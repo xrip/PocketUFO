@@ -1,0 +1,87 @@
+/* pufo_geoscape.h - the geoscape minute / hour / day tick chain.
+ *
+ * Evidence: Geoscape_TickShips @ 0x5d4e4, Geoscape_TickHourly @ 0x5d1bc,
+ * Geoscape_TickBases @ 0x5d3bc, driven by Geoscape_AdvanceTime @ 0x5ce40
+ * (ported in pufo_clock.c).
+ *
+ * Subsystems that are not part of this module (intercept reachability,
+ * mission-site spawning, facility construction, research and manufacturing
+ * accumulation) enter as hooks, each named after the original function it
+ * stands for. That keeps the tick order — the part that has to match —
+ * testable on its own.
+ */
+#ifndef PUFO_GEOSCAPE_H
+#define PUFO_GEOSCAPE_H
+
+#include "pufo_common.h"
+#include "game/pufo_clock.h"
+#include "game/pufo_ship.h"
+#include "game/pufo_strateg.h"
+#include "game/pufo_unit.h"
+
+typedef struct GeoscapeState {
+    GameTime     time;
+    GeoscapeWorld world;
+    StrategList *pList;
+
+    u16  nDaysSinceStart;   /* word_1472C8 @ 0x1472c8, capped at 200 */
+    i32  nSelectedShipIdx;  /* nSelectedShipIdx @ 0x187054 */
+    i32  nSelectedShipAux;  /* gUiRootPanel.anLineAux[140] */
+    u8   bLowSupplyFlag;    /* dword_1870C8 */
+
+    BaseRec *const *apBases;      /* pCtxBase.apBases */
+    ObjectRecFull  *pSupplyItem;  /* pCtxBase.apObjects[105] */
+    i32  nBaseCount;              /* SLOBYTE(gUiRootPanel.anLineAux[79]) */
+    i32 *apEmptyFacilityCells;    /* pMap.gap_TrajRest[26644], one per base */
+
+    Soldier *const *apSoldiers;   /* pCtxBase.apSoldiers */
+    u16  nSoldierCount;           /* pCtxBase.nSoldierCount (u16) */
+} GeoscapeState;
+
+typedef struct GeoscapeHooks {
+    /* StrategList_MaybeSpawnCraft_Process @ 0x7e420 (ProcessEvents side). */
+    void (*pfnProcessEvents)(u8 bSpawn, void *pUser);
+    /* Smap_CanInterceptReach @ 0x7e074. */
+    bool (*pfnCanInterceptReach)(i32 nShipIdx, void *pUser);
+    /* UiPanel_AppendLineWithSound @ 0x5a394. nMsg: 15 contact, 13 intercept
+     * lost, 43 low supply, 10 radar contact. GameTime_Pause @ 0x5d6ac is NOT
+     * part of the hook: 15, 13 and 10 pause the clock, 43 does not, so the
+     * port writes time.bPaused itself at the three pausing sites. */
+    void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
+    /* Geoscape_SpawnMissionSite @ 0x7e49c. */
+    void (*pfnSpawnMissionSite)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
+    /* Smap_GrantSiteRecovery @ 0x98b50. */
+    void (*pfnGrantSiteRecovery)(void *pUser);
+    /* ManufScreen_RefreshBaseTabs @ 0x70ebc. */
+    void (*pfnRefreshBaseTabs)(void *pUser);
+    /* ResearchScreen_AccumulateAllocated @ 0x74914. */
+    void (*pfnAccumulateResearch)(void *pUser);
+    /* Base_TickFacilityConstruction @ 0x62824. */
+    void (*pfnTickFacilityConstruction)(void *pUser);
+    /* Base_ClearFacilityGridRow @ 0x6a0e0; its byte result becomes the
+     * per-base site state byte_161F38[i]. */
+    i32 (*pfnClearFacilityGridRow)(i32 nBaseIdx, void *pUser);
+    /* Base_CountEmptyFacilityCells @ 0x6aee0. */
+    i32 (*pfnCountEmptyFacilityCells)(i32 nBaseIdx, void *pUser);
+    /* FundingScreen_OpenMonthly @ 0x5d160. */
+    void (*pfnOpenMonthly)(void *pUser);
+    /* Base_FindIndexBySiteId @ 0x5a8d0, passed through to the detect pass. */
+    i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
+    void *pUser;
+} GeoscapeHooks;
+
+/* Geoscape_TickShips @ 0x5d4e4. */
+void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks);
+
+/* Geoscape_TickHourly @ 0x5d1bc. */
+void Geoscape_TickHourly(GeoscapeState *pState, const GeoscapeHooks *pHooks);
+
+/* Geoscape_TickBases @ 0x5d3bc. */
+void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks);
+
+/* Convenience: Geoscape_AdvanceTime with the three tick hooks pre-wired to
+ * this module, plus the monthly funding hook. */
+void Geoscape_Advance(GeoscapeState *pState, const GeoscapeHooks *pHooks,
+                      i32 nDeltaSec);
+
+#endif /* PUFO_GEOSCAPE_H */

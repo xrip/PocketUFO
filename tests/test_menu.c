@@ -1,0 +1,356 @@
+/* test_menu.c - checks the options-menu button handlers.
+ *
+ * The interesting assertions are the per-group differences: the music group plays
+ * no sample at all, and the sfx group plays its sample after applying the volume
+ * rather than before. All four groups must keep their pads one-hot.
+ */
+#include "game/pufo_menu.h"
+
+#include <stdio.h>
+#include <string.h>
+
+static int g_nFailures;
+
+static void Check(bool bCond, const char *pszWhat)
+{
+    if (bCond) {
+        printf("  ok   %s\n", pszWhat);
+    } else {
+        printf("  FAIL %s\n", pszWhat);
+        g_nFailures += 1;
+    }
+}
+
+static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
+{
+    if (nGot == nWant) {
+        printf("  ok   %s (%d)\n", pszWhat, (int)nGot);
+    } else {
+        printf("  FAIL %s: got %d, want %d\n", pszWhat, (int)nGot, (int)nWant);
+        g_nFailures += 1;
+    }
+}
+
+/* --- recording hooks: the call ORDER matters, so keep a trace --------------- */
+
+#define TRACE_MAX 16
+
+typedef struct Trace {
+    char aEvent[TRACE_MAX][24];
+    i32  nEvents;
+    bool bAppliedMusic;
+    bool bAppliedSfx;
+    bool bPalettes;
+    bool bEndTurn;
+    bool bResize;
+} Trace;
+
+static Trace g_trace;
+
+static void TraceAdd(const char *pszEvent)
+{
+    if (g_trace.nEvents < TRACE_MAX) {
+        snprintf(g_trace.aEvent[g_trace.nEvents], sizeof(g_trace.aEvent[0]), "%s",
+                 pszEvent);
+    }
+    g_trace.nEvents += 1;
+}
+
+static void TraceReset(void)
+{
+    memset(&g_trace, 0, sizeof(g_trace));
+}
+
+static bool TraceAt(i32 nIndex, const char *pszWant)
+{
+    if (nIndex < 0 || nIndex >= g_trace.nEvents || nIndex >= TRACE_MAX) {
+        return false;
+    }
+    return strcmp(g_trace.aEvent[nIndex], pszWant) == 0;
+}
+
+static void H_Play(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (nSample == PUFO_MENU_SAMPLE_PRE) {
+        TraceAdd("sample17");
+    } else if (nSample == PUFO_MENU_SAMPLE_POST) {
+        TraceAdd("sample16");
+    } else {
+        TraceAdd("sample?");
+    }
+}
+
+static void H_ApplyMusic(void *pUser)
+{
+    (void)pUser;
+    g_trace.bAppliedMusic = true;
+    TraceAdd("applyMusic");
+}
+
+static void H_ApplySfx(void *pUser)
+{
+    (void)pUser;
+    g_trace.bAppliedSfx = true;
+    TraceAdd("applySfx");
+}
+
+static void H_LoadPalettes(void *pUser)
+{
+    (void)pUser;
+    g_trace.bPalettes = true;
+    TraceAdd("palettes");
+}
+
+static const MenuHooks g_hooks = {
+    H_Play, H_ApplyMusic, H_ApplySfx, H_LoadPalettes, NULL
+};
+
+static void H_BeginEnemyTurn(void *pUser)
+{
+    (void)pUser;
+    g_trace.bEndTurn = true;
+    TraceAdd("beginEnemyTurn");
+}
+
+static void H_ResizeWindow(void *pUser)
+{
+    (void)pUser;
+    g_trace.bResize = true;
+    TraceAdd("resize");
+}
+
+/* Counts the set entries in one pad group. */
+static i32 PadSum(const u8 *pPads)
+{
+    i32 n = 0;
+
+    for (i32 i = 0; i < PUFO_MENU_STEPS; ++i) {
+        n += pPads[i] != 0 ? 1 : 0;
+    }
+    return n;
+}
+
+/* Returns the lit index of a one-hot group, or -1. */
+static i32 PadLit(const u8 *pPads)
+{
+    for (i32 i = 0; i < PUFO_MENU_STEPS; ++i) {
+        if (pPads[i] != 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void TestSpeed(void)
+{
+    PufoOptions opt;
+    GameClock   clock;
+    MenuPads    pads;
+
+    printf("Menu_SetSpeed\n");
+    for (i32 step = 0; step < PUFO_MENU_STEPS; ++step) {
+        memset(&opt, 0, sizeof(opt));
+        memset(&clock, 0, sizeof(clock));
+        memset(&pads, 0, sizeof(pads));
+        /* Pre-light every pad to prove the handler clears them. */
+        memset(pads.abSpeed, 1, sizeof(pads.abSpeed));
+        TraceReset();
+
+        Check(Menu_SetSpeed(&opt, &clock, &pads, step, &g_hooks), "  speed applied");
+        CheckEqI32(clock.nSpeed, (u32)step, "  clock speed stored");
+        CheckEqI32(PadSum(pads.abSpeed), 1, "  speed pads are one-hot");
+        CheckEqI32(PadLit(pads.abSpeed), step, "  the right speed pad is lit");
+        Check(TraceAt(0, "sample17"), "  sample 17 plays first");
+        CheckEqI32(PadSum(pads.abGamma), 0, "  gamma pads untouched");
+        CheckEqI32(PadSum(pads.abMusic), 0, "  music pads untouched");
+        CheckEqI32(PadSum(pads.abSfx), 0, "  sfx pads untouched");
+    }
+
+    memset(&opt, 0, sizeof(opt));
+    memset(&clock, 0, sizeof(clock));
+    memset(&pads, 0, sizeof(pads));
+    Check(!Menu_SetSpeed(&opt, &clock, &pads, 5, &g_hooks), "  step 5 refused");
+    Check(!Menu_SetSpeed(&opt, &clock, &pads, -1, &g_hooks), "  step -1 refused");
+    Check(!Menu_SetSpeed(NULL, &clock, &pads, 0, &g_hooks), "  NULL options refused");
+}
+
+static void TestGamma(void)
+{
+    PufoOptions opt;
+    MenuPads    pads;
+
+    printf("Menu_SetGamma -- writes gamma then rebuilds palettes\n");
+    for (i32 step = 0; step < PUFO_MENU_STEPS; ++step) {
+        memset(&opt, 0, sizeof(opt));
+        memset(&pads, 0, sizeof(pads));
+        TraceReset();
+
+        Check(Menu_SetGamma(&opt, &pads, step, &g_hooks), "  gamma applied");
+        CheckEqI32(opt.nGamma, step, "  gamma stored in the options block");
+        CheckEqI32(PadLit(pads.abGamma), step, "  the right gamma pad is lit");
+        Check(g_trace.bPalettes, "  palettes were rebuilt");
+        Check(TraceAt(0, "sample17"), "  sample 17 plays first");
+        Check(TraceAt(1, "palettes"), "  palettes are rebuilt after the sample");
+    }
+
+    memset(&opt, 0, sizeof(opt));
+    memset(&pads, 0, sizeof(pads));
+    Check(!Menu_SetGamma(&opt, &pads, 5, &g_hooks), "  step 5 refused");
+}
+
+static void TestMusicVolume(void)
+{
+    PufoOptions opt;
+    MenuPads    pads;
+
+    printf("Menu_SetMusicVolume -- the ONLY group that plays no sample\n");
+    for (i32 step = 0; step < PUFO_MENU_STEPS; ++step) {
+        memset(&opt, 0, sizeof(opt));
+        memset(&pads, 0, sizeof(pads));
+        TraceReset();
+
+        Check(Menu_SetMusicVolume(&opt, &pads, step, &g_hooks), "  volume applied");
+        CheckEqI32(opt.nMusicVolume, step, "  music volume stored");
+        CheckEqI32(PadLit(pads.abMusic), step, "  the right music pad is lit");
+        Check(g_trace.bAppliedMusic, "  the volume was applied");
+        CheckEqI32(g_trace.nEvents, 1, "  exactly one event happened");
+        Check(TraceAt(0, "applyMusic"), "  and it was the volume apply, not a sample");
+    }
+
+    /* The pad index is 0-based even though the original names these 1..5. */
+    memset(&opt, 0, sizeof(opt));
+    memset(&pads, 0, sizeof(pads));
+    Check(Menu_SetMusicVolume(&opt, &pads, 0, &g_hooks), "  step 0 is valid (named Vol1)");
+    CheckEqI32(PadLit(pads.abMusic), 0, "  step 0 lights pad index 0");
+}
+
+static void TestSfxVolume(void)
+{
+    PufoOptions opt;
+    MenuPads    pads;
+
+    printf("Menu_SetSfxVolume -- applies the volume BEFORE the sample\n");
+    for (i32 step = 0; step < PUFO_MENU_STEPS; ++step) {
+        memset(&opt, 0, sizeof(opt));
+        memset(&pads, 0, sizeof(pads));
+        TraceReset();
+
+        Check(Menu_SetSfxVolume(&opt, &pads, step, &g_hooks), "  volume applied");
+        CheckEqI32(opt.nSoundVolume, step, "  sound volume stored");
+        CheckEqI32(PadLit(pads.abSfx), step, "  the right sfx pad is lit");
+        CheckEqI32(g_trace.nEvents, 2, "  two events happened");
+        Check(TraceAt(0, "applySfx"), "  the volume apply comes FIRST");
+        Check(TraceAt(1, "sample16"), "  sample 16 comes LAST");
+    }
+}
+
+static void TestPadsAreIndependent(void)
+{
+    PufoOptions opt;
+    GameClock   clock;
+    MenuPads    pads;
+
+    printf("The four pad groups are independent\n");
+    memset(&opt, 0, sizeof(opt));
+    memset(&clock, 0, sizeof(clock));
+    memset(&pads, 0, sizeof(pads));
+
+    (void)Menu_SetSpeed(&opt, &clock, &pads, 2, &g_hooks);
+    (void)Menu_SetGamma(&opt, &pads, 3, &g_hooks);
+    (void)Menu_SetMusicVolume(&opt, &pads, 1, &g_hooks);
+    (void)Menu_SetSfxVolume(&opt, &pads, 4, &g_hooks);
+
+    CheckEqI32(PadLit(pads.abSpeed), 2, "  speed pad still 2");
+    CheckEqI32(PadLit(pads.abGamma), 3, "  gamma pad still 3");
+    CheckEqI32(PadLit(pads.abMusic), 1, "  music pad still 1");
+    CheckEqI32(PadLit(pads.abSfx), 4, "  sfx pad still 4");
+    CheckEqI32(clock.nSpeed, 2, "  clock speed still 2");
+
+    /* And the option block ended with every group's value. */
+    CheckEqI32(opt.nGamma, 3, "  gamma 3");
+    CheckEqI32(opt.nMusicVolume, 1, "  music 1");
+    CheckEqI32(opt.nSoundVolume, 4, "  sfx 4");
+}
+
+static void TestButtons(void)
+{
+    printf("Menu_EndTurn / Menu_ResizeWindow\n");
+    TraceReset();
+    Menu_EndTurn(&g_hooks, H_BeginEnemyTurn);
+    Check(g_trace.bEndTurn, "  EndTurn began the enemy turn");
+    Check(TraceAt(0, "sample17"), "  EndTurn plays sample 17 first");
+    Check(TraceAt(1, "beginEnemyTurn"), "  then begins the turn");
+
+    TraceReset();
+    Menu_ResizeWindow(&g_hooks, H_ResizeWindow);
+    Check(g_trace.bResize, "  ResizeWindow resized");
+    Check(TraceAt(0, "sample16"), "  ResizeWindow plays sample 16");
+
+    /* A NULL callback must not crash. */
+    TraceReset();
+    Menu_EndTurn(&g_hooks, NULL);
+    Menu_ResizeWindow(&g_hooks, NULL);
+    Check(true, "  NULL callbacks are safe");
+}
+
+static void TestMuteToggles(void)
+{
+    PufoOptions opt;
+    u8 nMusicPad = 9;
+    u8 nSfxPad = 9;
+
+    printf("Menu_ToggleMusicMute / Menu_ToggleSfxMute\n");
+    Options_InitDefaults(&opt);
+    opt.bMusicOff = 0;
+    opt.bSoundOff = 0;
+
+    TraceReset();
+    Check(Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns on");
+    CheckEqI32(opt.bMusicOff, 1, "  music flag set");
+    CheckEqI32(nMusicPad, 1, "  music pad mirrors the flag");
+    Check(TraceAt(g_trace.nEvents - 1, "applyMusic"), "  music mute applies music volume");
+
+    Check(!Menu_ToggleMusicMute(&opt, &nMusicPad, &g_hooks), "  music mute turns off");
+    CheckEqI32(opt.bMusicOff, 0, "  music flag cleared");
+    CheckEqI32(nMusicPad, 0, "  music pad cleared");
+
+    TraceReset();
+    Check(Menu_ToggleSfxMute(&opt, &nSfxPad, &g_hooks), "  sfx mute turns on");
+    CheckEqI32(opt.bSoundOff, 1, "  sfx flag set");
+    CheckEqI32(nSfxPad, 1, "  sfx pad mirrors the flag");
+    Check(TraceAt(g_trace.nEvents - 1, "applySfx"), "  sfx mute applies sfx volume");
+
+    /* NULL option and NULL pad must be safe. */
+    Check(!Menu_ToggleMusicMute(NULL, NULL, &g_hooks), "  NULL options refused");
+    (void)Menu_ToggleSfxMute(&opt, NULL, NULL);
+
+    /* ForceNoDrag: the pad is the INVERSE of the new value. */
+    {
+        u8 nPad = 9;
+        opt.bForceNoDrag = 0;
+        Check(Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns on");
+        CheckEqI32(opt.bForceNoDrag, 1, "  flag set");
+        CheckEqI32(nPad, 0, "  pad is 0 when turning ON");
+        Check(!Menu_ToggleForceNoDrag(&opt, &nPad), "  forcenodrag turns off");
+        CheckEqI32(opt.bForceNoDrag, 0, "  flag cleared");
+        CheckEqI32(nPad, 1, "  pad is 1 when turning OFF");
+        Check(!Menu_ToggleForceNoDrag(NULL, NULL), "  NULL options refused");
+    }
+}
+
+int main(void)
+{
+    (void)setvbuf(stdout, NULL, _IONBF, 0);
+
+    TestSpeed();
+    TestGamma();
+    TestMusicVolume();
+    TestSfxVolume();
+    TestPadsAreIndependent();
+    TestButtons();
+    TestMuteToggles();
+
+    printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
+    return g_nFailures == 0 ? 0 : 1;
+}

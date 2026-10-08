@@ -1,0 +1,336 @@
+/* test_strateg.c - StrategList_UpdateMotion @ 0x80fd8, StrategList_UpdateDetect
+ * @ 0x81948, Strateg_CalcDetect @ 0x81378, Ship_ClearExpiredIntercepts @
+ * 0x8128c, CountActive @ 0x81a2c, FindByShipId @ 0x5a9b4.
+ *
+ * The pinned oddities: the proximity distance is sqrt(dx^2 + dy^2 + thresh)
+ * with the threshold INSIDE the root; the wrapped base distance is
+ * min(|bx-ux+800|, |ux-bx+800|, |ux-bx|); every site state requires the
+ * proximity timer to be idle; states 11/12 set bHyperDetect.
+ */
+#include "game/pufo_strateg.h"
+
+#include <stdio.h>
+#include <string.h>
+
+static int g_nFailures;
+
+static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
+{
+    if (nGot == nWant) {
+        printf("  ok   %s (%d)\n", pszWhat, (int)nGot);
+    } else {
+        printf("  FAIL %s: got %d, want %d\n", pszWhat, (int)nGot, (int)nWant);
+        g_nFailures += 1;
+    }
+}
+
+static void Check(bool bCond, const char *pszWhat)
+{
+    if (bCond) {
+        printf("  ok   %s\n", pszWhat);
+    } else {
+        printf("  FAIL %s\n", pszWhat);
+        g_nFailures += 1;
+    }
+}
+
+/* --- fixtures --- */
+
+static StrategItem g_aItems[8];
+static StrategItem *g_apItems[8];
+static Ship g_aShips[4];
+static Ship *g_apShips[4];
+static u8 g_aSiteState[4];
+static u8 g_aRadarPct[4];
+static GameTime g_Time; /* stands for the apLines[101..115] block */
+
+static i32 g_nMsgCount, g_nMsgId, g_nMsgArg3;
+
+static void Hook_Msg(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser)
+{
+    (void)nArg4; (void)pUser;
+    ++g_nMsgCount;
+    g_nMsgId = nMsg;
+    g_nMsgArg3 = nArg3;
+}
+
+static i32 Hook_FindBase(i32 nSiteId, void *pUser)
+{
+    (void)pUser;
+    return nSiteId - 7; /* site id 7 -> base 0 in the fixtures */
+}
+
+static void SetupWorld(GeoscapeWorld *pWorld, StrategList *pList, i32 nItems,
+                       i32 nShips)
+{
+    for (i32 i = 0; i < nItems; ++i) {
+        memset(&g_aItems[i], 0, sizeof(g_aItems[i]));
+        g_aItems[i].nSiteId = STRATEG_ID_UNASSIGNED;
+        g_aItems[i].nDisplayId = STRATEG_ID_UNASSIGNED;
+        g_apItems[i] = &g_aItems[i];
+    }
+    for (i32 i = 0; i < nShips; ++i) {
+        memset(&g_aShips[i], 0, sizeof(g_aShips[i]));
+        g_apShips[i] = &g_aShips[i];
+    }
+    memset(g_aSiteState, 0, sizeof(g_aSiteState));
+    memset(g_aRadarPct, 0, sizeof(g_aRadarPct));
+
+    pList->apItems = g_apItems;
+    pList->nCount = nItems;
+    pList->nNextDisplayId = 0;
+    pList->nNextSiteId = 0;
+
+    pWorld->apCraft = g_apShips;
+    pWorld->nShipCount = (u8)nShips;
+    pWorld->apSiteState = g_aSiteState;
+    pWorld->apRadarPct = g_aRadarPct;
+    pWorld->nTickSeconds = 60;
+    pWorld->nRadarBoostOff = 1; /* no +7 unless the test asks for it */
+    pWorld->nMinuteTicks = 0;
+    memset(&g_Time, 0, sizeof(g_Time));
+    pWorld->pTime = &g_Time;
+}
+
+static void TestCountAndFind(void)
+{
+    printf("CountActive / FindByShipId\n");
+    StrategList list;
+    GeoscapeWorld world;
+    SetupWorld(&world, &list, 3, 1);
+
+    g_aItems[0].nType = 1; g_aItems[0].bActive = 1;
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 0; g_aItems[1].nDisplayId = 42;
+    g_aItems[2].nType = 0; g_aItems[2].bActive = 0;
+    g_aShips[0].bId = 42;
+
+    CheckEqI32(StrategList_CountActive(&list), 1, "counts type1 active1 only");
+    CheckEqI32(StrategList_FindByShipId(&list, &world, 0), 1,
+               "finds type1 active0 entry with matching display id");
+    g_aShips[0].bId = 43;
+    CheckEqI32(StrategList_FindByShipId(&list, &world, 0), -1, "no match -> -1");
+}
+
+static void TestUpdateMotion(void)
+{
+    printf("StrategList_UpdateMotion\n");
+    StrategList list;
+    GeoscapeWorld world;
+    SetupWorld(&world, &list, 2, 1);
+
+    /* item 0: alien site being scanned; item 1: the ship's own entry */
+    g_aItems[0].nType = 0; g_aItems[0].bActive = 1;
+    g_aItems[0].nX = 100; g_aItems[0].nY = 100;
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 0; g_aItems[1].nDisplayId = 1;
+    g_aItems[1].nX = 100; g_aItems[1].nY = 100;
+
+    g_aShips[0].bId = 1;
+    g_aShips[0].bAtBase = 0;
+    g_aShips[0].bCraftType = 0; /* radius 15 */
+    g_aShips[0].bWeaponsHot = 1;
+
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 1, "hot ship at distance grows the timer");
+    CheckEqI32(g_aItems[0].bVisible, 0, "not visible yet");
+
+    /* thresh 120: visible once the timer reaches 120 */
+    for (i32 i = 1; i < 119; ++i)
+        StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].bVisible, 0, "still hidden at timer 119");
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].bVisible, 1, "visible when timer reaches thresh");
+    CheckEqI32(g_aItems[0].nTimer, 0, "timer cleared on visibility");
+    CheckEqI32(g_aItems[0].nDisplayId, 0, "display id assigned on visibility");
+    CheckEqI32(g_aItems[0].nSiteId, 0, "site id assigned on visibility");
+
+    /* Ship cold -> timer decays to zero each pass. */
+    g_aItems[0].bVisible = 0;
+    g_aItems[0].nDisplayId = STRATEG_ID_UNASSIGNED;
+    g_aItems[0].nSiteId = STRATEG_ID_UNASSIGNED;
+    g_aShips[0].bWeaponsHot = 0;
+    g_aItems[0].nTimer = 50;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 0, "timer reset when no hot ship is near");
+
+    /* Out of radius: craft type 0 radius 15, distance ~300. */
+    g_aShips[0].bWeaponsHot = 1;
+    g_aItems[1].nX = 400;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 0, "out of radius does not grow the timer");
+
+    /* Distance is sqrt(dx^2 + dy^2 + thresh): dx=11, dy=11, thresh=120 ->
+     * sqrt(362) = 19.03 -> 19, which is outside radius 15 but inside the
+     * type-2 radius 25. */
+    g_aItems[1].nX = 111; g_aItems[1].nY = 111;
+    g_aShips[0].bCraftType = 0;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 0, "sqrt(11^2+11^2+120)=19 misses radius 15");
+    g_aShips[0].bCraftType = 2;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 1, "same distance hits radius 25");
+
+    /* Ship at base is skipped entirely. */
+    g_aShips[0].bAtBase = 1;
+    g_aItems[0].nTimer = 7;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].nTimer, 0, "ship at base is ignored");
+    g_aShips[0].bAtBase = 0;
+
+    /* Fast tick (3600 s) uses threshold 1: visible in a single pass. */
+    world.nTickSeconds = 3600;
+    g_aItems[0].bVisible = 0;
+    g_aItems[0].nDisplayId = STRATEG_ID_UNASSIGNED;
+    g_aItems[0].nSiteId = STRATEG_ID_UNASSIGNED;
+    g_aItems[1].nX = 100; g_aItems[1].nY = 100;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].bVisible, 1, "threshold 1 makes one pass enough");
+
+    /* Type-1 active items become visible on proximity without weapons hot. */
+    world.nTickSeconds = 60;
+    g_aItems[0].nType = 1;
+    g_aShips[0].bWeaponsHot = 0;
+    g_aItems[0].bVisible = 0;
+    StrategList_UpdateMotion(&list, &world);
+    CheckEqI32(g_aItems[0].bVisible, 1, "type-1 item visible without hot weapons");
+}
+
+static void TestCalcDetect(void)
+{
+    printf("Strateg_CalcDetect\n");
+    StrategList list;
+    GeoscapeWorld world;
+    StrategHooks hooks = { Hook_Msg, Hook_FindBase, 0 };
+    SetupWorld(&world, &list, 2, 0);
+
+    /* item 0: player base entry (type 0, inactive), site id 7 -> base 0 */
+    g_aItems[0].nType = 0; g_aItems[0].bActive = 0;
+    g_aItems[0].nSiteId = 7;
+    g_aItems[0].nX = 10; g_aItems[0].nY = 100;
+
+    /* item 1: the ufo, wrapped-close to the base: dx = 20, dy = 0 */
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 1;
+    g_aItems[1].nX = 790; g_aItems[1].nY = 100;
+
+    g_aSiteState[0] = 1;
+    g_aRadarPct[0] = 100;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "state 1 within 24 with 100% radar detects");
+    CheckEqI32(g_nMsgId, 10, "radar contact posts message 10");
+    CheckEqI32(g_nMsgArg3, 1, "message carries the ufo index");
+    CheckEqI32(g_Time.bPaused, 1, "radar contact pauses the clock");
+    CheckEqI32(g_aItems[1].bHyperDetect, 0, "state 1 is not hyper");
+
+    /* Timer busy blocks every state. */
+    g_nMsgCount = 0;
+    g_aItems[1].nTimer = 3;
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "busy proximity timer blocks detection");
+    CheckEqI32(g_nMsgCount, 0, "blocked detection posts nothing");
+    g_aItems[1].nTimer = 0;
+
+    /* Outside the 24 radius: dx 40. */
+    g_aItems[1].nX = 50; /* dx = 40 */
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "state 1 outside 24 does not detect");
+    g_aItems[1].nX = 790;
+
+    /* State 2 reaches 31: dx 30 is inside. */
+    g_aSiteState[0] = 2;
+    g_aItems[1].nX = 40; /* dx = 30 */
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "state 2 within 31 detects");
+    g_aItems[1].nX = 790;
+
+    /* State 11 hyper-detects within 24. */
+    g_aSiteState[0] = 11;
+    g_aItems[1].bHyperDetect = 0;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "state 11 detects");
+    CheckEqI32(g_aItems[1].bHyperDetect, 1, "state 11 sets hyper flag");
+
+    /* Unknown state does nothing. */
+    g_aSiteState[0] = 5;
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "unknown site state never detects");
+
+    /* Radar 0% with the +7 boost off cannot detect (rand < 0 is never true). */
+    g_aSiteState[0] = 1;
+    g_aRadarPct[0] = 0;
+    world.nRadarBoostOff = 1;
+    Check(!Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "0% radar without boost cannot detect");
+
+    /* Radar 93% with the boost on becomes 100 -> guaranteed detection. */
+    g_aRadarPct[0] = 93;
+    world.nRadarBoostOff = 0;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 0, &list, &world, &hooks),
+          "93% radar + 7 boost detects like 100%");
+
+    /* nForcePct 100 pins detection regardless of the radar table. */
+    g_aRadarPct[0] = 0;
+    world.nRadarBoostOff = 1;
+    Check(Strateg_CalcDetect(&g_aItems[1], 1, 100, &list, &world, &hooks),
+          "forced 100% detection wins");
+}
+
+static void TestUpdateDetectAndIntercepts(void)
+{
+    printf("UpdateDetect / ClearExpiredIntercepts\n");
+    StrategList list;
+    GeoscapeWorld world;
+    StrategHooks hooks = { Hook_Msg, Hook_FindBase, 0 };
+    SetupWorld(&world, &list, 2, 1);
+
+    g_aItems[0].nType = 0; g_aItems[0].bActive = 0;
+    g_aItems[0].nSiteId = 7; g_aItems[0].nX = 10; g_aItems[0].nY = 100;
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 1;
+    g_aItems[1].nX = 790; g_aItems[1].nY = 100;
+    g_aItems[1].bDetected = 1; /* forces 100% */
+    g_aSiteState[0] = 1;
+    g_aRadarPct[0] = 0;
+
+    StrategList_UpdateDetect(&list, &world, &hooks);
+    CheckEqI32(g_aItems[1].bDetected, 1, "already-detected ufo stays detected");
+    CheckEqI32(g_aItems[1].bVisible, 1, "detected ufo is visible");
+    CheckEqI32(g_aItems[1].nDisplayId, 0, "display id assigned");
+
+    /* Not detected -> visible and hyper cleared. */
+    g_aItems[1].bDetected = 0;
+    g_aItems[1].bHyperDetect = 1;
+    StrategList_UpdateDetect(&list, &world, &hooks);
+    CheckEqI32(g_aItems[1].bDetected, 0, "0% radar loses detection");
+    CheckEqI32(g_aItems[1].bVisible, 0, "lost detection hides the ufo");
+    CheckEqI32(g_aItems[1].bHyperDetect, 0, "lost detection clears hyper");
+
+    /* Intercept expiry. */
+    g_aShips[0].bIntercepting = 1;
+    g_aShips[0].nStrategIdx = 1;
+    g_aItems[1].bVisible = 0;
+    g_aItems[1].nDisplayId = 123; /* already assigned -> target is really gone */
+    g_nMsgCount = 0;
+    Ship_ClearExpiredIntercepts(&world, &list, &hooks);
+    CheckEqI32(g_aShips[0].bIntercepting, 0, "intercept dropped when target lost");
+    CheckEqI32(g_nMsgId, 13, "lost intercept posts message 13");
+    CheckEqI32(g_Time.bPaused, 1, "lost intercept pauses the clock");
+
+    g_aShips[0].bIntercepting = 1;
+    g_aItems[1].nDisplayId = STRATEG_ID_UNASSIGNED; /* pending -> keep */
+    Ship_ClearExpiredIntercepts(&world, &list, &hooks);
+    CheckEqI32(g_aShips[0].bIntercepting, 1, "pending target keeps the intercept");
+
+    g_aShips[0].bIntercepting = 1;
+    g_aItems[1].nDisplayId = 123;
+    g_aItems[1].bVisible = 1;
+    Ship_ClearExpiredIntercepts(&world, &list, &hooks);
+    CheckEqI32(g_aShips[0].bIntercepting, 1, "visible target keeps the intercept");
+}
+
+int main(void)
+{
+    TestCountAndFind();
+    TestUpdateMotion();
+    TestCalcDetect();
+    TestUpdateDetectAndIntercepts();
+    printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
+    return g_nFailures != 0;
+}

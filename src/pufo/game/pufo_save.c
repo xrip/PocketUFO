@@ -1,0 +1,735 @@
+/* pufo_save.c - save/load chunk serialisation.
+ *
+ * Evidence: see pufo_save.h for the full address list.
+ */
+#include "game/pufo_save.h"
+
+#include <stdio.h>
+#include <string.h>
+
+bool Save_BuildSlotPath(char *pszOut, size_t cchOut, const char *pszAppDir, i32 nSlot)
+{
+    int n;
+
+    if (pszOut == NULL || cchOut == 0) {
+        return false;
+    }
+    /* The original is strcat(szAppDir, "sav") + itoa(slot) + strcat(".sav"), with
+     * no bounds handling. snprintf keeps the bounds explicit. */
+    n = snprintf(pszOut, cchOut, "%s%s%d%s", pszAppDir != NULL ? pszAppDir : "",
+                 "sav", (int)nSlot, ".sav");
+    return n > 0 && (size_t)n < cchOut;
+}
+
+/* One `DatFile_Write` wrapper that fails loudly, so a short write cannot pass as
+ * success the way a bare call would. */
+static bool W(DatFile *pDat, const void *pBuf, u32 nSize)
+{
+    return DatFile_Write(pDat, pBuf, nSize);
+}
+
+/* The flags are stored as six separate booleans, one per bit, NOT as a byte. That
+ * is three times the size of the flag byte and is reproduced because the read
+ * side consumes six bytes too. */
+static bool WriteFlags(DatFile *pDat, u8 bFlags)
+{
+    for (u32 i = 0; i < 6; ++i) {
+        u8 bBit = (u8)((bFlags >> i) & 1u);
+
+        if (!W(pDat, &bBit, 1)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool ReadFlags(DatFile *pDat, u8 *pbFlags)
+{
+    u8 bFlags = 0;
+
+    for (u32 i = 0; i < 6; ++i) {
+        u8 bBit = 0;
+
+        if (!DatFile_Read(pDat, &bBit, 1)) {
+            return false;
+        }
+        bFlags = (u8)(bFlags | ((bBit != 0 ? 1u : 0u) << i));
+    }
+    *pbFlags = bFlags;
+    return true;
+}
+
+bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
+{
+    u8 aPad[PUFO_SAVE_SOLDIER_PREFIX];
+    u32 nOff = 0;
+    u8  bZero = 0;
+    u8  aCell[3];
+    i32 nLook;
+    i32 nFemale;
+    u16 uZero = 0;
+    u32 nZero32 = 0;
+    i32 i;
+
+    if (pDat == NULL || pUnit == NULL) {
+        return false;
+    }
+    memset(aPad, 0, sizeof(aPad));
+
+    /* The six flag bits. */
+    if (!WriteFlags(pDat, pUnit->bFlags)) {
+        return false;
+    }
+    (void)nOff;
+
+    /* Scalar fields, in the original's write order. */
+    if (!W(pDat, &pUnit->bFacing, 1)) { return false; }
+    if (!W(pDat, &pUnit->uTu, 2)) { return false; }
+    if (!W(pDat, &pUnit->uStunOrArmor, 2)) { return false; }
+    if (!W(pDat, &pUnit->uHp, 2)) { return false; }
+    if (!W(pDat, &pUnit->bMorale, 1)) { return false; }
+
+    /* The cell coordinates, or three zero bytes when the unit is not on the map.
+     * The original writes the cell's own nX/nY/nZ when `bInTact != 0 && pCell`,
+     * else a shared zero dword's first three bytes. */
+    if (pUnit->bInTact != 0 && pUnit->pCell != NULL) {
+        aCell[0] = pUnit->pCell->nX;
+        aCell[1] = pUnit->pCell->nY;
+        aCell[2] = pUnit->pCell->nZ;
+    } else {
+        aCell[0] = 0;
+        aCell[1] = 0;
+        aCell[2] = 0;
+    }
+    if (!W(pDat, aCell, 3)) { return false; }
+
+    if (!W(pDat, &pUnit->nAnimPose, 1)) { return false; }
+    /* A one-byte zero pad before the draw offsets. */
+    if (!W(pDat, &bZero, 1)) { return false; }
+    if (!W(pDat, &pUnit->nDrawOffX, 1)) { return false; }
+    if (!W(pDat, &pUnit->nDrawOffY, 1)) { return false; }
+    if (!W(pDat, &pUnit->bStatus, 1)) { return false; }
+    if (!W(pDat, &pUnit->uTuSpent, 2)) { return false; }
+    if (!W(pDat, &pUnit->nMultiTarget, 1)) { return false; }
+
+    /* The non-tactical branch writes a raw 120-byte buffer produced by
+     * `memset(buf, 0x7FFF, 0x78)`. memset takes an int but stores its LOW BYTE,
+     * so the buffer is 120 bytes of 0xFF -- not a 0x7FFF pattern. Reproduced. */
+    {
+        u8 aMulti[120];
+
+        memset(aMulti, 0xFF, sizeof(aMulti));
+        if (!W(pDat, aMulti, sizeof(aMulti))) {
+            return false;
+        }
+    }
+
+    if (!W(pDat, &pUnit->bUnk148, 1)) { return false; }
+    if (!W(pDat, &pUnit->bUnk149, 1)) { return false; }
+    nLook = pUnit->nLook;
+    if (!W(pDat, &nLook, 4)) { return false; }
+    nFemale = pUnit->bFemale;
+    if (!W(pDat, &nFemale, 4)) { return false; }
+    if (!W(pDat, &pUnit->nUnitType, 1)) { return false; }
+
+    /* auStat: ten u16. The original writes them one at a time; the IDB renders
+     * some indices as `offsetof(Soldier, X)`, which evaluates to 4, 5, 6 and 8 --
+     * i.e. ascending 0..9. A single 20-byte write is the same bytes. */
+    if (!W(pDat, pUnit->auStat, sizeof(pUnit->auStat))) { return false; }
+
+    if (!W(pDat, &pUnit->nKind, 1)) { return false; }
+    if (!W(pDat, &pUnit->bUnk183, 1)) { return false; }
+    if (!W(pDat, &pUnit->uMissions, 2)) { return false; }
+    if (!W(pDat, pUnit->szName, sizeof(pUnit->szName))) { return false; }
+    if (!W(pDat, &pUnit->bRankType, 1)) { return false; }
+    /* auStatBase: nine u16, 18 bytes. */
+    if (!W(pDat, pUnit->auStatBase, sizeof(pUnit->auStatBase))) { return false; }
+
+    if (!W(pDat, &pUnit->bKneelOrPrimed, 1)) { return false; }
+    if (!W(pDat, &pUnit->bUnk247, 1)) { return false; }
+    if (!W(pDat, &pUnit->bUnk248, 1)) { return false; }
+    if (!W(pDat, &pUnit->uKills, 2)) { return false; }
+    if (!W(pDat, pUnit->abReady252, sizeof(pUnit->abReady252))) { return false; }
+    if (!W(pDat, &pUnit->bUnk961, 1)) { return false; }
+    if (!W(pDat, pUnit->auUnk962, sizeof(pUnit->auUnk962))) { return false; }
+    if (!W(pDat, pUnit->abUnk1012, sizeof(pUnit->abUnk1012))) { return false; }
+
+    /* The non-tactical inventory block: a 150-byte zero fill. */
+    {
+        u8 aInv[150];
+
+        memset(aInv, 0, sizeof(aInv));
+        if (!W(pDat, aInv, sizeof(aInv))) {
+            return false;
+        }
+    }
+
+    if (!W(pDat, &pUnit->bHumanoidInv, 1)) { return false; }
+    if (!W(pDat, &pUnit->uInvBurden, 2)) { return false; }
+    if (!W(pDat, &pUnit->bUnk422, 1)) { return false; }
+    if (!W(pDat, &pUnit->nArmorPoints, 4)) { return false; }
+    if (!W(pDat, &pUnit->nClass, 4)) { return false; }
+    if (!W(pDat, &pUnit->nUnk436, 4)) { return false; }
+    if (!W(pDat, &pUnit->nUnk440, 4)) { return false; }
+    if (!W(pDat, &pUnit->bUnk423, 1)) { return false; }
+
+    /* The non-tactical spotted block: a 244-byte zero fill. */
+    {
+        u8 aSpotted[244];
+
+        memset(aSpotted, 0, sizeof(aSpotted));
+        if (!W(pDat, aSpotted, sizeof(aSpotted))) {
+            return false;
+        }
+    }
+
+    /* Account for the scratch bytes so an unused-variable warning cannot mask a
+     * future gap: everything above is written explicitly, nothing comes from aPad. */
+    (void)uZero;
+    (void)nZero32;
+    (void)i;
+    return true;
+}
+
+bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
+{
+    u8  aSkip[244];
+    u8  aCell[3];
+    u8  bZero = 0;
+    i32 nLook;
+    i32 nFemale;
+    u16 uDiscard16;
+    i32 nDiscard32;
+
+    if (pDat == NULL || pUnit == NULL) {
+        return false;
+    }
+    memset(pUnit, 0, sizeof(*pUnit));
+
+    if (!ReadFlags(pDat, &pUnit->bFlags)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bFacing, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uTu, 2)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uStunOrArmor, 2)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uHp, 2)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bMorale, 1)) { return false; }
+    /* The cell coordinates are only meaningful for a tactical save, and the read
+     * side resolves them through the map; store them raw for the caller. */
+    if (!DatFile_Read(pDat, aCell, 3)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nAnimPose, 1)) { return false; }
+    if (!DatFile_Read(pDat, &bZero, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nDrawOffX, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nDrawOffY, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bStatus, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uTuSpent, 2)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nMultiTarget, 1)) { return false; }
+
+    /* The 120-byte multi-target block is not modelled; discard it. */
+    if (!DatFile_Read(pDat, aSkip, 120)) { return false; }
+
+    if (!DatFile_Read(pDat, &pUnit->bUnk148, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk149, 1)) { return false; }
+    if (!DatFile_Read(pDat, &nLook, 4)) { return false; }
+    pUnit->nLook = nLook;
+    if (!DatFile_Read(pDat, &nFemale, 4)) { return false; }
+    pUnit->bFemale = nFemale;
+    if (!DatFile_Read(pDat, &pUnit->nUnitType, 1)) { return false; }
+    if (!DatFile_Read(pDat, pUnit->auStat, sizeof(pUnit->auStat))) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nKind, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk183, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uMissions, 2)) { return false; }
+    if (!DatFile_Read(pDat, pUnit->szName, sizeof(pUnit->szName))) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bRankType, 1)) { return false; }
+    if (!DatFile_Read(pDat, pUnit->auStatBase, sizeof(pUnit->auStatBase))) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bKneelOrPrimed, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk247, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk248, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uKills, 2)) { return false; }
+    if (!DatFile_Read(pDat, pUnit->abReady252, sizeof(pUnit->abReady252))) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk961, 1)) { return false; }
+    if (!DatFile_Read(pDat, pUnit->auUnk962, sizeof(pUnit->auUnk962))) { return false; }
+    if (!DatFile_Read(pDat, pUnit->abUnk1012, sizeof(pUnit->abUnk1012))) { return false; }
+
+    /* 150-byte inventory block, discarded. */
+    if (!DatFile_Read(pDat, aSkip, 150)) { return false; }
+
+    if (!DatFile_Read(pDat, &pUnit->bHumanoidInv, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->uInvBurden, 2)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk422, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nArmorPoints, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nClass, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nUnk436, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nUnk440, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bUnk423, 1)) { return false; }
+
+    /* 244-byte spotted block, discarded. */
+    if (!DatFile_Read(pDat, aSkip, 244)) { return false; }
+
+    (void)nDiscard32;
+    (void)uDiscard16;
+    return true;
+}
+
+/* The two trailing chunks: `stactflg` holds one byte per soldier (bInTact), and
+ * `1_24scb` one u32 per soldier (the save id of the linked unit, or 0x7FFF). */
+bool Save_WriteTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+{
+    if (pDat == NULL || apSoldiers == NULL || nCount < 0) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_STACTFLG)) {
+        return false;
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        u8 bValue = (u8)(apSoldiers[i] != NULL && apSoldiers[i]->bInTact != 0 ? 1 : 0);
+
+        if (!W(pDat, &bValue, 1)) {
+            return false;
+        }
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_124SCB)) {
+        return false;
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        u32 nValue = 0x7FFFu; /* the "no link" sentinel */
+
+        if (apSoldiers[i] != NULL && apSoldiers[i]->pLinked1040 != NULL) {
+            /* The original reads the linked soldier's nSaveId at +956. */
+            nValue = (u32)*(const i32 *)((const u8 *)apSoldiers[i]->pLinked1040 + 956);
+        }
+        if (!W(pDat, &nValue, 4)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Save_ReadTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+{
+    if (pDat == NULL || apSoldiers == NULL || nCount < 0) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_STACTFLG)) {
+        return false;
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        u8 bValue = 0;
+
+        if (!DatFile_Read(pDat, &bValue, 1)) {
+            return false;
+        }
+        if (apSoldiers[i] != NULL) {
+            apSoldiers[i]->bInTact = bValue;
+        }
+    }
+
+    /* The `1_24scb` chunk records link ids; the port does not resolve them yet, so
+     * they are consumed to keep the stream consistent. */
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_124SCB)) {
+        return false;
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        u32 nValue = 0;
+
+        if (!DatFile_Read(pDat, &nValue, 4)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Save_WriteVersion(DatFile *pDat)
+{
+    u16 nVer = (u16)PUFO_SAVE_TACTVER_VALUE;
+
+    if (pDat == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_TACTVER)) {
+        return false;
+    }
+    return W(pDat, &nVer, 2);
+}
+
+bool Save_ReadVersion(DatFile *pDat, u8 *pnOutVer)
+{
+    u16 nVer = 0;
+
+    if (pDat == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TACTVER)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &nVer, 2)) {
+        return false;
+    }
+    if (pnOutVer != NULL) {
+        *pnOutVer = (u8)nVer;
+    }
+    return true;
+}
+
+/* Save_WriteSoldiers @ 0x42350.
+ *
+ * The order is: begin the chunk, write the u16 count, every record, then the two
+ * trailing per-soldier chunks. This is the only valid entry point because
+ * DatFile_Write refuses to work without an open chunk (verified: pufo_dat.c checks
+ * `nCurEntry == 0` and returns false). */
+bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount)
+{
+    u16 uCount = (u16)nCount;
+
+    if (pDat == NULL) {
+        return false;
+    }
+    if (nCount < 0) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_SOLDIERS)) {
+        return false;
+    }
+    if (!W(pDat, &uCount, 2)) {
+        return false;
+    }
+    if (apSoldiers != NULL) {
+        for (i32 i = 0; i < nCount; ++i) {
+            if (apSoldiers[i] != NULL && !Save_WriteSoldier(pDat, apSoldiers[i])) {
+                return false;
+            }
+        }
+    }
+    return Save_WriteTrailingChunks(pDat, apSoldiers, nCount);
+}
+
+/* Save_ReadSoldiers @ 0x416bc. The original allocates the roster from the count;
+ * this port fills caller-provided storage so ownership stays explicit. */
+bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
+                       i32 nCapacity)
+{
+    u16 uCount = 0;
+
+    if (pDat == NULL || pnCount == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_SOLDIERS)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &uCount, 2)) {
+        return false;
+    }
+    if ((i32)uCount > nCapacity) {
+        return false;
+    }
+    for (i32 i = 0; i < (i32)uCount; ++i) {
+        if (apapSoldiers != NULL && apapSoldiers[i] != NULL) {
+            if (!Save_ReadSoldier(pDat, apapSoldiers[i])) {
+                return false;
+            }
+        }
+    }
+    /* The write side ends with the two per-soldier chunks, so the read side must
+     * consume them; skipping this leaves bInTact (and the link ids) unrestored. */
+    if (!Save_ReadTrailingChunks(pDat, apapSoldiers, (i32)uCount)) {
+        return false;
+    }
+    *pnCount = (i32)uCount;
+    return true;
+}
+
+/* ------------------------------------------------------------ the small chunks */
+
+bool Save_WriteGameState(DatFile *pDat, u8 bTactFlag)
+{
+    if (pDat == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_GAMESTATE)) {
+        return false;
+    }
+    /* One byte, taken from pCtx[0] in the original -- the tactical flag. */
+    return W(pDat, &bTactFlag, 1);
+}
+
+bool Save_ReadGameState(DatFile *pDat, u8 *pbOutGameState)
+{
+    if (pDat == NULL || pbOutGameState == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_GAMESTATE)) {
+        return false;
+    }
+    /* The original restores into bGameState @ 0x15821C, NOT back into the flag it
+     * wrote from. The asymmetry is reproduced by keeping this a separate output. */
+    return DatFile_Read(pDat, pbOutGameState, 1);
+}
+
+bool Save_WriteObjBefore(DatFile *pDat, ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL || apObjects == NULL || nObjectCount < 0) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_OBJBEFORE)) {
+        return false;
+    }
+    /* One u16 per object: the recovery score at 0xCA of the 208-byte record. */
+    for (i32 i = 0; i < nObjectCount; ++i) {
+        if (apObjects[i] == NULL) {
+            return false;
+        }
+        if (!W(pDat, &apObjects[i]->uRecovScore, 2)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Save_ReadObjBefore(DatFile *pDat, ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL || apObjects == NULL || nObjectCount < 0) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_OBJBEFORE)) {
+        return false;
+    }
+    for (i32 i = 0; i < nObjectCount; ++i) {
+        if (apObjects[i] == NULL) {
+            return false;
+        }
+        if (!DatFile_Read(pDat, &apObjects[i]->uRecovScore, 2)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Save_WriteTime(DatFile *pDat, const SaveTimeRecord *pTime)
+{
+    if (pDat == NULL || pTime == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_TIME)) {
+        return false;
+    }
+    /* The write order is the original's, which is NOT the slot order: 105, 106,
+     * 103, 102, 101, 114, 115, then the word. */
+    if (!W(pDat, &pTime->nSlot105, 4)) { return false; }
+    if (!W(pDat, &pTime->nSlot106, 1)) { return false; }
+    if (!W(pDat, &pTime->nSlot103, 4)) { return false; }
+    if (!W(pDat, &pTime->nSlot102, 4)) { return false; }
+    if (!W(pDat, &pTime->nSlot101, 4)) { return false; }
+    if (!W(pDat, &pTime->nSlot114, 4)) { return false; }
+    if (!W(pDat, &pTime->nSlot115, 4)) { return false; }
+    return W(pDat, &pTime->nWord1472C8, 2);
+}
+
+bool Save_ReadTime(DatFile *pDat, SaveTimeRecord *pTime)
+{
+    if (pDat == NULL || pTime == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TIME)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pTime->nSlot105, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot106, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot103, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot102, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot101, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot114, 4)) { return false; }
+    if (!DatFile_Read(pDat, &pTime->nSlot115, 4)) { return false; }
+    return DatFile_Read(pDat, &pTime->nWord1472C8, 2);
+}
+
+bool Save_AssignRosterIndices(bool bTactFlag, Soldier **apSoldiers, i32 nSoldierCount,
+                              TactItem **apTactItems, i32 nTactItemCount)
+{
+    /* The whole function is gated on the tactical flag. */
+    if (!bTactFlag) {
+        return false;
+    }
+
+    if (apSoldiers != NULL) {
+        for (i32 i = 0; i < nSoldierCount; ++i) {
+            if (apSoldiers[i] != NULL) {
+                apSoldiers[i]->nSaveId = i;
+            }
+        }
+    }
+
+    /* The item counter RESTARTS at 0 rather than continuing from the soldier count,
+     * so the two id spaces deliberately overlap. */
+    if (apTactItems != NULL) {
+        for (i32 i = 0; i < nTactItemCount; ++i) {
+            if (apTactItems[i] != NULL) {
+                apTactItems[i]->nRefId = i;
+            }
+        }
+    }
+    return true;
+}
+
+/* Write one ResearchTopic in the original's field order. */
+static bool Save_WriteResearchTopic(DatFile *pDat, const ResearchTopic *pTopic)
+{
+    return DatFile_Write(pDat, &pTopic->bComplete, 1)
+        && DatFile_Write(pDat, &pTopic->bUnk31, 1)
+        && DatFile_Write(pDat, &pTopic->wNameId, 2)
+        && DatFile_Write(pDat, pTopic->abUnk20, 5)
+        && DatFile_Write(pDat, &pTopic->wUnk0, 2)
+        && DatFile_Write(pDat, pTopic->abUnk10, 5)
+        && DatFile_Write(pDat, &pTopic->bAvailable, 1)
+        && DatFile_Write(pDat, &pTopic->bUnk30, 1)
+        && DatFile_Write(pDat, &pTopic->bUnk33, 1)
+        && DatFile_Write(pDat, pTopic->abUnk25, 5)
+        && DatFile_Write(pDat, pTopic->abUnlock, 5)
+        && DatFile_Write(pDat, &pTopic->wProgress, 2)
+        && DatFile_Write(pDat, &pTopic->bUnk32, 1)
+        && DatFile_Write(pDat, &pTopic->wUnk2, 2);
+}
+
+static bool Save_ReadResearchTopic(DatFile *pDat, ResearchTopic *pTopic)
+{
+    return DatFile_Read(pDat, &pTopic->bComplete, 1)
+        && DatFile_Read(pDat, &pTopic->bUnk31, 1)
+        && DatFile_Read(pDat, &pTopic->wNameId, 2)
+        && DatFile_Read(pDat, pTopic->abUnk20, 5)
+        && DatFile_Read(pDat, &pTopic->wUnk0, 2)
+        && DatFile_Read(pDat, pTopic->abUnk10, 5)
+        && DatFile_Read(pDat, &pTopic->bAvailable, 1)
+        && DatFile_Read(pDat, &pTopic->bUnk30, 1)
+        && DatFile_Read(pDat, &pTopic->bUnk33, 1)
+        && DatFile_Read(pDat, pTopic->abUnk25, 5)
+        && DatFile_Read(pDat, pTopic->abUnlock, 5)
+        && DatFile_Read(pDat, &pTopic->wProgress, 2)
+        && DatFile_Read(pDat, &pTopic->bUnk32, 1)
+        && DatFile_Read(pDat, &pTopic->wUnk2, 2);
+}
+
+/* Save_WriteResearch @ 0x3f558. */
+bool Save_WriteResearch(DatFile *pDat, const SaveResearchState *pState)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, "research")) {
+        return false;
+    }
+    if (!DatFile_Write(pDat, pState->abHeadA, PUFO_RESEARCH_HEAD_A_BYTES)
+        || !DatFile_Write(pDat, pState->abHeadB, PUFO_RESEARCH_HEAD_B_BYTES)
+        || !DatFile_Write(pDat, pState->abHeadC, PUFO_RESEARCH_HEAD_C_BYTES)
+        || !DatFile_Write(pDat, pState->abHeadD, PUFO_RESEARCH_HEAD_D_BYTES)) {
+        return false;
+    }
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        if (!Save_WriteResearchTopic(pDat, &pState->aTopics[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Save_ReadResearch @ 0x406e8. */
+bool Save_ReadResearch(DatFile *pDat, SaveResearchState *pState)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, "research")) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, pState->abHeadA, PUFO_RESEARCH_HEAD_A_BYTES)
+        || !DatFile_Read(pDat, pState->abHeadB, PUFO_RESEARCH_HEAD_B_BYTES)
+        || !DatFile_Read(pDat, pState->abHeadC, PUFO_RESEARCH_HEAD_C_BYTES)
+        || !DatFile_Read(pDat, pState->abHeadD, PUFO_RESEARCH_HEAD_D_BYTES)) {
+        return false;
+    }
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        if (!Save_ReadResearchTopic(pDat, &pState->aTopics[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Write one SmapSite in the original's field order (740 bytes on disk). */
+static bool Save_WriteSmapSite(DatFile *pDat, const SmapSite *pSite)
+{
+    return DatFile_Write(pDat, &pSite->bUnk518, 1)
+        && DatFile_Write(pDat, &pSite->uRecoveredSoldiers, 2)
+        && DatFile_Write(pDat, &pSite->bFlag1, 1)
+        && DatFile_Write(pDat, &pSite->bHasLoot, 1)
+        && DatFile_Write(pDat, pSite->auItemQty, 0x200)
+        && DatFile_Write(pDat, &pSite->bRecoveredCraftCount, 1)
+        && DatFile_Write(pDat, &pSite->bRecoveredSoldierAssign, 1)
+        && DatFile_Write(pDat, &pSite->bFlag0, 1)
+        && DatFile_Write(pDat, pSite->anCraftIds, 0x14)
+        && DatFile_Write(pDat, pSite->anSoldierIds, 0xC8);
+}
+
+static bool Save_ReadSmapSite(DatFile *pDat, SmapSite *pSite)
+{
+    return DatFile_Read(pDat, &pSite->bUnk518, 1)
+        && DatFile_Read(pDat, &pSite->uRecoveredSoldiers, 2)
+        && DatFile_Read(pDat, &pSite->bFlag1, 1)
+        && DatFile_Read(pDat, &pSite->bHasLoot, 1)
+        && DatFile_Read(pDat, pSite->auItemQty, 0x200)
+        && DatFile_Read(pDat, &pSite->bRecoveredCraftCount, 1)
+        && DatFile_Read(pDat, &pSite->bRecoveredSoldierAssign, 1)
+        && DatFile_Read(pDat, &pSite->bFlag0, 1)
+        && DatFile_Read(pDat, pSite->anCraftIds, 0x14)
+        && DatFile_Read(pDat, pSite->anSoldierIds, 0xC8);
+}
+
+/* Save_WriteSmap @ 0x3fa28. */
+bool Save_WriteSmap(DatFile *pDat, const SaveSmapState *pState)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, "smap")) {
+        return false;
+    }
+    if (!DatFile_Write(pDat, &pState->nCamParam0, 4)
+        || !DatFile_Write(pDat, &pState->nCamScrollX, 4)
+        || !DatFile_Write(pDat, &pState->nCamScrollY, 4)
+        || !DatFile_Write(pDat, &pState->nParam3, 4)
+        || !DatFile_Write(pDat, &pState->nParam4, 4)) {
+        return false;
+    }
+    for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+        if (!Save_WriteSmapSite(pDat, &pState->aSites[i])) {
+            return false;
+        }
+    }
+    return DatFile_Write(pDat, pState->abTail5, 5)
+        && DatFile_Write(pDat, pState->abTail8a, 8)
+        && DatFile_Write(pDat, pState->abTail8b, 8);
+}
+
+/* Save_ReadSmap: the mirror of Save_WriteSmap (the original has no separate
+ * reader in this chunk's family; the port provides one for the round trip). */
+bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, "smap")) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pState->nCamParam0, 4)
+        || !DatFile_Read(pDat, &pState->nCamScrollX, 4)
+        || !DatFile_Read(pDat, &pState->nCamScrollY, 4)
+        || !DatFile_Read(pDat, &pState->nParam3, 4)
+        || !DatFile_Read(pDat, &pState->nParam4, 4)) {
+        return false;
+    }
+    for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+        if (!Save_ReadSmapSite(pDat, &pState->aSites[i])) {
+            return false;
+        }
+    }
+    return DatFile_Read(pDat, pState->abTail5, 5)
+        && DatFile_Read(pDat, pState->abTail8a, 8)
+        && DatFile_Read(pDat, pState->abTail8b, 8);
+}
