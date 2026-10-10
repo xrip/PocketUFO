@@ -3809,10 +3809,9 @@ objects 125/126/127; and the chryssalid transform (type 22 becomes type 14, stat
 name copied, no death flag, no corpse, not moved to the civilian roster, stats and
 `abReady252` from the template).
 
-**Not verified: the spotted-flag sweep.** With `KillCtx.bUiSlotArmed` confirmed set on
-the way in and unchanged on the way out, no cell in the ±8 window is cleared. The
-check was removed rather than left failing. The tail is ported from the pseudocode but
-has no evidence behind it yet.
+**The spotted-flag sweep is now verified.** It clears `MapCell.bFlags44` bit 0 across the +-8 tile window on all four layers and stops at the window edge.
+
+Two fixes came out of chasing it. The port was **not** reassigning `pUnit->pCell` to the cell the corpse landed on, which the original does at `0x4eaa8` (`pUnit->pCell = v36`) before it places the item and only for the first corpse; fall damage, the item drop and the sweep all read the unit from that cell. And the test had a dangling compound literal: `pCombat->pGeom = &(MapGeom){ 4, 4 }` inside a setup function, so the geometry died when the function returned. `nDimX` then read as 0, `nMaxX` became 0, the clamp set `nX1` and `nY1` to -1, and the sweep loop never executed. That is why every earlier probe showed the flag untouched with the branch provably armed.
 
 Two things worth knowing about the original that the tests pinned down:
 

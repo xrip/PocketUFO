@@ -1444,6 +1444,14 @@ static i32 Kill_DropCorpse(const KillCtx *pCtx, MapCell *pCell, Soldier *pUnit,
                         ? g_aCorpseObjByType[pUnit->nUnitType]
                         : Kill_QuadrantObj(pUnit->nUnitType, nQuadrant);
 
+    /* The original moves the unit onto the cell its corpse landed on (pUnit->pCell
+     * = v36 at 0x4eaa8) before it places the item, and only for the first corpse.
+     * Everything after the kill - fall damage, the drop, the sweep - reads the unit
+     * from that cell. */
+    if (nQuadrant == 0) {
+        pUnit->pCell = pLand;
+    }
+
     TactItem_ctor(pItem);
     pItem->pObj = pCtx->apObjects[nObjIdx];
     /* The original stores the unit pointer in the item's linked-soldier field only

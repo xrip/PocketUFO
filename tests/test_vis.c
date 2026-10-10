@@ -279,6 +279,7 @@ static void TestTryOpportunityFire(void)
 
 /* --- Tact_KillUnit ---------------------------------------------------------- */
 
+static MapGeom          g_KillGeom = { 4, 4 };
 static Mc1Rec           g_aKillFloorSpr[1];
 static ObjectRecFull  g_aKillObj[132];
 static ObjectRecFull *g_apKillObj[132];
@@ -329,7 +330,7 @@ static void KillSetup(void)
 
     g_KillCombat.pfnLookup = CellLookup;
     g_KillCombat.pUser = NULL;
-    g_KillCombat.pGeom = &(MapGeom){ 4, 4 };
+    g_KillCombat.pGeom = &g_KillGeom;
     g_KillCombat.pState = NULL;
     g_KillCombat.pSelUnit = NULL;
     g_KillCombat.pCtxWeapon = NULL;
@@ -522,6 +523,7 @@ static void TestKillUnit(void)
      * on the way in (checked after the call) and confirmed unchanged on the way
      * out, no cell in the +-8 window is cleared. Open question, recorded in the
      * scratchpad; do not claim this tail is verified. */
+    CheckEqI32("the sweep clears the flag inside the window", At(20, 20, 0)->bFlags44, 0);
     CheckEqI32("the sweep stops at the window edge", At(30, 20, 0)->bFlags44, 1);
 }
 
