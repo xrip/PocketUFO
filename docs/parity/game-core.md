@@ -2976,3 +2976,86 @@ One assumption still stands in `pufo_vistry.c`: `_stoi` truncates toward zero. I
 it rounds instead, every perpendicular axis in the table can differ by one. The
 diagonal and shallow-ray checks above would shift, so they are the tests to re-run
 against a dynamic check if this is ever verified on the original.
+
+# `Tact_ResolveThrowLanding @ 0x31a18` - port-ready brief (not yet ported)
+
+Signature: `(Map *pMap, int nX0, int nY0, int nZ0, int nX1, int nY1, int nZ1,
+TactItem *pItem)`. Returns 0 when the throw is out of range, otherwise the
+"landed on a valid target" flag. Every callee is already ported: `Game_RandU16`,
+`Tact_SimulateThrowArc @ 0x3102c`, `Map_TraceVoxelOccupancy @ 0x3242c`, plus
+`sqrt/cos/sin/tan` and the coredll double helpers.
+
+## Range budget from strength and weight
+
+```
+w = pSelUnit->auStat[9] * pItem->pObj->bWeight
+s = pSelUnit->auStat[8] * pSelUnit->uStunOrArmor
+budget = (double)(s / w / 2) + (s % w)      /* itod(lo = s/w/2, hi = s%w) */
+if (budget < 1.0)  budget = 1.0
+if (budget > 22.0) budget = 22.0
+```
+`auStat[8]` and `auStat[9]` are the throwing stats; `bWeight` is the item weight.
+
+## Short throws get a random target jitter
+
+When `|nX1 - nX0| < 3 && |nY1 - nY0| < 3`, the destination is pushed 2..5 cells
+away in a random direction on each axis: `Game_RandU16(2)` picks the sign and
+`Game_RandU16(3)` the size.
+
+## Range test before the arc
+
+```
+d = sqrt((nY1-nY0)^2 + (nX1-nX0)^2) * 0.0625          /* 1/16 */
+if (nZ1 >= nZ0) d *= (double)((nZ1 - nZ0) / 8)
+if (d > budget) return 0
+```
+Note the integer `(nZ1 - nZ0) / 8`: a height difference under 8 counts as zero, so
+a low throw upwards gets no vertical allowance at all.
+
+## The search loop
+
+`Tact_SimulateThrowArc(pMap, nX0, nY0, nZ0, v15, v18, nZ1, pItem)` fills the aim
+block (`dTravel`, `dAngleYaw`, `dAnglePitch`, `nArcDenomLo`, `nTrajBound`,
+`nLosX0/Y0/Z0/Z1`, `bTrajHitStop`). Then, while `bTrajHitStop != 0`:
+
+```
+dz = |nLosZ1 - nLosZ0|
+if (nTrajBound < dz)  dTravel += (nTrajBound / dz) * 0.01
+else                  dTravel += 0.5
+adMtX = nLosX0 + dTravel * cos(dAngleYaw)
+adMtY = nLosY0 + dTravel * sin(dAngleYaw)
+adMtZ = nLosZ0 + dTravel*tan(dAnglePitch)
+                 - (dTravel^2 * 9.18) / (nArcDenomLo^2 * cos^2 * 2.0)
+```
+The `9.18` is the throw gravity already recorded for `Tact_SimulateThrowArc`, and
+`nArcDenomLo` is the arc denominator the ballistics module keeps.
+
+Abort the arc when the landing point is invalid:
+`adMtX <= 0 || adMtY <= 0 || adMtZ <= 0 || adMtX >= 160*nMapDimX ||
+adMtY >= 160*nMapDimX || adMtZ >= 47.0` -> `bTrajHitStop = 0`.
+Same `>= 160 * nMapDimX` bound as `Tact_TraceProjectileArc`, and 47 is the height
+ceiling.
+
+`bLanded = 1` when `dTravel >= nTrajBound - 8.0`.
+
+Then `Map_TraceVoxelOccupancy(pMap, (int)adMtX, (int)adMtY, (int)adMtZ)`; a zero
+result also clears `bTrajHitStop` and ends the loop.
+
+## Tail
+
+`nTravelSaveLo/Hi = dTravel` (the same save slot `Tact_ComputeAimVector` uses), and
+the function returns `bLanded` only when `dTravel * 0.0625 <= budget`, else 0.
+
+## Constants used here
+
+| pair | value | meaning |
+|------|-------|---------|
+| (0, 1072693248) | 1.0 | budget floor |
+| (0, 1077280768) | 22.0 | budget ceiling |
+| (0, 1068498944) | 0.0625 | 1/16, cell-to-range scale |
+| (0, 1071644672) | 0.5 | travel bump when the bound is not the limiter |
+| (1202590843, 1065646817) | 0.01 | travel bump when the bound is the limiter |
+| (-171798692, 1075993640) | 9.18 | throw gravity |
+| (0, 0x40000000) | 2.0 | arc denominator scale |
+| (0, 1078427648) | 47.0 | landing height ceiling |
+| (0, 1075838976) | 8.0 | subtracted from the bound for the landed test |
