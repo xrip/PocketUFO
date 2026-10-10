@@ -2327,3 +2327,41 @@ cost field. The macros are now `PUFO_WEAPON_SORT_50` and `PUFO_WEAPON_SORT_15`.
 `ObjectRecFull.gap_B9[11]`, which `Combat_ResolveShot` reads for its own
 readiness choice, is the same byte `Unit_ApplyCellDamage` reads as its second
 selector. That is the confirmation that the two functions share one record.
+
+## Facing angles: the game's own pi family
+
+`Unit_bFacingAngleDuel @ 0x4dcf4` is ported (`pufo_unit.c`), and it decodes the
+angle constants the whole tactical layer shares. They are the game's own
+approximations, not the math library's:
+
+| value | appears as (lo, hi) | meaning |
+|-------|---------------------|---------|
+| 0.785375   | (-1065151889, 1072243146) | one facing step: facing angle = `(bFacing - 2) * 0.785375` |
+| 6.283      | (-1065151889, 1075388874) | a full turn, added to normalise a negative angle into [0, 2pi) |
+| 3.1415     | (-1065151889, 1074340298) | a half turn, the wrap threshold for an angle error |
+| 0.19634375 | (-1065151889, 1070145994) | facing step / 4, the tight tolerance that scores 2 |
+| 0.3926875  | (-1065151889, 1071194570) | facing step / 2, the loose tolerance that scores 1 |
+| 5.497625   | (1752346657, 1075182993)  | seven facing steps, the far bound in `Unit_bTryOpportunityFire` |
+| 16.0       | (0, 1076887552)            | voxel cells per map cell, used by `Unit_UpdateVisibility` |
+| 240.0      | (0, 1080950784)            | the ray step limit in `Unit_UpdateVisibility` |
+
+Facing 2 points down +X and facing 6 points down -X. The half turn 3.1415 is a
+hair *under* the real pi, so a bearing of exactly pi is above the wrap threshold
+and gets wrapped to `6.283 - pi`. That is not a rounding accident to "fix": it
+changes which side of a head-on pair scores the tight tolerance, and the port
+keeps the original's value.
+
+The duel's shape: each side gets `|trunc(facingAngle - bearingToTheOther)|`,
+wrapped into [0, half turn], scored 2 / 1 / 0 by the two tolerances; then each
+side rolls `Game_RandU16(100)` and loses the roll outright when `auStat[3]` is
+below it; then two `Game_RandU16(20)` luck rolls pick one side to scale by
+`((delta / 5) * (roll / 2) + roll) * score`, and the larger final value wins.
+A side with `auStat[3] == 0` therefore always loses, which is what the test
+pins down.
+
+`Unit_bTryOpportunityFire @ 0x47c38` is now fully read but still unported: it
+needs `Unit_bFacingAngleDuel` (done), `Unit_SelectBestFireMode @ 0x478e4`, and
+`Unit_UpdateVisibility @ 0x48580`. The last one is the big one - a 120-entry
+facing ray fan over the cell grid using `dword_B2278` (step vectors) and
+`unk_15718C` (per-voxel wall masks), plus the desert/forest ceiling-id rules.
+Those two tables are the next thing to recover.

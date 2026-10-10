@@ -945,6 +945,71 @@ static void TestRecalcInventory(void)
     CheckEqI32(Unit_RecalcInventoryStat(&unit, NULL), 0, "NULL hooks returns 0");
 }
 
+/* Unit_bFacingAngleDuel @ 0x4dcf4.
+ * Facing 2 points down +X and facing 6 points down -X: the facing angle is
+ * (bFacing - 2) * 0.785375. The game's own half turn is 3.1415, a hair under the
+ * real pi, which is what makes an opposite bearing wrap. */
+static void TestFacingAngleDuel(void)
+{
+    MapCell cellA, cellB;
+    Soldier a, b;
+    int nAWins, i;
+
+    printf("Unit_bFacingAngleDuel\n");
+    memset(&cellA, 0, sizeof(cellA));
+    memset(&cellB, 0, sizeof(cellB));
+    cellA.nX = 10;
+    cellA.nY = 10;
+    cellB.nX = 11;
+    cellB.nY = 10;
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    a.pCell = &cellA;
+    b.pCell = &cellB;
+    a.bFacing = 2;
+    b.bFacing = 6;
+
+    /* auStat[3] == 0 zeroes every reaction roll, and a zero roll can never beat
+     * a non-negative one, so this side loses whatever the dice do. */
+    a.auStat[3] = 0;
+    b.auStat[3] = 100;
+    bool bAlwaysLoses = true;
+    srand(1);
+    for (i = 0; i < 50; i++) {
+        if (Unit_bFacingAngleDuel(&a, &b)) {
+            bAlwaysLoses = false;
+            break;
+        }
+    }
+    Check(bAlwaysLoses, "a unit that fails its reaction roll never wins");
+
+    /* Both turned at each other: A looks down +X, B looks down -X. The duel is
+     * symmetric, so the wins split. */
+    a.auStat[3] = 100;
+    nAWins = 0;
+    srand(2024);
+    for (i = 0; i < 200; i++) {
+        if (Unit_bFacingAngleDuel(&a, &b)) {
+            ++nAWins;
+        }
+    }
+    Check(nAWins > 70 && nAWins < 130, "a symmetric duel splits the wins");
+    printf("  symmetric duel: A won %d/200\n", nAWins);
+
+    /* B turns the other way. Its error is trunc(0 - pi) = -3, magnitude 3, which
+     * is under the game's 3.1415 half turn, so it is not wrapped and scores 0. */
+    b.bFacing = 2;
+    nAWins = 0;
+    srand(2024);
+    for (i = 0; i < 200; i++) {
+        if (Unit_bFacingAngleDuel(&a, &b)) {
+            ++nAWins;
+        }
+    }
+    Check(nAWins > 150, "the well turned unit wins almost every duel");
+    printf("  A facing B, B facing away: A won %d/200\n", nAWins);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1009,6 +1074,7 @@ int main(void)
     TestArmorTuWarn();
     TestSpotCellOccupant();
     TestRecalcInventory();
+    TestFacingAngleDuel();
 
     TextTables_Free();
     Asset_CloseArchives();

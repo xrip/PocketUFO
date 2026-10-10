@@ -45,6 +45,97 @@ bool Unit_bIsLarge(const Soldier *pUnit)
     return g_aUnitTypeIsLarge[pUnit->nUnitType] == 1;
 }
 
+/* Unit_bFacingAngleDuel @ 0x4dcf4. Which of two units is better turned towards
+ * the other, used by the opportunity-fire decision.
+ *
+ * Each side gets an absolute angle error, then a random reaction roll scaled by
+ * that error and by a luck roll, and the larger final value wins.
+ *
+ * The angle constants are the game's own approximations, read from the double
+ * pairs it builds: a facing step of 0.785375 (not pi/4), a full turn of 6.283
+ * (not 2*pi), and a half turn of 3.1415. Both the facing angle and the bearing
+ * are normalised into [0, 2*pi) by adding the full turn when they come out
+ * negative, and the error is wrapped into [0, pi] the same way.
+ *
+ * The original's unused first context argument is dropped. */
+#define PUFO_FACING_STEP  0.785375
+#define PUFO_TURN_FULL    6.283
+#define PUFO_TURN_HALF    3.1415
+#define PUFO_FACING_TOL_1 0.19634375 /* PUFO_FACING_STEP / 4 */
+#define PUFO_FACING_TOL_2 0.3926875  /* PUFO_FACING_STEP / 2 */
+
+static double Unit_FacingAngle(const Soldier *pUnit)
+{
+    double dAngle = (double)((i32)pUnit->bFacing - 2) * PUFO_FACING_STEP;
+
+    if (dAngle < 0.0) {
+        dAngle += PUFO_TURN_FULL;
+    }
+    return dAngle;
+}
+
+static double Unit_CellBearing(const MapCell *pFrom, const MapCell *pTo)
+{
+    double dBearing = atan2((double)(pTo->nY - pFrom->nY),
+                            (double)(pTo->nX - pFrom->nX));
+
+    if (dBearing < 0.0) {
+        dBearing += PUFO_TURN_FULL;
+    }
+    return dBearing;
+}
+
+/* The error is truncated to an integer before its magnitude is taken, exactly as
+ * the original's dtoi/abs32 pair does. */
+static double Unit_AngleError(double dAngle, double dBearing)
+{
+    double dError = (double)(i32)(dAngle - dBearing);
+
+    if (dError < 0.0) {
+        dError = -dError;
+    }
+    if (dError > PUFO_TURN_HALF) {
+        dError = PUFO_TURN_FULL - dError;
+    }
+    return dError;
+}
+
+static i32 Unit_AngleScore(double dError)
+{
+    if (dError <= PUFO_FACING_TOL_1) {
+        return 2;
+    }
+    return dError <= PUFO_FACING_TOL_2 ? 1 : 0;
+}
+
+bool Unit_bFacingAngleDuel(const Soldier *pUnitA, const Soldier *pUnitB)
+{
+    double dErrA = Unit_AngleError(Unit_FacingAngle(pUnitA),
+                                   Unit_CellBearing(pUnitA->pCell, pUnitB->pCell));
+    double dErrB = Unit_AngleError(Unit_FacingAngle(pUnitB),
+                                   Unit_CellBearing(pUnitB->pCell, pUnitA->pCell));
+    i32 nScoreA = Unit_AngleScore(dErrA);
+    i32 nScoreB = Unit_AngleScore(dErrB);
+
+    i32 nRollA = Game_RandU16(0x64);
+    if ((i32)pUnitA->auStat[3] < nRollA) {
+        nRollA = 0;
+    }
+    i32 nRollB = Game_RandU16(0x64);
+    if ((i32)pUnitB->auStat[3] < nRollB) {
+        nRollB = 0;
+    }
+    i32 nLuckA = Game_RandU16(0x14);
+    i32 nLuckB = Game_RandU16(0x14);
+
+    if (nLuckA <= nLuckB) {
+        nRollB = ((nLuckB - nLuckA) / 5 * (nRollB / 2) + nRollB) * nScoreB;
+    } else {
+        nRollA = ((nLuckA - nLuckB) / 5 * (nRollA / 2) + nRollA) * nScoreA;
+    }
+    return nRollA > nRollB;
+}
+
 /* Unit_GetExtraSpr @ 0x2e59c. The disassembly reads the low byte of
  * anim.uFacingResetH (LDRB [pUnit,#0x32]) and the u16 anim.uExtraSprBase
  * (LDRH [pUnit,#0x26]), then indexes anMc1Base[uExtraSprBase] (the u16 at

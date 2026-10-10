@@ -212,6 +212,12 @@ void Unit_ctor(Soldier *pUnit);
 bool Unit_bIsOperative(const Soldier *pUnit);
 bool Unit_bIsLarge(const Soldier *pUnit);
 
+/* Unit_bFacingAngleDuel @ 0x4dcf4. True when pUnitA is the better turned of the
+ * two, judged from each unit's facing against the bearing to the other and then
+ * settled by a reaction roll. The original's unused first context argument is
+ * dropped. */
+bool Unit_bFacingAngleDuel(const Soldier *pUnitA, const Soldier *pUnitB);
+
 /* The lookup Unit_GetExtraSpr performs, split out because the splash walk calls
  * the same routine with a tile sprite record instead of a unit. Read straight off
  * the record, the two offsets are Mc1Rec.nSlot (+0x26) and Mc1Rec.bExtraSprFacing
