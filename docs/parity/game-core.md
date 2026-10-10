@@ -3208,3 +3208,104 @@ until that is done deliberately.
 
 `Unit_UpdateVisibility @ 0x48580` is now unblocked: it needs the ray table and
 this field, and both exist.
+
+# `Unit_UpdateVisibility @ 0x48580` - read, port-ready brief (not yet ported)
+
+Signature: `int __fastcall Unit_UpdateVisibility(Soldier *pUnit)`. Callees:
+`Unit_bIsOperative @ 0x49eb8`, `Unit_bIsLarge @ 0x49ecc`, `Unit_ScanVisibleUnits
+@ 0x4834c`, `Unit_SpotCellOccupant @ 0x48138`, `MapCell_SetBFlags29_4 @ 0x548c0`,
+`Map_IsValidCell`, `Map_TraceLos @ 0x30890`.
+
+## The eight ray-table passes are the eight facings
+
+`unk_B2278[i + 2 + pUnit->bFacing] != 0` is the ray's `aPass[bFacing]` flag. That
+closes the loop on `Tact_BuildVisRayTable`: the eight "passes" it seeds are the
+eight unit facing directions, and `Map_ComputeFov` uses only the even ones
+(0, 2, 4, 6) because it is called for the four shot directions.
+
+## Ray walk
+
+```
+d       = sqrt(dx*dx + dy*dy) * 16.0
+stepX   = (16*dx + 8) / d
+stepY   = (16*dy + 8) / d
+budget  = 240.0
+for t = 0 .. 239:
+    x = 16*cell.nX + 8 + t*stepX
+    y = 16*cell.nY + 8 + t*stepY
+    cell = (x/16, y/16)          break if out of bounds at nLayer
+    f = cell->nFlags32 & 7
+    if (f != 0 && f != 4)  budget = max(0.0, budget - 2.0*f)
+    if (t > budget)        break
+    ... wall A, wall B, reveal, ceiling ...
+```
+So `nFlags32 & 7` is a per-cell sight cost, 2 units each, against a budget of 240.
+
+## Layer choice
+
+`nLayer = pCell->nZ`, raised to `nZ + 1` when the cell has a ceiling sprite whose
+signed byte 36 is below -10. The loft row index used for every sprite test is
+`spr[(12 * nLayer + 8) % 12 + 8]`, which is the same row-table read
+`Los_TerrainRow` already models.
+
+## Vertical scans
+
+Before the rays: the unit's own cell is marked with `MapCell_SetBFlags29_4`; a
+large unit also marks three neighbour cells and sets their `bFlags44` bit 0. Then
+every layer below the unit is visited where the cell has no occupant or the
+occupant's byte 46 is 1, and every layer above where the floor sprite is absent
+or its byte 46 is 1. Each visit calls `Unit_SpotCellOccupant`.
+
+During the rays, whenever the ray enters a new cell it reveals upward until a cell
+with a floor sprite is found (bounded at layer 3) and downward to layer 0 on the
+same rule.
+
+## Wall and ceiling tests
+
+Wall A blocks when `spr[43] != 0` and either `x % 16 == 0` (a ray landing exactly
+on a cell boundary) or the loft bit is set, and then only if `spr[42] == 0` or the
+cell's `bFlags29` bit 2 is clear. Wall B is the same without the boundary case.
+`spr[43]` is a byte not used anywhere else in the port yet; it gates whether the
+sprite participates in sight at all.
+
+The ceiling blocks when its loft bit is set, and then a mission-type rule on the
+u16 at `ObjectRecFull.bTwoHanded`:
+- Desert: block unless the value is in `0x1B..0x41`.
+- Forest: block unless the value is in `0x1B..0x40`, with `82` also allowed.
+- Any other mission type: block.
+
+## Enemy multi-target scan
+
+For each enemy within 1..15 cells (`trunc(hypot)` of the cell difference):
+
+```
+angle        = atan2(ey - uy, ex - ux);  if (angle < 0) angle += 6.283
+facingAngle  = (bFacing - 2) * 0.785375; if (angle < 0) facingAngle += 6.283
+bFacing == 2:  skip unless 0.785375 <= angle <= 5.497625
+otherwise:     accept when abs(trunc(angle - facingAngle)) <= 0.785375
+```
+`0.785375` is the facing step already recorded for `Unit_bFacingAngleDuel`, and
+`5.497625` is seven times it. So the vision cone is one facing step wide on each
+side. The `trunc` of the angle difference is a quirk worth keeping.
+
+LOS is traced from `(16*nX+8, 16*nY+8, 12*nZ - ceilSpr->nObjParam + 8)` at both
+ends (the `nObjParam` term only applies when a ceiling sprite exists), with
+`Map.pSelUnit` temporarily set to the viewer and the enemy written into
+`anActionPhaseSave0[120]`, both restored afterwards. On success the enemy cell gets
+`bFlags29 |= 0x10` and `bFlags44 |= 1` plus `Unit_SpotCellOccupant`.
+
+## Constants
+
+| pair | value | meaning |
+|---|---|---|
+| (0, 1076887552) | 16.0 | ray length scale |
+| (0, 1080950784) | 240.0 | sight budget, and the 240-step walk limit |
+| (-1065151889, 1072243146) | 0.785375 | facing step, also the cone tolerance |
+| (-1065151889, 1075388874) | 6.283 | full turn |
+| (1752346657, 1075182993) | 5.497625 | 7 * facing step |
+
+## What it needs before it can be ported
+
+`Unit_ScanVisibleUnits`, `Unit_SpotCellOccupant`, `MapCell_SetBFlags29_4` and
+`Unit_bIsOperative` first. `Map_TraceLos`, `Map_TraceVoxelOccupancy`, the loft row
+test and the ray table are already in the port.
