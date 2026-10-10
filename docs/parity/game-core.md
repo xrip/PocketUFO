@@ -2142,3 +2142,66 @@ test skips the height test rather than ending the search.
 denominator 23.9437733; 48 voxels flat gives 31.6606068; 16,16,12 gives
 19.3139508. Those numbers come from the search itself, so a change in the
 angle set or the constants moves them.
+
+## Next target brief: Combat_SplashDamageCells @ 0x2e7d8 (read once, port next turn)
+
+Decompiled and worked through; recorded here so the next turn does not have to
+re-read it. Not ported yet.
+
+Signature `Combat_SplashDamageCells(Map *pMap, int x, int y, int z, int a5, int a6)`.
+`a5` and `pMap->nFireArg6` are the same kind of object - a weapon record - read
+at `+200` (u16 weapon class) and `+182` (u16 TU cost). Classes 50 and 15 are the
+two special cases.
+
+Shape: a 41 x 41 cell sweep centred on (x, y) - `cellX = (x - 20) + ix`,
+`cellY = (y - 20) + iy`, `ix, iy` in 0..40, fixed layer `z`. Cells outside
+`Map_IsValidCell` are skipped. Each cell is then walked over its four sprite
+slots, `slot = 0 floor, 1 wallA, 2 wallB, 3 ceiling`.
+
+Per-(cell, slot) hit record: `Map.gap_TrajRest` (Map+0x4ebc) indexed as
+`4 * (41 * iy + ix) + 4 * slot` dwords, i.e. 4 dwords per record. Only two are
+read: dword 0 (`power`, u16) and dword 3 (`unitPower`, u16). A zero `power`
+skips the record. Thresholds: `power > 0x14` gates damage and flag mutation,
+`power > 0x46` gates one flag mutation, `unitPower > 0x41` and `unitPower > 0xA`
+gate the two special weapon classes.
+
+Behaviour groups, in the order the original applies them:
+
+1. `a6 == 2` (and class not 50/15): when `power >= sprite[25]`, sets
+   `nFlags32 = (nFlags32 & ~7) | 4`, `nFlags40 = (nFlags40 & ~7) | 2`, clears
+   bit 0 of `bFlags36`. Then, unless `nFlags32 & 7 == 4`, randomly rewrites the
+   low 3 bits of `nFlags32` with `Game_RandU16(3)` and of `nFlags40` with
+   `Game_RandU16(2) + 2`.
+2. `a6 == 1` and slot is floor or ceiling: same `nFlags32 | 4`, random
+   `nFlags40` low 3 bits from `Game_RandU16(2) + 2`, sets bit 0 of `bFlags36`.
+3. Slot 0 and `power > 0x14` (class not 50/15): `Unit_ApplyCellDamage @ 0x2e5d0`.
+4. Slot 3 with an occupant that is not already hit (`gap_433[0] == 0`) and class
+   not 50/15: damage = `unitPower - bUnk248 * (1 - ready / 100)` where `ready`
+   is `abReady252[2]` for `a6 == 1`, `abReady252[0]` for `a6 == 0` (skipped when
+   the unit is `pSelUnit`) or `a6 == 2`, and the previous cell's value for other
+   `a6`. Then a random reduction `Game_RandU16(damage / 4)` is subtracted,
+   clamped at 0. Armour `nArmorPoints` absorbs first (clamped to 0, remainder
+   kept); the rest comes off `uHp` and is added to `nUnk436`, or `uHp` goes to 0.
+   Stun: when `damage >= auStat[1] >> 1` and the unit is not large,
+   `bKneelOrPrimed += (damage - (auStat[1] >> 1)) / 10 + 1`. Then `gap_433[0] = 1`
+   and `Unit_EnqueueIfApSpent @ 0x4a3d4` with 1.
+5. `a6 != 0` and `power > 0x14` and (class != 50 or `power > 0x46`): random
+   rewrite of bits 3..6 of `nFlags32` with `8 * Game_RandU16(3) - 57`.
+6. Sprite destruction, when the slot sprite exists and `sprite[22] != 255` and
+   class is not 50/15: `d = (int)(power - 1.05 * sprite[22])` (the constant pair
+   0/0x3FF0CCCC is 1.05). Cell damage counters are the four bytes at MapCell
+   +16..+19, one per slot. If `sprite[22] >= cellDamage + d` the counter grows by
+   `d` (clamped at 0) and 255 is stored as -1. Otherwise the sprite is destroyed:
+   slots 1..3 become NULL when `nZ != 0`, else `Unit_GetExtraSpr @ 0x2e59c`;
+   slot 0 checks `sprite[50]`, may set `bUnk16 = d - sprite[22]` when `nZ != 0`,
+   calls `Unit_GetExtraSpr`, and NULLs the floor sprite when the new
+   `sprite[22] <= bUnk16` and `nZ != 0`.
+7. Class 50 with `unitPower > 0x41` and an occupant: `uTuSpent += weapon[+182]`,
+   and when `uTuSpent >= uHp` it is replaced by `10 * (Game_RandU16(6) + 7) + uHp`,
+   then `Unit_EnqueueIfApSpent` with 0.
+8. Class 15 with a floor sprite and `unitPower > 0xA`: sets `nFlags32` and
+   `nFlags40` to `... | 3` on this cell and walks the cells directly above
+   (`nZ + 1 .. 3`, same x/y) applying the same until it reaches a NULL cell.
+
+Globals it uses: `g_pCurCell` @ 0x113998 (the original re-reads the cell through
+this global after every helper call), `pCtxBase` @ 0x1139b8.
