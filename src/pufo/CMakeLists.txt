@@ -503,6 +503,16 @@ add_test(NAME test_fov
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+add_executable(test_blast ${CMAKE_SOURCE_DIR}/tests/test_blast.c)
+target_link_libraries(test_blast PRIVATE pufo_options pufo_game pufo_util)
+set_target_properties(test_blast PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_blast
+    COMMAND test_blast
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 
 
 

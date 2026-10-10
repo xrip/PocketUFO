@@ -3380,7 +3380,9 @@ Returns 1 as soon as any ray touches an occupied cell, 0 after all passes.
 - Ray length gate: `sqrt(dx*dx + dy*dy) <= 2.0`, so only offsets within radius two
   are examined. `if (j >= 14) continue;` is therefore unreachable in practice.
 - Occupancy test is `MapCell_HasOccupant(pCell)` on the cell the step lands on.
-  The origin cell (offset 0,0) is never examined.
+  Step 0 of every row is the origin cell itself (`Step(3, 0, 0, 0) == 0` and
+  `Step(3, 0, 14, 0) == 14` in the ray table), so the cell the blast is centred on
+  is the first cell tested.
 - Wall flags are set on the same two cells as `Map_ComputeFov`, with the same
   asymmetry: byte 2 == 2 marks a wall on the cell being left (`pCell->bFlags57[0]
   |= 2`), byte 2 == 1 marks a wall on the cell being entered (`next->bFlags57[0]

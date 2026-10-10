@@ -113,4 +113,28 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
                     i32 nColBase, i32 nRowBase, i32 nOriginX, i32 nOriginY,
                     i32 nLayer, i32 nRange, i32 nCostMode, u16 nWeaponSortKey);
 
+/* Map_ScanBlastFootprint @ 0x32cd4.
+ *
+ * Walk the ray table for all eight passes (Map_ComputeFov uses only 0, 2, 4 and
+ * 6) and all four layers, and return true as soon as any ray lands on an occupied
+ * cell. Unlike the FOV walk, the step offsets are only used while their distance
+ * from the origin is within two cells: `sqrt(dx*dx + dy*dy) <= 2.0` ends a ray, so
+ * this is a radius-two footprint and the fifteen-step rows are never fully walked.
+ *
+ * Step 0 of every row is the origin cell itself, so the cell the blast is centred
+ * on is the first cell tested.
+ *
+ * The original indexes the current cell through pCtxBase.apCells with no bounds
+ * check, and only validates the next cell through Map_IsValidCell. The port looks
+ * the current cell up through pfnLookup and ends the ray when that returns NULL,
+ * which is a deliberate deviation: it turns an out-of-map read into a stop.
+ *
+ * Wall flags are set exactly as Map_ComputeFov sets them, with the same asymmetry
+ * between a wall on the cell being left (flag 2) and one on the cell being entered
+ * (flag 1). The blocking byte here is Mc1Rec.bUnk2B at 0x2b, not the 0x2a byte the
+ * other two scans test. The ceiling gate is `pCeilSpr != 0 && pCeilSpr->gap_0[0]
+ * != 0`. */
+bool Map_ScanBlastFootprint(const MapGeom *pGeom, MapCellLookup pfnLookup, void *pUser,
+                            const u8 *paSteps, MapCell *pOriginCell);
+
 #endif /* PUFO_VISTRY_H */

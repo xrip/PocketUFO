@@ -85,7 +85,12 @@ typedef struct Mc1Rec {
     u16  nSlot;           /* 0x26 */
     u16  nGlobalIdx;      /* 0x28 */
     u8   bBlocksMove;     /* 0x2a */
-    u8   gap_2b[3];       /* 0x2b */
+    u8   bUnk2B;          /* 0x2b, non-zero blocks a blast ray.
+                           * Read as pSpr[43] by Map_ScanBlastFootprint @ 0x32cd4 for
+                           * wall A, wall B and ceiling alike. Map_ComputeFov and
+                           * Map_TraceVoxelOccupancy test 0x2a instead, so the two
+                           * scans use different blocking bytes. */
+    u8   gap_2c[2];       /* 0x2c */
     u8   bBlocksSight;    /* 0x2e */
     u8   gap_2f[3];       /* 0x2F; [0] marks a real wall (Unit_CanStepExitDir) */
     u8   bExtraSprFacing; /* 0x32, non-zero means the sprite has an extra variant.

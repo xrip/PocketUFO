@@ -312,3 +312,96 @@ void Map_ComputeFov(FovField *pFov, u32 *paWindow,
         }
     }
 }
+
+/* Map_ScanBlastFootprint @ 0x32cd4.
+ *
+ * A blast ray is blocked by a sprite whose byte 0x2b is non-zero. The three tests
+ * (wall A, wall B, ceiling) all read that same byte, and each one ends the ray
+ * rather than just charging it, which is what makes this a footprint test and not
+ * a range test. */
+bool Map_ScanBlastFootprint(const MapGeom *pGeom, MapCellLookup pfnLookup, void *pUser,
+                            const u8 *paSteps, MapCell *pOriginCell)
+{
+    const i32 nOriginX = pOriginCell->nX;
+    const i32 nOriginY = pOriginCell->nY;
+
+    for (i32 nPass = 0; nPass < PUFO_VIS_PASS_COUNT; ++nPass) {
+        const u8 *paPass = paSteps + PUFO_VIS_GROUP_BYTES * nPass;
+
+        for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+            for (i32 nRay = 0; nRay < PUFO_VIS_RAYS_PER_PASS; ++nRay) {
+                const u8 *paRow = paPass + 60 * nRay;
+
+                for (i32 j = 0; j < PUFO_VIS_STEP_COUNT; ++j) {
+                    const u8 *paStep = paRow + 4 * j;
+                    const i32 nOffX = (i8)paStep[0];
+                    const i32 nOffY = (i8)paStep[1];
+                    MapCell *pCell;
+                    MapCell *pNext;
+                    Mc1Rec *pSpr;
+
+                    if (sqrt((double)nOffX * nOffX + (double)nOffY * nOffY) > 2.0) {
+                        break;
+                    }
+
+                    pCell = pfnLookup(nOriginX + nOffX, nOriginY + nOffY, nLayer, pUser);
+                    if (pCell == NULL) {
+                        break;
+                    }
+                    if (MapCell_HasOccupant(pCell)) {
+                        return true;
+                    }
+                    if (j >= PUFO_VIS_STEP_COUNT - 1) {
+                        continue;
+                    }
+
+                    /* The next step's bytes 0/1 are its absolute offsets, and byte 0
+                     * equal to the sentinel ends the ray before it is looked up. */
+                    if ((i8)paStep[4] == PUFO_VIS_RAY_END) {
+                        break;
+                    }
+                    if (!Map_IsValidCell(pGeom, nOriginX + (i8)paStep[4],
+                                         nOriginY + (i8)paStep[5], nLayer)) {
+                        break;
+                    }
+                    pNext = pfnLookup(nOriginX + (i8)paStep[4],
+                                      nOriginY + (i8)paStep[5], nLayer, pUser);
+
+                    if ((i8)paStep[2] == 2) {
+                        pCell->bFlags57[0] |= 2u;
+                        if (pCell->pWallSprA != NULL && pCell->pWallSprA->bUnk2B != 0) {
+                            break;
+                        }
+                    } else if ((i8)paStep[2] == 1) {
+                        pSpr = pNext->pWallSprA;
+                        pNext->bFlags57[0] |= 2u;
+                        if (pSpr != NULL && pSpr->bUnk2B != 0) {
+                            break;
+                        }
+                    }
+
+                    if ((i8)paStep[3] == 2) {
+                        pSpr = pCell->pWallSprB;
+                        pCell->bFlags57[0] |= 1u;
+                        if (pSpr != NULL && pSpr->bUnk2B != 0) {
+                            break;
+                        }
+                    } else if ((i8)paStep[3] == 1) {
+                        pSpr = pNext->pWallSprB;
+                        pNext->bFlags57[0] |= 1u;
+                        if (pSpr != NULL && pSpr->bUnk2B != 0) {
+                            break;
+                        }
+                    }
+
+                    pSpr = pCell->pCeilSpr;
+                    if (pSpr != NULL && pSpr->gap_0[0] != 0) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
+}
