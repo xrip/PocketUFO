@@ -2904,3 +2904,37 @@ so it would land mid-record. Either `v17` is not `4 * pass`, or `v22` is not the
 simple modulo I read, or the loop writes something other than `aStep[0]`. This has
 to be settled from the raw disassembly at `0x37bec..0x37c60`, not from the
 pseudocode, before the builder is ported.
+
+## Settled: the seeding loop writes `aStep[pass]`, and the walk tests it
+
+Raw disassembly at `0x37bec..0x37c54`:
+
+```
+R4 = 0; R3 = 0; LR = 0
+loop:  R1 = R3 + 30;  if (R3 > R1) skip;  R1 = R1 - R3 + 1 = 31
+       inner (31 times):
+           R2 = (R0 >= 4800) ? R0 - 4800 : R0        ; R0 = 600*pass + 40*k
+           R2 += R4                                   ; R4 = 4 * pass
+           STR 1, [dword_B2278 + R2 + 8]
+           R0 += 40
+       LR += 600;  R3 += 15;  R4 += 4
+```
+
+The dword index is `(600*pass + 40*k mod 4800)/4 + pass + 2`. Reducing it:
+
+| pass | dword index | lands on |
+|------|-------------|----------|
+| 0 | 10k + 2 | ray k, `aStep[0]` |
+| 1 | 10k + 153 | ray k+15, `aStep[1]` |
+| 2 | 10k + 304 | ray k+30, `aStep[2]` |
+| p | 10k + 151p + 2 | ray (15p + k) mod 120, `aStep[p]` |
+
+The `mod 4800` wrap is what keeps pass 7 inside the array: for k >= 15 the offset
+wraps and the ray index cycles back to 0.
+
+So `aStep[pass]` is the per-pass active flag, and the walk loop's `v57[2] != 0`
+test reads it because `v58 = dword_B2278` is advanced by **one dword per pass**
+(`++v58` at `0x380ac`), making `v57[2]` dword `2 + pass` of the ray record.
+
+`Tact_BuildVisRayTable @ 0x37ae4` is now fully understood and has no remaining
+blocker.
