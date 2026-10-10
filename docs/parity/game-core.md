@@ -2708,3 +2708,71 @@ argument list to the real function when it is ported.
    (`SUBS R0, R0, #1 / BPL` lets the counter fall past zero, and the target is
    then `apCells[-1][y][x]`). The port leaves the items where they are.
 4. `Map_ComputeFov` and the `unk_157198` writes are hooks, not ports.
+
+# Map_ComputeFov @ 0x2deac: signature settled, port still open
+
+Hex-Rays renders it as `Map_ComputeFov(Map *pMap)`. It is not. The prologue is
+
+```
+MOV  R12, SP
+PUSH {R0-R3}          ; 0x10
+PUSH {R4-R12,LR}      ; 0x28
+SUB  SP, SP, #0x10    ; 0x10   -> frame 0x48
+```
+
+so stack arguments start at `calleeSP + 0x48`. The callee reads four of them:
+
+| callee read | callee SP offset | caller SP offset | caller writes it with |
+|---|---|---|---|
+| `LDR R9, [SP,#nLayer]`   | 0x4C | +0x04 | the shot's layer |
+| `LDR R8, [SP,#nRange]`   | 0x50 | +0x08 | the range budget |
+| `LDR ..., [SP,#nOriginY]`| 0x48 | +0x00 | origin Y |
+| `... [SP,#a8]`           | 0x54 | +0x0C | a mode flag, 1 or 2 |
+
+and the caller writes exactly those four slots (`STR R8, [SP,#0x20+nOriginY]` at
+`0x2f320`, `STR R9, [SP,#0x20+nLayer]` at `0x2f2e0`, `STR R3, [SP,#0x20+nRange]` at
+`0x2f314`, `STR R3, [SP,#0x20+a8]` at `0x2f2fc`). The real signature is
+
+```c
+int Map_ComputeFov(Map *pMap, int a2, int a3, int a4,   /* R0..R3 */
+                   int nOriginY, int nLayer, int nRange, int a8);
+```
+
+The three call sites in `Combat_ResolveShot`:
+
+| site | R1 | R2 | R3 | nOriginY | nLayer | nRange | a8 |
+|---|---|---|---|---|---|---|---|
+| `0x2f324` bFireType 2 | 0 | 0 | Map+0x14054 | Map+0x14058 | nFireTgtZ | `uFirePower` | 2 |
+| `0x2f3a4` bFireType 1 | 0 | 0 | Map+0x14054 | Map+0x14058 | nFireTgtZ | `uFirePower >> 1` | 1 |
+| `0x2f6e8` ceiling break | `20 - col` | `20 - row` | origin X | origin Y | nFireTgtZ | `(int)(sprite[0x18] * 6.0)` | unchanged |
+
+So the `nRange` value the ceiling-break path computes with the 6.0 constant is not
+dead at all: it is the range budget of the field-of-view pass that follows. The
+earlier note in this file that called it a dead store is wrong.
+
+## What the function does
+
+1. Zero a 31 x 31 field of four u16 per entry at `Map + 0x120DC`
+   (`MOV R3, #0x120DC`, 31 x 31 iterations x 8 bytes = 7688 bytes). Records are
+   indexed by an offset pair in -15..15, which is why the body addresses them as
+   `Map + 248 * dy + 8 * dx + 77788`.
+2. Walk a static ray table `byte_AD720 @ 0xad720`: four groups of 1860 bytes,
+   selected by a loop counter `byte_10DBB4` taking 0, 2, 4, 6. Each group is 31
+   rays x 15 steps x 4 bytes. A step record is `dx, dy, wallAflag, wallBflag`, and
+   the next step's `dx, dy` are the following two bytes of the same ray.
+3. Per step: test the cell, write the remaining range into the field when it is
+   larger than what is there, subtract `sqrt(dx*dx + dy*dy) * 3.0` or `* 3.5`
+   (`a8 == 1` or the map weapon's `uSortKey == 50` selects 3.0, otherwise 3.5),
+   then attenuate on wall A, wall B and ceiling sprites. A wall only attenuates
+   when `sprite[0x16] > cell->bUnk17` (or 255) and `sprite[0x2A] == 0` or the cell
+   lacks flag bit 2. The cost subtracted is `sprite[0x17]`. The ceiling subtracts
+   `sprite[0x17]` too, except at the origin cell.
+4. Fold the 31 x 31 field into the 41 x 41 x 4 hit window centred on
+   `(a2 + 5, a3 + 5)`, clamping each u16 at 255.
+
+Constants: `1075838976` = 3.0, `1077149696` = 3.5, both as the high half of a
+double with a zero low half.
+
+`Map_ComputeFov` calls only `Map_IsValidCell` and `sqrt`, so it has no dependency
+on the unresolved Q15 helper family. It is portable as soon as the 7440-byte ray
+table is dumped. Until then `Combat_ResolveShot` calls it through `ShotHooks`.
