@@ -2776,3 +2776,90 @@ double with a zero low half.
 `Map_ComputeFov` calls only `Map_IsValidCell` and `sqrt`, so it has no dependency
 on the unresolved Q15 helper family. It is portable as soon as the 7440-byte ray
 table is dumped. Until then `Combat_ResolveShot` calls it through `ShotHooks`.
+
+# The `*s` helpers are single-precision soft-FPU, not fixed point
+
+This was recorded earlier as an open Q15 hypothesis. It is now resolved, and the
+fixed-point reading is wrong.
+
+`_itos @ 0xa6038`, `_muls @ 0xa603c`, `_stoi @ 0xa6040`, `_divs @ 0xa607c` are all
+`.idata` entries (import thunks, no body in the image) alongside `_itod @ 0xa6014`,
+`_dtoi @ 0xa602c`, `_utod @ 0xa6054`, `_muld @ 0xa6024`, `_addd`, `_gtd @ 0xa6018`.
+The name family is the Windows CE coredll soft-FPU export set: the `d` suffix is
+double precision, the `s` suffix is single precision. So
+
+```
+itos(x)  ->  (float)x
+divs(a,b)->  a / b        in float
+muls(a,b)->  a * b        in float
+stoi(x)  ->  (int)x
+```
+
+Independent evidence from the data, not the names: `Tact_BuildVisRayTable` computes
+`stoi(muls(divs(itos(v25), itos(v24)), itos(v0)))` with `v24, v25, v0` all in
+-15..15, and stores the result into a **byte**. `divs(itos(15), itos(1))` must
+therefore survive as 15, and `muls` must then produce 225. No 16-bit fixed-point
+format can hold `15 << 15`. Single-precision float is the only reading that fits.
+
+One assumption stays open: whether `_stoi` truncates toward zero or rounds to
+nearest. The port assumes truncation (what C does, and what the CE soft-FPU is
+documented to do) and this is the one place where a wrong guess would shift a ray
+table entry by one.
+
+# `Tact_BuildVisRayTable @ 0x37ae4` brief (next port)
+
+Builds `dword_B2278 @ 0xb2278`, 120 records of 40 bytes (`_DWORD dx, dy; _DWORD
+aStep[8]`), then fills `byte_AD720 @ 0xad720`, 4 groups x 31 rows x 15 steps x 4
+bytes = 7440 bytes. `byte_AD720` is `.data` initialised to 0xFF - it is runtime
+data, which is why dumping it from the IDB gives nothing but 0xFF.
+
+## The 120 rays are the perimeter of the 31 x 31 box
+
+Four loops of 30 records each, at `dword_B2278`, `+1200`, `+2400`, `+3600`
+(IDA's `unk_B2728`, `unk_B2BD8`, `unk_B3088` are these bands):
+
+| band | dx | dy |
+|------|----|----|
+| 0 | -15..14 | -15 |
+| 1 | 15 | -15..14 |
+| 2 | 15..-14 | 15 |
+| 3 | -15 | 15..-14 |
+
+Then all 960 step dwords are cleared.
+
+## The walk
+
+For each of the 120 rays, for each of 8 groups (`v63 = 8` down to 1):
+
+- `v24, v25` = the ray's dx, dy. Pick the dominant axis: `v60 = 0` when
+  `|dx| > |dy|` (walk x), else `v60 = 1` (walk y). `v26` is the dominant
+  component, and `v55 = v26 / |v26|` is its sign.
+- `v0` walks from 0 to `v26` in steps of `v55`.
+- Walk-x branch: `other = stoi(muls(divs(itos(dy), itos(dx)), itos(v0)))`, i.e.
+  `other = v0 * dy / dx` in float. Store `step[0] = v0`, `step[1] = other`.
+- Walk-y branch: `other = stoi(divs(itos(v0), divs(itos(dy), itos(dx))))`, i.e.
+  `other = v0 / (dy / dx)`, and `other = 0` when `dx == 0`. Store
+  `step[0] = other`, `step[1] = v0`.
+- Stop the ray when `sqrt(other*other + v0*v0) > 4.0` (`_gtd` against
+  1076756480 << 32 = 4.0): write the sentinel **96** into `step[0]` and end the
+  ray. That 96 is what `Map_ComputeFov` tests with `if (v17 == 96) break;`.
+- Bytes 2 and 3 of each step are the wall-A and wall-B flags: 0 when the
+  perpendicular coordinate did not change from the previous step, 1 when it
+  increased, 2 when it decreased; and one of the two bytes is set to 1 or 2 from
+  `v55` (the walk direction sign).
+
+Row index is `15 * (group * 31 + rayInGroup)`, and the step slot is
+`|v0|`, so `byte_AD720[4 * (15 * (31 * group + ray) + |v0|)]`.
+
+## Still to settle before the port is written
+
+1. `_stoi` truncation versus rounding (above).
+2. The seeding loop `for (j = 0; j < 4800; j += 600)` with the `__OFSUB__(v18,
+   v18 + 30)` guard, which writes 1 into selected `aStep[0]` slots. `v18` advances
+   by 15 eight times and the overflow guard drops the last iteration. What that
+   seeding means has not been worked out.
+3. Why 8 groups produce 4 groups' worth of output: `Map_ComputeFov` reads groups
+   selected by `byte_10DBB4` taking 0, 2, 4, 6, while the builder runs 8 passes.
+   The mapping between pass index and group index needs one more look.
+
+`Map_ComputeFov` and `Unit_UpdateVisibility @ 0x48580` both wait on this table.
