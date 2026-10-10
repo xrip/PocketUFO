@@ -3758,3 +3758,36 @@ keeps every claim traceable is: `Save_ReadTGameData` / `Save_WriteTGameData`, th
 
 `Mc1Rec[0x1E]` is worth naming independently — it is a tile category with at least the
 values 2, 3, 5, 7, 8, 9, 10 in use, and it is the only reader found so far.
+
+### Hex-Rays error found and corrected in the IDB: the chryssalid name copy
+
+`Tact_KillUnit`'s type-22 path shows up in pseudocode as a copy from
+`&MEMORY[0xB1140][560]`, which reads as "copy from a static text blob at 0xB1370".
+That is wrong. The ARM at `0x4e4fc..0x4e534` is:
+
+```
+LDR   R4, =0x1139B8          ; pMap
+MOV   R0, R4 ; BL Tact_RemoveUnitFromSideLists   ; returns pMap, so R0 is still pMap
+STRB  R3, [R5,#0xA0]         ; pUnit->nUnitType = 14
+ADD   R3, R0, #0x230         ; src = pMap + 0x230
+ADD   R1, R0, #0x230
+SUB   R0, R5, R3             ; R0 = pUnit - src
+ADD   R0, R0, #0xBA          ; R0 += offsetof(Soldier, szName)
+loop:
+LDRSB R2, [R1]               ; signed byte
+STRB  R2, [R0,R1]            ; -> pUnit + 0xBA = szName
+MOVS  R3, R2 ; ADD R1,#1 ; BNE loop
+```
+
+So it is a plain NUL-terminated **byte** copy of a name from `Map + 0x230` into
+`Soldier.szName`. `Map + 0x230` (0x113BE8) is in .bss — a runtime-filled context field,
+not a static string. Hex-Rays picked the wrong base register.
+
+Also recorded in the IDB: `pCtxBase` itself. The `Map` type in this database has **one
+member**, which is why every field access renders as `gap_*` or `MEMORY[0x1139B8]` and
+why several of those names are actively misleading. A comment at `0x1139B8` now lists
+the offsets proven from ARM rather than inferred from pseudocode, including `+0x230`,
+`+0x51 bFireStatus1`, `+0x5A bGameTickHold`, the `+0x4EBC` hit windows and the counter
+at `+0x4EBC + 4*49940`. The struct itself still cannot be edited headlessly — IDA 9.4
+has no `ida_struct` module and no `put_udt_details` — so the offsets live as listing
+comments until the struct is rebuilt in the GUI.
