@@ -224,5 +224,7 @@ bool Tact_ScanVictoryTiles(bool bCraftTileA0NonZero, u8 nMissionType, i32 nCraft
 
 /* The mission type the victory scan applies to. */
 #define PUFO_MISSION_TYPE_ALIEN_BASE 4u
+#define PUFO_MISSION_TYPE_FOREST 2u   /* MissionType_Forest */
+#define PUFO_MISSION_TYPE_DESERT   6u   /* MissionType_Desert */
 
 #endif /* PUFO_TACTCTL_H */

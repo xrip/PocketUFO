@@ -3391,3 +3391,53 @@ Returns 1 as soon as any ray touches an occupied cell, 0 after all passes.
   `Map_ComputeFov` and `Map_TraceVoxelOccupancy` test. A different byte, recorded
   as-is.
 - Ceiling gate: `pCeilSpr != 0 && pCeilSpr[0] != 0` breaks the ray.
+
+## `Unit_UpdateVisibility @ 0x48580` ported
+
+Ported into `pufo_unit.c` with `tests/test_vis.c` (26 checks). Four things the
+first reading got wrong, all caught by the tests:
+
+**The downward column test reads the cell *above*, not the cell being revealed.**
+The occupant index carries a `+3600` dword (one whole layer) that the cell index
+does not:
+
+```
+v11 = *(dword *)(pCtxBase + 4 * (60*nY + 60*v6 + nX + 25310))   ; occupant, layer L+1
+v12 = apCells[240*nY + 240*v6 + 4*nX]                           ; cell,   layer L
+```
+
+`25310 - 21710 = 3600` is one 60x60 layer. So a unit standing above hides the cell
+below it, unless its own byte `0x2E` is 1. Byte `0x2E` is inside the
+`SoldierMultiOrAnim` union, at `SoldierAnim + 0x12`; named `bUnk12`.
+
+**The fan reveals the unit's own cell too.** Step 0 of every ray is the origin
+cell, and the column reveal sets `bFlags44` bit 0 there. Only the large-unit 2x2
+block is skipped for a small unit.
+
+**Opening a wall needs both halves of the condition.** The gate is
+`sprite[0x2a] == 0 || !(cell->bFlags29 & 4)`. With `bBlocksMove == 0` the wall
+blocks no matter what the cell flag says; opening it requires a non-zero `0x2a`
+*and* bit 2.
+
+**Facing 2's multi-target cone excludes straight ahead.** The accepted bearing
+range is `0.785375 .. 5.497625`, which is everything except the +-45 degrees
+around 0 that facing 2 points along. The ray fan covers exactly that excluded
+wedge, so the fan spots what the cone will not. Isolating the cone in a test needs
+the fan disabled, which the test does by setting `nFlags32 & 7 == 7` on every
+cell: 14 per visit against a 240.0 budget, so the walk dies after 17 steps, one
+cell out.
+
+Mission type ids, from the disassembly at `0x48fa0`: `unk_128AD2` is
+`pCtxBase + 0x1511A` = `nMissionType`, **Desert is 6** and **Forest is 2**. The
+ceiling id is the u16 at sprite `+0x28`, which is `Mc1Rec.nGlobalIdx` seen through
+`*(u16 *)&ObjectRec->bTwoHanded`.
+
+The loft row id a sprite uses is byte `16`, from `(12 * nLayer + 8) % 12 + 8`.
+Because `12 * nLayer` is a whole number of layers the expression is always 16; it
+is `PUFO_MC1_ROWTAB_TO_Z + 8`, the same row-table read `Map_TraceVoxelOccupancy`
+uses at the mid-cell height.
+
+Deviation, recorded: the original indexes `apCells` without bounds checks in
+several places (the large-unit neighbours, the fan's current cell, and the column
+reveal when `nLayer` is 4). The port ends the walk when its injected lookup
+returns NULL.

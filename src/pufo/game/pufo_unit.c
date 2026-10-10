@@ -10,6 +10,8 @@
 
 #include "game/pufo_los.h"
 #include "game/pufo_combat.h"   /* UnitRosters */
+#include "game/pufo_vistry.h"   /* VisRay, ray-table counts */
+#include "game/pufo_tactctl.h"   /* mission type ids */
 #include "game/pufo_boot.h"   /* the extracted name tables, and TextTables_* */
 #include "game/pufo_font.h"   /* Font_GetSprByIndex / g_fontSys */
 #include "game/pufo_path.h"   /* g_aStepDir */
@@ -839,5 +841,314 @@ i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
 
     pSpot->pSelUnit = pSelSave;
     *ppScratchUnit = NULL;
+    return 0;
+}
+
+/* --- Unit_UpdateVisibility @ 0x48580 -------------------------------------- */
+
+/* The loft row a sprite uses at a given layer. The original indexes with
+ * `(12 * nLayer + 8) % 12 + 8`, which always lands on 16 because 12 * nLayer is a
+ * whole number of layers: the row id is the sprite byte at
+ * PUFO_MC1_ROWTAB_TO_Z + 8. The expression is kept as the original writes it so
+ * the shape stays visible. */
+static u32 Unit_LoftRowId(const Mc1Rec *pSpr, i32 nLayer)
+{
+    const u8 *pBytes = (const u8 *)pSpr;
+
+    return (u32)pBytes[PUFO_MC1_ROWTAB_TO_Z + ((12 * nLayer + 8) % PUFO_VOX_PER_CELL_Z)];
+}
+
+static bool Unit_bLoftBlocks(const LosTables *pTables, const Mc1Rec *pSpr, i32 nLayer,
+                             i32 nVoxX, i32 nVoxY)
+{
+    u32 nRow = (u32)(nVoxY % PUFO_VOX_PER_CELL_Y)
+             + PUFO_VOX_PER_CELL_Y * Unit_LoftRowId(pSpr, nLayer);
+
+    return Los_TestRowBit(pTables->pLoftemps, pTables->nLoftemps, nRow,
+                          (u32)(nVoxX % PUFO_VOX_PER_CELL_X));
+}
+
+/* A wall stops the ray when its 0x2b byte is set and the voxel is covered, and
+ * then only while the cell has not been opened: sprite byte 0x2a zero, or the
+ * cell's bFlags29 bit 2 clear. bBoundaryCase carries the original's extra rule for
+ * wall A, that a voxel landing exactly on a cell boundary counts as covered. */
+static bool Unit_bRayBlockedByWall(const LosTables *pTables, const MapCell *pCell,
+                                   const Mc1Rec *pSpr, i32 nLayer,
+                                   i32 nVoxX, i32 nVoxY, bool bBoundaryCase)
+{
+    if (pSpr == NULL || pSpr->bUnk2B == 0) {
+        return false;
+    }
+    if (!(bBoundaryCase && (nVoxX % PUFO_VOX_PER_CELL_X) == 0)
+        && !Unit_bLoftBlocks(pTables, pSpr, nLayer, nVoxX, nVoxY)) {
+        return false;
+    }
+    return pSpr->bBlocksMove == 0 || (pCell->bFlags29 & 4u) == 0;
+}
+
+/* The ceiling id is the u16 at sprite +0x28, which is Mc1Rec.nGlobalIdx. The
+ * original reaches it as *(u16 *)&ObjectRec->bTwoHanded, the same two bytes seen
+ * through the item record. */
+static bool Unit_bCeilingAllowed(u8 nMissionType, const Mc1Rec *pCeil)
+{
+    u16 nId = pCeil->nGlobalIdx;
+
+    if (nMissionType == PUFO_MISSION_TYPE_DESERT) {
+        return nId >= PUFO_CEIL_ID_DESERT_MIN && nId <= PUFO_CEIL_ID_DESERT_MAX;
+    }
+    if (nMissionType == PUFO_MISSION_TYPE_FOREST) {
+        return (nId >= PUFO_CEIL_ID_FOREST_MIN && nId <= PUFO_CEIL_ID_FOREST_MAX)
+            || nId == PUFO_CEIL_ID_FOREST_ALT;
+    }
+    return false;
+}
+
+/* Reveal the column through a cell the ray has entered, upward and downward.
+ * Up runs from nLayer while the layer stays under 4 and stops when the cell above
+ * has a floor sprite. Down runs from nLayer to layer 0 and stops at the first cell
+ * that has one. Both directions include nLayer itself, and the original then spots
+ * the ray's own cell a third time. */
+static void Unit_RevealColumn(VisCtx *pCtx, Soldier *pUnit,
+                              i32 nCellX, i32 nCellY, i32 nLayer)
+{
+    MapCell *pRayCell = NULL;
+
+    if (nLayer < 4) {
+        for (i32 nL = nLayer; nL < 4; ++nL) {
+            MapCell *pC = pCtx->pfnLookup(nCellX, nCellY, nL, pCtx->pUser);
+
+            if (pC == NULL) {
+                break;
+            }
+            if (nL == nLayer) {
+                pRayCell = pC;
+            }
+            if (Unit_bIsOperative(pUnit)) {
+                MapCell_SetBFlags29_4(pC);
+                pC->bFlags44 |= 1u;
+            }
+            Unit_SpotCellOccupant(pUnit, pC, pCtx->pSpot);
+            if (nL < 3) {
+                MapCell *pUp = pCtx->pfnLookup(nCellX, nCellY, nL + 1, pCtx->pUser);
+
+                if (pUp != NULL && pUp->pFloorSpr != NULL) {
+                    break;
+                }
+            }
+        }
+    }
+
+    for (i32 nL = nLayer; nL >= 0; --nL) {
+        MapCell *pC = pCtx->pfnLookup(nCellX, nCellY, nL, pCtx->pUser);
+
+        if (pC == NULL) {
+            break;
+        }
+        if (nL == nLayer) {
+            pRayCell = pC;
+        }
+        if (Unit_bIsOperative(pUnit)) {
+            MapCell_SetBFlags29_4(pC);
+            pC->bFlags44 |= 1u;
+        }
+        Unit_SpotCellOccupant(pUnit, pC, pCtx->pSpot);
+        if (pC->pFloorSpr != NULL) {
+            break;
+        }
+    }
+    if (pRayCell != NULL) {
+        Unit_SpotCellOccupant(pUnit, pRayCell, pCtx->pSpot);
+    }
+}
+
+i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx)
+{
+    MapCell *pOwn = pUnit->pCell;
+    const i32 nOwnX = pOwn->nX;
+    const i32 nOwnY = pOwn->nY;
+    const i32 nOwnZ = pOwn->nZ;
+    MapCell *pOwnCell;
+    Mc1Rec *pOwnCeil;
+    i32 nLayer;
+
+    if (!Unit_bIsOperative(pUnit)) {
+        pUnit->nMultiTarget = 0;
+        return Unit_ScanVisibleUnits(pUnit, pCtx->pTables, pCtx->pfnLookup, pCtx->pUser,
+                                     pCtx->pSpot, pCtx->pRosters, pCtx->ppScratchUnit);
+    }
+
+    if (pCtx->pSpot->pnTrajFront1036 != NULL) {
+        *pCtx->pSpot->pnTrajFront1036 = 0;
+    }
+    pUnit->nMultiTarget = 0;
+
+    MapCell_SetBFlags29_4(pOwn);
+    if (Unit_bIsLarge(pUnit)) {
+        static const i32 aDX[3] = { 1, 0, 1 };
+        static const i32 aDY[3] = { 0, 1, 1 };
+
+        for (i32 k = 0; k < 3; ++k) {
+            MapCell *pC = pCtx->pfnLookup(nOwnX + aDX[k], nOwnY + aDY[k], nOwnZ,
+                                          pCtx->pUser);
+
+            if (pC == NULL) {
+                continue;
+            }
+            MapCell_SetBFlags29_4(pC);
+            pC->bFlags44 |= 1u;
+        }
+    }
+
+    /* Down the column: a cell is revealed when the cell one layer above it has no
+     * occupant, or its occupant's byte 0x2E is 1. The walk reaches layer 0. */
+    for (i32 nL = nOwnZ - 1; nL >= 0; --nL) {
+        MapCell *pC = pCtx->pfnLookup(nOwnX, nOwnY, nL, pCtx->pUser);
+        MapCell *pAbove = pCtx->pfnLookup(nOwnX, nOwnY, nL + 1, pCtx->pUser);
+
+        if (pC == NULL || pAbove == NULL) {
+            break;
+        }
+        if (pAbove->pUnit == NULL || pAbove->pUnit->multiOrAnim.anim.bUnk12 == 1) {
+            MapCell_SetBFlags29_4(pC);
+            pC->bFlags44 |= 1u;
+            Unit_SpotCellOccupant(pUnit, pC, pCtx->pSpot);
+        }
+    }
+
+    /* Up the column: a cell is revealed when its own floor sprite is absent or its
+     * bBlocksSight byte is 1. */
+    for (i32 nL = nOwnZ + 1; nL < 4; ++nL) {
+        MapCell *pC = pCtx->pfnLookup(nOwnX, nOwnY, nL, pCtx->pUser);
+
+        if (pC == NULL) {
+            break;
+        }
+        if (pC->pFloorSpr == NULL || pC->pFloorSpr->bBlocksSight == 1) {
+            MapCell_SetBFlags29_4(pC);
+            pC->bFlags44 |= 1u;
+            Unit_SpotCellOccupant(pUnit, pC, pCtx->pSpot);
+        }
+    }
+
+    /* A low ceiling lifts the working layer by one, so the fan is walked at the
+     * height the unit is actually seen at. */
+    nLayer = nOwnZ;
+    pOwnCell = pCtx->pfnLookup(nOwnX, nOwnY, nOwnZ, pCtx->pUser);
+    pOwnCeil = pOwnCell->pCeilSpr;
+    if (pOwnCeil != NULL && pOwnCeil->iCeilParam < -10) {
+        nLayer = nOwnZ + 1;
+    }
+
+    for (i32 iRay = 0; iRay < PUFO_VIS_RAY_COUNT; ++iRay) {
+        const VisRay *pRay = &pCtx->apRays[iRay];
+        double dRun;
+        double dStepX;
+        double dStepY;
+        double dBudget = PUFO_VIS_BUDGET;
+        MapCell *pPrev = NULL;
+
+        if (pRay->aPass[pUnit->bFacing] == 0) {
+            continue;
+        }
+        dRun = sqrt((double)pRay->nDx * pRay->nDx
+                  + (double)pRay->nDy * pRay->nDy) * 16.0;
+        dStepX = ((double)(16 * pRay->nDx) + 8.0) / dRun;
+        dStepY = ((double)(16 * pRay->nDy) + 8.0) / dRun;
+
+        for (i32 t = 0; t < PUFO_VIS_MAX_STEPS; ++t) {
+            i32 nVoxX = (i32)((double)(16 * nOwnX + 8) + (double)t * dStepX);
+            i32 nVoxY = (i32)((double)(16 * nOwnY + 8) + (double)t * dStepY);
+            i32 nCellX = nVoxX / PUFO_VOX_PER_CELL_X;
+            i32 nCellY = nVoxY / PUFO_VOX_PER_CELL_Y;
+            MapCell *pCell;
+            u32 nCost;
+
+            if (!Map_IsValidCell(pCtx->pGeom, nCellX, nCellY, nLayer)) {
+                break;
+            }
+            pCell = pCtx->pfnLookup(nCellX, nCellY, nLayer, pCtx->pUser);
+            if (pCell == NULL) {
+                break;
+            }
+
+            nCost = pCell->nFlags32 & 7u;
+            if (nCost != 0u && nCost != 4u) {
+                double dSub = (double)(2u * nCost);
+
+                dBudget = (dBudget > dSub) ? (dBudget - dSub) : 0.0;
+            }
+            if (!((double)t <= dBudget)) {
+                break;
+            }
+
+            if (Unit_bRayBlockedByWall(pCtx->pTables, pCell, pCell->pWallSprA, nLayer,
+                                       nVoxX, nVoxY, true)) {
+                break;
+            }
+            if (Unit_bRayBlockedByWall(pCtx->pTables, pCell, pCell->pWallSprB, nLayer,
+                                       nVoxX, nVoxY, false)) {
+                break;
+            }
+
+            if (pCell != pPrev) {
+                Unit_RevealColumn(pCtx, pUnit, nCellX, nCellY, nLayer);
+                pPrev = pCell;
+            }
+
+            if (pCell->pCeilSpr != NULL
+                && Unit_bLoftBlocks(pCtx->pTables, pCell->pCeilSpr, nLayer,
+                                    nVoxX, nVoxY)
+                && !Unit_bCeilingAllowed(pCtx->nMissionType, pCell->pCeilSpr)) {
+                break;
+            }
+        }
+    }
+
+    /* Multi-target scan over the enemy roster. */
+    for (i32 i = 0; i < pCtx->pRosters->nEnemy; ++i) {
+        Soldier *pEnemy = pCtx->pRosters->apEnemy[i];
+        MapCell *pEnemyCell = pEnemy->pCell;
+        i32 nDx = nOwnX - pEnemyCell->nX;
+        i32 nDy = nOwnY - pEnemyCell->nY;
+        i32 nDist = (i32)sqrt((double)nDx * nDx + (double)nDy * nDy);
+        double dBearing;
+        double dFace;
+        bool bInView;
+
+        if (nDist > PUFO_VIS_SIGHT_RANGE || nDist < 1) {
+            continue;
+        }
+
+        dBearing = Unit_CellBearing(pOwn, pEnemyCell);
+        dFace = Unit_FacingAngle(pUnit);
+        if (pUnit->bFacing == 2) {
+            bInView = dBearing >= PUFO_FACING_STEP && dBearing <= PUFO_VIS_ANGLE_MAX;
+        } else {
+            i32 nErr = (i32)(dBearing - dFace);
+
+            bInView = (double)(nErr < 0 ? -nErr : nErr) <= PUFO_FACING_STEP;
+        }
+        if (!bInView) {
+            continue;
+        }
+
+        *pCtx->ppScratchUnit = pEnemy;
+        {
+            Soldier *pSelSave = pCtx->pSpot->pSelUnit;
+
+            pCtx->pSpot->pSelUnit = pUnit;
+            if (Map_TraceLos(pCtx->pTables, pCtx->pfnLookup, pCtx->pUser,
+                             16 * nOwnX + 8, 16 * nOwnY + 8, Unit_LosZ(pOwn),
+                             16 * pEnemyCell->nX + 8, 16 * pEnemyCell->nY + 8,
+                             Unit_LosZ(pEnemyCell), NULL, NULL)) {
+                Unit_SpotCellOccupant(pUnit, pEnemyCell, pCtx->pSpot);
+                pEnemyCell->bFlags29 |= 0x10u;
+                pEnemyCell->bFlags44 |= 1u;
+            }
+            pCtx->pSpot->pSelUnit = pSelSave;
+        }
+        *pCtx->ppScratchUnit = NULL;
+    }
+
     return 0;
 }

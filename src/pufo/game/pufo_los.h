@@ -52,6 +52,7 @@
 #define PUFO_VOX_PER_CELL_X 16
 #define PUFO_VOX_PER_CELL_Y 16
 #define PUFO_VOX_PER_CELL_Z 12
+#define PUFO_MC1_ROWTAB_TO_Z 8   /* sprite byte holding the loft row id for a z */
 
 /* Sprite-record field offsets the voxel test reads. */
 #define PUFO_MC1_ROW_TABLE_OFF 8   /* 12 bytes, z -> sprite index */

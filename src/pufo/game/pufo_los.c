@@ -19,7 +19,6 @@ static const u8 s_aUnitRowBase[PUFO_UNITLOFT_ROWS_PER_TYPE] = {
 
 /* Map_TraceVoxelOccupancy reads sprite bytes at record offset (8 + z % 12) and
  * the movement-blocking byte at 0x2a. */
-#define MC1_ROWTAB_TO_Z 8
 
 bool Los_TestRowBit(const u16 *pTable, u32 nTableLen, u32 nRowIndex, u32 nXBit)
 {
@@ -41,7 +40,7 @@ static u32 Los_TerrainRow(const Mc1Rec *pSpr, u32 nZSub)
 {
     const u8 *pBytes = (const u8 *)pSpr;
 
-    return (u32)pBytes[MC1_ROWTAB_TO_Z + (nZSub % PUFO_VOX_PER_CELL_Z)];
+    return (u32)pBytes[PUFO_MC1_ROWTAB_TO_Z + (nZSub % PUFO_VOX_PER_CELL_Z)];
 }
 
 /* Map_TraceVoxelOccupancy @ 0x3242c.

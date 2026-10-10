@@ -56,7 +56,10 @@ typedef struct SoldierAnim {
     u8  nPathZ;          /* 0x00 */
     u8  gap_1D[9];       /* 0x01 */
     u16 uExtraSprBase;   /* 0x0a */
-    u8  gap_28[8];       /* 0x0c */
+    u8  gap_28[6];       /* 0x0c */
+    u8  bUnk12;          /* 0x12, original Soldier +0x2E. Unit_UpdateVisibility
+                        * @ 0x48580 treats 1 as 'the cell below may be revealed
+                        * through this unit'. */
     u16 uFacingResetW;   /* 0x14 */
     u16 uFacingResetH;   /* 0x16 */
     u8  nFacingAnimA;    /* 0x18 */
@@ -459,5 +462,79 @@ i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
                           MapCellLookup pfnLookup, void *pUser,
                           SpotCtx *pSpot, const struct UnitRosters *pRosters,
                           Soldier **ppScratchUnit);
+
+/* Unit_UpdateVisibility @ 0x48580.
+ *
+ * Three phases.
+ *
+ * 1. Vertical reveal. The unit's own cell is flagged with MapCell_SetBFlags29_4.
+ *    A large unit does the same for the other three cells of its 2x2 footprint
+ *    and sets their bFlags44 bit 0. Then the column below is walked from the
+ *    layer under the unit down to layer 0, and a cell is revealed when the cell
+ *    one layer ABOVE it has no occupant, or its occupant's byte 0x2E is 1. The
+ *    column above is walked from nZ + 1 to layer 3, and a cell is revealed when
+ *    its own floor sprite is absent or its byte 0x2E (bBlocksSight) is 1.
+ *
+ * 2. Ray fan. All 120 rays are visited and a ray is used when its aPass flag for
+ *    the unit's facing is set, which is what makes the eight ray-table passes the
+ *    eight facings. For a ray (dx, dy):
+ *      d     = sqrt(dx*dx + dy*dy) * 16.0
+ *      stepX = (16*dx + 8) / d
+ *      stepY = (16*dy + 8) / d
+ *      x(t)  = 16*cell.nX + 8 + t*stepX,  y(t) likewise,  t = 0 .. 239
+ *    The voxel pair is truncated to ints and divided by 16 to get the cell. The
+ *    sight budget starts at 240.0 and every cell whose nFlags32 low 3 bits are
+ *    neither 0 nor 4 subtracts 2 * that value, floored at zero. The walk stops
+ *    when t exceeds the budget, when the cell is out of bounds at nLayer, or when
+ *    a wall or ceiling blocks the voxel.
+ *
+ *    nLayer is the cell's nZ, raised to nZ + 1 when the cell has a ceiling sprite
+ *    whose signed byte 0x24 is below -10.
+ *
+ *    Wall A blocks when sprite byte 0x2b (bUnk2B) is non-zero and either the voxel
+ *    x is exactly on a cell boundary or the loft bit is set, and then only if
+ *    sprite byte 0x2a is zero or the cell's bFlags29 bit 2 is clear. Wall B is the
+ *    same without the boundary case. The ceiling blocks when its loft bit is set
+ *    and the mission type does not allow this ceiling id: Desert allows
+ *    0x1B..0x41, Forest allows 0x1B..0x40 plus exactly 82, and every other mission
+ *    type blocks. The id is the u16 at ObjectRecFull +0x28, which is bTwoHanded
+ *    and bUnk41 read together.
+ *
+ *    Each new cell is flagged and then revealed upward and downward along the
+ *    column: up from nLayer while the layer stays under 4, stopping when the cell
+ *    above has a floor sprite; down from nLayer to layer 0, stopping at the first
+ *    cell that has a floor sprite.
+ *
+ * 3. Enemy multi-target scan. For every enemy within 1..15 cells, the bearing from
+ *    the viewer is compared with the facing angle. Facing 2 has its own rule
+ *    (accept only between 0.785375 and 5.497625); every other facing accepts when
+ *    the truncated angle error is within one facing step. On a clear trace the
+ *    enemy cell gets bFlags29 bit 4 and bFlags44 bit 0, and is spotted.
+ *
+ * A non-operative unit skips all of it and only runs Unit_ScanVisibleUnits.
+ */
+#define PUFO_VIS_BUDGET      240.0
+#define PUFO_VIS_MAX_STEPS   240
+#define PUFO_VIS_SIGHT_RANGE 15
+#define PUFO_VIS_ANGLE_MAX   5.497625   /* 7 * PUFO_FACING_STEP, the facing-2 bound */
+#define PUFO_CEIL_ID_DESERT_MIN 0x1B
+#define PUFO_CEIL_ID_DESERT_MAX 0x41
+#define PUFO_CEIL_ID_FOREST_MIN 0x1B
+#define PUFO_CEIL_ID_FOREST_MAX 0x40
+#define PUFO_CEIL_ID_FOREST_ALT 82
+
+typedef struct VisCtx {
+    SpotCtx             *pSpot;      /* shared with Unit_SpotCellOccupant */
+    const struct LosTables *pTables;  /* unk_15718C loft masks */
+    MapCellLookup        pfnLookup;
+    void                *pUser;
+    const MapGeom       *pGeom;
+    const struct VisRay *apRays;     /* unk_B2278, 120 records */
+    const struct UnitRosters *pRosters;
+    Soldier            **ppScratchUnit; /* pCtxBase.anActionPhaseSave0[120] */
+    u8                   nMissionType;  /* Map.nMissionType @ 0x1511A */
+} VisCtx;
+
+i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx);
 
 #endif /* PUFO_UNIT_H */
