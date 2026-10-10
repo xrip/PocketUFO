@@ -3309,3 +3309,83 @@ ends (the `nObjParam` term only applies when a ceiling sprite exists), with
 `Unit_ScanVisibleUnits`, `Unit_SpotCellOccupant`, `MapCell_SetBFlags29_4` and
 `Unit_bIsOperative` first. `Map_TraceLos`, `Map_TraceVoxelOccupancy`, the loft row
 test and the ray table are already in the port.
+
+## Correction: `_itod` is int -> double, not a 64-bit pair reader
+
+The throw range budget note in this file previously claimed that `_itod` converts
+the 64-bit pair `R1:R0`, so the remainder left by `_rt_sdiv` dominated the value
+and any non-exact division forced the 22.0 ceiling. **That was wrong.**
+
+Evidence, from the import table of `pufobeta.exe`:
+
+```
+_addd _subd _muld _divd      double arithmetic
+_led  _ltd  _ged  _gtd       double comparisons
+_itod _utod _stod            int / unsigned -> double
+_itos _stoi                  int <-> single
+_dtos _dtou _dtoui _dtoi     double -> float / unsigned / int
+_rt_sdiv _rt_udiv            integer division
+```
+
+There is no `_ltod`. The 64-bit -> double helper is absent from this binary, so
+`_itod` is the 32-bit `int -> double` helper. Hex-Rays rendering it as
+`itod(a1: sum, a2: stale)` is the same `__PAIR64__` artifact that already misled
+the throw-arc straddle reading; the second "argument" is just a register Hex-Rays
+guesses at.
+
+Second, independent confirmation from `Map_ScanBlastFootprint @ 0x32cd4`, at
+`0x32d68..0x32d90`:
+
+```
+LDRSB R0, [R1]           ; dx, the step's absolute x offset
+LDRSB R1, [R1,#1]        ; dy
+MUL   R2, R1, R1         ; dy*dy
+MUL   R1, R0, R0         ; dx*dx   <- R1 left stale
+ADD   R0, R2, R1         ; R0 = dx*dx + dy*dy
+BL    _itod
+BL    sqrt
+... led(result, 2.0) == 0 -> break the ray
+```
+
+If `_itod` read `R1:R0`, the value would be `dx*dx * 2^32 + (dx*dx + dy*dy)`, so
+every step with `dx != 0` would break the ray immediately and the function would
+examine nothing. As `int -> double` the test is `sqrt(dx*dx + dy*dy) <= 2.0`,
+which is a radius-two footprint: exactly what a blast footprint scan should be.
+
+Corrected rule, now in `Throw_RangeBudget`:
+
+```
+budget = clamp((double)((q + (q < 0 ? 1 : 0)) >> 1), 1.0, 22.0)
+```
+
+`MOVS/ADDMI` rounds a negative quotient toward zero, `ASR #1` then halves it.
+A division remainder has no effect at all. Test expectations updated: `3000/350`
+gives **4.0**, not 22.0. IDB comment at `0x31a44` rewritten and the IDB saved.
+
+## `Map_ScanBlastFootprint @ 0x32cd4` — read, port-ready
+
+Returns 1 as soon as any ray touches an occupied cell, 0 after all passes.
+
+- `unk_10DBB4` is the pass counter, started at 0 and stepped while the next value
+  stays under 8: **all eight passes**, unlike `Map_ComputeFov`, which uses 0/2/4/6.
+- Layers: `for (i = 0; i < 240; i += 60)` walks `apCells` at `240*i`, i.e. layer
+  `i/60`, four layers. `nLayer` is a separate counter incremented in the same loop
+  and is what `Map_IsValidCell` receives.
+- Rays: 31 per pass (`v3 = 0..30`), steps `j = 0..14`, record at
+  `steps[1860*pass + 60*v3 + 4*j]` — the same 1860-byte pass group and 4-byte step
+  record the ray-table port already models.
+- Step bytes 0/1 are **absolute** offsets from the origin cell (`a2+26` is cell X,
+  `a2+27` is cell Y). Bytes 4/5 are the next step's absolute offsets. Byte 0 of the
+  next step equal to 96 is the end-of-ray sentinel.
+- Ray length gate: `sqrt(dx*dx + dy*dy) <= 2.0`, so only offsets within radius two
+  are examined. `if (j >= 14) continue;` is therefore unreachable in practice.
+- Occupancy test is `MapCell_HasOccupant(pCell)` on the cell the step lands on.
+  The origin cell (offset 0,0) is never examined.
+- Wall flags are set on the same two cells as `Map_ComputeFov`, with the same
+  asymmetry: byte 2 == 2 marks a wall on the cell being left (`pCell->bFlags57[0]
+  |= 2`), byte 2 == 1 marks a wall on the cell being entered (`next->bFlags57[0]
+  |= 2`). Byte 3 does the same for wall B with bit 1.
+- The blocking sprite byte here is **sprite[43]**, not the sprite[42] that
+  `Map_ComputeFov` and `Map_TraceVoxelOccupancy` test. A different byte, recorded
+  as-is.
+- Ceiling gate: `pCeilSpr != 0 && pCeilSpr[0] != 0` breaks the ray.

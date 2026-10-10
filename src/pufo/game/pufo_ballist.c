@@ -344,7 +344,7 @@ double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem)
 
     /* _rt_sdiv with a zero divisor has no defined result. The port takes the
      * helper's usual behaviour, quotient 0 and remainder the dividend, which
-     * lands on the 22.0 ceiling. Recorded as a deviation, not as fact. */
+     * lands on the 1.0 floor. Recorded as a deviation, not as fact. */
     if (nW == 0) {
         nQuot = 0;
         nRem = nS;
@@ -353,11 +353,12 @@ double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem)
         nRem = nS % nW;
     }
 
-    /* MOVS/ADDMI adds 1 to a negative quotient, so the division rounds toward
-     * +inf rather than truncating. */
+    /* MOVS/ADDMI adds 1 to a negative quotient, so it rounds toward zero before
+     * the arithmetic shift. */
     nHalf = (nQuot + ((nQuot < 0) ? 1 : 0)) >> 1;
 
-    dBudget = (double)(((int64_t)(u32)nRem << 32) | (u32)nHalf);
+    /* _itod converts the 32-bit int in R0. The remainder in R1 is dead. */
+    dBudget = (double)nHalf;
     if (dBudget < PUFO_THROW_BUDGET_MIN) {
         dBudget = PUFO_THROW_BUDGET_MIN;
     } else if (dBudget > PUFO_THROW_BUDGET_MAX) {

@@ -209,22 +209,27 @@ typedef struct ThrowBudget {
 #define PUFO_THROW_Z_MAX         47.0
 #define PUFO_THROW_LAND_MARGIN   8.0
 
-/* The budget is a compiler artifact turned into behaviour, and the disassembly
- * at 0x31a44..0x31a78 shows exactly how:
+/* The budget comes from the disassembly at 0x31a44..0x31a78:
  *
  *   MUL  R0, auStat[9], bWeight          ; w
  *   MUL  R1, auStat[8], uStunOrArmor     ; s
  *   BL   _rt_sdiv                        ; R0 = s/w, R1 = s%w
- *   MOVS R3, R0 / ADDMI R3, R3, #1      ; round the quotient toward +inf
- *   MOV  R0, R3, ASR #1                 ; R0 = quotient / 2
- *   BL   _itod                          ; converts the 64-bit pair R1:R0
+ *   MOVS R3, R0 / ADDMI R3, R3, #1      ; a negative quotient rounds toward zero
+ *   MOV  R0, R3, ASR #1                 ; R0 = quotient >> 1
+ *   BL   _itod                          ; int in R0 -> double
  *
- * _itod takes a 64-bit integer in R1:R0, and R1 still holds the remainder left
- * by _rt_sdiv. So the high half of the value is the remainder, not a chosen
- * quantity. The consequence is a two-case rule:
+ * An earlier reading of this block claimed _itod converts a 64-bit pair R1:R0, so
+ * that the leftover remainder dominated the value and any non-zero division
+ * remainder forced the 22.0 ceiling. That was wrong. The coredll helper set in
+ * this binary is _itod, _utod, _stod, _itos, _stoi, _dtoi, _dtos, _dtou, _dtoui,
+ * _addd, _subd, _muld, _divd, _led, _ltd, _ged, _gtd - and there is no _ltod, so
+ * _itod is the 32-bit int -> double helper. Hex-Rays rendering it as
+ * `itod(a1: sum, a2: stale)` is the same __PAIR64__ artifact that already misled
+ * the throw-arc straddle reading.
  *
- *   s % w != 0  ->  the value is at least 2^32  ->  clamped to 22.0
- *   s % w == 0  ->  the value is (s/w)/2        ->  clamped into [1.0, 22.0]
+ * The rule is therefore plain, and a division remainder has no effect at all:
+ *
+ *   budget = clamp((double)((q + (q < 0 ? 1 : 0)) >> 1), 1.0, 22.0)
  *
  * pQuot and pRem are optional outputs so a test can see the raw division. */
 double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem);

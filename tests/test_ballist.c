@@ -131,17 +131,16 @@ int main(void)
         i32 nRem = -1;
 
         /* auStat[8]*uStunOrArmor = 50*60 = 3000, auStat[9]*bWeight = 50*2 = 100.
-         * Exact division, so the stale high half is zero and the budget is
-         * (3000/100)/2 = 15. */
+         * 3000/100 = 30, shifted right by one gives 15. */
         b.nStatThrow = 50; b.nStunOrArmor = 60; b.nStatStrength = 50; b.nWeight = 2;
-        CheckNear("exact division gives quotient/2", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
+        CheckNear("quotient/2 is the budget", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
         Check("quotient 30, remainder 0", nQuot == 30 && nRem == 0);
 
-        /* 3000/350 leaves a remainder, and _itod takes that remainder as the high
-         * half of a 64-bit integer. The value is then >= 2^32 and clamps to 22. */
+        /* 3000/350 = 8 with remainder 200. The remainder is dead: _itod converts
+         * only the int in R0, so the budget is 8 >> 1 = 4. */
         b.nWeight = 7;
-        CheckNear("any remainder clamps to the ceiling", Throw_RangeBudget(&b, &nQuot, &nRem), 22.0);
-        Check("remainder 200 is the stale high half", nRem == 200);
+        CheckNear("a remainder changes nothing", Throw_RangeBudget(&b, &nQuot, &nRem), 4.0);
+        Check("remainder 200 is left in R1 and ignored", nRem == 200);
 
         /* (3000/100)/2 with an odd quotient truncates: 31/2 = 15. */
         b.nStatThrow = 100; b.nStunOrArmor = 31; b.nWeight = 2;
@@ -159,7 +158,7 @@ int main(void)
     printf("throw landing loop\n");
     {
         MapGeom wide = {4, 4};   /* 40 x 40 cells, 640 x 640 voxels */
-        ThrowBudget b = {50, 50, 7, 60};   /* 3000 / 350 -> remainder 200 -> 22.0 */
+        ThrowBudget b = {50, 50, 7, 60};   /* 3000 / 350 = 8 -> budget 4.0 */
         ThrowBudget bExact = {50, 50, 2, 60};
         ThrowLanding land;
         i32 nRet;
@@ -189,9 +188,11 @@ int main(void)
         Check("loop ends on the map volume limit", land.dMtX >= 160.0 * 4.0);
         Check("out of budget at the end, so returns 0", nRet == 0);
 
-        /* |dz| larger than the bound selects the other bump: bound/|dz| * 0.01. */
+        /* |dz| larger than the bound selects the other bump: bound/|dz| * 0.01.
+         * The range test costs 16 * 0.0625 * (64/8) = 8.0, so this uses the
+         * 15.0 budget rather than the 4.0 one. */
         nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
-                                        NULL, NULL, &b, 4, false,
+                                        NULL, NULL, &bExact, 4, false,
                                         160, 160, 0, 176, 160, 64);
         CheckNear("bound bump is 16/64 * 0.01", land.dTravel, 0.0025);
         Check("steep throw is not rejected", !land.bRejected);
