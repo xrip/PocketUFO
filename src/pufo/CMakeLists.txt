@@ -59,6 +59,7 @@ add_library(pufo_game STATIC
     game/pufo_geoscape.c
     game/pufo_ballist.c
     game/pufo_combat.c
+    game/pufo_vistry.c
 )
 target_include_directories(pufo_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_game PUBLIC pufo_options pufo_platform pufo_render pufo_dat pufo_util)
@@ -479,6 +480,16 @@ set_target_properties(test_combat PROPERTIES
 )
 add_test(NAME test_combat
     COMMAND test_combat
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+add_executable(test_vistry ${CMAKE_SOURCE_DIR}/tests/test_vistry.c)
+target_link_libraries(test_vistry PRIVATE pufo_options pufo_game pufo_util)
+set_target_properties(test_vistry PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_vistry
+    COMMAND test_vistry
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
