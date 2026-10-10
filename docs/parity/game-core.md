@@ -3693,6 +3693,11 @@ battle results:
 | `Tact_Shutdown` | `0x3d568` | 3788 |
 | `Tact_InitMission` | `0x3c550` | 4120 |
 
+**Already ported.** Three of the ten are done, under names the coverage tool matches:
+`Tact_MarkAllSoldiersSeen` as `SideLists_MarkAllSoldiersSeen` (`pufo_roster.c`),
+`Tact_ScanVictoryTiles` and `Tact_GetCameraBounds` (`pufo_tactctl.c`). Their behaviour
+is recorded below for reference.
+
 **`Tact_MarkAllSoldiersSeen @ 0x33bf0`.** Walks `apSoldiers[0..nSoldierCount)`. For
 each unit with a non-zero `pLinked1040` and `uHp != 0`, increments the u16 at
 `pLinked1040 + 250` (a strategic-side "seen" counter) and clears `pLinked1040` back to
@@ -3714,7 +3719,42 @@ Otherwise 0.
   `apCraft[gap_86272[19]]`: type 1 widens by `+20, +10`, type 0 and type 2 widen by
   `+10, +20`, any other type leaves the point degenerate.
 
-None of the three is ported yet, and each needs Map fields the port has not named:
-`apSoldiers` / `nSoldierCount`, `Soldier.pLinked1040`, `nCraftTileA[0..8]`,
-`gap_6556[133]`, `pad86309a[20..21]`, `gap_86272[19]`, `apCraft->bCraftType`. Naming
-those is the first step of this subtree.
+None of the remaining seven is ported: `Tact_TallyBattleStats @ 0x3348c`,
+`Tact_TallyUnitResults @ 0x33780`, `Tact_TallyItemRecovery @ 0x33c80`,
+`Tact_TallyCraftRecovery @ 0x344b4`, `Tact_ClearSoldierBattleFlags @ 0x346e0`,
+`Tact_Shutdown @ 0x3d568`, `Tact_InitMission @ 0x3c550`. The last two are mission
+lifecycle rather than battle results and belong with the mission subsystem.
+
+### `Tact_TallyBattleStats @ 0x3348c`: analysed, deliberately not ported yet
+
+Shape: ten output counters, all zeroed on entry. Gate is
+`gap_6556[133] != 0 || anActionPhaseSave0[92] == 0` -> return. Then a triple walk over
+layers 0..3, `y` in `0..10*nMapDimY`, `x` in `0..10*nMapDimX` (the three loop counters
+are the globals `unk_113980`, `unk_10DBAC`, `unk_10DBA8`, and the current cell goes to
+`g_pCurCell @ 0x113998`), and for each of the four sprite slots it reads
+`Mc1Rec[0x1E]` — a tile category byte the port has not named yet, currently inside
+`Mc1Rec.gap_1D[3]`.
+
+Category 2 increments counter A and adds `unk_138E6C` to counter B once per such tile,
+so B is a count times a per-tile credit. Categories 3, 5, 7, 8, 9, 10 increment
+counters D, C, I, G, J, H. Anything else is ignored. At the end, when
+`gap_86272[17] > 3` or the mission is an alien base, counter E is set to `unk_138E70`.
+
+The two globals are the reason this is not ported yet. `xrefs_to` shows both are
+written only by `Tact_InitMission @ 0x3c550` and round-tripped through
+`Save_ReadTGameData @ 0x44248` / `Save_WriteTGameData @ 0x446a8`, so they are saved
+mission state, not scratch. The ARM at `0x3c578` shows exactly how they are produced:
+
+```
+ADD  R0, R0, #0xA ; STR R0, [R4,R12]   ; unk_138E6C = <value> + 10
+MOV  R0, #0x14    ; BL  Game_RandU16   ; unk_138E70 = rand(20), a 0..19 mission value
+```
+
+Neither `Tact_InitMission` nor the TGameData save block is ported, and the ten counters
+have no names until their consumer gives them meaning. Porting this function now would
+mean inventing ten names and two globals with no evidence behind them. The order that
+keeps every claim traceable is: `Save_ReadTGameData` / `Save_WriteTGameData`, then
+`Tact_InitMission`, then the tallies, then `Tact_CheckBattleEnd`, then `Tact_KillUnit`.
+
+`Mc1Rec[0x1E]` is worth naming independently — it is a tile category with at least the
+values 2, 3, 5, 7, 8, 9, 10 in use, and it is the only reader found so far.
