@@ -388,6 +388,122 @@ static void TestThrowMode(void)
     CheckEqI32("no flag rewrite", (i32)(pCell->nFlags32 & 7u), 0);
 }
 
+static ObjectRecFull g_wL, g_wR;
+static TactItem g_handL, g_handR;
+static ActionCostTable g_costs;
+static TactItem *g_pSel;
+static i32 g_nMode;
+
+static bool GateAllowAll(i32 nSortKey, void *pUser)
+{
+    (void)nSortKey;
+    (void)pUser;
+    return true;
+}
+
+static bool GateDeny(i32 nSortKey, void *pUser)
+{
+    (void)nSortKey;
+    (void)pUser;
+    return false;
+}
+
+static void TestSelectFireMode(void)
+{
+    FireGate allow = { GateAllowAll, NULL };
+    FireGate deny  = { GateDeny, NULL };
+
+    printf("Unit_SelectBestFireMode\n");
+    Reset();
+    memset(&g_wL, 0, sizeof(g_wL));
+    memset(&g_wR, 0, sizeof(g_wR));
+    memset(&g_handL, 0, sizeof(g_handL));
+    memset(&g_handR, 0, sizeof(g_handR));
+    memset(&g_costs, 0, sizeof(g_costs));
+    g_unit.pHandL = &g_handL;
+    g_unit.pHandR = NULL;
+    g_handL.pObj = &g_wL;
+    g_handL.nAmmo = 10;
+    g_wL.abArmorTu[0] = 20;
+    g_wL.abCostPct[0] = 50;
+    g_wL.uSortKey = 3;
+    g_unit.auStat[0] = 100;
+    g_unit.auStat[4] = 80;
+    g_unit.uTu = 50;
+
+    Check("an affordable left hand selects",
+          Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+    CheckEqI32("mode 0 chosen", g_nMode, 0);
+    CheckEqI32("TU cost for mode 0", g_costs.nTuCost[0], 20);
+    CheckEqI32("accuracy is pct * auStat[4] / 100", g_costs.nAccuracy[0], 40);
+    Check("the chosen item is the left hand", g_pSel == &g_handL);
+
+    printf("both modes affordable: mode 0 wins\n");
+    g_wL.abArmorTu[1] = 10;
+    Reset();
+    g_unit.pHandL = &g_handL;
+    g_unit.pHandR = NULL;
+    g_unit.auStat[0] = 100;
+    g_unit.uTu = 50;
+    Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs);
+    CheckEqI32("mode 0 overwrites mode 1", g_nMode, 0);
+
+    printf("only the expensive mode fits the budget\n");
+    Reset();
+    g_wL.abArmorTu[0] = 90;
+    g_wL.abArmorTu[1] = 10;
+    g_unit.pHandL = &g_handL;
+    g_unit.pHandR = NULL;
+    g_unit.auStat[0] = 100;
+    g_unit.uTu = 50;
+    Check("mode 1 is used when mode 0 does not fit",
+          Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+    CheckEqI32("mode 1", g_nMode, 1);
+    CheckEqI32("TU cost for mode 1", g_costs.nTuCost[1], 10);
+    g_wL.abArmorTu[0] = 20;
+
+    printf("no candidate at all\n");
+    Reset();
+    g_unit.pHandL = NULL;
+    g_unit.pHandR = NULL;
+    Check("empty hands select nothing",
+          !Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+
+    printf("out of ammo, two-handed, and research-denied\n");
+    Reset();
+    g_unit.pHandL = &g_handL;
+    g_unit.pHandR = NULL;
+    g_handL.nAmmo = 2;
+    g_wL.bAmmoCap = 0;
+    Check("two rounds left is not a candidate",
+          !Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+    g_wL.bAmmoCap = 255;
+    Check("an unlimited weapon is a candidate at any ammo count",
+          Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+    g_wL.bAmmoCap = 0;
+    g_handL.nAmmo = 10;
+    g_wL.bTwoHanded = 1;
+    Check("a two-handed weapon is not a candidate",
+          !Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs));
+    g_wL.bTwoHanded = 0;
+    Check("research denial blocks the shot",
+          !Unit_SelectBestFireMode(&g_unit, &deny, &g_pSel, &g_nMode, &g_costs));
+
+    printf("the right hand wins when both are valid\n");
+    Reset();
+    g_handR.pObj = &g_wR;
+    g_handR.nAmmo = 10;
+    g_wR.abArmorTu[0] = 30;
+    g_wR.uSortKey = 4;
+    g_unit.pHandL = &g_handL;
+    g_unit.pHandR = &g_handR;
+    g_unit.auStat[0] = 100;
+    g_unit.uTu = 50;
+    Unit_SelectBestFireMode(&g_unit, &allow, &g_pSel, &g_nMode, &g_costs);
+    Check("right hand selected", g_pSel == &g_handR);
+    CheckEqI32("right hand cost written", g_costs.nTuCost[0], 30);
+}
+
 int main(void)
 {
     TestIndex();
@@ -398,6 +514,7 @@ int main(void)
     TestOccupantDamage();
     TestCellDamage();
     TestThrowMode();
+    TestSelectFireMode();
 
     printf("%d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails != 0;

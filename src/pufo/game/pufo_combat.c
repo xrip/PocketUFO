@@ -8,7 +8,83 @@ size_t Combat_HitIndex(i32 nRow, i32 nCol, i32 nSlot)
     return (size_t)(4 * (PUFO_SPLASH_SPAN * nRow + nCol) + nSlot);
 }
 
-/* --- Unit_ApplyCellDamage @ 0x2e5d0 ---------------------------------------- */
+/* --- Unit_SelectBestFireMode @ 0x478e4 -------------------------------------- */
+
+/* One hand's candidate cost and mode. Returns 0xFFFF when the hand is not a
+ * candidate. The original assigns pSelWeapon as soon as a hand qualifies, before
+ * it knows which hand it will pick, and the port keeps that. */
+static i32 Combat_HandCost(Soldier *pUnit, TactItem *pHand, const FireGate *pGate,
+                           TactItem **ppSelWeapon, i32 *pnMode)
+{
+    if (pHand == NULL || pHand->pObj == NULL) {
+        return 0xFFFF;
+    }
+    if (!(pHand->nAmmo > 2 || pHand->pObj->bAmmoCap == 255)) {
+        return 0xFFFF;
+    }
+    if (pHand->pObj->bTwoHanded != 0
+        || (pHand->pObj->abArmorTu[0] == 0 && pHand->pObj->abArmorTu[1] == 0)) {
+        return 0xFFFF;
+    }
+
+    *ppSelWeapon = pHand;
+    i32 nCost = 0xFFFF;
+    i32 nMode = 0;
+
+    if (pHand->pObj->abArmorTu[1] != 0) {
+        i32 nTry = (i32)pUnit->auStat[0] * pHand->pObj->abArmorTu[1] / 100;
+        if (nTry <= (i32)pUnit->uTu) {
+            nCost = nTry;
+            nMode = 1;
+        }
+    }
+    /* Checked second, so mode 0 wins when both fit. */
+    if (pHand->pObj->abArmorTu[0] != 0) {
+        i32 nTry = (i32)pUnit->auStat[0] * pHand->pObj->abArmorTu[0] / 100;
+        if (nTry <= (i32)pUnit->uTu) {
+            nCost = nTry;
+            nMode = 0;
+        }
+    }
+    if (Unit_bIsOperative(pUnit)
+        && !pGate->pfnWeaponFireable(pHand->pObj->uSortKey, pGate->pUser)) {
+        nCost = 0xFFFF;
+    }
+    *pnMode = nMode;
+    return nCost;
+}
+
+bool Unit_SelectBestFireMode(Soldier *pUnit, const FireGate *pGate,
+                             TactItem **ppSelWeapon, i32 *pnActionMode,
+                             ActionCostTable *pCosts)
+{
+    i32 nModeL = 0, nModeR = 0;
+    i32 nCostL = Combat_HandCost(pUnit, pUnit->pHandL, pGate, ppSelWeapon, &nModeL);
+    i32 nCostR = Combat_HandCost(pUnit, pUnit->pHandR, pGate, ppSelWeapon, &nModeR);
+
+    TactItem *pSel;
+    i32 nMode, nCost;
+    if (nCostR < 0xFFFF) {
+        pSel = pUnit->pHandR;
+        nMode = nModeR;
+        nCost = nCostR;
+    } else if (nCostL < 0xFFFF) {
+        pSel = pUnit->pHandL;
+        nMode = nModeL;
+        nCost = nCostL;
+    } else {
+        return false;
+    }
+
+    *ppSelWeapon = pSel;
+    *pnActionMode = nMode;
+    pCosts->nAccuracy[nMode] = (i32)((double)pSel->pObj->abCostPct[nMode]
+                                     * (double)pUnit->auStat[4] * 0.01);
+    pCosts->nTuCost[nMode] = nCost;
+    return true;
+}
+
+/* --- Unit_ApplyCellDamage @ 0x2e5d0 ----------------------------------------- */
 
 /* Readiness source, selected by the weapon record's two selector bytes.
  * The five values all live in the unit: Soldier.abReady252[0..4] at 252..256.

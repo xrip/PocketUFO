@@ -74,6 +74,42 @@ typedef struct CombatCtx {
     ObjectRecFull *pCtxWeapon; /* Map.nFireArg6 @ Map+0x14050 */
 } CombatCtx;
 
+/* Research gate. The original asks the in-memory research table directly:
+ *     aFacTypeTable[4 + 34 * byte_AA968[weapon.uSortKey]] != 0
+ * A weapon may not be fired unless its research topic allows it. The table's
+ * in-memory field order is still unresolved (the port's ResearchTopic order is
+ * the on-disk order), so the check is injected as a callback rather than baked
+ * into a layout guess here. */
+typedef struct FireGate {
+    bool (*pfnWeaponFireable)(i32 nSortKey, void *pUser);
+    void *pUser;
+} FireGate;
+
+/* pCtxBase.nTrajFront0[1040..1135]: twelve action-mode slots, four bytes each.
+ * [1040 + 4*mode] is the TU cost and [1088 + 4*mode] the accuracy term. Three of
+ * the twelve are the fire modes; the rest belong to the other action modes. */
+#define PUFO_ACTION_SLOT_COUNT 12
+typedef struct ActionCostTable {
+    i32 nTuCost[PUFO_ACTION_SLOT_COUNT];
+    i32 nAccuracy[PUFO_ACTION_SLOT_COUNT];
+} ActionCostTable;
+
+/* Unit_SelectBestFireMode @ 0x478e4. Pick the weapon and fire mode for a shot.
+ *
+ * Each hand is a candidate when it holds an item, has ammo (nAmmo > 2) or an
+ * unlimited weapon (bAmmoCap == 255), is not two-handed, and has at least one of
+ * abArmorTu[0..1] non-zero. Mode 1 is tried from abArmorTu[1] and mode 0 from
+ * abArmorTu[0], each costing auStat[0] * abArmorTu[mode] / 100 TU and accepted
+ * only when that fits in uTu; mode 0 is checked second and so wins when both fit.
+ * An operative whose research topic forbids the weapon has that hand's cost reset
+ * to 0xFFFF. The right hand wins when it survived, otherwise the left.
+ *
+ * On success the chosen item and mode are written to ppSelWeapon / pnActionMode
+ * and the two slots for that mode are filled in pCosts. */
+bool Unit_SelectBestFireMode(Soldier *pUnit, const FireGate *pGate,
+                             TactItem **ppSelWeapon, i32 *pnActionMode,
+                             ActionCostTable *pCosts);
+
 /* Unit_ApplyCellDamage @ 0x2e5d0. Walks the cell's item list and damages every
  * linked unit that has not already been hit in this shot. The original returns
  * a mixed pointer (last unit seen, or the cell after a list removal); no call
