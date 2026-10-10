@@ -2443,3 +2443,33 @@ carry no body. It must be confirmed against the original's output (the built
 `byte_AD720` table) before the port relies on it, because a different scale
 factor produces a visibility fan that is subtly wrong rather than obviously
 wrong.
+
+## Brief: Unit_SelectBestFireMode @ 0x478e4 (read, not yet ported)
+
+Picks the weapon and firing mode for the shot and stores them in the fire
+context. For each hand (`Soldier.pHandL`, `Soldier.pHandR`):
+
+- A hand is a candidate when it holds an item, has ammo (`nAmmo > 2`) or the
+  weapon is unlimited (`ObjectRecFull.bAmmoCap == 255`), is not two-handed
+  (`ObjectRecFull.bTwoHanded == 0`), and has at least one non-zero
+  `ObjectRecFull.abArmorTu[0..1]`.
+- Mode 1 is chosen from `abArmorTu[1]` and mode 0 from `abArmorTu[0]`, each
+  costing `auStat[0] * abArmorTu[k] / 100` TU and accepted only when that fits in
+  `uTu`. Mode 0 wins when both fit - it is checked second and overwrites.
+- An operative whose weapon's faction record says it may not be fired resets that
+  hand's cost to 0xFFFF: `aFacTypeTable[3 + 34 * byte_AA968[uSortKey]] == 0`.
+- The right hand wins if it survived; otherwise the left hand. Result:
+  `pCtxBase.pSelWeapon` and `pCtxBase.nActionMode`, plus
+  `nTrajFront0[1088 + 4*mode] = (int)(weapon byte bFireType[mode+1] * auStat[4] * 0.01)`
+  and `nTrajFront0[1040 + 4*mode] = the TU cost`. The 0.01 constant is the double
+  pair (1202590843, 1065646817) and it is exact.
+
+Data dependencies, both still open:
+
+- `byte_AA968 @ 0xaa968` is a static map from weapon `uSortKey` to a faction
+  record index. The shipped bytes start
+  `00 01 06 09 02 07 0a 04 03 08 05 0b 0d 0c 12 17 18 16 15 19 0e 0f 11 14 10`
+  and continue with 0x61..0x65 and 0x71..0x75 for the special items.
+- `aFacTypeTable @ 0x15ef08` is **runtime-built**: the image is all 0xFF there,
+  like `dword_B2278`. Its builder has to be found before this function can be
+  ported. Records are 34 bytes; only byte +1 is read here.
