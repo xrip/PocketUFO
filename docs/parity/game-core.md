@@ -3844,3 +3844,26 @@ callees, only one is missing:
 So the next step is small and well-defined: port `Unit_RollChance @ 0x25e6c`, then
 `Tact_ProcessMoveAction` itself. Behaviour has not been analysed yet — the callee list
 is the only claim made here.
+
+### Analysed, not yet ported: `Unit_RollChance @ 0x25e6c`
+
+`Unit_RollChance(Soldier *pUnit, int nChance)` is a chance roll that, on failure,
+generates a scatter displacement and stores it in three scratch slots on the unit.
+
+Certain from the pseudocode:
+
+- `v4 = Game_RandU16(100) + 1`, so 1..100. Success is `v4 <= nChance`, which returns 0
+  and clears two of the three output slots.
+- On failure the magnitude is `Game_RandU16(v4 - nChance)`, i.e. the amount by which the
+  roll missed, plus 10, scaled by two soft-FPU constants and a third constant.
+- Two angles are drawn as `Game_RandU16(628)` reduced to a value in 0..6.28 — a full
+  turn in whole-number hundredths. `cos` and `sin` of those angles multiply the magnitude,
+  and the three products are converted back to integers with `dtoi`.
+- So the three outputs are a displacement triple, and the function returns the third one.
+
+Not yet resolved, and the reason it is not ported: the output slots render as
+`pUnit[82].apSpotted[10]`, `[11]`, `[12]` and one input as `pUnit[78].apSpotted[40]`,
+`[41]`. Those are Hex-Rays base-plus-index artifacts, not real fields, and at least one
+of the "inputs" is likely another constant pair the decompiler split. The real Soldier
+offsets need the ARM at `0x25eec..0x2608c` before any struct fields can be named. Guessing
+them here would put invented offsets into a shared struct.
