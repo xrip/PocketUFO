@@ -215,6 +215,18 @@ void Unit_ctor(Soldier *pUnit);
 bool Unit_bIsOperative(const Soldier *pUnit);
 bool Unit_bIsLarge(const Soldier *pUnit);
 
+/* unk_138EA0: the shared empty-slot placeholder. An inventory slot can hold this
+ * instead of NULL, and every inventory reader treats it as "no item". It is not a
+ * real item, so it is never dropped onto the map, but the slot holding it is still
+ * cleared. Modelled as a TactItem because the readers that compare against it
+ * (Ui_HitTestTactItem @ 0x11ac0, Inv_HandlePointer @ 0x12260) all treat inventory
+ * slots as TactItem pointers. */
+extern TactItem g_itemSlotEmpty;
+
+/* Unit_DropAllItemsToCell @ 0x4b4f8. Drop everything the unit carries into the
+ * cell it stands on and clear each slot. Large units keep their hands. */
+void Unit_DropAllItemsToCell(Soldier *pUnit);
+
 /* Unit_bFacingAngleDuel @ 0x4dcf4. True when pUnitA is the better turned of the
  * two, judged from each unit's facing against the bearing to the other and then
  * settled by a reaction roll. The original's unused first context argument is

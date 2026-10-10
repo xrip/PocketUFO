@@ -1088,6 +1088,111 @@ static void TestFacingAngleDuel(void)
     printf("  A facing B, B facing away: A won %d/200\n", nAWins);
 }
 
+static ObjectRecFull g_aDropObj[32];
+static TactItem g_aDropItem[32];
+
+static void DropReset(Soldier *pUnit, MapCell *pCell)
+{
+    memset(pUnit, 0, sizeof(*pUnit));
+    memset(pCell, 0, sizeof(*pCell));
+    for (i32 n = 0; n < 32; ++n) {
+        memset(&g_aDropObj[n], 0, sizeof(g_aDropObj[n]));
+        memset(&g_aDropItem[n], 0, sizeof(g_aDropItem[n]));
+        g_aDropObj[n].bListPri = (u8)n;
+        g_aDropItem[n].pObj = &g_aDropObj[n];
+    }
+    pUnit->pCell = pCell;
+}
+
+static i32 DropListLen(const MapCell *pCell)
+{
+    i32 n = 0;
+
+    for (TactItem *p = pCell->pItemList; p != NULL; p = p->pNext) {
+        ++n;
+    }
+    return n;
+}
+
+static void TestDropItems(void)
+{
+    Soldier unit;
+    MapCell cell;
+    i32 nSlot;
+
+    printf("Unit_DropAllItemsToCell @ 0x4b4f8\n");
+
+    /* A small unit loses everything it carries. */
+    DropReset(&unit, &cell);
+    unit.nUnitType = 0;
+    unit.pHandL = &g_aDropItem[0];
+    unit.pHandR = &g_aDropItem[1];
+    for (nSlot = 0; nSlot < 9; ++nSlot) {
+        unit.apBelt[nSlot] = &g_aDropItem[2 + nSlot];
+    }
+    for (nSlot = 0; nSlot < 8; ++nSlot) {
+        unit.apBackpack[nSlot] = &g_aDropItem[11 + nSlot];
+    }
+    for (nSlot = 0; nSlot < 4; ++nSlot) {
+        unit.aPockets[nSlot].apItem[0] = &g_aDropItem[19 + 2 * nSlot];
+        unit.aPockets[nSlot].apItem[1] = &g_aDropItem[20 + 2 * nSlot];
+    }
+    Unit_DropAllItemsToCell(&unit);
+
+    CheckEqI32(DropListLen(&cell), 25, "a small unit drops 25 items");
+    Check(unit.pHandL == NULL && unit.pHandR == NULL, "both hands are cleared");
+
+    /* The belt walk reads 4*n + 6*sizeof(MapCell) + offsetof(pWallSprA), which is
+     * apBelt[n]. All nine go. */
+    {
+        bool bAllClear = true;
+        for (nSlot = 0; nSlot < 9; ++nSlot) {
+            bAllClear = bAllClear && unit.apBelt[nSlot] == NULL;
+        }
+        Check(bAllClear, "all nine belt slots are cleared");
+    }
+
+    /* The backpack walk skips slots 5 and 6, and a skipped slot keeps its item. */
+    {
+        bool bCarried = unit.apBackpack[5] == &g_aDropItem[16]
+                     && unit.apBackpack[6] == &g_aDropItem[17];
+        bool bSixGone = unit.apBackpack[0] == NULL && unit.apBackpack[4] == NULL
+                     && unit.apBackpack[7] == NULL;
+        Check(bCarried, "backpack slots 5 and 6 keep their items");
+        Check(bSixGone, "the other six backpack slots are cleared");
+    }
+
+    /* Two passes of four pockets: apItem[0] of each, then apItem[1] of each. */
+    {
+        bool bAllClear = true;
+        for (nSlot = 0; nSlot < 4; ++nSlot) {
+            bAllClear = bAllClear && unit.aPockets[nSlot].apItem[0] == NULL
+                                   && unit.aPockets[nSlot].apItem[1] == NULL;
+        }
+        Check(bAllClear, "all eight pocket slots are cleared");
+    }
+
+    /* The empty-slot placeholder is not an item: the slot is cleared, but nothing
+     * reaches the cell list. */
+    DropReset(&unit, &cell);
+    unit.apBelt[0] = &g_itemSlotEmpty;
+    unit.apBelt[1] = &g_aDropItem[0];
+    Unit_DropAllItemsToCell(&unit);
+    CheckEqI32(DropListLen(&cell), 1, "the placeholder is not dropped");
+    Check(unit.apBelt[0] == NULL, "the placeholder slot is still cleared");
+
+    /* A large unit keeps its hands. */
+    DropReset(&unit, &cell);
+    unit.nUnitType = 4;
+    unit.pHandL = &g_aDropItem[0];
+    unit.pHandR = &g_aDropItem[1];
+    unit.apBelt[0] = &g_aDropItem[2];
+    Unit_DropAllItemsToCell(&unit);
+    Check(unit.pHandL == &g_aDropItem[0] && unit.pHandR == &g_aDropItem[1],
+          "a large unit keeps both hands");
+    CheckEqI32(DropListLen(&cell), 1, "a large unit still drops its belt");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1154,6 +1259,7 @@ int main(void)
     TestScanVisibleUnits();
     TestRecalcInventory();
     TestFacingAngleDuel();
+    TestDropItems();
 
     TextTables_Free();
     Asset_CloseArchives();

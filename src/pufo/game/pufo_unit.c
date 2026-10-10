@@ -1252,3 +1252,63 @@ bool Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter,
 
     return false;
 }
+
+/* Unit_DropAllItemsToCell @ 0x4b4f8.
+ *
+ * Drops everything the unit carries into the cell it stands on, clearing each slot
+ * as it goes. Large units keep their hands: the two hand slots are the only ones
+ * behind a Unit_bIsLarge guard.
+ *
+ * unk_138EA0 is the shared empty-slot placeholder. A slot may hold it instead of
+ * NULL. It counts as "no item" for dropping, but the slot is still cleared, so the
+ * placeholder does not survive a drop.
+ *
+ * Slot map. The decompiler renders the belt walk through a MapCell cast, so the
+ * offsets are worth spelling out: it reads v7[6].pWallSprA with v7 advancing four
+ * bytes at a time, which is 4*n + 6*sizeof(MapCell) + offsetof(pWallSprA) =
+ * 0x16c + 4*n, i.e. apBelt[n]. The backpack walk is i in 0..1, j in 0..3 with
+ * "i != 1 || (j != 1 && j != 2)", so slots 5 and 6 are skipped. The pocket walk
+ * runs twice with v12 advancing four bytes, which lands on apItem[0] of the four
+ * pockets and then on apItem[1] of the same four.
+ *
+ * The original returns a MapCell pointer that is just the last register value
+ * threaded through the inserts; no caller uses it. */
+TactItem g_itemSlotEmpty;
+
+static void Unit_DropSlot(MapCell *pCell, TactItem **ppItem)
+{
+    TactItem *pItem = *ppItem;
+
+    if (pItem == NULL) {
+        return;
+    }
+    if (pItem != &g_itemSlotEmpty) {
+        MapCell_ListInsertByPri(pCell, pItem);
+    }
+    *ppItem = NULL;
+}
+
+void Unit_DropAllItemsToCell(Soldier *pUnit)
+{
+    if (!Unit_bIsLarge(pUnit)) {
+        Unit_DropSlot(pUnit->pCell, &pUnit->pHandL);
+        Unit_DropSlot(pUnit->pCell, &pUnit->pHandR);
+    }
+
+    for (i32 n = 0; n < 9; ++n) {
+        Unit_DropSlot(pUnit->pCell, &pUnit->apBelt[n]);
+    }
+
+    for (i32 n = 0; n < 8; ++n) {
+        if (n == 5 || n == 6) {
+            continue;
+        }
+        Unit_DropSlot(pUnit->pCell, &pUnit->apBackpack[n]);
+    }
+
+    for (i32 nPocket = 0; nPocket < 4; ++nPocket) {
+        for (i32 nItem = 0; nItem < 2; ++nItem) {
+            Unit_DropSlot(pUnit->pCell, &pUnit->aPockets[nPocket].apItem[nItem]);
+        }
+    }
+}

@@ -3529,3 +3529,43 @@ pointing at the shooter, leaves `Map.bFireStatus0[1]` untouched, and enqueues no
 Build note: `pufo_combat.c` calls `Sound_Play`, and `pufo_unit.c` now references
 `Unit_SelectBestFireMode`, so `pufo_game` links `pufo_audio` publicly rather than every
 test target repeating it.
+
+### Ported and tested: `Unit_DropAllItemsToCell @ 0x4b4f8`
+
+Port: `Unit_DropAllItemsToCell` in `src/pufo/game/pufo_unit.c`. Tests:
+`TestDropItems` in `tests/test_unit.c`, 10 checks.
+
+The decompiler hides the slot map behind a `MapCell` cast, so the offsets are worth
+writing down. The belt walk reads `v7[6].pWallSprA` with `v7` advancing four bytes a
+step: `4*n + 6*sizeof(MapCell) + offsetof(pWallSprA)` = `4*n + 360 + 4` = `0x16c + 4*n`,
+which is `Soldier.apBelt[n]`. The write side of the same loop spells it as
+`apBelt[v4] + v6`, and the two agree.
+
+Full slot map:
+
+| Group | Slots | Dropped | Cleared |
+| --- | --- | --- | --- |
+| Hands | `pHandL`, `pHandR` | only when the unit is **not** large | same guard |
+| Belt | `apBelt[0..8]` | all 9 | all 9 |
+| Backpack | `apBackpack[0..7]` | 0,1,2,3,4,7 | same six |
+| Pockets | `aPockets[0..3].apItem[0..1]` | all 8 | all 8 |
+
+Two details that are easy to get wrong:
+
+- **Backpack slots 5 and 6 are skipped entirely**, not just skipped for dropping. The
+  guard is `i != 1 || (j != 1 && j != 2)` over `i` in 0..1 and `j` in 0..3, so a skipped
+  slot keeps its item. A unit dying does not shed those two.
+- **The pocket walk is two passes of four.** `v12` advances four bytes per pass, so pass
+  one lands on `apItem[0]` of each pocket and pass two on `apItem[1]` of the same four.
+  `InvPocketPair` is 12 bytes (two item pointers, two meta bytes, two spare), which is
+  what makes the four-byte step land on the second item pointer.
+
+`unk_138EA0` is the shared empty-slot placeholder. An inventory slot may hold it instead
+of NULL. It counts as "no item" for dropping — it is never inserted into the cell list —
+but the slot holding it is still cleared, so the placeholder does not survive a drop.
+Named `g_itemSlotEmpty` in the port and commented at `0x138ea0` in the IDB.
+
+All callees of `Tact_KillUnit @ 0x4e430` except `Tact_CheckBattleEnd` are now ported:
+`Unit_ApplyCellDamage`, `Unit_bIsLarge`, `Tact_RemoveUnitFromSideLists`,
+`Unit_UpdateAnimPose`, `Unit_ResetBattleState`, `Unit_PlaceOnMap`,
+`Combat_ResolveShot`, and `Unit_DropAllItemsToCell`.
