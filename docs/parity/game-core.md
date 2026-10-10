@@ -2017,3 +2017,114 @@ subtle:
   case; the `uRangeRemain < uRangeMax` gate blocked the consume and the warning
   never ran.
 - `test_clock.c` did not build: an unused `Check` helper under `/WX`.
+
+
+### Next game-core targets, and the one blocker
+
+The largest remaining `tact` gaps are the action processors and the shot pipeline:
+`Map_BuildMissionTerrain @ 0x22e10` (10676 B), `Tact_ProcessFireAction @ 0x50adc`
+(8192), `Tact_ProcessMoveAction @ 0x4f3f0` (5868), `Tact_CheckBattleEnd @ 0x34fbc`
+(5748), `Tact_ProcessFallAction @ 0x52adc` (5716), `Tact_KillUnit @ 0x4e430` (3748),
+`Combat_ResolveShot @ 0x2f12c` (2828), the throw/arc trio `Tact_SimulateThrowArc @
+0x3102c`, `Tact_TraceProjectileArc @ 0x2fc38`, `Tact_ResolveThrowLanding @ 0x31a18`,
+and `Combat_SplashDamageCells @ 0x2e7d8` (2388).
+
+The blocker is not the logic, it is the layout of the aim block inside `Map`.
+`Tact_ComputeAimVector @ 0x30368` writes the shot state into unnamed `Map` gaps:
+the 11-entry per-weapon table from `byte_A9218[11 * nFlags]` into `Map+0x13FD8`
+(81880) as 11 dwords, then the two endpoints at +44/+48/+52 and +56/+60/+64
+(81924..81944), the yaw into a named double, and the pitch into `Map+81968` or
+`Map+81960` depending on whether the shot is vertical. It also writes
+`MapCell.bFlags29 |= 0x20` on the origin cell and `bFireStatus0[1] = 1`,
+`bFireStatus0[2] = 0` (Map+81, Map+82 — already named in `pufo_input.h`).
+
+One reference, `*(_DWORD *)pMap->gap_82056 = nFlags` at 0x305c0, does not resolve
+against the current `Map` type (152632 bytes), so the IDB has to be fixed before
+this cluster is ported: name the aim block as a real sub-struct of `Map`, give the
+11-entry table at `byte_A9218` its own type, and re-check the `gap_82056` write.
+Doing that in the IDB first is cheaper than reverse-engineering the offsets from
+disassembly for each of the six functions that read the block.
+
+## Ballistics block: aim vector, shot arc, throw solver
+
+Recreated as `game/pufo_ballist.{h,c}`, tested by `tests/test_ballist.c`
+(37 checks, 0 failures).
+
+| Original | Recreated |
+|---|---|
+| `Tact_ComputeAimVector` @ `0x30368` | `Tact_ComputeAimVector`, `Aim_ComputeAngles` |
+| `Tact_TraceProjectileArc` @ `0x2fc38` | `Tact_TraceProjectileArc` |
+| `Tact_SimulateThrowArc` @ `0x3102c` | `Tact_SimulateThrowArc`, `Throw_HeightAt` |
+| `atAimRowTable` @ `0xA9218` | `g_atAimRowTable` |
+
+### The aim block is resolved, the blocker is gone
+
+Every write in `Tact_ComputeAimVector` is an immediate offset from the Map base
+register, so the block layout came out of the disassembly directly:
+
+```
+0x13FD8  11 dwords from atAimRowTable[11 * nFlags + i]
+0x14004/08/0C  origin X/Y/Z      0x14010/14/18  target X/Y/Z
+0x14020  dTravel    0x14028  dAngleYaw    0x14030  dAnglePitch
+0x14038  dTravelSave
+0x14060/64/68  trajectory end X/Y/Z (dwords)
+0x14078  arc denominator (double)
+0x14080/84  the bound double, held as two dwords
+0x14088  aim row id
+```
+
+Two earlier readings were wrong and are corrected:
+
+- `*(_DWORD *)pMap->gap_82056 = nFlags` at `0x305c0` is not a pointer write. The
+  ARM is `MOV R3, #0x14088; STR R0, [R4,R3]` - a plain dword at `Map+0x14088`.
+- `dAngleYaw` is at `0x14028` and `dAnglePitch` at `0x14030`. The decompiler's
+  `v30 = 81968 / 81960` pair looked like two pitch fields; the yaw store at
+  `0x14028` in the non-vertical branch and the random yaw store in the vertical
+  branch are the same field.
+- `padFire2` (8 bytes at `0x14060`) plus the four bytes at `0x14068` are three
+  dwords: end X, end Y, end Z. `MapView_DrawUnitHeightGlyph` @ `0x1c240` proves
+  it - it reads them as `% 16`, `% 16`, `% 12`, i.e. voxel remainders.
+
+The float constants, decoded as lo/hi dword pairs, are 1.0 (arc step), 1/16 and
+1/12 (voxel to tile/layer), 0.1 (random yaw scale), 9.18 (throw gravity),
+1/(2*9.18) (range form), 0.05 (search step scale), 0.001 (search base) and
+1.57075 - the original's own half-turn constant, not pi/2.
+
+### The arc stops on a floor hit only
+
+`Tact_TraceProjectileArc` tests the occupancy result truncated to one byte:
+
+```c
+if ((u8)Map_TraceVoxelOccupancy(...) != 0) { /* keep walking */ }
+else { record target; stop; }
+```
+
+A clear voxel returns `LOS_HIT_NONE` (-1), which is 0xFF as a byte, so the walk
+continues. Only a result of 0 (`LOS_HIT_FLOOR`) stops it and records the target.
+Wall, ceiling and occupant hits do not stop the arc. Recorded as the original's
+rule, not corrected.
+
+The abort test is `ltd(x, 160 * nMapDimX) == 0`, which is `x >= limit`, not
+`x < limit`; the first port had it inverted and the test caught it.
+
+### The throw solver
+
+`Tact_SimulateThrowArc` searches 19 angles `theta = base + step * 0.05 * i`
+starting at `base = 0.001`, `step = 1.57075`. Launch speed is fixed by the
+height term `v = (dz > 0 ? dz + 3 : 3)` through `v0^2 = 2 * 9.18 * v`, the
+candidate is rejected when its range `v0^2 * sin(2*theta) / (2*9.18)` exceeds
+the horizontal distance, and it is accepted when the trajectory height at that
+distance lands in `[dz, dz+1]`. When two consecutive angles straddle `dz` the
+search restarts with `base = that angle` and `step *= 0.05`.
+
+One detail needs a disassembly check before it is called settled: Hex-Rays
+renders both straddle conditions with `SLODWORD(v29)`, and it also sets
+`v29 = __PAIR64__(nDz, (int)hNext)`, which makes the comparison read `dz > dz`
+and the branch dead. The port uses the reading that makes the branch live -
+`dz` strictly between the two heights - because IDA's CFG has the branch. The
+other reading (no refinement at all) is not excluded yet.
+
+`test_ballist` pins three solved arcs: 32 voxels flat gives pitch 0.31515 and
+denominator 23.9437733; 48 voxels flat gives 31.6606068; 16,16,12 gives
+19.3139508. Those numbers come from the search itself, so a change in the
+angle set or the constants moves them.

@@ -57,6 +57,7 @@ add_library(pufo_game STATIC
     game/pufo_ship.c
     game/pufo_strateg.c
     game/pufo_geoscape.c
+    game/pufo_ballist.c
 )
 target_include_directories(pufo_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_game PUBLIC pufo_options pufo_platform pufo_render pufo_dat pufo_util)
@@ -452,6 +453,17 @@ set_target_properties(test_geoscape PROPERTIES
 )
 add_test(NAME test_geoscape
     COMMAND test_geoscape
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Aim block, projectile arc and the throw solver.
+add_executable(test_ballist ${CMAKE_SOURCE_DIR}/tests/test_ballist.c)
+target_link_libraries(test_ballist PRIVATE pufo_options pufo_game pufo_util)
+set_target_properties(test_ballist PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_ballist
+    COMMAND test_ballist
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
