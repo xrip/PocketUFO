@@ -3673,3 +3673,48 @@ helpers, none ported: `Tact_TallyBattleStats`, `Tact_TallyUnitResults`,
 `Tact_ClearSoldierBattleFlags`, `Tact_MarkAllSoldiersSeen`, `Tact_GetCameraBounds`,
 `Tact_InitMission`, `Tact_Shutdown`. That is the mission-results subtree and is a
 separate piece of work from the kill path itself.
+
+### Port-ready brief: the small `Tact_CheckBattleEnd` helpers
+
+Sizes matter for ordering. `Tact_CheckBattleEnd @ 0x34fbc` (5748 bytes) calls ten
+helpers; six are small enough to take first, and two are mission lifecycle rather than
+battle results:
+
+| Helper | Address | Bytes |
+| --- | --- | --- |
+| `Tact_MarkAllSoldiersSeen` | `0x33bf0` | 144 |
+| `Tact_ScanVictoryTiles` | `0x33264` | 184 |
+| `Tact_GetCameraBounds` | `0x3331c` | 368 |
+| `Tact_TallyCraftRecovery` | `0x33d80` | 556 |
+| `Tact_TallyBattleStats` | `0x3348c` | 756 |
+| `Tact_TallyUnitResults` | `0x33e20` | 1136 |
+| `Tact_TallyItemRecovery` | — | 2100 |
+| `Tact_ClearSoldierBattleFlags` | — | 2268 |
+| `Tact_Shutdown` | — | 3788 |
+| `Tact_InitMission` | — | 4120 |
+
+**`Tact_MarkAllSoldiersSeen @ 0x33bf0`.** Walks `apSoldiers[0..nSoldierCount)`. For
+each unit with a non-zero `pLinked1040` and `uHp != 0`, increments the u16 at
+`pLinked1040 + 250` (a strategic-side "seen" counter) and clears `pLinked1040` back to
+0. Note it re-reads `nSoldierCount` from the global inside the loop.
+
+**`Tact_ScanVictoryTiles @ 0x33264`.** Only does anything when `nCraftTileA[0] != 0`
+and `nMissionType == MissionType_AlienBase`. It walks a 2x2 block of cells anchored at
+`nCraftTileA[4]` (x) and `nCraftTileA[8]` (y) in the 2400-per-layer cell table, and
+returns 1 as soon as any of the four cells has a zero dword at cell offset 12 — that is
+`pCeilSpr == NULL`, so "an alien-base tile is missing its ceiling" counts as victory.
+Otherwise 0.
+
+**`Tact_GetCameraBounds @ 0x3331c`.** Five outputs (x0, y0, x1, y1). Three cases:
+- `gap_6556[133] == 0`: full map, `(0, 0, 10*nMapDimX, 10*nMapDimY)`.
+- Alien base: a 10-tall band at the bottom, `y0 = 10*nMapDimY - 10`, `y1 = 10*nMapDimY`,
+  `x0 = 10*(nMapDimX - 3)`, `x1 = x0 + 2`.
+- Otherwise: `x0 = x1 = 10 * pad86309a[20]` and `y0 = y1 = 10 * pad86309a[21]` (a
+  degenerate point), then widened by the craft type of
+  `apCraft[gap_86272[19]]`: type 1 widens by `+20, +10`, type 0 and type 2 widen by
+  `+10, +20`, any other type leaves the point degenerate.
+
+None of the three is ported yet, and each needs Map fields the port has not named:
+`apSoldiers` / `nSoldierCount`, `Soldier.pLinked1040`, `nCraftTileA[0..8]`,
+`gap_6556[133]`, `pad86309a[20..21]`, `gap_86272[19]`, `apCraft->bCraftType`. Naming
+those is the first step of this subtree.
