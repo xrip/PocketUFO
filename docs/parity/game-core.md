@@ -3635,14 +3635,18 @@ layer that has a floor sprite, walking down with `--nZ` until `nZ < 0`. A large 
 does this four times, one per footprint cell, with object indices
 `g_aCorpseObjQuadrant[4*nUnitType + 1]`, `+2`, `+3` for the other three.
 
-**Fall damage.** `nFall = pCell->nZ - nZFound - 1` — the cell's own `nZ` field minus
-the array index found by the walk, not two array indices. Then
-`v52 = trunc_soft(nFall * auStat[1] * 0.74)` where 0.74 is the soft-FPU constant
-`1053609165` (0x3F3D70A7 as a single-precision bit pattern). Clamped to 0 when
-negative. If `uHp > v52`: `uHp -= v52` and `nUnk436 += v52`; otherwise `uHp` is set
-to the accumulated `nUnk436`. **This needs a disassembly check at 0x4ef20**: read
-straight from the pseudocode, `pCell->nZ` and `nZFound` look equal, which would make
-`nFall` always -1 and the damage always zero.
+**Fall damage.** Confirmed from the ARM at `0x4eefc` rather than from the pseudocode:
+`LDRB R3, [R3,#0x1C]` reads the found cell's own `nZ` byte, `RSB R3, R8, R3` subtracts
+R8 (the loop's layer index), then `SUB R0, R3, #1`. So `nFall = pCell->nZ - nZFound - 1`
+really does mix two different quantities: a stored cell attribute and an array index.
+They are equal only when the map stores `nZ` equal to the layer slot, and then `nFall`
+is -1, the product clamps to 0, and a kill does no fall damage at all. On tiles where
+the cell's stored `nZ` sits above the slot it was found in, the term is positive and
+the unit takes damage. Reproduce it literally; do not simplify it to a layer
+difference. Then `v52 = trunc_soft(nFall * auStat[1] * 0.74)` — `LDRH R0, [R5,#0xA4]`
+confirms `auStat[1]` — where 0.74 is the soft-FPU constant `1053609165` (0x3F3D70A7 as
+a single-precision bit pattern). Clamped to 0 when negative. If `uHp > v52`:
+`uHp -= v52` and `nUnk436 += v52`; otherwise `uHp` is set to the accumulated `nUnk436`.
 
 **Inventory.** `Unit_DropAllItemsToCell` runs only when the unit is not large and
 `nUnitType != 14` — so a chryssalid transform keeps its gear.
