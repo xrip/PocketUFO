@@ -2117,12 +2117,26 @@ the horizontal distance, and it is accepted when the trajectory height at that
 distance lands in `[dz, dz+1]`. When two consecutive angles straddle `dz` the
 search restarts with `base = that angle` and `step *= 0.05`.
 
-One detail needs a disassembly check before it is called settled: Hex-Rays
-renders both straddle conditions with `SLODWORD(v29)`, and it also sets
-`v29 = __PAIR64__(nDz, (int)hNext)`, which makes the comparison read `dz > dz`
-and the branch dead. The port uses the reading that makes the branch live -
-`dz` strictly between the two heights - because IDA's CFG has the branch. The
-other reading (no refinement at all) is not excluded yet.
+The straddle conditions were settled against the disassembly, because
+Hex-Rays renders them wrongly. It sets
+`v29 = __PAIR64__(nDz, (int)hNext)` and then compares against
+`SLODWORD(v29)`, which reads as `dz > dz` and makes both refinement branches
+look dead. The ARM at `0x318f8..0x31928` is unambiguous (`R1` = dz, `R8` =
+height at the current angle, `R0` = height at the next angle, `R3` = dz + 1):
+
+```
+0x318f8  CMP R1, R8   BGT  0x3191C     ; dz > h0  -> second test
+0x31904  CMP R8, R3   BLE  0x319D4     ; h0 <= dz+1 -> leave the loop
+0x3190c  CMP R1, R8   BGE  0x3191C     ; dz >= h0 -> second test
+0x31914  CMP R1, R0   BGT  0x31984     ; dz > h1  -> refine
+0x3191c  CMP R1, R0   BGE  0x3192C     ; dz >= h1 -> continue
+0x31924  CMP R1, R8   BGT  0x31984     ; dz > h0  -> refine
+```
+
+So both guards are live and compare dz against the two heights, exactly as the
+port has them. `0x31394 CMP R7, #0x13 / BGE 0x319D4` confirms the 19-iteration
+bound, and `0x3161c MOVS R3, R0 / BEQ 0x3192C` confirms that a failed range
+test skips the height test rather than ending the search.
 
 `test_ballist` pins three solved arcs: 32 voxels flat gives pitch 0.31515 and
 denominator 23.9437733; 48 voxels flat gives 31.6606068; 16,16,12 gives
