@@ -1312,3 +1312,17 @@ void Unit_DropAllItemsToCell(Soldier *pUnit)
         }
     }
 }
+
+/* UnitList_ForEachRefresh @ 0x22b54. Refresh the visibility of every Xcom unit.
+ * The original threads the last Unit_UpdateVisibility result through as its own
+ * return value; no caller uses it.
+ *
+ * The original walks pMap->apXcomUnits / nXcomUnitCount. The port passes the same
+ * two through UnitRosters, which is already the roster pair every other unit-list
+ * walk uses. */
+void UnitList_ForEachRefresh(UnitRosters *pRosters, VisCtx *pCtx)
+{
+    for (i32 n = 0; n < pRosters->nXcom; ++n) {
+        Unit_UpdateVisibility(pRosters->apXcom[n], pCtx);
+    }
+}

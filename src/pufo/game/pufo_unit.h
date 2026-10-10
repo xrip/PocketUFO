@@ -554,6 +554,10 @@ typedef struct VisCtx {
 
 i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx);
 
+/* UnitList_ForEachRefresh @ 0x22b54. Refresh visibility for every Xcom unit.
+ * Called at the end of Tact_KillUnit when the death message path is armed. */
+void UnitList_ForEachRefresh(struct UnitRosters *pRosters, VisCtx *pCtx);
+
 /* Unit_bTryOpportunityFire @ 0x47c38. Offer one opportunity shot. See the
  * comment on the definition for the gate chain and for the quirk that a target
  * which turns out not to be spotted still reports success. */

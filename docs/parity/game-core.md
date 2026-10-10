@@ -3569,3 +3569,103 @@ All callees of `Tact_KillUnit @ 0x4e430` except `Tact_CheckBattleEnd` are now po
 `Unit_ApplyCellDamage`, `Unit_bIsLarge`, `Tact_RemoveUnitFromSideLists`,
 `Unit_UpdateAnimPose`, `Unit_ResetBattleState`, `Unit_PlaceOnMap`,
 `Combat_ResolveShot`, and `Unit_DropAllItemsToCell`.
+
+### Ported: `UnitList_ForEachRefresh @ 0x22b54`
+
+Port: `UnitList_ForEachRefresh(struct UnitRosters *, VisCtx *)` in
+`src/pufo/game/pufo_unit.c`. It is a seven-instruction loop: for each entry of
+`apXcomUnits[0..nXcomUnitCount)` call `Unit_UpdateVisibility`. The original threads
+the last result through as its own return value; no caller uses it, so the port
+returns void. It reuses `UnitRosters` rather than inventing a second roster type.
+
+### Port-ready brief: `Tact_KillUnit @ 0x4e430`
+
+All callees are ported except `Tact_CheckBattleEnd @ 0x34fbc`. The three data tables
+it reads are now named in the IDB and are read nowhere else in the binary.
+
+**Guard and counters.** Returns immediately when `bFlags & 0x20` is already set.
+Clears `nSpottedCount` and `nMultiTarget`. When `nUnitType > 8 && nUnitType != 16
+&& nUnitType != 17 && uHp == 0` it increments a dword counter at
+`Map.gap_TrajRest[49940]`.
+
+**Death sound.** Types 0..2 use `g_aDeathSoundByType[type]` (all three are 0, i.e.
+no sound). Types >= 3 use the fixed sample 22, as does any unit with `bFemale != 0`.
+
+**Chryssalid transform (`nUnitType == 22`).** A separate path that does not kill:
+remove from side lists, `bStatus = 1`, `nUnitType = 14`, copy ints from `0xB1370`
+into the unit, then load stats from the 32-byte-per-type template at
+`unk_A8F38 + 32 * 14` = `0xA8FD8`. That record reads:
+
+| Field | Value |
+| --- | --- |
+| `auStat[0]`, `uTu` | 80 |
+| `auStat[9]` | 60 |
+| `auStat[1]` | 100 + rand(20) - 10 |
+| `auStat[2]` | 40 + rand(20) - 10 |
+| `auStat[3]` | 110 + rand(20) - 10 |
+| `auStat[8]` | 60 + rand(20) - 10 |
+| `auStat[4]` | template words 14 then 15, both 0 (the second write wins) |
+| `bUnk248` | byte 16 = 15 |
+| `abReady252[0..4]` | bytes 18,20,22,24,26 = 5,5,20,5,5 |
+
+Then `Unit_ResetBattleState`, `bUnk422 = 0`, and `Unit_PlaceOnMap` at the cell saved
+in `Map.apMultiTargets[0]`.
+
+**Death path.** `bFlags |= 0x20`, `Unit_UpdateAnimPose`, `Tact_RemoveUnitFromSideLists`.
+
+**Morale shock**, and it is inverted by unit type:
+
+| Dead unit | Enemy roster | Xcom roster |
+| --- | --- | --- |
+| `nUnitType <= 8` | `morale - 1000/(3*auStat[2])`, clamp to 100 | `morale - 1000/(3*auStat[2])`, clamp to 0 |
+| `nUnitType > 8`, not 16 or 17 | `morale - 500/(3*auStat[2])`, clamp to 0 | `morale - 1000/(3*auStat[2]) + 34`, clamp to 100 |
+| 16 or 17 | none | none |
+
+`bMorale` is a byte, and the clamps write `LOBYTE(v) = 0` / `LOBYTE(v) = 100`.
+
+**Corpse placement.** `bStatus = 4`, own cell occupant cleared; a large unit also
+clears `(x+1)`, `(y+1)` and `(x+1,y+1)`. If the dead unit is `Map.pSelUnit`, the
+selection becomes `apXcomUnits[0]`. The unit is then appended to the **civilian**
+list (`apCivilians[nCivilianUnitCount++]`), which is where corpses live.
+
+A `TactItem` is allocated (0x18 bytes), `TactItem_ctor`'d, and its `pObj` set to
+`apObjects[g_aCorpseObjByType[nUnitType]]`. `nUnk16` is set to the unit pointer only
+when `uHp != 0`. The item is inserted into the first cell at or below the unit's
+layer that has a floor sprite, walking down with `--nZ` until `nZ < 0`. A large unit
+does this four times, one per footprint cell, with object indices
+`g_aCorpseObjQuadrant[4*nUnitType + 1]`, `+2`, `+3` for the other three.
+
+**Fall damage.** `nFall = pCell->nZ - nZFound - 1` — the cell's own `nZ` field minus
+the array index found by the walk, not two array indices. Then
+`v52 = trunc_soft(nFall * auStat[1] * 0.74)` where 0.74 is the soft-FPU constant
+`1053609165` (0x3F3D70A7 as a single-precision bit pattern). Clamped to 0 when
+negative. If `uHp > v52`: `uHp -= v52` and `nUnk436 += v52`; otherwise `uHp` is set
+to the accumulated `nUnk436`. **This needs a disassembly check at 0x4ef20**: read
+straight from the pseudocode, `pCell->nZ` and `nZFound` look equal, which would make
+`nFall` always -1 and the damage always zero.
+
+**Inventory.** `Unit_DropAllItemsToCell` runs only when the unit is not large and
+`nUnitType != 14` — so a chryssalid transform keeps its gear.
+
+**After the kill.** `Tact_CheckBattleEnd(pMap, 0)`. Then, unless `bGameTickHold` or
+`unk_138E74` is set: a unit with `bUnk1037` already set skips the message; otherwise
+types > 8 get `bUnk1037 = 1` with no message, and smaller units push a status message
+built from `szName` plus a text record — `unk_B38D0[3075]` for a living male,
+`unk_B38D0[8610]` / `unk_B38D0[8405]` for a dead female / male under type 4,
+`unk_B38D0[218735]` for a dead unit of type 4..8, or the fixed string at `unk_B45A0`
+when alive and female.
+
+**Type 18 explosion.** When `nUnitType == 18` and `rand(10) != 0`: set
+`nFireOrigX/Y` to the cell, `Combat_ResolveShot(map, x, y, z, 0, apObjects[17])`, then
+`Unit_ApplyCellDamage` with power 255 on the cell and its three large-unit neighbours.
+
+**Spotted-flag sweep.** When `apUiSlotsA[2] != 0`: clamp a ±8 tile window to
+`10*nMapDimX` / `10*nMapDimY` and clear bit 0 of `MapCell.bFlags44` (byte 44) for
+every cell in the window across all four layers, then `UnitList_ForEachRefresh`.
+
+**Remaining dependency.** `Tact_CheckBattleEnd @ 0x34fbc` (5748 bytes) needs ten
+helpers, none ported: `Tact_TallyBattleStats`, `Tact_TallyUnitResults`,
+`Tact_TallyItemRecovery`, `Tact_TallyCraftRecovery`, `Tact_ScanVictoryTiles`,
+`Tact_ClearSoldierBattleFlags`, `Tact_MarkAllSoldiersSeen`, `Tact_GetCameraBounds`,
+`Tact_InitMission`, `Tact_Shutdown`. That is the mission-results subtree and is a
+separate piece of work from the kill path itself.
