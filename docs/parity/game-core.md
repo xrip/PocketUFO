@@ -2473,3 +2473,28 @@ Data dependencies, both still open:
 - `aFacTypeTable @ 0x15ef08` is **runtime-built**: the image is all 0xFF there,
   like `dword_B2278`. Its builder has to be found before this function can be
   ported. Records are 34 bytes; only byte +1 is read here.
+
+## Link found: aFacTypeTable is the in-memory research table
+
+`aFacTypeTable @ 0x15ef08` is the same table the save layer already models as
+`ResearchTopic` (144 records of 34 bytes, `PUFO_RESEARCH_TOPIC_COUNT`). Its
+cross-references are `Save_WriteResearch @ 0x3f558`, `Save_ReadResearch @ 0x406e8`,
+`LoadGame @ 0x44bbc`, `Geoscape_TickHourly @ 0x5d1bc`, `Tact_OpenLeftHandMenu @ 0x17030`,
+`Tact_OpenRightHandMenu @ 0x17148`, and `Unit_SelectBestFireMode @ 0x478e4`.
+
+So the firing gate in `Unit_SelectBestFireMode`,
+
+```
+aFacTypeTable[3 + 34 * byte_AA968[weapon.uSortKey]] == 0   -> this hand may not fire
+```
+
+is a research-progress check: a weapon cannot be fired unless its research topic
+says so. `byte_AA968` is the weapon-sort-key to research-topic index map.
+
+One thing to pin down before this is ported: the port's `ResearchTopic` field
+order was taken from the **on-disk** write order, and the save header says plainly
+that the on-disk order is not the in-memory order. Byte +3 of the in-memory record
+is what the firing gate reads, so the in-memory layout has to be recovered from
+IDB typing or from the access patterns in `Geoscape_TickHourly` and the hand menus
+before the gate can be reproduced. Guessing it would make every weapon either
+fireable or not fireable.
