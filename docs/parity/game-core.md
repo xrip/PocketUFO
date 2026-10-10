@@ -3867,3 +3867,24 @@ Not yet resolved, and the reason it is not ported: the output slots render as
 of the "inputs" is likely another constant pair the decompiler split. The real Soldier
 offsets need the ARM at `0x25eec..0x2608c` before any struct fields can be named. Guessing
 them here would put invented offsets into a shared struct.
+
+### `Unit_RollChance @ 0x25e6c`: offsets resolved from ARM
+
+The `pUnit[78].apSpotted[40]` and `pUnit[82].apSpotted[10..12]` renderings are wrong in
+the same way the chryssalid copy was: the base register is **pCtxBase (R4 = 0x1139B8)**,
+not the unit.
+
+```
+MOV  R3, #0x14000 ; ORR R3, R3, #0x80   ; R3 = 0x14080
+LDR  R0, [R1,R3]!                        ; Map + 0x14080
+LDR  R1, [R1,#4]                         ; Map + 0x14084
+LDR  R2, =0x147AE148 ; LDR R3, =0x3FD147AE   ; the double 0.22
+...
+MOV  R3, #0x15058 ; STR R0, [R4,R3]      ; Map + 0x15058
+```
+
+So the magnitude input is the aim-block arc-bound double at `Map + 0x14080 / 0x14084` —
+the same pair `Tact_TraceProjectileArc` uses — and the displacement triple is written to
+`Map + 0x15058` and its two neighbours. `Unit_RollChance` is therefore a context-level
+scatter generator, not a per-unit one, and it is the function that fills the aim block
+after a failed chance roll.
