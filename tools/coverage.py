@@ -38,6 +38,14 @@ def load_functions():
     return rows
 
 
+def strip_c_comments(text):
+    """Drop /* */ and // comments. Without this, a function name merely mentioned in
+    a source comment counts as recreated, which inflates the coverage number."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"//[^\n]*", " ", text)
+    return text
+
+
 def load_source_names():
     """Every identifier defined or declared in src/pufo."""
     names = set()
@@ -46,7 +54,7 @@ def load_source_names():
             if not name.endswith((".c", ".h")):
                 continue
             with open(os.path.join(dirpath, name), encoding="utf-8", errors="replace") as f:
-                for line in f:
+                for line in strip_c_comments(f.read()).split("\n"):
                     for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", line):
                         names.add(word)
     return names
