@@ -2498,3 +2498,30 @@ is what the firing gate reads, so the in-memory layout has to be recovered from
 IDB typing or from the access patterns in `Geoscape_TickHourly` and the hand menus
 before the gate can be reproduced. Guessing it would make every weapon either
 fireable or not fireable.
+
+## Correction and addition: the research gate offset, and the action cost table
+
+The gate offset written above as `aFacTypeTable[3 + 34 * idx]` is off by one. Both
+readers spell it `*((_BYTE *)&aFacTypeTable[3] + 34 * idx + 1)`, and `aFacTypeTable`
+is a byte array, so the gate byte is at in-memory research-record offset **4**.
+
+`Tact_OpenLeftHandMenu @ 0x17030` and its mirror `Tact_OpenRightHandMenu @ 0x17148`
+confirm the gate and add two facts:
+
+- The gate also requires `uSortKey != 24 || Soldier.bUnk422 != 0`. Sort key 24 is a
+  weapon only units carrying that flag may use.
+- After the gate it calls `Ui_FillActionCosts @ 0x26104`, then scans the twelve mode
+  slots that `Unit_SelectBestFireMode` writes - `nTrajFront0[1088 + 4*k]` (the
+  per-mode accuracy term) and `nTrajFront0[1040 + 4*k]` (the TU cost) - for the
+  first `k` in 0..11 with a non-zero accuracy term and an affordable cost. If none
+  qualifies it pushes text record 205 and stops. Otherwise `nActionMode = 12` and
+  `nUiScreen = 3`.
+
+So `pCtxBase.nTrajFront0[1040..1135]` is a twelve-entry per-mode action cost table
+shared by the opportunity-fire path and the hand menus, and `Ui_FillActionCosts` is
+what fills it for the selected weapon.
+
+The in-memory layout question stays open: the port's `ResearchTopic` field order
+comes from the on-disk write order, and offset 4 in memory is not necessarily the
+same field. That has to be settled from the IDB typing of `aFacTypeTable` before
+the gate is ported.
