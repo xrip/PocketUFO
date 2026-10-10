@@ -2205,3 +2205,43 @@ Behaviour groups, in the order the original applies them:
 
 Globals it uses: `g_pCurCell` @ 0x113998 (the original re-reads the cell through
 this global after every helper call), `pCtxBase` @ 0x1139b8.
+
+## Helper briefs for the splash port (read once, port with it)
+
+`MapCell_HasOccupant @ 0x5487c` is already ported (`pufo_mapcell.c`): occupant
+counts only when `pUnit != NULL` and `Soldier.bStatus < 3`.
+
+`Unit_GetExtraSpr @ 0x2e59c` - `(unused, Soldier *pUnit)`. Returns NULL unless
+the low byte of `multiOrAnim.anim.uFacingResetH` is non-zero, in which case it
+returns `Font_GetSprByIndex(fontSys, fontSys[uExtraSprBase + 29] + that byte)`.
+So a unit's "extra sprite" is a font-table lookup keyed by two unit fields.
+
+`Unit_EnqueueIfApSpent @ 0x4a3d4` - `(Soldier *pUnit, u8 nArg)`. When
+`uTuSpent >= uHp` and bit 5 of `bFlags` is clear: calls
+`TactState_EnqueueDeathFlash @ 0x4a29c` unless the unit is large with non-zero
+`uHp`, then if the tact queue global `unk_157198` has `bQueueActive == 0` calls
+`TactState_KickQueue @ 0x4f334`.
+
+`Unit_ApplyCellDamage @ 0x2e5d0` - walks the cell's TactItem list
+(`MapCell + 52` = `pItemList`, `TactItem.pNext`), and for every item whose
+`nUnk16` (a Soldier pointer at `TactItem + 16`) is set and whose `bHitFlag`
+(`Soldier + 433`) is 0:
+
+- Picks a readiness byte from the *weapon* record (`v4`, the caller's context
+  pointer) using two selector bytes: at `+175` 1 -> `abReady[254]`, 2 ->
+  `abReady[252]`; otherwise at `+196` 2 -> `abReady[253]`, 3 -> `abReady[255]`,
+  else `abReady[256]`. Then `scale = 1 - readiness / 100`.
+- `damage = nArg - Soldier.bUnk248 * scale`, minus `Game_RandU16(damage / 4)`,
+  clamped at 0.
+- Armour `nArmorPoints` absorbs it (clamped to 0, overflow carried), the rest
+  comes off `uHp` and is added to `nUnk436`, or `uHp` goes to 0.
+- Stun identical to the splash path: `damage >= auStat[1] >> 1` and not large ->
+  `bKneelOrPrimed += (damage - (auStat[1] >> 1)) / 10 + 1`.
+- Sets `Soldier + 433 = 1`.
+- After each item: if the item has no unit (`nUnk16 == 0`) or that unit's
+  `uHp == 0` (`Soldier + 10`), and `nArg > 40`, the item is dropped with
+  `MapCell_ListRemove @ 0x54b58` and the walk restarts from the new list head.
+
+The stun/damage/armour block is the same code as the slot-3 path in
+`Combat_SplashDamageCells`; the port should share one helper rather than
+duplicate it.
