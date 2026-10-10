@@ -430,4 +430,34 @@ typedef MapCellLookup UnitCellLookup;
 void Unit_PlaceOnMap(Soldier *pUnit, i32 nX, i32 nY, i32 nLayer,
                      UnitCellLookup pfnLookup, void *pUser);
 
+/* Unit_ScanVisibleUnits @ 0x4834c.
+ *
+ * For every unit on either roster, trace a line of sight from the viewer's cell
+ * centre to the other unit's cell centre and, on success, spot that cell. The
+ * centre height is `12 * nZ - ceilSpr->nObjParam + 8`, the nObjParam term applying
+ * only when the cell has a ceiling sprite. Only units within 15 cells
+ * (trunc(hypot) of the cell difference) are considered.
+ *
+ * A unit is considered when its bStatus differs from the viewer's, or when its
+ * nUnitType is 16 or 17 even on the same side. Those two type ids are the only
+ * evidence of what they mean; they are recorded, not interpreted.
+ *
+ * The original publishes the target through two globals while it traces:
+ * pCtxBase.pSelUnit is replaced by the viewer and pCtxBase.anActionPhaseSave0[120]
+ * by the target, and both are restored. ppScratchUnit stands in for the second.
+ */
+#define PUFO_SCAN_RANGE_CELLS 15
+#define PUFO_UNIT_TYPE_SPOTTED_A 16
+#define PUFO_UNIT_TYPE_SPOTTED_B 17
+
+/* UnitRosters is defined in game/pufo_combat.h and LosTables in game/pufo_los.h;
+ * only pointers are needed here. */
+struct UnitRosters;
+struct LosTables;
+
+i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
+                          MapCellLookup pfnLookup, void *pUser,
+                          SpotCtx *pSpot, const struct UnitRosters *pRosters,
+                          Soldier **ppScratchUnit);
+
 #endif /* PUFO_UNIT_H */

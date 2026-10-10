@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "game/pufo_los.h"
+#include "game/pufo_combat.h"   /* UnitRosters */
 #include "game/pufo_boot.h"   /* the extracted name tables, and TextTables_* */
 #include "game/pufo_font.h"   /* Font_GetSprByIndex / g_fontSys */
 #include "game/pufo_path.h"   /* g_aStepDir */
@@ -776,4 +778,66 @@ u16 Unit_RecalcInventoryStat(Soldier *pUnit, const InvStatHooks *pHooks)
         }
     }
     return pUnit->uInvBurden;
+}
+
+/* Cell-centre height used at both ends of a sight trace. */
+static i32 Unit_LosZ(MapCell *pCell)
+{
+    i32 nZ = 12 * (i32)pCell->nZ;
+
+    if (pCell->pCeilSpr != NULL) {
+        nZ -= pCell->pCeilSpr->iCeilParam;
+    }
+    return nZ + 8;
+}
+
+i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
+                          MapCellLookup pfnLookup, void *pUser,
+                          SpotCtx *pSpot, const struct UnitRosters *pRosters,
+                          Soldier **ppScratchUnit)
+{
+    i32 nTotal = pRosters->nXcom + pRosters->nEnemy;
+    Soldier *pSelSave = pSpot->pSelUnit;
+    MapCell *pViewCell = pViewer->pCell;
+
+    if (pSpot->pnTrajFront1036 != NULL) {
+        *pSpot->pnTrajFront1036 = 0;
+    }
+    pViewer->nMultiTarget = 0;
+    pSpot->pSelUnit = pViewer;
+
+    for (i32 i = 0; i < nTotal; ++i) {
+        Soldier *pOther = (i < pRosters->nXcom)
+                        ? pRosters->apXcom[i]
+                        : pRosters->apEnemy[i - pRosters->nXcom];
+        MapCell *pOtherCell;
+        i32 nDx, nDy;
+
+        if (pOther->bStatus == pViewer->bStatus
+            && pOther->nUnitType != PUFO_UNIT_TYPE_SPOTTED_A
+            && pOther->nUnitType != PUFO_UNIT_TYPE_SPOTTED_B) {
+            continue;
+        }
+
+        pOtherCell = pOther->pCell;
+        nDx = (i32)pViewCell->nX - (i32)pOtherCell->nX;
+        nDy = (i32)pViewCell->nY - (i32)pOtherCell->nY;
+        if ((i32)sqrt((double)nDx * nDx + (double)nDy * nDy) > PUFO_SCAN_RANGE_CELLS) {
+            continue;
+        }
+
+        *ppScratchUnit = pOther;
+        if (Map_TraceLos(pTables, pfnLookup, pUser,
+                         16 * (i32)pViewCell->nX + 8, 16 * (i32)pViewCell->nY + 8,
+                         Unit_LosZ(pViewCell),
+                         16 * (i32)pOtherCell->nX + 8, 16 * (i32)pOtherCell->nY + 8,
+                         Unit_LosZ(pOtherCell), NULL, NULL)) {
+            Unit_SpotCellOccupant(pViewer, pOtherCell, pSpot);
+        }
+        *ppScratchUnit = NULL;
+    }
+
+    pSpot->pSelUnit = pSelSave;
+    *ppScratchUnit = NULL;
+    return 0;
 }
