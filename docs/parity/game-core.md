@@ -2365,3 +2365,45 @@ needs `Unit_bFacingAngleDuel` (done), `Unit_SelectBestFireMode @ 0x478e4`, and
 facing ray fan over the cell grid using `dword_B2278` (step vectors) and
 `unk_15718C` (per-voxel wall masks), plus the desert/forest ceiling-id rules.
 Those two tables are the next thing to recover.
+
+## Brief: Tact_BuildVisRayTable @ 0x37ae4 (read, not yet ported)
+
+`dword_B2278` @ 0xb2278 is **not** a static table. It is built at runtime by
+`Tact_BuildVisRayTable`, which is its only writer. The image holds 4800 bytes of
+0xFF there. Layout: 120 entries of 10 dwords (40 bytes):
+
+```
+[0] dx, [1] dy, [2..9] one enable dword per facing (8 facings)
+```
+
+Construction, in order:
+
+1. Four blocks of 30 entries, at `0xb2278`, `0xb2728`, `0xb2bd8`, `0xb3088`
+   (1200 bytes each), laying out the boundary of the direction square [-15, 15]:
+   - block 0: `dx = i - 15` for i in 0..29, `dy = -15`
+   - block 1: `dx = 15`, `dy = i - 15`
+   - block 2: `dx = 15 - i`, `dy = 15`
+   - block 3: `dx = -15`, `dy = 15 - i`
+2. All 120 gate dwords cleared to 0.
+3. Eight passes, one per facing `g = 0..7`, set the gate to 1 on 31 consecutive
+   entries starting at entry `15 * g`. The index wraps past entry 119 back to the
+   start, so facing 7 covers entries 105..119 and 0..15. Each facing therefore
+   gets a 31-ray arc of the 120 boundary directions.
+4. For every entry whose gate for the current facing is set, the ray from (0,0)
+   to (dx, dy) is rasterised and written into `byte_AD720` @ 0xad720 as 4-byte
+   records at `4 * (15 * (31 * facing + rayIndex)) + 4 * |t|`, where `t` is the
+   running parameter along the dominant axis. The four bytes are the two
+   coordinates, a step-direction code (1 forward, 2 backward), and a
+   previous-value change code (0 unchanged, 1 increased, 2 decreased). A ray point
+   past the limit writes the terminator byte 96 instead.
+   The limit is the double pair (0, 1076756480).
+
+The rasteriser uses the fixed-point helper family `_itos @ 0xa6038`,
+`_divs @ 0xa607c`, `_muls @ 0xa603c`, `_stoi @ 0xa6040` - the slope is computed
+in fixed point and converted back per step. Those four helpers are the next thing
+to characterise before this function can be ported; guessing their scale factor
+would produce a subtly wrong visibility fan.
+
+`Unit_UpdateVisibility @ 0x48580` consumes this table, and `unk_15718C @ 0x15718c`
+(per-voxel wall masks, indexed `y%16 + 16 * spriteMaskId` as u16 rows) is its
+other data dependency. Both are still open.
