@@ -3823,3 +3823,24 @@ Two things worth knowing about the original that the tests pinned down:
 `Tact_CheckBattleEnd @ 0x34fbc` is reached through `KillHooks.pfnCheckBattleEnd`. That
 function is mostly debrief UI and belongs to the `ui-input` task, so the seam is
 explicit instead of a stub.
+
+### Readiness check: `Tact_ProcessMoveAction @ 0x4f3f0` (875 pseudocode lines)
+
+Not ported yet, but the dependency survey is done and it is nearly clear. Of its
+callees, only one is missing:
+
+| Callee | Address | Port status |
+| --- | --- | --- |
+| `Unit_RollChance` | `0x25e6c` (596 B) | **missing** |
+| `Tact_RefreshTeamVisibility` | `0x4f368` (136 B) | ported, `pufo_turn.c` |
+| `Map_FacingDelta` | `0x276a0` (80 B) | ported, `pufo_path.c` |
+| `Map_bFacingTurnPositive` | `0x27668` (56 B) | ported, `pufo_path.c` |
+| `Map_IsValidCell` | `0x2bc9c` (100 B) | ported, `pufo_mapcell.c` |
+| `MapCell_HasOccupant`, `MapCell_SetOccupant`, `MapCell_ListRemove` | — | ported |
+| `Tact_ComputeAimVector`, `Tact_TraceProjectileArc`, `Tact_SimulateThrowArc`, `Tact_ResolveThrowLanding` | — | ported |
+| `Unit_UpdateVisibility`, `Unit_UpdateAnimPose`, `Unit_RecalcInventoryStat`, `Unit_bIsLarge`, `Unit_bArmorTuWarn` | — | ported |
+| `StatusMsg_Push`, `Sound_Play` | — | ported |
+
+So the next step is small and well-defined: port `Unit_RollChance @ 0x25e6c`, then
+`Tact_ProcessMoveAction` itself. Behaviour has not been analysed yet — the callee list
+is the only claim made here.
