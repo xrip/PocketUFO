@@ -2623,9 +2623,10 @@ this cell, call the field-of-view refresh, and mark the record by writing 1 into
 the **high half** of dword 3 (`STRH R2, [R8, #0x4ECA]`). The last cell that gave
 way wins.
 
-`0x2f698` computes `(double)sprite[0x18] * 6.0` and stores it into a spilled slot
-the decompiler names `nRange`; no use of that slot survives in the function, so the
-port does not compute it. The 6.0 constant is the pair (0, 0x40180000).
+`0x2f698` computes `(double)sprite[0x18] * 2.5` (`muld` against the pair
+(0, 0x40040000)) and stores the integer result into the caller slot the
+decompiler names `nRange`. It is not dead: it is the range budget of the
+field-of-view pass that follows.
 
 ## Direct unit damage, 0x2f408..0x2f574
 
@@ -2744,7 +2745,7 @@ The three call sites in `Combat_ResolveShot`:
 |---|---|---|---|---|---|---|---|
 | `0x2f324` bFireType 2 | 0 | 0 | Map+0x14054 | Map+0x14058 | nFireTgtZ | `uFirePower` | 2 |
 | `0x2f3a4` bFireType 1 | 0 | 0 | Map+0x14054 | Map+0x14058 | nFireTgtZ | `uFirePower >> 1` | 1 |
-| `0x2f6e8` ceiling break | `20 - col` | `20 - row` | origin X | origin Y | nFireTgtZ | `(int)(sprite[0x18] * 6.0)` | unchanged |
+| `0x2f6e8` ceiling break | `20 - col` | `20 - row` | origin X | origin Y | nFireTgtZ | `(int)(sprite[0x18] * 2.5)` | unchanged |
 
 So the `nRange` value the ceiling-break path computes with the 6.0 constant is not
 dead at all: it is the range budget of the field-of-view pass that follows. The
@@ -2770,8 +2771,8 @@ earlier note in this file that called it a dead store is wrong.
 4. Fold the 31 x 31 field into the 41 x 41 x 4 hit window centred on
    `(a2 + 5, a3 + 5)`, clamping each u16 at 255.
 
-Constants: `1075838976` = 3.0, `1077149696` = 3.5, both as the high half of a
-double with a zero low half.
+Constants, as the high half of a double with a zero low half:
+`1074003968` = 2.5, `1075838976` = 8.0, `1077149696` = 20.0, `1076756480` = 15.0.
 
 `Map_ComputeFov` calls only `Map_IsValidCell` and `sqrt`, so it has no dependency
 on the unresolved Q15 helper family. It is portable as soon as the 7440-byte ray
@@ -2840,8 +2841,9 @@ For each of the 120 rays, for each of 8 groups (`v63 = 8` down to 1):
 - Walk-y branch: `other = stoi(divs(itos(v0), divs(itos(dy), itos(dx))))`, i.e.
   `other = v0 / (dy / dx)`, and `other = 0` when `dx == 0`. Store
   `step[0] = other`, `step[1] = v0`.
-- Stop the ray when `sqrt(other*other + v0*v0) > 4.0` (`_gtd` against
-  1076756480 << 32 = 4.0): write the sentinel **96** into `step[0]` and end the
+- Stop the ray when `sqrt(other*other + v0*v0) > 15.0` (`_gtd` against
+  1076756480 << 32 = 15.0, which is why the table has 15 steps): write the
+  sentinel **96** into `step[0]` and end the
   ray. That 96 is what `Map_ComputeFov` tests with `if (v17 == 96) break;`.
 - Bytes 2 and 3 of each step are the wall-A and wall-B flags: 0 when the
   perpendicular coordinate did not change from the previous step, 1 when it
