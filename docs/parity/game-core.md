@@ -2569,3 +2569,142 @@ is a type lie and it would silently allow out-of-range reads. The clean fix is t
 drop the stand-in and type `TactItem.pObj` as `ObjectRecFull *` everywhere. That
 touches `pufo_mapcell.h`, `pufo_unit.h`, `pufo_tactui.h` and their tests, so it is a
 separate change rather than something to slip into a combat port.
+
+# Combat_ResolveShot @ 0x2f12c is ported
+
+`src/pufo/game/pufo_combat.c`, `Combat_ResolveShot`, with 43 new checks in
+`tests/test_combat.c` (102 checks in that file, 35/35 tests pass, clean `/W4 /WX`).
+
+## What the function actually is
+
+Six arguments: `(pMap, nFireTgtX, nFireTgtY, nFireTgtZ, nFireArg5, pObj)`.
+`nFireArg5` is the **slot the shot landed in**, not an index of any kind:
+
+| nFireArg5 | meaning |
+|-----------|---------|
+| 0 | floor sprite |
+| 1 | wall A sprite |
+| 2 | wall B sprite |
+| 3 | ceiling sprite |
+| 4 | a unit |
+
+That explains the two branches the decompiler hides behind `if (nFireArg5 != 4)`:
+slot 4 with `bFireType == 0` is a direct hit on a unit and runs **no splash walk at
+all**; every other combination goes to the splash path.
+
+The impact record is written at `gap_TrajRest[4 * nFireArg5 + 13440]`. 13440 / 4 =
+3360 = `4 * (41 * 20 + 20)`, the centre cell of the window, so the shot writes
+`(row 20, col 20, slot nFireArg5)` dword 0... except that `4 * nFireArg5` is a
+**dword** offset, so it writes the whole record of that slot, and for slot 3 that
+record is dword 3, the unit-power half.
+
+## The ceiling-break sweep is only reachable through a ceiling hit
+
+`Combat_ResolveShot` zeroes the entire 41 x 41 x 4 window at `0x2f258` (6724
+iterations x 4 bytes = 26896 bytes) and then writes exactly one record. The sweep
+at `0x2f328` reads the **low half of dword 3** (`LDRH R2, [R8, #0x4EC8]`, i.e.
+`gap_TrajRest + 16 * index + 12`).
+
+So the sweep can only ever see a non-zero unit power when the shot landed in slot
+3, because that write *is* dword 3. A first version of the test seeded dword 3
+separately and passed for the wrong reason; the port's test now fires the sweep by
+shooting into the ceiling slot, which is the only way the original can.
+
+Sweep rule, from `0x2f628..0x2f6f8`:
+
+```
+unitPower != 0
+&& cell->pCeilSpr != NULL
+&& sprite[0x18] != 0                 /* newly named Mc1Rec.bCeilBreakable */
+&& unitPower + cell->bUnk19 > sprite[0x16]   /* bStrength */
+```
+then: promote the walk mode to 2 and `Sound_Play(2)` once, move the impact point to
+this cell, call the field-of-view refresh, and mark the record by writing 1 into
+the **high half** of dword 3 (`STRH R2, [R8, #0x4ECA]`). The last cell that gave
+way wins.
+
+`0x2f698` computes `(double)sprite[0x18] * 6.0` and stores it into a spilled slot
+the decompiler names `nRange`; no use of that slot survives in the function, so the
+port does not compute it. The 6.0 constant is the pair (0, 0x40180000).
+
+## Direct unit damage, 0x2f408..0x2f574
+
+```
+readiness = bReadySel == 0 ? unit->abReady252[4]
+          : bReadySel == 2 ? unit->abReady252[1]
+          : bReadySel == 3 ? unit->abReady252[3]
+          : <uninitialised stack slot>          /* the original's else arm */
+
+power  = weapon->uFirePower - (1 - readiness / 100) * unit->bUnk248
+damage = power - (u16)Game_RandU16(power / 2)      /* clamped at 0 */
+armour: nArmorPoints -= damage; overflow carries into damage, armour floors at 0
+health: damage > uHp ? uHp = 0 : (uHp -= damage, nUnk436 += damage)
+stun:   damage >= (auStat[1] >> 1) && !Unit_bIsLarge ->
+            bKneelOrPrimed += (damage - (auStat[1] >> 1)) / 10 + 1
+Unit_EnqueueIfApSpent(pUnit, 0)
+```
+
+`(1 - readiness / 100)` is integer division: a target at 100 or more readiness
+loses no armour to the hit, and anything below 100 loses all of `bUnk248`. There is
+no scale in between.
+
+`0x2f4d8` is `if (nArmorPoints > 150) nullsub_4();` - a call to an empty function.
+Noted, not reproduced.
+
+## Vertical splash propagation, 0x2f760..0x2fa4c
+
+Only when the walk mode is non-zero. First the window is copied to the second
+window at `gap_TrajRest + 26896` (`memmove`, 0x6910 bytes), then every layer above
+and below the impact layer is attenuated and splashed:
+
+```
+value = (u16)record - (mode == 2 ? 20 : 4)
+if (value > 0 && cell[processedLayer]->pFloorSpr) value -= pFloorSpr->bStrength
+value = max(value, 0)
+```
+
+Two quirks kept as the original has them:
+- cell validity is tested against the **shot's** layer, not the layer being
+  processed (`Map_IsValidCell(pMap, x, y, nFireTgtZ)` while the sprite lookup uses
+  `apCells[v44]`);
+- only the low half of each record is read and written, so the sweep's mark in the
+  high half survives the propagation.
+
+## Item drop pass, 0x2fa9c..0x2fc14
+
+Runs after the splash, over layers 1..3 of the whole grid (`10 * nMapDimX` by
+`10 * nMapDimY`). A cell with items and no floor sprite drops every item to the
+**highest layer below that has a floor sprite** - the loop breaks on
+`**(v70 + 21710) != 0`, and `MapCell + 0` is `pFloorSpr`. Items are moved one at a
+time with `MapCell_ListRemove` then `MapCell_ListInsertByPri`, which keeps the
+list ordered by `ObjectRecFull.bListPri`.
+
+## `Map_ComputeFov @ 0x2deac` argument evidence (still unported)
+
+Hex-Rays renders both call sites as one-argument calls, but the registers say
+otherwise:
+
+| site | R0 | R1 | R2 | R3 |
+|------|----|----|----|----|
+| `0x2f324` area fire | pMap | 0 | 0 | `uFirePower` (not reloaded after the store to the `nRange` slot) |
+| `0x2f6e8` ceiling break | pMap | `20 - column` | the row counter | origin X |
+
+The port calls a `ShotHooks.pfnComputeFov` hook at both points and leaves the
+argument list to the real function when it is ported.
+
+## `off_AA040 @ 0xaa040` is the shot sound table
+
+360 bytes bounded by the next symbol at `0xaa168`, so 180 u16 entries, indexed by
+`ObjectRecFull.uSortKey`. Dumped into `g_aShotSound`. Values used: 1, 2, 4, 9, 10,
+18, 21.
+
+## Deviations recorded
+
+1. `off_AA040` is indexed with no bound check in the original; the port clamps
+   `uSortKey >= 180` to silence.
+2. `bReadySel` values other than 0, 2, 3 make the original read an uninitialised
+   stack slot; the port uses 0.
+3. The drop pass indexes layer **-1** when no layer below has a floor sprite
+   (`SUBS R0, R0, #1 / BPL` lets the counter fall past zero, and the target is
+   then `apCells[-1][y][x]`). The port leaves the items where they are.
+4. `Map_ComputeFov` and the `unk_157198` writes are hooks, not ports.
