@@ -504,6 +504,221 @@ static void TestSelectFireMode(void)
     CheckEqI32("right hand cost written", g_costs.nTuCost[0], 30);
 }
 
+
+/* --- Combat_ResolveShot @ 0x2f12c -------------------------------------------- */
+
+static Soldier g_aRoster[1];
+static Soldier *g_apRoster[1];
+static u32 g_aSave[PUFO_SPLASH_DWORDS];
+static ShotOutcome g_out;
+static i32 g_nFov, g_nArea;
+static Mc1Rec g_ceil, g_floor;
+static TactItem g_dropItem;
+static ObjectRecFull g_dropObj;
+
+static void HookFov(void *pUser)  { (void)pUser;  ++g_nFov; }
+static void HookArea(void *pUser) { (void)pUser;  ++g_nArea; }
+
+static ShotHooks g_hooks = { HookFov, HookArea, NULL };
+static UnitRosters g_rost;
+
+static void ResolveSetup(void)
+{
+    Reset();
+    g_nFov = 0;
+    g_nArea = 0;
+    memset(&g_ceil, 0, sizeof(g_ceil));
+    memset(&g_floor, 0, sizeof(g_floor));
+    memset(&g_out, 0, sizeof(g_out));
+    memset(g_aSave, 0xAA, sizeof(g_aSave));
+    memset(g_aRoster, 0, sizeof(g_aRoster));
+    g_apRoster[0] = &g_aRoster[0];
+    g_rost.apXcom = g_apRoster;
+    g_rost.nXcom = 1;
+    g_rost.apEnemy = NULL;
+    g_rost.nEnemy = 0;
+    g_rost.apCiv = NULL;
+    g_rost.nCiv = 0;
+    g_c.nShotOriginX = IMPACT_X;
+    g_c.nShotOriginY = IMPACT_Y;
+    /* A target that is not knocked down by the test hits unless the test says
+     * otherwise, and never loses armour unless the test says so. */
+    Impact()->pUnit = &g_unit;
+    g_unit.uHp = 1000;
+    g_unit.auStat[1] = 4000;
+    g_unit.abReady252[4] = 100;
+    g_shot.bFireType = 0;
+    g_shot.bReadySel = 0;
+    g_shot.uFirePower = 40;
+}
+
+static void TestResolveShot(void)
+{
+    printf("Combat_ResolveShot: direct unit hit\n");
+    ResolveSetup();
+    g_aRoster[0].gap_433 = 0x7F;
+    g_unit.uHp = 100;
+    g_shot.uFirePower = 40;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    Check("the roster hit flag is cleared before the shot", g_aRoster[0].gap_433 == 0);
+    Check("damage is fire power less a random cut of up to half",
+          g_out.nDamage >= 20 && g_out.nDamage <= 40);
+    CheckEqI32("health drops by exactly the damage applied", g_unit.uHp,
+               (u16)(100 - g_out.nDamage));
+    CheckEqI32("the damage-taken counter records the same amount", g_unit.nUnk436,
+               g_out.nDamage);
+    CheckEqI32("a direct hit runs no splash walk", g_out.eMode, SPLASH_MODE_NORMAL);
+    CheckEqI32("a direct hit refreshes no field of view", g_out.nFovCalls, 0);
+    CheckEqI32("a direct hit reports no area fire", g_nArea, 0);
+    Check("the weapon is published into the map fire context",
+          g_c.pCtxWeapon == &g_shot);
+
+    printf("armour soaks the hit first\n");
+    ResolveSetup();
+    g_unit.uHp = 100;
+    g_unit.nArmorPoints = 50;
+    g_shot.uFirePower = 2;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    CheckEqI32("no health damage when armour covers it", g_out.nDamage, 0);
+    CheckEqI32("health untouched", g_unit.uHp, 100);
+    Check("armour absorbed the hit",
+          g_unit.nArmorPoints == 48 || g_unit.nArmorPoints == 49);
+
+    printf("armour overflow carries into health\n");
+    ResolveSetup();
+    g_unit.uHp = 100;
+    g_unit.nArmorPoints = 1;
+    g_shot.uFirePower = 40;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    CheckEqI32("armour is emptied", g_unit.nArmorPoints, 0);
+    Check("the remainder hits health",
+          g_unit.uHp == (u16)(100 - g_out.nDamage) && g_out.nDamage >= 19);
+
+    printf("bReadySel picks the readiness byte\n");
+    ResolveSetup();
+    g_unit.bUnk248 = 10;
+    g_shot.uFirePower = 100;
+    g_unit.abReady252[4] = 100;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    Check("readiness 100 subtracts no armour", g_out.nDamage >= 50);
+    ResolveSetup();
+    g_unit.bUnk248 = 10;
+    g_shot.uFirePower = 100;
+    g_unit.abReady252[4] = 50;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X,
+                       IMPACT_Y, IMPACT_LAYER, 4, &g_shot, g_aHits, NULL, &g_out);
+    Check("readiness below 100 subtracts bUnk248 in full",
+          g_out.nDamage >= 45 && g_out.nDamage <= 90);
+    ResolveSetup();
+    g_unit.bUnk248 = 10;
+    g_shot.uFirePower = 100;
+    g_shot.bReadySel = 2;
+    g_unit.abReady252[4] = 0;
+    g_unit.abReady252[1] = 100;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    Check("bReadySel 2 reads abReady252[1]", g_out.nDamage >= 50);
+
+    printf("a strong hit knocks the unit down\n");
+    ResolveSetup();
+    g_unit.auStat[1] = 20;   /* half is 10, well under the damage */
+    g_shot.uFirePower = 100;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       4, &g_shot, g_aHits, NULL, &g_out);
+    {
+        i32 nWant = Unit_bIsLarge(&g_unit)
+                        ? 0 : (g_out.nDamage - (g_unit.auStat[1] >> 1)) / 10 + 1;
+        CheckEqI32("bKneelOrPrimed grows by (damage - half auStat[1]) / 10 + 1",
+                   g_unit.bKneelOrPrimed, (u8)nWant);
+    }
+
+    printf("Combat_ResolveShot: splash path\n");
+    ResolveSetup();
+    Impact()->pUnit = NULL;
+    g_floor.bStrength = 30;
+    Impact()->pFloorSpr = &g_floor;
+    g_shot.uFirePower = 60;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       0, &g_shot, g_aHits, NULL, &g_out);
+    CheckEqI32("the impact record holds the fire power",
+               (i32)g_aHits[Combat_HitIndex(20, 20, 0)], 60);
+    CheckEqI32("the floor slot damage counter grows by power - 1.5 * strength",
+               g_aCells[IMPACT_LAYER][IMPACT_Y][IMPACT_X].bUnk16, 15);
+    CheckEqI32("mode stays normal", g_out.eMode, SPLASH_MODE_NORMAL);
+    CheckEqI32("no field-of-view refresh without a ceiling break", g_out.nFovCalls, 0);
+    CheckEqI32("no area fire reported", g_nArea, 0);
+    CheckEqI32("the window is not copied when no copy is asked for",
+               (i32)g_aSave[0], (i32)0xAAAAAAAAu);
+
+    printf("ceiling break\n");
+    ResolveSetup();
+    Impact()->pUnit = NULL;
+    g_ceil.bCeilBreakable = 1;
+    g_ceil.bStrength = 5;
+    Impact()->pCeilSpr = &g_ceil;
+    Impact()->bUnk19 = 0;
+    g_shot.uFirePower = 30;
+    /* Slot 3 is the ceiling: the impact record lands in hit dword 3, which is
+     * exactly the half the ceiling-break sweep reads. */
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       3, &g_shot, g_aHits, g_aSave, &g_out);
+    CheckEqI32("a broken ceiling promotes the walk to throw mode", g_out.eMode,
+               SPLASH_MODE_THROW);
+    CheckEqI32("one field-of-view refresh per broken ceiling", g_out.nFovCalls, 1);
+    CheckEqI32("the impact point moves to the broken cell", g_out.nImpactX, IMPACT_X);
+    CheckEqI32("the impact row moves too", g_out.nImpactY, IMPACT_Y);
+    CheckEqI32("the record is marked in the high half of dword 3",
+               (i32)(g_aSave[Combat_HitIndex(20, 20, 3)] >> 16), 1);
+    CheckEqI32("area fire is reported", g_nArea, 1);
+    CheckEqI32("the impact window is snapshotted before attenuation",
+               (i32)(g_aSave[Combat_HitIndex(20, 20, 3)] & 0xFFFFu), 30);
+    Check("the live window is attenuated for the layers above",
+          (i32)(g_aHits[Combat_HitIndex(20, 20, 3)] & 0xFFFFu) < 30);
+
+    printf("area fire\n");
+    ResolveSetup();
+    Impact()->pUnit = NULL;
+    g_shot.bFireType = 1;
+    g_c.nShotOriginX = 31;
+    g_c.nShotOriginY = 32;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       0, &g_shot, g_aHits, NULL, &g_out);
+    CheckEqI32("area fire keeps the weapon's own mode", g_out.eMode,
+               SPLASH_MODE_SECONDARY);
+    CheckEqI32("area fire centres on the shot origin", g_out.nImpactX, 31);
+    CheckEqI32("area fire centres on the shot origin row", g_out.nImpactY, 32);
+    CheckEqI32("area fire refreshes the field of view once", g_out.nFovCalls, 1);
+    CheckEqI32("area fire is reported", g_nArea, 1);
+    CheckEqI32("area fire writes no impact record",
+               (i32)g_aHits[Combat_HitIndex(20, 20, 0)], 0);
+
+    printf("items fall to the floor layer\n");
+    ResolveSetup();
+    Impact()->pUnit = NULL;
+    memset(&g_dropItem, 0, sizeof(g_dropItem));
+    memset(&g_dropObj, 0, sizeof(g_dropObj));
+    g_dropObj.bListPri = 1;
+    g_dropItem.pObj = &g_dropObj;
+    g_aCells[2][10][10].pItemList = &g_dropItem;
+    g_aCells[1][10][10].pFloorSpr = &g_floor;
+    g_shot.uFirePower = 1;
+    Combat_ResolveShot(&g_c, &g_hooks, &g_rost, IMPACT_X, IMPACT_Y, IMPACT_LAYER,
+                       0, &g_shot, g_aHits, NULL, &g_out);
+    Check("the item left the spriteless cell",
+          g_aCells[2][10][10].pItemList == NULL);
+    Check("the item landed on the cell with a floor sprite",
+          g_aCells[1][10][10].pItemList == &g_dropItem);
+
+    printf("shot sound table\n");
+    CheckEqI32("off_AA040 has 180 entries", PUFO_SHOT_SOUND_COUNT, 180);
+    CheckEqI32("sort key 0 plays sample 18", g_aShotSound[0], 18);
+    CheckEqI32("sort key 15 plays sample 2", g_aShotSound[15], 2);
+    CheckEqI32("sort key 17 plays sample 2", g_aShotSound[17], 2);
+}
 int main(void)
 {
     TestIndex();
@@ -515,6 +730,7 @@ int main(void)
     TestCellDamage();
     TestThrowMode();
     TestSelectFireMode();
+    TestResolveShot();
 
     printf("%d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails != 0;

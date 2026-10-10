@@ -65,7 +65,11 @@ typedef struct Mc1Rec {
     u16  uUnk20;          /* 0x14 */
     u8   bStrength;       /* 0x16, sprite hardness; 255 means unbreakable.
                            * Read by Combat_SplashDamageCells @ 0x2e7d8 as pSpr[22]. */
-    u8   gap_17[2];       /* 0x17 */
+    u8   gap_17;          /* 0x17 */
+    u8   bCeilBreakable;  /* 0x18, non-zero when a ceiling sprite can give way at
+                           * all. Read by the ceiling-break sweep of
+                           * Combat_ResolveShot @ 0x2f12c (LDRB R3, [R0,#0x18]),
+                           * which also scales it by 6.0 into a spilled slot. */
     u8   bSplashResist;   /* 0x19, tile power needed to change the cell flags.
                            * Read as pSpr[25] in the SPLASH_MODE_THROW branch. */
     u8   gap_1A[2];       /* 0x1A */

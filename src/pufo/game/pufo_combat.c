@@ -1,5 +1,6 @@
 /* pufo_combat.c - see pufo_combat.h for the evidence and the layout notes. */
 #include "pufo_combat.h"
+#include "audio/pufo_audio.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_rand.h"
 
@@ -442,4 +443,328 @@ void Combat_SplashDamageCells(const CombatCtx *pCtx, i32 nX, i32 nY, i32 nLayer,
             }
         }
     }
+}
+
+/* --- Combat_ResolveShot @ 0x2f12c ------------------------------------------- */
+
+/* off_AA040 @ 0xaa040, 360 bytes = 180 u16, dumped from the IDB. Indexed by
+ * ObjectRecFull.uSortKey. Values seen: 1, 2, 4, 9, 10, 18, 21. */
+const u16 g_aShotSound[PUFO_SHOT_SOUND_COUNT] = {
+    18, 18, 4, 18, 18, 4, 18, 18, 18, 4, 18, 18,
+    18, 18, 2, 2, 2, 2, 2, 2, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 9, 1, 4, 4, 1,
+    9, 4, 9, 4, 10, 2, 2, 10, 2, 2, 1, 1,
+    1, 4, 1, 1, 18, 18, 18, 18, 10, 1, 1, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18,
+    18, 18, 18, 0, 20, 8, 5, 5, 8, 5, 5, 3,
+    3, 5, 11, 5, 11, 11, 18, 18, 18, 18, 18, 18,
+    18, 18, 20, 18, 21, 18, 18, 18, 18, 18, 18, 8,
+};
+
+static i32 Combat_ShotSound(const ObjectRecFull *pWeapon)
+{
+    /* The original indexes the table with no bound check. uSortKey is a u16 and
+     * the table has 180 entries, so a larger key reads past the table. The port
+     * clamps; see the parity note. */
+    return (pWeapon->uSortKey < PUFO_SHOT_SOUND_COUNT)
+               ? (i32)g_aShotSound[pWeapon->uSortKey] : 0;
+}
+
+/* 0x2f180..0x2f248: clear the per-shot "already hit" byte (Soldier+0x1B1) on
+ * every unit in all three rosters. Unit_ApplyCellDamage and the splash walk use
+ * it to hit each unit once per shot. */
+static void Combat_ClearShotFlags(const UnitRosters *pR)
+{
+    for (i32 i = 0; i < pR->nXcom; ++i)  { pR->apXcom[i]->gap_433 = 0; }
+    for (i32 i = 0; i < pR->nEnemy; ++i) { pR->apEnemy[i]->gap_433 = 0; }
+    for (i32 i = 0; i < pR->nCiv; ++i)   { pR->apCiv[i]->gap_433 = 0; }
+}
+
+/* 0x2f408..0x2f574: the direct unit hit. Damage is the weapon's fire power less
+ * the target's armour, cut by a random amount up to half, soaked by armour
+ * first, then health. A hit at least as strong as half the target's auStat[1]
+ * also knocks it down, unless it is a large unit. */
+static i32 Combat_DirectUnitDamage(const CombatCtx *pCtx, MapCell *pCell,
+                                   const ObjectRecFull *pWeapon)
+{
+    Soldier *pUnit = pCell->pUnit;
+    if (pUnit == NULL) {
+        /* 0x2f410: re-read the same cell through the context cell grid and take
+         * its unit. Map and pCtxBase are the same object, so this normally finds
+         * nothing new. */
+        MapCell *pAgain = pCtx->pfnLookup(pCell->nX, pCell->nY, pCell->nZ,
+                                          pCtx->pUser);
+        pUnit = pAgain->pUnit;
+    }
+
+    /* 0x2f44c: which readiness byte to subtract armour with, chosen by the
+     * weapon's bReadySel. Any other value makes the original read an
+     * uninitialised stack slot; the port uses zero and records the deviation. */
+    i32 nReady;
+    switch (pWeapon->bReadySel) {
+        case 0: nReady = pUnit->abReady252[4]; break;
+        case 2: nReady = pUnit->abReady252[1]; break;
+        case 3: nReady = pUnit->abReady252[3]; break;
+        default: nReady = 0; break;
+    }
+
+    /* (1 - nReady / 100) is integer arithmetic: a target at or above 100
+     * readiness loses no armour to the hit. */
+    i32 nPower = (i32)pWeapon->uFirePower
+               - (1 - nReady / 100) * (i32)pUnit->bUnk248;
+    i32 nDamage = nPower - (i32)Game_RandU16((u16)(nPower / 2));
+    if (nDamage < 0) {
+        nDamage = 0;
+    }
+
+    /* 0x2f4d8: `if (nArmorPoints > 150) nullsub_4();` - a call to an empty
+     * function, noted rather than reproduced. */
+    if (pUnit->nArmorPoints > 0) {
+        i32 nLeft = pUnit->nArmorPoints - nDamage;
+        pUnit->nArmorPoints = nLeft;
+        if (nLeft >= 0) {
+            nDamage = 0;
+        } else {
+            nDamage = -nLeft;
+            pUnit->nArmorPoints = 0;
+        }
+    }
+
+    if (nDamage > (i32)pUnit->uHp) {
+        pUnit->uHp = 0;
+    } else {
+        pUnit->uHp = (u16)(pUnit->uHp - (u16)nDamage);
+        pUnit->nUnk436 += nDamage;
+    }
+
+    if (nDamage >= (pUnit->auStat[1] >> 1) && !Unit_bIsLarge(pUnit)) {
+        pUnit->bKneelOrPrimed = (u8)(pUnit->bKneelOrPrimed
+            + (nDamage - (pUnit->auStat[1] >> 1)) / 10 + 1);
+    }
+
+    Unit_EnqueueIfApSpent(pCtx->pState, pUnit, 0);
+    return nDamage;
+}
+
+/* 0x2f328..0x2f734: walk the hit window looking for ceiling tiles the shot
+ * broke. Each cell's unit power (the low half of hit dword 3) plus the cell's
+ * own bUnk19 is compared against the ceiling sprite's strength. The last cell
+ * that gave way becomes the impact point of the splash walk, and the walk mode
+ * is promoted to SPLASH_MODE_THROW. */
+static void Combat_CeilingBreakSweep(const CombatCtx *pCtx,
+                                     const ShotHooks *pHooks, i32 nLayer,
+                                     i32 nOriginX, i32 nOriginY, u32 *apHits,
+                                     SplashMode *peMode, i32 *pnImpactX,
+                                     i32 *pnImpactY, i32 *pnFovCalls)
+{
+    for (i32 nRow = 0; nRow < PUFO_SPLASH_SPAN; ++nRow) {
+        for (i32 nCol = 0; nCol < PUFO_SPLASH_SPAN; ++nCol) {
+            i32 nX = nCol + nOriginX - PUFO_SPLASH_HALF;
+            i32 nY = nRow + nOriginY - PUFO_SPLASH_HALF;
+            if (!Map_IsValidCell(pCtx->pGeom, nX, nY, nLayer)) {
+                continue;
+        }
+            size_t nIdx = Combat_HitIndex(nRow, nCol, 3);
+            u16 nUnitPower = (u16)apHits[nIdx];
+            if (nUnitPower == 0) {
+                continue;
+            }
+            MapCell *pCell = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+            Mc1Rec *pCeil = pCell->pCeilSpr;
+            if (pCeil == NULL || pCeil->bCeilBreakable == 0) {
+                continue;
+            }
+            if ((i32)nUnitPower + (i32)pCell->bUnk19 <= (i32)pCeil->bStrength) {
+                continue;
+            }
+            if (*peMode == SPLASH_MODE_NORMAL) {
+                *peMode = SPLASH_MODE_THROW;
+                Sound_Play(PUFO_SOUND_CEILING_BREAK);
+            }
+            *pnImpactX = nX;
+            *pnImpactY = nY;
+            /* 0x2f698: (double)sprite+0x18 * 6.0, converted to int and stored
+             * into a spilled slot the decompiler names nRange. No use of that
+             * slot survives in the function, so the port does not compute it. */
+            pHooks->pfnComputeFov(pHooks->pUser);
+            (*pnFovCalls)++;
+            /* 0x2f6f8: mark the record by writing 1 into the high half of dword 3. */
+            apHits[nIdx] = (apHits[nIdx] & 0x0000FFFFu) | 0x00010000u;
+        }
+    }
+}
+
+/* 0x2f7ac..0x2f894 and 0x2f914..0x2f9f4: attenuate the hit window for a layer
+ * above or below the impact layer. The reduction is 20 when the shot became
+ * area fire and 4 otherwise, then the floor sprite of the layer being processed
+ * takes another bite. Cell validity is still tested against the shot's own
+ * layer, not the layer being processed - that is how the original writes it. */
+static void Combat_AttenuateLayer(const CombatCtx *pCtx, u32 *apHits,
+                                  i32 nLayerTest, i32 nLayerFloor, i32 nImpactX,
+                                  i32 nImpactY, SplashMode eMode)
+{
+    for (i32 nRow = 0; nRow < PUFO_SPLASH_SPAN; ++nRow) {
+        for (i32 nCol = 0; nCol < PUFO_SPLASH_SPAN; ++nCol) {
+            i32 nX = nCol + nImpactX - PUFO_SPLASH_HALF;
+            i32 nY = nRow + nImpactY - PUFO_SPLASH_HALF;
+            if (!Map_IsValidCell(pCtx->pGeom, nX, nY, nLayerTest)) {
+                continue;
+        }
+            for (i32 nSlot = 0; nSlot < 4; ++nSlot) {
+                size_t nIdx = Combat_HitIndex(nRow, nCol, nSlot);
+                i32 nValue = (i32)(u16)apHits[nIdx];
+                nValue -= (eMode == SPLASH_MODE_THROW) ? 20 : 4;
+                if (nValue > 0) {
+                    MapCell *pCell = pCtx->pfnLookup(nX, nY, nLayerFloor,
+                                                     pCtx->pUser);
+                    if (pCell->pFloorSpr != NULL) {
+                        nValue -= (i32)pCell->pFloorSpr->bStrength;
+                    }
+                }
+                if (nValue <= 0) {
+                    nValue = 0;
+                }
+                apHits[nIdx] = (apHits[nIdx] & 0xFFFF0000u) | (u32)(u16)nValue;
+            }
+        }
+    }
+}
+
+/* 0x2fa9c..0x2fc14: items left on a cell with no floor sprite fall to the
+ * highest layer below that has one. Layers 1..3 are scanned; layer 0 cannot
+ * fall. */
+static void Combat_DropCellItems(const CombatCtx *pCtx)
+{
+    const i32 nCellsX = 10 * (i32)pCtx->pGeom->nDimX;
+    const i32 nCellsY = 10 * (i32)pCtx->pGeom->nDimY;
+
+    for (i32 nLayer = 1; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nY = 0; nY < nCellsY; ++nY) {
+            for (i32 nX = 0; nX < nCellsX; ++nX) {
+                MapCell *pCell = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+                if (pCell == NULL || pCell->pItemList == NULL
+                    || pCell->pFloorSpr != NULL) {
+                    continue;
+                }
+                i32 nTarget = nLayer;
+                while (nTarget >= 0) {
+                    MapCell *pBelow = pCtx->pfnLookup(nX, nY, nTarget,
+                                                      pCtx->pUser);
+                    if (pBelow != NULL && pBelow->pFloorSpr != NULL) {
+                        break;
+                    }
+                    --nTarget;
+                }
+                if (nTarget == nLayer) {
+                    continue;
+                }
+                /* Deviation: with no floor sprite anywhere below, the original
+                 * indexes layer -1 of the cell grid. The port leaves the items
+                 * where they are instead. */
+                if (nTarget < 0) {
+                    continue;
+                }
+                MapCell *pDst = pCtx->pfnLookup(nX, nY, nTarget, pCtx->pUser);
+                while (pCell->pItemList != NULL) {
+                    TactItem *pNode = pCell->pItemList;
+                    MapCell_ListRemove(pCell, pNode);
+                    MapCell_ListInsertByPri(pDst, pNode);
+                }
+            }
+        }
+    }
+}
+
+void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
+                        const UnitRosters *pRosters, i32 nTgtX, i32 nTgtY,
+                        i32 nLayer, i32 nSlot, const ObjectRecFull *pWeapon,
+                        u32 *apHits, u32 *apHitsSave, ShotOutcome *pOut)
+{
+    Combat_ClearShotFlags(pRosters);
+
+    /* 0x2f254: the splash walk reads the firing weapon back out of the map. */
+    pCtx->pCtxWeapon = (ObjectRecFull *)pWeapon;
+
+    /* 0x2f258..0x2f284: clear the whole 41 x 41 x 4 window. */
+    for (size_t i = 0; i < PUFO_SPLASH_DWORDS; ++i) {
+        apHits[i] = 0;
+    }
+
+    SplashMode eMode = (SplashMode)pWeapon->bFireType;
+    i32 nImpactX = nTgtX;
+    i32 nImpactY = nTgtY;
+    i32 nFovCalls = 0;
+    pOut->nDamage = -1;
+
+    if (pWeapon->bFireType != 0) {
+        /* 0x2f2c0: area fire. Modes other than 1 and 2 skip the sound and the
+         * field-of-view refresh and go straight to the splash walk. */
+        if (pWeapon->bFireType == 1 || pWeapon->bFireType == 2) {
+            Sound_Play(Combat_ShotSound(pWeapon));
+            nImpactX = pCtx->nShotOriginX;
+            nImpactY = pCtx->nShotOriginY;
+            pHooks->pfnComputeFov(pHooks->pUser);
+            nFovCalls++;
+        }
+    } else {
+        Sound_Play(Combat_ShotSound(pWeapon));
+        /* 0x2f3dc: the impact record, at the centre of the window, in the slot
+         * the shot landed in. */
+        apHits[Combat_HitIndex(PUFO_SPLASH_HALF, PUFO_SPLASH_HALF, nSlot)]
+            = (u32)pWeapon->uFirePower;
+
+        if (nSlot == 4) {
+            /* 0x2f408: a direct hit on a unit. No splash walk at all. */
+            MapCell *pCell = pCtx->pfnLookup(nTgtX, nTgtY, nLayer, pCtx->pUser);
+            pOut->nDamage = Combat_DirectUnitDamage(pCtx, pCell, pWeapon);
+            pOut->eMode = eMode;
+            pOut->nImpactX = nImpactX;
+            pOut->nImpactY = nImpactY;
+            pOut->nFovCalls = nFovCalls;
+            return;
+        }
+    }
+
+    Combat_CeilingBreakSweep(pCtx, pHooks, nLayer, nImpactX, nImpactY, apHits,
+                             &eMode, &nImpactX, &nImpactY, &nFovCalls);
+    Combat_SplashDamageCells(pCtx, nImpactX, nImpactY, nLayer, pWeapon, apHits,
+                             eMode);
+
+    if (eMode != SPLASH_MODE_NORMAL) {
+        if (apHitsSave != NULL) {
+            /* 0x2f784: keep an untouched copy of the impact layer's window. */
+            for (size_t i = 0; i < PUFO_SPLASH_DWORDS; ++i) {
+                apHitsSave[i] = apHits[i];
+            }
+        }
+        for (i32 nUp = nLayer + 1; nUp < PUFO_MAP_LAYERS; ++nUp) {
+            Combat_AttenuateLayer(pCtx, apHits, nLayer, nUp, nImpactX, nImpactY,
+                                  eMode);
+            Combat_SplashDamageCells(pCtx, nImpactX, nImpactY, nUp, pWeapon,
+                                     apHits, eMode);
+        }
+        for (i32 nDown = nLayer - 1; nDown >= 0; --nDown) {
+            Combat_AttenuateLayer(pCtx, apHits, nLayer, nDown + 1, nImpactX,
+                                  nImpactY, eMode);
+            Combat_SplashDamageCells(pCtx, nImpactX, nImpactY, nDown, pWeapon,
+                                     apHits, eMode);
+        }
+    }
+
+    if (eMode == SPLASH_MODE_THROW || eMode == SPLASH_MODE_SECONDARY) {
+        pHooks->pfnAreaFire(pHooks->pUser);
+    }
+
+    Combat_DropCellItems(pCtx);
+
+    pOut->eMode = eMode;
+    pOut->nImpactX = nImpactX;
+    pOut->nImpactY = nImpactY;
+    pOut->nFovCalls = nFovCalls;
 }

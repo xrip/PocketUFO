@@ -63,6 +63,14 @@ typedef enum SplashMode {
     SPLASH_MODE_THROW    = 2
 } SplashMode;
 
+/* off_AA040 @ 0xaa040, 360 bytes = 180 u16: weapon uSortKey -> the sound id
+ * Combat_ResolveShot passes to Sound_Play. Dumped from the IDB. */
+#define PUFO_SHOT_SOUND_COUNT 180
+extern const u16 g_aShotSound[PUFO_SHOT_SOUND_COUNT];
+
+/* Sound_Play(2) at 0x2f66c: a ceiling tile gave way under the shot. */
+#define PUFO_SOUND_CEILING_BREAK 2
+
 /* Everything the walk needs from the game context, injected so the function is
  * testable without the 152 KB Map and its globals. */
 typedef struct CombatCtx {
@@ -72,7 +80,65 @@ typedef struct CombatCtx {
     TactState    *pState;    /* target of Unit_EnqueueIfApSpent */
     Soldier      *pSelUnit;  /* pCtxBase.pSelUnit @ 0x1139b8 */
     ObjectRecFull *pCtxWeapon; /* Map.nFireArg6 @ Map+0x14050 */
+    i32           nShotOriginX; /* Map.nFireOrigX @ Map+0x14054 */
+    i32           nShotOriginY; /* Map.nFireOrigY @ Map+0x14058 */
 } CombatCtx;
+
+/* Hooks for the two things Combat_ResolveShot touches that the port does not
+ * model yet.
+ *
+ * pfnComputeFov is Map_ComputeFov @ 0x2deac (1776 bytes), unported. Its argument
+ * list is not settled either: the area-fire call site sets R1 = R2 = 0, the
+ * ceiling-break call site sets R1 = 20 - column, R2 = the row counter and R3 =
+ * origin X, and Hex-Rays renders both as a one-argument call. The port calls the
+ * hook at the two proven points and leaves the arguments to the real function.
+ *
+ * pfnAreaFire stands for the two writes at 0x2fa80 and 0x2fa94 -
+ * `unk_157198->bUnk70115 = 1` (guarded by `pCtxBase.gap_2[0] == 0`) and
+ * `unk_157198->nUnk70024[4] = 0`. The unk_157198 global has no port model yet. */
+typedef struct ShotHooks {
+    void (*pfnComputeFov)(void *pUser);
+    void (*pfnAreaFire)(void *pUser);
+    void *pUser;
+} ShotHooks;
+
+/* The three rosters whose per-shot "already hit" byte (Soldier+0x1B1) the shot
+ * resolution clears. The original reads the counts from Map: nXcomUnitCount and
+ * nEnemyUnitCount are tested against zero, nCivilianUnitCount against greater
+ * than zero. */
+typedef struct UnitRosters {
+    Soldier **apXcom;
+    i32       nXcom;
+    Soldier **apEnemy;
+    i32       nEnemy;
+    Soldier **apCiv;
+    i32       nCiv;
+} UnitRosters;
+
+typedef struct ShotOutcome {
+    SplashMode eMode;   /* the original's a6, promoted to 2 by a ceiling break */
+    i32        nImpactX;
+    i32        nImpactY;
+    i32        nDamage; /* direct unit hit only; -1 on the splash path */
+    i32        nFovCalls;
+} ShotOutcome;
+
+/* Combat_ResolveShot @ 0x2f12c. Resolve one shot: fill the 41 x 41 hit window,
+ * apply it, and either damage the unit at the impact cell directly or walk the
+ * splash.
+ *
+ * nSlot is the original's nFireArg5, the slot the shot landed in: 0 floor,
+ * 1 wall A, 2 wall B, 3 ceiling, 4 a unit. Slot 4 with bFireType 0 takes the
+ * direct unit path; every other combination takes the splash path.
+ *
+ * apHits is the hit window, PUFO_SPLASH_DWORDS dwords. apHitsSave is the second
+ * window the original keeps next to the first (Map.gap_TrajRest + 26896); the
+ * shot resolution snapshots the window into it before it attenuates the layers
+ * above and below. Pass NULL to skip the copy. */
+void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
+                        const UnitRosters *pRosters, i32 nTgtX, i32 nTgtY,
+                        i32 nLayer, i32 nSlot, const ObjectRecFull *pWeapon,
+                        u32 *apHits, u32 *apHitsSave, ShotOutcome *pOut);
 
 /* Research gate. The original asks the in-memory research table directly:
  *     aFacTypeTable[4 + 34 * byte_AA968[weapon.uSortKey]] != 0

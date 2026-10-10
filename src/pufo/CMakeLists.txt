@@ -473,7 +473,7 @@ add_test(NAME test_ballist
 
 # Shot resolution: the 41x41 splash window, cell damage, sprite breakage.
 add_executable(test_combat ${CMAKE_SOURCE_DIR}/tests/test_combat.c)
-target_link_libraries(test_combat PRIVATE pufo_options pufo_game pufo_util)
+target_link_libraries(test_combat PRIVATE pufo_options pufo_game pufo_util pufo_audio)
 set_target_properties(test_combat PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
