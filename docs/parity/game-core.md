@@ -2977,7 +2977,7 @@ it rounds instead, every perpendicular axis in the table can differ by one. The
 diagonal and shallow-ray checks above would shift, so they are the tests to re-run
 against a dynamic check if this is ever verified on the original.
 
-# `Tact_ResolveThrowLanding @ 0x31a18` - port-ready brief (not yet ported)
+# Tact_ResolveThrowLanding @ 0x31a18 is ported
 
 Signature: `(Map *pMap, int nX0, int nY0, int nZ0, int nX1, int nY1, int nZ1,
 TactItem *pItem)`. Returns 0 when the throw is out of range, otherwise the
@@ -2990,11 +2990,36 @@ TactItem *pItem)`. Returns 0 when the throw is out of range, otherwise the
 ```
 w = pSelUnit->auStat[9] * pItem->pObj->bWeight
 s = pSelUnit->auStat[8] * pSelUnit->uStunOrArmor
-budget = (double)(s / w / 2) + (s % w)      /* itod(lo = s/w/2, hi = s%w) */
+budget = (double)itod64(lo = (s/w)/2, hi = s%w)   /* see below */
 if (budget < 1.0)  budget = 1.0
 if (budget > 22.0) budget = 22.0
 ```
 `auStat[8]` and `auStat[9]` are the throwing stats; `bWeight` is the item weight.
+
+**The budget is a compiler artifact that became behaviour.** The earlier reading
+`(s/w/2) + (s%w)` was wrong. The disassembly at `0x31a44..0x31a78` is:
+
+```
+MUL  R0, auStat[9], bWeight          ; w        (LDRB [R2,#0xA5])
+MUL  R1, auStat[8], uStunOrArmor     ; s        (LDRH [R1,#0xB2], [R1,#8])
+BL   _rt_sdiv                        ; R0 = s/w, R1 = s%w
+MOVS R3, R0 / ADDMI R3, R3, #1      ; round the quotient toward +inf
+MOV  R0, R3, ASR #1                 ; R0 = quotient / 2
+BL   _itod                          ; converts the 64-bit pair R1:R0
+```
+
+`_itod` converts a 64-bit integer held in `R1:R0`, and `R1` still holds the
+remainder left by `_rt_sdiv`. The high half is stale register state, not a chosen
+quantity. The consequence is a two-case rule:
+
+- `s % w != 0` -> the value is at least 2^32 -> clamped to **22.0**.
+- `s % w == 0` -> the value is `(s/w)/2` -> clamped into `[1.0, 22.0]`.
+
+So a throw only gets a custom range when the stat product divides exactly by the
+weight product; otherwise it gets the maximum. The `ADDMI` also means a negative
+quotient rounds toward +inf before the halving. Both are reproduced, and
+`Throw_RangeBudget` exposes the raw quotient and remainder so the tests can see
+which branch fired.
 
 ## Short throws get a random target jitter
 
@@ -3059,3 +3084,71 @@ the function returns `bLanded` only when `dTravel * 0.0625 <= budget`, else 0.
 | (0, 0x40000000) | 2.0 | arc denominator scale |
 | (0, 1078427648) | 47.0 | landing height ceiling |
 | (0, 1075838976) | 8.0 | subtracted from the bound for the landed test |
+
+## What the port pins down
+
+`Tact_ResolveThrowLanding` is in `src/pufo/game/pufo_ballist.c` with
+`Throw_RangeBudget`, `ThrowBudget` and `ThrowLanding`; 26 new checks in
+`tests/test_ballist.c` (63 in that file, 36 tests pass, clean `/W4 /WX`).
+
+`ThrowArc` now carries the aim-block fields the landing loop reads back: origin
+and target XYZ (`nLosX0..nLosZ1`), `dBound` (`nTrajBound`), and `dYaw`
+(`dAngleYaw`). No second copy of the aim block was introduced.
+
+Confirmed by tests:
+
+- A flat 160-voxel throw with the hit flag clear on entry runs the loop exactly
+  once: `dTravel = 0.5`, `dMtX = 160.5`, `dMtY = 160.0`, not landed, returns 0.
+- With the flag set the loop keeps stepping until the sample reaches
+  `160 * nMapDimX`, and then the tail test rejects it: `dTravel * 0.0625` is past
+  the budget, so it returns 0 even though `bLanded` is true.
+- A short throw (8 voxels) is landed on the first step because the landed test is
+  `dTravel >= dBound - 8.0` and `dBound - 8` is negative, so it returns 1.
+- `|dz| > dBound` selects the other bump: `16/64 * 0.01 = 0.0025`.
+- A 1600-voxel throw with an 80-voxel climb is rejected before any arc is solved
+  (`100.0 * 10 > 22.0`), while the same run with a 7-voxel climb is not rejected
+  at all, because the height factor is integer division by 8.
+
+## Map aim-block offsets, read out of the IDB struct
+
+`read_struct` on the `Map` type gives the authoritative offsets, and they match
+the ones derived from disassembly except for the two flag bytes:
+
+| field | offset | type |
+|---|---|---|
+| `adMtX / adMtY / adMtZ` | 0x13EE8 / 0x13F38 / 0x13F88 | `double[10]` each |
+| `nLosX0 / nLosY0 / nLosZ0` | 0x14004 / 0x14008 / 0x1400C | int |
+| `nLosX1 / nLosY1 / nLosZ1` | 0x14010 / 0x14014 / 0x14018 | int |
+| `dTravel` | 0x14020 | double |
+| `dAngleYaw` | 0x14028 | double |
+| `dAnglePitch` | 0x14030 | double |
+| `nTravelSaveLo / nTravelSaveHi` | 0x14038 / 0x1403C | the two halves of a double |
+| `nFireArg5 / nFireArg6` | 0x1404C / 0x14050 | int |
+| `bFireHitResult` | 0x1406C | char |
+| `bTrajHitStop` | 0x1406D | char |
+| `nArcDenomLo` | 0x14078 | int, written as a double |
+| `nTrajBound / nTrajBoundHi` | 0x14080 / 0x14084 | the two halves of a double |
+| `nMapDimX` | 0x1511B | unsigned char |
+| `pSelUnit` | 0x15334 | `Soldier *` |
+
+Two corrections to earlier notes: `0x1406C` is `bFireHitResult`, not the
+"arc left the map" flag, and `bTrajHitStop` is the byte after it at `0x1406D`.
+`adMtX/Y/Z` are ten-entry double arrays, not single values; only index 0 is used
+by the aim, arc and landing code read so far.
+
+`Tact_SimulateThrowArc` also stores the thrown item pointer at
+`*(_DWORD *)&pMap->bFireHitResult[4]` (Map+0x14070) and sets
+`pMap->bFireHitResult[1] = 1`. That is the handoff to whatever consumes the
+throw result, and it is recorded rather than interpreted.
+
+## Who sets `bTrajHitStop`
+
+`xrefs_to_field` on `Map.bTrajHitStop` finds no writer in the arc or landing
+code. The only functions touching it are the input handlers
+(`Input_OnLeft/Right/Up/Down/OnPointer/OnPointerUp/OnAction/OnSecondary/OnConfirm`,
+`UiScreen_OnCancel`, `Input_OnMenuEscape`), `MapView_DrawUnitFacingArrow`,
+`Tact_ProcessFireAction` and `Tact_ProcessFallAction`.
+
+The landing loop is `while (1)` with the break at the end, so it always runs once;
+the flag only decides whether it runs again. The port therefore takes it as an
+input (`bHitStopIn`) and returns the final value, instead of inventing a default.

@@ -124,6 +124,100 @@ int main(void)
     Check("close target is pushed away",
           abs(arc.nTargetX - 31) >= 2 && abs(arc.nTargetY - 31) >= 2);
 
+    printf("throw range budget (Tact_ResolveThrowLanding @ 0x31a18)\n");
+    {
+        ThrowBudget b;
+        i32 nQuot = -1;
+        i32 nRem = -1;
+
+        /* auStat[8]*uStunOrArmor = 50*60 = 3000, auStat[9]*bWeight = 50*2 = 100.
+         * Exact division, so the stale high half is zero and the budget is
+         * (3000/100)/2 = 15. */
+        b.nStatThrow = 50; b.nStunOrArmor = 60; b.nStatStrength = 50; b.nWeight = 2;
+        CheckNear("exact division gives quotient/2", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
+        Check("quotient 30, remainder 0", nQuot == 30 && nRem == 0);
+
+        /* 3000/350 leaves a remainder, and _itod takes that remainder as the high
+         * half of a 64-bit integer. The value is then >= 2^32 and clamps to 22. */
+        b.nWeight = 7;
+        CheckNear("any remainder clamps to the ceiling", Throw_RangeBudget(&b, &nQuot, &nRem), 22.0);
+        Check("remainder 200 is the stale high half", nRem == 200);
+
+        /* (3000/100)/2 with an odd quotient truncates: 31/2 = 15. */
+        b.nStatThrow = 100; b.nStunOrArmor = 31; b.nWeight = 2;
+        CheckNear("odd quotient truncates", Throw_RangeBudget(&b, &nQuot, &nRem), 15.0);
+
+        /* 1/1 -> quotient 1 -> half 0 -> below the floor. */
+        b.nStatThrow = 1; b.nStunOrArmor = 1; b.nStatStrength = 1; b.nWeight = 1;
+        CheckNear("tiny budget clamps to 1.0", Throw_RangeBudget(&b, NULL, NULL), 1.0);
+
+        /* 100*60/(50*2) = 60 -> half 30 -> above the ceiling. */
+        b.nStatThrow = 100; b.nStunOrArmor = 60; b.nStatStrength = 50; b.nWeight = 2;
+        CheckNear("big budget clamps to 22.0", Throw_RangeBudget(&b, NULL, NULL), 22.0);
+    }
+
+    printf("throw landing loop\n");
+    {
+        MapGeom wide = {4, 4};   /* 40 x 40 cells, 640 x 640 voxels */
+        ThrowBudget b = {50, 50, 7, 60};   /* 3000 / 350 -> remainder 200 -> 22.0 */
+        ThrowBudget bExact = {50, 50, 2, 60};
+        ThrowLanding land;
+        i32 nRet;
+
+        /* A 160-voxel flat throw. The flag is clear on entry, so the loop runs
+         * exactly once: dTravel takes one 0.5 bump and yaw is 0. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
+                                        NULL, NULL, &bExact, 4, false,
+                                        160, 160, 12, 320, 160, 12);
+        CheckNear("one bump of 0.5", land.dTravel, 0.5);
+        CheckNear("x follows yaw 0", land.dMtX, 160.5);
+        CheckNear("y unchanged", land.dMtY, 160.0);
+        Check("not landed (0.5 < 160 - 8)", !land.bLanded);
+        Check("flag stays clear", !land.bHitStop);
+        Check("not rejected by range", !land.bRejected);
+        Check("returns the landed flag", nRet == 0);
+        CheckNear("arc bound is the horizontal run", arc.dBound, 160.0);
+        CheckNear("arc yaw is atan2(0, 160)", arc.dYaw, 0.0);
+
+        /* Same throw with the flag set: the loop keeps stepping until the sample
+         * reaches 160 * nMapDimX = 640. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
+                                        NULL, NULL, &b, 4, true,
+                                        160, 160, 12, 320, 160, 12);
+        Check("loop ran on the caller's flag", land.dTravel > 100.0);
+        Check("landed once travel passed bound - 8", land.bLanded);
+        Check("loop ends on the map volume limit", land.dMtX >= 160.0 * 4.0);
+        Check("out of budget at the end, so returns 0", nRet == 0);
+
+        /* |dz| larger than the bound selects the other bump: bound/|dz| * 0.01. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
+                                        NULL, NULL, &b, 4, false,
+                                        160, 160, 0, 176, 160, 64);
+        CheckNear("bound bump is 16/64 * 0.01", land.dTravel, 0.0025);
+        Check("steep throw is not rejected", !land.bRejected);
+
+        /* A short throw is landed immediately, so the tail test decides the
+         * result: 0.5 * 0.0625 is well inside the budget. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &geom, CellLookup, NULL,
+                                        NULL, NULL, &b, 1, true,
+                                        160, 160, 12, 168, 160, 12);
+        Check("short throw lands", land.bLanded);
+        Check("returns 1 when landed and in budget", nRet == 1);
+
+        /* Range rejection: 1600 voxels of run times a height factor of 10. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
+                                        NULL, NULL, &b, 4, false,
+                                        160, 160, 0, 1760, 160, 80);
+        Check("too far is rejected", land.bRejected && nRet == 0);
+
+        /* The height factor is an integer division, so a climb under 8 voxels
+         * earns nothing and the throw is never rejected on height. */
+        nRet = Tact_ResolveThrowLanding(&arc, &land, &empty, &wide, CellLookup, NULL,
+                                        NULL, NULL, &b, 4, false,
+                                        160, 160, 0, 1760, 160, 7);
+        Check("a 7-voxel climb adds no range cost", !land.bRejected);
+    }
+
     printf("%d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails == 0 ? 0 : 1;
 }

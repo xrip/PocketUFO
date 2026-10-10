@@ -20,10 +20,17 @@
  *   0x14060  trajectory end X (int)
  *   0x14064  trajectory end Y (int)
  *   0x14068  trajectory end Z (int)
+ *   0x1406C  bFireHitResult (char), only written by Tact_ProcessFireAction
+ *   0x1406D  bTrajHitStop   (char), the loop flag read by Tact_ResolveThrowLanding
  *   0x14078  arc denominator  (double, Tact_SimulateThrowArc)
  *   0x14080  nTrajBound       \ the bound double, stored as two dwords
  *   0x14084  nTrajBoundHi     /
  *   0x14088  aim row id (nFlags)
+ *
+ * Offsets are read straight from the IDB's `Map` type (152632 bytes) with
+ * `read_struct`, and `adMtX/adMtY/adMtZ` at 0x13EE8/0x13F38/0x13F88 are
+ * `double[10]`, not single values. Only index 0 is used by the aim, arc and
+ * landing functions read so far.
  *
  * Aim row table (atAimRowTable @ 0xA9218, 6 rows x 11 bytes):
  *
@@ -115,7 +122,7 @@ typedef struct ShotTrace {
     i32    nEndZ;         /* 0x14068 */
     double dTravelSave;   /* 0x14038 */
     bool   bOutOfRange;   /* true when the bound was passed */
-    bool   bLeftMap;      /* 0x1406C, the arc left the map volume */
+    bool   bLeftMap;      /* the sample failed the bounds test (port-local flag) */
 } ShotTrace;
 
 /* Tact_TraceProjectileArc @ 0x2fc38.
@@ -132,10 +139,18 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
                              i32 nX1, i32 nY1, i32 nZ1, u8 nRowId,
                              ShotTrace *pOut);
 
-/* Result of Tact_SimulateThrowArc @ 0x3102c. */
+/* Result of Tact_SimulateThrowArc @ 0x3102c. The first group mirrors the Map
+ * aim block the original writes: nLosX0/Y0/Z0, nLosX1/Y1/Z1, dAngleYaw,
+ * nTrajBound. Tact_ResolveThrowLanding reads them back. */
 typedef struct ThrowArc {
-    i32    nTargetX;      /* possibly randomised, see below */
-    i32    nTargetY;
+    i32    nOriginX;      /* nLosX0 @ 0x14004 */
+    i32    nOriginY;      /* nLosY0 @ 0x14008 */
+    i32    nOriginZ;      /* nLosZ0 @ 0x1400C */
+    i32    nTargetX;      /* nLosX1 @ 0x14010, possibly randomised */
+    i32    nTargetY;      /* nLosY1 @ 0x14014, possibly randomised */
+    i32    nTargetZ;      /* nLosZ1 @ 0x14018 */
+    double dBound;        /* nTrajBound @ 0x14080, hypot of the horizontal run */
+    double dYaw;          /* dAngleYaw @ 0x14028, atan2(dy, dx) */
     double dArcDenom;     /* 0x14078 */
     double dLaunchVelSq;  /* v0^2 = 2 * PUFO_THROW_GRAVITY * height term */
     double dPitch;        /* pitch the search settled on */
@@ -166,5 +181,83 @@ void Tact_SimulateThrowArc(ThrowArc *pOut, const MapGeom *pGeom,
                            MapCellLookup pfnLookup, void *pUser,
                            i32 nX0, i32 nY0, i32 nZ0,
                            i32 nX1, i32 nY1, i32 nZ1);
+
+/* ## Tact_ResolveThrowLanding @ 0x31a18
+ *
+ * Range budget inputs, all read straight off the records in the original:
+ *
+ *   nStatThrow    Soldier.auStat[8]  (LDRH [R1,#0xB2])
+ *   nStatStrength Soldier.auStat[9]  (LDRH [R1,#0xB4])
+ *   nWeight       ObjectRecFull.bWeight @ 0xA5 (LDRB [R2,#0xA5])
+ *   nStunOrArmor  Soldier.uStunOrArmor @ 0x8   (LDRH [R1,#8])
+ */
+typedef struct ThrowBudget {
+    i32 nStatThrow;
+    i32 nStatStrength;
+    i32 nWeight;
+    i32 nStunOrArmor;
+} ThrowBudget;
+
+#define PUFO_THROW_STAT_THROW    8   /* auStat index */
+#define PUFO_THROW_STAT_STRENGTH 9   /* auStat index */
+#define PUFO_THROW_RANGE_SCALE   0.0625  /* 1/16, cell distance to range units */
+#define PUFO_THROW_Z_DIV         8       /* integer divisor on the height gain */
+#define PUFO_THROW_BUDGET_MIN    1.0
+#define PUFO_THROW_BUDGET_MAX    22.0
+#define PUFO_THROW_BUMP_BOUND    0.01
+#define PUFO_THROW_BUMP_PLAIN    0.5
+#define PUFO_THROW_Z_MAX         47.0
+#define PUFO_THROW_LAND_MARGIN   8.0
+
+/* The budget is a compiler artifact turned into behaviour, and the disassembly
+ * at 0x31a44..0x31a78 shows exactly how:
+ *
+ *   MUL  R0, auStat[9], bWeight          ; w
+ *   MUL  R1, auStat[8], uStunOrArmor     ; s
+ *   BL   _rt_sdiv                        ; R0 = s/w, R1 = s%w
+ *   MOVS R3, R0 / ADDMI R3, R3, #1      ; round the quotient toward +inf
+ *   MOV  R0, R3, ASR #1                 ; R0 = quotient / 2
+ *   BL   _itod                          ; converts the 64-bit pair R1:R0
+ *
+ * _itod takes a 64-bit integer in R1:R0, and R1 still holds the remainder left
+ * by _rt_sdiv. So the high half of the value is the remainder, not a chosen
+ * quantity. The consequence is a two-case rule:
+ *
+ *   s % w != 0  ->  the value is at least 2^32  ->  clamped to 22.0
+ *   s % w == 0  ->  the value is (s/w)/2        ->  clamped into [1.0, 22.0]
+ *
+ * pQuot and pRem are optional outputs so a test can see the raw division. */
+double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem);
+
+/* Outcome of Tact_ResolveThrowLanding. dMtX/Y/Z is the landing point in voxels. */
+typedef struct ThrowLanding {
+    double dTravel;      /* distance walked along the arc */
+    double dMtX;
+    double dMtY;
+    double dMtZ;
+    bool   bHitStop;     /* final value of Map.bTrajHitStop @ 0x1406D */
+    bool   bLanded;      /* the throw reached its own bound */
+    bool   bRejected;    /* the pre-arc range test failed, nothing was solved */
+} ThrowLanding;
+
+/* Tact_ResolveThrowLanding @ 0x31a18.
+ *
+ * Returns 0 when the throw cannot reach the target, or when the walked distance
+ * is out of budget at the end; otherwise the "landed" flag. bHitStopIn is the
+ * Map flag the caller leaves behind: the loop always runs once, but the flag
+ * decides whether it runs again. The original's only writers of that flag are
+ * the input handlers, Tact_ProcessFireAction and Tact_ProcessFallAction.
+ *
+ * The target jitter is applied twice on purpose, once here for the range test
+ * and again inside Tact_SimulateThrowArc, each with its own draws. */
+i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
+                             const LosTables *pTables, const MapGeom *pGeom,
+                             MapCellLookup pfnLookup, void *pUser,
+                             const Soldier *pUnitSelExclude,
+                             const Soldier *pUnitExtraExclude,
+                             const ThrowBudget *pBudget, u8 nMapDimX,
+                             bool bHitStopIn,
+                             i32 nX0, i32 nY0, i32 nZ0,
+                             i32 nX1, i32 nY1, i32 nZ1);
 
 #endif /* PUFO_BALLIST_H */

@@ -4,6 +4,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE] = {
     0x03, 0x04, 0x05, 0x05, 0x06, 0x00, 0x05, 0x00, 0x06, 0x00, 0x01,
@@ -316,11 +317,186 @@ void Tact_SimulateThrowArc(ThrowArc *pOut, const MapGeom *pGeom,
 
 done:
     if (pOut != NULL) {
+        pOut->nOriginX = nX0;
+        pOut->nOriginY = nY0;
+        pOut->nOriginZ = nZ0;
         pOut->nTargetX = nTx;
         pOut->nTargetY = nTy;
+        pOut->nTargetZ = nZ1;
+        pOut->dBound = dDist;
+        pOut->dYaw = atan2((double)nDy, (double)nDx);
         pOut->dArcDenom = dArcDenom;
         pOut->dLaunchVelSq = dVelSq;
         pOut->dPitch = dPitch;
         pOut->bLanded = bLanded;
     }
+}
+
+/* Throw_RangeBudget - see pufo_ballist.h for the disassembly it reproduces. */
+double Throw_RangeBudget(const ThrowBudget *pB, i32 *pQuot, i32 *pRem)
+{
+    i32 nW = pB->nStatStrength * pB->nWeight;
+    i32 nS = pB->nStatThrow * pB->nStunOrArmor;
+    i32 nQuot;
+    i32 nRem;
+    i32 nHalf;
+    double dBudget;
+
+    /* _rt_sdiv with a zero divisor has no defined result. The port takes the
+     * helper's usual behaviour, quotient 0 and remainder the dividend, which
+     * lands on the 22.0 ceiling. Recorded as a deviation, not as fact. */
+    if (nW == 0) {
+        nQuot = 0;
+        nRem = nS;
+    } else {
+        nQuot = nS / nW;
+        nRem = nS % nW;
+    }
+
+    /* MOVS/ADDMI adds 1 to a negative quotient, so the division rounds toward
+     * +inf rather than truncating. */
+    nHalf = (nQuot + ((nQuot < 0) ? 1 : 0)) >> 1;
+
+    dBudget = (double)(((int64_t)(u32)nRem << 32) | (u32)nHalf);
+    if (dBudget < PUFO_THROW_BUDGET_MIN) {
+        dBudget = PUFO_THROW_BUDGET_MIN;
+    } else if (dBudget > PUFO_THROW_BUDGET_MAX) {
+        dBudget = PUFO_THROW_BUDGET_MAX;
+    }
+
+    if (pQuot != NULL) {
+        *pQuot = nQuot;
+    }
+    if (pRem != NULL) {
+        *pRem = nRem;
+    }
+    return dBudget;
+}
+
+/* Landing height of the solved arc at a walked distance, the same expression
+ * Tact_SimulateThrowArc uses inside its search. */
+static double Throw_LandingZ(double dTravel, double dPitch, double dDenom,
+                             double dZ0)
+{
+    double dCos = cos(dPitch);
+    double dNumer = dTravel * dTravel * PUFO_THROW_GRAVITY;
+    double dDenomFull = dDenom * dDenom * dCos * dCos * 2.0;
+
+    return dZ0 + dTravel * tan(dPitch) - dNumer / dDenomFull;
+}
+
+i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
+                             const LosTables *pTables, const MapGeom *pGeom,
+                             MapCellLookup pfnLookup, void *pUser,
+                             const Soldier *pUnitSelExclude,
+                             const Soldier *pUnitExtraExclude,
+                             const ThrowBudget *pBudget, u8 nMapDimX,
+                             bool bHitStopIn,
+                             i32 nX0, i32 nY0, i32 nZ0,
+                             i32 nX1, i32 nY1, i32 nZ1)
+{
+    ThrowArc arc;
+    i32 nJitX = nX1;
+    i32 nJitY = nY1;
+    double dBudget;
+    double dRange;
+    double dTravel;
+    double dX, dY, dZ;
+    double dBound;
+    bool bHitStop = bHitStopIn;
+    bool bLanded = false;
+
+    memset(&arc, 0, sizeof(arc));
+
+    dBudget = Throw_RangeBudget(pBudget, NULL, NULL);
+
+    /* A target this close is pushed 2..5 tiles away, once for this range test.
+     * Tact_SimulateThrowArc repeats the jitter with its own draws. */
+    if (abs(nX1 - nX0) < 3 && abs(nY1 - nY0) < 3) {
+        nJitX = (Game_RandU16(2) != 0)
+              ? nX1 - (i32)Game_RandU16(3) - 2
+              : nX1 + (i32)Game_RandU16(3) + 2;
+        nJitY = (Game_RandU16(2) != 0)
+              ? nY1 - (i32)Game_RandU16(3) - 2
+              : nY1 + (i32)Game_RandU16(3) + 2;
+    }
+
+    dRange = sqrt((double)(nJitY - nY0) * (nJitY - nY0)
+                + (double)(nJitX - nX0) * (nJitX - nX0)) * PUFO_THROW_RANGE_SCALE;
+    if (nZ1 >= nZ0) {
+        /* Integer division: a climb of under 8 voxels earns no allowance. */
+        dRange *= (double)((nZ1 - nZ0) / PUFO_THROW_Z_DIV);
+    }
+    if (dRange > dBudget) {
+        if (pOut != NULL) {
+            memset(pOut, 0, sizeof(*pOut));
+            pOut->bRejected = true;
+        }
+        return 0;
+    }
+
+    Tact_SimulateThrowArc(&arc, pGeom, pfnLookup, pUser,
+                          nX0, nY0, nZ0, nX1, nY1, nZ1);
+
+    dTravel = 0.0;   /* the arc setup writes 0.0 into Map.dTravel */
+    dBound = arc.dBound;
+    dX = (double)arc.nOriginX;
+    dY = (double)arc.nOriginY;
+    dZ = (double)arc.nOriginZ;
+
+    for (;;) {
+        i32 nDz = abs(arc.nTargetZ - arc.nOriginZ);
+
+        if (dBound < (double)nDz) {
+            dTravel += (dBound / (double)nDz) * PUFO_THROW_BUMP_BOUND;
+        } else {
+            dTravel += PUFO_THROW_BUMP_PLAIN;
+        }
+
+        dX = (double)arc.nOriginX + dTravel * cos(arc.dYaw);
+        dY = (double)arc.nOriginY + dTravel * sin(arc.dYaw);
+        dZ = Throw_LandingZ(dTravel, arc.dPitch, arc.dArcDenom,
+                            (double)arc.nOriginZ);
+
+        if (dX <= 0.0 || dY <= 0.0 || dZ <= 0.0
+            || dX >= PUFO_ARC_XY_SCALE * (double)nMapDimX
+            || dY >= PUFO_ARC_XY_SCALE * (double)nMapDimX
+            || dZ >= PUFO_THROW_Z_MAX) {
+            bHitStop = false;
+        }
+
+        if (dTravel >= dBound - PUFO_THROW_LAND_MARGIN) {
+            bLanded = true;
+        }
+
+        /* Only LOS_HIT_FLOOR (0) clears the flag; a clear voxel returns -1, and
+         * the original masks the result to a byte before comparing. */
+        if (Map_TraceVoxelOccupancy(pTables, pfnLookup, pUser,
+                                    (u32)(i32)dX, (u32)(i32)dY, (u32)(i32)dZ,
+                                    pUnitSelExclude, pUnitExtraExclude) == LOS_HIT_FLOOR) {
+            bHitStop = false;
+        }
+
+        if (!bHitStop) {
+            break;
+        }
+    }
+
+    if (pOut != NULL) {
+        pOut->dTravel = dTravel;
+        pOut->dMtX = dX;
+        pOut->dMtY = dY;
+        pOut->dMtZ = dZ;
+        pOut->bHitStop = bHitStop;
+        pOut->bLanded = bLanded;
+        pOut->bRejected = false;
+    }
+    if (pArc != NULL) {
+        *pArc = arc;
+    }
+
+    if (dTravel * PUFO_THROW_RANGE_SCALE <= dBudget) {
+        return bLanded ? 1 : 0;
+    }
+    return 0;
 }
