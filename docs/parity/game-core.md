@@ -2188,8 +2188,8 @@ Behaviour groups, in the order the original applies them:
 5. `a6 != 0` and `power > 0x14` and (class != 50 or `power > 0x46`): random
    rewrite of bits 3..6 of `nFlags32` with `8 * Game_RandU16(3) - 57`.
 6. Sprite destruction, when the slot sprite exists and `sprite[22] != 255` and
-   class is not 50/15: `d = (int)(power - 1.05 * sprite[22])` (the constant pair
-   0/0x3FF0CCCC is 1.05). Cell damage counters are the four bytes at MapCell
+   class is not 50/15: `d = (int)(power - 1.5 * sprite[22])` (the constant pair
+   lo = 0, hi = 0x3FF80000 is 1.5). Cell damage counters are the four bytes at MapCell
    +16..+19, one per slot. If `sprite[22] >= cellDamage + d` the counter grows by
    `d` (clamped at 0) and 255 is stored as -1. Otherwise the sprite is destroyed:
    slots 1..3 become NULL when `nZ != 0`, else `Unit_GetExtraSpr @ 0x2e59c`;
