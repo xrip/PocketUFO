@@ -3888,3 +3888,16 @@ the same pair `Tact_TraceProjectileArc` uses — and the displacement triple is 
 `Map + 0x15058` and its two neighbours. `Unit_RollChance` is therefore a context-level
 scatter generator, not a per-unit one, and it is the function that fills the aim block
 after a failed chance roll.
+
+### `Unit_RollChance` constants decoded
+
+The magnitude chain is exact, not approximate:
+
+- The double pair `0x3FD147AE : 0x147AE148` is **0.27**. (An exponent read by eye gave
+  0.22; unpacking it gives 0.27.)
+- The soft-FPU constant `1008981770` is the single-precision value **0.01** exactly.
+
+So the scatter magnitude is `Map.arcBound * 0.27 * (miss + 10) * 0.01`, where `arcBound`
+is the double at `Map + 0x14080 / 0x14084` and `miss` is `Game_RandU16(roll - chance)`.
+That is the whole function's arithmetic; the remaining work is only wiring the three
+outputs to `Map + 0x15058` and its neighbours.
