@@ -6,6 +6,7 @@
 #include "asset/pufo_asset.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_combat.h"   /* UnitRosters */
 #include "game/pufo_font.h"
 #include "util/pufo_rand.h"
 
@@ -887,6 +888,83 @@ static u8 TwoHandedL(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; r
 static u8 AmmoCapL(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return g_bAmmoCapL; }
 static u8 AmmoWeight(i32 nIndex, void *pUser) { (void)pUser; return (u8)nIndex; }
 
+#define SCAN_GRID 40
+static MapCell g_aScanCells[4][SCAN_GRID][SCAN_GRID];
+
+static MapCell *ScanLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)nY; (void)pUser;
+    if (nX < 0 || nLayer < 0 || nX >= SCAN_GRID || nLayer >= 4) {
+        return NULL;
+    }
+    return &g_aScanCells[nLayer][10][nX];
+}
+
+static void PlaceScanUnit(Soldier *pU, i32 nX, u8 bStatus, u8 nType)
+{
+    MapCell *pCell = &g_aScanCells[0][10][nX];
+
+    memset(pU, 0, sizeof(*pU));
+    memset(pCell, 0, sizeof(*pCell));
+    pCell->nX = (u8)nX;
+    pCell->nY = 10;
+    pCell->pUnit = pU;
+    pU->pCell = pCell;
+    pU->bStatus = bStatus;
+    pU->nUnitType = nType;
+}
+
+static void TestScanVisibleUnits(void)
+{
+    Soldier viewer, enemy, ally, allySpecial, distant;
+    Soldier *apXcom[1] = { &ally };
+    Soldier *apEnemy[2] = { &enemy, &allySpecial };
+    SpotCtx ctx;
+    UnitRosters rosters;
+    Soldier *pScratch = &enemy;
+    Soldier *pSelOuter = &ally;
+    i32 nFlag1036 = 7;
+
+    printf("Unit_ScanVisibleUnits\n");
+    memset(g_aScanCells, 0, sizeof(g_aScanCells));
+    PlaceScanUnit(&viewer, 10, 0, 0);
+    PlaceScanUnit(&enemy, 12, 1, 0);
+    PlaceScanUnit(&ally, 11, 0, 0);
+    PlaceScanUnit(&allySpecial, 13, 0, 16);
+    PlaceScanUnit(&distant, 30, 1, 0);
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.bBusy = true;
+    ctx.pnTrajFront1036 = &nFlag1036;
+    ctx.pSelUnit = pSelOuter;
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.apXcom = apXcom;
+    rosters.nXcom = 1;
+    rosters.apEnemy = apEnemy;
+    rosters.nEnemy = 2;
+
+    CheckEqI32(Unit_ScanVisibleUnits(&viewer, NULL, ScanLookup, NULL, &ctx, &rosters,
+                                     &pScratch), 0, "scan returns 0");
+    /* The scan clears the flag on entry; Unit_SpotCellOccupant sets it again when
+     * it queues a spotted unit, so the value that survives is 1. */
+    CheckEqI32(nFlag1036, 1, "cleared on entry, then set again by the spot");
+    CheckEqI32(viewer.nMultiTarget, 1, "only the enemy-side unit is queued");
+    CheckEqI32(viewer.nSpottedCount, 1, "it is spotted");
+    Check(viewer.multiOrAnim.apMultiTargets[0] == &enemy, "the enemy pointer is stored");
+    Check(ctx.pSelUnit == pSelOuter, "pSelUnit is restored");
+    Check(pScratch == NULL, "the scratch target slot is cleared");
+
+    /* The same-side unit of type 16 is reached but not queued, and the ally is
+     * skipped outright. Replace the enemy with the far one: 20 cells away, past
+     * the 15-cell limit, so nothing is traced at all. */
+    apEnemy[0] = &distant;
+    memset(&viewer, 0, sizeof(viewer));
+    viewer.bStatus = 0;
+    viewer.pCell = &g_aScanCells[0][10][10];
+    Unit_ScanVisibleUnits(&viewer, NULL, ScanLookup, NULL, &ctx, &rosters, &pScratch);
+    CheckEqI32(viewer.nMultiTarget, 0, "a unit 20 cells away is never traced");
+}
+
 static void TestRecalcInventory(void)
 {
     Soldier unit;
@@ -1073,6 +1151,7 @@ int main(void)
     TestCanStepExitDir();
     TestArmorTuWarn();
     TestSpotCellOccupant();
+    TestScanVisibleUnits();
     TestRecalcInventory();
     TestFacingAngleDuel();
 
