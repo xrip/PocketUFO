@@ -38,8 +38,8 @@ static MapGeom g_geom = { 6, 6 };
 static TactState g_state;
 static Soldier g_unit;
 static TactItem g_item;
-static FireWeapon g_shot;
-static FireWeapon g_ctx;
+static ObjectRecFull g_shot;
+static ObjectRecFull g_ctx;
 static Mc1Rec g_spr;
 static u32 g_aHits[PUFO_SPLASH_DWORDS];
 static CombatCtx g_c;
@@ -90,8 +90,8 @@ static void Reset(void)
     g_c.pCtxWeapon = &g_ctx;
 
     /* A plain weapon class: neither 50 nor 15. */
-    g_ctx.uClass = 7;
-    g_shot.uClass = 7;
+    g_ctx.uSortKey = 7;
+    g_shot.uSortKey = 7;
     srand(1);
 }
 
@@ -178,7 +178,7 @@ static void TestClass15(void)
 
     printf("weapon class 15 collapses the tile upward\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_15;
     pCell->pFloorSpr = &g_spr;
     SetHit(3, 0x0B);
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
@@ -194,7 +194,7 @@ static void TestClass15(void)
 
     printf("the collapse stops where the lookup returns nothing\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_15;
     pCell->pFloorSpr = &g_spr;
     g_aCells[2][IMPACT_Y][IMPACT_X].pFloorSpr = NULL; /* marker for the test grid */
     SetHit(3, 0x0B);
@@ -206,7 +206,7 @@ static void TestClass15(void)
 
     printf("unit power 0x0A is not enough\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_15;
     pCell->pFloorSpr = &g_spr;
     SetHit(3, 0x0A);
     Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
@@ -220,8 +220,8 @@ static void TestClass50(void)
 
     printf("weapon class 50 drains TU instead of breaking the tile\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
-    g_shot.uTuCost = 20;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_50;
+    g_shot.uFirePower = 20;
     pCell->pUnit = &g_unit;
     g_unit.uHp = 100;
     SetHit(3, 0x42);
@@ -232,8 +232,8 @@ static void TestClass50(void)
 
     printf("spent TU past HP is replaced by the random unconscious value\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
-    g_shot.uTuCost = 200;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_50;
+    g_shot.uFirePower = 200;
     pCell->pUnit = &g_unit;
     g_unit.uHp = 100;
     SetHit(3, 0x42);
@@ -245,8 +245,8 @@ static void TestClass50(void)
 
     printf("unit power 0x41 is not enough\n");
     Reset();
-    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
-    g_shot.uTuCost = 20;
+    g_ctx.uSortKey = PUFO_WEAPON_SORT_50;
+    g_shot.uFirePower = 20;
     pCell->pUnit = &g_unit;
     g_unit.uHp = 100;
     SetHit(3, 0x41);

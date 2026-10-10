@@ -19,6 +19,7 @@
 #define PUFO_COMBAT_H
 
 #include "pufo_common.h"
+#include "game/pufo_boot.h"
 #include "pufo_mapcell.h"
 #include "pufo_tactstate.h"
 
@@ -31,33 +32,25 @@
 #define PUFO_POWER_MIN   0x14
 #define PUFO_POWER_HIGH  0x46
 
-/* Weapon class ids with special handling in the splash walk. */
-#define PUFO_WEAPON_CLASS_50 50
-#define PUFO_WEAPON_CLASS_15 15
+/* Weapon ids with special handling in the splash walk. These are
+ * ObjectRecFull.uSortKey values, which is also the index the shot sound table
+ * `off_AA040` is read with. */
+#define PUFO_WEAPON_SORT_50 50
+#define PUFO_WEAPON_SORT_15 15
 
-/* FireWeapon: the record the fire pipeline carries through the shot. IDA types
- * the argument as `int`, but every use is a pointer dereference. Only four
- * offsets are proven by the code that reads them:
- *   +175 selector byte for the readiness source (Unit_ApplyCellDamage)
- *   +182 u16 TU cost added to a unit when class is 50
- *   +196 selector byte used when +175 is zero
- *   +200 u16 class id
- * Everything else stays an opaque gap until a function that reads it is ported. */
-typedef struct FireWeapon {
-    u8   gap_0[175];    /* 0x00 */
-    u8   bReadySelA;    /* 0xAF (175) */
-    u8   gap_B0[6];     /* 0xB0 */
-    u16  uTuCost;       /* 0xB6 (182) */
-    u8   gap_B8[12];    /* 0xB8 */
-    u8   bReadySelB;    /* 0xC4 (196) */
-    u8   gap_C5[3];     /* 0xC5 */
-    u16  uClass;        /* 0xC8 (200) */
-} FireWeapon;
-
-_Static_assert(offsetof(FireWeapon, bReadySelA) == 175, "FireWeapon.bReadySelA at 175");
-_Static_assert(offsetof(FireWeapon, uTuCost) == 182, "FireWeapon.uTuCost at 182");
-_Static_assert(offsetof(FireWeapon, bReadySelB) == 196, "FireWeapon.bReadySelB at 196");
-_Static_assert(offsetof(FireWeapon, uClass) == 200, "FireWeapon.uClass at 200");
+/* The weapon record is ObjectRecFull (208 bytes, defined in pufo_boot.h) -- the
+ * same record the data layer parses out of main.dat. Combat_ResolveShot stores
+ * it in `pMap.nFireArg6` before it starts the splash walk, so the two places the
+ * walk reads a weapon from are the same object in every real shot.
+ *
+ * Offsets this module reads, all proven from the code that reads them:
+ *   +0xAF bFireType   readiness source selector, and the branch selector of the
+ *                     shot resolution (0 direct hit, 1 and 2 area fire)
+ *   +0xB6 uFirePower  written into the hit window at the impact cell, and added
+ *                     to a unit's uTuSpent for sort key 50
+ *   +0xC4 bReadySel   readiness source when bFireType is zero
+ *   +0xC8 uSortKey    weapon id and sound index
+ */
 
 /* Index into the hit window: one dword per (row, column, slot). */
 size_t Combat_HitIndex(i32 nRow, i32 nCol, i32 nSlot);
@@ -78,7 +71,7 @@ typedef struct CombatCtx {
     const MapGeom *pGeom;
     TactState    *pState;    /* target of Unit_EnqueueIfApSpent */
     Soldier      *pSelUnit;  /* pCtxBase.pSelUnit @ 0x1139b8 */
-    FireWeapon   *pCtxWeapon;/* Map.nFireArg6 @ Map+0x14050 */
+    ObjectRecFull *pCtxWeapon; /* Map.nFireArg6 @ Map+0x14050 */
 } CombatCtx;
 
 /* Unit_ApplyCellDamage @ 0x2e5d0. Walks the cell's item list and damages every
@@ -89,7 +82,7 @@ typedef struct CombatCtx {
  * `nPower` is the slot-0 tile power of the hit record. Items whose unit is gone
  * (no unit, or uHp == 0) are dropped from the list, but only when nPower > 40,
  * and each removal restarts the walk from the list head. */
-void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const FireWeapon *pWeapon);
+void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const ObjectRecFull *pWeapon);
 
 /* Combat_SplashDamageCells @ 0x2e7d8. Applies the 41 x 41 hit window.
  *
@@ -98,7 +91,7 @@ void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const FireWeapon *pWeapon)
  * fire-context record. They are separate parameters because the original reads
  * class from the Map one and from `a5` in another place. */
 void Combat_SplashDamageCells(const CombatCtx *pCtx, i32 nX, i32 nY, i32 nLayer,
-                              const FireWeapon *pShotWeapon, const u32 *apHits,
+                              const ObjectRecFull *pShotWeapon, const u32 *apHits,
                               SplashMode eMode);
 
 #endif /* PUFO_COMBAT_H */

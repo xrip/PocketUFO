@@ -2301,3 +2301,29 @@ Still open in this cluster: `Combat_ResolveShot @ 0x2f12c` (the caller, 2828
 bytes, 101 blocks), `Tact_ResolveThrowLanding @ 0x31a18`, `Unit_bTryOpportunityFire
 @ 0x47c38`, and the action processors `Tact_ProcessFireAction @ 0x50adc`,
 `Tact_ProcessMoveAction @ 0x4f3f0`, `Tact_ProcessFallAction @ 0x52adc`.
+
+## Correction: the weapon record is ObjectRecFull, not a new type
+
+`Combat_ResolveShot @ 0x2f12c` settles it. Before the splash walk it does
+`pMap->nFireArg6 = (int)pObj`, so the two weapon reads inside
+`Combat_SplashDamageCells` - `pMap->nFireArg6 + 200` and `a5 + 200` - are the
+same object. `pObj` is the 208-byte `ObjectRecFull` the data layer already parses
+out of main.dat (`pufo_boot.h`), so the first-cut `FireWeapon` struct in
+`pufo_combat.h` was a duplicate and is gone.
+
+What the four offsets really are:
+
+| offset | IDA called it | it is |
+|--------|---------------|-------|
+| +0xAF  | -             | `ObjectRecFull.bFireType`, the readiness selector and the branch selector of the shot resolution (0 direct hit, 1 and 2 area fire) |
+| +0xB6  | -             | `ObjectRecFull.uFirePower`, written into the hit window at the impact cell and added to a unit's `uTuSpent` for sort key 50 |
+| +0xC4  | `gap_B9[11]`  | newly named `ObjectRecFull.bReadySel`, the readiness selector used when `bFireType` is zero |
+| +0xC8  | -             | `ObjectRecFull.uSortKey`, the weapon id and the index into the shot sound table `off_AA040` |
+
+So the "weapon class 50 / 15" tests in the splash walk are `uSortKey`
+comparisons, and the TU drain for sort key 50 spends `uFirePower`, not a separate
+cost field. The macros are now `PUFO_WEAPON_SORT_50` and `PUFO_WEAPON_SORT_15`.
+
+`ObjectRecFull.gap_B9[11]`, which `Combat_ResolveShot` reads for its own
+readiness choice, is the same byte `Unit_ApplyCellDamage` reads as its second
+selector. That is the confirmation that the two functions share one record.

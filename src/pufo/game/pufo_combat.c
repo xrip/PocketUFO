@@ -16,18 +16,18 @@ size_t Combat_HitIndex(i32 nRow, i32 nCol, i32 nSlot)
  * scale from the previous item in place; the port keeps that behaviour by taking
  * the running value as an in/out argument. */
 static i32 Combat_ReadyScale(i32 nScale, const Soldier *pUnit,
-                             const FireWeapon *pWeapon)
+                             const ObjectRecFull *pWeapon)
 {
-    if (pWeapon->bReadySelA != 0) {
-        if (pWeapon->bReadySelA == 1) {
+    if (pWeapon->bFireType != 0) {
+        if (pWeapon->bFireType == 1) {
             nScale = pUnit->abReady252[2];
-        } else if (pWeapon->bReadySelA == 2) {
+        } else if (pWeapon->bFireType == 2) {
             nScale = pUnit->abReady252[0];
         }
-    } else if (pWeapon->bReadySelB != 0) {
-        if (pWeapon->bReadySelB == 2) {
+    } else if (pWeapon->bReadySel != 0) {
+        if (pWeapon->bReadySel == 2) {
             nScale = pUnit->abReady252[1];
-        } else if (pWeapon->bReadySelB == 3) {
+        } else if (pWeapon->bReadySel == 3) {
             nScale = pUnit->abReady252[3];
         }
     } else {
@@ -66,7 +66,7 @@ static void Combat_HurtUnit(Soldier *pUnit, i32 nDmg)
     pUnit->gap_433 = 1;
 }
 
-void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const FireWeapon *pWeapon)
+void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const ObjectRecFull *pWeapon)
 {
     i32 nScale = 0;
 
@@ -101,10 +101,10 @@ void Unit_ApplyCellDamage(MapCell *pCell, u16 nPower, const FireWeapon *pWeapon)
  * the cell's flag fields, then the low three bits of both flag words are
  * randomised unless nFlags32 already holds exactly 4. */
 static void Combat_ThrowFlags(MapCell *pCell, const Mc1Rec *pSpr, u16 nPower,
-                              const FireWeapon *pCtxWeapon)
+                              const ObjectRecFull *pCtxWeapon)
 {
-    if (pCtxWeapon->uClass == PUFO_WEAPON_CLASS_50
-        || pCtxWeapon->uClass == PUFO_WEAPON_CLASS_15) {
+    if (pCtxWeapon->uSortKey == PUFO_WEAPON_SORT_50
+        || pCtxWeapon->uSortKey == PUFO_WEAPON_SORT_15) {
         return;
     }
     if (pSpr != NULL && nPower >= pSpr->bSplashResist) {
@@ -149,8 +149,8 @@ static void Combat_DamageOccupant(const CombatCtx *pCtx, MapCell *pCell,
     if (pUnit->gap_433 != 0) {
         return;
     }
-    if (pCtx->pCtxWeapon->uClass == PUFO_WEAPON_CLASS_50
-        || pCtx->pCtxWeapon->uClass == PUFO_WEAPON_CLASS_15) {
+    if (pCtx->pCtxWeapon->uSortKey == PUFO_WEAPON_SORT_50
+        || pCtx->pCtxWeapon->uSortKey == PUFO_WEAPON_SORT_15) {
         return;
     }
     i32 nReady;
@@ -181,7 +181,7 @@ static void Combat_DamageOccupant(const CombatCtx *pCtx, MapCell *pCell,
 }
 
 /* Slot 0 only. Bits 3..6 of nFlags32 are replaced by one of four patterns. */
-static void Combat_MutateFlags(MapCell *pCell, const FireWeapon *pShotWeapon,
+static void Combat_MutateFlags(MapCell *pCell, const ObjectRecFull *pShotWeapon,
                                u16 nPower, SplashMode eMode)
 {
     if (eMode == SPLASH_MODE_NORMAL) {
@@ -190,7 +190,7 @@ static void Combat_MutateFlags(MapCell *pCell, const FireWeapon *pShotWeapon,
     if (nPower <= PUFO_POWER_MIN) {
         return;
     }
-    if (pShotWeapon->uClass == PUFO_WEAPON_CLASS_50 && nPower <= PUFO_POWER_HIGH) {
+    if (pShotWeapon->uSortKey == PUFO_WEAPON_SORT_50 && nPower <= PUFO_POWER_HIGH) {
         return;
     }
     u8 nRoll = (u8)(8 * Game_RandU16(3) - 57);
@@ -258,7 +258,7 @@ static void Combat_DamageSprite(MapCell *pCell, i32 nSlot, u16 nPower,
 /* Weapon class 50: instead of destroying the ceiling tile it drains TU from the
  * occupant until it is unconscious. */
 static void Combat_Class50TuDrain(const CombatCtx *pCtx, MapCell *pCell,
-                                  const FireWeapon *pShotWeapon, i32 nUnitPower)
+                                  const ObjectRecFull *pShotWeapon, i32 nUnitPower)
 {
     if (nUnitPower <= 0x41) {
         return;
@@ -267,7 +267,7 @@ static void Combat_Class50TuDrain(const CombatCtx *pCtx, MapCell *pCell,
         return;
     }
     Soldier *pUnit = pCell->pUnit;
-    pUnit->uTuSpent = (u16)(pUnit->uTuSpent + pShotWeapon->uTuCost);
+    pUnit->uTuSpent = (u16)(pUnit->uTuSpent + pShotWeapon->uFirePower);
     if (pUnit->uTuSpent >= (u16)pUnit->uHp) {
         pUnit->uTuSpent = (u16)(10 * (Game_RandU16(6) + 7) + pUnit->uHp);
     }
@@ -295,7 +295,7 @@ static void Combat_Class15Collapse(const CombatCtx *pCtx, MapCell *pCell,
 }
 
 void Combat_SplashDamageCells(const CombatCtx *pCtx, i32 nX, i32 nY, i32 nLayer,
-                              const FireWeapon *pShotWeapon, const u32 *apHits,
+                              const ObjectRecFull *pShotWeapon, const u32 *apHits,
                               SplashMode eMode)
 {
     i32 nScale = 0;
@@ -339,24 +339,24 @@ void Combat_SplashDamageCells(const CombatCtx *pCtx, i32 nX, i32 nY, i32 nLayer,
                     }
                 } else {
                     if ((u16)nSlotPower > PUFO_POWER_MIN
-                        && pCtx->pCtxWeapon->uClass != PUFO_WEAPON_CLASS_50
-                        && pCtx->pCtxWeapon->uClass != PUFO_WEAPON_CLASS_15) {
+                        && pCtx->pCtxWeapon->uSortKey != PUFO_WEAPON_SORT_50
+                        && pCtx->pCtxWeapon->uSortKey != PUFO_WEAPON_SORT_15) {
                         Unit_ApplyCellDamage(pCell, (u16)nSlotPower, pShotWeapon);
                     }
                     Combat_MutateFlags(pCell, pShotWeapon, (u16)nSlotPower, eMode);
                 }
 
-                u16 nCtxClass = pCtx->pCtxWeapon->uClass;
+                u16 nCtxClass = pCtx->pCtxWeapon->uSortKey;
                 if (pSpr == NULL || pSpr->bStrength == 255
-                    || nCtxClass == PUFO_WEAPON_CLASS_50
-                    || nCtxClass == PUFO_WEAPON_CLASS_15) {
+                    || nCtxClass == PUFO_WEAPON_SORT_50
+                    || nCtxClass == PUFO_WEAPON_SORT_15) {
                     /* The original leaves the slot here unless it is the ceiling
                      * slot; the two special weapon classes only act there. */
                     if (nSlot == 3) {
-                        if (nCtxClass == PUFO_WEAPON_CLASS_50) {
+                        if (nCtxClass == PUFO_WEAPON_SORT_50) {
                             Combat_Class50TuDrain(pCtx, pCell, pShotWeapon,
                                                   nUnitPower);
-                        } else if (nCtxClass == PUFO_WEAPON_CLASS_15) {
+                        } else if (nCtxClass == PUFO_WEAPON_SORT_15) {
                             Combat_Class15Collapse(pCtx, pCell, nUnitPower);
                         }
                     }

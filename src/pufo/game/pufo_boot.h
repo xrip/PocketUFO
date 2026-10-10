@@ -56,7 +56,9 @@ typedef struct ObjectRecFull {
     u8   abArmorTu[3];     /* 0xb3 */
     u16  uFirePower;       /* 0xb6 */
     u8   nCategory;        /* 0xb8 */
-    u8   gap_B9[15];       /* 0xb9 */
+    u8   gap_B9[11];       /* 0xb9 */
+    u8   bReadySel;        /* 0xc4 readiness source selector, read by Unit_ApplyCellDamage @ 0x2e5d0 and Combat_ResolveShot @ 0x2f12c */
+    u8   gap_C5[3];        /* 0xc5 */
     u16  uSortKey;         /* 0xc8 */
     u16  uRecovScore;      /* 0xca */
     u16  uRecovCount;      /* 0xcc */
