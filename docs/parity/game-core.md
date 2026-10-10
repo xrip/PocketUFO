@@ -3685,13 +3685,13 @@ battle results:
 | `Tact_MarkAllSoldiersSeen` | `0x33bf0` | 144 |
 | `Tact_ScanVictoryTiles` | `0x33264` | 184 |
 | `Tact_GetCameraBounds` | `0x3331c` | 368 |
-| `Tact_TallyCraftRecovery` | `0x33d80` | 556 |
+| `Tact_TallyCraftRecovery` | `0x344b4` | 556 |
 | `Tact_TallyBattleStats` | `0x3348c` | 756 |
-| `Tact_TallyUnitResults` | `0x33e20` | 1136 |
-| `Tact_TallyItemRecovery` | — | 2100 |
-| `Tact_ClearSoldierBattleFlags` | — | 2268 |
-| `Tact_Shutdown` | — | 3788 |
-| `Tact_InitMission` | — | 4120 |
+| `Tact_TallyUnitResults` | `0x33780` | 1136 |
+| `Tact_TallyItemRecovery` | `0x33c80` | 2100 |
+| `Tact_ClearSoldierBattleFlags` | `0x346e0` | 2268 |
+| `Tact_Shutdown` | `0x3d568` | 3788 |
+| `Tact_InitMission` | `0x3c550` | 4120 |
 
 **`Tact_MarkAllSoldiersSeen @ 0x33bf0`.** Walks `apSoldiers[0..nSoldierCount)`. For
 each unit with a non-zero `pLinked1040` and `uHp != 0`, increments the u16 at
