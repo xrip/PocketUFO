@@ -457,6 +457,8 @@ void Unit_PlaceOnMap(Soldier *pUnit, i32 nX, i32 nY, i32 nLayer,
  * only pointers are needed here. */
 struct UnitRosters;
 struct LosTables;
+struct FireGate;
+struct ActionCostTable;
 
 i32 Unit_ScanVisibleUnits(Soldier *pViewer, const struct LosTables *pTables,
                           MapCellLookup pfnLookup, void *pUser,
@@ -533,8 +535,19 @@ typedef struct VisCtx {
     const struct UnitRosters *pRosters;
     Soldier            **ppScratchUnit; /* pCtxBase.anActionPhaseSave0[120] */
     u8                   nMissionType;  /* Map.nMissionType @ 0x1511A */
+    struct AimState     *pAim;          /* the Map aim block, for the arc trace */
+    struct TactCtx272   *pTactCtx;      /* apOppFire / nOppFireCount */
+    u8                  *pbFireStatus1; /* Map.bFireStatus0[1] @ 0x51 */
 } VisCtx;
 
 i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx);
+
+/* Unit_bTryOpportunityFire @ 0x47c38. Offer one opportunity shot. See the
+ * comment on the definition for the gate chain and for the quirk that a target
+ * which turns out not to be spotted still reports success. */
+bool Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter,
+                              const struct FireGate *pGate, TactItem **ppSelWeapon,
+                              i32 *pnActionMode, struct ActionCostTable *pCosts,
+                              VisCtx *pCtx);
 
 #endif /* PUFO_UNIT_H */

@@ -12,6 +12,8 @@
 #include "game/pufo_combat.h"   /* UnitRosters */
 #include "game/pufo_vistry.h"   /* VisRay, ray-table counts */
 #include "game/pufo_tactctl.h"   /* mission type ids */
+#include "game/pufo_ballist.h"   /* AimState, Tact_TraceProjectileArc */
+#include "game/pufo_turn.h"        /* TactCtx272 */
 #include "game/pufo_boot.h"   /* the extracted name tables, and TextTables_* */
 #include "game/pufo_font.h"   /* Font_GetSprByIndex / g_fontSys */
 #include "game/pufo_path.h"   /* g_aStepDir */
@@ -1151,4 +1153,102 @@ i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx)
     }
 
     return 0;
+}
+
+/* Unit_bTryOpportunityFire @ 0x47c38.
+ *
+ * Note the argument order: the target comes first.
+ *
+ * The gate chain is distance, facing cone, the angle duel, then the fire-mode
+ * pick. All four use helpers the port already has, and the facing cone is the
+ * same rule the multi-target scan inside Unit_UpdateVisibility uses, with the
+ * same three constants and the same truncation of the angle error.
+ *
+ * The arc is traced FROM THE TARGET TO THE SHOOTER, and both ends use the plain
+ * `12 * nZ + 8`. That is unlike the Map_TraceLos calls in Unit_UpdateVisibility
+ * and Unit_ScanVisibleUnits, which subtract the ceiling sprite's nObjParam. The
+ * same pair of cell heights is spelled two ways in the same subsystem, and this
+ * one has no ceiling term.
+ *
+ * After a clear arc the shooter's visibility is refreshed and the target is
+ * looked for in the shooter's multi-target list. Only a real match enqueues the
+ * shooter into the opportunity-fire queue. */
+bool Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter,
+                              const struct FireGate *pGate, TactItem **ppSelWeapon,
+                              i32 *pnActionMode, struct ActionCostTable *pCosts,
+                              VisCtx *pCtx)
+{
+    MapCell *pTargetCell = pTarget->pCell;
+    MapCell *pShooterCell = pShooter->pCell;
+    const i32 nDx = pTargetCell->nX - pShooterCell->nX;
+    const i32 nDy = pTargetCell->nY - pShooterCell->nY;
+    const i32 nDist = (i32)sqrt((double)nDx * nDx + (double)nDy * nDy);
+    double dBearing;
+    double dFace;
+    bool bInView;
+
+    if (nDist > PUFO_VIS_SIGHT_RANGE || nDist < 1) {
+        return false;
+    }
+
+    dBearing = Unit_CellBearing(pShooterCell, pTargetCell);
+    dFace = Unit_FacingAngle(pShooter);
+    if (pShooter->bFacing == 2) {
+        bInView = dBearing >= PUFO_FACING_STEP && dBearing <= PUFO_VIS_ANGLE_MAX;
+    } else {
+        i32 nErr = (i32)(dBearing - dFace);
+
+        bInView = (double)(nErr < 0 ? -nErr : nErr) <= PUFO_FACING_STEP;
+    }
+    if (!bInView) {
+        return false;
+    }
+
+    if (!Unit_bFacingAngleDuel(pShooter, pTarget)) {
+        return false;
+    }
+    if (!Unit_SelectBestFireMode(pShooter, pGate, ppSelWeapon, pnActionMode, pCosts)) {
+        return false;
+    }
+
+    *pCtx->ppScratchUnit = pShooter;
+
+    if (!Tact_TraceProjectileArc(pCtx->pAim, pCtx->pTables, pCtx->pGeom,
+                                 pCtx->pfnLookup, pCtx->pUser, NULL, NULL,
+                                 16 * pTargetCell->nX + 8, 16 * pTargetCell->nY + 8,
+                                 12 * pTargetCell->nZ + 8,
+                                 16 * pShooterCell->nX + 8, 16 * pShooterCell->nY + 8,
+                                 12 * pShooterCell->nZ + 8, 0, NULL)) {
+        *pCtx->ppScratchUnit = NULL;
+        if (pCtx->pbFireStatus1 != NULL) {
+            *pCtx->pbFireStatus1 = 0;
+        }
+        return false;
+    }
+
+    Unit_UpdateVisibility(pShooter, pCtx);
+
+    if (pShooter->nMultiTarget > 0) {
+        const i32 nCount = pShooter->nMultiTarget;
+
+        for (i32 i = 0; i < nCount; ++i) {
+            if (pShooter->multiOrAnim.apMultiTargets[i] == pTarget) {
+                if (pCtx->pbFireStatus1 != NULL) {
+                    *pCtx->pbFireStatus1 = 0;
+                }
+                *pCtx->ppScratchUnit = NULL;
+                pCtx->pTactCtx->apOppFire[pCtx->pTactCtx->nOppFireCount] = pShooter;
+                pCtx->pTactCtx->nOppFireCount += 1;
+                return true;
+            }
+        }
+
+        /* Kept as the original has it. When the target is not in the list the
+         * search loop exits with the shooter pointer still in its result register,
+         * so the function reports success, leaves anActionPhaseSave0[120] pointing
+         * at the shooter, does not clear bFireStatus0[1], and enqueues nothing. */
+        return true;
+    }
+
+    return false;
 }

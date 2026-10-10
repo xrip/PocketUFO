@@ -62,7 +62,10 @@ add_library(pufo_game STATIC
     game/pufo_vistry.c
 )
 target_include_directories(pufo_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(pufo_game PUBLIC pufo_options pufo_platform pufo_render pufo_dat pufo_util)
+# pufo_combat.c calls Sound_Play, so the audio library is part of pufo_game's
+# interface rather than something each consumer repeats.
+target_link_libraries(pufo_game PUBLIC pufo_options pufo_platform pufo_render pufo_dat
+                      pufo_util pufo_audio)
 
 # UI panel line engine: the shared text/row engine every screen draws through.
 # UiPanel_ctor @ 0x3e730 is 7092 bytes; see the header for the layout proof.
@@ -474,7 +477,7 @@ add_test(NAME test_ballist
 
 # Shot resolution: the 41x41 splash window, cell damage, sprite breakage.
 add_executable(test_combat ${CMAKE_SOURCE_DIR}/tests/test_combat.c)
-target_link_libraries(test_combat PRIVATE pufo_options pufo_game pufo_util pufo_audio)
+target_link_libraries(test_combat PRIVATE pufo_options pufo_game pufo_util)
 set_target_properties(test_combat PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
