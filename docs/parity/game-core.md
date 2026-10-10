@@ -2863,3 +2863,44 @@ Row index is `15 * (group * 31 + rayInGroup)`, and the step slot is
    The mapping between pass index and group index needs one more look.
 
 `Map_ComputeFov` and `Unit_UpdateVisibility @ 0x48580` both wait on this table.
+
+## Correction: `byte_AD720` is eight groups, and group == builder pass
+
+The four-group reading above is wrong. Sizes settle it.
+
+`Map_ComputeFov` indexes the table as `1860 * byte_10DBB4 + 60 * i + 4 * k` with
+`byte_10DBB4` in {0, 2, 4, 6}, `i` in 0..30, `k` in 0..14. Maximum byte offset:
+`1860 * 6 + 60 * 30 + 4 * 14 = 13016`.
+
+`Tact_BuildVisRayTable` indexes it as `4 * (15 * (31 * pass + ray) + step)` =
+`60 * (31 * pass + ray) + 4 * step`, with 8 passes. Maximum:
+`60 * (31 * 7 + 30) + 56 = 14876`.
+
+Both fit exactly in **8 groups x 1860 bytes = 14880 bytes**, and the two index
+forms are the same shape: `60 * (31 * group + ray) + 4 * step`. So
+
+- the table is 8 groups of 31 rays x 15 steps x 4 bytes;
+- `Map_ComputeFov`'s group index **is** the builder's pass index, and it uses only
+  passes 0, 2, 4, 6;
+- the seeding loop makes exactly 31 rays active per pass, which is why the walk
+  loop's `v56` (the active-ray counter) stays in 0..30 and the offsets stay inside
+  the table.
+
+`Map_ScanBlastFootprint @ 0x32cd4` also reads `byte_AD720` and is the likely user
+of the other four passes.
+
+## Still open before this can be ported
+
+The seeding loop's addressing does not line up with the ray record layout:
+
+```c
+*(_DWORD *)((char *)&dword_B2278[2] + v22 + v17) = 1;
+/* v17 = 4 * pass, v22 = (600 * pass + 40 * k) mod 4800, k = 0..30 */
+```
+
+For pass 0 this lands on dword 2 of rays 0..30, which is `aStep[0]` as expected.
+For pass 1 the byte offset is `8 + 600 + 40k + 4`, and 604 is not a multiple of 40,
+so it would land mid-record. Either `v17` is not `4 * pass`, or `v22` is not the
+simple modulo I read, or the loop writes something other than `aStep[0]`. This has
+to be settled from the raw disassembly at `0x37bec..0x37c60`, not from the
+pseudocode, before the builder is ported.
