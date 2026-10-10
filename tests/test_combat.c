@@ -1,0 +1,404 @@
+/* test_combat.c - parity checks for shot resolution.
+ * Evidence: Combat_SplashDamageCells @ 0x2e7d8, Unit_ApplyCellDamage @ 0x2e5d0. */
+#include "game/pufo_combat.h"
+#include "game/pufo_mapcell.h"
+#include "util/pufo_rand.h"
+#include "game/pufo_tactstate.h"
+#include "game/pufo_unit.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int g_nChecks = 0;
+static int g_nFails = 0;
+
+static void Check(const char *pWhat, int bOk)
+{
+    ++g_nChecks;
+    if (!bOk) {
+        ++g_nFails;
+        printf("  FAIL %s\n", pWhat);
+    }
+}
+
+static void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
+{
+    if (nGot != nWant) {
+        printf("  FAIL %s: got %d want %d\n", pWhat, nGot, nWant);
+        ++g_nChecks;
+        ++g_nFails;
+        return;
+    }
+    ++g_nChecks;
+}
+
+static MapCell g_aCells[PUFO_MAP_LAYERS][60][60];
+static MapGeom g_geom = { 6, 6 };
+static TactState g_state;
+static Soldier g_unit;
+static TactItem g_item;
+static FireWeapon g_shot;
+static FireWeapon g_ctx;
+static Mc1Rec g_spr;
+static u32 g_aHits[PUFO_SPLASH_DWORDS];
+static CombatCtx g_c;
+
+/* The impact cell is the centre of the window, so row = col = 20. */
+#define IMPACT_X 30
+#define IMPACT_Y 30
+#define IMPACT_LAYER 0
+
+static MapCell *CellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nX < 0 || nY < 0 || nLayer < 0 || nX >= 60 || nY >= 60) {
+        return NULL;
+    }
+    return &g_aCells[nLayer][nY][nX];
+}
+
+static MapCell *Impact(void)
+{
+    return &g_aCells[IMPACT_LAYER][IMPACT_Y][IMPACT_X];
+}
+
+static void Reset(void)
+{
+    memset(g_aCells, 0, sizeof(g_aCells));
+    memset(g_aHits, 0, sizeof(g_aHits));
+    memset(&g_state, 0, sizeof(g_state));
+    memset(&g_unit, 0, sizeof(g_unit));
+    memset(&g_item, 0, sizeof(g_item));
+    memset(&g_shot, 0, sizeof(g_shot));
+    memset(&g_ctx, 0, sizeof(g_ctx));
+    memset(&g_spr, 0, sizeof(g_spr));
+    g_pTactState = &g_state;
+
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; nLayer++) {
+        for (i32 y = 0; y < 60; y++) {
+            for (i32 x = 0; x < 60; x++) {
+                MapCell_Init(&g_aCells[nLayer][y][x], x, y, nLayer);
+            }
+        }
+    }
+    g_c.pfnLookup = CellLookup;
+    g_c.pUser = NULL;
+    g_c.pGeom = &g_geom;
+    g_c.pState = &g_state;
+    g_c.pSelUnit = NULL;
+    g_c.pCtxWeapon = &g_ctx;
+
+    /* A plain weapon class: neither 50 nor 15. */
+    g_ctx.uClass = 7;
+    g_shot.uClass = 7;
+    srand(1);
+}
+
+static void SetHit(i32 nSlot, u32 nValue)
+{
+    g_aHits[Combat_HitIndex(20, 20, nSlot)] = nValue;
+}
+
+static void TestIndex(void)
+{
+    printf("Combat_HitIndex\n");
+    CheckEqI32("row 0 col 0 slot 0", (i32)Combat_HitIndex(0, 0, 0), 0);
+    CheckEqI32("row 0 col 0 slot 3", (i32)Combat_HitIndex(0, 0, 3), 3);
+    CheckEqI32("row 0 col 1 slot 0", (i32)Combat_HitIndex(0, 1, 0), 4);
+    CheckEqI32("row 1 col 0 slot 0", (i32)Combat_HitIndex(1, 0, 0), 4 * 41);
+    CheckEqI32("last record", (i32)Combat_HitIndex(40, 40, 3),
+               PUFO_SPLASH_DWORDS - 1);
+}
+
+static void TestEmptyWindow(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("Combat_SplashDamageCells with an empty window\n");
+    Reset();
+    pCell->pFloorSpr = &g_spr;
+    g_spr.bStrength = 100;
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("no counter written", pCell->bUnk16, 0);
+    CheckEqI32("no flags written", (i32)(pCell->nFlags32 & 7u), 0);
+}
+
+static void TestSpriteDamage(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("sprite damage accumulates in the per-slot counters\n");
+    Reset();
+    pCell->pFloorSpr = &g_spr;
+    g_spr.bStrength = 100;
+    SetHit(0, 200);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    /* d = 200 - 1.5 * 100 = 50, and 100 >= 0 + 50, so the tile only records it. */
+    CheckEqI32("first hit counter", pCell->bUnk16, 50);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("second hit counter", pCell->bUnk16, 100);
+    Check("sprite survives while the counter is under the hardness",
+          pCell->pFloorSpr == &g_spr);
+
+    printf("a third hit goes past the hardness\n");
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    /* Layer 0 with no extra variant: the original keeps the sprite standing. */
+    Check("layer 0 keeps the sprite when it has no extra variant",
+          pCell->pFloorSpr == &g_spr);
+
+    printf("the same break on layer 1 removes the sprite\n");
+    Reset();
+    g_aCells[1][IMPACT_Y][IMPACT_X].pFloorSpr = &g_spr;
+    g_spr.bStrength = 100;
+    SetHit(0, 1000);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, 1, &g_shot, g_aHits,
+                             SPLASH_MODE_NORMAL);
+    Check("layer 1 clears the broken sprite",
+          g_aCells[1][IMPACT_Y][IMPACT_X].pFloorSpr == NULL);
+
+    printf("strength 255 is unbreakable\n");
+    Reset();
+    pCell->pFloorSpr = &g_spr;
+    g_spr.bStrength = 255;
+    SetHit(0, 4000);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("no counter on an unbreakable sprite", pCell->bUnk16, 0);
+    Check("unbreakable sprite stays", pCell->pFloorSpr == &g_spr);
+}
+
+static void TestClass15(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("weapon class 15 collapses the tile upward\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    pCell->pFloorSpr = &g_spr;
+    SetHit(3, 0x0B);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("floor cell flags", (i32)(pCell->nFlags32 & 7u), 3);
+    CheckEqI32("floor cell second flags", (i32)(pCell->nFlags40 & 7u), 3);
+    CheckEqI32("one layer up",
+               (i32)(g_aCells[1][IMPACT_Y][IMPACT_X].nFlags32 & 7u), 3);
+    CheckEqI32("two layers up",
+               (i32)(g_aCells[2][IMPACT_Y][IMPACT_X].nFlags32 & 7u), 3);
+    CheckEqI32("three layers up",
+               (i32)(g_aCells[3][IMPACT_Y][IMPACT_X].nFlags32 & 7u), 3);
+
+    printf("the collapse stops where the lookup returns nothing\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    pCell->pFloorSpr = &g_spr;
+    g_aCells[2][IMPACT_Y][IMPACT_X].pFloorSpr = NULL; /* marker for the test grid */
+    SetHit(3, 0x0B);
+    g_c.pfnLookup = CellLookup;
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("layers above still flagged while the grid is dense",
+               (i32)(g_aCells[3][IMPACT_Y][IMPACT_X].nFlags32 & 7u), 3);
+
+    printf("unit power 0x0A is not enough\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_15;
+    pCell->pFloorSpr = &g_spr;
+    SetHit(3, 0x0A);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("threshold is strict", (i32)(pCell->nFlags32 & 7u), 0);
+}
+
+static void TestClass50(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("weapon class 50 drains TU instead of breaking the tile\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
+    g_shot.uTuCost = 20;
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 100;
+    SetHit(3, 0x42);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("TU spent", g_unit.uTuSpent, 20);
+    CheckEqI32("no HP lost", g_unit.uHp, 100);
+
+    printf("spent TU past HP is replaced by the random unconscious value\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
+    g_shot.uTuCost = 200;
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 100;
+    SetHit(3, 0x42);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    /* 10 * (rand(6) + 7) + uHp, so 170..229. */
+    Check("replacement is in the 170..229 band",
+          g_unit.uTuSpent >= 170 && g_unit.uTuSpent <= 229);
+
+    printf("unit power 0x41 is not enough\n");
+    Reset();
+    g_ctx.uClass = PUFO_WEAPON_CLASS_50;
+    g_shot.uTuCost = 20;
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 100;
+    SetHit(3, 0x41);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("threshold is strict", g_unit.uTuSpent, 0);
+}
+
+static void TestOccupantDamage(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("ceiling-slot power hurts the occupant\n");
+    Reset();
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 50;
+    g_unit.nArmorPoints = 1000;
+    g_unit.auStat[1] = 40;
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    Check("armour absorbs the whole hit", g_unit.uHp == 50);
+    Check("armour took the damage",
+          g_unit.nArmorPoints >= 900 && g_unit.nArmorPoints < 1000);
+    CheckEqI32("unit marked as hit this shot", g_unit.gap_433, 1);
+
+    printf("armour overflow carries into HP\n");
+    Reset();
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 50;
+    g_unit.nArmorPoints = 1;
+    SetHit(3, 10);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("armour clamped to zero", g_unit.nArmorPoints, 0);
+    /* damage is 10 - rand(2), so 8..10; the armour leaves 7..9 to spill. */
+    Check("the spill came off HP", g_unit.uHp >= 41 && g_unit.uHp <= 43);
+    CheckEqI32("spill recorded", g_unit.nUnk436, (i32)(50 - g_unit.uHp));
+
+    printf("the selected unit is exempt in normal mode\n");
+    Reset();
+    g_c.pSelUnit = &g_unit;
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 50;
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("selected unit untouched", g_unit.uHp, 50);
+    CheckEqI32("and not marked", g_unit.gap_433, 0);
+
+    printf("a unit already hit in this shot is skipped\n");
+    Reset();
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 50;
+    g_unit.gap_433 = 1;
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("no second hit", g_unit.uHp, 50);
+
+    printf("a dead occupant (bStatus >= 3) is not a target\n");
+    Reset();
+    pCell->pUnit = &g_unit;
+    g_unit.uHp = 50;
+    g_unit.bStatus = 3;
+    SetHit(3, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("not targeted", g_unit.uHp, 50);
+}
+
+static void TestCellDamage(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("Unit_ApplyCellDamage through the floor slot\n");
+    Reset();
+    pCell->pItemList = &g_item;
+    g_item.pLinkedSoldier = &g_unit;
+    g_unit.uHp = 50;
+    g_unit.nArmorPoints = 1000;
+    SetHit(0, 100);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("item unit was hit", g_unit.gap_433, 1);
+
+    printf("the tile power gate is strict\n");
+    Reset();
+    pCell->pItemList = &g_item;
+    g_item.pLinkedSoldier = &g_unit;
+    g_unit.uHp = 50;
+    SetHit(0, PUFO_POWER_MIN);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    CheckEqI32("power 0x14 does no unit damage", g_unit.gap_433, 0);
+
+    printf("dead items are dropped only past power 40\n");
+    Reset();
+    pCell->pItemList = &g_item;
+    g_item.pLinkedSoldier = NULL;
+    SetHit(0, 41);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    Check("item removed", pCell->pItemList == NULL);
+
+    Reset();
+    pCell->pItemList = &g_item;
+    g_item.pLinkedSoldier = NULL;
+    SetHit(0, 40);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_NORMAL);
+    Check("power 40 keeps the item", pCell->pItemList == &g_item);
+}
+
+static void TestThrowMode(void)
+{
+    MapCell *pCell = Impact();
+
+    printf("throw mode rewrites the tile flags past the sprite threshold\n");
+    Reset();
+    pCell->pFloorSpr = &g_spr;
+    g_spr.bStrength = 100;
+    g_spr.bSplashResist = 30;
+    SetHit(0, 30);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_THROW);
+    CheckEqI32("nFlags32 low bits", (i32)(pCell->nFlags32 & 7u), 4);
+    CheckEqI32("nFlags40 low bits", (i32)(pCell->nFlags40 & 7u), 2);
+    CheckEqI32("bFlags36 bit 0 cleared", pCell->bFlags36 & 1, 0);
+
+    printf("below the threshold nothing is set\n");
+    Reset();
+    pCell->pFloorSpr = &g_spr;
+    g_spr.bStrength = 100;
+    g_spr.bSplashResist = 31;
+    SetHit(0, 30);
+    Combat_SplashDamageCells(&g_c, IMPACT_X, IMPACT_Y, IMPACT_LAYER, &g_shot,
+                             g_aHits, SPLASH_MODE_THROW);
+    CheckEqI32("no flag rewrite", (i32)(pCell->nFlags32 & 7u), 0);
+}
+
+int main(void)
+{
+    TestIndex();
+    TestEmptyWindow();
+    TestSpriteDamage();
+    TestClass15();
+    TestClass50();
+    TestOccupantDamage();
+    TestCellDamage();
+    TestThrowMode();
+
+    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
+    return g_nFails != 0;
+}

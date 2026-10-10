@@ -2245,3 +2245,59 @@ So a unit's "extra sprite" is a font-table lookup keyed by two unit fields.
 The stun/damage/armour block is the same code as the slot-3 path in
 `Combat_SplashDamageCells`; the port should share one helper rather than
 duplicate it.
+
+## Ported: shot resolution block (pufo_combat)
+
+`Combat_SplashDamageCells @ 0x2e7d8` and `Unit_ApplyCellDamage @ 0x2e5d0` are now
+in `src/pufo/game/pufo_combat.c`, with `tests/test_combat.c` (43 checks).
+
+Evidence that settled the shapes:
+
+- The hit window is one dword per (row, column, slot) in `Map.gap_TrajRest`
+  (Map+0x4EBC), indexed `4 * (41 * row + col) + slot`. Confirmed from
+  `Combat_ResolveShot`: `MOV R0, #0x4E00 / ORR R0, R0, #0xBC` builds 0x4EBC, and
+  the grid itself is an array of dword cell pointers at Map+0x15338
+  (`MOV R2, #0x15000 / ORR R2, R2, #0x338 / LDR R2, [R3, R2]`), 60 dwords per
+  row, 4 layers.
+- `Unit_ApplyCellDamage` takes a fourth argument in R3. At the splash call site
+  it is `a5`, not the Map: `LDR R3, [SP, #0x1C+a5] / MOV R1, R4 / MOV R0, R8 /
+  BL Unit_ApplyCellDamage`. The class checks just before it read
+  `LDR R3, [R8, #0x14050] / LDRH R0, [R3, #0xC8]`, so Map+0x14050 is a *pointer*
+  to a record whose u16 class is at +200. Both records are modelled as
+  `FireWeapon` and passed separately, because the original reads class from the
+  Map one in some rules and from `a5` in another.
+- `MOV R3, #0x1B0 / ORR R3, R3, #1 / LDRB R3, [R6, R3]` confirms the "already hit
+  this shot" flag is Soldier+0x1B1 (`Soldier.gap_433`).
+
+Deviations, all deliberate:
+
+1. `Unit_ApplyCellDamage` returns nothing. The original returns a mixed pointer
+   (last unit seen, or the cell after a list removal) and none of its five call
+   sites uses it.
+2. Readiness selection. The original keeps the previous item's scale when a
+   selector byte is non-zero but not one of the known values, and its first
+   value is uninitialised stack. The port threads the running scale through the
+   walk and starts it at 0. Same result for every selector value the game uses.
+3. `g_pCurCell` @ 0x113998 is gone. The original re-reads the current cell from
+   that global after every helper call; no helper changes it, so the port keeps a
+   local pointer.
+4. `Unit_GetExtraSpr` is called by the splash walk with a *tile sprite* record,
+   not a unit. Its two reads, +0x26 and +0x32, land on `Mc1Rec.nSlot` and
+   `Mc1Rec.bExtraSprFacing`, so the reuse is coherent rather than a type bug. The
+   lookup is factored into `Rec_GetExtraSpr(nBaseIdx, nFacingByte)` and both
+   callers use it.
+5. Three `Mc1Rec` gap bytes are now named: `bStrength` at 0x16 (255 means
+   unbreakable), `bSplashResist` at 0x19 (tile power needed to rewrite the cell
+   flags in throw mode), `bExtraSprFacing` at 0x32 (non-zero means the sprite has
+   an extra variant). `gap_2f[0]` at 0x2F keeps its old name and meaning.
+6. The two special weapon classes act only on the ceiling slot. The original's
+   `if (slot != 3) goto LABEL_115` sits before the class tests; a first reading
+   of the pseudocode hid that.
+7. The random damage reduction is computed with a `u16` bound. When the damage is
+   negative the original's 32-bit bound differs, but both then clamp the result to
+   zero, so the outcome is identical.
+
+Still open in this cluster: `Combat_ResolveShot @ 0x2f12c` (the caller, 2828
+bytes, 101 blocks), `Tact_ResolveThrowLanding @ 0x31a18`, `Unit_bTryOpportunityFire
+@ 0x47c38`, and the action processors `Tact_ProcessFireAction @ 0x50adc`,
+`Tact_ProcessMoveAction @ 0x4f3f0`, `Tact_ProcessFallAction @ 0x52adc`.

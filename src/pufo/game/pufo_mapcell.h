@@ -62,7 +62,12 @@ typedef struct Mc1Rec {
     u8   gap_0[8];        /* 0x00 */
     u8   abPal[12];       /* 0x08 */
     u16  uUnk20;          /* 0x14 */
-    u8   gap_22[6];       /* 0x16 */
+    u8   bStrength;       /* 0x16, sprite hardness; 255 means unbreakable.
+                           * Read by Combat_SplashDamageCells @ 0x2e7d8 as pSpr[22]. */
+    u8   gap_17[2];       /* 0x17 */
+    u8   bSplashResist;   /* 0x19, tile power needed to change the cell flags.
+                           * Read as pSpr[25] in the SPLASH_MODE_THROW branch. */
+    u8   gap_1A[2];       /* 0x1A */
     u8   bHeight;         /* 0x1C, sprite height/occlusion, max over the 4 sprites */
     u8   gap_1D[3];       /* 0x1D */
     u8   bTransparent;    /* 0x20, 255 means transparent */
@@ -74,7 +79,14 @@ typedef struct Mc1Rec {
     u8   bBlocksMove;     /* 0x2a */
     u8   gap_2b[3];       /* 0x2b */
     u8   bBlocksSight;    /* 0x2e */
-    u8   gap_2f[5];       /* 0x2f */
+    u8   gap_2f[3];       /* 0x2F; [0] marks a real wall (Unit_CanStepExitDir) */
+    u8   bExtraSprFacing; /* 0x32, non-zero means the sprite has an extra variant.
+                           * Read as pSpr[50] by Combat_SplashDamageCells, and as the
+                           * facing byte by Unit_GetExtraSpr @ 0x2e59c, which the
+                           * splash walk calls with a sprite record instead of a unit.
+                           * The two offsets it uses, +0x26 and +0x32, land on nSlot
+                           * and this byte, so the reuse is deliberate. */
+    u8   gap_33;          /* 0x33 */
 } Mc1Rec;
 
 /* TactItem: 24 bytes. Referenced from the cell's item list. */

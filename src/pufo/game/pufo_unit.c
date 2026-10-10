@@ -49,15 +49,19 @@ bool Unit_bIsLarge(const Soldier *pUnit)
  * anim.uFacingResetH (LDRB [pUnit,#0x32]) and the u16 anim.uExtraSprBase
  * (LDRH [pUnit,#0x26]), then indexes anMc1Base[uExtraSprBase] (the u16 at
  * g_fontSys+0x3a) and adds the facing byte. */
-Mc1Rec *Unit_GetExtraSpr(const Soldier *pUnit)
+Mc1Rec *Rec_GetExtraSpr(u16 nBaseIdx, u8 nFacingByte)
 {
-    u8 nFacingByte = (u8)pUnit->multiOrAnim.anim.uFacingResetH;
-
     if (nFacingByte == 0) {
         return NULL;
     }
     return Font_GetSprByIndex(&g_fontSys,
-        (u16)(g_fontSys.anMc1Base[pUnit->multiOrAnim.anim.uExtraSprBase] + nFacingByte));
+        (u16)(g_fontSys.anMc1Base[nBaseIdx] + nFacingByte));
+}
+
+Mc1Rec *Unit_GetExtraSpr(const Soldier *pUnit)
+{
+    return Rec_GetExtraSpr(pUnit->multiOrAnim.anim.uExtraSprBase,
+                           (u8)pUnit->multiOrAnim.anim.uFacingResetH);
 }
 
 /* Soldier_RemoveById @ 0x36b8c, compaction half.

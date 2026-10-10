@@ -212,6 +212,12 @@ void Unit_ctor(Soldier *pUnit);
 bool Unit_bIsOperative(const Soldier *pUnit);
 bool Unit_bIsLarge(const Soldier *pUnit);
 
+/* The lookup Unit_GetExtraSpr performs, split out because the splash walk calls
+ * the same routine with a tile sprite record instead of a unit. Read straight off
+ * the record, the two offsets are Mc1Rec.nSlot (+0x26) and Mc1Rec.bExtraSprFacing
+ * (+0x32) -- the same two bytes the unit path reads at Soldier+0x26 and +0x32. */
+Mc1Rec *Rec_GetExtraSpr(u16 nBaseIdx, u8 nFacingByte);
+
 /* Unit_GetExtraSpr @ 0x2e59c. Returns the overlay sprite for the unit's
  * multi/anim state, or NULL when the low byte of the anim's uFacingResetH is
  * zero. The lookup index is g_fontSys.anMc1Base[uExtraSprBase] + that byte.
