@@ -2762,7 +2762,7 @@ earlier note in this file that called it a dead store is wrong.
    rays x 15 steps x 4 bytes. A step record is `dx, dy, wallAflag, wallBflag`, and
    the next step's `dx, dy` are the following two bytes of the same ray.
 3. Per step: test the cell, write the remaining range into the field when it is
-   larger than what is there, subtract `sqrt(dx*dx + dy*dy) * 3.0` or `* 3.5`
+   larger than what is there, subtract `sqrt(dx*dx + dy*dy) * 8.0` or `* 20.0`
    (`a8 == 1` or the map weapon's `uSortKey == 50` selects 3.0, otherwise 3.5),
    then attenuate on wall A, wall B and ceiling sprites. A wall only attenuates
    when `sprite[0x16] > cell->bUnk17` (or 255) and `sprite[0x2A] == 0` or the cell
@@ -2940,3 +2940,39 @@ test reads it because `v58 = dword_B2278` is advanced by **one dword per pass**
 
 `Tact_BuildVisRayTable @ 0x37ae4` is now fully understood and has no remaining
 blocker.
+
+# Tact_BuildVisRayTable @ 0x37ae4 is ported
+
+`src/pufo/game/pufo_vistry.{h,c}`, 42 checks in `tests/test_vistry.c` (36 tests
+pass, clean `/W4 /WX`).
+
+What the checks pin down:
+
+- The 120 rays are the perimeter of the 31 x 31 box in four bands of 30, and the
+  bands run `-15..14`, `15 / -15..14`, `15..-14 / 15`, `-15 / 15..-14`.
+- Pass `p` activates rays `(15 * p + k) mod 120`, `k = 0..30`. Eight passes, 248
+  ray-pass pairs.
+- A ray walks its dominant axis (ties walk y) from 0 toward the dominant component
+  and **breaks before writing the dominant value itself**, so a row holds exactly
+  fifteen steps and no row overruns into the next. The earlier note about a
+  four-byte overrun was wrong and the header no longer reserves slack.
+- The perpendicular axis is `trunc(v * dy / dx)` in walk-x and `trunc(v / (dy / dx))`
+  in walk-y, in single precision, truncating toward zero.
+- The ray ends when `sqrt(other^2 + v^2) > 15.0`, writing 96 into the step's byte 0.
+  A diagonal ray (-15, -15) ends at step 11; a shallow ray (15, -14) at step 12;
+  an axis-aligned ray (15, 0) fills all fifteen steps and never writes a sentinel.
+- The change flag lands on the **previous** step: byte 3 in walk-x (`[idx - 1]`),
+  byte 2 in walk-y (`[idx - 2]`). The current step's own flag byte is written only
+  when the perpendicular axis did not change (0) or, in walk-y, always at byte 3
+  from the walk direction sign.
+
+## What is left in this chain
+
+`Map_ComputeFov @ 0x2deac` is now unblocked: its input table is built, its only
+calls are `Map_IsValidCell` and `sqrt`, and its eight-parameter signature is
+settled. It is the next port, and `Unit_UpdateVisibility @ 0x48580` follows it.
+
+One assumption still stands in `pufo_vistry.c`: `_stoi` truncates toward zero. If
+it rounds instead, every perpendicular axis in the table can differ by one. The
+diagonal and shallow-ray checks above would shift, so they are the tests to re-run
+against a dynamic check if this is ever verified on the original.
