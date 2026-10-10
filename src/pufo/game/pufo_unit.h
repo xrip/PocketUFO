@@ -558,6 +558,65 @@ i32 Unit_UpdateVisibility(Soldier *pUnit, VisCtx *pCtx);
  * Called at the end of Tact_KillUnit when the death message path is armed. */
 void UnitList_ForEachRefresh(struct UnitRosters *pRosters, VisCtx *pCtx);
 
+/* --- Tact_KillUnit @ 0x4e430 context ----------------------------------------
+ *
+ * KillCtx carries what the kill path reaches through pCtxBase. The combat fields are
+ * a pointer to the existing CombatCtx rather than a copy of them.
+ *
+ * pszTransformName is Map + 0x230, the NUL-terminated name the chryssalid transform
+ * copies into Soldier.szName. pnKillCount is the dword at Map.gap_TrajRest + 4*49940.
+ * bTickHold is Map.bGameTickHold (0x5A) and bFrameScratch is byte_138E74, the frame
+ * scratch GameTick_OnTimer clears; either one suppresses the death message.
+ * bUiSlotArmed is the low byte of Map.apUiSlotsA[2], which arms the spotted-flag
+ * sweep and the Xcom visibility refresh.
+ *
+ * The five message tails are text records the original reaches by raw index into
+ * unk_B38D0: 3075 (alive male), unk_B45A0 (alive female), 8610 (dead female, type
+ * < 4), 8405 (dead male, type < 4) and 218735 (dead, type 4..8). The port has no raw
+ * text-record accessor yet, so the strings are supplied. */
+/* Forward declarations only. pufo_combat.h and pufo_statusmsg.h both pull this
+ * header in, so their full definitions are not reachable from here; pufo_unit.c
+ * includes them. */
+typedef struct CombatCtx CombatCtx;
+typedef struct ShotHooks ShotHooks;
+typedef struct StatusStack StatusStack;
+typedef struct StatusHooks StatusHooks;
+
+typedef struct KillCtx {
+    CombatCtx          *pCombat;        /* lookup, geom, rosters' shot origin */
+    struct UnitRosters *pRosters;
+    TactItem          **apTactItems;    /* Map.apTactItems */
+    i32                *pnTactItem;     /* Map.nTactItemCount, in/out */
+    ObjectRecFull     **apObjects;      /* Map.apObjects */
+    Soldier           **ppSelUnit;      /* Map.pSelUnit */
+    i32                *pnKillCount;    /* Map.gap_TrajRest + 4*49940 */
+    const char         *pszTransformName;
+    bool                bTickHold;
+    bool                bFrameScratch;
+    bool                bUiSlotArmed;
+    StatusStack        *pStatus;
+    const StatusHooks  *pStatusHooks;
+    VisCtx             *pVisCtx;
+    const char         *pszMsgAliveMale;
+    const char         *pszMsgAliveFemale;
+    const char         *pszMsgDeadFemale;
+    const char         *pszMsgDeadMaleSmall;
+    const char         *pszMsgDeadMaleBig;
+} KillCtx;
+
+/* pfnCheckBattleEnd stands for Tact_CheckBattleEnd @ 0x34fbc. That function is
+ * mostly debrief UI (UiControl / UiPanel construction) and belongs to the ui-input
+ * subsystem, so the seam is explicit rather than a stub. pShotHooks is what
+ * Combat_ResolveShot needs for the type-18 explosion. */
+typedef struct KillHooks {
+    void (*pfnCheckBattleEnd)(void *pUser);
+    const ShotHooks *pShotHooks;
+    void *pUser;
+} KillHooks;
+
+void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit);
+
+
 /* Unit_bTryOpportunityFire @ 0x47c38. Offer one opportunity shot. See the
  * comment on the definition for the gate chain and for the quirk that a target
  * which turns out not to be spotted still reports success. */

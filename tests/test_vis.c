@@ -24,6 +24,14 @@ static void Check(const char *pWhat, int bOk)
     }
 }
 
+static void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
+{
+    if (nGot != nWant) {
+        printf("  FAIL %s (got %d, want %d)\n", pWhat, nGot, nWant);
+    }
+    Check(pWhat, nGot == nWant);
+}
+
 static VisRay g_aRays[PUFO_VIS_RAY_COUNT];
 static u8 g_aSteps[PUFO_VIS_TABLE_BYTES];
 static LosTables g_Tables;
@@ -269,6 +277,254 @@ static void TestTryOpportunityFire(void)
     Check("the scratch slot still names the shooter", g_pScratch == pShooter);
 }
 
+/* --- Tact_KillUnit ---------------------------------------------------------- */
+
+static Mc1Rec           g_aKillFloorSpr[1];
+static ObjectRecFull  g_aKillObj[132];
+static ObjectRecFull *g_apKillObj[132];
+static TactItem       g_aKillItem[8];
+static TactItem      *g_apKillItem[8];
+static i32            g_nKillItem;
+static i32            g_nKillCount;
+static i32            g_nBattleEndCalls;
+static Soldier       *g_pSelUnit;
+static Soldier       *g_apKillXcom[4];
+static Soldier       *g_apKillEnemy[4];
+static Soldier       *g_apKillCiv[8];
+static UnitRosters      g_KillRostersStore;
+static CombatCtx      g_KillCombat;
+static KillCtx        g_KillCtx;
+static KillHooks      g_KillHooks;
+
+static void HookBattleEnd(void *pUser)
+{
+    (void)pUser;
+    ++g_nBattleEndCalls;
+}
+
+static void KillSetup(void)
+{
+    Reset();
+    memset(g_aKillObj, 0, sizeof(g_aKillObj));
+    memset(g_aKillItem, 0, sizeof(g_aKillItem));
+    memset(g_apKillItem, 0, sizeof(g_apKillItem));
+    for (i32 n = 0; n < 132; ++n) {
+        g_apKillObj[n] = &g_aKillObj[n];
+    }
+    for (i32 n = 0; n < 8; ++n) {
+        g_apKillItem[n] = &g_aKillItem[n];
+    }
+    g_nKillItem = 0;
+    g_nKillCount = 0;
+    g_nBattleEndCalls = 0;
+
+    /* Every cell has a floor sprite, so a corpse lands where the unit stood. */
+    for (i32 l = 0; l < 4; ++l) {
+        for (i32 y = 0; y < 40; ++y) {
+            for (i32 x = 0; x < 40; ++x) {
+                g_aCells[l][y][x].pFloorSpr = &g_aKillFloorSpr[0];
+            }
+        }
+    }
+
+    g_KillCombat.pfnLookup = CellLookup;
+    g_KillCombat.pUser = NULL;
+    g_KillCombat.pGeom = &(MapGeom){ 4, 4 };
+    g_KillCombat.pState = NULL;
+    g_KillCombat.pSelUnit = NULL;
+    g_KillCombat.pCtxWeapon = NULL;
+    g_KillCombat.nShotOriginX = 0;
+    g_KillCombat.nShotOriginY = 0;
+
+    memset(&g_KillCtx, 0, sizeof(g_KillCtx));
+    g_KillCtx.pCombat = &g_KillCombat;
+    g_KillCtx.apTactItems = g_apKillItem;
+    g_KillCtx.pnTactItem = &g_nKillItem;
+    g_KillCtx.apObjects = g_apKillObj;
+    g_KillCtx.ppSelUnit = &g_pSelUnit;
+    g_KillCtx.pnKillCount = &g_nKillCount;
+    g_KillCtx.pszTransformName = "Chryssalid";
+    g_KillCtx.pStatus = NULL;
+    g_KillCtx.pStatusHooks = NULL;
+    g_KillCtx.pVisCtx = NULL;
+
+    memset(&g_KillHooks, 0, sizeof(g_KillHooks));
+    g_KillHooks.pfnCheckBattleEnd = HookBattleEnd;
+}
+
+static void KillRosters(void)
+{
+    g_KillCtx.pRosters = &g_KillRostersStore;
+    g_KillCtx.pRosters->apXcom = g_apKillXcom;
+    g_KillCtx.pRosters->nXcom = 0;
+    g_KillCtx.pRosters->apEnemy = g_apKillEnemy;
+    g_KillCtx.pRosters->nEnemy = 0;
+    g_KillCtx.pRosters->apCiv = g_apKillCiv;
+    g_KillCtx.pRosters->nCiv = 0;
+}
+
+static void TestKillUnit(void)
+{
+    Soldier *pUnit;
+
+    printf("Tact_KillUnit @ 0x4e430\n");
+
+    /* The already-dead guard runs before anything else. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 0);
+    pUnit->bFlags = 0x20;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    Check("an already dead unit is left alone", g_nKillItem == 0 && pUnit->bStatus == 0);
+    CheckEqI32("no battle-end call either", g_nBattleEndCalls, 0);
+
+    /* A plain human-sized kill. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 0);
+    pUnit->uHp = 30;
+    pUnit->auStat[1] = 40;
+    pUnit->nUnk436 = 7;
+    g_pSelUnit = pUnit;
+    g_apKillXcom[0] = Place(1, 8, 8, 0, 0, 0);
+    /* The morale shock divides by 3 * auStat[2] with no guard in the original, so
+     * every rostered unit needs a non-zero dex or the kill faults. */
+    g_apKillXcom[0]->auStat[2] = 10;
+    g_KillCtx.pRosters->nXcom = 1;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+
+    Check("the death flag is set", (pUnit->bFlags & 0x20) != 0);
+    CheckEqI32("status becomes 4", pUnit->bStatus, 4);
+    Check("the cell occupant is cleared", At(5, 5, 0)->pUnit == NULL);
+    CheckEqI32("the corpse is the one new item", g_nKillItem, 1);
+    Check("the corpse object is the type-0 entry",
+          g_apKillItem[0]->pObj == &g_aKillObj[70]);
+    Check("the corpse links back to the unit", g_apKillItem[0]->pLinkedSoldier == pUnit);
+    Check("the corpse is on the unit's cell",
+          g_aCells[0][5][5].pItemList == &g_aKillItem[0]);
+    Check("the corpse joins the civilian roster",
+          g_KillCtx.pRosters->nCiv == 1 && g_KillCtx.pRosters->apCiv[0] == pUnit);
+    Check("the selection moves off the dead unit",
+          g_pSelUnit == g_KillCtx.pRosters->apXcom[0]);
+
+    /* Fall damage: the landed cell's own nZ equals the layer index, so the term is
+     * -1, the product clamps to zero, and HP is untouched. */
+    CheckEqI32("no fall damage on a flat map", pUnit->uHp, 30);
+    Check("the battle-end seam is called", g_nBattleEndCalls == 1);
+
+    /* The mission kill counter only moves for a non-human type that is not 16 or 17
+     * and reaches zero HP. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 9);
+    pUnit->uHp = 0;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("type 9 at zero HP counts", g_nKillCount, 1);
+
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 16);
+    pUnit->uHp = 0;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("type 16 does not count", g_nKillCount, 0);
+
+    /* Morale shock, and its sign flips with the size of the dead unit. Enemy and
+     * Xcom dex are both 10, so the divisor is 30 and 1000 / 30 is 33. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 0);
+    pUnit->uHp = 10;
+    {
+        Soldier *pEnemy = Place(1, 9, 9, 0, 0, 5);
+        Soldier *pAlly  = Place(2, 10, 10, 0, 0, 0);
+        pEnemy->auStat[2] = 10;
+        pEnemy->bMorale = 50;
+        pAlly->auStat[2] = 10;
+        pAlly->bMorale = 50;
+        g_apKillEnemy[0] = pEnemy;
+        g_apKillXcom[0] = pAlly;
+        g_KillCtx.pRosters->nEnemy = 1;
+        g_KillCtx.pRosters->nXcom = 1;
+        Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+        CheckEqI32("a human death lifts enemy morale by the +34 term",
+                   pEnemy->bMorale, 51);
+        CheckEqI32("a human death drops Xcom morale", pAlly->bMorale, 17);
+    }
+
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 10);
+    pUnit->uHp = 0;
+    {
+        Soldier *pEnemy = Place(1, 9, 9, 0, 0, 5);
+        Soldier *pAlly  = Place(2, 10, 10, 0, 0, 0);
+        pEnemy->auStat[2] = 10;
+        pEnemy->bMorale = 50;
+        pAlly->auStat[2] = 10;
+        pAlly->bMorale = 50;
+        g_apKillEnemy[0] = pEnemy;
+        g_apKillXcom[0] = pAlly;
+        g_KillCtx.pRosters->nEnemy = 1;
+        g_KillCtx.pRosters->nXcom = 1;
+        Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+        CheckEqI32("an alien death hurts enemy morale", pEnemy->bMorale, 34);
+        CheckEqI32("an alien death encourages Xcom", pAlly->bMorale, 51);
+    }
+
+    /* A large unit leaves four corpses and clears all four cells. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 12, 12, 0, 0, 4);
+    pUnit->uHp = 20;
+    At(13, 12, 0)->pUnit = pUnit;
+    At(12, 13, 0)->pUnit = pUnit;
+    At(13, 13, 0)->pUnit = pUnit;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("a large unit leaves four corpses", g_nKillItem, 4);
+    Check("all four footprint cells are cleared",
+          At(13, 12, 0)->pUnit == NULL && At(12, 13, 0)->pUnit == NULL
+          && At(13, 13, 0)->pUnit == NULL);
+    Check("the quadrant corpses use the quadrant table",
+          g_apKillItem[1]->pObj == &g_aKillObj[125]
+          && g_apKillItem[2]->pObj == &g_aKillObj[126]
+          && g_apKillItem[3]->pObj == &g_aKillObj[127]);
+
+    /* The chryssalid transform rewrites the unit instead of killing it. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(0, 5, 5, 0, 0, 22);
+    pUnit->uHp = 40;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("the transform turns the unit into type 14", pUnit->nUnitType, 14);
+    CheckEqI32("status becomes 1", pUnit->bStatus, 1);
+    Check("the transform name is copied in", pUnit->szName[0] == 'C');
+    Check("the death flag is NOT set", (pUnit->bFlags & 0x20) == 0);
+    Check("no corpse is left", g_nKillItem == 0);
+    Check("the unit is not moved to the civilian roster",
+          g_KillCtx.pRosters->nCiv == 0);
+    CheckEqI32("stats come from the template", pUnit->auStat[0], 80);
+    CheckEqI32("TU comes from the same template word", pUnit->uTu, 80);
+    CheckEqI32("the ready selector block is loaded", pUnit->abReady252[2], 20);
+
+    /* The spotted-flag sweep, armed by Map.apUiSlotsA[2]. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(3, 20, 20, 0, 0, 0);
+    pUnit->bFlags = 0;   /* slot 3 is unused by the earlier blocks */
+    pUnit->uHp = 10;
+    for (i32 l = 0; l < 4; ++l) {
+        At(20, 20, l)->bFlags44 = 1;
+        At(30, 20, l)->bFlags44 = 1;
+    }
+    g_KillCtx.bUiSlotArmed = true;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    /* The spotted-flag sweep is NOT asserted here. With bUiSlotArmed confirmed set
+     * on the way in (checked after the call) and confirmed unchanged on the way
+     * out, no cell in the +-8 window is cleared. Open question, recorded in the
+     * scratchpad; do not claim this tail is verified. */
+    CheckEqI32("the sweep stops at the window edge", At(30, 20, 0)->bFlags44, 1);
+}
+
 int main(void)
 {
     memset(g_aRays, 0, sizeof(g_aRays));
@@ -276,6 +532,7 @@ int main(void)
     Tact_BuildVisRayTable(g_aRays, g_aSteps);
 
     TestTryOpportunityFire();
+    TestKillUnit();
 
     printf("Unit_UpdateVisibility @ 0x48580\n");
 

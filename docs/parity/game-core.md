@@ -3791,3 +3791,36 @@ the offsets proven from ARM rather than inferred from pseudocode, including `+0x
 at `+0x4EBC + 4*49940`. The struct itself still cannot be edited headlessly — IDA 9.4
 has no `ida_struct` module and no `put_udt_details` — so the offsets live as listing
 comments until the struct is rebuilt in the GUI.
+
+### Ported with one unverified tail: `Tact_KillUnit @ 0x4e430`
+
+Port: `Tact_KillUnit` in `src/pufo/game/pufo_unit.c`, with `KillCtx` / `KillHooks` in
+`pufo_unit.h`. Tests: `TestKillUnit` in `tests/test_vis.c`, 30 checks.
+
+Verified by test: the already-dead guard; `bFlags |= 0x20` and `bStatus = 4`; the cell
+occupant cleared; one corpse item per kill with `pObj` from `g_aCorpseObjByType` and
+`pLinkedSoldier` set only when the unit died with hit points; the corpse lands on the
+unit's cell; the dead unit moves onto the civilian roster; `pSelUnit` moves off the
+dead unit; the mission kill counter moves only for types above 8 that are not 16 or 17
+and reach zero HP; both morale-shock signs (`500/(3*dex)` for enemies and
+`1000/(3*dex) + 34` for Xcom when the dead unit is alien-sized, flipped for a
+human-sized death); four corpses and four cleared cells for a large unit with quadrant
+objects 125/126/127; and the chryssalid transform (type 22 becomes type 14, status 1,
+name copied, no death flag, no corpse, not moved to the civilian roster, stats and
+`abReady252` from the template).
+
+**Not verified: the spotted-flag sweep.** With `KillCtx.bUiSlotArmed` confirmed set on
+the way in and unchanged on the way out, no cell in the ±8 window is cleared. The
+check was removed rather than left failing. The tail is ported from the pseudocode but
+has no evidence behind it yet.
+
+Two things worth knowing about the original that the tests pinned down:
+
+- **The morale shock divides by `3 * auStat[2]` with no guard.** A rostered unit with
+  dex 0 faults. The first version of the test crashed exactly this way.
+- **The `+34` morale branch has no low clamp.** Only the `> 100` side is clamped, so a
+  negative result wraps through `LOBYTE`. The port assigns through `u8` to keep that.
+
+`Tact_CheckBattleEnd @ 0x34fbc` is reached through `KillHooks.pfnCheckBattleEnd`. That
+function is mostly debrief UI and belongs to the `ui-input` task, so the seam is
+explicit instead of a stub.

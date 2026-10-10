@@ -9,7 +9,10 @@
 #include <string.h>
 
 #include "game/pufo_los.h"
-#include "game/pufo_combat.h"   /* UnitRosters */
+#include "audio/pufo_audio.h"    /* Sound_Play */
+#include "game/pufo_combat.h"   /* UnitRosters, CombatCtx, ShotHooks */
+#include "game/pufo_roster.h"    /* SideLists, SideLists_RemoveUnit */
+#include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks, StatusMsg_Push */
 #include "game/pufo_vistry.h"   /* VisRay, ray-table counts */
 #include "game/pufo_tactctl.h"   /* mission type ids */
 #include "game/pufo_ballist.h"   /* AimState, Tact_TraceProjectileArc */
@@ -1324,5 +1327,384 @@ void UnitList_ForEachRefresh(UnitRosters *pRosters, VisCtx *pCtx)
 {
     for (i32 n = 0; n < pRosters->nXcom; ++n) {
         Unit_UpdateVisibility(pRosters->apXcom[n], pCtx);
+    }
+}
+
+/* SideLists is the same two rosters UnitRosters already carries, seen through the
+ * type Tact_RemoveUnitFromSideLists works on. Built locally so there is one source
+ * of truth for the rosters. */
+static SideLists Kill_SideLists(const UnitRosters *pR)
+{
+    SideLists lists;
+
+    lists.apXcom  = pR->apXcom;
+    lists.nXcom   = pR->nXcom;
+    lists.apEnemy = pR->apEnemy;
+    lists.nEnemy  = pR->nEnemy;
+    return lists;
+}
+
+/* Copy a NUL-terminated string into a fixed field, truncating rather than
+ * overflowing. The original's copy loop is byte-at-a-time with the same stop. */
+static void Kill_CopyText(char *pDst, size_t cbDst, const char *pSrc)
+{
+    size_t n = 0;
+
+    while (n + 1 < cbDst && pSrc[n] != '\0') {
+        pDst[n] = pSrc[n];
+        ++n;
+    }
+    pDst[n] = '\0';
+}
+
+static void Kill_AppendText(char *pDst, size_t cbDst, const char *pSrc)
+{
+    size_t n = 0;
+
+    while (n < cbDst && pDst[n] != '\0') {
+        ++n;
+    }
+    while (n + 1 < cbDst && pSrc != NULL && pSrc[0] != '\0') {
+        pDst[n++] = *pSrc++;
+    }
+    if (n < cbDst) {
+        pDst[n] = '\0';
+    }
+}
+
+/* --- Tact_KillUnit @ 0x4e430 -------------------------------------------------
+ *
+ * The three tables this reads are named in the IDB and are read nowhere else in
+ * the binary. g_aDeathSoundByType is 23 entries, one per unit type 0..22; index 23
+ * onward is unrelated data. g_aCorpseObjByType is indexed by unit type.
+ * g_aCorpseObjQuadrant is indexed 4 * type + q with q = 1, 2, 3 for the three extra
+ * cells of a large unit's 2x2 footprint.
+ */
+static const u16 g_aDeathSoundByType[23] = {
+     0,  0,  0,  0, 18, 18, 18, 18, 18, 24, 25,
+    25, 24, 23, 28, 23, 22,  0, 18, 23, 18, 18, 29
+};
+
+static const u16 g_aCorpseObjByType[22] = {
+    70, 71, 72, 72, 75, 75, 75, 76, 76, 59, 62, 61,
+    60, 63, 65, 67, 74, 73, 99, 68, 66, 69
+};
+
+/* Types 0..3 and 9..11 have no quadrant corpses. */
+static const u16 g_aCorpseObjQuadrant[48] = {
+    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0,
+    75, 125, 126, 127,  75, 125, 126, 127,  75, 125, 126, 127,
+    76, 128, 129, 130,  76, 128, 129, 130,
+    0, 0, 0, 0,   0, 0, 0, 0,   0, 0, 0, 0
+};
+
+/* The chryssalid transform loads its stats from the 32-byte-per-type template at
+ * unk_A8F38 + 32 * 14 = 0xA8FD8. Dumped from the IDB. */
+static const u16 g_aChryssalidTemplate[16] = {
+    80, 60, 100, 40, 110, 0, 0, 0, 15, 5, 5, 20, 5, 5, 0, 0
+};
+
+static u16 Kill_QuadrantObj(u8 nUnitType, i32 nQuadrant)
+{
+    i32 nIndex = 4 * (i32)nUnitType + nQuadrant;
+
+    if (nIndex < 0 || nIndex >= (i32)(sizeof(g_aCorpseObjQuadrant) / sizeof(u16))) {
+        return 0;
+    }
+    return g_aCorpseObjQuadrant[nIndex];
+}
+
+/* Place one corpse item on the lowest cell at or below nLayer that has a floor
+ * sprite. The walk keeps the cell's own nX / nY and steps the layer index down,
+ * which is what the ARM does: the index is built from pCell->nY and pCell->nX and
+ * the layer term is decremented by 60 before it is multiplied by 60 again.
+ *
+ * Returns the layer the corpse landed on, or -1 when no cell had a floor sprite. */
+static i32 Kill_DropCorpse(const KillCtx *pCtx, MapCell *pCell, Soldier *pUnit,
+                           i32 nQuadrant)
+{
+    i32 nLayer = pCell->nZ;
+
+    while (nLayer >= 0) {
+        MapCell *pProbe = pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY, nLayer,
+                                                   pCtx->pCombat->pUser);
+        if (pProbe != NULL && pProbe->pFloorSpr != NULL) {
+            break;
+        }
+        --nLayer;
+    }
+    if (nLayer < 0) {
+        return -1;
+    }
+
+    MapCell    *pLand = pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY, nLayer,
+                                                 pCtx->pCombat->pUser);
+    TactItem   *pItem   = pCtx->apTactItems[*pCtx->pnTactItem];
+    u16         nObjIdx = (nQuadrant == 0)
+                        ? g_aCorpseObjByType[pUnit->nUnitType]
+                        : Kill_QuadrantObj(pUnit->nUnitType, nQuadrant);
+
+    TactItem_ctor(pItem);
+    pItem->pObj = pCtx->apObjects[nObjIdx];
+    /* The original stores the unit pointer in the item's linked-soldier field only
+     * for a unit that died with hit points; one already at zero HP leaves the field
+     * as the constructor left it. */
+    pItem->pLinkedSoldier = (pUnit->uHp != 0) ? pUnit : NULL;
+
+    MapCell_ListInsertByPri(pLand, pItem);
+    ++*pCtx->pnTactItem;
+    return nLayer;
+}
+
+void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
+{
+    if ((pUnit->bFlags & 0x20) != 0) {
+        return; /* already dead */
+    }
+
+    pUnit->nSpottedCount = 0;
+    pUnit->nMultiTarget  = 0;
+
+    /* A non-human type that reaches zero HP feeds the mission kill counter at
+     * Map.gap_TrajRest + 4 * 49940. Types 16 and 17 are excluded. */
+    if (pUnit->nUnitType > 8 && pUnit->nUnitType != 16 && pUnit->nUnitType != 17
+        && pUnit->uHp == 0 && pCtx->pnKillCount != NULL) {
+        ++*pCtx->pnKillCount;
+    }
+
+    /* Death sound. Types 0..2 with bFemale set play the fixed sample 22; everything
+     * else indexes g_aDeathSoundByType, and a type >= 3 that already has bFlags bit
+     * 5 set plays nothing at all. */
+    if (pUnit->nUnitType >= 3) {
+        if ((pUnit->bFlags & 0x20) == 0 && pUnit->nUnitType < 23) {
+            Sound_Play((i32)g_aDeathSoundByType[pUnit->nUnitType]);
+        }
+    } else if (pUnit->bFemale != 0) {
+        Sound_Play(22);
+    } else if (pUnit->nUnitType < 23) {
+        Sound_Play((i32)g_aDeathSoundByType[pUnit->nUnitType]);
+    }
+
+    if (pUnit->nUnitType == 22) {
+        /* The chryssalid transform. This path does not kill the unit: it rewrites
+         * it as unit type 14 and returns. */
+        SideLists lists = Kill_SideLists(pCtx->pRosters);
+
+        SideLists_RemoveUnit(&lists, pUnit);
+        pUnit->bStatus    = 1;
+        pUnit->nUnitType  = 14;
+
+        if (pCtx->pszTransformName != NULL) {
+            Kill_CopyText(pUnit->szName, sizeof(pUnit->szName), pCtx->pszTransformName);
+        }
+
+        const u16 *pTpl = g_aChryssalidTemplate;
+        pUnit->auStat[0] = pTpl[0];
+        pUnit->uTu       = pTpl[0];
+        pUnit->auStat[9] = pTpl[1];
+        pUnit->auStat[1] = (u16)(Game_RandU16(0x14) - 10 + pTpl[2]);
+        pUnit->auStat[2] = (u16)(Game_RandU16(0x14) - 10 + pTpl[3]);
+        pUnit->auStat[3] = (u16)(Game_RandU16(0x14) - 10 + pTpl[4]);
+        /* The original writes auStat[4] twice, from template words 14 and then 15,
+         * so the second write is the one that survives. */
+        pUnit->auStat[4] = pTpl[14];
+        pUnit->auStat[4] = pTpl[15];
+        pUnit->auStat[8] = (u16)(Game_RandU16(0x14) - 10 + pTpl[1]);
+        pUnit->bUnk248   = (u8)pTpl[8];
+        for (i32 n = 0; n < 5; ++n) {
+            pUnit->abReady252[n] = (u8)pTpl[9 + n];
+        }
+
+        pUnit->bUnk422 = 0;
+        Unit_PlaceOnMap(pUnit, pUnit->pCell->nX, pUnit->pCell->nY, pUnit->pCell->nZ,
+                        pCtx->pCombat->pfnLookup, pCtx->pCombat->pUser);
+        return;
+    }
+
+    pUnit->bFlags |= 0x20u;
+    /* bFlags bit 5 is set, so this takes the early return that pins the pose to 18
+     * and masks the other animation bits off. */
+    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    {
+        SideLists lists = Kill_SideLists(pCtx->pRosters);
+        SideLists_RemoveUnit(&lists, pUnit);
+    }
+
+    /* Morale shock, and its sign depends on whether the dead unit was human-sized.
+     * The +34 branch has no low clamp: a negative result wraps through LOBYTE, so
+     * the byte assignment below is part of the behaviour, not an accident. */
+    {
+        Soldier **apEnemy = pCtx->pRosters->apEnemy;
+        i32       nEnemy  = pCtx->pRosters->nEnemy;
+        Soldier **apXcom  = pCtx->pRosters->apXcom;
+        i32       nXcom   = pCtx->pRosters->nXcom;
+
+        if (pUnit->nUnitType > 8) {
+            if (pUnit->nUnitType != 16 && pUnit->nUnitType != 17) {
+                for (i32 n = 0; n < nEnemy; ++n) {
+                    i32 v = apEnemy[n]->bMorale
+                          - 500 / (3 * (i32)apEnemy[n]->auStat[2]);
+                    apEnemy[n]->bMorale = (v < 0) ? 0 : (u8)v;
+                }
+                for (i32 n = 0; n < nXcom; ++n) {
+                    i32 v = apXcom[n]->bMorale
+                          - 1000 / (3 * (i32)apXcom[n]->auStat[2]) + 34;
+                    apXcom[n]->bMorale = (v > 100) ? 100 : (u8)v;
+                }
+            }
+        } else {
+            for (i32 n = 0; n < nEnemy; ++n) {
+                i32 v = apEnemy[n]->bMorale
+                      - 1000 / (3 * (i32)apEnemy[n]->auStat[2]) + 34;
+                apEnemy[n]->bMorale = (v > 100) ? 100 : (u8)v;
+            }
+            for (i32 n = 0; n < nXcom; ++n) {
+                i32 v = apXcom[n]->bMorale
+                      - 1000 / (3 * (i32)apXcom[n]->auStat[2]);
+                apXcom[n]->bMorale = (v < 0) ? 0 : (u8)v;
+            }
+        }
+    }
+
+    MapCell *pCell = pUnit->pCell;
+    pUnit->bStatus = 4;
+    MapCell_SetOccupant(pCell, NULL);
+    if (Unit_bIsLarge(pUnit)) {
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY + 1,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY + 1,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+    }
+
+    if (*pCtx->ppSelUnit == pUnit) {
+        *pCtx->ppSelUnit = pCtx->pRosters->apXcom[0];
+    }
+
+    /* Corpses live on the civilian roster. */
+    pCtx->pRosters->apCiv[pCtx->pRosters->nCiv++] = pUnit;
+
+    i32 nLandLayer = Kill_DropCorpse(pCtx, pCell, pUnit, 0);
+    if (Unit_bIsLarge(pUnit)) {
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        Kill_DropCorpse(pCtx, pCell, pUnit, 1);
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY + 1,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        Kill_DropCorpse(pCtx, pCell, pUnit, 2);
+        MapCell_SetOccupant(pCtx->pCombat->pfnLookup(pCell->nX + 1, pCell->nY + 1,
+                                                     pCell->nZ, pCtx->pCombat->pUser), NULL);
+        Kill_DropCorpse(pCtx, pCell, pUnit, 3);
+    }
+
+    /* Fall damage. Confirmed from the ARM at 0x4eefc: the distance is the landed
+     * cell's own stored nZ byte minus the layer index the walk stopped at, minus
+     * one. Those are two different quantities, and when a map stores them equal the
+     * term is -1, the product clamps to zero, and the kill does no fall damage. */
+    {
+        MapCell *pLand = pCtx->pCombat->pfnLookup(pCell->nX, pCell->nY, nLandLayer,
+                                                  pCtx->pCombat->pUser);
+        i32 nFall = (nLandLayer < 0) ? -1 : (i32)pLand->nZ - nLandLayer - 1;
+        i32 nDmg  = (i32)((float)nFall * (float)pUnit->auStat[1] * 0.74f);
+
+        if (nDmg < 0) {
+            nDmg = 0;
+        }
+        if ((i32)pUnit->uHp > nDmg) {
+            pUnit->uHp    = (u16)((i32)pUnit->uHp - nDmg);
+            pUnit->nUnk436 += nDmg;
+        } else {
+            pUnit->uHp = (u16)pUnit->nUnk436;
+        }
+    }
+
+    /* A chryssalid transform keeps its gear; a large unit drops items per corpse
+     * instead of through this path. */
+    if (!Unit_bIsLarge(pUnit) && pUnit->nUnitType != 14) {
+        Unit_DropAllItemsToCell(pUnit);
+    }
+
+    if (pHooks->pfnCheckBattleEnd != NULL) {
+        pHooks->pfnCheckBattleEnd(pHooks->pUser);
+    }
+
+    if (pCtx->bTickHold || pCtx->bFrameScratch) {
+        return;
+    }
+
+    if (pUnit->bUnk1037 == 0) {
+        if (pUnit->nUnitType > 8) {
+            pUnit->bUnk1037 = 1; /* no message for these */
+        } else {
+            const char *pszTail;
+
+            if (pUnit->uHp != 0) {
+                pszTail = (pUnit->bFemale != 0) ? pCtx->pszMsgAliveFemale
+                                                : pCtx->pszMsgAliveMale;
+            } else if (pUnit->nUnitType < 4) {
+                pszTail = (pUnit->bFemale != 0) ? pCtx->pszMsgDeadFemale
+                                                : pCtx->pszMsgDeadMaleSmall;
+            } else {
+                pszTail = pCtx->pszMsgDeadMaleBig;
+            }
+            if (pszTail != NULL) {
+                char szMsg[200];
+
+                Kill_CopyText(szMsg, sizeof(szMsg), pUnit->szName);
+                Kill_AppendText(szMsg, sizeof(szMsg), pszTail);
+                StatusMsg_Push(pCtx->pStatus, szMsg, true, pCtx->pStatusHooks);
+            }
+        }
+    }
+
+    /* Type 18 goes up in an explosion that damages its own cell and the three
+     * large-unit neighbours. */
+    if (pUnit->nUnitType == 18 && Game_RandU16(0xA) != 0) {
+        pCtx->pCombat->nShotOriginX = pUnit->pCell->nX;
+        pCtx->pCombat->nShotOriginY = pUnit->pCell->nY;
+        Combat_ResolveShot(pCtx->pCombat, pHooks->pShotHooks, pCtx->pRosters,
+                           pUnit->pCell->nX, pUnit->pCell->nY, pUnit->pCell->nZ,
+                           0, pCtx->apObjects[17], NULL, NULL, NULL);
+
+        Unit_ApplyCellDamage(pUnit->pCell, 255, pCtx->apObjects[17]);
+        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX + 1,
+                             pUnit->pCell->nY, pUnit->pCell->nZ,
+                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
+        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX,
+                             pUnit->pCell->nY + 1, pUnit->pCell->nZ,
+                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
+        Unit_ApplyCellDamage(pCtx->pCombat->pfnLookup(pUnit->pCell->nX + 1,
+                             pUnit->pCell->nY + 1, pUnit->pCell->nZ,
+                             pCtx->pCombat->pUser), 255, pCtx->apObjects[17]);
+    }
+
+    /* Spotted-flag sweep over a +-8 tile window on every layer, then a full Xcom
+     * visibility refresh. */
+    if (pCtx->bUiSlotArmed) {
+        i32 nMaxX = 10 * (i32)pCtx->pCombat->pGeom->nDimX;
+        i32 nMaxY = 10 * (i32)pCtx->pCombat->pGeom->nDimY;
+        i32 nX1 = pUnit->pCell->nX + 8;
+        i32 nX0 = pUnit->pCell->nX - 8;
+        i32 nY1 = pUnit->pCell->nY + 8;
+        i32 nY0 = pUnit->pCell->nY - 8;
+
+        if (nX1 >= nMaxX) nX1 = nMaxX - 1;
+        if (nY1 >= nMaxY) nY1 = nMaxY - 1;
+        if (nX0 < 0) nX0 = 0;
+        if (nY0 < 0) nY0 = 0;
+
+        for (i32 nLayer = 0; nLayer < 4; ++nLayer) {
+            for (i32 nY = nY0; nY <= nY1; ++nY) {
+                for (i32 nX = nX0; nX <= nX1; ++nX) {
+                    MapCell *pProbe = pCtx->pCombat->pfnLookup(nX, nY, nLayer,
+                                                               pCtx->pCombat->pUser);
+                    if (pProbe != NULL) {
+                        pProbe->bFlags44 &= (u8)~1u;
+                    }
+                }
+            }
+        }
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
     }
 }
