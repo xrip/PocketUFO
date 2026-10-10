@@ -3152,3 +3152,59 @@ code. The only functions touching it are the input handlers
 The landing loop is `while (1)` with the break at the end, so it always runs once;
 the flag only decides whether it runs again. The port therefore takes it as an
 input (`bHitStopIn`) and returns the final value, instead of inventing a default.
+
+# Map_ComputeFov @ 0x2deac is ported
+
+`Map_ComputeFov`, `FovField` and `Fov_EntryIndex` in `src/pufo/game/pufo_vistry.{h,c}`,
+31 checks in `tests/test_fov.c` (38 tests pass, clean `/W4 /WX`). It lives beside
+`Tact_BuildVisRayTable` because the ray table is its only input.
+
+## What the checks pin down
+
+- The walk runs passes 0, 2, 4 and 6. The original drives this with a global
+  counter `byte_10DBB4` starting at 0 and stepping by 2 while the next value stays
+  under 8; the port takes the four passes implicitly.
+- The field is 31 x 31 entries of four u16, indexed by an offset pair in -15..15.
+  In the Map the cleared region is Map+73948 for 7688 bytes and the entries the
+  walk touches start at Map+77788, which is 480 entries in: entry index is
+  `480 + 31*offY + offX`, and the fold reads it as `31*a + j`, so `a = offY + 15`
+  and `j = offX + 15`. Hex-Rays hides this by folding the 73948 into the constant
+  `38897`, which is why the writes look like they are 480 entries away from the
+  reads. They are not.
+- Slot meaning: slot 3 is the running cost, slot 0 is stamped with it whenever this
+  visit beats the one already recorded, slot 1 is wall A, slot 2 is wall B.
+- The fold lands entry (offX, offY) on hit-window row `a3 + 20 + offY`, column
+  `a2 + 20 + offX`, and only the low half of each record dword is touched. The
+  upper half survives, and the sum clamps at 255.
+- Step cost is `trunc(sqrt(dStepX^2 + dStepY^2) * scale)` where scale is 8.0 when
+  `a8 == 1` or the weapon's `uSortKey == 50`, otherwise 20.0. An axial ray spends
+  20 per step at the slow scale and 8 at the fast one; the tests follow both to
+  the step where the budget would reach zero.
+- The wall test is the same pair of conditions `Map_TraceVoxelOccupancy` uses:
+  `sprite[22] > cell->bUnk17` (or `== 255`) and `sprite[42] == 0` or the cell's
+  `bFlags29` bit 2 clear. A wall with `bBlocksMove` zero never stops charging;
+  only a non-zero `bBlocksMove` plus bit 2 opens it.
+- The two flag branches are asymmetric and the port keeps the asymmetry. Flag 2
+  (the wall of the cell being left) records the slot **before** charging the wall;
+  flag 1 (the wall of the cell being entered) charges first and records the
+  reduced value. Flag 2 also sets `bFlags57[0] |= 2` on the cell.
+- A ceiling charges `sprite[23]` on every cell except the origin cell, and it is
+  charged at the **end** of the step, so the entry written at that step does not
+  yet include its own ceiling. The test follows this: one step out is 80, two
+  steps out is 57, not 77 and 54.
+
+## New field name
+
+`Mc1Rec.bWallRangeCost` at 0x17, split out of `gap_17`. It is `pSpr[23]` in
+`Map_ComputeFov`, used for wall A, wall B and ceiling alike, and its partner
+`pSpr[22]` is the already-named `bStrength`.
+
+## Still open in this chain
+
+`Combat_ResolveShot` currently carries a `ShotHooks.pfnComputeFov` placeholder.
+Wiring the real function into it means passing the `FovField` and the hit window
+through the combat context, which is a separate change; the placeholder stays
+until that is done deliberately.
+
+`Unit_UpdateVisibility @ 0x48580` is now unblocked: it needs the ray table and
+this field, and both exist.

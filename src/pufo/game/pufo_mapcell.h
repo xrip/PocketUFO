@@ -65,7 +65,10 @@ typedef struct Mc1Rec {
     u16  uUnk20;          /* 0x14 */
     u8   bStrength;       /* 0x16, sprite hardness; 255 means unbreakable.
                            * Read by Combat_SplashDamageCells @ 0x2e7d8 as pSpr[22]. */
-    u8   gap_17;          /* 0x17 */
+    u8   bWallRangeCost;  /* 0x17, range a ray loses passing this sprite.
+                           * Read as pSpr[23] by Map_ComputeFov @ 0x2deac for wall A,
+                           * wall B and ceiling alike. The paired byte pSpr[22] is
+                           * bStrength, compared against the cell's bUnk17 / bUnk18. */
     u8   bCeilBreakable;  /* 0x18, non-zero when a ceiling sprite can give way at
                            * all. Read by the ceiling-break sweep of
                            * Combat_ResolveShot @ 0x2f12c (LDRB R3, [R0,#0x18]),

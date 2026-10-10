@@ -493,6 +493,16 @@ add_test(NAME test_vistry
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+add_executable(test_fov ${CMAKE_SOURCE_DIR}/tests/test_fov.c)
+target_link_libraries(test_fov PRIVATE pufo_options pufo_game pufo_util)
+set_target_properties(test_fov PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_fov
+    COMMAND test_fov
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 
 
 

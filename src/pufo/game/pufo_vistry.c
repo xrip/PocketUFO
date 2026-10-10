@@ -136,3 +136,179 @@ RayDone:
         }
     }
 }
+
+/* Fov_EntryIndex - the 31 x 31 grid is indexed by an offset pair in -15..15. */
+size_t Fov_EntryIndex(i32 nOffX, i32 nOffY)
+{
+    return (size_t)(PUFO_FOV_GRID * (nOffY + PUFO_FOV_OFFSET) + (nOffX + PUFO_FOV_OFFSET));
+}
+
+/* The original's wall test, shared by wall A and wall B. */
+static bool Fov_WallCosts(const MapCell *pCell, const Mc1Rec *pSpr, u8 nCellCounter)
+{
+    if (pSpr == NULL) {
+        return false;
+    }
+    if (!((pSpr->bStrength > nCellCounter || pSpr->bStrength == 255)
+          && (pSpr->bBlocksMove == 0 || (pCell->bFlags29 & 4u) == 0))) {
+        return false;
+    }
+    return true;
+}
+
+void Map_ComputeFov(FovField *pFov, u32 *paWindow,
+                    const MapGeom *pGeom, MapCellLookup pfnLookup, void *pUser,
+                    const u8 *paSteps,
+                    i32 nColBase, i32 nRowBase, i32 nOriginX, i32 nOriginY,
+                    i32 nLayer, i32 nRange, i32 nCostMode, u16 nWeaponSortKey)
+{
+    double dCostScale = (nCostMode == 1 || nWeaponSortKey == PUFO_FOV_WEAPON_CLASS_FAST)
+                      ? PUFO_FOV_COST_FAST : PUFO_FOV_COST_SLOW;
+    MapCell *pOriginCell;
+
+    for (size_t e = 0; e < PUFO_FOV_GRID * PUFO_FOV_GRID; ++e) {
+        for (i32 s = 0; s < PUFO_FOV_SLOTS; ++s) {
+            pFov->aSlot[e][s] = 0;
+        }
+    }
+
+    pOriginCell = pfnLookup(nOriginX, nOriginY, nLayer, pUser);
+
+    for (i32 nPass = 0; nPass < PUFO_VIS_PASS_COUNT; nPass += 2) {
+        for (i32 i = 0; i < PUFO_VIS_RAYS_PER_PASS; ++i) {
+            i32 nCost = nRange;
+
+            for (i32 k = 0; ; ++k) {
+                const u8 *pStep = paSteps
+                                + PUFO_VIS_GROUP_BYTES * (size_t)nPass
+                                + 60 * (size_t)i + 4 * (size_t)k;
+                i32 nOffX = (i8)pStep[0];
+                i32 nOffY = (i8)pStep[1];
+                i32 nNextX, nNextY;
+                MapCell *pCell;
+                MapCell *pNext;
+                u16 *pEntry;
+                u16 *pEntryNext;
+
+                if (!Map_IsValidCell(pGeom, nOffX + nOriginX, nOffY + nOriginY, nLayer)) {
+                    break;
+                }
+                pCell = pfnLookup(nOffX + nOriginX, nOffY + nOriginY, nLayer, pUser);
+                pEntry = pFov->aSlot[Fov_EntryIndex(nOffX, nOffY)];
+
+                /* Slot 3 is the running cost; slot 0 is stamped with it whenever
+                 * this visit is better than the one already recorded. */
+                if (pEntry[3] < (u16)nCost) {
+                    pEntry[3] = (u16)nCost;
+                    pEntry[0] = (u16)nCost;
+                }
+                if (k >= 14) {
+                    break;
+                }
+
+                nNextX = (i8)pStep[4];
+                nNextY = (i8)pStep[5];
+
+                {
+                    i32 nDx = nOffX - nNextX;
+                    i32 nDy = nOffY - nNextY;
+                    nCost -= (i32)(sqrt((double)nDx * nDx + (double)nDy * nDy) * dCostScale);
+                }
+                if (nCost < 1) {
+                    break;
+                }
+                if (nNextX == PUFO_VIS_RAY_END) {
+                    break;
+                }
+                if (!Map_IsValidCell(pGeom, nNextX + nOriginX, nNextY + nOriginY, nLayer)) {
+                    break;
+                }
+                pNext = pfnLookup(nNextX + nOriginX, nNextY + nOriginY, nLayer, pUser);
+                pEntryNext = pFov->aSlot[Fov_EntryIndex(nNextX, nNextY)];
+
+                /* byte 2: wall A. Flag 2 is the wall of the cell being left,
+                 * flag 1 the wall of the cell being entered. */
+                if ((i8)pStep[2] == 2) {
+                    pCell->bFlags57[0] = (char)((u8)pCell->bFlags57[0] | 2u);
+                    if (Fov_WallCosts(pCell, pCell->pWallSprA, pCell->bUnk17)) {
+                        if (pEntry[1] < (u16)nCost) {
+                            pEntry[1] = (u16)nCost;
+                        }
+                        nCost -= pCell->pWallSprA->bWallRangeCost;
+                        if (nCost < 1) {
+                            break;
+                        }
+                    }
+                } else if ((i8)pStep[2] == 1) {
+                    if (Fov_WallCosts(pNext, pNext->pWallSprA, pNext->bUnk17)) {
+                        nCost -= pNext->pWallSprA->bWallRangeCost;
+                        if (pEntryNext[1] < (u16)nCost) {
+                            pEntryNext[1] = (u16)nCost;
+                        }
+                        if (nCost < 1) {
+                            break;
+                        }
+                    }
+                }
+
+                /* byte 3: wall B, same asymmetry. */
+                if ((i8)pStep[3] == 2) {
+                    if (Fov_WallCosts(pCell, pCell->pWallSprB, pCell->bUnk18)) {
+                        if (pEntry[2] < (u16)nCost) {
+                            pEntry[2] = (u16)nCost;
+                        }
+                        nCost -= pCell->pWallSprB->bWallRangeCost;
+                        if (nCost < 1) {
+                            break;
+                        }
+                    }
+                } else if ((i8)pStep[3] == 1) {
+                    if (Fov_WallCosts(pNext, pNext->pWallSprB, pNext->bUnk18)) {
+                        nCost -= pNext->pWallSprB->bWallRangeCost;
+                        if (pEntryNext[2] < (u16)nCost) {
+                            pEntryNext[2] = (u16)nCost;
+                        }
+                        if (nCost < 1) {
+                            break;
+                        }
+                    }
+                }
+
+                /* Ceiling, charged on every cell except the origin cell. */
+                if (pCell->pCeilSpr != NULL) {
+                    if (pCell != pOriginCell) {
+                        nCost -= pCell->pCeilSpr->bWallRangeCost;
+                    }
+                    if (nCost < 1) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /* Fold the 31 x 31 field into the 41 x 41 hit window, clamping at 255. Only
+     * the low half of each record dword is touched, as the original's u16
+     * read-modify-write does. */
+    for (i32 nRowOff = 0; nRowOff < PUFO_FOV_GRID; ++nRowOff) {
+        for (i32 nColOff = 0; nColOff < PUFO_FOV_GRID; ++nColOff) {
+            i32 nRow = nRowOff + nRowBase + 5;
+            i32 nCol = nColOff + nColBase + 5;
+
+            if (nRow >= PUFO_HIT_WINDOW_SIDE || nCol >= PUFO_HIT_WINDOW_SIDE) {
+                continue;
+            }
+            for (i32 s = 0; s < PUFO_FOV_SLOTS; ++s) {
+                size_t nIdx = 4 * ((size_t)(PUFO_HIT_WINDOW_SIDE * nRow + nCol)) + (size_t)s;
+                u32 *pRec = &paWindow[nIdx];
+                i32 nSum = (i32)(u16)(*pRec & 0xFFFFu)
+                         + (i32)pFov->aSlot[PUFO_FOV_GRID * nRowOff + nColOff][s];
+
+                if ((u32)nSum > 0xFFu) {
+                    nSum = 255;
+                }
+                *pRec = (*pRec & 0xFFFF0000u) | (u32)(u16)nSum;
+            }
+        }
+    }
+}
