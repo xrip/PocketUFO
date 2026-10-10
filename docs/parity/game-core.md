@@ -2407,3 +2407,39 @@ would produce a subtly wrong visibility fan.
 `Unit_UpdateVisibility @ 0x48580` consumes this table, and `unk_15718C @ 0x15718c`
 (per-voxel wall masks, indexed `y%16 + 16 * spriteMaskId` as u16 rows) is its
 other data dependency. Both are still open.
+
+## Finding: the arithmetic helpers are imports, not game code
+
+`_itod @ 0xa6014`, `_dtoi @ 0xa602c`, `addd/subd/muld/divd`, `ltd/gtd/led/ged`,
+and the fixed-point family `_itos @ 0xa6038`, `_divs @ 0xa607c`,
+`_muls @ 0xa603c`, `_stoi @ 0xa6040` are all in the `.idata` segment. They are
+import thunks (bytes of 0xFF, no function, decompilation fails). Hex-Rays calls
+them because the WinCE CRT supplies them; they are not part of the 1103 functions.
+
+Consequence for the port: the double helpers need no work - plain C `double`
+arithmetic already matches, which is what every ported module does today. The
+fixed-point family does need a reimplementation before `Tact_BuildVisRayTable`
+can be ported.
+
+From the way `Tact_BuildVisRayTable` uses them, the shape is a Q15 fixed-point
+package:
+
+```
+v32 = divs(itos(dy), itos(dx));      // slope  = dy / dx
+v34 = muls(v32, itos(t));            // offset = slope * t
+v35 = stoi(v34);                     // back to int
+```
+
+which is the standard way to get `dy * t / dx` without a divide per step. The
+reading that fits the value ranges (dx, dy, t are all at most 15) is:
+
+- `itos(x)` : int to signed 16-bit, plain truncation
+- `stoi(x)` : signed 16-bit to int
+- `divs(a, b)` : `(a << 15) / b`, a Q15 quotient
+- `muls(a, b)` : `(a * b) >> 15`
+
+That is a hypothesis from the call pattern, not a fact from the IDB - the thunks
+carry no body. It must be confirmed against the original's output (the built
+`byte_AD720` table) before the port relies on it, because a different scale
+factor produces a visibility fan that is subtly wrong rather than obviously
+wrong.
