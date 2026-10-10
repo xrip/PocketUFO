@@ -5,9 +5,12 @@
 #include "game/pufo_vistry.h"
 #include "game/pufo_combat.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_ballist.h"
+#include "game/pufo_turn.h"
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static int g_nChecks = 0;
 static int g_nFails = 0;
@@ -122,11 +125,157 @@ static UnitRosters NoRosters(void)
     return r;
 }
 
+
+/* An affordable weapon so Unit_SelectBestFireMode succeeds. auStat[3] is the
+ * duel's reaction stat: 100 never loses the roll and 0 always does, which makes
+ * Unit_bFacingAngleDuel deterministic without seeding the generator. */
+static ObjectRecFull g_wWeapon;
+static TactItem g_handL;
+static TactCtx272 g_TactCtx;
+static AimState g_Aim;
+static ActionCostTable g_Costs;
+static FireGate g_Gate;
+static u8 g_bFireStatus1;
+static TactItem *g_pSelItem;
+static i32 g_nSelMode;
+
+static bool GateAllowAll(i32 nSortKey, void *pUser)
+{
+    (void)nSortKey;
+    (void)pUser;
+    return true;
+}
+
+static void ArmShooter(Soldier *pU)
+{
+    memset(&g_wWeapon, 0, sizeof(g_wWeapon));
+    memset(&g_handL, 0, sizeof(g_handL));
+    memset(&g_Costs, 0, sizeof(g_Costs));
+    memset(&g_TactCtx, 0, sizeof(g_TactCtx));
+    memset(&g_Aim, 0, sizeof(g_Aim));
+    g_bFireStatus1 = 7;
+    g_Gate.pfnWeaponFireable = GateAllowAll;
+    g_Gate.pUser = NULL;
+
+    g_handL.pObj = &g_wWeapon;
+    g_handL.nAmmo = 10;
+    g_wWeapon.abArmorTu[0] = 20;
+    g_wWeapon.abCostPct[0] = 50;
+    g_wWeapon.uSortKey = 3;
+
+    pU->pHandL = &g_handL;
+    pU->pHandR = NULL;
+    pU->auStat[0] = 100;
+    pU->auStat[3] = 100;
+    pU->auStat[4] = 80;
+    pU->uTu = 50;
+
+    /* Unit_bFacingAngleDuel is decided by Game_RandU16 draws. Seed 89 makes the
+     * shooter's reaction roll non-zero, which is what the duel compares; with an
+     * unseeded generator the first draw is 41 and the roll truncates to 0, so the
+     * duel rejects the shot whatever the stats and facings are. */
+    srand(89);
+}
+
+static void RunOpp(Soldier *pTarget, Soldier *pShooter, UnitRosters *pRosters)
+{
+    VisCtx ctx;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pSpot = &g_Spot;
+    ctx.pTables = &g_Tables;
+    ctx.pfnLookup = CellLookup;
+    ctx.pGeom = &(MapGeom){ 4, 4 };
+    ctx.apRays = g_aRays;
+    ctx.pRosters = pRosters;
+    ctx.ppScratchUnit = &g_pScratch;
+    ctx.pAim = &g_Aim;
+    ctx.pTactCtx = &g_TactCtx;
+    ctx.pbFireStatus1 = &g_bFireStatus1;
+    Unit_bTryOpportunityFire(pTarget, pShooter, &g_Gate, &g_pSelItem, &g_nSelMode,
+                             &g_Costs, &ctx);
+}
+
+static void TestTryOpportunityFire(void)
+{
+    UnitRosters r = NoRosters();
+    Soldier *pShooter;
+    Soldier *pTarget;
+    Soldier *pDecoy;
+
+    printf("Unit_bTryOpportunityFire @ 0x47c38\n");
+
+    /* Past the 15-cell limit nothing is offered. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 2;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 20, 38, 0, 1, 0);
+    pTarget->auStat[3] = 0;
+    apEnemy[0] = pTarget;
+    r.nEnemy = 1;
+    RunOpp(pTarget, pShooter, &r);
+    Check("an 18-cell target is not offered", g_TactCtx.nOppFireCount == 0);
+
+    /* Facing 2's cone EXCLUDES straight ahead, so a target directly along +X is
+     * never offered. A diagonal target at bearing pi/4 is inside the cone and
+     * inside the fan, so it is spotted and the shooter is enqueued. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 2;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 22, 22, 0, 1, 0);
+    pTarget->auStat[3] = 0;
+    apEnemy[0] = pTarget;
+    r.nEnemy = 1;
+    RunOpp(pTarget, pShooter, &r);
+    Check("the shooter is enqueued", g_TactCtx.nOppFireCount == 1);
+    Check("the enqueued unit is the shooter", g_TactCtx.apOppFire[0] == pShooter);
+    Check("the chosen weapon is the left hand", g_pSelItem == &g_handL);
+    Check("Map.bFireStatus0[1] is cleared", g_bFireStatus1 == 0);
+    Check("the scratch target slot is cleared", g_pScratch == NULL);
+
+    /* Facing 4 (+Y) rejects a target straight along +X: the angle error truncates
+     * to -1, which is more than one facing step. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 4;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 22, 20, 0, 1, 0);
+    pTarget->auStat[3] = 0;
+    apEnemy[0] = pTarget;
+    r.nEnemy = 1;
+    RunOpp(pTarget, pShooter, &r);
+    Check("a target two facing steps off is not offered", g_TactCtx.nOppFireCount == 0);
+
+    /* The quirk. The target passes every gate but is not in the shooter's
+     * multi-target list: it sits outside the fan and is not on the enemy roster,
+     * while a decoy on that roster is spotted and makes the list non-empty. The
+     * original still reports success, leaves the scratch slot pointing at the
+     * shooter, does not clear bFireStatus0[1], and enqueues nothing. */
+    Reset();
+    pShooter = Place(0, 20, 20, 0, 0, 0);
+    pShooter->bFacing = 2;
+    ArmShooter(pShooter);
+    pTarget = Place(1, 20, 22, 0, 1, 0);      /* bearing pi/2, outside the fan */
+    pTarget->auStat[3] = 0;
+    pDecoy = Place(2, 22, 20, 0, 1, 0);       /* on the enemy roster, inside it */
+    apEnemy[0] = pDecoy;
+    r.nEnemy = 1;
+    RunOpp(pTarget, pShooter, &r);
+    Check("the decoy is spotted, so the list is not empty", pShooter->nMultiTarget == 1);
+    Check("nothing is enqueued", g_TactCtx.nOppFireCount == 0);
+    Check("bFireStatus0[1] is left alone", g_bFireStatus1 == 7);
+    Check("the scratch slot still names the shooter", g_pScratch == pShooter);
+}
+
 int main(void)
 {
     memset(g_aRays, 0, sizeof(g_aRays));
     memset(g_aSteps, 0, sizeof(g_aSteps));
     Tact_BuildVisRayTable(g_aRays, g_aSteps);
+
+    TestTryOpportunityFire();
 
     printf("Unit_UpdateVisibility @ 0x48580\n");
 

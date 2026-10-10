@@ -3493,3 +3493,39 @@ reports success. Recorded as the original's behaviour, not corrected.
 Port shape: the `unk_157180` opportunity-fire queue needs a port model
 (`apOppFire` / `nOppFireCount`) before this lands; `Map.bFireStatus0[1]` and
 `anActionPhaseSave0[120]` already have stand-ins in the port's context structs.
+
+### Ported and tested: `Unit_bTryOpportunityFire @ 0x47c38`
+
+Port: `Unit_bTryOpportunityFire` in `src/pufo/game/pufo_unit.c`. Tests:
+`TestTryOpportunityFire` in `tests/test_vis.c`, 11 checks.
+
+The `unk_157180` queue model the brief asked for already existed: `TactCtx272`
+(`pufo_turn.h`) carries `apOppFire[60]` and `nOppFireCount`, and `Turn_PickOppFireUnit`
+/ `Turn_FireAtOppFireTarget` consume them. No new type was needed. `VisCtx` gained
+`pAim`, `pTactCtx` and `pbFireStatus1` instead of a parallel context struct.
+
+Two findings that changed how the function must be read:
+
+1. **The facing cone excludes straight ahead.** For facing 2 the accepted bearings
+   are `0.785375 .. 5.497625` — everything except the ±45° wedge around +X. A target
+   directly along the facing axis is therefore *never* offered opportunity fire. The
+   same wedge is exactly what the ray fan covers, so the cone and the fan overlap only
+   on the diagonals. A test target has to sit on a diagonal (bearing pi/4) to be both
+   inside the cone and reachable by the fan.
+
+2. **The angle duel is decided by a raw roll, not by stats.** `Unit_bFacingAngleDuel`
+   scales only the side with the higher luck roll; the other side keeps its raw
+   `Game_RandU16(100)` value, and the comparison is `nRollA > nRollB`. `auStat[3]`
+   only zeroes a roll that comes out above it — it never creates a non-zero one. So a
+   shooter whose reaction roll truncates to 0 loses the duel whatever its stats and
+   facings are. `Game_RandU16` is `(u16)((float)(rand() % 32768) / 32768.0f * nMax)`,
+   and an unseeded generator's first value (41) truncates to 0 at nMax = 100. The test
+   seeds with 89, whose first draw is 329 and gives a roll of 1.
+
+The quirk is reproduced and asserted: target passes every gate, is not on the shooter's
+multi-target list, and the function still reports success, leaves the scratch slot
+pointing at the shooter, leaves `Map.bFireStatus0[1]` untouched, and enqueues nothing.
+
+Build note: `pufo_combat.c` calls `Sound_Play`, and `pufo_unit.c` now references
+`Unit_SelectBestFireMode`, so `pufo_game` links `pufo_audio` publicly rather than every
+test target repeating it.
