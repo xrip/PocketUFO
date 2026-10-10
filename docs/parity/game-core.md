@@ -3441,3 +3441,55 @@ Deviation, recorded: the original indexes `apCells` without bounds checks in
 several places (the large-unit neighbours, the fan's current cell, and the column
 reveal when `nLayer` is 4). The port ends the walk when its injected lookup
 returns NULL.
+
+# `Unit_bTryOpportunityFire @ 0x47c38` — read, port-ready brief (not yet ported)
+
+Signature: `bool __fastcall Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter)`.
+Note the argument order: the *target* comes first. Callees: `Unit_bFacingAngleDuel
+@ 0x4dcf4`, `Unit_SelectBestFireMode @ 0x478e4`, `Tact_TraceProjectileArc @ 0x2fc38`,
+`Unit_UpdateVisibility @ 0x48580` — all four are already ported.
+
+Gate chain, each step returns false when it fails:
+
+1. **Distance.** `trunc(hypot(dCellX, dCellY))` must be in `1..15`, measured between
+   the two cells.
+2. **Facing cone.** Identical to the multi-target scan inside
+   `Unit_UpdateVisibility`: bearing = `atan2(dy, dx)` normalised into `[0, 6.283)`,
+   facing angle = `(bFacing - 2) * 0.785375` normalised the same way. Facing 2
+   accepts only bearings in `0.785375..5.497625`; every other facing accepts when
+   `|trunc(bearing - facingAngle)| <= 0.785375`. The same three constants, the same
+   truncation quirk.
+3. **`Unit_bFacingAngleDuel(unk_157180, pShooter, pTarget)`** must return non-zero.
+   Its first argument is the `unk_157180` global and is unused by the function.
+4. **`Unit_SelectBestFireMode(pShooter)`** must return non-zero.
+5. **Arc trace.** `anActionPhaseSave0[120] = pShooter`, then
+   `Tact_TraceProjectileArc(map, x0, y0, z0, x1, y1, z1, nFlags = 0)` traced **from
+   the target to the shooter**:
+   - start: `16*target.nX + 8`, `16*target.nY + 8`, `12*target.nZ + 8`
+   - end:   `16*shooter.nX + 8`, `16*shooter.nY + 8`, `12*shooter.nZ + 8`
+
+   There is **no ceiling `nObjParam` term** here, unlike the LOS traces in
+   `Unit_UpdateVisibility` and `Unit_ScanVisibleUnits`. Both ends use the plain
+   `12 * nZ + 8`.
+
+6. **Confirm the target is actually spotted.** `Unit_UpdateVisibility(pShooter)` is
+   run, then the shooter's multi-target list is walked (`Soldier + 0x1C`, stride 4
+   on ILP32) looking for `pTarget`.
+
+On success: `Map.bFireStatus0[1] = 0`, `anActionPhaseSave0[120] = 0`, then
+`unk_157180->apOppFire[unk_157180->nOppFireCount] = pShooter` and
+`nOppFireCount` is incremented. This is the queue `Tact_TryScanOpportunityFire`
+consumes.
+
+On arc failure: `anActionPhaseSave0[120] = 0`, `Map.bFireStatus0[1] = 0`, return 0.
+
+**Quirk to keep.** When the arc succeeds but `pTarget` is *not* in the shooter's
+multi-target list, the loop exits at `if (v37 >= nMultiTarget) return v10;` with
+`v10` still holding `(int)pShooter`. The function returns a non-zero value — true —
+and it leaves `anActionPhaseSave0[120]` pointing at the shooter. It also does not
+clear `Map.bFireStatus0[1]` and does not enqueue anything. So "target not spotted"
+reports success. Recorded as the original's behaviour, not corrected.
+
+Port shape: the `unk_157180` opportunity-fire queue needs a port model
+(`apOppFire` / `nOppFireCount`) before this lands; `Map.bFireStatus0[1]` and
+`anActionPhaseSave0[120]` already have stand-ins in the port's context structs.
