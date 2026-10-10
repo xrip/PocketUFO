@@ -30,42 +30,12 @@
 #include "asset/pufo_asset.h"
 #include "game/pufo_font.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_objectrec.h"
 #include "pufo_common.h"
 #include "render/pufo_render.h"
 
-/* ObjectRec: 208 bytes, all scalars, so the layout must match on every target. */
-typedef struct ObjectRecFull {
-    u8   gap_0[36];        /* 0x00 */
-    i8   nObjParam;        /* 0x24 used by the LOS ceiling test */
-    i8   nDrawH;           /* 0x25 */
-    u8   bUnk38;           /* 0x26 */
-    u8   bUnk39;           /* 0x27 */
-    u8   bTwoHanded;       /* 0x28 */
-    u8   bUnk41;           /* 0x29 */
-    u16  auPerBaseVal[8];  /* 0x2a */
-    u16  aItemQty[52];     /* 0x3a */
-    u16  uIconId;          /* 0xa2 */
-    u8   bListPri;         /* 0xa4 list priority, used by MapCell_ListInsertByPri */
-    u8   bWeight;          /* 0xa5 */
-    u8   nFootW;           /* 0xa6 */
-    u8   nFootH;           /* 0xa7 */
-    u16  anAmmoTypeId[3];  /* 0xa8 */
-    u8   bAmmoCap;         /* 0xae */
-    u8   bFireType;        /* 0xaf */
-    u8   gap_AF[3];        /* 0xb0 */
-    u8   abArmorTu[3];     /* 0xb3 */
-    u16  uFirePower;       /* 0xb6 */
-    u8   nCategory;        /* 0xb8 */
-    u8   gap_B9[11];       /* 0xb9 */
-    u8   bReadySel;        /* 0xc4 readiness source selector, read by Unit_ApplyCellDamage @ 0x2e5d0 and Combat_ResolveShot @ 0x2f12c */
-    u8   gap_C5[3];        /* 0xc5 */
-    u16  uSortKey;         /* 0xc8 */
-    u16  uRecovScore;      /* 0xca */
-    u16  uRecovCount;      /* 0xcc */
-    u8   gap_CE[2];        /* 0xce */
-} ObjectRecFull;
-
-_Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
+/* ObjectRecFull moved to game/pufo_objectrec.h so the cell layer can use the
+ * real record instead of a stand-in. */
 
 /* texts.dat record geometry, from Assets_LoadStartup. */
 #define PUFO_TEXT_REC_SIZE_DISK 200

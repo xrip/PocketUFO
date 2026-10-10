@@ -14,6 +14,7 @@
 #ifndef PUFO_MAPCELL_H
 #define PUFO_MAPCELL_H
 
+#include "game/pufo_objectrec.h"
 #include "pufo_common.h"
 
 #define PUFO_CELL_SIZE   10  /* cells per map tile edge */
@@ -92,11 +93,10 @@ typedef struct Mc1Rec {
 /* TactItem: 24 bytes. Referenced from the cell's item list. */
 typedef struct TactItem TactItem;
 
-/* ObjectRec: 208 bytes. Only the list-priority byte is needed here. */
-typedef struct ObjectRec {
-    u8   abPad[0xA4];
-    u8   bListPri;        /* 0xA4 */
-} ObjectRec;
+/* ObjectRec is the real item record, not a stand-in. It used to be a 165-byte
+ * shadow with only bListPri named, which made every later field an injected
+ * hook and made TactItem.pObj a type lie. See game/pufo_objectrec.h. */
+typedef ObjectRecFull ObjectRec;
 
 /* Soldier: forward-declared. Only bStatus is read by HasOccupant. */
 typedef struct Soldier Soldier;
