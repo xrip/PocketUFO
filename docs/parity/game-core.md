@@ -2525,3 +2525,47 @@ The in-memory layout question stays open: the port's `ResearchTopic` field order
 comes from the on-disk write order, and offset 4 in memory is not necessarily the
 same field. That has to be settled from the IDB typing of `aFacTypeTable` before
 the gate is ported.
+
+## Fire modes are three, and the weapon record keeps them as parallel arrays
+
+`Unit_SelectBestFireMode` reads the per-mode accuracy as
+`pObj->bFireType[mode + 1]`, i.e. byte `0xAF + mode + 1`, and the per-mode TU cost
+as `abArmorTu[mode]` at `0xB3 + mode`. Both are indexed by the same mode, and the
+armour array has three entries, so there are **three** fire modes:
+
+| mode | accuracy byte | TU cost byte |
+|------|---------------|--------------|
+| 0 | 0xB0 | 0xB3 `abArmorTu[0]` |
+| 1 | 0xB1 | 0xB4 `abArmorTu[1]` |
+| 2 | 0xB2 | 0xB5 `abArmorTu[2]` |
+
+`gap_AF[3]` in `ObjectRecFull` is therefore not padding - it is the accuracy
+percentages, and the stored value is `mode + 1` indexed off `bFireType`. The
+accuracy written into the action table is `(int)(accuracyPercent * auStat[4] * 0.01)`.
+
+`pCtxBase.nTrajFront0[1040..1135]` is twelve slots, not three: three fire modes
+plus the other action modes share one cost table. `Tact_OpenLeftHandMenu` scans
+all twelve looking for an affordable one.
+
+## `byte_AA968` extent
+
+Dumped from the IDB. Entries 0..25 are a permutation of 0..25; 31..35 are 97..101;
+36..48 alternate 1 with 113/114; 49..51 are 115, 117, 116. Past about entry 52 the
+region stops looking like a byte map (values appear at stride 4), so the weapon
+sort-key to research-index map is roughly 52 entries and the following bytes belong
+to something else. The exact end has to be pinned from the IDB typing before a
+table is committed to the port.
+
+## Design issue to fix separately (blocks Unit_SelectBestFireMode)
+
+`pufo_mapcell.h` defines `ObjectRec` as `{ u8 abPad[0xA4]; u8 bListPri; }`, 165
+bytes, as a stand-in for the 208-byte `ObjectRecFull` in `pufo_boot.h`. `TactItem.pObj`
+is typed `ObjectRec *`, but the combat code reads `ObjectRecFull` fields through it
+(`bAmmoCap` at 0xAE, `abArmorTu` at 0xB3, `uSortKey` at 0xC8 - the last one is past
+the end of `ObjectRec`).
+
+Casting through would work at runtime because the real objects are 208 bytes, but it
+is a type lie and it would silently allow out-of-range reads. The clean fix is to
+drop the stand-in and type `TactItem.pObj` as `ObjectRecFull *` everywhere. That
+touches `pufo_mapcell.h`, `pufo_unit.h`, `pufo_tactui.h` and their tests, so it is a
+separate change rather than something to slip into a combat port.
