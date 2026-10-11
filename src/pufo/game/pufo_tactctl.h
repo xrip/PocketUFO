@@ -131,8 +131,8 @@ typedef struct LookModeCtx {
     u16 nMapTileH;      /* 0x32 */
     i32 nCamScrollX;    /* 0x15130 */
     i32 nCamScrollY;    /* 0x15134 */
-    i32 nTrajFront4;    /* nTrajFront0[4] @ 0x4A4C */
-    i32 nTrajFront5;    /* nTrajFront0[5] @ 0x4A50 */
+    i32 nTrajFront4;    /* the signed byte at 0x4A40 that SetCamOffset just wrote */
+    i32 nTrajFront5;    /* the signed byte at 0x4A41 that SetCamOffset just wrote */
     i32 nCamWorldOff0;  /* 0x4eac */
     i32 nCamWorldOff1;  /* 0x4eb0 */
     u8  nDimX;          /* 0x1511b */
@@ -143,6 +143,30 @@ typedef struct LookModeCtx {
 void MapView_EnterLookMode(LookModeCtx *pCtx,
                            void (*pfnPlaySample)(u32 nSample, void *pUser),
                            void *pUser);
+
+/* MapView_FocusOnUnit @ 0x2c758. Despite the name the second argument is a
+ * MapCell *, not a unit: the callee reads +0x1A/+0x1B/+0x1C, which are
+ * MapCell.nX/nY/nZ, and every caller passes a cell (for example the tail call at
+ * 0x16744 from MapView_FocusSelected passes Map.pSelUnit->pCell).
+ *
+ * It recentres the camera on half the tile size with no layer adjustment, then
+ * takes the cell coordinate MINUS the two scratch bytes SetCamOffset just wrote,
+ * read SIGNED (LDRSB at 0x2C788 and 0x2C7A0), and feeds that pair to
+ * Map_CenterOffsetX @ 0x26fcc and Map_CenterOffsetY @ 0x26ffc, storing the results
+ * into the camera-scroll pair at 0x15130/0x15134. It ends by tail-calling
+ * MapCursor_SetFlags with the cell's own layer plus one, so focusing on a cell on
+ * layer 0 puts the cursor on layer 1. */
+typedef struct FocusCtx {
+    u16 nMapTileW;      /* 0x30 */
+    u16 nMapTileH;      /* 0x32 */
+    u8  nDimX;          /* 0x1511B */
+    u8  nDimY;          /* 0x1511C */
+    i32 nCamScrollX;    /* 0x15130, written */
+    i32 nCamScrollY;    /* 0x15134, written */
+    CamOffset camOffset; /* 0x4A40/0x4A41: written by SetCamOffset, read back signed */
+} FocusCtx;
+
+void MapView_FocusOnCell(FocusCtx *pCtx, const MapCell *pCell, TactCursor *pCursor);
 
 /* Tact_GetCameraBounds @ 0x3331c.
  *

@@ -263,6 +263,33 @@ void MapView_EnterLookMode(LookModeCtx *pCtx,
                         + pCtx->nTrajFront5 - 40;
 }
 
+/* MapView_FocusOnUnit @ 0x2c758. */
+void MapView_FocusOnCell(FocusCtx *pCtx, const MapCell *pCell, TactCursor *pCursor)
+{
+    MapGeom geom;
+    i32 nA;
+    i32 nB;
+
+    if (pCtx == NULL || pCell == NULL) {
+        return;
+    }
+    geom.nDimX = pCtx->nDimX;
+    geom.nDimY = pCtx->nDimY;
+    MapView_SetCamOffset(&geom, (i32)pCtx->nMapTileW >> 1, (i32)pCtx->nMapTileH >> 1,
+                         false, 0, &pCtx->camOffset);
+
+    /* The scratch bytes are read back SIGNED, and the subtraction is the other way
+     * round from the look-mode handler: cell minus scratch (RSB at 0x2C790). */
+    nA = (i32)pCell->nX - (i32)(i8)pCtx->camOffset.bScratch40;
+    nB = (i32)pCell->nY - (i32)(i8)pCtx->camOffset.bScratch41;
+
+    pCtx->nCamScrollX = Map_CenterOffsetX((i32)pCtx->nDimX, nA, nB);
+    pCtx->nCamScrollY = Map_CenterOffsetY(nA, nB);
+    if (pCursor != NULL) {
+        MapCursor_SetFlags(pCursor, (u8)(pCell->nZ + 1));
+    }
+}
+
 /* Tact_GetCameraBounds @ 0x3331c. */
 void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
                           i32 *pnX1, i32 *pnY1)

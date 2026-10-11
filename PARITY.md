@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 214948 / 598792 (35.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 42 |
-| Test checks run | 3351 |
+| Test checks run | 3358 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -294,7 +294,7 @@ is the module that answers to it.
 | `0x179e4` | `Tact_TryFireMode4` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/game/pufo_tactui.h` |
-| `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapcell.h` |
+| `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapcell.h` (+2) |
 | `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_tactui.c` (+1) |
 | `0x276f0` | `MapView_SetCamOffset` | 152 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
@@ -365,7 +365,7 @@ is the module that answers to it.
 | `0x4f334` | `TactState_KickQueue` | 52 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_tactstate.c` (+2) |
 | `0x18e9c` | `Map_PlaySamples10_0E_ClearUiScreen` | 48 | `src/pufo/game/pufo_tactui.h` |
 | `0x194f8` | `Map_UiScreen7_PlaySamples10_0E` | 48 | `src/pufo/game/pufo_tactui.h` |
-| `0x26fcc` | `Map_CenterOffsetX` | 48 | `src/pufo/game/pufo_mapcell.h` |
+| `0x26fcc` | `Map_CenterOffsetX` | 48 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x4ab98` | `EnemyAi_EnqueueRandomTurn` | 48 | `src/pufo/game/pufo_enemyai.h` |
 | `0x198c4` | `Tact_OpenCommandScreenFlagged` | 44 | `src/pufo/game/pufo_tactui.h` |
 | `0x4f2d4` | `TactState_ctor` | 44 | `src/pufo/game/pufo_tactstate.h` |
@@ -378,7 +378,7 @@ is the module that answers to it.
 | `0x54ff8` | `TactBuf11408_ctor` | 32 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x164b8` | `Map_UiScreen7_PlaySample0E` | 28 | `src/pufo/game/pufo_tactui.h` |
 | `0x164d4` | `Map_UiScreen0F_PlaySample0F` | 28 | `src/pufo/game/pufo_tactui.h` |
-| `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h` |
+| `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
 | `0x548a0` | `MapCell_SetBFlags57_3` | 24 | `src/pufo/game/pufo_mapcell.h` |
 | `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactui.h` |
@@ -1335,7 +1335,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 43 |
-| `test_tactctl` | PASS | 116 |
+| `test_tactctl` | PASS | 123 |
 | `test_tacthud` | PASS | 88 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 402 |
@@ -1365,14 +1365,14 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 142 citations.
+parity report. Total: 140 citations.
 
-### Offsets below the image base (31)
+### Offsets below the image base (29)
 
 IDA loaded `pufobeta.exe` at `0x10000`, so no original code or data lives
 below it. Every one of these is a field offset inside a struct.
 
-`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`, `0x4a4c`, `0x4a50`
+`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`
 
 ### At or above the image base (111)
 

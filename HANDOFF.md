@@ -464,12 +464,12 @@ preparing this document.
    (`TactHud_OpenInventory`) and the special action pad `TactHud_UseSpecialItem20 @
    0x17d54` (`TactHud_UseSpecialItem`), which covers the mark-nearby branch, the
    medikit target search and its two refusal pairs, and the latch-4 branch. That
-   empties the tactical HUD handler block `0x163d4..0x17d54`. `Unit_CanStepExitDir @
+   empties the tactical HUD handler block `0x163d4..0x17d54`. `MapView_FocusOnUnit @
+   0x2c758` is ported for real as `MapView_FocusOnCell` (it takes a `MapCell *`, not a
+   unit). `Unit_CanStepExitDir @
    0x36d68` is retyped: both of its callers pass `Map.pSelUnit->pCell`, so the
    argument is a `MapCell *` and the bytes it reads are `nX/nY/nZ`, not the Soldier
-   path triple Hex-Rays named. Still open: `MapView_FocusOnUnit @ 0x2c758`
-   is injected as a hook rather than ported (it takes a `MapCell *`, not a unit),
-   and `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
+   path triple Hex-Rays named. Still open: `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
    the widget bank these handlers live in, are not ported yet. The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at

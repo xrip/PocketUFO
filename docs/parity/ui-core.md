@@ -515,6 +515,19 @@ documented at `Map+0x88`, for the byte that `Input_OnConfirm` case 4 already mod
 `bLookCommitFlag` at `Map+0x1508C`. Both pointer case-4 gates now read
 `bLookCommitFlag`, and the duplicate field is gone.
 
+### `MapView_FocusOnUnit @ 0x2c758` is a cell focus, and it is now ported
+
+`MapView_FocusOnCell` in `src/pufo/game/pufo_tactctl.c`. The second argument is a
+`MapCell *`: the callee reads `+0x1A/+0x1B/+0x1C` (`MapCell.nX/nY/nZ`) and every
+caller passes a cell, e.g. the tail call at `0x16744` from `MapView_FocusSelected`
+passes `Map.pSelUnit->pCell`. It recentres the camera with
+`MapView_SetCamOffset(nMapTileW>>1, nMapTileH>>1, 0)`, then takes the cell coordinate
+minus the two scratch bytes that call just wrote, read signed (`LDRSB` at `0x2C788`
+and `0x2C7A0`), and feeds the pair to `Map_CenterOffsetX @ 0x26fcc` and
+`Map_CenterOffsetY @ 0x26ffc`, storing into the camera-scroll pair `0x15130/0x15134`.
+It tail-calls `MapCursor_SetFlags @ 0x26f78` with the cell's own layer plus one, so
+focusing a layer-0 cell puts the cursor on layer 1. Asserted in `test_tactctl`.
+
 ## The inventory button and the special action pad
 
 Ported in `src/pufo/game/pufo_tacthud.c` as `TactHud_OpenInventory` and

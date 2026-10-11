@@ -429,6 +429,59 @@ static void TestEnterLookMode(void)
                Map_IsoOffsetB(3, 2, 3) + 200 - 40, "  world offset 1");
 }
 
+static void TestFocusOnCell(void)
+{
+    FocusCtx ctx;
+    static MapCell cell;
+    TactCursor cursor;
+    MapGeom geom;
+    CamOffset want;
+    i32 nA;
+    i32 nB;
+
+    printf("MapView_FocusOnCell\n");
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&cell, 0, sizeof(cell));
+    MapCell_Init(&cell, 7, 5, 2);
+    cursor.nX = 0;
+    cursor.nY = 0;
+    cursor.nFlags = 0;
+
+    ctx.nMapTileW = 240;
+    ctx.nMapTileH = 320;
+    ctx.nDimX = 4;
+    ctx.nDimY = 3;
+    ctx.nCamScrollX = 999;
+    ctx.nCamScrollY = 999;
+
+    /* The scratch pair is whatever SetCamOffset writes for half the tile size with
+     * no layer adjustment; the focus then subtracts it from the cell coordinate.
+     * Both bytes are read back SIGNED (LDRSB at 0x2C788/0x2C7A0), which the (i8)
+     * cast below reproduces. With these tile sizes both come out positive, so the
+     * sign only shows in the cast, not in the numbers: SetCamOffset(120, 160) gives
+     * (120 + 2*(160+8))/32 = 14 and (120/2 - 160 - 8)/-16 = 6. */
+    geom.nDimX = 4;
+    geom.nDimY = 3;
+    MapView_SetCamOffset(&geom, 120, 160, false, 0, &want);
+    nA = 7 - (i32)(i8)want.bScratch40;
+    nB = 5 - (i32)(i8)want.bScratch41;
+
+    MapView_FocusOnCell(&ctx, &cell, &cursor);
+    CheckEqI32(ctx.camOffset.bScratch40, want.bScratch40, "  scratch 0x4A40");
+    CheckEqI32(ctx.camOffset.bScratch41, want.bScratch41, "  scratch 0x4A41");
+    CheckEqI32(ctx.nCamScrollX, Map_CenterOffsetX(4, nA, nB), "  camera scroll X");
+    CheckEqI32(ctx.nCamScrollY, Map_CenterOffsetY(nA, nB), "  camera scroll Y");
+    CheckEqI32(cursor.nFlags, 3, "  cursor layer is the cell layer plus one");
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.nCamScrollX = 111;
+    ctx.nCamScrollY = 222;
+    cursor.nFlags = 4;
+    MapView_FocusOnCell(&ctx, NULL, &cursor);
+    CheckEqI32(ctx.nCamScrollX, 111, "  no cell leaves the scroll alone");
+    CheckEqI32(cursor.nFlags, 4, "  no cell leaves the cursor layer alone");
+}
+
 static void TestCameraBounds(void)
 {
     CameraBoundsCtx ctx;
@@ -495,6 +548,7 @@ int main(void)
     TestVictoryTiles();
     TestMapCursorSetPos();
     TestEnterLookMode();
+    TestFocusOnCell();
     TestCameraBounds();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
