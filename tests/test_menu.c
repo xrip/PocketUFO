@@ -211,7 +211,7 @@ static void TestMusicVolume(void)
         TraceReset();
 
         Check(Menu_SetMusicVolume(&opt, &pads, step, &g_hooks), "  volume applied");
-        CheckEqI32(opt.nMusicVolume, step, "  music volume stored");
+        CheckEqI32(opt.nMusicVolume, step + 1, "  music volume stored as 1..5");
         CheckEqI32(PadLit(pads.abMusic), step, "  the right music pad is lit");
         Check(g_trace.bAppliedMusic, "  the volume was applied");
         CheckEqI32(g_trace.nEvents, 1, "  exactly one event happened");
@@ -223,6 +223,12 @@ static void TestMusicVolume(void)
     memset(&pads, 0, sizeof(pads));
     Check(Menu_SetMusicVolume(&opt, &pads, 0, &g_hooks), "  step 0 is valid (named Vol1)");
     CheckEqI32(PadLit(pads.abMusic), 0, "  step 0 lights pad index 0");
+    CheckEqI32(opt.nMusicVolume, 1, "  Vol1 stores the immediate 1");
+    /* The original's arithmetic, Sound_ApplyMusicVolume @ 0x9E454:
+     * value = muted ? 0 : 12*volume + 4, level = 4*value - 1. */
+    CheckEqI32(Options_MusicLevel(&opt), 4 * (12 * 1 + 4) - 1, "  volume 1 gives level 63");
+    opt.bMusicOff = 1;
+    CheckEqI32(Options_MusicLevel(&opt), -1, "  muted gives -1, not 0");
 }
 
 static void TestSfxVolume(void)
@@ -237,7 +243,7 @@ static void TestSfxVolume(void)
         TraceReset();
 
         Check(Menu_SetSfxVolume(&opt, &pads, step, &g_hooks), "  volume applied");
-        CheckEqI32(opt.nSoundVolume, step, "  sound volume stored");
+        CheckEqI32(opt.nSoundVolume, step + 1, "  sound volume stored as 1..5");
         CheckEqI32(PadLit(pads.abSfx), step, "  the right sfx pad is lit");
         CheckEqI32(g_trace.nEvents, 2, "  two events happened");
         Check(TraceAt(0, "applySfx"), "  the volume apply comes FIRST");
@@ -269,8 +275,8 @@ static void TestPadsAreIndependent(void)
 
     /* And the option block ended with every group's value. */
     CheckEqI32(opt.nGamma, 3, "  gamma 3");
-    CheckEqI32(opt.nMusicVolume, 1, "  music 1");
-    CheckEqI32(opt.nSoundVolume, 4, "  sfx 4");
+    CheckEqI32(opt.nMusicVolume, 2, "  music 2 (step 1 + 1)");
+    CheckEqI32(opt.nSoundVolume, 5, "  sfx 5 (step 4 + 1)");
 }
 
 static void TestButtons(void)
@@ -339,6 +345,65 @@ static void TestMuteToggles(void)
     }
 }
 
+/* Options_SyncUiFromMap_GotoScreen12 @ 0x188e4: the options button changes no
+ * option, it re-reads the option block into all 29 pad bytes and opens screen 12. */
+static void TestSyncOptionPads(void)
+{
+    PufoOptions opt;
+    MenuPads    pads;
+    u16         nScreen = 0u;
+
+    printf("Menu_SyncOptionPads (0x188e4)\n");
+
+    TraceReset();
+    Options_InitDefaults(&opt);
+    memset(&pads, 0xFF, sizeof(pads));
+    Menu_SyncOptionPads(&pads, &opt, &nScreen, &g_hooks);
+
+    Check(TraceAt(0, "sample16"), "  sample 16 first");
+    CheckEqI32((i32)nScreen, 12, "  screen 12 opens");
+    /* Defaults: gamespeed 4, gamma 2, soundvolume 5, musicvolume 5. */
+    CheckEqI32(PadLit(pads.abSpeed), 4, "  speed pad 4 lit");
+    CheckEqI32(PadLit(pads.abGamma), 2, "  gamma pad 2 lit");
+    CheckEqI32(PadLit(pads.abMusic), 4, "  music pad 4 lit (volume 5)");
+    CheckEqI32(PadLit(pads.abSfx), 4, "  sfx pad 4 lit (volume 5)");
+    CheckEqI32(PadSum(pads.abSpeed) + PadSum(pads.abGamma)
+             + PadSum(pads.abMusic) + PadSum(pads.abSfx), 4, "  every group is one-hot");
+    CheckEqI32(pads.bConfirm, 0, "  the confirm pad of widget 75 stays dark");
+
+    /* The seven flag pads and the inverted forcenodrag pad. */
+    memset(&pads, 0, sizeof(pads));
+    opt.bScrollByPen = 0; opt.bShowBorder = 1; opt.bRunByDblClick = 0;
+    opt.bTurnByPen = 1;   opt.bMenuByPen = 0;
+    opt.bMusicOff = 1;    opt.bSoundOff = 0;
+    opt.bForceNoDrag = 1;
+    Menu_SyncOptionPads(&pads, &opt, &nScreen, &g_hooks);
+    CheckEqI32(pads.abPen[0] + pads.abPen[1] + pads.abPen[2] + pads.abPen[3]
+               + pads.abPen[4], 2, "  pen flags mirror the option bytes");
+    CheckEqI32(pads.bMusicMute, 1, "  music mute pad follows musicoff");
+    CheckEqI32(pads.bSfxMute, 0, "  sfx mute pad follows soundoff");
+    CheckEqI32(pads.bForceNoDrag, 0, "  forcenodrag pad is INVERTED");
+
+    memset(&pads, 0xFF, sizeof(pads));
+    opt.bForceNoDrag = 0;
+    Menu_SyncOptionPads(&pads, &opt, &nScreen, &g_hooks);
+    CheckEqI32(pads.bForceNoDrag, 1, "  a clear forcenodrag lights its pad");
+
+    /* Out-of-range values: the original writes past the group, the port does not. */
+    memset(&pads, 0, sizeof(pads));
+    opt.nGameSpeed = 9;
+    opt.nMusicVolume = 0;
+    Menu_SyncOptionPads(&pads, &opt, &nScreen, &g_hooks);
+    CheckEqI32(PadSum(pads.abSpeed), 0, "  speed 9 lights nothing");
+    CheckEqI32(PadSum(pads.abMusic), 0, "  volume 0 lights nothing");
+    CheckEqI32(pads.bSfxMute, 0, "  and does not touch the mute pad");
+
+    Menu_SyncOptionPads(NULL, &opt, &nScreen, &g_hooks);
+    Menu_SyncOptionPads(&pads, NULL, &nScreen, &g_hooks);
+    Menu_SyncOptionPads(&pads, &opt, NULL, NULL);
+    Check(true, "  NULL arguments are safe");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -350,6 +415,7 @@ int main(void)
     TestPadsAreIndependent();
     TestButtons();
     TestMuteToggles();
+    TestSyncOptionPads();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

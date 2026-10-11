@@ -36,22 +36,24 @@ static void TestBeginEnd(void)
 
     printf("UiModal_Begin / UiModal_End\n");
     memset(&modal, 0xAA, sizeof(modal));
-    UiModal_Begin(&modal, 140, 24, 4, 5, Yes, (void *)"NO", No);
+    UiModal_Begin(&modal, 140, 24, 4, "YES", Yes, (void *)"NO", No);
 
     Check(modal.bOpen, "  open flag set");
     CheckEqI32(modal.nField48, 0, "  pCtx+48 cleared");
     CheckEqI32(modal.nActionPhaseSave112, 0, "  anActionPhaseSave0[112] cleared");
-    CheckEqI32(modal.anRect12_15[0], 140, "  slot 12 stored");
-    CheckEqI32(modal.anRect12_15[1], 24, "  slot 13 stored");
-    CheckEqI32(modal.anRect12_15[2], 4, "  slot 14 stored");
-    CheckEqI32(modal.anRect12_15[3], 5, "  slot 15 stored");
+    CheckEqI32(modal.anRect12_14[0], 140, "  slot 12 stored");
+    CheckEqI32(modal.anRect12_14[1], 24, "  slot 13 stored");
+    CheckEqI32(modal.anRect12_14[2], 4, "  slot 14 stored");
+    Check(modal.pLabel15 != NULL, "  slot 15 label stored");
+    Check(modal.pLabel15 != NULL &&
+          strcmp((const char *)modal.pLabel15, "YES") == 0, "  slot 15 is the first label");
     Check(modal.pfn16 == Yes, "  slot 16 callback stored");
     Check(modal.p17 != NULL, "  slot 17 argument stored");
     Check(modal.pfn18 == No, "  slot 18 callback stored");
 
     UiModal_End(&modal);
     Check(!modal.bOpen, "  end clears only the open flag");
-    CheckEqI32(modal.anRect12_15[0], 140, "  stored fields survive end");
+    CheckEqI32(modal.anRect12_14[0], 140, "  stored fields survive end");
     Check(modal.pfn16 == Yes, "  callbacks survive end");
 }
 

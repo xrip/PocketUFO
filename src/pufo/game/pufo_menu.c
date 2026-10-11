@@ -65,8 +65,9 @@ bool Menu_SetMusicVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
         return false;
     }
     /* No sample in this group -- verified: Options_SetMusicVol1..5 contain no
-     * Sound_Play call at all. */
-    pOpt->nMusicVolume = nStep;
+     * Sound_Play call at all. The stored value is 1..5 (Vol1 writes the immediate
+     * 1 at 0x19A20, Vol5 writes 5 at 0x19B70), the pad index is 0-based. */
+    pOpt->nMusicVolume = nStep + 1;
     Pads_MakeOneHot(pPads->abMusic, nStep);
     if (pHooks != NULL && pHooks->pfnApplyMusicVolume != NULL) {
         pHooks->pfnApplyMusicVolume(pHooks->pUser);
@@ -80,8 +81,9 @@ bool Menu_SetSfxVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
     if (pOpt == NULL || pPads == NULL || !ValidStep(nStep)) {
         return false;
     }
-    /* The write and the volume apply come FIRST here; the sample is last. */
-    pOpt->nSoundVolume = nStep;
+    /* The write and the volume apply come FIRST here; the sample is last. The
+     * stored value is 1..5, exactly as MenuBtn_SetSfxVol1/5 write 1 and 5. */
+    pOpt->nSoundVolume = nStep + 1;
     Pads_MakeOneHot(pPads->abSfx, nStep);
     if (pHooks != NULL && pHooks->pfnApplySfxVolume != NULL) {
         pHooks->pfnApplySfxVolume(pHooks->pUser);
@@ -171,4 +173,51 @@ bool Menu_ToggleForceNoDrag(PufoOptions *pOpt, u8 *pPad)
         *pPad = bWasOn ? 1 : 0;
     }
     return bNew;
+}
+
+/* Light one pad of a five-pad group, guarding the index. The original indexes
+ * straight through `32 * value + offset` with no bounds test, so a volume of 0
+ * would light the sfx-mute pad and a speed above 4 would write past the group. */
+static void Pad_Lit(u8 *pGroup, i32 nIdx)
+{
+    if (nIdx >= 0 && nIdx < PUFO_MENU_STEPS) {
+        pGroup[nIdx] = 1;
+    }
+}
+
+void Menu_SyncOptionPads(MenuPads *pPads, const PufoOptions *pOpt,
+                         u16 *pnUiScreen, const MenuHooks *pHooks)
+{
+    if (pPads == NULL || pOpt == NULL) {
+        return;
+    }
+    Menu_Play(pHooks, PUFO_MENU_SAMPLE_POST);
+
+    /* The original's do-loop clears byte +10 of all 29 widgets of the block at
+     * unk_ACE50, i.e. every pad byte here, including the confirm pad of widget 75
+     * that it never lights again. */
+    memset(pPads, 0, sizeof(*pPads));
+
+    Pad_Lit(pPads->abSpeed, pOpt->nGameSpeed);
+    Pad_Lit(pPads->abGamma, pOpt->nGamma);
+    Pad_Lit(pPads->abMusic, pOpt->nMusicVolume - 1);
+    Pad_Lit(pPads->abSfx, pOpt->nSoundVolume - 1);
+
+    /* The seven flag pads are written as `if (flag) pad = 1`, which after the
+     * clear is the same as the normalised assignment below. */
+    pPads->abPen[0] = pOpt->bScrollByPen   != 0 ? 1 : 0;
+    pPads->abPen[1] = pOpt->bShowBorder    != 0 ? 1 : 0;
+    pPads->abPen[2] = pOpt->bRunByDblClick != 0 ? 1 : 0;
+    pPads->abPen[3] = pOpt->bTurnByPen     != 0 ? 1 : 0;
+    pPads->abPen[4] = pOpt->bMenuByPen     != 0 ? 1 : 0;
+    pPads->bMusicMute = pOpt->bMusicOff != 0 ? 1 : 0;
+    pPads->bSfxMute   = pOpt->bSoundOff != 0 ? 1 : 0;
+
+    /* The forcenodrag pad is the INVERSE, the same quirk Menu_ToggleForceNoDrag
+     * writes: `if (flag == 0) unk_AD1DA = 1`. */
+    pPads->bForceNoDrag = pOpt->bForceNoDrag == 0 ? 1 : 0;
+
+    if (pnUiScreen != NULL) {
+        *pnUiScreen = PUFO_MENU_SCREEN_OPTIONS;
+    }
 }

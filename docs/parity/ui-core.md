@@ -726,3 +726,99 @@ own size, which is why the size has to be written by hand.
    because the port's handlers take injected contexts rather than reading globals.
    The original handler for each slot is recorded in `g_aUiClickName`, which is also
    the work list for the handlers that are not ported yet.
+
+## The widget click adapters: MenuBtn_* @ 0x19498..0x1a26c
+
+Ported in `src/pufo/ui/pufo_menubtn.h/.c` as `test_menubtn`, 67 checks.
+
+Fourteen of the handlers `Tact_InitUiControls` installs are not behaviour, they are
+adapters: 24..56 bytes each, the widget bank as their only argument, and three
+statements. Ported by behaviour rather than per widget, because half of them are
+byte-identical duplicates:
+
+| original | bytes | what it does |
+|---|---|---|
+| `MenuBtn_Confirm0 @ 0x19650`, `Confirm1 @ 0x196e8`, `Confirm2 @ 0x19884`, `Confirm3 @ 0x198a4`, `Confirm4 @ 0x19910`, `Confirm5 @ 0x1a014` | 32 | sample 16, `Input_OnConfirm @ 0x15f3c` |
+| `MenuBtn_ConfirmSnd15 @ 0x198f0` | 32 | the same with sample 15 |
+| `MenuBtn_ConfirmClear @ 0x194c8` | 48 | sample 16, `nUiScreen = 0`, `Input_OnConfirm` |
+| `MenuBtn_Secondary @ 0x19498` | 48 | sample 16, `nUiScreen = 0`, `Input_OnSecondary @ 0x156e0` |
+| `MenuBtn_SecondaryDismiss @ 0x195e0` | 56 | the same, then `UiScreen_DismissHigh @ 0x159ec` |
+| `MenuBtn_ActionBack0 @ 0x195a8`, `ActionBack1 @ 0x19618` | 56 | sample 16, `nUiScreen = 0`, `Input_OnAction @ 0x1557c`, `UiScreen_OnBack @ 0x15670` |
+| `MenuBtn_Cancel0 @ 0x1a24c`, `Cancel1 @ 0x1a26c` | 32 | sample 16, `UiScreen_OnCancel @ 0x16200` |
+
+### The screen clear makes part of the callees dead
+
+Five of them write `nUiScreen = 0` before the handler runs, ARM at `0x194B0`,
+`0x194E0`, `0x195C0`, `0x195F8`, `0x19630`:
+
+```
+LDR  R0, =0x1139B8
+MOV  R1, #0
+STRH R1, [R0,#(unk_1139F2 - 0x1139B8)]   ; nUiScreen, Map+0x3A
+```
+
+`UiScreen_OnBack` and `UiScreen_DismissHigh` only act on screens 8, 9 and 13, so
+from these widgets those branches are unreachable: `SecondaryDismiss` always takes
+its no-op path, and `ActionBack`'s quit / battle-abort / cancel paths never run.
+`MenuBtn_ConfirmClear` on the options screen does not save the options either; it
+lands in the screen-0 case, which with a clear action latch plays sample 7 and
+toggles the deploy panel. The port reproduces the order instead of fixing it, and
+the test asserts the dead branch rather than the intended one.
+
+### The two scratch bytes
+
+`Input_OnAction` sets `byte_AD711` (pBank+0x1041) and `UiScreen_OnBack` clears the
+same byte (`0x15674 MOV R12,#(unk_AD711-0xAC6D0); STRB R2,[R1,R12]`), so
+`MenuBtn_ActionBack` leaves it 0. `UiScreen_DismissHigh` clears `bUiEscapeFlag`
+(`byte_AD712`) on entry. The port passes both through `UiButtonCtx` so the caller
+owns the storage.
+
+### The slot list and the quit dialog
+
+`Menu_OpenLoadSlots @ 0x18864` and `Menu_OpenSaveSlots @ 0x188a4` are identical
+except the screen they open: both call `SaveSlot_FormatList @ 0x45904` first, play
+sample 16, clear the list-mode byte `*0x157188`, then write 11 for the load list or
+10 for the save list. That 10 is what `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4` test to
+pick `SaveGame @ 0x44988` over `LoadGame @ 0x44bbc`.
+
+`Menu_ConfirmQuitDialog @ 0x18e2c` is the yes/no modal: sample 16, then
+`UiModal_Begin(pCtx, 140, 24, 4, "YES", App_QuitFromTact @ 0x18e18, "NO",
+Menu_CancelQuitDialog @ 0x18e04)`, then `nUiScreen = 8`. The slot layout is now
+explicit in `UiModalState`: slot 15 holds the first label and slot 17 the second,
+so `pLabel15` replaced the fourth int of `anRect12_15`. `App_QuitFromTact` is
+`Tact_Shutdown(1) + App_QuitDisplay`, which is the app shell's job, so both
+callbacks are injected. `Menu_CancelQuitDialog`, the NO callback, only clears the
+screen.
+
+### The options screen re-reads itself: Options_SyncUiFromMap_GotoScreen12 @ 0x188e4
+
+Ported as `Menu_SyncOptionPads` in `pufo_menu.c`. The options button changes no
+option. It clears `nState` (byte +0x0A) of all 29 widgets of the block at
+`unk_ACE50` and re-derives every one of them from the option block, then opens
+screen 12. The widget range is the pad block `MenuPads` now models in one struct:
+
+```
+60..64 speed   0xACE5A   32 * nGameSpeed + 10
+65..69 gamma   0xACEFA   32 * gamma       + 170
+70..74 pen     0xACF9A   flags 93..97, i.e. Map+0x150D5..0x150D9
+75     confirm 0xAD03A   cleared, never lit again
+76     music   0xAD05A   flag 98  (Map+0x150DA musicoff)
+77     sfx     0xAD07A   flag 99  (Map+0x150DB soundoff)
+78..82 music   0xAD09A   32 * musicvolume + 554
+83..87 sfx     0xAD13A   32 * soundvolume + 714
+88     nodrag  0xAD1DA   flag 108, INVERTED
+```
+
+The volume groups prove the option values are 1..5, not 0..4: `554 = 32*17 + 10`,
+so the pad is widget `77 + musicvolume`, and `Options_SetMusicVol1 @ 0x19A10`
+really writes the immediate 1 into `unk_128A98` (Map+0x150E0) while
+`Options_SetMusicVol5 @ 0x19B60` writes 5. `MenuBtn_SetSfxVol1 @ 0x19BB4` and
+`MenuBtn_SetSfxVol5 @ 0x19D34` do the same at `unk_128A94` (Map+0x150DC). The port
+had been storing 0..4 there, which is corrected: the buttons stay 0-based and the
+stored value is `nStep + 1`, matching what `Options_LoadFromRegistry` already
+clamps to 1..5 and what `Sound_ApplyMusicVolume @ 0x9E454` scales
+(`value = muted ? 0 : 12*volume + 4`, `level = 4*value - 1`, so muted gives -1).
+
+Deviation: the original indexes those four pads with no bounds test, so a volume of
+0 lights the sfx-mute pad of widget 77 and a speed above 4 writes past its group.
+The port only writes inside the group.

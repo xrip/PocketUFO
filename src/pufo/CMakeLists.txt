@@ -76,6 +76,7 @@ add_library(pufo_ui STATIC
     ui/pufo_control.c
     ui/pufo_modal.c
     ui/pufo_uibank.c
+    ui/pufo_menubtn.c
 )
 target_include_directories(pufo_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_ui PUBLIC pufo_options pufo_game pufo_render pufo_util)
@@ -438,6 +439,18 @@ set_target_properties(test_modal PROPERTIES
 )
 add_test(NAME test_modal
     COMMAND test_modal
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# The widget click adapters: the MenuBtn_* pfnClick handlers and the slot-list and
+# quit-dialog openers installed by Tact_InitUiControls.
+add_executable(test_menubtn ${CMAKE_SOURCE_DIR}/tests/test_menubtn.c)
+target_link_libraries(test_menubtn PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
+set_target_properties(test_menubtn PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_menubtn
+    COMMAND test_menubtn
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

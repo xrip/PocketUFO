@@ -3,7 +3,7 @@
 
 #include <string.h>
 
-void UiModal_Begin(UiModalState *pModal, i32 n12, i32 n13, i32 n14, i32 n15,
+void UiModal_Begin(UiModalState *pModal, i32 n12, i32 n13, i32 n14, void *pLabel15,
                    void (*pfn16)(void), void *p17, void (*pfn18)(void))
 {
     if (pModal == NULL) {
@@ -13,10 +13,10 @@ void UiModal_Begin(UiModalState *pModal, i32 n12, i32 n13, i32 n14, i32 n15,
     pModal->nField48 = 0;
     pModal->nActionPhaseSave112 = 0;
     pModal->bOpen = true;   /* LOBYTE(apUiSlotsA[19]) = 1 */
-    pModal->anRect12_15[0] = n12;
-    pModal->anRect12_15[1] = n13;
-    pModal->anRect12_15[2] = n14;
-    pModal->anRect12_15[3] = n15;
+    pModal->anRect12_14[0] = n12;
+    pModal->anRect12_14[1] = n13;
+    pModal->anRect12_14[2] = n14;
+    pModal->pLabel15 = pLabel15;
     pModal->pfn16 = pfn16;
     pModal->p17 = p17;
     pModal->pfn18 = pfn18;

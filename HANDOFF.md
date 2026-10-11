@@ -478,7 +478,20 @@ preparing this document.
    and mode-checked. `test_uibank` asserts it (388 checks). Widgets 113..127 are
    confirmed never laid out. The handler names for the slots whose handlers are not
    ported yet are recorded in `g_aUiClickName`, which is the work list for the rest
-   of this task. See `docs/parity/ui-core.md`, "The widget bank builder". The `UiPanel` type
+   of this task. That work list is now shorter: the fourteen `MenuBtn_*` click
+   adapters (`Confirm0..5 @ 0x19650..0x1a014`, `ConfirmSnd15 @ 0x198f0`,
+   `ConfirmClear @ 0x194c8`, `Secondary @ 0x19498`, `SecondaryDismiss @ 0x195e0`,
+   `ActionBack0/1 @ 0x195a8/0x19618`, `Cancel0/1 @ 0x1a24c/0x1a26c`) are ported in
+   `src/pufo/ui/pufo_menubtn.c` as six functions, together with
+   `Menu_OpenLoadSlots @ 0x18864` / `Menu_OpenSaveSlots @ 0x188a4` (screens 11 and
+   10) and `Menu_ConfirmQuitDialog @ 0x18e2c` / `Menu_CancelQuitDialog @ 0x18e04`.
+   `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` is `Menu_SyncOptionPads`, and it
+   proved the volume options are stored 1..5 (`Options_SetMusicVol1` writes the
+   immediate 1), which the port had wrong. `test_menubtn` adds 67 checks. What is
+   left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
+   `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
+   `Map_BuildDeployConfirmYesNo @ 0x18a68`, and the geoscape screens. See
+   `docs/parity/ui-core.md`, "The widget click adapters". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

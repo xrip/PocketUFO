@@ -4,7 +4,11 @@
  *           MenuBtn_SetGamma0..4 @ 0x19070/0x190d0/0x19130/0x19190/0x191f0,
  *           Options_SetMusicVol1..5 @ 0x19a10/0x19a64/0x19ab8/0x19b0c/0x19b60,
  *           MenuBtn_SetSfxVol1..5 @ 0x19bb4/0x19c14/0x19c74/0x19cd4/0x19d34,
- *           MenuBtn_EndTurn @ 0x16494, MenuBtn_ResizeWindow @ 0x19930.
+ *           MenuBtn_EndTurn @ 0x16494, MenuBtn_ResizeWindow @ 0x19930,
+ *           Options_SyncUiFromMap_GotoScreen12 @ 0x188e4,
+ *           Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
+ *           Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04,
+ *           App_QuitFromTact @ 0x18e18.
  *
  * ## These write the SAME option bytes the options module owns
  *
@@ -19,7 +23,9 @@
  * (`anActionPhaseSave0[104]` is 0x15078 + 104 = 0x150E0, and `[100]` is 0x150DC,
  * which is exactly how the original reaches them.) So the menu layer drives the
  * same option block `pufo_options` persists, and the port passes that struct in
- * rather than duplicating the fields.
+ * rather than duplicating the fields. The button handlers that need the modal or
+ * the input handlers live in `pufo_menubtn.h` instead, because `pufo_game` must
+ * not depend on `pufo_ui`.
  *
  * ## The one-hot pad arrays
  *
@@ -30,6 +36,18 @@
  *
  * Every handler clears all five pads of its group and sets one, so the arrays are
  * one-hot at all times.
+ *
+ * ## The volume values are 1..5, not 0..4
+ *
+ * `Options_SetMusicVol1 @ 0x19A10` writes the immediate 1 into the music volume
+ * dword at Map+0x150E0 and `Options_SetMusicVol5 @ 0x19B60` writes 5; the sfx
+ * group is the same at Map+0x150DC (`MenuBtn_SetSfxVol1 @ 0x19BB4` writes 1,
+ * `MenuBtn_SetSfxVol5 @ 0x19D34` writes 5). The pad lit is the FIRST of the five,
+ * so the button number is the stored value and the pad index is value - 1. That
+ * is also why `Options_SyncUiFromMap_GotoScreen12` reaches the music pads through
+ * `32 * musicvolume + 554`, i.e. widget 77 + volume. The port keeps the buttons
+ * 0-based and stores `nStep + 1`, which is what the registry round-trip and
+ * `Options_MusicLevel` already assume.
  *
  * ## Per-group differences that are real
  *
@@ -54,17 +72,35 @@
 /* Each group has five selectable steps. */
 #define PUFO_MENU_STEPS 5
 
+/* The screen the options button opens (nUiScreen, Map+0x3A). */
+#define PUFO_MENU_SCREEN_OPTIONS 12u
+
 /* The sample the speed/gamma groups play before acting, and the one the sfx group
  * plays after. */
 #define PUFO_MENU_SAMPLE_PRE  17
 #define PUFO_MENU_SAMPLE_POST 16
 
-/* The four one-hot pad groups. */
+/* The options screen (nUiScreen 12) is the 29-widget block pBank widgets 60..88.
+ * Each widget's nState byte (+0x0A) is one byte of this struct, in widget order:
+ *
+ *   60..64 speed   0xACE5A   65..69 gamma    0xACEFA
+ *   70..74 pen     0xACF9A   75    confirm   0xAD03A
+ *   76    music mute 0xAD05A 77    sfx mute  0xAD07A
+ *   78..82 music vol 0xAD09A 83..87 sfx vol  0xAD13A
+ *   88    forcenodrag 0xAD1DA
+ *
+ * `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` re-derives all 29 bytes from the
+ * option block, which is why they live in one struct. */
 typedef struct MenuPads {
     u8 abSpeed[PUFO_MENU_STEPS];   /* 0xACE5A, stride 0x20 */
     u8 abGamma[PUFO_MENU_STEPS];   /* 0xACEFA */
+    u8 abPen[PUFO_MENU_STEPS];     /* 0xACF9A, scrollbypen..menubypen */
+    u8 bConfirm;                   /* 0xAD03A, widget 75, never lit by the sync */
+    u8 bMusicMute;                 /* 0xAD05A */
+    u8 bSfxMute;                   /* 0xAD07A */
     u8 abMusic[PUFO_MENU_STEPS];   /* 0xAD09A */
     u8 abSfx[PUFO_MENU_STEPS];     /* 0xAD13A */
+    u8 bForceNoDrag;               /* 0xAD1DA, the INVERSE of the option byte */
 } MenuPads;
 
 /* What the handlers need from the world. Every effect is injected because each
@@ -98,12 +134,14 @@ bool Menu_SetGamma(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                    const MenuHooks *pHooks);
 
 /* Options_SetMusicVol1..5. Writes the music volume, then applies it. Plays NO
- * sample, unlike every other group. */
+ * sample, unlike every other group. nStep is the 0-based pad index; the stored
+ * value is nStep + 1, matching the original's 1..5. */
 bool Menu_SetMusicVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                          const MenuHooks *pHooks);
 
 /* MenuBtn_SetSfxVol1..5. Writes the sound volume, applies it, then plays sample
- * 16 -- i.e. the sample comes last here, not first. */
+ * 16 -- i.e. the sample comes last here, not first. nStep is the 0-based pad
+ * index; the stored value is nStep + 1. */
 bool Menu_SetSfxVolume(PufoOptions *pOpt, MenuPads *pPads, i32 nStep,
                        const MenuHooks *pHooks);
 
@@ -127,5 +165,22 @@ bool Menu_ToggleSfxMute(PufoOptions *pOpt, u8 *pPad, const MenuHooks *pHooks);
  * new flag value: turning the flag ON writes 0, turning it OFF writes 1 -- unlike
  * the mute toggles. Returns the new flag value. */
 bool Menu_ToggleForceNoDrag(PufoOptions *pOpt, u8 *pPad);
+
+/* Options_SyncUiFromMap_GotoScreen12 @ 0x188e4. The options button does not change
+ * any option: it re-reads the whole option block into the 29 pad bytes and opens
+ * screen 12. Order: sample 16, clear all 29 pads, then
+ *   abSpeed[nGameSpeed]        32 * nGameSpeed + 10,      widgets 60..64
+ *   abGamma[nGamma]            32 * gamma + 170,          widgets 65..69
+ *   abMusic[musicvolume - 1]   32 * musicvolume + 554,    widgets 78..82
+ *   abSfx[soundvolume - 1]     32 * soundvolume + 714,    widgets 83..87
+ * then the seven flag pads (the five pen flags, the two mute flags) are set only
+ * when the flag is set, and the forcenodrag pad is set only when the flag is CLEAR.
+ * Widget 75 (the confirm pad) is cleared and never re-lit. Finally nUiScreen = 12.
+ *
+ * Deviation: the original writes the four indexed pads unguarded, so a volume of 0
+ * lights the SFX MUTE pad (widget 77) and a speed above 4 writes past the group.
+ * The port only writes inside the group. */
+void Menu_SyncOptionPads(MenuPads *pPads, const PufoOptions *pOpt,
+                         u16 *pnUiScreen, const MenuHooks *pHooks);
 
 #endif /* PUFO_MENU_H */
