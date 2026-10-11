@@ -482,7 +482,7 @@ static void TestOnConfirm(void)
     memset(&t, 0, sizeof(t));
     s = ConfirmState();
     s.nUiScreen = 0;
-    s.bMultiTargetArmed = 1;
+    s.nActionLatch = 1;
     s.pbScratchFlag9 = &g_aScratch9;
     g_aScratch9 = 3;
     s.nCursorX = 7;
@@ -495,7 +495,7 @@ static void TestOnConfirm(void)
     s.nMultiTargetCount = 2;
     Input_OnConfirm(&s, &h);
     Check(g_aScratch9 == 0, "armed confirm clears the *unk_1571E4+9 scratch");
-    Check(s.bMultiTargetArmed == 0, "armed confirm clears byte 0x22");
+    Check(s.nActionLatch == 0, "armed confirm clears the action latch");
     Check(t.nSetCursor == 1 && t.nCursorX == 7 && t.nCursorY == 9,
           "armed confirm re-places the cursor at nCursorX/nCursorY");
     Check((g_aCell[0].bFlags29 & 0x40) == 0 && (g_aCell[1].bFlags29 & 0x40) == 0,
@@ -507,7 +507,7 @@ static void TestOnConfirm(void)
     memset(&t, 0, sizeof(t));
     s = ConfirmState();
     s.nUiScreen = 0;
-    s.bMultiTargetArmed = 1;
+    s.nActionLatch = 1;
     ConfirmWeapon(&s, 1, 20);
     g_aCell[0].bFlags29 = 0x40;
     s.apMultiTargets[0] = &g_aCell[0];
@@ -520,7 +520,7 @@ static void TestOnConfirm(void)
     memset(&t, 0, sizeof(t));
     s = ConfirmState();
     s.nUiScreen = 0;
-    s.bMultiTargetArmed = 1;
+    s.nActionLatch = 1;
     ConfirmWeapon(&s, 1, 35);
     g_aCell[0].bFlags29 = 0x40;
     s.apMultiTargets[0] = &g_aCell[0];
@@ -752,7 +752,7 @@ static void TestOnSecondary(void)
     memset(&t, 0, sizeof(t));
     g_aScratch9 = 1;
     s = SecState();
-    s.bMultiTargetArmed = 3;
+    s.nActionLatch = 3;
     s.pbScratchFlag9    = &g_aScratch9;
     s.nMultiTargetCount = 2;
     s.apMultiTargets[0] = &g_aGrid[0][1][1];
@@ -862,6 +862,16 @@ typedef struct PtrTrace {
     i32 nHitTest;
     i32 nGeoscape;
     i32 nSample;
+    i32 nGeosUp;
+    i32 nTitles;
+    i32 nEndScreen;
+    i32 nModalEnd;
+    i32 nPushRec;
+    i32 nLastRec;
+    i32 nSetCursor;
+    i32 nCtlClick;
+    i32 nSlot16;
+    i32 nSlot18;
     MapCell *pLastCell;
 } PtrTrace;
 
@@ -898,6 +908,23 @@ static void Tr_PtrSample(u32 nSample, void *pUser)
 {
     ((PtrTrace *)pUser)->nSample = (i32)nSample;
 }
+static void Tr_GeosUp(void *pUser)        { ((PtrTrace *)pUser)->nGeosUp++; }
+static void Tr_Titles(void *pUser)        { ((PtrTrace *)pUser)->nTitles++; }
+static void Tr_EndScreen(void *pUser)     { ((PtrTrace *)pUser)->nEndScreen++; }
+static void Tr_UpModalEnd(void *pUser)    { ((PtrTrace *)pUser)->nModalEnd++; }
+static void Tr_UpSetCursor(i32 x, i32 y, void *pUser)
+{
+    (void)x; (void)y;
+    ((PtrTrace *)pUser)->nSetCursor++;
+}
+static void Tr_PushRec(i32 nRecord, void *pUser)
+{
+    ((PtrTrace *)pUser)->nPushRec++;
+    ((PtrTrace *)pUser)->nLastRec = nRecord;
+}
+static void Tr_CtlClick(void) { g_ptr.nCtlClick++; }
+static void Tr_Slot16(void)   { g_ptr.nSlot16++; }
+static void Tr_Slot18(void)   { g_ptr.nSlot18++; }
 
 static MapCell *PtrLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
@@ -915,6 +942,12 @@ static TactInputHooks PtrHooks(void)
     h.pfnInvHandlePointer = Tr_InvHandle;
     h.pfnFocusOnCell      = Tr_FocusCell;
     h.pfnPlaySample       = Tr_PtrSample;
+    h.pfnGeoscapePointerUp = Tr_GeosUp;
+    h.pfnTitlesToStartup  = Tr_Titles;
+    h.pfnEndScreenShutdown = Tr_EndScreen;
+    h.pfnModalEnd         = Tr_UpModalEnd;
+    h.pfnSetCursorPos     = Tr_UpSetCursor;
+    h.pfnPushTextRecord   = Tr_PushRec;
     h.pUser               = &g_ptr;
     return h;
 }
@@ -939,6 +972,21 @@ static void PtrLive(i32 nIndex, i32 x, i32 y, u16 w, u16 h)
     p->y        = (i16)y;
     p->uWidth   = w;
     p->uHeight  = h;
+}
+
+/* For the release pass the hit box is never consulted, so every widget is made a
+ * live mode-0 control in state 1 with a counting click handler. After the call a
+ * widget still in state 1 was not released, which is how the ranges are pinned. */
+static void PtrBankLiveAll(void)
+{
+    i32 i;
+    PtrBankReset();
+    for (i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        g_bank.aCtl[i].bEnabled = 1;
+        g_bank.aCtl[i].nMode    = 0;
+        g_bank.aCtl[i].nState   = 1;
+        g_bank.aCtl[i].pfnClick = Tr_CtlClick;
+    }
 }
 
 static TactPointerWorld PtrWorld(void)
@@ -1133,14 +1181,14 @@ static void TestPointer(void)
     s = PtrState(0);
     s.bEdgeTestOn = 1;
     s.bDeployPanelOpen = 1;
-    s.bMultiTargetArmed = 0;
+    s.nActionLatch = 0;
     Input_OnPointer(&s, &h, &w, 5, 150, true);
     CheckEqI32((i32)g_bank.aCtl[0].nState, 1, "  the plain screen hits widget 0");
 
     PtrBankReset();
     PtrLive(0, 0, 0, 300, 300);
     PtrLive(2, 0, 0, 300, 300);
-    s.bMultiTargetArmed = 1;
+    s.nActionLatch = 1;
     Input_OnPointer(&s, &h, &w, 5, 150, true);
     CheckEqI32((i32)g_bank.aCtl[0].nState, 0, "  multi-target mode skips widget 0");
     CheckEqI32((i32)g_bank.aCtl[2].nState, 1, "  and hits widget 2 instead");
@@ -1196,6 +1244,383 @@ static void TestPointer(void)
     CheckEqI32((i32)g_bank.aCtl[0].nState, 0, "  screen 8 answers to nothing");
 }
 
+/* Input_OnPointerUp @ 0x148d0. No coordinates reach the original, so the checks pin
+ * which controls the release pass reaches and what the screen-3 action pad decides.
+ * A widget left in state 1 was not released. */
+static bool UpLive(i32 nIndex) { return g_bank.aCtl[nIndex].nState == 1; }
+
+static void TestPointerUp(void)
+{
+    TactInputHooks h = PtrHooks();
+    TactPointerWorld w = PtrWorld();
+    TactInputState s;
+
+    printf("Input_OnPointerUp -- the release pass\n");
+
+    /* The prologue clears the edge bytes and sets the scroll flag to 200. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(8);
+    s.nUiSlot5 = 0x01010101;
+    s.nUiSlot4 = 0;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nUiSlot5, 0, "  edge flags clear");
+    CheckEqI32(s.nUiSlot4, 200, "  slot 4 becomes 200");
+
+    /* The geoscape branch owns everything. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(0);
+    s.bGeoscapeUi = true;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nGeosUp, 1, "  geoscape branch runs");
+    Check(UpLive(0), "  no widget is released");
+
+    /* Screens 16 and 18 are answered before the tactical gate. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(16);
+    s.bTactFlag = false;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nTitles, 1, "  screen 16 goes titles -> startup");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(18);
+    s.bTactFlag = false;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nEndScreen, 1, "  screen 18 shuts the end screen down");
+
+    /* The tactical gate: bTactFlag, and either the scroll gate or the tick hold. */
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bTactFlag = false;
+    s.bPlayerInputOn = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(0), "  no release without bTactFlag");
+
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    s.bQueueActive = true;
+    s.bGameTickHold = false;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(0), "  a busy queue blocks it while the tick is not held");
+
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    s.bQueueActive = true;
+    s.bGameTickHold = true;
+    g_bank.aCtl[128].nMode = 3;   /* an inert mode: the release answers 0 */
+    w.pLookCtl = &g_bank.aCtl[128];
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(0), "  the tick hold lets it through");
+
+    /* Screen 0: the look control is released first and a firing one stops the pass. */
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    w.pLookCtl = &g_bank.aCtl[128];
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(128), "  the look control is released");
+    Check(UpLive(0) && UpLive(18), "  a firing look control stops the pass");
+
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    g_bank.aCtl[128].nMode = 3;
+    w.pLookCtl = &g_bank.aCtl[128];
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(0) && !UpLive(18) && UpLive(19), "  no latch releases 0..18");
+
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    s.nActionLatch = 3;
+    g_bank.aCtl[128].nMode = 3;
+    w.pLookCtl = &g_bank.aCtl[128];
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(2) && !UpLive(7) && !UpLive(9) && !UpLive(15),
+          "  an armed latch releases only 2, 7, 9, 15");
+    Check(UpLive(0) && UpLive(3) && UpLive(18), "  and none of the others");
+
+    PtrBankLiveAll();
+    s = PtrState(0);
+    s.bPlayerInputOn = 0;
+    w.pLookCtl = NULL;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(0), "  the HUD panel owns the pointer when 0x38 is clear");
+
+    /* Screen 1: thirteen widgets, then the drop when a drag is live. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(1);
+    s.bInvPanelOpen = 1;
+    s.bInvDragActive = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(19) && !UpLive(31) && UpLive(32), "  screen 1 releases 19..31");
+    CheckEqI32(g_ptr.nInvHandle, 0, "  an open panel does not drop");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(1);
+    s.bInvPanelOpen = 0;
+    s.bInvDragActive = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(19), "  a closed panel skips the release");
+    CheckEqI32(g_ptr.nInvHandle, 1, "  the live drag drops the item");
+    CheckEqI32((i32)s.bInvDragActive, 0, "  and the drag flag clears");
+
+    /* Screens 2, 4, 5, 7, 12, 15 and the standalone controls. */
+    PtrBankLiveAll();
+    s = PtrState(2);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(98) && !UpLive(100) && UpLive(101), "  screen 2 releases 98..100");
+
+    PtrBankLiveAll();
+    s = PtrState(5);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(44) && !UpLive(52) && UpLive(53), "  screen 5 releases 44..52");
+    CheckEqI32((i32)s.nUiScreen, 0, "  and screen 5 closes the screen");
+
+    PtrBankLiveAll();
+    s = PtrState(4);
+    s.bPhaseSave20 = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(101) && UpLive(102), "  screen 4 with the flag set releases one");
+
+    PtrBankLiveAll();
+    s = PtrState(4);
+    s.bPhaseSave20 = 0;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(102) && !UpLive(103) && UpLive(104),
+          "  and clears the flag to release 102..103");
+
+    PtrBankLiveAll();
+    s = PtrState(7);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(53) && !UpLive(59) && UpLive(60), "  screen 7 releases 53..59");
+
+    PtrBankLiveAll();
+    s = PtrState(12);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(60) && !UpLive(88) && UpLive(89), "  screen 12 releases 60..88");
+
+    PtrBankLiveAll();
+    s = PtrState(15);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(89) && !UpLive(97) && UpLive(98), "  screen 15 releases 89..97");
+
+    PtrBankLiveAll();
+    s = PtrState(13);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(128) && UpLive(129), "  screen 13 releases the standalone control");
+
+    PtrBankLiveAll();
+    s = PtrState(19);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(129) && UpLive(128), "  screen 19 releases its own");
+
+    PtrBankLiveAll();
+    s = PtrState(10);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(105) && UpLive(106), "  screens 10/11 stop at the first release");
+
+    /* Screens 8, 9 and 14 answer to nothing; 20/21 adopt apUiSlotsA[11]. */
+    PtrBankLiveAll();
+    s = PtrState(14);
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(0) && UpLive(129), "  screen 14 answers to nothing");
+
+    PtrBankLiveAll();
+    s = PtrState(20);
+    s.nUiSlot11 = 3;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nUiScreen, 3, "  screen 20 adopts slot 11");
+
+    /* The status line takes over while Map+0xac is live. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(0);
+    s.bPlayerInputOn = 1;
+    s.bSlot19Active = 1;
+    s.nSlot24Hit = 0;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(UpLive(0), "  hover column 0 releases nothing");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(0);
+    s.bSlot19Active = 1;
+    s.nSlot24Hit = 1;
+    w.pfnSlot16 = Tr_Slot16;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nModalEnd, 1, "  column 1 ends the modal");
+    CheckEqI32(g_ptr.nSlot16, 1, "  then runs the stored action at Map+0xa0");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(0);
+    s.bSlot19Active = 1;
+    s.nSlot24Hit = 2;
+    w.pfnSlot18 = Tr_Slot18;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nSlot18, 1, "  column 2 runs the one at Map+0xa8");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(0);
+    s.bSlot19Active = 1;
+    s.nSlot24Hit = 7;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nModalEnd, 0, "  an unknown column does nothing");
+    w.pfnSlot16 = NULL;
+    w.pfnSlot18 = NULL;
+
+    /* Screen 3: the action pad, then the latch is re-derived from the mode. */
+    memset(g_aUnit, 0, sizeof(g_aUnit));
+    memset(g_aObj, 0, sizeof(g_aObj));
+    memset(g_aItem, 0, sizeof(g_aItem));
+    g_aUnit[0].uTu = 20;
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 1;
+    s.anActionCost[1] = 10;
+    s.pSelUnit = &g_aUnit[0];
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(32) && UpLive(44), "  screen 3 releases 32..43");
+    CheckEqI32((i32)s.nActionLatch, 2, "  mode 0..2 latches 2");
+    CheckEqI32((i32)s.nUiScreen, 0, "  and the screen closes");
+    CheckEqI32(g_ptr.nSetCursor, 1, "  the cursor is re-placed");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 11;
+    s.anActionCost[11] = 10;
+    s.pSelUnit = &g_aUnit[0];
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nActionLatch, 1, "  mode 11 latches 1");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 12;
+    s.nActionLatch = 4;
+    s.pSelUnit = &g_aUnit[0];
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nActionLatch, 0, "  mode 12 clears the latch");
+    CheckEqI32(g_ptr.nPushRec, 0, "  and is never cost-checked");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 3;
+    s.anActionCost[3] = 10;
+    s.pSelUnit = &g_aUnit[0];
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nUiScreen, 3, "  mode 3 (throw) keeps the screen open");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 8;
+    s.nActionLatch = 4;
+    s.anActionCost[8] = 10;
+    s.pSelUnit = &g_aUnit[0];
+    ConfirmWeapon(&s, 1, 23);
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nActionLatch, 4, "  mode 8 with a uSortKey-23 weapon keeps the latch");
+    CheckEqI32((i32)s.nUiScreen, 3, "  and mode 8 keeps the screen open");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 8;
+    s.nActionLatch = 4;
+    s.anActionCost[8] = 10;
+    s.pSelUnit = &g_aUnit[0];
+    ConfirmWeapon(&s, 1, 20);
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)s.nActionLatch, 0, "  mode 8 with any other weapon clears the latch");
+
+    /* An unaffordable mode pushes "not enough time" and switches to mode 12. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(3);
+    s.nActionMode = 5;
+    s.nActionLatch = 4;
+    s.anActionCost[5] = 30;
+    s.pSelUnit = &g_aUnit[0];
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nPushRec, 1, "  an unaffordable mode pushes a record");
+    CheckEqI32(g_ptr.nLastRec, 1, "  the record is 1, not enough time");
+    CheckEqI32(s.nActionMode, 12, "  and the mode becomes 12");
+    CheckEqI32((i32)s.nActionLatch, 0, "  and the latch clears");
+    CheckEqI32((i32)s.nUiScreen, 0, "  and the screen closes");
+
+    /* Screen 17: three row blocks, and mode 0 has its own clearing rule. */
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(17);
+    w.nListMode = 0;
+    memset(w.abListHit, 0, sizeof(w.abListHit));
+    w.abListHit[2] = 1;
+    w.bListRowSticky = false;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(113) && !UpLive(116) && UpLive(117), "  mode 0 releases 113..116");
+    CheckEqI32(g_ptr.nCtlClick, 5, "  four releases plus the row click");
+    CheckEqI32((i32)w.abListHit[0], 0, "  rows before the hit one clear");
+    CheckEqI32((i32)w.abListHit[1], 0, "  as the scan goes");
+    CheckEqI32((i32)w.abListHit[2], 0, "  and the hit row clears when not sticky");
+    CheckEqI32((i32)w.abListHit[3], 0, "  rows after it are untouched");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(17);
+    w.nListMode = 0;
+    memset(w.abListHit, 0, sizeof(w.abListHit));
+    w.abListHit[1] = 1;
+    w.bListRowSticky = true;
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32((i32)w.abListHit[1], 1, "  a sticky row keeps its mark");
+    Check(!UpLive(114), "  and its control is still released");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(17);
+    w.nListMode = 0;
+    memset(w.abListHit, 0, sizeof(w.abListHit));
+    Input_OnPointerUp(&s, &h, &w);
+    CheckEqI32(g_ptr.nCtlClick, 4, "  no marked row means no row click");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(17);
+    w.nListMode = 1;
+    memset(w.abListHit, 0, sizeof(w.abListHit));
+    w.abListHit[3] = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(117) && !UpLive(120) && UpLive(121), "  mode 1 releases 117..120");
+    CheckEqI32(g_ptr.nCtlClick, 5, "  and clicks the marked row");
+    CheckEqI32((i32)w.abListHit[3], 0, "  mode 1 always clears the marks");
+
+    PtrBankLiveAll();
+    memset(&g_ptr, 0, sizeof(g_ptr));
+    s = PtrState(17);
+    w.nListMode = 2;
+    memset(w.abListHit, 0, sizeof(w.abListHit));
+    w.abListHit[6] = 1;
+    Input_OnPointerUp(&s, &h, &w);
+    Check(!UpLive(121) && !UpLive(127), "  mode 2 releases 121..127");
+    CheckEqI32(g_ptr.nCtlClick, 8, "  seven releases plus the row click");
+
+    w.nListMode = 0;
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -1209,6 +1634,7 @@ int main(void)
     TestOnConfirm();
     TestOnSecondary();
     TestPointer();
+    TestPointerUp();
 
     return TestSummary("test_input");
 }

@@ -189,7 +189,7 @@ The port models it as `UiWidgetBank` in `ui/pufo_control.h` with the same indice
 
 | Screen | Widgets | Screen | Widgets |
 |---|---|---|---|
-| 0 | 0..18, or only 2, 7, 9, 15 while `Map+0x22` is set | 7 | 53..59 |
+| 0 | 0..18, or only 2, 7, 9, 15 while `Map+0x02` is set | 7 | 53..59 |
 | 1 | 19..31 | 12 | 60..88 |
 | 2 | 98..100 | 15 | 89..97 |
 | 3 | 32..43 | 4 | 101, then 102..103 |
@@ -235,9 +235,13 @@ The port models it as `UiWidgetBank` in `ui/pufo_control.h` with the same indice
 | 3 | The drag-start scratch reads 0 when no drag is live | the original reads uninitialised stack (`var_4`) there |
 | 4 | `pfnFocusOnCell`, `pfnHitTestTactItem`, `pfnInvClearHitSlot`, `pfnInvHandlePointer` and `pfnGeoscapePointer` are injected | those subsystems are not ported yet; the injection matches the existing `TactInputHooks` design |
 
-**Open item:** `MapCursorPos.bSuppressLarge` is supplied by the caller. The citation
-`pMap->gap_2[1]` came from pseudocode; `MapCursor_SetPos @ 0x27014` still needs an
-ARM read to confirm whether it is `Map+0x22`.
+**Closed item:** `MapCursor_SetPos @ 0x27014` reads the byte at **`Map+0x02`**, proven at
+`0x2723C` (`LDRB R3, [R4,#2]` then `CMP R3, #0` / `BNE`), with `R4` confirmed as the `Map`
+base by the neighbouring `ADD R3, R4, R3` at `0x27064` producing `Map+0x15334` = `pSelUnit`.
+So a large selected unit spreads the cursor footprint over the extra cells only when the
+action latch is zero. The port derives `MapCursorPos.bSuppressLarge` from
+`TactInputState.nActionLatch` instead of taking it from the caller, and the byte is named
+`Map_bActionLatch` in the IDB.
 
 
 ## 2026-10-11: UiControl_HitTest @ 0x1a3d8 — the pointer press/release handler
@@ -284,4 +288,57 @@ this function clears on every mode 0/2 press path.
 | 1 | `pCtl` and `pCtx` are null-checked | the original dereferences both; the port must not crash on an uninitialised widget |
 | 2 | `pnUiSlot0` may be NULL, in which case the slot clear is skipped | the widget lives in the UI layer, which has no context object yet; the caller that owns `Map` passes the real pointer |
 | 3 | `pfnClick` is called normally instead of as a tail call | same observable behaviour; a tail call would also let the handler's return value become this function's result, which the original does not intend |
+
+
+## 2026-10-11: Input_OnPointerUp @ 0x148d0 — the release pass
+
+Ported in `src/pufo/game/pufo_input.c`, asserted by `test_input` (`TestPointerUp`, 68
+checks). 2140 bytes, 19 jumptable cases.
+
+### What it actually is
+
+Every `UiControl_HitTest` call in it passes `x = 0`, `y = 0`, `bDown = 0` and
+`bForceClick = 0` — `MOV R1,#0; MOV R2,#0; MOV R3,#0; STRB R8,[SP,#bForceClick]` at
+`0x14A60..0x14A70`, with `R8 = 0` set in the prologue. Because `UiControl_HitTest` only
+consults the hit box on a press, the coordinates are irrelevant: this function releases
+every control the current screen owns, and that release is what fires their `pfnClick`.
+
+### Facts proven from ARM
+
+| Fact | Evidence |
+|---|---|
+| Prologue clears the four HUD edge **bytes** `Map+0x74..0x77` individually, then stores the dword `200` into `apUiSlotsA[4]` (`Map+0x70`) | `0x148E4..0x148F8` (`MOV R0,#0xC8; STR R0,[R4,#…]`) |
+| `Input_OnPointer` clears `apUiSlotsA[4]` on a drag; `Input_OnPointerUp` **sets** it to 200 unconditionally | `0x14534` vs `0x148F8` |
+| Gate is `bTactFlag` and (`CanScroll` **or** `Map_bTickHold @ Map+0x5A`) — unlike the other handlers it runs while the queue is busy | `0x14B18..0x14B64` |
+| Screens 16, 17 and 18 are answered **before** the gate; 16 runs `Titles_Shutdown` + `GameUI_InitStartup`, 18 runs `EndScreen_Shutdown` | `0x14924`, `0x14AF0`, `0x14B08` |
+| The screen-17 list controls are at `pBank + 0xE20`, i.e. bank index **113 + row** | `0x14A5C` and `0x14AB8` (`ADD R0, R6, #0xE20; ADD R0, R0, R4, LSL#5`) |
+| Row block by mode: 0 -> rows 0..3 (113..116), 1 -> rows 4..7 (117..120), 2 -> rows 8..14 (121..127) plus `unk_1571B4` | `0x14A58`, `0x149E8`, `0x1494C` |
+| Mode 0 clears only the rows **before** the hit one, and clears the hit row only when `g_bListRowSticky` (`unk_188D4C`) is clear; modes 1 and 2 always clear every mark | `0x14A94..0x14ADC` |
+| While `Map+0xAC` is live the hover column at `Map+0xC0` decides: 0 clears it, 1 and 2 run `UiModal_End` then the stored action pointer at `Map+0xA0` / `Map+0xA8` | `0x14B68..0x14BE4` |
+| Screen 3 re-derives the action latch from `Map_nActionMode` (`Map+0x4C`): 0..2 -> 2, 11 -> 1, 12 -> 0, 8 -> 0 unless `pSelWeapon->pObj->uSortKey == 23` | `0x14F64..0x14FBC` |
+| The action TU cost table is a **dword array at `Map+0x4E4C`** indexed by mode: `MOV R2,#0x4E00; ORR R2,R2,#0x4C; ADD R3,R4,R1,LSL#2; LDR R3,[R3,R2]` at `0x14FC8..0x14FE4`. `Ui_FillActionCosts @ 0x263F0` writes it at dword index `mode + 0x1393`, which is the same address (`4 * 0x1393 = 0x4E4C`) | both sites |
+| An unaffordable mode pushes text record 1 ("not enough time", `aTextRecs + 0xCD`), sets mode 12 and clears the latch | `0x15008..0x15024` |
+| Only mode 3 (throw) and mode 8 (the target modal) keep screen 3 open; everything else clears `nUiScreen` | `0x15048..0x1505C` |
+| Screens 20 and 21 adopt the low word of `apUiSlotsA[11]` (`Map+0x8C`) | `0x14C50` |
+| The inventory drag flag here is `Map+0x3C` (`unk_1139F4`), not `Map+0x60` | `0x150BC`, `0x15120` |
+
+### Hex-Rays rendering errors corrected here
+
+- `MEMORY[0x1139B8].gap_2[1]` is `Map+0x02`, the action latch — the same rendering error as
+  in `Input_OnConfirm` and `Input_OnSecondary`.
+- `nTrajFront0[4 * nActionMode + 1040]` is not that array. The ARM reads `Map+0x4E4C +
+  4 * nActionMode`. The earlier note in `pufo_tactui.h` quoting `nTrajFront0[4*m + 1040]`
+  is a pseudocode artifact; the port's `anActionCost[12]` is the right model.
+- `gap_60[0]` in the screen-1 case is `Map+0x3C`.
+- `MEMORY[0xAD4F0][i]` is not a pointer stored in memory; it is `pBank + 0xE20` indexed as a
+  `UiControl` array, which the ARM shows as two `ADD`s.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `pfnClick` is called normally instead of as a tail call, and with no argument | the original tail-calls it and leaves a leftover register in `R0`; no handler reads it |
+| 2 | `pSelWeapon`, `pObj` and `pSelUnit` are null-checked in the screen-3 path | the original dereferences all three; the port must not crash on an unarmed action pad |
+| 3 | `anActionCost[n]` is only read for `n` in 0..11 | the original indexes it for any mode value, including negative ones, which reads outside the table |
+| 4 | `Titles_Shutdown`, `GameUI_InitStartup`, `EndScreen_Shutdown`, `Geoscape_OnPointerUp` and the two stored action pointers are injected | those subsystems are not ported yet |
 

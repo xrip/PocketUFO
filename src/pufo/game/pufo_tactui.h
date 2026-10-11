@@ -28,13 +28,18 @@
  *
  * `Ui_FillActionCosts` writes, for each action mode m in 0..11:
  *
- *     nTrajFront0[4*m + 1040] = cost      (the TU price)
- *     nTrajFront0[4*m + 1088] = enabled   (whether the mode is offered)
- *     unk_ACAD0[32*m + 9]     = enabled != 0
+ *     anActionCost[m]      = cost      (the TU price)
+ *     anActionEnabled[m]   = enabled   (whether the mode is offered)
+ *     pBank[32 + m].bEnabled = enabled != 0
  *
- * The three fire-mode functions read `nTrajFront0[4*m + 1040]` for m = 4, 5 and
- * 10 and compare it against the selected unit's `uTu`, so the table and the
- * readers are one contract and are ported together.
+ * Hex-Rays renders the first two as `nTrajFront0[4*m + 1040]` and
+ * `nTrajFront0[4*m + 1088]`. The ARM is flat and settles both: `0x263F0` stores at dword
+ * index `m + 0x1393` and `0x26400` at `m + 0x139F`, which are the byte addresses
+ * `Map+0x4E4C + 4*m` and `Map+0x4EBC + 4*m`. `Input_OnPointerUp @ 0x14FE4` reads the cost
+ * the same way (`Map + 0x4E4C + 4*mode`), and `Tact_TryFireMode4/10` read it for m = 4, 5
+ * and 10, so the table and its readers are one contract and are ported together. The
+ * enabled mirror at `0x2641C` is `pBank + 0x400 + 32*m + 9`, i.e. `UiControl.bEnabled` of
+ * the twelve action-pad widgets 32..43.
  */
 #ifndef PUFO_TACTUI_H
 #define PUFO_TACTUI_H

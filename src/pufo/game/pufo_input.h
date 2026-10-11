@@ -52,7 +52,10 @@ typedef struct TactInputState {
     u16  nUiSlot11;     /* apUiSlotsA[11] low word, screens 20..21 */
 
     /* Fields only Input_OnConfirm @ 0x15f3c touches. */
-    u8        bMultiTargetArmed; /* 0x22 byte_1139BA: multi-target selection is live */
+    u8        nActionLatch;  /* 0x02 unk_1139BA: the tactical action latch, 0..4.
+                              * 3 = multi-target selection is live (Tact_BeginMultiTarget
+                              * @ 0x18380), 4 = a fire mode is armed (Tact_TryFireMode4/10),
+                              * 0 = none. MapCursor_SetPos reads the same byte. */
     i32       nMultiTargetCount; /* 0x04 */
     MapCell  *apMultiTargets[8]; /* 0x08 */
     TactItem *pSelWeapon;        /* 0x48 */
@@ -92,6 +95,10 @@ typedef struct TactInputState {
     u8   bInvPanelOpen;    /* 0xe4 anPhaseSave0[108]: the inventory is open */
     i32  anCamDragX;       /* 0x4eb4, anCamWorldOff[2]: the drag start x */
     i32  anCamDragY;       /* 0x4eb8, anCamWorldOff[3]: the drag start y */
+
+    /* Fields only Input_OnPointerUp @ 0x148d0 touches. */
+    i32  nActionMode;                    /* 0x4c unk_113A04 */
+    i32  anActionCost[12];               /* 0x4e4c, dword stride, Ui_FillActionCosts @ 0x26104 */
 } TactInputState;
 
 /* The effects the handlers trigger in other subsystems, all injected. */
@@ -145,6 +152,15 @@ typedef struct TactInputHooks {
      * CELL: it reads the cell's nX, nY and nZ, recentres the camera scroll and
      * sets the cursor layer to nZ + 1. */
     void (*pfnFocusOnCell)(MapCell *pCell, void *pUser);
+    /* Geoscape_OnPointerUp @ 0x89450, on the &unk_1864F8 screen object. */
+    void (*pfnGeoscapePointerUp)(void *pUser);
+    /* Titles_Shutdown @ 0x3826c then GameUI_InitStartup @ 0x38a28, screen 16. */
+    void (*pfnTitlesToStartup)(void *pUser);
+    /* EndScreen_Shutdown @ 0x389f8, screen 18. */
+    void (*pfnEndScreenShutdown)(void *pUser);
+    /* StatusMsg_Push @ 0x2dda4 with a record index into aTextRecs @ 0xb38d0.
+     * Input_OnPointerUp uses record 1 ("not enough time"). */
+    void (*pfnPushTextRecord)(i32 nRecord, void *pUser);
     void *pUser;
 } TactInputHooks;
 
@@ -168,8 +184,9 @@ void Input_OnMenuEscape(TactInputState *pState, const TactInputHooks *pHooks);
  *
  * Gate: the geoscape branch only closes the geoscape UI; the tactical branch
  * needs bTactFlag plus TactInput_CanScroll. Then a 16-case switch on nUiScreen:
- *   0  commit or cancel the multi-target selection (byte 0x22). Armed: clear
- *      *unk_1571E4+9 and 0x22, re-place the cursor, and for a weapon whose
+ *   0  commit or cancel the multi-target selection (the action latch at 0x02).
+ *      Armed: clear *unk_1571E4+9 and the latch, re-place the cursor, and for a
+ *      weapon whose
  *      uSortKey is 13 or 35 clear bFlags29 bit 6 on every selected target cell;
  *      the count is cleared either way. Not armed: sample 7 and toggle
  *      bDeployPanelOpen.
@@ -204,7 +221,7 @@ typedef struct TactInputWorld {
  *   3, 5, 7, 8, 9, 13, 14 and anything above 15  do nothing.
  *   0  the tactical path below.
  *
- * Screen 0, two modes picked by bMultiTargetArmed (byte 0x22):
+ * Screen 0, two modes picked by nActionLatch (byte 0x02):
  *   == 3  pop the last selected target: clear bFlags29 bit 6 on
  *         apMultiTargets[nMultiTargetCount-1], decrement, and when the count
  *         reaches 0 also clear *unk_1571E4+9. Nothing happens when it is <= 0.
@@ -263,8 +280,9 @@ typedef struct TactPointerWorld {
     PadImage        *pHudPad;     /* Map+0xfc unk_113AB4: nOriginY and uHeight are read */
     CamOffset       *pCamOffset;  /* Map+0x4a40 / 0x4a41, written by SetCamOffset */
     bool             bCursorBusy; /* unk_157180->bBusy, the MapCursor_SetPos gate */
-    bool             bSuppressLarge; /* MapCursor_SetPos reads Map's gap_2[1]; the
-                                       * offset is still to be re-checked at 0x27014 */
+    bool             bListRowSticky; /* unk_188D4C: screen 17 mode 0 keeps its row */
+    void           (*pfnSlot16)(void); /* apUiSlotsA[16] @ Map+0xa0, screen-17 modal action */
+    void           (*pfnSlot18)(void); /* apUiSlotsA[18] @ Map+0xa8, the other one */
     UiControlHitCtx  hit;         /* the pad blit callbacks plus &pState->nUiSlot0 */
     bool             bActionFlag; /* byte_AD711, set by Input_OnAction */
 } TactPointerWorld;
@@ -302,5 +320,37 @@ typedef struct TactPointerWorld {
  * void. */
 void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
                      TactPointerWorld *pWorld, i32 nX, i32 nY, bool bDown);
+
+/* Input_OnPointerUp @ 0x148d0. WM_LBUTTONUP from PocketUFO_WndProc.
+ *
+ * It takes no coordinates: every UiControl_HitTest call passes x = 0, y = 0 and
+ * bDown = 0, so the hit box is never measured and only the release half of the
+ * control state machine runs. That is the whole point of the function: it releases
+ * every control the current screen owns, which is what fires their click handlers.
+ *
+ * Prologue: the four HUD edge bytes at Map+0x74..0x77 are cleared individually and
+ * apUiSlotsA[4] (Map+0x70) is set to 200. The geoscape branch stops there.
+ *
+ * Screens 16, 17 and 18 are handled before the tactical gate. 16 goes from the
+ * titles to the startup screen, 18 shuts the end screen down, and 17 is the list:
+ * it releases the list controls, then fires the click handler of the first row
+ * marked in abListHit and clears the marks. The row block depends on the mode:
+ * mode 0 rows 0..3 (bank index 113..116), mode 1 rows 4..7 (117..120), mode 2 rows
+ * 8..14 (121..127) plus the list control. Mode 0 is the odd one: it clears only the
+ * rows before the hit one, and clears the hit row itself only when the sticky flag
+ * unk_188D4C is clear.
+ *
+ * The tactical gate is bTactFlag and (TactInput_CanScroll or bGameTickHold). When
+ * the status line is live (Map+0xac) the release instead depends on the hover column
+ * at Map+0xc0: 0 clears it, 1 and 2 end the modal and then run the stored action at
+ * Map+0xa0 or Map+0xa8.
+ *
+ * Screen 3 is the action pad. After the release sweep it re-derives the action latch
+ * from nActionMode (0..2 -> 2, 11 -> 1, 8 with a weapon whose uSortKey is not 23 ->
+ * 0, 12 -> 0), refuses an unaffordable mode by pushing text record 1 and switching
+ * to mode 12, re-places the cursor, and keeps screen 3 only for mode 3 or 8.
+ * Screen 5 also clears the screen. Screens 20 and 21 adopt apUiSlotsA[11]. */
+void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
+                       TactPointerWorld *pWorld);
 
 #endif /* PUFO_INPUT_H */

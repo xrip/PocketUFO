@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 429 / 1103 (38.9%) |
-| Bytes of original code cited | 198444 / 598792 (33.1%) |
+| Functions cited as evidence | 434 / 1103 (39.3%) |
+| Bytes of original code cited | 208576 / 598792 (34.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 41 |
-| Test checks run | 3170 |
+| Test checks run | 3238 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -33,7 +33,7 @@ the per-subsystem notes and the tests listed at the end.
 | Subsystem | Recreated | Total | Bytes covered | What it is |
 |---|---|---|---|---|
 | `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
-| `boot-assets` | 2 | 4 | 1684 / 2744 | startup asset load, text-table extraction, shutdown |
+| `boot-assets` | 3 | 4 | 2536 / 2744 | startup asset load, text-table extraction, shutdown |
 | `render` | 33 | 51 | 6972 / 11108 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 17 | 21 | 1024 / 1180 | growable pointer array, RNG, string helpers |
@@ -41,11 +41,11 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 3 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 173 | 214 | 109388 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 25 | 52 | 16764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 26 | 52 | 18904 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 60 | 85 | 10272 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 29 | 205 | 25888 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 30 | 205 | 32880 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 27 | 243 | 3316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
-| `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
+| `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
 
@@ -74,11 +74,12 @@ is the module that answers to it.
 | `0x9f95c` | `AssetReader_Found` | 8 | `src/pufo/asset/pufo_asset.h` |
 | `0x9f964` | `AssetReader_Size` | 8 | `src/pufo/asset/pufo_asset.h` |
 
-### `boot-assets` (2 functions)
+### `boot-assets` (3 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
+| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/game/pufo_input.h` |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
 ### `render` (33 functions)
@@ -292,7 +293,7 @@ is the module that answers to it.
 | `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapcell.h` |
-| `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_tactui.c` (+1) |
 | `0x276f0` | `MapView_SetCamOffset` | 152 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x1c7dc` | `MapView_SetWallPalFromSlotA` | 148 | `src/pufo/game/pufo_isodraw.h` |
@@ -385,12 +386,13 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (25 functions)
+### `tact-ui` (26 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_unit.h` |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
+| `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_input.h` |
 | `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h` |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
@@ -421,7 +423,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_unit.h` |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_tactui.h` |
+| `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
@@ -430,7 +432,7 @@ is the module that answers to it.
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/ui/pufo_control.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
-| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
+| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapctx.c` (+4) |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -480,11 +482,12 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (29 functions)
+### `strat` (30 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_input.h` |
+| `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_input.h` |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_input.h` |
@@ -546,6 +549,13 @@ is the module that answers to it.
 | `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/game/pufo_menu.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
 
+### `titles` (2 functions)
+
+| Address | Original | Size | Recreated in |
+|---|---|---|---|
+| `0x3826c` | `Titles_Shutdown` | 100 | `src/pufo/game/pufo_input.h` |
+| `0x389f8` | `EndScreen_Shutdown` | 48 | `src/pufo/game/pufo_input.h` |
+
 ## Remaining gaps
 
 Every original function not yet cited, with its size and an explanation,
@@ -559,11 +569,10 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `boot-assets` — 2 functions, 1060 bytes remaining
+### `boot-assets` — 1 functions, 208 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x38a28` | `GameUI_InitStartup` | 852 | not yet ported; scheduled with the `boot-assets` subsystem work |
 | `0x38d7c` | `StartUi_Shutdown` | 208 | not yet ported; scheduled with the `boot-assets` subsystem work |
 
 ### `render` — 18 functions, 4136 bytes remaining
@@ -810,14 +819,13 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 27 functions, 27000 bytes remaining
+### `tact-ui` — 26 functions, 24860 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x148d0` | `Input_OnPointerUp` | 2140 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | not yet ported; scheduled with the `tact-ui` subsystem work |
@@ -872,12 +880,11 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 176 functions, 136568 bytes remaining
+### `strat` — 175 functions, 129576 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x89450` | `Geoscape_OnPointerUp` | 6992 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x94554` | `Game_StartNew` | 3976 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1274,7 +1281,7 @@ whose port work they belong to.
 | `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x75154` | `BuySellScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `titles` — 13 functions, 4444 bytes remaining
+### `titles` — 11 functions, 4296 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1287,10 +1294,8 @@ whose port work they belong to.
 | `0x388b0` | `EndScreen_Init` | 328 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46e88` | `Titles_ctor` | 284 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46dbc` | `Titles_UpdateStars` | 204 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x3826c` | `Titles_Shutdown` | 100 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x466dc` | `Titles_PresentToSoftSurf` | 76 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46fa4` | `Titles_dtor` | 60 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x389f8` | `EndScreen_Shutdown` | 48 | not yet ported; scheduled with the `titles` subsystem work |
 
 ## Test suites
 
@@ -1312,7 +1317,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 45 |
-| `test_input` | PASS | 178 |
+| `test_input` | PASS | 246 |
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
@@ -1359,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 135 citations.
+parity report. Total: 136 citations.
 
 ### Offsets below the image base (31)
 
@@ -1368,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`, `0x4a4c`, `0x4a50`
 
-### At or above the image base (104)
+### At or above the image base (105)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1397,6 +1402,7 @@ against the IDB when the final report is assembled.
 - `0x1472c0`
 - `0x1472c8`
 - `0x1472d0`
+- `0x14fe4`
 - `0x15078`
 - `0x15088`
 - `0x1508c`

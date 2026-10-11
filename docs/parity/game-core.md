@@ -4327,8 +4327,8 @@ Case bodies, each cited to its ARM block:
 
 | Screen | Behaviour | ARM |
 |---|---|---|
-| 0 | `byte_1139BA` (`Map+0x22`) selects commit or cancel | `0x16010` |
-| 0 armed | clear `*unk_1571E4 + 9`, clear `Map+0x22`, `MapCursor_SetPos(nCursorX, nCursorY)`, then for `pSelWeapon->pObj->uSortKey` 13 or 35 clear `MapCell.bFlags29` bit 6 over `apMultiTargets[0..n-1]`; count cleared either way | `0x16010..0x160A8` |
+| 0 | `byte_1139BA` (`Map+0x02`) selects commit or cancel | `0x16010` |
+| 0 armed | clear `*unk_1571E4 + 9`, clear `Map+0x02`, `MapCursor_SetPos(nCursorX, nCursorY)`, then for `pSelWeapon->pObj->uSortKey` 13 or 35 clear `MapCell.bFlags29` bit 6 over `apMultiTargets[0..n-1]`; count cleared either way | `0x16010..0x160A8` |
 | 0 unarmed | `Sound_Play(7, mode 4)` and `bDeployPanelOpen = (bDeployPanelOpen == 0)` | `0x160B8..0x160EC` |
 | 1 | `Sound_Play(16, mode 4)` then `Inv_CloseAndCommit` | `0x160F4` |
 | 2 | focus the view on the unit stored for the camera cell, clear the screen, sample 16 | `0x1610C` |
@@ -4340,11 +4340,16 @@ Case bodies, each cited to its ARM block:
 
 Hex-Rays errors corrected from ARM:
 
-- The multi-target flag renders as `MEMORY[0x1139B8].gap_2[1]`, which reads as `Map+0x01`.
-  The ARM is `LDRB R3, [R4,#(unk_1139BA - 0x1139B8)]` — `Map+0x22`. Follow-up question:
-  `MapCursor_SetPos @ 0x27014` is documented in the port as reading `pMap->gap_2[1]` for
-  its `bSuppressLarge` input; that citation came from pseudocode and should be re-checked
-  against ARM before it is trusted.
+- The multi-target flag renders as `MEMORY[0x1139B8].gap_2[1]`. That is `Map+0x02`, not
+  `Map+0x01`: the `Map` type's `gap_2` member starts at offset `0x01` and is `char[3]`, so
+  `gap_2[1]` is the byte at `0x02`. The ARM agrees exactly at `0x16010` — `LDRB R3,
+  [R4,#(unk_1139BA - 0x1139B8)]`, and `0x1139BA - 0x1139B8 = 0x02`. An earlier note here
+  read that subtraction as `0x22` and was wrong; `Map+0x22` has **zero** direct references
+  anywhere in the image.
+  The follow-up question is now closed: `MapCursor_SetPos @ 0x27014` reads the same byte,
+  proven at `0x2723C` (`LDRB R3, [R4,#2]` then `CMP R3, #0`), so a large selected unit only
+  spreads the cursor footprint when the latch is zero. The byte is named `Map_bActionLatch`
+  in the IDB.
 - Case 2's unit lookup renders as a nested `aszStatusMsg[...]` subscript. The ARM is a flat
   array read: base `Map + 0x140F0`, index `3600 * (i8)nLayerScratch + 60 * anCamWorldOff[1]
   + anCamWorldOff[0]`, dword stride, at `0x16144`. `nLayerScratch` is loaded with `LDRSB`,
@@ -4358,7 +4363,7 @@ split is wrong. Not resolved; the port injects the lookup instead of guessing a 
 
 Port shape and deviations:
 
-- `TactInputState` gained the fields only this handler touches: `bMultiTargetArmed` 0x22,
+- `TactInputState` gained the fields only this handler touches: `nActionLatch` 0x02,
   `nMultiTargetCount` 0x04, `apMultiTargets[8]` 0x08, `pSelWeapon` 0x48, `pSelUnit` 0x15334,
   `bDeployPanelOpen` 0x15110, `bUiSlot8Byte0` 0x80, `bLookCommitFlag` 0x1508C,
   `pLookCommitUnit` 0x15088, `nCursorX` 0x15128, `nCursorY` 0x1512C, `anCamWorldY` 0x4EB0,
@@ -4390,7 +4395,7 @@ Screen routing (`nUiScreen` @ `Map+0x3A`, u16):
 | 3, 5 | nothing |
 | 0 | the tactical path below |
 
-Screen 0, two mutually exclusive modes selected by `byte_1139BA` (`Map+0x22`):
+Screen 0, two mutually exclusive modes selected by `byte_1139BA` (`Map+0x02`):
 
 - `== 3` (multi-target pop): `n = nMultiTargetCount` (`Map+0x04`); if `n <= 0` return;
   clear `MapCell.bFlags29` bit 6 on `apMultiTargets[n-1]` (`Map+0x08 + 4*(n-1)`);
@@ -4437,8 +4442,9 @@ Notes that matter for the port:
 - All callees exist in the port: `MapCursor_IsValid`, `Unit_bIsLarge`, `Map_IsValidCell`,
   `Map_QueueDoorAction`, `Unit_FaceToward`, `TactState_KickQueue`. Only `nullsub_8` and
   `nullsub_4` are no-ops to skip.
-- Hex-Rays again renders `byte_1139BA` as `gap_2[1]`; the ARM is `Map+0x22`. This is now
-  the third site with that same pseudocode error.
+- Hex-Rays again renders `byte_1139BA` as `gap_2[1]`; the ARM is `Map+0x02` (the `Map`
+  type's `gap_2` starts at `0x01`, so `gap_2[1]` is `0x02`). This is now the third site with
+  that same pseudocode rendering, and an earlier note here mis-subtracted it as `Map+0x22`.
 
 ## 2026-10-11: Input_OnSecondary @ 0x156e0 — ported
 

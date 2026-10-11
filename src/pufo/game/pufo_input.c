@@ -363,8 +363,8 @@ void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks)
 
     switch (pState->nUiScreen) {
     case UI_SCREEN_NONE:
-        /* 0x16010: byte 0x22 selects commit or cancel. */
-        if (pState->bMultiTargetArmed == 0) {
+        /* 0x16010: the action latch at 0x02 selects commit or cancel. */
+        if (pState->nActionLatch == 0) {
             Input_CallSample(pHooks, 7);
             pState->bDeployPanelOpen = (pState->bDeployPanelOpen == 0) ? 1u : 0u;
             return;
@@ -372,7 +372,7 @@ void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks)
         if (pState->pbScratchFlag9 != NULL) {
             *pState->pbScratchFlag9 = 0;
         }
-        pState->bMultiTargetArmed = 0;
+        pState->nActionLatch = 0;
         if (pHooks->pfnSetCursorPos != NULL) {
             pHooks->pfnSetCursorPos(pState->nCursorX, pState->nCursorY, pHooks->pUser);
         }
@@ -503,8 +503,8 @@ void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
         return;
     }
 
-    /* Screen 0. 0x15794: byte 0x22 selects the mode. */
-    if (pState->bMultiTargetArmed == 3u) {
+    /* Screen 0. 0x15794: the action latch at 0x02 selects the mode. */
+    if (pState->nActionLatch == 3u) {
         /* 0x15980: pop the last selected target. */
         if (pState->nMultiTargetCount <= 0) {
             return;
@@ -786,7 +786,7 @@ camera:
         ctx.geom.nDimY       = pState->nMapDimY;
         ctx.bBusy            = pWorld->bCursorBusy;
         ctx.bSelUnitLarge    = (pSel != NULL) && Unit_bIsLarge(pSel);
-        ctx.bSuppressLarge   = pWorld->bSuppressLarge;
+        ctx.bSuppressLarge   = (pState->nActionLatch != 0);
 
         MapView_SetCamOffset(&ctx.geom, nHX, nHY, true, pState->nLayerScratch,
                              pWorld->pCamOffset);
@@ -830,7 +830,7 @@ camera:
     }
 
 widgets:
-    if (pState->bMultiTargetArmed != 0) {
+    if (pState->nActionLatch != 0) {
         for (i = 0; i < 4; ++i) {
             PointerHitTestRange(pBank, &pWorld->hit, anMulti[i], 1, nX, nY);
         }
@@ -995,3 +995,300 @@ void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
         break;
     }
 }
+
+/* --- Input_OnPointerUp @ 0x148d0 ----------------------------------------------
+ *
+ * Every UiControl_HitTest call in the original passes x = 0, y = 0 and bDown = 0
+ * (see 0x14A64..0x14A70), so the hit box is never measured and only the release
+ * half of the control state machine runs. That is the point of the function: it
+ * releases every control the current screen owns, which is what fires their click
+ * handlers. The screen-17 list controls sit at bank index 113 + row, which is the
+ * pBank + 0xE20 the ARM adds at 0x14A5C and 0x14AB8. */
+#define PUFO_PBANK_LIST_FIRST 113
+
+static void PointerUpRelease(UiWidgetBank *pBank, const UiControlHitCtx *pHit,
+                             i32 nFirst, i32 nCount, bool bStopOnHit)
+{
+    i32 i;
+    for (i = 0; i < nCount; ++i) {
+        if (UiControl_HitTest(&pBank->aCtl[nFirst + i], 0, 0, false, false, pHit) &&
+            bStopOnHit) {
+            return;
+        }
+    }
+}
+
+static void PointerUpClick(UiWidgetBank *pBank, i32 nIndex)
+{
+    if (pBank->aCtl[nIndex].pfnClick != NULL) {
+        pBank->aCtl[nIndex].pfnClick();
+    }
+}
+
+/* 0x1492C: the list screen. The row block and the clearing rule both depend on the
+ * list mode, and mode 0 is the odd one out. */
+static void PointerUpScreen17(TactPointerWorld *pWorld)
+{
+    UiWidgetBank *pBank = pWorld->pBank;
+    i32 nFirst, i;
+
+    switch (pWorld->nListMode) {
+    case 0:
+        PointerUpRelease(pBank, &pWorld->hit, PUFO_PBANK_LIST_FIRST, 4, false);
+        i = 0;
+        while (i < 4 && pWorld->abListHit[i] == 0) {
+            pWorld->abListHit[i] = 0;   /* 0x14AA4: the scan clears as it goes */
+            ++i;
+        }
+        if (i >= 4) {
+            return;
+        }
+        PointerUpClick(pBank, PUFO_PBANK_LIST_FIRST + i);
+        if (!pWorld->bListRowSticky) {   /* unk_188D4C */
+            pWorld->abListHit[i] = 0;
+        }
+        return;
+    case 1:
+        nFirst = PUFO_PBANK_LIST_FIRST + 4;
+        PointerUpRelease(pBank, &pWorld->hit, nFirst, 4, false);
+        for (i = 0; i < 4; ++i) {
+            if (pWorld->abListHit[i] != 0) {
+                PointerUpClick(pBank, nFirst + i);
+            }
+            pWorld->abListHit[i] = 0;
+        }
+        return;
+    case 2:
+        nFirst = PUFO_PBANK_LIST_FIRST + 8;
+        PointerUpRelease(pBank, &pWorld->hit, nFirst, 7, false);
+        for (i = 0; i < 7; ++i) {
+            if (pWorld->abListHit[i] != 0) {
+                PointerUpClick(pBank, nFirst + i);
+            }
+            pWorld->abListHit[i] = 0;
+        }
+        (void)UiControl_HitTest(pWorld->pListCtl, 0, 0, false, false, &pWorld->hit);
+        return;
+    default:
+        return;
+    }
+}
+
+/* 0x14E58: the tactical map. The look control is released first and stops the pass. */
+static void PointerUpScreen0(TactInputState *pState, TactPointerWorld *pWorld)
+{
+    static const i32 anMulti[4] = { 2, 7, 9, 15 };
+    i32 i;
+
+    if (pState->bPlayerInputOn == 0) {
+        return;
+    }
+    if (UiControl_HitTest(pWorld->pLookCtl, 0, 0, false, false, &pWorld->hit)) {
+        return;
+    }
+    if (pState->nActionLatch != 0) {
+        for (i = 0; i < 4; ++i) {
+            (void)UiControl_HitTest(&pWorld->pBank->aCtl[anMulti[i]], 0, 0, false,
+                                    false, &pWorld->hit);
+        }
+    } else {
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 0, 19, false);
+    }
+}
+
+/* 0x150AC: the inventory. The drag flag here is Map+0x3c, which Hex-Rays renders as
+ * gap_60[0]; the ARM at 0x150BC and 0x15120 settles it. */
+static void PointerUpScreen1(TactInputState *pState, const TactInputHooks *pHooks,
+                             TactPointerWorld *pWorld)
+{
+    if (pState->bInvPanelOpen != 0 || pState->bInvDragActive == 0) {
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 19, 13, false);
+    }
+    if (pState->bInvPanelOpen == 0 && pState->bInvDragActive != 0) {
+        if (pHooks->pfnInvHandlePointer != NULL) {
+            pHooks->pfnInvHandlePointer(pWorld->pBank, pHooks->pUser);
+        }
+        pState->bInvDragActive = 0;
+    }
+}
+
+/* 0x14F64: the action pad. The latch is re-derived from the action mode, an
+ * unaffordable mode falls back to mode 12 with the "not enough time" record, and
+ * only mode 3 (throw) and mode 8 (the target modal) keep the screen open. */
+static void PointerUpScreen3(TactInputState *pState, const TactInputHooks *pHooks,
+                             TactPointerWorld *pWorld)
+{
+    i32 nMode = pState->nActionMode;
+
+    /* 0x14F2C: twelve action buttons, and the sweep stops at the first release that
+     * actually fires. */
+    PointerUpRelease(pWorld->pBank, &pWorld->hit, 32, 12, true);
+
+    if (nMode >= 0) {
+        if (nMode <= 2) {
+            pState->nActionLatch = 2;
+        } else if (nMode == 8) {
+            if (pState->pSelWeapon == NULL || pState->pSelWeapon->pObj == NULL ||
+                pState->pSelWeapon->pObj->uSortKey != 23u) {
+                pState->nActionLatch = 0;
+            }
+        } else if (nMode == 11) {
+            pState->nActionLatch = 1;
+        } else if (nMode == 12) {
+            pState->nActionLatch = 0;
+        }
+    }
+
+    /* 0x14FC0: anActionCost is the dword array at Map+0x4e4c that
+     * Ui_FillActionCosts @ 0x26104 writes at 4*(mode + 0x1393). */
+    if (nMode != 12 && nMode >= 0 && nMode < 12 && pState->pSelUnit != NULL &&
+        pState->anActionCost[nMode] > (i32)pState->pSelUnit->uTu &&
+        pState->nUiScreen != 0 && pState->nUiScreen != 6) {
+        if (pHooks->pfnPushTextRecord != NULL) {
+            pHooks->pfnPushTextRecord(1, pHooks->pUser);
+        }
+        pState->nActionMode = 12;
+        pState->nActionLatch = 0;
+    }
+
+    /* 0x15028: re-place the cursor where it already is, which is what re-marks the
+     * cells the cursor covers. */
+    if (pHooks->pfnSetCursorPos != NULL) {
+        pHooks->pfnSetCursorPos(pState->nCursorX, pState->nCursorY, pHooks->pUser);
+    }
+
+    if (pState->nActionMode != 3 && pState->nActionMode != 8) {
+        pState->nUiScreen = 0;
+    }
+}
+
+void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
+                       TactPointerWorld *pWorld)
+{
+    if (pState == NULL || pHooks == NULL || pWorld == NULL || pWorld->pBank == NULL) {
+        return;
+    }
+
+    /* 0x148E4: the four HUD edge bytes are cleared one at a time, and the scroll
+     * flag at Map+0x70 is set to 200 rather than cleared as Input_OnPointer does. */
+    pState->nUiSlot5 = 0;
+    pState->nUiSlot4 = 200;
+
+    if (pState->bGeoscapeUi) {
+        if (pHooks->pfnGeoscapePointerUp != NULL) {
+            pHooks->pfnGeoscapePointerUp(pHooks->pUser);
+        }
+        return;
+    }
+
+    /* 0x14924: three screens are answered before the tactical gate. */
+    switch (pState->nUiScreen) {
+    case 17:
+        PointerUpScreen17(pWorld);
+        return;
+    case 16:
+        if (pHooks->pfnTitlesToStartup != NULL) {
+            pHooks->pfnTitlesToStartup(pHooks->pUser);
+        }
+        return;
+    case 18:
+        if (pHooks->pfnEndScreenShutdown != NULL) {
+            pHooks->pfnEndScreenShutdown(pHooks->pUser);
+        }
+        return;
+    default:
+        break;
+    }
+
+    if (!pState->bTactFlag) {
+        return;
+    }
+    /* 0x14B18: unlike the other handlers this one also runs while the queue is
+     * busy, as long as the game tick is held. */
+    if (!TactInput_CanScroll(pState) && !pState->bGameTickHold) {
+        return;
+    }
+
+    /* 0x14B68: while the status line is live the hover column decides the action. */
+    if (pState->bSlot19Active != 0) {
+        switch (pState->nSlot24Hit) {
+        case 0:
+            pState->nSlot24Hit = 0;
+            return;
+        case 1:
+            if (pHooks->pfnModalEnd != NULL) {
+                pHooks->pfnModalEnd(pHooks->pUser);
+            }
+            if (pWorld->pfnSlot16 != NULL) {
+                pWorld->pfnSlot16();
+            }
+            return;
+        case 2:
+            if (pHooks->pfnModalEnd != NULL) {
+                pHooks->pfnModalEnd(pHooks->pUser);
+            }
+            if (pWorld->pfnSlot18 != NULL) {
+                pWorld->pfnSlot18();
+            }
+            return;
+        default:
+            return;
+        }
+    }
+
+    switch (pState->nUiScreen) {
+    case 0:
+        PointerUpScreen0(pState, pWorld);
+        break;
+    case 1:
+        PointerUpScreen1(pState, pHooks, pWorld);
+        break;
+    case 2:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 98, 3, false);
+        break;
+    case 3:
+        PointerUpScreen3(pState, pHooks, pWorld);
+        break;
+    case 4:
+        (void)UiControl_HitTest(&pWorld->pBank->aCtl[101], 0, 0, false, false,
+                                &pWorld->hit);
+        if (pState->bPhaseSave20 == 0) {
+            PointerUpRelease(pWorld->pBank, &pWorld->hit, 102, 2, false);
+        }
+        break;
+    case 5:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 44, 9, false);
+        pState->nUiScreen = 0; /* 0x1505C, shared with the screen-3 tail */
+        break;
+    case 6:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 104, 1, false);
+        break;
+    case 7:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 53, 7, false);
+        break;
+    case 10:
+    case 11:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 105, 8, true);
+        break;
+    case 12:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 60, 29, false);
+        break;
+    case 13:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 128, 1, false);
+        break;
+    case 15:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 89, 9, false);
+        break;
+    case 19:
+        PointerUpRelease(pWorld->pBank, &pWorld->hit, 129, 1, false);
+        break;
+    case 20:
+    case 21:
+        pState->nUiScreen = pState->nUiSlot11;
+        break;
+    default:
+        /* 0x14BEC: screens 8, 9 and 14 answer to nothing. */
+        break;
+    }
+}
+
