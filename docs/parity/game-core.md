@@ -3975,3 +3975,51 @@ Deviations:
   throw ports.
 - The scatter triple is a struct out-parameter, not a live view of the context block. The context
   block itself is not modelled yet; `Tact_ProcessMoveAction` will own it.
+
+---
+
+## Carried over from the previous session, NOT verified: `Tact_ProcessMoveAction @ 0x4f3f0`
+
+Status: still not ported. This section preserves analysis produced in an earlier session
+and never committed. It is recorded as leads to re-derive, not as established fact.
+Nothing in it was re-checked against ARM in that session; the current session verified
+only the cross-references listed near the end.
+
+Function size: 5868 bytes, 236 blocks, cyclomatic complexity 173, 875 pseudocode lines.
+
+Claimed `TactState` scratch offsets (unverified):
+
+| Name | Offset |
+|---|---|
+| `nStepFrameDiv` | `0x04` |
+| `pStepFromCell` | `0x08` |
+| `nStepZDelta` | `0x0C` |
+| `nStepDrawOffX` / `nStepDrawOffY` | `0x1119C` / `0x111A0` |
+| `nStepHeightSrc` / `nStepHeightDst` | `0x111B0` / `0x111B4` |
+| `nTraceX` / `nTraceY` / `nTraceZ` | `0x111BC` / `0x111C0` / `0x111C4` |
+| `nQueueLen` | `0x111D4` |
+| `bQueueActive` | `0x111D6` |
+| `nPhaseTick` / `nPhaseMax` | `0x111D8` / `0x111DC` |
+| `bUnk70114` / `bUnk70115` | `0x111E2` / `0x111E3` |
+
+Claimed structure: a 19-case move FSM. Four ARM ranges were flagged as still needing
+verification before any port:
+
+1. `0x4F718..0x4F794` — large-unit 2x2 occupancy probe.
+2. `0x4F8B0..0x4F8EC` — `nStepHeightDst` +/-40 comparison.
+3. `0x4FB20` with `TactState_EnqueueVertStep @ 0x49ddc` — `entry.nTuCost` apparently
+   reused as a `MapCell *`.
+4. `0x50A40..0x50AD0` — civilian swap path.
+
+Two data tables are used by the function and their extents are **not determined**:
+`0xA9768` and `0xAA168`. Verified in the current session, and only this:
+`xrefs_to 0xA9768` -> `0x5008c`, `0x50358`; `xrefs_to 0xAA168` -> `0x50338`, `0x50354`;
+all four inside `Tact_ProcessMoveAction`. A 2048-byte read window at `0xA9768` runs past
+the end of its table. The word table at `0xAA168` ends before +0x1A0, where dword data
+begins. Name lookups over `0xA9700..0xAA400` returned no rows.
+
+Note the neighbour that is already pinned: `off_AA040 @ 0xaa040`, 360 bytes = 180 u16,
+is `g_aShotSound` in `pufo_combat.h`. It is a different table.
+
+The blocker for the port is now gone: `Unit_RollChance @ 0x25e6c`, the one missing
+callee from the readiness check above, is ported.
