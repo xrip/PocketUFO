@@ -77,7 +77,11 @@ typedef struct Mc1Rec {
                            * Read as pSpr[25] in the SPLASH_MODE_THROW branch. */
     u8   gap_1A[2];       /* 0x1A */
     u8   bHeight;         /* 0x1C, sprite height/occlusion, max over the 4 sprites */
-    u8   gap_1D[3];       /* 0x1D */
+    u8   bCeilSoundSel;   /* 0x1D, selects the footstep sample in
+                           * Tact_ProcessMoveAction @ 0x4f3f0: 1 gives sample 32,
+                           * anything else 19. Read from the ceiling sprite when
+                           * the cell has one, otherwise from the floor sprite. */
+    u8   gap_1E[2];       /* 0x1E */
     u8   bTransparent;    /* 0x20, 255 means transparent */
     u8   gap_21[3];       /* 0x21 */
     i8   iCeilParam;      /* 0x24, ceiling height/threshold; read as signed */
@@ -301,6 +305,11 @@ bool Map_RefreshCellMeta(MapCellLookup pfnLookup, void *pUser,
 i32 Map_CellCentreX(const MapCell *pCell);
 i32 Map_CellCentreY(const MapCell *pCell);
 i32 Map_CellCentreZ(const MapCell *pCell);
+
+/* The ceiling term of Map_CellCentreZ on its own: `(-12 * pCeilSpr->iCeilParam)
+ * / 24`, or 0 with no ceiling sprite. A caller that adds a muzzle offset to Z
+ * before the final +6 needs this piece separately. */
+i32 Map_CeilingLift(const MapCell *pCell);
 
 /* Clear the shot-trace flag (MapCell.bFlags29 bit 5, 0x20) over the grid.
  * Tact_ProcessMoveAction runs this sweep four times (0x4FDDC, 0x4FF08, 0x4F4C4,

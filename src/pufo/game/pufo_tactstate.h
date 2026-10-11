@@ -25,6 +25,7 @@
 #ifndef PUFO_TACTSTATE_H
 #define PUFO_TACTSTATE_H
 
+#include "game/pufo_ballist.h"
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -80,15 +81,44 @@ typedef struct TactQueueEntry {
 /* The modelled part of TactState. The real struct also carries ~70 KB of step
  * scratch (not yet ported) which is irrelevant to the queue itself. The field
  * offsets below are the original's, given so the ordering intent is recorded. */
+/* Field-for-field from the IDB's TactState (70120 bytes). The scratch fields
+ * after the queue are the ones the phase animations and Tact_ProcessMoveAction
+ * write; they are named here for the first time. The queue sits at 0x18 in the
+ * original and at the end here, which is harmless: a TactState is heap-allocated
+ * through g_pTactState and is never serialised or shared with the original. */
 typedef struct TactState {
-    u8             bFlag0;          /* 0x00 */
-    u8             bFlag1;          /* 0x01 */
-    i32            nQueueCursor;    /* 0x10 */
-    i32            nPhaseCounter;   /* 0x1118c, IDA nPhaseCounter */
-    u16            nQueueLen;       /* 0x111d4 */
-    u8             bQueueActive;    /* 0x111d6 */
-    u8             bUnk70103;       /* 0x111d7 */
-    u8             bPhaseActive;    /* 0x111e3, IDA bUnk70115 */
+    u8             bFlag0;           /* 0x0000 */
+    u8             bFlag1;           /* 0x0001 */
+    u8             gap_0002[2];      /* 0x0002 */
+    i32            nStepFrameDiv;    /* 0x0004 */
+    MapCell       *pStepFromCell;    /* 0x0008 */
+    i32            nStepZDelta;      /* 0x000C */
+    i32            nQueueCursor;     /* 0x0010 */
+    u8             gap_0014[4];      /* 0x0014 */
+    i32            nUnk70024;        /* 0x11188 */
+    i32            nPhaseCounter;    /* 0x1118C, IDA nPhaseCounter */
+    u8             gap_70032[12];    /* 0x11190 */
+    i32            nStepDrawOffX;    /* 0x1119C */
+    i32            nStepDrawOffY;    /* 0x111A0 */
+    i32            nStepCellScratch; /* 0x111A4 */
+    u8             gap_70056[8];     /* 0x111A8 */
+    i32            nStepHeightSrc;   /* 0x111B0 */
+    i32            nStepHeightDst;   /* 0x111B4 */
+    u8             gap_70072[4];     /* 0x111B8 */
+    i32            nTraceX;          /* 0x111BC */
+    i32            nTraceY;          /* 0x111C0 */
+    i32            nTraceZ;          /* 0x111C4 */
+    u8             gap_70088[12];    /* 0x111C8 */
+    u16            nQueueLen;        /* 0x111D4 */
+    u8             bQueueActive;     /* 0x111D6 */
+    u8             bUnk70103;        /* 0x111D7 */
+    i32            nPhaseTick;       /* 0x111D8 */
+    i32            nPhaseMax;        /* 0x111DC */
+    u8             gap_70112[2];     /* 0x111E0 */
+    u8             bUnk70114;        /* 0x111E2 */
+    u8             bPhaseActive;     /* 0x111E3, IDA bUnk70115 */
+    u8             bUnk70116;        /* 0x111E4 */
+    u8             gap_70117[3];     /* 0x111E5 */
     TactQueueEntry aQueue[PUFO_TACT_QUEUE_MAX];
 } TactState;
 
@@ -258,5 +288,77 @@ u32 GameTick_DecayCellFlags(u32 nFlags32);
 
 /* Phase length in ticks, from GameTick_Step's `> 11` guard. */
 #define PUFO_PHASE_TICK_MAX 11
+
+/* --- Tact_ProcessMoveAction @ 0x4f3f0 --- */
+
+/* aTextRecs @ 0xb38d0 is a table of 205-byte records. The move FSM pushes three
+ * of them through StatusMsg_Push @ 0x2dda4. */
+#define MOVE_MSG_NO_TIME     1 /* 0xb399d, "not enough time" */
+#define MOVE_MSG_ARMOUR_BLOCK 2 /* 0xb3a6a, armour would leave too little TU */
+#define MOVE_MSG_THROW_FAIL  4 /* 0xb3c04, the throw found no landing */
+
+/* The move FSM reaches into the original's context block (pCtxBase @ 0x1139b8)
+ * for scratch globals, the unit rosters and the shot plumbing. The port injects
+ * all of it; every field names the context offset it stands for. */
+typedef struct MoveActionCtx {
+    MapGeom       geom;        /* nMapDimX @ 0x1511B, nMapDimY @ 0x1511C */
+    MapCellLookup pfnLookup;
+    void         *pUser;
+
+    /* Scratch globals. */
+    i8          *pnLayerScratch;  /* 0x15138 unk_128AF0, signed byte */
+    i32         *pnMaxLayerClamp; /* 0x15074 unk_128A2C */
+    i32         *pnAnimPhase;     /* 0x10F8 unk_113AB0 */
+    i32         *pnShotCount;     /* 0x2C  unk_1139E4, Hex-Rays nStatusDrawY */
+    u8          *pbFlag22;        /* 0x22  unk_1139BA */
+    u8          *pbFireStatus1;   /* 0x51  unk_113A09 */
+    TactItem    **ppSelWeapon;    /* 0x48  unk_113A00 */
+    Soldier     **ppThrowTarget;  /* 0x150F0 unk_128AA8 */
+    i32         *pnUnk1405C;      /* 0x1405C unk_127A14 */
+    bool         bAnimBusy;       /* unk_157180 -> +0xF8, the walk-sound gate */
+    Soldier     *pTrackUnit;      /* unk_157180 -> +0x10C, ditto */
+    MapCell    **apShotCells;     /* the shot-history cell array; the original
+                                   * reads apShotCells[nShotCount] as
+                                   * *(pCtxBase + 4 * nShotCount + 4) at 0x50008 */
+
+    /* Rosters: three 30-entry pointer arrays and their counts. */
+    Soldier     **apXcomUnits;    /* 0x15154 */
+    Soldier     **apEnemyUnits;   /* 0x151CC */
+    Soldier     **apCivilians;    /* 0x15244 */
+    u8          *pnXcomCount;     /* 0x1511F unk_128AD7, byte */
+    u8          *pnEnemyCount;    /* 0x15124 unk_128ADC, byte */
+    i32         *pnCivilianCount; /* 0x15120 unk_128AD8, dword */
+
+    /* Shot plumbing. */
+    AimState          *pAim;      /* the Map aim block, 0x13FD8..0x14088 */
+    const LosTables   *pTables;
+    ScatterOffset     *pScatter;  /* 0x15058/5C/60 unk_128A10/14/18 */
+    const double      *pAdMtX;    /* 0x13EE8, 10 entries */
+    const double      *pAdMtY;    /* 0x13F38, 10 entries */
+    const double      *pAdMtZ;    /* 0x13F88, 10 entries */
+    ThrowArc          *pThrowArc; /* scratch the two throw calls share */
+    ThrowLanding      *pThrowLanding;
+    const ThrowBudget *pThrowBudget;
+    const InvStatHooks *pInvHooks;    /* for Unit_RecalcInventoryStat */
+    bool         bThrowHitStop;   /* Map.bTrajHitStop @ 0x1406D as the throw
+                                   * landing call sees it */
+    Soldier           *pTraceExcludeSel;   /* 0x1406C/0x14070 exclusions the arc
+                                            * trace reads; the move FSM forwards
+                                            * whatever the context already holds */
+    Soldier           *pTraceExcludeExtra;
+
+    /* Seams the port has not yet wired to a context object. */
+    bool (*pfnArmorTuWarn)(const Soldier *pUnit, i32 nTuCost, void *pUser);
+    void (*pfnPushStatus)(i32 nTextRecIndex, void *pUser);
+    void (*pfnUpdateVisibility)(Soldier *pUnit, void *pUser);
+    void  *pCallbackUser;
+    VisCtx *pVisCtx;              /* cmd 0xB ends with Unit_UpdateVisibility */
+} MoveActionCtx;
+
+/* The original returns an int, but every exit is either a register leftover or
+ * the result of Tact_RefreshTeamVisibility, which the port declares void. The
+ * port therefore returns nothing; no caller in the original tests the value in a
+ * way the port can reproduce. */
+void Tact_ProcessMoveAction(TactState *pState, const MoveActionCtx *pCtx);
 
 #endif /* PUFO_TACTSTATE_H */

@@ -408,7 +408,7 @@ preparing this document.
 
 ## 11. Next milestones, in priority order
 
-1. **Port `Tact_ProcessMoveAction @ 0x4f3f0`.** All callees exist and every ARM
+1. **Wire `Tact_ProcessMoveAction @ 0x4f3f0` to the real context.** The function itself is ported; what is left is filling `MoveActionCtx` from the Map context and replacing the three callbacks with the real `Unit_bArmorTuWarn`, `StatusMsg_Push` and `Unit_UpdateVisibility` calls.
    question that blocked it is answered (section 8). What remains is writing the
    19-case switch and choosing the injected context struct for the Map globals it
    reads. The pseudocode is 875 lines and `decompile(..., include_addresses: true)`

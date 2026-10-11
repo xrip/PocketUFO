@@ -4073,19 +4073,22 @@ nTuCost 0x3C. The port's `TactQueueEntry` offsets (0x00, 0x04, 0x08, 0x09, 0x0a,
    pseudocode lie. Then `CMP R10,#0 / CMP R10,#1 / MOVEQ R3,#0x28 / CMP R10,R3`:
    nStepZDelta 0 leaves the destination height alone, +1 replaces it with 40, and the
    third case compares against a leftover R3 before `SUB R3, R1, #0x28`.
-3. **0x4FB20 with 0x4FB10..0x4FB4C, the climb target cell.** The ARM reads the cell at
-   the unit's OWN coordinates (not one layer up): `LDRB R1,[cell,#0x1C]` (nZ),
-   `MUL` by 60, `+ nY` (+0x1B), `MUL` by 60, `+ nX` (+0x1A), then
-   `LDR R5, [ctx + 4*(3600*nZ + 60*nY + nX) + 0x11AF8]`. `nLayerScratch`
-   (unk_128AF0, ctx+0x15138) is then set to nZ+1. So the queue-entry field at +0x3C
-   really is reused as a `MapCell *` in the `nFacing != -1 && nFacing != 1` branch at
-   0x4FBBC.
+3. **0x4FB20 with 0x4FB10..0x4FB4C, the climb target cell.** RESOLVED. The ARM
+   builds `3600*nZ + 60*nY + nX` (`LDRB R1,[cell,#0x1C]`, `MUL` 60, `+ nY` at +0x1B,
+   `MUL` 60, `+ nX` at +0x1A) and loads
+   `LDR R5, [ctx + 4*(3600*nZ + 60*nY + nX) + 0x11AF8]`. The constant is
+   `MOV R2,#0x11800; ORR R2,R2,#0x2F8` = 0x11AF8, which is exactly
+   `0x15338 - 14400`: the grid base with one layer subtracted. So the climb with
+   `nFacing == -1` reads the cell at `(nX, nY, nZ - 1)`, one layer BELOW the unit.
+   `nLayerScratch` (unk_128AF0, ctx+0x15138) is then set to nZ+1, and the queue-entry
+   field at +0x3C really is reused as a `MapCell *` in the
+   `nFacing != -1 && nFacing != 1` branch at 0x4FBBC.
 
-   OPEN: the dword array at ctx+0x11AF8 (proven here, and the same displacement is
-   used by the map-wide `bFlags29 &= ~0x20` sweep at 0x4FE38) is 14400 bytes below the
-   `apCells` base this file records at ctx+0x15338 (0x15338 - 0x11AF8 = 14400 = exactly
-   one layer). Both renderings cannot be 14400-dword arrays. Resolve which base the
-   grid really starts at before wiring the port's MapCellLookup to the context.
+   The grid base itself is ctx+0x15338, confirmed independently three times: the
+   map-wide `bFlags29 &= ~0x20` sweep at 0x4FE34 uses `MOV R2,#0x15000;
+   ORR R2,R2,#0x338` = 0x15338, the step destination at 0x4F68C..0x4F698 uses the
+   same pair, and the multi-target clear at 0x504FC uses it again. The earlier
+   note that the sweep used 0x11AF8 was a misreading of that ORR pair.
 4. **0x50A40..0x50A90, the civilian swap.** apCivilians base is ctx+0x15244,
    apEnemyUnits base is ctx+0x15240, nCivilianUnitCount is ctx+0x15120. The scan finds
    pUnit's index, then `apCivilians[idx] = *(ctx + 0x15240 + 4*nCivilianUnitCount)`
@@ -4146,3 +4149,53 @@ type, because `byte_A7B80` has 24 rows while `g_aUnitMuzzleOffset` has 23 blocks
 original does not bound the index.
 
 `test_ballist` now runs 100 checks (was 77).
+
+## Tact_ProcessMoveAction @ 0x4f3f0 -> Tact_ProcessMoveAction (pufo_tactstate.c)
+
+Ported in full: all 15 handled commands, with 6, 9, 12 and 13 falling through the
+default. Each command is a small static function so the ARM ranges map one to one.
+
+| Port function | Original | What was checked in the ARM |
+|---|---|---|
+| `Tact_ProcessMoveAction` | 0x4F3F0..0x4F438 prologue | R4 = pState, R7 = entry->pUnit, R8 = entry->nTuCost, R9 = 56, R10 = entry->nDelta, R5 = entry->nFacing via `LDRSB` (signed), R6 = 1, R11 = 0 for the whole function |
+| `MoveTurn` | 0x4FA2C..0x4FA8C | nPhaseMax = Map_FacingDelta, nTurnDir = +/-1 from Map_bFacingTurnPositive, written to entry byte +0x0B |
+| `MoveStep` | 0x4F5D0..0x4F940 | destination `(nX+dx, nY+dy, nZ+nDelta)` from 0x4F63C..0x4F698; the 2x2 probe at deltas +0/+1/+60/+61; the eight draw offsets 0x4F7E0..0x4F860; the footstep gate 0x4F918..0x4F944 |
+| `MovePlayStepSound` | 0x4F94C..0x4FA18 | 23-case switch on nUnitType; types 15 and 19 silent; sprite byte 0x1D selects 32 over 19 |
+| `MoveTurnTrace` | 0x4FC38..0x4FDA0 | loop bound is the entry's signed nTurnDir; bit 0 set, bit 1 set only when the entry facing is 2 |
+| `MoveVert` | 0x4FAE4..0x4FBF4 | signed nFacing -1 / +1 branch, climb height from the ceiling byte + 24, `nPhaseMax = (16*h + 31 if negative) >> 5` |
+| `MoveRecover` | 0x5098C..0x50AD8 | roster split at nUnitType > 3, civilian copy-with-last |
+| `MoveFire` | 0x4FDC0..0x50350 | cancelled-shot multi-target clear 0x5035C..0x50530, two trace sweeps, muzzle origin 0x4FFC0..0x50100, scatter from Unit_RollChance, mode 7 straight fire |
+| `MoveThrow` | 0x50630..0x50984 | two landing resolutions with the doubled scatter, then SimulateThrowArc |
+
+Deviations, all recorded in the source comment:
+
+1. Cell access goes through `MapCellLookup` instead of the flat dword array at
+   ctx+0x15338, and a NULL from the injected lookup is skipped where the original
+   dereferences unconditionally.
+2. `Sound_Play` loses the original's R1 mode (2 for the sprite-selected footsteps,
+   4 for the fixed samples); the port settled on the one-argument shape earlier.
+3. The `nStepZDelta` test at 0x4F8DC compares against a leftover register instead
+   of -1; the port implements the intended `nDelta == -1`.
+4. `Unit_UpdateVisibility` is skipped when no `VisCtx` is injected, which is how a
+   test drives cmd 0xB.
+5. The function returns void. Every original exit either returns a register
+   leftover or the result of `Tact_RefreshTeamVisibility`, which the port declares
+   void.
+
+Two corrections to what the decompiler shows, both taken from the ARM:
+
+- The occupied target cell lowers `nZ1` by the target cell's own ceiling lift
+  (`SUB R7, R7, R0` at 0x50154 where R0 is `(-12 * iCeilParam) / 24`). Hex-Rays
+  renders the same subtraction with the opposite sign.
+- The civilian roster replacement is `apCivilians[idx] = apCivilians[n - 1]` with
+  `--n`. Hex-Rays' `apEnemyUnits[n + 29]` is a base-offset artifact of the same
+  load, `MOV LR,#0x15000; ORR LR,LR,#0x240` = 0x15240 = apCivilians - 4.
+
+Also confirmed here: an abort writes 13 into the entry and then
+`Tact_RefreshTeamVisibility` overwrites it with the end mark 12, so 13 is only
+observable on the cmd 0x10 path, which jumps to LABEL_170 and returns without the
+refresh.
+
+New test suite `test_moveaction`, 48 checks over cmds 0, 1, 2, 3, 4, 7, 8, 0xA,
+0xF, 0x10, 0xB and 0x12. Cmds 0xE and 0x11 are exercised only through the helpers
+in `test_ballist`; the full fire and throw paths need the wired context.

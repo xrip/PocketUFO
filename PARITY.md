@@ -20,7 +20,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions cited as evidence | 383 / 1103 (34.7%) |
 | Bytes of original code cited | 176980 / 598792 (29.6%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 39 |
+| Test suites | 40 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -210,7 +210,7 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
-| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+3) |
+| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_unit.h` |
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -405,7 +405,7 @@ is the module that answers to it.
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/ui/pufo_control.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
-| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_statusmsg.h`, `src/pufo/game/pufo_tactui.h` |
+| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_statusmsg.h`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -1317,6 +1317,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_mapcell` | PASS | 112 |
 | `test_menu` | PASS | 169 |
 | `test_modal` | PASS | 13 |
+| `test_moveaction` | PASS | 0 |
 | `test_panel` | PASS | 87 |
 | `test_path` | PASS | 48 |
 | `test_render` | PASS | 43 |
@@ -1337,7 +1338,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 0 |
 | `test_vistry` | PASS | 0 |
 
-**39 / 39 suites passing.**
+**40 / 40 suites passing.**
 
 ## Per-subsystem parity notes
 
@@ -1354,7 +1355,7 @@ every deviation with its reason, and the residual uncertainty.
 
 These citations point at data, struct fields, or instruction offsets rather
 than function entry points, so they are not counted as coverage. Listed for
-transparency: 128 addresses.
+transparency: 130 addresses.
 
 - `0x0000`
 - `0x00002`
@@ -1396,5 +1397,5 @@ transparency: 128 addresses.
 - `0x1408c`
 - `0x140b4`
 - `0x1472c0`
-- ... and 88 more
+- ... and 90 more
 

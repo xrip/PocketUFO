@@ -158,6 +158,16 @@ add_test(NAME test_unit
 
 # Tactical action queue: append order, interrupt-on-death insert, and the
 # uTuSpent >= uHp completion rule.
+add_executable(test_moveaction ${CMAKE_SOURCE_DIR}/tests/test_moveaction.c)
+target_link_libraries(test_moveaction PRIVATE pufo_options pufo_game pufo_audio pufo_render pufo_dat pufo_util)
+set_target_properties(test_moveaction PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_moveaction
+    COMMAND test_moveaction
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_executable(test_tactstate ${CMAKE_SOURCE_DIR}/tests/test_tactstate.c)
 target_link_libraries(test_tactstate PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_tactstate PROPERTIES

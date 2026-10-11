@@ -413,7 +413,7 @@ void TactItem_ctor(TactItem *pItem)
 
 /* --- shot-geometry helpers --- */
 
-static i32 Map_CeilLift(const MapCell *pCell)
+i32 Map_CeilingLift(const MapCell *pCell)
 {
     return (pCell->pCeilSpr != NULL)
                ? ((-12 * (i32)pCell->pCeilSpr->iCeilParam) / 24)
@@ -425,7 +425,7 @@ i32 Map_CellCentreY(const MapCell *pCell) { return 16 * (i32)pCell->nY + 8; }
 
 i32 Map_CellCentreZ(const MapCell *pCell)
 {
-    return 12 * (i32)pCell->nZ + Map_CeilLift(pCell) + 6;
+    return 12 * (i32)pCell->nZ + Map_CeilingLift(pCell) + 6;
 }
 
 void Map_ClearShotTraceFlags(MapCellLookup pfnLookup, void *pUser,
