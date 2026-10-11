@@ -3901,3 +3901,77 @@ So the scatter magnitude is `Map.arcBound * 0.27 * (miss + 10) * 0.01`, where `a
 is the double at `Map + 0x14080 / 0x14084` and `miss` is `Game_RandU16(roll - chance)`.
 That is the whole function's arithmetic; the remaining work is only wiring the three
 outputs to `Map + 0x15058` and its neighbours.
+
+### `Unit_RollChance @ 0x25e6c`: ported
+
+Ported to `src/pufo/game/pufo_ballist.c` as
+`Unit_RollChance(double dBound, i32 nChance, ScatterOffset *pScatter)`. The scatter triple is
+`ScatterOffset { nDx, nDy, nDz }` for `Map + 0x15058 / 0x1505C / 0x15060` (`unk_128A10`,
+`unk_128A14`, `unk_128A18`).
+
+Argument correction, settled from ARM rather than pseudocode. Hex-Rays types the first argument
+as `Soldier *pUnit`. The ARM is unambiguous: both call sites in `Tact_ProcessMoveAction @ 0x4f3f0`
+(at `0x501a0` and `0x50890`) pass R5, and R5 there is the `0x1139B8` context base -- the proof is
+`LDR R0, [R5, #(unk_113A00 - 0x1139B8)]` at `0x50850`. The body then reads `[R4, #0x14080]` and
+writes `[R4, #0x15058]`. The port therefore takes the two values the function actually touches,
+the bound double and the scatter triple, and takes no unit pointer at all.
+
+Control flow, straight from the disassembly:
+
+- `nRoll = Game_RandU16(100) + 1`, so `nRoll` is in `[1, 100]`.
+- `nRoll <= nChance` takes the success tail at `0x26084`: all three slots are stored as 0 and the
+  function returns 0. The `0x15060` store at `0x2608c` is shared by both paths, so the z slot is
+  written on success too.
+- Otherwise `nMiss = Game_RandU16((u16)(nRoll - nChance))`. The `LSL#16` / `LSR#16` pair masks the
+  miss width to 16 bits before it becomes `nMax`, so a wider miss scatters further.
+
+Magnitude, with the soft-FPU precision steps kept literal:
+
+```
+_muld   (double) dBound * 0.27        ; 0x3FD147AE : 0x147AE148
+_dtos   -> float
+_itos   (nMiss + 10) -> float
+_muls   float * float
+_muls   float * 0.01f                 ; 0x3C23D70A
+_stod   -> double
+```
+
+Angles. Each is `Game_RandU16(628)` reduced by `_rt_sdiv` with the divisor 100 in R0 and the
+dividend in R1, which is the operand order this binary uses (see `Throw_RangeBudget` and
+`MapView_bResolveIsoCell @ 0x1b114`). The division is integer and the remainder is dead, so each
+angle is a whole radian in `0..6`. Both draws happen before any trig call, so the stream order is
+`rand16(100)`, `rand16(miss)`, `rand16(628)`, `rand16(628)`.
+
+Outputs:
+
+```
+nDx = dtoi(cos(angA) * mag)   ; Map + 0x15058
+nDy = dtoi(sin(angA) * mag)   ; Map + 0x1505C
+nDz = dtoi(sin(angB) * mag)   ; Map + 0x15060, and the return value
+```
+
+`xrefs_to` the three globals finds only `Tact_ProcessMoveAction` as a reader. At `0x50208..0x50230`
+and `0x508ec..0x50954` it adds the triple to `nX1` / `nY1` / `nZ1`, and on the throw path it
+doubles dx and dy with `LSL#1` first (`0x508a0`, `0x508c0`).
+
+Checks: 14 new checks in `tests/test_ballist.c`, 77 total, 0 failures.
+
+- Success clears all three slots and returns 0; `nChance = 100` can never be beaten because the
+  roll tops out at 100.
+- Draw counts are pinned by comparing the RNG stream after the call against a reference stream
+  advanced by hand: one draw on the success path, four on the failure path.
+- `nChance = 99` fails only on a roll of 100, and there `nMiss` is `Game_RandU16(1)`, which is
+  always 0. That pins the magnitude to `27.0f * 10.0f * 0.01f`, so every slot must be a
+  whole-radian sample of 2.7. This is what proves the angle is an integer division rather than a
+  real 0..6.28 angle, and that a negative product truncates toward zero instead of flooring.
+- A 300-seed sweep keeps every component inside the widest magnitude the roll can produce.
+
+Deviations:
+
+- The original calls `cos`/`sin` from coredll; the port uses host `cos`/`sin`. The inputs are whole
+  radians, so the only exposure is a differing libm last ulp, which can only change the integer
+  result at an exact boundary.
+- `dtoi` is assumed to truncate toward zero, the same assumption already recorded for the arc and
+  throw ports.
+- The scatter triple is a struct out-parameter, not a live view of the context block. The context
+  block itself is not modelled yet; `Tact_ProcessMoveAction` will own it.

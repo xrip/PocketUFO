@@ -501,3 +501,51 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
     }
     return 0;
 }
+
+/* Unit_RollChance @ 0x25e6c.
+ *
+ * The soft-FPU thunks force a mixed-precision chain that is worth keeping
+ * literal, because dropping a step changes the rounded magnitude:
+ *   _muld  (double) dBound * 0.27
+ *   _dtos  -> float
+ *   _itos  (nMiss + 10) -> float
+ *   _muls  float * float
+ *   _muls  float * 0.01f
+ *   _stod  -> double
+ * The two angles come from _rt_sdiv, which takes the divisor in R0 and the
+ * dividend in R1, so each angle is a whole radian 0..6. */
+i32 Unit_RollChance(double dBound, i32 nChance, ScatterOffset *pScatter)
+{
+    i32 nRoll = (i32)Game_RandU16(100) + 1;
+
+    if (nRoll <= nChance) {
+        pScatter->nDx = 0;
+        pScatter->nDy = 0;
+        pScatter->nDz = 0;
+        return 0;
+    }
+
+    /* The miss width is masked to 16 bits by LSL#16/LSR#16 before it is used
+     * as nMax, which is what the u16 cast reproduces. */
+    i32 nMiss = (i32)Game_RandU16((u16)(nRoll - nChance));
+
+    float  fMag = (float)(dBound * 0.27);
+    double dMag;
+    i32    nAngA;
+    i32    nAngB;
+
+    fMag *= (float)(nMiss + 10);
+    fMag *= 0.01f;
+    dMag = (double)fMag;
+
+    /* Both draws happen before any trig call, so the stream order is fixed. */
+    nAngA = (i32)Game_RandU16(628) / 100;
+    nAngB = (i32)Game_RandU16(628) / 100;
+
+    /* _dtoi truncates toward zero, which is what a C cast does. */
+    pScatter->nDx = (i32)(cos((double)nAngA) * dMag);
+    pScatter->nDy = (i32)(sin((double)nAngA) * dMag);
+    pScatter->nDz = (i32)(sin((double)nAngB) * dMag);
+
+    return pScatter->nDz;
+}

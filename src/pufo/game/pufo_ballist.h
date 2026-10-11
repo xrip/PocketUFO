@@ -265,4 +265,41 @@ i32 Tact_ResolveThrowLanding(ThrowArc *pArc, ThrowLanding *pOut,
                              i32 nX0, i32 nY0, i32 nZ0,
                              i32 nX1, i32 nY1, i32 nZ1);
 
+/* Scatter displacement triple, Map+0x15058 / 0x1505C / 0x15060 (unk_128A10,
+ * unk_128A14, unk_128A18). Tact_ProcessMoveAction adds the three values to its
+ * nX1/nY1/nZ1 target, and xrefs_to those globals finds no other reader. */
+typedef struct ScatterOffset {
+    i32 nDx;   /* 0x15058 */
+    i32 nDy;   /* 0x1505C */
+    i32 nDz;   /* 0x15060 */
+} ScatterOffset;
+
+/* Unit_RollChance @ 0x25e6c.
+ *
+ * A percent roll against nChance. On success all three scatter slots are
+ * cleared and the function returns 0. On failure it fills the slots with a
+ * displacement triple and returns the z component.
+ *
+ * Hex-Rays renders the base register as the Soldier argument. The ARM is not
+ * ambiguous: both call sites in Tact_ProcessMoveAction pass R5, which is the
+ * 0x1139B8 context base (see the LDR [R5,#(unk_113A00-0x1139B8)] at 0x50850),
+ * and the body reads [R4,#0x14080] and writes [R4,#0x15058]. So the first
+ * argument is the context, not the unit, and the port takes the two values the
+ * function actually touches: the aim block bound and the scatter triple.
+ *
+ * The magnitude chain is exact:
+ *   mag = (double)(((float)(dBound * 0.27) * (float)(nMiss + 10)) * 0.01f)
+ * with 0.27 the double pair 0x3FD147AE:0x147AE148 and 0.01 the single
+ * 0x3C23D70A. nMiss is Game_RandU16(roll - nChance), so the further the roll
+ * misses, the wider the scatter.
+ *
+ * Each angle is Game_RandU16(628) divided by 100 with _rt_sdiv, which in this
+ * binary takes the divisor in R0 and the dividend in R1 (see Throw_RangeBudget
+ * and MapView_bResolveIsoCell @ 0x1b114). The division is integer, so the
+ * angles are whole radians 0..6 and the remainder is dead.
+ *
+ * pScatter must not be NULL: the original always has the context block in
+ * hand and stores all three slots on both paths. */
+i32 Unit_RollChance(double dBound, i32 nChance, ScatterOffset *pScatter);
+
 #endif /* PUFO_BALLIST_H */

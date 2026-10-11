@@ -1,9 +1,12 @@
 /* test_ballist.c - parity checks for the aim block, the shot arc and the
  * throw solver. Evidence: Tact_ComputeAimVector @ 0x30368,
- * Tact_TraceProjectileArc @ 0x2fc38, Tact_SimulateThrowArc @ 0x3102c. */
+ * Tact_TraceProjectileArc @ 0x2fc38, Tact_SimulateThrowArc @ 0x3102c,
+ * Unit_RollChance @ 0x25e6c. */
 #include "game/pufo_ballist.h"
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
+#include "util/pufo_rand.h"
+
 
 #include <math.h>
 #include <stdio.h>
@@ -25,6 +28,21 @@ static void CheckNear(const char *pWhat, double dGot, double dWant)
 {
     Check(pWhat, fabs(dGot - dWant) < 1e-6);
 }
+
+/* True when nGot is what _dtoi(trig(k) * dMag) gives for some whole radian
+ * k in 0..6. A double-precision angle or a floor instead of _dtoi lands
+ * outside this set. */
+static int WholeRadianMatch(i32 nGot, double dMag, int bCos)
+{
+    for (i32 k = 0; k <= 6; ++k) {
+        double d = bCos ? cos((double)k) : sin((double)k);
+        if ((i32)(d * dMag) == nGot) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 
 /* A 60 x 60 x 4 cell grid, addressed the way the original addresses its own. */
 static MapCell g_aCells[PUFO_MAP_LAYERS][60][60];
@@ -217,6 +235,87 @@ int main(void)
                                         NULL, NULL, &b, 4, false,
                                         160, 160, 0, 1760, 160, 7);
         Check("a 7-voxel climb adds no range cost", !land.bRejected);
+    }
+
+    printf("Unit_RollChance scatter\n");
+    {
+        ScatterOffset sc;
+        i32 nSeed100 = 0;
+
+        /* The roll is rand16(100) + 1, so it lives in [1, 100]. */
+        srand(1);
+        sc.nDx = sc.nDy = sc.nDz = 7;
+        Check("nChance 100 always succeeds", Unit_RollChance(30.0, 100, &sc) == 0);
+        Check("success clears the x slot", sc.nDx == 0);
+        Check("success clears the y slot", sc.nDy == 0);
+        Check("success clears the z slot", sc.nDz == 0);
+
+        /* Draw counts are part of the parity contract: one draw on the success
+         * path, four on the failure path. */
+        srand(1);
+        (void)Unit_RollChance(30.0, 100, &sc);
+        i32 nAfterSuccess = rand();
+        srand(1);
+        (void)rand();
+        Check("success path consumes one draw", rand() == nAfterSuccess);
+
+        srand(1);
+        (void)Unit_RollChance(30.0, 0, &sc);
+        i32 nAfterFail = rand();
+        srand(1);
+        for (int i = 0; i < 4; ++i) {
+            (void)rand();
+        }
+        Check("failure path consumes four draws", rand() == nAfterFail);
+
+        srand(1);
+        sc.nDx = sc.nDy = sc.nDz = 7;
+        i32 nRet = Unit_RollChance(30.0, 0, &sc);
+        Check("failure returns the z slot", nRet == sc.nDz);
+
+        srand(4242);
+        i32 nRetA = Unit_RollChance(77.5, 20, &sc);
+        ScatterOffset scA = sc;
+        srand(4242);
+        i32 nRetB = Unit_RollChance(77.5, 20, &sc);
+        Check("fixed seed reproduces the triple",
+              nRetA == nRetB && sc.nDx == scA.nDx && sc.nDy == scA.nDy
+              && sc.nDz == scA.nDz);
+
+        /* nMiss + 10 is in [10, 110], so no component can exceed the widest
+         * magnitude the roll can produce. */
+        double dMagMax = (double)((float)(40.0 * 0.27) * 110.0f * 0.01f);
+        int bInBounds = 1;
+        for (i32 nSeed = 1; nSeed <= 300; ++nSeed) {
+            srand(nSeed);
+            Unit_RollChance(40.0, 0, &sc);
+            if (fabs((double)sc.nDx) > dMagMax || fabs((double)sc.nDy) > dMagMax
+                || fabs((double)sc.nDz) > dMagMax) {
+                bInBounds = 0;
+            }
+        }
+        Check("scatter stays inside the magnitude bound", bInBounds);
+
+        /* nChance 99 fails only on a roll of 100, and there nMiss is
+         * Game_RandU16(1), which is always 0. That pins the magnitude exactly:
+         * 27.0f * 10.0f * 0.01f, so every slot must be a whole-radian sample
+         * of that magnitude. */
+        for (i32 nSeed = 1; nSeed <= 20000 && nSeed100 == 0; ++nSeed) {
+            srand(nSeed);
+            if ((i32)Game_RandU16(100) + 1 == 100) {
+                nSeed100 = nSeed;
+            }
+        }
+        Check("a seed exists that rolls 100", nSeed100 != 0);
+        if (nSeed100 != 0) {
+            double dMag = (double)((float)(100.0 * 0.27) * 10.0f * 0.01f);
+            CheckNear("pinned magnitude is 2.7", dMag, 2.7);
+            srand(nSeed100);
+            Unit_RollChance(100.0, 99, &sc);
+            Check("x is a whole-radian cosine", WholeRadianMatch(sc.nDx, dMag, 1));
+            Check("y is a whole-radian sine", WholeRadianMatch(sc.nDy, dMag, 0));
+            Check("z is a whole-radian sine", WholeRadianMatch(sc.nDz, dMag, 0));
+        }
     }
 
     printf("%d checks, %d failures\n", g_nChecks, g_nFails);
