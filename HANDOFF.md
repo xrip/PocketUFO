@@ -45,7 +45,7 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Tracked modifications | none (`git diff --stat` empty) |
 | Untracked files | listed in section 12, all intentional |
 | Build | clean, exit 0, no warnings under `/W4 /WX` |
-| Tests | `100% tests passed, 0 tests failed out of 41`, 1.42 s |
+| Tests | `100% tests passed, 0 tests failed out of 41`, 1.32 s, **2995 checks** (see `PARITY.md`) |
 | Executable | `build/src/pufo/Release/pocketufo.exe`, 27648 bytes |
 
 `pufobeta.exe.i64` is tracked on purpose. It is the analysis database, and commits
@@ -204,13 +204,22 @@ not yet drive the map, tactical, or strategic screens. That is exactly what the
 
 ## 6. What remains incomplete
 
-Coverage, measured three ways (see section 7 for why they disagree):
+Coverage has **one agreed definition**: an original function counts as recreated when
+the port cites it in a source comment of the form `@ 0xADDR`, with slash-runs like
+`@ 0x17790/0x177fc/0x17868` split so every address in the run counts. That rule lives
+in `docs/parity/coverage.py`, and `docs/parity/gen_report.py` imports it, so the two
+cannot disagree.
 
 | Measure | Result |
 |---|---|
-| `python tools/coverage.py` | 1103 functions, **276 recreated**, 791 gaps, 36 artifacts |
-| `python docs/parity/coverage.py` | **419 / 1103 cited** (38.0%), bytes 174692 / 598792 (29.2%) |
-| `python docs/parity/gen_report.py` | **382 / 1103** (34.6%), bytes 171112 / 598792 (28.6%) |
+| `python docs/parity/coverage.py` (agreed) | **420 / 1103 cited** (38.1%), bytes 180560 / 598792 (30.2%) |
+| `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
+| `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
+
+`tools/coverage.py` is a name-match audit, not the coverage number: it asks "does a
+function with this name exist in the port?", which misses a ported family cited once
+and counts a renamed port function as unmatched. Use it to spot names the citation
+rule missed, not as a headline.
 
 Per-subsystem citation coverage from `docs/parity/coverage.py`:
 
@@ -220,7 +229,7 @@ Per-subsystem citation coverage from `docs/parity/coverage.py`:
 | dat | 17 | 18 | 94% |
 | app-shell | 21 | 24 | 88% |
 | util | 17 | 21 | 81% |
-| tact | 172 | 214 | 80% |
+| tact | 173 | 214 | 81% |
 | ui-core | 59 | 85 | 69% |
 | render | 33 | 51 | 65% |
 | tact-ui | 20 | 52 | 38% |
@@ -249,65 +258,57 @@ Specific unfinished items inside `game-core`:
   verified from ARM and asserted in `test_vis` (window `nX±8` / `nY±8` clamped to
   `10 * nMapDim - 1`, four layers, `MapCell+0x2C` bit 0 cleared, gated on
   `Map_bSweepArmed` @ `0x113A20`).
-- `docs/parity/coverage.md` lists 126 cited addresses that are not in the function
-  inventory (thunks, data symbols, or typos). Those need triage before the final
-  parity report can claim "no unexplained gaps".
+- `PARITY.md` lists 132 citations that are not function starts, split by the image-base
+  rule into 31 struct-field offsets and 101 entries that mix global data symbols with
+  block-relative offsets. That split needs IDB triage before the final parity report can
+  claim "no unexplained gaps".
 
 ---
 
 ## 7. Known issues, assumptions, risks, and technical debt
 
-Reported so they can be handled as separate issues; none of them were fixed during
-this handoff.
+Reported so they can be handled as separate issues. Items 1-3 were open at the
+handoff and are now closed; the rest are still open.
 
-1. **`docs/BUILD.md` is stale.** Its "Source layout" section lists only the scaffold
-   files and states that `dat`, `save`, `ui-core`, `tact`, `tact-ui`, `strat`,
-   `strat-ui`, `render`, `audio`, `titles`, `boot-assets` are "still to be added".
-   All of them exist now. The toolchain table and the build commands in that file are
-   still accurate.
+1. ~~**`docs/BUILD.md` is stale.**~~ **Closed.** Its "Source layout" section now lists
+   the real tree (`app`, `platform`, `util`, `dat`, `asset`, `render`, `audio`, `ui`,
+   `game`, `tests`) and a new "Test harness" section records the output format.
 
-2. **Three coverage numbers, two parsers.** `tools/coverage.py` matches function names
-   against `docs/idb/functions.tsv` in the source (comments stripped, per `f63dadf`).
-   `docs/parity/coverage.py` counts addresses cited in the parity docs and also accepts
-   slash-runs like `@ 0xA/0xB`. `docs/parity/gen_report.py` uses a single-address
-   regex only. The 382 vs 419 difference is a parser rule, not a code change. Pick one
-   definition before publishing a headline number.
+2. ~~**Three coverage numbers, two parsers.**~~ **Closed.** The citation rule in
+   `docs/parity/coverage.py` is the single agreed definition (see section 6), and
+   `gen_report.py` now imports `CITE_RE`, `ADDR_RE`, `INVENTORY`, and `load_inventory`
+   from it instead of keeping its own single-address regex. Both report
+   **420 / 1103 (38.1%)** and 180560 / 598792 bytes. `tools/coverage.py` is kept as a
+   name-match audit and is labelled as a different question.
 
-3. **`PARITY.md` under-reports test checks for 9 suites.** `gen_report.py` runs each
-   test binary and counts the literal string `ok  ` in its stdout
-   (`docs/parity/gen_report.py`, `checks = out.count("ok  ")`). Suites that print one
-   `ok  ` line per assertion get a real count; suites that print a summary line instead
-   report 0. Actual counts, measured by running each binary directly:
-
-   | Suite | `PARITY.md` says | Actual |
-   |---|---|---|
-   | `test_ballist` | 0 | 77 checks, 0 failures |
-   | `test_combat` | 0 | 102 checks, 0 failures |
-   | `test_fov` | 0 | 31 checks, 0 failures |
-   | `test_vistry` | 0 | 42 checks, 0 failures |
-   | `test_blast` | 0 | 14 check(s), 0 failure(s) |
-   | `test_vis` | 0 | 70 check(s), 0 failure(s) |
-   | `test_cursordir` | 0 | prints `PASS: 0 failure(s)`, no count |
-   | `test_input` | 0 | prints `PASS: 0 failure(s)`, no count |
-   | `test_soldiername` | 0 | prints `PASS: 0 failure(s)`, no count |
-
-   `test_clock`, `test_geoscape`, `test_ship`, and `test_strateg` print
-   `PASS (0 failures)` and are reported correctly as 0 by the same rule. The clean fix
-   is one uniform output format across all suites.
+3. ~~**`PARITY.md` under-reports test checks for 9 suites.**~~ **Closed.**
+   `tests/pufo_test.h` is the shared harness: `TestCheck`, `TestEqI32`, `TestEqU16`,
+   `TestNear`, `TestSummary`, and the fixed output format
+   `  ok   <what>` / `  FAIL <what>` / `<suite>: N checks, M failures`. The 11 suites
+   that printed nothing on a pass (`ballist`, `blast`, `combat`, `cursordir`, `fov`,
+   `input`, `mapctx`, `moveaction`, `soldiername`, `vis`, `vistry`) now use it, keeping
+   their local helper names as thin wrappers so no call site changed. `gen_report.py`
+   reads the summary line (`count_checks`) and falls back to counting `ok`/`FAIL` lines.
+   All 41 suites report a real count. Side effect: `test_vis`'s old `CheckEqI32` printed
+   `FAIL` twice and counted the check once; the shared helper does both correctly.
 
 4. **Hex-Rays base-register errors are a recurring hazard in this IDB.** Two confirmed
-   so far (`eaa79b0`, `b4b875c`). The `Map` type in the database has **one member**, so
-   every field access renders as `gap_*` or `MEMORY[0x1139B8]`, and several generated
-   names are actively misleading. The working method is to prove offsets from ARM
-   disassembly, not from pseudocode. A comment at `0x1139B8` (`pCtxBase`) now lists the
-   offsets proven that way, including `+0x230`, `+0x51 bFireStatus1`,
-   `+0x5A bGameTickHold`, the `+0x4EBC` hit windows, and the counter at
+   so far (`eaa79b0`, `b4b875c`). The `Map` type now has **156 members** (size 152632,
+   verified by `type_inspect`), so pseudocode renders named fields at the named offsets
+   — but about 40 members are still `gap_*` / `pad*` blobs, and some named members
+   disagree with ARM-proven reads. Example: the move FSM reads its shot-history cell
+   array at `Map+0x30` (`nStatusDrawY @ 0x2C` plus 4, indexed by the shot count) while
+   the type calls `Map+0x30` `nMapTileW` / `nMapTileH`. The working method is still
+   to prove offsets from ARM disassembly, not from pseudocode. A comment at `0x1139B8`
+   (`pCtxBase`) lists the offsets proven that way, including `+0x230`, `+0x51
+   bFireStatus1`, `+0x5A bGameTickHold`, the `+0x4EBC` hit windows, and the counter at
    `+0x4EBC + 4*49940`.
 
-5. **The `Map` struct cannot be rebuilt headlessly.** IDA 9.4 has no `ida_struct`
-   module and no `put_udt_details`, so the offsets live as listing comments until the
-   struct is rebuilt in the GUI. Until then, expect pseudocode to keep lying about
-   `Map` field names.
+5. **`Map` member edits still need the IDA GUI.** IDA 9.4 has no `ida_struct` module and
+   no `put_udt_details`, so the remaining `gap_*` regions inside `Map` cannot be split
+   from a script. The type exists and is usable; only new or renamed members require the
+   GUI. Until those gaps are filled, expect pseudocode to keep lying about `Map` field
+   names in the unnamed regions.
 
 6. **`docs/parity/game-core.md` is 3977 lines / 207 KB.** Append with `Add-Content`;
    read a window with `Get-Content ... | Select-Object -Skip N -First M`. Never rewrite
@@ -427,9 +428,11 @@ preparing this document.
    clamp, all four layers, bit-only clear, and the gate off). The three gate bytes
    are named in the IDB: `Map_bTickHold` @ `0x113A12`, `Map_bSweepArmed` @
    `0x113A20`, `Map_bFrameScratch` @ `0x138E74`.
-4. **Fix the reporting debt** before it distorts decisions: one uniform test output
-   format so `PARITY.md` stops reporting 0 checks for 9 suites; one agreed coverage
-   definition; refresh `docs/BUILD.md` source layout.
+4. ~~**Fix the reporting debt** before it distorts decisions~~ — done. One shared test
+   harness (`tests/pufo_test.h`) gives every suite the same output format; the agreed
+   coverage definition is the citation rule in `docs/parity/coverage.py`, which
+   `gen_report.py` now imports; `docs/BUILD.md` lists the real source layout. See
+   section 7 items 1-3.
 5. **`ui-input` task.** The `UiPanel` type conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour
    slots at `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually

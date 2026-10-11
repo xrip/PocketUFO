@@ -6,27 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_nChecks = 0;
-static int g_nFails = 0;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
+static inline void CheckU16(const char *pWhat, u16 nGot, u16 nWant)
 {
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
-
-static void CheckU16(const char *pWhat, u16 nGot, u16 nWant)
-{
-    if (nGot != nWant) {
-        printf("  FAIL %s: got %u want %u\n", pWhat, nGot, nWant);
-        ++g_nChecks;
-        ++g_nFails;
-        return;
-    }
-    ++g_nChecks;
+    TestEqU16(pWhat, nGot, nWant);
 }
 
 static VisRay g_aRays[PUFO_VIS_RAY_COUNT];
@@ -179,6 +164,5 @@ int main(void)
         CheckU16("two steps out carries the 3 charged one step earlier", Slot(0, -2, 3), 57);
     }
 
-    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
-    return g_nFails == 0 ? 0 : 1;
+    return TestSummary("test_fov");
 }

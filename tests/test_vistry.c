@@ -5,27 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_nChecks = 0;
-static int g_nFails = 0;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
+static inline void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
 {
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
-
-static void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
-{
-    if (nGot != nWant) {
-        printf("  FAIL %s: got %d want %d\n", pWhat, nGot, nWant);
-        ++g_nChecks;
-        ++g_nFails;
-        return;
-    }
-    ++g_nChecks;
+    TestEqI32(pWhat, nGot, nWant);
 }
 
 static VisRay g_aRays[PUFO_VIS_RAY_COUNT];
@@ -108,6 +93,5 @@ int main(void)
     Check("no untouched byte survives in pass 0 row 0",
           g_aSteps[0] != 0xEE && g_aSteps[3] != 0xEE);
 
-    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
-    return g_nFails != 0;
+    return TestSummary("test_vistry");
 }

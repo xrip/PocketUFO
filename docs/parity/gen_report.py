@@ -18,10 +18,18 @@ import subprocess
 import sys
 from collections import defaultdict
 
-INVENTORY = os.path.join("docs", "idb", "inventory-grouped.tsv")
+# The citation rule and the inventory loader come from coverage.py, so the two
+# scripts cannot drift apart and PARITY.md quotes the same numbers the summary
+# prints. See docs/parity/coverage.py for the definition of "cited".
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from coverage import ADDR_RE, CITE_RE, INVENTORY, load_inventory  # noqa: E402
+
 OUT = "PARITY.md"
 TESTS_DIR = os.path.join("build", "tests", "Release")
-CITE_RE = re.compile(r"@\s*0x([0-9a-fA-F]{4,6})")
+IMAGE_BASE = 0x10000  # the base IDA chose for pufobeta.exe
+
+# Uniform suite summary, printed by TestSummary() in tests/pufo_test.h.
+SUMMARY_RE = re.compile(r"^(\w+): (\d+) checks, (\d+) failures$", re.M)
 
 # Subsystem presentation order and a one-line description. The descriptions state
 # what is recreated, so a reader can tell coverage apart from intent.
@@ -68,21 +76,12 @@ UI_PANEL_CONFLICT = {
 }
 
 
-def load_inventory():
-    by_addr = {}
-    with open(INVENTORY, encoding="utf-8") as f:
-        next(f)
-        for line in f:
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) != 4:
-                continue
-            addr, name, size, sub = parts
-            by_addr["0x" + addr.lower()] = (name, int(size), sub)
-    return by_addr
-
-
 def load_citations():
-    """addr -> sorted list of source files citing it."""
+    """addr -> sorted list of source files citing it.
+
+    One citation may name a family of addresses (`@ 0x17790/0x177fc/0x17868`),
+    so the whole run is split and every address in it counts.
+    """
     cites = defaultdict(set)
     for root, _dirs, files in os.walk("src"):
         for fn in files:
@@ -91,8 +90,22 @@ def load_citations():
             path = os.path.join(root, fn).replace(os.sep, "/")
             with open(path, encoding="utf-8", errors="replace") as f:
                 for m in CITE_RE.finditer(f.read()):
-                    cites["0x" + m.group(1).lower()].add(path)
+                    for a in ADDR_RE.finditer(m.group(1)):
+                        cites["0x" + a.group(1).lower()].add(path)
     return {k: sorted(v) for k, v in cites.items()}
+
+
+def count_checks(out):
+    """Checks a suite ran, from its summary line, or from its per-check lines.
+
+    The summary line is the contract (tests/pufo_test.h). The line count is the
+    fallback for a suite that has not been moved to the shared harness yet.
+    """
+    m = SUMMARY_RE.search(out)
+    if m:
+        return int(m.group(2))
+    return sum(1 for ln in out.splitlines()
+               if ln.startswith("  ok   ") or ln.startswith("  FAIL "))
 
 
 def run_tests():
@@ -106,10 +119,10 @@ def run_tests():
         try:
             p = subprocess.run([path], capture_output=True, text=True, timeout=120)
             out = p.stdout
+            checks = count_checks(out)
         except Exception as exc:  # noqa: BLE001
             results.append((fn[:-4], False, 0, str(exc)))
             continue
-        checks = out.count("ok  ")
         name = fn[:-4]
         # Retry from the repo root: some tests need the archives.
         if p.returncode != 0:
@@ -117,7 +130,7 @@ def run_tests():
                 p = subprocess.run([os.path.abspath(path)], capture_output=True,
                                    text=True, timeout=120, cwd=".")
                 out = p.stdout
-                checks = out.count("ok  ")
+                checks = count_checks(out)
             except Exception:  # noqa: BLE001
                 pass
         results.append((name, p.returncode == 0, checks, ""))
@@ -172,6 +185,7 @@ def main():
       % (cov_bytes, total_bytes, 100.0 * cov_bytes / total_bytes))
     A("| Subsystems in the IDB map | %d |" % len(SUBSYSTEMS))
     A("| Test suites | %d |" % len(tests))
+    A("| Test checks run | %d |" % sum(c for _n, _ok, c, _e in tests))
     A("")
     A("A citation means the port names the original function it answers to in a")
     A("source comment of the form `@ 0xADDR`. It answers \"is this original function")
@@ -272,16 +286,35 @@ def main():
     A("")
 
     if unknown:
+        # IDA loaded this image at 0x10000, so a citation below that cannot be an
+        # address in the database at all: it is an offset inside a named block.
+        below = [a for a in unknown if int(a, 16) < IMAGE_BASE]
+        at_or_above = [a for a in unknown if int(a, 16) >= IMAGE_BASE]
         A("## Cited addresses that are not function starts")
         A("")
-        A("These citations point at data, struct fields, or instruction offsets rather")
-        A("than function entry points, so they are not counted as coverage. Listed for")
-        A("transparency: %d addresses." % len(unknown))
+        A("`@ 0xADDR` is used in this port for two different things: an address in the")
+        A("IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).")
+        A("Only the first kind can be matched against the function inventory, so the")
+        A("rest are listed here instead of counted. Splitting them is part of the final")
+        A("parity report. Total: %d citations." % len(unknown))
         A("")
-        for a in unknown[:40]:
+        A("### Offsets below the image base (%d)" % len(below))
+        A("")
+        A("IDA loaded `pufobeta.exe` at `0x10000`, so no original code or data lives")
+        A("below it. Every one of these is a field offset inside a struct.")
+        A("")
+        A(", ".join("`%s`" % a for a in below))
+        A("")
+        A("### At or above the image base (%d)" % len(at_or_above))
+        A("")
+        A("Two kinds are mixed here and the report cannot tell them apart on its own:")
+        A("global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,")
+        A("`aTextRecs` at `0xb38d0`, the muzzle table at `0xa9768`), and block-relative")
+        A("offsets that happen to be numerically large (`Map+0x14004`). Triage them")
+        A("against the IDB when the final report is assembled.")
+        A("")
+        for a in at_or_above:
             A("- `%s`" % a)
-        if len(unknown) > 40:
-            A("- ... and %d more" % (len(unknown) - 40))
         A("")
 
     with open(OUT, "w", encoding="utf-8") as f:

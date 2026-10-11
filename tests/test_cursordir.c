@@ -4,15 +4,12 @@
 #include <string.h>
 
 #include "game/pufo_cursordir.h"
+#include "pufo_test.h"
 
-static int g_nFailures;
-
-static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
+/* This suite keeps the (got, want, what) argument order its call sites use. */
+static inline void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
 {
-    if (nGot != nWant) {
-        printf("  FAIL %s: got %d want %d\n", pszWhat, (int)nGot, (int)nWant);
-        g_nFailures += 1;
-    }
+    TestEqI32(pszWhat, nGot, nWant);
 }
 
 static void TestCompute(void)
@@ -129,6 +126,5 @@ int main(void)
     TestTickAdvances();
     TestTickShift();
 
-    printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
-    return g_nFailures == 0 ? 0 : 1;
+    return TestSummary("test_cursordir");
 }

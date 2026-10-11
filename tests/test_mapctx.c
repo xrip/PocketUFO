@@ -14,17 +14,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_nChecks;
-static int g_nFails;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
-{
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 
 /* The original's grid is 4 layers of 60 x 60 cells, which is the whole grid at
  * nMapDimX = nMapDimY = 6. */
@@ -689,6 +681,5 @@ int main(void)
     TestVisibility();
     TestFsmOnMap();
 
-    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
-    return g_nFails != 0;
+    return TestSummary("test_mapctx");
 }

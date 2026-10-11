@@ -7,17 +7,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_nChecks = 0;
-static int g_nFails = 0;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
-{
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 
 static VisRay g_aRays[PUFO_VIS_RAY_COUNT];
 static u8 g_aSteps[PUFO_VIS_TABLE_BYTES];
@@ -198,7 +190,5 @@ int main(void)
     Map_ScanBlastFootprint(&geom, CellLookup, NULL, g_aSteps, At(0, 0));
     Check("wall flags are recorded along the rays", AnyFlagSet());
 
-    printf("\n%s: %d check(s), %d failure(s)\n",
-           g_nFails == 0 ? "PASS" : "FAIL", g_nChecks, g_nFails);
-    return g_nFails == 0 ? 0 : 1;
+    return TestSummary("test_blast");
 }

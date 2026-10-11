@@ -14,21 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static int g_nChecks = 0;
-static int g_nFails = 0;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
+static inline void CheckNear(const char *pWhat, double dGot, double dWant)
 {
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
-
-static void CheckNear(const char *pWhat, double dGot, double dWant)
-{
-    Check(pWhat, fabs(dGot - dWant) < 1e-6);
+    TestNear(pWhat, dGot, dWant);
 }
 
 /* True when nGot is what _dtoi(trig(k) * dMag) gives for some whole radian
@@ -440,6 +431,5 @@ int main(void)
 
     TestMovePieces();
 
-    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
-    return g_nFails == 0 ? 0 : 1;
+    return TestSummary("test_ballist");
 }

@@ -8,23 +8,23 @@
 #include "game/pufo_soldiername.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_str.h"
+#include "pufo_test.h"
 
-static int g_nFailures;
-
-static void Check(bool bCond, const char *pszWhat)
+/* This suite keeps the (condition, what) argument order its call sites use. */
+static inline void Check(bool bCond, const char *pszWhat)
 {
-    if (!bCond) {
-        printf("  FAIL %s\n", pszWhat);
-        g_nFailures += 1;
-    }
+    TestCheck(pszWhat, bCond);
 }
 
-static void CheckEqStr(const char *pszGot, const char *pszWant, const char *pszWhat)
+static inline void CheckEqStr(const char *pszGot, const char *pszWant, const char *pszWhat)
 {
-    if (strcmp(pszGot, pszWant) != 0) {
-        printf("  FAIL %s (got \"%s\" want \"%s\")\n", pszWhat, pszGot, pszWant);
-        g_nFailures += 1;
+    ++g_nChecks;
+    if (strcmp(pszGot, pszWant) == 0) {
+        printf("  ok   %s\n", pszWhat);
+        return;
     }
+    ++g_nFails;
+    printf("  FAIL %s (got \"%s\" want \"%s\")\n", pszWhat, pszGot, pszWant);
 }
 
 static void TestBackspace(void)
@@ -110,6 +110,5 @@ int main(void)
     TestGlyphAt();
     TestAppendGlyph();
 
-    printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
-    return g_nFailures == 0 ? 0 : 1;
+    return TestSummary("test_soldiername");
 }

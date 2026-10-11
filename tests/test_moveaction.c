@@ -12,17 +12,9 @@
 #include <stdio.h>
 #include <string.h>
 
-static int g_nChecks;
-static int g_nFails;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
-{
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 
 static MapCell  g_aCells[4][12][12];
 static Soldier  g_aUnits[4];
@@ -414,6 +406,5 @@ int main(void)
     Check("too little TU aborts cmd 0x12 with the no-time record",
           Entry()->nCmd == TACTCMD_END_MARK && g_nStatusMsg == MOVE_MSG_NO_TIME);
 
-    printf("%d checks, %d failures\n", g_nChecks, g_nFails);
-    return g_nFails == 0 ? 0 : 1;
+    return TestSummary("test_moveaction");
 }

@@ -5,15 +5,12 @@
 #include <string.h>
 
 #include "game/pufo_input.h"
+#include "pufo_test.h"
 
-static int g_nFailures;
-
-static void Check(bool bCond, const char *pszWhat)
+/* This suite keeps the (condition, what) argument order its call sites use. */
+static inline void Check(bool bCond, const char *pszWhat)
 {
-    if (!bCond) {
-        printf("  FAIL %s\n", pszWhat);
-        g_nFailures += 1;
-    }
+    TestCheck(pszWhat, bCond);
 }
 
 typedef struct Trace {
@@ -388,6 +385,5 @@ int main(void)
     TestDismissHigh();
     TestOnBackCancel();
 
-    printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
-    return g_nFailures == 0 ? 0 : 1;
+    return TestSummary("test_input");
 }

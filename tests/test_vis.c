@@ -12,24 +12,12 @@
 #include <string.h>
 #include <stdlib.h>
 
-static int g_nChecks = 0;
-static int g_nFails = 0;
+#include "pufo_test.h"
 
-static void Check(const char *pWhat, int bOk)
+static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
+static inline void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
 {
-    ++g_nChecks;
-    if (!bOk) {
-        ++g_nFails;
-        printf("  FAIL %s\n", pWhat);
-    }
-}
-
-static void CheckEqI32(const char *pWhat, i32 nGot, i32 nWant)
-{
-    if (nGot != nWant) {
-        printf("  FAIL %s (got %d, want %d)\n", pWhat, nGot, nWant);
-    }
-    Check(pWhat, nGot == nWant);
+    TestEqI32(pWhat, nGot, nWant);
 }
 
 static VisRay g_aRays[PUFO_VIS_RAY_COUNT];
@@ -783,7 +771,5 @@ int main(void)
         Check("an enemy 18 cells away is never traced", pU->nMultiTarget == 0);
     }
 
-    printf("\n%s: %d check(s), %d failure(s)\n",
-           g_nFails == 0 ? "PASS" : "FAIL", g_nChecks, g_nFails);
-    return g_nFails == 0 ? 0 : 1;
+    return TestSummary("test_vis");
 }
