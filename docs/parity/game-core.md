@@ -4073,11 +4073,19 @@ nTuCost 0x3C. The port's `TactQueueEntry` offsets (0x00, 0x04, 0x08, 0x09, 0x0a,
    pseudocode lie. Then `CMP R10,#0 / CMP R10,#1 / MOVEQ R3,#0x28 / CMP R10,R3`:
    nStepZDelta 0 leaves the destination height alone, +1 replaces it with 40, and the
    third case compares against a leftover R3 before `SUB R3, R1, #0x28`.
-3. **0x4FB20 with 0x4FB10..0x4FB4C, the climb target cell.** The cell one layer up is
-   fetched from `ctx + 0x11AF8 + 4*(3600*(nZ+1) + 60*nY + nX)` using the cell's own
-   +0x1A/+0x1B/+0x1C bytes, and `nLayerScratch` (unk_128AF0, ctx+0x15138) is set to
-   nZ+1. So the queue-entry field at +0x3C really is reused as a `MapCell *` in the
-   `nFacing != -1 && nFacing != 1` branch at 0x4FBBC.
+3. **0x4FB20 with 0x4FB10..0x4FB4C, the climb target cell.** The ARM reads the cell at
+   the unit's OWN coordinates (not one layer up): `LDRB R1,[cell,#0x1C]` (nZ),
+   `MUL` by 60, `+ nY` (+0x1B), `MUL` by 60, `+ nX` (+0x1A), then
+   `LDR R5, [ctx + 4*(3600*nZ + 60*nY + nX) + 0x11AF8]`. `nLayerScratch`
+   (unk_128AF0, ctx+0x15138) is then set to nZ+1. So the queue-entry field at +0x3C
+   really is reused as a `MapCell *` in the `nFacing != -1 && nFacing != 1` branch at
+   0x4FBBC.
+
+   OPEN: the dword array at ctx+0x11AF8 (proven here, and the same displacement is
+   used by the map-wide `bFlags29 &= ~0x20` sweep at 0x4FE38) is 14400 bytes below the
+   `apCells` base this file records at ctx+0x15338 (0x15338 - 0x11AF8 = 14400 = exactly
+   one layer). Both renderings cannot be 14400-dword arrays. Resolve which base the
+   grid really starts at before wiring the port's MapCellLookup to the context.
 4. **0x50A40..0x50A90, the civilian swap.** apCivilians base is ctx+0x15244,
    apEnemyUnits base is ctx+0x15240, nCivilianUnitCount is ctx+0x15120. The scan finds
    pUnit's index, then `apCivilians[idx] = *(ctx + 0x15240 + 4*nCivilianUnitCount)`

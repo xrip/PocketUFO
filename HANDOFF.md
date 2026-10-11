@@ -342,6 +342,12 @@ recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAct
   `MapCell *`), and the civilian swap (apCivilians ctx+0x15244, apEnemyUnits ctx+0x15240,
   count ctx+0x15120; the real semantics are `apCivilians[idx] =
   apCivilians[nCivilianUnitCount-1]` then decrement — Hex-Rays' `+29` is a base artifact).
+- OPEN, found while verifying range 3: the cell-pointer array the ARM actually uses
+  (ctx+0x11AF8, at 0x4FB4C and again in the map-wide `bFlags29 &= ~0x20` sweep at
+  0x4FE38) sits exactly one layer (14400 bytes) below the `apCells` base recorded in
+  `docs/parity/game-core.md` and `pufo_mapcell.h` (ctx+0x15338). Both cannot be
+  14400-dword arrays. Settle this before wiring the port's `MapCellLookup` to the real
+  context; the injected-lookup tests are unaffected either way.
 - Both move tables are pinned in the port and named in the IDB: `g_aUnitMuzzleOffset`
   @ 0xA9768 (23 type blocks x 2 groups x 8 facings x 3 i16) and `g_aFireSoundBySortKey`
   @ 0xAA168 (148 u16 by `ObjectRec.uSortKey`).
