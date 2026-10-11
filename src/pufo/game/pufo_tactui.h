@@ -35,11 +35,21 @@
  * Hex-Rays renders the first two as `nTrajFront0[4*m + 1040]` and
  * `nTrajFront0[4*m + 1088]`. The ARM is flat and settles both: `0x263F0` stores at dword
  * index `m + 0x1393` and `0x26400` at `m + 0x139F`, which are the byte addresses
- * `Map+0x4E4C + 4*m` and `Map+0x4EBC + 4*m`. `Input_OnPointerUp @ 0x14FE4` reads the cost
- * the same way (`Map + 0x4E4C + 4*mode`), and `Tact_TryFireMode4/10` read it for m = 4, 5
- * and 10, so the table and its readers are one contract and are ported together. The
- * enabled mirror at `0x2641C` is `pBank + 0x400 + 32*m + 9`, i.e. `UiControl.bEnabled` of
- * the twelve action-pad widgets 32..43.
+ * `Map+0x4E4C + 4*m` and `Map+0x4E7C + 4*m` (4*0x1393 = 0x4E4C, 4*0x139F = 0x4E7C).
+ * `Tact_OpenLeftHandMenu @ 0x170D0` re-reads them with the literal immediates
+ * `MOV R3,#0x4E7C` for enabled and `MOV LR,#0x4E00 / ORR LR,LR,#0x4C` for the cost,
+ * which is the direct proof of both bases.
+ *
+ * `Map+0x4EBC` is a DIFFERENT array: the combat hit windows used by
+ * `Combat_ResolveShot` (`MOV R0,#0x4E00 / ORR R0,R0,#0xBC`), indexed
+ * `4*(41*row + col) + slot`. The two share the 0x4E00 page and were conflated in an
+ * earlier note; the enabled table is 0x4E7C.
+ *
+ * `Input_OnPointerUp @ 0x14FE4` reads the cost the same way (`Map + 0x4E4C + 4*mode`), and
+ * `Tact_TryFireMode4/10` read it for m = 4, 5 and 10, so the table and its readers are
+ * one contract and are ported together. The enabled mirror at `0x2641C` is
+ * `pBank + 0x400 + 32*m + 9`, i.e. `UiControl.bEnabled` of the twelve action-pad
+ * widgets 32..43.
  */
 #ifndef PUFO_TACTUI_H
 #define PUFO_TACTUI_H
@@ -171,6 +181,45 @@ void Ui_InvScrollDown(TactUiState *pUi);
 /* UiBank_SelectRadio0..3 @ 0x16e04/0x16e40/0x16e7c/0x16eb8. Plays sample 17 and
  * makes the chosen radio byte one-hot. Returns false for nRadio outside 0..3. */
 bool Ui_SelectRadio(TactUiState *pUi, i32 nRadio, const TactUiHooks *pHooks);
+
+/* Declared before the menu context that names it. */
+typedef struct ActionCostInput ActionCostInput;
+
+/* Tact_OpenLeftHandMenu @ 0x17030 and Tact_OpenRightHandMenu @ 0x17148. The two are
+ * the same 280-byte body with a different hand slot read, so the port has one
+ * function; the caller passes the hand it picked.
+ *
+ *   sample 17; bail when the action latch (Map+0x02) is not 0
+ *   pSelWeapon = pUnit->pHandL (or pHandR); bail when it is NULL
+ *   nSortKey = pSelWeapon->pObj->uSortKey
+ *   bail when the weapon's research record says this weapon has no action menu:
+ *   aFacTypeTable[13 + 34 * byte_AA968[nSortKey]] == 0 (ARM 0x17078..0x17094).
+ *   Injected as pfnWeaponHasMenu because aFacTypeTable @ 0x15EF08 is built at
+ *   runtime (the shipped image is all 0xFF) and its in-memory field order is not
+ *   yet recovered -- see the open item in docs/parity/game-core.md.
+ *   bail when nSortKey == 24 and the unit's byte at Soldier+0x1A6 is 0
+ *   Ui_FillActionCosts, then scan modes 0..11 for the first one that is both
+ *   enabled and affordable (cost <= uTu). None found -> push aTextRecs record 1
+ *   ("not enough time") and leave the screen closed. Found -> nActionMode = 12 and
+ *   nUiScreen = 3.
+ *
+ * The scan is a search for ANY affordable action, not for a specific one: the mode it
+ * finds is discarded and only used as a yes/no. Returns true when the menu opened.
+ *
+ * Deviation: the original reads the enabled and cost slots without bounds-checking
+ * the loop counter; the port walks the twelve modes it models, which is the same
+ * set (the ARM stops at R1 == 0x30, i.e. twelve four-byte steps). */
+typedef struct HandMenuCtx {
+    const ActionCostInput *pCost; /* what Ui_FillActionCosts needs for this weapon */
+    u8   bActionLatch;            /* Map+0x02: any non-zero value blocks the menu */
+    u16  uTu;                     /* Soldier+0x06 */
+    u16  uSortKey;                /* pObj->uSortKey @ 0xC8 */
+    u8   bByte1A6;                /* Soldier+0x1A6, the sort-key-24 gate */
+} HandMenuCtx;
+
+bool Ui_OpenHandMenu(TactUiState *pUi, const HandMenuCtx *pCtx,
+                     bool (*pfnWeaponHasMenu)(u16 uSortKey, void *pUser),
+                     const TactUiHooks *pHooks, void *pGateUser);
 
 /* Tact_OpenCommandScreen @ 0x16ffc: sample 16, clear bUnk1508C (the byte at
  * 0x1508C inside the gap15088 region), and set nUiScreen 4. */

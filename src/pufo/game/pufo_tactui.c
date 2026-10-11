@@ -384,6 +384,52 @@ void Ui_FillActionCosts(const ActionCostInput *pIn, TactUiState *pUi)
     }
 }
 
+/* ------------------------------------------------------ the hand action menus */
+
+/* aTextRecs record 1, "not enough time", at 0xB38D0 + 0xCD. */
+#define PUFO_TXTREC_NO_TIME 1
+
+bool Ui_OpenHandMenu(TactUiState *pUi, const HandMenuCtx *pCtx,
+                     bool (*pfnWeaponHasMenu)(u16 uSortKey, void *pUser),
+                     const TactUiHooks *pHooks, void *pGateUser)
+{
+    if (pUi == NULL || pCtx == NULL || pCtx->pCost == NULL) {
+        return false;
+    }
+
+    Ui_Play(pHooks, 17);
+
+    /* 0x1704C: any armed action blocks the menu. */
+    if (pCtx->bActionLatch != 0) {
+        return false;
+    }
+
+    /* 0x17090: the weapon's research record must offer an action menu. */
+    if (pfnWeaponHasMenu == NULL || !pfnWeaponHasMenu(pCtx->uSortKey, pGateUser)) {
+        return false;
+    }
+
+    /* 0x17098: sort key 24 needs the unit byte at +0x1A6. */
+    if (pCtx->uSortKey == 24 && pCtx->bByte1A6 == 0) {
+        return false;
+    }
+
+    Ui_FillActionCosts(pCtx->pCost, pUi);
+
+    /* 0x170D0..0x17108: twelve four-byte steps looking for any mode that is both
+     * offered and affordable. The found mode is not kept. */
+    for (i32 m = 0; m < PUFO_ACTION_MODE_COUNT; ++m) {
+        if (pUi->anActionEnabled[m] != 0 && pUi->anActionCost[m] <= (i32)pCtx->uTu) {
+            pUi->nActionMode = 12;
+            pUi->nUiScreen = 3;
+            return true;
+        }
+    }
+
+    Ui_Status(pHooks, PUFO_TXTREC_NO_TIME);
+    return false;
+}
+
 /* ---------------------------------------------------------- weapon sub-modes */
 
 bool Ui_SetSubMode(TactUiState *pUi, TactItem *pWeapon, Soldier *pUnit,

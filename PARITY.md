@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 438 / 1103 (39.7%) |
-| Bytes of original code cited | 212832 / 598792 (35.5%) |
+| Functions cited as evidence | 440 / 1103 (39.9%) |
+| Bytes of original code cited | 213392 / 598792 (35.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 42 |
-| Test checks run | 3288 |
+| Test checks run | 3313 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 3 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
-| `tact` | 173 | 214 | 109388 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 175 | 214 | 109948 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 30 | 52 | 23160 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 60 | 85 | 10272 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 30 | 205 | 32880 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -208,7 +208,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (173 functions)
+### `tact` (175 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -273,6 +273,8 @@ is the module that answers to it.
 | `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h` |
+| `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
+| `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x48028` | `Unit_bScanOpportunityFire` | 272 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/game/pufo_timer.h` |
 | `0x18774` | `TactAction_ConfirmFireBurst` | 240 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
@@ -777,7 +779,7 @@ whose port work they belong to.
 | `0x431ac` | `Save_AllocFlobjs` | 172 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f4f4` | `Save_WriteProduct` | 100 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 41 functions, 68956 bytes remaining
+### `tact` — 39 functions, 68396 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -817,8 +819,6 @@ whose port work they belong to.
 | `0x32fa8` | `Combat_DetonateNearbyItems` | 416 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x17030` | `Tact_OpenLeftHandMenu` | 280 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x17148` | `Tact_OpenRightHandMenu` | 280 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x430cc` | `Soldiers_Reload` | 224 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1338,7 +1338,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactctl` | PASS | 116 |
 | `test_tacthud` | PASS | 50 |
 | `test_tactstate` | PASS | 152 |
-| `test_tactui` | PASS | 377 |
+| `test_tactui` | PASS | 402 |
 | `test_template` | PASS | 40 |
 | `test_timer` | PASS | 78 |
 | `test_turn` | PASS | 63 |
@@ -1365,7 +1365,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 136 citations.
+parity report. Total: 138 citations.
 
 ### Offsets below the image base (31)
 
@@ -1374,7 +1374,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`, `0x4a4c`, `0x4a50`
 
-### At or above the image base (105)
+### At or above the image base (107)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1441,8 +1441,10 @@ against the IDB when the final report is assembled.
 - `0x15821c`
 - `0x158268`
 - `0x158890`
+- `0x15ef08`
 - `0x161f38`
 - `0x162008`
+- `0x170d0`
 - `0x186534`
 - `0x186544`
 - `0x186548`

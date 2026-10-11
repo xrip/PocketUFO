@@ -961,7 +961,7 @@ void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
     case 4:
         (void)UiControl_HitTest(&pWorld->pBank->aCtl[101], nX, nY, true, false,
                                 &pWorld->hit);
-        if (pState->bPhaseSave20 == 0) {
+        if (pState->bLookCommitFlag == 0) {
             PointerHitTestRange(pWorld->pBank, &pWorld->hit, 102, 2, nX, nY);
         }
         break;
@@ -1252,7 +1252,7 @@ void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
     case 4:
         (void)UiControl_HitTest(&pWorld->pBank->aCtl[101], 0, 0, false, false,
                                 &pWorld->hit);
-        if (pState->bPhaseSave20 == 0) {
+        if (pState->bLookCommitFlag == 0) {
             PointerUpRelease(pWorld->pBank, &pWorld->hit, 102, 2, false);
         }
         break;

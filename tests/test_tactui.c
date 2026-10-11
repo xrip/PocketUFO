@@ -444,6 +444,116 @@ static void TestActionCosts(void)
 }
 
 
+/* --- the hand action menus -------------------------------------------------
+ *
+ * The research gate is injected, so the test controls it with one flag. */
+static bool g_bGateAllow;
+
+static bool GateWeaponHasMenu(u16 uSortKey, void *pUser)
+{
+    (void)uSortKey;
+    (void)pUser;
+    return g_bGateAllow;
+}
+
+static void TestHandMenu(void)
+{
+    ActionCostInput in;
+    HandMenuCtx     ctx;
+    TactUiState     ui;
+
+    printf("Ui_OpenHandMenu\n");
+
+    /* The fixture is the one TestActionCosts uses: mode 0 is offered at 40 and
+     * costs 200 * 60 / 100 = 120 TU. */
+    memset(&in, 0, sizeof(in));
+    in.auStat4 = 50;
+    in.abCostPctPacked[0] = 80;
+    in.abFlagByMode[0] = 60;
+    in.auStat0 = 200;
+
+    UiReset(&ui);
+    Ui_FillActionCosts(&in, &ui);
+    CheckEqI32(ui.anActionEnabled[0], 40, "  fixture: mode 0 is offered");
+    CheckEqI32(ui.anActionCost[0], 120, "  fixture: mode 0 costs 120");
+
+    g_bGateAllow = true;
+
+    /* The affordable case: 120 TU is exactly what the unit has. */
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pCost = &in;
+    ctx.uTu = 120;
+    ctx.uSortKey = 1;
+    UiReset(&ui);
+    LogReset();
+    Check(Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  an affordable action opens the menu");
+    CheckEqI32(ui.nActionMode, 12, "  opens with nActionMode 12");
+    CheckEqI32((i32)ui.nUiScreen, 3, "  opens with nUiScreen 3");
+    CheckEqI32(g_log.nSamples, 1, "  plays one sample");
+    CheckEqI32(g_log.nLastSample, 17, "  the sample is 17");
+    CheckEqI32(g_log.nStatus, 0, "  and pushes no status message");
+
+    /* One TU short: the scan finds nothing and the screen stays closed. */
+    ctx.uTu = 119;
+    UiReset(&ui);
+    LogReset();
+    Check(!Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  an unaffordable action refuses");
+    CheckEqI32((i32)ui.nUiScreen, 0, "  refusing leaves the screen closed");
+    CheckEqI32(ui.nActionMode, 0, "  and leaves nActionMode alone");
+    CheckEqI32(g_log.nStatus, 1, "  refusing pushes one status message");
+    CheckEqI32(g_log.nLastStatus, 1, "  the record is 1, not enough time");
+
+    /* The action latch blocks the function before any cost is computed. */
+    ctx.uTu = 120;
+    ctx.bActionLatch = 3;
+    UiReset(&ui);
+    LogReset();
+    Check(!Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  an armed action latch blocks the menu");
+    CheckEqI32(g_log.nSamples, 1, "  the sample still plays");
+    CheckEqI32(g_log.nStatus, 0, "  but no status message is pushed");
+    CheckEqI32(ui.anActionCost[0], 10, "  and the cost table is left unfilled");
+    ctx.bActionLatch = 0;
+
+    /* The research gate. */
+    g_bGateAllow = false;
+    UiReset(&ui);
+    LogReset();
+    Check(!Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  a weapon whose research record is not cleared refuses");
+    CheckEqI32(g_log.nStatus, 0, "  the gate refusal pushes nothing");
+    g_bGateAllow = true;
+
+    /* Sort key 24 needs the unit byte at Soldier+0x1A6. */
+    ctx.uSortKey = 24;
+    ctx.bByte1A6 = 0;
+    UiReset(&ui);
+    LogReset();
+    Check(!Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  sort key 24 without the unit byte refuses");
+    CheckEqI32(g_log.nStatus, 0, "  and pushes nothing");
+    ctx.bByte1A6 = 1;
+    UiReset(&ui);
+    Check(Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  sort key 24 with the unit byte opens");
+    ctx.uSortKey = 1;
+
+    /* A missing gate is a refusal, not a crash. */
+    UiReset(&ui);
+    Check(!Ui_OpenHandMenu(&ui, &ctx, NULL, &g_hooks, NULL),
+          "  a missing research gate refuses");
+
+    /* Plenty of TU still opens; the scan is a yes/no, not a cheapest-mode search. */
+    ctx.uTu = 4000;
+    UiReset(&ui);
+    LogReset();
+    Check(Ui_OpenHandMenu(&ui, &ctx, GateWeaponHasMenu, &g_hooks, NULL),
+          "  plenty of TU opens too");
+    CheckEqI32(g_log.nStatus, 0, "  with no status message");
+}
+
 static void TestSubModes(void)
 {
     TactUiState ui;
@@ -1097,6 +1207,7 @@ int main(void)
     TestFireModes();
     TestTryFireMode();
     TestActionCosts();
+    TestHandMenu();
     TestSubModes();
     TestOptionToggles();
     TestScreenHelpers();

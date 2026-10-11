@@ -1386,13 +1386,13 @@ static void TestPointerUp(void)
 
     PtrBankLiveAll();
     s = PtrState(4);
-    s.bPhaseSave20 = 1;
+    s.bLookCommitFlag = 1;
     Input_OnPointerUp(&s, &h, &w);
     Check(!UpLive(101) && UpLive(102), "  screen 4 with the flag set releases one");
 
     PtrBankLiveAll();
     s = PtrState(4);
-    s.bPhaseSave20 = 0;
+    s.bLookCommitFlag = 0;
     Input_OnPointerUp(&s, &h, &w);
     Check(!UpLive(102) && !UpLive(103) && UpLive(104),
           "  and clears the flag to release 102..103");

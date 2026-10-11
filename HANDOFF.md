@@ -453,7 +453,14 @@ preparing this document.
    Closed items: `MapCursor_SetPos @ 0x27014` reads **`Map+0x02`**, not `Map+0x22`
    (`LDRB R3, [R4,#2]` at `0x2723C`); the wrong offset in the port header and in
    `docs/parity/game-core.md` is corrected, and the field is now
-   `bActionLatch` / `pbActionLatch`. Still open: `MapView_FocusOnUnit @ 0x2c758`
+   `bActionLatch` / `pbActionLatch`. `anActionPhaseSave0` is at **`Map+0x15078`**,
+   not `Map+0x74` — the port's `0xD1/0xD7/0xD8/0xD9/0xE4` claims were wrong and are
+   now `0x150D5..0x150E4`, and the duplicate `bPhaseSave20` field (a second name for
+   `bLookCommitFlag @ 0x1508C`) is removed. The action tables are settled by literal
+   immediates at `0x170D0`: cost `Map+0x4E4C + 4*m`, enabled `Map+0x4E7C + 4*m`
+   (`Map+0x4EBC` is the unrelated combat hit-window array). The hand action menus
+   `Tact_OpenLeftHandMenu @ 0x17030` and `Tact_OpenRightHandMenu @ 0x17148` are ported
+   as one `Ui_OpenHandMenu`. Still open: `MapView_FocusOnUnit @ 0x2c758`
    is injected as a hook rather than ported (it takes a `MapCell *`, not a unit),
    and `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
    the widget bank these handlers live in, are not ported yet. The `UiPanel` type

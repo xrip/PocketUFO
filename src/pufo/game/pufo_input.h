@@ -69,30 +69,32 @@ typedef struct TactInputState {
     i32       anCamWorldY;       /* 0x4eb0, anCamWorldOff[1] */
     u8       *pbScratchFlag9;    /* *unk_1571E4 + 9 */
 
-    /* Fields only Input_OnPointer @ 0x13c6c touches. The anPhaseSave names come
-     * from the original's byte array at Map+0x74; five of its indices are read
-     * through named globals in the disassembly ([93] = 0xd1, [95] = 0xd7,
-     * [96] = 0xd8, [97] = 0xd9, [108] = 0xe4), which is what pins the base. */
+    /* Fields only Input_OnPointer @ 0x13c6c touches. The anActionPhaseSave0 names
+     * come from the original's byte array at Map+0x15078, NOT at Map+0x74. Hex-Rays
+     * indexes it by byte, and the ARM immediates pin the base: [20] is unk_128A44
+     * = 0x1508C (0x1480C), [93] is unk_128A8D = 0x150D5 (0x141A8), [95]/[96]/[97]
+     * are unk_128A8F/90/91 = 0x150D7/8/9, and [108] is unk_128A9C = 0x150E4
+     * (0x1462C). Each of 0x150D5..0x150D9 also has its own Map_ToggleFlagXXXX
+     * handler, which is the second proof of the base. */
     u8   bNoHalfCursor;    /* 0x36 unk_1139EE: skip halving the drag coordinates */
     u8   bPlayerInputOn;   /* 0x38 unk_1139F0: the HUD panel owns the pointer */
     u8   bInvDragActive;   /* 0x3c unk_1139F4: an inventory drag is in progress */
     u32  nUiSlot0;         /* 0x60 apUiSlotsA[0], cleared by UiControl_HitTest */
     i32  nUiSlot3;         /* 0x6c unk_113A24: 8 = drag started, 0 = committed */
     i32  nUiSlot4;         /* 0x70 unk_113A28: 200 = the drag scrolled the view */
-    u32  nUiSlot5;         /* 0x74 apUiSlotsA[5] = anPhaseSave0[0..3]: the four HUD
-                            * edge flags, low byte = left, then right, top, bottom */
+    u32  nUiSlot5;         /* 0x74 apUiSlotsA[5]: the four HUD edge flags, low byte
+                            * = left, then right, top, bottom */
     u8   bSlot19Active;    /* 0xac unk_113A64: the status-line hit box is live */
     i32  nSlot20X;         /* 0xb0 unk_113A68: left status column */
     i32  nSlot21X;         /* 0xb4 unk_113A6C: right status column */
     i32  nSlot22Y;         /* 0xb8 unk_113A70: status row top */
     i32  nSlot23H;         /* 0xbc unk_113A74: status row height, must be > 0 */
     i32  nSlot24Hit;       /* 0xc0 unk_113A78: 1 left column, 2 right, 0 none */
-    u8   bPhaseSave20;     /* 0x88 anPhaseSave0[20], the screen-4 gate */
-    u8   bEdgeTestOn;      /* 0xd1 anPhaseSave0[93]: run the HUD edge tests */
-    u8   bClickCommits;    /* 0xd7 anPhaseSave0[95]: a click on the same cell acts */
-    u8   bDragScrollA;     /* 0xd8 anPhaseSave0[96] */
-    u8   bDragScrollB;     /* 0xd9 anPhaseSave0[97] */
-    u8   bInvPanelOpen;    /* 0xe4 anPhaseSave0[108]: the inventory is open */
+    u8   bEdgeTestOn;      /* 0x150D5 anPhaseSave0[93]: run the HUD edge tests */
+    u8   bClickCommits;    /* 0x150D7 anPhaseSave0[95]: a click on the same cell acts */
+    u8   bDragScrollA;     /* 0x150D8 anPhaseSave0[96] */
+    u8   bDragScrollB;     /* 0x150D9 anPhaseSave0[97] */
+    u8   bInvPanelOpen;    /* 0x150E4 anPhaseSave0[108]: the inventory is open */
     i32  anCamDragX;       /* 0x4eb4, anCamWorldOff[2]: the drag start x */
     i32  anCamDragY;       /* 0x4eb8, anCamWorldOff[3]: the drag start y */
 

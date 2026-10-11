@@ -434,3 +434,84 @@ reaches command 5.
 | 4 | The dead second `pFloorSpr == 0` test in the kneel branch is not reproduced | it is unreachable: the gate at `0x165A4` already proved the sprite exists |
 | 5 | `Sound_Play(17)` is injected as `pfnPlaySample` | the port's audio seam has no mode argument; the original passes mode 4 |
 
+## `Tact_OpenLeftHandMenu @ 0x17030` / `Tact_OpenRightHandMenu @ 0x17148` — the hand action menus
+
+Ported as one function, `Ui_OpenHandMenu` in `src/pufo/game/pufo_tactui.c`, asserted by
+`TestHandMenu` in `tests/test_tactui.c`. The two originals are the same 280-byte body
+with a different hand slot read (`pHandL` at `Soldier+0x104`, `pHandR` at `+0x108`), so
+the port has one implementation and the caller says which hand it picked.
+
+### Gate order, ARM-proven at `0x1703C..0x170B0`
+
+| Step | Address | Evidence |
+|---|---|---|
+| sample 17, mode 4 | `0x1703C` | `MOV R0,#0x11 / MOV R1,#4` |
+| bail when the action latch is armed | `0x1704C` | `LDRB` of `Map_bActionLatch` (`Map+0x02`), `CMP #0` |
+| `pSelWeapon = pHandL`, bail when NULL | `0x1705C` | `LDR R3,[R0]` after the hand load, `CMP #0` |
+| `nSortKey = pObj->uSortKey` | `0x17074` | `LDRH R0,[R3,#0xC8]` |
+| bail when the research record says no menu | `0x17078..0x17094` | `LDRB R3,[R0,R1]` on `byte_AA968`, `MUL LR,R3,#0x22`, `LDRB R3,[R3,#0xD]` |
+| bail when `nSortKey == 24` and `Soldier+0x1A6 == 0` | `0x17098..0x170B0` | `CMP R0,#0x18`, `LDRB R3,[R2,#0x1A6]` |
+| `Ui_FillActionCosts` | `0x170B8` | direct call |
+| scan 12 modes | `0x170D0..0x17108` | see below |
+| none affordable → push text record 1 | `0x1710C..0x1711C` | `ADD R1,R0,#0xCD` on `aTextRecs @ 0xB38D0` |
+| affordable → `nActionMode = 12`, `nUiScreen = 3` | `0x17134..0x17140` | `STR` to `Map_nActionMode`, `STRH` to `Map+0x3A` |
+
+### The two action tables, settled by literal immediates
+
+The scan at `0x170D0` is the cleanest proof of both bases, because the compiler
+materialised them as plain constants instead of Hex-Rays' `nTrajFront0[4*m + 1040]` rendering:
+
+```
+0x170D0  MOV R3, #0x4E7C          ; enabled table
+0x170D8  LDR R3, [R0,R3]          ; Map + 0x4E7C + 4*m
+0x170E4  MOV LR, #0x4E00
+0x170EC  ORR LR, LR, #0x4C        ; 0x4E4C
+0x170F0  LDR LR, [R0,LR]          ; Map + 0x4E4C + 4*m  (the TU cost)
+0x170E8  LDRH R3, [R2,#6]         ; pSelUnit->uTu
+0x170F8  BLE loc_17134            ; cost <= uTu  -> accept
+0x17104  CMP R1, #0x30            ; twelve four-byte steps
+```
+
+So the enabled table is `Map+0x4E7C + 4*m` and the cost table is `Map+0x4E4C + 4*m`.
+This corrects an earlier note that put the enabled table at `Map+0x4EBC`: `4*0x139F =
+0x4E7C`, and `Map+0x4EBC` is a different array entirely — the `Combat_ResolveShot` hit
+windows, built with `MOV R0,#0x4E00 / ORR R0,R0,#0xBC` and indexed `4*(41*row+col)+slot`.
+The two share the `0x4E00` page, which is how they were conflated.
+
+The scan is a yes/no, not a search for the cheapest or the intended action: the mode it
+finds is thrown away and only `nActionMode = 12` is stored. That is why `Input_OnPointerUp`
+case 3 later re-derives the real mode from `nActionMode`.
+
+### Deviations
+
+| # | Port | Original | Reason |
+|---|---|---|---|
+| 1 | The research gate is injected as `pfnWeaponHasMenu(uSortKey, pUser)` | reads `aFacTypeTable[13 + 34*byte_AA968[uSortKey]]` | `aFacTypeTable @ 0x15EF08` is built at runtime (the shipped image is all `0xFF`) and its in-memory field order is not yet recovered; guessing it would make every weapon either fireable or not. `byte_AA968`'s extent is also unpinned (see `docs/parity/game-core.md`) |
+| 2 | The mode loop is bounded to the twelve modelled modes | `R1` advances by 4 with no bounds check on the table | the ARM stops at `R1 == 0x30`, which is exactly twelve steps, so the sets match |
+| 3 | `pUi`, `pCtx` and `pCtx->pCost` are null-checked, and a missing gate is a refusal | no checks | the port's calling convention passes these by pointer |
+
+## Correction: `anActionPhaseSave0` is at `Map+0x15078`, not `Map+0x74`
+
+Hex-Rays indexes this byte array by index, and the ARM immediates pin the base:
+
+| Hex-Rays | real byte | ARM site | named global |
+|---|---|---|---|
+| `anActionPhaseSave0[20]` | `Map+0x1508C` | `0x1480C`, `0x14D0C`, `0x16168`, `0x17014` | `bLookCommitFlag` |
+| `anActionPhaseSave0[93]` | `Map+0x150D5` | `0x141A8` (the HUD edge-test gate) | `Map_bScrollByPen` |
+| `anActionPhaseSave0[95]` | `Map+0x150D7` | `0x144CC` | `Map_bRunByDblClick` |
+| `anActionPhaseSave0[96]` | `Map+0x150D8` | `0x14534` | `Map_bTurnByPen` |
+| `anActionPhaseSave0[97]` | `Map+0x150D9` | `0x14548` | `Map_bMenuByPen` |
+| `anActionPhaseSave0[108]` | `Map+0x150E4` | `0x1462C`, `0x150A8` | `Map_bInvPanelOpen` |
+
+`0x15078 + 93 = 0x150D5` and `0x15078 + 108 = 0x150E4`, which is the base that makes every
+index land on a global that has its own `Map_ToggleFlagXXXX_Play11` handler. The earlier
+note that put the base at `Map+0x74` was wrong, and it made the port claim offsets
+`0xD1/0xD7/0xD8/0xD9/0xE4` for bytes that live at `0x150D5..0x150E4`. `Map+0x74..0x77` is
+`apUiSlotsA[5]`, the four HUD edge flags (`Map_aEdgeFlag0..3`), and it is not an
+`anActionPhaseSave0` alias.
+
+One consequence was a real modelling bug: the port had a second field `bPhaseSave20`,
+documented at `Map+0x88`, for the byte that `Input_OnConfirm` case 4 already models as
+`bLookCommitFlag` at `Map+0x1508C`. Both pointer case-4 gates now read
+`bLookCommitFlag`, and the duplicate field is gone.
+
