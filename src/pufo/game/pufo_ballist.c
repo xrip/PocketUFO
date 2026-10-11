@@ -1,5 +1,6 @@
 /* pufo_ballist.c - see pufo_ballist.h for the evidence and the block layout. */
 #include "game/pufo_ballist.h"
+#include "game/pufo_unit.h"    /* Soldier, g_aUnitMuzzleOffset */
 #include "util/pufo_rand.h"
 
 #include <math.h>
@@ -548,4 +549,33 @@ i32 Unit_RollChance(double dBound, i32 nChance, ScatterOffset *pScatter)
     pScatter->nDz = (i32)(sin((double)nAngB) * dMag);
 
     return pScatter->nDz;
+}
+
+/* --- pieces of Tact_ProcessMoveAction @ 0x4f3f0 --- */
+
+MuzzleOffset Tact_MuzzleOffset(const Soldier *pUnit, const ObjectRec *pObj)
+{
+    i32 nType = (i32)pUnit->nUnitType;
+    if (nType >= PUFO_UNIT_MUZZLE_TYPE_COUNT) {
+        nType = PUFO_UNIT_MUZZLE_TYPE_COUNT - 1;
+    }
+
+    i32 nSel = ((i32)pObj->bListPri > 1) ? 0 : (i32)pObj->bListPri;
+    i32 nFacing = (i32)pUnit->bFacing & 7;
+
+    return g_aUnitMuzzleOffset[nType][nSel][nFacing];
+}
+
+void Tact_ChargeShotAmmo(TactItem *pWeapon, i32 *pnShotCount)
+{
+    const ObjectRec *pObj = pWeapon->pObj;
+    const u16 uKey = pObj->uSortKey;
+    const bool bSpecial = (uKey == 13 || uKey == 35);
+
+    if (pObj->bAmmoCap != 0xFF          /* 0x502E0 */
+        && pWeapon->nAmmo != 0          /* 0x502EC */
+        && !(bSpecial && *pnShotCount != 0)) { /* 0x502FC..0x50314 */
+        pWeapon->nAmmo = (u8)(pWeapon->nAmmo + 0xFF); /* 0x50318 */
+    }
+    *pnShotCount += 1;                  /* 0x50320..0x50328 */
 }

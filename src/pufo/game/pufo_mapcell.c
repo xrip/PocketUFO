@@ -410,3 +410,38 @@ void TactItem_ctor(TactItem *pItem)
     pItem->bUnk7  = 0;
     pItem->pLinkedSoldier = NULL;
 }
+
+/* --- shot-geometry helpers --- */
+
+static i32 Map_CeilLift(const MapCell *pCell)
+{
+    return (pCell->pCeilSpr != NULL)
+               ? ((-12 * (i32)pCell->pCeilSpr->iCeilParam) / 24)
+               : 0;
+}
+
+i32 Map_CellCentreX(const MapCell *pCell) { return 16 * (i32)pCell->nX + 8; }
+i32 Map_CellCentreY(const MapCell *pCell) { return 16 * (i32)pCell->nY + 8; }
+
+i32 Map_CellCentreZ(const MapCell *pCell)
+{
+    return 12 * (i32)pCell->nZ + Map_CeilLift(pCell) + 6;
+}
+
+void Map_ClearShotTraceFlags(MapCellLookup pfnLookup, void *pUser,
+                             const MapGeom *pMap)
+{
+    const i32 nRows = 10 * (i32)pMap->nDimY;
+    const i32 nCols = 10 * (i32)pMap->nDimX;
+
+    for (i32 nLayer = 0; nLayer < 4; ++nLayer) {
+        for (i32 nRow = 0; nRow < nRows; ++nRow) {
+            for (i32 nCol = 0; nCol < nCols; ++nCol) {
+                MapCell *pCell = pfnLookup(nCol, nRow, nLayer, pUser);
+                if (pCell != NULL) {
+                    pCell->bFlags29 &= (u8)~0x20;
+                }
+            }
+        }
+    }
+}

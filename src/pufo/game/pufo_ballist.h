@@ -302,4 +302,33 @@ typedef struct ScatterOffset {
  * hand and stores all three slots on both paths. */
 i32 Unit_RollChance(double dBound, i32 nChance, ScatterOffset *pScatter);
 
+/* --- pieces of Tact_ProcessMoveAction @ 0x4f3f0, kept separate so each one is
+ * testable on its own --- */
+
+/* The muzzle offset for a shot, unk_A9768 @ 0xa9768. Index proven from ARM at
+ * 0x50074..0x50094 with the clamp at 0x4FFD8..0x4FFE4:
+ *     idx = pUnit->bFacing + 8 * (bSel + 2 * pUnit->nUnitType)
+ * where bSel is ObjectRec.bListPri (+0xA4) clamped to 0 or 1. The caller adds the
+ * three components to the cell centre (Map_CellCentreX/Y/Z) at 0x50098..0x500E0.
+ *
+ * Deviation: the original does not bound the index, so a unit type at or past
+ * PUFO_UNIT_MUZZLE_TYPE_COUNT reads past the table. The port clamps the type and
+ * the facing; byte_A7B80 has 24 rows while this table has 23 blocks. */
+MuzzleOffset Tact_MuzzleOffset(const Soldier *pUnit, const ObjectRec *pObj);
+
+/* 0x502CC..0x50328: charge one queued shot.
+ *
+ * The shot counter (pCtxBase dword at +0x2C, unk_1139E4, Hex-Rays nStatusDrawY)
+ * is ALWAYS incremented, at 0x50320 after every other test.
+ *
+ * The ammo byte (TactItem.nAmmo @ +0x06) is decremented only when all of
+ *   - pObj->bAmmoCap != 255 (255 means the weapon never runs out), AND
+ *   - nAmmo != 0, AND
+ *   - NOT (uSortKey is 13 or 35 while the shot counter is already non-zero)
+ * holds. The counter test reads the value BEFORE the increment.
+ *
+ * The decrement itself is `nAmmo = (u8)(nAmmo + 0xFF)`, which is what the
+ * original's `ADD R3, R2, #0xFF` / `STRB R3, [R0,#6]` does on a byte. */
+void Tact_ChargeShotAmmo(TactItem *pWeapon, i32 *pnShotCount);
+
 #endif /* PUFO_BALLIST_H */

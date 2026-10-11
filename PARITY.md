@@ -210,7 +210,7 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
-| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_unit.h` |
+| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+3) |
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_unit.h` |
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |

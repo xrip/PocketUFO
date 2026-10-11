@@ -4127,3 +4127,22 @@ are RVA + 0x10000) and `tools/dump_muzzle.py`.
 IDB updated: `unk_A9768` -> `g_aUnitMuzzleOffset`, `word_AA168` ->
 `g_aFireSoundBySortKey`, `off_AA040` -> `g_aShotSoundBySortKey`, plus listing comments
 at 0xA9768, 0xAA168, 0xAA040 and 0xA7B80.
+
+
+### Shared pieces of Tact_ProcessMoveAction ported ahead of the FSM
+
+Four behaviours the 19-case switch repeats, pulled out so each is testable on its own:
+
+| Port function | Original | Evidence |
+|---|---|---|
+| `Map_CellCentreX/Y/Z` | the centre built at 0x5003C..0x50070 and again at 0x50778..0x507A8 | `16*nX+8`, `16*nY+8`, `12*nZ + (-12*pCeilSpr->iCeilParam / 24) + 6`; the ceiling term is 0 with no ceiling sprite, and the division truncates toward zero |
+| `Map_ClearShotTraceFlags` | 0x4FDDC..0x4FE90, and the same sweep at 0x4FF08, 0x4F4C4, 0x50638 | ARM 0x4FE20..0x4FE64: 4 layers x `10*nMapDimY` rows x `10*nMapDimX` columns, `bFlags29 &= 0xDF` |
+| `Tact_MuzzleOffset` | 0x50074..0x50094 with the clamp at 0x4FFD8..0x4FFE4 | `idx = bFacing + 8*(bListPri(clamped 0/1) + 2*nUnitType)` into `g_aUnitMuzzleOffset` |
+| `Tact_ChargeShotAmmo` | 0x502CC..0x50328 | shot counter (ctx+0x2C, unk_1139E4) always incremented; ammo byte at TactItem+6 decremented as `(u8)(nAmmo + 0xFF)` unless `bAmmoCap == 255`, `nAmmo == 0`, or (uSortKey is 13 or 35 while the counter is already non-zero, tested before the increment) |
+
+Deviations: `Map_ClearShotTraceFlags` skips a NULL the injected lookup may return (the
+original dereferences the slot unconditionally); `Tact_MuzzleOffset` clamps the unit
+type, because `byte_A7B80` has 24 rows while `g_aUnitMuzzleOffset` has 23 blocks and the
+original does not bound the index.
+
+`test_ballist` now runs 100 checks (was 77).

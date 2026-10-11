@@ -5,7 +5,9 @@
 #include "game/pufo_ballist.h"
 #include "game/pufo_los.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_unit.h"
 #include "util/pufo_rand.h"
+#include <string.h>
 
 
 #include <math.h>
@@ -54,6 +56,124 @@ static MapCell *CellLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
         return NULL;
     }
     return &g_aCells[nLayer][nY][nX];
+}
+
+static MapCell g_aTraceCells[4][12][12];
+
+static MapCell *TraceLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    return &g_aTraceCells[nLayer][nY][nX];
+}
+
+static void TestMovePieces(void)
+{
+    Soldier u;
+    ObjectRec o;
+    TactItem w;
+    MapCell c;
+    Mc1Rec ceil;
+    MapGeom geom;
+    MuzzleOffset m;
+
+    printf("muzzle offset (unk_A9768)\n");
+    memset(&u, 0, sizeof(u));
+    memset(&o, 0, sizeof(o));
+    u.nUnitType = 0;
+    u.bFacing = 0;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("type 0 facing 0 is (5,-5,3)", m.nDx == 5 && m.nDy == -5 && m.nDz == 3);
+    o.bListPri = 1;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("bListPri 1 selects the second group (6,-6,4)",
+          m.nDx == 6 && m.nDy == -6 && m.nDz == 4);
+    o.bListPri = 5;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("bListPri above 1 clamps to 0", m.nDx == 5 && m.nDy == -5 && m.nDz == 3);
+    u.nUnitType = 4;
+    u.bFacing = 7;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("type 4 facing 7 is zero", m.nDx == 0 && m.nDy == 0 && m.nDz == 0);
+    u.nUnitType = 18;
+    o.bListPri = 1;
+    u.bFacing = 3;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("type 18 group 1 is (0,0,-3)", m.nDx == 0 && m.nDy == 0 && m.nDz == -3);
+    u.nUnitType = 22;
+    o.bListPri = 0;
+    m = Tact_MuzzleOffset(&u, &o);
+    Check("type 22 is zero", m.nDx == 0 && m.nDy == 0 && m.nDz == 0);
+
+    printf("cell centre (0x5003C..0x50070)\n");
+    memset(&c, 0, sizeof(c));
+    c.nX = 3; c.nY = 4; c.nZ = 2; c.pCeilSpr = NULL;
+    Check("x = 16*nX + 8", Map_CellCentreX(&c) == 56);
+    Check("y = 16*nY + 8", Map_CellCentreY(&c) == 72);
+    Check("z = 12*nZ + 6 with no ceiling", Map_CellCentreZ(&c) == 30);
+    memset(&ceil, 0, sizeof(ceil));
+    ceil.iCeilParam = -20;
+    c.pCeilSpr = &ceil;
+    Check("ceiling -20 lifts by (-12*-20)/24 = 10", Map_CellCentreZ(&c) == 40);
+    ceil.iCeilParam = 5;
+    Check("ceiling +5 lowers by -60/24 = -2 (truncates toward zero)",
+          Map_CellCentreZ(&c) == 28);
+
+    printf("charge one shot (0x502CC..0x50328)\n");
+    memset(&o, 0, sizeof(o));
+    memset(&w, 0, sizeof(w));
+    w.pObj = &o;
+    o.bAmmoCap = 0;
+    o.uSortKey = 1;
+    i32 nCount = 0;
+    w.nAmmo = 10;
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("normal weapon loses one round", w.nAmmo == 9);
+    Check("shot counter advanced", nCount == 1);
+    w.nAmmo = 1;
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("ammo byte wraps 1 -> 0", w.nAmmo == 0);
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("empty weapon stays empty", w.nAmmo == 0);
+    Check("counter advances even when ammo is empty", nCount == 3);
+    w.nAmmo = 7;
+    o.bAmmoCap = 0xFF;
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("bAmmoCap 255 never charges", w.nAmmo == 7);
+    o.bAmmoCap = 0;
+    o.uSortKey = 13;
+    nCount = 0;
+    w.nAmmo = 4;
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("sort key 13 charges while the counter is zero", w.nAmmo == 3);
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("sort key 13 does not charge once the counter is non-zero",
+          w.nAmmo == 3);
+    o.uSortKey = 35;
+    w.nAmmo = 4;
+    nCount = 2;
+    Tact_ChargeShotAmmo(&w, &nCount);
+    Check("sort key 35 does not charge once the counter is non-zero",
+          w.nAmmo == 4);
+    Check("counter still advances for the special keys", nCount == 3);
+
+    printf("clear shot-trace flags (0x4FE20..0x4FE64)\n");
+    geom.nDimX = 1;
+    geom.nDimY = 1;
+    for (int z = 0; z < 4; ++z)
+        for (int y = 0; y < 12; ++y)
+            for (int x = 0; x < 12; ++x)
+                g_aTraceCells[z][y][x].bFlags29 = 0xFF;
+    Map_ClearShotTraceFlags(TraceLookup, NULL, &geom);
+    int bAll = 1, bOut = 1;
+    for (int z = 0; z < 4; ++z)
+        for (int y = 0; y < 12; ++y)
+            for (int x = 0; x < 12; ++x) {
+                u8 v = g_aTraceCells[z][y][x].bFlags29;
+                if (y < 10 && x < 10) { if (v != 0xDF) bAll = 0; }
+                else if (v != 0xFF) bOut = 0;
+            }
+    Check("10*dimY rows by 10*dimX columns on all 4 layers are cleared", bAll);
+    Check("cells outside the sweep keep their flag", bOut);
 }
 
 int main(void)
@@ -317,6 +437,8 @@ int main(void)
             Check("z is a whole-radian sine", WholeRadianMatch(sc.nDz, dMag, 0));
         }
     }
+
+    TestMovePieces();
 
     printf("%d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails == 0 ? 0 : 1;

@@ -289,4 +289,31 @@ bool Map_RefreshCellMeta(MapCellLookup pfnLookup, void *pUser,
                          const MapGeom *pMap, bool bLightEnabled,
                          const u8 *pLightmap);
 
+/* --- shot-geometry helpers, shared by Tact_ProcessMoveAction @ 0x4f3f0 --- */
+
+/* Sub-cell centre of a cell, in the units the arc tracers work in. Evidence:
+ * 0x5003C..0x50070 and 0x50778..0x507A8 both build exactly
+ *     x = 16*cell->nX + 8
+ *     y = 16*cell->nY + 8
+ *     z = 12*cell->nZ + (-12*pCeilSpr->iCeilParam / 24) + 6
+ * and the ceiling term is 0 when the cell has no ceiling sprite. The division is
+ * C integer division, so it truncates toward zero. */
+i32 Map_CellCentreX(const MapCell *pCell);
+i32 Map_CellCentreY(const MapCell *pCell);
+i32 Map_CellCentreZ(const MapCell *pCell);
+
+/* Clear the shot-trace flag (MapCell.bFlags29 bit 5, 0x20) over the grid.
+ * Tact_ProcessMoveAction runs this sweep four times (0x4FDDC, 0x4FF08, 0x4F4C4,
+ * 0x50638) before every arc or throw trace. The original's loop bounds are
+ *     for (v58 = 0; v58 < 240; v58 += 60)          -> 4 layers
+ *         for (v61 = 0; v61 < 10*nMapDimY; ++v61)  -> rows
+ *             for (v62 = 0; v62 < 10*nMapDimX; ++v62)  -> columns
+ * (ARM 0x4FE20..0x4FE64), so a map with dimX = dimY = 6 is swept over its whole
+ * 60 x 60 x 4 grid and a smaller map only over its used corner.
+ *
+ * Deviation: the original dereferences the grid slot unconditionally; the port
+ * skips a NULL the injected lookup may return. */
+void Map_ClearShotTraceFlags(MapCellLookup pfnLookup, void *pUser,
+                             const MapGeom *pMap);
+
 #endif /* PUFO_MAPCELL_H */
