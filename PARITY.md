@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 425 / 1103 (38.5%) |
-| Bytes of original code cited | 185420 / 598792 (31.0%) |
+| Functions cited as evidence | 426 / 1103 (38.6%) |
+| Bytes of original code cited | 185908 / 598792 (31.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 41 |
-| Test checks run | 3072 |
+| Test checks run | 3122 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,7 +42,7 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 173 | 214 | 109388 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 23 | 52 | 12804 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 59 | 85 | 9784 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 60 | 85 | 10272 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 28 | 205 | 17312 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 27 | 243 | 3316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
@@ -413,7 +413,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (59 functions)
+### `ui-core` (60 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -422,6 +422,7 @@ is the module that answers to it.
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_tactui.h` |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_panel.h` |
 | `0x3e730` | `UiPanel_ctor` | 408 | `src/pufo/ui/pufo_panel.h` |
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
@@ -840,7 +841,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 26 functions, 28584 bytes remaining
+### `ui-core` — 25 functions, 28096 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -852,7 +853,6 @@ whose port work they belong to.
 | `0x95bf0` | `Ui_AnimExpandBlit` | 948 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x1a3d8` | `UiControl_HitTest` | 488 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x36630` | `UiPulse_OnTimer` | 488 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x11320` | `UiBank_CtorAll` | 440 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
 | `test_combat` | PASS | 108 |
-| `test_control` | PASS | 64 |
+| `test_control` | PASS | 114 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 55 |
 | `test_enemyai` | PASS | 22 |

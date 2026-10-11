@@ -96,6 +96,102 @@ bool UiControl_BlitActivePad(UiControl *pCtl, UiControlBlitFn pfnBlit,
     return true;
 }
 
+/* UiControl_HitTest @ 0x1a3d8. See the header for the press/release table. */
+bool UiControl_HitTest(UiControl *pCtl, i32 x, i32 y, bool bDown, bool bForceClick,
+                       const UiControlHitCtx *pCtx)
+{
+    bool bHit = false;
+
+    if (pCtl == NULL || pCtx == NULL || pCtl->bEnabled == 0) {
+        return false;
+    }
+
+    /* 0x1A3F0: the stack argument is a force flag. It fires a mode-0 control that
+     * is already in state 1, with no position test at all. */
+    if (bForceClick && pCtl->nMode == 0 && pCtl->nState == 1) {
+        if (pCtl->pfnClick != NULL) {
+            pCtl->pfnClick();
+        }
+        return true;
+    }
+
+    /* 0x1A42C: the box is only measured on a press, and the far edge is exclusive
+     * one pixel short of x + uWidth and y + uHeight. */
+    if (bDown) {
+        bHit = x >= (i32)pCtl->x
+            && y >= (i32)pCtl->y
+            && x < (i32)pCtl->x + (i32)pCtl->uWidth - 1
+            && y < (i32)pCtl->y + (i32)pCtl->uHeight - 1;
+    }
+
+    if (bDown) {
+        switch (pCtl->nMode) {
+        case 0:
+        case 2:
+            if (bHit) {
+                if (pCtl->nState == 0) {
+                    pCtl->nState = 1;
+                    (void)UiControl_BlitActivePad(pCtl, pCtx->pfnBlit,
+                                                  pCtx->pfnBlitEx, pCtx->pUser);
+                }
+            } else if (pCtl->nState == 1) {
+                pCtl->nState = 0;
+                (void)UiControl_BlitActivePad(pCtl, pCtx->pfnBlit,
+                                              pCtx->pfnBlitEx, pCtx->pUser);
+            }
+            /* 0x1A530: every mode 0/2 press path clears the UI slot. */
+            if (pCtx->pnUiSlot0 != NULL) {
+                *pCtx->pnUiSlot0 = 0;
+            }
+            return bHit;
+
+        case 1:
+            if (bHit) {
+                if (pCtl->nState < 2) {
+                    pCtl->nState = (u8)(pCtl->nState + 2);
+                    (void)UiControl_BlitActivePad(pCtl, pCtx->pfnBlit,
+                                                  pCtx->pfnBlitEx, pCtx->pUser);
+                }
+            } else if (pCtl->nState > 1) {
+                /* 0x1A4EC: the release of a press is the one state change that does
+                 * not redraw. */
+                pCtl->nState = (u8)(pCtl->nState - 2);
+            }
+            return bHit;
+
+        default:
+            return bHit;
+        }
+    }
+
+    /* Release. 0x1A540: the hit box is never consulted here. */
+    switch (pCtl->nMode) {
+    case 0:
+    case 2:
+        if (pCtl->nState != 1) {
+            return false;
+        }
+        pCtl->nState = 0;
+        break;
+
+    case 1:
+        if (pCtl->nState <= 1) {
+            return false;
+        }
+        pCtl->nState = (pCtl->nState == 2) ? 1u : 0u;
+        break;
+
+    default:
+        return false;
+    }
+
+    (void)UiControl_BlitActivePad(pCtl, pCtx->pfnBlit, pCtx->pfnBlitEx, pCtx->pUser);
+    if (pCtl->pfnClick != NULL) {
+        pCtl->pfnClick();
+    }
+    return true;
+}
+
 void UiControl_SetPosMode(UiControl *pCtl, i16 x, i16 y, u8 nMode)
 {
     if (pCtl == NULL) {

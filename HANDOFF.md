@@ -45,7 +45,7 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Tracked modifications | none (`git diff --stat` empty) |
 | Untracked files | listed in section 12, all intentional |
 | Build | clean, exit 0, no warnings under `/W4 /WX` |
-| Tests | `100% tests passed, 0 tests failed out of 41`, 1.41 s, **3072 checks** (see `PARITY.md`) |
+| Tests | `100% tests passed, 0 tests failed out of 41`, 1.34 s, **3122 checks** (see `PARITY.md`) |
 | Executable | `build/src/pufo/Release/pocketufo.exe`, 27648 bytes |
 
 `pufobeta.exe.i64` is tracked on purpose. It is the analysis database, and commits
@@ -66,7 +66,7 @@ evidence, one is in progress, two are not started.
 | `data-layer` | complete | `pufo_dat.c` readers for the original archive layout, verified against the shipped `main.dat` / `lang.dat` (directory stride 21 confirmed from both file ends, lang-before-main archive order, case-insensitive lookup). |
 | `render-audio` | complete | `pufo_render.c` blitters and `pufo_audio.c` thin interface over the original audio dependency. Two real bugs were found and fixed here: a missing `y2` row term in all five blitters, and an init retry loop. |
 | `game-core` | **in progress** | Map/world, entities, unit records, pathing, LOS, turn/visibility, tactical state, combat, ballistics, saves, roster. See the port list below. |
-| `ui-input` | **in progress** | Keyboard handlers, the confirm key `Input_OnConfirm @ 0x15f3c`, the secondary key `Input_OnSecondary @ 0x156e0`, screen/modal routing, cancel and escape paths. Windows, menus and dialogs are still to do. |
+| `ui-input` | **in progress** | Keyboard handlers, the confirm key `Input_OnConfirm @ 0x15f3c`, the secondary key `Input_OnSecondary @ 0x156e0`, the control press/release handler `UiControl_HitTest @ 0x1a3d8`, screen/modal routing, cancel and escape paths. Windows, menus and dialogs are still to do. |
 | `integrate-parity` | not started | Full build + run of playable flows on Win64 + final parity report. |
 
 Recent `game-core` commits, newest first, each with its reason:
@@ -212,7 +212,7 @@ cannot disagree.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **425 / 1103 cited** (38.5%), bytes 185420 / 598792 (31.0%) |
+| `python docs/parity/coverage.py` (agreed) | **426 / 1103 cited** (38.6%), bytes 185908 / 598792 (31.0%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
 
@@ -284,7 +284,7 @@ handoff and are now closed; the rest are still open.
    `docs/parity/coverage.py` is the single agreed definition (see section 6), and
    `gen_report.py` now imports `CITE_RE`, `ADDR_RE`, `INVENTORY`, and `load_inventory`
    from it instead of keeping its own single-address regex. Both report
-   **425 / 1103 (38.5%)** and 185420 / 598792 bytes. `tools/coverage.py` is kept as a
+   **426 / 1103 (38.6%)** and 185908 / 598792 bytes. `tools/coverage.py` is kept as a
    name-match audit and is labelled as a different question.
 
 3. ~~**`PARITY.md` under-reports test checks for 9 suites.**~~ **Closed.**
@@ -439,13 +439,14 @@ preparing this document.
    coverage definition is the citation rule in `docs/parity/coverage.py`, which
    `gen_report.py` now imports; `docs/BUILD.md` lists the real source layout. See
    section 7 items 1-3.
-5. **`ui-input` task.** Started: `Input_OnConfirm @ 0x15f3c` and
-   `Input_OnSecondary @ 0x156e0` are ported and asserted (`test_input`, 130 checks),
-   including the door action and the face-and-kick tail. `Unit_FaceToward @ 0x49bf0`
-   is now ported for real: it enqueues a turn command, it does not write
-   `Soldier.bFacing`. The next links in the pointer chain are
-   `Input_OnPointer @ 0x13c6c`, `Input_OnPointerUp @ 0x148d0` and
-   `UiControl_HitTest @ 0x1a3d8`. The `UiPanel` type conflict is already resolved — the
+5. **`ui-input` task.** Started: `Input_OnConfirm @ 0x15f3c`,
+   `Input_OnSecondary @ 0x156e0` and `UiControl_HitTest @ 0x1a3d8` are ported and
+   asserted (`test_input` 130 checks, `test_control` `TestHitTest`), including the
+   door action, the face-and-kick tail and the control press/release state machine.
+   `Unit_FaceToward @ 0x49bf0` is now ported for real: it enqueues a turn command, it
+   does not write `Soldier.bFacing`. The next links in the pointer chain are
+   `Input_OnPointer @ 0x13c6c` and `Input_OnPointerUp @ 0x148d0`. The `UiPanel` type
+   conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start
    from `src/pufo/ui/` and `docs/parity/ui-core.md`.

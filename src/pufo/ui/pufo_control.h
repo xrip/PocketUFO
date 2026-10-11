@@ -82,6 +82,45 @@ bool UiControl_BlitActivePad(UiControl *pCtl, UiControlBlitFn pfnBlit,
  * adopts pad 1's size, so mode 2 is the only one that keeps its current size. */
 void UiControl_SetPosMode(UiControl *pCtl, i16 x, i16 y, u8 nMode);
 
+/* What UiControl_HitTest reaches outside the widget: the pad blit callbacks and the
+ * UI slot the original clears at Map+0x60 (apUiSlotsA[0], IDB unk_113A18). */
+typedef struct UiControlHitCtx {
+    u32            *pnUiSlot0;
+    UiControlBlitFn pfnBlit;
+    UiControlBlitFn pfnBlitEx;
+    void           *pUser;
+} UiControlHitCtx;
+
+/* UiControl_HitTest @ 0x1a3d8. The pointer press/release handler for one control.
+ *
+ * The original takes five arguments: (pCtl, x, y, bDown in R3, and a fifth byte on
+ * the stack that Hex-Rays leaves as an uninitialised local). Input_OnPointer always
+ * passes bDown = 1 and the stack byte = 0.
+ *
+ *   bEnabled == 0            -> 0, nothing happens.
+ *   bForceClick && mode 0 && state 1 -> run pfnClick, return 1.
+ *
+ * The hit box is measured only when bDown is set, and its far edge is exclusive at
+ * `x + uWidth - 1` and `y + uHeight - 1`.
+ *
+ * Press (bDown set), bHit = inside the box:
+ *   mode 0 or 2: hit and state 0 -> state 1 and redraw; no hit and state 1 ->
+ *                state 0 and redraw; either way Map+0x60 is cleared. Returns bHit.
+ *   mode 1:      hit and state < 2 -> state += 2 and redraw; no hit and state > 1
+ *                -> state -= 2 with NO redraw. Returns bHit.
+ *   other mode:  returns bHit and changes nothing.
+ *
+ * Release (bDown clear), the hit box is never consulted:
+ *   mode 0 or 2: state 1 -> state 0, redraw, click, return 1; otherwise 0.
+ *   mode 1:      state > 1 -> state = (state == 2) ? 1 : 0, redraw, click, return 1;
+ *                otherwise 0.
+ *   other mode:  0.
+ *
+ * The click handler is called as a tail call in the original; the port calls it
+ * normally, which is the same observable behaviour. */
+bool UiControl_HitTest(UiControl *pCtl, i32 x, i32 y, bool bDown, bool bForceClick,
+                       const UiControlHitCtx *pCtx);
+
 /* A control's description, as UiControl_Setup reads it: three pad names, an offset
  * from the base position, and the mode. */
 typedef struct UiControlDesc {

@@ -132,7 +132,7 @@ to match, and this widget is never serialised.
     mode 2    -> draws nothing (inert mode)
 
 The clamp is the load-bearing detail: `nState` is a `u8` but only pads 0..2 exist, so
-mode 1 guards against reading past `pPad2`. **Mode 0 does not clamp** � the original
+mode 1 guards against reading past `pPad2`. **Mode 0 does not clamp** � the original
 trusts its caller there, and the port reproduces that asymmetry rather than adding a
 clamp the original does not have.
 
@@ -176,3 +176,49 @@ in `ui/pufo_panel.{h,c}` as `UiPanel_ClickRow` and `UiPanel_SwapLines`.
 `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. `UiPanel_SwapLines` swaps two
 lines' text and `anLineAux` values through a 200-byte temp (bounded in the port).
 Covered by `tests/test_panel.c` (`TestClickRow`, `TestSwapLines`).
+
+## 2026-10-11: UiControl_HitTest @ 0x1a3d8 — the pointer press/release handler
+
+Ported in `src/pufo/ui/pufo_control.c`, asserted by `test_control` (`TestHitTest`).
+
+### The signature Hex-Rays got wrong
+
+The original takes **five** arguments. The ARM prologue reads a byte from the stack
+(`LDRB R0, [SP,#arg_0]` @ `0x1A3F0`) and the mode dispatch reads `R3`
+(`ANDS LR, R3, #0xFF` @ `0x1A42C`). Hex-Rays rendered both as uninitialised locals
+(`v3`, `v15`), which made the function look like it tested a random stack byte.
+Applied signature:
+
+```c
+int __fastcall UiControl_HitTest(UiControl *pCtl, int x, int y, char bDown, char bForceClick);
+```
+
+`Input_OnPointer` is the only caller (12 call sites) and always passes `bDown = 1`
+(`MOV R3,#1`) and `bForceClick = 0` (`STRB R11, [SP,#var_8]` with `R11 = 0`).
+
+### Behaviour, with the address of each rule
+
+| Rule | Evidence |
+|---|---|
+| `bEnabled == 0` returns 0 immediately | `0x1A3E0` (`[R4,#9]`) |
+| `bForceClick && nMode == 0 && nState == 1` -> tail-call `pfnClick`, return 1, no position test | `0x1A3F0..0x1A428` |
+| The hit box is measured **only on a press**; a release never consults it | `0x1A438` (`BEQ` past the box when `bDown == 0`) |
+| Box is `x >= ctl.x`, `y >= ctl.y`, `x < ctl.x + uWidth - 1`, `y < ctl.y + uHeight - 1` — the far edge is exclusive one pixel early | `0x1A43C..0x1A480` |
+| Press, mode 0 or 2: hit and state 0 -> state 1 + redraw; miss and state 1 -> state 0 + redraw; every path in this branch clears `Map+0x60` | `0x1A4F8..0x1A538` |
+| Press, mode 1: hit and state < 2 -> `state += 2` + redraw; miss and state > 1 -> `state -= 2` with **no** redraw | `0x1A4B0..0x1A4F4` |
+| Press, any other mode: return the hit, change nothing | `0x1A4A8` |
+| Release, mode 0 or 2 with state 1 -> state 0, redraw, click, return 1 | `0x1A558..0x1A584` |
+| Release, mode 1 with state > 1 -> `state = (state == 2) ? 1 : 0`, redraw, click, return 1 | `0x1A588..0x1A5B4` (`STRBEQ R6` / `STRBNE R7`) |
+| Release, any other mode or a state that does not qualify: return 0 | `0x1A554`, `0x1A560`, `0x1A590` |
+
+`Map+0x60` (IDB `unk_113A18`, Hex-Rays' `apUiSlotsA[0]`) is now commented as the slot
+this function clears on every mode 0/2 press path.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `pCtl` and `pCtx` are null-checked | the original dereferences both; the port must not crash on an uninitialised widget |
+| 2 | `pnUiSlot0` may be NULL, in which case the slot clear is skipped | the widget lives in the UI layer, which has no context object yet; the caller that owns `Map` passes the real pointer |
+| 3 | `pfnClick` is called normally instead of as a tail call | same observable behaviour; a tail call would also let the handler's return value become this function's result, which the original does not intend |
+
