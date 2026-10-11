@@ -896,3 +896,72 @@ tests assert the rebuild through the resulting list instead of a hook counter:
 items, so `nInvListCount` identifies which unit was rebuilt and proves that
 `Roster_CycleNext` does not rebuild while prev/next rebuild once, after the
 final selection.
+
+## The inventory hit test: Ui_HitTestTactItem @ 0x11ac0
+
+Ported as `Ui_HitTestTactItem(const InvHitTestCtx *, i32 nX, i32 nY)` in the new
+module `src/pufo/game/pufo_invdrag.{h,c}`. It is the seam the pointer handlers
+call (`TactInputHooks.pfnHitTestTactItem`) before an inventory drag starts.
+
+### The Map state it owns
+
+```
+pInvHitItem    @ 0x0040  unk_1139F8   the item under the pointer
+dragOffX       @ 0x4A28  unk_1183E0   -20 * pObj->nFootW @ 0xA6 / 2
+dragOffY       @ 0x4A2C               -20 * pObj->nFootH @ 0xA7 / 2
+nInvHitRegion  @ 0x4A30               0 ground, 1..4 pockets, 5/6 hands, 7 pack, 8 belt
+nInvHitSub0    @ 0x4A34  unk_1183EC   ground column, or the slot meta byte
+nInvHitSub1    @ 0x4A38               the second meta byte (pack, belt)
+```
+
+The drag scale is `MOV R8,#0xFFFFFFEC` (-20) and the halving is
+`MOVS / ADDMI #1 / ASR #1`, which on an even product is the plain `/2` — and
+`-20 * foot` is always even, so C division reproduces it exactly.
+
+### Two hit sources, and the table wins
+
+1. The ground list window `x 23..173, y 264..313` (ARM compares against `0x17`,
+   `0xAD`, `0x108`, `0x139`). The column is `(nX - 23) / 38` through `_rt_sdiv`,
+   the index is `nInvFilterType + column`, and the hit only lands below
+   `nInvListCount`. Region 0, `sub0` = the **column**, not the index.
+2. `aInvHitRects @ 0xA8DD8`, 25 records of 14 bytes (`x0, y0, x1, y1, region,
+   slot, col`), read out of the executable. The scan takes the FIRST record whose
+   rect contains the point, so the pairs that share an edge (records 0/1 both
+   contain `x = 41`) resolve by table order.
+
+The ground branch runs first and the table scan runs afterwards, so a table match
+overwrites the ground result. A table match on an EMPTY slot returns false and
+discards the ground hit, because the local item pointer was already replaced. With
+the real table this cannot bite: the ground window starts at `y = 264` and no
+record reaches past `y = 198`, so the two sources never overlap.
+
+### The slot mirror sentinel
+
+A slot holding the global `unk_138EA0` (Map+0x254E8) is not an item — it mirrors
+another slot, named by the meta byte stored beside it, and the hit is re-read
+through that byte. The meta byte is reported in `nInvHitSub0`/`nInvHitSub1` either
+way, which is how the drop path finds the slot back.
+
+| Slot | Index | Mirror |
+|---|---|---|
+| pocket `k` | `aPockets[k].apItem[slot]`, `slot` 0..1 | `apItem[abMeta[slot]]` |
+| backpack | `slot + 4*col`, meta at Soldier+`0x15C` (A) and `0x164` (B) | `apBackpack[A[idx] + 4*B[idx]]` |
+| belt | `slot + 3*col`, meta at Soldier+`0x190` (A) and `0x199` (B) | `apBelt[A[idx] + 3*B[idx]]` |
+
+The table only carries six of the eight backpack rects: the second row has slots 0
+and 3 only, so backpack slots 1 and 2 of that row cannot be hit by pointer at all.
+That is original behaviour, and `test_invdrag` asserts it rather than fixing it.
+
+### Deviations
+
+| Original | Port |
+|---|---|
+| dereferences `pSelUnit` and `pObj` with no test | refuses a NULL unit (returns the ground result), reports a zero drag offset for a NULL object |
+| indexes pocket/pack/belt with whatever the table says | treats an out-of-range slot or mirror index as no match |
+| an unknown region code falls through to the drag write with a stale pointer | returns the ground result (unreachable with the real table, whose region column is 0..7) |
+
+`tests/test_invdrag.c` adds 75 checks: the four ground columns, the scroll offset
+shifting the window while `sub0` stays the column, the end-of-list miss, the four
+pockets and their shared edges, the empty-slot miss, all three mirror rules, the
+hand bands, the 4x2 backpack and 3x3 belt grids, the two unreachable backpack
+cells, and the entry-time clear of the hit state. `ctest` runs 45 suites.

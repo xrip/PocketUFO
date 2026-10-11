@@ -144,7 +144,9 @@ typedef struct TactInputHooks {
     /* Geoscape_OnPointer @ 0x872d0, the whole geoscape branch. */
     void (*pfnGeoscapePointer)(i32 nX, i32 nY, bool bDown, void *pUser);
     /* Ui_HitTestTactItem @ 0x11ac0: hit-test the ground list or the inventory
-     * slots, true when something under the pointer was hit. */
+     * slots, true when something under the pointer was hit. Ported for real in
+     * src/pufo/game/pufo_invdrag.c; the app wires this seam to that function, which
+     * needs the Map drag state (pufo_invdrag.h documents the six Map fields). */
     bool (*pfnHitTestTactItem)(i32 nX, i32 nY, void *pUser);
     /* Inv_ClearHitSlot @ 0x11f40. */
     void (*pfnInvClearHitSlot)(void *pUser);

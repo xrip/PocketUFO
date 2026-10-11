@@ -494,12 +494,17 @@ preparing this document.
    skip `bTwoHanded == 2`, filter on `nCategory` against `nInvListSel` (0xFF = all),
    then selection-sort ascending by `uSortKey @ 0xC8` with the `u16` count array
    swapped in step. `apInvList @ 0x1A24` and `anInvCount @ 0x3A24` are 2048 entries
-   each. What is
+   each. The inventory hit test `Ui_HitTestTactItem @ 0x11ac0` is ported in the new
+   module `src/pufo/game/pufo_invdrag.c` with the 25-record `aInvHitRects @ 0xA8DD8`
+   table read out of the executable: the 4-column ground window, the first-match
+   table rule, and the `unk_138EA0` slot mirror that redirects a hit through the
+   meta byte beside the slot (`test_invdrag` 75 checks). What is
    left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
    `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
-   `Map_BuildDeployConfirmYesNo`, the inventory hit test `Ui_HitTestTactItem @ 0x11ac0`,
+   `Map_BuildDeployConfirmYesNo`, the inventory drop path `Inv_ClearHitSlot @ 0x11f40`
+   and `Inv_HandlePointer @ 0x12260`,
    and the geoscape screens. See
-   `docs/parity/ui-core.md`, "The ground item list". The `UiPanel` type
+   `docs/parity/ui-core.md`, "The inventory hit test". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

@@ -35,6 +35,7 @@ add_library(pufo_game STATIC
     game/pufo_unit.c
     game/pufo_tactstate.c
     game/pufo_tacthud.c
+    game/pufo_invdrag.c
     game/pufo_mapctx.c
     game/pufo_path.c
     game/pufo_los.c
@@ -582,6 +583,16 @@ set_target_properties(test_blast PROPERTIES
 )
 add_test(NAME test_blast
     COMMAND test_blast
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+add_executable(test_invdrag ${CMAKE_SOURCE_DIR}/tests/test_invdrag.c)
+target_link_libraries(test_invdrag PRIVATE pufo_options pufo_game pufo_util)
+set_target_properties(test_invdrag PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_invdrag
+    COMMAND test_invdrag
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
