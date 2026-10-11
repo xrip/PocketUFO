@@ -5,6 +5,8 @@
 #include <string.h>
 
 #include "game/pufo_input.h"
+#include "game/pufo_mapcell.h"
+#include "game/pufo_unit.h"   /* the full Soldier type */
 #include "pufo_test.h"
 
 /* This suite keeps the (condition, what) argument order its call sites use. */
@@ -34,6 +36,16 @@ typedef struct Trace {
     int nShutdownQuit;
     int nModalEndCheckBattle;
     int nOnCancel;
+    int nGeoscapeClose;
+    int nInvCommit;
+    int nSetCursor;
+    int nCursorX;
+    int nCursorY;
+    int nFocusCount;
+    int nFocusLayer;
+    int nFocusY;
+    int nFocusX;
+    int nSaveOptions;
 } Trace;
 
 static void Tr_PanelA(void *p) { ((Trace *)p)->nPanelA++; }
@@ -68,6 +80,24 @@ static void Tr_ShutdownReinit(void *p) { ((Trace *)p)->nShutdownReinit++; }
 static void Tr_ShutdownQuit(void *p) { ((Trace *)p)->nShutdownQuit++; }
 static void Tr_ModalEndCheckBattle(void *p) { ((Trace *)p)->nModalEndCheckBattle++; }
 static void Tr_OnCancel(void *p) { ((Trace *)p)->nOnCancel++; }
+static void Tr_GeoscapeClose(void *p) { ((Trace *)p)->nGeoscapeClose++; }
+static void Tr_InvCommit(void *p) { ((Trace *)p)->nInvCommit++; }
+static void Tr_SetCursor(i32 nX, i32 nY, void *p)
+{
+    Trace *t = (Trace *)p;
+    t->nSetCursor++;
+    t->nCursorX = nX;
+    t->nCursorY = nY;
+}
+static void Tr_FocusView(i32 nLayer, i32 nViewY, i32 nViewX, void *p)
+{
+    Trace *t = (Trace *)p;
+    t->nFocusCount++;
+    t->nFocusLayer = nLayer;
+    t->nFocusY = nViewY;
+    t->nFocusX = nViewX;
+}
+static void Tr_SaveOptions(void *p) { ((Trace *)p)->nSaveOptions++; }
 
 static TactInputHooks MakeHooks(Trace *t)
 {
@@ -91,6 +121,11 @@ static TactInputHooks MakeHooks(Trace *t)
     h.pfnShutdownQuit = Tr_ShutdownQuit;
     h.pfnModalEndCheckBattle = Tr_ModalEndCheckBattle;
     h.pfnOnCancel = Tr_OnCancel;
+    h.pfnGeoscapeCloseUi = Tr_GeoscapeClose;
+    h.pfnInvCloseAndCommit = Tr_InvCommit;
+    h.pfnSetCursorPos = Tr_SetCursor;
+    h.pfnFocusOnViewCell = Tr_FocusView;
+    h.pfnSaveOptions = Tr_SaveOptions;
     h.pUser = t;
     return h;
 }
@@ -374,6 +409,211 @@ static void TestOnBackCancel(void)
     Check(t.nModalEnd == 0, "cancel is gated by the tick hold while firing");
 }
 
+/* Input_OnConfirm @ 0x15f3c. */
+static MapCell g_aCell[2];
+static TactItem g_aItem[2];
+static ObjectRecFull g_aObj[2];
+static Soldier g_aUnit[2];
+static u8 g_aScratch9;
+
+static void ConfirmWeapon(TactInputState *pS, int nItem, u16 nSortKey)
+{
+    g_aObj[nItem].uSortKey = nSortKey;
+    g_aItem[nItem].pObj = &g_aObj[nItem];
+    pS->pSelWeapon = &g_aItem[nItem];
+}
+
+static TactInputState ConfirmState(void)
+{
+    TactInputState s = MakeState();
+    s.bTactFlag = true;
+    return s;
+}
+
+static void TestOnConfirm(void)
+{
+    Trace t;
+    TactInputHooks h = MakeHooks(&t);
+    TactInputState s;
+    static const u16 aModal[5] = { 3u, 5u, 10u, 11u, 15u };
+    static const u16 aNone[5] = { 8u, 9u, 13u, 14u, 16u };
+
+    /* The geoscape branch closes the geoscape UI and stops. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.bGeoscapeUi = true;
+    s.nUiScreen = 0;
+    Input_OnConfirm(&s, &h);
+    Check(t.nGeoscapeClose == 1, "confirm closes the geoscape UI when bGeoscapeUi");
+    Check(t.nModalEnd == 0 && t.nSampleCount == 0, "confirm stops after the geoscape branch");
+
+    /* The tactical gate. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.bTactFlag = false;
+    Input_OnConfirm(&s, &h);
+    Check(t.nGeoscapeClose == 0 && t.nSampleCount == 0, "confirm needs bTactFlag");
+
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.bFireStatus1 = 1;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 0, "confirm is blocked while a shot is in flight");
+
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.bQueueActive = true;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 0, "confirm is blocked while the action queue runs");
+
+    /* Screen 0, multi-target not armed: sample 7 and the deploy panel toggles. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 0;
+    s.bDeployPanelOpen = 0;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 7, "screen 0 unarmed plays sample 7");
+    Check(s.bDeployPanelOpen == 1, "screen 0 unarmed opens the deploy panel");
+    Input_OnConfirm(&s, &h);
+    Check(s.bDeployPanelOpen == 0, "screen 0 unarmed closes it again");
+
+    /* Screen 0, armed: scratch flag, cursor, target marks, count. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 0;
+    s.bMultiTargetArmed = 1;
+    s.pbScratchFlag9 = &g_aScratch9;
+    g_aScratch9 = 3;
+    s.nCursorX = 7;
+    s.nCursorY = 9;
+    ConfirmWeapon(&s, 0, 13);
+    g_aCell[0].bFlags29 = 0x60;
+    g_aCell[1].bFlags29 = 0x60;
+    s.apMultiTargets[0] = &g_aCell[0];
+    s.apMultiTargets[1] = &g_aCell[1];
+    s.nMultiTargetCount = 2;
+    Input_OnConfirm(&s, &h);
+    Check(g_aScratch9 == 0, "armed confirm clears the *unk_1571E4+9 scratch");
+    Check(s.bMultiTargetArmed == 0, "armed confirm clears byte 0x22");
+    Check(t.nSetCursor == 1 && t.nCursorX == 7 && t.nCursorY == 9,
+          "armed confirm re-places the cursor at nCursorX/nCursorY");
+    Check((g_aCell[0].bFlags29 & 0x40) == 0 && (g_aCell[1].bFlags29 & 0x40) == 0,
+          "uSortKey 13 clears the target mark on both cells");
+    Check((g_aCell[0].bFlags29 & 0x20) != 0, "only bit 6 is cleared, not bit 5");
+    Check(s.nMultiTargetCount == 0, "armed confirm clears the target count");
+
+    /* A weapon that is not one of the two multi-target kinds keeps its marks. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 0;
+    s.bMultiTargetArmed = 1;
+    ConfirmWeapon(&s, 1, 20);
+    g_aCell[0].bFlags29 = 0x40;
+    s.apMultiTargets[0] = &g_aCell[0];
+    s.nMultiTargetCount = 1;
+    Input_OnConfirm(&s, &h);
+    Check((g_aCell[0].bFlags29 & 0x40) != 0, "uSortKey 20 keeps the target mark");
+    Check(s.nMultiTargetCount == 0, "the count clears whatever the weapon");
+
+    /* uSortKey 35 behaves like 13. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 0;
+    s.bMultiTargetArmed = 1;
+    ConfirmWeapon(&s, 1, 35);
+    g_aCell[0].bFlags29 = 0x40;
+    s.apMultiTargets[0] = &g_aCell[0];
+    s.nMultiTargetCount = 1;
+    Input_OnConfirm(&s, &h);
+    Check((g_aCell[0].bFlags29 & 0x40) == 0, "uSortKey 35 clears the target mark");
+
+    /* Screen 1: inventory. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 1;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 16, "screen 1 plays sample 16");
+    Check(t.nInvCommit == 1, "screen 1 closes and commits the inventory");
+
+    /* Screen 2: look mode focuses on the unit stored for the camera cell. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 2;
+    s.nLayerScratch = 2;
+    s.anCamWorldX = 11;
+    s.anCamWorldY = 13;
+    Input_OnConfirm(&s, &h);
+    Check(t.nFocusCount == 1 && t.nFocusLayer == 2 && t.nFocusY == 13 && t.nFocusX == 11,
+          "screen 2 focuses on layer/anCamWorldOff[1]/[0]");
+    Check(s.nUiScreen == 0, "screen 2 clears the ui screen");
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 16, "screen 2 plays sample 16");
+
+    /* Screens 3, 5, 10, 11, 15 end the modal and clear the screen. */
+    for (int i = 0; i < 5; ++i) {
+        memset(&t, 0, sizeof(t));
+        s = ConfirmState();
+        s.nUiScreen = aModal[i];
+        Input_OnConfirm(&s, &h);
+        Check(t.nModalEnd == 1 && s.nUiScreen == 0,
+              "modal screens 3/5/10/11/15 end the modal and clear the screen");
+    }
+
+    /* Screen 4: the command pad. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 4;
+    s.bLookCommitFlag = 1;
+    s.pLookCommitUnit = &g_aUnit[1];
+    s.pSelUnit = &g_aUnit[0];
+    s.bUiSlot8Byte0 = 1;
+    Input_OnConfirm(&s, &h);
+    Check(s.pSelUnit == &g_aUnit[1], "screen 4 adopts the saved unit pointer");
+    Check(s.nUiScreen == 1, "screen 4 keeps the pad open from apUiSlotsA[8]");
+    Check(s.bLookCommitFlag == 0 && s.bUiSlot8Byte0 == 0, "screen 4 clears both scratch fields");
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 16, "screen 4 plays sample 16");
+
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 4;
+    s.bLookCommitFlag = 0;
+    s.pSelUnit = &g_aUnit[0];
+    s.bUiSlot8Byte0 = 0;
+    Input_OnConfirm(&s, &h);
+    Check(s.pSelUnit == &g_aUnit[0], "screen 4 without the flag keeps pSelUnit");
+    Check(s.nUiScreen == 0, "screen 4 with a clear slot byte closes the pad");
+
+    /* Screens 6, 7, 12. */
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 6;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 16 && s.nUiScreen == 0,
+          "screen 6 plays 16 and clears the screen");
+
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 7;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSampleCount == 1 && t.anSamples[0] == 14 && s.nUiScreen == 0,
+          "screen 7 plays 14 and clears the screen");
+
+    memset(&t, 0, sizeof(t));
+    s = ConfirmState();
+    s.nUiScreen = 12;
+    Input_OnConfirm(&s, &h);
+    Check(t.nSaveOptions == 1 && s.nUiScreen == 0, "screen 12 saves the options to the registry");
+
+    /* Screens 8, 9, 13, 14 and 16 do nothing at all. */
+    for (int i = 0; i < 5; ++i) {
+        memset(&t, 0, sizeof(t));
+        s = ConfirmState();
+        s.nUiScreen = aNone[i];
+        Input_OnConfirm(&s, &h);
+        Check(t.nSampleCount == 0 && t.nModalEnd == 0 && s.nUiScreen == aNone[i],
+              "screens 8/9/13/14/16 fall through the switch");
+    }
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -384,6 +624,7 @@ int main(void)
     TestMenuEscape();
     TestDismissHigh();
     TestOnBackCancel();
+    TestOnConfirm();
 
     return TestSummary("test_input");
 }

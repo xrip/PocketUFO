@@ -23,6 +23,10 @@
 
 #include "pufo_common.h"
 
+typedef struct MapCell MapCell;
+typedef struct TactItem TactItem;
+typedef struct Soldier Soldier;
+
 /* TactState.bQueueActive @ 0x111d6. */
 typedef struct TactInputState {
     bool bGeoscapeUi;   /* 0x44 */
@@ -43,6 +47,21 @@ typedef struct TactInputState {
     bool bGameTickHold; /* 0x5a */
     bool bCancelTo19;   /* gap_6556[132] != 0, the screen-13 escape branch */
     u16  nUiSlot11;     /* apUiSlotsA[11] low word, screens 20..21 */
+
+    /* Fields only Input_OnConfirm @ 0x15f3c touches. */
+    u8        bMultiTargetArmed; /* 0x22 byte_1139BA: multi-target selection is live */
+    i32       nMultiTargetCount; /* 0x04 */
+    MapCell  *apMultiTargets[8]; /* 0x08 */
+    TactItem *pSelWeapon;        /* 0x48 */
+    Soldier  *pSelUnit;          /* 0x15334, written by the screen-4 path */
+    u8        bDeployPanelOpen;  /* 0x15110 */
+    u8        bUiSlot8Byte0;     /* apUiSlotsA[8] low byte @ 0x80 */
+    u8        bLookCommitFlag;   /* unk_128A44 @ 0x1508C */
+    void     *pLookCommitUnit;   /* unk_128A40 @ 0x15088 */
+    i32       nCursorX;          /* 0x15128 */
+    i32       nCursorY;          /* 0x1512C */
+    i32       anCamWorldY;       /* 0x4eb0, anCamWorldOff[1] */
+    u8       *pbScratchFlag9;    /* *unk_1571E4 + 9 */
 } TactInputState;
 
 /* The effects the handlers trigger in other subsystems, all injected. */
@@ -70,6 +89,19 @@ typedef struct TactInputHooks {
     void (*pfnModalEndCheckBattle)(void *pUser);
     /* UiScreen_OnCancel @ 0x16200. */
     void (*pfnOnCancel)(void *pUser);
+    /* Geoscape_CloseUI @ 0x8b94c, on the &unk_1864F8 screen object. */
+    void (*pfnGeoscapeCloseUi)(void *pUser);
+    /* Inv_CloseAndCommit @ 0x15a48. */
+    void (*pfnInvCloseAndCommit)(void *pUser);
+    /* MapCursor_SetPos @ 0x27014, with the stored cursor position. */
+    void (*pfnSetCursorPos)(i32 nX, i32 nY, void *pUser);
+    /* MapView_FocusOnUnit @ 0x2c758 for the screen-2 path. The original reads a
+     * unit pointer out of the view-cell array at Map+0x140F0, indexed
+     * 3600*nLayer + 60*anCamWorldOff[1] + anCamWorldOff[0]; the port hands the
+     * three indices over and lets the context layer do the lookup. */
+    void (*pfnFocusOnViewCell)(i32 nLayer, i32 nViewY, i32 nViewX, void *pUser);
+    /* Options_SaveToRegistry @ 0x114d8. */
+    void (*pfnSaveOptions)(void *pUser);
     void *pUser;
 } TactInputHooks;
 
@@ -88,6 +120,29 @@ void Input_OnAction(TactInputState *pState, const TactInputHooks *pHooks,
 
 /* Input_OnMenuEscape @ 0x162ec. */
 void Input_OnMenuEscape(TactInputState *pState, const TactInputHooks *pHooks);
+
+/* Input_OnConfirm @ 0x15f3c. The confirm key / action button.
+ *
+ * Gate: the geoscape branch only closes the geoscape UI; the tactical branch
+ * needs bTactFlag plus TactInput_CanScroll. Then a 16-case switch on nUiScreen:
+ *   0  commit or cancel the multi-target selection (byte 0x22). Armed: clear
+ *      *unk_1571E4+9 and 0x22, re-place the cursor, and for a weapon whose
+ *      uSortKey is 13 or 35 clear bFlags29 bit 6 on every selected target cell;
+ *      the count is cleared either way. Not armed: sample 7 and toggle
+ *      bDeployPanelOpen.
+ *   1  sample 16 then Inv_CloseAndCommit.
+ *   2  focus the view on the unit stored for the current camera cell, clear the
+ *      screen, sample 16.
+ *   3, 5, 10, 11, 15  UiModal_End then clear the screen.
+ *   4  the command pad: when the commit flag at 0x1508C is set, adopt the saved
+ *      unit pointer at 0x15088 as pSelUnit; nUiScreen becomes the low byte of
+ *      apUiSlotsA[8] != 0; both scratch fields clear; sample 16.
+ *   6  sample 16, clear the screen.   7  sample 14, clear the screen.
+ *   12 Options_SaveToRegistry, clear the screen.
+ *   8, 9, 13, 14 and anything above 15 do nothing.
+ * The original's three arguments are unused except as the Inv_CloseAndCommit
+ * argument, so the port takes only the state and the hooks. */
+void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks);
 
 /* UI-screen ids used by UiScreen_DismissHigh. */
 #define PUFO_UI_SCREEN_TARGET_BEGIN 8u

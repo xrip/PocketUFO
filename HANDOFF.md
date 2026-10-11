@@ -254,10 +254,16 @@ Specific unfinished items inside `game-core`:
 - `Tact_TallyBattleStats @ 0x3348c` — analysed, deliberately not ported. It needs
   `Save_Read/WriteTGameData` and `Tact_InitMission` first, because `unk_138E6C` and
   `unk_138E70` are saved mission state.
-- `Tact_KillUnit @ 0x4e430` — ported, and the spotted-flag sweep tail is now
+- `Tact_KillUnit @ 0x4e430` — ported, and the spotted-flag sweep is now
   verified from ARM and asserted in `test_vis` (window `nX±8` / `nY±8` clamped to
   `10 * nMapDim - 1`, four layers, `MapCell+0x2C` bit 0 cleared, gated on
   `Map_bSweepArmed` @ `0x113A20`).
+- `Input_OnConfirm @ 0x15f3c` — ported (the confirm key: a 16-case `nUiScreen` switch),
+  asserted by `test_input` (94 checks). `Geoscape_CloseUI` and `Inv_CloseAndCommit` are
+  still injected hooks because neither is ported. One open IDB question came out of it:
+  the view-cell unit array at `Map+0x140F0` overlaps `Map.apCells @ 0x15338` in the `Map`
+  type, so the type's `aszStatusMsg` / `gap_TrajRest` split is suspect. See
+  `docs/parity/game-core.md`.
 - `PARITY.md` lists 132 citations that are not function starts, split by the image-base
   rule into 31 struct-field offsets and 101 entries that mix global data symbols with
   block-relative offsets. That split needs IDB triage before the final parity report can
@@ -433,10 +439,13 @@ preparing this document.
    coverage definition is the citation rule in `docs/parity/coverage.py`, which
    `gen_report.py` now imports; `docs/BUILD.md` lists the real source layout. See
    section 7 items 1-3.
-5. **`ui-input` task.** The `UiPanel` type conflict is already resolved — the
-   7092-byte layout is the real one, and the two views (16-byte lines with colour
-   slots at `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually
-   exclusive. Start from `src/pufo/ui/` and `docs/parity/ui-core.md`.
+5. **`ui-input` task.** Started: `Input_OnConfirm @ 0x15f3c` is ported and asserted.
+   The next links in the pointer chain are `Input_OnPointer @ 0x13c6c`,
+   `Input_OnPointerUp @ 0x148d0`, `Input_OnSecondary @ 0x156e0` and
+   `UiControl_HitTest @ 0x1a3d8`. The `UiPanel` type conflict is already resolved — the
+   7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
+   `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start
+   from `src/pufo/ui/` and `docs/parity/ui-core.md`.
 6. **`Tact_TallyBattleStats @ 0x3348c` subtree**, once `Save_Read/WriteTGameData` and
    `Tact_InitMission` are in place.
 7. **`integrate-parity` task.** Wire the app shell into a real playable flow on Win64,
@@ -462,7 +471,7 @@ preparing this document.
 | `docs/parity/game-core.md` | 3977 lines of current-task evidence. Append-only. |
 | `docs/parity/ui-core.md` | Starting point for the `ui-input` task. |
 | `PARITY.md` | Generated report. Do not hand-edit; regenerate with `gen_report.py`. |
-| `docs/BUILD.md` | Toolchain and commands (source layout section is stale). |
+| `docs/BUILD.md` | Toolchain, commands, the real source layout, and the test harness format. |
 
 ### Deliberately uncommitted files
 

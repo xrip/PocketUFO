@@ -1,5 +1,6 @@
 /* pufo_input.c - see pufo_input.h for evidence and the field map. */
 #include "game/pufo_input.h"
+#include "game/pufo_mapcell.h"   /* MapCell, TactItem, ObjectRecFull */
 
 /* The original's UI-screen ids. */
 #define UI_SCREEN_NONE          0u
@@ -337,4 +338,116 @@ i32 UiScreen_OnCancel(TactInputState *pState, const TactInputHooks *pHooks)
         pState->nUiScreen = pState->nUiSlot11;
     }
     return nResult;
+}
+
+/* Input_OnConfirm @ 0x15f3c.
+ *
+ * The gate is read off the ARM at 0x15F3C..0x15FBC: bGeoscapeUi (0x44) takes the
+ * geoscape branch; otherwise bTactFlag (0x00), bFireStatus2 (0x52), bTrajHitStop
+ * (0x1406D), bFireStatus1 (0x51) and TactState.bQueueActive (0x111D6) must all be
+ * clear/zero before the switch on nUiScreen (0x3A, LDRH/STRH). */
+void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks)
+{
+    if (pState->bGeoscapeUi) {
+        if (pHooks->pfnGeoscapeCloseUi != NULL) {
+            pHooks->pfnGeoscapeCloseUi(pHooks->pUser);
+        }
+        return;
+    }
+    if (!pState->bTactFlag || !TactInput_CanScroll(pState)) {
+        return;
+    }
+
+    switch (pState->nUiScreen) {
+    case UI_SCREEN_NONE:
+        /* 0x16010: byte 0x22 selects commit or cancel. */
+        if (pState->bMultiTargetArmed == 0) {
+            Input_CallSample(pHooks, 7);
+            pState->bDeployPanelOpen = (pState->bDeployPanelOpen == 0) ? 1u : 0u;
+            return;
+        }
+        if (pState->pbScratchFlag9 != NULL) {
+            *pState->pbScratchFlag9 = 0;
+        }
+        pState->bMultiTargetArmed = 0;
+        if (pHooks->pfnSetCursorPos != NULL) {
+            pHooks->pfnSetCursorPos(pState->nCursorX, pState->nCursorY, pHooks->pUser);
+        }
+        /* 0x16070: only the two multi-target weapon kinds clear their marks. */
+        if (pState->pSelWeapon != NULL && pState->pSelWeapon->pObj != NULL) {
+            u16 nSortKey = pState->pSelWeapon->pObj->uSortKey;
+            if (nSortKey == 13u || nSortKey == 35u) {
+                for (i32 i = 0; i < pState->nMultiTargetCount; ++i) {
+                    /* Deviation: the original dereferences the slot unconditionally. */
+                    if (pState->apMultiTargets[i] != NULL) {
+                        pState->apMultiTargets[i]->bFlags29 &= (u8)~0x40;
+                    }
+                }
+            }
+        }
+        pState->nMultiTargetCount = 0;
+        return;
+
+    case UI_SCREEN_INVENTORY:
+        Input_CallSample(pHooks, 16);
+        if (pHooks->pfnInvCloseAndCommit != NULL) {
+            pHooks->pfnInvCloseAndCommit(pHooks->pUser);
+        }
+        return;
+
+    case UI_SCREEN_LOOK:
+        /* 0x1610C: the unit stored for the camera's current view cell. */
+        if (pHooks->pfnFocusOnViewCell != NULL) {
+            pHooks->pfnFocusOnViewCell((i32)pState->nLayerScratch,
+                                       pState->anCamWorldY, pState->anCamWorldX,
+                                       pHooks->pUser);
+        }
+        pState->nUiScreen = 0;
+        Input_CallSample(pHooks, 16);
+        return;
+
+    case 3u:
+    case 5u:
+    case 10u:
+    case 11u:
+    case UI_SCREEN_ESCAPE_ALT:
+        /* 0x161E4: UiModal_End(pMap), then the shared screen-clear tail. */
+        if (pHooks->pfnModalEnd != NULL) {
+            pHooks->pfnModalEnd(pHooks->pUser);
+        }
+        pState->nUiScreen = 0;
+        return;
+
+    case UI_SCREEN_COMMAND:
+        /* 0x16168. */
+        if (pState->bLookCommitFlag != 0) {
+            pState->pSelUnit = (Soldier *)pState->pLookCommitUnit;
+        }
+        pState->nUiScreen = (pState->bUiSlot8Byte0 != 0) ? 1u : 0u;
+        pState->bLookCommitFlag = 0;
+        pState->bUiSlot8Byte0 = 0;
+        Input_CallSample(pHooks, 16);
+        return;
+
+    case UI_SCREEN_OPTIONS:
+        Input_CallSample(pHooks, 16);
+        pState->nUiScreen = 0;
+        return;
+
+    case UI_SCREEN_ESCAPE:
+        Input_CallSample(pHooks, 14);
+        pState->nUiScreen = 0;
+        return;
+
+    case UI_SCREEN_T12:
+        if (pHooks->pfnSaveOptions != NULL) {
+            pHooks->pfnSaveOptions(pHooks->pUser);
+        }
+        pState->nUiScreen = 0;
+        return;
+
+    default:
+        /* 8, 9, 13, 14 and anything above 15 fall straight to the epilogue. */
+        return;
+    }
 }

@@ -4305,3 +4305,68 @@ Three gate bytes are now named in the IDB: `Map_bTickHold` @ `0x113A12`,
 asserts the window edge (28 cleared, 29 untouched), all four layers, that only
 bit 0 of the byte changes, the clamp at the map edge, and that nothing is cleared
 when the gate is off.
+
+## 2026-10-11: Input_OnConfirm @ 0x15f3c — the confirm key
+
+Ported in `src/pufo/game/pufo_input.c`, declared in `pufo_input.h`, asserted by
+`test_input` (53 -> 94 checks).
+
+Gate, from the ARM at `0x15F3C..0x15FBC`:
+
+- `bGeoscapeUi` (`Map+0x44`) takes the geoscape branch: `Geoscape_CloseUI(&unk_1864F8)`
+  and nothing else.
+- otherwise all of `bTactFlag` (`Map+0x00`) non-zero, `bFireStatus2` (`Map+0x52`) zero,
+  `bTrajHitStop` (`Map+0x1406D`) zero, `bFireStatus1` (`Map+0x51`) zero and
+  `unk_157198->bQueueActive` (`TactState+0x111D6`) zero. That is exactly
+  `bTactFlag && TactInput_CanScroll()`.
+- `nUiScreen` is read with `LDRH` at `Map+0x3A` and written with `STRH`, so it is a u16.
+- 16-case jumptable at `0x15FC0`. Cases 8, 9, 13, 14 and anything above 15 jump straight
+  to the epilogue and change nothing.
+
+Case bodies, each cited to its ARM block:
+
+| Screen | Behaviour | ARM |
+|---|---|---|
+| 0 | `byte_1139BA` (`Map+0x22`) selects commit or cancel | `0x16010` |
+| 0 armed | clear `*unk_1571E4 + 9`, clear `Map+0x22`, `MapCursor_SetPos(nCursorX, nCursorY)`, then for `pSelWeapon->pObj->uSortKey` 13 or 35 clear `MapCell.bFlags29` bit 6 over `apMultiTargets[0..n-1]`; count cleared either way | `0x16010..0x160A8` |
+| 0 unarmed | `Sound_Play(7, mode 4)` and `bDeployPanelOpen = (bDeployPanelOpen == 0)` | `0x160B8..0x160EC` |
+| 1 | `Sound_Play(16, mode 4)` then `Inv_CloseAndCommit` | `0x160F4` |
+| 2 | focus the view on the unit stored for the camera cell, clear the screen, sample 16 | `0x1610C` |
+| 3, 5, 10, 11, 15 | `UiModal_End(pMap)` then the shared screen-clear tail | `0x161E4` |
+| 4 | `bLookCommitFlag` (`Map+0x1508C`) gates adopting `pLookCommitUnit` (`Map+0x15088`) as `pSelUnit` (`Map+0x15334`); `nUiScreen = (byte Map+0x80 != 0)`; both scratch fields cleared; sample 16 | `0x16168` |
+| 6 | sample 16, clear the screen | `0x161D4` |
+| 7 | sample 14, clear the screen | `0x161CC` |
+| 12 | `Options_SaveToRegistry()`, clear the screen | `0x161F0` |
+
+Hex-Rays errors corrected from ARM:
+
+- The multi-target flag renders as `MEMORY[0x1139B8].gap_2[1]`, which reads as `Map+0x01`.
+  The ARM is `LDRB R3, [R4,#(unk_1139BA - 0x1139B8)]` — `Map+0x22`. Follow-up question:
+  `MapCursor_SetPos @ 0x27014` is documented in the port as reading `pMap->gap_2[1]` for
+  its `bSuppressLarge` input; that citation came from pseudocode and should be re-checked
+  against ARM before it is trusted.
+- Case 2's unit lookup renders as a nested `aszStatusMsg[...]` subscript. The ARM is a flat
+  array read: base `Map + 0x140F0`, index `3600 * (i8)nLayerScratch + 60 * anCamWorldOff[1]
+  + anCamWorldOff[0]`, dword stride, at `0x16144`. `nLayerScratch` is loaded with `LDRSB`,
+  so it is signed.
+
+OPEN finding: that array base `Map+0x140F0` sits inside the `Map` type's `aszStatusMsg`
+member (`0x140B4`, `char[15][100]`), and a full `4*60*60` dword table there would overlap
+`Map.apCells @ 0x15338`, which ARM proves independently at three sites. Either the array is
+smaller than the index formula suggests, or the `Map` type's `aszStatusMsg` / `gap_TrajRest`
+split is wrong. Not resolved; the port injects the lookup instead of guessing a layout.
+
+Port shape and deviations:
+
+- `TactInputState` gained the fields only this handler touches: `bMultiTargetArmed` 0x22,
+  `nMultiTargetCount` 0x04, `apMultiTargets[8]` 0x08, `pSelWeapon` 0x48, `pSelUnit` 0x15334,
+  `bDeployPanelOpen` 0x15110, `bUiSlot8Byte0` 0x80, `bLookCommitFlag` 0x1508C,
+  `pLookCommitUnit` 0x15088, `nCursorX` 0x15128, `nCursorY` 0x1512C, `anCamWorldY` 0x4EB0,
+  `pbScratchFlag9` (`*unk_1571E4 + 9`).
+- New injected hooks: `pfnGeoscapeCloseUi`, `pfnInvCloseAndCommit`, `pfnSetCursorPos`,
+  `pfnFocusOnViewCell`, `pfnSaveOptions`. `Geoscape_CloseUI` and `Inv_CloseAndCommit` are
+  not ported yet, so they stay hooks; `MapCursor_SetPos`, `UiModal_End` and
+  `Options_SaveToRegistry` exist and can be wired by the caller.
+- The original passes its first argument straight to `Inv_CloseAndCommit`; the port drops
+  the three unused arguments and passes only state plus hooks.
+- The port skips a NULL entry in `apMultiTargets` instead of dereferencing it.
