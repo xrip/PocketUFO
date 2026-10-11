@@ -4370,3 +4370,72 @@ Port shape and deviations:
 - The original passes its first argument straight to `Inv_CloseAndCommit`; the port drops
   the three unused arguments and passes only state plus hooks.
 - The port skips a NULL entry in `apMultiTargets` instead of dereferencing it.
+
+## 2026-10-11: Input_OnSecondary @ 0x156e0 — analysed, port not written
+
+Full ARM read (174 instructions, 33 blocks). Recorded here so the port is a
+transcription job, not a re-derivation. IDB comments added at `0x156E0`, `0x15794`,
+`0x158F8`, `0x15958`.
+
+Gate: identical to `Input_OnConfirm` (`bGeoscapeUi` takes a `nullsub_8` no-op branch;
+otherwise `bTactFlag` plus `TactInput_CanScroll`).
+
+Screen routing (`nUiScreen` @ `Map+0x3A`, u16):
+
+| Screen | Behaviour |
+|---|---|
+| > 6 | clears the screen only for 10, 11, 12, 15; 13, 14 and > 15 do nothing |
+| 6 | clears the screen |
+| 1, 2, 4 | `Input_OnConfirm(a1, nUiScreen, a3)` — the second argument is the screen id |
+| 3, 5 | nothing |
+| 0 | the tactical path below |
+
+Screen 0, two mutually exclusive modes selected by `byte_1139BA` (`Map+0x22`):
+
+- `== 3` (multi-target pop): `n = nMultiTargetCount` (`Map+0x04`); if `n <= 0` return;
+  clear `MapCell.bFlags29` bit 6 on `apMultiTargets[n-1]` (`Map+0x08 + 4*(n-1)`);
+  `--n`; when the new value is 0 also clear `*unk_1571E4 + 9`.
+- otherwise: set `unk_AD712 = 1` (the escape-flag scratch the port already models),
+  return unless `MapCursor_IsValid(pMap)`, then:
+
+```
+pUnit  = Map.pSelUnit                       /* 0x15334 */
+pCell  = pUnit->pCell                       /* Soldier+0x10 */
+dx,dy  = aDirDeltaXY[3*pUnit->bFacing]      /* signed bytes */
+nX1 = pCell->nX + dx;  nY1 = pCell->nY + dy;  nZ = pCell->nZ
+
+if (!Unit_bIsLarge(pUnit) && (pUnit->bFacing % 2) == 0) {
+    if (Map_IsValidCell(pMap, nX1, nY1, nZ)
+        && (apCells[nZ][nY1][nX1]->bFlags57[0] & 8)) {        /* MapCell+0x39 bit 3 */
+        Map_QueueDoorAction(pMap, pUnit->pCell,
+                            apCells[(i8)nLayerScratch - 1][nCursorY][nCursorX],
+                            pUnit->bFacing);
+        nullsub_4("open door");
+    }
+}
+/* tail, always reached */
+pTo = apCells[(i8)nLayerScratch - 1][nCursorY][nCursorX];
+if (pUnit->pCell->nX != pTo->nX || pUnit->pCell->nY != pTo->nY) {
+    Unit_FaceToward(pUnit, pTo->nX, pTo->nY);
+    TactState_KickQueue(unk_157198);
+}
+```
+
+Notes that matter for the port:
+
+- The door check runs only for **even** facings. `bFacing % 2` is computed through
+  `__rt_sdiv` with `R0 = 2` (divisor) and `R1 = bFacing` (dividend), the reversed
+  convention already recorded for this toolchain. Even facings are the orthogonal ones
+  in `g_aStepDir`, so opening a door "in front of" the unit only happens orthogonally.
+- The cursor cell is reached as base `0x11AF8` = `Map.apCells @ 0x15338` minus one layer
+  (`14400` bytes), index `3600*(i8)nLayerScratch + 60*nCursorY + nCursorX`. So the cell
+  is `apCells[nLayerScratch - 1][nCursorY][nCursorX]` — the same one-layer-down reading
+  already proven for `Tact_ProcessMoveAction` case 5.
+- `nLayerScratch` is loaded with `LDRSB` (signed) at both sites.
+- `MapCell.bFlags57[0]` (`MapCell+0x39`) bit 3 is the door flag; the port already names
+  that field.
+- All callees exist in the port: `MapCursor_IsValid`, `Unit_bIsLarge`, `Map_IsValidCell`,
+  `Map_QueueDoorAction`, `Unit_FaceToward`, `TactState_KickQueue`. Only `nullsub_8` and
+  `nullsub_4` are no-ops to skip.
+- Hex-Rays again renders `byte_1139BA` as `gap_2[1]`; the ARM is `Map+0x22`. This is now
+  the third site with that same pseudocode error.
