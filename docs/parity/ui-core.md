@@ -342,3 +342,95 @@ every control the current screen owns, and that release is what fires their `pfn
 | 3 | `anActionCost[n]` is only read for `n` in 0..11 | the original indexes it for any mode value, including negative ones, which reads outside the table |
 | 4 | `Titles_Shutdown`, `GameUI_InitStartup`, `EndScreen_Shutdown`, `Geoscape_OnPointerUp` and the two stored action pointers are injected | those subsystems are not ported yet |
 
+## 2026-10-11: the tactical HUD action buttons
+
+Ported in `src/pufo/game/pufo_tacthud.c`, asserted by `test_tacthud` (50 checks).
+These are the `pfnClick` handlers `Tact_InitUiControls @ 0x3b498` installs on the
+tactical action pads (`TactHud_ToggleKneel` is referenced twice from there, at
+`0x3B518` and `0x3BD3C`), so they are reached through `UiControl_HitTest`, not
+through a key.
+
+### The unit-type record has four bytes, not one
+
+`g_aUnitTypeRecord @ 0xA7B80` (renamed from `byte_A7B80`) is 24 records of four
+bytes, indexed by `Soldier.nUnitType`. The port already had two of them as flat
+tables, and both were checked against the binary again:
+
+| Byte | Set for unit types | Who reads it |
+|---|---|---|
+| 0 | 3, 7, 8, 11, 13, 18 | `TactHud_ClimbUp @ 0x16798` (`LDRB R3, [R0,R3,LSL#2]`, `CMP R3,#1`) skips its ladder test when set |
+| 1 | 4, 5, 6, 7, 8, 18, 20, 21 | `Unit_bIsLarge @ 0x49ecc` (`g_aUnitTypeIsLarge`) |
+| 2 | 0, 1, 2, 3, 9, 10, 11, 12, 13 | not read by these three handlers |
+| 3 | 14, 15, 16, 17, 19, 20 | not read by these three handlers |
+
+`TactHud_ClimbUp` tests byte 0 and `Unit_bIsLarge` tests byte 1 of the same
+record, so the two are not interchangeable.
+
+### Kneel is the marksmanship bonus
+
+`TactHud_ToggleKneel @ 0x16570` spends 2 TU, flips `Soldier.bFlags` bit 0, and
+pushes one of two `aTextRecs` records. The ARM loads the record addresses
+directly (`LDRNE R3, =0x506DB` at `0x1661C`, `LDR R3, =0x5060E` at `0x16654`),
+and both are exact multiples of the 205-byte stride:
+
+| Record | Offset | Text (lang.dat, Windows-1251) | Meaning |
+|---|---|---|---|
+| 1606 | `aTextRecs + 0x5060E` | `Marksmanship increased by 25%` | pushed when the unit kneels |
+| 1607 | `aTextRecs + 0x506DB` | `No marksmanship increase` | pushed when it stands back up |
+
+So the message is about the shot bonus, not the pose. The gate, in ARM order:
+`nUnitType <= 3`, the unit's cell has a floor sprite, `uTu >= 2`, and
+`Unit_bArmorTuWarn(2)` is clear. The click sample 17 plays before any of that,
+so it is audible even when the action is refused.
+
+`nAnimPose` is moved by hand (`+1` standing, `-1` kneeling) and
+`Unit_UpdateAnimPose` is **not** called, unlike the queue's stand-from-kneel
+command 7, which does. Nothing is queued: the pose changes immediately.
+
+### The climb ladder test has two halves
+
+`TactHud_ClimbUp @ 0x1674c` and `TactHud_ClimbDown @ 0x16af0` are mirrors, and
+the pseudocode hides the layer arithmetic behind Hex-Rays pointer rendering.
+The ARM bases are unambiguous:
+
+| Base | Value | Means |
+|---|---|---|
+| `R8` | `0x15338` | `Map.apCells`, the unit's own layer |
+| `R7` | `0x18B78` | `apCells` at `nZ + 1` |
+| `R8` (reloaded) | `0x18B7C` | layer + 1, `x + 1` |
+| `R9` | `0x18C68` | layer + 1, `y + 1` |
+| `R7` (reloaded) | `0x18C6C` | layer + 1, `x + 1`, `y + 1` |
+
+Climb up, in order:
+
+1. Unless `g_aUnitTypeRecord[type][0] == 1`, both the unit's own cell and the
+   cell one layer up must have a floor sprite whose blocking byte `0x2E` is set
+   (`MapCell_TestFlag` selector 6) — `0x167A4..0x16808`.
+2. `nZ + 1 <= 3` (`0x16814`).
+3. If the upper cell has a floor sprite (selector 5), both floors must block
+   again — `0x16840`, `0x16874`, `0x168A8`. This half only bites when step 1 was
+   skipped by the type flag; otherwise it repeats a test that already passed.
+4. The upper cell must not be blank (selector 0) and must have no occupant.
+5. For a large unit, the three extra tiles **of the upper layer** must have no
+   wall facing the climb cell — `x+1` wall A, `y+1` wall B, `x+1,y+1` against
+   both — and no occupant (`0x1696C..0x16AB8`).
+6. `TactState_EnqueueVertStep(pSelUnit, 1)` then `TactState_KickQueue`.
+
+Climb down is the same with `nZ - 1` and no type-flag gate: if the unit's own
+cell has a floor sprite, both it and the cell below must block. `nZ - 1 < 0`
+returns on the signed test at `0x16B18` (`SUBS` / `BMI`). The facing byte is
+`0xFF`, which `MoveVert` reads as `-1`.
+
+Neither handler spends TU. The 8 TU cost is charged later, when the queue
+reaches command 5.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `pSelUnit`, `pCell` and every looked-up cell are null-checked | the original indexes `Map.apCells` directly and never checks; the port's lookup returns NULL out of range |
+| 2 | Climb up returns when the layer-1 lookup is out of range instead of reading past the pointer table | the original reads `apCells[4]` for a type-flag unit on layer 3, which is past the end of the array |
+| 3 | A neighbour lookup that returns NULL skips that neighbour's test | the original would wrap to the next row of `apCells` for a unit on the map edge |
+| 4 | The dead second `pFloorSpr == 0` test in the kneel branch is not reproduced | it is unreachable: the gate at `0x165A4` already proved the sprite exists |
+| 5 | `Sound_Play(17)` is injected as `pfnPlaySample` | the port's audio seam has no mode argument; the original passes mode 4 |
+

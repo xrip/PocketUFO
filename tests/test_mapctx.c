@@ -149,7 +149,7 @@ static void TestWiring(void)
     *g_Ctx.pnMaxLayerClamp = 2;
     *g_Ctx.pnAnimPhase     = 5;
     *g_Ctx.pnShotCount     = 1;
-    *g_Ctx.pbFlag22        = 7;
+    *g_Ctx.pbActionLatch   = 7;
     *g_Ctx.pbFireStatus1   = 8;
     *g_Ctx.ppSelWeapon     = &g_aItems[0];
     *g_Ctx.ppThrowTarget   = &g_aUnits[1];
@@ -157,7 +157,7 @@ static void TestWiring(void)
     Check("scratch globals write through to the map",
           g_Map.nLayerScratch == -3 && g_Map.nMaxLayerClamp == 2
           && g_Map.nAnimPhase == 5 && g_Map.nShotCount == 1
-          && g_Map.bFlag22 == 7 && g_Map.bFireStatus1 == 8
+          && g_Map.bActionLatch == 7 && g_Map.bFireStatus1 == 8
           && g_Map.pSelWeapon == &g_aItems[0]
           && g_Map.pThrowTarget == &g_aUnits[1]
           && g_Map.nFireTickProgress == 1);
@@ -599,7 +599,7 @@ static void TestFsmOnMap(void)
         g_State.aQueue[0].nX = 10;
         g_State.aQueue[0].nY = 10;
         g_State.aQueue[0].nZ = 0;
-        g_Map.bFlag22 = 1;
+        g_Map.bActionLatch = 1;
         Tact_ProcessMoveAction(&g_State, &g_Ctx);
 
         Check("the throw reached its landing",
@@ -608,7 +608,7 @@ static void TestFsmOnMap(void)
         Check("the thrown weapon left the left hand", pUnit->pHandL == NULL);
         Check("the throw target slot holds the target cell's occupant",
               g_Map.pThrowTarget == pUnit);
-        Check("the throw clears the flag at 0x22", g_Map.bFlag22 == 0);
+        Check("the throw clears the action latch", g_Map.bActionLatch == 0);
         Check("the landing was not rejected by range",
               g_Map.throwLanding.bRejected == 0);
     }

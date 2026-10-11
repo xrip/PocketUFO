@@ -868,7 +868,7 @@ static void MoveFire(TactState *pState, const MoveActionCtx *pCtx,
     const bool bSpecial = (uKey == 13 || uKey == 35);
     i32 nX0, nY0, nZ0, nX1, nY1, nZ1;
 
-    *pCtx->pbFlag22 = 0;
+    *pCtx->pbActionLatch = 0;
 
     if ((pUnit->bFlags & 0x20) != 0 || (i8)pState->nStepZDelta != 0) {
         /* 0x5035C..0x50530: the shot was cancelled mid-animation. Clear the
@@ -1036,7 +1036,7 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
                           nZ1 + pCtx->pScatter->nDz);
 
     *pCtx->pnMaxLayerClamp = *pCtx->pnLayerScratch;
-    *pCtx->pbFlag22 = 0;
+    *pCtx->pbActionLatch = 0;
     Sound_Play(12);
 }
 

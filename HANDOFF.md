@@ -439,17 +439,24 @@ preparing this document.
    coverage definition is the citation rule in `docs/parity/coverage.py`, which
    `gen_report.py` now imports; `docs/BUILD.md` lists the real source layout. See
    section 7 items 1-3.
-5. **`ui-input` task.** Started: `Input_OnConfirm @ 0x15f3c`,
-   `Input_OnSecondary @ 0x156e0`, `UiControl_HitTest @ 0x1a3d8` and the mouse handler
-   `Input_OnPointer @ 0x13c6c` are ported and asserted (`test_input` 178 checks,
-   `test_control` `TestHitTest`), including the door action, the face-and-kick tail,
-   the control press/release state machine, the widget bank `pBank @ 0xAC6D0` and the
-   camera drag. `Unit_FaceToward @ 0x49bf0` is now ported for real: it enqueues a turn
-   command, it does not write `Soldier.bFacing`. The last link in the pointer chain is
-   `Input_OnPointerUp @ 0x148d0`. Two open items: `MapCursor_SetPos @ 0x27014` needs an
-   ARM read to confirm its `gap_2[1]` citation (likely `Map+0x22`), and
-   `MapView_FocusOnUnit @ 0x2c758` is still injected — it takes a `MapCell *`, not a
-   unit. The `UiPanel` type
+5. **`ui-input` task.** The whole pointer chain is ported and asserted:
+   `Input_OnConfirm @ 0x15f3c`, `Input_OnSecondary @ 0x156e0`,
+   `UiControl_HitTest @ 0x1a3d8`, `Input_OnPointer @ 0x13c6c` and the release
+   pass `Input_OnPointerUp @ 0x148d0` (`test_input` 246 checks, `test_control`
+   `TestHitTest`), including the door action, the face-and-kick tail, the widget
+   bank `pBank @ 0xAC6D0`, the camera drag and the action-cost table at
+   `Map+0x4E4C`. The HUD action buttons the pads call are ported too:
+   `TactHud_ToggleKneel @ 0x16570`, `TactHud_ClimbUp @ 0x1674c` and
+   `TactHud_ClimbDown @ 0x16af0` in `src/pufo/game/pufo_tacthud.c`, asserted by
+   `test_tacthud` (50 checks). `Unit_FaceToward @ 0x49bf0` is ported for real:
+   it enqueues a turn command, it does not write `Soldier.bFacing`.
+   Closed items: `MapCursor_SetPos @ 0x27014` reads **`Map+0x02`**, not `Map+0x22`
+   (`LDRB R3, [R4,#2]` at `0x2723C`); the wrong offset in the port header and in
+   `docs/parity/game-core.md` is corrected, and the field is now
+   `bActionLatch` / `pbActionLatch`. Still open: `MapView_FocusOnUnit @ 0x2c758`
+   is injected as a hook rather than ported (it takes a `MapCell *`, not a unit),
+   and `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
+   the widget bank these handlers live in, are not ported yet. The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

@@ -34,6 +34,7 @@ add_library(pufo_game STATIC
     game/pufo_font.c
     game/pufo_unit.c
     game/pufo_tactstate.c
+    game/pufo_tacthud.c
     game/pufo_mapctx.c
     game/pufo_path.c
     game/pufo_los.c
@@ -177,6 +178,17 @@ set_target_properties(test_mapctx PROPERTIES
 )
 add_test(NAME test_mapctx
     COMMAND test_mapctx
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# The tactical HUD action buttons: kneel, climb up, climb down.
+add_executable(test_tacthud ${CMAKE_SOURCE_DIR}/tests/test_tacthud.c)
+target_link_libraries(test_tacthud PRIVATE pufo_options pufo_game pufo_audio pufo_render pufo_dat pufo_util)
+set_target_properties(test_tacthud PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_tacthud
+    COMMAND test_tacthud
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

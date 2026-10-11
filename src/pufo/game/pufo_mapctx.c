@@ -52,7 +52,7 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pnMaxLayerClamp = &pMap->nMaxLayerClamp;
     pOut->pnAnimPhase     = &pMap->nAnimPhase;
     pOut->pnShotCount     = &pMap->nShotCount;
-    pOut->pbFlag22        = &pMap->bFlag22;
+    pOut->pbActionLatch   = &pMap->bActionLatch;
     pOut->pbFireStatus1   = &pMap->bFireStatus1;
     pOut->ppSelWeapon     = &pMap->pSelWeapon;
     pOut->ppThrowTarget   = &pMap->pThrowTarget;

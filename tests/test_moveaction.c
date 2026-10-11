@@ -55,7 +55,7 @@ static i8          g_nLayerScratch;
 static i32         g_nMaxLayerClamp;
 static i32         g_nAnimPhase;
 static i32         g_nShotCount;
-static u8          g_bFlag22;
+static u8          g_bActionLatch;
 static u8          g_bFireStatus1;
 static TactItem   *g_pSelWeapon;
 static Soldier    *g_pThrowTarget;
@@ -97,7 +97,7 @@ static void ResetWorld(void)
     g_nMaxLayerClamp = 0;
     g_nAnimPhase = 0;
     g_nShotCount = 0;
-    g_bFlag22 = 0;
+    g_bActionLatch = 0;
     g_bFireStatus1 = 0;
     g_pSelWeapon = NULL;
     g_pThrowTarget = NULL;
@@ -114,7 +114,7 @@ static void ResetWorld(void)
     g_Ctx.pnMaxLayerClamp = &g_nMaxLayerClamp;
     g_Ctx.pnAnimPhase = &g_nAnimPhase;
     g_Ctx.pnShotCount = &g_nShotCount;
-    g_Ctx.pbFlag22 = &g_bFlag22;
+    g_Ctx.pbActionLatch = &g_bActionLatch;
     g_Ctx.pbFireStatus1 = &g_bFireStatus1;
     g_Ctx.ppSelWeapon = &g_pSelWeapon;
     g_Ctx.ppThrowTarget = &g_pThrowTarget;

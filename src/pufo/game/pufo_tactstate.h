@@ -316,7 +316,7 @@ typedef struct MoveActionCtx {
     i32         *pnMaxLayerClamp; /* 0x15074 unk_128A2C */
     i32         *pnAnimPhase;     /* 0x10F8 unk_113AB0 */
     i32         *pnShotCount;     /* 0x2C  unk_1139E4, Hex-Rays nStatusDrawY */
-    u8          *pbFlag22;        /* 0x22  unk_1139BA */
+    u8          *pbActionLatch;   /* 0x02  unk_1139BA, the action latch */
     u8          *pbFireStatus1;   /* 0x51  unk_113A09 */
     TactItem    **ppSelWeapon;    /* 0x48  unk_113A00 */
     Soldier     **ppThrowTarget;  /* 0x150F0 unk_128AA8 */

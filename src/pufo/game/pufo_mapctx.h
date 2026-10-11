@@ -70,7 +70,7 @@ typedef struct GameMap {
     i32     nMaxLayerClamp;    /* 0x15074 */
     i32     nAnimPhase;        /* 0x00F8 */
     i32     nShotCount;        /* 0x002C, Hex-Rays' nStatusDrawY */
-    u8      bFlag22;           /* 0x0022 */
+    u8      bActionLatch;      /* 0x0002, unk_1139BA: 0 none, 3 multi-target, 4 fire mode */
     u8      bFireStatus1;      /* 0x0051 */
     u8      nMissionType;      /* 0x1511A */
     Soldier *pThrowTarget;     /* 0x150F0 */
