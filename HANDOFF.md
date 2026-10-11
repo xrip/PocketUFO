@@ -237,10 +237,9 @@ complete large subsystem at 80%.
 
 Specific unfinished items inside `game-core`:
 
-- `Tact_ProcessMoveAction @ 0x4f3f0` — ported, and now wired to `GameMap` with the
-  real callbacks. Commands 0xE (fire) and 0x11 (throw) are exercised only through
-  their helpers in `test_ballist`; no end-to-end check on the wired context yet.
-  See section 8 for the analysis and `docs/parity/game-core.md` for the wiring.
+- `Tact_ProcessMoveAction @ 0x4f3f0` — ported, wired to `GameMap`, and every
+  handled command runs end to end in `test_mapctx`. See section 8 for the
+  analysis and `docs/parity/game-core.md` for the wiring.
 - The UI and inventory regions of the original `Map` block are not in `GameMap`
   yet; they are added when a consumer needs them.
 - `Tact_TallyBattleStats @ 0x3348c` — analysed, deliberately not ported. It needs
@@ -357,11 +356,12 @@ recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAct
 - `tools/pe_off.py` and `tools/dump_muzzle.py` now dump pinned tables straight out of
   `pufobeta.exe`. IDA addresses in this database are RVA + 0x10000.
 
-What is left: an end-to-end test of the fire (0xE) and throw (0x11) commands on the
-wired `GameMap`. The context fields the FSM reads are all present in `GameMap`
-(`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`, `nShotCount`, the three rosters
-and their counts, `bFireStatus1`, `nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`);
-`Map_BuildMoveActionCtx` points a `MoveActionCtx` at them.
+What is left: nothing structural. All 15 handled commands now run end to end
+against `GameMap` in `test_mapctx`. The context fields the FSM reads are all
+present in `GameMap` (`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`,
+`nShotCount`, the three rosters and their counts, `bFireStatus1`,
+`nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`); `Map_BuildMoveActionCtx` points a
+`MoveActionCtx` at them.
 
 ---
 
@@ -416,9 +416,8 @@ preparing this document.
 1. ~~Wire `Tact_ProcessMoveAction @ 0x4f3f0` to the real context~~ — done. `GameMap`
    (the IDB `Map` block) plus `Map_LookupCell`, `Map_BuildMoveActionCtx` and the
    real `Unit_bArmorTuWarn` / `StatusMsg_Push` / `Unit_UpdateVisibility` callbacks
-   are in `src/pufo/game/pufo_mapctx.c`, with `test_mapctx` (62 checks) driving
-   commands 1, 3 and 0x12 against live state. The fire (0xE) and throw (0x11)
-   commands still have no end-to-end test on the wired context.
+   are in `src/pufo/game/pufo_mapctx.c`, with `test_mapctx` (83 checks) driving
+   commands 1, 3, 0xE, 0x11 and 0x12 against live state.
 2. ~~Dump the two move tables~~ — done. `g_aUnitMuzzleOffset` @ 0xA9768 and
    `g_aFireSoundBySortKey` @ 0xAA168 are pinned in the port and named in the IDB.
    Three existing tables were found wrong and corrected in the same commit.

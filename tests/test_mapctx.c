@@ -479,6 +479,203 @@ static void TestFsmOnMap(void)
               g_State.nStepDrawOffX == 2 && g_State.nStepDrawOffY == -1);
         Check("the step charges no TU", pUnit->uTu == 20);
     }
+
+    /* Command 0xE (fire) end to end. nArg is the hit chance, and 100 makes
+     * Unit_RollChance succeed every time, which clears the scatter triple and
+     * makes the aim block deterministic. */
+    Reset();
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+        MapCell *pFrom = At(10, 10, 0);
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus   = 0;
+        pUnit->nUnitType = 0;
+        pUnit->bFacing   = 0;
+        pUnit->uTu       = 40;
+        pUnit->pCell     = pFrom;
+        pFrom->pUnit     = pUnit;
+
+        g_aObjs[0].uSortKey  = 0;    /* a normal weapon, not the 13/35 pair */
+        g_aObjs[0].bListPri  = 0;
+        g_aObjs[0].bAmmoCap  = 100;  /* not the unlimited marker 255 */
+        g_aObjs[0].bReadySel = 0;
+        g_aItems[0].pObj     = &g_aObjs[0];
+        g_aItems[0].nAmmo    = 5;
+        pUnit->pHandR        = &g_aItems[0];
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor     = 0;
+        g_State.aQueue[0].nCmd   = 0xE;
+        g_State.aQueue[0].pUnit  = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
+        g_State.aQueue[0].nTuCost = 8;
+        g_State.aQueue[0].nArg   = 100;
+        g_State.aQueue[0].nMode  = 0;
+        g_State.aQueue[0].nX     = 11;
+        g_State.aQueue[0].nY     = 10;
+        g_State.aQueue[0].nZ     = 0;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+
+        Check("fire leaves the entry running", g_State.aQueue[0].nCmd == 0xE);
+        Check("fire charges the TU", pUnit->uTu == 32);
+        Check("fire sets the aiming flag", (pUnit->bFlags & 4u) != 0);
+        Check("the weapon lost one round", g_aItems[0].nAmmo == 4);
+        Check("the shot counter advanced", g_Map.nShotCount == 1);
+        Check("the muzzle origin is the cell centre plus the type-0 offset",
+              g_Map.aim.nOriginX == 16 * 10 + 8 + 5
+              && g_Map.aim.nOriginY == 16 * 10 + 8 - 5
+              && g_Map.aim.nOriginZ == 12 * 0 + 3 + 6);
+        Check("a guaranteed hit aims straight at the target cell",
+              g_Map.aim.nTargetX == 16 * 11 + 8
+              && g_Map.aim.nTargetY == 16 * 10 + 8);
+        Check("the layer clamp follows the layer scratch",
+              g_Map.nMaxLayerClamp == g_Map.nLayerScratch);
+    }
+
+    /* Command 0xE with the unlimited-ammo marker: the round is not spent, but
+     * the shot counter still advances. */
+    Reset();
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus = 0;
+        pUnit->nUnitType = 0;
+        pUnit->uTu = 40;
+        pUnit->pCell = At(10, 10, 0);
+        g_aObjs[0].uSortKey = 0;
+        g_aObjs[0].bAmmoCap = 255;
+        g_aItems[0].pObj = &g_aObjs[0];
+        g_aItems[0].nAmmo = 5;
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor = 0;
+        g_State.aQueue[0].nCmd = 0xE;
+        g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].pWeapon = &g_aItems[0];
+        g_State.aQueue[0].nTuCost = 8;
+        g_State.aQueue[0].nArg = 100;
+        g_State.aQueue[0].nX = 11;
+        g_State.aQueue[0].nY = 10;
+        g_State.aQueue[0].nZ = 0;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+        Check("bAmmoCap 255 never spends a round", g_aItems[0].nAmmo == 5);
+        Check("and still counts the shot", g_Map.nShotCount == 1);
+    }
+
+    /* Command 0x11 (throw) end to end. The target is the unit's own cell, so
+     * the arc bound is 0 and the landing test (travel >= bound - 8) passes on
+     * the first bump. A throw at a neighbouring cell has bound 16 and cannot
+     * land in one bump while Map.bTrajHitStop is clear, which is the failure
+     * path checked after this one. */
+    Reset();
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+        MapCell *pFrom = At(10, 10, 0);
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus = 0;
+        pUnit->nUnitType = 0;
+        pUnit->uTu = 20;
+        pUnit->pCell = pFrom;
+        pFrom->pUnit = pUnit;
+
+        g_aObjs[0].uSortKey = 0;
+        g_aItems[0].pObj = &g_aObjs[0];
+        pUnit->pHandL = &g_aItems[0];
+        g_Map.pSelWeapon = &g_aItems[0];
+
+        /* 50 throw, 50 strength, weight 2, 60 stun: budget 15.0. */
+        g_Map.throwBudget.nStatThrow   = 50;
+        g_Map.throwBudget.nStatStrength = 50;
+        g_Map.throwBudget.nWeight      = 2;
+        g_Map.throwBudget.nStunOrArmor = 60;
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor = 0;
+        g_State.aQueue[0].nCmd = 0x11;
+        g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].nTuCost = 4;
+        g_State.aQueue[0].nArg = 100;
+        g_State.aQueue[0].nX = 10;
+        g_State.aQueue[0].nY = 10;
+        g_State.aQueue[0].nZ = 0;
+        g_Map.bFlag22 = 1;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+
+        Check("the throw reached its landing",
+              g_State.aQueue[0].nCmd == 0x11);
+        Check("the throw charged the TU", pUnit->uTu == 16);
+        Check("the thrown weapon left the left hand", pUnit->pHandL == NULL);
+        Check("the throw target slot holds the target cell's occupant",
+              g_Map.pThrowTarget == pUnit);
+        Check("the throw clears the flag at 0x22", g_Map.bFlag22 == 0);
+        Check("the landing was not rejected by range",
+              g_Map.throwLanding.bRejected == 0);
+    }
+
+    /* Command 0x11 at a neighbouring cell, with Map.bTrajHitStop clear: the
+     * landing loop runs once, the throw falls short, and the FSM pushes
+     * aTextRecs record 4 before aborting. */
+    Reset();
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    {
+        Soldier *pUnit = &g_aUnits[0];
+
+        memset(pUnit, 0, sizeof(*pUnit));
+        pUnit->bStatus = 0;
+        pUnit->nUnitType = 0;
+        pUnit->uTu = 20;
+        pUnit->pCell = At(10, 10, 0);
+        g_Map.throwBudget.nStatThrow = 50;
+        g_Map.throwBudget.nStatStrength = 50;
+        g_Map.throwBudget.nWeight = 2;
+        g_Map.throwBudget.nStunOrArmor = 60;
+
+        memset(&g_State, 0, sizeof(g_State));
+        g_State.nQueueCursor = 0;
+        g_State.aQueue[0].nCmd = 0x11;
+        g_State.aQueue[0].pUnit = pUnit;
+        g_State.aQueue[0].nTuCost = 4;
+        g_State.aQueue[0].nArg = 100;
+        g_State.aQueue[0].nX = 11;
+        g_State.aQueue[0].nY = 10;
+        g_State.aQueue[0].nZ = 0;
+        Tact_ProcessMoveAction(&g_State, &g_Ctx);
+
+        Check("a short throw with the hit-stop flag clear aborts",
+              g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+        Check("it pushed aTextRecs record 4",
+              g_Map.status.nCount == 1
+              && strcmp(g_Map.status.aszMsg[0], "throw failed") == 0);
+        Check("and charged no TU", pUnit->uTu == 20);
+    }
+
+    /* Command 0x11 with no TU: the ungated push of aTextRecs record 1, then the
+     * abort. Unlike the gated paths this one always pushes. */
+    Reset();
+    Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
+    Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
+    g_aUnits[0].bStatus = 0;
+    g_aUnits[0].nUnitType = 0;
+    g_aUnits[0].uTu = 0;
+    g_aUnits[0].pCell = At(10, 10, 0);
+    g_State.bUnk70114 = 1;
+    g_bSuppressNoTime = 1;
+    RunCmd(0x11, 4);
+    g_bSuppressNoTime = 0;
+    Check("a throw with no TU aborts", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
+    Check("and pushes the no-time record even with bUnk70114 set",
+          g_Map.status.nCount == 1
+          && strcmp(g_Map.status.aszMsg[0], "not enough time") == 0);
 }
 
 int main(void)

@@ -4197,8 +4197,8 @@ observable on the cmd 0x10 path, which jumps to LABEL_170 and returns without th
 refresh.
 
 New test suite `test_moveaction`, 48 checks over cmds 0, 1, 2, 3, 4, 7, 8, 0xA,
-0xF, 0x10, 0xB and 0x12. Cmds 0xE and 0x11 are exercised only through the helpers
-in `test_ballist`; the full fire and throw paths need the wired context.
+0xF, 0x10, 0xB and 0x12. Cmds 0xE and 0x11 run end to end in `test_mapctx`
+against the wired `GameMap`; see the section below.
 
 ## The live tactical context @ Map (152632 bytes) -> GameMap (pufo_mapctx.c)
 
@@ -4272,8 +4272,17 @@ from the ARM: index 0 is `byte_B5F40` = `aTextRecs + 205 * 48`, index 1 is
 the armour slot the option bank selects. The move FSM's own three records are 1
 (`0xB399D`), 2 (`0xB3A6A`) and 4 (`0xB3C04`), all `aTextRecs + 205 * n`.
 
-New test suite `test_mapctx`, 62 checks: grid lookup and bounds, every
+New test suite `test_mapctx`, 83 checks: grid lookup and bounds, every
 `MoveActionCtx` field write-through to the `GameMap`, the real status push
 including the busy gate, the armour-TU warning across all four option settings,
-the real visibility update, and the FSM running commands 1, 3 and 0x12 against
-the live context.
+the real visibility update, and the FSM running commands 1, 3, 0xE, 0x11 and 0x12
+against the live context — including the fire command's ammo rule (`bAmmoCap 255`
+never spends a round but still counts the shot) and both throw outcomes.
+
+The throw cases pin down one consequence of the landing loop that is easy to
+miss: with `Map.bTrajHitStop` clear the loop runs exactly once, so the travel is
+one bump and the landing test `travel >= bound - 8` only passes when the bound is
+small. A throw at the unit's own cell (bound 0) lands; a throw at a neighbouring
+cell (bound 16 voxels) does not, and the command aborts with aTextRecs record 4.
+That is the original's shape, not a port bug: the flag's only writers are the
+input handlers, `Tact_ProcessFireAction` and `Tact_ProcessFallAction`.
