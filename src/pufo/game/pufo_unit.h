@@ -26,12 +26,36 @@
 #define PUFO_SOLDIER_SIZE_ILP32 1044
 #define PUFO_UNIT_STAT_COUNT    10
 
-/* Unit type table, byte_A7B80 @ 0xa7b80. Stride 4; byte[+0] is the "flag 0"
- * column and byte[+1] the "is large" flag. Decoded from the 64 bytes at that
- * address for the first 16 types. */
-#define PUFO_UNIT_TYPE_COUNT 16
+/* Unit type table, byte_A7B80 @ 0xa7b80. Stride 4, 24 rows (96 bytes; the byte
+ * at +0x60 is not part of it). byte[+0] is the "flag 0" column and byte[+1] the
+ * "is large" flag that Unit_bIsLarge @ 0x49ecc tests against 1.
+ *
+ * The table used to be 16 rows and the is-large column had 1s at types 11 and
+ * 13. Both were wrong: those two rows are {1,0,1,0}, so flag 0 is set and the
+ * unit is NOT large. Types 16..23 exist and are reachable - the switch in
+ * Tact_ProcessMoveAction @ 0x4f3f0 has cases up to 0x16. */
+#define PUFO_UNIT_TYPE_COUNT 24
 extern const u8 g_aUnitTypeIsLarge[PUFO_UNIT_TYPE_COUNT];
 extern const u8 g_aUnitTypeFlag0[PUFO_UNIT_TYPE_COUNT];
+
+/* Unit muzzle-offset table, unk_A9768 @ 0xa9768: 23 blocks of 96 bytes, one per
+ * unit type, each 2 groups of 8 facings, each entry 3 i16 (dx, dy, dz).
+ *
+ * Index proven from ARM at 0x50074..0x50094:
+ *     idx = pUnit->bFacing + 8 * (bSel + 2 * pUnit->nUnitType)
+ * where bSel is ObjectRecFull.bListPri (pObj+0xA4) clamped to 0 or 1, and the
+ * byte offset is 6 * idx. The offsets are added to 16*cell->nX / 16*cell->nY /
+ * 12*cell->nZ to get the shot origin in sub-cell units (0x50098..0x500e0).
+ *
+ * Types 14..22 are zero blocks except type 18 group 1, which is {0,0,-3} for all
+ * eight facings. */
+#define PUFO_UNIT_MUZZLE_TYPE_COUNT 23
+typedef struct MuzzleOffset {
+    i16 nDx;
+    i16 nDy;
+    i16 nDz;
+} MuzzleOffset;
+extern const MuzzleOffset g_aUnitMuzzleOffset[PUFO_UNIT_MUZZLE_TYPE_COUNT][2][8];
 
 /* Unit_bIsOperative @ 0x49eb8 returns bStatus == 0; MapCell_HasOccupant
  * @ 0x5487c treats bStatus < 3 as occupying. */

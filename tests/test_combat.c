@@ -714,10 +714,22 @@ static void TestResolveShot(void)
           g_aCells[1][10][10].pItemList == &g_dropItem);
 
     printf("shot sound table\n");
-    CheckEqI32("off_AA040 has 180 entries", PUFO_SHOT_SOUND_COUNT, 180);
+    /* 0xAA040 + 148*2 = 0xAA168, which is where the second table starts. */
+    CheckEqI32("off_AA040 has 148 entries", PUFO_SHOT_SOUND_COUNT, 148);
     CheckEqI32("sort key 0 plays sample 18", g_aShotSound[0], 18);
     CheckEqI32("sort key 15 plays sample 2", g_aShotSound[15], 2);
     CheckEqI32("sort key 17 plays sample 2", g_aShotSound[17], 2);
+
+    printf("fire sound table (word_AA168)\n");
+    CheckEqI32("sort key 0 plays sample 20", g_aFireSoundBySortKey[0], 20);
+    CheckEqI32("sort key 7 plays sample 3", g_aFireSoundBySortKey[7], 3);
+    CheckEqI32("sort key 14 plays sample 18", g_aFireSoundBySortKey[14], 18);
+    CheckEqI32("sort key 22 plays sample 20", g_aFireSoundBySortKey[22], 20);
+    CheckEqI32("sort key 24 plays sample 21", g_aFireSoundBySortKey[24], 21);
+    /* The two tables are adjacent, so the last entry of the first one and the
+     * first entry of the second are different values. */
+    Check("the two sound tables are distinct",
+          g_aShotSound[147] != g_aFireSoundBySortKey[0]);
 }
 int main(void)
 {

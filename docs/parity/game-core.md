@@ -4023,3 +4023,99 @@ is `g_aShotSound` in `pufo_combat.h`. It is a different table.
 
 The blocker for the port is now gone: `Unit_RollChance @ 0x25e6c`, the one missing
 callee from the readiness check above, is ported.
+
+
+---
+
+## 2026-10-11: Tact_ProcessMoveAction @ 0x4f3f0 pre-port verification + three table fixes
+
+### TactState layout, proven from ARM
+
+Prologue of `Tact_ProcessMoveAction` (0x4f3f0) and `TactState_EnqueueTurn` (0x49b84):
+
+| Offset | Field | Evidence |
+|---|---|---|
+| 0x00 | bFlag0 | `STRB R6, [R4]` at 0x4f40c |
+| 0x01 | bFlag1 | `STRB R11, [R4,#1]` at 0x4f418 |
+| 0x04 | nStepFrameDiv | 0x4f8ec |
+| 0x08 | pStepFromCell | 0x4f648 |
+| 0x0C | nStepZDelta | 0x4f8c8 (R10) |
+| 0x10 | nQueueCursor | `LDR R3, [R4,#0x10]` at 0x4f3fc |
+| 0x18 | aQueue[1250], stride 56 | `ADD R0, R2, R4` then displacements 0x18/0x1C/0x20 |
+| 0x11188.. | tail scratch | |
+| 0x1118C | nPhaseCounter | |
+| 0x111D4 | nQueueLen (u16) | `MOV R2, #0x111D4` at 0x49b8c |
+| 0x111D6 | bQueueActive | |
+| 0x111D8 | nPhaseTick | `MOV R3, #0x111D8` at 0x4fa20 |
+| 0x111DC | nPhaseMax | `0x11000 | 0x1DC` at 0x4fa40 |
+| 0x111E2 | bUnk70114 | |
+| 0x111E3 | bUnk70115 | |
+
+Total size 0x111E8 = 70120, which is exactly the size IDA's `TactState` type reports.
+
+The compiler folds the entry address as `(pState + 56*idx) + 0x18`, so ARM displacements
+for entry fields are the entry offset plus 0x18: nCmd 0x18, pUnit 0x1C, nFacing 0x20,
+nX 0x21, nY 0x22, nTurnDir 0x23, nDelta 0x24, nMode 0x28, nZ 0x30, pWeapon 0x34,
+nTuCost 0x3C. The port's `TactQueueEntry` offsets (0x00, 0x04, 0x08, 0x09, 0x0a, 0x0b,
+0x0c, 0x18, 0x1c, 0x24, 0x28) are confirmed correct.
+
+### Four ARM ranges the previous session flagged, now settled
+
+1. **0x4F718..0x4F794, the large-unit 2x2 probe.** Four `MapCell_HasOccupant` probes on
+   cells at dword deltas +0, +1, +60, +61 from the destination cell, i.e. (x, y),
+   (x+1, y), (x, y+1), (x+1, y+1). Each occupied cell is then checked with
+   `LDR R3, [cell,#0x30]` / `CMP R3, pUnit`, so MapCell.pUnit at +0x30 is the occupant
+   and a cell occupied by this same unit does not block it. Failure goes to 0x50818
+   (abort) except the last probe, which goes to 0x4F4AC (status message).
+2. **0x4F8B0..0x4F8EC, the step height pair.** `LDRSBNE R1, [R0,#0x24]` then
+   `RSBNE R1, R1, #0`: the sprite height is the negated SIGNED BYTE at Mc1Rec+0x24.
+   Hex-Rays renders the same field as `gap_22[14]`, which is not offset 0x24 - another
+   pseudocode lie. Then `CMP R10,#0 / CMP R10,#1 / MOVEQ R3,#0x28 / CMP R10,R3`:
+   nStepZDelta 0 leaves the destination height alone, +1 replaces it with 40, and the
+   third case compares against a leftover R3 before `SUB R3, R1, #0x28`.
+3. **0x4FB20 with 0x4FB10..0x4FB4C, the climb target cell.** The cell one layer up is
+   fetched from `ctx + 0x11AF8 + 4*(3600*(nZ+1) + 60*nY + nX)` using the cell's own
+   +0x1A/+0x1B/+0x1C bytes, and `nLayerScratch` (unk_128AF0, ctx+0x15138) is set to
+   nZ+1. So the queue-entry field at +0x3C really is reused as a `MapCell *` in the
+   `nFacing != -1 && nFacing != 1` branch at 0x4FBBC.
+4. **0x50A40..0x50A90, the civilian swap.** apCivilians base is ctx+0x15244,
+   apEnemyUnits base is ctx+0x15240, nCivilianUnitCount is ctx+0x15120. The scan finds
+   pUnit's index, then `apCivilians[idx] = *(ctx + 0x15240 + 4*nCivilianUnitCount)`
+   and decrements the count. Because the two arrays are 4 bytes apart, that source slot
+   is `apCivilians[nCivilianUnitCount - 1]`. Hex-Rays' `apEnemyUnits[nCivilianUnitCount
+   + 29]` is a base-offset artifact, not a real index.
+
+### Table fixes (all three were wrong in the port)
+
+1. **byte_A7B80 unit-type table: 24 rows, not 16.** `Unit_bIsLarge @ 0x49ecc` is
+   `byte_A7B80[type*4 + 1] == 1`. The port's `g_aUnitTypeIsLarge` had 1s at types 11
+   and 13; the binary has `{1,0,1,0}` there, so those types are NOT large. Types
+   16..23 exist and are reachable (the switch in Tact_ProcessMoveAction has cases up to
+   0x16). Fixed: `PUFO_UNIT_TYPE_COUNT` is 24 and both columns are dumped from the
+   binary. `test_unit` and `test_enemyai` asserted the old values and were corrected.
+2. **g_aShotSoundBySortKey @ 0xAA040 is 148 entries, not 180.** 0xAA040 + 148*2 =
+   0xAA168, which is where the second sound table starts. The port's 180-entry array
+   ran 32 entries into it.
+3. **g_aFireSoundBySortKey @ 0xAA168, 148 u16, new.** Indexed by
+   ObjectRec.uSortKey with no bound check; used by Tact_ProcessMoveAction case 0xE
+   (0x50338) and case 0x12 (0x50330 -> LABEL_160). Values 3..21.
+
+### New table: g_aUnitMuzzleOffset @ 0xA9768
+
+23 unit-type blocks x 2 groups x 8 facings x 3 i16 (dx, dy, dz), 2208 bytes,
+0xA9768..0xAA007. Index proven from ARM at 0x50074..0x50094:
+
+    idx = pUnit->bFacing + 8 * (bSel + 2 * pUnit->nUnitType)   // byte offset = 6*idx
+
+`bSel` is `ObjectRec.bListPri` (pObj+0xA4) clamped to 0 or 1 (0x4FFD8..0x4FFE4). The
+three components are added to `16*cell->nX + 8`, `16*cell->nY + 8` and
+`12*cell->nZ + (-12*ceilSpr->byte0x24/24)` to build the shot origin (0x50098..0x500e0).
+Types 0..13 carry data; 14..22 are zero blocks except type 18 group 1, which is
+`{0,0,-3}` for all eight facings. Dumped from pufobeta.exe with tools/dump_muzzle.py.
+
+Tools added: `tools/pe_off.py` (PE RVA -> file offset; IDA addresses in this database
+are RVA + 0x10000) and `tools/dump_muzzle.py`.
+
+IDB updated: `unk_A9768` -> `g_aUnitMuzzleOffset`, `word_AA168` ->
+`g_aFireSoundBySortKey`, `off_AA040` -> `g_aShotSoundBySortKey`, plus listing comments
+at 0xA9768, 0xAA168, 0xAA040 and 0xA7B80.

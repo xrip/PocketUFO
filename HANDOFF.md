@@ -41,6 +41,7 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Branch | `master` |
 | Work tip before this handoff | `471a4ad` — "game-core: port Unit_RollChance at 0x25e6c (scatter triple at Map+0x15058) + 14 checks" |
 | Handoff commit | this document and the `game-core.md` note, committed on top of `471a4ad` |
+| Update 2026-10-11 | `Tact_ProcessMoveAction` pre-port verification landed: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. |
 | Tracked modifications | none (`git diff --stat` empty) |
 | Untracked files | listed in section 12, all intentional |
 | Build | clean, exit 0, no warnings under `/W4 /WX` |
@@ -320,46 +321,36 @@ this handoff.
 
 ---
 
-## 8. Analysis carried over from the previous session (UNVERIFIED)
+## 8. Tact_ProcessMoveAction @ 0x4f3f0 — verification done, port not written
 
-This block is here so the work is not lost. It was produced in the previous session and
-**nothing in it was committed then**. Treat it as leads to re-derive, not as fact.
+Everything the previous session left as a lead has now been re-derived from ARM and
+recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAction
+@ 0x4f3f0 pre-port verification + three table fixes"). Summary:
 
-Target: `Tact_ProcessMoveAction @ 0x4f3f0` — 5868 bytes, 236 blocks, cyclomatic
-complexity 173, 875 pseudocode lines. The prior session claims a 19-case breakdown of
-the move FSM, plus these `TactState` scratch offsets:
+- `TactState` layout proven end to end: header at 0x00..0x17 (bFlag0, bFlag1,
+  nStepFrameDiv 0x04, pStepFromCell 0x08, nStepZDelta 0x0C, nQueueCursor 0x10),
+  `aQueue[1250]` at 0x18, tail scratch from 0x11188 (nPhaseCounter 0x1118C,
+  nQueueLen 0x111D4, bQueueActive 0x111D6, nPhaseTick 0x111D8, nPhaseMax 0x111DC,
+  bUnk70114 0x111E2, bUnk70115 0x111E3). Total 0x111E8 = 70120, which matches the size
+  IDA reports for the type. The previous session's scratch offsets were right.
+- The entry address is folded as `(pState + 56*idx) + 0x18`, so ARM displacements are
+  entry offset + 0x18. The port's `TactQueueEntry` offsets are confirmed correct.
+- All four flagged ARM ranges are settled: the 2x2 probe (deltas +0/+1/+60/+61,
+  occupant at MapCell+0x30), the step-height pair (sprite height is the negated signed
+  byte at Mc1Rec+0x24, not Hex-Rays' `gap_22[14]`), the climb target cell (cell grid at
+  ctx+0x11AF8, index 3600*z + 60*y + x; the entry field at +0x3C really is reused as a
+  `MapCell *`), and the civilian swap (apCivilians ctx+0x15244, apEnemyUnits ctx+0x15240,
+  count ctx+0x15120; the real semantics are `apCivilians[idx] =
+  apCivilians[nCivilianUnitCount-1]` then decrement — Hex-Rays' `+29` is a base artifact).
+- Both move tables are pinned in the port and named in the IDB: `g_aUnitMuzzleOffset`
+  @ 0xA9768 (23 type blocks x 2 groups x 8 facings x 3 i16) and `g_aFireSoundBySortKey`
+  @ 0xAA168 (148 u16 by `ObjectRec.uSortKey`).
+- `tools/pe_off.py` and `tools/dump_muzzle.py` now dump pinned tables straight out of
+  `pufobeta.exe`. IDA addresses in this database are RVA + 0x10000.
 
-| Name | Offset |
-|---|---|
-| `nStepFrameDiv` | `0x04` |
-| `pStepFromCell` | `0x08` |
-| `nStepZDelta` | `0x0C` |
-| `nStepDrawOffX` / `nStepDrawOffY` | `0x1119C` / `0x111A0` |
-| `nStepHeightSrc` / `nStepHeightDst` | `0x111B0` / `0x111B4` |
-| `nTraceX` / `nTraceY` / `nTraceZ` | `0x111BC` / `0x111C0` / `0x111C4` |
-| `nQueueLen` | `0x111D4` |
-| `bQueueActive` | `0x111D6` |
-| `nPhaseTick` / `nPhaseMax` | `0x111D8` / `0x111DC` |
-| `bUnk70114` / `bUnk70115` | `0x111E2` / `0x111E3` |
-
-Four ARM ranges were flagged as still needing verification:
-
-1. `0x4F718..0x4F794` — the large-unit 2x2 occupancy probe.
-2. `0x4F8B0..0x4F8EC` — the `nStepHeightDst` +/-40 comparison.
-3. `0x4FB20` together with `TactState_EnqueueVertStep @ 0x49ddc` — `entry.nTuCost`
-   apparently reused as a `MapCell *`.
-4. `0x50A40..0x50AD0` — the civilian swap path.
-
-Two data tables are used by this function and **their extents are still unknown**:
-`0xA9768` and `0xAA168`. What was checked in the current session, and only this:
-`xrefs_to 0xA9768` returns `0x5008c` and `0x50358`, and `xrefs_to 0xAA168` returns
-`0x50338` and `0x50354` — all four inside `Tact_ProcessMoveAction`. A 2048-byte window
-at `0xA9768` runs past the end of its table; the word table at `0xAA168` ends before
-+0x1A0, where dword data begins. Name lookups over `0xA9700..0xAA400` returned nothing.
-
-Do not confuse `0xAA168` with a neighbouring table that is already pinned elsewhere:
-`pufo_combat.h` defines `off_AA040 @ 0xaa040`, 360 bytes = 180 u16, as
-`PUFO_SHOT_SOUND_COUNT 180` / `g_aShotSound`.
+What is left for the port itself: the 19-case switch body, and the context fields it
+reads (`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`, `nStatusDrawY`, the three
+rosters and their counts, `bFireStatus1`, `nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`).
 
 ---
 
@@ -411,14 +402,14 @@ preparing this document.
 
 ## 11. Next milestones, in priority order
 
-1. **Port `Tact_ProcessMoveAction @ 0x4f3f0`.** All callees now exist. Re-derive the
-   scratch offsets and the 19-case breakdown from ARM rather than trusting section 8;
-   verify the four flagged ARM ranges first (`0x4F718..0x4F794`,
-   `0x4F8B0..0x4F8EC`, `0x4FB20` + `TactState_EnqueueVertStep @ 0x49ddc`,
-   `0x50A40..0x50AD0`).
-2. **Dump the two move tables at `0xA9768` and `0xAA168`.** Determine exact extents and
-   element types from ARM, name them in the IDB, and add them to the port as pinned
-   arrays the way `g_aShotSound` is pinned in `pufo_combat.h`.
+1. **Port `Tact_ProcessMoveAction @ 0x4f3f0`.** All callees exist and every ARM
+   question that blocked it is answered (section 8). What remains is writing the
+   19-case switch and choosing the injected context struct for the Map globals it
+   reads. The pseudocode is 875 lines and `decompile(..., include_addresses: true)`
+   returns it in one call.
+2. ~~Dump the two move tables~~ — done. `g_aUnitMuzzleOffset` @ 0xA9768 and
+   `g_aFireSoundBySortKey` @ 0xAA168 are pinned in the port and named in the IDB.
+   Three existing tables were found wrong and corrected in the same commit.
 3. **Assert the `Tact_KillUnit` spotted-flag sweep.** It is ported but unverified;
    prove the sweep bounds and semantics from ARM, then add checks.
 4. **Fix the reporting debt** before it distorts decisions: one uniform test output

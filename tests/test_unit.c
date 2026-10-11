@@ -92,10 +92,13 @@ static void TestPredicates(void)
     Check(Unit_bIsLarge(&unit), "  type 8 is large");
     unit.nUnitType = 9;
     Check(!Unit_bIsLarge(&unit), "  type 9 is small");
+    /* byte_A7B80 rows 11 and 13 are {1,0,1,0}: flag 0 set, is-large clear. */
     unit.nUnitType = 11;
-    Check(Unit_bIsLarge(&unit), "  type 11 is large");
+    Check(!Unit_bIsLarge(&unit), "  type 11 is small");
     unit.nUnitType = 13;
-    Check(Unit_bIsLarge(&unit), "  type 13 is large");
+    Check(!Unit_bIsLarge(&unit), "  type 13 is small");
+    unit.nUnitType = 21;
+    Check(Unit_bIsLarge(&unit), "  type 21 is large");
     /* Out of table range must be safe, not an overread. */
     unit.nUnitType = 200;
     Check(!Unit_bIsLarge(&unit), "  out-of-range type is small, not an overread");
@@ -1193,6 +1196,54 @@ static void TestDropItems(void)
     CheckEqI32(DropListLen(&cell), 1, "a large unit still drops its belt");
 }
 
+/* byte_A7B80 @ 0xa7b80 (24 rows) and unk_A9768 @ 0xa9768 (23 muzzle blocks).
+ * Values dumped from pufobeta.exe; the index formula is proven from ARM at
+ * 0x50074..0x50094. */
+static void TestTypeTables(void)
+{
+    Soldier u;
+
+    printf("unit type tables\n");
+    CheckEqI32(PUFO_UNIT_TYPE_COUNT, 24, "byte_A7B80 has 24 rows");
+    /* Types 11 and 13 are {1,0,1,0}: flag 0 set, NOT large. The old table had
+     * them as large. */
+    CheckEqI32(g_aUnitTypeIsLarge[11], 0, "type 11 is not large");
+    CheckEqI32(g_aUnitTypeIsLarge[13], 0, "type 13 is not large");
+    CheckEqI32(g_aUnitTypeFlag0[11], 1, "type 11 has flag 0");
+    CheckEqI32(g_aUnitTypeFlag0[13], 1, "type 13 has flag 0");
+    CheckEqI32(g_aUnitTypeIsLarge[4], 1, "type 4 is large");
+    CheckEqI32(g_aUnitTypeIsLarge[8], 1, "type 8 is large");
+    CheckEqI32(g_aUnitTypeIsLarge[18], 1, "type 18 is large");
+    CheckEqI32(g_aUnitTypeIsLarge[20], 1, "type 20 is large");
+    CheckEqI32(g_aUnitTypeIsLarge[21], 1, "type 21 is large");
+    CheckEqI32(g_aUnitTypeIsLarge[22], 0, "type 22 is not large");
+    CheckEqI32(g_aUnitTypeIsLarge[23], 0, "type 23 is not large");
+
+    memset(&u, 0, sizeof(u));
+    u.nUnitType = 11;
+    Check(!Unit_bIsLarge(&u), "Unit_bIsLarge(11) is false");
+    u.nUnitType = 13;
+    Check(!Unit_bIsLarge(&u), "Unit_bIsLarge(13) is false");
+    u.nUnitType = 21;
+    Check(Unit_bIsLarge(&u), "Unit_bIsLarge(21) is true");
+
+    printf("muzzle offset table\n");
+    CheckEqI32(PUFO_UNIT_MUZZLE_TYPE_COUNT, 23, "unk_A9768 has 23 type blocks");
+    CheckEqI32(g_aUnitMuzzleOffset[0][0][0].nDx, 5, "type 0 group 0 facing 0 dx");
+    CheckEqI32(g_aUnitMuzzleOffset[0][0][0].nDy, -5, "type 0 group 0 facing 0 dy");
+    CheckEqI32(g_aUnitMuzzleOffset[0][0][0].nDz, 3, "type 0 group 0 facing 0 dz");
+    CheckEqI32(g_aUnitMuzzleOffset[0][1][0].nDx, 6, "type 0 group 1 facing 0 dx");
+    CheckEqI32(g_aUnitMuzzleOffset[0][1][7].nDz, 4, "type 0 group 1 facing 7 dz");
+    /* Types 4..8 share a block whose second half is all zero. */
+    CheckEqI32(g_aUnitMuzzleOffset[4][0][7].nDz, 0, "type 4 group 0 facing 7 dz");
+    CheckEqI32(g_aUnitMuzzleOffset[4][1][0].nDx, 0, "type 4 group 1 facing 0 dx");
+    /* Type 18 is the only zero-ish block with a non-zero group. */
+    CheckEqI32(g_aUnitMuzzleOffset[18][0][0].nDx, 0, "type 18 group 0 facing 0 dx");
+    CheckEqI32(g_aUnitMuzzleOffset[18][1][0].nDz, -3, "type 18 group 1 facing 0 dz");
+    CheckEqI32(g_aUnitMuzzleOffset[18][1][7].nDz, -3, "type 18 group 1 facing 7 dz");
+    CheckEqI32(g_aUnitMuzzleOffset[22][1][7].nDz, 0, "type 22 group 1 facing 7 dz");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1260,6 +1311,7 @@ int main(void)
     TestRecalcInventory();
     TestFacingAngleDuel();
     TestDropItems();
+    TestTypeTables();
 
     TextTables_Free();
     Asset_CloseArchives();

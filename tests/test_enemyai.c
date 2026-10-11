@@ -34,13 +34,21 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
 /* The two table columns, as decoded from byte_A7B80 @ 0xa7b80. Repeating them here
  * makes the test independent of the implementation's own copy: if the port's table
  * drifts, these expectations still describe the original. */
-static const u8 k_aFlag0[16] = { 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0 };
-static const u8 k_aLarge[16] = { 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 1, 0, 1, 0, 0 };
+/* Independent transcription of byte_A7B80 @ 0xa7b80, 24 rows of 4 bytes:
+ * byte[+0] is flag 0, byte[+1] is the is-large flag Unit_bIsLarge tests. */
+static const u8 k_aFlag0[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+    0, 0, 1, 0, 0, 0, 0, 0
+};
+static const u8 k_aLarge[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 1, 0, 1, 1, 0, 0
+};
 
 static void TestTableMatchesDecode(void)
 {
     printf("The unit-type table matches the decoded original bytes\n");
-    for (i32 t = 0; t < 16; ++t) {
+    for (i32 t = 0; t < PUFO_UNIT_TYPE_COUNT; ++t) {
         if (g_aUnitTypeFlag0[t] != k_aFlag0[t]
             || g_aUnitTypeIsLarge[t] != k_aLarge[t]) {
             printf("  MISMATCH at type %d: got flag0=%d large=%d\n", t,
@@ -63,7 +71,7 @@ static void TestPredicateExhaustive(void)
     /* Walk every type against every role in 0..5 and compare against the rule
      * transcribed from the decompilation. */
     for (i32 role = 0; role <= 5; ++role) {
-        for (i32 t = 0; t < 16; ++t) {
+        for (i32 t = 0; t < PUFO_UNIT_TYPE_COUNT; ++t) {
             bool bWant;
 
             unit.nUnitType = (u8)t;

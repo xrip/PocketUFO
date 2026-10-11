@@ -63,10 +63,16 @@ typedef enum SplashMode {
     SPLASH_MODE_THROW    = 2
 } SplashMode;
 
-/* off_AA040 @ 0xaa040, 360 bytes = 180 u16: weapon uSortKey -> the sound id
- * Combat_ResolveShot passes to Sound_Play. Dumped from the IDB. */
-#define PUFO_SHOT_SOUND_COUNT 180
+/* Two parallel 148-entry tables, both indexed by ObjectRecFull.uSortKey with no
+ * bound check in the original:
+ *   off_AA040 @ 0xaa040  - the sound Combat_ResolveShot plays on impact.
+ *   word_AA168 @ 0xaa168 - the sound Tact_ProcessMoveAction @ 0x4f3f0 plays for a
+ *                          queued shot (case 0xE at 0x50338 and case 0x12 at 0x50330).
+ * 0xAA040 + 148*2 = 0xAA168, so 148 is the real extent of the first table; the
+ * port used to claim 180, which ran 32 entries into the second table. */
+#define PUFO_SHOT_SOUND_COUNT 148
 extern const u16 g_aShotSound[PUFO_SHOT_SOUND_COUNT];
+extern const u16 g_aFireSoundBySortKey[PUFO_SHOT_SOUND_COUNT];
 
 /* Sound_Play(2) at 0x2f66c: a ceiling tile gave way under the shot. */
 #define PUFO_SOUND_CEILING_BREAK 2
