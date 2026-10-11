@@ -515,3 +515,103 @@ documented at `Map+0x88`, for the byte that `Input_OnConfirm` case 4 already mod
 `bLookCommitFlag` at `Map+0x1508C`. Both pointer case-4 gates now read
 `bLookCommitFlag`, and the duplicate field is gone.
 
+## The inventory button and the special action pad
+
+Ported in `src/pufo/game/pufo_tacthud.c` as `TactHud_OpenInventory` and
+`TactHud_UseSpecialItem`; asserted in `tests/test_tacthud.c` (38 new checks, 88 total).
+
+### `Inv_OpenScreen @ 0x16ef4`
+
+The gate order is `0x16EFC` sample gate, `0x16F1C` roster gate, `0x16F34` humanoid
+gate. The sample gate only gates the sample: with `LOBYTE(apUiSlotsA[2]) @ Map+0x68`
+clear the button still opens the screen, it just stays quiet.
+
+| Effect | Offset | ARM |
+|---|---|---|
+| `nInvListSel = 0xFF` (every category) | `Map+0x4A26` | `0x16F44` |
+| `nInvFilterType = 0` (ground list row 0) | `Map+0x1A22` | `0x16F54` |
+| `Inv_BuildVisibleList` | — | `0x16F5C` |
+| `pBank+0x2AA = 0`, `pBank+0x30A = 1` | `0xAC97A`, `0xAC9DA` | `0x16F68`, `0x16F70` |
+| five filter pads cleared | `0xAC9FA/ACA1A/ACA3A/ACA5A/ACA7A` | `0x16F78..0x16F98` |
+| action latch cleared | `Map+0x02` | `0x16FA0` |
+| cursor re-stamped at its own position | `Map+0x15128/0x1512C` | `0x16FB0`, `0x16FBC` |
+| `Unit_RecalcInventoryStat` | — | `0x16FD0` |
+| `nUiScreen = 1` | `Map+0x3A` (u16) | `0x16FD8` |
+| `Map_bDrawIsoLayer = 1` | `Map+0x254B0` | `0x16FE8` |
+
+`Map_bDrawIsoLayer` (was `unk_138E68`) is the tactical-layer draw switch:
+`Render_Frame @ 0x22310` skips `MapView_DrawIsoLayer` when it is clear (`0x22404`,
+`0x225c4`), and `Tact_InitMission @ 0x3c550` clears it at mission start (`0x3C5C0`).
+Renamed in the IDB.
+
+Deviation: the original tests `nXcomUnitCount` but dereferences `pSelUnit` without a
+NULL test; the port refuses a NULL selection. Deviation: `Unit_RecalcInventoryStat`
+needs the injected object-weight hooks, so a context without them skips the recalc.
+
+### `TactHud_UseSpecialItem20 @ 0x17d54` — the special pad, action mode 8
+
+`nActionMode = 8` (`0x17D74`) and `nUiScreen = 0` (`0x17D78`) are written before the
+weapon is read, so pressing the pad with an unusable item still closes the menu screen
+and still leaves mode 8 behind. The branch value is `pSelWeapon->pObj->uSortKey`:
+
+| `uSortKey` | Behaviour |
+|---|---|
+| 20 | pay `anActionCost[8]` off `Soldier.uTu` directly, not through the queue; mark every enemy and every Xcom unit within 10 cells; open `nUiScreen = 6` |
+| 21 | the medikit: find a target, refuse it, or enqueue command 18 |
+| 23 | affordability only: set the action latch `Map+0x02` to 4 |
+| other | stop, with mode 8 and screen 0 already written |
+
+All three gates read the full dword at `Map+0x4E4C + 4*8 = 0x118824` (`0x17DA0`,
+`0x17DD8`, `0x18078`). Only the sort-key-20 subtraction truncates: `0x180AC`
+`MOV R3,R2,LSL#16 / SUB R3,R1,R3,LSR#16` cuts the cost to 16 signed bits. The cost
+handed to the queue at `0x1804C` is the full dword. Failure in any branch pushes
+`aTextRecs` record 1, "not enough time".
+
+The mark sweep (`0x180D4..0x18180` enemies, `0x18198..0x18240` Xcom) writes
+`Soldier.bSpecialMark @ 0x1B0` from `sqrt(dx*dx + dy*dy) > 10.0`, the double constant
+`0x40240000_00000000` at `0x18154`. Exactly 10 cells keeps the mark.
+
+The medikit target search (`0x17E00..0x17F3C`):
+
+- the candidate cell is `pSelUnit->pCell` stepped one `aDirDeltaXY` step in the unit's
+  own facing, on the unit's own layer;
+- `Unit_CanStepExitDir @ 0x36d68` must say the step is clear, otherwise there is no
+  cell target;
+- the target is that cell's occupant `MapCell.pUnit @ 0x30`, which may be NULL;
+- when it is NULL, the scan looks for a civilian standing on the healer's own cell
+  that is not large, is humanoid (`nUnitType <= 3`) and has `uHp != 0`, and the fire
+  target becomes the healer's own cell instead of the adjacent one.
+
+Refusals, in ARM order:
+
+1. a non-civilian target that is NULL, inoperative, or large pushes records 9 and 10
+   (`0x17F8C`, `0x17FA4`) — "To use a medikit" plus "stand in front of the soldier";
+2. a target with `bKneelOrPrimed @ 0xF6` clear that has `uHp == auStat[1]`,
+   `bMorale == 100` and `uTuSpent <= uHp >> 1` pushes records 11 and 12 (`0x17FF4`,
+   `0x17FA4`) — "Does not need a medikit" plus an empty tail record.
+
+Records 9..12 are `aTextRecs + 205*9 = 0xB4005`, `+205*10 = 0xB40E2`, `+205*11 =
+0xB419F` and `+205*12 = 0xB4268`. The pairs are two status lines that read as one
+sentence; record 12 is empty in both `main.dat` and `lang.dat`.
+
+Otherwise `nFireTgtX/Y/Z @ 0x14040/0x14044/0x14048` take the target cell and its
+layer, `Tact_EnqueueActionOrStatus205 @ 0x4b420` appends command 18 with the target,
+`pSelWeapon`, the cost and mode 8, and `TactState_KickQueue` starts the queue.
+
+### `Unit_CanStepExitDir @ 0x36d68` takes a cell, not a unit
+
+Both of its code callers (`0x17C1C` in `TactAction_ConfirmMeleeMode6` and `0x17E3C`
+here) load the argument as `LDR R1, [R1,#0x10]` straight off `Map.pSelUnit`, so the
+pointer is `MapCell *`. The callee reads bytes `+0x1A/+0x1B/+0x1C`, which are
+`MapCell.nX/nY/nZ`. Hex-Rays typed it as `Soldier *` and named the same three bytes
+`nMultiTarget`, `gap_1B` and `anim.nPathZ`; the offsets are shared, the intended
+record is the cell. The port's parameter is now `const MapCell *`.
+
+Deviations in `TactHud_UseSpecialItem`: the original dereferences
+`pSelWeapon->pObj` with no NULL test; the port refuses a missing weapon. The original
+indexes `apCells` for the target cell without bounds checks; the port's injected
+lookup returns NULL out of range and the search falls through to the civilian scan.
+The original indexes the facing delta table without a bound, so facings 8 and 9 (up
+and down) read past the eight-row probe table; the port bounds the facing at
+`PUFO_PATH_DIR_COUNT` and lets the probe test refuse.
+

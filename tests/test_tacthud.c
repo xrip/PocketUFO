@@ -62,6 +62,12 @@ static void CbPush(i32 nRecord, void *pUser)
     (void)pUser;
     g_nRecord = nRecord;
 }
+static i32 g_nRebuildCalls;
+static void CbRebuild(void *pUser)
+{
+    (void)pUser;
+    g_nRebuildCalls += 1;
+}
 static bool CbWarn(const Soldier *pUnit, i32 nTuCost, void *pUser)
 {
     (void)pUnit; (void)nTuCost; (void)pUser;
@@ -111,6 +117,7 @@ static void Reset(void)
     g_nRecord = -1;
     g_nWarnCalls = 0;
     g_bWarn = false;
+    g_nRebuildCalls = 0;
 
     g_Unit.pCell = At(3, 3, 1);
     g_Unit.nUnitType = 0;
@@ -388,6 +395,301 @@ static void TestClimbDown(void)
           && Queued(1, TACTCMD_VERT_STEP, 0xFF));
 }
 
+static void TestOpenInventory(void)
+{
+    TactHudInvOpenCtx ctx;
+    TactCursor cursor = { 3, 3, 1 };
+    TactUiState ui;
+
+    printf("TactHud_OpenInventory\n");
+
+    Reset();
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&ui, 0, sizeof(ui));
+    ctx.pUi = &ui;
+    ctx.pSelUnit = &g_Unit;
+    ctx.pCursor = &cursor;
+    ctx.geom.nDimX = 1;
+    ctx.geom.nDimY = 1;
+    ctx.pfnLookup = Lookup;
+    ctx.nXcomCount = 4;
+    ctx.bSweepGate = 1;
+    ctx.bSelUnitLarge = false;
+    ctx.pfnPlaySample = CbPlay;
+    ctx.pfnRebuildVisibleList = CbRebuild;
+
+    Check("the inventory opens for a humanoid",
+          TactHud_OpenInventory(&ctx) && ui.nUiScreen == 1);
+    Check("the sweep gate picks sample 16", g_nSample == 16 && g_nSampleCalls == 1);
+    Check("the filter resets to every category", ui.nInvListSel == 0xFFu);
+    Check("the ground list scroll resets", ui.nInvFilterType == 0);
+    Check("the All pad is the lit one",
+          ui.bFilterPadAll == 1 && ui.bFilterPadX == 0
+          && ui.abFilterPad[0] == 0 && ui.abFilterPad[1] == 0
+          && ui.abFilterPad[2] == 0 && ui.abFilterPad[3] == 0
+          && ui.abFilterPad[4] == 0);
+    Check("the visible list is rebuilt once", g_nRebuildCalls == 1);
+    Check("the iso layer draw is switched on", ui.bDrawIsoLayer == 1);
+    Check("the cursor is re-stamped on its own cell",
+          cursor.nX == 3 && cursor.nY == 3);
+
+    /* The sample is gated, the rest of the gate is not. */
+    Reset();
+    ctx.bSweepGate = 0;
+    Check("the screen opens without the sample",
+          TactHud_OpenInventory(&ctx) && g_nSampleCalls == 0);
+
+    Reset();
+    ctx.bSweepGate = 1;
+    memset(&ui, 0, sizeof(ui));
+    ui.bActionLatch = 3;
+    ui.bFilterPadX = 1;
+    ui.abFilterPad[2] = 1;
+    ui.nInvFilterType = 7;
+    ui.nInvListSel = 4;
+    ctx.nXcomCount = 0;
+    Check("no team units means no inventory",
+          !TactHud_OpenInventory(&ctx) && ui.nUiScreen == 0);
+
+    Reset();
+    ctx.nXcomCount = 4;
+    g_Unit.nUnitType = 4;
+    Check("a non-humanoid gets no inventory", !TactHud_OpenInventory(&ctx));
+
+    Reset();
+    g_Unit.nUnitType = 0;
+    TactHud_OpenInventory(&ctx);
+    Check("the pads and the latch are reset on the way in",
+          ui.bActionLatch == 0 && ui.bFilterPadX == 0 && ui.abFilterPad[2] == 0
+          && ui.nInvFilterType == 0 && ui.nInvListSel == 0xFFu);
+}
+
+/* TactHud_UseSpecialItem20 @ 0x17d54. The three sort-key branches, the medikit
+ * target search and the two refusal pairs. */
+static void TestSpecialItem(void)
+{
+    static GameMap map;
+    static TactUiState ui;
+    static TactHudSpecialCtx ctx;
+    static TactItem item;
+    static ObjectRec obj;
+    static Soldier civ;
+    static Soldier third;
+
+    printf("TactHud_UseSpecialItem\n");
+
+    Reset();
+    memset(&map, 0, sizeof(map));
+    memset(&ui, 0, sizeof(ui));
+    memset(&ctx, 0, sizeof(ctx));
+    memset(&item, 0, sizeof(item));
+    memset(&obj, 0, sizeof(obj));
+    memset(&civ, 0, sizeof(civ));
+    memset(&third, 0, sizeof(third));
+
+    map.geom.nDimX = 1;
+    map.geom.nDimY = 1;
+    map.pSelUnit = &g_Unit;
+    item.pObj = &obj;
+    map.pSelWeapon = &item;
+    ui.anActionCost[PUFO_ACTION_MODE_SPECIAL] = 4;
+    ctx.pMap = &map;
+    ctx.pUi = &ui;
+    ctx.pQueue = &g_State;
+    ctx.pfnLookup = Lookup;
+    ctx.pfnPlaySample = CbPlay;
+    ctx.pfnPushTextRecord = CbPush;
+
+    /* An unrecognised weapon still leaves mode 8 and screen 0 behind. */
+    obj.uSortKey = 5;
+    TactHud_UseSpecialItem(&ctx);
+    Check("mode 8 and screen 0 are written before the weapon is read",
+          ui.nActionMode == PUFO_ACTION_MODE_SPECIAL && ui.nUiScreen == 0);
+    Check("an unrelated item does nothing else",
+          g_State.nQueueLen == 0 && g_nRecord == -1 && g_Unit.uTu == 10u);
+
+    /* --- sort key 20: pay, mark, open screen 6 --- */
+    obj.uSortKey = PUFO_SPECIAL_SORT_MARK;
+    g_Unit.uTu = 3;
+    TactHud_UseSpecialItem(&ctx);
+    Check("sort key 20 refuses without the TU", g_nRecord == 1 && g_Unit.uTu == 3u);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    g_Unit.pCell = At(0, 0, 1);
+    g_Other.pCell = At(9, 9, 1);
+    third.pCell = At(6, 8, 1);
+    map.apEnemyUnits[0] = &g_Other;
+    map.apEnemyUnits[1] = &third;
+    map.nEnemyCount = 2;
+    map.apXcomUnits[0] = &g_Unit;
+    map.nXcomCount = 1;
+    TactHud_UseSpecialItem(&ctx);
+    Check("sort key 20 pays from the unit's own TU", g_Unit.uTu == 6u);
+    Check("a unit 12.7 cells away loses its mark", g_Other.bSpecialMark == 0);
+    Check("a unit exactly 10 cells away keeps its mark", third.bSpecialMark == 1);
+    Check("the selected unit is marked too", g_Unit.bSpecialMark == 1);
+    Check("sort key 20 opens screen 6", ui.nUiScreen == 6);
+    Check("sort key 20 queues nothing", g_State.nQueueLen == 0);
+
+    /* --- sort key 23: affordability only --- */
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_LATCH;
+    TactHud_UseSpecialItem(&ctx);
+    Check("sort key 23 arms the fire latch", map.bActionLatch == PUFO_ACTION_LATCH_FIRE);
+    Check("sort key 23 spends nothing", g_Unit.uTu == 10u);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    map.bActionLatch = 0;
+    g_Unit.uTu = 1;
+    TactHud_UseSpecialItem(&ctx);
+    Check("sort key 23 refuses without the TU",
+          g_nRecord == 1 && map.bActionLatch == 0);
+
+    /* --- sort key 21: the medikit --- */
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    map.nEnemyCount = 0;
+    map.nXcomCount = 0;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;                       /* north: the cell at (3,2,1) */
+    g_Other.pCell = At(3, 2, 1);
+    g_Other.bStatus = 0;                      /* operative */
+    g_Other.nUnitType = 0;
+    g_Other.bKneelOrPrimed = 1;               /* skip the "does not need it" test */
+    At(3, 2, 1)->pUnit = &g_Other;
+    TactHud_UseSpecialItem(&ctx);
+    Check("the medikit enqueues command 18",
+          g_State.nQueueLen == 1
+          && g_State.aQueue[0].nCmd == TACTCMD_ACTION18);
+    Check("the entry carries the target, the mode and the cost",
+          g_State.aQueue[0].pTarget == &g_Other
+          && g_State.aQueue[0].nMode == PUFO_ACTION_MODE_SPECIAL
+          && g_State.aQueue[0].nTuCost == 4);
+    Check("the fire target is the cell in front, on the healer's layer",
+          ui.nFireTgtX == 3 && ui.nFireTgtY == 2 && ui.nFireTgtZ == 1);
+    Check("the queue starts", g_State.bQueueActive == 1);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    TactHud_UseSpecialItem(&ctx);
+    Check("an empty cell in front refuses with records 9 and 10",
+          g_nRecord == PUFO_TXTREC_MEDKIT_WHY2 && g_State.nQueueLen == 0);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    At(3, 2, 1)->pUnit = &g_Other;
+    g_Other.nUnitType = 4;                    /* large */
+    g_Other.bStatus = 0;
+    TactHud_UseSpecialItem(&ctx);
+    Check("a large target refuses", g_nRecord == PUFO_TXTREC_MEDKIT_WHY2);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    At(3, 2, 1)->pUnit = &g_Other;
+    g_Other.nUnitType = 0;
+    g_Other.bStatus = 2;                      /* not operative */
+    TactHud_UseSpecialItem(&ctx);
+    Check("an inoperative target refuses", g_nRecord == PUFO_TXTREC_MEDKIT_WHY2);
+
+    /* A civilian on the healer's own cell skips the operative and size tests. */
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    civ.pCell = At(3, 3, 1);
+    civ.nUnitType = 0;
+    civ.uHp = 30;
+    civ.bStatus = 5;
+    civ.bKneelOrPrimed = 1;
+    map.apCivilians[0] = &civ;
+    map.nCivilianCount = 1;
+    TactHud_UseSpecialItem(&ctx);
+    Check("a civilian on the own cell is treated as a target",
+          g_State.nQueueLen == 1 && g_State.aQueue[0].pTarget == &civ);
+    Check("a civilian target aims at the healer's own cell",
+          ui.nFireTgtX == 3 && ui.nFireTgtY == 3 && ui.nFireTgtZ == 1);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    map.nCivilianCount = 0;
+    At(3, 2, 1)->pUnit = &g_Other;
+    g_Other.bStatus = 0;
+    g_Other.nUnitType = 0;
+    g_Other.bKneelOrPrimed = 0;
+    g_Other.uHp = 50;
+    g_Other.auStat[1] = 50;
+    g_Other.bMorale = 100;
+    g_Other.uTuSpent = 20;
+    TactHud_UseSpecialItem(&ctx);
+    Check("a healthy target refuses with records 11 and 12",
+          g_nRecord == PUFO_TXTREC_MEDKIT_FIT2 && g_State.nQueueLen == 0);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    At(3, 2, 1)->pUnit = &g_Other;
+    g_Other.bStatus = 0;
+    g_Other.nUnitType = 0;
+    g_Other.bKneelOrPrimed = 0;
+    g_Other.uHp = 50;
+    g_Other.auStat[1] = 50;
+    g_Other.bMorale = 100;
+    g_Other.uTuSpent = 26;                    /* more than uHp/2 */
+    TactHud_UseSpecialItem(&ctx);
+    Check("spending more than half the HP in TU makes the kit worth it",
+          g_State.nQueueLen == 1);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.bFacing = 0;
+    At(3, 2, 1)->pWallSprB = Wall(0);
+    At(3, 2, 1)->pWallSprB->gap_2f[0] = 1;
+    TactHud_UseSpecialItem(&ctx);
+    Check("a wall in the facing direction blocks the target search",
+          g_nRecord == PUFO_TXTREC_MEDKIT_WHY2 && g_State.nQueueLen == 0);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = &item;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    g_Unit.uTu = 2;
+    TactHud_UseSpecialItem(&ctx);
+    Check("the medikit gate uses the full cost dword",
+          g_nRecord == 1 && g_State.nQueueLen == 0);
+
+    Reset();
+    map.pSelUnit = &g_Unit;
+    map.pSelWeapon = NULL;
+    obj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    TactHud_UseSpecialItem(&ctx);
+    Check("no selected weapon stops after the mode write",
+          ui.nActionMode == PUFO_ACTION_MODE_SPECIAL && g_nRecord == -1);
+}
+
 int main(void)
 {
     Reset();
@@ -396,5 +698,9 @@ int main(void)
     TestClimbUp();
     Reset();
     TestClimbDown();
+    Reset();
+    TestOpenInventory();
+    Reset();
+    TestSpecialItem();
     return TestSummary("test_tacthud");
 }

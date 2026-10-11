@@ -448,7 +448,7 @@ preparing this document.
    `Map+0x4E4C`. The HUD action buttons the pads call are ported too:
    `TactHud_ToggleKneel @ 0x16570`, `TactHud_ClimbUp @ 0x1674c` and
    `TactHud_ClimbDown @ 0x16af0` in `src/pufo/game/pufo_tacthud.c`, asserted by
-   `test_tacthud` (50 checks). `Unit_FaceToward @ 0x49bf0` is ported for real:
+   `test_tacthud` (88 checks). `Unit_FaceToward @ 0x49bf0` is ported for real:
    it enqueues a turn command, it does not write `Soldier.bFacing`.
    Closed items: `MapCursor_SetPos @ 0x27014` reads **`Map+0x02`**, not `Map+0x22`
    (`LDRB R3, [R4,#2]` at `0x2723C`); the wrong offset in the port header and in
@@ -460,7 +460,14 @@ preparing this document.
    immediates at `0x170D0`: cost `Map+0x4E4C + 4*m`, enabled `Map+0x4E7C + 4*m`
    (`Map+0x4EBC` is the unrelated combat hit-window array). The hand action menus
    `Tact_OpenLeftHandMenu @ 0x17030` and `Tact_OpenRightHandMenu @ 0x17148` are ported
-   as one `Ui_OpenHandMenu`. Still open: `MapView_FocusOnUnit @ 0x2c758`
+   as one `Ui_OpenHandMenu`. So are the inventory button `Inv_OpenScreen @ 0x16ef4`
+   (`TactHud_OpenInventory`) and the special action pad `TactHud_UseSpecialItem20 @
+   0x17d54` (`TactHud_UseSpecialItem`), which covers the mark-nearby branch, the
+   medikit target search and its two refusal pairs, and the latch-4 branch. That
+   empties the tactical HUD handler block `0x163d4..0x17d54`. `Unit_CanStepExitDir @
+   0x36d68` is retyped: both of its callers pass `Map.pSelUnit->pCell`, so the
+   argument is a `MapCell *` and the bytes it reads are `nX/nY/nZ`, not the Soldier
+   path triple Hex-Rays named. Still open: `MapView_FocusOnUnit @ 0x2c758`
    is injected as a hook rather than ported (it takes a `MapCell *`, not a unit),
    and `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
    the widget bank these handlers live in, are not ported yet. The `UiPanel` type

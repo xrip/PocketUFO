@@ -614,7 +614,7 @@ static const i8 s_aExitProbe[8][4][3] = {
     { { 0,  0, 2 }, { 0,  0, 1 }, { -1, 0, 1 }, { 0, -1, 2 } },
 };
 
-bool Unit_CanStepExitDir(const Soldier *pUnit, i32 nDir, const MapGeom *pGeom,
+bool Unit_CanStepExitDir(const MapCell *pOrigin, i32 nDir, const MapGeom *pGeom,
                          MapCellLookup pfnLookup, void *pUser)
 {
     const StepDir *pStep;
@@ -623,14 +623,14 @@ bool Unit_CanStepExitDir(const Soldier *pUnit, i32 nDir, const MapGeom *pGeom,
     i32 nZ;
     bool bBlocked = false;
 
-    if (pUnit == NULL || pGeom == NULL || pfnLookup == NULL
+    if (pOrigin == NULL || pGeom == NULL || pfnLookup == NULL
         || nDir < 0 || nDir > 7) {
         return false;
     }
     pStep = &g_aStepDir[nDir];
-    nX = (i32)pStep->dx + (i32)pUnit->nMultiTarget;
-    nY = (i32)(u8)pUnit->gap_1B + (i32)pStep->dy;
-    nZ = (i32)pUnit->multiOrAnim.anim.nPathZ;
+    nX = (i32)pStep->dx + (i32)pOrigin->nX;
+    nY = (i32)pStep->dy + (i32)pOrigin->nY;
+    nZ = (i32)pOrigin->nZ;
     if (!Map_IsValidCell(pGeom, nX, nY, nZ)) {
         return false;
     }

@@ -721,44 +721,44 @@ static MapCell *GridLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 static void TestCanStepExitDir(void)
 {
     static MapCell s_aGrid[4][30][40];
-    Soldier unit;
+    MapCell origin;
     MapGeom geom;
     Mc1Rec wall;
 
     printf("Unit_CanStepExitDir\n");
     memset(s_aGrid, 0, sizeof(s_aGrid));
     memset(&wall, 0, sizeof(wall));
-    memset(&unit, 0, sizeof(unit));
+    memset(&origin, 0, sizeof(origin));
     geom.nDimX = 4;
     geom.nDimY = 3;
-    unit.nMultiTarget = 5;
-    unit.gap_1B = 6;
-    unit.multiOrAnim.anim.nPathZ = 1;
+    origin.nX = 5;
+    origin.nY = 6;
+    origin.nZ = 1;
 
     /* nDir 0 steps (0,-1,0), so the probe base is (5,5,1). With no wall sprite
      * the direction is clear. */
-    Check(Unit_CanStepExitDir(&unit, 0, &geom, GridLookup, s_aGrid),
+    Check(Unit_CanStepExitDir(&origin, 0, &geom, GridLookup, s_aGrid),
           "clear when the probe cell has no wall");
 
     /* A wall-B sprite whose byte 0x2F is set blocks the step. bTransparent 0 and
      * bBlocksMove 0 make the blank/blocking test pass. */
     s_aGrid[1][5][5].pWallSprB = &wall;
     wall.gap_2f[0] = 1;
-    Check(!Unit_CanStepExitDir(&unit, 0, &geom, GridLookup, s_aGrid),
+    Check(!Unit_CanStepExitDir(&origin, 0, &geom, GridLookup, s_aGrid),
           "blocked by a wall sprite byte 0x2F");
 
     /* The same sprite with a clear byte 0x2F does not block. */
     wall.gap_2f[0] = 0;
-    Check(Unit_CanStepExitDir(&unit, 0, &geom, GridLookup, s_aGrid),
+    Check(Unit_CanStepExitDir(&origin, 0, &geom, GridLookup, s_aGrid),
           "not blocked when byte 0x2F is clear");
 
     /* Out of bounds: (5,5,1) with nDir 0 from Y=0 goes to Y=-1. */
-    unit.gap_1B = 0;
-    Check(!Unit_CanStepExitDir(&unit, 0, &geom, GridLookup, s_aGrid),
+    origin.nY = 0;
+    Check(!Unit_CanStepExitDir(&origin, 0, &geom, GridLookup, s_aGrid),
           "false when the probe base is out of bounds");
 
     /* An out-of-range direction is refused. */
-    Check(!Unit_CanStepExitDir(&unit, 8, &geom, GridLookup, s_aGrid),
+    Check(!Unit_CanStepExitDir(&origin, 8, &geom, GridLookup, s_aGrid),
           "direction 8 is refused");
 }
 

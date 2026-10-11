@@ -290,15 +290,23 @@ void Unit_UpdateAnimPose(Soldier *pUnit, const AnimHandInfo *pHandL,
 /* Unit_CanStepExitDir @ 0x36d68.
  *
  * Probes up to four cells in the direction given by `nDir` (0..7) and reports
- * whether the unit can step that way. The unit's probe position is the overlaid
- * path triple: `nMultiTarget` (X), `gap_1B` (Y) and `anim.nPathZ` (layer). Each
- * probe entry is (dx, dy, kind); the scan stops at the first entry whose dx is
- * above 2 (the padding value). A kind-2 entry checks the cell's wall-A sprite,
+ * whether the step is clear. The probe origin is the cell's own coordinate
+ * triple `MapCell.nX/nY/nZ`.
+ *
+ * The argument is a MapCell *, not a Soldier *. Both of the original's two code
+ * callers pass `Map.pSelUnit->pCell` (ARM 0x17BEC and 0x17E08, both `LDR R1,
+ * [R1,#0x10]`), and the callee then reads bytes +0x1A/+0x1B/+0x1C, which are
+ * MapCell.nX/nY/nZ. Hex-Rays typed the pointer as a Soldier * and so named the
+ * same three bytes `nMultiTarget`, `gap_1B` and `anim.nPathZ`; the offsets are
+ * shared, the intended record is the cell. The IDB comment is corrected to match.
+ *
+ * Each probe entry is (dx, dy, kind); the scan stops at the first entry whose dx
+ * is above 2 (the padding value). A kind-2 entry checks the cell's wall-A sprite,
  * any other kind its wall-B sprite, only when the cell passes the blank/blocking
  * test. The sprite's byte 0x2F (`gap_2f[0]`) marks a real wall; finding one makes
  * the direction blocked. Returns true when no wall was found. Cells come from the
  * injected MapCellLookup; the original indexes `apCells` directly. */
-bool Unit_CanStepExitDir(const Soldier *pUnit, i32 nDir, const MapGeom *pGeom,
+bool Unit_CanStepExitDir(const MapCell *pOrigin, i32 nDir, const MapGeom *pGeom,
                          MapCellLookup pfnLookup, void *pUser);
 
 /* The two object fields Unit_bArmorTuWarn reads from each hand. */
