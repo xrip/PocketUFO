@@ -469,8 +469,16 @@ preparing this document.
    unit). `Unit_CanStepExitDir @
    0x36d68` is retyped: both of its callers pass `Map.pSelUnit->pCell`, so the
    argument is a `MapCell *` and the bytes it reads are `nX/nY/nZ`, not the Soldier
-   path triple Hex-Rays named. Still open: `Tact_InitUiControls @ 0x3b498` / `Tact_LoadUiPads @ 0x3b068`, which build
-   the widget bank these handlers live in, are not ported yet. The `UiPanel` type
+   path triple Hex-Rays named. The widget bank itself is now ported too:
+   `Tact_InitUiControls @ 0x3b498` and `Tact_LoadUiPads @ 0x3b068` in
+   `src/pufo/ui/pufo_uibank.c`, with all thirteen `UiControlDesc` tables read out of
+   the executable (32-byte record: `xOff +0, yOff +2, szPad0 +4, szPad1 +13,
+   szPad2 +22, nMode +31`), 115 widgets laid out, 115 click handlers bound by widget
+   index, and the 54 pads (`MAN_0M0..MAN_3F3`, eleven named pads, `b0..b10`) named
+   and mode-checked. `test_uibank` asserts it (388 checks). Widgets 113..127 are
+   confirmed never laid out. The handler names for the slots whose handlers are not
+   ported yet are recorded in `g_aUiClickName`, which is the work list for the rest
+   of this task. See `docs/parity/ui-core.md`, "The widget bank builder". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

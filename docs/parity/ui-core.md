@@ -628,3 +628,101 @@ The original indexes the facing delta table without a bound, so facings 8 and 9 
 and down) read past the eight-row probe table; the port bounds the facing at
 `PUFO_PATH_DIR_COUNT` and lets the probe test refuse.
 
+
+## The widget bank builder: Tact_InitUiControls @ 0x3b498 and Tact_LoadUiPads @ 0x3b068
+
+Ported in `src/pufo/ui/pufo_uibank.c`, asserted by `test_uibank` (388 checks).
+
+### The descriptor record
+
+`UiControl_Setup @ 0x1a75c` names the field offsets in its own ARM at
+`0x1a76c..0x1a774`: `xOff` +0, `yOff` +2, `szPad0` +4, `szPad1` +13, `szPad2` +22,
+`nMode` +31, stride 32. Each name is a 9-byte inline buffer; an empty name means no
+pad, because `UiControl_LoadPads @ 0x1a604` compares each one against the empty
+string at `0x10DA38` and leaves that slot NULL. The port keeps the names as
+`const char *` and the field order identical.
+
+The thirteen tables were read out of `pufobeta.exe` with `tools/gen_uidesc_c.py`
+(`.data` VA `0xA6000`, so `file_offset = ida_va - 0xA6000 + 0x93000`), and every
+descriptor decodes to a readable pad name, which is what confirms the layout.
+
+### Groups, pinned by the pfnClick store addresses
+
+Widget index = `(store address - 0xAC6D0 - 0x0C) / 0x20`. That formula pins both the
+group boundaries and the handler binding, and the two agree everywhere:
+
+| group | widgets | descriptor | first handler |
+|---|---|---|---|
+| tactical | 0..18 | `off_A7ED8` | `Tact_CycleNextUnit @ 0x16684` |
+| menu column | 53..59 | `unk_A8838` | `Menu_OpenLoadSlots` |
+| inventory | 19..31 | `unk_A8158` | `Tact_SelectPrevUnit @ 0x17260` |
+| action pads | 32..43 | `unk_A8418` | `Tact_SetFireModeAuto @ 0x17868` |
+| deploy grid | 44..52 | `unk_A8918` | `Map_SetSubMode0_Play11 @ 0x18418` |
+| options | 60..88 | `off_A8A38` | `MenuBtn_SetSpeed0` |
+| research | 89..97 | `unk_A82F8` | `MenuBtn_Secondary` |
+| save slots | 98..100 | `unk_A8598` | `MenuBtn_Confirm0` |
+| load slots | 101..103 | `unk_A86B8` | `MenuBtn_Confirm1` |
+| quit | 104 | `stru_A8718` | `MenuBtn_Confirm3` |
+| save-load list | 105..112 | `unk_A8738` | `SaveLoad_Slot0` |
+| cancel 0 / 1 | 128 / 129 | `stru_A7CB8` / `stru_A7CD8` | `MenuBtn_Cancel0` / `1` |
+
+115 widgets are laid out and 115 handlers are bound. Widgets 113..127 are in neither
+list: they are the screen-17 list rows in the 16-byte gap between the 105..112 group
+(ending at `0xAD4EF`) and widget 128 (`0xAD6D0`), and the original never touches them.
+
+The inventory group also settles the filter numbering the port already reproduced:
+the pads are laid out `pistolvs, grenvs, ammovs` then `riflevs, rocketvs`, and the
+handlers installed on them are `SetFilter0, SetFilter3, SetFilter4, SetFilter1,
+SetFilter2`. The "quirk" is the visual layout, not a bug.
+
+Nine of the twelve action pads share position `27,136`. That is the data, not a
+decoding error: screen 3 only enables the modes the current weapon offers, so the
+overlapping slots are inert.
+
+### Overrides and the HUD origin
+
+Only the tactical group is positioned from the HUD pad. The origin is centred on x
+and bottom-aligned on y, and the odd `+1` branch applies to x only here:
+
+```
+nOriginX = (uWidth > 240 ? 241 - uWidth : 240 - uWidth) >> 1
+nOriginY = 320 - uHeight
+```
+
+After the groups the original writes seven fields straight into the bank: widget 16
+`100x30`, widgets 17 and 18 `34x53`, `bUnk17` on widgets 14, 15 and 31, and `nState`
+1 on widget 10. The three sized widgets are all mode 2, the inert mode that keeps its
+own size, which is why the size has to be written by hand.
+
+### Tact_LoadUiPads @ 0x3b068
+
+54 pads in three runs, all through `PadImage_Load`:
+
+- 32 manual pads, names `MAN_0M0..MAN_3F3` from the 9-byte-stride table at
+  `0xA90F8`, mode 34, origin forced to `50,55`, stored at `Map+0x199C + 4n`
+  (`MOV R6,#0x199C` at `0x3b0B0`).
+- 11 named pads: `invv` 1 (`Map+0x100`), `soldier` 8 (`Map+0x15108`), `mscanv` 16
+  (`Map+0x104`), `selsold` 34, `sbsold` 16, `ssold` 16, `enemystp` 9, `endmiss` 11,
+  `twonone` 15, `minimcur` 16, `dpanelv` 1 (`Map+0xFC`, the HUD pad).
+- 11 buttons `b0..b10` (`'b'` + `itoa(i)`), mode 1, origin zeroed, stored at
+  `Map+0xCC + 4n` (`LDR R0,[R4,#0xCC]` at `0x3b43C`).
+
+`minimcur` is centred with the full rule, both axes: `(uWidth > 240 ? 241 - uWidth :
+240 - uWidth) >> 1` and the same against 320.
+
+### Deviations
+
+1. The original allocates every pad with `operator new(0x14)`. The port takes the
+   allocation through an injected hook so a test runs without a heap and the app
+   shell can pool it.
+2. The original stores the pad pointer even when the allocation failed and then
+   calls `PadImage_Load` through the NULL. The port stores NULL, skips the load, and
+   reports the failure.
+3. The original writes two single bytes between group loops (`nState` on widget 10
+   after the menu column, `bUnk17` on widget 31 after the inventory group). No later
+   group touches either widget, so the port applies them with the other overrides at
+   the end; the observable result is the same.
+4. The click handlers are installed from a caller-supplied table indexed by widget,
+   because the port's handlers take injected contexts rather than reading globals.
+   The original handler for each slot is recorded in `g_aUiClickName`, which is also
+   the work list for the handlers that are not ported yet.

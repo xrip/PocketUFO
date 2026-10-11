@@ -144,14 +144,18 @@ typedef struct UiControlHitCtx {
 bool UiControl_HitTest(UiControl *pCtl, i32 x, i32 y, bool bDown, bool bForceClick,
                        const UiControlHitCtx *pCtx);
 
-/* A control's description, as UiControl_Setup reads it: three pad names, an offset
- * from the base position, and the mode. */
+/* A control's description, as UiControl_Setup reads it: an offset from the base
+ * position, three pad names, and the mode. The field order is the original's own
+ * 32-byte record order, proven from the offsets UiControl_Setup names in its ARM
+ * (xOff +0, yOff +2, szPad0 +4, szPad1 +13, szPad2 +22, nMode +31); the port keeps
+ * `const char *` instead of inline 9-byte buffers because its descriptors are static
+ * C data and are never overlaid on raw memory. */
 typedef struct UiControlDesc {
+    i16         xOff;
+    i16         yOff;
     const char *szPad0;
     const char *szPad1;
     const char *szPad2;
-    i16         xOff;
-    i16         yOff;
     u8          nMode;
 } UiControlDesc;
 

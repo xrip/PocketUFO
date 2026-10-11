@@ -75,6 +75,7 @@ add_library(pufo_ui STATIC
     ui/pufo_panel.c
     ui/pufo_control.c
     ui/pufo_modal.c
+    ui/pufo_uibank.c
 )
 target_include_directories(pufo_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_ui PUBLIC pufo_options pufo_game pufo_render pufo_util)
@@ -371,6 +372,17 @@ set_target_properties(test_control PROPERTIES
 )
 add_test(NAME test_control
     COMMAND test_control
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# The widget bank and pad bank: descriptor tables, group layout, click bindings.
+add_executable(test_uibank ${CMAKE_SOURCE_DIR}/tests/test_uibank.c)
+target_link_libraries(test_uibank PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
+set_target_properties(test_uibank PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_uibank
+    COMMAND test_uibank
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
