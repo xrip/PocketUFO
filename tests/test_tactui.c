@@ -43,7 +43,6 @@ static u8 ClipCap(u16 nAmmoTypeId, void *pUser)
 typedef struct Log {
     i32 nSamples;
     i32 nLastSample;
-    i32 nRebuilds;
     i32 nStatus;
     i32 nLastStatus;
     i32 nCursorFlags;
@@ -57,12 +56,6 @@ static void OnPlay(i32 nSample, void *pUser)
     (void)pUser;
     g_log.nSamples += 1;
     g_log.nLastSample = nSample;
-}
-
-static void OnRebuild(void *pUser)
-{
-    (void)pUser;
-    g_log.nRebuilds += 1;
 }
 
 static void OnStatus(i32 nIdx, void *pUser)
@@ -80,7 +73,7 @@ static void OnCursorFlags(u8 nFlags, void *pUser)
 }
 
 static const TactUiHooks g_hooks = {
-    OnPlay, OnRebuild, OnStatus, OnCursorFlags, NULL
+    OnPlay, NULL, OnStatus, OnCursorFlags, NULL
 };
 
 static void LogReset(void)
@@ -114,6 +107,9 @@ static void TestFilterMapping(void)
 
         UiReset(&ui);
         LogReset();
+        /* A sentinel count: the rebuild runs before the pads are touched, so a
+         * filter change always clears it. */
+        ui.nInvListCount = 7;
         Check(Ui_SetInvFilter(&ui, nFilter, &g_hooks), "  filter applied");
         for (i32 p = 0; p < PUFO_INV_FILTER_PADS; ++p) {
             if (ui.abFilterPad[p] != 0) {
@@ -132,7 +128,7 @@ static void TestFilterMapping(void)
         CheckEqI32(ui.nInvFilterType, 0, "  scroll cursor reset");
         CheckEqI32(g_log.nSamples, 1, "  played one sample");
         CheckEqI32(g_log.nLastSample, 17, "  sample 17");
-        CheckEqI32(g_log.nRebuilds, 1, "  rebuilt the visible list");
+        CheckEqI32(ui.nInvListCount, 0, "  rebuilt the visible list (no unit)");
     }
 
     /* All: the All pad, and a selection index of -1. */
@@ -199,7 +195,124 @@ static void TestScroll(void)
     LogReset();
     Ui_InvScrollDown(&ui);
     CheckEqI32(g_log.nSamples, 0, "  scroll plays no sample");
-    CheckEqI32(g_log.nRebuilds, 0, "  scroll does not rebuild the list");
+    CheckEqI32(ui.nInvListCount, 10, "  scroll does not rebuild the list");
+}
+
+/* --- Inv_BuildVisibleList @ 0x2d580 ---------------------------------------- */
+
+/* One cell, five items over four objects, chosen so every rule fires:
+ *
+ *   item0 obj0 key 30 cat 1 ammo 3   first copy of obj0
+ *   item1 obj1 key 10 cat 2 ammo 7   first copy of obj1
+ *   item2 obj0 key 30 cat 1 ammo 9   merge: larger ammo REPLACES item0
+ *   item3 obj1 key 10 cat 2 ammo 7   merge: equal ammo keeps item1
+ *   item4 obj2 key 20 cat 1 ammo 1   bTwoHanded == 2 -> never listed
+ *   item5 obj3 key  5 cat 3 ammo 4   a third object
+ *
+ * With the "all" filter the merged list is obj0(c2) obj1(c2) obj3(c1) and the
+ * sort by uSortKey puts it in the order obj3(5) obj1(10) obj0(30). */
+static ObjectRec g_aObj[4];
+static TactItem  g_aItem[6];
+static MapCell   g_Cell;
+static Soldier   g_Unit;
+
+static void ListReset(void)
+{
+    i32 i;
+
+    memset(g_aObj, 0, sizeof(g_aObj));
+    memset(g_aItem, 0, sizeof(g_aItem));
+    memset(&g_Cell, 0, sizeof(g_Cell));
+    memset(&g_Unit, 0, sizeof(g_Unit));
+
+    g_aObj[0].uSortKey = 30; g_aObj[0].nCategory = 1;
+    g_aObj[1].uSortKey = 10; g_aObj[1].nCategory = 2;
+    g_aObj[2].uSortKey = 20; g_aObj[2].nCategory = 1; g_aObj[2].bTwoHanded = 2;
+    g_aObj[3].uSortKey = 5;  g_aObj[3].nCategory = 3;
+
+    for (i = 0; i < 6; ++i) {
+        g_aItem[i].pNext = (i + 1 < 6) ? &g_aItem[i + 1] : NULL;
+    }
+    /* Two items share obj0 and two share obj1; obj2 is the two-handed one. */
+    g_aItem[0].pObj = &g_aObj[0];
+    g_aItem[1].pObj = &g_aObj[1];
+    g_aItem[2].pObj = &g_aObj[0];
+    g_aItem[3].pObj = &g_aObj[1];
+    g_aItem[4].pObj = &g_aObj[2];
+    g_aItem[5].pObj = &g_aObj[3];
+    g_aItem[0].nAmmo = 3;
+    g_aItem[1].nAmmo = 7;
+    g_aItem[2].nAmmo = 9;
+    g_aItem[3].nAmmo = 7;
+    g_aItem[4].nAmmo = 1;
+    g_aItem[5].nAmmo = 4;
+
+    g_Cell.pItemList = g_aItem;
+    g_Unit.pCell = &g_Cell;
+    g_Unit.nUnitType = 0;
+}
+
+static void TestBuildVisibleList(void)
+{
+    TactUiState ui;
+    TactUiHooks hooks = g_hooks;
+
+    printf("Inv_BuildVisibleList -- merge, filter, sort\n");
+    ListReset();
+    hooks.pSelUnit = &g_Unit;
+
+    /* The "all" filter: merge by ObjectRec, keep the larger ammo, sort ascending. */
+    UiReset(&ui);
+    ui.nInvListSel = 0xFF;
+    Inv_BuildVisibleList(&ui, &g_Unit);
+    CheckEqI32(ui.nInvListCount, 3, "  three distinct objects survive");
+    Check(ui.apInvList[0]->pObj == &g_aObj[3], "  slot 0 is the key-5 object");
+    Check(ui.apInvList[1]->pObj == &g_aObj[1], "  slot 1 is the key-10 object");
+    Check(ui.apInvList[2]->pObj == &g_aObj[0], "  slot 2 is the key-30 object");
+    CheckEqI32(ui.anInvCount[0], 1, "  key 5 has one copy");
+    CheckEqI32(ui.anInvCount[1], 2, "  key 10 has two copies");
+    CheckEqI32(ui.anInvCount[2], 2, "  key 30 has two copies");
+    Check(ui.apInvList[2] == &g_aItem[2], "  the larger-ammo copy replaced the first");
+    Check(ui.apInvList[1] == &g_aItem[1], "  an equal ammo keeps the first copy");
+    Check(ui.apInvList[0] != &g_aItem[4] && ui.apInvList[1] != &g_aItem[4] &&
+          ui.apInvList[2] != &g_aItem[4], "  the two-handed-mode-2 item is never listed");
+
+    /* A numbered filter keeps only the matching ObjectRec.nCategory. */
+    ui.nInvListSel = 1;
+    Inv_BuildVisibleList(&ui, &g_Unit);
+    CheckEqI32(ui.nInvListCount, 1, "  category 1 leaves one entry");
+    Check(ui.apInvList[0]->pObj == &g_aObj[0], "  the entry is the category-1 object");
+    CheckEqI32(ui.anInvCount[0], 2, "  its count is still merged");
+
+    ui.nInvListSel = 2;
+    Inv_BuildVisibleList(&ui, &g_Unit);
+    CheckEqI32(ui.nInvListCount, 1, "  category 2 leaves one entry");
+    Check(ui.apInvList[0]->pObj == &g_aObj[1], "  and it is the category-2 object");
+
+    /* A category nothing holds empties the list. */
+    ui.nInvListSel = 4;
+    Inv_BuildVisibleList(&ui, &g_Unit);
+    CheckEqI32(ui.nInvListCount, 0, "  an unmatched category empties the list");
+
+    /* The count is cleared before the walk, so a NULL unit cannot leave a stale
+     * list behind (the original would fault here instead). */
+    ui.nInvListSel = 0xFF;
+    ui.nInvListCount = 9;
+    Inv_BuildVisibleList(&ui, NULL);
+    CheckEqI32(ui.nInvListCount, 0, "  NULL unit clears the count first");
+
+    /* An empty cell clears the count and does nothing else. */
+    g_Cell.pItemList = NULL;
+    ui.nInvListCount = 9;
+    Inv_BuildVisibleList(&ui, &g_Unit);
+    CheckEqI32(ui.nInvListCount, 0, "  an empty cell leaves an empty list");
+
+    /* A filter handler reaches the same code through the hooks. */
+    g_Cell.pItemList = g_aItem;
+    UiReset(&ui);
+    Check(Ui_SetInvFilter(&ui, PUFO_INV_FILTER_ALL, &hooks), "  All filter applied");
+    CheckEqI32(ui.nInvListCount, 3, "  the filter rebuilt the list through the hooks");
+    Check(ui.apInvList[0]->pObj == &g_aObj[3], "  and sorted it");
 }
 
 static void TestRadio(void)
@@ -1202,6 +1315,7 @@ int main(void)
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestFilterMapping();    TestScroll();
+    TestBuildVisibleList();
     TestRadio();
     TestScreensAndLayers();
     TestFireModes();

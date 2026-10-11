@@ -20,6 +20,8 @@
  *     gap_2[1]          @ 0x0002  -- the action latch, shared with the roster
  *     nLayerScratch     @ 0x15138 (cursor flags)
  *     nInvFilterType    @ 0x1A22 (u8)
+ *     apInvList         @ 0x1A24 (TactItem*[2048])
+ *     anInvCount        @ 0x3A24 (u16[2048])
  *     nInvListCount     @ 0x4A24 (u16)
  *     nInvListSel       @ 0x4A26 (u8)
  *     nTrajFront0       @ 0x4A3C (dword array)
@@ -85,6 +87,11 @@
 /* Action modes the cost table covers. */
 #define PUFO_ACTION_MODE_COUNT 12
 
+/* Capacity of the ground-item list. The Map block gives the pointer array 0x2000
+ * bytes (0x1A24..0x3A23) and the count array 0x1000 bytes (0x3A24..0x4A23), so
+ * both hold 2048 entries and the two capacities are equal by construction. */
+#define PUFO_INV_LIST_MAX 2048
+
 typedef struct TactUiState {
     i32 nActionMode;            /* 0x4C */
     u16 nUiScreen;              /* 0x3A */
@@ -99,6 +106,11 @@ typedef struct TactUiState {
     u8  nInvFilterType;         /* 0x1A22 */
     u16 nInvListCount;          /* 0x4A24 */
     u8  nInvListSel;            /* 0x4A26 */
+    /* The ground-item list Inv_BuildVisibleList builds: one entry per distinct
+     * ObjectRec in the selected unit's cell, with the number of TactItems sharing
+     * that ObjectRec in anInvCount. */
+    TactItem *apInvList[PUFO_INV_LIST_MAX];   /* 0x1A24 */
+    u16       anInvCount[PUFO_INV_LIST_MAX];  /* 0x3A24 */
     /* The filter pads, in address order 0xAC9FA/0xACA1A/0xACA3A/0xACA5A/0xACA7A. */
     u8  abFilterPad[PUFO_INV_FILTER_PADS];
     u8  bFilterPadX;            /* 0xAC97A */
@@ -136,8 +148,10 @@ typedef struct TactUiState {
 /* The world pieces the UI transitions touch, plus the two effects they have. */
 typedef struct TactUiHooks {
     void (*pfnPlaySample)(i32 nSample, void *pUser);
-    /* Inv_BuildVisibleList @ 0x2d580, called by every filter change. */
-    void (*pfnRebuildVisibleList)(void *pUser);
+    /* Map.pSelUnit @ 0x15334. The filter handlers rebuild the ground list of the
+     * selected unit, so the world pointer they read is part of the contract. A
+     * NULL value skips the rebuild (documented deviation: the original faults). */
+    Soldier *pSelUnit;
     /* StatusMsg_Push @ 0x2dda4. The messages are runtime text records that the
      * port has not wired up, so the index is passed through instead of a string. */
     void (*pfnStatusMsg)(i32 nTextRecordIndex, void *pUser);
@@ -488,6 +502,30 @@ typedef enum TactToggleId {
  *
  * Each plays sample 17 first. Returns false for an id outside the five. */
 bool Ui_ToggleOption(TactUiState *pUi, i32 nWhich, const TactUiHooks *pHooks);
+
+/* ------------------------------------------------------- the ground item list */
+
+/* Inv_BuildVisibleList @ 0x2d580. Rebuilds the visible ground-item list of the
+ * selected unit's cell:
+ *
+ *   1. nInvListCount is cleared first, before anything is read.
+ *   2. Walk MapCell.pItemList @ 0x34. Skip an item when its ObjectRec.bTwoHanded
+ *      @ 0x28 is 2. Keep it when nInvListSel is 0xFF ("all") or when
+ *      ObjectRec.nCategory @ 0xB8 equals nInvListSel.
+ *   3. Merge by ObjectRec identity: if the list already holds an entry with the
+ *      same ObjectRec*, bump that entry's u16 count and keep the TactItem with the
+ *      LARGER nAmmo @ 0x06 (the comparison is `existing < new`, so a tie keeps the
+ *      first one found).
+ *   4. Otherwise append: anInvCount[n] = 1, apInvList[n] = item, n++.
+ *   5. Selection-sort the list ASCENDING by ObjectRec.uSortKey @ 0xC8, swapping the
+ *      count array in step with the pointer array. The outer pass runs while
+ *      pos + 1 < count and the scan runs pos+1 .. count-1, so the last entry is
+ *      only ever a candidate, never a scan target.
+ *
+ * Deviations: the original dereferences pSelUnit, pCell, pObj and every list entry
+ * without a NULL test, and appends without a capacity check; the port refuses a
+ * NULL unit/cell/pObj and stops appending at PUFO_INV_LIST_MAX. */
+void Inv_BuildVisibleList(TactUiState *pUi, Soldier *pSelUnit);
 
 /* ----------------------------------------------------------- screen helpers */
 

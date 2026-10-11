@@ -28,10 +28,84 @@ static void Ui_Status(const TactUiHooks *pHooks, i32 nTextRecord)
     }
 }
 
-static void Ui_RebuildList(const TactUiHooks *pHooks)
+static void Ui_RebuildList(TactUiState *pUi, const TactUiHooks *pHooks)
 {
-    if (pHooks != NULL && pHooks->pfnRebuildVisibleList != NULL) {
-        pHooks->pfnRebuildVisibleList(pHooks->pUser);
+    if (pHooks != NULL) {
+        Inv_BuildVisibleList(pUi, pHooks->pSelUnit);
+    }
+}
+
+/* ------------------------------------------------------ the ground item list */
+
+void Inv_BuildVisibleList(TactUiState *pUi, Soldier *pSelUnit)
+{
+    TactItem *pItem;
+    i32 nPos;
+    i32 nScan;
+
+    if (pUi == NULL) {
+        return;
+    }
+    /* 0x2d598: the count is cleared before anything is read. */
+    pUi->nInvListCount = 0;
+    if (pSelUnit == NULL || pSelUnit->pCell == NULL) {
+        return;
+    }
+    pItem = pSelUnit->pCell->pItemList;   /* 0x2d5ac: MapCell.pItemList @ 0x34 */
+    if (pItem == NULL) {
+        return;
+    }
+
+    do {
+        ObjectRec *pObj = pItem->pObj;   /* 0x2d5d0 */
+        u8 nSel;
+
+        /* 0x2d5dc: an item whose object is two-handed mode 2 is never listed. */
+        if (pObj != NULL && pObj->bTwoHanded != 2) {
+            nSel = pUi->nInvListSel;     /* 0x4A26 */
+            if (nSel == 0xFFu || pObj->nCategory == nSel) {
+                i32 nMatch = -1;
+
+                for (nScan = 0; nScan < (i32)pUi->nInvListCount; ++nScan) {
+                    if (pUi->apInvList[nScan]->pObj == pObj) {
+                        nMatch = nScan;
+                        break;
+                    }
+                }
+                if (nMatch >= 0) {
+                    /* 0x2d654: keep the copy with the larger ammo, `existing < new`,
+                     * so an equal ammo keeps the entry already in the list. */
+                    if (pUi->apInvList[nMatch]->nAmmo < pItem->nAmmo) {
+                        pUi->apInvList[nMatch] = pItem;
+                    }
+                    pUi->anInvCount[nMatch] =
+                        (u16)(pUi->anInvCount[nMatch] + 1u);   /* 0x2d680 */
+                } else if ((i32)pUi->nInvListCount < PUFO_INV_LIST_MAX) {
+                    pUi->anInvCount[pUi->nInvListCount] = 1;   /* 0x2d69c */
+                    pUi->apInvList[pUi->nInvListCount] = pItem; /* 0x2d6a8 */
+                    pUi->nInvListCount = (u16)(pUi->nInvListCount + 1u);
+                }
+            }
+        }
+        pItem = pItem->pNext;
+    } while (pItem != NULL);
+
+    /* 0x2d6d0..0x2d78c: selection sort, ascending by ObjectRec.uSortKey @ 0xC8.
+     * The ARM runs the outer pass while pos + 1 < count and scans pos+1 .. count-1,
+     * swapping the count array in step with the pointer array. */
+    for (nPos = 0; nPos + 1 < (i32)pUi->nInvListCount; ++nPos) {
+        for (nScan = nPos + 1; nScan < (i32)pUi->nInvListCount; ++nScan) {
+            if (pUi->apInvList[nScan]->pObj->uSortKey <
+                pUi->apInvList[nPos]->pObj->uSortKey) {
+                TactItem *pTmpItem = pUi->apInvList[nPos];
+                u16 nTmpCount = pUi->anInvCount[nPos];
+
+                pUi->apInvList[nPos] = pUi->apInvList[nScan];
+                pUi->apInvList[nScan] = pTmpItem;
+                pUi->anInvCount[nPos] = pUi->anInvCount[nScan];
+                pUi->anInvCount[nScan] = nTmpCount;
+            }
+        }
     }
 }
 
@@ -97,7 +171,7 @@ bool Ui_SetInvFilter(TactUiState *pUi, i32 nFilter, const TactUiHooks *pHooks)
     /* All selects -1; every numbered filter selects its own number. */
     pUi->nInvListSel = (nFilter == PUFO_INV_FILTER_ALL) ? (u8)-1 : (u8)nFilter;
 
-    Ui_RebuildList(pHooks);
+    Ui_RebuildList(pUi, pHooks);
     return true;
 }
 

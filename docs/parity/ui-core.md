@@ -822,3 +822,77 @@ clamps to 1..5 and what `Sound_ApplyMusicVolume @ 0x9E454` scales
 Deviation: the original indexes those four pads with no bounds test, so a volume of
 0 lights the sfx-mute pad of widget 77 and a speed above 4 writes past its group.
 The port only writes inside the group.
+
+## The ground item list: Inv_BuildVisibleList @ 0x2d580
+
+Ported as `Inv_BuildVisibleList(TactUiState *, Soldier *pSelUnit)` in
+`src/pufo/game/pufo_tactui.c`. It is the function every inventory filter, the
+inventory button, and the roster prev/next pair end with, so it replaces the
+`pfnRebuildVisibleList` hook the port used to inject in three places
+(`TactUiHooks`, `RosterHooks`, `TactHudInvOpenCtx`).
+
+### The three Map arrays it owns
+
+```
+apInvList      @ 0x1A24   TactItem*[2048]   the visible list
+anInvCount     @ 0x3A24   u16[2048]         copies of the object in each entry
+nInvListCount  @ 0x4A24   u16               entries in use
+nInvListSel    @ 0x4A26   u8                category filter, 0xFF = all
+nInvFilterType @ 0x1A22   u8                the 4-row scroll offset (NOT a filter)
+```
+
+Hex-Rays renders the two arrays through `gap_6691`, whose name is the DECIMAL
+offset 6691 = `0x1A23`, so `gap_6691[4*n+1]` is `apInvList[n]` and
+`gap_6691[2*n+8193]` is `anInvCount[n]`. The two capacities are exactly the gaps
+between them: `0x3A24 - 0x1A24 = 0x2000` bytes of pointers and
+`0x4A24 - 0x3A24 = 0x1000` bytes of counts, i.e. 2048 entries each.
+
+### Merge rule (0x2d5d0..0x2d6b8)
+
+Walk `pSelUnit->pCell->pItemList` (MapCell+0x34). For each item:
+
+1. skip when `pObj->bTwoHanded @ 0x28 == 2` — that mode is never listed;
+2. keep when `nInvListSel == 0xFF` or `pObj->nCategory @ 0xB8 == nInvListSel`;
+3. search the list for an entry with the SAME `ObjectRec *`;
+   * hit: `++anInvCount[n]`, and replace the stored `TactItem *` only when the
+     stored item's `nAmmo @ 0x06` is strictly smaller (`LDRB/LDRB/CMP` at
+     `0x2d648..0x2d65c`), so equal ammo keeps the first copy found;
+   * miss: `anInvCount[count] = 1`, `apInvList[count++] = item`.
+
+So the list is one entry per distinct object, and the entry points at the
+best-loaded copy of it.
+
+### Sort rule (0x2d6d0..0x2d78c)
+
+Selection sort, ASCENDING by `ObjectRec.uSortKey @ 0xC8`, with `anInvCount`
+swapped in step with `apInvList`. The ARM settles the bounds that Hex-Rays'
+index arithmetic hides:
+
+```
+0x2d6F4  ADD R2,R2,#1 ; CMP R5,R1 ; BGE out   -> outer runs while pos + 1 < count
+0x2d714  j = pos + 1 ... CMP R5,R2 ; BLT loop -> scan covers pos+1 .. count-1
+0x2d73C  LDRH R10,[R10,#0xC8] / LDRH R11,[R11,#0xC8] / CMP R11,R10 / STRCC pair
+```
+
+The last entry is therefore only ever a scan candidate, never a scan target.
+
+### Deviations
+
+| Original | Port |
+|---|---|
+| dereferences `pSelUnit`, `pCell`, `pObj` and every list entry with no NULL test | refuses a NULL unit/cell and skips an item with a NULL object; the count is still cleared first, exactly as at `0x2d598` |
+| appends with no capacity check | stops appending at `PUFO_INV_LIST_MAX` (2048, the real Map capacity) |
+
+### Checks
+
+`tests/test_tactui.c` adds `TestBuildVisibleList`: a six-item cell over four
+objects chosen so every rule fires — a merge that replaces on larger ammo, a
+merge that keeps the first copy on equal ammo, a `bTwoHanded == 2` item that is
+never listed, the ascending sort order, the counts travelling with their
+pointers, three numbered category filters, an unmatched category, a NULL unit,
+and an empty cell. `test_tactui` now runs 423 checks. The filter and roster
+tests assert the rebuild through the resulting list instead of a hook counter:
+`test_roster.c` gives each roster unit a cell holding a distinct number of
+items, so `nInvListCount` identifies which unit was rebuilt and proves that
+`Roster_CycleNext` does not rebuild while prev/next rebuild once, after the
+final selection.

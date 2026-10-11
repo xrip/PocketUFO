@@ -75,8 +75,6 @@ typedef struct TactHudInvOpenCtx {
     u8            bSweepGate;                       /* LOBYTE(apUiSlotsA[2]) @ 0x68 */
     bool          bSelUnitLarge;                    /* Unit_bIsLarge(pSelUnit) */
     void        (*pfnPlaySample)(i32 nSample, void *pUser);
-    /* Inv_BuildVisibleList @ 0x2d580, not yet ported; injected. */
-    void        (*pfnRebuildVisibleList)(void *pUser);
     /* Unit_RecalcInventoryStat @ 0x49ef0 needs these; a NULL pointer skips the
      * recalc, which is a port deviation. */
     const InvStatHooks *pInvStat;

@@ -4,6 +4,8 @@
  */
 #include "game/pufo_roster.h"
 
+#include "game/pufo_tactui.h"
+
 #include <string.h>
 
 i32 Roster_FindSelected(const UnitRoster *pRoster)
@@ -150,9 +152,7 @@ i32 Roster_SelectPrev(UnitRoster *pRoster, const RosterHooks *pHooks)
         pHooks->pfnFocusSelected(pHooks->pUser);
     }
     /* Prev/next end with Inv_BuildVisibleList; CycleNext does not. */
-    if (pHooks->pfnRebuildVisibleList != NULL) {
-        pHooks->pfnRebuildVisibleList(pHooks->pUser);
-    }
+    Inv_BuildVisibleList(pHooks->pUi, pRoster->pSelected);
     return nIndex;
 }
 
@@ -177,9 +177,7 @@ i32 Roster_SelectNext(UnitRoster *pRoster, const RosterHooks *pHooks)
     if (pHooks->pfnFocusSelected != NULL) {
         pHooks->pfnFocusSelected(pHooks->pUser);
     }
-    if (pHooks->pfnRebuildVisibleList != NULL) {
-        pHooks->pfnRebuildVisibleList(pHooks->pUser);
-    }
+    Inv_BuildVisibleList(pHooks->pUi, pRoster->pSelected);
     return nIndex;
 }
 
@@ -316,9 +314,7 @@ i32 Roster_SelectPrevFiltered(UnitRoster *pRoster, const RosterFilterHooks *pHoo
     if (pHooks->base.pfnFocusSelected != NULL) {
         pHooks->base.pfnFocusSelected(pHooks->base.pUser);
     }
-    if (pHooks->base.pfnRebuildVisibleList != NULL) {
-        pHooks->base.pfnRebuildVisibleList(pHooks->base.pUser);
-    }
+    Inv_BuildVisibleList(pHooks->base.pUi, pRoster->pSelected);
     return nIndex;
 }
 
@@ -347,9 +343,7 @@ i32 Roster_SelectNextFiltered(UnitRoster *pRoster, const RosterFilterHooks *pHoo
     /* The final candidate was already selected by the visit callback, so only the
      * visible-list rebuild remains -- the original calls it after the loop. */
     pRoster->pSelected = pRoster->apUnits[nIndex];
-    if (pHooks->base.pfnRebuildVisibleList != NULL) {
-        pHooks->base.pfnRebuildVisibleList(pHooks->base.pUser);
-    }
+    Inv_BuildVisibleList(pHooks->base.pUi, pRoster->pSelected);
     return nIndex;
 }
 

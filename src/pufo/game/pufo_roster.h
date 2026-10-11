@@ -50,6 +50,10 @@
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
+/* The UI state whose ground-item list prev/next rebuild. Defined in
+ * pufo_tactui.h; only a pointer is used here. */
+typedef struct TactUiState TactUiState;
+
 /* apXcomUnits is 120 bytes on the original = 30 pointers. */
 #define PUFO_ROSTER_MAX 30
 
@@ -83,7 +87,9 @@ typedef struct RosterHooks {
     void (*pfnPlaySample)(i32 nSample, void *pUser);
     void (*pfnSelectUnit)(Soldier *pUnit, void *pUser);
     void (*pfnFocusSelected)(void *pUser);          /* MapView_FocusSelected */
-    void (*pfnRebuildVisibleList)(void *pUser);     /* Inv_BuildVisibleList */
+    /* Map.pUi half: prev/next end with Inv_BuildVisibleList @ 0x2d580 on this
+     * state, using pRoster->pSelected as the unit. NULL skips the rebuild. */
+    TactUiState *pUi;
     void *pUser;
 } RosterHooks;
 

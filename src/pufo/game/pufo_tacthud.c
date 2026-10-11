@@ -223,9 +223,7 @@ bool TactHud_OpenInventory(const TactHudInvOpenCtx *pCtx)
 
     pCtx->pUi->nInvListSel = (u8)-1;   /* 0xFF at 0x4A26: every category */
     pCtx->pUi->nInvFilterType = 0;     /* 0x1A22: the ground list starts at row 0 */
-    if (pCtx->pfnRebuildVisibleList != NULL) {
-        pCtx->pfnRebuildVisibleList(pCtx->pCallbackUser);
-    }
+    Inv_BuildVisibleList(pCtx->pUi, pCtx->pSelUnit);
 
     /* The seven filter pads: "All" lit at pBank+0x30A, the other six dark. */
     pCtx->pUi->bFilterPadX = 0;

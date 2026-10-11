@@ -5,6 +5,9 @@
  */
 #include "game/pufo_roster.h"
 
+#include "game/pufo_mapcell.h"
+#include "game/pufo_tactui.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -38,7 +41,6 @@ typedef struct HookLog {
     i32      nSelects;
     Soldier *pLastSelected;
     i32      nFocus;
-    i32      nRebuild;
 } HookLog;
 
 static HookLog g_log;
@@ -63,14 +65,40 @@ static void OnFocusSelected(void *pUser)
     g_log.nFocus += 1;
 }
 
-static void OnRebuildVisibleList(void *pUser)
+/* The rebuild is no longer a hook: prev/next call Inv_BuildVisibleList on this
+ * state. Each roster unit gets a cell holding a DISTINCT number of ground items
+ * (unit i holds i + 1), so the resulting nInvListCount identifies which unit was
+ * rebuilt and whether a rebuild happened at all. A sentinel value of 9 marks "no
+ * rebuild happened". */
+static TactUiState g_Ui;
+static ObjectRec   g_aObj[25];
+static TactItem    g_aItem[25];
+static MapCell     g_aCell[5];
+
+static void ListFixtureReset(void)
 {
-    (void)pUser;
-    g_log.nRebuild += 1;
+    i32 i;
+
+    memset(g_aObj, 0, sizeof(g_aObj));
+    memset(g_aItem, 0, sizeof(g_aItem));
+    memset(g_aCell, 0, sizeof(g_aCell));
+    for (i = 0; i < 25; ++i) {
+        g_aObj[i].uSortKey = (u16)i;
+        g_aItem[i].pObj = &g_aObj[i];
+    }
+}
+
+/* Arm the sentinel: a rebuild always rewrites the count, so 9 survives only when
+ * no rebuild ran. The filter is "all", so the count equals the item count. */
+static void ListSentinel(void)
+{
+    memset(&g_Ui, 0, sizeof(g_Ui));
+    g_Ui.nInvListSel = 0xFF;
+    g_Ui.nInvListCount = 9;
 }
 
 static const RosterHooks g_hooks = {
-    OnPlaySample, OnSelectUnit, OnFocusSelected, OnRebuildVisibleList, NULL
+    OnPlaySample, OnSelectUnit, OnFocusSelected, &g_Ui, NULL
 };
 
 static void LogReset(void)
@@ -84,9 +112,21 @@ static void BuildRoster(UnitRoster *pRoster, Soldier *apUnits, Soldier *apType,
                         i32 nCount, Soldier *pSelected)
 {
     memset(pRoster, 0, sizeof(*pRoster));
+    ListFixtureReset();
     for (i32 i = 0; i < nCount; ++i) {
+        i32 j;
+
         memset(&apUnits[i], 0, sizeof(apUnits[i]));
         apUnits[i].nUnitType = apType[i].nUnitType;
+        /* Unit i owns a cell with i + 1 distinct ground items. */
+        if (i < 5) {
+            for (j = 0; j <= i; ++j) {
+                g_aItem[i * 5 + j].pNext =
+                    (j + 1 <= i) ? &g_aItem[i * 5 + j + 1] : NULL;
+            }
+            g_aCell[i].pItemList = &g_aItem[i * 5];
+            apUnits[i].pCell = &g_aCell[i];
+        }
         pRoster->apUnits[i] = &apUnits[i];
     }
     pRoster->nCount = nCount;
@@ -128,13 +168,14 @@ static void TestCycleNext(void)
     memset(aType, 0, sizeof(aType));
     BuildRoster(&roster, aUnits, aType, 4, &aUnits[1]);
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_CycleNext(&roster, &g_hooks), 2, "  slot 1 -> 2");
     CheckEqI32(g_log.nSamples, 1, "  played one sample");
     CheckEqI32(g_log.nLastSample, 17, "  sample index 17");
     CheckEqI32(g_log.nSelects, 1, "  selected once");
     Check(g_log.pLastSelected == &aUnits[2], "  selected the advanced slot");
     CheckEqI32(g_log.nFocus, 1, "  focused");
-    CheckEqI32(g_log.nRebuild, 0, "  CycleNext does NOT rebuild the visible list");
+    CheckEqI32(g_Ui.nInvListCount, 9, "  CycleNext does NOT rebuild the visible list");
 
     /* Wrap at the end. */
     roster.pSelected = &aUnits[3];
@@ -199,16 +240,20 @@ static void TestPrevNextFilter(void)
     /* The wrappers play the sample, select, focus, then rebuild. */
     roster.pSelected = &aUnits[0];
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_SelectNext(&roster, &g_hooks), 2, "  SelectNext returns 2");
     CheckEqI32(g_log.nSamples, 1, "  played one sample");
     CheckEqI32(g_log.nSelects, 1, "  selected once");
     CheckEqI32(g_log.nFocus, 1, "  focused");
-    CheckEqI32(g_log.nRebuild, 1, "  prev/next DO rebuild the visible list");
+    /* Slot 2 owns three ground items, so a rebuild lands on 3, not the sentinel. */
+    CheckEqI32(g_Ui.nInvListCount, 3, "  prev/next DO rebuild the visible list");
     Check(roster.pSelected == &aUnits[2], "  selection moved to slot 2");
 
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_SelectPrev(&roster, &g_hooks), 0, "  SelectPrev returns 0");
-    CheckEqI32(g_log.nRebuild, 1, "  SelectPrev also rebuilds");
+    /* Slot 0 owns one item. */
+    CheckEqI32(g_Ui.nInvListCount, 1, "  SelectPrev also rebuilds");
 
     /* A one-unit roster: next from 0 wraps to 0. */
     BuildRoster(&roster, aUnits, aType, 1, &aUnits[0]);
@@ -236,10 +281,11 @@ static void TestNoSelectableUnit(void)
 
     /* The wrapper must not select anything when no index was found. */
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_SelectNext(&roster, &g_hooks), -1, "  SelectNext refuses");
     CheckEqI32(g_log.nSelects, 0, "  nothing selected");
     CheckEqI32(g_log.nFocus, 0, "  nothing focused");
-    CheckEqI32(g_log.nRebuild, 0, "  list not rebuilt");
+    CheckEqI32(g_Ui.nInvListCount, 9, "  list not rebuilt");
 }
 
 static void TestEmptyRoster(void)
@@ -336,20 +382,25 @@ static void TestNextFilteredActsPerCandidate(void)
     log.bActive = true;
 
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_SelectNextFiltered(&roster, &fh), 3, "  lands on the human at 3");
     CheckEqI32(g_log.nSelects, 3,
                "  selected THREE times: once per candidate examined (1, 2, 3)");
     CheckEqI32(g_log.nFocus, 3, "  and focused three times");
-    CheckEqI32(g_log.nRebuild, 1, "  but rebuilt the list only once, after the loop");
+    /* The list is the FINAL unit's (slot 3 owns four items), so the rebuild ran
+     * once, after the loop, on the unit that was actually selected. */
+    CheckEqI32(g_Ui.nInvListCount, 4,
+               "  rebuilt once after the loop, on the final unit");
 
     /* The prev variant examines candidates without acting on them. */
     BuildRoster(&roster, aUnits, aType, 4, &aUnits[3]);
     log.bActive = true;
     LogReset();
+    ListSentinel();
     CheckEqI32(Roster_SelectPrevFiltered(&roster, &fh), 0, "  prev lands on 0");
     CheckEqI32(g_log.nSelects, 1, "  prev selects exactly once (it does not act per step)");
     CheckEqI32(g_log.nFocus, 1, "  and focuses once");
-    CheckEqI32(g_log.nRebuild, 1, "  and rebuilds once");
+    CheckEqI32(g_Ui.nInvListCount, 1, "  and rebuilds once");
 }
 
 static void TestFilteredTermination(void)

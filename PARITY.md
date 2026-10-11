@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 217284 / 598792 (36.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 44 |
-| Test checks run | 3834 |
+| Test checks run | 3855 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -405,7 +405,7 @@ is the module that answers to it.
 | `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
-| `0x2d580` | `Inv_BuildVisibleList` | 536 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/game/pufo_tactui.h` |
+| `0x2d580` | `Inv_BuildVisibleList` | 536 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_tactui.h` |
 | `0x16570` | `TactHud_ToggleKneel` | 276 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x119b0` | `Input_OnDown` | 272 | `src/pufo/game/pufo_input.h` |
 | `0x16ef4` | `Inv_OpenScreen` | 264 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -1339,7 +1339,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactctl` | PASS | 123 |
 | `test_tacthud` | PASS | 88 |
 | `test_tactstate` | PASS | 152 |
-| `test_tactui` | PASS | 402 |
+| `test_tactui` | PASS | 423 |
 | `test_template` | PASS | 40 |
 | `test_timer` | PASS | 78 |
 | `test_turn` | PASS | 63 |
@@ -1367,14 +1367,14 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 143 citations.
+parity report. Total: 145 citations.
 
-### Offsets below the image base (29)
+### Offsets below the image base (31)
 
 IDA loaded `pufobeta.exe` at `0x10000`, so no original code or data lives
 below it. Every one of these is a field offset inside a struct.
 
-`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`
+`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a3c`
 
 ### At or above the image base (114)
 

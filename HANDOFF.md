@@ -487,11 +487,19 @@ preparing this document.
    10) and `Menu_ConfirmQuitDialog @ 0x18e2c` / `Menu_CancelQuitDialog @ 0x18e04`.
    `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` is `Menu_SyncOptionPads`, and it
    proved the volume options are stored 1..5 (`Options_SetMusicVol1` writes the
-   immediate 1), which the port had wrong. `test_menubtn` adds 67 checks. What is
+   immediate 1), which the port had wrong. `test_menubtn` adds 67 checks. The ground
+   item list `Inv_BuildVisibleList @ 0x2d580` is ported in `pufo_tactui.c` and now
+   replaces the `pfnRebuildVisibleList` hook in `TactUiHooks`, `RosterHooks` and
+   `TactHudInvOpenCtx`: merge by `ObjectRec` identity keeping the larger `nAmmo`,
+   skip `bTwoHanded == 2`, filter on `nCategory` against `nInvListSel` (0xFF = all),
+   then selection-sort ascending by `uSortKey @ 0xC8` with the `u16` count array
+   swapped in step. `apInvList @ 0x1A24` and `anInvCount @ 0x3A24` are 2048 entries
+   each. What is
    left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
    `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
-   `Map_BuildDeployConfirmYesNo @ 0x18a68`, and the geoscape screens. See
-   `docs/parity/ui-core.md`, "The widget click adapters". The `UiPanel` type
+   `Map_BuildDeployConfirmYesNo`, the inventory hit test `Ui_HitTestTactItem @ 0x11ac0`,
+   and the geoscape screens. See
+   `docs/parity/ui-core.md`, "The ground item list". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

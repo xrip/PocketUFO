@@ -26,6 +26,10 @@ static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 #define GRID 10
 
 static MapCell g_aGrid[4][GRID][GRID];
+
+/* Ground items for the inventory-open test. */
+static ObjectRec g_aObj[2];
+static TactItem  g_aItem[2];
 static Mc1Rec  g_aSpr[8];
 static TactState g_State;
 static Soldier g_Unit;
@@ -61,12 +65,6 @@ static void CbPush(i32 nRecord, void *pUser)
 {
     (void)pUser;
     g_nRecord = nRecord;
-}
-static i32 g_nRebuildCalls;
-static void CbRebuild(void *pUser)
-{
-    (void)pUser;
-    g_nRebuildCalls += 1;
 }
 static bool CbWarn(const Soldier *pUnit, i32 nTuCost, void *pUser)
 {
@@ -117,7 +115,6 @@ static void Reset(void)
     g_nRecord = -1;
     g_nWarnCalls = 0;
     g_bWarn = false;
-    g_nRebuildCalls = 0;
 
     g_Unit.pCell = At(3, 3, 1);
     g_Unit.nUnitType = 0;
@@ -416,7 +413,18 @@ static void TestOpenInventory(void)
     ctx.bSweepGate = 1;
     ctx.bSelUnitLarge = false;
     ctx.pfnPlaySample = CbPlay;
-    ctx.pfnRebuildVisibleList = CbRebuild;
+
+    /* Two distinct objects on the selected unit's cell, so the rebuild the
+     * original performs is visible as a list of two entries. */
+    memset(g_aObj, 0, sizeof(g_aObj));
+    memset(g_aItem, 0, sizeof(g_aItem));
+    g_aObj[0].uSortKey = 40;
+    g_aObj[1].uSortKey = 12;
+    g_aItem[0].pObj = &g_aObj[0];
+    g_aItem[0].pNext = &g_aItem[1];
+    g_aItem[1].pObj = &g_aObj[1];
+    g_Unit.pCell->pItemList = g_aItem;
+    ui.nInvListCount = 9;   /* sentinel: a rebuild always rewrites it */
 
     Check("the inventory opens for a humanoid",
           TactHud_OpenInventory(&ctx) && ui.nUiScreen == 1);
@@ -428,7 +436,9 @@ static void TestOpenInventory(void)
           && ui.abFilterPad[0] == 0 && ui.abFilterPad[1] == 0
           && ui.abFilterPad[2] == 0 && ui.abFilterPad[3] == 0
           && ui.abFilterPad[4] == 0);
-    Check("the visible list is rebuilt once", g_nRebuildCalls == 1);
+    Check("the ground list is rebuilt and sorted",
+          ui.nInvListCount == 2 && ui.apInvList[0]->pObj == &g_aObj[1]
+          && ui.apInvList[1]->pObj == &g_aObj[0]);
     Check("the iso layer draw is switched on", ui.bDrawIsoLayer == 1);
     Check("the cursor is re-stamped on its own cell",
           cursor.nX == 3 && cursor.nY == 3);
