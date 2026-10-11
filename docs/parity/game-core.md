@@ -4286,3 +4286,22 @@ small. A throw at the unit's own cell (bound 0) lands; a throw at a neighbouring
 cell (bound 16 voxels) does not, and the command aborts with aTextRecs record 4.
 That is the original's shape, not a port bug: the flag's only writers are the
 input handlers, `Tact_ProcessFireAction` and `Tact_ProcessFallAction`.
+
+## Tact_KillUnit @ 0x4e430 — the spotted-flag sweep is now proven
+
+The tail was ported earlier without verification. The ARM at `0x4F24C..0x4F2B8`
+settles it:
+
+| ARM | Meaning |
+|---|---|
+| `LDRB R0, [R4,#(Map_bSweepArmed - 0x1139B8)]` … `BEQ loc_4F2C4` | the whole tail is gated on the byte at `Map+0x20`; clear means straight to the epilogue |
+| `ADD LR,R1,#8` / `SUB R5,R1,#8` / `MOV R1,#0xA` / `MUL R0,R3,R1` / `CMP LR,R0` / `SUBGE LR,R0,#1` / `CMP R5,#0` / `MOVMI R5,#0` | window `nX-8 .. nX+8`, high end clamped to `10*nMapDimX - 1`, low end clamped to 0; the same pair for `nY` against `nMapDimY` |
+| `ADD R6,#0x3C` … `CMP R6,#0xF0` `BLT` | four layers, 60 rows each |
+| `MOV R3,#0x15338` / `LDR R3,[R0,R3]` / `LDRB R11,[R3,#0x2C]` / `AND R11,#0xFE` / `STRB R11,[R3,#0x2C]` | the grid base is `apCells` @ `0x15338` again, and the clear is bit 0 of `MapCell+0x2C`, which is `bFlags44` |
+| `BL UnitList_ForEachRefresh` | then a full Xcom visibility refresh |
+
+Three gate bytes are now named in the IDB: `Map_bTickHold` @ `0x113A12`,
+`Map_bSweepArmed` @ `0x113A20`, `Map_bFrameScratch` @ `0x138E74`. `test_vis`
+asserts the window edge (28 cleared, 29 untouched), all four layers, that only
+bit 0 of the byte changes, the clamp at the map edge, and that nothing is cleared
+when the gate is off.

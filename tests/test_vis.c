@@ -507,7 +507,7 @@ static void TestKillUnit(void)
     CheckEqI32("TU comes from the same template word", pUnit->uTu, 80);
     CheckEqI32("the ready selector block is loaded", pUnit->abReady252[2], 20);
 
-    /* The spotted-flag sweep, armed by Map.apUiSlotsA[2]. */
+    /* The spotted-flag sweep, armed by the byte at Map+0x20 (unk_113A20). */
     KillSetup();
     KillRosters();
     pUnit = Place(3, 20, 20, 0, 0, 0);
@@ -515,16 +515,52 @@ static void TestKillUnit(void)
     pUnit->uHp = 10;
     for (i32 l = 0; l < 4; ++l) {
         At(20, 20, l)->bFlags44 = 1;
-        At(30, 20, l)->bFlags44 = 1;
+        At(28, 20, l)->bFlags44 = 1;
+        At(29, 20, l)->bFlags44 = 1;
+        At(20, 20, l)->bFlags29 = 0x40;
     }
     g_KillCtx.bUiSlotArmed = true;
     Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
-    /* The spotted-flag sweep is NOT asserted here. With bUiSlotArmed confirmed set
-     * on the way in (checked after the call) and confirmed unchanged on the way
-     * out, no cell in the +-8 window is cleared. Open question, recorded in the
-     * scratchpad; do not claim this tail is verified. */
-    CheckEqI32("the sweep clears the flag inside the window", At(20, 20, 0)->bFlags44, 0);
-    CheckEqI32("the sweep stops at the window edge", At(30, 20, 0)->bFlags44, 1);
+    /* Bounds proven from the ARM at 0x4F24C..0x4F2B8: the window is
+     * (nX-8 .. nX+8) x (nY-8 .. nY+8), each end clamped with MOVMI to 0 and
+     * SUBGE to 10 * nMapDim - 1, over four layers (R6 = 0, +0x3C, while < 0xF0),
+     * and the clear is LDRB [cell+0x2C] / AND #0xFE / STRB [cell+0x2C], which is
+     * MapCell.bFlags44 bit 0. The grid base is 0x15338 again. */
+    CheckEqI32("the sweep clears the flag at the unit's cell", At(20, 20, 0)->bFlags44, 0);
+    CheckEqI32("the sweep reaches the far edge of the window", At(28, 20, 0)->bFlags44, 0);
+    CheckEqI32("the sweep stops one cell past the window", At(29, 20, 0)->bFlags44, 1);
+    Check("the sweep runs on all four layers",
+          At(20, 20, 1)->bFlags44 == 0 && At(20, 20, 2)->bFlags44 == 0
+          && At(20, 20, 3)->bFlags44 == 0);
+    Check("only bit 0 of the byte is cleared", At(20, 20, 0)->bFlags29 == 0x40);
+
+    /* The gate: with Map+0x20 clear the whole sweep and the Xcom refresh are
+     * skipped (BEQ loc_4F2C4 straight to the epilogue). */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(3, 20, 20, 0, 0, 0);
+    pUnit->uHp = 10;
+    for (i32 l = 0; l < 4; ++l) {
+        At(20, 20, l)->bFlags44 = 1;
+    }
+    g_KillCtx.bUiSlotArmed = false;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("no sweep when the gate byte is clear", At(20, 20, 0)->bFlags44, 1);
+
+    /* The clamp: a unit eight cells from the map edge has its window cut to the
+     * grid, 10 * nMapDimX - 1 = 39 here. */
+    KillSetup();
+    KillRosters();
+    pUnit = Place(3, 35, 35, 0, 0, 0);
+    pUnit->uHp = 10;
+    At(39, 35, 0)->bFlags44 = 1;
+    At(30, 35, 0)->bFlags44 = 1;
+    At(26, 35, 0)->bFlags44 = 1;
+    g_KillCtx.bUiSlotArmed = true;
+    Tact_KillUnit(&g_KillCtx, &g_KillHooks, pUnit);
+    CheckEqI32("the clamped window still reaches the map edge", At(39, 35, 0)->bFlags44, 0);
+    CheckEqI32("the clamped low end is nX - 8", At(30, 35, 0)->bFlags44, 0);
+    CheckEqI32("one past the clamped low end is untouched", At(26, 35, 0)->bFlags44, 1);
 }
 
 int main(void)

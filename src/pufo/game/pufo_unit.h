@@ -615,9 +615,11 @@ typedef struct KillCtx {
     Soldier           **ppSelUnit;      /* Map.pSelUnit */
     i32                *pnKillCount;    /* Map.gap_TrajRest + 4*49940 */
     const char         *pszTransformName;
-    bool                bTickHold;
-    bool                bFrameScratch;
-    bool                bUiSlotArmed;
+    bool                bTickHold;      /* Map+0x0012 unk_113A12: skips the message
+                                         * and the sweep tail (0x4F0AC) */
+    bool                bFrameScratch;  /* Map+0x254BC unk_138E74: same early exit */
+    bool                bUiSlotArmed;   /* Map+0x0020 unk_113A20: arms the spotted-flag
+                                         * sweep and the Xcom refresh (0x4F24C) */
     StatusStack        *pStatus;
     const StatusHooks  *pStatusHooks;
     VisCtx             *pVisCtx;

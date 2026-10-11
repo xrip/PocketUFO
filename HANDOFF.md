@@ -245,9 +245,10 @@ Specific unfinished items inside `game-core`:
 - `Tact_TallyBattleStats @ 0x3348c` — analysed, deliberately not ported. It needs
   `Save_Read/WriteTGameData` and `Tact_InitMission` first, because `unk_138E6C` and
   `unk_138E70` are saved mission state.
-- `Tact_KillUnit @ 0x4e430` — ported, but the spotted-flag sweep tail is deliberately
-  unasserted: it was ported without being verified, and no test claims it
-  (commits `b7668b9`, `8569beb`).
+- `Tact_KillUnit @ 0x4e430` — ported, and the spotted-flag sweep tail is now
+  verified from ARM and asserted in `test_vis` (window `nX±8` / `nY±8` clamped to
+  `10 * nMapDim - 1`, four layers, `MapCell+0x2C` bit 0 cleared, gated on
+  `Map_bSweepArmed` @ `0x113A20`).
 - `docs/parity/coverage.md` lists 126 cited addresses that are not in the function
   inventory (thunks, data symbols, or typos). Those need triage before the final
   parity report can claim "no unexplained gaps".
@@ -421,8 +422,11 @@ preparing this document.
 2. ~~Dump the two move tables~~ — done. `g_aUnitMuzzleOffset` @ 0xA9768 and
    `g_aFireSoundBySortKey` @ 0xAA168 are pinned in the port and named in the IDB.
    Three existing tables were found wrong and corrected in the same commit.
-3. **Assert the `Tact_KillUnit` spotted-flag sweep.** It is ported but unverified;
-   prove the sweep bounds and semantics from ARM, then add checks.
+3. ~~Assert the `Tact_KillUnit` spotted-flag sweep~~ — done. The bounds are proven
+   from the ARM at `0x4F24C..0x4F2B8` and `test_vis` now asserts them (window,
+   clamp, all four layers, bit-only clear, and the gate off). The three gate bytes
+   are named in the IDB: `Map_bTickHold` @ `0x113A12`, `Map_bSweepArmed` @
+   `0x113A20`, `Map_bFrameScratch` @ `0x138E74`.
 4. **Fix the reporting debt** before it distorts decisions: one uniform test output
    format so `PARITY.md` stops reporting 0 checks for 9 suites; one agreed coverage
    definition; refresh `docs/BUILD.md` source layout.
