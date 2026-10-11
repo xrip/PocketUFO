@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 382 / 1103 (34.6%) |
-| Bytes of original code cited | 171112 / 598792 (28.6%) |
+| Functions cited as evidence | 383 / 1103 (34.7%) |
+| Bytes of original code cited | 176980 / 598792 (29.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 39 |
 
@@ -39,7 +39,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 2 | 132 | 8 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
-| `tact` | 160 | 214 | 102228 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 161 | 214 | 108096 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 15 | 52 | 9408 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 55 | 85 | 9576 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 27 | 205 | 15212 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -205,11 +205,12 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (160 functions)
+### `tact` (161 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
+| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_unit.h` |
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_unit.h` |
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -717,13 +718,12 @@ whose port work they belong to.
 | `0x431ac` | `Save_AllocFlobjs` | 172 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f4f4` | `Save_WriteProduct` | 100 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 54 functions, 76116 bytes remaining
+### `tact` — 53 functions, 70248 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | needs the .ma1 templates (ported) plus Font_LoadTactSprites (759 B) and the palette LUTs (Tact_BuildPaletteLuts, 1184 B) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | the largest fire action; depends on Combat_ResolveShot |
-| `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | the queue consumer for movement; depends on ProcessFallAction |
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3d568` | `Tact_Shutdown` | 3788 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1333,7 +1333,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_template` | PASS | 40 |
 | `test_timer` | PASS | 78 |
 | `test_turn` | PASS | 63 |
-| `test_unit` | PASS | 199 |
+| `test_unit` | PASS | 227 |
 | `test_vis` | PASS | 0 |
 | `test_vistry` | PASS | 0 |
 
@@ -1354,7 +1354,7 @@ every deviation with its reason, and the residual uncertainty.
 
 These citations point at data, struct fields, or instruction offsets rather
 than function entry points, so they are not counted as coverage. Listed for
-transparency: 126 addresses.
+transparency: 128 addresses.
 
 - `0x0000`
 - `0x00002`
@@ -1396,5 +1396,5 @@ transparency: 126 addresses.
 - `0x1408c`
 - `0x140b4`
 - `0x1472c0`
-- ... and 86 more
+- ... and 88 more
 
