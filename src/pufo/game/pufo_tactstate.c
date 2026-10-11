@@ -31,6 +31,25 @@ void TactState_EnqueueTurn(TactState *pState, Soldier *pUnit, u8 nFacing)
     pState->nQueueLen += 1;
 }
 
+/* Unit_FaceToward @ 0x49bf0. atan2 from the unit's own cell toward (nX,nY),
+ * wrapped to 0..7 by Unit_FacingToward, then the turn command is appended.
+ * The original's guard is `nX != pCell->nX || nY != pCell->nY`; the same-cell
+ * case enqueues nothing. */
+void Unit_FaceToward(TactState *pState, Soldier *pUnit, i32 nX, i32 nY)
+{
+    const MapCell *pCell;
+
+    /* Deviation: the original dereferences pUnit and pUnit->pCell unconditionally. */
+    if (pState == NULL || pUnit == NULL || pUnit->pCell == NULL) {
+        return;
+    }
+    pCell = pUnit->pCell;
+    if (nX == pCell->nX && nY == pCell->nY) {
+        return;
+    }
+    TactState_EnqueueTurn(pState, pUnit, Unit_FacingToward(pCell->nX, pCell->nY, nX, nY));
+}
+
 void TactState_EnqueueStep(TactState *pState, Soldier *pUnit, u8 nFacing, i32 nDelta)
 {
     TactQueueEntry *pEntry = &pState->aQueue[pState->nQueueLen];

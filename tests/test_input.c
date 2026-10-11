@@ -6,6 +6,7 @@
 
 #include "game/pufo_input.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_tactstate.h"  /* TactState, TactQueueEntry, TACTCMD_* */
 #include "game/pufo_unit.h"   /* the full Soldier type */
 #include "pufo_test.h"
 
@@ -614,6 +615,241 @@ static void TestOnConfirm(void)
     }
 }
 
+/* Input_OnSecondary @ 0x156e0. Needs a live grid, a queue and a unit. */
+#define SEC_DIM 8
+static MapCell   g_aGrid[4][SEC_DIM][SEC_DIM];
+static TactState g_SecQueue;
+static Soldier   g_SecUnit;
+static Mc1Rec    g_SecWall;
+
+static MapCell *SecLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nLayer < 0 || nLayer >= 4 || nX < 0 || nX >= SEC_DIM || nY < 0 || nY >= SEC_DIM) {
+        return NULL;
+    }
+    return &g_aGrid[nLayer][nY][nX];
+}
+
+/* One tactical map: unit at (1,1,0) facing east, cursor at (3,2) on layer 1
+ * (so its cell is layer 0), and a door wall on the cursor cell. */
+static void SecWorldReset(MapCell **ppDoor)
+{
+    i32 nLayer;
+    i32 nY;
+    i32 nX;
+
+    for (nLayer = 0; nLayer < 4; ++nLayer) {
+        for (nY = 0; nY < SEC_DIM; ++nY) {
+            for (nX = 0; nX < SEC_DIM; ++nX) {
+                MapCell_Init(&g_aGrid[nLayer][nY][nX], nX, nY, nLayer);
+                /* MapCell_Init keeps the door bit, so clear it here. */
+                g_aGrid[nLayer][nY][nX].bFlags57[0] = 0;
+            }
+        }
+    }
+    memset(&g_SecQueue, 0, sizeof(g_SecQueue));
+    memset(&g_SecUnit, 0, sizeof(g_SecUnit));
+    memset(&g_SecWall, 0, sizeof(g_SecWall));
+    g_SecWall.gap_2f[0] = 1;                 /* a real wall the door can open */
+    g_SecUnit.pCell    = &g_aGrid[0][1][1];  /* (1,1,0) */
+    g_SecUnit.bFacing  = 2;                  /* east */
+    g_SecUnit.nUnitType = 0;                 /* a small unit */
+    g_aGrid[0][2][3].pWallSprA = &g_SecWall; /* the cursor cell */
+    *ppDoor = &g_aGrid[0][1][2];             /* the cell east of the unit */
+}
+
+static TactInputState SecState(void)
+{
+    TactInputState s = ConfirmState();
+    s.nMapDimX     = 1;   /* cursor range 0..9 */
+    s.nMapDimY     = 1;
+    s.nLayerScratch = 1;  /* the cursor cell is on layer 0 */
+    s.nCursorX     = 3;
+    s.nCursorY     = 2;
+    s.pSelUnit     = &g_SecUnit;
+    return s;
+}
+
+static void TestOnSecondary(void)
+{
+    Trace           t;
+    TactInputHooks  h = MakeHooks(&t);
+    TactInputState  s;
+    TactInputWorld  w = { &g_SecQueue, SecLookup, NULL };
+    MapCell        *pDoor;
+    bool            bEscape;
+    static const u16 aClear[5] = { 6u, 10u, 11u, 12u, 15u };
+    static const u16 aNone[8]  = { 3u, 5u, 7u, 8u, 9u, 13u, 14u, 16u };
+
+    /* The geoscape branch is a no-op, and it does not touch the escape flag. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    bEscape = false;
+    s = SecState();
+    s.bGeoscapeUi = true;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(t.nSampleCount == 0 && !bEscape && g_SecQueue.nQueueLen == 0,
+          "secondary does nothing in the geoscape");
+
+    /* The tactical gate. */
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.bTactFlag = false;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 0 && !bEscape, "secondary needs bTactFlag");
+
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.bQueueActive = true;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 0 && !bEscape, "secondary is blocked while the queue runs");
+
+    /* Screens 1, 2 and 4 delegate to Input_OnConfirm. */
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.nUiScreen = 1;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(t.nInvCommit == 1 && t.anSamples[0] == 16, "screen 1 runs the confirm inventory path");
+
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.nUiScreen = 2;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(t.nFocusCount == 1 && s.nUiScreen == 0, "screen 2 runs the confirm look path");
+
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.nUiScreen = 4;
+    s.bLookCommitFlag = 1;
+    s.pLookCommitUnit = &g_SecUnit;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(s.pSelUnit == &g_SecUnit && s.nUiScreen == 0 && t.nSampleCount == 1,
+          "screen 4 runs the confirm command pad");
+
+    /* Screens that only clear themselves. */
+    for (int i = 0; i < 5; ++i) {
+        memset(&t, 0, sizeof(t));
+        s = SecState();
+        s.nUiScreen = aClear[i];
+        Input_OnSecondary(&s, &h, &w, &bEscape);
+        Check(s.nUiScreen == 0 && g_SecQueue.nQueueLen == 0,
+              "secondary clears the screen id");
+    }
+
+    /* Screens that do nothing at all. */
+    for (int i = 0; i < 8; ++i) {
+        memset(&t, 0, sizeof(t));
+        s = SecState();
+        s.nUiScreen = aNone[i];
+        Input_OnSecondary(&s, &h, &w, &bEscape);
+        Check(s.nUiScreen == aNone[i] && g_SecQueue.nQueueLen == 0 && !bEscape,
+              "secondary leaves these screens alone");
+    }
+
+    /* Screen 0, mode 3: pop the last selected target. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    g_aScratch9 = 1;
+    s = SecState();
+    s.bMultiTargetArmed = 3;
+    s.pbScratchFlag9    = &g_aScratch9;
+    s.nMultiTargetCount = 2;
+    s.apMultiTargets[0] = &g_aGrid[0][1][1];
+    s.apMultiTargets[1] = &g_aGrid[0][2][2];
+    s.apMultiTargets[0]->bFlags29 = 0x40;
+    s.apMultiTargets[1]->bFlags29 = 0x60;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(s.apMultiTargets[1]->bFlags29 == 0x20, "secondary pops the last target mark");
+    Check(s.apMultiTargets[0]->bFlags29 == 0x40, "secondary leaves the earlier target marked");
+    Check(s.nMultiTargetCount == 1 && g_aScratch9 == 1, "the scratch flag waits for the last pop");
+
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(s.nMultiTargetCount == 0 && g_aScratch9 == 0,
+          "the last pop clears the multi-target scratch flag");
+
+    s.apMultiTargets[0]->bFlags29 = 0x40;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(s.apMultiTargets[0]->bFlags29 == 0x40 && s.nMultiTargetCount == 0,
+          "an empty target list pops nothing");
+
+    /* Screen 0, cursor outside the map: the escape flag is set, nothing else. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    bEscape = false;
+    s = SecState();
+    s.nCursorX = 10;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(bEscape, "secondary sets the escape flag before the cursor test");
+    Check(g_SecQueue.nQueueLen == 0, "an out-of-map cursor queues no action");
+
+    /* Screen 0, east-facing small unit onto a door cell: Map_QueueDoorAction
+     * appends its open+door pair, then the unit turns toward the cursor cell and
+     * the queue starts. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    bEscape = false;
+    pDoor->bFlags57[0] = 8;
+    s = SecState();
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(bEscape, "secondary sets the escape flag in tactical mode");
+    Check(g_SecQueue.nQueueLen == 3, "secondary queues the door action and the turn");
+    Check(g_SecQueue.aQueue[0].nCmd == TACTCMD_OPEN
+          && g_SecQueue.aQueue[1].nCmd == TACTCMD_DOOR
+          && g_SecQueue.aQueue[1].nFacing == 4
+          && g_SecQueue.aQueue[1].nX == 3 && g_SecQueue.aQueue[1].nY == 2,
+          "the door pair carries the cursor cell and the door facing");
+    Check(g_SecQueue.aQueue[2].nCmd == TACTCMD_TURN, "secondary turns the unit to the cursor");
+    Check(g_SecQueue.bQueueActive, "secondary kicks the queue");
+
+    /* A diagonal facing never reaches the door path. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    pDoor->bFlags57[0] = 8;
+    s = SecState();
+    g_SecUnit.bFacing = 1;   /* north-east */
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 1 && g_SecQueue.aQueue[0].nCmd == TACTCMD_TURN,
+          "odd facings never open a door");
+
+    /* A large unit never opens a door either. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    pDoor->bFlags57[0] = 8;
+    s = SecState();
+    g_SecUnit.nUnitType = 4;  /* a large type */
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 1 && g_SecQueue.aQueue[0].nCmd == TACTCMD_TURN,
+          "large units never open a door");
+
+    /* No door mark on the cell in front: only the turn. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 1 && g_SecQueue.aQueue[0].nCmd == TACTCMD_TURN,
+          "no door mark means no door action");
+
+    /* The cursor cell is the unit's own cell: no turn, no kick. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.nCursorX = 1;
+    s.nCursorY = 1;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 0 && !g_SecQueue.bQueueActive,
+          "secondary does not turn a unit toward its own cell");
+
+    /* Layer 0 has no layer below it, so the cursor cell does not exist. */
+    SecWorldReset(&pDoor);
+    memset(&t, 0, sizeof(t));
+    s = SecState();
+    s.nLayerScratch = 0;
+    Input_OnSecondary(&s, &h, &w, &bEscape);
+    Check(g_SecQueue.nQueueLen == 0 && !g_SecQueue.bQueueActive,
+          "layer 0 has no cursor cell to face");
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -625,6 +861,7 @@ int main(void)
     TestDismissHigh();
     TestOnBackCancel();
     TestOnConfirm();
+    TestOnSecondary();
 
     return TestSummary("test_input");
 }

@@ -4439,3 +4439,61 @@ Notes that matter for the port:
   `nullsub_4` are no-ops to skip.
 - Hex-Rays again renders `byte_1139BA` as `gap_2[1]`; the ARM is `Map+0x22`. This is now
   the third site with that same pseudocode error.
+
+## 2026-10-11: Input_OnSecondary @ 0x156e0 — ported
+
+Ported in `src/pufo/game/pufo_input.c`, declared in `pufo_input.h`, asserted by
+`test_input` (94 -> 130 checks).
+
+### The `__rt_sdiv` return registers (correction)
+
+The earlier note in this file said the helper's "result" is in `R1`. It is not. Three
+sites prove the full shape — arguments `R0 = divisor`, `R1 = dividend`; **return
+`R0 = quotient`, `R1 = remainder`**:
+
+| Site | What it proves |
+|---|---|
+| `0x50054..0x500CC` (`Tact_ProcessMoveAction`) | `sdiv(24, -12*iCeilParam)`; the ceiling lift is consumed from `R0` at `0x500CC` (`ADD R0,R3,R0`), and the no-ceiling-sprite path pre-sets `R0 = 0` at `0x50070`. The quotient is `R0`. |
+| `0x1B114..0x1B130` (`MapView_bResolveIsoCell`) | `nTileY / 2` is done by the compiler with `ASR #1` at `0x1B0F0`, so the helper call exists only for the parity test: `MOVS LR, R1` then `ADDNE R3, R5, #1` is `if (nTileY % 2) v6 += 1`. The remainder is `R1`. |
+| `0x15824..0x15840` (`Input_OnSecondary`) | `MOV R0,#2; LDRB R1,[R6,#5]` then `MOVS R3, R1` gates the door path on `bFacing % 2`. Same shape. |
+
+IDB comments added at `0x1583C`, `0x1B128` and `0x5006C`. This also confirms the door
+gate is the orthogonal facings `0/2/4/6` — the same four `Map_QueueDoorAction @ 0x2bd00`
+accepts, which is why the two agree.
+
+### Ported behaviour
+
+| Part | Evidence | Port |
+|---|---|---|
+| Geoscape branch | `0x156F0`: `bGeoscapeUi != 0` calls `nullsub_8 @ 0x8b948` and returns | returns without a hook; the geoscape secondary click does nothing |
+| Tactical gate | `0x15708..0x1575C`, the same five checks as `Input_OnConfirm` | `bTactFlag && TactInput_CanScroll` |
+| Screens 1, 2, 4 | `0x15784`: `Input_OnConfirm(a1, nUiScreen, a3)` | `Input_OnConfirm(pState, pHooks)`; the port has no unused arguments |
+| Screens 6, 10, 11, 12, 15 | `0x15764` and `0x159C8..0x159E4` | clear `nUiScreen` |
+| Screens 3, 5, 7, 8, 9, 13, 14, > 15 | fall to `locret_159E8` | do nothing |
+| Screen 0, `byte_1139BA == 3` | `0x15980..0x159BC` | pop `apMultiTargets[nMultiTargetCount-1]`, `bFlags29 &= ~0x40`, decrement, clear `*unk_1571E4+9` when the count reaches 0; `<= 0` returns |
+| Escape flag | `0x157B0`: `bUiEscapeFlag = 1` (renamed from `unk_AD712`) | `*pbEscapeFlag = true`, the same scratch `UiScreen_DismissHigh` clears |
+| Cursor test | `0x157C0`: `MapCursor_IsValid(pMap)` | `MapCursor_IsValid` over a `TactCursor` built from `nCursorX/nCursorY/nLayerScratch` |
+| Facing delta | `0x157D8`: `aDirDeltaXY @ 0xA7AE0`, signed bytes at `3*bFacing` | `g_aStepDir[bFacing].dx/.dy` |
+| Door path | `0x15814..0x158E8` | `!Unit_bIsLarge && bFacing %% 2 == 0 && Map_IsValidCell(...)` and `bFlags57[0] & 8` -> `Map_QueueDoorAction(queue, pUnit->pCell, cursorCell, bFacing, ctx)` |
+| Tail | `0x158F8..0x1596C` | cursor cell differs in x or y -> `Unit_FaceToward` then `TactState_KickQueue` |
+
+`Map_pSelUnit` (`0x128CEC`, `Map+0x15334`), `Map_nCursorX` (`0x128AE0`) and
+`Map_nCursorY` (`0x128AE4`) are now named globals; the function comment at `0x156E0`
+records the whole routing.
+
+### `Unit_FaceToward @ 0x49bf0` is not a facing setter
+
+The port had only the pure `Unit_FacingToward` and injected the rest. The original
+reads `pUnit->pCell`, returns when `(nX,nY)` is that same cell, and otherwise
+**enqueues a command-0 turn** through `TactState_EnqueueTurn @ 0x49b84`; it never
+writes `Soldier.bFacing`. Ported as `Unit_FaceToward(TactState*, Soldier*, i32, i32)`
+in `pufo_tactstate.c`, next to the enqueue it performs.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `pSelUnit`, `pUnit->pCell`, the queue and the lookup are null-checked | the original dereferences all of them unconditionally; the port must not segfault on an uninitialised context |
+| 2 | A `NULL` cursor cell (layer 0 has no layer below) skips the face-and-kick tail | the original indexes `apCells[-1]` and reads whatever is there; the injected lookup returns NULL and the port stops instead of following garbage |
+| 3 | `Input_OnConfirm` is called without the original's three arguments | they are unused by `Input_OnConfirm` except as the `Inv_CloseAndCommit` argument, which the port passes through its hook |
+

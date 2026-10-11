@@ -23,9 +23,10 @@
 
 #include "pufo_common.h"
 
-typedef struct MapCell MapCell;
-typedef struct TactItem TactItem;
-typedef struct Soldier Soldier;
+#include "game/pufo_mapcell.h"  /* MapCell, MapGeom, MapCellLookup */
+#include "game/pufo_tactctl.h"  /* TactCursor */
+
+typedef struct TactState TactState;
 
 /* TactState.bQueueActive @ 0x111d6. */
 typedef struct TactInputState {
@@ -143,6 +144,38 @@ void Input_OnMenuEscape(TactInputState *pState, const TactInputHooks *pHooks);
  * The original's three arguments are unused except as the Inv_CloseAndCommit
  * argument, so the port takes only the state and the hooks. */
 void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks);
+
+/* What the screen-0 tactical path of Input_OnSecondary needs beyond the Map
+ * fields: the tactical queue (the original's unk_157198) and the cell grid. */
+typedef struct TactInputWorld {
+    TactState     *pQueue;
+    MapCellLookup  pfnLookup;
+    void          *pLookupUser;
+} TactInputWorld;
+
+/* Input_OnSecondary @ 0x156e0. The secondary / right-click key.
+ *
+ * Gate: the geoscape branch is a no-op (the original calls nullsub_8); the
+ * tactical branch needs bTactFlag plus TactInput_CanScroll. Then nUiScreen:
+ *   1, 2, 4  run Input_OnConfirm.
+ *   6, 10, 11, 12, 15  clear the screen.
+ *   3, 5, 7, 8, 9, 13, 14 and anything above 15  do nothing.
+ *   0  the tactical path below.
+ *
+ * Screen 0, two modes picked by bMultiTargetArmed (byte 0x22):
+ *   == 3  pop the last selected target: clear bFlags29 bit 6 on
+ *         apMultiTargets[nMultiTargetCount-1], decrement, and when the count
+ *         reaches 0 also clear *unk_1571E4+9. Nothing happens when it is <= 0.
+ *   other set the escape-flag scratch (unk_AD712), then require a cursor inside
+ *   the map. With the selected unit's cell (nX,nY,nZ) and the facing delta
+ *   (dx,dy) from g_aStepDir:
+ *     - a small unit on an even facing, a valid cell at (nX+dx, nY+dy, nZ) and
+ *       MapCell.bFlags57[0] bit 3 set there -> Map_QueueDoorAction with the
+ *       cursor cell apCells[nLayerScratch-1][nCursorY][nCursorX] and bFacing.
+ *     - always afterwards: if the cursor cell differs from the unit's cell in x
+ *       or y, Unit_FaceToward it and kick the queue. */
+void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
+                       const TactInputWorld *pWorld, bool *pbEscapeFlag);
 
 /* UI-screen ids used by UiScreen_DismissHigh. */
 #define PUFO_UI_SCREEN_TARGET_BEGIN 8u

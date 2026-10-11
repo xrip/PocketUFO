@@ -128,6 +128,12 @@ extern TactState *g_pTactState;
 void TactState_ctor(TactState *pState);
 
 void TactState_EnqueueTurn(TactState *pState, Soldier *pUnit, u8 nFacing);
+
+/* Unit_FaceToward @ 0x49bf0. Facing is not stored on the unit here: the original
+ * turns the unit by enqueueing a command-0 entry. It reads the unit's own cell,
+ * does nothing when (nX,nY) is that same cell, and otherwise appends the turn.
+ * The queue is an argument because the original reaches it through unk_157198. */
+void Unit_FaceToward(TactState *pState, Soldier *pUnit, i32 nX, i32 nY);
 void TactState_EnqueueStep(TactState *pState, Soldier *pUnit, u8 nFacing, i32 nDelta);
 void TactState_EnqueueStandFromKneel(TactState *pState, Soldier *pUnit);
 void TactState_EnqueueVertStep(TactState *pState, Soldier *pUnit, u8 nFacing);

@@ -1,6 +1,9 @@
 /* pufo_input.c - see pufo_input.h for evidence and the field map. */
 #include "game/pufo_input.h"
 #include "game/pufo_mapcell.h"   /* MapCell, TactItem, ObjectRecFull */
+#include "game/pufo_path.h"       /* g_aStepDir */
+#include "game/pufo_tactstate.h"  /* Map_QueueDoorAction, Unit_FaceToward, TactState_KickQueue */
+#include "game/pufo_unit.h"       /* Unit_bIsLarge, Soldier.pCell/bFacing */
 
 /* The original's UI-screen ids. */
 #define UI_SCREEN_NONE          0u
@@ -449,5 +452,128 @@ void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks)
     default:
         /* 8, 9, 13, 14 and anything above 15 fall straight to the epilogue. */
         return;
+    }
+}
+
+/* Input_OnSecondary @ 0x156e0. The secondary key (right click / second action).
+ *
+ * Gate read off the ARM at 0x156E0..0x1575C: bGeoscapeUi (0x44) takes a branch
+ * that only calls nullsub_8 @ 0x8b948, so the geoscape does nothing here. The
+ * tactical gate is the same five checks Input_OnConfirm uses.
+ *
+ * Screen routing is a compare chain, not a jumptable (0x15760..0x15784 and the
+ * far block at 0x159C8): >6 goes to 10..12 and 15 clearing the screen, 6 clears
+ * it, 1/2/4 delegate to Input_OnConfirm with the screen id as the second
+ * argument, 3 and 5 do nothing. */
+void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
+                       const TactInputWorld *pWorld, bool *pbEscapeFlag)
+{
+    TactCursor    cursor;
+    MapGeom       geom;
+    Soldier      *pUnit;
+    MapCell      *pCell;
+    MapCell      *pTo;
+    const StepDir *pDir;
+    i32           nX1;
+    i32           nY1;
+
+    if (pState->bGeoscapeUi) {
+        return; /* nullsub_8 @ 0x8b948 */
+    }
+    if (!pState->bTactFlag || !TactInput_CanScroll(pState)) {
+        return;
+    }
+
+    if (pState->nUiScreen > 6u) {
+        /* 0x159C8: 7, 8, 9, 13, 14 and anything above 15 fall to the epilogue. */
+        if ((pState->nUiScreen >= 10u && pState->nUiScreen <= 12u)
+            || pState->nUiScreen == UI_SCREEN_ESCAPE_ALT) {
+            pState->nUiScreen = 0;
+        }
+        return;
+    }
+    if (pState->nUiScreen == UI_SCREEN_OPTIONS) {
+        pState->nUiScreen = 0;
+        return;
+    }
+    if (pState->nUiScreen != UI_SCREEN_NONE) {
+        if (pState->nUiScreen <= UI_SCREEN_LOOK || pState->nUiScreen == UI_SCREEN_COMMAND) {
+            Input_OnConfirm(pState, pHooks);
+        }
+        return;
+    }
+
+    /* Screen 0. 0x15794: byte 0x22 selects the mode. */
+    if (pState->bMultiTargetArmed == 3u) {
+        /* 0x15980: pop the last selected target. */
+        if (pState->nMultiTargetCount <= 0) {
+            return;
+        }
+        pTo = pState->apMultiTargets[pState->nMultiTargetCount - 1];
+        if (pTo != NULL) {
+            pTo->bFlags29 &= (u8)~0x40;
+        }
+        if (--pState->nMultiTargetCount == 0 && pState->pbScratchFlag9 != NULL) {
+            *pState->pbScratchFlag9 = 0;
+        }
+        return;
+    }
+
+    if (pbEscapeFlag != NULL) {
+        *pbEscapeFlag = true; /* unk_AD712 = 1 @ 0x157B0 */
+    }
+
+    cursor.nX     = pState->nCursorX;
+    cursor.nY     = pState->nCursorY;
+    cursor.nFlags = pState->nLayerScratch;
+    geom.nDimX    = pState->nMapDimX;
+    geom.nDimY    = pState->nMapDimY;
+    if (!MapCursor_IsValid(&cursor, &geom)) {
+        return;
+    }
+
+    /* Deviation: the original dereferences pSelUnit and its cell unconditionally. */
+    pUnit = pState->pSelUnit;
+    if (pUnit == NULL || pUnit->pCell == NULL || pWorld == NULL
+        || pWorld->pQueue == NULL || pWorld->pfnLookup == NULL) {
+        return;
+    }
+    pCell = pUnit->pCell;
+
+    /* 0x157D8: the facing delta is aDirDeltaXY[3*bFacing], the same signed-byte
+     * triple the port keeps as g_aStepDir. */
+    pDir = &g_aStepDir[pUnit->bFacing];
+    nX1  = (i32)pDir->dx + pCell->nX;
+    nY1  = (i32)pDir->dy + pCell->nY;
+
+    /* 0x15814..0x158E8. The parity test is __rt_sdiv(R0=2, R1=bFacing) with the
+     * remainder in R1, so only the orthogonal facings reach the door path --
+     * which is also the only set of facings Map_QueueDoorAction accepts. */
+    if (!Unit_bIsLarge(pUnit) && (pUnit->bFacing % 2) == 0
+        && Map_IsValidCell(&geom, nX1, nY1, pCell->nZ)) {
+        MapCell *pDoor = pWorld->pfnLookup(nX1, nY1, pCell->nZ, pWorld->pLookupUser);
+        if (pDoor != NULL && (pDoor->bFlags57[0] & 8u) != 0) {
+            DoorActionCtx ctx = { pUnit, false, geom, pWorld->pfnLookup,
+                                  pWorld->pLookupUser };
+            /* 0x158C8: the cursor cell is apCells[nLayerScratch-1][nCursorY][nCursorX],
+             * the base 0x11AF8 = apCells @ 0x15338 minus one 14400-byte layer. */
+            Map_QueueDoorAction(pWorld->pQueue, pCell,
+                                pWorld->pfnLookup(cursor.nX, cursor.nY,
+                                                  (i32)(i8)cursor.nFlags - 1,
+                                                  pWorld->pLookupUser),
+                                pUnit->bFacing, &ctx);
+        }
+    }
+
+    /* 0x158F8: the tail runs on every path that got here, and re-reads the unit's
+     * cell. The cursor cell is the same one-layer-down lookup. */
+    pTo = pWorld->pfnLookup(cursor.nX, cursor.nY, (i32)(i8)cursor.nFlags - 1,
+                            pWorld->pLookupUser);
+    if (pTo == NULL) {
+        return;
+    }
+    if (pCell->nX != pTo->nX || pCell->nY != pTo->nY) {
+        Unit_FaceToward(pWorld->pQueue, pUnit, pTo->nX, pTo->nY);
+        TactState_KickQueue(pWorld->pQueue);
     }
 }
