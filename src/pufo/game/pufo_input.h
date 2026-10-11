@@ -24,7 +24,9 @@
 #include "pufo_common.h"
 
 #include "game/pufo_mapcell.h"  /* MapCell, MapGeom, MapCellLookup */
-#include "game/pufo_tactctl.h"  /* TactCursor */
+#include "game/pufo_tactctl.h"  /* TactCursor, MapCursorPos, CamOffset */
+#include "render/pufo_render.h" /* PadImage */
+#include "ui/pufo_control.h"    /* UiControl, UiWidgetBank, UiControlHitCtx */
 
 typedef struct TactState TactState;
 
@@ -63,6 +65,33 @@ typedef struct TactInputState {
     i32       nCursorY;          /* 0x1512C */
     i32       anCamWorldY;       /* 0x4eb0, anCamWorldOff[1] */
     u8       *pbScratchFlag9;    /* *unk_1571E4 + 9 */
+
+    /* Fields only Input_OnPointer @ 0x13c6c touches. The anPhaseSave names come
+     * from the original's byte array at Map+0x74; five of its indices are read
+     * through named globals in the disassembly ([93] = 0xd1, [95] = 0xd7,
+     * [96] = 0xd8, [97] = 0xd9, [108] = 0xe4), which is what pins the base. */
+    u8   bNoHalfCursor;    /* 0x36 unk_1139EE: skip halving the drag coordinates */
+    u8   bPlayerInputOn;   /* 0x38 unk_1139F0: the HUD panel owns the pointer */
+    u8   bInvDragActive;   /* 0x3c unk_1139F4: an inventory drag is in progress */
+    u32  nUiSlot0;         /* 0x60 apUiSlotsA[0], cleared by UiControl_HitTest */
+    i32  nUiSlot3;         /* 0x6c unk_113A24: 8 = drag started, 0 = committed */
+    i32  nUiSlot4;         /* 0x70 unk_113A28: 200 = the drag scrolled the view */
+    u32  nUiSlot5;         /* 0x74 apUiSlotsA[5] = anPhaseSave0[0..3]: the four HUD
+                            * edge flags, low byte = left, then right, top, bottom */
+    u8   bSlot19Active;    /* 0xac unk_113A64: the status-line hit box is live */
+    i32  nSlot20X;         /* 0xb0 unk_113A68: left status column */
+    i32  nSlot21X;         /* 0xb4 unk_113A6C: right status column */
+    i32  nSlot22Y;         /* 0xb8 unk_113A70: status row top */
+    i32  nSlot23H;         /* 0xbc unk_113A74: status row height, must be > 0 */
+    i32  nSlot24Hit;       /* 0xc0 unk_113A78: 1 left column, 2 right, 0 none */
+    u8   bPhaseSave20;     /* 0x88 anPhaseSave0[20], the screen-4 gate */
+    u8   bEdgeTestOn;      /* 0xd1 anPhaseSave0[93]: run the HUD edge tests */
+    u8   bClickCommits;    /* 0xd7 anPhaseSave0[95]: a click on the same cell acts */
+    u8   bDragScrollA;     /* 0xd8 anPhaseSave0[96] */
+    u8   bDragScrollB;     /* 0xd9 anPhaseSave0[97] */
+    u8   bInvPanelOpen;    /* 0xe4 anPhaseSave0[108]: the inventory is open */
+    i32  anCamDragX;       /* 0x4eb4, anCamWorldOff[2]: the drag start x */
+    i32  anCamDragY;       /* 0x4eb8, anCamWorldOff[3]: the drag start y */
 } TactInputState;
 
 /* The effects the handlers trigger in other subsystems, all injected. */
@@ -103,6 +132,19 @@ typedef struct TactInputHooks {
     void (*pfnFocusOnViewCell)(i32 nLayer, i32 nViewY, i32 nViewX, void *pUser);
     /* Options_SaveToRegistry @ 0x114d8. */
     void (*pfnSaveOptions)(void *pUser);
+    /* Geoscape_OnPointer @ 0x872d0, the whole geoscape branch. */
+    void (*pfnGeoscapePointer)(i32 nX, i32 nY, bool bDown, void *pUser);
+    /* Ui_HitTestTactItem @ 0x11ac0: hit-test the ground list or the inventory
+     * slots, true when something under the pointer was hit. */
+    bool (*pfnHitTestTactItem)(i32 nX, i32 nY, void *pUser);
+    /* Inv_ClearHitSlot @ 0x11f40. */
+    void (*pfnInvClearHitSlot)(void *pUser);
+    /* Inv_HandlePointer @ 0x12260, the drop path. Its argument is the widget bank. */
+    void (*pfnInvHandlePointer)(struct UiWidgetBank *pBank, void *pUser);
+    /* MapView_FocusOnUnit @ 0x2c758. Despite the name it centres the camera on a
+     * CELL: it reads the cell's nX, nY and nZ, recentres the camera scroll and
+     * sets the cursor layer to nZ + 1. */
+    void (*pfnFocusOnCell)(MapCell *pCell, void *pUser);
     void *pUser;
 } TactInputHooks;
 
@@ -206,5 +248,59 @@ void UiScreen_OnBack(TactInputState *pState, const TactInputHooks *pHooks,
  * geoscape; screen 19 does the same teardown; screens 20..21 adopt the low word
  * of apUiSlotsA[11]. */
 i32 UiScreen_OnCancel(TactInputState *pState, const TactInputHooks *pHooks);
+
+/* What Input_OnPointer reaches beyond the Map fields: the widget bank the window
+ * procedure owns, the two standalone controls, the screen-17 list state, the HUD
+ * pad whose height and origin drive the tactical hit boxes, and the camera scratch
+ * the drag path writes. */
+typedef struct TactPointerWorld {
+    TactInputWorld  tact;        /* the queue plus the cell grid lookup */
+    UiWidgetBank   *pBank;
+    UiControl      *pLookCtl;    /* unk_1571E4, hit first on screen 0 */
+    UiControl      *pListCtl;    /* unk_1571B4, hit by the screen-17 list mode */
+    i32              nListMode;   /* *0x157188: 0/1 four rows, 2 seven rows + control */
+    u8               abListHit[7];/* unk_156AB0: which list rows the pointer is over */
+    PadImage        *pHudPad;     /* Map+0xfc unk_113AB4: nOriginY and uHeight are read */
+    CamOffset       *pCamOffset;  /* Map+0x4a40 / 0x4a41, written by SetCamOffset */
+    bool             bCursorBusy; /* unk_157180->bBusy, the MapCursor_SetPos gate */
+    bool             bSuppressLarge; /* MapCursor_SetPos reads Map's gap_2[1]; the
+                                       * offset is still to be re-checked at 0x27014 */
+    UiControlHitCtx  hit;         /* the pad blit callbacks plus &pState->nUiSlot0 */
+    bool             bActionFlag; /* byte_AD711, set by Input_OnAction */
+} TactPointerWorld;
+
+/* Input_OnPointer @ 0x13c6c. WM_MOUSEMOVE (bDown = 0) and WM_LBUTTONDOWN
+ * (bDown = 1) from PocketUFO_WndProc.
+ *
+ * On entry it stores the pointer position into the bank and clears the four HUD
+ * edge flags at Map+0x74..0x77. The geoscape branch hands everything over and
+ * stops. Screen 17 is a list of rows, not widgets: it clears abListHit and marks
+ * the rows under the pointer, in one of three modes, and only mode 2 also
+ * hit-tests a control.
+ *
+ * The tactical branch needs bTactFlag. Before the screen switch it evaluates the
+ * status-line hit box (Map+0xac..0xc0) and, for screen 13, clears the two fire
+ * flags, the trajectory flag and the queue-active flag. The screen switch then runs
+ * only under the same gate the keyboard handlers use, TactInput_CanScroll.
+ *
+ * Screen 0 is the tactical map. It hit-tests the look control first and stops on a
+ * hit; then the multi-target list rows under the HUD (five at most, 18 pixels
+ * apart, based at 283 with the deploy panel open and 300 - HUD height otherwise);
+ * a hit there recentres the camera on that target's cell and plays sample 17. With
+ * no list hit it measures the HUD band height (303 open, 320 - HUD height closed)
+ * and its thirds, and either sets one or more of the four edge flags, or, when the
+ * pointer is over the map itself, runs the camera drag: SetCamOffset with the
+ * halved pointer position, then re-place the cursor from the iso offsets plus the
+ * camera scratch bytes, then commit a click (Input_OnAction) or mark a drag.
+ * Finally it hit-tests the widgets: the four live ones while multi-targeting,
+ * otherwise all nineteen.
+ *
+ * Screen 1 is the inventory: thirteen widgets, then the ground/slot hit test and
+ * the drag commit through the injected inventory hooks.
+ *
+ * The original returns a value its only two callers ignore, so the port returns
+ * void. */
+void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
+                     TactPointerWorld *pWorld, i32 nX, i32 nY, bool bDown);
 
 #endif /* PUFO_INPUT_H */

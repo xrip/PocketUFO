@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 426 / 1103 (38.6%) |
-| Bytes of original code cited | 185908 / 598792 (31.0%) |
+| Functions cited as evidence | 429 / 1103 (38.9%) |
+| Bytes of original code cited | 198444 / 598792 (33.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 41 |
-| Test checks run | 3122 |
+| Test checks run | 3170 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -41,9 +41,9 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 3 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 173 | 214 | 109388 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 23 | 52 | 12804 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 25 | 52 | 16764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 60 | 85 | 10272 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 28 | 205 | 17312 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 29 | 205 | 25888 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 27 | 243 | 3316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -385,12 +385,14 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (23 functions)
+### `tact-ui` (25 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_unit.h` |
+| `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_unit.h` |
+| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_input.h` |
+| `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h` |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x2d580` | `Inv_BuildVisibleList` | 536 | `src/pufo/game/pufo_tactui.h` |
@@ -417,7 +419,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_unit.h` |
+| `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_unit.h` |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_tactui.h` |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h` |
@@ -478,10 +480,11 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (28 functions)
+### `strat` (29 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_input.h` |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_input.h` |
@@ -807,12 +810,11 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 29 functions, 30960 bytes remaining
+### `tact-ui` — 27 functions, 27000 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x13c6c` | `Input_OnPointer` | 3172 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | not yet ported; scheduled with the `tact-ui` subsystem work |
@@ -823,7 +825,6 @@ whose port work they belong to.
 | `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x11f40` | `Inv_ClearHitSlot` | 788 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x16af0` | `TactHud_ClimbDown` | 788 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x21908` | `TactHud_DrawUnitRoster` | 676 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | not yet ported; scheduled with the `tact-ui` subsystem work |
@@ -871,12 +872,11 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 177 functions, 145144 bytes remaining
+### `strat` — 176 functions, 136568 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x872d0` | `Geoscape_OnPointer` | 8576 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1312,7 +1312,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 45 |
-| `test_input` | PASS | 130 |
+| `test_input` | PASS | 178 |
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 134 citations.
+parity report. Total: 135 citations.
 
 ### Offsets below the image base (31)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x4a24`, `0x4a26`, `0x4a3c`, `0x4a4c`, `0x4a50`
 
-### At or above the image base (103)
+### At or above the image base (104)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1476,6 +1476,7 @@ against the IDB when the final report is assembled.
 - `0xab270`
 - `0xac680`
 - `0xac6a8`
+- `0xac6d0`
 - `0xad720`
 - `0xb2278`
 - `0xb38d0`

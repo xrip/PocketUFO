@@ -386,7 +386,7 @@ add_test(NAME test_soldiername
 
 # Tactical/geoscape directional input handlers.
 add_executable(test_input ${CMAKE_SOURCE_DIR}/tests/test_input.c)
-target_link_libraries(test_input PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_input PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util)
 set_target_properties(test_input PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )

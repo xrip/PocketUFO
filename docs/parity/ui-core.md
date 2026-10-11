@@ -177,6 +177,69 @@ in `ui/pufo_panel.{h,c}` as `UiPanel_ClickRow` and `UiPanel_SwapLines`.
 lines' text and `anLineAux` values through a 200-byte temp (bounded in the port).
 Covered by `tests/test_panel.c` (`TestClickRow`, `TestSwapLines`).
 
+## 2026-10-11: Input_OnPointer @ 0x13c6c — the mouse handler
+
+Ported in `src/pufo/game/pufo_input.c`, asserted by `test_input` (`TestPointer`,
+48 checks). The first argument is **`pBank` @ `0xAC6D0`**, the widget bank the window
+procedure owns: a `UiControl` array at stride `0x20`, the escape-flag byte at
+`+0x1042` (`byte_AD712`) and the last pointer position at `+0x1044` / `+0x1048`.
+The port models it as `UiWidgetBank` in `ui/pufo_control.h` with the same indices.
+
+### Widget indices per screen (all `pBank + index * 0x20`)
+
+| Screen | Widgets | Screen | Widgets |
+|---|---|---|---|
+| 0 | 0..18, or only 2, 7, 9, 15 while `Map+0x22` is set | 7 | 53..59 |
+| 1 | 19..31 | 12 | 60..88 |
+| 2 | 98..100 | 15 | 89..97 |
+| 3 | 32..43 | 4 | 101, then 102..103 |
+| 5 | 44..52 | 6 | 104 |
+| 10, 11 | 105..112 | 13 | 128 |
+| 19 | 129 | 8, 9, 14, 16..18 | none |
+
+### Facts the disassembly settled
+
+- **`anActionPhaseSave0` is a byte array at `Map+0x74`.** Five indices are read
+  through named globals: `[93]` = `0xD1`, `[95]` = `0xD7`, `[96]` = `0xD8`,
+  `[97]` = `0xD9`, `[108]` = `0xE4`. That also means `apUiSlotsA[5]` (the dword at
+  `Map+0x74` that `UiControl_HitTest` clears and this function's HUD edge flags
+  write) is `anPhaseSave0[0..3]`.
+- **`MapView_FocusOnUnit @ 0x2c758` takes a `MapCell *`, not a unit.** It reads the
+  cell's `nX` (+0x1A), `nY` (+0x1B) and `nZ` (+0x1C), recentres the camera scroll,
+  and sets the cursor layer to `nZ + 1`. The name is wrong in the IDB.
+- The multi-target list lives on the **unit**: `Soldier.nMultiTarget` (i8 @ `+0x1A`)
+  and `Soldier.multiOrAnim.apMultiTargets[]` (`+0x1C`), not on `Map`. A row click
+  focuses the camera on that unit's `pCell`.
+- Row base is `283` with the deploy panel **open** and `300 - pHudPad->uHeight`
+  closed (`0x140E4`, where `LDRHEQ` fires on the *closed* test); the HUD band is
+  `303` open and `320 - uHeight` closed (`0x14130`).
+- Screen 17 is not widgets: it clears `unk_156AB0[0..6]` and marks the row bands.
+  Modes 0 and 1 are the same four rows at `x 50..190`, `y row+115 .. row+133`;
+  mode 2 is seven rows at `x 24..216`, `y row+65 .. row+83` plus `unk_1571B4`.
+
+### Hex-Rays errors found here (four more in the same class)
+
+| Pseudocode | Reality |
+|---|---|
+| `v8 >= &result->aQueue[1].nArg + 3 && v8 <= &result->aQueue[1].gap_34[1]` | `y >= row + 115 && y <= row + 133` |
+| `bFireStatus0[2]`, `bTrajPad27[2]`, `bFireStatus0[1]` | `Map+0x52`, `Map+0x1406D`, `Map+0x51` |
+| `gap_60[0]` | `Map+0x3C` (`unk_1139F4`) |
+| `nTrajFront0[4]` / `[5]` in the cursor call | the two signed scratch bytes `Map+0x4A40` / `Map+0x4A41` |
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | Returns `void` | the original's return value is ignored by both callers in `PocketUFO_WndProc` (`0xA07FC` falls straight through to storing `unk_AD710`) |
+| 2 | `pHudPad`, `pSelUnit` and the multi-target entries are null-checked | the original dereferences them unconditionally |
+| 3 | The drag-start scratch reads 0 when no drag is live | the original reads uninitialised stack (`var_4`) there |
+| 4 | `pfnFocusOnCell`, `pfnHitTestTactItem`, `pfnInvClearHitSlot`, `pfnInvHandlePointer` and `pfnGeoscapePointer` are injected | those subsystems are not ported yet; the injection matches the existing `TactInputHooks` design |
+
+**Open item:** `MapCursorPos.bSuppressLarge` is supplied by the caller. The citation
+`pMap->gap_2[1]` came from pseudocode; `MapCursor_SetPos @ 0x27014` still needs an
+ARM read to confirm whether it is `Map+0x22`.
+
+
 ## 2026-10-11: UiControl_HitTest @ 0x1a3d8 — the pointer press/release handler
 
 Ported in `src/pufo/ui/pufo_control.c`, asserted by `test_control` (`TestHitTest`).

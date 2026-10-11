@@ -56,6 +56,29 @@ typedef struct UiControl {
     PadImage *apPads[PUFO_CONTROL_PADS]; /* 0x14, 0x18, 0x1C */
 } UiControl;
 
+/* pBank @ 0xAC6D0. The original is one flat block: a UiControl array at stride
+ * 0x20, the escape-flag scratch byte at +0x1042 (byte_AD712) and the last pointer
+ * position at +0x1044 / +0x1048. Input_OnPointer @ 0x13c6c stores the position on
+ * entry and hit-tests these widgets by index:
+ *
+ *     screen 0   0..18, or only 2, 7, 9, 15 while multi-targeting
+ *     screen 1   19..31        screen 3   32..43       screen 5   44..52
+ *     screen 7   53..59        screen 12  60..88       screen 15  89..97
+ *     screen 2   98..100       screen 4   101, then 102..103
+ *     screen 6   104           screens 10,11 105..112
+ *     screen 13  128           screen 19  129
+ *
+ * The port keeps the same indices; UiControl is wider than 0x20 on Win64 and the
+ * bank is never overlaid on raw memory. */
+#define PUFO_PBANK_WIDGET_COUNT 130
+
+typedef struct UiWidgetBank {
+    UiControl aCtl[PUFO_PBANK_WIDGET_COUNT];
+    u8        bEscapeFlag; /* +0x1042, byte_AD712 */
+    i32       nPointerX;   /* +0x1044 */
+    i32       nPointerY;   /* +0x1048 */
+} UiWidgetBank;
+
 /* UiControl_ctor @ 0x1a28c. Zeroes position/mode/state, sets a 10x10 enabled
  * widget with no pads, and NULLs the click handler. */
 void UiControl_ctor(UiControl *pCtl);

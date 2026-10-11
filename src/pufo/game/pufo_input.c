@@ -577,3 +577,421 @@ void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
         TactState_KickQueue(pWorld->pQueue);
     }
 }
+
+/* --- Input_OnPointer @ 0x13c6c ------------------------------------------------
+ *
+ * The HUD edge flags live in one dword at Map+0x74, low byte first: left, right,
+ * top, bottom. The prologue clears all four; each test sets one or two. */
+#define PUFO_EDGE_LEFT   0
+#define PUFO_EDGE_RIGHT  1
+#define PUFO_EDGE_TOP    2
+#define PUFO_EDGE_BOTTOM 3
+
+static void PointerEdge(TactInputState *pState, i32 nEdge)
+{
+    pState->nUiSlot5 |= (u32)1u << (8 * nEdge);
+}
+
+static void PointerHitTestRange(UiWidgetBank *pBank, const UiControlHitCtx *pHit,
+                                i32 nFirst, i32 nCount, i32 nX, i32 nY)
+{
+    i32 i;
+    for (i = 0; i < nCount; ++i) {
+        (void)UiControl_HitTest(&pBank->aCtl[nFirst + i], nX, nY, true, false, pHit);
+    }
+}
+
+/* 0x13D08: screen 17 marks list rows instead of hit-testing widgets. Modes 0 and 1
+ * are the same four-row box (0x13DBC and 0x13E04 are identical code); mode 2 is
+ * seven rows and then the control. */
+static void PointerScreen17(TactPointerWorld *pWorld, i32 nX, i32 nY)
+{
+    i32 nRow;
+    i32 i;
+
+    for (i = 0; i < 7; ++i) {
+        pWorld->abListHit[i] = 0;
+    }
+
+    switch (pWorld->nListMode) {
+    case 0:
+    case 1:
+        for (nRow = 0, i = 0; nRow < 88; nRow += 22, ++i) {
+            if (nX >= 50 && nX <= 190 && nY >= nRow + 115 && nY <= nRow + 133) {
+                pWorld->abListHit[i] = 1;
+            }
+        }
+        break;
+    case 2:
+        for (nRow = 0, i = 0; nRow < 154; nRow += 22, ++i) {
+            if (nX >= 24 && nX <= 216 && nY >= nRow + 65 && nY <= nRow + 83) {
+                pWorld->abListHit[i] = 1;
+            }
+        }
+        (void)UiControl_HitTest(pWorld->pListCtl, nX, nY, true, false, &pWorld->hit);
+        break;
+    default:
+        break;
+    }
+}
+
+/* 0x13E58: the status-line hit box, live only while Map+0xac is set. The row is 18
+ * pixels tall and each column 51 pixels wide. */
+static void PointerStatusLine(TactInputState *pState, i32 nX, i32 nY)
+{
+    i32 nHit = 0;
+
+    if (pState->bSlot19Active == 0) {
+        return;
+    }
+    if (pState->nSlot23H > 0 && nY >= pState->nSlot22Y && nY <= pState->nSlot22Y + 17) {
+        if (nX >= pState->nSlot20X && nX <= pState->nSlot20X + 50) {
+            nHit = 1;
+        } else if (nX >= pState->nSlot21X && nX <= pState->nSlot21X + 50) {
+            nHit = 2;
+        }
+    }
+    pState->nSlot24Hit = nHit;
+}
+
+/* 0x1407C: the tactical map. */
+static void PointerScreen0(TactInputState *pState, const TactInputHooks *pHooks,
+                           TactPointerWorld *pWorld, bool bDown, i32 nX, i32 nY)
+{
+    static const i32 anMulti[4] = { 2, 7, 9, 15 };
+    UiWidgetBank *pBank = pWorld->pBank;
+    Soldier      *pSel  = pState->pSelUnit;
+    i32           nBase, nThird, nUpper, nRow, i;
+
+    if (UiControl_HitTest(pWorld->pLookCtl, nX, nY, true, false, &pWorld->hit)) {
+        return;
+    }
+
+    /* 0x140A0: the multi-target list under the HUD, at most five rows (the loop
+     * stops once the row offset reaches -90), 18 pixels apart. */
+    if (pSel != NULL && pSel->nMultiTarget > 0) {
+        nRow = 0;
+        for (i = 0; i < pSel->nMultiTarget && nRow > -90; ++i) {
+            i32 nTop = (pState->bDeployPanelOpen == 0 && pWorld->pHudPad != NULL)
+                     ? nRow + 300 - (i32)pWorld->pHudPad->uHeight
+                     : nRow + 283;
+            if (nX >= 207 && nY >= nTop && nX <= 237 && nY <= nTop + 16) {
+                Soldier *pTarget = pSel->multiOrAnim.apMultiTargets[i];
+                if (pHooks->pfnFocusOnCell != NULL && pTarget != NULL && pTarget->pCell != NULL) {
+                    pHooks->pfnFocusOnCell(pTarget->pCell, pHooks->pUser);
+                }
+                if (pHooks->pfnPlaySample != NULL) {
+                    pHooks->pfnPlaySample(17, pHooks->pUser);
+                }
+                return;
+            }
+            nRow -= 18;
+        }
+    }
+
+    /* 0x14130: the HUD band, and its thirds. */
+    nBase  = (pState->bDeployPanelOpen != 0)
+           ? 303
+           : 320 - (i32)(pWorld->pHudPad != NULL ? pWorld->pHudPad->uHeight : 0);
+    nThird = nBase / 3;
+    nUpper = nBase - nThird;
+
+    if (pState->bPlayerInputOn != 0 && pWorld->pHudPad != NULL &&
+        nY >= pWorld->pHudPad->nOriginY) {
+        goto widgets;
+    }
+    if (pState->bEdgeTestOn == 0) {
+        goto camera;
+    }
+
+    /* 0x141BC..0x14318: the eleven edge tests, in the order the original chains
+     * them. Each either sets flags and goes to the widgets, or falls through. */
+    if (nX < 15 && nY < nUpper && nY > nThird) {
+        PointerEdge(pState, PUFO_EDGE_LEFT);
+        goto widgets;
+    }
+    if (nX > 225 && nY < nUpper && nY > nThird) {
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        goto widgets;
+    }
+    if (nY < 15 && nX < 160 && nX > 80) {
+        PointerEdge(pState, PUFO_EDGE_TOP);
+        goto widgets;
+    }
+    if (nY < nBase && nY > nBase - 15 && nX < 160 && nX > 80) {
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        PointerEdge(pState, PUFO_EDGE_BOTTOM);
+        goto widgets;
+    }
+    if (nX < 15 && nY < nThird) {
+        PointerEdge(pState, PUFO_EDGE_TOP);
+        PointerEdge(pState, PUFO_EDGE_LEFT);
+        goto widgets;
+    }
+    if (nY < 15 && nX < 80) {
+        PointerEdge(pState, PUFO_EDGE_TOP);
+        PointerEdge(pState, PUFO_EDGE_LEFT);
+        goto widgets;
+    }
+    if (nX > 225 && nY > nUpper && nY < nBase) {
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        PointerEdge(pState, PUFO_EDGE_BOTTOM);
+        goto widgets;
+    }
+    if (nX > 160 && nY < nBase && nY > nBase - 15) {
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        PointerEdge(pState, PUFO_EDGE_BOTTOM);
+        goto widgets;
+    }
+    if (nX > 160 && nY < 15) {
+        PointerEdge(pState, PUFO_EDGE_TOP);
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        goto widgets;
+    }
+    if (nX > 225 && nY < nThird) {
+        PointerEdge(pState, PUFO_EDGE_TOP);
+        PointerEdge(pState, PUFO_EDGE_RIGHT);
+        goto widgets;
+    }
+    if (nX < 15 && nY > nUpper && nY < nBase) {
+        PointerEdge(pState, PUFO_EDGE_LEFT);
+        PointerEdge(pState, PUFO_EDGE_BOTTOM);
+        goto widgets;
+    }
+    if (nX < 80 && nY < nBase && nY > nBase - 15) {
+        PointerEdge(pState, PUFO_EDGE_LEFT);
+        PointerEdge(pState, PUFO_EDGE_BOTTOM);
+        goto widgets;
+    }
+
+camera:
+    /* 0x143D0: the pointer is over the map, so this is a camera drag. */
+    {
+        i32          nHX = nX, nHY = nY;
+        i32          nSavedX = pState->nCursorX, nSavedY = pState->nCursorY;
+        i32          nDragX = 0, nDragY = 0;
+        TactCursor   cursor;
+        MapCursorPos ctx;
+        i32          nOffB, nOffA;
+
+        if (pState->bNoHalfCursor == 0) {
+            nHX = nX / 2;
+            nHY = nY / 2;
+        }
+        cursor.nX     = pState->nCursorX;
+        cursor.nY     = pState->nCursorY;
+        cursor.nFlags = pState->nLayerScratch;
+        ctx.pCursor          = &cursor;
+        ctx.geom.nDimX       = pState->nMapDimX;
+        ctx.geom.nDimY       = pState->nMapDimY;
+        ctx.bBusy            = pWorld->bCursorBusy;
+        ctx.bSelUnitLarge    = (pSel != NULL) && Unit_bIsLarge(pSel);
+        ctx.bSuppressLarge   = pWorld->bSuppressLarge;
+
+        MapView_SetCamOffset(&ctx.geom, nHX, nHY, true, pState->nLayerScratch,
+                             pWorld->pCamOffset);
+
+        /* 0x1443C: a drag in progress remembers where the cursor was. The original
+         * reads uninitialised stack otherwise; the port reads zero. */
+        if (bDown && pState->nUiSlot3 > 0) {
+            nDragX = pState->nCursorX;
+            nDragY = pState->nCursorY;
+        }
+
+        nOffB = Map_IsoOffsetB(pState->nMapDimY, pState->nCamScrollX, pState->nCamScrollY);
+        nOffA = Map_IsoOffsetA(pState->nMapDimX, pState->nCamScrollX, pState->nCamScrollY);
+        MapCursor_SetPos(&ctx, nOffA + (i8)pWorld->pCamOffset->bScratch40,
+                         nOffB + (i8)pWorld->pCamOffset->bScratch41,
+                         pWorld->tact.pfnLookup, pWorld->tact.pLookupUser);
+        pState->nCursorX      = cursor.nX;
+        pState->nCursorY      = cursor.nY;
+        pState->nLayerScratch = cursor.nFlags;
+
+        /* 0x144CC: a press that did not move the cursor is a click on the cell. */
+        if (pState->bClickCommits != 0 && bDown) {
+            if (pState->nUiSlot3 > 0 && nDragX == pState->nCursorX &&
+                nDragY == pState->nCursorY) {
+                Input_OnAction(pState, pHooks, &pWorld->bActionFlag);
+                pState->nUiSlot3 = 0;
+            } else {
+                pState->nUiSlot3 = 8;
+            }
+        }
+
+        /* 0x14534: a release that moved the cursor marks a scroll. */
+        if (pState->bDragScrollA != 0 || pState->bDragScrollB != 0) {
+            if (bDown) {
+                pState->nUiSlot4 = 0;
+            } else if (nSavedX != pState->nCursorX || nSavedY != pState->nCursorY) {
+                pState->nUiSlot4 = 200;
+            }
+        }
+        return;
+    }
+
+widgets:
+    if (pState->bMultiTargetArmed != 0) {
+        for (i = 0; i < 4; ++i) {
+            PointerHitTestRange(pBank, &pWorld->hit, anMulti[i], 1, nX, nY);
+        }
+    } else {
+        PointerHitTestRange(pBank, &pWorld->hit, 0, 19, nX, nY);
+    }
+}
+
+/* 0x14624: the inventory screen. */
+static void PointerScreen1(TactInputState *pState, const TactInputHooks *pHooks,
+                           TactPointerWorld *pWorld, bool bDown, i32 nX, i32 nY)
+{
+    if (pState->bSlot19Active != 0) {
+        return;
+    }
+    if (pState->bInvPanelOpen != 0 || pState->bInvDragActive == 0) {
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 19, 13, nX, nY);
+    }
+
+    if (pState->bInvPanelOpen == 0 || !bDown) {
+        if (!bDown) {
+            return;
+        }
+        if (pHooks->pfnHitTestTactItem != NULL &&
+            pHooks->pfnHitTestTactItem(nX, nY, pHooks->pUser)) {
+            if (pHooks->pfnInvClearHitSlot != NULL) {
+                pHooks->pfnInvClearHitSlot(pHooks->pUser);
+            }
+            pState->bInvDragActive = 1;
+        }
+        return;
+    }
+
+    if (pState->bInvDragActive != 0) {
+        if (pHooks->pfnInvClearHitSlot != NULL) {
+            pHooks->pfnInvClearHitSlot(pHooks->pUser);
+        }
+        if (pHooks->pfnInvHandlePointer != NULL) {
+            pHooks->pfnInvHandlePointer(pWorld->pBank, pHooks->pUser);
+        }
+        pState->bInvDragActive = 0;
+    } else if (pHooks->pfnHitTestTactItem != NULL &&
+               pHooks->pfnHitTestTactItem(nX, nY, pHooks->pUser)) {
+        pState->bInvDragActive = 1;
+    }
+}
+
+/* 0x14704: the look-mode screen. Three widgets, otherwise the drag moves the view. */
+static void PointerScreen2(TactInputState *pState, TactPointerWorld *pWorld,
+                           bool bDown, i32 nX, i32 nY)
+{
+    bool bHit = false;
+    i32  i;
+
+    for (i = 0; i < 3; ++i) {
+        if (UiControl_HitTest(&pWorld->pBank->aCtl[98 + i], nX, nY, true, false,
+                              &pWorld->hit)) {
+            bHit = true;
+        }
+    }
+    if (bHit) {
+        return;
+    }
+    if (bDown) {
+        pState->anCamDragX = pState->anCamWorldX + nX / 4;
+        pState->anCamDragY = pState->anCamWorldY + nY / 4;
+    } else {
+        pState->anCamWorldX = pState->anCamDragX - nX / 4;
+        pState->anCamWorldY = pState->anCamDragY - nY / 4;
+    }
+}
+
+void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
+                     TactPointerWorld *pWorld, i32 nX, i32 nY, bool bDown)
+{
+    if (pState == NULL || pHooks == NULL || pWorld == NULL || pWorld->pBank == NULL) {
+        return;
+    }
+
+    /* 0x13C98: remember the position, and clear the four HUD edge flags. */
+    pWorld->pBank->nPointerX = nX;
+    pWorld->pBank->nPointerY = nY;
+    pState->nUiSlot5 = 0;
+
+    if (pState->bGeoscapeUi) {
+        if (pHooks->pfnGeoscapePointer != NULL) {
+            pHooks->pfnGeoscapePointer(nX, nY, bDown, pHooks->pUser);
+        }
+        return;
+    }
+
+    if (pState->nUiScreen == 17) {
+        PointerScreen17(pWorld, nX, nY);
+        return;
+    }
+    if (!pState->bTactFlag) {
+        return;
+    }
+
+    PointerStatusLine(pState, nX, nY);
+
+    /* 0x13ECC: the cancel screen drops the fire modes and the queue before the
+     * switch runs. */
+    if (pState->nUiScreen == 13) {
+        pState->bFireStatus2   = 0;
+        pState->bTrajPad27_2   = 0;
+        pState->bFireStatus1   = 0;
+        pState->bQueueActive   = false;
+    }
+
+    if (!TactInput_CanScroll(pState)) {
+        return;
+    }
+
+    switch (pState->nUiScreen) {
+    case 0:
+        PointerScreen0(pState, pHooks, pWorld, bDown, nX, nY);
+        break;
+    case 1:
+        PointerScreen1(pState, pHooks, pWorld, bDown, nX, nY);
+        break;
+    case 2:
+        PointerScreen2(pState, pWorld, bDown, nX, nY);
+        break;
+    case 3:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 32, 12, nX, nY);
+        break;
+    case 4:
+        (void)UiControl_HitTest(&pWorld->pBank->aCtl[101], nX, nY, true, false,
+                                &pWorld->hit);
+        if (pState->bPhaseSave20 == 0) {
+            PointerHitTestRange(pWorld->pBank, &pWorld->hit, 102, 2, nX, nY);
+        }
+        break;
+    case 5:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 44, 9, nX, nY);
+        break;
+    case 6:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 104, 1, nX, nY);
+        break;
+    case 7:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 53, 7, nX, nY);
+        break;
+    case 10:
+    case 11:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 105, 8, nX, nY);
+        break;
+    case 12:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 60, 29, nX, nY);
+        break;
+    case 13:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 128, 1, nX, nY);
+        break;
+    case 15:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 89, 9, nX, nY);
+        break;
+    case 19:
+        PointerHitTestRange(pWorld->pBank, &pWorld->hit, 129, 1, nX, nY);
+        break;
+    default:
+        /* 0x148C8: screens 8, 9, 14, 16, 17 and 18 answer to nothing. */
+        break;
+    }
+}
