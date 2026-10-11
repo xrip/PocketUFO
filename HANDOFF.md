@@ -41,11 +41,11 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Branch | `master` |
 | Work tip before this handoff | `471a4ad` — "game-core: port Unit_RollChance at 0x25e6c (scatter triple at Map+0x15058) + 14 checks" |
 | Handoff commit | this document and the `game-core.md` note, committed on top of `471a4ad` |
-| Update 2026-10-11 | `Tact_ProcessMoveAction` pre-port verification landed: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. |
+| Update 2026-10-11 | `Tact_ProcessMoveAction` is ported and now runs against a real context. `GameMap` (the IDB `Map` block, 152632 bytes, base `0x1139b8`) plus `Map_LookupCell` and the three real callbacks live in `src/pufo/game/pufo_mapctx.c`. Earlier in the same day: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. |
 | Tracked modifications | none (`git diff --stat` empty) |
 | Untracked files | listed in section 12, all intentional |
 | Build | clean, exit 0, no warnings under `/W4 /WX` |
-| Tests | `100% tests passed, 0 tests failed out of 39`, 1.35 s |
+| Tests | `100% tests passed, 0 tests failed out of 41`, 1.42 s |
 | Executable | `build/src/pufo/Release/pocketufo.exe`, 27648 bytes |
 
 `pufobeta.exe.i64` is tracked on purpose. It is the analysis database, and commits
@@ -237,9 +237,12 @@ complete large subsystem at 80%.
 
 Specific unfinished items inside `game-core`:
 
-- `Tact_ProcessMoveAction @ 0x4f3f0` — not ported. Its dependency survey is done and
-  every callee is now available. See section 8 for the analysis carried over from the
-  previous session, which is **not verified**.
+- `Tact_ProcessMoveAction @ 0x4f3f0` — ported, and now wired to `GameMap` with the
+  real callbacks. Commands 0xE (fire) and 0x11 (throw) are exercised only through
+  their helpers in `test_ballist`; no end-to-end check on the wired context yet.
+  See section 8 for the analysis and `docs/parity/game-core.md` for the wiring.
+- The UI and inventory regions of the original `Map` block are not in `GameMap`
+  yet; they are added when a consumer needs them.
 - `Tact_TallyBattleStats @ 0x3348c` — analysed, deliberately not ported. It needs
   `Save_Read/WriteTGameData` and `Tact_InitMission` first, because `unk_138E6C` and
   `unk_138E70` are saved mission state.
@@ -321,7 +324,7 @@ this handoff.
 
 ---
 
-## 8. Tact_ProcessMoveAction @ 0x4f3f0 — verification done, port not written
+## 8. Tact_ProcessMoveAction @ 0x4f3f0 — ported and wired to `GameMap`
 
 Everything the previous session left as a lead has now been re-derived from ARM and
 recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAction
@@ -354,9 +357,11 @@ recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAct
 - `tools/pe_off.py` and `tools/dump_muzzle.py` now dump pinned tables straight out of
   `pufobeta.exe`. IDA addresses in this database are RVA + 0x10000.
 
-What is left for the port itself: the 19-case switch body, and the context fields it
-reads (`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`, `nStatusDrawY`, the three
-rosters and their counts, `bFireStatus1`, `nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`).
+What is left: an end-to-end test of the fire (0xE) and throw (0x11) commands on the
+wired `GameMap`. The context fields the FSM reads are all present in `GameMap`
+(`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`, `nShotCount`, the three rosters
+and their counts, `bFireStatus1`, `nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`);
+`Map_BuildMoveActionCtx` points a `MoveActionCtx` at them.
 
 ---
 
@@ -408,11 +413,12 @@ preparing this document.
 
 ## 11. Next milestones, in priority order
 
-1. **Wire `Tact_ProcessMoveAction @ 0x4f3f0` to the real context.** The function itself is ported; what is left is filling `MoveActionCtx` from the Map context and replacing the three callbacks with the real `Unit_bArmorTuWarn`, `StatusMsg_Push` and `Unit_UpdateVisibility` calls.
-   question that blocked it is answered (section 8). What remains is writing the
-   19-case switch and choosing the injected context struct for the Map globals it
-   reads. The pseudocode is 875 lines and `decompile(..., include_addresses: true)`
-   returns it in one call.
+1. ~~Wire `Tact_ProcessMoveAction @ 0x4f3f0` to the real context~~ — done. `GameMap`
+   (the IDB `Map` block) plus `Map_LookupCell`, `Map_BuildMoveActionCtx` and the
+   real `Unit_bArmorTuWarn` / `StatusMsg_Push` / `Unit_UpdateVisibility` callbacks
+   are in `src/pufo/game/pufo_mapctx.c`, with `test_mapctx` (62 checks) driving
+   commands 1, 3 and 0x12 against live state. The fire (0xE) and throw (0x11)
+   commands still have no end-to-end test on the wired context.
 2. ~~Dump the two move tables~~ — done. `g_aUnitMuzzleOffset` @ 0xA9768 and
    `g_aFireSoundBySortKey` @ 0xAA168 are pinned in the port and named in the IDB.
    Three existing tables were found wrong and corrected in the same commit.

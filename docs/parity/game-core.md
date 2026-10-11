@@ -4199,3 +4199,81 @@ refresh.
 New test suite `test_moveaction`, 48 checks over cmds 0, 1, 2, 3, 4, 7, 8, 0xA,
 0xF, 0x10, 0xB and 0x12. Cmds 0xE and 0x11 are exercised only through the helpers
 in `test_ballist`; the full fire and throw paths need the wired context.
+
+## The live tactical context @ Map (152632 bytes) -> GameMap (pufo_mapctx.c)
+
+`Tact_ProcessMoveAction` and its callees all read one block: the IDB local type
+`Map`, reached in code as the context base at `0x1139b8`. `GameMap` is the port's
+version of that block, and `Map_BuildMoveActionCtx` points a `MoveActionCtx` at
+it, so the move FSM now runs against real state instead of test stubs.
+
+Field offsets are cited per field in `pufo_mapctx.h`. The ones the move FSM
+touches:
+
+| GameMap field | Map offset | IDB name |
+|---|---|---|
+| `nShotCount` | `0x002C` | `nStatusDrawY` |
+| `bFlag22` | `0x0022` | `unk_1139BA` |
+| `pSelWeapon` | `0x0048` | `unk_113A00` |
+| `bFireStatus1` | `0x0051` | `unk_113A09` |
+| `nAnimPhase` | `0x00F8` | `unk_113AB0` |
+| `apShotCells[9]` | `0x0004..0x0024` | `nMultiTargetCount` + `apMultiTargets[8]` |
+| `adMtX/Y/Z[10]` | `0x13EE8 / 0x13F38 / 0x13F88` | `double[10]` each |
+| `aim` | `0x13FD8..0x14088` | the aim block |
+| `nFireTickProgress` | `0x1405C` | `unk_127A14` |
+| `apTraceExclude[2]` | `0x1406C / 0x14070` | the arc-trace exclusions |
+| `bTrajHitStop` | `0x1406D` | ditto |
+| `scatter` | `0x15058 / 0x1505C / 0x15060` | `unk_128A10/14/18` |
+| `nMaxLayerClamp` | `0x15074` | `unk_128A2C` |
+| `pThrowTarget` | `0x150F0` | `unk_128AA8` |
+| `nMissionType` | `0x1511A` | `enum MissionType` |
+| `geom.nMapDimX/Y` | `0x1511B / 0x1511C` | `unk_128AD3 / 128AD4` |
+| `nXcomCount` | `0x1511F` | `unk_128AD7`, byte |
+| `nCivilianCount` | `0x15120` | `unk_128AD8`, dword |
+| `nEnemyCount` | `0x15124` | `unk_128ADC`, byte |
+| `nLayerScratch` | `0x15138` | `unk_128AF0`, signed byte |
+| `apXcomUnits[30]` | `0x15154` | `Soldier *[30]` |
+| `apEnemyUnits[30]` | `0x151CC` | `Soldier *[30]` |
+| `apCivilians[60]` | `0x15244` | `Soldier *[60]`, not `[30]` |
+| `pSelUnit` | `0x15334` | `Soldier *` |
+| `aCells[4][60][60]` | `0x15338` | `MapCell *[4][60][60]` |
+| `status` | `0x0054`, `0x1408C`, `0x140B4` | the status message stack |
+
+Two structural deviations, both recorded in the header:
+
+1. **Field order.** The original interleaves tactical, UI and inventory state in
+   one block. `GameMap` groups the tactical part and leaves the UI/inventory
+   regions out until a consumer needs them. The block is heap state and is never
+   serialised, so order carries no parity weight; the offsets above do.
+2. **The grid.** The original keeps `apCells` as a pointer table. `GameMap`
+   embeds the 14400 cells and `Map_LookupCell` returns their addresses, and it
+   applies `Map_IsValidCell` where the original indexes the table with no bounds
+   test at all.
+
+### The shot-history array is the multi-target array
+
+The fire command reads the recorded shot cell as `*(ctx + 4 * nShotCount + 4)` at
+`0x50008`. The IDB types that same block as `nMultiTargetCount` @ `0x04` followed
+by `apMultiTargets[8]` @ `0x08`. So the "shot history" is not a separate array:
+it is the multi-target cell list, read one entry past its count. `GameMap` keeps
+one `apShotCells[9]` covering `0x04..0x0024` rather than two names for one block.
+
+### The three callbacks, now real
+
+| Callback | Original | Evidence |
+|---|---|---|
+| `Map_ArmorTuWarnCb` | `Unit_bArmorTuWarn @ 0x4e254` | the hands are `Soldier.pHandL @ 0x104` / `pHandR @ 0x108`, each read through `TactItem.pObj`: `abArmorTu[3] @ 0xB3`, `bTwoHanded @ 0x28`; the option bytes are the radio bank `0xAC81A / 0xAC83A / 0xAC85A` |
+| `Map_PushStatusCb` | `StatusMsg_Push @ 0x2dda4` | `bForce` is 0, the `MOV R2,#0` at the throw-failure call site in the command 0x11 path |
+| `Map_UpdateVisibilityCb` | `Unit_UpdateVisibility @ 0x48580` | the call at the end of command 0xB discards the result |
+
+`Unit_bArmorTuWarn` pushes two text records of its own. Their record indices come
+from the ARM: index 0 is `byte_B5F40` = `aTextRecs + 205 * 48`, index 1 is
+`aTextRecs[205 * slot + 10045]` where `10045 = 205 * 49`, so the record follows
+the armour slot the option bank selects. The move FSM's own three records are 1
+(`0xB399D`), 2 (`0xB3A6A`) and 4 (`0xB3C04`), all `aTextRecs + 205 * n`.
+
+New test suite `test_mapctx`, 62 checks: grid lookup and bounds, every
+`MoveActionCtx` field write-through to the `GameMap`, the real status push
+including the busy gate, the armour-TU warning across all four option settings,
+the real visibility update, and the FSM running commands 1, 3 and 0x12 against
+the live context.

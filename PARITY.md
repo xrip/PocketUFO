@@ -20,7 +20,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions cited as evidence | 383 / 1103 (34.7%) |
 | Bytes of original code cited | 176980 / 598792 (29.6%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 40 |
+| Test suites | 41 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -214,7 +214,7 @@ is the module that answers to it.
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_unit.h` |
 | `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_mapcell.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
-| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
+| `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | `src/pufo/game/pufo_turn.h` |
 | `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+2) |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | `src/pufo/game/pufo_turn.h` |
@@ -257,7 +257,7 @@ is the module that answers to it.
 | `0x2b604` | `Path_ExpandCell` | 540 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_path.c` (+1) |
 | `0x48138` | `Unit_SpotCellOccupant` | 532 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x2e5d0` | `Unit_ApplyCellDamage` | 520 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
+| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+2) |
 | `0x27324` | `GameTick_Step` | 460 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x46fe0` | `Soldier_PickBestScoreAmong` | 388 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
@@ -405,7 +405,7 @@ is the module that answers to it.
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/ui/pufo_control.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
-| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_statusmsg.h`, `src/pufo/game/pufo_tactstate.h` (+1) |
+| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -1315,6 +1315,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
+| `test_mapctx` | PASS | 0 |
 | `test_menu` | PASS | 169 |
 | `test_modal` | PASS | 13 |
 | `test_moveaction` | PASS | 0 |
@@ -1338,7 +1339,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 0 |
 | `test_vistry` | PASS | 0 |
 
-**40 / 40 suites passing.**
+**41 / 41 suites passing.**
 
 ## Per-subsystem parity notes
 
@@ -1355,7 +1356,7 @@ every deviation with its reason, and the residual uncertainty.
 
 These citations point at data, struct fields, or instruction offsets rather
 than function entry points, so they are not counted as coverage. Listed for
-transparency: 130 addresses.
+transparency: 132 addresses.
 
 - `0x0000`
 - `0x00002`
@@ -1397,5 +1398,5 @@ transparency: 130 addresses.
 - `0x1408c`
 - `0x140b4`
 - `0x1472c0`
-- ... and 90 more
+- ... and 92 more
 
