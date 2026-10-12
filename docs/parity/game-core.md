@@ -5543,8 +5543,38 @@ Evidence: `Base_CalcLabCap @ 0x65818`, `Base_CountActiveResearch @ 0x68198`,
 `count * 50`. `Base_UpdateLabNeeded` is `Base_UpdateWorkshopNeeded` over kind 2, discarding
 `Base_CalcLabCap` at `0x65C88` for the same reason and returning the same 6. The port keeps
 one implementation of each — `FacilityCountFree`, `QuantitySumColumn`, `FacilityMarkNeeded`,
-`FacilityBudget50` — and gives every original its own name over it, because the originals are
+`FacilityBudget` — and gives every original its own name over it, because the originals are
 literally copies of the same loop.
+
+### All five needed passes, and what they say about the cell kinds
+
+Evidence: `Base_UpdateLivingQuartersNeeded @ 0x65e24`, `Base_UpdateLabNeeded @ 0x65c7c`,
+`Base_UpdateWorkshopNeeded @ 0x65bb4`, `Base_UpdateStoresNeeded @ 0x65d44`,
+`Base_UpdatePsiLabNeeded @ 0x65fc8`.
+
+The original has exactly five of these and the port now has all five. They are one machine;
+only the cell kind and the divisor change:
+
+| pass | kind | divisor | budget total comes from |
+|---|---|---|---|
+| `Base_UpdateLivingQuartersNeeded` | 1 | 50 | `CalcOccupiedSpace` + `CountOutboundTransferSpace` |
+| `Base_UpdateLabNeeded` | 2 | 50 | `CountActiveResearch` |
+| `Base_UpdateWorkshopNeeded` | 3 | 50 | `CountActiveManuf` |
+| `Base_UpdateStoresNeeded` | 6 | 300 | `CalcStorageUsed` + `CountItemQtyAcrossBases` |
+| `Base_UpdatePsiLabNeeded` | 8 | 10 | `CountPsiSoldiers` |
+
+That table is also the cell-kind map for `fac[nBase].facType`: 1 living quarters, 2 lab,
+3 workshop, 6 stores, 8 psi lab, plus 4, 5 and 9 which the site-state classifier reads.
+
+Stores is the only pass needing six times the pressure of the 50 group. Psi lab is the most
+sensitive: one psi soldier claims a cell.
+
+Each pass discards its own `Base_Calc*Cap` call, and each returns the loop-counter residue of
+6. The budget totals come from functions not yet ported, so the port takes each total as an
+argument, exactly as it does for the quantity columns.
+
+Clearing all five removes a blocker shared by `LoadGame @ 0x44bbc` and
+`Geoscape_CloseUI @ 0x8b94c`.
 
 `Base_CountActiveResearch` reads the **same** count byte as manufacturing, `0x160C4C`, so one
 entry count serves both, but its column has a different stride:

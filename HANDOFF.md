@@ -212,7 +212,7 @@ cannot disagree.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **591 / 1103 cited** (53.6%), bytes 222708 / 598792 (37.2%) |
+| `python docs/parity/coverage.py` (agreed) | **594 / 1103 cited** (53.9%), bytes 223356 / 598792 (37.3%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
@@ -237,7 +237,7 @@ Per-subsystem citation coverage from `docs/parity/coverage.py`:
 | tact-ui | 34 | 52 | 65% |
 | boot-assets | 2 | 4 | 50% |
 | strat-ui | 105 | 243 | 43% |
-| strat | 71 | 205 | 35% |
+| strat | 74 | 205 | 36% |
 | titles | 2 | 13 | 15% |
 | platform | 5 | 132 | 4% |
 
