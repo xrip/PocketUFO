@@ -39,7 +39,7 @@ typedef struct GeoscapeState {
 } GeoscapeState;
 
 typedef struct GeoscapeHooks {
-    /* StrategList_MaybeSpawnCraft_Process @ 0x7e420 (ProcessEvents side). */
+    /* StrategList_MaybeSpawnCraft_Process (0x7e420) (ProcessEvents side). */
     void (*pfnProcessEvents)(u8 bSpawn, void *pUser);
     /* Smap_CanInterceptReach @ 0x7e074. */
     bool (*pfnCanInterceptReach)(i32 nShipIdx, void *pUser);
@@ -48,7 +48,7 @@ typedef struct GeoscapeHooks {
      * part of the hook: 15, 13 and 10 pause the clock, 43 does not, so the
      * port writes time.bPaused itself at the three pausing sites. */
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
-    /* Geoscape_SpawnMissionSite @ 0x7e49c. */
+    /* Geoscape_SpawnMissionSite (0x7e49c). */
     void (*pfnSpawnMissionSite)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
     /* Smap_GrantSiteRecovery @ 0x98b50. */
     void (*pfnGrantSiteRecovery)(void *pUser);

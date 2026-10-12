@@ -146,7 +146,7 @@ void StrategList_Clear(PtrArray *pList);
 
 /* StrategItem_ctor @ 0x82bd4. It does one thing: writes the dword at +0x34 from the
  * global dword at 0x18640C. That global has exactly three xrefs in the IDB -- two in
- * StrategList_AddItem @ 0x826e8 and this one -- and no writer, so it is zero for the
+ * StrategList_AddItem (0x826e8) and this one -- and no writer, so it is zero for the
  * whole run. The port takes the value as a parameter instead of hiding a global that
  * is never written. */
 StrategItem *StrategItem_ctor(StrategItem *pItem, i32 nSeed);

@@ -277,8 +277,8 @@ UiControl *OptionsScreen_ClearSfxButtons(UiControl *apSfx[6]);
  * global and its clear function takes no arguments. The port's StrategList_Clear takes the
  * list, so the port registers a thunk that clears the list handed in here.
  *
- * Deliberately NOT ported: BaseGrid_RegisterAtexit @ 0x614b4 and its two thunks
- * BaseGrid_Atexit_nullsub5 @ 0x614a8 / BaseGrid_Atexit_nullsub6 @ 0x614c0. They register
+ * Deliberately NOT ported: BaseGrid_RegisterAtexit (0x614b4) and its two thunks
+ * BaseGrid_Atexit_nullsub5 (0x614a8) / BaseGrid_Atexit_nullsub6 (0x614c0). They register
  * nullsub_5 and nullsub_6, empty compiler-generated stubs, so they carry no behaviour. */
 int StrategList_RegisterAtexit(PtrArray *pList);
 
