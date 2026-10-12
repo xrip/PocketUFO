@@ -41,12 +41,14 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Branch | `master` |
 | Work tip before this handoff | `165b3d9` - game-core: Base_DemolishFacility, the whole-base teardown |
 | Handoff commit | this document and the `game-core.md` note, committed on top of `471a4ad` |
-| Update 2026-10-11 | `Tact_ProcessMoveAction` is ported and now runs against a real context. `GameMap` (the IDB `Map` block, 152632 bytes, base `0x1139b8`) plus `Map_LookupCell` and the three real callbacks live in `src/pufo/game/pufo_mapctx.c`. Earlier in the same day: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. |
+| Update 2026-10-12 | The render/HUD draw family was opened and the name audit was closed. `UiModal_DrawDialog @ 0x264a0` (2676 B), the tactical HUD draw family (`Menu_DrawLabeledPads 0x217e0`, `TactHud_DrawModalLeft/Right 0x21bac/0x21cec` merged, `TactHud_CopyStatusText 0x21688`, `TactHud_DrawActionButtons 0x21430`, `TactHud_DrawConfirmDialog 0x1eb68`, `TactHud_DrawStatusBanner 0x1e920`, `TactHud_DrawUnitRoster 0x21908`, `TactHud_DrawUnitMarkers 0x20c58`), `PadImage_BlitEx @ 0x11110`, `MapView_FocusSelected @ 0x16710`, `Save_ReadStrategVer @ 0x3f1c8`, and a new `titles` module with `Titles_DrawBackdrop @ 0x1e630`. `audit_names.py` unexplained flags went 116 -> 0; five false credits were removed and five wrong IDB names corrected. Coverage 599 -> 628 functions, 186152 -> 202688 bytes. |
 | Tracked modifications | none (`git diff --stat` empty) |
 | Untracked files | listed in section 12, all intentional |
 | Build | clean, exit 0, no warnings under `/W4 /WX` |
-| Tests | `100% tests passed, 0 tests failed out of 47`, 1.42 s, **5701 checks** (see `PARITY.md`) |
+| Tests | `100% tests passed, 0 tests failed out of 48`, 1.5 s, **about 6030 recorded checks** (see `PARITY.md`) |
+| Coverage | **628 / 1103 functions (56.9%)**, **202,688 / 598,792 bytes (33.8%)**, 0 negated citations, 0 unexplained name flags, 29 rows in `docs/parity/bugs.tsv` |
 | Executable | `build/src/pufo/Release/pocketufo.exe`, 27648 bytes |
+| Update 2026-10-11 | `Tact_ProcessMoveAction` is ported and now runs against a real context. `GameMap` (the IDB `Map` block, 152632 bytes, base `0x1139b8`) plus `Map_LookupCell` and the three real callbacks live in `src/pufo/game/pufo_mapctx.c`. Earlier in the same day: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. At that point 47 tests and 5701 checks; the current figures are in the rows above. |
 
 `pufobeta.exe.i64` is tracked on purpose. It is the analysis database, and commits
 that only re-save it (for example `b4b875c`, `eaa79b0`) carry the IDB comments and
@@ -66,7 +68,7 @@ evidence, one is in progress, two are not started.
 | `data-layer` | complete | `pufo_dat.c` readers for the original archive layout, verified against the shipped `main.dat` / `lang.dat` (directory stride 21 confirmed from both file ends, lang-before-main archive order, case-insensitive lookup). |
 | `render-audio` | complete | `pufo_render.c` blitters and `pufo_audio.c` thin interface over the original audio dependency. Two real bugs were found and fixed here: a missing `y2` row term in all five blitters, and an init retry loop. |
 | `game-core` | **in progress** | Map/world, entities, unit records, pathing, LOS, turn/visibility, tactical state, combat, ballistics, saves, roster. See the port list below. |
-| `ui-input` | **in progress** | Keyboard handlers, the confirm key `Input_OnConfirm @ 0x15f3c`, the secondary key `Input_OnSecondary @ 0x156e0`, the control press/release handler `UiControl_HitTest @ 0x1a3d8`, screen/modal routing, cancel and escape paths. Windows, menus and dialogs are still to do. |
+| `ui-input` | **in progress** | Keyboard handlers, the confirm key `Input_OnConfirm @ 0x15f3c`, the secondary key `Input_OnSecondary @ 0x156e0`, the control press/release handler `UiControl_HitTest @ 0x1a3d8`, screen/modal routing, cancel and escape paths. The modal dialogue renderer `UiModal_DrawDialog @ 0x264a0` and the tactical HUD draw family are now ported; the screen openers behind `Render_Frame @ 0x22310` are still to do. |
 | `integrate-parity` | not started | Full build + run of playable flows on Win64 + final parity report. |
 
 Recent `game-core` commits, newest first, each with its reason:
