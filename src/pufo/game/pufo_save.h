@@ -896,7 +896,7 @@ typedef struct SaveGameInput {
     void                     *pLookupUser;
     const RmpData            *pRmp;
 
-    void (*pfnRenderFrame)(void *pUser);   /* Render_Frame @ 0x22310 */
+    void (*pfnRenderFrame)(void *pUser);   /* Render_Frame (0x22310), NOT ported */
     void  *pRenderUser;
 } SaveGameInput;
 

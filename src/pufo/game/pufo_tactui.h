@@ -139,7 +139,7 @@ typedef struct TactUiState {
     u8  bDeployPanelOpen;
     /* LOBYTE(apUiSlotsA[8]) @ 0x00080, set by OpenCommandScreenFlagged. */
     u8  bSlot80Low;
-    /* unk_138E68 @ 0x254B0. Render_Frame @ 0x22310 skips MapView_DrawIsoLayer
+    /* unk_138E68 @ 0x254B0. Render_Frame (0x22310) skips MapView_DrawIsoLayer
      * when this byte is 0 (ARM 0x22404 and 0x225c4), and Tact_InitMission @
      * 0x3c550 clears it at mission start. Inv_OpenScreen sets it to 1. */
     u8  bDrawIsoLayer;

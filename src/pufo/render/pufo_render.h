@@ -5,7 +5,7 @@
  *   SoftSurf_AllocPixels @ 0x9f9a4, SoftSurf_GetWidth @ 0x9f994,
  *   SoftSurf_GetHeight @ 0x9f99c, SoftSurf_GetPixels @ 0x9fcb4,
  *   Render_SetTarget @ 0x9faa4, Render_BlitSoft_LoRes @ 0x9fa7c,
- *   Render_BlitSoft_HiRes @ 0x9fa90, Render_Frame @ 0x22310,
+ *   Render_BlitSoft_HiRes @ 0x9fa90, Render_Frame (0x22310),
  *   Blit_LoadSurface @ 0xa3964, Blit_SetTargetParams @ 0xa39ac,
  *   Blit_CopyRows @ 0xa3a14, Blit_CopyRows_HiRes @ 0xa3bb8,
  *   BlitParams_Set @ 0xa47b0, Blit_SetSrcRect @ 0xa3f5c,

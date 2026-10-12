@@ -1,7 +1,7 @@
 /* pufo_uibank.h - the widget bank and the pad bank the HUD is built from.
  *
  * Evidence: Tact_InitUiControls @ 0x3b498, Tact_LoadUiPads @ 0x3b068,
- *           UiControl_Setup @ 0x1a75c, UiControl_LoadPads @ 0x1a604.
+ *           UiControl_Setup @ 0x1a75c, UiControl_LoadPads (0x1a604).
  *
  * ## The descriptor record (32 bytes, read by UiControl_Setup)
  *
@@ -180,7 +180,7 @@ typedef struct UiBankInitCtx {
     /* The handlers to install, indexed by widget. A NULL entry is installed as-is,
      * which is what the original does for a handler it has none of. */
     void (*const *apfnClick)(void);
-    /* Stands in for UiControl_LoadPads @ 0x1a604. */
+    /* Stands in for UiControl_LoadPads (0x1a604), which is NOT ported. */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
     /* The look control's handler, TactAction_ConfirmFireBurst @ 0x18774. */

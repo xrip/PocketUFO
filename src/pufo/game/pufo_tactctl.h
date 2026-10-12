@@ -300,7 +300,7 @@ typedef struct DeployConfirmHooks {
     /* Sound_Play @ 0x9e0c0, sample 16 before the modal. */
     void (*pfnPlaySample)(i32 nSample, void *pUser);
     /* UiModal_Begin @ 0x26430 at 170,1069 with five buttons. The original passes
-     * "YES" @ 0xA62E8 with j_Tact_CheckBattleEnd @ 0x18a44 and "NO" @ 0xA62EC with
+     * "YES" @ 0xA62E8 with j_Tact_CheckBattleEnd (0x18a44) and "NO" @ 0xA62EC with
      * Map_ClearUiScreen @ 0x18a54, ported as Ui_ClearScreen. */
     void (*pfnModal)(i32 nX, i32 nY, i32 nCount, const char *szYes, const char *szNo,
                      void *pUser);

@@ -77,7 +77,7 @@ typedef struct ActionPhaseSave {
  * Tact_SelectUnit and MapView_FocusSelected; `pfnRequestFire` stands in for
  * TactState_EnqueueFireBurst @ 0x4b080 plus the following KickQueue @ 0x4f334,
  * which it must perform together. `pfnEnemyAiTick` stands in for
- * Tact_EnemyAiTick @ 0x4cbe0. */
+ * Tact_EnemyAiTick (0x4cbe0), NOT ported. */
 typedef struct TurnHooks {
     void (*pfnSetPlayerInput)(bool bEnabled, void *pUser);
     void (*pfnSetCursor)(i32 nX, i32 nY, i32 nLayer, void *pUser);
@@ -100,7 +100,7 @@ void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
  *
  * Sets bEnemyTurnActive, marks the context busy, clears every side's per-unit AI
  * and spotting state, and starts the action phase at phase 3. The original also
- * calls Render_Frame @ 0x22310 and BeforeEnemyStep @ 0x4b9b8 first; those are
+ * calls Render_Frame (0x22310) and BeforeEnemyStep @ 0x4b9b8 first; those are
  * injected via `pfnFrameStart` and `pfnBeforeEnemyStep` because both need the
  * full world (BeforeEnemyStep is 2792 bytes).
  *

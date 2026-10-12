@@ -165,8 +165,8 @@ typedef struct GameTickCtx {
 } GameTickCtx;
 
 typedef struct GameTickHooks {
-    void (*pfnGeoscapeTick)(void *pUser);      /* nullsub_9 @ 0x94550 */
-    void (*pfnTickActiveUnit)(void *pUser);    /* Tact_TickActiveUnit @ 0x54130 */
+    void (*pfnGeoscapeTick)(void *pUser);      /* nullsub_9 (0x94550) */
+    void (*pfnTickActiveUnit)(void *pUser);    /* Tact_TickActiveUnit (0x54130), NOT ported */
     void (*pfnClearFrameScratch)(void *pUser); /* byte_138E74 = 0 */
     void *pUser;
 } GameTickHooks;

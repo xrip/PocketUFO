@@ -193,7 +193,7 @@ typedef struct UiControlDesc {
 
 /* UiControl_Setup @ 0x1a75c.
  *
- * Loads the three pads (through UiControl_LoadPads @ 0x1a604) and then positions the
+ * Loads the three pads (through UiControl_LoadPads (0x1a604), not ported) and then positions the
  * control at `base + desc offset` in the description's mode. The pad loading is
  * injected because it reads the asset archives. */
 void UiControl_Setup(UiControl *pCtl, i16 xBase, i16 yBase, const UiControlDesc *pDesc,

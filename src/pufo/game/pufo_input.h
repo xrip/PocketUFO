@@ -115,7 +115,7 @@ typedef struct TactInputHooks {
     void (*pfnSelectNextUnit)(void *pUser);
     void (*pfnSelectPrevUnit)(void *pUser);
     void (*pfnPlaySample)(u32 nSample, void *pUser);
-    void (*pfnCursorChanged)(void *pUser);  /* nullsub_3 @ 0x22b50 */
+    void (*pfnCursorChanged)(void *pUser);  /* nullsub_3 (0x22b50) */
     void (*pfnHandleMapClick)(void *pUser); /* Tact_HandleMapClick */
     void (*pfnOnConfirm)(u16 nUiScreen, void *pUser);
     /* UiModal_End @ 0x2648c. */
@@ -130,7 +130,7 @@ typedef struct TactInputHooks {
     void (*pfnOnCancel)(void *pUser);
     /* Geoscape_CloseUI (0x8b94c), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapeCloseUi)(void *pUser);
-    /* Inv_CloseAndCommit @ 0x15a48. */
+    /* Inv_CloseAndCommit (0x15a48), NOT ported. */
     void (*pfnInvCloseAndCommit)(void *pUser);
     /* MapCursor_SetPos @ 0x27014, with the stored cursor position. */
     void (*pfnSetCursorPos)(i32 nX, i32 nY, void *pUser);
@@ -162,9 +162,9 @@ typedef struct TactInputHooks {
     void (*pfnFocusOnCell)(MapCell *pCell, void *pUser);
     /* Geoscape_OnPointerUp (0x89450), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapePointerUp)(void *pUser);
-    /* Titles_Shutdown @ 0x3826c then GameUI_InitStartup (0x38a28), screen 16. */
+    /* Titles_Shutdown (0x3826c), NOT ported, then GameUI_InitStartup (0x38a28), screen 16. */
     void (*pfnTitlesToStartup)(void *pUser);
-    /* EndScreen_Shutdown @ 0x389f8, screen 18. */
+    /* EndScreen_Shutdown (0x389f8), NOT ported, screen 18. */
     void (*pfnEndScreenShutdown)(void *pUser);
     /* StatusMsg_Push @ 0x2dda4 with a record index into aTextRecs @ 0xb38d0.
      * Input_OnPointerUp uses record 1 ("not enough time"). */
@@ -271,7 +271,7 @@ void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
  *    Map+0x150D9 (`bDragScrollB` here, `bMenuByPen` in pufo_tactui.h -- the same
  *    anPhaseSave0[97], named twice in the port). */
 typedef struct UiPulseHooks {
-    /* Geoscape_PulseUpdate @ 0x954dc. */
+    /* Geoscape_PulseUpdate (0x954dc), NOT ported. */
     void (*pfnPulseUpdate)(void *pUser);
     /* Sound_Play @ 0x9e0c0, sample 15. */
     void (*pfnPlaySample)(i32 nSample, void *pUser);

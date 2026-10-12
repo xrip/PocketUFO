@@ -41,7 +41,7 @@ typedef struct GeoscapeState {
 typedef struct GeoscapeHooks {
     /* StrategList_MaybeSpawnCraft_Process (0x7e420) (ProcessEvents side). */
     void (*pfnProcessEvents)(u8 bSpawn, void *pUser);
-    /* Smap_CanInterceptReach @ 0x7e074. */
+    /* Smap_CanInterceptReach (0x7e074), NOT ported. */
     bool (*pfnCanInterceptReach)(i32 nShipIdx, void *pUser);
     /* UiPanel_AppendLineWithSound @ 0x5a394. nMsg: 15 contact, 13 intercept
      * lost, 43 low supply, 10 radar contact. GameTime_Pause @ 0x5d6ac is NOT
@@ -50,22 +50,22 @@ typedef struct GeoscapeHooks {
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
     /* Geoscape_SpawnMissionSite (0x7e49c). */
     void (*pfnSpawnMissionSite)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
-    /* Smap_GrantSiteRecovery @ 0x98b50. */
+    /* Smap_GrantSiteRecovery (0x98b50), NOT ported. */
     void (*pfnGrantSiteRecovery)(void *pUser);
-    /* ManufScreen_RefreshBaseTabs @ 0x70ebc. */
+    /* ManufScreen_RefreshBaseTabs (0x70ebc), NOT ported. */
     void (*pfnRefreshBaseTabs)(void *pUser);
-    /* ResearchScreen_AccumulateAllocated @ 0x74914. */
+    /* ResearchScreen_AccumulateAllocated (0x74914), NOT ported. */
     void (*pfnAccumulateResearch)(void *pUser);
-    /* Base_TickFacilityConstruction @ 0x62824. */
+    /* Base_TickFacilityConstruction (0x62824), NOT ported. */
     void (*pfnTickFacilityConstruction)(void *pUser);
     /* Base_ClearFacilityGridRow @ 0x6a0e0; its byte result becomes the
      * per-base site state byte_161F38[i]. */
     i32 (*pfnClearFacilityGridRow)(i32 nBaseIdx, void *pUser);
     /* Base_CountEmptyFacilityCells @ 0x6aee0. */
     i32 (*pfnCountEmptyFacilityCells)(i32 nBaseIdx, void *pUser);
-    /* FundingScreen_OpenMonthly @ 0x5d160. */
+    /* FundingScreen_OpenMonthly (0x5d160), NOT ported. */
     void (*pfnOpenMonthly)(void *pUser);
-    /* Base_FindIndexBySiteId @ 0x5a8d0, passed through to the detect pass. */
+    /* Base_FindIndexBySiteId (0x5a8d0), NOT ported; passed through to the detect pass. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } GeoscapeHooks;

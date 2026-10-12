@@ -98,7 +98,7 @@ typedef struct StrategHooks {
      * a contact in the original is written directly through pWorld->pTime, not
      * through this hook: 10, 13 and 15 pause, 43 (low supply) does not. */
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
-    /* Base_FindIndexBySiteId @ 0x5a8d0. */
+    /* Base_FindIndexBySiteId (0x5a8d0), NOT ported. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } StrategHooks;

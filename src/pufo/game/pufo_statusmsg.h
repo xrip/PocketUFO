@@ -76,7 +76,7 @@ typedef struct StatusHooks {
     bool (*pfnIsBusy)(void *pUser);
     /* LOBYTE(apUiSlotsA[2]) != 0, the flag that makes a push repaint at once. */
     bool (*pfnShouldRender)(void *pUser);
-    /* Render_Frame @ 0x22310. */
+    /* Render_Frame (0x22310), NOT ported. */
     void (*pfnRender)(void *pUser);
     void *pUser;
 } StatusHooks;
