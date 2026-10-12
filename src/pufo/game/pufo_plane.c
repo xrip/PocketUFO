@@ -274,3 +274,46 @@ i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeapo
     pPanels->bPanelBOpen = 0; /* 0x79A18 */
     return 0;                 /* 0x79A1C */
 }
+
+/* BasePlaneScreen_AddInterceptMission @ 0x7de14.
+ *
+ * IDA says this function takes no arguments. It does. The disassembly opens with
+ * `MOV R3, R1, LSL #24` and `MOV R3, R3, ASR #24`, a sign-extend of R1's low byte, and R1 is
+ * then used twice: as the index into the mission-site table (`MUL R2, R3, #0x18`, so a 24-byte
+ * stride) and again unchanged as the bCraftClass argument.
+ *
+ * The coordinates are LDRSH loads, so both are signed 16-bit. */
+i32 BasePlaneScreen_AddInterceptMission(i32 bCraftClass, const InterceptMissionCtx *pCtx)
+{
+    StrategItem *pItem;
+    i32 nCount;
+
+    if (pCtx == NULL || pCtx->pList == NULL || pCtx->pnZoomMode == NULL ||
+        pCtx->pnSeed == NULL || pCtx->apSites == NULL || pCtx->pnMissionId == NULL) {
+        return 0;
+    }
+
+    /* Deviation: the original indexes with the sign-extended char and never bounds it. */
+    if (bCraftClass < 0 || bCraftClass >= pCtx->nSiteCount) {
+        return *pCtx->pnMissionId;
+    }
+
+    StrategList_AddItem(pCtx->pList, pCtx->pnSeed, *pCtx->pnZoomMode, 3, 1, bCraftClass,
+                        pCtx->apSites[bCraftClass].x,  /* 0x7DE48, LDRSH [R0,#0xC8] */
+                        pCtx->apSites[bCraftClass].y,  /* 0x7DE3C, LDRSH [R0,#0xCA] */
+                        *pCtx->pnMissionId, 1);        /* 0x7DE64 */
+
+    nCount = PtrArray_GetCount(pCtx->pList);           /* 0x7DE6C */
+    pItem = (StrategItem *)PtrArray_Get(pCtx->pList, nCount - 1);
+    if (pItem != NULL) {
+        pItem->nTimer = 2880;                          /* 0x7DE80 */
+    }
+
+    if (pCtx->pnLastIndex != NULL) {
+        /* The count is read a third time here rather than reused from 0x7DE6C. */
+        *pCtx->pnLastIndex = PtrArray_GetCount(pCtx->pList) - 1; /* 0x7DE98 */
+    }
+
+    *pCtx->pnMissionId = *pCtx->pnMissionId + 1;       /* 0x7DEAC */
+    return *pCtx->pnMissionId;                         /* the incremented value */
+}

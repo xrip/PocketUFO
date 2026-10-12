@@ -377,6 +377,80 @@ static void TestApplyWeaponSwap(void)
     TestEqI32("a selection with no gate changes no weapon byte", g_aCraft[0].bWeaponL, 25);
 }
 
+static void TestAddInterceptMission(void)
+{
+    static MissionSiteRecord g_aSites[3];
+    PtrArray list;
+    i32 seed = 0;
+    i32 zoom = 0;
+    i32 missionId = 100;
+    i32 lastIndex = -1;
+    InterceptMissionCtx ctx;
+    StrategItem *pItem;
+
+    printf("BasePlaneScreen_AddInterceptMission\n");
+
+    memset(g_aSites, 0, sizeof(g_aSites));
+    g_aSites[0].x = 120;  g_aSites[0].y = -40;
+    g_aSites[1].x = 300;  g_aSites[1].y = 250;
+    g_aSites[2].x = -1;   g_aSites[2].y = 799;
+
+    PtrArray_ctor(&list);
+    ctx.pList = &list;
+    ctx.pnZoomMode = &zoom;
+    ctx.pnSeed = &seed;
+    ctx.apSites = g_aSites;
+    ctx.nSiteCount = 3;
+    ctx.pnMissionId = &missionId;
+    ctx.pnLastIndex = &lastIndex;
+
+    TestEqI32("the return value is the id counter AFTER the increment", BasePlaneScreen_AddInterceptMission(1, &ctx), 101);
+    TestEqI32("the list grew by one", list.nCount, 1);
+
+    pItem = (StrategItem *)PtrArray_Get(&list, 0);
+    TestCheck("the new item is in the list", pItem != NULL);
+    if (pItem != NULL) {
+        TestEqI32("nType is 3, a mission site", pItem->nType, 3);
+        TestEqI32("bActive is 1", pItem->bActive, 1);
+        TestEqI32("bVisible is 1", pItem->bVisible, 1);
+        TestEqI32("bCraftClass is the argument", pItem->bCraftClass, 1);
+        TestEqI32("x comes from the record", pItem->nX, 300);
+        TestEqI32("y is read as SIGNED", pItem->nY, 250);
+        /* nType 3 puts the id in the site id and refuses the display id. */
+        TestEqI32("the id the item got is the counter BEFORE the increment", pItem->nSiteId, 100);
+        TestEqI32("and a type 3 item has no display id", pItem->nDisplayId, -1);
+        TestEqI32("the new item's timer is set to 2880", pItem->nTimer, 2880);
+    }
+
+    TestEqI32("the last-index global holds the new item's index", lastIndex, 0);
+    TestEqI32("and the id counter moved on for the next mission", missionId, 101);
+
+    /* A negative y in the table stays negative; the loads are LDRSH. */
+    BasePlaneScreen_AddInterceptMission(0, &ctx);
+    pItem = (StrategItem *)PtrArray_Get(&list, 1);
+    if (pItem != NULL) {
+        TestEqI32("a negative y is not widened to a positive", pItem->nY, -40);
+        TestEqI32("and its x is 120", pItem->nX, 120);
+    }
+    TestEqI32("the second item's index is 1", lastIndex, 1);
+
+    /* nType 3 is not scaled by zoom, unlike nType 5. */
+    zoom = 1;
+    BasePlaneScreen_AddInterceptMission(2, &ctx);
+    pItem = (StrategItem *)PtrArray_Get(&list, 2);
+    if (pItem != NULL) {
+        TestEqI32("a type 3 item is not rescaled at zoom 1", pItem->nX, -1);
+        TestEqI32("even though its y is above the level-0 width", pItem->nY, 799);
+    }
+
+    /* Out of range: the port refuses, and refusing must not disturb the id counter. */
+    TestEqI32("a craft class past the table adds nothing", BasePlaneScreen_AddInterceptMission(9, &ctx), 103);
+    TestEqI32("so the list stays where it was", list.nCount, 3);
+    TestEqI32("and the id counter did not move", missionId, 103);
+
+    PtrArray_DeleteAll(&list);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -385,6 +459,7 @@ int main(void)
     TestUnloadWeaponStores();
     TestLoadWeaponStores();
     TestApplyWeaponSwap();
+    TestAddInterceptMission();
 
     return TestSummary("test_plane");
 }

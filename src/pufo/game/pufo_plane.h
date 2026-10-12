@@ -25,6 +25,8 @@
 #include "pufo_common.h"
 #include "game/pufo_ship.h"   /* Ship, BaseRec */
 #include "game/pufo_boot.h"   /* ObjectRecFull */
+#include "game/pufo_strateg.h" /* StrategItem, StrategList_AddItem */
+#include "util/pufo_ptrarray.h" /* PtrArray */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -121,5 +123,48 @@ i32 BasePlane_LoadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv,
  * Both gate flags are cleared at the end whether or not either side did anything, and the
  * original always returns 0. */
 i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeaponEnv *pEnv);
+
+/* ------------------------------------------------- adding an intercept mission
+ *
+ * Evidence: BasePlaneScreen_AddInterceptMission @ 0x7de14.
+ *
+ * IDA gives this function no arguments, and that is wrong. The disassembly opens with
+ * `MOV R3, R1, LSL #24` then `MOV R3, R3, ASR #24`, which is a sign-extend of R1's low byte,
+ * and R1 is then used twice: as the index into the mission-site table and as the bCraftClass
+ * argument to StrategList_AddItem. So it takes one signed-char argument.
+ *
+ * The coordinates come from a table of 24-byte records at 0x1864F8 + 200, that is 0x1865C8,
+ * indexed by that craft class. x is the SIGNED 16-bit value at record +0 and y at record +2;
+ * the loads are LDRSH, so both are signed. The remaining 20 bytes of each record are not
+ * touched here.
+ *
+ * It then adds a strateg list item with nType 3, bActive 1, bVisible 1 and nId taken from the
+ * mission-id counter. Because nType is 3, that id lands in nSiteId and nDisplayId becomes -1.
+ * After the add it re-reads the list count, sets the new last item's nTimer to 2880, and stores
+ * count-1 into a separate global -- the index of the item it just created. The count is read a
+ * third time for that store rather than reused.
+ *
+ * Finally it post-increments the mission-id counter and returns the incremented value, so the
+ * id the item was given is the value the counter held before this call.
+ *
+ * Deviation: the original indexes the table with the sign-extended char and never bounds it, so
+ * a negative craft class reads before the table. The port refuses and adds nothing. */
+typedef struct MissionSiteRecord {
+    i16 x;      /* +0x00 */
+    i16 y;      /* +0x02 */
+    i16 agap[10];
+} MissionSiteRecord;   /* 24 bytes, the stride the original multiplies by 0x18 */
+
+typedef struct InterceptMissionCtx {
+    PtrArray *pList;                  /* the strateg list, 0x186534 */
+    i32 *pnZoomMode;                  /* the viewport's nMode, read live by AddItem */
+    i32 *pnSeed;                      /* the per-item seed counter, 0x18640C */
+    const MissionSiteRecord *apSites; /* the table at 0x1865C8 */
+    i32 nSiteCount;
+    i32 *pnMissionId;                 /* unk_18654C */
+    i32 *pnLastIndex;                 /* 0x186BE4, set to the index of the new item */
+} InterceptMissionCtx;
+
+i32 BasePlaneScreen_AddInterceptMission(i32 bCraftClass, const InterceptMissionCtx *pCtx);
 
 #endif /* PUFO_PLANE_H */
