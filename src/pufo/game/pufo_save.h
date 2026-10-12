@@ -902,4 +902,79 @@ typedef struct SaveGameInput {
 
 bool SaveGame(DatFile *pDat, const SaveGameInput *pIn);
 
+/* ------------------------------------------------- the load driver's tactical half
+ *
+ * Evidence: Save_ReadTGameData @ 0x44248.
+ *
+ * This is the reader for everything Save_WriteTGameData writes, and it does more than
+ * read fields back:
+ *
+ *   1. the 23 tgamedata fields;
+ *   2. Font_LoadTactSprites (0x257c4, NOT ported, injected as a hook), then for each of
+ *      the four sprite-set bytes that is not 23 it sets unk_15827A[i] from unk_15829E
+ *      and loads the sprite set named `xcom_<byte>` (aXcom0 @ 0xa7be8, stride 9) through
+ *      Font_LoadSpr @ 0x461d8, then rebuilds the font index with Font_BuildIndex @ 0x46480;
+ *   3. Save_ReadTeamUnits, Save_ReadFlobjs and Save_ReadMap, in that order;
+ *   4. a tactical reset of about thirty fields in the Map block, which is where a
+ *      loaded mission is made playable again;
+ *   5. v124.dat, which is OPTIONAL: when the chunk is absent the two dwords are ROLLED
+ *      with Game_RandU16 as `rand(40) + 10` and `rand(20)`.
+ *
+ * The reset is a mix of clears and sets. `bPlayerInputEnabled` is SET to 1, and
+ * apUiSlotsA[4] and apUiSlotsA[10] are set to the values 200 and 10, not to pointers.
+ * apUiSlotsA is `void *[28]` at Map+0x60, so those slots hold small integers.
+ *
+ * Deviation: the original checks none of the tgamedata reads, so a truncated chunk
+ * leaves the fields at whatever they were. The port reports false when a read fails but
+ * still runs the rest of the sequence, because the font and roster work is what makes
+ * the mission usable. */
+
+/* The tactical fields the load resets, named by the original's Map offsets (the Map
+ * struct @ 0x1139B8). Only the fields the original actually touches are listed. */
+typedef struct TactResetState {
+    u8   abGap01[2];          /* Map+0x01 and Map+0x02, both cleared */
+    i32  nMultiTargetCount;   /* Map+0x04 */
+    i32  nUnk2C;              /* Map+0x2C, reached as a dword through nUnk40+4 */
+    u8   nAnimPhase;          /* Map+0x37 */
+    u8   bPlayerInputEnabled; /* Map+0x38, SET to 1 rather than cleared */
+    u8   bUnk3C;              /* Map+0x3C, gap_60[0] */
+    u8   abFire[10];          /* Map+0x50..0x59: 0,1,2 cleared, 4..7 as one dword, 8,9 cleared */
+    u8   bGameTickHold;       /* Map+0x5A */
+    u8   bEnemyTurnActive;    /* Map+0x5B */
+    u8   bBattleEnded;        /* Map+0x5C */
+    u32  aUiSlot[11];         /* Map+0x60 apUiSlotsA: 0,3,5,6,7,8,9 cleared, 4 = 200, 10 = 10 */
+    u16  nUiScreen;           /* Map+0x3A */
+} TactResetState;
+
+/* The flobjs chunk's read side, bundled the same way FlobjsState bundles the write side. */
+typedef struct FlobjsReadState {
+    i32                  nWideCountFlag; /* Map+0x118: the count is 4 bytes wide when non-zero */
+    i32                 *pnTactItemCount;
+    TactItem *const     *apTactItems;
+    ObjectRecFull *const *apObjects;
+    i32                  nObjectCount;
+    Soldier *const      *apSoldiers;
+    i32                  nSoldierCount;
+} FlobjsReadState;
+
+typedef struct TactLoadHooks {
+    void (*pfnLoadTactSprites)(void *pUser);   /* Font_LoadTactSprites (0x257c4), not ported */
+    bool (*pfnLoadSpr)(i32 nSpriteSet, void *pUser); /* Font_LoadSpr(font, "xcom_<n>") */
+    void (*pfnBuildIndex)(void *pUser);        /* Font_BuildIndex @ 0x46480 */
+    u32  (*pfnRandU16)(u32 nMax, void *pUser); /* Game_RandU16 @ 0x3e59c */
+    void            *pUser;
+    const PufoFont  *pFont;                    /* the font handle the original keeps at 0x158268 */
+    u16             *paSpriteFlags;            /* unk_15827A, four entries */
+    u16              nSpriteFlagValue;         /* unk_15829E */
+    u8              *pbUnk157198Flag;          /* unk_157198->bUnk70115, cleared through a pointer */
+} TactLoadHooks;
+
+/* 23 means "no sprite set for this slot". */
+#define PUFO_SPRITE_SET_NONE 23
+
+bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
+                        TeamUnitsState *pRosters, const FlobjsReadState *pFlobjs,
+                        MapGeom *pMap, MapCellLookup pfnLookup, void *pLookupUser,
+                        TactResetState *pReset, const TactLoadHooks *pHooks);
+
 #endif /* PUFO_SAVE_H */

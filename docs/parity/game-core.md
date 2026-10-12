@@ -782,9 +782,9 @@ ILP32 original.
 
 ### Not yet recreated
 
-`LoadGame` @ 0x44bbc and `Save_ReadTGameData` @ 0x44248 � the port implements the
-container and the soldier chunks, but the full slot flow also needs everything else in the save subsystem is in place, including the container, every
-chunk writer, `SaveSlot_FormatList` @ 0x45904 and `SaveGame` @ 0x44988.
+`LoadGame` @ 0x44bbc � the port implements the
+container and the soldier chunks, but the full slot flow also needs everything else in the save subsystem is in place: the container, every chunk writer,
+every chunk reader, `SaveSlot_FormatList` @ 0x45904 and `SaveGame` @ 0x44988.
 
 ## Unit selection navigation (done)
 
@@ -5415,3 +5415,49 @@ write failure. The port returns false as soon as a step fails, and still closes 
 file. The caller must run `DatFile_ctor` on the handle first; the original's handle is
 a zero-initialised global, and skipping this leaves `nBufCap` uninitialised, which
 makes the first chunk succeed and every later one fail.
+
+## The tactical load (done)
+
+Files: `src/pufo/game/pufo_save.{h,c}`. Evidence: `Save_ReadTGameData` @ 0x44248.
+
+This is the reader for the tactical half, and it does four jobs beyond reading fields
+back:
+
+1. the 23 `tgamedata` fields, in the writer's order;
+2. `Font_LoadTactSprites` (0x257c4, not ported, injected as a hook), then for each of the
+   four sprite-set bytes at `Map+0x15116` that is not 23 it sets `unk_15827A[i]` from
+   `unk_15829E` and loads the sprite set named `xcom_<byte>` (`aXcom0` @ 0xa7be8, stride 9)
+   through `Font_LoadSpr` @ 0x461d8, then rebuilds the index with `Font_BuildIndex` @ 0x46480.
+   A slot of 23 loads nothing **and leaves its flag word alone**;
+3. `Save_ReadTeamUnits`, `Save_ReadFlobjs` and `Save_ReadMap`, in that order;
+4. a tactical reset of about thirty fields in the Map block, which is what makes a loaded
+   mission playable again.
+
+The reset is a mix of clears and sets, and the sets are the part that is easy to miss.
+Named by the original's `Map` offsets:
+
+| Map offset | field | what happens |
+|---|---|---|
+| 0x01, 0x02 | two gap bytes | cleared |
+| 0x04 | `nMultiTargetCount` | cleared |
+| 0x2C | reached as a dword through `nUnk40+4` | cleared |
+| 0x37 | `nAnimPhase` | cleared |
+| 0x38 | `bPlayerInputEnabled` | **set to 1** |
+| 0x3A | `nUiScreen` | cleared |
+| 0x3C | `gap_60[0]` | cleared |
+| 0x50..0x59 | the fire-status bytes | 0,1,2 cleared, 4..7 cleared as one dword, 8,9 cleared |
+| 0x5A, 0x5B, 0x5C | `bGameTickHold`, `bEnemyTurnActive`, `bBattleEnded` | cleared |
+| 0x60 | `apUiSlotsA` | slots 0,3,5,6,7,8,9 cleared; **slot 4 = 200** and **slot 10 = 10** |
+
+`apUiSlotsA` is `void *[28]` at `Map+0x60`, yet slots 4 and 10 receive the small integers
+200 and 10. Slot 8 is written as two half-writes, which is the same as clearing it. One
+further write goes through a pointer: `unk_157198->bUnk70115 = 0`.
+
+`v124.dat` is **optional**. When the chunk is present its two dwords are read into
+`unk_138E6C` and `unk_138E70`. When it is absent they are **rolled**: `Game_RandU16(40) + 10`
+and `Game_RandU16(20)`. A save without that chunk therefore gets a different value on every
+load, and the test asserts both branches.
+
+Deviation: the original checks none of the `tgamedata` reads, so a truncated chunk leaves
+the fields at whatever they were. The port reports false when a read fails but still runs
+the font, roster and reset work, because that is what makes the mission usable.

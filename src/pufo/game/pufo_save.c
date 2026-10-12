@@ -2296,3 +2296,122 @@ bool SaveGame(DatFile *pDat, const SaveGameInput *pIn)
     DatFile_Close(pDat);   /* 0x44B88: closed even after a failed write */
     return bOk;
 }
+
+/* Save_ReadTGameData @ 0x44248. */
+bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
+                        TeamUnitsState *pRosters, const FlobjsReadState *pFlobjs,
+                        MapGeom *pMap, MapCellLookup pfnLookup, void *pLookupUser,
+                        TactResetState *pReset, const TactLoadHooks *pHooks)
+{
+    bool bOk = true;
+
+    if (pDat == NULL || pSt == NULL || pRosters == NULL || pFlobjs == NULL ||
+        pMap == NULL || pReset == NULL || pHooks == NULL) {
+        return false;
+    }
+
+    /* 0x44258: the original does not check FindChunk, and checks none of these reads
+     * either. The port keeps the same order and reports the failures. */
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TGAMEDATA);
+    if (!DatFile_Read(pDat, &pSt->bUnk15110, 1))       { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->nUnk1510C, 4))       { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->abUnk15111[0], 1))   { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->abUnk15111[1], 1))   { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->abUnk15111[2], 1))   { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->nMapLayers, 1))      { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->bUnk15115, 1))       { bOk = false; }
+    if (!DatFile_Read(pDat, pSt->abSpriteSet, 4))      { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->nMissionType, 1))    { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->bUnk1517D, 1))       { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->bLightEnabled, 1))   { bOk = false; }
+    for (i32 i = 0; i < 4; ++i) {
+        if (!DatFile_Read(pDat, &pSt->anUnk15188[i], 4)) { bOk = false; }
+    }
+    for (i32 i = 0; i < 3; ++i) {
+        if (!DatFile_Read(pDat, &pSt->abUnk15198[i], 1)) { bOk = false; }
+    }
+    if (!DatFile_Read(pDat, &pSt->nUnk151A0, 4))        { bOk = false; }
+    for (i32 i = 0; i < 3; ++i) {
+        /* The craft tiles are dwords in memory and one byte each on disk. */
+        if (!DatFile_Read(pDat, &pSt->anCraftTile[i], 1)) { bOk = false; }
+    }
+
+    /* 0x4444C. */
+    if (pHooks->pfnLoadTactSprites != NULL) {
+        pHooks->pfnLoadTactSprites(pHooks->pUser);
+    }
+
+    /* 0x44450..0x4449C: the four sprite-set bytes at Map+0x15116. A slot of 23 loads
+     * nothing and also leaves its flag word alone. */
+    for (i32 i = 0; i < 4; ++i) {
+        if (pSt->abSpriteSet[i] != PUFO_SPRITE_SET_NONE) {
+            if (pHooks->paSpriteFlags != NULL) {
+                pHooks->paSpriteFlags[i] = pHooks->nSpriteFlagValue;
+            }
+            if (pHooks->pfnLoadSpr != NULL) {
+                (void)pHooks->pfnLoadSpr(pSt->abSpriteSet[i], pHooks->pUser);
+            }
+        }
+    }
+    if (pHooks->pfnBuildIndex != NULL) {   /* 0x444A4 */
+        pHooks->pfnBuildIndex(pHooks->pUser);
+    }
+
+    /* 0x444A8, 0x444B0, 0x444B4: the three chunk readers, in this order. */
+    (void)Save_ReadTeamUnits(pDat, pRosters, pFlobjs->apSoldiers, pFlobjs->nSoldierCount);
+    (void)Save_ReadFlobjs(pDat, pFlobjs->nWideCountFlag, pFlobjs->pnTactItemCount,
+                          pFlobjs->apTactItems, pFlobjs->apObjects, pFlobjs->nObjectCount,
+                          pFlobjs->apSoldiers);
+    (void)Save_ReadMap(pDat, pMap, pfnLookup, pLookupUser,
+                       pFlobjs->apSoldiers, pFlobjs->nSoldierCount,
+                       pFlobjs->apTactItems, *pFlobjs->pnTactItemCount, pHooks->pFont);
+
+    /* 0x444C0..0x445CC: the tactical reset. Mostly clears, but two are sets. */
+    pReset->abGap01[0] = 0;
+    pReset->abGap01[1] = 0;
+    pReset->nMultiTargetCount = 0;
+    pReset->nUnk2C = 0;
+    pReset->nAnimPhase = 0;
+    pReset->bPlayerInputEnabled = 1;   /* a SET, not a clear */
+    pReset->bUnk3C = 0;
+    pReset->abFire[0] = 0;
+    pReset->abFire[1] = 0;
+    pReset->abFire[2] = 0;
+    pReset->abFire[3] = 0;             /* the original clears 4..7 as one dword */
+    pReset->abFire[4] = 0;
+    pReset->abFire[5] = 0;
+    pReset->abFire[6] = 0;
+    pReset->abFire[7] = 0;
+    pReset->abFire[8] = 0;
+    pReset->abFire[9] = 0;
+    pReset->bGameTickHold = 0;
+    pReset->bEnemyTurnActive = 0;
+    pReset->bBattleEnded = 0;
+    pReset->aUiSlot[0] = 0;
+    pReset->aUiSlot[3] = 0;
+    pReset->aUiSlot[4] = 200;          /* a value in a pointer slot */
+    pReset->aUiSlot[5] = 0;
+    pReset->aUiSlot[6] = 0;
+    pReset->aUiSlot[7] = 0;
+    pReset->aUiSlot[8] = 0;            /* written as two half-writes in the original */
+    pReset->aUiSlot[9] = 0;
+    pReset->aUiSlot[10] = 10;          /* and another value */
+    pReset->nUiScreen = 0;
+    if (pHooks->pbUnk157198Flag != NULL) {   /* 0x445AC, through the object-blob pointer */
+        *pHooks->pbUnk157198Flag = 0;
+    }
+
+    /* 0x445D4..0x446A0: v124.dat is optional, and when it is missing the two dwords
+     * are ROLLED rather than left alone. */
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_V124);
+    if (DatFile_ChunkPresent(pDat)) {
+        if (!DatFile_Read(pDat, &pSt->nUnk138E6C, 4)) { bOk = false; }
+        if (!DatFile_Read(pDat, &pSt->nUnk138E70, 4)) { bOk = false; }
+    } else {
+        if (pHooks->pfnRandU16 != NULL) {
+            pSt->nUnk138E6C = (i32)(u16)pHooks->pfnRandU16(0x28u, pHooks->pUser) + 10;
+            pSt->nUnk138E70 = (i32)(u16)pHooks->pfnRandU16(0x14u, pHooks->pUser);
+        }
+    }
+    return bOk;
+}

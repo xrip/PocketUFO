@@ -2210,6 +2210,266 @@ static void TestSaveGame(void)
     (void)DeleteFileW(L"sav6.sav");
 }
 
+/* Save_ReadTGameData @ 0x44248. */
+static int  g_nTactSpriteLoads;
+static int  g_nSprCalls;
+static int  g_nTactBuildIndex;
+static int  g_nRandCalls;
+static i32  g_aSpriteSets[8];
+static u32  g_aRandMax[8];
+
+static void LoadTactSpritesProbe(void *pUser)
+{
+    (void)pUser;
+    g_nTactSpriteLoads++;
+}
+
+static bool LoadSprProbe(i32 nSpriteSet, void *pUser)
+{
+    (void)pUser;
+    if (g_nSprCalls < 8) {
+        g_aSpriteSets[g_nSprCalls] = nSpriteSet;
+    }
+    g_nSprCalls++;
+    return true;
+}
+
+static void BuildIndexProbe(void *pUser)
+{
+    (void)pUser;
+    g_nTactBuildIndex++;
+}
+
+static u32 RandProbe(u32 nMax, void *pUser)
+{
+    (void)pUser;
+    if (g_nRandCalls < 8) {
+        g_aRandMax[g_nRandCalls] = nMax;
+    }
+    g_nRandCalls++;
+    return nMax == 0x28u ? 7u : 3u;
+}
+
+static void TestReadTGameData(void)
+{
+    static u16 aSpriteFlags[4];
+    static u8 bBlobFlag;
+    static TactLoadHooks hooks;
+    DatFile dat;
+    TactSaveState w, r;
+    TactResetState reset;
+    TeamUnitsState rosters;
+    FlobjsState flobjs;
+    FlobjsReadState read;
+    MapGeom geom;
+    PufoFont font;
+    Soldier aSol[2];
+    Soldier *apSol[2];
+    Soldier *apXcom[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apEnemy[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apCiv[PUFO_SAVE_CIV_MAX];
+    Soldier *apHidden[PUFO_SAVE_ROSTER_MAX];
+    ObjectRecFull aObj[1];
+    ObjectRecFull *apObj[1];
+    TactItem aItem[1];
+    TactItem *apItem[1];
+    i32 nItemCount;
+
+    printf("Save_ReadTGameData\n");
+
+    memset(&w, 0, sizeof(w));
+    memset(&r, 0, sizeof(r));
+    memset(&font, 0, sizeof(font));
+    w.bUnk15110 = 0x11;
+    w.nUnk1510C = 0x01020304;
+    w.abUnk15111[0] = 0x21;
+    w.abUnk15111[1] = 0x22;
+    w.abUnk15111[2] = 0x23;
+    w.nMapLayers = 4;
+    w.bUnk15115 = 0x25;
+    w.abSpriteSet[0] = 0;
+    w.abSpriteSet[1] = 5;
+    w.abSpriteSet[2] = PUFO_SPRITE_SET_NONE;   /* 23: this slot loads nothing */
+    w.abSpriteSet[3] = 7;
+    w.nMissionType = 9;
+    w.bUnk1517D = 1;
+    w.bLightEnabled = 1;
+    w.anUnk15188[0] = (i32)0xAAAAAAAA;
+    w.anUnk15188[1] = 1;
+    w.anUnk15188[2] = 2;
+    w.anUnk15188[3] = 3;
+    w.abUnk15198[0] = 1;
+    w.abUnk15198[1] = 2;
+    w.abUnk15198[2] = 3;
+    w.nUnk151A0 = 0x11223344;
+    w.anCraftTile[0] = 7;
+    w.anCraftTile[1] = 8;
+    w.anCraftTile[2] = 9;
+    w.nUnk138E6C = 1234;
+    w.nUnk138E70 = 5678;
+
+    memset(aSol, 0, sizeof(aSol));
+    for (i32 i = 0; i < 2; ++i) {
+        apSol[i] = &aSol[i];
+        aSol[i].nSaveId = i;
+    }
+    memset(apXcom, 0, sizeof(apXcom));
+    memset(apEnemy, 0, sizeof(apEnemy));
+    memset(apCiv, 0, sizeof(apCiv));
+    memset(apHidden, 0, sizeof(apHidden));
+    apXcom[0] = &aSol[0];
+    apEnemy[0] = &aSol[1];
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.nXcomCount = 1;
+    rosters.nEnemyCount = 1;
+    rosters.apXcomUnits = apXcom;
+    rosters.apEnemyUnits = apEnemy;
+    rosters.apCivilians = apCiv;
+    rosters.apHiddenUnits = apHidden;
+    rosters.pSelUnit = &aSol[0];
+
+    memset(aObj, 0, sizeof(aObj));
+    memset(aItem, 0, sizeof(aItem));
+    apObj[0] = &aObj[0];
+    apItem[0] = &aItem[0];
+    aItem[0].pObj = &aObj[0];
+    aItem[0].nRefId = 0;
+    aItem[0].nIndex = 12;
+    memset(&flobjs, 0, sizeof(flobjs));
+    flobjs.apTactItems = (const TactItem *const *)apItem;
+    flobjs.nTactItemCount = 1;
+    flobjs.apObjects = (const ObjectRecFull *const *)apObj;
+    flobjs.nObjectCount = 1;
+    geom.nDimX = 1;
+    geom.nDimY = 1;
+
+    Check(OpenWrite("test_tload.tmp", &dat, 9), "  container opened");
+    Check(Save_WriteTGameData(&dat, &w, &rosters, &flobjs, &geom, MapTestLookup, NULL),
+          "  the tactical half written");
+    DatFile_Close(&dat);
+
+    /* Everything the reset touches starts dirty, so a clear is observable. */
+    memset(&reset, 0xEE, sizeof(reset));
+    aSpriteFlags[0] = 0x1111;
+    aSpriteFlags[1] = 0x2222;
+    aSpriteFlags[2] = 0x3333;
+    aSpriteFlags[3] = 0x4444;
+    bBlobFlag = 1;
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnLoadTactSprites = LoadTactSpritesProbe;
+    hooks.pfnLoadSpr = LoadSprProbe;
+    hooks.pfnBuildIndex = BuildIndexProbe;
+    hooks.pfnRandU16 = RandProbe;
+    hooks.paSpriteFlags = aSpriteFlags;
+    hooks.nSpriteFlagValue = 0x0077;
+    hooks.pbUnk157198Flag = &bBlobFlag;
+    g_nTactSpriteLoads = 0;
+    g_nSprCalls = 0;
+    g_nTactBuildIndex = 0;
+    g_nRandCalls = 0;
+
+    memset(&read, 0, sizeof(read));
+    read.nWideCountFlag = 1;
+    read.pnTactItemCount = &nItemCount;
+    read.apTactItems = apItem;
+    read.apObjects = apObj;
+    read.nObjectCount = 1;
+    read.apSoldiers = apSol;
+    read.nSoldierCount = 2;
+    nItemCount = 1;
+
+    Check(OpenRead("test_tload.tmp", &dat), "  reopened for reading");
+    Check(Save_ReadTGameData(&dat, &r, &rosters, &read, &geom, MapTestLookup, NULL,
+                             &reset, &hooks), "  read back");
+    DatFile_Close(&dat);
+
+    CheckEqI32(r.bUnk15110, 0x11, "  0x15110");
+    CheckEqI32(r.nUnk1510C, 0x01020304, "  0x1510C");
+    CheckEqI32(r.abUnk15111[2], 0x23, "  0x15113");
+    CheckEqI32(r.nMapLayers, 4, "  the layer count");
+    CheckEqI32(r.nMissionType, 9, "  nMissionType");
+    CheckEqI32(r.bLightEnabled, 1, "  the light gate");
+    CheckEqI32(r.anUnk15188[0], (i32)0xAAAAAAAA, "  0x15188");
+    CheckEqI32(r.nUnk151A0, 0x11223344, "  0x151A0");
+    CheckEqI32(r.anCraftTile[2], 9, "  the third craft tile, one byte on disk");
+
+    CheckEqI32(g_nTactSpriteLoads, 1, "  Font_LoadTactSprites runs once, first");
+    CheckEqI32(g_nSprCalls, 3, "  three sprite sets loaded, the 23 slot is skipped");
+    CheckEqI32(g_aSpriteSets[0], 0, "  xcom_0");
+    CheckEqI32(g_aSpriteSets[1], 5, "  xcom_5");
+    CheckEqI32(g_aSpriteSets[2], 7, "  xcom_7");
+    CheckEqI32(g_nTactBuildIndex, 1, "  Font_BuildIndex runs once, after the sets");
+    CheckEqI32(aSpriteFlags[0], 0x0077, "  unk_15827A[0] set from unk_15829E");
+    CheckEqI32(aSpriteFlags[1], 0x0077, "  [1] set");
+    CheckEqI32(aSpriteFlags[2], 0x3333, "  [2] left alone, because its set is 23");
+    CheckEqI32(aSpriteFlags[3], 0x0077, "  [3] set");
+
+    CheckEqI32(rosters.nXcomCount, 1, "  Save_ReadTeamUnits ran");
+    CheckEqI32(nItemCount, 1, "  Save_ReadFlobjs ran");
+    CheckEqI32(aItem[0].nIndex, 12, "  and filled the item");
+
+    CheckEqI32(reset.bPlayerInputEnabled, 1, "  bPlayerInputEnabled is SET to 1");
+    CheckEqI32(reset.aUiSlot[4], 200, "  apUiSlotsA[4] becomes the value 200");
+    CheckEqI32(reset.aUiSlot[10], 10, "  apUiSlotsA[10] becomes the value 10");
+    CheckEqI32(reset.aUiSlot[0], 0, "  the other slots are cleared");
+    CheckEqI32(reset.aUiSlot[8], 0, "  including slot 8, written as two halves");
+    CheckEqI32(reset.nMultiTargetCount, 0, "  nMultiTargetCount cleared");
+    CheckEqI32(reset.nAnimPhase, 0, "  nAnimPhase cleared");
+    CheckEqI32(reset.abFire[4], 0, "  the fire-status dword cleared");
+    CheckEqI32(reset.bBattleEnded, 0, "  bBattleEnded cleared");
+    CheckEqI32(reset.nUiScreen, 0, "  nUiScreen cleared");
+    CheckEqI32(bBlobFlag, 0, "  and unk_157198's flag is cleared through the pointer");
+
+    CheckEqI32(r.nUnk138E6C, 1234, "  v124.dat present, so the stored dwords are used");
+    CheckEqI32(r.nUnk138E70, 5678, "  both of them");
+    CheckEqI32(g_nRandCalls, 0, "  and nothing is rolled");
+
+    /* The same load with v124.dat missing: the two dwords are ROLLED. The tactical
+     * half is written chunk by chunk here, with the 43 tgamedata bytes transcribed in
+     * the original's write order. */
+    static const u8 aTact43[43] = {
+        0x11,
+        0x04, 0x03, 0x02, 0x01,
+        0x21, 0x22, 0x23,
+        0x04,
+        0x25,
+        0x00, 0x05, 0x17, 0x07,
+        0x09,
+        0x01,
+        0x01,
+        0xAA, 0xAA, 0xAA, 0xAA, 0x01, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00,
+        0x01, 0x02, 0x03,
+        0x44, 0x33, 0x22, 0x11,
+        0x07, 0x08, 0x09
+    };
+
+    Check(OpenWrite("test_tload2.tmp", &dat, 8), "  container without v124.dat");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_TGAMEDATA), "  tgamedata");
+    Check(DatFile_Write(&dat, aTact43, 43), "  43 bytes in the original's order");
+    Check(Save_WriteTeamUnits(&dat, &rosters), "  teamunits, aliens, diedsolds, hiddensold");
+    Check(Save_WriteFlobjs(&dat, flobjs.apTactItems, flobjs.nTactItemCount,
+                           flobjs.apObjects, flobjs.nObjectCount), "  flobjs");
+    Check(Save_WriteMap(&dat, &geom, MapTestLookup, NULL), "  and map");
+    DatFile_Close(&dat);
+
+    memset(&r, 0, sizeof(r));
+    memset(&reset, 0xEE, sizeof(reset));
+    g_nRandCalls = 0;
+    Check(OpenRead("test_tload2.tmp", &dat), "  reopened");
+    Check(Save_ReadTGameData(&dat, &r, &rosters, &read, &geom, MapTestLookup, NULL,
+                             &reset, &hooks), "  read back");
+    DatFile_Close(&dat);
+    CheckEqI32(g_nRandCalls, 2, "  two rolls when v124.dat is absent");
+    CheckEqI32(g_aRandMax[0], 0x28u, "  the first is rand(40)");
+    CheckEqI32(g_aRandMax[1], 0x14u, "  the second is rand(20)");
+    CheckEqI32(r.nUnk138E6C, 17, "  first dword is rand + 10");
+    CheckEqI32(r.nUnk138E70, 3, "  second is the raw roll");
+
+    remove("test_tload.tmp");
+    remove("test_tload2.tmp");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2235,6 +2495,7 @@ int main(void)
     TestSlotList();
     TestStrategChunk();
     TestSaveGame();
+    TestReadTGameData();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
