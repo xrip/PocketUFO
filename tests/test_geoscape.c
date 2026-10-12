@@ -555,6 +555,41 @@ static void TestWorkshopCap(void)
 #undef W_O
 }
 
+static void TestActiveManuf(void)
+{
+    printf("Base_CountActiveManuf\n");
+    static u16 col[200];
+
+    memset(col, 0, sizeof(col));
+    CheckEqI32(Base_CountActiveManuf(col, 0), 0, "a zero entry count never touches the array");
+
+    memset(col, 0, sizeof(col));
+    col[0] = 7;
+    col[1] = 13;
+    col[2] = 20;
+    CheckEqI32(Base_CountActiveManuf(col, 2), 20, "only the first nEntries entries count");
+    CheckEqI32(Base_CountActiveManuf(col, 3), 40, "all three entries sum to 40");
+
+    memset(col, 0, sizeof(col));
+    col[0] = 0xFFFF;
+    CheckEqI32(Base_CountActiveManuf(col, 1), 65535,
+               "a u16 entry is widened to int before it is added");
+
+    /* The count is read as an unsigned byte, so 256 entries is not reachable. */
+    memset(col, 0, sizeof(col));
+    for (int i = 0; i < 200; ++i) {
+        col[i] = 1;
+    }
+    CheckEqI32(Base_CountActiveManuf(col, 255), 200,
+               "the count is clamped to a byte, so only the 200 real entries add up");
+
+    /* Base 1's column is 200 u16 past base 0's, which is the 400-byte stride. */
+    memset(col, 0, sizeof(col));
+    col[0] = 5;      /* base 0 */
+    col[200 - 1] = 0;
+    CheckEqI32(Base_CountActiveManuf(&col[0], 1), 5, "base 0 reads the start of the area");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -565,6 +600,7 @@ int main(void)
     TestBaseGridLookup();
     TestFacilityClassify();
     TestWorkshopCap();
+    TestActiveManuf();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

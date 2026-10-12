@@ -333,3 +333,23 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
     }
     return nCap; /* 0x6590C */
 }
+
+/* Base_CountActiveManuf @ 0x68264. Sums the first nEntries u16 entries of one base's
+ * manufacturing quantity column. See the header for where that column sits. */
+i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries)
+{
+    i32 nTotal = 0;
+    i32 i;
+
+    if (apManufQty == NULL || nEntries <= 0) {
+        return 0; /* 0x68280: a zero count never touches the array */
+    }
+    if (nEntries > 255) {
+        nEntries = 255; /* the original reads the count as an unsigned byte */
+    }
+
+    for (i = 0; i < nEntries; ++i) {
+        nTotal += apManufQty[i]; /* 0x682A4 reads a u16, 0x682AC advances by 2 */
+    }
+    return nTotal; /* 0x682BC */
+}

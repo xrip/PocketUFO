@@ -172,6 +172,24 @@ i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteStat
  * Base_CountActiveManuf instead. The capacity is used by other callers, not that one. */
 i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_CountActiveManuf @ 0x68264: total manufacturing quantity held by one base.
+ *
+ * It sums the first nEntries u16 entries of that base's quantity column and returns the
+ * total. nEntries comes from the single global byte at 0x160C4C, which is shared by every
+ * base rather than stored per base, and it is read as an unsigned byte, so the most the
+ * original will ever walk is 255 entries. When it is zero the array is not touched at all.
+ *
+ * Where the column lives is worth spelling out, because the decompiler hides it. The
+ * original addresses it as gUiRootPanel.anLineAux[100*nBase + 149] plus 8578 u16 slots.
+ * anLineAux[149] is the product block itself, and 8578 u16 slots is 17152 bytes, which is
+ * exactly PUFO_PRODUCT_BLOCK_BYTES. So the quantity columns start immediately after the
+ * product block, at 0x15E19C, and each base gets 400 bytes, which is 200 u16 entries.
+ * The loop only reads nEntries of those 200.
+ *
+ * The original's first argument is never read; it is passed the grid pointer anyway. The
+ * port drops it and takes the column directly. */
+i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;
