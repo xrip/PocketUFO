@@ -6197,3 +6197,22 @@ unported: each tail-calls a 1.2–1.5 KB screen builder (`FundingScreen_Toggle`,
 that is not ported yet.
 
 Covered by `TestFundingHelpers`, 16 checks.
+
+### `BaseGrid_SubByte0x654 @ 0x6acec` — a guard that is not a floor (done)
+
+It resolves a type byte to a base index and subtracts from that base's grid byte. Two details:
+
+- It only subtracts when the byte is **already non-zero**, so a zero stays zero.
+- There is **no floor**, so a positive byte wraps below zero. 30 minus 40 gives 246.
+
+It also does not check the found index: `Base_FindIndexByTypeByte` answers -1 when no base has the
+type, and `0x6AD1C` then reads and writes `abGrid[-1]`. The port refuses. Its return value is the
+constant 1620 — register residue, not a status — so the port returns the index instead.
+
+Three small functions decoded and left unported, with the decode recorded in the IDB:
+`Smap_ClearSelection @ 0x84648` (clears the selection and unpauses **only if no message lines are
+left**), `OptionsScreen_PanelPrev/Next @ 0x6d01c/0x6d064` (scroll four panels' cursors at once), and
+`Ufopaedia_CacheSelRow @ 0x99fd0` (a one-shot cache: the selected row is captured the first time and
+never refreshed by this path).
+
+Covered by the extended `TestBaseGridLookup`, 6 more checks.

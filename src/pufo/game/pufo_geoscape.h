@@ -130,6 +130,13 @@ i32 BaseGrid_GetTypeByte(BaseRec *const *apBases, i32 nBaseCount, const u8 *abGr
 i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
                          u8 nType, i8 bValue);
 
+/* BaseGrid_SubByte0x654 @ 0x6acec. Subtract from one base's grid byte, found by type byte. It
+ * only subtracts when the byte is already non-zero, but has no floor, so a positive byte can go
+ * negative. The original does not check the found index and touches abGrid[-1] when no base has
+ * the type; the port refuses. */
+i32 BaseGrid_SubTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
+                         u8 nType, i8 nAmount);
+
 /* ------------------------------------------------- the facility layout classifier
  *
  * Evidence: Base_ClearFacilityGridRow @ 0x6a0e0.

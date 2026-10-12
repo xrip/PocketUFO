@@ -427,6 +427,20 @@ static void TestBaseGridLookup(void)
     CheckEqI32(BaseGrid_SetTypeByte(apBases, 3, aGrid, 5, 1), -1, "no match writes nothing");
     CheckEqI32(aGrid[0], 0, "the grid is untouched after a refused write");
 
+    /* BaseGrid_SubByte0x654 @ 0x6acec. */
+    CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 9, 12), 1, "the subtract returns the index");
+    CheckEqI32(aGrid[1], 30, "42 minus 12");
+    CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 9, 40), 1, "and it keeps going");
+    CheckEqI32(aGrid[1], -10 & 0xFF,
+               "there is no floor, so a positive byte wraps below zero as the original does");
+
+    aGrid[2] = 0;
+    CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 11, 5), 2, "base 2 is found by its type");
+    CheckEqI32(aGrid[2], 0, "a byte that is already zero is left alone - that is the guard");
+
+    CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 5, 5), -1,
+               "no match is refused, where the original reads and writes abGrid[-1]");
+
     memset(&obj, 0, sizeof(obj));
     aBases[1].bSlot = 2;
     aBases[1].nStoresTotal = 10;

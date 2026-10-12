@@ -244,6 +244,31 @@ i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
     return nIdx;
 }
 
+/* BaseGrid_SubByte0x654 @ 0x6acec. Subtract from one base's grid byte, found by type byte.
+ *
+ * Two things the original does that are easy to miss. It only subtracts when the byte is
+ * already non-zero -- so a zero stays zero -- but there is no floor, so a positive byte can go
+ * negative. And it does not check the found index: Base_FindIndexByTypeByte answers -1 when no
+ * base has the type, and 0x6AD1C then reads and writes abGrid[-1]. The port refuses.
+ *
+ * The return value is the constant 1620, which is register residue, not a status. The port
+ * returns the found index instead, which is at least something a caller could use. */
+i32 BaseGrid_SubTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
+                         u8 nType, i8 nAmount)
+{
+    const i32 nIdx = Base_FindIndexByTypeByte(apBases, nBaseCount, nType);
+
+    if (nIdx < 0 || abGrid == NULL) {
+        return nIdx; /* deviation: the original reads and writes abGrid[-1] here */
+    }
+
+    if (abGrid[nIdx] != 0) { /* 0x6AD1C */
+        abGrid[nIdx] = (u8)(abGrid[nIdx] - nAmount); /* 0x6AD24: no floor, can go negative */
+    }
+
+    return nIdx;
+}
+
 void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
 {
     i32 nSlot;
