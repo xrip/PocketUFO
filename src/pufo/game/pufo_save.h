@@ -71,6 +71,7 @@
 #define PUFO_SAVE_TAG_TIME      "time"
 #define PUFO_SAVE_TAG_SOLDIERS  "soldiers"
 #define PUFO_SAVE_TAG_MCNT      "mcnt"
+#define PUFO_SAVE_TAG_FLOBJS    "flobjs"
 #define PUFO_SAVE_TAG_TGAMEDATA "tgamedata"
 #define PUFO_SAVE_TAG_OBJBEFORE "objbefore"
 #define PUFO_SAVE_TAG_RMP       "rmp"
@@ -404,5 +405,20 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
 bool Save_WriteShips(DatFile *pDat, const Ship *const *apShips, i32 nShipCount,
                      ObjectRecFull *const *apObjects, i32 nObjectCount);
 bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv *pEnv);
+
+/* Save_AllocFlobjs @ 0x431ac. FindChunk("flobjs"), read the tactical item count, then
+ * allocate that many TactItem records (new(0x18) + TactItem_ctor @ 0x3e718) into the
+ * caller's array. Unlike the bases and ships readers this one frees NOTHING first.
+ *
+ * The count read is 1 byte wide or 4 bytes wide, decided by the dword at Map+0x118
+ * (0x113AD0): 4 when it is non-zero, 1 when it is zero. Its only two writers in the
+ * IDB are Game_StartNew (0x94554) and Base_StripAllCraftCargo (0x69a38); its meaning is
+ * NOT established, so the port takes it as an explicit argument rather than guessing.
+ *
+ * With the 1-byte width the original writes one byte into a 4-byte global, so the upper
+ * three bytes of the count keep whatever they had. That is reproduced: the port stores
+ * into the low byte and leaves the rest. */
+bool Save_AllocFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
+                      TactItem **apTactItems);
 
 #endif /* PUFO_SAVE_H */

@@ -915,6 +915,76 @@ static void TestShipsChunk(void)
     Check(!Save_ReadShips(&dat, apRead, NULL, &env), "NULL count refused");
 }
 
+static void TestAllocFlobjs(void)
+{
+    DatFile dat;
+    TactItem *apItems[8];
+    i32 nCount;
+
+    printf("Save_AllocFlobjs\n");
+
+    /* Wide form: the count is a 4-byte field. */
+    Check(OpenWrite("test_flobjs.tmp", &dat, 2), "  container opened");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_FLOBJS), "  chunk begun");
+    {
+        i32 nWrite = 3;
+        Check(DatFile_Write(&dat, &nWrite, 4), "  4-byte count written");
+    }
+    DatFile_Close(&dat);
+
+    memset(apItems, 0, sizeof(apItems));
+    nCount = 0;
+    Check(OpenRead("test_flobjs.tmp", &dat), "  reopened");
+    Check(Save_AllocFlobjs(&dat, 1, &nCount, apItems), "  wide read");
+    DatFile_Close(&dat);
+    CheckEqI32(nCount, 3, "the wide read takes 4 bytes");
+    Check(apItems[0] != NULL && apItems[2] != NULL, "one record per item");
+    if (apItems[0] != NULL) {
+        CheckEqI32(apItems[0]->pNext == NULL, 1, "the ctor clears pNext");
+        CheckEqI32(apItems[0]->bUnk7, 0, "and bUnk7");
+        CheckEqI32(apItems[0]->bUnk8, 0, "and bUnk8");
+        CheckEqI32(apItems[0]->pLinkedSoldier == NULL, 1, "and the linked soldier");
+    }
+    for (i32 i = 0; i < 8; ++i) {
+        free(apItems[i]);
+        apItems[i] = NULL;
+    }
+
+    /* Narrow form: one byte into a 4-byte global, so the upper three bytes survive. */
+    Check(OpenWrite("test_flobjs2.tmp", &dat, 2), "  narrow container opened");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_FLOBJS), "  narrow chunk begun");
+    {
+        u8 bWrite = 2;
+        Check(DatFile_Write(&dat, &bWrite, 1), "  1-byte count written");
+    }
+    DatFile_Close(&dat);
+
+    memset(apItems, 0, sizeof(apItems));
+    nCount = 0;
+    Check(OpenRead("test_flobjs2.tmp", &dat), "  narrow reopened");
+    Check(Save_AllocFlobjs(&dat, 0, &nCount, apItems), "  narrow read");
+    DatFile_Close(&dat);
+    CheckEqI32(nCount, 2, "the narrow read takes 1 byte");
+    Check(apItems[0] != NULL && apItems[1] != NULL, "the loop used the low byte only");
+    Check(apItems[2] == NULL, "and stopped there");
+    for (i32 i = 0; i < 8; ++i) {
+        free(apItems[i]);
+        apItems[i] = NULL;
+    }
+
+    /* The upper three bytes of the count global survive a narrow read. The array is
+     * NULL here on purpose: the loop would otherwise run 0x123402 times, which is what
+     * the original would do too. */
+    nCount = 0x123400; /* what the global held before the load */
+    Check(OpenRead("test_flobjs2.tmp", &dat), "  reopened again");
+    Check(!Save_AllocFlobjs(&dat, 0, &nCount, NULL), "  NULL array stops the loop");
+    DatFile_Close(&dat);
+    CheckEqI32(nCount, 0x123402, "the narrow read leaves the upper three bytes alone");
+
+    Check(!Save_AllocFlobjs(NULL, 1, &nCount, apItems), "NULL dat refused");
+    Check(!Save_AllocFlobjs(&dat, 1, NULL, apItems), "NULL count refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -931,6 +1001,7 @@ int main(void)
     TestProductChunk();
     TestBasesChunk();
     TestShipsChunk();
+    TestAllocFlobjs();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

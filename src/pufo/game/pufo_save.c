@@ -1137,3 +1137,48 @@ bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv
     }
     return true;
 }
+
+bool Save_AllocFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
+                      TactItem **apTactItems)
+{
+    if (pDat == NULL || pnTactItemCount == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_FLOBJS)) { /* 0x431BC */
+        return false;
+    }
+
+    if (nWideCountFlag != 0) { /* 0x431E0: 4 when Map+0x118 is non-zero, else 1 */
+        if (!DatFile_Read(pDat, pnTactItemCount, 4)) {
+            return false;
+        }
+    } else {
+        u8 bLow = 0;
+
+        if (!DatFile_Read(pDat, &bLow, 1)) {
+            return false;
+        }
+        /* One byte into a 4-byte little-endian global: the upper three bytes survive. */
+        *pnTactItemCount = (*pnTactItemCount & ~0xFF) | bLow;
+    }
+
+    for (i32 i = 0; i < *pnTactItemCount; ++i) {
+        TactItem *pItem;
+
+        if (apTactItems == NULL) {
+            return false;
+        }
+        pItem = (TactItem *)malloc(sizeof(TactItem));
+        if (pItem == NULL) {
+            return false;
+        }
+        /* 0x43210..0x43234: new(0x18) then the ctor, then store. The ctor clears only
+         * pNext, bUnk8, bUnk7 and pLinkedSoldier, so the rest is uninitialised here and
+         * the flobjs reader fills it in afterwards. */
+        memset((void *)pItem + offsetof(TactItem, pObj), 0,
+               sizeof(TactItem) - offsetof(TactItem, pObj));
+        TactItem_ctor(pItem);
+        apTactItems[i] = pItem;
+    }
+    return true;
+}

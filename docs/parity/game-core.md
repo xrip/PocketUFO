@@ -2016,6 +2016,24 @@ Type 2's `uRangeMax` is written as `-5536` into a u16, which is 60000. `nFuel` s
 entries. The port clamps. Covered by `tests/test_save.c` (`TestShipsChunk`, 41 checks).
 
 
+### `Save_AllocFlobjs` (done)
+
+`Save_AllocFlobjs @ 0x431ac` is recreated in `game/pufo_save.{h,c}`. It finds the `flobjs` chunk,
+reads the tactical item count, and allocates that many `TactItem` records (`new(0x18)` plus
+`TactItem_ctor @ 0x3e718`) into the caller's array. Unlike the bases and ships readers it frees
+nothing first.
+
+**The count read is 1 byte or 4 bytes wide**, decided by the dword at `Map + 0x118` (0x113AD0):
+4 when it is non-zero, 1 when it is zero. Its only two writers in the IDB are `Game_StartNew`
+(0x94554) and `Base_StripAllCraftCargo` (0x69a38), and neither is ported, so the meaning of that
+flag is **not established** -- the port takes it as an explicit argument instead of guessing. What
+is established is the consequence: with the narrow width the original stores one byte into a
+4-byte little-endian global, so the upper three bytes of the count keep whatever they had. The
+port reproduces that and the test asserts `0x123400` becomes `0x123402`.
+
+Covered by `tests/test_save.c` (`TestAllocFlobjs`, 24 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With
