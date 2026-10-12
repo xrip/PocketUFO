@@ -6360,7 +6360,13 @@ behind them.
 | `Map_BuildMissionTerrain @ 0x22e10` | 10,676 | unported, the largest single gap in the tact subsystem |
 | `Tact_SpawnAliens @ 0x3a2ac` | 3,516 | unported |
 | `Tact_DeployTeamAndHwps @ 0x39980` | 2,348 | unported |
-| `Tact_SetupCraftCargo @ 0x38f00` | 2,116 | unported |
+| `Tact_SetupCraftCargo @ 0x38f00` | 2,116 | unported; needs the ammo-split table at `0x156CD0` and the per-object work triple at `0x157208`, neither owned by the port yet |
+
+`Tact_SetupCraftCargo` is worth one note before anyone ports it. Its guard reads
+`v21 < 372 || v21 > 420`, which looks like a byte-range test and is not: `v21` advances by 12 per
+object, 372 is 12 × 31 and 420 is 12 × 35, so it skips **object indices 31 through 35** — the craft
+store slots. The same guard appears twice. Reading it as a byte range would silently include the
+craft stores in a tally the original excludes them from.
 | `Tact_EquipTeamFromCraft @ 0x3be24` | 1,836 | unported |
 | `Tact_SelectTeamUnits @ 0x39744` | 572 | unported; needs `Tact_SelectUnit` and the deploy-cell table at `byte_A66B8` |
 | `Map_PatchCraftSprites @ 0x25ab4` | 952 | unported |
