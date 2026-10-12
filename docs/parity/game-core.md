@@ -6266,9 +6266,9 @@ the port's one listed deviation in this function.
 
 Covered by `TestTransferTacticalLoot`, 28 checks.
 
-## `Base_DemolishFacility @ 0x66b70` — mapped in full, deliberately not ported
+## `Base_DemolishFacility @ 0x66b70` — ported
 
-1,600 bytes. It removes a **whole base**, not one facility inside it: find the base whose 64-byte
+1,600 bytes. Despite the name it removes a **whole base**. find the base whose 64-byte
 record at `0x186C40` has `nFacType` equal to the argument, drop that base's strateg entry, delete
 the soldiers stationed there, remove every craft homed there, mark its map sites unassigned,
 renumber home bases and soldier assignments, compact every per-base array, drop the count byte at
@@ -6284,19 +6284,41 @@ Two findings worth having on record:
 - **The research column stride is 288 bytes per base, not 144.** `MOV R3, #0x120` at 0x66E88.
   Hex-Rays renders 144 because it types the pointer as `u16 *`.
 
-### The blocker, stated precisely
+### The compaction, and the stride that looked wrong
 
-The compaction shifts six per-base arrays in parallel. Five are resolved: `0x186C40` records at 64
-bytes, `apBases` records moved by `memmove` of 20 bytes, the facility block at 144, `buildDays` at
-36, the research column at 288.
+The compaction shifts six per-base arrays in parallel. All strides are now confirmed from the
+disassembly rather than the decompiler:
 
-The three product shifts are not. Their fixed offsets land on arrays we already know — 0x15B79C is
-product array B, 0x15D09C is product array C, 0x15E19C is the `Base_CountActiveManuf` quantity
-column — and each source sits exactly one column further on, so all three are shift-left-by-one.
-But the dword array advances **800 bytes per base index** (one 200-dword column, consistent) while
-the two u16 arrays advance only **100 bytes per base index** against a 400-byte column. Either
-those arrays have 50-entry columns and the shift spans four of them, or the original's stride is
-simply wrong. Both readings fit the arithmetic; nothing in the IDB decides between them.
+| array | per-base stride | where it comes from |
+|---|---|---|
+| `0x186C40` facility records | 64 | `ADD R6, R0, R4, LSL#6` |
+| `apBases` records | 20, moved through the pointers | `memmove` of `0x14` at 0x66F44 |
+| facility block (four grids) | 144 | 4 × 6 cells at 0x66F4C |
+| `buildDays` | 36 | `MOV R3, #0x24` |
+| research column at `0x16022C` | 288 | `MOV R3, #0x120` |
+| product B at `0x15B79C` | 800 (200 u32) | `MOV R3, #0x320` |
+| product C at `0x15D09C` | 400 (200 u16) | `MOV R3, #0x190` |
+| manuf quantity column at `0x15E19C` | 400 (200 u16) | same register, different fixed offset |
 
-Porting on a guess would put a wrong layout into the parity report, so this function stays mapped
-and uncited. `Tact_Shutdown @ 0x3d568` remains blocked on it.
+The one that looked wrong was the u16 stride. Hex-Rays renders it `100 * v27`, which reads as 100
+bytes against a 400-byte column — but the anchor is typed as a four-byte element, so 100 elements
+**is** 400 bytes. `MOV R3, #0x190` settles it. Reading Hex-Rays' literal here would have put a
+wrong layout into the port.
+
+### A third original bug, reproduced
+
+Product B and product C land on column `idx - 1`, which is the correct compaction. The manufacturing
+quantity column at `0x15E19C` lands on column `idx`. So it is shifted **one base later** than every
+other array: the removed base keeps its manufacturing values, and the base after it takes the one
+after that. `TestDemolishBase` asserts both halves — 111 stays where it is, and 333 moves into
+column 2.
+
+A miss in the first search is also reproduced. The index lands on the base count, the compaction
+guard fails, and the function still drops the count and deletes `apBases[count-1]` — so asking to
+demolish a type no base has removes the **last** base.
+
+Covered by `TestDemolishBase`, 25 checks.
+
+Test trap found here: `Soldier_RemoveById`, `Ship_RemoveWithCargo` and `StrategList_RemoveAt` free
+what they remove. A test that frees those objects again corrupts the heap and the binary dies
+before printing its summary — which looks like a pass under ctest if the stale binary is used.

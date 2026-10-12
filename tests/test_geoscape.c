@@ -9,6 +9,10 @@
  */
 #include "game/pufo_geoscape.h"
 #include "game/pufo_save.h" /* SmapSite, for the monthly upkeep fixture */
+#include "game/pufo_ship.h"
+#include "game/pufo_unit.h"
+#include "util/pufo_ptrarray.h"
+#include <stdlib.h>
 #include "game/pufo_strateg.h"
 #include "game/pufo_clock.h"
 #include "ui/pufo_linelist.h"
@@ -1216,6 +1220,200 @@ static void TestPsiCapAndUpkeep(void)
 #undef P_O
 }
 
+/* The columns are 200 entries per base, and the port shifts them flat, so the fixture needs
+ * room for a column past the last base. */
+static u16 g_apManufCol[200 * 4];
+static u16 g_apProductC[200 * 4];
+static i32 g_apProductB[200 * 4];
+static u16 g_apResearch[144 * 4];
+static u8 g_abDemoGrid[1524];
+static BaseSiteRec g_aSiteRec[3];
+static ObjectRecFull g_aDemoObj[1];
+static ObjectRecFull *g_apDemoObj[1];
+static SmapSite g_aDemoSite[2];
+static u8 g_abDemoHangar[256];
+
+static void TestDemolishBase(void)
+{
+    static Ship *apCraft[2];
+    static Soldier *apSoldier[3];
+    static BaseRec *apBase[3];
+    static void *apStrateg[2];
+    Ship *aShip[2];
+    Soldier *aSoldier[3];
+    BaseRec *aBase[3];
+    StrategItem *aItem[2];
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static i32 nSeed;
+    ShipRemovalEnv shipEnv;
+    BaseDemolishEnv env;
+    u8 nShipCount = 2;
+    u8 nBaseCount = 3;
+    u16 nSoldierCount = 3;
+    u16 nObjectCount = 1;
+    u16 nResearchEntries = 1;
+    u8 once = 0;
+
+    printf("Base_DemolishFacility\n");
+
+    for (int i = 0; i < 2; ++i) {
+        aShip[i] = (Ship *)calloc(1, sizeof(Ship));
+        aShip[i]->bId = (u8)(7 + i);
+        aShip[i]->bHomeBase = (u8)(1 + i); /* both homed above the base being removed */
+        apCraft[i] = aShip[i];
+    }
+    aShip[1]->nSlotIdx = 1;
+
+    for (int i = 0; i < 3; ++i) {
+        aSoldier[i] = (Soldier *)calloc(1, sizeof(Soldier));
+        aSoldier[i]->nUnk440 = 100 + i;
+        aSoldier[i]->bUnk183 = 255; /* not aboard anything */
+        apSoldier[i] = aSoldier[i];
+    }
+    aSoldier[0]->nKind = 1; /* stationed at the doomed base, deleted */
+    aSoldier[1]->nKind = 2; /* above it, renumbered down */
+    aSoldier[2]->nKind = 1;
+    aSoldier[2]->bUnk183 = 1; /* aboard craft 1, so not deleted by the base pass */
+
+    /* Everything the teardown deletes has to be a heap object: the original operator-deletes
+     * apBases[newCount-1] and the port frees it. */
+    for (int i = 0; i < 3; ++i) {
+        aBase[i] = (BaseRec *)calloc(1, sizeof(BaseRec));
+        aBase[i]->bSlot = (u8)i;
+        aBase[i]->nStoresTotal = 1000 + i;
+        apBase[i] = aBase[i];
+    }
+
+    g_aSiteRec[0].nFacType = 10;
+    g_aSiteRec[1].nFacType = 11; /* the one asked for */
+    g_aSiteRec[2].nFacType = 12;
+
+    aItem[0] = (StrategItem *)calloc(1, sizeof(StrategItem));
+    aItem[1] = (StrategItem *)calloc(1, sizeof(StrategItem));
+    aItem[0]->nType = 0;
+    aItem[0]->bActive = 0;
+    aItem[0]->nSiteId = 11; /* found by SITE ID, not by facility type */
+    aItem[1]->nType = 1;
+    aItem[1]->nDisplayId = 7;
+    apStrateg[0] = aItem[0];
+    apStrateg[1] = aItem[1];
+    list.nCount = 2;
+    list.apItems = (void **)calloc(2, sizeof(void *));
+    list.apItems[0] = aItem[0];
+    list.apItems[1] = aItem[1];
+
+    g_apDemoObj[0] = &g_aDemoObj[0];
+    g_aDemoObj[0].auPerBaseVal[1] = 7;
+    g_aDemoObj[0].auPerBaseVal[2] = 9;
+
+    g_aDemoSite[0].bFlag1 = 11;
+    g_aDemoSite[1].bFlag1 = 12;
+
+    memset(g_abDemoGrid, 255, sizeof(g_abDemoGrid));
+    memset(g_abDemoGrid, 0, 36 * 8);
+    g_abDemoGrid[480 + 144 * 1] = 0xA1; /* facType cell (0,0) of base 1 */
+    g_abDemoGrid[480 + 144 * 2] = 0xA2;
+    g_abDemoGrid[36 * 1] = 5; /* buildDays cell (0,0) of base 1 */
+    g_abDemoGrid[36 * 2] = 9;
+
+    g_apManufCol[200 * 1] = 111;
+    g_apManufCol[200 * 2] = 222;
+    g_apManufCol[200 * 3] = 333;
+    g_apProductC[200 * 1] = 1111;
+    g_apProductC[200 * 2] = 2222;
+    g_apProductB[200 * 1] = 11111;
+    g_apProductB[200 * 2] = 22222;
+    g_apResearch[144 * 1] = 55;
+    g_apResearch[144 * 2] = 66;
+
+    memset(&world, 0, sizeof(world));
+    world.apCraft = apCraft;
+    world.nShipCount = 2;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+
+    memset(&shipEnv, 0, sizeof(shipEnv));
+    shipEnv.apCraft = apCraft;
+    shipEnv.pnShipCount = &nShipCount;
+    shipEnv.apSoldiers = apSoldier;
+    shipEnv.pnSoldierCount = &nSoldierCount;
+    shipEnv.apObjects = g_apDemoObj;
+    shipEnv.nObjectCount = nObjectCount;
+    shipEnv.pStrategList = &list;
+    shipEnv.pWorld = &world;
+    shipEnv.pnSpawnOnceFlag = &once;
+    shipEnv.pSpawnCtx = &ctx;
+    shipEnv.abHangarFlag = g_abDemoHangar;
+    shipEnv.nHangarFlagCap = (i32)sizeof(g_abDemoHangar);
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = apCraft;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = apSoldier;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apBases = apBase;
+    env.apObjects = g_apDemoObj;
+    env.pnObjectCount = &nObjectCount;
+    env.abFacilityGrid = g_abDemoGrid;
+    env.apSiteRecs = g_aSiteRec;
+    env.apManufCols = g_apManufCol;
+    env.apProductC = g_apProductC;
+    env.apProductB = g_apProductB;
+    env.apResearchCols = g_apResearch;
+    env.pnResearchEntries = &nResearchEntries;
+    env.apSites = g_aDemoSite;
+    env.nSiteCount = 2;
+    env.pbBaseCount = &nBaseCount;
+    env.pShipEnv = &shipEnv;
+
+    CheckEqI32(Base_DemolishFacility(&env, 11), 2, "it returns the new base count");
+
+    CheckEqI32(nShipCount, 1, "the craft homed here is gone");
+    CheckEqI32(apCraft[0]->bId, 8, "and the array compacted over it");
+    CheckEqI32(apCraft[0]->bHomeBase, 1, "its home base renumbered down from 2");
+
+    CheckEqI32(nSoldierCount, 2, "the soldier stationed here is deleted");
+    CheckEqI32(apSoldier[0]->nUnk440, 101, "the roster compacted over the deletion");
+    CheckEqI32(apSoldier[0]->nKind, 1, "and the soldier from base 2 is now at base 1");
+    CheckEqI32(apSoldier[1]->bUnk183, 0,
+               "the craft index the other soldier was aboard renumbered with the craft array");
+
+    CheckEqI32(list.nCount, 0,
+               "both strateg entries go: the base pass drops the site entry and the craft pass "
+               "drops the craft's");
+
+    CheckEqI32(g_aDemoSite[0].bFlag0, 255, "the site owned by this base is marked unassigned");
+    CheckEqI32(g_aDemoSite[1].bFlag0, 0, "and the other site is left alone");
+
+    CheckEqI32(g_abDemoGrid[480 + 144 * 1], 0xA2, "the facility block moves down one base");
+    CheckEqI32(g_abDemoGrid[36 * 1], 9, "and the build days move with it");
+
+    CheckEqI32(g_aDemoObj[0].auPerBaseVal[1], 9, "every object's per-base column shifts left");
+    CheckEqI32(g_apProductC[200 * 1], 2222, "product C shifts left");
+    CheckEqI32(g_apProductB[200 * 1], 22222, "product B shifts left");
+    CheckEqI32(g_apResearch[144 * 1], 66, "the research column shifts left");
+
+    CheckEqI32(g_apManufCol[200 * 1], 111,
+               "but the manufacturing column does NOT: it starts one base later");
+    CheckEqI32(g_apManufCol[200 * 2], 333, "so base 2 takes base 3's value and base 1 keeps its own");
+
+    CheckEqI32(g_aSiteRec[1].nFacType, 12, "the facility records compact too");
+    CheckEqI32(apBase[1]->nStoresTotal, 1002, "the BaseRec records are moved through the pointers");
+    CheckEqI32(apBase[1]->bSlot, 1, "and the slots are renumbered");
+    CheckEqI32(apBase[2] == NULL ? 1 : 0, 1, "the last apBases slot is freed and cleared");
+
+    /* A type no base has: the search lands on the count, the compaction guard fails, and the
+     * function still drops the count and deletes the last base. */
+    CheckEqI32(Base_DemolishFacility(&env, 99), 1,
+               "a type no base has still removes the LAST base - the original has no found test");
+    CheckEqI32(g_aSiteRec[0].nFacType, 10, "and nothing was compacted, so base 0 is untouched");
+
+    /* The removals free what they remove, and a test that frees it again corrupts the heap under
+     * ctest. Everything here is static or intentionally left allocated. */
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1230,6 +1428,7 @@ int main(void)
     TestSoldiersAssigned();
     TestShipsAtBase();
     TestClearSelection();
+    TestDemolishBase();
     TestPsiCapAndUpkeep();
     TestFindFacilityCell();
     TestActiveManuf();

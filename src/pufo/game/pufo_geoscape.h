@@ -208,6 +208,70 @@ i32 Base_CalcStoresCapacity(const u8 *abFacilityGrid, i32 nBaseIndex);
  * This is one of the two inputs Base_UpdateStoresNeeded uses for its budget inside the original;
  * the other is Base_CountItemQtyAcrossBases (0x67d68), still unported. */
 i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBase);
+
+/* One in-memory facility record. The original keeps eight of these at 0x186C40 and walks them
+ * 64 bytes at a time. The wire form is SaveBaseFacility, 61 bytes in a scattered field order;
+ * this is the shape in memory, and the field offsets come from that wire type's own annotations. */
+typedef struct BaseSiteRec {
+    u8   bType;          /* +0x00 */
+    u8   gap_01[1];
+    u16  uUnk2;          /* +0x02 */
+    u16  uUnk4;          /* +0x04 */
+    u8   abUnk6[20];     /* +0x06 */
+    char abName[20];     /* +0x1a */
+    u8   gap_2E[2];
+    i32  nUnk48;         /* +0x30 */
+    i32  nDemolishState; /* +0x34 */
+    i32  nBuildState;    /* +0x38 */
+    i32  nFacType;       /* +0x3c */
+} BaseSiteRec;
+
+_Static_assert(sizeof(BaseSiteRec) == 64, "BaseSiteRec must be 64 bytes");
+
+/* Every per-base column in the compaction is 200 entries wide, whether the entries are u16 or
+ * u32: 400 bytes for the u16 columns and 800 for the u32 ones, which is what the strides
+ * MOV R3,#0x190 and MOV R3,#0x320 at 0x66E4C and 0x66E80 say. */
+#define PUFO_BASE_COLUMN_ENTRIES 200
+
+/* Evidence: Base_DemolishFacility @ 0x66b70 (1600 bytes).
+ *
+ * Despite the name this removes a WHOLE BASE. It finds the base whose facility record has nFacType
+ * equal to the argument, drops that base's strateg entry, deletes the soldiers stationed there,
+ * removes every craft homed there, marks its map sites unassigned, renumbers the home bases and
+ * soldier assignments above it, compacts every per-base array, drops the base count, deletes the
+ * last apBases pointer, and renumbers BaseRec.bSlot. It returns the new base count.
+ *
+ * The argument is used with two different meanings, and that is the original's design rather than
+ * a transcription problem: at 0x66BB8 it is a facility type compared against nFacType, and at
+ * 0x66BE4 it is a SITE ID compared against StrategItem.nSiteId.
+ *
+ * A miss in the first search is not an error. The index lands on the base count, the compaction
+ * guard fails, and the function still drops the count and deletes apBases[count-1] - so asking to
+ * demolish a type no base has removes the LAST base. Reproduced. */
+typedef struct BaseDemolishEnv {
+    Ship **apCraft;
+    u8 *pnShipCount;
+    Soldier **apSoldiers;
+    u16 *pnSoldierCount;
+    BaseRec **apBases;
+    ObjectRecFull **apObjects;
+    u16 *pnObjectCount;
+    u8 *abFacilityGrid;      /* 1524 bytes: buildDays then eight 144-byte blocks */
+    BaseSiteRec *apSiteRecs; /* 0x186C40 */
+    u16 *apManufCols;        /* 0x15E19C, 200 u16 per base */
+    u16 *apProductC;         /* 0x15D09C, 200 u16 per base */
+    i32  *apProductB;        /* 0x15B79C, 200 u32 per base */
+    u16 *apResearchCols;     /* 0x16022C, 144 u16 per base */
+    u16 *pnResearchEntries;  /* 0x160C4C, shared by every base */
+    struct SmapSite *apSites;  /* 0x162030 */
+    i32 nSiteCount;          /* 0x186410, signed */
+    u8 *pbBaseCount;         /* 0x159D80, signed char */
+    /* Reused whole for Ship_RemoveWithCargo, which is also what supplies the strateg list, the
+     * world, the spawn gate and the spawn context this function needs. */
+    const ShipRemovalEnv *pShipEnv;
+} BaseDemolishEnv;
+
+i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType);
 i32 Base_CalcAlienContainmentCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 i32 Base_CalcHangarCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 

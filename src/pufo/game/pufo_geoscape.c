@@ -594,6 +594,197 @@ i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 
     return nTotal;
 }
 
+/* ---- Base_DemolishFacility @ 0x66b70 ------------------------------------------- */
+
+/* Shift one per-base column left by one base, over the bases above the one being removed.
+ * nEntries is the original's loop count, which is Map.nObjectCount for the object-shaped columns
+ * and the shared byte at 0x160C4C for the research column. The columns themselves are 200 entries
+ * wide, so when nObjectCount is larger the original runs on into the next column; that is what
+ * this reproduces. */
+static void ShiftColumnU16(u16 *apCol, i32 nFirstBase, i32 nLastBase, i32 nEntries, i32 nStride)
+{
+    for (i32 nBase = nFirstBase; nBase < nLastBase; ++nBase) {
+        for (i32 k = 0; k < nEntries; ++k) {
+            apCol[nStride * nBase + k] = apCol[nStride * (nBase + 1) + k];
+        }
+    }
+}
+
+i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
+{
+    if (pEnv == NULL || pEnv->pbBaseCount == NULL || pEnv->apSiteRecs == NULL ||
+        pEnv->abFacilityGrid == NULL) {
+        return 0;
+    }
+
+    i32 nCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x66B90, the signed byte at 0x159D80 */
+
+    /* 1. Which base, by facility type. 0x66BA4. A miss leaves the index on the count. */
+    i32 nBase = 0;
+    while (nBase < nCount && pEnv->apSiteRecs[nBase].nFacType != (i32)nFacType) {
+        ++nBase;
+    }
+
+    /* 2. The strateg entry, and here the same argument means a SITE ID. 0x66BE4. An unmatched
+     * search leaves nStrat on the count, and the original calls the removal anyway. */
+    if (pEnv->pShipEnv != NULL && pEnv->pShipEnv->pStrategList != NULL) {
+        i32 nStrat = 0;
+        i32 nStratCount = PtrArray_GetCount(pEnv->pShipEnv->pStrategList);
+        while (nStrat < nStratCount) {
+            StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pShipEnv->pStrategList, nStrat);
+            if (pItem != NULL && pItem->nSiteId == (i32)nFacType && pItem->nType == 0 &&
+                pItem->bActive == 0) {
+                break;
+            }
+            ++nStrat;
+        }
+        (void)StrategList_RemoveAt(pEnv->pShipEnv->pStrategList, pEnv->pShipEnv->pWorld, nStrat,
+                                   pEnv->pShipEnv->pnSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
+    }
+
+    /* 3. Delete the soldiers stationed here. 0x66CB0. nKind is the base index and bUnk183 above
+     * 0xFD means the soldier is not aboard a craft. The loop does not advance on a delete, so it
+     * re-tests the slot the removal moved into, which is what makes the cascade work. */
+    if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
+        i32 nSoldier = 0;
+        while (nSoldier < (i32)*pEnv->pnSoldierCount) {
+            Soldier *pSol = pEnv->apSoldiers[nSoldier];
+            if (pSol != NULL && pSol->nKind == nBase && pSol->bUnk183 > 0xFD) {
+                nSoldier = 0; /* the original re-tests the same slot after a removal */
+                *pEnv->pnSoldierCount =
+                    (u16)Soldier_RemoveById(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount,
+                                            pSol->nUnk440);
+            } else {
+                ++nSoldier;
+            }
+        }
+    }
+
+    /* 4. Remove every craft homed here. 0x66D18. The count is re-read through the removal because
+     * the array shrinks under it. */
+    if (pEnv->apCraft != NULL && pEnv->pnShipCount != NULL && pEnv->pShipEnv != NULL) {
+        i32 nShip = 0;
+        while (nShip < (i32)*pEnv->pnShipCount) {
+            Ship *pShip = pEnv->apCraft[nShip];
+            if (pShip != NULL && (i32)pShip->bHomeBase == nBase) {
+                (void)Ship_RemoveWithCargo(pEnv->pShipEnv, (i32)pShip->bId);
+            } else {
+                ++nShip;
+            }
+        }
+    }
+
+    /* 5. Mark this base's map sites unassigned. 0x66D70. bFlag0 = -1 is the not-assigned marker. */
+    if (pEnv->apSites != NULL) {
+        for (i32 nSite = 0; nSite < pEnv->nSiteCount; ++nSite) {
+            if ((i8)pEnv->apSites[nSite].bFlag1 == (i8)nFacType) {
+                pEnv->apSites[nSite].bFlag0 = 0xFF;
+            }
+        }
+    }
+
+    /* 6. Renumber the home bases above it. 0x66DC0. */
+    if (pEnv->apCraft != NULL && pEnv->pnShipCount != NULL) {
+        for (i32 nShip = 0; nShip < (i32)*pEnv->pnShipCount; ++nShip) {
+            Ship *pShip = pEnv->apCraft[nShip];
+            if (pShip != NULL && (i32)pShip->bHomeBase > nBase) {
+                pShip->bHomeBase = (u8)((i32)pShip->bHomeBase - 1);
+            }
+        }
+    }
+
+    /* 7. Renumber the base every soldier is stationed at. 0x66E20. */
+    if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
+        for (i32 nSoldier = 0; nSoldier < (i32)*pEnv->pnSoldierCount; ++nSoldier) {
+            Soldier *pSol = pEnv->apSoldiers[nSoldier];
+            if (pSol != NULL && pSol->nKind > nBase) {
+                pSol->nKind = pSol->nKind - 1;
+            }
+        }
+    }
+
+    i32 nNewCount = nCount - 1;
+
+    /* 8. Compact every per-base array. 0x66E4C: only when the removed base is not the last one. */
+    if (nBase < nCount - 1) {
+        i32 nObjectCount = (pEnv->pnObjectCount != NULL) ? (i32)*pEnv->pnObjectCount : 0;
+
+        for (i32 nSrc = nBase + 1; nSrc < nCount; ++nSrc) {
+            i32 nDst = nSrc - 1;
+
+            /* ObjectRec.auPerBaseVal, one u16 per object per base. 0x66F0C. */
+            if (pEnv->apObjects != NULL) {
+                for (int k = 0; k < nObjectCount; ++k) {
+                    if (pEnv->apObjects[k] != NULL) {
+                        pEnv->apObjects[k]->auPerBaseVal[nDst] = pEnv->apObjects[k]->auPerBaseVal[nSrc];
+                    }
+                }
+            }
+
+            /* The BaseRec records themselves, moved by 20 bytes through the pointers. 0x66F44. */
+            if (pEnv->apBases != NULL && nDst < PUFO_BASE_FAC_COUNT && nSrc < PUFO_BASE_FAC_COUNT &&
+                pEnv->apBases[nDst] != NULL && pEnv->apBases[nSrc] != NULL) {
+                memmove(pEnv->apBases[nDst], pEnv->apBases[nSrc], sizeof(BaseRec));
+            }
+
+            /* The four 36-byte grids of the facility block, 144 bytes in all. 0x66F4C. */
+            memmove(pEnv->abFacilityGrid + 372 + 144 * nDst,
+                    pEnv->abFacilityGrid + 372 + 144 * nSrc, 144);
+
+            /* buildDays, 36 bytes. 0x66FA8. */
+            memmove(pEnv->abFacilityGrid + 36 * nDst, pEnv->abFacilityGrid + 36 * nSrc, 36);
+
+            /* The research column, 144 u16 per base, gated on the shared count. 0x67008. */
+            if (pEnv->apResearchCols != NULL && pEnv->pnResearchEntries != NULL) {
+                for (i32 k = 0; k < (i32)*pEnv->pnResearchEntries; ++k) {
+                    pEnv->apResearchCols[144 * nDst + k] = pEnv->apResearchCols[144 * nSrc + k];
+                }
+            }
+
+            /* Product array C (u16) and B (u32). 0x67078 and 0x67090. */
+            if (pEnv->apProductC != NULL) {
+                for (i32 k = 0; k < nObjectCount; ++k) {
+                    pEnv->apProductC[PUFO_BASE_COLUMN_ENTRIES * nDst + k] =
+                        pEnv->apProductC[PUFO_BASE_COLUMN_ENTRIES * nSrc + k];
+                }
+            }
+            if (pEnv->apProductB != NULL) {
+                for (i32 k = 0; k < nObjectCount; ++k) {
+                    pEnv->apProductB[PUFO_BASE_COLUMN_ENTRIES * nDst + k] =
+                        pEnv->apProductB[PUFO_BASE_COLUMN_ENTRIES * nSrc + k];
+                }
+            }
+
+            /* The 64-byte facility records. 0x670D4. */
+            memmove(&pEnv->apSiteRecs[nDst], &pEnv->apSiteRecs[nSrc], sizeof(BaseSiteRec));
+        }
+
+        /* ORIGINAL BUG, reproduced: the manufacturing quantity column is shifted one base LATER
+         * than every other array. Its fixed offset 17156 lands on 0x15E19C with the loop index
+         * itself, while product C at 12404 and product B at 5604 land one column earlier. So
+         * column nBase keeps its value and column nBase+1 is overwritten from nBase+2. */
+        if (pEnv->apManufCols != NULL) {
+            ShiftColumnU16(pEnv->apManufCols, nBase + 1, nCount, nObjectCount,
+                           PUFO_BASE_COLUMN_ENTRIES);
+        }
+    }
+
+    /* 9. Drop the count, delete the pointer the shift left duplicated, renumber the slots. */
+    *pEnv->pbBaseCount = (u8)nNewCount; /* 0x6714C */
+    if (nNewCount >= 0 && nNewCount < PUFO_BASE_FAC_COUNT && pEnv->apBases != NULL &&
+        pEnv->apBases[nNewCount] != NULL) {
+        free(pEnv->apBases[nNewCount]); /* 0x6715C, operator delete */
+        pEnv->apBases[nNewCount] = NULL;
+    }
+
+    for (i32 nSlot = 0; nSlot < nNewCount; ++nSlot) {
+        if (pEnv->apBases != NULL && pEnv->apBases[nSlot] != NULL) {
+            pEnv->apBases[nSlot]->bSlot = (u8)nSlot; /* 0x67180 */
+        }
+    }
+    return nNewCount; /* the original returns the loop counter, which is the new count */
+}
+
 /* Base_UpdatePsiLabNeeded @ 0x65fc8. Kind 8, and the only pass with a divisor of 10: one
  * psi-soldier per lab cell is enough to claim it. It discards Base_CalcPsiLabCap at 0x65FD4
  * and takes its total from Base_CountPsiSoldiers. */
