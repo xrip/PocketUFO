@@ -106,6 +106,10 @@ cluster, with details in `docs/parity/*.md`:
   struct holding the thirteen root widgets, the strateg PtrArray at +0x3C and the mission-site
   table at +0xC8. That leaves `LoadGame` blocked on three functions, not four:
   `Geoscape_InitUI` (0x857f4), `Tact_Shutdown` (0x3d568) and `Tact_InitMission` (0x3c550).
+  `Tact_Shutdown`'s own five missing callees are down to two: `Base_DemolishFacility` (0x66b70)
+  and `Base_TransferTacticalLoot` (0x68344); `Map_FreeRmpNodes`, `Soldier_RemoveById` and
+  `Ship_RemoveWithCargo @ 0x36830` are now ported. That last port also fixed a real bug in
+  `PtrArray_Remove`, which dropped the whole array whenever the removal hit the last slot.
 - **Base facility layer.** All five `Base_Update*Needed` passes, their `Base_Calc*Cap` and
   `Base_Count*` helpers, `Base_FindFacilityCell @ 0x6ae54`, `Base_CountEmptyFacilityCells @ 0x6aee0`
   and `Base_ClearFacilityGridRow @ 0x6a0e0` (whose name is wrong: it classifies, it does not clear).
@@ -264,7 +268,7 @@ give the parenthesized form any credit.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **586 / 1103 cited** (53.1%), bytes 217432 / 598792 (36.3%) |
+| `python docs/parity/coverage.py` (agreed) | **587 / 1103 cited** (53.2%), bytes 218292 / 598792 (36.5%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |

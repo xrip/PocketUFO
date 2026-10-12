@@ -4,6 +4,9 @@
  * step are transcribed from the decompilation.
  */
 #include "game/pufo_ship.h"
+#include "game/pufo_strateg.h"
+#include "game/pufo_unit.h"
+#include "util/pufo_ptrarray.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -245,12 +248,178 @@ static void TestCargoPair(void)
     CheckEqI32(item.aItemQty[0], 0, "and the object is left alone");
 }
 
+/* ------------------------------------------------- losing a craft, cargo and all */
+
+static void TestEqI32Local(const char *pszWhat, i32 nGot, i32 nWant)
+{
+    CheckEqI32(nGot, nWant, pszWhat);
+}
+
+static void TestShipRemoveWithCargo(void)
+{
+    Ship *apShip[3];
+    static Ship *g_apCraft[3];
+    Soldier *apSoldier[4];
+    static Soldier *g_apSoldier[4];
+    static ObjectRecFull g_aObject[2];
+    static ObjectRecFull *g_apObject[2];
+    StrategItem *apItem[2];
+    void *apStrateg[2];
+    static u8 g_abHangar[256];
+    static i32 g_anAssigned[4];
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static i32 nSeed;
+    ShipRemovalEnv env;
+    u8 nShipCount;
+    u16 nSoldierCount;
+    i32 nAssignedCount;
+    u8 once;
+
+    printf("Ship_RemoveWithCargo\n");
+
+    /* Everything the teardown deletes has to be a heap object, because the original
+     * operator-deletes it and the port frees it. */
+    for (int i = 0; i < 3; ++i) {
+        apShip[i] = (Ship *)calloc(1, sizeof(Ship));
+        apShip[i]->bId = (u8)(10 + i);
+        apShip[i]->nSlotIdx = i;
+        g_apCraft[i] = apShip[i];
+    }
+    apShip[1]->bHomeBase = 0;
+    apShip[1]->bHangarX = 3;
+    apShip[1]->bHangarY = 0;
+
+    for (int i = 0; i < 4; ++i) {
+        apSoldier[i] = (Soldier *)calloc(1, sizeof(Soldier));
+        apSoldier[i]->nUnk440 = 100 + i;
+        g_apSoldier[i] = apSoldier[i];
+    }
+    apSoldier[0]->bUnk183 = 0;
+    apSoldier[1]->bUnk183 = 1;   /* on the doomed craft */
+    apSoldier[2]->bUnk183 = 2;
+    apSoldier[3]->bUnk183 = 255; /* not assigned to anything */
+
+    for (int i = 0; i < 2; ++i) {
+        apItem[i] = (StrategItem *)calloc(1, sizeof(StrategItem));
+        apStrateg[i] = apItem[i];
+    }
+    apItem[0]->nType = 0;
+    apItem[1]->nType = 1;
+    apItem[1]->nDisplayId = 11;
+
+    for (int i = 0; i < 2; ++i) {
+        g_apObject[i] = &g_aObject[i];
+        for (int s = 0; s < 3; ++s) {
+            g_aObject[i].aItemQty[s] = (u16)(i * 10 + s + 5);
+        }
+    }
+
+    list.nCount = 2;
+    /* PtrArray_DeleteAt reallocs the item array, so it has to be a heap array. */
+    list.apItems = (void **)calloc(2, sizeof(void *));
+    list.apItems[0] = apItem[0];
+    list.apItems[1] = apItem[1];
+
+    memset(g_abHangar, 0xEE, sizeof(g_abHangar));
+    g_anAssigned[0] = 0;
+    g_anAssigned[1] = 2;
+    g_anAssigned[2] = 1;
+    g_anAssigned[3] = 255;
+
+    memset(&world, 0, sizeof(world));
+    world.apCraft = g_apCraft;
+    world.nShipCount = 3;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+    once = 0;
+
+    nShipCount = 3;
+    nSoldierCount = 4;
+    nAssignedCount = 4;
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apCraft;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = g_apSoldier;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = g_apObject;
+    env.nObjectCount = 2;
+    env.pStrategList = &list;
+    env.pWorld = &world;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctx;
+    env.abHangarFlag = g_abHangar;
+    env.nHangarFlagCap = (i32)sizeof(g_abHangar);
+    env.anAssignedShip = g_anAssigned;
+    env.pnAssignedShipCount = &nAssignedCount;
+
+    /* The hangar cell this craft occupies: 6*(24*0 + 0 + 12) + 3 = 75. */
+    g_abHangar[75] = 9;
+
+
+    i32 nResult = Ship_RemoveWithCargo(&env, 11);
+
+    TestEqI32Local("the count after the removal is two", nResult, 2);
+    TestEqI32Local("and the count byte agrees", (i32)nShipCount, 2);
+
+    /* Struct copy compaction: slot 1 now holds what slot 2 held, which is id 12. */
+    TestEqI32Local("slot 0 still holds id 10", (i32)g_apCraft[0]->bId, 10);
+    TestEqI32Local("slot 1 was overwritten by slot 2", (i32)g_apCraft[1]->bId, 12);
+
+    /* The cargo column shifts left with the ships. */
+    TestEqI32Local("object 0 column 1 took column 2", (i32)g_aObject[0].aItemQty[1], 7);
+    TestEqI32Local("object 1 column 1 took column 2", (i32)g_aObject[1].aItemQty[1], 17);
+    TestEqI32Local("and column 0 was left alone", (i32)g_aObject[0].aItemQty[0], 5);
+
+    /* Crew: the soldier on the doomed craft is gone, the one above it follows the gap down. */
+    TestEqI32Local("one soldier was removed", (i32)nSoldierCount, 3);
+    TestEqI32Local("the unassigned sentinel is untouched", (i32)g_apSoldier[2]->bUnk183, 255);
+    TestEqI32Local("the soldier below the gap keeps its index", (i32)g_apSoldier[0]->bUnk183, 0);
+    TestEqI32Local("the soldier above the gap moved down", (i32)g_apSoldier[1]->bUnk183, 1);
+
+    /* The strateg entry carrying the craft is the one with nType 1 and the matching id. */
+    TestEqI32Local("one strateg item was removed", (i32)list.nCount, 1);
+    TestEqI32Local("and the base entry survived", (i32)((StrategItem *)list.apItems[0])->nType, 0);
+
+    /* Hangar flag. */
+    TestEqI32Local("the craft's hangar cell is cleared", (i32)g_abHangar[75], 0);
+    TestEqI32Local("its neighbour is not", (i32)g_abHangar[76], 0xEE);
+
+    /* The assigned list has no sentinel test: 255 above the gap becomes 254. */
+    TestEqI32Local("assigned 0 stays", g_anAssigned[0], 0);
+    TestEqI32Local("assigned 2 moves to 1", g_anAssigned[1], 1);
+    TestEqI32Local("assigned 1 is not above the gap so it stays", g_anAssigned[2], 1);
+    TestEqI32Local("and 255 is decremented too", g_anAssigned[3], 254);
+
+    /* Slots are renumbered over the remaining count. */
+    TestEqI32Local("slot 0 keeps index 0", g_apCraft[0]->nSlotIdx, 0);
+    TestEqI32Local("slot 1 is renumbered to 1", g_apCraft[1]->nSlotIdx, 1);
+
+    /* An unknown id is refused rather than deleting past the end. */
+    nResult = Ship_RemoveWithCargo(&env, 99);
+    TestEqI32Local("an unknown id leaves the count alone", nResult, 2);
+    TestEqI32Local("and nothing is deleted", (i32)nShipCount, 2);
+
+    /* What the teardown already released: the last craft object, the crew member on it,
+     * and the strateg entry that carried it. Freeing those again would be a double free. */
+    free(apShip[0]);
+    free(apShip[1]);
+    free(apSoldier[0]);
+    free(apSoldier[2]);
+    free(apSoldier[3]);
+    free(apItem[0]);
+    free(list.apItems);
+}
+
 int main(void)
 {
     TestRangeRecover();
     TestRefuel();
     TestSupplyConsume();
     TestCargoPair();
+    TestShipRemoveWithCargo();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

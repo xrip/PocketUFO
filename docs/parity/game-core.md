@@ -5748,3 +5748,46 @@ means four bytes, so each group covers three adjacent widgets — the same misre
 Five callees are still unported: `Map_FreeRmpNodes` (0x55018), `Soldier_RemoveById` (0x36b8c),
 `Base_DemolishFacility` (0x66b70), `Ship_RemoveWithCargo` (0x36830), `Base_TransferTacticalLoot`
 (0x68344). The whole decode is recorded in the IDB.
+
+## Losing a craft: `Ship_RemoveWithCargo @ 0x36830` (done)
+
+Ported as `Ship_RemoveWithCargo(const ShipRemovalEnv *, i32 nShipId)` in `game/pufo_ship.{h,c}`.
+It is what runs when a mission ends with the craft gone — `Tact_Shutdown`'s outcome path and
+`Base_DemolishFacility` both reach it.
+
+**The ship array is compacted by struct copy, not by moving pointers.** ARM at 0x36A50 does
+`memmove(apCraft[i-1], apCraft[i], 0x44)` — 68 bytes, `sizeof(Ship)`. The pointer array keeps its
+pointers; only the last object is ever deleted, at 0x36B40 after the count drops.
+
+**The cargo column moves with the ships.** ARM at 0x36A24 computes `2*i + 0x38` for the store and
+reads at `2*i + 0x3A`, so `ObjectRecFull.aItemQty[i-1] = aItemQty[i]` for every object record.
+0x3A is the same `aItemQty` base the ships chunk writes cargo through, and `nObjectCount` is the
+u16 at 0x114A60.
+
+**Three index sets are decremented**, because three things index the ship array positionally:
+`Soldier.bUnk183 @ 0x0B7` (the soldier's ship, left alone when it is 254 or 255 — the two
+"not assigned" sentinels), the crew list itself (every soldier on the doomed craft is deleted),
+and the assigned-ship array at 0x16146C with its signed count at 0x161468. The last one has **no
+sentinel test**, so a stored 255 becomes 254.
+
+**The hangar flag** is cleared at `0x158CD8 + 6*(24*bHomeBase + bHangarY + 12) + bHangarX`
+(0x368CC..0x368D8): six bytes per cell, 24 cells per base, and the three bytes feeding the index
+are the home base and the two hangar coordinates.
+
+Finally `Ship.nSlotIdx @ 0x1C` is renumbered 0..count-1 for every remaining craft — the same value
+`Ship_ctor` assigns at creation.
+
+### A real bug this port exposed in `PtrArray_Remove`
+
+Removing the *last* item of a `PtrArray` crashed the new test. The branch was
+
+```c
+if (nIndex + nRemove >= nTotal) { apNew = NULL; }
+```
+
+which threw the whole array away whenever the removal reached the last slot: every item before it
+leaked, and the struct was left with a NULL `apItems` and a non-zero `nCount`. The condition is
+now `nTotal - nRemove <= 0` — only an empty result drops the array. Fixed in
+`util/pufo_ptrarray.c`; the memmove logic already handled the prefix correctly.
+
+Covered by `tests/test_ship.c` (`TestShipRemoveWithCargo`, 22 checks).

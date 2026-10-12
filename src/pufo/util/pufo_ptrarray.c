@@ -74,7 +74,11 @@ void PtrArray_Remove(PtrArray *pArr, int nIndex, int nCount)
         nRemove = nTotal - nIndex;
     }
 
-    if (nIndex + nRemove >= nTotal) {
+    /* Only an empty result drops the array. The previous test here was
+     * `nIndex + nRemove >= nTotal`, which threw the whole array away whenever the
+     * removal reached the last slot, leaking every item before it and leaving a NULL
+     * array with a non-zero count. */
+    if (nTotal - nRemove <= 0) {
         apNew = NULL;
     } else {
         apNew = malloc(sizeof(void *) * ((size_t)nTotal + 1u));

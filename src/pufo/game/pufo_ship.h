@@ -14,6 +14,7 @@
 
 #include "pufo_common.h"
 #include "game/pufo_boot.h"   /* ObjectRecFull, for the supply item */
+#include "util/pufo_ptrarray.h"
 
 typedef struct BaseRec {
     i32 nStoresTotal;  /* +0x00 nUnk0: total stored item count */
@@ -169,5 +170,62 @@ Ship *Ship_Ctor(Ship *pShip, u8 nCraftType, i32 nId, i32 nHomeBase, u8 bSkip,
  * pair. */
 Ship *InvSel_AddItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta);
 Ship *InvSel_SubItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta);
+
+/* ------------------------------------------------- losing a craft, cargo and all
+ *
+ * Evidence: Ship_RemoveWithCargo @ 0x36830.
+ *
+ * Called when a mission ends with the craft gone (Tact_Shutdown's outcome path and
+ * Base_DemolishFacility). It removes the ship, its crew, its strateg entry, its hangar
+ * flag and its cargo column, then renumbers everything above it.
+ *
+ * The ship array is compacted by STRUCT COPY, not by moving pointers: for every slot above
+ * the removed one, ARM at 0x36A50 does memmove(apCraft[i-1], apCraft[i], 0x44) -- 68 bytes,
+ * sizeof(Ship). The pointer array keeps its pointers; only the last object is deleted
+ * (0x36B40 deletes apCraft[nShipCount-1] after the count is decremented).
+ *
+ * The cargo column moves with it. ARM at 0x36A24 reads ObjectRecFull.aItemQty[i] at byte
+ * 0x3A + 2*i and stores it at 0x3A + 2*i - 2, so aItemQty[i-1] = aItemQty[i] for every
+ * object record. That is the same 0x3A the ships chunk writes cargo through.
+ *
+ * Three index sets are decremented, because three things index the ship array positionally:
+ *   - Soldier.bUnk183 @ 0x0B7, the soldier's ship, decremented when it is above the removed
+ *     index and is neither 254 nor 255 (the two "not assigned" sentinels).
+ *   - the crew list: every soldier whose bUnk183 equals the removed index is deleted outright,
+ *     through Soldier_RemoveById.
+ *   - the assigned-ship array at 0x16146C, whose count is the signed dword at 0x161468.
+ * Finally Ship.nSlotIdx @ 0x1C is renumbered 0..count-1 for every remaining craft, which is
+ * the same value Ship_ctor assigns at creation.
+ *
+ * The hangar flag is cleared at 0x158CD8 + 6*(24*Ship.bHomeBase + Ship.bHangarY + 12) +
+ * Ship.bHangarX (0x368CC..0x368D8). The three bytes are the home base and the two hangar
+ * grid coordinates, and the stride is six.
+ *
+ * Deviations, all of them cases where the original walks off the end:
+ *   - An unknown ship id leaves the search index equal to the count, and the original then
+ *     deletes apCraft[count] and shifts a list that has nothing to shift. The port returns
+ *     the count unchanged.
+ *   - The original clears the hangar flag with no bound on the computed index.
+ *   - If no strateg entry matches, the original calls StrategList_RemoveAt with an index
+ *     equal to the item count. The port skips the call. */
+typedef struct ShipRemovalEnv {
+    Ship **apCraft;
+    u8 *pnShipCount;              /* Map + 0x1194, unsigned byte */
+    struct Soldier **apSoldiers;
+    u16 *pnSoldierCount;          /* Map + 0x1998, unsigned 16-bit */
+    ObjectRecFull **apObjects;
+    u16 nObjectCount;             /* Map + 0x10A8, unsigned 16-bit */
+    PtrArray *pStrategList;       /* 0x1864F8 + 0x3C */
+    const struct GeoscapeWorld *pWorld;
+    u8 *pnSpawnOnceFlag;          /* 0x162028, the replacement-spawn gate */
+    const struct StrategSpawnCtx *pSpawnCtx;
+    u8 *abHangarFlag;             /* the six-byte-per-cell table at 0x158CD8 */
+    i32 nHangarFlagCap;
+    i32 *anAssignedShip;          /* 0x16146C */
+    i32 *pnAssignedShipCount;     /* 0x161468, signed */
+} ShipRemovalEnv;
+
+/* Returns the ship count after the removal. */
+i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
 
 #endif /* PUFO_SHIP_H */

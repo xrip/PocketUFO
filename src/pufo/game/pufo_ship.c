@@ -1,7 +1,11 @@
 /* pufo_ship.c - see pufo_ship.h for the evidence map. */
 #include "game/pufo_ship.h"
 
+#include <stdlib.h>
 #include <string.h>
+
+#include "game/pufo_strateg.h" /* StrategList_RemoveAt, StrategItem */
+#include "game/pufo_unit.h"    /* Soldier */
 
 BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
                       ObjectRecFull *const *apObjects, i32 nObjectCount)
@@ -251,4 +255,123 @@ void Ship_TickRangeRecoverConsume(Ship *pShip, const ShipSupplyHooks *pHooks)
     }
     if (pShip->uRangeRemain > pShip->uRangeMax)
         pShip->uRangeRemain = pShip->uRangeMax;
+}
+
+/* Ship_RemoveWithCargo @ 0x36830.
+ *
+ * The ship array is compacted by struct copy: ARM at 0x36A50 does
+ * memmove(apCraft[i-1], apCraft[i], 0x44), 68 bytes, sizeof(Ship). The pointer array keeps
+ * its pointers and only the last object is deleted, at 0x36B40 after the count drops.
+ * The cargo column moves with the ships: ARM at 0x36A24 reads ObjectRecFull.aItemQty[i] at
+ * byte 0x3A + 2*i and stores it at 0x3A + 2*i - 2. */
+i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->pnShipCount == NULL) {
+        return 0;
+    }
+
+    i32 nCount = (u8)*pEnv->pnShipCount;
+    i32 nIdx = 0;
+
+    /* 0x3684C..0x3687C: find the craft by its id byte. */
+    while (nIdx < nCount && pEnv->apCraft[nIdx]->bId != (u8)nShipId) {
+        ++nIdx;
+    }
+    if (nIdx >= nCount) {
+        /* The original proceeds with an index equal to the count and deletes apCraft[count]. */
+        return nCount;
+    }
+
+    Ship *pShip = pEnv->apCraft[nIdx];
+
+    /* 0x368CC..0x368D8: clear this craft's hangar flag. Six bytes per cell, and the three
+     * bytes feeding the index are the home base and the two hangar coordinates. */
+    if (pEnv->abHangarFlag != NULL) {
+        i32 nFlagIdx = 6 * (24 * (i32)pShip->bHomeBase + (i32)pShip->bHangarY + 12)
+                     + (i32)pShip->bHangarX;
+        if (nFlagIdx >= 0 && nFlagIdx < pEnv->nHangarFlagCap) {
+            pEnv->abHangarFlag[nFlagIdx] = 0;
+        }
+    }
+
+    /* 0x368E0..0x36934: drop the strateg entry that carries this craft. The gate is
+     * nType == 1 and nDisplayId == Ship.bId. */
+    if (pEnv->pStrategList != NULL) {
+        i32 nItems = pEnv->pStrategList->nCount;
+        i32 nStrateg = 0;
+        while (nStrateg < nItems) {
+            StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nStrateg);
+            if (pItem != NULL && pItem->nType == 1 && pItem->nDisplayId == (i32)pShip->bId) {
+                break;
+            }
+            ++nStrateg;
+        }
+        if (nStrateg < nItems) {
+            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pWorld, nStrateg,
+                                 pEnv->pnSpawnOnceFlag, pEnv->pSpawnCtx);
+        }
+    }
+
+    /* 0x36948..0x369BC: delete the crew. A removal shifts the list, so the walk does not
+     * advance; only a soldier that stays moves the cursor on. */
+    if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
+        u16 nSoldiers = *pEnv->pnSoldierCount;
+        i32 i = 0;
+        while (i < (i32)nSoldiers) {
+            if (pEnv->apSoldiers[i]->bUnk183 == (u8)nIdx) {
+                free(pEnv->apSoldiers[i]);
+                for (i32 k = i + 1; k < (i32)nSoldiers; ++k) {
+                    pEnv->apSoldiers[k - 1] = pEnv->apSoldiers[k];
+                }
+                --nSoldiers;
+                *pEnv->pnSoldierCount = nSoldiers;
+            } else {
+                ++i;
+            }
+        }
+    }
+
+    /* 0x369D8..0x36A70: shift every craft above this one down, and shift the cargo column
+     * in every object record along with it. */
+    for (i32 i = nIdx + 1; i < nCount; ++i) {
+        if (pEnv->apObjects != NULL) {
+            for (u16 o = 0; o < pEnv->nObjectCount; ++o) {
+                pEnv->apObjects[o]->aItemQty[i - 1] = pEnv->apObjects[o]->aItemQty[i];
+            }
+        }
+        memmove(pEnv->apCraft[i - 1], pEnv->apCraft[i], sizeof(Ship));
+    }
+
+    /* 0x36A88..0x36AE4: every remaining soldier's ship index above the gap moves down one.
+     * 254 and 255 are the "not assigned" sentinels and are left alone. */
+    if (pEnv->apSoldiers != NULL) {
+        u16 nSoldiers = *pEnv->pnSoldierCount;
+        for (i32 i = 0; i < (i32)nSoldiers; ++i) {
+            u8 b = pEnv->apSoldiers[i]->bUnk183;
+            if (b != 255 && b != 254 && (i32)b > nIdx) {
+                pEnv->apSoldiers[i]->bUnk183 = (u8)(b - 1);
+            }
+        }
+    }
+
+    /* 0x36AEC..0x36B20: the assigned-ship list at 0x16146C, count at 0x161468. */
+    if (pEnv->anAssignedShip != NULL && pEnv->pnAssignedShipCount != NULL) {
+        for (i32 i = 0; i < *pEnv->pnAssignedShipCount; ++i) {
+            if (pEnv->anAssignedShip[i] > nIdx) {
+                pEnv->anAssignedShip[i] -= 1;
+            }
+        }
+    }
+
+    /* 0x36B34..0x36B40: drop the count, then delete the object the last slot held. */
+    nCount -= 1;
+    *pEnv->pnShipCount = (u8)nCount;
+    free(pEnv->apCraft[nCount]);
+
+    /* 0x36B50..0x36B80: renumber the hangar slots of everything that is left. */
+    for (i32 i = 0; i < nCount; ++i) {
+        pEnv->apCraft[i]->nSlotIdx = i;
+    }
+
+    return nCount;
 }
