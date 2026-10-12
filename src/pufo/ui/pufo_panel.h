@@ -27,9 +27,9 @@
  * `UiPanel_GetLineFlag` @ 0x5a334 and `UiPanel_GetLineColor` @ 0x5a33c are a
  * DIFFERENT structure that IDA merged under the same name. They index a plain
  * `u8 abLineFlags[nLine]` at offset 0 and 16-byte records with four dword colour
- * slots at `+0xC8..+0xD4`, with a `u8` count at `+0xD48` (3400). They are
- * therefore deliberately NOT ported here; they need that second structure
- * recovered first. See docs/parity/game-core.md for the full proof.
+ * slots at `+0xC8..+0xD4`, with a `u8` count at `+0xD48` (3400). They are ported as
+ * their own type in `ui/pufo_linelist.{h,c}`, NOT as UiPanel members. See
+ * docs/parity/game-core.md, "The second structure IDA merges under UiPanel".
  *
  * ## Layout
  *

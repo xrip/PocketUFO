@@ -75,6 +75,7 @@ target_link_libraries(pufo_game PUBLIC pufo_options pufo_platform pufo_render pu
 add_library(pufo_ui STATIC
     ui/pufo_panel.c
     ui/pufo_control.c
+    ui/pufo_linelist.c
     ui/pufo_modal.c
     ui/pufo_uibank.c
     ui/pufo_menubtn.c

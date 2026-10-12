@@ -6,6 +6,7 @@
  */
 #include "asset/pufo_asset.h"
 #include "ui/pufo_panel.h"
+#include "ui/pufo_linelist.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -395,6 +396,85 @@ static void TestTrackHold(void)
     UiPanel_FreeLines(&panel);
 }
 
+static i32 g_nLineSample;
+static void Line_Sample(i32 nSample, void *pUser) { (void)pUser; g_nLineSample = nSample; }
+
+static void TestLineList(void)
+{
+    UiLineList list;
+
+    printf("UiLineList (the second structure IDA merges under UiPanel)\n");
+
+    /* The layout the six functions prove: 200 flag bytes, then 200 16-byte records,
+     * then the count byte at 3400. */
+    CheckEqI32((i32)offsetof(UiLineList, abLineFlags), 0, "  flags at +0");
+    CheckEqI32((i32)offsetof(UiLineList, anColor), 200, "  records at +0xC8 (200)");
+    CheckEqI32((i32)offsetof(UiLineList, nLineCount), PUFO_LINELIST_COUNT_OFF,
+               "  count at +0xD48 (3400)");
+    CheckEqI32((i32)sizeof(UiLineList), 3404,
+               "  3401 bytes of fields, padded to 3404 by the u32 record array");
+
+    memset(&list, 0, sizeof(list));
+
+    /* Append is an insert at the current count, so nothing shifts. */
+    g_nLineSample = 0;
+    UiLineList_AppendWithSound(&list, 11, 100, 101, 102, 103, Line_Sample, NULL);
+    UiLineList_AppendWithSound(&list, 12, 200, 201, 202, 203, Line_Sample, NULL);
+    CheckEqI32((i32)list.nLineCount, 2, "  two appends");
+    CheckEqI32(g_nLineSample, 7, "  append plays sample 7");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 12, "  line 1 flag");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 102, "  line 0 colour slot 2");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 203, "  line 1 colour slot 3");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 4), 0, "  slot 4 reads zero");
+
+    /* Insert at the front shifts everything up one place. */
+    UiLineList_Insert(&list, 0, 9, 900, 901, 902, 903);
+    CheckEqI32((i32)list.nLineCount, 3, "  insert increments the count");
+    CheckEqI32(UiLineList_GetFlag(&list, 0), 9, "  the new line is at 0");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 11, "  the old line 0 moved to 1");
+    CheckEqI32(UiLineList_GetFlag(&list, 2), 12, "  the old line 1 moved to 2");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 0), 100, "  the whole record moved");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 103, "  including its last slot");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 2, 0), 200, "  and so did the next one");
+
+    /* SetLine overwrites in place and leaves the count alone. */
+    UiLineList_SetLine(&list, 1, 77, 1, 2, 3, 4);
+    CheckEqI32((i32)list.nLineCount, 3, "  SetLine does not touch the count");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 77, "  flag replaced");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 1, 1), 2, "  colours replaced");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 900, "  neighbours untouched");
+
+    /* Remove shifts the tail down. */
+    UiLineList_Remove(&list, 0);
+    CheckEqI32((i32)list.nLineCount, 2, "  remove decrements the count");
+    CheckEqI32(UiLineList_GetFlag(&list, 0), 77, "  line 1 became line 0");
+    CheckEqI32(UiLineList_GetFlag(&list, 1), 12, "  line 2 became line 1");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 3), 4, "  its record moved with it");
+
+    /* The decrement is guarded, so an empty list stays empty. */
+    UiLineList_Remove(&list, 0);
+    UiLineList_Remove(&list, 0);
+    UiLineList_Remove(&list, 0);
+    CheckEqI32((i32)list.nLineCount, 0, "  removing from an empty list keeps it at 0");
+
+    /* Inserting past the end leaves a gap and still counts the line, which is what
+     * the original does. */
+    memset(&list, 0, sizeof(list));
+    UiLineList_Insert(&list, 5, 55, 5, 5, 5, 5);
+    CheckEqI32((i32)list.nLineCount, 1, "  an out-of-range insert still increments");
+    CheckEqI32(UiLineList_GetFlag(&list, 5), 55, "  and writes the slot it was given");
+    CheckEqI32(UiLineList_GetFlag(&list, 0), 0, "  leaving the earlier slots empty");
+
+    /* NULL is tolerated everywhere. */
+    UiLineList_Insert(NULL, 0, 1, 1, 1, 1, 1);
+    UiLineList_SetLine(NULL, 0, 1, 1, 1, 1, 1);
+    UiLineList_Remove(NULL, 0);
+    CheckEqI32(UiLineList_GetFlag(NULL, 0), 0, "  GetFlag on NULL reads 0");
+    CheckEqI32((i32)UiLineList_GetColor(NULL, 0, 0), 0, "  GetColor on NULL reads 0");
+    UiLineList_AppendWithSound(NULL, 1, 1, 1, 1, 1, Line_Sample, NULL);
+    Check(true, "  NULL list is safe");
+}
+
 static void TestSwapLines(void)
 {
     UiPanel panel;
@@ -442,6 +522,7 @@ int main(void)
     TestWrapText();
     TestClickRow();
     TestTrackHold();
+    TestLineList();
     TestSwapLines();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);

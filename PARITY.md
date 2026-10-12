@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 474 / 1103 (43.0%) |
-| Bytes of original code cited | 221720 / 598792 (37.0%) |
+| Functions cited as evidence | 476 / 1103 (43.2%) |
+| Bytes of original code cited | 223472 / 598792 (37.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4340 |
+| Test checks run | 4372 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,9 +42,9 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 33 | 52 | 25788 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 65 | 85 | 11932 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 66 | 85 | 11984 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 31 | 205 | 34692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 47 | 243 | 4560 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 48 | 243 | 6260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -431,7 +431,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (65 functions)
+### `ui-core` (66 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -444,7 +444,7 @@ is the module that answers to it.
 | `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
-| `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x3e730` | `UiPanel_ctor` | 408 | `src/pufo/ui/pufo_panel.h` |
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.h` |
@@ -454,23 +454,23 @@ is the module that answers to it.
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_panel.h` |
+| `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x1a340` | `UiControl_BlitActivePad` | 152 | `src/pufo/ui/pufo_control.h` |
 | `0x2d798` | `Text_DrawString` | 148 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x2dd20` | `StatusMsg_Shift` | 132 | `src/pufo/game/pufo_statusmsg.h` |
 | `0x1a2c8` | `UiControl_FreePads` | 120 | `src/pufo/ui/pufo_control.h` |
-| `0x5a3dc` | `UiPanel_RemoveLine` | 116 | `src/pufo/ui/pufo_panel.h` |
+| `0x5a3dc` | `UiPanel_RemoveLine` | 116 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x15670` | `UiScreen_OnBack` | 112 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
 | `0x9ec48` | `Font_BlitGlyphToSoft` | 112 | `src/pufo/game/pufo_font.h` |
 | `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x26430` | `UiModal_Begin` | 92 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tactctl.h` (+1) |
-| `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_panel.h` |
+| `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.h` |
-| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` |
+| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` (+1) |
 | `0x1a5c0` | `UiControl_SetPosMode` | 68 | `src/pufo/ui/pufo_control.h` |
 | `0x1a75c` | `UiControl_Setup` | 68 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.c` (+1) |
 | `0x16e04` | `UiBank_SelectRadio0_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
@@ -482,6 +482,7 @@ is the module that answers to it.
 | `0x11110` | `PadImage_BlitEx` | 56 | `src/pufo/ui/pufo_control.h` |
 | `0x110dc` | `PadImage_Blit` | 52 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
 | `0x46630` | `Font_DrawGlyph_IndexedOffset` | 52 | `src/pufo/game/pufo_font.h` |
+| `0x5a450` | `UiPanel_SetLineColors` | 52 | `src/pufo/ui/pufo_linelist.h` |
 | `0x84ecc` | `Ui_CloseScreen18` | 52 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x84e9c` | `Ui_OpenScreen18` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x85164` | `Ui_OpenFunding` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -499,7 +500,7 @@ is the module that answers to it.
 | `0x99f88` | `UiPanel_ScrollPrev` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
-| `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_panel.h` |
+| `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
 ### `strat` (31 functions)
 
@@ -537,10 +538,11 @@ is the module that answers to it.
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+4) |
 
-### `strat-ui` (47 functions)
+### `strat-ui` (48 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | `src/pufo/ui/pufo_linelist.h` |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_geoscape.h` |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h` |
@@ -876,7 +878,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 20 functions, 26436 bytes remaining
+### `ui-core` — 19 functions, 26384 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -895,7 +897,6 @@ whose port work they belong to.
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46144` | `Font_Free` | 148 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x5a450` | `UiPanel_SetLineColors` | 52 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x619a8` | `Ui_SetTransferFlag` | 36 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1080,7 +1081,7 @@ whose port work they belong to.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 196 functions, 112448 bytes remaining
+### `strat-ui` — 195 functions, 110748 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1104,7 +1105,6 @@ whose port work they belong to.
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1327,7 +1327,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_menubtn` | PASS | 67 |
 | `test_modal` | PASS | 14 |
 | `test_moveaction` | PASS | 48 |
-| `test_panel` | PASS | 111 |
+| `test_panel` | PASS | 143 |
 | `test_path` | PASS | 48 |
 | `test_render` | PASS | 43 |
 | `test_rmp` | PASS | 46 |

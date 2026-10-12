@@ -4575,3 +4575,49 @@ by simply not appending anything, rather than inventing text.
 | 1 | `snprintf` replaces the `itoa` + `strcat` chain | same result, no unbounded `strcat` into a fixed scratch buffer; the port takes an explicit `nMsgCap` |
 | 2 | `Sound_Play`, the modal and the text records are hooks | the dialog is the only caller that reaches them without a `Map` context; hooks keep the counting half testable without the UI |
 | 3 | NULL `pCell` skips a unit | the original reads `pUnit->pCell->nX` unconditionally |
+
+## The second structure IDA merges under `UiPanel`: the 3401-byte line list
+
+`UiPanel_InsertLine @ 0x5a294`, `UiPanel_GetLineFlag @ 0x5a334`,
+`UiPanel_GetLineColor @ 0x5a33c`, `UiPanel_AppendLineWithSound @ 0x5a394`,
+`UiPanel_RemoveLine @ 0x5a3dc` and `UiPanel_SetLineColors @ 0x5a450` are ported as
+`UiLineList_Insert`, `UiLineList_GetFlag`, `UiLineList_GetColor`,
+`UiLineList_AppendWithSound`, `UiLineList_Remove` and `UiLineList_SetLine` in the new
+`ui/pufo_linelist.{h,c}`, asserted by `test_panel` (`TestLineList`, 27 checks).
+
+They are **not** `UiPanel` members. All six index their first argument the same way:
+
+| field | offset | evidence |
+|---|---|---|
+| `abLineFlags[200]` | `+0x000` | `*(_BYTE *)(base + nLine)` in `0x5a2f8`, `0x5a338`, `0x5a454` |
+| record, 16 bytes | `+0x0C8 + 16*nLine` | `ADD R2, R0, R1, LSL#4` then `STR R3, [R2, #0xC8]` at `0x5a45c` |
+| colour slots | record `+0x00, +0x04, +0x08, +0x0C` | `v16[50..53]` in `GetLineColor`, `0xC8/0xCC/0xD4` in `SetLineColors` |
+| `nLineCount` (u8) | `+0xD48` (3400) | read in all four mutators |
+
+The capacity is not assumed, it falls out of the arithmetic: `200 + 16*200 = 3400`, so
+the flag bytes and the records tile the block exactly and the count byte sits
+immediately after them.
+
+The 7092-byte `UiPanel` in `pufo_panel.h` remains the real type of the draw path,
+proven two independent ways: `gUiRootPanel @ 0x158890 + apLines(0xBE4) + 4*105 ==
+0x159618` is the game-clock field and `+4*106 == 0x15961C` is the geoscape flag, and
+`UiScrollList_TrackHold @ 0x3ed44` addresses that same 7092 layout field for field.
+
+The caller that shows the overlay is `ResearchScreen_RebuildTopicList @ 0x74270`: it
+passes `(int)&gUiRootPanel` to `UiPanel_AppendLineWithSound` and to
+`UiPanel_SetLineColors`, and reads the line count as
+`LOBYTE(gUiRootPanel.apLines[89]) - 1` -- `apLines[89]` is offset 3400 of the 7092
+layout, which is exactly this structure's count byte. The original overlays the two
+views on the same bytes; the port keeps two types and does not model the overlay.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | The insert shift stops at the 200-entry capacity, and the remove shift breaks there | the original writes `flags[count]` and `record[count]`, which runs past the block when the list is full; the port does not invoke out-of-bounds writes |
+| 2 | `AppendWithSound` returns void and takes the sample hook | the original returns `Sound_Play`'s value, which its callers ignore |
+| 3 | NULL list and out-of-range indices are handled | the original dereferences whatever it is given |
+
+Kept as-is, not fixed: inserting at an index past the count does **not** clamp. It
+writes the slot it was given, leaves a gap, and still increments the count. The test
+pins that.
