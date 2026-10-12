@@ -9,17 +9,23 @@
  *   Blit_LoadSurface @ 0xa3964, Blit_SetTargetParams @ 0xa39ac,
  *   Blit_CopyRows @ 0xa3a14, Blit_CopyRows_HiRes @ 0xa3bb8,
  *   BlitParams_Set @ 0xa47b0, Blit_SetSrcRect @ 0xa3f5c,
- *   Store_dword_A3028 @ 0xa3624,
  *   SoftSurf_Blit_Inner @ 0xa47d0, SoftSurf_BlitFlip_Inner @ 0xa49a0,
  *   SoftSurf_BlitIndexed_Inner @ 0xa306c,
  *   SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638,
  *   SoftSurf_FillRect_Inner @ 0xa3f94,
  *   SoftSurf_BlitIndexed @ 0x9e9f4, SoftSurf_BlitIndexedKeyed @ 0x9ea34,
  *   SoftSurf_Blit @ 0x9e558, SoftSurf_BlitFlip @ 0x9e590,
- *   SoftSurf_BlitSrcRect @ 0x9ebf8, SoftSurf_BlitRect @ 0x9ebb0,
  *   PadImage_ctor @ 0x11000, PadImage_FreeData @ 0x1100c,
  *   PadImage_Load @ 0x11020, PadImage_Blit @ 0x110dc,
  *   Palette_Load @ 0x3e47c.
+ *
+ * Three addresses this module is about but does NOT implement, so they carry no credit:
+ *   SoftSurf_BlitRect (0x9ebb0) and SoftSurf_BlitSrcRect (0x9ebf8) are bound wrappers that
+ *     pin the global surface unk_156A7C and call SoftSurf_BlitRectEx (0x9fc30) /
+ *     SoftSurf_BlitSrcRectEx (0x9fc70). Neither the wrapper nor either Ex form is ported.
+ *   Store_dword_A3028 (0xa3624) is a 20-byte setter that stores its argument into
+ *     dword_A3028 and returns it. The port has no owner for that global.
+ * Listed here because they describe the blitter's shape, not because they are recreated.
  *
  * The original renders into one 240x320 16bpp surface (created in
  * Assets_LoadStartup @ 0x382d0 via SoftSurf_AllocPixels(240,320,2)) and blits

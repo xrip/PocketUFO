@@ -93,3 +93,21 @@ Tact_CycleNextUnit	Roster_CycleNext	roster module owns cycling
 WinMain	wWinMain	the Win64 entry point keeps the accelerator behaviour
 EnemyAi_bMultiTargetTypeMatch	EnemyAi_MultiTargetTypeMatch	multi-target type gate
 Smap_GetTileAtMode	Smap_GetOverlayAtMode	it reads the overlay layer, so the port names that
+# --- timer families: the original has byte-identical duplicates, the port keeps one body and a
+# thin alias each, so the call sites stay recognisable. Verified against pufo_timer.c.
+KillTimers_A	Timer_KillA	A/B/C are byte-identical in the original
+KillTimers_B	Timer_KillB	alias of Timer_KillA
+KillTimers_C	Timer_KillC	alias of Timer_KillA
+StartTimers_A	Timer_StartA	A/B/C are byte-identical in the original
+StartTimers_B	Timer_StartB	alias of Timer_StartA
+StartTimers_C	Timer_StartC	alias of Timer_StartA
+StartTimers_D	Timer_StartD	the outlier set: four ids, one interval of zero
+KillTimers_D	Timer_KillD	kills the StartTimers_D id set
+KillTimers_BySpeed	Timer_KillBySpeed	game-speed variant
+StartTimers_BySpeed	Timer_StartBySpeed	game-speed variant
+# --- render and font: merged wrappers. Verified against pufo_render.c and pufo_font.c.
+Render_BlitSoft_LoRes	Render_BlitSurface	LoRes and HiRes merged into one port function
+Render_BlitSoft_HiRes	Render_BlitSurface	deviation: the HiRes 2x2 upscale is not reproduced, Win64 scales instead
+SoftSurf_BlitGlyph_Inner	Font_BlitGlyph	the RLE glyph rasteriser lives in the font module
+SoftSurf_BlitGlyph	Font_DrawGlyph	bound form merged into Font_DrawGlyph
+Font_BlitGlyphToSoft	Font_DrawGlyph	clamp-to-19, glyph table lookup, palette resolve, blit
