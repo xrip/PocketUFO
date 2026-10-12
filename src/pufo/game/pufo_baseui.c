@@ -157,3 +157,147 @@ signed char BaseInfoScreen_OnOk(BaseInfoOkState *pState)
     pState->nCurrentBase = pState->nPendingBase;    /* 0x557DC LDRSB, 0x557E0 STRB */
     return pState->nPendingBase;                    /* 0x557E4 returns R0 */
 }
+
+/* 0x716a8 is the same eight instructions as 0x557c8, down to the LDRSB. */
+signed char PsiScreen_OnOk(BaseInfoOkState *pState)
+{
+    return BaseInfoScreen_OnOk(pState);
+}
+
+void BuySellScreen_ListPanelPrev(UiPanel *pFirst, UiPanel *pSecond)
+{
+    if (pFirst != NULL) {
+        UiPanel_ScrollPrev(pFirst); /* 0x79A2C, unk_161EDC */
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollPrev(pSecond); /* 0x79A38, unk_161A3C */
+    }
+}
+
+void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond)
+{
+    if (pFirst != NULL) {
+        UiPanel_ScrollNext(pFirst); /* 0x79A54 */
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollNext(pSecond); /* 0x79A60 */
+    }
+}
+
+/* The six openers share one body. bIdAfterInit carries the ordering difference the
+ * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
+ * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */
+static void Geoscape_OpenScreen(GeoscapeScreenState *pState, i32 nScreenId,
+                                bool bIdAfterInit, const ScreenInitHooks *pHooks)
+{
+    if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
+        pHooks->pfnPlaySample(17, 4, pHooks->pUser); /* MOV R1, #4 / MOV R0, #0x11 */
+    }
+    if (!bIdAfterInit && pState != NULL) {
+        pState->nGeoscapeScreen = nScreenId;
+    }
+    if (pHooks != NULL && pHooks->pfnInit != NULL) {
+        pHooks->pfnInit(pHooks->pSlot, pHooks->pUser);
+    }
+    if (bIdAfterInit && pState != NULL) {
+        pState->nGeoscapeScreen = nScreenId;
+    }
+}
+
+void ManufScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 9, true, pHooks);
+}
+
+void TransferScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 10, true, pHooks);
+}
+
+void BaseInfoScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 3, true, pHooks);
+}
+
+void BuySellScreen_OpenBuy(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 11, false, pHooks);
+}
+
+void BuySellScreen_OpenSell(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 12, false, pHooks);
+}
+
+void BaseFacScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 7, false, pHooks);
+}
+
+/* Seven thunks, one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI. */
+static void Geoscape_CloseScreenThunk(const GeoscapeCloseHooks *pHooks)
+{
+    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
+        pHooks->pfnCloseUi(pHooks->pUser);
+    }
+}
+
+void BaseInfoScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void BaseFacScreen_CloseThunkA(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void BaseFacScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void SoldierScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void ManufScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void ResearchScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void BuySellScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void NewBaseScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
+        pHooks->pfnPlaySample(17, pHooks->pUser); /* 0x615BC */
+    }
+    Geoscape_CloseScreenThunk(pHooks); /* 0x615C8 */
+}
+
+i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks)
+{
+    if (pScratch != NULL) {
+        pScratch->nLineAux145 = 0; /* 0x6B478 */
+    }
+    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
+        pHooks->pfnCloseUi(pHooks->pUser); /* 0x6B480 */
+    }
+    if (pHooks != NULL && pHooks->pfnFreeGeoscapeUi != NULL) {
+        pHooks->pfnFreeGeoscapeUi(1, pHooks->pUser); /* 0x6B488 */
+    }
+    if (pHooks != NULL && pHooks->pfnStartupUi != NULL) {
+        return pHooks->pfnStartupUi(pHooks->pUser); /* 0x6B490 tail call */
+    }
+    return 0;
+}

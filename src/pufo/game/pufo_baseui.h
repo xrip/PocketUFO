@@ -89,6 +89,11 @@ void BaseFacScreen_PanelNext(UiPanel *pPanel);
 void SoldierScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond);
 void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
+/* BuySellScreen_ListPanelPrev @ 0x79a20 / ListPanelNext @ 0x79a48: the same two-panel
+ * shape as the soldier screen, over unk_161EDC first and unk_161A3C second. */
+void BuySellScreen_ListPanelPrev(UiPanel *pFirst, UiPanel *pSecond);
+void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,
@@ -126,5 +131,83 @@ typedef struct BaseInfoOkState {
 } BaseInfoOkState;
 
 signed char BaseInfoScreen_OnOk(BaseInfoOkState *pState);
+
+/* PsiScreen_OnOk @ 0x716a8 is byte for byte the same eight instructions as
+ * BaseInfoScreen_OnOk @ 0x557c8: same globals, same widths, same return. The port keeps
+ * one implementation and two names. */
+signed char PsiScreen_OnOk(BaseInfoOkState *pState);
+
+/* ------------------------------------------------- geoscape screen openers, second batch
+ *
+ * Evidence: ManufScreen_Open @ 0x614cc, TransferScreen_Open @ 0x614fc,
+ * BaseInfoScreen_Open @ 0x6167c, BuySellScreen_OpenBuy @ 0x61794,
+ * BuySellScreen_OpenSell @ 0x617c4, BaseFacScreen_Open @ 0x61844.
+ *
+ * All six are Sound_Play(17, 4), the screen's Init, and the screen id at 0x186BC4. Two
+ * facts the source only shows in the disassembly:
+ *
+ *   1. Sound_Play takes a second argument, 4 (0x614D4, 0x61504, ...). The port's sample
+ *      hook carries it.
+ *   2. The order of Init and the id is NOT uniform. Manuf, Transfer and BaseInfo write
+ *      the id AFTER the Init (0x614EC, 0x6151C, 0x6169C). BuySell and BaseFac write it
+ *      BEFORE (0x617AC, 0x6185C). An Init that reaches the close dispatcher therefore
+ *      sees a different screen id depending on which opener ran.
+ *
+ * The screen slot each Init receives is a global: unk_159E98 (anLineAux[149]) for
+ * Manuf, 0x1870D8 for Transfer, unk_158828 for BaseInfo, unk_161A08 for both BuySell
+ * modes. The port passes it through the hooks instead of owning it. */
+typedef struct ScreenInitHooks {
+    void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
+    void (*pfnInit)(void *pSlot, void *pUser);
+    void *pSlot;
+    void *pUser;
+} ScreenInitHooks;
+
+void ManufScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void TransferScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void BaseInfoScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void BuySellScreen_OpenBuy(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void BuySellScreen_OpenSell(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void BaseFacScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+
+/* ------------------------------------------------- the eight screen close thunks
+ *
+ * Evidence: BaseInfoScreen_CloseThunk @ 0x557bc, BaseFacScreen_CloseThunkA @ 0x589c0,
+ * BaseFacScreen_CloseThunk @ 0x59b54, SoldierScreen_CloseThunk @ 0x64ae4,
+ * ManufScreen_CloseThunk @ 0x6e3d4, ResearchScreen_CloseThunk @ 0x72ffc,
+ * BuySellScreen_CloseThunk @ 0x75154, NewBaseScreen_CloseThunk @ 0x615b0.
+ *
+ * Seven of them are two instructions: `LDR R0, =0x1864F8` and `B Geoscape_CloseUI`. They
+ * are not seven behaviours; they are one tail call with one argument, written seven
+ * times so each widget has its own function pointer. NewBaseScreen_CloseThunk is the odd
+ * one: it plays sample 17 first and then makes the same call.
+ *
+ * Geoscape_CloseUI @ 0x8b94c is not ported (~40 unported callees), so it stays a hook. */
+typedef struct GeoscapeCloseHooks {
+    void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI(&MEMORY[0x1864F8]) */
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void *pUser;
+} GeoscapeCloseHooks;
+
+void BaseInfoScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void BaseFacScreen_CloseThunkA(const GeoscapeCloseHooks *pHooks);
+void BaseFacScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void SoldierScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void ManufScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void ResearchScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void BuySellScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void NewBaseScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+
+/* OptionsScreen_ReturnToTitle @ 0x6b46c: clears the panel scratch byte, closes the
+ * geoscape screen, frees every geoscape widget, and re-inits the startup UI. The scratch
+ * byte is the same ScreenScratch field the base-screen helpers set to 3 and 4. */
+typedef struct TitleReturnHooks {
+    void (*pfnCloseUi)(void *pUser);              /* Geoscape_CloseUI @ 0x8b94c */
+    void (*pfnFreeGeoscapeUi)(i32 nMode, void *pUser); /* GeoscapeUi_FreeAll @ 0x86d20 */
+    i32 (*pfnStartupUi)(void *pUser);             /* GameUI_InitStartup @ 0x38a28 */
+    void *pUser;
+} TitleReturnHooks;
+
+i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks);
 
 #endif /* PUFO_BASEUI_H */

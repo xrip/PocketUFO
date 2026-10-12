@@ -1931,6 +1931,41 @@ disagree in width: `0x557E0` stores a byte, case 19 stores a dword. Covered by
 `tests/test_baseui.c` (`TestSelectionCaches`, `TestBaseInfoOk`, 14 checks).
 
 
+### Screen openers, close thunks, and the second paging pair (done)
+
+`PsiScreen_OnOk @ 0x716a8` is byte for byte the same eight instructions as
+`BaseInfoScreen_OnOk @ 0x557c8`, `LDRSB` included, so the port keeps one implementation
+and two names.
+
+`BuySellScreen_ListPanelPrev @ 0x79a20` and `ListPanelNext @ 0x79a48` are the same
+two-panel shape as the soldier screen, over `unk_161EDC` first and `unk_161A3C` second.
+
+Six openers are recreated over one shared body and a `ScreenInitHooks`:
+`ManufScreen_Open @ 0x614cc` (id 9), `TransferScreen_Open @ 0x614fc` (10),
+`BaseInfoScreen_Open @ 0x6167c` (3), `BuySellScreen_OpenBuy @ 0x61794` (11),
+`BuySellScreen_OpenSell @ 0x617c4` (12), `BaseFacScreen_Open @ 0x61844` (7). Two facts
+come only from the disassembly. `Sound_Play` takes a second argument, 4 (`MOV R1, #4` at
+0x614D4 and in every opener). And the order of the Init and the screen id is not uniform:
+Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the id **after** the
+Init, while BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) write it **before**. An Init
+that reaches the close dispatcher therefore sees a different screen id depending on which
+opener ran, and the test captures that by reading the id from inside the Init hook.
+
+Seven close thunks -- `BaseInfoScreen_CloseThunk @ 0x557bc`,
+`BaseFacScreen_CloseThunkA @ 0x589c0`, `BaseFacScreen_CloseThunk @ 0x59b54`,
+`SoldierScreen_CloseThunk @ 0x64ae4`, `ManufScreen_CloseThunk @ 0x6e3d4`,
+`ResearchScreen_CloseThunk @ 0x72ffc`, `BuySellScreen_CloseThunk @ 0x75154` -- are not
+seven behaviours. Each is `LDR R0, =0x1864F8` and `B Geoscape_CloseUI`: one tail call
+with one argument, written seven times so every widget can hold its own function pointer.
+`NewBaseScreen_CloseThunk @ 0x615b0` is the odd one: it plays sample 17 first.
+`Geoscape_CloseUI @ 0x8b94c` itself stays a hook (~40 unported callees).
+
+`OptionsScreen_ReturnToTitle @ 0x6b46c` clears the panel scratch byte, closes the
+geoscape screen, frees every geoscape widget with mode 1, and returns the result of
+`GameUI_InitStartup @ 0x38a28`. Covered by `tests/test_baseui.c`
+(`TestBuySellPaging`, `TestScreenOpeners`, `TestCloseThunks`, `TestTitleReturn`, 40 checks).
+
+
 ### Geoscape screen openers (done)
 
 `Ui_OpenScreen18 @ 0x84e9c`, `Ui_CloseScreen18 @ 0x84ecc` and

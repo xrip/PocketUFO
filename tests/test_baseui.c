@@ -209,6 +209,207 @@ static void TestBaseInfoOk(void)
     CheckEqI32(st.nCurrentBase, -1, "and is copied as a signed byte");
 
     CheckEqI32(BaseInfoScreen_OnOk(NULL), 0, "NULL is tolerated");
+
+    /* 0x716a8 is the same eight instructions as 0x557c8. */
+    st.nPendingBase = 5;
+    st.bPsiPending = 0;
+    st.nCurrentBase = 1;
+    CheckEqI32(PsiScreen_OnOk(&st), 5, "PsiScreen_OnOk behaves identically");
+    CheckEqI32(st.bPsiPending, 1, "it arms the psi screen");
+    CheckEqI32(st.nCurrentBase, 5, "and moves the same base index");
+}
+
+static UiPanel g_aBuySellPanels[2];
+
+static void TestBuySellPaging(void)
+{
+    printf("buy/sell list paging\n");
+
+    memset(g_aBuySellPanels, 0, sizeof(g_aBuySellPanels));
+    g_aBuySellPanels[0].nUnk3028 = 4;   /* unk_161EDC */
+    g_aBuySellPanels[0].nLineCount = 9;
+    g_aBuySellPanels[0].nStyle = 3;
+    g_aBuySellPanels[1].nUnk3028 = 1;   /* unk_161A3C */
+    g_aBuySellPanels[1].nLineCount = 6;
+    g_aBuySellPanels[1].nStyle = 2;
+
+    BuySellScreen_ListPanelNext(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 5, "both panels page");
+    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 2, "the second one too");
+
+    BuySellScreen_ListPanelPrev(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 4, "prev moves both back");
+    CheckEqI32(g_aBuySellPanels[1].nUnk3028, 1, "in the same slot order");
+
+    g_aBuySellPanels[0].nUnk3028 = 6;
+    BuySellScreen_ListPanelNext(&g_aBuySellPanels[0], &g_aBuySellPanels[1]);
+    CheckEqI32(g_aBuySellPanels[0].nUnk3028, 6, "next stops at nLineCount - nStyle");
+
+    BuySellScreen_ListPanelPrev(NULL, NULL);
+    BuySellScreen_ListPanelNext(NULL, NULL);
+    Check(1, "NULL panels are tolerated");
+}
+
+static i32 g_nIdAtInit;
+static i32 g_nOpenSample;
+static i32 g_nOpenSampleArg;
+static void *g_pInitSlot;
+static i32 g_nCloseCalls;
+static i32 g_nCloseSamples;
+static i32 g_nFreeMode;
+static i32 g_nStartupCalls;
+
+static void OpenSample(u32 nSample, u32 nArg, void *pUser)
+{
+    (void)pUser;
+    g_nOpenSample = (i32)nSample;
+    g_nOpenSampleArg = (i32)nArg;
+}
+
+static void OpenInit(void *pSlot, void *pUser)
+{
+    const GeoscapeScreenState *pState = (const GeoscapeScreenState *)pUser;
+    g_pInitSlot = pSlot;
+    g_nIdAtInit = (pState != NULL) ? pState->nGeoscapeScreen : -1;
+}
+
+static void CloseSample(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    g_nCloseSamples += (i32)nSample;
+}
+
+static void CloseUi(void *pUser)
+{
+    (void)pUser;
+    ++g_nCloseCalls;
+}
+
+static void FreeUi(i32 nMode, void *pUser)
+{
+    (void)pUser;
+    g_nFreeMode = nMode;
+}
+
+static i32 StartupUi(void *pUser)
+{
+    (void)pUser;
+    ++g_nStartupCalls;
+    return 77;
+}
+
+static void TestScreenOpeners(void)
+{
+    GeoscapeScreenState st;
+    ScreenInitHooks hk;
+    static i32 nSlot;
+
+    printf("geoscape screen openers\n");
+
+    hk.pfnPlaySample = OpenSample;
+    hk.pfnInit = OpenInit;
+    hk.pSlot = &nSlot;
+    hk.pUser = &st;
+
+    /* Manuf, Transfer and BaseInfo write the id AFTER the Init. */
+    for (i32 i = 0; i < 3; ++i) {
+        static const i32 aWant[3] = { 9, 10, 3 };
+        memset(&st, 0, sizeof(st));
+        g_nIdAtInit = -1;
+        if (i == 0) {
+            ManufScreen_Open(&st, &hk);
+        } else if (i == 1) {
+            TransferScreen_Open(&st, &hk);
+        } else {
+            BaseInfoScreen_Open(&st, &hk);
+        }
+        CheckEqI32(g_nOpenSample, 17, "every opener plays sample 17");
+        CheckEqI32(g_nOpenSampleArg, 4, "Sound_Play takes a second argument, 4");
+        Check(g_pInitSlot == (void *)&nSlot, "the Init gets the screen slot");
+        CheckEqI32(g_nIdAtInit, 0, "the id is still unset while the Init runs");
+        CheckEqI32(st.nGeoscapeScreen, aWant[i], "the id is written after the Init");
+    }
+
+    /* BuySell and BaseFac write it BEFORE. */
+    memset(&st, 0, sizeof(st));
+    g_nIdAtInit = -1;
+    BuySellScreen_OpenBuy(&st, &hk);
+    CheckEqI32(g_nIdAtInit, 11, "the buy opener sets the id before the Init");
+    CheckEqI32(st.nGeoscapeScreen, 11, "and the screen id is 11");
+
+    memset(&st, 0, sizeof(st));
+    g_nIdAtInit = -1;
+    BuySellScreen_OpenSell(&st, &hk);
+    CheckEqI32(g_nIdAtInit, 12, "the sell opener sets 12 first");
+
+    memset(&st, 0, sizeof(st));
+    g_nIdAtInit = -1;
+    BaseFacScreen_Open(&st, &hk);
+    CheckEqI32(g_nIdAtInit, 7, "the facility opener sets 7 first");
+
+    memset(&st, 0, sizeof(st));
+    ManufScreen_Open(&st, NULL);
+    CheckEqI32(st.nGeoscapeScreen, 9, "a missing hook set still records the id");
+}
+
+static void TestCloseThunks(void)
+{
+    GeoscapeCloseHooks hk;
+
+    printf("screen close thunks\n");
+
+    hk.pfnCloseUi = CloseUi;
+    hk.pfnPlaySample = CloseSample;
+    hk.pUser = NULL;
+
+    g_nCloseCalls = 0;
+    g_nCloseSamples = 0;
+    BaseInfoScreen_CloseThunk(&hk);
+    BaseFacScreen_CloseThunkA(&hk);
+    BaseFacScreen_CloseThunk(&hk);
+    SoldierScreen_CloseThunk(&hk);
+    ManufScreen_CloseThunk(&hk);
+    ResearchScreen_CloseThunk(&hk);
+    BuySellScreen_CloseThunk(&hk);
+    CheckEqI32(g_nCloseCalls, 7, "seven thunks, one tail call each");
+    CheckEqI32(g_nCloseSamples, 0, "none of the seven plays a sample");
+
+    g_nCloseCalls = 0;
+    g_nCloseSamples = 0;
+    NewBaseScreen_CloseThunk(&hk);
+    CheckEqI32(g_nCloseCalls, 1, "the new-base thunk closes too");
+    CheckEqI32(g_nCloseSamples, 17, "and it is the one that plays sample 17 first");
+
+    BaseInfoScreen_CloseThunk(NULL);
+    NewBaseScreen_CloseThunk(NULL);
+    CheckEqI32(g_nCloseCalls, 1, "a missing hook set is tolerated");
+}
+
+static void TestTitleReturn(void)
+{
+    ScreenScratch s;
+    TitleReturnHooks hk;
+
+    printf("OptionsScreen_ReturnToTitle\n");
+
+    memset(&s, 0, sizeof(s));
+    s.nLineAux145 = 4;
+    hk.pfnCloseUi = CloseUi;
+    hk.pfnFreeGeoscapeUi = FreeUi;
+    hk.pfnStartupUi = StartupUi;
+    hk.pUser = NULL;
+
+    g_nCloseCalls = 0;
+    g_nFreeMode = -1;
+    g_nStartupCalls = 0;
+
+    CheckEqI32(OptionsScreen_ReturnToTitle(&s, &hk), 77, "the startup result is returned");
+    CheckEqI32(s.nLineAux145, 0, "the panel scratch byte is cleared first");
+    CheckEqI32(g_nCloseCalls, 1, "the geoscape screen is closed");
+    CheckEqI32(g_nFreeMode, 1, "every geoscape widget is freed with mode 1");
+    CheckEqI32(g_nStartupCalls, 1, "the startup UI is re-inited");
+
+    CheckEqI32(OptionsScreen_ReturnToTitle(NULL, NULL), 0, "NULL hooks return zero");
 }
 
 int main(void)
@@ -220,6 +421,10 @@ int main(void)
     TestPanelPaging();
     TestSelectionCaches();
     TestBaseInfoOk();
+    TestBuySellPaging();
+    TestScreenOpeners();
+    TestCloseThunks();
+    TestTitleReturn();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

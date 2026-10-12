@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 509 / 1103 (46.1%) |
-| Bytes of original code cited | 228904 / 598792 (38.2%) |
+| Functions cited as evidence | 528 / 1103 (47.9%) |
+| Bytes of original code cited | 230936 / 598792 (38.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4501 |
+| Test checks run | 4541 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,8 +43,8 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 54 | 205 | 38092 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 56 | 243 | 6536 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 55 | 205 | 39548 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 74 | 243 | 7112 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -79,7 +79,7 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
-| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/game/pufo_input.h` |
+| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
 ### `render` (33 functions)
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (54 functions)
+### `strat` (55 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -515,6 +515,7 @@ is the module that answers to it.
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
+| `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | `src/pufo/game/pufo_baseui.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
@@ -563,7 +564,7 @@ is the module that answers to it.
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
 
-### `strat-ui` (56 functions)
+### `strat-ui` (74 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -603,11 +604,21 @@ is the module that answers to it.
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x614cc` | `ManufScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x614fc` | `TransferScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x6167c` | `BaseInfoScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x61794` | `BuySellScreen_OpenBuy` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x617c4` | `BuySellScreen_OpenSell` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x61844` | `BaseFacScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b46c` | `OptionsScreen_ReturnToTitle` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x557c8` | `BaseInfoScreen_OnOk` | 44 | `src/pufo/game/pufo_baseui.h` |
+| `0x716a8` | `PsiScreen_OnOk` | 44 | `src/pufo/game/pufo_baseui.h` |
 | `0x61874` | `SoldierScreen_PanelPrev` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x6189c` | `SoldierScreen_PanelNext` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x6dd24` | `ManufScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x76138` | `BuySellScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x96ab0` | `Transfer_CacheSelIndex` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/game/pufo_menu.h` |
 | `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
@@ -619,10 +630,18 @@ is the module that answers to it.
 | `0x1a014` | `MenuBtn_Confirm5` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/game/pufo_baseui.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | `src/pufo/game/pufo_baseui.h` |
 | `0x589dc` | `BaseFacScreen_PanelNext` | 16 | `src/pufo/game/pufo_baseui.h` |
+| `0x557bc` | `BaseInfoScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x589c0` | `BaseFacScreen_CloseThunkA` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x59b54` | `BaseFacScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x64ae4` | `SoldierScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x6e3d4` | `ManufScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x75154` | `BuySellScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 
 ### `titles` (2 functions)
 
@@ -933,7 +952,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 151 functions, 124364 bytes remaining
+### `strat` — 150 functions, 122908 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -958,7 +977,6 @@ whose port work they belong to.
 | `0x5abe4` | `FundingScreen_Toggle` | 1560 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a4bc` | `BaseFac_BuildStatusMsg` | 1520 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x69a38` | `Base_StripAllCraftCargo` | 1476 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1089,7 +1107,7 @@ whose port work they belong to.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 187 functions, 110472 bytes remaining
+### `strat-ui` — 169 functions, 109896 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1257,29 +1275,11 @@ whose port work they belong to.
 | `0x1a1c0` | `MenuCtl13_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a1f4` | `MenuCtl14_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a034` | `MenuCtl1_OnClick` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x614cc` | `ManufScreen_Open` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x614fc` | `TransferScreen_Open` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6167c` | `BaseInfoScreen_Open` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x61794` | `BuySellScreen_OpenBuy` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x617c4` | `BuySellScreen_OpenSell` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x61844` | `BaseFacScreen_Open` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b46c` | `OptionsScreen_ReturnToTitle` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x716a8` | `PsiScreen_OnOk` | 44 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a09c` | `MenuCtl0_OnClick` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x557bc` | `BaseInfoScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x589c0` | `BaseFacScreen_CloseThunkA` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x59b54` | `BaseFacScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x64ae4` | `SoldierScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x6e3d4` | `ManufScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x75154` | `BuySellScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
 ### `titles` — 11 functions, 4296 bytes remaining
 
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 46 |
+| `test_baseui` | PASS | 86 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
