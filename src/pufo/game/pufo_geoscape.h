@@ -220,6 +220,17 @@ i32 Base_CountBuiltFacilities(const u8 *abFacilityGrid, i32 nBaseIndex);
 i32 Base_CountSoldiersAssigned(Soldier *const *apSoldiers, i32 nSoldierCount,
                                Ship *const *apCraft, i32 nCraftCount, i32 nBaseIndex);
 
+/* Base_CountShipsAtBase @ 0x66090. Craft homed at this base, plus one byte of the shared
+ * grid. The second half is the reason this is not just a count: it adds
+ * BaseGrid_GetByte0x654(grid, apBases[nBaseIndex]->bUnk4), so the number a caller gets is
+ * the craft at the base plus whatever that grid byte holds for the base's type byte.
+ *
+ * The arity question is settled: BaseGrid_GetByte0x654 takes two arguments (its first is
+ * never read) and reaches both the grid and the base array through globals. The port's
+ * BaseGrid_GetTypeByte takes the same two things as parameters. */
+i32 Base_CountShipsAtBase(Ship *const *apCraft, i32 nCraftCount, BaseRec *const *apBases,
+                          i32 nBaseCount, const u8 *abGrid, i32 nBaseIndex);
+
 /* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
  * The same 6 by 6 walk as the two capacity passes, returning 1 at the first match. A free cell
  * means its buildDays byte is zero, that is nothing under construction there.

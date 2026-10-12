@@ -5914,3 +5914,15 @@ grew a `bRequireFree` flag for it rather than copying the loop a fifth time. Wha
 it is not a capacity.
 
 Covered by `TestCapacityFamily`, 14 checks.
+
+`Base_CountShipsAtBase @ 0x66090` is ported, and the arity question it raised is settled:
+`BaseGrid_GetByte0x654 @ 0x6acc0` takes **two** arguments (its first is never read) and reaches both
+the grid and the base array through globals — the port's `BaseGrid_GetTypeByte` takes those same two
+things as parameters.
+
+The function is a craft count plus a grid byte: `count(bHomeBase == n) + grid[find(n)]`, where `find`
+searches for `apBases[n]->bUnk4`. Because the type byte comes from the base itself, the search always
+answers at least that base, so the grid half is never skipped by a failed search — only an empty base
+slot skips it, and there the port returns the craft count instead of dereferencing NULL.
+
+Covered by `TestShipsAtBase`, 6 checks.

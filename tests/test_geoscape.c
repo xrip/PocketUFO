@@ -1014,6 +1014,60 @@ static void TestSoldiersAssigned(void)
                "a craft index past the array is not counted");
 }
 
+
+static void TestShipsAtBase(void)
+{
+    static Ship g_aShip[3];
+    static Ship *g_apShip[3];
+    static BaseRec g_aBase[2];
+    static BaseRec *g_apBase[2];
+    static u8 g_abGrid[8];
+
+    printf("Base_CountShipsAtBase\n");
+
+    memset(g_aShip, 0, sizeof(g_aShip));
+    memset(g_aBase, 0, sizeof(g_aBase));
+    memset(g_abGrid, 0, sizeof(g_abGrid));
+    for (int i = 0; i < 3; ++i) {
+        g_apShip[i] = &g_aShip[i];
+        g_aShip[i].bHomeBase = (u8)(i < 2 ? 0 : 1);
+    }
+    for (int i = 0; i < 2; ++i) {
+        g_apBase[i] = &g_aBase[i];
+    }
+    g_aBase[0].bUnk4 = 7;
+    g_aBase[1].bUnk4 = 9;
+    g_abGrid[0] = 5;
+    g_abGrid[1] = 3;
+
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 0), 7,
+               "two craft homed here, plus the grid byte for this base's type byte");
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 1), 4,
+               "one craft homed at base 1, plus its own grid byte");
+
+    /* The grid half follows the type byte, not the base index: a second base sharing the
+     * type byte resolves to the first one. */
+    g_aBase[1].bUnk4 = 7;
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 1), 1 + 5,
+               "a shared type byte resolves to the first base that has it");
+
+    /* The type byte always answers at least its own base, so the grid half is never
+     * skipped by a failed search. What can skip it is an empty base slot. */
+    g_aBase[0].bUnk4 = 20;
+    g_aBase[1].bUnk4 = 21;
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 1), 1 + 3,
+               "a base with its own type byte reads its own grid slot");
+
+    g_apBase[0] = NULL;
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 0), 2,
+               "an empty base slot still counts the craft homed there, and adds no grid byte, where the original would dereference it");
+    g_apBase[0] = &g_aBase[0];
+
+    /* Deviation: the original indexes apBases with an unbounded base index. */
+    CheckEqI32(Base_CountShipsAtBase(g_apShip, 3, g_apBase, 2, g_abGrid, 5), 0,
+               "a base index past the array is refused rather than read");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1026,6 +1080,7 @@ int main(void)
     TestWorkshopCap();
     TestCapacityFamily();
     TestSoldiersAssigned();
+    TestShipsAtBase();
     TestFindFacilityCell();
     TestActiveManuf();
     TestWorkshopNeeded();

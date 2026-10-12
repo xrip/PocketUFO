@@ -583,3 +583,27 @@ i32 Base_CountSoldiersAssigned(Soldier *const *apSoldiers, i32 nSoldierCount,
 
     return nCount;
 }
+
+/* Base_CountShipsAtBase @ 0x66090. Craft homed at this base, plus the shared grid byte for
+ * this base's type. The grid half is why this is not just a count: 0x66110 adds
+ * BaseGrid_GetByte0x654(grid, apBases[nBaseIndex]->bUnk4) to the craft total. */
+i32 Base_CountShipsAtBase(Ship *const *apCraft, i32 nCraftCount, BaseRec *const *apBases,
+                          i32 nBaseCount, const u8 *abGrid, i32 nBaseIndex)
+{
+    i32 nShips = 0;
+
+    for (i32 i = 0; i < nCraftCount; ++i) {
+        if (apCraft != NULL && apCraft[i] != NULL &&
+            (i32)apCraft[i]->bHomeBase == nBaseIndex) {
+            ++nShips; /* 0x660D8 */
+        }
+    }
+
+    if (nBaseIndex < 0 || nBaseIndex >= nBaseCount || apBases == NULL ||
+        apBases[nBaseIndex] == NULL) {
+        return nShips; /* the original indexes apBases with an unbounded base index */
+    }
+
+    return nShips + BaseGrid_GetTypeByte(apBases, nBaseCount, abGrid,
+                                         apBases[nBaseIndex]->bUnk4); /* 0x66110 */
+}
