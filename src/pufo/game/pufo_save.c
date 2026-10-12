@@ -733,3 +733,50 @@ bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState)
         && DatFile_Read(pDat, pState->abTail8a, 8)
         && DatFile_Read(pDat, pState->abTail8b, 8);
 }
+
+/* 0x3f4f4. All three writes run; the original returns only the last result (0x3F52C), so a
+ * failed middle write does not stop the chunk. The tail region is never written. */
+bool Save_WriteProduct(DatFile *pDat, const u8 *pBlock)
+{
+    if (pDat == NULL || pBlock == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_PRODUCT)) {
+        return false; /* 0x3F500 */
+    }
+    (void)DatFile_Write(pDat, pBlock, 6400);          /* 0x3F514 */
+    (void)DatFile_Write(pDat, pBlock + 6400, 6400);   /* 0x3F520 */
+    return DatFile_Write(pDat, pBlock + 12800, 3200); /* 0x3F52C */
+}
+
+/* 0x4062c. The offsets are fixed at 0 / 6400 / 12800 / 16000 in BOTH branches; only the
+ * sizes change. An old save therefore fills entries 0..1151 of each array and leaves the
+ * rest of the block untouched. */
+bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock)
+{
+    if (pDat == NULL || pBlock == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_PRODUCT)) {
+        return false; /* 0x40638 */
+    }
+    if (nSaveFmtVer >= 3) {
+        if (!DatFile_Read(pDat, pBlock, 6400)) {
+            return false; /* 0x406B0 */
+        }
+        if (!DatFile_Read(pDat, pBlock + 6400, 6400)) {
+            return false; /* 0x406C8 */
+        }
+        return DatFile_Read(pDat, pBlock + 12800, 3200); /* 0x406D0, array C via the tail */
+    }
+    if (!DatFile_Read(pDat, pBlock, 4608)) {
+        return false; /* 0x4065C */
+    }
+    if (!DatFile_Read(pDat, pBlock + 6400, 4608)) {
+        return false; /* 0x40674 */
+    }
+    if (!DatFile_Read(pDat, pBlock + 12800, 2304)) {
+        return false; /* 0x4068C */
+    }
+    return DatFile_Read(pDat, pBlock + 16000, 1152); /* 0x40690, the region past array C */
+}

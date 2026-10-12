@@ -261,4 +261,36 @@ typedef struct SaveSmapState {
 bool Save_WriteSmap(DatFile *pDat, const SaveSmapState *pState);
 bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState);
 
+/* ------------------------------------------------- the product chunk
+ *
+ * Evidence: Save_WriteProduct @ 0x3f4f4, Save_ReadProduct @ 0x4062c.
+ *
+ * The product table is three parallel arrays that sit CONTIGUOUS in the original, and the
+ * chunk addresses them by a fixed offset from the start of the first one:
+ *
+ *     A  32-bit, 1600 entries, 6400 bytes, at block +0      (0x159E9C)
+ *     B  32-bit, 1600 entries, 6400 bytes, at block +6400   (0x15B79C)
+ *     C  16-bit, 1600 entries, 3200 bytes, at block +12800  (0x15D09C)
+ *     tail                       1152 bytes, at block +16000 (0x15DD1C)
+ *
+ * Writing is always the new layout: 6400, 6400, 3200, and the tail is not written at all.
+ *
+ * Reading depends on the save format version byte at 0x18655C, and this is the part that
+ * matters. The OFFSETS stay the same in both branches; only the SIZES shrink:
+ *
+ *     version >= 3: A 6400, B 6400, then the shared tail read puts C (3200) at +12800
+ *     version <  3: A 4608, B 4608, C 2304, then the tail read puts 1152 bytes at +16000
+ *
+ * So an old save fills entries 0..1151 of each array and leaves 1152..1599 holding whatever
+ * was there before the load. The two branches are not two layouts over the same data; they
+ * are the same layout read with different widths.
+ *
+ * The `| 4` in the original's last address is the compiler folding the four-byte gap between
+ * &anLineAux[149] and &anLineAux[150]: 12800|4 lands on block +12800 and 16000|4 on block
+ * +16000. The real offsets are 12800 and 16000. */
+#define PUFO_PRODUCT_BLOCK_BYTES 17152  /* 16000 + 1152, the widest a read can reach */
+
+bool Save_WriteProduct(DatFile *pDat, const u8 *pBlock);
+bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock);
+
 #endif /* PUFO_SAVE_H */

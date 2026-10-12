@@ -1870,6 +1870,41 @@ records written field by field (740 on-disk bytes per 742-byte site; `gap_519` a
 20 + 200*740 + 21 = 148041 bytes. Covered by `tests/test_save.c` (`TestSmapChunk`).
 
 
+### Product save chunk (done)
+
+`Save_WriteProduct @ 0x3f4f4` and `Save_ReadProduct @ 0x4062c` are recreated in
+`game/pufo_save.{h,c}` over one contiguous block of `PUFO_PRODUCT_BLOCK_BYTES` = 17152 bytes.
+The product table is three parallel arrays that sit back to back in the original, and the
+chunk reaches them by a fixed offset from the first:
+
+```
+A  32-bit, 1600 entries, 6400 bytes, block +0      (0x159E9C)
+B  32-bit, 1600 entries, 6400 bytes, block +6400   (0x15B79C)
+C  16-bit, 1600 entries, 3200 bytes, block +12800  (0x15D09C)
+tail                       1152 bytes, block +16000 (0x15DD1C)
+```
+
+Writing is always the new layout -- 6400, 6400, 3200 -- and the tail is never written. All
+three writes run; the original returns only the last result, so a failed middle write does
+not stop the chunk.
+
+Reading branches on the save format version byte at 0x18655C, and the important part is what
+does NOT change: the offsets stay 0 / 6400 / 12800 / 16000 in both branches, only the sizes
+shrink.
+
+```
+version >= 3: A 6400, B 6400, then the shared tail read puts C (3200) at +12800
+version <  3: A 4608, B 4608, C 2304, then the tail read puts 1152 bytes at +16000
+```
+
+So an old save fills entries 0..1151 of each array and leaves 1152..1599 holding whatever was
+there before the load. The two branches are the same layout read with different widths, not
+two layouts. The test proves it by pre-filling the read buffer with a sentinel and asserting
+the gap stays sentinel. The `| 4` in the original's last address is the compiler folding the
+four-byte gap between `&anLineAux[149]` and `&anLineAux[150]`: `12800|4` lands on block +12800
+and `16000|4` on block +16000. Covered by `tests/test_save.c` (`TestProductChunk`, 31 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

@@ -545,6 +545,84 @@ static void TestAssignRosterIndices(void)
     Check(Save_AssignRosterIndices(true, NULL, 0, apItems, 4), "  soldiers NULL is fine");
 }
 
+static void TestProductChunk(void)
+{
+    static DatFile dat;
+    static u8 aBlock[PUFO_PRODUCT_BLOCK_BYTES];
+    static u8 aRead[PUFO_PRODUCT_BLOCK_BYTES];
+    static u8 aRaw[12672];
+
+    printf("Save_WriteProduct / Save_ReadProduct\n");
+
+    memset(aBlock, 0, sizeof(aBlock));
+    aBlock[0] = 0xA1;        /* array A, entry 0 */
+    aBlock[6399] = 0xA2;     /* array A, last byte */
+    aBlock[6400] = 0xB1;     /* array B, entry 0 */
+    aBlock[12799] = 0xB2;    /* array B, last byte */
+    aBlock[12800] = 0xC1;    /* array C, entry 0 */
+    aBlock[15999] = 0xC2;    /* array C, last byte */
+    aBlock[16000] = 0xD1;    /* the tail region, which the writer must NOT touch */
+
+    Check(OpenWrite("test_prod.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteProduct(&dat, aBlock), "  product chunk written");
+    DatFile_Close(&dat);
+
+    CheckEqI32(FileSizeOf(L"test_prod.tmp"), 46 + 16000,
+               "  the new chunk payload is 6400 + 6400 + 3200");
+
+    memset(aRead, 0xEE, sizeof(aRead));
+    Check(OpenRead("test_prod.tmp", &dat), "  reopened for read");
+    Check(Save_ReadProduct(&dat, 3, aRead), "  version 3 read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(aRead[0], 0xA1, "array A start round-trips");
+    CheckEqI32(aRead[6399], 0xA2, "array A end round-trips");
+    CheckEqI32(aRead[6400], 0xB1, "array B sits at block +6400");
+    CheckEqI32(aRead[12799], 0xB2, "array B end round-trips");
+    CheckEqI32(aRead[12800], 0xC1, "array C sits at block +12800");
+    CheckEqI32(aRead[15999], 0xC2, "array C end round-trips");
+    CheckEqI32(aRead[16000], 0xEE, "the tail is never written");
+
+    /* An old save: same offsets, smaller sizes. Everything past the shrunk size must keep
+     * what the reader already had, which here is the 0xEE sentinel. */
+    memset(aRaw, 0, sizeof(aRaw));
+    aRaw[0] = 0x11;
+    aRaw[4607] = 0x12;        /* A's 4608 bytes */
+    aRaw[4608] = 0x21;        /* B's 4608 bytes */
+    aRaw[9215] = 0x22;
+    aRaw[9216] = 0x31;        /* C's 2304 bytes */
+    aRaw[11519] = 0x32;
+    aRaw[11520] = 0x41;       /* the tail's 1152 bytes */
+    aRaw[12671] = 0x42;
+
+    Check(OpenWrite("test_prod2.tmp", &dat, 2), "  old container opened");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_PRODUCT), "  old chunk begun");
+    Check(DatFile_Write(&dat, aRaw, 4608), "  old A written");
+    Check(DatFile_Write(&dat, aRaw + 4608, 4608), "  old B written");
+    Check(DatFile_Write(&dat, aRaw + 9216, 2304), "  old C written");
+    Check(DatFile_Write(&dat, aRaw + 11520, 1152), "  old tail written");
+    DatFile_Close(&dat);
+
+    memset(aRead, 0xEE, sizeof(aRead));
+    Check(OpenRead("test_prod2.tmp", &dat), "  old reopened");
+    Check(Save_ReadProduct(&dat, 2, aRead), "  version 2 read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(aRead[0], 0x11, "old A start lands at block +0");
+    CheckEqI32(aRead[4607], 0x12, "old A ends at entry 1151");
+    CheckEqI32(aRead[4608], 0xEE, "old A leaves a gap the reader never fills");
+    CheckEqI32(aRead[6400], 0x21, "old B still lands at block +6400");
+    CheckEqI32(aRead[6400 + 4607], 0x22, "old B ends 4608 bytes later");
+    CheckEqI32(aRead[12800], 0x31, "old C still lands at block +12800");
+    CheckEqI32(aRead[12800 + 2303], 0x32, "old C ends 2304 bytes later");
+    CheckEqI32(aRead[16000], 0x41, "the old tail lands at block +16000");
+    CheckEqI32(aRead[16000 + 1151], 0x42, "and runs 1152 bytes");
+
+    Check(!Save_WriteProduct(NULL, aBlock), "  NULL dat refused");
+    Check(!Save_WriteProduct(&dat, NULL), "  NULL block refused");
+    Check(!Save_ReadProduct(&dat, 3, NULL), "  a NULL read block is refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -558,6 +636,7 @@ int main(void)
     TestAssignRosterIndices();
     TestResearchChunk();
     TestSmapChunk();
+    TestProductChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
