@@ -112,3 +112,18 @@ SoftSurf_BlitGlyph_Inner	Font_BlitGlyph	the RLE glyph rasteriser lives in the fo
 SoftSurf_BlitGlyph	Font_DrawGlyph	bound form merged into Font_DrawGlyph
 Font_BlitGlyphToSoft	Font_DrawGlyph	clamp-to-19, glyph table lookup, palette resolve, blit
 SoftSurf_BlitCopyRaw	Blit_CopyRows	the original carries this 420-byte body twice, 0xa3a14 and 0xa3db8
+# --- merged families: the original has near-identical siblings that differ only in which flag or
+# value they touch; the port keeps one body and an index. Verified against the port sources.
+Map_ToggleFlag128A8D_Play11	Ui_ToggleOption	id TACT_TOGGLE_SCROLL; five toggles, one body, each with its own coupling rule
+Map_ToggleFlag128A8E_Play11	Ui_ToggleOption	id TACT_TOGGLE_SHOW; it recomputes from SCROLL rather than flipping
+Map_ToggleFlag128A8F_Play11	Ui_ToggleOption	id TACT_TOGGLE_RUN
+Map_ToggleFlag128A90_Play11	Ui_ToggleOption	id TACT_TOGGLE_TURN; mutually exclusive with MENU
+Map_ToggleFlag128A91_Play11	Ui_ToggleOption	id TACT_TOGGLE_MENU; mutually exclusive with TURN
+Tact_SetFireModeAimed	Ui_SetFireMode	nMode selects the mode; the three originals differ only in which mode they set
+Tact_SetFireModeSnap	Ui_SetFireMode	merged
+Tact_SetFireModeAuto	Ui_SetFireMode	merged
+MenuBtn_SetSfxVol1	Menu_SetSfxVolume	nStep is the 0-based pad index, the stored value is nStep + 1
+MenuBtn_SetSfxVol2	Menu_SetSfxVolume	merged
+MenuBtn_SetSfxVol3	Menu_SetSfxVolume	merged
+MenuBtn_SetSfxVol4	Menu_SetSfxVolume	merged
+MenuBtn_SetSfxVol5	Menu_SetSfxVolume	merged
