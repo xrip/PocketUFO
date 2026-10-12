@@ -2,8 +2,7 @@
  *
  * Evidence: Map_LoadMa1 @ 0x54ba4, CDialogTemplate ctor @ 0x54c3c,
  *           GetTemplateByte0 @ 0x54c68, GetTemplateByte1 @ 0x54c5c,
- *           GetLevelCount @ 0x54c74, GetCellByte @ 0x54c80,
- *           Map_ApplyTemplateToCells @ 0x54cf4.
+ *           GetLevelCount @ 0x54c74, GetCellByte @ 0x54c80, *           Map_ApplyTemplateToCells @ 0x54cf4.
  *
  * ## .ma1 layout
  *
@@ -63,6 +62,9 @@ typedef struct MapTemplate {
 bool MapTemplate_Load(MapTemplate *pTpl, const char *pszBase, u8 nFlag);
 
 void MapTemplate_Free(MapTemplate *pTpl);
+
+/* CDialogTemplate_GetLevelCount @ 0x54c74. Header byte 2. */
+u8 MapTemplate_GetLevelCount(const MapTemplate *pTpl);
 
 /* CDialogTemplate_GetCellByte @ 0x54c80. Returns 0 when the coordinates are out
  * of range; the original indexes unchecked (see the parity notes). */

@@ -61,6 +61,14 @@ void MapTemplate_Free(MapTemplate *pTpl)
     pTpl->nLevels = 0;
 }
 
+/* CDialogTemplate_GetLevelCount @ 0x54c74. The level count is header byte 2.
+ * The original reads it through the pointer every call; the port keeps it in the struct
+ * when the template loads, which is the same value. */
+u8 MapTemplate_GetLevelCount(const MapTemplate *pTpl)
+{
+    return pTpl->nLevels;
+}
+
 /* CDialogTemplate_GetCellByte @ 0x54c80.
  *
  * The original computes

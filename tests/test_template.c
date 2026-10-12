@@ -159,6 +159,8 @@ static void TestCellByte(void)
     CheckEqI32(MapTemplate_GetCellByte(&tpl, tpl.nDimX, 0, 0, 0), 0, "  x out of range");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, tpl.nDimY, 0, 0), 0, "  y out of range");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, tpl.nLevels, 0), 0, "  z out of range");
+    CheckEqI32(MapTemplate_GetLevelCount(&tpl), tpl.nLevels,
+               "  GetLevelCount returns header byte 2");
     CheckEqI32(MapTemplate_GetCellByte(&tpl, 0, 0, 0, PUFO_MA1_CELL_BYTES), 0, "  slot out of range");
 
     /* The last cell must be inside the blob: 4*(dimX*dimY*(levels-1) + ...) */

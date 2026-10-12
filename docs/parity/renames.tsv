@@ -127,3 +127,23 @@ MenuBtn_SetSfxVol2	Menu_SetSfxVolume	merged
 MenuBtn_SetSfxVol3	Menu_SetSfxVolume	merged
 MenuBtn_SetSfxVol4	Menu_SetSfxVolume	merged
 MenuBtn_SetSfxVol5	Menu_SetSfxVolume	merged
+MenuBtn_SetGamma0	Menu_SetGamma	five pads, one body; nStep is the 0-based pad index
+MenuBtn_SetGamma1	Menu_SetGamma	merged
+MenuBtn_SetGamma2	Menu_SetGamma	merged
+MenuBtn_SetGamma3	Menu_SetGamma	merged
+MenuBtn_SetGamma4	Menu_SetGamma	merged
+Map_SetSubMode0_Play11	Ui_SetSubMode	nine pads set nine submodes through one body
+Map_SetSubMode1_Play11	Ui_SetSubMode	merged
+Map_SetSubMode2_Play11	Ui_SetSubMode	merged
+Map_SetSubMode3_Play11	Ui_SetSubMode	merged
+Map_SetSubMode4_Play11	Ui_SetSubMode	merged
+Map_SetSubMode5_Play11	Ui_SetSubMode	merged
+Map_SetSubMode6_Play11	Ui_SetSubMode	merged
+Map_SetSubMode7_Play11	Ui_SetSubMode	merged
+Map_SetSubMode8_Play11	Ui_SetSubMode	merged
+Ui_ToggleMusicMute	Menu_ToggleMusicMute	the original offers them separately; the port keys the behaviour on the option byte to stay DRY
+Ui_ToggleSfxMute	Menu_ToggleSfxMute	mirrors the new flag into its one-byte pad indicator
+TactItem_bTryReloadClip	TactItem_TryReloadClip	the ammo-cap lookup is injected rather than reached through globals
+CDialogTemplate_GetCellByte	MapTemplate_GetCellByte	template module owns it, and a bounds check was added
+Menu_ConfirmQuitDialog	Menu_OpenQuitDialog	the YES and NO callbacks are injected
+SoldierScreen_CopyNameToEdit	SoldierName_CopyToEdit	the port takes explicit pointers and leaves the scratch flag to the caller
