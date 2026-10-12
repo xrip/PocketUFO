@@ -699,6 +699,114 @@ static void TestHpGlyphs(void)
     CheckEqI32(InkRow(5), 17 - 6, "the draw y is nObjParam + nDrawY");
 }
 
+static void TestViewportGuide(void)
+{
+    IsoViewportGuide g;
+    u16 *pPix;
+
+    printf("MapView_DrawViewportGuide @ 0x1aadc\n");
+
+    memset(&g, 0, sizeof(g));
+    g.bActionReady = 1;
+    g.bPlayerInputEnabled = 1;
+    g.bDeployPanelOpen = 0;
+    g.nHudPadHeight = 20;   /* v2 = 300, v3 = 100, v4 = 200 */
+
+    /* The guide blits from the surface to the surface, so the test fills the surface with a marker
+     * colour and then clears the probe pixels it expects to be repainted. The source tile at
+     * (172,184) keeps the marker, so any destination the guide touches comes back non-zero.
+     * SoftSurf_AllocPixels frees the old pixels when they are non-NULL, so it doubles as the
+     * reallocation here. */
+    SoftSurf_AllocPixels(&g_surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_surf;
+    pPix = (u16 *)g_surf.pPixels;
+    for (i32 i = 0; i < 240 * 320; ++i) { pPix[i] = 0x1234; }
+
+    /* Gate: every one of the four conditions must hold. */
+    g.bGameTickHold = 1;
+    pPix[15 * 240 + 15] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "a held game tick suppresses the guide");
+    g.bGameTickHold = 0;
+
+    g.bCursorBusy = 1;
+    pPix[15 * 240 + 15] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "a busy cursor suppresses the guide");
+    g.bCursorBusy = 0;
+
+    g.bActionReady = 0;
+    pPix[15 * 240 + 15] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "no action phase suppresses the guide");
+    g.bActionReady = 1;
+
+    g.bPlayerInputEnabled = 0;
+    pPix[15 * 240 + 15] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[15 * 240 + 15], 0, "player input off suppresses the guide");
+    g.bPlayerInputEnabled = 1;
+
+    /* The frame itself. SoftSurf_BlitSrcRect blends source and destination by the colour key rather
+     * than copying, so the value that lands depends on how many segments cover a pixel - 813 for one
+     * pass, 1138 for two. What is assertable is that a covered pixel is no longer empty. */
+    g.nUiSlot5 = 0;
+    pPix[15 * 240 + 15] = 0;
+    pPix[15 * 240 + 225] = 0;
+    pPix[285 * 240 + 15] = 0;   /* y = v2 - 15 */
+    pPix[300 * 240 + 0] = 0;    /* the full-width bottom line at y = v2 */
+    pPix[0 * 240 + 80] = 0;     /* the x 80 tick at the top */
+    MapView_DrawViewportGuide(&g);
+    Check(pPix[15 * 240 + 15] != 0, "the frame's top-left corner");
+    Check(pPix[15 * 240 + 225] != 0, "and its top-right");
+    Check(pPix[285 * 240 + 15] != 0, "and the bottom of the left side at v2 - 15");
+    Check(pPix[300 * 240 + 0] != 0, "and the full-width line at y = v2");
+    Check(pPix[0 * 240 + 80] != 0, "and the tick at x 80");
+
+    /* No edge flag draws no indicator. (0, v3 + 1) is inside the left bar but outside every frame
+     * segment, so it reports the indicator alone. */
+    pPix[101 * 240 + 0] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[101 * 240 + 0], 0, "no edge flag draws no indicator");
+
+    g.nUiSlot5 = 0x000000FFu;   /* left */
+    pPix[101 * 240 + 0] = 0;
+    MapView_DrawViewportGuide(&g);
+    Check(pPix[101 * 240 + 0] != 0, "the left flag draws a bar between the third lines");
+
+    g.nUiSlot5 = 0x0000FF00u;   /* right */
+    pPix[101 * 240 + 0] = 0;
+    pPix[101 * 240 + 225] = 0;
+    MapView_DrawViewportGuide(&g);
+    CheckEqI32((i32)pPix[101 * 240 + 0], 0, "the right flag does not draw on the left edge");
+    Check(pPix[101 * 240 + 225] != 0, "and draws on the right edge");
+
+    /* Priority: bottom wins over top, top over left. The bottom bar starts at v2 - v3 = 200. */
+    g.nUiSlot5 = 0xFF00FFFFu;   /* bottom, top and left all set */
+    pPix[200 * 240 + 0] = 0;
+    pPix[101 * 240 + 0] = 0;    /* the left bar would cover this */
+    MapView_DrawViewportGuide(&g);
+    Check(pPix[200 * 240 + 0] != 0, "bottom takes priority over top and left");
+    CheckEqI32((i32)pPix[101 * 240 + 0], 0, "so the left bar is left alone");
+
+    /* Top with no left or right flag gives the centre cap at (80,0), not a side bar. Add the left
+     * flag and the top branch draws the left bar from y 15 instead. */
+    g.nUiSlot5 = 0x00FF00FFu;   /* top and left */
+    pPix[16 * 240 + 0] = 0;
+    MapView_DrawViewportGuide(&g);
+    Check(pPix[16 * 240 + 0] != 0, "top with left draws the bar from y 15, not between the thirds");
+    CheckEqI32((i32)pPix[101 * 240 + 0], 0, "and not at the third line");
+
+    /* The deploy panel changes v2, and with it every third line: v2 = 303, v3 = 101. */
+    g.nUiSlot5 = 0x000000FFu;
+    g.bDeployPanelOpen = 1;
+    pPix[102 * 240 + 0] = 0;
+    pPix[100 * 240 + 0] = 0;
+    MapView_DrawViewportGuide(&g);
+    Check(pPix[102 * 240 + 0] != 0, "the deploy panel moves v3 to 101, so the bar starts there");
+    CheckEqI32((i32)pPix[100 * 240 + 0], 0, "and one row earlier is untouched");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -712,6 +820,7 @@ int main(void)
     TestResolve();
     TestSelectMarkers();
     TestHpGlyphs();
+    TestViewportGuide();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

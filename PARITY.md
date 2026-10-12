@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 637 / 1103 (57.8%) |
-| Bytes of original code cited | 206272 / 598792 (34.4%) |
+| Functions cited as evidence | 638 / 1103 (57.8%) |
+| Bytes of original code cited | 207528 / 598792 (34.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6127 |
+| Test checks run | 6146 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 164 | 214 | 71432 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 165 | 214 | 72688 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 46 | 52 | 30492 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 104 | 205 | 33812 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -233,7 +233,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (164 functions)
+### `tact` (165 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -252,6 +252,7 @@ is the module that answers to it.
 | `0x2bd00` | `Map_QueueDoorAction` | 1448 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4dcf4` | `Unit_bFacingAngleDuel` | 1376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x30368` | `Tact_ComputeAimVector` | 1320 | `src/pufo/game/pufo_ballist.h` |
+| `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
@@ -941,7 +942,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 50 functions, 106912 bytes remaining
+### `tact` — 49 functions, 105656 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -966,7 +967,6 @@ whose port work they belong to.
 | `0x3be24` | `Tact_EquipTeamFromCraft` | 1836 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4c4a0` | `AfterEnemyStep` | 1368 | 1368 B of post-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x21e2c` | `MapView_DrawIsoLayer` | 1252 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3734c` | `Tact_BuildPaletteLuts` | 1184 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1315,7 +1315,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |
-| `test_isodraw` | PASS | 99 |
+| `test_isodraw` | PASS | 118 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
 | `test_mapctx` | PASS | 83 |

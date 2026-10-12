@@ -226,4 +226,40 @@ void MapView_DrawCellSelectMarkerHi(IsoDrawCtx *pIso, const IsoSelectGate *pGate
  * Like the original, this dereferences pObj without a check. */
 void TactUnit_DrawHpGlyphs(IsoDrawCtx *pIso, const IsoSpriteBases *pBases);
 
+/* What MapView_DrawViewportGuide reads. The original reaches all of it through the Map block and the
+ * cursor global; the port takes them as arguments so the guide is testable. */
+typedef struct IsoViewportGuide {
+    u8  bGameTickHold;       /* Map+0x5A */
+    u8  bActionReady;        /* Map.anActionPhaseSave0[94] @ 0x150D6 */
+    u8  bPlayerInputEnabled; /* Map+0x38 */
+    u8  bCursorBusy;         /* unk_157180->bBusy */
+    u8  bDeployPanelOpen;    /* Map+0x15110 */
+    i32 nHudPadHeight;       /* Map.pHudPad (Map+0xFC) -> uHeight */
+    u32 nUiSlot5;            /* Map.apUiSlotsA[5]: byte0 left, byte1 right, byte2 top, byte3 bottom */
+} IsoViewportGuide;
+
+/* MapView_DrawViewportGuide @ 0x1aadc.
+ *
+ * The tactical viewport frame: 13 keyed blits of one source tile (172,184) at key 150, forming a
+ * rectangle from (15,15) to (225,v2) with tick marks at x 80 and 160 and at the third lines. The
+ * bottom edge is a full 240-wide line at y = v2.
+ *
+ *   v2 = 303 when the deploy panel is open, else 320 - pHudPad->uHeight
+ *   v3 = v2 / 3, v4 = v2 - v2 / 3
+ *
+ * Note the frame is not symmetric in one place: the top horizontal run is 210 wide while the bottom
+ * one is 211.
+ *
+ * Then one indicator, chosen by the four edge flags in priority order bottom, top, left, right:
+ *
+ *   bottom set -> a vertical bar at x 0 or 225 from v2 - v3 down to v2 - 15, plus a 80-wide cap on
+ *     the bottom edge; left wins over right wins over centre
+ *   else top set -> the same shape at the top, but the vertical run is v3 - 14 rather than v3 - 15
+ *   else left set -> a 15-wide bar on the left edge between the two third lines
+ *   else right set -> the same on the right edge
+ *
+ * The indicator blits use key 128 while the frame uses 150. The original takes the draw context and
+ * never reads it. */
+void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide);
+
 #endif /* PUFO_ISODRAW_H */

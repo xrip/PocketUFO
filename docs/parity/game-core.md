@@ -6409,7 +6409,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | **ported** |
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded, deliberately not ported: `angle` and `scale` are .bss doubles with no owner in the port |
-| `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | not ported |
+| `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | not ported |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
 | `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
@@ -6570,6 +6570,30 @@ SUB  R0, R0, R3, LSL #4  ; ...but this subtracts the quotient back: it is a MODU
 
 The division is intermediate. Hex-Rays rendered `% 16` correctly, and "correcting" it to `/ 16` would
 have introduced an error rather than removed one.
+
+### `MapView_DrawViewportGuide @ 0x1aadc` — the tactical viewport frame
+
+Fourteen keyed blits of one source tile, `(172, 184)`. Thirteen form the frame at key 150; the last one
+is an indicator at key 128.
+
+```
+v2 = 303 when the deploy panel is open, else 320 - pHudPad->uHeight
+v3 = v2 / 3,  v4 = v2 - v3
+```
+
+The gate is four conditions: `bGameTickHold` clear, `anActionPhaseSave0[94]` non-zero,
+`bPlayerInputEnabled` non-zero, and the cursor not busy.
+
+Two details worth recording:
+
+- the frame is **not symmetric**: the top horizontal run is 210 wide, the bottom one is 211.
+- the indicator's priority order is **bottom, top, left, right** — not the order the four bytes are
+  stored in. And the top variant's vertical run is `v3 - 14` while the bottom variant's is `v3 - 15`.
+
+One thing the test had to learn the hard way: `SoftSurf_BlitSrcRect` **blends** source and destination
+by the colour key rather than copying. A pixel covered by one segment reads 813, by two reads 1138. So
+the assertable fact is covered-versus-not-covered, not a pixel value. Asserting an exact colour here
+would have been asserting the blend arithmetic, which is a different function's business.
 
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn

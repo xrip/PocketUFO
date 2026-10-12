@@ -3,6 +3,7 @@
 
 #include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / g_fontSys */
 #include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
+#include "render/pufo_render.h" /* SoftSurf_BlitSrcRect */
 
 void MapView_DrawCellFloorGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim)
 {
@@ -352,5 +353,79 @@ void TactUnit_DrawHpGlyphs(IsoDrawCtx *pIso, const IsoSpriteBases *pBases)
         pIso->nHpGlyph = nValue - 1;
         (void)Font_DrawGlyph(pIso->nDrawX, pIso->nObjParam + pIso->nDrawY,
                              (u16)((i32)pBases->nFloorobBase + nValue - 1), pIso->nPal);
+    }
+}
+
+/* Every segment of the guide is the same source tile at the same key; only the rectangle moves. */
+#define GUIDE_SRC_X 172
+#define GUIDE_SRC_Y 184
+#define GUIDE_KEY   150
+#define GUIDE_KEY_EDGE 128
+
+/* MapView_DrawViewportGuide @ 0x1aadc. */
+void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
+{
+    i32 v2;
+    i32 v3;
+    i32 v4;
+    u32 nFlags = pGuide->nUiSlot5;
+
+    if (pGuide->bGameTickHold != 0 || pGuide->bActionReady == 0 ||
+        pGuide->bPlayerInputEnabled == 0 || pGuide->bCursorBusy != 0) {
+        return;
+    }
+
+    v2 = (pGuide->bDeployPanelOpen != 0) ? 303 : 320 - pGuide->nHudPadHeight;
+    v3 = v2 / 3;
+    v4 = v2 - v3;
+
+    SoftSurf_BlitSrcRect(15, 15, 210, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(15, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(15, v2 - 15, 211, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(225, 15, 1, v2 - 30, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(80, 0, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(0, v3, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(160, 0, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(225, v3, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(225, v4, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(160, v2 - 15, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(80, v2 - 15, 1, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(0, v4, 15, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+    SoftSurf_BlitSrcRect(0, v2, 240, 1, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY);
+
+    /* Priority order is bottom, top, left, right. */
+    if ((nFlags & 0xFF000000u) != 0) {
+        if ((nFlags & 0xFFu) != 0) {
+            SoftSurf_BlitSrcRect(0, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(0, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        } else if ((nFlags & 0xFF00u) != 0) {
+            SoftSurf_BlitSrcRect(225, v2 - v3, 15, v3 - 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(160, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        } else {
+            SoftSurf_BlitSrcRect(80, v2 - 15, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        }
+        return;
+    }
+
+    if ((nFlags & 0xFF0000u) != 0) {
+        if ((nFlags & 0xFFu) != 0) {
+            SoftSurf_BlitSrcRect(0, 15, 15, v3 - 14, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(0, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        } else if ((nFlags & 0xFF00u) != 0) {
+            SoftSurf_BlitSrcRect(225, 15, 15, v3 - 14, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+            SoftSurf_BlitSrcRect(160, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        } else {
+            SoftSurf_BlitSrcRect(80, 0, 80, 15, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        }
+        return;
+    }
+
+    if ((nFlags & 0xFFu) != 0) {
+        SoftSurf_BlitSrcRect(0, v3, 15, v4 - v3, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
+        return;
+    }
+
+    if ((nFlags & 0xFF00u) != 0) {
+        SoftSurf_BlitSrcRect(225, v3, 15, v4 - v3, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
     }
 }
