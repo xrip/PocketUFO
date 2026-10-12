@@ -17,6 +17,9 @@
 
 #include "pufo_common.h"
 
+#include "game/pufo_boot.h"
+#include "render/pufo_render.h"
+
 typedef struct UiModalState {
     i32 nField48;             /* pCtx+48, cleared on begin */
     i32 nActionPhaseSave112;  /* anActionPhaseSave0[112], cleared on begin */
@@ -37,5 +40,40 @@ void UiModal_Begin(UiModalState *pModal, i32 n12, i32 n13, i32 n14, void *pLabel
 
 /* UiModal_End @ 0x2648c. Clears only the open flag; the stored fields survive. */
 void UiModal_End(UiModalState *pModal);
+
+/* --- the modal dialogue renderer ------------------------------------------------
+ *
+ * UiModal_DrawDialog @ 0x264a0 draws the framed dialogue: a filled body, four border
+ * strips, two travelling highlight bands, one or two 50x17 buttons with centred labels,
+ * and the text lines copied out of the 205-byte text-record table.
+ *
+ * The original reaches everything through the game context: the typewriter cursor at
+ * Map+0x86248, the progressive-draw flag at Map+0x86252A, the animation phase, the band
+ * selector unk_1139EF (Map+0x37), the selected-button slot apUiSlotsA[24], and the output
+ * slots apUiSlotsA[20..23]. The port passes those as UiModalAnim and UiModalLayout so the
+ * whole renderer is testable without a context.
+ */
+typedef struct UiModalAnim {
+    i32  nCursor;        /* Map+0x86248: the typewriter cursor, wraps at 40 */
+    i32  bProgressive;   /* Map+0x86252A: 0 draws whole lines, non-zero draws a prefix */
+    i32  nAnimPhase;     /* every key formula is centred on abs(nAnimPhase - 4) */
+    i32  nBand;          /* unk_1139EF (Map+0x37): nBand % 4 picks the horizontal band */
+    i32  nSelButton;     /* apUiSlotsA[24]: 1 highlights the left button, 2 the right */
+    const GfxColorEnv *pColor;
+} UiModalAnim;
+
+typedef struct UiModalLayout {
+    i32 nButtonX[2];     /* apUiSlotsA[20] and [21] */
+    i32 nButtonY;        /* apUiSlotsA[22] */
+    i32 nButtonCount;    /* apUiSlotsA[23] */
+} UiModalLayout;
+
+/* nRecIndex is the FIRST text record to draw; line N uses record nRecIndex + N.
+ * pszBtn1 / pszBtn2 are the button labels; NULL means no button. Returns the length of
+ * the last line drawn, or the cursor value before the update when nLines is not positive -
+ * register residue the callers do not use, reproduced rather than invented. */
+i32 UiModal_DrawDialog(UiModalAnim *pAnim, const u8 *pTextRecs, i32 nWidth,
+                       i32 nRecIndex, i32 nLines, const char *pszBtn1,
+                       const char *pszBtn2, UiModalLayout *pLayout);
 
 #endif /* PUFO_MODAL_H */
