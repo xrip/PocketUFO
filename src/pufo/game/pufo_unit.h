@@ -380,6 +380,14 @@ u16 Unit_RecalcInventoryStat(Soldier *pUnit, const InvStatHooks *pHooks);
  * Both are listed in docs/parity/game-core.md. */
 i32 Unit_RemoveAt(Soldier **apSoldiers, i32 nCount, i32 nIndex);
 
+/* Soldier_RemoveById @ 0x36b8c. Search the roster for the first soldier whose nUnk440 equals
+ * nId, then delete, compact and decrement.
+ *
+ * The original never asks whether the search found anything. Its loop ends with the index at the
+ * count, and 0x36BE0 deletes apSoldiers[that index] regardless -- so a failed lookup deletes one
+ * slot past the array and still shortens the list. The port returns the list untouched. */
+i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId);
+
 /* Unit_ResetBattleState @ 0x498b0. Derives TU/HP/armour from auStat:
  *   auStat[0] -> uTu, auStat[1] -> uHp, auStat[9] -> uStunOrArmor */
 void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,

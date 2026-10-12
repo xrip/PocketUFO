@@ -217,11 +217,9 @@ Mc1Rec *Unit_GetExtraSpr(const Soldier *pUnit)
                            (u8)pUnit->multiOrAnim.anim.uFacingResetH);
 }
 
-/* Soldier_RemoveById @ 0x36b8c, compaction half.
- *
- * The original also searches by id (Soldier.nUnk440 @ 0x1b8); the search belongs
- * to the caller here so this module does not need the whole struct. Both
- * memory-safety deviations from the original are documented in the header. */
+/* The delete, compact and decrement half of Soldier_RemoveById @ 0x36b8c. It is also used
+ * directly where the caller already knows the index. Both memory-safety deviations from the
+ * original are documented in the header. */
 i32 Unit_RemoveAt(Soldier **apSoldiers, i32 nCount, i32 nIndex)
 {
     if (nCount <= 0) {
@@ -235,6 +233,37 @@ i32 Unit_RemoveAt(Soldier **apSoldiers, i32 nCount, i32 nIndex)
         apSoldiers[i - 1] = apSoldiers[i];
     }
     return nCount - 1;
+}
+
+/* Soldier_RemoveById @ 0x36b8c. Find the first soldier whose roster id (nUnk440) matches, then
+ * delete, compact and decrement -- which is Unit_RemoveAt, so this is the search half on top of
+ * it.
+ *
+ * The original has no "was it found" test. Its search loop exits when the index reaches the
+ * count, and 0x36BE0 then deletes apSoldiers[that index]: when nothing matched that is one slot
+ * past the array, and the count is decremented anyway. The port returns the list untouched.
+ *
+ * Deviation: the original also deletes a NULL slot without complaint, and reads the count as a
+ * u16, so a count of 0 wraps to 65535 on the way out. The port keeps the count in an int. */
+i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId)
+{
+    if (apSoldiers == NULL || nCount <= 0) {
+        return nCount; /* 0x36BB0 */
+    }
+
+    i32 nIndex = 0;
+    while (nIndex < nCount) {
+        if (apSoldiers[nIndex] != NULL && apSoldiers[nIndex]->nUnk440 == nId) {
+            break; /* 0x36BC4 */
+        }
+        ++nIndex; /* 0x36BC8 */
+    }
+
+    if (nIndex >= nCount) {
+        return nCount; /* deviation: the original deletes apSoldiers[nCount] here */
+    }
+
+    return Unit_RemoveAt(apSoldiers, nCount, nIndex); /* 0x36BE0..0x36C4C */
 }
 
 /* Armour granted purely by unit type, from Unit_ResetBattleState @ 0x498b0. */

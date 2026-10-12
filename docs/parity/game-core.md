@@ -6050,3 +6050,21 @@ Correction to my own arithmetic: that batch was first written as 8,692 bytes. Th
 598 -> 590 functions and 194,100 -> 184,620 bytes, which is 9,480. The eight sizes
 (1484 + 1368 + 1284 + 1252 + 1132 + 1104 + 1068 + 788) add to 9,480. The whole integrity pass was
 15 citations and 38,888 bytes: 29,076 + 9,480 + 332.
+
+### `Soldier_RemoveById @ 0x36b8c` closed, and it was the flag worth the most (done)
+
+The one partial I left in the flag list on purpose is now a real port: the search half
+(`Soldier.nUnk440 @ 0x1b8`) sits on top of the existing `Unit_RemoveAt`, which already did the
+delete, compact and decrement.
+
+The original's bug is worth stating plainly. Its search loop ends with the index **at the count**
+when nothing matches, and `0x36BE0` then does `operator delete(apSoldiers[that index])` with no
+found test — one slot past the array — and decrements the count anyway. A failed lookup therefore
+destroys a slot the roster never had and shortens the list. The port returns the list untouched.
+
+Unexplained-flag bytes dropped from 8,728 to **8,524 (1.4% of the binary)**; coverage is unchanged
+at 588 / 1103 because this citation was already being credited, dishonestly, by `Unit_RemoveAt`.
+That is the whole point of the flag list: the number was already counting this function, and the
+flag was the thing that said it should not be.
+
+Covered by `TestRemoveById`, 9 checks.

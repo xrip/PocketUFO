@@ -1244,6 +1244,46 @@ static void TestTypeTables(void)
     CheckEqI32(g_aUnitMuzzleOffset[22][1][7].nDz, 0, "type 22 group 1 facing 7 dz");
 }
 
+
+static void TestRemoveById(void)
+{
+    Soldier *apUnits[3];
+    i32 nCount;
+
+    printf("Soldier_RemoveById\n");
+
+    for (int i = 0; i < 3; ++i) {
+        apUnits[i] = (Soldier *)malloc(sizeof(Soldier));
+        Unit_ctor(apUnits[i]);
+        apUnits[i]->nUnk440 = 7 + i;
+    }
+    nCount = 3;
+
+    nCount = Soldier_RemoveById(apUnits, nCount, 8);
+    CheckEqI32(nCount, 2, "  the middle soldier is found by roster id and removed");
+    CheckEqI32(apUnits[0]->nUnk440, 7, "  the one before it stays");
+    CheckEqI32(apUnits[1]->nUnk440, 9, "  the one after it shifts down");
+
+    /* The original has no found test: a failed search deletes apSoldiers[count] and shortens
+     * the list anyway. The port leaves everything alone. */
+    nCount = Soldier_RemoveById(apUnits, nCount, 999);
+    CheckEqI32(nCount, 2, "  an id nobody has is a no-op, not a one-past-the-end free");
+    CheckEqI32(apUnits[1]->nUnk440, 9, "  and the last slot is still there");
+
+    nCount = Soldier_RemoveById(apUnits, nCount, 7);
+    CheckEqI32(nCount, 1, "  removing the first slot works");
+    CheckEqI32(apUnits[0]->nUnk440, 9, "  the survivor moves to slot 0");
+
+    nCount = Soldier_RemoveById(apUnits, nCount, 9);
+    CheckEqI32(nCount, 0, "  and the list can be emptied this way");
+
+    /* Every soldier this test allocated was freed by the port as it removed it, so there is
+     * nothing left for the test to free. Freeing apUnits[0] here would be a double free. */
+
+    nCount = Soldier_RemoveById(NULL, 3, 1);
+    CheckEqI32(nCount, 3, "  no array at all is a no-op");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1299,6 +1339,7 @@ int main(void)
     TestFacing();
     TestPlacement();
     TestRemove();
+    TestRemoveById();
     TestGenerateNames();
     TestGenerate();
     TestControlRecovery();
