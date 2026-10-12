@@ -78,4 +78,22 @@ typedef struct PlaneWeaponEnv {
 
 i32 BasePlane_UnloadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv);
 
+/* BasePlane_LoadWeaponStores @ 0x793e0. The reverse: put carried ammo back into base stores.
+ *
+ * A mode decides how much comes back, computed from the two panel gates before the weapon is
+ * looked at. Panel A's gate gives mode 2 unless this weapon is the craft's RIGHT-hand weapon,
+ * where it drops to 1. Panel B's gate gives mode 2 unless this weapon is the LEFT-hand weapon,
+ * where it drops to 1 -- and that second test OVERWRITES the first, so with both gates set only
+ * the second one matters. With neither gate the mode stays 0.
+ *
+ * Mode 2 means the weapon is replaced outright: the craft keeps one load and only the excess
+ * above it goes back to the base. Any other mode returns the entire carried amount and zeroes
+ * the byte. Weapon 29 converts between its rounds and base items on both paths.
+ *
+ * Deviation: the original returns the weapon index on some paths and the selected craft index
+ * on the others, which is why no caller may read it as a status. None of them do. The port
+ * returns the number of base items added. */
+i32 BasePlane_LoadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv,
+                               const PlaneWeaponPanels *pPanels);
+
 #endif /* PUFO_PLANE_H */

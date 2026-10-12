@@ -159,12 +159,106 @@ static void TestUnloadWeaponStores(void)
     TestEqI32("the craft column of the object stays untouched", g_aObj52.aItemQty[0], 0);
 }
 
+static void TestLoadWeaponStores(void)
+{
+    static Ship g_aCraft[1];
+    static Ship *g_apCraft[1];
+    static BaseRec g_aBase[1];
+    static BaseRec *g_apBases[1];
+    static ObjectRecFull g_aObj52, g_aObj105;
+    static ObjectRecFull *g_apObjects[106];
+    static PlaneWeaponEnv env;
+    PlaneWeaponPanels panels;
+
+    printf("BasePlane_LoadWeaponStores\n");
+
+    memset(g_aCraft, 0, sizeof(g_aCraft));
+    memset(g_aBase, 0, sizeof(g_aBase));
+    memset(&g_aObj52, 0, sizeof(g_aObj52));
+    memset(&g_aObj105, 0, sizeof(g_aObj105));
+    memset(g_apObjects, 0, sizeof(g_apObjects));
+    g_apObjects[52] = &g_aObj52;
+    g_apObjects[105] = &g_aObj105;
+    g_apCraft[0] = &g_aCraft[0];
+    g_apBases[0] = &g_aBase[0];
+    memset(&panels, 0, sizeof(panels));
+    env.apCraft = g_apCraft;
+    env.apObjects = g_apObjects;
+    env.apBases = g_apBases;
+    env.nCraftIdx = 0;
+    env.nBaseIdx = 0;
+
+    /* No gate set: mode 0, so the whole carried amount goes back and the byte is zeroed. */
+    g_aCraft[0].bAmmo25 = 7;
+    TestEqI32("with no panel gate the whole load returns",
+              BasePlane_LoadWeaponStores(25, &env, &panels), 7);
+    TestEqI32("and the carried byte is zeroed", g_aCraft[0].bAmmo25, 0);
+    TestEqI32("landing in base stores", g_aObj52.auPerBaseVal[0], 7);
+
+    /* Gate set and this weapon is NOT the other hand's weapon: mode 2, keep one load. */
+    memset(&g_aObj52, 0, sizeof(g_aObj52));
+    panels.bPanelAOpen = 1;
+    g_aCraft[0].bWeaponR = 26;   /* not 25, so weapon 25 is being replaced outright */
+    g_aCraft[0].bAmmo25 = 25;
+    TestEqI32("mode 2 returns only the excess above one load",
+              BasePlane_LoadWeaponStores(25, &env, &panels), 15);
+    TestEqI32("and the craft keeps exactly one load of 10", g_aCraft[0].bAmmo25, 10);
+
+    /* Carrying less than one load means no excess at all. */
+    memset(&g_aObj52, 0, sizeof(g_aObj52));
+    g_aCraft[0].bAmmo25 = 4;
+    TestEqI32("carrying 4 against a load of 10 returns nothing",
+              BasePlane_LoadWeaponStores(25, &env, &panels), 0);
+    TestEqI32("and the 4 stays on the craft", g_aCraft[0].bAmmo25, 4);
+
+    /* Gate set but this weapon IS the other hand's weapon: mode 1, so everything returns. */
+    memset(&g_aObj52, 0, sizeof(g_aObj52));
+    g_aCraft[0].bWeaponR = 25;   /* panel A is changing and 25 is the RIGHT-hand weapon */
+    g_aCraft[0].bAmmo25 = 25;
+    TestEqI32("a weapon shared with the other hand returns everything",
+              BasePlane_LoadWeaponStores(25, &env, &panels), 25);
+    TestEqI32("and its byte is zeroed", g_aCraft[0].bAmmo25, 0);
+
+    /* The second gate test overwrites the first, so only panel B decides when both are set. */
+    memset(&g_aObj52, 0, sizeof(g_aObj52));
+    panels.bPanelAOpen = 1;
+    panels.bPanelBOpen = 1;
+    g_aCraft[0].bWeaponR = 99;   /* panel A would have said mode 2 ... */
+    g_aCraft[0].bWeaponL = 25;   /* ... but panel B says this is the left-hand weapon, mode 1 */
+    g_aCraft[0].bAmmo25 = 20;
+    TestEqI32("with both gates only panel B's test survives",
+              BasePlane_LoadWeaponStores(25, &env, &panels), 20);
+    TestEqI32("so the byte is zeroed rather than capped", g_aCraft[0].bAmmo25, 0);
+
+    /* Weapon 29 converts rounds back into base items on both paths. */
+    memset(&g_aObj105, 0, sizeof(g_aObj105));
+    panels.bPanelAOpen = 0;   /* no gate at all, so mode 0 and everything returns */
+    panels.bPanelBOpen = 0;
+    g_aCraft[0].bAmmo29 = 45;
+    TestEqI32("45 rounds of weapon 29 return as 4 base items",
+              BasePlane_LoadWeaponStores(29, &env, &panels), 4);
+    TestEqI32("the odd round is dropped, not carried over", g_aCraft[0].bAmmo29, 0);
+    TestEqI32("and 4 items land in the base", g_aObj105.auPerBaseVal[0], 4);
+
+    memset(&g_aObj105, 0, sizeof(g_aObj105));
+    panels.bPanelAOpen = 1;
+    g_aCraft[0].bWeaponR = 26;
+    g_aCraft[0].bAmmo29 = 130;   /* 100 rounds is one load, so the excess is 30 rounds */
+    TestEqI32("mode 2 for weapon 29 keeps 100 rounds and returns 30",
+              BasePlane_LoadWeaponStores(29, &env, &panels), 3);
+    TestEqI32("leaving one load on the craft", g_aCraft[0].bAmmo29, 100);
+
+    /* An unhandled weapon does nothing. */
+    TestEqI32("weapon 24 is not one of the five", BasePlane_LoadWeaponStores(24, &env, &panels), 0);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestSelectWeapon();
     TestUnloadWeaponStores();
+    TestLoadWeaponStores();
 
     return TestSummary("test_plane");
 }
