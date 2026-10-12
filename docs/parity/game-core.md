@@ -5465,21 +5465,33 @@ the font, roster and reset work, because that is what makes the mission usable.
 ## The base facility grid and the workshop chain
 
 Evidence: `Base_ClearFacilityGridRow @ 0x6a0e0`, `Base_CalcWorkshopCap @ 0x65894`,
-`Base_CountActiveManuf @ 0x68264`, `Base_UpdateWorkshopNeeded @ 0x65bb4`, all in
-`src/pufo/game/pufo_geoscape.{h,c}`.
+`Base_CalcLabCap @ 0x65818`, `Base_CountActiveManuf @ 0x68264`,
+`Base_CountActiveResearch @ 0x68198`, `Base_UpdateWorkshopNeeded @ 0x65bb4`,
+`Base_UpdateLabNeeded @ 0x65c7c`, all in `src/pufo/game/pufo_geoscape.{h,c}`.
 
 One base's facility layout is three 36-byte grids, indexed `6*column + row` over a 6x6
 layout. The cell-type and needed-flag grids sit inside a **144-byte per-base block**; the
-occupancy grid sits outside it:
+build-days grid sits outside it. The original's own types name them: IDA carries
+`BaseFacilityGrid` (size 1524) as `buildDays u8[8][6][6]` at `+0x000` followed by
+`fac BaseFacBlock[8]` at `+0x174`, and `BaseFacBlock` (size 144) as `tileA`, `tileB`,
+`layer2` and `facType`, each a 36-byte `BaseFacLayer6`.
 
-| grid | address |
-|---|---|
-| occupancy | `grid + 36*nBaseIndex` |
-| needed flags | `grid + 444 + 144*nBaseIndex` |
-| cell type | `grid + 480 + 144*nBaseIndex` |
+| grid | address | original name |
+|---|---|---|
+| build days | `grid + 36*nBaseIndex` | `buildDays[nBase]` |
+| needed flags | `grid + 444 + 144*nBaseIndex` | `fac[nBase].layer2` |
+| cell type | `grid + 480 + 144*nBaseIndex` | `fac[nBase].facType` |
 
-Cell type **3** is a workshop, **4** and **5** are the two placeable states the site-state
-classifier looks at, and **9** is the third one. The classifier never looks at 3.
+The typed view and the raw offsets agree exactly: `Base_UpdateStoresNeeded` contains both
+forms in one function, `pGrid + 144*nBase + 444` and `pGrid->fac[nBase].layer2`, and
+`372 + 72` is `444`.
+
+A cell counting as **free** means its build days are zero, that is nothing under
+construction there, rather than that no facility owns the cell.
+
+Cell type **2** is a lab, **3** is a workshop, **6** is storage, **4**, **5** and **9** are
+the three states the site-state classifier looks at, and the classifier never looks at 2 or
+3.
 
 `Base_ClearFacilityGridRow` is **misnamed**: it clears nothing. It classifies a base and
 stores a state byte into the per-base array at `0x161F38`, which is the port's
@@ -5493,11 +5505,22 @@ workshop is worth exactly 50 units of capacity. It reads nothing but the grid.
 
 `Base_CountActiveManuf` sums the first *N* u16 entries of a per-base quantity column, where
 *N* is the single global byte at `0x160C4C` — shared by every base, read as an unsigned byte,
-so 255 is the ceiling. The decompiler hides the address as `anLineAux[100*nBase + 149]` plus
-8578 u16 slots. `anLineAux[149]` is the product block, and 8578 u16 slots is 17152 bytes,
-which is exactly `PUFO_PRODUCT_BLOCK_BYTES`. The columns therefore start **immediately after
-the product block** at `0x15E19C`, 400 bytes per base, 200 u16 entries of which only *N* are
-read.
+so 255 is the ceiling. The decompiler hides the address; the disassembly states it outright:
+
+```asm
+LDR  R1, =unk_159E98      base
+MUL  R11, nBase, #0x190   400 bytes per base
+MOV  R3, #0x4304          17156
+LDRH R3, [R1,R3]          u16 entry; the loop advances R1 by 2
+LDR  R2, =0x15EF08
+LDRB R2, [R2, #0x1D44]    the count byte, at 0x160C4C
+```
+
+The column base is `0x159E98 + 17156 = 0x15E19C`, which is exactly where the product block
+ends: the product block starts at `0x159E9C` and `PUFO_PRODUCT_BLOCK_BYTES` is 17152. The
+constant is 17156 rather than 17152 only because the anchor `0x159E98` sits four bytes before
+the product block. The columns start **immediately after the product block**, 400 bytes per
+base, 200 u16 entries of which only *N* are read.
 
 `Base_UpdateWorkshopNeeded` consumes both. Budget is `total / 50 + 1`, and 0 when the total
 is 0, so any active manufacturing at all buys at least one needed workshop. For every
@@ -5510,3 +5533,34 @@ at `0x65BC0` **discards** a pure function's result and the budget comes from
 `Base_CountActiveManuf` instead — the port omits that call, which is the only deviation. And
 the return value is loop-counter residue: the inner counter resets to 0 each row and always
 reaches 6, so the function returns 6 no matter what it did.
+
+### The lab chain is the same machine with a different kind
+
+Evidence: `Base_CalcLabCap @ 0x65818`, `Base_CountActiveResearch @ 0x68198`,
+`Base_UpdateLabNeeded @ 0x65c7c`.
+
+`Base_CalcLabCap` is `Base_CalcWorkshopCap` over free cells of kind **2** instead of 3, still
+`count * 50`. `Base_UpdateLabNeeded` is `Base_UpdateWorkshopNeeded` over kind 2, discarding
+`Base_CalcLabCap` at `0x65C88` for the same reason and returning the same 6. The port keeps
+one implementation of each — `FacilityCountFree`, `QuantitySumColumn`, `FacilityMarkNeeded`,
+`FacilityBudget50` — and gives every original its own name over it, because the originals are
+literally copies of the same loop.
+
+`Base_CountActiveResearch` reads the **same** count byte as manufacturing, `0x160C4C`, so one
+entry count serves both, but its column has a different stride:
+
+```asm
+LDR  R2, =0x15EF08
+LDRB R3, [R2, #0x1D44]    the count byte, at 0x160C4C
+MUL  R11, nBase, #0x120   288 bytes per base, not 400
+MOV  R2, #0x1324          4900
+LDRH R2, [R1,R2]          u16 entry; R1 advances by 2
+```
+
+so its column base is `0x15EF08 + 4900 = 0x16022C`, 288 bytes per base, 144 u16 entries.
+
+**Open question, recorded rather than guessed.** The manufacturing columns run 3200 bytes
+from `0x15E19C` and end at `0x160DDC`, and `0x16022C` falls inside that range. Two arrays
+with different strides cannot both own that memory, so these are most likely two views of one
+block rather than two separate arrays. Nothing in the port depends on the answer: both
+functions take the column as an argument.
