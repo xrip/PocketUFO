@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 598 / 1103 (54.2%) |
-| Bytes of original code cited | 222504 / 598792 (37.2%) |
+| Functions cited as evidence | 599 / 1103 (54.3%) |
+| Bytes of original code cited | 222644 / 598792 (37.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5662 |
+| Test checks run | 5668 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 174 | 214 | 105664 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 35 | 52 | 26124 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 84 | 205 | 26408 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 85 | 205 | 26548 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 105 | 243 | 9192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -516,7 +516,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (84 functions)
+### `strat` (85 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -554,6 +554,7 @@ is the module that answers to it.
 | `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x55650` | `BaseRec_ctor` | 148 | `src/pufo/game/pufo_ship.h` |
+| `0x66230` | `Base_CountSoldiersAssigned` | 140 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6ae54` | `Base_FindFacilityCell` | 140 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x65b30` | `Base_CalcWeaponStorageUsed` | 132 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x662bc` | `Base_HasResearchSlotFree` | 132 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -1005,7 +1006,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 121 functions, 136048 bytes remaining
+### `strat` — 120 functions, 135908 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1088,7 +1089,6 @@ whose port work they belong to.
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a5b8` | `Ship_ClearInterceptByStrategIdx` | 148 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66090` | `Base_CountShipsAtBase` | 140 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x66230` | `Base_CountSoldiersAssigned` | 140 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a92c` | `Ship_FindIndexByStrategType` | 136 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6641c` | `Base_CraftWeaponItemId` | 128 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1311,7 +1311,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_enemyai` | PASS | 22 |
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
-| `test_geoscape` | PASS | 157 |
+| `test_geoscape` | PASS | 163 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |

@@ -207,6 +207,19 @@ bool Base_HasWorkshopSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNee
  * not a capacity. */
 i32 Base_CountBuiltFacilities(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_CountSoldiersAssigned @ 0x66230. How many soldiers are actually available at this
+ * base. A soldier counts when their base slot (Soldier.nKind) is this base, they are not
+ * away in a craft (bUnk183 != 254), and either they are not in a craft at all (bUnk183 == 255)
+ * or the craft they are in is currently at base.
+ *
+ * So 254 means "aboard a craft that is out" and 255 means "not aboard anything" -- the same
+ * pair of sentinels Ship_RemoveWithCargo leaves alone when it renumbers ship indices.
+ *
+ * Deviation: the original indexes apCraft with bUnk183 without a bound. The port refuses a
+ * soldier whose craft index is out of range rather than reading past the array. */
+i32 Base_CountSoldiersAssigned(Soldier *const *apSoldiers, i32 nSoldierCount,
+                               Ship *const *apCraft, i32 nCraftCount, i32 nBaseIndex);
+
 /* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
  * The same 6 by 6 walk as the two capacity passes, returning 1 at the first match. A free cell
  * means its buildDays byte is zero, that is nothing under construction there.

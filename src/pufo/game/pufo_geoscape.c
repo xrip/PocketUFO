@@ -546,3 +546,40 @@ i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers
     return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 8,
                               FacilityBudget(nPsiSoldiers, 10)); /* 0x6608C */
 }
+
+/* Base_CountSoldiersAssigned @ 0x66230. Soldiers actually available at this base: their base
+ * slot matches, they are not away in a craft (bUnk183 != 254), and either they are not aboard
+ * anything (bUnk183 == 255) or the craft they are aboard is currently at base. */
+i32 Base_CountSoldiersAssigned(Soldier *const *apSoldiers, i32 nSoldierCount,
+                               Ship *const *apCraft, i32 nCraftCount, i32 nBaseIndex)
+{
+    i32 nCount = 0;
+
+    if (apSoldiers == NULL) {
+        return 0;
+    }
+
+    for (i32 i = 0; i < nSoldierCount; ++i) {
+        const Soldier *pSol = apSoldiers[i];
+        if (pSol == NULL) {
+            continue;
+        }
+
+        i32 nCraft = (i32)pSol->bUnk183;
+        if (nCraft == 254) {
+            continue;                              /* away in a craft */
+        }
+        if ((i32)pSol->nKind != nBaseIndex) {
+            continue;
+        }
+
+        if (nCraft == 255) {
+            ++nCount;                              /* not aboard anything */
+        } else if (nCraft >= 0 && nCraft < nCraftCount && apCraft != NULL &&
+                   apCraft[nCraft] != NULL && apCraft[nCraft]->bAtBase != 0) {
+            ++nCount;                              /* aboard, and that craft is home */
+        }
+    }
+
+    return nCount;
+}

@@ -964,6 +964,56 @@ static void TestCapacityFamily(void)
 #undef C_O
 }
 
+
+static void TestSoldiersAssigned(void)
+{
+    static Soldier g_aSol[5];
+    static Soldier *g_apSol[5];
+    static Ship g_aShip[2];
+    static Ship *g_apShip[2];
+
+    printf("Base_CountSoldiersAssigned\n");
+
+    memset(g_aSol, 0, sizeof(g_aSol));
+    memset(g_aShip, 0, sizeof(g_aShip));
+    for (int i = 0; i < 5; ++i) {
+        g_apSol[i] = &g_aSol[i];
+        g_aSol[i].nKind = 0;
+        g_aSol[i].bUnk183 = 255;
+    }
+    g_aShip[0].bAtBase = 1;
+    g_aShip[1].bAtBase = 0;
+    for (int i = 0; i < 2; ++i) {
+        g_apShip[i] = &g_aShip[i];
+    }
+
+    g_aSol[1].bUnk183 = 0;   /* aboard craft 0, which is home */
+    g_aSol[2].bUnk183 = 1;   /* aboard craft 1, which is out */
+    g_aSol[3].bUnk183 = 254; /* away, sentinel */
+    g_aSol[4].nKind = 1;     /* a different base */
+
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 0), 2,
+               "unassigned soldiers and those in a craft that is home both count");
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 1), 1,
+               "the soldier whose base slot is 1 belongs to base 1");
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 2), 0,
+               "a base nobody is assigned to has none");
+
+    /* Flip the craft's at-base flag and the count follows. */
+    g_aShip[1].bAtBase = 1;
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 0), 3,
+               "a soldier in a craft that came home counts");
+    g_aShip[0].bAtBase = 0;
+    g_aShip[1].bAtBase = 0;
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 0), 1,
+               "and neither counts once both craft are out");
+
+    /* An out-of-range craft index is refused rather than read past the array. */
+    g_aSol[1].bUnk183 = 7;
+    CheckEqI32(Base_CountSoldiersAssigned(g_apSol, 5, g_apShip, 2, 0), 1,
+               "a craft index past the array is not counted");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -975,6 +1025,7 @@ int main(void)
     TestFacilityClassify();
     TestWorkshopCap();
     TestCapacityFamily();
+    TestSoldiersAssigned();
     TestFindFacilityCell();
     TestActiveManuf();
     TestWorkshopNeeded();
