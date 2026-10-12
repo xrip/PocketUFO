@@ -505,6 +505,31 @@ void OptionsScreen_PanelNext(UiPanel *const apPanels[4])
     }
 }
 
+/* Ufopaedia_CacheSelRow @ 0x99fd0. A one-shot cache, and the one-shot part is the behaviour.
+ *
+ * While the flag is zero it copies the ufopaedia list's current selected row into the cache and
+ * raises the flag. Once the flag is raised it does nothing at all -- the cached row is never
+ * refreshed by this path. So whatever row was current the first time this ran is the row the rest
+ * of the ufopaedia code sees, until some other path clears the flag.
+ *
+ * The original returns the address of whichever global it touched: the cache when it cached, the
+ * flag when it did not. The port returns whether it cached, which is the same information without
+ * handing out addresses. */
+bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow)
+{
+    if (pbFlag == NULL || pnCachedRow == NULL) {
+        return false;
+    }
+
+    if (*pbFlag != 0) {
+        return false; /* 0x99FD4: the flag is already up, nothing happens */
+    }
+
+    *pbFlag = 1;                              /* 0x99FE4 */
+    *pnCachedRow = nPanelSelectedRow;         /* 0x9A000: dword_187204->nUnk3032 */
+    return true;
+}
+
 /* Funding_DeltaToArrow @ 0x5ab34. Which arrow to draw next to a funding figure: -2, -1, 0, 1, 2.
  *
  * It is a chain of compares, not a switch, and the thresholds come from the total: a2/8 and a2/2,

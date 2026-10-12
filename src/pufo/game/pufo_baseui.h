@@ -316,4 +316,9 @@ i32 Funding_DeltaToArrow(i32 nDelta, i32 nTotal);
 void OptionsScreen_PanelPrev(struct UiPanel *const apPanels[4]);
 void OptionsScreen_PanelNext(struct UiPanel *const apPanels[4]);
 
+/* Ufopaedia_CacheSelRow @ 0x99fd0. A one-shot cache: while the flag is zero it stores the list's
+ * current selected row and raises the flag; once raised it does nothing, so the cached row is never
+ * refreshed by this path. Returns whether it cached. */
+bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow);
+
 #endif /* PUFO_BASEUI_H */

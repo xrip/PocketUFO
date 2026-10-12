@@ -123,6 +123,29 @@ static void TestGeoscapeScreens(void)
     CheckEqI32(g_nFundingOpen, 1, "  funding screen opened");
 }
 
+static void TestUfopaediaCache(void)
+{
+    u8 bFlag = 0;
+    i32 nCached = -1;
+
+    printf("Ufopaedia_CacheSelRow\n");
+
+    CheckEqI32(Ufopaedia_CacheSelRow(&bFlag, &nCached, 4) ? 1 : 0, 1,
+               "the first call caches and raises the flag");
+    CheckEqI32(nCached, 4, "the row that was current is the row that gets stored");
+    CheckEqI32(bFlag, 1, "and the flag is raised");
+
+    /* Once the flag is up the function does nothing at all - the cache is never refreshed. */
+    CheckEqI32(Ufopaedia_CacheSelRow(&bFlag, &nCached, 9) ? 1 : 0, 0,
+               "a second call caches nothing");
+    CheckEqI32(nCached, 4, "so the first row is what the rest of the ufopaedia code still sees");
+
+    bFlag = 0;
+    CheckEqI32(Ufopaedia_CacheSelRow(&bFlag, &nCached, 9) ? 1 : 0, 1,
+               "clearing the flag somewhere else re-arms it");
+    CheckEqI32(nCached, 9, "and the new row is cached");
+}
+
 static void TestOptionsPanelPaging(void)
 {
     static UiPanel aPanels[4];
@@ -723,6 +746,7 @@ int main(void)
 
     TestScratch();
     TestGeoscapeScreens();
+    TestUfopaediaCache();
     TestOptionsPanelPaging();
     TestFundingHelpers();
     TestPanelPaging();

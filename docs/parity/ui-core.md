@@ -1413,3 +1413,9 @@ test targets were missing `pufo_ui` on their link line and failed to link — an
 the stale binaries and reported green.
 
 Covered by `TestClearSelection` (5 checks) and `TestOptionsPanelPaging` (10 checks).
+
+`Ufopaedia_CacheSelRow @ 0x99fd0` is a one-shot cache, and the one-shot part is the behaviour: while
+the flag is zero it stores the list's current selected row and raises the flag; once raised it does
+nothing at all, so the cached row is never refreshed by this path. Whatever row was current the first
+time this ran is what the rest of the ufopaedia code sees, until some other path clears the flag.
+Covered by `TestUfopaediaCache`, 7 checks.
