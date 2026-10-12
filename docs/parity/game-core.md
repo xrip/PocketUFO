@@ -6390,3 +6390,65 @@ modelled:
 - The unit-type filter is not a simple range. XCOM types are 0..3, aliens 4..8, and the third branch
   catches 9..13 plus 14..20 plus 22. A port that reads it as "0..3 XCOM, everything else alien" is
   wrong for types 21 and 23 and above.
+
+---
+
+## The isometric layer cluster behind `MapView_DrawIsoLayer @ 0x21e2c`
+
+`MapView_DrawIsoLayer` is 1,252 bytes but it is not one unit of work: it calls 17 functions, and 11
+of them were unported. It is recorded here as a cluster so the size of the remaining work is visible
+rather than hidden behind one address.
+
+It walks the map twice per layer. The first pass draws floors only; the second draws everything else.
+For each tile it calls the same gate, and when the gate fails and the layer is 0 it draws a single
+fallback glyph instead. That fallback is the only reason the two passes share a shape.
+
+| callee | size | state |
+|---|---|---|
+| `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam. Not ported |
+| `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | not ported |
+| `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | not ported |
+| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | not ported |
+| `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | not ported |
+| `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | not ported |
+| `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
+| `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
+| `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
+| `TactUnit_DrawFacingGlyph @ 0x1c754` | 136 | **ported** |
+| `TactUnit_DrawHpGlyphs @ 0x1b4b0` | 212 | not ported: needs `TactItem` +0x28 named (a byte tested against 2) and the meaning of `ObjectRec.aItemQty[50]` |
+| `Map_IsoOffsetA/B @ 0x26f88 / 0x26fa8` | — | already ported in `pufo_mapcell.h` |
+| `MapView_DrawCellFloorGlyph`, `MapView_DrawCellOccupantGlyph`, `MapView_SetWallPalFromSlotA/B` | — | already ported in `pufo_isodraw.c` |
+| `Unit_bIsOperative @ 0x49eb8`, `StatusMsg_DrawStack @ 0x1afc4` | — | already ported |
+
+### The sprite group bases, which the pseudocode obscures
+
+The renderer's glyph indices are all built from per-group bases kept inside the font block at
+`0x158268`. `Font_LoadTactSprites @ 0x257c4` is the only writer, and the ARM states the rule exactly:
+
+```
+LDR  R1, =aFloorob
+LDRH R0, [R4,#0x36]     ; fontSys.nTotalSprFrames
+STRH R0, [R4,#0x22]     ; base for floorob = the count BEFORE the load
+BL   Font_LoadSpr
+```
+
+Each base is the running frame count captured immediately **before** its group is loaded, so it is
+that group's first index. The table, from the `STRH` displacements:
+
+| offset | group | | offset | group |
+|---|---|---|---|---|
+| +0x00 | blanks | | +0x20 | handob |
+| +0x02 | cursor | | +0x22 | floorob |
+| +0x04 | mission terrain (from `nTotalMc1`) | | +0x24 | tanks |
+| +0x06 | craft (from `nTotalMc1`) | | +0x26 | bigobs |
+| +0x2A | bullets | | +0x2E | scang |
+| +0x30 | smoke | | +0x32 | expl |
+
+Hex-Rays renders these as `gap_8[n]` and `gap_32[n]` and its indices do not agree with the ARM
+displacements; the `STRH` displacements are authoritative. The four the leaf helpers read were
+renamed in the IDB to `nHandobSprBase`, `nFloorobSprBase`, `nTanksSprBase`, `nBigObsSprBase`,
+`nBulletsSprBase`, `nScangSprBase`, `nSmokeSprBase` and `nExplSprBase`.
+
+The animation kind table at `unk_AA018` is `00 08 0C 10 00 04 00 00`, indexed by
+`MapCell.nFlags32 & 7`. Kind 4 is the only kind that draws twice, and its second glyph uses the entry
+for kind 1, which is 8 — the byte Hex-Rays calls `byte_AA019`.

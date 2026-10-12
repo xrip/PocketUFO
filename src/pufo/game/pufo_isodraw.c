@@ -70,3 +70,58 @@ void MapView_SetWallPalFromSlotB(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim)
     }
     MapView_DrawWallGlyph(pIso, pIso->pCell->pWallSprB, pAnim);
 }
+
+/* unk_AA018, read from the binary: 00 08 0C 10 00 04 00 00. */
+static const u8 g_aAnimGlyphOffset[8] = { 0, 8, 12, 16, 0, 4, 0, 0 };
+
+/* TactUnit_DrawAnimGlyphs @ 0x1c6ac. */
+void TactUnit_DrawAnimGlyphs(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim,
+                             const IsoSpriteBases *pBases)
+{
+    i32 nKind;
+
+    if (pIso == NULL || pIso->pCell == NULL) {
+        return;
+    }
+
+    nKind = (i32)(pIso->pCell->nFlags32 & 7u);
+    if (nKind == 0) {
+        return;
+    }
+
+    (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY,
+                         (u16)(g_aAnimGlyphOffset[nKind] + (pAnim->nAnimPhase >> 1) +
+                               pBases->nSmokeBase),
+                         pIso->nPal);
+
+    if (nKind == 4) {
+        /* The second glyph uses the entry for kind 1, which is 8. */
+        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY,
+                             (u16)(g_aAnimGlyphOffset[1] + (pAnim->nAnimPhase >> 1) +
+                                   pBases->nSmokeBase),
+                             pIso->nPal);
+    }
+}
+
+/* TactUnit_DrawFacingGlyph @ 0x1c754. */
+void TactUnit_DrawFacingGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim,
+                              const IsoSpriteBases *pBases)
+{
+    u32 nFlagsField;
+
+    if (pIso == NULL || pIso->pCell == NULL) {
+        return;
+    }
+    if (pAnim->bPhaseActive == 0) {
+        return;
+    }
+
+    nFlagsField = pIso->pCell->nFlags32 & 0x78u;
+    if (nFlagsField == 0 || nFlagsField > 0x40u) {
+        return;
+    }
+
+    (void)Font_DrawGlyph(pIso->nDrawX - 48, pIso->nDrawY - 12,
+                         (u16)(pBases->nExplBase - ((pIso->pCell->nFlags32 >> 3) & 0xFu) + 8u),
+                         0);
+}
