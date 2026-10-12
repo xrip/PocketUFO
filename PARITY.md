@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 557 / 1103 (50.5%) |
-| Bytes of original code cited | 210708 / 598792 (35.2%) |
+| Functions cited as evidence | 554 / 1103 (50.2%) |
+| Bytes of original code cited | 207756 / 598792 (34.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
 | Test checks run | 4651 |
@@ -39,11 +39,11 @@ the per-subsystem notes and the tests listed at the end.
 | `util` | 18 | 21 | 1036 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 16 | 35 | 9288 / 27172 | save/load chunk read/write |
+| `save` | 15 | 35 | 8492 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 62 | 205 | 22644 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `ui-core` | 66 | 85 | 12200 / 38368 | shared UI panel, text engine, menus |
+| `strat` | 61 | 205 | 20544 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 97 | 243 | 8316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -190,13 +190,12 @@ is the module that answers to it.
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
 
-### `save` (16 functions)
+### `save` (15 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
-| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/game/pufo_tactctl.c` |
 | `0x3fa28` | `Save_WriteSmap` | 396 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x3f558` | `Save_WriteResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x406e8` | `Save_ReadResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -431,7 +430,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (67 functions)
+### `ui-core` (66 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -480,7 +479,6 @@ is the module that answers to it.
 | `0x16eb8` | `UiBank_SelectRadio3_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x1a28c` | `UiControl_ctor` | 60 | `src/pufo/ui/pufo_control.h` |
 | `0x2dca8` | `Text_MeasureWidth` | 60 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
-| `0x11110` | `PadImage_BlitEx` | 56 | `src/pufo/ui/pufo_control.h` |
 | `0x110dc` | `PadImage_Blit` | 52 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
 | `0x46630` | `Font_DrawGlyph_IndexedOffset` | 52 | `src/pufo/game/pufo_font.h` |
 | `0x5a450` | `UiPanel_SetLineColors` | 52 | `src/pufo/ui/pufo_linelist.h` |
@@ -503,13 +501,12 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (62 functions)
+### `strat` (61 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
-| `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h` |
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
@@ -869,7 +866,7 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 19 functions, 17884 bytes remaining
+### `save` — 20 functions, 18680 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -882,6 +879,7 @@ whose port work they belong to.
 | `0x438e0` | `Save_WriteMap` | 932 | not yet ported; scheduled with the `save` subsystem work |
 | `0x402c0` | `Save_ReadBases` | 876 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f6dc` | `Save_WriteShips` | 844 | not yet ported; scheduled with the `save` subsystem work |
+| `0x45904` | `SaveSlot_FormatList` | 796 | not yet ported; scheduled with the `save` subsystem work |
 | `0x40c4c` | `Save_ReadSmap` | 768 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f1fc` | `Save_WriteBases` | 760 | not yet ported; scheduled with the `save` subsystem work |
 | `0x446a8` | `Save_WriteTGameData` | 640 | not yet ported; scheduled with the `save` subsystem work |
@@ -959,7 +957,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 18 functions, 26112 bytes remaining
+### `ui-core` — 19 functions, 26168 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -977,12 +975,13 @@ whose port work they belong to.
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46144` | `Font_Free` | 148 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | not yet ported; scheduled with the `ui-core` subsystem work |
+| `0x11110` | `PadImage_BlitEx` | 56 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x619a8` | `Ui_SetTransferFlag` | 36 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 143 functions, 139812 bytes remaining
+### `strat` — 144 functions, 141912 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1002,6 +1001,7 @@ whose port work they belong to.
 | `0x838dc` | `Smap_BeginCraftSelect` | 2424 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6727c` | `Geoscape_DrawGlobeHover` | 2208 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c5c8` | `Geoscape_DrawClockPads` | 2168 | not yet ported; scheduled with the `strat` subsystem work |
+| `0x8b94c` | `Geoscape_CloseUI` | 2100 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x72398` | `Geoscape_DrawBaseStatsPanel` | 1960 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5edf4` | `RadarScreen_DrawCraftArmament` | 1692 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x693ec` | `Craft_LoadStoresFromBase` | 1612 | not yet ported; scheduled with the `strat` subsystem work |

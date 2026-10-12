@@ -77,7 +77,7 @@ bool GameSpeed_Set(GameClock *pClock, u32 nSpeed)
  * The original writes LOBYTE(gUiRootPanel.apLines[106]) = 1. apLines is the
  * panel's 500-entry line-pointer array, and slots 105/106 are reused as a clock
  * value and a pause flag rather than as line pointers -- SaveSlot_FormatList
- * @ 0x45904 reads slot 105 the same way as a packed timestamp. Modelling that as
+ * (0x45904) reads slot 105 the same way as a packed timestamp. Modelling that as
  * a named field on the clock keeps the aliasing out of the port. */
 void GameTime_Pause(GameClock *pClock)
 {

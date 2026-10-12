@@ -124,7 +124,7 @@ void UiBank_FreeAllPads(UiWidgetBank *pBank);
 /* UiControl_BlitActivePad @ 0x1a340. Returns true when a pad was drawn.
  *
  * `pfnBlit` stands in for PadImage_Blit @ 0x110dc and `pfnBlitEx` for
- * PadImage_BlitEx @ 0x11110, chosen by `bUnk17`. It is injected so a test can verify
+ * PadImage_BlitEx (0x11110), chosen by `bUnk17`. It is injected so a test can verify
  * the mode/state selection without a framebuffer. */
 typedef void (*UiControlBlitFn)(const PadImage *pPad, void *pUser);
 

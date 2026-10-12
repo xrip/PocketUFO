@@ -121,7 +121,7 @@ i32 ManufScreen_SyncSelection(i32 *pnLineAux147, i32 nSel0BD8);
  * Three state changes: set byte_1870F8 to 1, copy the SIGNED byte at byte_1870F4 into
  * byte_158834, and return that signed byte (0x557DC uses LDRSB, so a negative index
  * stays negative). 0x1870F4 is the base the psi screen selected -- Geoscape_CloseUI
- * @ 0x8b94c case 19 fills it from Base_CalcPsiLabCap @ 0x6598c -- and 0x158834 is the
+ * (0x8b94c) case 19 fills it from Base_CalcPsiLabCap @ 0x6598c -- and 0x158834 is the
  * base the geoscape screens work on.
  *
  * The two writers of 0x158834 disagree in width: 0x557E0 stores a byte, case 19 of
