@@ -1154,3 +1154,52 @@ memory.
 
 `FreeAllPads` is reached through `Bank_AtexitThunk @ 0x11170`, i.e. it is the
 process-exit cleanup of the widget bank.
+
+## The held-key repeat timer: `UiPulse_OnTimer @ 0x36630`
+
+Ported as `UiPulse_OnTimer(const UiPulseCtx *)` in `game/pufo_input.{h,c}`, asserted
+by `test_input` (`TestPulseTimer`, 24 checks). It is the timer the original installs as
+`0xC353`, and it is what makes a held direction key keep scrolling.
+
+`pCtxBase` is `Map @ 0x1139B8` and the second argument is `pBank @ 0xAC6D0`.
+
+**Gate.** `Map+0x44` (`bGeoscapeUi`) hands over to `Geoscape_PulseUpdate` and stops.
+Otherwise the whole body needs `Map+0x00` (`bTactFlag`).
+
+**The pulse slot.** `apUiSlotsA[0]` @ `Map+0x60` counts up and wraps past 3. On the
+wrap it calls `UiControl_HitTest` on `UiBank_ctl22` (`pBank+0x2C0`) and `UiBank_ctl23`
+(`pBank+0x2E0`) and clears the slot. ARM `0x36688..0x366C0` pins the arguments:
+`x = 0`, `y = 0`, `bDown = 0` (`MOV R3, #0`) and `bForceClick = 1`
+(`STRB R6, [SP,#4+bForceClick]`). That is a forced *release*, so a control already in
+state 1 fires its click handler with no pointer involved. The same slot is what
+`UiControl_HitTest` clears on a press, which is why one byte serves both paths.
+
+**Two sets of held-direction flags.**
+
+| where | flags | order applied | gate |
+|---|---|---|---|
+| `Map+0x74..0x77` (`nUiSlot5`, `apUiSlotsA[5]`) | left, right, top, bottom | left, right, up, down | always |
+| `pBank+0x104C..0x104F` (`UiBank_bHeldUp/Down/Left/Right`) | up, down, left, right | up, down, left, right | only while `nUiScreen == 0` |
+
+The first set is the same four bytes `Input_OnPointer @ 0x13c6c` calls the HUD edge
+flags. The pointer handler sets them when the pointer sits on a HUD edge and the timer
+repeats them as keyboard input, which is what makes the camera keep scrolling.
+
+**The long press.** `apUiSlotsA[3]` @ `Map+0x6C` decrements while it is positive, and
+`apUiSlotsA[4]` @ `Map+0x70` increments but never past 200. On the tick where the
+second one becomes exactly 15 the long-press action fires, once per ramp:
+
+- with `Map+0x150D9` set, it writes `nUiScreen = 15` (`*((_WORD *)pCtxBase + 29)`, i.e.
+  `Map+0x3A`) and plays sample 15;
+- otherwise it runs `Input_OnSecondary`.
+
+`Map+0x150D9` is `anPhaseSave0[97]`, called `bDragScrollB` in `pufo_input.h` and
+`bMenuByPen` in `pufo_tactui.h`. That double naming is pre-existing and worth
+resolving, but it is one byte, not two.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `Geoscape_PulseUpdate` and `Sound_Play` are hooks in `UiPulseHooks` | neither is reachable from a `Map` context in the port |
+| 2 | The secondary-key branch is skipped when `pWorld` is NULL | the original calls `Input_OnSecondary` unconditionally; the port must not hand it a NULL tactical world |

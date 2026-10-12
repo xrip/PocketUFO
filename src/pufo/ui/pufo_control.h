@@ -77,6 +77,9 @@ typedef struct UiWidgetBank {
     u8        bEscapeFlag; /* +0x1042, byte_AD712 */
     i32       nPointerX;   /* +0x1044 */
     i32       nPointerY;   /* +0x1048 */
+    /* The four held-key repeat flags the timer reads, in the order it applies them:
+     * up, down, left, right. They repeat only while nUiScreen is 0. */
+    u8        abHeldDir[4]; /* +0x104C..0x104F, UiBank_bHeldUp/Down/Left/Right */
 } UiWidgetBank;
 
 /* UiControl_ctor @ 0x1a28c. Zeroes position/mode/state, sets a 10x10 enabled

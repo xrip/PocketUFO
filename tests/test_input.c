@@ -1621,6 +1621,162 @@ static void TestPointerUp(void)
     w.nListMode = 0;
 }
 
+static i32 g_nPulseUpdate;
+static i32 g_nPulseSample;
+static i32 g_nClickA;
+static i32 g_nClickB;
+
+static void Pulse_Update(void *p) { (void)p; g_nPulseUpdate += 1; }
+static void Pulse_Sample(i32 nSample, void *p) { (void)p; g_nPulseSample = nSample; }
+static void Pulse_ClickA(void) { g_nClickA += 1; }
+static void Pulse_ClickB(void) { g_nClickB += 1; }
+static void Pulse_Blit(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; }
+
+static void TestPulseTimer(void)
+{
+    Trace t;
+    TactInputState s = MakeState();
+    TactInputHooks h = MakeHooks(&t);
+    UiControl ctlA, ctlB;
+    UiControlHitCtx hit;
+    u32 nHitSlot;
+    u8 abBank[4];
+    bool bEscape = false;
+    UiPulseHooks timers;
+    UiPulseCtx ctx;
+    TactInputWorld world;
+
+    printf("UiPulse_OnTimer\n");
+    memset(&t, 0, sizeof(t));
+    g_nPulseUpdate = 0;
+    g_nPulseSample = 0;
+    g_nClickA = 0;
+    g_nClickB = 0;
+
+    UiControl_ctor(&ctlA);
+    UiControl_ctor(&ctlB);
+    ctlA.nMode = 0; ctlA.nState = 1; ctlA.pfnClick = Pulse_ClickA;
+    ctlB.nMode = 0; ctlB.nState = 1; ctlB.pfnClick = Pulse_ClickB;
+    nHitSlot = 0xDEAD;
+    memset(&hit, 0, sizeof(hit));
+    hit.pnUiSlot0 = &nHitSlot;
+    hit.pfnBlit = Pulse_Blit;
+    hit.pfnBlitEx = Pulse_Blit;
+
+    memset(&timers, 0, sizeof(timers));
+    timers.pfnPulseUpdate = Pulse_Update;
+    timers.pfnPlaySample = Pulse_Sample;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pState = &s;
+    ctx.pHooks = &h;
+    ctx.pCtlPulseA = &ctlA;
+    ctx.pCtlPulseB = &ctlB;
+    ctx.pHit = &hit;
+    ctx.pbBankHeld = abBank;
+    ctx.pTimers = &timers;
+    ctx.pbEscapeFlag = &bEscape;
+    memset(&world, 0, sizeof(world));
+    ctx.pWorld = &world;
+
+    s.bGeoscapeUi = true;
+    s.nUiSlot0 = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(g_nPulseUpdate, 1, "  geoscape mode calls Geoscape_PulseUpdate");
+    CheckEqI32((i32)s.nUiSlot0, 0, "  and touches nothing else");
+
+    s.bGeoscapeUi = false;
+    s.bTactFlag = false;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32((i32)s.nUiSlot0, 0, "  no tactical flag, nothing runs");
+
+    /* apUiSlotsA[0] counts up and wraps past 3 on the fourth call. */
+    s.bTactFlag = true;
+    s.nUiSlot0 = 0;
+    s.nUiSlot5 = 0;
+    s.nUiSlot3 = 0;
+    s.nUiSlot4 = 0;
+    abBank[0] = abBank[1] = abBank[2] = abBank[3] = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32((i32)s.nUiSlot0, 1, "  slot 0 counts 0 -> 1");
+    CheckEqI32(g_nClickA, 0, "  no forced click yet");
+    UiPulse_OnTimer(&ctx);
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32((i32)s.nUiSlot0, 3, "  slot 0 reaches 3");
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(g_nClickA, 1, "  the wrap force-releases control A");
+    CheckEqI32(g_nClickB, 1, "  and control B");
+    CheckEqI32((i32)s.nUiSlot0, 0, "  slot 0 clears after the wrap");
+
+    /* The four bytes of nUiSlot5 repeat as held direction input. */
+    s.nCamScrollX = 0;
+    s.nCamScrollY = 0;
+    s.nUiSlot5 = 0x000000FFu;   /* left */
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nCamScrollX, -1, "  held left scrolls the camera");
+    s.nUiSlot5 = 0xFF000000u;   /* bottom */
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nCamScrollY, 1, "  held bottom scrolls the camera down");
+    s.nUiSlot5 = 0;
+
+    /* The bank's four held bytes only repeat on screen 0. */
+    s.nUiScreen = 0;
+    abBank[0] = 1; abBank[1] = 1; abBank[2] = 1; abBank[3] = 1;
+    s.nCamScrollX = 0;
+    s.nCamScrollY = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nCamScrollX, 0, "  bank left and right cancel on one tick");
+    CheckEqI32(s.nCamScrollY, 0, "  bank up and down cancel on one tick");
+    abBank[0] = 1; abBank[1] = 0; abBank[2] = 0; abBank[3] = 0;
+    s.nCamScrollY = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nCamScrollY, -1, "  bank held byte 0 is up");
+    s.nUiScreen = 1;
+    s.nCamScrollY = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nCamScrollY, 0, "  bank held bytes are ignored off screen 0");
+    abBank[0] = abBank[1] = abBank[2] = abBank[3] = 0;
+
+    /* slot 3 counts down only while positive, slot 4 stops at 200. */
+    s.nUiSlot3 = 5;
+    s.nUiSlot4 = 200;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nUiSlot3, 4, "  slot 3 decrements");
+    CheckEqI32(s.nUiSlot4, 200, "  slot 4 never exceeds 200");
+    s.nUiSlot3 = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nUiSlot3, 0, "  slot 3 does not go negative");
+
+    /* The tick where slot 4 reaches exactly 15 is the long-press action. */
+    s.nUiSlot4 = 14;
+    s.nUiSlot3 = 0;
+    s.bDragScrollB = 1;
+    s.nUiScreen = 0;
+    g_nPulseSample = 0;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nUiSlot4, 15, "  slot 4 reaches 15");
+    CheckEqI32((i32)s.nUiScreen, 15, "  the pen-menu byte opens screen 15");
+    CheckEqI32(g_nPulseSample, 15, "  and plays sample 15");
+
+    /* Without that byte it is the secondary key instead: screen 6 clears. */
+    s.bDragScrollB = 0;
+    s.nUiSlot4 = 14;
+    s.nUiScreen = 6;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32((i32)s.nUiScreen, 0, "  otherwise the secondary key runs");
+
+    /* Slot 4 keeps counting past 15, so the action fires once per ramp. */
+    s.nUiSlot4 = 15;
+    s.nUiScreen = 6;
+    UiPulse_OnTimer(&ctx);
+    CheckEqI32(s.nUiSlot4, 16, "  slot 4 moves past 15");
+    CheckEqI32((i32)s.nUiScreen, 6, "  and does not fire again");
+
+    /* NULL context is tolerated. */
+    UiPulse_OnTimer(NULL);
+    Check(true, "  NULL context is safe");
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -1635,6 +1791,7 @@ int main(void)
     TestOnSecondary();
     TestPointer();
     TestPointerUp();
+    TestPulseTimer();
 
     return TestSummary("test_input");
 }

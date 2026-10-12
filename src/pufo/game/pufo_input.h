@@ -244,6 +244,54 @@ typedef struct TactInputWorld {
 void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
                        const TactInputWorld *pWorld, bool *pbEscapeFlag);
 
+/* --------------------------------------------------- the held-key repeat timer */
+
+/* UiPulse_OnTimer @ 0x36630, the timer installed as 0xC353.
+ *
+ * Gate: the geoscape branch hands over to Geoscape_PulseUpdate and stops; otherwise
+ * the whole body needs `bTactFlag`.
+ *
+ * 1. `nUiSlot0` @ Map+0x60 (apUiSlotsA[0]) counts up and wraps past 3. On the wrap it
+ *    force-releases the two inventory pulse controls and clears itself. ARM
+ *    0x36688..0x366C0 passes x = 0, y = 0, bDown = 0 and bForceClick = 1, so a control
+ *    sitting in state 1 fires its click with no pointer involved. UiControl_HitTest
+ *    also clears Map+0x60 on a press, which is why the same slot serves both paths.
+ *
+ * 2. The four bytes at Map+0x74..0x77 -- `nUiSlot5`, the same four the pointer handler
+ *    calls HUD edge flags -- are the held direction state, repeated in the order
+ *    left, right, up, down.
+ *
+ * 3. Four more held flags live in the widget bank at +0x104C..0x104F (IDB
+ *    unk_AD71C..unk_AD71F) and repeat up, down, left, right in that order, but only
+ *    while `nUiScreen` is 0.
+ *
+ * 4. `nUiSlot3` @ Map+0x6C counts down while positive, `nUiSlot4` @ Map+0x70 counts up
+ *    to 200, and on the tick where it reaches exactly 15 either opens screen 15 and
+ *    plays sample 15, or runs the secondary key. Which one is decided by the byte at
+ *    Map+0x150D9 (`bDragScrollB` here, `bMenuByPen` in pufo_tactui.h -- the same
+ *    anPhaseSave0[97], named twice in the port). */
+typedef struct UiPulseHooks {
+    /* Geoscape_PulseUpdate @ 0x954dc. */
+    void (*pfnPulseUpdate)(void *pUser);
+    /* Sound_Play @ 0x9e0c0, sample 15. */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pUser;
+} UiPulseHooks;
+
+typedef struct UiPulseCtx {
+    TactInputState         *pState;
+    const TactInputHooks   *pHooks;
+    const TactInputWorld   *pWorld;      /* for the secondary-key branch */
+    bool                   *pbEscapeFlag;/* pBank+0x1042, passed on to Input_OnSecondary */
+    UiControl              *pCtlPulseA;  /* unk_AC990 = pBank+0x2C0, widget 22 */
+    UiControl              *pCtlPulseB;  /* unk_AC9B0 = pBank+0x2E0, widget 23 */
+    const UiControlHitCtx  *pHit;
+    const u8               *pbBankHeld;  /* pBank+0x104C..0x104F: up, down, left, right */
+    const UiPulseHooks     *pTimers;
+} UiPulseCtx;
+
+void UiPulse_OnTimer(const UiPulseCtx *pCtx);
+
 /* UI-screen ids used by UiScreen_DismissHigh. */
 #define PUFO_UI_SCREEN_TARGET_BEGIN 8u
 #define PUFO_UI_SCREEN_TARGET_END   9u

@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 472 / 1103 (42.8%) |
-| Bytes of original code cited | 219420 / 598792 (36.6%) |
+| Functions cited as evidence | 474 / 1103 (43.0%) |
+| Bytes of original code cited | 221720 / 598792 (37.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4315 |
+| Test checks run | 4340 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,8 +42,8 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 33 | 52 | 25788 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 64 | 85 | 11444 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 30 | 205 | 32880 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `ui-core` | 65 | 85 | 11932 / 38368 | shared UI panel, text engine, menus |
+| `strat` | 31 | 205 | 34692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 47 | 243 | 4560 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -129,7 +129,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+2) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 
 ### `util` (18 functions)
 
@@ -431,7 +431,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (64 functions)
+### `ui-core` (65 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -441,6 +441,7 @@ is the module that answers to it.
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
+| `0x36630` | `UiPulse_OnTimer` | 488 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x11320` | `UiBank_CtorAll` | 440 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x1117c` | `UiBank_FreeAllPads` | 420 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -500,7 +501,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (30 functions)
+### `strat` (31 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -509,6 +510,7 @@ is the module that answers to it.
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_input.h` |
+| `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
@@ -874,7 +876,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 21 functions, 26924 bytes remaining
+### `ui-core` — 20 functions, 26436 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -886,7 +888,6 @@ whose port work they belong to.
 | `0x95bf0` | `Ui_AnimExpandBlit` | 948 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x36630` | `UiPulse_OnTimer` | 488 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9955c` | `Ui_InitTransfer` | 392 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84bf8` | `Ui_OpenResearch` | 288 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -900,7 +901,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 175 functions, 129576 bytes remaining
+### `strat` — 174 functions, 127764 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -919,7 +920,6 @@ whose port work they belong to.
 | `0x6727c` | `Geoscape_DrawGlobeHover` | 2208 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c5c8` | `Geoscape_DrawClockPads` | 2168 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x72398` | `Geoscape_DrawBaseStatsPanel` | 1960 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x954dc` | `Geoscape_PulseUpdate` | 1812 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5edf4` | `RadarScreen_DrawCraftArmament` | 1692 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x693ec` | `Craft_LoadStoresFromBase` | 1612 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66b70` | `Base_DemolishFacility` | 1600 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1317,7 +1317,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 45 |
-| `test_input` | PASS | 246 |
+| `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |

@@ -1292,3 +1292,106 @@ void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
     }
 }
 
+/* --------------------------------------------------------------------------
+ * UiPulse_OnTimer @ 0x36630 - the held-key repeat timer.
+ * -------------------------------------------------------------------------- */
+
+/* 0x366CC..0x36700: the four bytes of nUiSlot5 are the held direction state the
+ * pointer handler writes as HUD edge flags, repeated here as keyboard input. */
+static void Pulse_RepeatHeld(const UiPulseCtx *pCtx)
+{
+    TactInputState *pState = pCtx->pState;
+    const u32 nSlot5 = pState->nUiSlot5;
+
+    if ((nSlot5 & 0xFFu) != 0) {
+        Input_OnLeft(pState, pCtx->pHooks);
+    }
+    if (((nSlot5 >> 8) & 0xFFu) != 0) {
+        Input_OnRight(pState, pCtx->pHooks);
+    }
+    if (((nSlot5 >> 16) & 0xFFu) != 0) {
+        Input_OnUp(pState, pCtx->pHooks);
+    }
+    if (((nSlot5 >> 24) & 0xFFu) != 0) {
+        Input_OnDown(pState, pCtx->pHooks);
+    }
+
+    /* 0x36708..0x367A4: the bank's four held bytes repeat only on screen 0, and in
+     * a different order: up, down, left, right. */
+    if (pCtx->pbBankHeld == NULL || pState->nUiScreen != 0) {
+        return;
+    }
+    if (pCtx->pbBankHeld[0] != 0) {
+        Input_OnUp(pState, pCtx->pHooks);
+    }
+    if (pCtx->pbBankHeld[1] != 0) {
+        Input_OnDown(pState, pCtx->pHooks);
+    }
+    if (pCtx->pbBankHeld[2] != 0) {
+        Input_OnLeft(pState, pCtx->pHooks);
+    }
+    if (pCtx->pbBankHeld[3] != 0) {
+        Input_OnRight(pState, pCtx->pHooks);
+    }
+}
+
+void UiPulse_OnTimer(const UiPulseCtx *pCtx)
+{
+    if (pCtx == NULL || pCtx->pState == NULL || pCtx->pTimers == NULL) {
+        return;
+    }
+
+    /* 0x36644: the geoscape branch owns its own pulse and stops here. */
+    if (pCtx->pState->bGeoscapeUi) {
+        if (pCtx->pTimers->pfnPulseUpdate != NULL) {
+            pCtx->pTimers->pfnPulseUpdate(pCtx->pTimers->pUser);
+        }
+        return;
+    }
+    if (!pCtx->pState->bTactFlag) {
+        return;
+    }
+
+    /* 0x36664: apUiSlotsA[0] counts up and wraps past 3. */
+    if (pCtx->pState->nUiSlot0 > 3u) {
+        pCtx->pState->nUiSlot0 = 0;
+    } else {
+        pCtx->pState->nUiSlot0 += 1;
+    }
+    /* 0x36688..0x366C0: on the wrap, force-release the two pulse controls. ARM passes
+     * x = 0, y = 0, bDown = 0 and bForceClick = 1, so a control already in state 1
+     * fires its click handler with no pointer involved. */
+    if (pCtx->pState->nUiSlot0 > 3u) {
+        if (pCtx->pHit != NULL) {
+            (void)UiControl_HitTest(pCtx->pCtlPulseA, 0, 0, false, true, pCtx->pHit);
+            (void)UiControl_HitTest(pCtx->pCtlPulseB, 0, 0, false, true, pCtx->pHit);
+        }
+        pCtx->pState->nUiSlot0 = 0;
+    }
+
+    Pulse_RepeatHeld(pCtx);
+
+    /* 0x367A8..0x367C4: apUiSlotsA[3] counts down while it is positive, and
+     * apUiSlotsA[4] counts up but never past 200. */
+    if (pCtx->pState->nUiSlot3 > 0) {
+        pCtx->pState->nUiSlot3 -= 1;
+    }
+    if (pCtx->pState->nUiSlot4 < 200) {
+        pCtx->pState->nUiSlot4 += 1;
+    }
+    /* 0x367D0: the tick where nUiSlot4 reaches exactly 15 is the long-press action.
+     * With the Map+0x150D9 byte set it opens screen 15 and plays sample 15; without
+     * it, it is the secondary key. */
+    if (pCtx->pState->nUiSlot4 == 15) {
+        if (pCtx->pState->bDragScrollB != 0) {
+            pCtx->pState->nUiScreen = 15;
+            if (pCtx->pTimers->pfnPlaySample != NULL) {
+                pCtx->pTimers->pfnPlaySample(15, pCtx->pTimers->pUser);
+            }
+        } else if (pCtx->pWorld != NULL) {
+            Input_OnSecondary(pCtx->pState, pCtx->pHooks, pCtx->pWorld,
+                              pCtx->pbEscapeFlag);
+        }
+    }
+}
+
