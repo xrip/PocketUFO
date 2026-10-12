@@ -340,6 +340,120 @@ static void TestRollCraftStats(void)
     list.nCount = 0;
 }
 
+static void TestAddAlienSiteAndTravel(void)
+{
+    printf("AddAlienSiteIfValid / InitTravel\n");
+    PtrArray list;
+    StrategItem item;
+    StrategItem *p;
+    PadImage grid;
+    Ship ship;
+    Ship *apCraft[1];
+    GeoscapeWorld world;
+    i32 seed = 0;
+    i32 i;
+    i32 nBelowFloor = 0;
+    u8 aGrid[6];
+
+    for (i = 0; i < 6; ++i) {
+        aGrid[i] = 7;
+    }
+    memset(&grid, 0, sizeof(grid));
+    grid.uWidth = 3;
+    grid.pData = aGrid;
+
+    PtrArray_ctor(&list);
+
+    /* Ocean refuses. */
+    aGrid[0] = 255;
+    Check(!StrategList_AddAlienSiteIfValid(&list, &seed, 0, &grid, 0, 0, 1),
+          "a 255 tile is ocean and nothing is added");
+    CheckEqI32(list.nCount, 0, "the list did not grow");
+
+    /* Land adds the mirror image of a spawned craft. */
+    aGrid[0] = 7;
+    p = StrategList_AddAlienSiteIfValid(&list, &seed, 0, &grid, 40, 50, 1) ? list.apItems[0] : NULL;
+    Check(p != NULL, "a land tile adds the site");
+    CheckEqI32(p->nType, 0, "nType 0, a site");
+    CheckEqI32(p->bActive, 1, "bActive 1");
+    CheckEqI32(p->bCraftClass, 255, "bCraftClass -1 becomes 255 through the byte store");
+    CheckEqI32(p->nSiteId, 50000, "nSiteId gets the 50000 because nType is 0");
+    CheckEqI32(p->nDisplayId, -1, "nDisplayId is -1, the mirror of a craft");
+    CheckEqI32(p->bVisible, 1, "bVisible is the discovered flag");
+    CheckEqI32(p->nX, 40, "x");
+    CheckEqI32(p->nY, 50, "y");
+    PtrArray_DeleteAll(&list);
+
+    /* ---- InitTravel ---- */
+    memset(&item, 0, sizeof(item));
+    memset(&ship, 0, sizeof(ship));
+    apCraft[0] = &ship;
+    memset(&world, 0, sizeof(world));
+    world.apCraft = apCraft;
+    world.nShipCount = 1;
+
+    item.nType = 0;      /* a site: the speed branch never runs */
+    item.dSpeed = 5.0;
+    StrategEntry_InitTravel(&item, 100, 10, 150, 10, 0, 0, 1, 6, 1, &world, 4242);
+    CheckEqI32(item.nX, 100, "bCopyStart copies the start into the position");
+    CheckEqI32(item.nStartX, 100, "nStartX");
+    CheckEqI32(item.nDestX, 150, "nDestX");
+    CheckEqI32(item.nMissionSub, 6, "nMissionSub is the bC argument");
+    CheckEqI32(item.nTravelEpochSec, 4242, "the epoch is the clock at apLines[105]");
+    CheckEqI32(StrategEntry_InitTravel(&item, 100, 10, 150, 10, 0, 0, 1, 6, 1, &world, 77), 77,
+               "the return value is the same clock value");
+    /* A site is not a craft, so its speed is whatever it already had. */
+    Check(item.dSpeed > 4.99 && item.dSpeed < 5.01, "a site item is given no speed of its own");
+    Check(item.dTrackA > 0.099 && item.dTrackA < 0.101, "dTrackA is dSpeed times 0.02");
+    CheckEqI32(item.nTravelStartSec, 50, "the plain leg wins over both wrap legs");
+    CheckEqI32(item.bTravelDir, 1, "and it runs forwards");
+    CheckEqI32(item.uTravelMin, 500, "sqrt(50^2) over dTrackA 0.1 is 500 minutes");
+
+    /* The cylinder: 100 to 700 is 600 the long way and 200 through the wrap. */
+    CheckEqI32(StrategEntry_InitTravel(&item, 100, 10, 700, 10, 0, 0, 1, 0, 1, &world, 0), 0,
+               "wrap leg returns the clock");
+    CheckEqI32(item.nTravelStartSec, 200, "the wrap-around leg is shorter and wins");
+    CheckEqI32(item.bTravelDir, -1, "and it runs backwards");
+    StrategEntry_InitTravel(&item, 700, 10, 100, 10, 0, 0, 1, 0, 1, &world, 0);
+    CheckEqI32(item.nTravelStartSec, 200, "the other direction finds the same wrap leg");
+    CheckEqI32(item.bTravelDir, 1, "and runs forwards");
+
+    /* A dwelling item has no speed at all. */
+    item.dSpeed = 5.0;
+    StrategEntry_InitTravel(&item, 100, 10, 150, 10, 200, 0, 1, 1, 1, &world, 0);
+    Check(item.dSpeed == 0.0, "nTimer above 0 forces the speed to zero, whatever it was");
+    Check(item.dTrackA == 0.0, "so dTrackA is zero too");
+    CheckEqI32(item.uTravelMin, 0, "and the port refuses the divide by zero the original does not");
+
+    /* An inactive craft takes its speed from the matching ship's fuel capacity. */
+    memset(&item, 0, sizeof(item));
+    item.nType = 1;
+    item.bActive = 0;
+    item.nDisplayId = 42;
+    ship.bId = 42;
+    ship.uFuelCap = 120;
+    StrategEntry_InitTravel(&item, 100, 10, 150, 10, 0, 0, 1, 0, 1, &world, 0);
+    Check(item.dSpeed > 1.99 && item.dSpeed < 2.01, "120 fuel capacity over 60 is speed 2");
+    StrategEntry_InitTravel(&item, 100, 10, 150, 10, 5, 0, 1, 0, 1, &world, 0);
+    Check(item.dSpeed == 0.0, "an inactive craft with nFlag above 0 does not move");
+
+    /* An active craft is floored at 10.0. Class 1 can draw 17 * 2 = 34 of jitter off a
+     * base of 40, which is 6, so the floor is what holds it up. */
+    for (i = 0; i < 300; ++i) {
+        memset(&item, 0, sizeof(item));
+        item.nType = 1;
+        item.bActive = 1;
+        item.bCraftClass = 1;
+        StrategEntry_InitTravel(&item, 100, 10, 150, 10, 0, 0, 1, 0, 1, &world, 0);
+        if (item.dSpeed < 10.0) {
+            ++nBelowFloor;
+        }
+    }
+    CheckEqI32(nBelowFloor, 0, "no active craft speed is ever left below 10.0");
+
+    PtrArray_DeleteAll(&list);
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -784,6 +898,7 @@ int main(void)
     TestAddItem();
     TestAddUfoAt();
     TestRollCraftStats();
+    TestAddAlienSiteAndTravel();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

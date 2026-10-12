@@ -410,6 +410,138 @@ int StrategList_RollCraftStats(PtrArray *pList, i32 nIndex, i32 nDifficulty,
     return pfnSpawn(pItem, nMissionSub, pUser); /* 0x81BDC tail call */
 }
 
+bool StrategList_AddAlienSiteIfValid(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                     const PadImage *pMap, i32 x, i32 y,
+                                     i32 bDiscovered)
+{
+    if (Tilemap_GetAt(pMap, x, y) == 255) { /* 0x7E3D8: ocean */
+        return false;
+    }
+    /* 0x7E404: bCraftClass -1 becomes 255 through the byte store. */
+    (void)StrategList_AddItem(pList, pnSeed, nZoomMode, 0, 1, 255, x, y,
+                              STRATEG_ID_UNASSIGNED, bDiscovered);
+    return true;
+}
+
+/* Per-class speed bases, recovered from the subd immediates at 0x7F7BC, 0x7F890,
+ * 0x7F95C and 0x7F9B4, and the integer bases at 0x7F804, 0x7F83C, 0x7F8D0 and 0x7F908. */
+static const double g_aCraftSpeed[8] = {
+    36.6666, 40.0, 45.0, 66.6666, 71.0, 80.0, 53.6666, 83.3333
+};
+/* The extra jitter roll per class; 0 means the jitter is used as drawn. */
+static const i32 g_aCraftJitter[8] = { 0, 3, 3, 5, 5, 5, 4, 5 };
+
+#define STRATEG_SPEED_FLOOR 10.0
+#define STRATEG_TRACKA_SCALE 0.02
+#define STRATEG_FUEL_SPEED_SCALE (1.0 / 60.0)
+#define STRATEG_MAP_WRAP_X 800
+
+i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
+                            i32 nFlag, i32 bA, i32 bB, i32 bC, i32 bCopyStart,
+                            const GeoscapeWorld *pWorld, i32 nGameTotalSec)
+{
+    i32 nDistWrapA, nDistWrapB, nDistPlain, nDx, nDy;
+
+    if (pEntry == NULL) {
+        return 0;
+    }
+
+    pEntry->nDestX      = nX1;    /* 0x7F618 */
+    pEntry->nDestY      = nY1;    /* 0x7F628 */
+    pEntry->dFracX      = 0.0;    /* 0x7F624, 0x7F630 */
+    pEntry->dFracY      = 0.0;    /* 0x7F640, 0x7F650 */
+    pEntry->bVisible    = (u8)bB; /* 0x7F638 */
+    pEntry->nStartX     = nX0;    /* 0x7F644 */
+    pEntry->nStartY     = nY0;    /* 0x7F654 */
+    pEntry->nMissionSub = (u8)bC; /* 0x7F648 */
+    pEntry->bFlagA      = (u8)bA; /* 0x7F658 */
+    pEntry->nTimer      = nFlag;  /* 0x7F660 */
+
+    if (bCopyStart != 0) { /* 0x7F66C */
+        pEntry->nX = nX0;
+        pEntry->nY = nY0;
+    }
+    pEntry->bTravelDir = 0; /* 0x7F674 */
+
+    if (pEntry->nType == 1) { /* 0x7F67C: only craft get a speed */
+        if (pEntry->bActive != 0) {
+            i8  nJitter = (i8)Game_RandU16(0x12); /* 0x7F74C: 0..17 */
+            u8  nClass  = pEntry->bCraftClass;
+
+            pEntry->bRandA = (u8)nJitter;
+            if (nClass <= 7) {
+                if (g_aCraftJitter[nClass] != 0) {
+                    nJitter = (i8)(nJitter * (i8)Game_RandU16((u16)g_aCraftJitter[nClass]));
+                    pEntry->bRandA = (u8)nJitter;
+                }
+                pEntry->dSpeed = g_aCraftSpeed[nClass] - (double)nJitter;
+            }
+            /* A class outside 0..7 leaves dSpeed at whatever it already was. */
+            if (pEntry->dSpeed < STRATEG_SPEED_FLOOR) { /* 0x7F9F4 */
+                pEntry->dSpeed = STRATEG_SPEED_FLOOR;
+            }
+        } else {
+            i32 nShip = 0;
+            bool bFound = false;
+
+            if (pWorld != NULL) {
+                for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) { /* 0x7F6C4 */
+                    if (pWorld->apCraft[nShip] != NULL
+                        && pWorld->apCraft[nShip]->bId == pEntry->nDisplayId) {
+                        bFound = true;
+                        break;
+                    }
+                }
+            }
+            if (bFound) {
+                pEntry->dSpeed = (double)pWorld->apCraft[nShip]->uFuelCap
+                               * STRATEG_FUEL_SPEED_SCALE; /* 0x7F714 */
+            } else {
+                /* Deviation: the original indexes apCraft at nShipCount, one past
+                 * the end, when nothing matches. The port leaves the speed alone. */
+            }
+            if (nFlag > 0) { /* 0x7F720 */
+                pEntry->dSpeed = 0.0;
+            }
+        }
+    }
+
+    if (pEntry->nTimer > 0) { /* 0x7FA1C: a dwelling item does not move */
+        pEntry->dSpeed = 0.0;
+    }
+
+    pEntry->dTrackA    = pEntry->dSpeed * STRATEG_TRACKA_SCALE; /* 0x7FA3C */
+    pEntry->bTravelDir = 1; /* 0x7FA50 */
+
+    /* The shorter of the direct leg and the wrap-around one. */
+    nDistWrapA = Abs32(pEntry->nDestX - pEntry->nStartX + STRATEG_MAP_WRAP_X); /* 0x7FA70 */
+    pEntry->nTravelStartSec = nDistWrapA;
+    nDistWrapB = Abs32(pEntry->nStartX - pEntry->nDestX + STRATEG_MAP_WRAP_X); /* 0x7FA88 */
+    if (nDistWrapA > nDistWrapB) {
+        pEntry->nTravelStartSec = nDistWrapB;
+        pEntry->bTravelDir = -1;
+    }
+    nDistPlain = Abs32(pEntry->nStartX - pEntry->nDestX); /* 0x7FAA8 */
+    if (pEntry->nTravelStartSec > nDistPlain) {
+        pEntry->nTravelStartSec = nDistPlain;
+        pEntry->bTravelDir = (pEntry->nStartX >= pEntry->nDestX) ? -1 : 1;
+    }
+
+    /* x is wrap-aware here and y is not. */
+    nDx = pEntry->nTravelStartSec;
+    nDy = pEntry->nDestY - pEntry->nStartY;
+    if (pEntry->dTrackA != 0.0) {
+        pEntry->uTravelMin =
+            (u16)(sqrt((double)(nDy * nDy) + (double)(nDx * nDx)) / pEntry->dTrackA);
+    } else {
+        /* Deviation: the original divides by zero whenever the speed is zero. */
+        pEntry->uTravelMin = 0;
+    }
+
+    pEntry->nTravelEpochSec = nGameTotalSec; /* 0x7FB6C, apLines[105] */
+    return nGameTotalSec;
+}
+
 /* ------------------------------------------------------- the geoscape viewport */
 
 /* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn

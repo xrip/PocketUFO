@@ -251,6 +251,77 @@ int StrategList_RollCraftStats(PtrArray *pList, i32 nIndex, i32 nDifficulty,
                                i32 nEarlyGate, const StrategRollTables *pTables,
                                StrategSpawnMissionFn pfnSpawn, void *pUser);
 
+/* StrategList_AddAlienSiteIfValid @ 0x7e3b4: the land-tile gate in front of the
+ * item builder. If the tile at x,y is 255 -- ocean -- nothing is added and the
+ * result is false. Otherwise it is an AddItem with nType 0, bActive 1, nId 50000
+ * and bVisible set to the caller's discovered flag.
+ *
+ * bCraftClass is passed as -1. AddItem stores it through a byte, so the item ends
+ * up with bCraftClass 255. That is not a craft class at all; it is what makes a
+ * site item distinguishable from a craft by that field, and it is also why a site
+ * item never matches any row of the craft weight or speed tables.
+ *
+ * Because nType is 0, 50000 lands in nSiteId and nDisplayId becomes -1 -- the
+ * mirror image of a spawned craft. Its only callers are the subtype-4 branch of
+ * Geoscape_SpawnMissionSite. */
+bool StrategList_AddAlienSiteIfValid(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                     const PadImage *pMap, i32 x, i32 y,
+                                     i32 bDiscovered);
+
+/* ------------------------------------------------- the flight path initialiser
+ *
+ * Evidence: StrategEntry_InitTravel @ 0x7f60c.
+ *
+ * Sets start and destination, resets the fractional position, picks a speed, and
+ * works out how long the leg takes. Every branch of the mission machine ends by
+ * calling it, so this is where a strateg item's motion actually begins.
+ *
+ * Speed for an ACTIVE craft is a per-class base minus a random jitter:
+ *
+ *   class  base      jitter roll
+ *   0      36.6666   none
+ *   1      40        rand(3)
+ *   2      45        rand(3)
+ *   3      66.6666   rand(5)
+ *   4      71        rand(5)
+ *   5      80        rand(5)
+ *   6      53.6666   rand(4)
+ *   7      83.3333   rand(5)
+ *
+ * The bases 36.6666, 66.6666, 53.6666 and 83.3333 were recovered from the subd
+ * immediates; 40, 45, 71 and 80 are written as integers. The jitter starts as
+ * Game_RandU16(0x12), so 0..17, and is then multiplied by the class roll before
+ * being subtracted -- so a class 3 craft can be up to 68 slower than its base.
+ * A class outside 0..7 leaves dSpeed untouched, and any speed below 10.0 is
+ * raised to exactly 10.0.
+ *
+ * For an INACTIVE craft the speed is the matching ship's uFuelCap times 1/60.
+ * Hazard: the original's ship search runs to nShipCount when nothing matches and
+ * then indexes apCraft at that count, one past the end. The port leaves the speed
+ * untouched in that case.
+ *
+ * Two overrides follow, and both win over whatever was chosen above:
+ *   - an inactive craft with nFlag above 0 gets speed 0
+ *   - ANY item with nTimer above 0 gets speed 0
+ *
+ * dTrackA is always dSpeed times 0.02.
+ *
+ * The leg length is the shorter of the direct x distance and the wrap-around one,
+ * which is the map's 800-wide cylinder:
+ *   a = |destX - startX + 800|,  b = |startX - destX + 800|
+ * and the plain |startX - destX| is taken if it is smaller than both. bTravelDir
+ * records which way that shorter leg runs.
+ *
+ * Note the asymmetry: x is wrap-aware and y is not. uTravelMin is
+ * sqrt(dy*dy + dx*dx) / dTrackA, with dy the plain difference. If dSpeed is 0 then
+ * dTrackA is 0 and that division has no defined result; the original has no guard
+ * and the port sets uTravelMin to 0 instead.
+ *
+ * nTravelEpochSec is the clock at apLines[105], which is also the return value. */
+i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
+                            i32 nFlag, i32 bA, i32 bB, i32 bC, i32 bCopyStart,
+                            const GeoscapeWorld *pWorld, i32 nGameTotalSec);
+
 /* ------------------------------------------------------- the geoscape viewport
  *
  * One 36-byte block at 0x1863E8. IDA carries two names for it because different
