@@ -6173,3 +6173,27 @@ cannot alias. Storing a second view in the env went stale across a removal and p
 The view is now built fresh from the array on demand — one helper, no stored duplicate.
 
 Covered by `TestInterceptRetarget`, 10 checks.
+
+### The two funding leaf helpers, and a band that can never be reached (done)
+
+`Funding_ScoreToBarLevel @ 0x5aa60` — the first argument is not an amount and not an index into five
+equal slots. It maps 0 → 3, 1 → 5, 2 → 4, 3 → 1, 4 → 3, and **two scores share level 3**. Direction
+-2/-1/1/2 means -50,000 / -25,000 / +25,000 / +50,000; direction 0 or anything outside -2..2 returns 0
+and throws the level away. Hex-Rays renders the level as `v2 << 24 >> 24`, which is just the compiler
+widening a signed char.
+
+`Funding_DeltaToArrow @ 0x5ab34` — which arrow to draw, -2..2, against thresholds derived from the
+total (`total/8` and `total/2`, integer division). The third test reads `total / -8`, not `total / 8`:
+dividing by -8 is what puts the middle band on the other side of zero.
+
+The consequence is worth stating, because it is not obvious from the source: **with a positive total
+only -2 and 2 are reachable.** The first test swallows everything at or below `total/8 + total/2`, and
+the -1 band would need a delta above that which is also at or below `total/8` — impossible. With a
+negative total all five arrows become reachable. A base in the black never gets a "flat" or "up some"
+arrow no matter what its delta is.
+
+`FundingScreen_Open @ 0x5b560` and `FundingScreen_OpenMonthly @ 0x5d160` were decoded and left
+unported: each tail-calls a 1.2–1.5 KB screen builder (`FundingScreen_Toggle`, `FundingScreen_Init`)
+that is not ported yet.
+
+Covered by `TestFundingHelpers`, 16 checks.

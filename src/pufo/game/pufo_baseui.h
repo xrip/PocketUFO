@@ -300,4 +300,14 @@ typedef struct OptionsScreenHooks {
 void OptionsScreen_RebuildWithSound(const OptionsScreenHooks *pHooks);
 void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHooks *pHooks);
 
+/* Funding_ScoreToBarLevel @ 0x5aa60. Score 0..4 maps to 3, 5, 4, 1, 3 (two scores share 3);
+ * direction -2/-1/1/2 means -50000/-25000/+25000/+50000; direction 0 or outside -2..2 returns 0
+ * and discards the level. */
+i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection);
+
+/* Funding_DeltaToArrow @ 0x5ab34. Which funding arrow to draw, -2..2, against thresholds derived
+ * from the total (total/8 and total/2, integer division). A negative total moves the bands, so the
+ * same delta gets a different arrow for a base in the red. */
+i32 Funding_DeltaToArrow(i32 nDelta, i32 nTotal);
+
 #endif /* PUFO_BASEUI_H */

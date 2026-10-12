@@ -448,3 +448,56 @@ void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHoo
         pHooks->pfnOpen(nMode, pHooks->pUser); /* 0x6DD20, tail call with R4 */
     }
 }
+
+/* Funding_ScoreToBarLevel @ 0x5aa60. How much money one funding bar step is worth.
+ *
+ * The first argument is not an amount and not an index into a table of five: the mapping is
+ * 0 -> 3, 1 -> 5, 2 -> 4, 3 -> 1, 4 -> 3, and anything else gives 0. Two scores share 3.
+ *
+ * The second is a direction, not a magnitude: -2 and -1 mean down, 1 and 2 mean up, and 0 or
+ * anything outside -2..2 returns 0 outright -- the level lookup is discarded on that path.
+ *
+ * Hex-Rays renders the level as `v2 << 24 >> 24`, which is the compiler widening a signed char.
+ * Every level is 1..5, so the port keeps a plain int multiply. */
+i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection)
+{
+    static const i32 anLevelByScore[5] = { 3, 5, 4, 1, 3 }; /* 0x5AA6C..0x5AAE4 */
+    i32 nAmount;
+
+    const i32 nLevel = (nScore >= 0 && nScore <= 4) ? anLevelByScore[nScore] : 0;
+
+    switch (nDirection) {
+    case -2: nAmount = -50000; break;
+    case -1: nAmount = -25000; break;
+    case  1: nAmount =  25000; break;
+    case  2: nAmount =  50000; break;
+    default: return 0; /* 0x5AAD0, 0x5AAC8: the level is thrown away */
+    }
+
+    return nLevel * nAmount; /* 0x5AB2C */
+}
+
+/* Funding_DeltaToArrow @ 0x5ab34. Which arrow to draw next to a funding figure: -2, -1, 0, 1, 2.
+ *
+ * It is a chain of compares, not a switch, and the thresholds come from the total: a2/8 and a2/2,
+ * with integer division truncating toward zero. That makes the bands asymmetric for a negative
+ * total, which is the point -- a base in the red gets a different arrow for the same delta.
+ *
+ * The third test reads `a1 <= a2 / -8`, not `a2 / 8`. Dividing by -8 is what puts the middle band
+ * on the other side of zero. */
+i32 Funding_DeltaToArrow(i32 nDelta, i32 nTotal)
+{
+    if (nDelta <= nTotal / 8 + nTotal / 2) {
+        return -2; /* 0x5AB54 */
+    }
+    if (nDelta <= nTotal / 8) {
+        return -1; /* 0x5AB60 */
+    }
+    if (nDelta <= nTotal / -8) {
+        return 0; /* 0x5AB7C */
+    }
+    if (nDelta > nTotal / -8 - nTotal / 2) {
+        return 2; /* 0x5ABAC */
+    }
+    return 1; /* 0x5ABD4 */
+}

@@ -123,6 +123,36 @@ static void TestGeoscapeScreens(void)
     CheckEqI32(g_nFundingOpen, 1, "  funding screen opened");
 }
 
+static void TestFundingHelpers(void)
+{
+    printf("Funding_ScoreToBarLevel and Funding_DeltaToArrow\n");
+
+    CheckEqI32(Funding_ScoreToBarLevel(0, 1), 75000, "score 0 is level 3, one step is 25000");
+    CheckEqI32(Funding_ScoreToBarLevel(1, 2), 250000, "score 1 is level 5, two steps is 50000 each");
+    CheckEqI32(Funding_ScoreToBarLevel(3, -1), -25000, "score 3 is level 1, and down is negative");
+    CheckEqI32(Funding_ScoreToBarLevel(4, 1), 75000,
+               "score 4 shares level 3 with score 0, so it costs the same");
+    CheckEqI32(Funding_ScoreToBarLevel(5, 1), 0, "a score outside 0..4 has level 0");
+    CheckEqI32(Funding_ScoreToBarLevel(1, 0), 0,
+               "direction 0 returns 0 and throws the level away");
+    CheckEqI32(Funding_ScoreToBarLevel(1, 3), 0, "and so does a direction outside -2..2");
+
+    /* A positive total makes three of the five arrows unreachable: the first test
+     * (delta <= total/8 + total/2) already swallows everything up to 500, and the -1 band would
+     * need a delta above 500 that is also at or below 100. */
+    CheckEqI32(Funding_DeltaToArrow(-600, 800), -2, "a big negative delta is -2");
+    CheckEqI32(Funding_DeltaToArrow(0, 800), -2, "even zero is -2 when the total is positive");
+    CheckEqI32(Funding_DeltaToArrow(500, 800), -2, "and everything up to 500 is -2");
+    CheckEqI32(Funding_DeltaToArrow(501, 800), 2, "the next value jumps straight to 2");
+
+    /* A negative total moves the bands, and all five arrows become reachable. */
+    CheckEqI32(Funding_DeltaToArrow(-600, -800), -2, "down a lot");
+    CheckEqI32(Funding_DeltaToArrow(-300, -800), -1, "down some");
+    CheckEqI32(Funding_DeltaToArrow(50, -800), 0, "flat");
+    CheckEqI32(Funding_DeltaToArrow(200, -800), 1, "up some");
+    CheckEqI32(Funding_DeltaToArrow(600, -800), 2, "up a lot");
+}
+
 static void TestPanelPaging(void)
 {
     UiPanel a, b;
@@ -654,6 +684,7 @@ int main(void)
 
     TestScratch();
     TestGeoscapeScreens();
+    TestFundingHelpers();
     TestPanelPaging();
     TestSelectionCaches();
     TestBaseInfoOk();
