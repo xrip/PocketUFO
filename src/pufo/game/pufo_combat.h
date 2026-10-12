@@ -93,11 +93,12 @@ typedef struct CombatCtx {
 /* Hooks for the two things Combat_ResolveShot touches that the port does not
  * model yet.
  *
- * pfnComputeFov is Map_ComputeFov @ 0x2deac (1776 bytes), unported. Its argument
- * list is not settled either: the area-fire call site sets R1 = R2 = 0, the
- * ceiling-break call site sets R1 = 20 - column, R2 = the row counter and R3 =
- * origin X, and Hex-Rays renders both as a one-argument call. The port calls the
- * hook at the two proven points and leaves the arguments to the real function.
+ * pfnComputeFov is Map_ComputeFov @ 0x2deac (1776 bytes), ported in
+ * game/pufo_vistry.c. Its argument list is not settled either: the area-fire call
+ * site sets R1 = R2 = 0, the ceiling-break call site sets R1 = 20 - column, R2 = the
+ * row counter and R3 = origin X, and Hex-Rays renders both as a one-argument call.
+ * The port calls the hook at the two proven points and leaves the arguments to the
+ * real function.
  *
  * pfnAreaFire stands for the two writes at 0x2fa80 and 0x2fa94 -
  * `unk_157198->bUnk70115 = 1` (guarded by `pCtxBase.gap_2[0] == 0`) and
