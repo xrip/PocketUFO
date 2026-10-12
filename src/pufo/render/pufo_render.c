@@ -24,9 +24,12 @@ u32 g_aPalette[PUFO_PAL_SLOTS][PUFO_PAL_SIZE];
 /* gxDisp.ffFormat @ 0x188398+0x14. The Win64 target is RGB565. */
 u32 g_ffFormat = PUFO_FF_565;
 
-/* Blitter scratch, matching dword_A3028..dword_A3040 @ 0xa3028..0xa3040. */
-static i32 s_nSrcRectW;   /* dword_A3034 */
-static i32 s_nSrcRectH;   /* dword_A3038 */
+/* Blitter scratch, matching blitColorKey..s_nBlendAlpha @ 0xa3028..0xa3040. */
+static i32 s_nColorKey;   /* blitColorKey @ 0xa3028: glyph index treated as transparent */
+static i32 s_nColorMid;   /* blitColorMid @ 0xa302c: green field source of the fill colour */
+static i32 s_nColorLow;   /* blitColorLow @ 0xa3030: red field source of the fill colour */
+static i32 s_nRectW;      /* blitRectW @ 0xa3034: fill width, and its clip bound */
+static i32 s_nRectH;      /* blitRectH @ 0xa3038: fill height, and its clip bound */
 static i32 s_nMaskPtr;    /* dword_A303C, mask pointer for the Flip blend */
 static i32 s_nBlendAlpha; /* dword_A3040 */
 
@@ -138,10 +141,24 @@ void BlitParams_Set(i32 nAlpha, i32 nMaskPtr)
     s_nMaskPtr    = nMaskPtr;
 }
 
-void Blit_SetSrcRect(i32 nW, i32 nH)
+/* Blit_SetRectAndColor @ 0xa3f5c. Renamed in the IDB from Blit_SetSrcRect: the
+ * assignment is not positional and the old argument names were wrong. arg0/arg1
+ * become the rectangle size; arg2/arg3 are only ever read as colour operands. */
+void Blit_SetRectAndColor(i32 nRectW, i32 nRectH, i32 nColorMid, i32 nColorLow)
 {
-    s_nSrcRectW = nW;
-    s_nSrcRectH = nH;
+    s_nRectW    = nRectW;
+    s_nRectH    = nRectH;
+    s_nColorMid = nColorMid;
+    s_nColorLow = nColorLow;
+}
+
+/* Blit_SetColorKey @ 0xa3624. The one writer of blitColorKey, which
+ * SoftSurf_BlitIndexedKeyed_Inner compares against every glyph byte; a match skips
+ * the pixel, so this is the transparency index. */
+i32 Blit_SetColorKey(i32 nKey)
+{
+    s_nColorKey = nKey;
+    return nKey;
 }
 
 /* Blit_CopyRows @ 0xa3a14: logical surface -> render target, 1:1. */
@@ -199,6 +216,139 @@ void Blit_CopyRows(void)
             pDst = pRow + nPitchY;
         }
     }
+}
+
+/* The fill colour Blit_CopyToXY and SoftSurf_BlitSrcRect_Inner write: the index
+ * supplies the 5-bit top field, the two colour operands the middle and low ones. */
+static u32 Blit_PackedColor(u32 nIdx)
+{
+    return ((nIdx >> 3) << 11)
+         + 32u * ((u32)s_nColorMid >> 2)
+         + ((u32)s_nColorLow >> 3);
+}
+
+/* Clip s_nRectW x s_nRectH at (x,y) against the loaded surface. The original's
+ * guards are reproduced literally, including x <= nSurf0 rather than x < nSurf0.
+ * Returns the fill size through *pnW / *pnH and reports nothing to draw as zero. */
+static bool Blit_ClipFillRect(i32 *px, i32 *py, i32 *pnW, i32 *pnH)
+{
+    i32 x = *px, y = *py;
+    i32 nW = s_nRectW, nH = s_nRectH;
+    i32 nXEnd = x + nW, nYEnd = y + nH;
+
+    if (nW < 0) { nW = 0; }
+    if (nH < 0) { nH = 0; }
+    if (!(x <= g_blitState.nSurf0 && y <= g_blitState.nSurf1
+          && nXEnd >= 0 && nYEnd >= 0)) {
+        *pnW = 0; *pnH = 0;
+        return false;
+    }
+    if (x < 0) { nW += x; x = 0; }
+    if (y < 0) { nH += y; y = 0; }
+    if (nXEnd > g_blitState.nSurf0) { nW -= nXEnd - g_blitState.nSurf0; }
+    if (nYEnd > g_blitState.nSurf1) { nH -= nYEnd - g_blitState.nSurf1; }
+
+    *px = x; *py = y; *pnW = nW; *pnH = nH;
+    return nW != 0 && nH != 0;
+}
+
+/* Blit_CopyToXY @ 0xa42e4. Fills the rectangle in the LOADED SURFACE, not the render
+ * target: the destination is blitState.pSrc, stride blitState.nSurf0. Runs only for
+ * pixel mode 1 or 2; mode 0 and anything else falls through and draws nothing. */
+void Blit_CopyToXY(i32 x, i32 y, u32 nIdx)
+{
+    u32  nColor = Blit_PackedColor(nIdx);
+    i32  nFillW, nFillH;
+    u16 *pRow;
+    i32  nRow, nCol;
+
+    if (!(g_blitState.nPixelMode == 1 || g_blitState.nPixelMode == 2)) {
+        return;
+    }
+    if (!Blit_ClipFillRect(&x, &y, &nFillW, &nFillH)) {
+        return;
+    }
+
+    pRow = (u16 *)g_blitState.pSrc + x + g_blitState.nSurf0 * y;
+    for (nRow = nFillH; nRow != 0; --nRow) {
+        u16 *pStart = pRow;
+        for (nCol = nFillW; nCol != 0; --nCol) {
+            *pRow++ = (u16)nColor;
+        }
+        pRow = pStart + g_blitState.nSurf0;
+    }
+}
+
+/* SoftSurf_BlitSrcRect_Inner @ 0xa4450. Same rectangle, same clipping, same colour as
+ * Blit_CopyToXY, but it blends the destination with that colour per 5-6-5 field using
+ * nKey and 255-nKey, so nKey=255 is opaque and nKey=0 leaves the pixel alone. Note the
+ * gate here reads nSurf2, the SURFACE mode, where Blit_CopyToXY reads nPixelMode, the
+ * TARGET mode: the original really does gate the two on different things. */
+void SoftSurf_BlitSrcRect_Inner(i32 x, i32 y, u32 nIdx, i32 nKey)
+{
+    u32  nColor = Blit_PackedColor(nIdx);
+    i32  nFillW, nFillH;
+    u16 *pRow;
+    i32  nRow, nCol;
+    i32  nInv = 255 - nKey;
+
+    if (!(g_blitState.nSurf2 == 1 || g_blitState.nSurf2 == 2)) {
+        return;
+    }
+    if (!Blit_ClipFillRect(&x, &y, &nFillW, &nFillH)) {
+        return;
+    }
+
+    pRow = (u16 *)g_blitState.pSrc + x + g_blitState.nSurf0 * y;
+    for (nRow = nFillH; nRow != 0; --nRow) {
+        u16 *pStart = pRow;
+        for (nCol = nFillW; nCol != 0; --nCol) {
+            u16 nDst = *pRow;
+            u16 nLow = (u16)(((nDst & 0x1Fu)    * (u32)nInv) >> 8)
+                     + (u16)(((nColor & 0x1Fu)  * (u32)nKey) >> 8);
+            u16 nMid = (u16)((((nDst & 0x7E0u)   >> 5) * (u32)nInv) >> 8)
+                     + (u16)((((nColor & 0x7E0u) >> 5) * (u32)nKey) >> 8);
+            u16 nTop = (u16)((((nDst & 0xF800u)   >> 11) * (u32)nInv) >> 8)
+                     + (u16)((((nColor & 0xF800u) >> 11) * (u32)nKey) >> 8);
+
+            *pRow = (u16)(nLow + 32u * nMid + ((u32)nTop << 11));
+            ++pRow;
+        }
+        pRow = pStart + g_blitState.nSurf0;
+    }
+}
+
+/* SoftSurf_BlitRectEx @ 0x9fc30 and SoftSurf_BlitSrcRectEx @ 0x9fc70: load the surface
+ * descriptor, publish the rectangle and colour operands, then fill or blend. */
+void SoftSurf_BlitRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                         u32 nIdx, i32 nColorMid, i32 nColorLow)
+{
+    Blit_LoadSurface(pSurf);
+    Blit_SetRectAndColor(nRectW, nRectH, nColorMid, nColorLow);
+    Blit_CopyToXY(x, y, nIdx);
+}
+
+void SoftSurf_BlitSrcRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                            u32 nIdx, i32 nColorMid, i32 nColorLow, i32 nKey)
+{
+    Blit_LoadSurface(pSurf);
+    Blit_SetRectAndColor(nRectW, nRectH, nColorMid, nColorLow);
+    SoftSurf_BlitSrcRect_Inner(x, y, nIdx, nKey);
+}
+
+/* SoftSurf_BlitRect @ 0x9ebb0 and SoftSurf_BlitSrcRect @ 0x9ebf8: the bound forms that
+ * pin g_pMainSurface. */
+void SoftSurf_BlitRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
+                       i32 nColorMid, i32 nColorLow)
+{
+    SoftSurf_BlitRectEx(g_pMainSurface, x, y, nRectW, nRectH, nIdx, nColorMid, nColorLow);
+}
+
+void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
+                          i32 nColorMid, i32 nColorLow, i32 nKey)
+{
+    SoftSurf_BlitSrcRectEx(g_pMainSurface, x, y, nRectW, nRectH, nIdx,
+                           nColorMid, nColorLow, nKey);
 }
 
 /* Render_BlitSoft_LoRes @ 0x9fa7c / HiRes @ 0x9fa90.

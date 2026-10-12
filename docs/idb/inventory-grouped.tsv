@@ -1084,14 +1084,14 @@ a1760	LocalSize	12	platform
 a2000	SoftSurf_BlurPixels	116	render
 a306c	SoftSurf_BlitIndexed_Inner	860	render
 a33c8	SoftSurf_BlitIndexed_Mode12	604	render
-a3624	Store_dword_A3028	20	util
+a3624	Blit_SetColorKey	20	util
 a3638	SoftSurf_BlitIndexedKeyed_Inner	812	render
 a3964	Blit_LoadSurface	72	render
 a39ac	Blit_SetTargetParams	104	render
 a3a14	Blit_CopyRows	420	render
 a3bb8	Blit_CopyRows_HiRes	512	render
 a3db8	SoftSurf_BlitCopyRaw	420	render
-a3f5c	Blit_SetSrcRect	56	render
+a3f5c	Blit_SetRectAndColor	56	render
 a3f94	SoftSurf_FillRect_Inner	576	render
 a41d4	SoftSurf_BlitGlyph_Inner	268	render
 a42e0	nullsub_10	4	platform

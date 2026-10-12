@@ -8,24 +8,19 @@
  *   Render_BlitSoft_HiRes @ 0x9fa90, Render_Frame (0x22310),
  *   Blit_LoadSurface @ 0xa3964, Blit_SetTargetParams @ 0xa39ac,
  *   Blit_CopyRows @ 0xa3a14, Blit_CopyRows_HiRes @ 0xa3bb8,
- *   BlitParams_Set @ 0xa47b0, Blit_SetSrcRect @ 0xa3f5c,
+ *   BlitParams_Set @ 0xa47b0, Blit_SetRectAndColor @ 0xa3f5c, Blit_SetColorKey @ 0xa3624,
+ *   Blit_CopyToXY @ 0xa42e4, SoftSurf_BlitSrcRect_Inner @ 0xa4450,
  *   SoftSurf_Blit_Inner @ 0xa47d0, SoftSurf_BlitFlip_Inner @ 0xa49a0,
  *   SoftSurf_BlitIndexed_Inner @ 0xa306c,
  *   SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638,
  *   SoftSurf_FillRect_Inner @ 0xa3f94,
  *   SoftSurf_BlitIndexed @ 0x9e9f4, SoftSurf_BlitIndexedKeyed @ 0x9ea34,
  *   SoftSurf_Blit @ 0x9e558, SoftSurf_BlitFlip @ 0x9e590,
+ *   SoftSurf_BlitRectEx @ 0x9fc30, SoftSurf_BlitSrcRectEx @ 0x9fc70,
+ *   SoftSurf_BlitRect @ 0x9ebb0, SoftSurf_BlitSrcRect @ 0x9ebf8,
  *   PadImage_ctor @ 0x11000, PadImage_FreeData @ 0x1100c,
  *   PadImage_Load @ 0x11020, PadImage_Blit @ 0x110dc,
  *   Palette_Load @ 0x3e47c.
- *
- * Three addresses this module is about but does NOT implement, so they carry no credit:
- *   SoftSurf_BlitRect (0x9ebb0) and SoftSurf_BlitSrcRect (0x9ebf8) are bound wrappers that
- *     pin the global surface unk_156A7C and call SoftSurf_BlitRectEx (0x9fc30) /
- *     SoftSurf_BlitSrcRectEx (0x9fc70). Neither the wrapper nor either Ex form is ported.
- *   Store_dword_A3028 (0xa3624) is a 20-byte setter that stores its argument into
- *     dword_A3028 and returns it. The port has no owner for that global.
- * Listed here because they describe the blitter's shape, not because they are recreated.
  *
  * The original renders into one 240x320 16bpp surface (created in
  * Assets_LoadStartup @ 0x382d0 via SoftSurf_AllocPixels(240,320,2)) and blits
@@ -120,7 +115,18 @@ extern BlitState g_blitState;
 void Blit_LoadSurface(const SoftSurf *pSurf);
 void Blit_SetTargetParams(const RenderTarget *pTarget);
 void BlitParams_Set(i32 nAlpha, i32 nMaskOrZero);
-void Blit_SetSrcRect(i32 nW, i32 nH);
+void Blit_SetRectAndColor(i32 nRectW, i32 nRectH, i32 nColorMid, i32 nColorLow);
+i32  Blit_SetColorKey(i32 nKey);
+void Blit_CopyToXY(i32 x, i32 y, u32 nIdx);
+void SoftSurf_BlitSrcRect_Inner(i32 x, i32 y, u32 nIdx, i32 nKey);
+void SoftSurf_BlitRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                         u32 nIdx, i32 nColorMid, i32 nColorLow);
+void SoftSurf_BlitSrcRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                            u32 nIdx, i32 nColorMid, i32 nColorLow, i32 nKey);
+void SoftSurf_BlitRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
+                       i32 nColorMid, i32 nColorLow);
+void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
+                          i32 nColorMid, i32 nColorLow, i32 nKey);
 
 /* Full-surface row copy to the render target. */
 void Blit_CopyRows(void);

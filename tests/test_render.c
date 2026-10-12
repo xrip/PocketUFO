@@ -266,6 +266,115 @@ static void TestCopyRows(void)
     SoftSurf_dtor(&surf);
 }
 
+/* SoftSurf_BlitRectEx / SoftSurf_BlitSrcRectEx / Blit_CopyToXY /
+ * SoftSurf_BlitSrcRect_Inner: the rectangle fill and blend pair. */
+static void TestRectFillAndBlend(void)
+{
+    SoftSurf surf;
+    u16      aTarget[12];
+    u16     *pPix;
+    i32      i;
+
+    printf("SoftSurf_BlitRect / SoftSurf_BlitSrcRect (rect fill and blend)\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 4, 3, PIXMODE_16BPP);
+    pPix = (u16 *)SoftSurf_GetPixels(&surf);
+    for (i = 0; i < 12; ++i) {
+        pPix[i] = 0;
+        aTarget[i] = 0;
+    }
+    Render_SetTarget(4, 3, 2, 2, 8, (u8 *)aTarget);
+
+    /* All three operands at their maximum: idx 0xFF gives the top field, colorMid the
+     * middle, colorLow the bottom, so the packed colour is 0xFFFF. */
+    SoftSurf_BlitRectEx(&surf, 1, 1, 2, 2, 0xFF, 0xFF, 0xFF);
+    CheckEqU32(pPix[1 * 4 + 1], 0xFFFF, "  (1,1) filled");
+    CheckEqU32(pPix[1 * 4 + 2], 0xFFFF, "  (2,1) filled");
+    CheckEqU32(pPix[2 * 4 + 1], 0xFFFF, "  (1,2) filled");
+    CheckEqU32(pPix[2 * 4 + 2], 0xFFFF, "  (2,2) filled");
+    CheckEqU32(pPix[0], 0, "  (0,0) outside the rect");
+    CheckEqU32(pPix[3], 0, "  (3,0) outside the rect");
+
+    /* The fill lands in the loaded SURFACE, not the render target. */
+    for (i = 0; i < 12; ++i) {
+        if (aTarget[i] != 0) {
+            g_nFailures += 1;
+            printf("  FAIL target pixel %d written: %u\n", (int)i, (unsigned)aTarget[i]);
+        }
+    }
+    Check(1, "  render target untouched by Blit_CopyToXY");
+
+    /* Colour really comes from the three operands, not from a constant:
+     * idx 8 -> (8>>3)<<11 = 0x800, mid 4 -> 32*(4>>2) = 0x20, low 8 -> 8>>3 = 0x01. */
+    SoftSurf_BlitRectEx(&surf, 0, 0, 1, 1, 0x08, 0x04, 0x08);
+    CheckEqU32(pPix[0], 0x0821, "  idx 8 / mid 4 / low 8 packs to 0x0821");
+
+    /* Negative origin: the guard is x <= nSurf0, and the size shrinks by the overflow. */
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    SoftSurf_BlitRectEx(&surf, -1, -1, 4, 4, 0xFF, 0xFF, 0xFF);
+    CheckEqU32(pPix[0], 0xFFFF, "  clipped fill starts at (0,0)");
+    CheckEqU32(pPix[10], 0xFFFF, "  clipped fill ends at (2,2)");
+    CheckEqU32(pPix[3], 0, "  column 3 left alone");
+    CheckEqU32(pPix[11], 0, "  last pixel left alone");
+
+    /* x == nSurf0 passes the guard but the width clips to zero, so nothing is drawn. */
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    SoftSurf_BlitRectEx(&surf, 4, 0, 2, 2, 0xFF, 0xFF, 0xFF);
+    CheckEqU32(pPix[0], 0, "  x == nSurf0 draws nothing");
+
+    /* Pixel mode 0 (the 8bpp target) falls straight through. */
+    pPix[1 * 4 + 1] = 0xFFFF;
+    Render_SetTarget(4, 3, 0, 1, 4, (u8 *)aTarget);
+    SoftSurf_BlitRectEx(&surf, 1, 1, 2, 2, 0xFF, 0xFF, 0xFF);
+    CheckEqU32(pPix[1 * 4 + 1], 0xFFFF, "  mode 0 target leaves the surface as it was");
+    Render_SetTarget(4, 3, 2, 2, 8, (u8 *)aTarget);
+
+    /* The blend gate reads the SURFACE mode, not the target mode. An 8bpp surface has
+     * nSurf2 == 0, so the blend does nothing even with a 16bpp target. */
+    SoftSurf surf8;
+    SoftSurf_ctor(&surf8);
+    SoftSurf_AllocPixels(&surf8, 4, 3, PIXMODE_8BPP);
+    SoftSurf_BlitSrcRectEx(&surf8, 0, 0, 2, 2, 0xFF, 0xFF, 0xFF, 255);
+    CheckEqI32(g_blitState.nSurf2, 0, "  8bpp surface gives nSurf2 0");
+    CheckEqI32(g_blitState.nPixelMode, 2, "  target mode is still 2");
+    SoftSurf_dtor(&surf8);
+
+    /* Blend arithmetic. dst 0xFFFF, colour 0xFFFF, either key:
+     *   31 * 255 >> 8 = 30, 63 * 255 >> 8 = 62
+     * so the result is 30 + 32*62 + (30<<11) = 0x1E + 0x7C0 + 0xF000 = 0xF7DE.
+     * (f * 255) >> 8 is f - 1 for every non-zero field, so the original never
+     * reproduces a field exactly even at a fully opaque key. Recorded, not corrected. */
+    for (i = 0; i < 12; ++i) { pPix[i] = 0xFFFF; }
+    SoftSurf_BlitSrcRectEx(&surf, 0, 0, 1, 1, 0xFF, 0xFF, 0xFF, 255);
+    CheckEqU32(pPix[0], 0xF7DE, "  opaque blend still loses one per field");
+
+    for (i = 0; i < 12; ++i) { pPix[i] = 0xFFFF; }
+    SoftSurf_BlitSrcRectEx(&surf, 0, 0, 1, 1, 0xFF, 0xFF, 0xFF, 0);
+    CheckEqU32(pPix[0], 0xF7DE, "  zero-key blend also loses one per field");
+
+    for (i = 0; i < 12; ++i) { pPix[i] = 0x001F; }
+    SoftSurf_BlitSrcRectEx(&surf, 0, 0, 1, 1, 0xFF, 0xFF, 0xFF, 0);
+    CheckEqU32(pPix[0], 0x001E, "  nKey 0 scales the destination, it does not skip it");
+
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    SoftSurf_BlitSrcRectEx(&surf, 0, 0, 1, 1, 0xFF, 0xFF, 0xFF, 0);
+    CheckEqU32(pPix[0], 0, "  nKey 0 on an empty destination stays empty");
+
+    /* The bound forms pin g_pMainSurface. */
+    g_pMainSurface = &surf;
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    SoftSurf_BlitRect(0, 0, 1, 1, 0xFF, 0xFF, 0xFF);
+    CheckEqU32(pPix[0], 0xFFFF, "  SoftSurf_BlitRect uses g_pMainSurface");
+    SoftSurf_BlitSrcRect(1, 1, 1, 1, 0xFF, 0xFF, 0xFF, 255);
+    CheckEqU32(pPix[1 * 4 + 1], 0xF7DE, "  SoftSurf_BlitSrcRect uses g_pMainSurface");
+    g_pMainSurface = NULL;
+
+    CheckEqI32(Blit_SetColorKey(0x2A), 0x2A, "  Blit_SetColorKey returns its argument");
+
+    SoftSurf_dtor(&surf);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -283,6 +392,7 @@ int main(void)
     TestBlitKeyed();
     TestFillRect();
     TestCopyRows();
+    TestRectFillAndBlend();
 
     Asset_CloseArchives();
 
