@@ -178,6 +178,14 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * port keeps two names over one implementation. */
 i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
+ * The same 6 by 6 walk as the two capacity passes, returning 1 at the first match. A free cell
+ * means its buildDays byte is zero, that is nothing under construction there.
+ *
+ * The original's arguments are (grid, kind, baseIndex); the port puts the base index second to
+ * match the rest of this family. */
+i32 Base_FindFacilityCell(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind);
+
 /* Base_CountEmptyFacilityCells @ 0x6aee0. The same 6 by 6 walk over the same two grids, but
  * with weights of 2 and 3 rather than 50, summed over two cell kinds: a free kind-4 cell adds
  * 2 and a free kind-5 cell adds 3. Nothing else contributes.

@@ -506,6 +506,58 @@ static void TestFacilityClassify(void)
 #undef CELL_O
 }
 
+static void TestFindFacilityCell(void)
+{
+    static u8 grid[700];
+
+    printf("Base_FindFacilityCell\n");
+
+#define F_T(c, r) grid[480 + 144 * 0 + 6 * (c) + (r)]
+#define F_O(c, r) grid[6 * (c) + (r)]
+
+    memset(grid, 0, sizeof(grid));
+    F_T(2, 3) = 3;
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 3), 1,
+               "one free cell of the asked-for kind is a hit");
+
+    memset(grid, 0, sizeof(grid));
+    F_T(2, 3) = 3;
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 2), 0,
+               "a lab request finds nothing when only a workshop is free");
+
+    memset(grid, 0, sizeof(grid));
+    F_T(2, 3) = 3;
+    F_O(2, 3) = 4;
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 3), 0,
+               "a cell under construction is not a free cell");
+
+    memset(grid, 0, sizeof(grid));
+    F_T(0, 0) = 9;
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 9), 1,
+               "the last cell in the walk still counts");
+
+    /* The kind is compared as an unsigned byte, so a signed char argument still matches 200. */
+    memset(grid, 0, sizeof(grid));
+    F_T(5, 5) = 200;
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 200), 1,
+               "a kind above 127 is compared unsigned, as the original does");
+
+    /* Base 1 reads its own 144-byte type block but shares the buildDays stride rule. */
+    memset(grid, 0, sizeof(grid));
+    grid[480 + 144 * 1 + 6 * 1 + 1] = 3;
+    CheckEqI32(Base_FindFacilityCell(grid, 1, 3), 1,
+               "base 1 is looked up in its own type block");
+    CheckEqI32(Base_FindFacilityCell(grid, 0, 3), 0,
+               "and base 0 does not see it");
+
+    grid[6 * 1 + 1] = 2; /* base 0's buildDays for the same cell is irrelevant here */
+    CheckEqI32(Base_FindFacilityCell(grid, 1, 3), 1,
+               "base 1's own buildDays byte is still zero, so it still hits");
+
+#undef F_T
+#undef F_O
+}
+
 static void TestWorkshopCap(void)
 {
     printf("Base_CalcWorkshopCap\n");
@@ -837,6 +889,7 @@ int main(void)
     TestBaseGridLookup();
     TestFacilityClassify();
     TestWorkshopCap();
+    TestFindFacilityCell();
     TestActiveManuf();
     TestWorkshopNeeded();
     TestLabChain();

@@ -355,6 +355,20 @@ i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
     return FacilityScoreFree(abFacilityGrid, nBaseIndex, 2, 50); /* 0x65890 */
 }
 
+/* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
+ *
+ * It is the same 6 by 6 walk as the capacity passes -- cell kind at fac[nBase].facType, free
+ * meaning buildDays is zero -- and it returns 1 at the first match and 0 after the last cell.
+ * That is exactly a nonzero count, so the port reuses the shared walk with a weight of 1 rather
+ * than writing the loop a fourth time.
+ *
+ * The original's arguments are (grid, kind, baseIndex); the port puts the base index second to
+ * match every other function in this family. */
+i32 Base_FindFacilityCell(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
+{
+    return FacilityScoreFree(abFacilityGrid, nBaseIndex, nKind, 1) != 0 ? 1 : 0;
+}
+
 /* Base_CountEmptyFacilityCells @ 0x6aee0. The same walk with weights of 2 and 3 instead of
  * 50, summed over two kinds: free kind-4 cells count 2 each and free kind-5 cells count 3
  * each. Unlike the capacity passes this is not about a facility kind at all -- 4 and 5 are two
