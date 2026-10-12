@@ -184,14 +184,14 @@ typedef struct InvDropHooks {
      * successful drop. */
     void (*pfnPlaySample)(i32 nSample, void *pUser);
     /* UiModal_Begin @ 0x26430 with the label "OK" @ 0xA62D8 and UiModal_EndThunk
-     * @ 0x12254 as the callback; the app supplies both. */
+     * (0x12254) as the callback; the app supplies both. */
     void (*pfnModal)(i32 nX, i32 nY, i32 nCount, const char *szLabel, void *pUser);
     /* pCtxBase.apObjects[nIndex], the ammo-type match against a weapon's
      * anAmmoTypeId @ 0xA8. */
     ObjectRec *(*pfnFindObject)(i32 nIndex, void *pUser);
     /* operator new(0x18) then TactItem_ctor @ 0x3e718. NULL when it fails. */
     TactItem *(*pfnAllocItem)(void *pUser);
-    /* operator delete @ 0xa115c. */
+    /* operator delete (0xa115c). */
     void (*pfnFreeItem)(TactItem *pItem, void *pUser);
     /* unk_136DF0 @ Map+0x23438 and its count unk_128AF4 @ Map+0x1513C. */
     TactItem **apItemPool;

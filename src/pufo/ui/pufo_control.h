@@ -117,7 +117,8 @@ extern const UiBankSpan g_aUiBankSpans[PUFO_PBANK_SPAN_COUNT];
  * is passed rather than reached through bank memory. Returns the bank. */
 UiWidgetBank *UiBank_CtorAll(UiWidgetBank *pBank, bool *pbActionFlag);
 
-/* UiBank_FreeAllPads @ 0x1117c, reached through Bank_AtexitThunk @ 0x11170. Frees the
+/* UiBank_FreeAllPads @ 0x1117c, reached through Bank_AtexitThunk (0x11170, a 12-byte thunk the
+ * port does not reproduce). Frees the
  * pads of all 130 widgets in the reverse group order. */
 void UiBank_FreeAllPads(UiWidgetBank *pBank);
 

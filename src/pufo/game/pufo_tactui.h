@@ -290,7 +290,8 @@ bool Ui_SetFireMode(TactUiState *pUi, i32 nMode, const FireModeWeapon *pWeapon,
 /* The text-record index the out-of-ammo refusal pushes (byte_B3D9E). */
 #define PUFO_TXT_OUT_OF_AMMO 0
 
-/* Map_PlaySample11_SetMode0B @ 0x179c0: sample 17, nActionMode = 11. */
+/* Map_PlaySample17_SetMode11 @ 0x179c0: sample 17, nActionMode = 11. (Renamed in the IDB: the
+ * old name said sample 11; 0x179CC plays 17.) */
 void Ui_SetMode11(TactUiState *pUi, const TactUiHooks *pHooks);
 
 /* Tact_TryFireMode4/10/5 @ 0x179e4/0x17a80/0x17b1c.
@@ -532,10 +533,12 @@ void Inv_BuildVisibleList(TactUiState *pUi, Soldier *pSelUnit);
 /* Map_ClearUiScreen @ 0x18a54: nUiScreen = 0. No sound. */
 void Ui_ClearScreen(TactUiState *pUi);
 
-/* Map_PlaySamples10_0E_ClearUiScreen @ 0x18e9c: sample 16, sample 14, screen 0. */
+/* Map_PlaySamples16_14_ClearUiScreen @ 0x18e9c: sample 16, sample 14, screen 0. (Renamed in the
+ * IDB: the old name said samples 10 and 14; 0x18EA8 plays 16.) */
 void Ui_Samples16_14_ClearScreen(TactUiState *pUi, const TactUiHooks *pHooks);
 
-/* Map_UiScreen7_PlaySamples10_0E @ 0x194f8: screen 7, then samples 16 and 14. */
+/* Map_UiScreen7_PlaySamples16_14 @ 0x194f8: screen 7, then samples 16 and 14. (Renamed in the
+ * IDB for the same reason as 0x18e9c.) */
 void Ui_Screen7_Samples16_14(TactUiState *pUi, const TactUiHooks *pHooks);
 
 /* Map_PlaySamples16_7_SetDeployFlag @ 0x19528 and

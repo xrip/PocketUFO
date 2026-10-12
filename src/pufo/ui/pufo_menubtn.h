@@ -7,7 +7,7 @@
  *   Cancel0 @ 0x1a24c, Cancel1 @ 0x1a26c,
  *   Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
  *   Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04,
- *   App_QuitFromTact @ 0x18e18.
+ *   App_QuitFromTact (0x18e18), not ported.
  *
  * ## What they are
  *
@@ -109,7 +109,7 @@ void Menu_OpenSlotList(u16 *pnUiScreen, i32 *pnListMode, bool bSaveMode,
                        const MenuHooks *pHooks);
 
 /* Menu_ConfirmQuitDialog @ 0x18e2c: sample 16, then UiModal_Begin(pCtx, 140, 24, 4,
- * "YES", App_QuitFromTact @ 0x18e18, "NO", Menu_CancelQuitDialog @ 0x18e04), then
+ * "YES", App_QuitFromTact (0x18e18), "NO", Menu_CancelQuitDialog @ 0x18e04), then
  * nUiScreen = 8. The two callbacks are injected: App_QuitFromTact is
  * Tact_Shutdown(1) + App_QuitDisplay, which is the app shell's job. Returns the new
  * screen id, as the original does. */

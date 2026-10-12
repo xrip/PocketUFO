@@ -192,3 +192,36 @@ MenuCtl14_OnClick	Menu_LoadSlot	merged
 Set_byte_159E88_3_SetUiY	BaseUi_SetScratch3AndUiY	
 IncDwordIfInRange_AtPlus0xBD4	UiPanel_ScrollNext	0x589dc is a tail call to 0x3f00c
 Save_ReadStrategVer	Save_ReadStrategVersion	the port names the destination explicitly instead of writing 0x18655C
+BaseGrid_SubByte0x654	BaseGrid_SubTypeByte	the base array, count, and grid are passed in
+Tact_OpenCommandScreen	Ui_OpenCommandScreen	
+Tact_OpenCommandScreenFlagged	Ui_OpenCommandScreenFlagged	
+Map_UiScreen7_PlaySamples10_0E	Ui_Screen7_Samples16_14	IDB renamed: 0x19510 plays sample 16, not 10
+Map_PlaySamples10_0E_ClearUiScreen	Ui_Samples16_14_ClearScreen	IDB renamed: 0x18EA8 plays sample 16, not 10
+Map_PlaySample11_SetMode0B	Ui_SetMode11	IDB renamed to Map_PlaySample17_SetMode11: 0x179CC plays 17
+Cache_ObjPlus0xBD8_To_dword_186BE8	BaseUi_Cache186BE8	0x76138 and 0x96ab0 are the same seven instructions
+Tilemap_GetAtAlt	Tilemap_GetAt	duplicate of 0x8217c differing only in which global grid it reads
+MenuBtn_EndTurn	Menu_EndTurn	Tact_BeginEnemyTurn is injected
+TactCtx272_ctor	TactCtx_ctor	
+MenuBtn_Cancel0	MenuBtn_Cancel	two identical pads, one body
+MenuBtn_Cancel1	MenuBtn_Cancel	merged
+MenuBtn_Confirm0	MenuBtn_Confirm	the sample is an argument
+MenuBtn_Confirm1	MenuBtn_Confirm	merged
+MenuBtn_Confirm2	MenuBtn_Confirm	merged
+MenuBtn_Confirm3	MenuBtn_Confirm	merged
+MenuBtn_Confirm4	MenuBtn_Confirm	merged
+MenuBtn_Confirm5	MenuBtn_Confirm	merged
+MenuBtn_ConfirmSnd15	MenuBtn_Confirm	merged
+UiPanel_ScrollNextSel	UiPanel_ScrollNext	the Sel wrappers act on dword_1871D0[byte_1871F8]; the port takes the panel
+UiPanel_ScrollPrevSel	UiPanel_ScrollPrev	merged
+DecDwordIfPos_AtPlus0xBD4	UiPanel_ScrollPrev	0x589cc is a tail call to 0x3f040
+Map_UiScreen0F_PlaySample0F	Ui_OpenScreen15	
+Set_byte_159E88_4	BaseUi_SetScratch4	
+Soldier_ctor	Unit_ctor	
+CDialogTemplate_GetLevelCount	MapTemplate_GetLevelCount	
+CDialogTemplate_GetTemplateByte0	MapTemplate.nDimX	replaced by a struct field set at load
+CDialogTemplate_GetTemplateByte1	MapTemplate.nDimY	replaced by a struct field set at load
+??0CDialogTemplate@@QAA@XZ	MapTemplate_Load	the port initialises the struct when the .ma1 loads
+Map_UiScreen7_PlaySample0E	Ui_OpenScreen7	
+Map_ClearUiScreen	Ui_ClearScreen	
+MenuBtn_ResizeWindow	Menu_ResizeWindow	App_ResizeMainWindow is injected; the pad body is ported
+AssetReader_ClearGlobal	AssetReader_Clear	the original clears the global reader at 0x187028; the port takes the reader

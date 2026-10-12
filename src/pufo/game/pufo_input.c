@@ -458,7 +458,7 @@ void Input_OnConfirm(TactInputState *pState, const TactInputHooks *pHooks)
 /* Input_OnSecondary @ 0x156e0. The secondary key (right click / second action).
  *
  * Gate read off the ARM at 0x156E0..0x1575C: bGeoscapeUi (0x44) takes a branch
- * that only calls nullsub_8 @ 0x8b948, so the geoscape does nothing here. The
+ * that only calls nullsub_8 (0x8b948), so the geoscape does nothing here. The
  * tactical gate is the same five checks Input_OnConfirm uses.
  *
  * Screen routing is a compare chain, not a jumptable (0x15760..0x15784 and the
@@ -478,7 +478,7 @@ void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
     i32           nY1;
 
     if (pState->bGeoscapeUi) {
-        return; /* nullsub_8 @ 0x8b948 */
+        return; /* nullsub_8 (0x8b948) */
     }
     if (!pState->bTactFlag || !TactInput_CanScroll(pState)) {
         return;
