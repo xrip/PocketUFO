@@ -144,6 +144,67 @@ static void TestFindIdxForShip(void)
                "out-of-range ship index is refused, where the original would fault");
 }
 
+static void TestAddItem(void)
+{
+    printf("StrategList_AddItem\n");
+    PtrArray list;
+    i32 seed = 0;
+    StrategItem *p;
+
+    PtrArray_ctor(&list);
+
+    p = StrategList_AddItem(&list, &seed, 0, 1, 0, 2, 300, 400, 42, 1);
+    Check(p != NULL, "allocates and appends");
+    CheckEqI32(list.nCount, 1, "list grew by one");
+    CheckEqI32(seed, 1, "the seed counter is incremented after the item is built");
+
+    CheckEqI32(p->nSeed, 0, "item 0 carries seed 0");
+    CheckEqI32(p->nType, 1, "nType");
+    CheckEqI32(p->bActive, 0, "bActive");
+    CheckEqI32(p->bCraftClass, 2, "bCraftClass");
+    CheckEqI32(p->bVisible, 1, "bVisible");
+    CheckEqI32(p->bRace, 255, "bRace is written as -1, so 255 in a byte");
+    CheckEqI32(p->nHp, -1, "nHp starts at -1");
+    CheckEqI32(p->nPhase, 0, "nPhase");
+    CheckEqI32(p->bDone, 0, "bDone");
+    CheckEqI32(p->nTimer, 0, "nTimer");
+    CheckEqI32(p->bFlagA, 0, "bFlagA");
+    CheckEqI32(p->bHyperDetect, 0, "bHyperDetect");
+    CheckEqI32(p->bDetected, 0, "bDetected");
+
+    /* nType 1 takes the display id and refuses the site id. */
+    CheckEqI32(p->nDisplayId, 42, "type 1 gets nDisplayId = nId");
+    CheckEqI32(p->nSiteId, -1, "type 1 gets nSiteId = -1");
+
+    /* nType 0 and 3 are the mirror image. */
+    p = StrategList_AddItem(&list, &seed, 0, 0, 1, 0, 10, 20, 7, 0);
+    CheckEqI32(p->nSiteId, 7, "type 0 gets nSiteId = nId");
+    CheckEqI32(p->nDisplayId, -1, "type 0 gets nDisplayId = -1");
+    p = StrategList_AddItem(&list, &seed, 0, 3, 1, 0, 10, 20, 9, 0);
+    CheckEqI32(p->nSiteId, 9, "type 3 gets nSiteId = nId");
+    CheckEqI32(p->nDisplayId, -1, "type 3 gets nDisplayId = -1");
+    CheckEqI32(p->nSeed, 2, "the third item carries seed 2");
+
+    /* Only nType 5 converts coordinates, and only for zoom modes 1 and 2. */
+    p = StrategList_AddItem(&list, &seed, 0, 5, 1, 0, 300, 300, 0, 1);
+    CheckEqI32(p->nX, 300, "zoom mode 0 does not scale");
+    CheckEqI32(p->nY, 300, "zoom mode 0 does not scale y either");
+
+    p = StrategList_AddItem(&list, &seed, 1, 5, 1, 0, 300, 300, 0, 1);
+    CheckEqI32(p->nX, 399, "zoom mode 1 scales by 1.333 and truncates, so 399 not 400");
+    CheckEqI32(p->nStartY, 399, "nStartY carries the scaled value");
+    CheckEqI32(p->nDestX, 399, "nDestX carries the scaled value");
+
+    p = StrategList_AddItem(&list, &seed, 2, 5, 1, 0, 300, 300, 0, 1);
+    CheckEqI32(p->nX, 508, "zoom mode 2 scales by 1.694");
+
+    /* A non-5 type is never scaled, whatever the zoom mode. */
+    p = StrategList_AddItem(&list, &seed, 2, 1, 1, 0, 300, 300, 5, 1);
+    CheckEqI32(p->nX, 300, "a craft item is not scaled even at zoom mode 2");
+
+    PtrArray_DeleteAll(&list);
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -585,6 +646,7 @@ int main(void)
     TestZoomButtons();
     TestStrategListAlloc();
     TestFindIdxForShip();
+    TestAddItem();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

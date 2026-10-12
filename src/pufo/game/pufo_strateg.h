@@ -145,16 +145,59 @@ void StrategList_ctor(PtrArray *pList);
 void StrategList_Clear(PtrArray *pList);
 
 /* StrategItem_ctor @ 0x82bd4. It does one thing: writes the dword at +0x34 from the
- * global dword at 0x18640C. That global has exactly three xrefs in the IDB -- two in
- * StrategList_AddItem (0x826e8) and this one -- and no writer, so it is zero for the
- * whole run. The port takes the value as a parameter instead of hiding a global that
- * is never written. */
+ * global dword at 0x18640C. That global has exactly three xrefs in the IDB: read at
+ * 0x82A7C and incremented at 0x82A84, both inside StrategList_AddItem @ 0x826e8, and
+ * read here at 0x82BD8. So it is a per-item seed counter, written once per added item,
+ * and it starts at zero because .bss is zeroed. The port passes it as a pointer so the
+ * counter is visible instead of hidden in a global. */
 StrategItem *StrategItem_ctor(StrategItem *pItem, i32 nSeed);
 
 /* StrategItem_AllocAdd @ 0x415cc: operator new(0x88), StrategItem_ctor, then
  * PtrArray_Add. The add happens whether or not the allocation succeeded, so a failed
  * allocation appends a null entry -- reproduced as written. */
 bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed);
+
+/* ------------------------------------------------- adding a strateg item
+ *
+ * Evidence: StrategList_AddItem @ 0x826e8.
+ *
+ * Allocates through StrategItem_AllocAdd, then writes the LAST entry of the list field
+ * by field. The original re-reads PtrArray_GetCount and PtrArray_Get(count-1) before
+ * every single store, which is why the decompiler is full of v29..v48; nothing changes
+ * the count in between, so the port takes the pointer once.
+ *
+ * pnSeed is the original's global at 0x18640C. It is read for the constructor and
+ * incremented at 0x82A84 AFTER the item was built, so item N gets seed N counting from
+ * whatever the counter held at the start.
+ *
+ * The nType == 5 coordinate conversion is the interesting part. A type-5 item's x and y
+ * are multiplied by the world scale of the CURRENT zoom level before being stored, so a
+ * type-5 item created while zoomed in lands at the right world position:
+ *
+ *   nZoomMode 1 -> 1.333   (the same constant Smap_ZoomOut @ 0x81c08 uses for 1 -> 0)
+ *   nZoomMode 2 -> 1.694
+ *   nZoomMode 0 -> no scaling
+ *
+ * Both factors were recovered from the `muld` immediates: 0x3FF5555555555556 and
+ * 0x3FFB0A3D70A3D70A. `dtoi` truncates toward zero, so 300 at mode 1 is 399, not 400.
+ *
+ * The id fields split by type, and the two are mutually exclusive:
+ *   nType 0 or 3 -> nSiteId = nId,     nDisplayId = -1
+ *   nType 1      -> nDisplayId = nId, nSiteId = -1
+ *   any other    -> NEITHER is written. operator new leaves them indeterminate, so a
+ *                   type 2, 4 or 5 item starts life with a garbage site id and display
+ *                   id. Nothing here fixes that; a later pass has to assign them.
+ *
+ * Deviations, both listed rather than hidden:
+ *   - the original writes through PtrArray_Get(count-1) with no NULL check, so a failed
+ *     allocation faults on the first field store. The port returns NULL instead.
+ *   - the original returns &MEMORY[0x1863E8], the viewport, not the item it created. The
+ *     port returns the item, which is the only value a caller can use.
+ *   - the original mirrors the list count into the separate global 0x186530 at 0x82710.
+ *     The port keeps one count, in the PtrArray. */
+StrategItem *StrategList_AddItem(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                 i32 nType, i32 bActive, i32 bCraftClass,
+                                 i32 x, i32 y, i32 nId, i32 bVisible);
 
 /* ------------------------------------------------------- the geoscape viewport
  *

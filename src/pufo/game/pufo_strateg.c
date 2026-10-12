@@ -246,8 +246,9 @@ StrategItem *StrategItem_ctor(StrategItem *pItem, i32 nSeed)
         return NULL;
     }
     /* 0x82bdc: the only write. The original reads the global dword at 0x18640C, which
-     * has no writer anywhere in the IDB. Nothing else in the record is initialised --
-     * operator new leaves the other 132 bytes as they were. */
+     * StrategList_AddItem @ 0x826e8 reads at 0x82A7C and increments at 0x82A84, so it is
+     * a per-item seed counter that starts at zero. Nothing else in the record is
+     * initialised -- operator new leaves the other 132 bytes as they were. */
     pItem->nSeed = nSeed;
     return pItem;
 }
@@ -268,6 +269,78 @@ bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed)
      * original would have stored. */
     PtrArray_Add(pList, pItem);
     return pItem != NULL;
+}
+
+/* World scale of each zoom level, recovered from the muld immediates at 0x82790 and
+ * 0x82818: 0x3FF5555555555556 and 0x3FFB0A3D70A3D70A. */
+#define STRATEG_SCALE_MODE1 1.333
+#define STRATEG_SCALE_MODE2 1.694
+
+StrategItem *StrategList_AddItem(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                 i32 nType, i32 bActive, i32 bCraftClass,
+                                 i32 x, i32 y, i32 nId, i32 bVisible)
+{
+    StrategItem *pItem;
+    i32 nx = x;
+    i32 ny = y;
+
+    if (pList == NULL || pnSeed == NULL) {
+        return NULL;
+    }
+
+    if (!StrategItem_AllocAdd(pList, *pnSeed)) { /* 0x82704 */
+        return NULL; /* deviation: the original faults on the first field store */
+    }
+    *pnSeed += 1; /* 0x82A84 */
+
+    pItem = (StrategItem *)PtrArray_Get(pList, pList->nCount - 1);
+    if (pItem == NULL) {
+        return NULL;
+    }
+
+    pItem->nType   = (u8)nType;   /* 0x82728 */
+    pItem->bActive = (u8)bActive; /* 0x82748 */
+
+    if (nType == 5) { /* 0x8275C: a type-5 item is placed in level-0 world units */
+        if (nZoomMode == 1) {
+            nx = (i32)((double)nx * STRATEG_SCALE_MODE1);
+            ny = (i32)((double)ny * STRATEG_SCALE_MODE1);
+        }
+        if (nZoomMode == 2) {
+            nx = (i32)((double)nx * STRATEG_SCALE_MODE2);
+            ny = (i32)((double)ny * STRATEG_SCALE_MODE2);
+        }
+    }
+
+    pItem->bHyperDetect = 0;  /* 0x82888 */
+    pItem->bDetected    = 0;  /* 0x828A0 */
+    pItem->bRace        = 255; /* 0x828BC: written as -1 */
+    pItem->nPhase       = 0;  /* 0x828D4 */
+    pItem->bDone        = 0;  /* 0x828EC */
+    pItem->nX           = nx; /* 0x82904 */
+    pItem->nY           = ny; /* 0x8291C */
+    pItem->nStartX      = nx; /* 0x82934 */
+    pItem->nStartY      = ny; /* 0x8294C */
+    pItem->nDestX       = nx; /* 0x82964 */
+    pItem->nDestY       = ny; /* 0x82984 */
+
+    if (nType == 0 || nType == 3) { /* 0x82990 */
+        pItem->nSiteId    = nId; /* 0x829A8 */
+        pItem->nDisplayId = -1;  /* 0x829C0 */
+    }
+    if (nType == 1) { /* 0x829C8 */
+        pItem->nDisplayId = nId; /* 0x829E0 */
+        pItem->nSiteId    = -1;  /* 0x829F8 */
+    }
+    /* Any other nType leaves nSiteId and nDisplayId as whatever operator new left. */
+
+    pItem->bVisible     = (u8)bVisible; /* 0x82A14 */
+    pItem->nTimer       = 0;            /* 0x82A2C */
+    pItem->bFlagA       = 0;            /* 0x82A44 */
+    pItem->bCraftClass  = (u8)bCraftClass; /* 0x82A5C */
+    pItem->nHp          = -1;           /* 0x82A74 */
+
+    return pItem;
 }
 
 /* ------------------------------------------------------- the geoscape viewport */
