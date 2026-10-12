@@ -5710,3 +5710,41 @@ from `0x15E19C` and end at `0x160DDC`, and `0x16022C` falls inside that range. T
 with different strides cannot both own that memory, so these are most likely two views of one
 block rather than two separate arrays. Nothing in the port depends on the answer: both
 functions take the column as an argument.
+
+## The mission outcome table inside `Tact_Shutdown` (mapped, not yet ported)
+
+`Tact_Shutdown (0x3d568)` (3788 bytes) is the tactical teardown and one of the three remaining
+`LoadGame` blockers. Its teardown half is mechanical. Its interesting half is at 0x3DCF4: when
+`bKeepSome == 0` the function commits the mission result, and that is a decision table over two
+bytes the IDB had never explained.
+
+- `unk_128A8C` — the mission ended in a **retreat**, not a completed landing.
+- `unk_128AD5` — the outcome code. **0, 2 and 3 all mean the craft leaves**; **1 means the site is
+  held**.
+- `unk_1153D9` — selects which of the two outcome paths runs.
+
+With `unk_1153D9` set: outcome 1 demolishes the base facility named by the byte at 0x159D81;
+outcome 0 removes the current strateg item when its `nType` is 4.
+
+With `unk_1153D9` clear: outcomes 0, 2 and 3 set byte **0x162028 to 1** — that is the one-shot
+replacement-spawn gate `StrategList_RemoveAt @ 0x82ab0` reads at 0x82AB0, so leaving a mission is
+what re-arms the next UFO spawn. Then either the item is removed, or (when `unk_128A8C == 0`) the
+item is removed only if its `nType` is 4 **and** `Ship_RemoveWithCargo` runs for the craft at
+`Map_nCraftIndex`. Outcome 1 transfers tactical loot into the base on a retreat and demolishes the
+facility otherwise.
+
+**Unit removal runs before the outcome** (0x3DD0C): every enemy is removed with no test; civilians
+are removed when `Soldier+960` is 0; XCOM units are removed when `nUnitType` (byte at `Soldier+160`)
+is `> 3 && <= 8` **or** `Soldier+960` is 0. The loop bound is re-read from `nCivilianUnitCount` /
+`nXcomUnitCount` every iteration because `Soldier_RemoveById` shrinks the list — the walk is against
+a moving target.
+
+`Tact_Shutdown` also frees the tactical bank through **thirteen pad families** (0x3D6E4): group
+sizes 19, 13, 12, 29, 7, 9, 9, 3, 3, 1, 8, 1, 1 at widget offsets 0, 19, 32, 60, 53, 44, 89, 98,
+101, 104, 105, 128, 129. Hex-Rays again renders the inner step as four `UiControl`s where the ARM
+means four bytes, so each group covers three adjacent widgets — the same misreading as
+`StartUi_Shutdown @ 0x38d7c`.
+
+Five callees are still unported: `Map_FreeRmpNodes` (0x55018), `Soldier_RemoveById` (0x36b8c),
+`Base_DemolishFacility` (0x66b70), `Ship_RemoveWithCargo` (0x36830), `Base_TransferTacticalLoot`
+(0x68344). The whole decode is recorded in the IDB.
