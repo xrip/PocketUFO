@@ -366,11 +366,654 @@ static void TestClear(void)
     Check(g_Unit.apBelt[1] == &g_aBelt[1], "  an unknown region clears nothing");
 }
 
+/* --- drop fixture --------------------------------------------------------- */
+
+static MapCell   g_aGrid[4][6][6];
+static Mc1Rec    g_FloorSpr;
+static TactItem *g_apPool[PUFO_INV_ITEM_POOL_MAX];
+static i32       g_nPool;
+static TactItem  g_aAlloc[4];
+static i32       g_nAlloc;
+static i32       g_aSamples[16];
+static i32       g_nSamples;
+static i32       g_aModalX[8], g_aModalY[8], g_aModalN[8];
+static i32       g_nModal;
+static ObjectRec g_aObjById[8];
+static i32       g_nFreed;
+static i32       g_nWeightCalls;
+
+static void Tr_Play(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (g_nSamples < (i32)(sizeof(g_aSamples) / sizeof(g_aSamples[0]))) {
+        g_aSamples[g_nSamples++] = nSample;
+    }
+}
+
+static void Tr_Modal(i32 nX, i32 nY, i32 nCount, const char *szLabel, void *pUser)
+{
+    (void)szLabel; (void)pUser;
+    if (g_nModal < 8) {
+        g_aModalX[g_nModal] = nX;
+        g_aModalY[g_nModal] = nY;
+        g_aModalN[g_nModal] = nCount;
+        ++g_nModal;
+    }
+}
+
+static ObjectRec *Tr_Find(i32 nIndex, void *pUser)
+{
+    (void)pUser;
+    return (nIndex >= 0 && nIndex < 8) ? &g_aObjById[nIndex] : NULL;
+}
+
+static TactItem *Tr_Alloc(void *pUser)
+{
+    (void)pUser;
+    if (g_nAlloc >= 4) {
+        return NULL;
+    }
+    memset(&g_aAlloc[g_nAlloc], 0, sizeof(g_aAlloc[g_nAlloc]));
+    return &g_aAlloc[g_nAlloc++];
+}
+
+static void Tr_Free(TactItem *pItem, void *pUser)
+{
+    (void)pItem; (void)pUser;
+    ++g_nFreed;
+}
+
+static MapCell *Tr_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nLayer < 0 || nLayer > 3 || nY < 0 || nY > 5 || nX < 0 || nX > 5) {
+        return NULL;
+    }
+    return &g_aGrid[nLayer][nY][nX];
+}
+
+static u8 Tr_Weight(TactItem *pItem, void *pUser)
+{
+    (void)pItem; (void)pUser;
+    ++g_nWeightCalls;
+    return 1;
+}
+
+static u8 Tr_TwoHanded(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return 0; }
+static u8 Tr_AmmoCap(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return 255; }
+static u8 Tr_AmmoWeight(i32 nIndex, void *pUser) { (void)nIndex; (void)pUser; return 1; }
+
+static const InvStatHooks g_StatHooks = {
+    Tr_Weight, Tr_TwoHanded, Tr_AmmoCap, Tr_AmmoWeight, NULL
+};
+
+/* The drop fixture: the unit stands on cell (3,3,2), the pool holds one item, and
+ * the drag anchor is the stored drag offset plus 10, so a test picks an anchor by
+ * writing the drag offset and leaving the pen at zero. */
+static void ResetDrop(void)
+{
+    Reset();
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(g_apPool, 0, sizeof(g_apPool));
+    memset(g_aObjById, 0, sizeof(g_aObjById));
+    g_nPool = 0;
+    g_nAlloc = 0;
+    g_nSamples = 0;
+    g_nModal = 0;
+    g_nFreed = 0;
+    g_nWeightCalls = 0;
+
+    for (i32 z = 0; z < 4; ++z) {
+        for (i32 y = 0; y < 6; ++y) {
+            for (i32 x = 0; x < 6; ++x) {
+                g_aGrid[z][y][x].nX = (u8)x;
+                g_aGrid[z][y][x].nY = (u8)y;
+                g_aGrid[z][y][x].nZ = (u8)z;
+            }
+        }
+    }
+    g_Unit.pCell = &g_aGrid[2][3][3];
+    g_Unit.uTu = 20;
+    g_Ui.bActionLatch = 0;
+    g_aGrid[2][3][3].pFloorSpr = &g_FloorSpr;   /* the unit stands on a floor */
+
+    /* The hit fixture fills every slot; a drop test needs empty ones. */
+    g_Unit.pHandL = NULL;
+    g_Unit.pHandR = NULL;
+    for (i32 p = 0; p < 4; ++p) {
+        for (i32 s = 0; s < 2; ++s) {
+            g_Unit.aPockets[p].apItem[s] = NULL;
+        }
+    }
+    for (i32 i = 0; i < 8; ++i) {
+        g_Unit.apBackpack[i] = NULL;
+    }
+    for (i32 i = 0; i < 9; ++i) {
+        g_Unit.apBelt[i] = NULL;
+    }
+    g_Ui.nInvListCount = 0;
+    for (i32 i = 0; i < 4; ++i) {
+        g_Ui.apInvList[i] = NULL;
+    }
+}
+
+static InvDropHooks DropHooks(void)
+{
+    InvDropHooks h;
+
+    memset(&h, 0, sizeof(h));
+    h.pfnPlaySample = Tr_Play;
+    h.pfnModal = Tr_Modal;
+    h.pfnFindObject = Tr_Find;
+    h.pfnAllocItem = Tr_Alloc;
+    h.pfnFreeItem = Tr_Free;
+    h.apItemPool = g_apPool;
+    h.pnItemCount = &g_nPool;
+    h.pfnLookupCell = Tr_Lookup;
+    h.pInvStat = &g_StatHooks;
+    return h;
+}
+
+/* Arm the drag state: the item, the region it came from, its slot pair, and an
+ * anchor point. */
+static InvDropCtx DropCtx(TactItem *pItem, i32 nRegion, i32 nSub0, i32 nSub1,
+                          i32 nAnchorX, i32 nAnchorY)
+{
+    static InvDropHooks s_h;
+    InvDropCtx c;
+
+    s_h = DropHooks();
+    memset(&c, 0, sizeof(c));
+    c.pHit = &g_Hit;
+    c.pUi = &g_Ui;
+    c.pSelUnit = &g_Unit;
+    c.pSentinel = &g_Sentinel;
+    c.nPtrX = 0;
+    c.nPtrY = 0;
+    c.pHooks = &s_h;
+
+    g_Hit.pHitItem = pItem;
+    /* A drag item must not carry a stale list link into the cell it lands in. */
+    pItem->pNext = NULL;
+    g_Hit.nHitRegion = nRegion;
+    g_Hit.nHitSub0 = nSub0;
+    g_Hit.nHitSub1 = nSub1;
+    g_Hit.nDragOffX = nAnchorX - 10;
+    g_Hit.nDragOffY = nAnchorY - 10;
+    return c;
+}
+
+static i32 SampleAt(i32 i)
+{
+    return (i < g_nSamples) ? g_aSamples[i] : -1;
+}
+
+static void CheckSamples(const char *pszWhat, i32 n0, i32 n1)
+{
+    char szBuf[96];
+    i32 nWant1 = (n1 < 0) ? -1 : n1;
+
+    snprintf(szBuf, sizeof(szBuf), "%s (%d, %d)", pszWhat, (int)n0, (int)nWant1);
+    Check(g_nSamples == ((n1 < 0) ? 1 : 2) && SampleAt(0) == n0 &&
+          (n1 < 0 || SampleAt(1) == n1), szBuf);
+}
+
+/* --- drop tests ------------------------------------------------------------ */
+
+static TactItem g_Item1x1;   /* 1 x 1, the ordinary case */
+static TactItem g_Item2x1;   /* 2 x 1, a wide footprint */
+static TactItem g_Weapon;    /* a weapon held in a hand */
+static ObjectRec g_O1x1;
+static ObjectRec g_O2x1;
+static ObjectRec g_OWeapon;
+static ObjectRec g_OClip;
+
+static void SetupItems(void)
+{
+    memset(&g_O1x1, 0, sizeof(g_O1x1));
+    memset(&g_O2x1, 0, sizeof(g_O2x1));
+    memset(&g_OWeapon, 0, sizeof(g_OWeapon));
+    memset(&g_OClip, 0, sizeof(g_OClip));
+    memset(&g_Item1x1, 0, sizeof(g_Item1x1));
+    memset(&g_Item2x1, 0, sizeof(g_Item2x1));
+    memset(&g_Weapon, 0, sizeof(g_Weapon));
+    g_O1x1.nFootW = 1;
+    g_O1x1.nFootH = 1;
+    g_O2x1.nFootW = 2;
+    g_O2x1.nFootH = 1;
+    g_OWeapon.nFootW = 1;
+    g_OWeapon.nFootH = 1;
+    g_OWeapon.anAmmoTypeId[0] = 4;   /* the weapon accepts object id 4 */
+    g_OClip.nFootW = 1;
+    g_OClip.nFootH = 1;
+    g_OClip.bTwoHanded = 1;   /* the clip-load gate tests the DRAGGED item */
+    g_Item1x1.pObj = &g_O1x1;
+    g_Item2x1.pObj = &g_O2x1;
+    g_Weapon.pObj = &g_OWeapon;
+    /* apObjects[4] is the clip object the weapon's ammo id names. */
+    g_aObjById[4].nFootW = 1;
+    g_aObjById[4].nFootH = 1;
+    g_aObjById[4].bTwoHanded = 1;
+}
+
+/* Put a weapon in one hand and a clip in the drag state. */
+static void SetupClip(TactItem **ppHand)
+{
+    *ppHand = &g_Weapon;
+    g_Weapon.nAmmo = 0;
+    g_Item1x1.pObj = &g_aObjById[4];
+    g_Item1x1.nAmmo = 7;
+    g_Item1x1.nIndex = 4;
+}
+
+static void TestDropPocket(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the pocket slots\n");
+    ResetDrop();
+    SetupItems();
+
+    /* Pocket 0 slot 0 is the rect x 22..41, y 22..41. */
+    c = DropCtx(&g_Item2x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    Check(Inv_HandlePointer(&c), "  a wide item drops into pocket 0");
+    Check(g_Unit.aPockets[0].apItem[0] == &g_Item2x1, "  the anchor slot holds the item");
+    Check(g_Unit.aPockets[0].apItem[1] == &g_Sentinel, "  the covered slot holds the sentinel");
+    CheckEqI32(g_Unit.aPockets[0].abMeta[1], 0, "  its meta byte names slot 0");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_A, "  pockets 0/1 cost 4 time units");
+    CheckSamples("  sample 17 on a placed drop", 17, -1);
+    Check(g_nWeightCalls > 0, "  Unit_RecalcInventoryStat ran");
+
+    /* Pocket 2 costs 5. */
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 1, 0, 110, 30);
+    Check(Inv_HandlePointer(&c), "  pocket 1 slot 1");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_A, "  pocket 1 also costs 4");
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 170);
+    Check(Inv_HandlePointer(&c), "  pocket 2 slot 0");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_POCKET_B, "  pockets 2/3 cost 5");
+
+    /* An occupied slot is refused before any charge, and the item goes back. */
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    g_Unit.aPockets[0].apItem[0] = &g_aPocket[0][0];
+    g_Unit.pCell->pItemList = NULL;
+    Check(!Inv_HandlePointer(&c), "  an occupied pocket is refused");
+    CheckEqI32(g_Unit.uTu, 20, "  no time units were charged");
+    Check(g_Unit.aPockets[0].apItem[0] == &g_aPocket[0][0], "  the slot keeps its item");
+
+    /* A tall item does not fit a pocket at all. */
+    ResetDrop();
+    g_O1x1.nFootH = 2;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    Check(!Inv_HandlePointer(&c), "  nFootH > 1 never fits a pocket");
+    g_O1x1.nFootH = 1;
+
+    /* A wide item at slot 1 runs past the pair. */
+    ResetDrop();
+    c = DropCtx(&g_Item2x1, INV_REGION_GROUND, 1, 0, 50, 30);
+    Check(!Inv_HandlePointer(&c), "  slot 1 plus a 2-wide footprint is refused");
+    CheckEqI32(g_Unit.uTu, 20, "  the bounds test runs before the charge");
+
+    /* Not enough time: the modal fires and the drop still falls through. */
+    ResetDrop();
+    g_Unit.uTu = 3;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    Check(!Inv_HandlePointer(&c), "  3 time units cannot pay for a pocket");
+    CheckEqI32(g_nModal, 1, "  one modal was raised");
+    CheckEqI32(g_aModalX[0], 160, "  the time modal is at 160,31");
+    CheckEqI32(g_aModalY[0], 31, "  with one button");
+
+    /* The latch makes every drop free, and a drop inside the source region too. */
+    ResetDrop();
+    g_Ui.bActionLatch = 4;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 30, 30);
+    Check(Inv_HandlePointer(&c), "  a set latch still places the item");
+    CheckEqI32(g_Unit.uTu, 20, "  but charges nothing");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_POCKET0, 1, 0, 50, 30);
+    Check(Inv_HandlePointer(&c), "  pocket 0 slot 1");
+    CheckEqI32(g_Unit.uTu, 20, "  a drop inside the source region is free");
+}
+
+static void TestDropHands(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the hands\n");
+    ResetDrop();
+    SetupItems();
+
+    /* The left hand is x 3..42, y 61..119; the right hand x 122..161. */
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(Inv_HandlePointer(&c), "  an empty left hand takes the item");
+    Check(g_Unit.pHandL == &g_Item1x1, "  pHandL");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_HAND, "  a hand costs 6");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 130, 90);
+    Check(Inv_HandlePointer(&c), "  an empty right hand takes the item");
+    Check(g_Unit.pHandR == &g_Item1x1, "  pHandR");
+
+    /* A priority weapon in the other hand blocks it, unless one side is category 3. */
+    ResetDrop();
+    SetupItems();
+    g_Unit.pHandR = &g_Weapon;
+    g_OWeapon.bListPri = 1;
+    g_OWeapon.nCategory = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(!Inv_HandlePointer(&c), "  a priority weapon blocks the other hand");
+    CheckEqI32(g_Unit.uTu, 20, "  and nothing is charged");
+    g_O1x1.nCategory = 3;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(Inv_HandlePointer(&c), "  a category-3 incoming item goes in anyway");
+    g_O1x1.nCategory = 1;
+
+    /* The mirror case: a priority incoming item is blocked unless the HELD weapon
+     * is category 3. */
+    ResetDrop();
+    SetupItems();
+    g_Unit.pHandR = &g_Weapon;
+    g_O1x1.bListPri = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(!Inv_HandlePointer(&c), "  a priority item cannot join a normal weapon");
+    ResetDrop();
+    SetupItems();
+    g_Unit.pHandR = &g_Weapon;
+    g_O1x1.bListPri = 1;
+    g_OWeapon.nCategory = 3;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(Inv_HandlePointer(&c), "  unless the held weapon is category 3");
+    g_O1x1.bListPri = 0;
+    g_OWeapon.nCategory = 1;
+
+    /* Loading a clip: the weapon is in the left hand, the dragged item is the
+     * two-handed clip whose object one of the weapon's ammo ids names. */
+    ResetDrop();
+    SetupItems();
+    SetupClip(&g_Unit.pHandL);
+    g_apPool[0] = &g_Item2x1;
+    g_apPool[1] = &g_Item1x1;   /* the dragged item, not the last entry */
+    g_apPool[2] = &g_aGround[0];
+    g_nPool = 3;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(Inv_HandlePointer(&c), "  a clip loads into the empty weapon");
+    CheckEqI32(g_Weapon.nAmmo, 7, "  the weapon now holds the clip");
+    CheckEqI32(g_Weapon.nIndex, 4, "  and its ammo index follows the clip");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_HAND, "  loading costs 6");
+    CheckSamples("  sample 6 for the load, then 17", 6, 17);
+    CheckEqI32(g_nFreed, 1, "  the clip object was deleted");
+    CheckEqI32(g_nPool, 2, "  the pool count dropped by one");
+    Check(g_apPool[1] == &g_aGround[0], "  the hole closed with the LAST entry");
+
+    /* A weapon that already holds a clip raises the 160,45 modal. */
+    ResetDrop();
+    SetupItems();
+    SetupClip(&g_Unit.pHandL);
+    g_Weapon.nAmmo = 3;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(!Inv_HandlePointer(&c), "  a loaded weapon refuses the clip");
+    CheckEqI32(g_nModal, 1, "  one modal");
+    CheckEqI32(g_aModalY[0], 45, "  at 160,45");
+    CheckEqI32(g_Unit.uTu, 20, "  and no charge");
+
+    /* A priority weapon with the other hand full raises the 200,43 modal. */
+    ResetDrop();
+    SetupItems();
+    g_OWeapon.bListPri = 1;
+    g_O1x1.bTwoHanded = 1;
+    g_Unit.pHandL = &g_Weapon;
+    g_Unit.pHandR = &g_aPocket[1][0];
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(!Inv_HandlePointer(&c), "  a two-handed item onto a priority weapon");
+    CheckEqI32(g_nModal, 1, "  one modal was raised");
+    CheckEqI32(g_aModalX[0], 200, "  blocks with the 200,43 modal");
+    CheckEqI32(g_aModalN[0], 2, "  which has two buttons");
+
+    /* A non-two-handed item on an occupied hand is simply refused. */
+    ResetDrop();
+    SetupItems();
+    g_Unit.pHandL = &g_Weapon;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(!Inv_HandlePointer(&c), "  a one-handed item cannot stack on a held item");
+
+    /* The clip load charges even without the region exemption, but the latch skips
+     * it entirely. */
+    ResetDrop();
+    SetupItems();
+    SetupClip(&g_Unit.pHandR);
+    g_Item1x1.nAmmo = 2;
+    g_Ui.bActionLatch = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_HAND_R, 0, 0, 130, 90);
+    Check(Inv_HandlePointer(&c), "  the latch exempts the clip load too");
+    CheckEqI32(g_Unit.uTu, 20, "  nothing was charged");
+    CheckEqI32(g_Weapon.nAmmo, 2, "  the right-hand weapon took the clip");
+}
+
+static void TestDropGrid(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the backpack and the belt\n");
+    ResetDrop();
+    SetupItems();
+
+    /* Backpack row 0 is y 160..179, columns at x 160/179/198/217. */
+    c = DropCtx(&g_Item2x1, INV_REGION_GROUND, 0, 0, 170, 170);
+    Check(Inv_HandlePointer(&c), "  a 2-wide item drops into backpack col 0");
+    Check(g_Unit.apBackpack[0] == &g_Item2x1, "  anchor slot 0 holds the item");
+    Check(g_Unit.apBackpack[1] == &g_Sentinel, "  slot 1 holds the sentinel");
+    CheckEqI32(g_Unit.abBackpackMeta[1], 0, "  meta A names the column");
+    CheckEqI32(g_Unit.abBackpackMeta[1 + 8], 0, "  meta B names the row");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_BACKPACK, "  the backpack costs 7");
+
+    /* Row 1 is y 179..198 and only columns 0 and 3 have a rect. */
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 3, 1, 225, 190);
+    Check(Inv_HandlePointer(&c), "  backpack col 3 row 1");
+    Check(g_Unit.apBackpack[3 + 4] == &g_Item1x1, "  index 3 + 4*1");
+    CheckEqI32(g_Unit.abBackpackMeta[7], 3, "  meta A is 3");
+    CheckEqI32(g_Unit.abBackpackMeta[15], 1, "  meta B is 1");
+
+    /* A footprint that is not fully empty is refused. */
+    ResetDrop();
+    g_Unit.apBackpack[5] = &g_aPack[5];   /* slot 1 of row 1 is occupied */
+    c = DropCtx(&g_Item2x1, INV_REGION_GROUND, 0, 1, 170, 190);
+    Check(!Inv_HandlePointer(&c), "  an occupied cell inside the footprint blocks it");
+    CheckEqI32(g_Unit.uTu, 20, "  and nothing was charged");
+
+    /* A 2-tall item at row 1 runs past the grid. */
+    ResetDrop();
+    g_O1x1.nFootH = 2;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 1, 170, 190);
+    Check(!Inv_HandlePointer(&c), "  nFootH + row > 2 is refused");
+    g_O1x1.nFootH = 1;
+
+    /* The belt is 3 x 3 at x 170..227, y 22..79. */
+    ResetDrop();
+    c = DropCtx(&g_Item2x1, INV_REGION_GROUND, 0, 0, 180, 30);
+    Check(Inv_HandlePointer(&c), "  a 2-wide item drops into belt col 0 row 0");
+    Check(g_Unit.apBelt[0] == &g_Item2x1, "  anchor slot 0");
+    Check(g_Unit.apBelt[1] == &g_Sentinel, "  slot 1 holds the sentinel");
+    CheckEqI32(g_Unit.abBeltMetaA[1], 0, "  meta A");
+    CheckEqI32(g_Unit.abBeltMetaB[1], 0, "  meta B");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_BELT, "  the belt costs 8");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 2, 2, 220, 70);
+    Check(Inv_HandlePointer(&c), "  belt col 2 row 2");
+    Check(g_Unit.apBelt[2 + 6] == &g_Item1x1, "  index 2 + 3*2");
+    CheckEqI32(g_Unit.abBeltMetaA[8], 2, "  meta A is 2");
+    CheckEqI32(g_Unit.abBeltMetaB[8], 2, "  meta B is 2");
+
+    ResetDrop();
+    g_O1x1.nFootH = 2;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 2, 180, 70);
+    Check(!Inv_HandlePointer(&c), "  nFootH + row > 3 is refused on the belt");
+    g_O1x1.nFootH = 1;
+}
+
+static void TestDropGround(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the ground strip\n");
+    ResetDrop();
+    SetupItems();
+
+    /* The strip is the hit-test window: x 23..173, y 264..313. */
+    c = DropCtx(&g_Item1x1, INV_REGION_POCKET0, 0, 0, 100, 300);
+    Check(Inv_HandlePointer(&c), "  a drop on the ground strip is placed");
+    Check(g_aGrid[2][3][3].pItemList == &g_Item1x1, "  it went into the unit's own cell");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_GROUND, "  the ground costs 5");
+    CheckEqI32(g_Ui.nInvListCount, 1, "  the visible list was rebuilt");
+    Check(g_Ui.apInvList[0] == &g_Item1x1, "  with the dropped item in it");
+
+    /* The cell search walks down to the lowest layer with a floor sprite. */
+    ResetDrop();
+    g_aGrid[2][3][3].pFloorSpr = NULL;   /* the unit's own layer has no floor */
+    g_aGrid[1][3][3].pFloorSpr = NULL;
+    g_aGrid[0][3][3].pFloorSpr = &g_FloorSpr;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 100, 300);
+    Check(Inv_HandlePointer(&c), "  a floorless layer still drops");
+    Check(g_aGrid[0][3][3].pItemList == &g_Item1x1, "  down to the first layer with a floor");
+    Check(g_aGrid[2][3][3].pItemList == NULL, "  and not into the unit's own layer");
+
+    /* A ground drop that cannot pay raises the modal and falls through to the
+     * restore, which puts the item back in the pocket it came from. */
+    ResetDrop();
+    g_Unit.uTu = 4;
+    c = DropCtx(&g_Item1x1, INV_REGION_HAND_L, 0, 0, 100, 300);
+    Check(!Inv_HandlePointer(&c), "  4 time units cannot pay for the ground");
+    CheckEqI32(g_aModalY[0], 31, "  the time modal fired");
+    Check(g_Unit.pHandL == &g_Item1x1, "  the restore put it back in the left hand");
+    CheckEqI32(g_Unit.uTu, 4, "  and charged nothing");
+}
+
+static void TestDropSplit(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the ammo split\n");
+    ResetDrop();
+    SetupItems();
+
+    /* The split rect is x 185..221, y 99..140. */
+    g_Item1x1.nAmmo = 5;
+    g_Item1x1.nIndex = 6;
+    g_aObjById[6].nFootW = 1;
+    g_aObjById[6].nFootH = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(Inv_HandlePointer(&c), "  a clipped weapon splits on the hand panel");
+    Check(g_Unit.pHandR == &g_Item1x1, "  the weapon goes to the right hand");
+    CheckEqI32(g_Item1x1.nAmmo, 0, "  and is left empty");
+    Check(g_Unit.pHandL == &g_aAlloc[0], "  the clip becomes a new item in the left hand");
+    CheckEqI32(g_aAlloc[0].nAmmo, 5, "  carrying the clip count");
+    Check(g_aAlloc[0].pObj == &g_aObjById[6], "  and the ammo object the index names");
+    Check(g_apPool[0] == &g_aAlloc[0], "  the new item entered the pool");
+    CheckEqI32(g_nPool, 1, "  and the count grew");
+    CheckEqI32(g_Unit.uTu, 20 - PUFO_INV_TU_SPLIT, "  the split costs 6");
+    CheckSamples("  sample 17 on the split", 17, -1);
+
+    /* An empty weapon, a 255 weapon and a two-handed weapon are all refused. */
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  an item with no clip cannot split");
+    ResetDrop();
+    g_Item1x1.nAmmo = 255;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  255 means infinite ammo, so no split");
+    g_Item1x1.nAmmo = 5;
+    ResetDrop();
+    g_O1x1.bTwoHanded = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  a two-handed item cannot split");
+    g_O1x1.bTwoHanded = 0;
+    ResetDrop();
+    g_Item1x1.nAmmo = 5;
+    g_Unit.pHandL = &g_aPocket[0][0];
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  a full left hand blocks the split");
+
+    /* The split tests uTu even when the latch is set. */
+    ResetDrop();
+    g_Item1x1.nAmmo = 5;
+    g_Unit.uTu = 5;
+    g_Ui.bActionLatch = 1;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 200, 120);
+    Check(!Inv_HandlePointer(&c), "  the split still needs 6 time units with the latch set");
+    CheckEqI32(g_aModalY[0], 31, "  and raises the time modal");
+}
+
+static void TestDropRestore(void)
+{
+    InvDropCtx c;
+
+    printf("Inv_HandlePointer -- the restore\n");
+    ResetDrop();
+    SetupItems();
+
+    /* No rect contains (0,0), so nothing is attempted and the item goes back. */
+    c = DropCtx(&g_Item2x1, INV_REGION_BACKPACK, 0, 1, 0, 0);
+    Check(!Inv_HandlePointer(&c), "  a point outside every rect drops nothing");
+    CheckEqI32(g_Unit.uTu, 20, "  nothing was charged");
+    CheckEqI32(g_nSamples, 0, "  and no sample was played");
+    Check(g_Unit.apBackpack[0 + 4] == &g_Item2x1, "  the backpack anchor was restored");
+    Check(g_Unit.apBackpack[1 + 4] == &g_Sentinel, "  with its covered slot");
+    CheckEqI32(g_Unit.abBackpackMeta[5], 0, "  meta A");
+    CheckEqI32(g_Unit.abBackpackMeta[13], 1, "  meta B");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_BELT, 2, 1, 0, 0);
+    Check(!Inv_HandlePointer(&c), "  a belt source restores the belt");
+    Check(g_Unit.apBelt[2 + 3] == &g_Item1x1, "  index 2 + 3*1");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, INV_REGION_POCKET3, 1, 0, 0, 0);
+    Check(!Inv_HandlePointer(&c), "  a pocket-3 source restores pocket 3");
+    Check(g_Unit.aPockets[3].apItem[1] == &g_Item1x1, "  slot 1 of pocket 3");
+
+    ResetDrop();
+    c = DropCtx(&g_Item1x1, 99, 0, 0, 0, 0);
+    Check(!Inv_HandlePointer(&c), "  an unknown source region restores nothing");
+    Check(g_Unit.pHandL == NULL && g_Unit.pHandR == NULL, "  the hands stay empty");
+    Check(g_aGrid[2][3][3].pItemList == NULL, "  and the cell stays empty");
+
+    /* The pool decrement is unconditional, even when the item was never in the
+     * pool. That is the original's behaviour. */
+    ResetDrop();
+    SetupItems();
+    SetupClip(&g_Unit.pHandL);
+    g_Weapon.nAmmo = 0;
+    g_Item1x1.nAmmo = 1;
+    g_apPool[0] = &g_aGround[0];
+    g_nPool = 2;
+    c = DropCtx(&g_Item1x1, INV_REGION_GROUND, 0, 0, 10, 90);
+    Check(Inv_HandlePointer(&c), "  a clip loads from outside the pool");
+    CheckEqI32(g_nPool, 1, "  the count still dropped by one");
+    CheckEqI32(g_nFreed, 1, "  and the item was still deleted");
+    Check(g_apPool[0] == &g_aGround[0], "  no hole was closed because none was found");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     Reset(); TestGround();
+    Reset(); TestPockets();
+    Reset(); TestHands();
+    Reset(); TestBackpack();
+    Reset(); TestBelt();
+    Reset(); TestMisses();
+    Reset(); TestClear();
+    Reset(); TestDropPocket();
+    Reset(); TestDropHands();
+    Reset(); TestDropGrid();
+    Reset(); TestDropGround();
+    Reset(); TestDropSplit();
+    Reset(); TestDropRestore();
     Reset(); TestPockets();
     Reset(); TestHands();
     Reset(); TestBackpack();

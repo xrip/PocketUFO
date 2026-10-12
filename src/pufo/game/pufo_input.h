@@ -151,7 +151,10 @@ typedef struct TactInputHooks {
     /* Inv_ClearHitSlot @ 0x11f40. Ported for real in src/pufo/game/pufo_invdrag.c
      * as Inv_ClearHitSlot(const InvHitTestCtx *); the app wires this seam to it. */
     void (*pfnInvClearHitSlot)(void *pUser);
-    /* Inv_HandlePointer @ 0x12260, the drop path. Its argument is the widget bank. */
+    /* Inv_HandlePointer @ 0x12260, the drop path. Ported for real in
+     * src/pufo/game/pufo_invdrag.c as Inv_HandlePointer(const InvDropCtx *); the app
+     * wires this seam to it. The original reads the pen position from the widget bank
+     * (pBank+0x1044 / +0x1048) rather than taking it as an argument. */
     void (*pfnInvHandlePointer)(struct UiWidgetBank *pBank, void *pUser);
     /* MapView_FocusOnUnit @ 0x2c758. Despite the name it centres the camera on a
      * CELL: it reads the cell's nX, nY and nZ, recentres the camera scroll and

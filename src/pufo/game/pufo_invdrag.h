@@ -118,6 +118,110 @@ typedef struct InvHitTestCtx {
  * out-of-range slot as no match. */
 bool Ui_HitTestTactItem(const InvHitTestCtx *pCtx, i32 nX, i32 nY);
 
+/* --- the drop path, Inv_HandlePointer @ 0x12260 ---
+ *
+ * The pointer position is not an argument: the original reads it from the widget
+ * bank at pBank+0x1044 and pBank+0x1048 (ARM 0x12290 / 0x122A0), adds the drag
+ * offset the hit test stored and 10, and re-tests that point against the same
+ * 25-record table. The tail re-tests it a second time against the ground strip.
+ *
+ *     nDragOffX + nPtrX + 10, nDragOffY + nPtrY + 10
+ *
+ * ## Order
+ *
+ * 1. Table hit -> place into the slot (pocket, hand, backpack, belt).
+ * 2. Not placed and the point is in the ground strip -> insert into the cell.
+ * 3. Still not placed and the point is in the unload rect -> split the ammo.
+ * 4. Placed -> sample 17. Not placed -> put the item back where it came from.
+ * 5. Always Unit_RecalcInventoryStat then Unit_UpdateAnimPose.
+ *
+ * ## Time units
+ *
+ * The charge happens only when the action latch (Map+0x0002) is clear AND the
+ * item did not already come from the region it is dropped into, so moving an item
+ * inside its own region is free. Cost by target: pocket 0/1 = 4, pocket 2/3 = 5,
+ * hand = 6, backpack = 7, belt = 8, ground strip = 5, ammo split = 6. A short
+ * balance raises the modal at 160,31 and the drop falls through to the tail.
+ *
+ * ## The three modals
+ *
+ *     160, 31, 1  "OK"  not enough time units
+ *     160, 45, 1  "OK"  the weapon already holds a clip
+ *     200, 43, 2  "OK"  a priority weapon already fills the other hand
+ *
+ * ## The item pool
+ *
+ * The original keeps its TactItems in `unk_136DF0` (Map+0x23438) with the count in
+ * `unk_128AF4` (Map+0x1513C). Loading a clip deletes the dragged item and closes
+ * the hole with the LAST entry (ARM 0x12DB4 reads index count-1 through the alias
+ * constant 0x23434), then decrements. The decrement is unconditional: an item that
+ * was not in the pool at all still costs one entry, which is the original's
+ * behaviour and is reproduced here.
+ */
+
+/* Ground strip and the ammo-split rect, from the ARM compares at 0x133A4 and
+ * 0x1353C (0x17/0xAD/0x108/0x139 and 0xB9/0xDD/0x63/0x8C). */
+#define PUFO_INV_DROP_GROUND_X0 185
+#define PUFO_INV_DROP_GROUND_X1 221
+#define PUFO_INV_DROP_GROUND_Y0 99
+#define PUFO_INV_DROP_GROUND_Y1 140
+
+/* Time-unit costs. */
+#define PUFO_INV_TU_POCKET_A 4
+#define PUFO_INV_TU_POCKET_B 5
+#define PUFO_INV_TU_HAND     6
+#define PUFO_INV_TU_BACKPACK 7
+#define PUFO_INV_TU_BELT     8
+#define PUFO_INV_TU_GROUND   5
+#define PUFO_INV_TU_SPLIT    6
+
+/* The TactItem pool capacity is not fixed in the original; the port bounds it so a
+ * test fixture cannot run off the end. */
+#define PUFO_INV_ITEM_POOL_MAX 256
+
+typedef struct InvDropHooks {
+    /* Sound_Play @ 0x9e0c0. Sample 6 on a successful clip load, 17 on any
+     * successful drop. */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    /* UiModal_Begin @ 0x26430 with the label "OK" @ 0xA62D8 and UiModal_EndThunk
+     * @ 0x12254 as the callback; the app supplies both. */
+    void (*pfnModal)(i32 nX, i32 nY, i32 nCount, const char *szLabel, void *pUser);
+    /* pCtxBase.apObjects[nIndex], the ammo-type match against a weapon's
+     * anAmmoTypeId @ 0xA8. */
+    ObjectRec *(*pfnFindObject)(i32 nIndex, void *pUser);
+    /* operator new(0x18) then TactItem_ctor @ 0x3e718. NULL when it fails. */
+    TactItem *(*pfnAllocItem)(void *pUser);
+    /* operator delete @ 0xa115c. */
+    void (*pfnFreeItem)(TactItem *pItem, void *pUser);
+    /* unk_136DF0 @ Map+0x23438 and its count unk_128AF4 @ Map+0x1513C. */
+    TactItem **apItemPool;
+    i32       *pnItemCount;
+    /* The cell grid, for the ground drop's floor search. */
+    MapCellLookup pfnLookupCell;
+    void         *pLookupUser;
+    /* Unit_RecalcInventoryStat @ 0x49ef0. NULL skips it. */
+    const InvStatHooks *pInvStat;
+    void *pUser;
+} InvDropHooks;
+
+typedef struct InvDropCtx {
+    InvHitState       *pHit;    /* the state the hit test left behind */
+    TactUiState       *pUi;     /* bActionLatch @ 0x0002, the visible list */
+    Soldier           *pSelUnit;
+    TactItem          *pSentinel; /* unk_138EA0 @ Map+0x254E8 */
+    i32                nPtrX;   /* pBank+0x1044 */
+    i32                nPtrY;   /* pBank+0x1048 */
+    const InvDropHooks *pHooks;
+} InvDropCtx;
+
+/* Inv_HandlePointer @ 0x12260. Returns the original's internal success flag (its
+ * own return value is the constant 1). Deviations: the port refuses a NULL unit,
+ * item or object instead of faulting, bounds every slot write to the array it
+ * writes, and skips the field writes of a TactItem whose allocation failed.
+ * Inv_ClearHitSlot runs before this in Input_OnPointer @ 0x146A4, so a failed drop
+ * is a move of an item that has already left its slot. */
+bool Inv_HandlePointer(const InvDropCtx *pCtx);
+
 /* Inv_ClearHitSlot @ 0x11f40. Empties the slot the hit test selected, sized by the
  * item's own footprint: nFootW consecutive columns, nFootH rows, with a row stride
  * of 4 for the backpack and 3 for the belt. Region 0 is the ground list, which is

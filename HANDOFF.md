@@ -501,12 +501,17 @@ preparing this document.
    meta byte beside the slot (`test_invdrag` 75 checks). `Inv_ClearHitSlot @ 0x11f40`
    is ported beside it, and its raw dword writes (`4*(sub0 + 67/70/73/76)`,
    `4*(sub0 + 4*sub1 + 79)`, `4*(sub0 + 3*sub1 + 91)`) confirm the `aPockets` 12-byte
-   records, the 4-slot backpack rows and the 3-slot belt rows. What is
+   records, the 4-slot backpack rows and the 3-slot belt rows. The drop half
+   `Inv_HandlePointer @ 0x12260` is ported beside them: the anchor is the stored drag
+   offset plus the pen position at `pBank+0x1044/0x1048` plus 10, the per-target time
+   costs are 4/4, 5/5, 6, 7, 8, 5 and 6 with a latch and same-region exemption, the
+   clip load deletes the dragged item and closes the pool hole with `pool[count-1]`
+   (ARM `0x12DB4` builds it as `Map + 4*count + 0x23434`), and a failed drop restores
+   the item to the region the hit test recorded (`test_invdrag` 281 checks). What is
    left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
    `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
-   `Map_BuildDeployConfirmYesNo`, the inventory drop path `Inv_HandlePointer @ 0x12260`,
-   and the geoscape screens. See
-   `docs/parity/ui-core.md`, "The inventory hit test". The `UiPanel` type
+   `Map_BuildDeployConfirmYesNo`, and the geoscape screens. See
+   `docs/parity/ui-core.md`, "The inventory hit test" and "Dropping the item". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

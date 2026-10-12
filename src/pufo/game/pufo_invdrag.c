@@ -293,3 +293,532 @@ void Inv_ClearHitSlot(const InvHitTestCtx *pCtx)
             return;
     }
 }
+
+/* --------------------------------------------------------------------------
+ * Inv_HandlePointer @ 0x12260 - the drop path. See the header for the contract.
+ * -------------------------------------------------------------------------- */
+
+/* aOk @ 0xA62D8, the label every modal here passes. */
+static const char s_szOk[] = "OK";
+
+static i32 Drop_Foot(const ObjectRec *pObj, bool bWidth)
+{
+    if (pObj == NULL) {
+        return 0;
+    }
+    return bWidth ? (i32)pObj->nFootW : (i32)pObj->nFootH;
+}
+
+/* The three modal shapes: 160,31 not enough time; 160,45 the weapon already holds
+ * a clip; 200,43 a priority weapon already fills the other hand. */
+static void Drop_Modal(const InvDropCtx *pCtx, i32 nX, i32 nY, i32 nCount)
+{
+    if (pCtx->pHooks->pfnModal != NULL) {
+        pCtx->pHooks->pfnModal(nX, nY, nCount, s_szOk, pCtx->pHooks->pUser);
+    }
+}
+
+/* The charge rule at 0x123C8 and its seven copies: free when the action latch is
+ * set, or when the item goes back into the region it came from. */
+static bool Drop_Charge(const InvDropCtx *pCtx, i32 nCost, i32 nOwnRegion)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+
+    if (pCtx->pUi->bActionLatch != 0 || pCtx->pHit->nHitRegion == nOwnRegion) {
+        return true;
+    }
+    if ((i32)pUnit->uTu < nCost) {
+        Drop_Modal(pCtx, 160, 31, 1);
+        return false;
+    }
+    pUnit->uTu = (u16)(pUnit->uTu - nCost);
+    return true;
+}
+
+/* The clip load has no region exemption (0x12970, 0x12C94): the latch alone skips
+ * the charge. */
+static bool Drop_ChargeClip(const InvDropCtx *pCtx, i32 nCost)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+
+    if (pCtx->pUi->bActionLatch != 0) {
+        return true;
+    }
+    if ((i32)pUnit->uTu < nCost) {
+        Drop_Modal(pCtx, 160, 31, 1);
+        return false;
+    }
+    pUnit->uTu = (u16)(pUnit->uTu - nCost);
+    return true;
+}
+
+/* 0x12AC4 and 0x12E2C, the same expression in both hands: a priority weapon blocks
+ * the drop unless the incoming item is category 3, and a priority incoming item
+ * blocks it unless the held one is category 3. */
+static bool Drop_HandBlocked(const ObjectRec *pHeld, const ObjectRec *pIncoming)
+{
+    if (pHeld == NULL || pIncoming == NULL) {
+        return false;
+    }
+    return (pHeld->bListPri == 1 && pIncoming->nCategory != 3) ||
+           (pIncoming->bListPri == 1 && pHeld->nCategory != 3);
+}
+
+/* 0x128C8: the dragged item must be one of the three ammo types the held weapon
+ * accepts, matched through apObjects on the anAmmoTypeId @ 0xA8 triple. */
+static bool Drop_WeaponTakes(const InvDropCtx *pCtx, const TactItem *pWeapon,
+                             const ObjectRec *pObj)
+{
+    const ObjectRec *pW = (pWeapon != NULL) ? pWeapon->pObj : NULL;
+
+    if (pW == NULL || pObj == NULL || pCtx->pHooks->pfnFindObject == NULL) {
+        return false;
+    }
+    for (i32 k = 0; k < 3; ++k) {
+        if (pCtx->pHooks->pfnFindObject(pW->anAmmoTypeId[k], pCtx->pHooks->pUser) == pObj) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 0x12A04..0x12A58: the weapon's current ammo index follows the clip it now holds.
+ * The third type is only tested when the first two miss, and a miss leaves the
+ * index untouched. */
+static void Drop_SetAmmoIndex(const InvDropCtx *pCtx, TactItem *pWeapon,
+                              const ObjectRec *pObj)
+{
+    const ObjectRec *pW = pWeapon->pObj;
+
+    if (pW == NULL || pObj == NULL || pCtx->pHooks->pfnFindObject == NULL) {
+        return;
+    }
+    for (i32 k = 0; k < 2; ++k) {
+        if (pCtx->pHooks->pfnFindObject(pW->anAmmoTypeId[k], pCtx->pHooks->pUser) == pObj) {
+            pWeapon->nIndex = pW->anAmmoTypeId[k];
+            return;
+        }
+    }
+    if (pCtx->pHooks->pfnFindObject(pW->anAmmoTypeId[2], pCtx->pHooks->pUser) == pObj) {
+        pWeapon->nIndex = pW->anAmmoTypeId[2];
+    }
+}
+
+/* 0x12A5C..0x12A94 then 0x12DB4 / 0x12DCC: close the pool hole with the LAST entry
+ * (ARM reads index count-1 through the alias constant 0x23434), delete the item and
+ * decrement. The search only runs when the count is above 1, and the decrement is
+ * unconditional, so an item that was never in the pool still costs one entry. */
+static void Drop_PoolTakeOut(const InvDropCtx *pCtx, TactItem *pItem)
+{
+    const InvDropHooks *pHooks = pCtx->pHooks;
+    i32 n = *pHooks->pnItemCount;
+
+    if (n > 1) {
+        for (i32 i = 0; i < n; ++i) {
+            if (pHooks->apItemPool[i] == pItem) {
+                pHooks->apItemPool[i] = pHooks->apItemPool[n - 1];
+                break;
+            }
+        }
+    }
+    if (pHooks->pfnFreeItem != NULL) {
+        pHooks->pfnFreeItem(pItem, pHooks->pUser);
+    }
+    *pHooks->pnItemCount = n - 1;
+}
+
+/* 0x12438..0x124A4 and LABEL_161 @ 0x1330C: the covered slots take the sentinel and
+ * a meta byte naming the anchor, then the anchor slot takes the item itself. */
+static void Drop_MarkPocket(const InvDropCtx *pCtx, i32 nPocket, i32 nSub0, i32 nFootW)
+{
+    InvPocketPair *pPk = &pCtx->pSelUnit->aPockets[nPocket];
+
+    for (i32 i = 0; i < nFootW; ++i) {
+        i32 n = nSub0 + i;
+        if (n < 0 || n >= 2) {
+            continue;
+        }
+        pPk->apItem[n] = pCtx->pSentinel;
+        pPk->abMeta[n] = (u8)nSub0;
+    }
+    if (nSub0 >= 0 && nSub0 < 2) {
+        pPk->apItem[nSub0] = pCtx->pHit->pHitItem;
+    }
+}
+
+static void Drop_MarkBackpack(const InvDropCtx *pCtx, i32 nSub0, i32 nSub1,
+                              i32 nFootW, i32 nFootH)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+
+    for (i32 nRow = 0; nRow < nFootH; ++nRow) {
+        for (i32 i = 0; i < nFootW; ++i) {
+            /* 0x13044: index sub0 + 4*sub1 + 4*row + col, meta A then meta B at +8. */
+            i32 n = nSub0 + 4 * nSub1 + 4 * nRow + i;
+            if (n < 0 || n >= 8) {
+                continue;
+            }
+            pUnit->apBackpack[n] = pCtx->pSentinel;
+            pUnit->abBackpackMeta[n] = (u8)nSub0;
+            pUnit->abBackpackMeta[n + 8] = (u8)nSub1;
+        }
+    }
+    /* LABEL_161 with index sub0 + 4*sub1 + 79. */
+    if (nSub0 + 4 * nSub1 >= 0 && nSub0 + 4 * nSub1 < 8) {
+        pUnit->apBackpack[nSub0 + 4 * nSub1] = pCtx->pHit->pHitItem;
+    }
+}
+
+static void Drop_MarkBelt(const InvDropCtx *pCtx, i32 nSub0, i32 nSub1,
+                          i32 nFootW, i32 nFootH)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+
+    for (i32 nRow = 0; nRow < nFootH; ++nRow) {
+        for (i32 i = 0; i < nFootW; ++i) {
+            /* 0x1325C: index sub0 + 3*sub1 + 3*row + col, row stride 3 slots. */
+            i32 n = nSub0 + 3 * nSub1 + 3 * nRow + i;
+            if (n < 0 || n >= 9) {
+                continue;
+            }
+            pUnit->apBelt[n] = pCtx->pSentinel;
+            pUnit->abBeltMetaA[n] = (u8)nSub0;
+            pUnit->abBeltMetaB[n] = (u8)nSub1;
+        }
+    }
+    /* LABEL_161 with index 3*sub1 + sub0 + 91. */
+    if (3 * nSub1 + nSub0 >= 0 && 3 * nSub1 + nSub0 < 9) {
+        pUnit->apBelt[3 * nSub1 + nSub0] = pCtx->pHit->pHitItem;
+    }
+}
+
+/* 0x12F3C and 0x1314C: the whole footprint must be empty before the drop is even
+ * considered. The first occupied cell stops it. */
+static bool Drop_FootprintFree(const Soldier *pUnit, i32 nSub0, i32 nSub1,
+                               i32 nFootW, i32 nFootH, i32 nRowStride, i32 nSlots)
+{
+    const TactItem *const *apSlots = (nRowStride == 4)
+        ? (const TactItem *const *)pUnit->apBackpack
+        : (const TactItem *const *)pUnit->apBelt;
+
+    for (i32 nRow = 0; nRow < nFootH; ++nRow) {
+        for (i32 i = 0; i < nFootW; ++i) {
+            i32 n = nSub0 + nRowStride * nSub1 + nRowStride * nRow + i;
+            if (n >= 0 && n < nSlots && apSlots[n] != NULL) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* 0x13440..0x134B8: the item lands in the selected unit's cell, on the lowest layer
+ * at or below the unit's own layer whose cell has a floor sprite (the probe reads
+ * the cell's first dword, which is pFloorSpr). */
+static void Drop_Ground(const InvDropCtx *pCtx)
+{
+    const InvDropHooks *pHooks = pCtx->pHooks;
+    MapCell *pSrc = pCtx->pSelUnit->pCell;
+    i32 nZ;
+
+    if (pSrc == NULL || pHooks->pfnLookupCell == NULL) {
+        return;
+    }
+    nZ = pSrc->nZ;
+    while (nZ > 0) {
+        MapCell *pProbe = pHooks->pfnLookupCell(pSrc->nX, pSrc->nY, nZ, pHooks->pLookupUser);
+        if (pProbe == NULL || pProbe->pFloorSpr != NULL) {
+            break;
+        }
+        --nZ;
+    }
+    MapCell *pDst = pHooks->pfnLookupCell(pSrc->nX, pSrc->nY, nZ, pHooks->pLookupUser);
+    if (pDst == NULL) {
+        return;
+    }
+    MapCell_ListInsertByPri(pDst, pCtx->pHit->pHitItem);
+    Inv_BuildVisibleList(pCtx->pUi, pCtx->pSelUnit);
+}
+
+/* 0x1291C..0x12DF0: the dragged item is a clip and the weapon is empty, so the clip
+ * count moves into the weapon, the weapon's ammo index follows the clip, and the
+ * clip object is destroyed and taken out of the pool. */
+static bool Drop_LoadClip(const InvDropCtx *pCtx, TactItem *pWeapon)
+{
+    TactItem *pItem = pCtx->pHit->pHitItem;
+
+    if (pWeapon->nAmmo != 0) {
+        Drop_Modal(pCtx, 160, 45, 1);
+        return false;
+    }
+    if (!Drop_ChargeClip(pCtx, PUFO_INV_TU_HAND)) {
+        return false;
+    }
+    pWeapon->nAmmo = pItem->nAmmo;
+    if (pCtx->pHooks->pfnPlaySample != NULL) {
+        pCtx->pHooks->pfnPlaySample(6, pCtx->pHooks->pUser);
+    }
+    Drop_SetAmmoIndex(pCtx, pWeapon, pItem->pObj);
+    Drop_PoolTakeOut(pCtx, pItem);
+    return true;
+}
+
+/* The switch at 0x12340. True when the item is now in the slot. A false return is
+ * the original's LABEL_164: the drop failed and the tail gets its turn. */
+static bool Drop_InSlot(const InvDropCtx *pCtx, const InvHitRect *pRect)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+    TactItem *pItem = pCtx->pHit->pHitItem;
+    ObjectRec *pObj = pItem->pObj;
+    i32 nSub0 = pRect->nSlot;
+    i32 nSub1 = pRect->nCol;
+    i32 nFootW = Drop_Foot(pObj, true);
+    i32 nFootH = Drop_Foot(pObj, false);
+
+    switch (pRect->nRegion) {
+    case 0: /* pockets, table region 0..3 */
+    case 1:
+    case 2:
+    case 3:
+        if (nSub0 < 0 || nSub0 >= 2) {
+            return false;
+        }
+        if (pUnit->aPockets[pRect->nRegion].apItem[nSub0] != NULL) {
+            return false; /* 0x12384 */
+        }
+        if (nFootH > 1 || nSub0 + nFootW > 2) {
+            return false; /* 0x123A8 */
+        }
+        if (!Drop_Charge(pCtx, (pRect->nRegion < 2) ? PUFO_INV_TU_POCKET_A
+                                                    : PUFO_INV_TU_POCKET_B,
+                         INV_REGION_POCKET0 + pRect->nRegion)) {
+            return false;
+        }
+        Drop_MarkPocket(pCtx, pRect->nRegion, nSub0, nFootW);
+        return true;
+
+    case 4: /* the left hand */
+        if (pUnit->pHandL != NULL) {
+            TactItem *pWeapon = pUnit->pHandL;
+            if (pObj == NULL || pObj->bTwoHanded != 1) {
+                return false;
+            }
+            if (pWeapon->pObj != NULL && pWeapon->pObj->bListPri == 1 &&
+                pUnit->pHandR != NULL) {
+                Drop_Modal(pCtx, 200, 43, 2); /* LABEL_55 @ 0x128A8 */
+                return false;
+            }
+            if (!Drop_WeaponTakes(pCtx, pWeapon, pObj)) {
+                return false;
+            }
+            return Drop_LoadClip(pCtx, pWeapon);
+        }
+        if (pUnit->pHandR != NULL && Drop_HandBlocked(pUnit->pHandR->pObj, pObj)) {
+            return false;
+        }
+        if (!Drop_Charge(pCtx, PUFO_INV_TU_HAND, INV_REGION_HAND_L)) {
+            return false;
+        }
+        pUnit->pHandL = pItem; /* 0x12B7C */
+        return true;
+
+    case 5: /* the right hand */
+        if (pUnit->pHandR == NULL) {
+            if (pUnit->pHandL != NULL && Drop_HandBlocked(pUnit->pHandL->pObj, pObj)) {
+                return false; /* 0x12E28 and 0x12E44 */
+            }
+            if (!Drop_Charge(pCtx, PUFO_INV_TU_HAND, INV_REGION_HAND_R)) {
+                return false;
+            }
+            pUnit->pHandR = pItem; /* 0x12ED4 */
+            return true;
+        }
+        if (pObj == NULL || pObj->bTwoHanded != 1) {
+            return false;
+        }
+        if (pUnit->pHandR->pObj != NULL && pUnit->pHandR->pObj->bListPri == 1 &&
+            pUnit->pHandL != NULL) {
+            Drop_Modal(pCtx, 200, 43, 2);
+            return false;
+        }
+        if (!Drop_WeaponTakes(pCtx, pUnit->pHandR, pObj)) {
+            return false;
+        }
+        return Drop_LoadClip(pCtx, pUnit->pHandR);
+
+    case 6: /* the backpack, 4 columns x 2 rows */
+        if (nSub0 < 0 || nSub0 > 3 || nSub1 < 0 || nSub1 > 1) {
+            return false;
+        }
+        if (pUnit->apBackpack[nSub0 + 4 * nSub1] != NULL) {
+            return false;
+        }
+        if (nFootH + nSub1 > 2 || nFootW + nSub0 > 4) {
+            return false;
+        }
+        if (!Drop_FootprintFree(pUnit, nSub0, nSub1, nFootW, nFootH, 4, 8)) {
+            return false;
+        }
+        if (!Drop_Charge(pCtx, PUFO_INV_TU_BACKPACK, INV_REGION_BACKPACK)) {
+            return false;
+        }
+        Drop_MarkBackpack(pCtx, nSub0, nSub1, nFootW, nFootH);
+        return true;
+
+    case 7: /* the belt, 3 columns x 3 rows */
+        if (nSub0 < 0 || nSub0 > 2 || nSub1 < 0 || nSub1 > 2) {
+            return false;
+        }
+        if (pUnit->apBelt[nSub0 + 3 * nSub1] != NULL) {
+            return false;
+        }
+        if (nFootH + nSub1 > 3 || nFootW + nSub0 > 3) {
+            return false;
+        }
+        if (!Drop_FootprintFree(pUnit, nSub0, nSub1, nFootW, nFootH, 3, 9)) {
+            return false;
+        }
+        if (!Drop_Charge(pCtx, PUFO_INV_TU_BELT, INV_REGION_BELT)) {
+            return false;
+        }
+        Drop_MarkBelt(pCtx, nSub0, nSub1, nFootW, nFootH);
+        return true;
+
+    default:
+        /* 0x12340 default: LABEL_162, which counts as placed. Unreachable with the
+         * shipped table, whose regions are all 0..7. */
+        return true;
+    }
+}
+
+/* 0x136A0: the drop failed, so the item goes back into the region and slot the hit
+ * test recorded. No charge, no sound. */
+static void Drop_Restore(const InvDropCtx *pCtx)
+{
+    Soldier *pUnit = pCtx->pSelUnit;
+    TactItem *pItem = pCtx->pHit->pHitItem;
+    i32 nSub0 = pCtx->pHit->nHitSub0;
+    i32 nSub1 = pCtx->pHit->nHitSub1;
+    i32 nFootW = Drop_Foot(pItem->pObj, true);
+    i32 nFootH = Drop_Foot(pItem->pObj, false);
+
+    switch (pCtx->pHit->nHitRegion) {
+    case INV_REGION_GROUND:
+        Drop_Ground(pCtx);
+        break;
+    case INV_REGION_POCKET0:
+    case INV_REGION_POCKET1:
+    case INV_REGION_POCKET2:
+    case INV_REGION_POCKET3:
+        if (nSub0 >= 0 && nSub0 < 2) {
+            Drop_MarkPocket(pCtx, pCtx->pHit->nHitRegion - 1, nSub0, nFootW);
+        }
+        break;
+    case INV_REGION_HAND_L:
+        pUnit->pHandL = pItem; /* 0x139A8 */
+        break;
+    case INV_REGION_HAND_R:
+        pUnit->pHandR = pItem; /* 0x139BC */
+        break;
+    case INV_REGION_BACKPACK:
+        Drop_MarkBackpack(pCtx, nSub0, nSub1, nFootW, nFootH);
+        break;
+    case INV_REGION_BELT:
+        Drop_MarkBelt(pCtx, nSub0, nSub1, nFootW, nFootH);
+        break;
+    default:
+        break;
+    }
+}
+
+bool Inv_HandlePointer(const InvDropCtx *pCtx)
+{
+    const InvDropHooks *pHooks;
+    Soldier *pUnit;
+    TactItem *pItem;
+    i32 nX, nY;
+    bool bPlaced = false;
+
+    if (pCtx == NULL || pCtx->pHit == NULL || pCtx->pUi == NULL ||
+        pCtx->pHooks == NULL || pCtx->pSelUnit == NULL ||
+        pCtx->pHit->pHitItem == NULL) {
+        return false;
+    }
+    pHooks = pCtx->pHooks;
+    pUnit = pCtx->pSelUnit;
+    pItem = pCtx->pHit->pHitItem;
+
+    /* 0x122A8 / 0x122C0: the drag anchor is the stored drag offset plus the pen
+     * position in the widget bank plus 10. */
+    nX = pCtx->pHit->nDragOffX + pCtx->nPtrX + 10;
+    nY = pCtx->pHit->nDragOffY + pCtx->nPtrY + 10;
+
+    for (i32 i = 0; i < PUFO_INV_HITRECT_COUNT; ++i) {
+        const InvHitRect *pRect = &s_aHitRect[i];
+        if (nX < pRect->x0 || nX > pRect->x1 || nY < pRect->y0 || nY > pRect->y1) {
+            continue;
+        }
+        bPlaced = Drop_InSlot(pCtx, pRect);
+        break;
+    }
+
+    /* LABEL_164 @ 0x133A4: the ground strip, the same window the hit test uses. A
+     * time-unit failure here still falls through to the split test. */
+    if (!bPlaced && nX >= PUFO_INV_GROUND_X0 && nX <= PUFO_INV_GROUND_X1 &&
+        nY >= PUFO_INV_GROUND_Y0 && nY <= PUFO_INV_GROUND_Y1) {
+        if (Drop_Charge(pCtx, PUFO_INV_TU_GROUND, INV_REGION_GROUND)) {
+            Drop_Ground(pCtx);
+            bPlaced = true;
+        }
+    }
+
+    /* 0x1353C: the ammo split. A single-item weapon with a clip in hand, dropped on
+     * the hand panel while both hands are empty, becomes the right hand and its clip
+     * a new item in the left hand. This one tests uTu even when the latch is set. */
+    if (!bPlaced && nX >= PUFO_INV_DROP_GROUND_X0 && nX <= PUFO_INV_DROP_GROUND_X1 &&
+        nY >= PUFO_INV_DROP_GROUND_Y0 && nY <= PUFO_INV_DROP_GROUND_Y1 &&
+        pItem->pObj != NULL && pItem->pObj->bTwoHanded == 0 &&
+        pItem->nAmmo != 0 && pItem->nAmmo != 255 &&
+        pUnit->pHandL == NULL && pUnit->pHandR == NULL) {
+        if ((i32)pUnit->uTu < PUFO_INV_TU_SPLIT) {
+            Drop_Modal(pCtx, 160, 31, 1);
+        } else {
+            i32 nIdx = *pHooks->pnItemCount;
+            TactItem *pNew = (pHooks->pfnAllocItem != NULL)
+                ? pHooks->pfnAllocItem(pHooks->pUser) : NULL;
+
+            if (pCtx->pUi->bActionLatch == 0) {
+                pUnit->uTu = (u16)(pUnit->uTu - PUFO_INV_TU_SPLIT);
+            }
+            if (nIdx >= 0 && nIdx < PUFO_INV_ITEM_POOL_MAX) {
+                pHooks->apItemPool[nIdx] = pNew;
+            }
+            if (pNew != NULL) {
+                if (pHooks->pfnFindObject != NULL) {
+                    pNew->pObj = pHooks->pfnFindObject(pItem->nIndex, pHooks->pUser);
+                }
+                pNew->nAmmo = pItem->nAmmo;
+            }
+            pItem->nAmmo = 0;
+            *pHooks->pnItemCount = nIdx + 1;
+            pUnit->pHandR = pItem;   /* 0x1362C */
+            pUnit->pHandL = pNew;    /* 0x13650, the pool slot just written */
+            bPlaced = true;
+        }
+    }
+
+    if (bPlaced) {
+        if (pHooks->pfnPlaySample != NULL) {
+            pHooks->pfnPlaySample(17, pHooks->pUser);
+        }
+    } else {
+        Drop_Restore(pCtx);
+    }
+
+    /* 0x13C40 / 0x13C5C: both run whatever happened. */
+    if (pHooks->pInvStat != NULL) {
+        Unit_RecalcInventoryStat(pUnit, pHooks->pInvStat);
+    }
+    Unit_UpdateAnimPose(pUnit, NULL, NULL);
+    return bPlaced;
+}

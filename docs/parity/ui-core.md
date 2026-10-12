@@ -995,3 +995,93 @@ pointers. The port clears item slots only.
 2-wide pocket pair clear, a 1-wide clear that leaves the neighbour, both hands, a 2x2
 backpack clear across two 4-slot rows, a 1x3 belt clear across two 3-slot rows, and
 the unknown-region no-op.
+
+## Dropping the item: Inv_HandlePointer @ 0x12260
+
+Ported as `bool Inv_HandlePointer(const InvDropCtx *)` in `src/pufo/game/pufo_invdrag.c`.
+It is the second half of the drag: `Input_OnPointer @ 0x146A4` calls `Inv_ClearHitSlot`
+and then this, so every drop here moves an item that has already left its slot.
+`Tact_EquipTeamFromCraft @ 0x3be24` calls it four times as the auto-equip path, after
+storing `Map.pSelUnit`, `Map.pInvHitItem` and `unk_1183E4` by hand.
+
+The pointer position is not an argument. ARM `0x12290` / `0x122A0` read it from the
+widget bank at `pBank+0x1044` and `pBank+0x1048`, and the drop point is
+
+    nInvDragOffX @ 0x4A28 + nPtrX + 10,  nInvDragOffY @ 0x4A2C + nPtrY + 10
+
+which is the same anchor the hit test computed, so the item is dropped where its own
+footprint is drawn, not where the pen is.
+
+### Order
+
+1. Scan `aInvHitRects` for the first record containing the anchor and run its case.
+2. Not placed and the anchor is in the ground strip (`x 23..173, y 264..313`) -> insert
+   into the cell.
+3. Still not placed and the anchor is in `x 185..221, y 99..140` -> split the ammo.
+4. Placed -> `Sound_Play(17)`. Not placed -> put the item back where it came from.
+5. Always `Unit_RecalcInventoryStat @ 0x49ef0` then `Unit_UpdateAnimPose @ 0x4978c`.
+
+The original's own return value is the constant 1; the port returns the internal
+success flag because that is the only observable result.
+
+### Time units
+
+The charge at `0x123C8` and its seven copies has two exemptions: the action latch
+(`Map+0x0002`) is set, or the item goes back into the region the hit test recorded it
+came from. So moving an item inside its own region is free.
+
+| Target | Cost | ARM |
+|---|---|---|
+| pocket 0, 1 | 4 | `0x123E0` |
+| pocket 2, 3 | 5 | `0x1265C`, `0x12794` |
+| hand | 6 | `0x12B24`, `0x12E7C` |
+| backpack | 7 | `0x12FAC` |
+| belt | 8 | `0x131BC` |
+| ground strip | 5 | `0x133DC` |
+| ammo split | 6 | `0x13554`, and this one tests `uTu` even with the latch set |
+
+A short balance raises the modal at `160,31` and the drop falls through to step 2, so a
+refused pocket drop can still land on the ground strip.
+
+### The three modals
+
+| Position | Buttons | Meaning |
+|---|---|---|
+| `160, 31` | 1 | not enough time units |
+| `160, 45` | 1 | the weapon already holds a clip (`0x12920`) |
+| `200, 43` | 2 | a priority weapon already fills the other hand (`0x128A8`) |
+
+All three pass the label `OK @ 0xA62D8` and `UiModal_EndThunk @ 0x12254`.
+
+### The hands
+
+A hand that already holds something only accepts a `bTwoHanded == 1` item, and only as
+a clip load: the weapon's `anAmmoTypeId @ 0xA8` triple must name the dragged object
+through `apObjects`, and the weapon must be empty. Then `pWeapon->nAmmo` takes the
+clip count, sample 6 plays, `pWeapon->nIndex` follows the clip, and the clip object is
+deleted. An empty hand refuses a two-way conflict: the same expression appears on both
+sides (`0x12AC4`, `0x12E2C`) -- a priority (`bListPri == 1`) item on either side blocks
+the drop unless the item on the other side is category 3.
+
+### The item pool
+
+`unk_136DF0 @ Map+0x23438` holds the TactItems and `unk_128AF4 @ Map+0x1513C` counts
+them. The clip load closes the hole with the LAST entry: ARM `0x12DB4` builds the
+address as `Map + 4*count + 0x23434`, which is `pool[count-1]`, not the
+`apCells[3][59][count+59]` Hex-Rays printed. The same alias explains `0x13650`: after
+the increment it reads back the pool slot just written, which is why the new clip ends
+up in `pHandL` and the emptied weapon in `pHandR`.
+
+Latent original bug, reproduced rather than fixed: the search only runs when the count
+is above 1, and the decrement is unconditional, so a clip that was never in the pool
+still costs one entry.
+
+### The ground drop and the restore
+
+`0x13440..0x1348C` walks the layer table down from the unit's own layer while the cell
+has no floor sprite -- the probe reads the cell's first dword, which is `pFloorSpr` --
+and inserts into the first layer that has one. The same routine puts a region-0 item
+back when the drop failed.
+
+Deviation: the original faults on a NULL cell pointer in that probe; the port stops the
+descent instead.

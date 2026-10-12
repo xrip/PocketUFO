@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 464 / 1103 (42.1%) |
-| Bytes of original code cited | 217284 / 598792 (36.3%) |
+| Functions cited as evidence | 466 / 1103 (42.2%) |
+| Bytes of original code cited | 217308 / 598792 (36.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 3943 |
+| Test checks run | 4136 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -38,11 +38,11 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 17 | 21 | 1024 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 3 | 132 | 12 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 4 | 132 | 24 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 175 | 214 | 109948 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 33 | 52 | 25788 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 60 | 85 | 10272 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 61 | 85 | 10284 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 30 | 205 | 32880 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 47 | 243 | 4560 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
@@ -129,7 +129,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+1) |
 
 ### `util` (17 functions)
 
@@ -180,10 +180,11 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.h` |
 
-### `platform` (3 functions)
+### `platform` (4 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0xa115c` | `??3@YAXPAX@Z` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x22b50` | `nullsub_3` | 4 | `src/pufo/game/pufo_input.h` |
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
@@ -243,7 +244,7 @@ is the module that answers to it.
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | `src/pufo/game/pufo_mapcell.h` |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
-| `0x49ef0` | `Unit_RecalcInventoryStat` | 940 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/game/pufo_unit.c` (+1) |
+| `0x49ef0` | `Unit_RecalcInventoryStat` | 940 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tacthud.h` (+2) |
 | `0x4d950` | `Tact_ProcessActionPhase` | 932 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` |
@@ -380,7 +381,7 @@ is the module that answers to it.
 | `0x164b8` | `Map_UiScreen7_PlaySample0E` | 28 | `src/pufo/game/pufo_tactui.h` |
 | `0x164d4` | `Map_UiScreen0F_PlaySample0F` | 28 | `src/pufo/game/pufo_tactui.h` |
 | `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
-| `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
+| `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapcell.c` (+1) |
 | `0x548a0` | `MapCell_SetBFlags57_3` | 24 | `src/pufo/game/pufo_mapcell.h` |
 | `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactui.h` |
 | `0x49eb8` | `Unit_bIsOperative` | 20 | `src/pufo/game/pufo_unit.h` |
@@ -393,7 +394,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_unit.h` |
+| `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
@@ -427,7 +428,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (60 functions)
+### `ui-core` (61 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -457,7 +458,7 @@ is the module that answers to it.
 | `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x26430` | `UiModal_Begin` | 92 | `src/pufo/ui/pufo_modal.h` |
+| `0x26430` | `UiModal_Begin` | 92 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/ui/pufo_modal.h` |
 | `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_panel.h` |
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -490,6 +491,7 @@ is the module that answers to it.
 | `0x99f78` | `UiPanel_ScrollNext` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x99f88` | `UiPanel_ScrollPrev` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_panel.h` |
 
 ### `strat` (30 functions)
@@ -644,7 +646,7 @@ whose port work they belong to.
 | `0x9ecb8` | `App_ResizeMainWindow` | 84 | not yet ported; scheduled with the `app-shell` subsystem work |
 | `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `platform` — 129 functions, 1896 bytes remaining
+### `platform` — 128 functions, 1884 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -674,7 +676,6 @@ whose port work they belong to.
 | `0x3f0dc` | `j_DatFile_dtor` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460c4` | `j_Font_Init_ReturnArg` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460dc` | `j_Font_Free` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa115c` | `??3@YAXPAX@Z` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa1168` | `??2@YAPAXI@Z` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa1174` | `strcat` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa1180` | `sqrt` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -870,7 +871,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 25 functions, 28096 bytes remaining
+### `ui-core` — 24 functions, 28084 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -897,7 +898,6 @@ whose port work they belong to.
 | `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x619a8` | `Ui_SetTransferFlag` | 36 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
 ### `strat` — 175 functions, 129576 bytes remaining
@@ -1318,7 +1318,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 45 |
 | `test_input` | PASS | 246 |
-| `test_invdrag` | PASS | 88 |
+| `test_invdrag` | PASS | 281 |
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
@@ -1368,7 +1368,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 152 citations.
+parity report. Total: 157 citations.
 
 ### Offsets below the image base (37)
 
@@ -1377,7 +1377,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (115)
+### At or above the image base (120)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1392,6 +1392,9 @@ against the IDB when the final report is assembled.
 - `0x11398c`
 - `0x1139a8`
 - `0x1139b8`
+- `0x128a8`
+- `0x1330c`
+- `0x133a4`
 - `0x14004`
 - `0x14008`
 - `0x1400c`
@@ -1406,6 +1409,7 @@ against the IDB when the final report is assembled.
 - `0x14080`
 - `0x1408c`
 - `0x140b4`
+- `0x146a4`
 - `0x1472c0`
 - `0x1472c8`
 - `0x1472d0`
@@ -1484,6 +1488,7 @@ against the IDB when the final report is assembled.
 - `0xa60e4`
 - `0xa62a4`
 - `0xa62a8`
+- `0xa62d8`
 - `0xa7ae0`
 - `0xa7b80`
 - `0xa8138`
