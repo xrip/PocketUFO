@@ -454,6 +454,69 @@ static void TestAddAlienSiteAndTravel(void)
     PtrArray_DeleteAll(&list);
 }
 
+static i32 g_nEventCalls;
+
+static int EventProbe(void *pUser)
+{
+    (void)pUser;
+    ++g_nEventCalls;
+    return 11;
+}
+
+static void TestMaybeSpawnCraft(void)
+{
+    printf("StrategList_MaybeSpawnCraft_Process\n");
+    PtrArray list;
+    StrategItem item;
+    i32 seed = 0;
+    i32 i;
+    i32 nBadX = 0, nBadY = 0;
+
+    PtrArray_ctor(&list);
+
+    /* bSpawn 0: no item, but the event pass still runs and its value is returned. */
+    g_nEventCalls = 0;
+    g_nSpawnCalls = 0;
+    CheckEqI32(StrategList_MaybeSpawnCraft_Process(&list, &seed, 0, &g_Roll, 0, 99, 0,
+                                                   SpawnProbe, EventProbe, NULL), 11,
+               "the event pass runs even when nothing spawns");
+    CheckEqI32(list.nCount, 0, "no item was added");
+    CheckEqI32(g_nSpawnCalls, 0, "and neither was the mission spawn");
+
+    /* The gate is exactly 1. */
+    CheckEqI32(StrategList_MaybeSpawnCraft_Process(&list, &seed, 0, &g_Roll, 0, 99, 2,
+                                                   SpawnProbe, EventProbe, NULL), 11,
+               "bSpawn 2 is not 1, so it does not spawn either");
+    CheckEqI32(list.nCount, 0, "bSpawn is compared, not tested");
+
+    /* bSpawn 1: one craft, rolled, handed to the mission spawn. */
+    for (i = 0; i < 50; ++i) {
+        StrategList_MaybeSpawnCraft_Process(&list, &seed, 0, &g_Roll, 0, 99, 1,
+                                            SpawnProbe, EventProbe, NULL);
+    }
+    CheckEqI32(list.nCount, 50, "each call adds exactly one item");
+    CheckEqI32(g_nSpawnCalls, 50, "and each one goes through the mission spawn");
+    CheckEqI32(seed, 50, "the seed counter advanced once per item");
+
+    for (i = 0; i < 50; ++i) {
+        StrategItem *p = (StrategItem *)list.apItems[i];
+        if (p->nX < 20 || p->nX > 780) {
+            ++nBadX;
+        }
+        if (p->nY < 20 || p->nY > 380) {
+            ++nBadY;
+        }
+        if (p->nType != 1 || p->bActive != 1) {
+            ++nBadX;
+        }
+    }
+    CheckEqI32(nBadX, 0, "every spawn is a craft inside 20..780 in x");
+    CheckEqI32(nBadY, 0, "and 20..380 in y, the map with a 20 tile margin");
+
+    (void)item;
+    PtrArray_DeleteAll(&list);
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -899,6 +962,7 @@ int main(void)
     TestAddUfoAt();
     TestRollCraftStats();
     TestAddAlienSiteAndTravel();
+    TestMaybeSpawnCraft();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

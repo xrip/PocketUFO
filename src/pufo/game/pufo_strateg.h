@@ -322,6 +322,35 @@ i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 
                             i32 nFlag, i32 bA, i32 bB, i32 bC, i32 bCopyStart,
                             const GeoscapeWorld *pWorld, i32 nGameTotalSec);
 
+/* StrategList_MaybeSpawnCraft_Process @ 0x7e420: optionally put one alien craft
+ * at a random land position and roll its stats, then always run the geoscape
+ * event pass.
+ *
+ * The gate is `bSpawn == 1` exactly, not merely non-zero, so any other value
+ * skips the spawn and still runs the event pass.
+ *
+ * The position is drawn as Game_RandU16(0x2F8) + 20 for x and Game_RandU16(0x168)
+ * + 20 for y, so 20..780 by 20..380 -- the playable map with a 20-tile margin, and
+ * note that x is drawn first. The craft class is 0 here; RollCraftStats then
+ * replaces it with the class its own weight table picks, capped at 2 while the
+ * early gate is below 15.
+ *
+ * RollCraftStats is called with the index the new item landed at, count - 1, read
+ * back from the list rather than remembered. Because RollCraftStats ends by
+ * tail-calling Geoscape_SpawnMissionSite, that hand-off has to be passed through
+ * here as well.
+ *
+ * StrategList_ProcessEvents is a hook: it is the geoscape's per-tick event pass and
+ * it is not ported yet. */
+typedef int (*StrategProcessEventsFn)(void *pUser);
+
+i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                        const StrategRollTables *pTables, i32 nDifficulty,
+                                        i32 nEarlyGate, i32 bSpawn,
+                                        StrategSpawnMissionFn pfnSpawnMission,
+                                        StrategProcessEventsFn pfnProcessEvents,
+                                        void *pUser);
+
 /* ------------------------------------------------------- the geoscape viewport
  *
  * One 36-byte block at 0x1863E8. IDA carries two names for it because different

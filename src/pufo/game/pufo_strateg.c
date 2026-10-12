@@ -542,6 +542,27 @@ i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 
     return nGameTotalSec;
 }
 
+i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                        const StrategRollTables *pTables, i32 nDifficulty,
+                                        i32 nEarlyGate, i32 bSpawn,
+                                        StrategSpawnMissionFn pfnSpawnMission,
+                                        StrategProcessEventsFn pfnProcessEvents,
+                                        void *pUser)
+{
+    if (pList == NULL || pfnProcessEvents == NULL) {
+        return 0;
+    }
+    if (bSpawn == 1) { /* 0x7E434: exactly 1, not merely non-zero */
+        i32 nX = (i32)Game_RandU16(0x2F8) + 20; /* 0x7E440, drawn first */
+        i32 nY = (i32)Game_RandU16(0x168) + 20; /* 0x7E448 */
+
+        (void)StrategList_AddUfoAt(pList, pnSeed, nZoomMode, nX, nY, 0); /* 0x7E46C */
+        (void)StrategList_RollCraftStats(pList, pList->nCount - 1, nDifficulty,
+                                         nEarlyGate, pTables, pfnSpawnMission, pUser);
+    }
+    return pfnProcessEvents(pUser); /* 0x7E488 tail call, runs either way */
+}
+
 /* ------------------------------------------------------- the geoscape viewport */
 
 /* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn
