@@ -147,3 +147,24 @@ TactItem_bTryReloadClip	TactItem_TryReloadClip	the ammo-cap lookup is injected r
 CDialogTemplate_GetCellByte	MapTemplate_GetCellByte	template module owns it, and a bounds check was added
 Menu_ConfirmQuitDialog	Menu_OpenQuitDialog	the YES and NO callbacks are injected
 SoldierScreen_CopyNameToEdit	SoldierName_CopyToEdit	the port takes explicit pointers and leaves the scratch flag to the caller
+MenuBtn_SetSpeed0	Menu_SetSpeed	five pads, one body
+MenuBtn_SetSpeed1	Menu_SetSpeed	merged
+MenuBtn_SetSpeed2	Menu_SetSpeed	merged
+MenuBtn_SetSpeed3	Menu_SetSpeed	merged
+MenuBtn_SetSpeed4	Menu_SetSpeed	merged
+Options_SetMusicVol1	Menu_SetMusicVolume	five pads, one body
+Options_SetMusicVol2	Menu_SetMusicVolume	merged
+Options_SetMusicVol3	Menu_SetMusicVolume	merged
+Options_SetMusicVol4	Menu_SetMusicVolume	merged
+Options_SetMusicVol5	Menu_SetMusicVolume	merged
+BasePlaneScreen_SelectWeapon25	BasePlaneScreen_SelectWeapon	the weapon index is an argument
+BasePlaneScreen_SelectWeapon26	BasePlaneScreen_SelectWeapon	merged
+BasePlaneScreen_SelectWeapon27	BasePlaneScreen_SelectWeapon	merged
+BasePlaneScreen_SelectWeapon28	BasePlaneScreen_SelectWeapon	merged
+BasePlaneScreen_SelectWeapon29	BasePlaneScreen_SelectWeapon	merged
+BasePlaneScreen_SelectWeapon30	BasePlaneScreen_SelectWeapon	merged
+TactHud_ToggleFlag128A9C	Menu_ToggleForceNoDrag	the pad is the inverse of the new value
+PlaySample7_SetFlags_Cache0xBD8	BaseUi_PlaySample7Cache160C74	the cache slot is passed in rather than reached through a global
+Map_BackspaceSelectedName	SoldierName_Backspace	the soldier is passed in
+Font_Init	PufoFont_Init	the font struct is passed in
+Font_Free	PufoFont_Free	deviation: the original guards on bInited, PufoFont_Free runs unconditionally
