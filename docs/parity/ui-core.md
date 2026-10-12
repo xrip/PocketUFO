@@ -1451,3 +1451,69 @@ Two things worth knowing before porting, because they are not obvious from the p
 - `TactHud_DrawModalLeft` blits 8 pads but draws only 7 labels, and it writes `40` into
   `Map.anActionPhaseSave0[112]` before opening the dialog. The count mismatch is the original's.
 
+---
+
+## Update: the HUD draw family is ported, and `Render_Frame` is now the remaining gap
+
+Everything listed above as a blocker is now in the port. `UiModal_DrawDialog @ 0x264a0` (2,676 B)
+lives in `src/pufo/ui/pufo_modal.c`, and the HUD draw family lives in `src/pufo/game/pufo_tacthud.c`:
+
+| original | size | port |
+|---|---|---|
+| `Menu_DrawLabeledPads @ 0x217e0` | 296 | `Menu_DrawLabeledPads`, plus `Menu_LabelRecordIndex` split out so the sparse map is assertable |
+| `TactHud_DrawModalLeft @ 0x21bac` | 320 | `TactHud_DrawModalPanel(..., 1102, ...)` |
+| `TactHud_DrawModalRight @ 0x21cec` | 320 | the same body, record 1103 |
+| `TactHud_CopyStatusText @ 0x21688` | 344 | `TactHud_CopyStatusText` |
+| `TactHud_DrawConfirmDialog @ 0x1eb68` | 484 | `TactHud_DrawConfirmDialog` |
+| `TactHud_DrawStatusBanner @ 0x1e920` | 584 | `TactHud_DrawStatusBanner` |
+| `TactHud_DrawActionButtons @ 0x21430` | 600 | `TactHud_DrawActionButtons`, plus `TactHud_ActionButtonRecord` |
+| `TactHud_DrawUnitMarkers @ 0x20c58` | 672 | `TactHud_DrawUnitMarkers` |
+| `TactHud_DrawUnitRoster @ 0x21908` | 676 | `TactHud_DrawUnitRoster` |
+
+### The bank-offset rule, which the pseudocode obscures
+
+Pad geometry appears as `*((__int16 *)&pBank + 16 * idx + N)`. That is not a field index into some
+other structure: the byte offset is `2 * N`, and `2 * N / 32` is the index of the `UiControl` record
+itself. Every member of the family lands on a span that `Tact_Shutdown @ 0x3d568` also walks, which
+is the cross-check:
+
+| bank u16 index | byte offset | widgets | used by |
+|---|---|---|---|
+| 512 | 1024 | 32..43 | `TactHud_DrawUnitRoster` (12) |
+| 704 | 1408 | 44..52 | `TactHud_CopyStatusText` (9) |
+| 848 | 1696 | 53..59 | `Menu_DrawLabeledPads` (7) |
+| 1424 | 2848 | 89..97 | `TactHud_DrawActionButtons` (9) |
+| 1680 | 3360 | 105..112 | `TactHud_DrawModalPanel` (8) |
+| 2048 | 4096 | 128 | `TactHud_DrawStatusBanner` (1) |
+| — | 4128 | 129 | `TactHud_DrawConfirmDialog` (1); here the ARM names `unk_AD6F0` / `unk_AD6F2` / `unk_AD6F4` directly instead of indexing the bank |
+
+### `Render_Frame @ 0x22310` (756 B): the dispatch table, fully decoded
+
+It is driven by `WM_TIMER` id `0xC351` and ends in `GX_Present @ 0x27788`. If `Map.bGeoscapeUi` is
+set it delegates to `Geoscape_Draw @ 0x8c180` and nothing else happens. Otherwise:
+
+- screens `0x10`, `0x11`, `0x12` are the titles screen, the main menu, and the titles backdrop;
+- every other screen first calls `TactHud_TickCursorDir @ 0x1e888` and writes `34` into the
+  trajectory scratch, then dispatches. Screens `0, 3, 5, 7, 8, 9, 0xA, 0xB, 0xC, 0xF` first draw the
+  iso layer when `Map_bDrawIsoLayer @ 0x138e68` is set, and then add a per-screen overlay;
+- screens `0x14` and `0x15` share one handler.
+
+What is still missing, with sizes:
+
+| callee | size | note |
+|---|---|---|
+| `Geoscape_Draw @ 0x8c180` | 33,744 | the whole geoscape renderer, by far the largest single gap in the tree |
+| `Tact_DrawCommandPads @ 0x1fc8c` | 4,044 | |
+| `MainMenu_Draw @ 0x1dbb8` | 2,680 | |
+| `MapView_DrawMinimap @ 0x1ed4c` | 2,112 | |
+| `TactHud_DrawInventoryScreen @ 0x1f58c` | 1,792 | |
+| `TactHud_DrawTopBar @ 0x20ef8` | 1,336 | |
+| `MapView_DrawIsoLayer @ 0x21e2c` | 1,252 | |
+| `Titles_DrawAnimatedFrame @ 0x1a83c` | 672 | needs the titles state block at `0x158804` modelled first |
+| `Titles_DrawBackdrop @ 0x1e630` | 600 | **ported** in `src/pufo/game/pufo_titles.c` |
+| `TactHud_DrawUnitRoster @ 0x21908` | 676 | **ported** |
+| `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` | 40 | deliberately not ported: it is two calls, and the port has no Cydonia module to own it |
+
+`Render_Frame` itself is not ported until its callees are. It is written as `Render_Frame (0x22310)`
+in the port's comments, never with an `@`, so the audit does not count it as recreated.
+
