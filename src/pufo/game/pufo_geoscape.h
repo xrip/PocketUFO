@@ -178,6 +178,17 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * port keeps two names over one implementation. */
 i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_CountEmptyFacilityCells @ 0x6aee0. The same 6 by 6 walk over the same two grids, but
+ * with weights of 2 and 3 rather than 50, summed over two cell kinds: a free kind-4 cell adds
+ * 2 and a free kind-5 cell adds 3. Nothing else contributes.
+ *
+ * It is worth being clear about what this is not. The capacity passes count facility kinds and
+ * produce a production limit; this one counts kinds 4 and 5, which are two of the three states
+ * Base_ClearFacilityGridRow classifies, so it is a measure of how much room a base has left.
+ * LoadGame (0x44bbc) stores the result in the array the port calls apRadarPct, which is the
+ * same array Base_ClearFacilityGridRow writes its site state into. */
+i32 Base_CountEmptyFacilityCells(const u8 *abFacilityGrid, i32 nBaseIndex);
+
 /* Base_CountActiveResearch @ 0x68198. The same sum Base_CountActiveManuf performs, over a
  * different column, and reading the SAME count byte at 0x160C4C -- one entry count serves
  * both manufacturing and research.

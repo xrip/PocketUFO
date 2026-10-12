@@ -316,11 +316,11 @@ store:
  * BaseFacBlock, size 144, as tileA, tileB, layer2 and facType, each a 36-byte
  * BaseFacLayer6. So the grid this port calls occupancy is the original's buildDays, and
  * "equals zero" means the cell is not under construction rather than that it is unowned. */
-static i32 FacilityCountFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
+static i32 FacilityScoreFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 nWeight)
 {
     const u8 *pType;
     const u8 *pBuild;
-    i32 nCap = 0;
+    i32 nTotal = 0;
     i32 nRow;
 
     if (abFacilityGrid == NULL) {
@@ -333,25 +333,37 @@ static i32 FacilityCountFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
     for (nRow = 0; nRow < 6; ++nRow) {
         i32 nCol;
         for (nCol = 0; nCol < 6; ++nCol) {
-            /* The originals test the kind, then the build days, then add 50 to the total. */
+            /* The originals test the kind, then the build days, then add a weight. Only the
+             * weight differs between the capacity passes and the site-score pass. */
             if (pType[6 * nCol + nRow] == nKind && pBuild[6 * nCol + nRow] == 0) {
-                nCap += 50;
+                nTotal += nWeight;
             }
         }
     }
-    return nCap;
+    return nTotal;
 }
 
 /* Base_CalcWorkshopCap @ 0x65894. Counts free workshop cells and returns count * 50. */
 i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
 {
-    return FacilityCountFree(abFacilityGrid, nBaseIndex, 3); /* 0x6590C */
+    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 3, 50); /* 0x6590C */
 }
 
 /* Base_CalcLabCap @ 0x65818. The same count over free lab cells. */
 i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
 {
-    return FacilityCountFree(abFacilityGrid, nBaseIndex, 2); /* 0x65890 */
+    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 2, 50); /* 0x65890 */
+}
+
+/* Base_CountEmptyFacilityCells @ 0x6aee0. The same walk with weights of 2 and 3 instead of
+ * 50, summed over two kinds: free kind-4 cells count 2 each and free kind-5 cells count 3
+ * each. Unlike the capacity passes this is not about a facility kind at all -- 4 and 5 are two
+ * of the three states Base_ClearFacilityGridRow classifies, so this measures how much room a
+ * base has left rather than what it can produce. */
+i32 Base_CountEmptyFacilityCells(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 4, 2) +
+           FacilityScoreFree(abFacilityGrid, nBaseIndex, 5, 3); /* 0x6AF18..0x6AF9C */
 }
 
 static i32 QuantitySumColumn(const u16 *apColumn, i32 nEntries)

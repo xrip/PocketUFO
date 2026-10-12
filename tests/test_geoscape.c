@@ -776,6 +776,57 @@ static void TestRemainingNeededPasses(void)
 #undef K_N
 }
 
+static void TestEmptyFacilityCells(void)
+{
+    printf("Base_CountEmptyFacilityCells\n");
+    static u8 grid[700];
+
+#define E_T(c, r) grid[480 + 6 * (c) + (r)]
+#define E_B(c, r) grid[6 * (c) + (r)]
+
+    memset(grid, 0, sizeof(grid));
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 0, "an all-zero grid scores 0");
+
+    memset(grid, 0, sizeof(grid));
+    E_T(0, 0) = 4;
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 2, "a free kind-4 cell is worth 2");
+
+    memset(grid, 0, sizeof(grid));
+    E_T(0, 0) = 5;
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 3, "a free kind-5 cell is worth 3");
+
+    memset(grid, 0, sizeof(grid));
+    E_T(0, 0) = 4;
+    E_B(0, 0) = 1;
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 0,
+               "a cell under construction contributes nothing");
+
+    memset(grid, 0, sizeof(grid));
+    E_T(0, 0) = 3;
+    E_T(1, 1) = 8;
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 0,
+               "kinds 3 and 8 are not counted at all");
+
+    memset(grid, 0, sizeof(grid));
+    E_T(0, 0) = 4;
+    E_T(1, 0) = 5;
+    E_T(2, 0) = 5;
+    E_T(3, 0) = 4;
+    E_B(3, 0) = 9;
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 2 + 3 + 3,
+               "two 4s and two 5s, one of them occupied, score 8");
+
+    memset(grid, 0, sizeof(grid));
+    for (int i = 0; i < 36; ++i) {
+        grid[480 + i] = 5;
+    }
+    CheckEqI32(Base_CountEmptyFacilityCells(grid, 0), 36 * 3,
+               "a full grid of free kind-5 cells is 108");
+
+#undef E_T
+#undef E_B
+}
+
 int main(void)
 {
     TestTickShips();
@@ -790,6 +841,7 @@ int main(void)
     TestWorkshopNeeded();
     TestLabChain();
     TestRemainingNeededPasses();
+    TestEmptyFacilityCells();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
