@@ -212,8 +212,9 @@ cannot disagree.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **429 / 1103 cited** (38.9%), bytes 198444 / 598792 (33.1%) |
+| `python docs/parity/coverage.py` (agreed) | **588 / 1103 cited** (53.3%), bytes 222292 / 598792 (37.1%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
+| `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
 
 `tools/coverage.py` is a name-match audit, not the coverage number: it asks "does a
@@ -226,19 +227,19 @@ Per-subsystem citation coverage from `docs/parity/coverage.py`:
 | Subsystem | Cited | Total | Pct |
 |---|---|---|---|
 | audio | 6 | 6 | 100% |
+| save | 34 | 35 | 97% |
 | dat | 17 | 18 | 94% |
-| app-shell | 21 | 24 | 88% |
-| util | 17 | 21 | 81% |
-| tact | 173 | 214 | 81% |
-| ui-core | 59 | 85 | 69% |
+| app-shell | 22 | 24 | 92% |
+| util | 18 | 21 | 86% |
+| tact | 176 | 214 | 82% |
+| ui-core | 66 | 85 | 78% |
 | render | 33 | 51 | 65% |
-| tact-ui | 20 | 52 | 38% |
-| save | 16 | 35 | 46% |
+| tact-ui | 34 | 52 | 65% |
 | boot-assets | 2 | 4 | 50% |
-| strat-ui | 27 | 243 | 11% |
-| strat | 27 | 205 | 13% |
-| platform | 2 | 132 | 2% |
-| titles | 0 | 13 | 0% |
+| strat-ui | 105 | 243 | 43% |
+| strat | 68 | 205 | 33% |
+| titles | 2 | 13 | 15% |
+| platform | 5 | 132 | 4% |
 
 The two hard gaps are `platform` (WinCE API surface: 2 of 132) and `titles` (0 of 13),
 followed by the two strategy layers (`strat` 13%, `strat-ui` 11%). `tact` is the most
