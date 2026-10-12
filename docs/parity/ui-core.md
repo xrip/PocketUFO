@@ -1350,3 +1350,48 @@ everything in `if (bInited)`, it deletes `apMc1Index` only inside the `apSprInde
 pointer dangling rather than clearing them.
 
 Covered by `tests/test_menubtn.c` (`TestStartUiShutdown`, 13 checks).
+
+## What the geoscape UI owns, and how it is released (done)
+
+`GeoscapeUi_FreeAll @ 0x86d20` is recreated as `GeoscapeUi_FreeAll(GeoscapeUiState *, const
+GeoscapeRoster *, char)` in the new `ui/pufo_geouimanage.{h,c}`. It is the teardown
+`Geoscape_CloseUI` case 19 (bankruptcy) calls with 1, and it is the only remaining LoadGame
+blocker's sibling: `Geoscape_InitUI` (0x857f4) builds this same set of objects.
+
+The function is a walk over forty globals. The port turns it into a function over data: the
+owned set lives in `GeoscapeUiState`, and the teardown empties it slot by slot. That makes the
+bounds testable — every slot is filled with a heap object, and a slot the loops never reached
+would stay non-NULL.
+
+**0x1864F8 is one struct, not a loose global.** ARM at 0x87204 does `ADD R0, R9, #0x3C` with
+`R9 = 0x1864F8` before `PtrArray_DeleteAll`, so the strateg list at 0x186534 is a **field** of
+the geoscape UI root at +0x3C. The same block holds thirteen widget pointers at +0..+30, is the
+argument `Geoscape_CloseUI` is called with, and its +0xC8 (0x1865C8) is the 24-byte mission-site
+table. Three things previously recorded as separate globals are one object.
+
+**0x186BC0 holds a pointer, not the pair.** `Smap_ZoomOut` at 0x81D90 does `LDR R1,[R1]` then
+`STRH R3,[R1,#2]` — the world size pair lives behind a heap pointer stored at 0x186BC0. FreeAll
+deletes it with no null check and no `PadImage_FreeData`, because it is not a PadImage.
+
+**The three world counts are three different widths**, and the ARM is explicit:
+
+| | read | address | gate |
+|---|---|---|---|
+| soldiers | `LDRH` | Map + 0x1998 (0x115350) | `<= 0`, unsigned |
+| bases | `LDRSB` | 0x159D80 | `<= 0`, **signed** — a negative count releases nothing |
+| craft | `LDRB` | Map + 0x1194 (0x114B4C) | `<= 0`, unsigned |
+
+0x159D80 is the byte the bases chunk stores as its base count and the byte `BaseRec_ctor`
+indexes `auPerBaseVal` with. Three subsystems reach the same value independently.
+
+The arrays sit at Map + 0x1174 (bases), Map + 0x1198 (soldiers) and Map + 0x10AC (craft), read
+out of the ARM's folded immediates at 0x8713C, 0x87190 and 0x871DC.
+
+**A latent fault in the original.** At 0x87220 it writes `nLineCount = 20` into the status panel
+at panel + 0xBDC and only then tests the panel for null at 0x8722C. A null `unk_18641C` faults.
+The port tests first.
+
+`unk_186B08` is not a game variable. Every loop in this function stores its counter through that
+one global — it is the compiler's spilled loop counter, and nothing reads it afterwards.
+
+Covered by `tests/test_geouimanage.c` (73 checks).

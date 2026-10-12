@@ -101,6 +101,11 @@ cluster, with details in `docs/parity/*.md`:
   `SaveGame @ 0x44988` and `SaveSlot_FormatList @ 0x45904`. `LoadGame @ 0x44bbc` is the only one
   left. Each chunk's on-disk layout, version gates on the save-format byte `0x18655C`, and read
   order are recorded in `docs/parity/save-format.md`.
+- **Geoscape UI lifecycle.** `GeoscapeUi_FreeAll @ 0x86d20` is ported as a function over an
+  owned-object struct (`ui/pufo_geouimanage.{h,c}`), which also settles that 0x1864F8 is one
+  struct holding the thirteen root widgets, the strateg PtrArray at +0x3C and the mission-site
+  table at +0xC8. That leaves `LoadGame` blocked on three functions, not four:
+  `Geoscape_InitUI` (0x857f4), `Tact_Shutdown` (0x3d568) and `Tact_InitMission` (0x3c550).
 - **Base facility layer.** All five `Base_Update*Needed` passes, their `Base_Calc*Cap` and
   `Base_Count*` helpers, `Base_FindFacilityCell @ 0x6ae54`, `Base_CountEmptyFacilityCells @ 0x6aee0`
   and `Base_ClearFacilityGridRow @ 0x6a0e0` (whose name is wrong: it classifies, it does not clear).
@@ -213,9 +218,9 @@ citation is invisible to the parity report.
 
 ## 5. What currently works
 
-- Configure, build, and a clean warning-free compile of all 46 test binaries plus the
+- Configure, build, and a clean warning-free compile of all 47 test binaries plus the
   game executable.
-- 46 test suites pass. They are behavior tests against values read out of the IDB, not
+- 47 test suites pass. They are behavior tests against values read out of the IDB, not
   smoke tests. `PARITY.md` reports 377 checks for `test_tactui`, 199 for `test_unit`,
   152 for `test_tactstate`, 112 for `test_mapcell`. Suites that print their own summary
   line instead report 0 there even though they do count checks — see issue 3 in
@@ -259,7 +264,7 @@ give the parenthesized form any credit.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **585 / 1103 cited** (53.0%), bytes 215976 / 598792 (36.1%) |
+| `python docs/parity/coverage.py` (agreed) | **586 / 1103 cited** (53.1%), bytes 217432 / 598792 (36.3%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |

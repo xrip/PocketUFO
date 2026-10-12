@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 585 / 1103 (53.0%) |
-| Bytes of original code cited | 215976 / 598792 (36.1%) |
+| Functions cited as evidence | 586 / 1103 (53.1%) |
+| Bytes of original code cited | 217432 / 598792 (36.3%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 46 |
-| Test checks run | 5514 |
+| Test suites | 47 |
+| Test checks run | 5587 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 173 | 214 | 104804 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 35 | 52 | 26124 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 72 | 205 | 20740 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 73 | 205 | 22196 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 105 | 243 | 9192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -515,12 +515,13 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (72 functions)
+### `strat` (73 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
+| `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | `src/pufo/ui/pufo_geouimanage.c`, `src/pufo/ui/pufo_geouimanage.h` |
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | `src/pufo/game/pufo_strateg.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
@@ -993,7 +994,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 133 functions, 141716 bytes remaining
+### `strat` — 132 functions, 140260 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1023,7 +1024,6 @@ whose port work they belong to.
 | `0x5abe4` | `FundingScreen_Toggle` | 1560 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a4bc` | `BaseFac_BuildStatusMsg` | 1520 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x69a38` | `Base_StripAllCraftCargo` | 1476 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1312,6 +1312,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 143 |
+| `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |
 | `test_isodraw` | PASS | 8 |
@@ -1345,7 +1346,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**46 / 46 suites passing.**
+**47 / 47 suites passing.**
 
 ## Per-subsystem parity notes
 

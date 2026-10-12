@@ -117,9 +117,6 @@ void Timer_StartBySpeed(u32 nGameSpeed);
  * speed recorded through Timer_SetPendingSpeed instead. */
 void Timer_InstallAsGameTimers(GameClock *pClock);
 
-
-#endif /* PUFO_TIMER_H */
-
 /* ------------------------------------------------------------------ the tick handler
  *
  * GameTick_OnTimer @ 0x274f0 is the 0xC350 WM_TIMER handler. It is the one place
@@ -175,3 +172,5 @@ typedef struct GameTickHooks {
 bool GameTick_OnTimer(const GameTickCtx *pCtx, StatusStack *pStack, TactState *pState,
                       const GameTickHooks *pHooks,
                       MapCellLookup pfnLookup, void *pLookupUser);
+
+#endif /* PUFO_TIMER_H */
