@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 555 / 1103 (50.3%) |
-| Bytes of original code cited | 235048 / 598792 (39.3%) |
+| Functions cited as evidence | 556 / 1103 (50.4%) |
+| Bytes of original code cited | 235776 / 598792 (39.4%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 45 |
-| Test checks run | 4596 |
+| Test suites | 46 |
+| Test checks run | 4610 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 67 | 205 | 46272 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 89 | 243 | 7852 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 90 | 243 | 8580 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 3 | 13 | 552 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -575,11 +575,12 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (89 functions)
+### `strat-ui` (90 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | `src/pufo/ui/pufo_linelist.h` |
+| `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.h` |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | `src/pufo/game/pufo_geoscape.h` |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h` |
@@ -1118,7 +1119,7 @@ whose port work they belong to.
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 154 functions, 109156 bytes remaining
+### `strat-ui` — 153 functions, 108428 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1161,7 +1162,6 @@ whose port work they belong to.
 | `0x75878` | `BuySellScreen_UpdatePrices` | 784 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x75160` | `BuySellScreen_FillBuyPanel` | 772 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6be74` | `OptionsScreen_Init` | 760 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x65290` | `SoldierScreen_Draw` | 716 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7a9b4` | `BasePlaneScreen_AdjustSelectedQty` | 644 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1324,6 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 143 |
 | `test_path` | PASS | 48 |
+| `test_plane` | PASS | 14 |
 | `test_render` | PASS | 43 |
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
@@ -1344,7 +1345,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**45 / 45 suites passing.**
+**46 / 46 suites passing.**
 
 ## Per-subsystem parity notes
 

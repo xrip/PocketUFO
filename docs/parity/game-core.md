@@ -1998,6 +1998,23 @@ Covered by `tests/test_baseui.c` (`TestMoreCloseThunks`, `TestResearchPaging`,
 `TestOptionsRadioClear`, `TestAtexitRegistration`, 21 checks).
 
 
+### Craft loadout weapon selection (done)
+
+`BasePlaneScreen_SelectWeapon25..30 @ 0x79b20/0x79b64/0x79ba8/0x79bec/0x79c30/0x79c74` are
+six copies of thirteen instructions, ported as one function `BasePlaneScreen_SelectWeapon`
+with the index as an argument, in the new `game/pufo_plane.{h,c}`.
+
+The loadout screen carries two weapon panels, and each panel only takes the new weapon when
+its own gate is set: `unk_161F18` gates `unk_161F10` and `unk_161F1C` gates `unk_161F14`. A
+closed panel keeps its old selection. The swap runs either way -- 0x79B54 is a `B`, a true
+tail call to `BasePlaneScreen_ApplyWeaponSwap @ 0x79748`, which is not ported, so its result
+is what these handlers return.
+
+The widths come only from the disassembly: the gates are read with `LDRB` and the selection
+is written with `STRBNE`, so the selected weapon index is a **byte**. Covered by
+`tests/test_plane.c` (14 checks).
+
+
 ### Geoscape screen openers (done)
 
 `Ui_OpenScreen18 @ 0x84e9c`, `Ui_CloseScreen18 @ 0x84ecc` and

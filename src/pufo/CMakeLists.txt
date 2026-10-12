@@ -56,6 +56,7 @@ add_library(pufo_game STATIC
     game/pufo_cursordir.c
     game/pufo_isodraw.c
     game/pufo_baseui.c
+    game/pufo_plane.c
     game/pufo_clock.c
     game/pufo_ship.c
     game/pufo_strateg.c
@@ -475,6 +476,16 @@ set_target_properties(test_baseui PROPERTIES
 )
 add_test(NAME test_baseui
     COMMAND test_baseui
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+add_executable(test_plane ${CMAKE_SOURCE_DIR}/tests/test_plane.c)
+target_link_libraries(test_plane PRIVATE pufo_game pufo_util)
+set_target_properties(test_plane PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_plane
+    COMMAND test_plane
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
