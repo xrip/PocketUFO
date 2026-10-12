@@ -6408,7 +6408,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | **ported** — the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam |
 | `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | **ported** |
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
-| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded, deliberately not ported: `angle` and `scale` are .bss doubles with no owner in the port |
+| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded; **no longer blocked** — `g_dblIsoAngle` and `g_dblIsoScale` now have ported owners |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | fully decoded, port next — every callee is already ported |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
@@ -6529,10 +6529,9 @@ array at `ObjectRec + 0x3a`, and the ships chunk writes it indexed by ship slot;
 was found in the binary. The offset is proven from the ARM. Its meaning is an open question, and the port
 reproduces the offset without inventing a name for it.
 
-### `MapView_DrawUnitHeightGlyph @ 0x1c240` — decoded, deliberately not ported
+### `MapView_DrawUnitHeightGlyph @ 0x1c240` — decoded, unblocked, port next
 
-It draws the firing-arc height glyph for the cell that **is** the current fire target. Everything about
-it is now known except one thing, and that one thing is why it is not ported.
+It draws the firing-arc height glyph for the cell that **is** the current fire target.
 
 The gate, six conditions, all required:
 
@@ -6555,9 +6554,25 @@ index  = 10 * nHeightGlyphId + nFireTickProgress + nSmokeSprBase + 16, palette 1
 position = (nHeightOff + nDrawX, nDrawY + nHeightAux + 15)
 ```
 
-Why it is deferred: `angle` (`0x1571F8`) and `scale` (`0x156AA8`) are **.bss doubles set elsewhere**, and
-the port has no owner for either. Porting now would mean inventing two globals with no proven writer.
-The only real constant is `2.0` at `0xAADB0`.
+Why it was deferred, and why that is resolved: `angle` (`0x1571F8`) and `scale` (`0x156AA8`) are .bss
+doubles set elsewhere, and the port had no owner for either. Porting then would have meant inventing two
+globals with no proven writer.
+
+Both writers turned out to be tiny, and both are now ported:
+
+| original | size | what it stores |
+|---|---|---|
+| `Math_StoreAtan2Const @ 0x370e8` | 56 | `atan2(32.0, 16.0)` = 1.1071487177940904 rad, about 63.43 degrees |
+| `Math_StoreSqrtConst @ 0x37098` | 76 | `sqrt(320.0) * 2^-4` = `sqrt(320)/16` = `sqrt(5)/2` = 1.118033988749895 |
+
+The angle's tangent is exactly **2**, which is the 32 by 16 isometric tile ratio — the same ratio the
+resolve step uses in `nDrawX = 32 * nTileX` and `nDrawY = 8 * (...)`. The scale constant's multiplier is
+the double `0x3FB0000000000000`, which is `0.0625` exactly; Hex-Rays renders it as the raw word
+`1068498944`, which reads like an arbitrary integer until you unpack it.
+
+Each global has exactly two readers in the whole binary: `MapView_DrawUnitFacingArrow @ 0x1b7bc` and
+`MapView_DrawUnitHeightGlyph @ 0x1c240`. They are iso-draw constants, not general math state, and the
+port names them `g_dblIsoAngle` and `g_dblIsoScale` for that reason.
 
 One trap avoided on the way. The ARM reads:
 

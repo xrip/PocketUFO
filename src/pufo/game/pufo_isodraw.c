@@ -5,6 +5,25 @@
 #include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
 #include "render/pufo_render.h" /* SoftSurf_BlitSrcRect */
 
+#include <math.h>
+
+double g_dblIsoAngle; /* unk_1571F8 */
+double g_dblIsoScale; /* unk_156AA8 */
+
+/* Math_StoreSqrtConst @ 0x37098. The multiplier is the double 0x3FB0000000000000, which is 2^-4,
+ * so this is sqrt(320)/16 = sqrt(5)/2. */
+void Math_StoreSqrtConst(void)
+{
+    g_dblIsoScale = sqrt(320.0) * 0.0625;
+}
+
+/* Math_StoreAtan2Const @ 0x370e8. atan2(32, 16) is the angle of the 32 by 16 iso tile, so its
+ * tangent is exactly 2. */
+void Math_StoreAtan2Const(void)
+{
+    g_dblIsoAngle = atan2(32.0, 16.0);
+}
+
 void MapView_DrawCellFloorGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim)
 {
     Mc1Rec *pFloorSpr;

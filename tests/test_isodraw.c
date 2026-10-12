@@ -5,6 +5,7 @@
  *
  * The wall-palette tests look at branching only. The two TactUnit helpers are index arithmetic, so
  * they run against a probe font that reports which glyph index was asked for. See InstallProbeFont. */
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -807,6 +808,21 @@ static void TestViewportGuide(void)
     CheckEqI32((i32)pPix[100 * 240 + 0], 0, "and one row earlier is untouched");
 }
 
+static void TestIsoConstants(void)
+{
+    printf("iso projection constants @ 0x37098 / 0x370e8\n");
+
+    Math_StoreSqrtConst();
+    Math_StoreAtan2Const();
+
+    /* Asserted as derived facts rather than restatements of the calls. */
+    Check(fabs(g_dblIsoScale - 1.1180339887498949) < 1e-12, "scale is sqrt(320)/16, which is sqrt(5)/2");
+    Check(fabs(tan(g_dblIsoAngle) - 2.0) < 1e-12,
+          "the angle's tangent is 2, matching the 32 by 16 iso tile");
+    Check(g_dblIsoAngle > 1.107148717794 && g_dblIsoAngle < 1.107148717795,
+          "the angle is atan2(32,16), about 63.43 degrees");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -821,6 +837,7 @@ int main(void)
     TestSelectMarkers();
     TestHpGlyphs();
     TestViewportGuide();
+    TestIsoConstants();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

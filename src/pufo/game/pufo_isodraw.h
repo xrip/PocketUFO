@@ -262,4 +262,20 @@ typedef struct IsoViewportGuide {
  * never reads it. */
 void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide);
 
+/* The isometric projection constants. The original computes both once and keeps them in .bss, and
+ * every iso glyph placement reads them back out.
+ *
+ *   g_dblIsoAngle = atan2(32.0, 16.0) - the angle of the 32 by 16 iso tile, so its tangent is 2.
+ *   g_dblIsoScale = sqrt(320.0) * 2^-4 = sqrt(320)/16 = sqrt(5)/2.
+ *
+ * The multiplier in Math_StoreSqrtConst is the double 0x3FB0000000000000, which is 2^-4 exactly. */
+extern double g_dblIsoAngle; /* unk_1571F8 */
+extern double g_dblIsoScale; /* unk_156AA8 */
+
+/* Math_StoreSqrtConst @ 0x37098. */
+void Math_StoreSqrtConst(void);
+
+/* Math_StoreAtan2Const @ 0x370e8. */
+void Math_StoreAtan2Const(void);
+
 #endif /* PUFO_ISODRAW_H */
