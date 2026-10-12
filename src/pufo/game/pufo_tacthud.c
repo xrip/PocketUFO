@@ -6,6 +6,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 static MapCell *HudCell(const TactHudCtx *pCtx, i32 nX, i32 nY, i32 nLayer)
@@ -424,4 +425,74 @@ void TactHud_UseSpecialItem(const TactHudSpecialCtx *pCtx)
     TactState_EnqueueAction18(pCtx->pQueue, pUnit, tgt.pUnit, pMap->pSelWeapon,
                               nCost, pUi->nActionMode);
     TactState_KickQueue(pCtx->pQueue);
+}
+
+/* --------------------------------------------------------------------------
+ * PadImage_BlitDecimal @ 0x36c58 - a decimal number drawn as pad images.
+ * -------------------------------------------------------------------------- */
+
+i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
+                        i32 nWidth, bool bLeadZero,
+                        HudPadBlitFn pfnBlitEx, void *pUser)
+{
+    char szNum[20];
+    i32 nLen;
+    i32 nPad;
+    i32 nResult;
+
+    if (apPads == NULL) {
+        return 0;
+    }
+
+    /* Deviation: snprintf stands in for itoa(nVal, buf, 10). Same digits, bounded. */
+    snprintf(szNum, sizeof(szNum), "%d", (int)nVal);
+    nLen = (i32)strlen(szNum);
+
+    /* 0x36C94: the filler count is the field width minus the digit count, and zero
+     * when the width is not larger. */
+    nPad = (nWidth > 0 && nWidth > nLen) ? nWidth - nLen : 0;
+
+    if (nPad > 0) {
+        /* 0x36CB0: slot 10 is the leading pad, slot 0 is the plain one. */
+        const i32 nFill = bLeadZero ? 10 : 0;
+        for (i32 i = 0; i < nPad; ++i) {
+            PadImage *pPad = apPads[nFill];
+            if (pPad == NULL) {
+                break;
+            }
+            pPad->nOriginX = x;
+            pPad->nOriginY = y;
+            if (pfnBlitEx != NULL) {
+                pfnBlitEx(pPad, pUser);
+            }
+            /* 0x36CF8: the filler advance is width + 1. */
+            x += (i32)pPad->uWidth + 1;
+        }
+    }
+
+    nResult = nLen;   /* 0x36D04: the return value starts as the digit count. */
+    for (i32 i = 0; i < nLen; ++i) {
+        const i32 nDigit = (i32)(u8)szNum[i] - 48;
+        PadImage *pPad;
+
+        /* 0x36D28 indexes the table by the character itself; a non-digit cannot come
+         * out of the decimal conversion, but the port does not read past the table. */
+        if (nDigit < 0 || nDigit >= 10) {
+            break;
+        }
+        pPad = apPads[nDigit];
+        if (pPad == NULL) {
+            break;
+        }
+        pPad->nOriginX = x;
+        pPad->nOriginY = y;
+        if (pfnBlitEx != NULL) {
+            pfnBlitEx(pPad, pUser);
+        }
+        /* 0x36D54 and the for increment at 0x36D14: the next digit starts one pixel
+         * after this one ends. */
+        nResult = x + (i32)pPad->uWidth;
+        x = nResult + 1;
+    }
+    return nResult;
 }

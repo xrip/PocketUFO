@@ -700,10 +700,79 @@ static void TestSpecialItem(void)
           ui.nActionMode == PUFO_ACTION_MODE_SPECIAL && g_nRecord == -1);
 }
 
+static void ChkEq(i32 nGot, i32 nWant, const char *pWhat)
+{
+    Check(pWhat, nGot == nWant);
+}
+
+static PadImage g_aDigitPad[PUFO_HUD_DIGIT_PADS];
+static PadImage *g_apDigitPad[PUFO_HUD_DIGIT_PADS];
+static i32 g_nBlits;
+static i32 g_aBlitX[32];
+
+static void Dec_Blit(PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nBlits < 32) {
+        g_aBlitX[g_nBlits] = pPad->nOriginX;
+    }
+    g_nBlits += 1;
+}
+
+static void TestBlitDecimal(void)
+{
+    i32 nRet;
+
+    printf("PadImage_BlitDecimal\n");
+    for (i32 i = 0; i < PUFO_HUD_DIGIT_PADS; ++i) {
+        memset(&g_aDigitPad[i], 0, sizeof(g_aDigitPad[i]));
+        g_aDigitPad[i].uWidth = 5;
+        g_apDigitPad[i] = &g_aDigitPad[i];
+    }
+
+    /* No field width: two digits, one pixel apart. */
+    g_nBlits = 0;
+    nRet = TactHud_BlitDecimal(g_apDigitPad, 100, 50, 42, 0, false, Dec_Blit, NULL);
+    ChkEq(g_nBlits, 2, "  42 blits two digit pads");
+    ChkEq(g_aBlitX[0], 100, "  first digit at x");
+    ChkEq(g_aBlitX[1], 106, "  next digit at width + 1");
+    ChkEq(nRet, 111, "  returns the right edge of the last digit");
+    ChkEq(g_aDigitPad[4].nOriginY, 50, "  the pad origin Y is written too");
+
+    /* Field width 5 with the plain filler: three filler pads then the digits. */
+    g_nBlits = 0;
+    nRet = TactHud_BlitDecimal(g_apDigitPad, 100, 50, 42, 5, false, Dec_Blit, NULL);
+    ChkEq(g_nBlits, 5, "  width 5 pads out to five blits");
+    ChkEq(g_aBlitX[0], 100, "  filler starts at x");
+    ChkEq(g_aBlitX[2], 112, "  third filler at 2 * (width + 1)");
+    ChkEq(g_aBlitX[3], 118, "  the first digit follows the filler");
+    ChkEq(nRet, 129, "  right edge after the padded field");
+
+    /* With bLeadZero the filler comes from slot 10 instead of slot 0. */
+    g_aDigitPad[0].nOriginX = -1;
+    g_aDigitPad[10].nOriginX = -1;
+    g_nBlits = 0;
+    (void)TactHud_BlitDecimal(g_apDigitPad, 200, 50, 7, 4, true, Dec_Blit, NULL);
+    ChkEq(g_nBlits, 4, "  three leading pads plus the digit");
+    ChkEq(g_aDigitPad[10].nOriginX, 212, "  slot 10 is the leading pad; the last write wins");
+    ChkEq(g_aDigitPad[0].nOriginX, -1, "  slot 0 is not used when bLeadZero is set");
+
+    /* A width that is not larger than the digit count adds no filler. */
+    g_nBlits = 0;
+    (void)TactHud_BlitDecimal(g_apDigitPad, 0, 0, 1234, 3, false, Dec_Blit, NULL);
+    ChkEq(g_nBlits, 4, "  width 3 does not pad a four-digit value");
+
+    /* NULL table is tolerated. */
+    ChkEq(TactHud_BlitDecimal(NULL, 0, 0, 1, 0, false, Dec_Blit, NULL), 0,
+               "  NULL table returns 0");
+}
+
 int main(void)
 {
     Reset();
     TestKneel();
+    Reset();
+    TestBlitDecimal();
     Reset();
     TestClimbUp();
     Reset();

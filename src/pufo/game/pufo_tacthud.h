@@ -13,6 +13,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_tactui.h"
+#include "render/pufo_render.h"
 #include "game/pufo_unit.h"
 
 /* The texts.dat records the kneel action announces. Kneeling is the shot
@@ -159,5 +160,33 @@ typedef struct TactHudSpecialCtx {
 } TactHudSpecialCtx;
 
 void TactHud_UseSpecialItem(const TactHudSpecialCtx *pCtx);
+
+/* PadImage_BlitDecimal @ 0x36c58. Draw a decimal number as pad images.
+ *
+ * The original reaches an 11-entry `PadImage *` table inside its HUD context at
+ * offset 0xCC (0x36CC4 computes `pCtx + 4*idx` then reads `+51` dwords, i.e. +204).
+ * Index 0..9 is the digit for `0..9` -- 0x36D28 computes `pCtx + 4*ch - 192`, and
+ * 4*'0' - 192 is zero, so the character picks the slot directly. Index 10 is the
+ * filler pad, reached as `pCtx + 4*10` when `bLeadZero` is set and `pCtx + 0`, i.e.
+ * slot 0, when it is not.
+ *
+ * `nWidth` is a minimum field width. When it is larger than the digit count, the
+ * difference is filled with the filler pad first. Every pad advance is its width
+ * plus one, so digits and filler alike leave a one-pixel gap; the filler loop adds
+ * the gap to `x` directly (0x36CF8) and the digit loop does it through the for
+ * increment (0x36D14: `x = result + 1`).
+ *
+ * Each pad has its `nOriginX`/`nOriginY` written before it is blitted, so the pads
+ * are stateful scratch, not immutable glyphs. Returns the right edge of the last
+ * digit, `x + uWidth`, which is what the original returns from 0x36D54.
+ *
+ * All six callers are `TactHud_DrawSelectedUnitPanel @ 0x1d5ec`. */
+#define PUFO_HUD_DIGIT_PADS 11
+
+typedef void (*HudPadBlitFn)(PadImage *pPad, void *pUser);
+
+i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
+                        i32 nWidth, bool bLeadZero,
+                        HudPadBlitFn pfnBlitEx, void *pUser);
 
 #endif /* PUFO_TACTHUD_H */

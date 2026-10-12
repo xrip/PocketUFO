@@ -1203,3 +1203,36 @@ resolving, but it is one byte, not two.
 |---|---|---|
 | 1 | `Geoscape_PulseUpdate` and `Sound_Play` are hooks in `UiPulseHooks` | neither is reachable from a `Map` context in the port |
 | 2 | The secondary-key branch is skipped when `pWorld` is NULL | the original calls `Input_OnSecondary` unconditionally; the port must not hand it a NULL tactical world |
+
+## Drawing a number as pad images: `PadImage_BlitDecimal @ 0x36c58`
+
+Ported as `TactHud_BlitDecimal` in `game/pufo_tacthud.{h,c}`, asserted by `test_tacthud`
+(`TestBlitDecimal`, 15 checks). All six callers are
+`TactHud_DrawSelectedUnitPanel @ 0x1d5ec`.
+
+The original reaches an 11-entry `PadImage *` table inside its HUD context at offset
+`0xCC`: `0x36CC4` computes `pCtx + 4*idx` and then reads `+51` dwords, i.e. `+204`. The
+digit loop at `0x36D28` computes `pCtx + 4*ch - 192`, and `4*'0' - 192` is zero, so the
+character byte picks the slot directly -- slots 0..9 are the digits. Slot 10 is the
+filler: `0x36CB0` selects index 10 when `bLeadZero` is set and index 0 when it is not.
+
+`nWidth` is a minimum field width. `0x36C94` makes the filler count
+`nWidth - strlen(digits)`, and zero when the width is not larger. The filler is blitted
+first, then the digits.
+
+**The spacing is width + 1 everywhere.** The filler loop adds it to `x` directly
+(`0x36CF8`), and the digit loop does it through the `for` increment (`0x36D14` reads
+`x = result + 1` where `result` is `x + uWidth` from `0x36D54`). One pixel between
+every glyph.
+
+Each pad has `nOriginX`/`nOriginY` written before it is blitted, so the digit pads are
+stateful scratch, not immutable glyphs. The return value is the right edge of the last
+digit.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `snprintf` replaces `itoa(nVal, buf, 10)` | same digits, bounded buffer |
+| 2 | A non-digit stops the loop | the original computes `pCtx + 4*ch - 192` for any byte, so a `-` sign reads the slot just below the digit table. The port does not read outside the table |
+| 3 | The blit is injected as `pfnBlitEx` | `PadImage_BlitEx @ 0x11110` is not ported yet; the same seam `UiControl_BlitActivePad` already uses |

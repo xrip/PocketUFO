@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 476 / 1103 (43.2%) |
-| Bytes of original code cited | 223472 / 598792 (37.3%) |
+| Functions cited as evidence | 478 / 1103 (43.3%) |
+| Bytes of original code cited | 225228 / 598792 (37.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4372 |
+| Test checks run | 4387 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -41,8 +41,8 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 33 | 52 | 25788 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 66 | 85 | 11984 / 38368 | shared UI panel, text engine, menus |
+| `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 31 | 205 | 34692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 48 | 243 | 6260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
@@ -393,7 +393,7 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (33 functions)
+### `tact-ui` (34 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -401,6 +401,7 @@ is the module that answers to it.
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
+| `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
 | `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_input.h` |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/ui/pufo_uibank.h` |
@@ -431,7 +432,7 @@ is the module that answers to it.
 | `0x173a8` | `Inv_ScrollDown` | 60 | `src/pufo/game/pufo_tactui.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (66 functions)
+### `ui-core` (67 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -450,6 +451,7 @@ is the module that answers to it.
 | `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.h` |
 | `0x3eee0` | `UiScrollList_ClickRow` | 300 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
+| `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapctx.c` (+4) |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
 | `0x11020` | `PadImage_Load` | 188 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` (+1) |
@@ -854,7 +856,7 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 19 functions, 17976 bytes remaining
+### `tact-ui` — 18 functions, 16492 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -862,7 +864,6 @@ whose port work they belong to.
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x20ef8` | `TactHud_DrawTopBar` | 1336 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x21908` | `TactHud_DrawUnitRoster` | 676 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x20c58` | `TactHud_DrawUnitMarkers` | 672 | not yet ported; scheduled with the `tact-ui` subsystem work |
@@ -878,7 +879,7 @@ whose port work they belong to.
 | `0x45e8c` | `InvSel_AddItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 19 functions, 26384 bytes remaining
+### `ui-core` — 18 functions, 26112 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -892,7 +893,6 @@ whose port work they belong to.
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9955c` | `Ui_InitTransfer` | 392 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84bf8` | `Ui_OpenResearch` | 288 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x36c58` | `PadImage_BlitDecimal` | 272 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46144` | `Font_Free` | 148 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -1338,7 +1338,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 43 |
 | `test_tactctl` | PASS | 139 |
-| `test_tacthud` | PASS | 88 |
+| `test_tacthud` | PASS | 103 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 423 |
 | `test_template` | PASS | 40 |
