@@ -205,6 +205,141 @@ static void TestAddItem(void)
     PtrArray_DeleteAll(&list);
 }
 
+static const StrategRollTables g_Roll = {
+    /* unk_AAC98: mission subtype weights by craft class. */
+    {
+        { 100, 0, 0, 0, 0, 0, 0, 0 },
+        { 100, 0, 0, 0, 0, 0, 0, 0 },
+        { 100, 0, 0, 0, 0, 0, 0, 0 },
+        {  50, 50, 0, 0, 0, 0, 0, 0 },
+        {  50, 0, 50, 0, 0, 0, 0, 0 },
+        {  20, 0, 0, 40, 0, 40, 0, 0 },
+        {   0, 0, 0, 30, 0, 0, 70, 25 },
+        {   0, 0, 60, 0, 0, 15, 0, 0 },
+    },
+    /* byte_AACD8: craft class weights by difficulty. */
+    {
+        { 22, 33, 35,  5,  5,  0,  0,  0 },
+        { 10, 30, 35, 10, 10,  5,  0,  0 },
+        {  8, 20, 20, 15, 15,  7, 10,  5 },
+        {  0, 20, 20, 15, 15,  8, 17,  5 },
+        {  0, 15, 15, 15, 15,  8, 20, 12 },
+        {  0, 10, 15, 15, 15,  8, 22, 15 },
+    },
+    /* byte_AAD08: race weights by difficulty. */
+    {
+        { 100, 0, 0, 0, 0 },
+        {  70, 0, 30, 0, 0 },
+        {  33, 0, 33, 34, 0 },
+        {  25, 25, 25, 25, 0 },
+        {  20, 20, 20, 20, 20 },
+        {  20, 20, 20, 20, 20 },
+    },
+};
+
+static StrategItem *g_pSpawnedItem;
+static i32          g_nSpawnSub;
+static i32          g_nSpawnCalls;
+static void        *g_apSlots[1];
+
+static int SpawnProbe(StrategItem *pUfo, i32 nMissionSub, void *pUser)
+{
+    (void)pUser;
+    g_pSpawnedItem = pUfo;
+    g_nSpawnSub = nMissionSub;
+    ++g_nSpawnCalls;
+    return 7;
+}
+
+static void TestAddUfoAt(void)
+{
+    printf("StrategList_AddUfoAt\n");
+    PtrArray list;
+    StrategItem *p;
+    i32 seed = 0;
+
+    PtrArray_ctor(&list);
+
+    p = StrategList_AddUfoAt(&list, &seed, 2, 300, 400, 3);
+    Check(p != NULL, "appends a craft item");
+    CheckEqI32(p->nType, 1, "nType is 1, a craft");
+    CheckEqI32(p->bActive, 1, "bActive is 1");
+    CheckEqI32(p->bCraftClass, 3, "the craft class is the only free argument");
+    CheckEqI32(p->nDisplayId, 50000, "nId 50000 lands in nDisplayId because nType is 1");
+    CheckEqI32(p->nSiteId, -1, "nSiteId is -1");
+    CheckEqI32(p->bVisible, 0, "bVisible is 0");
+    /* Only nType 5 is scaled, so zoom mode 2 leaves a craft where it was put. */
+    CheckEqI32(p->nX, 300, "a craft is not scaled even at zoom mode 2");
+    CheckEqI32(p->nY, 400, "nor is y");
+
+    PtrArray_DeleteAll(&list);
+}
+
+static void TestRollCraftStats(void)
+{
+    printf("StrategList_RollCraftStats\n");
+    PtrArray list;
+    StrategItem item;
+    i32 i;
+    i32 nBadRace = 0, nBadCraft = 0, nBadSub = 0, nBadRet = 0, nRace0 = 0;
+
+    PtrArray_ctor(&list);
+    g_apSlots[0] = &item;
+    list.apItems = g_apSlots;
+    list.nCount = 1;
+    memset(&item, 0, sizeof(item));
+
+    /* Difficulty 0 has a race row of a single 100, so race 0 is forced whatever
+     * the roll. That makes this deterministic without controlling the RNG. */
+    for (i = 0; i < 200; ++i) {
+        int nRet;
+        item.bRace = 0;
+        item.bCraftClass = 0;
+        nRet = StrategList_RollCraftStats(&list, 0, 0, 99, &g_Roll, SpawnProbe, NULL);
+        if (nRet != 7) {
+            ++nBadRet;
+        }
+        if (item.bRace != 0) {
+            ++nBadRace;
+        } else {
+            ++nRace0;
+        }
+        /* Difficulty 0 craft row totals 100 across columns 0..4, so 5..7 are
+         * unreachable there. */
+        if (item.bCraftClass > 4) {
+            ++nBadCraft;
+        }
+        if (g_nSpawnSub < 0 || g_nSpawnSub > 7) {
+            ++nBadSub;
+        }
+    }
+    CheckEqI32(nBadRace, 0, "difficulty 0 can only roll race 0");
+    CheckEqI32(nRace0, 200, "and it does it every time");
+    CheckEqI32(nBadCraft, 0, "difficulty 0 craft class stays in 0..4");
+    CheckEqI32(nBadRet, 0, "the spawn return value is passed straight through");
+    CheckEqI32(nBadSub, 0, "the mission subtype handed to the spawn is always 0..7");
+    Check(g_pSpawnedItem == &item, "the spawn gets the item at nIndex");
+
+    /* The early gate caps the craft class at 2. */
+    nBadCraft = 0;
+    for (i = 0; i < 200; ++i) {
+        StrategList_RollCraftStats(&list, 0, 5, 0, &g_Roll, SpawnProbe, NULL);
+        if (item.bCraftClass > 2) {
+            ++nBadCraft;
+        }
+    }
+    CheckEqI32(nBadCraft, 0, "while the gate is below 15 no craft class above 2 survives");
+
+    /* Out of range index: no spawn, no crash. */
+    g_nSpawnCalls = 0;
+    CheckEqI32(StrategList_RollCraftStats(&list, 9, 0, 99, &g_Roll, SpawnProbe, NULL), 0,
+               "an out-of-range index returns without spawning");
+    CheckEqI32(g_nSpawnCalls, 0, "and the spawn hook is not called");
+
+    list.apItems = NULL;
+    list.nCount = 0;
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -647,6 +782,8 @@ int main(void)
     TestStrategListAlloc();
     TestFindIdxForShip();
     TestAddItem();
+    TestAddUfoAt();
+    TestRollCraftStats();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

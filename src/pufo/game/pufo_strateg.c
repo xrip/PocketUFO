@@ -343,6 +343,73 @@ StrategItem *StrategList_AddItem(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
     return pItem;
 }
 
+StrategItem *StrategList_AddUfoAt(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                  i32 x, i32 y, i32 bCraftClass)
+{
+    return StrategList_AddItem(pList, pnSeed, nZoomMode, 1, 1, bCraftClass,
+                               x, y, STRATEG_ID_UNASSIGNED, 0); /* 0x7E3AC */
+}
+
+/* The weighted walk both picks share: roll 1..100, add weights left to right, stop
+ * when the running total reaches the roll. The loop covers only the first seven
+ * columns, so an over-high roll leaves the index at 7. */
+static i32 RollWeighted(const u8 *apRow, i32 nRoll)
+{
+    i32 nSum = 0;
+    i32 nIdx = 0;
+
+    for (;;) {
+        nSum += apRow[nIdx];
+        if (nRoll <= nSum) {
+            break;
+        }
+        ++nIdx;
+        if (nIdx >= 7) {
+            break;
+        }
+    }
+    return nIdx;
+}
+
+int StrategList_RollCraftStats(PtrArray *pList, i32 nIndex, i32 nDifficulty,
+                               i32 nEarlyGate, const StrategRollTables *pTables,
+                               StrategSpawnMissionFn pfnSpawn, void *pUser)
+{
+    StrategItem *pItem;
+    i32 nMissionSub;
+
+    if (pList == NULL || pTables == NULL) {
+        return 0;
+    }
+    pItem = (StrategItem *)PtrArray_Get(pList, nIndex); /* 0x81AAC */
+    if (pItem == NULL) {
+        return 0;
+    }
+
+    if (nDifficulty > 5) { /* 0x81AC0 */
+        nDifficulty = 5;
+    }
+    if (nDifficulty < 0) {
+        nDifficulty = 0; /* deviation: the original would read before the tables */
+    }
+
+    pItem->bRace = (u8)RollWeighted(pTables->aRaceWeight[nDifficulty],
+                                    (i32)Game_RandU16(100) + 1); /* 0x81B24 */
+
+    pItem->bCraftClass = (u8)RollWeighted(pTables->aCraftWeight[nDifficulty],
+                                          (i32)Game_RandU16(100) + 1); /* 0x81B90 */
+    if (nEarlyGate < 15 && pItem->bCraftClass > 2) { /* 0x81B7C */
+        pItem->bCraftClass = 2;
+    }
+
+    /* The mission row is chosen from the class that survived the cap, read back
+     * off the item rather than from a local. */
+    nMissionSub = RollWeighted(pTables->aMissionWeight[pItem->bCraftClass & 7],
+                               (i32)Game_RandU16(100) + 1);
+
+    return pfnSpawn(pItem, nMissionSub, pUser); /* 0x81BDC tail call */
+}
+
 /* ------------------------------------------------------- the geoscape viewport */
 
 /* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn

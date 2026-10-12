@@ -199,6 +199,58 @@ StrategItem *StrategList_AddItem(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
                                  i32 nType, i32 bActive, i32 bCraftClass,
                                  i32 x, i32 y, i32 nId, i32 bVisible);
 
+/* StrategList_AddUfoAt @ 0x7e374: a tail call to StrategList_AddItem with the
+ * alien-craft arguments filled in -- nType 1, bActive 1, nId 50000, bVisible 0.
+ * The zoom mode is read live from the viewport's nMode, which is why it is a
+ * parameter here. nId 50000 is STRATEG_ID_UNASSIGNED, and because nType is 1 it
+ * lands in nDisplayId, so a freshly spawned craft is addressable but has no
+ * display id yet. nSiteId becomes -1. */
+StrategItem *StrategList_AddUfoAt(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
+                                  i32 x, i32 y, i32 bCraftClass);
+
+/* ------------------------------------------------- the spawn roll tables
+ *
+ * Evidence: byte_AAD08, byte_AACD8 and unk_AAC98, read straight out of .data.
+ * They tile 0xAAC98..0xAAD26 with no gaps, which is what confirms the row widths.
+ *
+ * Row index is the difficulty byte at apLines[117], clamped to 5. The same slot is
+ * the radar boost offset elsewhere in the port, so one byte drives two systems.
+ */
+typedef struct StrategRollTables {
+    /* byte_AAC98, 8 rows of 8, indexed by bCraftClass: mission subtype weights. */
+    u8 aMissionWeight[8][8];
+    /* byte_AACD8, 6 rows of 8, indexed by difficulty: craft class weights. */
+    u8 aCraftWeight[6][8];
+    /* byte_AAD08, 6 rows of 5, indexed by difficulty: race weights. */
+    u8 aRaceWeight[6][5];
+} StrategRollTables;
+
+/* StrategList_RollCraftStats @ 0x81a9c: pick race, craft class and mission
+ * subtype for the item at nIndex, then hand it to Geoscape_SpawnMissionSite.
+ *
+ * Each pick is the same weighted walk: roll Game_RandU16(100) + 1, so 1..100,
+ * then add weights left to right until the running total reaches the roll.
+ * The walk stops after 7 columns, so a roll above the row total leaves the
+ * index at 7 -- and the eighth column of every weight row is therefore never
+ * added. It is dead data, and 7 is a reachable result:
+ *
+ *   craft weights, difficulty 5: 0+10+15+15+15+8+22 = 85, so rolls 86..100 give class 7
+ *   mission weights, class 7:    0+0+60+0+0+15+0    = 75, so rolls 76..100 give subtype 7
+ *
+ * The race walk cannot overflow: every difficulty row totals exactly 100.
+ *
+ * The craft class is then capped at 2 while the gate value is below 15, which is
+ * the original's early-game restriction -- no heavy craft before that point.
+ *
+ * Deviation: the original clamps the difficulty only at the top (`> 5`) and then
+ * uses it as a row index, so a negative byte reads before the tables. The port
+ * clamps to 0..5. */
+typedef int (*StrategSpawnMissionFn)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
+
+int StrategList_RollCraftStats(PtrArray *pList, i32 nIndex, i32 nDifficulty,
+                               i32 nEarlyGate, const StrategRollTables *pTables,
+                               StrategSpawnMissionFn pfnSpawn, void *pUser);
+
 /* ------------------------------------------------------- the geoscape viewport
  *
  * One 36-byte block at 0x1863E8. IDA carries two names for it because different
