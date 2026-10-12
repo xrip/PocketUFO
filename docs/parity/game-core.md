@@ -4621,3 +4621,75 @@ views on the same bytes; the port keeps two types and does not model the overlay
 Kept as-is, not fixed: inserting at an index past the count does **not** clamp. It
 writes the slot it was given, leaves a gap, and still increments the count. The test
 pins that.
+
+## The geoscape viewport and the strateg list containers
+
+Ported in `game/pufo_strateg.{h,c}`, asserted by `test_strateg` (`TestSmapView`,
+`TestStrategListAlloc`, 27 checks).
+
+| Original | Port |
+|---|---|
+| `Smap_ScrollBy @ 0x820d0` | `Smap_ScrollBy` |
+| `Smap_GetTileAtScreen @ 0x82244` | `Smap_GetTileAtScreen` |
+| `Tilemap_GetAt @ 0x8217c`, `Tilemap_GetAtAlt @ 0x821a0` | `Tilemap_GetAt` (one implementation) |
+| `StrategItem_ctor @ 0x82bd4` | `StrategItem_ctor` |
+| `StrategItem_AllocAdd @ 0x415cc` | `StrategItem_AllocAdd` |
+| `StrategList_ctor @ 0x83890`, `StrategList_Clear @ 0x838ac` | same names over `PtrArray` |
+
+### One 36-byte block, two IDA names
+
+`0x1863E8` carries both `SmapCamera` (36 bytes: nMode, nScrollX, nScrollY, nMapW,
+nMapH, nUnk14, nUnk18, nPickX, nPickY) and `SmapView` (28 bytes: nUnk0, nPosX, nPosY,
+nStride, nUnk16, nLastDx, nLastDy). The two agree offset by offset, so they are the
+same struct seen for two jobs:
+
+```
+0x00 nMode   == nUnk0      0x10 nMapH   == nUnk16
+0x04 nScrollX == nPosX     0x14 nUnk14  == nLastDx
+0x08 nScrollY == nPosY     0x18 nUnk18  == nLastDy
+0x0C nMapW   == nStride
+```
+
+Two consequences that the names hide:
+
+- **The scroll position is the view position.** `Smap_ScrollBy` writes `nPosX`/`nPosY`
+  and `Smap_ZoomOut` rescales `nScrollX`/`nScrollY` at the same offsets.
+- **The tile grid stride is the map width.** `Smap_GetTileAtScreen` wraps x with
+  `nMapW` and then indexes the tile bytes with `nStride` -- the same dword at `0x0C`.
+
+### Scroll arithmetic
+
+`pos = pos - delta + last_delta` (0x82104, 0x82114): the view tracks absolute pointer
+positions, so the delta applied last time is added back before the new one is removed.
+With `halfH = nMapH/2 - 160`, and only when the screen id at `0x186BC4` is not 2:
+
+- `nScrollY + halfH < 0` -> `nScrollY = -halfH` (0x82130)
+- then `nScrollY + halfH > nStripHeight + nMapH - 320` -> `nScrollY = nStripHeight -
+  halfH + nMapH - 320` (0x82154)
+
+The upper clamp tests the value the lower clamp produced, so they are not independent.
+`nStripHeight` is the `uHeight` of the PadImage-shaped object read through `0x186BBC`.
+The deltas are stored last, after clamping.
+
+### Screen to tile
+
+`tileX = nScrollX + nMapW/2 + x - 120`, `tileY = nScrollY + nMapH/2 + y - 160`: the view
+centre is screen (120, 160). A negative coordinate wraps **once** (0x8228C, 0x82294);
+an out-of-range positive one does not wrap at all. The map is a cylinder only on the
+low side. `nPickX`/`nPickY` record the resolved coordinate.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `Smap_GetTileAtScreen` refuses an out-of-range read and returns 0 | the original indexes `pData[nStride*tileY + tileX]` with no check; past one wrap the coordinate is still negative |
+| 2 | `StrategItem_ctor` takes the seed as a parameter | the original reads the global dword at `0x18640C`, which has three xrefs (two in `StrategList_AddItem @ 0x826e8`, this ctor) and no writer, so it is always zero |
+| 3 | `Tilemap_GetAt` covers both globals | 0x82198 and 0x821BC are the same expression over `0x186B74` and `0x186C18` |
+
+`StrategItem_AllocAdd` keeps the original's unconditional `PtrArray_Add`: a failed
+allocation appends a null entry (0x415fc).
+
+Still open in this cluster: `Smap_ZoomOut @ 0x81c08` / `Smap_ZoomIn @ 0x81e44` (they
+rescale the scroll with double constants that need reading from the constant pool) and
+the thin button wrappers `Smap_OnZoomOut @ 0x84ab8`, `Smap_OnZoomIn @ 0x84ad8`,
+`Smap_BeginCraftSelectBtn @ 0x84634`.

@@ -17,6 +17,8 @@
 #include "pufo_common.h"
 #include "game/pufo_clock.h"   /* GameTime, for the pause byte */
 #include "game/pufo_ship.h"
+#include "render/pufo_render.h"   /* PadImage, for the tile grids */
+#include "util/pufo_ptrarray.h"   /* PtrArray, the strateg list itself */
 
 typedef struct StrategItem {
     u8   nType;          /* +0x00 0 base, 1 craft */
@@ -37,7 +39,8 @@ typedef struct StrategItem {
     u8   gap_29[3];
     i32  nTimer;         /* +0x2c proximity-detect accumulation */
     u8   bFlagA;         /* +0x30 */
-    u8   gap_31[7];
+    u8   gap_31[3];
+    i32  nSeed;          /* +0x34, seeded by StrategItem_ctor @ 0x82bd4 */
     u8   bVisible;       /* +0x38 */
     u8   nMissionSub;    /* +0x39 */
     u8   gap_3A[6];
@@ -127,5 +130,98 @@ bool Strateg_CalcDetect(StrategItem *pUfo, i32 nIndex, i32 nForcePct,
  * invisible (but not the ones still waiting for a display id). */
 void Ship_ClearExpiredIntercepts(GeoscapeWorld *pWorld, StrategList *pList,
                                  const StrategHooks *pHooks);
+
+/* ------------------------------------------------------------ the strateg list
+ *
+ * The original's list global `strategList` @ 0x186534 is a plain PtrArray; the two
+ * id counters sit beside it at 0x186544 / 0x186548. These two wrappers act on the
+ * PtrArray itself, which is what the original calls. */
+
+/* StrategList_ctor @ 0x83890: PtrArray_ctor over strategList. */
+void StrategList_ctor(PtrArray *pList);
+
+/* StrategList_Clear @ 0x838ac: PtrArray_DeleteAll, then PtrArray_Clear. The items
+ * are freed as well as the array. */
+void StrategList_Clear(PtrArray *pList);
+
+/* StrategItem_ctor @ 0x82bd4. It does one thing: writes the dword at +0x34 from the
+ * global dword at 0x18640C. That global has exactly three xrefs in the IDB -- two in
+ * StrategList_AddItem @ 0x826e8 and this one -- and no writer, so it is zero for the
+ * whole run. The port takes the value as a parameter instead of hiding a global that
+ * is never written. */
+StrategItem *StrategItem_ctor(StrategItem *pItem, i32 nSeed);
+
+/* StrategItem_AllocAdd @ 0x415cc: operator new(0x88), StrategItem_ctor, then
+ * PtrArray_Add. The add happens whether or not the allocation succeeded, so a failed
+ * allocation appends a null entry -- reproduced as written. */
+bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed);
+
+/* ------------------------------------------------------- the geoscape viewport
+ *
+ * One 36-byte block at 0x1863E8. IDA carries two names for it because different
+ * functions use it for different jobs: `SmapCamera` (36 bytes: nMode, nScrollX,
+ * nScrollY, nMapW, nMapH, nUnk14, nUnk18, nPickX, nPickY) for the zoom and pick
+ * state, and `SmapView` (28 bytes: nUnk0, nPosX, nPosY, nStride, nUnk16, nLastDx,
+ * nLastDy) for the drag. The two views agree offset by offset:
+ *
+ *     0x00 nMode   == nUnk0
+ *     0x04 nScrollX == nPosX
+ *     0x08 nScrollY == nPosY
+ *     0x0C nMapW   == nStride
+ *     0x10 nMapH   == nUnk16
+ *     0x14 nUnk14  == nLastDx
+ *     0x18 nUnk18  == nLastDy
+ *
+ * So the scroll position IS the view position, and the tile grid stride IS the map
+ * width: Smap_GetTileAtScreen @ 0x82244 wraps x with nMapW and then indexes the tile
+ * bytes with nStride, which is the same field. One struct, no aliasing. */
+typedef struct SmapView {
+    i32 nMode;    /* 0x00 zoom level: 0 widest, 1 middle, 2 closest */
+    i32 nScrollX; /* 0x04 */
+    i32 nScrollY; /* 0x08 */
+    i32 nMapW;    /* 0x0C also the stride of the tile byte grid */
+    i32 nMapH;    /* 0x10 */
+    i32 nLastDx;  /* 0x14 the previous drag delta */
+    i32 nLastDy;  /* 0x18 */
+    i32 nPickX;   /* 0x1C last tile Smap_GetTileAtScreen resolved to */
+    i32 nPickY;   /* 0x20 */
+} SmapView;
+
+_Static_assert(sizeof(SmapView) == 36, "the geoscape viewport is 36 bytes");
+
+/* Smap_ScrollBy @ 0x820d0. Drag the view by (nDx, nDy).
+ *
+ * The move is `pos = pos - delta + last_delta`, so the previous delta is added back:
+ * the view tracks absolute pointer positions, not per-event deltas.
+ *
+ * The vertical clamp only runs when nScreenMode (the dword at 0x186BC4, the screen id
+ * the geoscape pointer handlers switch on) is not 2. With halfH = nMapH/2 - 160:
+ *
+ *   - if nScrollY + halfH < 0  -> nScrollY = -halfH
+ *   - if nScrollY + halfH > nStripHeight + nMapH - 320 -> nScrollY =
+ *       nStripHeight - halfH + nMapH - 320
+ *
+ * nStripHeight is the uHeight of the PadImage-shaped object the original reads at
+ * 0x186BBC. The lower clamp updates the value the upper clamp then tests, so the two
+ * are not independent. The deltas are stored last, after any clamping. */
+void Smap_ScrollBy(SmapView *pView, i32 nDx, i32 nDy, i32 nScreenMode,
+                   i32 nStripHeight);
+
+/* Smap_GetTileAtScreen @ 0x82244. Screen pixel to tile coordinate, wrapping once.
+ *
+ *   tileX = nScrollX + nMapW/2 + x - 120, plus nMapW once if still negative
+ *   tileY = nScrollY + nMapH/2 + y - 160, plus nMapH once if still negative
+ *
+ * One wrap only: a value below -nMapW stays negative and the port reads out of the
+ * grid exactly as the original does, so the port checks the range and returns 0
+ * instead (deviation 1). The tile grid is nMapH rows of nMapW bytes. The resolved
+ * coordinates are written to nPickX/nPickY even when the lookup is refused. */
+u8 Smap_GetTileAtScreen(SmapView *pView, const u8 *pTiles, i32 nX, i32 nY);
+
+/* Tilemap_GetAt @ 0x8217c and Tilemap_GetAtAlt @ 0x821a0. Byte lookup in a
+ * PadImage-shaped tile grid: pData + uWidth * y + x. The two differ only in which
+ * global grid they use (0x186B74 and 0x186C18), so the port takes the grid and keeps
+ * one implementation. The original's first argument is unused. */
+u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY);
 
 #endif /* PUFO_STRATEG_H */

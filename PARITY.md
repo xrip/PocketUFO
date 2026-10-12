@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 478 / 1103 (43.3%) |
-| Bytes of original code cited | 225228 / 598792 (37.6%) |
+| Functions cited as evidence | 487 / 1103 (44.2%) |
+| Bytes of original code cited | 226692 / 598792 (37.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4387 |
+| Test checks run | 4414 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 31 | 205 | 34692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 40 | 205 | 36156 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 48 | 243 | 6260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (31 functions)
+### `strat` (40 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -515,6 +515,7 @@ is the module that answers to it.
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_input.h` |
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
+| `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_ship.h` |
@@ -529,7 +530,9 @@ is the module that answers to it.
 | `0x8128c` | `Ship_ClearExpiredIntercepts` | 236 | `src/pufo/game/pufo_ship.h`, `src/pufo/game/pufo_strateg.h` |
 | `0x81948` | `StrategList_UpdateDetect` | 224 | `src/pufo/game/pufo_strateg.h` |
 | `0x5a9b4` | `StrategList_FindByShipId` | 172 | `src/pufo/game/pufo_strateg.h` |
+| `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.h` |
+| `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_strateg.h` |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_geoscape.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.h` |
@@ -538,7 +541,13 @@ is the module that answers to it.
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/game/pufo_geoscape.h` |
 | `0x45f80` | `Ship_TickRangeRecover` | 72 | `src/pufo/game/pufo_ship.h` |
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
+| `0x415cc` | `StrategItem_AllocAdd` | 52 | `src/pufo/game/pufo_strateg.h` |
+| `0x8217c` | `Tilemap_GetAt` | 36 | `src/pufo/game/pufo_strateg.h` |
+| `0x821a0` | `Tilemap_GetAtAlt` | 36 | `src/pufo/game/pufo_strateg.h` |
+| `0x838ac` | `StrategList_Clear` | 36 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+4) |
+| `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
+| `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
 
 ### `strat-ui` (48 functions)
 
@@ -902,7 +911,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 174 functions, 127764 bytes remaining
+### `strat` — 165 functions, 126300 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -934,7 +943,6 @@ whose port work they belong to.
 | `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x629b0` | `Base_CanPlaceHangarAt` | 968 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x826e8` | `StrategList_AddItem` | 968 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b1fc` | `FundingScreen_Draw` | 868 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x854c4` | `Geoscape_OnRadarListClick` | 804 | not yet ported; scheduled with the `strat` subsystem work |
@@ -987,7 +995,6 @@ whose port work they belong to.
 | `0x7debc` | `Funding_AddRaceBonus` | 196 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a404` | `BaseFac_FormatCostLabel` | 184 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x655f8` | `Base_CalcOccupiedSpace` | 180 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x820d0` | `Smap_ScrollBy` | 172 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5ab34` | `Funding_DeltaToArrow` | 164 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a830` | `Ship_ClearWaypointIntercept` | 160 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5e768` | `RadarScreen_SetCursorNW` | 160 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1007,7 +1014,6 @@ whose port work they belong to.
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6641c` | `Base_CraftWeaponItemId` | 128 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x821c4` | `Smap_GetTileAtMode` | 128 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x82244` | `Smap_GetTileAtScreen` | 128 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65720` | `Base_CalcStoresCapacity` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6579c` | `Base_CalcLivingQuartersCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65818` | `Base_CalcLabCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1053,23 +1059,17 @@ whose port work they belong to.
 | `0x84648` | `Smap_ClearSelection` | 64 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b560` | `FundingScreen_Open` | 60 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x556e4` | `BaseRec_AddItemQty` | 56 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x415cc` | `StrategItem_AllocAdd` | 52 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6ac90` | `BaseGrid_SetByteAtFound` | 48 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6acc0` | `BaseGrid_GetByte0x654` | 44 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x8217c` | `Tilemap_GetAt` | 36 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x821a0` | `Tilemap_GetAtAlt` | 36 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x838ac` | `StrategList_Clear` | 36 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66198` | `Base_GetItemQtyA` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x661b8` | `Base_GetItemQtyB` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84ab8` | `Smap_OnZoomOut` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84ad8` | `Smap_OnZoomIn` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d6c0` | `GameTime_Unpause` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x82bd4` | `StrategItem_ctor` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x83890` | `StrategList_ctor` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5abd8` | `FundingScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5c078` | `FundingScreen_ExitThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x614a8` | `BaseGrid_Atexit_nullsub5` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1336,7 +1336,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_ship` | PASS | 31 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
-| `test_strateg` | PASS | 43 |
+| `test_strateg` | PASS | 70 |
 | `test_tactctl` | PASS | 139 |
 | `test_tacthud` | PASS | 103 |
 | `test_tactstate` | PASS | 152 |

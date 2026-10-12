@@ -1,8 +1,10 @@
 /* pufo_strateg.c - see pufo_strateg.h for the evidence map. */
 #include "game/pufo_strateg.h"
 #include "util/pufo_rand.h"
+#include "util/pufo_ptrarray.h"
 
 #include <math.h>
+#include <stdlib.h>
 
 static i32 Abs32(i32 n)
 {
@@ -217,4 +219,136 @@ void Ship_ClearExpiredIntercepts(GeoscapeWorld *pWorld, StrategList *pList,
             pWorld->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac, 0x81340 */
         }
     }
+}
+
+/* ------------------------------------------------------------ the strateg list */
+
+void StrategList_ctor(PtrArray *pList)
+{
+    if (pList == NULL) {
+        return;
+    }
+    PtrArray_ctor(pList); /* 0x83890 calls it on strategList @ 0x186534 */
+}
+
+void StrategList_Clear(PtrArray *pList)
+{
+    if (pList == NULL) {
+        return;
+    }
+    PtrArray_DeleteAll(pList); /* 0x838bc */
+    PtrArray_Clear(pList);     /* 0x838c8 */
+}
+
+StrategItem *StrategItem_ctor(StrategItem *pItem, i32 nSeed)
+{
+    if (pItem == NULL) {
+        return NULL;
+    }
+    /* 0x82bdc: the only write. The original reads the global dword at 0x18640C, which
+     * has no writer anywhere in the IDB. Nothing else in the record is initialised --
+     * operator new leaves the other 132 bytes as they were. */
+    pItem->nSeed = nSeed;
+    return pItem;
+}
+
+bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed)
+{
+    StrategItem *pItem;
+
+    if (pList == NULL) {
+        return false;
+    }
+    pItem = (StrategItem *)malloc(sizeof(StrategItem)); /* operator new(0x88), 0x415d8 */
+    if (pItem != NULL) {
+        StrategItem_ctor(pItem, nSeed);
+    }
+    /* 0x415fc: the add is unconditional, so a failed allocation appends a null entry.
+     * Reproduced rather than fixed, because PtrArray_Get callers then see the null the
+     * original would have stored. */
+    PtrArray_Add(pList, pItem);
+    return pItem != NULL;
+}
+
+/* ------------------------------------------------------- the geoscape viewport */
+
+void Smap_ScrollBy(SmapView *pView, i32 nDx, i32 nDy, i32 nScreenMode,
+                   i32 nStripHeight)
+{
+    i32 nHalfH;
+
+    if (pView == NULL) {
+        return;
+    }
+
+    nHalfH = pView->nMapH / 2 - 160; /* 0x820F0 */
+
+    /* 0x82104 / 0x82114: pos - delta + last_delta. The view tracks absolute positions,
+     * so the delta it applied last time is added back before the new one is taken off. */
+    pView->nScrollX = pView->nScrollX - nDx + pView->nLastDx;
+    pView->nScrollY = pView->nScrollY - nDy + pView->nLastDy;
+
+    if (nScreenMode != 2) {
+        i32 nY;
+
+        /* 0x82124: the lower clamp, and the value the upper clamp then tests. */
+        nY = pView->nScrollY;
+        if (nY + nHalfH < 0) {
+            nY = -nHalfH;
+            pView->nScrollY = nY;
+        }
+        /* 0x82154: the upper clamp. nStripHeight is the uHeight of the object the
+         * original reads through 0x186BBC. */
+        if (nY + nHalfH > nStripHeight + pView->nMapH - 320) {
+            pView->nScrollY = nStripHeight - nHalfH + pView->nMapH - 320;
+        }
+    }
+
+    /* 0x82164 / 0x82168: stored after any clamping. */
+    pView->nLastDx = nDx;
+    pView->nLastDy = nDy;
+}
+
+u8 Smap_GetTileAtScreen(SmapView *pView, const u8 *pTiles, i32 nX, i32 nY)
+{
+    i32 nTileX;
+    i32 nTileY;
+
+    if (pView == NULL) {
+        return 0;
+    }
+
+    /* 0x8227C / 0x82288: the view centre is screen (120, 160). */
+    nTileX = pView->nScrollX + pView->nMapW / 2 + nX - 120;
+    nTileY = pView->nScrollY + pView->nMapH / 2 + nY - 160;
+
+    /* 0x8228C / 0x82294: one wrap for a negative coordinate, no wrap for an
+     * out-of-range positive one. The map is a cylinder only on the low side. */
+    if (nTileX < 0) {
+        nTileX += pView->nMapW;
+    }
+    if (nTileY < 0) {
+        nTileY += pView->nMapH;
+    }
+
+    pView->nPickX = nTileX; /* 0x822B0 / 0x822B4 */
+    pView->nPickY = nTileY;
+
+    /* Deviation 1: the original indexes pData[nStride * tileY + tileX] with no range
+     * check at all. The port refuses the read and returns 0. */
+    if (pTiles == NULL || nTileX < 0 || nTileX >= pView->nMapW ||
+        nTileY < 0 || nTileY >= pView->nMapH) {
+        return 0;
+    }
+    return pTiles[pView->nMapW * nTileY + nTileX];
+}
+
+u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY)
+{
+    if (pMap == NULL || pMap->pData == NULL) {
+        return 0;
+    }
+    /* 0x82198 and 0x821BC are the same expression over two different globals
+     * (0x186B74 and 0x186C18), so one implementation covers both. */
+    return pMap->pData[(i32)pMap->uWidth * nY + nX];
 }

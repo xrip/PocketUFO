@@ -325,12 +325,111 @@ static void TestUpdateDetectAndIntercepts(void)
     CheckEqI32(g_aShips[0].bIntercepting, 1, "visible target keeps the intercept");
 }
 
+static void TestSmapView(void)
+{
+    SmapView view;
+    u8 aTiles[8 * 4];
+    PadImage grid;
+    u8 aGrid[6];
+
+    printf("SmapView @ 0x1863E8\n");
+
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 8;
+    view.nMapH = 4;
+
+    /* Screen mode 2 skips the clamp, so this shows the drag arithmetic alone. */
+    Smap_ScrollBy(&view, 10, 20, 2, 0);
+    CheckEqI32(view.nScrollX, -10, "first drag moves the view by minus the delta");
+    CheckEqI32(view.nLastDx, 10, "the delta is stored for the next drag");
+    Smap_ScrollBy(&view, 4, 6, 2, 0);
+    CheckEqI32(view.nScrollX, -4, "the previous delta is added back first");
+    CheckEqI32(view.nScrollY, -6, "Y follows the same rule");
+
+    /* nMapH 400 gives halfH = 40, so the clamps are reachable. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 8;
+    view.nMapH = 400;
+    view.nScrollY = -100;
+    Smap_ScrollBy(&view, 0, 0, 0, 0);
+    CheckEqI32(view.nScrollY, -40, "the lower clamp is -(nMapH/2 - 160)");
+
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 8;
+    view.nMapH = 400;
+    view.nScrollY = 300;
+    Smap_ScrollBy(&view, 0, 0, 0, 0);
+    CheckEqI32(view.nScrollY, 40, "the upper clamp uses the strip height");
+
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 8;
+    view.nMapH = 400;
+    view.nScrollY = 300;
+    Smap_ScrollBy(&view, 0, 0, 2, 0);
+    CheckEqI32(view.nScrollY, 300, "screen mode 2 skips both clamps");
+
+    /* Screen (120, 160) is the view centre. With scroll 0 and nMapW/2 = 4 the tile
+     * under screen (116, 158) is (0, 0). */
+    for (i32 i = 0; i < 32; ++i) {
+        aTiles[i] = (u8)i;
+    }
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 8;
+    view.nMapH = 4;
+    CheckEqI32(Smap_GetTileAtScreen(&view, aTiles, 116, 158), 0, "centre maps to tile 0");
+    CheckEqI32(view.nPickX, 0, "the pick x is written");
+    CheckEqI32(view.nPickY, 0, "the pick y is written");
+    CheckEqI32(Smap_GetTileAtScreen(&view, aTiles, 119, 159), 11, "one row down is stride 8");
+    CheckEqI32(view.nPickX, 3, "tile x from the stride");
+    CheckEqI32(view.nPickY, 1, "tile y from the stride");
+
+    /* A negative coordinate wraps once. */
+    CheckEqI32(Smap_GetTileAtScreen(&view, aTiles, 111, 158), 3, "a negative x wraps by nMapW");
+    CheckEqI32(view.nPickX, 3, "the wrapped coordinate is the one stored");
+
+    /* Past one wrap the original would read out of the grid; the port refuses. */
+    CheckEqI32(Smap_GetTileAtScreen(&view, aTiles, 107, 158), 0, "a second wrap is refused");
+    CheckEqI32(view.nPickX, -1, "the pick still records where it tried to read");
+    CheckEqI32(Smap_GetTileAtScreen(&view, aTiles, 116 + 8, 158), 0, "an oversized x is refused");
+
+    /* Tilemap_GetAt and Tilemap_GetAtAlt are the same expression over two globals. */
+    for (i32 i = 0; i < 6; ++i) {
+        aGrid[i] = (u8)(i + 1);
+    }
+    memset(&grid, 0, sizeof(grid));
+    grid.uWidth = 3;
+    grid.pData = aGrid;
+    CheckEqI32(Tilemap_GetAt(&grid, 2, 1), 6, "tile grid lookup is pData + uWidth*y + x");
+    CheckEqI32(Tilemap_GetAt(&grid, 1, 0), 2, "first row");
+}
+
+static void TestStrategListAlloc(void)
+{
+    PtrArray list;
+
+    printf("StrategItem_AllocAdd\n");
+
+    StrategList_ctor(&list);
+    CheckEqI32(list.nCount, 0, "StrategList_ctor leaves an empty list");
+
+    Check(StrategItem_AllocAdd(&list, 7), "the first item allocates");
+    Check(StrategItem_AllocAdd(&list, 9), "the second item allocates");
+    CheckEqI32(list.nCount, 2, "each item is appended");
+    CheckEqI32(((StrategItem *)list.apItems[0])->nSeed, 7, "the ctor seeds +0x34");
+    CheckEqI32(((StrategItem *)list.apItems[1])->nSeed, 9, "the seed is per item");
+
+    StrategList_Clear(&list);
+    CheckEqI32(list.nCount, 0, "StrategList_Clear empties the list");
+}
+
 int main(void)
 {
     TestCountAndFind();
     TestUpdateMotion();
     TestCalcDetect();
     TestUpdateDetectAndIntercepts();
+    TestSmapView();
+    TestStrategListAlloc();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
