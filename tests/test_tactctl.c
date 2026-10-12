@@ -5,6 +5,8 @@
  * onto named Map fields. The test asserts the resolved behaviour, not the alias.
  */
 #include "game/pufo_tactctl.h"
+#include "game/pufo_tactui.h"
+#include "game/pufo_unit.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -536,6 +538,131 @@ static void TestCameraBounds(void)
     CheckEqI32(nY1, 40, "  unknown type Y1 unchanged");
 }
 
+/* --- the deploy confirm dialog ------------------------------------------- */
+
+static MapCell  g_aDepCell[8];
+static Soldier  g_aDepUnit[8];
+static Soldier *g_apDepUnit[8];
+static Soldier *g_apDepCiv[2];
+static i32      g_nDepSample;
+static i32      g_nDepModalX, g_nDepModalY, g_nDepModalN;
+static char     g_szMsg1[128], g_szMsg2[128];
+
+static void Dep_Play(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    g_nDepSample = nSample;
+}
+
+static void Dep_Modal(i32 nX, i32 nY, i32 nCount, const char *szYes, const char *szNo,
+                      void *pUser)
+{
+    (void)szYes; (void)szNo; (void)pUser;
+    g_nDepModalX = nX;
+    g_nDepModalY = nY;
+    g_nDepModalN = nCount;
+}
+
+static const char *Dep_Text(i32 nRecord, void *pUser)
+{
+    (void)pUser;
+    if (nRecord == PUFO_TXTREC_DEPLOY_IN)   { return " in"; }
+    if (nRecord == PUFO_TXTREC_DEPLOY_JOIN) { return " out"; }
+    return "";
+}
+
+static const DeployConfirmHooks g_DepHooks = {Dep_Play, Dep_Modal, Dep_Text, NULL};
+
+static void TestDeployUnits(void)
+{
+    DeployCountCtx c;
+    DeployCounts r;
+    TactUiState ui;
+
+    printf("Map_BuildDeployConfirmYesNo -- the deploy buckets\n");
+
+    /* A 10x10-tile map, craft tile (2,2), so the craft rect starts at x 20, y 20 and
+     * craft type 1 widens it to x 40, y 30. */
+    memset(&c, 0, sizeof(c));
+    c.Bounds.bUseCraft = true;
+    c.Bounds.nMissionType = 0;
+    c.Bounds.nMapDimX = 10;
+    c.Bounds.nMapDimY = 10;
+    c.Bounds.nCraftMapX = 2;
+    c.Bounds.nCraftMapY = 2;
+    c.Bounds.bCraftType = 1;
+    for (i32 i = 0; i < 8; ++i) {
+        g_aDepCell[i].nX = 0;
+        g_aDepCell[i].nY = 0;
+        g_aDepUnit[i].pCell = &g_aDepCell[i];
+        g_aDepUnit[i].uHp = 1;
+    }
+    /* 0: inside, small. 1: outside, small. 2: inside, big (type 5). 3: outside, big.
+     * 4: type 9, never counted. 5: on the far edge, inside. */
+    g_aDepCell[0].nX = 25; g_aDepCell[0].nY = 25; g_aDepUnit[0].nUnitType = 1;
+    g_aDepCell[1].nX = 51; g_aDepCell[1].nY = 25; g_aDepUnit[1].nUnitType = 2;
+    g_aDepCell[2].nX = 30; g_aDepCell[2].nY = 30; g_aDepUnit[2].nUnitType = 5;
+    g_aDepCell[3].nX = 19; g_aDepCell[3].nY = 20; g_aDepUnit[3].nUnitType = 8;
+    g_aDepCell[4].nX = 25; g_aDepCell[4].nY = 25; g_aDepUnit[4].nUnitType = 9;
+    g_aDepCell[5].nX = 40; g_aDepCell[5].nY = 30; g_aDepUnit[5].nUnitType = 3;
+    c.apXcom = g_apDepUnit;
+    c.nXcomCount = 6;
+    c.apCiv = g_apDepCiv;
+    c.nCivCount = 2;
+    for (i32 i = 0; i < 6; ++i) {
+        g_apDepUnit[i] = &g_aDepUnit[i];
+    }
+    g_apDepCiv[0] = &g_aDepUnit[6];
+    g_apDepCiv[1] = &g_aDepUnit[7];
+    g_aDepCell[6].nX = 25; g_aDepCell[6].nY = 25; g_aDepUnit[6].nUnitType = 2;
+    g_aDepCell[7].nX = 25; g_aDepCell[7].nY = 25; g_aDepUnit[7].nUnitType = 2;
+    g_aDepUnit[7].uHp = 0;   /* 0x18C24: no hit points, not counted */
+
+    Tact_CountDeployUnits(&c, &r);
+    CheckEqI32(r.nSmallIn, 3, "  three small units inside (inclusive edges)");
+    CheckEqI32(r.nSmallOut, 1, "  one small unit outside");
+    CheckEqI32(r.nBigIn, 1, "  one 4..8 unit inside");
+    CheckEqI32(r.nBigOut, 1, "  one 4..8 unit outside");
+
+    /* The alien-base mission type replaces the craft rect with the bottom
+     * three-tile strip: x 70..100, y 90..100. */
+    c.Bounds.nMissionType = PUFO_MISSION_TYPE_ALIEN_BASE;
+    g_aDepCell[0].nX = 75; g_aDepCell[0].nY = 95;
+    Tact_CountDeployUnits(&c, &r);
+    CheckEqI32(r.nSmallIn, 1, "  only unit 0 is in the alien-base strip");
+    CheckEqI32(r.nSmallOut, 3, "  the other small units and the civilian are outside");
+    CheckEqI32(r.nBigIn, 0, "  the type-5 unit at 30,30 is now outside");
+    CheckEqI32(r.nBigOut, 2, "  both 4..8 units are outside");
+
+    /* The dialog half. */
+    c.Bounds.nMissionType = 0;
+    g_aDepCell[0].nX = 25; g_aDepCell[0].nY = 25;
+    memset(&ui, 0, sizeof(ui));
+    ui.nUiScreen = 0;
+    g_nDepSample = 0;
+    g_nDepModalN = 0;
+    g_szMsg1[0] = 0;
+    g_szMsg2[0] = 0;
+    {
+        DeployConfirmCtx dc;
+        memset(&dc, 0, sizeof(dc));
+        dc.Count = c;
+        dc.pUi = &ui;
+        dc.aszMsg1 = g_szMsg1;
+        dc.aszMsg2 = g_szMsg2;
+        dc.nMsgCap = 128;
+        dc.pHooks = &g_DepHooks;
+        CheckEqI32(Map_BuildDeployConfirmYesNo(&dc), 9, "  the handler returns 9");
+    }
+    CheckEqI32(g_nDepSample, 16, "  sample 16 plays before the modal");
+    CheckEqI32(g_nDepModalX, 170, "  the modal is at 170,1069");
+    CheckEqI32(g_nDepModalY, 1069, "  with y 1069");
+    CheckEqI32(g_nDepModalN, 5, "  and five buttons");
+    CheckEqI32((i32)ui.nUiScreen, 9, "  nUiScreen becomes 9");
+    Check(strcmp(g_szMsg1, "3 in1 out") == 0, "  message 1 is in-count, text 28, big-in, text 29");
+    Check(strcmp(g_szMsg2, "1 in1 out") == 0, "  message 2 uses the outside counts");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -550,6 +677,7 @@ int main(void)
     TestEnterLookMode();
     TestFocusOnCell();
     TestCameraBounds();
+    TestDeployUnits();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

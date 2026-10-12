@@ -4503,3 +4503,75 @@ in `pufo_tactstate.c`, next to the enqueue it performs.
 | 2 | A `NULL` cursor cell (layer 0 has no layer below) skips the face-and-kick tail | the original indexes `apCells[-1]` and reads whatever is there; the injected lookup returns NULL and the port stops instead of following garbage |
 | 3 | `Input_OnConfirm` is called without the original's three arguments | they are unused by `Input_OnConfirm` except as the `Inv_CloseAndCommit` argument, which the port passes through its hook |
 
+
+## The deploy confirm dialog: `Map_BuildDeployConfirmYesNo @ 0x18a68`
+
+Ported as `Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *)` with the counting
+half split out as `Tact_CountDeployUnits`, both in `pufo_tactctl.c`. `test_tactctl`
+grew a `TestDeployUnits` block covering the buckets, the alien-base strip, the modal
+arguments and both messages.
+
+### The rectangle is not new geometry
+
+ARM `0x18A7C..0x18AC8` builds the rectangle from `Map_nCraftMapX @ 0x15139` and
+`Map_nCraftMapY @ 0x1513A` (both renamed this pass), `Map_nMissionType @ 0x1511A`, and
+`apCraft[Map_nCraftIndex @ 0x15113]->bCraftType @ +0x02`, where `apCraft` is
+`Map + 0x10AC` with a 4-byte pointer stride:
+
+```
+MOV R0, #0x10AC
+ADD R3, R8, R3, LSL#2        ; R8 = Map
+LDR R3, [R3, R0]             ; apCraft[nCraftIndex]
+LDRB R3, [R3, #2]            ; bCraftType
+```
+
+That is the same rule `Tact_GetCameraBounds @ 0x3331c` already implements, and that
+function is already ported with a `CameraBoundsCtx`. The only difference is that the
+dialog has no whole-map branch, so the port forces `bUseCraft = true` before calling
+it. No second rectangle implementation was written.
+
+### The buckets and the hole
+
+`0x18B5C..0x18CA0` runs the same test over the XCom list and then the civilian list.
+The rect test is inclusive on all four edges. Classification:
+
+| `nUnitType` | inside | outside |
+|---|---|---|
+| `< 4` | `nSmallIn` | `nSmallOut` |
+| `4 .. 8` | `nBigIn` | `nBigOut` |
+| `> 8` | **not counted at all** | **not counted at all** |
+
+The `> 8` hole is real: a type-9 unit is neither inside nor outside as far as this
+dialog is concerned, and the test pins it.
+
+Civilians are skipped when `Soldier.uHp @ 0x00A` is zero (`0x18C24`). Their position
+comes from `MapCell.nX/nY @ 0x1A/0x1B` and their type from `Soldier.nUnitType @ 0x0A0`,
+identical to the XCom pass.
+
+### The messages
+
+`0x18CB8..0x18D6C` builds two strings with `itoa` and `strcat` into the scratch
+buffers `unk_E90D9` and `unk_E9273`:
+
+```
+message 1 = itoa(nSmallIn) + text 28 + itoa(nBigIn)   + text 29 + [text 30]
+message 2 = itoa(nSmallOut) + text 28 + itoa(nBigOut) + text 29 + [unk_E900C]
+```
+
+The fragments `unk_B4F3C`, `unk_B5009` and `unk_B50D6` are `aTextRecs @ 0xB38D0` plus
+`205 * 28`, `205 * 29` and `205 * 30` -- runtime-loaded text records, not static
+strings, so the port reaches them through `pfnTextRecord`.
+
+The tail of message 2 copies `unk_E900C`. `xrefs_to 0xE900C` returns exactly two data
+references, both inside this function, and the address lies past the file-backed
+`.data` end at `0xAC800`. Nothing ever writes it, so its first byte is zero and the
+copy loop moves only the terminator: message 2 has an empty tail. The port models that
+by simply not appending anything, rather than inventing text.
+
+### Deviations
+
+| # | Deviation | Reason |
+|---|---|---|
+| 1 | `snprintf` replaces the `itoa` + `strcat` chain | same result, no unbounded `strcat` into a fixed scratch buffer; the port takes an explicit `nMsgCap` |
+| 2 | `Sound_Play`, the modal and the text records are hooks | the dialog is the only caller that reaches them without a `Map` context; hooks keep the counting half testable without the UI |
+| 3 | NULL `pCell` skips a unit | the original reads `pUnit->pCell->nX` unconditionally |

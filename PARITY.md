@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 466 / 1103 (42.2%) |
-| Bytes of original code cited | 217308 / 598792 (36.3%) |
+| Functions cited as evidence | 468 / 1103 (42.4%) |
+| Bytes of original code cited | 218248 / 598792 (36.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4136 |
+| Test checks run | 4152 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -38,9 +38,9 @@ the per-subsystem notes and the tests listed at the end.
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 17 | 21 | 1024 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 4 | 132 | 24 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
+| `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
-| `tact` | 175 | 214 | 109948 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 33 | 52 | 25788 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 61 | 85 | 10284 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 30 | 205 | 32880 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -129,7 +129,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+1) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+2) |
 
 ### `util` (17 functions)
 
@@ -180,10 +180,11 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.h` |
 
-### `platform` (4 functions)
+### `platform` (5 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | `src/pufo/game/pufo_tactctl.h` |
 | `0xa115c` | `??3@YAXPAX@Z` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x22b50` | `nullsub_3` | 4 | `src/pufo/game/pufo_input.h` |
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
@@ -210,7 +211,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (175 functions)
+### `tact` (176 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -246,6 +247,7 @@ is the module that answers to it.
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x49ef0` | `Unit_RecalcInventoryStat` | 940 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tacthud.h` (+2) |
 | `0x4d950` | `Tact_ProcessActionPhase` | 932 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
+| `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x478e4` | `Unit_SelectBestFireMode` | 852 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` |
 | `0x2c7f4` | `Map_RefreshCellMeta` | 800 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
@@ -383,7 +385,7 @@ is the module that answers to it.
 | `0x26ffc` | `Map_CenterOffsetY` | 24 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_tactctl.h` |
 | `0x3e718` | `TactItem_ctor` | 24 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapcell.c` (+1) |
 | `0x548a0` | `MapCell_SetBFlags57_3` | 24 | `src/pufo/game/pufo_mapcell.h` |
-| `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactui.h` |
+| `0x18a54` | `Map_ClearUiScreen` | 20 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactui.h` |
 | `0x49eb8` | `Unit_bIsOperative` | 20 | `src/pufo/game/pufo_unit.h` |
 | `0x26f78` | `MapCursor_SetFlags` | 16 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` (+1) |
 | `0x548c0` | `MapCell_SetBFlags29_4` | 16 | `src/pufo/game/pufo_mapcell.h` |
@@ -458,7 +460,7 @@ is the module that answers to it.
 | `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
-| `0x26430` | `UiModal_Begin` | 92 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/ui/pufo_modal.h` |
+| `0x26430` | `UiModal_Begin` | 92 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tactctl.h` (+1) |
 | `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_panel.h` |
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -646,7 +648,7 @@ whose port work they belong to.
 | `0x9ecb8` | `App_ResizeMainWindow` | 84 | not yet ported; scheduled with the `app-shell` subsystem work |
 | `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `platform` — 128 functions, 1884 bytes remaining
+### `platform` — 127 functions, 1868 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -657,7 +659,6 @@ whose port work they belong to.
 | `0xa1658` | `Crt_CallFnTable` | 48 | not yet ported; scheduled with the `platform` subsystem work |
 | `0xa1610` | `atexit` | 24 | not yet ported; scheduled with the `platform` subsystem work |
 | `0x11148` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x22604` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x3f0b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -803,7 +804,7 @@ whose port work they belong to.
 | `0x431ac` | `Save_AllocFlobjs` | 172 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f4f4` | `Save_WriteProduct` | 100 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 39 functions, 68396 bytes remaining
+### `tact` — 38 functions, 67472 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -828,7 +829,6 @@ whose port work they belong to.
 | `0x2c2a8` | `Unit_PathToCell` | 1052 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x36830` | `Ship_RemoveWithCargo` | 860 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3348c` | `Tact_TallyBattleStats` | 756 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x2cb14` | `Ship_SpawnAtSlot` | 664 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1337,7 +1337,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 43 |
-| `test_tactctl` | PASS | 123 |
+| `test_tactctl` | PASS | 139 |
 | `test_tacthud` | PASS | 88 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 423 |
@@ -1368,7 +1368,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 157 citations.
+parity report. Total: 160 citations.
 
 ### Offsets below the image base (37)
 
@@ -1377,7 +1377,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (120)
+### At or above the image base (123)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1432,6 +1432,7 @@ against the IDB when the final report is assembled.
 - `0x1511b`
 - `0x1511c`
 - `0x1511f`
+- `0x15120`
 - `0x15124`
 - `0x15128`
 - `0x15138`
@@ -1489,6 +1490,8 @@ against the IDB when the final report is assembled.
 - `0xa62a4`
 - `0xa62a8`
 - `0xa62d8`
+- `0xa62e8`
+- `0xa62ec`
 - `0xa7ae0`
 - `0xa7b80`
 - `0xa8138`

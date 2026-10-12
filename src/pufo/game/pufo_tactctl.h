@@ -22,6 +22,8 @@
 #include "game/pufo_mapcell.h"
 #include "pufo_common.h"
 
+typedef struct TactUiState TactUiState;
+
 /* The cursor-overlay byte MapCursor_SetFlags writes (nLayerScratch @ 0x15138). */
 typedef struct TactCursor {
     i32 nX;            /* nCursorX   @ 0x15128 */
@@ -248,6 +250,76 @@ bool Tact_ScanVictoryTiles(bool bCraftTileA0NonZero, u8 nMissionType, i32 nCraft
 
 /* The mission type the victory scan applies to. */
 #define PUFO_MISSION_TYPE_ALIEN_BASE 4u
+
+/* ------------------------------------------------- the deploy confirm dialog */
+
+/* Map_BuildDeployConfirmYesNo @ 0x18a68, the widget-56 handler of the deploy panel.
+ *
+ * It counts units inside and outside the craft rectangle -- the SAME rectangle
+ * Tact_GetCameraBounds computes, reached here with bUseCraft always true (the
+ * original has no whole-map branch) -- and asks YES/NO.
+ *
+ * The classification has four buckets and a hole:
+ *
+ *     nUnitType < 4    inside -> nSmallIn   outside -> nSmallOut
+ *     4 <= nUnitType <= 8  inside -> nBigIn  outside -> nBigOut
+ *     nUnitType > 8    NOT COUNTED AT ALL
+ *
+ * The rect test is inclusive on all four edges. Civilians are skipped entirely when
+ * `uHp @ 0x00A` is zero; their position comes from MapCell.nX/nY @ 0x1A/0x1B and
+ * their type from Soldier.nUnitType @ 0x0A0, exactly like the XCom pass.
+ *
+ * The two messages are the original's scratch buffers unk_E90D9 and unk_E9273, built
+ * as `itoa(count) + text 28 + itoa(count) + text 29` and then a copy of text record
+ * 30 for the first one. The second copies unk_E900C instead, which has no writer
+ * anywhere in the executable (xrefs_to 0xE900C returns only the two uses inside this
+ * function) and lies past the file-backed .data end, so its tail is empty. */
+#define PUFO_TXTREC_DEPLOY_IN   28
+#define PUFO_TXTREC_DEPLOY_JOIN 29
+#define PUFO_TXTREC_DEPLOY_TAIL 30
+
+typedef struct DeployCounts {
+    i32 nSmallIn;
+    i32 nSmallOut;
+    i32 nBigIn;
+    i32 nBigOut;
+} DeployCounts;
+
+typedef struct DeployCountCtx {
+    CameraBoundsCtx Bounds;   /* bUseCraft is ignored: the rect is always the craft one */
+    Soldier *const *apXcom;   /* Map.apXcomUnits @ 0x15154 */
+    i32 nXcomCount;           /* Map.nXcomUnitCount @ 0x1511F */
+    Soldier *const *apCiv;    /* Map.apCivilians @ 0x15244 */
+    i32 nCivCount;            /* Map.nCivilianUnitCount @ 0x15120 */
+} DeployCountCtx;
+
+/* The counting half on its own, so the buckets can be tested without the UI. */
+void Tact_CountDeployUnits(const DeployCountCtx *pCtx, DeployCounts *pOut);
+
+typedef struct DeployConfirmHooks {
+    /* Sound_Play @ 0x9e0c0, sample 16 before the modal. */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    /* UiModal_Begin @ 0x26430 at 170,1069 with five buttons. The original passes
+     * "YES" @ 0xA62E8 with j_Tact_CheckBattleEnd @ 0x18a44 and "NO" @ 0xA62EC with
+     * Map_ClearUiScreen @ 0x18a54, ported as Ui_ClearScreen. */
+    void (*pfnModal)(i32 nX, i32 nY, i32 nCount, const char *szYes, const char *szNo,
+                     void *pUser);
+    /* aTextRecs @ 0xB38D0, 205-byte records. NULL is read as an empty fragment. */
+    const char *(*pfnTextRecord)(i32 nRecord, void *pUser);
+    void *pUser;
+} DeployConfirmHooks;
+
+typedef struct DeployConfirmCtx {
+    DeployCountCtx     Count;
+    TactUiState       *pUi;      /* nUiScreen @ 0x3A is set to 9 */
+    char              *aszMsg1;  /* unk_E90D9 */
+    char              *aszMsg2;  /* unk_E9273 */
+    i32                nMsgCap;
+    const DeployConfirmHooks *pHooks;
+} DeployConfirmCtx;
+
+/* Returns 9, the screen id the original returns and stores in nUiScreen. */
+i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx);
 #define PUFO_MISSION_TYPE_FOREST 2u   /* MissionType_Forest */
 #define PUFO_MISSION_TYPE_DESERT   6u   /* MissionType_Desert */
 

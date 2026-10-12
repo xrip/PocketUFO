@@ -507,11 +507,16 @@ preparing this document.
    costs are 4/4, 5/5, 6, 7, 8, 5 and 6 with a latch and same-region exemption, the
    clip load deletes the dragged item and closes the pool hole with `pool[count-1]`
    (ARM `0x12DB4` builds it as `Map + 4*count + 0x23434`), and a failed drop restores
-   the item to the region the hit test recorded (`test_invdrag` 281 checks). What is
+   the item to the region the hit test recorded (`test_invdrag` 281 checks). The last
+   pBank widget handler is ported too: `Map_BuildDeployConfirmYesNo @ 0x18a68` reuses
+   the already-ported `Tact_GetCameraBounds` for its rectangle and adds the four
+   counting buckets, where `nUnitType > 8` is not counted at all and a civilian with
+   `uHp == 0` is skipped (`test_tactctl`). What is
    left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
-   `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
-   `Map_BuildDeployConfirmYesNo`, and the geoscape screens. See
-   `docs/parity/ui-core.md`, "The inventory hit test" and "Dropping the item". The `UiPanel` type
+   `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`)
+   and the geoscape screens. See
+   `docs/parity/ui-core.md`, "The inventory hit test" and "Dropping the item", and
+   `docs/parity/game-core.md`, "The deploy confirm dialog". The `UiPanel` type
    conflict is already resolved — the
    7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
    `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start

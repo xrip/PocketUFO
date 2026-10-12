@@ -4,8 +4,11 @@
  *           GameSpeed_Set @ 0x260c0, GameTime_Pause @ 0x5d6ac.
  */
 #include "game/pufo_tactctl.h"
+#include "game/pufo_tactui.h"
+#include "game/pufo_unit.h"
 
 #include <string.h>
+#include <stdio.h>
 
 /* The original's timer backend, injected so the speed logic is testable without
  * a window. Defaults to no-ops: KillTimers_BySpeed @ 0x9e8b4 and
@@ -323,4 +326,120 @@ void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
         *pnX1 += 10;
         *pnY1 += 20;
     }
+}
+
+/* --------------------------------------------------------------------------
+ * Map_BuildDeployConfirmYesNo @ 0x18a68 - the deploy confirm dialog.
+ * -------------------------------------------------------------------------- */
+
+/* 0x18B5C..0x18CA0: the two passes share the bucket rule. The rect test is
+ * inclusive on all four edges, and a type above 8 falls out of every bucket. */
+static void Deploy_Bucket(const Soldier *pUnit, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
+                          DeployCounts *pOut)
+{
+    const MapCell *pCell = pUnit->pCell;
+    bool bInside;
+    u8 nType;
+
+    if (pCell == NULL) {
+        return;
+    }
+    bInside = (i32)pCell->nX >= nX0 && (i32)pCell->nX <= nX1 &&
+              (i32)pCell->nY >= nY0 && (i32)pCell->nY <= nY1;
+    nType = pUnit->nUnitType;
+    if (nType < 4u) {
+        if (bInside) {
+            pOut->nSmallIn += 1;
+        } else {
+            pOut->nSmallOut += 1;
+        }
+    } else if (nType <= 8u) {
+        if (bInside) {
+            pOut->nBigIn += 1;
+        } else {
+            pOut->nBigOut += 1;
+        }
+    }
+}
+
+void Tact_CountDeployUnits(const DeployCountCtx *pCtx, DeployCounts *pOut)
+{
+    i32 nX0, nY0, nX1, nY1;
+    CameraBoundsCtx Bounds;
+
+    if (pCtx == NULL || pOut == NULL) {
+        return;
+    }
+    pOut->nSmallIn = 0;
+    pOut->nSmallOut = 0;
+    pOut->nBigIn = 0;
+    pOut->nBigOut = 0;
+
+    /* The dialog always uses the craft rectangle: the original has no whole-map
+     * branch, so bUseCraft is forced on. */
+    Bounds = pCtx->Bounds;
+    Bounds.bUseCraft = true;
+    Tact_GetCameraBounds(&Bounds, &nX0, &nY0, &nX1, &nY1);
+
+    if (pCtx->apXcom != NULL) {
+        for (i32 i = 0; i < pCtx->nXcomCount; ++i) {
+            if (pCtx->apXcom[i] != NULL) {
+                Deploy_Bucket(pCtx->apXcom[i], nX0, nY0, nX1, nY1, pOut);
+            }
+        }
+    }
+    if (pCtx->apCiv != NULL) {
+        for (i32 i = 0; i < pCtx->nCivCount; ++i) {
+            const Soldier *pCiv = pCtx->apCiv[i];
+            /* 0x18C24: a civilian with no hit points is not counted at all. */
+            if (pCiv != NULL && pCiv->uHp != 0) {
+                Deploy_Bucket(pCiv, nX0, nY0, nX1, nY1, pOut);
+            }
+        }
+    }
+}
+
+static const char *Deploy_Text(const DeployConfirmHooks *pHooks, i32 nRecord)
+{
+    const char *sz = (pHooks->pfnTextRecord != NULL)
+        ? pHooks->pfnTextRecord(nRecord, pHooks->pUser) : NULL;
+
+    return (sz != NULL) ? sz : "";
+}
+
+i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
+{
+    DeployCounts Counts;
+
+    if (pCtx == NULL || pCtx->pHooks == NULL) {
+        return 9;
+    }
+    Tact_CountDeployUnits(&pCtx->Count, &Counts);
+
+    /* 0x18CB8..0x18D6C: itoa + text 28 + itoa + text 29, then the tail copy. The
+     * first message appends text record 30; the second appends unk_E900C, which
+     * nothing ever writes, so it contributes nothing. */
+    if (pCtx->aszMsg1 != NULL && pCtx->nMsgCap > 0) {
+        snprintf(pCtx->aszMsg1, (size_t)pCtx->nMsgCap, "%d%s%d%s%s",
+                 (int)Counts.nSmallIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
+                 (int)Counts.nBigIn, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN),
+                 Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_TAIL));
+    }
+    if (pCtx->aszMsg2 != NULL && pCtx->nMsgCap > 0) {
+        snprintf(pCtx->aszMsg2, (size_t)pCtx->nMsgCap, "%d%s%d%s",
+                 (int)Counts.nSmallOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_IN),
+                 (int)Counts.nBigOut, Deploy_Text(pCtx->pHooks, PUFO_TXTREC_DEPLOY_JOIN));
+    }
+
+    if (pCtx->pHooks->pfnPlaySample != NULL) {
+        pCtx->pHooks->pfnPlaySample(16, pCtx->pHooks->pUser);
+    }
+    if (pCtx->pHooks->pfnModal != NULL) {
+        pCtx->pHooks->pfnModal(170, 1069, 5, "YES", "NO", pCtx->pHooks->pUser);
+    }
+    /* 0x18DE0. */
+    if (pCtx->pUi != NULL) {
+        pCtx->pUi->nUiScreen = 9;
+    }
+    return 9;
 }
