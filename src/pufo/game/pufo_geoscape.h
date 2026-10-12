@@ -130,6 +130,33 @@ i32 BaseGrid_GetTypeByte(BaseRec *const *apBases, i32 nBaseCount, const u8 *abGr
 i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
                          u8 nType, i8 bValue);
 
+/* ------------------------------------------------- the facility layout classifier
+ *
+ * Evidence: Base_ClearFacilityGridRow @ 0x6a0e0.
+ *
+ * THE NAME IS WRONG. It clears nothing. It reads one base's facility layout and
+ * stores a state byte into the per-base site-state array at 0x161F38, which is the
+ * same array the port carries as GeoscapeWorld.apSiteState, indexed by the very
+ * argument the original calls a2. That also settles what a2 is: a base index.
+ *
+ * The two grids are the same pair Base_CountEmptyFacilityCells (0x6aee0) walks --
+ * occupancy at grid + 36*nBaseIndex, cell type at grid + 480 + 144*nBaseIndex, both
+ * 6 wide, indexed 6*column + row.
+ *
+ * Three passes, and the value they write is a small classification:
+ *
+ *   1. any cell of type 4 with its occupancy byte 0  -> state = 1
+ *   2. any cell of type 5 with its occupancy byte 0  -> state = 2, overwriting the 1
+ *   3. any cell of type 9 with its occupancy byte 0  -> state += 10, then stop
+ *
+ * Passes 1 and 2 assign rather than add, so 2 wins over 1 and the two are never
+ * both present. Pass 3 exits on the FIRST free type-9 cell, so the 10 is added at
+ * most once. A base with a free type-9 slot therefore ends up as 11 or 12.
+ *
+ * Note the order matters: pass 3 runs last and can add to whatever 1 or 2 was
+ * chosen, but a base with no free 4 or 5 slot and a free 9 slot ends up as 10. */
+i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteState);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;

@@ -442,6 +442,70 @@ static void TestBaseGridLookup(void)
     CheckEqI32(aBases[1].nStoresTotal, -7, "an out-of-range slot skips both adds");
 }
 
+static void TestFacilityClassify(void)
+{
+    printf("Base_ClearFacilityGridRow\n");
+    static u8 grid[700];
+    static u8 site[8];
+
+    /* Occupancy for base 0 is grid[0..35], cell type is grid[480..515]. */
+#define CELL_T(c, r) grid[480 + 6 * (c) + (r)]
+#define CELL_O(c, r) grid[6 * (c) + (r)]
+
+    memset(grid, 0, sizeof(grid));
+    memset(site, 0, sizeof(site));
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 0,
+               "an all-zero layout is state 0");
+    CheckEqI32(site[0], 0, "and the site-state byte is written");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(0, 0) = 4;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 1, "a free type-4 slot gives state 1");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(0, 0) = 4;
+    CELL_O(0, 0) = 1;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 0,
+               "a type-4 slot that is occupied does not count");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(0, 0) = 4;
+    CELL_T(1, 1) = 5;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 2,
+               "type 5 overwrites the 1, so the two are never both present");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(2, 3) = 9;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 10,
+               "a free type-9 slot alone gives 10");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(0, 0) = 4;
+    CELL_T(2, 3) = 9;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 11, "type 4 plus a free 9 is 11");
+
+    memset(grid, 0, sizeof(grid));
+    CELL_T(0, 0) = 5;
+    CELL_T(2, 3) = 9;
+    CELL_T(3, 3) = 9;
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 0, site), 12,
+               "two free 9 slots still add the 10 only once");
+
+    /* A second base reads its own block, not base 0's. */
+    memset(grid, 0, sizeof(grid));
+    memset(site, 0, sizeof(site));
+    grid[480 + 144 + 6 * 0 + 0] = 4;   /* base 1 type grid */
+    grid[36 + 6 * 0 + 0] = 1;          /* base 1 occupancy, slot 0 occupied */
+    grid[480 + 144 + 6 * 1 + 1] = 4;   /* base 1 type grid, another slot */
+    CheckEqI32(Base_ClearFacilityGridRow(grid, 1, site), 1,
+               "base 1 is classified from its own 144-byte type block");
+    CheckEqI32(site[1], 1, "and lands in its own site-state byte");
+    CheckEqI32(site[0], 0, "base 0 is left alone");
+
+#undef CELL_T
+#undef CELL_O
+}
+
 int main(void)
 {
     TestTickShips();
@@ -450,6 +514,7 @@ int main(void)
     TestAdvance();
     TestPanelFlagsAndQty();
     TestBaseGridLookup();
+    TestFacilityClassify();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

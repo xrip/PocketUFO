@@ -259,3 +259,50 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
     pItem->auPerBaseVal[nSlot] = (u16)((i32)pItem->auPerBaseVal[nSlot] + nDelta);
     pBase->nStoresTotal += nDelta; /* 0x55714 */
 }
+
+/* Base_ClearFacilityGridRow @ 0x6a0e0. Despite the name it clears nothing; see the
+ * header for the three passes and what state byte each one produces. */
+i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteState)
+{
+    const u8 *pType;
+    const u8 *pOcc;
+    i8 nState = 0;
+    i32 nRow;
+
+    if (abFacilityGrid == NULL || apSiteState == NULL) {
+        return 0;
+    }
+
+    pType = &abFacilityGrid[480 + 144 * nBaseIndex];
+    pOcc  = &abFacilityGrid[36 * nBaseIndex];
+
+    for (nRow = 0; nRow < 6; ++nRow) { /* 0x6A0EC: any free type-4 slot */
+        i32 nCol;
+        for (nCol = 0; nCol < 6; ++nCol) {
+            if (pType[6 * nCol + nRow] == 4 && pOcc[6 * nCol + nRow] == 0) {
+                nState = 1;
+            }
+        }
+    }
+    for (nRow = 0; nRow < 6; ++nRow) { /* 0x6A154: any free type-5 slot, overwrites the 1 */
+        i32 nCol;
+        for (nCol = 0; nCol < 6; ++nCol) {
+            if (pType[6 * nCol + nRow] == 5 && pOcc[6 * nCol + nRow] == 0) {
+                nState = 2;
+            }
+        }
+    }
+    for (nRow = 0; nRow < 6; ++nRow) { /* 0x6A1B0: a free type-9 slot, once */
+        i32 nCol;
+        for (nCol = 0; nCol < 6; ++nCol) {
+            if (pType[6 * nCol + nRow] == 9 && pOcc[6 * nCol + nRow] == 0) {
+                nState = (i8)(nState + 10);
+                goto store; /* 0x6A214: exits both loops */
+            }
+        }
+    }
+
+store:
+    apSiteState[nBaseIndex] = (u8)nState; /* 0x6A218, unk_161F38 */
+    return nState;
+}
