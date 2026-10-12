@@ -181,7 +181,7 @@ void Input_OnRight(TactInputState *pState, const TactInputHooks *pHooks);
 void Input_OnUp(TactInputState *pState, const TactInputHooks *pHooks);
 void Input_OnDown(TactInputState *pState, const TactInputHooks *pHooks);
 
-/* Input_OnAction @ 0x1557c. Sets the original's byte_AD711 scratch flag. */
+/* Input_OnAction @ 0x1557c. Sets the original's UiBank_bActionFlag scratch flag. */
 void Input_OnAction(TactInputState *pState, const TactInputHooks *pHooks,
                     bool *pbActionFlag);
 
@@ -261,7 +261,7 @@ void Input_OnSecondary(TactInputState *pState, const TactInputHooks *pHooks,
 i32 UiScreen_DismissHigh(TactInputState *pState, const TactInputHooks *pHooks,
                          bool *pbEscapeFlag);
 
-/* UiScreen_OnBack @ 0x15670. Clears byte_AD711 and, for screens 8/9/13, runs the
+/* UiScreen_OnBack @ 0x15670. Clears UiBank_bActionFlag and, for screens 8/9/13, runs the
  * quit, battle-end-abort or cancel path. */
 void UiScreen_OnBack(TactInputState *pState, const TactInputHooks *pHooks,
                      bool *pbEscapeFlag);
@@ -292,7 +292,7 @@ typedef struct TactPointerWorld {
     void           (*pfnSlot16)(void); /* apUiSlotsA[16] @ Map+0xa0, screen-17 modal action */
     void           (*pfnSlot18)(void); /* apUiSlotsA[18] @ Map+0xa8, the other one */
     UiControlHitCtx  hit;         /* the pad blit callbacks plus &pState->nUiSlot0 */
-    bool             bActionFlag; /* byte_AD711, set by Input_OnAction */
+    bool             bActionFlag; /* UiBank_bActionFlag, set by Input_OnAction */
 } TactPointerWorld;
 
 /* Input_OnPointer @ 0x13c6c. WM_MOUSEMOVE (bDown = 0) and WM_LBUTTONDOWN

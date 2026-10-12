@@ -38,7 +38,7 @@
  *
  * ## The two scratch bytes
  *
- * Input_OnAction @ 0x1557c sets byte_AD711 (pBank+0x1041) and UiScreen_OnBack
+ * Input_OnAction @ 0x1557c sets UiBank_bActionFlag (pBank+0x1041) and UiScreen_OnBack
  * @ 0x15674 clears the SAME byte, so MenuBtn_ActionBack leaves it 0.
  * Input_OnSecondary sets byte_AD712 (bUiEscapeFlag) in its screen-0 path and
  * UiScreen_DismissHigh clears it on entry. The port passes both through the
@@ -69,7 +69,7 @@ typedef struct UiButtonCtx {
     TactInputState       *pState;
     const TactInputHooks *pHooks;
     const TactInputWorld *pWorld;      /* only the Secondary pair needs it */
-    bool                 *pbActionFlag; /* byte_AD711 */
+    bool                 *pbActionFlag; /* UiBank_bActionFlag */
     bool                 *pbEscapeFlag; /* byte_AD712 */
 } UiButtonCtx;
 

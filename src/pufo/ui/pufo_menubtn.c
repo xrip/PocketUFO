@@ -66,7 +66,7 @@ void MenuBtn_ActionBack(const UiButtonCtx *pCtx)
     }
     Btn_PlayInput(pCtx->pHooks, PUFO_BTN_SAMPLE_CONFIRM);
     pCtx->pState->nUiScreen = 0;
-    /* Input_OnAction sets byte_AD711 and UiScreen_OnBack clears the same byte, so
+    /* Input_OnAction sets UiBank_bActionFlag and UiScreen_OnBack clears the same byte, so
      * the pair leaves it 0. Both take the caller's storage. */
     Input_OnAction(pCtx->pState, pCtx->pHooks, pCtx->pbActionFlag);
     UiScreen_OnBack(pCtx->pState, pCtx->pHooks, pCtx->pbActionFlag);

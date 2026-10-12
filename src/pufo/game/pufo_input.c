@@ -159,7 +159,7 @@ void Input_OnAction(TactInputState *pState, const TactInputHooks *pHooks,
         return;
     }
     if (pbActionFlag != NULL) {
-        *pbActionFlag = true; /* byte_AD711 */
+        *pbActionFlag = true; /* UiBank_bActionFlag */
     }
     if (!TactInput_CanScroll(pState)) {
         return;
@@ -266,7 +266,7 @@ void UiScreen_OnBack(TactInputState *pState, const TactInputHooks *pHooks,
                      bool *pbEscapeFlag)
 {
     if (pbEscapeFlag != NULL) {
-        *pbEscapeFlag = false; /* byte_AD711 = 0 */
+        *pbEscapeFlag = false; /* UiBank_bActionFlag = 0 */
     }
     if (pState == NULL) {
         return;

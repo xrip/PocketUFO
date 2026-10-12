@@ -241,3 +241,52 @@ void EmptyBtn_OnClick(void (*pfnPlaySample)(i32 nSample, void *pUser),
         pfnClearDrawMode(pUser);
     }
 }
+
+/* --------------------------------------------------------------------------
+ * The whole bank: UiBank_CtorAll @ 0x11320 and UiBank_FreeAllPads @ 0x1117c.
+ * -------------------------------------------------------------------------- */
+
+/* Read straight out of the two loop bounds. UiBank_CtorAll runs
+ *   19 @ 0, 13 @ 19, 12 @ 32, 9 @ 44, 7 @ 53, 29 @ 60, 9 @ 89, 3 @ 98,
+ *   3 @ 101, 1 @ 104, 8 @ 105, 15 @ 113, 1 @ 128, 1 @ 129
+ * and UiBank_FreeAllPads runs the same fourteen groups in the opposite order,
+ * counting down inside each one. The groups are the per-screen widget ranges the
+ * hit test uses, so the bank really is fourteen screens' worth of widgets laid end
+ * to end. 19+13+12+9+7+29+9+3+3+1+8+15+1+1 = 130, every slot exactly once. */
+const UiBankSpan g_aUiBankSpans[PUFO_PBANK_SPAN_COUNT] = {
+    {  0, 19}, { 19, 13}, { 32, 12}, { 44,  9}, { 53,  7}, { 60, 29},
+    { 89,  9}, { 98,  3}, {101,  3}, {104,  1}, {105,  8}, {113, 15},
+    {128,  1}, {129,  1},
+};
+
+UiWidgetBank *UiBank_CtorAll(UiWidgetBank *pBank, bool *pbActionFlag)
+{
+    if (pBank == NULL) {
+        return NULL;
+    }
+    for (i32 g = 0; g < PUFO_PBANK_SPAN_COUNT; ++g) {
+        const UiBankSpan *pGroup = &g_aUiBankSpans[g];
+        for (i32 i = 0; i < (i32)pGroup->nCount; ++i) {
+            UiControl_ctor(&pBank->aCtl[pGroup->nFirst + i]);
+        }
+    }
+    /* 0x114B8 and 0x114C8: the two bank-level flags are cleared last. */
+    pBank->bEscapeFlag = 0;
+    if (pbActionFlag != NULL) {
+        *pbActionFlag = false;   /* UiBank_bActionFlag @ 0xAD711 */
+    }
+    return pBank;
+}
+
+void UiBank_FreeAllPads(UiWidgetBank *pBank)
+{
+    if (pBank == NULL) {
+        return;
+    }
+    for (i32 g = PUFO_PBANK_SPAN_COUNT - 1; g >= 0; --g) {
+        const UiBankSpan *pGroup = &g_aUiBankSpans[g];
+        for (i32 i = (i32)pGroup->nCount - 1; i >= 0; --i) {
+            UiControl_FreePads(&pBank->aCtl[pGroup->nFirst + i]);
+        }
+    }
+}

@@ -89,6 +89,35 @@ void UiControl_ctor(UiControl *pCtl);
  * because a double free is undefined rather than defined behaviour. */
 void UiControl_FreePads(UiControl *pCtl);
 
+/* The bank is not one flat array of 130 widgets: the original walks it as 14 fixed
+ * groups, and the groups are exactly the per-screen ranges the hit test uses.
+ * UiBank_CtorAll @ 0x11320 walks them in this order, ascending inside each group.
+ * UiBank_FreeAllPads @ 0x1117c walks the SAME groups in reverse order, descending
+ * inside each group, and together the two cover every slot exactly once.
+ *
+ * These boundaries are the same ones the descriptor groups in pufo_uibank.h
+ * (`g_aUiBankGroup`) use; that table lists only the twelve spans Tact_InitUiControls
+ * positions, in its own run order (53 first). The two spans it leaves out are 0..18,
+ * built elsewhere, and 113..127, which get no click handler. */
+typedef struct UiBankSpan {
+    u8 nFirst;
+    u8 nCount;
+} UiBankSpan;
+
+#define PUFO_PBANK_SPAN_COUNT 14
+extern const UiBankSpan g_aUiBankSpans[PUFO_PBANK_SPAN_COUNT];
+
+/* UiBank_CtorAll @ 0x11320. Constructs all 130 widgets group by group, then clears
+ * the escape-flag scratch byte at bank +0x1042 and the action flag `UiBank_bActionFlag`.
+ * `pbActionFlag` is the same flag `Input_OnAction @ 0x1557c` sets and
+ * `UiScreen_OnBack @ 0x15670` clears; it lives in TactInputWorld in the port, so it
+ * is passed rather than reached through bank memory. Returns the bank. */
+UiWidgetBank *UiBank_CtorAll(UiWidgetBank *pBank, bool *pbActionFlag);
+
+/* UiBank_FreeAllPads @ 0x1117c, reached through Bank_AtexitThunk @ 0x11170. Frees the
+ * pads of all 130 widgets in the reverse group order. */
+void UiBank_FreeAllPads(UiWidgetBank *pBank);
+
 /* UiControl_BlitActivePad @ 0x1a340. Returns true when a pad was drawn.
  *
  * `pfnBlit` stands in for PadImage_Blit @ 0x110dc and `pfnBlitEx` for

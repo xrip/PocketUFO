@@ -542,6 +542,74 @@ static void TestHitTest(void)
     Check(!UiControl_HitTest(&ctl, 0, 0, true, true, NULL), "  NULL hit context is safe");
 }
 
+static void TestBankAll(void)
+{
+    static UiWidgetBank bank;
+    static PadImage aPad[PUFO_PBANK_WIDGET_COUNT];
+    static i32 aSeen[PUFO_PBANK_WIDGET_COUNT];
+    bool bAction = true;
+    bool bOk;
+    i32 nTotal = 0;
+
+    printf("UiBank_CtorAll / UiBank_FreeAllPads\n");
+
+    /* The fourteen groups tile the 130 slots exactly once. */
+    for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        aSeen[i] = 0;
+    }
+    for (i32 g = 0; g < PUFO_PBANK_SPAN_COUNT; ++g) {
+        for (i32 k = 0; k < (i32)g_aUiBankSpans[g].nCount; ++k) {
+            i32 nIdx = (i32)g_aUiBankSpans[g].nFirst + k;
+            Check(nIdx >= 0 && nIdx < PUFO_PBANK_WIDGET_COUNT, "  group index in range");
+            aSeen[nIdx] += 1;
+        }
+        nTotal += (i32)g_aUiBankSpans[g].nCount;
+    }
+    CheckEqI32(nTotal, PUFO_PBANK_WIDGET_COUNT, "  the groups total 130");
+    bOk = true;
+    for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        if (aSeen[i] != 1) {
+            bOk = false;
+        }
+    }
+    Check(bOk, "  every slot is covered exactly once");
+
+    /* Construct: the original dirties nothing, so start from a dirty bank and check
+     * that all 130 come out as the ctor defaults. */
+    memset(&bank, 0xFF, sizeof(bank));
+    Check(UiBank_CtorAll(&bank, &bAction) == &bank, "  returns the bank");
+    CheckEqI32((i32)bank.bEscapeFlag, 0, "  escape flag at bank+0x1042 cleared");
+    Check(!bAction, "  UiBank_bActionFlag action flag cleared");
+    bOk = true;
+    for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        if (bank.aCtl[i].uWidth != 10 || bank.aCtl[i].uHeight != 10 ||
+            bank.aCtl[i].bEnabled != 1 || bank.aCtl[i].pfnClick != NULL) {
+            bOk = false;
+        }
+    }
+    Check(bOk, "  all 130 widgets are 10x10 enabled with no handler");
+
+    /* FreeAllPads walks the same groups backwards, so every slot must be visited. */
+    for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        PadImage_ctor(&aPad[i]);
+        aPad[i].pData = NULL;   /* nothing to release; this checks coverage only */
+        bank.aCtl[i].apPads[0] = &aPad[i];
+    }
+    UiBank_FreeAllPads(&bank);
+    bOk = true;
+    for (i32 i = 0; i < PUFO_PBANK_WIDGET_COUNT; ++i) {
+        if (bank.aCtl[i].apPads[0] != NULL) {
+            bOk = false;
+        }
+    }
+    Check(bOk, "  FreeAllPads visited all 130 widgets");
+
+    /* NULL is tolerated by both. */
+    Check(UiBank_CtorAll(NULL, &bAction) == NULL, "  NULL bank returns NULL");
+    UiBank_FreeAllPads(NULL);
+    Check(true, "  NULL bank is tolerated by FreeAllPads");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -553,6 +621,7 @@ int main(void)
     TestSetupAndClick();
     TestEmptyBtnClick();
     TestHitTest();
+    TestBankAll();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

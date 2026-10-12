@@ -1109,3 +1109,48 @@ back when the drop failed.
 
 Deviation: the original faults on a NULL cell pointer in that probe; the port stops the
 descent instead.
+
+## The widget bank as fourteen spans: `UiBank_CtorAll @ 0x11320` and `UiBank_FreeAllPads @ 0x1117c`
+
+Ported as `UiBank_CtorAll(UiWidgetBank *, bool *pbActionFlag)` and
+`UiBank_FreeAllPads(UiWidgetBank *)` in `ui/pufo_control.{h,c}`, asserted by
+`test_control` (`TestBankAll`).
+
+`pBank @ 0xAC6D0` holds 130 `UiControl` widgets, but the original never walks them as
+one flat array. Both functions walk **fourteen fixed spans**, and the two together are
+the proof of the layout: `CtorAll` runs them in index order ascending inside each span,
+`FreeAllPads` runs the same spans in reverse order descending inside each span, and the
+union covers every slot exactly once.
+
+| span | widgets | screen that hit-tests it |
+|---|---|---|
+| 0..18 | 19 | 0 (only 2, 7, 9, 15 while multi-targeting) |
+| 19..31 | 13 | 1 |
+| 32..43 | 12 | 3 |
+| 44..52 | 9 | 5 |
+| 53..59 | 7 | 7 |
+| 60..88 | 29 | 12 |
+| 89..97 | 9 | 15 |
+| 98..100 | 3 | 2 |
+| 101..103 | 3 | 4 |
+| 104 | 1 | 6 |
+| 105..112 | 8 | 10, 11 |
+| 113..127 | 15 | none — `g_aUiClickName` installs no handler here |
+| 128 | 1 | 13 |
+| 129 | 1 | 19 |
+
+The port keeps this as `g_aUiBankSpans`, one table used by both functions. It is the
+same boundary set as the descriptor groups in `pufo_uibank.h` (`g_aUiBankGroup`), which
+lists only the twelve spans `Tact_InitUiControls` positions and runs them in its own
+order (53 first). The two spans that table leaves out are 0..18, built elsewhere, and
+113..127, which gets no click handler at all.
+
+`CtorAll` finishes by clearing the two bank-level scratch bytes: `UiBank_bEscapeFlag`
+@ `0xAD712` (bank +0x1042) and `UiBank_bActionFlag` @ `0xAD711` (bank +0x1041, renamed
+from `unk_AD711`). The action flag is the one `Input_OnAction @ 0x1557c` sets and
+`UiScreen_OnBack @ 0x15670` clears; in the port it lives in `TactInputWorld` as
+`bActionFlag`, so `CtorAll` takes it as a pointer instead of reaching through bank
+memory.
+
+`FreeAllPads` is reached through `Bank_AtexitThunk @ 0x11170`, i.e. it is the
+process-exit cleanup of the widget bank.
