@@ -157,6 +157,21 @@ i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
  * chosen, but a base with no free 4 or 5 slot and a free 9 slot ends up as 10. */
 i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteState);
 
+/* Base_CalcWorkshopCap @ 0x65894: the workshop capacity of one base.
+ *
+ * It counts the cells whose type byte is 3 -- a workshop -- whose matching occupancy
+ * byte is 0, and returns that count times 50. So one free workshop cell is worth
+ * exactly 50 units of manufacturing capacity, and the grid is the only input: no
+ * globals, no dependencies.
+ *
+ * The same 6 by 6 pair Base_ClearFacilityGridRow walks, with the cell type at
+ * grid + 480 + 144*nBaseIndex and the occupancy at grid + 36*nBaseIndex.
+ *
+ * Worth noting for whoever reads the caller: Base_UpdateWorkshopNeeded calls this at
+ * 0x65BC0 and DISCARDS the result. It then derives its budget from
+ * Base_CountActiveManuf instead. The capacity is used by other callers, not that one. */
+i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;

@@ -306,3 +306,30 @@ store:
     apSiteState[nBaseIndex] = (u8)nState; /* 0x6A218, unk_161F38 */
     return nState;
 }
+
+/* Base_CalcWorkshopCap @ 0x65894. Counts free workshop cells and returns count * 50. */
+i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    const u8 *pType;
+    const u8 *pOcc;
+    i32 nCap = 0;
+    i32 nRow;
+
+    if (abFacilityGrid == NULL) {
+        return 0;
+    }
+
+    pType = &abFacilityGrid[480 + 144 * nBaseIndex];
+    pOcc  = &abFacilityGrid[36 * nBaseIndex];
+
+    for (nRow = 0; nRow < 6; ++nRow) {
+        i32 nCol;
+        for (nCol = 0; nCol < 6; ++nCol) {
+            /* 0x658D0 tests the type, 0x658F0 the occupancy, and adds 50 to the total. */
+            if (pType[6 * nCol + nRow] == 3 && pOcc[6 * nCol + nRow] == 0) {
+                nCap += 50;
+            }
+        }
+    }
+    return nCap; /* 0x6590C */
+}

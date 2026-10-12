@@ -506,6 +506,55 @@ static void TestFacilityClassify(void)
 #undef CELL_O
 }
 
+static void TestWorkshopCap(void)
+{
+    printf("Base_CalcWorkshopCap\n");
+    static u8 grid[700];
+
+#define W_T(c, r) grid[480 + 6 * (c) + (r)]
+#define W_O(c, r) grid[6 * (c) + (r)]
+
+    memset(grid, 0, sizeof(grid));
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 0, "no workshop cells means no capacity");
+
+    memset(grid, 0, sizeof(grid));
+    W_T(0, 0) = 3;
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 50,
+               "one free workshop cell is worth exactly 50");
+
+    memset(grid, 0, sizeof(grid));
+    W_T(0, 0) = 3;
+    W_O(0, 0) = 1;
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 0,
+               "an occupied workshop cell counts for nothing");
+
+    memset(grid, 0, sizeof(grid));
+    W_T(0, 0) = 3;
+    W_T(1, 1) = 3;
+    W_T(2, 2) = 3;
+    W_T(3, 3) = 4; /* not a workshop */
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 150,
+               "three free cells give 150, and type 4 is not a workshop");
+
+    memset(grid, 0, sizeof(grid));
+    for (int i = 0; i < 36; ++i) {
+        grid[480 + i] = 3;
+    }
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 36 * 50,
+               "a full grid of free workshops is 36 * 50");
+
+    /* Base 1 reads its own 144-byte type block and its own occupancy column. */
+    memset(grid, 0, sizeof(grid));
+    grid[480 + 144 + 0] = 3;   /* base 1, cell 0 free */
+    grid[480 + 144 + 6] = 3;   /* base 1, another cell */
+    grid[36 + 6] = 7;          /* but its occupancy byte is set */
+    CheckEqI32(Base_CalcWorkshopCap(grid, 1), 50,
+               "base 1 counts only its own free cells");
+
+#undef W_T
+#undef W_O
+}
+
 int main(void)
 {
     TestTickShips();
@@ -515,6 +564,7 @@ int main(void)
     TestPanelFlagsAndQty();
     TestBaseGridLookup();
     TestFacilityClassify();
+    TestWorkshopCap();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
