@@ -236,6 +236,28 @@ void BaseFacScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHoo
     Geoscape_OpenScreen(pState, 7, false, pHooks);
 }
 
+/* BasePlaneScreen_Open @ 0x617F4: sample 17, the id 6 written at 0x61828 BEFORE the Init
+ * tail call to BasePlaneScreen_Init (0x7d9e4) with the slot at unk_161A48. Same shape as
+ * BuySell and BaseFac, so it reuses the shared opener. */
+void BasePlaneScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks)
+{
+    Geoscape_OpenScreen(pState, 6, false, pHooks);
+}
+
+void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *pHooks)
+{
+    if (pCtl != NULL) {
+        pCtl->x = (i16)(120 - (pCtl->uWidth >> 1)); /* 0x588E4: LDRH, LSR #1, RSB #0x78 */
+        pCtl->y = (i16)(0x120 | 2);                 /* 0x588F4: 290 built as ORR #2 */
+        if (pHooks != NULL) {
+            pCtl->pfnClick = pHooks->pfnClick;      /* 0x58900: STR [R1,#0xC] */
+        }
+    }
+    if (pHooks != NULL && pHooks->pfnUpdate != NULL) {
+        pHooks->pfnUpdate(nMode); /* 0x58908, tail call. nMode is R1; R0 was overwritten. */
+    }
+}
+
 /* Seven thunks, one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI. */
 static void Geoscape_CloseScreenThunk(const GeoscapeCloseHooks *pHooks)
 {

@@ -2107,7 +2107,8 @@ two-panel shape as the soldier screen, over `unk_161EDC` first and `unk_161A3C` 
 Six openers are recreated over one shared body and a `ScreenInitHooks`:
 `ManufScreen_Open @ 0x614cc` (id 9), `TransferScreen_Open @ 0x614fc` (10),
 `BaseInfoScreen_Open @ 0x6167c` (3), `BuySellScreen_OpenBuy @ 0x61794` (11),
-`BuySellScreen_OpenSell @ 0x617c4` (12), `BaseFacScreen_Open @ 0x61844` (7). Two facts
+`BuySellScreen_OpenSell @ 0x617c4` (12), `BaseFacScreen_Open @ 0x61844` (7), and
+`BasePlaneScreen_Open @ 0x617f4` (6, the hangar). Two facts
 come only from the disassembly. `Sound_Play` takes a second argument, 4 (`MOV R1, #4` at
 0x614D4 and in every opener). And the order of the Init and the screen id is not uniform:
 Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the id **after** the
@@ -2123,6 +2124,17 @@ seven behaviours. Each is `LDR R0, =0x1864F8` and `B Geoscape_CloseUI`: one tail
 with one argument, written seven times so every widget can hold its own function pointer.
 `NewBaseScreen_CloseThunk @ 0x615b0` is the odd one: it plays sample 17 first.
 `Geoscape_CloseUI @ 0x8b94c` itself stays a hook (~40 unported callees).
+
+`BaseAtScreen_Open @ 0x588cc` is not an opener of the same family. It plays no sample and sets
+no screen id: it positions one `UiControl` and installs its click handler, then tail-calls the
+screen's own update. The ARM pins the shape -- `LDRH [R3,#4]`, `LSR #1`, `RSB R1, R1, #0x78`,
+`STRH [R3]` gives `x = 120 - (uWidth >> 1)` stored as 16 bits, so the control is centred on
+x = 120; `MOV R3, #0x120`, `ORR R3, R3, #2`, `STRH [R1,#2]` gives y = 290 built as `0x120|2`;
+`STR [R1,#0xC]` installs the click handler. `MOV R0, R1` at 0x588D0 drops the first argument --
+the mode is the second one, a char, which is the same trick `OptionsScreen_OpenWithSound @ 0x6dd04`
+plays in the other direction. The control pointer itself lives at 0x186BA4, so the port takes the
+control as an argument. Its callees, `BaseAtScreen_CloseThunk` (0x577c0) and `BaseAtScreen_Update`
+(0x57808), are unported and are named without a citation.
 
 `OptionsScreen_ReturnToTitle @ 0x6b46c` clears the panel scratch byte, closes the
 geoscape screen, frees every geoscape widget with mode 1, and returns the result of

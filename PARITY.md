@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 560 / 1103 (50.8%) |
-| Bytes of original code cited | 211548 / 598792 (35.3%) |
+| Functions cited as evidence | 562 / 1103 (51.0%) |
+| Bytes of original code cited | 211696 / 598792 (35.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
-| Test checks run | 4763 |
+| Test checks run | 4775 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12200 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 62 | 205 | 20692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 97 | 243 | 8316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 99 | 243 | 8464 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -573,7 +573,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (97 functions)
+### `strat-ui` (99 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -606,6 +606,8 @@ is the module that answers to it.
 | `0x19b0c` | `Options_SetMusicVol4` | 84 | `src/pufo/game/pufo_menu.h` |
 | `0x19b60` | `Options_SetMusicVol5` | 84 | `src/pufo/game/pufo_menu.h` |
 | `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/game/pufo_baseui.c` |
+| `0x588cc` | `BaseAtScreen_Open` | 68 | `src/pufo/game/pufo_baseui.h` |
 | `0x79b20` | `BasePlaneScreen_SelectWeapon25` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79b64` | `BasePlaneScreen_SelectWeapon26` | 68 | `src/pufo/game/pufo_plane.h` |
 | `0x79ba8` | `BasePlaneScreen_SelectWeapon27` | 68 | `src/pufo/game/pufo_plane.h` |
@@ -1130,7 +1132,7 @@ whose port work they belong to.
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 146 functions, 108692 bytes remaining
+### `strat-ui` — 144 functions, 108544 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1261,7 +1263,6 @@ whose port work they belong to.
 | `0x19f24` | `SaveLoad_Slot4` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x19f74` | `SaveLoad_Slot5` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x19fc4` | `SaveLoad_Slot6` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x617f4` | `BasePlaneScreen_Open` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7cc3c` | `BasePlaneScreen_SelectListed` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6af80` | `SaveGame_Slot0_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6afcc` | `SaveGame_Slot1_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1278,7 +1279,6 @@ whose port work they belong to.
 | `0x6d064` | `OptionsScreen_PanelNext` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd4c` | `ManufScreen_PanelPrev` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x588cc` | `BaseAtScreen_Open` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 
 ### `titles` — 11 functions, 4296 bytes remaining
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 117 |
+| `test_baseui` | PASS | 129 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

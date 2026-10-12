@@ -171,6 +171,30 @@ void BaseInfoScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHo
 void BuySellScreen_OpenBuy(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
 void BuySellScreen_OpenSell(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
 void BaseFacScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+void BasePlaneScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHooks);
+
+/* BaseAtScreen_Open @ 0x588cc. It does NOT play a sample and does NOT set the screen id --
+ * it positions one UiControl and installs its click handler, then tail-calls the screen's
+ * own update.
+ *
+ * The ARM (0x588CC..0x58908) pins the details:
+ *   LDRH [R3,#4] / LSR #1 / RSB R1, R1, #0x78 / STRH [R3]   -> x = 120 - (uWidth >> 1),
+ *     stored as a 16-bit value. The control is centred on x = 120.
+ *   MOV R3, #0x120 / ORR R3, R3, #2 / STRH [R1,#2]          -> y = 290, built as 0x120|2.
+ *   STR [R1,#0xC]                                           -> pfnClick = the close thunk.
+ *   MOV R0, R1 at 0x588D0                                   -> the FIRST argument is dropped;
+ *     the mode is the second argument, a char.
+ *
+ * The control pointer is held at 0x186BA4 (LDR R3, [R2]), so the port takes the control as
+ * an argument. Both callees are unported and are named without a citation: the click handler
+ * is BaseAtScreen_CloseThunk (0x577c0), a tail call to Geoscape_CloseUI (0x8b94c), and the
+ * update is BaseAtScreen_Update (0x57808). */
+typedef struct BaseAtScreenOpenHooks {
+    void (*pfnClick)(void);   /* stored into pCtl->pfnClick */
+    void (*pfnUpdate)(i32 nMode);
+} BaseAtScreenOpenHooks;
+
+void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *pHooks);
 
 /* ------------------------------------------------- the eight screen close thunks
  *

@@ -572,6 +572,82 @@ static void TestOptionsSoundWrappers(void)
     Check(1, "NULL hooks are tolerated");
 }
 
+static i32 g_nAtX;
+static i32 g_nAtY;
+static i32 g_nAtClickCalls;
+static i32 g_nAtMode;
+static UiControl *g_pAtCtl;
+
+static void AtClick(void)
+{
+    ++g_nAtClickCalls;
+}
+
+static void AtUpdate(i32 nMode)
+{
+    g_nAtMode = nMode;
+}
+
+static void AtInit(void *pSlot, void *pUser)
+{
+    (void)pSlot;
+    (void)pUser;
+    ++g_nOptInitCalls;
+}
+
+static void TestAtAndHangarOpeners(void)
+{
+    UiControl ctl;
+    GeoscapeScreenState st;
+    ScreenInitHooks ih;
+    BaseAtScreenOpenHooks ah;
+
+    printf("BaseAtScreen_Open / BasePlaneScreen_Open\n");
+
+    memset(&ctl, 0, sizeof(ctl));
+    ctl.uWidth = 40;
+    g_pAtCtl = &ctl;
+    g_nAtClickCalls = 0;
+    g_nAtMode = -1;
+
+    ah.pfnClick = AtClick;
+    ah.pfnUpdate = AtUpdate;
+    BaseAtScreen_Open(&ctl, 3, &ah);
+
+    g_nAtX = ctl.x;
+    g_nAtY = ctl.y;
+    CheckEqI32(g_nAtX, 100, "x centres the control on 120: 120 - (40 >> 1)");
+    CheckEqI32(g_nAtY, 290, "y is 290, built as 0x120|2");
+    CheckEqI32(g_nAtMode, 3, "the mode reaches the update");
+    Check(ctl.pfnClick == AtClick, "the click handler is installed at +0x0C");
+
+    ctl.pfnClick();
+    CheckEqI32(g_nAtClickCalls, 1, "and it is the control's own handler");
+
+    ctl.uWidth = 41;
+    BaseAtScreen_Open(&ctl, 0, &ah);
+    CheckEqI32(ctl.x, 100, "an odd width still drops to the same centre");
+
+    BaseAtScreen_Open(NULL, 1, &ah);
+    CheckEqI32(g_nAtMode, 1, "a NULL control still runs the update");
+    BaseAtScreen_Open(&ctl, 2, NULL);
+    Check(ctl.pfnClick == AtClick, "NULL hooks change nothing and call nothing");
+
+    /* BasePlaneScreen_Open @ 0x617F4: id 6 written BEFORE the Init. */
+    memset(&st, 0, sizeof(st));
+    memset(&ih, 0, sizeof(ih));
+    g_nOptSample = 0;
+    g_nOptSampleArg = 0;
+    g_nOptInitCalls = 0;
+    ih.pfnPlaySample = OptSample;
+    ih.pfnInit = AtInit;
+    BasePlaneScreen_Open(&st, &ih);
+    CheckEqI32(g_nOptSample, 17, "the hangar opener plays sample 17");
+    CheckEqI32(g_nOptSampleArg, 4, "with the second argument 4");
+    CheckEqI32(st.nGeoscapeScreen, 6, "screen id 6 is the hangar");
+    CheckEqI32(g_nOptInitCalls, 1, "and the Init runs once");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -590,6 +666,7 @@ int main(void)
     TestOptionsRadioClear();
     TestAtexitRegistration();
     TestOptionsSoundWrappers();
+    TestAtAndHangarOpeners();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
