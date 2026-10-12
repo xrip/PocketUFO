@@ -120,4 +120,31 @@ void Ship_TickRangeRecoverConsume(Ship *pShip, const ShipSupplyHooks *pHooks);
 /* Ship_ClearExpiredIntercepts @ 0x8128c needs the strateg list; it lives in
  * pufo_strateg.h to keep the dependency one-way, and is declared there. */
 
+/* Ship_ctor @ 0x45c20. If the bSkip byte is set the ctor does NOTHING -- it returns
+ * the record untouched.
+ *
+ * Otherwise, in order: bId = nId, bHomeBase = nHomeBase, the five ammo bytes, the four
+ * cargo counts, bContactMsg, bIntercepting, nStrategIdx and uRangeRemain are cleared,
+ * 0x45C80 stores the u16 1 at &bAtBase -- which sets bAtBase = 1 AND bRefueling = 0 --
+ * bWeaponsHot is cleared, bCraftType is stored, and nSlotIdx takes the CURRENT ship
+ * count. Then 0x45CB0..0x45CE4 zeroes aItemQty[nSlotIdx] in every object record: the
+ * per-craft stock column, at 0x3a. That index is unbounded in the original (aItemQty
+ * has 52 entries); the port clamps and records the deviation.
+ *
+ * bType is NOT saved in the ships chunk. It comes from a per-craft-type counter, one
+ * byte each at 0x18653C .. 0x186540, incremented here. A craft type above 4 leaves
+ * bType at 1 and sets no range or fuel field at all.
+ *
+ * The craft table below is the ctor's if-chain. Type 2's uRangeMax is written as -5536
+ * into a u16, which is 60000. */
+typedef struct ShipCtorEnv {
+    u8  abTypeCounters[5];       /* unk_18653C .. unk_186540, one per craft type */
+    i32 nShipCount;              /* pCtxBase.nShipCount: the new ship's cargo column */
+    ObjectRecFull *const *apObjects;
+    i32 nObjectCount;
+} ShipCtorEnv;
+
+Ship *Ship_Ctor(Ship *pShip, u8 nCraftType, i32 nId, i32 nHomeBase, u8 bSkip,
+                ShipCtorEnv *pEnv);
+
 #endif /* PUFO_SHIP_H */

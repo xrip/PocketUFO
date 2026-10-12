@@ -375,4 +375,34 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
                     BaseRec **apBases, i32 nOldBaseCount, u8 bUnk186558,
                     ObjectRecFull *const *apObjects, i32 nObjectCount);
 
+/* ---- ships chunk ----
+ *
+ * `Save_WriteShips @ 0x3f6dc` and `Save_ReadShips @ 0x4086c`. One byte ship count, then
+ * per ship 61 bytes of fields and one u16 per object.
+ *
+ * The field order is neither the struct order nor any grouping: nFuel, bHomeBase,
+ * nSlotIdx, bCraftType, bWeaponL, uRangeRemain, bHangarX, bHangarY, anCargoQty[16],
+ * bNeedsSupply, bCanDogfight, uUnk4, uFuelMax, uRangeMax, bCrewSlots, bType, bAtBase,
+ * bWeaponsHot, bAmmo27, bAmmo30, bAmmo29, bAmmo25, bAmmo26, bRefueling, bWeaponR,
+ * bId, uFuelCap, uUnk14, uRangeRate, bIntercepting, nStrategIdx, bContactMsg.
+ *
+ * The per-object column starts at 58 (0x3a), which is ObjectRecFull.aItemQty, so the
+ * bases chunk writes the auPerBaseVal columns and this chunk writes the aItemQty ones.
+ * The column is again the LOOP INDEX.
+ *
+ * bType IS saved here (the 16th write, `pBuf: apCraft[0]`), and Ship_Ctor also sets it,
+ * so the ctor's per-type counter only decides bType for ships that are created, not
+ * loaded.
+ *
+ * The reader frees the old records AFTER FindChunk but BEFORE the count is read, using
+ * the count it already had -- the opposite order from Save_ReadBases. Then 0x40C24:
+ * once a ship is loaded, a craft type of 0 forces uRangeMax to 10000.
+ *
+ * pnShipCount is in/out: on entry it is the count the caller holds (used to free), on
+ * exit it is the count from the file. The original uses one global for both.
+ */
+bool Save_WriteShips(DatFile *pDat, const Ship *const *apShips, i32 nShipCount,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount);
+bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv *pEnv);
+
 #endif /* PUFO_SAVE_H */

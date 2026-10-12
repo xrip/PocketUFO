@@ -975,3 +975,165 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
     }
     return true;
 }
+
+bool Save_WriteShips(DatFile *pDat, const Ship *const *apShips, i32 nShipCount,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_SHIPS)) {
+        return false; /* 0x3F6E8 */
+    }
+
+    /* 0x3F704: the count is saved as ONE byte of a 4-byte global. */
+    {
+        u8 bCount = (u8)nShipCount;
+        if (!W(pDat, &bCount, 1)) {
+            return false;
+        }
+    }
+
+    for (i32 s = 0; s < nShipCount; ++s) {
+        const Ship *pShip = (apShips != NULL) ? apShips[s] : NULL;
+
+        if (pShip == NULL) {
+            return false;
+        }
+        if (!W(pDat, &pShip->nFuel, 2))         { return false; } /* 0x3F740 */
+        if (!W(pDat, &pShip->bHomeBase, 1))     { return false; } /* 0x3F754 */
+        if (!W(pDat, &pShip->nSlotIdx, 4))      { return false; } /* 0x3F768 */
+        if (!W(pDat, &pShip->bCraftType, 1))    { return false; } /* 0x3F77C */
+        if (!W(pDat, &pShip->bWeaponL, 1))      { return false; } /* 0x3F790 */
+        if (!W(pDat, &pShip->uRangeRemain, 2))  { return false; } /* 0x3F7A4 */
+        if (!W(pDat, &pShip->bHangarX, 1))      { return false; } /* 0x3F7B8 */
+        if (!W(pDat, &pShip->bHangarY, 1))      { return false; } /* 0x3F7CC */
+        if (!W(pDat, pShip->anCargoQty, 16))    { return false; } /* 0x3F7E0 */
+        if (!W(pDat, &pShip->bNeedsSupply, 1))  { return false; } /* 0x3F7F4 */
+        if (!W(pDat, &pShip->bCanDogfight, 1))  { return false; } /* 0x3F808 */
+        if (!W(pDat, &pShip->uUnk4, 2))         { return false; } /* 0x3F81C */
+        if (!W(pDat, &pShip->uFuelMax, 2))      { return false; } /* 0x3F830 */
+        if (!W(pDat, &pShip->uRangeMax, 2))     { return false; } /* 0x3F844 */
+        if (!W(pDat, &pShip->bCrewSlots, 1))    { return false; } /* 0x3F858 */
+        if (!W(pDat, &pShip->bType, 1))         { return false; } /* 0x3F868: pBuf = the record start */
+        if (!W(pDat, &pShip->bAtBase, 1))       { return false; } /* 0x3F87C */
+        if (!W(pDat, &pShip->bWeaponsHot, 1))   { return false; } /* 0x3F890 */
+        if (!W(pDat, &pShip->bAmmo27, 1))       { return false; } /* 0x3F8A4 */
+        if (!W(pDat, &pShip->bAmmo30, 1))       { return false; } /* 0x3F8B8 */
+        if (!W(pDat, &pShip->bAmmo29, 1))       { return false; } /* 0x3F8CC */
+        if (!W(pDat, &pShip->bAmmo25, 1))       { return false; } /* 0x3F8E0 */
+        if (!W(pDat, &pShip->bAmmo26, 1))       { return false; } /* 0x3F8F4 */
+        if (!W(pDat, &pShip->bRefueling, 1))    { return false; } /* 0x3F908 */
+        if (!W(pDat, &pShip->bWeaponR, 1))      { return false; } /* 0x3F91C */
+        if (!W(pDat, &pShip->bId, 1))           { return false; } /* 0x3F930 */
+        if (!W(pDat, &pShip->uFuelCap, 2))      { return false; } /* 0x3F944 */
+        if (!W(pDat, &pShip->uUnk14, 2))        { return false; } /* 0x3F958 */
+        if (!W(pDat, &pShip->uRangeRate, 2))    { return false; } /* 0x3F96C */
+        if (!W(pDat, &pShip->bIntercepting, 1)) { return false; } /* 0x3F980 */
+        if (!W(pDat, &pShip->nStrategIdx, 4))   { return false; } /* 0x3F994 */
+        if (!W(pDat, &pShip->bContactMsg, 1))   { return false; } /* 0x3F9A8 */
+
+        /* 0x3F720 seeds the column at 58 (0x3a, aItemQty) and 0x3FA08 adds 2 per ship. */
+        for (i32 o = 0; o < nObjectCount; ++o) {
+            if (apObjects == NULL || apObjects[o] == NULL || s >= 52) {
+                return false;
+            }
+            if (!W(pDat, &apObjects[o]->aItemQty[s], 2)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv *pEnv)
+{
+    i32 nOldCount;
+    u8  bCount;
+
+    if (pDat == NULL || pnShipCount == NULL || pEnv == NULL) {
+        return false;
+    }
+
+    /* 0x4087C: FindChunk first, THEN free -- the opposite order from Save_ReadBases. */
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_SHIPS)) {
+        return false;
+    }
+
+    nOldCount = *pnShipCount;
+    if (apShips != NULL) {
+        for (i32 i = 0; i < nOldCount; ++i) {
+            free(apShips[i]);
+            apShips[i] = NULL;
+        }
+    }
+
+    if (!DatFile_Read(pDat, &bCount, 1)) { /* 0x408E0 */
+        return false;
+    }
+    *pnShipCount = (i32)bCount;
+
+    for (i32 s = 0; s < (i32)bCount; ++s) {
+        Ship *pNew = (Ship *)malloc(sizeof(Ship));
+
+        if (pNew == NULL) {
+            return false;
+        }
+        memset(pNew, 0, sizeof(Ship));
+
+        /* 0x40908..0x40944: new(0x44) then Ship_Ctor(type 0, id = loop index, home 0,
+         * skip 0), then store. The ctor's nSlotIdx is the count just read, so it zeroes
+         * aItemQty[nShipCount] of every object, and its type-0 stats are all
+         * overwritten by the reads below. */
+        (void)Ship_Ctor(pNew, 0, s, 0, 0, pEnv);
+        apShips[s] = pNew;
+
+        if (!DatFile_Read(pDat, &pNew->nFuel, 2))         { return false; } /* 0x40954 */
+        if (!DatFile_Read(pDat, &pNew->bHomeBase, 1))     { return false; } /* 0x40968 */
+        if (!DatFile_Read(pDat, &pNew->nSlotIdx, 4))      { return false; } /* 0x4097C */
+        if (!DatFile_Read(pDat, &pNew->bCraftType, 1))    { return false; } /* 0x40990 */
+        if (!DatFile_Read(pDat, &pNew->bWeaponL, 1))      { return false; } /* 0x409A4 */
+        if (!DatFile_Read(pDat, &pNew->uRangeRemain, 2))  { return false; } /* 0x409B8 */
+        if (!DatFile_Read(pDat, &pNew->bHangarX, 1))      { return false; } /* 0x409CC */
+        if (!DatFile_Read(pDat, &pNew->bHangarY, 1))      { return false; } /* 0x409E0 */
+        if (!DatFile_Read(pDat, pNew->anCargoQty, 16))    { return false; } /* 0x409F4 */
+        if (!DatFile_Read(pDat, &pNew->bNeedsSupply, 1))  { return false; } /* 0x40A08 */
+        if (!DatFile_Read(pDat, &pNew->bCanDogfight, 1))  { return false; } /* 0x40A1C */
+        if (!DatFile_Read(pDat, &pNew->uUnk4, 2))         { return false; } /* 0x40A30 */
+        if (!DatFile_Read(pDat, &pNew->uFuelMax, 2))      { return false; } /* 0x40A44 */
+        if (!DatFile_Read(pDat, &pNew->uRangeMax, 2))     { return false; } /* 0x40A58 */
+        if (!DatFile_Read(pDat, &pNew->bCrewSlots, 1))    { return false; } /* 0x40A6C */
+        if (!DatFile_Read(pDat, &pNew->bType, 1))         { return false; } /* 0x40A7C */
+        if (!DatFile_Read(pDat, &pNew->bAtBase, 1))       { return false; } /* 0x40A90 */
+        if (!DatFile_Read(pDat, &pNew->bWeaponsHot, 1))   { return false; } /* 0x40AA4 */
+        if (!DatFile_Read(pDat, &pNew->bAmmo27, 1))       { return false; } /* 0x40AB8 */
+        if (!DatFile_Read(pDat, &pNew->bAmmo30, 1))       { return false; } /* 0x40ACC */
+        if (!DatFile_Read(pDat, &pNew->bAmmo29, 1))       { return false; } /* 0x40AE0 */
+        if (!DatFile_Read(pDat, &pNew->bAmmo25, 1))       { return false; } /* 0x40AF4 */
+        if (!DatFile_Read(pDat, &pNew->bAmmo26, 1))       { return false; } /* 0x40B08 */
+        if (!DatFile_Read(pDat, &pNew->bRefueling, 1))    { return false; } /* 0x40B1C */
+        if (!DatFile_Read(pDat, &pNew->bWeaponR, 1))      { return false; } /* 0x40B30 */
+        if (!DatFile_Read(pDat, &pNew->bId, 1))           { return false; } /* 0x40B44 */
+        if (!DatFile_Read(pDat, &pNew->uFuelCap, 2))      { return false; } /* 0x40B58 */
+        if (!DatFile_Read(pDat, &pNew->uUnk14, 2))        { return false; } /* 0x40B6C */
+        if (!DatFile_Read(pDat, &pNew->uRangeRate, 2))    { return false; } /* 0x40B80 */
+        if (!DatFile_Read(pDat, &pNew->bIntercepting, 1)) { return false; } /* 0x40B94 */
+        if (!DatFile_Read(pDat, &pNew->nStrategIdx, 4))   { return false; } /* 0x40BA8 */
+        if (!DatFile_Read(pDat, &pNew->bContactMsg, 1))   { return false; } /* 0x40BBC */
+
+        for (i32 o = 0; o < pEnv->nObjectCount; ++o) {
+            if (pEnv->apObjects == NULL || pEnv->apObjects[o] == NULL || s >= 52) {
+                return false;
+            }
+            if (!DatFile_Read(pDat, &pEnv->apObjects[o]->aItemQty[s], 2)) {
+                return false;
+            }
+        }
+
+        /* 0x40C24..0x40C2C: after the load, a craft type of 0 forces uRangeMax to 10000. */
+        if (pNew->bCraftType == 0) {
+            pNew->uRangeMax = 10000;
+        }
+    }
+    return true;
+}

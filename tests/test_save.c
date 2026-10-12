@@ -770,6 +770,151 @@ static void TestBasesChunk(void)
     Check(!Save_ReadBases(NULL, 3, &got, apRead, 0, 0, apObj, 2), "NULL read dat refused");
 }
 
+static void TestShipsChunk(void)
+{
+    DatFile dat;
+    Ship aShip[2];
+    const Ship *apShip[2];
+    Ship *apRead[8];
+    ObjectRecFull aObj[2];
+    ObjectRecFull *apObj[2];
+    ShipCtorEnv env;
+
+    printf("Save_WriteShips / Save_ReadShips / Ship_Ctor\n");
+
+    for (i32 o = 0; o < 2; ++o) {
+        memset(&aObj[o], 0, sizeof(aObj[o]));
+        for (i32 k = 0; k < 52; ++k) { aObj[o].aItemQty[k] = (u16)(500 + k); }
+        for (i32 k = 0; k < 8; ++k) { aObj[o].auPerBaseVal[k] = (u16)(1000 + k); }
+        apObj[o] = &aObj[o];
+    }
+
+    memset(aShip, 0, sizeof(aShip));
+    for (i32 s = 0; s < 2; ++s) {
+        aShip[s].nFuel = (i16)(100 + s);
+        aShip[s].bHomeBase = (u8)(s + 1);
+        aShip[s].nSlotIdx = s;
+        aShip[s].bCraftType = (u8)(s == 0 ? 0 : 3);
+        aShip[s].bWeaponL = (i8)(10 + s);
+        aShip[s].uRangeRemain = (u16)(200 + s);
+        aShip[s].bHangarX = (u8)(3 + s);
+        aShip[s].bHangarY = (u8)(4 + s);
+        aShip[s].anCargoQty[0] = 11 + s;
+        aShip[s].anCargoQty[3] = 14 + s;
+        aShip[s].bNeedsSupply = (u8)(s == 1);
+        aShip[s].bCanDogfight = (u8)(s == 0);
+        aShip[s].uUnk4 = (u16)(30 + s);
+        aShip[s].uFuelMax = (u16)(40 + s);
+        aShip[s].uRangeMax = (u16)(1234 + s);
+        aShip[s].bCrewSlots = (u8)(2 + s);
+        aShip[s].bType = (u8)(7 + s);
+        aShip[s].bAtBase = (u8)(s == 0);
+        aShip[s].bWeaponsHot = 1;
+        aShip[s].bAmmo25 = (u8)(25 + s);
+        aShip[s].bAmmo26 = (u8)(26 + s);
+        aShip[s].bAmmo27 = (u8)(27 + s);
+        aShip[s].bAmmo29 = (u8)(29 + s);
+        aShip[s].bAmmo30 = (u8)(30 + s);
+        aShip[s].bRefueling = (u8)(s == 1);
+        aShip[s].bWeaponR = (i8)(40 + s);
+        aShip[s].bId = (u8)(90 + s);
+        aShip[s].uFuelCap = (u16)(500 + s);
+        aShip[s].uUnk14 = (u16)(14 + s);
+        aShip[s].uRangeRate = (u16)(20 + s);
+        aShip[s].bIntercepting = (u8)(s == 0);
+        aShip[s].nStrategIdx = 300 + s;
+        aShip[s].bContactMsg = (u8)(s == 1);
+        apShip[s] = &aShip[s];
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.nShipCount = 2;
+    env.apObjects = apObj;
+    env.nObjectCount = 2;
+
+    Check(OpenWrite("test_ships.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteShips(&dat, apShip, 2, apObj, 2), "  ships chunk written");
+    DatFile_Close(&dat);
+
+    /* 1 count byte + 2 * (61 field bytes + 2*2 object bytes). */
+    CheckEqI32(FileSizeOf(L"test_ships.tmp"), 46 + 1 + 2 * 65,
+               "the chunk is 1 byte plus 65 per ship");
+
+    memset(apRead, 0, sizeof(apRead));
+    Check(OpenRead("test_ships.tmp", &dat), "  reopened for read");
+    {
+        i32 nCount = 0; /* the caller held no ships before the load */
+        Check(Save_ReadShips(&dat, apRead, &nCount, &env), "  read");
+        CheckEqI32(nCount, 2, "the count comes back out of the reader");
+    }
+    DatFile_Close(&dat);
+
+    Check(apRead[0] != NULL && apRead[1] != NULL, "one record allocated per ship");
+    if (apRead[0] != NULL && apRead[1] != NULL) {
+        CheckEqI32(apRead[0]->nFuel, 100, "nFuel round-trips");
+        CheckEqI32(apRead[0]->nSlotIdx, 0, "nSlotIdx round-trips");
+        CheckEqI32(apRead[1]->anCargoQty[3], 15, "the cargo counts round-trip");
+        CheckEqI32(apRead[1]->bType, 8, "bType IS saved in this chunk");
+        CheckEqI32(apRead[1]->uRangeMax, 1235, "a non-zero craft type keeps its range max");
+        CheckEqI32(apRead[1]->nStrategIdx, 301, "nStrategIdx round-trips");
+        CheckEqI32(apRead[1]->bWeaponR, 41, "bWeaponR round-trips");
+        /* 0x40C24: a craft type of 0 gets its uRangeMax forced after the load. */
+        CheckEqI32(apRead[0]->uRangeMax, 10000,
+                   "craft type 0 has uRangeMax forced to 10000 after the load");
+    }
+
+    /* The writer's column is the loop index, so ships 0 and 1 wrote aItemQty[0..1].
+     * Ship_Ctor is handed the count (2), so it zeroes aItemQty[2] of every object. */
+    CheckEqI32(aObj[0].aItemQty[0], 500, "ship 0 wrote object column 0");
+    CheckEqI32(aObj[1].aItemQty[1], 501, "ship 1 wrote object column 1");
+    CheckEqI32(aObj[0].aItemQty[2], 0, "the ctor zeroed aItemQty[2] of object 0");
+    CheckEqI32(aObj[1].aItemQty[2], 0, "the ctor zeroed aItemQty[2] of object 1");
+    CheckEqI32(aObj[0].aItemQty[3], 503, "column 3 was left alone");
+    CheckEqI32(aObj[0].auPerBaseVal[0], 1000, "the ships chunk never touches auPerBaseVal");
+
+    for (i32 s = 0; s < 8; ++s) {
+        free(apRead[s]);
+        apRead[s] = NULL;
+    }
+
+    /* Ship_Ctor on its own. */
+    memset(&aShip[0], 0xEE, sizeof(aShip[0]));
+    (void)Ship_Ctor(&aShip[0], 1, 5, 6, 1, &env);
+    CheckEqI32(aShip[0].bCraftType, 0xEE, "bSkip leaves the record untouched");
+
+    memset(&aShip[0], 0, sizeof(aShip[0]));
+    env.abTypeCounters[0] = 3;
+    (void)Ship_Ctor(&aShip[0], 0, 5, 6, 0, &env);
+    CheckEqI32(aShip[0].bType, 4, "bType is the incremented per-type counter");
+    CheckEqI32(env.abTypeCounters[0], 4, "and the counter is written back");
+    CheckEqI32(aShip[0].bCrewSlots, 0, "interceptor crew is 0");
+    CheckEqI32(aShip[0].uRangeMax, 10000, "interceptor range max");
+    CheckEqI32(aShip[0].uFuelMax, 150, "interceptor fuel max");
+    CheckEqI32(aShip[0].uFuelCap, 760, "interceptor fuel cap");
+    CheckEqI32(aShip[0].bAtBase, 1, "a new ship starts at base");
+    CheckEqI32(aShip[0].bRefueling, 0, "and the u16 store clears the byte beside it");
+    CheckEqI32(aShip[0].nSlotIdx, 2, "nSlotIdx takes the current ship count");
+
+    memset(&aShip[1], 0, sizeof(aShip[1]));
+    (void)Ship_Ctor(&aShip[1], 2, 5, 6, 0, &env);
+    CheckEqI32(aShip[1].uRangeMax, 60000, "type 2 range max is -5536 as a u16");
+    CheckEqI32(aShip[1].uFuelCap, 5400, "type 2 fuel cap");
+    CheckEqI32(aShip[1].bCrewSlots, 2, "type 2 crew is 2");
+    (void)Ship_Ctor(&aShip[1], 1, 5, 6, 0, &env);
+    CheckEqI32(aShip[1].bCrewSlots, 1, "type 1 crew is 1");
+    CheckEqI32(aShip[1].uRangeMax, 30000, "type 1 range max");
+
+    memset(&aShip[1], 0xEE, sizeof(aShip[1]));
+    aObj[0].aItemQty[2] = 777;
+    (void)Ship_Ctor(&aShip[1], 5, 5, 6, 0, &env);
+    CheckEqI32(aShip[1].uFuelMax, 0xEEEE, "a type above 4 sets no fuel field");
+    CheckEqI32(aShip[1].bType, 1, "and bType stays 1");
+    CheckEqI32(aObj[0].aItemQty[2], 0, "but the cargo column is still cleared");
+
+    Check(!Save_WriteShips(NULL, apShip, 2, apObj, 2), "NULL dat refused");
+    Check(!Save_ReadShips(&dat, apRead, NULL, &env), "NULL count refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -785,6 +930,7 @@ int main(void)
     TestSmapChunk();
     TestProductChunk();
     TestBasesChunk();
+    TestShipsChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -1966,6 +1966,56 @@ reproducing that out-of-range write; the test asserts `aItemQty[0]` survives. Ev
 the chunk is reproduced byte for byte. Covered by `tests/test_save.c` (`TestBasesChunk`, 47 checks).
 
 
+### Ships save chunk and `Ship_ctor` (done)
+
+`Save_WriteShips @ 0x3f6dc` and `Save_ReadShips @ 0x4086c` are recreated in `game/pufo_save.{h,c}`
+over the port's existing 68-byte `Ship`. One byte ship count, then per ship 61 bytes of fields and
+one u16 per object: `1 + n * (61 + 2 * objectCount)`.
+
+The field order is neither the struct order nor any grouping -- nFuel, bHomeBase, nSlotIdx,
+bCraftType, bWeaponL, uRangeRemain, bHangarX, bHangarY, anCargoQty[16], bNeedsSupply, bCanDogfight,
+uUnk4, uFuelMax, uRangeMax, bCrewSlots, bType, bAtBase, bWeaponsHot, bAmmo27, bAmmo30, bAmmo29,
+bAmmo25, bAmmo26, bRefueling, bWeaponR, bId, uFuelCap, uUnk14, uRangeRate, bIntercepting,
+nStrategIdx, bContactMsg.
+
+**This chunk writes the other object column.** 0x3F720 seeds the per-object offset at 58 and
+0x3FA08 adds 2 per ship, and 58 is 0x3a -- `ObjectRecFull.aItemQty`. So the bases chunk fills the
+`auPerBaseVal` columns and this one fills the `aItemQty` columns, both indexed by loop position.
+
+**The two readers free in opposite orders.** `Save_ReadBases` frees first and calls FindChunk
+after; `Save_ReadShips` calls FindChunk at 0x4087C and frees at 0x40888, still before the count is
+read, so both free with the count they already had.
+
+**A loaded interceptor gets its range max overwritten.** 0x40C24 tests the `bCraftType` that was
+just read from disk and, when it is 0, stores 10000 into the u16 at `Ship + 0x0A` -- `uRangeMax`.
+The value saved in the file is discarded. The test saves 1234 for a type-0 craft and asserts 10000
+comes back, while a type-3 craft keeps its saved 1235.
+
+`Ship_ctor @ 0x45c20` is recreated as `Ship_Ctor` in `game/pufo_ship.{h,c}`. If the `bSkip` byte is
+set the ctor does nothing at all. Otherwise it clears the ammo bytes, cargo counts, contact and
+intercept state, and `uRangeRemain`; 0x45C80 stores the u16 1 at `&bAtBase`, which sets `bAtBase`
+to 1 and `bRefueling` to 0 in one write; it takes `nSlotIdx` from the CURRENT ship count and then
+zeroes `aItemQty[nSlotIdx]` in every object record.
+
+`bType` comes from a per-craft-type counter, one byte each at 0x18653C .. 0x186540, incremented on
+each construction. A craft type above 4 leaves `bType` at 1 and sets no range or fuel field at all,
+while still clearing the cargo column. The craft table:
+
+| type | crew | dogfight | rangeMax | rangeRate | needsSupply | fuelMax | fuelCap |
+|---|---|---|---|---|---|---|---|
+| 0 interceptor | 0 | 1 | 10000 | 20 | 0 | 150 | 760 |
+| 1 | 1 | 1 | 30000 | 2 | 1 | 800 | 3100 |
+| 2 | 2 | 1 | 60000 | 2 | 1 | 1200 | 5400 |
+| 3 | 2 | 0 | 1000 | 20 | 0 | 100 | 3000 |
+| 4 | 2 | 0 | 20000 | 2 | 1 | 500 | 4500 |
+
+Type 2's `uRangeMax` is written as `-5536` into a u16, which is 60000. `nFuel` starts equal to
+`uFuelMax` and `uUnk14` is 2 for every type that reaches the table.
+
+**Recorded deviation.** `aItemQty[nSlotIdx]` is written with no bound check; `aItemQty` has 52
+entries. The port clamps. Covered by `tests/test_save.c` (`TestShipsChunk`, 41 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With
