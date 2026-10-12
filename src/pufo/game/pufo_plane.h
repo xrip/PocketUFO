@@ -23,6 +23,8 @@
 #define PUFO_PLANE_H
 
 #include "pufo_common.h"
+#include "game/pufo_ship.h"   /* Ship, BaseRec */
+#include "game/pufo_boot.h"   /* ObjectRecFull */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -33,5 +35,47 @@ typedef struct PlaneWeaponPanels {
 
 i32 BasePlaneScreen_SelectWeapon(PlaneWeaponPanels *pPanels, i32 nWeaponIndex,
                                  i32 (*pfnApplySwap)(void *pUser), void *pUser);
+
+/* ------------------------------------------------- moving weapon ammo to and from base stores
+ *
+ * Evidence: BasePlane_UnloadWeaponStores @ 0x790e8.
+ *
+ * Its argument is a WEAPON INDEX, not a pointer. The decompiler types it BaseRec* but every
+ * test in the function is on the low byte, and the callers pass an index straight out of a
+ * Ship.bWeaponL or Ship.bWeaponR.
+ *
+ * Five weapons are handled, each with an object record and a load size:
+ *
+ *     weapon   object      load
+ *     25       apObjects[52]    10
+ *     26       apObjects[53]     3
+ *     27       apObjects[54]     2
+ *     29       apObjects[105]   10
+ *     30       apObjects[55]     2
+ *
+ * Read the base's stock for that object at auPerBaseVal[nBaseIndex], take
+ * min(stock, load), add it into the craft's ammo byte for the weapon, and subtract the same
+ * amount from the base. That is the whole rule, and it collapses the five branches the
+ * original writes out.
+ *
+ * Weapon 29 is the one that breaks the pattern in appearance only: its carried count is in
+ * rounds of 10 per base item, so it adds 10 times the amount taken. Its Load counterpart
+ * divides by 10 on the way back.
+ *
+ * A weapon index outside those five does nothing and changes nothing.
+ *
+ * Deviation: the original returns whatever BaseRec_SubItemQty returned, which is a BaseRec
+ * pointer, and returns the weapon index unchanged for an unhandled weapon. No caller reads
+ * either -- BasePlaneScreen_ApplyWeaponSwap discards both. The port returns the amount taken
+ * from base stores, which is the only thing worth reporting. */
+typedef struct PlaneWeaponEnv {
+    Ship *const *apCraft;
+    ObjectRecFull *const *apObjects;
+    BaseRec *const *apBases;
+    i32 nCraftIdx;
+    i32 nBaseIdx;   /* the SIGNED byte at gUiRootPanel.anLineAux[79] */
+} PlaneWeaponEnv;
+
+i32 BasePlane_UnloadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */
