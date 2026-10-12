@@ -558,6 +558,80 @@ static void TestBlurPixels(void)
     Check(SoftSurf_BlurPixels(aBuf, 4, 4) == aBuf, "  returns the buffer it was given");
 }
 
+/* SoftSurf_BlitRawGlyph @ 0xa33c8: a raw copy of the glyph's own pixel values, and the
+ * 24bpp branch's stride bug. */
+static void TestBlitRawGlyph(void)
+{
+    SoftSurf s16, s24;
+    u8       aGlyph[4 + 8];
+    u16     *pPix;
+    i32      i;
+
+    printf("SoftSurf_BlitRawGlyph (0xa33c8)\n");
+
+    /* 2 x 2 glyph of 16bpp pixels. */
+    aGlyph[0] = 2; aGlyph[1] = 0;
+    aGlyph[2] = 2; aGlyph[3] = 0;
+    aGlyph[4] = 0x11; aGlyph[5] = 0x11;
+    aGlyph[6] = 0x22; aGlyph[7] = 0x22;
+    aGlyph[8] = 0x33; aGlyph[9] = 0x33;
+    aGlyph[10] = 0x44; aGlyph[11] = 0x44;
+
+    SoftSurf_ctor(&s16);
+    SoftSurf_AllocPixels(&s16, 4, 3, PIXMODE_16BPP);
+    pPix = (u16 *)SoftSurf_GetPixels(&s16);
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    Blit_LoadSurface(&s16);
+
+    SoftSurf_BlitRawGlyph(1, 1, aGlyph);
+    CheckEqU32(pPix[1 * 4 + 1], 0x1111, "  glyph pixel 0 copied raw");
+    CheckEqU32(pPix[1 * 4 + 2], 0x2222, "  glyph pixel 1");
+    CheckEqU32(pPix[2 * 4 + 1], 0x3333, "  glyph row 1 pixel 0");
+    CheckEqU32(pPix[2 * 4 + 2], 0x4444, "  glyph row 1 pixel 1");
+    CheckEqU32(pPix[0], 0, "  outside the glyph rect");
+
+    /* Half off the top-left: the clip throws away one column and one row, and the glyph
+     * pointer has to advance by the same amount, so the surviving pixel is the last one. */
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    SoftSurf_BlitRawGlyph(-1, -1, aGlyph);
+    CheckEqU32(pPix[0], 0x4444, "  clipped glyph advances its own pointer");
+    CheckEqU32(pPix[1], 0, "  only the surviving column is drawn");
+
+    /* 24bpp branch: three bytes per pixel read, but the destination advances by two.
+     * Confirmed in the disassembly at 0xa35e4: LDRH/STRH, LDRB/STRB, ADD R7,R7,#2, while the
+     * row step is 3 * nSurf0. Reproduced, not corrected. */
+    SoftSurf_ctor(&s24);
+    SoftSurf_AllocPixels(&s24, 4, 1, PIXMODE_24BPP);
+    {
+        u8 *pBytes = SoftSurf_GetPixels(&s24);
+        for (i = 0; i < 12; ++i) { pBytes[i] = 0; }
+    }
+    {
+        u8 aGlyph24[4 + 6];
+        u8 *pBytes;
+
+        aGlyph24[0] = 2; aGlyph24[1] = 0;
+        aGlyph24[2] = 1; aGlyph24[3] = 0;
+        aGlyph24[4] = 0xAA; aGlyph24[5] = 0xBB; aGlyph24[6] = 0xCC;
+        aGlyph24[7] = 0x11; aGlyph24[8] = 0x22; aGlyph24[9] = 0x33;
+
+        Blit_LoadSurface(&s24);
+        SoftSurf_BlitRawGlyph(0, 0, aGlyph24);
+
+        pBytes = SoftSurf_GetPixels(&s24);
+        CheckEqI32(pBytes[0], 0xAA, "  24bpp first pixel byte 0");
+        CheckEqI32(pBytes[1], 0xBB, "  24bpp first pixel byte 1");
+        /* The second pixel lands two bytes along, on top of the first pixel's third byte. */
+        CheckEqI32(pBytes[2], 0x11, "  24bpp second pixel starts at +2, not +3");
+        CheckEqI32(pBytes[3], 0x22, "  24bpp second pixel byte 1");
+        CheckEqI32(pBytes[4], 0x33, "  24bpp second pixel byte 2");
+        CheckEqI32(pBytes[5], 0, "  24bpp row only reaches 2n bytes of a 3n-byte row");
+    }
+
+    SoftSurf_dtor(&s16);
+    SoftSurf_dtor(&s24);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -579,6 +653,7 @@ int main(void)
     TestRectHelpers();
     TestSamplePixel();
     TestBlurPixels();
+    TestBlitRawGlyph();
 
     Asset_CloseArchives();
 

@@ -1083,7 +1083,7 @@ a1754	LocalAlloc	12	platform
 a1760	LocalSize	12	platform
 a2000	SoftSurf_BlurPixels	116	render
 a306c	SoftSurf_BlitIndexed_Inner	860	render
-a33c8	SoftSurf_BlitIndexed_Mode12	604	render
+a33c8	SoftSurf_BlitRawGlyph	604	render
 a3624	Blit_SetColorKey	20	util
 a3638	SoftSurf_BlitIndexedKeyed_Inner	812	render
 a3964	Blit_LoadSurface	72	render

@@ -238,14 +238,18 @@ static u32 Blit_PackedColor(u32 nIdx)
          + ((u32)s_nColorLow >> 3);
 }
 
-/* Clip s_nRectW x s_nRectH at (x,y) against the loaded surface. The original's
- * guards are reproduced literally, including x <= nSurf0 rather than x < nSurf0.
- * Returns the fill size through *pnW / *pnH and reports nothing to draw as zero. */
-static bool Blit_ClipFillRect(i32 *px, i32 *py, i32 *pnW, i32 *pnH)
+/* The clip every rectangle blit in this module performs. *pnW / *pnH are the requested size;
+ * on return they are the size to draw, and *pnSkipX / *pnSkipY say how many source columns and
+ * rows fell outside the surface. The guards are the original's, including x <= nSurf0 rather
+ * than x < nSurf0. */
+static bool Blit_ClipRect(i32 *px, i32 *py, i32 *pnW, i32 *pnH, i32 *pnSkipX, i32 *pnSkipY)
 {
     i32 x = *px, y = *py;
-    i32 nW = s_nRectW, nH = s_nRectH;
+    i32 nW = *pnW, nH = *pnH;
     i32 nXEnd = x + nW, nYEnd = y + nH;
+
+    *pnSkipX = 0;
+    *pnSkipY = 0;
 
     if (nW < 0) { nW = 0; }
     if (nH < 0) { nH = 0; }
@@ -254,13 +258,22 @@ static bool Blit_ClipFillRect(i32 *px, i32 *py, i32 *pnW, i32 *pnH)
         *pnW = 0; *pnH = 0;
         return false;
     }
-    if (x < 0) { nW += x; x = 0; }
-    if (y < 0) { nH += y; y = 0; }
+    if (x < 0) { nW += x; *pnSkipX = -x; x = 0; }
+    if (y < 0) { nH += y; *pnSkipY = -y; y = 0; }
     if (nXEnd > g_blitState.nSurf0) { nW -= nXEnd - g_blitState.nSurf0; }
     if (nYEnd > g_blitState.nSurf1) { nH -= nYEnd - g_blitState.nSurf1; }
 
     *px = x; *py = y; *pnW = nW; *pnH = nH;
     return nW != 0 && nH != 0;
+}
+
+static bool Blit_ClipFillRect(i32 *px, i32 *py, i32 *pnW, i32 *pnH)
+{
+    i32 nSkipX, nSkipY;
+
+    *pnW = s_nRectW;
+    *pnH = s_nRectH;
+    return Blit_ClipRect(px, py, pnW, pnH, &nSkipX, &nSkipY);
 }
 
 /* Blit_CopyToXY @ 0xa42e4. Fills the rectangle in the LOADED SURFACE, not the render
@@ -426,6 +439,67 @@ u8 *SoftSurf_BlurPixels(u8 *pPixels, i32 nWidth, i32 nHeight)
     } while (nRows != 0);
 
     return pPixels;
+}
+
+/* SoftSurf_BlitRawGlyph @ 0xa33c8, named SoftSurf_BlitIndexed_Mode12 in the original although
+ * nothing here indexes a palette: it copies the glyph's own pixel values into the loaded
+ * surface. The glyph is the usual 4-byte header (u16 width, u16 height) followed by pixels.
+ *
+ * Branch 1 (surface mode 1 or 2) reads 2-byte pixels. Branch 2 (any other mode) reads 3-byte
+ * pixels - and there the original has a confirmed stride bug: it writes three bytes per pixel
+ * but advances the destination by two (LDRH/STRH, LDRB/STRB, ADD R7,R7,#2 at 0xa35e4) while the
+ * row step is 3 * nSurf0. Pixels therefore overlap each other and a row of n of them covers 2n
+ * bytes of a 3n-byte row. Reproduced verbatim; recorded in docs/parity/bugs.tsv.
+ *
+ * The glyph pointer is advanced by however much the clip threw away, so a partially off-surface
+ * glyph still draws the right pixels. */
+void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph)
+{
+    i32  nGlyphW = (i32)((pGlyph[0]) | (pGlyph[1] << 8));
+    i32  nGlyphH = (i32)((pGlyph[2]) | (pGlyph[3] << 8));
+    const u8 *pPix = pGlyph + 4;
+    i32 nDrawW = nGlyphW, nDrawH = nGlyphH;
+    i32 nSkipX, nSkipY, nRow, nCol;
+
+    if (!Blit_ClipRect(&x, &y, &nDrawW, &nDrawH, &nSkipX, &nSkipY)) {
+        return;
+    }
+
+    if (g_blitState.nSurf2 == 1 || g_blitState.nSurf2 == 2) {
+        u16 *pRow = (u16 *)g_blitState.pSrc + x + g_blitState.nSurf0 * y;
+
+        pPix += 2 * nSkipX + 2 * nSkipY * nGlyphW;
+        for (nRow = nDrawH; nRow != 0; --nRow) {
+            u16 *pStart = pRow;
+            for (nCol = nDrawW; nCol != 0; --nCol) {
+                *pRow++ = (u16)((pPix[0]) | (pPix[1] << 8));
+                pPix += 2;
+            }
+            pPix += 2 * (nGlyphW - nDrawW);
+            pRow = pStart + g_blitState.nSurf0;
+        }
+        return;
+    }
+
+    {
+        u8 *pRow = (u8 *)g_blitState.pSrc + 3 * x + 3 * g_blitState.nSurf0 * y;
+
+        pPix += 3 * nSkipX + 3 * nSkipY * nGlyphW;
+        for (nRow = nDrawH; nRow != 0; --nRow) {
+            u8 *pStart = pRow;
+            for (nCol = nDrawW; nCol != 0; --nCol) {
+                pRow[0] = pPix[0];
+                pRow[1] = pPix[1];
+                pRow[2] = pPix[2];
+                /* ORIGINAL BUG (0xa35E4), reproduced: the destination advances by 2 while the
+                 * row stride is 3 * nSurf0. */
+                pRow += 2;
+                pPix += 3;
+            }
+            pPix += 3 * (nGlyphW - nDrawW);
+            pRow = pStart + 3 * g_blitState.nSurf0;
+        }
+    }
 }
 
 /* BlitState_Get @ 0xa479c. Returns the width of the currently loaded surface. */
