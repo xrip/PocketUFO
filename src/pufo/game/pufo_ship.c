@@ -659,3 +659,54 @@ i32 Base_CraftWeaponItemId(ObjectRecFull *const *apObjects, i32 nSlot, i32 nBase
 
     return (i32)apObjects[nObject]->auPerBaseVal[nBaseColumn]; /* 0x66498 */
 }
+
+/* Craft_CountSoldiersAboard @ 0x6649c, renamed in the IDB from Base_CountSoldiersAtBase.
+ * It counts soldiers whose bUnk183 equals the argument, and bUnk183 is the craft a soldier is
+ * assigned to -- 254 and 255 being the sentinels Ship_RemoveWithCargo leaves alone. The argument
+ * is a craft index, not a base index: BasePlaneScreen_CommitStores passes unk_161AC4 here and
+ * passes the same value to Craft_GetTypeCargoCap and Base_CalcWeaponStorageUsed as nCraftIdx.
+ *
+ * Deviation: the original dereferences every slot without a NULL test. */
+i32 Craft_CountSoldiersAboard(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nCraftIndex)
+{
+    i32 nCount = 0;
+
+    if (apSoldiers == NULL) {
+        return 0;
+    }
+
+    for (i32 i = 0; i < nSoldierCount; ++i) {
+        if (apSoldiers[i] != NULL && (i32)apSoldiers[i]->bUnk183 == nCraftIndex) {
+            ++nCount; /* 0x664DC */
+        }
+    }
+
+    return nCount;
+}
+
+/* BasePlane_CalcWeaponStoresUsed @ 0x78e78. What the hangar screen is about to load: the per-slot
+ * carried counts it has accumulated, weighted by each object's per-unit cargo size. It walks EVERY
+ * object index, not a filtered range -- the filtering already happened when the counts were
+ * recorded.
+ *
+ * anCarried is unk_161AD0, which BasePlaneScreen_CommitStores increments at 0x7AFD8 for each row
+ * it accepts. Hex-Rays renders this loop as one 64-bit value because the index lives in the high
+ * word and the running total in the low word. */
+i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
+                                   const i32 *anCarried)
+{
+    i32 nUsed = 0;
+
+    if (apObjects == NULL || anCarried == NULL || nObjectCount <= 0) {
+        return 0; /* 0x78E98 */
+    }
+
+    for (i32 i = 0; i < nObjectCount; ++i) {
+        if (apObjects[i] == NULL) {
+            continue; /* deviation: the original faults on an empty record */
+        }
+        nUsed += (i32)apObjects[i]->bCargoSize * anCarried[i]; /* 0x78EBC */
+    }
+
+    return nUsed;
+}

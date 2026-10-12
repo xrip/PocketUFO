@@ -719,6 +719,58 @@ static void TestCraftWeaponItemId(void)
     CheckEqI32(Base_CraftWeaponItemId(NULL, 31, 3), -1, "no object array at all gives -1");
 }
 
+static void TestCrewAndStoresTotals(void)
+{
+    static Soldier g_aSol[4];
+    static Soldier *g_apSol[4];
+    static ObjectRecFull g_aObj[3];
+    static ObjectRecFull *g_apObj[3];
+
+    printf("Craft_CountSoldiersAboard and BasePlane_CalcWeaponStoresUsed\n");
+
+    for (int i = 0; i < 4; ++i) {
+        memset(&g_aSol[i], 0, sizeof(g_aSol[i]));
+        g_apSol[i] = &g_aSol[i];
+    }
+    g_aSol[0].bUnk183 = 255; /* not aboard anything */
+    g_aSol[1].bUnk183 = 0;
+    g_aSol[2].bUnk183 = 1;
+    g_aSol[3].bUnk183 = 254; /* away in a craft */
+
+    CheckEqI32(Craft_CountSoldiersAboard(g_apSol, 4, 0), 1, "one soldier is assigned to craft 0");
+    CheckEqI32(Craft_CountSoldiersAboard(g_apSol, 4, 1), 1, "and one to craft 1");
+    CheckEqI32(Craft_CountSoldiersAboard(g_apSol, 4, 2), 0, "nobody is on craft 2");
+    CheckEqI32(Craft_CountSoldiersAboard(g_apSol, 4, 255), 1,
+               "there is no sentinel test, so asking for craft 255 counts the unassigned");
+    CheckEqI32(Craft_CountSoldiersAboard(g_apSol, 4, 254), 1,
+               "and 254 is just another number to this function");
+
+    for (int i = 0; i < 3; ++i) {
+        memset(&g_aObj[i], 0, sizeof(g_aObj[i]));
+        g_apObj[i] = &g_aObj[i];
+    }
+    g_aObj[0].bCargoSize = 2;
+    g_aObj[1].bCargoSize = 3;
+    g_aObj[2].bCargoSize = 1;
+
+    static const i32 anCarried[3] = { 5, 1, 0 };
+    CheckEqI32(BasePlane_CalcWeaponStoresUsed(g_apObj, 3, anCarried), 2 * 5 + 3 * 1,
+               "carried counts weighted by each object's per-unit size");
+
+    /* Every index is walked, including 0, which Base_CalcWeaponStorageUsed skips. */
+    static const i32 anCarried0[3] = { 7, 0, 0 };
+    CheckEqI32(BasePlane_CalcWeaponStoresUsed(g_apObj, 3, anCarried0), 14,
+               "index 0 counts here, unlike in Base_CalcWeaponStorageUsed");
+
+    CheckEqI32(BasePlane_CalcWeaponStoresUsed(g_apObj, 0, anCarried), 0,
+               "a zero object count reads nothing");
+    CheckEqI32(BasePlane_CalcWeaponStoresUsed(g_apObj, 3, NULL), 0, "no carried array gives 0");
+
+    g_apObj[1] = NULL;
+    CheckEqI32(BasePlane_CalcWeaponStoresUsed(g_apObj, 3, anCarried), 10,
+               "an empty object record is skipped, where the original faults");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -730,6 +782,7 @@ int main(void)
     TestLoadStores();
     TestStripCraftCargo();
     TestCraftWeaponItemId();
+    TestCrewAndStoresTotals();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

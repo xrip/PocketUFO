@@ -627,7 +627,7 @@ addr	name	size
 66340	Base_HasWorkshopSlotFree	132
 663c4	Ui_AnimExpandBlit_IfEnabled	88
 6641c	Base_CraftWeaponItemId	128
-6649c	Base_CountSoldiersAtBase	84
+6649c	Craft_CountSoldiersAboard	84
 664f0	Base_CountAmmoObjectsAtBase	92
 6654c	Soldier_FormatDisplayName	384
 666cc	Ship_FormatDisplayName	424

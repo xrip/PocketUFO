@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 588 / 1103 (53.3%) |
-| Bytes of original code cited | 184288 / 598792 (30.8%) |
+| Functions cited as evidence | 590 / 1103 (53.5%) |
+| Bytes of original code cited | 184460 / 598792 (30.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5710 |
+| Test checks run | 5720 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 24640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 89 | 205 | 27080 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 91 | 205 | 27252 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 104 | 243 | 7492 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -502,7 +502,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (89 functions)
+### `strat` (91 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -569,6 +569,8 @@ is the module that answers to it.
 | `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
 | `0x68198` | `Base_CountActiveResearch` | 92 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x78e78` | `BasePlane_CalcWeaponStoresUsed` | 88 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
+| `0x6649c` | `Craft_CountSoldiersAboard` | 84 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x45f80` | `Ship_TickRangeRecover` | 72 | `src/pufo/game/pufo_ship.h` |
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | `src/pufo/game/pufo_strateg.h` |
 | `0x556e4` | `BaseRec_AddItemQty` | 56 | `src/pufo/game/pufo_geoscape.h` |
@@ -1009,7 +1011,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 116 functions, 135376 bytes remaining
+### `strat` — 114 functions, 135204 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1115,8 +1117,6 @@ whose port work they belong to.
 | `0x853e4` | `Smap_ConfirmSelectedAlt` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65a6c` | `BaseFac_RaceCharToIndex` | 88 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x661d8` | `Base_CountSoldiers` | 88 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x78e78` | `BasePlane_CalcWeaponStoresUsed` | 88 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6649c` | `Base_CountSoldiersAtBase` | 84 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x32c88` | `BaseRec_Create` | 76 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6144c` | `RadarScreen_SetActive` | 76 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x668e8` | `Base_RemoveAllSoldiers` | 72 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1330,7 +1330,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 660 |
-| `test_ship` | PASS | 118 |
+| `test_ship` | PASS | 128 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |

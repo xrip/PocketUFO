@@ -6077,3 +6077,29 @@ That is the whole point of the flag list: the number was already counting this f
 flag was the thing that said it should not be.
 
 Covered by `TestRemoveById`, 9 checks.
+
+### A craft's crew count, and what the hangar screen is about to load (done)
+
+`Base_CountSoldiersAtBase @ 0x6649c` is renamed in the IDB to **`Craft_CountSoldiersAboard`**. The
+name was wrong. It counts soldiers whose `Soldier.bUnk183` equals the argument, and `bUnk183` is the
+craft a soldier is assigned to — the same byte whose 254 and 255 sentinels `Ship_RemoveWithCargo`
+leaves alone. At the call site in `BasePlaneScreen_CommitStores` (`0x7AD38`) the argument is
+`unk_161AC4`, which that function also passes as `nCraftIdx` to `Craft_GetTypeCargoCap` and
+`Base_CalcWeaponStorageUsed`. It is a craft index, not a base index.
+
+There is no sentinel test, so asking for "craft 255" counts the soldiers who are aboard nothing.
+That is the original's behaviour and the port keeps it.
+
+`BasePlane_CalcWeaponStoresUsed @ 0x78e78` is the other half: it sums `bCargoSize * carried` over
+**every** object index, where the carried counts are what the hangar screen accumulated in
+`unk_161AD0` — the same array `BasePlaneScreen_CommitStores` increments at `0x7AFD8` for each row it
+accepts. Unlike `Base_CalcWeaponStorageUsed`, it does not filter indices: index 0 counts. Filtering
+already happened when the counts were recorded.
+
+`BasePlaneScreen_CommitStores` adds the two together with `apObjects[slot].bCargoSize` and compares
+against `Craft_GetTypeCargoCap`. Its own port is blocked on modelling the hangar screen's state
+block (`0x161A40`, `0x161AC8`, `0x161AD0`, `0x161EE0`, `0x161EEC`, `0x161EF4`); the full decode, including
+the crew quota per craft class and the slot-34 asymmetry (5 leaves the base, 50 lands on the craft),
+is recorded in the IDB.
+
+Covered by `TestCrewAndStoresTotals`, 10 checks.

@@ -627,7 +627,7 @@ addr	name	size	subsystem
 66340	Base_HasWorkshopSlotFree	132	strat
 663c4	Ui_AnimExpandBlit_IfEnabled	88	ui-core
 6641c	Base_CraftWeaponItemId	128	strat
-6649c	Base_CountSoldiersAtBase	84	strat
+6649c	Craft_CountSoldiersAboard	84	strat
 664f0	Base_CountAmmoObjectsAtBase	92	strat
 6654c	Soldier_FormatDisplayName	384	tact
 666cc	Ship_FormatDisplayName	424	strat

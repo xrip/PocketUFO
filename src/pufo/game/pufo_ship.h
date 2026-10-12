@@ -277,6 +277,17 @@ CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip);
  * the base count at 0x159D80 -- the base the base screens are showing. */
 i32 Base_CraftWeaponItemId(ObjectRecFull *const *apObjects, i32 nSlot, i32 nBaseColumn);
 
+/* Craft_CountSoldiersAboard @ 0x6649c. The IDB called this Base_CountSoldiersAtBase; that name is
+ * wrong. It counts soldiers whose bUnk183 -- the craft they are assigned to -- equals the
+ * argument, and the call site in BasePlaneScreen_CommitStores passes the same value it uses as
+ * nCraftIdx everywhere else. */
+i32 Craft_CountSoldiersAboard(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nCraftIndex);
+
+/* BasePlane_CalcWeaponStoresUsed @ 0x78e78. Sum of bCargoSize * carried count over every object
+ * index. The carried counts are what the hangar screen accumulated, so no filtering happens here. */
+i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
+                                   const i32 *anCarried);
+
 /* Objects 1..24 and 36..52 are the ones that occupy the hold. */
 i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
                                i32 nCraftIdx);
