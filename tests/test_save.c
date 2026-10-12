@@ -1612,6 +1612,102 @@ static void TestReadRmp(void)
     remove("test_rmpbig.tmp");
 }
 
+static bool WriteSaveFile(const char *pszName, i32 nTotalSec, u8 bGameState,
+                          bool bWithMcnt, u8 nMcnt)
+{
+    DatFile dat;
+
+    if (!OpenWrite(pszName, &dat, 4)) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_TIME)) { return false; }
+    if (!DatFile_Write(&dat, &nTotalSec, 4)) { return false; }
+    if (!DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_GAMESTATE)) { return false; }
+    if (!DatFile_Write(&dat, &bGameState, 1)) { return false; }
+    if (bWithMcnt) {
+        if (!DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_MCNT)) { return false; }
+        if (!DatFile_Write(&dat, &nMcnt, 1)) { return false; }
+    }
+    DatFile_Close(&dat);
+    return true;
+}
+
+static void TestSlotList(void)
+{
+    SaveSlotFormatCtx ctx;
+    GameTime time;
+    u8 bGameState;
+    static char apLines[PUFO_SAVE_SLOT_COUNT][PUFO_SAVE_SLOT_LINE_SIZE];
+
+    printf("SaveSlot_FormatList\n");
+
+    /* 27524520 s = day 15, month 11, 13:42 of 1999. */
+    Check(WriteSaveFile("sav0.sav", 27524520, 1, true, 7), "  slot 0 written");
+    /* 0 s = day 1, month 1, 00:00, no mission flag, no mcnt chunk. */
+    Check(WriteSaveFile("sav1.sav", 0, 0, false, 0), "  slot 1 written");
+
+    memset(&time, 0, sizeof(time));
+    time.nTotalSec = 12345; /* must come back unchanged */
+    bGameState = 0;
+
+    memset(apLines, 0, sizeof(apLines));
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.apLines = apLines;
+    ctx.pszSaveDir = "";
+    ctx.pTime = &time;
+    ctx.pbGameState = &bGameState;
+    ctx.pszPrefix = "";                  /* aTextRecs[205 * 1800]: out of range */
+    ctx.pszNotSaved = "Game not saved";  /* aTextRecs[205 * 1074] */
+    ctx.pszMission = " (mission)";       /* aTextRecs[205 * 1075] */
+
+    SaveSlot_FormatList(&ctx);
+
+    CheckEqStr(apLines[0], "15.11.1999 13:42 (mission) 7",
+               "slot 0 is the decoded date plus the mission marker");
+    CheckEqStr(apLines[1], "01.01.1999 00:00",
+               "slot 1 pads every single-digit field with the separator");
+    CheckEqStr(apLines[2], "Game not saved", "a missing save is one text record");
+    CheckEqStr(apLines[6], "Game not saved", "for every missing slot");
+
+    CheckEqI32(time.nTotalSec, 12345, "the live clock's total is restored at the end");
+    CheckEqI32(time.nDay, 1, "but the decoded day is left in the clock");
+    CheckEqI32(time.nMonth, 1, "and so is the month, from the LAST file inspected");
+    CheckEqI32(bGameState, 0, "bGameState comes from the last gamestate chunk read");
+
+    /* The last file inspected wins: drop slot 1 and the leftovers come from slot 0. */
+    remove("sav1.sav");
+    bGameState = 0;
+    memset(apLines, 0, sizeof(apLines));
+    SaveSlot_FormatList(&ctx);
+    CheckEqI32(time.nDay, 15, "with slot 1 gone the clock keeps slot 0's day");
+    CheckEqI32(time.nMonth, 11, "and its month");
+    CheckEqI32(bGameState, 1, "and bGameState keeps slot 0's value");
+    CheckEqI32(time.nTotalSec, 12345, "while the total is still restored");
+
+    /* A mission save with no mcnt chunk gets the marker but no number. */
+    Check(WriteSaveFile("sav2.sav", 0, 1, false, 0), "  slot 2 written");
+    memset(apLines, 0, sizeof(apLines));
+    SaveSlot_FormatList(&ctx);
+    CheckEqStr(apLines[2], "01.01.1999 00:00 (mission)", "the mission marker without mcnt");
+
+    /* A file with no gamestate chunk leaves the flag as it was. */
+    Check(WriteSaveFile("sav3.sav", 0, 0, false, 0), "  slot 3 written");
+    bGameState = 1;
+    memset(apLines, 0, sizeof(apLines));
+    SaveSlot_FormatList(&ctx);
+    CheckEqStr(apLines[3], "01.01.1999 00:00", "slot 3 has no marker");
+    CheckEqI32(bGameState, 0, "and the read cleared the flag");
+
+    /* Lines are 40 bytes apart. */
+    CheckEqI32((i32)(sizeof(apLines[1]) - sizeof(apLines[0])), 0, "the stride is uniform");
+    CheckEqI32((i32)sizeof(apLines[0]), PUFO_SAVE_SLOT_LINE_SIZE, "40 bytes per line");
+
+    remove("sav0.sav");
+    remove("sav1.sav");
+    remove("sav2.sav");
+    remove("sav3.sav");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1634,6 +1730,7 @@ int main(void)
     TestTeamUnitsChunk();
     TestTGameDataWrite();
     TestReadRmp();
+    TestSlotList();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

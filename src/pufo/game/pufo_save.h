@@ -51,6 +51,7 @@
 
 #include "dat/pufo_dat.h"
 #include "game/pufo_boot.h"
+#include "game/pufo_clock.h"
 #include "game/pufo_font.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_ship.h"
@@ -665,5 +666,72 @@ typedef i32 (*RmpModuleLoad)(RmpData *pRmp, const char *pszBase,
                              i32 nLevel, void *pUser);
 
 bool Save_ReadRmp(DatFile *pDat, RmpData *pRmp, RmpModuleLoad pfnLoad, void *pUser);
+
+/* ------------------------------------------------- the save/load slot list
+ *
+ * SaveSlot_FormatList @ 0x45904 builds the seven lines of the save and load screens.
+ * It is a reader of seven SEPARATE files: for slot n it opens `<dir>sav<n>.sav`, so the
+ * list is built by opening each save in turn, not from one file.
+ *
+ * The path is built as `MEMORY[0x1883B0] + "sav" + itoa(n) + ".sav"` (0x45944..0x45994),
+ * and the same 296-byte buffer is then reused as the scratch for every itoa after the
+ * file is open. The first itoa uses a separate 52-byte buffer because the path is still
+ * needed at that point.
+ *
+ * A missing file gives the whole line from one text record:
+ *
+ *     aTextRecs[205 * 1074] = "Game not saved"
+ *
+ * A present file is opened, and the line is built from the `time` chunk:
+ *
+ *     read 4 bytes into GameTime.nTotalSec, GameTime_Decode, then
+ *     (day   < 10 ? "0"  : "")  + day
+ *     (month >= 10 ? "."  : ".0") + month
+ *     "." + year
+ *     (hour  >= 10 ? " "  : " 0") + hour
+ *     (minute>= 10 ? ":"  : ":0") + minute
+ *
+ * The padding is the interesting part: the separator doubles as the pad character, so a
+ * single-digit month renders as ".03" and a single-digit hour as " 09". The prefix copied
+ * at 0x459E4 is aTextRecs[205 * 1800], which is PAST the end of TEXTS.DAT (1721 records),
+ * so in this data set it is an empty string and only terminates the line. That is the same
+ * out-of-range record UiControl_LoadPads reads as an empty pad name.
+ *
+ * Then the `gamestate` chunk is read into bGameState @ 0x15821C, which is the flag that
+ * says a tactical mission is stored in the file. When it is set the line gets
+ *
+ *     aTextRecs[205 * 1075] = " (mission)"
+ *
+ * and, only if a `mcnt` chunk is present, " " plus that byte as a decimal number.
+ *
+ * Two side effects worth knowing:
+ *
+ *   - the decoded date is written into the LIVE clock. Only nTotalSec is restored at
+ *     0x45C10; year, month, day, hour and minute are left holding the values decoded from
+ *     the LAST save file that was inspected.
+ *   - bGameState @ 0x15821C is overwritten from the last file that had a gamestate chunk.
+ *
+ * FindChunk and Read results are ignored by the original: a save without a time chunk
+ * simply formats whatever nTotalSec already held.
+ *
+ * Deviation: the original concatenates with unbounded strcat into a 40-byte line; the port
+ * bounds every append to 39 characters plus the terminator. */
+#define PUFO_SAVE_SLOT_COUNT 7
+#define PUFO_SAVE_SLOT_LINE_SIZE 40
+#define PUFO_SAVE_TEXT_NOT_SAVED 1074 /* "Game not saved" */
+#define PUFO_SAVE_TEXT_MISSION   1075 /* " (mission)"     */
+#define PUFO_SAVE_TEXT_LINE_PREFIX 1800 /* past the end of TEXTS.DAT: empty */
+
+typedef struct SaveSlotFormatCtx {
+    char (*apLines)[PUFO_SAVE_SLOT_LINE_SIZE]; /* 7 lines, stride 40 (0x45BFC) */
+    const char *pszSaveDir;                    /* MEMORY[0x1883B0] */
+    GameTime *pTime;                           /* the live clock, used as scratch */
+    u8 *pbGameState;                           /* bGameState @ 0x15821C */
+    const char *pszPrefix;                     /* aTextRecs[205 * 1800] */
+    const char *pszNotSaved;                   /* aTextRecs[205 * 1074] */
+    const char *pszMission;                    /* aTextRecs[205 * 1075] */
+} SaveSlotFormatCtx;
+
+void SaveSlot_FormatList(SaveSlotFormatCtx *pCtx);
 
 #endif /* PUFO_SAVE_H */

@@ -2200,6 +2200,59 @@ arrays with no bound check; the port refuses a count above 60.
 Covered by `tests/test_save.c` (`TestReadRmp`, 25 checks).
 
 
+### The save/load slot list (done)
+
+`SaveSlot_FormatList @ 0x45904` is recreated in `game/pufo_save.{h,c}`. It builds the seven lines
+of the save and the load screens, and it is a reader of seven **separate** files: for slot `n` it
+opens `<dir>sav<n>.sav`, so the list is built by opening each save in turn.
+
+The path is `<dir> + "sav" + itoa(n) + ".sav"` (0x45944..0x45994). The same 296-byte buffer is then
+reused as the scratch for every `itoa` after the file is open; only the first one uses a separate
+52-byte buffer, because the path is still needed at that point.
+
+A missing file gives the whole line from one text record:
+
+```
+aTextRecs[205 * 1074] = "Game not saved"
+```
+
+A present file is opened and the line is built from the `time` chunk: read 4 bytes into
+`GameTime.nTotalSec`, `GameTime_Decode`, then
+
+```
+(day    < 10 ? "0" : "")  + day
+(month  >= 10 ? "." : ".0") + month
+"." + year
+(hour   >= 10 ? " " : " 0") + hour
+(minute >= 10 ? ":" : ":0") + minute
+```
+
+The separator doubles as the pad character, so a single-digit month renders `.03` and a
+single-digit hour renders ` 09`. The prefix copied at 0x459E4 is `aTextRecs[205 * 1800]`, which is
+**past the end of TEXTS.DAT** (344202 bytes = 1721 records), so in this data set it is an empty
+string and only terminates the line. That is the same out-of-range record
+`UiControl_LoadPads @ 0x1a604` reads as an empty pad name.
+
+Then the `gamestate` chunk is read into `bGameState @ 0x15821C`, the flag that says a tactical
+mission is stored in the file. When it is set the line gets `aTextRecs[205 * 1075]`, which is
+`" (mission)"`, and only if a `mcnt` chunk is present, `" "` plus that byte as a decimal number.
+
+Two side effects:
+
+- the decoded date is written into the **live clock**. Only `nTotalSec` is restored at 0x45C10; year,
+  month, day, hour and minute are left holding the values decoded from the last save file that was
+  inspected, which is the last slot whose file existed, not the last slot.
+- `bGameState @ 0x15821C` is overwritten from the last file that had a `gamestate` chunk.
+
+`FindChunk` and `Read` results are ignored by the original: a save without a `time` chunk simply
+formats whatever `nTotalSec` already held.
+
+Deviation: the original concatenates with unbounded `strcat` into a 40-byte line; the port bounds
+every append to 39 characters plus the terminator.
+
+Covered by `tests/test_save.c` (`TestSlotList`, 21 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

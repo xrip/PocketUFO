@@ -1875,3 +1875,118 @@ bool Save_ReadRmp(DatFile *pDat, RmpData *pRmp, RmpModuleLoad pfnLoad, void *pUs
     }
     return true;
 }
+
+/* Bounded concatenation. The original uses strcat with no bound at all; the port caps
+ * the append so a corrupt save cannot write past the 40-byte line. */
+static void StrAppend(char *pszDst, size_t cbDst, const char *pszText)
+{
+    size_t nUsed = strlen(pszDst);
+    size_t nLen;
+
+    if (pszText == NULL || nUsed + 1 >= cbDst) {
+        return;
+    }
+    nLen = strlen(pszText);
+    if (nLen > cbDst - 1 - nUsed) {
+        nLen = cbDst - 1 - nUsed;
+    }
+    memcpy(pszDst + nUsed, pszText, nLen);
+    pszDst[nUsed + nLen] = '\0';
+}
+
+static void StrAppendInt(char *pszDst, size_t cbDst, i32 nValue)
+{
+    char szNum[16];
+
+    snprintf(szNum, sizeof(szNum), "%d", nValue);
+    StrAppend(pszDst, cbDst, szNum);
+}
+
+void SaveSlot_FormatList(SaveSlotFormatCtx *pCtx)
+{
+    DatFile dat;
+    char szPath[296]; /* pszPath @ bp-15Ch */
+    i32 nTotalSecSaved;
+
+    if (pCtx == NULL || pCtx->apLines == NULL || pCtx->pTime == NULL ||
+        pCtx->pbGameState == NULL) {
+        return;
+    }
+
+    DatFile_ctor(&dat); /* 0x45914 */
+
+    /* 0x4593C: nTotalSec is saved so the live clock can be put back at the end.
+     * The decoded fields are NOT put back. */
+    nTotalSecSaved = pCtx->pTime->nTotalSec;
+
+    for (i32 nSlot = 0; nSlot < PUFO_SAVE_SLOT_COUNT; ++nSlot) { /* 0x45C04 */
+        char *pszLine = pCtx->apLines[nSlot];
+
+        pszLine[0] = '\0';
+
+        /* 0x45944..0x45994: <dir> + "sav" + itoa(slot) + ".sav". */
+        szPath[0] = '\0';
+        StrAppend(szPath, sizeof(szPath), pCtx->pszSaveDir);
+        StrAppend(szPath, sizeof(szPath), "sav");
+        StrAppendInt(szPath, sizeof(szPath), nSlot);
+        StrAppend(szPath, sizeof(szPath), ".sav");
+
+        if (!DatFile_Exists(szPath)) { /* 0x459A8 */
+            StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pszNotSaved);
+            continue;
+        }
+
+        DatFile_Open(&dat, szPath, PUFO_DAT_READ, 100); /* 0x459BC */
+
+        /* 0x459C8..0x459E0: the results are not checked. A save with no time chunk
+         * formats whatever nTotalSec already held. */
+        (void)DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TIME);
+        (void)DatFile_Read(&dat, &pCtx->pTime->nTotalSec, 4);
+        (void)GameTime_Decode(pCtx->pTime);
+
+        /* 0x459E4: aTextRecs[205 * 1800], out of range in this data set, so this
+         * only writes the terminator. */
+        StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pszPrefix);
+
+        /* 0x45A00..0x45AF4: the separator doubles as the pad character. */
+        if (pCtx->pTime->nDay < 10) {
+            StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, "0");
+        }
+        StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pTime->nDay);
+        StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE,
+                  pCtx->pTime->nMonth >= 10 ? "." : ".0");
+        StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pTime->nMonth);
+        StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, ".");
+        StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pTime->nYear);
+        StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE,
+                  pCtx->pTime->nHour >= 10 ? " " : " 0");
+        StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pTime->nHour);
+        StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE,
+                  pCtx->pTime->nMinute >= 10 ? ":" : ":0");
+        StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pTime->nMinute);
+
+        /* 0x45B00..0x45B1C: the flag says a tactical mission is stored in the file. */
+        (void)DatFile_FindChunk(&dat, PUFO_SAVE_TAG_GAMESTATE);
+        (void)DatFile_Read(&dat, pCtx->pbGameState, 1);
+
+        if (*pCtx->pbGameState != 0) {
+            StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, pCtx->pszMission);
+
+            (void)DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MCNT); /* 0x45B3C */
+            if (DatFile_ChunkPresent(&dat)) { /* 0x45B4C */
+                i32 nMissionCount = 0;
+
+                (void)DatFile_Read(&dat, &nMissionCount, 1);
+                StrAppend(pszLine, PUFO_SAVE_SLOT_LINE_SIZE, " ");
+                StrAppendInt(pszLine, PUFO_SAVE_SLOT_LINE_SIZE,
+                             (i32)((u8)nMissionCount));
+            }
+        }
+
+        DatFile_Close(&dat); /* 0x45B8C */
+    }
+
+    /* 0x45C10: only the total goes back. The decoded date stays in the clock. */
+    pCtx->pTime->nTotalSec = nTotalSecSaved;
+    DatFile_dtor(&dat); /* 0x45C14 */
+}
