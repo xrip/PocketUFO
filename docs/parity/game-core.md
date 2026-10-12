@@ -2501,6 +2501,37 @@ Neither store function's return value is a status: Load returns the weapon index
 and the selected craft index on others, and no caller reads either. Covered by
 `tests/test_plane.c` (71 checks).
 
+### Adding an intercept mission (done)
+
+`BasePlaneScreen_AddInterceptMission @ 0x7de14`, ported in `game/pufo_plane.{h,c}`.
+
+**IDA's signature for this function was wrong.** It declared no arguments. The disassembly opens
+with `MOV R3, R1, LSL #24` then `MOV R3, R3, ASR #24` — a sign-extend of R1's low byte — and R1
+is then used twice: as the index into the mission-site table (`MUL R2, R3, #0x18`, a 24-byte
+stride) and again unchanged as the `bCraftClass` argument. Applying
+`int __fastcall BasePlaneScreen_AddInterceptMission(char bCraftClass)` to the IDB made the
+argument appear in the pseudocode, which is the proof.
+
+The table is 24-byte records at `0x1865C8`, indexed by craft class. `x` is the **signed** 16-bit
+value at record +0 and `y` at +2; both loads are `LDRSH`. The remaining 20 bytes are untouched
+here. The table lives in `.bss`, so it is filled at run time and carries no static data.
+
+It adds a strateg item with `nType 3`, `bActive 1`, `bVisible 1` and `nId` from the mission-id
+counter `dword_18654C`. Because `nType` is 3, that id lands in `nSiteId` and `nDisplayId` becomes
+-1. It then re-reads the list count, sets the new last item's `nTimer` to **2880**, and stores
+`count-1` into `0x186BE4` — the index of the item it just created — reading the count a third
+time for that store rather than reusing it.
+
+Finally it post-increments the mission-id counter and returns the **incremented** value, so the id
+the item carries is the value the counter held *before* the call. Tested on both sides.
+
+Deviation: the original indexes with the sign-extended char and never bounds it, so a negative
+craft class reads before the table. The port refuses, and refusing leaves the id counter
+untouched.
+
+This and `Base_FindFacilityCell @ 0x6ae54` clear both named dependencies of
+`Geoscape_SpawnMissionSite @ 0x7e49c`.
+
 
 ### Geoscape screen openers (done)
 
