@@ -2151,6 +2151,29 @@ fire-status bytes, `bEnemyTurnActive`, `bBattleEnded`, most of `apUiSlotsA`, `nU
 Covered by `tests/test_save.c` (`TestTGameDataWrite`, 18 checks).
 
 
+### The smap chunk reader is not a mirror of the writer (done)
+
+`Save_ReadSmap @ 0x40c4c` is recreated in `game/pufo_save.{h,c}`. An earlier note in the source
+claimed the original had no separate reader for this chunk. That was wrong: the reader exists and
+it does something the writer does not.
+
+After reading `nMode`, `nScrollX` and `nScrollY` into the viewport at 0x1863E8, and only when
+`unk_15821C` is zero, it switches on the mode it just read and **restores the whole zoom level**:
+the tile grid and layer globals are swapped to that level's set, the world pair becomes 800x400,
+600x300 or 472x236, and `nMapW`/`nMapH` are taken from that level's grid PadImage. A mode outside
+0..2 restores nothing — the switch has a `default: break`, which the test exercises with a stored
+mode of 0x11111111.
+
+**No scroll rescale and no vertical clamp run on a load**, unlike `Smap_ZoomIn @ 0x81e44`: the
+stored scroll is restored exactly as saved. The port reuses `Smap_ApplyZoomSet`, which is the same
+piece both zoom functions apply, rather than writing a second copy.
+
+The tail order is also not ascending: 5 bytes go to `unk_161F40`, the next 8 to `unk_162000`, and
+the last 8 to `unk_161FF0`, which sits **below** `unk_162000`.
+
+Covered by `tests/test_save.c` (`TestSmapChunk`, 17 new checks on top of the 268-check round trip).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

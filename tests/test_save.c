@@ -488,7 +488,7 @@ static void TestSmapChunk(void)
 
     memset(&read, 0, sizeof(read));
     Check(OpenRead("test_save8.tmp", &dat), "  reopened");
-    Check(Save_ReadSmap(&dat, &read), "  smap read");
+    Check(Save_ReadSmap(&dat, &read, NULL, NULL, NULL, false), "  smap read");
     CheckEqI32((i32)read.nCamParam0, 0x11111111, "  header dword 0 round-trips");
     CheckEqI32((i32)read.nCamScrollY, 0x33333333, "  header dword 2 round-trips");
     CheckEqI32(read.aSites[0].bUnk518, 0xCC, "  site 0 bUnk518 round-trips");
@@ -501,6 +501,61 @@ static void TestSmapChunk(void)
 
     Check(!Save_WriteSmap(NULL, &written), "  NULL dat refused");
     Check(!Save_WriteSmap(&dat, NULL), "  NULL state refused");
+
+    /* The reader restores the zoom level it just read, which is not a mirror of
+     * the writer. Mode 1 publishes 600 x 300 and takes the map size from that
+     * level's grid PadImage. */
+    {
+        SmapView view;
+        SmapWorldSize world;
+        PadImage grid;
+        SmapZoomSet aSets[3];
+
+        memset(&grid, 0, sizeof(grid));
+        grid.uWidth = 123;
+        grid.uHeight = 45;
+        memset(aSets, 0, sizeof(aSets));
+        aSets[1].pGrid = &grid;
+        aSets[1].uWorldW = 600;
+        aSets[1].uWorldH = 300;
+
+        memset(&view, 0, sizeof(view));
+        view.nMapW = 1;
+        view.nMapH = 2;
+
+        /* The first file stored nCamParam0 = 0x11111111, a mode outside 0..2. */
+        Check(OpenRead("test_save8.tmp", &dat), "  reopened for the mode switch");
+        Check(Save_ReadSmap(&dat, &read, &view, aSets, &world, false), "  read with a view");
+        DatFile_Close(&dat);
+        CheckEqI32(view.nMapW, 1, "a mode outside 0..2 restores nothing");
+
+        written.nCamParam0 = 1;
+        written.nCamScrollX = 500;
+        written.nCamScrollY = 250;
+        Check(OpenWrite("test_smapzoom.tmp", &dat, 2), "  zoom container");
+        Check(Save_WriteSmap(&dat, &written), "  mode 1 written");
+        DatFile_Close(&dat);
+        Check(OpenRead("test_smapzoom.tmp", &dat), "  reopened");
+        Check(Save_ReadSmap(&dat, &read, &view, aSets, &world, false), "  read with a view");
+        DatFile_Close(&dat);
+        CheckEqI32(view.nMode, 1, "the mode comes out of the chunk");
+        CheckEqI32(view.nScrollX, 500, "scroll is restored as stored, with no rescale");
+        CheckEqI32(view.nMapW, 123, "nMapW comes from the level's grid PadImage");
+        CheckEqI32(view.nMapH, 45, "and so does nMapH");
+        CheckEqI32((i32)world.uW, 600, "the world pair becomes 600 x 300");
+        CheckEqI32((i32)world.uH, 300, "for zoom level 1");
+
+        /* The unk_15821C gate: with the restore skipped the map size is left alone. */
+        view.nMapW = 7;
+        view.nMapH = 8;
+        Check(OpenRead("test_smapzoom.tmp", &dat), "  reopened again");
+        Check(Save_ReadSmap(&dat, &read, &view, aSets, &world, true), "  read with the gate set");
+        DatFile_Close(&dat);
+        CheckEqI32(view.nMapW, 7, "the gate leaves the map size alone");
+        CheckEqI32(view.nMode, 1, "but the mode is still read");
+
+        remove("test_smapzoom.tmp");
+    }
     remove("test_save8.tmp");
 }
 

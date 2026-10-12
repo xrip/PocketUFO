@@ -54,6 +54,7 @@
 #include "game/pufo_font.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_ship.h"
+#include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -268,7 +269,22 @@ typedef struct SaveSmapState {
 } SaveSmapState;
 
 bool Save_WriteSmap(DatFile *pDat, const SaveSmapState *pState);
-bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState);
+
+/* Save_ReadSmap @ 0x40c4c. It is NOT a plain mirror of the writer.
+ *
+ * After reading nMode, nScrollX and nScrollY into the viewport at 0x1863E8, and
+ * only when unk_15821C is zero, it switches on the mode it just read and restores
+ * the whole zoom level: the tile grid and layer globals are swapped to that
+ * level's set, the world pair becomes 800x400, 600x300 or 472x236, and nMapW/nMapH
+ * are taken from the level's grid PadImage. A mode outside 0..2 restores nothing
+ * (the switch has a `default: break`). No scroll rescale and no vertical clamp run
+ * here, unlike Smap_ZoomIn.
+ *
+ * The tail order is also not ascending: the 5 bytes go to unk_161F40, the next 8 to
+ * unk_162000, and the last 8 to unk_161FF0, which sits BELOW unk_162000. */
+bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState, SmapView *pView,
+                   const SmapZoomSet aSets[3], SmapWorldSize *pWorld,
+                   bool bSkipZoomRestore);
 
 /* ------------------------------------------------- the product chunk
  *

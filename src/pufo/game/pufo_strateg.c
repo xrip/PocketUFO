@@ -356,8 +356,8 @@ u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY)
 /* Publish the level's map size, the way 0x81DA0..0x81DB0 and 0x81EC0..0x81FF0 do it:
  * nMapW/nMapH come from the level's grid PadImage, and the world pair goes to the
  * separate 0x186BC0 global. */
-static void Smap_ApplyZoomSet(SmapView *pView, const SmapZoomSet *pSet,
-                              SmapWorldSize *pOut)
+void Smap_ApplyZoomSet(SmapView *pView, const SmapZoomSet *pSet,
+                       SmapWorldSize *pOut)
 {
     if (pSet->pGrid != NULL) {
         pView->nMapW = (i32)pSet->pGrid->uWidth;

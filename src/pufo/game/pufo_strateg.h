@@ -273,6 +273,13 @@ bool Smap_ZoomIn(SmapView *pView, const SmapZoomSet aSets[3],
  * map pair 800 x 400 (scale 1.33), level 0 does nothing. No clamping. */
 bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut);
 
+/* Publish one zoom level's world size and map size. This is the piece both
+ * Smap_ZoomIn @ 0x81e44 and Smap_ZoomOut @ 0x81c08 apply after changing nMode, and
+ * Save_ReadSmap @ 0x40c4c applies to the mode it just read out of the smap chunk.
+ * nMapW/nMapH come from the grid PadImage's own uWidth/uHeight; the world pair is
+ * the fixed 800x400 / 600x300 / 472x236. */
+void Smap_ApplyZoomSet(SmapView *pView, const SmapZoomSet *pSet, SmapWorldSize *pOut);
+
 /* Smap_ClampScrollY @ 0x837f8. The original keeps the vertical clamp as its own
  * function: it gates on the screen id at 0x186BC4 not being 2, and takes the strip
  * height from [0x186BBC]->uHeight. Smap_ScrollBy @ 0x820d0 (0x82124..0x82160) and

@@ -708,28 +708,46 @@ bool Save_WriteSmap(DatFile *pDat, const SaveSmapState *pState)
         && DatFile_Write(pDat, pState->abTail8b, 8);
 }
 
-/* Save_ReadSmap: the mirror of Save_WriteSmap (the original has no separate
- * reader in this chunk's family; the port provides one for the round trip). */
-bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState)
+/* Save_ReadSmap @ 0x40c4c. Not a plain mirror: the original restores the zoom level it
+ * just read, unless unk_15821C is set. No scroll rescale and no vertical clamp run here,
+ * unlike Smap_ZoomIn @ 0x81e44. */
+bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState, SmapView *pView,
+                   const SmapZoomSet aSets[3], SmapWorldSize *pWorld,
+                   bool bSkipZoomRestore)
 {
     if (pDat == NULL || pState == NULL) {
         return false;
     }
-    if (!DatFile_FindChunk(pDat, "smap")) {
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_SMAP)) { /* 0x40C60 */
         return false;
     }
-    if (!DatFile_Read(pDat, &pState->nCamParam0, 4)
-        || !DatFile_Read(pDat, &pState->nCamScrollX, 4)
-        || !DatFile_Read(pDat, &pState->nCamScrollY, 4)
-        || !DatFile_Read(pDat, &pState->nParam3, 4)
-        || !DatFile_Read(pDat, &pState->nParam4, 4)) {
+    if (!DatFile_Read(pDat, &pState->nCamParam0, 4)  /* 0x40C78: viewport nMode */
+        || !DatFile_Read(pDat, &pState->nCamScrollX, 4) /* 0x40C90 */
+        || !DatFile_Read(pDat, &pState->nCamScrollY, 4) /* 0x40CA8 */
+        || !DatFile_Read(pDat, &pState->nParam3, 4)     /* 0x40D94 */
+        || !DatFile_Read(pDat, &pState->nParam4, 4)) {  /* 0x40DAC */
         return false;
     }
-    for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+
+    if (pView != NULL) {
+        pView->nMode    = pState->nCamParam0;
+        pView->nScrollX = pState->nCamScrollX;
+        pView->nScrollY = pState->nCamScrollY;
+
+        /* 0x40CB4: the unk_15821C gate, then the switch on the mode just read. */
+        if (!bSkipZoomRestore && aSets != NULL &&
+            pState->nCamParam0 >= 0 && pState->nCamParam0 < 3) {
+            Smap_ApplyZoomSet(pView, &aSets[pState->nCamParam0], pWorld);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) { /* 0x40DB4..0x40E7C */
         if (!Save_ReadSmapSite(pDat, &pState->aSites[i])) {
             return false;
         }
     }
+
+    /* 0x40E84..0x40EB8: unk_161F40, then unk_162000, then unk_161FF0. */
     return DatFile_Read(pDat, pState->abTail5, 5)
         && DatFile_Read(pDat, pState->abTail8a, 8)
         && DatFile_Read(pDat, pState->abTail8b, 8);

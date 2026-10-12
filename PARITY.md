@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 569 / 1103 (51.6%) |
-| Bytes of original code cited | 216484 / 598792 (36.2%) |
+| Functions cited as evidence | 570 / 1103 (51.7%) |
+| Bytes of original code cited | 217252 / 598792 (36.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
-| Test checks run | 4884 |
+| Test checks run | 4901 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -39,7 +39,7 @@ the per-subsystem notes and the tests listed at the end.
 | `util` | 18 | 21 | 1036 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 27 | 35 | 16924 / 27172 | save/load chunk read/write |
+| `save` | 28 | 35 | 17692 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12200 / 38368 | shared UI panel, text engine, menus |
@@ -190,7 +190,7 @@ is the module that answers to it.
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
 
-### `save` (27 functions)
+### `save` (28 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -201,6 +201,7 @@ is the module that answers to it.
 | `0x438e0` | `Save_WriteMap` | 932 | `src/pufo/game/pufo_save.h` |
 | `0x402c0` | `Save_ReadBases` | 876 | `src/pufo/game/pufo_save.h` |
 | `0x3f6dc` | `Save_WriteShips` | 844 | `src/pufo/game/pufo_save.h` |
+| `0x40c4c` | `Save_ReadSmap` | 768 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+1) |
 | `0x3f1fc` | `Save_WriteBases` | 760 | `src/pufo/game/pufo_save.h` |
 | `0x446a8` | `Save_WriteTGameData` | 640 | `src/pufo/game/pufo_save.h` |
 | `0x43c84` | `Save_WriteTeamUnits` | 604 | `src/pufo/game/pufo_save.h` |
@@ -524,7 +525,7 @@ is the module that answers to it.
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
-| `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_strateg.h` |
+| `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_ship.h` |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d1bc` | `Geoscape_TickHourly` | 512 | `src/pufo/game/pufo_geoscape.h` |
@@ -881,7 +882,7 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 8 functions, 10248 bytes remaining
+### `save` — 7 functions, 9480 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -890,7 +891,6 @@ whose port work they belong to.
 | `0x3fbb4` | `Save_WriteStrateg` | 1616 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44248` | `Save_ReadTGameData` | 1120 | not yet ported; scheduled with the `save` subsystem work |
 | `0x45904` | `SaveSlot_FormatList` | 796 | not yet ported; scheduled with the `save` subsystem work |
-| `0x40c4c` | `Save_ReadSmap` | 768 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44988` | `SaveGame` | 564 | not yet ported; scheduled with the `save` subsystem work |
 | `0x43ee0` | `Save_ReadRmp` | 320 | not yet ported; scheduled with the `save` subsystem work |
 
@@ -1333,7 +1333,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_render` | PASS | 43 |
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
-| `test_save` | PASS | 367 |
+| `test_save` | PASS | 384 |
 | `test_ship` | PASS | 31 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
