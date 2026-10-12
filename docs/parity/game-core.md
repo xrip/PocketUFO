@@ -2174,6 +2174,32 @@ the last 8 to `unk_161FF0`, which sits **below** `unk_162000`.
 Covered by `tests/test_save.c` (`TestSmapChunk`, 17 new checks on top of the 268-check round trip).
 
 
+### The rmp chunk (done)
+
+`Save_ReadRmp @ 0x43ee0` is recreated in `game/pufo_save.{h,c}`. There is no writer for this
+chunk: it records the random-map modules a mission was built from, and `Tact_InitMission @ 0x3c550`
+is the other caller.
+
+A count, then six blocks, then one `Map_LoadRmp` call per module. The six blocks are 60 dwords
+each except the names, which are 60 * 20 = 1200 bytes. **The order they are read in is not the
+order the loader takes them in:**
+
+```
+read 1 -> nTileX   read 2 -> nTileY   read 3 -> nSizeX   read 4 -> nSizeY
+read 5 -> the 20-byte names           read 6 -> nLevel
+```
+
+and the call is `Map_LoadRmp(rmp, nTileX[i], nTileY[i], nSizeX[i], nSizeY[i], name + 20*i,
+nLevel[i])`. Getting that order wrong silently builds the map with sizes where levels should be,
+so the port takes the loader as a callback and the test records the arguments instead of trusting
+the round trip.
+
+A zero or negative count loads nothing. Deviation: the original indexes its six fixed 60-entry
+arrays with no bound check; the port refuses a count above 60.
+
+Covered by `tests/test_save.c` (`TestReadRmp`, 25 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

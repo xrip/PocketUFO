@@ -55,6 +55,7 @@
 #include "game/pufo_mapcell.h"
 #include "game/pufo_ship.h"
 #include "game/pufo_strateg.h"
+#include "game/pufo_rmp.h"
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -635,5 +636,34 @@ typedef struct FlobjsState {
 bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
                          const TeamUnitsState *pRosters, const FlobjsState *pFlobjs,
                          const MapGeom *pMap, MapCellLookup pfnLookup, void *pUser);
+
+/* ------------------------------------------------- the rmp chunk
+ *
+ * Save_ReadRmp @ 0x43ee0. A count, then SIX blocks, then one Map_LoadRmp call per
+ * module. There is no writer for this chunk: it records the random-map modules a
+ * mission was built from, and Tact_InitMission @ 0x3c550 is the other caller.
+ *
+ * The six blocks are 60 dwords each (240 bytes) except the module names, which are
+ * 60 * 20 = 1200 bytes. The order they are READ in is not the order the loader
+ * takes them in:
+ *
+ *     read 1 -> nTileX   read 2 -> nTileY   read 3 -> nSizeX   read 4 -> nSizeY
+ *     read 5 -> the 20-byte names          read 6 -> nLevel
+ *
+ * and the call is Map_LoadRmp(rmp, nTileX[i], nTileY[i], nSizeX[i], nSizeY[i],
+ * name + 20*i, nLevel[i]). Getting that order wrong silently builds the map with
+ * sizes where levels should be, so the port takes the loader as a callback and the
+ * test records the arguments.
+ *
+ * The loop only runs when the count is positive. Deviation: the original indexes
+ * its six fixed 60-entry arrays with no bound check; the port refuses a count
+ * above 60. */
+#define PUFO_SAVE_RMP_MODULE_MAX 60
+
+typedef i32 (*RmpModuleLoad)(RmpData *pRmp, const char *pszBase,
+                             i32 nTileX, i32 nTileY, i32 nSizeX, i32 nSizeY,
+                             i32 nLevel, void *pUser);
+
+bool Save_ReadRmp(DatFile *pDat, RmpData *pRmp, RmpModuleLoad pfnLoad, void *pUser);
 
 #endif /* PUFO_SAVE_H */

@@ -1833,3 +1833,45 @@ bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
     }
     return W(pDat, &pSt->nUnk138E70, 4); /* 0x448E4 */
 }
+
+bool Save_ReadRmp(DatFile *pDat, RmpData *pRmp, RmpModuleLoad pfnLoad, void *pUser)
+{
+    i32 aTileX[PUFO_SAVE_RMP_MODULE_MAX];
+    i32 aTileY[PUFO_SAVE_RMP_MODULE_MAX];
+    i32 aSizeX[PUFO_SAVE_RMP_MODULE_MAX];
+    i32 aSizeY[PUFO_SAVE_RMP_MODULE_MAX];
+    i32 aLevel[PUFO_SAVE_RMP_MODULE_MAX];
+    char aNames[PUFO_SAVE_RMP_MODULE_MAX][20];
+    i32 nCount;
+
+    if (pDat == NULL || pRmp == NULL || pfnLoad == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_RMP)) { /* 0x43EF4 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &nCount, 4)) { /* 0x43F04 */
+        return false;
+    }
+    if (nCount > PUFO_SAVE_RMP_MODULE_MAX) { /* deviation: the original has no bound check */
+        return false;
+    }
+
+    /* 0x43F18..0x43F7C: the six blocks, in the original's read order. */
+    if (!DatFile_Read(pDat, aTileX, sizeof(aTileX))) { return false; }
+    if (!DatFile_Read(pDat, aTileY, sizeof(aTileY))) { return false; }
+    if (!DatFile_Read(pDat, aSizeX, sizeof(aSizeX))) { return false; }
+    if (!DatFile_Read(pDat, aSizeY, sizeof(aSizeY))) { return false; }
+    if (!DatFile_Read(pDat, aNames, sizeof(aNames))) { return false; }
+    if (!DatFile_Read(pDat, aLevel, sizeof(aLevel))) { return false; }
+
+    if (nCount <= 0) { /* 0x43F8C: a zero or negative count loads nothing */
+        return true;
+    }
+
+    for (i32 i = 0; i < nCount; ++i) { /* 0x43F9C..0x43FFC */
+        (void)pfnLoad(pRmp, aNames[i], aTileX[i], aTileY[i], aSizeX[i], aSizeY[i],
+                      aLevel[i], pUser);
+    }
+    return true;
+}

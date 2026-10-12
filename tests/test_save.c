@@ -1504,6 +1504,114 @@ static void TestTGameDataWrite(void)
           "NULL rosters refused");
 }
 
+static i32 g_nRmpCalls;
+static i32 g_aRmpTileX[4], g_aRmpTileY[4], g_aRmpSizeX[4], g_aRmpSizeY[4], g_aRmpLevel[4];
+static char g_aRmpName[4][20];
+
+static i32 RmpRecorder(RmpData *pRmp, const char *pszBase, i32 nTileX, i32 nTileY,
+                       i32 nSizeX, i32 nSizeY, i32 nLevel, void *pUser)
+{
+    (void)pRmp;
+    (void)pUser;
+    if (g_nRmpCalls < 4) {
+        g_aRmpTileX[g_nRmpCalls] = nTileX;
+        g_aRmpTileY[g_nRmpCalls] = nTileY;
+        g_aRmpSizeX[g_nRmpCalls] = nSizeX;
+        g_aRmpSizeY[g_nRmpCalls] = nSizeY;
+        g_aRmpLevel[g_nRmpCalls] = nLevel;
+        memcpy(g_aRmpName[g_nRmpCalls], pszBase, 20);
+    }
+    ++g_nRmpCalls;
+    return 0;
+}
+
+static bool WriteRmpChunk(DatFile *pDat, i32 nCount)
+{
+    i32 aTileX[PUFO_SAVE_RMP_MODULE_MAX] = {0};
+    i32 aTileY[PUFO_SAVE_RMP_MODULE_MAX] = {0};
+    i32 aSizeX[PUFO_SAVE_RMP_MODULE_MAX] = {0};
+    i32 aSizeY[PUFO_SAVE_RMP_MODULE_MAX] = {0};
+    i32 aLevel[PUFO_SAVE_RMP_MODULE_MAX] = {0};
+    char aNames[PUFO_SAVE_RMP_MODULE_MAX][20];
+
+    aTileX[0] = 1;  aTileX[1] = 2;  aTileX[2] = 3;
+    aTileY[0] = 10; aTileY[1] = 20; aTileY[2] = 30;
+    aSizeX[0] = 100; aSizeX[1] = 200; aSizeX[2] = 300;
+    aSizeY[0] = 1000; aSizeY[1] = 2000; aSizeY[2] = 3000;
+    aLevel[0] = 7;  aLevel[1] = 8;  aLevel[2] = 9;
+    memset(aNames, 0, sizeof(aNames));
+    memcpy(aNames[0], "mod0", 5);
+    memcpy(aNames[1], "mod1", 5);
+    memcpy(aNames[2], "mod2", 5);
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_RMP)) {
+        return false;
+    }
+    if (!DatFile_Write(pDat, &nCount, 4)) { return false; }
+    if (!DatFile_Write(pDat, aTileX, sizeof(aTileX))) { return false; }
+    if (!DatFile_Write(pDat, aTileY, sizeof(aTileY))) { return false; }
+    if (!DatFile_Write(pDat, aSizeX, sizeof(aSizeX))) { return false; }
+    if (!DatFile_Write(pDat, aSizeY, sizeof(aSizeY))) { return false; }
+    if (!DatFile_Write(pDat, aNames, sizeof(aNames))) { return false; }
+    return DatFile_Write(pDat, aLevel, sizeof(aLevel));
+}
+
+static void TestReadRmp(void)
+{
+    DatFile dat;
+    RmpData rmp;
+
+    printf("Save_ReadRmp\n");
+
+    memset(&rmp, 0, sizeof(rmp));
+
+    Check(OpenWrite("test_rmp.tmp", &dat, 2), "  container opened");
+    Check(WriteRmpChunk(&dat, 3), "  rmp chunk written");
+    DatFile_Close(&dat);
+    /* 4 + 5*240 + 1200. */
+    CheckEqI32(FileSizeOf(L"test_rmp.tmp"), 46 + 4 + 5 * 240 + 1200, "the chunk payload");
+
+    g_nRmpCalls = 0;
+    Check(OpenRead("test_rmp.tmp", &dat), "  reopened");
+    Check(Save_ReadRmp(&dat, &rmp, RmpRecorder, NULL), "  read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(g_nRmpCalls, 3, "one Map_LoadRmp call per module");
+    CheckEqI32(g_aRmpTileX[0], 1, "the first block read becomes nTileX");
+    CheckEqI32(g_aRmpTileY[0], 10, "the second becomes nTileY");
+    CheckEqI32(g_aRmpSizeX[0], 100, "the third becomes nSizeX");
+    CheckEqI32(g_aRmpSizeY[0], 1000, "the fourth becomes nSizeY");
+    CheckEqI32(g_aRmpLevel[0], 7, "and the LAST block becomes nLevel");
+    Check(strcmp(g_aRmpName[0], "mod0") == 0, "the names come from the 1200-byte block");
+    Check(strcmp(g_aRmpName[2], "mod2") == 0, "at 20 bytes per module");
+    CheckEqI32(g_aRmpLevel[2], 9, "the third module gets the third level");
+
+    /* A zero count loads nothing. */
+    Check(OpenWrite("test_rmp0.tmp", &dat, 2), "  empty container");
+    Check(WriteRmpChunk(&dat, 0), "  count 0 written");
+    DatFile_Close(&dat);
+    g_nRmpCalls = 0;
+    Check(OpenRead("test_rmp0.tmp", &dat), "  reopened");
+    Check(Save_ReadRmp(&dat, &rmp, RmpRecorder, NULL), "  read");
+    DatFile_Close(&dat);
+    CheckEqI32(g_nRmpCalls, 0, "a zero count loads nothing");
+
+    /* More modules than the original's fixed arrays hold. */
+    Check(OpenWrite("test_rmpbig.tmp", &dat, 2), "  oversized container");
+    Check(WriteRmpChunk(&dat, 61), "  count 61 written");
+    DatFile_Close(&dat);
+    Check(OpenRead("test_rmpbig.tmp", &dat), "  reopened");
+    Check(!Save_ReadRmp(&dat, &rmp, RmpRecorder, NULL), "a count above 60 is refused");
+    DatFile_Close(&dat);
+
+    Check(!Save_ReadRmp(&dat, &rmp, NULL, NULL), "NULL loader refused");
+    Check(!Save_ReadRmp(NULL, &rmp, RmpRecorder, NULL), "NULL dat refused");
+
+    remove("test_rmp.tmp");
+    remove("test_rmp0.tmp");
+    remove("test_rmpbig.tmp");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1525,6 +1633,7 @@ int main(void)
     TestMapChunk();
     TestTeamUnitsChunk();
     TestTGameDataWrite();
+    TestReadRmp();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
