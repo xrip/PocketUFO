@@ -6408,7 +6408,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | **ported** — the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam |
 | `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | **ported** |
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
-| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | not ported |
+| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded, deliberately not ported: `angle` and `scale` are .bss doubles with no owner in the port |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | not ported |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | not ported |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
@@ -6528,6 +6528,48 @@ What is **not** known, stated rather than papered over: why column 50. `aItemQty
 array at `ObjectRec + 0x3a`, and the ships chunk writes it indexed by ship slot; no writer of column 50
 was found in the binary. The offset is proven from the ARM. Its meaning is an open question, and the port
 reproduces the offset without inventing a name for it.
+
+### `MapView_DrawUnitHeightGlyph @ 0x1c240` — decoded, deliberately not ported
+
+It draws the firing-arc height glyph for the cell that **is** the current fire target. Everything about
+it is now known except one thing, and that one thing is why it is not ported.
+
+The gate, six conditions, all required:
+
+| test | where |
+|---|---|
+| `Map + 0x52` byte non-zero | the port's `bFireStatus2` |
+| `Map + 0x59` byte non-zero | now named `bFireStatus9` |
+| `nMapX == nFireTgtY` | `0x14044` |
+| `nMapY == nFireTgtX` | `0x14040` — **X and Y are swapped** against the iso fields |
+| `nLayer == nFireTgtZ` | `0x14048` |
+| `nHeightGlyphId != 0` | `0x14000` |
+
+The arithmetic, with `A = nAimHeightRawA % 16`, `B = nAimHeightRawB % 16`, `C = third operand % 12`:
+
+```
+nHeightOff = (A - B) * sin(angle) * scale
+nHeightAux = (A + B) * cos(angle) * scale * scale - 2*C - 1
+
+index  = 10 * nHeightGlyphId + nFireTickProgress + nSmokeSprBase + 16, palette 1
+position = (nHeightOff + nDrawX, nDrawY + nHeightAux + 15)
+```
+
+Why it is deferred: `angle` (`0x1571F8`) and `scale` (`0x156AA8`) are **.bss doubles set elsewhere**, and
+the port has no owner for either. Porting now would mean inventing two globals with no proven writer.
+The only real constant is `2.0` at `0xAADB0`.
+
+One trap avoided on the way. The ARM reads:
+
+```
+MOVS R3, R0
+ADDMI R3, R3, #0xF
+MOV  R3, R3, ASR #4      ; looks like a divide by 16
+SUB  R0, R0, R3, LSL #4  ; ...but this subtracts the quotient back: it is a MODULO
+```
+
+The division is intermediate. Hex-Rays rendered `% 16` correctly, and "correcting" it to `/ 16` would
+have introduced an error rather than removed one.
 
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn
