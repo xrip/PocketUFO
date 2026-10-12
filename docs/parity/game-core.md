@@ -6410,7 +6410,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded, deliberately not ported: `angle` and `scale` are .bss doubles with no owner in the port |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
-| `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | not ported |
+| `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | fully decoded, port next — every callee is already ported |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
 | `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
 | `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
@@ -6594,6 +6594,37 @@ One thing the test had to learn the hard way: `SoftSurf_BlitSrcRect` **blends** 
 by the colour key rather than copying. A pixel covered by one segment reads 813, by two reads 1138. So
 the assertable fact is covered-versus-not-covered, not a pixel value. Asserting an exact colour here
 would have been asserting the blend arithmetic, which is a different function's business.
+
+### `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` — decoded, two offsets that look wrong and are not
+
+Every callee is already ported, so this is ready to implement. Two readings in the pseudocode are
+misleading and had to be resolved against the struct layout.
+
+**`pObj->aItemQty[0x34]` is not an array element.** `aItemQty` is 52 u16 entries at `ObjectRec + 0x3a`,
+so index 52 is one past the end — and `0x3a + 104 = 0xA2`, which is `uIconId`. The weapon icon glyph is
+therefore `uIconId + nBigObsSprBase − 1`: **weapon icons come from the bigobs sprite group**. Reading it
+as a quantity would have been wrong.
+
+**`*(u8*)(*pHand + 174) != 255` is `bAmmoCap`.** `ObjectRec + 0xAE`, where 255 means the weapon never
+runs out of ammo. The value drawn next to it is `TactItem + 6`, which is `nAmmo`. So the panel shows a
+clip count only for weapons that have one.
+
+The rest of the shape:
+
+- it **re-bases the panel and 19 bank controls first**: `v1 = 303` when the deploy panel is open, else
+  `320 − pHudPad->uHeight`, stored into `pHudPad->nOriginY`, then
+  `for (i = 0; i < 608; i += 32) pBank[i].y = off_A7ED8[i + 2] + v1`. 608 / 32 = 19, and those are the
+  same 19 controls it then blits.
+- weapon centring is `nOriginX + 19*(2 − nFootW)/2 + 9` on the left and `+ 198` on the right, with
+  `y = nOriginY + 17*(3 − nFootH)/2 + 41` — a 2×3 footprint of 19×17 pixel cells.
+- the ammo number is shown when `(bTwoHanded == 0 && nCategory < 3) || Unit_bIsLarge(unit)`.
+- four decimals of width 3 with leading zeros: TU (forced to 0 when `unk_157198->bUnk70114` is set),
+  stun/armor at (109,60) and (109,75), HP and morale at (160,60) and (160,75).
+- a 12-segment animation bar at `(nOriginX + 85, nOriginY + 13)`, each segment 4×2 on a 6-pixel pitch,
+  whose profile depends on `apUiSlotsA[26]`: mode 0 is a clamped ramp, mode 1 a triangle over
+  `slot25 % 32`, mode 2 a peaked profile with key `120 − 10·|v21|` where `v21` counts up from `−v19`.
+- **when the counter reaches its end the next animation mode is chosen at random**: `slot25 = 0` and
+  `slot26 = Game_RandU16(3)`. That is why no test may assert on a specific mode following an animation.
 
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn
