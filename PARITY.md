@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 502 / 1103 (45.5%) |
-| Bytes of original code cited | 228552 / 598792 (38.2%) |
+| Functions cited as evidence | 504 / 1103 (45.7%) |
+| Bytes of original code cited | 228616 / 598792 (38.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4472 |
+| Test checks run | 4487 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 51 | 205 | 37904 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 53 | 205 | 37968 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 52 | 243 | 6372 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (51 functions)
+### `strat` (53 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -556,6 +556,8 @@ is the module that answers to it.
 | `0x838ac` | `StrategList_Clear` | 36 | `src/pufo/game/pufo_strateg.h` |
 | `0x66198` | `Base_GetItemQtyA` | 32 | `src/pufo/game/pufo_geoscape.h` |
 | `0x661b8` | `Base_GetItemQtyB` | 32 | `src/pufo/game/pufo_geoscape.h` |
+| `0x84ab8` | `Smap_OnZoomOut` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x84ad8` | `Smap_OnZoomIn` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.c` (+5) |
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
@@ -926,7 +928,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 154 functions, 124552 bytes remaining
+### `strat` — 152 functions, 124488 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1069,8 +1071,6 @@ whose port work they belong to.
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84648` | `Smap_ClearSelection` | 64 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b560` | `FundingScreen_Open` | 60 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x84ab8` | `Smap_OnZoomOut` | 32 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x84ad8` | `Smap_OnZoomIn` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d6c0` | `GameTime_Unpause` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1336,7 +1336,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_ship` | PASS | 31 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
-| `test_strateg` | PASS | 93 |
+| `test_strateg` | PASS | 108 |
 | `test_tactctl` | PASS | 139 |
 | `test_tacthud` | PASS | 103 |
 | `test_tactstate` | PASS | 152 |

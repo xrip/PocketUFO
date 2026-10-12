@@ -423,3 +423,25 @@ bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pO
     /* Smap_ZoomOut applies no clamp, unlike Smap_ZoomIn. */
     return true;
 }
+
+/* Smap_OnZoomOut @ 0x84ab8 and Smap_OnZoomIn @ 0x84ad8: the two zoom buttons.
+ * Each is Sound_Play(17) followed by a tail call on the one global view at 0x1863E8,
+ * and each returns the zoom result straight through (0x84AC4/0x84AC8, 0x84AE4/0x84AE8).
+ * The sample is a hook because the audio backend is a seam in this port. */
+bool Smap_OnZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut,
+                    SmapSampleFn pfnPlay, void *pUser)
+{
+    if (pfnPlay != NULL) {
+        pfnPlay(17, pUser); /* 0x84AC4 */
+    }
+    return Smap_ZoomOut(pView, aSets, pOut);
+}
+
+bool Smap_OnZoomIn(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut,
+                   i32 nStripHeight, SmapSampleFn pfnPlay, void *pUser)
+{
+    if (pfnPlay != NULL) {
+        pfnPlay(17, pUser); /* 0x84AE4 */
+    }
+    return Smap_ZoomIn(pView, aSets, pOut, nStripHeight);
+}

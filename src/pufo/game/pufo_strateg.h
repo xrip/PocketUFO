@@ -283,4 +283,17 @@ bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pO
  * 0x83830 writes `160 - nMapH/2`, the same value as -(nMapH/2 - 160). */
 void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight);
 
+/* The zoom buttons. Smap_OnZoomOut @ 0x84ab8 and Smap_OnZoomIn @ 0x84ad8 are two
+ * instructions each: play sample 17, then apply the zoom to the one global view.
+ * The port injects the sample because the audio backend is a seam here.
+ *
+ * Note the asymmetry the buttons inherit: zoom out never clamps, zoom in always does,
+ * with the strip height read from [0x186BBC]->uHeight in the original. */
+typedef void (*SmapSampleFn)(i32 nSample, void *pUser);
+
+bool Smap_OnZoomIn(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut,
+                   i32 nStripHeight, SmapSampleFn pfnPlay, void *pUser);
+bool Smap_OnZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut,
+                    SmapSampleFn pfnPlay, void *pUser);
+
 #endif /* PUFO_STRATEG_H */

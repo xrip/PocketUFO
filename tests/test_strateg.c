@@ -457,6 +457,71 @@ static void TestSmapZoom(void)
     Check(!Smap_ZoomOut(&view, aSets, &world), "level 0 has no zoom-out step");
 }
 
+static i32 g_nSampleCalls;
+static i32 g_aSampleLog[4];
+
+static void RecordSample(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (g_nSampleCalls < 4) {
+        g_aSampleLog[g_nSampleCalls] = nSample;
+    }
+    ++g_nSampleCalls;
+}
+
+static void TestZoomButtons(void)
+{
+    SmapView view;
+    SmapZoomSet aSets[3];
+    SmapWorldSize world;
+    static PadImage aGrid[3];
+
+    printf("Smap_OnZoomIn / Smap_OnZoomOut\n");
+
+    aGrid[0].uWidth = 800; aGrid[0].uHeight = 400;
+    aGrid[1].uWidth = 600; aGrid[1].uHeight = 300;
+    aGrid[2].uWidth = 472; aGrid[2].uHeight = 236;
+    for (i32 i = 0; i < 3; ++i) {
+        aSets[i].pTiles = NULL;
+        aSets[i].pGrid = &aGrid[i];
+        aSets[i].pOverlay = NULL;
+    }
+    aSets[0].uWorldW = 800; aSets[0].uWorldH = 400;
+    aSets[1].uWorldW = 600; aSets[1].uWorldH = 300;
+    aSets[2].uWorldW = 472; aSets[2].uWorldH = 236;
+
+    memset(&view, 0, sizeof(view));
+    view.nScrollX = 100;
+    view.nScrollY = 100;
+
+    g_nSampleCalls = 0;
+    Check(Smap_OnZoomIn(&view, aSets, &world, 0, RecordSample, NULL),
+          "the zoom-in button reports the step it took");
+    CheckEqI32(g_nSampleCalls, 1, "the button plays exactly one sample");
+    CheckEqI32(g_aSampleLog[0], 17, "the zoom click is sample 17");
+    CheckEqI32(view.nMode, 1, "the button moves the global view one level");
+    CheckEqI32(view.nScrollY, -10, "the button keeps the zoom-in clamp");
+
+    /* 0x84AE4 runs before the zoom, so a refused step still clicks. */
+    Check(Smap_OnZoomIn(&view, aSets, &world, 0, RecordSample, NULL),
+          "the button walks level 1 to level 2");
+    CheckEqI32(view.nMode, 2, "the closest level is now reached");
+    Check(!Smap_OnZoomIn(&view, aSets, &world, 0, RecordSample, NULL),
+          "level 2 still refuses the zoom-in step");
+    CheckEqI32(g_nSampleCalls, 3, "a refused step still plays the sample");
+    CheckEqI32(view.nMode, 2, "and still changes nothing else");
+
+    Check(Smap_OnZoomOut(&view, aSets, &world, RecordSample, NULL),
+          "the zoom-out button reports the step it took");
+    CheckEqI32(g_aSampleLog[2], 17, "the zoom-out click is the same sample");
+    CheckEqI32(view.nMode, 1, "zoom out moves back one level");
+
+    view.nMode = 0;
+    Check(!Smap_OnZoomOut(&view, aSets, &world, RecordSample, NULL),
+          "level 0 still refuses the zoom-out step");
+    CheckEqI32(g_nSampleCalls, 5, "the widest level clicks too");
+}
+
 static void TestStrategListAlloc(void)
 {
     PtrArray list;
@@ -484,6 +549,7 @@ int main(void)
     TestUpdateDetectAndIntercepts();
     TestSmapView();
     TestSmapZoom();
+    TestZoomButtons();
     TestStrategListAlloc();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;

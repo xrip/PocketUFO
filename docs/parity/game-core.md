@@ -4726,8 +4726,22 @@ against 1/1.33 = 0.7518796992481203. A full round trip on a scroll of 100 lands 
 That asymmetry is in the original, and the test asserts it rather than hiding it.
 
 `Smap_ZoomIn` clamps `nScrollY` after the rescale using the **new** map height;
-`Smap_ZoomOut` applies no clamp at all. The clamp is the same code `Smap_ScrollBy`
-uses, so it lives in one helper (`Smap_ClampScrollY`).
+`Smap_ZoomOut` applies no clamp at all.
+
+The clamp is a function of its own in the original, `Smap_ClampScrollY @ 0x837f8`:
+it gates on the screen id at 0x186BC4 not being 2, reads the strip height from
+`[0x186BBC]->uHeight`, and writes `160 - nMapH/2` for the lower bound, which is the
+same value as `-(nMapH/2 - 160)` written the other way round. `Smap_ScrollBy @ 0x820d0`
+(0x82124..0x82160) and `Smap_ZoomIn @ 0x81e44` (0x82080..0x820B0) both inline the
+identical code instead of calling it, so the port keeps one public helper and three
+call sites.
+
+The two zoom buttons are `Smap_OnZoomOut @ 0x84ab8` and `Smap_OnZoomIn @ 0x84ad8`, two
+instructions each: `Sound_Play(17)` and then a tail call on the one global view at
+0x1863E8, with the zoom result returned straight through. The sample runs before the
+zoom, so a refused step at level 2 or level 0 still clicks. Ported as `Smap_OnZoomIn` /
+`Smap_OnZoomOut` with the sample behind a `SmapSampleFn` hook, asserted by
+`test_strateg::TestZoomButtons` (12 checks).
 
 ### Deviations, continued
 
@@ -4735,6 +4749,8 @@ uses, so it lives in one helper (`Smap_ClampScrollY`).
 |---|---|---|
 | 4 | The level table is caller-owned data; the port does not write 0x186B04 / 0x186E40 / 0x186BE0 | the app reads `aSets[pView->nMode]` after a zoom instead of the port owning three globals |
 | 5 | The `u16` pair at 0x186BC0 travels in `SmapWorldSize` | it is a neighbouring global, not part of the 36-byte view block |
+| 6 | The strip height and the screen-id gate are arguments, not reads of `[0x186BBC]` and `0x186BC4` | the port owns no UI globals; the caller supplies both |
+| 7 | Sample 17 is a `SmapSampleFn` hook | the audio backend is a seam in this port |
 
 ### Strategic accessors: per-base quantity, panel flags, unpause
 
