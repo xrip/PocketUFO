@@ -433,3 +433,92 @@ i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount
 
     return nUsed;
 }
+
+/* Craft_LoadStoresFromBase @ 0x693ec.
+ *
+ * Fill the craft from its home base, one unit at a time. Each unit is gated on the hold
+ * having room for it: Base_CalcWeaponStorageUsed + that object's bCargoSize has to stay under
+ * Craft_GetTypeCargoCap, and the capacity is re-read every unit, so a load that fills the hold
+ * stops early rather than overshooting.
+ *
+ * The default case is one ammo object: take min(what the craft carries of the weapon object,
+ * what the base has of the ammo object).
+ *
+ * Kinds 7, 8 and 10 split the wanted load across three ammo pools in order. ARM
+ * 0x69884..0x698E4 works it out as: take what the first pool has, or the whole want if the
+ * first pool covers it; the remainder goes to the second pool the same way; what is left after
+ * the second pool is capped by the third. */
+static i32 LoadUnits(const CraftStoreLoadEnv *pEnv, Ship *pShip, BaseRec *pBase,
+                     ObjectRecFull *pObj, i32 nCraftIdx, i32 nUnits)
+{
+    for (i32 i = 0; i < nUnits; ++i) {
+        i32 nUsed = Base_CalcWeaponStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nCraftIdx);
+        i32 nCap = (i32)Craft_GetTypeCargoCap(pShip);
+        if (nUsed + (i32)pObj->bCargoSize < nCap) {
+            (void)InvSel_AddItemQty(pShip, pObj, 1);
+            (void)BaseRec_SubItemQty(pBase, pObj, 1);
+        }
+    }
+    return nUnits;
+}
+
+void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nSrc,
+                              i32 nCraftIdx)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->apObjects == NULL ||
+        pEnv->apBases == NULL || nCraftIdx < 0 || nCraftIdx >= 52) {
+        return;
+    }
+
+    Ship *pShip = pEnv->apCraft[nCraftIdx];
+    if (pShip == NULL) {
+        return;
+    }
+
+    i32 nHome = (i32)pShip->bHomeBase;
+    if (nHome < 0 || nHome >= 8) { /* auPerBaseVal has eight columns */
+        return;
+    }
+
+    BaseRec *pBase = pEnv->apBases[nHome];
+    if (pBase == NULL) {
+        return;
+    }
+
+    i32 nWeapon = (i32)nItemKind;
+    if (nWeapon < 0 || nWeapon >= pEnv->nObjectCount || pEnv->apObjects[nWeapon] == NULL) {
+        return;
+    }
+
+    i32 nWant = (i32)pEnv->apObjects[nWeapon]->aItemQty[nCraftIdx];
+
+    i32 aPool[3];
+    i32 nPool = 1;
+
+    switch (nItemKind) {
+    case 7:  aPool[0] = 40; aPool[1] = 41; aPool[2] = 42; nPool = 3; break;
+    case 8:  aPool[0] = 43; aPool[1] = 44; aPool[2] = 45; nPool = 3; break;
+    case 10: aPool[0] = 46; aPool[1] = 47; aPool[2] = 48; nPool = 3; break;
+    default: aPool[0] = (i32)nSrc; break;
+    }
+
+    /* Split the wanted load across the pools, first pool first. */
+    i32 nTake[3];
+    i32 nRemain = nWant;
+    for (i32 p = 0; p < nPool; ++p) {
+        i32 nIdx = aPool[p];
+        if (nIdx < 0 || nIdx >= pEnv->nObjectCount || pEnv->apObjects[nIdx] == NULL) {
+            nTake[p] = 0;
+            continue;
+        }
+        i32 nStock = (i32)pEnv->apObjects[nIdx]->auPerBaseVal[nHome];
+        nTake[p] = (nRemain < nStock) ? nRemain : nStock;
+        nRemain -= nTake[p];
+    }
+
+    for (i32 p = 0; p < nPool; ++p) {
+        if (nTake[p] > 0) {
+            (void)LoadUnits(pEnv, pShip, pBase, pEnv->apObjects[aPool[p]], nCraftIdx, nTake[p]);
+        }
+    }
+}

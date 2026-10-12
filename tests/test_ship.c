@@ -492,6 +492,95 @@ static void TestCargoHold(void)
                    Base_CalcWeaponStorageUsed(g_apObj, 53, 60), 0);
 }
 
+
+/* ------------------------------------------------- refilling a craft from its base */
+
+static void TestLoadStores(void)
+{
+    static Ship g_aShip[1];
+    static Ship *g_apCraft[1];
+    static BaseRec g_aBase[1];
+    static BaseRec *g_apBase[1];
+    static ObjectRecFull g_aObj[53];
+    static ObjectRecFull *g_apObj[53];
+    CraftStoreLoadEnv env;
+
+    printf("Craft_LoadStoresFromBase\n");
+
+    memset(g_aShip, 0, sizeof(g_aShip));
+    memset(g_aBase, 0, sizeof(g_aBase));
+    memset(g_aObj, 0, sizeof(g_aObj));
+    g_aShip[0].bCraftType = 0;      /* hold 140 */
+    g_aShip[0].bHomeBase = 0;
+    g_aShip[0].nSlotIdx = 0;
+    g_aBase[0].bSlot = 0;
+    g_apCraft[0] = &g_aShip[0];
+    g_apBase[0] = &g_aBase[0];
+    for (int i = 0; i < 53; ++i) {
+        g_apObj[i] = &g_aObj[i];
+        g_aObj[i].bCargoSize = 1;
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apCraft;
+    env.apBases = g_apBase;
+    env.apObjects = g_apObj;
+    env.nObjectCount = 53;
+
+    /* One weapon object, one ammo object. The craft carries five cannons, the base has
+     * three rounds, so three rounds move and no more. */
+    g_aObj[1].aItemQty[0] = 5;
+    g_aObj[36].auPerBaseVal[0] = 3;
+    g_aBase[0].nStoresTotal = 10;
+
+    Craft_LoadStoresFromBase(&env, 1, 36, 0);
+
+    TestEqI32Local("the craft took three rounds", (i32)g_aObj[36].aItemQty[0], 3);
+    TestEqI32Local("and the base is out", (i32)g_aObj[36].auPerBaseVal[0], 0);
+    TestEqI32Local("the base's store total dropped by three", (i32)g_aBase[0].nStoresTotal, 7);
+    TestEqI32Local("the craft's cargo total rose by three", (i32)g_aShip[0].uUnk4, 3);
+
+    /* Nothing to take. */
+    Craft_LoadStoresFromBase(&env, 1, 36, 0);
+    TestEqI32Local("an empty base loads nothing", (i32)g_aObj[36].aItemQty[0], 3);
+
+    /* Three pools, split in order: 4 from the first, 3 from the second, the last 3 from
+     * the third even though it has twenty. */
+    memset(g_aObj, 0, sizeof(g_aObj));
+    for (int i = 0; i < 53; ++i) {
+        g_aObj[i].bCargoSize = 1;
+    }
+    g_aObj[7].aItemQty[0] = 10;
+    g_aObj[40].auPerBaseVal[0] = 4;
+    g_aObj[41].auPerBaseVal[0] = 3;
+    g_aObj[42].auPerBaseVal[0] = 20;
+
+    Craft_LoadStoresFromBase(&env, 7, 0, 0);
+
+    TestEqI32Local("first pool gave all four it had", (i32)g_aObj[40].aItemQty[0], 4);
+    TestEqI32Local("second pool gave all three it had", (i32)g_aObj[41].aItemQty[0], 3);
+    TestEqI32Local("third pool gave only the remainder", (i32)g_aObj[42].aItemQty[0], 3);
+    TestEqI32Local("and kept the other seventeen", (i32)g_aObj[42].auPerBaseVal[0], 17);
+
+    /* A craft whose hold cap is zero takes nothing at all, because the gate is
+     * used + size < cap and nothing is under zero. */
+    memset(g_aObj, 0, sizeof(g_aObj));
+    for (int i = 0; i < 53; ++i) {
+        g_aObj[i].bCargoSize = 1;
+    }
+    g_aShip[0].bCraftType = 3;
+    g_aObj[1].aItemQty[0] = 5;
+    g_aObj[36].auPerBaseVal[0] = 3;
+
+    Craft_LoadStoresFromBase(&env, 1, 36, 0);
+    TestEqI32Local("a craft with no hold loads nothing", (i32)g_aObj[36].aItemQty[0], 0);
+    TestEqI32Local("and the base keeps its stock", (i32)g_aObj[36].auPerBaseVal[0], 3);
+
+    /* An out-of-range craft index is refused. */
+    Craft_LoadStoresFromBase(&env, 1, 36, 60);
+    TestEqI32Local("an out-of-range craft index loads nothing", (i32)g_aObj[36].aItemQty[0], 0);
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -500,6 +589,7 @@ int main(void)
     TestCargoPair();
     TestShipRemoveWithCargo();
     TestCargoHold();
+    TestLoadStores();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

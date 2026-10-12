@@ -273,4 +273,23 @@ CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip);
 i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
                                i32 nCraftIdx);
 
+/* Evidence: Craft_LoadStoresFromBase @ 0x693ec.
+ *
+ * Fill one craft from its home base. The wanted amount is what the craft carries of the weapon
+ * object apObjects[nItemKind]; the supply comes from apObjects[nSrc]->auPerBaseVal[bHomeBase].
+ * For kinds 7, 8 and 10 the supply is split across three ammo pools in fixed order:
+ * 40/41/42, 43/44/45 and 46/47/48.
+ *
+ * Deviation: the original returns whatever the last BaseRec_SubItemQty left in R0, which is a
+ * BaseRec pointer nothing reads. The port returns void. */
+typedef struct CraftStoreLoadEnv {
+    Ship **apCraft;
+    BaseRec **apBases;
+    struct ObjectRecFull **apObjects;
+    i32 nObjectCount;
+} CraftStoreLoadEnv;
+
+void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nSrc,
+                              i32 nCraftIdx);
+
 #endif /* PUFO_SHIP_H */

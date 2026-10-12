@@ -5882,3 +5882,10 @@ the wanted load across three ammo pools in order: `n1 = min(want, s1)`, `n2 = mi
 `n3 = min(want-n1-n2, s3)`.
 
 Covered by `tests/test_ship.c` (`TestCargoHold`, 14 checks).
+
+`Craft_LoadStoresFromBase @ 0x693ec` is now ported beside them (`Craft_LoadStoresFromBase` in
+`game/pufo_ship.{h,c}`): it takes `min(craft carried, base stock)` for a single ammo object, or
+splits the wanted load across the three-pool sets 40/41/42, 43/44/45 and 46/47/48 for kinds 7, 8
+and 10, and re-reads the hold capacity before every unit so a load that fills the hold stops early.
+That leaves `Base_StripAllCraftCargo` (0x69a38) as the only unported step under
+`Base_TransferTacticalLoot` (0x68344). Covered by `TestLoadStores`, 12 checks.
