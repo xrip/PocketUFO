@@ -2083,6 +2083,40 @@ already held in memory; `bFlags57[0]` stores only bits 2 and 3 and leaves bits 0
 Covered by `tests/test_save.c` (`TestMapChunk`, 40 checks).
 
 
+### The four roster chunks (done)
+
+`Save_WriteTeamUnits @ 0x43c84` and `Save_ReadTeamUnits @ 0x44020` are recreated in
+`game/pufo_save.{h,c}`. One function writes **four** chunks and one reads all four back:
+
+```
+teamunits   1 byte count, the selected unit's id, then 30 ids   = 125 bytes
+aliens      1 byte count, then 30 ids                           = 121
+diedsolds   4 byte count, then 60 ids                           = 244
+hiddensold  4 byte count, then 30 ids                           = 124
+```
+
+Every id is the soldier's `nSaveId`, or `0x7FFF` for an empty slot.
+
+**The counts are not the same width.** teamunits and aliens store one byte (`Map.nXcomUnitCount`
+@ 0x1511F and `nEnemyUnitCount` @ 0x15124 are bytes); diedsolds and hiddensold store four
+(`nCivilianUnitCount` @ 0x15120 is a dword).
+
+**Only teamunits stores a selection, and it stores it before the roster** — the second field of
+the chunk (0x43CE0), not after any list.
+
+**The writer gates each slot on `index < count AND slot != NULL`, the reader ignores the count it
+just read.** A roster slot past the count is written as `0x7FFF` even when the array holds a
+pointer there, and the reader always consumes the full 30 / 30 / 60 / 30. A stale pointer beyond
+the count is therefore dropped by a save/load round trip. `TestTeamUnitsChunk` proves this with a
+unit parked at `apXcom[5]` with a count of 3.
+
+**The hidden reserve is not part of the Map block.** It is `unk_138DF0`, the 30 dwords that start
+exactly where Map ends (`0x1139B8 + 152632 = 0x138DF0`), which is why Hex-Rays reaches it as
+`&v10[1].gap_TrajRest[45476]`.
+
+Covered by `tests/test_save.c` (`TestTeamUnitsChunk`, 28 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

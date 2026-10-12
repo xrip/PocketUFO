@@ -73,6 +73,10 @@
 #define PUFO_SAVE_TAG_SOLDIERS  "soldiers"
 #define PUFO_SAVE_TAG_MCNT      "mcnt"
 #define PUFO_SAVE_TAG_MAP       "map"
+#define PUFO_SAVE_TAG_TEAMUNITS "teamunits"
+#define PUFO_SAVE_TAG_ALIENS    "aliens"
+#define PUFO_SAVE_TAG_DIEDSOLDS "diedsolds"
+#define PUFO_SAVE_TAG_HIDDENSOL "hiddensold"
 #define PUFO_SAVE_TAG_FLOBJS    "flobjs"
 #define PUFO_SAVE_TAG_TGAMEDATA "tgamedata"
 #define PUFO_SAVE_TAG_OBJBEFORE "objbefore"
@@ -507,5 +511,56 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
                   Soldier *const *apSoldiers, i32 nSoldierCount,
                   TactItem *const *apItems, i32 nItemCount,
                   const PufoFont *pFont);
+
+/* ------------------------------------------------- the four roster chunks
+ *
+ * Save_WriteTeamUnits @ 0x43c84 and Save_ReadTeamUnits @ 0x44020. One function
+ * writes FOUR chunks and one function reads all four back.
+ *
+ *     teamunits   1 byte count, the selected unit's id, then 30 ids
+ *     aliens      1 byte count, then 30 ids
+ *     diedsolds   4 byte count, then 60 ids
+ *     hiddensold  4 byte count, then 30 ids
+ *
+ * Every id is the soldier's nSaveId, or 0x7FFF for an empty slot.
+ *
+ * Four details the disassembly is the only source for:
+ *
+ *   - The counts are NOT the same width. teamunits and aliens store one byte
+ *     (Map.nXcomUnitCount @ 0x1511F and nEnemyUnitCount @ 0x15124 are bytes),
+ *     diedsolds and hiddensold store four (nCivilianUnitCount @ 0x15120 is a
+ *     dword). A save is 125 + 121 + 244 + 124 bytes of payload.
+ *
+ *   - Only teamunits stores a selected unit, and it stores it BEFORE the roster,
+ *     as the second field of the chunk (0x43CE0), not after the count of any list.
+ *
+ *   - The writer gates each slot on `index < count AND slot != NULL`, so a slot
+ *     past the count is written as 0x7FFF even when the array holds a pointer
+ *     there. The reader always consumes the full 30 / 30 / 60 / 30 and ignores
+ *     the count it just read, so a stale pointer beyond the count is dropped.
+ *
+ *   - The hidden reserve is not part of the Map block. It is unk_138DF0, the 30
+ *     dwords that start exactly where Map ends (0x1139B8 + 152632 = 0x138DF0),
+ *     which is why Hex-Rays reaches it as `&v10[1].gap_TrajRest[45476]`.
+ *
+ * Deviation: the reader indexes apSoldiers with no bound check; the port refuses
+ * an out-of-range id. */
+#define PUFO_SAVE_ROSTER_MAX 30 /* the teamunits, aliens and hiddensold slot count */
+#define PUFO_SAVE_CIV_MAX    60 /* the diedsolds slot count */
+typedef struct TeamUnitsState {
+    u8      nXcomCount;      /* Map.nXcomUnitCount @ 0x1511F, one byte */
+    u8      nEnemyCount;     /* Map.nEnemyUnitCount @ 0x15124, one byte */
+    i32     nCivilianCount;  /* Map.nCivilianUnitCount @ 0x15120, four bytes */
+    i32     nHiddenCount;    /* Map.nEnemyReserveCount */
+    Soldier **apXcomUnits;   /* Map.apXcomUnits @ 0x15154, 30 entries */
+    Soldier **apEnemyUnits;  /* Map.apEnemyUnits @ 0x151CC, 30 entries */
+    Soldier **apCivilians;   /* Map.apCivilians @ 0x15244, 60 entries */
+    Soldier **apHiddenUnits; /* unk_138DF0, 30 entries, the block right after Map */
+    Soldier  *pSelUnit;      /* Map.pSelUnit @ 0x15334 */
+} TeamUnitsState;
+
+bool Save_WriteTeamUnits(DatFile *pDat, const TeamUnitsState *pState);
+bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
+                        Soldier *const *apSoldiers, i32 nSoldierCount);
 
 #endif /* PUFO_SAVE_H */

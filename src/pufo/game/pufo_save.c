@@ -1576,3 +1576,161 @@ bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *p
     }
     return true;
 }
+
+/* One roster slot list: nSaveId, or 0x7FFF for an empty slot. The writer only
+ * looks at slots below the count, so a pointer past the count is not saved. */
+static bool WriteRosterIds(DatFile *pDat, Soldier *const *apUnits, i32 nCount, i32 nSlots)
+{
+    for (i32 i = 0; i < nSlots; ++i) {
+        i32 nId = (i < nCount && apUnits != NULL && apUnits[i] != NULL)
+                ? apUnits[i]->nSaveId
+                : 0x7FFF;
+
+        if (!W(pDat, &nId, 4)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The reader always consumes the full slot list and ignores the count it just read. */
+static bool ReadRosterIds(DatFile *pDat, Soldier **apDst, i32 nSlots,
+                          Soldier *const *apSoldiers, i32 nSoldierCount)
+{
+    for (i32 i = 0; i < nSlots; ++i) {
+        i32 nId;
+
+        if (!DatFile_Read(pDat, &nId, 4)) {
+            return false;
+        }
+        if (nId == 0x7FFF) {
+            apDst[i] = NULL;
+            continue;
+        }
+        if (nId < 0 || nId >= nSoldierCount || apSoldiers == NULL) {
+            return false;
+        }
+        apDst[i] = apSoldiers[nId];
+    }
+    return true;
+}
+
+bool Save_WriteTeamUnits(DatFile *pDat, const TeamUnitsState *pState)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_TEAMUNITS)) { /* 0x43C94 */
+        return false;
+    }
+    if (!W(pDat, &pState->nXcomCount, 1)) { /* 0x43CAC: one byte, not four */
+        return false;
+    }
+    {
+        i32 nId = (pState->pSelUnit != NULL) ? pState->pSelUnit->nSaveId : 0x7FFF;
+
+        if (!W(pDat, &nId, 4)) { /* 0x43CC8..0x43CE0: the selection, before the roster */
+            return false;
+        }
+    }
+    if (!WriteRosterIds(pDat, pState->apXcomUnits, pState->nXcomCount,
+                        PUFO_SAVE_ROSTER_MAX)) { /* 0x43CE4..0x43D38 */
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_ALIENS)) { /* 0x43D44 */
+        return false;
+    }
+    if (!W(pDat, &pState->nEnemyCount, 1)) {
+        return false;
+    }
+    if (!WriteRosterIds(pDat, pState->apEnemyUnits, pState->nEnemyCount,
+                        PUFO_SAVE_ROSTER_MAX)) { /* 0x43D60..0x43DB8 */
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_DIEDSOLDS)) { /* 0x43DC4 */
+        return false;
+    }
+    if (!W(pDat, &pState->nCivilianCount, 4)) { /* 0x43DDC: four bytes here */
+        return false;
+    }
+    if (!WriteRosterIds(pDat, pState->apCivilians, pState->nCivilianCount,
+                        PUFO_SAVE_CIV_MAX)) { /* 0x43DE0..0x43E38 */
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_HIDDENSOL)) { /* 0x43E44 */
+        return false;
+    }
+    if (!W(pDat, &pState->nHiddenCount, 4)) {
+        return false;
+    }
+    return WriteRosterIds(pDat, pState->apHiddenUnits, pState->nHiddenCount,
+                          PUFO_SAVE_ROSTER_MAX); /* 0x43E60..0x43EB8 */
+}
+
+bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
+                        Soldier *const *apSoldiers, i32 nSoldierCount)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TEAMUNITS)) { /* 0x44030 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pState->nXcomCount, 1)) {
+        return false;
+    }
+    {
+        i32 nId;
+
+        if (!DatFile_Read(pDat, &nId, 4)) { /* 0x44058 */
+            return false;
+        }
+        if (nId == 0x7FFF) {
+            pState->pSelUnit = NULL;
+        } else if (nId >= 0 && nId < nSoldierCount && apSoldiers != NULL) {
+            pState->pSelUnit = apSoldiers[nId];
+        } else {
+            return false;
+        }
+    }
+    if (!ReadRosterIds(pDat, pState->apXcomUnits, PUFO_SAVE_ROSTER_MAX,
+                       apSoldiers, nSoldierCount)) {
+        return false;
+    }
+
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_ALIENS)) { /* 0x440E8 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pState->nEnemyCount, 1)) {
+        return false;
+    }
+    if (!ReadRosterIds(pDat, pState->apEnemyUnits, PUFO_SAVE_ROSTER_MAX,
+                       apSoldiers, nSoldierCount)) {
+        return false;
+    }
+
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_DIEDSOLDS)) { /* 0x44154 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pState->nCivilianCount, 4)) {
+        return false;
+    }
+    if (!ReadRosterIds(pDat, pState->apCivilians, PUFO_SAVE_CIV_MAX,
+                       apSoldiers, nSoldierCount)) {
+        return false;
+    }
+
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_HIDDENSOL)) { /* 0x441C0 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pState->nHiddenCount, 4)) {
+        return false;
+    }
+    return ReadRosterIds(pDat, pState->apHiddenUnits, PUFO_SAVE_ROSTER_MAX,
+                         apSoldiers, nSoldierCount);
+}

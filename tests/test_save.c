@@ -1209,6 +1209,105 @@ static void TestMapChunk(void)
     DatFile_Close(&dat);
 }
 
+static void TestTeamUnitsChunk(void)
+{
+    DatFile dat;
+    Soldier aSol[6];
+    Soldier *apSoldiers[6];
+    Soldier *apXcom[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apEnemy[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apCiv[PUFO_SAVE_CIV_MAX];
+    Soldier *apHidden[PUFO_SAVE_ROSTER_MAX];
+    TeamUnitsState st;
+
+    printf("Save_WriteTeamUnits / Save_ReadTeamUnits\n");
+
+    memset(aSol, 0, sizeof(aSol));
+    for (i32 i = 0; i < 6; ++i) {
+        apSoldiers[i] = &aSol[i];
+        aSol[i].nSaveId = i;
+    }
+    memset(apXcom, 0, sizeof(apXcom));
+    memset(apEnemy, 0, sizeof(apEnemy));
+    memset(apCiv, 0, sizeof(apCiv));
+    memset(apHidden, 0, sizeof(apHidden));
+
+    apXcom[0] = &aSol[0];
+    apXcom[1] = &aSol[1];
+    apXcom[2] = &aSol[2];
+    apXcom[5] = &aSol[3]; /* past the count of 3, so it is not saved */
+    apEnemy[0] = &aSol[4];
+    apEnemy[1] = &aSol[5];
+    apCiv[0] = &aSol[0];
+    apCiv[1] = &aSol[1];
+    apCiv[2] = &aSol[2];
+    apCiv[3] = &aSol[3];
+    apCiv[10] = &aSol[4]; /* past the count of 4 */
+    apHidden[0] = &aSol[5];
+
+    memset(&st, 0, sizeof(st));
+    st.nXcomCount = 3;
+    st.nEnemyCount = 2;
+    st.nCivilianCount = 4;
+    st.nHiddenCount = 1;
+    st.apXcomUnits = apXcom;
+    st.apEnemyUnits = apEnemy;
+    st.apCivilians = apCiv;
+    st.apHiddenUnits = apHidden;
+    st.pSelUnit = &aSol[2];
+
+    Check(OpenWrite("test_teamunits.tmp", &dat, 5), "  container opened");
+    Check(Save_WriteTeamUnits(&dat, &st), "  four chunks written");
+    DatFile_Close(&dat);
+    /* 1+4+120, 1+120, 4+240, 4+120. */
+    CheckEqI32(FileSizeOf(L"test_teamunits.tmp"), 109 + 125 + 121 + 244 + 124,
+               "the four payloads");
+
+    memset(apXcom, 0xEE, sizeof(apXcom));
+    Check(OpenRead("test_teamunits.tmp", &dat), "  reopened");
+    Check(Save_ReadTeamUnits(&dat, &st, apSoldiers, 6), "  read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(st.nXcomCount, 3, "the team count round-trips as a byte");
+    CheckEqI32(st.nEnemyCount, 2, "the enemy count as a byte");
+    CheckEqI32(st.nCivilianCount, 4, "the civilian count as a dword");
+    CheckEqI32(st.nHiddenCount, 1, "and the reserve count as a dword");
+    Check(st.pSelUnit == &aSol[2], "the selected unit is the second field of teamunits");
+    Check(apXcom[0] == &aSol[0] && apXcom[2] == &aSol[2], "the team resolves by nSaveId");
+    Check(apXcom[5] == NULL, "a slot past the count is dropped even though it held a unit");
+    Check(apEnemy[0] == &aSol[4] && apEnemy[1] == &aSol[5], "the enemy roster resolves");
+    Check(apEnemy[2] == NULL, "and stops at the count");
+    Check(apCiv[3] == &aSol[3], "the civilian roster resolves");
+    Check(apCiv[10] == NULL, "and its stale slot past the count is dropped too");
+    Check(apHidden[0] == &aSol[5], "the reserve roster resolves");
+    Check(apHidden[1] == NULL, "0x7FFF becomes a NULL reserve slot");
+    Check(apXcom[29] == NULL && apCiv[59] == NULL,
+          "the reader consumes all 30 and all 60 slots");
+
+    /* An id the roster does not hold. */
+    aSol[0].nSaveId = 99;
+    Check(OpenWrite("test_teambad.tmp", &dat, 5), "  second container");
+    Check(Save_WriteTeamUnits(&dat, &st), "  bad id written");
+    DatFile_Close(&dat);
+    Check(OpenRead("test_teambad.tmp", &dat), "  reopened");
+    Check(!Save_ReadTeamUnits(&dat, &st, apSoldiers, 6), "an out-of-range id is refused");
+    DatFile_Close(&dat);
+
+    aSol[0].nSaveId = 0;
+    st.pSelUnit = NULL;
+    Check(OpenWrite("test_teamsel.tmp", &dat, 5), "  third container");
+    Check(Save_WriteTeamUnits(&dat, &st), "  no selection written");
+    DatFile_Close(&dat);
+    Check(OpenRead("test_teamsel.tmp", &dat), "  reopened");
+    Check(Save_ReadTeamUnits(&dat, &st, apSoldiers, 6), "  read");
+    DatFile_Close(&dat);
+    Check(st.pSelUnit == NULL, "no selection becomes 0x7FFF and back to NULL");
+
+    Check(!Save_WriteTeamUnits(NULL, &st), "NULL dat refused");
+    Check(!Save_WriteTeamUnits(&dat, NULL), "NULL state refused");
+    Check(!Save_ReadTeamUnits(&dat, NULL, apSoldiers, 6), "NULL read state refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1228,6 +1327,7 @@ int main(void)
     TestAllocFlobjs();
     TestFlobjsChunk();
     TestMapChunk();
+    TestTeamUnitsChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
