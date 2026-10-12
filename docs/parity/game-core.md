@@ -5994,7 +5994,7 @@ Honest coverage after the correction: **598 / 1103 functions (54.2%)**, **194,10
 `Map_ComputeReachable @ 0x2b820` was checked and left alone — it is ported as `Path_ComputeReachable`,
 a documented rename.
 
-### Second integrity batch: eight more citations removed (8,692 bytes)
+### Second integrity batch: eight more citations removed (9,480 bytes)
 
 Checked by hand against the source, one citation site at a time:
 
@@ -6045,3 +6045,8 @@ Renames added this pass, all verified against a definition in `src/pufo`: `Map_L
 
 `Tact_SelectUnit @ 0x2c6c4` (148 bytes) and `Tact_LoadLoftData @ 0x3bd6c` (184 bytes) were cited in
 module Evidence headers with no port behind them; both are now parenthesized.
+
+Correction to my own arithmetic: that batch was first written as 8,692 bytes. The measured drop was
+598 -> 590 functions and 194,100 -> 184,620 bytes, which is 9,480. The eight sizes
+(1484 + 1368 + 1284 + 1252 + 1132 + 1104 + 1068 + 788) add to 9,480. The whole integrity pass was
+15 citations and 38,888 bytes: 29,076 + 9,480 + 332.
