@@ -8,6 +8,8 @@
  *   Render_BlitSoft_HiRes @ 0x9fa90, Render_Frame (0x22310),
  *   Blit_LoadSurface @ 0xa3964, Blit_SetTargetParams @ 0xa39ac,
  *   Blit_CopyRows @ 0xa3a14, Blit_CopyRows_HiRes @ 0xa3bb8,
+ *   SoftSurf_BlitCopyRaw @ 0xa3db8 (a duplicate of Blit_CopyRows in the original),
+ *   SoftSurf_SamplePixel @ 0xa4630,
  *   BlitParams_Set @ 0xa47b0, Blit_SetRectAndColor @ 0xa3f5c, Blit_SetColorKey @ 0xa3624,
  *   Blit_CopyToXY @ 0xa42e4, SoftSurf_BlitSrcRect_Inner @ 0xa4450,
  *   SoftSurf_Blit_Inner @ 0xa47d0, SoftSurf_BlitFlip_Inner @ 0xa49a0,
@@ -160,6 +162,7 @@ void SoftSurf_FillRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nR
 void SoftSurf_FillRect_Inner(i32 x, i32 y, i32 nIdx, const u32 *pPal);
 void *SoftSurf_GetAlloc(const SoftSurf *pSurf);
 i32  BlitState_Get(void);
+i32  SoftSurf_SamplePixel(i32 x, i32 y);
 void SoftSurf_BlitRectProxy(i32 nIgnored, i32 x, i32 y, i32 nRectW, i32 nRectH,
                             u8 nIdx, u8 nColorMid, u8 nColorLow);
 

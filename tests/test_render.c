@@ -445,6 +445,76 @@ static void TestRectHelpers(void)
     SoftSurf_dtor(&surf);
 }
 
+/* SoftSurf_SamplePixel @ 0xa4630, and the fact that SoftSurf_BlitCopyRaw @ 0xa3db8 is a
+ * duplicate of Blit_CopyRows @ 0xa3a14 in the original. */
+static void TestSamplePixel(void)
+{
+    SoftSurf s16, s8, s24;
+
+    printf("SoftSurf_SamplePixel\n");
+
+    SoftSurf_ctor(&s16);
+    SoftSurf_AllocPixels(&s16, 4, 3, PIXMODE_16BPP);
+    {
+        u16 *pPix = (u16 *)SoftSurf_GetPixels(&s16);
+        i32  i;
+        for (i = 0; i < 12; ++i) {
+            pPix[i] = (u16)(0x1111 * (i + 1));
+        }
+    }
+    Blit_LoadSurface(&s16);
+
+    CheckEqI32(SoftSurf_SamplePixel(0, 0), 0x11, "  16bpp returns the low byte of the pixel");
+    CheckEqI32(SoftSurf_SamplePixel(1, 0), 0x22, "  next pixel");
+    CheckEqI32(SoftSurf_SamplePixel(0, 1), 0x55, "  next row");
+    CheckEqI32(SoftSurf_SamplePixel(-1, 0), 0, "  x below zero returns 0");
+    CheckEqI32(SoftSurf_SamplePixel(0, -1), 0, "  y below zero returns 0");
+    CheckEqI32(SoftSurf_SamplePixel(5, 0), 0, "  x past the width returns 0");
+    /* The guard is <=, not <. x == nSurf0 is accepted and reads byte offset 8, which is the
+     * low byte of pixel index 4 - the first pixel of the next row. */
+    CheckEqI32(SoftSurf_SamplePixel(4, 0), 0x55,
+               "  x == nSurf0 is accepted and reads the next row (original off-by-one)");
+
+    SoftSurf_ctor(&s8);
+    SoftSurf_AllocPixels(&s8, 4, 1, PIXMODE_8BPP);
+    {
+        u8 *pBytes = SoftSurf_GetPixels(&s8);
+        pBytes[0] = 0xA1; pBytes[1] = 0xB2; pBytes[2] = 0xC3; pBytes[3] = 0xD4;
+    }
+    Blit_LoadSurface(&s8);
+    CheckEqI32(SoftSurf_SamplePixel(0, 0), 0xA1, "  8bpp stride is one byte");
+    CheckEqI32(SoftSurf_SamplePixel(2, 0), 0xC3, "  8bpp second sample");
+
+    SoftSurf_ctor(&s24);
+    SoftSurf_AllocPixels(&s24, 4, 1, PIXMODE_24BPP);
+    {
+        u8 *pBytes = SoftSurf_GetPixels(&s24);
+        pBytes[0] = 0x10; pBytes[1] = 0x11; pBytes[2] = 0x12;
+        pBytes[3] = 0x20; pBytes[4] = 0x21; pBytes[5] = 0x22;
+    }
+    Blit_LoadSurface(&s24);
+    CheckEqI32(SoftSurf_SamplePixel(0, 0), 0x10, "  24bpp stride is three bytes");
+    CheckEqI32(SoftSurf_SamplePixel(1, 0), 0x20, "  24bpp second pixel");
+
+    /* Blit_CopyRows and SoftSurf_BlitCopyRaw are the same 420-byte function twice in the
+     * original. One port body, and this checks it against the raw copy the original does. */
+    {
+        u16 aTarget[12];
+        i32  i;
+        u16 *pPix = (u16 *)SoftSurf_GetPixels(&s16);
+        for (i = 0; i < 12; ++i) { pPix[i] = (u16)(i + 1); aTarget[i] = 0; }
+        Render_SetTarget(4, 3, 2, 2, 8, (u8 *)aTarget);
+        Blit_LoadSurface(&s16);
+        Blit_CopyRows();
+        CheckEqU32(aTarget[0], 1, "  raw copy first pixel");
+        CheckEqU32(aTarget[11], 12, "  raw copy last pixel");
+    }
+
+    SoftSurf_dtor(&s16);
+    SoftSurf_dtor(&s8);
+    SoftSurf_dtor(&s24);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -464,6 +534,7 @@ int main(void)
     TestCopyRows();
     TestRectFillAndBlend();
     TestRectHelpers();
+    TestSamplePixel();
 
     Asset_CloseArchives();
 

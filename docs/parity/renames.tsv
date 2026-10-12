@@ -111,3 +111,4 @@ Render_BlitSoft_HiRes	Render_BlitSurface	deviation: the HiRes 2x2 upscale is not
 SoftSurf_BlitGlyph_Inner	Font_BlitGlyph	the RLE glyph rasteriser lives in the font module
 SoftSurf_BlitGlyph	Font_DrawGlyph	bound form merged into Font_DrawGlyph
 Font_BlitGlyphToSoft	Font_DrawGlyph	clamp-to-19, glyph table lookup, palette resolve, blit
+SoftSurf_BlitCopyRaw	Blit_CopyRows	the original carries this 420-byte body twice, 0xa3a14 and 0xa3db8

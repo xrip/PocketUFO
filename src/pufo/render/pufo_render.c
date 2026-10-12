@@ -168,7 +168,11 @@ i32 Blit_SetColorKey(i32 nKey)
     return nKey;
 }
 
-/* Blit_CopyRows @ 0xa3a14: logical surface -> render target, 1:1. */
+/* Blit_CopyRows @ 0xa3a14: logical surface -> render target, 1:1.
+ *
+ * SoftSurf_BlitCopyRaw @ 0xa3db8 is the same function twice in the original - same three
+ * pixel-mode branches, same loop bodies, same 420 bytes. One implementation covers both;
+ * the duplicate is recorded in docs/parity/bugs.tsv rather than copied. */
 void Blit_CopyRows(void)
 {
     i32 nWidth  = g_blitState.nWidth;
@@ -356,6 +360,34 @@ void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
 {
     SoftSurf_BlitSrcRectEx(g_pMainSurface, x, y, nRectW, nRectH, nIdx,
                            nColorMid, nColorLow, nKey);
+}
+
+/* SoftSurf_SamplePixel @ 0xa4630. Reads one byte out of the loaded surface: the byte of an
+ * 8bpp pixel, the low byte of a 16bpp pixel, or the first byte of a 24bpp pixel. The three
+ * branches are the three strides, and the third one is written in the original as
+ * "2*x + 2*y*nSurf0 + x + y*nSurf0", which is just 3*(x + y*nSurf0).
+ *
+ * The bounds test is x <= nSurf0 and y <= nSurf1, not <. A coordinate equal to the dimension
+ * is accepted and reads past the row - reproduced, recorded in docs/parity/bugs.tsv. */
+i32 SoftSurf_SamplePixel(i32 x, i32 y)
+{
+    const u8 *p;
+    i32       nStride;
+
+    if (!(x <= g_blitState.nSurf0 && y <= g_blitState.nSurf1 && x >= 0 && y >= 0)) {
+        return 0;
+    }
+
+    if (g_blitState.nSurf2 == 0) {
+        nStride = 1;
+    } else if (g_blitState.nSurf2 == 1 || g_blitState.nSurf2 == 2) {
+        nStride = 2;
+    } else {
+        nStride = 3;
+    }
+
+    p = (const u8 *)g_blitState.pSrc;
+    return p[nStride * (x + y * g_blitState.nSurf0)];
 }
 
 /* BlitState_Get @ 0xa479c. Returns the width of the currently loaded surface. */
