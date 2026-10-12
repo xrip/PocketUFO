@@ -1,5 +1,7 @@
 /* pufo_baseui.c - see pufo_baseui.h for evidence. */
 #include "game/pufo_baseui.h"
+#include <stdlib.h>  /* atexit, for StrategList_RegisterAtexit @ 0x838a0 */
+#include "game/pufo_strateg.h" /* StrategList_Clear */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -300,4 +302,106 @@ i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks 
         return pHooks->pfnStartupUi(pHooks->pUser); /* 0x6B490 tail call */
     }
     return 0;
+}
+
+/* Five more copies of the same two instructions. */
+void FundingScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void FundingScreen_ExitThunk(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void Geoscape_CloseUI_ThunkA(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void Geoscape_CloseUI_ThunkB(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks)
+{
+    Geoscape_CloseScreenThunk(pHooks);
+}
+
+i32 Geoscape_OnMapClick_Thunk(const MapClickHooks *pHooks)
+{
+    /* 0x857EC tail-calls Geoscape_OnMapClick @ 0x8b4a8 and drops the four callback
+     * arguments the widget framework passes. */
+    if (pHooks != NULL && pHooks->pfnMapClick != NULL) {
+        return pHooks->pfnMapClick(pHooks->pUser);
+    }
+    return 0;
+}
+
+void ResearchScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird)
+{
+    if (pFirst != NULL) {
+        UiPanel_ScrollPrev(pFirst); /* 0x72E3C, unk_160C68 */
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollPrev(pSecond); /* 0x72E48, unk_15EEFC */
+    }
+    if (pThird != NULL) {
+        UiPanel_ScrollPrev(pThird); /* 0x72E54, unk_15EF00 */
+    }
+}
+
+void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird)
+{
+    if (pFirst != NULL) {
+        UiPanel_ScrollNext(pFirst); /* 0x72E74 */
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollNext(pSecond); /* 0x72E80 */
+    }
+    if (pThird != NULL) {
+        UiPanel_ScrollNext(pThird); /* 0x72E8C */
+    }
+}
+
+/* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
+ * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
+static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])
+{
+    for (i32 i = 0; i < 6; ++i) {
+        if (apCtl[i] != NULL) {
+            apCtl[i]->nState = 0;
+        }
+    }
+    return apCtl[5];
+}
+
+UiControl *OptionsScreen_ClearMusicButtons(UiControl *apMusic[6])
+{
+    return OptionsScreen_ClearRadioGroup(apMusic); /* 0x6b994, anLineAux[128..133] */
+}
+
+UiControl *OptionsScreen_ClearSfxButtons(UiControl *apSfx[6])
+{
+    return OptionsScreen_ClearRadioGroup(apSfx); /* 0x6b9d4, anLineAux[134..139] */
+}
+
+/* The original can pass StrategList_Clear straight to atexit because its strategic list is
+ * a global and its clear takes no arguments. The port's takes the list, so it registers a
+ * thunk over the list handed in here. */
+static PtrArray *g_pStrategListToClear;
+
+static void StrategList_ClearAtexitThunk(void)
+{
+    if (g_pStrategListToClear != NULL) {
+        StrategList_Clear(g_pStrategListToClear);
+    }
+}
+
+int StrategList_RegisterAtexit(PtrArray *pList)
+{
+    g_pStrategListToClear = pList;
+    return atexit(StrategList_ClearAtexitThunk); /* 0x838A0 */
 }

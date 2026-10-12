@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "game/pufo_baseui.h"
+#include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
 
 static int g_nFailures;
 
@@ -412,6 +413,105 @@ static void TestTitleReturn(void)
     CheckEqI32(OptionsScreen_ReturnToTitle(NULL, NULL), 0, "NULL hooks return zero");
 }
 
+static void TestMoreCloseThunks(void)
+{
+    GeoscapeCloseHooks hk;
+    MapClickHooks mk;
+
+    printf("five more close thunks, the map click shim\n");
+
+    hk.pfnCloseUi = CloseUi;
+    hk.pfnPlaySample = CloseSample;
+    hk.pUser = NULL;
+
+    g_nCloseCalls = 0;
+    FundingScreen_CloseThunk(&hk);
+    FundingScreen_ExitThunk(&hk);
+    Geoscape_CloseUI_ThunkA(&hk);
+    Geoscape_CloseUI_ThunkB(&hk);
+    Geoscape_CloseUI_ThunkC(&hk);
+    CheckEqI32(g_nCloseCalls, 5, "all five reach the same dispatcher");
+
+    mk.pfnMapClick = StartupUi; /* any i32(void*) will do */
+    mk.pUser = NULL;
+    g_nStartupCalls = 0;
+    CheckEqI32(Geoscape_OnMapClick_Thunk(&mk), 77, "the shim forwards the result");
+    CheckEqI32(g_nStartupCalls, 1, "and calls the map click once");
+    CheckEqI32(Geoscape_OnMapClick_Thunk(NULL), 0, "a missing hook returns zero");
+}
+
+static void TestResearchPaging(void)
+{
+    UiPanel a, b, c;
+
+    printf("research screen paging\n");
+
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    memset(&c, 0, sizeof(c));
+    a.nUnk3028 = 2; a.nLineCount = 8; a.nStyle = 4;
+    b.nUnk3028 = 1; b.nLineCount = 5; b.nStyle = 2;
+    c.nUnk3028 = 0; c.nLineCount = 6; c.nStyle = 3;
+
+    ResearchScreen_PanelNext(&a, &b, &c);
+    CheckEqI32(a.nUnk3028, 3, "all three panels page");
+    CheckEqI32(b.nUnk3028, 2, "the middle one too");
+    CheckEqI32(c.nUnk3028, 1, "and the last one");
+
+    ResearchScreen_PanelPrev(&a, &b, &c);
+    CheckEqI32(a.nUnk3028, 2, "prev moves all three back");
+    CheckEqI32(c.nUnk3028, 0, "the last cursor stops at zero");
+
+    ResearchScreen_PanelNext(NULL, NULL, NULL);
+    Check(1, "NULL panels are tolerated");
+}
+
+static void TestOptionsRadioClear(void)
+{
+    UiControl aPool[6];
+    UiControl *apCtl[6];
+    UiControl *pRet;
+
+    printf("options radio group clear\n");
+
+    for (i32 i = 0; i < 6; ++i) {
+        memset(&aPool[i], 0, sizeof(aPool[i]));
+        aPool[i].nState = (u8)(i + 1);
+        apCtl[i] = &aPool[i];
+    }
+
+    pRet = OptionsScreen_ClearMusicButtons(apCtl);
+    Check(pRet == &aPool[5], "the return value is the sixth widget pointer");
+    for (i32 i = 0; i < 6; ++i) {
+        CheckEqI32(aPool[i].nState, 0, "every nState byte is cleared");
+    }
+
+    for (i32 i = 0; i < 6; ++i) {
+        aPool[i].nState = 3;
+    }
+    pRet = OptionsScreen_ClearSfxButtons(apCtl);
+    Check(pRet == &aPool[5], "the sfx group returns its sixth pointer too");
+    CheckEqI32(aPool[0].nState, 0, "the sfx group is cleared as well");
+
+    for (i32 i = 0; i < 6; ++i) {
+        apCtl[i] = NULL;
+    }
+    Check(OptionsScreen_ClearMusicButtons(apCtl) == NULL,
+          "null widgets are skipped without crashing");
+}
+
+static void TestAtexitRegistration(void)
+{
+    PtrArray list;
+
+    printf("StrategList_RegisterAtexit\n");
+
+    StrategList_ctor(&list);
+    Check(StrategItem_AllocAdd(&list, 3), "the list holds an item");
+    CheckEqI32(StrategList_RegisterAtexit(&list), 0,
+               "atexit accepts the clear thunk (the clear itself runs at exit)");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -425,6 +525,10 @@ int main(void)
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();
+    TestMoreCloseThunks();
+    TestResearchPaging();
+    TestOptionsRadioClear();
+    TestAtexitRegistration();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

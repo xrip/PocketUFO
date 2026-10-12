@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 528 / 1103 (47.9%) |
-| Bytes of original code cited | 230936 / 598792 (38.6%) |
+| Functions cited as evidence | 543 / 1103 (49.2%) |
+| Bytes of original code cited | 232480 / 598792 (38.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4541 |
+| Test checks run | 4563 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,8 +43,8 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 55 | 205 | 39548 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 74 | 243 | 7112 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 66 | 205 | 40852 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 78 | 243 | 7352 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (55 functions)
+### `strat` (66 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -516,6 +516,7 @@ is the module that answers to it.
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
 | `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | `src/pufo/game/pufo_baseui.h` |
+| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
@@ -563,8 +564,18 @@ is the module that answers to it.
 | `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.c` (+5) |
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
+| `0x5abd8` | `FundingScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x5c078` | `FundingScreen_ExitThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x614a8` | `BaseGrid_Atexit_nullsub5` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x838a0` | `StrategList_RegisterAtexit` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x838d0` | `Geoscape_CloseUI_ThunkA` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x857e8` | `Geoscape_OnMapClick_Thunk` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
+| `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (74 functions)
+### `strat-ui` (78 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -599,9 +610,13 @@ is the module that answers to it.
 | `0x19de4` | `SaveLoad_Slot0` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x18864` | `Menu_OpenLoadSlots` | 64 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x188a4` | `Menu_OpenSaveSlots` | 64 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x6b994` | `OptionsScreen_ClearMusicButtons` | 64 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b9d4` | `OptionsScreen_ClearSfxButtons` | 64 | `src/pufo/game/pufo_baseui.h` |
 | `0x195a8` | `MenuBtn_ActionBack0` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x195e0` | `MenuBtn_SecondaryDismiss` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x72e30` | `ResearchScreen_PanelPrev` | 56 | `src/pufo/game/pufo_baseui.h` |
+| `0x72e68` | `ResearchScreen_PanelNext` | 56 | `src/pufo/game/pufo_baseui.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x614cc` | `ManufScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
@@ -952,7 +967,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 150 functions, 122908 bytes remaining
+### `strat` — 139 functions, 121604 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -980,7 +995,6 @@ whose port work they belong to.
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x629b0` | `Base_CanPlaceHangarAt` | 968 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1096,18 +1110,8 @@ whose port work they belong to.
 | `0x5d6c0` | `GameTime_Unpause` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x5abd8` | `FundingScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x5c078` | `FundingScreen_ExitThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614a8` | `BaseGrid_Atexit_nullsub5` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x838a0` | `StrategList_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x838d0` | `Geoscape_CloseUI_ThunkA` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x857e8` | `Geoscape_OnMapClick_Thunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 169 functions, 109896 bytes remaining
+### `strat-ui` — 165 functions, 109656 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1263,10 +1267,6 @@ whose port work they belong to.
 | `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b994` | `OptionsScreen_ClearMusicButtons` | 64 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b9d4` | `OptionsScreen_ClearSfxButtons` | 64 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x72e30` | `ResearchScreen_PanelPrev` | 56 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x72e68` | `ResearchScreen_PanelNext` | 56 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a0bc` | `MenuCtl8_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a0f0` | `MenuCtl9_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a124` | `MenuCtl10_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 86 |
+| `test_baseui` | PASS | 108 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

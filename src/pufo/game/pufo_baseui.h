@@ -17,6 +17,8 @@
 
 #include "pufo_common.h"
 #include "ui/pufo_panel.h"   /* UiPanel, the list these handlers page through */
+#include "ui/pufo_control.h" /* UiControl, whose nState these handlers clear */
+#include "util/pufo_ptrarray.h" /* PtrArray, for StrategList_RegisterAtexit */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -209,5 +211,51 @@ typedef struct TitleReturnHooks {
 } TitleReturnHooks;
 
 i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks);
+
+/* Five more copies of the same close tail call: FundingScreen_CloseThunk @ 0x5abd8,
+ * FundingScreen_ExitThunk @ 0x5c078, Geoscape_CloseUI_ThunkA @ 0x838d0,
+ * Geoscape_CloseUI_ThunkB @ 0x96020, Geoscape_CloseUI_ThunkC @ 0x9a8c0. Together with the
+ * seven above, twelve widget handlers all reach the same dispatcher. */
+void FundingScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+void FundingScreen_ExitThunk(const GeoscapeCloseHooks *pHooks);
+void Geoscape_CloseUI_ThunkA(const GeoscapeCloseHooks *pHooks);
+void Geoscape_CloseUI_ThunkB(const GeoscapeCloseHooks *pHooks);
+void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks);
+
+/* Geoscape_OnMapClick_Thunk @ 0x857e8: a widget callback shim that drops its four
+ * arguments and tail-calls Geoscape_OnMapClick @ 0x8b4a8, which is not ported. */
+typedef struct MapClickHooks {
+    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick @ 0x8b4a8 */
+    void *pUser;
+} MapClickHooks;
+
+i32 Geoscape_OnMapClick_Thunk(const MapClickHooks *pHooks);
+
+/* ResearchScreen_PanelPrev @ 0x72e30 / PanelNext @ 0x72e68: the paging shape again, but
+ * THREE panels -- unk_160C68, then unk_15EEFC, then unk_15EF00, in that order. The last
+ * call is the one the original returns. */
+void ResearchScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird);
+void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird);
+
+/* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
+ * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
+ * anLineAux[134..139] (sfx). The handler writes zero into byte +10 of every one of them,
+ * which is UiControl.nState -- the same selected/radio byte the bank widgets use. So this
+ * is "deselect the whole radio group", not a field wipe.
+ *
+ * The value returned is the SIXTH widget pointer itself (0x6B9C4 loads it before the last
+ * store), not a status code. */
+UiControl *OptionsScreen_ClearMusicButtons(UiControl *apMusic[6]);
+UiControl *OptionsScreen_ClearSfxButtons(UiControl *apSfx[6]);
+
+/* StrategList_RegisterAtexit @ 0x838a0 is `return atexit(StrategList_Clear);` -- the
+ * original registers its own cleanup with the C runtime, because its strategic list is a
+ * global and its clear function takes no arguments. The port's StrategList_Clear takes the
+ * list, so the port registers a thunk that clears the list handed in here.
+ *
+ * Deliberately NOT ported: BaseGrid_RegisterAtexit @ 0x614b4 and its two thunks
+ * BaseGrid_Atexit_nullsub5 @ 0x614a8 / BaseGrid_Atexit_nullsub6 @ 0x614c0. They register
+ * nullsub_5 and nullsub_6, empty compiler-generated stubs, so they carry no behaviour. */
+int StrategList_RegisterAtexit(PtrArray *pList);
 
 #endif /* PUFO_BASEUI_H */

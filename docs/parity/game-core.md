@@ -1966,6 +1966,38 @@ geoscape screen, frees every geoscape widget with mode 1, and returns the result
 (`TestBuySellPaging`, `TestScreenOpeners`, `TestCloseThunks`, `TestTitleReturn`, 40 checks).
 
 
+### Twelve copies of one close call, three-panel paging, the options radio groups (done)
+
+Five more thunks join the seven above: `FundingScreen_CloseThunk @ 0x5abd8`,
+`FundingScreen_ExitThunk @ 0x5c078`, `Geoscape_CloseUI_ThunkA @ 0x838d0`,
+`Geoscape_CloseUI_ThunkB @ 0x96020`, `Geoscape_CloseUI_ThunkC @ 0x9a8c0`. Twelve widget
+handlers now reach the same dispatcher, and none of them is a separate behaviour.
+`Geoscape_OnMapClick_Thunk @ 0x857e8` is the same idea for the map: it drops the four
+arguments the widget framework passes and tail-calls `Geoscape_OnMapClick @ 0x8b4a8`,
+which is not ported, so it stays a hook.
+
+`ResearchScreen_PanelPrev @ 0x72e30` and `PanelNext @ 0x72e68` page **three** panels,
+`unk_160C68`, `unk_15EEFC`, `unk_15EF00`, in that order.
+
+`OptionsScreen_ClearMusicButtons @ 0x6b994` and `OptionsScreen_ClearSfxButtons @ 0x6b9d4`
+write zero into byte `+10` of six widget pointers held in `gUiRootPanel.anLineAux[128..133]`
+and `anLineAux[134..139]`. Byte `+10` is `UiControl.nState`, the same selected/radio byte
+the bank widgets use, so these are "deselect the whole radio group", not a field wipe. The
+value returned is the sixth widget pointer itself (`0x6B9C4` loads it before the last
+store), not a status code. One implementation, two names.
+
+`StrategList_RegisterAtexit @ 0x838a0` is `return atexit(StrategList_Clear);` -- the
+original registers its own cleanup with the C runtime, possible because its strategic list
+is a global and its clear takes no arguments. The port's `StrategList_Clear` takes the
+list, so it registers a thunk over the list handed in.
+
+Deliberately **not ported**: `BaseGrid_RegisterAtexit @ 0x614b4` and its thunks
+`BaseGrid_Atexit_nullsub5 @ 0x614a8` / `BaseGrid_Atexit_nullsub6 @ 0x614c0`. They register
+`nullsub_5` and `nullsub_6`, empty compiler-generated stubs, so they carry no behaviour.
+Covered by `tests/test_baseui.c` (`TestMoreCloseThunks`, `TestResearchPaging`,
+`TestOptionsRadioClear`, `TestAtexitRegistration`, 21 checks).
+
+
 ### Geoscape screen openers (done)
 
 `Ui_OpenScreen18 @ 0x84e9c`, `Ui_CloseScreen18 @ 0x84ecc` and
