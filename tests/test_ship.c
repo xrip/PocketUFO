@@ -413,6 +413,85 @@ static void TestShipRemoveWithCargo(void)
     free(list.apItems);
 }
 
+
+/* ------------------------------------------------- the cargo hold */
+
+static void TestCargoHold(void)
+{
+    Ship ship;
+    static ObjectRecFull g_aObj[53];
+    static ObjectRecFull *g_apObj[53];
+
+    printf("Craft_GetTypeCargoCap\n");
+
+    memset(&ship, 0, sizeof(ship));
+    for (u8 t = 0; t <= 5; ++t) {
+        ship.bCraftType = t;
+        i32 nCap = (i32)Craft_GetTypeCargoCap(&ship);
+        switch (t) {
+        case 0:  TestEqI32Local("craft type 0 holds 140", nCap, 140); break;
+        case 1:  TestEqI32Local("craft type 1 holds 120", nCap, 120); break;
+        case 2:  TestEqI32Local("craft type 2 holds 260", nCap, 260); break;
+        case 3:  TestEqI32Local("craft type 3 holds nothing", nCap, 0); break;
+        case 4:  TestEqI32Local("craft type 4 holds nothing", nCap, 0); break;
+        default: TestEqI32Local("an unknown craft type reports -1, not a cap", nCap, -1); break;
+        }
+    }
+    TestEqI32Local("no ship at all is the same as an unknown type",
+                   (i32)Craft_GetTypeCargoCap(NULL), -1);
+
+    printf("Base_CalcWeaponStorageUsed\n");
+
+    /* Every object carries ten units of size one. Only the weapon range 1..24 and the
+     * ammo range 36..51 are charged, so 40 objects contribute. */
+    for (int i = 0; i < 53; ++i) {
+        g_apObj[i] = &g_aObj[i];
+        g_aObj[i].bCargoSize = 1;
+        g_aObj[i].aItemQty[0] = 10;
+    }
+    TestEqI32Local("the weapon and ammo ranges fill the hold",
+                   Base_CalcWeaponStorageUsed(g_apObj, 53, 0), 400);
+
+    /* The ranges the original leaves out: object 0, 25..36, and 52. Give them a size that
+     * would be impossible to miss if they were counted. */
+    g_aObj[0].bCargoSize = 100;
+    for (int i = 25; i <= 35; ++i) {
+        g_aObj[i].bCargoSize = 100;
+    }
+    g_aObj[52].bCargoSize = 100;
+    TestEqI32Local("object 0, 25..35 and 52 are never charged",
+                   Base_CalcWeaponStorageUsed(g_apObj, 53, 0), 400);
+
+    /* The charge is size times units, not a unit count. */
+    memset(g_aObj, 0, sizeof(g_aObj));
+    for (int i = 0; i < 53; ++i) {
+        g_apObj[i] = &g_aObj[i];
+    }
+    g_aObj[1].bCargoSize = 2;
+    g_aObj[1].aItemQty[0] = 3;   /* 6 */
+    g_aObj[24].bCargoSize = 5;
+    g_aObj[24].aItemQty[0] = 1;  /* 5 */
+    g_aObj[37].bCargoSize = 4;
+    g_aObj[37].aItemQty[0] = 10; /* 40 */
+    g_aObj[51].bCargoSize = 7;
+    g_aObj[51].aItemQty[0] = 2;  /* 14 */
+    TestEqI32Local("each object is charged its size times what it carries",
+                   Base_CalcWeaponStorageUsed(g_apObj, 53, 0), 65);
+
+    /* A different craft column reads a different load. */
+    g_aObj[1].aItemQty[7] = 9;
+    TestEqI32Local("the column is the craft index",
+                   Base_CalcWeaponStorageUsed(g_apObj, 53, 7), 18);
+
+    /* An empty hold, and a count that leaves nothing to walk. */
+    TestEqI32Local("one object means nothing is counted",
+                   Base_CalcWeaponStorageUsed(g_apObj, 1, 0), 0);
+    TestEqI32Local("no objects at all means nothing is counted",
+                   Base_CalcWeaponStorageUsed(g_apObj, 0, 0), 0);
+    TestEqI32Local("an out-of-range craft index is refused",
+                   Base_CalcWeaponStorageUsed(g_apObj, 53, 60), 0);
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -420,6 +499,7 @@ int main(void)
     TestSupplyConsume();
     TestCargoPair();
     TestShipRemoveWithCargo();
+    TestCargoHold();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

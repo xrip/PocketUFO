@@ -5832,3 +5832,53 @@ The research column's 144-byte stride and the `0x160C4C` gate are the same pair
 
 Recorded in the IDB. Porting it needs the port to own all seven arrays at once, which is the next
 step after `Geoscape_InitUI`.
+
+## The cargo hold: what fills it and what counts against it (done, plus the chain above it mapped)
+
+`Craft_GetTypeCargoCap @ 0x65ac4` and `Base_CalcWeaponStorageUsed @ 0x65b30` are ported into
+`game/pufo_ship.{h,c}`. They are the two leaves under the craft-cargo chain.
+
+**The hold cap is chosen by `Ship.bCraftType @ 0x02` and nothing else:** 0 → 140, 1 → 120,
+2 → 260, 3 or 4 → 0, anything else → **-1**. The -1 is not a cap; a caller comparing against it
+gets a hold nothing fits into.
+
+**What counts against the cap** is `ObjectRecFull.bCargoSize @ 0xC6 × aItemQty[craftIndex]`, summed
+over a filtered index range. The ARM states the filter literally at 0x65B74:
+
+```
+(index > 0 && index < 25) || (index > 35 && index < 52)
+```
+
+so **objects 1..24 (the weapons) and 36..51 (the ammo) fill the hold**, and object 0, 25..35 and 52
+are never charged. The first half of the condition looks like a pointer compare against the Map base
+only because the compiler walks `apObjects` as `Map + 4*index`.
+
+That byte at 0xC6 was `gap_B9[13]` in one place and `+198` in another depending on which base
+register the code used. It is now named `bCargoSize` in `ObjectRecFull`.
+
+`apObjects` sits at **Map + 0x120** — `Craft_LoadStoresFromBase`'s default case makes that explicit
+with the folded `4*nSrc + 1128888`.
+
+### The chain above them (mapped in the IDB, not yet ported)
+
+`Base_TransferTacticalLoot` (0x68344) → `Base_StripAllCraftCargo @ 0x69a38` →
+`Craft_LoadStoresFromBase @ 0x693ec` → the two functions above.
+
+`Base_StripAllCraftCargo` runs over every craft with `Ship.bCanDogfight @ 0x21` set and, for ten
+groups, dumps the craft's cargo into its home base and refills it. The gate is always
+*craft-carried < base-stock*, and the pairs are cargo object vs weapon object:
+
+| cargo | weapon | | cargo | weapon |
+|---|---|---|---|---|
+| 36 | 1 | | 43+44+45 | 8 |
+| 37 | 3 | | 46+47+48 | 10 |
+| 38 | 4 | | 49 | 11 |
+| 39 | 6 | | 50 | 12 |
+| 40+41+42 | 7 | | 51 | 13 |
+
+`Craft_LoadStoresFromBase` then refills one unit at a time, each unit gated on
+`Base_CalcWeaponStorageUsed + bCargoSize < Craft_GetTypeCargoCap`. For kinds 7, 8 and 10 it splits
+the wanted load across three ammo pools in order: `n1 = min(want, s1)`, `n2 = min(want-n1, s2)`,
+`n3 = min(want-n1-n2, s3)`.
+
+Covered by `tests/test_ship.c` (`TestCargoHold`, 14 checks).

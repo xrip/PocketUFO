@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 587 / 1103 (53.2%) |
-| Bytes of original code cited | 218292 / 598792 (36.5%) |
+| Functions cited as evidence | 589 / 1103 (53.4%) |
+| Bytes of original code cited | 218532 / 598792 (36.5%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5610 |
+| Test checks run | 5624 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 174 | 214 | 105664 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 35 | 52 | 26124 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 73 | 205 | 22196 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 75 | 205 | 22436 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 105 | 243 | 9192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -516,7 +516,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (73 functions)
+### `strat` (75 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -553,6 +553,7 @@ is the module that answers to it.
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x55650` | `BaseRec_ctor` | 148 | `src/pufo/game/pufo_ship.h` |
 | `0x6ae54` | `Base_FindFacilityCell` | 140 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x65b30` | `Base_CalcWeaponStorageUsed` | 132 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x6a05c` | `StrategList_FindIdxForShip` | 132 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_strateg.h` |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
@@ -562,6 +563,7 @@ is the module that answers to it.
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_strateg.h` |
 | `0x837f8` | `Smap_ClampScrollY` | 120 | `src/pufo/game/pufo_strateg.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x65ac4` | `Craft_GetTypeCargoCap` | 108 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x7e3b4` | `StrategList_AddAlienSiteIfValid` | 108 | `src/pufo/game/pufo_strateg.h` |
 | `0x68264` | `Base_CountActiveManuf` | 100 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_geoscape.h` |
@@ -994,7 +996,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 132 functions, 140260 bytes remaining
+### `strat` — 130 functions, 140020 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1081,7 +1083,6 @@ whose port work they belong to.
 | `0x66090` | `Base_CountShipsAtBase` | 140 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66230` | `Base_CountSoldiersAssigned` | 140 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a92c` | `Ship_FindIndexByStrategType` | 136 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x65b30` | `Base_CalcWeaponStorageUsed` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x662bc` | `Base_HasResearchSlotFree` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66340` | `Base_HasWorkshopSlotFree` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1098,7 +1099,6 @@ whose port work they belong to.
 | `0x656ac` | `Base_CountAmmoItems` | 116 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66874` | `Base_RemoveAllShips` | 116 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x681f4` | `Base_GetEngineerCount` | 112 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x65ac4` | `Craft_GetTypeCargoCap` | 108 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6812c` | `Base_GetScientistCount` | 108 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x8502c` | `GameTime_SetSpeedIdx3` | 104 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85094` | `GameTime_SetSpeedIdx4` | 104 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1330,7 +1330,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 660 |
-| `test_ship` | PASS | 67 |
+| `test_ship` | PASS | 81 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 257 |

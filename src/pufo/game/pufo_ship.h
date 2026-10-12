@@ -228,4 +228,49 @@ typedef struct ShipRemovalEnv {
 /* Returns the ship count after the removal. */
 i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
 
+/* ------------------------------------------------- the cargo hold and what is in it
+ *
+ * Evidence: Craft_GetTypeCargoCap @ 0x65ac4, Base_CalcWeaponStorageUsed @ 0x65b30.
+ *
+ * The hold cap is chosen by Ship.bCraftType @ 0x02 and nothing else:
+ *
+ *     0 interceptor      140
+ *     1                  120
+ *     2                  260
+ *     3 or 4               0
+ *     anything else       -1
+ *
+ * The -1 is not a cap, it is "unknown craft type", and a caller that compares against it
+ * gets a hold that nothing fits into.
+ *
+ * Base_CalcWeaponStorageUsed adds up what the craft is already carrying, charging each
+ * object its per-unit size: sum of ObjectRecFull.bCargoSize @ 0xC6 times
+ * aItemQty[nCraftIdx]. Only two object ranges count, and the ARM states the filter
+ * literally at 0x65B74:
+ *
+ *     (index > 0 && index < 25) || (index > 35 && index < 52)
+ *
+ * so objects 1..24 (the weapons) and 36..51 (the ammo) fill the hold, and 25..35 do not.
+ * Object 0 does not either. The first half of the ARM's condition reads as a pointer
+ * compare against the Map base, which is just `index > 0` because the pointer is
+ * Map + 4*index.
+ *
+ * Deviation: the original takes the craft index as a signed char and does not bound it
+ * against nObjectCount or the ship array. The port takes an i32 and refuses out-of-range
+ * indices. */
+typedef enum CraftCargoCap {
+    CRAFT_CARGO_CAP_NONE = 0,
+    CRAFT_CARGO_CAP_TYPE0 = 140,
+    CRAFT_CARGO_CAP_TYPE1 = 120,
+    CRAFT_CARGO_CAP_TYPE2 = 260,
+    CRAFT_CARGO_CAP_UNKNOWN = -1
+} CraftCargoCap;
+
+/* The original's first argument is never read; the port takes the ship directly. */
+CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip);
+
+/* Objects 1..24 and 36..52 are the ones that occupy the hold. */
+i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
+                               i32 nCraftIdx);
+
 #endif /* PUFO_SHIP_H */

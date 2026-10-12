@@ -375,3 +375,61 @@ i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId)
 
     return nCount;
 }
+
+/* Craft_GetTypeCargoCap @ 0x65ac4. The hold cap is chosen by Ship.bCraftType @ 0x02 and
+ * nothing else. The -1 for an unknown craft type is not a cap; a caller comparing against
+ * it gets a hold nothing fits into. */
+CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip)
+{
+    if (pShip == NULL) {
+        return CRAFT_CARGO_CAP_UNKNOWN;
+    }
+
+    switch (pShip->bCraftType) {
+    case 0: return CRAFT_CARGO_CAP_TYPE0; /* 140 */
+    case 1: return CRAFT_CARGO_CAP_TYPE1; /* 120 */
+    case 2: return CRAFT_CARGO_CAP_TYPE2; /* 260 */
+    case 3:
+    case 4: return CRAFT_CARGO_CAP_NONE;  /*   0 */
+    default: return CRAFT_CARGO_CAP_UNKNOWN;
+    }
+}
+
+/* Base_CalcWeaponStorageUsed @ 0x65b30. What the craft already carries, charged at each
+ * object's per-unit size.
+ *
+ * The ARM states the index filter literally at 0x65B74:
+ *   (index > 0 && index < 25) || (index > 35 && index < 52)
+ * The first half looks like a pointer compare against the Map base because the compiler
+ * walked apObjects as Map + 4*index; with the loop starting at index 1 it is just
+ * `index > 0`. */
+i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
+                               i32 nCraftIdx)
+{
+    i32 nUsed = 0;
+
+    if (apObjects == NULL || nObjectCount <= 1 || nCraftIdx < 0 || nCraftIdx >= 52) {
+        return 0;
+    }
+
+    for (i32 i = 1; i < nObjectCount; ++i) {
+        const bool bWeapon = (i > 0 && i < 25);
+        const bool bAmmo = (i > 35 && i < 52);
+
+        if (!bWeapon && !bAmmo) {
+            continue;
+        }
+
+        ObjectRecFull *pObj = apObjects[i];
+        if (pObj == NULL) {
+            continue;
+        }
+
+        u16 nCarried = pObj->aItemQty[nCraftIdx];
+        if (nCarried != 0) {
+            nUsed += (i32)pObj->bCargoSize * (i32)nCarried; /* 0x65B98 */
+        }
+    }
+
+    return nUsed;
+}

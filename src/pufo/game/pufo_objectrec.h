@@ -42,7 +42,13 @@ typedef struct ObjectRecFull {
     u8   bReadySel;        /* 0xc4 readiness source selector, read by
                             * Unit_ApplyCellDamage @ 0x2e5d0 and
                             * Combat_ResolveShot @ 0x2f12c */
-    u8   gap_C5[3];        /* 0xc5 */
+    u8   gap_C5[1];        /* 0xc5 */
+    u8   bCargoSize;       /* 0xc6 the per-unit size the cargo hold test charges:
+                            * Base_CalcWeaponStorageUsed sums bCargoSize * aItemQty[craft],
+                            * and Craft_LoadStoresFromBase gates each single unit on
+                            * used + bCargoSize < Craft_GetTypeCargoCap. IDA shows it as
+                            * gap_B9[13] or +198 depending on the base register. */
+    u8   gap_C7[1];        /* 0xc7 */
     u16  uSortKey;         /* 0xc8 weapon id: sound index, research index key, category */
     u16  uRecovScore;      /* 0xca */
     u16  uRecovCount;      /* 0xcc */
