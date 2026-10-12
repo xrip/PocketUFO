@@ -42,7 +42,7 @@
  *   09 00 00 00 00 00 00 00 00 00 00
  *
  * Only entry 10 is read outside the shot code: MapView_DrawUnitHeightGlyph
- * @ 0x1c240 uses it as a glyph id (`10 * anAimRow[10] + ...`) and skips the
+ * (0x1c240) uses it as a glyph id (`10 * anAimRow[10] + ...`) and skips the
  * glyph when it is 0. The other ten entries have no reader found yet; they are
  * recorded rather than interpreted.
  *

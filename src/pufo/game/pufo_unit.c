@@ -489,7 +489,7 @@ void Unit_Generate(Soldier *pUnit, u8 nKind)
     pUnit->pLinked1040 = NULL;
 }
 
-/* --- Tact_UpdateUnitControl @ 0x4a444, the unit-arithmetic half --- */
+/* --- Tact_UpdateUnitControl (0x4a444), the unit-arithmetic half --- */
 
 /* Morale threshold: at or above 95 the unit is fully rallied and snaps to 100,
  * otherwise morale rises by 5. Verified from the decompilation's `>= 0x5F`. */

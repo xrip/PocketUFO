@@ -182,7 +182,7 @@ typedef struct Soldier {
     i32        nClass;         /* 0x1ac */
     u8         bSpecialMark;   /* 0x1b0 */
     u8         gap_433;        /* 0x1b1 */
-    /* Read as gap_433[1] by Tact_UpdateUnitControl @ 0x4a444: set once when the
+    /* Read as gap_433[1] by Tact_UpdateUnitControl (0x4a444): set once when the
      * unit is recovered from alien control, which makes the function idempotent. */
     u8         bControlRecovered; /* 0x1b2 */
     u8         bUnk435;        /* 0x1b3 */
@@ -431,7 +431,9 @@ void Unit_Generate(Soldier *pUnit, u8 nKind);
  * a test. Uses the extracted text tables (see pufo_boot.h). */
 void Unit_GenerateName(Soldier *pUnit);
 
-/* Unit_ApplyControlRecovery @ 0x4a444 (first half).
+/* Unit_ApplyControlRecovery, the first half of Tact_UpdateUnitControl (0x4a444).
+ * The port implements the unit-arithmetic half only; the rest of that 788-byte function is
+ * not recreated, so this citation credits nothing.
  *
  * Applies the knockout/recovery bookkeeping when a unit is recovered from alien
  * control. Split out from Tact_UpdateUnitControl because the rest of that

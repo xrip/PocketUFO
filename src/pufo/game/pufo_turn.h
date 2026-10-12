@@ -125,7 +125,7 @@ void Tact_BeginEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks,
  * Clears bEnemyTurnActive and busy, re-enables input, restores the selected unit
  * (falling back to the first XCom unit when the saved one is dead or flagged
  * 0x20), selects it, and re-focuses the view. `pfnAfterEnemyStep` stands in for
- * AfterEnemyStep @ 0x4c4a0. The first XCom unit is passed in because the port
+ * AfterEnemyStep (0x4c4a0). The first XCom unit is passed in because the port
  * does not yet own the side lists. */
 void Tact_EndEnemyTurn(TactCtx272 *pCtx, const TurnHooks *pHooks, Soldier *pFirstXcom,
                        void (*pfnAfterEnemyStep)(TactCtx272 *pCtx, void *pUser));

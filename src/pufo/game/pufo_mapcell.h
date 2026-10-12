@@ -49,7 +49,7 @@
  * it gap_22[10], since gap_22 spans 0x16..0x26) and the blocking bytes at 0x2a
  * and 0x2e (gap_2A[0] and gap_2A[4]). A signed parameter byte at 0x24 is read as
  * a CEILING height/threshold by Path_ExpandCell @ 0x2b604 and
- * Map_ProbeStepOccupants @ 0x2778c (both load `*(char*)(pCeilSpr + 0x24)`).
+ * Map_ProbeStepOccupants (0x2778c) (both load `*(char*)(pCeilSpr + 0x24)`).
  * An unsigned sprite height byte at 0x1C is read by Map_RefreshCellMeta
  * @ 0x2c7f4 (`*(u8*)(pSpr + 28)`, taking the max over the four sprites).
  *
@@ -237,7 +237,7 @@ size_t Map_CellIndex(i32 nDimX, i32 nDimY, i32 nX, i32 nY, i32 nLayer);
  *
  * Parameter meaning comes from the call sites, not from IDA's names:
  *   MapView_FocusOnUnit @ 0x2c758 calls the Center family with two coordinate
- *   DELTAS: nA = unitX - camX, nB = unitY - camY. MapView_DrawIsoLayer @ 0x21e2c
+ *   DELTAS: nA = unitX - camX, nB = unitY - camY. MapView_DrawIsoLayer (0x21e2c)
  *   calls the Iso family with cell coordinates.
  *
  * Two things to note because they look like mistakes and are not:

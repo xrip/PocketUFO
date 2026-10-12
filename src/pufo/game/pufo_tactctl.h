@@ -26,9 +26,9 @@ typedef struct TactUiState TactUiState;
 
 /* The cursor-overlay byte MapCursor_SetFlags writes (nLayerScratch @ 0x15138). */
 typedef struct TactCursor {
-    i32 nX;            /* nCursorX   @ 0x15128 */
-    i32 nY;            /* nCursorY   @ 0x1512c */
-    u8  nFlags;        /* nLayerScratch @ 0x15138, written by SetFlags */
+    i32 nX;            /* nCursorX, 0x15128 */
+    i32 nY;            /* nCursorY, 0x1512c */
+    u8  nFlags;        /* nLayerScratch, 0x15138, written by SetFlags */
 } TactCursor;
 
 /* MapCursor_SetFlags @ 0x26f78. */

@@ -15,7 +15,7 @@
 void Options_InitDefaults(PufoOptions *pOpt)
 {
     memset(pOpt, 0, sizeof(*pOpt));
-    /* Verified against Map_InitAndLoadRegistry @ 0x22648: each Reg_GetString call
+    /* Verified against Map_InitAndLoadRegistry (0x22648): each Reg_GetString call
      * supplies a literal default string, and the flag defaults are read as
      * `strcmp(value, "0") != 0`, so a default of "1" means set and "0" clear.
      *

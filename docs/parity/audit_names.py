@@ -35,7 +35,7 @@ def definitions():
                         continue
                     m = DEF_RE.match(line)
                     if m:
-                        names.add(m.group(1))
+                        names.add(m.group(1).lower())
     return names
 
 
@@ -48,7 +48,7 @@ def main():
     for addr, (orig_name, size, subsystem) in sorted(inventory.items()):
         if addr not in cited:
             continue
-        if orig_name in defined:
+        if orig_name.lower() in defined:
             continue
         flagged.append((addr, orig_name, subsystem, size))
 

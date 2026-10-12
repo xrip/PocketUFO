@@ -270,7 +270,7 @@ give the parenthesized form any credit.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **598 / 1103 cited** (54.2%), bytes 194100 / 598792 (32.4%) |
+| `python docs/parity/coverage.py` (agreed) | **590 / 1103 cited** (53.5%), bytes 184620 / 598792 (30.8%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |

@@ -5993,3 +5993,28 @@ Honest coverage after the correction: **598 / 1103 functions (54.2%)**, **194,10
 
 `Map_ComputeReachable @ 0x2b820` was checked and left alone — it is ported as `Path_ComputeReachable`,
 a documented rename.
+
+### Second integrity batch: eight more citations removed (8,692 bytes)
+
+Checked by hand against the source, one citation site at a time:
+
+| original | bytes | verdict |
+|---|---|---|
+| `TactHud_DrawSelectedUnitPanel` `0x1d5ec` | 1,484 | cited only as "all six callers are …" — no such function in the port |
+| `AfterEnemyStep` `0x4c4a0` | 1,368 | hook field: "`pfnAfterEnemyStep` stands in for" |
+| `Map_InitAndLoadRegistry` `0x22648` | 1,284 | cited as the source of default values `Options_InitDefaults` borrows |
+| `MapView_DrawIsoLayer` `0x21e2c` | 1,252 | cited describing which coordinate family the original calls |
+| `MapView_DrawUnitHeightGlyph` `0x1c240` | 1,132 | cited describing what the original reads; the citation also spanned two lines |
+| `Tact_HandleMapClick` `0x1512c` | 1,104 | **not a function citation at all** — a struct field comment `nCursorY @ 0x1512c` naming a global |
+| `Map_ProbeStepOccupants` `0x2778c` | 1,068 | cited listing which originals read a cell field |
+| `Tact_UpdateUnitControl` `0x4a444` | 788 | only the unit-arithmetic half is ported, as `Unit_ApplyControlRecovery` |
+
+The `0x1512c` case is a new shape of the same problem: a **data** address written in the `@` form is
+credited as a recreated function. Struct-field comments that name globals must not use `@`.
+
+Checked and **left alone** as documented renames: `Assets_LoadStartup` → `Boot_LoadStartup`,
+`Map_LoadRmp` → `Rmp_Load`, `Soldier_Generate` → `Unit_Generate`,
+`Map_ApplyTemplateToCells` → `MapTemplate_ApplyToCells`, `UiPanelMsg_Draw` → `UiPanel_DrawText`,
+`Map_ComputeReachable` → `Path_ComputeReachable`, `Ship_ctor` → `Ship_Ctor`.
+
+Honest coverage now: **590 / 1103 functions (53.5%)**, **184,620 / 598,792 bytes (30.8%)**.

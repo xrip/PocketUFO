@@ -180,7 +180,7 @@ void TactHud_UseSpecialItem(const TactHudSpecialCtx *pCtx);
  * are stateful scratch, not immutable glyphs. Returns the right edge of the last
  * digit, `x + uWidth`, which is what the original returns from 0x36D54.
  *
- * All six callers are `TactHud_DrawSelectedUnitPanel @ 0x1d5ec`. */
+ * All six callers are `TactHud_DrawSelectedUnitPanel (0x1d5ec)`. */
 #define PUFO_HUD_DIGIT_PADS 11
 
 typedef void (*HudPadBlitFn)(PadImage *pPad, void *pUser);
