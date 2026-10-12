@@ -50,4 +50,16 @@ typedef struct TitlesBackdrop {
  * 36 rows; below that the window starts at row 0 and grows to scroll/20 rows. */
 i32 Titles_DrawBackdrop(TitlesBackdrop *pEnv);
 
+/* The original's titles surface, unk_158808 @ 0x158808. It is created in Titles_ctor (0x46e88,
+ * not ported) and freed in Titles_dtor (0x46fa4, not ported), and this is the only module that
+ * touches it, so the port owns it here. */
+extern SoftSurf *g_pTitlesSurface;
+
+/* SoftSurf_DrawBorderAndBlur @ 0x9e5c8.
+ *
+ * Four strips of palette entry 0 around the edge of the titles surface, then a blur of the whole
+ * surface. Note the asymmetry the original actually has: the four strips are hardcoded 240 and
+ * 320, while the blur is given the surface's real width and height read through the accessors. */
+u8 *SoftSurf_DrawBorderAndBlur(void);
+
 #endif /* PUFO_TITLES_H */

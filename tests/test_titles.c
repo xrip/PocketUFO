@@ -159,11 +159,47 @@ static void TestBackdrop(void)
     g_pMainSurface = NULL;
 }
 
+static void TestBorderAndBlur(void)
+{
+    SoftSurf titles;
+
+    printf("SoftSurf_DrawBorderAndBlur @ 0x9e5c8\n");
+
+    SoftSurf_ctor(&titles);
+    SoftSurf_AllocPixels(&titles, 240, 320, PIXMODE_8BPP);
+    g_pTitlesSurface = &titles;
+    memset(g_aPalette[0], 0, sizeof(g_aPalette[0]));
+
+    /* Everything non-zero first, so a border pixel going to zero can only come from the fill and
+     * an interior pixel changing can only come from the blur. */
+    memset(titles.pPixels, 0x40, (size_t)titles.nWidth * (size_t)titles.nHeight);
+
+    (void)SoftSurf_DrawBorderAndBlur();
+
+    CheckEqI32("the top-left corner is filled to palette entry 0",
+               (i32)titles.pPixels[0], 0);
+    CheckEqI32("the top-right corner too",
+               (i32)titles.pPixels[239], 0);
+    CheckEqI32("and the bottom-left",
+               (i32)titles.pPixels[319 * 240], 0);
+    CheckEqI32("the blur is interior-only, so (1,1) sees two zero neighbours",
+               (i32)titles.pPixels[1 * 240 + 1], 0x1F);
+    /* The blur is an in-place cascade, so a pixel's own neighbours may already have been blurred
+     * by the time it is reached and the exact value depends on position. What is position-independent
+     * is that an interior pixel of a uniform field loses value and stays non-zero. */
+    Check(titles.pPixels[160 * 240 + 120] != 0x40 &&
+          titles.pPixels[160 * 240 + 120] != 0,
+          "a pixel with four non-zero neighbours is blurred but not erased");
+
+    g_pTitlesSurface = NULL;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestBackdrop();
+    TestBorderAndBlur();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

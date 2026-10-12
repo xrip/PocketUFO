@@ -5,6 +5,22 @@
 
 #include <stdlib.h>
 
+/* The original's titles surface, unk_158808. */
+SoftSurf *g_pTitlesSurface;
+
+/* SoftSurf_DrawBorderAndBlur @ 0x9e5c8. */
+u8 *SoftSurf_DrawBorderAndBlur(void)
+{
+    SoftSurf_FillRectEx(g_pTitlesSurface, 0, 0, 240, 1, 0, 0);
+    SoftSurf_FillRectEx(g_pTitlesSurface, 0, 319, 240, 1, 0, 0);
+    SoftSurf_FillRectEx(g_pTitlesSurface, 0, 0, 1, 320, 0, 0);
+    SoftSurf_FillRectEx(g_pTitlesSurface, 239, 0, 1, 320, 0, 0);
+
+    return SoftSurf_BlurPixels(SoftSurf_GetPixels(g_pTitlesSurface),
+                               SoftSurf_GetWidth(g_pTitlesSurface),
+                               SoftSurf_GetHeight(g_pTitlesSurface));
+}
+
 /* Titles_DrawBackdrop @ 0x1e630. */
 i32 Titles_DrawBackdrop(TitlesBackdrop *pEnv)
 {
