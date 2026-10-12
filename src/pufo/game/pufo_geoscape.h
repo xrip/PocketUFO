@@ -84,4 +84,29 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks);
 void Geoscape_Advance(GeoscapeState *pState, const GeoscapeHooks *pHooks,
                       i32 nDeltaSec);
 
+/* Base_GetItemQtyA @ 0x66198 and Base_GetItemQtyB @ 0x661b8. Both read a u16 out of an
+ * object's per-base array and differ ONLY in which object slot they reach:
+ *
+ *     A -> pCtxBase.apObjects[113]->auPerBaseVal[nBase]
+ *     B -> pCtxBase.apObjects[112]->auPerBaseVal[nBase]
+ *
+ * so the port takes the object and keeps one implementation. The original's index is a
+ * `char` used with no bound check, so an index past the eight entries reads whatever
+ * follows; the port refuses and returns 0. */
+i32 Base_GetItemQty(const ObjectRecFull *pItem, i32 nBaseIdx);
+
+/* Geoscape_SetPanelFlagA @ 0x8b448 and Geoscape_SetPanelFlagB @ 0x8b478. Each sets one
+ * byte of the block at 0x1864F4, and only while the screen id at 0x186BC4 is 0 or 2;
+ * for any other screen id nothing at all is written. A writes +1, B writes +3. Returns
+ * true when the flag was set. */
+typedef struct GeoscapePanelFlags {
+    u8 bUnk0;   /* 0x1864F4 */
+    u8 bPanelA; /* 0x1864F5 */
+    u8 bUnk2;   /* 0x1864F6 */
+    u8 bPanelB; /* 0x1864F7 */
+} GeoscapePanelFlags;
+
+bool Geoscape_SetPanelFlagA(i32 nScreenMode, GeoscapePanelFlags *pFlags);
+bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags);
+
 #endif /* PUFO_GEOSCAPE_H */

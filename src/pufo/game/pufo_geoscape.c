@@ -165,3 +165,40 @@ void Geoscape_Advance(GeoscapeState *pState, const GeoscapeHooks *pHooks,
     };
     Geoscape_AdvanceTime(&pState->time, nDeltaSec, &clockHooks);
 }
+
+/* --------------------------------------------------------------------------
+ * Small strategic accessors.
+ * -------------------------------------------------------------------------- */
+
+i32 Base_GetItemQty(const ObjectRecFull *pItem, i32 nBaseIdx)
+{
+    if (pItem == NULL || nBaseIdx < 0 ||
+        nBaseIdx >= (i32)(sizeof(pItem->auPerBaseVal) / sizeof(pItem->auPerBaseVal[0]))) {
+        return 0; /* the original reads past the array here; the port does not */
+    }
+    return (i32)pItem->auPerBaseVal[nBaseIdx];
+}
+
+static bool Geoscape_PanelApplies(i32 nScreenMode)
+{
+    /* 0x8b45c / 0x8b48c: only the two screens 0 and 2 arm these flags. */
+    return nScreenMode == 0 || nScreenMode == 2;
+}
+
+bool Geoscape_SetPanelFlagA(i32 nScreenMode, GeoscapePanelFlags *pFlags)
+{
+    if (pFlags == NULL || !Geoscape_PanelApplies(nScreenMode)) {
+        return false;
+    }
+    pFlags->bPanelA = 1; /* unk_1864F5, 0x8b468 */
+    return true;
+}
+
+bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags)
+{
+    if (pFlags == NULL || !Geoscape_PanelApplies(nScreenMode)) {
+        return false;
+    }
+    pFlags->bPanelB = 1; /* unk_1864F7, 0x8b498 */
+    return true;
+}

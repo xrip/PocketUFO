@@ -74,4 +74,9 @@ typedef struct GeoscapeClockHooks {
 void Geoscape_AdvanceTime(GameTime *pTime, i32 nDeltaSec,
                           const GeoscapeClockHooks *pHooks);
 
+/* GameTime_Unpause @ 0x5d6c4. One write: it clears the pause byte, the same
+ * apLines[106] byte GameTime_Pause @ 0x5d6ac sets. There is no counter and no other
+ * state, so unpausing while already running is a no-op rather than an error. */
+void GameTime_Unpause(GameTime *pTime);
+
 #endif /* PUFO_CLOCK_H */

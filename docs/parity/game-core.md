@@ -4735,3 +4735,29 @@ uses, so it lives in one helper (`Smap_ClampScrollY`).
 |---|---|---|
 | 4 | The level table is caller-owned data; the port does not write 0x186B04 / 0x186E40 / 0x186BE0 | the app reads `aSets[pView->nMode]` after a zoom instead of the port owning three globals |
 | 5 | The `u16` pair at 0x186BC0 travels in `SmapWorldSize` | it is a neighbouring global, not part of the 36-byte view block |
+
+### Strategic accessors: per-base quantity, panel flags, unpause
+
+Ported in `game/pufo_geoscape.{h,c}` and `game/pufo_clock.{h,c}`, asserted by
+`test_geoscape::TestPanelFlagsAndQty` (12 checks).
+
+`Base_GetItemQtyA @ 0x66198` and `Base_GetItemQtyB @ 0x661b8` are the same expression
+over two object slots:
+
+```
+A -> pCtxBase.apObjects[113]->auPerBaseVal[nBase]
+B -> pCtxBase.apObjects[112]->auPerBaseVal[nBase]
+```
+
+so the port keeps one `Base_GetItemQty(const ObjectRecFull *, i32)` and names the two
+slots in the comment. The original's index is a `char` used with no bound check; an
+index past the eight entries reads whatever follows. The port refuses and returns 0.
+
+`Geoscape_SetPanelFlagA @ 0x8b448` and `Geoscape_SetPanelFlagB @ 0x8b478` each set one
+byte of the block at `0x1864F4` (A writes `+1`, B writes `+3`) and only while the screen
+id at `0x186BC4` is 0 or 2. For any other screen nothing at all is written -- that is the
+whole function. Modelled as `GeoscapePanelFlags` with a shared `Geoscape_PanelApplies`.
+
+`GameTime_Unpause @ 0x5d6c4` is one write: it clears the pause byte, the same
+`apLines[106]` byte `GameTime_Pause @ 0x5d6ac` sets. There is no pause counter, so
+unpausing while already running is a no-op rather than an error.

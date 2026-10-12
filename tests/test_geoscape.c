@@ -364,12 +364,44 @@ static void TestAdvance(void)
     CheckEqI32(g_nMonthly, 1, "monthly funding fired at the month change");
 }
 
+static void TestPanelFlagsAndQty(void)
+{
+    GeoscapePanelFlags flags;
+    ObjectRecFull obj;
+    GameTime time;
+
+    printf("panel flags, per-base quantity, unpause\n");
+
+    memset(&flags, 0, sizeof(flags));
+    Check(Geoscape_SetPanelFlagA(0, &flags), "screen 0 arms panel flag A");
+    Check(Geoscape_SetPanelFlagB(2, &flags), "screen 2 arms panel flag B");
+    Check(!Geoscape_SetPanelFlagA(5, &flags), "any other screen arms nothing");
+    CheckEqI32(flags.bPanelA, 1, "A lands at 0x1864F5");
+    CheckEqI32(flags.bPanelB, 1, "B lands at 0x1864F7");
+    CheckEqI32(flags.bUnk0, 0, "the neighbouring byte is untouched");
+    CheckEqI32(flags.bUnk2, 0, "so is the other one");
+
+    memset(&obj, 0, sizeof(obj));
+    obj.auPerBaseVal[3] = 42;
+    CheckEqI32(Base_GetItemQty(&obj, 3), 42, "per-base quantity lookup");
+    CheckEqI32(Base_GetItemQty(&obj, 8), 0, "an index past the eight entries is refused");
+    CheckEqI32(Base_GetItemQty(NULL, 0), 0, "NULL object returns 0");
+
+    memset(&time, 0, sizeof(time));
+    time.bPaused = 1;
+    GameTime_Unpause(&time);
+    CheckEqI32(time.bPaused, 0, "GameTime_Unpause clears the pause byte");
+    GameTime_Unpause(&time);
+    CheckEqI32(time.bPaused, 0, "unpausing while running is a no-op");
+}
+
 int main(void)
 {
     TestTickShips();
     TestTickHourly();
     TestTickBases();
     TestAdvance();
+    TestPanelFlagsAndQty();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

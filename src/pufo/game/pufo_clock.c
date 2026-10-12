@@ -102,3 +102,11 @@ void Geoscape_AdvanceTime(GameTime *pTime, i32 nDeltaSec,
     if (pTime->nMonth != nMonthBefore)
         pHooks->pfnOpenMonthly(pHooks->pUser);
 }
+
+void GameTime_Unpause(GameTime *pTime)
+{
+    if (pTime == NULL) {
+        return;
+    }
+    pTime->bPaused = 0; /* 0x5d6c8: LOBYTE(gUiRootPanel.apLines[106]) = 0 */
+}
