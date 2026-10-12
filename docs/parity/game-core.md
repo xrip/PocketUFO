@@ -2532,6 +2532,48 @@ untouched.
 This and `Base_FindFacilityCell @ 0x6ae54` clear both named dependencies of
 `Geoscape_SpawnMissionSite @ 0x7e49c`.
 
+### The UFO mission machine (done)
+
+`Geoscape_SpawnMissionSite @ 0x7e49c`, 4460 bytes, ported in `game/pufo_strateg.c`. The largest
+single geoscape function ported so far, and it was only portable once every callee was in place.
+
+**The outer switch is on the argument, not on the item.** `-1` advances the mission already stored
+in `pUfo->nMissionSub`. `0..7` starts that subtype. Anything else returns `nMissionSub + 1` having
+changed nothing.
+
+The advance path gives every subtype the same three gates in the same order:
+
+| gate | what it does |
+|---|---|
+| `nPhase > 3` | pick a target and travel to it, with `bC` set to the subtype |
+| `nPhase == 3` | teleport onto the target if it lies inside the current viewport, set a dwell, drop to phase 2 |
+| `nPhase < 3` and `nTimer == 0` | run the landing effect, then move to a fresh random point |
+
+The dwells are **200, 200, 720, 2880, 60, 1 and 720** for subtypes 1 through 7. Subtype 0 has no
+target gate and no dwell at all: it travels to a random point and decrements whenever `nPhase > 0`,
+skipping the `nTimer` test the shared tail applies.
+
+What actually differs between subtypes is **where the target comes from**:
+
+- **1, 2, 4** re-roll until `Tilemap_GetAt` is not 255, so they always land on dry ground.
+- **3, 5** take a random entry from the 56-record mission-site table at `0x1865C8`. Subtype 5 also
+  remembers which entry, because its landing effect reports that index to the radar message.
+- **6** picks a random base and wants one with **no** free cell of facility kind 10. It retries up
+  to 20 times and on the twentieth gives up on bases entirely, travelling to a random point and
+  returning **before the gates run**.
+- **7** collects every active type-0 item into a 100-entry stack array and picks one at random.
+
+The landing effects: subtype 4 drops an alien site (undiscovered when `rand(0x14)+1 <= 16`, else
+discovered with line 60 and a clock pause) and stamps the new item with the UFO's race and target
+index. Subtype 5 raises an intercept mission, stamps the same two fields, appends line 16, arms
+`nRadarPulseTimer` to 250 and pauses. Subtype 6 opens the base-contact screen and sets the screen
+id to 20.
+
+The shared tail returns `nPhase` as it was **before** the decrement, and marks `bDone` only when
+`nPhase` lands on 0 and the craft is not visible.
+
+Covered by `tests/test_strateg.c` (41 checks).
+
 
 ### Geoscape screen openers (done)
 
