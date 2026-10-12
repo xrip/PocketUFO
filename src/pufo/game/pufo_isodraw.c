@@ -2,6 +2,7 @@
 #include "game/pufo_isodraw.h"
 
 #include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / g_fontSys */
+#include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
 
 void MapView_DrawCellFloorGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim)
 {
@@ -124,4 +125,73 @@ void TactUnit_DrawFacingGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim,
     (void)Font_DrawGlyph(pIso->nDrawX - 48, pIso->nDrawY - 12,
                          (u16)(pBases->nExplBase - ((pIso->pCell->nFlags32 >> 3) & 0xFu) + 8u),
                          0);
+}
+
+/* MapView_bResolveIsoCell @ 0x1b0d4. */
+bool MapView_bResolveIsoCell(IsoDrawCtx *pIso, const IsoGrid *pGrid)
+{
+    i32 nTileX;
+    i32 nTileY;
+    i32 nHalfY;
+    i32 bOdd;
+    i32 nLayer;
+    i32 nMapX;
+    i32 nMapY;
+
+    nTileY = pIso->nTileY;
+    nTileX = pIso->nTileX;
+
+    /* C's / truncates toward zero, which is what __rt_sdiv does and what the ARM's
+     * MOVS / ADDMI / ASR idiom computes. The odd test is the remainder being non-zero. */
+    nHalfY = nTileY / 2;
+    bOdd = (nTileY % 2) != 0;
+
+    nMapY = pIso->nIsoOffA + nTileX + nHalfY;
+    nMapX = nHalfY - nTileX + pIso->nIsoOffB;
+    if (bOdd != 0) {
+        nMapX += 1;
+    }
+
+    pIso->nMapY = nMapY;
+    pIso->nMapX = nMapX;
+
+    pIso->bOob = (nMapY < 0 || nMapX < 0 ||
+                  nMapY > 10 * pGrid->nDimX - 1 ||
+                  nMapX > 10 * pGrid->nDimY - 1) ? 1u : 0u;
+
+    nLayer = (i32)pIso->nLayer;
+
+    pIso->nDrawX = 32 * nTileX - 16;
+    if (bOdd != 0) {
+        pIso->nDrawX = 32 * nTileX - 32;
+    }
+    pIso->nDrawY = 8 * (nTileY - 3 * nLayer - 4);
+
+    if (pIso->bOob != 0 || pIso->nDrawY + 40 <= 0) {
+        return false;
+    }
+
+    /* The array is MapCell *[4][60][60]. The ARM multiplies by 0x3C twice, which is both the layer
+     * stride in cells and sizeof(MapCell) on the original - the compiler folded them into one
+     * constant. */
+    pIso->pCell = pGrid->apCells[PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM * nLayer + nMapX) + nMapY];
+    pIso->pUnit = pIso->pCell->pUnit;
+
+    if (pIso->pCell->pCeilSpr != NULL) {
+        pIso->nObjParam = (i32)pIso->pCell->pCeilSpr->iCeilParam;
+    } else {
+        pIso->nObjParam = 0;
+    }
+
+    if ((pIso->pCell->bFlags29 & 0x10u) != 0) {
+        if ((pIso->pCell->nFlags32 & 7u) == 4u) {
+            pIso->nPal = 0;
+        } else {
+            pIso->nPal = (i32)pIso->pCell->bUnk56;
+        }
+    } else {
+        pIso->nPal = 255;
+    }
+
+    return true;
 }

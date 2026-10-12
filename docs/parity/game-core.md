@@ -6405,7 +6405,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 
 | callee | size | state |
 |---|---|---|
-| `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam. Not ported |
+| `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | **ported** — the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam |
 | `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | not ported |
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | not ported |
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | not ported |
@@ -6452,3 +6452,39 @@ renamed in the IDB to `nHandobSprBase`, `nFloorobSprBase`, `nTanksSprBase`, `nBi
 The animation kind table at `unk_AA018` is `00 08 0C 10 00 04 00 00`, indexed by
 `MapCell.nFlags32 & 7`. Kind 4 is the only kind that draws twice, and its second glyph uses the entry
 for kind 1, which is 8 — the byte Hex-Rays calls `byte_AA019`.
+
+### The IsoDrawCtx fields the pseudocode cannot show
+
+`MapView_bResolveIsoCell` is where the context's layout becomes visible, and the ARM displacements are
+the only trustworthy source. Hex-Rays reaches two of these through `pIso[1].pCell`, which is how it
+renders a plain dword as a struct pointer field:
+
+| offset | field | |
+|---|---|---|
+| 0x00 | `pCell` | 0x38 `nLayer` |
+| 0x04 | `nDrawX` | 0x54 `nObjParam` |
+| 0x08 | `nDrawY` | 0x58 `pUnit` |
+| 0x1C | `nIsoOffA` | 0x64 `bWallPalIdx` |
+| 0x20 | `nIsoOffB` | 0x6C `nPal` |
+| 0x24 | `bOob` (byte) | 0x138 `nMapY` |
+| 0x28 | `nTileX` | 0x13C `nMapX` |
+| 0x2C | `nTileY` | |
+
+The rules it applies:
+
+- `nMapY = nIsoOffA + nTileX + nTileY / 2`, `nMapX = nIsoOffB + nTileY / 2 - nTileX`, plus one when
+  `nTileY` is odd. The divide is the compiler's signed divide-by-two (`MOVS` / `ADDMI` / `ASR`), which
+  truncates toward zero, and the odd test is the `__rt_sdiv` remainder being non-zero — so a negative
+  odd row takes the `+1` too.
+- Out of bounds is any negative coordinate, `nMapY > 10 * nMapDimX - 1`, or `nMapX > 10 * nMapDimY - 1`.
+  The factor of ten is because the dimensions are stored in 6-tile units.
+- `nDrawX = 32 * nTileX - 16`, or `- 32` on an odd row; `nDrawY = 8 * (nTileY - 3 * nLayer - 4)`.
+- It returns false when out of bounds **or when `nDrawY + 40 <= 0`**. That is a 40-pixel lookahead, not
+  a screen test: a cell whose top is 40 or more pixels below the draw origin is skipped, and one that is
+  merely off the bottom edge is not.
+- The cell is `apCells[60 * (60 * nLayer + nMapX) + nMapY]`. The ARM multiplies by `0x3C` twice, which
+  is both the layer stride in cells and `sizeof(MapCell)` on the original — the compiler folded the two
+  into one constant.
+- `nObjParam` is the ceiling sprite's signed `iCeilParam` at sprite + 0x24, or 0 with no ceiling sprite.
+  `nPal` is 255 unless the cell's `bFlags29` bit 4 is set, in which case it is 0 for animation kind 4
+  and the cell's `bUnk56` otherwise.

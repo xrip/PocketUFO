@@ -305,6 +305,151 @@ static void TestFacingGlyph(void)
     Check(InkRow(12) != -1, "it uses palette 0 regardless of the cell palette");
 }
 
+static void TestResolve(void)
+{
+    /* The array is indexed 60 * (60 * nLayer + nMapX) + nMapY. Every slot points at one ordinary
+     * cell except the one a given case is expected to land on, which points at a distinctive cell.
+     * That makes the index arithmetic an exact assertion at both layer 0 and layer 1 without a pool
+     * of four thousand cells. */
+    static MapCell *apGrid[3844];
+    static MapCell  aOrdinary;
+    static MapCell  aTarget;
+    static Mc1Rec   ceilSpr;
+    IsoGrid grid;
+    IsoDrawCtx iso;
+    i32 k;
+
+    printf("MapView_bResolveIsoCell @ 0x1b0d4\n");
+
+    for (k = 0; k < 3844; ++k) {
+        apGrid[k] = &aOrdinary;
+    }
+    grid.apCells = apGrid;
+    grid.nDimX = 1;   /* the limit is 10 * 1 - 1 = 9 */
+    grid.nDimY = 1;
+
+    memset(&iso, 0, sizeof(iso));
+    memset(&aOrdinary, 0, sizeof(aOrdinary));
+
+    iso.nIsoOffA = 0;
+    iso.nIsoOffB = 0;
+    iso.nLayer = 0;
+    iso.nTileX = 2;
+    iso.nTileY = 4;
+    apGrid[4] = &aTarget;
+
+    Check(MapView_bResolveIsoCell(&iso, &grid), "an even tile resolves");
+    CheckEqI32(iso.nMapY, 4, "nMapY = nIsoOffA + nTileX + nTileY / 2");
+    CheckEqI32(iso.nMapX, 0, "nMapX = nTileY / 2 - nTileX + nIsoOffB");
+    CheckEqI32(iso.nDrawX, 48, "nDrawX = 32 * nTileX - 16");
+    CheckEqI32(iso.nDrawY, 0, "nDrawY = 8 * (nTileY - 3 * nLayer - 4)");
+    CheckEqI32(iso.bOob, 0, "in bounds");
+    Check(iso.pCell == &aTarget, "the cell lands at 60 * nMapX + nMapY for layer 0");
+    apGrid[4] = &aOrdinary;
+
+    /* Odd tile row: nMapX gains one and nDrawX shifts by a further 16. */
+    iso.nTileY = 5;
+    apGrid[64] = &aTarget;
+    Check(MapView_bResolveIsoCell(&iso, &grid), "an odd tile resolves");
+    CheckEqI32(iso.nMapX, 1, "an odd nTileY adds one to nMapX");
+    CheckEqI32(iso.nMapY, 4, "nMapY is unchanged by the odd correction");
+    CheckEqI32(iso.nDrawX, 32, "an odd nTileY shifts nDrawX to 32 * nTileX - 32");
+    CheckEqI32(iso.nDrawY, 8, "nDrawY follows the new row");
+    Check(iso.pCell == &aTarget, "the odd correction moves the cell by one column");
+    apGrid[64] = &aOrdinary;
+
+    /* A negative odd row: the divide truncates toward zero, and the odd correction still applies. */
+    iso.nTileY = -5;
+    iso.nTileX = 0;
+    iso.nIsoOffA = 10;
+    iso.nIsoOffB = 3;
+    Check(!MapView_bResolveIsoCell(&iso, &grid),
+          "a cell whose top is 40 or more pixels below the screen is skipped");
+    CheckEqI32(iso.nMapY, 8, "-5 / 2 truncates toward zero, giving -2");
+    CheckEqI32(iso.nMapX, 2, "the odd correction still applies to a negative row");
+    CheckEqI32(iso.nDrawY, -72, "nDrawY is -72, so nDrawY + 40 is not positive");
+
+    /* The cutoff is exactly 40: -40 fails and -32 passes. */
+    iso.nTileY = -1;
+    iso.nIsoOffA = 0;
+    iso.nIsoOffB = 0;
+    Check(!MapView_bResolveIsoCell(&iso, &grid), "nDrawY of exactly -40 is rejected");
+    CheckEqI32(iso.nDrawY, -40, "nDrawY is exactly -40");
+
+    iso.nTileY = 0;
+    apGrid[0] = &aTarget;
+    Check(MapView_bResolveIsoCell(&iso, &grid), "nDrawY of -32 is accepted");
+    CheckEqI32(iso.nDrawY, -32, "nDrawY is -32");
+    Check(iso.pCell == &aTarget, "tile row 0 at layer 0 lands on slot 0");
+
+    /* A higher layer moves the window and the index: tile row 7 at layer 1 resolves to
+     * nMapX 4, nMapY 3, which is slot 60 * (60 * 1 + 4) + 3 = 3843. */
+    iso.nTileY = 7;
+    iso.nLayer = 1;
+    apGrid[3843] = &aTarget;
+    Check(MapView_bResolveIsoCell(&iso, &grid), "a higher layer shifts the window");
+    CheckEqI32(iso.nDrawY, 0, "layer 1 puts tile row 7 at nDrawY 0");
+    CheckEqI32(iso.nMapX, 4, "nMapX for layer 1 tile row 7");
+    CheckEqI32(iso.nMapY, 3, "nMapY for layer 1 tile row 7");
+    Check(iso.pCell == &aTarget, "layer 1 indexes 60 * (60 * nLayer + nMapX) + nMapY");
+    apGrid[3843] = &aOrdinary;
+    iso.nLayer = 0;
+
+    /* Out of bounds on each side. */
+    iso.nTileY = 4;
+    iso.nTileX = 8;
+    Check(!MapView_bResolveIsoCell(&iso, &grid), "nMapY above 10 * nDimX - 1 is out of bounds");
+    CheckEqI32(iso.nMapY, 10, "nMapY is 0 + 8 + 2 against a limit of 9");
+    CheckEqI32(iso.bOob, 1, "bOob is set");
+
+    iso.nTileX = 0;
+    iso.nIsoOffB = 20;
+    Check(!MapView_bResolveIsoCell(&iso, &grid), "nMapX above 10 * nDimY - 1 is out of bounds");
+    CheckEqI32(iso.nMapX, 22, "nMapX is 22 against a limit of 9");
+
+    iso.nIsoOffB = 0;
+    iso.nIsoOffA = -10;
+    Check(!MapView_bResolveIsoCell(&iso, &grid), "a negative nMapY is out of bounds");
+    CheckEqI32(iso.bOob, 1, "bOob is set for a negative coordinate");
+
+    /* nPal: 255 unless bFlags29 bit 4 is set, then 0 for animation kind 4 and bUnk56 otherwise.
+     * These run on the tile that lands on slot 0, whose cell is aTarget. */
+    iso.nIsoOffA = 0;
+    iso.nIsoOffB = 0;
+    iso.nTileX = 0;
+    iso.nTileY = 0;
+    memset(&aTarget, 0, sizeof(aTarget));
+    aTarget.bFlags29 = 0;
+    Check(MapView_bResolveIsoCell(&iso, &grid), "resolved for the palette tests");
+    CheckEqI32(iso.nPal, 255, "no bFlags29 bit 4 gives palette 255");
+
+    aTarget.bFlags29 = 0x10;
+    aTarget.nFlags32 = 4;
+    aTarget.bUnk56 = 7;
+    (void)MapView_bResolveIsoCell(&iso, &grid);
+    CheckEqI32(iso.nPal, 0, "bit 4 with animation kind 4 gives palette 0");
+
+    aTarget.nFlags32 = 2;
+    (void)MapView_bResolveIsoCell(&iso, &grid);
+    CheckEqI32(iso.nPal, 7, "bit 4 with any other kind gives the cell's bUnk56");
+
+    /* nObjParam is the ceiling sprite's signed iCeilParam, or zero with no ceiling sprite. */
+    aTarget.pCeilSpr = NULL;
+    (void)MapView_bResolveIsoCell(&iso, &grid);
+    CheckEqI32(iso.nObjParam, 0, "no ceiling sprite gives nObjParam 0");
+
+    ceilSpr.iCeilParam = -3;
+    aTarget.pCeilSpr = &ceilSpr;
+    (void)MapView_bResolveIsoCell(&iso, &grid);
+    CheckEqI32(iso.nObjParam, -3, "iCeilParam is read as a signed byte");
+
+    aTarget.pUnit = (Soldier *)&aTarget;
+    (void)MapView_bResolveIsoCell(&iso, &grid);
+    Check(iso.pUnit == (Soldier *)&aTarget, "pUnit is bound from the resolved cell");
+
+    apGrid[0] = &aOrdinary;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -315,6 +460,7 @@ int main(void)
     TestNulls();
     TestAnimGlyphs();
     TestFacingGlyph();
+    TestResolve();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

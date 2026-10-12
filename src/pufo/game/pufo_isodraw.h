@@ -8,13 +8,27 @@
  *           TactUnit_DrawFacingGlyph @ 0x1c754.
  *
  * The original threads a 316-byte IsoDrawCtx through the isometric renderer. Only
- * the fields these four helpers touch are modelled:
+ * the fields these helpers touch are modelled:
  *
  *   pCell        0x00
  *   nDrawX       0x04
  *   nDrawY       0x08
+ *   nIsoOffA     0x1C
+ *   nIsoOffB     0x20
+ *   bOob         0x24
+ *   nTileX       0x28
+ *   nTileY       0x2C
+ *   nLayer       0x38
+ *   nObjParam    0x54
+ *   pUnit        0x58
  *   bWallPalIdx  0x64
  *   nPal         0x6c
+ *   nMapY        0x138
+ *   nMapX        0x13C
+ *
+ * Those offsets are the ARM displacements in MapView_bResolveIsoCell, not the pseudocode: Hex-Rays
+ * reaches several of them through pIso[1].pCell and other invented aliases, which is how it renders a
+ * dword at 0x13C as if it were a struct pointer field.
  *
  * The animation phase and its scratch byte are `pCtxBase.nAnimPhase` (0x37) and
  * `nAnimPhaseScratch[0]`; they are passed in as IsoAnimGlobals so the helpers stay
@@ -33,8 +47,18 @@ typedef struct IsoDrawCtx {
     MapCell *pCell;       /* 0x00 */
     i32      nDrawX;      /* 0x04 */
     i32      nDrawY;      /* 0x08 */
+    i32      nIsoOffA;    /* 0x1C */
+    i32      nIsoOffB;    /* 0x20 */
+    u8       bOob;        /* 0x24 */
+    i32      nTileX;      /* 0x28 */
+    i32      nTileY;      /* 0x2C */
+    u8       nLayer;      /* 0x38 */
+    i32      nObjParam;   /* 0x54 */
+    Soldier *pUnit;       /* 0x58 */
     u8       bWallPalIdx; /* 0x64 */
     i32      nPal;        /* 0x6c */
+    i32      nMapY;       /* 0x138 */
+    i32      nMapX;       /* 0x13C */
 } IsoDrawCtx;
 
 typedef struct IsoAnimGlobals {
@@ -99,5 +123,37 @@ void TactUnit_DrawAnimGlyphs(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim,
  * this one always uses palette 0, never the cell palette. */
 void TactUnit_DrawFacingGlyph(IsoDrawCtx *pIso, const IsoAnimGlobals *pAnim,
                               const IsoSpriteBases *pBases);
+
+/* What the resolve needs from the map: the flattened cell pointer array and the two dimension bytes.
+ * Passed in so the gate is testable without a whole GameMap. */
+typedef struct IsoGrid {
+    MapCell *const *apCells; /* Map.apCells @ 0x15338, MapCell *[4][60][60] flattened */
+    i32 nDimX;               /* Map.nMapDimX @ 0x1511B */
+    i32 nDimY;               /* Map.nMapDimY @ 0x1511C */
+} IsoGrid;
+
+/* MapView_bResolveIsoCell @ 0x1b0d4. The gate every per-cell draw in the iso layer runs through.
+ *
+ * Tile coordinates become map coordinates:
+ *
+ *   nMapY = nIsoOffA + nTileX + nTileY / 2
+ *   nMapX = nIsoOffB + nTileY / 2 - nTileX, plus one when nTileY is odd
+ *
+ * The divide is the compiler's signed divide-by-two (MOVS / ADDMI / ASR), which truncates toward zero
+ * like C. The odd test is the remainder of __rt_sdiv being non-zero, so a negative odd nTileY takes
+ * the +1 too.
+ *
+ * Out of bounds is any negative coordinate, nMapY above 10 * nMapDimX - 1, or nMapX above
+ * 10 * nMapDimY - 1. The factor of ten is there because the dimensions are stored in 6-tile units.
+ *
+ * Draw position: nDrawX is 32 * nTileX - 16, or - 32 when nTileY is odd; nDrawY is
+ * 8 * (nTileY - 3 * nLayer - 4). The function then returns false when the cell is out of bounds, or
+ * when nDrawY + 40 is not positive - so a cell whose top is more than 40 pixels below the screen is
+ * skipped, and one that is merely off the bottom edge is not.
+ *
+ * Only on success does it bind pCell, pUnit, nObjParam and nPal. nObjParam is the ceiling sprite's
+ * signed iCeilParam, or 0 with no ceiling sprite. nPal is 255 unless the cell's bFlags29 bit 4 is set,
+ * in which case it is 0 when the animation kind is 4 and the cell's bUnk56 otherwise. */
+bool MapView_bResolveIsoCell(IsoDrawCtx *pIso, const IsoGrid *pGrid);
 
 #endif /* PUFO_ISODRAW_H */
