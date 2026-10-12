@@ -190,6 +190,36 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * port drops it and takes the column directly. */
 i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
 
+/* ------------------------------------------------- the workshop needed pass
+ *
+ * Evidence: Base_UpdateWorkshopNeeded @ 0x65bb4.
+ *
+ * It marks the first N workshop cells of one base as needed, where N is a budget built
+ * from the manufacturing total:
+ *
+ *     N = (nActiveManuf == 0) ? 0 : nActiveManuf / 50 + 1
+ *
+ * So a base with any active manufacturing at all gets at least one needed workshop, and
+ * one more per full 50 units. It then walks the 6 by 6 grid and, for every cell whose
+ * type byte is 3, writes 1 into the needed-flag grid while the budget lasts and 0 once it
+ * runs out. Cells that are not workshops are left untouched -- the pass never clears them.
+ *
+ * The needed-flag grid is the third grid in the same per-base block: cell type at
+ * grid + 480 + 144*nBaseIndex, needed flags at grid + 444 + 144*nBaseIndex, occupancy at
+ * grid + 36*nBaseIndex.
+ *
+ * Two things about the original worth recording.
+ *
+ * It calls Base_CalcWorkshopCap at 0x65BC0 and DISCARDS the result, then builds the budget
+ * from Base_CountActiveManuf instead. That call is pure -- the capacity function reads the
+ * grid and returns, with no store anywhere -- so the port omits it. This is the one
+ * deviation, and it cannot change behaviour.
+ *
+ * Its return value is loop-counter residue. The inner counter is reset to 0 at 0x65C20 on
+ * every row and always runs to 6, so the function returns 6 no matter what it did. The
+ * port reproduces 6 rather than inventing a status. */
+i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;

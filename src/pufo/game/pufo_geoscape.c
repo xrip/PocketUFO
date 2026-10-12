@@ -353,3 +353,44 @@ i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries)
     }
     return nTotal; /* 0x682BC */
 }
+
+/* Base_UpdateWorkshopNeeded @ 0x65bb4. Marks the first N workshop cells as needed.
+ * The original's call to Base_CalcWorkshopCap at 0x65BC0 discards a pure function's
+ * result, so the port omits it; see the header. */
+i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf)
+{
+    u8 *pType;
+    u8 *pNeed;
+    i32 nBudget;
+    i32 nRow;
+    i32 nCol = 0;
+
+    if (abFacilityGrid == NULL) {
+        return 0;
+    }
+
+    /* 0x65BD4: a zero total gives no budget, otherwise one per 50 plus one. */
+    nBudget = (nActiveManuf != 0) ? (nActiveManuf / 50 + 1) : 0;
+
+    pType = &abFacilityGrid[480 + 144 * nBaseIndex];
+    pNeed = &abFacilityGrid[444 + 144 * nBaseIndex];
+
+    for (nRow = 0; nRow < 6; ++nRow) {
+        nCol = 0; /* 0x65C20: the counter the function eventually returns */
+        do {
+            if (pType[6 * nCol + nRow] == 3) { /* 0x65C34: only workshop cells */
+                u8 bNeed;
+                if (nBudget <= 0) {
+                    bNeed = 0; /* 0x65C50 */
+                } else {
+                    bNeed = 1;
+                    --nBudget; /* 0x65C4C */
+                }
+                pNeed[6 * nCol + nRow] = bNeed; /* 0x65C58 */
+            }
+            ++nCol;
+        } while (nCol < 6);
+    }
+
+    return nCol; /* 0x65C78: always 6, the inner counter's final value */
+}

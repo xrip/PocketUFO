@@ -590,6 +590,63 @@ static void TestActiveManuf(void)
     CheckEqI32(Base_CountActiveManuf(&col[0], 1), 5, "base 0 reads the start of the area");
 }
 
+static void TestWorkshopNeeded(void)
+{
+    printf("Base_UpdateWorkshopNeeded\n");
+    static u8 grid[700];
+
+#define N_T(c, r) grid[480 + 6 * (c) + (r)]
+#define N_N(c, r) grid[444 + 6 * (c) + (r)]
+
+    /* No active manufacturing means no budget, so every workshop is marked unneeded. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 3;
+    N_T(1, 1) = 3;
+    CheckEqI32(Base_UpdateWorkshopNeeded(grid, 0, 0), 6, "the return value is always 6");
+    CheckEqI32(N_N(0, 0), 0, "a zero total marks the first workshop unneeded");
+    CheckEqI32(N_N(1, 1), 0, "and the second one too");
+
+    /* Budget is total / 50 + 1, so any non-zero total buys at least one. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 3;
+    N_T(1, 1) = 3;
+    Base_UpdateWorkshopNeeded(grid, 0, 1);
+    CheckEqI32(N_N(0, 0), 1, "a total of 1 still buys one needed workshop");
+    CheckEqI32(N_N(1, 1), 0, "and no more than that");
+
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 3;
+    N_T(1, 0) = 3;
+    N_T(2, 0) = 3;
+    Base_UpdateWorkshopNeeded(grid, 0, 50);
+    CheckEqI32(N_N(0, 0) + N_N(1, 0) + N_N(2, 0), 2, "a total of 50 buys exactly two");
+
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 3;
+    N_T(1, 0) = 3;
+    N_T(2, 0) = 3;
+    Base_UpdateWorkshopNeeded(grid, 0, 100);
+    CheckEqI32(N_N(0, 0) + N_N(1, 0) + N_N(2, 0), 3, "a total of 100 buys exactly three");
+
+    /* Visit order is row 0 across all columns first, then row 1, and so on. */
+    memset(grid, 0, sizeof(grid));
+    N_T(1, 0) = 3; /* visited second overall */
+    N_T(0, 1) = 3; /* visited seventh */
+    Base_UpdateWorkshopNeeded(grid, 0, 1);
+    CheckEqI32(N_N(1, 0), 1, "the earlier row claims the budget first");
+    CheckEqI32(N_N(0, 1), 0, "the later row gets nothing");
+
+    /* Cells that are not workshops are never written. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 4;
+    N_N(0, 0) = 9;
+    Base_UpdateWorkshopNeeded(grid, 0, 500);
+    CheckEqI32(N_N(0, 0), 9, "a type-4 cell keeps whatever its needed byte held");
+
+#undef N_T
+#undef N_N
+}
+
 int main(void)
 {
     TestTickShips();
@@ -601,6 +658,7 @@ int main(void)
     TestFacilityClassify();
     TestWorkshopCap();
     TestActiveManuf();
+    TestWorkshopNeeded();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
