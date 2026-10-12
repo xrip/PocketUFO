@@ -51,6 +51,7 @@
 
 #include "dat/pufo_dat.h"
 #include "game/pufo_boot.h"
+#include "game/pufo_font.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_ship.h"
 #include "game/pufo_unit.h"
@@ -71,6 +72,7 @@
 #define PUFO_SAVE_TAG_TIME      "time"
 #define PUFO_SAVE_TAG_SOLDIERS  "soldiers"
 #define PUFO_SAVE_TAG_MCNT      "mcnt"
+#define PUFO_SAVE_TAG_MAP       "map"
 #define PUFO_SAVE_TAG_FLOBJS    "flobjs"
 #define PUFO_SAVE_TAG_TGAMEDATA "tgamedata"
 #define PUFO_SAVE_TAG_OBJBEFORE "objbefore"
@@ -444,5 +446,66 @@ bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
                      TactItem *const *apTactItems,
                      ObjectRecFull *const *apObjects, i32 nObjectCount,
                      Soldier *const *apSoldiers);
+
+/* ------------------------------------------------- the map chunk
+ *
+ * Save_WriteMap @ 0x438e0 and Save_ReadMap @ 0x433d8.
+ *
+ * The chunk is the whole tactical grid: two dimension bytes, then one 43-byte
+ * record for every cell of every layer that the map dimensions cover.
+ *
+ * The grid is a flat pointer array at apCells @ 0x15338, 240 bytes per row and
+ * 14400 bytes per layer, so it is 240 rows of 60 pointers no matter how big the
+ * map is. Both functions build the same address with the same ARM sequence,
+ * `ADD R3, layerCounter, rowCounter / MUL R2, R3, #0xF0 / LDR R4, [base, #0x15338]`,
+ * where the layer counter is 0, 60, 120, 180. The port reaches the cells through
+ * the MapCellLookup the other map algorithms already use.
+ *
+ * The dimension bytes are Map.nMapDimX @ +86299 and nMapDimY @ +86300, and the
+ * loops run over 10*nMapDimY rows and 10*nMapDimX columns, so a map with dimX =
+ * dimY = 6 covers the whole 60 x 60 x 4 grid and a smaller map only its corner.
+ *
+ * Per cell, in the original's write order:
+ *   4 bytes at cell+0x10 (bUnk16..bUnk19 as one block),
+ *   bFlags29 bits 0,1,2,3,4 each as their own byte,
+ *   nFlags32 & 7, then (nFlags32 >> 3) & 0xF,
+ *   bFlags36 & 1,
+ *   nFlags40 & 7, then (nFlags40 >> 3) & 0xF,
+ *   bFlags44 & 1,
+ *   the occupant's nSaveId or 0x7FFF,
+ *   the item list head's nRefId or 0x7FFF,
+ *   bUnk56,
+ *   bFlags57[0] bit 2 and bit 3 each as their own byte,
+ *   bFlags57[1],
+ *   and the four sprite records as their nGlobalIdx or 0x7FFF, 4 bytes each.
+ *
+ * Three things only the reader shows:
+ *   - it writes nX, nY and nZ from the loop counters instead of reading them, and
+ *     clears nUnk20, bUnk24 and gap_25. Coordinates are derived, not stored.
+ *   - restoring bFlags29 bit 4 uses the mask 0x8F, which also CLEARS bits 5 and 6.
+ *     Bit 5 is the shot-trace flag Map_ClearShotTraceFlags sweeps, so a load wipes
+ *     it for every cell as a side effect of restoring bit 4.
+ *   - restoring bFlags44 is `bFlags44 & 0xFC ^ (value & 1)`, which clears bit 1 on
+ *     the way in. The low three bits of nFlags32 and nFlags40 are merged with an
+ *     XOR, the upper nibble with a mask; both end up as the stored value.
+ *
+ * What is NOT serialised, proven by pre-filling a cell with ones after the write
+ * and reading it back:
+ *   - nFlags32 and nFlags40 store only 7 bits each (3 + 4). Bits 7 and up keep
+ *     whatever the cell already held in memory, so they are recomputed after a load.
+ *   - bFlags57[0] stores only bits 2 and 3. Bits 0 and 1 keep their in-memory value.
+ *   - bFlags29 stores bits 0..4 and clears bits 5 and 6; bit 7 survives.
+ *   - bUnk17, bUnk18 and bUnk19 are stored as part of the 4-byte block at cell+0x10,
+ *     but nUnk20, bUnk24 and gap_25 are cleared rather than read.
+ *
+ * Deviation: the original dereferences the grid slot unconditionally and indexes
+ * apSoldiers / the item array with no bound check. The port skips a NULL slot and
+ * refuses an out-of-range index. */
+bool Save_WriteMap(DatFile *pDat, const MapGeom *pMap,
+                   MapCellLookup pfnLookup, void *pUser);
+bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *pUser,
+                  Soldier *const *apSoldiers, i32 nSoldierCount,
+                  TactItem *const *apItems, i32 nItemCount,
+                  const PufoFont *pFont);
 
 #endif /* PUFO_SAVE_H */

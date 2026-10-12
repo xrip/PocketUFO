@@ -1061,6 +1061,154 @@ static void TestFlobjsChunk(void)
     Check(!Save_ReadFlobjs(&dat, 1, NULL, apItem, apObj, 2, apSol), "NULL count refused");
 }
 
+static MapCell g_aMapCells[PUFO_MAP_LAYERS][10][10];
+
+static MapCell *MapTestLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nLayer < 0 || nLayer >= PUFO_MAP_LAYERS || nX < 0 || nX >= 10 || nY < 0 || nY >= 10) {
+        return NULL;
+    }
+    return &g_aMapCells[nLayer][nY][nX];
+}
+
+static void TestMapChunk(void)
+{
+    DatFile dat;
+    MapGeom geom;
+    MapCell *pCell;
+    Soldier aSol[2];
+    Soldier *apSol[2];
+    TactItem aItem[2];
+    TactItem *apItem[2];
+    Mc1Rec aMc1[3];
+    Mc1Rec *apMc1[3];
+    PufoFont font;
+
+    printf("Save_WriteMap / Save_ReadMap\n");
+
+    memset(g_aMapCells, 0, sizeof(g_aMapCells));
+    memset(aSol, 0, sizeof(aSol));
+    memset(aItem, 0, sizeof(aItem));
+    memset(aMc1, 0, sizeof(aMc1));
+    memset(&font, 0, sizeof(font));
+
+    geom.nDimX = 1; /* 10 x 10 cells per layer, 4 layers */
+    geom.nDimY = 1;
+
+    for (i32 i = 0; i < 2; ++i) {
+        apSol[i] = &aSol[i];
+        apItem[i] = &aItem[i];
+        aSol[i].nSaveId = i;
+        aItem[i].nRefId = i;
+    }
+    for (i32 i = 0; i < 3; ++i) {
+        apMc1[i] = &aMc1[i];
+        aMc1[i].nGlobalIdx = (u16)i;
+    }
+    font.apMc1Index = apMc1;
+    font.nMc1IndexCount = 3;
+
+    pCell = &g_aMapCells[2][3][4];
+    pCell->bUnk16 = 0x11;
+    pCell->bUnk17 = 0x22;
+    pCell->bUnk18 = 0x33;
+    pCell->bUnk19 = 0x44;
+    pCell->bFlags29 = 0x35; /* bits 0, 2, 4 set; bit 5 is the shot-trace flag */
+    pCell->nFlags32 = 0x1A9;
+    pCell->bFlags36 = 1;
+    pCell->nFlags40 = 0x72;
+    pCell->bFlags44 = 0x03; /* bit 1 must not survive a load */
+    pCell->bUnk56 = 0x7F;
+    pCell->bFlags57[0] = 0x0F; /* bits 0 and 1 are outside the stored pair */
+    pCell->bFlags57[1] = 0x2A;
+    pCell->pUnit = &aSol[1];
+    pCell->pItemList = &aItem[1];
+    pCell->pFloorSpr = &aMc1[1];
+    pCell->pWallSprA = &aMc1[2];
+    pCell->pWallSprB = NULL;
+    pCell->pCeilSpr = &aMc1[0];
+
+    Check(OpenWrite("test_mapchunk.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteMap(&dat, &geom, MapTestLookup, NULL), "  chunk written");
+    DatFile_Close(&dat);
+    /* 2 dimension bytes + 400 cells * 43 bytes. */
+    CheckEqI32(FileSizeOf(L"test_mapchunk.tmp"), 46 + 2 + 400 * 43,
+               "43 bytes per cell");
+
+    memset(g_aMapCells, 0, sizeof(g_aMapCells));
+    /* Pre-fill AFTER the write: the file holds zeros for this cell while memory holds
+     * ones, which is what shows which bits a load recomputes and which it leaves alone. */
+    g_aMapCells[0][0][1].bFlags29 = 0xFF;
+    g_aMapCells[0][0][1].bFlags44 = 0xFF;
+    g_aMapCells[0][0][1].nFlags32 = 0x100;
+    g_aMapCells[0][0][1].bFlags57[0] = 0x03;
+    Check(OpenRead("test_mapchunk.tmp", &dat), "  reopened");
+    Check(Save_ReadMap(&dat, &geom, MapTestLookup, NULL, apSol, 2, apItem, 2, &font), "  read");
+    DatFile_Close(&dat);
+
+    pCell = &g_aMapCells[2][3][4];
+    CheckEqI32(pCell->bUnk16, 0x11, "the 0x10 block round-trips");
+    CheckEqI32(pCell->bUnk19, 0x44, "as four bytes, not one");
+    CheckEqI32(pCell->nX, 4, "nX comes from the column counter");
+    CheckEqI32(pCell->nY, 3, "nY from the row counter");
+    CheckEqI32(pCell->nZ, 2, "nZ from the layer counter");
+    CheckEqI32(pCell->nUnk20, 0, "nUnk20 is cleared, not read");
+    CheckEqI32(pCell->bUnk24, 0, "and so are bUnk24 and bUnk25");
+    CheckEqI32(pCell->bFlags29, 0x15, "bFlags29 bit 5 is cleared by the 0x8F mask");
+    CheckEqI32(pCell->nFlags32, 0x29, "nFlags32 keeps only its low 7 bits");
+    CheckEqI32(pCell->bFlags36, 1, "bFlags36 round-trips");
+    CheckEqI32(pCell->nFlags40, 0x72, "nFlags40 round-trips");
+    CheckEqI32(pCell->bFlags44, 0x01, "bFlags44 bit 1 is cleared on the way in");
+    CheckEqI32(pCell->bUnk56, 0x7F, "bUnk56 round-trips");
+    CheckEqI32(pCell->bFlags57[0], 0x0C, "only bits 2 and 3 of bFlags57[0] are stored");
+    CheckEqI32(pCell->bFlags57[1], 0x2A, "bFlags57[1] round-trips as a byte");
+    Check(pCell->pUnit == &aSol[1], "the occupant resolves through nSaveId");
+    Check(pCell->pItemList == &aItem[1], "the item list head through nRefId");
+    Check(pCell->pFloorSpr == &aMc1[1], "the floor sprite through nGlobalIdx");
+    Check(pCell->pWallSprA == &aMc1[2], "and so the first wall sprite");
+    Check(pCell->pWallSprB == NULL, "0x7FFF means no wall sprite B");
+    Check(pCell->pCeilSpr == &aMc1[0], "and the ceiling sprite resolves too");
+
+    pCell = &g_aMapCells[0][0][1];
+    CheckEqI32(pCell->bFlags29, 0x8F, "a stored zero still clears bits 5 and 6");
+    CheckEqI32(pCell->bFlags44, 0xFC, "and bFlags44 loses bits 0 and 1 whatever it held");
+    CheckEqI32(pCell->nFlags32, 0x100, "bits 7 and up of nFlags32 are not stored at all");
+    CheckEqI32(pCell->bFlags57[0], 0x03, "and bits 0 and 1 of bFlags57[0] are left alone");
+
+    pCell = &g_aMapCells[3][9][9];
+    Check(pCell->pUnit == NULL && pCell->pItemList == NULL, "an empty cell keeps both links null");
+    Check(pCell->pFloorSpr == NULL && pCell->pCeilSpr == NULL,
+          "and all four sprites null");
+
+    /* An occupant id the roster does not hold. */
+    g_aMapCells[0][0][0].pUnit = NULL;
+    Check(OpenWrite("test_mapbad.tmp", &dat, 2), "  second container");
+    {
+        /* Force a bad id by writing a cell whose occupant is out of range: point the
+         * grid at a soldier outside the array the reader is given. */
+        Soldier aFar[3];
+        memset(aFar, 0, sizeof(aFar));
+        aFar[2].nSaveId = 77;
+        g_aMapCells[0][0][0].pUnit = &aFar[2];
+        Check(Save_WriteMap(&dat, &geom, MapTestLookup, NULL), "  bad id written");
+    }
+    DatFile_Close(&dat);
+    Check(OpenRead("test_mapbad.tmp", &dat), "  reopened");
+    Check(!Save_ReadMap(&dat, &geom, MapTestLookup, NULL, apSol, 2, apItem, 2, &font),
+          "an out-of-range occupant id is refused");
+    DatFile_Close(&dat);
+
+    Check(!Save_WriteMap(NULL, &geom, MapTestLookup, NULL), "NULL dat refused");
+    Check(!Save_WriteMap(&dat, &geom, NULL, NULL), "NULL lookup refused");
+
+    /* The good file, but with no font: the sprite index at cell [2][3][4] cannot resolve. */
+    Check(OpenRead("test_mapchunk.tmp", &dat), "  reopened for the font check");
+    Check(!Save_ReadMap(&dat, &geom, MapTestLookup, NULL, apSol, 2, apItem, 2, NULL),
+          "a sprite index with no font is refused");
+    DatFile_Close(&dat);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1079,6 +1227,7 @@ int main(void)
     TestShipsChunk();
     TestAllocFlobjs();
     TestFlobjsChunk();
+    TestMapChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

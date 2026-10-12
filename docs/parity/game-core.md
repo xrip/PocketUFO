@@ -2056,6 +2056,33 @@ writer always stores 4 bytes.
 Covered by `tests/test_save.c` (`TestFlobjsChunk`, 20 checks).
 
 
+### The map chunk (done)
+
+`Save_WriteMap @ 0x438e0` and `Save_ReadMap @ 0x433d8` are recreated in `game/pufo_save.{h,c}`.
+The chunk is two dimension bytes and then **43 bytes for every cell** the map dimensions cover:
+`10*nMapDimY` rows by `10*nMapDimX` columns by 4 layers, so a 6x6 map covers the whole grid.
+
+**The grid is a fixed 240-row array, not a sized one.** Both functions build the cell address
+with the same ARM sequence, `ADD R3, layerCounter, rowCounter` then `MUL R2, R3, #0xF0` then
+`LDR R4, [base, #0x15338]`, where the layer counter is 0, 60, 120 or 180. That is apCells
+@ 0x15338: 60 pointers per row, 14400 bytes per layer, 240 rows total, whatever the map size is.
+The port reaches the same cells through the `MapCellLookup` the other map algorithms already use.
+
+**Coordinates are derived, not stored.** The reader writes nX, nY and nZ from its own loop
+counters and clears nUnk20, bUnk24 and gap_25.
+
+**A load wipes the shot-trace flag as a side effect.** Restoring bFlags29 bit 4 uses the mask
+`0x8F`, which also clears bits 5 and 6. Bit 5 is the flag `Map_ClearShotTraceFlags` sweeps before
+every arc trace, so loading a save clears it on every cell without anyone asking.
+
+**What is not serialised**, proven by pre-filling a cell with ones after the write and reading it
+back: `nFlags32` and `nFlags40` store only 7 bits each (3 plus 4) and keep whatever bits 7 and up
+already held in memory; `bFlags57[0]` stores only bits 2 and 3 and leaves bits 0 and 1 alone;
+`bFlags44` loses bit 1 on the way in whatever it held.
+
+Covered by `tests/test_save.c` (`TestMapChunk`, 40 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

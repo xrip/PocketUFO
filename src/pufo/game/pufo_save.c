@@ -1314,3 +1314,265 @@ bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
     }
     return true;
 }
+
+/* One bit as its own byte, which is how the map chunk stores every flag. */
+static bool WriteBit(DatFile *pDat, u32 nBit)
+{
+    u8 bBit = (u8)(nBit & 1u);
+
+    return W(pDat, &bBit, 1);
+}
+
+static bool ReadBit(DatFile *pDat, u32 *pnBit)
+{
+    u8 bBit = 0;
+
+    if (!DatFile_Read(pDat, &bBit, 1)) {
+        return false;
+    }
+    *pnBit = bBit & 1u;
+    return true;
+}
+
+/* One byte into a word. The reader keeps the whole byte for the two nibble fields
+ * of nFlags32 and nFlags40, so it must not be narrowed to a bit. */
+static bool ReadByte(DatFile *pDat, u32 *pnVal)
+{
+    u8 bVal = 0;
+
+    if (!DatFile_Read(pDat, &bVal, 1)) {
+        return false;
+    }
+    *pnVal = bVal;
+    return true;
+}
+
+bool Save_WriteMap(DatFile *pDat, const MapGeom *pMap,
+                   MapCellLookup pfnLookup, void *pUser)
+{
+    if (pDat == NULL || pMap == NULL || pfnLookup == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_MAP)) { /* 0x438F0 */
+        return false;
+    }
+    if (!W(pDat, &pMap->nDimX, 1)) { /* Map.nMapDimX @ +86299 */
+        return false;
+    }
+    if (!W(pDat, &pMap->nDimY, 1)) { /* Map.nMapDimY @ +86300 */
+        return false;
+    }
+
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nRow = 0; nRow < PUFO_CELL_SIZE * (i32)pMap->nDimY; ++nRow) {
+            for (i32 nCol = 0; nCol < PUFO_CELL_SIZE * (i32)pMap->nDimX; ++nCol) {
+                MapCell *pCell = pfnLookup(nCol, nRow, nLayer, pUser);
+                u32 nLow, nHigh;
+                i32 nIndex;
+
+                if (pCell == NULL) { /* deviation: the original dereferences the slot */
+                    continue;
+                }
+
+                if (!W(pDat, &pCell->bUnk16, 4)) { /* 0x43998: bUnk16..bUnk19 as a block */
+                    return false;
+                }
+                for (u32 nBit = 0; nBit < 5; ++nBit) { /* 0x439B0..0x43A34 */
+                    if (!WriteBit(pDat, (u32)pCell->bFlags29 >> nBit)) {
+                        return false;
+                    }
+                }
+                nLow  = (u32)pCell->nFlags32 & 7u;           /* 0x43A4C */
+                nHigh = ((u32)pCell->nFlags32 >> 3) & 0xFu;  /* 0x43A6C */
+                if (!W(pDat, &nLow, 1) || !W(pDat, &nHigh, 1)) {
+                    return false;
+                }
+                if (!WriteBit(pDat, (u32)pCell->bFlags36)) { /* 0x43A88 */
+                    return false;
+                }
+                nLow  = (u32)pCell->nFlags40 & 7u;           /* 0x43AA4 */
+                nHigh = ((u32)pCell->nFlags40 >> 3) & 0xFu;  /* 0x43AC0 */
+                if (!W(pDat, &nLow, 1) || !W(pDat, &nHigh, 1)) {
+                    return false;
+                }
+                if (!WriteBit(pDat, (u32)pCell->bFlags44)) { /* 0x43AE0 */
+                    return false;
+                }
+
+                nIndex = (pCell->pUnit != NULL) ? pCell->pUnit->nSaveId : 0x7FFF;
+                if (!W(pDat, &nIndex, 4)) { /* 0x43AF8..0x43B08 */
+                    return false;
+                }
+                nIndex = (pCell->pItemList != NULL) ? pCell->pItemList->nRefId : 0x7FFF;
+                if (!W(pDat, &nIndex, 4)) { /* 0x43B10..0x43B2C */
+                    return false;
+                }
+
+                if (!W(pDat, &pCell->bUnk56, 1)) { /* 0x43B3C */
+                    return false;
+                }
+                if (!WriteBit(pDat, (u32)pCell->bFlags57[0] >> 2)) { /* 0x43B58 */
+                    return false;
+                }
+                if (!WriteBit(pDat, (u32)pCell->bFlags57[0] >> 3)) { /* 0x43B78 */
+                    return false;
+                }
+                if (!W(pDat, &pCell->bFlags57[1], 1)) { /* 0x43B8C, IDA's bFlags58 */
+                    return false;
+                }
+
+                { /* 0x43BA0..0x43C1C: the four sprites as their nGlobalIdx */
+                    const Mc1Rec *const apSpr[4] = {
+                        pCell->pFloorSpr, pCell->pWallSprA, pCell->pWallSprB, pCell->pCeilSpr
+                    };
+
+                    for (u32 nWhich = 0; nWhich < 4; ++nWhich) {
+                        nIndex = (apSpr[nWhich] != NULL)
+                               ? (i32)apSpr[nWhich]->nGlobalIdx
+                               : 0x7FFF;
+                        if (!W(pDat, &nIndex, 4)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool Save_ReadMap(DatFile *pDat, MapGeom *pMap, MapCellLookup pfnLookup, void *pUser,
+                  Soldier *const *apSoldiers, i32 nSoldierCount,
+                  TactItem *const *apItems, i32 nItemCount,
+                  const PufoFont *pFont)
+{
+    if (pDat == NULL || pMap == NULL || pfnLookup == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_MAP)) { /* 0x433E8 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pMap->nDimX, 1)) { /* 0x43400 */
+        return false;
+    }
+    if (!DatFile_Read(pDat, &pMap->nDimY, 1)) { /* 0x43418 */
+        return false;
+    }
+
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nRow = 0; nRow < PUFO_CELL_SIZE * (i32)pMap->nDimY; ++nRow) {
+            for (i32 nCol = 0; nCol < PUFO_CELL_SIZE * (i32)pMap->nDimX; ++nCol) {
+                MapCell *pCell = pfnLookup(nCol, nRow, nLayer, pUser);
+                u32 aBit[5];
+                u32 nLow, nHigh;
+                i32 nIndex;
+
+                if (pCell == NULL) { /* deviation: the original dereferences the slot */
+                    continue;
+                }
+
+                if (!DatFile_Read(pDat, &pCell->bUnk16, 4)) { /* 0x434C0 */
+                    return false;
+                }
+                pCell->nUnk20 = 0;  /* 0x434D0 */
+                pCell->bUnk24 = 0;
+                pCell->bUnk25 = 0;
+                pCell->nX = (u8)nCol; /* 0x434DC: coordinates are derived, not stored */
+                pCell->nY = (u8)nRow;
+                pCell->nZ = (u8)nLayer;
+
+                for (u32 nBit = 0; nBit < 5; ++nBit) { /* 0x434E8..0x435B0 */
+                    if (!ReadBit(pDat, &aBit[nBit])) {
+                        return false;
+                    }
+                }
+                /* The five stores are individually `& mask | bit`, and the last mask is
+                 * 0x8F, which also clears bits 5 and 6. Bit 5 is the shot-trace flag, so a
+                 * load wipes it for every cell while restoring bit 4. Bit 7 survives. */
+                pCell->bFlags29 = (u8)(((u32)pCell->bFlags29 & 0x8Fu) |
+                                       (aBit[0] | (aBit[1] << 1) | (aBit[2] << 2) |
+                                       (aBit[3] << 3) | (aBit[4] << 4)));
+
+                if (!ReadByte(pDat, &nLow) || !ReadByte(pDat, &nHigh)) { /* 0x435BC, 0x435E8 */
+                    return false;
+                }
+                nLow &= 7u;
+                nHigh &= 0xFu;
+                if (!ReadBit(pDat, &aBit[0])) { /* 0x43610 */
+                    return false;
+                }
+                pCell->nFlags32 = ((u32)pCell->nFlags32 & 0xFFFFFF87u) | nLow | (nHigh << 3);
+                pCell->bFlags36 = (u8)(((u32)pCell->bFlags36 & ~1u) | aBit[0]);
+
+                if (!ReadByte(pDat, &nLow) || !ReadByte(pDat, &nHigh)) { /* 0x43644, 0x43670 */
+                    return false;
+                }
+                nLow &= 7u;
+                nHigh &= 0xFu;
+                if (!ReadBit(pDat, &aBit[0])) { /* 0x43698 */
+                    return false;
+                }
+                pCell->nFlags40 = ((u32)pCell->nFlags40 & 0xFFFFFF87u) | nLow | (nHigh << 3);
+                /* 0x436BC is `bFlags44 & 0xFC ^ value`, which clears bit 1 on the way in. */
+                pCell->bFlags44 = (u8)(((u32)pCell->bFlags44 & 0xFCu) | aBit[0]);
+
+                if (!DatFile_Read(pDat, &nIndex, 4)) { /* 0x436C0 */
+                    return false;
+                }
+                if (nIndex == 0x7FFF) {
+                    pCell->pUnit = NULL;
+                } else if (nIndex >= 0 && nIndex < nSoldierCount && apSoldiers != NULL) {
+                    pCell->pUnit = apSoldiers[nIndex];
+                } else {
+                    return false;
+                }
+
+                if (!DatFile_Read(pDat, &nIndex, 4)) { /* 0x436F0 */
+                    return false;
+                }
+                if (nIndex == 0x7FFF) {
+                    pCell->pItemList = NULL;
+                } else if (nIndex >= 0 && nIndex < nItemCount && apItems != NULL) {
+                    pCell->pItemList = apItems[nIndex];
+                } else {
+                    return false;
+                }
+
+                if (!DatFile_Read(pDat, &pCell->bUnk56, 1)) { /* 0x43720 */
+                    return false;
+                }
+                if (!ReadBit(pDat, &aBit[0]) || !ReadBit(pDat, &aBit[1])) { /* 0x43730, 0x43758 */
+                    return false;
+                }
+                pCell->bFlags57[0] = (u8)(((u32)pCell->bFlags57[0] & 0xF3u) |
+                                          ((aBit[0] & 1u) << 2) | ((aBit[1] & 1u) << 3));
+                if (!DatFile_Read(pDat, &pCell->bFlags57[1], 1)) { /* 0x43780 */
+                    return false;
+                }
+
+                { /* 0x43790..0x4385C: Font_GetSprByIndex on the stored nGlobalIdx */
+                    Mc1Rec **pppSpr[4] = {
+                        &pCell->pFloorSpr, &pCell->pWallSprA, &pCell->pWallSprB, &pCell->pCeilSpr
+                    };
+
+                    for (u32 nWhich = 0; nWhich < 4; ++nWhich) {
+                        if (!DatFile_Read(pDat, &nIndex, 4)) {
+                            return false;
+                        }
+                        if (nIndex == 0x7FFF) {
+                            *pppSpr[nWhich] = NULL;
+                        } else if (nIndex >= 0 && pFont != NULL) {
+                            *pppSpr[nWhich] = Font_GetSprByIndex(pFont, (u16)nIndex);
+                            if (*pppSpr[nWhich] == NULL) {
+                                return false;
+                            }
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
