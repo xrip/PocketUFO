@@ -89,4 +89,42 @@ void BaseFacScreen_PanelNext(UiPanel *pPanel);
 void SoldierScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond);
 void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
+/* ------------------------------------------------- screen selection caches
+ *
+ * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,
+ * ManufScreen_SyncSelection @ 0x6dd24.
+ *
+ * All three are the same seven instructions: load a screen-object pointer, read the
+ * dword at +0xBD8 (IDA names the field nUnk3032, and 3032 == 0xBD8), store it into one
+ * global, and return it. 0x76138 and 0x96ab0 are byte for byte identical and both write
+ * dword_186BE8, the cache BaseUi_Cache186BE8 already owns, so they forward to it.
+ * 0x6dd24 reads unk_15EE38 instead of unk_161A1C and writes
+ * gUiRootPanel.anLineAux[147] (0x159E90), which the port takes as a pointer.
+ *
+ * Nothing here clamps or validates the index. The original stores whatever the control
+ * holds. */
+i32 BuySellScreen_SyncSelection(ScreenScratch *pScratch, i32 nSel0BD8);
+i32 Transfer_CacheSelIndex(ScreenScratch *pScratch, i32 nSel0BD8);
+i32 ManufScreen_SyncSelection(i32 *pnLineAux147, i32 nSel0BD8);
+
+/* ------------------------------------------------- the base info screen's OK button
+ *
+ * Evidence: BaseInfoScreen_OnOk @ 0x557c8.
+ *
+ * Three state changes: set byte_1870F8 to 1, copy the SIGNED byte at byte_1870F4 into
+ * byte_158834, and return that signed byte (0x557DC uses LDRSB, so a negative index
+ * stays negative). 0x1870F4 is the base the psi screen selected -- Geoscape_CloseUI
+ * @ 0x8b94c case 19 fills it from Base_CalcPsiLabCap @ 0x6598c -- and 0x158834 is the
+ * base the geoscape screens work on.
+ *
+ * The two writers of 0x158834 disagree in width: 0x557E0 stores a byte, case 19 of
+ * Geoscape_CloseUI stores a dword. */
+typedef struct BaseInfoOkState {
+    signed char nPendingBase; /* byte_1870F4, the base the psi screen selected */
+    u8  bPsiPending;          /* byte_1870F8 */
+    signed char nCurrentBase; /* byte_158834, the base the geoscape screens act on */
+} BaseInfoOkState;
+
+signed char BaseInfoScreen_OnOk(BaseInfoOkState *pState);
+
 #endif /* PUFO_BASEUI_H */

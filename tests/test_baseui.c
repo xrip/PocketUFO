@@ -160,6 +160,57 @@ static void TestPanelPaging(void)
     Check(1, "NULL panels are tolerated");
 }
 
+static void TestSelectionCaches(void)
+{
+    ScreenScratch s;
+    i32 nAux147;
+
+    printf("screen selection caches\n");
+
+    memset(&s, 0, sizeof(s));
+    nAux147 = -1;
+
+    CheckEqI32(BuySellScreen_SyncSelection(&s, 7), 7,
+               "BuySellScreen_SyncSelection returns the +0xBD8 value");
+    CheckEqI32(s.nCache186BE8, 7, "and stores it in dword_186BE8");
+
+    /* 0x96ab0 is byte for byte 0x76138, so it lands in the same global. */
+    CheckEqI32(Transfer_CacheSelIndex(&s, 3), 3, "Transfer_CacheSelIndex returns it");
+    CheckEqI32(s.nCache186BE8, 3, "the transfer screen overwrites the same cache");
+
+    CheckEqI32(ManufScreen_SyncSelection(&nAux147, 11), 11,
+               "ManufScreen_SyncSelection returns the +0xBD8 value");
+    CheckEqI32(nAux147, 11, "and writes gUiRootPanel.anLineAux[147]");
+    CheckEqI32(s.nCache186BE8, 3, "it leaves the other cache alone");
+
+    CheckEqI32(ManufScreen_SyncSelection(NULL, 5), 5,
+               "a missing destination still returns");
+}
+
+static void TestBaseInfoOk(void)
+{
+    BaseInfoOkState st;
+
+    printf("BaseInfoScreen_OnOk\n");
+
+    st.nPendingBase = 2;
+    st.bPsiPending = 0;
+    st.nCurrentBase = 9;
+
+    CheckEqI32(BaseInfoScreen_OnOk(&st), 2, "OK returns the pending base index");
+    CheckEqI32(st.bPsiPending, 1, "OK arms the psi screen");
+    CheckEqI32(st.nCurrentBase, 2, "and makes it the base the screens act on");
+
+    /* 0x557DC uses LDRSB, so a negative index is not widened to a positive one. */
+    st.nPendingBase = -1;
+    st.bPsiPending = 0;
+    st.nCurrentBase = 4;
+    CheckEqI32(BaseInfoScreen_OnOk(&st), -1, "a negative index stays negative");
+    CheckEqI32(st.nCurrentBase, -1, "and is copied as a signed byte");
+
+    CheckEqI32(BaseInfoScreen_OnOk(NULL), 0, "NULL is tolerated");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -167,6 +218,8 @@ int main(void)
     TestScratch();
     TestGeoscapeScreens();
     TestPanelPaging();
+    TestSelectionCaches();
+    TestBaseInfoOk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

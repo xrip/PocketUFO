@@ -1893,6 +1893,44 @@ source `nUnk3032` into `dword_186BE8` / `unk_160C74`, the second also playing sa
 7 and setting `unk_160C80`/clearing `byte_187080`. Covered by `tests/test_baseui.c`.
 
 
+### Strategic screen list paging (done)
+
+`BaseFacScreen_PanelPrev @ 0x589cc`, `BaseFacScreen_PanelNext @ 0x589dc`,
+`SoldierScreen_PanelPrev @ 0x61874` and `SoldierScreen_PanelNext @ 0x6189c` are
+one-liners over the two scroll-cursor movers that were already recreated in
+`ui/pufo_panel.c`: `UiPanel_ScrollNext` (`IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c`,
+`if (nUnk3028 < nLineCount - nStyle) ++nUnk3028`) and `UiPanel_ScrollPrev`
+(`DecDwordIfPos_AtPlus0xBD4 @ 0x3f040`, `if (nUnk3028 > 0) --nUnk3028`). Neither wraps.
+
+`BaseFacScreen_Panel*` moves the single panel the original points at through
+`unk_15886C`. `SoldierScreen_Panel*` moves two panels, the pointers held in
+`gUiRootPanel.apLines[186]` and `gUiRootPanel.anLineAux[106]`, in that order, and the
+second call is the value the original returns. The limit is `nLineCount - nStyle`, so a
+panel whose visible row count equals its line count can never page -- that is what
+`nStyle` is for. Covered by `tests/test_baseui.c` (`TestPanelPaging`, 9 checks).
+
+
+### Screen selection caches and the base info OK button (done)
+
+`BuySellScreen_SyncSelection @ 0x76138`, `Transfer_CacheSelIndex @ 0x96ab0` and
+`ManufScreen_SyncSelection @ 0x6dd24` are the same seven instructions: load a
+screen-object pointer, read the dword at `+0xBD8` (IDA names the field `nUnk3032`, and
+3032 == 0xBD8), store it into one global, return it. `0x76138` and `0x96ab0` are byte
+for byte identical and both write `dword_186BE8`, the cache
+`Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec` already owns, so the port forwards both
+to `BaseUi_Cache186BE8`. `0x6dd24` reads `unk_15EE38` instead of `unk_161A1C` and writes
+`gUiRootPanel.anLineAux[147]` (`0x159E90`), which the port takes as a pointer. Nothing
+clamps the index.
+
+`BaseInfoScreen_OnOk @ 0x557c8` sets `byte_1870F8` to 1, copies the SIGNED byte at
+`byte_1870F4` into `byte_158834` (`0x557DC` uses `LDRSB`, so a negative index stays
+negative), and returns it. `0x1870F4` is the base the psi screen selected --
+`Geoscape_CloseUI @ 0x8b94c` case 19 fills it from `Base_CalcPsiLabCap @ 0x6598c` -- and
+`0x158834` is the base the geoscape screens work on. The two writers of `0x158834`
+disagree in width: `0x557E0` stores a byte, case 19 stores a dword. Covered by
+`tests/test_baseui.c` (`TestSelectionCaches`, `TestBaseInfoOk`, 14 checks).
+
+
 ### Geoscape screen openers (done)
 
 `Ui_OpenScreen18 @ 0x84e9c`, `Ui_CloseScreen18 @ 0x84ecc` and

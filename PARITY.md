@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 504 / 1103 (45.7%) |
-| Bytes of original code cited | 228616 / 598792 (38.2%) |
+| Functions cited as evidence | 509 / 1103 (46.1%) |
+| Bytes of original code cited | 228904 / 598792 (38.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4487 |
+| Test checks run | 4501 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,8 +43,8 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 53 | 205 | 37968 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 52 | 243 | 6372 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 54 | 205 | 38092 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 56 | 243 | 6536 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (53 functions)
+### `strat` (54 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -512,7 +512,7 @@ is the module that answers to it.
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_input.h` |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
-| `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_input.h` |
+| `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | `src/pufo/game/pufo_input.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.h` |
@@ -536,6 +536,7 @@ is the module that answers to it.
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.h` |
 | `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_strateg.h` |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
+| `0x6598c` | `Base_CalcPsiLabCap` | 124 | `src/pufo/game/pufo_baseui.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_geoscape.h` |
 | `0x837f8` | `Smap_ClampScrollY` | 120 | `src/pufo/game/pufo_strateg.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.h` |
@@ -562,7 +563,7 @@ is the module that answers to it.
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
 
-### `strat-ui` (52 functions)
+### `strat-ui` (56 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -602,8 +603,12 @@ is the module that answers to it.
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x557c8` | `BaseInfoScreen_OnOk` | 44 | `src/pufo/game/pufo_baseui.h` |
 | `0x61874` | `SoldierScreen_PanelPrev` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x6189c` | `SoldierScreen_PanelNext` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x6dd24` | `ManufScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x76138` | `BuySellScreen_SyncSelection` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x96ab0` | `Transfer_CacheSelIndex` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/game/pufo_menu.h` |
 | `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x196e8` | `MenuBtn_Confirm1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
@@ -928,7 +933,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 152 functions, 124488 bytes remaining
+### `strat` — 151 functions, 124364 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1034,7 +1039,6 @@ whose port work they belong to.
 | `0x65818` | `Base_CalcLabCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65894` | `Base_CalcWorkshopCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65910` | `Base_CalcAlienContainmentCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6598c` | `Base_CalcPsiLabCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6611c` | `Base_CalcHangarCap` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x682c8` | `Base_CountBuiltFacilities` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84e20` | `Base_EnterBuildMode` | 124 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1085,7 +1089,7 @@ whose port work they belong to.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 191 functions, 110636 bytes remaining
+### `strat-ui` — 187 functions, 110472 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1260,13 +1264,9 @@ whose port work they belong to.
 | `0x617c4` | `BuySellScreen_OpenSell` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x61844` | `BaseFacScreen_Open` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6b46c` | `OptionsScreen_ReturnToTitle` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x557c8` | `BaseInfoScreen_OnOk` | 44 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x716a8` | `PsiScreen_OnOk` | 44 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6dd24` | `ManufScreen_SyncSelection` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x76138` | `BuySellScreen_SyncSelection` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x79a48` | `BuySellScreen_ListPanelNext` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x96ab0` | `Transfer_CacheSelIndex` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a09c` | `MenuCtl0_OnClick` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 32 |
+| `test_baseui` | PASS | 46 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

@@ -126,3 +126,34 @@ void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond)
         UiPanel_ScrollNext(pSecond);
     }
 }
+
+/* 0x76138 and 0x96ab0 are the same seven instructions as 0x7afec, so both forward to
+ * the cache that already owns dword_186BE8. Only the source object differs between the
+ * three, and the port takes the +0xBD8 value as an argument. */
+i32 BuySellScreen_SyncSelection(ScreenScratch *pScratch, i32 nSel0BD8)
+{
+    return BaseUi_Cache186BE8(pScratch, nSel0BD8);
+}
+
+i32 Transfer_CacheSelIndex(ScreenScratch *pScratch, i32 nSel0BD8)
+{
+    return BaseUi_Cache186BE8(pScratch, nSel0BD8);
+}
+
+i32 ManufScreen_SyncSelection(i32 *pnLineAux147, i32 nSel0BD8)
+{
+    if (pnLineAux147 != NULL) {
+        *pnLineAux147 = nSel0BD8; /* 0x6DD3C */
+    }
+    return nSel0BD8; /* 0x6DD40 */
+}
+
+signed char BaseInfoScreen_OnOk(BaseInfoOkState *pState)
+{
+    if (pState == NULL) {
+        return 0;
+    }
+    pState->bPsiPending = 1;                        /* 0x557D0, MOV #1 / STRB */
+    pState->nCurrentBase = pState->nPendingBase;    /* 0x557DC LDRSB, 0x557E0 STRB */
+    return pState->nPendingBase;                    /* 0x557E4 returns R0 */
+}
