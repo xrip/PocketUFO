@@ -879,3 +879,279 @@ StrategItem *Ship_ClearWaypointIntercept(const ShipRemovalEnv *pEnv, i32 nShipId
     pShip->bIntercepting = 0; /* 0x5A8B8 */
     return pEntry;
 }
+
+/* ---- Base_TransferTacticalLoot @ 0x68344 ---------------------------------------- */
+
+/* The three facility grids, laid out as documented in pufo_geoscape.h:
+ *     buildDays : abGrid + 36 * nBase + 6 * row + col
+ *     layer2    : abGrid + 444 + 144 * nBase + 6 * row + col
+ *     facType   : abGrid + 480 + 144 * nBase + 6 * row + col
+ * The scan proves them directly. 0x683F8 scales the row by 24 before the multiply by 6, which is
+ * 144 per base, and adds 80, so 480 + 6*row + col. 0x6843C adds 0x1C0|3 = 451 = 444 + 6 + 1, that
+ * is layer2 one row and one column further on. 0x68488 multiplies the base by 6 twice, which is
+ * the 36-byte buildDays block. */
+static u8 *FacTypeCell(u8 *abGrid, i32 nBase, i32 nRow, i32 nCol)
+{
+    return abGrid + 480 + 144 * nBase + 6 * nRow + nCol;
+}
+
+static u8 *Layer2Cell(u8 *abGrid, i32 nBase, i32 nRow, i32 nCol)
+{
+    return abGrid + 444 + 144 * nBase + 6 * nRow + nCol;
+}
+
+static u8 *BuildDaysCell(u8 *abGrid, i32 nBase, i32 nRow, i32 nCol)
+{
+    return abGrid + 36 * nBase + 6 * nRow + nCol;
+}
+
+/* One weapon mount, 0x68A18 for the left and 0x6C70 for the right. The original writes the two
+ * copies out in full; they differ only in which byte they read and which byte they write, so one
+ * helper covers both. nMounts is 2 when both mounts carry the same weapon and 1 when they differ,
+ * which is how the original halves the demand for a single mount.
+ *
+ * The carried ammo is returned to the base first, then drawn back. Weapon 29 is the odd one: it is
+ * returned in tens and drawn back in hundreds. Returns true when the base could not cover the
+ * demand, in which case the craft takes whatever the base had and the base column is zeroed. */
+static bool RefuelOneMount(Ship *pShip, BaseRec *pBase, ObjectRecFull *const *apObjects,
+                           i32 nObjectCount, i8 nWeapon, i32 nMounts, i32 nBaseCol,
+                           i32 *pnReportObj)
+{
+    i32 nObjId;
+    i32 nDemand;
+    u8 *pbAmmo;
+
+    switch (nWeapon) {
+    case 25: nObjId = 52;  nDemand = 10 * nMounts; pbAmmo = &pShip->bAmmo25; break;
+    case 26: nObjId = 53;  nDemand = 3 * nMounts;  pbAmmo = &pShip->bAmmo26; break;
+    case 27: nObjId = 54;  nDemand = 2 * nMounts;  pbAmmo = &pShip->bAmmo27; break;
+    case 29: nObjId = 105; nDemand = 10 * nMounts; pbAmmo = &pShip->bAmmo29; break;
+    case 30: nObjId = 55;  nDemand = 2 * nMounts;  pbAmmo = &pShip->bAmmo30; break;
+    default: return false; /* 0x68A18: any other weapon is left exactly as it was */
+    }
+
+    if (nObjId >= nObjectCount || apObjects[nObjId] == NULL) {
+        return false;
+    }
+    ObjectRecFull *pObj = apObjects[nObjId];
+
+    /* Return what the craft carries. Weapon 29 is carried in tens and the base counts it in units.
+     * 0x68AC8 for 29, 0x6A48 / 0x6B44 / 0x6B9C / 0x6C0C for the rest. */
+    BaseRec_AddItemQty(pBase, pObj, (nObjId == 105) ? ((i32)*pbAmmo / 10) : (i32)*pbAmmo);
+    *pbAmmo = 0;
+
+    i32 nStock = (i32)pObj->auPerBaseVal[nBaseCol];
+    if (nStock >= nDemand) {
+        /* Enough at the base: the craft takes the demand, and weapon 29 takes it in hundreds. */
+        *pbAmmo = (u8)((nObjId == 105) ? (100 * nMounts) : nDemand); /* 0x6B2C */
+        BaseRec_SubItemQty(pBase, pObj, nDemand);                    /* 0x6C5C */
+        return false;
+    }
+
+    /* Not enough: the craft takes whatever the base had, and the base column is cleared. */
+    *pbAmmo = (u8)((nObjId == 105) ? (10 * nStock) : nStock); /* 0x6B00 */
+    pObj->auPerBaseVal[nBaseCol] = 0;                         /* 0x6B10 */
+    *pnReportObj = nObjId;
+    return true;
+}
+
+void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoShortage)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->apBases == NULL ||
+        pEnv->apObjects == NULL || pEnv->abFacilityGrid == NULL) {
+        return;
+    }
+
+    for (i32 nBase = 0; nBase < pEnv->nBaseCount; ++nBase) {
+        if (pEnv->apBases[nBase] == NULL) {
+            continue;
+        }
+        BaseRec *pBase = pEnv->apBases[nBase];
+
+        for (i32 nShip = 0; nShip < pEnv->nShipCount; ++nShip) {
+            if (pEnv->apCraft[nShip] == NULL) {
+                continue;
+            }
+            Ship *pShip = pEnv->apCraft[nShip];
+            i32 nHome = (i32)pShip->bHomeBase;
+
+            /* 0x683DC. The gate clears the hot flag as it tests it. */
+            if (nHome != nBase || pShip->bAtBase == 0 || pShip->bWeaponsHot == 0) {
+                continue;
+            }
+            pShip->bWeaponsHot = 0; /* 0x683E0 */
+
+            /* 1. Park the craft. A hangar cell whose down-right neighbour in layer2 is free and
+             * whose own build days are zero takes the craft. The scan does not stop at the first
+             * hit unless a marker was actually written, so a craft type the table does not know
+             * keeps scanning and can move the hangar coordinates again. */
+            bool bParked = false;
+            for (i32 nRow = 0; nRow < 5 && !bParked; ++nRow) {
+                for (i32 nCol = 0; nCol < 5; ++nCol) {
+                    if (*FacTypeCell(pEnv->abFacilityGrid, nHome, nRow, nCol) != 11) {
+                        continue;
+                    }
+                    if (*Layer2Cell(pEnv->abFacilityGrid, nHome, nRow + 1, nCol + 1) != 0) {
+                        continue;
+                    }
+                    if (*BuildDaysCell(pEnv->abFacilityGrid, nHome, nRow, nCol) != 0) {
+                        continue;
+                    }
+                    pShip->bHangarX = (u8)(nCol + 1); /* 0x68468 */
+                    pShip->bHangarY = (u8)(nRow + 1); /* 0x68478 */
+
+                    /* ORIGINAL BUG, reproduced: the marker goes into the facility block numbered by
+                     * the CRAFT TYPE, not the home base. A type 1 craft landing at base 3 writes
+                     * into base 1's grid. */
+                    if (pShip->bCraftType <= 4) {
+                        *Layer2Cell(pEnv->abFacilityGrid, (i32)pShip->bCraftType, nRow + 1, nCol + 1)
+                            = (u8)(33 + pShip->bCraftType); /* 0x684D0..0x68594 */
+                        bParked = true;
+                        break;
+                    }
+                }
+            }
+
+            /* 2. Credit the crew. 0x685E4. A soldier aboard this craft who has no credit yet takes
+             * 40 percent of the mission value and is marked away in a craft. */
+            if (pEnv->apSoldiers != NULL && pEnv->pnSoldierCount != NULL) {
+                for (i32 k = 0; k < (i32)*pEnv->pnSoldierCount; ++k) {
+                    Soldier *pSol = pEnv->apSoldiers[k];
+                    if (pSol == NULL) {
+                        continue;
+                    }
+                    if (pSol->bUnk183 == (u8)nShip && pSol->bUnk247 == 0 && pSol->nUnk436 != 0) {
+                        pSol->bUnk247 = (u8)(40 * pSol->nUnk436 / 100); /* 0x68610 */
+                        pSol->bUnk183 = 254;                           /* 0x6861C */
+                    }
+                }
+            }
+
+            /* 3. Dump and refill every craft's cargo, not just this one. 0x68644. */
+            CraftStoreLoadEnv cargo;
+            cargo.apCraft = pEnv->apCraft;
+            cargo.apBases = pEnv->apBases;
+            cargo.apObjects = pEnv->apObjects;
+            cargo.nObjectCount = pEnv->nObjectCount;
+            Base_StripAllCraftCargo(&cargo, pEnv->nShipCount);
+
+            /* 4. A craft must not carry more of a weapon than the base has ammo for it. 0x68658.
+             * Objects 1..13, each checked against the three records its anAmmoTypeId names. */
+            bool bStoresShort = false;
+            i32 nReportObj = 0;
+            for (i32 k = 1; k <= 13 && k < pEnv->nObjectCount; ++k) {
+                ObjectRecFull *pWeapon = pEnv->apObjects[k];
+                if (pWeapon == NULL) {
+                    continue;
+                }
+                i32 nCarried = (i32)pWeapon->aItemQty[nShip];
+                i32 nAmmo = 0;
+                for (int j = 0; j < 3; ++j) {
+                    i32 nAmmoId = (i32)pWeapon->anAmmoTypeId[j];
+                    if (nAmmoId < pEnv->nObjectCount && pEnv->apObjects[nAmmoId] != NULL) {
+                        nAmmo += (i32)pEnv->apObjects[nAmmoId]->aItemQty[nShip];
+                    }
+                }
+                if (nCarried > nAmmo) {
+                    bStoresShort = true;
+                    nReportObj = 255; /* 0x686C0: the report names no object */
+                }
+            }
+
+            /* 5. The craft gives back what it was carrying. 0x686F0. Slot 34 comes back in tens. */
+            static const i32 aStoreObj[4] = { 56, 57, 105, 58 };
+            static const i32 aWeaponObj[4] = { 31, 32, 34, 35 };
+            static const i32 aWeight[4] = { 30, 8, 5, 8 };
+
+            for (int j = 0; j < 4; ++j) {
+                if (aStoreObj[j] >= pEnv->nObjectCount || pEnv->apObjects[aStoreObj[j]] == NULL) {
+                    continue;
+                }
+                i32 nGive = pShip->anCargoQty[j];
+                if (j == 2) {
+                    nGive /= 10; /* 0x68730 */
+                }
+                BaseRec_AddItemQty(pBase, pEnv->apObjects[aStoreObj[j]], nGive);
+                pShip->anCargoQty[j] = 0;
+            }
+
+            /* 6. Top up. Anything the craft carries beyond what the base can hold for that many
+             * units is moved from the craft to the base. 0x68784..0x688F4. */
+            for (int j = 0; j < 4; ++j) {
+                if (aWeaponObj[j] >= pEnv->nObjectCount || aStoreObj[j] >= pEnv->nObjectCount) {
+                    continue;
+                }
+                ObjectRecFull *pWeapon = pEnv->apObjects[aWeaponObj[j]];
+                ObjectRecFull *pStore = pEnv->apObjects[aStoreObj[j]];
+                if (pWeapon == NULL || pStore == NULL) {
+                    continue;
+                }
+                i32 nStock = (i32)pStore->auPerBaseVal[nBase];
+                if (aWeight[j] * (i32)pWeapon->aItemQty[nShip] > nStock) {
+                    i32 nDelta = (i32)pWeapon->aItemQty[nShip] - nStock / aWeight[j];
+                    InvSel_SubItemQty(pShip, pWeapon, (i16)nDelta);
+                    BaseRec_AddItemQty(pBase, pWeapon, nDelta);
+                    nReportObj = aStoreObj[j];
+                    bStoresShort = true;
+                }
+            }
+
+            if (bStoresShort) {
+                if (pEnv->pfnAppendLine != NULL) {
+                    pEnv->pfnAppendLine(39, 0, nShip, nReportObj, pEnv->pUser); /* 0x68924 */
+                }
+                if (pEnv->pbUiRefreshFlag != NULL) {
+                    *pEnv->pbUiRefreshFlag = 1; /* 0x68930 */
+                }
+            }
+
+            /* 7. Reload from base stores. The base is charged 30, 8, 5 and 8 per unit; the craft is
+             * credited 30, 8, 50 and 8. Slot 34 is asymmetric, and that is the same asymmetry
+             * BasePlaneScreen_CommitStores shows on the manual path. 0x68948..0x689E4. */
+            static const i32 aCraftCredit[4] = { 30, 8, 50, 8 };
+            for (int j = 0; j < 4; ++j) {
+                if (aWeaponObj[j] >= pEnv->nObjectCount || aStoreObj[j] >= pEnv->nObjectCount) {
+                    continue;
+                }
+                ObjectRecFull *pWeapon = pEnv->apObjects[aWeaponObj[j]];
+                ObjectRecFull *pStore = pEnv->apObjects[aStoreObj[j]];
+                if (pWeapon == NULL || pStore == NULL) {
+                    continue;
+                }
+                i32 nQty = (i32)pWeapon->aItemQty[nShip];
+                BaseRec_SubItemQty(pBase, pStore, aWeight[j] * nQty);
+                pShip->anCargoQty[j] = aCraftCredit[j] * nQty;
+            }
+
+            /* ORIGINAL BUG, reproduced: 0x689E4 sign-extends R8, and R8 was last written at 0x68654
+             * as 2 * ship index. The base index this call receives is therefore twice the ship
+             * index, not the base being processed. Hex-Rays renders it as (char)nBaseIdx.
+             *
+             * DEVIATION: the original computes the needed total inside Base_UpdateStoresNeeded from
+             * Base_CalcStorageUsed (0x6555c) and Base_CountItemQtyAcrossBases (0x67d68). Only the
+             * first is ported, so the pass this call performs is weaker than the original's. */
+            Base_UpdateStoresNeeded(pEnv->abFacilityGrid, (i8)(2 * nShip),
+                                    Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount,
+                                                         (i8)(2 * nShip)));
+
+            /* 8. Re-draw both mounts' ammo. 0x6A00: two mounts of the same weapon share one
+             * demand of 2 units, two different weapons each demand 1. */
+            i32 nMounts = (pShip->bWeaponL == pShip->bWeaponR) ? 2 : 1;
+            bool bAmmoShort = false;
+
+            bAmmoShort = RefuelOneMount(pShip, pBase, pEnv->apObjects, pEnv->nObjectCount,
+                                        pShip->bWeaponL, nMounts, nBase, &nReportObj) || bAmmoShort;
+            bAmmoShort = RefuelOneMount(pShip, pBase, pEnv->apObjects, pEnv->nObjectCount,
+                                        pShip->bWeaponR, nMounts, nBase, &nReportObj) || bAmmoShort;
+
+            if (bAmmoShort) {
+                if (pEnv->pbUiRefreshFlag != NULL) {
+                    *pEnv->pbUiRefreshFlag = 1; /* 0x68EC0 */
+                }
+                if (bAnnounceAmmoShortage && pEnv->pfnAppendLine != NULL) {
+                    pEnv->pfnAppendLine(40, nBase, nReportObj, 0, pEnv->pUser); /* 0x68EDC */
+                }
+            }
+        }
+    }
+}

@@ -199,6 +199,15 @@ i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * simply one craft slot. */
 i32 Base_CalcLivingQuartersCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 i32 Base_CalcStoresCapacity(const u8 *abFacilityGrid, i32 nBaseIndex);
+
+/* Base_CalcStorageUsed @ 0x6555c. How much of the base's own stock is taking up room: the sum of
+ * bCargoSize * auPerBaseVal[nBase] over a fixed set of object indices - 1..69, 105..111, 122..124
+ * and 140. Objects outside those ranges never count, no matter what they hold. An object whose
+ * column for this base is zero contributes nothing, which is the only test the original makes.
+ *
+ * This is one of the two inputs Base_UpdateStoresNeeded uses for its budget inside the original;
+ * the other is Base_CountItemQtyAcrossBases (0x67d68), still unported. */
+i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBase);
 i32 Base_CalcAlienContainmentCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 i32 Base_CalcHangarCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 

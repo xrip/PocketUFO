@@ -564,6 +564,36 @@ i32 Base_UpdateStoresNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nStoresNeede
                               FacilityBudget(nStoresNeeded, 300)); /* 0x65E20 */
 }
 
+/* Base_CalcStorageUsed @ 0x6555c. See the header for the index filter. The original's first guard
+ * is `(int)p > (int)&Map`, which is true for every iteration because the running pointer starts
+ * past the Map base, so the filter reduces to the four index ranges. */
+i32 Base_CalcStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBase)
+{
+    i32 nTotal = 0;
+
+    /* DEVIATION: the original indexes auPerBaseVal with the char it was given and does not check
+     * it, so an out-of-range base reads past the eight columns. The port returns 0 instead. */
+    if (apObjects == NULL || nBase < 0 ||
+        nBase >= (i32)(sizeof(((ObjectRecFull *)0)->auPerBaseVal) /
+                     sizeof(((ObjectRecFull *)0)->auPerBaseVal[0]))) {
+        return 0;
+    }
+
+    for (i32 nIdx = 1; nIdx < nObjectCount; ++nIdx) {
+        bool bCounted = (nIdx < 70) || (nIdx > 104 && nIdx < 112) || (nIdx > 121 && nIdx < 125) ||
+                        nIdx == 140; /* 0x655B8 */
+        if (!bCounted || apObjects[nIdx] == NULL) {
+            continue;
+        }
+        ObjectRecFull *pObj = apObjects[nIdx];
+        if (pObj->auPerBaseVal[nBase] == 0) {
+            continue; /* 0x655D4 */
+        }
+        nTotal += (i32)pObj->bCargoSize * (i32)pObj->auPerBaseVal[nBase]; /* 0x655DC */
+    }
+    return nTotal;
+}
+
 /* Base_UpdatePsiLabNeeded @ 0x65fc8. Kind 8, and the only pass with a divisor of 10: one
  * psi-soldier per lab cell is enough to claim it. It discards Base_CalcPsiLabCap at 0x65FD4
  * and takes its total from Base_CountPsiSoldiers. */

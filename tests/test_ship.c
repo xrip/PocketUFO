@@ -4,6 +4,7 @@
  * step are transcribed from the decompilation.
  */
 #include "game/pufo_ship.h"
+#include "game/pufo_geoscape.h"
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_ptrarray.h"
@@ -903,6 +904,187 @@ static void TestInterceptRetarget(void)
     free(list.apItems);
 }
 
+#define LOOT_N_OBJECTS 150
+
+static ObjectRecFull g_aLootObj[LOOT_N_OBJECTS];
+static ObjectRecFull *g_apLootObj[LOOT_N_OBJECTS];
+static Ship g_aLootShip[1];
+static Ship *g_apLootShip[1];
+static BaseRec g_aLootBase[1];
+static BaseRec *g_apLootBase[1];
+static Soldier *g_apLootSoldier[2];
+static u8 g_abLootGrid[1524];
+static Soldier g_aLootSoldier[2];
+static u8 g_bLootRefresh;
+static u16 g_nLootSoldiers = 2;
+
+static int g_nMsgCount;
+static int g_aMsgFlag[8];
+static int g_aMsgC0[8];
+static int g_aMsgC1[8];
+static int g_aMsgC2[8];
+
+static void LootMsg(i32 bFlag, i32 nC0, i32 nC1, i32 nC2, void *pUser)
+{
+    (void)pUser;
+    if (g_nMsgCount < 8) {
+        g_aMsgFlag[g_nMsgCount] = bFlag;
+        g_aMsgC0[g_nMsgCount] = nC0;
+        g_aMsgC1[g_nMsgCount] = nC1;
+        g_aMsgC2[g_nMsgCount] = nC2;
+        ++g_nMsgCount;
+    }
+}
+
+static void TestTransferTacticalLoot(void)
+{
+    TacticalLootEnv env;
+
+    printf("Base_TransferTacticalLoot\n");
+
+    for (int i = 0; i < LOOT_N_OBJECTS; ++i) {
+        g_apLootObj[i] = &g_aLootObj[i];
+    }
+    g_apLootShip[0] = &g_aLootShip[0];
+    g_apLootBase[0] = &g_aLootBase[0];
+    g_apLootSoldier[0] = &g_aLootSoldier[0];
+    g_apLootSoldier[1] = &g_aLootSoldier[1];
+    g_aLootBase[0].bSlot = 0;
+
+    /* An empty base: every facility cell is 255, and every layer2 cell is occupied so that only
+     * the one cell below the hangar reads as free. */
+    memset(g_abLootGrid, 255, sizeof(g_abLootGrid));
+    memset(g_abLootGrid, 0, 36 * 8); /* buildDays: nothing under construction anywhere */
+    for (int i = 0; i < 8; ++i) {
+        g_abLootGrid[444 + 144 * i + 6 * 1 + 1] = 0;
+    }
+
+    /* Base_CalcStorageUsed first, before the transfer moves anything. */
+    g_aLootObj[5].bCargoSize = 3;
+    g_aLootObj[5].auPerBaseVal[0] = 10;  /* 3 * 10 counts */
+    g_aLootObj[70].bCargoSize = 9;
+    g_aLootObj[70].auPerBaseVal[0] = 100; /* index 70 is outside every range */
+    g_aLootObj[105].bCargoSize = 2;
+    g_aLootObj[105].auPerBaseVal[0] = 5;  /* 2 * 5 counts */
+    CheckEqI32(Base_CalcStorageUsed(g_apLootObj, LOOT_N_OBJECTS, 0), 40,
+               "storage used counts only the ranges 1..69, 105..111, 122..124 and 140");
+    g_aLootObj[5].bCargoSize = 0;
+    g_aLootObj[5].auPerBaseVal[0] = 0;
+    g_aLootObj[70].auPerBaseVal[0] = 0;
+    g_aLootObj[105].bCargoSize = 0;
+    g_aLootObj[105].auPerBaseVal[0] = 0;
+
+    /* A hangar cell at base 0 (0,0), free down-right, nothing under construction. */
+    g_abLootGrid[480 + 6 * 0 + 0] = 11;
+    g_abLootGrid[444 + 6 * 1 + 1] = 0;
+
+    Ship *pShip = &g_aLootShip[0];
+    pShip->bHomeBase = 0;
+    pShip->bAtBase = 1;
+    pShip->bWeaponsHot = 1;
+    pShip->bCraftType = 1;
+    pShip->bCanDogfight = 0; /* keeps Base_StripAllCraftCargo out of the way */
+    pShip->nSlotIdx = 0;
+    pShip->bWeaponL = 25;
+    pShip->bWeaponR = 25;
+    pShip->bAmmo25 = 7;
+    pShip->anCargoQty[0] = 300;
+    pShip->anCargoQty[1] = 80;
+    pShip->anCargoQty[2] = 400;
+    pShip->anCargoQty[3] = 80;
+
+    /* One weapon the base cannot supply ammo for, so the stores report fires. */
+    g_aLootObj[1].aItemQty[0] = 5;
+    g_aLootObj[1].anAmmoTypeId[0] = 0;
+    g_aLootObj[1].anAmmoTypeId[1] = 0;
+    g_aLootObj[1].anAmmoTypeId[2] = 0;
+
+    /* Craft stores for the four cargo slots, and enough base stock that the reload does not wrap. */
+    g_aLootObj[31].aItemQty[0] = 4;
+    g_aLootObj[32].aItemQty[0] = 3;
+    g_aLootObj[34].aItemQty[0] = 4;
+    g_aLootObj[35].aItemQty[0] = 5;
+    g_aLootObj[52].auPerBaseVal[0] = 100;
+
+    g_aLootSoldier[0].bUnk183 = 0; /* aboard craft 0 */
+    g_aLootSoldier[0].bUnk247 = 0;
+    g_aLootSoldier[0].nUnk436 = 100;
+    g_aLootSoldier[1].bUnk183 = 0;
+    g_aLootSoldier[1].bUnk247 = 5; /* already credited, so skipped */
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apLootShip;
+    env.apBases = g_apLootBase;
+    env.apObjects = g_apLootObj;
+    env.apSoldiers = g_apLootSoldier;
+    env.pnSoldierCount = &g_nLootSoldiers;
+    env.abFacilityGrid = g_abLootGrid;
+    env.pbUiRefreshFlag = &g_bLootRefresh;
+    env.nBaseCount = 1;
+    env.nShipCount = 1;
+    env.nObjectCount = LOOT_N_OBJECTS;
+    env.pfnAppendLine = LootMsg;
+    g_nMsgCount = 0;
+
+    Base_TransferTacticalLoot(&env, true);
+
+    CheckEqI32(pShip->bWeaponsHot, 0, "the gate clears the hot flag as it tests it");
+    CheckEqI32(pShip->bHangarX, 1, "the craft is parked one column in");
+    CheckEqI32(pShip->bHangarY, 1, "and one row down");
+    CheckEqI32(g_abLootGrid[444 + 144 * 1 + 6 * 1 + 1], 34,
+               "the marker lands in the block numbered by the CRAFT TYPE, not the home base");
+    CheckEqI32(g_abLootGrid[444 + 6 * 1 + 1], 0,
+               "and base 0's own layer2 is left alone, which is the original's bug");
+
+    CheckEqI32(g_aLootSoldier[0].bUnk247, 40, "an uncredited crew member takes 40 percent");
+    CheckEqI32(g_aLootSoldier[0].bUnk183, 254, "and is marked away in a craft");
+    CheckEqI32(g_aLootSoldier[1].bUnk247, 5, "a crew member already credited is skipped");
+
+    CheckEqI32(g_aLootObj[56].auPerBaseVal[0], 180, "slot 31 reload charges the base 30 per unit");
+    CheckEqI32(g_aLootObj[57].auPerBaseVal[0], 56, "slot 32 charges 8");
+    CheckEqI32(g_aLootObj[105].auPerBaseVal[0], 20, "slot 34 charges 5");
+    CheckEqI32(g_aLootObj[58].auPerBaseVal[0], 40, "slot 35 charges 8");
+    CheckEqI32(pShip->anCargoQty[2], 200,
+               "while the craft is credited 50 for slot 34, not 5 - the asymmetry");
+    CheckEqI32(pShip->anCargoQty[0], 120, "and 30 for slot 31");
+
+    CheckEqI32(g_bLootRefresh, 1, "the stores shortage raises the UI refresh flag");
+    CheckEqI32(g_nMsgCount, 1, "and only the stores shortage is announced when ammo is plentiful");
+    CheckEqI32(g_aMsgFlag[0], 39, "the stores report is message 39");
+    CheckEqI32(g_aMsgC2[0], 255,
+               "named by no object, because the weapon-vs-ammo test names nothing");
+
+    CheckEqI32(pShip->bAmmo25, 20, "two mounts of the same weapon share one demand of 20");
+    CheckEqI32(g_aLootObj[52].auPerBaseVal[0], 87, "the base pays 20 once per mount, twice");
+
+    /* Now the same landing with almost no ammo at the base. */
+    pShip->bWeaponsHot = 1;
+    pShip->bAmmo25 = 7;
+    g_aLootObj[52].auPerBaseVal[0] = 3;
+    g_bLootRefresh = 0;
+    g_nMsgCount = 0;
+    Base_TransferTacticalLoot(&env, true);
+
+    CheckEqI32(pShip->bAmmo25, 10,
+               "a shortfall hands the craft the whole base column, which already includes the 7 it "
+               "just gave back");
+    CheckEqI32(g_aLootObj[52].auPerBaseVal[0], 0, "and clears the base column");
+    CheckEqI32(g_nMsgCount, 2, "the ammo shortage is announced as well");
+    CheckEqI32(g_aMsgFlag[1], 40, "message 40");
+    CheckEqI32(g_aMsgC1[1], 52, "naming the ammo record");
+
+    /* The same shortage with the second argument non-zero is silent but still refreshes the UI. */
+    pShip->bWeaponsHot = 1;
+    pShip->bAmmo25 = 7;
+    g_aLootObj[52].auPerBaseVal[0] = 3;
+    g_bLootRefresh = 0;
+    g_nMsgCount = 0;
+    Base_TransferTacticalLoot(&env, false);
+
+    CheckEqI32(g_nMsgCount, 1, "a non-zero second argument silences the ammo report only");
+    CheckEqI32(g_bLootRefresh, 1, "and the refresh flag is raised either way");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -916,6 +1098,7 @@ int main(void)
     TestCraftWeaponItemId();
     TestCrewAndStoresTotals();
     TestInterceptRetarget();
+    TestTransferTacticalLoot();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

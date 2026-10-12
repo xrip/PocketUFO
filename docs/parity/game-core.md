@@ -6216,3 +6216,52 @@ left**), `OptionsScreen_PanelPrev/Next @ 0x6d01c/0x6d064` (scroll four panels' c
 never refreshed by this path).
 
 Covered by the extended `TestBaseGridLookup`, 6 more checks.
+
+## The landing pass: `Base_TransferTacticalLoot @ 0x68344` (done)
+
+3,048 bytes, 87 basic blocks, and every callee is now ported. It walks every base and every craft,
+and for each craft that is at its home base with its weapons hot it parks it in a hangar cell,
+credits its crew, dumps and refills cargo, checks the craft is not carrying more weapons than the
+base has ammo for, reloads its stores, and re-draws each mount's ammo. The gate at 0x683DC clears
+`Ship.bWeaponsHot` as it tests it, so a craft is processed once per landing.
+
+Four things this function settled for the whole cargo family:
+
+**`anAmmoTypeId[3]` at `ObjectRec + 0xA8` holds object indices, not ammo type ids.** The shortage
+loop at 0x68658 reads `apObjects[obj->anAmmoTypeId[k]]->aItemQty[shipIdx]` and compares the sum
+against how many of that weapon the craft carries. Objects 1..13 are the ones checked.
+
+**Slot 34 is asymmetric, and now we know why.** The base is charged 5 per unit and the craft is
+credited 50. `BasePlaneScreen_CommitStores` shows the same asymmetry on the manual path; this is
+the landing path, so it is not a hangar-screen quirk.
+
+**Two mounts of the same weapon share one demand.** `nMounts` is 2 when `bWeaponL == bWeaponR` and
+1 when they differ, and the demand per weapon is 10, 3, 2, 10, 2 for weapons 25, 26, 27, 29, 30.
+Weapon 29 is returned to the base in tens and drawn back in hundreds. The two mounts share one
+ammo byte, so the right mount re-reads what the left mount just wrote.
+
+**A shortfall takes the base column *after* the craft's own ammo was added to it.** With 3 at the
+base and 7 aboard, the craft ends with 10, not 7. That is the second time this session a test
+expectation of mine was wrong rather than the port.
+
+### Two original bugs, reproduced and asserted
+
+1. **The hangar marker goes into the wrong base's grid.** The three grid *reads* in the scan scale
+   by `24 * bHomeBase`; the one *write* scales by `24 * bCraftType`. A type 1 craft landing at base
+   3 writes its marker into base 1's facility grid. Proven from `MUL R2,R3,R8` at 0x6858C where R3
+   is `Ship.bCraftType`.
+2. **`Base_UpdateStoresNeeded` is called with the wrong base index.** 0x689E4 sign-extends R8, and
+   R8 was last written at 0x68654 as `2 * ship index` from the stack slot holding the ship index.
+   So the argument is `(i8)(2 * shipIdx)`: ship 1 updates base 2, ship 4 names base 8, past the
+   eight base blocks. Hex-Rays renders it as `(char)nBaseIdx`, which is wrong.
+
+### `Base_CalcStorageUsed @ 0x6555c` (done)
+
+Sum of `bCargoSize * auPerBaseVal[nBase]` over a fixed set of object indices: 1..69, 105..111,
+122..124 and 140. Its first guard compares the running pointer against the Map base, which is true
+on every iteration, so it reduces to `index < 70`. This is one of the two budget inputs
+`Base_UpdateStoresNeeded` uses internally; the other, `Base_CountItemQtyAcrossBases` (0x67d68), is
+still unported, so the needed-flag pass this call performs is weaker than the original's. That is
+the port's one listed deviation in this function.
+
+Covered by `TestTransferTacticalLoot`, 28 checks.

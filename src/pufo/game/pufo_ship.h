@@ -348,4 +348,43 @@ void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nS
  * hangar UI. */
 void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount);
 
+/* Evidence: Base_TransferTacticalLoot @ 0x68344 (3048 bytes, 87 blocks).
+ *
+ * The landing pass. It walks every base and every craft, and for each craft that is at its home
+ * base with its weapons hot it: parks it in a hangar cell, credits the crew it was carrying,
+ * dumps and refills cargo, checks that the craft does not carry more weapons than the base has
+ * ammo for, reloads its stores from the base, and finally re-draws each weapon mount's ammo.
+ *
+ * The gate at 0x683DC clears Ship.bWeaponsHot as it tests it, so a craft is processed once per
+ * landing and a cold craft is skipped entirely.
+ *
+ * Two things the original does that are easy to mistake for a transcription error. Both are
+ * reproduced here and both are named in the .c file.
+ *
+ *   - The hangar marker byte is written into the facility block numbered by Ship.bCraftType, not
+ *     by Ship.bHomeBase. The three grid READS use bHomeBase; the one WRITE uses bCraftType.
+ *   - The Base_UpdateStoresNeeded call passes (i8)(2 * ship index) as its base index.
+ *
+ * bAnnounceAmmoShortage is the original's second argument. An ammo shortage always raises the UI
+ * refresh flag, but only announces itself when that argument is zero, so the same transfer can run
+ * silently. A stores shortage always announces itself. */
+typedef struct TacticalLootEnv {
+    Ship **apCraft;
+    BaseRec **apBases;
+    struct ObjectRecFull **apObjects;
+    Soldier **apSoldiers;
+    u16 *pnSoldierCount;
+    u8 *abFacilityGrid;
+    u8 *pbUiRefreshFlag; /* unk_1870C8, set by either report */
+    i32 nBaseCount;
+    i32 nShipCount;
+    i32 nObjectCount;
+    /* UiPanel_AppendLineWithSound @ 0x5a394 on the message panel at 0x158890. bFlag is 39 for a
+     * stores shortage and 40 for an ammo shortage. */
+    void (*pfnAppendLine)(i32 bFlag, i32 nC0, i32 nC1, i32 nC2, void *pUser);
+    void *pUser;
+} TacticalLootEnv;
+
+void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoShortage);
+
 #endif /* PUFO_SHIP_H */

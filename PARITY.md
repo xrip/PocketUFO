@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 603 / 1103 (54.7%) |
-| Bytes of original code cited | 186428 / 598792 (31.1%) |
+| Functions cited as evidence | 605 / 1103 (54.9%) |
+| Bytes of original code cited | 189632 / 598792 (31.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5784 |
+| Test checks run | 5812 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 24640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 101 | 205 | 29008 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 103 | 205 | 32212 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 107 | 243 | 7704 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -471,7 +471,7 @@ is the module that answers to it.
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.h` |
-| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` (+1) |
+| `0x5a394` | `UiPanel_AppendLineWithSound` | 72 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_ship.h` (+2) |
 | `0x1a5c0` | `UiControl_SetPosMode` | 68 | `src/pufo/ui/pufo_control.h` |
 | `0x1a75c` | `UiControl_Setup` | 68 | `src/pufo/ui/pufo_control.h`, `src/pufo/ui/pufo_uibank.c` (+1) |
 | `0x16e04` | `UiBank_SelectRadio0_Play11` | 60 | `src/pufo/game/pufo_tactui.h` |
@@ -502,11 +502,12 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (101 functions)
+### `strat` (103 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
+| `0x68344` | `Base_TransferTacticalLoot` | 3048 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x693ec` | `Craft_LoadStoresFromBase` | 1612 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
 | `0x69a38` | `Base_StripAllCraftCargo` | 1476 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
@@ -544,6 +545,7 @@ is the module that answers to it.
 | `0x5ab34` | `Funding_DeltaToArrow` | 164 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x5a830` | `Ship_ClearWaypointIntercept` | 160 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x6555c` | `Base_CalcStorageUsed` | 156 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x55650` | `BaseRec_ctor` | 148 | `src/pufo/game/pufo_ship.h` |
 | `0x5a5b8` | `Ship_ClearInterceptByStrategIdx` | 148 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x66090` | `Base_CountShipsAtBase` | 140 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -1024,7 +1026,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 104 functions, 133448 bytes remaining
+### `strat` — 102 functions, 130244 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1038,7 +1040,6 @@ whose port work they belong to.
 | `0x5f490` | `RadarScreen_Init` | 3600 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6c16c` | `Geoscape_DrawScreen` | 3476 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x82be8` | `Smap_HitTestStrategSelect` | 3088 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x68344` | `Base_TransferTacticalLoot` | 3048 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5dc84` | `RadarScreen_DrawOverlay` | 2788 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b59c` | `FundingScreen_DrawExtended` | 2780 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1098,7 +1099,6 @@ whose port work they belong to.
 | `0x655f8` | `Base_CalcOccupiedSpace` | 180 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5e768` | `RadarScreen_SetCursorNW` | 160 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5ea70` | `RadarScreen_SetCursorSE` | 160 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6555c` | `Base_CalcStorageUsed` | 156 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84e20` | `Base_EnterBuildMode` | 124 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1330,7 +1330,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 660 |
-| `test_ship` | PASS | 138 |
+| `test_ship` | PASS | 166 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
