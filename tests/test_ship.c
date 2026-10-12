@@ -673,6 +673,52 @@ static void TestStripCraftCargo(void)
     TestEqI32Local("and its base stock is untouched", (i32)g_aObj[36].auPerBaseVal[1], 1);
 }
 
+
+static void TestCraftWeaponItemId(void)
+{
+    static ObjectRecFull g_aObj[106];
+    static ObjectRecFull *g_apObj[106];
+
+    printf("Base_CraftWeaponItemId\n");
+
+    for (int i = 0; i < 106; ++i) {
+        memset(&g_aObj[i], 0, sizeof(g_aObj[i]));
+        g_apObj[i] = &g_aObj[i];
+    }
+    g_aObj[56].auPerBaseVal[3] = 11;
+    g_aObj[57].auPerBaseVal[3] = 22;
+    g_aObj[58].auPerBaseVal[3] = 33;
+    g_aObj[105].auPerBaseVal[3] = 44;
+
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 31, 3), 11, "slot 31 reads object record 56");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 32, 3), 22, "slot 32 reads 57");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 34, 3), 44, "slot 34 reads 105");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 35, 3), 33, "slot 35 reads 58");
+
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 33, 3), 1000,
+               "slot 33 is a constant, with no object record touched");
+    g_aObj[56].auPerBaseVal[3] = 999;
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 33, 3), 1000,
+               "and changing every record leaves slot 33 alone");
+
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 30, 3), -1, "slot 30 is not a craft stores slot");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 36, 3), -1, "and neither is slot 36");
+
+    /* The column is the signed byte 0x159D81 at the call site, and there are eight columns. */
+    g_aObj[56].auPerBaseVal[7] = 77;
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 31, 7), 77, "the eighth column is reachable");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 31, 8), -1,
+               "a column past the eight is refused, where the original reads on");
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 31, -1), -1, "and so is a negative one");
+
+    g_apObj[57] = NULL;
+    CheckEqI32(Base_CraftWeaponItemId(g_apObj, 32, 3), -1,
+               "an empty object record gives -1, where the original faults");
+    g_apObj[57] = &g_aObj[57];
+
+    CheckEqI32(Base_CraftWeaponItemId(NULL, 31, 3), -1, "no object array at all gives -1");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -683,6 +729,7 @@ int main(void)
     TestCargoHold();
     TestLoadStores();
     TestStripCraftCargo();
+    TestCraftWeaponItemId();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

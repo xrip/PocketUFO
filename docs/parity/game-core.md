@@ -5946,3 +5946,27 @@ else — not item type, not active state. It dereferences `PtrArray_Get(nStrateg
 test; the port returns -1.
 
 Covered by `TestFindByStrategIdx` and `TestOverlayAtMode`, 14 checks.
+
+### Craft stores slots 31..35, and the byte that says which base you are looking at (done)
+
+`Base_CraftWeaponItemId @ 0x6641c` is the selected base's stock of the item a craft stores slot
+refers to:
+
+| slot | object record | value read |
+|---|---|---|
+| 31 | `apObjects[56]` | `auPerBaseVal[col]` |
+| 32 | `apObjects[57]` | `auPerBaseVal[col]` |
+| 33 | — | the constant **1000**, no record touched |
+| 34 | `apObjects[105]` | `auPerBaseVal[col]` |
+| 35 | `apObjects[58]` | `auPerBaseVal[col]` |
+| other | — | **-1** |
+
+The column comes from the call site: at `0x7ADC4` the only code caller (`BasePlaneScreen_CommitStores
+@ 0x7ac38`) passes it as the **signed global byte `0x159D81`** — the byte sitting immediately after
+the base count at `0x159D80`. That byte is the base the base screens are currently showing, so this
+function is not about a craft at all; it asks how much of the item the *displayed* base has.
+
+Slot 33 returning a fixed 1000 is the odd one: whatever that slot holds, the original keeps no
+per-base count for it.
+
+Covered by `TestCraftWeaponItemId`, 13 checks.

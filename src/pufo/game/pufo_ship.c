@@ -618,3 +618,44 @@ void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount)
         }
     }
 }
+
+/* Base_CraftWeaponItemId @ 0x6641c. The selected base's stock of the item a craft stores slot
+ * refers to. Its second argument is the slot, and the call site at 0x7ADC4 passes the third as
+ * the signed global byte 0x159D81 -- the byte sitting right next to the base count at 0x159D80,
+ * which is the base the base screens are currently showing.
+ *
+ *   slot 31 -> apObjects[56]   slot 32 -> apObjects[57]
+ *   slot 34 -> apObjects[105]  slot 35 -> apObjects[58]
+ *   slot 33 -> 1000, a constant, with no object record touched
+ *   anything else -> -1
+ *
+ * Slot 33 returning a fixed 1000 is the odd one: whatever that slot holds, the original does not
+ * keep a per-base count for it.
+ *
+ * Deviations: the original indexes auPerBaseVal with a signed byte and no bound, and faults on a
+ * NULL object record. The port bounds the column to the eight real columns and returns -1 for a
+ * NULL record. */
+i32 Base_CraftWeaponItemId(ObjectRecFull *const *apObjects, i32 nSlot, i32 nBaseColumn)
+{
+    static const i32 anSlotObject[5] = { 56, 57, -1, 105, 58 }; /* 0x6642C..0x66484 */
+
+    if (nSlot < 31 || nSlot > 35) {
+        return -1; /* 0x6644C */
+    }
+    if (nSlot == 33) {
+        return 1000; /* 0x66470: no object record is read */
+    }
+    if (nBaseColumn < 0 || nBaseColumn >= 8) {
+        return -1; /* deviation: the original has no bound on the column */
+    }
+    if (apObjects == NULL) {
+        return -1;
+    }
+
+    const i32 nObject = anSlotObject[nSlot - 31];
+    if (nObject < 0 || apObjects[nObject] == NULL) {
+        return -1; /* deviation: the original faults here */
+    }
+
+    return (i32)apObjects[nObject]->auPerBaseVal[nBaseColumn]; /* 0x66498 */
+}

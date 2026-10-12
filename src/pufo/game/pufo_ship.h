@@ -269,6 +269,14 @@ typedef enum CraftCargoCap {
 /* The original's first argument is never read; the port takes the ship directly. */
 CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip);
 
+/* Base_CraftWeaponItemId @ 0x6641c. The selected base's stock of the item a craft stores slot
+ * refers to. Slots 31, 32, 34 and 35 read the per-base column of object records 56, 57, 105 and
+ * 58; slot 33 is a constant 1000 with no record touched; anything else is -1.
+ *
+ * The caller at 0x7ADC4 passes the column as the signed global byte 0x159D81, the byte next to
+ * the base count at 0x159D80 -- the base the base screens are showing. */
+i32 Base_CraftWeaponItemId(ObjectRecFull *const *apObjects, i32 nSlot, i32 nBaseColumn);
+
 /* Objects 1..24 and 36..52 are the ones that occupy the hold. */
 i32 Base_CalcWeaponStorageUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,
                                i32 nCraftIdx);

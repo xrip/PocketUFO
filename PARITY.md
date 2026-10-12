@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 602 / 1103 (54.6%) |
-| Bytes of original code cited | 223048 / 598792 (37.2%) |
+| Functions cited as evidence | 603 / 1103 (54.7%) |
+| Bytes of original code cited | 223176 / 598792 (37.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5688 |
+| Test checks run | 5701 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 174 | 214 | 105664 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 35 | 52 | 26124 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 88 | 205 | 26952 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 89 | 205 | 27080 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 105 | 243 | 9192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -516,7 +516,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (88 functions)
+### `strat` (89 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -562,6 +562,7 @@ is the module that answers to it.
 | `0x662bc` | `Base_HasResearchSlotFree` | 132 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x66340` | `Base_HasWorkshopSlotFree` | 132 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6a05c` | `StrategList_FindIdxForShip` | 132 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x6641c` | `Base_CraftWeaponItemId` | 128 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x821c4` | `Smap_GetTileAtMode` | 128 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_strateg.h` |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
@@ -1009,7 +1010,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 117 functions, 135504 bytes remaining
+### `strat` — 116 functions, 135376 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1092,7 +1093,6 @@ whose port work they belong to.
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a5b8` | `Ship_ClearInterceptByStrategIdx` | 148 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6641c` | `Base_CraftWeaponItemId` | 128 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84e20` | `Base_EnterBuildMode` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x95fa4` | `Base_GrantStarterItems` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x96894` | `Smap_SumSiteScores` | 120 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1330,7 +1330,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 660 |
-| `test_ship` | PASS | 105 |
+| `test_ship` | PASS | 118 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
