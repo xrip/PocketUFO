@@ -632,6 +632,56 @@ static void TestBlitRawGlyph(void)
     SoftSurf_dtor(&s24);
 }
 
+/* Gfx_PackRgb565Pair @ 0x2d82c: the colour helper every draw function calls. */
+static void TestPackRgb565Pair(void)
+{
+    GfxColorEnv env;
+    u32         nSavedFormat = g_ffFormat;
+
+    printf("Gfx_PackRgb565Pair\n");
+
+    /* nScaleSource 3 gives factor 3 * 0.1 + 0.7 = 1.0, so the channels pass through at their
+     * natural 5/6/5 widths: 255 >> 3 is 31, 255 >> 2 is 63. */
+    env.nScaleSource = 3;
+    env.nFadeCount   = 0;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 128, 128, 128), 0x8410,
+               "  returns the SECOND packed colour, not the first");
+
+    /* A scale source of 10 gives factor 1.7: 31/1.7 = 18, 63/1.7 = 37. Both colours are the
+     * same here because the return value is the second one. */
+    env.nScaleSource = 10;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 255, 255, 255) & 0xFFFF, 0x94B2,
+               "  factor 1.7 scales every channel");
+
+    /* A fade divides again, and the inner division is integer: (11 - 5) / 2 + 1 = 4.
+     * 31/4 = 7, 63/4 = 15. */
+    env.nScaleSource = 3;
+    env.nFadeCount   = 5;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 255, 255, 255) & 0xFFFF, 0x39E7,
+               "  fade divides a second time by (11 - nFade)/2 + 1");
+
+    /* Clamps are 5 / 6 / 5 bits. */
+    env.nScaleSource = 3;
+    env.nFadeCount   = 0;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 1000, 1000, 1000, 1000, 1000, 1000) & 0xFFFF, 0xFFFF,
+               "  channels clamp to 31 / 63 / 31");
+
+    /* Gate: the helper only runs for a 565 display format. */
+    g_ffFormat = PUFO_FF_888;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 255, 255, 255, 255, 255), 0,
+               "  does nothing unless the format has the 565 bit");
+    g_ffFormat = nSavedFormat;
+
+    /* Green is shifted by 2 and red and blue by 3 - the widths are 6, 5 and 5. */
+    env.nScaleSource = 3;
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 0, 255, 0, 0, 255, 0) & 0xFFFF, 0x7E0,
+               "  green alone fills the 6-bit middle field");
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 255, 0, 0, 255, 0, 0) & 0xFFFF, 0xF800,
+               "  red alone fills the top field");
+    CheckEqU32(Gfx_PackRgb565Pair(&env, 0, 0, 255, 0, 0, 255) & 0xFFFF, 0x1F,
+               "  blue alone fills the low field");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -654,6 +704,7 @@ int main(void)
     TestSamplePixel();
     TestBlurPixels();
     TestBlitRawGlyph();
+    TestPackRgb565Pair();
 
     Asset_CloseArchives();
 

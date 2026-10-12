@@ -11,6 +11,7 @@
  *   SoftSurf_BlitCopyRaw @ 0xa3db8 (a duplicate of Blit_CopyRows in the original),
  *   SoftSurf_SamplePixel @ 0xa4630, SoftSurf_BlurPixels @ 0xa2000,
  *   SoftSurf_BlitRawGlyph @ 0xa33c8 (named SoftSurf_BlitIndexed_Mode12 in the original),
+ *   Gfx_PackRgb565Pair @ 0x2d82c,
  *   BlitParams_Set @ 0xa47b0, Blit_SetRectAndColor @ 0xa3f5c, Blit_SetColorKey @ 0xa3624,
  *   Blit_CopyToXY @ 0xa42e4, SoftSurf_BlitSrcRect_Inner @ 0xa4450,
  *   SoftSurf_Blit_Inner @ 0xa47d0, SoftSurf_BlitFlip_Inner @ 0xa49a0,
@@ -166,6 +167,16 @@ i32  BlitState_Get(void);
 i32  SoftSurf_SamplePixel(i32 x, i32 y);
 u8  *SoftSurf_BlurPixels(u8 *pPixels, i32 nWidth, i32 nHeight);
 void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph);
+/* What Gfx_PackRgb565Pair reads out of the world. The port has no owner for either value yet,
+ * so they are passed in rather than reached through a global. */
+typedef struct GfxColorEnv {
+    i32 nScaleSource; /* unk_128AB8, Map + 0x15100 */
+    i32 nFadeCount;   /* Map.apUiSlotsA[1], the fade counter */
+} GfxColorEnv;
+
+u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
+                       i32 r2, i32 g2, i32 b2);
+
 void SoftSurf_BlitRectProxy(i32 nIgnored, i32 x, i32 y, i32 nRectW, i32 nRectH,
                             u8 nIdx, u8 nColorMid, u8 nColorLow);
 

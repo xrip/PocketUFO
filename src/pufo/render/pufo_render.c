@@ -33,6 +33,11 @@ static i32 s_nRectH;      /* blitRectH @ 0xa3038: fill height, and its clip boun
 static i32 s_nMaskPtr;    /* dword_A303C, mask pointer for the Flip blend */
 static i32 s_nBlendAlpha; /* dword_A3040 */
 
+/* unk_147B54 and unk_147B3C @ 0x147b54 / 0x147b3c: scratch stores of Gfx_PackRgb565Pair.
+ * Each has exactly one xref in the original - the write - so nothing reads them. */
+static u32 s_nPackScratchFirst;
+static u32 s_nPackScratchSecond;
+
 void SoftSurf_ctor(SoftSurf *pSurf)
 {
     pSurf->pPixels = NULL;
@@ -500,6 +505,78 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph)
             pRow = pStart + 3 * g_blitState.nSurf0;
         }
     }
+}
+
+/* Gfx_PackRgb565Pair @ 0x2d82c - the central colour helper, with over 100 call sites across
+ * every draw function in the game.
+ *
+ * What it does: builds a scale factor from a Map-resident value, divides each channel by it,
+ * divides again by a fade factor when a fade is in progress, clamps to 5/6/5 bits and packs
+ * (r<<11) | (g<<5) | b. It runs only when the display format is 565 (bit 7 of ffFormat).
+ *
+ * The factor is (double)nScaleSource * 0.1 + 0.7. The constants are exact doubles:
+ * 0x3FB99999:0x9999999A is 0.1 and 0x3FE66666:0x66666666 is 0.7. Hex-Rays renders the scale
+ * source as if it came from r1; the disassembly at 0x2D85C loads unk_128AB8 (Map + 0x15100).
+ *
+ * The channel shifts are not symmetric: red and blue are >> 3 (8 to 5 bits) and green is >> 2
+ * (8 to 6 bits).
+ *
+ * The original reads ffFormat through its first argument, which IDA named nScale but is a pointer
+ * into the GX display block (LDR R0,[R0,#0x14] at 0x2d840). The port already owns g_ffFormat, so
+ * it reads that instead - recorded as a deviation, not hidden.
+ *
+ * The two globals it stores into, 0x147B54 and 0x147B3C, each have exactly one xref: the write
+ * here. Nothing reads them, so callers use the return value and the stores are scratch. */
+u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
+                       i32 r2, i32 g2, i32 b2)
+{
+    double dFactor = (double)pEnv->nScaleSource * 0.1 + 0.7;
+    double dFade   = 0.0;
+    i32    nR1, nG1, nB1, nR2, nG2, nB2;
+    u32    nFirst, nSecond;
+
+    if ((g_ffFormat & PUFO_FF_565) == 0) {
+        return 0;
+    }
+
+    nR1 = (i32)((double)(r1 >> 3) / dFactor);
+    nG1 = (i32)((double)(g1 >> 2) / dFactor);
+    nB1 = (i32)((double)(b1 >> 3) / dFactor);
+
+    if (pEnv->nFadeCount > 0) {
+        /* The inner division is integer in the original: itod is applied to the result of
+         * (11 - nFadeCount) / 2, not to the difference itself. */
+        dFade = (double)((11 - pEnv->nFadeCount) / 2 + 1);
+        nR1 = (i32)((double)nR1 / dFade);
+        nG1 = (i32)((double)nG1 / dFade);
+        nB1 = (i32)((double)nB1 / dFade);
+    }
+
+    if (nR1 > 31) { nR1 = 31; }
+    if (nG1 > 63) { nG1 = 63; }
+    if (nB1 > 31) { nB1 = 31; }
+
+    nFirst  = (u32)(nB1 + 32 * (nG1 + (nR1 << 6)));
+    s_nPackScratchFirst = nFirst;   /* unk_147B54 */
+
+    nR2 = (i32)((double)(r2 >> 3) / dFactor);
+    nG2 = (i32)((double)(g2 >> 2) / dFactor);
+    nB2 = (i32)((double)(b2 >> 3) / dFactor);
+
+    if (pEnv->nFadeCount > 0) {
+        nR2 = (i32)((double)nR2 / dFade);
+        nG2 = (i32)((double)nG2 / dFade);
+        nB2 = (i32)((double)nB2 / dFade);
+    }
+
+    if (nR2 > 31) { nR2 = 31; }
+    if (nG2 > 63) { nG2 = 63; }
+    if (nB2 > 31) { nB2 = 31; }
+
+    nSecond = (u32)(nB2 + 32 * (nG2 + (nR2 << 6)));
+    s_nPackScratchSecond = nSecond; /* unk_147B3C */
+
+    return nSecond;
 }
 
 /* BlitState_Get @ 0xa479c. Returns the width of the currently loaded surface. */
