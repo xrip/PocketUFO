@@ -77,6 +77,7 @@
 #define PUFO_SAVE_TAG_ALIENS    "aliens"
 #define PUFO_SAVE_TAG_DIEDSOLDS "diedsolds"
 #define PUFO_SAVE_TAG_HIDDENSOL "hiddensold"
+#define PUFO_SAVE_TAG_V124      "v124.dat"
 #define PUFO_SAVE_TAG_FLOBJS    "flobjs"
 #define PUFO_SAVE_TAG_TGAMEDATA "tgamedata"
 #define PUFO_SAVE_TAG_OBJBEFORE "objbefore"
@@ -562,5 +563,61 @@ typedef struct TeamUnitsState {
 bool Save_WriteTeamUnits(DatFile *pDat, const TeamUnitsState *pState);
 bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
                         Soldier *const *apSoldiers, i32 nSoldierCount);
+
+/* ------------------------------------------------- the tactical session block
+ *
+ * Save_WriteTGameData @ 0x446a8. One call writes FIVE chunks in this order:
+ *
+ *     tgamedata (43 bytes), teamunits, aliens, diedsolds, hiddensold,
+ *     map, v124.dat (8 bytes)
+ *
+ * so it is the tactical half of a save, and it calls the three writers above
+ * rather than duplicating them.
+ *
+ * The tgamedata payload is 23 fields in a fixed order. The offsets come from the
+ * IDB's Map struct gaps, and two of them are already known fields, which is what
+ * pins the arithmetic: gap_86272[20] is 0x15114, the port's nMapLayers, and
+ * gap_86301[1] is 0x1517E, the light-enable gate Map_RefreshCellMeta reads.
+ *
+ * The dword at Map+0x15116 is written as four bytes and Save_ReadTGameData (0x44248, NOT ported)
+ * consumes it as four sprite-set ids: for each byte that is not 23 it loads the
+ * sprite set named `xcom_<byte>` (aXcom0 @ 0xa7be8, stride 9) through Font_LoadSpr,
+ * then rebuilds the font index. 23 means "no set for this slot". That is the only
+ * place the four faction sprite sets of a mission are recorded.
+ *
+ * The three craft-tile fields are dwords in memory and are written one byte each.
+ *
+ * v124.dat is two dwords at unk_138E6C and unk_138E70. On the read side they are
+ * optional: if the chunk is missing the original rolls them with Game_RandU16 as
+ * `rand(40) + 10` and `rand(20)`. */
+typedef struct TactSaveState {
+    u8   bUnk15110;       /* 0x15110, gap_86272[16] */
+    i32  nUnk1510C;       /* 0x1510C, gap_86272[12] */
+    u8   abUnk15111[3];   /* 0x15111..0x15113, gap_86272[17..19] */
+    u8   nMapLayers;      /* 0x15114, gap_86272[20] */
+    u8   bUnk15115;       /* 0x15115, gap_86272[21] */
+    u8   abSpriteSet[4];  /* 0x15116..0x15119, gap_86272[22]; 23 means no set */
+    u8   nMissionType;    /* 0x1511A */
+    u8   bUnk1517D;       /* 0x1517D, gap_86301[0] */
+    u8   bLightEnabled;   /* 0x1517E, gap_86301[1] */
+    i32  anUnk15188[4];   /* 0x15188, 0x1518C, 0x15190, 0x15194, pad86309a[3,7,11,15] */
+    u8   abUnk15198[3];   /* 0x15198..0x1519A, pad86309a[19,20,21] */
+    i32  nUnk151A0;       /* 0x151A0, gap_86336 */
+    i32  anCraftTile[3];  /* nCraftTileA, stride 4, written one byte each */
+    i32  nUnk138E6C;      /* v124.dat, first dword */
+    i32  nUnk138E70;      /* v124.dat, second dword */
+} TactSaveState;
+
+/* The flobjs chunk's inputs, bundled so Save_WriteTGameData can pass them on. */
+typedef struct FlobjsState {
+    const TactItem *const *apTactItems;
+    i32 nTactItemCount;
+    const ObjectRecFull *const *apObjects;
+    i32 nObjectCount;
+} FlobjsState;
+
+bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
+                         const TeamUnitsState *pRosters, const FlobjsState *pFlobjs,
+                         const MapGeom *pMap, MapCellLookup pfnLookup, void *pUser);
 
 #endif /* PUFO_SAVE_H */

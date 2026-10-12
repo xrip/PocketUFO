@@ -2117,6 +2117,40 @@ exactly where Map ends (`0x1139B8 + 152632 = 0x138DF0`), which is why Hex-Rays r
 Covered by `tests/test_save.c` (`TestTeamUnitsChunk`, 28 checks).
 
 
+### The tactical session block (write side done)
+
+`Save_WriteTGameData @ 0x446a8` is recreated in `game/pufo_save.{h,c}`. One call writes **eight**
+chunks in this order: `tgamedata`, `teamunits`, `aliens`, `diedsolds`, `hiddensold`, `map`,
+`v124.dat`. It calls the roster, flobjs and map writers above rather than duplicating them, which
+is what fixes the chunk order of a tactical save.
+
+The `tgamedata` payload is 23 fields in a fixed order, 43 bytes. The offsets come from the IDB's
+`Map` struct gaps, and two of them are already-known fields, which is what pins the arithmetic:
+`gap_86272[20]` is 0x15114, the port's `nMapLayers`, and `gap_86301[1]` is 0x1517E, the
+light-enable gate `Map_RefreshCellMeta` reads.
+
+**The dword at Map+0x15116 is four sprite-set ids.** It is written as four bytes, and the reader
+consumes each byte as a sprite-set index: for every byte that is not 23 it loads the set named
+`xcom_<byte>` through `Font_LoadSpr` and then rebuilds the font index. 23 means "no set for this
+slot". This is the only place a mission's four faction sprite sets are recorded.
+
+**The three craft-tile fields are dwords in memory and are written one byte each.**
+
+`v124.dat` is two dwords at `unk_138E6C` and `unk_138E70`. On the read side they are optional: if
+the chunk is missing the original rolls them as `Game_RandU16(40) + 10` and `Game_RandU16(20)`.
+
+`TestTGameDataWrite` compares the written payload byte for byte against a 43-byte expectation
+built by hand from the decompilation, so the field order is checked, not assumed.
+
+NOT ported, and deliberately not cited: `Save_ReadTGameData` (0x44248). It reads the 43 fields
+back, reloads the four sprite sets, calls the three roster/flobjs/map readers, then clears about
+thirty tactical state fields (`nMultiTargetCount`, `nAnimPhase`, `bPlayerInputEnabled` to 1, the
+fire-status bytes, `bEnemyTurnActive`, `bBattleEnded`, most of `apUiSlotsA`, `nUiScreen`) and sets
+`apUiSlotsA[4]` to 200 and `apUiSlotsA[10]` to 10.
+
+Covered by `tests/test_save.c` (`TestTGameDataWrite`, 18 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

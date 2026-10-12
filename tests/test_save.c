@@ -1308,6 +1308,147 @@ static void TestTeamUnitsChunk(void)
     Check(!Save_ReadTeamUnits(&dat, NULL, apSoldiers, 6), "NULL read state refused");
 }
 
+static void TestTGameDataWrite(void)
+{
+    DatFile dat;
+    TactSaveState st;
+    TeamUnitsState rosters;
+    FlobjsState flobjs;
+    MapGeom geom;
+    Soldier aSol[2];
+    Soldier *apSol[2];
+    Soldier *apXcom[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apEnemy[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apCiv[PUFO_SAVE_CIV_MAX];
+    Soldier *apHidden[PUFO_SAVE_ROSTER_MAX];
+    ObjectRecFull aObj[1];
+    const ObjectRecFull *apObjC[1];
+    TactItem aItem[1];
+    const TactItem *apItemC[1];
+    /* The 43 bytes the tgamedata payload must be, in the original's write order. */
+    static const u8 aWant[43] = {
+        0x11,             /* 0x15110 */
+        0x04, 0x03, 0x02, 0x01, /* 0x1510C as a dword */
+        0x21, 0x22, 0x23, /* 0x15111..0x15113 */
+        0x04,             /* 0x15114, the layer count */
+        0x25,             /* 0x15115 */
+        0x00, 0x05, 0x17, 0x07, /* 0x15116: four sprite-set ids, 0x17 == 23 means none */
+        0x09,             /* nMissionType */
+        0x01,             /* 0x1517D */
+        0x01,             /* the light-enable gate */
+        0xAA, 0xAA, 0xAA, 0xAA, 0x01, 0x00, 0x00, 0x00,
+        0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, /* 0x15188..0x15194 */
+        0x01, 0x02, 0x03, /* 0x15198..0x1519A */
+        0x44, 0x33, 0x22, 0x11, /* 0x151A0 */
+        0x07, 0x08, 0x09  /* the three craft tiles, one byte each */
+    };
+    u8 aGot[43];
+
+    printf("Save_WriteTGameData\n");
+
+    memset(&st, 0, sizeof(st));
+    st.bUnk15110 = 0x11;
+    st.nUnk1510C = 0x01020304;
+    st.abUnk15111[0] = 0x21;
+    st.abUnk15111[1] = 0x22;
+    st.abUnk15111[2] = 0x23;
+    st.nMapLayers = 4;
+    st.bUnk15115 = 0x25;
+    st.abSpriteSet[0] = 0;
+    st.abSpriteSet[1] = 5;
+    st.abSpriteSet[2] = 23; /* the "no set" id */
+    st.abSpriteSet[3] = 7;
+    st.nMissionType = 9;
+    st.bUnk1517D = 1;
+    st.bLightEnabled = 1;
+    st.anUnk15188[0] = (i32)0xAAAAAAAA;
+    st.anUnk15188[1] = 1;
+    st.anUnk15188[2] = 2;
+    st.anUnk15188[3] = 3;
+    st.abUnk15198[0] = 1;
+    st.abUnk15198[1] = 2;
+    st.abUnk15198[2] = 3;
+    st.nUnk151A0 = 0x11223344;
+    st.anCraftTile[0] = 7;
+    st.anCraftTile[1] = 8;
+    st.anCraftTile[2] = 9;
+    st.nUnk138E6C = 1234;
+    st.nUnk138E70 = 5678;
+
+    memset(aSol, 0, sizeof(aSol));
+    for (i32 i = 0; i < 2; ++i) {
+        apSol[i] = &aSol[i];
+        aSol[i].nSaveId = i;
+    }
+    memset(apXcom, 0, sizeof(apXcom));
+    memset(apEnemy, 0, sizeof(apEnemy));
+    memset(apCiv, 0, sizeof(apCiv));
+    memset(apHidden, 0, sizeof(apHidden));
+    apXcom[0] = &aSol[0];
+    apEnemy[0] = &aSol[1];
+
+    memset(&rosters, 0, sizeof(rosters));
+    rosters.nXcomCount = 1;
+    rosters.nEnemyCount = 1;
+    rosters.nCivilianCount = 0;
+    rosters.nHiddenCount = 0;
+    rosters.apXcomUnits = apXcom;
+    rosters.apEnemyUnits = apEnemy;
+    rosters.apCivilians = apCiv;
+    rosters.apHiddenUnits = apHidden;
+    rosters.pSelUnit = &aSol[0];
+
+    memset(aObj, 0, sizeof(aObj));
+    memset(aItem, 0, sizeof(aItem));
+    apObjC[0] = &aObj[0];
+    apItemC[0] = &aItem[0];
+    aItem[0].pObj = &aObj[0];
+    aItem[0].nRefId = 0;
+    aItem[0].nIndex = 12;
+
+    memset(&flobjs, 0, sizeof(flobjs));
+    flobjs.apTactItems = apItemC;
+    flobjs.nTactItemCount = 1;
+    flobjs.apObjects = apObjC;
+    flobjs.nObjectCount = 1;
+
+    geom.nDimX = 1;
+    geom.nDimY = 1;
+
+    Check(OpenWrite("test_tgamedata.tmp", &dat, 9), "  container opened");
+    Check(Save_WriteTGameData(&dat, &st, &rosters, &flobjs, &geom, MapTestLookup, NULL),
+          "eight chunks written");
+    DatFile_Close(&dat);
+
+    /* 43 + (125+121+244+124) + (4+17) + (2+400*43) + 8, over a header for 8 chunks. */
+    CheckEqI32(FileSizeOf(L"test_tgamedata.tmp"),
+               4 + 21 * 9 + 43 + 614 + 21 + 17202 + 8, "the whole tactical half");
+
+    Check(OpenRead("test_tgamedata.tmp", &dat), "  reopened");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TGAMEDATA), "  tgamedata found");
+    memset(aGot, 0, sizeof(aGot));
+    Check(DatFile_Read(&dat, aGot, 43), "  43 bytes read back");
+    Check(memcmp(aGot, aWant, 43) == 0, "the field order matches the original");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TEAMUNITS), "  teamunits follows");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_ALIENS), "  aliens");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_DIEDSOLDS), "  diedsolds");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_HIDDENSOL), "  hiddensold");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MAP), "  map");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_V124), "  and v124.dat last");
+    {
+        i32 aPair[2] = { 0, 0 };
+        Check(DatFile_Read(&dat, aPair, 8), "  v124.dat is two dwords");
+        CheckEqI32(aPair[0], 1234, "unk_138E6C round-trips");
+        CheckEqI32(aPair[1], 5678, "unk_138E70 round-trips");
+    }
+    DatFile_Close(&dat);
+
+    Check(!Save_WriteTGameData(NULL, &st, &rosters, &flobjs, &geom, MapTestLookup, NULL),
+          "NULL dat refused");
+    Check(!Save_WriteTGameData(&dat, &st, NULL, &flobjs, &geom, MapTestLookup, NULL),
+          "NULL rosters refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1328,6 +1469,7 @@ int main(void)
     TestFlobjsChunk();
     TestMapChunk();
     TestTeamUnitsChunk();
+    TestTGameDataWrite();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

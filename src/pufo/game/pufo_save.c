@@ -1734,3 +1734,84 @@ bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
     return ReadRosterIds(pDat, pState->apHiddenUnits, PUFO_SAVE_ROSTER_MAX,
                          apSoldiers, nSoldierCount);
 }
+
+bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
+                         const TeamUnitsState *pRosters, const FlobjsState *pFlobjs,
+                         const MapGeom *pMap, MapCellLookup pfnLookup, void *pUser)
+{
+    if (pDat == NULL || pSt == NULL || pRosters == NULL || pFlobjs == NULL || pMap == NULL) {
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_TGAMEDATA)) { /* 0x446B4 */
+        return false;
+    }
+    if (!W(pDat, &pSt->bUnk15110, 1)) { /* 0x446D0 */
+        return false;
+    }
+    if (!W(pDat, &pSt->nUnk1510C, 4)) { /* 0x446E8 */
+        return false;
+    }
+    for (u32 i = 0; i < 3; ++i) { /* 0x446FC, 0x44710, 0x44724 */
+        if (!W(pDat, &pSt->abUnk15111[i], 1)) {
+            return false;
+        }
+    }
+    if (!W(pDat, &pSt->nMapLayers, 1)) { /* 0x4473C: gap_86272[20], the layer count */
+        return false;
+    }
+    if (!W(pDat, &pSt->bUnk15115, 1)) { /* 0x44750 */
+        return false;
+    }
+    /* 0x44764: one dword written as four bytes, and the reader uses each byte as a
+     * sprite-set id, 23 meaning "no set for this slot". */
+    if (!W(pDat, pSt->abSpriteSet, 4)) {
+        return false;
+    }
+    if (!W(pDat, &pSt->nMissionType, 1)) { /* 0x44778 */
+        return false;
+    }
+    if (!W(pDat, &pSt->bUnk1517D, 1)) { /* 0x4478C */
+        return false;
+    }
+    if (!W(pDat, &pSt->bLightEnabled, 1)) { /* 0x447A0 */
+        return false;
+    }
+    for (u32 i = 0; i < 4; ++i) { /* 0x447B8, 0x447D0, 0x447E8, 0x44800 */
+        if (!W(pDat, &pSt->anUnk15188[i], 4)) {
+            return false;
+        }
+    }
+    for (u32 i = 0; i < 3; ++i) { /* 0x44818, 0x4482C, 0x44840 */
+        if (!W(pDat, &pSt->abUnk15198[i], 1)) {
+            return false;
+        }
+    }
+    if (!W(pDat, &pSt->nUnk151A0, 4)) { /* 0x44858 */
+        return false;
+    }
+    for (u32 i = 0; i < 3; ++i) { /* 0x44870, 0x44888, 0x448A0: dwords written as bytes */
+        if (!W(pDat, &pSt->anCraftTile[i], 1)) {
+            return false;
+        }
+    }
+
+    if (!Save_WriteTeamUnits(pDat, pRosters)) { /* 0x448A4 */
+        return false;
+    }
+    if (!Save_WriteFlobjs(pDat, pFlobjs->apTactItems, pFlobjs->nTactItemCount,
+                          pFlobjs->apObjects, pFlobjs->nObjectCount)) { /* 0x448A8 */
+        return false;
+    }
+    if (!Save_WriteMap(pDat, pMap, pfnLookup, pUser)) { /* 0x448AC */
+        return false;
+    }
+
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_V124)) { /* 0x448B8 */
+        return false;
+    }
+    if (!W(pDat, &pSt->nUnk138E6C, 4)) { /* 0x448D0 */
+        return false;
+    }
+    return W(pDat, &pSt->nUnk138E70, 4); /* 0x448E4 */
+}
