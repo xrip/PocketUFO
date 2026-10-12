@@ -5856,8 +5856,17 @@ only because the compiler walks `apObjects` as `Map + 4*index`.
 That byte at 0xC6 was `gap_B9[13]` in one place and `+198` in another depending on which base
 register the code used. It is now named `bCargoSize` in `ObjectRecFull`.
 
-`apObjects` sits at **Map + 0x120** — `Craft_LoadStoresFromBase`'s default case makes that explicit
-with the folded `4*nSrc + 1128888`.
+`apObjects` sits at **Map + 0x108**, not 0x120 — an earlier note here said 0x120 and was wrong.
+The ARM settles it: `Craft_LoadStoresFromBase` loads `R4 = apCraft - 0x10AC`, which is just `&Map`,
+then does `ADD R3, R4, R2, LSL#2` and `LDR R3, [R3, #0x108]` — that is `Map + 4*nIndex + 0x108`, so
+index 0 of `apObjects` is at 0x108. `Base_CraftWeaponItemId` agrees from the other side: its arms
+read `[R0, #0x1E8]`, `#0x1EC`, `#0x1F0` and `#0x2AC` for object records 56, 57, 58 and 105, and
+488 - 4*56 = 264 = 0x108.
+
+The three arrays sit side by side: `apObjects` at **Map + 0x108** (256 pointers), `apCraft` at
+**Map + 0x10AC**, `apBases` at **Map + 0x1174**. The folded constants that look like large absolute
+addresses (`4*nSrc + 1128888`, `4*(1067 + nSrc)`) are the compiler folding the Map base into the
+index — 4*1067 = 4268 = 0x10AC, which is why `apCraft[n]` appears as an offset of 1067 dwords.
 
 ### The chain above them (mapped in the IDB, not yet ported)
 
