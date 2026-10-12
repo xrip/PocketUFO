@@ -703,6 +703,79 @@ static void TestLabChain(void)
 #undef L_N
 }
 
+static void TestRemainingNeededPasses(void)
+{
+    printf("LivingQuarters / Stores / PsiLab needed passes\n");
+    static u8 grid[700];
+
+#define K_T(c, r) grid[480 + 6 * (c) + (r)]
+#define K_N(c, r) grid[444 + 6 * (c) + (r)]
+
+    /* Living quarters is kind 1 with the usual divisor of 50. */
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 1;
+    K_T(1, 0) = 3;
+    CheckEqI32(Base_UpdateLivingQuartersNeeded(grid, 0, 1), 6, "living quarters returns 6");
+    CheckEqI32(K_N(0, 0), 1, "the kind-1 cell is marked");
+    CheckEqI32(K_N(1, 0), 0, "the workshop in the same row is not");
+
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 1;
+    K_T(1, 0) = 1;
+    Base_UpdateLivingQuartersNeeded(grid, 0, 50);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0), 2, "a total of 50 buys two living-quarter cells");
+
+    /* Stores is kind 6 and the only pass with a divisor of 300. */
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 6;
+    K_T(1, 0) = 6;
+    Base_UpdateStoresNeeded(grid, 0, 50);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0), 1,
+               "a total of 50 buys only one storage cell, the divisor is 300");
+
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 6;
+    K_T(1, 0) = 6;
+    Base_UpdateStoresNeeded(grid, 0, 300);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0), 2, "a total of 300 buys two");
+
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 6;
+    CheckEqI32(Base_UpdateStoresNeeded(grid, 0, 0), 6, "a zero total marks nothing");
+    CheckEqI32(K_N(0, 0), 0, "the storage cell stays unmarked");
+
+    /* Psi lab is kind 8 with a divisor of 10, the most sensitive of the five. */
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 8;
+    K_T(1, 0) = 8;
+    Base_UpdatePsiLabNeeded(grid, 0, 10);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0), 2, "ten psi soldiers buy two lab cells");
+
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 8;
+    K_T(1, 0) = 8;
+    Base_UpdatePsiLabNeeded(grid, 0, 1);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0), 1, "one psi soldier still buys one");
+
+    /* The five passes do not interfere: each only writes its own kind. */
+    memset(grid, 0, sizeof(grid));
+    K_T(0, 0) = 1;
+    K_T(1, 0) = 2;
+    K_T(2, 0) = 3;
+    K_T(3, 0) = 6;
+    K_T(4, 0) = 8;
+    Base_UpdateLivingQuartersNeeded(grid, 0, 500);
+    Base_UpdateLabNeeded(grid, 0, 500);
+    Base_UpdateWorkshopNeeded(grid, 0, 500);
+    Base_UpdateStoresNeeded(grid, 0, 500);
+    Base_UpdatePsiLabNeeded(grid, 0, 500);
+    CheckEqI32(K_N(0, 0) + K_N(1, 0) + K_N(2, 0) + K_N(3, 0) + K_N(4, 0), 5,
+               "all five kinds claimed once each, no cross-marking");
+
+#undef K_T
+#undef K_N
+}
+
 int main(void)
 {
     TestTickShips();
@@ -716,6 +789,7 @@ int main(void)
     TestActiveManuf();
     TestWorkshopNeeded();
     TestLabChain();
+    TestRemainingNeededPasses();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

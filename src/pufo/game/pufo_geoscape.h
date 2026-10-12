@@ -280,6 +280,31 @@ i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveMan
  * loop-counter residue of 6. */
 i32 Base_UpdateLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveResearch);
 
+/* ------------------------------------------------- the other three needed passes
+ *
+ * Evidence: Base_UpdateLivingQuartersNeeded @ 0x65e24, Base_UpdateStoresNeeded @ 0x65d44,
+ * Base_UpdatePsiLabNeeded @ 0x65fc8.
+ *
+ * All five needed passes are the same machine. Only the cell kind and the divisor change:
+ *
+ *     pass                kind   divisor   budget total comes from
+ *     LivingQuarters        1        50     CalcOccupiedSpace + CountOutboundTransferSpace
+ *     Lab                   2        50     CountActiveResearch
+ *     Workshop              3        50     CountActiveManuf
+ *     Stores                6       300     CalcStorageUsed + CountItemQtyAcrossBases
+ *     PsiLab                8        10     CountPsiSoldiers
+ *
+ * That table is also the cell-kind map for fac[nBase].facType: 1 living quarters, 2 lab,
+ * 3 workshop, 6 stores, 8 psi lab, and 4, 5 and 9 the three states the site-state
+ * classifier reads.
+ *
+ * Each one discards its own Base_Calc*Cap call, and each returns the same loop-counter
+ * residue of 6. The budget totals come from functions that are not ported yet, so the port
+ * takes each total as an argument, exactly as it does for the quantity columns. */
+i32 Base_UpdateLivingQuartersNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nSpaceNeeded);
+i32 Base_UpdateStoresNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nStoresNeeded);
+i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;

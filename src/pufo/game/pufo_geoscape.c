@@ -420,11 +420,11 @@ static i32 FacilityMarkNeeded(u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 
     return nCol; /* always 6, the inner counter's final value */
 }
 
-/* A budget of one per 50 units, plus one, and nothing at all when the total is zero.
- * Both needed passes compute it the same way. */
-static i32 FacilityBudget50(i32 nTotal)
+/* A budget of one per nPer units, plus one, and nothing at all when the total is zero.
+ * All five needed passes compute it the same way and only the divisor differs. */
+static i32 FacilityBudget(i32 nTotal, i32 nPer)
 {
-    return (nTotal != 0) ? (nTotal / 50 + 1) : 0;
+    return (nTotal != 0) ? (nTotal / nPer + 1) : 0;
 }
 
 /* Base_UpdateWorkshopNeeded @ 0x65bb4. Marks the first N workshop cells as needed.
@@ -433,7 +433,7 @@ static i32 FacilityBudget50(i32 nTotal)
 i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf)
 {
     return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 3,
-                              FacilityBudget50(nActiveManuf)); /* 0x65C78 */
+                              FacilityBudget(nActiveManuf, 50)); /* 0x65C78 */
 }
 
 /* Base_UpdateLabNeeded @ 0x65c7c. The same pass over lab cells. It discards
@@ -441,5 +441,33 @@ i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveMan
 i32 Base_UpdateLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveResearch)
 {
     return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 2,
-                              FacilityBudget50(nActiveResearch)); /* 0x65D40 */
+                              FacilityBudget(nActiveResearch, 50)); /* 0x65D40 */
+}
+
+/* Base_UpdateLivingQuartersNeeded @ 0x65e24. Kind 1, divisor 50. It discards
+ * Base_CalcLivingQuartersCap at 0x65E30, and its total is Base_CalcOccupiedSpace plus
+ * Base_CountOutboundTransferSpace, neither of which is ported, so the sum arrives here. */
+i32 Base_UpdateLivingQuartersNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nSpaceNeeded)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 1,
+                              FacilityBudget(nSpaceNeeded, 50)); /* 0x65F00 */
+}
+
+/* Base_UpdateStoresNeeded @ 0x65d44. Kind 6, and the only pass with a divisor of 300 rather
+ * than 50, so storage needs six times as much pressure before a cell is marked. It discards
+ * Base_CalcStoresCapacity at 0x65D50, and its total is Base_CalcStorageUsed plus
+ * Base_CountItemQtyAcrossBases. */
+i32 Base_UpdateStoresNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nStoresNeeded)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 6,
+                              FacilityBudget(nStoresNeeded, 300)); /* 0x65E20 */
+}
+
+/* Base_UpdatePsiLabNeeded @ 0x65fc8. Kind 8, and the only pass with a divisor of 10: one
+ * psi-soldier per lab cell is enough to claim it. It discards Base_CalcPsiLabCap at 0x65FD4
+ * and takes its total from Base_CountPsiSoldiers. */
+i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 8,
+                              FacilityBudget(nPsiSoldiers, 10)); /* 0x6608C */
 }
