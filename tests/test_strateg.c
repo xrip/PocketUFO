@@ -1055,6 +1055,247 @@ static void TestStrategListAlloc(void)
     CheckEqI32(list.nCount, 0, "StrategList_Clear empties the list");
 }
 
+/* ------------------------------------------------------------------ mission machine */
+
+static i32 g_nLineCalls, g_nLineFlag, g_nLineArg2;
+static i32 g_nInterceptCalls, g_nInterceptClass;
+static i32 g_nContactCalls;
+
+static void MissionLineHook(i32 nFlag, i32 nArg2, i32 nArg3, void *pUser)
+{
+    (void)nArg3; (void)pUser;
+    ++g_nLineCalls;
+    g_nLineFlag = nFlag;
+    g_nLineArg2 = nArg2;
+}
+
+static i32 MissionInterceptHook(i32 bCraftClass, void *pUser)
+{
+    (void)pUser;
+    ++g_nInterceptCalls;
+    g_nInterceptClass = bCraftClass;
+    return 0;
+}
+
+static void MissionContactHook(StrategItem *pUfo, void *pUser)
+{
+    (void)pUfo; (void)pUser;
+    ++g_nContactCalls;
+}
+
+static void TestSpawnMissionSite(void)
+{
+    static PadImage g_Map;
+    static u8 g_aTiles[400];
+    static SmapView g_View;
+    static PtrArray g_List;
+    static i32 g_Seed;
+    static BaseRec g_aBases[2];
+    static BaseRec *g_apBases[2];
+    static MissionSiteRecord g_aSites[4];
+    static u8 g_aGrid[700];
+    static GameTime g_Time;
+    static GeoscapeWorld g_World;
+    static i32 g_Radar;
+    static SpawnMissionCtx g_Ctx;
+    StrategItem ufo;
+
+    printf("Geoscape_SpawnMissionSite\n");
+
+    memset(g_aTiles, 1, sizeof(g_aTiles));   /* every tile is dry ground */
+    memset(&g_Map, 0, sizeof(g_Map));
+    g_Map.uWidth = 20;
+    g_Map.pData = g_aTiles;
+
+    memset(&g_View, 0, sizeof(g_View));
+    g_View.nMapW = 800;
+    g_View.nMapH = 400;
+
+    memset(g_aSites, 0, sizeof(g_aSites));
+    g_aSites[0].x = 111; g_aSites[0].y = 222;
+    g_aSites[1].x = -30; g_aSites[1].y = 799;
+
+    memset(g_aBases, 0, sizeof(g_aBases));
+    g_aBases[0].nUnk8 = 40;  g_aBases[0].nUnk12 = 50;
+    g_aBases[1].nUnk8 = 600; g_aBases[1].nUnk12 = 700;
+    g_apBases[0] = &g_aBases[0];
+    g_apBases[1] = &g_aBases[1];
+
+    memset(&g_World, 0, sizeof(g_World));
+    g_World.pTime = &g_Time;
+    g_World.nTickSeconds = 60;
+
+    PtrArray_ctor(&g_List);
+
+    memset(&g_Ctx, 0, sizeof(g_Ctx));
+    g_Ctx.pList = &g_List;
+    g_Ctx.pnSeed = &g_Seed;
+    g_Ctx.pView = &g_View;
+    g_Ctx.pTilemap = &g_Map;
+    g_Ctx.apBases = g_apBases;
+    g_Ctx.nBaseCount = 1;
+    g_Ctx.apSites = g_aSites;
+    g_Ctx.nSiteCount = 2;
+    g_Ctx.abFacilityGrid = g_aGrid;
+    g_Ctx.pnRadarPulseTimer = &g_Radar;
+    g_Ctx.pWorld = &g_World;
+    g_Ctx.hooks.pfnAppendLine = MissionLineHook;
+    g_Ctx.hooks.pfnAddIntercept = MissionInterceptHook;
+    g_Ctx.hooks.pfnContactScreen = MissionContactHook;
+
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1;
+    ufo.bActive = 1;
+    ufo.bCraftClass = 2;
+    ufo.bRace = 3;
+    ufo.bVisible = 1;
+    ufo.nX = 100;
+    ufo.nY = 100;
+
+    /* ---- starting a subtype */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, 4, &g_Ctx), 0, "starting a subtype returns the travel result");
+    CheckEqI32(ufo.nMissionSub, 4, "the item now carries subtype 4");
+    CheckEqI32(ufo.nPhase, 4, "subtype 4 starts at phase 4");
+    CheckEqI32(ufo.nTargetX, 0, "starting clears the target x");
+    CheckEqI32(ufo.nTargetY, 0, "and the target y");
+
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    Geoscape_SpawnMissionSite(&ufo, 0, &g_Ctx);
+    CheckEqI32(ufo.nPhase, 3, "subtype 0 is the one that starts at phase 3, not 4");
+
+    /* An argument outside -1..7 does nothing at all and returns argument + 1. */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nPhase = 5;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, 8, &g_Ctx), 9, "an unknown argument returns argument + 1");
+    CheckEqI32(ufo.nPhase, 5, "and the item is untouched");
+
+    /* ---- gate 2: the dwell and the teleport */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 3;
+    ufo.nPhase = 3;
+    ufo.nX = 10; ufo.nY = 10;
+    ufo.nTargetX = 300; ufo.nTargetY = 200;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx), 2, "gate 2 returns the phase it left the gate at");
+    CheckEqI32(ufo.nX, 300, "a target inside the viewport teleports the craft onto it");
+    CheckEqI32(ufo.nY, 200, "in both axes");
+    CheckEqI32(ufo.nTimer, 720, "subtype 3 dwells 720");
+    CheckEqI32(ufo.nPhase, 2, "and drops to phase 2");
+
+    /* A target outside the viewport still sets the dwell, but the craft does not move. */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 1; ufo.nPhase = 3; ufo.nX = 10; ufo.nY = 10;
+    ufo.nTargetX = 5000; ufo.nTargetY = 200;
+    Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+    CheckEqI32(ufo.nX, 10, "a target past nMapW does not teleport");
+    CheckEqI32(ufo.nTimer, 200, "but the dwell is still set");
+
+    /* ---- gate 3, subtype 5: the intercept mission */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bRace = 7; ufo.bVisible = 1;
+    ufo.nMissionSub = 5; ufo.nPhase = 2; ufo.nTimer = 0; ufo.nTargetIdx = 3;
+    g_nInterceptCalls = 0; g_nLineCalls = 0; g_Radar = 0; g_Time.bPaused = 0;
+    Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+    CheckEqI32(g_nInterceptCalls, 1, "subtype 5 at phase 2 raises an intercept mission");
+    CheckEqI32(g_nInterceptClass, 2, "with the UFO's craft class");
+    CheckEqI32(g_nLineFlag, 16, "and appends the radar line, flag 16");
+    CheckEqI32(g_nLineArg2, 3, "carrying the site-table index it chose");
+    CheckEqI32(g_Radar, 250, "and arms the radar pulse timer");
+    CheckEqI32(g_Time.bPaused, 1, "and pauses the clock");
+
+    /* ---- gate 3, subtype 4: the alien site, tagged with the UFO's race */
+    {
+        StrategItem *pSite;
+        i32 nBefore = g_List.nCount;
+
+        memset(&ufo, 0, sizeof(ufo));
+        ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bRace = 5; ufo.bVisible = 1;
+        ufo.nMissionSub = 4; ufo.nPhase = 2; ufo.nTimer = 0; ufo.nTargetIdx = 11;
+        ufo.nX = 50; ufo.nY = 60;
+        Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+        Check(g_List.nCount > nBefore, "subtype 4 at phase 2 puts an alien site on the list");
+        pSite = (StrategItem *)PtrArray_Get(&g_List, g_List.nCount - 1);
+        if (pSite != NULL) {
+            CheckEqI32(pSite->nType, 0, "the new item is a site, nType 0");
+            CheckEqI32(pSite->bRace, 5, "and it is stamped with the UFO's race");
+            CheckEqI32(pSite->nTargetIdx, 11, "and with the UFO's target index");
+        }
+    }
+
+    /* ---- gate 3, subtype 6: the base-contact screen */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 6; ufo.nPhase = 2; ufo.nTimer = 0;
+    g_nContactCalls = 0;
+    Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+    CheckEqI32(g_nContactCalls, 1, "subtype 6 at phase 2 opens the base-contact screen");
+
+    /* ---- gate 1, subtype 6: a base with no free kind-10 cell is accepted */
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 6; ufo.nPhase = 4; ufo.nX = 10; ufo.nY = 10;
+    Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+    CheckEqI32(ufo.nTargetX, 40, "the base's own coordinates become the target");
+    CheckEqI32(ufo.nTargetY, 50, "in both axes");
+    CheckEqI32(ufo.nTargetIdx, 0, "and the base index is remembered");
+
+    /* A base that DOES have a free kind-10 cell is rejected, and with only one base in play the
+     * search exhausts its 20 attempts and gives up before the gates. */
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    g_aGrid[480] = 10;   /* base 0, cell (0,0), kind 10, build days zero: free */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 6; ufo.nPhase = 4; ufo.nTimer = 0; ufo.nX = 10; ufo.nY = 10;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx), 4,
+               "exhausting the base search returns the phase unchanged");
+    CheckEqI32(ufo.nPhase, 4, "and the gates never run");
+    CheckEqI32(ufo.nTimer, 0, "so no dwell was set");
+
+    /* ---- gate 1, subtype 7: a random active site */
+    {
+        StrategItem *pAdded = StrategList_AddItem(&g_List, &g_Seed, 0, 0, 1, 0,
+                                                  777, 321, 4242, 0);
+        (void)pAdded;
+        memset(&ufo, 0, sizeof(ufo));
+        ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+        ufo.nMissionSub = 7; ufo.nPhase = 4; ufo.nX = 10; ufo.nY = 10;
+        Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+        CheckEqI32(ufo.nTargetX, 777, "subtype 7 targets an active type-0 item");
+        CheckEqI32(ufo.nTargetY, 321, "and takes its coordinates");
+    }
+
+    /* ---- the shared tail */
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 0;
+    ufo.nMissionSub = 9;   /* not a subtype the machine knows */
+    ufo.nPhase = 1; ufo.nTimer = 0;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx), 9,
+               "an unknown stored subtype returns the stored subtype, not nPhase");
+    CheckEqI32(ufo.nPhase, 1, "and skips the decrement the shared tail would apply");
+    CheckEqI32(ufo.bDone, 0, "so bDone is not set here");
+
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 0;
+    ufo.nMissionSub = 1; ufo.nPhase = 1; ufo.nTimer = 0;
+    CheckEqI32(Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx), 1,
+               "the tail returns nPhase from before the decrement");
+    CheckEqI32(ufo.nPhase, 0, "and then drops it to 0");
+    CheckEqI32(ufo.bDone, 1, "a finished mission nobody can see is marked done");
+
+    memset(&ufo, 0, sizeof(ufo));
+    ufo.nType = 1; ufo.bActive = 1; ufo.bCraftClass = 2; ufo.bVisible = 1;
+    ufo.nMissionSub = 1; ufo.nPhase = 1; ufo.nTimer = 0;
+    Geoscape_SpawnMissionSite(&ufo, -1, &g_Ctx);
+    CheckEqI32(ufo.bDone, 0, "a visible craft is never marked done");
+
+    PtrArray_DeleteAll(&g_List);
+}
+
 int main(void)
 {
     TestCountAndFind();
@@ -1072,6 +1313,7 @@ int main(void)
     TestAddAlienSiteAndTravel();
     TestMaybeSpawnCraft();
     TestRemoveAtAndPurge();
+    TestSpawnMissionSite();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

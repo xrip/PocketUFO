@@ -1,6 +1,8 @@
 /* pufo_strateg.c - see pufo_strateg.h for the evidence map. */
 #include "game/pufo_strateg.h"
 #include "util/pufo_rand.h"
+#include "game/pufo_geoscape.h"   /* Base_FindFacilityCell */
+#include "game/pufo_ship.h"      /* BaseRec */
 #include "util/pufo_ptrarray.h"
 
 #include <math.h>
@@ -873,4 +875,319 @@ i32 StrategList_FindIdxForShip(const StrategList *pList,
         }
     }
     return -1;
+}
+
+
+
+/* ------------------------------------------------- the UFO mission machine */
+
+/* The dwell each subtype sets when it arrives: gate 2 writes it and drops nPhase to 2. */
+static const i32 g_anMissionDwell[8] = { 0, 200, 200, 720, 2880, 60, 1, 720 };
+
+/* Move the craft to a fresh random point. In this path the y roll is drawn FIRST; the
+ * land-search loop draws x first, and the original keeps that difference, so the port does too. */
+static void MissionRollTravel(StrategItem *pUfo, const SpawnMissionCtx *pCtx, i32 bC)
+{
+    i32 nY = (i32)Game_RandU16(0x168) + 20;
+    i32 nX = (i32)Game_RandU16(0x2F8) + 20;
+
+    StrategEntry_InitTravel(pUfo, pUfo->nX, pUfo->nY, nX, nY, 0, 0, pUfo->bVisible, bC, 0,
+                            pCtx->pWorld, pCtx->nGameTotalSec);
+}
+
+static void MissionTravelToTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx, i32 bC)
+{
+    StrategEntry_InitTravel(pUfo, pUfo->nX, pUfo->nY, pUfo->nTargetX, pUfo->nTargetY,
+                            0, 0, pUfo->bVisible, bC, 0, pCtx->pWorld, pCtx->nGameTotalSec);
+}
+
+/* Subtypes 1, 2 and 4 re-roll until the tile is not 255, so their target is always dry ground. */
+static void MissionPickLandTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx)
+{
+    i32 nX, nY;
+
+    do {
+        nX = (i32)Game_RandU16(0x2F8) + 20;
+        nY = (i32)Game_RandU16(0x168) + 20;
+    } while (Tilemap_GetAt(pCtx->pTilemap, nX, nY) == 255);
+
+    pUfo->nTargetX = nX;
+    pUfo->nTargetY = nY;
+}
+
+/* Subtypes 3 and 5 take a random entry from the 56-record mission-site table. Subtype 5 also
+ * remembers which one, because its landing effect reports that index to the radar message. */
+static void MissionPickSiteTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx, i32 bKeepIdx)
+{
+    i32 nIdx = (i32)Game_RandU16(0x38);
+
+    if (nIdx >= pCtx->nSiteCount) {
+        /* Deviation: the original never bounds the roll against its 56 records. */
+        nIdx = pCtx->nSiteCount - 1;
+    }
+    if (bKeepIdx) {
+        pUfo->nTargetIdx = nIdx;
+    }
+    pUfo->nTargetX = pCtx->apSites[nIdx].x;
+    pUfo->nTargetY = pCtx->apSites[nIdx].y;
+}
+
+/* Gate 2: teleport onto the target when it lies inside the current viewport, then set the dwell. */
+static void MissionDwell(StrategItem *pUfo, const SpawnMissionCtx *pCtx, u8 bSub)
+{
+    if (Abs32(pUfo->nTargetX) <= pCtx->pView->nMapW &&
+        Abs32(pUfo->nTargetY) <= pCtx->pView->nMapH) {
+        pUfo->nX = pUfo->nTargetX;
+        pUfo->nY = pUfo->nTargetY;
+    }
+    pUfo->nTimer = g_anMissionDwell[bSub];
+    pUfo->nPhase = 2;
+}
+
+/* Subtypes 4 and 5 both stamp the strateg item they just created with the UFO's race and target
+ * index. The original re-reads the list count before each store; one read is enough here. */
+static void MissionTagLastItem(StrategItem *pUfo, const SpawnMissionCtx *pCtx)
+{
+    StrategItem *pSite;
+    i32 nCount = PtrArray_GetCount(pCtx->pList);
+
+    if (nCount <= 0) {
+        return;
+    }
+    pSite = (StrategItem *)PtrArray_Get(pCtx->pList, nCount - 1);
+    if (pSite == NULL) {
+        return;
+    }
+    pSite->bRace = pUfo->bRace;            /* 0x7EB48, byte +112 */
+    pSite->nTargetIdx = pUfo->nTargetIdx;  /* 0x7EB64, dword +33 */
+}
+
+/* Gate 3's landing effect, which only runs at nPhase 2. */
+static void MissionLanding(StrategItem *pUfo, const SpawnMissionCtx *pCtx, u8 bSub)
+{
+    if (pUfo->nPhase != 2) {
+        return;
+    }
+
+    if (bSub == 4) {
+        i32 nRoll = (i32)Game_RandU16(0x14) + 1;
+
+        if (nRoll <= 16) {
+            StrategList_AddAlienSiteIfValid(pCtx->pList, pCtx->pnSeed, pCtx->pView->nMode,
+                                            pCtx->pTilemap, pUfo->nX, pUfo->nY, 0);
+        } else {
+            StrategList_AddAlienSiteIfValid(pCtx->pList, pCtx->pnSeed, pCtx->pView->nMode,
+                                            pCtx->pTilemap, pUfo->nX, pUfo->nY, 1);
+            if (pCtx->hooks.pfnAppendLine != NULL) {
+                pCtx->hooks.pfnAppendLine(60, PtrArray_GetCount(pCtx->pList) - 1, 0,
+                                          pCtx->hooks.pUser);
+            }
+            pCtx->pWorld->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac, 0x7EB14 */
+        }
+        MissionTagLastItem(pUfo, pCtx);
+        return;
+    }
+
+    if (bSub == 5) {
+        if (pCtx->hooks.pfnAddIntercept != NULL) {
+            pCtx->hooks.pfnAddIntercept(pUfo->bCraftClass, pCtx->hooks.pUser);
+        }
+        MissionTagLastItem(pUfo, pCtx);
+        if (pCtx->hooks.pfnAppendLine != NULL) {
+            pCtx->hooks.pfnAppendLine(16, pUfo->nTargetIdx, 0, pCtx->hooks.pUser);
+        }
+        if (pCtx->pnRadarPulseTimer != NULL) {
+            *pCtx->pnRadarPulseTimer = 250; /* 0x7ED34 */
+        }
+        pCtx->pWorld->pTime->bPaused = 1; /* 0x7ED3C */
+        return;
+    }
+
+    if (bSub == 6 && pCtx->hooks.pfnContactScreen != NULL) {
+        pCtx->hooks.pfnContactScreen(pUfo, pCtx->hooks.pUser);
+    }
+}
+
+/* Gates 2 and 3, shared by every subtype that reaches them. */
+static void MissionPhaseGates(StrategItem *pUfo, const SpawnMissionCtx *pCtx, u8 bSub)
+{
+    if (pUfo->nPhase == 3) {
+        MissionDwell(pUfo, pCtx, bSub);
+    }
+    if (pUfo->nPhase < 3 && pUfo->nTimer == 0) {
+        MissionLanding(pUfo, pCtx, bSub);
+        MissionRollTravel(pUfo, pCtx, bSub);
+    }
+}
+
+/* Subtype 6 wants a base with NO free cell of facility kind 10. It picks a base, and if that one
+ * has a free cell it tries again, up to 20 times. On the twentieth attempt it gives up on bases
+ * entirely and travels to a random point instead. */
+static bool MissionPickBaseTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx)
+{
+    i32 nAttempt = 0;
+
+    for (;;) {
+        BaseRec *pBase;
+        i32 nBase = (i32)Game_RandU16((u16)(i8)pCtx->nBaseCount);
+
+        if (nBase < 0 || nBase >= pCtx->nBaseCount) {
+            return false; /* deviation: the original indexes apBases with no bound */
+        }
+        pBase = pCtx->apBases[nBase];
+        if (pBase == NULL) {
+            return false;
+        }
+
+        pUfo->nTargetIdx = nBase;
+        pUfo->nTargetX = pBase->nUnk8;
+        pUfo->nTargetY = pBase->nUnk12;
+
+        if (Base_FindFacilityCell(pCtx->abFacilityGrid, nBase, 10) == 0) {
+            return true;
+        }
+        ++nAttempt;
+        if (nAttempt == 20) {
+            return false;
+        }
+    }
+}
+
+/* Subtype 7 targets a random ACTIVE type-0 item. The original collects candidate indices into a
+ * 100-entry stack array, so a list with more than 100 candidates silently truncates. */
+static bool MissionPickActiveSiteTarget(StrategItem *pUfo, const SpawnMissionCtx *pCtx)
+{
+    i32 aCandidates[100];
+    i32 nFound = 0;
+    i32 nLimit = 100;
+    i32 nPick;
+    StrategItem *pTarget;
+    i32 i;
+
+    for (i = 0; i < PtrArray_GetCount(pCtx->pList); ++i) {
+        StrategItem *pItem = (StrategItem *)PtrArray_Get(pCtx->pList, i);
+
+        if (pItem != NULL && pItem->nType == 0 && pItem->bActive == 1) {
+            if (nFound < nLimit) {
+                aCandidates[nFound] = i;
+            }
+            ++nFound;
+        }
+    }
+
+    if (nFound == 0) {
+        return false;
+    }
+    if (nFound < nLimit) {
+        nLimit = nFound;
+    }
+
+    nPick = aCandidates[Game_RandU16((u16)nLimit)];
+    pTarget = (StrategItem *)PtrArray_Get(pCtx->pList, nPick);
+    if (pTarget == NULL) {
+        return false;
+    }
+
+    pUfo->nTargetIdx = nPick;
+    pUfo->nTargetX = pTarget->nX;
+    pUfo->nTargetY = pTarget->nY;
+    return true;
+}
+
+i32 Geoscape_SpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, const SpawnMissionCtx *pCtx)
+{
+    u8 bSub;
+    i32 nResult;
+
+    if (pUfo == NULL || pCtx == NULL || pCtx->pList == NULL || pCtx->pView == NULL ||
+        pCtx->pTilemap == NULL || pCtx->apSites == NULL || pCtx->pWorld == NULL ||
+        pCtx->pWorld->pTime == NULL) {
+        return 0;
+    }
+
+    /* ---- start a subtype: the argument is 0..7 */
+    if (nMissionSub >= 0 && nMissionSub <= 7) {
+        MissionRollTravel(pUfo, pCtx, nMissionSub);
+        pUfo->nMissionSub = (u8)nMissionSub;
+        pUfo->nPhase = (nMissionSub == 0) ? 3 : 4;
+        pUfo->nTargetX = 0;
+        pUfo->nTargetY = 0;
+        return 0; /* the original returns StrategEntry_InitTravel's value */
+    }
+
+    if (nMissionSub != -1) {
+        return nMissionSub + 1; /* 0x7E4B0 with nothing done */
+    }
+
+    /* ---- advance the mission already stored in the item */
+    bSub = pUfo->nMissionSub;
+    nResult = (i32)(char)pUfo->nMissionSub; /* 0x7E4EC */
+
+    switch (bSub) {
+    case 0:
+        MissionRollTravel(pUfo, pCtx, 0);
+        nResult = pUfo->nPhase;
+        if (nResult > 0) {
+            pUfo->nPhase = nResult - 1; /* this path skips the nTimer test the tail applies */
+        }
+        goto LABEL_102;
+
+    case 1:
+    case 2:
+    case 4:
+        if (pUfo->nPhase > 3) {
+            MissionPickLandTarget(pUfo, pCtx);
+            MissionTravelToTarget(pUfo, pCtx, bSub);
+        }
+        MissionPhaseGates(pUfo, pCtx, bSub);
+        goto LABEL_99;
+
+    case 3:
+    case 5:
+        if (pUfo->nPhase > 3) {
+            MissionPickSiteTarget(pUfo, pCtx, bSub == 5);
+            MissionTravelToTarget(pUfo, pCtx, bSub);
+        }
+        MissionPhaseGates(pUfo, pCtx, bSub);
+        goto LABEL_99;
+
+    case 6:
+        if (pUfo->nPhase > 3) {
+            if (MissionPickBaseTarget(pUfo, pCtx)) {
+                MissionTravelToTarget(pUfo, pCtx, 6);
+            } else {
+                MissionRollTravel(pUfo, pCtx, 0);
+                return pUfo->nPhase; /* the give-up path returns before the gates */
+            }
+        }
+        MissionPhaseGates(pUfo, pCtx, bSub);
+        goto LABEL_99;
+
+    case 7:
+        if (pUfo->nPhase > 3) {
+            if (MissionPickActiveSiteTarget(pUfo, pCtx)) {
+                MissionTravelToTarget(pUfo, pCtx, 7);
+            } else {
+                MissionRollTravel(pUfo, pCtx, 0);
+            }
+        }
+        MissionPhaseGates(pUfo, pCtx, bSub);
+        goto LABEL_99;
+
+    default:
+        goto LABEL_102; /* an unknown stored subtype skips the decrement entirely */
+    }
+
+LABEL_99:
+    /* The returned value is nPhase as it was BEFORE the decrement. */
+    nResult = pUfo->nPhase;
+    if (nResult > 0 && pUfo->nTimer == 0) {
+        pUfo->nPhase = nResult - 1;
+    }
+
+LABEL_102:
+    if (pUfo->nPhase == 0 && pUfo->bVisible == 0) {
+        pUfo->bDone = 1;
+    }
+    return nResult;
 }

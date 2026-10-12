@@ -149,12 +149,6 @@ i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeapo
  *
  * Deviation: the original indexes the table with the sign-extended char and never bounds it, so
  * a negative craft class reads before the table. The port refuses and adds nothing. */
-typedef struct MissionSiteRecord {
-    i16 x;      /* +0x00 */
-    i16 y;      /* +0x02 */
-    i16 agap[10];
-} MissionSiteRecord;   /* 24 bytes, the stride the original multiplies by 0x18 */
-
 typedef struct InterceptMissionCtx {
     PtrArray *pList;                  /* the strateg list, 0x186534 */
     i32 *pnZoomMode;                  /* the viewport's nMode, read live by AddItem */

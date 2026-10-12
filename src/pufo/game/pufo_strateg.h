@@ -77,6 +77,16 @@ typedef struct StrategList {
 
 /* The pieces of the geoscape world the contact updates reach into. The ship
  * array is pCtxBase.apCraft (count byte at pCtxBase+0x1194). */
+/* The mission-site table at 0x1865C8: 24-byte records, indexed by craft class in
+ * BasePlaneScreen_AddInterceptMission @ 0x7de14 and by a random roll of 56 in
+ * Geoscape_SpawnMissionSite @ 0x7e49c. x and y are SIGNED 16-bit; both loads are LDRSH. The
+ * remaining 20 bytes of each record are not touched by either caller. */
+typedef struct MissionSiteRecord {
+    i16 x;      /* +0x00 */
+    i16 y;      /* +0x02 */
+    i16 agap[10];
+} MissionSiteRecord;   /* 24 bytes, the stride the original multiplies by 0x18 */
+
 typedef struct GeoscapeWorld {
     Ship *const *apCraft;
     u8    nShipCount;
@@ -321,6 +331,8 @@ bool StrategList_AddAlienSiteIfValid(PtrArray *pList, i32 *pnSeed, i32 nZoomMode
 i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
                             i32 nFlag, i32 bA, i32 bB, i32 bC, i32 bCopyStart,
                             const GeoscapeWorld *pWorld, i32 nGameTotalSec);
+
+
 
 /* StrategList_MaybeSpawnCraft_Process @ 0x7e420: optionally put one alien craft
  * at a random land position and roll its stats, then always run the geoscape
@@ -582,5 +594,74 @@ bool Smap_OnZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *
  * for both. */
 i32 StrategList_FindIdxForShip(const StrategList *pList,
                                const GeoscapeWorld *pWorld, i32 nShipIdx);
+
+/* ------------------------------------------------- the UFO mission machine
+ *
+ * Evidence: Geoscape_SpawnMissionSite @ 0x7e49c.
+ *
+ * The outer switch is on the ARGUMENT, not on the item. -1 means "advance the mission already
+ * stored in pUfo->nMissionSub". 0..7 means "start that subtype". Anything else returns
+ * nMissionSub + 1 having changed nothing.
+ *
+ * START PATH, argument 0..7. Roll a random point, travel the craft there with bC set to the
+ * subtype, then set nPhase. Subtype 0 sets it to 3; every other subtype sets it to 4. All eight
+ * then zero nTargetX and nTargetY and return the travel result.
+ *
+ * ADVANCE PATH, argument -1. Every subtype has the same three gates in the same order:
+ *
+ *   nPhase > 3          pick a new target and travel to it, with bC set to the subtype
+ *   nPhase == 3         teleport onto the target if it lies inside the current viewport, then
+ *                       set a per-subtype dwell in nTimer and drop nPhase to 2
+ *   nPhase < 3 and      run the subtype's landing effect, then move to a fresh random point
+ *   nTimer == 0
+ *
+ * The dwells are 200, 200, 720, 2880, 60, 1 and 720 for subtypes 1 through 7.
+ *
+ * The tail is shared: result = nPhase, and if that is above zero and nTimer is zero then nPhase
+ * drops by one. If nPhase ends at 0 and the craft is not visible, bDone is set. The returned
+ * value is nPhase as it was BEFORE that decrement.
+ *
+ * Where the target comes from is what actually differs between subtypes:
+ *
+ *   1, 2, 4   roll a point and re-roll while the tile is 255, so they always land on dry ground
+ *   3, 5      take a random entry from the mission-site table, 56 of them
+ *   6         a random base, and it wants a base with NO free cell of facility kind 10; it
+ *             retries up to 20 times and on the 20th gives up and travels to a random point
+ *   7         a random ACTIVE type-0 item from the strateg list, or a random point if none
+ *
+ * Deviations, both recorded: the original indexes the mission-site table and the base array with
+ * unbounded values, and its 100-entry scratch array for subtype 7 silently truncates a list
+ * longer than 100 candidates. The port bounds the first two and caps the third.
+ */
+typedef struct SpawnMissionHooks {
+    /* UiPanel_AppendLineWithSound @ 0x5a394 on the root panel. Subtype 4 appends flag 60 with
+     * the new item's index, subtype 5 appends flag 16 with pUfo->nTargetIdx. */
+    void (*pfnAppendLine)(i32 nFlag, i32 nArg2, i32 nArg3, void *pUser);
+    /* BasePlaneScreen_AddInterceptMission @ 0x7de14, called with pUfo->bCraftClass. */
+    i32  (*pfnAddIntercept)(i32 bCraftClass, void *pUser);
+    /* BaseAtScreen_Open @ 0x588cc, the base-contact screen. The original fills the block at
+     * 0x158840..0x158849 and sets the screen id 0x186BC4 to 20 before calling it. */
+    void (*pfnContactScreen)(StrategItem *pUfo, void *pUser);
+    void *pUser;
+} SpawnMissionHooks;
+
+typedef struct SpawnMissionCtx {
+    PtrArray *pList;                    /* the strateg list, 0x186534 */
+    i32 *pnSeed;                        /* the per-item seed counter, 0x18640C */
+    SmapView *pView;                    /* nMapW and nMapH gate the teleport */
+    const PadImage *pTilemap;           /* the land test, 255 is ocean */
+    BaseRec *const *apBases;            /* subtype 6's targets */
+    i32 nBaseCount;                     /* the SIGNED byte at anLineAux[79] */
+    const MissionSiteRecord *apSites;   /* the table at 0x1865C8 */
+    i32 nSiteCount;
+    const u8 *abFacilityGrid;           /* subtype 6 asks for a free cell of kind 10 */
+    i32 *pnRadarPulseTimer;             /* nRadarPulseTimer @ 0xAC224, subtype 5 sets 250 */
+    GeoscapeWorld *pWorld;              /* shared by StrategEntry_InitTravel; its pTime->bPaused
+                                         * is the byte GameTime_Pause @ 0x5d6ac writes */
+    i32 nGameTotalSec;
+    SpawnMissionHooks hooks;
+} SpawnMissionCtx;
+
+i32 Geoscape_SpawnMissionSite(StrategItem *pUfo, i32 nMissionSub, const SpawnMissionCtx *pCtx);
 
 #endif /* PUFO_STRATEG_H */
