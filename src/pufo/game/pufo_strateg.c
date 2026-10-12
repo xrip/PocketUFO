@@ -445,3 +445,33 @@ bool Smap_OnZoomIn(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *p
     }
     return Smap_ZoomIn(pView, aSets, pOut, nStripHeight);
 }
+
+/* StrategList_FindIdxForShip @ 0x6a05c. No type gate, no active gate: the first item
+ * whose nDisplayId equals the craft's bId wins. */
+i32 StrategList_FindIdxForShip(const StrategList *pList,
+                               const GeoscapeWorld *pWorld, i32 nShipIdx)
+{
+    const Ship *pShip;
+    i32 i;
+
+    if (pList == NULL || pWorld == NULL || pList->nCount <= 0) {
+        return -1; /* 0x6A078 */
+    }
+    if (nShipIdx < 0 || nShipIdx >= (i32)pWorld->nShipCount
+        || pWorld->apCraft == NULL || pWorld->apCraft[nShipIdx] == NULL) {
+        return -1; /* deviation: the original faults here */
+    }
+    pShip = pWorld->apCraft[nShipIdx];
+
+    for (i = 0; i < pList->nCount; ++i) {
+        const StrategItem *pItem = pList->apItems[i];
+
+        if (pItem == NULL) {
+            continue;
+        }
+        if (pShip->bId == pItem->nDisplayId) { /* 0x6A0AC */
+            return (i32)(signed char)i;       /* 0x6A0C8: the index is a signed char */
+        }
+    }
+    return -1;
+}

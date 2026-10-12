@@ -303,4 +303,33 @@ bool Smap_OnZoomIn(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *p
 bool Smap_OnZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut,
                     SmapSampleFn pfnPlay, void *pUser);
 
+/* ------------------------------------------------- ship to strateg-item lookup
+ *
+ * Evidence: StrategList_FindIdxForShip @ 0x6a05c.
+ *
+ * Finds the strateg item that represents one craft, by comparing `Ship.bId @ +0x01`
+ * against `StrategItem.nDisplayId @ +0x10`. That is the only place the two id spaces
+ * are shown to be the same number, and it is what `LoadGame` uses to decide whether a
+ * loaded craft already has an item or needs one added.
+ *
+ * Two details the disassembly settles:
+ *
+ *   - the first argument the original is called with (`a1`, the base-block pointer at
+ *     `&MEMORY[0x158890].apLines[189]`) is NEVER read. The lookup uses the craft array
+ *     and the list globals only.
+ *   - the index is returned through `(char)v3` at 0x6A0C8, so it is a SIGNED CHAR. A
+ *     list longer than 127 items would return a negative index for a real match.
+ *
+ * This is NOT the same function as `StrategList_FindByShipId @ 0x5a9b4` above, even
+ * though both compare `Ship.bId` with `StrategItem.nDisplayId`. That one also requires
+ * `nType == 1` and `bActive == 0`; this one has no type or active gate at all and would
+ * match a base, a site or an inactive craft. The original carries both, and `LoadGame`
+ * calls this one. Keeping them separate is what makes the difference visible.
+ *
+ * Deviation: the original dereferences `apCraft[nShipIdx]` with no bound check and no
+ * NULL check, so an out-of-range ship index or a NULL slot faults. The port returns -1
+ * for both. */
+i32 StrategList_FindIdxForShip(const StrategList *pList,
+                               const GeoscapeWorld *pWorld, i32 nShipIdx);
+
 #endif /* PUFO_STRATEG_H */

@@ -111,6 +111,39 @@ static void TestCountAndFind(void)
     CheckEqI32(StrategList_FindByShipId(&list, &world, 0), -1, "no match -> -1");
 }
 
+static void TestFindIdxForShip(void)
+{
+    printf("StrategList_FindIdxForShip\n");
+    StrategList list;
+    GeoscapeWorld world;
+
+    SetupWorld(&world, &list, 3, 1);
+    memset(g_aItems, 0, sizeof(g_aItems));
+    g_aItems[0].nType = 5; g_aItems[0].bActive = 1; g_aItems[0].nDisplayId = 7;
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 1; g_aItems[1].nDisplayId = 9;
+    g_aShips[0].bId = 7;
+
+    /* No type gate and no active gate: item 0 is type 5 and active, and still matches. */
+    CheckEqI32(StrategList_FindIdxForShip(&list, &world, 0), 0,
+               "matches with no type or active gate");
+    CheckEqI32(StrategList_FindByShipId(&list, &world, 0), -1,
+               "the other lookup refuses it, so the two are not the same function");
+
+    g_aShips[0].bId = 9;
+    CheckEqI32(StrategList_FindIdxForShip(&list, &world, 0), 1,
+               "an active type-1 item matches too");
+
+    g_aShips[0].bId = 11;
+    CheckEqI32(StrategList_FindIdxForShip(&list, &world, 0), -1, "no match -> -1");
+
+    list.nCount = 0;
+    CheckEqI32(StrategList_FindIdxForShip(&list, &world, 0), -1, "empty list -> -1");
+
+    SetupWorld(&world, &list, 3, 1);
+    CheckEqI32(StrategList_FindIdxForShip(&list, &world, 99), -1,
+               "out-of-range ship index is refused, where the original would fault");
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -551,6 +584,7 @@ int main(void)
     TestSmapZoom();
     TestZoomButtons();
     TestStrategListAlloc();
+    TestFindIdxForShip();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
