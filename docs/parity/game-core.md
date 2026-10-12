@@ -5791,3 +5791,44 @@ now `nTotal - nRemove <= 0` — only an empty result drops the array. Fixed in
 `util/pufo_ptrarray.c`; the memmove logic already handled the prefix correctly.
 
 Covered by `tests/test_ship.c` (`TestShipRemoveWithCargo`, 22 checks).
+
+## `Base_DemolishFacility @ 0x66b70` removes a whole base (mapped, not yet ported)
+
+The name is misleading in the same way `Base_ClearFacilityGridRow` is. It does not demolish one
+facility inside a base. It finds the base whose 64-byte record at **0x186C40** has `nFacType` equal
+to the argument, and then removes that base entirely: its strateg entry, its stationed soldiers,
+every craft homed there, and finally `apBases[count-1]`.
+
+The base count it walks is the byte at `pBase + 1560`, which with `pBase = 0x159768` is **0x159D80**
+— the same byte the bases chunk stores, `BaseRec_ctor` indexes `auPerBaseVal` with, and
+`GeoscapeUi_FreeAll` gates its base loop on.
+
+**The argument is used with two meanings.** It is matched against `0x186C40[i].nFacType` to find the
+base, and against `StrategItem.nSiteId` (with `nType == 0 && bActive == 0`) to find the geoscape
+entry. If no entry matches, the index equals the item count and `StrategList_RemoveAt` is called out
+of range.
+
+**Who gets deleted with the base:** soldiers with `Soldier.nKind == baseIndex` **and**
+`bUnk183 > 0xFD` — the stationed ones, not the ones aboard a craft. Then every ship with
+`bHomeBase == baseIndex` goes through `Ship_RemoveWithCargo`, re-reading the ship count each time
+because the array shrinks under it. Then the `SmapSite` records at 0x162030 (count at 0x186410) with
+`bFlag1 == the argument` get `bFlag0 = -1`, the not-assigned marker.
+
+**The compaction is the interesting part**: seven parallel per-base arrays shift left at once, each
+with its own stride and its own copy idiom.
+
+| array | per-base stride | how it is moved |
+|---|---|---|
+| `0x186C40` facility records | 64 | byte-by-byte loop, 64 iterations (0x670D4) |
+| `apBases` records | 20 | `memmove(..., 0x14)` (0x66F44) |
+| facility block `0x159768.fac` | 144 | 4 × 6 cells (0x66F4C) |
+| `buildDays` grid `0x159768 + 36*base` | 36 | 6 × 6 bytes (0x66FA8) |
+| research column `0x16022C` | 144 | gated on the shared count byte at `0x160C4C` |
+| product columns `0x159E98` | — | three word/dword shifts per step (0x67078..0x670BC) |
+| `ObjectRec.auPerBaseVal` | 2 per base | shifted in every object record (0x66F0C) |
+
+The research column's 144-byte stride and the `0x160C4C` gate are the same pair
+`Base_CountActiveResearch` uses, seen here from the other side.
+
+Recorded in the IDB. Porting it needs the port to own all seven arrays at once, which is the next
+step after `Geoscape_InitUI`.
