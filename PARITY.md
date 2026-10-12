@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 497 / 1103 (45.1%) |
-| Bytes of original code cited | 228320 / 598792 (38.1%) |
+| Functions cited as evidence | 501 / 1103 (45.4%) |
+| Bytes of original code cited | 228432 / 598792 (38.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
 | Test checks run | 4464 |
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 50 | 205 | 37784 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 48 | 243 | 6260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 52 | 243 | 6372 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -141,11 +141,11 @@ is the module that answers to it.
 | `0x73328` | `PlaySample7_SetFlags_Cache0xBD8` | 88 | `src/pufo/game/pufo_baseui.h` |
 | `0x3e434` | `PtrArray_DeleteAll` | 72 | `src/pufo/util/pufo_ptrarray.h` |
 | `0x6b674` | `Set_byte_159E88_3_SetUiY` | 60 | `src/pufo/game/pufo_baseui.h` |
-| `0x3f00c` | `IncDwordIfInRange_AtPlus0xBD4` | 52 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x3f00c` | `IncDwordIfInRange_AtPlus0xBD4` | 52 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x7afec` | `Cache_ObjPlus0xBD8_To_dword_186BE8` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x82bac` | `PtrArray_DeleteAt` | 40 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1130` | `PtrArray_Get` | 36 | `src/pufo/util/pufo_ptrarray.h` |
-| `0x3f040` | `DecDwordIfPos_AtPlus0xBD4` | 28 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x3f040` | `DecDwordIfPos_AtPlus0xBD4` | 28 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x6b6b0` | `Set_byte_159E88_4` | 20 | `src/pufo/game/pufo_baseui.h` |
 | `0xa3624` | `Store_dword_A3028` | 20 | `src/pufo/render/pufo_render.h` |
 | `0xa0f80` | `PtrArray_ctor` | 16 | `src/pufo/util/pufo_ptrarray.h` |
@@ -559,7 +559,7 @@ is the module that answers to it.
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
 
-### `strat-ui` (48 functions)
+### `strat-ui` (52 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -599,6 +599,8 @@ is the module that answers to it.
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x61874` | `SoldierScreen_PanelPrev` | 40 | `src/pufo/game/pufo_baseui.h` |
+| `0x6189c` | `SoldierScreen_PanelNext` | 40 | `src/pufo/game/pufo_baseui.h` |
 | `0x16494` | `MenuBtn_EndTurn` | 36 | `src/pufo/game/pufo_menu.h` |
 | `0x19650` | `MenuBtn_Confirm0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x196e8` | `MenuBtn_Confirm1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
@@ -611,6 +613,8 @@ is the module that answers to it.
 | `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | `src/pufo/game/pufo_baseui.h` |
+| `0x589dc` | `BaseFacScreen_PanelNext` | 16 | `src/pufo/game/pufo_baseui.h` |
 
 ### `titles` (2 functions)
 
@@ -1081,7 +1085,7 @@ whose port work they belong to.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 195 functions, 110748 bytes remaining
+### `strat-ui` — 191 functions, 110636 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1258,8 +1262,6 @@ whose port work they belong to.
 | `0x6b46c` | `OptionsScreen_ReturnToTitle` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x557c8` | `BaseInfoScreen_OnOk` | 44 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x716a8` | `PsiScreen_OnOk` | 44 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x61874` | `SoldierScreen_PanelPrev` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6189c` | `SoldierScreen_PanelNext` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd24` | `ManufScreen_SyncSelection` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x76138` | `BuySellScreen_SyncSelection` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x79a20` | `BuySellScreen_ListPanelPrev` | 40 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1271,8 +1273,6 @@ whose port work they belong to.
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x589dc` | `BaseFacScreen_PanelNext` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x557bc` | `BaseInfoScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x589c0` | `BaseFacScreen_CloseThunkA` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x59b54` | `BaseFacScreen_CloseThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |

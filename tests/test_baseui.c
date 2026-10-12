@@ -122,12 +122,51 @@ static void TestGeoscapeScreens(void)
     CheckEqI32(g_nFundingOpen, 1, "  funding screen opened");
 }
 
+static void TestPanelPaging(void)
+{
+    UiPanel a, b;
+
+    printf("screen list paging\n");
+    memset(&a, 0, sizeof(a));
+    memset(&b, 0, sizeof(b));
+    a.nUnk3028 = 3;
+    a.nLineCount = 10;
+    a.nStyle = 5;
+    b.nUnk3028 = 0;
+    b.nLineCount = 4;
+    b.nStyle = 4;
+
+    BaseFacScreen_PanelPrev(&a);
+    CheckEqI32(a.nUnk3028, 2, "prev decrements the scroll cursor");
+    BaseFacScreen_PanelNext(&a);
+    CheckEqI32(a.nUnk3028, 3, "next increments while the limit is not reached");
+    a.nUnk3028 = 5;
+    BaseFacScreen_PanelNext(&a);
+    CheckEqI32(a.nUnk3028, 5, "next stops at nLineCount - nStyle");
+
+    SoldierScreen_PanelPrev(&a, &b);
+    CheckEqI32(a.nUnk3028, 4, "both panels move, in slot order");
+    CheckEqI32(b.nUnk3028, 0, "a cursor of zero cannot go below it");
+
+    a.nUnk3028 = 0;
+    SoldierScreen_PanelNext(&a, &b);
+    CheckEqI32(a.nUnk3028, 1, "the first panel moves");
+    CheckEqI32(b.nUnk3028, 0, "nLineCount == nStyle means next never moves");
+
+    BaseFacScreen_PanelPrev(NULL);
+    BaseFacScreen_PanelNext(NULL);
+    SoldierScreen_PanelPrev(NULL, NULL);
+    SoldierScreen_PanelNext(NULL, NULL);
+    Check(1, "NULL panels are tolerated");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestScratch();
     TestGeoscapeScreens();
+    TestPanelPaging();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

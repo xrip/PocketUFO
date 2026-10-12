@@ -86,3 +86,43 @@ void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
         pHooks->pfnFundingOpen(pHooks->pUser);
     }
 }
+
+/* ------------------------------------------------- strategic screen list paging */
+
+void BaseFacScreen_PanelPrev(UiPanel *pPanel)
+{
+    if (pPanel == NULL) {
+        return; /* the original would fault on a null unk_15886C */
+    }
+    UiPanel_ScrollPrev(pPanel); /* 0x589cc is a tail call to 0x3f040 */
+}
+
+void BaseFacScreen_PanelNext(UiPanel *pPanel)
+{
+    if (pPanel == NULL) {
+        return;
+    }
+    UiPanel_ScrollNext(pPanel); /* 0x589dc is a tail call to 0x3f00c */
+}
+
+void SoldierScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond)
+{
+    /* 0x61874 / 0x61880: both panels move, apLines[186] first, anLineAux[106] second. */
+    if (pFirst != NULL) {
+        UiPanel_ScrollPrev(pFirst);
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollPrev(pSecond);
+    }
+}
+
+void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond)
+{
+    /* 0x618a8 and the returned second call. */
+    if (pFirst != NULL) {
+        UiPanel_ScrollNext(pFirst);
+    }
+    if (pSecond != NULL) {
+        UiPanel_ScrollNext(pSecond);
+    }
+}

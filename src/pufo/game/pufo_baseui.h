@@ -16,6 +16,7 @@
 #define PUFO_BASEUI_H
 
 #include "pufo_common.h"
+#include "ui/pufo_panel.h"   /* UiPanel, the list these handlers page through */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -67,5 +68,25 @@ typedef struct GeoscapeHooks {
 void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
 void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
 void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
+
+/* ------------------------------------------------- strategic screen list paging
+ *
+ * Four screen handlers that are one-liners over the scroll movers already ported in
+ * pufo_panel.c (`UiPanel_ScrollNext` = IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c,
+ * `UiPanel_ScrollPrev` = DecDwordIfPos_AtPlus0xBD4 @ 0x3f040). They differ only in
+ * which panel they point at:
+ *
+ *   BaseFacScreen_PanelPrev @ 0x589cc / PanelNext @ 0x589dc
+ *       the single panel the original keeps the pointer to at unk_15886C.
+ *   SoldierScreen_PanelPrev @ 0x61874 / PanelNext @ 0x6189c
+ *       TWO panels, the pointers held in gUiRootPanel.apLines[186] and
+ *       gUiRootPanel.anLineAux[106]. Both are moved, in that order, and the second
+ *       call is the one the original returns.
+ *
+ * The port takes the panels as arguments instead of reaching through the globals. */
+void BaseFacScreen_PanelPrev(UiPanel *pPanel);
+void BaseFacScreen_PanelNext(UiPanel *pPanel);
+void SoldierScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond);
+void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
 #endif /* PUFO_BASEUI_H */

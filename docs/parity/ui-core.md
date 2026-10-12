@@ -1236,3 +1236,30 @@ digit.
 | 1 | `snprintf` replaces `itoa(nVal, buf, 10)` | same digits, bounded buffer |
 | 2 | A non-digit stops the loop | the original computes `pCtx + 4*ch - 192` for any byte, so a `-` sign reads the slot just below the digit table. The port does not read outside the table |
 | 3 | The blit is injected as `pfnBlitEx` | `PadImage_BlitEx @ 0x11110` is not ported yet; the same seam `UiControl_BlitActivePad` already uses |
+
+## Strategic screen list paging
+
+`BaseFacScreen_PanelPrev @ 0x589cc`, `BaseFacScreen_PanelNext @ 0x589dc`,
+`SoldierScreen_PanelPrev @ 0x61874`, `SoldierScreen_PanelNext @ 0x6189c`, ported in
+`game/pufo_baseui.{h,c}`, asserted by `test_baseui::TestPanelPaging` (9 checks).
+
+All four are one-liners over the scroll movers already ported in `pufo_panel.c`:
+
+```
+UiPanel_ScrollNext  = IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c
+    if (nUnk3028 < nLineCount - nStyle) nUnk3028 += 1;
+UiPanel_ScrollPrev  = DecDwordIfPos_AtPlus0xBD4 @ 0x3f040
+    if (nUnk3028 > 0) nUnk3028 -= 1;
+```
+
+They differ only in which panel they point at. `BaseFacScreen_Panel*` uses the single
+pointer the original keeps at `unk_15886C`. `SoldierScreen_Panel*` moves **two** panels,
+the pointers held in `gUiRootPanel.apLines[186]` and `gUiRootPanel.anLineAux[106]`, in
+that order, and the second call is the one the original returns.
+
+The `next` limit is `nLineCount - nStyle` (dwords at panel `+0xBDC` and `+0xBE0`), so a
+panel whose visible row count equals its line count can never page. The `prev` bound is
+zero. Neither mover wraps.
+
+Deviation: the port takes the panels as arguments and guards against a null slot; the
+original reaches through the globals and would fault on a null.
