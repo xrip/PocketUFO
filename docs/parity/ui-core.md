@@ -1309,3 +1309,44 @@ number — and they are **not** the start menu's load buttons.
 `SaveGame` (0x44988) and `LoadGame` (0x44bbc) are not ported, so both are hooks.
 
 Covered by `tests/test_menubtn.c` (`TestSaveLoadSlot`, 12 checks).
+
+## Tearing down the start UI (done)
+
+`StartUi_Shutdown @ 0x38d7c` is recreated as `StartUi_Shutdown(const StartUiShutdownEnv *)` in
+`ui/pufo_menubtn.{h,c}`. It is the teardown the start screen runs before a game begins or a save
+loads.
+
+**The pad loop, and why the decompiler is misleading here.** Hex-Rays renders it as
+
+```c
+for ( i = 15; ... ) { v2 = v0;
+  for ( j = 3; ... ) { pPad0 = v2[113].pPad0; ... v2 = (char *)v2 + 4; }
+  ++v0; }
+```
+
+which reads as three pad pointers four **widgets** apart. The ARM says otherwise: `MOV R3, #0xE34`
+is loaded once outside both loops and never modified, the inner step is `ADD R4, R4, #4` — four
+**bytes** — and the outer step is `ADD R7, R7, #0x20`, one `UiControl`. Each of the 15 groups frees
+three **adjacent** dwords at `pBank + 32*i + 0xE34`.
+
+`0xE34` is 3636, and `3636 = 32*113 + 0x14`, which is widget 113's `pPad0`. So the three dwords are
+`pPad0`, `pPad1` and `pPad2` of a single widget, and the outer step moves to the next widget. The
+loop frees the pads of bank **widgets 113 through 127** — the tail of the 130-widget bank, where the
+start-menu pads live. Nothing reaches past the bank, and the range is proven by test sentinels at
+widgets 112 and 128.
+
+After the pads: the font at `0x158268` is freed, then the standalone control `unk_1571B4` if there
+is one (`UiControl_FreePads` then delete), then the two blocks at `0x1568D8` and `0x1568EC`, and
+finally `Map.nUiScreen` becomes **22**.
+
+This is the one place the port deletes the `PadImage` structs themselves, because the original
+operator-deletes each one straight after freeing its pixel data. Everywhere else the port leaves the
+pad struct to its caller.
+
+**`Font_Free @ 0x46144` was already recreated** as `PufoFont_Free` in `game/pufo_font.c`; it simply
+had no citation. It is now cited in `pufo_font.h`, with three deviations recorded: the original wraps
+everything in `if (bInited)`, it deletes `apMc1Index` only inside the `apSprIndex != nullptr` branch
+(a font with a null spr index and a live mc1 index leaks), and it leaves `nSlotCount` and every
+pointer dangling rather than clearing them.
+
+Covered by `tests/test_menubtn.c` (`TestStartUiShutdown`, 13 checks).

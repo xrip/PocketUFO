@@ -1,6 +1,7 @@
 /* pufo_menubtn.c - see pufo_menubtn.h for the evidence and the reasoning. */
 #include "ui/pufo_menubtn.h"
 
+#include <stdlib.h>
 #include "game/pufo_menu.h"
 
 static void Btn_Play(const MenuHooks *pHooks, i32 nSample)
@@ -222,4 +223,68 @@ i32 SaveLoad_Slot(i32 nSlot, i32 nUiScreen, i32 *pnListMode,
         return 0; /* 0x19E28 */
     }
     return nResult;
+}
+
+/* StartUi_Shutdown @ 0x38d7c.
+ *
+ * The decompiler renders the pad loop as `v2[113].pPad0` with `v2 = (char *)v2 + 4`, which reads
+ * as three pad pointers four WIDGETS apart. The ARM says otherwise: `MOV R3, #0xE34` is loaded
+ * once outside both loops and never modified, the inner step is `ADD R4, R4, #4` -- four BYTES --
+ * and the outer step is `ADD R7, R7, #0x20`, one UiControl. Each of the 15 groups therefore frees
+ * three ADJACENT dwords at pBank + 32*i + 0xE34.
+ *
+ * 0xE34 is 3636, and 3636 = 32 * 113 + 0x14, which is widget 113's pPad0. The three dwords are
+ * pPad0, pPad1 and pPad2 of a single widget, and the outer step moves to the next widget. The loop
+ * frees the three pads of bank widgets 113 through 127 inclusive: the tail of the 130-widget bank,
+ * which is where the start-menu pads live. Nothing reaches past the bank. */
+void StartUi_Shutdown(const StartUiShutdownEnv *pEnv)
+{
+    i32 i;
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    if (pEnv->hooks.pfnSoundShutdown != NULL) {
+        pEnv->hooks.pfnSoundShutdown(pEnv->hooks.pUser); /* 0x38D80 */
+    }
+    if (pEnv->hooks.pfnKillTimers != NULL) {
+        pEnv->hooks.pfnKillTimers(pEnv->hooks.pUser);    /* 0x38D84 */
+    }
+
+    if (pEnv->pBank != NULL) {
+        for (i = 0; i < 15; ++i) {                        /* 0x38D8C, R8 = 15 */
+            UiControl *pCtl = &pEnv->pBank[113 + i];
+            i32 k;
+
+            for (k = 0; k < PUFO_CONTROL_PADS; ++k) {     /* 0x38D94, R5 = 3 */
+                PadImage *pPad = pCtl->apPads[k];
+                if (pPad != NULL) {
+                    PadImage_FreeData(pPad);             /* 0x38DB8 */
+                    free(pPad);                          /* 0x38DC0, operator delete */
+                    pCtl->apPads[k] = NULL;
+                }
+            }
+        }
+    }
+
+    if (pEnv->hooks.pfnFontFree != NULL) {
+        pEnv->hooks.pfnFontFree(pEnv->pFont, pEnv->hooks.pUser); /* 0x38DE8 */
+    }
+
+    if (pEnv->pStartCtl != NULL) {                        /* 0x38DF8 */
+        UiControl_FreePads(pEnv->pStartCtl);              /* 0x38E00 */
+        if (pEnv->hooks.pfnFree != NULL) {
+            pEnv->hooks.pfnFree(pEnv->pStartCtl, pEnv->hooks.pUser); /* 0x38E08 */
+        }
+    }
+
+    if (pEnv->hooks.pfnFree != NULL) {
+        pEnv->hooks.pfnFree(pEnv->pBlockA, pEnv->hooks.pUser); /* 0x38E14 */
+        pEnv->hooks.pfnFree(pEnv->pBlockB, pEnv->hooks.pUser); /* 0x38E20 */
+    }
+
+    if (pEnv->pnUiScreen != NULL) {
+        *pEnv->pnUiScreen = 22;                           /* 0x38E2C */
+    }
 }

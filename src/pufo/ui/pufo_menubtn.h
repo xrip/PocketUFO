@@ -50,6 +50,8 @@
 #include "game/pufo_input.h"
 #include "game/pufo_menu.h"
 #include "pufo_common.h"
+#include "render/pufo_render.h"   /* PadImage, PadImage_FreeData */
+#include "ui/pufo_control.h"      /* UiControl */
 #include "ui/pufo_modal.h"
 
 /* The samples the confirm adapters play. 16 is the default UI click; only
@@ -196,5 +198,46 @@ typedef struct SaveLoadSlotHooks {
 
 i32 SaveLoad_Slot(i32 nSlot, i32 nUiScreen, i32 *pnListMode,
                   const SaveLoadSlotHooks *pHooks);
+
+/* ------------------------------------------------- tearing down the start UI
+ *
+ * Evidence: StartUi_Shutdown @ 0x38d7c.
+ *
+ * The decompiler renders the pad loop as `v2[113].pPad0` with `v2 = v2 + 4`, which reads as
+ * three pad pointers four WIDGETS apart. The ARM says otherwise: `MOV R3, #0xE34` is loaded once
+ * outside both loops and never changed, the inner step is `ADD R4, R4, #4` -- four BYTES -- and
+ * the outer step is `ADD R7, R7, #0x20`, one UiControl. So each of the 15 groups frees three
+ * ADJACENT dwords at pBank + 32*i + 0xE34.
+ *
+ * 0xE34 is 3636, and 3636 = 32*113 + 0x14, which is widget 113's pPad0. The three dwords are
+ * therefore pPad0, pPad1 and pPad2 of one widget, and the outer step moves to the next widget.
+ * The whole loop frees the three pads of bank widgets 113 through 127 inclusive -- the tail of
+ * the 130-widget bank, which is where the start-menu pads live. Nothing reaches past the bank.
+ *
+ * After that it frees the start UI's font, then the standalone control at unk_1571B4 if there is
+ * one, then two blocks the start screen allocated, and finally sets the screen id to 22.
+ *
+ * Deviation worth naming: this is the one place the port deletes the PadImage structs themselves,
+ * because the original operator-deletes each one straight after freeing its pixel data. Everywhere
+ * else the port leaves the pad struct to its caller. */
+typedef struct StartUiShutdownHooks {
+    void (*pfnSoundShutdown)(void *pUser); /* seam for Sound_Shutdown (0x9e3d4) */
+    void (*pfnKillTimers)(void *pUser);    /* seam for KillTimers_B (0x9e754) */
+    void (*pfnFontFree)(void *pFont, void *pUser); /* seam for Font_Free (0x46144) */
+    void *(*pfnFree)(void *pBlock, void *pUser);   /* operator delete for the two blocks */
+    void *pUser;
+} StartUiShutdownHooks;
+
+typedef struct StartUiShutdownEnv {
+    UiControl *pBank;      /* the 130-widget bank; widgets 113..127 are freed */
+    UiControl *pStartCtl;  /* unk_1571B4, may be NULL */
+    void *pFont;           /* the font the start UI loaded */
+    void *pBlockA;         /* MEMORY[0x1568D8] */
+    void *pBlockB;         /* MEMORY[0x1568EC] */
+    i32 *pnUiScreen;       /* Map.nUiScreen @ +0x3A, set to 22 */
+    StartUiShutdownHooks hooks;
+} StartUiShutdownEnv;
+
+void StartUi_Shutdown(const StartUiShutdownEnv *pEnv);
 
 #endif /* PUFO_MENUBTN_H */

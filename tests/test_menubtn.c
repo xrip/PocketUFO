@@ -4,6 +4,7 @@
  *  ActionBack0/1 @ 0x195a8/0x19618, Cancel0/1 @ 0x1a24c/0x1a26c,
  *  Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
  *  Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04.) */
+#include <stdlib.h>
 #include "game/pufo_input.h"
 #include "game/pufo_menu.h"
 #include "pufo_test.h"
@@ -512,6 +513,90 @@ static void TestStartMenu(void)
     TestEqI32("NULL hooks are tolerated", 1, 1);
 }
 
+/* ------------------------------------------------------------------ start UI teardown */
+
+static i32 g_nSoundCalls, g_nKillCalls, g_nFontCalls, g_nFreeCalls;
+static void *g_pFreedFont;
+
+static void SdSound(void *pUser)   { (void)pUser; ++g_nSoundCalls; }
+static void SdKill(void *pUser)    { (void)pUser; ++g_nKillCalls; }
+static void SdFontFree(void *pFont, void *pUser) { (void)pUser; ++g_nFontCalls; g_pFreedFont = pFont; }
+static void *SdFree(void *pBlock, void *pUser)
+{
+    (void)pUser;
+    ++g_nFreeCalls;
+    free(pBlock);
+    return NULL;
+}
+
+static void TestStartUiShutdown(void)
+{
+    static UiControl g_aBank[130];
+    static PadImage g_SentinelA, g_SentinelB;
+    static PadImage g_Font;
+    static i32 nUiScreen;
+    StartUiShutdownEnv env;
+    UiControl *pStartCtl;
+
+    printf("StartUi_Shutdown\n");
+
+    memset(g_aBank, 0, sizeof(g_aBank));
+    memset(&env, 0, sizeof(env));
+    env.pBank = g_aBank;
+    env.pFont = &g_Font;
+    env.pnUiScreen = &nUiScreen;
+    env.hooks.pfnSoundShutdown = SdSound;
+    env.hooks.pfnKillTimers = SdKill;
+    env.hooks.pfnFontFree = SdFontFree;
+    env.hooks.pfnFree = SdFree;
+
+    /* Sentinels just outside the range the loop covers. If the range is wrong these get freed. */
+    g_aBank[112].apPads[0] = &g_SentinelA;
+    g_aBank[128].apPads[0] = &g_SentinelB;
+
+    /* Real heap pads at both ends of the range, so a miss shows up as a pointer left set. */
+    for (int k = 0; k < 3; ++k) {
+        g_aBank[113].apPads[k] = (PadImage *)calloc(1, sizeof(PadImage));
+    }
+    g_aBank[127].apPads[0] = (PadImage *)calloc(1, sizeof(PadImage));
+
+    nUiScreen = 7;
+    g_nSoundCalls = g_nKillCalls = g_nFontCalls = g_nFreeCalls = 0;
+    pStartCtl = (UiControl *)calloc(1, sizeof(UiControl));
+    env.pStartCtl = pStartCtl;
+    env.pBlockA = calloc(1, 16);
+    env.pBlockB = calloc(1, 16);
+
+    StartUi_Shutdown(&env);
+
+    TestEqI32("the sound layer is shut down", g_nSoundCalls, 1);
+    TestEqI32("the timers are killed", g_nKillCalls, 1);
+    TestEqI32("the start UI's font is freed", g_nFontCalls, 1);
+    TestCheck("and it is the font the environment carried", g_pFreedFont == &g_Font);
+
+    TestCheck("widget 113's first pad is gone", g_aBank[113].apPads[0] == NULL);
+    TestCheck("widget 113's third pad is gone", g_aBank[113].apPads[2] == NULL);
+    TestCheck("widget 127 is still inside the range", g_aBank[127].apPads[0] == NULL);
+    TestCheck("widget 112 is OUTSIDE the range and keeps its pad",
+              g_aBank[112].apPads[0] == &g_SentinelA);
+    TestCheck("widget 128 is outside the range too",
+              g_aBank[128].apPads[0] == &g_SentinelB);
+
+    TestEqI32("the standalone control and the two blocks are freed", g_nFreeCalls, 3);
+    TestEqI32("and the screen id becomes 22", nUiScreen, 22);
+
+    /* With no standalone control, only the two blocks are freed. */
+    memset(g_aBank, 0, sizeof(g_aBank));
+    nUiScreen = 0;
+    g_nFreeCalls = 0;
+    env.pStartCtl = NULL;
+    env.pBlockA = calloc(1, 16);
+    env.pBlockB = calloc(1, 16);
+    StartUi_Shutdown(&env);
+    TestEqI32("a missing standalone control is skipped, not an error", g_nFreeCalls, 2);
+    TestEqI32("and the screen id is still set", nUiScreen, 22);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -525,6 +610,7 @@ int main(void)
     TestSlotList();
     TestQuitDialog();
     TestStartMenu();
+    TestStartUiShutdown();
     TestSaveLoadSlot();
 
     return TestSummary("test_menubtn");

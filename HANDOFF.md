@@ -90,6 +90,35 @@ Recent `game-core` commits, newest first, each with its reason:
 | `8755ada` | Port `Unit_DropAllItemsToCell @ 0x4b4f8` + 10 checks | Belt/backpack/pocket slot map proven from offsets; backpack slots 5 and 6 kept. |
 | `44982b1` | `TestTryOpportunityFire` + parity notes | Facing cone excludes straight ahead; the duel is decided by a raw roll, not stats. |
 
+
+### The commit table above is not exhaustive
+
+It stops at `44982b1`; 160+ commits have landed since. The short version of that stretch, by
+cluster, with details in `docs/parity/*.md`:
+
+- **Save subsystem, 37 of 38 functions.** Every chunk writer and reader is ported: product, bases,
+  ships, flobjs, strateg, map, teamunits (four roster chunks), tgamedata, smap, rmp, plus
+  `SaveGame @ 0x44988` and `SaveSlot_FormatList @ 0x45904`. `LoadGame @ 0x44bbc` is the only one
+  left. Each chunk's on-disk layout, version gates on the save-format byte `0x18655C`, and read
+  order are recorded in `docs/parity/save-format.md`.
+- **Base facility layer.** All five `Base_Update*Needed` passes, their `Base_Calc*Cap` and
+  `Base_Count*` helpers, `Base_FindFacilityCell @ 0x6ae54`, `Base_CountEmptyFacilityCells @ 0x6aee0`
+  and `Base_ClearFacilityGridRow @ 0x6a0e0` (whose name is wrong: it classifies, it does not clear).
+  The three per-base grids and their strides are in `docs/parity/game-core.md`.
+- **Loadout weapon swap, whole.** `BasePlaneScreen_ApplyWeaponSwap @ 0x79748` with
+  `BasePlane_Load/UnloadWeaponStores @ 0x793e0/0x790e8` and the `InvSel_*ItemQty` cargo pair. The
+  key finding is that a weapon and its ammo are **separate object records**, which is why the swap's
+  call order does not move ammo.
+- **The UFO mission machine.** `Geoscape_SpawnMissionSite @ 0x7e49c` (4460 bytes) plus its whole
+  dependency chain: `StrategList_AddItem`, `RollCraftStats`, `AddUfoAt`, `AddAlienSiteIfValid`,
+  `Entry_InitTravel`, `MaybeSpawnCraft_Process`, `RemoveAt`, `PurgeType5` (whose cascade bug is
+  reproduced on purpose), `FindIdxForShip`, and `BasePlaneScreen_AddInterceptMission @ 0x7de14`.
+- **Parity report integrity.** Three audit tools now run before every commit:
+  `coverage.py --gaps`, `audit_credits.py` (a port claim on the same line as a port denial) and
+  `audit_names.py` (credited addresses with no definition). Six passes caught false credits, the
+  largest removing 19 functions and 14988 bytes at once. The trap and how to avoid it are in
+  section 7.
+
 ---
 
 ## 4. Current architecture and the decisions that matter
@@ -184,9 +213,9 @@ citation is invisible to the parity report.
 
 ## 5. What currently works
 
-- Configure, build, and a clean warning-free compile of all 39 test binaries plus the
+- Configure, build, and a clean warning-free compile of all 46 test binaries plus the
   game executable.
-- 39 test suites pass. They are behavior tests against values read out of the IDB, not
+- 46 test suites pass. They are behavior tests against values read out of the IDB, not
   smoke tests. `PARITY.md` reports 377 checks for `test_tactui`, 199 for `test_unit`,
   152 for `test_tactstate`, 112 for `test_mapcell`. Suites that print their own summary
   line instead report 0 there even though they do count checks — see issue 3 in
@@ -230,7 +259,7 @@ give the parenthesized form any credit.
 
 | Measure | Result |
 |---|---|
-| `python docs/parity/coverage.py` (agreed) | **575 / 1103 cited** (52.1%), bytes 208368 / 598792 (34.8%) |
+| `python docs/parity/coverage.py` (agreed) | **585 / 1103 cited** (53.0%), bytes 215976 / 598792 (36.1%) |
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |
@@ -532,9 +561,10 @@ preparing this document.
    the already-ported `Tact_GetCameraBounds` for its rectangle and adds the four
    counting buckets, where `nUnitType > 8` is not counted at all and a civilian with
    `uHp == 0` is skipped (`test_tactctl`). What is
-   left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
-   `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`)
-   and the geoscape screens. See
+   left of this task is `LoadGame @ 0x44bbc`. The rest of the save/load slot screen is
+   ported: `SaveSlot_FormatList @ 0x45904`, `SaveGame @ 0x44988`,
+   `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4` and `StartUi_Shutdown @ 0x38d7c`. What remains
+   there is the geoscape screens. See
    `docs/parity/ui-core.md`, "The inventory hit test" and "Dropping the item", and
    `docs/parity/game-core.md`, "The deploy confirm dialog". The `UiPanel` type
    conflict is already resolved — the

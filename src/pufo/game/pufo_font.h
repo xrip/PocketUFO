@@ -1,6 +1,6 @@
 /* pufo_font.h - bitmap font loading, glyph blitting and text measurement.
  *
- * Evidence: Font_Init @ 0x460e8, Font_LoadSpr @ 0x461d8,
+ * Evidence: Font_Init @ 0x460e8, Font_Free @ 0x46144, Font_LoadSpr @ 0x461d8,
  *           Font_BuildIndex @ 0x46480, Font_GetSprByIndex @ 0x46600,
  *           Font_DrawGlyph @ 0x4661c, Font_DrawGlyph_IndexedOffset @ 0x46630,
  *           Font_BlitGlyphToSoft @ 0x9ec48, SoftSurf_BlitGlyph @ 0x9fc00,
@@ -83,6 +83,17 @@ extern FontMetrics g_fontMetrics;
 extern PufoFont g_fontSys;
 
 void PufoFont_Init(PufoFont *pFont);
+
+/* Font_Free @ 0x46144. Releases each loaded slot's .spr and .mc1 block, then the two
+ * index arrays, then clears the init flag.
+ *
+ * Three places the port is stricter than the original:
+ *   - The original wraps everything in `if (pFont->bInited)`. PufoFont_Free runs unconditionally;
+ *     freeing NULL pointers is a no-op, so the only difference is a font that was never inited.
+ *   - It deletes apMc1Index only inside the `apSprIndex != nullptr` branch, so a font with a null
+ *     spr index and a live mc1 index leaks. The port frees both.
+ *   - It leaves nSlotCount, the slot pointers and the index pointers dangling; only bInited goes
+ *     to 0. The port clears them so a second free cannot double-release. */
 void PufoFont_Free(PufoFont *pFont);
 
 /* Loads "<pszName>.spr" and, if present, "<pszName>.mc1". Returns true if the
