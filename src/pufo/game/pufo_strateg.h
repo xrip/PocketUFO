@@ -506,6 +506,12 @@ u8 Smap_GetOverlayAtMode(const SmapView *pView, const PadImage *const aOverlay[3
 i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,
                                 i32 nStrategIdx);
 
+/* Smap_ClearSelection @ 0x84648. Drop the first line of the geoscape message list and unpause the
+ * game only if that leaves the list empty - a contact message pauses the game, and clearing the
+ * selection may resume it only when no message is still on screen. */
+struct UiLineList;
+u8 Smap_ClearSelection(struct UiLineList *pLines, GameTime *pTime, u8 *pbSelectionFlag);
+
 /* ------------------------------------------------------------- zoom levels
  *
  * Each zoom step swaps three layer globals and takes the map size from the second

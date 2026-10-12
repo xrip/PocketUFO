@@ -4,6 +4,7 @@
 #include "game/pufo_geoscape.h"   /* Base_FindFacilityCell */
 #include "game/pufo_ship.h"      /* BaseRec */
 #include "util/pufo_ptrarray.h"
+#include "ui/pufo_linelist.h"  /* UiLineList_Remove, for Smap_ClearSelection */
 
 #include <math.h>
 #include <stdlib.h>
@@ -884,6 +885,30 @@ i32 StrategList_FindIdxForShip(const StrategList *pList,
  *
  * Deviation: the original calls PtrArray_Get(nStrategIdx) and dereferences the result with no
  * bounds test, so an out of range strateg index faults. The port returns -1. */
+/* Smap_ClearSelection @ 0x84648. Drop the first line of the geoscape message list, and unpause the
+ * game only if that leaves the list EMPTY. That conditional is the whole point of the function: a
+ * contact message pauses the game, and clearing the selection is allowed to resume it only once no
+ * message is still on screen. With two messages left it clears the selection and leaves the game
+ * paused.
+ *
+ * It then clears the selection flag and returns its address, which is what the original hands back. */
+u8 Smap_ClearSelection(UiLineList *pLines, GameTime *pTime, u8 *pbSelectionFlag)
+{
+    if (pLines != NULL) {
+        UiLineList_Remove(pLines, 0); /* 0x84658 */
+
+        if (pLines->nLineCount == 0 && pTime != NULL) { /* 0x84664 */
+            GameTime_Unpause(pTime); /* 0x84668 */
+        }
+    }
+
+    if (pbSelectionFlag != NULL) {
+        *pbSelectionFlag = 0; /* 0x84674 */
+    }
+
+    return pbSelectionFlag != NULL ? *pbSelectionFlag : 0;
+}
+
 i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,
                                 i32 nStrategIdx)
 {

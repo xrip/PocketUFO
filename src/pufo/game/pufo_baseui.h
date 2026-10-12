@@ -310,4 +310,10 @@ i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection);
  * same delta gets a different arrow for a base in the red. */
 i32 Funding_DeltaToArrow(i32 nDelta, i32 nTotal);
 
+/* OptionsScreen_PanelPrev @ 0x6d01c / OptionsScreen_PanelNext @ 0x6d064. The options screen has
+ * four scrolling lists and its prev/next buttons move all four cursors at once. Both handlers touch
+ * the same four panels in the same order. */
+void OptionsScreen_PanelPrev(struct UiPanel *const apPanels[4]);
+void OptionsScreen_PanelNext(struct UiPanel *const apPanels[4]);
+
 #endif /* PUFO_BASEUI_H */

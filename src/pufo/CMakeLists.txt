@@ -305,7 +305,7 @@ add_test(NAME test_turn
 # Save-file container and soldier record round-tripping. The 740-byte prefix size
 # is the layout check: every field is transcribed from the write order.
 add_executable(test_save ${CMAKE_SOURCE_DIR}/tests/test_save.c)
-target_link_libraries(test_save PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_save PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_save PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
@@ -481,7 +481,7 @@ add_test(NAME test_baseui
 )
 
 add_executable(test_plane ${CMAKE_SOURCE_DIR}/tests/test_plane.c)
-target_link_libraries(test_plane PRIVATE pufo_game pufo_util)
+target_link_libraries(test_plane PRIVATE pufo_ui pufo_game pufo_util)
 set_target_properties(test_plane PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
@@ -503,7 +503,7 @@ add_test(NAME test_clock
 
 # Player craft ticks: range recovery, refuel rates, supply consumption.
 add_executable(test_ship ${CMAKE_SOURCE_DIR}/tests/test_ship.c)
-target_link_libraries(test_ship PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_ship PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_ship PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
@@ -514,7 +514,7 @@ add_test(NAME test_ship
 
 # Contact list: proximity detect, radar detect, intercept expiry.
 add_executable(test_strateg ${CMAKE_SOURCE_DIR}/tests/test_strateg.c)
-target_link_libraries(test_strateg PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_strateg PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_strateg PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
@@ -536,7 +536,7 @@ add_test(NAME test_geouimanage
 
 # The geoscape tick chain and its wiring to the clock.
 add_executable(test_geoscape ${CMAKE_SOURCE_DIR}/tests/test_geoscape.c)
-target_link_libraries(test_geoscape PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_geoscape PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_geoscape PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )

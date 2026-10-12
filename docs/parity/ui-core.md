@@ -1395,3 +1395,21 @@ The port tests first.
 one global — it is the compiler's spilled loop counter, and nothing reads it afterwards.
 
 Covered by `tests/test_geouimanage.c` (73 checks).
+
+### Clearing a geoscape selection, and the options screen's four cursors (done)
+
+`Smap_ClearSelection @ 0x84648` drops the first line of the geoscape message list and unpauses the
+game **only if that leaves the list empty**. A contact message pauses the game; clearing the selection
+is allowed to resume it only when no message is still on screen. With two messages up, the same call
+clears the selection and leaves the game paused. The conditional is the whole function.
+
+`OptionsScreen_PanelPrev @ 0x6d01c` and `OptionsScreen_PanelNext @ 0x6d064` are the same shape: four
+scroll steps over the panels held at `gUiRootPanel.anLineAux[117] / [141] / [142] / [118]`, in that
+order. The options screen has four scrolling lists and its prev/next buttons move **all four cursors
+at once** — they are not per-panel controls. Prev is bounded by zero, next by `lineCount - style`.
+
+Build note: `pufo_strateg.c` now calls `UiLineList_Remove`, so `pufo_game` depends on `pufo_ui`. Five
+test targets were missing `pufo_ui` on their link line and failed to link — and ctest would have run
+the stale binaries and reported green.
+
+Covered by `TestClearSelection` (5 checks) and `TestOptionsPanelPaging` (10 checks).

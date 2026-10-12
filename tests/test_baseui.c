@@ -123,6 +123,45 @@ static void TestGeoscapeScreens(void)
     CheckEqI32(g_nFundingOpen, 1, "  funding screen opened");
 }
 
+static void TestOptionsPanelPaging(void)
+{
+    static UiPanel aPanels[4];
+    UiPanel *apPanels[4];
+
+    printf("OptionsScreen_PanelPrev / PanelNext\n");
+
+    for (int i = 0; i < 4; ++i) {
+        memset(&aPanels[i], 0, sizeof(aPanels[i]));
+        aPanels[i].nUnk3028 = 3;
+        aPanels[i].nLineCount = 20;
+        aPanels[i].nStyle = 5;
+        apPanels[i] = &aPanels[i];
+    }
+
+    /* One press moves all four cursors. They are not per-panel controls. */
+    OptionsScreen_PanelPrev(apPanels);
+    for (int i = 0; i < 4; ++i) {
+        CheckEqI32(aPanels[i].nUnk3028, 2, "prev steps every one of the four cursors");
+    }
+
+    OptionsScreen_PanelNext(apPanels);
+    OptionsScreen_PanelNext(apPanels);
+    for (int i = 0; i < 4; ++i) {
+        CheckEqI32(aPanels[i].nUnk3028, 4, "next steps them all back");
+    }
+
+    /* The next step is bounded by lineCount - style = 15, the prev step by zero. */
+    for (int i = 0; i < 40; ++i) {
+        OptionsScreen_PanelNext(apPanels);
+    }
+    CheckEqI32(aPanels[0].nUnk3028, 15, "next stops at lineCount - style");
+
+    for (int i = 0; i < 40; ++i) {
+        OptionsScreen_PanelPrev(apPanels);
+    }
+    CheckEqI32(aPanels[0].nUnk3028, 0, "prev stops at zero");
+}
+
 static void TestFundingHelpers(void)
 {
     printf("Funding_ScoreToBarLevel and Funding_DeltaToArrow\n");
@@ -684,6 +723,7 @@ int main(void)
 
     TestScratch();
     TestGeoscapeScreens();
+    TestOptionsPanelPaging();
     TestFundingHelpers();
     TestPanelPaging();
     TestSelectionCaches();

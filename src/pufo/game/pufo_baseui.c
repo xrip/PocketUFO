@@ -477,6 +477,34 @@ i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection)
     return nLevel * nAmount; /* 0x5AB2C */
 }
 
+/* OptionsScreen_PanelPrev @ 0x6d01c and OptionsScreen_PanelNext @ 0x6d064. The options screen has
+ * four scrolling lists and its prev/next buttons move ALL FOUR cursors one row at once -- they are
+ * not per-panel controls. Both handlers touch the same four panels in the same order, and each one
+ * is the plain scroll step: prev is `if (cursor > 0) --cursor`, next is
+ * `if (cursor < lineCount - style) ++cursor`.
+ *
+ * The original reaches the panels through gUiRootPanel.anLineAux[117], [141], [142] and [118], which
+ * is a dword array doubling as a pointer array. The port takes them as an explicit four-element
+ * array so the coupling is visible: a caller that passes them in the wrong order scrolls the wrong
+ * lists, and nothing in the original would tell you. */
+void OptionsScreen_PanelPrev(UiPanel *const apPanels[4])
+{
+    for (int i = 0; i < 4; ++i) {
+        if (apPanels[i] != NULL) {
+            UiPanel_ScrollPrev(apPanels[i]); /* 0x6D028, 0x6D034, 0x6D040, 0x6D04C */
+        }
+    }
+}
+
+void OptionsScreen_PanelNext(UiPanel *const apPanels[4])
+{
+    for (int i = 0; i < 4; ++i) {
+        if (apPanels[i] != NULL) {
+            UiPanel_ScrollNext(apPanels[i]); /* 0x6D070, 0x6D07C, 0x6D088, 0x6D094 */
+        }
+    }
+}
+
 /* Funding_DeltaToArrow @ 0x5ab34. Which arrow to draw next to a funding figure: -2, -1, 0, 1, 2.
  *
  * It is a chain of compares, not a switch, and the thresholds come from the total: a2/8 and a2/2,

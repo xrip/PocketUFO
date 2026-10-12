@@ -9,6 +9,9 @@
  */
 #include "game/pufo_geoscape.h"
 #include "game/pufo_save.h" /* SmapSite, for the monthly upkeep fixture */
+#include "game/pufo_strateg.h"
+#include "game/pufo_clock.h"
+#include "ui/pufo_linelist.h"
 #include "util/pufo_rand.h"
 
 #include <stdio.h>
@@ -1083,6 +1086,34 @@ static void TestShipsAtBase(void)
                "a base index past the array is refused rather than read");
 }
 
+static void TestClearSelection(void)
+{
+    static UiLineList lines;
+    static GameTime time;
+    static u8 bSelected;
+
+    printf("Smap_ClearSelection\n");
+
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    time.bPaused = 1;
+    bSelected = 1;
+
+    /* Two messages on screen: clearing the selection removes one and leaves the game paused,
+     * because a message is still up. */
+    Smap_ClearSelection(&lines, &time, &bSelected);
+    CheckEqI32(lines.nLineCount, 1, "the first line is dropped");
+    CheckEqI32(time.bPaused, 1, "and the game stays paused while a message is still on screen");
+    CheckEqI32(bSelected, 0, "the selection flag is cleared either way");
+
+    /* Now the list is empty, so the same call is allowed to resume the game. */
+    Smap_ClearSelection(&lines, &time, &bSelected);
+    CheckEqI32(lines.nLineCount, 0, "the list is empty");
+    CheckEqI32(time.bPaused, 0,
+               "and only now does the same call unpause - that conditional is the function");
+}
+
 static void TestPsiCapAndUpkeep(void)
 {
     static u8 g_abGrid[700];
@@ -1198,6 +1229,7 @@ int main(void)
     TestCapacityFamily();
     TestSoldiersAssigned();
     TestShipsAtBase();
+    TestClearSelection();
     TestPsiCapAndUpkeep();
     TestFindFacilityCell();
     TestActiveManuf();
