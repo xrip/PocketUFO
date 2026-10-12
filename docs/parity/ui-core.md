@@ -1419,3 +1419,35 @@ the flag is zero it stores the list's current selected row and raises the flag; 
 nothing at all, so the cached row is never refreshed by this path. Whatever row was current the first
 time this ran is what the rest of the ufopaedia code sees, until some other path clears the flag.
 Covered by `TestUfopaediaCache`, 7 checks.
+
+## The tact HUD draw family: what is ready and what is not
+
+Measured by decompiling the two smallest members and checking every callee against `src/pufo`.
+
+Already ported and callable from here: `Gfx_PackRgb565Pair @ 0x2d82c`, `UiControl_BlitActivePad
+@ 0x1a340`, `Text_MeasureWidth @ 0x2dca8`, `Text_DrawString @ 0x2d798`, and the text-record table
+`aTextRecs @ 0xB38D0` at stride 205. The widget bank `pBank @ 0xAC6D0` is modelled as
+`UiWidgetBank` in `pufo_uibank.h`, at `UiControl` stride 0x20 with widget index
+`(addr - 0xAC6D0 - 0x0C) / 0x20`.
+
+Still missing, and these are the actual blockers:
+
+| what | where it is needed |
+|---|---|
+| `UiModal_DrawDialog @ 0x264a0` (2,676 B) | `Render_Frame`, `TactHud_DrawModalLeft`, `TactHud_DrawModalRight` |
+| the pad arrays `unk_ACD70` (7 controls) and `unk_AD3F0` (8 controls) | `Menu_DrawLabeledPads`, `TactHud_DrawModalLeft` |
+| the 40-byte-per-string table at `0x156938` | `TactHud_DrawModalLeft` |
+| the mode flag at `0x157188` | `TactHud_DrawModalLeft` (it decides whether the modal dialog is drawn) |
+
+Two things worth knowing before porting, because they are not obvious from the pseudocode:
+
+- `Menu_DrawLabeledPads @ 0x217e0` picks its text record by a **sparse index map**, not by loop
+  counter: index 5 reads record 402 and index 6 reads record 23, while 0..4 read 18..22. So the
+  seven menu labels are not seven consecutive records.
+- Both functions centre their label the same way: `pad.x + (pad.width - Text_MeasureWidth(s)) / 2`,
+  reading the pad geometry as u16 fields out of the bank. `Menu_DrawLabeledPads` uses offsets
+  848/849/850 and `TactHud_DrawModalLeft` uses 1680/1681/1682, and the vertical offset differs too:
+  `+ 3` for the menu, `+ 2` for the modal.
+- `TactHud_DrawModalLeft` blits 8 pads but draws only 7 labels, and it writes `40` into
+  `Map.anActionPhaseSave0[112]` before opening the dialog. The count mismatch is the original's.
+
