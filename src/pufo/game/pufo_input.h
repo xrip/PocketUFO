@@ -148,7 +148,8 @@ typedef struct TactInputHooks {
      * src/pufo/game/pufo_invdrag.c; the app wires this seam to that function, which
      * needs the Map drag state (pufo_invdrag.h documents the six Map fields). */
     bool (*pfnHitTestTactItem)(i32 nX, i32 nY, void *pUser);
-    /* Inv_ClearHitSlot @ 0x11f40. */
+    /* Inv_ClearHitSlot @ 0x11f40. Ported for real in src/pufo/game/pufo_invdrag.c
+     * as Inv_ClearHitSlot(const InvHitTestCtx *); the app wires this seam to it. */
     void (*pfnInvClearHitSlot)(void *pUser);
     /* Inv_HandlePointer @ 0x12260, the drop path. Its argument is the widget bank. */
     void (*pfnInvHandlePointer)(struct UiWidgetBank *pBank, void *pUser);

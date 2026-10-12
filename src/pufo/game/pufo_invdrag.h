@@ -118,4 +118,20 @@ typedef struct InvHitTestCtx {
  * out-of-range slot as no match. */
 bool Ui_HitTestTactItem(const InvHitTestCtx *pCtx, i32 nX, i32 nY);
 
+/* Inv_ClearHitSlot @ 0x11f40. Empties the slot the hit test selected, sized by the
+ * item's own footprint: nFootW consecutive columns, nFootH rows, with a row stride
+ * of 4 for the backpack and 3 for the belt. Region 0 is the ground list, which is
+ * taken out of the cell's item list and the visible list is rebuilt.
+ *
+ * The slot bases prove the Map layout of the inventory block: the pocket cases
+ * write dword index `sub0 + 67/70/73/76`, i.e. byte offsets 0x10C/0x118/0x124/0x130
+ * = aPockets[0..3] with a 12-byte record; the backpack case writes index
+ * `sub0 + 4*sub1 + 79` = 0x13C = apBackpack[0] with a 4-slot row; the belt case
+ * writes `sub0 + 3*sub1 + 91` = 0x16C = apBelt[0] with a 3-slot row.
+ *
+ * Deviation: the original writes nFootW consecutive dwords with no bound, so a wide
+ * item in pocket slot 1 also zeroes the four meta/spare bytes that follow the two
+ * item pointers. The port clears item slots only. */
+void Inv_ClearHitSlot(const InvHitTestCtx *pCtx);
+
 #endif /* PUFO_INVDRAG_H */

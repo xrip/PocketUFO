@@ -42,6 +42,10 @@ static TactItem     g_aPocket[4][2];
 static TactItem     g_aPack[8];
 static TactItem     g_aBelt[9];
 static ObjectRec    g_Obj;
+static ObjectRec    g_ObjWide;   /* 2 x 2 footprint */
+static ObjectRec    g_ObjTall;   /* 1 x 3 footprint */
+static ObjectRec    g_aGroundObj[4];
+static MapCell      g_Cell;
 
 static void Reset(void)
 {
@@ -53,12 +57,23 @@ static void Reset(void)
     memset(g_aPack, 0, sizeof(g_aPack));
     memset(g_aBelt, 0, sizeof(g_aBelt));
     memset(&g_Obj, 0, sizeof(g_Obj));
+    memset(&g_ObjWide, 0, sizeof(g_ObjWide));
+    memset(&g_ObjTall, 0, sizeof(g_ObjTall));
+    memset(&g_Cell, 0, sizeof(g_Cell));
+    memset(g_aGroundObj, 0, sizeof(g_aGroundObj));
 
     g_Obj.nFootW = 2;   /* -20 * 2 / 2 = -20 */
     g_Obj.nFootH = 3;   /* -20 * 3 / 2 = -30 */
+    g_ObjWide.nFootW = 2;
+    g_ObjWide.nFootH = 2;
+    g_ObjTall.nFootW = 1;
+    g_ObjTall.nFootH = 3;
 
     for (i32 i = 0; i < 4; ++i) {
-        g_aGround[i].pObj = &g_Obj;
+        /* Distinct objects, so the visible list keeps one entry per item. */
+        g_aGroundObj[i].nFootW = 2;
+        g_aGroundObj[i].nFootH = 3;
+        g_aGround[i].pObj = &g_aGroundObj[i];
         g_Ui.apInvList[i] = &g_aGround[i];
     }
     for (i32 p = 0; p < 4; ++p) {
@@ -263,6 +278,94 @@ static void TestMisses(void)
     Check(!Ui_HitTestTactItem(NULL, 30, 30), "  a NULL context is refused");
 }
 
+static void TestClear(void)
+{
+    InvHitTestCtx ctx = Ctx();
+
+    printf("Inv_ClearHitSlot @ 0x11f40 -- the footprint clear\n");
+
+    /* Region 0: the item leaves the cell list and the visible list is rebuilt. */
+    MapCell_Init(&g_Cell, 0, 0, 0);
+    g_Unit.pCell = &g_Cell;
+    g_Cell.pItemList = &g_aGround[0];
+    g_aGround[0].pNext = &g_aGround[1];
+    g_aGround[1].pNext = NULL;
+    g_Ui.nInvListSel = 0xFF;
+    g_Ui.nInvFilterType = 0;
+    Inv_BuildVisibleList(&g_Ui, &g_Unit);
+    CheckEqI32(g_Ui.nInvListCount, 2, "  two ground items are listed");
+    g_Hit.nHitRegion = INV_REGION_GROUND;
+    g_Hit.pHitItem = &g_aGround[0];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Cell.pItemList == &g_aGround[1], "  the hit item is out of the cell list");
+    CheckEqI32(g_Ui.nInvListCount, 1, "  and the visible list is rebuilt");
+
+    Reset();
+    ctx = Ctx();
+
+    /* A 2-wide pocket item clears both slots of the pair. */
+    g_aPocket[0][0].pObj = &g_ObjWide;
+    g_aPocket[0][1].pObj = &g_ObjWide;
+    g_Hit.nHitRegion = INV_REGION_POCKET0;
+    g_Hit.nHitSub0 = 0;
+    g_Hit.pHitItem = &g_aPocket[0][0];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.aPockets[0].apItem[0] == NULL &&
+          g_Unit.aPockets[0].apItem[1] == NULL,
+          "  a 2-wide pocket item clears both slots");
+
+    /* A 1-wide item at slot 1 leaves slot 0 alone. */
+    g_Hit.nHitRegion = INV_REGION_POCKET1;
+    g_Hit.nHitSub0 = 1;
+    g_Hit.pHitItem = &g_aPocket[1][1];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.aPockets[1].apItem[1] == NULL, "  slot 1 cleared");
+    Check(g_Unit.aPockets[1].apItem[0] == &g_aPocket[1][0], "  slot 0 untouched");
+
+    /* The two hands. */
+    g_Unit.pHandL = &g_aPocket[2][0];
+    g_Unit.pHandR = &g_aPocket[3][0];
+    g_Hit.nHitRegion = INV_REGION_HAND_L;
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.pHandL == NULL, "  region 5 clears pHandL");
+    g_Hit.nHitRegion = INV_REGION_HAND_R;
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.pHandR == NULL, "  region 6 clears pHandR");
+
+    /* A 2 x 2 backpack item clears four cells across two 4-slot rows. */
+    g_aPack[0].pObj = &g_ObjWide;
+    g_Hit.nHitRegion = INV_REGION_BACKPACK;
+    g_Hit.nHitSub0 = 0;
+    g_Hit.nHitSub1 = 0;
+    g_Hit.pHitItem = &g_aPack[0];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.apBackpack[0] == NULL && g_Unit.apBackpack[1] == NULL &&
+          g_Unit.apBackpack[4] == NULL && g_Unit.apBackpack[5] == NULL,
+          "  a 2x2 pack item clears slots 0,1,4,5 (row stride 4)");
+    Check(g_Unit.apBackpack[2] == &g_aPack[2] && g_Unit.apBackpack[3] == &g_aPack[3] &&
+          g_Unit.apBackpack[6] == &g_aPack[6] && g_Unit.apBackpack[7] == &g_aPack[7],
+          "  and leaves the other six");
+
+    /* A 1 x 3 belt item clears one column across two 3-slot rows. */
+    g_aBelt[0].pObj = &g_ObjTall;
+    g_Hit.nHitRegion = INV_REGION_BELT;
+    g_Hit.nHitSub0 = 0;
+    g_Hit.nHitSub1 = 0;
+    g_Hit.pHitItem = &g_aBelt[0];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.apBelt[0] == NULL && g_Unit.apBelt[3] == NULL &&
+          g_Unit.apBelt[6] == NULL,
+          "  a 1x3 belt item clears slots 0,3,6 (row stride 3)");
+    Check(g_Unit.apBelt[1] == &g_aBelt[1] && g_Unit.apBelt[8] == &g_aBelt[8],
+          "  and leaves the rest");
+
+    /* An unknown region does nothing at all. */
+    g_Hit.nHitRegion = INV_REGION_COUNT;
+    g_Hit.pHitItem = &g_aBelt[1];
+    Inv_ClearHitSlot(&ctx);
+    Check(g_Unit.apBelt[1] == &g_aBelt[1], "  an unknown region clears nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -273,6 +376,7 @@ int main(void)
     Reset(); TestBackpack();
     Reset(); TestBelt();
     Reset(); TestMisses();
+    Reset(); TestClear();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -498,11 +498,13 @@ preparing this document.
    module `src/pufo/game/pufo_invdrag.c` with the 25-record `aInvHitRects @ 0xA8DD8`
    table read out of the executable: the 4-column ground window, the first-match
    table rule, and the `unk_138EA0` slot mirror that redirects a hit through the
-   meta byte beside the slot (`test_invdrag` 75 checks). What is
+   meta byte beside the slot (`test_invdrag` 75 checks). `Inv_ClearHitSlot @ 0x11f40`
+   is ported beside it, and its raw dword writes (`4*(sub0 + 67/70/73/76)`,
+   `4*(sub0 + 4*sub1 + 79)`, `4*(sub0 + 3*sub1 + 91)`) confirm the `aPockets` 12-byte
+   records, the 4-slot backpack rows and the 3-slot belt rows. What is
    left of this task is the save/load slot screen (`SaveSlot_FormatList @ 0x45904`,
    `SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`, `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4`),
-   `Map_BuildDeployConfirmYesNo`, the inventory drop path `Inv_ClearHitSlot @ 0x11f40`
-   and `Inv_HandlePointer @ 0x12260`,
+   `Map_BuildDeployConfirmYesNo`, the inventory drop path `Inv_HandlePointer @ 0x12260`,
    and the geoscape screens. See
    `docs/parity/ui-core.md`, "The inventory hit test". The `UiPanel` type
    conflict is already resolved — the

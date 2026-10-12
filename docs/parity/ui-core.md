@@ -965,3 +965,33 @@ shifting the window while `sub0` stays the column, the end-of-list miss, the fou
 pockets and their shared edges, the empty-slot miss, all three mirror rules, the
 hand bands, the 4x2 backpack and 3x3 belt grids, the two unreachable backpack
 cells, and the entry-time clear of the hit state. `ctest` runs 45 suites.
+
+## Clearing the slot: Inv_ClearHitSlot @ 0x11f40
+
+Ported as `Inv_ClearHitSlot(const InvHitTestCtx *)` in the same module. It empties
+the slot the hit test selected, and it is the clearest evidence left for the layout
+of the Soldier inventory block, because the original writes raw dword indices from
+`Soldier+0`:
+
+| Region | Index written | Resolves to |
+|---|---|---|
+| 1..4 pockets | `4 * (sub0 + 67/70/73/76)` | bytes `0x10C/0x118/0x124/0x130` = `aPockets[0..3]`, 12-byte records |
+| 5, 6 hands | direct field write | `pHandL = NULL`, `pHandR = NULL` |
+| 7 backpack | `4 * (sub0 + 4*sub1 + 79)`, row stride `+16` | byte `0x13C` = `apBackpack[0]`, 4-slot rows |
+| 8 belt | `4 * (sub0 + 3*sub1 + 91)`, row stride `+12` | byte `0x16C` = `apBelt[0]`, 3-slot rows |
+
+The clear is a FOOTPRINT, not one slot: `nFootW` consecutive columns for `nFootH`
+rows, with the row stride 4 for the backpack and 3 for the belt. Each row is guarded
+by `pObj->nFootW != 0` (`LDRB [R3,#0xA6]` at `0x12174` / `0x12200`), so a zero-width
+item clears nothing. Region 0 is the ground list: `MapCell_ListRemove(pSelUnit->
+pCell, pInvHitItem)` at `0x11FB4` and then `Inv_BuildVisibleList`, so the window
+shows what is left.
+
+Deviation: the original writes `nFootW` consecutive dwords with no bound, so a 2-wide
+item in pocket slot 1 also zeroes the four meta/spare bytes that follow the two item
+pointers. The port clears item slots only.
+
+`test_invdrag` now runs 88 checks, covering the ground removal plus the rebuild, the
+2-wide pocket pair clear, a 1-wide clear that leaves the neighbour, both hands, a 2x2
+backpack clear across two 4-slot rows, a 1x3 belt clear across two 3-slot rows, and
+the unknown-region no-op.

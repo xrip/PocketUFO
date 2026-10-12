@@ -197,3 +197,99 @@ bool Ui_HitTestTactItem(const InvHitTestCtx *pCtx, i32 nX, i32 nY)
     Hit_DragOffsets(pCtx->pHit, pItem);
     return pItem != NULL;
 }
+
+/* The footprint width guard: the original tests `pObj->nFootW != 0` before each
+ * row (0x12174 / 0x12200, `LDRB [R3,#0xA6]`), so a zero-width item clears nothing. */
+static i32 Clear_FootW(const TactItem *pItem)
+{
+    if (pItem == NULL || pItem->pObj == NULL) {
+        return 0;
+    }
+    return (pItem->pObj->nFootW != 0) ? (i32)pItem->pObj->nFootW : 0;
+}
+
+void Inv_ClearHitSlot(const InvHitTestCtx *pCtx)
+{
+    TactItem *pItem;
+    Soldier *pUnit;
+    i32 nFootW;
+    i32 nFootH;
+    i32 nRow;
+
+    if (pCtx == NULL || pCtx->pHit == NULL || pCtx->pSelUnit == NULL) {
+        return;
+    }
+    pUnit = pCtx->pSelUnit;
+    pItem = pCtx->pHit->pHitItem;
+
+    switch (pCtx->pHit->nHitRegion) {
+        case INV_REGION_GROUND:
+            /* 0x11FB4: the item leaves the cell it lies on, then the visible list
+             * is rebuilt so the window shows what is left. */
+            if (pUnit->pCell != NULL && pItem != NULL) {
+                MapCell_ListRemove(pUnit->pCell, pItem);
+            }
+            Inv_BuildVisibleList(pCtx->pUi, pUnit);
+            return;
+        case INV_REGION_POCKET0:
+        case INV_REGION_POCKET1:
+        case INV_REGION_POCKET2:
+        case INV_REGION_POCKET3: {
+            InvPocketPair *pPk = &pUnit->aPockets[pCtx->pHit->nHitRegion - 1];
+            i32 nStart = pCtx->pHit->nHitSub0;
+
+            /* 0x11FE0: dword index `sub0 + 67/70/73/76`, i.e. the pocket record
+             * with its 12-byte stride. */
+            nFootW = Clear_FootW(pItem);
+            for (i32 i = 0; i < nFootW; ++i) {
+                if (nStart + i >= 0 && nStart + i < 2) {
+                    pPk->apItem[nStart + i] = NULL;
+                }
+            }
+            return;
+        }
+        case INV_REGION_HAND_L:
+            pUnit->pHandL = NULL;   /* 0x12124 */
+            return;
+        case INV_REGION_HAND_R:
+            pUnit->pHandR = NULL;   /* 0x1213C */
+            return;
+        case INV_REGION_BACKPACK:
+            if (pItem == NULL || pItem->pObj == NULL) {
+                return;
+            }
+            nFootW = Clear_FootW(pItem);
+            nFootH = (i32)pItem->pObj->nFootH;
+            for (nRow = 0; nRow < nFootH; ++nRow) {
+                /* 0x12164: index `sub0 + 4*sub1 + 79`, row stride 4 slots. */
+                i32 nStart = pCtx->pHit->nHitSub0 +
+                             4 * pCtx->pHit->nHitSub1 + 4 * nRow;
+                for (i32 i = 0; i < nFootW; ++i) {
+                    if (nStart + i >= 0 && nStart + i < 8) {
+                        pUnit->apBackpack[nStart + i] = NULL;
+                    }
+                }
+            }
+            return;
+        case INV_REGION_BELT:
+            if (pItem == NULL || pItem->pObj == NULL) {
+                return;
+            }
+            nFootW = Clear_FootW(pItem);
+            nFootH = (i32)pItem->pObj->nFootH;
+            for (nRow = 0; nRow < nFootH; ++nRow) {
+                /* 0x121F0: index `sub0 + 3*sub1 + 91`, row stride 3 slots. */
+                i32 nStart = pCtx->pHit->nHitSub0 +
+                             3 * pCtx->pHit->nHitSub1 + 3 * nRow;
+                for (i32 i = 0; i < nFootW; ++i) {
+                    if (nStart + i >= 0 && nStart + i < 9) {
+                        pUnit->apBelt[nStart + i] = NULL;
+                    }
+                }
+            }
+            return;
+        default:
+            /* 0x12250: an unknown region does nothing. */
+            return;
+    }
+}

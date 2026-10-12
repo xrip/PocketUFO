@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 217284 / 598792 (36.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 3930 |
+| Test checks run | 3943 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -401,7 +401,7 @@ is the module that answers to it.
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_input.h` |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/ui/pufo_uibank.h` |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h` |
+| `0x11f40` | `Inv_ClearHitSlot` | 788 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` |
 | `0x16af0` | `TactHud_ClimbDown` | 788 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x156e0` | `Input_OnSecondary` | 780 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
 | `0x15f3c` | `Input_OnConfirm` | 708 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
@@ -1318,7 +1318,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoscape` | PASS | 45 |
 | `test_input` | PASS | 246 |
-| `test_invdrag` | PASS | 75 |
+| `test_invdrag` | PASS | 88 |
 | `test_isodraw` | PASS | 8 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
