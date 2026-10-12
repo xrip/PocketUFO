@@ -275,7 +275,7 @@ bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed)
 /* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn
  * @ 0x82080..0x820B0 apply. Identical in both, so it lives here once. The upper test
  * uses the value the lower clamp produced, not the one it started from. */
-static void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight)
+void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight)
 {
     const i32 nHalfH = pView->nMapH / 2 - 160;
     i32 nY = pView->nScrollY;

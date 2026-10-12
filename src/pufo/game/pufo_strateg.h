@@ -273,4 +273,14 @@ bool Smap_ZoomIn(SmapView *pView, const SmapZoomSet aSets[3],
  * map pair 800 x 400 (scale 1.33), level 0 does nothing. No clamping. */
 bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut);
 
+/* Smap_ClampScrollY @ 0x837f8. The original keeps the vertical clamp as its own
+ * function: it gates on the screen id at 0x186BC4 not being 2, and takes the strip
+ * height from [0x186BBC]->uHeight. Smap_ScrollBy @ 0x820d0 (0x82124..0x82160) and
+ * Smap_ZoomIn @ 0x81e44 (0x82080..0x820B0) both INLINE the same code instead of
+ * calling it, which is why the port has one helper and three call sites. The screen-id
+ * gate lives here, not in the callers.
+ *
+ * 0x83830 writes `160 - nMapH/2`, the same value as -(nMapH/2 - 160). */
+void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight);
+
 #endif /* PUFO_STRATEG_H */
