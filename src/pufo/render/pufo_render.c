@@ -106,6 +106,13 @@ u8 *SoftSurf_GetPixels(const SoftSurf *pSurf)
     return pSurf->pPixels;
 }
 
+/* SoftSurf_GetAlloc @ 0x9fcbc. The raw allocation, which is four bytes below pPixels
+ * because the glyph header is the allocation prefix. */
+void *SoftSurf_GetAlloc(const SoftSurf *pSurf)
+{
+    return pSurf->pAlloc;
+}
+
 void Render_SetTarget(i32 nW, i32 nH, i32 nBytes, i32 nPitchX, i32 nPitchY, u8 *pBits)
 {
     g_renderTarget.nWidth      = nW;
@@ -351,6 +358,21 @@ void SoftSurf_BlitSrcRect(i32 x, i32 y, i32 nRectW, i32 nRectH, u32 nIdx,
                            nColorMid, nColorLow, nKey);
 }
 
+/* BlitState_Get @ 0xa479c. Returns the width of the currently loaded surface. */
+i32 BlitState_Get(void)
+{
+    return g_blitState.nSurf0;
+}
+
+/* SoftSurf_BlitRectProxy @ 0x2dce4. A caller-side shim: its first argument is dropped and
+ * the last three are widened from bytes before the bound fill is called. */
+void SoftSurf_BlitRectProxy(i32 nIgnored, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                            u8 nIdx, u8 nColorMid, u8 nColorLow)
+{
+    (void)nIgnored;
+    SoftSurf_BlitRect(x, y, nRectW, nRectH, (u32)nIdx, (i32)nColorMid, (i32)nColorLow);
+}
+
 /* Render_BlitSoft_LoRes @ 0x9fa7c / HiRes @ 0x9fa90.
  *
  * The HiRes variant (Blit_CopyRows_HiRes @ 0xa3bb8) writes each source pixel as
@@ -584,17 +606,21 @@ static void Blit_FlipBlend(i32 x, i32 y, const u8 *pGlyph, const u32 *pPal, cons
     }
 }
 
+/* SoftSurf_BlitIndexedEx @ 0x9fadc. */
 void SoftSurf_BlitIndexedEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph, i32 nPalSlot)
 {
     Blit_LoadSurface(pSurf);
     Blit_Indexed(x, y, pGlyph, g_aPalette[nPalSlot & (PUFO_PAL_SLOTS - 1)], false, 0);
 }
 
+/* SoftSurf_BlitIndexedKeyedEx @ 0x9fb0c. The key travels through blitColorKey, not as an
+ * argument: the original calls Blit_SetColorKey and the Inner reads the global. */
 void SoftSurf_BlitIndexedKeyedEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph,
                                  i32 nPalSlot, u8 nKey)
 {
     Blit_LoadSurface(pSurf);
-    Blit_Indexed(x, y, pGlyph, g_aPalette[nPalSlot & (PUFO_PAL_SLOTS - 1)], true, (i32)nKey);
+    Blit_SetColorKey(nKey);
+    Blit_Indexed(x, y, pGlyph, g_aPalette[nPalSlot & (PUFO_PAL_SLOTS - 1)], true, s_nColorKey);
 }
 
 void SoftSurf_BlitEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph,
@@ -612,67 +638,57 @@ void SoftSurf_BlitFlipEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph,
     Blit_FlipBlend(x, y, pGlyph, pPal, pMask);
 }
 
-/* SoftSurf_FillRect_Inner @ 0xa3f94. Fills w x h with one palette entry. The
- * original takes the size from the source-rect globals that SoftSurf_FillRectEx
- * sets; taking them directly is equivalent and avoids the global hop. */
-void SoftSurf_FillRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nW, i32 nH,
-                         i32 nPalSlot, i32 nIdx)
+/* SoftSurf_FillRect_Inner @ 0xa3f94. The size is not an argument: it comes from
+ * blitRectW / blitRectH, which SoftSurf_FillRectEx publishes. An 8bpp surface is filled
+ * with the raw index byte, a 16bpp surface with the palette entry. A surface mode that is
+ * neither 0 nor 1 nor 2 draws nothing. */
+void SoftSurf_FillRect_Inner(i32 x, i32 y, i32 nIdx, const u32 *pPal)
 {
-    i32 nFillW = nW;
-    i32 nFillH = nH;
-    i32 y2;
+    i32 nFillW, nFillH;
+    i32 nRow, nCol;
 
-    if (nFillW < 0) {
-        nFillW = 0;
-    }
-    if (nFillH < 0) {
-        nFillH = 0;
-    }
-
-    Blit_LoadSurface(pSurf);
-
-    if (x > g_blitState.nSurf0 || y > g_blitState.nSurf1
-        || x + nFillW < 0 || y + nFillH < 0) {
+    if (!(g_blitState.nSurf2 == 0 || g_blitState.nSurf2 == 1 || g_blitState.nSurf2 == 2)) {
         return;
     }
-    if (x < 0) {
-        nFillW += x;
-        x       = 0;
-    }
-    if (y < 0) {
-        nFillH += y;
-        y       = 0;
-    }
-    if (x + nFillW > g_blitState.nSurf0) {
-        nFillW -= (x + nFillW) - g_blitState.nSurf0;
-    }
-    if (y + nFillH > g_blitState.nSurf1) {
-        nFillH -= (y + nFillH) - g_blitState.nSurf1;
-    }
-    if (nFillW <= 0 || nFillH <= 0) {
+    if (!Blit_ClipFillRect(&x, &y, &nFillW, &nFillH)) {
         return;
     }
 
-    for (y2 = 0; y2 < nFillH; ++y2) {
-        i32 x2;
+    if (g_blitState.nSurf2 == 0) {
+        u8 *pRow = (u8 *)g_blitState.pSrc + g_blitState.nSurf0 * y + x;
 
-        if (g_blitState.nSurf2 == 0) {
-            u8 *pDst = (u8 *)g_blitState.pSrc + g_blitState.nSurf0 * (y + y2) + x;
-
-            for (x2 = 0; x2 < nFillW; ++x2) {
-                *pDst++ = (u8)nIdx;
+        for (nRow = nFillH; nRow != 0; --nRow) {
+            u8 *pStart = pRow;
+            for (nCol = nFillW; nCol != 0; --nCol) {
+                *pRow++ = (u8)nIdx;
             }
-        } else {
-            /* The original only implements the 16bpp branch here (nSurf2 1|2). */
-            u16 *pDst   = (u16 *)((u8 *)g_blitState.pSrc
-                                  + 2 * (g_blitState.nSurf0 * (y + y2) + x));
-            u16  nColor = (u16)g_aPalette[nPalSlot & (PUFO_PAL_SLOTS - 1)][nIdx];
+            pRow = pStart + g_blitState.nSurf0;
+        }
+        return;
+    }
 
-            for (x2 = 0; x2 < nFillW; ++x2) {
-                *pDst++ = nColor;
+    {
+        u16  nColor = (u16)pPal[nIdx];
+        u16 *pRow   = (u16 *)g_blitState.pSrc + g_blitState.nSurf0 * y + x;
+
+        for (nRow = nFillH; nRow != 0; --nRow) {
+            u16 *pStart = pRow;
+            for (nCol = nFillW; nCol != 0; --nCol) {
+                *pRow++ = nColor;
             }
+            pRow = pStart + g_blitState.nSurf0;
         }
     }
+}
+
+/* SoftSurf_FillRectEx @ 0x9fbbc. Publishes the rectangle with both colour operands zero,
+ * which is what makes the fill a flat palette entry rather than a packed colour. */
+void SoftSurf_FillRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                         i32 nPalSlot, i32 nIdx)
+{
+    Blit_LoadSurface(pSurf);
+    Blit_SetRectAndColor(nRectW, nRectH, 0, 0);
+    SoftSurf_FillRect_Inner(x, y, nIdx, g_aPalette[nPalSlot & (PUFO_PAL_SLOTS - 1)]);
 }
 
 /* Palette_Load @ 0x3e47c. Reads 768 bytes of RGB triples and converts to the

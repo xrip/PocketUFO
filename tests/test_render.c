@@ -375,6 +375,76 @@ static void TestRectFillAndBlend(void)
     SoftSurf_dtor(&surf);
 }
 
+/* SoftSurf_GetAlloc @ 0x9fcbc, BlitState_Get @ 0xa479c, SoftSurf_FillRect_Inner @ 0xa3f94,
+ * SoftSurf_BlitRectProxy @ 0x2dce4. */
+static void TestRectHelpers(void)
+{
+    SoftSurf surf;
+    u16      aTarget[12];
+    u16     *pPix;
+    i32      i;
+
+    printf("FillRect_Inner / GetAlloc / BlitState_Get / BlitRectProxy\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 4, 3, PIXMODE_16BPP);
+    pPix = (u16 *)SoftSurf_GetPixels(&surf);
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; aTarget[i] = 0; }
+    Render_SetTarget(4, 3, 2, 2, 8, (u8 *)aTarget);
+
+    Check(surf.pPixels == (u8 *)SoftSurf_GetAlloc(&surf) + 4,
+          "  GetAlloc returns the block four bytes below the pixels");
+
+    Blit_LoadSurface(&surf);
+    CheckEqI32(BlitState_Get(), 4, "  BlitState_Get returns the loaded surface width");
+
+    /* The Inner takes its size from the published rectangle, not from arguments. */
+    g_aPalette[1][5] = 0x1234;
+    Blit_SetRectAndColor(2, 2, 0, 0);
+    SoftSurf_FillRect_Inner(0, 0, 5, g_aPalette[1]);
+    CheckEqU32(pPix[0], 0x1234, "  (0,0) from the published rect");
+    CheckEqU32(pPix[1], 0x1234, "  (1,0)");
+    CheckEqU32(pPix[4], 0x1234, "  (0,1)");
+    CheckEqU32(pPix[5], 0x1234, "  (1,1)");
+    CheckEqU32(pPix[2], 0, "  (2,0) outside the published rect");
+    CheckEqU32(pPix[8], 0, "  (0,2) outside the published rect");
+
+    /* A negative published rectangle clamps to zero and draws nothing. */
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    Blit_SetRectAndColor(-4, -4, 0, 0);
+    SoftSurf_FillRect_Inner(0, 0, 5, g_aPalette[1]);
+    CheckEqU32(pPix[0], 0, "  negative rect draws nothing");
+
+    /* 8bpp surface: the fill writes the raw index byte, not a palette entry. */
+    {
+        SoftSurf surf8;
+        u8      *pBytes;
+
+        SoftSurf_ctor(&surf8);
+        SoftSurf_AllocPixels(&surf8, 4, 1, PIXMODE_8BPP);
+        pBytes = SoftSurf_GetPixels(&surf8);
+        pBytes[0] = 0; pBytes[1] = 0; pBytes[2] = 0; pBytes[3] = 0;
+        Blit_LoadSurface(&surf8);
+        Blit_SetRectAndColor(2, 1, 0, 0);
+        SoftSurf_FillRect_Inner(0, 0, 0xAB, g_aPalette[1]);
+        CheckEqI32(pBytes[0], 0xAB, "  8bpp fill writes the index byte");
+        CheckEqI32(pBytes[1], 0xAB, "  8bpp fill covers the rect");
+        CheckEqI32(pBytes[2], 0, "  8bpp fill stops at the rect width");
+        SoftSurf_dtor(&surf8);
+    }
+
+    /* The proxy drops its first argument and widens the last three from bytes. It goes
+     * through the bound fill, so it needs g_pMainSurface to be the test surface. */
+    Render_SetTarget(4, 3, 2, 2, 8, (u8 *)aTarget);
+    for (i = 0; i < 12; ++i) { pPix[i] = 0; }
+    g_pMainSurface = &surf;
+    SoftSurf_BlitRectProxy(0x7777, 0, 0, 1, 1, 0xFF, 0xFF, 0xFF);
+    g_pMainSurface = NULL;
+    CheckEqU32(pPix[0], 0xFFFF, "  proxy ignores its first argument and widens the bytes");
+
+    SoftSurf_dtor(&surf);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -393,6 +463,7 @@ int main(void)
     TestFillRect();
     TestCopyRows();
     TestRectFillAndBlend();
+    TestRectHelpers();
 
     Asset_CloseArchives();
 

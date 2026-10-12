@@ -14,6 +14,9 @@
  *   SoftSurf_BlitIndexed_Inner @ 0xa306c,
  *   SoftSurf_BlitIndexedKeyed_Inner @ 0xa3638,
  *   SoftSurf_FillRect_Inner @ 0xa3f94,
+ *   SoftSurf_BlitIndexedEx @ 0x9fadc, SoftSurf_BlitIndexedKeyedEx @ 0x9fb0c,
+ *   SoftSurf_FillRectEx @ 0x9fbbc, SoftSurf_GetAlloc @ 0x9fcbc,
+ *   BlitState_Get @ 0xa479c, SoftSurf_BlitRectProxy @ 0x2dce4,
  *   SoftSurf_BlitIndexed @ 0x9e9f4, SoftSurf_BlitIndexedKeyed @ 0x9ea34,
  *   SoftSurf_Blit @ 0x9e558, SoftSurf_BlitFlip @ 0x9e590,
  *   SoftSurf_BlitRectEx @ 0x9fc30, SoftSurf_BlitSrcRectEx @ 0x9fc70,
@@ -152,8 +155,13 @@ void SoftSurf_BlitEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph,
  * IDA's names (nW, nH, nKey) are wrong for this function. */
 void SoftSurf_BlitFlipEx(const SoftSurf *pSurf, i32 x, i32 y, const u8 *pGlyph,
                          const u32 *pPal, const u8 *pMask);
-void SoftSurf_FillRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nW, i32 nH,
+void SoftSurf_FillRectEx(const SoftSurf *pSurf, i32 x, i32 y, i32 nRectW, i32 nRectH,
                          i32 nPalSlot, i32 nIdx);
+void SoftSurf_FillRect_Inner(i32 x, i32 y, i32 nIdx, const u32 *pPal);
+void *SoftSurf_GetAlloc(const SoftSurf *pSurf);
+i32  BlitState_Get(void);
+void SoftSurf_BlitRectProxy(i32 nIgnored, i32 x, i32 y, i32 nRectW, i32 nRectH,
+                            u8 nIdx, u8 nColorMid, u8 nColorLow);
 
 void SoftSurf_BlitIndexed(i32 x, i32 y, const u8 *pGlyph, i32 nPalSlot);
 void SoftSurf_BlitIndexedKeyed(i32 x, i32 y, const u8 *pGlyph, i32 nPalSlot, u8 nKey);
