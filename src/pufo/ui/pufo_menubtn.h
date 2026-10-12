@@ -118,4 +118,49 @@ i32 Menu_OpenQuitDialog(UiModalState *pModal, u16 *pnUiScreen,
 /* Menu_CancelQuitDialog @ 0x18e04, the NO callback: it only clears the screen. */
 void Menu_CancelQuitDialog(u16 *pnUiScreen);
 
+/* ------------------------------------------------- the start menu buttons
+ *
+ * Evidence: MenuCtl0_OnClick @ 0x1a09c, MenuCtl1_OnClick @ 0x1a034,
+ * MenuCtl2_OnClick @ 0x1a064, MenuCtl3_OnClick @ 0x1a080.
+ *
+ * All four play sample 16 and then shut the start UI down (StartUi_Shutdown @ 0x38d7c, not
+ * ported, so it is a hook). What runs afterwards is the whole of the main menu:
+ *
+ *   0  Geoscape_InitUI(0)                                  new game
+ *   1  SaveSlot_FormatList(ctx), then the list mode becomes 2   load
+ *   2  Titles_Init                                        credits
+ *   3  App_QuitDisplay                                    quit
+ *
+ * Only button 1 touches the list mode, and it does so AFTER the list is built (0x1A048 then
+ * 0x1A054). The mode is the same global Menu_OpenSlotList clears to 0 and MenuCtl8..14 set
+ * to 3. */
+typedef struct StartMenuHooks {
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void (*pfnShutdownStartUi)(void *pUser); /* StartUi_Shutdown @ 0x38d7c */
+    void (*pfnNewGame)(void *pUser);         /* Geoscape_InitUI @ 0x857f4 */
+    void (*pfnFormatSlots)(void *pUser);     /* SaveSlot_FormatList @ 0x45904 */
+    void (*pfnTitles)(void *pUser);          /* Titles_Init @ 0x380d8 */
+    void (*pfnQuit)(void *pUser);            /* App_QuitDisplay @ 0xa0388 */
+    void *pUser;
+} StartMenuHooks;
+
+void MenuCtl0_OnClick(const StartMenuHooks *pHooks);
+void MenuCtl1_OnClick(i32 *pnListMode, const StartMenuHooks *pHooks);
+void MenuCtl2_OnClick(const StartMenuHooks *pHooks);
+void MenuCtl3_OnClick(const StartMenuHooks *pHooks);
+
+/* MenuCtl8..14_OnClick @ 0x1a0bc/0x1a0f0/0x1a124/0x1a158/0x1a18c/0x1a1c0/0x1a1f4: the seven
+ * load-slot buttons, identical except for the slot number 0..6.
+ *
+ * Three details the source only shows in the disassembly. The mode is set to 3 BEFORE the
+ * load runs (0x1A0CC before 0x1A0D4), so a load that re-enters the UI sees "loading". The
+ * test on the result is on its LOW BYTE (`CBZ R0` after a byte compare at 0x1A0DC), not the
+ * whole word. And a failed load puts the mode back to 2 -- the value MenuCtl1_OnClick set
+ * when it opened the list -- and returns 2 rather than the callee's value. */
+#define PUFO_MENU_MODE_LOAD_LIST 2
+#define PUFO_MENU_MODE_LOADING   3
+
+i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
+                  i32 (*pfnLoadGame)(i32 nSlot, void *pUser), void *pUser);
+
 #endif /* PUFO_MENUBTN_H */

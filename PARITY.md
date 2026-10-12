@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 543 / 1103 (49.2%) |
-| Bytes of original code cited | 232480 / 598792 (38.8%) |
+| Functions cited as evidence | 555 / 1103 (50.3%) |
+| Bytes of original code cited | 235048 / 598792 (39.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4563 |
+| Test checks run | 4596 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -33,19 +33,19 @@ the per-subsystem notes and the tests listed at the end.
 | Subsystem | Recreated | Total | Bytes covered | What it is |
 |---|---|---|---|---|
 | `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
-| `boot-assets` | 3 | 4 | 2536 / 2744 | startup asset load, text-table extraction, shutdown |
+| `boot-assets` | 4 | 4 | 2744 / 2744 | startup asset load, text-table extraction, shutdown |
 | `render` | 33 | 51 | 6972 / 11108 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 18 | 21 | 1036 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 16 | 35 | 12964 / 27172 | save/load chunk read/write |
+| `save` | 14 | 35 | 9000 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 66 | 205 | 40852 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 78 | 243 | 7352 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
-| `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
+| `strat` | 67 | 205 | 46272 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 89 | 243 | 7852 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `titles` | 3 | 13 | 552 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
 
@@ -74,12 +74,13 @@ is the module that answers to it.
 | `0x9f95c` | `AssetReader_Found` | 8 | `src/pufo/asset/pufo_asset.h` |
 | `0x9f964` | `AssetReader_Size` | 8 | `src/pufo/asset/pufo_asset.h` |
 
-### `boot-assets` (3 functions)
+### `boot-assets` (4 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
 | `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
+| `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
 ### `render` (33 functions)
@@ -166,7 +167,7 @@ is the module that answers to it.
 | `0x9fcc4` | `WinMain` | 132 | `src/pufo/app/pufo_app.c` |
 | `0x54c80` | `CDialogTemplate_GetCellByte` | 116 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x9e7f4` | `StartTimers_D` | 112 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
-| `0xa0388` | `App_QuitDisplay` | 100 | `src/pufo/app/pufo_app.c` |
+| `0xa0388` | `App_QuitDisplay` | 100 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x9e864` | `KillTimers_D` | 80 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e8b4` | `KillTimers_BySpeed` | 80 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_timer.c` (+1) |
 | `0x9e6d4` | `StartTimers_A` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
@@ -191,15 +192,13 @@ is the module that answers to it.
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
 
-### `save` (16 functions)
+### `save` (14 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x44bbc` | `LoadGame` | 3400 | `src/pufo/game/pufo_save.h` |
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
-| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/game/pufo_save.h`, `src/pufo/game/pufo_tactctl.c` (+1) |
-| `0x44988` | `SaveGame` | 564 | `src/pufo/game/pufo_save.h` |
+| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x3fa28` | `Save_WriteSmap` | 396 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x3f558` | `Save_WriteResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x406e8` | `Save_ReadResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -504,12 +503,13 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (66 functions)
+### `strat` (67 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_input.h` |
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_input.h` |
+| `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_geoscape.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
@@ -575,7 +575,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (78 functions)
+### `strat-ui` (89 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -617,8 +617,16 @@ is the module that answers to it.
 | `0x19618` | `MenuBtn_ActionBack1` | 56 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x72e30` | `ResearchScreen_PanelPrev` | 56 | `src/pufo/game/pufo_baseui.h` |
 | `0x72e68` | `ResearchScreen_PanelNext` | 56 | `src/pufo/game/pufo_baseui.h` |
+| `0x1a0bc` | `MenuCtl8_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a0f0` | `MenuCtl9_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a124` | `MenuCtl10_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a158` | `MenuCtl11_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a18c` | `MenuCtl12_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a1c0` | `MenuCtl13_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a1f4` | `MenuCtl14_OnClick` | 52 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19498` | `MenuBtn_Secondary` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x194c8` | `MenuBtn_ConfirmClear` | 48 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a034` | `MenuCtl1_OnClick` | 48 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x614cc` | `ManufScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x614fc` | `TransferScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
 | `0x6167c` | `BaseInfoScreen_Open` | 48 | `src/pufo/game/pufo_baseui.h` |
@@ -643,9 +651,12 @@ is the module that answers to it.
 | `0x198f0` | `MenuBtn_ConfirmSnd15` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19910` | `MenuBtn_Confirm4` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a014` | `MenuBtn_Confirm5` | 32 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a09c` | `MenuCtl0_OnClick` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/game/pufo_baseui.h` |
+| `0x1a064` | `MenuCtl2_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
+| `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | `src/pufo/game/pufo_baseui.h` |
@@ -658,10 +669,11 @@ is the module that answers to it.
 | `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x75154` | `BuySellScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `titles` (2 functions)
+### `titles` (3 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x380d8` | `Titles_Init` | 404 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x3826c` | `Titles_Shutdown` | 100 | `src/pufo/game/pufo_input.h` |
 | `0x389f8` | `EndScreen_Shutdown` | 48 | `src/pufo/game/pufo_input.h` |
 
@@ -677,12 +689,6 @@ whose port work they belong to.
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-
-### `boot-assets` — 1 functions, 208 bytes remaining
-
-| Address | Original | Size | Note |
-|---|---|---|---|
-| `0x38d7c` | `StartUi_Shutdown` | 208 | not yet ported; scheduled with the `boot-assets` subsystem work |
 
 ### `render` — 18 functions, 4136 bytes remaining
 
@@ -854,10 +860,11 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 19 functions, 14208 bytes remaining
+### `save` — 21 functions, 18172 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
+| `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 | `0x40f4c` | `Save_ReadStrateg` | 1664 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3fbb4` | `Save_WriteStrateg` | 1616 | not yet ported; scheduled with the `save` subsystem work |
 | `0x433d8` | `Save_ReadMap` | 1288 | not yet ported; scheduled with the `save` subsystem work |
@@ -870,6 +877,7 @@ whose port work they belong to.
 | `0x3f1fc` | `Save_WriteBases` | 760 | not yet ported; scheduled with the `save` subsystem work |
 | `0x446a8` | `Save_WriteTGameData` | 640 | not yet ported; scheduled with the `save` subsystem work |
 | `0x43c84` | `Save_WriteTeamUnits` | 604 | not yet ported; scheduled with the `save` subsystem work |
+| `0x44988` | `SaveGame` | 564 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44020` | `Save_ReadTeamUnits` | 552 | not yet ported; scheduled with the `save` subsystem work |
 | `0x42f48` | `Save_WriteFlobjs` | 388 | not yet ported; scheduled with the `save` subsystem work |
 | `0x43258` | `Save_ReadFlobjs` | 384 | not yet ported; scheduled with the `save` subsystem work |
@@ -967,12 +975,11 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 139 functions, 121604 bytes remaining
+### `strat` — 138 functions, 116184 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x857f4` | `Geoscape_InitUI` | 5420 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x94554` | `Game_StartNew` | 3976 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x60570` | `RadarScreen_Update` | 3804 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1111,7 +1118,7 @@ whose port work they belong to.
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 165 functions, 109656 bytes remaining
+### `strat-ui` — 154 functions, 109156 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1267,21 +1274,10 @@ whose port work they belong to.
 | `0x79c30` | `BasePlaneScreen_SelectWeapon29` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x79c74` | `BasePlaneScreen_SelectWeapon30` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a0bc` | `MenuCtl8_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a0f0` | `MenuCtl9_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a124` | `MenuCtl10_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a158` | `MenuCtl11_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a18c` | `MenuCtl12_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a1c0` | `MenuCtl13_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a1f4` | `MenuCtl14_OnClick` | 52 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a034` | `MenuCtl1_OnClick` | 48 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a09c` | `MenuCtl0_OnClick` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a064` | `MenuCtl2_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x1a080` | `MenuCtl3_OnClick` | 28 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | not yet ported; scheduled with the `strat-ui` subsystem work |
 
-### `titles` — 11 functions, 4296 bytes remaining
+### `titles` — 10 functions, 3892 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1289,7 +1285,6 @@ whose port work they belong to.
 | `0x1a83c` | `Titles_DrawAnimatedFrame` | 672 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x1e630` | `Titles_DrawBackdrop` | 600 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x468cc` | `Titles_LoadScene` | 512 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x380d8` | `Titles_Init` | 404 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46738` | `Titles_DrawCreditLines` | 404 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x388b0` | `EndScreen_Init` | 328 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46e88` | `Titles_ctor` | 284 | not yet ported; scheduled with the `titles` subsystem work |
@@ -1324,7 +1319,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_mapcell` | PASS | 112 |
 | `test_mapctx` | PASS | 83 |
 | `test_menu` | PASS | 189 |
-| `test_menubtn` | PASS | 67 |
+| `test_menubtn` | PASS | 100 |
 | `test_modal` | PASS | 14 |
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 143 |
@@ -1368,7 +1363,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 163 citations.
+parity report. Total: 166 citations.
 
 ### Offsets below the image base (37)
 
@@ -1377,7 +1372,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (126)
+### At or above the image base (129)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1475,6 +1470,9 @@ against the IDB when the final report is assembled.
 - `0x188538`
 - `0x188d54`
 - `0x18e74`
+- `0x1a078`
+- `0x1a098`
+- `0x1a0b8`
 - `0x1b114`
 - `0x254b0`
 - `0x2fd30`

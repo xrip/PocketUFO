@@ -814,6 +814,29 @@ so `pLabel15` replaced the fourth int of `anRect12_15`. `App_QuitFromTact` is
 callbacks are injected. `Menu_CancelQuitDialog`, the NO callback, only clears the
 screen.
 
+### The start menu buttons and the seven load slots (done)
+
+`MenuCtl0_OnClick @ 0x1a09c`, `MenuCtl1_OnClick @ 0x1a034`, `MenuCtl2_OnClick @ 0x1a064` and
+`MenuCtl3_OnClick @ 0x1a080` are the main menu. All four play sample 16 and then shut the
+start UI down (`StartUi_Shutdown @ 0x38d7c`, not ported, so it is a hook). What runs
+afterwards is the entire menu: new game (`Geoscape_InitUI(0)`), load (`SaveSlot_FormatList`,
+then the list mode becomes 2), credits (`Titles_Init`), quit (`App_QuitDisplay`). Only the
+load button touches the list mode, and it does so after the list is built (0x1A048 then
+0x1A054).
+
+`MenuCtl8..14_OnClick @ 0x1a0bc/0x1a0f0/0x1a124/0x1a158/0x1a18c/0x1a1c0/0x1a1f4` are the
+seven load-slot buttons, identical except for the slot number 0..6, so the port keeps one
+function `Menu_LoadSlot` with the slot as an argument. Three details come only from the
+disassembly: the mode is set to 3 **before** the load runs (0x1A0CC before 0x1A0D4), so a
+load that re-enters the UI sees "loading"; the test on the result is on its **low byte**
+(0x1A0DC), not the whole word, so a result of `0x100` fails while `0x101` passes; and a
+failed load returns 2 rather than the callee's value, putting the mode back to the value the
+load button set when it opened the list. Covered by `tests/test_menubtn.c`
+(`TestStartMenu`, 33 checks).
+
+The list mode is one global shared by three handlers: `Menu_OpenSlotList` clears it to 0,
+`MenuCtl1_OnClick` sets it to 2, `Menu_LoadSlot` sets it to 3 while a load runs.
+
 ### The options screen re-reads itself: Options_SyncUiFromMap_GotoScreen12 @ 0x188e4
 
 Ported as `Menu_SyncOptionPads` in `pufo_menu.c`. The options button changes no

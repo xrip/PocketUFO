@@ -330,6 +330,112 @@ static void TestQuitDialog(void)
     TestEqI32("  the NO callback only clears the screen", (i32)nScreen, 0);
 }
 
+static i32 g_nSmSample;
+static i32 g_nSmLoadSlot;
+static i32 g_nSmLoadResult;
+static char g_szSmLog[24];
+
+static void SmLog(char c)
+{
+    size_t n = strlen(g_szSmLog);
+    if (n + 1 < sizeof(g_szSmLog)) {
+        g_szSmLog[n] = c;
+        g_szSmLog[n + 1] = 0;
+    }
+}
+
+static void SmSample(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    g_nSmSample = (i32)nSample;
+    SmLog('s');
+}
+
+static void SmShutdown(void *pUser) { (void)pUser; SmLog('x'); }
+static void SmNewGame(void *pUser) { (void)pUser; SmLog('g'); }
+static void SmFormatSlots(void *pUser) { (void)pUser; SmLog('f'); }
+static void SmTitles(void *pUser) { (void)pUser; SmLog('t'); }
+static void SmQuit(void *pUser) { (void)pUser; SmLog('q'); }
+
+static i32 SmLoadGame(i32 nSlot, void *pUser)
+{
+    (void)pUser;
+    g_nSmLoadSlot = nSlot;
+    SmLog('l');
+    return g_nSmLoadResult;
+}
+
+static void TestStartMenu(void)
+{
+    StartMenuHooks hk;
+    i32 nMode;
+
+    printf("start menu buttons\n");
+
+    hk.pfnPlaySample = SmSample;
+    hk.pfnShutdownStartUi = SmShutdown;
+    hk.pfnNewGame = SmNewGame;
+    hk.pfnFormatSlots = SmFormatSlots;
+    hk.pfnTitles = SmTitles;
+    hk.pfnQuit = SmQuit;
+    hk.pUser = NULL;
+
+    g_nSmSample = 0;
+    g_szSmLog[0] = 0;
+    MenuCtl0_OnClick(&hk);
+    TestEqI32("new game plays sample 16", g_nSmSample, 16);
+    TestEqI32("new game shuts the start UI down first", strcmp(g_szSmLog, "sxg"), 0);
+
+    g_szSmLog[0] = 0;
+    nMode = 0;
+    MenuCtl1_OnClick(&nMode, &hk);
+    TestEqI32("load formats the list before it sets the mode", strcmp(g_szSmLog, "sf"), 0);
+    TestEqI32("and the mode becomes 2", nMode, PUFO_MENU_MODE_LOAD_LIST);
+
+    g_szSmLog[0] = 0;
+    MenuCtl2_OnClick(&hk);
+    TestEqI32("credits run after the shutdown", strcmp(g_szSmLog, "sxt"), 0);
+
+    g_szSmLog[0] = 0;
+    MenuCtl3_OnClick(&hk);
+    TestEqI32("quit runs after the shutdown", strcmp(g_szSmLog, "sxq"), 0);
+
+    /* MenuCtl8..14: the seven load slots. */
+    for (i32 nSlot = 0; nSlot < 7; ++nSlot) {
+        g_szSmLog[0] = 0;
+        nMode = 0;
+        g_nSmLoadResult = 1;
+        TestEqI32("a successful load returns the callee value",
+                  Menu_LoadSlot(&nMode, nSlot, SmLoadGame, NULL), 1);
+        TestEqI32("the mode is 3 while the load runs", nMode, PUFO_MENU_MODE_LOADING);
+        TestEqI32("the slot number travels", g_nSmLoadSlot, nSlot);
+    }
+
+    /* A failed load: mode back to 2, and the returned value is 2, not the callee's. */
+    nMode = 0;
+    g_nSmLoadResult = 0;
+    TestEqI32("a failed load returns 2", Menu_LoadSlot(&nMode, 3, SmLoadGame, NULL), 2);
+    TestEqI32("and the mode goes back to 2", nMode, PUFO_MENU_MODE_LOAD_LIST);
+
+    /* 0x1A0DC tests the LOW BYTE, so a result whose low byte is zero still fails. */
+    nMode = 0;
+    g_nSmLoadResult = 0x100;
+    TestEqI32("a result of 0x100 fails on its low byte",
+              Menu_LoadSlot(&nMode, 0, SmLoadGame, NULL), 2);
+
+    nMode = 0;
+    g_nSmLoadResult = 0x101;
+    TestEqI32("a result of 0x101 passes and is returned whole",
+              Menu_LoadSlot(&nMode, 0, SmLoadGame, NULL), 0x101);
+
+    nMode = 0;
+    TestEqI32("a missing load hook counts as a failure",
+              Menu_LoadSlot(&nMode, 0, NULL, NULL), 2);
+
+    MenuCtl0_OnClick(NULL);
+    TestEqI32("NULL hooks are tolerated", 1, 1);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -342,6 +448,7 @@ int main(void)
     TestCancel();
     TestSlotList();
     TestQuitDialog();
+    TestStartMenu();
 
     return TestSummary("test_menubtn");
 }

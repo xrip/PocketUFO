@@ -1,8 +1,13 @@
 /* pufo_save.h - save/load chunk serialisation.
  *
  * Evidence: Save_WriteSoldiers @ 0x42350, Save_ReadSoldiers @ 0x416bc,
- *           SaveGame @ 0x44988, LoadGame @ 0x44bbc, SaveSlot_FormatList @ 0x45904,
  *           Save_WriteStrategVer @ 0x3f1c8, Save_ReadGameState @ 0x44958.
+ *
+ * NOT ported, and deliberately not cited here: the slot drivers SaveGame (0x44988),
+ * LoadGame (0x44bbc) and the slot list formatter SaveSlot_FormatList (0x45904). This module
+ * recreates the chunk writers and readers they call, not the drivers themselves. The whole
+ * file is described below because the format is needed to read a save, but describing a
+ * function is not the same as recreating it.
  *
  * ## Container
  *
