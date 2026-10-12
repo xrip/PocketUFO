@@ -39,7 +39,7 @@ original WinCE targets, mobile ports, new features, packaging/installer.
 | Item | Value |
 |---|---|
 | Branch | `master` |
-| Work tip before this handoff | `665943c` — “parity: a rename ledger, and a bug in the citation audit it exposed” |
+| Work tip before this handoff | `665943c` - parity: a rename ledger, and a bug in the citation audit it exposed |
 | Handoff commit | this document and the `game-core.md` note, committed on top of `471a4ad` |
 | Update 2026-10-11 | `Tact_ProcessMoveAction` is ported and now runs against a real context. `GameMap` (the IDB `Map` block, 152632 bytes, base `0x1139b8`) plus `Map_LookupCell` and the three real callbacks live in `src/pufo/game/pufo_mapctx.c`. Earlier in the same day: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. |
 | Tracked modifications | none (`git diff --stat` empty) |
