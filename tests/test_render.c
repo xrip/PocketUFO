@@ -515,6 +515,49 @@ static void TestSamplePixel(void)
     SoftSurf_dtor(&s24);
 }
 
+/* SoftSurf_BlurPixels @ 0xa2000: interior-only, four-neighbour, in place. */
+static void TestBlurPixels(void)
+{
+    u8 aBuf[16];
+    i32 i;
+
+    printf("SoftSurf_BlurPixels\n");
+
+    /* 4x4, interior is rows 1..2 by columns 1..2. The blur reads neighbours it has already
+     * rewritten in the same pass, so the numbers below are a cascade, not a convolution. */
+    for (i = 0; i < 16; ++i) { aBuf[i] = 0; }
+    aBuf[5] = 8; aBuf[6] = 8; aBuf[9] = 8; aBuf[10] = 8;
+    SoftSurf_BlurPixels(aBuf, 4, 4);
+    /* (0 + 8 + 0 + 8) >> 2 = 4, then minus one. */
+    CheckEqI32(aBuf[5], 3, "  first interior pixel");
+    /* (3 + 0 + 0 + 8) >> 2 = 2, minus one: the left neighbour is the value just written. */
+    CheckEqI32(aBuf[6], 1, "  cascade uses the already-blurred left neighbour");
+    /* (0 + 8 + 3 + 0) >> 2 = 2, minus one: the up neighbour is already blurred too. */
+    CheckEqI32(aBuf[9], 1, "  cascade uses the already-blurred up neighbour");
+    /* (1 + 0 + 1 + 0) >> 2 = 0, and a zero average is left at zero rather than decremented. */
+    CheckEqI32(aBuf[10], 0, "  zero average stays zero");
+
+    /* The border is never written, which is why the caller fills it first. */
+    for (i = 0; i < 16; ++i) { aBuf[i] = 255; }
+    aBuf[5] = 8; aBuf[6] = 8; aBuf[9] = 8; aBuf[10] = 8;
+    SoftSurf_BlurPixels(aBuf, 4, 4);
+    CheckEqI32(aBuf[0], 255, "  top-left border untouched");
+    CheckEqI32(aBuf[3], 255, "  top-right border untouched");
+    CheckEqI32(aBuf[12], 255, "  bottom-left border untouched");
+    CheckEqI32(aBuf[15], 255, "  bottom-right border untouched");
+    CheckEqI32(aBuf[1], 255, "  top edge untouched");
+    CheckEqI32(aBuf[4], 255, "  left edge untouched");
+
+    /* The centre is not part of the average: a lone bright pixel spreads to its neighbours
+     * and leaves itself at the average of its surroundings. */
+    for (i = 0; i < 16; ++i) { aBuf[i] = 0; }
+    aBuf[5] = 100;
+    SoftSurf_BlurPixels(aBuf, 4, 4);
+    CheckEqI32(aBuf[5], 0, "  the centre pixel is not in its own average");
+
+    Check(SoftSurf_BlurPixels(aBuf, 4, 4) == aBuf, "  returns the buffer it was given");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -535,6 +578,7 @@ int main(void)
     TestRectFillAndBlend();
     TestRectHelpers();
     TestSamplePixel();
+    TestBlurPixels();
 
     Asset_CloseArchives();
 

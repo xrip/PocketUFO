@@ -390,6 +390,44 @@ i32 SoftSurf_SamplePixel(i32 x, i32 y)
     return p[nStride * (x + y * g_blitState.nSurf0)];
 }
 
+/* SoftSurf_BlurPixels @ 0xa2000. A four-neighbour box blur over the INTERIOR only: it
+ * starts at offset (nWidth + 1) and runs (nHeight - 2) rows by (nWidth - 2) columns, so the
+ * border is never touched - which is why SoftSurf_DrawBorderAndBlur fills the border first.
+ *
+ * Two things the original does that are easy to miss:
+ *   - the average excludes the centre pixel: left, right, up, down only;
+ *   - it blurs in place, so the up neighbour of any pixel was already overwritten earlier in
+ *     the same pass. The result is a cascade, not a single convolution.
+ * If the average is non-zero it is then reduced by one; a zero average stays zero.
+ *
+ * The original returns its pPixels argument as an int. The port returns it as the pointer it
+ * is, which is the same value without a pointer-to-int cast. */
+u8 *SoftSurf_BlurPixels(u8 *pPixels, i32 nWidth, i32 nHeight)
+{
+    u8 *p     = pPixels + nWidth + 1;
+    i32 nRows = nHeight - 2;
+
+    do {
+        u8 *pRowStart = p;
+        i32 nCols     = nWidth - 2;
+
+        do {
+            u32 nAvg = ((u32)p[-1] + (u32)p[1] + (u32)p[-nWidth] + (u32)p[nWidth]) >> 2;
+
+            if (nAvg != 0) {
+                nAvg -= 1;
+            }
+            *p++ = (u8)nAvg;
+            --nCols;
+        } while (nCols != 0);
+
+        p = pRowStart + nWidth;
+        --nRows;
+    } while (nRows != 0);
+
+    return pPixels;
+}
+
 /* BlitState_Get @ 0xa479c. Returns the width of the currently loaded surface. */
 i32 BlitState_Get(void)
 {
