@@ -395,6 +395,53 @@ static void TestPanelFlagsAndQty(void)
     CheckEqI32(time.bPaused, 0, "unpausing while running is a no-op");
 }
 
+static void TestBaseGridLookup(void)
+{
+    static BaseRec aBases[3];
+    static BaseRec *apBases[3];
+    static u8 aGrid[8];
+    static ObjectRecFull obj;
+
+    printf("Base_FindIndexByTypeByte / BaseRec_AddItemQty\n");
+
+    for (i32 i = 0; i < 3; ++i) {
+        memset(&aBases[i], 0, sizeof(aBases[i]));
+        apBases[i] = &aBases[i];
+    }
+    aBases[0].bUnk4 = 7;
+    aBases[1].bUnk4 = 9;
+    aBases[2].bUnk4 = 11;
+    memset(aGrid, 0, sizeof(aGrid));
+
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 7), 0, "the first base matches at index 0");
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 9), 1, "the type byte is BaseRec.bUnk4");
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 5), -1,
+               "no match stops at the array end instead of running off it");
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 0, 7), -1, "an empty base list answers -1");
+
+    CheckEqI32(BaseGrid_GetTypeByte(apBases, 3, aGrid, 9), 0, "the grid starts clear");
+    CheckEqI32(BaseGrid_SetTypeByte(apBases, 3, aGrid, 9, 42), 1, "the setter returns the index");
+    CheckEqI32(aGrid[1], 42, "the write lands at the found index");
+    CheckEqI32(BaseGrid_GetTypeByte(apBases, 3, aGrid, 9), 42, "the getter reads it back");
+    CheckEqI32(BaseGrid_SetTypeByte(apBases, 3, aGrid, 5, 1), -1, "no match writes nothing");
+    CheckEqI32(aGrid[0], 0, "the grid is untouched after a refused write");
+
+    memset(&obj, 0, sizeof(obj));
+    aBases[1].bSlot = 2;
+    aBases[1].nStoresTotal = 10;
+    obj.auPerBaseVal[2] = 5;
+    BaseRec_AddItemQty(&aBases[1], &obj, 3);
+    CheckEqI32(obj.auPerBaseVal[2], 8, "the per-base slot grows by the delta");
+    CheckEqI32(aBases[1].nStoresTotal, 13, "the base total grows by the same delta");
+    BaseRec_AddItemQty(&aBases[1], &obj, -20);
+    CheckEqI32((i32)(i16)obj.auPerBaseVal[2], -12, "neither add clamps at zero");
+    CheckEqI32(aBases[1].nStoresTotal, -7, "the total goes negative too");
+
+    aBases[1].bSlot = 99;
+    BaseRec_AddItemQty(&aBases[1], &obj, 5);
+    CheckEqI32(aBases[1].nStoresTotal, -7, "an out-of-range slot skips both adds");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -402,6 +449,7 @@ int main(void)
     TestTickBases();
     TestAdvance();
     TestPanelFlagsAndQty();
+    TestBaseGridLookup();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -4761,3 +4761,31 @@ whole function. Modelled as `GeoscapePanelFlags` with a shared `Geoscape_PanelAp
 `GameTime_Unpause @ 0x5d6c4` is one write: it clears the pause byte, the same
 `apLines[106]` byte `GameTime_Pause @ 0x5d6ac` sets. There is no pause counter, so
 unpausing while already running is a no-op rather than an error.
+
+### Base lookup by type byte and the base item total
+
+Ported in `game/pufo_geoscape.{h,c}`, asserted by `test_geoscape::TestBaseGridLookup`
+(16 checks).
+
+`Base_FindIndexByTypeByte @ 0x6ac30` is a linear search for the first base whose type
+byte (`BaseRec.bUnk4 @ +0x04`) equals the requested type. With a base count of zero it
+returns -1 immediately (0x6ac50). **Otherwise the loop has no bound at all** (0x6ac54):
+it walks forward until some entry happens to match, off the end of the array if none
+does. The port bounds it by the base count and returns -1.
+
+`BaseGrid_GetByte0x654 @ 0x6acc0` and `BaseGrid_SetByteAtFound @ 0x6ac90` resolve a type
+through that search and then read or write one byte of the grid the original keeps at
+`gUiRootPanel.anLineAux[94]`. The getter returns the byte, the setter returns the found
+index and writes nothing when there is none.
+
+`BaseRec_AddItemQty @ 0x556e4` is two adds with no clamping and no floor at zero:
+
+```
+pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;
+pBase->nStoresTotal                     += nDelta;
+```
+
+A negative delta drives both below zero, and the u16 slot wraps as u16 while the base
+total is a signed int. Both are reproduced. The slot index is `BaseRec.bSlot @ +0x05`
+widened as a char with no check; the port skips both adds when it falls outside the
+eight entries.

@@ -109,4 +109,34 @@ typedef struct GeoscapePanelFlags {
 bool Geoscape_SetPanelFlagA(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 
+/* Base_FindIndexByTypeByte @ 0x6ac30. Linear search over the base array for the first
+ * base whose type byte (BaseRec.bUnk4 @ +0x04) equals nType.
+ *
+ * With a base count of zero it returns -1 immediately (0x6ac50). Otherwise the loop has
+ * NO bound at all: it walks forward until some entry happens to match, off the end of
+ * the array if none does. The port bounds it by nBaseCount and returns -1 (deviation).
+ *
+ * The comparison is against a `char` field. WinCE ARM treats plain char as unsigned,
+ * and the port compares as u8, which is what the original does in practice. */
+i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType);
+
+/* BaseGrid_GetByte0x654 @ 0x6acc0 and BaseGrid_SetByteAtFound @ 0x6ac90. Both resolve a
+ * type byte to a base index through Base_FindIndexByTypeByte and then read or write one
+ * byte of the grid the original keeps at gUiRootPanel.anLineAux[94]. The getter returns
+ * the byte (0 when there is no match), the setter returns the found index and writes
+ * nothing when there is none. */
+i32 BaseGrid_GetTypeByte(BaseRec *const *apBases, i32 nBaseCount, const u8 *abGrid,
+                         u8 nType);
+i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
+                         u8 nType, i8 bValue);
+
+/* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
+ *
+ *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;
+ *     pBase->nStoresTotal                     += nDelta;
+ *
+ * The slot index is BaseRec.bSlot @ +0x05 widened as a char, unchecked. The port skips
+ * both adds when the slot is outside the eight entries (deviation). */
+void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
+
 #endif /* PUFO_GEOSCAPE_H */

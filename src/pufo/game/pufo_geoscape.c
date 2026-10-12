@@ -202,3 +202,60 @@ bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags)
     pFlags->bPanelB = 1; /* unk_1864F7, 0x8b498 */
     return true;
 }
+
+i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType)
+{
+    if (apBases == NULL || nBaseCount <= 0) {
+        return -1; /* 0x6ac50: an empty base list answers -1 without searching */
+    }
+    for (i32 i = 0; i < nBaseCount; ++i) {
+        if (apBases[i] == NULL) {
+            continue;
+        }
+        if (apBases[i]->bUnk4 == nType) {
+            return i;
+        }
+    }
+    /* The original has no bound here and keeps walking until something matches. */
+    return -1;
+}
+
+i32 BaseGrid_GetTypeByte(BaseRec *const *apBases, i32 nBaseCount, const u8 *abGrid,
+                         u8 nType)
+{
+    const i32 nIdx = Base_FindIndexByTypeByte(apBases, nBaseCount, nType);
+
+    if (nIdx < 0 || abGrid == NULL) {
+        return 0;
+    }
+    return (i32)abGrid[nIdx]; /* 0x6ace4: gUiRootPanel.anLineAux[94] + index */
+}
+
+i32 BaseGrid_SetTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 *abGrid,
+                         u8 nType, i8 bValue)
+{
+    const i32 nIdx = Base_FindIndexByTypeByte(apBases, nBaseCount, nType);
+
+    if (nIdx < 0 || abGrid == NULL) {
+        return nIdx; /* 0x6acb8: the found index is the return value, -1 writes nothing */
+    }
+    abGrid[nIdx] = (u8)bValue;
+    return nIdx;
+}
+
+void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
+{
+    i32 nSlot;
+
+    if (pBase == NULL || pItem == NULL) {
+        return;
+    }
+    nSlot = (i8)pBase->bSlot; /* 0x55708 widens the slot byte as a char */
+    if (nSlot < 0 ||
+        nSlot >= (i32)(sizeof(pItem->auPerBaseVal) / sizeof(pItem->auPerBaseVal[0]))) {
+        return;
+    }
+    /* Neither add clamps, so a negative delta can drive both below zero. Reproduced. */
+    pItem->auPerBaseVal[nSlot] = (u16)((i32)pItem->auPerBaseVal[nSlot] + nDelta);
+    pBase->nStoresTotal += nDelta; /* 0x55714 */
+}

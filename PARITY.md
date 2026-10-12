@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 493 / 1103 (44.7%) |
-| Bytes of original code cited | 228076 / 598792 (38.1%) |
+| Functions cited as evidence | 497 / 1103 (45.1%) |
+| Bytes of original code cited | 228320 / 598792 (38.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 45 |
-| Test checks run | 4449 |
+| Test checks run | 4464 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 46 | 205 | 37540 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 50 | 205 | 37784 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 48 | 243 | 6260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -504,7 +504,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (46 functions)
+### `strat` (50 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -538,14 +538,18 @@ is the module that answers to it.
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_geoscape.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.h` |
+| `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/game/pufo_geoscape.h` |
 | `0x45f80` | `Ship_TickRangeRecover` | 72 | `src/pufo/game/pufo_ship.h` |
+| `0x556e4` | `BaseRec_AddItemQty` | 56 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x415cc` | `StrategItem_AllocAdd` | 52 | `src/pufo/game/pufo_strateg.h` |
+| `0x6ac90` | `BaseGrid_SetByteAtFound` | 48 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | `src/pufo/game/pufo_geoscape.h` |
+| `0x6acc0` | `BaseGrid_GetByte0x654` | 44 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8217c` | `Tilemap_GetAt` | 36 | `src/pufo/game/pufo_strateg.h` |
 | `0x821a0` | `Tilemap_GetAtAlt` | 36 | `src/pufo/game/pufo_strateg.h` |
 | `0x838ac` | `StrategList_Clear` | 36 | `src/pufo/game/pufo_strateg.h` |
@@ -917,7 +921,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 159 functions, 124916 bytes remaining
+### `strat` — 155 functions, 124672 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1045,7 +1049,6 @@ whose port work they belong to.
 | `0x84f64` | `GameTime_Set1Min` | 100 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84fc8` | `GameTime_Set5Min` | 100 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x69ffc` | `Ship_FindIndexById` | 96 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x664f0` | `Base_CountAmmoObjectsAtBase` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x68198` | `Base_CountActiveResearch` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84428` | `Smap_DismissSelected` | 92 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1062,9 +1065,6 @@ whose port work they belong to.
 | `0x7e374` | `StrategList_AddUfoAt` | 64 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84648` | `Smap_ClearSelection` | 64 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b560` | `FundingScreen_Open` | 60 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x556e4` | `BaseRec_AddItemQty` | 56 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6ac90` | `BaseGrid_SetByteAtFound` | 48 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6acc0` | `BaseGrid_GetByte0x654` | 44 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84ab8` | `Smap_OnZoomOut` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84ad8` | `Smap_OnZoomIn` | 32 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d6c0` | `GameTime_Unpause` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1316,7 +1316,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_enemyai` | PASS | 22 |
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
-| `test_geoscape` | PASS | 57 |
+| `test_geoscape` | PASS | 72 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |
 | `test_isodraw` | PASS | 8 |
