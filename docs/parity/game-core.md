@@ -6322,3 +6322,29 @@ Covered by `TestDemolishBase`, 25 checks.
 Test trap found here: `Soldier_RemoveById`, `Ship_RemoveWithCargo` and `StrategList_RemoveAt` free
 what they remove. A test that frees those objects again corrupts the heap and the binary dies
 before printing its summary — which looks like a pass under ctest if the stale binary is used.
+
+## `Tact_Shutdown @ 0x3d568` — fully unblocked, mapped in the IDB, not yet ported
+
+3,788 bytes. Every callee is now ported: `Sound_Shutdown`, `KillTimers_BySpeed`,
+`UiPanel_FreeLines`, `Map_FreeRmpNodes`, `PadImage_FreeData`, `Font_Free`, `UiControl_FreePads`,
+`PtrArray_DeleteAll`, `Soldier_RemoveById`, `StrategList_RemoveAt`, `Ship_RemoveWithCargo`,
+`Base_DemolishFacility` and `Base_TransferTacticalLoot`. What remains is the shape of the function
+itself, and the decode is recorded in the IDB at 0x3D6E4, 0x3DD0C, 0x3E06C, 0x3E158 and 0x3E328.
+
+Four things worth having written down:
+
+- **Thirteen `pBank` pad families**, each freeing three adjacent pad pointers and zeroing the slot
+  it came from. Group sizes and starting widget offsets: 19 at 0, 13 at 19, 12 at 32, 29 at 60,
+  7 at 53, 9 at 44, 9 at 89, 3 at 98, 3 at 101, 1 at 104, 8 at 105, 1 at 128, 1 at 129. Three of
+  them are written `for (n = 0; n == 0; ++n)`, so they run exactly once.
+- **Which units are removed is a filter, not a sweep.** Civilians go when `Soldier + 960` is zero;
+  every enemy goes with no test at all; XCOM units go when `nUnitType` (`Soldier + 160`) is 4..8 or
+  `Soldier + 960` is zero. The bound is re-read each iteration because the removal changes it while
+  the index keeps advancing — so the walk can skip entries.
+- **The tactical sprite set is 32 `PadImage` slots** freed as 4 × 2 × 4 from `Map + 0x199C`, which
+  is the same block `Save_ReadTGameData` rebuilds.
+- **The tactical map free runs in tenths of a cell**: 10 × `nMapDimY` rows by 10 × `nMapDimX`
+  columns, four layer pointers per cell at a 14,400-byte stride.
+
+`LoadGame @ 0x44bbc` is blocked by `Tact_Shutdown`, `Geoscape_InitUI @ 0x857f4` and
+`Tact_InitMission @ 0x3c550`. Of those three, `Tact_Shutdown` is now the cheapest.
