@@ -163,4 +163,38 @@ void MenuCtl3_OnClick(const StartMenuHooks *pHooks);
 i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
                   i32 (*pfnLoadGame)(i32 nSlot, void *pUser), void *pUser);
 
+/* ------------------------------------------------- the save/load screen's slot buttons
+ *
+ * SaveLoad_Slot0..6 @ 0x19de4/0x19e34/0x19e84/0x19ed4/0x19f24/0x19f74/0x19fc4: seven
+ * identical handlers that differ only in the slot number.
+ *
+ * They are NOT the same as the start menu's load buttons, and the differences are
+ * the whole point of them:
+ *
+ *   - the list mode becomes 1, not 3 (0x19DF4). 1 is the save/load list; 3 is the
+ *     start menu's "loading" state.
+ *   - the direction is decided by the CURRENT screen, not by which button was
+ *     pressed: `nUiScreen == 10` is the save screen and runs SaveGame, anything
+ *     else runs LoadGame (0x19E08). One button therefore means "save" or "load"
+ *     depending on which list it is drawn in.
+ *   - SaveGame's result is returned unchanged and the mode stays 1; only the load
+ *     path has a failure case.
+ *   - a failed load puts the mode back to 0, not 2, and returns 0 (0x19E2C). The
+ *     start menu's buttons restore 2 because that is the value their opener set.
+ *
+ * As in Menu_LoadSlot, the test on the load result is on its LOW BYTE (0x19E28).
+ *
+ * SaveGame (0x44988) and LoadGame (0x44bbc) are not ported, so both are hooks. */
+#define PUFO_MENU_MODE_SAVE_LOAD_LIST 1
+#define PUFO_MENU_SCREEN_SAVE_LIST   10
+
+typedef struct SaveLoadSlotHooks {
+    i32 (*pfnSaveGame)(i32 nSlot, void *pUser); /* SaveGame (0x44988) */
+    i32 (*pfnLoadGame)(i32 nSlot, void *pUser); /* LoadGame (0x44bbc) */
+    void *pUser;
+} SaveLoadSlotHooks;
+
+i32 SaveLoad_Slot(i32 nSlot, i32 nUiScreen, i32 *pnListMode,
+                  const SaveLoadSlotHooks *pHooks);
+
 #endif /* PUFO_MENUBTN_H */

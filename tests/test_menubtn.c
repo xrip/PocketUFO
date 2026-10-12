@@ -365,6 +365,82 @@ static i32 SmLoadGame(i32 nSlot, void *pUser)
     return g_nSmLoadResult;
 }
 
+static i32 g_nHookSlot;
+
+static i32 SaveHook(i32 nSlot, void *pUser)
+{
+    (void)pUser;
+    g_nHookSlot = nSlot;
+    return 5;
+}
+
+static i32 LoadHookOk(i32 nSlot, void *pUser)
+{
+    (void)pUser;
+    g_nHookSlot = nSlot;
+    return 7;
+}
+
+/* 0x100 has a zero LOW byte, so the original treats it as a failure. */
+static i32 LoadHookFail(i32 nSlot, void *pUser)
+{
+    (void)nSlot;
+    (void)pUser;
+    return 0x100;
+}
+
+static i32 LoadHookLow(i32 nSlot, void *pUser)
+{
+    (void)nSlot;
+    (void)pUser;
+    return 0x101;
+}
+
+static void TestSaveLoadSlot(void)
+{
+    SaveLoadSlotHooks hooks;
+    i32 nMode;
+
+    printf("SaveLoad_Slot0..6\n");
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnSaveGame = SaveHook;
+    hooks.pfnLoadGame = LoadHookOk;
+
+    /* The save screen: nUiScreen == 10 runs SaveGame and the mode stays 1. */
+    g_nHookSlot = -1;
+    nMode = 99;
+    TestEqI32("the save screen returns SaveGame's value unchanged",
+              SaveLoad_Slot(6, PUFO_MENU_SCREEN_SAVE_LIST, &nMode, &hooks), 5);
+    TestEqI32("and the button's own slot number", g_nHookSlot, 6);
+    TestEqI32("the mode becomes 1 and stays 1", nMode, PUFO_MENU_MODE_SAVE_LOAD_LIST);
+
+    /* Any other screen runs LoadGame. */
+    g_nHookSlot = -1;
+    nMode = 99;
+    TestEqI32("another screen runs LoadGame", SaveLoad_Slot(2, 3, &nMode, &hooks), 7);
+    TestEqI32("with the same slot number", g_nHookSlot, 2);
+    TestEqI32("and a good load keeps the mode at 1", nMode, PUFO_MENU_MODE_SAVE_LOAD_LIST);
+
+    /* A failed load restores 0, not 2, and returns 0. */
+    hooks.pfnLoadGame = LoadHookFail;
+    nMode = 99;
+    TestEqI32("a failed load returns 0", SaveLoad_Slot(0, 3, &nMode, &hooks), 0);
+    TestEqI32("and the mode goes back to 0, not 2", nMode, 0);
+
+    /* The test is on the low byte: 0x101 has a non-zero low byte. */
+    hooks.pfnLoadGame = LoadHookLow;
+    nMode = 99;
+    TestEqI32("0x101 passes because only the low byte is tested",
+              SaveLoad_Slot(1, 3, &nMode, &hooks), 0x101);
+    TestEqI32("so the mode is left alone", nMode, PUFO_MENU_MODE_SAVE_LOAD_LIST);
+
+    hooks.pfnSaveGame = NULL;
+    TestEqI32("no SaveGame hook gives 0",
+              SaveLoad_Slot(0, PUFO_MENU_SCREEN_SAVE_LIST, &nMode, &hooks), 0);
+    TestCheck("NULL hooks refused", SaveLoad_Slot(0, 3, &nMode, NULL) == 0);
+}
+
 static void TestStartMenu(void)
 {
     StartMenuHooks hk;
@@ -449,6 +525,7 @@ int main(void)
     TestSlotList();
     TestQuitDialog();
     TestStartMenu();
+    TestSaveLoadSlot();
 
     return TestSummary("test_menubtn");
 }

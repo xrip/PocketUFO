@@ -1286,3 +1286,26 @@ zero. Neither mover wraps.
 
 Deviation: the port takes the panels as arguments and guards against a null slot; the
 original reaches through the globals and would fault on a null.
+
+
+## The save/load screen's slot buttons (done)
+
+`SaveLoad_Slot0..6 @ 0x19de4/0x19e34/0x19e84/0x19ed4/0x19f24/0x19f74/0x19fc4` are recreated as one
+`SaveLoad_Slot` in `ui/pufo_menubtn.{h,c}`. Seven identical handlers differing only in the slot
+number — and they are **not** the start menu's load buttons.
+
+- The list mode becomes **1**, not 3 (0x19DF4). 1 is the save/load list; 3 is the start menu's
+  "loading" state.
+- The direction comes from the **current screen**, not from which button was pressed:
+  `nUiScreen == 10` is the save screen and runs `SaveGame`; anything else runs `LoadGame`
+  (0x19E08). One button means "save" or "load" depending on which list it is drawn in.
+- `SaveGame`'s result is returned unchanged and the mode stays 1. Only the load path has a failure
+  case.
+- A failed load puts the mode back to **0**, not 2, and returns 0 (0x19E2C). The start menu's
+  buttons restore 2 because that is the value their opener set.
+- As in `Menu_LoadSlot`, the test on the load result is on its **low byte** (0x19E28): 0x100 fails,
+  0x101 passes.
+
+`SaveGame` (0x44988) and `LoadGame` (0x44bbc) are not ported, so both are hooks.
+
+Covered by `tests/test_menubtn.c` (`TestSaveLoadSlot`, 12 checks).

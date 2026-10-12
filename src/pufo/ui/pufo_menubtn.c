@@ -188,3 +188,38 @@ i32 Menu_LoadSlot(i32 *pnListMode, i32 nSlot,
     }
     return nResult;
 }
+
+i32 SaveLoad_Slot(i32 nSlot, i32 nUiScreen, i32 *pnListMode,
+                  const SaveLoadSlotHooks *pHooks)
+{
+    i32 nResult;
+
+    if (pHooks == NULL) {
+        return 0;
+    }
+
+    if (pnListMode != NULL) {
+        *pnListMode = PUFO_MENU_MODE_SAVE_LOAD_LIST; /* 0x19DF4 */
+    }
+
+    /* 0x19E08: the direction comes from the screen the button is drawn in. */
+    if (nUiScreen == PUFO_MENU_SCREEN_SAVE_LIST) {
+        if (pHooks->pfnSaveGame == NULL) {
+            return 0;
+        }
+        return pHooks->pfnSaveGame(nSlot, pHooks->pUser); /* 0x19E0C */
+    }
+
+    if (pHooks->pfnLoadGame == NULL) {
+        return 0;
+    }
+    nResult = pHooks->pfnLoadGame(nSlot, pHooks->pUser); /* 0x19E20 */
+
+    if ((nResult & 0xFF) == 0) { /* 0x19E28, the LOW byte again */
+        if (pnListMode != NULL) {
+            *pnListMode = 0; /* 0x19E2C, not 2 */
+        }
+        return 0; /* 0x19E28 */
+    }
+    return nResult;
+}
