@@ -292,4 +292,16 @@ typedef struct CraftStoreLoadEnv {
 void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nSrc,
                               i32 nCraftIdx);
 
+/* Evidence: Base_StripAllCraftCargo @ 0x69a38.
+ *
+ * For every craft with Ship.bCanDogfight @ 0x21 set, dump the ammo it carries into its home base
+ * and refill it from that base. Ten groups, each a gate, a deposit and a refill; the gate is
+ * "the craft carries less ammo than it carries weapons", taken against the values before the
+ * deposit. The group table is g_aCraftAmmoGroups in the .c file: 36/1, 37/3, 38/4, 39/6,
+ * 40+41+42/7, 43+44+45/8, 46+47+48/10, 49/11, 50/12, 51/13.
+ *
+ * Callers are Base_TransferTacticalLoot (0x68344) and Base_DistributeRecoveredItems, not the
+ * hangar UI. */
+void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount);
+
 #endif /* PUFO_SHIP_H */

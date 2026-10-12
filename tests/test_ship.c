@@ -581,6 +581,98 @@ static void TestLoadStores(void)
     TestEqI32Local("an out-of-range craft index loads nothing", (i32)g_aObj[36].aItemQty[0], 0);
 }
 
+
+/* ------------------------------------------------- dumping cargo home and refilling */
+
+static void TestStripCraftCargo(void)
+{
+    static Ship g_aShip[2];
+    static Ship *g_apCraft[2];
+    static BaseRec g_aBase[1];
+    static BaseRec *g_apBase[1];
+    static ObjectRecFull g_aObj[53];
+    static ObjectRecFull *g_apObj[53];
+    CraftStoreLoadEnv env;
+
+    printf("Base_StripAllCraftCargo\n");
+
+    memset(g_aShip, 0, sizeof(g_aShip));
+    memset(g_aBase, 0, sizeof(g_aBase));
+    memset(g_aObj, 0, sizeof(g_aObj));
+    g_aShip[0].bCanDogfight = 1;
+    g_aShip[0].bCraftType = 0;   /* hold 140 */
+    g_aShip[0].bHomeBase = 0;
+    g_aShip[0].nSlotIdx = 0;
+    g_aShip[1].bCanDogfight = 0; /* not stripped at all */
+    g_aShip[1].bCraftType = 0;
+    g_aShip[1].bHomeBase = 0;
+    g_aShip[1].nSlotIdx = 1;
+    g_aBase[0].bSlot = 0;
+    g_apCraft[0] = &g_aShip[0];
+    g_apCraft[1] = &g_aShip[1];
+    g_apBase[0] = &g_aBase[0];
+    for (int i = 0; i < 53; ++i) {
+        g_apObj[i] = &g_aObj[i];
+        g_aObj[i].bCargoSize = 1;
+    }
+
+    /* Group 1: five cannons, two rounds aboard, one round in the base. The gate is
+     * 2 < 5, so the two rounds go home (base becomes three) and the craft pulls back
+     * min(5, 3) = three. */
+    g_aObj[1].aItemQty[0] = 5;
+    g_aObj[36].aItemQty[0] = 2;
+    g_aObj[36].auPerBaseVal[0] = 1;
+
+    /* Group 3: one weapon, four rounds. 4 < 1 is false, so this group is left alone. */
+    g_aObj[3].aItemQty[0] = 1;
+    g_aObj[37].aItemQty[0] = 4;
+    g_aObj[37].auPerBaseVal[0] = 2;
+
+    /* Group 7 (three pools): six weapons, one round in each of the first two pools. */
+    g_aObj[7].aItemQty[0] = 6;
+    g_aObj[40].aItemQty[0] = 1;
+    g_aObj[40].auPerBaseVal[0] = 1;
+    g_aObj[41].aItemQty[0] = 1;
+    g_aObj[41].auPerBaseVal[0] = 1;
+    g_aObj[42].auPerBaseVal[0] = 5;
+
+    /* The second craft carries the same kind of load but cannot dogfight, so it must be
+     * skipped outright. Its column is 1. */
+    g_aObj[1].aItemQty[1] = 5;
+    g_aObj[36].aItemQty[1] = 2;
+    g_aObj[36].auPerBaseVal[1] = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apCraft;
+    env.apBases = g_apBase;
+    env.apObjects = g_apObj;
+    env.nObjectCount = 53;
+
+    Base_StripAllCraftCargo(&env, 2);
+
+    TestEqI32Local("the craft ended with three rounds, one per weapon it can supply",
+                   (i32)g_aObj[36].aItemQty[0], 3);
+    TestEqI32Local("and the base is out of them", (i32)g_aObj[36].auPerBaseVal[0], 0);
+
+    TestEqI32Local("a group that already has enough is left alone",
+                   (i32)g_aObj[37].aItemQty[0], 4);
+    TestEqI32Local("and its base stock is untouched", (i32)g_aObj[37].auPerBaseVal[0], 2);
+
+    /* Three pools: 1+1 carried against 6 weapons, so both go home (each base pool becomes 2)
+     * and the split pulls 2 + 2 + 2 back. */
+    TestEqI32Local("first pool gave its whole stock", (i32)g_aObj[40].aItemQty[0], 2);
+    TestEqI32Local("and is empty at base", (i32)g_aObj[40].auPerBaseVal[0], 0);
+    TestEqI32Local("second pool gave its whole stock", (i32)g_aObj[41].aItemQty[0], 2);
+    TestEqI32Local("and is empty at base", (i32)g_aObj[41].auPerBaseVal[0], 0);
+    TestEqI32Local("third pool covered the remainder", (i32)g_aObj[42].aItemQty[0], 2);
+    TestEqI32Local("and kept three at base", (i32)g_aObj[42].auPerBaseVal[0], 3);
+
+    /* The craft without bCanDogfight keeps everything it had. */
+    TestEqI32Local("a craft that cannot dogfight keeps its ammo",
+                   (i32)g_aObj[36].aItemQty[1], 2);
+    TestEqI32Local("and its base stock is untouched", (i32)g_aObj[36].auPerBaseVal[1], 1);
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -590,6 +682,7 @@ int main(void)
     TestShipRemoveWithCargo();
     TestCargoHold();
     TestLoadStores();
+    TestStripCraftCargo();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

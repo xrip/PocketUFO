@@ -5889,3 +5889,9 @@ splits the wanted load across the three-pool sets 40/41/42, 43/44/45 and 46/47/4
 and 10, and re-reads the hold capacity before every unit so a load that fills the hold stops early.
 That leaves `Base_StripAllCraftCargo` (0x69a38) as the only unported step under
 `Base_TransferTacticalLoot` (0x68344). Covered by `TestLoadStores`, 12 checks.
+
+`Base_StripAllCraftCargo @ 0x69a38` is ported as `Base_StripAllCraftCargo` in `game/pufo_ship.c`,
+driven by a ten-row table `g_aCraftAmmoGroups` instead of ten copies of the same three steps. The
+net effect of a group is that the craft ends up carrying one round per weapon it has, as far as the
+base can supply them. `Base_TransferTacticalLoot` (0x68344) is now the only step left under it.
+Covered by `TestStripCraftCargo`, 12 checks.

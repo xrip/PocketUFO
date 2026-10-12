@@ -6,6 +6,7 @@
 
 #include "game/pufo_strateg.h" /* StrategList_RemoveAt, StrategItem */
 #include "game/pufo_unit.h"    /* Soldier */
+#include "game/pufo_geoscape.h" /* BaseRec_AddItemQty */
 
 BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
                       ObjectRecFull *const *apObjects, i32 nObjectCount)
@@ -519,6 +520,101 @@ void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nS
     for (i32 p = 0; p < nPool; ++p) {
         if (nTake[p] > 0) {
             (void)LoadUnits(pEnv, pShip, pBase, pEnv->apObjects[aPool[p]], nCraftIdx, nTake[p]);
+        }
+    }
+}
+
+/* Base_StripAllCraftCargo @ 0x69a38.
+ *
+ * For every craft with Ship.bCanDogfight @ 0x21 set, dump the ammo it is carrying into its
+ * home base and then refill it from that base. Ten groups, and each group is the same three
+ * steps: a gate, a deposit, a refill.
+ *
+ * The gate is always "the craft carries less ammo than it carries weapons", where the ammo is
+ * the sum over the group. The comparison is unsigned and it is taken against the values BEFORE
+ * the deposit, so a group that already has enough is left completely alone.
+ *
+ * The deposit is per ammo object: subtract what the craft carries from the craft, add the same
+ * amount to the base. Then Craft_LoadStoresFromBase pulls back min(weapons carried, base stock),
+ * so the net effect is that the craft ends up carrying exactly as many rounds as it has weapons,
+ * as far as the base can supply them.
+ *
+ * Callers are Base_TransferTacticalLoot and Base_DistributeRecoveredItems, not the hangar UI:
+ * the hangar has its own CommitStores / Rearm / BasePlane_LoadWeaponStores path. */
+typedef struct {
+    u8 nKind;      /* the nItemKind to hand Craft_LoadStoresFromBase */
+    u8 aAmmo[3];   /* the ammo objects in the group, in pool order */
+    u8 nAmmoCount;
+    u8 nWeaponObj; /* the weapon object the carried count is read from */
+} CraftAmmoGroup;
+
+static const CraftAmmoGroup g_aCraftAmmoGroups[10] = {
+    {  1, { 36,  0,  0 }, 1,  1 },
+    {  3, { 37,  0,  0 }, 1,  3 },
+    {  4, { 38,  0,  0 }, 1,  4 },
+    {  6, { 39,  0,  0 }, 1,  6 },
+    {  7, { 40, 41, 42 }, 3,  7 },
+    {  8, { 43, 44, 45 }, 3,  8 },
+    { 10, { 46, 47, 48 }, 3, 10 },
+    { 11, { 49,  0,  0 }, 1, 11 },
+    { 12, { 50,  0,  0 }, 1, 12 },
+    { 13, { 51,  0,  0 }, 1, 13 },
+};
+
+void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->apObjects == NULL ||
+        pEnv->apBases == NULL) {
+        return;
+    }
+
+    for (i32 n = 0; n < nShipCount; ++n) {
+        Ship *pShip = pEnv->apCraft[n];
+        if (pShip == NULL || pShip->bCanDogfight == 0) {
+            continue;                                   /* 0x69A7C */
+        }
+
+        i32 nHome = (i32)pShip->bHomeBase;
+        if (nHome < 0 || nHome >= 8) {
+            continue;
+        }
+        BaseRec *pBase = pEnv->apBases[nHome];
+        if (pBase == NULL) {
+            continue;
+        }
+
+        for (i32 g = 0; g < 10; ++g) {
+            const CraftAmmoGroup *pGroup = &g_aCraftAmmoGroups[g];
+
+            if (pGroup->nWeaponObj >= pEnv->nObjectCount ||
+                pEnv->apObjects[pGroup->nWeaponObj] == NULL) {
+                continue;
+            }
+
+            i32 nWeapons = (i32)pEnv->apObjects[pGroup->nWeaponObj]->aItemQty[n];
+            i32 nCarried = 0;
+            for (i32 a = 0; a < pGroup->nAmmoCount; ++a) {
+                if (pGroup->aAmmo[a] < pEnv->nObjectCount &&
+                    pEnv->apObjects[pGroup->aAmmo[a]] != NULL) {
+                    nCarried += (i32)pEnv->apObjects[pGroup->aAmmo[a]]->aItemQty[n];
+                }
+            }
+
+            if (!(nCarried < nWeapons)) {
+                continue;                               /* 0x69AA0 and friends */
+            }
+
+            for (i32 a = 0; a < pGroup->nAmmoCount; ++a) {
+                ObjectRecFull *pAmmo = pEnv->apObjects[pGroup->aAmmo[a]];
+                if (pAmmo == NULL) {
+                    continue;
+                }
+                i32 nAmount = (i32)pAmmo->aItemQty[n];
+                (void)InvSel_SubItemQty(pShip, pAmmo, (i16)nAmount);  /* 0x69AAC */
+                BaseRec_AddItemQty(pBase, pAmmo, nAmount);            /* 0x69AC8 */
+            }
+
+            Craft_LoadStoresFromBase(pEnv, pGroup->nKind, pGroup->aAmmo[0], n); /* 0x69ADC */
         }
     }
 }
