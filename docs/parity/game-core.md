@@ -6265,3 +6265,38 @@ still unported, so the needed-flag pass this call performs is weaker than the or
 the port's one listed deviation in this function.
 
 Covered by `TestTransferTacticalLoot`, 28 checks.
+
+## `Base_DemolishFacility @ 0x66b70` — mapped in full, deliberately not ported
+
+1,600 bytes. It removes a **whole base**, not one facility inside it: find the base whose 64-byte
+record at `0x186C40` has `nFacType` equal to the argument, drop that base's strateg entry, delete
+the soldiers stationed there, remove every craft homed there, mark its map sites unassigned,
+renumber home bases and soldier assignments, compact every per-base array, drop the count byte at
+`0x159D80`, delete `apBases[newCount-1]`, and renumber `BaseRec.bSlot`. All five callees are
+ported, so nothing else is missing.
+
+Two findings worth having on record:
+
+- **The argument is used with two meanings in one function.** At 0x66BB8 it is a facility type
+  compared against `0x186C40[i].nFacType`; at 0x66BE4 it is a **site id** compared against
+  `StrategItem.nSiteId`. If no strateg entry matches, the index equals the item count and
+  `StrategList_RemoveAt` is called one past the end.
+- **The research column stride is 288 bytes per base, not 144.** `MOV R3, #0x120` at 0x66E88.
+  Hex-Rays renders 144 because it types the pointer as `u16 *`.
+
+### The blocker, stated precisely
+
+The compaction shifts six per-base arrays in parallel. Five are resolved: `0x186C40` records at 64
+bytes, `apBases` records moved by `memmove` of 20 bytes, the facility block at 144, `buildDays` at
+36, the research column at 288.
+
+The three product shifts are not. Their fixed offsets land on arrays we already know — 0x15B79C is
+product array B, 0x15D09C is product array C, 0x15E19C is the `Base_CountActiveManuf` quantity
+column — and each source sits exactly one column further on, so all three are shift-left-by-one.
+But the dword array advances **800 bytes per base index** (one 200-dword column, consistent) while
+the two u16 arrays advance only **100 bytes per base index** against a 400-byte column. Either
+those arrays have 50-entry columns and the shift spans four of them, or the original's stride is
+simply wrong. Both readings fit the arithmetic; nothing in the IDB decides between them.
+
+Porting on a guess would put a wrong layout into the parity report, so this function stays mapped
+and uncited. `Tact_Shutdown @ 0x3d568` remains blocked on it.
