@@ -5461,3 +5461,52 @@ load, and the test asserts both branches.
 Deviation: the original checks none of the `tgamedata` reads, so a truncated chunk leaves
 the fields at whatever they were. The port reports false when a read fails but still runs
 the font, roster and reset work, because that is what makes the mission usable.
+
+## The base facility grid and the workshop chain
+
+Evidence: `Base_ClearFacilityGridRow @ 0x6a0e0`, `Base_CalcWorkshopCap @ 0x65894`,
+`Base_CountActiveManuf @ 0x68264`, `Base_UpdateWorkshopNeeded @ 0x65bb4`, all in
+`src/pufo/game/pufo_geoscape.{h,c}`.
+
+One base's facility layout is three 36-byte grids, indexed `6*column + row` over a 6x6
+layout. The cell-type and needed-flag grids sit inside a **144-byte per-base block**; the
+occupancy grid sits outside it:
+
+| grid | address |
+|---|---|
+| occupancy | `grid + 36*nBaseIndex` |
+| needed flags | `grid + 444 + 144*nBaseIndex` |
+| cell type | `grid + 480 + 144*nBaseIndex` |
+
+Cell type **3** is a workshop, **4** and **5** are the two placeable states the site-state
+classifier looks at, and **9** is the third one. The classifier never looks at 3.
+
+`Base_ClearFacilityGridRow` is **misnamed**: it clears nothing. It classifies a base and
+stores a state byte into the per-base array at `0x161F38`, which is the port's
+`GeoscapeWorld.apSiteState`. Any free type-4 slot gives state 1; any free type-5 slot gives
+2, **overwriting** the 1, so the two are never both present; any free type-9 slot adds 10 and
+exits, so the 10 lands at most once. A base with a free 9 slot ends up 10, 11 or 12. That
+also settles what the original's `a2` argument is: **a base index**, not a set index.
+
+`Base_CalcWorkshopCap` counts free workshop cells and returns `count * 50`. One free
+workshop is worth exactly 50 units of capacity. It reads nothing but the grid.
+
+`Base_CountActiveManuf` sums the first *N* u16 entries of a per-base quantity column, where
+*N* is the single global byte at `0x160C4C` — shared by every base, read as an unsigned byte,
+so 255 is the ceiling. The decompiler hides the address as `anLineAux[100*nBase + 149]` plus
+8578 u16 slots. `anLineAux[149]` is the product block, and 8578 u16 slots is 17152 bytes,
+which is exactly `PUFO_PRODUCT_BLOCK_BYTES`. The columns therefore start **immediately after
+the product block** at `0x15E19C`, 400 bytes per base, 200 u16 entries of which only *N* are
+read.
+
+`Base_UpdateWorkshopNeeded` consumes both. Budget is `total / 50 + 1`, and 0 when the total
+is 0, so any active manufacturing at all buys at least one needed workshop. For every
+workshop cell it writes 1 into the needed grid while the budget lasts and 0 after it runs
+out; non-workshop cells are never written. Visit order is row 0 across all six columns, then
+row 1.
+
+Two original quirks are reproduced rather than cleaned up. The call to `Base_CalcWorkshopCap`
+at `0x65BC0` **discards** a pure function's result and the budget comes from
+`Base_CountActiveManuf` instead — the port omits that call, which is the only deviation. And
+the return value is loop-counter residue: the inner counter resets to 0 each row and always
+reaches 6, so the function returns 6 no matter what it did.
