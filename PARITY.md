@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 590 / 1103 (53.5%) |
-| Bytes of original code cited | 184460 / 598792 (30.8%) |
+| Functions cited as evidence | 592 / 1103 (53.7%) |
+| Bytes of original code cited | 185016 / 598792 (30.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
-| Test checks run | 5720 |
+| Test checks run | 5729 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 24640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 91 | 205 | 27252 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 93 | 205 | 27808 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 104 | 243 | 7492 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
@@ -502,7 +502,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (91 functions)
+### `strat` (93 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -520,6 +520,7 @@ is the module that answers to it.
 | `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_save.h`, `src/pufo/game/pufo_ship.h` |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d1bc` | `Geoscape_TickHourly` | 512 | `src/pufo/game/pufo_geoscape.h` |
+| `0x6a230` | `Base_CalcMonthlyUpkeep` | 468 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5d4e4` | `Geoscape_TickShips` | 456 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5ce40` | `Geoscape_AdvanceTime` | 404 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5cfd4` | `GameTime_Decode` | 396 | `src/pufo/game/pufo_clock.h` |
@@ -557,7 +558,7 @@ is the module that answers to it.
 | `0x65818` | `Base_CalcLabCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x65894` | `Base_CalcWorkshopCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x65910` | `Base_CalcAlienContainmentCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
-| `0x6598c` | `Base_CalcPsiLabCap` | 124 | `src/pufo/game/pufo_baseui.h` |
+| `0x6598c` | `Base_CalcPsiLabCap` | 124 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.c` (+1) |
 | `0x6611c` | `Base_CalcHangarCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x682c8` | `Base_CountBuiltFacilities` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_strateg.h` |
@@ -569,6 +570,7 @@ is the module that answers to it.
 | `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
 | `0x68198` | `Base_CountActiveResearch` | 92 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x661d8` | `Base_CountSoldiers` | 88 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x78e78` | `BasePlane_CalcWeaponStoresUsed` | 88 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x6649c` | `Craft_CountSoldiersAboard` | 84 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x45f80` | `Ship_TickRangeRecover` | 72 | `src/pufo/game/pufo_ship.h` |
@@ -1011,7 +1013,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 114 functions, 135204 bytes remaining
+### `strat` — 112 functions, 134648 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1060,7 +1062,6 @@ whose port work they belong to.
 | `0x5d918` | `RadarScreen_DrawFuelGauge` | 524 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5eb10` | `RadarScreen_BlitMapBackdrop` | 508 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a64c` | `Ship_AbortCourse` | 484 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6a230` | `Base_SumCraftAtBase` | 468 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x666cc` | `Ship_FormatDisplayName` | 424 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x62824` | `Base_TickFacilityConstruction` | 396 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5db24` | `RadarScreen_RollWeaponHit` | 352 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1116,7 +1117,6 @@ whose port work they belong to.
 | `0x845d8` | `Smap_ConfirmSelected` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x853e4` | `Smap_ConfirmSelectedAlt` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65a6c` | `BaseFac_RaceCharToIndex` | 88 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x661d8` | `Base_CountSoldiers` | 88 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x32c88` | `BaseRec_Create` | 76 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6144c` | `RadarScreen_SetActive` | 76 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x668e8` | `Base_RemoveAllSoldiers` | 72 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1311,7 +1311,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_enemyai` | PASS | 22 |
 | `test_font` | PASS | 29 |
 | `test_fov` | PASS | 31 |
-| `test_geoscape` | PASS | 169 |
+| `test_geoscape` | PASS | 178 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |

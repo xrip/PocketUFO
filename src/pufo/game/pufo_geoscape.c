@@ -1,5 +1,6 @@
 /* pufo_geoscape.c - see pufo_geoscape.h for the evidence map. */
 #include "game/pufo_geoscape.h"
+#include "game/pufo_save.h"   /* SmapSite, for the monthly upkeep of a base */
 #include "util/pufo_rand.h"
 
 static i32 Abs32(i32 n)
@@ -606,4 +607,97 @@ i32 Base_CountShipsAtBase(Ship *const *apCraft, i32 nCraftCount, BaseRec *const 
 
     return nShips + BaseGrid_GetTypeByte(apBases, nBaseCount, abGrid,
                                          apBases[nBaseIndex]->bUnk4); /* 0x66110 */
+}
+
+/* Base_CalcPsiLabCap @ 0x6598c. Kind 8, 10 per free cell -- the same walk as the rest of the
+ * capacity family. Hex-Rays scrambles it into a do/while with a running pointer, but the two
+ * grids it touches are the usual pair: the type byte at grid + 480 + 144*nBase and the build days
+ * at grid + 36*nBase. */
+i32 Base_CalcPsiLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 8, 10, true); /* 0x659E8 */
+}
+
+/* Base_CountSoldiers @ 0x661d8. Soldiers whose base slot (Soldier.nKind) is this base. This is
+ * the plain assignment count; Base_CountSoldiersAssigned (0x66230) is the stricter one that also
+ * asks whether the soldier is reachable. */
+i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex)
+{
+    i32 nCount = 0;
+
+    if (apSoldiers == NULL) {
+        return 0;
+    }
+
+    for (i32 i = 0; i < nSoldierCount; ++i) {
+        if (apSoldiers[i] != NULL && (i32)apSoldiers[i]->nKind == nBaseIndex) {
+            ++nCount; /* 0x6621C */
+        }
+    }
+
+    return nCount;
+}
+
+/* Base_SumCraftAtBase @ 0x6a230, renamed Base_CalcMonthlyUpkeep: the IDB name describes one of
+ * the five terms. What it returns is the monthly cost of one base.
+ *
+ *   craft homed here   type 0 or 1 -> 500,000   2 -> 700,000   3 -> 600,000   4 -> 400,000
+ *   soldiers assigned  20,000 each
+ *   object 112 stock   20,000 per unit at this base
+ *   object 113 stock   30,000 per unit at this base
+ *   geoscape sites     20,000 * (auItemQty[224] + bRecoveredSoldierAssign)
+ *                      + 30,000 * auItemQty[226], for sites whose bFlag1 is this base
+ *   facility cells     50,000 for every cell whose type byte is not 255, built or not
+ *
+ * The last term is the one that bites: an unfinished facility is charged the same 50,000 as a
+ * finished one, because this walk reads the facility TYPE grid and never looks at build days. */
+i32 Base_CalcMonthlyUpkeep(Ship *const *apCraft, i32 nCraftCount,
+                           Soldier *const *apSoldiers, i32 nSoldierCount,
+                           const SmapSite *aSites, i32 nSiteCount,
+                           ObjectRecFull *const *apObjects, const u8 *abFacilityGrid,
+                           i32 nBaseIndex)
+{
+    static const i32 anCraftCost[5] = { 500000, 500000, 700000, 600000, 400000 }; /* 0x6A294..0x6A2D4 */
+
+    i32 nTotal = 0;
+
+    if (apCraft != NULL) {
+        for (i32 i = 0; i < nCraftCount; ++i) {
+            const Ship *pShip = apCraft[i];
+            if (pShip == NULL || (i32)pShip->bHomeBase != nBaseIndex) {
+                continue;
+            }
+            if (pShip->bCraftType < 2) {
+                nTotal += anCraftCost[0];
+            } else if (pShip->bCraftType <= 4) {
+                nTotal += anCraftCost[pShip->bCraftType];
+            }
+            /* any other type contributes nothing, as in the original's switch */
+        }
+    }
+
+    nTotal += 20000 * (Base_CountSoldiers(apSoldiers, nSoldierCount, nBaseIndex)
+                       + Base_GetItemQty(apObjects != NULL ? apObjects[112] : NULL, nBaseIndex));
+    nTotal += 30000 * Base_GetItemQty(apObjects != NULL ? apObjects[113] : NULL, nBaseIndex);
+
+    for (i32 i = 0; i < nSiteCount; ++i) {
+        if ((i32)(signed char)aSites[i].bFlag1 != nBaseIndex) {
+            continue; /* 0x6A364 */
+        }
+        nTotal += 20000 * ((i32)aSites[i].auItemQty[224] + (i32)(signed char)aSites[i].bRecoveredSoldierAssign);
+        nTotal += 30000 * (i32)aSites[i].auItemQty[226]; /* 0x6A384 */
+    }
+
+    if (abFacilityGrid != NULL) {
+        const u8 *pType = abFacilityGrid + 480 + 144 * nBaseIndex; /* 0x6A3BC + 372 */
+        for (i32 nRow = 0; nRow < 6; ++nRow) {
+            for (i32 nCol = 0; nCol < 6; ++nCol) {
+                if (pType[6 * nCol + nRow] != 255) {
+                    nTotal += 50000; /* 0x6A3DC */
+                }
+            }
+        }
+    }
+
+    return nTotal;
 }

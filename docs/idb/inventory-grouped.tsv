@@ -653,7 +653,7 @@ addr	name	size	subsystem
 69ffc	Ship_FindIndexById	96	strat
 6a05c	StrategList_FindIdxForShip	132	strat
 6a0e0	Base_ClearFacilityGridRow	336	strat
-6a230	Base_SumCraftAtBase	468	strat
+6a230	Base_CalcMonthlyUpkeep	468	strat
 6a404	BaseFac_FormatCostLabel	184	strat
 6a4bc	BaseFac_BuildStatusMsg	1520	strat
 6aaac	Ui_SwapStringSlots	172	ui-core

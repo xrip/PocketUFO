@@ -6103,3 +6103,37 @@ the crew quota per craft class and the slot-34 asymmetry (5 leaves the base, 50 
 is recorded in the IDB.
 
 Covered by `TestCrewAndStoresTotals`, 10 checks.
+
+### What a base actually costs each month (done)
+
+`Base_SumCraftAtBase @ 0x6a230` is renamed in the IDB to **`Base_CalcMonthlyUpkeep`**. The old name
+describes one of its five terms. It is the monthly cost of one base:
+
+| term | cost |
+|---|---|
+| craft homed here | type 0 or 1 → 500,000; 2 → 700,000; 3 → 600,000; 4 → 400,000; anything else → nothing |
+| soldiers assigned to the base | 20,000 each |
+| object 112 stock at this base | 20,000 per unit |
+| object 113 stock at this base | 30,000 per unit |
+| geoscape sites with `bFlag1` == this base | `20,000 * (auItemQty[224] + bRecoveredSoldierAssign) + 30,000 * auItemQty[226]` |
+| facility cells | **50,000 for every cell whose type byte is not 255** |
+
+Two facts that only show up when you write the test:
+
+**An empty facility cell is 255, not 0.** A zeroed type block reads as 36 built facilities and costs
+1,800,000 a month. The first version of this test asserted against a zeroed grid and "failed" against
+a correct port.
+
+**This term reads the facility TYPE grid and never looks at build days**, so a facility still under
+construction is charged the full 50,000. That is the opposite of every capacity function in the same
+family, which all require build days to be zero before a cell counts.
+
+Also ported: `Base_CalcPsiLabCap @ 0x6598c` (kind 8, 10 per free cell — Hex-Rays scrambles it into a
+do/while over a running pointer, but the two grids are the usual pair) and `Base_CountSoldiers
+@ 0x661d8` (the plain base-assignment count, versus `Base_CountSoldiersAssigned @ 0x66230` which also
+asks whether the soldier is reachable).
+
+These are the two callees `Geoscape_CloseUI` case 19 needs for the monthly economy close. That case
+is now reachable except for `PsiScreen_Init`, `EndScreen_Init` and the funding totals block.
+
+Covered by `TestPsiCapAndUpkeep`, 9 checks.

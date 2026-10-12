@@ -207,6 +207,35 @@ bool Base_HasWorkshopSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNee
  * not a capacity. */
 i32 Base_CountBuiltFacilities(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_CalcPsiLabCap @ 0x6598c. Kind 8, 10 per free cell. Hex-Rays scrambles this one into a
+ * do/while over a running pointer, but the two grids it reads are the usual pair. */
+i32 Base_CalcPsiLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+
+/* Base_CountSoldiers @ 0x661d8. Soldiers whose base slot (Soldier.nKind) is this base -- the
+ * plain assignment count. Base_CountSoldiersAssigned (0x66230) is the stricter version that also
+ * asks whether the soldier is reachable. */
+i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex);
+
+/* Base_SumCraftAtBase @ 0x6a230, renamed: the IDB name describes one of the five terms. This is
+ * the monthly cost of one base.
+ *
+ *   craft homed here   type 0 or 1 -> 500,000   2 -> 700,000   3 -> 600,000   4 -> 400,000
+ *   soldiers assigned  20,000 each
+ *   object 112 stock   20,000 per unit held at this base
+ *   object 113 stock   30,000 per unit held at this base
+ *   geoscape sites     20,000 * (auItemQty[224] + bRecoveredSoldierAssign)
+ *                      + 30,000 * auItemQty[226], for sites whose bFlag1 is this base
+ *   facility cells     50,000 for every cell whose type byte is not 255
+ *
+ * The last term reads the facility TYPE grid and never looks at build days, so an unfinished
+ * facility is charged the same 50,000 as a finished one. */
+typedef struct SmapSite SmapSite;
+i32 Base_CalcMonthlyUpkeep(Ship *const *apCraft, i32 nCraftCount,
+                           Soldier *const *apSoldiers, i32 nSoldierCount,
+                           const SmapSite *aSites, i32 nSiteCount,
+                           ObjectRecFull *const *apObjects, const u8 *abFacilityGrid,
+                           i32 nBaseIndex);
+
 /* Base_CountSoldiersAssigned @ 0x66230. How many soldiers are actually available at this
  * base. A soldier counts when their base slot (Soldier.nKind) is this base, they are not
  * away in a craft (bUnk183 != 254), and either they are not in a craft at all (bUnk183 == 255)

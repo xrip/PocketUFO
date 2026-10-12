@@ -653,7 +653,7 @@ addr	name	size
 69ffc	Ship_FindIndexById	96
 6a05c	StrategList_FindIdxForShip	132
 6a0e0	Base_ClearFacilityGridRow	336
-6a230	Base_SumCraftAtBase	468
+6a230	Base_CalcMonthlyUpkeep	468
 6a404	BaseFac_FormatCostLabel	184
 6a4bc	BaseFac_BuildStatusMsg	1520
 6aaac	Ui_SwapStringSlots	172

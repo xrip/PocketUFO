@@ -8,6 +8,7 @@
  * site-state table, soldier timers.
  */
 #include "game/pufo_geoscape.h"
+#include "game/pufo_save.h" /* SmapSite, for the monthly upkeep fixture */
 #include "util/pufo_rand.h"
 
 #include <stdio.h>
@@ -1068,6 +1069,108 @@ static void TestShipsAtBase(void)
                "a base index past the array is refused rather than read");
 }
 
+static void TestPsiCapAndUpkeep(void)
+{
+    static u8 g_abGrid[700];
+    static Soldier g_aSol[3];
+    static Soldier *g_apSol[3];
+    static Ship g_aShip[2];
+    static Ship *g_apShip[2];
+    static ObjectRecFull g_aObj[114];
+    static ObjectRecFull *g_apObj[114];
+    static SmapSite g_aSite[2];
+
+    printf("Base_CalcPsiLabCap and Base_CalcMonthlyUpkeep\n");
+
+#define P_T(c, r) g_abGrid[480 + 6 * (c) + (r)]
+#define P_O(c, r) g_abGrid[6 * (c) + (r)]
+
+    memset(g_abGrid, 0, sizeof(g_abGrid));
+    P_T(0, 0) = 8;
+    CheckEqI32(Base_CalcPsiLabCap(g_abGrid, 0), 10, "one free psi lab cell holds 10");
+    P_O(0, 0) = 5;
+    CheckEqI32(Base_CalcPsiLabCap(g_abGrid, 0), 0, "one under construction holds nothing");
+
+    for (int i = 0; i < 114; ++i) {
+        memset(&g_aObj[i], 0, sizeof(g_aObj[i]));
+        g_apObj[i] = &g_aObj[i];
+    }
+    for (int i = 0; i < 3; ++i) {
+        memset(&g_aSol[i], 0, sizeof(g_aSol[i]));
+        g_apSol[i] = &g_aSol[i];
+        g_aSol[i].nKind = 0;
+    }
+    g_aSol[2].nKind = 1;
+    for (int i = 0; i < 2; ++i) {
+        memset(&g_aShip[i], 0, sizeof(g_aShip[i]));
+        g_apShip[i] = &g_aShip[i];
+    }
+    g_aShip[0].bHomeBase = 0;
+    g_aShip[0].bCraftType = 0;
+    g_aShip[1].bHomeBase = 1;
+    g_aShip[1].bCraftType = 2;
+    g_aObj[112].auPerBaseVal[0] = 3;
+    g_aObj[113].auPerBaseVal[0] = 2;
+    memset(g_aSite, 0, sizeof(g_aSite));
+    g_aSite[0].bFlag1 = 0;
+    g_aSite[0].auItemQty[224] = 1;
+    g_aSite[0].bRecoveredSoldierAssign = 2;
+    g_aSite[0].auItemQty[226] = 3;
+    g_aSite[1].bFlag1 = 1;
+    g_aSite[1].auItemQty[224] = 4;
+    g_aSite[1].bRecoveredSoldierAssign = 1;
+    g_aSite[1].auItemQty[226] = 2;
+
+    CheckEqI32(Base_CountSoldiers(g_apSol, 3, 0), 2, "two soldiers are assigned to base 0");
+    CheckEqI32(Base_CountSoldiers(g_apSol, 3, 1), 1, "and one to base 1");
+
+    /* An EMPTY facility cell is 255, not zero. That matters here because the upkeep term charges
+     * every cell whose type byte is NOT 255, so a zeroed grid looks like 36 built facilities.
+     * Fill both bases' type blocks with 255 first. */
+    for (int i = 480; i < (int)sizeof(g_abGrid); ++i) {
+        g_abGrid[i] = 255;
+    }
+
+    /* Base 0: one type-0 craft (500000) + 2 soldiers (40000) + 3 of object 112 at 20000 (60000)
+     * + 2 of object 113 at 30000 (60000) + one site (20000*3 + 30000*3 = 150000)
+     * + two facility cells at 50000 (100000). */
+    P_T(0, 0) = 8;
+    P_T(1, 1) = 3;
+    CheckEqI32(Base_CalcMonthlyUpkeep(g_apShip, 2, g_apSol, 3, g_aSite, 2, g_apObj, g_abGrid, 0),
+               500000 + 40000 + 60000 + 60000 + 150000 + 100000,
+               "every term of the monthly cost, added");
+
+    /* A cell under construction is charged the same as a finished one: this walk reads the type
+     * grid and never looks at build days. */
+    P_O(0, 0) = 9;
+    CheckEqI32(Base_CalcMonthlyUpkeep(g_apShip, 2, g_apSol, 3, g_aSite, 2, g_apObj, g_abGrid, 0),
+               500000 + 40000 + 60000 + 60000 + 150000 + 100000,
+               "an unfinished facility is charged the full 50000");
+
+    /* An empty cell (type 255) is free. */
+    P_T(0, 0) = 255;
+    CheckEqI32(Base_CalcMonthlyUpkeep(g_apShip, 2, g_apSol, 3, g_aSite, 2, g_apObj, g_abGrid, 0),
+               500000 + 40000 + 60000 + 60000 + 150000 + 50000,
+               "a cell whose type byte is 255 contributes nothing");
+
+    /* Base 1 has a type-2 craft (700000), one soldier, no stock at this base, its own site, and
+     * its own 36 facility cells, which are all zero here. */
+    CheckEqI32(Base_CalcMonthlyUpkeep(g_apShip, 2, g_apSol, 3, g_aSite, 2, g_apObj, g_abGrid, 1),
+               700000 + 20000 + (20000 * 5 + 30000 * 2),
+               "base 1 is charged its own craft, soldier and site, and no facility cells");
+
+    /* A zeroed type block is 36 built facilities to this function. */
+    for (int i = 480; i < 480 + 144; ++i) {
+        g_abGrid[i] = 0;
+    }
+    CheckEqI32(Base_CalcMonthlyUpkeep(g_apShip, 2, g_apSol, 3, g_aSite, 2, g_apObj, g_abGrid, 0),
+               500000 + 40000 + 60000 + 60000 + 150000 + 36 * 50000,
+               "a block of zeros is 36 facilities, because empty is 255 and not 0");
+
+#undef P_T
+#undef P_O
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1081,6 +1184,7 @@ int main(void)
     TestCapacityFamily();
     TestSoldiersAssigned();
     TestShipsAtBase();
+    TestPsiCapAndUpkeep();
     TestFindFacilityCell();
     TestActiveManuf();
     TestWorkshopNeeded();

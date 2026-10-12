@@ -64,6 +64,7 @@ Inv_OpenScreen	TactHud_OpenInventory	the inventory button (widget 4)
 Tact_OpenLeftHandMenu	Ui_OpenHandMenu	two 280-byte bodies, one function; the caller passes the hand
 Tact_OpenRightHandMenu	Ui_OpenHandMenu	two 280-byte bodies, one function; the caller passes the hand
 Tact_RemoveUnitFromSideLists	SideLists_RemoveUnit	search XCom first, then enemy, compact downward
+Base_SumCraftAtBase	Base_CalcMonthlyUpkeep	the old name described one of five terms; it is the monthly cost of a base
 Options_SyncUiFromMap_GotoScreen12	Menu_SyncOptionPads	the options button re-derives every pad byte from the option block
 TactAction_ConfirmUseItem	Ui_ConfirmUseItem	action mode 3 confirm
 StartTimers_BySpeed	Timer_StartBySpeed	the speed switch has no default arm
