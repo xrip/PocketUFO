@@ -6,6 +6,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
+#include "audio/pufo_audio.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -291,6 +292,21 @@ void MapView_FocusOnCell(FocusCtx *pCtx, const MapCell *pCell, TactCursor *pCurs
     if (pCursor != NULL) {
         MapCursor_SetFlags(pCursor, (u8)(pCell->nZ + 1));
     }
+}
+
+/* MapView_FocusSelected @ 0x16710.
+ *
+ * Plays sample 17 when the gate byte is set, then centres on the selected unit's CELL.
+ * The gate is the low byte of Map.apUiSlotsA[2]; the port takes it as an argument because it
+ * does not own that slot array. The cell is what the callee takes, not the unit - see the note
+ * on MapView_FocusOnCell. */
+void MapView_FocusSelected(FocusCtx *pCtx, const MapCell *pSelCell, u8 bGateByte,
+                           TactCursor *pCursor)
+{
+    if (bGateByte != 0) {
+        Sound_Play(17);
+    }
+    MapView_FocusOnCell(pCtx, pSelCell, pCursor);
 }
 
 /* Tact_GetCameraBounds @ 0x3331c. */

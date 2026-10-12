@@ -371,6 +371,24 @@ bool Save_ReadVersion(DatFile *pDat, u8 *pnOutVer)
     return true;
 }
 
+/* Save_ReadStrategVer @ 0x3f1c8.
+ *
+ * FindChunk("strateg") then read one byte into the save format version byte at 0x18655C.
+ * LoadGame @ 0x44d84 calls this before reading any chunk body, so the version that decides how
+ * the other chunks are sized comes from the strateg chunk.
+ *
+ * The original checks neither result: FindChunk's return is dropped, so a save with no strateg
+ * chunk still runs the read at whatever position FindChunk left, and the previous version byte
+ * survives a failed read. Reproduced. */
+bool Save_ReadStrategVersion(DatFile *pDat, i8 *pbVersion)
+{
+    if (pDat == NULL || pbVersion == NULL) {
+        return false;
+    }
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_STRATEG);
+    return DatFile_Read(pDat, pbVersion, 1);
+}
+
 /* Save_WriteSoldiers @ 0x42350.
  *
  * The order is: begin the chunk, write the u16 count, every record, then the two

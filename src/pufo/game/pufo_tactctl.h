@@ -170,6 +170,12 @@ typedef struct FocusCtx {
 
 void MapView_FocusOnCell(FocusCtx *pCtx, const MapCell *pCell, TactCursor *pCursor);
 
+/* MapView_FocusSelected @ 0x16710. Sample 17 when the gate is set, then centre on the selected
+ * unit's cell. The gate is the low byte of Map.apUiSlotsA[2], passed in because the port does not
+ * own that slot array. */
+void MapView_FocusSelected(FocusCtx *pCtx, const MapCell *pSelCell, u8 bGateByte,
+                           TactCursor *pCursor);
+
 /* Tact_GetCameraBounds @ 0x3331c.
  *
  * When `bUseCraft` (byte 0x1A21 / gap_6556[133]) is clear the whole map is

@@ -1910,6 +1910,18 @@ static void TestStrategChunk(void)
     Check(!Save_WriteStrateg(&dat, &st, NULL), "NULL list refused");
     Check(!Save_ReadStrateg(&dat, &got, NULL), "NULL list refused");
 
+    /* Save_ReadStrategVer @ 0x3f1c8: LoadGame reads the save format version out of the strateg
+     * chunk before it reads any chunk body, because that byte decides how the others are sized. */
+    {
+        i8 bVer = 99;
+        Check(OpenRead("test_strateg.tmp", &dat), "  reopened for the version read");
+        Check(Save_ReadStrategVersion(&dat, &bVer), "  version byte read");
+        CheckEqI32(bVer, 3, "  the version byte is the one that was written");
+        DatFile_Close(&dat);
+        Check(!Save_ReadStrategVersion(NULL, &bVer), "  NULL dat refused");
+        Check(!Save_ReadStrategVersion(&dat, NULL), "  NULL version out refused");
+    }
+
     remove("test_strateg.tmp");
     remove("test_nost.tmp");
 }

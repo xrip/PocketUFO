@@ -481,7 +481,43 @@ static void TestFocusOnCell(void)
     cursor.nFlags = 4;
     MapView_FocusOnCell(&ctx, NULL, &cursor);
     CheckEqI32(ctx.nCamScrollX, 111, "  no cell leaves the scroll alone");
+    CheckEqI32(ctx.nCamScrollY, 222, "  no cell leaves the scroll Y alone");
     CheckEqI32(cursor.nFlags, 4, "  no cell leaves the cursor layer alone");
+
+    /* MapView_FocusSelected @ 0x16710 is the same focus plus a sample. The gate byte only
+     * chooses whether sample 17 plays, so the camera result must be identical either way.
+     * Sound is not asserted here: Sound_Play needs the audio-ready flag, which test_audio
+     * covers with its own fake backend. */
+    MapView_SetCamOffset(&geom, 120, 160, false, 0, &want);
+    nA = 7 - (i32)(i8)want.bScratch40;
+    nB = 5 - (i32)(i8)want.bScratch41;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.nMapTileW = 240;
+    ctx.nMapTileH = 320;
+    ctx.nDimX = 4;
+    ctx.nDimY = 3;
+    cursor.nFlags = 0;
+    MapView_FocusSelected(&ctx, &cell, 0, &cursor);
+    CheckEqI32(ctx.nCamScrollX, Map_CenterOffsetX(4, nA, nB), "  gate clear still focuses X");
+    CheckEqI32(cursor.nFlags, 3, "  gate clear still sets the cursor layer");
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.nMapTileW = 240;
+    ctx.nMapTileH = 320;
+    ctx.nDimX = 4;
+    ctx.nDimY = 3;
+    cursor.nFlags = 0;
+    MapView_FocusSelected(&ctx, &cell, 1, &cursor);
+    CheckEqI32(ctx.nCamScrollX, Map_CenterOffsetX(4, nA, nB), "  gate set focuses the same X");
+    CheckEqI32(ctx.nCamScrollY, Map_CenterOffsetY(nA, nB), "  gate set focuses the same Y");
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.nCamScrollX = 111;
+    ctx.nCamScrollY = 222;
+    MapView_FocusSelected(&ctx, NULL, 1, NULL);
+    CheckEqI32(ctx.nCamScrollX, 111, "  no cell leaves the focus alone");
+    CheckEqI32(ctx.nCamScrollY, 222, "  and no cursor is safe to pass");
 }
 
 static void TestCameraBounds(void)

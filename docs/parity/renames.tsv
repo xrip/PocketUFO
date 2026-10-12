@@ -168,3 +168,27 @@ PlaySample7_SetFlags_Cache0xBD8	BaseUi_PlaySample7Cache160C74	the cache slot is 
 Map_BackspaceSelectedName	SoldierName_Backspace	the soldier is passed in
 Font_Init	PufoFont_Init	the font struct is passed in
 Font_Free	PufoFont_Free	deviation: the original guards on bInited, PufoFont_Free runs unconditionally
+UiBank_SelectRadio0_Play11	Ui_SelectRadio	four radio pads, one body; nRadio makes the byte one-hot
+UiBank_SelectRadio1_Play11	Ui_SelectRadio	merged
+UiBank_SelectRadio2_Play11	Ui_SelectRadio	merged
+UiBank_SelectRadio3_Play11	Ui_SelectRadio	merged
+MapView_LayerUp	Ui_LayerUp	
+MapView_LayerDown	Ui_LayerDown	
+Map_IncByte128AF0_Play11	Ui_IncLayer	sample 17 then pad86309a[19] += 1 while < 4
+Map_DecByte128AF0_Play11	Ui_DecLayer	merged
+Map_PlaySamples10_7_SetFlag_ClearScreen	Ui_Samples16_7_SetDeployFlag	IDB renamed: the code plays samples 16 and 7, not 10 and 7
+Map_PlaySamples10_7_ClearFlag_ClearScreen	Ui_Samples16_7_ClearDeployFlag	IDB renamed, same reason
+MenuBtn_ActionBack0	MenuBtn_ActionBack	two pads, one body
+MenuBtn_ActionBack1	MenuBtn_ActionBack	merged
+Menu_OpenLoadSlots	Menu_OpenSlotList	bSaveMode selects load or save
+Menu_OpenSaveSlots	Menu_OpenSlotList	merged
+MenuCtl8_OnClick	Menu_LoadSlot	seven identical load-slot buttons, the slot number is an argument
+MenuCtl9_OnClick	Menu_LoadSlot	merged
+MenuCtl10_OnClick	Menu_LoadSlot	merged
+MenuCtl11_OnClick	Menu_LoadSlot	merged
+MenuCtl12_OnClick	Menu_LoadSlot	merged
+MenuCtl13_OnClick	Menu_LoadSlot	merged
+MenuCtl14_OnClick	Menu_LoadSlot	merged
+Set_byte_159E88_3_SetUiY	BaseUi_SetScratch3AndUiY	
+IncDwordIfInRange_AtPlus0xBD4	UiPanel_ScrollNext	0x589dc is a tail call to 0x3f00c
+Save_ReadStrategVer	Save_ReadStrategVersion	the port names the destination explicitly instead of writing 0x18655C

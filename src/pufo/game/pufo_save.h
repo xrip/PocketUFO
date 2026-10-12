@@ -1,7 +1,7 @@
 /* pufo_save.h - save/load chunk serialisation.
  *
  * Evidence: Save_WriteSoldiers @ 0x42350, Save_ReadSoldiers @ 0x416bc,
- *           Save_WriteStrategVer @ 0x3f1c8, Save_ReadGameState @ 0x44958.
+ *           Save_ReadStrategVer @ 0x3f1c8, Save_ReadGameState @ 0x44958.
  *
  * NOT ported, and deliberately not cited here: the load driver LoadGame (0x44bbc).
  * This module recreates the chunk writers and readers the drivers call, and now the
@@ -122,9 +122,16 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit);
 bool Save_WriteTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
 bool Save_ReadTrailingChunks(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
 
-/* Save_WriteStrategVer @ 0x3f1c8 / the matching read. */
+/* The "tactver" chunk: a u16 written by the save driver at 0x44A10..0x44A28 and read back.
+ * This is NOT the strateg version byte - see Save_ReadStrategVersion below. */
 bool Save_WriteVersion(DatFile *pDat);
 bool Save_ReadVersion(DatFile *pDat, u8 *pnOutVer);
+
+/* Save_ReadStrategVer @ 0x3f1c8. FindChunk("strateg") then read ONE byte into the save format
+ * version (0x18655C). LoadGame @ 0x44d84 calls this before any chunk body, so the version that
+ * sizes the other chunks comes from the strateg chunk. The original checks neither result: a
+ * missing strateg chunk leaves the previous version byte in place. */
+bool Save_ReadStrategVersion(DatFile *pDat, i8 *pbVersion);
 
 /* --- the small chunks -------------------------------------------------------
  *

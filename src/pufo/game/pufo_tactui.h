@@ -538,8 +538,9 @@ void Ui_Samples16_14_ClearScreen(TactUiState *pUi, const TactUiHooks *pHooks);
 /* Map_UiScreen7_PlaySamples10_0E @ 0x194f8: screen 7, then samples 16 and 14. */
 void Ui_Screen7_Samples16_14(TactUiState *pUi, const TactUiHooks *pHooks);
 
-/* Map_PlaySamples10_7_SetFlag_ClearScreen @ 0x19528 and
- * Map_PlaySamples10_7_ClearFlag_ClearScreen @ 0x19568: sample 16, sample 7,
+/* Map_PlaySamples16_7_SetDeployFlag @ 0x19528 and
+ * Map_PlaySamples16_7_ClearDeployFlag @ 0x19568 (renamed in the IDB: the old name said
+ * samples 10 and 7, the code at 0x19534 and 0x19540 plays 16 and 7): sample 16, sample 7,
  * set/clear bDeployPanelOpen (gap_86272[16] @ 0x15110), then screen 0. */
 void Ui_Samples16_7_SetDeployFlag(TactUiState *pUi, const TactUiHooks *pHooks);
 void Ui_Samples16_7_ClearDeployFlag(TactUiState *pUi, const TactUiHooks *pHooks);
