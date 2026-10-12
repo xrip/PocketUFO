@@ -172,6 +172,35 @@ i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteStat
  * Base_CountActiveManuf instead. The capacity is used by other callers, not that one. */
 i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* Base_CalcLabCap @ 0x65818. Identical to Base_CalcWorkshopCap in every respect except
+ * the cell kind it looks for: it counts free cells of kind 2, a lab, and returns
+ * count * 50. The original carries these as two separate copies of the same loop, so the
+ * port keeps two names over one implementation. */
+i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+
+/* Base_CountActiveResearch @ 0x68198. The same sum Base_CountActiveManuf performs, over a
+ * different column, and reading the SAME count byte at 0x160C4C -- one entry count serves
+ * both manufacturing and research.
+ *
+ * Its own constants, taken from the disassembly rather than the decompiler:
+ *
+ *     LDR  R2, =0x15EF08
+ *     LDRB R3, [R2, #0x1D44]   the count byte, at 0x160C4C
+ *     MUL  R11, nBase, #0x120  288 bytes per base, not 400
+ *     MOV  R2, #0x1324         4900
+ *     LDRH R2, [R1,R2]         the u16 entry, R1 advances by 2
+ *
+ * so the column base is 0x15EF08 + 4900 = 0x16022C, 288 bytes per base, which is 144 u16
+ * entries.
+ *
+ * OPEN QUESTION, recorded rather than guessed: the manufacturing columns run from 0x15E19C
+ * for 8 * 400 = 3200 bytes, ending at 0x160DDC, and 0x16022C falls inside that range. Two
+ * arrays with different strides cannot both own that memory, so these are most likely two
+ * views of one block rather than two separate arrays. Which one is the real layout is not
+ * established, and nothing here depends on the answer because both take the column as an
+ * argument. */
+i32 Base_CountActiveResearch(const u16 *apResearchQty, i32 nEntries);
+
 /* Base_CountActiveManuf @ 0x68264: total manufacturing quantity held by one base.
  *
  * It sums the first nEntries u16 entries of that base's quantity column and returns the
@@ -179,12 +208,24 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * base rather than stored per base, and it is read as an unsigned byte, so the most the
  * original will ever walk is 255 entries. When it is zero the array is not touched at all.
  *
- * Where the column lives is worth spelling out, because the decompiler hides it. The
- * original addresses it as gUiRootPanel.anLineAux[100*nBase + 149] plus 8578 u16 slots.
- * anLineAux[149] is the product block itself, and 8578 u16 slots is 17152 bytes, which is
- * exactly PUFO_PRODUCT_BLOCK_BYTES. So the quantity columns start immediately after the
- * product block, at 0x15E19C, and each base gets 400 bytes, which is 200 u16 entries.
- * The loop only reads nEntries of those 200.
+ * Where the column lives is worth spelling out, because the decompiler hides it. It renders
+ * the address as gUiRootPanel.anLineAux[100*nBase + 149] plus 8578 u16 slots. The
+ * disassembly is clearer and is what this section is taken from:
+ *
+ *     LDR  R1, =unk_159E98      base
+ *     MUL  R11, nBase, #0x190   400 bytes per base
+ *     MOV  R3, #0x4304          17156
+ *     LDRH R3, [R1,R3]          the u16 entry, and the loop advances R1 by 2
+ *
+ * So the column base is 0x159E98 + 17156 = 0x15E19C, which is exactly where the product
+ * block ends: the product block starts at 0x159E9C and PUFO_PRODUCT_BLOCK_BYTES is 17152.
+ * The constant is 17156 rather than 17152 only because the anchor 0x159E98 sits four bytes
+ * before the product block. The quantity columns therefore start immediately after the
+ * product block, and each base gets 400 bytes, which is 200 u16 entries. The loop only
+ * reads nEntries of those 200.
+ *
+ * The count byte is reached the same way: LDR R2, =0x15EF08 with LDRB R2, [R2, #0x1D44],
+ * which is the byte at 0x160C4C.
  *
  * The original's first argument is never read; it is passed the grid pointer anyway. The
  * port drops it and takes the column directly. */
@@ -219,6 +260,12 @@ i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
  * every row and always runs to 6, so the function returns 6 no matter what it did. The
  * port reproduces 6 rather than inventing a status. */
 i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf);
+
+/* Base_UpdateLabNeeded @ 0x65c7c. The same pass as Base_UpdateWorkshopNeeded with the
+ * cell kind changed to 2, a lab, and the budget taken from Base_CountActiveResearch.
+ * It also discards Base_CalcLabCap at 0x65C88 for the same reason, and returns the same
+ * loop-counter residue of 6. */
+i32 Base_UpdateLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveResearch);
 
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *

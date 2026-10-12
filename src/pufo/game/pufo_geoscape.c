@@ -307,8 +307,10 @@ store:
     return nState;
 }
 
-/* Base_CalcWorkshopCap @ 0x65894. Counts free workshop cells and returns count * 50. */
-i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+/* The three facility passes the original carries as separate copies share one shape, so
+ * the port keeps one implementation each and gives the originals their own names. Cell
+ * kind is the only thing that differs between the workshop and lab versions. */
+static i32 FacilityCountFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
 {
     const u8 *pType;
     const u8 *pOcc;
@@ -325,43 +327,63 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
     for (nRow = 0; nRow < 6; ++nRow) {
         i32 nCol;
         for (nCol = 0; nCol < 6; ++nCol) {
-            /* 0x658D0 tests the type, 0x658F0 the occupancy, and adds 50 to the total. */
-            if (pType[6 * nCol + nRow] == 3 && pOcc[6 * nCol + nRow] == 0) {
+            /* The originals test the kind, then the occupancy, then add 50 to the total. */
+            if (pType[6 * nCol + nRow] == nKind && pOcc[6 * nCol + nRow] == 0) {
                 nCap += 50;
             }
         }
     }
-    return nCap; /* 0x6590C */
+    return nCap;
 }
 
-/* Base_CountActiveManuf @ 0x68264. Sums the first nEntries u16 entries of one base's
- * manufacturing quantity column. See the header for where that column sits. */
-i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries)
+/* Base_CalcWorkshopCap @ 0x65894. Counts free workshop cells and returns count * 50. */
+i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityCountFree(abFacilityGrid, nBaseIndex, 3); /* 0x6590C */
+}
+
+/* Base_CalcLabCap @ 0x65818. The same count over free lab cells. */
+i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityCountFree(abFacilityGrid, nBaseIndex, 2); /* 0x65890 */
+}
+
+static i32 QuantitySumColumn(const u16 *apColumn, i32 nEntries)
 {
     i32 nTotal = 0;
     i32 i;
 
-    if (apManufQty == NULL || nEntries <= 0) {
-        return 0; /* 0x68280: a zero count never touches the array */
+    if (apColumn == NULL || nEntries <= 0) {
+        return 0; /* both functions skip the array entirely on a zero count */
     }
     if (nEntries > 255) {
-        nEntries = 255; /* the original reads the count as an unsigned byte */
+        nEntries = 255; /* both read the count as an unsigned byte */
     }
 
     for (i = 0; i < nEntries; ++i) {
-        nTotal += apManufQty[i]; /* 0x682A4 reads a u16, 0x682AC advances by 2 */
+        nTotal += apColumn[i]; /* a u16 read, and the pointer advances by 2 */
     }
-    return nTotal; /* 0x682BC */
+    return nTotal;
 }
 
-/* Base_UpdateWorkshopNeeded @ 0x65bb4. Marks the first N workshop cells as needed.
- * The original's call to Base_CalcWorkshopCap at 0x65BC0 discards a pure function's
- * result, so the port omits it; see the header. */
-i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf)
+/* Base_CountActiveManuf @ 0x68264. Manufacturing quantity column. */
+i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries)
+{
+    return QuantitySumColumn(apManufQty, nEntries); /* 0x682BC */
+}
+
+/* Base_CountActiveResearch @ 0x68198. Research quantity column, same count byte. */
+i32 Base_CountActiveResearch(const u16 *apResearchQty, i32 nEntries)
+{
+    return QuantitySumColumn(apResearchQty, nEntries); /* 0x681EC */
+}
+
+/* The needed-marking pass, shared by the workshop and lab versions. It walks row 0 across
+ * all six columns, then row 1, and so on, spending a budget of 1 per matching cell. */
+static i32 FacilityMarkNeeded(u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 nBudget)
 {
     u8 *pType;
     u8 *pNeed;
-    i32 nBudget;
     i32 nRow;
     i32 nCol = 0;
 
@@ -369,28 +391,49 @@ i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveMan
         return 0;
     }
 
-    /* 0x65BD4: a zero total gives no budget, otherwise one per 50 plus one. */
-    nBudget = (nActiveManuf != 0) ? (nActiveManuf / 50 + 1) : 0;
-
     pType = &abFacilityGrid[480 + 144 * nBaseIndex];
     pNeed = &abFacilityGrid[444 + 144 * nBaseIndex];
 
     for (nRow = 0; nRow < 6; ++nRow) {
-        nCol = 0; /* 0x65C20: the counter the function eventually returns */
+        nCol = 0; /* the counter these functions eventually return */
         do {
-            if (pType[6 * nCol + nRow] == 3) { /* 0x65C34: only workshop cells */
+            if (pType[6 * nCol + nRow] == nKind) { /* only cells of this kind */
                 u8 bNeed;
                 if (nBudget <= 0) {
-                    bNeed = 0; /* 0x65C50 */
+                    bNeed = 0;
                 } else {
                     bNeed = 1;
-                    --nBudget; /* 0x65C4C */
+                    --nBudget;
                 }
-                pNeed[6 * nCol + nRow] = bNeed; /* 0x65C58 */
+                pNeed[6 * nCol + nRow] = bNeed;
             }
             ++nCol;
         } while (nCol < 6);
     }
 
-    return nCol; /* 0x65C78: always 6, the inner counter's final value */
+    return nCol; /* always 6, the inner counter's final value */
+}
+
+/* A budget of one per 50 units, plus one, and nothing at all when the total is zero.
+ * Both needed passes compute it the same way. */
+static i32 FacilityBudget50(i32 nTotal)
+{
+    return (nTotal != 0) ? (nTotal / 50 + 1) : 0;
+}
+
+/* Base_UpdateWorkshopNeeded @ 0x65bb4. Marks the first N workshop cells as needed.
+ * The original's call to Base_CalcWorkshopCap at 0x65BC0 discards a pure function's
+ * result, so the port omits it; see the header. */
+i32 Base_UpdateWorkshopNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveManuf)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 3,
+                              FacilityBudget50(nActiveManuf)); /* 0x65C78 */
+}
+
+/* Base_UpdateLabNeeded @ 0x65c7c. The same pass over lab cells. It discards
+ * Base_CalcLabCap at 0x65C88 for the same reason. */
+i32 Base_UpdateLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nActiveResearch)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 2,
+                              FacilityBudget50(nActiveResearch)); /* 0x65D40 */
 }

@@ -647,6 +647,62 @@ static void TestWorkshopNeeded(void)
 #undef N_N
 }
 
+static void TestLabChain(void)
+{
+    printf("Base_CalcLabCap / Base_CountActiveResearch / Base_UpdateLabNeeded\n");
+    static u8 grid[700];
+    static u16 col[200];
+
+#define L_T(c, r) grid[480 + 6 * (c) + (r)]
+#define L_N(c, r) grid[444 + 6 * (c) + (r)]
+
+    /* Kind separation: the two capacity functions look at different cell kinds. */
+    memset(grid, 0, sizeof(grid));
+    L_T(0, 0) = 3; /* workshop */
+    L_T(1, 1) = 2; /* lab */
+    CheckEqI32(Base_CalcWorkshopCap(grid, 0), 50, "the workshop count sees only kind 3");
+    CheckEqI32(Base_CalcLabCap(grid, 0), 50, "the lab count sees only kind 2");
+
+    memset(grid, 0, sizeof(grid));
+    L_T(0, 0) = 2;
+    L_T(1, 0) = 2;
+    L_T(2, 0) = 2;
+    grid[6 * 1 + 0] = 4; /* base 0 occupancy for the middle lab */
+    CheckEqI32(Base_CalcLabCap(grid, 0), 100,
+               "two free labs give 100, an occupied one gives nothing");
+
+    memset(grid, 0, sizeof(grid));
+    L_T(0, 0) = 3;
+    CheckEqI32(Base_CalcLabCap(grid, 0), 0, "a workshop is not a lab");
+
+    /* The lab needed pass marks kind 2 and leaves kind 3 alone. */
+    memset(grid, 0, sizeof(grid));
+    L_T(0, 0) = 3;
+    L_T(1, 0) = 2;
+    CheckEqI32(Base_UpdateLabNeeded(grid, 0, 1), 6, "the lab pass also returns 6");
+    CheckEqI32(L_N(1, 0), 1, "the lab cell is marked needed");
+    CheckEqI32(L_N(0, 0), 0, "the workshop cell in the same row is not");
+
+    memset(grid, 0, sizeof(grid));
+    L_T(0, 0) = 3;
+    L_T(1, 0) = 2;
+    Base_UpdateWorkshopNeeded(grid, 0, 1);
+    CheckEqI32(L_N(0, 0), 1, "the workshop pass marks the workshop");
+    CheckEqI32(L_N(1, 0), 0, "and leaves the lab unmarked");
+
+    /* Research quantity is the same sum over a different column. */
+    memset(col, 0, sizeof(col));
+    col[0] = 100;
+    col[1] = 200;
+    CheckEqI32(Base_CountActiveResearch(col, 2), 300, "research totals the column");
+    CheckEqI32(Base_CountActiveResearch(col, 0), 0, "and a zero count reads nothing");
+    CheckEqI32(Base_CountActiveResearch(&col[1], 1), 200,
+               "a different column offset is a different base");
+
+#undef L_T
+#undef L_N
+}
+
 int main(void)
 {
     TestTickShips();
@@ -659,6 +715,7 @@ int main(void)
     TestWorkshopCap();
     TestActiveManuf();
     TestWorkshopNeeded();
+    TestLabChain();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
