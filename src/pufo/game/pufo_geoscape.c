@@ -309,11 +309,17 @@ store:
 
 /* The three facility passes the original carries as separate copies share one shape, so
  * the port keeps one implementation each and gives the originals their own names. Cell
- * kind is the only thing that differs between the workshop and lab versions. */
+ * kind is the only thing that differs between the workshop and lab versions.
+ *
+ * The original's own type names settle what the grids are. IDA carries BaseFacilityGrid,
+ * size 1524, as buildDays u8[8][6][6] at +0x000, then fac BaseFacBlock[8] at +0x174; and
+ * BaseFacBlock, size 144, as tileA, tileB, layer2 and facType, each a 36-byte
+ * BaseFacLayer6. So the grid this port calls occupancy is the original's buildDays, and
+ * "equals zero" means the cell is not under construction rather than that it is unowned. */
 static i32 FacilityCountFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
 {
     const u8 *pType;
-    const u8 *pOcc;
+    const u8 *pBuild;
     i32 nCap = 0;
     i32 nRow;
 
@@ -321,14 +327,14 @@ static i32 FacilityCountFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
         return 0;
     }
 
-    pType = &abFacilityGrid[480 + 144 * nBaseIndex];
-    pOcc  = &abFacilityGrid[36 * nBaseIndex];
+    pType  = &abFacilityGrid[480 + 144 * nBaseIndex]; /* fac[nBase].facType */
+    pBuild = &abFacilityGrid[36 * nBaseIndex];        /* buildDays[nBase] */
 
     for (nRow = 0; nRow < 6; ++nRow) {
         i32 nCol;
         for (nCol = 0; nCol < 6; ++nCol) {
-            /* The originals test the kind, then the occupancy, then add 50 to the total. */
-            if (pType[6 * nCol + nRow] == nKind && pOcc[6 * nCol + nRow] == 0) {
+            /* The originals test the kind, then the build days, then add 50 to the total. */
+            if (pType[6 * nCol + nRow] == nKind && pBuild[6 * nCol + nRow] == 0) {
                 nCap += 50;
             }
         }
@@ -391,8 +397,8 @@ static i32 FacilityMarkNeeded(u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 
         return 0;
     }
 
-    pType = &abFacilityGrid[480 + 144 * nBaseIndex];
-    pNeed = &abFacilityGrid[444 + 144 * nBaseIndex];
+    pType = &abFacilityGrid[480 + 144 * nBaseIndex]; /* fac[nBase].facType */
+    pNeed = &abFacilityGrid[444 + 144 * nBaseIndex]; /* fac[nBase].layer2 */
 
     for (nRow = 0; nRow < 6; ++nRow) {
         nCol = 0; /* the counter these functions eventually return */

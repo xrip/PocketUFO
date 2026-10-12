@@ -249,6 +249,19 @@ i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
  * grid + 480 + 144*nBaseIndex, needed flags at grid + 444 + 144*nBaseIndex, occupancy at
  * grid + 36*nBaseIndex.
  *
+ * The original's own type names say what those three are. IDA carries BaseFacilityGrid,
+ * size 1524, as buildDays u8[8][6][6] at +0x000 followed by fac BaseFacBlock[8] at +0x174,
+ * and BaseFacBlock, size 144, as tileA, tileB, layer2 and facType, each a 36-byte
+ * BaseFacLayer6. Mapping those onto the offsets used here:
+ *
+ *     grid + 36*nBaseIndex          buildDays[nBase]
+ *     grid + 444 + 144*nBaseIndex   fac[nBase].layer2
+ *     grid + 480 + 144*nBaseIndex   fac[nBase].facType
+ *
+ * So what this port first called the occupancy grid is the original's buildDays, and a cell
+ * counting as free means its build days are zero, that is nothing under construction there,
+ * rather than that no facility owns the cell.
+ *
  * Two things about the original worth recording.
  *
  * It calls Base_CalcWorkshopCap at 0x65BC0 and DISCARDS the result, then builds the budget
