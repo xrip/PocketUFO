@@ -469,7 +469,7 @@ add_test(NAME test_isodraw
 
 # Base-screen scratch-cell helpers.
 add_executable(test_baseui ${CMAKE_SOURCE_DIR}/tests/test_baseui.c)
-target_link_libraries(test_baseui PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_baseui PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util)
 set_target_properties(test_baseui PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
