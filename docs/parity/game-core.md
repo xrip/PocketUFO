@@ -6137,3 +6137,39 @@ These are the two callees `Geoscape_CloseUI` case 19 needs for the monthly econo
 is now reachable except for `PsiScreen_Init`, `EndScreen_Init` and the funding totals block.
 
 Covered by `TestPsiCapAndUpkeep`, 9 checks.
+
+### Sending a craft home, and the one number that separates the two ways to do it (done)
+
+`Ship_RetargetTravel @ 0x5a484` and `Ship_ClearWaypointIntercept @ 0x5a830` are the same body with
+one difference, and the difference is a single value written to the same field:
+
+| step | `Ship_RetargetTravel` | `Ship_ClearWaypointIntercept` |
+|---|---|---|
+| drop a type-5 waypoint the craft is chasing | yes | yes |
+| find the craft's own entry | yes | yes |
+| write `nTimer` (+0x2C) | **0** — start counting again | **0xFFFF** — parked, cannot fire |
+| travel to the home base | yes | **no** |
+
+A waypoint is `nType 5`, and it is *removed* from the strateg list rather than merely unlinked: it is
+a one-shot contact, so leaving it in the list would let another craft pick it up.
+
+`Ship_ClearInterceptByStrategIdx @ 0x5a5b8` is the cleanup a removed contact needs: retarget every
+craft whose `bHomeBase < 0xFE`, `bIntercepting` is set, and `nStrategIdx` is the item. It re-reads the
+ship count after each retarget, because `StrategList_RemoveAt` can spawn a replacement craft mid-loop.
+
+`BaseRec_Create @ 0x32c88` allocates a 20-byte base record, runs `BaseRec_Ctor`, and stores it at
+`apBases[nBaseCount]` — it does **not** increment the count, the caller does, and a failed allocation
+stores the null anyway.
+
+**A duplicate found in the original.** `Base_FindIndexBySiteId @ 0x5a8d0` is a second copy of
+`Base_FindIndexByTypeByte @ 0x6ac30`: same search, same `BaseRec.bUnk4`, same -1. The only difference
+is that this copy bounds its loop and answers -1 on an empty list, while 0x6ac30 walks off the end. The
+port keeps one implementation and does not cite 0x5a8d0.
+
+**A fixture bug that exposed a design problem.** The port carries the strateg list as a `PtrArray`
+(the shape `StrategList_RemoveAt` wants) and searches it as a `StrategList` (the shape
+`StrategList_FindByShipId` wants). Those two structs have their fields in the opposite order, so they
+cannot alias. Storing a second view in the env went stale across a removal and produced a wrong lookup.
+The view is now built fresh from the array on demand — one helper, no stored duplicate.
+
+Covered by `TestInterceptRetarget`, 10 checks.

@@ -710,3 +710,172 @@ i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectC
 
     return nUsed;
 }
+
+/* The port carries the strateg list as a PtrArray (that is the shape StrategList_RemoveAt wants)
+ * and searches it as a StrategList (that is the shape StrategList_FindByShipId wants). The two
+ * structs have their fields in the opposite order, so they cannot alias one another. This builds
+ * the search view FRESH from the array each time, which is the only way to keep it from going
+ * stale across a removal: StrategList_RemoveAt compacts the array, and a view built before it
+ * would still report the old count. */
+static StrategList StrategViewOf(const PtrArray *pArr)
+{
+    StrategList v;
+
+    v.apItems = (StrategItem **)pArr->apItems;
+    v.nCount = pArr->nCount;
+    v.nNextDisplayId = 0;
+    v.nNextSiteId = 0;
+    return v;
+}
+
+/* BaseRec_Create @ 0x32c88. Allocate one 20-byte base record, run BaseRec_Ctor over it, and put
+ * it in the first free roster slot -- index nBaseCount, which the CALLER increments. This function
+ * does not touch the count.
+ *
+ * The original stores the result even when operator new returns null, so a failed allocation leaves
+ * a NULL in the roster. The port does the same, because the save layer already has to cope with
+ * short reads leaving slots empty. */
+BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, ObjectRecFull *const *apObjects,
+                        i32 nObjectCount)
+{
+    BaseRec *pNew = (BaseRec *)malloc(sizeof(BaseRec)); /* 0x32C94: operator new(0x14) */
+
+    if (pNew != NULL) {
+        /* 0x32CA0 calls BaseRec_ctor with only the record. The port's ctor takes the roster slot
+         * and the object table as well, because the ctor zeroes auPerBaseVal[byte 0x159D80] in
+         * every object record; the new base's slot is its own index. */
+        BaseRec_Ctor(pNew, nBaseCount, 0, apObjects, nObjectCount);
+    }
+
+    if (apBases != NULL && nBaseCount >= 0) {
+        apBases[nBaseCount] = pNew; /* 0x32CC8 */
+    }
+
+    return pNew;
+}
+
+/* Ship_RetargetTravel @ 0x5a484. Send a craft home. Three steps, in this order.
+ *
+ * 1. If the craft is intercepting a waypoint item (nType 5), drop that item from the strateg list
+ *    and clear bIntercepting. A waypoint is a one-shot contact, so it is removed rather than left
+ *    pointing at a craft that no longer wants it.
+ * 2. Find the craft's own strateg entry and clear its nTimer (+0x2C) to 0, which restarts the
+ *    proximity-detect accumulation.
+ * 3. Run StrategEntry_InitTravel from the entry's current position to its HOME BASE's coordinates
+ *    (BaseRec.nUnk8 / nUnk12), with nFlag 0, bA 0, bB 1, bC 1, bCopyStart 0.
+ *
+ * Ship_ClearWaypointIntercept (0x5a830) is this same body with step 3 replaced by nothing and step
+ * 2 setting nTimer to 0xFFFF instead of 0 -- "never fire" rather than "start counting". */
+i32 Ship_RetargetTravel(const ShipRemovalEnv *pEnv, i32 nShipIdx)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || nShipIdx < 0 ||
+        nShipIdx >= (i32)*pEnv->pnShipCount) {
+        return -1;
+    }
+
+    Ship *pShip = pEnv->apCraft[nShipIdx];
+    if (pShip == NULL) {
+        return -1;
+    }
+
+    if (pShip->bIntercepting != 0 && pEnv->pStrategList != NULL) {
+        const StrategItem *pWaypoint =
+            (const StrategItem *)PtrArray_Get(pEnv->pStrategList, pShip->nStrategIdx);
+        if (pWaypoint != NULL && pWaypoint->nType == 5) { /* 0x5A4E8 */
+            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pWorld, pShip->nStrategIdx,
+                                 pEnv->pnSpawnOnceFlag, pEnv->pSpawnCtx);
+            pShip->bIntercepting = 0; /* 0x5A500 */
+        }
+    }
+
+    const StrategList view = StrategViewOf(pEnv->pStrategList);
+    const i32 nEntryIdx = StrategList_FindByShipId(&view, pEnv->pWorld, nShipIdx);
+    StrategItem *pEntry = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nEntryIdx);
+    if (pEntry == NULL) {
+        return -1; /* deviation: the original dereferences it */
+    }
+
+    pEntry->nTimer = 0; /* 0x5A524: restart the proximity accumulation */
+
+    const BaseRec *pHome = (pEnv->apBases != NULL && pShip->bHomeBase >= 0)
+                               ? pEnv->apBases[pShip->bHomeBase]
+                               : NULL;
+    if (pHome == NULL) {
+        return -1; /* deviation: the original indexes apBases with an unchecked byte */
+    }
+
+    const i32 nResult = StrategEntry_InitTravel(pEntry, pEntry->nX, pEntry->nY,
+                                                pHome->nUnk8, pHome->nUnk12, 0, 0, 1, 1, 0,
+                                                pEnv->pWorld,
+                                                pEnv->pnGameTotalSec != NULL
+                                                    ? *pEnv->pnGameTotalSec
+                                                    : 0);
+    pShip->bIntercepting = 0; /* 0x5A59C */
+    return nResult;
+}
+
+/* Ship_ClearInterceptByStrategIdx @ 0x5a5b8. Retarget every craft that is chasing ONE strateg
+ * item -- the cleanup a removed contact needs. A craft qualifies when its home base is a real one
+ * (bHomeBase < 0xFE), it is intercepting, and its nStrategIdx is the item. Returns the ship count,
+ * re-read after each retarget because StrategList_RemoveAt can spawn a replacement craft. */
+i32 Ship_ClearInterceptByStrategIdx(const ShipRemovalEnv *pEnv, i32 nStrategIdx)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL) {
+        return 0;
+    }
+
+    i32 nShipCount = (i32)*pEnv->pnShipCount;
+
+    for (i32 i = 0; i < nShipCount; ++i) {
+        const Ship *pShip = pEnv->apCraft[i];
+        if (pShip == NULL) {
+            continue;
+        }
+        if (pShip->bHomeBase < 0xFE && pShip->bIntercepting != 0 &&
+            pShip->nStrategIdx == nStrategIdx) { /* 0x5A614 */
+            (void)Ship_RetargetTravel(pEnv, i);
+            nShipCount = (i32)*pEnv->pnShipCount; /* 0x5A62C */
+        }
+    }
+
+    return nShipCount;
+}
+
+/* Ship_ClearWaypointIntercept @ 0x5a830. Ship_RetargetTravel with the travel step dropped and the
+ * timer cleared to 0xFFFF instead of 0. The craft keeps wherever it was heading; only the
+ * intercept is cancelled, and its proximity timer is parked so it cannot fire.
+ *
+ * Returns the craft's strateg entry, which is what the original hands back. */
+StrategItem *Ship_ClearWaypointIntercept(const ShipRemovalEnv *pEnv, i32 nShipIdx)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || nShipIdx < 0 ||
+        nShipIdx >= (i32)*pEnv->pnShipCount) {
+        return NULL;
+    }
+
+    Ship *pShip = pEnv->apCraft[nShipIdx];
+    if (pShip == NULL) {
+        return NULL;
+    }
+
+    if (pShip->bIntercepting != 0 && pEnv->pStrategList != NULL) {
+        const StrategItem *pWaypoint =
+            (const StrategItem *)PtrArray_Get(pEnv->pStrategList, pShip->nStrategIdx);
+        if (pWaypoint != NULL && pWaypoint->nType == 5) { /* 0x5A874 */
+            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pWorld, pShip->nStrategIdx,
+                                 pEnv->pnSpawnOnceFlag, pEnv->pSpawnCtx);
+            pShip->bIntercepting = 0; /* 0x5A88C */
+        }
+    }
+
+    const StrategList view = StrategViewOf(pEnv->pStrategList);
+    const i32 nEntryIdx = StrategList_FindByShipId(&view, pEnv->pWorld, nShipIdx);
+    StrategItem *pEntry = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nEntryIdx);
+
+    if (pEntry != NULL) {
+        pEntry->nTimer = 0xFFFF; /* 0x5A8B0: parked, not restarted */
+    }
+
+    pShip->bIntercepting = 0; /* 0x5A8B8 */
+    return pEntry;
+}

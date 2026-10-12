@@ -771,6 +771,138 @@ static void TestCrewAndStoresTotals(void)
                "an empty object record is skipped, where the original faults");
 }
 
+static void TestInterceptRetarget(void)
+{
+    static Ship *g_apCraft[2];
+    static Soldier *g_apSoldier[1];
+    static ObjectRecFull *g_apObj2[1];
+    static BaseRec *g_apBase[1];
+    static BaseRec g_Base;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static i32 nSeed;
+    static i32 nTotalSec;
+    static u8 g_abHangar[64];
+    static i32 g_anAssigned[1];
+    ShipRemovalEnv env;
+    Ship *apShip[2];
+    StrategItem *apItem[3];
+    void **apSlots;
+    u8 nShipCount;
+    u16 nSoldierCount;
+    i32 nAssignedCount;
+    u8 once;
+
+    printf("Ship_RetargetTravel / ClearInterceptByStrategIdx / ClearWaypointIntercept\n");
+
+    for (int i = 0; i < 2; ++i) {
+        apShip[i] = (Ship *)calloc(1, sizeof(Ship));
+        apShip[i]->bId = (u8)(10 + i);
+        apShip[i]->bHomeBase = 0;
+        apShip[i]->nSlotIdx = i;
+        apShip[i]->bIntercepting = 1;
+        apShip[i]->nStrategIdx = 0;
+        g_apCraft[i] = apShip[i];
+    }
+
+    /* Item 0 is the waypoint both craft are chasing; item 1 is craft 0's own entry. */
+    apItem[0] = (StrategItem *)calloc(1, sizeof(StrategItem));
+    apItem[1] = (StrategItem *)calloc(1, sizeof(StrategItem));
+    apItem[2] = NULL;
+    apItem[0]->nType = 5;
+    apItem[0]->nTimer = 1234;
+    apItem[1]->nType = 1;
+    apItem[1]->bActive = 0;
+    apItem[1]->nDisplayId = 10; /* Ship 0's bId */
+    apItem[1]->nTimer = 999;
+    apItem[1]->nX = 40;
+    apItem[1]->nY = 60;
+
+    /* PtrArray_Remove may free and replace apItems, so it has to be heap storage. */
+    /* Ship 1 needs its own entry too, or there is nothing for RetargetTravel to send home. */
+    apItem[2] = (StrategItem *)calloc(1, sizeof(StrategItem));
+    apItem[2]->nType = 1;
+    apItem[2]->bActive = 0;
+    apItem[2]->nDisplayId = 11; /* Ship 1's bId */
+    apItem[2]->nTimer = 555;
+    apItem[2]->nX = 40;
+    apItem[2]->nY = 60;
+
+    apSlots = (void **)malloc(sizeof(void *) * 4);
+    apSlots[0] = apItem[0];
+    apSlots[1] = apItem[1];
+    apSlots[2] = apItem[2];
+    list.nCount = 3;
+    list.apItems = apSlots;
+
+    g_Base.nUnk8 = 100;
+    g_Base.nUnk12 = 200;
+    g_apBase[0] = &g_Base;
+
+    nShipCount = 2;
+    nSoldierCount = 0;
+    nAssignedCount = 0;
+    once = 0; /* no replacement spawn during the test */
+    nTotalSec = 0;
+    world.apCraft = g_apCraft;
+    world.nShipCount = 2;
+
+    env.apCraft = g_apCraft;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = g_apSoldier;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = g_apObj2;
+    env.nObjectCount = 0;
+    env.pStrategList = &list;
+    env.pWorld = &world;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctx;
+    env.abHangarFlag = g_abHangar;
+    env.nHangarFlagCap = 64;
+    env.anAssignedShip = g_anAssigned;
+    env.pnAssignedShipCount = &nAssignedCount;
+    env.apBases = g_apBase;
+    env.pnGameTotalSec = &nTotalSec;
+    memset(&ctx, 0, sizeof(ctx));
+    nSeed = 0;
+    ctx.pnSeed = &nSeed;
+
+    /* ClearWaypointIntercept: the waypoint is a one-shot contact, so it is removed; the craft's
+     * own entry has its timer PARKED at 0xFFFF rather than restarted. */
+    StrategItem *pEntry = Ship_ClearWaypointIntercept(&env, 0);
+    CheckEqI32(pEntry == apItem[1] ? 1 : 0, 1,
+               "it hands back the craft's own strateg entry");
+    CheckEqI32(apItem[1]->nTimer, 0xFFFF, "the proximity timer is parked, not restarted");
+    CheckEqI32(apShip[0]->bIntercepting, 0, "and the intercept flag is cleared");
+    CheckEqI32(list.nCount, 2, "the type-5 waypoint was removed from the list");
+
+    /* RetargetTravel on the second craft: same waypoint removal (already gone), timer back to 0,
+     * and travel initialised from the entry's position to the home base's coordinates. */
+    /* Ship 1's own entry is item 2. Ship 0's entry keeps the parked 0xFFFF from the call above,
+     * which is the difference between the two functions in one number. */
+    (void)Ship_RetargetTravel(&env, 1);
+    CheckEqI32(apItem[2]->nTimer, 0, "RetargetTravel restarts its own entry's timer at zero");
+    CheckEqI32(apItem[1]->nTimer, 0xFFFF,
+               "and leaves the other craft's parked timer alone - the difference between the two");
+    CheckEqI32(apShip[1]->bIntercepting, 0, "and clears the intercept flag");
+    CheckEqI32(apItem[2]->nDestX, 100, "the destination is the home base's x");
+    CheckEqI32(apItem[2]->nDestY, 200, "and its y");
+
+    /* ClearInterceptByStrategIdx: nothing is intercepting any more, so nothing is retargeted and
+     * it just reports the ship count. */
+    CheckEqI32(Ship_ClearInterceptByStrategIdx(&env, 0), 2,
+               "with no craft intercepting it reports the ship count and changes nothing");
+
+    for (int i = 0; i < 2; ++i) {
+        free(apShip[i]);
+    }
+    for (int i = 0; i < list.nCount; ++i) {
+        free(list.apItems[i]);
+    }
+    free(list.apItems);
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -783,6 +915,7 @@ int main(void)
     TestStripCraftCargo();
     TestCraftWeaponItemId();
     TestCrewAndStoresTotals();
+    TestInterceptRetarget();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

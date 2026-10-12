@@ -215,15 +215,40 @@ typedef struct ShipRemovalEnv {
     u16 *pnSoldierCount;          /* Map + 0x1998, unsigned 16-bit */
     ObjectRecFull **apObjects;
     u16 nObjectCount;             /* Map + 0x10A8, unsigned 16-bit */
-    PtrArray *pStrategList;       /* 0x1864F8 + 0x3C */
+    PtrArray *pStrategList;       /* 0x1864F8 + 0x3C. The port keeps the list in the PtrArray
+                                   * shape; the StrategList view used for searching is built from
+                                   * it on demand, never stored, so it cannot go stale across a
+                                   * removal. */
     const struct GeoscapeWorld *pWorld;
     u8 *pnSpawnOnceFlag;          /* 0x162028, the replacement-spawn gate */
     const struct StrategSpawnCtx *pSpawnCtx;
     u8 *abHangarFlag;             /* the six-byte-per-cell table at 0x158CD8 */
     i32 nHangarFlagCap;
+    BaseRec *const *apBases;      /* Map + 0x1174, needed to retarget a craft to its home base */
+    i32 *pnGameTotalSec;          /* the clock total, which StrategEntry_InitTravel needs */
+
+/* BaseRec_Create @ 0x32c88. Allocate one 20-byte base record, run BaseRec_Ctor over it, and store
+ * it at roster slot nBaseCount. The caller increments the count; this function does not. */
     i32 *anAssignedShip;          /* 0x16146C */
     i32 *pnAssignedShipCount;     /* 0x161468, signed */
 } ShipRemovalEnv;
+
+/* BaseRec_Create @ 0x32c88. Allocate one 20-byte base record, run BaseRec_Ctor over it, and store
+ * it at roster slot nBaseCount. The caller increments the count; this function does not. */
+BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, ObjectRecFull *const *apObjects,
+                        i32 nObjectCount);
+
+/* Ship_RetargetTravel @ 0x5a484. Send one craft home: drop a type-5 waypoint it was chasing,
+ * restart its own entry's proximity timer, and run StrategEntry_InitTravel to its home base's
+ * coordinates. */
+i32 Ship_RetargetTravel(const ShipRemovalEnv *pEnv, i32 nShipIdx);
+
+/* Ship_ClearInterceptByStrategIdx @ 0x5a5b8. Retarget every craft chasing one strateg item. */
+i32 Ship_ClearInterceptByStrategIdx(const ShipRemovalEnv *pEnv, i32 nStrategIdx);
+
+/* Ship_ClearWaypointIntercept @ 0x5a830. Ship_RetargetTravel with the travel step dropped and the
+ * timer parked at 0xFFFF instead of restarted at 0. */
+struct StrategItem *Ship_ClearWaypointIntercept(const ShipRemovalEnv *pEnv, i32 nShipIdx);
 
 /* Returns the ship count after the removal. */
 i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
