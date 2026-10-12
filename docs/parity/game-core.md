@@ -5926,3 +5926,23 @@ answers at least that base, so the grid half is never skipped by a failed search
 slot skips it, and there the port returns the craft count instead of dereferencing NULL.
 
 Covered by `TestShipsAtBase`, 6 checks.
+
+### The overlay layer of each zoom set, and the mirror lookup (done)
+
+`Smap_GetTileAtMode @ 0x821c4` is ported as `Smap_GetOverlayAtMode`. It reads the **overlay**
+layer, not the terrain layer `Smap_GetTileAtScreen` reads. The three globals it switches between
+(`0x186C28`, `0x186C1C`, `0x186BB8`) hold `PadImage` **pointers**, and they are the third PadImage of
+each zoom set — so each zoom level has a terrain grid and an overlay grid, and the port takes the
+three overlays as an array.
+
+Two details that are easy to get wrong: `x` is reduced by a global origin (`0x186C20`) before the
+lookup, and the stride is the PadImage's own `uWidth`, not the viewport's `nMapW`. For a mode outside
+0..2 the original returns an uninitialised stack byte; the port returns 0.
+
+`Ship_FindIndexByStrategType @ 0x5a92c` is the **mirror** of `StrategList_FindIdxForShip @ 0x6a05c`:
+that one takes a ship index and returns the strateg index, this one takes a strateg index and returns
+the ship index whose `Ship.bId` equals the item's `nDisplayId`. Like its mirror it gates on nothing
+else — not item type, not active state. It dereferences `PtrArray_Get(nStrategIdx)` with no bounds
+test; the port returns -1.
+
+Covered by `TestFindByStrategIdx` and `TestOverlayAtMode`, 14 checks.

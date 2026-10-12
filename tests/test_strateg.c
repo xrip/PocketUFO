@@ -1296,6 +1296,85 @@ static void TestSpawnMissionSite(void)
     PtrArray_DeleteAll(&g_List);
 }
 
+
+static void TestFindByStrategIdx(void)
+{
+    StrategList list;
+    GeoscapeWorld world;
+
+    printf("Ship_FindIndexByStrategType\n");
+
+    SetupWorld(&world, &list, 3, 3);
+    memset(g_aItems, 0, sizeof(g_aItems));
+    g_aItems[0].nDisplayId = 7;
+    g_aItems[1].nDisplayId = 9;
+    g_aItems[2].nDisplayId = STRATEG_ID_UNASSIGNED;
+    g_aShips[0].bId = 1;
+    g_aShips[1].bId = 9;
+    g_aShips[2].bId = 7;
+
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 0), 2,
+               "the item's display id picks the craft with that bId, wherever it sits");
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 1), 1, "and the second item picks its own craft");
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 2), -1, "an unassigned display id matches no craft");
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 3), -1,
+               "a strateg index past the list is refused, where the original faults");
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, -1), -1, "and so is a negative one");
+
+    /* Two craft sharing a bId: the first one in array order wins, as in the original loop. */
+    g_aShips[0].bId = 7;
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 0), 0,
+               "the first craft in array order wins when two share a bId");
+
+    world.nShipCount = 0;
+    CheckEqI32(Ship_FindIndexByStrategType(&world, &list, 0), -1,
+               "no craft means no answer, checked before the item is read");
+}
+
+static void TestOverlayAtMode(void)
+{
+    static u8 aBytes[3][12];
+    static PadImage aSet[3];
+    static const PadImage *aOverlay[3];
+    SmapView view;
+
+    printf("Smap_GetOverlayAtMode\n");
+
+    for (int n = 0; n < 3; ++n) {
+        for (int i = 0; i < 12; ++i) {
+            aBytes[n][i] = (u8)(n * 10 + i);
+        }
+        memset(&aSet[n], 0, sizeof(aSet[n]));
+        aSet[n].pData = aBytes[n];
+        aSet[n].uWidth = 4;
+        aOverlay[n] = &aSet[n]; /* the three globals hold pointers, not structs */
+    }
+
+    memset(&view, 0, sizeof(view));
+
+    view.nMode = 0;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 2, 1), 6,
+               "mode 0 reads the first overlay, stride is the PadImage's own uWidth");
+    view.nMode = 1;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 2, 1), 16,
+               "mode 1 reads a different PadImage");
+    view.nMode = 2;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 2, 1), 26, "and mode 2 a third");
+
+    /* The x coordinate is offset by the origin before the lookup. */
+    view.nMode = 0;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 2, 4, 1), 6,
+               "x is reduced by the origin, so the same byte is reached from a shifted x");
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 1, 4, 1), 7,
+               "and a different origin reaches a different byte");
+
+    view.nMode = 3;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 0, 0), 0,
+               "a mode outside 0..2 returns 0, where the original returns an uninitialised byte");
+    view.nMode = -1;
+    CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 0, 0), 0, "and the same for a negative mode");
+}
+
 int main(void)
 {
     TestCountAndFind();
@@ -1307,6 +1386,8 @@ int main(void)
     TestZoomButtons();
     TestStrategListAlloc();
     TestFindIdxForShip();
+    TestFindByStrategIdx();
+    TestOverlayAtMode();
     TestAddItem();
     TestAddUfoAt();
     TestRollCraftStats();

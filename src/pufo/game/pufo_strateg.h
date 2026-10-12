@@ -487,6 +487,25 @@ u8 Smap_GetTileAtScreen(SmapView *pView, const u8 *pTiles, i32 nX, i32 nY);
  * one implementation. The original's first argument is unused. */
 u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY);
 
+/* Smap_GetTileAtMode @ 0x821c4. One byte of the OVERLAY layer of the tile set the current zoom
+ * level selects -- not the terrain layer Smap_GetTileAtScreen reads. The three globals it picks
+ * from (0x186C28, 0x186C1C, 0x186BB8) are the third PadImage of each zoom set, so the port takes
+ * the three overlays as an array.
+ *
+ * The x coordinate is offset by a global origin (0x186C20) before the lookup, and the stride is
+ * the PadImage's own uWidth rather than the viewport's nMapW.
+ *
+ * Deviation: for a mode outside 0..2 the original returns an uninitialised stack byte. The port
+ * returns 0. */
+u8 Smap_GetOverlayAtMode(const SmapView *pView, const PadImage *const aOverlay[3],
+                         i32 nOriginX, i32 nX, i32 nY);
+
+/* Ship_FindIndexByStrategType @ 0x5a92c. The mirror of StrategList_FindIdxForShip: this one
+ * takes a strateg index and returns the index of the craft whose bId equals that item's
+ * nDisplayId. Like its mirror it gates on nothing else. */
+i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,
+                                i32 nStrategIdx);
+
 /* ------------------------------------------------------------- zoom levels
  *
  * Each zoom step swaps three layer globals and takes the map size from the second

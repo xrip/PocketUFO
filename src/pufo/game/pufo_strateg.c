@@ -877,6 +877,37 @@ i32 StrategList_FindIdxForShip(const StrategList *pList,
     return -1;
 }
 
+/* Ship_FindIndexByStrategType @ 0x5a92c. The mirror of the function above: that one takes a
+ * ship index and returns the strateg index, this one takes a strateg index and returns the
+ * ship index. It compares the item's nDisplayId against each craft's bId, and like its mirror
+ * it gates on nothing else -- not item type, not active state.
+ *
+ * Deviation: the original calls PtrArray_Get(nStrategIdx) and dereferences the result with no
+ * bounds test, so an out of range strateg index faults. The port returns -1. */
+i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,
+                                i32 nStrategIdx)
+{
+    const StrategItem *pItem;
+
+    if (pWorld == NULL || pList == NULL || pWorld->nShipCount <= 0) {
+        return -1; /* 0x5A94C */
+    }
+    if (nStrategIdx < 0 || nStrategIdx >= pList->nCount || pList->apItems == NULL ||
+        pList->apItems[nStrategIdx] == NULL) {
+        return -1; /* deviation: the original faults here */
+    }
+    pItem = pList->apItems[nStrategIdx];
+
+    for (i32 i = 0; i < (i32)pWorld->nShipCount; ++i) {
+        if (pWorld->apCraft != NULL && pWorld->apCraft[i] != NULL &&
+            pItem->nDisplayId == pWorld->apCraft[i]->bId) {
+            return i; /* 0x5A9A0 */
+        }
+    }
+
+    return -1; /* 0x5A998 */
+}
+
 
 
 /* ------------------------------------------------- the UFO mission machine */
@@ -1190,4 +1221,23 @@ LABEL_102:
         pUfo->bDone = 1;
     }
     return nResult;
+}
+
+/* Smap_GetTileAtMode @ 0x821c4. Read one byte of the OVERLAY layer of the tile set the current
+ * zoom level selects -- not the terrain layer Smap_GetTileAtScreen reads. The three globals
+ * 0x186C28, 0x186C1C and 0x186BB8 are the third PadImage of each zoom set.
+ *
+ * The x coordinate is offset by a global origin (0x186C20) before the lookup, and the stride is
+ * the PadImage's own uWidth, not the viewport's nMapW.
+ *
+ * Deviation: for a mode outside 0..2 the original returns an uninitialised stack byte. The port
+ * returns 0. */
+u8 Smap_GetOverlayAtMode(const SmapView *pView, const PadImage *const aOverlay[3],
+                         i32 nOriginX, i32 nX, i32 nY)
+{
+    if (pView == NULL || pView->nMode < 0 || pView->nMode > 2 || aOverlay == NULL) {
+        return 0;
+    }
+
+    return Tilemap_GetAt(aOverlay[pView->nMode], nX - nOriginX, nY); /* 0x821D0, 0x82214 */
 }
