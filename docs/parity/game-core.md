@@ -1905,6 +1905,67 @@ four-byte gap between `&anLineAux[149]` and `&anLineAux[150]`: `12800|4` lands o
 and `16000|4` on block +16000. Covered by `tests/test_save.c` (`TestProductChunk`, 31 checks).
 
 
+### Bases save chunk (done)
+
+`Save_WriteBases @ 0x3f1fc` and `Save_ReadBases @ 0x402c0` are recreated in `game/pufo_save.{h,c}`
+over `SaveBasesState`. Unlike the product chunk this one is not a contiguous table: it is a flat
+sequence of blocks and field-by-field records, and the port keeps the pieces separate.
+
+```
+   288  block at 0x159768
+  1152  block at 0x1598DC
+     1  base count, 0x159D80 (IDA: gUiRootPanel.anLineAux[79])
+     1  0x159D81
+     1  0x159D82
+     4  0x159D90
+   8/4  0x159DBC   -- 8 written, but only 4 READ when the version byte at 0x18655C is below 3
+     4  0x1598D8
+   0/1  0x158848   -- written always, READ only when version >= 3
+    17  BaseFacFlag[i].bFlag20, i = 0..16, stride 28
+     9  0x18655D
+   488  8 facility records, 61 bytes each
+  then per base, while the count byte is > 0 as a signed char:
+    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bUnk17, bUnk16
+    2n  one u16 per object: auPerBaseVal[baseIndex]
+```
+
+Header 1974 bytes, then 16 + 2*objectCount per base.
+
+**The facility record is serialised in an order that is not its memory order.** In memory
+`BaseFacility` is 64 bytes laid out `bType, gap_1, uUnk2, uUnk4, abUnk6[20], abName[20], gap_46,
+nUnk48, nUnkDemolishState, nUnkBuildState, nFacType`. On disk the nine writes run `abName, bType,
+nUnkBuildState, abUnk6, nFacType, nUnk48, uUnk2, uUnk4, nUnkDemolishState` -- 61 bytes. `gap_1` at
++0x01 and `gap_46` at +0x2e are never written.
+
+**The per-base column is the loop index, not `BaseRec.bSlot`.** 0x3F3CC seeds a byte offset at 42
+and 0x3F4C0 adds 2 per base, so base `i` writes `ObjectRecFull.auPerBaseVal[i]` of every object.
+42 is 0x2a, the offset of that array.
+
+**The two version gates are a real format difference, not a compatibility shim.** The writer always
+emits 8 bytes at 0x159DBC and always emits the 0x158848 byte; the reader consumes 4 and skips it
+when the version byte is below 3. Reading a modern chunk with the old branch shifts everything
+after the gate five bytes early -- the test asserts the first place-flag byte lands on the 0x1598D8
+block.
+
+**The reader frees before it reads.** 0x402D0..0x40310 deletes `nOldBaseCount` `BaseRec` pointers
+using the count the game held BEFORE the chunk is read, then reads the new count and allocates
+that many fresh records.
+
+`BaseRec_ctor @ 0x55650` is recreated as `BaseRec_Ctor` in `game/pufo_ship.{h,c}`. It zeroes
+`auPerBaseVal[nSlotIndex]` in every object record, then sets `nStoresTotal = 0`, `bUnk4 =` the
+global byte at 0x186558, `bSlot = nSlotIndex`. The index is the signed byte at 0x159D80 at the
+moment the ctor runs -- in the save reader that is the base **count** just read, so loading a
+three-base save zeroes column 3 of every object, one past the last column the writer produced.
+In that path all three field writes are immediately overwritten by the values from disk, so the
+column zeroing is the ctor's only live effect there.
+
+**Recorded deviation.** The original has no bound check on that index. With the maximum eight bases
+the index is 8, and 2*8 bytes past `auPerBaseVal` (0x2a) lands on `aItemQty[0]` at 0x3a, so the
+ctor zeroes the first stock count of every item in the game. The port clamps the index instead of
+reproducing that out-of-range write; the test asserts `aItemQty[0]` survives. Everything else in
+the chunk is reproduced byte for byte. Covered by `tests/test_save.c` (`TestBasesChunk`, 47 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

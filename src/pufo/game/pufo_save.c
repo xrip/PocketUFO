@@ -5,6 +5,7 @@
 #include "game/pufo_save.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 bool Save_BuildSlotPath(char *pszOut, size_t cchOut, const char *pszAppDir, i32 nSlot)
@@ -779,4 +780,198 @@ bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock)
         return false; /* 0x4068C */
     }
     return DatFile_Read(pDat, pBlock + 16000, 1152); /* 0x40690, the region past array C */
+}
+
+/* The facility record, field by field, in the original's order (0x3F31C..0x3F39C).
+ * Nine writes for a 61-byte record; gap_1 and gap_46 of the 64-byte in-memory
+ * BaseFacility are skipped. */
+static bool WriteFacility(DatFile *pDat, const SaveBaseFacility *pFac)
+{
+    return W(pDat, pFac->szName, 20)
+        && W(pDat, &pFac->bType, 1)
+        && W(pDat, &pFac->nBuildState, 4)
+        && W(pDat, pFac->szUnk6, 20)
+        && W(pDat, &pFac->nFacType, 4)
+        && W(pDat, &pFac->nUnk48, 4)
+        && W(pDat, &pFac->uUnk2, 2)
+        && W(pDat, &pFac->uUnk4, 2)
+        && W(pDat, &pFac->nDemolishState, 4);
+}
+
+static bool ReadFacility(DatFile *pDat, SaveBaseFacility *pFac)
+{
+    return DatFile_Read(pDat, pFac->szName, 20)
+        && DatFile_Read(pDat, &pFac->bType, 1)
+        && DatFile_Read(pDat, &pFac->nBuildState, 4)
+        && DatFile_Read(pDat, pFac->szUnk6, 20)
+        && DatFile_Read(pDat, &pFac->nFacType, 4)
+        && DatFile_Read(pDat, &pFac->nUnk48, 4)
+        && DatFile_Read(pDat, &pFac->uUnk2, 2)
+        && DatFile_Read(pDat, &pFac->uUnk4, 2)
+        && DatFile_Read(pDat, &pFac->nDemolishState, 4);
+}
+
+bool Save_WriteBases(DatFile *pDat, const SaveBasesState *pState,
+                     const BaseRec *const *apBases,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_BASES)) {
+        return false; /* 0x3F208 */
+    }
+
+    if (!W(pDat, pState->abBlock288, 288))  { return false; } /* 0x3F21C, 0x159768 */
+    if (!W(pDat, pState->abBlock1152, 1152)){ return false; } /* 0x3F22C, 0x1598DC */
+    if (!W(pDat, &pState->bBaseCount, 1))   { return false; } /* 0x3F244, 0x159D80 */
+    if (!W(pDat, &pState->bUnk159D81, 1))   { return false; } /* 0x3F25C */
+    if (!W(pDat, &pState->bUnk159D82, 1))   { return false; } /* 0x3F274 */
+    if (!W(pDat, pState->abUnk159D90, 4))   { return false; } /* 0x3F28C */
+    if (!W(pDat, pState->abUnk159DBC, 8))   { return false; } /* 0x3F2A4: always 8 written */
+    if (!W(pDat, pState->abUnk1598D8, 4))   { return false; } /* 0x3F2B4 */
+    if (!W(pDat, &pState->bUnk158848, 1))   { return false; } /* 0x3F2C8: always written */
+
+    /* 0x3F2CC..0x3F2E8: one byte per place flag, bFlag20 of a 28-byte BaseFacFlag. */
+    for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
+        if (!W(pDat, &pState->abFlag20[i], 1)) {
+            return false;
+        }
+    }
+
+    if (!W(pDat, pState->abUnk18655D, 9)) { return false; } /* 0x3F304 */
+
+    for (i32 f = 0; f < PUFO_BASE_FAC_COUNT; ++f) {
+        if (!WriteFacility(pDat, &pState->aFac[f])) {
+            return false;
+        }
+    }
+
+    if ((i8)pState->bBaseCount > 0 && apBases != NULL) {
+        for (i32 b = 0; b < (i8)pState->bBaseCount; ++b) {
+            const BaseRec *pBase = apBases[b];
+
+            if (pBase == NULL) {
+                return false;
+            }
+            if (!W(pDat, &pBase->bSlot, 1))        { return false; } /* 0x3F3EC */
+            if (!W(pDat, &pBase->bUnk4, 1))        { return false; } /* 0x3F400 */
+            if (!W(pDat, &pBase->nStoresTotal, 4)) { return false; } /* 0x3F410 */
+            if (!W(pDat, &pBase->nUnk8, 4))        { return false; } /* 0x3F424 */
+            if (!W(pDat, &pBase->nUnk12, 4))       { return false; } /* 0x3F438 */
+            if (!W(pDat, &pBase->bUnk17, 1))       { return false; } /* 0x3F44C */
+            if (!W(pDat, &pBase->bUnk16, 1))       { return false; } /* 0x3F460 */
+
+            /* 0x3F470..0x3F4AC: one u16 per object. 0x3F3CC seeds the column offset at
+             * 42 (0x2a, auPerBaseVal) and 0x3F4C0 adds 2 per base, so the column is the
+             * LOOP INDEX and not BaseRec.bSlot. */
+            for (i32 o = 0; o < nObjectCount; ++o) {
+                if (apObjects == NULL || apObjects[o] == NULL || b >= 8) {
+                    return false;
+                }
+                if (!W(pDat, &apObjects[o]->auPerBaseVal[b], 2)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
+                    BaseRec **apBases, i32 nOldBaseCount, u8 bUnk186558,
+                    ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL || pState == NULL) {
+        return false;
+    }
+
+    /* 0x402D0..0x40310: free the records the game still holds BEFORE the chunk is
+     * read, using the count from before the read, not the one in the file. */
+    if (apBases != NULL) {
+        for (i32 i = 0; i < nOldBaseCount; ++i) {
+            free(apBases[i]);
+            apBases[i] = NULL;
+        }
+    }
+
+    /* 0x4031C: the original does not test this. A failed lookup shows up as the
+     * reads failing, so the port stops here instead. */
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_BASES)) {
+        return false;
+    }
+
+    if (!DatFile_Read(pDat, pState->abBlock288, 288))   { return false; } /* 0x4032C */
+    if (!DatFile_Read(pDat, pState->abBlock1152, 1152)) { return false; } /* 0x4033C */
+    if (!DatFile_Read(pDat, &pState->bBaseCount, 1))    { return false; } /* 0x40354 */
+    if (!DatFile_Read(pDat, &pState->bUnk159D81, 1))    { return false; } /* 0x4036C */
+    if (!DatFile_Read(pDat, &pState->bUnk159D82, 1))    { return false; } /* 0x40384 */
+    if (!DatFile_Read(pDat, pState->abUnk159D90, 4))    { return false; } /* 0x4039C */
+
+    /* 0x403A4..0x403C4: 8 bytes on a modern save, 4 on an old one. The writer always
+     * emits 8, so the four upper bytes keep whatever they had on a version < 3 read. */
+    if (!DatFile_Read(pDat, pState->abUnk159DBC,
+                      (nSaveFmtVer >= 3) ? 8u : 4u)) {
+        return false;
+    }
+
+    if (!DatFile_Read(pDat, pState->abUnk1598D8, 4)) { return false; } /* 0x403D4 */
+
+    /* 0x403E0..0x403F0: this byte is only read on version >= 3. */
+    if (nSaveFmtVer >= 3) {
+        if (!DatFile_Read(pDat, &pState->bUnk158848, 1)) {
+            return false;
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_BASE_FLAG_COUNT; ++i) {
+        if (!DatFile_Read(pDat, &pState->abFlag20[i], 1)) {
+            return false;
+        }
+    }
+
+    if (!DatFile_Read(pDat, pState->abUnk18655D, 9)) { return false; } /* 0x40428 */
+
+    for (i32 f = 0; f < PUFO_BASE_FAC_COUNT; ++f) {
+        if (!ReadFacility(pDat, &pState->aFac[f])) {
+            return false;
+        }
+    }
+
+    if ((i8)pState->bBaseCount > 0 && apBases != NULL) {
+        for (i32 b = 0; b < (i8)pState->bBaseCount; ++b) {
+            BaseRec *pNew = (BaseRec *)malloc(sizeof(BaseRec));
+
+            if (pNew == NULL) {
+                return false;
+            }
+            memset(pNew, 0, sizeof(BaseRec));
+
+            /* 0x404F8..0x40534: new(0x14) then the ctor, then store. The ctor is handed
+             * the byte at 0x159D80, which here is the base COUNT just read, so it zeroes
+             * auPerBaseVal[nBaseCount] of every object -- one past the last column the
+             * writer produced. Its three field writes are all overwritten below. */
+            (void)BaseRec_Ctor(pNew, (i8)pState->bBaseCount, bUnk186558,
+                               apObjects, nObjectCount);
+            apBases[b] = pNew;
+
+            if (!DatFile_Read(pDat, &pNew->bSlot, 1))        { return false; } /* 0x40544 */
+            if (!DatFile_Read(pDat, &pNew->bUnk4, 1))        { return false; } /* 0x40558 */
+            if (!DatFile_Read(pDat, &pNew->nStoresTotal, 4)) { return false; } /* 0x40568 */
+            if (!DatFile_Read(pDat, &pNew->nUnk8, 4))        { return false; } /* 0x4057C */
+            if (!DatFile_Read(pDat, &pNew->nUnk12, 4))       { return false; } /* 0x40590 */
+            if (!DatFile_Read(pDat, &pNew->bUnk17, 1))       { return false; } /* 0x405A4 */
+            if (!DatFile_Read(pDat, &pNew->bUnk16, 1))       { return false; } /* 0x405B8 */
+
+            for (i32 o = 0; o < nObjectCount; ++o) {
+                if (apObjects == NULL || apObjects[o] == NULL || b >= 8) {
+                    return false;
+                }
+                if (!DatFile_Read(pDat, &apObjects[o]->auPerBaseVal[b], 2)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }

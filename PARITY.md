@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 554 / 1103 (50.2%) |
-| Bytes of original code cited | 207756 / 598792 (34.7%) |
+| Functions cited as evidence | 557 / 1103 (50.5%) |
+| Bytes of original code cited | 209540 / 598792 (35.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
-| Test checks run | 4651 |
+| Test checks run | 4698 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -39,11 +39,11 @@ the per-subsystem notes and the tests listed at the end.
 | `util` | 18 | 21 | 1036 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 15 | 35 | 8492 / 27172 | save/load chunk read/write |
+| `save` | 17 | 35 | 10128 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12200 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 61 | 205 | 20544 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 62 | 205 | 20692 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 97 | 243 | 8316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
@@ -190,12 +190,14 @@ is the module that answers to it.
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
 
-### `save` (15 functions)
+### `save` (17 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
+| `0x402c0` | `Save_ReadBases` | 876 | `src/pufo/game/pufo_save.h` |
+| `0x3f1fc` | `Save_WriteBases` | 760 | `src/pufo/game/pufo_save.h` |
 | `0x3fa28` | `Save_WriteSmap` | 396 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x3f558` | `Save_WriteResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x406e8` | `Save_ReadResearch` | 388 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -501,7 +503,7 @@ is the module that answers to it.
 | `0x12254` | `UiModal_EndThunk` | 12 | `src/pufo/game/pufo_invdrag.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (61 functions)
+### `strat` (62 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -528,6 +530,7 @@ is the module that answers to it.
 | `0x5a9b4` | `StrategList_FindByShipId` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.h` |
+| `0x55650` | `BaseRec_ctor` | 148 | `src/pufo/game/pufo_ship.h` |
 | `0x82244` | `Smap_GetTileAtScreen` | 128 | `src/pufo/game/pufo_strateg.h` |
 | `0x45f04` | `Ship_TickRefuelAtBase` | 124 | `src/pufo/game/pufo_ship.h` |
 | `0x6598c` | `Base_CalcPsiLabCap` | 124 | `src/pufo/game/pufo_baseui.h` |
@@ -866,7 +869,7 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 20 functions, 18680 bytes remaining
+### `save` — 18 functions, 17044 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -877,11 +880,9 @@ whose port work they belong to.
 | `0x44248` | `Save_ReadTGameData` | 1120 | not yet ported; scheduled with the `save` subsystem work |
 | `0x4086c` | `Save_ReadShips` | 992 | not yet ported; scheduled with the `save` subsystem work |
 | `0x438e0` | `Save_WriteMap` | 932 | not yet ported; scheduled with the `save` subsystem work |
-| `0x402c0` | `Save_ReadBases` | 876 | not yet ported; scheduled with the `save` subsystem work |
 | `0x3f6dc` | `Save_WriteShips` | 844 | not yet ported; scheduled with the `save` subsystem work |
 | `0x45904` | `SaveSlot_FormatList` | 796 | not yet ported; scheduled with the `save` subsystem work |
 | `0x40c4c` | `Save_ReadSmap` | 768 | not yet ported; scheduled with the `save` subsystem work |
-| `0x3f1fc` | `Save_WriteBases` | 760 | not yet ported; scheduled with the `save` subsystem work |
 | `0x446a8` | `Save_WriteTGameData` | 640 | not yet ported; scheduled with the `save` subsystem work |
 | `0x43c84` | `Save_WriteTeamUnits` | 604 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44988` | `SaveGame` | 564 | not yet ported; scheduled with the `save` subsystem work |
@@ -981,7 +982,7 @@ whose port work they belong to.
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 144 functions, 141912 bytes remaining
+### `strat` — 143 functions, 141764 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1072,7 +1073,6 @@ whose port work they belong to.
 | `0x5ea70` | `RadarScreen_SetCursorSE` | 160 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6555c` | `Base_CalcStorageUsed` | 156 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x55650` | `BaseRec_ctor` | 148 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a5b8` | `Ship_ClearInterceptByStrategIdx` | 148 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66090` | `Base_CountShipsAtBase` | 140 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66230` | `Base_CountSoldiersAssigned` | 140 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1333,7 +1333,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_render` | PASS | 43 |
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
-| `test_save` | PASS | 146 |
+| `test_save` | PASS | 193 |
 | `test_ship` | PASS | 31 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |

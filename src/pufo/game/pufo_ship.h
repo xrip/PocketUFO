@@ -29,6 +29,26 @@ typedef struct BaseRec {
 
 _Static_assert(sizeof(BaseRec) == 20, "BaseRec must be 20 bytes");
 
+/* BaseRec_ctor @ 0x55650. Two effects, in this order:
+ *
+ * 1. 0x55660..0x556B0: for every record in the object table, store 0 into
+ *    auPerBaseVal[nSlotIndex]. The index is the SIGNED byte at 0x159D80 at the
+ *    moment the ctor runs -- the caller's current base slot, and in the save reader
+ *    the base COUNT that was just read out of the chunk.
+ * 2. 0x556B8..0x556D0: nStoresTotal = 0, bUnk4 = the global byte at 0x186558,
+ *    bSlot = nSlotIndex.
+ *
+ * The original has NO bound check on the index. With the maximum eight bases the
+ * index is 8, and 2*8 bytes past auPerBaseVal (0x2a) lands on aItemQty[0] at 0x3a,
+ * so the ctor zeroes the first stock count of every item in the game. The port
+ * clamps instead of reproducing that write; the deviation is recorded in
+ * docs/parity/game-core.md.
+ *
+ * In the save reader all three field writes are immediately overwritten by the
+ * values from disk, so the only live effect there is the column zeroing. */
+BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
+                      ObjectRecFull *const *apObjects, i32 nObjectCount);
+
 typedef struct Ship {
     u8   bType;        /* +0x00 record kind */
     u8   bId;          /* +0x01 craft id, matched against StrategItem.nDisplayId */

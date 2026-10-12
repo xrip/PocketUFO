@@ -623,6 +623,153 @@ static void TestProductChunk(void)
     Check(!Save_ReadProduct(&dat, 3, NULL), "  a NULL read block is refused");
 }
 
+static void TestBasesChunk(void)
+{
+    DatFile dat;
+    SaveBasesState st, got;
+    ObjectRecFull aObj[2];
+    ObjectRecFull *apObj[2];
+    BaseRec aBase[3];
+    const BaseRec *apBase[3];
+    BaseRec *apRead[8];
+    i32 b;
+
+    printf("Save_WriteBases / Save_ReadBases\n");
+
+    memset(&st, 0, sizeof(st));
+    memset(&got, 0, sizeof(got));
+    for (i32 i = 0; i < 288; ++i)  { st.abBlock288[i]   = (u8)(i * 3 + 1); }
+    for (i32 i = 0; i < 1152; ++i) { st.abBlock1152[i]  = (u8)(i * 5 + 7); }
+    st.bBaseCount = 3;
+    st.bUnk159D81 = 0x11;
+    st.bUnk159D82 = 0x22;
+    for (i32 i = 0; i < 4; ++i) { st.abUnk159D90[i] = (u8)(0x30 + i); }
+    for (i32 i = 0; i < 8; ++i) { st.abUnk159DBC[i] = (u8)(0x40 + i); }
+    for (i32 i = 0; i < 4; ++i) { st.abUnk1598D8[i] = (u8)(0x50 + i); }
+    st.bUnk158848 = 0x66;
+    for (i32 i = 0; i < 17; ++i) { st.abFlag20[i]     = (u8)(i + 1); }
+    for (i32 i = 0; i < 9; ++i)  { st.abUnk18655D[i]  = (u8)(0x70 + i); }
+    for (i32 f = 0; f < 8; ++f) {
+        snprintf(st.aFac[f].szName, 20, "Fac%02d", (int)f);
+        snprintf(st.aFac[f].szUnk6, 20, "U6_%02d", (int)f);
+        st.aFac[f].bType = (u8)f;
+        st.aFac[f].nBuildState = 1000 + f;
+        st.aFac[f].nFacType = 100 + f;
+        st.aFac[f].nUnk48 = 200 + f;
+        st.aFac[f].uUnk2 = (u16)(300 + f);
+        st.aFac[f].uUnk4 = (u16)(400 + f);
+        st.aFac[f].nDemolishState = 500 + f;
+    }
+    for (i32 o = 0; o < 2; ++o) {
+        memset(&aObj[o], 0, sizeof(aObj[o]));
+        for (i32 k = 0; k < 8; ++k) { aObj[o].auPerBaseVal[k] = (u16)(1000 + k); }
+        aObj[o].aItemQty[0] = 4242; /* 0x3a, the field an unbounded ctor index would hit */
+        apObj[o] = &aObj[o];
+    }
+    memset(apBase, 0, sizeof(apBase));
+    for (b = 0; b < 3; ++b) {
+        memset(&aBase[b], 0, sizeof(aBase[b]));
+        aBase[b].bSlot = (u8)(b + 1);
+        aBase[b].bUnk4 = (u8)(0x10 + b);
+        aBase[b].nStoresTotal = 7 + b;
+        aBase[b].nUnk8 = 80 + b;
+        aBase[b].nUnk12 = 90 + b;
+        aBase[b].bUnk16 = (u8)(0xA0 + b);
+        aBase[b].bUnk17 = (u8)(0xB0 + b);
+        apBase[b] = &aBase[b];
+    }
+
+    Check(OpenWrite("test_bases.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteBases(&dat, &st, apBase, apObj, 2), "  bases chunk written");
+    DatFile_Close(&dat);
+
+    /* 288+1152+1+1+1+4+8+4+1+17+9+8*61 = 1974, then 3 * (16 + 2*2). */
+    CheckEqI32(FileSizeOf(L"test_bases.tmp"), 46 + 1974 + 60,
+               "the chunk is 1974 header bytes plus 20 per base");
+
+    memset(&got, 0xEE, sizeof(got));
+    memset(apRead, 0, sizeof(apRead));
+    Check(OpenRead("test_bases.tmp", &dat), "  reopened for read");
+    Check(Save_ReadBases(&dat, 3, &got, apRead, 0, 0x5A, apObj, 2), "  version 3 read");
+    DatFile_Close(&dat);
+
+    Check(memcmp(got.abBlock288, st.abBlock288, 288) == 0, "the 288-byte block round-trips");
+    Check(memcmp(got.abBlock1152, st.abBlock1152, 1152) == 0, "the 1152-byte block round-trips");
+    CheckEqI32(got.bBaseCount, 3, "the base count round-trips");
+    CheckEqI32(got.bUnk159D81, 0x11, "0x159D81 round-trips");
+    CheckEqI32(got.bUnk159D82, 0x22, "0x159D82 round-trips");
+    Check(memcmp(got.abUnk159D90, st.abUnk159D90, 4) == 0, "the 4-byte field round-trips");
+    Check(memcmp(got.abUnk159DBC, st.abUnk159DBC, 8) == 0, "version 3 reads all 8 bytes");
+    CheckEqI32(got.bUnk158848, 0x66, "version 3 reads the 0x158848 byte");
+    Check(memcmp(got.abFlag20, st.abFlag20, 17) == 0, "all 17 place-flag bytes round-trip");
+    Check(memcmp(got.abUnk18655D, st.abUnk18655D, 9) == 0, "the 9-byte block round-trips");
+
+    CheckEqStr(got.aFac[0].szName, "Fac00", "facility 0 name round-trips");
+    CheckEqI32(got.aFac[0].nBuildState, 1000, "facility 0 build state round-trips");
+    CheckEqStr(got.aFac[7].szUnk6, "U6_07", "facility 7 unknown-6 string round-trips");
+    CheckEqI32(got.aFac[7].nFacType, 107, "facility 7 type round-trips");
+    CheckEqI32(got.aFac[7].uUnk2, 307, "facility 7 uUnk2 round-trips");
+    CheckEqI32(got.aFac[7].nDemolishState, 507, "facility 7 demolish state round-trips");
+
+    Check(apRead[0] != NULL && apRead[2] != NULL, "the reader allocated one record per base");
+    if (apRead[0] != NULL) {
+        CheckEqI32(apRead[0]->bSlot, 1, "bSlot round-trips");
+        CheckEqI32(apRead[0]->bUnk4, 0x10, "bUnk4 round-trips");
+        CheckEqI32(apRead[0]->nStoresTotal, 7, "the store total round-trips");
+        CheckEqI32(apRead[0]->nUnk12, 90, "nUnk12 round-trips");
+        CheckEqI32(apRead[0]->bUnk16, 0xA0, "bUnk16 round-trips");
+        CheckEqI32(apRead[0]->bUnk17, 0xB0, "bUnk17 round-trips");
+    }
+
+    /* The writer's column is the loop index, so bases 0..2 wrote columns 0..2. */
+    CheckEqI32(aObj[0].auPerBaseVal[0], 1000, "base 0 wrote object column 0");
+    CheckEqI32(aObj[1].auPerBaseVal[2], 1002, "base 2 wrote object column 2");
+    /* BaseRec_Ctor is handed the count byte, so it zeroes column 3 of every object. */
+    CheckEqI32(aObj[0].auPerBaseVal[3], 0, "the ctor zeroed column 3 of object 0");
+    CheckEqI32(aObj[1].auPerBaseVal[3], 0, "the ctor zeroed column 3 of object 1");
+    CheckEqI32(aObj[0].auPerBaseVal[4], 1004, "column 4 was left alone");
+    CheckEqI32(aObj[0].aItemQty[0], 4242, "the port clamps the ctor index");
+
+    for (b = 0; b < 8; ++b) {
+        free(apRead[b]);
+        apRead[b] = NULL;
+    }
+
+    /* Same file, old reader: the two version gates consume 4 + 1 fewer bytes, so
+     * everything after them is shifted by five. That is what makes the gates real. */
+    memset(&got, 0xEE, sizeof(got));
+    Check(OpenRead("test_bases.tmp", &dat), "  reopened for the old-format read");
+    (void)Save_ReadBases(&dat, 2, &got, apRead, 0, 0x5A, apObj, 2);
+    DatFile_Close(&dat);
+    for (b = 0; b < 8; ++b) {
+        free(apRead[b]);
+        apRead[b] = NULL;
+    }
+    CheckEqI32(got.abUnk159DBC[7], 0xEE,
+               "version 2 reads only 4 of the 8 bytes");
+    CheckEqI32(got.bUnk158848, 0xEE, "version 2 never reads the 0x158848 byte");
+    CheckEqI32(got.abFlag20[0], 0x50, "the flags start on the 0x1598D8 block");
+    CheckEqI32(got.abFlag20[1], 0x51, "five bytes earlier than they should");
+
+    /* BaseRec_Ctor on its own: the index is the byte at 0x159D80, and the original
+     * does not bound it. */
+    aObj[0].auPerBaseVal[7] = 9999;
+    BaseRec_Ctor(&aBase[0], 7, 0x33, apObj, 2);
+    CheckEqI32(aObj[0].auPerBaseVal[7], 0, "index 7 zeroes the last column");
+    CheckEqI32(aBase[0].bSlot, 7, "the ctor stores the index as bSlot");
+    CheckEqI32(aBase[0].bUnk4, 0x33, "and the global byte as bUnk4");
+    CheckEqI32(aBase[0].nStoresTotal, 0, "and clears the store total");
+    aObj[0].auPerBaseVal[7] = 8888;
+    aObj[0].aItemQty[0] = 4242;
+    BaseRec_Ctor(&aBase[0], 8, 0x33, apObj, 2);
+    CheckEqI32(aObj[0].aItemQty[0], 4242,
+               "index 8 would hit aItemQty[0]; the port leaves it");
+
+    Check(!Save_WriteBases(NULL, &st, apBase, apObj, 2), "NULL dat refused");
+    Check(!Save_WriteBases(&dat, NULL, apBase, apObj, 2), "NULL state refused");
+    Check(!Save_ReadBases(NULL, 3, &got, apRead, 0, 0, apObj, 2), "NULL read dat refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -637,6 +784,7 @@ int main(void)
     TestResearchChunk();
     TestSmapChunk();
     TestProductChunk();
+    TestBasesChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -52,6 +52,7 @@
 #include "dat/pufo_dat.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_ship.h"
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -292,5 +293,86 @@ bool Save_ReadSmap(DatFile *pDat, SaveSmapState *pState);
 
 bool Save_WriteProduct(DatFile *pDat, const u8 *pBlock);
 bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock);
+
+/* ---- bases chunk ----
+ *
+ * `Save_WriteBases @ 0x3f1fc` and `Save_ReadBases @ 0x402c0`. The chunk is a flat
+ * sequence of blocks and field-by-field records, not one contiguous table, so the
+ * port carries the pieces in `SaveBasesState`.
+ *
+ * On-disk order, and the byte count each piece costs:
+ *
+ *   288  block at 0x159768
+ *  1152  block at 0x1598DC
+ *     1  base count, 0x159D80 (IDA: gUiRootPanel.anLineAux[79])
+ *     1  0x159D81
+ *     1  0x159D82
+ *     4  0x159D90            (anLineAux[83])
+ *   8/4  0x159DBC            (anLineAux[94]) -- 8 written, but only 4 READ when the
+ *                             save format version byte at 0x18655C is below 3
+ *     4  0x1598D8
+ *   0/1  0x158848            -- written always, READ only when version >= 3
+ *    17  BaseFacFlag[i].bFlag20, i = 0..16, stride 28, array at 0x186E48
+ *     9  0x18655D
+ *   488  8 facility records, 61 bytes each (see SaveBaseFacility)
+ *  then for each base, while the count byte is > 0 as a SIGNED char:
+ *    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bUnk17, bUnk16
+ *   2n   one u16 per object: auPerBaseVal[baseIndex] of every object record
+ *
+ * Two things the shape of the loop hides.
+ *
+ * The facility record is serialised field by field in an order that is NOT the
+ * in-memory order, and two gaps are skipped. In memory BaseFacility is 64 bytes;
+ * on disk it is 61. gap_1 at +0x01 and gap_46 at +0x2e are never written.
+ *
+ * The per-base column index is the LOOP INDEX, not BaseRec.bSlot: 0x3f3CC seeds a
+ * byte offset at 42 and 0x3F4C0 adds 2 per base, so base i writes
+ * ObjectRecFull.auPerBaseVal[i] of every object. 42 is 0x2a, the offset of that
+ * array.
+ */
+#define PUFO_BASE_FAC_COUNT   8
+#define PUFO_BASE_FLAG_COUNT  17
+#define PUFO_BASES_HEADER_BYTES 1974 /* everything before the per-base records */
+
+/* One facility record as it appears on disk: 61 bytes, in the original's scattered
+ * field order. The in-memory BaseFacility is 64 bytes and orders the fields
+ * differently, so this is a wire type, not a mirror of it. */
+typedef struct SaveBaseFacility {
+    char szName[20];       /* abName,    +0x1a */
+    u8   bType;            /* bType,     +0x00 */
+    i32  nBuildState;      /* nUnkBuildState,   +0x38 */
+    char szUnk6[20];       /* abUnk6,    +0x06 */
+    i32  nFacType;         /* nFacType,  +0x3c */
+    i32  nUnk48;           /* nUnk48,    +0x30 */
+    u16  uUnk2;            /* uUnk2,     +0x02 */
+    u16  uUnk4;            /* uUnk4,     +0x04 */
+    i32  nDemolishState;   /* nUnkDemolishState, +0x34 */
+} SaveBaseFacility;
+
+typedef struct SaveBasesState {
+    u8   abBlock288[288];
+    u8   abBlock1152[1152];
+    u8   bBaseCount;       /* signed char: gates the per-base loops on both sides */
+    u8   bUnk159D81;
+    u8   bUnk159D82;
+    u8   abUnk159D90[4];
+    u8   abUnk159DBC[8];   /* upper 4 bytes stay untouched when version < 3 */
+    u8   abUnk1598D8[4];
+    u8   bUnk158848;       /* stays untouched when version < 3 */
+    u8   abFlag20[PUFO_BASE_FLAG_COUNT];
+    u8   abUnk18655D[9];
+    SaveBaseFacility aFac[PUFO_BASE_FAC_COUNT];
+} SaveBasesState;
+
+/* apBases and apObjects are the caller's pointer arrays; nObjectCount is the object
+ * table size (pCtxBase.nObjectCount). The reader allocates BaseRec records into
+ * apBases and frees nOldBaseCount of them first -- the original frees with the count
+ * it had BEFORE the chunk is read (0x402D0..0x40310), then reads the new count. */
+bool Save_WriteBases(DatFile *pDat, const SaveBasesState *pState,
+                     const BaseRec *const *apBases,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount);
+bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
+                    BaseRec **apBases, i32 nOldBaseCount, u8 bUnk186558,
+                    ObjectRecFull *const *apObjects, i32 nObjectCount);
 
 #endif /* PUFO_SAVE_H */

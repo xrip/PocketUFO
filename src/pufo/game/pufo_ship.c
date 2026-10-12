@@ -1,6 +1,33 @@
 /* pufo_ship.c - see pufo_ship.h for the evidence map. */
 #include "game/pufo_ship.h"
 
+#include <string.h>
+
+BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
+                      ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pBase == NULL) {
+        return NULL;
+    }
+
+    if (apObjects != NULL && nObjectCount > 0) {
+        for (i32 i = 0; i < nObjectCount; ++i) {
+            if (apObjects[i] == NULL) {
+                continue;
+            }
+            if (nSlotIndex >= 0 && nSlotIndex < (i32)(sizeof(apObjects[i]->auPerBaseVal)
+                                                      / sizeof(apObjects[i]->auPerBaseVal[0]))) {
+                apObjects[i]->auPerBaseVal[nSlotIndex] = 0;
+            }
+        }
+    }
+
+    pBase->nStoresTotal = 0;
+    pBase->bUnk4 = bUnk186558;
+    pBase->bSlot = (u8)nSlotIndex;
+    return pBase;
+}
+
 void Ship_TickRangeRecover(Ship *pShip)
 {
     if (pShip->bAtBase != 0) {
