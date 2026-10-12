@@ -13,6 +13,8 @@
 #include "game/pufo_mapcell.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_boot.h"
+#include "game/pufo_font.h"
 #include "pufo_common.h"
 
 #include <stdio.h>
@@ -767,6 +769,103 @@ static void TestBlitDecimal(void)
                "  NULL table returns 0");
 }
 
+/* --- the HUD draw family ---------------------------------------------------------
+ *
+ * Menu_DrawLabeledPads @ 0x217e0, TactHud_DrawModalLeft @ 0x21bac,
+ * TactHud_DrawModalRight @ 0x21cec, TactHud_CopyStatusText @ 0x21688.
+ *
+ * What is asserted here is what the functions decide and can be observed: how many pads each
+ * one walks, the sparse label-record map, and the modal mode gate. The centring itself is not
+ * asserted: Text_DrawString writes into the font layer and is not injected, so a label's final
+ * x is not observable from a test. */
+
+static i32 g_nPadBlits;
+
+static void CountBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    g_nPadBlits += 1;
+}
+
+static void TestHudDraw(void)
+{
+    UiControl aPad[PUFO_HUD_STATUS_PADS];
+    PadImage aImg[PUFO_HUD_STATUS_PADS];
+    SoftSurf surf;
+    static u8 aRecs[8 * PUFO_TEXT_REC_STRIDE];
+    static u8 aLabels[PUFO_HUD_MODAL_LABELS * PUFO_HUD_MODAL_LABEL_STRIDE];
+    GfxColorEnv color;
+    UiModalAnim anim;
+    i32 nScratch;
+    i32 i;
+
+    printf("HUD draw family\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+    g_fontSys.apSprIndex = NULL;
+
+    memset(aRecs, 0, sizeof(aRecs));
+    memcpy(aRecs + 5 * PUFO_TEXT_REC_STRIDE, "STATUS", 7);
+    memset(aLabels, 0, sizeof(aLabels));
+    for (i = 0; i < PUFO_HUD_MODAL_LABELS; ++i) {
+        sprintf((char *)(aLabels + i * PUFO_HUD_MODAL_LABEL_STRIDE), "L%d", (int)i);
+    }
+
+    memset(&color, 0, sizeof(color));
+
+    for (i = 0; i < PUFO_HUD_STATUS_PADS; ++i) {
+        memset(&aPad[i], 0, sizeof(aPad[i]));
+        memset(&aImg[i], 0, sizeof(aImg[i]));
+        aPad[i].x = (i16)(10 + 20 * i);
+        aPad[i].y = (i16)(30 + 10 * i);
+        aPad[i].uWidth = 40;
+        aPad[i].uHeight = 17;
+        aPad[i].nMode = 0;
+        aPad[i].bEnabled = 1;
+        aPad[i].nState = 0;
+        aPad[i].apPads[0] = &aImg[i];
+    }
+
+    TestEqI32("menu label record for pad 0 is 18", Menu_LabelRecordIndex(0), 18);
+    TestEqI32("menu label record for pad 4 is 22", Menu_LabelRecordIndex(4), 22);
+    TestEqI32("menu label record for pad 5 is 402, not 23", Menu_LabelRecordIndex(5), 402);
+    TestEqI32("menu label record for pad 6 is 23", Menu_LabelRecordIndex(6), 23);
+
+    g_nPadBlits = 0;
+    TestEqI32("Menu_DrawLabeledPads walks seven pads",
+              Menu_DrawLabeledPads(aPad, aRecs, &color, CountBlit, CountBlit, NULL), 7);
+    TestEqI32("seven pads blitted", g_nPadBlits, 7);
+
+    memset(&anim, 0, sizeof(anim));
+    anim.pColor = &color;
+
+    g_nPadBlits = 0;
+    nScratch = -1;
+    TestEqI32("a modal mode other than 1 is returned unchanged",
+              TactHud_DrawModalPanel(aPad, aLabels, 0, 1102, &nScratch, &anim, aRecs,
+                                     CountBlit, CountBlit, NULL), 0);
+    TestEqI32("eight pads blitted although only seven labels are drawn", g_nPadBlits, 8);
+    TestEqI32("no modal dialog, so the action-phase scratch is untouched", nScratch, -1);
+
+    g_nPadBlits = 0;
+    nScratch = -1;
+    (void)TactHud_DrawModalPanel(aPad, aLabels, 1, 0, &nScratch, &anim, aRecs,
+                                 CountBlit, CountBlit, NULL);
+    TestEqI32("mode 1 writes 40 into anActionPhaseSave0[112]", nScratch, 40);
+    TestEqI32("eight pads blitted again", g_nPadBlits, 8);
+
+    g_nPadBlits = 0;
+    TestEqI32("TactHud_CopyStatusText walks nine pads",
+              TactHud_CopyStatusText(aPad, (const char *)(aRecs + 5 * PUFO_TEXT_REC_STRIDE),
+                                     &color, CountBlit, CountBlit, NULL), 9);
+    TestEqI32("nine pads blitted", g_nPadBlits, 9);
+
+    g_pMainSurface = NULL;
+}
+
 int main(void)
 {
     Reset();
@@ -781,5 +880,7 @@ int main(void)
     TestOpenInventory();
     Reset();
     TestSpecialItem();
+    Reset();
+    TestHudDraw();
     return TestSummary("test_tacthud");
 }

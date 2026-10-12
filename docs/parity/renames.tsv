@@ -225,3 +225,5 @@ Map_UiScreen7_PlaySample0E	Ui_OpenScreen7
 Map_ClearUiScreen	Ui_ClearScreen	
 MenuBtn_ResizeWindow	Menu_ResizeWindow	App_ResizeMainWindow is injected; the pad body is ported
 AssetReader_ClearGlobal	AssetReader_Clear	the original clears the global reader at 0x187028; the port takes the reader
+TactHud_DrawModalLeft	TactHud_DrawModalPanel	identical to 0x21cec except the modal text record, 1102 versus 1103
+TactHud_DrawModalRight	TactHud_DrawModalPanel	merged

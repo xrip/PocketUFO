@@ -15,6 +15,8 @@
 #include "game/pufo_tactui.h"
 #include "render/pufo_render.h"
 #include "game/pufo_unit.h"
+#include "ui/pufo_control.h"
+#include "ui/pufo_modal.h"
 
 /* The texts.dat records the kneel action announces. Kneeling is the shot
  * accuracy bonus, so the message is about marksmanship, not about the pose:
@@ -188,5 +190,49 @@ typedef void (*HudPadBlitFn)(PadImage *pPad, void *pUser);
 i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
                         i32 nWidth, bool bLeadZero,
                         HudPadBlitFn pfnBlitEx, void *pUser);
+
+/* --- the HUD draw family that Render_Frame (0x22310, not ported) dispatches ----------
+ *
+ * All three read pad geometry out of pBank and centre a label on it. The bank offsets the
+ * decompiler shows as "u16 field indices" are the pad records themselves:
+ *
+ *   Menu_DrawLabeledPads   848*2 = 1696 -> unk_ACD70, bank widgets 53..59, vertical +3
+ *   TactHud_DrawModalPanel 1680*2 = 3360 -> unk_AD3F0, bank widgets 105..112, vertical +2
+ *   TactHud_CopyStatusText  704*2 = 1408 -> unk_ACC50, bank widgets 44..52, centred on a
+ *                                          fixed 23 rather than on the pad width
+ *
+ * Those three spans are the same groups Tact_Shutdown (0x3d568, not ported) walks (offsets 53/7,
+ * 105/8 and 44/9), which is the cross-check that the arithmetic is right. */
+#define PUFO_HUD_MENU_PADS        7
+#define PUFO_HUD_MODAL_PADS       8
+#define PUFO_HUD_MODAL_LABELS     7
+#define PUFO_HUD_MODAL_LABEL_STRIDE 40
+#define PUFO_HUD_STATUS_PADS      9
+
+/* Menu_DrawLabeledPads @ 0x217e0. Seven pads blitted and seven labels drawn, but the label
+ * records are a sparse map, not the loop counter: index 5 reads record 402 and index 6 reads
+ * record 23, while 0..4 read 18..22. */
+/* Menu_DrawLabeledPads @ 0x217e0. Seven pads blitted and seven labels drawn, but the label
+ * records are a sparse map, not the loop counter: index 5 reads record 402 and index 6 reads
+ * record 23, while 0..4 read 18..22. Split out because that map is the whole interest of the
+ * function and it is worth being able to assert it. */
+i32 Menu_LabelRecordIndex(i32 nIdx);
+
+i32 Menu_DrawLabeledPads(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv *pColor,
+                         UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* TactHud_DrawModalLeft @ 0x21bac and TactHud_DrawModalRight @ 0x21cec. The same body; they
+ * differ only in the modal text record, 1102 versus 1103. Eight pads are blitted but only
+ * seven labels are drawn - the count mismatch is the original's. */
+i32 TactHud_DrawModalPanel(UiControl *pPads, const u8 *pLabelTable, i32 nModalMode,
+                           i32 nTextRecIndex, i32 *pnActionPhaseSave112,
+                           UiModalAnim *pAnim, const u8 *pTextRecs,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* TactHud_CopyStatusText @ 0x21688. The status line is text record 5 (unk_B3CD1 =
+ * aTextRecs + 205*5), drawn white centred at y = 100; then nine pads each get their own index
+ * printed as a decimal. */
+i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxColorEnv *pColor,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
 
 #endif /* PUFO_TACTHUD_H */

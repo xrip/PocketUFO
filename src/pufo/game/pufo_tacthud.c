@@ -3,6 +3,8 @@
 #include "game/pufo_tacthud.h"
 
 #include "game/pufo_path.h"
+#include "game/pufo_boot.h"
+#include "game/pufo_font.h"
 
 #include <math.h>
 #include <stddef.h>
@@ -493,6 +495,136 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
          * after this one ends. */
         nResult = x + (i32)pPad->uWidth;
         x = nResult + 1;
+    }
+    return nResult;
+}
+
+/* Copy one 205-byte text record into a caller buffer, as the original's byte-at-a-time
+ * do/while does. The port uses the full record size rather than the original's scratch. */
+static void CopyTextRecord(const u8 *pTextRecs, i32 nRec, char *pszOut)
+{
+    const u8 *pSrc = pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+    i32 k = 0;
+
+    for (;;) {
+        pszOut[k] = (char)pSrc[k];
+        if (pszOut[k] == 0) {
+            break;
+        }
+        ++k;
+    }
+}
+
+/* The centring rule the HUD label draws share: pad.x + (pad.uWidth - text width) / 2, at
+ * pad.y + a fixed vertical offset. The menu uses +3, the modal panels use +2. */
+static void DrawLabelOnPad(const UiControl *pPad, const char *psz, i32 nVertOffset)
+{
+    i32 nWidth = Text_MeasureWidth(psz);
+
+    Text_DrawString((i32)pPad->x + ((i32)pPad->uWidth - nWidth) / 2,
+                    (i32)pPad->y + nVertOffset, psz);
+}
+
+/* Menu_DrawLabeledPads @ 0x217e0.
+ *
+ * The label records are a sparse map: index 5 reads record 402 and index 6 reads record 23,
+ * while 0..4 read 18..22. Seven menu labels are therefore NOT seven consecutive records. */
+i32 Menu_LabelRecordIndex(i32 nIdx)
+{
+    if (nIdx == 5) {
+        return 402;
+    }
+    if (nIdx == 6) {
+        return 23;
+    }
+    return nIdx + 18;
+}
+
+i32 Menu_DrawLabeledPads(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv *pColor,
+                         UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    char szLabel[PUFO_TEXT_REC_STRIDE];
+    i32 nIdx;
+    i32 nResult;
+
+    Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+
+    for (nIdx = 0; ; ++nIdx) {
+        (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
+
+        CopyTextRecord(pTextRecs, Menu_LabelRecordIndex(nIdx), szLabel);
+        DrawLabelOnPad(&pPads[nIdx], szLabel, 3);
+
+        nResult = nIdx + 1;
+        if (nResult >= PUFO_HUD_MENU_PADS) {
+            break;
+        }
+    }
+    return nResult;
+}
+
+/* TactHud_DrawModalLeft @ 0x21bac and TactHud_DrawModalRight @ 0x21cec, one body.
+ *
+ * Eight pads are blitted and only seven labels are drawn; the eighth pad has no label. That
+ * mismatch is the original's, reproduced rather than tidied. The modal text is drawn only when
+ * the mode flag (0x157188) is exactly 1, and 40 is written into the action-phase scratch cell
+ * anActionPhaseSave0[112] first. */
+i32 TactHud_DrawModalPanel(UiControl *pPads, const u8 *pLabelTable, i32 nModalMode,
+                           i32 nTextRecIndex, i32 *pnActionPhaseSave112,
+                           UiModalAnim *pAnim, const u8 *pTextRecs,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    UiModalLayout layout;
+    i32 i;
+
+    for (i = 0; i < PUFO_HUD_MODAL_PADS; ++i) {
+        (void)UiControl_BlitActivePad(&pPads[i], pfnBlit, pfnBlitEx, pUser);
+    }
+
+    for (i = 0; i < PUFO_HUD_MODAL_LABELS; ++i) {
+        Gfx_PackRgb565Pair(pAnim->pColor, 26, 244, 252, 13, 122, 126);
+        DrawLabelOnPad(&pPads[i], (const char *)(pLabelTable + PUFO_HUD_MODAL_LABEL_STRIDE * i), 2);
+    }
+
+    if (nModalMode != 1) {
+        return nModalMode;
+    }
+
+    *pnActionPhaseSave112 = 40;
+    return UiModal_DrawDialog(pAnim, pTextRecs, 150, nTextRecIndex, 1, NULL, NULL, &layout);
+}
+
+/* TactHud_CopyStatusText @ 0x21688.
+ *
+ * The status line is text record 5 (unk_B3CD1 = aTextRecs + 205*5), drawn in white centred on
+ * the 240-pixel screen at y = 100. Then nine pads each get their own index printed as a decimal,
+ * centred on a FIXED 23 rather than on the pad's own width - the only place in this family that
+ * does not use the pad width. */
+i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxColorEnv *pColor,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    char szNum[16];
+    i32 nIdx;
+    i32 nResult;
+    i32 nWidth;
+
+    Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
+    nWidth = Text_MeasureWidth(pszStatus);
+    Text_DrawString((240 - nWidth) / 2, 100, pszStatus);
+
+    Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+
+    for (nIdx = 0; ; ++nIdx) {
+        (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
+
+        sprintf(szNum, "%d", nIdx);   /* j_itoa (0x9e9f0, a 4-byte thunk to the CRT), base 10 */
+        nWidth = Text_MeasureWidth(szNum);
+        Text_DrawString((i32)pPads[nIdx].x + (23 - nWidth) / 2, (i32)pPads[nIdx].y + 4, szNum);
+
+        nResult = nIdx + 1;
+        if (nResult >= PUFO_HUD_STATUS_PADS) {
+            break;
+        }
     }
     return nResult;
 }

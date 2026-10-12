@@ -189,7 +189,7 @@ add_test(NAME test_mapctx
 
 # The tactical HUD action buttons: kneel, climb up, climb down.
 add_executable(test_tacthud ${CMAKE_SOURCE_DIR}/tests/test_tacthud.c)
-target_link_libraries(test_tacthud PRIVATE pufo_options pufo_game pufo_audio pufo_render pufo_dat pufo_util)
+target_link_libraries(test_tacthud PRIVATE pufo_options pufo_game pufo_audio pufo_render pufo_dat pufo_util pufo_ui)
 set_target_properties(test_tacthud PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
