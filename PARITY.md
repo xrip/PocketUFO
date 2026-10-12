@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 555 / 1103 (50.3%) |
-| Bytes of original code cited | 210652 / 598792 (35.2%) |
+| Functions cited as evidence | 557 / 1103 (50.5%) |
+| Bytes of original code cited | 210708 / 598792 (35.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
-| Test checks run | 4642 |
+| Test checks run | 4651 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 67 | 85 | 12256 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 62 | 205 | 22644 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 95 | 243 | 8260 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 97 | 243 | 8316 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 2 | 13 | 148 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -570,7 +570,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (95 functions)
+### `strat-ui` (97 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -656,9 +656,11 @@ is the module that answers to it.
 | `0x1a24c` | `MenuBtn_Cancel0` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a26c` | `MenuBtn_Cancel1` | 32 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x615b0` | `NewBaseScreen_CloseThunk` | 32 | `src/pufo/game/pufo_baseui.h` |
+| `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | `src/pufo/game/pufo_baseui.h` |
 | `0x1a064` | `MenuCtl2_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x1a080` | `MenuCtl3_OnClick` | 28 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19930` | `MenuBtn_ResizeWindow` | 24 | `src/pufo/game/pufo_menu.h` |
+| `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | `src/pufo/game/pufo_baseui.h` |
 | `0x18e04` | `Menu_CancelQuitDialog` | 20 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x589cc` | `BaseFacScreen_PanelPrev` | 16 | `src/pufo/game/pufo_baseui.h` |
 | `0x589dc` | `BaseFacScreen_PanelNext` | 16 | `src/pufo/game/pufo_baseui.h` |
@@ -1128,7 +1130,7 @@ whose port work they belong to.
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 148 functions, 108748 bytes remaining
+### `strat-ui` — 146 functions, 108692 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1278,8 +1280,6 @@ whose port work they belong to.
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x588cc` | `BaseAtScreen_Open` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x99fd0` | `Ufopaedia_CacheSelRow` | 68 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6dd04` | `OptionsScreen_OpenWithSound` | 32 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6cf00` | `OptionsScreen_RebuildWithSound` | 24 | not yet ported; scheduled with the `strat-ui` subsystem work |
 
 ### `titles` — 11 functions, 4296 bytes remaining
 
@@ -1305,7 +1305,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 108 |
+| `test_baseui` | PASS | 117 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

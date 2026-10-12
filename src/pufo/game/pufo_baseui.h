@@ -258,4 +258,22 @@ UiControl *OptionsScreen_ClearSfxButtons(UiControl *apSfx[6]);
  * nullsub_5 and nullsub_6, empty compiler-generated stubs, so they carry no behaviour. */
 int StrategList_RegisterAtexit(PtrArray *pList);
 
+/* OptionsScreen_RebuildWithSound @ 0x6cf00 and OptionsScreen_OpenWithSound @ 0x6dd04: play
+ * sample 7, then tail-call the options screen's own builder. Both pass Sound_Play a second
+ * argument, 4 (MOV R1, #4 at 0x6CF08 and 0x6DD10), the same as the geoscape openers.
+ *
+ * 0x6dd04 takes two arguments and keeps only the second: it saves R1 into R4 before the sample
+ * and hands R4 to OptionsScreen_Open as the mode. The first argument is dropped. Both callees,
+ * OptionsScreen_Init (0x6be74) and OptionsScreen_Open (0x6d0ac), are not ported, so they are
+ * hooks and are named without a citation. */
+typedef struct OptionsScreenHooks {
+    void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
+    void (*pfnInit)(void *pUser);
+    void (*pfnOpen)(i32 nMode, void *pUser);
+    void *pUser;
+} OptionsScreenHooks;
+
+void OptionsScreen_RebuildWithSound(const OptionsScreenHooks *pHooks);
+void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHooks *pHooks);
+
 #endif /* PUFO_BASEUI_H */

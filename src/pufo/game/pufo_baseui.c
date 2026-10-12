@@ -405,3 +405,24 @@ int StrategList_RegisterAtexit(PtrArray *pList)
     g_pStrategListToClear = pList;
     return atexit(StrategList_ClearAtexitThunk); /* 0x838A0 */
 }
+
+void OptionsScreen_RebuildWithSound(const OptionsScreenHooks *pHooks)
+{
+    if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
+        pHooks->pfnPlaySample(7, 4, pHooks->pUser); /* 0x6CF08: MOV R1, #4 */
+    }
+    if (pHooks != NULL && pHooks->pfnInit != NULL) {
+        pHooks->pfnInit(pHooks->pUser); /* 0x6CF14, tail call */
+    }
+}
+
+void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHooks *pHooks)
+{
+    (void)nIgnored; /* 0x6DD08 saves R1 into R4 and never touches R0 */
+    if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
+        pHooks->pfnPlaySample(7, 4, pHooks->pUser); /* 0x6DD10 */
+    }
+    if (pHooks != NULL && pHooks->pfnOpen != NULL) {
+        pHooks->pfnOpen(nMode, pHooks->pUser); /* 0x6DD20, tail call with R4 */
+    }
+}

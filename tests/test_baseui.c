@@ -502,7 +502,9 @@ static void TestOptionsRadioClear(void)
 
 static void TestAtexitRegistration(void)
 {
-    PtrArray list;
+    /* The atexit thunk runs AFTER main returns, so the list it clears must outlive the
+     * stack frame. A local here is a use-after-scope crash (0xc0000374 under ctest). */
+    static PtrArray list;
 
     printf("StrategList_RegisterAtexit\n");
 
@@ -510,6 +512,64 @@ static void TestAtexitRegistration(void)
     Check(StrategItem_AllocAdd(&list, 3), "the list holds an item");
     CheckEqI32(StrategList_RegisterAtexit(&list), 0,
                "atexit accepts the clear thunk (the clear itself runs at exit)");
+}
+
+static i32 g_nOptSample;
+static i32 g_nOptSampleArg;
+static i32 g_nOptMode;
+static i32 g_nOptInitCalls;
+
+static void OptSample(u32 nSample, u32 nArg, void *pUser)
+{
+    (void)pUser;
+    g_nOptSample = (i32)nSample;
+    g_nOptSampleArg = (i32)nArg;
+}
+
+static void OptInit(void *pUser) { (void)pUser; ++g_nOptInitCalls; }
+static void OptOpen(i32 nMode, void *pUser)
+{
+    (void)pUser;
+    g_nOptMode = nMode;
+    ++g_nOptInitCalls;
+}
+
+static void TestOptionsSoundWrappers(void)
+{
+    OptionsScreenHooks hk;
+
+    printf("options screen sound wrappers\n");
+
+    hk.pfnPlaySample = OptSample;
+    hk.pfnInit = OptInit;
+    hk.pfnOpen = OptOpen;
+    hk.pUser = NULL;
+
+    g_nOptSample = 0;
+    g_nOptSampleArg = 0;
+    g_nOptInitCalls = 0;
+    OptionsScreen_RebuildWithSound(&hk);
+    CheckEqI32(g_nOptSample, 7, "rebuild plays sample 7");
+    CheckEqI32(g_nOptSampleArg, 4, "Sound_Play takes a second argument, 4");
+    CheckEqI32(g_nOptInitCalls, 1, "and rebuilds the screen once");
+
+    g_nOptSample = 0;
+    g_nOptMode = -1;
+    g_nOptInitCalls = 0;
+    OptionsScreen_OpenWithSound(999, -1, &hk);
+    CheckEqI32(g_nOptSample, 7, "open plays sample 7");
+    CheckEqI32(g_nOptSampleArg, 4, "with the same second argument");
+    CheckEqI32(g_nOptMode, -1, "the mode reaches OptionsScreen_Open");
+    CheckEqI32(g_nOptInitCalls, 1, "the open runs once");
+
+    /* 0x6DD08 keeps R1 and never reads R0, so the first argument cannot matter. */
+    g_nOptMode = -1;
+    OptionsScreen_OpenWithSound(0, 5, &hk);
+    CheckEqI32(g_nOptMode, 5, "the first argument is dropped");
+
+    OptionsScreen_RebuildWithSound(NULL);
+    OptionsScreen_OpenWithSound(0, 0, NULL);
+    Check(1, "NULL hooks are tolerated");
 }
 
 int main(void)
@@ -529,6 +589,7 @@ int main(void)
     TestResearchPaging();
     TestOptionsRadioClear();
     TestAtexitRegistration();
+    TestOptionsSoundWrappers();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
