@@ -2034,6 +2034,28 @@ port reproduces that and the test asserts `0x123400` becomes `0x123402`.
 Covered by `tests/test_save.c` (`TestAllocFlobjs`, 24 checks).
 
 
+### The flobjs chunk body (done)
+
+`Save_WriteFlobjs @ 0x42f48` and `Save_ReadFlobjs @ 0x43258` are recreated in `game/pufo_save.{h,c}`.
+17 bytes per item: the object **index**, nIndex(2), nAmmo(1), bUnk7(1), bUnk8(1), the next item's
+pool index(4), the linked soldier's `nSaveId`(4).
+
+**Both links are stored as indices with 0x7FFF as the null sentinel.** The next-item link stores
+`pNext->nRefId`, which is the pool index `Save_AssignRosterIndices @ 0x42ea0` gave that item, and
+the reader resolves it back through the same array. The soldier link stores `nSaveId`, which is the
+roster index, and the reader indexes `apSoldiers` with it directly.
+
+**The object index comes from a linear search, and a miss is saved as an out-of-range index.** The
+loop at 0x42FB0..0x42FE4 leaves the index equal to `nObjectCount` when nothing matches, and the
+original writes that and lets the reader dereference `apObjects[that]`. The port refuses instead.
+
+**A load reads the count twice.** `Save_AllocFlobjs` allocates the records and `Save_ReadFlobjs`
+fills them, and both call `FindChunk` and read the count through the same 1-or-4 width gate. The
+writer always stores 4 bytes.
+
+Covered by `tests/test_save.c` (`TestFlobjsChunk`, 20 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

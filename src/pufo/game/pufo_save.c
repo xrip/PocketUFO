@@ -1182,3 +1182,135 @@ bool Save_AllocFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
     }
     return true;
 }
+
+bool Save_WriteFlobjs(DatFile *pDat, const TactItem *const *apTactItems, i32 nTactItemCount,
+                      const ObjectRecFull *const *apObjects, i32 nObjectCount)
+{
+    if (pDat == NULL) {
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_FLOBJS)) { /* 0x42F58 */
+        return false;
+    }
+    if (!W(pDat, &nTactItemCount, 4)) { /* 0x42F74: the writer is always 4 bytes wide */
+        return false;
+    }
+
+    for (i32 i = 0; i < nTactItemCount; ++i) {
+        const TactItem *pItem = (apTactItems != NULL) ? apTactItems[i] : NULL;
+        i32 nObjIndex = 0;
+        i32 nLink;
+        i32 nSaveId;
+
+        if (pItem == NULL) {
+            return false;
+        }
+
+        /* 0x42FB0..0x42FE4: a linear search for pObj. A miss leaves the index equal to
+         * nObjectCount, and the original writes that out-of-range index and lets the
+         * reader dereference it. The port refuses instead. */
+        for (i32 o = 0; o < nObjectCount; ++o) {
+            if (apObjects != NULL && apObjects[o] == pItem->pObj) {
+                break;
+            }
+            nObjIndex = o + 1;
+        }
+        if (nObjIndex >= nObjectCount) {
+            return false;
+        }
+
+        if (!W(pDat, &nObjIndex, 4))        { return false; } /* 0x42FF4 */
+        if (!W(pDat, &pItem->nIndex, 2))    { return false; } /* 0x4300C */
+        if (!W(pDat, &pItem->nAmmo, 1))     { return false; } /* 0x43020 */
+        if (!W(pDat, &pItem->bUnk7, 1))     { return false; } /* 0x43034 */
+        if (!W(pDat, &pItem->bUnk8, 1))     { return false; } /* 0x43048 */
+
+        /* 0x43058..0x43070: the NEXT item's pool index, which is what nRefId holds after
+         * Save_AssignRosterIndices @ 0x42ea0 has numbered the pool. */
+        nLink = (pItem->pNext != NULL) ? pItem->pNext->nRefId : 0x7FFF;
+        if (!W(pDat, &nLink, 4)) {
+            return false;
+        }
+        nSaveId = (pItem->pLinkedSoldier != NULL) ? pItem->pLinkedSoldier->nSaveId : 0x7FFF;
+        if (!W(pDat, &nSaveId, 4)) { /* 0x43080..0x43098 */
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
+                     TactItem *const *apTactItems,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount,
+                     Soldier *const *apSoldiers)
+{
+    if (pDat == NULL || pnTactItemCount == NULL) {
+        return false;
+    }
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_FLOBJS)) { /* 0x4326C */
+        return false;
+    }
+
+    /* 0x43274: the same 1-or-4 width gate as Save_AllocFlobjs. A load reads the count
+     * twice, once to allocate and once to fill. */
+    if (nWideCountFlag != 0) {
+        if (!DatFile_Read(pDat, pnTactItemCount, 4)) {
+            return false;
+        }
+    } else {
+        u8 bLow = 0;
+
+        if (!DatFile_Read(pDat, &bLow, 1)) {
+            return false;
+        }
+        *pnTactItemCount = (*pnTactItemCount & ~0xFF) | bLow;
+    }
+
+    for (i32 i = 0; i < *pnTactItemCount; ++i) {
+        TactItem *pItem = (apTactItems != NULL) ? apTactItems[i] : NULL;
+        i32 nObjIndex;
+        i32 nLink;
+
+        if (pItem == NULL) {
+            return false;
+        }
+        if (!DatFile_Read(pDat, &nObjIndex, 4)) { /* 0x432D4 */
+            return false;
+        }
+        if (nObjIndex < 0 || nObjIndex >= nObjectCount || apObjects == NULL ||
+            apObjects[nObjIndex] == NULL) {
+            return false;
+        }
+        pItem->pObj = apObjects[nObjIndex]; /* 0x432F0 */
+
+        if (!DatFile_Read(pDat, &pItem->nIndex, 2))  { return false; } /* 0x43300 */
+        if (!DatFile_Read(pDat, &pItem->nAmmo, 1))   { return false; } /* 0x43314 */
+        if (!DatFile_Read(pDat, &pItem->bUnk7, 1))   { return false; } /* 0x43328 */
+        if (!DatFile_Read(pDat, &pItem->bUnk8, 1))   { return false; } /* 0x4333C */
+
+        if (!DatFile_Read(pDat, &nLink, 4)) { /* 0x4334C */
+            return false;
+        }
+        if (nLink == 0x7FFF) {
+            pItem->pNext = NULL;
+        } else if (nLink >= 0 && nLink < *pnTactItemCount && apTactItems[nLink] != NULL) {
+            pItem->pNext = apTactItems[nLink];
+        } else {
+            return false;
+        }
+
+        if (!DatFile_Read(pDat, &nLink, 4)) { /* 0x4337C */
+            return false;
+        }
+        if (nLink == 0x7FFF) {
+            pItem->pLinkedSoldier = NULL;
+        } else if (nLink >= 0 && apSoldiers != NULL) {
+            /* The original indexes apSoldiers with no bound check; the port cannot know
+             * the roster size here, so it only rejects a negative index. */
+            pItem->pLinkedSoldier = apSoldiers[nLink];
+        } else {
+            return false;
+        }
+    }
+    return true;
+}

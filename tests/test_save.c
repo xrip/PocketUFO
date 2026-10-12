@@ -985,6 +985,82 @@ static void TestAllocFlobjs(void)
     Check(!Save_AllocFlobjs(&dat, 1, NULL, apItems), "NULL count refused");
 }
 
+static void TestFlobjsChunk(void)
+{
+    DatFile dat;
+    ObjectRecFull aObj[2];
+    const ObjectRecFull *apObjC[2];
+    ObjectRecFull *apObj[2];
+    Soldier aSol[2];
+    Soldier *apSol[2];
+    TactItem aItem[3];
+    const TactItem *apItemC[3];
+    TactItem *apItem[3];
+
+    printf("Save_WriteFlobjs / Save_ReadFlobjs\n");
+
+    memset(aObj, 0, sizeof(aObj));
+    memset(aSol, 0, sizeof(aSol));
+    memset(aItem, 0, sizeof(aItem));
+    for (i32 i = 0; i < 2; ++i) {
+        apObj[i] = &aObj[i];
+        apObjC[i] = &aObj[i];
+        apSol[i] = &aSol[i];
+        aSol[i].nSaveId = i; /* nSaveId IS the roster index; the reader indexes apSoldiers with it */
+    }
+    for (i32 i = 0; i < 3; ++i) {
+        apItem[i] = &aItem[i];
+        apItemC[i] = &aItem[i];
+        aItem[i].nRefId = i; /* what Save_AssignRosterIndices leaves behind */
+        aItem[i].nIndex = (u16)(7 + i);
+        aItem[i].nAmmo = (u8)(30 + i);
+        aItem[i].bUnk7 = (u8)i;
+        aItem[i].bUnk8 = (u8)(2 - i);
+    }
+    aItem[0].pObj = &aObj[0];
+    aItem[1].pObj = &aObj[1];
+    aItem[2].pObj = &aObj[0];
+    aItem[0].pNext = &aItem[1];
+    aItem[1].pNext = &aItem[2];
+    aItem[2].pNext = NULL;
+    aItem[0].pLinkedSoldier = &aSol[0];
+    aItem[1].pLinkedSoldier = NULL;
+    aItem[2].pLinkedSoldier = &aSol[1];
+
+    Check(OpenWrite("test_flobjs3.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteFlobjs(&dat, apItemC, 3, apObjC, 2), "  chunk written");
+    DatFile_Close(&dat);
+    /* 4-byte count + 3 * (4 + 2 + 1 + 1 + 1 + 4 + 4). */
+    CheckEqI32(FileSizeOf(L"test_flobjs3.tmp"), 46 + 4 + 3 * 17,
+               "17 bytes per item");
+
+    memset(aItem, 0xEE, sizeof(aItem));
+    Check(OpenRead("test_flobjs3.tmp", &dat), "  reopened");
+    {
+        i32 nCount = 0;
+        Check(Save_ReadFlobjs(&dat, 1, &nCount, apItem, apObj, 2, apSol), "  read");
+        CheckEqI32(nCount, 3, "the count round-trips");
+    }
+    DatFile_Close(&dat);
+
+    Check(aItem[0].pObj == &aObj[0], "the object index resolves back to the record");
+    Check(aItem[1].pObj == &aObj[1], "the second item gets its own object");
+    CheckEqI32(aItem[0].nIndex, 7, "nIndex round-trips");
+    CheckEqI32(aItem[2].nAmmo, 32, "nAmmo round-trips");
+    CheckEqI32(aItem[2].bUnk8, 0, "bUnk8 round-trips");
+    Check(aItem[0].pNext == &aItem[1], "the link is stored as the pool index");
+    Check(aItem[1].pNext == &aItem[2], "and resolves back through the same array");
+    Check(aItem[2].pNext == NULL, "0x7FFF becomes a NULL next pointer");
+    Check(aItem[0].pLinkedSoldier == &aSol[0], "the soldier link is nSaveId");
+    Check(aItem[1].pLinkedSoldier == NULL, "and 0x7FFF becomes a NULL soldier");
+    Check(aItem[2].pLinkedSoldier == &aSol[1], "the second soldier resolves by its own id");
+
+    aItem[1].pObj = NULL; /* an object the table does not hold */
+    Check(!Save_WriteFlobjs(&dat, apItemC, 3, apObjC, 2), "an unfound object is refused");
+    Check(!Save_WriteFlobjs(NULL, apItemC, 3, apObjC, 2), "NULL dat refused");
+    Check(!Save_ReadFlobjs(&dat, 1, NULL, apItem, apObj, 2, apSol), "NULL count refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1002,6 +1078,7 @@ int main(void)
     TestBasesChunk();
     TestShipsChunk();
     TestAllocFlobjs();
+    TestFlobjsChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

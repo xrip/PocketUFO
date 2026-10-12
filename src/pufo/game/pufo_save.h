@@ -421,4 +421,28 @@ bool Save_ReadShips(DatFile *pDat, Ship **apShips, i32 *pnShipCount, ShipCtorEnv
 bool Save_AllocFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
                       TactItem **apTactItems);
 
+/* Save_WriteFlobjs @ 0x42f48 and Save_ReadFlobjs @ 0x43258 -- the body of the flobjs
+ * chunk. 17 bytes per item: the object INDEX, nIndex(2), nAmmo(1), bUnk7(1), bUnk8(1),
+ * the next item's pool index(4), the linked soldier's nSaveId(4).
+ *
+ * The object index is found by a linear search over apObjects for the item's pObj.
+ * If nothing matches, the loop ends with the index equal to nObjectCount, so a NOT FOUND
+ * object is saved as an out-of-range index and the reader dereferences apObjects[that].
+ * Reproduced, with the port refusing instead of reading out of bounds.
+ *
+ * The two links are stored as INDICES with 0x7FFF as the null sentinel:
+ *   next:  pNext == NULL -> 0x7FFF, else pNext->nRefId. Save_AssignRosterIndices @ 0x42ea0
+ *          numbers nRefId 0,1,2,... over the same pool the reader indexes into.
+ *   soldier: pLinkedSoldier == NULL -> 0x7FFF, else pLinkedSoldier->nSaveId (Soldier + 0x3bc).
+ *
+ * The writer always stores the count as 4 bytes; the reader uses the same 1-or-4 width gate
+ * as Save_AllocFlobjs. Both readers FindChunk and read the count, so a load reads it twice:
+ * Save_AllocFlobjs allocates the records and Save_ReadFlobjs fills them. */
+bool Save_WriteFlobjs(DatFile *pDat, const TactItem *const *apTactItems, i32 nTactItemCount,
+                      const ObjectRecFull *const *apObjects, i32 nObjectCount);
+bool Save_ReadFlobjs(DatFile *pDat, i32 nWideCountFlag, i32 *pnTactItemCount,
+                     TactItem *const *apTactItems,
+                     ObjectRecFull *const *apObjects, i32 nObjectCount,
+                     Soldier *const *apSoldiers);
+
 #endif /* PUFO_SAVE_H */
