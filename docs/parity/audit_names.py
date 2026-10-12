@@ -20,6 +20,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from coverage import load_inventory, load_citations  # noqa: E402
 
 SRC = os.path.join("src", "pufo")
+RENAMES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "renames.tsv")
+
+
+def renames():
+    """Original name -> port name, for citations the port keeps under another name.
+
+    A flag that is never resolved is noise, and noise hides a real gap. Every line in
+    renames.tsv is a pair somebody checked in the source, so a flagged address whose
+    original name appears there is explained and drops out of the report.
+    """
+    out = {}
+    if not os.path.exists(RENAMES):
+        return out
+    for line in open(RENAMES, encoding="utf-8"):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("	")
+        if len(parts) >= 2:
+            out[parts[0].lower()] = (parts[1], parts[2] if len(parts) > 2 else "")
+    return out
 DEF_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_ \*]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 
 
@@ -43,14 +64,21 @@ def main():
     defined = definitions()
     cited = load_citations()
     inventory = load_inventory()
+    renamed = renames()
 
     flagged = []
+    explained = 0
     for addr, (orig_name, size, subsystem) in sorted(inventory.items()):
         if addr not in cited:
             continue
         if orig_name.lower() in defined:
             continue
+        if orig_name.lower() in renamed:
+            explained += 1
+            continue
         flagged.append((addr, orig_name, subsystem, size))
+
+    print(f"renames on record: {len(renamed)}  (they explain {explained} citations)")
 
     # Sorted by size: a flagged 4 KB citation distorts the report far more than a flagged
     # 100-byte one, and the big ones are worth checking by hand first.

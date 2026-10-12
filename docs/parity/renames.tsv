@@ -1,0 +1,94 @@
+# Original name -> port name, for citations the port keeps under a different name.
+#
+# audit_names.py flags every credited address whose original name is not defined in src/pufo.
+# Most flags are deliberate renames or merged families, and a flag that is never resolved is
+# noise that hides a real gap. Every line here is a pair someone checked in the source.
+#
+# Format: <original name>\t<port name>\t<why>
+Assets_LoadStartup	Boot_LoadStartup	same load order, renamed to the module's verb
+Map_LoadRmp	Rmp_Load	rmp module owns the loader
+Map_PickRmpSpawnForUnit	Rmp_PickSpawnForUnit	same module rename
+Map_FreeRmpNodes	Rmp_FreeNodes	same module rename
+Soldier_Generate	Unit_Generate	unit module owns soldier generation
+Map_ApplyTemplateToCells	MapTemplate_ApplyToCells	template module owns it
+UiPanelMsg_Draw	UiPanel_DrawText	"Msg" was IDA's name for the text rows
+Map_ComputeReachable	Path_ComputeReachable	path module owns the flood fill
+Ship_ctor	Ship_Ctor	case only
+InitInstance	App_InitInstance	app shell owns it
+App_QuitDisplay	App_QuitDisplay	kept
+GX_PresentFrame	Gx_Present	Win64 has no GAPI; the DIB presenter replaces it
+Blit_CopyRows_HiRes	Blit_CopyRows	one implementation, no hi-res split
+UiScrollList_TrackHold	UiPanel_TrackHoldRow	press-and-hold auto-repeat on the panel
+UiScrollList_ClickRow	UiPanel_ClickRow	panel owns row clicks
+SoftSurf_ctor	SoftSurf_ctor	kept
+SoftSurf_dtor	SoftSurf_dtor	kept
+SoftSurf_AllocPixels	SoftSurf_AllocPixels	kept
+PadImage_BlitDecimal	TactHud_BlitDecimal	hud owns the digit blit
+Inv_SetFilterAll	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter0	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter1	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter2	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter3	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter4	Ui_SetInvFilter	six radio handlers, one function
+Inv_SetFilter5	Ui_SetInvFilter	six radio handlers, one function
+UiBank_SelectRadio0	Ui_SelectRadio	four radio handlers, one function
+UiBank_SelectRadio1	Ui_SelectRadio	four radio handlers, one function
+UiBank_SelectRadio2	Ui_SelectRadio	four radio handlers, one function
+UiBank_SelectRadio3	Ui_SelectRadio	four radio handlers, one function
+Inv_ScrollUp	Ui_InvScrollUp	panel owns the scroll
+Inv_ScrollDown	Ui_InvScrollDown	panel owns the scroll
+SaveLoad_Slot0	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot1	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot2	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot3	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot4	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot5	SaveLoad_Slot	seven identical handlers, one function
+SaveLoad_Slot6	SaveLoad_Slot	seven identical handlers, one function
+Base_GetItemQtyA	Base_GetItemQty	pair merged, one implementation
+Base_GetItemQtyB	Base_GetItemQty	pair merged, one implementation
+Geoscape_SetPanelFlagA	Geoscape_SetPanelFlag	pair merged
+Geoscape_SetPanelFlagB	Geoscape_SetPanelFlag	pair merged
+BaseGrid_GetByte0x654	BaseGrid_GetTypeByte	the grid byte is a type byte; the port takes the globals as parameters
+BaseGrid_SetByteAtFound	BaseGrid_SetTypeByte	same pair
+Font_Free	PufoFont_Free	kept as the module's own free
+TactHud_UseSpecialItem20	TactHud_UseSpecialItem	the special action pad (widget 40)
+SoftSurf_BlitIndexed_Inner	Blit_Indexed	indexed blit, one implementation for both inner forms
+SoftSurf_BlitIndexedKeyed_Inner	Blit_Indexed	merged with the plain indexed form
+SoftSurf_FillRect_Inner	SoftSurf_FillRectEx	fills w x h with one palette entry
+SoftSurf_BlitFlip_Inner	Blit_FlipBlend	IDA's name is misleading; it is a flip plus blend
+SoftSurf_Blit_Inner	Blit_Blend	constant-alpha blend over a 16bpp surface
+SoftSurf_BlitGlyph_Inner	Font_BlitGlyph	the RLE glyph rasteriser lives in the font module
+TactAction_ConfirmSpecial9	Ui_ConfirmSpecial9	action mode 9 confirm
+TactAction_ConfirmFireBurst	Ui_ConfirmFireBurst	fire-burst confirm
+Inv_OpenScreen	TactHud_OpenInventory	the inventory button (widget 4)
+Tact_OpenLeftHandMenu	Ui_OpenHandMenu	two 280-byte bodies, one function; the caller passes the hand
+Tact_OpenRightHandMenu	Ui_OpenHandMenu	two 280-byte bodies, one function; the caller passes the hand
+Tact_RemoveUnitFromSideLists	SideLists_RemoveUnit	search XCom first, then enemy, compact downward
+Options_SyncUiFromMap_GotoScreen12	Menu_SyncOptionPads	the options button re-derives every pad byte from the option block
+TactAction_ConfirmUseItem	Ui_ConfirmUseItem	action mode 3 confirm
+StartTimers_BySpeed	Timer_StartBySpeed	the speed switch has no default arm
+Tact_EnqueueActionOrStatus205	TactState_EnqueueAction18	enqueue an action-18 command
+Tact_SelectPrevUnitFiltered	Roster_SelectPrevFiltered	roster module owns filtered selection
+Tact_SelectNextUnitFiltered	Roster_SelectNextFiltered	roster module owns filtered selection
+SoldierScreen_AppendNameGlyph	SoldierName_AppendGlyphAt	soldiername module owns the glyph grid
+GameAssets_Shutdown	Asset_CloseArchives	asset module owns the archives
+Ui_SwapStringSlots	UiPanel_SwapLines	swaps two rows' text pointers and lengths
+UiPanel_InsertLine	UiLineList_Insert	the 3401-byte line list is its own type
+UiPanel_GetLineFlag	UiLineList_GetFlag	same list
+UiPanel_GetLineColor	UiLineList_GetColor	same list
+UiPanel_RemoveLine	UiLineList_Remove	same list
+UiPanel_AppendLineWithSound	UiLineList_AppendWithSound	same list
+UiPanel_SetLineColors	UiLineList_SetColors	same list
+Tact_SelectPrevUnit	Roster_SelectPrev	roster module owns selection
+Tact_SelectNextUnit	Roster_SelectNext	roster module owns selection
+Tact_TryFireMode4	Ui_TryFireMode	three fire modes, one function with a mode argument
+Tact_TryFireMode10	Ui_TryFireMode	three fire modes, one function with a mode argument
+Tact_TryFireMode5	Ui_TryFireMode	three fire modes, one function with a mode argument
+Map_LoadMa1	MapTemplate_Load	template module owns the .ma1 reader
+MapView_FocusOnUnit	MapView_FocusOnCell	despite the name it centres on a cell, not a unit
+Tact_BeginMultiTarget	Ui_BeginMultiTarget	multi-target begin
+Tact_MarkAllSoldiersSeen	SideLists_MarkAllSoldiersSeen	roster module owns the seen sweep
+Tact_CycleNextUnit	Roster_CycleNext	roster module owns cycling
+WinMain	wWinMain	the Win64 entry point keeps the accelerator behaviour
+EnemyAi_bMultiTargetTypeMatch	EnemyAi_MultiTargetTypeMatch	multi-target type gate
+Smap_GetTileAtMode	Smap_GetOverlayAtMode	it reads the overlay layer, so the port names that

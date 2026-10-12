@@ -45,8 +45,20 @@ def credited():
     return rows
 
 
+def clause(line, start, end):
+    """The clause a citation sits in, and only that clause.
+
+    A denial belongs to the citation it is attached to. On a line that lists several
+    originals, "not ported" after one of them says nothing about the others, so the
+    search is bounded by the commas and semicolons around this citation.
+    """
+    left = max(line.rfind(",", 0, start), line.rfind(";", 0, start)) + 1
+    right = min(x for x in (line.find(",", end), line.find(";", end), len(line)) if x >= end)
+    return line[left:right].strip()
+
+
 def citations():
-    """addr -> list of (file, lineno, name, line text)."""
+    """addr -> list of (file, lineno, name, line text, clause text)."""
     hits = {}
     for path in sorted(SRC.rglob("*")):
         if path.suffix not in (".c", ".h"):
@@ -54,7 +66,8 @@ def citations():
         for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             for m in CITE_RE.finditer(line):
                 hits.setdefault(m.group(2).lower(), []).append(
-                    (path.relative_to(ROOT), n, m.group(1), line.strip()))
+                    (path.relative_to(ROOT), n, m.group(1), line.strip(),
+                     clause(line, m.start(), m.end())))
     return hits
 
 
@@ -76,8 +89,8 @@ def main():
     negated, undefined = [], []
     for addr, name in rows:
         for where in cites.get(addr.lower(), []):
-            f, n, cname, text = where
-            if NEGATE_RE.search(text):
+            f, n, cname, text, clausetext = where
+            if NEGATE_RE.search(clausetext):
                 negated.append((addr, name, f, n, text))
             elif cname not in defined:
                 undefined.append((addr, name, f, n, text))

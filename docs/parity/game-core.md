@@ -6018,3 +6018,30 @@ Checked and **left alone** as documented renames: `Assets_LoadStartup` → `Boot
 `Map_ComputeReachable` → `Path_ComputeReachable`, `Ship_ctor` → `Ship_Ctor`.
 
 Honest coverage now: **590 / 1103 functions (53.5%)**, **184,620 / 598,792 bytes (30.8%)**.
+
+## The rename ledger, and a tool fix it exposed
+
+`docs/parity/renames.tsv` now records every original name the port keeps under a different name —
+87 pairs, each checked in the source. `audit_names.py` consults it, so a flag is either an explained
+rename or a real gap instead of 200-odd lines nobody reads.
+
+**133 flags remain, worth 8,728 bytes (1.5% of the binary).** The largest is `Soldier_RemoveById
+@ 0x36b8c` (204 bytes): the port has `Unit_RemoveAt`, which is the compaction half, and has no
+equivalent of the search-by-id half. That one is a genuine partial and is deliberately left in the
+flag list rather than papered over with a rename entry.
+
+`audit_credits.py` had a bug the ledger work exposed: it searched the whole line for a denial, so on
+`Tact_SelectNextUnit @ 0x17304, Tact_SelectUnit (0x2c6c4, not ported)` it flagged the first function
+too. Denials now bind to the clause around the citation they modify, bounded by commas and
+semicolons. NEGATED citations after the fix: **0**.
+
+Renames added this pass, all verified against a definition in `src/pufo`: `Map_LoadMa1` ->
+`MapTemplate_Load`, `MapView_FocusOnUnit` -> `MapView_FocusOnCell`, `Tact_CycleNextUnit` ->
+`Roster_CycleNext`, `WinMain` -> `wWinMain`, `EnemyAi_bMultiTargetTypeMatch` ->
+`EnemyAi_MultiTargetTypeMatch`, `Smap_GetTileAtMode` -> `Smap_GetOverlayAtMode`, the six
+`UiPanel_*Line*` functions -> `UiLineList_*`, `Tact_TryFireMode4/10/5` -> `Ui_TryFireMode`,
+`Tact_OpenLeftHandMenu`/`Tact_OpenRightHandMenu` -> `Ui_OpenHandMenu`,
+`Tact_RemoveUnitFromSideLists` -> `SideLists_RemoveUnit`, and the five render `*_Inner` blitters.
+
+`Tact_SelectUnit @ 0x2c6c4` (148 bytes) and `Tact_LoadLoftData @ 0x3bd6c` (184 bytes) were cited in
+module Evidence headers with no port behind them; both are now parenthesized.

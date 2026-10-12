@@ -89,7 +89,7 @@
  *   78..82 music vol 0xAD09A 83..87 sfx vol  0xAD13A
  *   88    forcenodrag 0xAD1DA
  *
- * `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` re-derives all 29 bytes from the
+ * `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4`, ported as Menu_SyncOptionPads, re-derives all 29 bytes from the
  * option block, which is why they live in one struct. */
 typedef struct MenuPads {
     u8 abSpeed[PUFO_MENU_STEPS];   /* 0xACE5A, stride 0x20 */

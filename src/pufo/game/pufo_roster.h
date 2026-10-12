@@ -1,7 +1,7 @@
 /* pufo_roster.h - the XCom unit roster and the unit-selection navigation.
  *
  * Evidence: Tact_CycleNextUnit @ 0x16684, Tact_SelectPrevUnit @ 0x17260,
- *           Tact_SelectNextUnit @ 0x17304, Tact_SelectUnit @ 0x2c6c4,
+ *           Tact_SelectNextUnit @ 0x17304, Tact_SelectUnit (0x2c6c4, not ported),
  *           MapView_FocusSelected @ 0x16710.
  *
  * ## Roster fields
@@ -79,7 +79,7 @@ i32 Roster_CycleNextIndex(UnitRoster *pRoster);
 i32 Roster_PrevSelectableIndex(const UnitRoster *pRoster);
 i32 Roster_NextSelectableIndex(const UnitRoster *pRoster);
 
-/* What the navigation functions need from the world. `Tact_SelectUnit` @ 0x2c6c4
+/* What the navigation functions need from the world. `Tact_SelectUnit` (0x2c6c4, not ported)
  * and `MapView_FocusSelected` @ 0x16710 are injected because both need the map,
  * the status line and the inventory list; `pfnPlaySample` stands in for
  * `Sound_Play` so the roster layer stays free of an audio dependency. */

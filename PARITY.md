@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 590 / 1103 (53.5%) |
-| Bytes of original code cited | 184620 / 598792 (30.8%) |
+| Functions cited as evidence | 588 / 1103 (53.3%) |
+| Bytes of original code cited | 184288 / 598792 (30.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
 | Test checks run | 5701 |
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 2 | 132 | 16 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 163 | 214 | 70292 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 24640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 89 | 205 | 27080 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -226,7 +226,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (163 functions)
+### `tact` (161 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -293,7 +293,6 @@ is the module that answers to it.
 | `0x549c8` | `MapCell_TestFlag` | 200 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
 | `0x163d4` | `MapView_EnterLookMode` | 192 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x33264` | `Tact_ScanVictoryTiles` | 184 | `src/pufo/game/pufo_tactctl.h` |
-| `0x3bd6c` | `Tact_LoadLoftData` | 184 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_los.c` (+1) |
 | `0x19708` | `Tact_SelectPrevUnitFiltered` | 176 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/game/pufo_roster.h` |
 | `0x17304` | `Tact_SelectNextUnit` | 164 | `src/pufo/game/pufo_roster.h` |
@@ -306,7 +305,6 @@ is the module that answers to it.
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x1c7dc` | `MapView_SetWallPalFromSlotA` | 148 | `src/pufo/game/pufo_isodraw.h` |
 | `0x1c870` | `MapView_SetWallPalFromSlotB` | 148 | `src/pufo/game/pufo_isodraw.h` |
-| `0x2c6c4` | `Tact_SelectUnit` | 148 | `src/pufo/game/pufo_roster.h`, `src/pufo/game/pufo_unit.h` |
 | `0x47164` | `Soldier_FindNextSmallByType` | 148 | `src/pufo/game/pufo_roster.h` |
 | `0x33bf0` | `Tact_MarkAllSoldiersSeen` | 144 | `src/pufo/game/pufo_roster.h` |
 | `0x4b928` | `EnemyAi_bMultiTargetTypeMatch` | 144 | `src/pufo/game/pufo_enemyai.h` |
@@ -906,7 +904,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 51 functions, 108052 bytes remaining
+### `tact` — 53 functions, 108384 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -959,6 +957,8 @@ whose port work they belong to.
 | `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x430cc` | `Soldiers_Reload` | 224 | not yet ported; scheduled with the `tact` subsystem work |
+| `0x3bd6c` | `Tact_LoadLoftData` | 184 | not yet ported; scheduled with the `tact` subsystem work |
+| `0x2c6c4` | `Tact_SelectUnit` | 148 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 

@@ -4,7 +4,7 @@
  *           Unit_ResetBattleState @ 0x498b0, Unit_bIsOperative @ 0x49eb8,
  *           Unit_bIsLarge @ 0x49ecc, Unit_PlaceOnMap @ 0x49a0c,
  *           Unit_FaceToward @ 0x49bf0, Soldier_RemoveById @ 0x36b8c,
- *           Tact_SelectUnit @ 0x2c6c4, Save_WriteSoldiers @ 0x42350.
+ *           Tact_SelectUnit (0x2c6c4, not ported), Save_WriteSoldiers @ 0x42350.
  *
  * Soldier is 1044 (0x414) bytes in the original (ILP32). It is NOT serialised
  * as a raw blob: Save_WriteSoldiers @ 0x42350 writes every field individually,

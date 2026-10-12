@@ -1,6 +1,6 @@
 /* pufo_los.c - voxel occupancy and line-of-sight tracing.
  *
- * Evidence: Tact_LoadLoftData @ 0x3bd6c, Map_TraceVoxelOccupancy @ 0x3242c,
+ * Evidence: Tact_LoadLoftData (0x3bd6c, the loader is not ported), Map_TraceVoxelOccupancy @ 0x3242c,
  *           Map_TraceLos @ 0x30890.
  */
 #include "game/pufo_los.h"
