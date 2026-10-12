@@ -793,10 +793,17 @@ static void TestHudDraw(void)
     UiControl aPad[PUFO_HUD_STATUS_PADS];
     PadImage aImg[PUFO_HUD_STATUS_PADS];
     SoftSurf surf;
-    static u8 aRecs[8 * PUFO_TEXT_REC_STRIDE];
+    /* PadImage_Blit reaches the glyph header through pData with no NULL guard, exactly as the
+     * original does, so the test must hand it a real one: u16 width, u16 height, then pixels. */
+    static u8 aGlyph[4 + 64];
+    static u8 aRecs[1112 * PUFO_TEXT_REC_STRIDE];
     static u8 aLabels[PUFO_HUD_MODAL_LABELS * PUFO_HUD_MODAL_LABEL_STRIDE];
     GfxColorEnv color;
     UiModalAnim anim;
+    TactHudActionGate gate;
+    TactHudBannerState banner;
+    UiPanel panelA;
+    UiPanel panelB;
     i32 nScratch;
     i32 i;
 
@@ -815,6 +822,8 @@ static void TestHudDraw(void)
     }
 
     memset(&color, 0, sizeof(color));
+    memset(&panelA, 0, sizeof(panelA));
+    memset(&panelB, 0, sizeof(panelB));
 
     for (i = 0; i < PUFO_HUD_STATUS_PADS; ++i) {
         memset(&aPad[i], 0, sizeof(aPad[i]));
@@ -863,11 +872,88 @@ static void TestHudDraw(void)
                                      &color, CountBlit, CountBlit, NULL), 9);
     TestEqI32("nine pads blitted", g_nPadBlits, 9);
 
+    /* PadImage_Blit needs a real glyph, and the pad init loop above wipes aImg, so this goes
+     * after it. */
+    aGlyph[0] = 8; aGlyph[1] = 0;
+    aGlyph[2] = 8; aGlyph[3] = 0;
+    aImg[0].uWidth = 8;
+    aImg[0].uHeight = 8;
+    aImg[0].pData = aGlyph;
+    aImg[0].nMode = 0;
+
+    /* TactHud_DrawActionButtons @ 0x21430: the per-button visibility rule. */
+    memset(&gate, 0, sizeof(gate));
+    gate.nActionMode = 0;
+    TestEqI32("mode 0: button 0 is record 396", TactHud_ActionButtonRecord(&gate, 0), 396);
+    TestEqI32("mode 0: button 1 is hidden", TactHud_ActionButtonRecord(&gate, 1), -1);
+    TestEqI32("mode 0: button 3 is hidden", TactHud_ActionButtonRecord(&gate, 3), -1);
+    TestEqI32("mode 0: button 4 is record 1110", TactHud_ActionButtonRecord(&gate, 4), 1110);
+    TestEqI32("mode 0: button 5 is record 398", TactHud_ActionButtonRecord(&gate, 5), 398);
+    TestEqI32("mode 0: button 6 is hidden", TactHud_ActionButtonRecord(&gate, 6), -1);
+    TestEqI32("mode 0: button 8 is record 401, written as 400|1",
+              TactHud_ActionButtonRecord(&gate, 8), 401);
+
+    gate.nActionMode = 3;
+    gate.nMultiTargetCount = 0;
+    TestEqI32("mode 3: button 1 is record 1111, not 1108",
+              TactHud_ActionButtonRecord(&gate, 1), 1111);
+    TestEqI32("mode 3 with no multi-target: button 2 is hidden",
+              TactHud_ActionButtonRecord(&gate, 2), -1);
+    TestEqI32("mode 3: button 3 is record 397, written as 396|1",
+              TactHud_ActionButtonRecord(&gate, 3), 397);
+    gate.nMultiTargetCount = 1;
+    TestEqI32("mode 3 with a multi-target: button 2 is record 1109",
+              TactHud_ActionButtonRecord(&gate, 2), 1109);
+
+    gate.nActionMode = 1;
+    TestEqI32("mode 1: button 1 is record 1108", TactHud_ActionButtonRecord(&gate, 1), 1108);
+
+    /* With mode 0 the visible set is 0, 4, 5, 7, 8. Their y is packed: 19 * (visible so far)
+     * + 87, so hiding button 1 moves everything later up by one step. */
+    memset(&gate, 0, sizeof(gate));
+    for (i = 0; i < PUFO_HUD_ACTION_PADS; ++i) {
+        aPad[i].y = (i16)(500 + i);
+    }
+    g_nPadBlits = 0;
+    TestEqI32("TactHud_DrawActionButtons still walks nine pads",
+              TactHud_DrawActionButtons(aPad, &gate, aRecs, &color, CountBlit, CountBlit, NULL), 9);
+    TestEqI32("only five of the nine are visible", g_nPadBlits, 5);
+    TestEqI32("hidden button 1 stays disabled", aPad[1].bEnabled, 0);
+    TestEqI32("hidden button 1 keeps its stored y", aPad[1].y, 501);
+    TestEqI32("visible button 0 lands at y 87", aPad[0].y, 87);
+    TestEqI32("visible button 4 lands at y 106", aPad[4].y, 106);
+    TestEqI32("visible button 8 lands at y 163", aPad[8].y, 163);
+
+    /* TactHud_DrawStatusBanner @ 0x1e920 is skipped whole while the fade counter is positive. */
+    memset(&banner, 0, sizeof(banner));
+    banner.nFadeCount = 3;
+    g_nPadBlits = 0;
+    TestEqI32("a positive fade count returns it unchanged",
+              TactHud_DrawStatusBanner(&aPad[0], NULL, &banner, "footer", "pad", NULL, NULL,
+                                       &color, CountBlit, CountBlit, NULL), 3);
+    TestEqI32("and nothing is blitted", g_nPadBlits, 0);
+
+    banner.nFadeCount = 0;
+    g_nPadBlits = 0;
+    TestEqI32("a non-positive fade count draws the banner",
+              TactHud_DrawStatusBanner(&aPad[0], &aImg[0], &banner, "footer", "pad", &panelA,
+                                       &panelB, &color, CountBlit, CountBlit, NULL), 1);
+    TestEqI32("the banner blits its one pad", g_nPadBlits, 1);
+
+    g_nPadBlits = 0;
+    TestEqI32("the confirm dialog draws", TactHud_DrawConfirmDialog(&aPad[0], &aImg[0], "pad",
+                                                                    "title", "left", "right",
+                                                                    &panelA, &panelB, &color,
+                                                                    CountBlit, CountBlit, NULL), 1);
+    TestEqI32("the dialog blits its one pad", g_nPadBlits, 1);
+
     g_pMainSurface = NULL;
 }
 
 int main(void)
 {
+    (void)setvbuf(stdout, NULL, _IONBF, 0);
+
     Reset();
     TestKneel();
     Reset();

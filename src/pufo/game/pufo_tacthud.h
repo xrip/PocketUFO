@@ -17,6 +17,7 @@
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"
 #include "ui/pufo_modal.h"
+#include "ui/pufo_panel.h"
 
 /* The texts.dat records the kneel action announces. Kneeling is the shot
  * accuracy bonus, so the message is about marksmanship, not about the pose:
@@ -234,5 +235,58 @@ i32 TactHud_DrawModalPanel(UiControl *pPads, const u8 *pLabelTable, i32 nModalMo
  * printed as a decimal. */
 i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxColorEnv *pColor,
                            UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* --- the nine tactical action buttons ---------------------------------------------
+ *
+ * TactHud_DrawActionButtons @ 0x21430. Bank widgets 89..97 (unk_AD1F0 = pBank + 2848,
+ * and 1424*2 = 2848), the same span Tact_Shutdown (0x3d568, not ported) walks as 89/9.
+ *
+ * Each button first has its bEnabled cleared, then a per-index rule decides whether it is
+ * shown at all. A shown button gets bEnabled = 1 and its y REWRITTEN to 19 * (count of
+ * buttons already drawn) + 87, so the visible buttons stack from y = 87 in 19-pixel steps
+ * regardless of which ones were hidden. The hidden ones keep their stored y and are simply
+ * not blitted. */
+#define PUFO_HUD_ACTION_PADS 9
+
+typedef struct TactHudActionGate {
+    u8  nActionMode;        /* Map.gap_2[1] @ 0x0002 */
+    i32 nMultiTargetCount;  /* Map.nMultiTargetCount */
+    u8  bDeployPanelOpen;   /* Map.gap_86272[16] @ 0x15110 */
+} TactHudActionGate;
+
+/* The text record for button nIdx, or -1 when the button is hidden. Records 397 and 401 appear
+ * in the ARM as `396 | 1` and `400 | 1`, which is the compiler sharing a constant, not an
+ * operation the code means to perform. */
+i32 TactHud_ActionButtonRecord(const TactHudActionGate *pGate, i32 nIdx);
+
+i32 TactHud_DrawActionButtons(UiControl *pPads, const TactHudActionGate *pGate,
+                              const u8 *pTextRecs, const GfxColorEnv *pColor,
+                              UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* TactHud_DrawConfirmDialog @ 0x1eb68 (screen 0x13) and TactHud_DrawStatusBanner @ 0x1e920
+ * (screen 0xD). Each owns one pad: bank widget 129 (unk_AD6F0 = pBank + 4128) and bank widget
+ * 128 (unk_AD6D0 = pBank + 4096). The banner is skipped entirely when the fade counter
+ * (apUiSlotsA[1]) is positive. */
+typedef struct TactHudBannerState {
+    i32 nFadeCount;        /* apUiSlotsA[1]: a positive value skips the whole banner */
+    i32 nReadyFlag;        /* anActionPhaseSave0[92]: non-zero draws the banner green */
+    char szBanner[16];     /* anActionPhaseSave0[28], the centred banner text */
+    char szTimer[16];      /* anActionPhaseSave0[58], drawn at (200, 260) */
+    i32 nTimerValue;       /* anActionPhaseSave0[58] as a number: 45 turns it red */
+} TactHudBannerState;
+
+i32 TactHud_DrawConfirmDialog(UiControl *pPad, const PadImage *pBackdrop,
+                              const char *szPadLabel, const char *szTitle,
+                              const char *szLeft, const char *szRight,
+                              UiPanel *pPanelA, UiPanel *pPanelB,
+                              const GfxColorEnv *pColor,
+                              UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
+                             const TactHudBannerState *pState, const char *szFooter,
+                             const char *szPadLabel,
+                             UiPanel *pPanelA, UiPanel *pPanelB,
+                             const GfxColorEnv *pColor,
+                             UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
 
 #endif /* PUFO_TACTHUD_H */

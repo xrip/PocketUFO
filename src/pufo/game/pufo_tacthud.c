@@ -628,3 +628,176 @@ i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxCol
     }
     return nResult;
 }
+
+/* TactHud_ActionButtonRecord @ 0x21430, the per-button visibility rule. */
+i32 TactHud_ActionButtonRecord(const TactHudActionGate *pGate, i32 nIdx)
+{
+    switch (nIdx) {
+        case 0:
+            return 396;
+        case 1:
+            if (pGate->nActionMode != 1 && pGate->nActionMode != 2
+                && pGate->nActionMode != 4 && pGate->nActionMode != 3) {
+                return -1;
+            }
+            return (pGate->nActionMode == 3) ? 1111 : 1108;
+        case 2:
+            if (pGate->nActionMode != 3 || pGate->nMultiTargetCount < 1) {
+                return -1;
+            }
+            return 1109;
+        case 3:
+            if (pGate->nActionMode == 0) {
+                return -1;
+            }
+            return 397;   /* written in the ARM as 396 | 1 */
+        case 4:
+            if (pGate->nActionMode != 0) {
+                return -1;
+            }
+            return 1110;
+        case 5:
+            if (pGate->bDeployPanelOpen != 0) {
+                return -1;
+            }
+            return 398;
+        case 6:
+            if (pGate->bDeployPanelOpen == 0) {
+                return -1;
+            }
+            return 399;
+        case 7:
+            return 400;
+        case 8:
+            return 401;   /* written in the ARM as 400 | 1 */
+        default:
+            return -1;
+    }
+}
+
+/* TactHud_DrawActionButtons @ 0x21430.
+ *
+ * Nine buttons, each first disabled and then re-enabled by its own rule. A visible button's y is
+ * rewritten to 19 * (visible count so far) + 87, so the stack is packed: hiding a middle button
+ * moves every later one up. The label is centred on the pad with a vertical offset of 1. */
+i32 TactHud_DrawActionButtons(UiControl *pPads, const TactHudActionGate *pGate,
+                              const u8 *pTextRecs, const GfxColorEnv *pColor,
+                              UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    char szLabel[PUFO_TEXT_REC_STRIDE];
+    i32 nIdx;
+    i32 nVisible = 0;
+    i32 nResult;
+
+    for (nIdx = 0; ; ++nIdx) {
+        i32 nRec;
+
+        pPads[nIdx].bEnabled = 0;
+
+        nRec = TactHud_ActionButtonRecord(pGate, nIdx);
+        if (nRec >= 0) {
+            pPads[nIdx].bEnabled = 1;
+            pPads[nIdx].y = (i16)(19 * nVisible + 87);
+
+            (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
+
+            Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+            CopyTextRecord(pTextRecs, nRec, szLabel);
+            DrawLabelOnPad(&pPads[nIdx], szLabel, 1);
+
+            ++nVisible;
+        }
+
+        nResult = nIdx + 1;
+        if (nResult >= PUFO_HUD_ACTION_PADS) {
+            break;
+        }
+    }
+    return nResult;
+}
+
+/* TactHud_DrawConfirmDialog @ 0x1eb68.
+ *
+ * A backdrop pad, one bank pad (widget 129) centred on its own label, a title centred at y = 10,
+ * two fixed side labels at (10, 30) and (170, 30), then two message panels. The side labels are
+ * green; the pad label is the usual cyan. */
+i32 TactHud_DrawConfirmDialog(UiControl *pPad, const PadImage *pBackdrop,
+                              const char *szPadLabel, const char *szTitle,
+                              const char *szLeft, const char *szRight,
+                              UiPanel *pPanelA, UiPanel *pPanelB,
+                              const GfxColorEnv *pColor,
+                              UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    i32 nWidth;
+
+    PadImage_Blit(pBackdrop);
+
+    (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
+
+    Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+    DrawLabelOnPad(pPad, szPadLabel, 1);
+
+    Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    nWidth = Text_MeasureWidth(szTitle);
+    Text_DrawString((240 - nWidth) / 2, 10, szTitle);
+
+    Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    Text_DrawString(10, 30, szLeft);
+
+    Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    Text_DrawString(170, 30, szRight);
+
+    UiPanel_DrawText(pPanelA);
+    UiPanel_DrawText(pPanelB);
+
+    return 1;
+}
+
+/* TactHud_DrawStatusBanner @ 0x1e920.
+ *
+ * Skipped whole when the fade counter is positive. The banner text is green when the ready flag
+ * is set and red otherwise; the timer text is the other way round, red only when its value is
+ * exactly 45. */
+i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
+                             const TactHudBannerState *pState, const char *szFooter,
+                             const char *szPadLabel,
+                             UiPanel *pPanelA, UiPanel *pPanelB,
+                             const GfxColorEnv *pColor,
+                             UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    i32 nWidth;
+
+    if (pState->nFadeCount > 0) {
+        return pState->nFadeCount;
+    }
+
+    PadImage_Blit(pBackdrop);
+
+    if (pState->nReadyFlag != 0) {
+        Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    } else {
+        Gfx_PackRgb565Pair(pColor, 255, 0, 0, 90, 0, 0);
+    }
+    nWidth = Text_MeasureWidth(pState->szBanner);
+    Text_DrawString(120 - nWidth / 2, 10, pState->szBanner);
+
+    UiPanel_DrawText(pPanelA);
+    UiPanel_DrawText(pPanelB);
+
+    Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    Text_DrawString(10, 260, szFooter);
+
+    if (pState->nTimerValue == 45) {
+        Gfx_PackRgb565Pair(pColor, 255, 0, 0, 90, 0, 0);
+    } else {
+        Gfx_PackRgb565Pair(pColor, 0, 255, 0, 0, 90, 0);
+    }
+    Text_DrawString(200, 260, pState->szTimer);
+
+    (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
+
+    Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+    DrawLabelOnPad(pPad, szPadLabel, 1);
+
+    return 1;
+}
