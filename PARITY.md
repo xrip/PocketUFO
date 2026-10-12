@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 636 / 1103 (57.7%) |
-| Bytes of original code cited | 206060 / 598792 (34.4%) |
+| Functions cited as evidence | 637 / 1103 (57.8%) |
+| Bytes of original code cited | 206272 / 598792 (34.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6115 |
+| Test checks run | 6127 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -41,7 +41,7 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
 | `tact` | 164 | 214 | 71432 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 45 | 52 | 30280 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 46 | 52 | 30492 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 104 | 205 | 33812 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
@@ -402,7 +402,7 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (45 functions)
+### `tact-ui` (46 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -435,6 +435,7 @@ is the module that answers to it.
 | `0x1557c` | `Input_OnAction` | 244 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
 | `0x116c0` | `Input_OnLeft` | 240 | `src/pufo/game/pufo_input.h` |
 | `0x162ec` | `Input_OnMenuEscape` | 228 | `src/pufo/game/pufo_input.h` |
+| `0x1b4b0` | `TactUnit_DrawHpGlyphs` | 212 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x1c6ac` | `TactUnit_DrawAnimGlyphs` | 168 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x1e888` | `TactHud_TickCursorDir` | 152 | `src/pufo/game/pufo_cursordir.h` |
 | `0x1c754` | `TactUnit_DrawFacingGlyph` | 136 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
@@ -995,7 +996,7 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 7 functions, 13484 bytes remaining
+### `tact-ui` — 6 functions, 13272 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1005,7 +1006,6 @@ whose port work they belong to.
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x1b4b0` | `TactUnit_DrawHpGlyphs` | 212 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
 ### `ui-core` — 17 functions, 23604 bytes remaining
 
@@ -1315,7 +1315,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 281 |
-| `test_isodraw` | PASS | 87 |
+| `test_isodraw` | PASS | 99 |
 | `test_los` | PASS | 31 |
 | `test_mapcell` | PASS | 112 |
 | `test_mapctx` | PASS | 83 |

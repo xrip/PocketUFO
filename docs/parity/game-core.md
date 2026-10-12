@@ -6415,7 +6415,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
 | `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
 | `TactUnit_DrawFacingGlyph @ 0x1c754` | 136 | **ported** |
-| `TactUnit_DrawHpGlyphs @ 0x1b4b0` | 212 | not ported: needs `TactItem` +0x28 named (a byte tested against 2) and the meaning of `ObjectRec.aItemQty[50]` |
+| `TactUnit_DrawHpGlyphs @ 0x1b4b0` | 212 | **ported** — the offset it reads is proven; its meaning is not (see below) |
 | `Map_IsoOffsetA/B @ 0x26f88 / 0x26fa8` | — | already ported in `pufo_mapcell.h` |
 | `MapView_DrawCellFloorGlyph`, `MapView_DrawCellOccupantGlyph`, `MapView_SetWallPalFromSlotA/B` | — | already ported in `pufo_isodraw.c` |
 | `Unit_bIsOperative @ 0x49eb8`, `StatusMsg_DrawStack @ 0x1afc4` | — | already ported |
@@ -6504,6 +6504,30 @@ easy to get wrong:
 
 A miss in the multi-target scan is not a miss: the loop keeps the index, so a cell that is not
 multi-targeted still gets a glyph, at index 8.
+
+### `TactUnit_DrawHpGlyphs`, and one offset whose meaning is still unknown
+
+Two glyphs, and the second one's source is easy to misread. The ARM is decisive:
+
+```
+LDR  R3, [R4]              ; pIso->pCell
+LDR  R3, [R3,#0x34]        ; pCell->pItemList      -- the HEAD, reloaded
+LDR  R3, [R3]              ; pItem->pObj
+LDRH R3, [R3,#0x9E]        ; ObjectRec + 0x9E
+```
+
+- Rule 1 walks the item list while the item's object has `bTwoHanded` (`ObjectRec + 0x28`) equal to 2.
+  Reaching any other value draws one glyph at the bullets base + 7. Running off the end of the list
+  skips that glyph — but rule 2 still runs.
+- Rule 2 reads the **head** item's object at `+0x9E`, which is `aItemQty[50]`, and if it is non-zero
+  draws one glyph at the floorob base + (value − 1). It is not the item the walk stopped at. The test
+  gives the head and the found item different values and asserts the wrong reading draws nothing.
+- Both glyphs draw at `(nDrawX, nObjParam + nDrawY)` with the cell palette, not at `nDrawY` alone.
+
+What is **not** known, stated rather than papered over: why column 50. `aItemQty` is a 52-entry u16
+array at `ObjectRec + 0x3a`, and the ships chunk writes it indexed by ship slot; no writer of column 50
+was found in the binary. The offset is proven from the ARM. Its meaning is an open question, and the port
+reproduces the offset without inventing a name for it.
 
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn

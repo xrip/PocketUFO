@@ -61,8 +61,10 @@ typedef struct IsoDrawCtx {
     Soldier *pUnit;       /* 0x58 */
     u8       bWallPalIdx; /* 0x64 */
     i32      nPal;        /* 0x6c */
+    i32      nHpGlyph;    /* 0x70 */
     i32      nMapY;       /* 0x138 */
     i32      nMapX;       /* 0x13C */
+    TactItem *pItemCursor;/* 0x134, the item-list walk cursor */
 } IsoDrawCtx;
 
 typedef struct IsoAnimGlobals {
@@ -204,5 +206,24 @@ void MapView_DrawCellSelectMarker(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
  * Unlike its sibling, this one DOES add the cursor base to B. */
 void MapView_DrawCellSelectMarkerHi(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
                                     const IsoSpriteBases *pBases);
+
+/* TactUnit_DrawHpGlyphs @ 0x1b4b0.
+ *
+ * Two glyphs, and the rules behind them are not obvious:
+ *
+ * 1. Walk the cell's item list from the head while the item's object has bTwoHanded == 2. If a item
+ *    with any other value is reached, draw one glyph at the bullets group base + 7. If the walk runs
+ *    off the end of the list, that glyph is not drawn - but rule 2 still runs.
+ * 2. Read the HEAD item's object at +0x9E, which is aItemQty[50]. If it is non-zero, draw one glyph at
+ *    floorob base + (value - 1). The head is used, not the item the walk stopped at; the ARM confirms
+ *    it reloads pCell->pItemList->pObj rather than the loop cursor.
+ *
+ * Both glyphs are drawn at (nDrawX, nObjParam + nDrawY) with the cell palette, not at nDrawY alone.
+ *
+ * What is NOT known: why column 50. The ships chunk writes aItemQty indexed by ship slot, and no writer
+ * of column 50 was found. The offset is proven from the ARM (LDRH R3, [R3,#0x9E]); its meaning is not.
+ *
+ * Like the original, this dereferences pObj without a check. */
+void TactUnit_DrawHpGlyphs(IsoDrawCtx *pIso, const IsoSpriteBases *pBases);
 
 #endif /* PUFO_ISODRAW_H */

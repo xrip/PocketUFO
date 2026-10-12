@@ -609,6 +609,96 @@ static void TestSelectMarkers(void)
     CheckEqI32(InkAt(5, 25), 0, "and no second glyph");
 }
 
+static void TestHpGlyphs(void)
+{
+    MapCell      cell;
+    ObjectRec    objHead;
+    ObjectRec    objNext;
+    TactItem     itemHead;
+    TactItem     itemNext;
+    IsoDrawCtx   iso;
+    IsoSpriteBases bases;
+
+    printf("TactUnit_DrawHpGlyphs @ 0x1b4b0\n");
+
+    memset(&bases, 0, sizeof(bases));
+    bases.nBulletsBase = 10;
+    bases.nFloorobBase = 20;
+
+    memset(&cell, 0, sizeof(cell));
+    memset(&objHead, 0, sizeof(objHead));
+    memset(&objNext, 0, sizeof(objNext));
+    memset(&itemHead, 0, sizeof(itemHead));
+    memset(&itemNext, 0, sizeof(itemNext));
+
+    itemHead.pObj = &objHead;
+    itemHead.pNext = &itemNext;
+    itemNext.pObj = &objNext;
+    itemNext.pNext = NULL;
+    cell.pItemList = &itemHead;
+
+    memset(&iso, 0, sizeof(iso));
+    iso.pCell = &cell;
+    iso.nDrawX = 5;
+    iso.nDrawY = 0;
+    iso.nObjParam = 0;
+    iso.nPal = 0;
+
+    /* Head is not two-handed-exclusive, so the bullets glyph is drawn immediately, and the count
+     * glyph follows at floorob base + (value - 1). */
+    objHead.bTwoHanded = 1;
+    objHead.aItemQty[50] = 3;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), 17, "bullets base + 7 drawn for a non two-handed-exclusive head");
+    Check(InkAt(5, 22) != 0, "count glyph at floorob base + (3 - 1)");
+    CheckEqI32(iso.nHpGlyph, 2, "nHpGlyph holds value - 1");
+
+    /* The walk skips leading two-handed-exclusive items, but the COUNT still comes from the head.
+     * The found item holds a different value, so a port that used the cursor would draw at 28. */
+    objHead.bTwoHanded = 2;
+    objHead.aItemQty[50] = 1;
+    objNext.bTwoHanded = 0;
+    objNext.aItemQty[50] = 9;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), 17, "the walk still draws the bullets glyph at the found item");
+    Check(InkAt(5, 20) != 0, "but the count comes from the HEAD item");
+    CheckEqI32(InkAt(5, 28), 0, "not from the item the walk stopped at");
+
+    /* Every item two-handed-exclusive: the walk runs off the end, the bullets glyph is skipped, and
+     * the count glyph is still drawn. */
+    objHead.bTwoHanded = 2;
+    objNext.bTwoHanded = 2;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), 20, "an exhausted walk skips the bullets glyph but not the count");
+
+    /* A count of zero draws nothing. */
+    objHead.bTwoHanded = 1;
+    objHead.aItemQty[50] = 0;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), 17, "the bullets glyph is drawn regardless of the count");
+    CheckEqI32(InkAt(5, 19), 0, "a count of zero draws no second glyph");
+    CheckEqI32(iso.nHpGlyph, 0, "nHpGlyph holds 0");
+
+    /* No items at all. */
+    cell.pItemList = NULL;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), -1, "an empty item list draws nothing");
+
+    /* Both glyphs land at nObjParam + nDrawY, not at nDrawY alone. */
+    cell.pItemList = &itemHead;
+    objHead.bTwoHanded = 1;
+    objHead.aItemQty[50] = 1;
+    iso.nObjParam = -6;
+    ClearSurface();
+    TactUnit_DrawHpGlyphs(&iso, &bases);
+    CheckEqI32(InkRow(5), 17 - 6, "the draw y is nObjParam + nDrawY");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -621,6 +711,7 @@ int main(void)
     TestFacingGlyph();
     TestResolve();
     TestSelectMarkers();
+    TestHpGlyphs();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

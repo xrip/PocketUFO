@@ -317,3 +317,40 @@ void MapView_DrawCellSelectMarkerHi(IsoDrawCtx *pIso, const IsoSelectGate *pGate
 
     DrawSelectGlyphPair(pIso, pBases, false);
 }
+
+/* TactUnit_DrawHpGlyphs @ 0x1b4b0. */
+void TactUnit_DrawHpGlyphs(IsoDrawCtx *pIso, const IsoSpriteBases *pBases)
+{
+    TactItem *pItem;
+    i32       nValue;
+
+    if (pIso->pCell->pItemList == NULL) {
+        return;
+    }
+
+    /* Walk past the leading items whose object is two-handed-exclusive. The cursor is kept in the
+     * context, as the original does. */
+    pItem = pIso->pItemCursor = pIso->pCell->pItemList;
+    while (pItem->pObj->bTwoHanded == 2) {
+        pItem = pItem->pNext;
+        pIso->pItemCursor = pItem;
+        if (pItem == NULL) {
+            break;
+        }
+    }
+
+    if (pItem != NULL) {
+        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nObjParam + pIso->nDrawY,
+                             (u16)((i32)pBases->nBulletsBase + 7), pIso->nPal);
+    }
+
+    /* The head item, reloaded - not the item the walk stopped at. */
+    nValue = (i32)pIso->pCell->pItemList->pObj->aItemQty[50];
+    pIso->nHpGlyph = nValue;
+
+    if (nValue != 0) {
+        pIso->nHpGlyph = nValue - 1;
+        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nObjParam + pIso->nDrawY,
+                             (u16)((i32)pBases->nFloorobBase + nValue - 1), pIso->nPal);
+    }
+}
