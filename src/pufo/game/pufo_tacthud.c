@@ -525,6 +525,16 @@ static void DrawLabelOnPad(const UiControl *pPad, const char *psz, i32 nVertOffs
                     (i32)pPad->y + nVertOffset, psz);
 }
 
+/* The same centring, but against a fixed width instead of the pad's own. TactHud_CopyStatusText
+ * @ 0x21688 and TactHud_DrawTopBar @ 0x20ef8 both do this, and both use 23. */
+static void DrawLabelOnPadFixed(const UiControl *pPad, const char *psz, i32 nFixedWidth,
+                                i32 nVertOffset)
+{
+    i32 nWidth = Text_MeasureWidth(psz);
+
+    Text_DrawString((i32)pPad->x + (nFixedWidth - nWidth) / 2, (i32)pPad->y + nVertOffset, psz);
+}
+
 /* Menu_DrawLabeledPads @ 0x217e0.
  *
  * The label records are a sparse map: index 5 reads record 402 and index 6 reads record 23,
@@ -618,8 +628,7 @@ i32 TactHud_CopyStatusText(UiControl *pPads, const char *pszStatus, const GfxCol
         (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
 
         sprintf(szNum, "%d", nIdx);   /* j_itoa (0x9e9f0, a 4-byte thunk to the CRT), base 10 */
-        nWidth = Text_MeasureWidth(szNum);
-        Text_DrawString((i32)pPads[nIdx].x + (23 - nWidth) / 2, (i32)pPads[nIdx].y + 4, szNum);
+        DrawLabelOnPadFixed(&pPads[nIdx], szNum, 23, 4);
 
         nResult = nIdx + 1;
         if (nResult >= PUFO_HUD_STATUS_PADS) {
@@ -924,4 +933,94 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
     (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
 
     return 1;
+}
+
+/* TactHud_DrawTopBar @ 0x20ef8.
+ *
+ * Four records centred on the screen, six records left-aligned at x 40, then 29 pad blits with
+ * decimal labels. See the header for the record indices and the widget spans.
+ *
+ * The original's single argument is typed IsoDrawCtx * because it reuses that structure's scratch
+ * text buffer and one scratch int. Nothing here reads an iso-draw field, so the port owns its own
+ * scratch instead.
+ *
+ * Deviation, recorded rather than hidden: the original copies each text record into that scratch
+ * buffer with a byte loop and no length check. The port uses PUFO_TEXT_REC_STRIDE, the full record
+ * size. */
+i32 TactHud_DrawTopBar(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv *pColor,
+                       UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    char szText[PUFO_TEXT_REC_STRIDE];
+    char szNum[16];
+    i32 nIdx;
+    i32 nResult;
+    i32 nWidth;
+
+    Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
+
+    CopyTextRecord(pTextRecs, 32, szText);
+    nWidth = Text_MeasureWidth(szText);
+    Text_DrawString((240 - nWidth) / 2, 0, szText);
+
+    /* Record 33 has no colour call of its own; it inherits the pair above. */
+    CopyTextRecord(pTextRecs, 33, szText);
+    nWidth = Text_MeasureWidth(szText);
+    Text_DrawString((240 - nWidth) / 2, 50, szText);
+
+    Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
+    CopyTextRecord(pTextRecs, 1031, szText);
+    nWidth = Text_MeasureWidth(szText);
+    Text_DrawString((240 - nWidth) / 2, 100, szText);
+
+    Gfx_PackRgb565Pair(pColor, 255, 255, 255, 10, 10, 10);
+    CopyTextRecord(pTextRecs, 1032, szText);
+    nWidth = Text_MeasureWidth(szText);
+    Text_DrawString((240 - nWidth) / 2, 150, szText);
+
+    /* These six are not measured: x is the constant 40. */
+    CopyTextRecord(pTextRecs, 1043, szText);
+    Text_DrawString(40, 200, szText);
+    for (nIdx = 0; nIdx < 5; ++nIdx) {
+        CopyTextRecord(pTextRecs, 391 + nIdx, szText);
+        Text_DrawString(40, 220 + 20 * nIdx, szText);
+    }
+
+    Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+
+    for (nIdx = 0; ; ++nIdx) {
+        (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
+
+        if (nIdx < 10) {
+            sprintf(szNum, "%d", nIdx % 5 + 1);
+            DrawLabelOnPadFixed(&pPads[nIdx], szNum, 23, 4);
+        }
+
+        nResult = nIdx + 1;
+        if (nResult >= PUFO_HUD_TOPBAR_PADS) {
+            break;
+        }
+    }
+
+    /* Two label-only loops. They label pads 18..22 and 23..27 of the same array and blit nothing. */
+    for (nIdx = 0; ; ++nIdx) {
+        sprintf(szNum, "%d", nIdx % 5 + 1);
+        DrawLabelOnPadFixed(&pPads[18 + nIdx], szNum, 23, 4);
+
+        nResult = nIdx + 1;
+        if (nResult >= 5) {
+            break;
+        }
+    }
+
+    for (nIdx = 0; ; ++nIdx) {
+        sprintf(szNum, "%d", nIdx % 5 + 1);
+        DrawLabelOnPadFixed(&pPads[23 + nIdx], szNum, 23, 4);
+
+        nResult = nIdx + 1;
+        if (nResult >= 5) {
+            break;
+        }
+    }
+
+    return nResult;
 }

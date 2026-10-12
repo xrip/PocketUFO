@@ -780,6 +780,42 @@ static void TestBlitDecimal(void)
  * x is not observable from a test. */
 
 static i32 g_nPadBlits;
+static u16 *g_pTestPix;
+
+/* A pixel of the test surface. The surface is 16bpp, so the stride is two bytes. */
+static i32 PixAt(i32 x, i32 y)
+{
+    return (i32)g_pTestPix[y * 240 + x];
+}
+
+/* Text_DrawString reaches glyphs through g_fontSys.apSprIndex, and Font_DrawGlyph returns
+ * immediately when that is NULL. Without a font no text position is observable, so the top-bar test
+ * installs a minimal one: every code point is the same one-pixel glyph, eight pixels wide.
+ *
+ * The glyph format is a command stream, not a bitmap: byte 0 is the start Y offset, byte 1 the start
+ * X offset, then commands until 0xFF. 0xFE starts a new row. */
+static u8 g_aFakeGlyph[4] = { 0, 0, 0x30, 0xFF };
+static u8 *g_apFakeSpr[256];
+
+static void InstallFakeFont(void)
+{
+    for (i32 i = 0; i < 256; ++i) {
+        g_apFakeSpr[i] = g_aFakeGlyph;
+        g_fontMetrics.aAdvance[i] = 8;
+    }
+    g_fontSys.apSprIndex = g_apFakeSpr;
+    g_fontSys.nSprIndexCount = 256;
+    g_fontSys.nGlyphBase = 0;
+
+    /* Font_DrawGlyph writes pPal[nRun] with nPal 0, so palette slot 0 needs a non-zero entry at the
+     * index the fake glyph uses. */
+    memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
+
+    /* Font_BlitGlyph refuses to draw unless the blit state's pixel mode is 1 or 2, and
+     * Blit_LoadSurface does not set that field - only Blit_SetTargetParams does. Nothing in this
+     * fixture calls the latter, so the mode has to be stated here. */
+    g_blitState.nPixelMode = 2;
+}
 
 static void CountBlit(const PadImage *pPad, void *pUser)
 {
@@ -790,8 +826,8 @@ static void CountBlit(const PadImage *pPad, void *pUser)
 
 static void TestHudDraw(void)
 {
-    UiControl aPad[PUFO_HUD_ROSTER_PADS];
-    PadImage aImg[PUFO_HUD_ROSTER_PADS];
+    UiControl aPad[PUFO_HUD_TOPBAR_PADS];
+    PadImage aImg[PUFO_HUD_TOPBAR_PADS];
     SoftSurf surf;
     /* PadImage_Blit reaches the glyph header through pData with no NULL guard, exactly as the
      * original does, so the test must hand it a real one: u16 width, u16 height, then pixels. */
@@ -834,7 +870,7 @@ static void TestHudDraw(void)
     memset(&panelA, 0, sizeof(panelA));
     memset(&panelB, 0, sizeof(panelB));
 
-    for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+    for (i = 0; i < PUFO_HUD_TOPBAR_PADS; ++i) {
         memset(&aPad[i], 0, sizeof(aPad[i]));
         memset(&aImg[i], 0, sizeof(aImg[i]));
         aPad[i].x = (i16)(10 + 20 * i);
@@ -1060,6 +1096,54 @@ static void TestHudDraw(void)
     (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, apXcom, 1, apEnemy, 1,
                                   CountBlit, CountBlit, NULL);
     TestEqI32("an unmarked unit leaves the mark alone", aImg[2].nOriginX, -1);
+
+    /* TactHud_DrawTopBar @ 0x20ef8.
+     *
+     * The pad spacing is re-done for this one: the earlier layout puts x at 10 + 20*i, which runs
+     * off the 240-pixel screen past pad 11, and this function labels pads up to 27. */
+    for (i = 0; i < PUFO_HUD_TOPBAR_PADS; ++i) {
+        aPad[i].x = (i16)(10 + 8 * i);
+        aPad[i].y = (i16)(30 + 10 * i);
+    }
+
+    InstallFakeFont();
+    memset(surf.pPixels, 0, (size_t)surf.nWidth * (size_t)surf.nHeight * 2u);
+    g_pTestPix = (u16 *)surf.pPixels;
+
+    memcpy(aRecs + 32 * PUFO_TEXT_REC_STRIDE, "AB", 3);
+    memcpy(aRecs + 1043 * PUFO_TEXT_REC_STRIDE,
+           "012345678901234567890123456789", 31); /* 30 chars, 240 pixels wide */
+    memcpy(aRecs + 391 * PUFO_TEXT_REC_STRIDE, "X", 2);
+    memcpy(aRecs + 395 * PUFO_TEXT_REC_STRIDE, "Y", 2);
+
+    g_nPadBlits = 0;
+    TestEqI32("TactHud_DrawTopBar returns the last label loop's count",
+              TactHud_DrawTopBar(aPad, aRecs, &color, CountBlit, CountBlit, NULL), 5);
+    TestEqI32("29 pads blitted", g_nPadBlits, 29);
+
+    /* Record 32 is "AB": 16 pixels wide, centred at (240 - 16) / 2 = 112. */
+    TestCheck("record 32 is centred on the screen", PixAt(112, 0) != 0);
+    TestCheck("its second glyph lands eight pixels later", PixAt(120, 0) != 0);
+
+    /* Record 1043 is 240 pixels wide. Drawn at the constant x 40 it starts at 40; if it were
+     * centred it would start at 0. This is the assertion that separates the two groups. */
+    TestCheck("record 1043 is drawn at the constant x 40", PixAt(40, 200) != 0);
+    TestCheck("and not centred, which would put it at x 0", PixAt(0, 200) == 0);
+
+    /* Records 391..395 follow at x 40 in steps of 20. */
+    TestCheck("record 391 lands at y 220", PixAt(40, 220) != 0);
+    TestCheck("record 395 lands at y 300", PixAt(40, 300) != 0);
+
+    /* Labels are (index % 5 + 1) centred on a fixed 23, so a one-digit label of width 8 lands at
+     * pad x + (23 - 8) / 2 = pad x + 7, at pad y + 4. Pad 0 is at (10, 30). */
+    TestCheck("pad 0 gets a label at 10 + 7", PixAt(17, 34) != 0);
+
+    /* Pad 10 is in the blit loop but past its label cutoff. */
+    TestCheck("pad 10 is blitted but never labelled", PixAt(210 + 7, 130 + 4) == 0);
+
+    /* Pads 18 and 27 are labelled only by the two later loops, which blit nothing. */
+    TestCheck("pad 18 is labelled by the second loop", PixAt(154 + 7, 210 + 4) != 0);
+    TestCheck("pad 27 is labelled by the third loop", PixAt(226 + 7, 300 + 4) != 0);
 
     g_pMainSurface = NULL;
 }

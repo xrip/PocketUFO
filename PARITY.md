@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 630 / 1103 (57.1%) |
-| Bytes of original code cited | 202948 / 598792 (33.9%) |
+| Functions cited as evidence | 631 / 1103 (57.2%) |
+| Bytes of original code cited | 204284 / 598792 (34.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6024 |
+| Test checks run | 6036 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -41,7 +41,7 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
 | `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 42 | 52 | 28640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 43 | 52 | 29976 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 104 | 205 | 33812 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
@@ -399,7 +399,7 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (42 functions)
+### `tact-ui` (43 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -407,6 +407,7 @@ is the module that answers to it.
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
 | `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
+| `0x20ef8` | `TactHud_DrawTopBar` | 1336 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/ui/pufo_uibank.h` |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -992,7 +993,7 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 10 functions, 15124 bytes remaining
+### `tact-ui` — 9 functions, 13788 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1001,7 +1002,6 @@ whose port work they belong to.
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | not yet ported; scheduled with the `tact-ui` subsystem work |
-| `0x20ef8` | `TactHud_DrawTopBar` | 1336 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1b4b0` | `TactUnit_DrawHpGlyphs` | 212 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1c6ac` | `TactUnit_DrawAnimGlyphs` | 168 | not yet ported; scheduled with the `tact-ui` subsystem work |
@@ -1335,7 +1335,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
 | `test_tactctl` | PASS | 146 |
-| `test_tacthud` | PASS | 160 |
+| `test_tacthud` | PASS | 172 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 423 |
 | `test_template` | PASS | 41 |

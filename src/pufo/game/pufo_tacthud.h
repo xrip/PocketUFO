@@ -201,6 +201,8 @@ i32 TactHud_BlitDecimal(PadImage *const *apPads, i32 x, i32 y, i32 nVal,
  *   TactHud_DrawModalPanel 1680*2 = 3360 -> unk_AD3F0, bank widgets 105..112, vertical +2
  *   TactHud_CopyStatusText  704*2 = 1408 -> unk_ACC50, bank widgets 44..52, centred on a
  *                                          fixed 23 rather than on the pad width
+ *   TactHud_DrawTopBar      960*2 = 1920 -> unk_ACE50, bank widgets 60..88, labels on 60..69,
+ *                                          78..82 and 83..87, also centred on a fixed 23
  *
  * Those three spans are the same groups Tact_Shutdown (0x3d568, not ported) walks (offsets 53/7,
  * 105/8 and 44/9), which is the cross-check that the arithmetic is right. */
@@ -329,5 +331,31 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
                             Soldier *const *apXcom, i32 nXcomCount,
                             Soldier *const *apEnemy, i32 nEnemyCount,
                             UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* TactHud_DrawTopBar @ 0x20ef8 draws 29 pads (bank widgets 60..88, unk_ACE50). */
+#define PUFO_HUD_TOPBAR_PADS 29
+
+/* TactHud_DrawTopBar @ 0x20ef8.
+ *
+ * Despite the name this is a fixed information layout, not a bar: four text records centred on the
+ * 240-pixel screen at y 0, 50, 100 and 150, then six records left-aligned at x 40 and y 200..300 in
+ * steps of 20, then 29 pad blits with decimal labels.
+ *
+ * The ten operands the decompiler shows as unk_B5270, unk_B533D, 0xE726B, 0xE7338, unk_E7C07 and
+ * unk_C71EB..unk_C751F are all entries of aTextRecs @ 0xB38D0 at stride 205. The gaps between them
+ * are exactly 205, and each address divided by 205 from the block base is a whole number:
+ *
+ *   unk_B5270  record 32    y 0    unk_B533D  record 33    y 50
+ *   0xE726B    record 1031  y 100  0xE7338    record 1032  y 150
+ *   unk_E7C07  record 1043  y 200  unk_C71EB..unk_C751F  records 391..395  y 220..300
+ *
+ * Only the four centred records are measured. The six at x 40 are drawn without Text_MeasureWidth,
+ * so their x is the constant 40 and not a centred position.
+ *
+ * Labels are the decimal value of (index % 5 + 1), so they read 1 2 3 4 5 1 2 3 4 5. The first loop
+ * labels only its first ten pads; the two later loops label pads 18..22 and 23..27 of the same
+ * array without blitting anything. Pads 10..17 and 28 never get a label. */
+i32 TactHud_DrawTopBar(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv *pColor,
+                       UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
 
 #endif /* PUFO_TACTHUD_H */
