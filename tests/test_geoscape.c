@@ -879,6 +879,91 @@ static void TestEmptyFacilityCells(void)
 #undef E_B
 }
 
+
+static void TestCapacityFamily(void)
+{
+    static u8 grid[700];
+
+    printf("Base capacity family\n");
+
+#define C_T(c, r) grid[480 + 6 * (c) + (r)]
+#define C_O(c, r) grid[6 * (c) + (r)]
+
+    /* Living quarters: 50 per free cell. */
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 1;
+    C_T(1, 1) = 1;
+    C_O(1, 1) = 4;
+    CheckEqI32(Base_CalcLivingQuartersCap(grid, 0), 50,
+               "one free living-quarters cell houses 50, the one under construction counts for nothing");
+
+    /* Stores: 300 per free cell. */
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 6;
+    C_T(2, 3) = 6;
+    CheckEqI32(Base_CalcStoresCapacity(grid, 0), 600,
+               "one stores cell is worth 300 units");
+
+    /* Alien containment: 10 per free cell. */
+    memset(grid, 0, sizeof(grid));
+    C_T(5, 5) = 7;
+    CheckEqI32(Base_CalcAlienContainmentCap(grid, 0), 10,
+               "one containment cell holds 10");
+
+    /* Hangar: one slot per free cell, no multiplier. */
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 11;
+    C_T(0, 1) = 11;
+    C_T(0, 2) = 11;
+    C_O(0, 2) = 9;
+    CheckEqI32(Base_CalcHangarCap(grid, 0), 2,
+               "a hangar cell is one craft slot, and an unfinished one is not a slot");
+
+    /* Base_HasResearchSlotFree and Base_HasWorkshopSlotFree compute the whole capacity and
+     * compare, so the boundary is the capacity itself. */
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 2;
+    C_T(1, 1) = 2;
+    CheckEqI32(Base_HasResearchSlotFree(grid, 0, 100), 1,
+               "two free lab cells cover a need of exactly 100");
+    CheckEqI32(Base_HasResearchSlotFree(grid, 0, 150), 0,
+               "and do not cover 150");
+    CheckEqI32(Base_HasResearchSlotFree(grid, 0, 0), 1,
+               "a need of zero is always covered");
+
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 3;
+    CheckEqI32(Base_HasWorkshopSlotFree(grid, 0, 50), 1, "one workshop cell covers 50");
+    CheckEqI32(Base_HasWorkshopSlotFree(grid, 0, 51), 0, "and not 51");
+
+    /* Base_CountBuiltFacilities is the only member that ignores build days. */
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 13;
+    C_T(0, 1) = 14;
+    C_T(0, 2) = 15;
+    C_T(0, 3) = 16;
+    CheckEqI32(Base_CountBuiltFacilities(grid, 0), 500 + 600 + 900 + 1500,
+               "kinds 13, 14, 15 and 16 are weighted 500, 600, 900 and 1500");
+
+    C_O(0, 0) = 7; /* under construction */
+    CheckEqI32(Base_CountBuiltFacilities(grid, 0), 500 + 600 + 900 + 1500,
+               "and unlike every other member it does not test build days");
+
+    memset(grid, 0, sizeof(grid));
+    C_T(0, 0) = 12;
+    C_T(0, 1) = 17;
+    CheckEqI32(Base_CountBuiltFacilities(grid, 0), 0, "kinds 12 and 17 are not counted");
+
+    /* A second base reads its own 144-byte type block. */
+    memset(grid, 0, sizeof(grid));
+    grid[480 + 144 * 1 + 6 * 0 + 0] = 6;
+    CheckEqI32(Base_CalcStoresCapacity(grid, 1), 300, "base 1 has its own stores cells");
+    CheckEqI32(Base_CalcStoresCapacity(grid, 0), 0, "and base 0 does not see them");
+
+#undef C_T
+#undef C_O
+}
+
 int main(void)
 {
     TestTickShips();
@@ -889,6 +974,7 @@ int main(void)
     TestBaseGridLookup();
     TestFacilityClassify();
     TestWorkshopCap();
+    TestCapacityFamily();
     TestFindFacilityCell();
     TestActiveManuf();
     TestWorkshopNeeded();

@@ -5895,3 +5895,22 @@ driven by a ten-row table `g_aCraftAmmoGroups` instead of ten copies of the same
 net effect of a group is that the craft ends up carrying one round per weapon it has, as far as the
 base can supply them. `Base_TransferTacticalLoot` (0x68344) is now the only step left under it.
 Covered by `TestStripCraftCargo`, 12 checks.
+
+### The rest of the base capacity family (done)
+
+`Base_CalcLivingQuartersCap @ 0x6579c`, `Base_CalcStoresCapacity @ 0x65720`,
+`Base_CalcAlienContainmentCap @ 0x65910` and `Base_CalcHangarCap @ 0x6611c` are one line each over
+the shared `FacilityScoreKind` walk: kind 1 at 50, kind 6 at 300, kind 7 at 10, kind 11 at 1. The
+weights are the capacities — a living-quarters cell houses 50 people, a stores cell holds 300 units,
+a containment cell holds 10 aliens, a hangar cell is one craft slot.
+
+`Base_HasResearchSlotFree @ 0x662bc` and `Base_HasWorkshopSlotFree @ 0x66340` are **not** searches
+for a free cell: they compute the whole capacity and return `nNeeded <= capacity`, so they are
+`Base_CalcLabCap` / `Base_CalcWorkshopCap` with a threshold compare bolted on.
+
+`Base_CountBuiltFacilities @ 0x682c8` is the only member that **ignores build days** — kinds 13, 14,
+15 and 16 are weighted 500, 600, 900 and 1500 whether or not they are finished. The shared walk
+grew a `bRequireFree` flag for it rather than copying the loop a fifth time. Whatever this measures,
+it is not a capacity.
+
+Covered by `TestCapacityFamily`, 14 checks.

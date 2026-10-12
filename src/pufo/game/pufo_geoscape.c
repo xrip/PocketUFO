@@ -316,7 +316,8 @@ store:
  * BaseFacBlock, size 144, as tileA, tileB, layer2 and facType, each a 36-byte
  * BaseFacLayer6. So the grid this port calls occupancy is the original's buildDays, and
  * "equals zero" means the cell is not under construction rather than that it is unowned. */
-static i32 FacilityScoreFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 nWeight)
+static i32 FacilityScoreKind(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 nWeight,
+                             bool bRequireFree)
 {
     const u8 *pType;
     const u8 *pBuild;
@@ -335,7 +336,8 @@ static i32 FacilityScoreFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind,
         for (nCol = 0; nCol < 6; ++nCol) {
             /* The originals test the kind, then the build days, then add a weight. Only the
              * weight differs between the capacity passes and the site-score pass. */
-            if (pType[6 * nCol + nRow] == nKind && pBuild[6 * nCol + nRow] == 0) {
+            if (pType[6 * nCol + nRow] == nKind &&
+                (!bRequireFree || pBuild[6 * nCol + nRow] == 0)) {
                 nTotal += nWeight;
             }
         }
@@ -346,13 +348,13 @@ static i32 FacilityScoreFree(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind,
 /* Base_CalcWorkshopCap @ 0x65894. Counts free workshop cells and returns count * 50. */
 i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex)
 {
-    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 3, 50); /* 0x6590C */
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 3, 50, true); /* 0x6590C */
 }
 
 /* Base_CalcLabCap @ 0x65818. The same count over free lab cells. */
 i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
 {
-    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 2, 50); /* 0x65890 */
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 2, 50, true); /* 0x65890 */
 }
 
 /* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
@@ -366,7 +368,7 @@ i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex)
  * match every other function in this family. */
 i32 Base_FindFacilityCell(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
 {
-    return FacilityScoreFree(abFacilityGrid, nBaseIndex, nKind, 1) != 0 ? 1 : 0;
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, nKind, 1, true) != 0 ? 1 : 0;
 }
 
 /* Base_CountEmptyFacilityCells @ 0x6aee0. The same walk with weights of 2 and 3 instead of
@@ -376,8 +378,55 @@ i32 Base_FindFacilityCell(const u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind)
  * base has left rather than what it can produce. */
 i32 Base_CountEmptyFacilityCells(const u8 *abFacilityGrid, i32 nBaseIndex)
 {
-    return FacilityScoreFree(abFacilityGrid, nBaseIndex, 4, 2) +
-           FacilityScoreFree(abFacilityGrid, nBaseIndex, 5, 3); /* 0x6AF18..0x6AF9C */
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 4, 2, true) +
+           FacilityScoreKind(abFacilityGrid, nBaseIndex, 5, 3, true); /* 0x6AF18..0x6AF9C */
+}
+
+/* Base_CalcLivingQuartersCap @ 0x6579c. Kind 1, 50 per free cell. */
+i32 Base_CalcLivingQuartersCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 1, 50, true); /* 0x657F8 */
+}
+
+/* Base_CalcStoresCapacity @ 0x65720. Kind 6, 300 per free cell. */
+i32 Base_CalcStoresCapacity(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 6, 300, true); /* 0x6577C */
+}
+
+/* Base_CalcAlienContainmentCap @ 0x65910. Kind 7, 10 per free cell. */
+i32 Base_CalcAlienContainmentCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 7, 10, true); /* 0x6596C */
+}
+
+/* Base_CalcHangarCap @ 0x6611c. Kind 11, one hangar slot per free cell. */
+i32 Base_CalcHangarCap(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 11, 1, true); /* 0x66178 */
+}
+
+/* Base_HasResearchSlotFree @ 0x662bc. Computes the whole lab capacity and returns
+ * nNeeded <= capacity. It is Base_CalcLabCap with a threshold compare, not a search. */
+bool Base_HasResearchSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNeeded)
+{
+    return nNeeded <= Base_CalcLabCap(abFacilityGrid, nBaseIndex); /* 0x6633C */
+}
+
+/* Base_HasWorkshopSlotFree @ 0x66340. The same over workshop cells. */
+bool Base_HasWorkshopSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNeeded)
+{
+    return nNeeded <= Base_CalcWorkshopCap(abFacilityGrid, nBaseIndex); /* 0x663C0 */
+}
+
+/* Base_CountBuiltFacilities @ 0x682c8. The only member of the family that does not test build
+ * days: kinds 13..16 are weighted 500, 600, 900 and 1500 whether or not they are finished. */
+i32 Base_CountBuiltFacilities(const u8 *abFacilityGrid, i32 nBaseIndex)
+{
+    return FacilityScoreKind(abFacilityGrid, nBaseIndex, 13, 500, false) +
+           FacilityScoreKind(abFacilityGrid, nBaseIndex, 14, 600, false) +
+           FacilityScoreKind(abFacilityGrid, nBaseIndex, 15, 900, false) +
+           FacilityScoreKind(abFacilityGrid, nBaseIndex, 16, 1500, false); /* 0x68308..0x68328 */
 }
 
 static i32 QuantitySumColumn(const u16 *apColumn, i32 nEntries)

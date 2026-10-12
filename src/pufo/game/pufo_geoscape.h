@@ -178,6 +178,35 @@ i32 Base_CalcWorkshopCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * port keeps two names over one implementation. */
 i32 Base_CalcLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
 
+/* The rest of the capacity family. Every one is the same 6 by 6 walk over
+ * fac[nBaseIndex].facType and buildDays[nBaseIndex]; only the cell kind and the weight
+ * differ. A cell counts when its kind matches AND its build days are zero.
+ *
+ *   Base_CalcLivingQuartersCap     @ 0x6579c  kind 1,  +50 each
+ *   Base_CalcStoresCapacity        @ 0x65720  kind 6,  +300 each
+ *   Base_CalcAlienContainmentCap   @ 0x65910  kind 7,  +10 each
+ *   Base_CalcHangarCap             @ 0x6611c  kind 11, +1 each
+ *
+ * The weights are the capacities themselves: one living-quarters cell houses 50 people, one
+ * stores cell holds 300 units, one containment cell holds 10 aliens, and a hangar cell is
+ * simply one craft slot. */
+i32 Base_CalcLivingQuartersCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+i32 Base_CalcStoresCapacity(const u8 *abFacilityGrid, i32 nBaseIndex);
+i32 Base_CalcAlienContainmentCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+i32 Base_CalcHangarCap(const u8 *abFacilityGrid, i32 nBaseIndex);
+
+/* Base_HasResearchSlotFree @ 0x662bc and Base_HasWorkshopSlotFree @ 0x66340. Both compute the
+ * whole capacity and then return `nNeeded <= capacity`, so they are the capacity passes with a
+ * threshold compare bolted on -- not a search for a single free cell. */
+bool Base_HasResearchSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNeeded);
+bool Base_HasWorkshopSlotFree(const u8 *abFacilityGrid, i32 nBaseIndex, i32 nNeeded);
+
+/* Base_CountBuiltFacilities @ 0x682c8. The odd one out: it sums weights over cell kinds
+ * 13, 14, 15 and 16 with +500, +600, +900 and +1500, and it does NOT test build days, so a
+ * facility under construction counts the same as a finished one. Whatever this measures, it is
+ * not a capacity. */
+i32 Base_CountBuiltFacilities(const u8 *abFacilityGrid, i32 nBaseIndex);
+
 /* Base_FindFacilityCell @ 0x6ae54. Does this base have a free cell of facility kind nKind?
  * The same 6 by 6 walk as the two capacity passes, returning 1 at the first match. A free cell
  * means its buildDays byte is zero, that is nothing under construction there.
