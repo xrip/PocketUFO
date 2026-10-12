@@ -6406,8 +6406,8 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | callee | size | state |
 |---|---|---|
 | `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | **ported** — the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam |
-| `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | not ported |
-| `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | not ported |
+| `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | **ported** |
+| `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | not ported |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | not ported |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | not ported |
@@ -6488,3 +6488,23 @@ The rules it applies:
 - `nObjParam` is the ceiling sprite's signed `iCeilParam` at sprite + 0x24, or 0 with no ceiling sprite.
   `nPal` is 255 unless the cell's `bFlags29` bit 4 is set, in which case it is 0 for animation kind 4
   and the cell's `bUnk56` otherwise.
+
+### The two select markers, and the mode byte behind them
+
+Both markers pick a pair of glyph offsets from `Map.gap_2[1]` — the port's `UnitRoster.bActionLatch` —
+and draw them from the **cursor** sprite group (`fontSys + 0x02`). They differ in three ways that are
+easy to get wrong:
+
+- the gates differ. The low marker fires on `bFlags57[0]` bit 3 **or** `bFlags29` bit 6; the high marker
+  only on bit 3.
+- the second glyph is offset differently. The low marker draws B as an **absolute** index — its mode-3
+  value is already `multi-target slot + nGlyphBase + 49`. The high marker adds the cursor base to B.
+- the mode tables are not the same. Mode 2 uses `phase >> 1` in both, but mode 0 and 1 use `phase >> 2`
+  only in the high marker, and the low marker's mode 0/1 path is the occupant test.
+
+A miss in the multi-target scan is not a miss: the loop keeps the index, so a cell that is not
+multi-targeted still gets a glyph, at index 8.
+
+Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
+handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn
+with whatever glyph index the previously drawn cell left in the shared context. The port reproduces it.

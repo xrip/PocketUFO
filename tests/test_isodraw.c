@@ -10,6 +10,7 @@
 
 #include "game/pufo_font.h"
 #include "game/pufo_isodraw.h"
+#include "game/pufo_unit.h"
 #include "render/pufo_render.h"
 
 static int g_nFailures;
@@ -450,6 +451,164 @@ static void TestResolve(void)
     apGrid[0] = &aOrdinary;
 }
 
+static void TestSelectMarkers(void)
+{
+    MapCell       cell;
+    Soldier       unit;
+    IsoDrawCtx    iso;
+    IsoSelectGate gate;
+    IsoSpriteBases bases;
+
+    printf("select markers @ 0x1b280 / 0x1b584\n");
+
+    /* Cursor base 10 and glyph base 0 keep every index inside the 64-entry probe table, so the inked
+     * row reports the index directly. */
+    memset(&bases, 0, sizeof(bases));
+    bases.nCursorBase = 10;
+    bases.nGlyphBase = 0;
+
+    memset(&gate, 0, sizeof(gate));
+    gate.nMapLayers = 1;   /* layer 0 is the top layer */
+    gate.nAnimPhase = 0;
+
+    memset(&cell, 0, sizeof(cell));
+    memset(&unit, 0, sizeof(unit));
+    unit.bStatus = 0;      /* occupies and is operative */
+    cell.pUnit = &unit;
+    cell.bFlags57[0] = 8;  /* the flagged bit both markers need */
+
+    memset(&iso, 0, sizeof(iso));
+    iso.pCell = &cell;
+    iso.nDrawX = 5;
+    iso.nDrawY = 0;
+    iso.nLayer = 0;
+
+    /* The queue gate. */
+    gate.bQueueActive = 1;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), -1, "a busy tactical queue suppresses the low marker");
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), -1, "and the high one");
+    gate.bQueueActive = 0;
+
+    /* The gates differ: the low marker also fires on bFlags29 bit 6, the high one does not. */
+    cell.bFlags57[0] = 0;
+    cell.bFlags29 = 0x40;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    Check(InkRow(5) != -1, "bFlags29 bit 6 alone draws the low marker");
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), -1, "but not the high marker");
+    cell.bFlags57[0] = 8;
+    cell.bFlags29 = 0;
+
+    /* Mode 0 on the top layer, occupant target: A = phase >> 2. */
+    gate.nActionLatch = 0;
+    gate.nAnimPhase = 8;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 10 + 2, "mode 0 with an occupant target gives A = phase >> 2");
+
+    /* No occupant gives A = 0. */
+    cell.pUnit = NULL;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 10, "no occupant gives A = 0");
+    cell.pUnit = &unit;
+
+    /* Not the top layer, and no bFlags29 bit 6: A = 2 regardless of the mode. */
+    iso.nLayer = 0;
+    gate.nMapLayers = 2;
+    gate.nActionLatch = 4;
+    gate.nAnimPhase = 8;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 12, "a lower layer gives A = 2");
+    gate.nMapLayers = 1;
+
+    /* Mode 2 uses phase >> 1, not phase >> 2. */
+    gate.nActionLatch = 2;
+    gate.nAnimPhase = 4;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 10 + 9, "mode 2 gives A = (phase >> 1) + 7");
+
+    cell.pUnit = NULL;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 16, "mode 2 without an occupant target gives A = 6");
+    cell.pUnit = &unit;
+
+    /* Mode 3 with bFlags29 bit 6: A = 7, and B is the multi-target slot plus the glyph base plus 49.
+     * That B is absolute - it is drawn without adding the cursor base. */
+    cell.bFlags29 = 0x40;
+    gate.apMultiTargets[2] = &cell;
+    gate.nActionLatch = 3;
+    gate.nAnimPhase = 8;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 17, "mode 3 with bit 6 gives A = 7");
+    Check(InkAt(5, 51) != 0, "B is the multi-target slot plus 49, drawn as an absolute index");
+    CheckEqI32(InkAt(5, 61), 0, "and is not offset by the cursor base");
+
+    /* A cell that is not in the list still gets a glyph, at index 8. */
+    gate.apMultiTargets[2] = NULL;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    Check(InkAt(5, 57) != 0, "a miss still draws, at slot 8");
+    cell.bFlags29 = 0;
+
+    /* Mode 5 or above leaves A at whatever the previous cell stored. Reproduced, not tidied. */
+    gate.nActionLatch = 5;
+    iso.nGlyphA = 33;
+    ClearSurface();
+    MapView_DrawCellSelectMarker(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 43, "an unhandled mode draws with the stale context value");
+    iso.nGlyphA = 0;
+
+    /* The high marker. */
+    gate.nActionLatch = 0;
+    gate.nAnimPhase = 8;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 15, "mode 0 gives A = (phase >> 2) + 3");
+    CheckEqI32(InkAt(5, 25), 0, "mode 0 draws no second glyph");
+
+    gate.nActionLatch = 1;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 15, "mode 1 keeps the same A");
+    Check(InkAt(5, 27) != 0, "mode 1 adds B = (phase >> 2) + 15, offset by the cursor base");
+
+    gate.nActionLatch = 2;
+    gate.nAnimPhase = 4;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 19, "mode 2 gives A = (phase >> 1) + 7");
+
+    gate.nActionLatch = 3;
+    gate.nAnimPhase = 8;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 15, "mode 3 keeps A = (phase >> 2) + 3");
+    Check(InkAt(5, 25) != 0, "mode 3 adds B = (phase >> 2) + 13");
+
+    gate.nActionLatch = 4;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    Check(InkAt(5, 23) != 0, "mode 4 adds B = (phase >> 2) + 11 instead");
+
+    gate.nMapLayers = 2;
+    gate.nActionLatch = 3;
+    ClearSurface();
+    MapView_DrawCellSelectMarkerHi(&iso, &gate, &bases);
+    CheckEqI32(InkRow(5), 15, "a lower layer gives A = 5");
+    CheckEqI32(InkAt(5, 25), 0, "and no second glyph");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -461,6 +620,7 @@ int main(void)
     TestAnimGlyphs();
     TestFacingGlyph();
     TestResolve();
+    TestSelectMarkers();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

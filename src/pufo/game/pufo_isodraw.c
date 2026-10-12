@@ -195,3 +195,125 @@ bool MapView_bResolveIsoCell(IsoDrawCtx *pIso, const IsoGrid *pGrid)
 
     return true;
 }
+
+/* MapView_bCellIsOccupantTarget: the predicate both select markers repeat verbatim. */
+bool MapView_bCellIsOccupantTarget(const MapCell *pCell)
+{
+    return MapCell_HasOccupant(pCell) &&
+           (((pCell->bFlags44 & 1u) != 0) || Unit_bIsOperative(pCell->pUnit));
+}
+
+/* The pair draw both markers end in. A is always relative to the cursor base. B is relative only for
+ * the high marker; the low marker's B is already an absolute index. */
+static void DrawSelectGlyphPair(IsoDrawCtx *pIso, const IsoSpriteBases *pBases, bool bAbsoluteB)
+{
+    i32 nB;
+
+    (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY,
+                         (u16)((i32)(u16)pIso->nGlyphA + (i32)pBases->nCursorBase), 0);
+
+    if (pIso->nGlyphB != 0) {
+        nB = bAbsoluteB ? pIso->nGlyphB
+                        : (i32)pBases->nCursorBase + (i32)(u16)pIso->nGlyphB;
+        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY, (u16)nB, 0);
+    }
+}
+
+/* MapView_DrawCellSelectMarker @ 0x1b280. */
+void MapView_DrawCellSelectMarker(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
+                                  const IsoSpriteBases *pBases)
+{
+    MapCell *pCell = pIso->pCell;
+    i32      nIdx;
+
+    if (pGate->bQueueActive != 0) {
+        return;
+    }
+    if (((pCell->bFlags57[0] & 8u) == 0) && ((pCell->bFlags29 & 0x40u) == 0)) {
+        return;
+    }
+
+    pIso->nGlyphB = 0;
+
+    if ((i32)pIso->nLayer == pGate->nMapLayers - 1 || (pCell->bFlags29 & 0x40u) != 0) {
+        if (pGate->nActionLatch > 1) {
+            switch (pGate->nActionLatch) {
+            case 2:
+                pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell)
+                                    ? (pGate->nAnimPhase >> 1) + 7
+                                    : 6;
+                DrawSelectGlyphPair(pIso, pBases, true);
+                return;
+
+            case 3:
+                if ((pCell->bFlags29 & 0x40u) != 0) {
+                    /* The original scans the eight apMultiTargets slots and keeps the index even on a
+                     * miss, so a cell that is not multi-targeted still gets a glyph, at index 8. */
+                    pIso->nGlyphA = 7;
+                    for (nIdx = 0; nIdx < PUFO_ISODRAW_MULTI_TARGET_SLOTS; ++nIdx) {
+                        if (pGate->apMultiTargets[nIdx] == pCell) {
+                            break;
+                        }
+                    }
+                    pIso->nGlyphB = nIdx + (i32)pBases->nGlyphBase + 49;
+                    DrawSelectGlyphPair(pIso, pBases, true);
+                    return;
+                }
+                break;
+
+            case 4:
+                break;
+
+            default:
+                /* Mode 5 or above: the original draws with whatever the previous cell left in the
+                 * context. Reproduced rather than tidied. */
+                DrawSelectGlyphPair(pIso, pBases, true);
+                return;
+            }
+        }
+
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (pGate->nAnimPhase >> 2) : 0;
+    } else {
+        pIso->nGlyphA = 2;
+    }
+
+    DrawSelectGlyphPair(pIso, pBases, true);
+}
+
+/* MapView_DrawCellSelectMarkerHi @ 0x1b584. */
+void MapView_DrawCellSelectMarkerHi(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
+                                    const IsoSpriteBases *pBases)
+{
+    MapCell *pCell = pIso->pCell;
+    i32      nPhase = pGate->nAnimPhase;
+
+    if (pGate->bQueueActive != 0) {
+        return;
+    }
+    if ((pCell->bFlags57[0] & 8u) == 0) {
+        return;
+    }
+
+    pIso->nGlyphB = 0;
+
+    if ((i32)pIso->nLayer != pGate->nMapLayers - 1) {
+        pIso->nGlyphA = 5;
+    } else if (pGate->nActionLatch == 1) {
+        pIso->nGlyphB = (nPhase >> 2) + 15;
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (nPhase >> 2) + 3 : 3;
+    } else if (pGate->nActionLatch == 2) {
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (nPhase >> 1) + 7 : 6;
+    } else if (pGate->nActionLatch == 3) {
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (nPhase >> 2) + 3 : 3;
+        pIso->nGlyphB = (nPhase >> 2) + 13;
+    } else if (pGate->nActionLatch == 4) {
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (nPhase >> 2) + 3 : 3;
+        pIso->nGlyphB = (nPhase >> 2) + 11;
+    } else if (pGate->nActionLatch != 0) {
+        /* Any other mode: A stays stale, B stays zero. */
+    } else {
+        pIso->nGlyphA = MapView_bCellIsOccupantTarget(pCell) ? (nPhase >> 2) + 3 : 3;
+    }
+
+    DrawSelectGlyphPair(pIso, pBases, false);
+}

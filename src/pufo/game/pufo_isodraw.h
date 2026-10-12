@@ -19,6 +19,8 @@
  *   nTileX       0x28
  *   nTileY       0x2C
  *   nLayer       0x38
+ *   nGlyphA      0x3C
+ *   nGlyphB      0x40
  *   nObjParam    0x54
  *   pUnit        0x58
  *   bWallPalIdx  0x64
@@ -53,6 +55,8 @@ typedef struct IsoDrawCtx {
     i32      nTileX;      /* 0x28 */
     i32      nTileY;      /* 0x2C */
     u8       nLayer;      /* 0x38 */
+    i32      nGlyphA;     /* 0x3C */
+    i32      nGlyphB;     /* 0x40 */
     i32      nObjParam;   /* 0x54 */
     Soldier *pUnit;       /* 0x58 */
     u8       bWallPalIdx; /* 0x64 */
@@ -82,11 +86,24 @@ typedef struct IsoAnimGlobals {
  *
  * Only the four these helpers read are modelled. */
 typedef struct IsoSpriteBases {
+    u16 nCursorBase;  /* fontSys + 0x02, the cursor group. Both select markers draw from it. */
     u16 nFloorobBase; /* fontSys + 0x22 */
     u16 nBulletsBase; /* fontSys + 0x2A */
     u16 nSmokeBase;   /* fontSys + 0x30 */
     u16 nExplBase;    /* fontSys + 0x32 */
+    u16 nGlyphBase;   /* fontSys + 0x28, the same base Text_DrawString adds a character to */
 } IsoSpriteBases;
+
+/* What the two select markers read out of the map and the tactical queue. */
+#define PUFO_ISODRAW_MULTI_TARGET_SLOTS 8 /* Map.apMultiTargets @ 0x15338+0x08, eight entries */
+
+typedef struct IsoSelectGate {
+    u8      bQueueActive;                        /* TactState.bQueueActive, IDA unk_157198 */
+    u8      nActionLatch;                        /* Map.gap_2[1], the port's UnitRoster.bActionLatch */
+    i32     nMapLayers;                          /* Map.nMapLayers */
+    i32     nAnimPhase;                          /* Map.nAnimPhase */
+    MapCell *apMultiTargets[PUFO_ISODRAW_MULTI_TARGET_SLOTS];
+} IsoSelectGate;
 
 /* MapView_DrawCellFloorGlyph @ 0x1c904. Draws the floor sprite at
  * (nDrawX, nDrawY - sprite gap_25) using the animation phase as the glyph index. */
@@ -155,5 +172,37 @@ typedef struct IsoGrid {
  * signed iCeilParam, or 0 with no ceiling sprite. nPal is 255 unless the cell's bFlags29 bit 4 is set,
  * in which case it is 0 when the animation kind is 4 and the cell's bUnk56 otherwise. */
 bool MapView_bResolveIsoCell(IsoDrawCtx *pIso, const IsoGrid *pGrid);
+
+/* MapView_bCellIsOccupantTarget, the predicate both select markers repeat verbatim:
+ * the cell has an occupant AND (its bFlags44 bit 0 is set OR that unit is operative). */
+bool MapView_bCellIsOccupantTarget(const MapCell *pCell);
+
+/* MapView_DrawCellSelectMarker @ 0x1b280.
+ *
+ * Drawn when the cell is flagged (bFlags57[0] bit 3) OR marked with bFlags29 bit 6, and only while
+ * the tactical queue is idle. The glyph pair is chosen by the action-latch mode:
+ *
+ *   not the top layer and no bFlags29 bit 6 -> A = 2
+ *   mode 2 -> A = (phase >> 1) + 7 when the cell is an occupant target, else 6
+ *   mode 3 with bFlags29 bit 6 -> A = 7, and B is the cell's slot in apMultiTargets plus the glyph
+ *     base plus 49. That B is an ABSOLUTE index: it is drawn without adding the cursor base.
+ *   mode 3 without the bit, mode 4, or mode 0/1 -> A = 0 when the cell is not an occupant target,
+ *     otherwise A = phase >> 2
+ *   any other mode -> A is left at whatever the previous cell stored in the context
+ *
+ * A is drawn at A + cursor base. B is drawn as itself. */
+void MapView_DrawCellSelectMarker(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
+                                  const IsoSpriteBases *pBases);
+
+/* MapView_DrawCellSelectMarkerHi @ 0x1b584.
+ *
+ * The same idea with a narrower gate - only bFlags57[0] bit 3, no bFlags29 bit 6 - and a different
+ * table. Not the top layer gives A = 5. On the top layer: mode 0 gives A = (phase >> 2) + 3 or 3 with
+ * no second glyph; mode 1 adds B = (phase >> 2) + 15; mode 2 gives A = (phase >> 1) + 7 or 6; mode 3
+ * gives B = (phase >> 2) + 13; mode 4 gives B = (phase >> 2) + 11; anything else leaves A stale.
+ *
+ * Unlike its sibling, this one DOES add the cursor base to B. */
+void MapView_DrawCellSelectMarkerHi(IsoDrawCtx *pIso, const IsoSelectGate *pGate,
+                                    const IsoSpriteBases *pBases);
 
 #endif /* PUFO_ISODRAW_H */
