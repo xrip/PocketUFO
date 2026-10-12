@@ -2210,3 +2210,89 @@ bool Save_ReadStrateg(DatFile *pDat, StrategSaveState *pSt, PtrArray *pList)
 
     return bFound;
 }
+
+/* SaveGame @ 0x44988. The whole slot file, in the original's order. */
+bool SaveGame(DatFile *pDat, const SaveGameInput *pIn)
+{
+    char pszPath[296];   /* the original's pszPath[292] plus the itoa scratch */
+    bool bOk;
+
+    if (pDat == NULL || pIn == NULL) {
+        return false;
+    }
+
+    /* 0x4499C: a frame is rendered before the file is opened, so the save lands on
+     * a settled screen rather than mid-update. */
+    if (pIn->pfnRenderFrame != NULL) {
+        pIn->pfnRenderFrame(pIn->pRenderUser);
+    }
+
+    if (!Save_BuildSlotPath(pszPath, sizeof(pszPath), pIn->pszAppDir, pIn->nSlot)) {
+        return false;
+    }
+    if (!DatFile_Open(pDat, pszPath, PUFO_DAT_CREATE, 100)) { /* 0x44A04 */
+        return false;
+    }
+
+    bOk = Save_WriteVersion(pDat);                     /* tactver, 0x44A10..0x44A28 */
+    if (bOk) { bOk = Save_WriteGameState(pDat, pIn->bTactFlag); }          /* 0x44A2C */
+    /* 0x44A30: the roster ids are assigned here, between gamestate and bases, so the
+     * flobjs links written later can be stored as indices. The original ignores the
+     * result, and this helper reports false when the tactical flag is clear, so its
+     * result must NOT gate the rest of the save. */
+    (void)Save_AssignRosterIndices(pIn->bTactFlag != 0, pIn->apSoldiers,
+                                   pIn->nSoldierCount, pIn->apTactItems,
+                                   pIn->nTactItemCount);
+    if (bOk) {
+        bOk = Save_WriteBases(pDat, pIn->pBases, pIn->apBases,          /* 0x44A34 */
+                              pIn->apObjects, pIn->nObjectCount);
+    }
+    if (bOk) { bOk = Save_WriteProduct(pDat, pIn->pProductBlock); }              /* 0x44A38 */
+    if (bOk) { bOk = Save_WriteResearch(pDat, pIn->pResearch); }                /* 0x44A3C */
+    if (bOk) {
+        bOk = Save_WriteShips(pDat, pIn->apShips, pIn->nShipCount,     /* 0x44A40 */
+                              pIn->apObjects, pIn->nObjectCount);
+    }
+    if (bOk) { bOk = Save_WriteSmap(pDat, pIn->pSmap); }                        /* 0x44A44 */
+    if (bOk) { bOk = Save_WriteStrateg(pDat, pIn->pStrateg, pIn->pStrategList); } /* 0x44A48 */
+    if (bOk) { bOk = Save_WriteTime(pDat, pIn->pTime); }                        /* 0x44A4C */
+    if (bOk) {
+        bOk = Save_WriteSoldiers(pDat, pIn->apSoldiers, pIn->nSoldierCount);    /* 0x44A50 */
+    }
+
+    if (pIn->bTactFlag != 0) {
+        /* 0x44A80: the mission counter is bumped HERE, and the value written is the
+         * incremented one. Saving a mission advances it. */
+        if (pIn->pnMissionCount != NULL) {
+            (*pIn->pnMissionCount)++;
+        }
+        if (bOk) { bOk = DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_MCNT); }        /* 0x44A88 */
+        if (bOk) { bOk = W(pDat, pIn->pnMissionCount, 1); }                     /* 0x44AA0 */
+        if (bOk) {
+            /* 0x44AA4: this one call writes tgamedata, teamunits, aliens, diedsolds,
+             * hiddensold, map and v124.dat. */
+            bOk = Save_WriteTGameData(pDat, pIn->pTact, pIn->pRosters, pIn->pFlobjs,
+                                      pIn->pMap, pIn->pfnLookup, pIn->pLookupUser);
+        }
+        if (bOk) {
+            bOk = Save_WriteObjBefore(pDat, pIn->apObjects, pIn->nObjectCount);  /* 0x44AAC */
+        }
+        /* 0x44AB8..0x44B78: the rmp chunk, written inline because no writer function
+         * for it exists anywhere else. */
+        if (bOk) { bOk = DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_RMP); }
+        if (bOk) { bOk = W(pDat, &pIn->pRmp->nModCount, 4); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->anModTileX, 0xF0u); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->anModTileY, 0xF0u); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->anModSizeX, 0xF0u); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->anModSizeY, 0xF0u); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->aszModName, 0x4B0u); }
+        if (bOk) { bOk = W(pDat, pIn->pRmp->anModLevel, 0xF0u); }
+        /* 0x44B80: only the tactical branch closes the screen. */
+        if (pIn->pnUiScreen != NULL) {
+            *pIn->pnUiScreen = 0;
+        }
+    }
+
+    DatFile_Close(pDat);   /* 0x44B88: closed even after a failed write */
+    return bOk;
+}

@@ -1914,6 +1914,302 @@ static void TestStrategChunk(void)
     remove("test_nost.tmp");
 }
 
+/* SaveGame @ 0x44988. */
+static int   g_nRenderCalls;
+static int   g_bFileExistedAtRender;
+static const char *g_pszRenderProbe;
+
+static void RenderFrameProbe(void *pUser)
+{
+    (void)pUser;
+    g_nRenderCalls++;
+    g_bFileExistedAtRender = DatFile_Exists(g_pszRenderProbe) ? 1 : 0;
+}
+
+/* Read the container directory straight out of the file, so the chunk ORDER can be
+ * checked and not only the presence of each chunk. Names are stored uppercased. */
+static bool TagEq(const char *a, const char *b)
+{
+    for (; *a && *b; ++a, ++b) {
+        char ca = *a, cb = *b;
+        if (ca >= 'a' && ca <= 'z') {
+            ca = (char)(ca - 'a' + 'A');
+        }
+        if (cb >= 'a' && cb <= 'z') {
+            cb = (char)(cb - 'a' + 'A');
+        }
+        if (ca != cb) {
+            return false;
+        }
+    }
+    return *a == 0 && *b == 0;
+}
+static i32 ReadDirTags(const wchar_t *pwPath, char aOut[40][14], u32 aSize[40])
+{
+    u8 hdr[4 + 21 * 100];
+    HANDLE hFile;
+    DWORD nRead = 0;
+    i32 n = 0;
+
+    hFile = CreateFileW(pwPath, GENERIC_READ, FILE_SHARE_READ, NULL,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    if (!ReadFile(hFile, hdr, (DWORD)sizeof(hdr), &nRead, NULL) ||
+        nRead != (DWORD)sizeof(hdr)) {
+        (void)CloseHandle(hFile);
+        return -1;
+    }
+    (void)CloseHandle(hFile);
+    for (i32 i = 0; i < 100; ++i) {
+        const u8 *p = hdr + 4 + 21 * i;
+
+        if (p[0] == 0) {
+            continue;
+        }
+        if (n >= 40) {
+            break;
+        }
+        memcpy(aOut[n], p, 13);
+        aOut[n][13] = 0;
+        memcpy(&aSize[n], p + 13, 4);
+        n++;
+    }
+    return n;
+}
+
+static void TestSaveGame(void)
+{
+    static u8 aProduct[16000];
+    static RmpData rmp;
+    static i32 nPtrA, nPtrB;
+    static SaveGameInput in;
+    static char aTags[40][14];
+    static u32 aSize[40];
+    DatFile dat;
+    SaveBasesState bases;
+    SaveResearchState research;
+    SaveSmapState smap;
+    StrategSaveState strateg;
+    SaveTimeRecord time;
+    Soldier aSol[1];
+    Soldier *apSol[1];
+    TactItem aItem[1];
+    TactItem *apItem[1];
+    ObjectRecFull aObj[1];
+    ObjectRecFull *apObj[1];
+    const BaseRec *apBases[1];
+    const Ship *apShips[1];
+    PtrArray list;
+    TactSaveState tact;
+    TeamUnitsState rosters;
+    FlobjsState flobjs;
+    MapGeom geom;
+    Soldier *apXcom[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apEnemy[PUFO_SAVE_ROSTER_MAX];
+    Soldier *apCiv[PUFO_SAVE_CIV_MAX];
+    Soldier *apHidden[PUFO_SAVE_ROSTER_MAX];
+    i32 nMissionCount;
+    u16 nUiScreen;
+    i32 nDir;
+    static const char *const aWantOrder[] = {
+        PUFO_SAVE_TAG_TACTVER, PUFO_SAVE_TAG_GAMESTATE, PUFO_SAVE_TAG_BASES,
+        PUFO_SAVE_TAG_PRODUCT, PUFO_SAVE_TAG_RESEARCH, PUFO_SAVE_TAG_SHIPS,
+        PUFO_SAVE_TAG_SMAP, PUFO_SAVE_TAG_STRATEG, PUFO_SAVE_TAG_TIME,
+        PUFO_SAVE_TAG_SOLDIERS, PUFO_SAVE_TAG_STACTFLG, PUFO_SAVE_TAG_124SCB,
+        PUFO_SAVE_TAG_MCNT, PUFO_SAVE_TAG_TGAMEDATA, PUFO_SAVE_TAG_TEAMUNITS,
+        PUFO_SAVE_TAG_ALIENS, PUFO_SAVE_TAG_DIEDSOLDS, PUFO_SAVE_TAG_HIDDENSOL,
+        PUFO_SAVE_TAG_FLOBJS, PUFO_SAVE_TAG_MAP, PUFO_SAVE_TAG_V124,
+        PUFO_SAVE_TAG_OBJBEFORE, PUFO_SAVE_TAG_RMP
+    };
+
+    printf("SaveGame\n");
+
+    memset(&bases, 0, sizeof(bases));
+    memset(&research, 0, sizeof(research));
+    memset(&smap, 0, sizeof(smap));
+    memset(&time, 0, sizeof(time));
+    memset(&tact, 0, sizeof(tact));
+    memset(&rosters, 0, sizeof(rosters));
+    memset(&rmp, 0, sizeof(rmp));
+    memset(aProduct, 0x5A, sizeof(aProduct));
+
+    bases.bBaseCount = 0;
+    nPtrA = 0x1111;
+    nPtrB = 0x2222;
+    memset(&strateg, 0, sizeof(strateg));
+    strateg.bSaveVersion = 3;
+    strateg.nStrategCount = 0;
+    strateg.pnUnk1865A8 = &nPtrA;
+    strateg.pnUnk186594 = &nPtrB;
+    memset(&list, 0, sizeof(list));
+
+    memset(aSol, 0, sizeof(aSol));
+    memset(aItem, 0, sizeof(aItem));
+    memset(aObj, 0, sizeof(aObj));
+    apSol[0] = &aSol[0];
+    apItem[0] = &aItem[0];
+    apObj[0] = &aObj[0];
+    aItem[0].pObj = &aObj[0];
+    apBases[0] = NULL;
+    apShips[0] = NULL;
+
+    memset(apXcom, 0, sizeof(apXcom));
+    memset(apEnemy, 0, sizeof(apEnemy));
+    memset(apCiv, 0, sizeof(apCiv));
+    memset(apHidden, 0, sizeof(apHidden));
+    rosters.nXcomCount = 1;
+    rosters.nEnemyCount = 0;
+    rosters.nCivilianCount = 0;
+    rosters.nHiddenCount = 0;
+    rosters.apXcomUnits = apXcom;
+    rosters.apEnemyUnits = apEnemy;
+    rosters.apCivilians = apCiv;
+    rosters.apHiddenUnits = apHidden;
+    rosters.pSelUnit = &aSol[0];
+    apXcom[0] = &aSol[0];
+
+    geom.nDimX = 1;
+    geom.nDimY = 1;
+
+    rmp.nModCount = 2;
+    rmp.anModTileX[0] = 3;
+    rmp.anModTileY[0] = 5;
+    rmp.anModSizeX[0] = 7;
+    rmp.anModSizeY[0] = 9;
+    rmp.anModLevel[0] = 11;
+    memcpy(rmp.aszModName[0], "mod_a", 6);
+    rmp.anModTileX[1] = 13;
+    rmp.anModLevel[1] = 17;
+    memcpy(rmp.aszModName[1], "mod_b", 6);
+
+    nMissionCount = 41;
+    nUiScreen = 7;
+
+    memset(&in, 0, sizeof(in));
+    in.pszAppDir = "";
+    in.nSlot = 5;
+    in.bTactFlag = 1;
+    in.pnMissionCount = &nMissionCount;
+    in.pnUiScreen = &nUiScreen;
+    in.pBases = &bases;
+    in.apBases = apBases;
+    in.pProductBlock = aProduct;
+    in.pResearch = &research;
+    in.apShips = apShips;
+    in.nShipCount = 0;
+    in.pSmap = &smap;
+    in.pStrateg = &strateg;
+    in.pStrategList = &list;
+    in.pTime = &time;
+    in.apSoldiers = apSol;
+    in.nSoldierCount = 1;
+    in.apTactItems = apItem;
+    in.nTactItemCount = 1;
+    in.apObjects = apObj;
+    in.nObjectCount = 1;
+    in.pTact = &tact;
+    in.pRosters = &rosters;
+    in.pFlobjs = &flobjs;
+    in.pMap = &geom;
+    in.pfnLookup = MapTestLookup;
+    in.pRmp = &rmp;
+    in.pfnRenderFrame = RenderFrameProbe;
+    memset(&flobjs, 0, sizeof(flobjs));
+    flobjs.apTactItems = (const TactItem *const *)apItem;
+    flobjs.nTactItemCount = 1;
+    flobjs.apObjects = (const ObjectRecFull *const *)apObj;
+    flobjs.nObjectCount = 1;
+
+    (void)DeleteFileW(L"sav5.sav");
+    g_nRenderCalls = 0;
+    g_bFileExistedAtRender = -1;
+    g_pszRenderProbe = "sav5.sav";
+
+    DatFile_ctor(&dat);   /* the original's handle is a zero-initialised global */
+    Check(SaveGame(&dat, &in), "tactical slot written");
+    CheckEqI32(g_nRenderCalls, 1, "  Render_Frame runs once");
+    CheckEqI32(g_bFileExistedAtRender, 0, "  and before the slot file exists");
+    Check(DatFile_Exists("sav5.sav"), "  sav5.sav was built from the dir and slot");
+
+    nDir = ReadDirTags(L"sav5.sav", aTags, aSize);
+    CheckEqI32(nDir, 23, "  twenty-three chunks in the tactical branch");
+    for (i32 i = 0; i < nDir && i < 23; ++i) {
+        char szMsg[80];
+        snprintf(szMsg, sizeof(szMsg), "  chunk %d is %s", i, aTags[i]);
+        Check(TagEq(aTags[i], aWantOrder[i]), szMsg);
+    }
+
+    CheckEqI32((i32)aSize[0], 2, "  tactver is two bytes");
+    CheckEqI32((i32)aSize[1], 1, "  gamestate is one byte");
+    CheckEqI32((i32)aSize[3], 16000, "  product is the whole 16000-byte block");
+    CheckEqI32((i32)aSize[7], PUFO_SAVE_STRATEG_HEADER_SIZE, "  strateg header only, no items");
+    CheckEqI32((i32)aSize[10], 1, "  stactflg follows soldiers");
+    CheckEqI32((i32)aSize[11], 4, "  and 1_24scb after it");
+    CheckEqI32((i32)aSize[12], 1, "  mcnt is one byte");
+    CheckEqI32((i32)aSize[22], 4 + 5 * 240 + 1200,
+               "  rmp is count plus five dword blocks plus the names");
+
+    CheckEqI32(nMissionCount, 42, "  the mission counter was incremented at save time");
+    CheckEqI32(nUiScreen, 0, "  nUiScreen is cleared only in the tactical branch");
+
+    Check(OpenRead("sav5.sav", &dat), "  reopened");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MCNT), "  mcnt found");
+    {
+        u8 bMcnt = 0;
+        Check(DatFile_Read(&dat, &bMcnt, 1), "  mcnt byte read");
+        CheckEqI32(bMcnt, 42, "  the value written is the INCREMENTED counter");
+    }
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_RMP), "  rmp found");
+    {
+        i32 nCount = 0;
+        i32 aBlock[60];
+        u8 aNames[1200];
+
+        Check(DatFile_Read(&dat, &nCount, 4), "  rmp count first");
+        CheckEqI32(nCount, 2, "  two modules");
+        Check(DatFile_Read(&dat, aBlock, 240), "  then tileX");
+        CheckEqI32(aBlock[0], 3, "  tileX[0]");
+        Check(DatFile_Read(&dat, aBlock, 240), "  then tileY");
+        CheckEqI32(aBlock[0], 5, "  tileY[0]");
+        Check(DatFile_Read(&dat, aBlock, 240), "  then sizeX");
+        CheckEqI32(aBlock[0], 7, "  sizeX[0]");
+        Check(DatFile_Read(&dat, aBlock, 240), "  then sizeY");
+        CheckEqI32(aBlock[0], 9, "  sizeY[0]");
+        memset(aNames, 0, sizeof(aNames));
+        Check(DatFile_Read(&dat, aNames, 1200), "  then the 1200-byte name block");
+        CheckEqStr((const char *)aNames, "mod_a", "  name[0]");
+        CheckEqStr((const char *)aNames + 20, "mod_b", "  name[1] at +20");
+        Check(DatFile_Read(&dat, aBlock, 240), "  and level LAST, after the names");
+        CheckEqI32(aBlock[0], 11, "  level[0]");
+    }
+    DatFile_Close(&dat);
+
+    /* The geoscape half: same driver, no tactical chunks, no side effects. */
+    in.nSlot = 6;
+    in.bTactFlag = 0;
+    nUiScreen = 7;
+    (void)DeleteFileW(L"sav6.sav");
+    DatFile_ctor(&dat);
+    Check(SaveGame(&dat, &in), "geoscape slot written");
+    Check(DatFile_Exists("sav6.sav"), "  sav6.sav");
+    nDir = ReadDirTags(L"sav6.sav", aTags, aSize);
+    CheckEqI32(nDir, 12, "  twelve chunks without the tactical branch");
+    Check(OpenRead("sav6.sav", &dat), "  reopened");
+    Check(!DatFile_FindChunk(&dat, PUFO_SAVE_TAG_MCNT), "  no mcnt");
+    Check(!DatFile_FindChunk(&dat, PUFO_SAVE_TAG_TGAMEDATA), "  no tgamedata");
+    Check(!DatFile_FindChunk(&dat, PUFO_SAVE_TAG_RMP), "  no rmp");
+    Check(DatFile_FindChunk(&dat, PUFO_SAVE_TAG_SOLDIERS), "  soldiers still there");
+    CheckEqI32(nMissionCount, 42, "  the counter is untouched by a geoscape save");
+    CheckEqI32(nUiScreen, 7, "  and so is nUiScreen");
+    CheckEqI32(g_nRenderCalls, 2, "  a frame is rendered for both kinds of save");
+    DatFile_Close(&dat);
+
+    (void)DeleteFileW(L"sav5.sav");
+    (void)DeleteFileW(L"sav6.sav");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1938,6 +2234,7 @@ int main(void)
     TestReadRmp();
     TestSlotList();
     TestStrategChunk();
+    TestSaveGame();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

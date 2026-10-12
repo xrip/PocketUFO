@@ -782,11 +782,9 @@ ILP32 original.
 
 ### Not yet recreated
 
-`SaveGame` @ 0x44988 and `LoadGame` @ 0x44bbc themselves � the port implements the
-container and the soldier chunks, but the full slot flow also needs `bases`,
-`product`, `research`, `ships`, `smap`, `strateg`, `time` and the four tactical
-chunks, which belong to subsystems that are not ported yet. `SaveSlot_FormatList`
-@ 0x45904 also remains.
+`LoadGame` @ 0x44bbc and `Save_ReadTGameData` @ 0x44248 � the port implements the
+container and the soldier chunks, but the full slot flow also needs everything else in the save subsystem is in place, including the container, every
+chunk writer, `SaveSlot_FormatList` @ 0x45904 and `SaveGame` @ 0x44988.
 
 ## Unit selection navigation (done)
 
@@ -5373,3 +5371,47 @@ A negative delta drives both below zero, and the u16 slot wraps as u16 while the
 total is a signed int. Both are reproduced. The slot index is `BaseRec.bSlot @ +0x05`
 widened as a char with no check; the port skips both adds when it falls outside the
 eight entries.
+
+## The save driver (done)
+
+Files: `src/pufo/game/pufo_save.{h,c}`. Evidence: `SaveGame` @ 0x44988.
+
+`SaveGame` is the only function that owns a slot file. It renders a frame, builds
+`<dir>sav<n>.sav`, opens the slot as a 100-entry container, writes the chunks, and
+closes. The full chunk order, measured from the port's own output and matching the
+original's call sequence:
+
+```
+tactver  gamestate  bases  product  research  ships  smap  strateg  time
+soldiers  stactflg  1_24scb                                  (always, 12 chunks)
+mcnt  tgamedata  teamunits  aliens  diedsolds  hiddensold
+flobjs  map  v124.dat  objbefore  rmp                        (tactical only, +11)
+```
+
+`stactflg` and `1_24scb` are part of the soldier write, and `flobjs` sits inside the
+tactical half between `hiddensold` and `map`. Neither is obvious from the call list.
+
+Four things in the driver are not in the chunk list at all:
+
+- `Save_AssignRosterIndices` runs **between** `gamestate` and `bases`, not at the end.
+  It is what gives every soldier its `nSaveId` and every tactical item its `nRefId`, so
+  the `flobjs` links written later can be stored as indices.
+- The mission counter `unk_138E8C` is **incremented at save time**, before `mcnt` is
+  written, and the value stored is the incremented one. Saving a mission advances it.
+- The `rmp` chunk has no writer function anywhere in the binary. Its seven writes are
+  inline in `SaveGame`: count as 4 bytes, then `anModTileX`, `anModTileY`, `anModSizeX`,
+  `anModSizeY` (240 each), the 1200-byte name block, and `anModLevel` last. 2404 bytes.
+  That is the order `Save_ReadRmp` reads them in, and it is not the order `Map_LoadRmp`
+  takes its arguments in.
+- `nUiScreen` is cleared **only** in the tactical branch. Saving from the geoscape
+  leaves the screen id alone.
+
+`Save_AssignRosterIndices` reports false whenever the tactical flag is clear, and the
+original ignores the result, so the driver deliberately discards it. Gating the save on
+it would make every geoscape save fail.
+
+Deviation: the original returns whatever `DatFile_Close` left in R0 and ignores every
+write failure. The port returns false as soon as a step fails, and still closes the
+file. The caller must run `DatFile_ctor` on the handle first; the original's handle is
+a zero-initialised global, and skipping this leaves `nBufCap` uninitialised, which
+makes the first chunk succeed and every later one fail.

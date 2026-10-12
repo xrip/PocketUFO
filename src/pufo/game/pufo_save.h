@@ -3,11 +3,10 @@
  * Evidence: Save_WriteSoldiers @ 0x42350, Save_ReadSoldiers @ 0x416bc,
  *           Save_WriteStrategVer @ 0x3f1c8, Save_ReadGameState @ 0x44958.
  *
- * NOT ported, and deliberately not cited here: the slot drivers SaveGame (0x44988),
- * LoadGame (0x44bbc) and the slot list formatter SaveSlot_FormatList (0x45904). This module
- * recreates the chunk writers and readers they call, not the drivers themselves. The whole
- * file is described below because the format is needed to read a save, but describing a
- * function is not the same as recreating it.
+ * NOT ported, and deliberately not cited here: the load driver LoadGame (0x44bbc).
+ * This module recreates the chunk writers and readers the drivers call, and now the
+ * save driver itself. The whole file is described below because the format is needed
+ * to read a save, but describing a function is not the same as recreating it.
  *
  * ## Container
  *
@@ -828,5 +827,79 @@ typedef struct StrategSaveState {
 
 bool Save_WriteStrateg(DatFile *pDat, const StrategSaveState *pSt, const PtrArray *pList);
 bool Save_ReadStrateg(DatFile *pDat, StrategSaveState *pSt, PtrArray *pList);
+
+/* ------------------------------------------------- the save driver
+ *
+ * Evidence: SaveGame @ 0x44988.
+ *
+ * One call writes a whole slot file. It renders a frame first, builds
+ * `<dir>sav<n>.sav`, opens the slot as a 100-entry container on the global handle
+ * unk_158220, writes the chunks in the order below, and closes.
+ *
+ *     tactver, gamestate, bases, product, research, ships, smap, strateg, time,
+ *     soldiers            (always)
+ *     mcnt, tgamedata, objbefore, rmp   (only when Map.bTactFlag is set)
+ *
+ * Three things here are not obvious from the chunk list:
+ *
+ *   - `Save_AssignRosterIndices` runs BETWEEN the gamestate chunk and the bases
+ *     chunk, not at the end. It is what gives every soldier its nSaveId and every
+ *     tactical item its nRefId, so the flobjs links written later are valid.
+ *   - The mission counter unk_138E8C is INCREMENTED at save time, before the mcnt
+ *     chunk is written. Saving a mission advances the counter; it does not record
+ *     a counter someone else set.
+ *   - The rmp chunk has no writer function. Its seven writes are inline here:
+ *     count as 4 bytes, then tileX, tileY, sizeX, sizeY (240 each), the 1200-byte
+ *     name block, and level LAST. That is the same order Save_ReadRmp reads them
+ *     in, and the same order Map_LoadRmp does NOT take its arguments in.
+ *
+ * nUiScreen is cleared only in the tactical branch, so saving from the geoscape
+ * leaves the screen id alone while saving from a mission closes the screen.
+ *
+ * Deviation: the original returns whatever DatFile_Close left in R0, and ignores
+ * every write failure. The port returns false as soon as a step fails, and it
+ * still closes the file, because a half-written slot is worse than a failed one.
+ * `Save_AssignRosterIndices` is the one call whose result is deliberately ignored,
+ * because it reports false whenever the tactical flag is clear and the original
+ * carries on regardless. The caller must have run DatFile_ctor on pDat first; the
+ * original's handle is a zero-initialised global. */
+typedef struct SaveGameInput {
+    const char *pszAppDir;        /* MEMORY[0x1883B0] */
+    i32         nSlot;            /* 0..6 in practice, unbounded in the original */
+    u8          bTactFlag;        /* Map.bTactFlag @ 0x1139B8 */
+    i32        *pnMissionCount;   /* unk_138E8C, incremented in the tactical branch */
+    u16        *pnUiScreen;       /* Map.nUiScreen, cleared in the tactical branch */
+
+    const SaveBasesState     *pBases;
+    const BaseRec *const     *apBases;
+    const u8                 *pProductBlock;
+    const SaveResearchState  *pResearch;
+    const Ship *const        *apShips;
+    i32                       nShipCount;
+    const SaveSmapState      *pSmap;
+    const StrategSaveState   *pStrateg;
+    const PtrArray           *pStrategList;
+    const SaveTimeRecord     *pTime;
+
+    Soldier **apSoldiers;         /* non-const: AssignRosterIndices writes nSaveId */
+    i32       nSoldierCount;
+    TactItem **apTactItems;       /* non-const: AssignRosterIndices writes nRefId */
+    i32       nTactItemCount;
+    ObjectRecFull *const     *apObjects;
+    i32                       nObjectCount;
+
+    const TactSaveState      *pTact;
+    const TeamUnitsState     *pRosters;
+    const FlobjsState        *pFlobjs;
+    const MapGeom            *pMap;
+    MapCellLookup             pfnLookup;
+    void                     *pLookupUser;
+    const RmpData            *pRmp;
+
+    void (*pfnRenderFrame)(void *pUser);   /* Render_Frame @ 0x22310 */
+    void  *pRenderUser;
+} SaveGameInput;
+
+bool SaveGame(DatFile *pDat, const SaveGameInput *pIn);
 
 #endif /* PUFO_SAVE_H */
