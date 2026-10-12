@@ -6348,3 +6348,39 @@ Four things worth having written down:
 
 `LoadGame @ 0x44bbc` is blocked by `Tact_Shutdown`, `Geoscape_InitUI @ 0x857f4` and
 `Tact_InitMission @ 0x3c550`. Of those three, `Tact_Shutdown` is now the cheapest.
+
+## The tact subsystem blocker map
+
+Measured by checking every callee of `Tact_InitMission @ 0x3c550` against `src/pufo`. It is the
+deepest remaining blocker, and the order matters: four of the nine are leaves with nothing else
+behind them.
+
+| callee | bytes | status |
+|---|---|---|
+| `Map_BuildMissionTerrain @ 0x22e10` | 10,676 | unported, the largest single gap in the tact subsystem |
+| `Tact_SpawnAliens @ 0x3a2ac` | 3,516 | unported |
+| `Tact_DeployTeamAndHwps @ 0x39980` | 2,348 | unported |
+| `Tact_SetupCraftCargo @ 0x38f00` | 2,116 | unported |
+| `Tact_EquipTeamFromCraft @ 0x3be24` | 1,836 | unported |
+| `Tact_SelectTeamUnits @ 0x39744` | 572 | unported; needs `Tact_SelectUnit` and the deploy-cell table at `byte_A66B8` |
+| `Map_PatchCraftSprites @ 0x25ab4` | 952 | unported |
+| `Tact_SelectUnit @ 0x2c6c4` | 148 | unported; its only unported dependency is `Unit_FormatDisplayName @ 0x476d4` |
+| `Unit_FormatDisplayName @ 0x476d4` | leaf | unported; needs the two 20-byte-per-rank string tables at `0xB2200` and `0xB2148`, which the port does not own yet |
+
+Already ported and callable from here: `Tact_LoadUiPads`, `Tact_InitUiControls`,
+`Tact_BuildVisRayTable`, `Tact_LoadLoftData`, `MapView_FocusSelected`, `Map_RefreshCellMeta`,
+`MapCell_SetBFlags29_4`, `Save_ReadObjBefore`, `Save_ReadSoldiers`, `StartTimers_BySpeed`,
+`GameSpeed_Set`, `Inv_OpenScreen`, `Map_InitFacingScratch`, `Font_Init`, `UiPanel_WrapText`,
+`Palette_Load`, `StatusMsg_Push`, `Unit_bIsOperative`, `MapCursor_SetPos`,
+`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Unit_RecalcInventoryStat`.
+
+Two facts worth keeping about `Unit_FormatDisplayName`, because they decide how the name tables get
+modelled:
+
+- `szName` is at `Soldier + 0x0ba` and `szDisplayName` at `Soldier + 0x2bc`, and the original writes
+  the display name as `szName[514]`. 0x0ba + 514 is 0x2bc, so the two renderings of the same store
+  agree, and the third path - copying the global text at `0x10DA38` to `pUnit + 700` - lands on
+  `szDisplayName` too.
+- The unit-type filter is not a simple range. XCOM types are 0..3, aliens 4..8, and the third branch
+  catches 9..13 plus 14..20 plus 22. A port that reads it as "0..3 XCOM, everything else alien" is
+  wrong for types 21 and 23 and above.
