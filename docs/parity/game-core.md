@@ -2253,6 +2253,57 @@ every append to 39 characters plus the terminator.
 Covered by `tests/test_save.c` (`TestSlotList`, 21 checks).
 
 
+### The strateg chunk (done)
+
+`Save_WriteStrateg @ 0x3fbb4` and `Save_ReadStrateg @ 0x40f4c` are recreated in
+`game/pufo_save.{h,c}`. The chunk is a **134-byte header** followed by the strateg list at
+**113 bytes per item**.
+
+The header is 38 writes in a fixed order that is not address order. Most of these globals have no
+known meaning yet, so `StrategSaveState` names each field for the address it comes from. The known
+ones:
+
+- `bSaveVersion` at 0x18655C — the save format version. It is saved **here**, and
+  `Save_ReadProduct`, `Save_ReadBases` and `Save_ReadShips` all branch on it.
+- `nStrategCount` at 0x186530 — the item count. It is **not** the PtrArray's own count field: the
+  list at `strategList @ 0x186534` keeps its count at 0x186534 and its item array at 0x186538, so
+  0x186530 is a separate global that mirrors the count and is also the loop bound in both
+  directions.
+- `abTypeCounters[5]` at 0x18653C..0x186540 — one byte per craft type. `Ship_ctor @ 0x45c20` bumps
+  them and stores the result in `Ship.bType`, so saving them is what lets `bType` survive a load.
+- `nSelectedShipIdx` at 0x187054.
+
+Two header entries are used as **pointers**, not values: 0x1865A8 and 0x186594 hold addresses that
+`DatFile_Write` is handed directly, so the saved value is what they point at.
+
+The block 0x186568..0x1865BC is 22 dwords and 21 are written, in a scattered column-by-column
+order. **0x18657C is the one header dword a save does not carry.**
+
+The 33 item fields are written in an order that is neither address order nor size order, and the
+entry at `+0` (`nType`) is written twelfth into the record rather than first. The port keeps that
+order exactly, because it is what the byte layout on disk is.
+
+Reader differences from the writer, all of them load-bearing:
+
+- `PtrArray_DeleteAll` runs **before** the header is read, so a failed load still empties the
+  strateg list. `FindChunk`'s result is not checked either.
+- the version byte is read into a scratch and **discarded**. The per-item gate at 0x41554 then tests
+  the build's own 0x18655C, not the value that came from the file. A save written by an older build
+  is read with the **current** build's record size.
+- `nTargetX` and `nTargetY` are only read when that version is above 2, so an old record is 105
+  bytes, not 113. Proven directly: with the version at 2 and two 113-byte records on disk, the
+  second item's `bActive` comes out as the low byte of the **first** item's `nTargetX`.
+- the count is a global the reader only overwrites when the read succeeds. With a stale non-zero
+  count and no strateg chunk at all, the original still allocates that many items and reads nothing
+  into them, so the list comes back full of uninitialised records.
+
+Deviation: the original reads and writes through fixed globals and never checks a `DatFile` result;
+the port takes the state and the list as arguments and returns false when the chunk is missing,
+while still emptying the list the way the original does.
+
+Covered by `tests/test_save.c` (`TestStrategChunk`, 96 checks).
+
+
 ### Camera bounds (done)
 
 `Tact_GetCameraBounds @ 0x3331c` is recreated in `game/pufo_tactctl.{h,c}`. With

@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 578 / 1103 (52.4%) |
-| Bytes of original code cited | 218848 / 598792 (36.5%) |
+| Functions cited as evidence | 580 / 1103 (52.6%) |
+| Bytes of original code cited | 222128 / 598792 (37.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 46 |
-| Test checks run | 4959 |
+| Test checks run | 5067 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -39,7 +39,7 @@ the per-subsystem notes and the tests listed at the end.
 | `util` | 18 | 21 | 1036 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 5 | 132 | 40 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 30 | 35 | 18808 / 27172 | save/load chunk read/write |
+| `save` | 32 | 35 | 22088 / 27172 | save/load chunk read/write |
 | `tact` | 176 | 214 | 110872 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 34 | 52 | 27272 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12200 / 38368 | shared UI panel, text engine, menus |
@@ -190,12 +190,14 @@ is the module that answers to it.
 | `0x8b948` | `nullsub_8` | 4 | `src/pufo/game/pufo_input.c` |
 | `0x94550` | `nullsub_9` | 4 | `src/pufo/game/pufo_timer.h` |
 
-### `save` (30 functions)
+### `save` (32 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
+| `0x40f4c` | `Save_ReadStrateg` | 1664 | `src/pufo/game/pufo_save.h` |
+| `0x3fbb4` | `Save_WriteStrateg` | 1616 | `src/pufo/game/pufo_save.h` |
 | `0x433d8` | `Save_ReadMap` | 1288 | `src/pufo/game/pufo_save.h` |
 | `0x4086c` | `Save_ReadShips` | 992 | `src/pufo/game/pufo_save.h` |
 | `0x438e0` | `Save_WriteMap` | 932 | `src/pufo/game/pufo_save.h` |
@@ -528,7 +530,7 @@ is the module that answers to it.
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_geoscape.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
-| `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_ship.h` |
+| `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_save.h`, `src/pufo/game/pufo_ship.h` |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
 | `0x5d1bc` | `Geoscape_TickHourly` | 512 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5d4e4` | `Geoscape_TickShips` | 456 | `src/pufo/game/pufo_geoscape.h` |
@@ -890,13 +892,11 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 5 functions, 8364 bytes remaining
+### `save` — 3 functions, 5084 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
-| `0x40f4c` | `Save_ReadStrateg` | 1664 | not yet ported; scheduled with the `save` subsystem work |
-| `0x3fbb4` | `Save_WriteStrateg` | 1616 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44248` | `Save_ReadTGameData` | 1120 | not yet ported; scheduled with the `save` subsystem work |
 | `0x44988` | `SaveGame` | 564 | not yet ported; scheduled with the `save` subsystem work |
 
@@ -1333,7 +1333,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_render` | PASS | 43 |
 | `test_rmp` | PASS | 46 |
 | `test_roster` | PASS | 114 |
-| `test_save` | PASS | 430 |
+| `test_save` | PASS | 538 |
 | `test_ship` | PASS | 31 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |

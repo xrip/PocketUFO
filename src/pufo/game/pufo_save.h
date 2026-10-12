@@ -58,6 +58,7 @@
 #include "game/pufo_strateg.h"
 #include "game/pufo_rmp.h"
 #include "game/pufo_unit.h"
+#include "util/pufo_ptrarray.h"
 #include "pufo_common.h"
 
 /* The non-tactical soldier prefix size derived above. */
@@ -733,5 +734,99 @@ typedef struct SaveSlotFormatCtx {
 } SaveSlotFormatCtx;
 
 void SaveSlot_FormatList(SaveSlotFormatCtx *pCtx);
+
+/* ------------------------------------------------- the strateg chunk
+ *
+ * Save_WriteStrateg @ 0x3fbb4 and Save_ReadStrateg @ 0x40f4c. The chunk is a 134-byte
+ * header followed by the strateg list, 113 bytes per item.
+ *
+ * The header is 38 writes in a fixed order that is NOT address order. Most of these globals
+ * have no known meaning yet, so each field is named for the address it comes from; the ones
+ * that are known are named for what they are:
+ *
+ *   bSaveVersion   0x18655C  the save format version. It is SAVED here, and Save_ReadProduct,
+ *                            Save_ReadBases and Save_ReadShips all branch on it.
+ *   nStrategCount  0x186530  the strateg item count. It is NOT the PtrArray's own count
+ *                            field: the list at strategList @ 0x186534 keeps its count at
+ *                            0x186534 and its item array at 0x186538, so 0x186530 is a
+ *                            separate global that mirrors the count and is also the loop
+ *                            bound in both the writer and the reader.
+ *   abTypeCounters 0x18653C..0x186540  one byte per craft type. Ship_ctor @ 0x45c20 bumps
+ *                            them and stores the result in Ship.bType, so saving them is what
+ *                            lets bType survive a load.
+ *   nSelectedShipIdx 0x187054  the geoscape's selected ship.
+ *
+ * Two header entries are used as POINTERS, not values: 0x1865A8 and 0x186594 hold addresses
+ * that DatFile_Write is given directly, so the saved value is what they point at. The port
+ * carries them as pointer fields for the same reason.
+ *
+ * The block 0x186568 .. 0x1865BC is 22 dwords and 21 of them are written, in a scattered
+ * column-by-column order. 0x18657C is never touched, so it is the one header dword a save
+ * does not carry.
+ *
+ * The item fields are written in an order that is neither address order nor size order, and
+ * the entry at +0 is written TWELVE fields into the record rather than first. The port keeps
+ * that order exactly, because it is what the byte layout on disk is.
+ *
+ * Reader differences from the writer, all of them load-bearing:
+ *
+ *   - PtrArray_DeleteAll runs BEFORE the header is read, so a failed load still empties the
+ *     strateg list. FindChunk's result is not checked either.
+ *   - the version byte is read into a scratch and DISCARDED. The per-item gate at 0x41554 then
+ *     tests the build's own 0x18655C, not the value that came from the file. A save written by
+ *     an older build is therefore read with the CURRENT build's record size.
+ *   - nTargetX and nTargetY are only read when that version is above 2. An older record is 105
+ *     bytes, not 113, and those two fields keep whatever StrategItem_AllocAdd left in them.
+ *   - items are created by StrategItem_AllocAdd as the loop runs, and the loop is a do/while on
+ *     the count that was just read, so a count of zero or less allocates nothing.
+ *
+ * Deviation: the original reads and writes through fixed globals and never checks a DatFile
+ * result; the port takes the state and the list as arguments and returns false when the chunk
+ * is missing, while still emptying the list the way the original does. */
+typedef struct StrategSaveState {
+    i8   bSaveVersion;        /* 0x18655C */
+    i32  nUnk186558;          /* 0x186558 */
+    i32  nUnk186550;          /* 0x186550 */
+    i32  nUnk186554;          /* 0x186554 */
+    i32  nStrategCount;       /* 0x186530, a separate count global, not the PtrArray's own */
+    u8   abTypeCounters[5];   /* 0x18653C .. 0x186540 */
+    i32  nUnk186544;          /* 0x186544 */
+    i32  nUnk186548;          /* 0x186548 */
+    i32  nUnk18654C;          /* 0x18654C */
+    i32  nUnkMap6691p4845;    /* Map + 0x6691 + 4845 */
+    i32  nUnk1865BC;          /* 0x1865BC */
+    i32  nUnk1865B4;          /* 0x1865B4 */
+    i32  nUnk1865A0;          /* 0x1865A0 */
+    i32  nUnk18658C;          /* 0x18658C */
+    i32  nUnk186574;          /* 0x186574 */
+    i32  nUnk1865B8;          /* 0x1865B8 */
+    i32  nUnk1865A4;          /* 0x1865A4 */
+    i32  nUnk186590;          /* 0x186590 */
+    i32  nUnk186578;          /* 0x186578 */
+    i32 *pnUnk1865A8;         /* 0x1865A8, used as a POINTER */
+    i32 *pnUnk186594;         /* 0x186594, used as a POINTER */
+    i32  nUnk186580;          /* 0x186580 */
+    i32  nUnk186568;          /* 0x186568 */
+    i32  nUnk1865B0;          /* 0x1865B0 */
+    i32  nUnk18659C;          /* 0x18659C */
+    i32  nUnk186588;          /* 0x186588 */
+    i32  nUnk186570;          /* 0x186570 */
+    i32  nUnk1865AC;          /* 0x1865AC */
+    i32  nUnk186598;          /* 0x186598 */
+    i32  nUnk186584;          /* 0x186584 */
+    i32  nUnk18656C;          /* 0x18656C */
+    i32  nUnk186BE4;          /* 0x186BE4 */
+    i32  nUnkMap6691p6937;    /* Map + 0x6691 + 6937 */
+    i32  nSelectedShipIdx;    /* 0x187054 */
+} StrategSaveState;
+
+/* 134 header bytes: 1 + five counters + 32 dwords. */
+#define PUFO_SAVE_STRATEG_HEADER_SIZE 134
+/* 113 bytes per item in the current format, 105 when the version is 2 or lower. */
+#define PUFO_SAVE_STRATEG_ITEM_SIZE     113
+#define PUFO_SAVE_STRATEG_ITEM_SIZE_OLD 105
+
+bool Save_WriteStrateg(DatFile *pDat, const StrategSaveState *pSt, const PtrArray *pList);
+bool Save_ReadStrateg(DatFile *pDat, StrategSaveState *pSt, PtrArray *pList);
 
 #endif /* PUFO_SAVE_H */

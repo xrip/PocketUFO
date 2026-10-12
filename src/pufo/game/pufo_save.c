@@ -1990,3 +1990,223 @@ void SaveSlot_FormatList(SaveSlotFormatCtx *pCtx)
     pCtx->pTime->nTotalSec = nTotalSecSaved;
     DatFile_dtor(&dat); /* 0x45C14 */
 }
+
+bool Save_WriteStrateg(DatFile *pDat, const StrategSaveState *pSt, const PtrArray *pList)
+{
+    if (pDat == NULL || pSt == NULL || pList == NULL) {
+        return false;
+    }
+    if (pSt->pnUnk1865A8 == NULL || pSt->pnUnk186594 == NULL) {
+        /* The original hands these two globals to DatFile_Write as addresses. */
+        return false;
+    }
+    if (!DatFile_BeginChunk(pDat, PUFO_SAVE_TAG_STRATEG)) { /* 0x3FBC0 */
+        return false;
+    }
+
+    /* 0x3FBD4..0x3FE24: the 38 header writes, in the original's order. */
+    if (!W(pDat, &pSt->bSaveVersion, 1)) { return false; }
+    if (!W(pDat, &pSt->nUnk186558, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186550, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186554, 4)) { return false; }
+    /* 0x3FC14 writes MEMORY[0x186530]. That is NOT the PtrArray's own count field: the
+     * strateg PtrArray starts at 0x186534, so its count is at 0x186534 and its item array
+     * at 0x186538. 0x186530 is a separate global that mirrors the item count, and it is
+     * also the loop bound. */
+    if (!W(pDat, &pSt->nStrategCount, 4)) { return false; }
+    if (!W(pDat, &pSt->abTypeCounters[0], 1)) { return false; }
+    if (!W(pDat, &pSt->abTypeCounters[1], 1)) { return false; }
+    if (!W(pDat, &pSt->abTypeCounters[2], 1)) { return false; }
+    if (!W(pDat, &pSt->abTypeCounters[3], 1)) { return false; }
+    if (!W(pDat, &pSt->abTypeCounters[4], 1)) { return false; }
+    if (!W(pDat, &pSt->nUnk186544, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186548, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk18654C, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnkMap6691p4845, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865BC, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865B4, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865A0, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk18658C, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186574, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865B8, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865A4, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186590, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186578, 4)) { return false; }
+    if (!W(pDat, pSt->pnUnk1865A8, 4)) { return false; } /* 0x3FD44, a POINTER */
+    if (!W(pDat, pSt->pnUnk186594, 4)) { return false; } /* 0x3FD54, a POINTER */
+    if (!W(pDat, &pSt->nUnk186580, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186568, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865B0, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk18659C, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186588, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186570, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk1865AC, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186598, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186584, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk18656C, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnk186BE4, 4)) { return false; }
+    if (!W(pDat, &pSt->nUnkMap6691p6937, 4)) { return false; }
+    if (!W(pDat, &pSt->nSelectedShipIdx, 4)) { return false; }
+
+    for (i32 i = 0; i < pSt->nStrategCount; ++i) { /* 0x3FE34 */
+        const StrategItem *p = (const StrategItem *)PtrArray_Get(pList, i);
+
+        if (p == NULL) {
+            return false;
+        }
+        /* 0x3FE50..0x401D0: 33 fields, in the original's order. The entry at +0 is written
+         * twelfth into the record, not first. */
+        if (!W(pDat, &p->bActive, 1)) { return false; }
+        if (!W(pDat, &p->nSiteId, 4)) { return false; }
+        if (!W(pDat, &p->bRandA, 1)) { return false; }
+        if (!W(pDat, &p->nTimer, 4)) { return false; }
+        if (!W(pDat, &p->nSeed, 4)) { return false; }
+        if (!W(pDat, &p->bVisible, 1)) { return false; }
+        if (!W(pDat, &p->bFlagA, 1)) { return false; }
+        if (!W(pDat, &p->nDisplayId, 4)) { return false; }
+        if (!W(pDat, &p->bCraftClass, 1)) { return false; }
+        if (!W(pDat, &p->nX, 4)) { return false; }
+        if (!W(pDat, &p->nDestX, 4)) { return false; }
+        if (!W(pDat, &p->nStartX, 4)) { return false; }
+        if (!W(pDat, &p->nY, 4)) { return false; }
+        if (!W(pDat, &p->nDestY, 4)) { return false; }
+        if (!W(pDat, &p->nStartY, 4)) { return false; }
+        if (!W(pDat, &p->nMissionSub, 1)) { return false; }
+        if (!W(pDat, &p->nTravelStartSec, 4)) { return false; }
+        if (!W(pDat, &p->dSpeed, 8)) { return false; }
+        if (!W(pDat, &p->dTrackA, 8)) { return false; }
+        if (!W(pDat, &p->bHyperDetect, 1)) { return false; }
+        if (!W(pDat, &p->nType, 1)) { return false; } /* 0x40080, the item pointer itself */
+        if (!W(pDat, &p->bTravelDir, 1)) { return false; }
+        if (!W(pDat, &p->uTravelMin, 2)) { return false; }
+        if (!W(pDat, &p->nTravelEpochSec, 4)) { return false; }
+        if (!W(pDat, &p->dFracX, 8)) { return false; }
+        if (!W(pDat, &p->dFracY, 8)) { return false; }
+        if (!W(pDat, &p->nHp, 4)) { return false; }
+        if (!W(pDat, &p->nPhase, 4)) { return false; }
+        if (!W(pDat, &p->bRace, 1)) { return false; }
+        if (!W(pDat, &p->nTargetIdx, 4)) { return false; }
+        if (!W(pDat, &p->bDone, 1)) { return false; }
+        /* The writer has NO version gate: nTargetX and nTargetY are always written. */
+        if (!W(pDat, &p->nTargetX, 4)) { return false; }
+        if (!W(pDat, &p->nTargetY, 4)) { return false; }
+    }
+    return true;
+}
+
+bool Save_ReadStrateg(DatFile *pDat, StrategSaveState *pSt, PtrArray *pList)
+{
+    i8 bVersionFromDisk = 0;
+    bool bFound;
+
+    if (pDat == NULL || pSt == NULL || pList == NULL) {
+        return false;
+    }
+
+    bFound = DatFile_FindChunk(pDat, PUFO_SAVE_TAG_STRATEG); /* 0x40F5C */
+
+    /* 0x40F68: the list is emptied BEFORE anything is read, and FindChunk's result is not
+     * checked, so a save with no strateg chunk still clears the live list. */
+    PtrArray_DeleteAll(pList);
+
+    /* 0x40F78: the version byte is read into a scratch and DISCARDED. The per-item gate below
+     * tests pSt->bSaveVersion, which is the build's own 0x18655C. */
+    (void)DatFile_Read(pDat, &bVersionFromDisk, 1);
+
+    (void)DatFile_Read(pDat, &pSt->nUnk186558, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186550, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186554, 4);
+    (void)DatFile_Read(pDat, &pSt->nStrategCount, 4);
+    (void)DatFile_Read(pDat, &pSt->abTypeCounters[0], 1);
+    (void)DatFile_Read(pDat, &pSt->abTypeCounters[1], 1);
+    (void)DatFile_Read(pDat, &pSt->abTypeCounters[2], 1);
+    (void)DatFile_Read(pDat, &pSt->abTypeCounters[3], 1);
+    (void)DatFile_Read(pDat, &pSt->abTypeCounters[4], 1);
+    (void)DatFile_Read(pDat, &pSt->nUnk186544, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186548, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk18654C, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnkMap6691p4845, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865BC, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865B4, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865A0, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk18658C, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186574, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865B8, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865A4, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186590, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186578, 4);
+    if (pSt->pnUnk1865A8 != NULL) {
+        (void)DatFile_Read(pDat, pSt->pnUnk1865A8, 4); /* 0x410E8, a POINTER */
+    }
+    if (pSt->pnUnk186594 != NULL) {
+        (void)DatFile_Read(pDat, pSt->pnUnk186594, 4); /* 0x410F8, a POINTER */
+    }
+    (void)DatFile_Read(pDat, &pSt->nUnk186580, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186568, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865B0, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk18659C, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186588, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186570, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk1865AC, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186598, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186584, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk18656C, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnk186BE4, 4);
+    (void)DatFile_Read(pDat, &pSt->nUnkMap6691p6937, 4);
+    (void)DatFile_Read(pDat, &pSt->nSelectedShipIdx, 4);
+
+    /* 0x411DC..0x415A4: a do/while on the count that was just read. The list itself was
+     * emptied above and is rebuilt by StrategItem_AllocAdd, so the loop bound is the
+     * separate 0x186530 global and not the PtrArray's own count. */
+    for (i32 i = 0; i < pSt->nStrategCount; ++i) {
+        StrategItem *p;
+
+        if (!StrategItem_AllocAdd(pList, 0)) { /* 0x411E4 */
+            return false;
+        }
+        p = (StrategItem *)PtrArray_Get(pList, i);
+        if (p == NULL) {
+            return false;
+        }
+
+        (void)DatFile_Read(pDat, &p->bActive, 1);
+        (void)DatFile_Read(pDat, &p->nSiteId, 4);
+        (void)DatFile_Read(pDat, &p->bRandA, 1);
+        (void)DatFile_Read(pDat, &p->nTimer, 4);
+        (void)DatFile_Read(pDat, &p->nSeed, 4);
+        (void)DatFile_Read(pDat, &p->bVisible, 1);
+        (void)DatFile_Read(pDat, &p->bFlagA, 1);
+        (void)DatFile_Read(pDat, &p->nDisplayId, 4);
+        (void)DatFile_Read(pDat, &p->bCraftClass, 1);
+        (void)DatFile_Read(pDat, &p->nX, 4);
+        (void)DatFile_Read(pDat, &p->nDestX, 4);
+        (void)DatFile_Read(pDat, &p->nStartX, 4);
+        (void)DatFile_Read(pDat, &p->nY, 4);
+        (void)DatFile_Read(pDat, &p->nDestY, 4);
+        (void)DatFile_Read(pDat, &p->nStartY, 4);
+        (void)DatFile_Read(pDat, &p->nMissionSub, 1);
+        (void)DatFile_Read(pDat, &p->nTravelStartSec, 4);
+        (void)DatFile_Read(pDat, &p->dSpeed, 8);
+        (void)DatFile_Read(pDat, &p->dTrackA, 8);
+        (void)DatFile_Read(pDat, &p->bHyperDetect, 1);
+        (void)DatFile_Read(pDat, &p->nType, 1); /* 0x41430, the item pointer itself */
+        (void)DatFile_Read(pDat, &p->bTravelDir, 1);
+        (void)DatFile_Read(pDat, &p->uTravelMin, 2);
+        (void)DatFile_Read(pDat, &p->nTravelEpochSec, 4);
+        (void)DatFile_Read(pDat, &p->dFracX, 8);
+        (void)DatFile_Read(pDat, &p->dFracY, 8);
+        (void)DatFile_Read(pDat, &p->nHp, 4);
+        (void)DatFile_Read(pDat, &p->nPhase, 4);
+        (void)DatFile_Read(pDat, &p->bRace, 1);
+        (void)DatFile_Read(pDat, &p->nTargetIdx, 4);
+        (void)DatFile_Read(pDat, &p->bDone, 1);
+
+        /* 0x41554: the gate is on the BUILD's version byte, not the one this file carried. */
+        if (pSt->bSaveVersion > 2) {
+            (void)DatFile_Read(pDat, &p->nTargetX, 4);
+            (void)DatFile_Read(pDat, &p->nTargetY, 4);
+        }
+    }
+
+    return bFound;
+}

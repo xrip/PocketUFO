@@ -1708,6 +1708,212 @@ static void TestSlotList(void)
     remove("sav3.sav");
 }
 
+static void FillStrategItem(StrategItem *p, i32 nBase)
+{
+    p->nType = (u8)(nBase & 0xFF);
+    p->bActive = (u8)(nBase + 1);
+    p->bCraftClass = (u8)(nBase + 2);
+    p->bUnk3 = (u8)(nBase + 3);
+    p->nX = nBase + 4;
+    p->nY = nBase + 5;
+    p->nSiteId = nBase + 6;
+    p->nDisplayId = nBase + 7;
+    p->bRandA = (u8)(nBase + 8);
+    p->nStartX = nBase + 9;
+    p->nStartY = nBase + 10;
+    p->nDestX = nBase + 11;
+    p->nDestY = nBase + 12;
+    p->bTravelDir = (i8)(nBase + 13);
+    p->nTimer = nBase + 14;
+    p->bFlagA = (u8)(nBase + 15);
+    p->nSeed = nBase + 16;
+    p->bVisible = (u8)(nBase + 17);
+    p->nMissionSub = (u8)(nBase + 18);
+    p->dTrackA = (double)nBase + 19.5;
+    p->dSpeed = (double)nBase + 20.25;
+    p->dFracX = (double)nBase + 21.125;
+    p->dFracY = (double)nBase + 22.0625;
+    p->nTravelStartSec = nBase + 23;
+    p->bHyperDetect = (u8)(nBase + 24);
+    p->bDetected = (u8)(nBase + 25);
+    p->uTravelMin = (u16)(nBase + 26);
+    p->nTravelEpochSec = nBase + 27;
+    p->nHp = nBase + 28;
+    p->bRace = (u8)(nBase + 29);
+    p->nPhase = nBase + 30;
+    p->bDone = (u8)(nBase + 31);
+    p->nTargetX = nBase + 32;
+    p->nTargetY = nBase + 33;
+    p->nTargetIdx = nBase + 34;
+}
+
+static void CheckStrategItem(const StrategItem *pGot, const StrategItem *pWant, const char *pszWhat)
+{
+    CheckEqI32(pGot->bActive, pWant->bActive, pszWhat);
+    CheckEqI32(pGot->nSiteId, pWant->nSiteId, pszWhat);
+    CheckEqI32(pGot->nTimer, pWant->nTimer, pszWhat);
+    CheckEqI32(pGot->nSeed, pWant->nSeed, pszWhat);
+    CheckEqI32(pGot->nDisplayId, pWant->nDisplayId, pszWhat);
+    CheckEqI32(pGot->nX, pWant->nX, pszWhat);
+    CheckEqI32(pGot->nDestX, pWant->nDestX, pszWhat);
+    CheckEqI32(pGot->nY, pWant->nY, pszWhat);
+    CheckEqI32(pGot->nStartY, pWant->nStartY, pszWhat);
+    CheckEqI32(pGot->nMissionSub, pWant->nMissionSub, pszWhat);
+    CheckEqI32(pGot->nTravelStartSec, pWant->nTravelStartSec, pszWhat);
+    CheckEqI32(pGot->bHyperDetect, pWant->bHyperDetect, pszWhat);
+    CheckEqI32(pGot->nType, pWant->nType, pszWhat);
+    CheckEqI32(pGot->uTravelMin, pWant->uTravelMin, pszWhat);
+    CheckEqI32(pGot->nTravelEpochSec, pWant->nTravelEpochSec, pszWhat);
+    CheckEqI32(pGot->nHp, pWant->nHp, pszWhat);
+    CheckEqI32(pGot->nPhase, pWant->nPhase, pszWhat);
+    CheckEqI32(pGot->bRace, pWant->bRace, pszWhat);
+    CheckEqI32(pGot->nTargetIdx, pWant->nTargetIdx, pszWhat);
+    CheckEqI32(pGot->bDone, pWant->bDone, pszWhat);
+    CheckEqI32(pGot->nTargetX, pWant->nTargetX, pszWhat);
+    CheckEqI32(pGot->nTargetY, pWant->nTargetY, pszWhat);
+    Check(pGot->dSpeed == pWant->dSpeed, pszWhat);
+    Check(pGot->dTrackA == pWant->dTrackA, pszWhat);
+    Check(pGot->dFracX == pWant->dFracX && pGot->dFracY == pWant->dFracY, pszWhat);
+}
+
+static void TestStrategChunk(void)
+{
+    DatFile dat;
+    StrategSaveState st;
+    StrategSaveState got;
+    PtrArray list;
+    PtrArray list2;
+    StrategItem want[2];
+    i32 nPtrA = 0x51515151;
+    i32 nPtrB = 0x52525252;
+
+    printf("Save_WriteStrateg / Save_ReadStrateg\n");
+
+    memset(&st, 0, sizeof(st));
+    st.bSaveVersion = 3;
+    st.nUnk186558 = 0x11111111;
+    st.nUnk186550 = 0x22222222;
+    st.nUnk186554 = 0x33333333;
+    st.abTypeCounters[0] = 1;
+    st.abTypeCounters[1] = 2;
+    st.abTypeCounters[2] = 0;
+    st.abTypeCounters[3] = 4;
+    st.abTypeCounters[4] = 0;
+    st.nStrategCount = 2;
+    st.nUnk186544 = 0x44444444;
+    st.nUnkMap6691p4845 = 0x45454545;
+    st.nUnk1865BC = 0xBCBCBCBC;
+    st.nUnk186574 = 0x74747474;
+    st.pnUnk1865A8 = &nPtrA;
+    st.pnUnk186594 = &nPtrB;
+    st.nUnk186568 = 0x68686868;
+    st.nUnk186BE4 = 0xBE4BE4BE;
+    st.nUnkMap6691p6937 = 0x69696969;
+    st.nSelectedShipIdx = 7;
+
+    FillStrategItem(&want[0], 1000);
+    FillStrategItem(&want[1], 2000);
+    /* The shifted-read test below depends on this byte. */
+    want[0].nTargetX = 0x11223344;
+    want[1].bActive = 7;
+
+    PtrArray_ctor(&list);
+    Check(StrategItem_AllocAdd(&list, 0), "  item 0 allocated");
+    Check(StrategItem_AllocAdd(&list, 0), "  item 1 allocated");
+    memcpy(PtrArray_Get(&list, 0), &want[0], sizeof(StrategItem));
+    memcpy(PtrArray_Get(&list, 1), &want[1], sizeof(StrategItem));
+
+    Check(OpenWrite("test_strateg.tmp", &dat, 2), "  container opened");
+    Check(Save_WriteStrateg(&dat, &st, &list), "  strateg written");
+    DatFile_Close(&dat);
+    PtrArray_Clear(&list);
+
+    /* 134 header bytes plus 113 per item. */
+    CheckEqI32(FileSizeOf(L"test_strateg.tmp"), 46 + 134 + 2 * 113, "the chunk payload");
+
+    /* A current-format load. */
+    memset(&got, 0, sizeof(got));
+    got.bSaveVersion = 3;
+    got.pnUnk1865A8 = &nPtrA;
+    got.pnUnk186594 = &nPtrB;
+    nPtrA = 0;
+    nPtrB = 0;
+    PtrArray_ctor(&list2);
+    Check(OpenRead("test_strateg.tmp", &dat), "  reopened");
+    Check(Save_ReadStrateg(&dat, &got, &list2), "  read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(list2.nCount, 2, "the list is rebuilt by StrategItem_AllocAdd");
+    CheckEqI32(got.nStrategCount, 2, "and the separate count global comes from the chunk");
+    CheckEqI32(got.nUnk186558, 0x11111111, "the header round trips");
+    CheckEqI32(got.nUnkMap6691p4845, 0x45454545, "including the Map-block entries");
+    CheckEqI32(got.nSelectedShipIdx, 7, "and the selected ship");
+    CheckEqI32(nPtrA, 0x51515151, "the two pointer entries carry what they point at");
+    CheckEqI32(nPtrB, 0x52525252, "not the addresses");
+    CheckEqI32(got.abTypeCounters[3], 4, "the craft-type counters survive a load");
+
+    CheckStrategItem((const StrategItem *)PtrArray_Get(&list2, 0), &want[0], "item 0");
+    CheckStrategItem((const StrategItem *)PtrArray_Get(&list2, 1), &want[1], "item 1");
+    PtrArray_DeleteAll(&list2);
+    PtrArray_Clear(&list2);
+
+    /* The gate is on the BUILD's version byte, so a version-2 build reads 105 bytes per
+     * item out of records that are 113 bytes long, and the second item starts inside the
+     * first one's nTargetX. */
+    memset(&got, 0, sizeof(got));
+    got.bSaveVersion = 2;
+    got.pnUnk1865A8 = &nPtrA;
+    got.pnUnk186594 = &nPtrB;
+    PtrArray_ctor(&list2);
+    Check(OpenRead("test_strateg.tmp", &dat), "  reopened");
+    Check(Save_ReadStrateg(&dat, &got, &list2), "  read");
+    DatFile_Close(&dat);
+
+    CheckEqI32(list2.nCount, 2, "the rebuilt list still has two items");
+    CheckStrategItem((const StrategItem *)PtrArray_Get(&list2, 0), &want[0],
+                     "the first item is unaffected");
+    CheckEqI32(((StrategItem *)PtrArray_Get(&list2, 1))->bActive, 0x44,
+               "a version-2 build reads 105 bytes per item, so the second item starts"
+               " inside the first one's nTargetX");
+    PtrArray_DeleteAll(&list2);
+    PtrArray_Clear(&list2);
+
+    /* A save with no strateg chunk still empties the live list. */
+    Check(OpenWrite("test_nost.tmp", &dat, 2), "  container without strateg");
+    Check(DatFile_BeginChunk(&dat, PUFO_SAVE_TAG_TIME), "  a dummy chunk");
+    Check(DatFile_Write(&dat, &nPtrA, 4), "  written");
+    DatFile_Close(&dat);
+
+    PtrArray_ctor(&list2);
+    Check(StrategItem_AllocAdd(&list2, 0), "  a live item");
+    CheckEqI32(list2.nCount, 1, "one item before the load");
+    got.nStrategCount = 0;
+    Check(OpenRead("test_nost.tmp", &dat), "  reopened");
+    Check(!Save_ReadStrateg(&dat, &got, &list2), "  the missing chunk is reported");
+    DatFile_Close(&dat);
+    CheckEqI32(list2.nCount, 0, "and the list was emptied");
+    PtrArray_Clear(&list2);
+
+    /* The count is a global the reader only overwrites when the read succeeds. With a stale
+     * non-zero count and no chunk, the original still allocates that many items and reads
+     * nothing into them, so the list comes back full of uninitialised records. */
+    PtrArray_ctor(&list2);
+    Check(StrategItem_AllocAdd(&list2, 0), "  a live item");
+    got.nStrategCount = 3;
+    Check(OpenRead("test_nost.tmp", &dat), "  reopened");
+    Check(!Save_ReadStrateg(&dat, &got, &list2), "  the missing chunk is reported");
+    DatFile_Close(&dat);
+    CheckEqI32(list2.nCount, 3, "but the stale count still allocates three items");
+    PtrArray_DeleteAll(&list2);
+    PtrArray_Clear(&list2);
+
+    Check(!Save_WriteStrateg(&dat, &st, NULL), "NULL list refused");
+    Check(!Save_ReadStrateg(&dat, &got, NULL), "NULL list refused");
+
+    remove("test_strateg.tmp");
+    remove("test_nost.tmp");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1731,6 +1937,7 @@ int main(void)
     TestTGameDataWrite();
     TestReadRmp();
     TestSlotList();
+    TestStrategChunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
