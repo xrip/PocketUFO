@@ -2,7 +2,7 @@
  *
  * Evidence: Map_FacingDelta @ 0x276a0, Path_EnqueueCell @ 0x2b534,
  *           Path_ExpandCell @ 0x2b604, Map_ComputeReachable @ 0x2b820,
- *           Unit_CanStepTo @ 0x27bb8 (predicate only).
+ *           Unit_CanStepTo (0x27bb8) -- predicate only, the 14.7 KB body is not ported.
  *
  * The original runs a cost-based flood fill over the cell grid. Two frontier
  * lists are used alternately (double buffering), selected by byte_10DB80:
@@ -94,7 +94,7 @@ u8 Map_FacingDelta(u8 nFrom, u8 nTo);
  * positive (the original does not flip at 4, only above it). */
 bool Map_bFacingTurnPositive(u8 nFrom, u8 nTo);
 
-/* A step probe. Mirrors Unit_CanStepTo @ 0x27bb8, which reads the cell grid and
+/* A step probe. Mirrors the predicate of Unit_CanStepTo (0x27bb8), which reads the cell grid and
  * the selected unit through globals. It is injected here because the real
  * function is ~14.7 KB and is its own body of work; the flood fill above it is
  * what this module owns.

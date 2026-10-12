@@ -45,16 +45,22 @@ def main():
     inventory = load_inventory()
 
     flagged = []
-    for addr, (orig_name, _size, subsystem) in sorted(inventory.items()):
+    for addr, (orig_name, size, subsystem) in sorted(inventory.items()):
         if addr not in cited:
             continue
         if orig_name in defined:
             continue
-        flagged.append((addr, orig_name, subsystem))
+        flagged.append((addr, orig_name, subsystem, size))
 
-    print(f"credited addresses whose original name is not defined: {len(flagged)}")
-    for addr, name, subsystem in flagged:
-        print(f"  {addr}  {subsystem:12s}  {name}")
+    # Sorted by size: a flagged 4 KB citation distorts the report far more than a flagged
+    # 100-byte one, and the big ones are worth checking by hand first.
+    flagged.sort(key=lambda e: -e[3])
+    total = sum(e[3] for e in flagged)
+
+    print(f"credited addresses whose original name is not defined: {len(flagged)}"
+          f"  (worth {total} bytes, {100.0 * total / 598792:.1f}% of the binary)")
+    for addr, name, subsystem, size in flagged:
+        print(f"  {addr}  {size:6d}  {subsystem:12s}  {name}")
     return 0
 
 

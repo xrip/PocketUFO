@@ -256,7 +256,7 @@ i32 Map_CenterOffsetY(i32 nA, i32 nB);
 /* Lightmap geometry, verified against the shipped lightmap.dat (529 = 0x211 bytes)
  * and the spread loop of Map_RefreshCellMeta @ 0x2c7f4.
  *
- * `Tact_InitMission` @ 0x3c550 reads 0x211 bytes of "lightmap.dat" into
+ * `Tact_InitMission` (0x3c550) reads 0x211 bytes of "lightmap.dat" into
  * unk_156AB8 @ 0x156ab8. The file is exactly 529 bytes = 23 x 23, and the spread
  * loop indexes it as `pTable[k*23 + c]` for k, c in 0..22, which is confirmed by
  * evaluating the original's expression `unk_156AB8[v19 + 264 + v20]` with

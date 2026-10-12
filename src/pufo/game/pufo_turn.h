@@ -100,7 +100,7 @@ void Tact_ProcessActionPhase(TactCtx272 *pCtx, const TurnHooks *pHooks,
  *
  * Sets bEnemyTurnActive, marks the context busy, clears every side's per-unit AI
  * and spotting state, and starts the action phase at phase 3. The original also
- * calls Render_Frame (0x22310) and BeforeEnemyStep @ 0x4b9b8 first; those are
+ * calls Render_Frame (0x22310) and BeforeEnemyStep (0x4b9b8) first; those are
  * injected via `pfnFrameStart` and `pfnBeforeEnemyStep` because both need the
  * full world (BeforeEnemyStep is 2792 bytes).
  *

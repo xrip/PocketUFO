@@ -642,7 +642,7 @@ bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
  *
  * Save_ReadRmp @ 0x43ee0. A count, then SIX blocks, then one Map_LoadRmp call per
  * module. There is no writer for this chunk: it records the random-map modules a
- * mission was built from, and Tact_InitMission @ 0x3c550 is the other caller.
+ * mission was built from, and Tact_InitMission (0x3c550) is the other caller.
  *
  * The six blocks are 60 dwords each (240 bytes) except the module names, which are
  * 60 * 20 = 1200 bytes. The order they are READ in is not the order the loader

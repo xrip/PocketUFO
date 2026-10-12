@@ -8,7 +8,7 @@
 
 /* aDirDeltaXY @ 0xa7ae0, decoded from the 30 bytes of signed triples at that
  * address. This is the authoritative step table: the unit step legality test
- * (Unit_CanStepTo @ 0x27bb8) dispatches on it, and so does the flood fill. */
+ * (Unit_CanStepTo (0x27bb8)) dispatches on it, and so does the flood fill. */
 const StepDir g_aStepDir[PUFO_PATH_DIR_COUNT] = {
     {  0, -1,  0 }, /* 0: N  */
     {  1, -1,  0 }, /* 1: NE (diagonal) */

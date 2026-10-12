@@ -24,7 +24,7 @@
  * IDA merged the two under one name, so these six are ported here as their own type
  * rather than as UiPanel members.
  *
- * The caller that shows the alias is `ResearchScreen_RebuildTopicList @ 0x74270`: it
+ * The caller that shows the alias is `ResearchScreen_RebuildTopicList (0x74270)`: it
  * passes `(int)&gUiRootPanel` to `UiPanel_AppendLineWithSound @ 0x5a394` and to
  * `UiPanel_SetLineColors @ 0x5a450`, and reads the line count as
  * `LOBYTE(gUiRootPanel.apLines[89]) - 1` -- `apLines[89]` is offset 3400 of the 7092

@@ -638,7 +638,7 @@ typedef struct KillCtx {
     const char         *pszMsgDeadMaleBig;
 } KillCtx;
 
-/* pfnCheckBattleEnd stands for Tact_CheckBattleEnd @ 0x34fbc. That function is
+/* pfnCheckBattleEnd stands for Tact_CheckBattleEnd (0x34fbc). That function is
  * mostly debrief UI (UiControl / UiPanel construction) and belongs to the ui-input
  * subsystem, so the seam is explicit rather than a stub. pShotHooks is what
  * Combat_ResolveShot needs for the type-18 explosion. */

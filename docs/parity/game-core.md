@@ -5970,3 +5970,26 @@ Slot 33 returning a fixed 1000 is the odd one: whatever that slot holds, the ori
 per-base count for it.
 
 Covered by `TestCraftWeaponItemId`, 13 checks.
+
+## Parity report integrity: five citations worth 29 KB were not ports
+
+`audit_names.py` now prints the byte weight of every flagged citation, sorted by size. That
+immediately exposed five citations that credit work the port never did — **29,076 bytes, 4.9% of the
+binary**:
+
+| original | bytes | what the citation actually said |
+|---|---|---|
+| `Unit_CanStepTo` `0x27bb8` | 14,716 | "predicate only… the real function is ~14.7 KB and is its own body of work" |
+| `Tact_CheckBattleEnd` `0x34fbc` | 5,748 | a hook field: "the seam is explicit rather than a stub" |
+| `Tact_InitMission` `0x3c550` | 4,120 | two comments describing what the original reads from lightmap.dat |
+| `BeforeEnemyStep` `0x4b9b8` | 2,792 | "injected via `pfnBeforeEnemyStep` because both need the full world" |
+| `ResearchScreen_RebuildTopicList` `0x74270` | 1,700 | naming the original caller that proves a type alias |
+
+Every one of them said, in the same sentence, that the port does not implement it. All five are now
+written `Name (0xaddr)`, which the tool does not credit.
+
+Honest coverage after the correction: **598 / 1103 functions (54.2%)**, **194,100 / 598,792 bytes
+(32.4%)**.
+
+`Map_ComputeReachable @ 0x2b820` was checked and left alone — it is ported as `Path_ComputeReachable`,
+a documented rename.

@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 603 / 1103 (54.7%) |
-| Bytes of original code cited | 223176 / 598792 (37.3%) |
+| Functions cited as evidence | 598 / 1103 (54.2%) |
+| Bytes of original code cited | 194100 / 598792 (32.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 47 |
 | Test checks run | 5701 |
@@ -40,11 +40,11 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 22 | 24 | 6272 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 2 | 132 | 16 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 174 | 214 | 105664 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 170 | 214 | 78288 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 35 | 52 | 26124 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 66 | 85 | 12004 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 89 | 205 | 27080 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 105 | 243 | 9192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 104 | 243 | 7492 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 0 | 13 | 0 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -226,18 +226,14 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (174 functions)
+### `tact` (170 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
-| `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_unit.h` |
-| `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_save.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+2) |
-| `0x4b9b8` | `BeforeEnemyStep` | 2792 | `src/pufo/game/pufo_turn.h` |
 | `0x31a18` | `Tact_ResolveThrowLanding` | 2580 | `src/pufo/game/pufo_ballist.h` |
 | `0x3102c` | `Tact_SimulateThrowArc` | 2540 | `src/pufo/game/pufo_ballist.h` |
 | `0x2e7d8` | `Combat_SplashDamageCells` | 2388 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
@@ -610,11 +606,10 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (105 functions)
+### `strat-ui` (104 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | `src/pufo/ui/pufo_linelist.h` |
 | `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h` |
@@ -919,17 +914,21 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 40 functions, 72680 bytes remaining
+### `tact` — 44 functions, 100056 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
+| `0x27bb8` | `Unit_CanStepTo` | 14716 | cell addressing resolved but the ~15-global working set and Map_ProbeStepOccupants are not ported; the path flood takes an injected probe, so it is a drop-in once that contract exists |
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | needs the .ma1 templates (ported) plus Font_LoadTactSprites (759 B) and the palette LUTs (Tact_BuildPaletteLuts, 1184 B) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | the largest fire action; depends on Combat_ResolveShot |
+| `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | not yet ported; scheduled with the `tact` subsystem work |
+| `0x3c550` | `Tact_InitMission` | 4120 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3d568` | `Tact_Shutdown` | 3788 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | 3440 B enemy AI driver; injected as a hook in pufo_turn |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | not yet ported; scheduled with the `tact` subsystem work |
+| `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x1b7bc` | `MapView_DrawUnitFacingArrow` | 2692 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x39980` | `Tact_DeployTeamAndHwps` | 2348 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x346e0` | `Tact_ClearSoldierBattleFlags` | 2268 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1131,7 +1130,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 138 functions, 107816 bytes remaining
+### `strat-ui` — 139 functions, 109516 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1155,6 +1154,7 @@ whose port work they belong to.
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | not yet ported; scheduled with the `strat-ui` subsystem work |
+| `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | not yet ported; scheduled with the `strat-ui` subsystem work |
