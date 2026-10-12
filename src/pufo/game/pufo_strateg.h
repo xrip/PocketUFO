@@ -224,4 +224,53 @@ u8 Smap_GetTileAtScreen(SmapView *pView, const u8 *pTiles, i32 nX, i32 nY);
  * one implementation. The original's first argument is unused. */
 u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY);
 
+/* ------------------------------------------------------------- zoom levels
+ *
+ * Each zoom step swaps three layer globals and takes the map size from the second
+ * one:
+ *
+ *     level  tiles      size source   third layer   the u16 pair at 0x186BC0
+ *     0      0x186B74   0x186B78      0x186C28       800 x 400
+ *     1      0x187064   0x1864F0      0x186C1C       600 x 300
+ *     2      0x18705C   0x1864EC      0x186BB8       472 x 236
+ *
+ * The port keeps the table as data the caller owns. After a zoom the app reads
+ * aSets[pView->nMode] to get the layers it has to draw, instead of the original
+ * writing them into globals (deviation 2). */
+typedef struct SmapZoomSet {
+    PadImage *pTiles;   /* 0x186B04: the byte grid Smap_GetTileAtScreen reads */
+    PadImage *pGrid;    /* 0x186E40: its uWidth/uHeight become nMapW/nMapH */
+    PadImage *pOverlay; /* 0x186BE0 */
+    u16  uWorldW;       /* the u16 at 0x186BC0 */
+    u16  uWorldH;       /* the u16 at 0x186BC0 + 2 */
+} SmapZoomSet;
+
+/* The world size pair the zoom steps publish at 0x186BC0. It is not part of the
+ * 36-byte view block, so it travels separately. */
+typedef struct SmapWorldSize {
+    u16 uW;
+    u16 uH;
+} SmapWorldSize;
+
+/* The scroll rescale factors, read out of the muld immediates. Zooming in from
+ * level 0 to 1 is NOT the reciprocal of zooming out from 1 to 0: 0.7501875468867217
+ * against 1/1.33 = 0.7518796992481203. Zooming in from 1 to 2 IS exactly 1/1.27.
+ * The asymmetry is in the original; a round trip does not restore the scroll. */
+#define PUFO_SMAP_ZOOM_IN_0_1  0.7501875468867217
+#define PUFO_SMAP_ZOOM_IN_1_2  0.7874015748031495
+#define PUFO_SMAP_ZOOM_OUT_2_1 1.27
+#define PUFO_SMAP_ZOOM_OUT_1_0 1.33
+
+/* Smap_ZoomIn @ 0x81e44. Level 0 goes to 1, level 1 goes to 2, level 2 does nothing
+ * (the original returns its argument unchanged). The new map size is taken from the
+ * level's grid PadImage BEFORE the scroll is rescaled, and the rescale truncates:
+ * dtoi() is a plain double-to-int. ZoomIn then clamps nScrollY with the NEW map
+ * height; ZoomOut does not clamp at all. Returns false when the level has no step. */
+bool Smap_ZoomIn(SmapView *pView, const SmapZoomSet aSets[3],
+                 SmapWorldSize *pOut, i32 nStripHeight);
+
+/* Smap_ZoomOut @ 0x81c08. Level 2 goes to 1 (scale 1.27), level 1 goes to 0 with the
+ * map pair 800 x 400 (scale 1.33), level 0 does nothing. No clamping. */
+bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut);
+
 #endif /* PUFO_STRATEG_H */

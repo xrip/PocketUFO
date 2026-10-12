@@ -4693,3 +4693,45 @@ Still open in this cluster: `Smap_ZoomOut @ 0x81c08` / `Smap_ZoomIn @ 0x81e44` (
 rescale the scroll with double constants that need reading from the constant pool) and
 the thin button wrappers `Smap_OnZoomOut @ 0x84ab8`, `Smap_OnZoomIn @ 0x84ad8`,
 `Smap_BeginCraftSelectBtn @ 0x84634`.
+
+### Zoom levels and the scroll rescale
+
+`Smap_ZoomIn @ 0x81e44` and `Smap_ZoomOut @ 0x81c08`, ported as `Smap_ZoomIn` /
+`Smap_ZoomOut` with the level table as data (`SmapZoomSet`, `SmapWorldSize`), asserted
+by `test_strateg::TestSmapZoom` (20 checks).
+
+Each step swaps three layer globals and takes the map size from the second one:
+
+| level | tiles (0x186B04) | size source (0x186E40) | third layer (0x186BE0) | u16 pair at 0x186BC0 |
+|---|---|---|---|---|
+| 0 | 0x186B74 | 0x186B78 | 0x186C28 | 800 x 400 |
+| 1 | 0x187064 | 0x1864F0 | 0x186C1C | 600 x 300 |
+| 2 | 0x18705C | 0x1864EC | 0x186BB8 | 472 x 236 |
+
+Level 2 has no zoom-in step and level 0 has no zoom-out step; both return without
+touching anything (0x81E5C, 0x81C14/0x81C1C).
+
+The scroll rescale is `itod` / `muld` / `dtoi` -- int to double, multiply by an
+immediate, truncate back to int. The four factors, read out of the `muld` immediates:
+
+| step | factor |
+|---|---|
+| in 0 -> 1 | 0.7501875468867217 |
+| in 1 -> 2 | 0.7874015748031495 (exactly 1/1.27) |
+| out 2 -> 1 | 1.27 |
+| out 1 -> 0 | 1.33 |
+
+**Zooming in from 0 to 1 is not the reciprocal of zooming out from 1 to 0**: 0.7501875468867217
+against 1/1.33 = 0.7518796992481203. A full round trip on a scroll of 100 lands on 98.
+That asymmetry is in the original, and the test asserts it rather than hiding it.
+
+`Smap_ZoomIn` clamps `nScrollY` after the rescale using the **new** map height;
+`Smap_ZoomOut` applies no clamp at all. The clamp is the same code `Smap_ScrollBy`
+uses, so it lives in one helper (`Smap_ClampScrollY`).
+
+### Deviations, continued
+
+| # | Deviation | Reason |
+|---|---|---|
+| 4 | The level table is caller-owned data; the port does not write 0x186B04 / 0x186E40 / 0x186BE0 | the app reads `aSets[pView->nMode]` after a zoom instead of the port owning three globals |
+| 5 | The `u16` pair at 0x186BC0 travels in `SmapWorldSize` | it is a neighbouring global, not part of the 36-byte view block |

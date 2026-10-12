@@ -272,36 +272,36 @@ bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed)
 
 /* ------------------------------------------------------- the geoscape viewport */
 
+/* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn
+ * @ 0x82080..0x820B0 apply. Identical in both, so it lives here once. The upper test
+ * uses the value the lower clamp produced, not the one it started from. */
+static void Smap_ClampScrollY(SmapView *pView, i32 nStripHeight)
+{
+    const i32 nHalfH = pView->nMapH / 2 - 160;
+    i32 nY = pView->nScrollY;
+
+    if (nY + nHalfH < 0) {
+        nY = -nHalfH;
+        pView->nScrollY = nY;
+    }
+    if (nY + nHalfH > nStripHeight + pView->nMapH - 320) {
+        pView->nScrollY = nStripHeight - nHalfH + pView->nMapH - 320;
+    }
+}
+
 void Smap_ScrollBy(SmapView *pView, i32 nDx, i32 nDy, i32 nScreenMode,
                    i32 nStripHeight)
 {
-    i32 nHalfH;
-
     if (pView == NULL) {
         return;
     }
 
-    nHalfH = pView->nMapH / 2 - 160; /* 0x820F0 */
-
     /* 0x82104 / 0x82114: pos - delta + last_delta. The view tracks absolute positions,
-     * so the delta it applied last time is added back before the new one is taken off. */
-    pView->nScrollX = pView->nScrollX - nDx + pView->nLastDx;
+     * so the delta it applied last time is added back before the new one is taken off. */    pView->nScrollX = pView->nScrollX - nDx + pView->nLastDx;
     pView->nScrollY = pView->nScrollY - nDy + pView->nLastDy;
 
     if (nScreenMode != 2) {
-        i32 nY;
-
-        /* 0x82124: the lower clamp, and the value the upper clamp then tests. */
-        nY = pView->nScrollY;
-        if (nY + nHalfH < 0) {
-            nY = -nHalfH;
-            pView->nScrollY = nY;
-        }
-        /* 0x82154: the upper clamp. nStripHeight is the uHeight of the object the
-         * original reads through 0x186BBC. */
-        if (nY + nHalfH > nStripHeight + pView->nMapH - 320) {
-            pView->nScrollY = nStripHeight - nHalfH + pView->nMapH - 320;
-        }
+        Smap_ClampScrollY(pView, nStripHeight);
     }
 
     /* 0x82164 / 0x82168: stored after any clamping. */
@@ -351,4 +351,75 @@ u8 Tilemap_GetAt(const PadImage *pMap, i32 nX, i32 nY)
     /* 0x82198 and 0x821BC are the same expression over two different globals
      * (0x186B74 and 0x186C18), so one implementation covers both. */
     return pMap->pData[(i32)pMap->uWidth * nY + nX];
+}
+
+/* Publish the level's map size, the way 0x81DA0..0x81DB0 and 0x81EC0..0x81FF0 do it:
+ * nMapW/nMapH come from the level's grid PadImage, and the world pair goes to the
+ * separate 0x186BC0 global. */
+static void Smap_ApplyZoomSet(SmapView *pView, const SmapZoomSet *pSet,
+                              SmapWorldSize *pOut)
+{
+    if (pSet->pGrid != NULL) {
+        pView->nMapW = (i32)pSet->pGrid->uWidth;
+        pView->nMapH = (i32)pSet->pGrid->uHeight;
+    }
+    if (pOut != NULL) {
+        pOut->uW = pSet->uWorldW;
+        pOut->uH = pSet->uWorldH;
+    }
+}
+
+bool Smap_ZoomIn(SmapView *pView, const SmapZoomSet aSets[3],
+                 SmapWorldSize *pOut, i32 nStripHeight)
+{
+    double dScale;
+
+    if (pView == NULL || aSets == NULL) {
+        return false;
+    }
+    if (pView->nMode == 0) {
+        dScale = PUFO_SMAP_ZOOM_IN_0_1; /* 0x82014: muld immediates */
+        pView->nMode = 1;
+    } else if (pView->nMode == 1) {
+        dScale = PUFO_SMAP_ZOOM_IN_1_2; /* 0x81EF4 */
+        pView->nMode = 2;
+    } else {
+        return false; /* 0x81E5C: level 2 has no step, nothing is touched */
+    }
+
+    Smap_ApplyZoomSet(pView, &aSets[pView->nMode], pOut);
+
+    /* itod / muld / dtoi is a plain int -> double -> int, so the product truncates
+     * toward zero. The new map size is already in place when the clamp runs. */
+    pView->nScrollX = (i32)((double)pView->nScrollX * dScale);
+    pView->nScrollY = (i32)((double)pView->nScrollY * dScale);
+
+    Smap_ClampScrollY(pView, nStripHeight);
+    return true;
+}
+
+bool Smap_ZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *pOut)
+{
+    double dScale;
+
+    if (pView == NULL || aSets == NULL) {
+        return false;
+    }
+    if (pView->nMode == 1) {
+        dScale = PUFO_SMAP_ZOOM_OUT_1_0; /* 0x81DD4 */
+        pView->nMode = 0;
+    } else if (pView->nMode == 2) {
+        dScale = PUFO_SMAP_ZOOM_OUT_2_1; /* 0x81CB4 */
+        pView->nMode = 1;
+    } else {
+        return false; /* 0x81C14 / 0x81C1C: level 0 has no step */
+    }
+
+    Smap_ApplyZoomSet(pView, &aSets[pView->nMode], pOut);
+
+    pView->nScrollX = (i32)((double)pView->nScrollX * dScale);
+    pView->nScrollY = (i32)((double)pView->nScrollY * dScale);
+
+    /* Smap_ZoomOut applies no clamp, unlike Smap_ZoomIn. */
+    return true;
 }

@@ -403,6 +403,60 @@ static void TestSmapView(void)
     CheckEqI32(Tilemap_GetAt(&grid, 1, 0), 2, "first row");
 }
 
+static void TestSmapZoom(void)
+{
+    SmapView view;
+    SmapZoomSet aSets[3];
+    SmapWorldSize world;
+    static PadImage aGrid[3];
+
+    printf("Smap_ZoomIn / Smap_ZoomOut\n");
+
+    aGrid[0].uWidth = 800; aGrid[0].uHeight = 400;
+    aGrid[1].uWidth = 600; aGrid[1].uHeight = 300;
+    aGrid[2].uWidth = 472; aGrid[2].uHeight = 236;
+    for (i32 i = 0; i < 3; ++i) {
+        aSets[i].pTiles = NULL;
+        aSets[i].pGrid = &aGrid[i];
+        aSets[i].pOverlay = NULL;
+    }
+    aSets[0].uWorldW = 800; aSets[0].uWorldH = 400;
+    aSets[1].uWorldW = 600; aSets[1].uWorldH = 300;
+    aSets[2].uWorldW = 472; aSets[2].uWorldH = 236;
+
+    memset(&view, 0, sizeof(view));
+    view.nScrollX = 100;
+    view.nScrollY = 100;
+
+    Check(Smap_ZoomIn(&view, aSets, &world, 0), "level 0 has a zoom-in step");
+    CheckEqI32(view.nMode, 1, "level 0 goes to level 1");
+    CheckEqI32(view.nMapW, 600, "the map size comes from the level grid");
+    CheckEqI32(view.nMapH, 300, "map height too");
+    CheckEqI32(world.uW, 600, "the world pair is published");
+    CheckEqI32(view.nScrollX, 75, "scroll scales by 0.7501875468867217 and truncates");
+    CheckEqI32(view.nScrollY, -10, "zoom in clamps y with the new map height");
+
+    Check(Smap_ZoomIn(&view, aSets, &world, 0), "level 1 has a zoom-in step");
+    CheckEqI32(view.nMode, 2, "level 1 goes to level 2");
+    CheckEqI32(view.nMapH, 236, "the closest level is 472 x 236");
+    CheckEqI32(view.nScrollX, 59, "the second step scales by 1/1.27");
+    CheckEqI32(view.nScrollY, -42, "y truncates toward zero before the clamp");
+
+    Check(!Smap_ZoomIn(&view, aSets, &world, 0), "level 2 has no zoom-in step");
+    CheckEqI32(view.nMode, 2, "a refused step changes nothing");
+
+    Check(Smap_ZoomOut(&view, aSets, &world), "level 2 has a zoom-out step");
+    CheckEqI32(view.nMode, 1, "level 2 goes back to level 1");
+    CheckEqI32(view.nScrollX, 74, "zoom out scales by 1.27");
+    CheckEqI32(view.nScrollY, -53, "zoom out applies no clamp");
+
+    Check(Smap_ZoomOut(&view, aSets, &world), "level 1 has a zoom-out step");
+    CheckEqI32(view.nMode, 0, "back to the widest level");
+    CheckEqI32(view.nMapW, 800, "the widest level is 800 x 400");
+    CheckEqI32(view.nScrollX, 98, "a full round trip does not restore the scroll");
+    Check(!Smap_ZoomOut(&view, aSets, &world), "level 0 has no zoom-out step");
+}
+
 static void TestStrategListAlloc(void)
 {
     PtrArray list;
@@ -429,6 +483,7 @@ int main(void)
     TestCalcDetect();
     TestUpdateDetectAndIntercepts();
     TestSmapView();
+    TestSmapZoom();
     TestStrategListAlloc();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
