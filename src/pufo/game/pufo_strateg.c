@@ -563,6 +563,112 @@ i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomM
     return pfnProcessEvents(pUser); /* 0x7E488 tail call, runs either way */
 }
 
+/* The same rule as StrategList_CountActive @ 0x81a2c, over the real container.
+ * The port carries two views of the one global strateg list -- PtrArray and
+ * StrategList -- and they are not castable. That is a design problem to settle
+ * separately; this is the smallest honest bridge. */
+static i32 CountActiveCraft(const PtrArray *pList)
+{
+    i32 nHits = 0;
+    i32 i;
+
+    for (i = 0; i < pList->nCount; ++i) {
+        const StrategItem *pItem = (const StrategItem *)pList->apItems[i];
+        if (pItem != NULL && pItem->nType == 1 && pItem->bActive == 1) {
+            ++nHits;
+        }
+    }
+    return nHits;
+}
+
+i32 StrategList_RemoveAt(PtrArray *pList, const GeoscapeWorld *pWorld, i32 nIndex,
+                         u8 *pnSpawnOnceFlag, const StrategSpawnCtx *pCtx)
+{
+    i32 nShip;
+    i32 nOnce;
+
+    if (pList == NULL || nIndex < 0) {
+        return 0;
+    }
+
+    /* 0x82AC4: re-point every intercept that sits after the hole being made. */
+    if (pWorld != NULL) {
+        for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) {
+            Ship *pShip = pWorld->apCraft[nShip];
+            if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx > nIndex) {
+                pShip->nStrategIdx -= 1; /* 0x82AFC */
+            }
+        }
+    }
+
+    PtrArray_DeleteAt(pList, nIndex); /* 0x82B28 */
+
+    nOnce = (pnSpawnOnceFlag != NULL) ? (i32)*pnSpawnOnceFlag : 0; /* 0x82B3C */
+    if (nOnce == 0) {
+        return nOnce;
+    }
+
+    if (pCtx != NULL) {
+        i32 nMissing = 3 - CountActiveCraft(pList); /* 0x82B50 */
+        while (nMissing > 0) {
+            if (Game_RandU16(3) == 1) { /* 0x82B70: exactly 1 */
+                (void)StrategList_MaybeSpawnCraft_Process(pList, pCtx->pnSeed,
+                                                          pCtx->nZoomMode, pCtx->pTables,
+                                                          pCtx->nDifficulty, pCtx->nEarlyGate,
+                                                          1, pCtx->pfnSpawnMission,
+                                                          pCtx->pfnProcessEvents, pCtx->pUser);
+            }
+            --nMissing;
+        }
+        *pnSpawnOnceFlag = 0; /* 0x82B94 */
+    }
+    return 0;
+}
+
+i32 StrategList_PurgeType5(PtrArray *pList, const GeoscapeWorld *pWorld,
+                           u8 *pnSpawnOnceFlag, const StrategSpawnCtx *pCtx)
+{
+    i32 i = 0;
+    int bKeep = 1; /* 0x6AB60: set once, before the loop, and never reset per iteration */
+
+    if (pList == NULL) {
+        return 0;
+    }
+    if (pList->nCount <= 0) {
+        return pList->nCount;
+    }
+
+    for (;;) {
+        const StrategItem *pItem = (const StrategItem *)pList->apItems[i];
+
+        if (pItem != NULL && pItem->nType == 5) {
+            bKeep = 0; /* 0x6ABA0 */
+            if (pWorld != NULL) {
+                i32 nShip;
+                for (nShip = 0; nShip < (i32)pWorld->nShipCount; ++nShip) {
+                    const Ship *pShip = pWorld->apCraft[nShip];
+                    if (pShip != NULL && pShip->bIntercepting != 0
+                        && pShip->nStrategIdx == i) {
+                        bKeep = 1; /* 0x6ABD0: a ship claims it */
+                    }
+                }
+            }
+        }
+
+        if (bKeep == 0) {
+            (void)StrategList_RemoveAt(pList, pWorld, i, pnSpawnOnceFlag, pCtx);
+            if (i < pList->nCount - 1) {
+                continue; /* 0x6AC08: re-tests the SAME index, with bKeep still 0 */
+            }
+        }
+        ++i;
+        if (i >= pList->nCount) {
+            break;
+        }
+    }
+    return pList->nCount;
+}
+
 /* ------------------------------------------------------- the geoscape viewport */
 
 /* The vertical clamp both Smap_ScrollBy @ 0x82124..0x82160 and Smap_ZoomIn

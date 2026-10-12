@@ -517,6 +517,114 @@ static void TestMaybeSpawnCraft(void)
     PtrArray_DeleteAll(&list);
 }
 
+static void TestRemoveAtAndPurge(void)
+{
+    printf("RemoveAt / PurgeType5\n");
+    PtrArray list;
+    Ship ship;
+    Ship *apCraft[1];
+    GeoscapeWorld world;
+    StrategSpawnCtx ctx;
+    u8 once;
+    i32 seed = 0;
+    i32 i;
+
+    apCraft[0] = &ship;
+    memset(&world, 0, sizeof(world));
+    world.apCraft = apCraft;
+    world.nShipCount = 1;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pTables = &g_Roll;
+    ctx.pnSeed = &seed;
+    ctx.pfnSpawnMission = SpawnProbe;
+    ctx.pfnProcessEvents = EventProbe;
+
+    /* ---- RemoveAt re-points the intercepts that sit after the hole ---- */
+    PtrArray_ctor(&list);
+    for (i = 0; i < 3; ++i) {
+        (void)StrategItem_AllocAdd(&list, i);
+        ((StrategItem *)list.apItems[i])->nType = 1;
+    }
+    memset(&ship, 0, sizeof(ship));
+    ship.bIntercepting = 1;
+    ship.nStrategIdx = 2;
+    once = 0;
+    CheckEqI32(StrategList_RemoveAt(&list, &world, 0, &once, &ctx), 0,
+               "with the one-shot flag clear it returns that flag unchanged");
+    CheckEqI32(list.nCount, 2, "one item removed");
+    CheckEqI32(ship.nStrategIdx, 1, "the intercept after the hole moved down to follow its target");
+
+    ship.nStrategIdx = 0;
+    (void)StrategList_RemoveAt(&list, &world, 0, &once, &ctx);
+    CheckEqI32(ship.nStrategIdx, 0, "an intercept at or below the removed index is left alone");
+    PtrArray_DeleteAll(&list);
+
+    /* ---- the one-shot replacement pass ---- */
+    /* Game_RandU16(3) has to land on exactly 1, so a single pass is a coin flip.
+     * Repeat it: 40 passes is 120 rolls, and the flag is re-armed each time. */
+    once = 1;
+    g_nSpawnCalls = 0;
+    g_nEventCalls = 0;
+    PtrArray_ctor(&list);
+    CheckEqI32(StrategList_RemoveAt(&list, &world, 0, &once, &ctx), 0,
+               "a replacement pass returns 0, not the flag it read");
+    CheckEqI32(once, 0, "and the one-shot byte is cleared, so it can only fire once");
+    PtrArray_DeleteAll(&list);
+
+    for (i = 0; i < 40; ++i) {
+        PtrArray_ctor(&list);
+        once = 1;
+        (void)StrategList_RemoveAt(&list, &world, 0, &once, &ctx);
+        PtrArray_DeleteAll(&list);
+    }
+    Check(g_nSpawnCalls > 0, "the replacement spawn does fire on a roll of exactly 1");
+    Check(g_nEventCalls >= g_nSpawnCalls,
+          "each replacement spawn also runs the geoscape event pass");
+
+    /* ---- PurgeType5, and the cascade bug the original really has ---- */
+    /* A claimed type-5 item survives and nothing else is touched. */
+    PtrArray_ctor(&list);
+    for (i = 0; i < 5; ++i) {
+        (void)StrategItem_AllocAdd(&list, i);
+        ((StrategItem *)list.apItems[i])->nType = (i == 0) ? 5 : 1;
+    }
+    memset(&ship, 0, sizeof(ship));
+    ship.bIntercepting = 1;
+    ship.nStrategIdx = 0;
+    once = 0;
+    CheckEqI32(StrategList_PurgeType5(&list, &world, &once, &ctx), 5,
+               "a type-5 item a ship is chasing is kept, and so is everything else");
+    PtrArray_DeleteAll(&list);
+
+    /* No ships: the first item is unclaimed type 5, so it goes -- and then the flag
+     * is still 0, so the next item goes too, whatever it is. Five items in, one out. */
+    PtrArray_ctor(&list);
+    for (i = 0; i < 5; ++i) {
+        (void)StrategItem_AllocAdd(&list, i);
+        ((StrategItem *)list.apItems[i])->nType = (i == 0) ? 5 : 1;
+    }
+    memset(&ship, 0, sizeof(ship));
+    world.nShipCount = 0;
+    once = 0;
+    CheckEqI32(StrategList_PurgeType5(&list, &world, &once, &ctx), 1,
+               "ORIGINAL BUG REPRODUCED: one unclaimed type-5 item cascades and deletes every item after it");
+    PtrArray_DeleteAll(&list);
+
+    /* Same bug from the middle: index 1 is the unclaimed type 5, so 1 and 2 go and
+     * the walk then steps past the end. Five in, two out. */
+    PtrArray_ctor(&list);
+    for (i = 0; i < 5; ++i) {
+        (void)StrategItem_AllocAdd(&list, i);
+        ((StrategItem *)list.apItems[i])->nType = (i == 1) ? 5 : 1;
+    }
+    once = 0;
+    CheckEqI32(StrategList_PurgeType5(&list, &world, &once, &ctx), 2,
+               "the cascade stops only when the index reaches the last item");
+    PtrArray_DeleteAll(&list);
+
+    world.nShipCount = 1;
+}
+
 static void TestUpdateMotion(void)
 {
     printf("StrategList_UpdateMotion\n");
@@ -963,6 +1071,7 @@ int main(void)
     TestRollCraftStats();
     TestAddAlienSiteAndTravel();
     TestMaybeSpawnCraft();
+    TestRemoveAtAndPurge();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -351,6 +351,62 @@ i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomM
                                         StrategProcessEventsFn pfnProcessEvents,
                                         void *pUser);
 
+/* The arguments StrategList_RemoveAt has to hand to StrategList_MaybeSpawnCraft_Process
+ * when a removal triggers a replacement spawn. Bundled because there are eight of them
+ * and none of them belong to the removal itself. */
+typedef struct StrategSpawnCtx {
+    const StrategRollTables *pTables;
+    i32 nDifficulty;
+    i32 nEarlyGate;
+    i32 nZoomMode;
+    i32 *pnSeed;
+    StrategSpawnMissionFn pfnSpawnMission;
+    StrategProcessEventsFn pfnProcessEvents;
+    void *pUser;
+} StrategSpawnCtx;
+
+/* ------------------------------------------------- removing a strateg item
+ *
+ * Evidence: StrategList_RemoveAt @ 0x82ab0.
+ *
+ * Two jobs, and the first one is the reason removals are not just a container call.
+ *
+ * 1. Keep intercept references valid. Every ship that is bIntercepting and whose
+ *    nStrategIdx is GREATER than nIndex has it decremented by one. Ships at or below
+ *    nIndex are left alone. Without this, removing a contact makes every later
+ *    intercept point at the wrong item.
+ *
+ * 2. A removal can spawn a replacement. If the one-shot byte at 0x162028 is set, the
+ *    original computes 3 minus the number of active craft, and for each missing one
+ *    rolls Game_RandU16(3), calling StrategList_MaybeSpawnCraft_Process with bSpawn 1
+ *    only on a roll of exactly 1. It then clears the byte and returns 0. If the byte
+ *    was already 0 it is returned unchanged. So the return value is that byte either
+ *    way -- 0 when a replacement pass ran.
+ *
+ * Note that each MaybeSpawnCraft_Process call runs the geoscape event pass too, so a
+ * removal that spawns two replacements runs the event pass twice. */
+i32 StrategList_RemoveAt(PtrArray *pList, const GeoscapeWorld *pWorld, i32 nIndex,
+                         u8 *pnSpawnOnceFlag, const StrategSpawnCtx *pCtx);
+
+/* StrategList_PurgeType5 @ 0x6ab58: drop every type-5 item no ship is claiming.
+ *
+ * For an item at index i with nType 5 it looks for any ship that is bIntercepting
+ * with nStrategIdx equal to i. If none claims it, the item is removed.
+ *
+ * THIS FUNCTION HAS A BUG IN THE ORIGINAL, AND THE PORT REPRODUCES IT.
+ * The keep-flag is set to 1 only before the loop, at 0x6AB60, and inside the ship
+ * scan. It is NOT reset per iteration. So once one unclaimed type-5 item is removed
+ * the flag stays 0, and the item now sitting at that same index is removed too,
+ * whatever its type -- and this cascades until only the last item of the list is
+ * left. With five items and an unclaimed type-5 item first, the result is one item.
+ *
+ * That matters because LoadGame (0x44bbc) calls this whenever the save version byte
+ * 0x18655C is below 3, so loading an old save that holds an unclaimed type-5 item
+ * wipes the geoscape down to a single contact. It is reproduced rather than fixed so
+ * the port behaves like the original; the bug is recorded in the IDB comment too. */
+i32 StrategList_PurgeType5(PtrArray *pList, const GeoscapeWorld *pWorld,
+                           u8 *pnSpawnOnceFlag, const StrategSpawnCtx *pCtx);
+
 /* ------------------------------------------------------- the geoscape viewport
  *
  * One 36-byte block at 0x1863E8. IDA carries two names for it because different
