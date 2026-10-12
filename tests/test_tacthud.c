@@ -790,8 +790,8 @@ static void CountBlit(const PadImage *pPad, void *pUser)
 
 static void TestHudDraw(void)
 {
-    UiControl aPad[PUFO_HUD_STATUS_PADS];
-    PadImage aImg[PUFO_HUD_STATUS_PADS];
+    UiControl aPad[PUFO_HUD_ROSTER_PADS];
+    PadImage aImg[PUFO_HUD_ROSTER_PADS];
     SoftSurf surf;
     /* PadImage_Blit reaches the glyph header through pData with no NULL guard, exactly as the
      * original does, so the test must hand it a real one: u16 width, u16 height, then pixels. */
@@ -804,6 +804,15 @@ static void TestHudDraw(void)
     TactHudBannerState banner;
     UiPanel panelA;
     UiPanel panelB;
+    TactHudRoster roster;
+    TactHudMarkerEnv marks;
+    static u8 aModeNames[PUFO_HUD_ROSTER_PADS * PUFO_HUD_ROSTER_NAME_STRIDE];
+    Soldier xcom;
+    Soldier enemy;
+    Soldier *apXcom[1];
+    Soldier *apEnemy[1];
+    MapCell selCell;
+    MapCell unitCell;
     i32 nScratch;
     i32 i;
 
@@ -825,7 +834,7 @@ static void TestHudDraw(void)
     memset(&panelA, 0, sizeof(panelA));
     memset(&panelB, 0, sizeof(panelB));
 
-    for (i = 0; i < PUFO_HUD_STATUS_PADS; ++i) {
+    for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
         memset(&aPad[i], 0, sizeof(aPad[i]));
         memset(&aImg[i], 0, sizeof(aImg[i]));
         aPad[i].x = (i16)(10 + 20 * i);
@@ -880,6 +889,11 @@ static void TestHudDraw(void)
     aImg[0].uHeight = 8;
     aImg[0].pData = aGlyph;
     aImg[0].nMode = 0;
+
+    memset(aModeNames, 0, sizeof(aModeNames));
+    for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+        sprintf((char *)(aModeNames + i * PUFO_HUD_ROSTER_NAME_STRIDE), "M%d", (int)i);
+    }
 
     /* TactHud_DrawActionButtons @ 0x21430: the per-button visibility rule. */
     memset(&gate, 0, sizeof(gate));
@@ -946,6 +960,106 @@ static void TestHudDraw(void)
                                                                     &panelA, &panelB, &color,
                                                                     CountBlit, CountBlit, NULL), 1);
     TestEqI32("the dialog blits its one pad", g_nPadBlits, 1);
+
+    /* TactHud_DrawUnitRoster @ 0x21908: twelve modes, only the ones with a non-zero entry drawn,
+     * and a drawn pad's y rewritten to 23 * (drawn so far) + 67. */
+    memset(&roster, 0, sizeof(roster));
+    roster.pSelWeapon = NULL;
+    g_nPadBlits = 0;
+    TestEqI32("no selected weapon means no roster panel",
+              TactHud_DrawUnitRoster(aPad, &roster, &color, CountBlit, CountBlit, NULL), 0);
+    TestEqI32("nothing blitted", g_nPadBlits, 0);
+
+    roster.pSelWeapon = aGlyph;
+    roster.pNameTable = aModeNames;
+    roster.szNumberPrefixA = "A";
+    roster.szNumberPrefixB = "B";
+    roster.anModeFlag[0] = 4;
+    roster.anModeFlag[3] = 7;
+    roster.anModeFlag[11] = 2;
+    roster.anModeValue[0] = 40;
+    roster.anModeValue[3] = 70;
+    roster.anModeValue[11] = 20;
+    for (i = 0; i < PUFO_HUD_ROSTER_PADS; ++i) {
+        aPad[i].y = (i16)(500 + i);
+        aPad[i].bEnabled = 1;   /* the action-button test above disabled some of them */
+    }
+    g_nPadBlits = 0;
+    TestEqI32("the roster still walks twelve modes",
+              TactHud_DrawUnitRoster(aPad, &roster, &color, CountBlit, CountBlit, NULL), 12);
+    TestEqI32("only three modes are drawn", g_nPadBlits, 3);
+    TestEqI32("drawn mode 0 lands at y 67", aPad[0].y, 67);
+    TestEqI32("drawn mode 3 lands at y 90, not 136", aPad[3].y, 90);
+    TestEqI32("drawn mode 11 lands at y 113", aPad[11].y, 113);
+    TestEqI32("an undrawn mode keeps its stored y", aPad[5].y, 505);
+
+    /* TactHud_DrawUnitMarkers @ 0x20c58: 11 pixels per cell of difference, centred on x = 120.
+     * XCOM uses 11 * (dy + 14) = 11*dy + 154 and enemies 11 * dy + 155, one pixel apart. */
+    MapCell_Init(&selCell, 5, 5, 0);
+    MapCell_Init(&unitCell, 7, 6, 0);
+    memset(&xcom, 0, sizeof(xcom));
+    memset(&enemy, 0, sizeof(enemy));
+    xcom.pCell = &unitCell;
+    xcom.bSpecialMark = 1;
+    xcom.nUnitType = 0;
+    enemy.pCell = &unitCell;
+    enemy.bSpecialMark = 1;
+    enemy.nUnitType = 0;
+    apXcom[0] = &xcom;
+    apEnemy[0] = &enemy;
+
+    memset(&marks, 0, sizeof(marks));
+    /* The overlay pad must not be one a control points at: UiControl_BlitActivePad rewrites its
+     * origin from the control at the end of the function. */
+    marks.pOverlayPad = &aImg[10];
+    marks.pLargeMark = &aImg[1];
+    marks.pSmallMark = &aImg[2];
+    marks.pSelCell = &selCell;
+    aImg[1].pData = aGlyph;
+    aImg[2].pData = aGlyph;
+    aImg[10].pData = aGlyph;
+
+    g_nPadBlits = 0;
+    TestEqI32("TactHud_DrawUnitMarkers draws its one pad",
+              TactHud_DrawUnitMarkers(&aPad[0], &marks, apXcom, 1, apEnemy, 1,
+                                      CountBlit, CountBlit, NULL), 1);
+    TestEqI32("the overlay pad is moved to (0,0)", aImg[10].nOriginX, 0);
+    TestEqI32("and its y too", aImg[10].nOriginY, 0);
+
+    /* XCOM alone: 11 * (dy + 14) = 11*1 + 154, then -4 for a small unit. */
+    (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, apXcom, 1, NULL, 0,
+                                  CountBlit, CountBlit, NULL);
+    TestEqI32("small XCOM mark x = 11*2 + 120 - 4", aImg[2].nOriginX, 138);
+    TestEqI32("small XCOM mark y = 11*(1+14) - 4", aImg[2].nOriginY, 161);
+
+    /* Enemies alone: 11 * dy + 155, then -4. One pixel lower than the XCOM band. */
+    aImg[2].nOriginY = -1;
+    (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, NULL, 0, apEnemy, 1,
+                                  CountBlit, CountBlit, NULL);
+    TestEqI32("small enemy mark y = 11*1 + 155 - 4", aImg[2].nOriginY, 162);
+
+    /* A large unit takes the large mark, offset 2 for XCOM and 8 for the enemy. Unit type 4 is
+     * the large one in g_aUnitTypeIsLarge, which is a const table. */
+    xcom.nUnitType = 4;
+    enemy.nUnitType = 4;
+    (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, apXcom, 1, NULL, 0,
+                                  CountBlit, CountBlit, NULL);
+    TestEqI32("large XCOM mark x = 142 - 2", aImg[1].nOriginX, 140);
+    TestEqI32("large XCOM mark y = 165 - 2", aImg[1].nOriginY, 163);
+    (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, NULL, 0, apEnemy, 1,
+                                  CountBlit, CountBlit, NULL);
+    TestEqI32("large enemy mark x = 142 - 8", aImg[1].nOriginX, 134);
+    TestEqI32("large enemy mark y = 166 - 8", aImg[1].nOriginY, 158);
+    xcom.nUnitType = 0;
+    enemy.nUnitType = 0;
+
+    /* An unmarked unit draws nothing. */
+    xcom.bSpecialMark = 0;
+    enemy.bSpecialMark = 0;
+    aImg[2].nOriginX = -1;
+    (void)TactHud_DrawUnitMarkers(&aPad[0], &marks, apXcom, 1, apEnemy, 1,
+                                  CountBlit, CountBlit, NULL);
+    TestEqI32("an unmarked unit leaves the mark alone", aImg[2].nOriginX, -1);
 
     g_pMainSurface = NULL;
 }

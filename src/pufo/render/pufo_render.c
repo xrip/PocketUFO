@@ -1037,3 +1037,12 @@ void PadImage_Blit(const PadImage *pPad)
 {
     SoftSurf_BlitIndexed(pPad->nOriginX, pPad->nOriginY, pPad->pData, pPad->nMode);
 }
+
+/* PadImage_BlitEx @ 0x11110. The keyed form of the same blit: the caller supplies the colour key
+ * (0xFF for the unit markers). The original also passes uWidth and uHeight into
+ * SoftSurf_BlitIndexedKeyed @ 0x9ea34, which takes five arguments and reads the size from the
+ * glyph header, so those two are dead arguments. Reproduced as the five the callee uses. */
+void PadImage_BlitEx(const PadImage *pPad, u8 nKey)
+{
+    SoftSurf_BlitIndexedKeyed(pPad->nOriginX, pPad->nOriginY, pPad->pData, pPad->nMode, nKey);
+}

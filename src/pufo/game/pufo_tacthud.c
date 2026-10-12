@@ -801,3 +801,127 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
 
     return 1;
 }
+
+/* TactHud_DrawUnitRoster @ 0x21908.
+ *
+ * Twelve fire modes, only those with a non-zero entry drawn. A drawn pad's y is rewritten to
+ * 23 * (drawn count so far) + 67, so the panel packs the visible modes. The mode name comes from
+ * a 30-byte-stride table at 0xB3768, which sits BELOW aTextRecs @ 0xB38D0 and is not a text-record
+ * table. The first number is drawn only for modes 0..2 and 11 - the ARM test is `idx < 3 || idx > 10` -
+ * and it is the same value that gates the row, so a row either shows one number or two. */
+i32 TactHud_DrawUnitRoster(UiControl *pPads, const TactHudRoster *pRoster,
+                           const GfxColorEnv *pColor,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    char szText[128];
+    i32 nIdx;
+    i32 nVisible = 0;
+    i32 nResult;
+
+    if (pRoster->pSelWeapon == NULL) {
+        return 0;
+    }
+
+    for (nIdx = 0; ; ++nIdx) {
+        if (pRoster->anModeFlag[nIdx] != 0) {
+            pPads[nIdx].y = (i16)(23 * nVisible + 67);
+
+            (void)UiControl_BlitActivePad(&pPads[nIdx], pfnBlit, pfnBlitEx, pUser);
+
+            Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+            Text_DrawString((i32)pPads[nIdx].x + 5, (i32)pPads[nIdx].y + 3,
+                            (const char *)(pRoster->pNameTable + PUFO_HUD_ROSTER_NAME_STRIDE * nIdx));
+
+            if (nIdx < 3 || nIdx > 10) {
+                sprintf(szText, "%s%d", pRoster->szNumberPrefixA, pRoster->anModeFlag[nIdx]);
+                /* The original sets the same colour twice here; reproduced rather than tidied. */
+                Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+                Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+                Text_DrawString((i32)pPads[nIdx].x + 85, (i32)pPads[nIdx].y + 3, szText);
+            }
+
+            sprintf(szText, "%s%d", pRoster->szNumberPrefixB, pRoster->anModeValue[nIdx]);
+            Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+            Text_DrawString((i32)pPads[nIdx].x + 135, (i32)pPads[nIdx].y + 3, szText);
+
+            ++nVisible;
+        }
+
+        nResult = nIdx + 1;
+        if (nResult >= PUFO_HUD_ROSTER_PADS) {
+            break;
+        }
+    }
+    return nResult;
+}
+
+/* TactHud_DrawUnitMarkers @ 0x20c58.
+ *
+ * One overlay pad at (0,0), then a marker for every unit carrying bSpecialMark, placed relative to
+ * the selected unit's cell at 11 pixels per cell of difference. XCOM rows use 11 * (dy + 14), which
+ * is 11 * dy + 154, while enemy rows use 11 * dy + 155: the two bands are one pixel apart rather
+ * than symmetric. Large units take the large mark, offset a further 2 for XCOM and 8 for enemies,
+ * and are also the only case where the two differ; small units take the small mark at 4 either way. */
+i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
+                            Soldier *const *apXcom, i32 nXcomCount,
+                            Soldier *const *apEnemy, i32 nEnemyCount,
+                            UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser)
+{
+    i32 i;
+
+    pEnv->pOverlayPad->nOriginX = 0;
+    pEnv->pOverlayPad->nOriginY = 0;
+    PadImage_Blit(pEnv->pOverlayPad);
+
+    for (i = 0; i < nXcomCount; ++i) {
+        const Soldier *pUnit = apXcom[i];
+        i32 nX;
+        i32 nY;
+        PadImage *pMark;
+
+        if (pUnit->bSpecialMark == 0) {
+            continue;
+        }
+        nX = 11 * (pUnit->pCell->nX - pEnv->pSelCell->nX) + 120;
+        nY = 11 * (pUnit->pCell->nY - pEnv->pSelCell->nY + 14);
+
+        if (Unit_bIsLarge(pUnit)) {
+            pMark = pEnv->pLargeMark;
+            pMark->nOriginX = nX - 2;
+            pMark->nOriginY = nY - 2;
+        } else {
+            pMark = pEnv->pSmallMark;
+            pMark->nOriginX = nX - 4;
+            pMark->nOriginY = nY - 4;
+        }
+        PadImage_BlitEx(pMark, 0xFFu);
+    }
+
+    for (i = 0; i < nEnemyCount; ++i) {
+        const Soldier *pUnit = apEnemy[i];
+        i32 nX;
+        i32 nY;
+        PadImage *pMark;
+
+        if (pUnit->bSpecialMark == 0) {
+            continue;
+        }
+        nX = 11 * (pUnit->pCell->nX - pEnv->pSelCell->nX) + 120;
+        nY = 11 * (pUnit->pCell->nY - pEnv->pSelCell->nY) + 155;
+
+        if (Unit_bIsLarge(pUnit)) {
+            pMark = pEnv->pLargeMark;
+            pMark->nOriginX = nX - 8;
+            pMark->nOriginY = nY - 8;
+        } else {
+            pMark = pEnv->pSmallMark;
+            pMark->nOriginX = nX - 4;
+            pMark->nOriginY = nY - 4;
+        }
+        PadImage_BlitEx(pMark, 0xFFu);
+    }
+
+    (void)UiControl_BlitActivePad(pPad, pfnBlit, pfnBlitEx, pUser);
+
+    return 1;
+}

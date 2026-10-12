@@ -217,5 +217,6 @@ void PadImage_FreeData(PadImage *pPad);
 /* Loads "<pszName>.pad" from the archives. nMode is the palette slot. */
 bool PadImage_Load(PadImage *pPad, const char *pszName, u8 nMode);
 void PadImage_Blit(const PadImage *pPad);
+void PadImage_BlitEx(const PadImage *pPad, u8 nKey);
 
 #endif /* PUFO_RENDER_H */

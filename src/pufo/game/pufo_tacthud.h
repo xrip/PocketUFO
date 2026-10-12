@@ -289,4 +289,45 @@ i32 TactHud_DrawStatusBanner(UiControl *pPad, const PadImage *pBackdrop,
                              const GfxColorEnv *pColor,
                              UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
 
+/* --- the fire-mode roster panel (screen 3) ----------------------------------------
+ *
+ * TactHud_DrawUnitRoster @ 0x21908. Bank widgets 32..43 (unk_ACAD0 = pBank + 1024, and 512*2 =
+ * 1024), the same span Tact_Shutdown (0x3d568, not ported) walks as 32/12. Twelve fire modes;
+ * only the ones with a non-zero entry are drawn, and a drawn pad has its y REWRITTEN to
+ * 23 * (drawn count so far) + 67, so the panel packs the visible modes. */
+#define PUFO_HUD_ROSTER_PADS 12
+#define PUFO_HUD_ROSTER_NAME_STRIDE 30
+
+typedef struct TactHudRoster {
+    const void *pSelWeapon;    /* Map.pSelWeapon: NULL skips the whole panel */
+    i32 anModeFlag[12];        /* Map + 20092, the twelve per-mode values also drawn as a number */
+    i32 anModeValue[12];       /* Map + 20044 */
+    const u8 *pNameTable;      /* 0xB3768, twelve 30-byte mode names, BELOW aTextRecs @ 0xB38D0 */
+    const char *szNumberPrefixA; /* unk_C7051 */
+    const char *szNumberPrefixB; /* unk_C711E */
+} TactHudRoster;
+
+i32 TactHud_DrawUnitRoster(UiControl *pPads, const TactHudRoster *pRoster,
+                           const GfxColorEnv *pColor,
+                           UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
+/* --- the marked-unit markers (screen 6) -------------------------------------------
+ *
+ * TactHud_DrawUnitMarkers @ 0x20c58. One overlay pad is blitted at (0,0) first, then every unit
+ * carrying bSpecialMark gets a marker placed relative to the SELECTED unit's cell: 11 pixels per
+ * cell of difference, centred on x = 120. XCOM rows start at 11 * (dy + 14) and enemy rows at
+ * 11 * dy + 155, so the two bands are one pixel apart rather than symmetric. Large units use the
+ * large mark with a further offset and small units the small mark. */
+typedef struct TactHudMarkerEnv {
+    PadImage *pOverlayPad;   /* Map.pMarkerPad, blitted at (0,0) */
+    PadImage *pLargeMark;    /* unk_138EB8 */
+    PadImage *pSmallMark;    /* unk_156A80 */
+    const MapCell *pSelCell; /* pSelUnit->pCell */
+} TactHudMarkerEnv;
+
+i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
+                            Soldier *const *apXcom, i32 nXcomCount,
+                            Soldier *const *apEnemy, i32 nEnemyCount,
+                            UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
+
 #endif /* PUFO_TACTHUD_H */
