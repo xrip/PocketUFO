@@ -193,11 +193,64 @@ static void TestSupplyConsume(void)
     CheckEqI32(bLowFlag, 0, "low-supply flag stays clear");
 }
 
+static void TestCargoPair(void)
+{
+    printf("InvSel_AddItemQty / InvSel_SubItemQty\n");
+    Ship ship;
+    ObjectRecFull item;
+
+    memset(&ship, 0, sizeof(ship));
+    memset(&item, 0, sizeof(item));
+    ship.nSlotIdx = 3;
+
+    CheckEqI32((int)(InvSel_AddItemQty(&ship, &item, 5) == &ship), 1,
+               "both return the ship pointer, not a status");
+    CheckEqI32(item.aItemQty[3], 5, "the object's column for this ship is what changes");
+    CheckEqI32(item.aItemQty[4], 0, "a neighbouring ship's column is untouched");
+    CheckEqI32(ship.uUnk4, 5, "and the craft's own cargo total at +0x04 follows");
+
+    InvSel_SubItemQty(&ship, &item, 2);
+    CheckEqI32(item.aItemQty[3], 3, "the subtract pair reverses it");
+    CheckEqI32(ship.uUnk4, 3, "in both places");
+
+    /* Two ships with different slots own different columns of the same object. */
+    memset(&ship, 0, sizeof(ship));
+    memset(&item, 0, sizeof(item));
+    ship.nSlotIdx = 0;
+    Ship other;
+    memset(&other, 0, sizeof(other));
+    other.nSlotIdx = 1;
+    InvSel_AddItemQty(&ship, &item, 7);
+    InvSel_AddItemQty(&other, &item, 11);
+    CheckEqI32(item.aItemQty[0], 7, "ship one owns column zero");
+    CheckEqI32(item.aItemQty[1], 11, "ship two owns column one");
+    CheckEqI32(ship.uUnk4, 7, "each craft totals only its own");
+    CheckEqI32(other.uUnk4, 11, "and the other its own");
+
+    /* u16 wrap, reproduced: neither update clamps. */
+    memset(&ship, 0, sizeof(ship));
+    memset(&item, 0, sizeof(item));
+    ship.nSlotIdx = 0;
+    ship.uUnk4 = 0;
+    InvSel_SubItemQty(&ship, &item, 1);
+    CheckEqI32(ship.uUnk4, 65535, "the cargo total wraps rather than floors at zero");
+
+    /* Deviation: an out-of-range slot skips both updates instead of writing off the end. */
+    memset(&ship, 0, sizeof(ship));
+    memset(&item, 0, sizeof(item));
+    ship.nSlotIdx = 52;
+    ship.uUnk4 = 9;
+    InvSel_AddItemQty(&ship, &item, 4);
+    CheckEqI32(ship.uUnk4, 9, "an out-of-range slot writes nothing at all");
+    CheckEqI32(item.aItemQty[0], 0, "and the object is left alone");
+}
+
 int main(void)
 {
     TestRangeRecover();
     TestRefuel();
     TestSupplyConsume();
+    TestCargoPair();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

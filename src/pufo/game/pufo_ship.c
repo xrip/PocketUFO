@@ -186,6 +186,43 @@ void Ship_TickRefuelAtBase(Ship *pShip)
     }
 }
 
+/* The cargo pair shares one body; only the sign of the two updates differs. */
+static Ship *ShipCargoApply(Ship *pSel, ObjectRecFull *pItem, i32 nDelta, bool bAdd)
+{
+    i32 nSlot;
+
+    if (pSel == NULL || pItem == NULL) {
+        return pSel;
+    }
+
+    nSlot = pSel->nSlotIdx;
+    if (nSlot < 0 ||
+        nSlot >= (i32)(sizeof(pItem->aItemQty) / sizeof(pItem->aItemQty[0]))) {
+        return pSel; /* deviation: the original indexes this blindly */
+    }
+
+    if (bAdd) {
+        pItem->aItemQty[nSlot] = (u16)((i32)pItem->aItemQty[nSlot] + nDelta); /* 0x45EB0 */
+        pSel->uUnk4 = (u16)((i32)pSel->uUnk4 + nDelta);                        /* 0x45EC0 */
+    } else {
+        pItem->aItemQty[nSlot] = (u16)((i32)pItem->aItemQty[nSlot] - nDelta); /* 0x45EEC */
+        pSel->uUnk4 = (u16)((i32)pSel->uUnk4 - nDelta);                        /* 0x45EFC */
+    }
+    return pSel;
+}
+
+/* InvSel_AddItemQty @ 0x45e8c. */
+Ship *InvSel_AddItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta)
+{
+    return ShipCargoApply(pSel, pItem, nDelta, true);
+}
+
+/* InvSel_SubItemQty @ 0x45ec8. */
+Ship *InvSel_SubItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta)
+{
+    return ShipCargoApply(pSel, pItem, nDelta, false);
+}
+
 /* BaseRec_SubItemQty @ 0x5571c. */
 static void BaseRec_SubItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
 {

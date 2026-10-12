@@ -147,4 +147,27 @@ typedef struct ShipCtorEnv {
 Ship *Ship_Ctor(Ship *pShip, u8 nCraftType, i32 nId, i32 nHomeBase, u8 bSkip,
                 ShipCtorEnv *pEnv);
 
+/* ------------------------------------------------- the craft cargo counterpart
+ *
+ * Evidence: InvSel_AddItemQty @ 0x45e8c, InvSel_SubItemQty @ 0x45ec8.
+ *
+ * These are the mirror of the BaseRec_AddItemQty and BaseRec_SubItemQty pair on the craft
+ * side, and the shape is identical: one add into the object's per-owner column, one into
+ * the owner's own running total.
+ *
+ *     pItem->aItemQty[pSel->nSlotIdx] += nDelta;   the object's per-craft column
+ *     pSel->uUnk4                     += nDelta;   the craft's cargo total at +0x04
+ *
+ * The column index is Ship.nSlotIdx at +0x1c, which Ship_Ctor set to the ship count at the
+ * moment the ship was created. That is what makes aItemQty a per-craft column rather than a
+ * per-item count, and it is the same trick auPerBaseVal uses with BaseRec.bSlot.
+ *
+ * Both return the ship pointer, not a status.
+ *
+ * Deviation: the original never checks nSlotIdx against the 52 entries of aItemQty. The port
+ * skips both adds when it is out of range, matching what it already does for the base-side
+ * pair. */
+Ship *InvSel_AddItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta);
+Ship *InvSel_SubItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta);
+
 #endif /* PUFO_SHIP_H */
