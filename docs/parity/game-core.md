@@ -2451,12 +2451,55 @@ with the index as an argument, in the new `game/pufo_plane.{h,c}`.
 The loadout screen carries two weapon panels, and each panel only takes the new weapon when
 its own gate is set: `unk_161F18` gates `unk_161F10` and `unk_161F1C` gates `unk_161F14`. A
 closed panel keeps its old selection. The swap runs either way -- 0x79B54 is a `B`, a true
-tail call to `BasePlaneScreen_ApplyWeaponSwap @ 0x79748`, which is not ported, so its result
-is what these handlers return.
+tail call to `BasePlaneScreen_ApplyWeaponSwap @ 0x79748`, so its result is what these handlers
+return.
 
 The widths come only from the disassembly: the gates are read with `LDRB` and the selection
-is written with `STRBNE`, so the selected weapon index is a **byte**. Covered by
-`tests/test_plane.c` (14 checks).
+is written with `STRBNE`, so the selected weapon index is a **byte**.
+
+### The loadout swap and its ammo stores (done)
+
+`BasePlaneScreen_ApplyWeaponSwap @ 0x79748`, `BasePlane_UnloadWeaponStores @ 0x790e8` and
+`BasePlane_LoadWeaponStores @ 0x793e0`, all in `game/pufo_plane.{h,c}`.
+
+**A weapon and its ammo are separate object records.** The swap moves `apObjects[weapon]`
+through cargo and base stores, while the two store functions move `apObjects[52..55]` and
+`apObjects[105]`. That is easy to miss and it changes what the call order means: the new
+weapon leaves base stores before its ammo is loaded, but since those are different records the
+load does not see a reduced stock.
+
+The store functions take a **weapon index**, not a pointer. The decompiler types the argument
+`BaseRec *` but every test in both functions is on the low byte, and the callers pass
+`Ship.bWeaponL` or `Ship.bWeaponR` straight in.
+
+| weapon | ammo record | load |
+|---|---|---|
+| 25 | `apObjects[52]` | 10 |
+| 26 | `apObjects[53]` | 3 |
+| 27 | `apObjects[54]` | 2 |
+| 29 | `apObjects[105]` | 10 |
+| 30 | `apObjects[55]` | 2 |
+
+Weapon 29 counts **rounds of 10 per base item**, so the unload multiplies by 10 and the load
+divides by 10 on both paths; a leftover round from the divide is dropped, not carried.
+
+Unload is one rule written out as five branches with the comparison flipped between them:
+take `min(stock, load)` from base stores into the craft's carried byte. Load is the reverse,
+and a mode decides how much comes back. Panel A's gate gives mode 2 unless this weapon is the
+craft's **right**-hand weapon, where it drops to 1; panel B's gate gives mode 2 unless it is
+the **left**-hand weapon, where it drops to 1 — and the second test **overwrites** the first,
+so with both gates only panel B's test survives. Mode 2 leaves one load on the craft and
+returns only the excess; any other mode returns everything and zeroes the byte.
+
+In the swap, the order that is load-bearing is the **weapon-byte assignment at 0x798BC, which
+comes last**. The cargo removal at 0x79838 re-reads the weapon byte, so assigning it any
+earlier removes the new weapon from the craft instead of the old one. When the craft carries
+nothing, the two base-store calls for the old weapon and the cargo removal are absent, and the
+base-store call for the new weapon moves to the end, after the load.
+
+Neither store function's return value is a status: Load returns the weapon index on some paths
+and the selected craft index on others, and no caller reads either. Covered by
+`tests/test_plane.c` (71 checks).
 
 
 ### Geoscape screen openers (done)
