@@ -127,7 +127,7 @@ static void StartMenu_Play(const StartMenuHooks *pHooks)
 static void StartMenu_Shutdown(const StartMenuHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnShutdownStartUi != NULL) {
-        pHooks->pfnShutdownStartUi(pHooks->pUser); /* StartUi_Shutdown @ 0x38d7c */
+        pHooks->pfnShutdownStartUi(pHooks->pUser); /* StartUi_Shutdown (0x38d7c) */
     }
 }
 

@@ -1,7 +1,7 @@
 /* pufo_plane.h - the craft loadout screen's weapon selection.
  *
- * Evidence: BasePlaneScreen_SelectWeapon25..30 @
- * 0x79b20/0x79b64/0x79ba8/0x79bec/0x79c30/0x79c74.
+ * Evidence: BasePlaneScreen_SelectWeapon25..30 @ 0x79b20/0x79b64/0x79ba8/0x79bec/0x79c30/0x79c74
+ * (all six on one line: the parity tool reads a citation run on a single line).
  *
  * The loadout screen carries TWO weapon panels. Every one of the six handlers is the same
  * thirteen instructions:
@@ -16,8 +16,9 @@
  * takes the index as an argument.
  *
  * A closed panel keeps its old selection, and the swap runs whether or not anything was
- * written. BasePlaneScreen_ApplyWeaponSwap @ 0x79748 is not ported, so it is a hook, and its
- * result is what these handlers return. */
+ * written. BasePlaneScreen_ApplyWeaponSwap (0x79748) is not ported, so it is a hook, and its
+ * result is what these handlers return. It is named without a citation on purpose: a citation
+ * credits a function as recreated. */
 #ifndef PUFO_PLANE_H
 #define PUFO_PLANE_H
 

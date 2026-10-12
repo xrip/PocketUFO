@@ -184,7 +184,7 @@ void BaseFacScreen_Open(GeoscapeScreenState *pState, const ScreenInitHooks *pHoo
  * times so each widget has its own function pointer. NewBaseScreen_CloseThunk is the odd
  * one: it plays sample 17 first and then makes the same call.
  *
- * Geoscape_CloseUI @ 0x8b94c is not ported (~40 unported callees), so it stays a hook. */
+ * Geoscape_CloseUI (0x8b94c) is not ported (~40 unported callees), so it stays a hook. */
 typedef struct GeoscapeCloseHooks {
     void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI(&MEMORY[0x1864F8]) */
     void (*pfnPlaySample)(u32 nSample, void *pUser);
@@ -204,9 +204,9 @@ void NewBaseScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
  * geoscape screen, frees every geoscape widget, and re-inits the startup UI. The scratch
  * byte is the same ScreenScratch field the base-screen helpers set to 3 and 4. */
 typedef struct TitleReturnHooks {
-    void (*pfnCloseUi)(void *pUser);              /* Geoscape_CloseUI @ 0x8b94c */
-    void (*pfnFreeGeoscapeUi)(i32 nMode, void *pUser); /* GeoscapeUi_FreeAll @ 0x86d20 */
-    i32 (*pfnStartupUi)(void *pUser);             /* GameUI_InitStartup @ 0x38a28 */
+    void (*pfnCloseUi)(void *pUser);              /* Geoscape_CloseUI (0x8b94c) */
+    void (*pfnFreeGeoscapeUi)(i32 nMode, void *pUser); /* GeoscapeUi_FreeAll (0x86d20) */
+    i32 (*pfnStartupUi)(void *pUser);             /* GameUI_InitStartup (0x38a28) */
     void *pUser;
 } TitleReturnHooks;
 
@@ -223,9 +223,9 @@ void Geoscape_CloseUI_ThunkB(const GeoscapeCloseHooks *pHooks);
 void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks);
 
 /* Geoscape_OnMapClick_Thunk @ 0x857e8: a widget callback shim that drops its four
- * arguments and tail-calls Geoscape_OnMapClick @ 0x8b4a8, which is not ported. */
+ * arguments and tail-calls Geoscape_OnMapClick (0x8b4a8), which is not ported. */
 typedef struct MapClickHooks {
-    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick @ 0x8b4a8 */
+    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick (0x8b4a8) */
     void *pUser;
 } MapClickHooks;
 

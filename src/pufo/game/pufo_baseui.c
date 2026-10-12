@@ -332,7 +332,7 @@ void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks)
 
 i32 Geoscape_OnMapClick_Thunk(const MapClickHooks *pHooks)
 {
-    /* 0x857EC tail-calls Geoscape_OnMapClick @ 0x8b4a8 and drops the four callback
+    /* 0x857EC tail-calls Geoscape_OnMapClick (0x8b4a8) and drops the four callback
      * arguments the widget framework passes. */
     if (pHooks != NULL && pHooks->pfnMapClick != NULL) {
         return pHooks->pfnMapClick(pHooks->pUser);

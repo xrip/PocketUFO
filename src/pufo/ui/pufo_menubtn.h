@@ -99,7 +99,7 @@ void MenuBtn_ActionBack(const UiButtonCtx *pCtx);
 i32 MenuBtn_Cancel(const UiButtonCtx *pCtx);
 
 /* Menu_OpenLoadSlots @ 0x18864 / Menu_OpenSaveSlots @ 0x188a4. Both rebuild the
- * seven-row slot list first (SaveSlot_FormatList @ 0x45904, injected because it
+ * seven-row slot list first (SaveSlot_FormatList (0x45904), injected because it
  * reads the save files), play sample 16, clear the list-mode byte *0x157188, and
  * open screen 10 for the save list or 11 for the load list. */
 void Menu_OpenSlotList(u16 *pnUiScreen, i32 *pnListMode, bool bSaveMode,
@@ -123,7 +123,7 @@ void Menu_CancelQuitDialog(u16 *pnUiScreen);
  * Evidence: MenuCtl0_OnClick @ 0x1a09c, MenuCtl1_OnClick @ 0x1a034,
  * MenuCtl2_OnClick @ 0x1a064, MenuCtl3_OnClick @ 0x1a080.
  *
- * All four play sample 16 and then shut the start UI down (StartUi_Shutdown @ 0x38d7c, not
+ * All four play sample 16 and then shut the start UI down (StartUi_Shutdown (0x38d7c), not
  * ported, so it is a hook). What runs afterwards is the whole of the main menu:
  *
  *   0  Geoscape_InitUI(0)                                  new game
@@ -136,10 +136,10 @@ void Menu_CancelQuitDialog(u16 *pnUiScreen);
  * to 3. */
 typedef struct StartMenuHooks {
     void (*pfnPlaySample)(u32 nSample, void *pUser);
-    void (*pfnShutdownStartUi)(void *pUser); /* StartUi_Shutdown @ 0x38d7c */
-    void (*pfnNewGame)(void *pUser);         /* Geoscape_InitUI @ 0x857f4 */
-    void (*pfnFormatSlots)(void *pUser);     /* SaveSlot_FormatList @ 0x45904 */
-    void (*pfnTitles)(void *pUser);          /* Titles_Init @ 0x380d8 */
+    void (*pfnShutdownStartUi)(void *pUser); /* StartUi_Shutdown (0x38d7c) */
+    void (*pfnNewGame)(void *pUser);         /* Geoscape_InitUI (0x857f4) */
+    void (*pfnFormatSlots)(void *pUser);     /* SaveSlot_FormatList (0x45904) */
+    void (*pfnTitles)(void *pUser);          /* Titles_Init (0x380d8) */
     void (*pfnQuit)(void *pUser);            /* App_QuitDisplay @ 0xa0388 */
     void *pUser;
 } StartMenuHooks;

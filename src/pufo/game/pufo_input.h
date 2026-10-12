@@ -128,7 +128,7 @@ typedef struct TactInputHooks {
     void (*pfnModalEndCheckBattle)(void *pUser);
     /* UiScreen_OnCancel @ 0x16200. */
     void (*pfnOnCancel)(void *pUser);
-    /* Geoscape_CloseUI @ 0x8b94c, on the &unk_1864F8 screen object. */
+    /* Geoscape_CloseUI (0x8b94c), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapeCloseUi)(void *pUser);
     /* Inv_CloseAndCommit @ 0x15a48. */
     void (*pfnInvCloseAndCommit)(void *pUser);
@@ -141,7 +141,7 @@ typedef struct TactInputHooks {
     void (*pfnFocusOnViewCell)(i32 nLayer, i32 nViewY, i32 nViewX, void *pUser);
     /* Options_SaveToRegistry @ 0x114d8. */
     void (*pfnSaveOptions)(void *pUser);
-    /* Geoscape_OnPointer @ 0x872d0, the whole geoscape branch. */
+    /* Geoscape_OnPointer (0x872d0), the whole geoscape branch. */
     void (*pfnGeoscapePointer)(i32 nX, i32 nY, bool bDown, void *pUser);
     /* Ui_HitTestTactItem @ 0x11ac0: hit-test the ground list or the inventory
      * slots, true when something under the pointer was hit. Ported for real in
@@ -160,9 +160,9 @@ typedef struct TactInputHooks {
      * CELL: it reads the cell's nX, nY and nZ, recentres the camera scroll and
      * sets the cursor layer to nZ + 1. */
     void (*pfnFocusOnCell)(MapCell *pCell, void *pUser);
-    /* Geoscape_OnPointerUp @ 0x89450, on the &unk_1864F8 screen object. */
+    /* Geoscape_OnPointerUp (0x89450), on the &unk_1864F8 screen object. */
     void (*pfnGeoscapePointerUp)(void *pUser);
-    /* Titles_Shutdown @ 0x3826c then GameUI_InitStartup @ 0x38a28, screen 16. */
+    /* Titles_Shutdown @ 0x3826c then GameUI_InitStartup (0x38a28), screen 16. */
     void (*pfnTitlesToStartup)(void *pUser);
     /* EndScreen_Shutdown @ 0x389f8, screen 18. */
     void (*pfnEndScreenShutdown)(void *pUser);
