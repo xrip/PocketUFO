@@ -265,6 +265,24 @@ catches a different way of being wrong:
   so `MapView_FocusOnUnit @ 0x2c758` credited through `MapView_FocusOnCell` is correct and
   must survive the check.
 
+### The bug ledger, for the QoL pass
+
+`docs/parity/bugs.tsv` is the index of everything the original does wrong that we know about,
+and of every place the port deliberately differs. One row per finding: the address the evidence
+came from, what is wrong, where the reproduction lives in the port, whether the port reproduces
+it, and whether a QoL patch should fix it.
+
+It exists because the findings were otherwise spread over three places — a `ORIGINAL BUG` comment
+in the port, a section in `docs/parity/`, and an IDA listing comment that `git grep` cannot see at
+all. `audit_bugs.py` keeps the ledger honest: any `ORIGINAL BUG` marker in `src/pufo` that has no
+row is a flag, and any row whose port location no longer resolves is a flag. It found two of those
+immediately, both because a marker named a data address instead of the canonical one — which is why
+the convention is now `ORIGINAL BUG (0x67048), reproduced: ...` with the address in the marker.
+
+Eighteen rows today: six genuine original bugs found this session alone, four missing-test bugs,
+two register-residue return values, two misleading names, one duplicate function, and three
+deliberate port deviations.
+
 The safe form for anything the port does not implement is `Name (0xaddr)`: the tool does not
 give the parenthesized form any credit.
 
@@ -274,6 +292,7 @@ give the parenthesized form any credit.
 | `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
 | `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
 | `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |
+| `python docs/parity/audit_bugs.py` | `ORIGINAL BUG` markers with no row in `docs/parity/bugs.tsv`, and ledger rows whose port location no longer resolves |
 | `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
 
 `tools/coverage.py` is a name-match audit, not the coverage number: it asks "does a

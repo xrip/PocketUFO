@@ -1000,9 +1000,9 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
                     pShip->bHangarX = (u8)(nCol + 1); /* 0x68468 */
                     pShip->bHangarY = (u8)(nRow + 1); /* 0x68478 */
 
-                    /* ORIGINAL BUG, reproduced: the marker goes into the facility block numbered by
-                     * the CRAFT TYPE, not the home base. A type 1 craft landing at base 3 writes
-                     * into base 1's grid. */
+                    /* ORIGINAL BUG (0x6858C), reproduced: the marker goes into the facility block
+                     * numbered by the CRAFT TYPE, not the home base. A type 1 craft landing at base
+                     * 3 writes into base 1's grid. */
                     if (pShip->bCraftType <= 4) {
                         *Layer2Cell(pEnv->abFacilityGrid, (i32)pShip->bCraftType, nRow + 1, nCol + 1)
                             = (u8)(33 + pShip->bCraftType); /* 0x684D0..0x68594 */

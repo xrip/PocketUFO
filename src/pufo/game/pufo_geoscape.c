@@ -759,9 +759,9 @@ i32 Base_DemolishFacility(const BaseDemolishEnv *pEnv, i8 nFacType)
             memmove(&pEnv->apSiteRecs[nDst], &pEnv->apSiteRecs[nSrc], sizeof(BaseSiteRec));
         }
 
-        /* ORIGINAL BUG, reproduced: the manufacturing quantity column is shifted one base LATER
-         * than every other array. Its fixed offset 17156 lands on 0x15E19C with the loop index
-         * itself, while product C at 12404 and product B at 5604 land one column earlier. So
+        /* ORIGINAL BUG (0x67048), reproduced: the manufacturing quantity column is shifted one
+         * base LATER than every other array. Its fixed offset 17156 lands on 0x15E19C with the loop
+         * index itself, while product C at 12404 and product B at 5604 land one column earlier. So
          * column nBase keeps its value and column nBase+1 is overwritten from nBase+2. */
         if (pEnv->apManufCols != NULL) {
             ShiftColumnU16(pEnv->apManufCols, nBase + 1, nCount, nObjectCount,
