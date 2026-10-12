@@ -173,3 +173,104 @@ i32 BasePlane_LoadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv,
     BaseRec_AddItemQty(pBase, pItem, nAdd); /* 0x79700 */
     return nAdd;
 }
+
+/* The object table the weapon indices address. The original never bounds a weapon index against
+ * it here, so the port bounds it only to keep a negative i8 weapon from reading out of range. */
+#define PUFO_PLANE_OBJECT_LIMIT 256
+
+/* One side of BasePlaneScreen_ApplyWeaponSwap @ 0x79748. The original writes the left and right
+ * halves out longhand; they are the same code with bWeaponL/bWeaponR and the two selection
+ * globals swapped, so the port keeps one helper and calls it twice.
+ *
+ * The order matters and is not the obvious one. When the craft already carries a weapon:
+ *
+ *   1. put one of the OLD weapon back into base stores
+ *   2. return the OLD weapon's carried ammo to base stores
+ *   3. take one of the NEW weapon OUT of base stores
+ *   4. add the NEW weapon to the craft's cargo
+ *   5. load the NEW weapon's ammo from base stores into the craft
+ *   6. remove one of the OLD weapon from the craft's cargo
+ *
+ * A weapon and its ammo are SEPARATE object records: the swap moves apObjects[weapon] through
+ * cargo and base stores, while the two store functions move apObjects[52..55] and [105]. So the
+ * take-out running before the load does NOT reduce the ammo the load sees; they touch different
+ * records. The order that is load-bearing is the weapon-byte assignment, which comes last: the
+ * cargo removal at 0x79838 re-reads the weapon byte, and assigning it earlier would remove the
+ * NEW weapon from the craft instead of the old one.
+ *
+ * When the craft carries nothing, steps 1, 2 and 6 are absent and the base-store call for the
+ * new weapon moves to the END, after the load rather than before it. The original's call to
+ * BasePlane_LoadWeaponStores in that branch passes weapon index 0, which is not one of the five
+ * handled weapons and therefore does nothing; the port omits the call and says so. */
+static void PlaneSwapSide(Ship *pCraft, ObjectRecFull *const *apObjects, BaseRec *pBase,
+                          i32 nNewWeapon, i8 *pbWeapon, const PlaneWeaponEnv *pEnv,
+                          const PlaneWeaponPanels *pPanels)
+{
+    i32 nOld = (i32)*pbWeapon;
+    ObjectRecFull *pNew;
+    ObjectRecFull *pOld;
+
+    if (nNewWeapon < 0 || nNewWeapon >= PUFO_PLANE_OBJECT_LIMIT) {
+        return;
+    }
+    pNew = apObjects[nNewWeapon];
+    if (pNew == NULL) {
+        return;
+    }
+
+    if (nOld != 0) {
+        if (nOld < 0 || nOld >= PUFO_PLANE_OBJECT_LIMIT || apObjects[nOld] == NULL) {
+            return;
+        }
+        pOld = apObjects[nOld];
+
+        BaseRec_AddItemQty(pBase, pOld, 1);              /* 0x797B0 */
+        BasePlane_LoadWeaponStores(nOld, pEnv, pPanels); /* 0x797C4 */
+        BaseRec_AddItemQty(pBase, pNew, -1);             /* 0x797F0, BaseRec_SubItemQty */
+        InvSel_AddItemQty(pCraft, pNew, 1);              /* 0x79810 */
+        BasePlane_UnloadWeaponStores(nNewWeapon, pEnv);  /* 0x79818 */
+        InvSel_SubItemQty(pCraft, pOld, 1);              /* 0x79838 */
+    } else {
+        /* 0x79854 would call LoadWeaponStores(0), which handles nothing. */
+        InvSel_AddItemQty(pCraft, pNew, 1);              /* 0x79878 */
+        BasePlane_UnloadWeaponStores(nNewWeapon, pEnv);  /* 0x79880 */
+        BaseRec_AddItemQty(pBase, pNew, -1);             /* 0x798A8, and this one comes LAST */
+    }
+
+    *pbWeapon = (i8)nNewWeapon; /* 0x798BC */
+}
+
+/* BasePlaneScreen_ApplyWeaponSwap @ 0x79748. Applies the loadout the two weapon panels selected.
+ * Both gate flags are cleared at the end whether or not either side did anything, and the
+ * original always returns 0. */
+i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeaponEnv *pEnv)
+{
+    Ship *pCraft;
+    BaseRec *pBase;
+
+    if (pPanels == NULL || pEnv == NULL || pEnv->apCraft == NULL ||
+        pEnv->apObjects == NULL || pEnv->apBases == NULL) {
+        return 0;
+    }
+
+    pCraft = pEnv->apCraft[pEnv->nCraftIdx];
+    pBase = pEnv->apBases[pEnv->nBaseIdx];
+    if (pCraft == NULL || pBase == NULL) {
+        pPanels->bPanelAOpen = 0; /* 0x79A10 */
+        pPanels->bPanelBOpen = 0; /* 0x79A18 */
+        return 0;
+    }
+
+    if (pPanels->bPanelAOpen != 0) {
+        PlaneSwapSide(pCraft, pEnv->apObjects, pBase, pPanels->nPanelASel, &pCraft->bWeaponL,
+                      pEnv, pPanels);
+    }
+    if (pPanels->bPanelBOpen != 0) {
+        PlaneSwapSide(pCraft, pEnv->apObjects, pBase, pPanels->nPanelBSel, &pCraft->bWeaponR,
+                      pEnv, pPanels);
+    }
+
+    pPanels->bPanelAOpen = 0; /* 0x79A10 */
+    pPanels->bPanelBOpen = 0; /* 0x79A18 */
+    return 0;                 /* 0x79A1C */
+}

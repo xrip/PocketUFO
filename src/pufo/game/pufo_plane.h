@@ -96,4 +96,30 @@ i32 BasePlane_UnloadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv);
 i32 BasePlane_LoadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv,
                                const PlaneWeaponPanels *pPanels);
 
+/* BasePlaneScreen_ApplyWeaponSwap @ 0x79748. Applies the loadout the two panels selected. It
+ * takes no arguments in the original; every input is a global, and this port passes them in.
+ *
+ * The left and right halves are the same code with the weapon byte and the selection global
+ * swapped, so the port keeps one helper and calls it twice.
+ *
+ * When the craft already carries a weapon the order is: one of the OLD weapon goes back into
+ * base stores, the OLD weapon's carried ammo returns, one of the NEW weapon is taken OUT of base
+ * stores, the NEW weapon is added to the craft's cargo, the NEW weapon's ammo is loaded from
+ * base stores, and only then is one of the OLD weapon removed from the cargo.
+ *
+ * A weapon and its ammo are SEPARATE object records. The swap moves apObjects[weapon] through
+ * cargo and base stores, while the two store functions move apObjects[52..55] and [105]. That is
+ * why the take-out running before the load has no effect on the ammo: they touch different
+ * records. The order that IS load-bearing is the assignment of the weapon byte, which happens
+ * LAST. The cargo removal at 0x79838 re-reads the weapon byte, so assigning it any earlier would
+ * remove the NEW weapon from the craft instead of the old one.
+ *
+ * When the craft carries nothing, the two base-store calls for the old weapon and the cargo
+ * removal are absent, and the base-store call for the NEW weapon moves to the END, after the
+ * load rather than before it.
+ *
+ * Both gate flags are cleared at the end whether or not either side did anything, and the
+ * original always returns 0. */
+i32 BasePlaneScreen_ApplyWeaponSwap(PlaneWeaponPanels *pPanels, const PlaneWeaponEnv *pEnv);
+
 #endif /* PUFO_PLANE_H */
