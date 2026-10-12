@@ -183,14 +183,29 @@ i32 UiPanel_WrapText(UiPanel *pPanel, u8 nMaxW, u8 nLineStart, const char *pszTe
  * itself owns. */
 void UiPanel_DrawText(UiPanel *pPanel);
 
-/* UiScrollList_ClickRow @ 0x3eee6 (the original's 0x3eee0 entry).
+/* UiScrollList_ClickRow @ 0x3eee0.
  *
- * Computes the clicked row as `(nY - nPosY) / nFont`, stores it in `nUnk3028` and
- * clears `nUnk3016`/`bUnk3024` and the global `unk_158018`. When `bFlag7073` is
- * set and the row is within `nStyle`/`nLineCount`, and (nX, nY) is strictly inside
- * the rect at (`nUnk7052`, `nUnk7056`) sized `nViewW` x `nViewH`, it sets
- * `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. Returns the row index. */
+ * Computes the clicked row as `(nY - nPosY) / nFont`, stores it in the dword at panel
+ * offset 12 (gap_0[12]) and clears `nUnk3016`, `bUnk3024` and the global `unk_158018`.
+ * `nUnk3028` is READ, never written: ARM 0x3EEE0..0x3F000 writes only unk_158018,
+ * 0xBC8, 0xC and 0xBD0, and reaches 0xBD4 only as the left side of the sum.
+ * When `bFlag7073` is set and the row is within `nStyle`/`nLineCount`, and (nX, nY) is
+ * strictly inside the rect at (`nUnk7052`, `nUnk7056`) sized `nViewW` x `nViewH`, it
+ * sets `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. Returns the row index. */
 i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY);
+
+/* UiScrollList_TrackHold @ 0x3ed44, the pointer-move half of the same list.
+ *
+ * It computes the row the same way and stores it in gap_0[12], but it does NOT clear
+ * `nUnk3016` or `unk_158018` on entry. Outside the rect, or past `nStyle`/`nLineCount`,
+ * it clears `bUnk3024` and `nUnk3016`. Inside, it sets `bUnk3024` and then runs the
+ * press-and-hold repeat: only while `bUnk7080` is set does it count, it resets the
+ * counter whenever the hovered row differs from the global `unk_158018`, and when
+ * `nUnk3016` reaches `nUnk7084` it clears `bUnk7080`, clamps `nUnk3016` to that
+ * threshold, sets `nUnk3032 = nUnk3028 + row` and calls `pfnClick`. So a held pointer
+ * auto-repeats the row click once per `nUnk7084` calls, and moving to another row
+ * restarts the count. Returns the row index. */
+i32 UiPanel_TrackHoldRow(UiPanel *pPanel, i32 nX, i32 nY);
 
 /* Ui_SwapStringSlots @ 0x6aaac. Swaps two lines' text pointers' contents and their
  * anLineAux values. The original copies through a 200-byte stack buffer, which the

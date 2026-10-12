@@ -165,17 +165,41 @@ leaving the stored fields intact. The original takes the implicit context; the p
 takes a `UiModalState *`. Covered by `tests/test_modal.c`.
 
 
-### Panel click-row and line swap (done)
+### Panel click-row, hold repeat and line swap (done)
 
-`UiScrollList_ClickRow @ 0x3eee6` and `Ui_SwapStringSlots @ 0x6aaac` are recreated
-in `ui/pufo_panel.{h,c}` as `UiPanel_ClickRow` and `UiPanel_SwapLines`.
-`UiPanel_ClickRow` computes the clicked row as `(nY - nPosY) / nFont`, stores it in
-`nUnk3028` and the dword at panel offset 12, clears `nUnk3016`/`bUnk3024`/the global
-`unk_158018`, and when `bFlag7073` is set and the click is inside the
-(`nUnk7052`,`nUnk7056`) rect sized `nViewW` x `nViewH`, sets
-`nUnk3032 = nUnk3028 + row` and calls `pfnClick`. `UiPanel_SwapLines` swaps two
-lines' text and `anLineAux` values through a 200-byte temp (bounded in the port).
-Covered by `tests/test_panel.c` (`TestClickRow`, `TestSwapLines`).
+`UiScrollList_ClickRow @ 0x3eee0`, `UiScrollList_TrackHold @ 0x3ed44` and
+`Ui_SwapStringSlots @ 0x6aaac` are recreated in `ui/pufo_panel.{h,c}` as
+`UiPanel_ClickRow`, `UiPanel_TrackHoldRow` and `UiPanel_SwapLines`.
+
+Both list handlers compute the row the same way, `(nY - nPosY) / nFont`, and store it
+in the dword at panel offset 12 (`gap_0[12]`). `nFont` @ `0x1B9C` is therefore the row
+pitch, not a font id, and the default 17 from `UiPanel_ctor` is the row height.
+
+`UiPanel_ClickRow` clears `nUnk3016`, `bUnk3024` and the global
+`UiScrollList_nLastHoverRow` @ `0x158018` (renamed from `unk_158018`), and when
+`bFlag7073` is set, the row is within `nStyle` and `nLineCount`, and the point is
+strictly inside the (`nUnk7052`, `nUnk7056`) rect sized `nViewW` x `nViewH`, it sets
+`nUnk3032 = nUnk3028 + row` and tail-calls `pfnClick`.
+
+**Correction.** The port used to write the row into `nUnk3028` as well. ARM
+`0x3EEE0..0x3F000` writes only `unk_158018`, `panel+0xBC8`, `panel+0xC` and the byte at
+`panel+0xBD0`; `panel+0xBD4` (`nUnk3028`) is reached only as the left operand of the
+sum. So `nUnk3028` is the scroll cursor, owned by the scroll functions, and a click
+selects `nUnk3028 + row` rather than `2 * row`. The old test asserted the wrong value.
+
+`UiPanel_TrackHoldRow` is the pointer-move half. It clears nothing on entry. Outside
+the row limits or the rect it clears `bUnk3024` and `nUnk3016`; inside it sets
+`bUnk3024` and then runs the press-and-hold auto-repeat, which only counts while
+`bUnk7080` is set, restarts whenever the hovered row differs from
+`UiScrollList_nLastHoverRow`, and at `nUnk7084` clears `bUnk7080`, clamps the counter,
+selects `nUnk3028 + row` and calls `pfnClick`. A held pointer therefore repeats a row
+selection once every `nUnk7084` move events, and sliding to another row starts the
+count over.
+
+`UiPanel_SwapLines` swaps two lines' text and `anLineAux` values through a 200-byte
+temp (bounded in the port).
+
+Covered by `tests/test_panel.c` (`TestClickRow`, `TestTrackHold`, `TestSwapLines`).
 
 ## 2026-10-11: Input_OnPointer @ 0x13c6c — the mouse handler
 

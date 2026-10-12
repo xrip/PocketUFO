@@ -287,7 +287,8 @@ static void TestWrapText(void)
     UiPanel_FreeLines(&panel);
 }
 
-static void RecClick(void) {}
+static i32 g_nClicks;
+static void RecClick(void) { g_nClicks += 1; }
 
 static void TestClickRow(void)
 {
@@ -304,12 +305,15 @@ static void TestClickRow(void)
     panel.nStyle = 3;
     panel.nLineCount = 10;
     panel.bFlag7073 = 1;
+    panel.nUnk3028 = 3;    /* the scroll cursor; ClickRow only reads it */
+    g_nClicks = 0;
 
     /* Inside the rect: row 2, callback fires. */
     panel.pfnClick = RecClick;
     CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  inside click row is 2");
-    CheckEqI32(panel.nUnk3028, 2, "  nUnk3028 stores the row");
-    CheckEqI32(panel.nUnk3032, 4, "  nUnk3032 = row + nUnk3028");
+    CheckEqI32(panel.nUnk3028, 3, "  nUnk3028 is read, never written");
+    CheckEqI32(panel.nUnk3032, 5, "  nUnk3032 = nUnk3028 + row");
+    CheckEqI32(g_nClicks, 1, "  the click callback ran");
     Check(panel.pfnClick != NULL, "  callback installed");
 
     /* Outside the x range: no callback, but the row is still stored. */
@@ -321,6 +325,72 @@ static void TestClickRow(void)
     /* bFlag7073 clear disables the callback but not the row. */
     panel.bFlag7073 = 0;
     CheckEqI32(UiPanel_ClickRow(&panel, 20, 50), 2, "  disabled flag still returns row");
+
+    UiPanel_FreeLines(&panel);
+}
+
+static void TestTrackHold(void)
+{
+    UiPanel panel;
+
+    printf("UiPanel_TrackHoldRow\n");
+    Check(UiPanel_ctor(&panel, 10), "  constructed");
+    panel.nPosY = 10;
+    panel.nFont = 20;      /* row = (nY - 10) / 20 */
+    panel.nUnk7052 = 5;
+    panel.nViewW = 100;
+    panel.nUnk7056 = 10;
+    panel.nViewH = 50;
+    panel.nStyle = 3;
+    panel.nLineCount = 10;
+    panel.bFlag7073 = 1;
+    panel.bUnk7080 = 1;    /* hold repeat armed */
+    panel.nUnk7084 = 3;    /* threshold */
+    panel.nUnk3028 = 4;    /* scroll cursor */
+    panel.pfnClick = RecClick;
+    g_nClicks = 0;
+
+    /* Outside the rect: hover flag and counter both clear, no click. */
+    CheckEqI32(UiPanel_TrackHoldRow(&panel, 1, 50), 2, "  outside x still returns row 2");
+    CheckEqI32(panel.bUnk3024, 0, "  outside clears bUnk3024");
+    CheckEqI32(panel.nUnk3016, 0, "  outside clears the repeat counter");
+    CheckEqI32(g_nClicks, 0, "  outside never clicks");
+
+    /* Inside: hover set, counting, nothing fires until the threshold. */
+    CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 50), 2, "  inside row 2");
+    CheckEqI32(panel.bUnk3024, 1, "  inside sets bUnk3024");
+    CheckEqI32(panel.nUnk3016, 1, "  first hold tick");
+    CheckEqI32(g_nClicks, 0, "  no click below the threshold");
+    (void)UiPanel_TrackHoldRow(&panel, 20, 50);
+    CheckEqI32(panel.nUnk3016, 2, "  second hold tick");
+    CheckEqI32(g_nClicks, 0, "  still below the threshold");
+    (void)UiPanel_TrackHoldRow(&panel, 20, 50);
+    CheckEqI32(panel.nUnk3016, 3, "  counter clamped to the threshold");
+    CheckEqI32(g_nClicks, 1, "  the threshold fires the click once");
+    CheckEqI32(panel.nUnk3032, 6, "  nUnk3032 = nUnk3028 + row");
+    CheckEqI32(panel.bUnk7080, 0, "  bUnk7080 clears after firing");
+
+    /* With the hold flag clear it hovers but never repeats. */
+    g_nClicks = 0;
+    (void)UiPanel_TrackHoldRow(&panel, 20, 50);
+    (void)UiPanel_TrackHoldRow(&panel, 20, 50);
+    CheckEqI32(panel.nUnk3016, 3, "  counter keeps its clamped value; only leaving the rect or changing row clears it");
+    CheckEqI32(panel.bUnk3024, 1, "  hover flag still set");
+    CheckEqI32(g_nClicks, 0, "  no repeat without bUnk7080");
+
+    /* Moving to another row restarts the count. */
+    panel.bUnk7080 = 1;
+    panel.nUnk3016 = 0;
+    g_nClicks = 0;
+    CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 30), 1, "  row 1 at nY 30");
+    CheckEqI32(panel.nUnk3016, 1, "  row 1 counts 1");
+    (void)UiPanel_TrackHoldRow(&panel, 20, 50);
+    CheckEqI32(panel.nUnk3016, 1, "  changing row restarts the counter");
+
+    /* bFlag7073 clear disables everything but the row itself. */
+    panel.bFlag7073 = 0;
+    CheckEqI32(UiPanel_TrackHoldRow(&panel, 20, 50), 2, "  disabled flag still returns row");
+    CheckEqI32(panel.bUnk3024, 1, "  disabled flag leaves bUnk3024 alone");
 
     UiPanel_FreeLines(&panel);
 }
@@ -371,6 +441,7 @@ int main(void)
     TestScroll();
     TestWrapText();
     TestClickRow();
+    TestTrackHold();
     TestSwapLines();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);

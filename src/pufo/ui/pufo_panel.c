@@ -351,7 +351,7 @@ void UiPanel_DrawText(UiPanel *pPanel)
 /* The original's global flag unk_158018, cleared on every click. */
 static i32 s_nClickRowFlag;
 
-/* UiScrollList_ClickRow @ 0x3eee6 (entry 0x3eee0). */
+/* UiScrollList_ClickRow @ 0x3eee0. */
 i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY)
 {
     i32 nRow;
@@ -365,9 +365,10 @@ i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY)
     pPanel->nUnk3016 = 0;
     /* Row = (nY - nPosY) / nFont, exactly the original's two field reads. */
     nRow = (nY - pPanel->nPosY) / pPanel->nFont;
-    /* The original stores the row into the dword at panel offset 12 (gap_0[12]). */
+    /* The original stores the row into the dword at panel offset 12 (gap_0[12]).
+     * It never writes nUnk3028 here; ARM 0x3EEE0..0x3F000 writes only unk_158018,
+     * 0xBC8, 0xC and 0xBD0, and reads 0xBD4 as the left side of the sum below. */
     *(i32 *)(void *)(pPanel->gap_0 + 12) = nRow;
-    pPanel->nUnk3028 = nRow;
     pPanel->bUnk3024 = 0;
 
     if (pPanel->bFlag7073 != 0
@@ -384,6 +385,64 @@ i32 UiPanel_ClickRow(UiPanel *pPanel, i32 nX, i32 nY)
                 return nRow;
             }
         }
+    }
+    return nRow;
+}
+
+/* UiScrollList_TrackHold @ 0x3ed44. */
+i32 UiPanel_TrackHoldRow(UiPanel *pPanel, i32 nX, i32 nY)
+{
+    i32 nRow;
+    i32 nLeft;
+    i32 nTop;
+    i32 nThreshold;
+
+    if (pPanel == NULL) {
+        return 0;
+    }
+    nRow = (nY - pPanel->nPosY) / pPanel->nFont;
+    *(i32 *)(void *)(pPanel->gap_0 + 12) = nRow;
+
+    if (pPanel->bFlag7073 == 0) {
+        return nRow;
+    }
+    nLeft = pPanel->nUnk7052;
+    nTop = pPanel->nUnk7056;
+    if (nRow > pPanel->nStyle - 1
+        || nRow > pPanel->nLineCount - 1
+        || nX <= nLeft
+        || nX >= pPanel->nViewW + nLeft
+        || nY <= nTop
+        || nY >= pPanel->nViewH + nTop) {
+        pPanel->bUnk3024 = 0;
+        pPanel->nUnk3016 = 0;
+        return nRow;
+    }
+
+    pPanel->bUnk3024 = 1;
+    if (pPanel->bUnk7080 == 0) {
+        return nRow;
+    }
+    /* 0x3EE50: a different hovered row restarts the repeat counter. */
+    if (s_nClickRowFlag != nRow) {
+        pPanel->nUnk3016 = 0;
+    }
+    pPanel->nUnk3016 += 1;
+    s_nClickRowFlag = nRow;
+
+    nThreshold = pPanel->nUnk7084;
+    if (pPanel->nUnk3016 >= nThreshold) {
+        /* 0x3EE84..0x3EEB8: re-reads gap_0[12] rather than reusing the register. */
+        i32 nStored = *(i32 *)(void *)(pPanel->gap_0 + 12);
+        pPanel->bUnk7080 = 0;
+        pPanel->nUnk3016 = nThreshold;
+        pPanel->nUnk3032 = pPanel->nUnk3028 + nStored;
+        if (pPanel->pfnClick != NULL) {
+            pPanel->pfnClick();
+        }
+        /* The original returns the click callback's value; pfnClick is modelled as
+         * void here, so the row is returned instead. Same deviation as ClickRow. */
+        return nRow;
     }
     return nRow;
 }
