@@ -478,3 +478,10 @@ bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB)
     pPanel->anLineAux[nIdxB] = nAuxA;
     return true;
 }
+
+/* Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0. */
+void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel)
+{
+    PadImage_Blit(pPad);
+    UiPanel_DrawText(pPanel);
+}

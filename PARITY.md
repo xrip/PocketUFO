@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 629 / 1103 (57.0%) |
-| Bytes of original code cited | 202908 / 598792 (33.9%) |
+| Functions cited as evidence | 630 / 1103 (57.1%) |
+| Bytes of original code cited | 202948 / 598792 (33.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6019 |
+| Test checks run | 6024 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,7 +42,7 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
 | `tact` | 161 | 214 | 69960 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 42 | 52 | 28640 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 67 | 85 | 14724 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 104 | 205 | 33812 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 1 | 13 | 600 / 4444 | intro/outro animated scenes |
@@ -446,7 +446,7 @@ is the module that answers to it.
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (67 functions)
+### `ui-core` (68 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -503,6 +503,7 @@ is the module that answers to it.
 | `0x84ecc` | `Ui_CloseScreen18` | 52 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x84e9c` | `Ui_OpenScreen18` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x85164` | `Ui_OpenFunding` | 48 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3e914` | `UiPanel_SetBytes6to11` | 40 | `src/pufo/ui/pufo_panel.h` |
 | `0x1a228` | `EmptyBtn_OnClick` | 36 | `src/pufo/ui/pufo_control.h` |
 | `0x46600` | `Font_GetSprByIndex` | 28 | `src/pufo/game/pufo_font.h` |
@@ -1006,7 +1007,7 @@ whose port work they belong to.
 | `0x1c6ac` | `TactUnit_DrawAnimGlyphs` | 168 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x1c754` | `TactUnit_DrawFacingGlyph` | 136 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 18 functions, 23644 bytes remaining
+### `ui-core` — 17 functions, 23604 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1023,7 +1024,6 @@ whose port work they belong to.
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x1a7a0` | `Cydonia_Blit_Then_UiPanelMsg_Draw` | 40 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x619a8` | `Ui_SetTransferFlag` | 36 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1323,7 +1323,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_menubtn` | PASS | 125 |
 | `test_modal` | PASS | 30 |
 | `test_moveaction` | PASS | 48 |
-| `test_panel` | PASS | 143 |
+| `test_panel` | PASS | 148 |
 | `test_path` | PASS | 48 |
 | `test_plane` | PASS | 93 |
 | `test_render` | PASS | 125 |

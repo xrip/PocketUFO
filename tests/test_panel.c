@@ -502,6 +502,54 @@ static void TestSwapLines(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* Cydonia_BlitThenDrawPanel @ 0x1a7a0 is the whole handler for screens 0x14 and 0x15: one pad
+ * blit then one panel draw. What is worth asserting is that both halves really run and that the
+ * panel half does not consume panel state, since the original calls this every frame. */
+static void TestCydoniaHandler(void)
+{
+    SoftSurf  surf;
+    PadImage  pad;
+    UiPanel   panel;
+    static u8 aGlyph[4 + 8];   /* a 4x2 glyph: two u16 header fields then the pixels */
+    u16      *pPix;
+
+    printf("Cydonia_BlitThenDrawPanel @ 0x1a7a0\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+
+    /* Glyph pixels are indices into the palette, so give the slot this pad uses a non-zero colour
+     * for every index; otherwise "something was drawn" is indistinguishable from an empty surface. */
+    memset(g_aPalette[30], 0x7F, sizeof(g_aPalette[30]));
+
+    aGlyph[0] = 4;  aGlyph[1] = 0;
+    aGlyph[2] = 2;  aGlyph[3] = 0;
+    for (i32 i = 0; i < 8; ++i) { aGlyph[4 + i] = 1; }
+
+    PadImage_ctor(&pad);
+    pad.nOriginX = 40;
+    pad.nOriginY = 60;
+    pad.uWidth   = 4;
+    pad.uHeight  = 2;
+    pad.pData    = aGlyph;
+    pad.nMode    = 30;
+
+    Check(UiPanel_ctor(&panel, 3), "  panel constructed");
+    panel.nPosX = 100;
+    panel.nPosY = 200;
+
+    Cydonia_BlitThenDrawPanel(&pad, &panel);
+
+    pPix = (u16 *)surf.pPixels;
+    Check(pPix[60 * 240 + 40] != 0, "  the pad half drew at the pad origin");
+    Check(pPix[61 * 240 + 43] != 0, "  and covers the whole 4x2 glyph");
+    CheckEqI32((i32)panel.nLineCount, 3, "  the panel half left the line count alone");
+    CheckEqI32((i32)panel.nUnk3028, 0, "  and left the scroll position alone");
+
+    g_pMainSurface = NULL;
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -524,6 +572,7 @@ int main(void)
     TestTrackHold();
     TestLineList();
     TestSwapLines();
+    TestCydoniaHandler();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

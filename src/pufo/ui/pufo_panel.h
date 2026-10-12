@@ -52,6 +52,7 @@
 #define PUFO_PANEL_H
 
 #include "game/pufo_font.h"
+#include "render/pufo_render.h"
 #include "pufo_common.h"
 
 #define PUFO_PANEL_LINES      500
@@ -211,5 +212,13 @@ i32 UiPanel_TrackHoldRow(UiPanel *pPanel, i32 nX, i32 nY);
  * anLineAux values. The original copies through a 200-byte stack buffer, which the
  * port keeps as the same bound. */
 bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB);
+
+/* Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0.
+ *
+ * The entire handler for screens 0x14 and 0x15: blit one pad, then draw one message panel. The
+ * original reaches both through globals - a pad POINTER stored at 0x15692C and a panel at 0x1571EC
+ * - and the port passes them. It lives here rather than in its own module because it is two calls
+ * and nothing else; the screens themselves are not ported. */
+void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel);
 
 #endif /* PUFO_PANEL_H */
