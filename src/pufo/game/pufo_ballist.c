@@ -23,9 +23,11 @@ const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE] = {
  * 160 * nMapDimX (the original tests ltd(x, 160*nMapDimX) == 0). */
 #define PUFO_ARC_XY_SCALE 160.0
 
-/* The original divides voxel x and y by 16 with MOVS/ADDMI +0xF then ASR #4,
- * which is floor division. z uses _rt_sdiv, which truncates toward zero. */
-static i32 Ball_FloorDiv16(i32 nV)
+/* The original divides voxel x and y by 16 with MOVS/ADDMI +0xF then ASR #4. That is truncating
+ * division, the same as C's /, not floor: for v < 0, (v + 15) >> 4 equals v / 16. z uses _rt_sdiv,
+ * which truncates too. MapView_DrawUnitFacingArrow @ 0x1b7bc divides the roster the same way, so
+ * this one is shared. See docs/parity/bugs.tsv at 0x1B8EC for the naming finding. */
+i32 Ball_FloorDiv16(i32 nV)
 {
     return (nV >= 0) ? (nV >> 4) : ((nV + 15) >> 4);
 }

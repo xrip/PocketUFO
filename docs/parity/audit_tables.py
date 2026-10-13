@@ -71,6 +71,11 @@ TABLES = [
     # declares it as 56 bytes; the real extent is 54 -- the last two bytes are zero padding, and the
     # highest index the readers reach is 17.
     ("facility build spec",      0xAA8F8, "g_aFacBuildSpec",          "src/pufo/game/pufo_geoscape.c", 54, "B", 0),
+    # MapView_DrawUnitFacingArrow's glyph nudge table, indexed 10 * nRowId + n. The image holds the
+    # same 64 bytes twice -- byte_A9290 for x and byte_A92D0 for y -- and both are registered against
+    # the port's single copy, which is what proves they are identical.
+    ("arrow glyph x nudge",      0xA9290, "g_abArrowGlyphOff",        "src/pufo/game/pufo_isodraw.c", 64, "b", 0),
+    ("arrow glyph y nudge",      0xA92D0, "g_abArrowGlyphOff",        "src/pufo/game/pufo_isodraw.c", 64, "b", 0),
 ]
 
 

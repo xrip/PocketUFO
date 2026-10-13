@@ -81,6 +81,8 @@ typedef struct IsoDrawCtx {
     u8       bUnitGlyphRow;  /* 0x69, the aUnitWalkGlyph row: 2 when nAnimPose is 18,
                               * otherwise (bFlags & 2) ? 1 : 0 */
     i32      nScratch2;      /* 0x100 */
+    i32      nRosterIndex;   /* 0x114, IDA nRosterAux2: the multi-target roster cursor
+                              * MapView_DrawUnitFacingArrow walks over 0..9 */
     u8       bTwoHandWeapon; /* 0x12C, set from the two hands and cleared when the unit is
                               * armed with a weapon whose ObjectRec+0xA4 is zero */
     i32      nPal;        /* 0x6c */
@@ -380,6 +382,50 @@ typedef struct IsoHeightGate {
  * the original's return value on a skipped path is whatever gate byte it last read - register
  * residue - so the port returns 1 when it drew and 0 when it did not. */
 int MapView_DrawUnitHeightGlyph(IsoDrawCtx *pIso, const IsoHeightGate *pGate,
+                                const IsoSpriteBases *pBases);
+
+/* What MapView_DrawUnitFacingArrow reads out of the Map and TactState blocks.
+ *
+ * The original reaches all of it through the two base registers (Map at 0x1139B8, and the
+ * TactState pointer at 0x157198); the port takes it as an argument so the arrow is testable
+ * without either block. */
+typedef struct IsoArrowGate {
+    u8          bFireAnimActive; /* TactState+0x111E1: the fire animation is running. Set by move
+                                  * command 0x12 (which also zeroes nPhaseCounter) and cleared by
+                                  * command 0x10. IDA leaves it inside gap_70112. */
+    i32         nPhaseCounter;   /* TactState+0x1118C */
+    u8          bFireStatus1;    /* Map+0x51 */
+    const double *adMtX;         /* Map+0x13EE8, 10 entries: the multi-target trajectory roster */
+    const double *adMtY;         /* Map+0x13F38, 10 entries */
+    const double *adMtZ;         /* Map+0x13F88, 10 entries */
+    const i32   *anAimRow;       /* Map+0x13FD8, 11 entries: the copied aim row */
+    i32          nRowId;         /* Map+0x14088: selects the glyph-offset group, 10 * nRowId + n */
+    u8           bTrajHitStop;   /* Map+0x1406D */
+    TactItem    *pThrownItem;    /* Map+0x14070, written by Tact_SimulateThrowArc @ 0x319f4 */
+} IsoArrowGate;
+
+/* MapView_DrawUnitFacingArrow @ 0x1b7bc.
+ *
+ * Draws the glyph that marks a shot at the cell it passes through. Three mutually exclusive
+ * branches, all behind the one gate `pCell->bFlags29 & 0x20` (the shot-trace flag):
+ *
+ *   1. bFireAnimActive: the muzzle smoke, nSmokeBase + (nPhaseCounter % 4) + 56, at the unit's own
+ *      facing offset (nDrawX + nDrawOffX, nDrawY + nObjParam + nDrawOffY). Needs pUnit.
+ *   2. bFireStatus1: walk the ten-entry roster in pIso->nRosterIndex. An entry is drawn when its
+ *      floored voxel coordinates are this cell: floor(X/16) == nX, floor(Y/16) == nY, (int)Z/12 == nZ,
+ *      and the aim-row dword is > 0. The glyph is LOWORD(anAimRow[n]) + nBulletsBase - 1.
+ *   3. bTrajHitStop: the thrown item's own floor-object glyph, pThrownItem->pObj->aItemQty[50]
+ *      + nFloorobBase - 1, at the end of entry 0 of the roster.
+ *
+ * X and Y are floored (ARM MOVS / ADDMI #0xF / ASR #4) while Z uses C-style truncating division,
+ * exactly as in the arc code. The three height operands are the remainders, stored as doubles at
+ * 0x78/0x80/0x88, and the projection is the same iso rotation MapView_DrawUnitHeightGlyph uses -
+ * but with its own constants: the roster branch ends at +40.0 - 16.0 - 2.0*C, the throw branch
+ * keeps the height glyph's - 20.0 - 8.0 tail as well.
+ *
+ * The original's return value is register residue and the caller (MapView_DrawIsoLayer @ 0x21fc8)
+ * drops it, so the port returns the number of glyphs drawn, like its siblings return 1 or 0. */
+int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
                                 const IsoSpriteBases *pBases);
 
 /* ------------------------------------------------------------ iso unit animation tables

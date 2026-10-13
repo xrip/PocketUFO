@@ -6477,7 +6477,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | **ported** |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | **ported** |
-| `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
+| `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | **ported** in `src/pufo/game/pufo_isodraw.c`, behind `IsoArrowGate` |
 | `MapView_DrawUnit @ 0x1c958` | 3,220 | **ported** in `src/pufo/game/pufo_isodraw.c`, behind `IsoUnitDrawGate` |
 | `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
 | `TactUnit_DrawFacingGlyph @ 0x1c754` | 136 | **ported** |
@@ -6668,9 +6668,9 @@ resolve step uses in `nDrawX = 32 * nTileX` and `nDrawY = 8 * (...)`. The scale 
 the double `0x3FB0000000000000`, which is `0.0625` exactly; Hex-Rays renders it as the raw word
 `1068498944`, which reads like an arbitrary integer until you unpack it.
 
-Each global has exactly two readers in the whole binary: `MapView_DrawUnitFacingArrow (0x1b7bc, not
-ported)` and `MapView_DrawUnitHeightGlyph @ 0x1c240`. They are iso-draw constants, not general math
-state, and the port names them `g_dblIsoAngle` and `g_dblIsoScale` for that reason.
+Each global has exactly two readers in the whole binary: `MapView_DrawUnitFacingArrow @ 0x1b7bc` and
+`MapView_DrawUnitHeightGlyph @ 0x1c240`. They are iso-draw constants, not general math state, and the
+port names them `g_dblIsoAngle` and `g_dblIsoScale` for that reason.
 
 One trap avoided on the way. The ARM reads:
 
@@ -6683,6 +6683,67 @@ SUB  R0, R0, R3, LSL #4  ; ...but this subtracts the quotient back: it is a MODU
 
 The division is intermediate. Hex-Rays rendered `% 16` correctly, and "correcting" it to `/ 16` would
 have introduced an error rather than removed one.
+
+### `MapView_DrawUnitFacingArrow @ 0x1b7bc` — the marker a shot leaves on the map
+
+Ported in `src/pufo/game/pufo_isodraw.c` behind `IsoArrowGate`, tested by `TestFacingArrow` in
+`tests/test_isodraw.c` (46 checks).
+
+One gate for everything: `pCell->bFlags29 & 0x20`, the shot-trace flag. `Tact_ComputeAimVector` sets
+it on the origin cell (0x305A4) and `Map_ClearShotTraceFlags` clears it over the grid, so this function
+only runs on cells a shot actually touched. Behind that gate the three branches are exclusive, in the
+order the ARM tests them:
+
+1. **`TactState + 0x111E1` non-zero** (0x1B7DC) — the fire animation is running. The glyph is muzzle
+   smoke, `nSmokeSprBase + nPhaseCounter % 4 + 56`, at the unit's own facing offset
+   `(nDrawX + Soldier.nDrawOffX, nDrawY + nObjParam + Soldier.nDrawOffY)`. `pUnit` is tested after the
+   flag, so a flagged cell with no unit draws nothing. The flag is unnamed in IDA (`gap_70112[1]`);
+   move command 0x12 sets it together with `nPhaseCounter = 0` (0x4F5B0), command 0x10 clears it, and
+   `Tact_ProcessFallAction` writes it at 0x52BFC.
+2. **`bFireStatus1` (Map+0x51) non-zero** — walk the ten-entry multi-target roster held in
+   `adMtX / adMtY / adMtZ` at `Map+0x13EE8 / 0x13F38 / 0x13F88` (doubles, stride 8), with the cursor in
+   `IsoDrawCtx + 0x114` (IDA `nRosterAux2`). An entry is drawn when `anAimRow[n] > 0` and its voxel
+   coordinates floor to this cell: `X/16 == nX`, `Y/16 == nY`, `Z/12 == nZ`. The glyph is
+   `LOWORD(anAimRow[n]) + nBulletsSprBase - 1`.
+3. **`bTrajHitStop` (Map+0x1406D) non-zero** — the thrown item's own floor-object glyph,
+   `pArrowThrownItem->pObj->aItemQty[50] + nFloorobSprBase - 1`, at the end of roster entry 0. No cell
+   compare, no aim-row test. `pArrowThrownItem` (was `unk_127A28`, Map+0x14070) is written by
+   `Tact_SimulateThrowArc` at 0x319F4, which stores the `TactItem *` parameter and sets the flag in the
+   same block — that is what makes the two a pair, and it is also why the missing null test at 0x1C1F4
+   is latent rather than live.
+
+**The projection is the same iso rotation as `MapView_DrawUnitHeightGlyph`, with different constants.**
+The three operands are again the remainders `A = X - 16*(X/16)`, `B = Y - 16*(Y/16)`,
+`C = Z - 12*(Z/12)`, stored as doubles at 0x78 / 0x80 / 0x88, and the immediates are the same family:
+
+```
+roster branch  nHeightOff = (A*sin*scale + 16.0) - (B*sin*scale)
+               nHeightAux = ((B*cos + A*cos)*scale + 40.0) - 16.0 - 2.0*C
+throw branch   nHeightOff = (A*sin*scale + 16.0) - (B*sin*scale) - 16.0
+               nHeightAux = ((B*cos + A*cos)*scale + 40.0) - 16.0 - 2.0*C - 20.0 - 8.0
+```
+
+The height glyph's `+2.0 - 2.0` pair is `+16.0` here, and the roster branch drops the `-20.0 - 8.0`
+tail. Simplified with `sin*scale = 1.0` and `cos*scale = 0.5`: the roster gives `A - B + 16` and
+`(A + B)/2 - 2C + 24`, the throw gives `A - B` and `(A + B)/2 - 2C - 4`.
+
+**The nudge table is stored twice.** `byte_A9290` (x) and `byte_A92D0` (y) are 64 signed bytes each and
+byte for byte identical — 13 non-zero entries, all negative, from -1 to -3. They are indexed
+`10 * Map.nRowId + n`, so the row is the aim class and the column is the roster entry. The port keeps
+one copy, `g_abArrowGlyphOff`, and `audit_tables.py` checks both image addresses against it; that is
+what proves the duplication rather than asserting it. `nRowId` is the raw aim class id
+`Tact_ComputeAimVector` stores at `Map+0x14088` (0x305C0) with no clamp, so an id above 5 reads past
+the table in the original too — recorded at 0x1BD18.
+
+**One correction to the notes above.** The `MOVS / ADDMI #0xF / ASR #4` idiom is truncating division,
+not floor: for `v < 0`, `(v + 15) >> 4` equals `v / 16` exactly, so -17 gives -1 and not -2. The modulo
+reading in the previous section stays right — C's `%` is the truncating remainder — but the *quotient*
+truncates as well, which is what `Z/12` already did. The port's helper is named `Ball_FloorDiv16`; the
+arithmetic is correct and the name is not, recorded at 0x1B8EC.
+
+Deviations, both recorded in `docs/parity/bugs.tsv`: the return value is register residue and
+`MapView_DrawIsoLayer` drops it (0x21FCC reloads `pIso` immediately), so the port returns the number of
+glyphs drawn; and the port keeps one copy of the nudge table where the image keeps two.
 
 ### `MapView_DrawViewportGuide @ 0x1aadc` — the tactical viewport frame
 

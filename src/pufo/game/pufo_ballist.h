@@ -50,8 +50,9 @@
  *
  * Coordinates in the aim block are voxels: 16 x 16 voxels per tile, 12 voxel
  * levels per tile. Conversions seen in the arc code are /16 on x and y and /12
- * on z. The original divides x and y with a floor (add 15 when negative, then
- * arithmetic shift) and z with C-style truncating division; both are reproduced.
+ * on z. x and y use the add-15-then-arithmetic-shift idiom and z uses _rt_sdiv; both
+ * truncate toward zero, so C's / reproduces them. The idiom is often called a floor and
+ * for these operands it is not - see docs/parity/bugs.tsv at 0x1B8EC.
  */
 #ifndef PUFO_BALLIST_H
 #define PUFO_BALLIST_H
@@ -74,6 +75,13 @@
 
 /* atAimRowTable @ 0xA9218. */
 extern const u8 g_atAimRowTable[PUFO_AIM_ROW_TABLE_SIZE];
+
+/* The original's voxel-to-cell divide on x and y: MOVS / ADDMI #0xF / ASR #4. That is TRUNCATING
+ * division, not floor - for v < 0, (v + 15) >> 4 equals v / 16 exactly, so -17 gives -1 and not
+ * -2. The name says floor and is kept because three call sites and the parity notes use it; the
+ * finding is in docs/parity/bugs.tsv at 0x1B8EC. Shared with MapView_DrawUnitFacingArrow @ 0x1b7bc,
+ * which divides the roster the same way. */
+i32 Ball_FloorDiv16(i32 nV);
 
 /* Shot state, one copy of the Map aim block. */
 typedef struct AimState {

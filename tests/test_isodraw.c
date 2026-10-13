@@ -927,6 +927,275 @@ static void TestHeightGlyph(void)
     memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
 }
 
+/* ------------------------------------------------------------ MapView_DrawUnitFacingArrow @ 0x1b7bc
+ *
+ * The three branches are mutually exclusive, so each case sets exactly one of the three flags.
+ *
+ * Fixture arithmetic: roster entry 0 is X = 50, Y = 20, Z = 7, which floors to the fixture cell
+ * (3, 1, 0) and leaves A = 2, B = 4, C = 7. With sin * scale exactly 1.0 and cos * scale exactly
+ * 0.5 every product lands on an integer, so the branch constants decide the results outright:
+ * the roster branch gives nHeightOff = 2 + 16 - 4 = 14 and nHeightAux = 3 + 40 - 16 - 14 = 13;
+ * the throw branch subtracts the 16.0 it just added and keeps the -20.0 - 8.0 tail, so it gives
+ * -2 and -15.
+ *
+ * Ink rule: the probe glyph is one pixel at (x, y + index), so InkRow(x) reports y + index. */
+static double         g_adArrowX[10];
+static double         g_adArrowY[10];
+static double         g_adArrowZ[10];
+static i32            g_anArrowRow[11];
+static MapCell        g_arrowCell;
+static Soldier        g_arrowUnit;
+static TactItem       g_arrowItem;
+static ObjectRecFull  g_arrowObj;
+static IsoArrowGate   g_arrowGate;
+static IsoDrawCtx     g_arrowIso;
+static IsoSpriteBases g_arrowBases;
+
+static void ArrowFixture_Reset(void)
+{
+    memset(g_adArrowX, 0, sizeof(g_adArrowX));
+    memset(g_adArrowY, 0, sizeof(g_adArrowY));
+    memset(g_adArrowZ, 0, sizeof(g_adArrowZ));
+    memset(g_anArrowRow, 0, sizeof(g_anArrowRow));
+    memset(&g_arrowCell, 0, sizeof(g_arrowCell));
+    memset(&g_arrowUnit, 0, sizeof(g_arrowUnit));
+    memset(&g_arrowItem, 0, sizeof(g_arrowItem));
+    memset(&g_arrowObj, 0, sizeof(g_arrowObj));
+    memset(&g_arrowGate, 0, sizeof(g_arrowGate));
+    memset(&g_arrowIso, 0, sizeof(g_arrowIso));
+    memset(&g_arrowBases, 0, sizeof(g_arrowBases));
+
+    g_arrowCell.nX = 3;
+    g_arrowCell.nY = 1;
+    g_arrowCell.nZ = 0;
+    g_arrowCell.bFlags29 = 0x20;
+
+    g_arrowIso.pCell      = &g_arrowCell;
+    g_arrowIso.nDrawX     = 100;
+    g_arrowIso.nDrawY     = 40;
+    g_arrowIso.nObjParam  = 10;
+    g_arrowIso.nPal       = 0;
+    g_arrowIso.nRosterIndex = -999; /* sentinel: a value no branch wrote */
+
+    g_arrowUnit.nDrawOffX = 3;
+    g_arrowUnit.nDrawOffY = -2;
+
+    g_arrowItem.pObj        = &g_arrowObj;
+    g_arrowObj.aItemQty[50] = 6;
+
+    g_arrowBases.nSmokeBase   = 0;
+    g_arrowBases.nBulletsBase = 10;
+    g_arrowBases.nFloorobBase = 0;
+
+    g_arrowGate.adMtX      = g_adArrowX;
+    g_arrowGate.adMtY      = g_adArrowY;
+    g_arrowGate.adMtZ      = g_adArrowZ;
+    g_arrowGate.anAimRow   = g_anArrowRow;
+    g_arrowGate.pThrownItem = &g_arrowItem;
+    g_arrowGate.bFireStatus1 = 1;
+    g_arrowGate.nRowId       = 0;
+
+    g_adArrowX[0] = 50.0; /* /16 = 3, remainder 2 */
+    g_adArrowY[0] = 20.0; /* /16 = 1, remainder 4 */
+    g_adArrowZ[0] = 7.0;  /* /12 = 0, remainder 7 */
+    g_anArrowRow[0] = 4;  /* glyph 4 + 10 - 1 = 13 */
+}
+
+static void TestFacingArrow(void)
+{
+    printf("MapView_DrawUnitFacingArrow @ 0x1b7bc\n");
+
+    Math_StoreSqrtConst();
+    Math_StoreAtan2Const();
+
+    /* --- the gate all three branches share --- */
+    ArrowFixture_Reset();
+    g_arrowCell.bFlags29 = 0;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "no shot-trace flag on the cell, nothing is drawn");
+    CheckEqI32(InkRow(113), -1, "and the roster branch really did not run");
+
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "a flagged cell with all three flags clear still draws nothing");
+
+    /* --- branch 1: muzzle smoke at the unit's facing offset --- */
+    ArrowFixture_Reset();
+    g_arrowIso.pUnit = &g_arrowUnit;
+    g_arrowGate.bFireAnimActive = 1;
+    g_arrowGate.nPhaseCounter = 2;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 1,
+               "the fire-animation branch draws");
+    CheckEqI32(InkRow(103), 48 + 58,
+               "x is nDrawX + 3, y is 40 + 10 - 2, index is 0 + 2 + 56");
+    CheckEqI32(g_arrowIso.nRosterIndex, -999, "and the roster cursor is left alone");
+
+    g_arrowGate.nPhaseCounter = 4;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(InkRow(103), 48 + 56, "phase 4 is 4 % 4 = 0, so the first smoke frame");
+    g_arrowGate.nPhaseCounter = 5;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(InkRow(103), 48 + 57, "phase 5 is 5 % 4 = 1");
+
+    ArrowFixture_Reset();
+    g_arrowGate.bFireAnimActive = 1;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "the smoke branch needs a unit, and the flag is tested before pUnit");
+    CheckEqI32(InkRow(103), -1, "so a null unit draws nothing");
+
+    ArrowFixture_Reset();
+    g_arrowIso.pUnit = &g_arrowUnit;
+    g_arrowGate.bFireAnimActive = 1;
+    g_arrowGate.nPhaseCounter = 2;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    Check(InkAt(103, 106) != 0, "smoke is drawn");
+    CheckEqI32(InkRow(113), -1, "and the roster branch is skipped, not added to");
+
+    /* --- branch 2: the ten-entry multi-target roster --- */
+    ArrowFixture_Reset();
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 1,
+               "entry 0 hits the fixture cell");
+    CheckEqI32(g_arrowIso.nHeightOff, 14, "nHeightOff is A + 16 - B, which is 2 + 16 - 4");
+    CheckEqI32(g_arrowIso.nHeightAux, 13, "nHeightAux is (A + B)/2 + 40 - 16 - 2C");
+    CheckEqI32(InkRow(113), 52 + 13, "glyph 13 at (100 + 14 - 1, 40 + 13 - 1)");
+    CheckEqI32(g_arrowIso.nRosterIndex, 10, "the cursor walks the whole roster");
+    Check(fabs(g_arrowIso.dHeightA - 2.0) < 1e-12, "A is the 16 remainder of 50");
+    Check(fabs(g_arrowIso.dHeightB - 4.0) < 1e-12, "B is the 16 remainder of 20");
+    Check(fabs(g_arrowIso.dHeightC - 7.0) < 1e-12, "C is the 12 remainder of 7");
+
+    /* The nudge table is indexed 10 * nRowId + n. Row 0 starts at -1, row 4 starts at -3. */
+    ArrowFixture_Reset();
+    g_arrowGate.nRowId = 4;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(InkRow(111), 50 + 13, "row 4 nudges both axes by -3");
+    CheckEqI32(InkRow(113), -1, "and the un-nudged column stays empty");
+
+    /* Each of the four entry tests, on its own. */
+    ArrowFixture_Reset();
+    g_anArrowRow[0] = 0;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "an aim-row entry of 0 is skipped");
+
+    ArrowFixture_Reset();
+    g_anArrowRow[0] = -3;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "and so is a negative one: the test is > 0, not != 0");
+
+    ArrowFixture_Reset();
+    g_adArrowX[0] = 67.0; /* /16 = 4 */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "x floored to 4 is not this cell");
+
+    ArrowFixture_Reset();
+    g_adArrowY[0] = 36.0; /* /16 = 2 */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "y floored to 2 is not this cell");
+
+    ArrowFixture_Reset();
+    g_adArrowZ[0] = 12.0; /* /12 = 1 */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "z divided to 1 is not this layer");
+
+    ArrowFixture_Reset();
+    g_adArrowX[0] = -17.0; /* -17 / 16 = -1, and a cell coordinate is a byte */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "a negative x can never match a cell coordinate");
+
+    /* z truncates toward zero, so -1 / 12 is 0 and the layer still matches. */
+    ArrowFixture_Reset();
+    g_adArrowZ[0] = -1.0;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 1,
+               "z truncates: -1 / 12 is 0, so the layer matches");
+    Check(fabs(g_arrowIso.dHeightC + 1.0) < 1e-12, "and C keeps the sign: -1 - 12 * 0");
+    CheckEqI32(g_arrowIso.nHeightAux, 29, "which lifts nHeightAux to 3 + 40 - 16 + 2");
+    CheckEqI32(InkRow(113), 68 + 13, "and the glyph moves down with it");
+
+    /* Two entries can hit the same cell, and entry 1 sits in an un-nudged table slot. */
+    ArrowFixture_Reset();
+    g_adArrowX[1] = 50.0;
+    g_adArrowY[1] = 20.0;
+    g_adArrowZ[1] = 7.0;
+    g_anArrowRow[1] = 11; /* glyph 11 + 10 - 1 = 20 */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 2,
+               "both entries hit, so two glyphs are drawn");
+    CheckEqI32(InkRow(113), 52 + 13, "entry 0 nudged by -1");
+    Check(InkAt(114, 53 + 20) != 0, "entry 1 nudged by 0");
+
+    ArrowFixture_Reset();
+    g_anArrowRow[0] = 0;
+    g_arrowIso.nRosterIndex = 7;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(g_arrowIso.nRosterIndex, 10,
+               "the cursor is zeroed at the branch even when nothing matches");
+
+    /* --- branch 3: the thrown item's own glyph at the end of entry 0 --- */
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    g_arrowGate.bTrajHitStop = 1;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 1,
+               "the throw branch draws");
+    CheckEqI32(g_arrowIso.nHeightOff, -2,
+               "it subtracts the 16.0 it just added: 2 + 16 - 4 - 16");
+    CheckEqI32(g_arrowIso.nHeightAux, -15,
+               "and keeps the -20.0 - 8.0 tail: 3 + 40 - 16 - 14 - 20 - 8");
+    CheckEqI32(InkRow(98), 25 + 5, "glyph 6 + 0 - 1 at (100 - 2, 40 - 15)");
+
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 0,
+               "bTrajHitStop clear blocks the throw branch");
+
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    g_arrowGate.bTrajHitStop = 1;
+    g_arrowCell.nX = 9;   /* this branch compares nothing against the cell */
+    g_anArrowRow[0] = 0;  /* and does not test the aim row either */
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases), 1,
+               "the throw branch checks neither the cell nor the aim row");
+
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    g_arrowGate.bTrajHitStop = 1;
+    g_arrowObj.aItemQty[50] = 9;
+    g_arrowBases.nFloorobBase = 4;
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(InkRow(98), 25 + 12, "the glyph is aItemQty[50] + the floorob base - 1");
+
+    /* Entry 0 drives the position: X = 54 leaves A = 6, so the glyph moves two columns right. */
+    ArrowFixture_Reset();
+    g_arrowGate.bFireStatus1 = 0;
+    g_arrowGate.bTrajHitStop = 1;
+    g_adArrowX[0] = 54.0; /* /16 = 3, remainder 6 */
+    ClearSurface();
+    (void)MapView_DrawUnitFacingArrow(&g_arrowIso, &g_arrowGate, &g_arrowBases);
+    CheckEqI32(g_arrowIso.nHeightOff, 2, "6 + 16 - 4 - 16");
+    CheckEqI32(g_arrowIso.nHeightAux, -13, "(4 + 6)/2 + 40 - 16 - 14 - 20 - 8");
+    CheckEqI32(InkRow(102), 27 + 5, "so the glyph lands at (102, 27)");
+}
+
 /* ------------------------------------------------------------ MapView_DrawUnit @ 0x1c958
  *
  * Almost every decision this function makes lands in an IsoDrawCtx field, so the tests read the
@@ -1458,6 +1727,7 @@ int main(void)
     TestViewportGuide();
     TestIsoConstants();
     TestHeightGlyph();
+    TestFacingArrow();
     TestUnitGate();
     TestUnitDirections();
     TestUnitCeilMin();

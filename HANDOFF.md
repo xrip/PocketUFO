@@ -56,14 +56,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 672 / 1103 (60.9%)
-                                             bytes cited:     254912 / 598792 (42.6%)
-python docs/parity/audit_credits.py       -> NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 676 / 1103 (61.3%)
+                                             bytes cited:     258728 / 598792 (43.2%)
+python docs/parity/audit_credits.py       -> credited functions: 676, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 56, ORIGINAL BUG markers in src/pufo: 16
+python docs/parity/audit_bugs.py          -> ledger rows: 71, ORIGINAL BUG markers in src/pufo: 17
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 34 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 37 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -74,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 51 suites: **7133**.
+Test checks run across the 51 suites: **7235**.
 
 ### Per-subsystem status
 
@@ -662,12 +662,13 @@ does.
 
 ### Priority 2 — finish the tactical renderer
 
-`MapView_DrawIsoLayer` (0x21e2c, 1,252 B) is now blocked by exactly one callee:
-
-1. `MapView_DrawUnitFacingArrow` (0x1b7bc, 2,692 B) — needs a 10-entry trajectory roster modelled:
-   X doubles at 0x1278A0 stride 8, Y at 0x1278F0 stride 8, Z at 0x127940 stride 8, a glyph dword
-   table at 0x127990 stride 4, and `nHeightGlyphId` at 0x1279B8 as the entry after that table. Also
-   needs `byte_A9290`, `byte_A92D0`, `Map.gap_82056`, and `Map.adMtX/Y/Z`.
+1. Done: `MapView_DrawUnitFacingArrow` (0x1b7bc, 2,692 B) is ported in `src/pufo/game/pufo_isodraw.c`
+   behind `IsoArrowGate`, with 46 checks in `tests/test_isodraw.c`. The roster it reads was already
+   modelled — `Map.adMtX/adMtY/adMtZ` at 0x13EE8/0x13F38/0x13F88 and `AimState.anAimRow` at 0x13FD8 —
+   so what the step actually added was the gate struct, one 64-byte nudge table (`g_abArrowGlyphOff`,
+   audited against both of its image addresses because the original stores it twice), and
+   `IsoDrawCtx.nRosterIndex` at 0x114.
+2. `MapView_DrawIsoLayer` (0x21e2c, 1,252 B) is now unblocked: every callee it reaches is ported.
 
 Then `Tact_DrawCommandPads` (0x1fc8c) and `Render_Frame` (0x22310) itself.
 

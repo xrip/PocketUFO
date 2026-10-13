@@ -1,6 +1,7 @@
 /* pufo_isodraw.c - see pufo_isodraw.h for evidence and the field map. */
 #include "game/pufo_isodraw.h"
 
+#include "game/pufo_ballist.h" /* Ball_FloorDiv16, the original's voxel-to-cell divide */
 #include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / Font_DrawGlyph / g_fontSys */
 #include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
 #include "game/pufo_tactui.h" /* Tact_MapTypeToGlyphIdx */
@@ -492,6 +493,132 @@ int MapView_DrawUnitHeightGlyph(IsoDrawCtx *pIso, const IsoHeightGate *pGate,
                                + (pGate->nFireTickProgress & 0xFFFF)
                                + (i32)pBases->nSmokeBase + 16),
                          1);
+    return 1;
+}
+
+/* The x/y nudge MapView_DrawUnitFacingArrow adds to a roster glyph, indexed 10 * nRowId + n.
+ *
+ * The original keeps the same 64 bytes twice - byte_A9290 @ 0xA9290 for x, byte_A92D0 @ 0xA92D0 for
+ * y - and the two are byte for byte identical, so the port keeps one copy. Both addresses are
+ * registered against this symbol in docs/parity/audit_tables.py.
+ *
+ * The values are read with LDRSB, so they are signed: -3 to 0, and only 13 of the 64 are non-zero. */
+#define PUFO_ARROW_GLYPH_OFF_COUNT 64
+
+static const i8 g_abArrowGlyphOff[PUFO_ARROW_GLYPH_OFF_COUNT] = {
+    -1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, -1, -1, -1, -1, -2,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, -2, -1,
+    -1, -1, -1, -1, -1, -1,  0,  0, -3,  0,  0,  0,  0,  0,  0,  0,
+     0,  0, -2,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+};
+
+int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
+                                const IsoSpriteBases *pBases)
+{
+    double dSin, dCos, dX, dY, dZ, dA, dB, dC;
+    i32 nDrawn = 0;
+    i32 nFloorX, nFloorY, nZq, nSel;
+
+    /* The one gate all three branches share: the shot-trace flag on the cell. */
+    if ((pIso->pCell->bFlags29 & 0x20u) == 0) return 0;
+
+    /* Branch 1, 0x1B7F0. The fire animation is running, so the glyph is muzzle smoke at the unit's
+     * own facing offset. The flag is tested before pUnit, and a null unit ends the call. */
+    if (pGate->bFireAnimActive != 0) {
+        const Soldier *pUnit = pIso->pUnit;
+        if (pUnit == NULL) return 0;
+        (void)Font_DrawGlyph(pIso->nDrawX + pUnit->nDrawOffX,
+                             pIso->nDrawY + pIso->nObjParam + pUnit->nDrawOffY,
+                             (i32)pBases->nSmokeBase + (i32)(u16)(pGate->nPhaseCounter % 4) + 56,
+                             pIso->nPal);
+        return 1;
+    }
+
+    dSin = sin(g_dblIsoAngle);
+    dCos = cos(g_dblIsoAngle);
+
+    if (pGate->bFireStatus1 != 0) {
+        /* Branch 2, 0x1B870: the ten-entry multi-target roster. The cursor lives in the context and
+         * the original zeroes it here even when no entry matches. */
+        pIso->nRosterIndex = 0;
+        do {
+            const i32 n = pIso->nRosterIndex;
+
+            if (pGate->anAimRow[n] > 0) {
+                dX = pGate->adMtX[n];
+                dY = pGate->adMtY[n];
+                dZ = pGate->adMtZ[n];
+
+                /* Voxel to cell: x and y floor-divide, z truncates. The compares are in the
+                 * original's order and stop at the first mismatch. */
+                nFloorX = Ball_FloorDiv16((i32)dX);
+                nFloorY = Ball_FloorDiv16((i32)dY);
+                nZq     = (i32)dZ / 12;
+
+                if (nFloorX == (i32)pIso->pCell->nX
+                    && nFloorY == (i32)pIso->pCell->nY
+                    && nZq == (i32)pIso->pCell->nZ) {
+                    dA = dX - (double)(16 * nFloorX);
+                    dB = dY - (double)(16 * nFloorY);
+                    dC = dZ - (double)(12 * nZq);
+                    pIso->dHeightA = dA;
+                    pIso->dHeightB = dB;
+                    pIso->dHeightC = dC;
+
+                    pIso->nHeightOff = (i32)(((dA * dSin) * g_dblIsoScale + 16.0)
+                                             - (dB * dSin) * g_dblIsoScale);
+                    pIso->nHeightAux = (i32)((((dB * dCos) + (dA * dCos)) * g_dblIsoScale
+                                             + 40.0) - 16.0 - (dC * 2.0));
+
+                    /* 0x1BD18 has no bound test: nRowId is the raw aim class id Tact_ComputeAimVector
+                     * stores at Map+0x14088 (0x305C0), and 10 * nRowId + n runs past the 64-byte
+                     * nudge table for anything above 5. The port assumes the documented 0..5. */
+                    nSel = 10 * pGate->nRowId + n;
+                    (void)Font_DrawGlyph(pIso->nDrawX + pIso->nHeightOff + g_abArrowGlyphOff[nSel],
+                                         pIso->nDrawY + pIso->nHeightAux + g_abArrowGlyphOff[nSel],
+                                         (i32)(u16)pGate->anAimRow[n]
+                                             + (i32)pBases->nBulletsBase - 1,
+                                         pIso->nPal);
+                    ++nDrawn;
+                }
+            }
+            pIso->nRosterIndex = n + 1;
+        } while (pIso->nRosterIndex < 10);
+        return nDrawn;
+    }
+
+    /* Branch 3, 0x1BDC8: the thrown item's own floor-object glyph, at the end of roster entry 0. No
+     * cell compare and no aim-row test. ORIGINAL BUG (0x1C1F4): the original tests only the flag and
+     * then dereferences the pointer, so a flag set without a stored item is a null dereference. The
+     * port keeps the same unguarded dereference. */
+    if (pGate->bTrajHitStop == 0) return 0;
+
+    dX = pGate->adMtX[0];
+    dY = pGate->adMtY[0];
+    dZ = pGate->adMtZ[0];
+    nFloorX = Ball_FloorDiv16((i32)dX);
+    nFloorY = Ball_FloorDiv16((i32)dY);
+    nZq     = (i32)dZ / 12;
+
+    dA = dX - (double)(16 * nFloorX);
+    dB = dY - (double)(16 * nFloorY);
+    dC = dZ - (double)(12 * nZq);
+    pIso->dHeightA = dA;
+    pIso->dHeightB = dB;
+    pIso->dHeightC = dC;
+
+    /* This branch subtracts the 16.0 it just added, and keeps the height glyph's -20.0 -8.0 tail.
+     * The subtraction is not folded away because the original does not fold it. */
+    pIso->nHeightOff = (i32)(((dA * dSin) * g_dblIsoScale + 16.0)
+                             - (dB * dSin) * g_dblIsoScale - 16.0);
+    pIso->nHeightAux = (i32)(((((dB * dCos) + (dA * dCos)) * g_dblIsoScale
+                               + 40.0) - 16.0 - (dC * 2.0)) - 20.0 - 8.0);
+
+    (void)Font_DrawGlyph(pIso->nDrawX + pIso->nHeightOff,
+                         pIso->nDrawY + pIso->nHeightAux,
+                         (i32)pGate->pThrownItem->pObj->aItemQty[50]
+                             + (i32)pBases->nFloorobBase - 1,
+                         pIso->nPal);
     return 1;
 }
 

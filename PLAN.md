@@ -193,8 +193,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
   which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
   Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
   `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain, and the next
-  unblocked item is Priority 2's `MapView_DrawUnitFacingArrow (0x1b7bc)`, whose only callees are
-  `Font_DrawGlyph` (ported) and CRT `sin`/`cos`.
+  unblocked item is Priority 2's `MapView_DrawIsoLayer (0x21e2c)`, whose last unported callee
+  (`MapView_DrawUnitFacingArrow`) is now ported.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
   - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
@@ -221,6 +221,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
     row 1 while the stamp follows `v10`, the 5×5 corner search, and a craft type outside 0..4
     writing the hangar coordinates and then falling through the switch without stamping.
   - [x] IDB: function header comment at 0x2cb14
+- [x] `MapView_DrawUnitFacingArrow @ 0x1b7bc` (2,692 B) — ported in `src/pufo/game/pufo_isodraw.c`
+  behind `IsoArrowGate`, with 46 new checks in `tests/test_isodraw.c`.
+  - [x] the three branches settled: `TactState+0x111E1` (fire animation running) → muzzle smoke at the
+    unit's facing offset; `bFireStatus1` → the ten-entry roster at `Map+0x13EE8/0x13F38/0x13F88`;
+    `bTrajHitStop` → the thrown item's floor-object glyph at the end of entry 0. All behind the one
+    cell gate `bFlags29 & 0x20`.
+  - [x] `_rt_sdiv` argument order pinned from the ARM: `MOV R1,R0` is the **dividend** and `MOV R0,#12`
+    the divisor, so `nPhaseCounter % 4` and `(int)Z / 12` both read the way Hex-Rays renders them. The
+    first reading of the smoke branch had it backwards.
+  - [x] `byte_A9290` / `byte_A92D0` named `aArrowGlyphOffX` / `aArrowGlyphOffY` (64 signed bytes each)
+    and inlined as one `g_abArrowGlyphOff`, with **both** image addresses registered in
+    `audit_tables.py` — 37 tables, 0 mismatched. The audit caught a transcription slip in the first
+    draft (11 zeros where the image has 10), which is exactly what it exists for.
+  - [x] `unk_127A28` named `pArrowThrownItem`: the `TactItem *` `Tact_SimulateThrowArc` stores at
+    Map+0x14070 (0x319F4), read here as `pItem->pObj->aItemQty[50]` — the same ObjectRec+0x9E field
+    `TactUnit_DrawHpGlyphs` already reads.
+  - [x] five rows added to `bugs.tsv` (71 total): the unguarded dereference at 0x1C1F4, the unbounded
+    nudge index at 0x1BD18, the duplicated nudge table, the residue return, and the naming finding
+    below.
+  - [x] IDB: function header comment at 0x1b7bc, line comments at 0x1b7dc (the `TactState+0x111E1`
+    flag and its writers), 0x1b888 (the entry test), 0x1bd18 (the nudge index) and 0x1c1f4 (the null
+    dereference)
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
@@ -240,16 +262,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - Useful by-product: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
-  `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. Priority 2's
-  `MapView_DrawUnitFacingArrow (0x1b7bc)` is fully unblocked and self-contained, so it is the next
-  item actually workable. This is a change of order, not of goal: the geoscape chain stays open and
-  is listed above.
+  `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
+  items are therefore in Priority 2: `MapView_DrawUnitFacingArrow` is done, and
+  `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is now unblocked. This is a change of order, not of goal:
+  the geoscape chain stays open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is now blocked only by
-   `MapView_DrawUnitFacingArrow (0x1b7bc, 2,692 B)`. 3. Geoscape. 4. Screens. 5. Housekeeping.
-   See `HANDOFF.md` §10.
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is unblocked: every callee it
+   reaches (`MapView_DrawUnitFacingArrow`, `MapView_DrawUnitHeightGlyph`, `TactUnit_DrawHpGlyphs`,
+   `TactUnit_DrawAnimGlyphs`, `TactUnit_DrawFacingGlyph`, `MapView_DrawCellSelectMarkerHi`) is ported.
+   3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
 
@@ -284,6 +307,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   of the two comments is wrong.
 - [ ] The cell grid is modelled twice: `GameMap.aCells` and `TactInitEnv.apCells` are the same
   14400-entry array reached through two different fields. One owner should be picked.
+- [ ] `Ball_FloorDiv16` is misnamed. The ARM idiom it reproduces (`MOVS` / `ADDMI #0xF` / `ASR #4`) is
+  **truncating** division, not floor: for `v < 0`, `(v + 15) >> 4` equals `v / 16` exactly, so -17 gives
+  -1 and not -2. The arithmetic is right and matches the ARM; only the name and the older comments say
+  "floor". Renaming touches three call sites in `pufo_ballist.c` plus the parity notes, so it is left as
+  its own step. Recorded at `0x1B8EC` in `bugs.tsv`; the comments now state the truth.
+- [ ] Map+0x1406C..0x14070 has three competing models. `pufo_mapctx.h` calls it
+  `Soldier *apTraceExclude[2]`, `pufo_ballist.h` calls 0x1406C `bFireHitResult` and 0x1406D
+  `bTrajHitStop`, and `MapView_DrawUnitFacingArrow` proves 0x14070 holds a `TactItem *` written by
+  `Tact_SimulateThrowArc` (0x319F4). A byte pair and a pointer cannot both own the same four bytes, so
+  one of the three is wrong. Not folded into this step — the arrow port takes the pointer through
+  `IsoArrowGate.pThrownItem` and leaves the Map model alone.
 
 ## Measured state
 
@@ -305,6 +339,7 @@ Refresh after each commit. A coverage delta must match the function size in
 
 | `BaseFac_SetCellBuildState` + `Base_GrantStarterItems` | 51/51 (Release) | 7170 | 674/1103 (61.1%) | 255372/598792 (42.6%) | 35 checked, 0 mismatched |
 | `Ship_SpawnAtSlot` | 51/51 (Release) | 7189 | 675/1103 (61.2%) | 256036/598792 (42.8%) | 35 checked, 0 mismatched |
+| `MapView_DrawUnitFacingArrow` | 51/51 (Release) | 7235 | 676/1103 (61.3%) | 258728/598792 (43.2%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
