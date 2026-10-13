@@ -7006,6 +7006,43 @@ distinctive cells sit at the decoded positions, twelve decoys sit at the same tw
 coordinates the other way round, and every other grid slot points at one shared sink. The two index sets
 are disjoint, so the wrong order writes decoys and the sink instead.
 
+## `Soldier_CreateAndClassify @ 0x22ba0` — and a fallback that cannot be reached
+
+Ported as `Unit_CreateAndClassify` (624 B), with the classification split out as `Unit_ClassFromStats` so the
+gates can be aimed at chosen stats. `unk_186554` renamed in the IDB to **`g_nNextSoldierId`** — the roster id
+handed to `Soldier.nUnk440`, which `Soldier_RemoveById` searches on and which the save file persists.
+
+Hex-Rays renders each gate as a bool that is conditionally recomputed, which hides a plain OR:
+
+```nv12 = (A - B <= 5);  if (A - B > 5) v12 = (A - C <= 5);
+```
+
+so `!v12` means `A - B > 5 AND A - C > 5`. Read that way the whole classification is just "one average
+dominates the other two":
+
+| class | condition |
+|---|---|
+| 0 | `A - B > 5` and `A - C > 5` |
+| 1 | `B - C > 7` and `B - A > 5` |
+| 2 | `C - B > 0` and `C - A > 0` |
+| 3 | balanced and `|A - B| < 10` |
+| 4 | balanced and `|B - C| < 10` and `B > A` |
+| 5 | balanced and `|A - C| < 10` and `A > B` |
+
+with `A = (auStat[8]+auStat[9]+auStat[5]+auStat[0]) >> 2`, `B = (auStat[3]+auStat[4])/2`,
+`C = (auStat[6]+auStat[7]+auStat[2])/3`.
+
+**The fallback at `0x22DE8` is dead code.** If nothing fires, the original draws `Game_RandU16(3) + 3`. It
+cannot happen: sweeping A, B and C over −200..300 leaves **zero** unclassified triples, and the reachable
+averages from `Unit_Generate` are A 35..64, B 35..64, C 7..62. So soldier classes are fully deterministic,
+which is worth knowing before anyone treats them as randomised.
+
+Two smaller things reproduced rather than tidied: the id is assigned **before** the counter is bumped, and
+the function returns the **incremented** counter, so callers receive the next id rather than the one handed
+out; and the count is a u16 with no bounds check on the roster array. The missing `operator new` check is in
+the ledger at `0x22BB8` — the original stores the null and dereferences it one instruction later, so the port
+departs rather than reproducing a crash.
+
 ## `Tact_EquipTeamFromCraft @ 0x3be24` — decoded, deliberately not ported yet
 
 1,836 bytes, 82 basic blocks. Every callee it needs is already in the port (`Inv_HandlePointer`,

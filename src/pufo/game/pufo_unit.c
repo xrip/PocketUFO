@@ -11,6 +11,7 @@
 #include "game/pufo_los.h"
 #include "audio/pufo_audio.h"    /* Sound_Play */
 #include "util/pufo_str.h"       /* pufo_strcpy, pufo_strcat */
+#include "util/pufo_rand.h"      /* Game_RandU16 */
 #include "game/pufo_combat.h"   /* UnitRosters, CombatCtx, ShotHooks */
 #include "game/pufo_roster.h"    /* SideLists, SideLists_RemoveUnit */
 #include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks, StatusMsg_Push */
@@ -517,6 +518,126 @@ void Unit_Generate(Soldier *pUnit, u8 nKind)
         pUnit->abUnk1012[i]  = 0;
     }
     pUnit->pLinked1040 = NULL;
+}
+
+static i32 Unit_i32Abs(i32 nValue)
+{
+    return nValue < 0 ? -nValue : nValue;
+}
+
+/* The classification half of Soldier_CreateAndClassify @ 0x22ba0, split out because the gates are the
+ * interesting part and are otherwise unreachable in a test: inside the original they run straight after a
+ * fresh stat roll, so no caller can aim them at chosen stats. */
+i32 Unit_ClassFromStats(const Soldier *pUnit)
+{
+    i32 nAvgA = ((i32)pUnit->auStat[8] + pUnit->auStat[9] + pUnit->auStat[5] + pUnit->auStat[0]) >> 2;
+    i32 nAvgB = ((i32)pUnit->auStat[3] + pUnit->auStat[4]) / 2;
+    i32 nAvgC = ((i32)pUnit->auStat[6] + pUnit->auStat[7] + pUnit->auStat[2]) / 3;
+    i32 nClass = -1;
+    bool bBalanced = true;                  /* v4 = 1 at 0x22BB4 */
+
+    if (nAvgA - nAvgB > 5 && nAvgA - nAvgC > 5) {
+        bBalanced = false;
+        nClass = 0;
+    }
+    if (nAvgB - nAvgC > 7 && nAvgB - nAvgA > 5) {
+        bBalanced = false;
+        nClass = 1;
+    }
+    if (nAvgC - nAvgB > 0 && nAvgC - nAvgA > 0) {
+        bBalanced = false;
+        nClass = 2;
+    }
+
+    if (bBalanced) {
+        if (Unit_i32Abs(nAvgA - nAvgB) < 10) {
+            nClass = 3;                     /* 0x22D40 */
+        }
+        if (Unit_i32Abs(nAvgB - nAvgC) < 10 && nAvgB > nAvgA) {
+            nClass = 4;                     /* 0x22D74 */
+        }
+        if (Unit_i32Abs(nAvgA - nAvgC) < 10 && nAvgA > nAvgB) {
+            nClass = 5;                     /* 0x22DAC */
+        }
+    }
+
+    if (nClass == -1) {
+        nClass = (i32)Game_RandU16(3) + 3;  /* 0x22DE8: 3, 4 or 5 */
+    }
+    return nClass;
+}
+
+/* Soldier_CreateAndClassify @ 0x22ba0.
+ *
+ * Allocates a soldier, generates it, classifies it from three averages of its own stats, hands out the next
+ * roster id, and adds one to the roster count at the very end.
+ *
+ * ## The three averages, and what the classification actually measures
+ *
+ *   nAvgA = (auStat[8] + auStat[9] + auStat[5] + auStat[0]) >> 2
+ *   nAvgB = (auStat[3] + auStat[4]) / 2
+ *   nAvgC = (auStat[6] + auStat[7] + auStat[2]) / 3
+ *
+ * Note the first uses a shift and the others a divide. For non-negative sums they agree, and the stats are
+ * all positive here, so it makes no difference - but it is what the original does.
+ *
+ * Hex-Rays renders each gate as a bool that is conditionally recomputed, which hides a plain OR:
+ *
+ *   v12 = (A - B <= 5);  if (A - B > 5) v12 = (A - C <= 5);
+ *
+ * so `!v12` means `A - B > 5 AND A - C > 5`. Read that way the three gates are simply "one average dominates
+ * the other two", and the classes are 0 = A dominates, 1 = B dominates, 2 = C dominates:
+ *
+ *   class 0: A - B > 5  and A - C > 5
+ *   class 1: B - C > 7  and B - A > 5
+ *   class 2: C - B > 0  and C - A > 0
+ *
+ * If none of them fired, the soldier is balanced and gets 3, 4 or 5 from closeness:
+ *
+ *   class 3: |A - B| < 10
+ *   class 4: |B - C| < 10 and B > A
+ *   class 5: |A - C| < 10 and A > B
+ *
+ * and 4 and 5 are mutually exclusive because one needs B > A and the other A > B. If still unclassified -
+ * which needs A - B >= 10, and either |B - C| >= 10 or B <= A, and either |A - C| >= 10 or A <= B - the
+ * original draws Game_RandU16(3) + 3, so 3, 4 or 5.
+ *
+ * ## Two details worth naming
+ *
+ * The roster id is assigned BEFORE the counter is bumped: the soldier gets unk_186554 as it stands, and the
+ * increment happens at 0x22DF0. The return value is that incremented counter, not the id the soldier got,
+ * so callers receive the NEXT id. Reproduced.
+ *
+ * The count is a u16 in the original - apSoldiers[LOWORD(nSoldierCount)] and ++*(u16 *)&nSoldierCount - and
+ * there is no bounds check on the roster array at all.
+ *
+ * Deviation, recorded in docs/parity/bugs.tsv: the original has no check after operator new. It stores the
+ * null into apSoldiers and then dereferences it on the very next instruction at 0x22C10, so a failed
+ * allocation is a crash rather than a behaviour. The port returns without touching the roster instead. */
+i32 Unit_CreateAndClassify(UnitCreateEnv *pEnv, u8 nKind)
+{
+    Soldier *pNew;
+    i32 nSlot;
+    i32 nId;
+
+    pNew = (Soldier *)malloc(sizeof(Soldier));
+    if (pNew == NULL) {
+        return *pEnv->pnNextSoldierId;
+    }
+    Unit_ctor(pNew);
+
+    nSlot = (i32)(u16)*pEnv->pnSoldierCount;
+    pEnv->apSoldiers[nSlot] = pNew;
+
+    nId = *pEnv->pnNextSoldierId;
+    pNew->nUnk440 = nId;                    /* 0x22C10 */
+    Unit_Generate(pNew, nKind);             /* 0x22C20 */
+
+    pNew->nClass = Unit_ClassFromStats(pNew);
+
+    *pEnv->pnNextSoldierId = nId + 1;               /* 0x22DF0 */
+    *pEnv->pnSoldierCount = (i32)(u16)(*pEnv->pnSoldierCount + 1);   /* 0x22E00, a u16 increment */
+    return nId + 1;                                 /* the incremented counter, not the id handed out */
 }
 
 /* --- Tact_UpdateUnitControl (0x4a444), the unit-arithmetic half --- */

@@ -233,3 +233,4 @@ MenuBtn_SetGamma1	MenuBtn_SetGamma	merged
 MenuBtn_SetGamma2	MenuBtn_SetGamma	merged
 MenuBtn_SetGamma3	MenuBtn_SetGamma	merged
 MenuBtn_SetGamma4	MenuBtn_SetGamma	merged
+Soldier_CreateAndClassify	Unit_CreateAndClassify	the port names soldiers Unit_* like the rest of the unit module; the classification half is split out as Unit_ClassFromStats

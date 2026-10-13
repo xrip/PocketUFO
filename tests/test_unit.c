@@ -1437,6 +1437,123 @@ static void TestFormatDisplayName(void)
           "the return value is Soldier.szDisplayName itself");
 }
 
+/* Soldier_CreateAndClassify @ 0x22ba0.
+ *
+ * The classification gates are checked with chosen stats through Unit_ClassFromStats, which is the same code
+ * the create path runs. The six stat vectors below were solved by search rather than picked by eye, because
+ * three of the classes sit behind gates that a hand-picked vector tends to trip by accident - my first two
+ * attempts at class 4 and class 5 both landed on the dominance gates instead.
+ *
+ * Class 3 is the one where 3 survives: |A-B| < 10 fires it, and neither 4 nor 5 can overwrite because
+ * |B-C| and |A-C| are both 10 or more. In the class 4 and class 5 vectors 3 fires first and is then
+ * overwritten, which is what the original does. */
+static void TestClassifySoldier(void)
+{
+    static const u16 aStats[6][10] = {
+        { 95, 41, 91, 33, 63, 68, 74, 23, 37, 97 },   /* A=74 B=48 C=62 -> 0 */
+        { 11, 17, 21, 96, 18,  7, 86, 24, 14, 93 },   /* A=31 B=57 C=43 -> 1 */
+        {  6, 43, 83, 36, 84, 88, 91, 74, 55, 64 },   /* A=53 B=60 C=82 -> 2 */
+        { 56, 29, 45, 18, 98, 74, 39, 29, 89, 28 },   /* A=61 B=58 C=37 -> 3 */
+        { 68, 92, 93, 49, 40, 38,  1, 17,  5, 64 },   /* A=43 B=44 C=37 -> 4 */
+        { 42,  2, 62, 33, 79, 94, 29, 87, 65, 37 },   /* A=59 B=56 C=59 -> 5 */
+    };
+    static const i32 aWant[6] = { 0, 1, 2, 3, 4, 5 };
+    Soldier unit;
+    i32 i;
+
+    for (i = 0; i < 6; ++i) {
+        memset(&unit, 0, sizeof(unit));
+        memcpy(unit.auStat, aStats[i], sizeof(unit.auStat));
+        CheckEqI32(Unit_ClassFromStats(&unit), aWant[i], "classification from chosen stat averages");
+    }
+
+    /* The gates are total. Sweeping the averages shows no (A, B, C) triple is left unclassified - not over
+     * the reachable range and not over -200..300 either - so the Game_RandU16(3) + 3 fallback at 0x22DE8 is
+     * unreachable dead code in the original. The expected class here is computed from the gates as written in
+     * the decode, with -1 left visible, so the test checks both that the port agrees and that -1 never
+     * happens. Soldier classes are therefore fully deterministic, which matters for any QoL work on them. */
+    {
+        bool bAgree = true;
+        bool bTotal = true;
+        for (i = 0; i < 64; ++i) {
+            Soldier s;
+            i32 A, B, C, nWant;
+            bool bBal;
+            memset(&s, 0, sizeof(s));
+            s.auStat[0] = (u16)(35 + (i * 7) % 30);
+            s.auStat[3] = (u16)(30 + (i * 11) % 30);
+            s.auStat[4] = (u16)(40 + (i * 5) % 30);
+            s.auStat[5] = (u16)(30 + (i * 3) % 20);
+            s.auStat[6] = (u16)(10 + (i * 13) % 20);
+            s.auStat[7] = (u16)(1 + (i * 17) % 100);
+            s.auStat[8] = (u16)(20 + (i * 19) % 60);
+            s.auStat[9] = (u16)(40 + (i * 23) % 30);
+
+            A = ((i32)s.auStat[8] + s.auStat[9] + s.auStat[5] + s.auStat[0]) >> 2;
+            B = ((i32)s.auStat[3] + s.auStat[4]) / 2;
+            C = ((i32)s.auStat[6] + s.auStat[7] + s.auStat[2]) / 3;
+
+            nWant = -1;
+            bBal = true;
+            if (A - B > 5 && A - C > 5) { bBal = false; nWant = 0; }
+            if (B - C > 7 && B - A > 5) { bBal = false; nWant = 1; }
+            if (C - B > 0 && C - A > 0) { bBal = false; nWant = 2; }
+            if (bBal) {
+                if (abs(A - B) < 10) { nWant = 3; }
+                if (abs(B - C) < 10 && B > A) { nWant = 4; }
+                if (abs(A - C) < 10 && A > B) { nWant = 5; }
+            }
+            if (nWant == -1) {
+                bTotal = false;
+            }
+            if (Unit_ClassFromStats(&s) != nWant) {
+                bAgree = false;
+            }
+        }
+        Check(bAgree, "the port matches the gates over a sweep of stat vectors");
+        Check(bTotal, "no average triple is left unclassified, so the RNG fallback is dead code");
+    }
+}
+
+/* The bookkeeping half of Soldier_CreateAndClassify: the roster slot, the id handout order, and the return
+ * value. The id is assigned BEFORE the counter is bumped, and the function returns the bumped counter. */
+static void TestCreateSoldier(void)
+{
+    static Soldier *apSoldiers[8];
+    UnitCreateEnv env;
+    i32 nCount = 0;
+    i32 nId = 100;
+    i32 nReturn;
+
+    memset(apSoldiers, 0, sizeof(apSoldiers));
+    env.apSoldiers = apSoldiers;
+    env.pnSoldierCount = &nCount;
+    env.pnNextSoldierId = &nId;
+
+    nReturn = Unit_CreateAndClassify(&env, 0);
+
+    CheckEqI32(nCount, 1, "the roster count grows by one");
+    Check(apSoldiers[0] != NULL, "the new soldier lands in the slot the count pointed at");
+    CheckEqI32(apSoldiers[0]->nUnk440, 100, "the soldier gets the id as it stood, before the bump");
+    CheckEqI32(nId, 101, "the id counter is bumped");
+    CheckEqI32(nReturn, 101, "the return value is the bumped counter, not the id handed out");
+    Check(apSoldiers[1] == NULL, "nothing is written past the new slot");
+
+    nReturn = Unit_CreateAndClassify(&env, 0);
+    CheckEqI32(nCount, 2, "a second call appends rather than overwrites");
+    CheckEqI32(apSoldiers[1]->nUnk440, 101, "the second soldier gets the next id");
+    CheckEqI32(nReturn, 102, "and the call returns the counter after that bump");
+    Check(apSoldiers[2] == NULL, "nothing is written past the new slot");
+
+    {
+        i32 nClass = apSoldiers[0]->nClass;
+        Check(nClass >= 0 && nClass <= 5, "a generated soldier is always classified 0..5");
+    }
+
+    free(apSoldiers[0]);
+    free(apSoldiers[1]);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1507,6 +1624,8 @@ int main(void)
     TestDropItems();
     TestTypeTables();
     TestFormatDisplayName();
+    TestClassifySoldier();
+    TestCreateSoldier();
 
     TextTables_Free();
     Asset_CloseArchives();

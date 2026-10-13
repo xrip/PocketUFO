@@ -434,6 +434,27 @@ i32 Unit_ArmorForType(u16 nUnitType);
  * value; callers ignore it). */
 void Unit_Generate(Soldier *pUnit, u8 nKind);
 
+/* What Soldier_CreateAndClassify @ 0x22ba0 needs from the Map block and from the running soldier id.
+ * The port does not own the Map block, so all three come in through this struct.
+ *
+ * pnNextSoldierId is unk_186554, which the port already carries in its save block as nUnk186554. It is the
+ * id handed to Soldier.nUnk440, the roster id Soldier_RemoveById searches on, and it is persisted in the
+ * save file - so it survives a load and does not restart at zero. */
+typedef struct UnitCreateEnv {
+    Soldier **apSoldiers;      /* Map.apSoldiers */
+    i32      *pnSoldierCount;  /* Map.nSoldierCount, a u16 in the original */
+    i32      *pnNextSoldierId; /* unk_186554 */
+} UnitCreateEnv;
+
+/* The classification half of Soldier_CreateAndClassify, split out because the gates are the interesting part
+ * and are otherwise unreachable in a test: inside the original they run straight after a fresh stat roll, so
+ * no caller can aim them at chosen stats. Returns 0..5. */
+i32 Unit_ClassFromStats(const Soldier *pUnit);
+
+/* Soldier_CreateAndClassify @ 0x22ba0. Allocate a soldier, generate it, classify it from its own stat
+ * averages, hand out the next roster id, and add one to the roster count. Returns the id handed out. */
+i32 Unit_CreateAndClassify(UnitCreateEnv *pEnv, u8 nKind);
+
 /* The name-drawing half of Unit_Generate, split out because it is the part that
  * consumes the RNG in a specific order and is therefore the part worth pinning in
  * a test. Uses the extracted text tables (see pufo_boot.h). */
