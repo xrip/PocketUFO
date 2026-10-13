@@ -2493,7 +2493,6 @@ static void TestSoldiersReload(void)
     static DatFile dat;
     static Soldier aWritten[3];
     Soldier       *apRoster[8];
-    Soldier       *pOld0, *pOld1;
     i32            nCount = 2;
     i32            nRead = 0;
 
@@ -2522,10 +2521,6 @@ static void TestSoldiersReload(void)
     apRoster[1] = (Soldier *)malloc(sizeof(Soldier));
     apRoster[0]->nUnk440 = 111;
     apRoster[1]->nUnk440 = 222;
-    pOld0 = apRoster[0];
-    pOld1 = apRoster[1];
-    (void)pOld0;
-    (void)pOld1;
 
     DatFile_ctor(&dat);
     Check(DatFile_Open(&dat, "test_reload.tmp", PUFO_DAT_READ, 0), "  reopened for read");
@@ -2533,7 +2528,6 @@ static void TestSoldiersReload(void)
     Check(Soldiers_Reload(&dat, apRoster, &nCount, 8), "  reload succeeded");
     CheckEqI32(nCount, 3, "  the roster size comes from the saved count");
     Check(apRoster[0] != NULL && apRoster[1] != NULL && apRoster[2] != NULL, "  three soldiers allocated");
-    Check(apRoster[0] != pOld0 || apRoster[1] != pOld1, "  the old roster was replaced, not reused");
     Check(apRoster[3] == NULL, "  nothing is allocated past the count");
 
     /* Freshly constructed, not loaded: every field the writer set is still zero here. */
@@ -2565,6 +2559,24 @@ static void TestSoldiersReload(void)
     for (i32 i = 0; i < 2; ++i) {
         free(apRoster[i]);
     }
+
+    /* The free at 0x430D8 runs before the chunk is even looked at, and the original leaves the
+     * count pointing at memory it just freed. The port nulls the slots it freed, so a reload that
+     * fails after the free still leaves the roster safe. This is the part of the function that a
+     * successful reload cannot show. */
+    memset(apRoster, 0, sizeof(apRoster));
+    apRoster[0] = (Soldier *)malloc(sizeof(Soldier));
+    apRoster[1] = (Soldier *)malloc(sizeof(Soldier));
+    apRoster[0]->nUnk440 = 111;
+    apRoster[1]->nUnk440 = 222;
+    nCount = 2;
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_reload_none.tmp", PUFO_DAT_CREATE, 4), "  empty container opened");
+    Check(!Soldiers_Reload(&dat, apRoster, &nCount, 8), "  reload refuses a container with no soldiers chunk");
+    Check(apRoster[0] == NULL && apRoster[1] == NULL, "  the freed slots are nulled, not left dangling");
+    CheckEqI32(nCount, 2, "  the count is left as the caller had it when the chunk read fails");
+    DatFile_Close(&dat);
+    remove("test_reload_none.tmp");
 
     remove("test_reload.tmp");
 }

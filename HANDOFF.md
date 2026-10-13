@@ -474,6 +474,11 @@ These are all real, all paid for already.
   `util/pufo_str.h` and `CreateFileW` plus `ReadFile`.
 - `TactItem.nAmmo` is a `u8` at offset 0x06. Passing 999 is a constant-conversion error.
 - An empty facility cell is 255. A zeroed grid fixture silently reads as 36 built facilities.
+- Do not assert on pointer identity across a `free`/`malloc` pair. `test_save.c` used to check that
+  `Soldiers_Reload` handed back addresses different from the roster it freed. The CRT reuses the two
+  just-freed 740-byte blocks, so the check failed on a clean tree while the port was correct. It now
+  checks the part that is actually the port's behaviour: after a reload that fails at the chunk
+  lookup, the freed slots are NULL and the caller's count is untouched.
 
 ---
 
