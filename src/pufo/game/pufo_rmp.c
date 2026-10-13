@@ -12,31 +12,23 @@
 #include "util/pufo_rand.h" /* Game_RandU16, for the random spawn start */
 #include "util/pufo_str.h"
 
-/* byte_A7B80 @ 0xa7b80, stride 4, 24 rows. Read straight out of the image. Two of the four bytes per
- * unit type are consulted by Map_PickRmpSpawnForUnit:
- *     byte[4i]   = 1 for types 3, 7, 8, 11, 13, 18, 20, 21, 22
- *     byte[4i+1] = 1 for types 4, 5, 6, 7, 8, 18
- * The other two are not read here: byte[4i+2] is 1 for every type except 4..8, 14, 19 and 23, and
- * byte[4i+3] is set only for type 14.
+/* byte_A7B80 @ 0xa7b80, stride 4, 24 rows, read row by row out of the image:
  *
- * An earlier version of this table had 1 in only two slots, types 3 and 15. Type 15 is not set in the
- * image at all, and seven of the nine real slots were missing, so every bFlag19 gate in
- * Map_PickRmpSpawnForUnit was wrong for most unit types. */
-static const u8 s_aUnitTypeFlagA[PUFO_UNIT_TYPE_COUNT] = {
-    0, 0, 0, 1, 0, 0, 0, 1,
-    1, 0, 0, 1, 0, 1, 0, 0,
-    0, 0, 1, 0, 1, 1, 1, 0
-};
-
-/* byte_A7B80[4i+1], the second flag the bFlag19 gates read. It is NOT the same table as
- * g_aUnitTypeIsLarge: that one is 1 for 4..8, 18, 20 and 21, while this is 1 for 4..8 and 18. The two
- * agree on 4..8 and 18 and disagree on 20 and 21, so they are different flags and neither is derived
- * from the other. */
-static const u8 s_aUnitTypeFlagB[PUFO_UNIT_TYPE_COUNT] = {
-    0, 0, 0, 0, 1, 1, 1, 1,
-    1, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 1, 0, 0, 0, 0, 0
-};
+ *   type : 0      1      2      3      4      5      6      7
+ *   row  : 0,0,1, 0 0,0,1,0 0,0,1,0 1,0,1,0 0,1,0,0 0,1,0,0 0,1,0,0 1,1,0,0
+ *   type : 8      9      10     11     12     13     14     15
+ *   row  : 1,1,0,0 0,0,1,0 0,0,1,0 1,0,1,0 0,0,1,0 1,0,1,0 0,0,0,1 0,0,0,1
+ *   type : 16     17     18     19     20     21     22     23
+ *   row  : 0,0,0,1 0,0,0,1 1,1,0,0 0,0,0,1 0,1,0,1 0,1,0,0 0,0,0,0 0,0,0,0
+ *
+ * So byte[4i] is 1 for types 3, 7, 8, 11, 13 and 18, and byte[4i+1] is 1 for types 4, 5, 6, 7, 8, 18, 20
+ * and 21. Those are exactly g_aUnitTypeFlag0 and g_aUnitTypeIsLarge in pufo_unit.c, and Unit_bIsLarge
+ * @ 0x49ecc confirms the second one: it is `byte_A7B80[4 * nUnitType + 1] == 1`. Both are reused from
+ * there rather than duplicated here.
+ *
+ * The local table this replaces had byte[4i] set for types 3 and 15 only. Type 15 is 0,0,0,1 in the image,
+ * so that slot was simply wrong, and types 7, 8, 11, 13 and 18 were missing. Every bFlag19 gate in
+ * Map_PickRmpSpawnForUnit was therefore wrong for most unit types. */
 
 void Rmp_Init(RmpData *pRmp)
 {
@@ -229,8 +221,8 @@ void Rmp_UnitInfoFromSoldier(RmpUnitInfo *pInfo, const Soldier *pUnit)
     pInfo->nMoveClass = pUnit->bRankType;   /* pUnit[0x0E2] */
     pInfo->bFlag0     = pUnit->bUnk435;     /* pUnit[0x1B3] */
     if (pInfo->nUnitType < PUFO_UNIT_TYPE_COUNT) {
-        pInfo->bTypeFlagA = s_aUnitTypeFlagA[pInfo->nUnitType];
-        pInfo->bTypeFlagB = s_aUnitTypeFlagB[pInfo->nUnitType];
+        pInfo->bTypeFlagA = g_aUnitTypeFlag0[pInfo->nUnitType];
+        pInfo->bTypeFlagB = g_aUnitTypeIsLarge[pInfo->nUnitType];
     }
 }
 

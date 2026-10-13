@@ -1514,11 +1514,19 @@ used; both were decoded from the 64 bytes in the image rather than inferred:
 | type | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | flag0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
-| large | 0 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
+| large | 0 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-`g_aUnitTypeFlag0` is new here; `g_aUnitTypeIsLarge` already existed and agreed with the
-decode. The test re-states both columns independently, so a drift in the port's table
-fails the test rather than silently changing the predicate.
+| type | 16 | 17 | 18 | 19 | 20 | 21 | 22 | 23 |
+|---|---|---|---|---|---|---|---|---|
+| flag0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| large | 0 | 0 | 1 | 0 | 1 | 1 | 0 | 0 |
+
+`g_aUnitTypeFlag0` is `byte[4i]` and `g_aUnitTypeIsLarge` is `byte[4i+1]`. That second identity is not an
+assumption: `Unit_bIsLarge @ 0x49ecc` is literally `byte_A7B80[4 * pUnit->nUnitType + 1] == 1`.
+
+An earlier version of this table recorded `large` as 1 for types 11 and 13. The image says 0 for both, and
+the real extra slots are 18, 20 and 21. The rows above were re-read row by row rather than from one long
+dump, because transcribing a 96-byte run is where the mistake was made.
 
 ### The predicate's asymmetry
 

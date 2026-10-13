@@ -349,16 +349,19 @@ static void TestPickSpawn(void)
     Rmp_Init(&rmp);
 }
 
-/* The two flag columns of byte_A7B80, read straight out of the image at 0xa7b80. */
+/* The two flag columns of byte_A7B80, verified row by row against the image at 0xa7b80. byte[4i] is 1 for
+ * types 3, 7, 8, 11, 13 and 18; byte[4i+1] is 1 for types 4, 5, 6, 7, 8, 18, 20 and 21. Unit_bIsLarge
+ * @ 0x49ecc is `byte_A7B80[4 * nUnitType + 1] == 1`, which is what pins the second column to
+ * g_aUnitTypeIsLarge rather than leaving it as a guess. */
 static const u8 s_aWantFlagA[PUFO_UNIT_TYPE_COUNT] = {
     0, 0, 0, 1, 0, 0, 0, 1,
     1, 0, 0, 1, 0, 1, 0, 0,
-    0, 0, 1, 0, 1, 1, 1, 0
+    0, 0, 1, 0, 0, 0, 0, 0
 };
 static const u8 s_aWantFlagB[PUFO_UNIT_TYPE_COUNT] = {
     0, 0, 0, 0, 1, 1, 1, 1,
     1, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 1, 0, 0, 0, 0, 0
+    0, 0, 1, 0, 1, 1, 0, 0
 };
 
 static void TestUnitInfoFromSoldier(void)
