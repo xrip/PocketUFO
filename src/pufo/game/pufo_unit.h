@@ -669,4 +669,29 @@ bool Unit_bTryOpportunityFire(Soldier *pTarget, Soldier *pShooter,
                               i32 *pnActionMode, struct ActionCostTable *pCosts,
                               VisCtx *pCtx);
 
+/* --- the display name -------------------------------------------------------------
+ *
+ * Unit_FormatDisplayName @ 0x476d4. It writes Soldier.szDisplayName (0x2BC) and returns it.
+ *
+ * nUnitType selects one of three families:
+ *
+ *   0..3                 rank ": " name (mode 0), rank (mode 1), name (mode 2)
+ *   4..8, 14..20, 22     name (mode 0 or 2), empty (any other mode)
+ *   9..13, 21, 23..      name " - " rank (mode 0), name (mode 1), rank (mode 2)
+ *
+ * The two rank tables are 20-byte fixed slots filled at load time by Assets_LoadStartup (0x382d0,
+ * not ported) - both are .bss and read as all zeros in the image, so they are runtime data, not
+ * compiled strings. 0xB2200 serves the first family and 0xB2148 the third.
+ *
+ * "empty" is not a guess. For the middle family the original copies from 0x10DA38, which is the .bss
+ * zero page - the same buffer UiControl_LoadPads compares pad names against as "the empty string".
+ * Copying it clears the display name.
+ *
+ * Modes 3 and above are asymmetric and that is reproduced: the first and third families write nothing
+ * at all and leave szDisplayName untouched, while the middle family clears it. */
+#define PUFO_RANK_NAME_STRIDE 20
+
+char *Unit_FormatDisplayName(Soldier *pUnit, i8 nMode,
+                             const char *panRankLow, const char *panRankOther);
+
 #endif /* PUFO_UNIT_H */

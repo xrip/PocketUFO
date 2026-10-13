@@ -583,7 +583,7 @@ drop-in once the working-set contract is ported.
 | `Tact_ProcessMoveAction` @ `0x4f3f0` | 5,868 | The queue *consumer*; the queue itself is done, the driver is not |
 | `GameTick_Step` @ `0x27324` | 460 | Animated-cell flag decay + phase counter; small but needs the cell grid wired to the context |
 | `Soldier_Generate` @ `0x49410` | 892 | Name generation from `aszTextC`/`aszTextD` and the stat roll. Partially understood; needs the text blobs wired |
-| `Unit_FormatDisplayName` @ `0x476d4` | 528 | Needs `pUnit->szDisplayName` (offset `+0x2CE`) and the `aszTextA`/`aszTextE` rank tables, which are inside the not-yet-modelled Soldier tail |
+| `Unit_FormatDisplayName` @ `0x476d4` | 528 | **ported** — `szDisplayName` is at `Soldier + 0x2bc`, not `+0x2ce`; the two rank tables are runtime-filled `.bss` slots passed in as parameters |
 | every `UiPanel_*` line function | — | **Blocked by the struct conflict above.** Do not port until the layout is settled |
 
 ## Mission templates (.ma1)
@@ -6370,8 +6370,8 @@ craft stores in a tally the original excludes them from.
 | `Tact_EquipTeamFromCraft @ 0x3be24` | 1,836 | unported |
 | `Tact_SelectTeamUnits @ 0x39744` | 572 | unported; needs `Tact_SelectUnit` and the deploy-cell table at `byte_A66B8` |
 | `Map_PatchCraftSprites @ 0x25ab4` | 952 | unported |
-| `Tact_SelectUnit @ 0x2c6c4` | 148 | unported; its only unported dependency is `Unit_FormatDisplayName @ 0x476d4` |
-| `Unit_FormatDisplayName @ 0x476d4` | leaf | unported; needs the two 20-byte-per-rank string tables at `0xB2200` and `0xB2148`, which the port does not own yet |
+| `Tact_SelectUnit @ 0x2c6c4` | 148 | unported; its only unported dependency was `Unit_FormatDisplayName (0x476d4)`, now ported — so it is unblocked |
+| `Unit_FormatDisplayName @ 0x476d4` | 528 | **ported** |
 
 Already ported and callable from here: `Tact_LoadUiPads`, `Tact_InitUiControls`,
 `Tact_BuildVisRayTable`, `Tact_LoadLoftData`, `MapView_FocusSelected`, `Map_RefreshCellMeta`,
@@ -6380,16 +6380,29 @@ Already ported and callable from here: `Tact_LoadUiPads`, `Tact_InitUiControls`,
 `Palette_Load`, `StatusMsg_Push`, `Unit_bIsOperative`, `MapCursor_SetPos`,
 `Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Unit_RecalcInventoryStat`.
 
-Two facts worth keeping about `Unit_FormatDisplayName`, because they decide how the name tables get
-modelled:
+Three facts worth keeping about `Unit_FormatDisplayName`, because they decide how it gets modelled:
 
 - `szName` is at `Soldier + 0x0ba` and `szDisplayName` at `Soldier + 0x2bc`, and the original writes
   the display name as `szName[514]`. 0x0ba + 514 is 0x2bc, so the two renderings of the same store
   agree, and the third path - copying the global text at `0x10DA38` to `pUnit + 700` - lands on
   `szDisplayName` too.
-- The unit-type filter is not a simple range. XCOM types are 0..3, aliens 4..8, and the third branch
-  catches 9..13 plus 14..20 plus 22. A port that reads it as "0..3 XCOM, everything else alien" is
-  wrong for types 21 and 23 and above.
+- The unit-type filter is not a simple range, and reading it as "0..3 XCOM, everything else alien"
+  is wrong. The three families are:
+
+  | family | nUnitType |
+  |---|---|
+  | rank `": "` name | 0..3 |
+  | plain name, and **empty** for any mode other than 0 or 2 | 4..8, 14..20, 22 |
+  | name `" - "` rank | 9..13, 21, 23 and above |
+
+  An earlier note here put 14..20 and 22 in the third family. They are not: the middle condition is
+  `t <= 8 || (t > 13 && (t <= 20 || t == 22))`, and the test pins 14, 15, 21, 22 and 23 individually.
+- The middle family's "empty" is not a guess. It copies from `0x10DA38`, the .bss zero page — the same
+  buffer `UiControl_LoadPads` compares pad names against as the empty string. Copying it clears the
+  display name.
+
+Modes 3 and above are asymmetric, and that is reproduced rather than tidied: the first and third
+families write nothing at all and leave `szDisplayName` untouched, while the middle family clears it.
 
 ---
 

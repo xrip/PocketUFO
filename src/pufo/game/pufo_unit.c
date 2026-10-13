@@ -10,6 +10,7 @@
 
 #include "game/pufo_los.h"
 #include "audio/pufo_audio.h"    /* Sound_Play */
+#include "util/pufo_str.h"       /* pufo_strcpy, pufo_strcat */
 #include "game/pufo_combat.h"   /* UnitRosters, CombatCtx, ShotHooks */
 #include "game/pufo_roster.h"    /* SideLists, SideLists_RemoveUnit */
 #include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks, StatusMsg_Push */
@@ -1797,4 +1798,57 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
         }
         UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
     }
+}
+
+/* The family nUnitType selects. The middle condition is the original's, precedence included:
+ * t <= 8 || (t > 13 && (t <= 20 || t == 22)). */
+static bool NameFamilyLow(u8 nUnitType)
+{
+    return nUnitType <= 3;
+}
+
+static bool NameFamilyPlain(u8 nUnitType)
+{
+    return nUnitType <= 8
+        || (nUnitType > 13 && (nUnitType <= 20 || nUnitType == 22));
+}
+
+char *Unit_FormatDisplayName(Soldier *pUnit, i8 nMode,
+                             const char *panRankLow, const char *panRankOther)
+{
+    const char *pszRank;
+
+    if (NameFamilyLow(pUnit->nUnitType)) {
+        pszRank = panRankLow + PUFO_RANK_NAME_STRIDE * (i32)pUnit->bRankType;
+        if (nMode == 0) {
+            pufo_strcpy(pUnit->szDisplayName, pszRank);
+            pufo_strcat(pUnit->szDisplayName, ": ", sizeof(pUnit->szDisplayName));
+            pufo_strcat(pUnit->szDisplayName, pUnit->szName, sizeof(pUnit->szDisplayName));
+        } else if (nMode == 1) {
+            pufo_strcpy(pUnit->szDisplayName, pszRank);
+        } else if (nMode == 2) {
+            pufo_strcpy(pUnit->szDisplayName, pUnit->szName);
+        }
+    } else if (NameFamilyPlain(pUnit->nUnitType)) {
+        if (nMode == 0 || nMode == 2) {
+            pufo_strcpy(pUnit->szDisplayName, pUnit->szName);
+        } else {
+            /* The original copies from 0x10DA38, the .bss zero page it also uses as "the empty
+             * string". The effect is to clear the display name. */
+            pUnit->szDisplayName[0] = '\0';
+        }
+    } else {
+        pszRank = panRankOther + PUFO_RANK_NAME_STRIDE * (i32)pUnit->bRankType;
+        if (nMode == 0) {
+            pufo_strcpy(pUnit->szDisplayName, pUnit->szName);
+            pufo_strcat(pUnit->szDisplayName, " - ", sizeof(pUnit->szDisplayName));
+            pufo_strcat(pUnit->szDisplayName, pszRank, sizeof(pUnit->szDisplayName));
+        } else if (nMode == 1) {
+            pufo_strcpy(pUnit->szDisplayName, pUnit->szName);
+        } else if (nMode == 2) {
+            pufo_strcpy(pUnit->szDisplayName, pszRank);
+        }
+    }
+
+    return pUnit->szDisplayName;
 }

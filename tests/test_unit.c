@@ -9,6 +9,7 @@
 #include "game/pufo_combat.h"   /* UnitRosters */
 #include "game/pufo_font.h"
 #include "util/pufo_rand.h"
+#include "util/pufo_str.h"   /* pufo_strcpy: strcpy is deprecated under /WX */
 
 #include <math.h>
 #include <stdio.h>
@@ -1284,6 +1285,158 @@ static void TestRemoveById(void)
     CheckEqI32(nCount, 3, "  no array at all is a no-op");
 }
 
+/* The two rank tables are 20-byte fixed slots filled at load time. Stand in for them with known
+ * names so the composition is observable. */
+static char g_aRankLow[9][PUFO_RANK_NAME_STRIDE];
+static char g_aRankOther[9][PUFO_RANK_NAME_STRIDE];
+static Soldier g_NameUnit;
+
+static void TestFormatDisplayName(void)
+{
+    static const char *const apszLow[9] = {
+        "Squad", "Sgt", "Lt", "Cpt", "Maj", "Col", "Gen", "Adm", "Pvt"
+    };
+    static const char *const apszOther[9] = {
+        "Drone", "Mutron", "Sectoid", "Floatser", "Medik", "Warbr", "Alien", "Boss", "Zombie"
+    };
+
+    printf("Unit_FormatDisplayName @ 0x476d4\n");
+
+    for (i32 i = 0; i < 9; ++i) {
+        pufo_strcpy(g_aRankLow[i], apszLow[i]);
+        pufo_strcpy(g_aRankOther[i], apszOther[i]);
+    }
+
+    memset(&g_NameUnit, 0, sizeof(g_NameUnit));
+    pufo_strcpy(g_NameUnit.szName, "Hallow");
+    g_NameUnit.bRankType = 0;
+
+    /* Family one: unit types 0..3. */
+    g_NameUnit.nUnitType = 0;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 0, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Squad: Hallow") == 0,
+          "mode 0 composes rank, colon, name");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Squad") == 0,
+          "mode 1 is the rank alone");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 2, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "mode 2 is the name alone");
+
+    pufo_strcpy(g_NameUnit.szDisplayName, "sentinel");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 3, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "sentinel") == 0,
+          "mode 3 writes nothing and leaves the old value");
+
+    /* The rank slot is picked by bRankType at stride 20. */
+    g_NameUnit.bRankType = 3;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Cpt") == 0,
+          "bRankType indexes the rank table at stride 20");
+    g_NameUnit.bRankType = 0;
+
+    /* Family two: 4..8, 14..20, and 22. */
+    for (i32 nType = 4; nType <= 8; ++nType) {
+        g_NameUnit.nUnitType = (u8)nType;
+        Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 0, &g_aRankLow[0][0],
+                                            &g_aRankOther[0][0]),
+                     "Hallow") == 0,
+              "types 4..8 take the plain name");
+    }
+
+    pufo_strcpy(g_NameUnit.szDisplayName, "sentinel");
+    g_NameUnit.nUnitType = 5;
+    Check(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                 &g_aRankOther[0][0])[0] == '\0',
+          "mode 1 in this family copies the .bss empty string, so it clears the name");
+
+    pufo_strcpy(g_NameUnit.szDisplayName, "sentinel");
+    Check(Unit_FormatDisplayName(&g_NameUnit, 7, &g_aRankLow[0][0],
+                                 &g_aRankOther[0][0])[0] == '\0',
+          "and so does any other mode here, unlike the other two families");
+
+    g_NameUnit.nUnitType = 15;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 2, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 15 is in the plain family");
+    g_NameUnit.nUnitType = 22;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 0, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 22 is a named exception in the plain family");
+
+    /* Family three: 9..13, 21, and 23 and above. Rank 1 so the value can only come from the second
+     * table - rank 0 would read "Squad" there too if the wrong table were used. */
+    g_NameUnit.bRankType = 1;
+    g_NameUnit.nUnitType = 10;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 0, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow - Mutron") == 0,
+          "mode 0 composes name, dash, rank, in the other order");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "mode 1 is the name alone");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 2, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Mutron") == 0,
+          "mode 2 is the rank alone, from the second table");
+
+    pufo_strcpy(g_NameUnit.szDisplayName, "sentinel");
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 4, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "sentinel") == 0,
+          "mode 4 writes nothing in this family either");
+
+    /* The family boundaries, one check each. */
+    g_NameUnit.bRankType = 1;
+    pufo_strcpy(g_NameUnit.szDisplayName, "sentinel");
+    g_NameUnit.nUnitType = 3;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Sgt") == 0,
+          "type 3 is the last of the first family");
+    g_NameUnit.nUnitType = 8;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "") == 0,
+          "type 8 is the last plain one");
+    g_NameUnit.nUnitType = 9;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 9 starts the third family");
+    g_NameUnit.nUnitType = 13;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 13 is still third family, not plain");
+    g_NameUnit.nUnitType = 14;
+    Check(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                 &g_aRankOther[0][0])[0] == '\0',
+          "type 14 is plain, so mode 1 clears");
+    g_NameUnit.nUnitType = 21;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 21 is third family, not plain");
+    g_NameUnit.nUnitType = 23;
+    Check(strcmp(Unit_FormatDisplayName(&g_NameUnit, 1, &g_aRankLow[0][0],
+                                        &g_aRankOther[0][0]),
+                 "Hallow") == 0,
+          "type 23 is third family");
+
+    Check(Unit_FormatDisplayName(&g_NameUnit, 0, &g_aRankLow[0][0],
+                                 &g_aRankOther[0][0]) == g_NameUnit.szDisplayName,
+          "the return value is Soldier.szDisplayName itself");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -1353,6 +1506,7 @@ int main(void)
     TestFacingAngleDuel();
     TestDropItems();
     TestTypeTables();
+    TestFormatDisplayName();
 
     TextTables_Free();
     Asset_CloseArchives();
