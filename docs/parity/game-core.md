@@ -7640,3 +7640,128 @@ is what makes the row counts safe to hard-code:
 `0xA7408`, and `aUnitWalkGlyph` has a six-byte zero tail before `aPoseFrameTable` at `0xA7660`. Neither
 padding run is part of a table. `python tools/gen_isodraw_tables.py --check` prints the boundary bytes on
 both sides of all nine, which is the check to rerun if an extent is ever in doubt.
+
+## `Map_BuildMissionTerrain @ 0x22e10` — read end to end in ARM, decode in progress
+
+10,676 bytes, 313 basic blocks, 2,669 instructions, one caller (`Tact_InitMission @ 0x3c550`). Read in
+full in ARM on 2026-10-13. This records what the ARM settles and what still has to be settled. It is
+deliberately **not** a port plan yet — the open list at the bottom has to close first.
+
+### The frame, and the grid that lives in the wrong place
+
+Four `CDialogTemplate` objects are constructed on the stack (`pOut`, `var_D8`, `pTpl`, `var_118`) and
+destroyed in that order at 0x25794..0x257C0. `Font_LoadTactSprites(pMap)` runs at 0x22E38, then
+`memset(&pTpl.pDim1, 0, 0x24)`.
+
+**That 36-byte memset is the whole 6×6 module grid, and its base is the address of the `pDim1` field.**
+`CDialogTemplate` is 20 bytes with `pDim1` at +8, so the grid runs from +8 to +0x2B — past the end of
+the struct, into the stack slots IDA names `var_97`, `var_96`, `var_95`, `var_90` and `var_78`. Every
+access in the function is `base + 6 * tile + x`. A port that treats `pDim1` as a pointer, or sizes the
+grid to the struct, is wrong.
+
+There is a **second** 6×6 array, dword-strided, based at `var_90`: written at 0x24580 (zeroed per
+entry), 0x24DA4 (`0, 1, 2, 3` into four slots) and 0x252A8 (`1, 2, 3, 0`). It is a per-tile kind code,
+not the same thing as the byte grid.
+
+### Phase 1 — the cell grid (0x22E6C .. 0x22F50)
+
+`Map_nMapLayers` (Map+0x15114) == 0 jumps straight to 0x23DAC. Otherwise three nested loops build the
+cell array:
+
+| loop | bound | index step |
+|---|---|---|
+| outer, `nY` | `Map[Map+0x1511C] * 10` | +60 |
+| middle, `nX` | `Map[Map+0x1511B] * 10` | +1 |
+| inner, `nLayer` | fixed 4 | +`0x3840` bytes = +3600 dwords |
+
+The ARM is `ADD R6, pMap, (60*nY + nX), LSL#2` then `STR R0, [R6, #0x15338]` with `ADD R6, R6, #0x3840`
+per layer, so the slot address is `Map + 0x15338 + 4*(60*nY + nX) + 0x3840*nLayer` — a dword index of
+`60*nY + nX + 3600*nLayer`. The cell array is **inline in the Map block**: 3600 cells per layer, 4
+layers, 14400 dwords = `0xE100` bytes, spanning `Map+0x15338` to `Map+0x23438`, which is exactly where
+`Map.apTactItems` starts. That adjacency is the proof of the extent. Per cell:
+`operator new(0x3C)`; on success `MapCell_Reset()` then store the pointer; on failure store NULL and
+**still call `MapCell_Init(NULL, nX, nY, nLayer)`**. Then `MapCell_Init(pCell, nX, nY, nLayer)`. The
+14400 stride is the four-layer cell array the port already reaches through `MapCellLookup`, and the
+`* 10` is `PUFO_CELLS_PER_TILE`.
+
+The same three-loop allocation appears three more times, for the other mission paths: 0x23E74 (the
+XCom base mission, `Map_nMissionType == 3`), 0x24640 (the `nMapLayers == 0` path, which first writes
+6 into both `Map+0x1511B` and `Map+0x1511C`), and the grid is therefore always 4 layers.
+
+### Phase 2 — which module goes on which tile (0x22F50 .. 0x23B08)
+
+- `Map_nMissionType == 5` (Urban) gets two random passes at 0x22F60 and 0x22FC0: `Game_RandU16(2)`,
+  and on zero either a random column of `3`s (`grid[rand + 6*i]`) or a random row rewritten `4`, or
+  `2` where it was already `0`.
+- `Map_nTerrainVariant` (Map+0x15111) non-zero: `Map[Map+0x15112] = (u8)Map[Map+0x1510C]` (a byte
+  store from a dword load), then the module name is `9 * (3 * variant + Map[Map+0x1510C] - 3)` off
+  `aTileSprIndex + 0xA8` — a nine-byte-per-entry name table with the **same index shape** as the alien
+  race tables in `Tact_SpawnAliens`. `Map_LoadMa1(pOut, name, 4)`.
+- The template's two dimension bytes are read through `_rt_sdiv(byte, 10)`: `nOffX = (u8)(byte1 / 10)`
+  and `nOffY = (u8)(byte0 / 10)`, and the random bound is `Map[Map+0x1511B] - byte1/10`. This `/10`
+  appears at every template in the function — the template header packs two tile counts in one byte.
+- A nested walk over those extents writes `1` into the 6×6 grid wherever the template says a module
+  sits.
+
+### Phase 3 — `.rmp` spawn nodes (recurring, e.g. 0x2354C, 0x23ECC, 0x24FE8)
+
+For each module tile: `CDialogTemplate_GetLevelCount`, `GetTemplateByte0`, `GetTemplateByte1`, both
+divided by 10 into `nSizeY` / `nSizeX`, then `Map_LoadRmp(pRmpMissionData, nTileX, nTileY, nSizeX,
+nSizeY, nLevel)`. The port already owns `Map_LoadRmp` and `RmpData`.
+
+### Phase 4 — random ceiling breaks through `Combat_ResolveShot` (0x23B3C .. 0x23CAC)
+
+`Map_nTerrainVariant == 2` sets a dword at `var_FC` to 0x33; `== 3` sets it to 0x12 and
+`var_118.pDim1` to `Game_RandU16(0x1E)`, forced to 0 when `Map_bUnk15115 < 0x32`. Then
+`Game_RandU16(3)` twice, `n4 = 1 - r1`, `n5 = 1 - r2`, `if (n4 + n5 == 0) n4 = 1`, and a loop of
+`n5 * 2` by `n4 * 2` cells that writes `Map+0x127A0C = x`, `Map+0x127A10 = y` and calls
+`Combat_ResolveShot(pMap, x, y, apObjects[0], 0, 0)` — the same globals `MapView_DrawUnitHeightGlyph`
+compares against. A second loop runs `(Map_bUnk15115 - 0x1E) / 10` shots at template-derived
+coordinates. This is the original breaking ceiling tiles by firing at the map.
+
+### Phase 5 — sprite stamping (0x24150 .. 0x256F8)
+
+Four near-identical stamp blocks walk the module grid and write `Font_GetSprByIndex(pFont, index)`
+into the four cell sprite slots at offsets `0x00`, `0x04`, `0x08`, `0x0C` — `pFloorSpr`, `pWallSprB`,
+`pWallSprA`, `pCeilSpr` in the port's `MapCell`. The sprite index comes from `aTileSprIndex` as a u16
+table (`LDRH`), `index - 1` is passed to `Font_GetSprByIndex`, and a zero entry means "store 0".
+Guards read `aMissionTileTypes` at `0x159768 + 0x5F4` and `0x159768 + 0x5F0` and skip tiles whose byte
+is `0x10`, `0x11`, `0x12` or `0x14`. Some branches write 0 into a *neighbouring* cell's slot through
+offsets `0x15630`, `0x15CA4`, `0x15C00`, `0x15BB4`, `0x1582B8`, `0x18290` — alternate cell-array bases
+that have to be resolved to cell coordinates before this is portable.
+
+### Phase 6 — the tail (0x2571C .. 0x257C4)
+
+A sweep over `4 * Map[0x1511B] * 10 * Map[0x1511C]` cells doing `cell->nFlags32 &= ~0x78` (bits 3, 4,
+5 and 6 cleared) at every layer, then `Map_PatchCraftSprites(pMap)`, then the four
+`~CDialogTemplate` destructors.
+
+### What is settled
+
+- The cell index formula and the four-layer grid, in all four allocation sites.
+- The 6×6 byte grid living at `&pTpl.pDim1` and overrunning the struct.
+- The second dword-strided 6×6 kind array at `var_90`.
+- The `_rt_sdiv(templateByte, 10)` convention for every template dimension.
+- The module name table index `3 * nTerrainVariant + Map[Map+0x1510C] - 3`, nine bytes per entry.
+- That the ceiling-break pass really calls `Combat_ResolveShot` and writes `Map+0x127A0C` /
+  `Map+0x127A10` first.
+- The final `nFlags32 &= ~0x78` sweep and the `Map_PatchCraftSprites` call.
+
+### What is open, and blocks the port
+
+1. The meaning of the 6×6 grid values `0, 1, 2, 3, 4` and of the `var_90` kind codes `0, 1, 2, 3`.
+2. `byte_A6AF0` — the per-terrain-variant random-max table used by `Game_RandU16(byte_A6AF0[variant])`
+   at 0x237AC and 0x252C0. Extent and meaning unestablished.
+3. The alternate cell-array base offsets `0x15630`, `0x15BB4`, `0x15C00`, `0x15CA4`, `0x18290`,
+   `0x182B8`, `0x15422C`, `0x1583B4`. Each is `Map + offset` and each has to be expressed as a cell
+   coordinate before the stamping phase can be ported.
+4. `aMissionTileTypes` at `0x159768 + 0x5F0` and `+ 0x5F4`: extent, and why `0x10/0x11/0x12/0x14` are
+   the skip codes.
+5. `unk_128B00` (selects the `"0"` or `"15"` name suffix at 0x24A18) and the `word_128B04` /
+   `word_128B08` pair (a random module position written into both grids and used as the `Map_LoadRmp`
+   tile).
+6. Whether the `nMapLayers == 0` path (0x23DAC) and the `Map_nMissionType == 3` path (0x23E08) share
+   the module phases by fallthrough or by separate copies — the function has three near-duplicate
+   copies of the same stamping block and they are not byte-identical.
+7. The allocation-failure behaviour: the original stores NULL and then calls `MapCell_Init(NULL, ...)`.
+   Decide reproduce-or-deviate before writing it.

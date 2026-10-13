@@ -52,7 +52,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
     weapon/ammo boundary and the tail's read-after-add
   - [x] four tests in `tests/test_tactctl.c` (73 new checks, 6813 total), one of which calls the
     function twice to pin the scratch persistence
-- [ ] `Map_BuildMissionTerrain (0x22e10)`
+- [~] `Map_BuildMissionTerrain (0x22e10)` — 10,676 B, 313 blocks. Read end to end in ARM; the six
+  phases and the cell-array extent are settled and written to `docs/parity/game-core.md`, and the phase
+  boundaries carry IDB comments. Not ported yet.
+  - [x] the cell array is inline in `Map`: `Map + 0x15338 + 4*(60*nY + nX) + 0x3840*nLayer`, 3600 cells
+    per layer, 4 layers, 14400 dwords = `0xE100` B, ending exactly at `Map+0x23438` = `apTactItems`
+  - [x] the 6×6 module grid lives at `&pTpl.pDim1` and overruns the 20-byte `CDialogTemplate`
+  - [x] every template dimension is read as `_rt_sdiv(headerByte, 10)` — cells to tiles
+  - [ ] open: the module-grid values `0..4`, the `var_90` kind codes, `byte_A6AF0`, `aMissionTileTypes`
+    at `0x159768+0x5F0/+0x5F4`, `unk_128B00`, `word_128B04/128B08`, and the three near-duplicate
+    stamping copies
+  - [ ] `CDialogTemplate_GetTemplateByte0 @ 0x54c68` and `GetTemplateByte1 @ 0x54c5c` (12 B each) are
+    the only unported callees; both are `pBlob[0]` / `pBlob[1]` accessors
 - [ ] `Tact_InitMission (0x3c550)`
 - [ ] `Tact_Shutdown (0x3d568)`
 - [ ] `LoadGame (0x44bbc)`
