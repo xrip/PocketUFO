@@ -6408,7 +6408,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_bResolveIsoCell @ 0x1b0d4` | 428 | **ported** — the gate: tile to map coordinates, bounds test, binds pCell/pUnit/nPal/nObjParam |
 | `MapView_DrawCellSelectMarker @ 0x1b280` | 476 | **ported** |
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
-| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | fully decoded; **no longer blocked** — `g_dblIsoAngle` and `g_dblIsoScale` now have ported owners |
+| `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | **ported** |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | fully decoded, port next — every callee is already ported |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
@@ -6529,7 +6529,7 @@ array at `ObjectRec + 0x3a`, and the ships chunk writes it indexed by ship slot;
 was found in the binary. The offset is proven from the ARM. Its meaning is an open question, and the port
 reproduces the offset without inventing a name for it.
 
-### `MapView_DrawUnitHeightGlyph @ 0x1c240` — decoded, unblocked, port next
+### `MapView_DrawUnitHeightGlyph @ 0x1c240` — ported, and the trig turns out to be a rotation
 
 It draws the firing-arc height glyph for the cell that **is** the current fire target.
 
@@ -6544,15 +6544,47 @@ The gate, six conditions, all required:
 | `nLayer == nFireTgtZ` | `0x14048` |
 | `nHeightGlyphId != 0` | `0x14000` |
 
-The arithmetic, with `A = nAimHeightRawA % 16`, `B = nAimHeightRawB % 16`, `C = third operand % 12`:
+The arithmetic, with `A = nHeightSrcX % 16`, `B = nHeightSrcY % 16`, `C = nHeightSrcZ % 12`. Written the
+way the original writes it, folded constants and all:
 
 ```
-nHeightOff = (A - B) * sin(angle) * scale
-nHeightAux = (A + B) * cos(angle) * scale * scale - 2*C - 1
+nHeightOff = ((A*sin*scale) + 2.0) - (B*sin*scale) - 2.0
+nHeightAux = ((B*cos) + (A*cos)) * scale + 40.0 - 2.0 - (C*2.0) - 20.0 - 8.0
 
-index  = 10 * nHeightGlyphId + nFireTickProgress + nSmokeSprBase + 16, palette 1
+index  = 10 * LOWORD(nHeightGlyphId) + LOWORD(nFireTickProgress) + nSmokeSprBase + 16, palette 1
 position = (nHeightOff + nDrawX, nDrawY + nHeightAux + 15)
 ```
+
+**The two constants collapse the whole trigonometry to integers.** With `angle = atan2(32, 16)` and
+`scale = sqrt(320)/16`:
+
+```
+sin(angle) * scale = 32/sqrt(1280) * sqrt(320)/16 = 2 * sqrt(1/4) = 1.0
+cos(angle) * scale = 16/sqrt(1280) * sqrt(320)/16     = sqrt(1/4)   = 0.5
+```
+
+so the same arithmetic is
+
+```
+nHeightOff = A - B
+nHeightAux = (A + B)/2 - 2*C + 10
+```
+
+That is the isometric rotation of a position pair: one axis runs along the tile diagonal, the other is
+half the sum, and the third term is height. It is also the strongest evidence for what the three
+operands are — **X, Y and Z**, not three heights — which is why the globals were renamed from
+`nAimHeightRawA` / `nAimHeightRawB` / `unk_127A20` to `nHeightSrcX` / `nHeightSrcY` / `nHeightSrcZ`.
+The producer of the triple is still not identified, and the names say "source", not where it comes from.
+
+An earlier note here gave `nHeightAux` as `(A + B) * cos * scale * scale - 2*C - 1`. That was wrong in
+two ways: `scale` is applied once, not twice, and the four folded immediates net to `+10`, not `-1`.
+The constants are `1076887552` = 2.0, `1078198272` = 40.0, `1077149696` = 20.0, `1075838976` = 8.0, and
+`40 - 2 - 20 - 8 = 10`.
+
+The port reproduces the original operation order rather than the simplified pair. `sin * scale` is
+mathematically 1.0 but is the product of two rounded transcendental functions, so the result lands on an
+integer only approximately — and the value is truncated to int. A different association could move it
+across the boundary.
 
 Why it was deferred, and why that is resolved: `angle` (`0x1571F8`) and `scale` (`0x156AA8`) are .bss
 doubles set elsewhere, and the port had no owner for either. Porting then would have meant inventing two
@@ -6570,9 +6602,9 @@ resolve step uses in `nDrawX = 32 * nTileX` and `nDrawY = 8 * (...)`. The scale 
 the double `0x3FB0000000000000`, which is `0.0625` exactly; Hex-Rays renders it as the raw word
 `1068498944`, which reads like an arbitrary integer until you unpack it.
 
-Each global has exactly two readers in the whole binary: `MapView_DrawUnitFacingArrow @ 0x1b7bc` and
-`MapView_DrawUnitHeightGlyph @ 0x1c240`. They are iso-draw constants, not general math state, and the
-port names them `g_dblIsoAngle` and `g_dblIsoScale` for that reason.
+Each global has exactly two readers in the whole binary: `MapView_DrawUnitFacingArrow (0x1b7bc, not
+ported)` and `MapView_DrawUnitHeightGlyph @ 0x1c240`. They are iso-draw constants, not general math
+state, and the port names them `g_dblIsoAngle` and `g_dblIsoScale` for that reason.
 
 One trap avoided on the way. The ARM reads:
 

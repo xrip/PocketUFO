@@ -448,3 +448,47 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide)
         SoftSurf_BlitSrcRect(225, v3, 15, v4 - v3, 0, GUIDE_SRC_X, GUIDE_SRC_Y, GUIDE_KEY_EDGE);
     }
 }
+
+int MapView_DrawUnitHeightGlyph(IsoDrawCtx *pIso, const IsoHeightGate *pGate,
+                                const IsoSpriteBases *pBases)
+{
+    double dA, dB, dC, dSin, dCos, dOff, dAux;
+
+    /* The gate, in the order the original tests it. X and Y really are compared swapped. */
+    if (pGate->bFireStatus2 == 0) return 0;
+    if (pGate->bFireStatus9 == 0) return 0;
+    if (pIso->nMapX != pGate->nFireTgtY) return 0;
+    if (pIso->nMapY != pGate->nFireTgtX) return 0;
+    if ((i32)pIso->nLayer != pGate->nFireTgtZ) return 0;
+    if (pGate->nHeightGlyphWord == 0) return 0;
+
+    /* ARM: MOVS / ADDMI #0xF / ASR #4 then SUB R0, R0, R3, LSL#4. That is a modulo, and C's %
+     * already matches its truncation-toward-zero sign rule. */
+    dA = (double)(pGate->nHeightSrcX % 16);
+    dB = (double)(pGate->nHeightSrcY % 16);
+    dC = (double)(pGate->nHeightSrcZ % 12);
+    pIso->dHeightA = dA;
+    pIso->dHeightB = dB;
+    pIso->dHeightC = dC;
+
+    /* The operation order is the original's, constants and all. sin * scale is exactly 1.0 and
+     * cos * scale exactly 0.5, so the products land on integers and a different association could
+     * move one across the truncation. */
+    dSin = sin(g_dblIsoAngle);
+    dOff = ((dA * dSin * g_dblIsoScale) + 2.0) - (dB * dSin * g_dblIsoScale) - 2.0;
+    pIso->nHeightOff = (i32)dOff;
+
+    dCos = cos(g_dblIsoAngle);
+    dAux = (((dB * dCos) + (dA * dCos)) * g_dblIsoScale + 40.0) - 2.0 - (dC * 2.0) - 20.0 - 8.0;
+    pIso->nHeightAux = (i32)dAux;
+
+    /* LOWORD on both halves, and the glyph id is read as a u16 here even though the gate above
+     * tested the whole dword. */
+    (void)Font_DrawGlyph(pIso->nHeightOff + pIso->nDrawX,
+                         pIso->nDrawY + pIso->nHeightAux + 15,
+                         (u16)(10 * (i32)(pGate->nHeightGlyphWord & 0xFFFFu)
+                               + (pGate->nFireTickProgress & 0xFFFF)
+                               + (i32)pBases->nSmokeBase + 16),
+                         1);
+    return 1;
+}

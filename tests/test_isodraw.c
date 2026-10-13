@@ -823,6 +823,106 @@ static void TestIsoConstants(void)
           "the angle is atan2(32,16), about 63.43 degrees");
 }
 
+static void TestHeightGlyph(void)
+{
+    IsoDrawCtx     iso;
+    IsoHeightGate  gate;
+    IsoSpriteBases bases;
+
+    printf("MapView_DrawUnitHeightGlyph @ 0x1c240\n");
+
+    memset(&iso, 0, sizeof(iso));
+    memset(&gate, 0, sizeof(gate));
+    memset(&bases, 0, sizeof(bases));
+
+    Math_StoreSqrtConst();
+    Math_StoreAtan2Const();
+
+    /* The glyph is drawn with palette 1, and InstallProbeFont inks slot 0. Swap that: ink slot 1 and
+     * clear slot 0, so ink can only appear if palette 1 really was the one passed through. */
+    memset(g_aPalette[0], 0, sizeof(g_aPalette[0]));
+    memset(g_aPalette[1], 0x7F, sizeof(g_aPalette[1]));
+
+    iso.nDrawX = 100;
+    iso.nDrawY = 60;
+    iso.nMapX  = 7;
+    iso.nMapY  = 5;
+    iso.nLayer = 2;
+
+    gate.bFireStatus2      = 1;
+    gate.bFireStatus9      = 1;
+    gate.nFireTgtX         = 5; /* compared against nMapY */
+    gate.nFireTgtY         = 7; /* compared against nMapX */
+    gate.nFireTgtZ         = 2;
+    gate.nHeightGlyphWord  = 3;
+    gate.nHeightSrcX       = 50; /* % 16 = 2 */
+    gate.nHeightSrcY       = 20; /* % 16 = 4 */
+    gate.nHeightSrcZ       = 7;  /* % 12 = 7 */
+    gate.nFireTickProgress = 5;
+    bases.nSmokeBase       = 0;
+
+    ClearSurface();
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 1,
+               "the gate passes and the glyph is drawn");
+    CheckEqI32(iso.nHeightOff, -2, "nHeightOff is A - B, which is 2 - 4");
+    CheckEqI32(iso.nHeightAux, -1,
+               "nHeightAux is (A + B)/2 - 2C + 10, which is 3 - 14 + 10");
+
+    /* Index = 10*3 + 5 + 0 + 16 = 51, and probe glyph 51 inks the row at y + 51. The drawn position
+     * is (nHeightOff + nDrawX, nDrawY + nHeightAux + 15) = (98, 74), so one reading reports both the
+     * index and the position. */
+    CheckEqI32(InkRow(98), 74 + 51, "the glyph is index 51 drawn at x 98, y 74");
+    CheckEqI32(InkRow(97), -1, "nothing is drawn one column to the left");
+
+    /* Each gate condition on its own. */
+    gate.bFireStatus2 = 0;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0, "bFireStatus2 clear blocks it");
+    gate.bFireStatus2 = 1;
+
+    gate.bFireStatus9 = 0;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0, "bFireStatus9 clear blocks it");
+    gate.bFireStatus9 = 1;
+
+    gate.nFireTgtY = 8;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0,
+               "nMapX must equal nFireTgtY, not nFireTgtX");
+    gate.nFireTgtY = 7;
+
+    gate.nFireTgtX = 6;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0,
+               "nMapY must equal nFireTgtX");
+    gate.nFireTgtX = 5;
+
+    gate.nFireTgtZ = 3;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0, "nLayer must equal nFireTgtZ");
+    gate.nFireTgtZ = 2;
+
+    gate.nHeightGlyphWord = 0;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 0,
+               "a zero height glyph id blocks it");
+    gate.nHeightGlyphWord = 3;
+
+    /* The gate tests the whole dword while the index reads the low half, so a value that is only
+     * non-zero in the high half passes the gate and then contributes nothing to the index. */
+    ClearSurface();
+    gate.nHeightGlyphWord = 0x00010000u;
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 1,
+               "ORIGINAL BUG (0x1C2B4), reproduced: the gate tests the dword but the index reads a u16");
+    CheckEqI32(InkRow(98), 74 + 21, "and the high half contributes nothing to the index");
+    gate.nHeightGlyphWord = 3;
+
+    /* Negative operands: C's % truncates toward zero, matching the ARM modulo idiom. */
+    ClearSurface();
+    gate.nHeightSrcX = -50; /* % 16 = -2 */
+    gate.nHeightSrcY = 20;  /* % 16 = 4  */
+    CheckEqI32(MapView_DrawUnitHeightGlyph(&iso, &gate, &bases), 1, "a negative source still draws");
+    CheckEqI32(iso.nHeightOff, -6, "-50 % 16 is -2, so nHeightOff is -2 - 4");
+    gate.nHeightSrcX = 50;
+
+    memset(g_aPalette[1], 0, sizeof(g_aPalette[1]));
+    memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -838,6 +938,7 @@ int main(void)
     TestHpGlyphs();
     TestViewportGuide();
     TestIsoConstants();
+    TestHeightGlyph();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

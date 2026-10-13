@@ -463,6 +463,16 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
+Note the asymmetry above, because getting it wrong fails silently: `ctest` takes `-C Release`,
+`cmake --build` takes `--config Release`. `cmake --build build -C Release` prints a usage block and
+exits 1 — and if you pipe the build through `grep`, that usage text contains neither "error" nor
+"warning", so a filtered build looks clean while nothing was compiled. Worse, `echo "exit=$?"` after a
+pipeline reports the status of the last pipeline stage, not cmake. The stale binary from the previous
+build stays in place and still prints `PASS: 0 failure(s)`.
+
+That cost a full unit of work this session: a port and its tests were reported as passing against a
+binary that had not been rebuilt. Check the binary's timestamp against the sources when in doubt.
+
 Run the game: `build\src\pufo\Release\pocketufo.exe`. Run one suite directly when you
 need its output, from the repo root (data tests need `main.dat` / `lang.dat` there):
 

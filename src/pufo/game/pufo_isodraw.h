@@ -54,6 +54,8 @@ typedef struct IsoDrawCtx {
     u8       bOob;        /* 0x24 */
     i32      nTileX;      /* 0x28 */
     i32      nTileY;      /* 0x2C */
+    i32      nHeightOff;  /* 0x30, written by MapView_DrawUnitHeightGlyph */
+    i32      nHeightAux;  /* 0x34, the same */
     u8       nLayer;      /* 0x38 */
     i32      nGlyphA;     /* 0x3C */
     i32      nGlyphB;     /* 0x40 */
@@ -62,6 +64,9 @@ typedef struct IsoDrawCtx {
     u8       bWallPalIdx; /* 0x64 */
     i32      nPal;        /* 0x6c */
     i32      nHpGlyph;    /* 0x70 */
+    double   dHeightA;    /* 0x78, the three operands after their modulo, kept as doubles */
+    double   dHeightB;    /* 0x80 */
+    double   dHeightC;    /* 0x88 */
     i32      nMapY;       /* 0x138 */
     i32      nMapX;       /* 0x13C */
     TactItem *pItemCursor;/* 0x134, the item-list walk cursor */
@@ -272,10 +277,56 @@ void MapView_DrawViewportGuide(const IsoViewportGuide *pGuide);
 extern double g_dblIsoAngle; /* unk_1571F8 */
 extern double g_dblIsoScale; /* unk_156AA8 */
 
-/* Math_StoreSqrtConst @ 0x37098. */
-void Math_StoreSqrtConst(void);
+/* Math_StoreSqrtConst @ 0x37098. */void Math_StoreSqrtConst(void);
 
 /* Math_StoreAtan2Const @ 0x370e8. */
 void Math_StoreAtan2Const(void);
+
+/* What MapView_DrawUnitHeightGlyph reads out of the Map block.
+ *
+ * The original reaches all of it through the Map base; the port takes it as an argument so the
+ * glyph is testable without a Map. */
+typedef struct IsoHeightGate {
+    u8  bFireStatus2;      /* Map+0x52 */
+    u8  bFireStatus9;      /* Map+0x59 */
+    i32 nFireTgtX;         /* Map+0x14040 */
+    i32 nFireTgtY;         /* Map+0x14044 */
+    i32 nFireTgtZ;         /* Map+0x14048 */
+    u32 nHeightGlyphWord;  /* Map+0x14000: the gate tests the whole dword, the index uses the low half */
+    i32 nHeightSrcX;       /* Map+0x14060 */
+    i32 nHeightSrcY;       /* Map+0x14064 */
+    i32 nHeightSrcZ;       /* Map+0x14068 */
+    i32 nFireTickProgress; /* Map+0x1405C, used as its low half */
+} IsoHeightGate;
+
+/* MapView_DrawUnitHeightGlyph @ 0x1c240.
+ *
+ * Draws the firing-arc height glyph, but only on the cell that IS the current fire target. Six
+ * conditions must all hold, and note that X and Y are compared swapped against the iso fields:
+ *
+ *   bFireStatus2 and bFireStatus9 both non-zero
+ *   nMapX == nFireTgtY, nMapY == nFireTgtX, nLayer == nFireTgtZ
+ *   the dword at nHeightGlyphWord is non-zero
+ *
+ * With A = nHeightSrcX % 16, B = nHeightSrcY % 16, C = nHeightSrcZ % 12, the original computes:
+ *
+ *   nHeightOff = ((A*sin*scale) + 2.0) - (B*sin*scale) - 2.0
+ *   nHeightAux = ((B*cos) + (A*cos)) * scale + 40.0 - 2.0 - (C*2.0) - 20.0 - 8.0
+ *
+ * The port reproduces that operation order rather than the simplified form, because the two
+ * constants make the products land on integers: sin*scale is exactly 1.0 and cos*scale exactly 0.5,
+ * so a different association can move a value across a truncation boundary. Simplified, the same
+ * arithmetic is nHeightOff = A - B and nHeightAux = (A + B)/2 - 2*C + 10 - that is the isometric
+ * rotation of a position pair, which is why the three operands are X, Y and Z.
+ *
+ * The glyph is 10 * LOWORD(nHeightGlyphWord) + LOWORD(nFireTickProgress) + nSmokeBase + 16, palette
+ * 1, at (nHeightOff + nDrawX, nDrawY + nHeightAux + 15).
+ *
+ * Two asymmetries are reproduced rather than tidied. The gate tests the whole dword at 0x14000 while
+ * the index reads it as a u16, so a non-zero high half passes the gate and contributes nothing. And
+ * the original's return value on a skipped path is whatever gate byte it last read - register
+ * residue - so the port returns 1 when it drew and 0 when it did not. */
+int MapView_DrawUnitHeightGlyph(IsoDrawCtx *pIso, const IsoHeightGate *pGate,
+                                const IsoSpriteBases *pBases);
 
 #endif /* PUFO_ISODRAW_H */
