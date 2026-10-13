@@ -9,6 +9,7 @@
 
 #include "game/pufo_titles.h"
 #include "game/pufo_font.h"
+#include "asset/pufo_asset.h"
 #include "render/pufo_render.h"
 
 static int g_nFailures;
@@ -195,15 +196,8 @@ static void TestBorderAndBlur(void)
 }
 
 static SoftSurf g_titlesSurf;
-static TitlesParticle g_aParticles[4];
+static TitlesParticle g_aParticles[4096];
 static TitlesStar g_aStars[4];
-static i32 g_nSceneCalls;
-
-static void CountScene(void *pUser)
-{
-    (void)pUser;
-    g_nSceneCalls += 1;
-}
 
 static void ClearTitles(void)
 {
@@ -227,7 +221,6 @@ static TitlesAnimation MakeAnimEnv(void)
     env.pTitlesSurface   = &g_titlesSurf;
     env.nFillPalSlot     = 0;
     env.nPresentPalSlot  = 12;
-    env.pfnLoadScene     = CountScene;
     env.Credits          = MakeEnv(0);
     return env;
 }
@@ -310,11 +303,14 @@ static void TestAnimation(void)
     (void)Titles_AnimateParticles(&env);
     CheckEqI32("a mid-sequence frame leaves the timer alone too", p->nTimer, 9);
 
-    /* 681 hands over to the scene loader. */
-    g_nSceneCalls = 0;
+    /* 681 or more hands over to the scene loader. With no archives open this exercises the guarded
+     * path: nothing is loaded, but the frame counter still resets and the index still advances. */
     env.nFrame = 681;
+    env.nSceneIndex = 0;
     (void)Titles_AnimateParticles(&env);
-    CheckEqI32("frame 681 or more calls the scene loader", g_nSceneCalls, 1);
+    CheckEqI32("a late frame resets the frame counter", env.nFrame, 0);
+    CheckEqI32("and advances the scene index even when nothing could be loaded", env.nSceneIndex, 1);
+    env.nSceneIndex = 0;
 
     /* Stars advance by speed and are reborn past the bottom. */
     env.nStarCount = 1;
@@ -393,6 +389,62 @@ static void TestAnimation(void)
                Titles_DrawCreditLines(&env.Credits), 2);
 }
 
+static int TestLoadScene(void)
+{
+    const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    static u8 aRaw[16384];
+    TitlesAnimation env = MakeAnimEnv();
+    AssetReader rdr;
+    u32 cb;
+    i32 nBad = 0;
+
+    printf("Titles_LoadScene @ 0x468cc\n");
+
+    if (!Asset_OpenArchives(apszPaths)) {
+        Check(false, "Asset_OpenArchives(lang.dat, main.dat)");
+        return 1;
+    }
+
+    /* Ground truth first: read title0.dat directly, so every derived field can be checked against the
+     * bytes rather than against the port's own arithmetic. */
+    AssetReader_Clear(&rdr);
+    Check(AssetReader_Find(&rdr, "title0.dat"), "title0.dat is in the archives");
+    cb = AssetReader_Size(&rdr);
+    Check(cb >= 2u && cb <= sizeof(aRaw), "and its size fits the fixture buffer");
+    Check(AssetReader_Read(&rdr, aRaw, cb), "read it");
+
+    env.nSceneIndex = 0;
+    (void)Titles_LoadScene(&env);
+
+    Check(env.nParticleCount > 0 && env.nParticleCount <= 4096, "the scene has particles");
+    CheckEqI32("and the count is (size - 2) / 2 byte pairs", env.nParticleCount,
+               (i32)((cb - 2u) / 2u));
+    CheckEqI32("the header bytes become the two scale factors", env.nSceneScaleX, (i32)aRaw[0]);
+    CheckEqI32("both of them", env.nSceneScaleY, (i32)aRaw[1]);
+    CheckEqI32("the frame counter is reset", env.nFrame, 0);
+    CheckEqI32("and the scene index advances to 1", env.nSceneIndex, 1);
+
+    for (i32 i = 0; i < env.nParticleCount; ++i) {
+        const TitlesParticle *p = &g_aParticles[i];
+        i32 nWantX = 3 * (i32)aRaw[2 + 2 * i] + 3 * (80 - (i32)aRaw[0]) / 2;
+        i32 nWantY = 3 * (i32)aRaw[3 + 2 * i] + (320 - 3 * (i32)aRaw[1]) / 2;
+
+        if (p->nTargetX != 120 || p->nTargetY != 160) { nBad = 1; }
+        if (p->nHomeX != nWantX || p->nHomeY != nWantY) { nBad = 1; }
+        if (p->nX < -500 || p->nX > 499) { nBad = 1; }
+        if (p->nY < -350 || p->nY > -1) { nBad = 1; }
+    }
+    Check(nBad == 0,
+          "every particle has target (120, 160), a home pair derived from the file bytes, and a start in range");
+
+    (void)Titles_LoadScene(&env);
+    CheckEqI32("loading again takes title1.dat and wraps the index back to 0", env.nSceneIndex, 0);
+    Check(env.nParticleCount > 0, "and title1.dat has particles too");
+
+    Asset_CloseArchives();
+    return 0;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -400,6 +452,10 @@ int main(void)
     TestBackdrop();
     TestBorderAndBlur();
     TestAnimation();
+    if (TestLoadScene() != 0) {
+        printf("\n%s: %d failure(s)\n", "FAIL", g_nFailures);
+        return 1;
+    }
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

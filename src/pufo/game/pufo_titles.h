@@ -110,6 +110,11 @@ typedef struct TitlesAnimation {
     i32             nStarCount;      /* g_pTitlesState + 87220 */
     i32             nFrame;          /* g_pTitlesState + 8 */
     i32             nScroll;         /* g_pTitlesState + 87228 */
+    /* The two bytes at the head of a title scene, read by Titles_LoadScene. They scale where the
+     * home pair lands, so they are state and not locals. */
+    i32             nSceneScaleX;    /* g_pTitlesState + 0 */
+    i32             nSceneScaleY;    /* g_pTitlesState + 4 */
+    i32             nSceneIndex;     /* g_pTitlesState + 16: which titleN.dat to load next */
     SoftSurf       *pTitlesSurface;  /* g_pTitlesSurface, 0x158808 */
     /* aPalette is at 0x1472D0 with 1024 bytes per slot, so the two palettes this module passes are
      * slot 0 (the original writes MEMORY[0x1472D0]) and slot 12 (the original writes &unk_14A2D0,
@@ -117,8 +122,6 @@ typedef struct TitlesAnimation {
     i32             nFillPalSlot;    /* 0 */
     i32             nPresentPalSlot; /* 12 */
     TitlesBackdrop  Credits;         /* the credit lines; note their scroll is this nScroll */
-    void (*pfnLoadScene)(void *pUser); /* Titles_LoadScene (0x468cc), not ported */
-    void           *pSceneUser;
 } TitlesAnimation;
 
 /* Titles_PresentToSoftSurf @ 0x466dc. Copies the titles surface into the main surface at (0, 0), using
@@ -141,5 +144,15 @@ i32 Titles_DrawCreditLines(TitlesBackdrop *pEnv);
  * x is dtoi(amplitude * cos(speed * y * 0.01) + baseX), then advances the frame counter and runs the
  * border blur, the present, the particle step, the star step and the credit lines. */
 i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv);
+
+/* Titles_LoadScene @ 0x468cc. Loads "titleN.dat" where N is the scene index, which cycles 0, 1, 0.
+ * The file is a 2-byte header followed by byte pairs: the header gives the two scale factors, and each
+ * pair is one particle's home position. Every particle starts at a random point with its target fixed at
+ * (120, 160), and the frame counter is reset.
+ *
+ * Deviation: the original never checks whether the member was found, so a missing titleN.dat makes it
+ * allocate zero bytes and then read the header out of that allocation. The port skips the record loop in
+ * that case and still resets the frame counter and advances the scene index. */
+i32 Titles_LoadScene(TitlesAnimation *pEnv);
 
 #endif /* PUFO_TITLES_H */

@@ -2,9 +2,11 @@
 #include "game/pufo_titles.h"
 
 #include "game/pufo_font.h"
+#include "asset/pufo_asset.h" /* AssetReader, the titleN.dat lookup */
 #include "util/pufo_rand.h" /* Game_RandU16, the star and particle rolls */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 /* The original's titles surface, unk_158808. */
@@ -195,10 +197,7 @@ i32 Titles_AnimateParticles(TitlesAnimation *pEnv)
             return nFrame;
         }
         if (nFrame > 680) {
-            if (pEnv->pfnLoadScene != NULL) {
-                pEnv->pfnLoadScene(pEnv->pSceneUser);
-            }
-            return nFrame;
+            return Titles_LoadScene(pEnv);
         }
         return nFrame;
     }
@@ -241,6 +240,61 @@ i32 Titles_DrawCreditLines(TitlesBackdrop *pEnv)
                       PUFO_TITLES_ROW_STEP * (i + PUFO_TITLES_ROW_BASE) - pEnv->nScroll, 31);
     }
     return pEnv->nMaxRows;
+}
+
+/* Titles_LoadScene @ 0x468cc. */
+i32 Titles_LoadScene(TitlesAnimation *pEnv)
+{
+    AssetReader rdr;
+    char szName[32];
+    u8 *pData;
+    u32 cb;
+    i32 nPairs;
+
+    AssetReader_Clear(&rdr);
+    pEnv->nParticleCount = 0;
+
+    snprintf(szName, sizeof(szName), "title%d.dat", pEnv->nSceneIndex);
+    (void)AssetReader_Find(&rdr, szName);
+
+    cb = AssetReader_Size(&rdr);
+    pData = (u8 *)malloc(cb);
+    if (pData != NULL) {
+        (void)AssetReader_Read(&rdr, pData, cb);
+    }
+
+    /* The original computes (size - 2) / 2 on an unsigned size, so a member smaller than 2 bytes wraps
+     * to a huge count and is only saved by the signed test that follows. The port states the guard. */
+    nPairs = (pData != NULL && cb >= 2u) ? (i32)((cb - 2u) / 2u) : 0;
+
+    if (nPairs > 0) {
+        pEnv->nSceneScaleX = (i32)pData[0];
+        pEnv->nSceneScaleY = (i32)pData[1];
+
+        for (i32 i = 0; i < nPairs; ++i) {
+            TitlesParticle *p = &pEnv->aParticles[pEnv->nParticleCount];
+            i32 nHomeA = (i32)pData[2 + 2 * i];
+            i32 nHomeB = (i32)pData[3 + 2 * i];
+
+            p->nX       = (i32)Game_RandU16(1000) - 500;
+            p->nY       = (i32)Game_RandU16(350) - 350;
+            p->nTargetX = 120;
+            p->nTargetY = 160;
+            p->nHomeX   = 3 * nHomeA + 3 * (80 - pEnv->nSceneScaleX) / 2;
+            p->nHomeY   = 3 * nHomeB + (320 - 3 * pEnv->nSceneScaleY) / 2;
+
+            pEnv->nParticleCount += 1;
+        }
+    }
+
+    free(pData);
+
+    pEnv->nFrame = 0;
+    pEnv->nSceneIndex += 1;
+    if (pEnv->nSceneIndex >= 2) {
+        pEnv->nSceneIndex = 0;
+    }
+    return pEnv->nSceneIndex;
 }
 
 /* Titles_DrawAnimatedFrame @ 0x1a83c.
