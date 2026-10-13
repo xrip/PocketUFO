@@ -59,8 +59,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
     per layer, 4 layers, 14400 dwords = `0xE100` B, ending exactly at `Map+0x23438` = `apTactItems`
   - [x] the 6×6 module grid lives at `&pTpl.pDim1` and overruns the 20-byte `CDialogTemplate`
   - [x] every template dimension is read as `_rt_sdiv(headerByte, 10)` — cells to tiles
-  - [ ] open: the module-grid values `0..4`, the `var_276` kind codes, `byte_A6AF0`, `aMissionTileTypes`
-    at `0x159768+0x5F0/+0x5F4`, `unk_128B00`, `word_128B04/128B08`, and the three near-duplicate
+  - [x] `byte_A6AF0` resolved: ten-entry per-mission-type module-count table (jungle 12, culta 19,
+    forest 12, xbase 21, ubase 16, urban 15, desert 12, mount 13, polar 14, mars 11); urban is
+    `rand(12)+3` so its module numbers are 3..14 and every other terrain starts at 0
+  - [x] `aMissionTileTypes @ 0x159D5C` is runtime `.bss` state, not a shipped table; `0x14` skips the
+    tile's `Map_LoadRmp`
+  - [x] the shot-count selector is a Map dword-index offset: the shot's object-array argument is
+    `*(Map + 0x108 + 4*selector)`, selector 18 for variant 2 and 51 for variant 3
+  - [ ] open: the module-grid values `0..4`, the `var_276` kind codes, `unk_128B00`,
+    `word_128B04/128B08`, the `0x10/0x11/0x12` tile-type guards, and the three near-duplicate
     stamping copies
   - [ ] `CDialogTemplate_GetTemplateByte0 @ 0x54c68` and `GetTemplateByte1 @ 0x54c5c` (12 B each) are
     the only unported callees; both are `pBlob[0]` / `pBlob[1]` accessors

@@ -7711,8 +7711,14 @@ nSizeY, nLevel)`. The port already owns `Map_LoadRmp` and `RmpData`.
 
 ### Phase 4 — random ceiling breaks through `Combat_ResolveShot` (0x23B3C .. 0x23CAC)
 
-`Map_nTerrainVariant == 2` sets a dword at `var_FC` to 0x33; `== 3` sets it to 0x12 and
-`var_118.pDim1` to `Game_RandU16(0x1E)`, forced to 0 when `Map_bUnk15115 < 0x32`. Then
+`Map_nTerrainVariant == 2` sets the shot-count selector to 18 (`0x12`); `== 3` sets it to 51 (`0x33`);
+any other variant sets it to 0 and skips the whole phase. In the 2/3 cases the shot count is
+`Game_RandU16(0x1E)`, forced to 0 when `Map_bUnk15115 < 0x32`. The selector is not a count — it is a
+dword-index offset into the Map block: the shot's object-array argument is
+`*(Map + 0x108 + 4*selector)`, so variant 0/1 uses `Map+0x108` (the objects array), variant 2 uses
+`Map+0x150`, variant 3 uses `Map+0x1D4`. The second shot loop always uses `Map+0x108`.
+
+Then
 `Game_RandU16(3)` twice, `n4 = 1 - r1`, `n5 = 1 - r2`, `if (n4 + n5 == 0) n4 = 1`, and a loop of
 `n5 * 2` by `n4 * 2` cells that writes `Map+0x127A0C = x`, `Map+0x127A10 = y` and calls
 `Combat_ResolveShot(pMap, x, y, apObjects[0], 0, 0)` — the same globals `MapView_DrawUnitHeightGlyph`
@@ -7736,6 +7742,34 @@ A sweep over `4 * Map[0x1511B] * 10 * Map[0x1511C]` cells doing `cell->nFlags32 
 5 and 6 cleared) at every layer, then `Map_PatchCraftSprites(pMap)`, then the four
 `~CDialogTemplate` destructors.
 
+### The XcomBase path (0x23E08 .. 0x2412C)
+
+`Map_nMissionType == 3` writes 6 into both `Map_nMapDimX` and `Map_nMapDimY`, runs the same three-loop
+cell allocation, then walks `aMissionTileTypes @ 0x159D5C` in rows of 6. For each tile it builds the
+name `<aTerrainNameByMissionType[nMissionType]><itoa(tileTypeByte)>`, loads it with `nFlag 2`, applies
+it at `(nTileX, nTileY)`, and when `GetLevelCount <= 3` stamps, for levels 3 down to `nLevel`:
+`Font_GetSprByIndex(2)` into cell slot `0x00` and `Font_GetSprByIndex(3)` into cell slot `0x0C`. The
+cell index there is **not** the `60*y + x` form — it expands to
+
+    3600*nLevel + 60*nTileY + 6*nTileRow + x
+
+which is the 6×6-tile grid with each tile 6 cells apart inside a 60-cell row. A tile whose type byte is
+`0x14` (20) skips its `Map_LoadRmp`.
+
+### The name tables, verified from the image
+
+Nine bytes per entry in all four:
+
+| table | address | indexed by | contents |
+|---|---|---|---|
+| `aTerrainNameByMissionType` | `0xA67F8` | `Map_nMissionType` | jungle, culta, forest, xbase_, ubase_, urban, desert, mount, polar, mars |
+| `aTerrainNameSuffix0` | `0xA7B20` | `Map_nMissionType` | `"0"` for every type except urban, which is `"4"` |
+| `aPlane` | `0xA6668` | `Map_nMissionType - 1` | plane, lightnin, avenger |
+| UFO module table | `0xA6590` | `3*(nTerrainVariant-1) + tier` | ufo1a, -, -, ufo_110, ufo_120, -, ufo_130, ufo_140, -, ufo_150, ufo_170, -, ufo_160 |
+
+`tier` is `(u8)Map[Map+0x1510C]`, which the function also stores into `Map_bUnk15112` (`Map+0x15112`)
+before using it. The UFO table ends exactly at `aPlane`.
+
 ### What is settled
 
 - The cell index formula and the four-layer grid, in all four allocation sites.
@@ -7746,17 +7780,24 @@ A sweep over `4 * Map[0x1511B] * 10 * Map[0x1511C]` cells doing `cell->nFlags32 
 - That the ceiling-break pass really calls `Combat_ResolveShot` and writes `Map+0x127A0C` /
   `Map+0x127A10` first.
 - The final `nFlags32 &= ~0x78` sweep and the `Map_PatchCraftSprites` call.
+- `byte_A6AF0` is a ten-entry per-mission-type module-count table, read as
+  `Game_RandU16(byte_A6AF0[nMissionType])`: jungle 12, culta 19, forest 12, xbase 21, ubase 16, urban
+  15, desert 12, mount 13, polar 14, mars 11. Urban is special-cased as `Game_RandU16(byte_A6AF5 - 3)
+  + 3`, i.e. `rand(12) + 3`, so an urban module number is 3..14 while every other terrain starts at 0.
+- `aMissionTileTypes @ 0x159D5C` is **runtime state, not a shipped table** — it lives in the `.bss` base
+  block and has no bytes in the image. It is walked in rows of 6 by the XcomBase path.
 
 ### What is open, and blocks the port
 
 1. The meaning of the 6×6 grid values `0, 1, 2, 3, 4` and of the `var_90` kind codes `0, 1, 2, 3`.
-2. `byte_A6AF0` — the per-terrain-variant random-max table used by `Game_RandU16(byte_A6AF0[variant])`
-   at 0x237AC and 0x252C0. Extent and meaning unestablished.
-3. The alternate cell-array base offsets `0x15630`, `0x15BB4`, `0x15C00`, `0x15CA4`, `0x18290`,
+2. The alternate cell-array base offsets `0x15630`, `0x15BB4`, `0x15C00`, `0x15CA4`, `0x18290`,
    `0x182B8`, `0x15422C`, `0x1583B4`. Each is `Map + offset` and each has to be expressed as a cell
-   coordinate before the stamping phase can be ported.
-4. `aMissionTileTypes` at `0x159768 + 0x5F0` and `+ 0x5F4`: extent, and why `0x10/0x11/0x12/0x14` are
-   the skip codes.
+   coordinate before the stamping phase can be ported. `0x15630` is `Map_apCells0 + 190` dwords, so at
+   least one of them is a cell index rather than a separate array — the stamping loops build their
+   base as `Map + 4*(10*(rowAcc + col) + layerAcc)` and that arithmetic has to be reproduced exactly,
+   not guessed from the offsets.
+3. `aMissionTileTypes` sentinels `0x10`, `0x11`, `0x12`, `0x14`: `0x14` is proven to skip the tile's
+   `Map_LoadRmp`; the other three are guards on the sprite stamping and their meaning is not settled.
 5. `unk_128B00` (selects the `"0"` or `"15"` name suffix at 0x24A18) and the `word_128B04` /
    `word_128B08` pair (a random module position written into both grids and used as the `Map_LoadRmp`
    tile).
