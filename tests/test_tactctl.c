@@ -7,6 +7,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_ship.h"   /* Ship.bAtBase for the mode 1 rule */
 #include "util/pufo_str.h" /* pufo_strcpy: strcpy is deprecated under /WX */
 
 #include <stdio.h>
@@ -832,6 +833,216 @@ static void TestSelectUnit(void)
     unitA.bStatus = 0;
 }
 
+static Ship    s_aTeamShip[2];
+static Ship   *s_apTeamShip[2];
+static Soldier s_aTeamUnit[4];
+static Soldier *s_apTeamUnit[4];
+static Soldier *s_aTeamXcom[30];
+static u8      s_aTeamDeploy[104 * 3];
+static u16     s_aTeamStat[10];
+static u8      g_nTeamCount;
+
+/* Four soldiers, ordered so that each mode stops at a different place.
+ *
+ *   0: base 1, aboard craft 0
+ *   1: base 1, aboard nothing (255)
+ *   2: base 1, aboard craft 1
+ *   3: base 255, aboard nothing
+ *
+ * nUnk436 and uInvBurden are sentinels: nUnk436 is cleared for every soldier the walk REACHES, and
+ * uInvBurden is rewritten to 1 only for soldiers that made it into the roster. Together they separate
+ * "visited then rejected" from "never visited". */
+static void TeamFixtureReset(void)
+{
+    for (i32 i = 0; i < 4; ++i) {
+        memset(&s_aTeamUnit[i], 0, sizeof(s_aTeamUnit[i]));
+        s_aTeamUnit[i].nUnitType  = 0;   /* not large, so placement stays single-cell */
+        s_aTeamUnit[i].nUnk436    = 0x7A;
+        s_aTeamUnit[i].uInvBurden = 99;
+        s_aTeamUnit[i].bStatus    = 5;
+        s_aTeamUnit[i].bFacing    = 3;
+        s_aTeamUnit[i].nAnimPose  = 7;
+        s_apTeamUnit[i] = &s_aTeamUnit[i];
+    }
+    s_aTeamUnit[0].nKind = 1;   s_aTeamUnit[0].bUnk183 = 0;
+    s_aTeamUnit[1].nKind = 1;   s_aTeamUnit[1].bUnk183 = 255;
+    s_aTeamUnit[2].nKind = 1;   s_aTeamUnit[2].bUnk183 = 1;
+    s_aTeamUnit[3].nKind = 255; s_aTeamUnit[3].bUnk183 = 255;
+
+    memset(s_aTeamXcom, 0, sizeof(s_aTeamXcom));
+    memset(s_aTeamDeploy, 0, sizeof(s_aTeamDeploy));
+    s_aTeamDeploy[1 * 104 + 0] = 1;
+    s_aTeamDeploy[1 * 104 + 1] = 2;
+    s_aTeamDeploy[1 * 104 + 2] = 0;
+    s_aTeamDeploy[2 * 104 + 0] = 4;
+    s_aTeamDeploy[2 * 104 + 1] = 6;
+    s_aTeamDeploy[2 * 104 + 2] = 1;
+
+    s_aTeamStat[0] = 45;
+    s_aTeamStat[1] = 78;
+    s_aTeamStat[9] = 12;
+
+    s_apTeamShip[0] = &s_aTeamShip[0];
+    s_apTeamShip[1] = &s_aTeamShip[1];
+    memset(s_aTeamShip, 0, sizeof(s_aTeamShip));
+    s_aTeamShip[0].bAtBase = 1;
+    s_aTeamShip[1].bAtBase = 1;
+}
+
+static i32 TeamRunCase(TactTeamSelectEnv *pEnv)
+{
+    for (i32 i = 0; i < 4; ++i) {
+        s_aTeamUnit[i].nUnk436    = 0x7A;
+        s_aTeamUnit[i].uInvBurden = 99;
+        s_aTeamUnit[i].bStatus    = 5;
+        s_aTeamUnit[i].bFacing    = 3;
+        s_aTeamUnit[i].nAnimPose  = 7;
+        s_aTeamUnit[i].pCell      = NULL;
+    }
+    memset(s_aTeamXcom, 0, sizeof(s_aTeamXcom));
+    g_nTeamCount = 0;
+    pEnv->pnXcomCount = &g_nTeamCount;
+    return Tact_SelectTeamUnits(pEnv);
+}
+
+static void TestSelectTeamUnits(void)
+{
+    TactCursor    cursor;
+    MapCursorPos  pos;
+    StatusStack   stack;
+    StatusHooks   hooks = { Sel_NotBusy, Sel_NoRepaint, Sel_NoRender, NULL };
+    InvStatHooks  inv = { NULL, NULL, NULL, NULL, NULL };
+    TactSelectCtx selCtx;
+    TactTeamSelectEnv env;
+    Soldier      *pSel = NULL;
+
+    printf("Tact_SelectTeamUnits @ 0x39744\n");
+
+    TeamFixtureReset();
+
+    memset(s_aCursorGrid, 0, sizeof(s_aCursorGrid));
+    s_aCursorGrid[1][26][14].nX = 14; s_aCursorGrid[1][26][14].nY = 26; s_aCursorGrid[1][26][14].nZ = 1;
+    s_aCursorGrid[0][22][11].nX = 11; s_aCursorGrid[0][22][11].nY = 22; s_aCursorGrid[0][22][11].nZ = 0;
+
+    memset(&cursor, 0, sizeof(cursor));
+    pos.pCursor = &cursor;
+    pos.geom.nDimX = 8;
+    pos.geom.nDimY = 8;
+    pos.bBusy = false;
+    pos.bSelUnitLarge = false;
+    pos.bSuppressLarge = false;
+    memset(&stack, 0, sizeof(stack));
+
+    memset(&selCtx, 0, sizeof(selCtx));
+    selCtx.ppSelUnit = &pSel;
+    selCtx.pCursorPos = &pos;
+    selCtx.pfnLookup = LookupCell;
+    selCtx.pStatus = &stack;
+    selCtx.pStatusHooks = &hooks;
+    selCtx.panRankLow = &s_aSelRankLow[0][0];
+    selCtx.panRankOther = &s_aSelRankLow[0][0];
+
+    memset(&env, 0, sizeof(env));
+    env.apSoldiers = s_apTeamUnit;
+    env.nSoldierCount = 4;
+    env.apCraft = (struct Ship **)s_apTeamShip;
+    env.nCraftIndex = 0;
+    env.nCraftMapX = 1;   /* 10 cells */
+    env.nCraftMapY = 2;   /* 20 cells */
+    env.nSelectedBase = 1;
+    env.pDeployOffsets = s_aTeamDeploy;
+    env.apXcomUnits = s_aTeamXcom;
+    env.auStat = s_aTeamStat;
+    env.nStatCount = 10;
+    env.pfnLookup = LookupCell;
+    env.pSelectCtx = &selCtx;
+    env.pInvHooks = &inv;
+
+    /* The anchor is 10 * craft tile plus the record pair, and the record is chosen by the layer count.
+     * Two different layer counts against the same craft position prove the 104-byte stride. */
+    env.bMissionMode = 4;   /* accept everything, so the anchor is the only thing under test */
+    env.nMapLayers = 2;
+    (void)TeamRunCase(&env);
+    CheckEqI32(g_nTeamCount, 4, "  mode above 3 accepts every soldier");
+    Check(s_aTeamUnit[0].pCell == &s_aCursorGrid[1][26][14],
+          "  layer count 2 gives x 10+4, y 20+6, layer 1");
+
+    env.nMapLayers = 1;
+    (void)TeamRunCase(&env);
+    Check(s_aTeamUnit[0].pCell == &s_aCursorGrid[0][22][11],
+          "  layer count 1 gives x 10+1, y 20+2, layer 0");
+
+    env.nMapLayers = 0;
+    (void)TeamRunCase(&env);
+    Check(s_aTeamUnit[0].pCell == &s_aCursorGrid[0][0][0],
+          "  a zero layer count skips the table and anchors at (0, 0, 0)");
+
+    /* Mode 1 is the base-deploy rule: nKind must equal the selected base, and the soldier's craft must
+     * either be absent (255) or sitting at a base. Soldier 3 has the wrong base, so the walk stops there. */
+    env.bMissionMode = 1;
+    env.nMapLayers = 2;
+    CheckEqI32(TeamRunCase(&env), 3, "  mode 1 takes the three soldiers of the selected base");
+    Check(s_aTeamXcom[0] == &s_aTeamUnit[0] && s_aTeamXcom[1] == &s_aTeamUnit[1] &&
+          s_aTeamXcom[2] == &s_aTeamUnit[2] && s_aTeamXcom[3] == NULL,
+          "  in roster order, with nothing past them");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0,
+               "  the rejected soldier is still visited first: 0x1B4 is cleared before any test");
+
+    /* Craft 1 is not at base, so soldier 2 is reached, cleared, and then rejected. */
+    s_aTeamShip[1].bAtBase = 0;
+    CheckEqI32(TeamRunCase(&env), 2, "  a soldier aboard a craft that is not at base is rejected");
+    CheckEqI32(s_aTeamUnit[2].nUnk436, 0,
+               "  he is still visited, so his 0x1B4 field is cleared");
+    CheckEqI32(s_aTeamUnit[3].nUnk436, 0x7A, "  and the walk still stops at him");
+    s_aTeamShip[1].bAtBase = 1;
+
+    /* Modes 0, 2 and 3 all compare bUnk183 against the launch craft. */
+    env.bMissionMode = 0;
+    env.nCraftIndex = 0;
+    CheckEqI32(TeamRunCase(&env), 1, "  mode 0 takes only soldiers aboard craft 0");
+    env.bMissionMode = 3;
+    CheckEqI32(TeamRunCase(&env), 1, "  mode 3 uses the same rule");
+    env.bMissionMode = 2;
+    env.nCraftIndex = 255;
+    pSel = NULL;
+    CheckEqI32(TeamRunCase(&env), 0, "  mode 2 with craft 255 takes nobody");
+    Check(pSel == NULL, "  an empty roster selects no unit");
+    CheckEqI32(s_aTeamUnit[1].uInvBurden, 99, "  and recalculates nobody");
+    Check(s_aTeamUnit[1].nUnk436 == 0x7A && s_aTeamUnit[2].nUnk436 == 0x7A &&
+          s_aTeamUnit[3].nUnk436 == 0x7A,
+          "  rejection at the first soldier leaves every later soldier completely untouched");
+    env.nCraftIndex = 0;
+
+    /* Anything above 3 accepts without looking at the soldier. */
+    env.bMissionMode = 200;
+    CheckEqI32(TeamRunCase(&env), 4, "  a mode above 3 accepts unconditionally");
+
+    /* The base byte is loaded with LDRSB. A value of 0xFF sign-extends to -1 and then matches no nKind,
+     * which an unsigned compare would not do: soldier 3 has nKind 255 and is still rejected. */
+    env.bMissionMode = 1;
+    env.nSelectedBase = (i8)0xFF;
+    CheckEqI32(TeamRunCase(&env), 0,
+               "  the signed base load means 0xFF matches no nKind, even soldier 3 with nKind 255");
+    env.nSelectedBase = 1;
+
+    /* What an accepted soldier gets. */
+    env.bMissionMode = 1;
+    (void)TeamRunCase(&env);
+    CheckEqI32(s_aTeamUnit[0].bFacing, 0, "  facing reset to 0");
+    CheckEqI32(s_aTeamUnit[0].nAnimPose, 1, "  animation pose reset to 1");
+    CheckEqI32(s_aTeamUnit[0].bStatus, 0, "  bStatus cleared");
+    CheckEqI32(s_aTeamUnit[0].uTu, 45, "  TU from stat 0");
+    CheckEqI32(s_aTeamUnit[0].uHp, 78, "  HP from stat 1");
+    CheckEqI32(s_aTeamUnit[0].uStunOrArmor, 12, "  stun or armour from stat 9");
+    CheckEqI32(s_aTeamUnit[0].uInvBurden, 1, "  inventory stats recalculated");
+    CheckEqI32(s_aTeamUnit[3].uInvBurden, 99, "  the unprocessed soldier is not recalculated");
+
+    /* The first roster entry is selected, which moves the cursor onto the cell it was placed on. */
+    Check(pSel == &s_aTeamUnit[0], "  the first roster entry is selected through Tact_SelectUnit");
+    CheckEqI32(cursor.nX, 14, "  the cursor follows the placement x");
+    CheckEqI32(cursor.nY, 26, "  and the placement y");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -848,6 +1059,7 @@ int main(void)
     TestCameraBounds();
     TestDeployUnits();
     TestSelectUnit();
+    TestSelectTeamUnits();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

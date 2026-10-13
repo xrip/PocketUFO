@@ -6,6 +6,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_ship.h"
 #include "game/pufo_statusmsg.h" /* StatusMsg_Push */
 #include "audio/pufo_audio.h"
 
@@ -482,4 +483,77 @@ void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit)
 
     MapCursor_SetPos(pCtx->pCursorPos, pUnit->pCell->nX, pUnit->pCell->nY,
                      pCtx->pfnLookup, pCtx->pLookupUser);
+}
+
+i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
+{
+    i32 nX = 0;
+    i32 nY = 0;
+    i32 nLayer = 0;
+
+    /* 0x3975c: the record index is the mission layer count, and a zero count skips the table entirely. */
+    if (pEnv->nMapLayers != 0) {
+        const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * (i32)pEnv->nMapLayers;
+        nX     = 10 * (i32)pEnv->nCraftMapX + (i32)pRec[0];
+        nY     = 10 * (i32)pEnv->nCraftMapY + (i32)pRec[1];
+        nLayer = (i32)pRec[2];
+    }
+
+    *pEnv->pnXcomCount = 0;
+
+    for (i32 i = 0; i < pEnv->nSoldierCount; ++i) {
+        Soldier *pUnit = pEnv->apSoldiers[i];
+        bool bAccept;
+
+        /* 0x397f8: Soldier+0x1B4 is cleared before any test, so a rejected soldier is still cleared. */
+        pUnit->nUnk436 = 0;
+
+        switch (pEnv->bMissionMode) {
+        case 1: {
+            /* ORIGINAL BUG (0x398B0), reproduced: the selected base byte is loaded with LDRSB and then
+             * compared against Soldier.nKind, an unsigned byte. A base byte of 0x80 or more sign-extends
+             * to a negative int and matches no nKind at all, so the team comes out empty. Base indices are
+             * small in practice, which is why this has never been seen. */
+            const u8 bCraft = pUnit->bUnk183;
+            bAccept = ((i32)pUnit->nKind == (i32)pEnv->nSelectedBase) &&
+                      bCraft != 254u &&
+                      (bCraft == 255u || pEnv->apCraft[bCraft]->bAtBase != 0);
+            break;
+        }
+        case 0:
+        case 2:
+        case 3:
+            /* 0x3982c: the craft the mission launched from. */
+            bAccept = (pUnit->bUnk183 == pEnv->nCraftIndex);
+            break;
+        default:
+            /* 0x39844: anything above 3 accepts without testing the soldier. */
+            bAccept = true;
+            break;
+        }
+
+        if (!bAccept) {
+            /* ORIGINAL BEHAVIOUR, reproduced: rejection ends the walk rather than skipping the soldier,
+             * so one unsuitable soldier leaves every later soldier unprocessed. */
+            break;
+        }
+
+        Unit_ResetBattleState(pUnit, 0, pUnit->nUnitType, pEnv->auStat, pEnv->nStatCount);
+        pUnit->bStatus = 0;                                    /* STRB R2, [R3,#0x17] */
+        Unit_PlaceOnMap(pUnit, nX, nY, nLayer, pEnv->pfnLookup, pEnv->pLookupUser);
+
+        const u8 nCount = *pEnv->pnXcomCount;
+        pEnv->apXcomUnits[nCount] = pUnit;
+        *pEnv->pnXcomCount = (u8)(nCount + 1);
+    }
+
+    if (*pEnv->pnXcomCount != 0) {
+        Tact_SelectUnit(pEnv->pSelectCtx, pEnv->apXcomUnits[0]);
+
+        for (i32 i = 0; i < (i32)*pEnv->pnXcomCount; ++i) {
+            (void)Unit_RecalcInventoryStat(pEnv->apXcomUnits[i], pEnv->pInvHooks);
+        }
+    }
+
+    return (i32)*pEnv->pnXcomCount;
 }

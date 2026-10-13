@@ -365,4 +365,64 @@ typedef struct TactSelectCtx {
 
 void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
 
+/* Tact_SelectTeamUnits @ 0x39744.
+ *
+ * Builds the deploy anchor, then walks the soldier array and decides who joins the tactical roster.
+ *
+ * The anchor comes from aDeployCellOffsets @ 0xA66B8, records of 104 bytes indexed by the mission layer
+ * count. Record byte 0 is added to 10 * Map_nCraftMapX @ 0x15199 and byte 1 to 10 * Map_nCraftMapY @
+ * 0x1519A; byte 2 is the layer. The craft position is held in tiles and 10 is cells per tile, which is the
+ * same factor Tact_GetCameraBounds (0x3331c) applies to those same two bytes. A layer count of zero puts
+ * the anchor at (0, 0, 0) without reading the table at all.
+ *
+ * Soldier+0x1B4 (nUnk436) is cleared for every soldier visited, before any acceptance test, so a rejected
+ * soldier still has it cleared.
+ *
+ * Map_bMissionMode @ 0x1511D picks the rule:
+ *
+ *   0, 2, 3   accept when Soldier.bUnk183 == Map_nCraftIndex @ 0x15113, the craft the mission launched from
+ *   1         accept when Soldier.nKind == the selected base byte unk_159D81, and bUnk183 is not 254, and
+ *             either bUnk183 is 255 (aboard nothing) or apCraft[bUnk183]->bAtBase is set
+ *   above 3   accept unconditionally
+ *
+ * Mode 1 is the base-deploy case and it is the only branch that reaches apCraft (Map+0x10AC). Hex-Rays
+ * renders the base byte as MEMORY[0x158890].anLineAux[79]; the ARM loads unk_159D81, the byte immediately
+ * after the base count at 0x159D80, and it loads it with LDRSB. That signed load is reproduced here: a base
+ * byte of 0x80 or more becomes a negative int and then matches no nKind, which an unsigned compare would
+ * not do. In practice base indices are small, so the quirk is latent.
+ *
+ * The behaviour most likely to be ported wrong: a rejected soldier ENDS the walk rather than being skipped.
+ * The rejection branch jumps straight to the count read, so one unsuitable soldier leaves every later
+ * soldier unprocessed.
+ *
+ * Accepted soldiers get Unit_ResetBattleState with facing 0, bStatus = 0, Unit_PlaceOnMap at the anchor, and
+ * a slot in apXcomUnits @ 0x15154. If the roster is not empty the first entry is selected through
+ * Tact_SelectUnit, and then every entry has its inventory-derived stats recalculated.
+ *
+ * Deviation: the original returns the count through the loop's register chain. The port returns it as i32. */
+#define PUFO_DEPLOY_RECORD_SIZE 104
+
+typedef struct TactTeamSelectEnv {
+    Soldier **apSoldiers;          /* the soldier array */
+    i32      nSoldierCount;        /* its length; the original reads the count as a u16 */
+    struct Ship **apCraft;         /* Map.apCraft @ Map+0x10AC, only mode 1 touches it */
+    i32      bMissionMode;         /* Map_bMissionMode @ 0x1511D */
+    u8       nCraftIndex;          /* Map_nCraftIndex @ 0x15113 */
+    u8       nMapLayers;           /* Map.nMapLayers @ 0x15114, the record index */
+    u8       nCraftMapX;           /* Map_nCraftMapX @ 0x15199, in tiles */
+    u8       nCraftMapY;           /* Map_nCraftMapY @ 0x1519A, in tiles */
+    i8       nSelectedBase;        /* unk_159D81, signed because the original loads it with LDRSB */
+    const u8 *pDeployOffsets;      /* aDeployCellOffsets @ 0xA66B8 */
+    Soldier **apXcomUnits;         /* Map.apXcomUnits @ 0x15154 */
+    u8      *pnXcomCount;          /* nXcomUnitCount @ 0x1511F */
+    const u16 *auStat;             /* for Unit_ResetBattleState */
+    i32      nStatCount;
+    MapCellLookup      pfnLookup;  /* for Unit_PlaceOnMap */
+    void              *pLookupUser;
+    TactSelectCtx     *pSelectCtx; /* for Tact_SelectUnit */
+    const struct InvStatHooks *pInvHooks; /* for Unit_RecalcInventoryStat */
+} TactTeamSelectEnv;
+
+i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv);
+
 #endif /* PUFO_TACTCTL_H */
