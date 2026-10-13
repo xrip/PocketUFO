@@ -6905,9 +6905,18 @@ g_aFireSoundBySortKey      000AA168  148 entries  exact match
 g_aStepDir                 000A7AE0   30 entries  exact match
 g_aUnitTypeFlag0           000A7B80   24 entries  exact match
 g_aUnitTypeIsLarge         000A7B81   24 entries  exact match
+g_aUnitMuzzleOffset        000A9768  1104 entries  exact match
+s_aHitRect                 000A8DD8  175 entries  exact match
 
-5 tables checked, 0 mismatched
+7 tables checked, 0 mismatched
 ```
+
+`g_aUnitMuzzleOffset` is the one worth naming: 23 unit types × 2 selections × 8 facings of i16 triples,
+2,208 bytes at `unk_A9768`, and it is the largest table in the port that was transcribed out of the binary.
+It is byte-for-byte correct. `s_aHitRect` is `aInvHitRects @ 0xA8DD8`, 25 records of 14 bytes.
+
+Registering a multi-dimensional table needs the symbol's full declarator — `g_aUnitMuzzleOffset[N][2][8]` —
+so the tool matches repeated bracket groups rather than one.
 
 The unit type flags are registered with a stride of 4 because the image stores them as 24 rows of 4 bytes
 while the port keeps two separate 24-entry arrays. That stride is exactly what got mis-transcribed by hand

@@ -25,6 +25,10 @@ TABLES = [
     ("step deltas",              0xA7AE0, "g_aStepDir",            "src/pufo/game/pufo_path.c",    30, "b", 0),
     ("unit type flag byte[4i]",  0xA7B80, "g_aUnitTypeFlag0",      "src/pufo/game/pufo_unit.c",    24, "b", 4),
     ("unit type flag byte[4i+1]", 0xA7B81, "g_aUnitTypeIsLarge",   "src/pufo/game/pufo_unit.c",    24, "b", 4),
+    # 23 blocks of 96 bytes at unk_A9768: 23 types x 2 selections x 8 facings, each an i16 triple.
+    ("unit muzzle offsets",      0xA9768, "g_aUnitMuzzleOffset",   "src/pufo/game/pufo_unit.c",  1104, "h", 0),
+    # aInvHitRects: 25 records of 14 bytes, seven i16 each.
+    ("inventory hit rects",      0xA8DD8, "s_aHitRect",            "src/pufo/game/pufo_invdrag.c", 175, "h", 0),
 ]
 
 
@@ -42,7 +46,7 @@ def port_table(path, sym):
     otherwise be read as entries.
     """
     src = open(path, encoding="utf-8").read()
-    m = re.search(r"\b" + sym + r"\[[^\]]*\]\s*=\s*\{(.*?)\n\};", src, re.S)
+    m = re.search(r"\b" + sym + r"(?:\[[^\]]*\])+\s*=\s*\{(.*?)\n\};", src, re.S)
     if not m:
         raise SystemExit("no table named %s in %s" % (sym, path))
     body = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.S)
