@@ -1,6 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD: `6121f6d`. Working tree: clean (no modified tracked files).
+Date: 2026-10-13. HEAD before this edit: `73917e8`. This document is committed together with the nine
+`MapView_DrawUnit` static tables, which are now in the port (section 7, Priority 1 step 1).
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -52,7 +53,7 @@ python docs/parity/audit_names.py         -> renames on record: 216 (explain 203
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 42, ORIGINAL BUG markers in src/pufo: 13
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 9 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 18 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -63,7 +64,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 48 suites: **6677**.
+Test checks run across the 48 suites: **6680**.
 
 ### Per-subsystem status
 
@@ -198,7 +199,7 @@ Three audits exist because claims drifted:
   Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 216 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
-  against the shipped image. 9 tables, 0 mismatches.
+  against the shipped image. 18 tables, 0 mismatches.
 
 ### Decision: ARM disassembly beats Hex-Rays
 
@@ -228,7 +229,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 48 test suites, 6677 checks, all passing in 1.5 s.
+- 48 test suites, 6680 checks, all passing in 1.6 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -292,7 +293,7 @@ not research:
 
 - `Tact_SpawnAliens` (0x3a2ac) — see section 7 for the tables.
 - `MapView_DrawUnit` (0x1c958, 3,220 B, 126 blocks) — all offsets, all table extents, all semantics
-  settled. Nine tables measured and ready to inline.
+  settled, and its nine static tables are now in the port. What is left is the function body itself.
 - `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
   unmodelled globals: `0x158848`, `0x162030`, `0x186410`.
 - `BasePlaneScreen_CommitStores` (0x7ac38) — blocked on the hangar screen state block
@@ -305,9 +306,11 @@ not research:
 
 ## 7. Known issues, constraints, assumptions, risks
 
-### The `MapView_DrawUnit` table set is measured but not yet in the port
+### The `MapView_DrawUnit` table set is in the port and byte-checked
 
-Nine static tables, all extents settled against the shipped image:
+Nine static tables, all extents settled against the shipped image, all nine now defined in
+`src/pufo/game/pufo_isodraw.c`, exported by `pufo_isodraw.h`, dumped by `tools/gen_isodraw_tables.py`,
+and registered in `docs/parity/audit_tables.py`:
 
 | Table | Address | Extent | Evidence |
 |---|---|---|---|
@@ -319,12 +322,15 @@ Nine static tables, all extents settled against the shipped image:
 | `aUnitHeightOff` | 0xA7A28 | 184 B, 8 signed per type | |
 | `aBobPhaseY` | 0xA7BE0 | 8 signed bytes | next bytes are the ASCII `xcom_0`, which proves the end |
 | `aUnitWeaponYOff` | 0xA9310 | 23 B | only type 9 (5) and type 11 (-1) are non-zero |
-| `aUnitFacingDrawOff` | 0xA93A8 | 16 signed per type | **extent past type 21 is still open** |
+| `aUnitFacingDrawOff` | 0xA93A8 | 224 B, 16 signed per type, **14 types** | ends at `0xA9488`, where the u16 table `Map_TraceVoxelOccupancy (0x3242c)` begins |
 
-**Open risk.** `aUnitWalkGlyph` covers 22 of the 23 unit types. `27 * 22 = 594` and `aPoseFrameTable`
-begins six bytes past the end of type 21. A type 22 unit reaching the walk branch reads six bytes of
-its own and then reads into the pose table. Whether that is reachable is unresolved. Do not assume
-the table is 23 rows wide.
+**How the two short tables were settled.** `aUnitWalkGlyph` is 594 bytes, which is exactly one more
+than the largest index reachable for type 21 (`27 * 21 + 9 * 2 + 8 = 593`), so it has 22 rows and type
+22 has none. `aUnitFacingDrawOff` is 224 bytes, which is exactly one more than the largest index
+reachable for type 13 (`2 * (8 * 13 + 7) + 1 = 223`), so it has 14 rows; the earlier reading that saw
+"type 22 starting with 80" was reading the occupancy table that follows it. The port keeps both tables
+short rather than padding them, so an out-of-range unit type reads the same bytes the original does.
+`python tools/gen_isodraw_tables.py --check` prints the boundary bytes on both sides of all nine.
 
 ### `Tact_SpawnAliens` data model
 
@@ -441,7 +447,7 @@ python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
 All five must be clean. Expected right now: 0 negated citations, 0 unexplained name flags, ledger
-and markers agree, 9 tables exact.
+and markers agree, 18 tables exact.
 
 ### Traps that will cost you a unit if you ignore them
 
@@ -503,9 +509,9 @@ evidence and a final report that has no unexplained gaps.
 This is the single highest-value thing in the repository, because nothing playable exists until it
 does.
 
-1. Inline the nine `MapView_DrawUnit` tables into `src/pufo/game/pufo_isodraw.c` and add them to
-   `docs/parity/audit_tables.py`. This is independent, verifiable work that can be committed on its
-   own. Resolve the `aUnitFacingDrawOff` extent past type 21 first.
+1. Done: the nine `MapView_DrawUnit` tables are in `src/pufo/game/pufo_isodraw.c`, exported by
+   `pufo_isodraw.h`, generated by `tools/gen_isodraw_tables.py`, and audited by
+   `docs/parity/audit_tables.py`. `aUnitFacingDrawOff` is 14 types wide, not 23.
 2. Port `Tact_SpawnAliens` (0x3a2ac). Decode is committed. Needs an env carrying `nTerrainVariant`,
    `bUnk86290..86297`, `nEnemyUnitCount`, `nEnemyReserveCount`, `apEnemyUnits`, `apHiddenSoldiers`,
    plus `aAlienRaceCounts`, `aAlienSecondaryCounts`, `aAlienBeltObjects`, `aAlienMissionTotals`,

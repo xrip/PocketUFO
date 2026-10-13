@@ -329,4 +329,33 @@ typedef struct IsoHeightGate {
 int MapView_DrawUnitHeightGlyph(IsoDrawCtx *pIso, const IsoHeightGate *pGate,
                                 const IsoSpriteBases *pBases);
 
+/* ------------------------------------------------------------ iso unit animation tables
+ *
+ * The nine static tables MapView_DrawUnit (0x1c958) reads. They land here before the function
+ * itself because their extents are settled facts about the shipped image, and each one is checked
+ * byte for byte by docs/parity/audit_tables.py. The definitions are in pufo_isodraw.c, dumped by
+ * tools/gen_isodraw_tables.py.
+ *
+ * PUFO_ISO_UNIT_TYPE_COUNT is 23, not the 24 rows of g_aUnitTypeFlag0: these tables cover unit
+ * types 0 through 22, and two of them cover fewer than that. g_aUnitWalkGlyph has 22 rows because
+ * type 22 has no walk data, and g_aUnitFacingDrawOff has 14 rows because the 224-byte table ends at
+ * 0xA9488, where the u16 table Map_TraceVoxelOccupancy (0x3242c) indexes as
+ * 4 * (8 * nUnitType + bFacing) begins. */
+#define PUFO_ISO_UNIT_TYPE_COUNT       23
+#define PUFO_ISO_WALK_KIND_COUNT       (PUFO_ISO_UNIT_TYPE_COUNT * 80)
+#define PUFO_ISO_ANIM_FRAME_COUNT      78
+#define PUFO_ISO_WALK_GLYPH_TYPE_COUNT 22
+#define PUFO_ISO_POSE_FRAME_COUNT      152
+#define PUFO_ISO_FACING_OFF_TYPE_COUNT 14
+
+extern const u8  g_aUnitWalkKind[PUFO_ISO_WALK_KIND_COUNT];
+extern const u16 g_aUnitAnimFrame[PUFO_ISO_ANIM_FRAME_COUNT][3];
+extern const u8  g_aUnitWalkGlyph[PUFO_ISO_WALK_GLYPH_TYPE_COUNT][3][9];
+extern const u8  g_aPoseFrameTable[PUFO_ISO_POSE_FRAME_COUNT][5];
+extern const u8  g_aUnitTypePoseBase[PUFO_ISO_UNIT_TYPE_COUNT];
+extern const i8  g_aUnitHeightOff[PUFO_ISO_UNIT_TYPE_COUNT][8];
+extern const i8  g_aBobPhaseY[8];
+extern const i8  g_aUnitWeaponYOff[PUFO_ISO_UNIT_TYPE_COUNT];
+extern const i8  g_aUnitFacingDrawOff[PUFO_ISO_FACING_OFF_TYPE_COUNT][8][2];
+
 #endif /* PUFO_ISODRAW_H */

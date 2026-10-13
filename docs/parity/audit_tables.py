@@ -32,6 +32,17 @@ TABLES = [
     # The two Tact_EquipTeamFromCraft candidate tables, plain dword object indices.
     ("equip left-hand order",    0xA62F0, "s_aHandObjects",        "src/pufo/game/pufo_invdrag.c",  13, "i", 0),
     ("equip third-pickup order", 0xA6328, "s_aPackObjects",        "src/pufo/game/pufo_invdrag.c",   6, "i", 0),
+    # The nine MapView_DrawUnit tables, dumped by tools/gen_isodraw_tables.py. Extents come from the
+    # image: each one is closed by the next symbol, and the two short ones are recorded as short.
+    ("unit walk kind",           0xA6B00, "g_aUnitWalkKind",       "src/pufo/game/pufo_isodraw.c", 1840, "B", 0),
+    ("unit anim frame",          0xA7230, "g_aUnitAnimFrame",      "src/pufo/game/pufo_isodraw.c",  234, "H", 0),
+    ("unit walk glyph",          0xA7408, "g_aUnitWalkGlyph",      "src/pufo/game/pufo_isodraw.c",  594, "B", 0),
+    ("pose frame table",         0xA7660, "g_aPoseFrameTable",     "src/pufo/game/pufo_isodraw.c",  760, "B", 0),
+    ("unit type pose base",      0xA7958, "g_aUnitTypePoseBase",   "src/pufo/game/pufo_isodraw.c",   23, "B", 0),
+    ("unit height offset",       0xA7A28, "g_aUnitHeightOff",      "src/pufo/game/pufo_isodraw.c",  184, "b", 0),
+    ("bob phase Y",              0xA7BE0, "g_aBobPhaseY",          "src/pufo/game/pufo_isodraw.c",    8, "b", 0),
+    ("unit weapon Y offset",     0xA9310, "g_aUnitWeaponYOff",     "src/pufo/game/pufo_isodraw.c",   23, "b", 0),
+    ("unit facing draw offset",  0xA93A8, "g_aUnitFacingDrawOff",  "src/pufo/game/pufo_isodraw.c",  224, "b", 0),
 ]
 
 

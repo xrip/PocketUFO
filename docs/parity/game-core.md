@@ -7503,18 +7503,9 @@ out-of-range-looking column that `TactHud_DrawSelectedUnitPanel` reads at 52. Ne
 
 ### What is still open, and why it is not ported yet
 
-Nine static tables are used and none is modelled in the port: `byte_A6B00`, `word_A7230`,
-`aUnitWalkGlyph @ 0xA7408`, `aPoseFrameTable @ 0xA7660`, `aUnitTypePoseBase @ 0xA7958`,
-`aUnitHeightOff @ 0xA7A28`, `aUnitWeaponYOff @ 0xA9310`, `aUnitFacingDrawOff @ 0xA93A8`,
-`aBobPhaseY @ 0xA7BE0`.
-
-Their extents are not settled, and one pair disagrees with itself. `byte_A6B00` is indexed
-`5 * (bFacing + 16 * nUnitType + 8) + step`, which needs 5 * 16 * 23 = 1840 bytes, and the gap to
-`word_A7230` is exactly 0x730 = 1840, so that one is closed and implies 23 unit types. `aUnitWalkGlyph`
-is indexed `27 * nUnitType + 9 * bUnitFlag4 + step`, which needs 27 * 22 + 9 * 2 + 2 = 614 bytes, but
-the gap to `aPoseFrameTable` is only 0x258 = 600. Either the walk table covers fewer types than the
-facing table, or the index is not what the pseudocode says. That has to be settled from the bytes and
-from ARM before any of it is transcribed, because a wrong extent silently changes which units draw.
+Nine static tables are used. All nine are now in the port and byte-checked against the image, so they
+are no longer the reason this function is unported; the extents and index shapes are recorded in the
+next section and in "The nine iso tables are in the port" at the end of this file.
 
 `IsoDrawCtx` also needs about a dozen new fields the port does not model yet: the four direction bytes
 `bUnitFlag0..3`, `bUnitFlag4`, `bAnimStep`, `nAnimFrame`, `nAnimParam`, `nAnimAux`, `nDrawAux`,
@@ -7527,8 +7518,8 @@ that needs ARM to resolve.
 Reading the bytes rather than the pseudocode closes most of it, and confirms **23 unit types,
 indices 0 through 22**, independently of `g_aUnitMuzzleOffset`.
 
-`byte_A6B00 @ 0xA6B00` is 80 bytes per unit type, 23 types, 1840 bytes, which is exactly the gap to
-`word_A7230`. Each 5-entry group is a walk-kind permutation for one facing. Types 0 through 10 are
+`aUnitWalkKind @ 0xA6B00` is 80 bytes per unit type, 23 types, 1840 bytes, which is exactly the gap to
+`aUnitAnimFrame @ 0xA7230`. Each 5-entry group is a walk-kind permutation for one facing. Types 0 through 10 are
 mostly `0,1,2,3,4`; type 11 is `3,0,2,1,4`; types 13 and 15 through 22 are `4,1,0,0,0`. So the five
 animation slots are reordered per unit type, and several types share one reordering.
 
@@ -7553,7 +7544,50 @@ and the extent is not a guess because the very next bytes are the ASCII string `
 `aUnitWeaponYOff @ 0xA9310` is one byte per unit type, and only two entries are not zero: type 9 is 5
 and type 11 is 255.
 
-`aUnitFacingDrawOff @ 0xA93A8` is 16 signed bytes per unit type, two per facing. Types 0 through 21
-are coherent, with 14 through 21 alternating between `0,0,8,0,1,0` and `4,0,12,0,5,0`. Type 22 starts
-with 80 and type 23 with 96, which do not fit the pattern, so this table's extent is the one still
-open.
+`aUnitFacingDrawOff @ 0xA93A8` is 16 signed bytes per unit type, two per facing, and the table is
+**224 bytes: 14 unit types, not 23.** ARM at `0x1D280..0x1D294` is `LDRB R2,[R5,#5]` for `bFacing`,
+`LDRB R3,[R5,#0xA0]` for `nUnitType`, `ADD R3,R2,R3,LSL#3`, `ADD R3,R0,R3,LSL#1`, then `LDRSB R3,[R3]`
+and `LDRSB R3,[R3,#1]`: index `2 * (8 * nUnitType + bFacing) + axis`, sixteen bytes per type. The table
+ends at `0xA9488`, and what follows is a different table - a u16 table `Map_TraceVoxelOccupancy (0x3242c)`
+indexes as `4 * (8 * nUnitType + bFacing)`, which runs 736 bytes and ends exactly at
+`g_aUnitMuzzleOffset @ 0xA9768`. The earlier note in this section, which found types 14 through 21
+"alternating" and type 22 "starting with 80", was reading that other table as if it were the tail of
+this one. A unit of type 14 or above that reaches the facing branch at `0x1D288` reads out of
+`aUnitFacingDrawOff` and into the occupancy table.
+
+## The nine iso tables are in the port
+
+`tools/gen_isodraw_tables.py` dumps the nine tables out of `pufobeta.exe` and prints the C initialiser
+block. That block now sits at the end of `src/pufo/game/pufo_isodraw.c`, the externs and the row counts
+are in `pufo_isodraw.h`, and all nine are registered in `docs/parity/audit_tables.py`. The audit now
+checks 18 tables and reports 0 mismatched. Coverage did not move - still 665 / 1103 functions and
+227292 / 598792 bytes - because a data table is not a function.
+
+Index shapes, each read off ARM inside `MapView_DrawUnit (0x1c958)` rather than off the pseudocode:
+
+| Port symbol | IDB symbol | Address | Index | ARM |
+|---|---|---|---|---|
+| `g_aUnitWalkKind` | `aUnitWalkKind` | 0xA6B00 | `5 * (bFacing + 16 * nUnitType + 8 * bWalkHalf) + bAnimStep` | 0x1CF5C |
+| `g_aUnitAnimFrame` | `aUnitAnimFrame` | 0xA7230 | `6 * nAnimFrame + 2 * k`, three u16 per frame | 0x1D048 |
+| `g_aUnitWalkGlyph` | `aUnitWalkGlyph` | 0xA7408 | `27 * nUnitType + 9 * bUnitFlag4 + nDirection` | 0x1CBA8 |
+| `g_aPoseFrameTable` | `aPoseFrameTable` | 0xA7660 | `5 * (nAnimParam + g_aUnitTypePoseBase[nUnitType]) + nWalkKind` | 0x1CFD8 |
+| `g_aUnitTypePoseBase` | `aUnitTypePoseBase` | 0xA7958 | `nUnitType` | 0x1CFDC |
+| `g_aUnitHeightOff` | `aUnitHeightOff` | 0xA7A28 | `8 * nUnitType + nAnimPhase` | 0x1D190 |
+| `g_aBobPhaseY` | `aBobPhaseY` | 0xA7BE0 | the animation clock byte, Map + 0x37 | 0x1D54C |
+| `g_aUnitWeaponYOff` | `aUnitWeaponYOff` | 0xA9310 | `nUnitType` | 0x1D3E8 |
+| `g_aUnitFacingDrawOff` | `aUnitFacingDrawOff` | 0xA93A8 | `2 * (8 * nUnitType + bFacing) + axis` | 0x1D288 |
+
+Two of the short tables are exact rather than merely bounded, and that is worth spelling out because it
+is what makes the row counts safe to hard-code:
+
+- `aUnitWalkKind` at 1840 bytes is exactly one more than the largest index the walk branch can form for
+  type 22: `5 * (7 + 16 * 22 + 8) + 4 = 1839`. The table is 23 types wide because the index says so.
+- `aUnitWalkGlyph` at 594 bytes is exactly one more than the largest index reachable for type 21:
+  `27 * 21 + 9 * 2 + 8 = 593`, with `bUnitFlag4` in 0..2 and the direction byte in 0..8. Type 22 has no
+  row at all, and a type 22 unit that reaches the walk branch reads into `aPoseFrameTable`. The port
+  keeps the table at 22 rows rather than padding it to 23, so that read behaves as the original's does.
+
+`aUnitAnimFrame` is 468 bytes of frames followed by four zero bytes before `aUnitWalkGlyph` at
+`0xA7408`, and `aUnitWalkGlyph` has a six-byte zero tail before `aPoseFrameTable` at `0xA7660`. Neither
+padding run is part of a table. `python tools/gen_isodraw_tables.py --check` prints the boundary bytes on
+both sides of all nine, which is the check to rerun if an extent is ever in doubt.
