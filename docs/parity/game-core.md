@@ -7167,3 +7167,48 @@ asserted a belt landing and failed; the port was right and my expectation was wr
 
 One layout detail worth keeping: `abUnk1012` at `Soldier+0x3F4` is a **byte** array while
 `TactItem.nIndex` is a **u16**, so the compare at `0x3BF9C` is 16-bit against 8-bit.
+
+## `Tact_DeployTeamAndHwps @ 0x39980` — decoded, one table question still open
+
+2,348 bytes, 64 blocks. Five phases.
+
+1. Park every existing XCom unit at cell `(1,1,0)`.
+2. Loop object indices **31..35**, the hardware store slots. `v4 = apObjects[i]->uRecovCount`
+   (`ObjectRec + 0xCA`) is how many soldiers to spawn; `nUnitType = i - 27`, so types 4..8.
+3. Re-place the units parked in phase 1, scanning deploy points for the first cell with no occupant.
+4. `Tact_SelectUnit(apXcomUnits[0])`.
+5. Only when `nMapLayers == 0`: build a scatter list and move every `apTactItems[j]` from the head of
+   `apCells[0][0][0]->pItemList` onto layer-1 cells.
+
+**`apBases[nSoldierCount + 8]` is a naming artifact.** ARM at `0x39B48` is `MOV R2, #0x1194` then
+`LDR R4, [R3, R2]` — it is `apSoldiers[nSoldierCount]`. `apSoldiers` is at **Map+0x1194** and the count is
+the u16 at **Map+0x1998**. `apBases` at Map+0x1174 plus eight entries is the same address, which is why
+Hex-Rays picked the wrong array.
+
+**A hardware soldier is named after the object it carries**: the name is copied from the ObjectRec's own
+first bytes at `ObjectRec + 0`.
+
+Two stat presets. Objects 31, 32, 33 get `auStat[0]=70 [1]=90 [2]=110 [3]=20 [4]=60 [8]=60 [9]=70` and
+`bUnk248 = 40`; objects 34, 35 get `100/90/110/30/60/60/100` and `bUnk248 = 55`. Both get `bMorale = 100`.
+
+**Object index 33 has no ammo computation.** The switch has cases 31, 32, 34 and 35 with `default: break`,
+so for 33 the ammo total is never assigned and is still read at `0x39D50` and `0x39D98`.
+
+Ammo is split `nAmmo = total / count` for every copy **except the last**, which gets
+`total % count + total / count` — the whole remainder goes to the last soldier. `nIndex` is the object's
+`uSortKey`, and **both hands are set to the same TactItem**.
+
+Placement, ARM at `0x39C58` authoritative, with `k` the deployed counter at Map+0x15140:
+
+```
+nX     = 10 * Map_nCraftMapX + byte_A6688[4k + 16*(nMapLayers-1)]
+nY     = 10 * Map_nCraftMapY + byte_A6688[4k + 16*(nMapLayers-1) + 1]
+nLayer = aDeployCellOffsets[104*nMapLayers + 4k - 102]
+```
+
+**What still blocks the port.** `byte_A67F0[0..2]` is `14, 12, 26` — per-layer deploy-point counts — but
+`0xA67F0` sits 248 bytes into a table whose records are 104 bytes, so `byte_A67F0` and
+`aDeployCellOffsets` overlap in the IDB. `byte_A6688` holds twelve 4-byte records:
+`(4,9,1,0) (4,11,1,0) (4,13,1,0)`, six zero records, then `(4,10,1,0) (4,12,1,0) (4,14,1,0) (4,16,1,0)`.
+With 14 points for layer 1 the index runs past those twelve records. That has to be settled from ARM before
+anyone ports this, because guessing it would silently place soldiers on the wrong cells.
