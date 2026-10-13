@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "asset/pufo_asset.h"
+#include "game/pufo_mapctx.h"   /* PUFO_MAP_CELL_DIM */
 #include "render/pufo_render.h"
 #include "util/pufo_str.h"
 
@@ -222,6 +223,92 @@ Mc1Rec *Font_GetSprByIndex(const PufoFont *pFont, u16 nIndex)
         return NULL;
     }
     return pFont->apMc1Index[nIndex];
+}
+
+/* The original writes the palette bytes of a craft sprite with a counted byte loop (STRB [R3],#1 /
+ * SUBS / BPL) starting at record offset 8. Two of the three calls run twelve bytes, one runs five. */
+static void Font_SetPalBytes6(Mc1Rec *pSpr, i32 nCount)
+{
+    i32 i;
+
+    if (pSpr == NULL) {
+        return;
+    }
+    for (i = 0; i < nCount; ++i) {
+        pSpr->abPal[i] = 6;
+    }
+}
+
+/* Map_PatchCraftSprites @ 0x25ab4.
+ *
+ * Runs only on a two-layer map. Three things happen:
+ *
+ * 1. Palette bytes. Craft sprites +13 and +3 get all twelve abPal bytes set to 6; sprite +21 gets only
+ *    its first five. abPal is at record offset 8 (ARM: ADD R3, R0, #8 then STRB [R3],#1), and the twelve
+ *    byte loops cover offsets 8 through 19.
+ * 2. A flag clear. Sprites +42, +43, +44 and +45 each get the u16 at record offset 0x14 set to 0
+ *    (ARM: STRH R7, [R0,#0x14]). Hex-Rays calls this field uUnk20; the offset is 0x14, and what it means
+ *    is not established, so the port keeps the name and records the writer.
+ * 3. Twelve cell stamps on layer 1, all writing pWallSprA.
+ *
+ * The cell coordinates are the part to be careful about. The original puts 10 * nCraftMapY + row into the
+ * slot that every other reader calls nMapX, and 10 * nCraftMapX + col into the nMapY slot. That is the
+ * same X/Y swap the MapView_DrawUnitHeightGlyph gate shows (nMapX against nFireTgtY, nMapY against
+ * nFireTgtX), so it is a convention in this game rather than a mistake, and the port reproduces it.
+ *
+ * Hex-Rays hides this by advancing the Map base: at 0x25BD4 it renders v10 = v10 + 86329 and then reads
+ * v10->bTactFlag. 0x1139B8 + 86329 + offsetof(Map, bTactFlag) lands on Map_nCraftMapX, so the operand is
+ * the craft tile column, not a flag. */
+void Map_PatchCraftSprites(PufoFont *pFont, const CraftSpritePatchEnv *pEnv)
+{
+    /* row goes to the nMapX slot, col to the nMapY slot, both added to 10 * the craft tile coordinate. */
+    static const struct {
+        i8 nRow;
+        i8 nCol;
+        u8 nSprOffset;
+    } aStamps[12] = {
+        { 2,  7, 42 }, { 4,  5, 42 }, { 3,  6, 42 },
+        { 8,  9, 43 }, { 7, 10, 43 }, { 6, 11, 43 },
+        { 6,  5, 44 }, { 7,  6, 44 }, { 8,  7, 44 },
+        { 2,  9, 45 }, { 3, 10, 45 }, { 4, 11, 45 },
+    };
+    i32 i;
+
+    if (pEnv->nMapLayers != 2) {                          /* 0x25ACC */
+        return;
+    }
+
+    /* 0x25AE0, 0x25B10, 0x25B38: the palette bytes. */
+    Font_SetPalBytes6(Font_GetSprByIndex(pFont, (u16)(pEnv->nCraftSprBase + 13)), 12);
+    Font_SetPalBytes6(Font_GetSprByIndex(pFont, (u16)(pEnv->nCraftSprBase + 3)), 12);
+    Font_SetPalBytes6(Font_GetSprByIndex(pFont, (u16)(pEnv->nCraftSprBase + 21)), 5);
+
+    /* 0x25B64 through 0x25BA0: the flag clear. */
+    for (i = 0; i < 4; ++i) {
+        Mc1Rec *pSpr = Font_GetSprByIndex(pFont, (u16)(pEnv->nCraftSprBase + 42 + i));
+        if (pSpr != NULL) {
+            pSpr->uUnk20 = 0;
+        }
+    }
+
+    /* 0x25BF0 through 0x25E58: the twelve stamps. */
+    for (i = 0; i < 12; ++i) {
+        i32 nMapX = 10 * pEnv->nCraftMapY + aStamps[i].nRow;
+        i32 nMapY = 10 * pEnv->nCraftMapX + aStamps[i].nCol;
+        Mc1Rec *pSpr = Font_GetSprByIndex(pFont, (u16)(pEnv->nCraftSprBase + aStamps[i].nSprOffset));
+        MapCell *pCell;
+
+        if (nMapX < 0 || nMapX >= PUFO_MAP_CELL_DIM ||
+            nMapY < 0 || nMapY >= PUFO_MAP_CELL_DIM ||
+            pSpr == NULL) {
+            continue;
+        }
+
+        pCell = pEnv->apCells[PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM * 1 + nMapX) + nMapY];
+        if (pCell != NULL) {
+            pCell->pWallSprA = pSpr;
+        }
+    }
 }
 
 void FontMetrics_Load(void)

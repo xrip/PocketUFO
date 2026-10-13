@@ -6973,3 +6973,26 @@ member of that block — the same operand `Gfx_PackRgb565Pair` and `Palette_Load
 palette entry, and it writes back 16 bits. `Palette_Load` packs the `0x100` format as `R | G<<8 | B<<16`,
 so on a 24-bit display this pass drops the whole blue channel out of every palette. Reproduced, and pinned
 by a test that feeds in `0x00AABB1234` and asserts the entry comes out `0x00001234`.
+
+## `Map_PatchCraftSprites @ 0x25ab4`, and the X/Y convention it exposes
+
+Ported (952 B). Runs only on a two-layer map: it sets twelve `abPal` bytes to 6 on craft sprites +13 and
++3, five on +21, zeroes the u16 at record offset `0x14` on sprites +42..45, and stamps `pWallSprA` on
+twelve layer-1 cells.
+
+**The cell coordinates are swapped, and that is a convention rather than a bug.** The original puts
+`10 * nCraftMapY + row` into the slot every other reader calls `nMapX`, and `10 * nCraftMapX + col` into
+the `nMapY` slot. `MapView_DrawUnitHeightGlyph`'s gate does the same thing — `nMapX` against `nFireTgtY`,
+`nMapY` against `nFireTgtX`. Two independent sites agreeing is why this is recorded as convention.
+
+Hex-Rays hides it. At `0x25BD4` it renders `v10 = v10 + 86329` and then reads `v10->bTactFlag`, which reads
+like a flag. `0x1139B8 + 86329 + offsetof(Map, bTactFlag)` lands on `Map_nCraftMapX` — the operand is the
+craft tile column.
+
+`fontSys_nCraftSprBase` (`unk_15826E`, font block +0x06) named in the IDB; it is the craft sprite group the
+whole function indexes through.
+
+The test is worth keeping because it cannot be satisfied by an off-by-one or a swapped index: twelve
+distinctive cells sit at the decoded positions, twelve decoys sit at the same twelve pairs with the
+coordinates the other way round, and every other grid slot points at one shared sink. The two index sets
+are disjoint, so the wrong order writes decoys and the sink instead.

@@ -6,6 +6,7 @@
  */
 #include "asset/pufo_asset.h"
 #include "game/pufo_font.h"
+#include "game/pufo_mapctx.h"   /* PUFO_MAP_CELL_DIM */
 #include "render/pufo_render.h"
 
 #include <stdio.h>
@@ -251,6 +252,132 @@ static void TestMetrics(void)
     CheckEqI32(Text_MeasureWidth(""), 0, "  measure empty");
 }
 
+/* Map_PatchCraftSprites @ 0x25ab4.
+ *
+ * The fixture is built so a wrong cell index cannot hide. Twelve distinctive cells sit at the indices the
+ * decoded specification says the original stamps, twelve decoy cells sit at the same twelve pairs with the
+ * two coordinates the other way round, and every other slot in the grid points at one shared sink. The two
+ * index sets are disjoint, so if the port put the craft's X into the nMapX slot instead of its Y, the
+ * writes would land on decoys and the sink and this test would fail loudly.
+ *
+ * Craft coordinates are (2, 3) and the sprite group base is 0, so the sprite indices the original uses are
+ * the plain numbers in the stamp table. */
+static void TestPatchCraftSprites(void)
+{
+    static Mc1Rec aSpr[64];
+    static Mc1Rec *apSprIdx[64];
+    static MapCell aSink;
+    static MapCell aWant[12];
+    static MapCell aDecoy[12];
+    static MapCell *apCells[PUFO_MAP_CELL_DIM * PUFO_MAP_CELL_DIM * 2];
+    static const i8 aRow[12] = { 2, 4, 3, 8, 7, 6, 6, 7, 8, 2, 3, 4 };
+    static const i8 aCol[12] = { 7, 5, 6, 9, 10, 11, 5, 6, 7, 9, 10, 11 };
+    static const u8 aSprOff[12] = { 42, 42, 42, 43, 43, 43, 44, 44, 44, 45, 45, 45 };
+    PufoFont font;
+    CraftSpritePatchEnv env;
+    i32 i;
+
+    memset(aSpr, 0, sizeof(aSpr));
+    memset(&aSink, 0, sizeof(aSink));
+    memset(aWant, 0, sizeof(aWant));
+    memset(aDecoy, 0, sizeof(aDecoy));
+    memset(&font, 0, sizeof(font));
+
+    for (i = 0; i < 64; ++i) {
+        apSprIdx[i] = &aSpr[i];
+    }
+    font.apMc1Index = apSprIdx;
+    font.nMc1IndexCount = 64;
+
+    /* Sprite state the original overwrites, pre-filled so the writes are visible. */
+    for (i = 0; i < 12; ++i) {
+        aSpr[13].abPal[i] = 0xAA;
+        aSpr[3].abPal[i] = 0xAA;
+        aSpr[21].abPal[i] = 0xAA;
+    }
+    aSpr[42].uUnk20 = 0x1234;
+    aSpr[43].uUnk20 = 0x1234;
+    aSpr[44].uUnk20 = 0x1234;
+    aSpr[45].uUnk20 = 0x1234;
+
+    for (i = 0; i < (i32)(sizeof(apCells) / sizeof(apCells[0])); ++i) {
+        apCells[i] = &aSink;
+    }
+    for (i = 0; i < 12; ++i) {
+        const i32 nWant = PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM + 10 * 3 + aRow[i]) + 10 * 2 + aCol[i];
+        const i32 nDecoy = PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM + 10 * 2 + aCol[i]) + 10 * 3 + aRow[i];
+        apCells[nWant] = &aWant[i];
+        apCells[nDecoy] = &aDecoy[i];
+    }
+
+    env.nCraftSprBase = 0;
+    env.apCells = apCells;
+    env.nMapLayers = 2;
+    env.nCraftMapX = 2;
+    env.nCraftMapY = 3;
+
+    /* A map that is not two layers deep must leave every byte alone. */
+    env.nMapLayers = 1;
+    Map_PatchCraftSprites(&font, &env);
+    Check(aSpr[13].abPal[0] == 0xAA, "a one layer map does not recolour craft sprites");
+    Check(aSpr[42].uUnk20 == 0x1234, "a one layer map does not clear the sprite flag");
+    Check(aSink.pWallSprA == NULL, "a one layer map stamps nothing");
+
+    env.nMapLayers = 2;
+    Map_PatchCraftSprites(&font, &env);
+
+    /* Twelve bytes for sprites +13 and +3, only five for +21. */
+    {
+        bool bOk = true;
+        for (i = 0; i < 12; ++i) {
+            if (aSpr[13].abPal[i] != 6 || aSpr[3].abPal[i] != 6) {
+                bOk = false;
+            }
+        }
+        Check(bOk, "craft sprites +13 and +3 get all twelve palette bytes set to 6");
+    }
+    {
+        bool bOk = true;
+        for (i = 0; i < 5; ++i) {
+            if (aSpr[21].abPal[i] != 6) {
+                bOk = false;
+            }
+        }
+        for (i = 5; i < 12; ++i) {
+            if (aSpr[21].abPal[i] != 0xAA) {
+                bOk = false;
+            }
+        }
+        Check(bOk, "craft sprite +21 gets only its first five palette bytes");
+    }
+    {
+        bool bOk = (aSpr[42].uUnk20 == 0) && (aSpr[43].uUnk20 == 0) &&
+                   (aSpr[44].uUnk20 == 0) && (aSpr[45].uUnk20 == 0);
+        Check(bOk, "craft sprites +42 through +45 have the 0x14 flag cleared");
+    }
+
+    /* The stamps, and the proof that the craft's Y goes into the nMapX slot. */
+    {
+        bool bOk = true;
+        for (i = 0; i < 12; ++i) {
+            if (aWant[i].pWallSprA != &aSpr[aSprOff[i]]) {
+                bOk = false;
+            }
+        }
+        Check(bOk, "all twelve cells of layer 1 get the expected wall sprite");
+    }
+    {
+        bool bClean = true;
+        for (i = 0; i < 12; ++i) {
+            if (aDecoy[i].pWallSprA != NULL) {
+                bClean = false;
+            }
+        }
+        Check(bClean, "the swapped-coordinate positions are NOT stamped, the original swaps them");
+    }
+    Check(aSink.pWallSprA == NULL, "nothing outside the twelve stamped cells is touched");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -268,6 +395,7 @@ int main(void)
     TestGlyphDecode();
     TestBlitIntoSurface();
     TestMetrics();
+    TestPatchCraftSprites();
 
     Asset_CloseArchives();
 

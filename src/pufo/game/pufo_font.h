@@ -107,6 +107,21 @@ void Font_BuildIndex(PufoFont *pFont);
 /* Record lookup by flat index. Returns NULL when out of range. */
 Mc1Rec *Font_GetSprByIndex(const PufoFont *pFont, u16 nIndex);
 
+/* What Map_PatchCraftSprites @ 0x25ab4 reads out of the font block and the Map block. The port owns
+ * neither, so both come in here. */
+typedef struct CraftSpritePatchEnv {
+    u16     nCraftSprBase;   /* fontSys + 0x06, the craft sprite group */
+    MapCell *const *apCells; /* Map.apCells @ 0x15338, flattened [4][60][60] */
+    i32     nMapLayers;      /* Map+0x15114 */
+    i32     nCraftMapX;      /* Map_nCraftMapX @ 0x15199 */
+    i32     nCraftMapY;      /* Map_nCraftMapY @ 0x1519A */
+} CraftSpritePatchEnv;
+
+/* Map_PatchCraftSprites @ 0x25ab4. Only runs when the map has exactly two layers: it recolours three
+ * craft sprites, clears a flag on four more, and stamps those four onto twelve cells of layer 1 around
+ * the craft's tile. */
+void Map_PatchCraftSprites(PufoFont *pFont, const CraftSpritePatchEnv *pEnv);
+
 /* Font_LoadSpr from the archive into g_fontMetrics. Missing file leaves the
  * table empty and bLoaded false. */
 void FontMetrics_Load(void);
