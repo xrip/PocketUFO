@@ -6996,3 +6996,51 @@ The test is worth keeping because it cannot be satisfied by an off-by-one or a s
 distinctive cells sit at the decoded positions, twelve decoys sit at the same twelve pairs with the
 coordinates the other way round, and every other grid slot points at one shared sink. The two index sets
 are disjoint, so the wrong order writes decoys and the sink instead.
+
+## `Tact_EquipTeamFromCraft @ 0x3be24` — decoded, deliberately not ported yet
+
+1,836 bytes, 82 basic blocks. Every callee it needs is already in the port (`Inv_HandlePointer`,
+`MapCell_ListRemove`, `MapCell_ListInsertByPri`, `Unit_RecalcInventoryStat`, `TactItem_ctor`,
+`aInvHitRects`), so it is unblocked — it is a size problem, not a dependency problem. Recorded here so the
+port is a transcription job rather than a re-derivation.
+
+It loops over `Map.nXcomUnitCount` / `Map.apXcomUnits` and splits on `Soldier.bUnk961` (Soldier+0x961), an
+already-equipped flag. Set: re-run the two 25-slot inventory passes. Clear: equip from the craft, then set
+the flag at `0x3C510`.
+
+**The 25-slot walk.** Hex-Rays renders the cursor advancing by 2 and reads `auUnk962[0]` each time, which
+means it walks `auUnk962[0..24]` — 25 u16 object indices at `Soldier+0x962`, one per inventory slot.
+`abUnk1012[slot]` at `Soldier+0x1012` is the parallel array on the same counter.
+
+- **Pass A**, slots whose object has `bTwoHanded == 0` **and** `nCategory != 3`: find a `TactItem` in the
+  list at `0x157204` whose `pObj` matches and whose `nAmmo` is non-zero, set the pointer scratch at
+  `0xAD714`/`0xAD718` from `aInvHitRects[slot]`, clear `nInvDragOffX/Y`, set `pSelUnit` and `pInvHitItem`,
+  call `Inv_HandlePointer`, remove from the list, recalc. Then, if `bAmmoCap != 255`, ammo bookkeeping
+  against `abUnk1012[slot]`: either build a fresh `TactItem` carrying the old ammo and reinsert it by
+  priority, or swap ammo with a matching entry.
+- **Pass B**, same 25 slots, gate `bTwoHanded != 0` **or** `nCategory == 3` **or** `nCategory == 5`: same
+  drive and remove, no ammo bookkeeping.
+
+**The equip branch is three table walks over candidate object indices.**
+
+| table | entries | for | accept when |
+|---|---|---|---|
+| `unk_A62F0` | 13 dwords (index +4, ends at 52) | left hand | `4*(burden + weight + 3) / strength == 0` |
+| `anAmmoTypeId[0..2]` | 3 | ammo for that weapon | `4*(burden + weight) / strength < 1` |
+| `unk_A6328` | 6 dwords (index +4, ends at 24) | belt | `4*(burden + weight + 3) / strength < 2` |
+
+All three divides are `__rt_sdiv`. The hit rect for ammo is **16** when the ammo object's `nFootW >= 3` or
+its `nFootH != 1`, otherwise **4**; the belt always uses hit rect **10**.
+
+**Layouts proven from ARM, not inferred:**
+
+- the item-list container at `0x157204` has `pItemList` at offset **0x34**;
+- `Map.apTactItems` is at **Map+0x23438** (`MOV R2,#0x23400` then `ORR R2,R2,#0x38`);
+- `TactItem` is 24 bytes: `pObj` +0, `nIndex` +4, `nAmmo` +6, `pNext` +0xC;
+- `ObjectRec.bWeight` at **+0xA5**;
+- `Soldier.uInvBurden` at **+0x1A4**, and the strength stat used here at **+0xB2**.
+
+**Hex-Rays artifact resolved.** At `0x3C0B0` it renders `v12 = &Map + 4 * ++nTactItemCount` and then
+`v12[36109]`, which reads like an out-of-range slot. ARM adds 1 to the count and then loads from
+`Map + 4*newCount + 0x23434`, which is `apTactItems[newCount - 1]` — the item stored a few instructions
+earlier at `0x3C04C`. It inserts the just-created item.
