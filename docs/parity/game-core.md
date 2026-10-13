@@ -6865,3 +6865,19 @@ what the code does; corrected before saving. The port's gate was already right.
 Deviation worth recording: the port adds guards the original does not have — it skips a craft whose
 `bHomeBase` is outside 0..7, and it skips null entries in `apBases` and `apObjects`. The original
 dereferences whatever those hold.
+
+## Verified: the step table, `aDirDeltaXY @ 0xa7ae0`
+
+30 bytes of signed triples, read as ten 6-byte chunks so the boundaries could be cross-checked. All ten
+match `g_aStepDir` exactly:
+
+| dir | bytes | delta | dir | bytes | delta |
+|---|---|---|---|---|---|
+| 0 N | `00 FF 00` | (0,-1,0) | 5 SW | `FF 01 00` | (-1,1,0) |
+| 1 NE | `01 FF 00` | (1,-1,0) | 6 W | `FF 00 00` | (-1,0,0) |
+| 2 E | `01 00 00` | (1,0,0) | 7 NW | `FF FF 00` | (-1,-1,0) |
+| 3 SE | `01 01 00` | (1,1,0) | 8 up | `00 00 01` | (0,0,1) |
+| 4 S | `00 01 00` | (0,1,0) | 9 down | `00 00 FF` | (0,0,-1) |
+
+This is the table the step legality test `Unit_CanStepTo @ 0x27bb8` and the flood fill both dispatch on, so a
+wrong entry here would corrupt movement and line of sight across the tactical layer. It is correct.
