@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 662 / 1103 (60.0%) |
-| Bytes of original code cited | 226800 / 598792 (37.9%) |
+| Functions cited as evidence | 665 / 1103 (60.3%) |
+| Bytes of original code cited | 227292 / 598792 (38.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6662 |
+| Test checks run | 6677 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 178 | 214 | 83928 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 104 | 205 | 33812 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 107 | 205 | 34304 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 7 | 13 | 3220 / 4444 | intro/outro animated scenes |
 
@@ -545,7 +545,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (104 functions)
+### `strat` (107 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -584,6 +584,8 @@ is the module that answers to it.
 | `0x65bb4` | `Base_UpdateWorkshopNeeded` | 200 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x65c7c` | `Base_UpdateLabNeeded` | 200 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x65fc8` | `Base_UpdatePsiLabNeeded` | 200 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x65f04` | `Base_UpdateAlienContainmentNeeded` | 196 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x655f8` | `Base_CalcOccupiedSpace` | 180 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5a9b4` | `StrategList_FindByShipId` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x820d0` | `Smap_ScrollBy` | 172 | `src/pufo/game/pufo_strateg.h` |
 | `0x5ab34` | `Funding_DeltaToArrow` | 164 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -614,6 +616,7 @@ is the module that answers to it.
 | `0x682c8` | `Base_CountBuiltFacilities` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_strateg.h` |
 | `0x837f8` | `Smap_ClampScrollY` | 120 | `src/pufo/game/pufo_strateg.h` |
+| `0x656ac` | `Base_CountAmmoItems` | 116 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x65ac4` | `Craft_GetTypeCargoCap` | 108 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x7e3b4` | `StrategList_AddAlienSiteIfValid` | 108 | `src/pufo/game/pufo_strateg.h` |
@@ -1035,7 +1038,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 101 functions, 128644 bytes remaining
+### `strat` — 98 functions, 128152 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1101,10 +1104,8 @@ whose port work they belong to.
 | `0x68044` | `Base_CountOutboundTransferSpace` | 232 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x671b0` | `Base_HitTestFacilityStrip` | 204 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x67f78` | `Base_CountInboundTransfers` | 204 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x65f04` | `Base_UpdateAlienContainmentNeeded` | 196 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7debc` | `Funding_AddRaceBonus` | 196 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a404` | `BaseFac_FormatCostLabel` | 184 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x655f8` | `Base_CalcOccupiedSpace` | 180 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5e768` | `RadarScreen_SetCursorNW` | 160 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5ea70` | `RadarScreen_SetCursorSE` | 160 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1112,7 +1113,6 @@ whose port work they belong to.
 | `0x84e20` | `Base_EnterBuildMode` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x95fa4` | `Base_GrantStarterItems` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x96894` | `Smap_SumSiteScores` | 120 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x656ac` | `Base_CountAmmoItems` | 116 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66874` | `Base_RemoveAllShips` | 116 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x681f4` | `Base_GetEngineerCount` | 112 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6812c` | `Base_GetScientistCount` | 108 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1311,7 +1311,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_enemyai` | PASS | 22 |
 | `test_font` | PASS | 38 |
 | `test_fov` | PASS | 31 |
-| `test_geoscape` | PASS | 215 |
+| `test_geoscape` | PASS | 230 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 306 |

@@ -7375,3 +7375,49 @@ Fixed by giving `Combat_ResolveShot` a static scratch window and outcome when th
 NULL, which reproduces the original's single shared window rather than inventing a new rule.
 Callers that want to inspect the result still pass their own. This is a port-side defect, not an
 original bug, so it is recorded here rather than in `bugs.tsv`.
+
+## The sixth needed pass, and what it counts
+
+Ported: `Base_UpdateAlienContainmentNeeded @ 0x65f04` (196 B), `Base_CountAmmoItems @ 0x656ac`
+(116 B), `Base_CalcOccupiedSpace @ 0x655f8` (180 B). Coverage moved 662 -> 665 functions and
+226,800 -> 227,292 bytes, which is exactly 180 + 116 + 196.
+
+`Base_UpdateAlienContainmentNeeded` is the sixth member of the needed-flag family, and it is the
+same machine as the other five: walk the 6 by 6 grid, and for every cell whose type byte is the
+kind this pass cares about, write 1 into the needed grid while the budget lasts and 0 once it runs
+out. Cells of any other kind are left exactly as they were. Kind 7 is alien containment, and the
+budget is `ammo / 10 + 1`, or 0 when there is no ammo at all -- the `+ 1` is real, so five ammo
+still claims one containment cell.
+
+It also shows the family's odd habit a third time. ARM at 0x65F10 is `BL Base_CalcAlienContainmentCap`
+followed by `MOV R0, R4`: the capacity is computed and then the return register is overwritten
+before anything reads it. The capacity function is pure, so the port does not make the call. The
+same discarded call is in `Base_UpdateWorkshopNeeded` and `Base_UpdatePsiLabNeeded`.
+
+Its return value is loop-counter residue, always 6, reproduced.
+
+### The two object-column readers
+
+Both reach the object array through their first argument, and ARM shows that argument is the Map
+base rather than the facility grid the pseudocode claims. At 0x656F0 the load is
+`[R2 + 4*(i-1) + 4 + 0x108]`, and 0x108 is `Map.apObjects`, so the pointer is `apObjects[i]`. In
+`Base_UpdateAlienContainmentNeeded`, ARM at 0x65F14 is `MOV R0, R4` before the call: R4 is the Map
+base, and R0 had held the grid for the capacity call. Hex-Rays reused the grid for both.
+
+The port takes the array and its count as parameters instead, which is how the rest of the family
+already works.
+
+What each one sums is the per-base quantity column `ObjectRec.auPerBaseVal[nBase]` at offset 0x2A:
+
+- `Base_CountAmmoItems`: object indices 77 through 104 inclusive, plus object 114. The gate is
+  `i > 76 && i < 105 || i == 114`.
+- `Base_CalcOccupiedSpace`: soldiers whose `Soldier.nKind` matches the base, plus object 112 and
+  object 113 only. Those two are tested with two compares against 0x70 and 0x71, not a range test.
+
+The base index is a `char` in all three. `Soldier.nKind` is a `u8`, so a negative base index matches
+no soldier, and the `auPerBaseVal` index is unguarded in the original: index -1 reads the two bytes
+before the column. The port reproduces the narrowing and does not add a bounds test, since a bounds
+test would change which objects contribute.
+
+Both readers also carry a `!= 0` test on each quantity before adding it. Adding zero is a no-op, so
+that test cannot change the total.

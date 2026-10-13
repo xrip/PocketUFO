@@ -1414,6 +1414,117 @@ static void TestDemolishBase(void)
      * ctest. Everything here is static or intentionally left allocated. */
 }
 
+/* --- the sixth needed pass and the two object-column readers -------------------------
+ *
+ * Base_CountAmmoItems @ 0x656ac, Base_UpdateAlienContainmentNeeded @ 0x65f04,
+ * Base_CalcOccupiedSpace @ 0x655f8. */
+
+static ObjectRecFull s_aSpaceObj[120];
+static ObjectRecFull *s_apSpaceObj[120];
+static Soldier       s_aSpaceSoldier[4];
+static Soldier      *s_apSpaceSoldier[4];
+
+static void SpaceFixture(void)
+{
+    for (i32 i = 0; i < 120; ++i) {
+        memset(&s_aSpaceObj[i], 0, sizeof(s_aSpaceObj[i]));
+        s_apSpaceObj[i] = &s_aSpaceObj[i];
+    }
+    for (i32 i = 0; i < 4; ++i) {
+        memset(&s_aSpaceSoldier[i], 0, sizeof(s_aSpaceSoldier[i]));
+        s_apSpaceSoldier[i] = &s_aSpaceSoldier[i];
+    }
+}
+
+static void TestContainmentNeededAndSpace(void)
+{
+    static u8 grid[700];
+
+    printf("Base_UpdateAlienContainmentNeeded @ 0x65f04, Base_CountAmmoItems @ 0x656ac, "
+           "Base_CalcOccupiedSpace @ 0x655f8\n");
+
+#define N_T(c, r) grid[480 + 6 * (c) + (r)]
+#define N_N(c, r) grid[444 + 6 * (c) + (r)]
+
+    /* Three containment cells, 25 ammo: budget is 25 / 10 + 1 = 3, so all three are claimed. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 7;
+    N_T(1, 1) = 7;
+    N_T(2, 2) = 7;
+    CheckEqI32(Base_UpdateAlienContainmentNeeded(grid, 0, 25), 6,
+               "the return is loop-counter residue, always 6");
+    CheckEqI32(N_N(0, 0), 1, "first containment cell claimed");
+    CheckEqI32(N_N(1, 1), 1, "second containment cell claimed");
+    CheckEqI32(N_N(2, 2), 1, "third containment cell claimed");
+
+    /* 5 ammo still gives a budget of 1, because the formula is n / 10 + 1 and not n / 10. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 7;
+    N_T(1, 1) = 7;
+    Base_UpdateAlienContainmentNeeded(grid, 0, 5);
+    CheckEqI32(N_N(0, 0), 1, "five ammo still claims one cell");
+    CheckEqI32(N_N(1, 1), 0, "and no more");
+
+    /* No ammo at all is the special case: the budget is 0, not 1. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 7;
+    Base_UpdateAlienContainmentNeeded(grid, 0, 0);
+    CheckEqI32(N_N(0, 0), 0, "zero ammo claims nothing");
+
+    /* Cells that are not containment are left exactly as they were, including a stale value. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 7;
+    N_T(3, 3) = 6;
+    N_N(3, 3) = 99;
+    Base_UpdateAlienContainmentNeeded(grid, 0, 100);
+    CheckEqI32(N_N(0, 0), 1, "the containment cell is claimed");
+    CheckEqI32(N_N(3, 3), 99, "a stores cell keeps whatever the stores pass left there");
+
+    /* Base index 1 reads its own block, not base 0's. */
+    memset(grid, 0, sizeof(grid));
+    N_T(0, 0) = 7;
+    grid[480 + 144 + 6 * 0 + 0] = 7;
+    Base_UpdateAlienContainmentNeeded(grid, 1, 100);
+    CheckEqI32(N_N(0, 0), 0, "base 0 is untouched when base 1 is updated");
+    CheckEqI32(grid[444 + 144 + 6 * 0 + 0], 1, "base 1 claims its own cell");
+
+    /* Base_CountAmmoItems: 77..104 inclusive, plus object 114. The bounds are the interesting part. */
+    SpaceFixture();
+    s_aSpaceObj[76].auPerBaseVal[0] = 1000;
+    s_aSpaceObj[77].auPerBaseVal[0] = 10;
+    s_aSpaceObj[104].auPerBaseVal[0] = 20;
+    s_aSpaceObj[105].auPerBaseVal[0] = 1000;
+    s_aSpaceObj[113].auPerBaseVal[0] = 1000;
+    s_aSpaceObj[114].auPerBaseVal[0] = 5;
+    CheckEqI32(Base_CountAmmoItems(s_apSpaceObj, 120, 0), 35,
+               "77 and 104 and 114 count, 76 and 105 and 113 do not");
+
+    /* Only object 77 has a base 3 column set, so the answer is 40 and not 45: object 114's base 3
+     * entry was never written. */
+    s_aSpaceObj[77].auPerBaseVal[3] = 40;
+    CheckEqI32(Base_CountAmmoItems(s_apSpaceObj, 120, 3), 40, "base 3 reads its own column");
+
+    /* Base_CalcOccupiedSpace: soldiers assigned to the base, plus objects 112 and 113. */
+    SpaceFixture();
+    s_aSpaceSoldier[0].nKind = 2;
+    s_aSpaceSoldier[1].nKind = 2;
+    s_aSpaceSoldier[2].nKind = 1;
+    s_aSpaceSoldier[3].nKind = 2;
+    s_aSpaceObj[112].auPerBaseVal[2] = 7;
+    s_aSpaceObj[113].auPerBaseVal[2] = 9;
+    s_aSpaceObj[111].auPerBaseVal[2] = 500;
+    s_aSpaceObj[114].auPerBaseVal[2] = 500;
+    CheckEqI32(Base_CalcOccupiedSpace(s_apSpaceSoldier, 4, s_apSpaceObj, 120, 2), 19,
+               "three soldiers plus 7 and 9 from objects 112 and 113");
+
+    /* The base index is a char in the original, so a negative one matches no nKind, which is u8. */
+    CheckEqI32(Base_CalcOccupiedSpace(s_apSpaceSoldier, 4, s_apSpaceObj, 120, -1), 0,
+               "a negative base index matches no soldier");
+
+#undef N_T
+#undef N_N
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1425,6 +1536,7 @@ int main(void)
     TestFacilityClassify();
     TestWorkshopCap();
     TestCapacityFamily();
+    TestContainmentNeededAndSpace();
     TestSoldiersAssigned();
     TestShipsAtBase();
     TestClearSelection();

@@ -486,6 +486,36 @@ i32 Base_UpdateLivingQuartersNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nSpa
 i32 Base_UpdateStoresNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nStoresNeeded);
 i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers);
 
+/* Base_UpdateAlienContainmentNeeded @ 0x65f04. The sixth needed pass, and the same machine as the
+ * other five: cell kind 7 (alien containment), budget `ammoItems / 10 + 1`, or 0 when there is no
+ * ammo at all.
+ *
+ * Like the other four it calls its own capacity function first and throws the answer away. ARM at
+ * 0x65F10 is `BL Base_CalcAlienContainmentCap` followed by `MOV R0, R4`, so the return register is
+ * overwritten before anything reads it. The port simply does not make the call.
+ *
+ * The base index is narrowed to a char at 0x65F0C, reproduced. */
+i32 Base_UpdateAlienContainmentNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nAmmoItems);
+
+/* Base_CountAmmoItems @ 0x656ac. How much ammo is stored for one base: the per-base quantity column
+ * of every object whose index is 77..104 inclusive, plus object 114.
+ *
+ * The original reaches apObjects through its first argument, which ARM shows is the Map base: at
+ * 0x656F0 the load is `[R2 + 4*(i-1) + 4 + 0x108]`, which is apObjects[i]. The port takes the array
+ * instead. The base index is a char in the original.
+ *
+ * The `!= 0` test on each quantity is cosmetic: adding zero is a no-op. */
+i32 Base_CountAmmoItems(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBaseIndex);
+
+/* Base_CalcOccupiedSpace @ 0x655f8. How much of a base's space is taken: every soldier whose base
+ * slot (Soldier.nKind) matches, plus the per-base quantity of object 112 and object 113.
+ *
+ * Those two indices are the only place either number is used, and the pair is checked with two
+ * compares against 0x70 and 0x71 rather than a range test. */
+i32 Base_CalcOccupiedSpace(Soldier *const *apSoldiers, i32 nSoldierCount,
+                           ObjectRecFull *const *apObjects, i32 nObjectCount,
+                           i32 nBaseIndex);
+
 /* BaseRec_AddItemQty @ 0x556e4. Two adds, no clamping and no floor at zero:
  *
  *     pItem->auPerBaseVal[(char)pBase->bSlot] += nDelta;

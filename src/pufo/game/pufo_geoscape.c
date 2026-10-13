@@ -794,6 +794,60 @@ i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers
                               FacilityBudget(nPsiSoldiers, 10)); /* 0x6608C */
 }
 
+/* Base_CountAmmoItems @ 0x656ac. */
+i32 Base_CountAmmoItems(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nBaseIndex)
+{
+    i32 nTotal = 0;
+    i8 nSlot = (i8)nBaseIndex;                    /* 0x656AC: the argument is a char */
+
+    for (i32 i = 1; i < nObjectCount; ++i) {
+        /* 0x656E8: 77..104 inclusive, plus object 114. */
+        if ((i > 76 && i < 105) || i == 114) {
+            if (apObjects[i] != NULL) {
+                nTotal += apObjects[i]->auPerBaseVal[nSlot];
+            }
+        }
+    }
+    return nTotal;
+}
+
+/* Base_UpdateAlienContainmentNeeded @ 0x65f04.
+ *
+ * The original calls Base_CalcAlienContainmentCap at 0x65F10 and then overwrites the return
+ * register with `MOV R0, R4` before calling Base_CountAmmoItems, so the capacity is computed and
+ * discarded. It is pure, so the port does not call it. */
+i32 Base_UpdateAlienContainmentNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nAmmoItems)
+{
+    return FacilityMarkNeeded(abFacilityGrid, nBaseIndex, 7,
+                              FacilityBudget(nAmmoItems, 10));   /* 0x65F3C */
+}
+
+/* Base_CalcOccupiedSpace @ 0x655f8. */
+i32 Base_CalcOccupiedSpace(Soldier *const *apSoldiers, i32 nSoldierCount,
+                           ObjectRecFull *const *apObjects, i32 nObjectCount,
+                           i32 nBaseIndex)
+{
+    i32 nUsed = 0;
+    i8 nSlot = (i8)nBaseIndex;                    /* 0x655FC: the argument is a char */
+
+    /* 0x6560C: the count is read as a u16, so a larger value wraps. */
+    for (i32 i = 0; i < (i32)(u16)nSoldierCount; ++i) {
+        if (apSoldiers[i] != NULL && (i32)apSoldiers[i]->nKind == (i32)nSlot) {
+            ++nUsed;
+        }
+    }
+
+    for (i32 i = 1; i < nObjectCount; ++i) {
+        /* 0x65674: two compares against 0x70 and 0x71, not a range test. */
+        if (i == 112 || i == 113) {
+            if (apObjects[i] != NULL) {
+                nUsed += apObjects[i]->auPerBaseVal[nSlot];
+            }
+        }
+    }
+    return nUsed;
+}
+
 /* Base_CountSoldiersAssigned @ 0x66230. Soldiers actually available at this base: their base
  * slot matches, they are not away in a craft (bUnk183 != 254), and either they are not aboard
  * anything (bUnk183 == 255) or the craft they are aboard is currently at base. */
