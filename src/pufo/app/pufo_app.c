@@ -150,6 +150,8 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
     g_hWndMain = hWnd;
 
     if (!Gx_Open(&g_gx, hWnd, PUFO_SURF_W, PUFO_SURF_H)) {
+        printf("pocketufo: display surface failed to open\n");
+        fflush(stdout);
         DestroyWindow(hWnd);
         g_hWndMain = NULL;
         return false;
@@ -167,6 +169,15 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
         };
 
         g_bAssetsLoaded = Boot_LoadStartup(&g_assets, apszArchives);
+
+        /* DEVIATION: the original's InitInstance @ 0x9fd48 reports nothing, and on WinCE that was fine
+         * because a missing asset pack still left a visible window. On Win64 a build with no assets and a
+         * build that is merely between frames look the same from the outside, so the port states what it
+         * found. This is the only way to tell a good launch from a broken one without looking at the
+         * screen. */
+        printf("pocketufo: assets %s (lang.dat=%s, main.dat=%s)\n",
+               g_bAssetsLoaded ? "loaded" : "NOT FOUND", g_szLangPath, g_szMainPath);
+        fflush(stdout);
     }
 
     ShowWindow(hWnd, nCmdShow);

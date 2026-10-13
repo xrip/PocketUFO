@@ -86,3 +86,25 @@ would exit on its own well before that.
 This satisfies the "the binary launches on Win64" success criterion at the
 scaffold level. The main playable flows are covered by
 `docs/parity/game-core.md` and the remaining UI task.
+
+## Re-verified with a startup report
+
+The shell now prints one line after the asset load, so a good launch is distinguishable from a broken one
+without looking at the screen. Re-run against the shipped archives:
+
+```
+pocketufo: assets loaded (lang.dat=E:\pocketufo\build\run\lang.dat, main.dat=E:\pocketufo\build\run\main.dat)
+```
+
+The process was then still alive in `tasklist` with a 13 MB working set. So on Win64 the port resolves the
+archive paths from the executable directory, opens both archives, and `Boot_LoadStartup` succeeds.
+
+DEVIATION recorded: the original's `InitInstance @ 0x9fd48` prints nothing. On WinCE a missing asset pack
+still left a visible window, so silence was harmless. On Win64 a build with no assets and a build that is
+merely between frames look identical from outside, which is why the port states what it found. It also
+reports a display-surface failure, which the original had no equivalent of because GAPI either worked or
+the resolution was unsupported.
+
+One trap worth recording: a GUI process left running keeps the executable open, so the next link fails with
+`lld-link: failed to write output ... permission denied` and `cmake --build` exits 1. Kill the process
+before rebuilding.
