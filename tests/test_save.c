@@ -1414,8 +1414,8 @@ static void TestTGameDataWrite(void)
     st.abSpriteSet[2] = 23; /* the "no set" id */
     st.abSpriteSet[3] = 7;
     st.nMissionType = 9;
-    st.bUnk1517D = 1;
-    st.bLightEnabled = 1;
+    st.bMissionMode = 1;
+    st.bUnk1511E = 1;
     st.anUnk15188[0] = (i32)0xAAAAAAAA;
     st.anUnk15188[1] = 1;
     st.anUnk15188[2] = 2;
@@ -2304,8 +2304,8 @@ static void TestReadTGameData(void)
     w.abSpriteSet[2] = PUFO_SPRITE_SET_NONE;   /* 23: this slot loads nothing */
     w.abSpriteSet[3] = 7;
     w.nMissionType = 9;
-    w.bUnk1517D = 1;
-    w.bLightEnabled = 1;
+    w.bMissionMode = 1;
+    w.bUnk1511E = 1;
     w.anUnk15188[0] = (i32)0xAAAAAAAA;
     w.anUnk15188[1] = 1;
     w.anUnk15188[2] = 2;
@@ -2397,10 +2397,11 @@ static void TestReadTGameData(void)
 
     CheckEqI32(r.bUnk15110, 0x11, "  0x15110");
     CheckEqI32(r.nUnk1510C, 0x01020304, "  0x1510C");
-    CheckEqI32(r.abUnk15111[2], 0x23, "  0x15113");
+    CheckEqI32(r.abUnk15111[2], 0x23, "  0x15113, Map_nCraftIndex");
     CheckEqI32(r.nMapLayers, 4, "  the layer count");
     CheckEqI32(r.nMissionType, 9, "  nMissionType");
-    CheckEqI32(r.bLightEnabled, 1, "  the light gate");
+    CheckEqI32(r.bMissionMode, 1, "  0x1511D, the mission mode");
+    CheckEqI32(r.bUnk1511E, 1, "  0x1511E");
     CheckEqI32(r.anUnk15188[0], (i32)0xAAAAAAAA, "  0x15188");
     CheckEqI32(r.nUnk151A0, 0x11223344, "  0x151A0");
     CheckEqI32(r.anCraftTile[2], 9, "  the third craft tile, one byte on disk");

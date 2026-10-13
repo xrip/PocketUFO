@@ -602,7 +602,13 @@ bool Save_ReadTeamUnits(DatFile *pDat, TeamUnitsState *pState,
  * The tgamedata payload is 23 fields in a fixed order. The offsets come from the
  * IDB's Map struct gaps, and two of them are already known fields, which is what
  * pins the arithmetic: gap_86272[20] is 0x15114, the port's nMapLayers, and
- * gap_86301[1] is 0x1517E, the light-enable gate Map_RefreshCellMeta reads.
+ * Map_nMissionType is 0x1511A.
+ *
+ * The two bytes after the mission type are Map+0x1511D and Map+0x1511E. The writer
+ * loads them as (unk_128AD5 - 0x1139B8) and (unk_128AD6 - 0x1139B8), and 0x128AD5 -
+ * 0x1139B8 is 0x1511D. An earlier note here called them 0x1517D and 0x1517E, which
+ * was wrong: those are different bytes. unk_128AD5 is the mode byte that
+ * Tact_SelectTeamUnits (0x39744) dispatches on, so it is named bMissionMode here.
  *
  * The dword at Map+0x15116 is written as four bytes and Save_ReadTGameData (0x44248, NOT ported)
  * consumes it as four sprite-set ids: for each byte that is not 23 it loads the
@@ -623,10 +629,10 @@ typedef struct TactSaveState {
     u8   bUnk15115;       /* 0x15115, gap_86272[21] */
     u8   abSpriteSet[4];  /* 0x15116..0x15119, gap_86272[22]; 23 means no set */
     u8   nMissionType;    /* 0x1511A */
-    u8   bUnk1517D;       /* 0x1517D, gap_86301[0] */
-    u8   bLightEnabled;   /* 0x1517E, gap_86301[1] */
+    u8   bMissionMode;    /* 0x1511D, unk_128AD5: the mode Tact_SelectTeamUnits dispatches on */
+    u8   bUnk1511E;       /* 0x1511E, unk_128AD6 */
     i32  anUnk15188[4];   /* 0x15188, 0x1518C, 0x15190, 0x15194, pad86309a[3,7,11,15] */
-    u8   abUnk15198[3];   /* 0x15198..0x1519A, pad86309a[19,20,21] */
+    u8   abUnk15198[3];   /* 0x15198 unnamed; 0x15199 is Map_nCraftMapX and 0x1519A is Map_nCraftMapY */
     i32  nUnk151A0;       /* 0x151A0, gap_86336 */
     i32  anCraftTile[3];  /* nCraftTileA, stride 4, written one byte each */
     i32  nUnk138E6C;      /* v124.dat, first dword */

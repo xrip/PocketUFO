@@ -1807,10 +1807,10 @@ bool Save_WriteTGameData(DatFile *pDat, const TactSaveState *pSt,
     if (!W(pDat, &pSt->nMissionType, 1)) { /* 0x44778 */
         return false;
     }
-    if (!W(pDat, &pSt->bUnk1517D, 1)) { /* 0x4478C */
+    if (!W(pDat, &pSt->bMissionMode, 1)) { /* 0x4478C: unk_128AD5, Map+0x1511D */
         return false;
     }
-    if (!W(pDat, &pSt->bLightEnabled, 1)) { /* 0x447A0 */
+    if (!W(pDat, &pSt->bUnk1511E, 1)) { /* 0x447A0: unk_128AD6, Map+0x1511E */
         return false;
     }
     for (u32 i = 0; i < 4; ++i) { /* 0x447B8, 0x447D0, 0x447E8, 0x44800 */
@@ -2340,8 +2340,8 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
     if (!DatFile_Read(pDat, &pSt->bUnk15115, 1))       { bOk = false; }
     if (!DatFile_Read(pDat, pSt->abSpriteSet, 4))      { bOk = false; }
     if (!DatFile_Read(pDat, &pSt->nMissionType, 1))    { bOk = false; }
-    if (!DatFile_Read(pDat, &pSt->bUnk1517D, 1))       { bOk = false; }
-    if (!DatFile_Read(pDat, &pSt->bLightEnabled, 1))   { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->bMissionMode, 1))    { bOk = false; }
+    if (!DatFile_Read(pDat, &pSt->bUnk1511E, 1))       { bOk = false; }
     for (i32 i = 0; i < 4; ++i) {
         if (!DatFile_Read(pDat, &pSt->anUnk15188[i], 4)) { bOk = false; }
     }
