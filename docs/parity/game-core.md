@@ -6453,7 +6453,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
 | `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | **ported** |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
-| `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
+| `MapView_DrawUnit @ 0x1c958` | 3,220 | **ported** in `src/pufo/game/pufo_isodraw.c`, behind `IsoUnitDrawGate` |
 | `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
 | `TactUnit_DrawFacingGlyph @ 0x1c754` | 136 | **ported** |
 | `TactUnit_DrawHpGlyphs @ 0x1b4b0` | 212 | **ported** — the offset it reads is proven; its meaning is not (see below) |
@@ -7471,11 +7471,11 @@ test would change which objects contribute.
 Both readers also carry a `!= 0` test on each quantity before adding it. Adding zero is a no-op, so
 that test cannot change the total.
 
-## MapView_DrawUnit decoded, not yet ported
+## MapView_DrawUnit ported
 
 `MapView_DrawUnit @ 0x1c958` is 3,220 bytes and 126 basic blocks. It is the last leaf the iso layer
-needs besides `MapView_DrawUnitFacingArrow`. This pass settled the parts that were guessable and
-recorded the parts that are not.
+needs besides `MapView_DrawUnitFacingArrow`. It now lives in `src/pufo/game/pufo_isodraw.c` behind an
+`IsoUnitDrawGate`, and `tests/test_isodraw.c` covers it in eight groups.
 
 ### What is now proven
 
@@ -7518,6 +7518,12 @@ and each step looks up `aUnitWalkGlyph[27 * nUnitType + 9 * bUnitFlag4 + directi
 lift when the direction is 8. `bUnitFlag4` itself is 2 when `nAnimPose` is 18, otherwise whether
 `bFlags` bit 1 is set.
 
+The compare order matters. `0x1CB48` tests `nX` first, so the "different column" row is decided before
+the "different row" test at `0x1CB78` is ever reached. Two cells with equal coordinates but different
+object identity therefore fall through to the diagonal set at `0x1CB90` -- the original never re-tests
+identity after the first compare. That is unreachable through `MapView_bResolveIsoCell`, which resolves
+`pIso->pCell` out of the same array, but the port reproduces the fall-through rather than tidying it.
+
 **Which animation clock.** Unit types 20 and 21 read IDA's `nAnimPhase`. Every other type reads
 `unk_1139EF`, which is Map + 0x37. ARM at 0x1CC08 is `CMP R0, #0x14`, `CMPNE R0, #0x15`, then
 `LDRNE` of `unk_1139EF` and `LDREQ` of `nAnimPhase`. Hex-Rays renders the two the other way round.
@@ -7533,9 +7539,13 @@ requires `pSelUnit->pCell == pIso->pCell`. Its position is
 
 and it is put on screen with `PadImage_BlitEx(pad, 0xFF)`.
 
-**Palette is restored.** The function saves `pIso->nPal` on the stack at entry, zeroes it when the unit
-is operative, and writes the saved value back on every return path. So `MapView_DrawUnit` leaves
-`pIso->nPal` exactly as it found it, which matters because the caller reuses it for terrain.
+**Palette is restored -- except on the two paths that fail the visibility gate.** The function saves
+`pIso->nPal` on the stack at entry and zeroes it when the unit is operative, but the saved value is
+written back only from `0x1D5DC` onward. The not-drawable exits jump straight to the POP: `0x1CA58` for
+a large unit with no flagged cell in its 2 by 2 block, and the small-unit path at `0x1CAAC` after the
+re-test at `0x1CA50`. So an operative unit behind an unflagged cell leaves `pIso->nPal` at 0 for the
+caller, which reuses it for terrain. An earlier note here said every return path restores it; that was
+wrong.
 
 **Unoperative marker.** When the unit is not operative and `nPal > 7`, a glyph from the cursor group is
 drawn at the unit position: base + 18 before the body and base + 17 after it. Both additionally require
@@ -7550,17 +7560,31 @@ the walk branch and once for the pose branch.
 **Weapon icon column.** The weapon overlay takes its glyph from `ObjectRec.aItemQty[51]`, the same
 out-of-range-looking column that `TactHud_DrawSelectedUnitPanel` reads at 52. Neither is a quantity.
 
-### What is still open, and why it is not ported yet
+### The context fields, now proven from ARM
 
-Nine static tables are used. All nine are now in the port and byte-checked against the image, so they
-are no longer the reason this function is unported; the extents and index shapes are recorded in the
-next section and in "The nine iso tables are in the port" at the end of this file.
+`IsoDrawCtx` gained the walk state at these offsets: `nDrawMode` 0x0C, `nDrawAux` 0x10, `nSpriteX`
+0x14, `nSpriteY` 0x18, `bAnimStep` 0x44, `nAnimFrame` 0x48, `nAnimParam` 0x4C, `bAnimKind` 0x50,
+`bUnitFlag0..3` 0x65..0x68, `bUnitFlag4` 0x69, `nScratch2` 0x100 and the two-handed-weapon flag 0x12C.
+The self-referential `(char *)pIso + pIso->bAnimStep` then `[101]` is `bUnitFlag[bAnimStep]`, as
+recorded above -- not a bug.
 
-`IsoDrawCtx` also needs about a dozen new fields the port does not model yet: the four direction bytes
-`bUnitFlag0..3`, `bUnitFlag4`, `bAnimStep`, `nAnimFrame`, `nAnimParam`, `nAnimAux`, `nDrawAux`,
-`nDrawMode`, `nScratch2`, `nSpriteX` and `nSpriteY`. Their offsets are not yet proven, and one of them
-is read through `(char *)pIso + pIso->bAnimStep` and then `[101]`, which is a self-referential index
-that needs ARM to resolve.
+### Where the port differs, and why
+
+1. **The weapon overlay's null dereference at 0x1D384.** The original's object chain ends in
+   `LDREQ R3,[R2]` with `R2 = pHandR = 0` when both hands are empty. The port skips the glyph. Whether
+   that path is reachable is not proven: `Unit_DeriveAnimPose` derives `nAnimPose` from `bFlags` and
+   the two hands, so poses 5..17 may imply a hand item, but nothing in the IDB proves it.
+2. **`aUnitFacingDrawOff` is bounded.** The port refuses the read for unit types 14 and above rather
+   than reproducing a read past a 224-byte table into the occupancy table at 0xA9488.
+3. **`aUnitWalkGlyph` is bounded.** Type 22 has no walk row; the port yields glyph 0 (skip) instead of
+   reading six bytes of type 21's tail and then into `aPoseFrameTable`.
+4. **The group-base array is 28 entries, not 18.** `Tact_MapTypeToGlyphIdx` is not clamped anywhere --
+   ARM at 0x1CE70 is `AND R3,R0,#0xFF` / `ADD R3,R5,R3,LSL#1` / `LDRH R3,[R3]` -- and it returns 18 for
+   unit types 5 through 8 and `nType + 5` (up to 27) for anything the four-byte probe at Map+0x16..0x19
+   misses. So the caller-supplied base block has to reach fontSys + 0x36. The documented bases stop at
+   +0x32; +0x34 and +0x36 are the two words past them.
+
+Everything else, including the `nPal` restore asymmetry and the zero-frame store, is reproduced.
 
 ### Table extents, settled against the image
 

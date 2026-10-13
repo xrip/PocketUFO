@@ -4,7 +4,11 @@
  * TactUnit_DrawAnimGlyphs @ 0x1c6ac, TactUnit_DrawFacingGlyph @ 0x1c754).
  *
  * The wall-palette tests look at branching only. The two TactUnit helpers are index arithmetic, so
- * they run against a probe font that reports which glyph index was asked for. See InstallProbeFont. */
+ * they run against a probe font that reports which glyph index was asked for. See InstallProbeFont.
+ *
+ * MapView_DrawUnit @ 0x1c958 is covered through the IsoDrawCtx it leaves behind: the direction bytes,
+ * the walk state, nObjParam, nPal and the selection pad's origin. Ink is used only for the two cursor
+ * markers, where the question is whether a glyph reached Font_DrawGlyph at all. */
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -923,6 +927,521 @@ static void TestHeightGlyph(void)
     memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
 }
 
+/* ------------------------------------------------------------ MapView_DrawUnit @ 0x1c958
+ *
+ * Almost every decision this function makes lands in an IsoDrawCtx field, so the tests read the
+ * context back instead of trying to separate glyph ink that all lands in one column. Ink is used
+ * only where the question is whether a glyph reached Font_DrawGlyph at all.
+ *
+ * The fixture builds one layer's worth of the flattened cell array (3600 slots) and fills the 4 by 3
+ * corner of it, which is where every index the function computes for these cases falls: the unit sits
+ * at (0, 0, 0) so its 2 by 2 block is slots 0, 1, 60 and 61. */
+#define UNIT_LAYER_CELLS 3600
+
+static MapCell        *g_apUnitCells[UNIT_LAYER_CELLS];
+static MapCell         g_aUnitGrid[4][3];
+static Mc1Rec          g_aUnitCeil[4];
+static Soldier         g_unit;
+static TactItem        g_handL;
+static TactItem        g_handR;
+static ObjectRecFull   g_objWeapon;
+static ObjectRecFull   g_objMisc;
+static ObjectRecFull  *g_pSelWeapon;
+static PadImage        g_framePad;
+static u8              g_aFramePadBlob[8];
+static u16             g_aUnitGroupBase[PUFO_ISO_GROUP_BASE_COUNT];
+static u8              g_aUnitTypeProbe[4];
+static IsoUnitDrawGate g_ugate;
+static IsoDrawCtx      g_uiso;
+
+static void UnitFixture_Reset(void)
+{
+    i32 x;
+    i32 y;
+    i32 k;
+
+    memset(g_apUnitCells, 0, sizeof(g_apUnitCells));
+    memset(g_aUnitGrid, 0, sizeof(g_aUnitGrid));
+    memset(g_aUnitCeil, 0, sizeof(g_aUnitCeil));
+    memset(&g_unit, 0, sizeof(g_unit));
+    memset(&g_handL, 0, sizeof(g_handL));
+    memset(&g_handR, 0, sizeof(g_handR));
+    memset(&g_objWeapon, 0, sizeof(g_objWeapon));
+    memset(&g_objMisc, 0, sizeof(g_objMisc));
+    memset(g_aUnitGroupBase, 0, sizeof(g_aUnitGroupBase));
+    memset(&g_uiso, 0, sizeof(g_uiso));
+
+    for (x = 0; x < 4; ++x) {
+        for (y = 0; y < 3; ++y) {
+            g_aUnitGrid[x][y].nX = (u8)x;
+            g_aUnitGrid[x][y].nY = (u8)y;
+            g_aUnitGrid[x][y].nZ = 0;
+            g_apUnitCells[60 * y + x] = &g_aUnitGrid[x][y];
+        }
+    }
+
+    /* Sentinels, so a field the function did not write is distinguishable from a value it did. */
+    g_uiso.bAnimStep = 99;
+    g_uiso.bAnimKind = 99;
+    g_uiso.bUnitGlyphRow = 99;
+    g_uiso.abUnitFlag[0] = 99;
+    g_uiso.abUnitFlag[1] = 99;
+    g_uiso.abUnitFlag[2] = 99;
+    g_uiso.abUnitFlag[3] = 99;
+    g_uiso.nAnimFrame = -1;
+    g_uiso.nAnimParam = -1;
+    g_uiso.nScratch2 = -1;
+    g_uiso.nDrawMode = -1;
+    g_uiso.nDrawAux = -1;
+
+    g_uiso.pCell = &g_aUnitGrid[0][0];
+    g_uiso.pUnit = &g_unit;
+    g_uiso.nDrawX = 100;
+    g_uiso.nDrawY = 40;
+    g_uiso.nPal = 255;
+    /* A small unit's nObjParam comes from MapView_bResolveIsoCell, not from this function, so the
+     * fixture supplies one that is far from the marker rows. */
+    g_uiso.nObjParam = 60;
+
+    g_unit.pCell = &g_aUnitGrid[0][0];
+    g_unit.bStatus = 1;      /* not operative: Unit_bIsOperative tests bStatus == 0 */
+    g_unit.nUnitType = 0;    /* small */
+    g_unit.nAnimPose = 15;
+    g_unit.bFacing = 0;
+    g_unit.bFlags = 0;
+
+    for (k = 0; k < 4; ++k) {
+        g_aUnitTypeProbe[k] = 0xEE; /* matches no unit type */
+    }
+
+    g_pSelWeapon = &g_objMisc;
+    g_ugate.apCells = g_apUnitCells;
+    g_ugate.pSelUnit = NULL;
+    g_ugate.bQueueActive = 0;
+    g_ugate.bSelectFlag = 0;
+    g_ugate.nAnimPhase = 0;
+    g_ugate.nMapPhase = 0;
+    g_ugate.paGroupBase = g_aUnitGroupBase;
+    g_ugate.nCursorBase = 0;
+    g_ugate.nHandobBase = 4;
+    g_ugate.apSelWeapon = &g_pSelWeapon;
+    g_ugate.pSelectFrame = &g_framePad;
+    g_ugate.paTypeProbe = g_aUnitTypeProbe;
+
+    /* PadImage_BlitEx has no NULL guard, so the frame pad needs a real blob: u16 width, u16 height,
+     * then indexed pixels. The single pixel is the 0xFF key, so the blit lays no ink and the tests
+     * read nOriginX / nOriginY instead. */
+    g_aFramePadBlob[0] = 1;   g_aFramePadBlob[1] = 0;
+    g_aFramePadBlob[2] = 1;   g_aFramePadBlob[3] = 0;
+    g_aFramePadBlob[4] = 0xFF;
+    PadImage_ctor(&g_framePad);
+    g_framePad.pData = g_aFramePadBlob;
+    g_framePad.uWidth = 1;
+    g_framePad.uHeight = 1;
+    g_framePad.nOriginX = -999;
+    g_framePad.nOriginY = -999;
+}
+
+static void TestUnitGate(void)
+{
+    printf("MapView_DrawUnit @ 0x1c958: the visibility gate\n");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 0;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bAnimStep, 99, "small unit on an unflagged cell: the walk loop never runs");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bAnimStep, 5, "small unit on a flagged cell: five walk steps");
+    CheckEqI32(g_uiso.bAnimKind, 4, "and the last step is the weapon pass");
+
+    /* A large unit is drawable when ANY cell of the 2 by 2 block anchored on its own cell is flagged.
+     * Its block is slots 0, 1, 60 and 61. */
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;                 /* large */
+    g_aUnitGrid[1][1].bFlags44 = 1;       /* slot idx + 61 */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[3], 2, "large unit: a flagged diagonal neighbour is enough");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[3], 99, "large unit: nothing flagged in the block, nothing drawn");
+
+    /* The restore asymmetry: only the paths that pass the gate write nPal back. */
+    UnitFixture_Reset();
+    g_unit.bStatus = 0;                   /* operative, so nPal is zeroed at entry */
+    g_aUnitGrid[0][0].bFlags44 = 0;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nPal, 0,
+               "ORIGINAL BUG (0x1CAAC): an undrawn unit leaves nPal at 0 for the caller");
+
+    UnitFixture_Reset();
+    g_unit.bStatus = 0;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nPal, 255, "a drawn unit restores nPal");
+}
+
+static void TestUnitDirections(void)
+{
+    printf("MapView_DrawUnit: the large-unit direction set\n");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[0], 0, "same cell: flag0");
+    CheckEqI32(g_uiso.abUnitFlag[1], 4, "same cell: flag1");
+    CheckEqI32(g_uiso.abUnitFlag[3], 2, "same cell: two steps");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_uiso.pCell = &g_aUnitGrid[1][0];    /* different X, same Y */
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[0], 1, "same row: flag0");
+    CheckEqI32(g_uiso.abUnitFlag[1], 5, "same row: flag1");
+    CheckEqI32(g_uiso.abUnitFlag[3], 2, "same row: two steps");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_uiso.pCell = &g_aUnitGrid[0][1];    /* same X, different Y */
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[0], 2, "same column: flag0");
+    CheckEqI32(g_uiso.abUnitFlag[1], 6, "same column: flag1");
+    CheckEqI32(g_uiso.abUnitFlag[3], 2, "same column: two steps");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_uiso.pCell = &g_aUnitGrid[1][1];    /* different in both */
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.abUnitFlag[0], 3, "diagonal: flag0");
+    CheckEqI32(g_uiso.abUnitFlag[1], 7, "diagonal: flag1");
+    CheckEqI32(g_uiso.abUnitFlag[2], 8, "diagonal: flag2");
+    CheckEqI32(g_uiso.abUnitFlag[3], 3, "diagonal: three steps");
+    /* The last step is direction 8, and nObjParam is 0 here (no ceiling sprites). */
+    CheckEqI32(g_uiso.nSpriteY, 40 - 4, "the direction-8 step lifts the glyph by 4");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_unit.nAnimPose = 18;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bUnitGlyphRow, 2, "walk-glyph row 2 when nAnimPose is 18");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_unit.bFlags = 2;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bUnitGlyphRow, 1, "row 1 when bFlags bit 1 is set");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bUnitGlyphRow, 0, "row 0 otherwise");
+}
+
+static void TestUnitCeilMin(void)
+{
+    printf("MapView_DrawUnit: nObjParam over the 2 by 2 block\n");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_aUnitGrid[0][0].pCeilSpr = &g_aUnitCeil[0]; g_aUnitCeil[0].iCeilParam = 5;
+    g_aUnitGrid[1][0].pCeilSpr = &g_aUnitCeil[1]; g_aUnitCeil[1].iCeilParam = -3;
+    g_aUnitGrid[0][1].pCeilSpr = &g_aUnitCeil[2]; g_aUnitCeil[2].iCeilParam = 0;
+    g_aUnitGrid[1][1].pCeilSpr = &g_aUnitCeil[3]; g_aUnitCeil[3].iCeilParam = -2;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nObjParam, -3, "the minimum over the four ceiling sprites");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_aUnitGrid[0][0].pCeilSpr = &g_aUnitCeil[0]; g_aUnitCeil[0].iCeilParam = -7;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nObjParam, -7, "the unit's own ceiling counts only when it is negative");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nObjParam, 0, "no ceiling sprites gives 0");
+}
+
+static void TestUnitMarkers(void)
+{
+    printf("MapView_DrawUnit: the two cursor markers\n");
+
+    /* nPal 255 with the select flag clear: both markers are skipped. The body glyphs draw at row
+     * nObjParam + nDrawY + index = 100 and up, so rows 57 and 58 belong to the markers alone. */
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    ClearSurface();
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(InkAt(100, 57) == 0 && InkAt(100, 58) == 0, "nPal 255 with no select flag draws no marker");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_uiso.nPal = 10;
+    g_ugate.bSelectFlag = 1;
+    ClearSurface();
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(InkAt(100, 40 + 18) != 0, "the marker before the body is cursor base + 18");
+    Check(InkAt(100, 40 + 17) != 0, "the marker after the body is cursor base + 17");
+
+    UnitFixture_Reset();
+    g_unit.bStatus = 0;                   /* operative */
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_uiso.nPal = 10;
+    g_ugate.bSelectFlag = 1;
+    ClearSurface();
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(InkAt(100, 57) == 0 && InkAt(100, 58) == 0,
+          "an operative unit draws no marker: nPal is zeroed, and 0 is not above 7");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_uiso.nPal = 10;
+    g_ugate.bSelectFlag = 0;
+    ClearSurface();
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(InkAt(100, 58) != 0, "a palette that is not 255 draws the marker without the flag");
+
+    UnitFixture_Reset();
+    g_unit.bStatus = 0;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_uiso.nPal = 4;
+    g_ugate.bSelectFlag = 1;
+    ClearSurface();
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(InkAt(100, 57) == 0 && InkAt(100, 58) == 0, "nPal at or below 7 draws no marker");
+}
+
+static void TestSelectionFrame(void)
+{
+    printf("MapView_DrawUnit: the selection frame\n");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = &g_unit;
+    g_ugate.bQueueActive = 1;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginX, -999, "suppressed while the tactical queue is active");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = NULL;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginX, -999, "and for anything that is not the selected unit");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.bFlags = 2;
+    g_ugate.pSelUnit = &g_unit;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginX, -999, "and for a selected unit with bFlags bit 1 set");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = &g_unit;
+    g_framePad.uWidth = 20;
+    g_framePad.uHeight = 10;
+    g_ugate.nMapPhase = 2;                /* aBobPhaseY[2] = -2 */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginX, 100 + ((32 - 20) >> 1), "x centres the frame on nDrawX");
+    CheckEqI32(g_framePad.nOriginY, -2 - 10 + 60 + 40, "y is bob - height + nObjParam + nDrawY");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = &g_unit;
+    g_framePad.uWidth = 40;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginX, 100 + ((33 - 40) >> 1),
+               "a frame wider than 32 takes 33 - uWidth before the shift");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = &g_unit;
+    g_uiso.pCell = &g_aUnitGrid[1][0];
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(g_framePad.nOriginX != -999, "a large selected unit still gets its x");
+    CheckEqI32(g_framePad.nOriginY, -999,
+               "but a large unit off its own cell stops before the blit, after restoring nPal");
+
+    UnitFixture_Reset();
+    g_unit.nUnitType = 4;
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_ugate.pSelUnit = &g_unit;
+    g_framePad.uHeight = 10;
+    g_ugate.nMapPhase = 0;                /* aBobPhaseY[0] = 0, and nObjParam recomputes to 0 */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_framePad.nOriginY, 0 - 10 + 0 + 40 + 8, "a large unit on its own cell adds 8");
+    CheckEqI32(g_uiso.nPal, 255, "and that early exit still restores nPal");
+}
+
+static void TestUnitPoseTable(void)
+{
+    printf("MapView_DrawUnit: the pose-frame table branch\n");
+
+    /* Unit type 0, facing 0 has the walk-kind group 0,1,2,3,4, so step 3 is the kind-3 step and step
+     * 4 is the weapon pass, which does not touch nAnimFrame. The stored value is the table entry
+     * decremented in place at 0x1CFF8 and 0x1D018. */
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 15;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimFrame, (i32)g_aPoseFrameTable[6][3] - 1,
+               "pose 15 with no two-hand weapon takes the 5*base+33 entry");
+    Check(g_uiso.nAnimFrame != (i32)g_aPoseFrameTable[15][3] - 1,
+          "which is a different frame from the general pose+base entry");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 14;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimFrame, (i32)g_aPoseFrameTable[14][3] - 1,
+               "a pose below 0xF takes the general pose+base entry");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 20;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimFrame, (i32)g_aPoseFrameTable[20][3] - 1,
+               "and a pose above 0x11 takes the general entry too");
+
+    /* A zero table entry is still stored before the zero test, so the step records 0 and draws
+     * nothing. Row 19 is all zeros. */
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 19;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nAnimFrame, 0, "a zero frame entry is stored as 0, not decremented");
+}
+
+static void TestUnitWeaponPass(void)
+{
+    printf("MapView_DrawUnit: the weapon overlay\n");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objWeapon;
+    g_objWeapon.bListPri = 1;
+    g_unit.pHandL = &g_handL;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bTwoHandWeapon, 1, "bListPri 1 in a hand sets the two-hand flag");
+    CheckEqI32(g_uiso.nScratch2, -1, "but the wrapped facing is only stored for an armed unit");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handR.pObj = &g_objWeapon;
+    g_objWeapon.uSortKey = 22;
+    g_unit.pHandR = &g_handR;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bTwoHandWeapon, 1, "uSortKey 22 counts as a weapon too");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objWeapon;
+    g_objWeapon.bListPri = 1;
+    g_unit.pHandL = &g_handL;
+    g_unit.bFlags = 4;
+    g_pSelWeapon = &g_objMisc;            /* bListPri 0 */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bTwoHandWeapon, 0, "an armed unit with a bListPri 0 selected weapon clears it");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objWeapon;
+    g_objWeapon.bListPri = 1;
+    g_objWeapon.aItemQty[51] = 9;
+    g_unit.pHandL = &g_handL;
+    g_unit.bFlags = 4;
+    g_unit.bFacing = 3;
+    g_pSelWeapon = &g_objWeapon;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bTwoHandWeapon, 1, "a bListPri 1 selected weapon keeps the flag");
+    CheckEqI32(g_uiso.nScratch2, 5, "facing 3 becomes 5 for the two-hand overlay");
+    /* nAnimParam is not observable here: the two-hand flag selects the +8 walk-kind group, whose
+     * step 4 is not the weapon pass, so a later body step overwrites it. */
+    CheckEqI32(g_uiso.nDrawMode, g_aUnitFacingDrawOff[0][3][0], "nDrawMode takes the facing offset");
+    CheckEqI32(g_uiso.nDrawAux, g_aUnitFacingDrawOff[0][3][1], "nDrawAux takes the second one");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objWeapon;
+    g_objWeapon.bListPri = 1;
+    g_objWeapon.aItemQty[51] = 9;
+    g_unit.pHandL = &g_handL;
+    g_unit.bFlags = 4;
+    g_unit.bFacing = 7;
+    g_pSelWeapon = &g_objWeapon;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nScratch2, 1, "facing 7 wraps to 1");
+
+    /* The overlay index. With the two-hand flag clear the walk-kind group is 0,1,2,3,4, so the weapon
+     * pass is the last step and nAnimParam still holds what it wrote. */
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_handL.pObj = &g_objWeapon;
+    g_objWeapon.bListPri = 1;
+    g_unit.pHandL = &g_handL;
+    g_unit.bFlags = 4;
+    g_unit.bFacing = 3;
+    g_pSelWeapon = &g_objMisc;
+    g_objMisc.bListPri = 0;
+    g_objMisc.aItemQty[51] = 9;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.bTwoHandWeapon, 0, "with the flag clear, step 4 is the last step");
+    CheckEqI32(g_uiso.nAnimParam, 9 + 3, "the index is aItemQty[51] plus the unwrapped facing");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.bFlags = 1;                    /* bit 0 gives nDrawAux 4 */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nDrawAux, 4, "bFlags bit 0 gives nDrawAux 4");
+    CheckEqI32(g_uiso.nDrawMode, 0, "and nDrawMode is cleared before the facing branch");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.bFlags = 2;                    /* bit 1 set, bit 4 clear -> the height table */
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    CheckEqI32(g_uiso.nDrawAux, g_aUnitHeightOff[0][0],
+               "bFlags bit 1 without bit 4 takes aUnitHeightOff[type][nAnimPhase]");
+
+    UnitFixture_Reset();
+    g_aUnitGrid[0][0].bFlags44 = 1;
+    g_unit.nAnimPose = 15;
+    g_unit.pHandL = NULL;
+    g_unit.pHandR = NULL;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(true,
+          "DEVIATION: both hands empty skips the glyph the original would dereference at 0x1D384");
+}
+
+static void TestUnitNulls(void)
+{
+    printf("MapView_DrawUnit: NULL safety\n");
+
+    UnitFixture_Reset();
+    MapView_DrawUnit(NULL, &g_ugate);
+    MapView_DrawUnit(&g_uiso, NULL);
+    g_uiso.pUnit = NULL;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    g_uiso.pUnit = &g_unit;
+    g_uiso.pCell = NULL;
+    MapView_DrawUnit(&g_uiso, &g_ugate);
+    Check(true, "NULL context, gate, unit or cell is safe");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -939,6 +1458,14 @@ int main(void)
     TestViewportGuide();
     TestIsoConstants();
     TestHeightGlyph();
+    TestUnitGate();
+    TestUnitDirections();
+    TestUnitCeilMin();
+    TestUnitMarkers();
+    TestSelectionFrame();
+    TestUnitPoseTable();
+    TestUnitWeaponPass();
+    TestUnitNulls();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

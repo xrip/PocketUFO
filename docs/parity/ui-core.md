@@ -1508,7 +1508,7 @@ What is still missing, with sizes:
 | `MapView_DrawMinimap @ 0x1ed4c` | 2,112 | |
 | `TactHud_DrawInventoryScreen @ 0x1f58c` | 1,792 | **ported** in `src/pufo/game/pufo_tacthud.c` |
 | `TactHud_DrawItemStrip @ 0x2cdac` | 2,004 | **ported** in `src/pufo/game/pufo_tacthud.c`, see below |
-| `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnit (0x1c958)` and `MapView_DrawUnitFacingArrow (0x1b7bc)` |
+| `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnitFacingArrow (0x1b7bc)`; `MapView_DrawUnit @ 0x1c958` is ported |
 | `Titles_DrawAnimatedFrame @ 0x1a83c` | 672 | **ported**; its four callees `Titles_PresentToSoftSurf @ 0x466dc`, `Titles_AnimateParticles @ 0x46acc`, `Titles_UpdateStars @ 0x46dbc` and `Titles_DrawCreditLines @ 0x46738` are ported with it |
 | `Titles_DrawBackdrop @ 0x1e630` | 600 | **ported** in `src/pufo/game/pufo_titles.c` |
 | `TactHud_DrawTopBar @ 0x20ef8` | 1,336 | **ported** |

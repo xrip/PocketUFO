@@ -43,12 +43,17 @@
 #define PUFO_ISODRAW_H
 
 #include "game/pufo_mapcell.h"
+#include "render/pufo_render.h" /* PadImage, for the selection frame */
 #include "pufo_common.h"
 
 typedef struct IsoDrawCtx {
     MapCell *pCell;       /* 0x00 */
     i32      nDrawX;      /* 0x04 */
     i32      nDrawY;      /* 0x08 */
+    i32      nDrawMode;   /* 0x0C, MapView_DrawUnit: the aUnitFacingDrawOff x term */
+    i32      nDrawAux;    /* 0x10, MapView_DrawUnit: the running y term */
+    i32      nSpriteX;    /* 0x14, MapView_DrawUnit */
+    i32      nSpriteY;    /* 0x18, MapView_DrawUnit */
     i32      nIsoOffA;    /* 0x1C */
     i32      nIsoOffB;    /* 0x20 */
     u8       bOob;        /* 0x24 */
@@ -59,9 +64,25 @@ typedef struct IsoDrawCtx {
     u8       nLayer;      /* 0x38 */
     i32      nGlyphA;     /* 0x3C */
     i32      nGlyphB;     /* 0x40 */
+
+    /* --- the MapView_DrawUnit @ 0x1c958 walk state ---
+     * The original indexes abUnitFlag by bAnimStep, so those four bytes have to stay
+     * adjacent. abUnitFlag[3] is the step count, not a flag. */
+    u8       bAnimStep;      /* 0x44, the walk-step index 0..4 */
+    i32      nAnimFrame;     /* 0x48 */
+    i32      nAnimParam;     /* 0x4C, read as a u16 by every glyph index that uses it */
+    u8       bAnimKind;      /* 0x50, the aUnitWalkKind entry for the current step */
+
     i32      nObjParam;   /* 0x54 */
     Soldier *pUnit;       /* 0x58 */
     u8       bWallPalIdx; /* 0x64 */
+    u8       abUnitFlag[4]; /* 0x65, 0x66, 0x67 are direction codes 4..7 indexed by
+                             * bAnimStep; 0x68 is the number of steps to walk */
+    u8       bUnitGlyphRow;  /* 0x69, the aUnitWalkGlyph row: 2 when nAnimPose is 18,
+                              * otherwise (bFlags & 2) ? 1 : 0 */
+    i32      nScratch2;      /* 0x100 */
+    u8       bTwoHandWeapon; /* 0x12C, set from the two hands and cleared when the unit is
+                              * armed with a weapon whose ObjectRec+0xA4 is zero */
     i32      nPal;        /* 0x6c */
     i32      nHpGlyph;    /* 0x70 */
     double   dHeightA;    /* 0x78, the three operands after their modulo, kept as doubles */
@@ -100,6 +121,38 @@ typedef struct IsoSpriteBases {
     u16 nExplBase;    /* fontSys + 0x32 */
     u16 nGlyphBase;   /* fontSys + 0x28, the same base Text_DrawString adds a character to */
 } IsoSpriteBases;
+
+/* The u16 group bases at fontSys + 0x00, indexed by Tact_MapTypeToGlyphIdx. The ARM reads them as
+ * `LDRH [fontSys + 2*idx]`; Hex-Rays renders the same thing as `gap_0[2*idx]`.
+ *
+ * 28 entries, not 18, because the index is not clamped anywhere. ARM at 0x1CE70 is `AND R3,R0,#0xFF`
+ * then `ADD R3,R5,R3,LSL#1` then `LDRH R3,[R3]` with no bound test, and Tact_MapTypeToGlyphIdx
+ * returns 18 for unit types 5..8 and `nType + 5` for anything the probe misses -- so a type 22 unit
+ * reaches fontSys + 0x36. The documented bases run to +0x32 (expl); +0x34 and +0x36 are the two
+ * words past them. */
+#define PUFO_ISO_GROUP_BASE_COUNT 28
+
+/* What MapView_DrawUnit @ 0x1c958 reaches outside the context. */
+typedef struct IsoUnitDrawGate {
+    MapCell *const   *apCells;      /* Map.apCells @ 0x15338, 3600 slots per layer */
+    Soldier          *pSelUnit;     /* Map.pSelUnit @ 0x15134 */
+    u8                bQueueActive; /* TactState.bQueueActive, IDA unk_157198 */
+    u8                bSelectFlag;  /* unk_128AD6 @ Map+0x11E */
+    u8                nAnimPhase;   /* nAnimPhase @ Map+0xF8 (IDB 0x113AB0) */
+    u8                nMapPhase;    /* unk_1139EF @ Map+0x37 */
+    const u16        *paGroupBase;  /* fontSys + 0x00, PUFO_ISO_GROUP_BASE_COUNT entries */
+    u16               nCursorBase;  /* fontSys + 0x02 */
+    u16               nHandobBase;  /* nHandobSprBase, fontSys + 0x20 */
+    ObjectRecFull   **apSelWeapon;  /* pSelWeapon @ 0x113A00, a pointer to the selected weapon */
+    PadImage         *pSelectFrame; /* unk_156928, the selection frame pad */
+    const u8         *paTypeProbe;  /* Map+0x16..0x19, the four bytes Tact_MapTypeToGlyphIdx scans */
+} IsoUnitDrawGate;
+
+/* MapView_DrawUnit @ 0x1c958 (3,220 bytes). See the header note in pufo_isodraw.c for the decode.
+ *
+ * The original's return value is whatever R0 happens to hold at the exit -- it is register debris,
+ * not a status, and no caller in the original tests it. The port returns 0. */
+int MapView_DrawUnit(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate);
 
 /* What the two select markers read out of the map and the tactical queue. */
 #define PUFO_ISODRAW_MULTI_TARGET_SLOTS 8 /* Map.apMultiTargets @ 0x15338+0x08, eight entries */

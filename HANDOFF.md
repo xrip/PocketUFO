@@ -296,8 +296,6 @@ draw.
 These are analysed and recorded in `docs/parity/` and in IDB comments. Porting them is transcription,
 not research:
 
-- `MapView_DrawUnit` (0x1c958, 3,220 B, 126 blocks) — all offsets, all table extents, all semantics
-  settled, and its nine static tables are now in the port. What is left is the function body itself.
 - `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
   unmodelled globals: `0x158848`, `0x162030`, `0x186410`.
 - `BasePlaneScreen_CommitStores` (0x7ac38) — blocked on the hangar screen state block
@@ -549,13 +547,20 @@ does.
 5. Port `Tact_InitMission` (0x3c550).
 6. Done: `Tact_Shutdown` (0x3d568) is ported. Next is `LoadGame` (0x44bbc), still blocked by
    `Geoscape_InitUI` and `Tact_InitMission`.
+7. Done: `MapView_DrawUnit` (0x1c958) is ported in `pufo_isodraw.c` behind `IsoUnitDrawGate`. Re-reading
+   every branch in ARM changed four things the pseudocode had wrong or left unstated: the pose-frame
+   branch converges on a store that happens before the zero test, so a zero entry is stored as 0; the
+   direction classification compares `nX` first, so equal coordinates fall through to the diagonal set;
+   `bAnimStep` ends at the step count because both loop tails store the increment before the test; and
+   the group-base index is unclamped, so `PUFO_ISO_GROUP_BASE_COUNT` is 28 rather than 18. Note also
+   that the compact `disasm` listing dropped the instruction at `0x1CE34` — the address-anchored
+   listing is the one to trust for exact code.
 
 ### Priority 2 — finish the tactical renderer
 
-`MapView_DrawIsoLayer` (0x21e2c, 1,252 B) is blocked by exactly two callees:
+`MapView_DrawIsoLayer` (0x21e2c, 1,252 B) is now blocked by exactly one callee:
 
-1. `MapView_DrawUnit` (0x1c958, 3,220 B) — fully decoded, tables measured, ready to port.
-2. `MapView_DrawUnitFacingArrow` (0x1b7bc, 2,692 B) — needs a 10-entry trajectory roster modelled:
+1. `MapView_DrawUnitFacingArrow` (0x1b7bc, 2,692 B) — needs a 10-entry trajectory roster modelled:
    X doubles at 0x1278A0 stride 8, Y at 0x1278F0 stride 8, Z at 0x127940 stride 8, a glyph dword
    table at 0x127990 stride 4, and `nHeightGlyphId` at 0x1279B8 as the entry after that table. Also
    needs `byte_A9290`, `byte_A92D0`, `Map.gap_82056`, and `Map.adMtX/Y/Z`.

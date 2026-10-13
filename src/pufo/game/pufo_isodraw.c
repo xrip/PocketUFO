@@ -1,9 +1,11 @@
 /* pufo_isodraw.c - see pufo_isodraw.h for evidence and the field map. */
 #include "game/pufo_isodraw.h"
 
-#include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / g_fontSys */
+#include "game/pufo_font.h"   /* Font_DrawGlyph_IndexedOffset / Font_DrawGlyph / g_fontSys */
 #include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM */
-#include "render/pufo_render.h" /* SoftSurf_BlitSrcRect */
+#include "game/pufo_tactui.h" /* Tact_MapTypeToGlyphIdx */
+#include "game/pufo_unit.h"   /* Unit_bIsOperative / Unit_bIsLarge */
+#include "render/pufo_render.h" /* SoftSurf_BlitSrcRect / PadImage_BlitEx */
 
 #include <math.h>
 
@@ -1185,3 +1187,415 @@ const i8 g_aUnitFacingDrawOff[PUFO_ISO_FACING_OFF_TYPE_COUNT][8][2] = {
                    {  -9,  -8 },
                    {  -2, -10 } },
 };
+
+/* --------------------------------------------------------------- MapView_DrawUnit
+ *
+ * MapView_DrawUnit @ 0x1c958, 3,220 bytes, 126 blocks.
+ *
+ * Entry gate. A unit is drawn only when something at its position blocks movement:
+ *   - a small unit: its own draw cell (pIso->pCell) has bFlags44 bit 0 set;
+ *   - a large unit: any cell of the 2x2 block anchored on the unit's OWN cell has it set.
+ * The 2x2 block is slots idx, idx+1, idx+60 and idx+61 of the flattened cell array: the cell plus
+ * its right and lower neighbours.
+ *
+ * Two mutually exclusive bodies follow, large and small, and both end in the same selection-frame
+ * tail. The large body classifies the unit's cell against the draw cell into one of four direction
+ * sets written into abUnitFlag, then walks abUnitFlag[0 .. abUnitFlag[3]-1] through
+ * g_aUnitWalkGlyph[type][row][dir]. The small body walks five fixed steps through
+ * g_aUnitWalkKind[5*(16*type + facing + 8*twoHand) + step].
+ *
+ * Three Hex-Rays renderings here are wrong and the ARM is authoritative:
+ *   - the two-handed-weapon flag is at IsoDrawCtx + 0x12C. Hex-Rays writes `gap_12D[7]`, which is
+ *     0x134 -- that slot is the item-list cursor and belongs to other functions.
+ *   - `LDRB [R6,#0x14]` is Soldier.nAnimPose, not bFlags. bFlags is at 0x04, confirmed at 0x1D504
+ *     by `LDRB R3,[R0,#4]` followed by `ANDS R3,#2`.
+ *   - unit types 20 and 21 read nAnimPhase (Map+0xF8); every other type reads unk_1139EF (Map+0x37).
+ *     Hex-Rays renders the two swapped.
+ *
+ * Palette. nPal is saved on the stack at entry and zeroed when the unit is operative, but it is only
+ * written back from 0x1D5DC onward. The two not-drawable exits at 0x1CA58 and 0x1CAAC jump straight to
+ * the POP, so an operative unit behind an unflagged cell leaves pIso->nPal at 0 for the caller, which
+ * reuses it for terrain.
+ *
+ * Deviation. In the weapon-glyph branch the original reaches `pHandR->pObj` when BOTH hands are
+ * empty, which is a null dereference. The port skips the glyph instead. Whether that path is
+ * reachable is not proven: Unit_DeriveAnimPose derives nAnimPose from bFlags and the two hands, so
+ * poses 5..17 may imply a hand item, but nothing in the IDB proves it.
+ */
+
+#define ISO_CELLS_PER_LAYER 3600
+#define ISO_CELLS_PER_ROW      60
+#define ISO_TYPE_PROBE_COUNT     4  /* Map+0x16..0x19, probed by Tact_MapTypeToGlyphIdx */
+
+/* itos -> muls(0.125f) -> muls(scale) -> stoi. The original round-trips through decimal strings;
+ * the port keeps the arithmetic in a double and truncates toward zero, the same assumption already
+ * recorded for _stoi in pufo_vistry.c. */
+static i32 Iso_AnimPhaseTerm(i32 nPhase, i32 nScale)
+{
+    return (i32)(((double)nPhase * 0.125) * (double)nScale);
+}
+
+static bool Iso_HandIsWeapon(const TactItem *pItem)
+{
+    const ObjectRecFull *pObj;
+    u16 uSort;
+
+    if (pItem == NULL) {
+        return false;
+    }
+    pObj = pItem->pObj;
+    uSort = pObj->uSortKey;
+    return pObj->bListPri == 1 || uSort == 22 || uSort == 24;
+}
+
+/* The minimum over the 2x2 block of the ceiling sprite's signed iCeilParam at Mc1Rec + 0x24. Both
+ * original reads are LDRSB, so the comparison is signed. */
+static i32 Iso_MinCeilParam(MapCell *const *apCells, i32 nIdx)
+{
+    static const i32 anOff[4] = { 0, 1, ISO_CELLS_PER_ROW, ISO_CELLS_PER_ROW + 1 };
+    i32 nMin = 0;
+    i32 k;
+
+    for (k = 0; k < 4; ++k) {
+        MapCell *pCell = apCells[nIdx + anOff[k]];
+        Mc1Rec *pCeil;
+
+        if (pCell == NULL) {
+            continue;
+        }
+        pCeil = pCell->pCeilSpr;
+        if (pCeil != NULL && pCeil->iCeilParam < nMin) {
+            nMin = pCeil->iCeilParam;
+        }
+    }
+    return nMin;
+}
+
+static bool Iso_UnitIsDrawable(const IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
+{
+    Soldier *pUnit = pIso->pUnit;
+    MapCell *pCell;
+    i32 nIdx;
+
+    if (!Unit_bIsLarge(pUnit)) {
+        return (pIso->pCell->bFlags44 & 1) != 0;
+    }
+    pCell = pUnit->pCell;
+    nIdx = ISO_CELLS_PER_LAYER * (i32)pCell->nZ + ISO_CELLS_PER_ROW * (i32)pCell->nY
+           + (i32)pCell->nX;
+    return (pGate->apCells[nIdx]->bFlags44 & 1) != 0
+        || (pGate->apCells[nIdx + 1]->bFlags44 & 1) != 0
+        || (pGate->apCells[nIdx + ISO_CELLS_PER_ROW]->bFlags44 & 1) != 0
+        || (pGate->apCells[nIdx + ISO_CELLS_PER_ROW + 1]->bFlags44 & 1) != 0;
+}
+
+/* 0x1CA60 and 0x1D458. The two cursor markers: 18 above the unit before the body runs, 17 after
+ * it. Both need a palette above 7, the unit's cell flag set, and either the select flag or a
+ * palette that is not exactly 255. */
+static void Iso_DrawCursorMarker(const IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate, u16 uOffset)
+{
+    i32 nPal = pIso->nPal;
+
+    if (Unit_bIsOperative(pIso->pUnit) || nPal <= 7) {
+        return;
+    }
+    if ((pIso->pUnit->pCell->bFlags44 & 1) != 0 && (pGate->bSelectFlag != 0 || nPal != 255)) {
+        Font_DrawGlyph(pIso->nDrawX + pIso->pUnit->nDrawOffX,
+                       pIso->nDrawY + pIso->pUnit->nDrawOffY,
+                       (u16)(pGate->nCursorBase + uOffset), 0);
+    }
+}
+
+/* 0x1CB90. A large unit whose cell differs from the drawn cell in BOTH coordinates walks three
+ * directions, the third being 8 -- the direction code that lifts the glyph by 4 pixels. */
+static void Iso_SetLargeUnitDiagonal(IsoDrawCtx *pIso)
+{
+    pIso->abUnitFlag[0] = 3;
+    pIso->abUnitFlag[1] = 7;
+    pIso->abUnitFlag[2] = 8;
+    pIso->abUnitFlag[3] = 3;
+}
+
+static void Iso_DrawLargeUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
+{
+    Soldier *pUnit = pIso->pUnit;
+    MapCell *pCell = pUnit->pCell;
+    i32 nIdx;
+    i32 nStep;
+
+    pIso->bUnitGlyphRow = (pUnit->nAnimPose == 18) ? 2 : ((pUnit->bFlags & 2) != 0 ? 1 : 0);
+
+    if (pCell == pIso->pCell) {
+        pIso->abUnitFlag[0] = 0;
+        pIso->abUnitFlag[1] = 4;
+        pIso->abUnitFlag[3] = 2;
+    } else if (pCell->nX != pIso->pCell->nX) {
+        /* 0x1CB48 compares nX first. */
+        if (pCell->nY == pIso->pCell->nY) {
+            pIso->abUnitFlag[0] = 1;
+            pIso->abUnitFlag[1] = 5;
+            pIso->abUnitFlag[3] = 2;
+        } else {
+            Iso_SetLargeUnitDiagonal(pIso);
+        }
+    } else if (pCell->nY != pIso->pCell->nY) {
+        /* 0x1CB78, reached only when nX is equal. */
+        pIso->abUnitFlag[0] = 2;
+        pIso->abUnitFlag[1] = 6;
+        pIso->abUnitFlag[3] = 2;
+    } else {
+        /* Equal coordinates but a different cell object. The original falls through to the diagonal
+         * set because it never tests object identity after the first compare. Not reachable through
+         * MapView_bResolveIsoCell, which resolves pIso->pCell out of the same array. */
+        Iso_SetLargeUnitDiagonal(pIso);
+    }
+
+    nIdx = ISO_CELLS_PER_LAYER * (i32)pCell->nZ + ISO_CELLS_PER_ROW * (i32)pCell->nY
+           + (i32)pCell->nX;
+
+    for (nStep = 0; nStep < pIso->abUnitFlag[3]; ++nStep) {
+        u8 bDir = pIso->abUnitFlag[nStep];
+        const u16 *pFrame;
+        u8 nGlyph;
+        u8 nPhase;
+        i32 nGlyphIdx;
+
+        pIso->bAnimStep = (u8)nStep;
+        nGlyph = (pUnit->nUnitType < PUFO_ISO_WALK_GLYPH_TYPE_COUNT)
+                     ? g_aUnitWalkGlyph[pUnit->nUnitType][pIso->bUnitGlyphRow][bDir]
+                     : 0;
+        pIso->nAnimFrame = nGlyph;
+        if (nGlyph == 0) {
+            continue;
+        }
+        pIso->nAnimFrame = nGlyph - 1;
+        pFrame = g_aUnitAnimFrame[pIso->nAnimFrame];
+
+        nPhase = (pUnit->nUnitType == 20 || pUnit->nUnitType == 21) ? pGate->nAnimPhase
+                                                                    : pGate->nMapPhase;
+        pIso->nAnimParam = pUnit->bFacing * pFrame[2]
+                         + Iso_AnimPhaseTerm(nPhase, pFrame[1]) + pFrame[0];
+
+        pIso->nObjParam = Iso_MinCeilParam(pGate->apCells, nIdx);
+
+        pIso->nSpriteY = pIso->nObjParam + pUnit->nDrawOffY + pIso->nDrawY;
+        pIso->nSpriteX = pIso->nDrawX + pUnit->nDrawOffX;
+        if (bDir == 8) {
+            pIso->nSpriteY -= 4;
+        }
+
+        nGlyphIdx = Tact_MapTypeToGlyphIdx(pUnit->nUnitType, pGate->paTypeProbe,
+                                           ISO_TYPE_PROBE_COUNT);
+        Font_DrawGlyph(pIso->nSpriteX, pIso->nSpriteY,
+                       (u16)(pGate->paGroupBase[nGlyphIdx] + (u16)pIso->nAnimParam), 0);
+    }
+
+    /* 0x1CE94 stores the incremented step before the loop test, so the walk leaves bAnimStep equal to
+     * the step count, not the last index used. */
+    pIso->bAnimStep = (u8)nStep;
+}
+
+static void Iso_DrawSmallUnitGlyphs(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
+{
+    Soldier *pUnit = pIso->pUnit;
+    i32 nStep;
+
+    pIso->bTwoHandWeapon = (u8)(Iso_HandIsWeapon(pUnit->pHandL) || Iso_HandIsWeapon(pUnit->pHandR));
+    if ((pUnit->bFlags & 4) != 0 && (*pGate->apSelWeapon)->bListPri == 0) {
+        pIso->bTwoHandWeapon = 0;
+    }
+
+    for (nStep = 0; nStep < 5; ++nStep) {
+        u8 bKind;
+        i32 nKey;
+        i32 nPose;
+        const u16 *pFrame;
+        i32 nPhase;
+        i32 nYTerm;
+        i32 nGlyphIdx;
+
+        pIso->bAnimStep = (u8)nStep;
+        nKey = pUnit->bFacing + 16 * (i32)pUnit->nUnitType
+             + (pIso->bTwoHandWeapon != 0 ? 8 : 0);
+        bKind = g_aUnitWalkKind[5 * nKey + nStep];
+        pIso->bAnimKind = bKind;
+
+        if (bKind != 4) {
+            i32 nFrame;
+
+            /* The original indexes the flat 760-byte table as 5*(pose + base) + kind. The one
+             * special case, 5*base + 33, is the same row form with pose = 6 and kind = 3. */
+            nPose = pUnit->nAnimPose;
+            i32 nRow = nPose + g_aUnitTypePoseBase[pUnit->nUnitType];
+            if ((nPose < 0xF || nPose > 0x11) || pIso->bTwoHandWeapon != 0) {
+                nFrame = g_aPoseFrameTable[nRow][bKind];
+            } else if (bKind == 3) {
+                nFrame = g_aPoseFrameTable[g_aUnitTypePoseBase[pUnit->nUnitType] + 6][3];
+            } else {
+                nFrame = g_aPoseFrameTable[nRow][bKind];
+            }
+            pIso->nAnimFrame = nFrame;
+            if (bKind == 1 && pUnit->nUnitType <= 3u && pUnit->bFemale != 0) {
+                ++pIso->nAnimFrame;
+            }
+            if (pIso->nAnimFrame == 0) {
+                continue;
+            }
+            pIso->nAnimFrame -= 1;
+            pFrame = g_aUnitAnimFrame[pIso->nAnimFrame];
+
+            nPhase = (pUnit->nAnimPose == 1) ? pGate->nMapPhase : pGate->nAnimPhase;
+            pIso->nAnimParam = pUnit->bFacing * pFrame[2]
+                             + Iso_AnimPhaseTerm(nPhase, pFrame[1]) + pFrame[0];
+
+            if (g_aUnitAnimFrame[pIso->nAnimFrame][1] != 1) {
+                nYTerm = 0;
+            } else if ((pUnit->bFlags & 1) != 0) {
+                nYTerm = (bKind == 2) ? 0 : 4;
+            } else if ((pUnit->bFlags & 2) == 0 || (pUnit->bFlags & 0x10) != 0) {
+                nYTerm = 0;
+            } else {
+                nYTerm = g_aUnitHeightOff[pUnit->nUnitType][pGate->nAnimPhase];
+            }
+
+            pIso->nSpriteY = nYTerm + pUnit->nDrawOffY + pIso->nDrawY;
+            pIso->nSpriteX = pIso->nDrawX + pUnit->nDrawOffX;
+
+            nGlyphIdx = Tact_MapTypeToGlyphIdx(pUnit->nUnitType, pGate->paTypeProbe,
+                                               ISO_TYPE_PROBE_COUNT);
+            Font_DrawGlyph(pIso->nSpriteX, pIso->nObjParam + pIso->nSpriteY,
+                           (u16)(pGate->paGroupBase[nGlyphIdx] + (u16)pIso->nAnimParam), 0);
+            continue;
+        }
+
+        /* Kind 4 is the weapon pass. */
+        if ((pUnit->bFlags & 1) != 0) {
+            pIso->nDrawAux = 4;
+        } else if ((pUnit->bFlags & 2) == 0 || (pUnit->bFlags & 0x10) != 0) {
+            pIso->nDrawAux = 0;
+        } else {
+            pIso->nDrawAux = g_aUnitHeightOff[pUnit->nUnitType][pGate->nAnimPhase];
+        }
+        pIso->nDrawMode = 0;
+
+        /* aUnitFacingDrawOff covers 14 unit types, not 23. A type 14 or above reaching here reads
+         * past the table into the u16 occupancy table that follows it at 0xA9488. The port bounds it
+         * and leaves nDrawMode at 0 and nDrawAux unchanged instead of reproducing that read. */
+        if (pIso->bTwoHandWeapon != 0 && (pUnit->bFlags & 4) != 0
+            && pUnit->nUnitType < PUFO_ISO_FACING_OFF_TYPE_COUNT) {
+            pIso->nDrawMode = g_aUnitFacingDrawOff[pUnit->nUnitType][pUnit->bFacing][0];
+            pIso->nDrawAux += g_aUnitFacingDrawOff[pUnit->nUnitType][pUnit->bFacing][1];
+        } else if (pUnit->nUnitType == 9) {
+            pIso->nDrawAux += 1;
+        } else if (pUnit->nUnitType == 11) {
+            pIso->nDrawAux -= 1;
+        }
+
+        nPose = pUnit->nAnimPose;
+        if (nPose < 5 || nPose >= 0x12) {
+            continue;
+        }
+
+        {
+            const ObjectRecFull *pObj = NULL;
+            const TactItem *pHandR = pUnit->pHandR;
+            i32 nFacingTerm;
+
+            if ((pUnit->bFlags & 4) != 0) {
+                pObj = *pGate->apSelWeapon;
+            } else if (Iso_HandIsWeapon(pUnit->pHandL)) {
+                pObj = pUnit->pHandL->pObj;
+            } else if (Iso_HandIsWeapon(pHandR)) {
+                pObj = pHandR->pObj;
+            } else if (pUnit->pHandL != NULL) {
+                pObj = pUnit->pHandL->pObj;
+            } else if (pHandR != NULL) {
+                pObj = pHandR->pObj;
+            } else {
+                /* Deviation: the original dereferences the null pHandR here. */
+                continue;
+            }
+
+            pIso->nAnimParam = pObj->aItemQty[51];
+            if (pIso->bTwoHandWeapon != 0 && (pUnit->bFlags & 4) != 0) {
+                nFacingTerm = pUnit->bFacing + 2;
+                if ((unsigned)nFacingTerm >= 8u) {
+                    nFacingTerm = pUnit->bFacing - 6;
+                }
+                pIso->nScratch2 = nFacingTerm;
+            } else {
+                nFacingTerm = pUnit->bFacing;
+            }
+            pIso->nAnimParam += nFacingTerm;
+
+            Font_DrawGlyph(pIso->nDrawMode + pUnit->nDrawOffX + pIso->nDrawX,
+                           pUnit->nDrawOffY + g_aUnitWeaponYOff[pUnit->nUnitType]
+                               + pIso->nObjParam + pIso->nDrawAux + pIso->nDrawY,
+                           (u16)pIso->nAnimParam + pGate->nHandobBase - 1, 0);
+        }
+    }
+
+    /* 0x1D434, the same post-increment store as the walk loop: bAnimStep ends at 5. */
+    pIso->bAnimStep = (u8)nStep;
+}
+
+int MapView_DrawUnit(IsoDrawCtx *pIso, const IsoUnitDrawGate *pGate)
+{
+    i32 nPalSaved;
+    i32 nSide;
+
+    if (pIso == NULL || pGate == NULL || pIso->pUnit == NULL || pIso->pCell == NULL) {
+        return 0;
+    }
+
+    nPalSaved = pIso->nPal;
+    if (Unit_bIsOperative(pIso->pUnit)) {
+        pIso->nPal = 0; /* 0x1C984 */
+    }
+
+    if (!Iso_UnitIsDrawable(pIso, pGate)) {
+        /* ORIGINAL BUG (0x1CAAC): both not-drawable exits jump straight to the POP, so they never
+         * write the saved palette back. An operative unit whose cell is not flagged leaves nPal at 0
+         * for the caller, which reuses it for terrain. Only the paths that pass the gate restore it. */
+        return 0;
+    }
+
+    Iso_DrawCursorMarker(pIso, pGate, 18);
+
+    if (Unit_bIsLarge(pIso->pUnit)) {
+        Iso_DrawLargeUnitGlyphs(pIso, pGate);
+    } else {
+        Iso_DrawSmallUnitGlyphs(pIso, pGate);
+    }
+
+    Iso_DrawCursorMarker(pIso, pGate, 17);
+
+    /* The selection frame. Suppressed while the tactical queue is active, for anything that is not
+     * the selected unit, and for a selected unit whose bFlags bit 1 is set. */
+    if (pGate->bQueueActive == 0 && pIso->pUnit == pGate->pSelUnit
+        && (pGate->pSelUnit->bFlags & 2) == 0) {
+        PadImage *pFrame = pGate->pSelectFrame;
+
+        nSide = 32 - (i32)pFrame->uWidth;
+        if (pFrame->uWidth > 0x20u) {
+            nSide = 33 - (i32)pFrame->uWidth;
+        }
+        pFrame->nOriginX = pIso->nDrawX + (nSide >> 1);
+
+        if (Unit_bIsLarge(pGate->pSelUnit)) {
+            if (pGate->pSelUnit->pCell != pIso->pCell) {
+                goto restore; /* 0x1D5DC: this early exit DOES restore */
+            }
+            pFrame->nOriginY = g_aBobPhaseY[pGate->nMapPhase] - (i32)pFrame->uHeight
+                             + pIso->nObjParam + pIso->nDrawY + 8;
+        } else {
+            pFrame->nOriginY = g_aBobPhaseY[pGate->nMapPhase] - (i32)pFrame->uHeight
+                             + pIso->nObjParam + pIso->nDrawY;
+        }
+        PadImage_BlitEx(pFrame, 0xFF);
+    }
+
+restore:
+    pIso->nPal = nPalSaved;
+    return 0;
+}

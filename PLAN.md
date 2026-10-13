@@ -97,12 +97,34 @@ Order is by what unblocks what. Each item ends with gates + commit.
     survivor)
   - [x] IDB: the function header no longer claims unported callees, and the pad-group comment now
     records the 115 + 15 = 130 cross-check
+- [x] `MapView_DrawUnit @ 0x1c958` — ported, 3,220 B cited, in `src/pufo/game/pufo_isodraw.c` behind
+  `IsoUnitDrawGate`
+  - [x] every branch re-read from ARM rather than pseudocode; the compact `disasm` listing dropped an
+    instruction at `0x1CE34`, so the remaining regions were verified through the address-anchored
+    listing instead
+  - [x] the pose-frame branch settled: pose outside `0xF..0x11` takes `5*(pose+base)+kind`; inside it,
+    no two-hand weapon AND walk kind 3 takes `5*base+33`, which is row `base+6` column 3. Both paths
+    converge on the store at `0x1CFF8`, which happens BEFORE the zero test — a zero entry is stored as
+    0, not decremented
+  - [x] the direction classification compares `nX` first (`0x1CB48`), so equal coordinates with a
+    different cell object fall through to the diagonal set at `0x1CB90`
+  - [x] `PUFO_ISO_GROUP_BASE_COUNT` corrected 18 → 28: `Tact_MapTypeToGlyphIdx` is unclamped and
+    returns 18 for types 5..8 and `nType + 5` up to 27, so the base block must reach fontSys + 0x36
+  - [x] `bAnimStep` now ends at the step count, not the last index used — both loop tails store the
+    incremented value before the test
+  - [x] `tests/test_isodraw.c`: 200 checks total, eight new groups. Most assertions read the context
+    back; ink is used only for the two cursor markers
+  - [x] three findings added to `bugs.tsv` (the `nPal` restore asymmetry, the null dereference at
+    `0x1D384`, the 14-type facing table overrun) and seven IDB comments, one of which replaces a
+    comment there that claimed every return path restores `nPal`
 - [ ] `Tact_InitMission (0x3c550)`
 - [ ] `LoadGame (0x44bbc)`
 
 ## Later priorities
 
-2. Tactical renderer leftovers. 3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is now blocked only by
+   `MapView_DrawUnitFacingArrow (0x1b7bc, 2,692 B)`. 3. Geoscape. 4. Screens. 5. Housekeeping.
+   See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
 
@@ -127,4 +149,5 @@ Refresh after each commit. A coverage delta must match the function size in
 | `d4c74f1` | 48/48 | 6740 | 666/1103 (60.4%) | 230808/598792 (38.5%) | 28 checked, 0 mismatched |
 | `8043c2b` | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
 | `89022a5`, `887fed8`, `36addee` — decode + IDB only | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
-| this commit (parent `36addee`) | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
+| `36addee` + `Tact_Shutdown` | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
+| this commit | 49/49 | 6977 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 28 checked, 0 mismatched |
