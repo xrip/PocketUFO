@@ -7444,9 +7444,30 @@ own cell and `LDRSB R0, [R0,#0x24]` with `CMP` and `STRLT` for the neighbours, s
 same field. Hex-Rays rendered the first as `pCeilSpr->gap_22[14]`, which is a different offset and is
 wrong.
 
-**New layout fact.** `Soldier.bFlags` is at **Soldier + 0x14**. ARM at 0x1CC06 is `LDRB R2, [R6,#0x14]`
-followed by `CMP R2, #2`, which is the `bFlags & 2` test Hex-Rays shows as `pUnit->bFlags & 2`. The
-same instruction sequence re-confirms `nUnitType` at Soldier + 0xA0.
+**Correction to an earlier note in this section.** `Soldier + 0x14` is `nAnimPose`, not `bFlags`.
+`Soldier.bFlags` is at **Soldier + 0x04**, which the port already models and static-asserts, and ARM at
+0x1D504 confirms it with `LDRB R3, [R0,#4]` and `ANDS R3, R3, #2`. The instruction at 0x1CC06 is
+`LDRB R2, [R6,#0x14]`, which loads `nAnimPose`, and the `CMP R2, #2` after it tests that. The same
+sequence re-confirms `nUnitType` at Soldier + 0xA0.
+
+**The self-referential index is a direction table.** The pseudocode computes
+`v20 = (char *)pIso + pIso->bAnimStep` and then reads `v20[101]`, which looks like a bug and is not.
+`bAnimStep` is at IsoDrawCtx + 0x44 and 101 is 0x65, which is `bUnitFlag0`. So `v20[101]` is
+`bUnitFlag[bAnimStep]`: the walk loop reads the direction byte for the step it is on.
+
+That makes the large-unit branch a small, legible machine. The direction bytes are set once from how the
+unit's own cell compares with the cell being drawn:
+
+| unit cell vs drawn cell | flag0 | flag1 | flag2 | steps |
+|---|---|---|---|---|
+| same cell | 0 | 4 | - | 2 |
+| same row, different column | 1 | 5 | - | 2 |
+| same column, different row | 2 | 6 | - | 2 |
+| different both | 3 | 7 | 8 | 3 |
+
+and each step looks up `aUnitWalkGlyph[27 * nUnitType + 9 * bUnitFlag4 + direction]`, with a 4 pixel
+lift when the direction is 8. `bUnitFlag4` itself is 2 when `nAnimPose` is 18, otherwise whether
+`bFlags` bit 1 is set.
 
 **Which animation clock.** Unit types 20 and 21 read IDA's `nAnimPhase`. Every other type reads
 `unk_1139EF`, which is Map + 0x37. ARM at 0x1CC08 is `CMP R0, #0x14`, `CMPNE R0, #0x15`, then
