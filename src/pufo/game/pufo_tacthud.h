@@ -358,4 +358,77 @@ i32 TactHud_DrawUnitMarkers(UiControl *pPad, const TactHudMarkerEnv *pEnv,
 i32 TactHud_DrawTopBar(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv *pColor,
                        UiControlBlitFn pfnBlit, UiControlBlitFn pfnBlitEx, void *pUser);
 
+/* --- the selected-unit panel ---------------------------------------------------------
+ *
+ * TactHud_DrawSelectedUnitPanel @ 0x1d5ec.
+ *
+ * It starts by re-basing the panel and the 19 tactical HUD controls, before any gate:
+ *
+ *   nOriginY = 303 when the deploy panel is open, else 320 - pHudPad->uHeight
+ *   pBank[i].y = aHudPanelBaseY[i] + nOriginY, for i in 0..18
+ *
+ * Those 19 are the named control table at off_A7ED8 @ 0xA7ED8, 32-byte UiControl records with
+ * names in the binary: nextu, uplev, cuplev, map, invent, endturn, dnlev, cdnlev, sit, center,
+ * alwaysrs, singles, aims, autos, mainmenu, pmenu, and three unnamed. Only the y field is rewritten;
+ * the x values in the table are the controls' fixed columns.
+ *
+ * Then, gated on bPlayerInputEnabled, a selected unit, and Unit_bIsOperative:
+ *
+ *   the HUD pad itself is blitted, then each weapon hand's icon, then the 19 controls,
+ *   then four status decimals, then the animation bar.
+ *
+ * Weapon icons: x = nOriginX + 19*(2 - nFootW)/2 + 9 on the left and + 198 on the right,
+ * y = nOriginY + 17*(3 - nFootH)/2 + 41 - centring inside a 2x3 footprint of 19x17 cells. The glyph
+ * index is pObj->uIconId + nBigObsBase - 1, so weapon icons come from the bigobs sprite group. In
+ * the pseudocode that index reads as pObj->aItemQty[0x34]: index 52 of a 52-entry u16 array at
+ * ObjectRec+0x3a is one past the end, and 0x3a + 104 = 0xA2, which is uIconId.
+ *
+ * The ammo number is shown when (bTwoHanded == 0 && nCategory < 3) || Unit_bIsLarge(unit), and only
+ * when pObj->bAmmoCap != 255 (255 means the weapon never runs out). It is TactItem.nAmmo, drawn two
+ * wide with leading zeros at nOriginX + 22 on the left and + 211 on the right.
+ *
+ * The four decimals are three wide with leading zeros: time units (forced to 0 when the tactical
+ * state says the unit has spent them), stun/armor, hit points, morale - at (109,60), (109,75),
+ * (160,60) and (160,75).
+ *
+ * The bar is 12 segments of 4x2 on a 6-pixel pitch at (nOriginX + 85, nOriginY + 13), 72 wide, and
+ * its profile depends on the mode slot:
+ *
+ *   mode 0: key = 10 * v where v = counter below 16, else 15 up to 113, else 128 - counter
+ *   mode 1: r = counter % 32, v = r above 15 ? 32 - r : r, key = 10 * v
+ *   mode 2: r = counter % 24, v = r at least 12 ? 24 - r : r, then each segment k in 0..11 takes
+ *     key = 120 - 10*abs(k - v), a peak that walks across the bar
+ *   any other mode: the bar is skipped entirely
+ *
+ * When the counter reaches its end the next mode is chosen at RANDOM: the counter resets to 0 and the
+ * mode becomes Game_RandU16(3). The end is 120 for mode 2 and 128 for modes 0 and 1. No test may
+ * assert a specific mode following an animation.
+ *
+ * Deviation: the original returns whatever value it last happened to load - register residue, not a
+ * status. The port returns whether it drew the panel.
+ *
+ * pEnv is not const because the rollover writes the counter and mode slots back. */
+#define PUFO_HUD_PANEL_CONTROLS 19
+
+/* off_A7ED8 @ 0xA7ED8, the y field of each of the 19 named HUD controls. */
+extern const i16 aHudPanelBaseY[PUFO_HUD_PANEL_CONTROLS];
+
+typedef struct TactHudPanelEnv {
+    PadImage          *pHudPad;              /* Map.pHudPad (Map+0xFC) */
+    PadImage *const   *apDigitPads;          /* the 11-entry table the decimal helper reads */
+    Soldier           *pSelUnit;             /* Map.pSelUnit */
+    u8                 bDeployPanelOpen;     /* Map+0x15110 */
+    u8                 bPlayerInputEnabled;  /* Map+0x38 */
+    u8                 bTuSuppressed;        /* unk_157198->bUnk70114 */
+    u16                nBigObsBase;          /* fontSys + 0x26, the bigobs group */
+    i32                nAnimCounter;         /* Map.apUiSlotsA[25] */
+    i32                nAnimMode;            /* Map.apUiSlotsA[26] */
+} TactHudPanelEnv;
+
+bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
+                                   const GfxColorEnv *pColor,
+                                   HudPadBlitFn pfnDecimalBlit, void *pDecimalUser,
+                                   UiControlBlitFn pfnCtlBlit, UiControlBlitFn pfnCtlBlitEx,
+                                   void *pCtlUser);
+
 #endif /* PUFO_TACTHUD_H */

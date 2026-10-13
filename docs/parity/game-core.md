@@ -6410,7 +6410,7 @@ fallback glyph instead. That fallback is the only reason the two passes share a 
 | `MapView_DrawCellSelectMarkerHi @ 0x1b584` | 568 | **ported** |
 | `MapView_DrawUnitHeightGlyph @ 0x1c240` | 1,132 | **ported** |
 | `MapView_DrawViewportGuide @ 0x1aadc` | 1,256 | **ported** |
-| `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | fully decoded, port next — every callee is already ported |
+| `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` | 1,484 | **ported** |
 | `MapView_DrawUnitFacingArrow @ 0x1b7bc` | 2,692 | not ported |
 | `MapView_DrawUnit @ 0x1c958` | 3,220 | not ported |
 | `TactUnit_DrawAnimGlyphs @ 0x1c6ac` | 168 | **ported** |
@@ -6642,10 +6642,10 @@ by the colour key rather than copying. A pixel covered by one segment reads 813,
 the assertable fact is covered-versus-not-covered, not a pixel value. Asserting an exact colour here
 would have been asserting the blend arithmetic, which is a different function's business.
 
-### `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` — decoded, two offsets that look wrong and are not
+### `TactHud_DrawSelectedUnitPanel @ 0x1d5ec` — ported, and it names the 19 HUD controls
 
-Every callee is already ported, so this is ready to implement. Two readings in the pseudocode are
-misleading and had to be resolved against the struct layout.
+Every callee was already ported, so this was mechanical. Two readings in the pseudocode are misleading
+and had to be resolved against the struct layout.
 
 **`pObj->aItemQty[0x34]` is not an array element.** `aItemQty` is 52 u16 entries at `ObjectRec + 0x3a`,
 so index 52 is one past the end — and `0x3a + 104 = 0xA2`, which is `uIconId`. The weapon icon glyph is
@@ -6662,6 +6662,35 @@ The rest of the shape:
   `320 − pHudPad->uHeight`, stored into `pHudPad->nOriginY`, then
   `for (i = 0; i < 608; i += 32) pBank[i].y = off_A7ED8[i + 2] + v1`. 608 / 32 = 19, and those are the
   same 19 controls it then blits.
+
+  That table turned out to be the tactical HUD's control layout, with **names stored in the binary**.
+  `off_A7ED8` @ `0xA7ED8` is 19 `UiControl` records of 32 bytes, renamed in the IDB to
+  `aHudTactControls`:
+
+  | control | x | y |
+  |---|---|---|
+  | `nextu` | 8 | 20 |
+  | `uplev` | 46 | 20 |
+  | `cuplev` | 84 | 20 |
+  | `map` | 121 | 20 |
+  | `invent` | 159 | 20 |
+  | `endturn` | 197 | 20 |
+  | `dnlev` | 46 | 38 |
+  | `cdnlev` | 84 | 38 |
+  | `sit` | 121 | 38 |
+  | `center` | 159 | 38 |
+  | `alwaysrs` | 50 | 60 |
+  | `singles` | 69 | 60 |
+  | `aims` | 50 | 73 |
+  | `autos` | 69 | 73 |
+  | `mainmenu` | 0 | 3 |
+  | `pmenu` | 206 | 3 |
+  | unnamed | 92 | 60 |
+  | unnamed | 9 | 39 |
+  | unnamed | 198 | 39 |
+
+  The panel rewrites only the y field. The x values are the controls' fixed columns and nothing here
+  touches them, which is why the layout survives a panel resize.
 - weapon centring is `nOriginX + 19*(2 − nFootW)/2 + 9` on the left and `+ 198` on the right, with
   `y = nOriginY + 17*(3 − nFootH)/2 + 41` — a 2×3 footprint of 19×17 pixel cells.
 - the ammo number is shown when `(bTwoHanded == 0 && nCategory < 3) || Unit_bIsLarge(unit)`.

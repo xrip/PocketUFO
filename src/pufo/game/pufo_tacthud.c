@@ -5,6 +5,7 @@
 #include "game/pufo_path.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_font.h"
+#include "util/pufo_rand.h" /* Game_RandU16, the panel's next animation mode */
 
 #include <math.h>
 #include <stddef.h>
@@ -1023,4 +1024,178 @@ i32 TactHud_DrawTopBar(UiControl *pPads, const u8 *pTextRecs, const GfxColorEnv 
     }
 
     return nResult;
+}
+
+/* off_A7ED8 @ 0xA7ED8. The 19 tactical HUD controls are 32-byte UiControl records in .rdata, and
+ * their names are in the binary: nextu, uplev, cuplev, map, invent, endturn, dnlev, cdnlev, sit,
+ * center, alwaysrs, singles, aims, autos, mainmenu, pmenu, then three unnamed. These are the u16 at
+ * record offset 2 of each. The x fields (8, 46, 84, 121, 159, 197, 46, 84, 121, 159, 50, 69, 50, 69,
+ * 0, 206, 92, 9, 198) are the controls' fixed columns and this function never touches them. */
+const i16 aHudPanelBaseY[PUFO_HUD_PANEL_CONTROLS] = {
+    20, 20, 20, 20, 20, 20,   /* nextu, uplev, cuplev, map, invent, endturn */
+    38, 38, 38, 38,           /* dnlev, cdnlev, sit, center                  */
+    60, 60,                   /* alwaysrs, singles                           */
+    73, 73,                   /* aims, autos                                 */
+    3,  3,                    /* mainmenu, pmenu                             */
+    60, 39, 39                /* the three unnamed records                   */
+};
+
+/* 0x1D764 and 0x1D81C: centred inside a 2x3 footprint of 19x17 cells. The left side adds 9, the
+ * right adds 198. */
+static i32 PanelIconX(i32 nOriginX, i32 nFootW, i32 nSideOffset)
+{
+    return nOriginX + 19 * (2 - (i32)nFootW) / 2 + nSideOffset;
+}
+
+static i32 PanelIconY(i32 nOriginY, i32 nFootH)
+{
+    return nOriginY + 17 * (3 - (i32)nFootH) / 2 + 41;
+}
+
+/* 0x1D73C and 0x1D848 state the same rule two different ways - one as an inclusive test with an
+ * early skip, the other as a compound condition. Both reduce to this. */
+static bool PanelShowsAmmo(const TactItem *pHand, const Soldier *pUnit)
+{
+    return (pHand->pObj->bTwoHanded == 0 && pHand->pObj->nCategory < 3)
+        || Unit_bIsLarge(pUnit);
+}
+
+bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
+                                   const GfxColorEnv *pColor,
+                                   HudPadBlitFn pfnDecimalBlit, void *pDecimalUser,
+                                   UiControlBlitFn pfnCtlBlit, UiControlBlitFn pfnCtlBlitEx,
+                                   void *pCtlUser)
+{
+    i32 nOriginY;
+    i32 nOriginX;
+    i32 nCounter;
+    i32 nTu;
+    TactItem *pHand;
+
+    /* 0x1D618: the re-base runs before every gate, so it happens even with no selected unit. */
+    nOriginY = pEnv->bDeployPanelOpen != 0 ? 303 : 320 - (i32)pEnv->pHudPad->uHeight;
+    pEnv->pHudPad->nOriginY = nOriginY;
+    for (i32 i = 0; i < PUFO_HUD_PANEL_CONTROLS; ++i) {
+        pBank[i].y = (i16)(aHudPanelBaseY[i] + nOriginY);
+    }
+
+    if (pEnv->bPlayerInputEnabled == 0) {
+        return false;
+    }
+    if (pEnv->pSelUnit == NULL) {
+        return false;
+    }
+    if (!Unit_bIsOperative(pEnv->pSelUnit)) {
+        return false;
+    }
+
+    PadImage_BlitEx(pEnv->pHudPad, 0);
+    nOriginX = pEnv->pHudPad->nOriginX;
+
+    /* The glyph index is uIconId + nBigObsBase - 1. In the pseudocode it reads as aItemQty[0x34],
+     * which is index 52 of a 52-entry u16 array at ObjectRec+0x3a - one past the end, landing on
+     * 0xA2, which is uIconId. */
+    pHand = pEnv->pSelUnit->pHandL;
+    if (pHand != NULL) {
+        (void)Font_DrawGlyph(PanelIconX(nOriginX, pHand->pObj->nFootW, 9),
+                             PanelIconY(nOriginY, pHand->pObj->nFootH),
+                             (u16)(pHand->pObj->uIconId + pEnv->nBigObsBase - 1), 0);
+        /* 0x1D778: bAmmoCap 255 means the weapon never runs out, so it has no clip to show. */
+        if (PanelShowsAmmo(pHand, pEnv->pSelUnit) && pHand->pObj->bAmmoCap != 255) {
+            (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 22, nOriginY + 42,
+                                      (i32)pHand->nAmmo, 2, true,
+                                      pfnDecimalBlit, pDecimalUser);
+        }
+    }
+
+    pHand = pEnv->pSelUnit->pHandR;
+    if (pHand != NULL) {
+        (void)Font_DrawGlyph(PanelIconX(nOriginX, pHand->pObj->nFootW, 198),
+                             PanelIconY(nOriginY, pHand->pObj->nFootH),
+                             (u16)(pHand->pObj->uIconId + pEnv->nBigObsBase - 1), 0);
+        if (PanelShowsAmmo(pHand, pEnv->pSelUnit) && pHand->pObj->bAmmoCap != 255) {
+            (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 211, nOriginY + 42,
+                                      (i32)pHand->nAmmo, 2, true,
+                                      pfnDecimalBlit, pDecimalUser);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_HUD_PANEL_CONTROLS; ++i) {
+        (void)UiControl_BlitActivePad(&pBank[i], pfnCtlBlit, pfnCtlBlitEx, pCtlUser);
+    }
+
+    (void)Gfx_PackRgb565Pair(pColor, 144, 219, 194, 42, 114, 110);
+
+    nTu = pEnv->bTuSuppressed != 0 ? 0 : (i32)pEnv->pSelUnit->uTu;
+    (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 109, nOriginY + 60, nTu, 3, true,
+                              pfnDecimalBlit, pDecimalUser);
+    (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 109, nOriginY + 75,
+                              (i32)pEnv->pSelUnit->uStunOrArmor, 3, true,
+                              pfnDecimalBlit, pDecimalUser);
+    (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 160, nOriginY + 60,
+                              (i32)pEnv->pSelUnit->uHp, 3, true,
+                              pfnDecimalBlit, pDecimalUser);
+    (void)TactHud_BlitDecimal(pEnv->apDigitPads, nOriginX + 160, nOriginY + 75,
+                              (i32)pEnv->pSelUnit->bMorale, 3, true,
+                              pfnDecimalBlit, pDecimalUser);
+
+    /* The animation bar. 12 segments of 4x2 on a 6-pixel pitch, 72 wide. */
+    nCounter = pEnv->nAnimCounter;
+    if (pEnv->nAnimMode == 2) {
+        i32 nPeak = nCounter % 24;
+
+        if (nPeak >= 12) {
+            nPeak = 24 - nPeak;
+            if (nCounter % 24 <= 12) {
+                nPeak = 12;
+            }
+        }
+        for (i32 nOff = 0, nWalk = -nPeak; nOff < 72; nOff += 6, ++nWalk) {
+            i32 nAbs = nWalk < 0 ? -nWalk : nWalk;
+            SoftSurf_BlitRectProxy(0, nOff + nOriginX + 85, nOriginY + 13, 4, 2, 0,
+                                   (u8)(120 - 10 * nAbs), 0);
+        }
+        if (nCounter >= 120) {
+            pEnv->nAnimCounter = 0;
+            pEnv->nAnimMode = (i32)Game_RandU16(3);
+        }
+        return true;
+    }
+
+    if (pEnv->nAnimMode == 1) {
+        i32 nRem = nCounter % 32;
+        u8  nKey;
+
+        if (nRem > 15) {
+            nRem = 32 - nRem;
+        }
+        nKey = (u8)(10 * nRem);
+        for (i32 nOff = 0; nOff < 72; nOff += 6) {
+            SoftSurf_BlitRectProxy(0, nOff + nOriginX + 85, nOriginY + 13, 4, 2, 0, nKey, 0);
+        }
+    } else if (pEnv->nAnimMode == 0) {
+        i8  nVal = (i8)(u8)nCounter;
+        u8  nKey;
+
+        if (nCounter >= 16) {
+            nVal = (i8)(0x80 - (u8)nCounter);
+            if (nCounter <= 113) {
+                nVal = 15;
+            }
+        }
+        /* The multiply is done in u8 in the original, so a counter past 128 wraps before the bar is
+         * drawn and only then resets. Reproduced rather than tidied. */
+        nKey = (u8)(10 * nVal);
+        for (i32 nOff = 0; nOff < 72; nOff += 6) {
+            SoftSurf_BlitRectProxy(0, nOff + nOriginX + 85, nOriginY + 13, 4, 2, 0, nKey, 0);
+        }
+    } else {
+        return true; /* any other mode draws no bar at all */
+    }
+
+    if (nCounter >= 128) {
+        pEnv->nAnimCounter = 0;
+        pEnv->nAnimMode = (i32)Game_RandU16(3);
+    }
+    return true;
 }

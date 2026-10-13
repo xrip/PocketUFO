@@ -1148,6 +1148,276 @@ static void TestHudDraw(void)
     g_pMainSurface = NULL;
 }
 
+/* A probe font whose glyph k draws its single run at y + k, so the inked row reports the glyph index
+ * as well as the position. Same trick as test_isodraw.c. */
+static u8   g_aProbeGlyph[256][4];
+static u8  *g_apProbeSpr[256];
+static i32  g_nDecBlits;
+static i32  g_aDecX[64];
+static i32  g_aDecY[64];
+static i32  g_nCtlBlits;
+static i32  g_nFillerBlits;
+
+/* PadImage_BlitEx has no NULL guard, matching the original, so the HUD pad needs real data. */
+static u8 g_aHudPadData[8];
+
+static void PanelDecBlit(PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nDecBlits < 64) {
+        g_aDecX[g_nDecBlits] = pPad->nOriginX;
+        g_aDecY[g_nDecBlits] = pPad->nOriginY;
+    }
+    /* Slot 10 is the leading-zero filler pad, slot 0 the plain zero digit. */
+    if (pPad == &g_aDigitPad[10]) {
+        g_nFillerBlits += 1;
+    }
+    g_nDecBlits += 1;
+}
+
+static void PanelCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    g_nCtlBlits += 1;
+}
+
+static i32 PanelInkRow(const SoftSurf *pSurf, i32 nCol)
+{
+    const u16 *p = (const u16 *)pSurf->pPixels;
+
+    for (i32 y = 0; y < pSurf->nHeight; ++y) {
+        if (p[y * pSurf->nWidth + nCol] != 0) {
+            return y;
+        }
+    }
+    return -1;
+}
+
+static void TestSelectedUnitPanel(void)
+{
+    UiControl  aBank[PUFO_HUD_PANEL_CONTROLS];
+    PadImage   aBankPad[PUFO_HUD_PANEL_CONTROLS];
+    PadImage   hudPad;
+    TactHudPanelEnv env;
+    TactItem   handL, handR;
+    GfxColorEnv color = { 1, 0 };
+    SoftSurf   surf;
+
+    printf("TactHud_DrawSelectedUnitPanel @ 0x1d5ec\n");
+
+    for (i32 i = 0; i < 256; ++i) {
+        g_aProbeGlyph[i][0] = (u8)i;
+        g_aProbeGlyph[i][1] = 0;
+        g_aProbeGlyph[i][2] = 0x30;
+        g_aProbeGlyph[i][3] = 0xFF;
+        g_apProbeSpr[i] = g_aProbeGlyph[i];
+    }
+    g_fontSys.apSprIndex = g_apProbeSpr;
+    g_fontSys.nSprIndexCount = 256;
+    g_fontSys.nGlyphBase = 0;
+    memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
+    g_blitState.nPixelMode = 2;
+
+    for (i32 i = 0; i < PUFO_HUD_DIGIT_PADS; ++i) {
+        memset(&g_aDigitPad[i], 0, sizeof(g_aDigitPad[i]));
+        g_aDigitPad[i].uWidth = 5;
+        g_apDigitPad[i] = &g_aDigitPad[i];
+    }
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+
+    memset(aBank, 0, sizeof(aBank));
+    memset(aBankPad, 0, sizeof(aBankPad));
+    for (i32 i = 0; i < PUFO_HUD_PANEL_CONTROLS; ++i) {
+        aBank[i].bEnabled = 1;
+        aBank[i].apPads[0] = &aBankPad[i];
+        aBank[i].apPads[1] = &aBankPad[i];
+        aBank[i].apPads[2] = &aBankPad[i];
+    }
+
+    memset(&hudPad, 0, sizeof(hudPad));
+    hudPad.nOriginX = 10;
+    hudPad.uWidth = 2;
+    hudPad.uHeight = 90;
+    hudPad.pData = g_aHudPadData;
+
+    memset(&env, 0, sizeof(env));
+    env.pHudPad = &hudPad;
+    env.apDigitPads = g_apDigitPad;
+    env.bPlayerInputEnabled = 1;
+    env.nBigObsBase = 20;
+    env.nAnimMode = 3; /* no bar, so the first assertions see a clean surface */
+
+    Reset();
+    g_Unit.uTu = 45;
+    g_Unit.uStunOrArmor = 7;
+    g_Unit.uHp = 88;
+    g_Unit.bMorale = 6;
+    env.pSelUnit = &g_Unit;
+
+    memset(&g_aObj[0], 0, sizeof(g_aObj[0]));
+    memset(&g_aObj[1], 0, sizeof(g_aObj[1]));
+    g_aObj[0].nFootW = 2;  g_aObj[0].nFootH = 3;
+    g_aObj[0].uIconId = 3; g_aObj[0].bAmmoCap = 30;
+    g_aObj[1] = g_aObj[0];
+    g_aObj[1].uIconId = 4;
+    memset(&handL, 0, sizeof(handL));
+    handL.pObj = &g_aObj[0];
+    handL.nAmmo = 12;
+    memset(&handR, 0, sizeof(handR));
+    handR.pObj = &g_aObj[1];
+    handR.nAmmo = 7;
+    g_Unit.pHandL = &handL;
+    g_Unit.pHandR = &handR;
+
+    /* The re-base runs before every gate. */
+    env.bDeployPanelOpen = 1;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(hudPad.nOriginY, 303, "the deploy panel pins the HUD pad at 303");
+    ChkEq(aBank[0].y, 20 + 303, "nextu is re-based to its own row plus 303");
+    ChkEq(aBank[18].y, 39 + 303, "the last unnamed control uses row 39");
+
+    env.bDeployPanelOpen = 0;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(hudPad.nOriginY, 230, "closed, the pad sits at 320 minus its 90 pixel height");
+    ChkEq(aBank[13].y, 73 + 230, "autos keeps its own row 73");
+
+    env.bPlayerInputEnabled = 0;
+    Check("player input off skips the panel",
+          !TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                         PanelCtlBlit, PanelCtlBlit, NULL));
+    ChkEq(aBank[0].y, 20 + 230, "but the re-base still ran");
+    env.bPlayerInputEnabled = 1;
+
+    env.pSelUnit = NULL;
+    Check("no selected unit skips the panel",
+          !TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                         PanelCtlBlit, PanelCtlBlit, NULL));
+    env.pSelUnit = &g_Unit;
+
+    g_Unit.bStatus = 1;
+    Check("a non-operative unit skips the panel",
+          !TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                         PanelCtlBlit, PanelCtlBlit, NULL));
+    g_Unit.bStatus = 0;
+
+    /* A full draw. Only the two weapon glyphs reach the surface: the decimals and the controls go
+     * through the injected callbacks. */
+    memset(surf.pPixels, 0, (size_t)surf.nWidth * (size_t)surf.nHeight * 2u);
+    g_nDecBlits = 0;
+    g_nCtlBlits = 0;
+    g_nFillerBlits = 0;
+    Check("a valid unit draws the panel",
+          TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL));
+    ChkEq(g_nCtlBlits, PUFO_HUD_PANEL_CONTROLS, "19 bank controls are blitted");
+
+    /* Left icon: index 3 + 20 - 1 = 22 at (10 + 9, 230 + 41), so the probe inks row 271 + 22.
+     * Right icon: index 4 + 20 - 1 = 23 at (10 + 198, 271). */
+    ChkEq(PanelInkRow(&surf, 19), 271 + 22,
+          "the left icon is uIconId + bigobs - 1 drawn at the centred left column");
+    ChkEq(PanelInkRow(&surf, 208), 271 + 23,
+          "the right icon uses the same rule at column 198");
+
+    /* Six decimal groups, in call order: left ammo 2, right ammo 2, time units 3, stun 3, hit points
+     * 3, morale 3. Digit pads are 5 wide, so the advance is 6. */
+    ChkEq(g_nDecBlits, 16, "ammo twice each, then four status values with leading-zero fillers");
+    ChkEq(g_aDecX[0], 10 + 22,  "left ammo starts at origin plus 22");
+    ChkEq(g_aDecY[0], 230 + 42, "and at origin plus 42");
+    ChkEq(g_aDecX[2], 10 + 211, "right ammo starts at origin plus 211");
+    ChkEq(g_aDecX[4], 10 + 109, "time units at origin plus 109");
+    ChkEq(g_aDecY[4], 230 + 60, "on the first status row");
+    ChkEq(g_aDecX[7], 10 + 109, "stun and armor below it on the second row");
+    ChkEq(g_aDecY[7], 230 + 75, "at origin plus 75");
+    ChkEq(g_aDecX[10], 10 + 160, "hit points at origin plus 160");
+    ChkEq(g_aDecY[10], 230 + 60, "back on the first row");
+    ChkEq(g_aDecX[13], 10 + 160, "morale shares the second row on the right");
+
+    /* A weapon that never runs out has no clip to show. */
+    g_aObj[0].bAmmoCap = 255;
+    g_aObj[1].bAmmoCap = 255;
+    g_nDecBlits = 0;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(g_nDecBlits, 12, "bAmmoCap 255 removes both ammo numbers and leaves the four status ones");
+    g_aObj[0].bAmmoCap = 30;
+    g_aObj[1].bAmmoCap = 30;
+
+    /* Two-handed and category 3 or above hides the number unless the unit is large. */
+    g_aObj[0].bTwoHanded = 1;
+    g_aObj[0].nCategory = 5;
+    g_aObj[1].bTwoHanded = 1;
+    g_aObj[1].nCategory = 5;
+    g_nDecBlits = 0;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(g_nDecBlits, 12, "a two-handed heavy weapon on a small unit shows no ammo");
+    g_aObj[0].bTwoHanded = 0;
+    g_aObj[0].nCategory = 1;
+    g_aObj[1].bTwoHanded = 0;
+    g_aObj[1].nCategory = 1;
+
+    /* The suppressed time-unit flag draws a literal zero. The group is three pads either way, so what
+     * changes is how many of them are filler: 45 is one filler and two digits, 0 is two fillers and a
+     * digit. */
+    g_nFillerBlits = 0;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(g_nFillerBlits, 7, "0 + 1 + 1 + 2 + 1 + 2 filler pads across the six groups");
+
+    env.bTuSuppressed = 1;
+    g_nFillerBlits = 0;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(g_nFillerBlits, 8, "suppressed time units become 0 and take one more filler pad");
+    env.bTuSuppressed = 0;
+
+    /* The bar: mode 1 draws it, mode 3 draws nothing at all. */
+    memset(surf.pPixels, 0, (size_t)surf.nWidth * (size_t)surf.nHeight * 2u);
+    env.nAnimMode = 1;
+    env.nAnimCounter = 15;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    Check("mode 1 draws the bar row",
+          PanelInkRow(&surf, 10 + 85) == 230 + 13);
+    Check("and the 12 segments cover the last one",
+          PanelInkRow(&surf, 10 + 85 + 69) == 230 + 13);
+    Check("the 6 pixel pitch leaves a gap between segments",
+          PanelInkRow(&surf, 10 + 85 + 4) == -1);
+
+    memset(surf.pPixels, 0, (size_t)surf.nWidth * (size_t)surf.nHeight * 2u);
+    env.nAnimMode = 3;
+    env.nAnimCounter = 15;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    Check("mode 3 draws no bar",
+          PanelInkRow(&surf, 10 + 85) == -1
+          && PanelInkRow(&surf, 10 + 85 + 69) == -1);
+
+    /* The rollover. The next mode is random, so only the reset and the range are assertable. */
+    env.nAnimMode = 0;
+    env.nAnimCounter = 128;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(env.nAnimCounter, 0, "a counter of 128 resets");
+    Check("and the next mode is drawn at random from 0..2",
+          env.nAnimMode >= 0 && env.nAnimMode <= 2);
+
+    env.nAnimMode = 2;
+    env.nAnimCounter = 119;
+    (void)TactHud_DrawSelectedUnitPanel(aBank, &env, &color, PanelDecBlit, NULL,
+                                        PanelCtlBlit, PanelCtlBlit, NULL);
+    ChkEq(env.nAnimCounter, 119, "mode 2 runs to 119, not 127");
+
+    g_pMainSurface = NULL;
+    g_fontSys.apSprIndex = NULL;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1166,5 +1436,7 @@ int main(void)
     TestSpecialItem();
     Reset();
     TestHudDraw();
+    Reset();
+    TestSelectedUnitPanel();
     return TestSummary("test_tacthud");
 }
