@@ -2,6 +2,7 @@
 #include "pufo_combat.h"
 #include "audio/pufo_audio.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_tactctl.h"   /* MapView_FocusOnCell, FocusCtx, TactCursor */
 #include "game/pufo_vistry.h"   /* Map_ScanBlastFootprint, the second gate on every proximity device */
 #include "util/pufo_rand.h"
 
@@ -692,6 +693,105 @@ static void Combat_DropCellItems(const CombatCtx *pCtx)
                 }
             }
         }
+    }
+}
+
+/* The two halves of the detonation tail. The original writes the origin, then focuses only
+ * when the cell's bFlags44 bit 0 is set, and records that it moved the view. */
+static void Proximity_SetOrigin(ProximityCtx *pCtx, MapCell *pCell)
+{
+    pCtx->pCombat->nShotOriginX = pCell->nX;
+    pCtx->pCombat->nShotOriginY = pCell->nY;
+}
+
+static void Proximity_FocusIfFlagged(ProximityCtx *pCtx, MapCell *pCell)
+{
+    if ((pCell->bFlags44 & 1) != 0) {
+        MapView_FocusOnCell(pCtx->pFocus, pCell, pCtx->pCursor);
+        if (pCtx->pbViewMoved != NULL) {
+            *pCtx->pbViewMoved = 1;
+        }
+    }
+}
+
+static void Proximity_Resolve(ProximityCtx *pCtx, MapCell *pCell, ObjectRec *pObj)
+{
+    Combat_ResolveShot(pCtx->pCombat, pCtx->pShotHooks, pCtx->pRosters,
+                       pCell->nX, pCell->nY, pCell->nZ, 0, pObj, NULL, NULL, NULL);
+}
+
+/* MapCell_TickProximityItems @ 0x4b724.
+ *
+ * Hex-Rays renders the shot argument at 0x4B900 as pItemList->pObj->gap_0, which looks like a
+ * read through the object. Case 15 settles it: v8 = (int *)pItemList and the argument is *v8,
+ * which is the TactItem's own pObj field. Both paths pass the object pointer. The default case
+ * removes the node before the shared tail, but MapCell_ListRemove @ 0x54b58 only relinks and
+ * never frees, so the pointer is still good. */
+void MapCell_TickProximityItems(ProximityCtx *pCtx, MapCell *pCell)
+{
+    if (pCtx == NULL || pCell == NULL || pCtx->pCombat == NULL ||
+        pCtx->pGeom == NULL || pCtx->pfnLookupCell == NULL || pCtx->paSteps == NULL) {
+        return;
+    }
+
+    if (pCtx->pbViewMoved != NULL) {
+        *pCtx->pbViewMoved = 0;                     /* 0x4B738 */
+    }
+
+    for (TactItem *pItem = pCell->pItemList; pItem != NULL; ) {
+        ObjectRec *pObj = pItem->pObj;
+
+        if (pObj == NULL || pObj->nCategory != 3 || pItem->bUnk8 == 0) {
+            pItem = pItem->pNext;
+            continue;
+        }
+
+        /* 0x4B770: decrement first, then test. The compare is signed char, so a countdown that
+         * is already zero becomes -1 and detonates again on every later call. */
+        i8 nCountdown = (i8)(u8)(pItem->bUnk7 - 1);
+        pItem->bUnk7 = (u8)nCountdown;
+        if (nCountdown > 0) {
+            pItem = pItem->pNext;
+            continue;
+        }
+
+        TactItem *pRemove = pItem;
+
+        switch (pObj->uSortKey) {
+        case PUFO_PROXIMITY_KEY_MARK:
+            /* 0x4B79C: no detonation, only the animated-tile flag field. */
+            pCell->nFlags40 = (pCell->nFlags40 & 0xFFFFFF87u) | 0x38u;
+            pItem = pItem->pNext;
+            break;
+
+        case PUFO_PROXIMITY_KEY_DETONATE:
+            pItem = pItem->pNext;
+            Proximity_SetOrigin(pCtx, pCell);
+            Proximity_FocusIfFlagged(pCtx, pCell);
+            Proximity_Resolve(pCtx, pCell, pObj);
+            break;
+
+        case PUFO_PROXIMITY_KEY_BLAST:
+            /* 0x4B850: a blocked footprint stops the whole cell, not just this item. */
+            if (!Map_ScanBlastFootprint(pCtx->pGeom, pCtx->pfnLookupCell,
+                                        pCtx->pLookupUser, pCtx->paSteps, pCell)) {
+                return;
+            }
+            Proximity_SetOrigin(pCtx, pCell);
+            Proximity_FocusIfFlagged(pCtx, pCell);
+            Proximity_Resolve(pCtx, pCell, pObj);
+            return;   /* 0x4B91C: a blast device is never removed from the cell */
+
+        default:
+            /* 0x4B8C0..0x4B8FC: origin, then removal, then the focus. */
+            Proximity_SetOrigin(pCtx, pCell);
+            MapCell_ListRemove(pCell, pRemove);
+            Proximity_FocusIfFlagged(pCtx, pCell);
+            Proximity_Resolve(pCtx, pCell, pObj);
+            return;
+        }
+
+        MapCell_ListRemove(pCell, pRemove);         /* 0x4B7A8, reached from 14 and 15 only */
     }
 }
 

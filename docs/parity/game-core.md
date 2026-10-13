@@ -7238,22 +7238,31 @@ worth checking rather than assuming.
 
 `MapCell_TickProximityItems` is decoded but not ported yet.
 
-Both decoded, neither ported yet. Together they are the arming countdown and the chain reaction.
+Both are ported in `src/pufo/game/pufo_combat.c`. Together they are the arming countdown and the
+chain reaction.
 
 **What a proximity device is.** A `TactItem` whose object has `nCategory == 3` and whose own `bUnk8` byte
 (`TactItem + 0x08`) is set. `TactItem.bUnk7` at `+0x07` is the **arming countdown**: the tick function
 decrements it once per call for every such item in the cell, and the device goes off when it reaches zero.
+
+The countdown compare is a **signed char**: `v5 = bUnk7 - 1; bUnk7 = v5; v5 <= 0`. A device already sitting
+at zero therefore becomes -1, fires again, and leaves 255 behind so it fires on every later call too.
 
 **`MapCell_TickProximityItems` (516 B)** walks one cell's item list and switches on `ObjectRec.uSortKey`:
 
 | sort key | behaviour |
 |---|---|
 | 14 | does **not** detonate. Sets `pCell->nFlags40 = (nFlags40 & ~0x78) \| 0x38`, removes the item |
-| 15 | sets `Map.nFireOrigX/Y`, focuses the view when `pCell->bFlags44` bit 0 is set, resolves the shot, removes |
-| 16 | `Map_ScanBlastFootprint` first — if it returns 0 the **whole function returns**. Otherwise resolves the shot and returns **without removing the item** |
+| 15 | sets `Map.nFireOrigX/Y`, focuses when `pCell->bFlags44` bit 0 is set, resolves the shot, removes |
+| 16 | `Map_ScanBlastFootprint` first — if it returns 0 the **whole function returns**, so the rest of the cell is not even ticked. Otherwise it sets the origin, focuses, resolves the shot, and returns **without removing the item** |
 | other | sets the origin, removes the item, focuses, resolves the shot, returns |
 
 So only key 14 is removed without detonating, and key 16 detonates but stays in the list.
+
+Hex-Rays renders the shared shot tail at 0x4B900 as `pItemList->pObj->gap_0`, which reads as if it
+reaches through the object. Case 15 settles it: `v8 = (int *)pItemList` and the argument is `*v8`, the
+TactItem's own `pObj`. Both paths pass the object pointer. The default case removes the node before
+that tail, but `MapCell_ListRemove @ 0x54b58` only relinks and never frees, so the pointer is still good.
 
 **`Combat_DetonateNearbyItems` (416 B)** is a **9 × 9 box** `[nX-4, nX+4) × [nY-4, nY+4)` over all four
 layers. Its gate *tests* `bUnk7 <= 0` but does **not** decrement it, unlike the tick function. Every candidate

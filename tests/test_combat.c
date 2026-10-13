@@ -2,6 +2,7 @@
  * Evidence: Combat_SplashDamageCells @ 0x2e7d8, Unit_ApplyCellDamage @ 0x2e5d0. */
 #include "game/pufo_combat.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_tactctl.h"   /* FocusCtx, TactCursor for the proximity tick */
 #include "game/pufo_vistry.h"   /* VisRay, PUFO_VIS_RAY_COUNT, Map_ScanBlastFootprint */
 #include "util/pufo_rand.h"
 #include "game/pufo_tactstate.h"
@@ -727,7 +728,12 @@ static void TestResolveShot(void)
 static TactItem      s_aDev[6];
 static ObjectRecFull s_objBlast;   /* category 3, sort key 16 */
 static ObjectRecFull s_objMark;    /* category 3, sort key 14 */
+static ObjectRecFull s_objDet;     /* category 3, sort key 15 */
+static ObjectRecFull s_objOther;   /* category 3, some other sort key */
 static Soldier       s_occ;
+static FocusCtx      s_focus;
+static TactCursor    s_cursor;
+static u8            s_bViewMoved;
 static VisRay        s_aRays[PUFO_VIS_RAY_COUNT];
 static u8            s_aSteps[PUFO_VIS_TABLE_BYTES];
 static u8            s_bFlag;
@@ -750,8 +756,13 @@ static void ProxFixture(void)
     memset(s_aDev, 0, sizeof(s_aDev));
     memset(&s_objBlast, 0, sizeof(s_objBlast));
     memset(&s_objMark, 0, sizeof(s_objMark));
+    memset(&s_objDet, 0, sizeof(s_objDet));
+    memset(&s_objOther, 0, sizeof(s_objOther));
     memset(&s_occ, 0, sizeof(s_occ));
+    memset(&s_focus, 0, sizeof(s_focus));
+    memset(&s_cursor, 0, sizeof(s_cursor));
     s_bFlag = 0xAA;
+    s_bViewMoved = 0xAA;
 
     for (i32 z = 0; z < PUFO_MAP_LAYERS; ++z) {
         for (i32 y = 0; y < 60; ++y) {
@@ -767,6 +778,15 @@ static void ProxFixture(void)
     s_objBlast.uSortKey = 16;
     s_objMark.nCategory = 3;
     s_objMark.uSortKey = 14;
+    s_objDet.nCategory = 3;
+    s_objDet.uSortKey = 15;
+    s_objOther.nCategory = 3;
+    s_objOther.uSortKey = 20;
+
+    s_focus.nMapTileW = 40;
+    s_focus.nMapTileH = 40;
+    s_focus.nDimX = 6;
+    s_focus.nDimY = 6;
 
     for (i32 i = 0; i < 6; ++i) {
         s_aDev[i].pObj = &s_objBlast;
@@ -788,6 +808,9 @@ static void ProxFixture(void)
     s_prox.pLookupUser = NULL;
     s_prox.paSteps = s_aSteps;
     s_prox.pbBlastScanFlag = &s_bFlag;
+    s_prox.pFocus = &s_focus;
+    s_prox.pCursor = &s_cursor;
+    s_prox.pbViewMoved = &s_bViewMoved;
 }
 
 /* Map_ScanBlastFootprint is the second gate on every candidate: it has to find an
@@ -882,6 +905,106 @@ static void TestDetonateNearbyItems(void)
     Check("and the walk restarted for the second", !ListHas(ProxCell(0, 0, 0), &s_aDev[1]));
 }
 
+static void TestTickProximityItems(void)
+{
+    printf("MapCell_TickProximityItems @ 0x4b724\n");
+
+    /* The countdown runs whether or not the device goes off. */
+    ProxFixture();
+    s_aDev[0].bUnk7 = 3;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    g_c.nShotOriginX = -1;
+    g_c.nShotOriginY = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    CheckEqI32("countdown drops by one", s_aDev[0].bUnk7, 2);
+    Check("and nothing detonates", g_c.nShotOriginX == -1 && g_c.nShotOriginY == -1);
+
+    /* Sort key 15 detonates and is removed. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objDet;
+    s_aDev[0].bUnk7 = 1;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    g_c.nShotOriginX = -1;
+    g_c.nShotOriginY = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    CheckEqI32("key 15 records the origin x", g_c.nShotOriginX, PROX_X);
+    CheckEqI32("key 15 records the origin y", g_c.nShotOriginY, PROX_Y);
+    Check("key 15 is removed from the cell", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+
+    /* Sort key 14 is removed without detonating, and rewrites the animated-tile flags. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objMark;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ProxCell(0, 0, 0)->nFlags40 = 0;
+    g_c.nShotOriginX = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    Check("key 14 is removed", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    Check("but it detonates nothing", g_c.nShotOriginX == -1);
+    CheckEqI32("key 14 sets nFlags40 to (old & ~0x78) | 0x38", ProxCell(0, 0, 0)->nFlags40, 0x38);
+
+    /* Sort key 16 with a blocked footprint stops the whole cell: the item behind it is
+     * not even ticked. Ten cells away from the shot fixture there is no occupant inside
+     * the footprint, so the scan finds nothing. */
+    ProxFixture();
+    s_aDev[0].bUnk7 = 1;
+    s_aDev[1].bUnk7 = 3;
+    s_aDev[0].pNext = &s_aDev[1];
+    ProxCell(10, 10, 0)->pItemList = &s_aDev[0];
+    g_c.nShotOriginX = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(10, 10, 0));
+    Check("a blocked blast device detonates nothing", g_c.nShotOriginX == -1);
+    CheckEqI32("and the next item in the cell is left unticked", s_aDev[1].bUnk7, 3);
+
+    /* Sort key 16 with a clear footprint detonates but stays in the list. */
+    ProxFixture();
+    s_aDev[0].bUnk7 = 1;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    g_c.nShotOriginX = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    Check("a clear blast device detonates", g_c.nShotOriginX == PROX_X);
+    Check("and stays in the cell", ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+
+    /* Any other sort key detonates, is removed, and returns: the item behind it is not
+     * ticked because the function has already left. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objOther;
+    s_aDev[1].bUnk7 = 3;
+    s_aDev[0].pNext = &s_aDev[1];
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    g_c.nShotOriginX = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    Check("another key detonates", g_c.nShotOriginX == PROX_X);
+    Check("and is removed", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    CheckEqI32("and the walk stops there", s_aDev[1].bUnk7, 3);
+
+    /* The view only moves when the cell's bFlags44 bit 0 is set. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objDet;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ProxCell(0, 0, 0)->bFlags44 = 0;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    CheckEqI32("flag clear leaves the view alone", s_bViewMoved, 0);
+
+    ProxFixture();
+    s_aDev[0].pObj = &s_objDet;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ProxCell(0, 0, 0)->bFlags44 = 1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    CheckEqI32("flag set reports the view moved", s_bViewMoved, 1);
+
+    /* The compare is signed char, so a countdown already at zero wraps to -1, fires, and
+     * leaves 255 behind to fire again next time. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objDet;
+    s_aDev[0].bUnk7 = 0;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    g_c.nShotOriginX = -1;
+    MapCell_TickProximityItems(&s_prox, ProxCell(0, 0, 0));
+    Check("an already-zero countdown still detonates", g_c.nShotOriginX == PROX_X);
+}
+
 int main(void)
 {
     TestIndex();
@@ -895,6 +1018,7 @@ int main(void)
     TestSelectFireMode();
     TestResolveShot();
     TestDetonateNearbyItems();
+    TestTickProximityItems();
 
     return TestSummary("test_combat");
 }

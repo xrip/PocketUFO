@@ -153,13 +153,18 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
  * bUnk8 byte at TactItem + 0x08 is set. TactItem.bUnk7 at +0x07 is the arming
  * countdown.
  *
- * The blast device, the one this function looks for, is ObjectRec.uSortKey 16. The
- * switch in MapCell_TickProximityItems (0x4b724) also knows 14 and 15. */
+ * The blast device, the one the detonation sweep looks for, is ObjectRec.uSortKey 16.
+ * The tick function also knows 14 and 15. */
+#define PUFO_PROXIMITY_KEY_MARK 14
+#define PUFO_PROXIMITY_KEY_DETONATE 15
 #define PUFO_PROXIMITY_KEY_BLAST 16
 
 /* Half-width of the detonation box: SUB R6,R0,#4 / ADD R4,R0,#4 at 0x32FD8 and
  * 0x32FE0, so the box is [nX-4, nX+4) by [nY-4, nY+4), nine cells across. */
 #define PUFO_PROXIMITY_BOX_RADIUS 4
+
+struct FocusCtx;   /* game/pufo_tactctl.h */
+struct TactCursor; /* game/pufo_tactctl.h */
 
 /* The state both proximity functions reach through the Map block in the original. */
 typedef struct ProximityCtx {
@@ -171,6 +176,9 @@ typedef struct ProximityCtx {
     void               *pLookupUser;
     const u8           *paSteps;      /* the step table Map_ScanBlastFootprint walks */
     u8                 *pbBlastScanFlag; /* unk_157198 + 70112, cleared at 0x32FCC */
+    struct FocusCtx    *pFocus;       /* MapView_FocusOnCell @ 0x2c758 reaches the camera */
+    struct TactCursor  *pCursor;
+    u8                 *pbViewMoved;  /* BYTE1(Map.apUiSlotsA[8]), cleared at 0x4B738 */
 } ProximityCtx;
 
 /* Combat_DetonateNearbyItems @ 0x32fa8. Detonate the armed blast devices in a nine by
@@ -186,6 +194,26 @@ typedef struct ProximityCtx {
  * whether the coordinate is inside the map; the port takes the cell from the lookup it
  * was given. */
 void Combat_DetonateNearbyItems(ProximityCtx *pCtx, const MapCell *pSrcCell);
+
+/* MapCell_TickProximityItems @ 0x4b724. Run the arming countdown for one cell and detonate
+ * whatever reaches zero.
+ *
+ * The countdown is decremented for EVERY armed category-3 item in the cell, whether or not it
+ * goes off, and the compare is a signed char, so a countdown already at zero wraps to -1 and
+ * fires again on every later call.
+ *
+ * What happens next depends on the object's sort key, and the four outcomes are genuinely
+ * different:
+ *
+ *   14 does not detonate at all. It rewrites the cell's animated-tile flags and is removed.
+ *   15 detonates and is removed, with no footprint gate.
+ *   16 is gated by Map_ScanBlastFootprint, and if that scan finds nothing the WHOLE function
+ *      stops, so the rest of the cell is not even ticked. When it does detonate, the item
+ *      stays in the list.
+ *   anything else detonates and is removed.
+ *
+ * Only 14 is removed without detonating, and only 16 detonates without being removed. */
+void MapCell_TickProximityItems(ProximityCtx *pCtx, MapCell *pCell);
 
 /* Research gate. The original asks the in-memory research table directly:
  *     aFacTypeTable[4 + 34 * byte_AA968[weapon.uSortKey]] != 0
