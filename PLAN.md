@@ -189,7 +189,33 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [x] a fixture bug this step exposed: `Tact_BuildVisRayTable` writes `PUFO_VIS_TABLE_BYTES`
     (14,880) step bytes, and the new fixture sized its step array at 256. It overran into the asset
     registry's statics and crashed the next `AssetReader_Find`. The ray table itself was correct.
-- [ ] `LoadGame (0x44bbc)`
+- [ ] `LoadGame (0x44bbc)` — blocked by exactly one callee now: `Geoscape_InitUI (0x857f4, 5,420 B)`,
+  which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
+  Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
+  `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain, and the next
+  unblocked item is Priority 2's `MapView_DrawUnitFacingArrow (0x1b7bc)`, whose only callees are
+  `Font_DrawGlyph` (ported) and CRT `sin`/`cos`.
+- [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
+  `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
+  - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
+    build days) and registered in `audit_tables.py` — 35 tables, 0 mismatched. IDA declares 56 bytes;
+    the real extent is 54.
+  - [x] the grid model settled from the ARM's own arithmetic: `fac[]` is `gBaseFacGrid + 0x174` and a
+    store is `6*(24*nBase + nY) + nX` into it, while `buildDays` is `6*(6*nBase + nY) + nX`. The ARM
+    multiplies `nY`, which is the coordinate the other readers of this grid call the column.
+  - [x] facility type 11 settled as the hangar (the kind `Base_CalcHangarCap` counts): a 2×2
+    footprint marking four tileA quadrants 9/10/11/12, build days at only three of the four cells,
+    no tileB, and a `facType` byte in the anchor cell only — which is why it counts once.
+  - [x] IDB: named `Map_apObjects31` (0x113B3C) and `Map_apObjects56` (0x113BA0), commented
+    `aFacBuildSpec`, both function headers and the diagonal `buildDays` store at 0x62484
+  - [x] five rows added to `bugs.tsv` (61 total)
+  - [x] `tests/test_geoscape.c`: 37 new checks
+- [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
+  `BaseFac_SetCellBuildState` and `Base_GrantStarterItems` (both now ported), plus
+  `Base_CreateNamedEntry`, `Ship_SpawnAtSlot`, `InvSel_AddItemQty`, `Geoscape_BuildNavControls`,
+  `Smap_ZoomOut` and `StrategList_MaybeSpawnCraft_Process`, which still need checking.
+- [ ] `GameTime_Set5Sec (0x84f00, 100 B)` — needs a model for the six UI control pointers at
+  0x186500..0x186514 and the byte at 0x187070.
 
 ## Later priorities
 
@@ -248,6 +274,8 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Map_BuildMissionTerrain` | 50/50 | 7043 | 670/1103 (60.7%) | 250608/598792 (41.9%) | 34 checked, 0 mismatched |
 | this commit (`Tact_LoadLoftData`) | 50/50 | 7048 | 671/1103 (60.8%) | 250792/598792 (41.9%) | 34 checked, 0 mismatched |
 | `Tact_InitMission` | 51/51 (Release) | 7133 | 672/1103 (60.9%) | 254912/598792 (42.6%) | 34 checked, 0 mismatched |
+
+| `BaseFac_SetCellBuildState` + `Base_GrantStarterItems` | 51/51 (Release) | 7170 | 674/1103 (61.1%) | 255372/598792 (42.6%) | 35 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

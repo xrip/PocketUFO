@@ -525,4 +525,66 @@ i32 Base_CalcOccupiedSpace(Soldier *const *apSoldiers, i32 nSoldierCount,
  * both adds when the slot is outside the eight entries (deviation). */
 void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
 
+/* ------------------------------------------------- writing one facility into a base grid
+ *
+ * Evidence: BaseFac_SetCellBuildState @ 0x623bc, called from BaseFacScreen_DrawPlacementOverlay
+ * (0x599a8) and ten times from Game_StartNew (0x94554).
+ *
+ * The grid is the original's BaseFacilityGrid, gBaseFacGrid @ 0x159768, 1524 bytes: buildDays
+ * u8[8][6][6] at +0x000, then fac BaseFacBlock[8] at +0x174, each block 144 bytes of tileA,
+ * tileB, layer2 and facType, each a 6 by 6 layer.
+ *
+ * Two row bases are formed and every store goes through one of them:
+ *
+ *     fac row   6 * (24*nBaseIndex + nY) + nX   == 144*nBaseIndex + 6*nY + nX
+ *     days row  6 * (6*nBaseIndex  + nY) + nX   ==  36*nBaseIndex + 6*nY + nX
+ *
+ * The ARM multiplies nY, so nY is the coordinate the other readers of this grid call the column.
+ *
+ * nBuildDays is aFacBuildSpec[nFacType].nBuildDays, or 0 when bClear is set.
+ *
+ * An ordinary facility writes three bytes:
+ *
+ *     fac[nBase].tileA[nY][nX] = aFacBuildSpec[nFacType].bTileA
+ *     fac[nBase].tileB[nY][nX] = aFacBuildSpec[nFacType].bTileB    (the +36 layer)
+ *     buildDays[nBase][nY][nX] = nBuildDays
+ *
+ * Facility type 11 is the hangar -- the kind Base_CalcHangarCap counts -- and it is a 2 by 2
+ * footprint. It writes four tileA quadrants instead of a tileA/tileB pair:
+ *
+ *     tileA[nY][nX] = 9, tileA[nY][nX+1] = 10, tileA[nY+1][nX] = 11, tileA[nY+1][nX+1] = 12
+ *
+ * and buildDays at (nY,nX), (nY,nX+1) and (nY+1,nX+1). The fourth buildDays cell, (nY+1,nX), is
+ * never written: the ARM reaches the three as +0, +1 and +7 bytes from the anchor, and +7 is the
+ * diagonal. tileB and layer2 are not touched for a hangar at all.
+ *
+ * Both paths then share the tail, which writes buildDays[nBase][nY][nX] a second time (the same
+ * byte the hangar path already wrote) and fac[nBase].facType[nY][nX] = nFacType. Only the anchor
+ * cell gets a facType byte, which is why a hangar counts once in Base_CalcHangarCap and not four
+ * times even though it marks four tileA cells.
+ *
+ * Three things the original leaves the port to decide:
+ *
+ * - Its first argument is the grid pointer and it is never read; every store goes through the
+ *   global 0x159768. Both callers pass the grid they mean, so the port uses the argument.
+ * - Nothing bounds nBaseIndex, nX, nY or nFacType. aFacBuildSpec has 18 records, so a type above
+ *   17 reads past it. The port refuses out-of-range indices (deviation).
+ * - The return value is 6*(24*nBaseIndex + nY + 18), the address delta the facType store used. It
+ *   is register residue, not a status, and the port reproduces it. */
+#define PUFO_FAC_TYPE_HANGAR 11
+#define PUFO_FAC_SPEC_COUNT  18
+#define PUFO_FAC_BASE_COUNT  8
+
+i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
+                              i32 nX, i8 nY, u8 bClear);
+
+/* Base_GrantStarterItems @ 0x95fa4. Four BaseRec_AddItemQty calls against the base the original
+ * keeps at Map+0x1174 and nothing else: object 105 gets +10, object 34 +2, object 31 +1 and object
+ * 56 +33. The four are Map_apObjects105, Map_apObjects34, Map_apObjects31 and Map_apObjects56 --
+ * slots of the object-pointer array that starts at Map+0x108. With bClear zero it does nothing and
+ * returns its own argument; the first ARM argument is
+ * unused there because the base comes from the global. The port takes the base and the object array
+ * and returns nothing. */
+void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 bGrant);
+
 #endif /* PUFO_GEOSCAPE_H */

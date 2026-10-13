@@ -67,6 +67,10 @@ TABLES = [
     ("craft pad names",          0xA6668, "g_aPlaneName",             "src/pufo/game/pufo_terrain.c",  27, "B", 0),
     ("terrain name by mission",  0xA67F8, "g_aTerrainNameByMission",  "src/pufo/game/pufo_terrain.c",  90, "B", 0),
     ("terrain name suffix",      0xA7B20, "g_aTerrainNameSuffix",     "src/pufo/game/pufo_terrain.c",  90, "B", 0),
+    # aFacBuildSpec: 18 records of three bytes (tileA byte, tileB byte, signed build days). IDA
+    # declares it as 56 bytes; the real extent is 54 -- the last two bytes are zero padding, and the
+    # highest index the readers reach is 17.
+    ("facility build spec",      0xAA8F8, "g_aFacBuildSpec",          "src/pufo/game/pufo_geoscape.c", 54, "B", 0),
 ]
 
 

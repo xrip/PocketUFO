@@ -8086,3 +8086,55 @@ and on the run path at `0x3D2D0`.
 step array at 256, so the builder overran into the asset registry's statics and the next
 `AssetReader_Find` dereferenced a clobbered directory pointer. The ray table itself was correct; the
 buffer was not. Worth remembering because the symptom was a crash three calls away from the cause.
+
+## `BaseFac_SetCellBuildState @ 0x623bc` and `Base_GrantStarterItems @ 0x95fa4` — ported
+
+`src/pufo/game/pufo_geoscape.c`, asserted by `tests/test_geoscape.c` (37 new checks). 336 + 124 = 460
+bytes cited. These are the first two links of the chain that now stands between the port and
+`LoadGame`: `LoadGame` → `Geoscape_InitUI` → `Game_StartNew` → these two.
+
+### What the grid actually is
+
+The original's own type names settle it and the ARM's arithmetic confirms it. `gBaseFacGrid @ 0x159768`
+is 1524 bytes: `buildDays u8[8][6][6]` at +0x000, then `fac BaseFacBlock[8]` at +0x174, each block 144
+bytes of `tileA`, `tileB`, `layer2`, `facType`, each a 6 by 6 layer.
+
+`BaseFac_SetCellBuildState` forms two row bases and every store goes through one of them:
+
+```
+fac row    6 * (24*nBaseIndex + nY) + nX   == 144*nBaseIndex + 6*nY + nX
+days row   6 * (6*nBaseIndex  + nY) + nX   ==  36*nBaseIndex + 6*nY + nX
+```
+
+The ARM multiplies `nY`. That is the coordinate the other readers of this grid call the column, so the
+port's existing `6*column + row` and this function's `6*nY + nX` are the same indexing seen from two
+ends.
+
+### The hangar is the 2 by 2 case, and it is asymmetric
+
+Facility type 11 is the hangar — the kind `Base_CalcHangarCap` counts at 0x6611c. It writes four
+tileA quadrants, 9 at (nY,nX), 10 at (nY,nX+1), 11 at (nY+1,nX) and 12 at the diagonal, and it writes
+no `tileB` at all. Its build days go to three cells: the ARM stores them at +0, +1 and +7 bytes from
+the anchor, and +7 is `6*(row+1) + (col+1)`, the diagonal. The (nY+1,nX) cell never gets a build-day
+byte even though its tileA quadrant is marked.
+
+Then the shared tail writes `facType` in the anchor cell only. That is why a hangar counts once in
+`Base_CalcHangarCap` and not four times, despite marking four tileA cells.
+
+### `aFacBuildSpec`
+
+`0xAA8F8`, 18 records of three bytes: the tileA byte, the tileB byte, and the build days read with
+`LDRSB` at 0x623EC so it is signed. Indexed `3*nFacType`. IDA declares it 56 bytes; the real extent is
+54 and the last two are zero padding. Record 11 is `FF, FF, 19` and its two tile bytes are never used,
+because type 11 takes the hangar path — which is a useful confirmation that the special case really is
+keyed on the type and not on the spec entry.
+
+### What the port refuses
+
+The original bounds nothing: `nBaseIndex`, `nX`, `nY` and `nFacType` all go straight into address
+arithmetic, and a type of 18 or more reads past `aFacBuildSpec`. The port refuses out-of-range indices
+and returns 0. It also uses the grid argument, which the original accepts and never reads — both
+callers pass the grid they mean, so the difference is latent rather than behavioural.
+
+The return value `6*(24*nBaseIndex + nY + 18)` is the address delta the `facType` store used. It is
+reproduced unchanged, because no caller uses it and inventing a status would be a guess.

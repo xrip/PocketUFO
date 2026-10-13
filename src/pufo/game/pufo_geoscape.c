@@ -286,6 +286,76 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
     pBase->nStoresTotal += nDelta; /* 0x55714 */
 }
 
+/* aFacBuildSpec @ 0xAA8F8, 18 records of three bytes: the tileA byte, the tileB byte and the
+ * build days. The days byte is read with LDRSB at 0x623EC, so it is signed. Record 11 is 0xFF,
+ * 0xFF, 19 and is never used as tiles: type 11 is the hangar and takes the 2 by 2 path instead. */
+typedef struct FacBuildSpec {
+    u8 bTileA;
+    u8 bTileB;
+    i8 nBuildDays;
+} FacBuildSpec;
+
+static const FacBuildSpec g_aFacBuildSpec[PUFO_FAC_SPEC_COUNT] = {
+    { 0x02, 0x11, 0x00 }, { 0x01, 0x12, 0x10 }, { 0x01, 0x13, 0x1A }, { 0x01, 0x14, 0x20 },
+    { 0x02, 0x15, 0x0C }, { 0x01, 0x16, 0x19 }, { 0x01, 0x18, 0x0A }, { 0x01, 0x19, 0x12 },
+    { 0x01, 0x1F, 0x18 }, { 0x02, 0x20, 0x1A }, { 0x02, 0x1E, 0x1E }, { 0xFF, 0xFF, 0x19 },
+    { 0x02, 0x1D, 0x26 }, { 0x02, 0x17, 0x10 }, { 0x03, 0x1A, 0x18 }, { 0x03, 0x1B, 0x22 },
+    { 0x03, 0x1C, 0x22 }, { 0x00, 0x00, 0x00 },
+};
+
+/* BaseFac_SetCellBuildState @ 0x623bc. The header has the two row bases and the hangar case.
+ *
+ * The offsets below are the ARM's own: 0x159768 is buildDays and 0x159768 + 0x174 is fac[], and
+ * every store is (layer base) + 6*(row + k) + col, which the ARM forms as a MUL then an ADD. The
+ * +1 and +7 stores are the same row one column right and the diagonal cell one row down. */
+i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
+                              i32 nX, i8 nY, u8 bClear)
+{
+    const i32 nFacRow  = 24 * nBaseIndex + nY; /* 0x62418 and 0x624A8 */
+    const i32 nDaysRow = 6 * nBaseIndex + nY;  /* 0x62468 and 0x624E4 */
+    const i32 nFac     = 0x174 + 6 * nFacRow + nX;
+    const i32 nDays    = 6 * nDaysRow + nX;
+    i8 nBuildDays;
+
+    if (abFacilityGrid == NULL || nBaseIndex < 0 || nBaseIndex >= PUFO_FAC_BASE_COUNT
+        || nFacType >= PUFO_FAC_SPEC_COUNT || nX < 0 || nX >= 6 || nY < 0 || nY >= 6) {
+        return 0; /* deviation: the original bounds none of these */
+    }
+
+    nBuildDays = (bClear != 0) ? 0 : g_aFacBuildSpec[nFacType].nBuildDays;
+
+    if (nFacType == PUFO_FAC_TYPE_HANGAR) {
+        abFacilityGrid[nFac]     = 9;  /* 0x62438 */
+        abFacilityGrid[nFac + 1] = 10; /* 0x62444 */
+        abFacilityGrid[nFac + 6] = 11; /* 0x62458: 6*(row+1) + col */
+        abFacilityGrid[nFac + 7] = 12; /* 0x62460: the diagonal quadrant */
+
+        abFacilityGrid[nDays]     = (u8)nBuildDays; /* 0x6247C */
+        abFacilityGrid[nDays + 1] = (u8)nBuildDays; /* 0x62480 */
+        abFacilityGrid[nDays + 7] = (u8)nBuildDays; /* 0x62484: (nY+1,nX) is left alone */
+    } else {
+        abFacilityGrid[nFac]      = g_aFacBuildSpec[nFacType].bTileA; /* 0x624C4 */
+        abFacilityGrid[nFac + 36] = g_aFacBuildSpec[nFacType].bTileB; /* 0x624DC: 6*(row+6) */
+    }
+
+    abFacilityGrid[nDays] = (u8)nBuildDays; /* 0x624F0, the tail store both paths share */
+    abFacilityGrid[0x174 + 6 * (nFacRow + 18) + nX] = nFacType; /* 0x62504, anchor cell only */
+
+    return 6 * (nFacRow + 18); /* 0x624F8: the facType address delta, returned as residue */
+}
+
+/* Base_GrantStarterItems @ 0x95fa4. Four adds against one base, in the original's order. */
+void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 bGrant)
+{
+    if (bGrant == 0 || pBase == NULL || apObjects == NULL) {
+        return; /* 0x95FB0: with the flag clear nothing is added at all */
+    }
+    BaseRec_AddItemQty(pBase, apObjects[105], 10); /* 0x95FCC, Map_apObjects105 */
+    BaseRec_AddItemQty(pBase, apObjects[34], 2);   /* 0x95FE4, Map_apObjects34 */
+    BaseRec_AddItemQty(pBase, apObjects[31], 1);   /* 0x95FFC, Map_apObjects31 */
+    BaseRec_AddItemQty(pBase, apObjects[56], 33);  /* 0x96014, Map_apObjects56 */
+}
+
 /* Base_ClearFacilityGridRow @ 0x6a0e0. Despite the name it clears nothing; see the
  * header for the three passes and what state byte each one produces. */
 i32 Base_ClearFacilityGridRow(u8 *abFacilityGrid, i32 nBaseIndex, u8 *apSiteState)

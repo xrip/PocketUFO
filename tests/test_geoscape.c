@@ -1525,6 +1525,93 @@ static void TestContainmentNeededAndSpace(void)
 #undef N_N
 }
 
+static void TestFacilityPlaceAndGrant(void)
+{
+    static u8 grid[1524];
+    static BaseRec base;
+    static ObjectRecFull objs[123];
+    static ObjectRecFull *apObjs[123];
+
+    printf("BaseFac_SetCellBuildState / Base_GrantStarterItems\n");
+
+    /* fac[] starts at grid + 0x174. Within base b the four layers are tileA at +0, tileB at +36,
+     * layer2 at +72 and facType at +108, each indexed 6*row + col where row is the ARM's nY.
+     * buildDays is its own array at grid + 36*b. */
+#define FAC(l, b, y, x) grid[0x174 + 144 * (b) + (l) + 6 * (y) + (x)]
+#define DAYS(b, y, x)   grid[36 * (b) + 6 * (y) + (x)]
+
+    memset(grid, 0, sizeof(grid));
+    /* Spec record 1 is tileA 0x01, tileB 0x12, 16 build days. */
+    CheckEqI32(BaseFac_SetCellBuildState(grid, 0, 1, 2, 3, 0), 6 * (24 * 0 + 3 + 18),
+               "the return is the facType address delta, not a status");
+    CheckEqI32(FAC(0, 0, 3, 2), 0x01, "tileA gets the spec's first byte");
+    CheckEqI32(FAC(36, 0, 3, 2), 0x12, "tileB gets the spec's second byte");
+    CheckEqI32(DAYS(0, 3, 2), 16, "buildDays gets the spec's third byte");
+    CheckEqI32(FAC(108, 0, 3, 2), 1, "the shared tail writes facType in the anchor cell");
+    CheckEqI32(FAC(0, 0, 3, 3), 0, "the neighbouring tileA cell is untouched");
+    CheckEqI32(FAC(72, 0, 3, 2), 0, "layer2 is never written");
+    CheckEqI32(FAC(108, 0, 3, 3), 0, "and neither is the neighbouring facType cell");
+
+    memset(grid, 0, sizeof(grid));
+    (void)BaseFac_SetCellBuildState(grid, 0, 1, 2, 3, 1);
+    CheckEqI32(DAYS(0, 3, 2), 0, "bClear writes zero build days instead of the spec value");
+    CheckEqI32(FAC(0, 0, 3, 2), 0x01, "but the tile bytes still come from the spec");
+
+    memset(grid, 0, sizeof(grid));
+    (void)BaseFac_SetCellBuildState(grid, 2, 4, 1, 5, 0);
+    CheckEqI32(FAC(0, 2, 5, 1), 0x02, "base 2 lands 144 bytes further on");
+    CheckEqI32(DAYS(2, 5, 1), 12, "and its buildDays row is 36 bytes further on");
+    CheckEqI32(DAYS(1, 5, 1), 0, "the previous base's row is left alone");
+
+    /* Type 11 is the hangar: a 2 by 2 footprint, spec days 25. */
+    memset(grid, 0, sizeof(grid));
+    (void)BaseFac_SetCellBuildState(grid, 1, 11, 1, 2, 0);
+    CheckEqI32(FAC(0, 1, 2, 1), 9,  "hangar quadrant at (nY,nX)");
+    CheckEqI32(FAC(0, 1, 2, 2), 10, "hangar quadrant at (nY,nX+1)");
+    CheckEqI32(FAC(0, 1, 3, 1), 11, "hangar quadrant at (nY+1,nX)");
+    CheckEqI32(FAC(0, 1, 3, 2), 12, "hangar quadrant at the diagonal");
+    CheckEqI32(DAYS(1, 2, 1), 25, "buildDays at the anchor");
+    CheckEqI32(DAYS(1, 2, 2), 25, "and one column right");
+    CheckEqI32(DAYS(1, 3, 2), 25, "and at the diagonal");
+    CheckEqI32(DAYS(1, 3, 1), 0,
+               "but NOT at (nY+1,nX): the ARM reaches the three as +0, +1 and +7");
+    CheckEqI32(FAC(36, 1, 2, 1), 0, "a hangar writes no tileB at all");
+    CheckEqI32(FAC(108, 1, 2, 1), 11, "facType is set in the anchor cell only");
+    CheckEqI32(FAC(108, 1, 2, 2), 0, "so the other three quadrants have no facType byte");
+    CheckEqI32(FAC(108, 1, 3, 1), 0, "which is why a hangar counts once, not four times");
+
+    memset(grid, 0, sizeof(grid));
+    CheckEqI32(BaseFac_SetCellBuildState(grid, 0, 18, 0, 0, 0), 0,
+               "a facility type past the 18 spec records is refused");
+    CheckEqI32(grid[0x174], 0, "and nothing is written");
+    (void)BaseFac_SetCellBuildState(grid, 0, 1, 6, 0, 0);
+    CheckEqI32(grid[0x174], 0, "a column of 6 is refused too");
+    (void)BaseFac_SetCellBuildState(grid, 8, 1, 0, 0, 0);
+    CheckEqI32(grid[0x174 + 144 * 8 - 1], 0, "and so is base index 8");
+
+    memset(objs, 0, sizeof(objs));
+    for (i32 i = 0; i < 123; ++i) {
+        apObjs[i] = &objs[i];
+    }
+    memset(&base, 0, sizeof(base));
+    base.bSlot = 3;
+
+    Base_GrantStarterItems(&base, apObjs, 0);
+    CheckEqI32(objs[105].auPerBaseVal[3], 0, "with the grant flag clear nothing is added");
+    CheckEqI32(base.nStoresTotal, 0, "and the base total does not move");
+
+    Base_GrantStarterItems(&base, apObjs, 1);
+    CheckEqI32(objs[105].auPerBaseVal[3], 10, "object 105 gets 10");
+    CheckEqI32(objs[34].auPerBaseVal[3], 2, "object 34 gets 2");
+    CheckEqI32(objs[31].auPerBaseVal[3], 1, "object 31 gets 1");
+    CheckEqI32(objs[56].auPerBaseVal[3], 33, "object 56 gets 33");
+    CheckEqI32(objs[35].auPerBaseVal[3], 0, "no other object is touched");
+    CheckEqI32(base.nStoresTotal, 46, "the base total is the sum of the four deltas");
+
+#undef FAC
+#undef DAYS
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1548,6 +1635,7 @@ int main(void)
     TestLabChain();
     TestRemainingNeededPasses();
     TestEmptyFacilityCells();
+    TestFacilityPlaceAndGrant();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 672 / 1103 (60.9%) |
-| Bytes of original code cited | 254912 / 598792 (42.6%) |
+| Functions cited as evidence | 674 / 1103 (61.1%) |
+| Bytes of original code cited | 255372 / 598792 (42.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 51 |
-| Test checks run | 7133 |
+| Test checks run | 7170 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 185 | 214 | 111548 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 107 | 205 | 34304 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 109 | 205 | 34764 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 7 | 13 | 3220 / 4444 | intro/outro animated scenes |
 
@@ -552,7 +552,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (107 functions)
+### `strat` (109 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -577,6 +577,7 @@ is the module that answers to it.
 | `0x5ce40` | `Geoscape_AdvanceTime` | 404 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5cfd4` | `GameTime_Decode` | 396 | `src/pufo/game/pufo_clock.h` |
 | `0x81a9c` | `StrategList_RollCraftStats` | 364 | `src/pufo/game/pufo_strateg.h` |
+| `0x623bc` | `BaseFac_SetCellBuildState` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6a0e0` | `Base_ClearFacilityGridRow` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5a484` | `Ship_RetargetTravel` | 308 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x5d3bc` | `Geoscape_TickBases` | 296 | `src/pufo/game/pufo_geoscape.h` |
@@ -622,6 +623,7 @@ is the module that answers to it.
 | `0x6611c` | `Base_CalcHangarCap` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x682c8` | `Base_CountBuiltFacilities` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e420` | `StrategList_MaybeSpawnCraft_Process` | 124 | `src/pufo/game/pufo_strateg.h` |
+| `0x95fa4` | `Base_GrantStarterItems` | 124 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x837f8` | `Smap_ClampScrollY` | 120 | `src/pufo/game/pufo_strateg.h` |
 | `0x656ac` | `Base_CountAmmoItems` | 116 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x81a2c` | `StrategList_CountActive` | 112 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
@@ -1038,7 +1040,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 98 functions, 128152 bytes remaining
+### `strat` — 96 functions, 127692 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1090,7 +1092,6 @@ whose port work they belong to.
 | `0x5db24` | `RadarScreen_RollWeaponHit` | 352 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84484` | `Smap_SelectMapTarget` | 340 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84964` | `Smap_ResolveInterceptUI` | 340 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x623bc` | `BaseFac_SetCellBuildState` | 336 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x79cb8` | `BasePlane_ResetDetailState` | 328 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x842ec` | `Smap_ConfirmCraftTarget` | 316 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5e808` | `RadarScreen_SetCursorNE` | 308 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1111,7 +1112,6 @@ whose port work they belong to.
 | `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x85440` | `Smap_SetWaypoint` | 132 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84e20` | `Base_EnterBuildMode` | 124 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x95fa4` | `Base_GrantStarterItems` | 124 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x96894` | `Smap_SumSiteScores` | 120 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x66874` | `Base_RemoveAllShips` | 116 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x681f4` | `Base_GetEngineerCount` | 112 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1311,7 +1311,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_enemyai` | PASS | 22 |
 | `test_font` | PASS | 38 |
 | `test_fov` | PASS | 31 |
-| `test_geoscape` | PASS | 230 |
+| `test_geoscape` | PASS | 267 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 306 |
@@ -1369,7 +1369,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 219 citations.
+parity report. Total: 221 citations.
 
 ### Offsets below the image base (37)
 
@@ -1378,7 +1378,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (182)
+### At or above the image base (184)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1467,6 +1467,7 @@ against the IDB when the final report is assembled.
 - `0x158808`
 - `0x15881c`
 - `0x158890`
+- `0x159768`
 - `0x159d5c`
 - `0x15ef08`
 - `0x161f38`
@@ -1556,6 +1557,7 @@ against the IDB when the final report is assembled.
 - `0xaa030`
 - `0xaa040`
 - `0xaa168`
+- `0xaa8f8`
 - `0xaad4c`
 - `0xab270`
 - `0xac224`
