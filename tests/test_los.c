@@ -352,6 +352,29 @@ static void TestRealTables(void)
     free(pUnit);
 }
 
+/* Tact_LoadLoftData @ 0x3bd6c, through the port's own loader. */
+static void TestLoftLoader(void)
+{
+    LosTables tables = { 0 };
+    u32       nNonZero = 0;
+
+    printf("Tact_LoadLoftData\n");
+    Check(Tact_LoadLoftData(&tables), "the loader reports success against the shipped archives");
+    CheckEqI32((i32)tables.nLoftemps, 1792, "loftemps.dat loaded as 1792 u16 rows");
+    CheckEqI32((i32)tables.nUnitloft, 21504, "unitloft.dat loaded as 21504 u16 rows");
+    Check(tables.pLoftemps != NULL && tables.pUnitloft != NULL, "both buffers allocated");
+
+    for (u32 i = 0; i < tables.nUnitloft; ++i) {
+        if (tables.pUnitloft[i] != 0) {
+            nNonZero += 1;
+        }
+    }
+    Check(nNonZero > 0, "the unit silhouette table holds real blocking masks");
+
+    free((void *)tables.pLoftemps);
+    free((void *)tables.pUnitloft);
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -368,6 +391,7 @@ int main(void)
     TestOccupant();
     TestTrace();
     TestRealTables();
+    TestLoftLoader();
 
     Asset_CloseArchives();
 

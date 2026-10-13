@@ -1,14 +1,61 @@
 /* pufo_los.c - voxel occupancy and line-of-sight tracing.
  *
- * Evidence: Tact_LoadLoftData (0x3bd6c, the loader is not ported), Map_TraceVoxelOccupancy @ 0x3242c,
+ * Evidence: Tact_LoadLoftData @ 0x3bd6c, Map_TraceVoxelOccupancy @ 0x3242c,
  *           Map_TraceLos @ 0x30890.
  */
 #include "game/pufo_los.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "asset/pufo_asset.h"
 #include "util/pufo_rand.h"  /* Game_RandU16, used by the vertical-ray case */
+
+/* One member of the pair: allocate, read, hand back the u16 count.
+ *
+ * The original sizes the block as `operator new(2 * (AssetReader_Size() / 2))` and then reads the
+ * FULL member size into it. On an odd member that is a one-byte heap overflow. Both shipped members
+ * are even (LOFTEMPS.DAT 3584, UNITLOFT.DAT 43008), so the two agree in practice; the port reads
+ * only what it allocated, which is the deviation recorded in docs/parity/bugs.tsv. */
+static bool Los_LoadRowTable(const char *pszName, const u16 **ppOut, u32 *pnOut)
+{
+    AssetReader rdr;
+    u32         cb;
+    u16        *pBuf;
+
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, pszName)) {
+        return false;
+    }
+    cb = 2u * (AssetReader_Size(&rdr) / 2u);
+    if (cb == 0) {
+        return false;
+    }
+    pBuf = (u16 *)malloc(cb);
+    if (pBuf == NULL) {
+        return false;
+    }
+    if (!AssetReader_Read(&rdr, pBuf, cb)) {
+        free(pBuf);
+        return false;
+    }
+    *ppOut = pBuf;
+    *pnOut = cb / 2u;
+    return true;
+}
+
+/* Tact_LoadLoftData @ 0x3bd6c.
+ *
+ * The original overwrites the two globals without freeing what the previous load left, so a second
+ * call leaks the first pair; the caller owns the buffers and releases them (Tact_Shutdown's
+ * appLoftemps / appUnitloft). Its return value is the UNITLOFT read result alone -- a failed
+ * LOFTEMPS does not change it, and that is reproduced. */
+bool Tact_LoadLoftData(LosTables *pTables)
+{
+    (void)Los_LoadRowTable("loftemps.dat", &pTables->pLoftemps, &pTables->nLoftemps);
+    return Los_LoadRowTable("unitloft.dat", &pTables->pUnitloft, &pTables->nUnitloft);
+}
 
 /* word_A9488 @ 0xa9488, decoded from the 32 bytes at that address. It repeats
  * per unit type, giving the base sprite row for each facing with the kneeling

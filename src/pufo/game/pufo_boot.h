@@ -1,7 +1,7 @@
 /* pufo_boot.h - startup asset loading.
  *
  * Evidence: Assets_LoadStartup @ 0x382d0, GameAssets_Shutdown @ 0x38e4c,
- *           Tact_LoadLoftData (0x3bd6c, the loader is not ported).
+ *           Tact_LoadLoftData @ 0x3bd6c (in game/pufo_los.c).
  *
  * Assets_LoadStartup opens the two archives, then loads, in this order:
  *

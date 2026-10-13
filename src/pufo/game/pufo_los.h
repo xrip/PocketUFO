@@ -1,6 +1,6 @@
 /* pufo_los.h - voxel occupancy and line-of-sight tracing.
  *
- * Evidence: Tact_LoadLoftData (0x3bd6c, the loader is not ported),
+ * Evidence: Tact_LoadLoftData @ 0x3bd6c,
  *           Map_TraceVoxelOccupancy @ 0x3242c (voxel test),
  *           Map_TraceLos @ 0x30890 (the trace).
  *
@@ -82,6 +82,10 @@ typedef struct LosTables {
  * to `facing + 8 * kneeling`, which is the 16 rows each unit type occupies in
  * unitloft.dat. */
 #define PUFO_UNITLOFT_ROWS_PER_TYPE 16
+
+/* Tact_LoadLoftData @ 0x3bd6c. Loads LOFTEMPS.DAT and UNITLOFT.DAT into the two row-mask tables.
+ * The caller owns the buffers; the original does not free the previous pair when it reloads. */
+bool Tact_LoadLoftData(LosTables *pTables);
 
 /* Reads one bit out of a row-mask table. Returns false when the index is out of
  * range, which the original does not check. */

@@ -146,6 +146,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [x] three findings added to `bugs.tsv` (the `nPal` restore asymmetry, the null dereference at
     `0x1D384`, the 14-type facing table overrun) and seven IDB comments, one of which replaces a
     comment there that claimed every return path restores `nPal`
+- [x] `Tact_LoadLoftData @ 0x3bd6c` — ported, 184 B cited, in `src/pufo/game/pufo_los.c` as
+  `Tact_LoadLoftData(LosTables *)`. It was the last genuinely unported callee of `Tact_InitMission`;
+  `Font_Init`, `TactCtx272_ctor`, `StartTimers_BySpeed` and `Inv_OpenScreen` were already ported under
+  other names. Deviation recorded: the original sizes each block as `2 * (size / 2)` and reads the full
+  member size into it (a one-byte overflow on an odd member) and never frees the previous pair.
 - [ ] `Tact_InitMission (0x3c550)`
 - [ ] `LoadGame (0x44bbc)`
 
@@ -181,4 +186,5 @@ Refresh after each commit. A coverage delta must match the function size in
 | `36addee` + `Tact_Shutdown` | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
 | `7c29217` + `MapView_DrawUnit` | 49/49 | 6977 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 28 checked, 0 mismatched |
 | `.ma1` direction fix | 49/49 | 6984 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 30 checked, 0 mismatched |
-| this commit (`Map_BuildMissionTerrain`) | 50/50 | 7043 | 670/1103 (60.7%) | 250608/598792 (41.9%) | 34 checked, 0 mismatched |
+| `Map_BuildMissionTerrain` | 50/50 | 7043 | 670/1103 (60.7%) | 250608/598792 (41.9%) | 34 checked, 0 mismatched |
+| this commit (`Tact_LoadLoftData`) | 50/50 | 7048 | 671/1103 (60.8%) | 250792/598792 (41.9%) | 34 checked, 0 mismatched |

@@ -1,8 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD before this edit: `2966ac1`. This document is committed together with
-`Map_BuildMissionTerrain` (0x22e10), ported in `src/pufo/game/pufo_terrain.{h,c}` with
-`tests/test_terrain.c`. The decode that made it possible is written up in `docs/parity/game-core.md`.
+Date: 2026-10-13. HEAD before this edit: `02b0b3d`. This document is committed together with
+`Tact_LoadLoftData` (0x3bd6c), ported in `src/pufo/game/pufo_los.c`. The previous commit brought
+`Map_BuildMissionTerrain` (0x22e10) in `src/pufo/game/pufo_terrain.{h,c}` with `tests/test_terrain.c`;
+the decode that made it possible is written up in `docs/parity/game-core.md`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -47,12 +48,12 @@ ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed o
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 670 / 1103 (60.7%)
-                                             bytes cited:     250608 / 598792 (41.9%)
+python docs/parity/coverage.py            -> functions cited: 671 / 1103 (60.8%)
+                                             bytes cited:     250792 / 598792 (41.9%)
 python docs/parity/audit_credits.py       -> NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 51, ORIGINAL BUG markers in src/pufo: 16
+python docs/parity/audit_bugs.py          -> ledger rows: 52, ORIGINAL BUG markers in src/pufo: 16
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 34 tables checked, 0 mismatched
 ```
@@ -65,7 +66,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 50 suites: **7043**.
+Test checks run across the 50 suites: **7048**.
 
 ### Per-subsystem status
 
@@ -260,7 +261,13 @@ This is the shortest chain that produces a real game session, in dependency orde
    writes for `Tact_EquipTeamFromCraft`, and `0x158848` is the mission base index. All four are
    `TactCargoEnv` fields now.
 4. `Tact_InitMission` (0x3c550, 4,120 B) — was blocked only by item 1, which is now ported, so this is
-   the next thing on the path.
+   the next thing on the path. Its callee list was checked against the port for this commit and only
+   one callee is genuinely missing: `Tact_LoadLoftData` (0x3bd6c), now ported in `pufo_los.c`.
+   `Font_Init` is `PufoFont_Init`, `TactCtx272_ctor` is `TactCtx_ctor`, `StartTimers_BySpeed` is
+   `Timer_StartBySpeed` and `Inv_OpenScreen` is `TactHud_OpenInventory` — all ported under other names
+   and all listed in `docs/parity/renames.tsv`. What makes this function hard is not its callees but
+   the ten global singletons it allocates and the roughly thirty flags it clears before it calls
+   anything.
 5. Done: `Tact_Shutdown` (0x3d568, 3,788 B) — ported in `src/pufo/game/pufo_tactend.{h,c}`. It was
    deferred on the grounds that it frees singletons the port does not yet allocate. That objection
    dissolves the same way it does everywhere else in this port: the function takes every slot it
@@ -474,7 +481,7 @@ notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-16 markers in the source, 51 ledger rows. Examples:
+16 markers in the source, 52 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
