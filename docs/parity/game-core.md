@@ -6801,3 +6801,32 @@ around:
    not known until read in ARM.
 2. The port owns no model for `0x158848`, `0x162030` or `0x186410`. The last two are the loot record and its
    index, which belong to the geoscape state block rather than to the tact module.
+
+## Verified: the craft speed table, `StrategEntry_InitTravel (0x7f60c)`
+
+The four fractional speed bases are soft-float `subd` immediates given as dword pairs. Unpacked and compared
+against the port's table:
+
+| class | dword pair | value | port `g_aCraftSpeed` | jitter roll |
+|---|---|---|---|---|
+| 0 | `639091134, 1078089043` @ 0x7F7BC | 36.6666 | 36.6666 | none |
+| 1 | integer base 40 @ 0x7F804 | 40.0 | 40.0 | `RandU16(3)` |
+| 2 | integer base 45 @ 0x7F83C | 45.0 | 45.0 | `RandU16(3)` |
+| 3 | `-1827938081, 1079028393` @ 0x7F890 | 66.6666 | 66.6666 | `RandU16(5)` |
+| 4 | integer base 71 @ 0x7F8D0 | 71.0 | 71.0 | `RandU16(5)` |
+| 5 | integer base 80 @ 0x7F908 | 80.0 | 80.0 | `RandU16(5)` |
+| 6 | `639091134, 1078646099` @ 0x7F95C | 53.6666 | 53.6666 | `RandU16(4)` |
+| 7 | `-913969041, 1079301460` @ 0x7F9B4 | 83.3333 | 83.3333 | `RandU16(5)` |
+
+The three scales match too: the speed floor at 0x7F9F4 is exactly `10.0`, the inactive-craft fuel scale at
+0x7F714 is `0.016666666666666666` = 1/60, and the track-A scale at 0x7FA3C is exactly `0.02`. The jitter
+roll table `{0, 3, 3, 5, 5, 5, 4, 5}` matches the per-class `Game_RandU16` bounds, and the base jitter is
+`Game_RandU16(0x12)`, so 0..17.
+
+These are the literal decimal values the original compiler emitted, **not** fractions like 110/3 or 200/3.
+That matters: 36.6666 and 110/3 differ by about 7e-5, so writing the "obvious" fraction would have been a
+silent parity drift.
+
+Method note, because it bit me twice in one session: unpack these with a computation, not by hand. My own
+hand conversion of `1078646099` gave a value around 53.17 and made me think the port's 53.6666 was wrong.
+It is exact. `struct.unpack('<d', struct.pack('<II', lo, hi))` is the reliable route.
