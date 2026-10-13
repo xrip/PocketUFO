@@ -121,9 +121,9 @@ typedef struct TactShutdownEnv {
     struct Soldier **apCivilianUnits;  /* Map+0x15244 */
     i32             *pnCivilianCount;  /* Map+0x15120 */
     struct Soldier **apEnemyUnits;     /* Map+0x151CC */
-    i32             *pnEnemyCount;     /* Map+0x15124 */
+    u8              *pnEnemyCount;     /* Map+0x15124, a byte in the original */
     struct Soldier **apXcomUnits;      /* Map+0x15154 */
-    i32             *pnXcomCount;      /* Map+0x1511F */
+    u8              *pnXcomCount;      /* Map+0x1511F, a byte in the original */
 
     /* --- the mission outcome decision table --- */
     u8 *pbMissionMode;           /* Map_bMissionMode @ Map+0x1511D */

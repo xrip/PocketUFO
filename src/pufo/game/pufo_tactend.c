@@ -116,7 +116,7 @@ static void Shutdown_RemoveUnits(const TactShutdownEnv *pEnv)
         Soldier *pUnit = (Soldier *)pEnv->apEnemyUnits[i];
 
         *pEnv->pnEnemyCount =
-            Soldier_RemoveById(pEnv->apEnemyUnits, *pEnv->pnEnemyCount, pUnit->nUnk440);
+            (u8)Soldier_RemoveById(pEnv->apEnemyUnits, *pEnv->pnEnemyCount, pUnit->nUnk440);
     }
 
     nBound = *pEnv->pnXcomCount;
@@ -127,7 +127,7 @@ static void Shutdown_RemoveUnits(const TactShutdownEnv *pEnv)
 
         if ((nType > 3 && nType <= 8) || pUnit->bInZone == 0) {
             *pEnv->pnXcomCount =
-                Soldier_RemoveById(pEnv->apXcomUnits, *pEnv->pnXcomCount, pUnit->nUnk440);
+                (u8)Soldier_RemoveById(pEnv->apXcomUnits, *pEnv->pnXcomCount, pUnit->nUnk440);
             nBound = *pEnv->pnXcomCount;
         }
         ++i;

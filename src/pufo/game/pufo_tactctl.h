@@ -451,7 +451,7 @@ typedef struct TactDeployEnv {
     /* apSoldiers is Map+0x1198 and the count is the u16 at Map+0x1998. */
     UnitCreateEnv   create;
     Soldier       **apXcomUnits;         /* Map.apXcomUnits @ Map+0x15154 */
-    i32            *pnXcomUnitCount;     /* nXcomUnitCount @ Map+0x1511F, a u8 in the original */
+    u8             *pnXcomUnitCount;     /* nXcomUnitCount @ Map+0x1511F, a byte in the original */
     TactItem      **apTactItems;         /* Map.apTactItems @ Map+0x23438 */
     i32            *pnTactItemCount;     /* Map_nTactItemCount @ Map+0x1513C */
     i32            *pnDeployedHwps;      /* unk_128AF8 @ Map+0x15140, the running hardware count */
@@ -545,7 +545,7 @@ _Static_assert(sizeof(AlienUnitStatRec) == 32, "aAlienUnitStats records are 32 b
 typedef struct TactSpawnAliensEnv {
     UnitCreateEnv    create;              /* apSoldiers @ Map+0x1198, count @ Map+0x1998 */
     Soldier        **apEnemyUnits;        /* unk_128B84 @ Map+0x151CC */
-    i32             *pnEnemyUnitCount;    /* nEnemyUnitCount @ Map+0x15124, a u8 in the original */
+    u8              *pnEnemyUnitCount;    /* nEnemyUnitCount @ Map+0x15124, a byte in the original */
     Soldier        **apHiddenSoldiers;    /* apHiddenSoldiers @ Map+0x25438 */
     i32             *pnEnemyReserveCount; /* Map_nEnemyReserveCount @ Map+0x15144 */
     TactItem       **apTactItems;         /* Map.apTactItems @ Map+0x23438 */

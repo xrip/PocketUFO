@@ -458,8 +458,8 @@ static void TestScanOpportunityFire(void)
     Soldier    aXcomUnits[3];
     Soldier   *aEnemy[4];
     Soldier   *aXcom[3];
-    i32        nEnemyCount = 4;
-    i32        nXcomCount = 3;
+    u8         nEnemyCount = 4;
+    u8         nXcomCount = 3;
 
     printf("Unit_bScanOpportunityFire\n");
     memset(&ctx, 0, sizeof(ctx));

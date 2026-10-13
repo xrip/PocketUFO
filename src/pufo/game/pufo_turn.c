@@ -306,8 +306,8 @@ void Tact_RefreshTeamVisibility(TactState *pQueue, Soldier **apXcom, i32 nXcom,
 
 /* Unit_bScanOpportunityFire @ 0x48028. */
 bool Unit_bScanOpportunityFire(TactCtx272 *pCtx, Soldier *pUnit,
-                               Soldier *const *apEnemy, const i32 *pnEnemyCount,
-                               Soldier *const *apXcom, const i32 *pnXcomCount,
+                               Soldier *const *apEnemy, const u8 *pnEnemyCount,
+                               Soldier *const *apXcom, const u8 *pnXcomCount,
                                void (*pfnTryOpportunityFire)(Soldier *pTarget,
                                                              Soldier *pShooter,
                                                              void *pUser),

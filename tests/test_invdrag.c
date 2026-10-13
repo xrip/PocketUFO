@@ -1011,7 +1011,7 @@ static TactItem    s_aEquipItem[24];
 static MapCell     s_EquipCell;
 static Soldier    *s_apEquipUnits[4];
 static InvDropCtx  s_EquipDrop;
-static i32         g_nEquipCount;
+static u8          g_nEquipCount;
 
 static void EquipFixture(void)
 {

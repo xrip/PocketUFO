@@ -743,7 +743,7 @@ i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
             *pEnv->pnTactItemCount = nItemIdx + 1;
 
             pEnv->apXcomUnits[*pEnv->pnXcomUnitCount] = pUnit;
-            *pEnv->pnXcomUnitCount = *pEnv->pnXcomUnitCount + 1;
+            *pEnv->pnXcomUnitCount = (u8)(*pEnv->pnXcomUnitCount + 1);
             *pEnv->pnDeployedHwps = nDeployed + 1;
         }
     }
@@ -1191,7 +1191,7 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
             *pEnv->pnEnemyReserveCount = *pEnv->pnEnemyReserveCount + 1;
         } else {
             pEnv->apEnemyUnits[*pEnv->pnEnemyUnitCount] = pUnit;         /* 0x3A760 */
-            *pEnv->pnEnemyUnitCount = *pEnv->pnEnemyUnitCount + 1;
+            *pEnv->pnEnemyUnitCount = (u8)(*pEnv->pnEnemyUnitCount + 1);
         }
 
         pUnit->nLook = 0;                                                /* 0x3A7E4 */

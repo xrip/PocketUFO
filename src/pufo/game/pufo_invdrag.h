@@ -248,7 +248,7 @@ void Inv_ClearHitSlot(const InvHitTestCtx *pCtx);
 typedef struct TactEquipCtx {
     MapCell      *pItemListCell;   /* the container at 0x157204; its pItemList @ 0x34 holds the loose items */
     Soldier     **apXcomUnits;     /* Map.apXcomUnits @ 0x15154 */
-    i32          *pnXcomUnitCount; /* Map.nXcomUnitCount @ 0x1511F */
+    u8           *pnXcomUnitCount; /* Map.nXcomUnitCount @ 0x1511F, a byte in the original */
     ObjectRec    **apObjects;      /* Map.apObjects @ Map+0x108 */
     InvHitState  *pHit;            /* drag offset and the dragged-item scratch */
     InvDropCtx   *pDrop;           /* pointer position, selected unit, item pool, drop hooks */

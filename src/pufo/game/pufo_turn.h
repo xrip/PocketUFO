@@ -160,8 +160,8 @@ void Tact_RefreshTeamVisibility(TactState *pQueue, Soldier **apXcom, i32 nXcom,
  * original does when a target may have died. Returns whether any opportunity fire
  * was queued. The two counts are passed by pointer so the re-read is preserved. */
 bool Unit_bScanOpportunityFire(TactCtx272 *pCtx, Soldier *pUnit,
-                               Soldier *const *apEnemy, const i32 *pnEnemyCount,
-                               Soldier *const *apXcom, const i32 *pnXcomCount,
+                               Soldier *const *apEnemy, const u8 *pnEnemyCount,
+                               Soldier *const *apXcom, const u8 *pnXcomCount,
                                void (*pfnTryOpportunityFire)(Soldier *pTarget,
                                                              Soldier *pShooter,
                                                              void *pUser),
