@@ -6045,7 +6045,6 @@ Checked by hand against the source, one citation site at a time:
 | `TactHud_DrawSelectedUnitPanel` `0x1d5ec` | 1,484 | cited only as "all six callers are …" — no such function in the port |
 | `AfterEnemyStep` `0x4c4a0` | 1,368 | hook field: "`pfnAfterEnemyStep` stands in for" |
 | `Map_InitAndLoadRegistry` `0x22648` | 1,284 | cited as the source of default values `Options_InitDefaults` borrows |
-| `MapView_DrawIsoLayer` `0x21e2c` | 1,252 | cited describing which coordinate family the original calls |
 | `MapView_DrawUnitHeightGlyph` `0x1c240` | 1,132 | cited describing what the original reads; the citation also spanned two lines |
 | `Tact_HandleMapClick` `0x1512c` | 1,104 | **not a function citation at all** — a struct field comment `nCursorY @ 0x1512c` naming a global |
 | `Map_ProbeStepOccupants` `0x2778c` | 1,068 | cited listing which originals read a cell field |
@@ -6462,8 +6461,9 @@ families write nothing at all and leave `szDisplayName` untouched, while the mid
 ## The isometric layer cluster behind `MapView_DrawIsoLayer @ 0x21e2c`
 
 `MapView_DrawIsoLayer` is 1,252 bytes but it is not one unit of work: it calls 17 functions, and 11
-of them were unported. It is recorded here as a cluster so the size of the remaining work is visible
-rather than hidden behind one address.
+of them were unported when this cluster was first written. All 17 are ported now, and the
+orchestrator itself is ported as `MapView_DrawIsoLayer(IsoDrawCtx *, const IsoLayerEnv *)` — see the
+section at the end of this cluster.
 
 It walks the map twice per layer. The first pass draws floors only; the second draws everything else.
 For each tile it calls the same gate, and when the gate fails and the layer is 0 it draws a single
@@ -6832,6 +6832,53 @@ The rest of the shape:
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn
 with whatever glyph index the previously drawn cell left in the shared context. The port reproduces it.
+
+### `MapView_DrawIsoLayer @ 0x21e2c` — the tactical map frame
+
+Ported in `src/pufo/game/pufo_isodraw.c` behind `IsoLayerEnv`, tested by `TestIsoLayer` in
+`tests/test_isodraw.c` (25 checks). It is the only caller of the per-cell chain, so it is also the
+first place where all seven per-cell gates have to exist at once; `Render_Frame @ 0x22310` will own
+that env when it is ported.
+
+**Two passes per layer, not one.** Pass 1 calls only `MapView_DrawCellFloorGlyph`; pass 2 calls the
+other eleven. That is why the floor is under the units rather than interleaved with them, and it is
+also why the two loops look identical: the only thing they share besides the gate is the fallback.
+
+**The fallback is layer 0 only.** When `MapView_bResolveIsoCell` fails, both passes draw the blank
+group glyph at `fontSys + 0x00` with palette 0 — but only when `nLayer == 0`. The ARM tests
+`LDRB R3,[pIso,#0x38]; CMP R3,#0; BNE` after the failed gate (0x21F04 / 0x21FEC), so upper layers
+leave an unresolved cell completely empty. With `nDrawY = 8 * (nTileY - 3 * nLayer - 4)` that is easy
+to miss: on layer 1 the first in-range row is `nTileY = 7`, which lands at the same y as layer 0's
+`nTileY = 4`, so the test has to compare positions rather than count draws.
+
+**The frame tail, in order.** `MapView_DrawViewportGuide`, `TactHud_DrawSelectedUnitPanel`, the
+multi-target bars, `StatusMsg_DrawStack`, a colour pair, `UiControl_BlitActivePad` plus the pad's
+centred label, and finally the cover.
+
+The bars are the only arithmetic worth recording:
+
+```
+column   207, fixed
+row      300 - 18 * i - (deploy panel open ? 17 : pHudPad->uHeight)
+fill     30 by 16, colour index (u8)(10 * Map+0x37 + 128)   -- stored with STRB, so it is a byte
+label    itoa(i + 1), centred: 207 + (30 - Text_MeasureWidth) / 2
+cap      five, whatever Soldier.nMultiTarget says
+```
+
+The cover is a full 240 by 320 blit of index 55 at key 128, skipped when `Map_nUiScreen` is 0 or 13 —
+the two screens that already own the frame.
+
+**Three original defects, all in `bugs.tsv`.** `Unit_bIsOperative` is called with `Map.pSelUnit` with
+no null test even though `StatusMsg_DrawStack` tests the same pointer a few instructions later
+(0x22080). The pad label is copied from `aTextRecs + 0x35A7` into `IsoDrawCtx + 0xAC` byte by byte to
+its NUL with no bound, and a text record is 205 bytes against an 84-byte buffer (0x22254) — the port
+bounds it with `snprintf`. And `StatusMsg_DrawStack` is handed the draw context where it wants the
+Map, so its scratch (`nStatusDrawY`, the loop cursor) lands in `IsoDrawCtx` (0x22190) — the port gives
+it the real owner.
+
+Four globals this function reads are now named: `nTileCountX` (Map+0x34) and `nTileCountY` (Map+0x35),
+written by the camera-scroll input handlers; `bDeployPanelOpen` (Map+0x15110); and `pActiveLookCtl`
+(`dword_1571E4`), the control `Input_OnPointer` last touched.
 
 ## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
 

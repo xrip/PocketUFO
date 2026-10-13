@@ -1196,6 +1196,245 @@ static void TestFacingArrow(void)
     CheckEqI32(InkRow(102), 27 + 5, "so the glyph lands at (102, 27)");
 }
 
+/* ------------------------------------------------------------ MapView_DrawIsoLayer @ 0x21e2c
+ *
+ * The frame is an orchestrator, so these tests aim at what it DECIDES rather than at what the eleven
+ * per-cell callees draw: the two iso offsets, the loop bounds and the state they leave behind, the
+ * layer-0-only fallback glyph, the multi-target bars, the pad label copy, and the mission cover.
+ *
+ * The grid is built so that every cell FAILS to resolve: with nMapDimX = nMapDimY = 1 and no camera
+ * scroll, Map_IsoOffsetA gives -5, so nMapY is negative for every tile in the fixture. That keeps the
+ * chain quiet and leaves the fallback glyph as the only thing drawn. */
+static MapCell         *g_apLayerGrid[3844];
+static MapCell          g_layerCell;
+static IsoGrid          g_layerGrid;
+static IsoDrawCtx       g_layerIso;
+static IsoLayerEnv      g_layerEnv;
+static IsoAnimGlobals   g_layerAnim;
+static IsoSelectGate    g_layerSelect;
+static IsoUnitDrawGate  g_layerUnit;
+static IsoSpriteBases   g_layerBases;
+static IsoHeightGate    g_layerHeight;
+static IsoArrowGate     g_layerArrow;
+static IsoViewportGuide g_layerGuide;
+static UiControl        g_layerBank[PUFO_HUD_PANEL_CONTROLS];
+static UiControl        g_layerCtl;
+static TactHudPanelEnv  g_layerPanel;
+static PadImage         g_layerHudPad;
+static StatusStack      g_layerStatus;
+static StatusDrawHooks  g_layerHooks;
+static GfxColorEnv      g_layerColor;
+static Soldier          g_layerSel;
+static u16              g_aLayerGroupBase[PUFO_ISO_GROUP_BASE_COUNT];
+static i32              g_nHookSetColor;
+static i32              g_nHookDraw;
+
+static void LayerHook_SetColor(u8 r1, u8 g1, u8 b1, u8 r2, u8 g2, u8 b2, void *pUser)
+{
+    (void)r1; (void)g1; (void)b1; (void)r2; (void)g2; (void)b2; (void)pUser;
+    ++g_nHookSetColor;
+}
+
+static void LayerHook_Draw(i32 x, i32 y, const char *psz, void *pUser)
+{
+    (void)x; (void)y; (void)psz; (void)pUser;
+    ++g_nHookDraw;
+}
+
+static bool LayerHook_InputOff(void *pUser) { (void)pUser; return false; }
+static bool LayerHook_NotOperative(void *pUser) { (void)pUser; return false; }
+static bool LayerHook_NotBusy(void *pUser) { (void)pUser; return false; }
+static i32  LayerHook_PadOriginY(void *pUser) { (void)pUser; return 0; }
+static void LayerHook_BlitPad(PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; }
+static void LayerHook_BlitPadEx(const PadImage *pPad, void *pUser) { (void)pPad; (void)pUser; }
+
+static void LayerFixture_Reset(void)
+{
+    i32 k;
+
+    memset(g_aLayerGroupBase, 0, sizeof(g_aLayerGroupBase));
+    memset(&g_layerCell, 0, sizeof(g_layerCell));
+    memset(&g_layerIso, 0, sizeof(g_layerIso));
+    memset(&g_layerEnv, 0, sizeof(g_layerEnv));
+    memset(&g_layerAnim, 0, sizeof(g_layerAnim));
+    memset(&g_layerSelect, 0, sizeof(g_layerSelect));
+    memset(&g_layerUnit, 0, sizeof(g_layerUnit));
+    memset(&g_layerBases, 0, sizeof(g_layerBases));
+    memset(&g_layerHeight, 0, sizeof(g_layerHeight));
+    memset(&g_layerArrow, 0, sizeof(g_layerArrow));
+    memset(&g_layerGuide, 0, sizeof(g_layerGuide));
+    memset(g_layerBank, 0, sizeof(g_layerBank));
+    memset(&g_layerCtl, 0, sizeof(g_layerCtl));
+    memset(&g_layerPanel, 0, sizeof(g_layerPanel));
+    memset(&g_layerHudPad, 0, sizeof(g_layerHudPad));
+    memset(&g_layerStatus, 0, sizeof(g_layerStatus));
+    memset(&g_layerHooks, 0, sizeof(g_layerHooks));
+    memset(&g_layerColor, 0, sizeof(g_layerColor));
+    memset(&g_layerSel, 0, sizeof(g_layerSel));
+    for (k = 0; k < 3844; ++k) {
+        g_apLayerGrid[k] = &g_layerCell;
+    }
+
+    g_layerGrid.apCells = g_apLayerGrid;
+    g_layerGrid.nDimX   = 1;
+    g_layerGrid.nDimY   = 1;
+
+    g_layerEnv.nMapDimX      = 1;
+    g_layerEnv.nMapDimY      = 1;
+    g_layerEnv.nCamScrollX   = 0;
+    g_layerEnv.nCamScrollY   = 0;
+    g_layerEnv.nLayerCount   = 2;
+    g_layerEnv.nTileCountX   = 2;
+    g_layerEnv.nTileCountY   = 8;
+    g_layerEnv.nMapPhase     = 3;
+    g_layerEnv.pGrid         = &g_layerGrid;
+    g_layerEnv.pAnim         = &g_layerAnim;
+    g_layerEnv.pSelect       = &g_layerSelect;
+    g_layerEnv.pUnit         = &g_layerUnit;
+    g_layerEnv.pBases        = &g_layerBases;
+    g_layerEnv.pHeight       = &g_layerHeight;
+    g_layerEnv.pArrow        = &g_layerArrow;
+    g_layerEnv.pGuide        = &g_layerGuide;
+    g_layerEnv.pBank         = g_layerBank;
+    g_layerEnv.pPanel        = &g_layerPanel;
+    g_layerEnv.pColor        = &g_layerColor;
+    g_layerEnv.pfnDecimalBlit = LayerHook_BlitPad;
+    g_layerEnv.pfnCtlBlit     = LayerHook_BlitPadEx;
+    g_layerEnv.pfnCtlBlitEx   = LayerHook_BlitPadEx;
+    g_layerEnv.pStatus        = &g_layerStatus;
+    g_layerEnv.pStatusHooks   = &g_layerHooks;
+    g_layerEnv.pSelUnit       = &g_layerSel;
+    g_layerEnv.bDeployPanelOpen = 1;
+    g_layerEnv.nHudPadHeight  = 40;
+    g_layerEnv.pLookCtl       = &g_layerCtl;
+    g_layerEnv.pPadLabel      = "AB";
+    g_layerEnv.nUiScreen      = 0;   /* the cover is off unless a case turns it on */
+
+    g_layerUnit.paGroupBase = g_aLayerGroupBase;
+
+    /* The panel re-bases the 19 controls and then stops, which is all this fixture wants from it. */
+    g_layerPanel.pHudPad             = &g_layerHudPad;
+    g_layerPanel.pSelUnit            = &g_layerSel;
+    g_layerPanel.bDeployPanelOpen    = 1;
+    g_layerPanel.bPlayerInputEnabled = 0;
+
+    g_layerCtl.x        = 10;
+    g_layerCtl.y        = 20;
+    g_layerCtl.bEnabled = 1;
+
+    g_layerHooks.pfnSetColor            = LayerHook_SetColor;
+    g_layerHooks.pfnDraw                = LayerHook_Draw;
+    g_layerHooks.pfnPlayerInputEnabled  = LayerHook_InputOff;
+    g_layerHooks.pfnSelectedIsOperative = LayerHook_NotOperative;
+    g_layerHooks.pfnIsBusy              = LayerHook_NotBusy;
+    g_layerHooks.pfnHudPadOriginY       = LayerHook_PadOriginY;
+
+    g_nHookSetColor = 0;
+    g_nHookDraw     = 0;
+}
+
+static void TestIsoLayer(void)
+{
+    printf("MapView_DrawIsoLayer @ 0x21e2c\n");
+
+    Math_StoreSqrtConst();
+    Math_StoreAtan2Const();
+
+    /* --- the iso offsets and the loop end state --- */
+    LayerFixture_Reset();
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nIsoOffA, -5, "nIsoOffA is nCamScrollX - 5 * nMapDimX + nCamScrollY");
+    CheckEqI32(g_layerIso.nIsoOffB, 4, "nIsoOffB is 5 * nMapDimY - nCamScrollX + nCamScrollY - 1");
+    CheckEqI32(g_layerIso.nLayer, 2, "the layer counter ends one past the last layer drawn");
+    CheckEqI32(g_layerIso.nTileX, 2, "the inner counter ends at the x count");
+    CheckEqI32(g_layerIso.nTileY, 8, "the outer counter ends at the y count");
+
+    /* --- the fallback glyph is layer 0 only ---
+     * nDrawX = 32 * nTileX - 16 (or - 32 on an odd tile row) and nDrawY = 8 * (nTileY - 3 * nLayer - 4).
+     * Layer 0, tile (1, 7) is odd so it lands at (0, 24); layer 1's only non-negative row is tile
+     * (1, 7) too, which would be (0, 0). Ink at 24 and none at 0 is the layer test. */
+    Check(InkAt(0, 24) != 0, "layer 0 draws the blank group glyph where a cell does not resolve");
+    CheckEqI32(InkAt(0, 0), 0, "layer 1 does not, and its only in-range row would have been (0, 0)");
+    Check(InkAt(16, 0) != 0, "tile (1, 4) on layer 0 is at (16, 0)");
+
+    /* --- zero counts leave the counters at zero and draw nothing --- */
+    LayerFixture_Reset();
+    g_layerEnv.nLayerCount = 0;
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nLayer, 0, "no layers, no walk");
+    CheckEqI32(InkRow(16), -1, "and the fallback glyph never runs");
+
+    LayerFixture_Reset();
+    g_layerEnv.nTileCountX = 0;
+    g_layerEnv.nTileCountY = 0;
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nTileX, 0, "a zero x count still sets the counter");
+    CheckEqI32(g_layerIso.nTileY, 0, "and so does the y count");
+    CheckEqI32(InkRow(16), -1, "with no tiles nothing is drawn");
+
+    /* --- the multi-target bars --- */
+    LayerFixture_Reset();
+    g_layerSel.nMultiTarget = 7;
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nScratch2, 5, "five bars at most, whatever the unit's count says");
+    CheckEqI32(g_layerIso.nTileX, 207, "every bar is at column 207");
+    CheckEqI32(g_layerIso.nTileY, 211, "the last bar is 300 - 18 * 4 - 17, the deploy-panel short form");
+
+    LayerFixture_Reset();
+    g_layerEnv.bDeployPanelOpen = 0;
+    g_layerSel.nMultiTarget = 3;
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nScratch2, 3, "a count below the cap runs to the count");
+    CheckEqI32(g_layerIso.nTileY, 300 - 18 * 2 - 40,
+               "with the panel closed the bar is shortened by the hud pad height instead");
+
+    LayerFixture_Reset();
+    g_layerIso.nScratch2 = -999;
+    g_layerSel.nMultiTarget = 0;
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.nScratch2, -999, "a unit with no multi-target list never enters the loop");
+
+    /* --- the active pad and its label --- */
+    LayerFixture_Reset();
+    g_layerIso.szText[0] = '?';
+    g_layerIso.szText[1] = '\0';
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.szText[0], 'A', "the enabled pad copies its label into the context");
+    CheckEqI32(g_layerIso.szText[1], 'B', "two characters, as the fixture label has");
+
+    LayerFixture_Reset();
+    g_layerCtl.bEnabled = 0;
+    g_layerIso.szText[0] = '?';
+    g_layerIso.szText[1] = '\0';
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(g_layerIso.szText[0], '?', "a disabled pad draws nothing and copies nothing");
+
+    /* --- the mission cover --- */
+    LayerFixture_Reset();
+    g_layerEnv.nLayerCount = 0;
+    g_layerEnv.nUiScreen = 5;
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    Check(InkAt(239, 319) != 0, "screen 5 gets the full 240 by 320 cover");
+
+    LayerFixture_Reset();
+    g_layerEnv.nLayerCount = 0;
+    g_layerEnv.nUiScreen = 13;
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(InkAt(239, 319), 0, "screen 13 is one of the two the cover skips");
+
+    LayerFixture_Reset();
+    g_layerEnv.nLayerCount = 0;
+    g_layerEnv.nUiScreen = 0;
+    ClearSurface();
+    MapView_DrawIsoLayer(&g_layerIso, &g_layerEnv);
+    CheckEqI32(InkAt(239, 319), 0, "and so is screen 0");
+}
+
 /* ------------------------------------------------------------ MapView_DrawUnit @ 0x1c958
  *
  * Almost every decision this function makes lands in an IsoDrawCtx field, so the tests read the
@@ -1728,6 +1967,7 @@ int main(void)
     TestIsoConstants();
     TestHeightGlyph();
     TestFacingArrow();
+    TestIsoLayer();
     TestUnitGate();
     TestUnitDirections();
     TestUnitCeilMin();

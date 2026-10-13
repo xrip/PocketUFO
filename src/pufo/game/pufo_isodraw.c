@@ -9,6 +9,7 @@
 #include "render/pufo_render.h" /* SoftSurf_BlitSrcRect / PadImage_BlitEx */
 
 #include <math.h>
+#include <stdio.h>  /* snprintf, the bounded stand-in for the original's itoa and byte copy */
 
 double g_dblIsoAngle; /* unk_1571F8 */
 double g_dblIsoScale; /* unk_156AA8 */
@@ -620,6 +621,125 @@ int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
                              + (i32)pBases->nFloorobBase - 1,
                          pIso->nPal);
     return 1;
+}
+
+/* ------------------------------------------------------------ the tactical map frame
+ *
+ * MapView_DrawIsoLayer @ 0x21e2c. The only caller of the per-cell chain, so it is where the seven
+ * per-cell gates have to exist at the same time. */
+
+/* The multi-target bars stop at five whatever the unit's count says. */
+#define PUFO_ISO_MULTI_TARGET_BARS 5
+
+void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
+{
+    i32 nWidth, nOutDrawY;
+
+    /* The original calls the two iso helpers with the context base and lets them read nMapDimX/Y
+     * out of it; the port passes the dimensions in (see pufo_mapcell.h). */
+    pIso->nIsoOffA = Map_IsoOffsetA(pEnv->nMapDimX, pEnv->nCamScrollX, pEnv->nCamScrollY);
+    pIso->nIsoOffB = Map_IsoOffsetB(pEnv->nMapDimY, pEnv->nCamScrollX, pEnv->nCamScrollY);
+    pIso->nLayer = 0;
+
+    if ((i32)pEnv->nLayerCount > 0) {
+        /* The layer counter is the context byte at 0x38, incremented and re-tested as a byte. */
+        do {
+            /* Pass 1: floor sprites only, so the floor sits under everything pass 2 draws. */
+            for (pIso->nTileY = 0; pIso->nTileY < (i32)pEnv->nTileCountY; ++pIso->nTileY) {
+                for (pIso->nTileX = 0; pIso->nTileX < (i32)pEnv->nTileCountX; ++pIso->nTileX) {
+                    if (MapView_bResolveIsoCell(pIso, pEnv->pGrid)) {
+                        MapView_DrawCellFloorGlyph(pIso, pEnv->pAnim);
+                    } else if (pIso->nLayer == 0) {
+                        /* A cell that does not resolve still gets the blank group glyph, but only on
+                         * the bottom layer, and always with palette 0 rather than the cell's. */
+                        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY,
+                                             pEnv->pUnit->paGroupBase[0], 0);
+                    }
+                }
+            }
+
+            /* Pass 2: the rest of the chain, in the original's order. */
+            for (pIso->nTileY = 0; pIso->nTileY < (i32)pEnv->nTileCountY; ++pIso->nTileY) {
+                for (pIso->nTileX = 0; pIso->nTileX < (i32)pEnv->nTileCountX; ++pIso->nTileX) {
+                    if (MapView_bResolveIsoCell(pIso, pEnv->pGrid)) {
+                        MapView_DrawCellSelectMarker(pIso, pEnv->pSelect, pEnv->pBases);
+                        MapView_SetWallPalFromSlotA(pIso, pEnv->pAnim);
+                        MapView_SetWallPalFromSlotB(pIso, pEnv->pAnim);
+                        MapView_DrawCellOccupantGlyph(pIso, pEnv->pAnim);
+                        TactUnit_DrawHpGlyphs(pIso, pEnv->pBases);
+                        (void)MapView_DrawUnit(pIso, pEnv->pUnit);
+                        (void)MapView_DrawUnitFacingArrow(pIso, pEnv->pArrow, pEnv->pBases);
+                        (void)MapView_DrawUnitHeightGlyph(pIso, pEnv->pHeight, pEnv->pBases);
+                        TactUnit_DrawAnimGlyphs(pIso, pEnv->pAnim, pEnv->pBases);
+                        MapView_DrawCellSelectMarkerHi(pIso, pEnv->pSelect, pEnv->pBases);
+                        TactUnit_DrawFacingGlyph(pIso, pEnv->pAnim, pEnv->pBases);
+                    } else if (pIso->nLayer == 0) {
+                        (void)Font_DrawGlyph(pIso->nDrawX, pIso->nDrawY,
+                                             pEnv->pUnit->paGroupBase[0], 0);
+                    }
+                }
+            }
+
+            pIso->nLayer = (u8)(pIso->nLayer + 1);
+        } while ((i32)pIso->nLayer < (i32)pEnv->nLayerCount);
+    }
+
+    MapView_DrawViewportGuide(pEnv->pGuide);
+
+    (void)TactHud_DrawSelectedUnitPanel(pEnv->pBank, pEnv->pPanel, pEnv->pColor,
+                                        pEnv->pfnDecimalBlit, pEnv->pDecimalUser,
+                                        pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+
+    /* The multi-target bars. ORIGINAL BUG (0x22080): Unit_bIsOperative is called with Map.pSelUnit
+     * with no null test, even though StatusMsg_DrawStack tests the same pointer. */
+    if (Unit_bIsOperative(pEnv->pSelUnit) && (i32)pEnv->pSelUnit->nMultiTarget > 0) {
+        pIso->nScratch2 = 0;
+        do {
+            const i32 nIdx = pIso->nScratch2;
+
+            if (nIdx >= PUFO_ISO_MULTI_TARGET_BARS) break;
+
+            pIso->nTileX = 207;
+            pIso->nTileY = (pEnv->bDeployPanelOpen != 0) ? (300 - 18 * nIdx - 17)
+                                                          : (300 - 18 * nIdx - pEnv->nHudPadHeight);
+
+            /* 0x2211C stores the bar index with STRB, so it is the low byte of 10 * phase + 128. */
+            SoftSurf_BlitRectProxy(0, 207, pIso->nTileY, 30, 16,
+                                   (u8)(10 * (i32)pEnv->nMapPhase + 128), 0, 0);
+
+            (void)snprintf(pIso->szText, sizeof(pIso->szText), "%d", nIdx + 1);
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 55, 255, 55, 0, 0, 0);
+            nWidth = Text_MeasureWidth(pIso->szText);
+            Text_DrawString(pIso->nTileX + (30 - nWidth) / 2, pIso->nTileY, pIso->szText);
+
+            pIso->nScratch2 = nIdx + 1;
+        } while (pIso->nScratch2 < (i32)pEnv->pSelUnit->nMultiTarget);
+    }
+
+    /* The original hands the draw context to StatusMsg_DrawStack where that function wants its
+     * status scratch; the port gives it the real owner. */
+    (void)StatusMsg_DrawStack(pEnv->pStatus, &nOutDrawY, pEnv->pStatusHooks);
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 26, 244, 252, 13, 122, 126);
+
+    (void)UiControl_BlitActivePad(pEnv->pLookCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+    if (pEnv->pLookCtl->bEnabled != 0) {
+        SoftSurf_BlitRectProxy(0, pEnv->pLookCtl->x + 50,
+                               6 * ((i32)pEnv->nMapPhase / 3) + pEnv->pLookCtl->y + 2,
+                               2, 4, 0xDC, 0, 0);
+
+        /* ORIGINAL BUG (0x22254): the label is copied byte by byte to its NUL with no bound, and a
+         * text record is 205 bytes while the context buffer is 84. snprintf bounds the copy. */
+        (void)snprintf(pIso->szText, sizeof(pIso->szText), "%s", pEnv->pPadLabel);
+        nWidth = Text_MeasureWidth(pIso->szText);
+        Text_DrawString(pEnv->pLookCtl->x + (51 - nWidth) / 2,
+                        pEnv->pLookCtl->y + 3, pIso->szText);
+    }
+
+    /* The mission fade-out cover, skipped on the two screens that already own the frame. */
+    if (pEnv->nUiScreen != 0 && pEnv->nUiScreen != 13) {
+        SoftSurf_BlitSrcRectEx(g_pMainSurface, 0, 0, 240, 320, 0x37, 55, 140, 128);
+    }
 }
 
 /* ------------------------------------------------------------ iso unit animation tables

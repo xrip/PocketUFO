@@ -192,9 +192,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [ ] `LoadGame (0x44bbc)` — blocked by exactly one callee now: `Geoscape_InitUI (0x857f4, 5,420 B)`,
   which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
   Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
-  `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain, and the next
-  unblocked item is Priority 2's `MapView_DrawIsoLayer (0x21e2c)`, whose last unported callee
-  (`MapView_DrawUnitFacingArrow`) is now ported.
+  `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain. In Priority 2
+  the map frame is now assembled; what is left there is `Tact_DrawCommandPads (0x1fc8c)` and the
+  caller `Render_Frame (0x22310)`.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
   - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
@@ -243,6 +243,25 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [x] IDB: function header comment at 0x1b7bc, line comments at 0x1b7dc (the `TactState+0x111E1`
     flag and its writers), 0x1b888 (the entry test), 0x1bd18 (the nudge index) and 0x1c1f4 (the null
     dereference)
+- [x] `MapView_DrawIsoLayer @ 0x21e2c` (1,252 B) — ported in the same file behind `IsoLayerEnv`, with
+  25 new checks in `tests/test_isodraw.c`. It is the only caller of the per-cell chain, so it is where
+  the seven per-cell gates get assembled; `Render_Frame` will own that env.
+  - [x] the two-pass shape settled: pass 1 draws floors only, pass 2 draws the other eleven, and the
+    unresolved-cell fallback (blank group glyph, `fontSys+0x00`, palette 0) runs on layer 0 only.
+  - [x] the frame tail settled: viewport guide, selected-unit panel, up to five multi-target bars at
+    column 207 with row `300 - 18*i - (deploy panel ? 17 : pHudPad->uHeight)`, the status stack, the
+    active pad and its centred label, and a 240×320 cover of index 55 at key 128 unless
+    `Map_nUiScreen` is 0 or 13.
+  - [x] `IsoDrawCtx.szText` modelled at 0xAC — the scratch string the itoa output and the pad label
+    copy share.
+  - [x] IDB: `nTileCountX` (Map+0x34), `nTileCountY` (Map+0x35), `bDeployPanelOpen` (Map+0x15110) and
+    `pActiveLookCtl` (`dword_1571E4`) named; function header at 0x21e2c and line comments at 0x22080,
+    0x220E8 and 0x22248
+  - [x] four rows added to `bugs.tsv` (75 total): the unguarded `Unit_bIsOperative(Map.pSelUnit)`, the
+    unbounded label copy, the STRB-truncated bar index, and `StatusMsg_DrawStack` being handed the
+    draw context instead of the Map
+  - [x] `test_isodraw` now links `pufo_ui`, because `pufo_isodraw.obj` reaches
+    `UiControl_BlitActivePad` through `pufo_tacthud.obj`. That is the known cycle, not a new one.
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
@@ -263,16 +282,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
-  items are therefore in Priority 2: `MapView_DrawUnitFacingArrow` is done, and
-  `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is now unblocked. This is a change of order, not of goal:
-  the geoscape chain stays open and is listed above.
+  items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow` and `MapView_DrawIsoLayer` are
+  both done and only `Tact_DrawCommandPads` and `Render_Frame` remain. This is a change of order, not
+  of goal: the geoscape chain stays open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer (0x21e2c, 1,252 B)` is unblocked: every callee it
-   reaches (`MapView_DrawUnitFacingArrow`, `MapView_DrawUnitHeightGlyph`, `TactUnit_DrawHpGlyphs`,
-   `TactUnit_DrawAnimGlyphs`, `TactUnit_DrawFacingGlyph`, `MapView_DrawCellSelectMarkerHi`) is ported.
-   3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer` is done, so what is left in this priority is
+   `Tact_DrawCommandPads (0x1fc8c)` and `Render_Frame (0x22310)` itself — the caller that will own the
+   `IsoLayerEnv` this step introduced. 3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
 
@@ -285,6 +303,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - It fired again when `test_tactend` was added: `Tact_Shutdown` calls `StrategList_RemoveAt`,
     which pulls `pufo_strateg.obj`, which reaches `UiLineList_Remove` in `pufo_ui`. The test target
     now links `pufo_ui` like the other fifteen that already had to.
+  - And again with `MapView_DrawIsoLayer`: `pufo_isodraw.obj` now reaches
+    `UiControl_BlitActivePad` through `pufo_tacthud.obj`, so `test_isodraw` links `pufo_ui` too —
+    eighteen of the fifty-one test targets now have to.
 - [ ] Three test targets fail in the **Debug** configuration and pass in Release. All three already
   fail at `04f1155` — verified by building that commit in a clean worktree with the same ClangCL
   toolset — so none of them came from the `Tact_InitMission` step. They are Debug-CRT artefacts:
@@ -340,6 +361,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `BaseFac_SetCellBuildState` + `Base_GrantStarterItems` | 51/51 (Release) | 7170 | 674/1103 (61.1%) | 255372/598792 (42.6%) | 35 checked, 0 mismatched |
 | `Ship_SpawnAtSlot` | 51/51 (Release) | 7189 | 675/1103 (61.2%) | 256036/598792 (42.8%) | 35 checked, 0 mismatched |
 | `MapView_DrawUnitFacingArrow` | 51/51 (Release) | 7235 | 676/1103 (61.3%) | 258728/598792 (43.2%) | 37 checked, 0 mismatched |
+| `MapView_DrawIsoLayer` | 51/51 (Release) | 7260 | 677/1103 (61.4%) | 259980/598792 (43.4%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

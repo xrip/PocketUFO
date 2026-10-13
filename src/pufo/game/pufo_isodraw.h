@@ -43,6 +43,8 @@
 #define PUFO_ISODRAW_H
 
 #include "game/pufo_mapcell.h"
+#include "game/pufo_statusmsg.h" /* StatusStack, StatusDrawHooks */
+#include "game/pufo_tacthud.h"   /* TactHudPanelEnv, HudPadBlitFn, UiControlBlitFn */
 #include "render/pufo_render.h" /* PadImage, for the selection frame */
 #include "pufo_common.h"
 
@@ -80,6 +82,10 @@ typedef struct IsoDrawCtx {
                              * bAnimStep; 0x68 is the number of steps to walk */
     u8       bUnitGlyphRow;  /* 0x69, the aUnitWalkGlyph row: 2 when nAnimPose is 18,
                               * otherwise (bFlags & 2) ? 1 : 0 */
+    char     szText[84];     /* 0xAC, the scratch string MapView_DrawIsoLayer fills with itoa output
+                              * and with a copy of the active pad's label. The label copy runs to its
+                              * NUL with no bound test (0x22254), so the buffer is only as safe as the
+                              * text record it is copied from. */
     i32      nScratch2;      /* 0x100 */
     i32      nRosterIndex;   /* 0x114, IDA nRosterAux2: the multi-target roster cursor
                               * MapView_DrawUnitFacingArrow walks over 0..9 */
@@ -427,6 +433,77 @@ typedef struct IsoArrowGate {
  * drops it, so the port returns the number of glyphs drawn, like its siblings return 1 or 0. */
 int MapView_DrawUnitFacingArrow(IsoDrawCtx *pIso, const IsoArrowGate *pGate,
                                 const IsoSpriteBases *pBases);
+
+/* ------------------------------------------------------------ the tactical map frame
+ *
+ * Everything MapView_DrawIsoLayer @ 0x21e2c reaches outside the draw context. It is the only
+ * function that drives the per-cell chain, so it is also the first place all the per-cell gates have
+ * to be assembled together; Render_Frame (0x22310) will own this env when it is ported.
+ *
+ * The offsets in the comments are Map-context offsets unless the field names a global. */
+typedef struct IsoLayerEnv {
+    /* --- the iso camera and the loop bounds --- */
+    i32  nMapDimX;        /* Map.nMapDimX @ 0x1511B, read by Map_IsoOffsetA */
+    i32  nMapDimY;        /* Map.nMapDimY @ 0x1511C, read by Map_IsoOffsetB */
+    i32  nCamScrollX;     /* Map.nCamScrollX @ 0x15130 (IDA unk_128AE8) */
+    i32  nCamScrollY;     /* Map.nCamScrollY @ 0x15134 (IDA unk_128AEC) */
+    i8   nLayerCount;     /* Map.nLayerScratch @ 0x15138, signed byte, read with LDRSB */
+    u8   nTileCountX;     /* Map+0x34 (IDA unk_1139EC), written by Input_OnLeft/OnRight */
+    u8   nTileCountY;     /* Map+0x35 (IDA unk_1139ED), written by Input_OnUp/OnDown */
+    u8   nMapPhase;       /* Map+0x37 (IDA unk_1139EF), the phase the bars and the pad tick on */
+
+    /* --- the per-cell chain, each with the gate that callee already takes --- */
+    const IsoGrid          *pGrid;
+    const IsoAnimGlobals   *pAnim;
+    const IsoSelectGate    *pSelect;
+    const IsoUnitDrawGate  *pUnit;
+    const IsoSpriteBases   *pBases;
+    const IsoHeightGate    *pHeight;
+    const IsoArrowGate     *pArrow;
+
+    /* --- the frame furniture --- */
+    const IsoViewportGuide *pGuide;
+    UiControl              *pBank;      /* pBank @ 0xAC6D0, the control bank the panel re-bases */
+    TactHudPanelEnv        *pPanel;
+    const GfxColorEnv      *pColor;
+    HudPadBlitFn            pfnDecimalBlit;
+    void                   *pDecimalUser;
+    UiControlBlitFn         pfnCtlBlit;
+    UiControlBlitFn         pfnCtlBlitEx;
+    void                   *pCtlUser;
+    StatusStack            *pStatus;
+    const StatusDrawHooks  *pStatusHooks;
+
+    /* --- the multi-target bars drawn under the selected unit --- */
+    Soldier *pSelUnit;          /* Map.pSelUnit @ 0x15334 */
+    u8       bDeployPanelOpen;  /* Map+0x15110 */
+    i32      nHudPadHeight;     /* Map.pHudPad (Map+0xFC) -> uHeight at +0xA */
+
+    /* --- the active control pad and its label --- */
+    UiControl  *pLookCtl;       /* dword_1571E4, the pad Input_OnPointer last touched */
+    const char *pPadLabel;      /* aTextRecs @ 0xB38D0 + 0x35A7 */
+
+    u16 nUiScreen;              /* Map_nUiScreen @ 0x3A */
+} IsoLayerEnv;
+
+/* MapView_DrawIsoLayer @ 0x21e2c — the tactical map frame, and the only caller of the per-cell chain.
+ *
+ * Two passes over every layer, not one: pass 1 draws only the floor sprite, pass 2 draws everything
+ * else. That is why the floor is under the units rather than interleaved with them. Both passes walk
+ * nTileCountY outer and nTileCountX inner, and both fall back to the same thing on a cell that does
+ * not resolve: on layer 0 only, the blank group glyph at fontSys+0x00 with palette 0.
+ *
+ * Pass 2's chain, in the original's order: select marker, wall palette A, wall palette B, occupant
+ * glyph, hp glyphs, the unit, the facing arrow, the height glyph, the animation glyphs, the high
+ * select marker, the facing glyph.
+ *
+ * Then the frame: the viewport guide, the selected-unit panel, up to five multi-target bars for the
+ * selected unit (207, 300 - 18*i, shortened by 17 when the deploy panel is open and by the hud pad's
+ * height otherwise), the status stack, the active pad and its centred label, and finally a full
+ * 240 by 320 blit of index 55 at key 128 unless the screen id is 0 or 13.
+ *
+ * The original returns register debris and no caller tests it; the port returns void. */
+void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv);
 
 /* ------------------------------------------------------------ iso unit animation tables
  *

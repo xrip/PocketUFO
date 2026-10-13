@@ -502,7 +502,7 @@ add_test(NAME test_menubtn
 
 # Per-cell isometric glyph draw helpers and wall-palette selection.
 add_executable(test_isodraw ${CMAKE_SOURCE_DIR}/tests/test_isodraw.c)
-target_link_libraries(test_isodraw PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+target_link_libraries(test_isodraw PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util)
 set_target_properties(test_isodraw PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
 )
