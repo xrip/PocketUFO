@@ -123,19 +123,20 @@ i32 Rmp_Load(RmpData *pRmp, const char *pszBase,
  * used, or -1 when no node was acceptable.
  *
  * The filters, in the original's order:
- *   - unit silhouette class (pUnit[0xA0], i.e. nUnitType): for large units the
- *     node's bFlag20 must match the unit's movement class (pUnit[0xE2], with 8
- *     normalised to 4); small units require bFlag20 == 1
- *   - bFlag19 gates the unit's size/can-fly bits from byte_A7B80
+ *   - unit type number (pUnit[0xA0]): types 0..8 require the node's bFlag20 == 1; types above 8 compare
+ *     bFlag20 against the unit's movement class (pUnit[0xE2], with 8 normalised to 4). This is the type
+ *     number itself, not the large-unit footprint flag: types 4..8 are large but still take the first path.
+ *   - when the movement class is 2, bFlag20 must be 2, or 0 for a unit whose pUnit[0x1B3] byte is clear
+ *     and whose mission is not an XCom base defence
+ *   - bFlag19 gates the unit's two type flags from byte_A7B80
  *   - the destination cell must be free
  *
  * pUnit is passed as bytes because only three fields are read and the full
  * Soldier tail is not modelled; see Rmp_NodeAcceptsUnit for the exact offsets. */
 typedef struct RmpUnitInfo {
-    u8 nUnitType;    /* pUnit[0x A0] */
-    u8 nMoveClass;   /* pUnit[0xE2], normalised: 8 -> 4 */
+    u8 nUnitType;    /* pUnit[0xA0] */
+    u8 nMoveClass;   /* pUnit[0xE2], normalised at the point of use: 8 -> 4 */
     u8 bFlag0;       /* pUnit[0x1B3] (435), the "kneeling/primed" byte */
-    bool bIsLarge;
     /* byte_A7B80[4 * nUnitType] and byte_A7B80[4 * nUnitType + 1] */
     u8 bTypeFlagA;
     u8 bTypeFlagB;

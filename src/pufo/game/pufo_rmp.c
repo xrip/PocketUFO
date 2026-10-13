@@ -12,15 +12,30 @@
 #include "util/pufo_rand.h" /* Game_RandU16, for the random spawn start */
 #include "util/pufo_str.h"
 
-/* byte_A7B80 @ 0xa7b80, stride 4. Two flags per unit type are consulted by
- * Map_PickRmpSpawnForUnit: byte[4*type] and byte[4*type+1]. Decoded from the
- * 64 bytes at that address:
- *     byte[4i]   = 1 for types 3 and 15
- *     byte[4i+1] = 1 for types 4..8, 11, 13
- * The +1 byte is the same "is large" flag pufo_unit.c uses, so it is reused from
- * there rather than duplicated. The +0 byte is the other unit-size class flag. */
+/* byte_A7B80 @ 0xa7b80, stride 4, 24 rows. Read straight out of the image. Two of the four bytes per
+ * unit type are consulted by Map_PickRmpSpawnForUnit:
+ *     byte[4i]   = 1 for types 3, 7, 8, 11, 13, 18, 20, 21, 22
+ *     byte[4i+1] = 1 for types 4, 5, 6, 7, 8, 18
+ * The other two are not read here: byte[4i+2] is 1 for every type except 4..8, 14, 19 and 23, and
+ * byte[4i+3] is set only for type 14.
+ *
+ * An earlier version of this table had 1 in only two slots, types 3 and 15. Type 15 is not set in the
+ * image at all, and seven of the nine real slots were missing, so every bFlag19 gate in
+ * Map_PickRmpSpawnForUnit was wrong for most unit types. */
 static const u8 s_aUnitTypeFlagA[PUFO_UNIT_TYPE_COUNT] = {
-    0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+    0, 0, 0, 1, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 1, 0, 0,
+    0, 0, 1, 0, 1, 1, 1, 0
+};
+
+/* byte_A7B80[4i+1], the second flag the bFlag19 gates read. It is NOT the same table as
+ * g_aUnitTypeIsLarge: that one is 1 for 4..8, 18, 20 and 21, while this is 1 for 4..8 and 18. The two
+ * agree on 4..8 and 18 and disagree on 20 and 21, so they are different flags and neither is derived
+ * from the other. */
+static const u8 s_aUnitTypeFlagB[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 0, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 1, 0, 0, 0, 0, 0
 };
 
 void Rmp_Init(RmpData *pRmp)
@@ -208,13 +223,14 @@ void Rmp_UnitInfoFromSoldier(RmpUnitInfo *pInfo, const Soldier *pUnit)
 {
     memset(pInfo, 0, sizeof(*pInfo));
     pInfo->nUnitType = pUnit->nUnitType;
-    pInfo->bIsLarge  = Unit_bIsLarge(pUnit);
-    /* pUnit[0xE2] is bRankType; the original normalises 8 to 4. */
-    pInfo->nMoveClass = 0;
-    pInfo->bFlag0     = 0;
+    /* The original reads these two soldier bytes directly. An earlier version left both at zero, which
+     * made the whole bRankType == 2 rule in Rmp_NodeAcceptsUnit unreachable. The 8 -> 4 normalisation is
+     * done at the point of use, as the original does it, not here. */
+    pInfo->nMoveClass = pUnit->bRankType;   /* pUnit[0x0E2] */
+    pInfo->bFlag0     = pUnit->bUnk435;     /* pUnit[0x1B3] */
     if (pInfo->nUnitType < PUFO_UNIT_TYPE_COUNT) {
         pInfo->bTypeFlagA = s_aUnitTypeFlagA[pInfo->nUnitType];
-        pInfo->bTypeFlagB = g_aUnitTypeIsLarge[pInfo->nUnitType];
+        pInfo->bTypeFlagB = s_aUnitTypeFlagB[pInfo->nUnitType];
     }
 }
 
@@ -229,7 +245,10 @@ void Rmp_UnitInfoFromSoldier(RmpUnitInfo *pInfo, const Soldier *pUnit)
 bool Rmp_NodeAcceptsUnit(const RmpNode *pNode, const RmpUnitInfo *pInfo,
                          bool bXcomBaseMission)
 {
-    if (!pInfo->bIsLarge) {
+    /* The original splits on the unit type number itself: `CMP R2, #8; BLS` at 0x55468, where R2 is
+     * pUnit[0xA0]. It is NOT the large-unit flag. Types 4..8 are large by footprint but still take the
+     * bFlag20 == 1 path, and types 9..17 are not large but take the movement-class path. */
+    if (pInfo->nUnitType <= 8u) {
         if (pNode->bFlag20 != 1) {
             return false;
         }

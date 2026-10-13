@@ -186,26 +186,56 @@ static void TestAcceptsUnit(void)
     memset(&node, 0, sizeof(node));
     memset(&info, 0, sizeof(info));
 
-    /* Small unit requires bFlag20 == 1. */
-    info.bIsLarge = false;
+    /* Types 0..8 require bFlag20 == 1. */
+    info.nUnitType = 2;
     node.bFlag20  = 0;
-    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  small: bFlag20 0 rejected");
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  type 2: bFlag20 0 rejected");
     node.bFlag20 = 1;
-    Check(Rmp_NodeAcceptsUnit(&node, &info, false), "  small: bFlag20 1 accepted");
+    Check(Rmp_NodeAcceptsUnit(&node, &info, false), "  type 2: bFlag20 1 accepted");
     node.bFlag20 = 2;
-    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  small: bFlag20 2 rejected");
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  type 2: bFlag20 2 rejected");
 
-    /* Large unit compares against the movement class, 8 normalised to 4. */
-    info.bIsLarge   = true;
-    info.nMoveClass = 8; /* normalises to 4 */
+    /* The gate is the type NUMBER, not the large-unit footprint flag. Type 8 is large by footprint but
+     * still takes the bFlag20 == 1 path, and type 9 is not large but takes the movement-class path. That
+     * is what separates the two readings, and the original does it with CMP #8 / BLS. */
+    info.nMoveClass = 4;
     node.bFlag20    = 4;
-    Check(Rmp_NodeAcceptsUnit(&node, &info, false), "  large: class 8 -> node 4 accepted");
+    info.nUnitType  = 8;
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false),
+          "  type 8 is large by footprint but still needs bFlag20 == 1");
+    info.nUnitType = 9;
+    Check(Rmp_NodeAcceptsUnit(&node, &info, false),
+          "  type 9 is not large but compares bFlag20 against the movement class");
+
+    /* Movement class 8 normalises to 4. */
+    info.nMoveClass = 8;
+    node.bFlag20    = 4;
+    Check(Rmp_NodeAcceptsUnit(&node, &info, false), "  class 8 -> node 4 accepted");
     node.bFlag20 = 3;
-    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  large: class 8 vs node 3 rejected");
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  class 8 vs node 3 rejected");
+
+    /* Class 2 is its own rule. With pUnit[0x1B3] set the node must be class 2. With it clear, class 0 is
+     * allowed unless the mission is an XCom base defence. */
+    info.nUnitType  = 12;
+    info.nMoveClass = 2;
+    info.bFlag0     = 1;
+    node.bFlag20    = 2;
+    Check(Rmp_NodeAcceptsUnit(&node, &info, false), "  class 2 with 0x1B3 set accepts node class 2");
+    node.bFlag20 = 0;
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  class 2 with 0x1B3 set rejects node class 0");
+    info.bFlag0 = 0;
+    Check(Rmp_NodeAcceptsUnit(&node, &info, false),
+          "  class 2 with 0x1B3 clear accepts node class 0 on a normal mission");
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, true),
+          "  but rejects it when the mission is an XCom base defence");
+    node.bFlag20 = 2;
+    Check(Rmp_NodeAcceptsUnit(&node, &info, true), "  class 2 nodes are fine either way");
+    node.bFlag20 = 1;
+    Check(!Rmp_NodeAcceptsUnit(&node, &info, false), "  class 2 rejects node class 1");
 
     /* bFlag19 gates the unit type flags. */
     node.bFlag20 = 1;
-    info.bIsLarge = false;
+    info.nUnitType = 2;
     info.bTypeFlagA = 1;
     info.bTypeFlagB = 0;
     node.bFlag19 = 1;
@@ -319,6 +349,54 @@ static void TestPickSpawn(void)
     Rmp_Init(&rmp);
 }
 
+/* The two flag columns of byte_A7B80, read straight out of the image at 0xa7b80. */
+static const u8 s_aWantFlagA[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 1, 0, 0, 0, 1,
+    1, 0, 0, 1, 0, 1, 0, 0,
+    0, 0, 1, 0, 1, 1, 1, 0
+};
+static const u8 s_aWantFlagB[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 0, 1, 1, 1, 1,
+    1, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 1, 0, 0, 0, 0, 0
+};
+
+static void TestUnitInfoFromSoldier(void)
+{
+    RmpUnitInfo info;
+    Soldier     unit;
+    int         nBad = 0;
+
+    printf("Rmp_UnitInfoFromSoldier\n");
+
+    memset(&unit, 0, sizeof(unit));
+    unit.nUnitType = 13;
+    unit.bRankType = 8;
+    unit.bUnk435   = 1;
+
+    Rmp_UnitInfoFromSoldier(&info, &unit);
+    CheckEqI32(info.nUnitType, 13, "  unit type copied");
+    CheckEqI32(info.nMoveClass, 8, "  pUnit[0xE2] is read rather than left at zero");
+    CheckEqI32(info.bFlag0, 1, "  pUnit[0x1B3] is read rather than left at zero");
+    CheckEqI32(info.bTypeFlagA, 1, "  byte_A7B80[4*13] is 1");
+    CheckEqI32(info.bTypeFlagB, 0, "  byte_A7B80[4*13+1] is 0");
+
+    for (i32 t = 0; t < PUFO_UNIT_TYPE_COUNT; ++t) {
+        unit.nUnitType = (u8)t;
+        Rmp_UnitInfoFromSoldier(&info, &unit);
+        if (info.bTypeFlagA != s_aWantFlagA[t] || info.bTypeFlagB != s_aWantFlagB[t]) {
+            nBad = 1;
+        }
+    }
+    Check(nBad == 0,
+          "  both flag columns match the image for all 24 unit types");
+
+    unit.nUnitType = 200;
+    Rmp_UnitInfoFromSoldier(&info, &unit);
+    CheckEqI32(info.bTypeFlagA, 0, "  a type beyond the table leaves the flags clear");
+    CheckEqI32(info.bTypeFlagB, 0, "  both of them");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -336,6 +414,7 @@ int main(void)
     TestLinks();
     TestFree();
     TestAcceptsUnit();
+    TestUnitInfoFromSoldier();
     TestPickSpawn();
 
     Asset_CloseArchives();
