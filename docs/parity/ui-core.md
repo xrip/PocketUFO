@@ -1506,13 +1506,51 @@ What is still missing, with sizes:
 | `Tact_DrawCommandPads @ 0x1fc8c` | 4,044 | |
 | `MainMenu_Draw @ 0x1dbb8` | 2,680 | |
 | `MapView_DrawMinimap @ 0x1ed4c` | 2,112 | |
-| `TactHud_DrawInventoryScreen @ 0x1f58c` | 1,792 | |
-| `TactHud_DrawTopBar @ 0x20ef8` | 1,336 | |
-| `MapView_DrawIsoLayer @ 0x21e2c` | 1,252 | |
-| `Titles_DrawAnimatedFrame @ 0x1a83c` | 672 | needs the titles state block at `0x158804` modelled first |
+| `TactHud_DrawInventoryScreen (0x1f58c)` | 1,792 | blocked only by `TactHud_DrawItemStrip (0x2cdac)` below |
+| `TactHud_DrawItemStrip (0x2cdac)` | 2,004 | fully decoded, see below; needs six state models the port does not own |
+| `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnit (0x1c958)` and `MapView_DrawUnitFacingArrow (0x1b7bc)` |
+| `Titles_DrawAnimatedFrame (0x1a83c)` | 672 | needs the titles state block at `0x158804` modelled first |
 | `Titles_DrawBackdrop @ 0x1e630` | 600 | **ported** in `src/pufo/game/pufo_titles.c` |
+| `TactHud_DrawTopBar @ 0x20ef8` | 1,336 | **ported** |
 | `TactHud_DrawUnitRoster @ 0x21908` | 676 | **ported** |
-| `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` | 40 | deliberately not ported: it is two calls, and the port has no Cydonia module to own it |
+| `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` | 40 | **ported** as `Cydonia_BlitThenDrawPanel` in `src/pufo/ui/pufo_panel.c` |
+
+## `TactHud_DrawItemStrip (0x2cdac)`, decoded and not yet ported
+
+Six draw regions, each with its own fixed anchor. Every icon in the function is
+`pObj->uIconId + nBigObsSprBase - 1`, the bigobs sprite group — the same rule
+`TactHud_DrawSelectedUnitPanel @ 0x1d5ec` uses for weapon icons.
+
+| region | x | y |
+|---|---|---|
+| item strip, 4 slots | `38 * i + HandSlot + 19*(2 - nFootW)/2 + 24` | `EquipDelta + 17*(3 - nFootH)/2 + 265` |
+| strip count label | `38 * i - Text_MeasureWidth + 52` (right aligned) | `301` |
+| right hand | `124 + HandSlot + 19*(2 - nFootW)/2` | `63 + EquipDelta + 17*(3 - nFootH)/2` |
+| left hand | `5 + HandSlot + 19*(2 - nFootW)/2` | `63 + EquipDelta + 17*(3 - nFootH)/2` |
+| backpack, 2 rows x 4 cols | `19 * col + HandSlot + 162` | `19 * row + EquipDelta + 163` |
+| belt, 3 rows x 3 cols | `19 * col + HandSlot + 172` | `19 * row + EquipDelta + 25` |
+| pockets 2 and 3 | `19 * col + HandSlot + 23` and `+ 105` | `EquipDelta + 163` |
+| pockets 0 and 1 | `19 * col + HandSlot + 24` and `+ 105` | `EquipDelta + 25` |
+
+The `19 * (2 - nFootW) / 2` and `17 * (3 - nFootH) / 2` pair is the footprint centring recipe used
+throughout the tactical HUD.
+
+Three facts worth carrying into the port:
+
+- An empty slot is `item == NULL` **or** `item == unk_138EA0`. So `0x138EA0` is a sentinel `TactItem`
+  pointer meaning "empty" alongside null, and the port has to test both.
+- `unk_10DBA8` and `unk_10DBAC` are `.bss` loop counters reused across three separate loops. They are
+  shared scratch, not locals, so the original is not re-entrant. The port should use locals and record
+  that as a deviation.
+- The empty-hand marker pad `dword_156A70` is blitted at `(126, 64)` when `pHandL != NULL` and
+  `pHandR == NULL` and `pHandL->pObj->bListPri == 1`, and at `(7, 64)` when `pHandR != NULL` and
+  `pHandL == NULL` and `pHandR->pObj->bListPri == 1`. Hex-Rays renders this as a confusing double
+  assignment to a `zf` flag; the net condition is the one written here. In plain terms: one hand holds a
+  one-handed item and the other hand is empty, so mark the empty hand.
+
+The strip loop reads its list through `Map.gap_6691` with a `4 * index + 1` byte offset, and the count
+from a parallel u16 array at `Map.gap_6691 + 8193`, both indexed by `row + Map.nInvFilterType`. The
+filter is a scroll offset: the loop breaks when `row + nInvFilterType >= nInvListCount`.
 
 `Render_Frame` itself is not ported until its callees are. It is written as `Render_Frame (0x22310)`
 in the port's comments, never with an `@`, so the audit does not count it as recreated.
