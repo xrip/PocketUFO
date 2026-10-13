@@ -25,6 +25,7 @@ TABLES = [
     ("step deltas",              0xA7AE0, "g_aStepDir",            "src/pufo/game/pufo_path.c",    30, "b", 0),
     ("unit type flag byte[4i]",  0xA7B80, "g_aUnitTypeFlag0",      "src/pufo/game/pufo_unit.c",    24, "b", 4),
     ("unit type flag byte[4i+1]", 0xA7B81, "g_aUnitTypeIsLarge",   "src/pufo/game/pufo_unit.c",    24, "b", 4),
+    ("unit type flag byte[4i+2]", 0xA7B82, "g_aUnitTypeFlag2",     "src/pufo/game/pufo_unit.c",    24, "b", 4),
     # 23 blocks of 96 bytes at unk_A9768: 23 types x 2 selections x 8 facings, each an i16 triple.
     ("unit muzzle offsets",      0xA9768, "g_aUnitMuzzleOffset",   "src/pufo/game/pufo_unit.c",  1104, "h", 0),
     # aInvHitRects: 25 records of 14 bytes, seven i16 each.
@@ -43,6 +44,17 @@ TABLES = [
     ("bob phase Y",              0xA7BE0, "g_aBobPhaseY",          "src/pufo/game/pufo_isodraw.c",    8, "b", 0),
     ("unit weapon Y offset",     0xA9310, "g_aUnitWeaponYOff",     "src/pufo/game/pufo_isodraw.c",   23, "b", 0),
     ("unit facing draw offset",  0xA93A8, "g_aUnitFacingDrawOff",  "src/pufo/game/pufo_isodraw.c",  224, "b", 0),
+    # The nine Tact_SpawnAliens tables, dumped by tools/gen_alien_tables.py. Every extent is closed
+    # by the next symbol in the image; see tools/gen_alien_tables.py --check for the boundary bytes.
+    ("sprite set names",         0xA7BE8, "s_aSpriteSetName",         "src/pufo/game/pufo_tactctl.c", 207, "B", 0),
+    ("alien race counts",        0xA6618, "s_aAlienRaceCounts",       "src/pufo/game/pufo_tactctl.c",  16, "B", 0),
+    ("alien secondary counts",   0xA6658, "s_aAlienSecondaryCounts",  "src/pufo/game/pufo_tactctl.c",  16, "B", 0),
+    ("alien race composition",   0xA6628, "s_aAlienRaceComposition",  "src/pufo/game/pufo_tactctl.c",  40, "B", 0),
+    ("alien rank types",         0xA6650, "s_aAlienRankTypes",        "src/pufo/game/pufo_tactctl.c",   5, "B", 0),
+    ("alien mission totals",     0xAA020, "s_aAlienMissionTotals",    "src/pufo/game/pufo_tactctl.c",   8, "H", 0),
+    ("alien composition divisor", 0xAA030, "s_aAlienCompositionDivisor", "src/pufo/game/pufo_tactctl.c", 8, "H", 0),
+    ("alien belt objects",       0xAA008, "s_aAlienBeltObjects",      "src/pufo/game/pufo_tactctl.c",   8, "h", 0),
+    ("alien unit stats",         0xA8F38, "s_aAlienUnitStats",        "src/pufo/game/pufo_tactctl.c", 224, "h", 0),
 ]
 
 

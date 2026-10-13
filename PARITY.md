@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 665 / 1103 (60.3%) |
-| Bytes of original code cited | 227292 / 598792 (38.0%) |
+| Functions cited as evidence | 666 / 1103 (60.4%) |
+| Bytes of original code cited | 230808 / 598792 (38.5%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 48 |
-| Test checks run | 6680 |
+| Test checks run | 6740 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 178 | 214 | 83928 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 179 | 214 | 87444 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 107 | 205 | 34304 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -235,13 +235,14 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (178 functions)
+### `tact` (179 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
+| `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
 | `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+2) |
 | `0x31a18` | `Tact_ResolveThrowLanding` | 2580 | `src/pufo/game/pufo_ballist.h` |
 | `0x3102c` | `Tact_SimulateThrowArc` | 2540 | `src/pufo/game/pufo_ballist.h` |
@@ -300,7 +301,7 @@ is the module that answers to it.
 | `0x498b0` | `Unit_ResetBattleState` | 348 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
-| `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
+| `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h` |
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
@@ -967,7 +968,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 36 functions, 94416 bytes remaining
+### `tact` — 35 functions, 90900 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -978,7 +979,6 @@ whose port work they belong to.
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3c550` | `Tact_InitMission` | 4120 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3d568` | `Tact_Shutdown` | 3788 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x3a2ac` | `Tact_SpawnAliens` | 3516 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | 3440 B enemy AI driver; injected as a hook in pufo_turn |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
@@ -1334,7 +1334,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
-| `test_tactctl` | PASS | 245 |
+| `test_tactctl` | PASS | 305 |
 | `test_tacthud` | PASS | 266 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 423 |
@@ -1366,7 +1366,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 196 citations.
+parity report. Total: 206 citations.
 
 ### Offsets below the image base (37)
 
@@ -1375,7 +1375,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (159)
+### At or above the image base (169)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1455,7 +1455,9 @@ against the IDB when the final report is assembled.
 - `0x157b0`
 - `0x15821c`
 - `0x158268`
+- `0x15827a`
 - `0x158808`
+- `0x15881c`
 - `0x158890`
 - `0x15ef08`
 - `0x161f38`
@@ -1485,6 +1487,7 @@ against the IDB when the final report is assembled.
 - `0x1b114`
 - `0x254b0`
 - `0x2fd30`
+- `0x3ad48`
 - `0x44d84`
 - `0x5d6c4`
 - `0x82080`
@@ -1508,6 +1511,9 @@ against the IDB when the final report is assembled.
 - `0xa62ec`
 - `0xa62f0`
 - `0xa6328`
+- `0xa6618`
+- `0xa6628`
+- `0xa6658`
 - `0xa6688`
 - `0xa66b8`
 - `0xa67f0`
@@ -1524,11 +1530,15 @@ against the IDB when the final report is assembled.
 - `0xa7ed8`
 - `0xa8138`
 - `0xa8dd8`
+- `0xa8f38`
 - `0xa9218`
 - `0xa9310`
 - `0xa93a8`
 - `0xa9488`
 - `0xa9768`
+- `0xaa008`
+- `0xaa020`
+- `0xaa030`
 - `0xaa040`
 - `0xaa168`
 - `0xab270`

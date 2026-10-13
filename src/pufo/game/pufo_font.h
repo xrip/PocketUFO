@@ -51,6 +51,11 @@
 typedef struct PufoFont {
     u8        bInited;                              /* 0x598 */
     u8        nSlotCount;                           /* 0x400 */
+    /* The four alien sprite-set bases Tact_SpawnAliens @ 0x3a2ac writes at 0x3AAFC: for each of
+     * Map_abSpriteSet[0..3] that is not 23, the running nTotalSprFrames at the moment that set was
+     * loaded. Slot i is left untouched when abSpriteSet[i] is 23, so it keeps whatever the previous
+     * mission left there - the original does not clear it. */
+    u16       anAlienSprBase[4];                    /* 0x12, fontSys_anAlienSprBase @ 0x15827a */
     u16       nTotalSprFrames;                      /* 0x36 */
     u16       nTotalMc1;                            /* 0x38 */
     u16       anMc1Base[PUFO_FONT_SLOTS];           /* 0x3a */

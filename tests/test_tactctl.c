@@ -1346,6 +1346,305 @@ static void TestDeployScatterNoLayers(void)
     D_Fixture();
 }
 
+/* --- Tact_SpawnAliens (0x3a2ac) -------------------------------------------------------------
+ *
+ * The mission-type branches that use fixed formulas consume RNG, so those are checked as ranges.
+ * The terrain-table branch is fully deterministic and is checked value by value.
+ */
+
+static Soldier      *s_apSoldiers[64];
+static Soldier      *s_apEnemyUnits[64];
+static Soldier      *s_apHidden[64];
+static TactItem     *s_apTactItems[256];
+static ObjectRecFull s_aObjects[128];
+static ObjectRecFull *s_apObjects[128];
+static char          s_aszNames[23][40];
+static PufoFont      s_font;
+static i32           s_nSoldierCount, s_nNextId, s_nEnemyCount, s_nReserve, s_nItemCount;
+static i32           s_nKills;
+static Soldier      *s_apKilled[64];
+
+static void Spawn_KillUnit(Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    pUnit->bUnk435 = 0;   /* stands for what Tact_KillUnit (0x4e430) leaves behind */
+    if (s_nKills < 64) {
+        s_apKilled[s_nKills] = pUnit;
+    }
+    s_nKills += 1;
+}
+
+static bool Spawn_WasKilled(const Soldier *pUnit)
+{
+    for (i32 i = 0; i < s_nKills && i < 64; ++i) {
+        if (s_apKilled[i] == pUnit) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static u8 Spawn_HookWeight(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return 0; }
+static u8 Spawn_HookTwoHanded(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return 0; }
+static u8 Spawn_HookAmmoCap(TactItem *pItem, void *pUser) { (void)pItem; (void)pUser; return 255; }
+static u8 Spawn_HookAmmoWeight(i32 nIndex, void *pUser) { (void)nIndex; (void)pUser; return 0; }
+
+static const InvStatHooks s_spawnInvHooks = {
+    Spawn_HookWeight, Spawn_HookTwoHanded, Spawn_HookAmmoCap, Spawn_HookAmmoWeight, NULL
+};
+
+static void SpawnFixture_Reset(void)
+{
+    memset(s_apSoldiers, 0, sizeof(s_apSoldiers));
+    memset(s_apEnemyUnits, 0, sizeof(s_apEnemyUnits));
+    memset(s_apHidden, 0, sizeof(s_apHidden));
+    memset(s_apTactItems, 0, sizeof(s_apTactItems));
+    memset(s_aObjects, 0, sizeof(s_aObjects));
+    s_nSoldierCount = 0;
+    s_nNextId = 1;
+    s_nEnemyCount = 0;
+    s_nReserve = 0;
+    s_nItemCount = 0;
+    s_nKills = 0;
+    memset(s_apKilled, 0, sizeof(s_apKilled));
+
+    for (i32 i = 0; i < 128; ++i) {
+        s_apObjects[i] = &s_aObjects[i];
+        /* Every weapon points its ammo type at object 0, whose cap the port then copies. */
+        s_aObjects[i].anAmmoTypeId[0] = 0;
+        s_aObjects[i].bWeight = 0;
+    }
+    s_aObjects[0].bAmmoCap = 100;
+
+    PufoFont_Init(&s_font);
+
+    memset(s_aszNames, 0, sizeof(s_aszNames));
+    pufo_strcpy(s_aszNames[9],  "SECTOID");
+    pufo_strcpy(s_aszNames[10], "MUTON");
+    pufo_strcpy(s_aszNames[11], "FLOATER");
+    pufo_strcpy(s_aszNames[12], "SNAKEMAN");
+}
+
+static void SpawnEnv_Init(TactSpawnAliensEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->create.apSoldiers = s_apSoldiers;
+    pEnv->create.pnSoldierCount = &s_nSoldierCount;
+    pEnv->create.pnNextSoldierId = &s_nNextId;
+    pEnv->apEnemyUnits = s_apEnemyUnits;
+    pEnv->pnEnemyUnitCount = &s_nEnemyCount;
+    pEnv->apHiddenSoldiers = s_apHidden;
+    pEnv->pnEnemyReserveCount = &s_nReserve;
+    pEnv->apTactItems = s_apTactItems;
+    pEnv->pnTactItemCount = &s_nItemCount;
+    pEnv->apObjects = s_apObjects;
+    pEnv->pFont = &s_font;
+    pEnv->pRmp = NULL;
+    pEnv->pfnLookupCell = NULL;
+    pEnv->pInvHooks = &s_spawnInvHooks;
+    pEnv->pfnKillUnit = Spawn_KillUnit;
+    pEnv->panUnitName = &s_aszNames[0][0];
+    pEnv->nMissionMode = 0;
+    pEnv->nMissionType = 1;          /* not Urban, XcomBase, AlienBase or Mars: the table branch */
+    pEnv->nTerrainVariant = 5;
+    pEnv->nAlienTier = 0;
+    pEnv->nAlienPoolScale = 120;
+    pEnv->abSpriteSet[0] = 9;        /* sectoid */
+    pEnv->abSpriteSet[1] = 10;       /* muton */
+    pEnv->abSpriteSet[2] = 11;       /* floater */
+    pEnv->abSpriteSet[3] = 12;       /* snakeman */
+    pEnv->nAlienSetIndex = 0;
+    pEnv->nFourthRaceCount = 0;
+}
+
+static void SpawnFixture_Free(TactSpawnAliensEnv *pEnv)
+{
+    (void)pEnv;
+    for (i32 i = 0; i < s_nSoldierCount; ++i) {
+        free(s_apSoldiers[i]);
+    }
+    for (i32 i = 0; i < s_nItemCount; ++i) {
+        free(s_apTactItems[i]);
+    }
+    PufoFont_Free(&s_font);
+}
+
+static void TestSpawnAliensTerrainBranch(void)
+{
+    TactSpawnAliensEnv env;
+
+    printf("Tact_SpawnAliens - terrain-table branch\n");
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+
+    /* Terrain 5, tier 0 -> row 12: primary 20 from raceCounts, secondary 2 from secondaryCounts.
+     * Mission type 1 -> no reserves. The three race groups cover the 20 primary units only, so the
+     * two secondary units fall past group 3 and take the random race. */
+    i32 nSpawned = Tact_SpawnAliens(&env);
+
+    CheckEqI32(s_nEnemyCount, 22, "  20 + 2 enemies from table row 12");
+    CheckEqI32(s_nReserve, 0, "  no hidden soldiers outside the XCom base mission");
+    CheckEqI32(nSpawned, 22, "  returns the enemy count");
+
+    /* Set index 4 -> composition row 4 = 3,3,0,1,1. Group 1 = trunc(20 * 0.8) = 16,
+     * group 2 = (20-16)/2 = 2, group 3 = 20-2-16 = 2. */
+    CheckEqI32(s_apEnemyUnits[0]->nUnitType, 9,  "  first group is abSpriteSet[0]");
+    CheckEqI32(s_apEnemyUnits[15]->nUnitType, 9, "  enemy 15 is still in the first group");
+    CheckEqI32(s_apEnemyUnits[16]->nUnitType, 10, "  enemy 16 starts the second group");
+    CheckEqI32(s_apEnemyUnits[17]->nUnitType, 10, "  enemy 17 ends the second group");
+    CheckEqI32(s_apEnemyUnits[18]->nUnitType, 11, "  enemy 18 starts the third group");
+    CheckEqI32(s_apEnemyUnits[19]->nUnitType, 11, "  enemy 19 ends the third group");
+
+    /* Names come from the 40-byte-per-type block, not from the soldier generator. */
+    Check(strcmp(s_apEnemyUnits[0]->szName, "SECTOID") == 0, "  name copied from panUnitName[9]");
+    Check(strcmp(s_apEnemyUnits[16]->szName, "MUTON") == 0, "  name copied from panUnitName[10]");
+
+    /* Rank: the composition slots are spent in order, so 3,3,3 then 5,5,5 then 4 then 8, then the
+     * default 2 once every slot has been drained. */
+    CheckEqI32(s_apEnemyUnits[0]->bRankType, 3, "  rank 3 from composition slot 0");
+    CheckEqI32(s_apEnemyUnits[2]->bRankType, 3, "  third rank-3 alien");
+    CheckEqI32(s_apEnemyUnits[3]->bRankType, 5, "  rank 5 from composition slot 1");
+    CheckEqI32(s_apEnemyUnits[5]->bRankType, 5, "  third rank-5 alien");
+    CheckEqI32(s_apEnemyUnits[6]->bRankType, 4, "  rank 4 from composition slot 3 (slot 2 is 0)");
+    CheckEqI32(s_apEnemyUnits[7]->bRankType, 8, "  rank 8 from composition slot 4");
+    CheckEqI32(s_apEnemyUnits[8]->bRankType, 2, "  drained composition leaves the default rank 2");
+
+    /* Stats that carry no jitter. */
+    CheckEqI32(s_apEnemyUnits[0]->auStat[0], 45, "sectoid auStat[0]");
+    CheckEqI32(s_apEnemyUnits[0]->uTu, 45, "sectoid uTu");
+    CheckEqI32(s_apEnemyUnits[0]->auStat[9], 50, "sectoid auStat[9]");
+    CheckEqI32(s_apEnemyUnits[16]->auStat[0], 55, "muton auStat[0]");
+    CheckEqI32(s_apEnemyUnits[16]->auStat[9], 120, "muton auStat[9]");
+    CheckEqI32(s_apEnemyUnits[18]->auStat[0], 60, "floater auStat[0]");
+    CheckEqI32(s_apEnemyUnits[16]->bUnk248, 20, "muton bUnk248 from record +10");
+    CheckEqI32(s_apEnemyUnits[16]->abReady252[2], 20, "muton abReady252[2] from record +16");
+
+    /* The two secondary units sit past group 3, and nFourthRaceCount is 0, so they take the random
+     * fallback race rand(2) + 16. */
+    Check(s_apEnemyUnits[20]->nUnitType >= 16 && s_apEnemyUnits[20]->nUnitType <= 18,
+          "enemy 20 past the race groups takes rand(2) + 16");
+    Check(s_apEnemyUnits[21]->nUnitType >= 16 && s_apEnemyUnits[21]->nUnitType <= 18,
+          "enemy 21 likewise");
+
+    /* Sectoid record has nStat6 == -1, so both stats are rolled. Muton and floater have nStat6 == 0,
+     * so both are taken straight from the record. */
+    Check(s_apEnemyUnits[0]->auStat[6] >= 30 && s_apEnemyUnits[0]->auStat[6] <= 79,
+          "sectoid auStat[6] rolled as rand(50) + 30");
+    Check(s_apEnemyUnits[0]->auStat[7] >= 30 && s_apEnemyUnits[0]->auStat[7] <= 79,
+          "sectoid auStat[7] rolled too");
+    CheckEqI32(s_apEnemyUnits[16]->auStat[6], 0, "muton auStat[6] from the record");
+    CheckEqI32(s_apEnemyUnits[16]->auStat[7], 0, "muton auStat[7] from the record");
+    CheckEqI32(s_apEnemyUnits[16]->bUnk422, 0, "muton keeps bUnk422 clear");
+
+    /* Stealth budget (120 - 20) * 20 * 0.01 = 20, which equals the primary count, so it drops to
+     * 19: the 20th enemy is not flagged, and neither is either secondary unit. */
+    Check(s_apEnemyUnits[18]->bUnk435 == 0 && Spawn_WasKilled(s_apEnemyUnits[18]),
+          "enemy 18 was flagged and killed");
+    Check(!Spawn_WasKilled(s_apEnemyUnits[19]),
+          "the 20th enemy misses the 19-slot stealth budget");
+    Check(!Spawn_WasKilled(s_apEnemyUnits[20]), "the secondary units are not flagged either");
+
+    /* Sprite-set bases: nothing is loaded, so every base is the running total at the time, which
+     * is zero, and the four slots are all visited because none is 23. */
+    CheckEqI32(s_font.anAlienSprBase[0], 0, "alien sprite base 0");
+    CheckEqI32(s_font.anAlienSprBase[3], 0, "alien sprite base 3");
+
+    /* Recomposed composition is (totals[4] + 0) / divisor[i] = 400 / 1,100,1,1,50,100,250,400.
+     * The hand pool is slots 7,6,5,4,3 and the belt pool is slots 1 and 0, so each of the 20
+     * enemies takes exactly one hand weapon and one belt item. */
+    CheckEqI32(s_nItemCount, 40, "one hand weapon and one belt item per enemy");
+    Check(s_apEnemyUnits[0]->pHandL != NULL, "enemy 0 has a hand weapon");
+    CheckEqI32(s_apEnemyUnits[0]->pHandL->nIndex, 0, "hand weapon nIndex is the object ammo type");
+    CheckEqI32(s_apEnemyUnits[0]->pHandL->nAmmo, 100, "hand weapon ammo is that object's cap");
+    Check(s_apEnemyUnits[0]->apBelt[1] != NULL, "enemy 0's belt item lands in slot 1");
+    Check(s_apEnemyUnits[3]->apBelt[1] != NULL, "enemy 3 also uses belt slot 1");
+    Check(s_apEnemyUnits[4]->apBelt[1] == NULL, "belt slot 1 held only four items");
+    Check(s_apEnemyUnits[4]->apBelt[0] != NULL, "enemy 4 falls through to belt slot 0");
+
+    /* bUnk422 survives only for rank 4 or 8 outside the Urban and XCom base missions. Enemy 6 is a
+     * sectoid, the one race whose record sets it, so this is also the nStat6 == -1 case surviving. */
+    CheckEqI32(s_apEnemyUnits[6]->bUnk422, 1, "rank 4 keeps bUnk422");
+    CheckEqI32(s_apEnemyUnits[7]->bUnk422, 1, "rank 8 keeps bUnk422");
+    CheckEqI32(s_apEnemyUnits[0]->bUnk422, 0, "rank 3 loses bUnk422");
+
+    /* The tail kills every still-flagged enemy and restarts the scan after each one. */
+    CheckEqI32(s_nKills, 19, "19 flagged enemies killed");
+    CheckEqI32(s_apEnemyUnits[19]->uHp, (i32)s_apEnemyUnits[19]->auStat[1],
+               "the unflagged enemy keeps its health");
+
+    SpawnFixture_Free(&env);
+}
+
+static void TestSpawnAliensLeadRaceGate(void)
+{
+    TactSpawnAliensEnv env;
+
+    printf("Tact_SpawnAliens - lead race 10 zeroes the secondary count\n");
+
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+    env.nTerrainVariant = 4;                 /* row 9: primary 13, secondary 1 */
+    env.abSpriteSet[0] = 9;
+    (void)Tact_SpawnAliens(&env);
+    CheckEqI32(s_nEnemyCount, 14, "terrain 4 tier 0 gives 13 + 1 with a sectoid lead");
+    SpawnFixture_Free(&env);
+
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+    env.nTerrainVariant = 4;
+    env.abSpriteSet[0] = 10;                 /* muton lead */
+    (void)Tact_SpawnAliens(&env);
+    CheckEqI32(s_nEnemyCount, 13, "a muton lead drops the secondary unit");
+    SpawnFixture_Free(&env);
+
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+    env.nTerrainVariant = 4;
+    env.abSpriteSet[0] = 12;                 /* ethereal lead */
+    (void)Tact_SpawnAliens(&env);
+    CheckEqI32(s_nEnemyCount, 13, "an ethereal lead drops it too");
+    SpawnFixture_Free(&env);
+}
+
+static void TestSpawnAliensXcomBase(void)
+{
+    TactSpawnAliensEnv env;
+
+    printf("Tact_SpawnAliens - XCom base defence hides its squad\n");
+
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+    env.nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;   /* fixed formulas, so ranges not values */
+    (void)Tact_SpawnAliens(&env);
+
+    CheckEqI32(s_nEnemyCount, 0, "nothing goes into apEnemyUnits");
+    /* Mission type 3 draws 3 - rand(3) secondary and 15 - rand(5) primary, and both go into the
+     * hidden squad, so the total is 10..16. */
+    Check(s_nReserve >= 10 && s_nReserve <= 16, "hidden squad is (3 - rand(3)) + (15 - rand(5))");
+    Check(s_apHidden[0] != NULL, "the first hidden soldier is stored");
+    CheckEqI32(s_nKills, 0, "the kill tail scans apEnemyUnits, which is empty");
+
+    SpawnFixture_Free(&env);
+}
+
+static void TestSpawnAliensSpriteSlotSkipped(void)
+{
+    TactSpawnAliensEnv env;
+
+    printf("Tact_SpawnAliens - a 23 sprite-set slot is left alone\n");
+
+    SpawnFixture_Reset();
+    SpawnEnv_Init(&env);
+    env.abSpriteSet[3] = PUFO_SPRITE_SET_NONE;
+    s_font.anAlienSprBase[3] = 77;
+    (void)Tact_SpawnAliens(&env);
+
+    CheckEqI32(s_font.anAlienSprBase[3], 77, "slot 3 keeps whatever the previous mission left");
+    CheckEqI32(s_font.anAlienSprBase[0], 0, "the other three slots are still written");
+
+    SpawnFixture_Free(&env);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1367,6 +1666,10 @@ int main(void)
     TestDeployHwpsStaleAmmoAndGate();
     TestDeployReplacesParkedTeam();
     TestDeployScatterNoLayers();
+    TestSpawnAliensTerrainBranch();
+    TestSpawnAliensLeadRaceGate();
+    TestSpawnAliensXcomBase();
+    TestSpawnAliensSpriteSlotSkipped();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

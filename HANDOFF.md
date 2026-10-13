@@ -1,7 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD before this edit: `73917e8`. This document is committed together with the nine
-`MapView_DrawUnit` static tables, which are now in the port (section 7, Priority 1 step 1).
+Date: 2026-10-13. HEAD before this edit: `de8bbc4`. This document is committed together with
+`Tact_SpawnAliens` and its nine static alien-mission tables, which are now in the port (section 7,
+Priority 1 step 2).
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -46,14 +47,14 @@ ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed o
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 665 / 1103 (60.3%)
-                                             bytes cited:     227292 / 598792 (38.0%)
+python docs/parity/coverage.py            -> functions cited: 666 / 1103 (60.4%)
+                                             bytes cited:     230808 / 598792 (38.5%)
 python docs/parity/audit_credits.py       -> NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 42, ORIGINAL BUG markers in src/pufo: 13
+python docs/parity/audit_bugs.py          -> ledger rows: 44, ORIGINAL BUG markers in src/pufo: 13
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 18 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 28 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -182,7 +183,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 42 rows, 13 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 44 rows, 13 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -199,7 +200,7 @@ Three audits exist because claims drifted:
   Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 216 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
-  against the shipped image. 18 tables, 0 mismatches.
+  against the shipped image. 28 tables, 0 mismatches.
 
 ### Decision: ARM disassembly beats Hex-Rays
 
@@ -251,8 +252,8 @@ This is the shortest chain that produces a real game session, in dependency orde
 
 1. `Map_BuildMissionTerrain` (0x22e10, 10,676 B) — the largest remaining `tact` gap. Its own
    dependencies are already ported: `.ma1` templates, `Font_LoadTactSprites`, `Tact_BuildPaletteLuts`.
-2. `Tact_SpawnAliens` (0x3a2ac, 3,516 B) — **fully decoded**, all ten callees already ported. It is
-   blocked only on static data tables, which are now measured (see section 7).
+2. Done: `Tact_SpawnAliens` (0x3a2ac, 3,516 B) — ported, with its nine static tables inlined and
+   image-audited (see section 7).
 3. `Tact_SetupCraftCargo` (0x38f00, 2,116 B) — blocked on four globals the port does not own:
    `0x156CD0` ammo-split table, `0x157208` per-object work triple, `0x157204`, `0x158848`.
 4. `Tact_InitMission` (0x3c550, 4,120 B) — blocked only by 1, 2 and 3.
@@ -291,7 +292,6 @@ draw.
 These are analysed and recorded in `docs/parity/` and in IDB comments. Porting them is transcription,
 not research:
 
-- `Tact_SpawnAliens` (0x3a2ac) — see section 7 for the tables.
 - `MapView_DrawUnit` (0x1c958, 3,220 B, 126 blocks) — all offsets, all table extents, all semantics
   settled, and its nine static tables are now in the port. What is left is the function body itself.
 - `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
@@ -341,10 +341,19 @@ byte for byte against the image. `aAlienBeltObjects` (0xAA008) is eight u16
 14, 12, 10, 8, 6, 4, 2, 0 and skips the entry where the counter equals 4 — the `-1` sentinel is
 skipped by a counter, not by a test.
 
-**Likely original stack bug at 0x3AB6C, recorded and not reproduced.** `v87` is `_DWORD[7]` at
-`bp-0x20`, ending at `bp-0x09`, but the composition loop writes eight dwords. The eighth lands at
-`bp-0x04`, which is `v88`, the stack byte later used as a `TactItem` stub at 0x3AD50. Decide
-explicitly whether to reproduce it before porting.
+**There is no stack overrun at 0x3AB6C — the earlier claim here was wrong.** The composition array is
+one 8-dword array at `SP+0x70` (`bp-0x20` .. `bp-0x04`). The 5-entry seed loop at 0x3A34C writes its
+first five slots, the loop at 0x3AB50 overwrites all eight, and the belt walk at 0x3AD50 starts at
+`var_4` (`bp-0x04`) and steps **down** over the same eight slots. IDA's `var_14`, `var_10` and `var_4`
+are three elements of that one array that Hex-Rays declared as separate variables, which is what made
+`v87` look like `_DWORD[7]` overrun a `TactItem` stub. In the IDB the three phantom `var_14` /
+`var_10` / `var_4` are deleted and the array head is named `anComposition` at `bp-0x20` (IDA rejects a
+real 8-dword stack array over this frame). The port uses one `i32 anComposition[8]`.
+
+**Two stack slots `Tact_SpawnAliens` reads without ever writing**, both in `docs/parity/bugs.tsv` and
+both modelled as explicit `TactSpawnAliensEnv` fields because C cannot read uninitialised memory:
+`var_24` (read at 0x3A8BC, bounds the fourth race group) and `var_48` (the alien set index, left
+unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
 
 ### Assumptions carried forward
 
@@ -447,7 +456,7 @@ python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
 All five must be clean. Expected right now: 0 negated citations, 0 unexplained name flags, ledger
-and markers agree, 18 tables exact.
+and markers agree, 28 tables exact.
 
 ### Traps that will cost you a unit if you ignore them
 
@@ -512,10 +521,9 @@ does.
 1. Done: the nine `MapView_DrawUnit` tables are in `src/pufo/game/pufo_isodraw.c`, exported by
    `pufo_isodraw.h`, generated by `tools/gen_isodraw_tables.py`, and audited by
    `docs/parity/audit_tables.py`. `aUnitFacingDrawOff` is 14 types wide, not 23.
-2. Port `Tact_SpawnAliens` (0x3a2ac). Decode is committed. Needs an env carrying `nTerrainVariant`,
-   `bUnk86290..86297`, `nEnemyUnitCount`, `nEnemyReserveCount`, `apEnemyUnits`, `apHiddenSoldiers`,
-   plus `aAlienRaceCounts`, `aAlienSecondaryCounts`, `aAlienBeltObjects`, `aAlienMissionTotals`,
-   `aAlienCompositionDivisors`, `aAlienUnitStats`. Decide explicitly about the 0x3AB6C stack overrun.
+2. Done: `Tact_SpawnAliens` (0x3a2ac) is ported as `Tact_SpawnAliens(TactSpawnAliensEnv *)` in
+   `pufo_tactctl.c`, with the nine static tables inlined and generated by
+   `tools/gen_alien_tables.py`. The 0x3AB6C "stack overrun" turned out not to exist (see §7).
 3. Model `0x156CD0` and `0x157208`, then port `Tact_SetupCraftCargo` (0x38f00).
 4. Port `Map_BuildMissionTerrain` (0x22e10). Largest single gap on the critical path.
 5. Port `Tact_InitMission` (0x3c550).
@@ -550,7 +558,10 @@ remaining bulk is.
 - Extend `audit_tables.py` to the remaining hand-dumped tables: `s_aFilterPad[6]`, `g_aUiBankSpans`,
   `g_aUiNamedPad`, and the eleven `aUiDesc*` control tables. Some are derived from code bounds
   rather than image byte tables; record that distinction rather than forcing a byte comparison.
-- Decide the fate of the 0x3AB6C stack overrun before porting `Tact_SpawnAliens`.
+- The 23 sprite-set name slots inside `aXcom0` (0xA7BE8) are still one typed object
+  (`char aXcom0[23][9]`) with the names listed in an IDB comment, not 23 separate IDB names: the MCP
+  `rename` data form only accepts already-named globals and rejects the unnamed addresses with
+  `Global '0xA7C39' not found`. In the port they are `g_aSpriteSetName[23][9]`, which is named.
 
 ---
 
@@ -562,7 +573,7 @@ remaining bulk is.
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 216 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 42-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 44-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

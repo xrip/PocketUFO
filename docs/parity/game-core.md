@@ -7329,26 +7329,53 @@ sentinel is skipped by a counter, not by a test.
 **`word_AA020` is eight mission-set totals**: `1, 35, 100, 300, 400, 350, 400, 300`, indexed by the same
 `v76`. The race composition is then recomputed as `(word_AA020[v76] + unk_1472C8) / unk_AA030[i]`.
 
-### An original stack bug at 0x3AB6C
+### There is no stack overrun at 0x3AB6C — the earlier reading was wrong
 
 ```
-v47 = v87;  v48 = 8;
-do { --v48; *v47++ = v50 / *v49++; } while (v48 != 0);
+ADD  R6, SP, #0x48+var_20      ; 0x3AB50
+MOV  R7, #8
+...
+SUB  R7, R7, #1                ; 0x3AB68
+STR  R0, [R6]                  ; 0x3AB6C
+ADD  R6, R6, #4
+CMP  R7, #0
+BHI  loc_3AB50
 ```
 
-`v87` is `_DWORD v87[7]` at `bp-0x20`, which ends at `bp-0x09`. The loop writes **eight** dwords, so the
-eighth lands at `bp-0x04` — which is `v88`, the one-byte stack variable that becomes the `TactItem` stub at
-0x3AD50. The composition loop therefore writes four bytes over the head of a stub it later reads as a
-`TactItem *`. Worth reproducing deliberately, or fixing, but it should not be done silently.
+The composition array is **one 8-dword array** at `SP+0x70` (`bp-0x20` .. `bp-0x04`). The 5-entry seed
+loop at `0x3A34C` writes its first five slots, this loop overwrites all eight, and the belt walk at
+`0x3AD50` starts at `var_4` (`bp-0x04`) and steps **down** four bytes eight times over the same eight
+slots. IDA's `var_14`, `var_10` and `var_4` are three elements of that one array that Hex-Rays had
+declared as separate variables, which is what produced the claim that `v87` is `_DWORD[7]` and that the
+eighth dword overruns a `TactItem` stub. It does not: the array is eight wide and both users agree.
+In the IDB the three phantom `var_14` / `var_10` / `var_4` are deleted and the array head is named
+`anComposition` at `bp-0x20`; IDA refuses a real 8-dword stack array over this frame, so the other
+seven slots stay as unnamed frame bytes. The port uses one `i32 anComposition[8]`.
+
+### Two stack slots Tact_SpawnAliens reads without ever writing
+
+Both are in `docs/parity/bugs.tsv`. A C port cannot read uninitialised memory, so both come in as
+`TactSpawnAliensEnv` fields.
+
+- `var_24`, read at `0x3A8BC`. It is the fourth race group's count: the bound is
+  `CMP R7, (var_24 + var_28 + var_2C + var_30)` and the group body at `0x3A8DC` loads
+  `Map_abSpriteSet+3`. The whole function has exactly two references to `var_24` — the frame
+  declaration and this load.
+- `var_48`, the alien set index. Stored for mission mode 0 (`0x3A31C`), 1 (`0x3A30C`), 2 (`0x3A304`)
+  and 3 (`0x3A2F4`, `R2` preloaded to 5), overwritten when `nMissionType` is 9 (`0x3A338`), and left
+  unwritten by the `BNE loc_3A324` at `0x3A2F0` for any mode above 3. It then indexes the eight-row
+  composition table and the eight-entry mission totals table.
 
 ### The rest of the shape
 
 - Enemy counts by mission type: type 5 gives `15 - rand(5)` and `5 - rand(3)` plus `rand(5) + 5` reserves;
   type 3 gives `15 - rand(5)` and `3 - rand(3)`; types 4 and 9 give `20 - rand(5)` and `4 - rand(3)`;
   everything else reads the terrain tables. A lead race of 10 or 12 forces the secondary count to 0.
-- The primary count is halved through a **string round trip**: `itos` then `stod` then multiply by the
-  double at `0x3F4CCCCD` (0.2) then `dtoi`. That is `floor(v5 * 0.2)` reached through decimal text, which is
-  what the WinCE runtime does.
+- The primary count is split into three race groups through a **string round trip**: `itos` then `stod`
+  then multiply by the double pair `0x3FE99999 : 0x9999999A` (**0.8**) then `dtoi`. So group 1 is
+  `floor(primary * 0.8)` clamped to at least 1, group 2 is `(primary - group1) / 2`, group 3 is the
+  remainder. The earlier note here said 0.2 and called it a halving; both were wrong. Unpacking the
+  constant pair gives 0.8, and `0x3F4CCCCD` is not referenced by this function at all.
 - Race assignment is by position: the first `v84` soldiers get the lead race, the next `v85` get the second,
   the next `v86` get the third, and anything past that gets `rand(2) + 16`. A race value of 23 means
   "none" and falls through.
@@ -7357,7 +7384,8 @@ eighth lands at `bp-0x04` — which is `v88`, the one-byte stack variable that b
 - A `-1` in record word 6 means "roll it": `auStat[6] = rand(0x32) + 30` and `auStat[7] = rand(0x32) + 30`
   with `bUnk422 = 1`; otherwise both are taken from the record and `bUnk422 = 0`.
 - `bUnk435` is set on up to `v78` non-large aliens, excluding unit types 16 and 17. `v78` is
-  `(bUnk86293 - 20) * v5 / something`, and it is reduced by one when it would equal the whole enemy count.
+  `(Map_bUnk15115 - 20) * primary * 0.01` — the double pair `0x3F847AE1 : 0x47AE147B` is 0.01, so the
+  divisor is 100 — and it is reduced by one when it would equal the whole enemy count.
 - For the XCom base defence mission the soldiers go into `apHiddenSoldiers` and `nEnemyReserveCount` instead
   of `apEnemyUnits`, and they are **not** placed by `Map_PickRmpSpawnForUnit`.
 - Unit types 18 and 21 are handed `apObjects[11]` with `nAmmo = -2`, which in a u8 field is 255.

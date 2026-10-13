@@ -19,6 +19,7 @@
 #ifndef PUFO_TACTCTL_H
 #define PUFO_TACTCTL_H
 
+#include "game/pufo_font.h"      /* PufoFont for TactSpawnAliensEnv */
 #include "game/pufo_mapcell.h"
 #include "game/pufo_objectrec.h"  /* ObjectRecFull for TactDeployEnv */
 #include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks for TactSelectCtx */
@@ -493,5 +494,114 @@ typedef struct TactDeployEnv {
  * The number of soldiers is read from ObjectRec.uRecovScore at 0xCA, not uRecovCount at 0xCC.
  * ARM at 0x39A24 is LDRH R11, [R3,#0xCA]. */
 i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv);
+
+/* ---------------------------------------------------- spawning the alien squad */
+
+/* Mission types Tact_SpawnAliens branches on. Values proven from ARM compares:
+ * CMP #5 and CMP #3 at 0x3AC00 (Urban / XcomBase), CMP #9 at 0x3A338 (MarsOrSpecial),
+ * CMP #4 and CMP #9 at 0x3A41C (AlienBase / MarsOrSpecial). */
+#define PUFO_MISSION_TYPE_URBAN         5u
+#define PUFO_MISSION_TYPE_MARS_SPECIAL  9u
+
+/* The 32-byte alien stat record aAlienUnitStats @ 0xa8f38 carries, index nUnitType - 9.
+ * Field map taken from ARM at 0x3A934..0x3AA40. Sixteen halfwords, no padding. */
+typedef struct AlienUnitStatRec {
+    i16 nTu;        /* +00 -> auStat[0] and uTu */
+    i16 nStat8;     /* +02 -> auStat[8], plus a rand(20) - 10 jitter */
+    i16 nStat9;     /* +04 -> auStat[9] */
+    i16 nStat2;     /* +06 -> auStat[2], plus a jitter */
+    i16 nHp;        /* +08 -> auStat[1], plus a jitter */
+    i16 nStat3;     /* +0A -> auStat[3], plus a jitter */
+    i16 nStat6;     /* +0C -> auStat[6]. -1 means "roll both": auStat[6] and auStat[7]
+                     * each become rand(50) + 30 and bUnk422 is set to 1. */
+    i16 nStat7;     /* +0E -> auStat[7] */
+    i16 nUnk248;    /* +10, low byte -> bUnk248 */
+    i16 nReady[5];  /* +12, +14, +16, +18, +1A, low bytes -> abReady252[0..4] */
+    i16 nStat4;     /* +1C -> auStat[4] */
+    i16 nStat5;     /* +1E -> auStat[5] */
+} AlienUnitStatRec;
+_Static_assert(sizeof(AlienUnitStatRec) == 32, "aAlienUnitStats records are 32 bytes");
+
+/* The sprite-set name table aXcom0 @ 0xa7be8: 23 nine-byte names, index nUnitType. */
+#define PUFO_ALIEN_SPRITE_SET_NAME_COUNT 23
+
+/* Everything Tact_SpawnAliens reaches through the Map block, the font block and the
+ * mission data.
+ *
+ * Two of the original's inputs are stack slots it never writes, and a C port cannot read
+ * uninitialised memory, so both come in as fields and both are recorded in
+ * docs/parity/bugs.tsv:
+ *
+ *   nFourthRaceCount  - var_24, read at 0x3A8BC as the fourth race group's count. The whole
+ *                       function has exactly two references to var_24: this read and the frame
+ *                       declaration. It bounds the group that gets Map_abSpriteSet[3].
+ *   nAlienSetIndex    - var_48. Written for nMissionMode 0, 1, 2 and 3 (0x3A31C, 0x3A30C,
+ *                       0x3A304, 0x3A2F4) and overwritten when nMissionType is 9, but the
+ *                       `BNE loc_3A324` at 0x3A2F0 leaves it unwritten for any mode above 3.
+ *                       The port computes it for modes 0..3 and uses this field only above 3.
+ */
+typedef struct TactSpawnAliensEnv {
+    UnitCreateEnv    create;              /* apSoldiers @ Map+0x1198, count @ Map+0x1998 */
+    Soldier        **apEnemyUnits;        /* unk_128B84 @ Map+0x151CC */
+    i32             *pnEnemyUnitCount;    /* nEnemyUnitCount @ Map+0x15124, a u8 in the original */
+    Soldier        **apHiddenSoldiers;    /* apHiddenSoldiers @ Map+0x25438 */
+    i32             *pnEnemyReserveCount; /* Map_nEnemyReserveCount @ Map+0x15144 */
+    TactItem       **apTactItems;         /* Map.apTactItems @ Map+0x23438 */
+    i32             *pnTactItemCount;     /* Map_nTactItemCount @ Map+0x1513C */
+    ObjectRecFull  **apObjects;           /* Map.apObjects @ Map+0x108; [11] is Map_apObjects11 */
+    PufoFont        *pFont;               /* fontSys @ 0x158268 */
+    struct RmpData  *pRmp;                /* pRmpMissionData @ 0x15881C */
+    MapCellLookup    pfnLookupCell;       /* for Rmp_PickSpawnForUnit */
+    void            *pLookupUser;
+    const InvStatHooks *pInvHooks;        /* for Unit_RecalcInventoryStat */
+    /* Tact_KillUnit (0x4e430) at the tail. A seam, not a call: the kill path needs the whole
+     * KillCtx, which belongs to the combat layer. */
+    void (*pfnKillUnit)(Soldier *pUnit, void *pUser);
+    void            *pKillUser;
+
+    u8   nMissionMode;       /* Map_bMissionMode @ Map+0x1511D */
+    u8   nMissionType;       /* Map_nMissionType @ Map+0x1511A */
+    u8   nTerrainVariant;    /* Map_nTerrainVariant @ Map+0x15111 */
+    u8   nAlienTier;         /* Map_bUnk15112 @ Map+0x15112, the column within a terrain row */
+    u8   nAlienPoolScale;    /* Map_bUnk15115 @ Map+0x15115, the stealth-budget scale */
+    u8   abSpriteSet[4];     /* Map_abSpriteSet @ Map+0x15116..0x15119, 23 means "no race" */
+    u16  nAlienPoolAddend;   /* nAlienPoolAddend @ Map+0x33910, read with LDRH */
+    const char *panUnitName; /* 0xB1140, 40-byte records indexed by nUnitType (.bss, loaded at run
+                              * time, so it is injected rather than dumped) */
+
+    i32  nAlienSetIndex;     /* used only when nMissionMode is above 3; see the note above */
+    i32  nFourthRaceCount;   /* the original never writes it; see the note above */
+} TactSpawnAliensEnv;
+
+/* Tact_SpawnAliens @ 0x3a2ac. Build the alien squad for the mission.
+ *
+ * Nine steps, in the original's order:
+ *
+ *   1. Pick the alien set index from nMissionMode (0 -> nTerrainVariant - 1, 1 -> 7, 2 -> 6,
+ *      3 -> 5) and force it to 5 when nMissionType is MarsOrSpecial. Seed the eight-slot
+ *      composition array from g_aAlienRaceComposition[5 * index].
+ *   2. Decide the three group sizes. Urban, XcomBase, AlienBase and MarsOrSpecial use fixed
+ *      formulas with their own RNG order; every other type reads g_aAlienRaceCounts and
+ *      g_aAlienSecondaryCounts at 3 * nTerrainVariant + nAlienTier - 3. A lead race of 10 or
+ *      12 forces the secondary count to 0.
+ *   3. Split the primary count into the first three race groups. The 0.8 scaling is skipped
+ *      when the terrain is shallow or when both secondary races are large.
+ *   4. Compute the stealth budget: (nAlienPoolScale - 20) * primary * 0.01, reduced by one when
+ *      it would equal the whole primary count.
+ *   5. Spawn primary + secondary + reserve units, assign each a race by position, copy its name
+ *      from panUnitName, roll its stats from g_aAlienUnitStats, reset its battle state, flag up
+ *      to the stealth budget of them, recalc its burden and place it through the rmp spawn
+ *      picker - except for the XCom base defence mission, where the units go into
+ *      apHiddenSoldiers / nEnemyReserveCount and are not placed at all.
+ *   6. Load the four sprite sets into the font and rebuild the index.
+ *   7. Recompute the eight-slot composition as
+ *      (g_aAlienMissionTotals[index] + nAlienPoolAddend) / g_aAlienCompositionDivisor[i].
+ *   8. For every unit whose type table byte +2 is set, walk g_aAlienBeltObjects backwards and
+ *      give it a hand weapon and then a belt item, each drawn from the composition counts.
+ *   9. Kill every flagged unit outright, restarting the scan from index 0 after each kill.
+ *
+ * Deviation: the original returns loop-counter residue. The port returns the number of units
+ * spawned into apEnemyUnits. */
+i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv);
 
 #endif /* PUFO_TACTCTL_H */

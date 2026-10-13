@@ -36,6 +36,14 @@ const u8 g_aUnitTypeFlag0[PUFO_UNIT_TYPE_COUNT] = {
     1, 0, 0, 1, 0, 1, 0, 0,
     0, 0, 1, 0, 0, 0, 0, 0
 };
+/* Column +2. The only reader found so far is Tact_SpawnAliens at 0x3AD48, which gates the whole
+ * equipment walk on it: types 0..3 and 9..13 get a hand weapon and a belt item, everything else
+ * gets nothing. The column is named for its position, not for a proven meaning. */
+const u8 g_aUnitTypeFlag2[PUFO_UNIT_TYPE_COUNT] = {
+    1, 1, 1, 1, 0, 0, 0, 0,
+    0, 1, 1, 1, 1, 1, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
 
 /* unk_A9768 @ 0xa9768, 23 x 2 x 8 MuzzleOffset. Dumped from the binary. */
 const MuzzleOffset g_aUnitMuzzleOffset[PUFO_UNIT_MUZZLE_TYPE_COUNT][2][8] = {

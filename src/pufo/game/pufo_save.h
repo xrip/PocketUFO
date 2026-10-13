@@ -993,8 +993,8 @@ typedef struct TactLoadHooks {
     u8              *pbUnk157198Flag;          /* unk_157198->bUnk70115, cleared through a pointer */
 } TactLoadHooks;
 
-/* 23 means "no sprite set for this slot". */
-#define PUFO_SPRITE_SET_NONE 23
+/* 23 means "no sprite set for this slot". The constant itself is in game/pufo_mapcell.h because
+ * Tact_SpawnAliens needs it too. */
 
 bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
                         TeamUnitsState *pRosters, const FlobjsReadState *pFlobjs,

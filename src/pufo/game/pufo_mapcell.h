@@ -214,6 +214,11 @@ MapCell *MapCell_ListRemove(MapCell *pCell, TactItem *pNode);
  * caller cannot accidentally rely on a fuller clear. */
 void TactItem_ctor(TactItem *pItem);
 
+/* Map_abSpriteSet @ Map+0x15116..0x15119 holds four race ids, and 23 means "no race in this
+ * slot". Read by Save_LoadTactical, by Tact_SpawnAliens @ 0x3a2ac and by the sprite-set load loop
+ * at 0x3AAE8, so it lives with the shared game constants rather than in one consumer. */
+#define PUFO_SPRITE_SET_NONE 23
+
 /* Map geometry. The grid is 4 layers of (10*dimX) x (10*dimY) cells. */
 typedef struct MapGeom {
     u8 nDimX; /* map tiles across */

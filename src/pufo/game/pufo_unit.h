@@ -37,6 +37,9 @@
 #define PUFO_UNIT_TYPE_COUNT 24
 extern const u8 g_aUnitTypeIsLarge[PUFO_UNIT_TYPE_COUNT];
 extern const u8 g_aUnitTypeFlag0[PUFO_UNIT_TYPE_COUNT];
+/* Column +2 of the same table. Read by Tact_SpawnAliens @ 0x3ad48 as the gate on the whole
+ * equipment walk for a spawned unit. */
+extern const u8 g_aUnitTypeFlag2[PUFO_UNIT_TYPE_COUNT];
 
 /* Unit muzzle-offset table, unk_A9768 @ 0xa9768: 23 blocks of 96 bytes, one per
  * unit type, each 2 groups of 8 facings, each entry 3 i16 (dx, dy, dz).
