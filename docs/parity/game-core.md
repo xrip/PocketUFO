@@ -7806,3 +7806,50 @@ before using it. The UFO table ends exactly at `aPlane`.
    copies of the same stamping block and they are not byte-identical.
 7. The allocation-failure behaviour: the original stores NULL and then calls `MapCell_Init(NULL, ...)`.
    Decide reproduce-or-deviate before writing it.
+
+## `Map_BuildMissionTerrain` — the `nMapLayers == 0` path and the tail, decode finished
+
+Read 2026-10-13. This closes the last structural question: the `nMapLayers == 0` path and the
+`Map_nMissionType == 3` path are **separate copies**, not a shared fallthrough. They build the same
+kind of layout with different constants and different sprite indices, and the stamping blocks differ.
+
+### The empty-layers path (0x23E08 .. 0x256F8)
+
+`Map_nMapLayers == 0` jumps to 0x23DAC, which then splits on mission type. The non-XcomBase arm:
+
+1. Writes 6 into `Map_nMapDimX` and `Map_nMapDimY`, zeroes the 6×6 dword kind array (`36` dwords,
+   `sp+0x94`), and runs the same three-loop cell allocation.
+2. Builds `<aTerrainNameByMissionType[nMissionType]>` + (`unk_128B00 ? "15" : "0"`), loads it with
+   `nFlag 2`, and applies it at tiles (5,5), (4,5), (3,5).
+3. Sets the module grid cells `pTpl_8[33]`, `pTpl_8[34]`, `pTpl_8[35]` to 1 — the last row, columns
+   3, 4 and 5.
+4. Stamps `Font_GetSprByIndex(0x3F)` into cell slot `0x00` and `Font_GetSprByIndex(0x3E)` into slot
+   `0x0C`, for levels 3 down to `nLevel`, at three columns 10 cells apart.
+5. Loads three `.rmp` sets, for tiles (5,5), (4,5), (3,5).
+6. `word_128B04 = Game_RandU16(5)`, `word_128B08 = Game_RandU16(4)` — a random tile in the 6×6 grid —
+   applies the same template there, stamps it, and writes 1 into the module grid at
+   `6*y + x`, `6*y + x + 1`, `6*(y+1) + x`, `6*(y+1) + x + 1`. The kind array gets `0, 1, 2, 3` at
+   those same four positions.
+7. Fills every remaining empty module cell with a random module, with this filter on the module
+   number drawn from `byte_A6AF0[nMissionType]`:
+
+       while (n == 4);
+       if (n != 0 && n != 15 && (n != 12 || (x != 0 && x != nDimX-1 && y != 0 && y != nDimY-1)))
+
+   So module numbers 0, 4 and 15 are never used at all, and 12 is never used on the border. If the
+   chosen module would overflow the grid, the cell is retried.
+8. Two final stamping passes keyed on the kind array: one skips kind 3 and kind 1, the other skips
+   kind 2 and kind 3.
+
+### The tail (0x2571C .. 0x257C4)
+
+`cell->nFlags32 &= 0xFFFFFF87` (bits 3, 4, 5, 6 cleared) over `10 * nMapDimY` rows, `10 * nMapDimX`
+columns and four layers, then `Map_PatchCraftSprites(pMap)`, then the four `~CDialogTemplate`
+destructors in the order `v266`, `pTpl`, `v273`, `pOut`.
+
+### What that closes
+
+- Open question 6 is answered: separate copies, not fallthrough.
+- `unk_128B00` is the `"0"` / `"15"` name-suffix selector, and `word_128B04` / `word_128B08` are the
+  random 6×6 tile position (`rand(5)`, `rand(4)`) that both grids and the `.rmp` load agree on.
+- The module-number filter above is a hard rule, not a guess — it is written out in the ARM.
