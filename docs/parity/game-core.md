@@ -6718,3 +6718,45 @@ The rest of the shape:
 Both markers have the same latent bug, recorded in the ledger: an action-latch value above 4 that is not
 handled by the switch jumps straight to the draw with `nGlyphA` never assigned, so the marker is drawn
 with whatever glyph index the previously drawn cell left in the shared context. The port reproduces it.
+
+## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
+
+All four of its callees are ported (`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Tact_SelectUnit`,
+`Unit_RecalcInventoryStat`), so this is ready to do.
+
+The deployment position comes from `byte_A66B8`, a table of 104-byte records indexed by the selector byte
+`unk_128ACC`:
+
+```
+nX     = 10 * Map_nCraftMapX + entry[0]
+nY     = 10 * Map_nCraftMapY + entry[1]
+nLayer = entry[2]
+```
+
+ARM reaches the three fields as `[R0,#-0x68]`, `[R0,#-0x67]` and `[R0,#-0x66]` off `byte_A66B8 + 104*sel`,
+which is entry bytes 0, 1 and 2. A zero selector makes all three zero.
+
+Every soldier gets `Soldier+0x1B4` (`nUnk436`) cleared first, unconditionally, before any acceptance test.
+
+The mode byte `unk_128AD5` then decides who joins the team:
+
+| mode | accepted when |
+|---|---|
+| 0 | `bUnk183 == unk_128ACB` |
+| 1 | `nKind` equals the byte at `0x158890+79`, and `bUnk183` is not 254, and either it is 255 or `apCraft[bUnk183]->bAtBase` is set |
+| 2, 3 | `bUnk183 == Map_nCraftIndex` |
+| negative, or above 3 | unconditionally |
+
+Accepted units get `Unit_ResetBattleState(pUnit, 0)`, `bStatus = 0`, `Unit_PlaceOnMap(nX, nY, nLayer)`, and
+are appended to `apXcomUnits` while `nXcomUnitCount` increments.
+
+One behaviour to carry over carefully: **a rejected unit ends the loop rather than being skipped.** The
+rejection branch jumps straight to the count read, so a single unsuitable soldier in the roster truncates
+the rest of the team. That is easy to mistake for a `continue` when reading the control flow.
+
+If the count is non-zero the function then calls `Tact_SelectUnit(apXcomUnits[0])` and runs
+`Unit_RecalcInventoryStat` over the roster.
+
+Both loops walk their arrays through the IDB's base-advancing form — `v6->apSoldiers[0]` with `v6 += 4`,
+`v10->apXcomUnits[0]` with `v10 += 4`. That is how IDA renders an index walk in this function and is not
+an off-by-one or a repeated-first-element bug; I initially read it as one and corrected the IDB comment.
