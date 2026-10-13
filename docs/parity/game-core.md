@@ -590,30 +590,56 @@ drop-in once the working-set contract is ported.
 
 `MapTemplate_Load` @ `0x54ba4` reads `"<base>.ma1"` and stores the header. The
 format was confirmed against **all 159 `.ma1` members** of the shipped `main.dat`:
-every one satisfies `size == 3 + 4 * dimX * dimY * levels`.
+every one satisfies `size == 3 + 4 * nRows * nCols * levels`.
 
 ```
-u8  nDimX      template width  in map cells
-u8  nDimY      template height in map cells
+u8  nRows      template height in map cells   (header byte 0)
+u8  nCols      template width  in map cells   (header byte 1)
 u8  nLevels    number of z levels
-u8  aCells[4 * nDimX * nDimY * nLevels]
+u8  aCells[4 * nRows * nCols * nLevels]
 ```
 
 Cell indexing, from `CDialogTemplate_GetCellByte` @ `0x54c80` (the trailing `+3`
 skips the header):
 
 ```
-aCells[4 * (dimX*dimY*z + dimY*y + x) + nSlot + 3]
+aCells[4 * (nRows*nCols*z + nCols*y + x) + nSlot + 3]
 ```
 
 Each cell carries four sprite slots, read by `Map_ApplyTemplateToCells` as floor,
 wall A, wall B, ceiling. A slot value of **0 or 1** means "no sprite" (the
 original tests `<= 1`); anything above is a real index into the font sprite base.
 
-Samples verified in the test: `AVENGER.MA1` 2403 bytes / header `20 x 10 x 3`,
-`CULTA0.MA1` 403 bytes / header `10 x 10 x 1`. The traversal is x inner, then y,
-then z, and `test_template` asserts all 600 cells of `AVENGER` are visited with
-`SetTileSprites` applied.
+### Header byte 0 is the Y extent, not the X extent
+
+The size formula is symmetric, so it cannot tell the two apart, and an earlier
+version of this section -- and the port -- had it backwards. Three independent
+reads in the original agree:
+
+- `Map_ApplyTemplateToCells @ 0x54cf4` builds its destination as
+  `10 * (6 * (10 * nOffY + row) + nOffX) + col`, where `row` loops to header byte 0 and `col` loops
+  to header byte 1. The flat index is that of `(x, y) = (10 * nOffX + col, 10 * nOffY + row)`, so byte
+  0 counts rows and byte 1 counts columns. The `6` and the `10` multiply to the 60-cell row stride.
+- `CDialogTemplate_GetCellByte @ 0x54c80` uses header byte 1 as the row stride, which only makes
+  sense if byte 1 is the column count.
+- Every `Map_LoadRmp` call in `Map_BuildMissionTerrain (0x22e10)` passes `nSizeX = byte1 / 10` and
+  `nSizeY = byte0 / 10`.
+
+**What that broke in the port.** `MapTemplate_ApplyToCells` looped `nX < nDimX` and `nY < nDimY` and
+passed those straight to `MapTemplate_GetCellByte`, whose stride is `nDimY`. For a non-square template
+that reads past the end of every row and lands the template transposed on the map. `AVENGER.MA1` is
+20 rows by 10 columns, so it stamped a 20-wide by 10-tall area instead of 10 wide by 20 tall. The
+offsets were also treated as cell coordinates when the original scales them by `PUFO_CELLS_PER_TILE`.
+
+Fixed: the fields are now `nRows` / `nCols` so the mistake cannot recur, the traversal is
+`nRows` outer / `nCols` inner / `nLevels` innermost as the ARM nests them, and `nOffX` / `nOffY` are
+tile coordinates. `test_template.c` now asserts the direction directly -- the far corner must be
+`(x = cols-1, y = rows-1)` and the transposed corner must be untouched -- plus that a tile offset
+lands ten cells in, not one.
+
+Samples verified in the test: `AVENGER.MA1` 2403 bytes / header `20 rows x 10 cols x 3 levels`,
+`CULTA0.MA1` 403 bytes / header `10 x 10 x 1`. `test_template` asserts all 600 cells of `AVENGER` are
+visited with `SetTileSprites` applied, and that the last cell ends exactly at the blob end.
 
 ## Route / spawn nodes (.rmp)
 

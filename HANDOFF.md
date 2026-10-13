@@ -334,6 +334,30 @@ reachable for type 13 (`2 * (8 * 13 + 7) + 1 = 223`), so it has 14 rows; the ear
 short rather than padding them, so an out-of-range unit type reads the same bytes the original does.
 `python tools/gen_isodraw_tables.py --check` prints the boundary bytes on both sides of all nine.
 
+### The `.ma1` header's two extent bytes are Y first, then X
+
+Fixed in this commit, and worth knowing before touching the terrain builder. `.ma1` header byte 0 is
+the template's **row** count and byte 1 its **column** count. The size formula
+`3 + 4 * nRows * nCols * nLevels` is symmetric so it cannot show this; the proof is three reads that
+agree — `Map_ApplyTemplateToCells (0x54cf4)` builds its destination as
+`10 * (6 * (10 * nOffY + row) + nOffX) + col` with `row` looping to byte 0, `CDialogTemplate_GetCellByte
+(0x54c80)` uses byte 1 as the row stride, and every `Map_LoadRmp` call in `Map_BuildMissionTerrain
+(0x22e10)` passes `nSizeX = byte1 / 10`, `nSizeY = byte0 / 10`.
+
+`MapTemplate_ApplyToCells` had it the other way round: it looped `nX < nDimX` / `nY < nDimY` and passed
+those to a getter whose stride is `nDimY`, so a non-square template read past the end of every row and
+landed transposed on the map, and its offsets were taken as cell coordinates rather than tiles. The
+fields are now `nRows` / `nCols`, the nesting matches the ARM, and offsets are tile coordinates scaled
+by `PUFO_CELLS_PER_TILE`. `test_template.c` asserts the direction outright: the far corner is
+`(x = cols-1, y = rows-1)`, the transposed corner is untouched, and a tile offset lands ten cells in.
+
+Two shipped tables the terrain builder needs are now in `src/pufo/game/pufo_terrain.c` and audited:
+`g_aTileSprIndex` (64 u16 in 16 rows of 4: floor, wall A, wall B, ceiling) and `g_aTerrainModuleCount`
+(the per-mission-type module ceiling, 10 bytes). IDA declared `aTileSprIndex[128]`, which is 256 bytes
+and runs 128 bytes past the real end into the module-name strings at `0xA6590`; the IDB now declares it
+`[64]` and the 40 bytes at `0xA6568` are named separately as belonging to `Smap_InitCraftSelectState
+(0x61b94)`.
+
 ### `Tact_SpawnAliens` data model
 
 Four IDB symbols that looked like separate tables are one 80-byte block based at 0xA6618:

@@ -42,6 +42,7 @@ add_library(pufo_game STATIC
     game/pufo_los.c
     game/pufo_boot.c
     game/pufo_template.c
+    game/pufo_terrain.c
     game/pufo_rmp.c
     game/pufo_tactctl.c
     game/pufo_tactend.c

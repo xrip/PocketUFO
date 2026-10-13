@@ -83,6 +83,30 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [ ] reading aid: the full Hex-Rays text is in `.tmp/bmt/bmt1.c` (scratch, untracked). The MCP
     `decompile` truncates at ~52 KB; `curl` to `http://127.0.0.1:13337/mcp` truncates too, so the
     dump has to come from a session that already holds it. Do not trust its offsets — ARM wins.
+  - [x] open question 1 closed: the 6×6 module grid holds 0 = empty, 1 = occupied by the generic
+    terrain module, and 2/3/4 = Urban module numbers 0/1/2 — Urban re-loads a flagged cell as
+    `<terrain><value-2>`. The `var_90` dword array is a separate per-tile kind, written `0,1,2,3` at
+    the random tile and read by the two final stamping passes that skip kinds 1+3 and 2+3.
+  - [x] open question 2 closed: every "alternate cell-array base" is a cell index into the same
+    14400-dword array. The XcomBase passes use `543 + 600*tileRow + 10*tileCol + col`, that is
+    `y = 9 + 10*tileRow`, `x = 3 + col + 10*tileCol`; and `189 + 600*tileRow + 60*k + 10*tileCol`,
+    that is `y = 3 + k + 10*tileRow`, `x = 9 + 10*tileCol`.
+- [x] `.ma1` header direction fixed — **header byte 0 is the row count, byte 1 the column count**
+  - Proved three ways: `Map_ApplyTemplateToCells (0x54cf4)` builds `10*(6*(10*nOffY + row) + nOffX) + col`
+    with `row` looping to byte 0; `GetCellByte (0x54c80)` uses byte 1 as the row stride; every
+    `Map_LoadRmp` call passes `nSizeX = byte1/10` and `nSizeY = byte0/10`.
+  - `MapTemplate_ApplyToCells` had it backwards, so a non-square template read past the end of every
+    row and landed transposed, and its offsets were cells rather than tiles. Fields renamed
+    `nRows`/`nCols`, nesting matches the ARM, offsets are tiles scaled by `PUFO_CELLS_PER_TILE`, and
+    `test_template.c` asserts the direction outright. No coverage change — a correctness fix.
+  - [x] `CDialogTemplate_GetTemplateByte0 @ 0x54c68` and `GetTemplateByte1 @ 0x54c5c` ported as
+    `MapTemplate_GetHeaderByte0/1`. Both were already credited by the evidence header, so coverage
+    did not move.
+  - [x] `src/pufo/game/pufo_terrain.{h,c}` added with `g_aTileSprIndex` (64 u16, 16 rows of 4) and
+    `g_aTerrainModuleCount` (10 bytes), both audited — 30 tables, 0 mismatched
+  - [x] IDB: `aTileSprIndex` re-declared `[64]` (IDA had `[128]`, 128 bytes past the real end), the 40
+    bytes at `0xA6568` named as `Smap_InitCraftSelectState (0x61b94)`'s table, `aUfo1a` restored, and
+    comments added at `0x54cf4`, `0x54c68` and `0x54c5c` recording that byte 0 is Y
 - [x] `Tact_Shutdown @ 0x3d568` — ported, 3,788 B cited, in `src/pufo/game/pufo_tactend.{h,c}`
   - [x] it was the only Priority 1 item whose callees were all already ported, so it went first;
     `Tact_InitMission` is still blocked by `Map_BuildMissionTerrain`
@@ -150,4 +174,5 @@ Refresh after each commit. A coverage delta must match the function size in
 | `8043c2b` | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
 | `89022a5`, `887fed8`, `36addee` — decode + IDB only | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
 | `36addee` + `Tact_Shutdown` | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
-| this commit | 49/49 | 6977 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 28 checked, 0 mismatched |
+| `7c29217` + `MapView_DrawUnit` | 49/49 | 6977 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 28 checked, 0 mismatched |
+| this commit (`.ma1` direction fix) | 49/49 | 6984 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 30 checked, 0 mismatched |

@@ -44,8 +44,8 @@ bool MapTemplate_Load(MapTemplate *pTpl, const char *pszBase, u8 nFlag)
     }
 
     pTpl->cbBlob  = cb;
-    pTpl->nDimX   = pTpl->pBlob[0];
-    pTpl->nDimY   = pTpl->pBlob[1];
+    pTpl->nRows   = pTpl->pBlob[0];   /* header byte 0 is the Y extent */
+    pTpl->nCols   = pTpl->pBlob[1];   /* header byte 1 is the X extent */
     pTpl->nLevels = pTpl->pBlob[2];
     pTpl->nFlag   = nFlag;
     return true;
@@ -56,8 +56,8 @@ void MapTemplate_Free(MapTemplate *pTpl)
     free(pTpl->pBlob);
     pTpl->pBlob   = NULL;
     pTpl->cbBlob  = 0;
-    pTpl->nDimX   = 0;
-    pTpl->nDimY   = 0;
+    pTpl->nRows   = 0;
+    pTpl->nCols   = 0;
     pTpl->nLevels = 0;
 }
 
@@ -69,13 +69,27 @@ u8 MapTemplate_GetLevelCount(const MapTemplate *pTpl)
     return pTpl->nLevels;
 }
 
+/* CDialogTemplate_GetTemplateByte0 @ 0x54c68. `LDR R3,[R0]` then `LDRB R0,[R3]`: header byte 0, the
+ * Y extent. Map_BuildMissionTerrain divides it by 10 to turn cells into tiles. */
+u8 MapTemplate_GetHeaderByte0(const MapTemplate *pTpl)
+{
+    return pTpl->nRows;
+}
+
+/* CDialogTemplate_GetTemplateByte1 @ 0x54c5c. `LDR R3,[R0]` then `LDRB R0,[R3,#1]`: header byte 1,
+ * the X extent. */
+u8 MapTemplate_GetHeaderByte1(const MapTemplate *pTpl)
+{
+    return pTpl->nCols;
+}
+
 /* CDialogTemplate_GetCellByte @ 0x54c80.
  *
  * The original computes
- *     pTemplate[4 * dimX * dimY * nZ + 4 * dimY * nY + 4 * nX + nSlot + 3]
- * with no bound check, and reads dimX/dimY fresh from the header each call. The
- * trailing +3 skips the header. Reproduced, with a bounds check added because the
- * original's behaviour out of range is undefined rather than defined. */
+ *     pTemplate[4 * nRows * nCols * nZ + 4 * nCols * nY + 4 * nX + nSlot + 3]
+ * with no bound check, and reads the two header bytes fresh each call. The trailing +3 skips the
+ * header. Reproduced, with a bounds check added because the original's behaviour out of range is
+ * undefined rather than defined. */
 u8 MapTemplate_GetCellByte(const MapTemplate *pTpl, u32 nX, u32 nY, u32 nZ, u32 nSlot)
 {
     u32 nIndex;
@@ -83,12 +97,12 @@ u8 MapTemplate_GetCellByte(const MapTemplate *pTpl, u32 nX, u32 nY, u32 nZ, u32 
     if (pTpl->pBlob == NULL) {
         return 0;
     }
-    if (nX >= pTpl->nDimX || nY >= pTpl->nDimY || nZ >= pTpl->nLevels
+    if (nX >= pTpl->nCols || nY >= pTpl->nRows || nZ >= pTpl->nLevels
         || nSlot >= PUFO_MA1_CELL_BYTES) {
         return 0;
     }
     nIndex = PUFO_MA1_CELL_BYTES
-           * ((u32)pTpl->nDimX * pTpl->nDimY * nZ + (u32)pTpl->nDimY * nY + nX)
+           * ((u32)pTpl->nRows * pTpl->nCols * nZ + (u32)pTpl->nCols * nY + nX)
            + nSlot + PUFO_MA1_HDR;
     if (nIndex >= pTpl->cbBlob) {
         return 0;
@@ -107,32 +121,33 @@ u8 MapTemplate_GetSpriteIndex(const MapTemplate *pTpl, u32 nX, u32 nY, u32 nZ, u
 
 /* Map_ApplyTemplateToCells @ 0x54cf4.
  *
- * Traversal order is x inner, then y, then z: the disassembly walks nX from 0 to
- * dimX-1, then nY from 0 to dimY-1, then nZ from 0 to nLevels-1. For each cell it
- * resolves the four slot sprites and calls MapCell_SetTileSprites with
- * (floor, wallA, wallB, ceiling).
+ * Nesting is the original's: header byte 0 outer (the rows), header byte 1 inner, then the level
+ * count innermost. For each cell it resolves the four slot sprites and calls MapCell_SetTileSprites
+ * with (floor, wallA, wallB, ceiling).
  *
- * The original's destination stride is the MAP's cell grid (2400 bytes per layer,
- * 240 per tile row in the IDB's byte math), not the template's. Here the lookup
- * takes absolute cell coordinates so the caller owns the grid geometry. */
+ * The destination is a cell of the MAP grid, and nOffX / nOffY are tile coordinates: the ARM builds
+ * `10 * (6 * (10 * nOffY + row) + nOffX) + col`, which is the flat index of
+ * (x, y) = (10 * nOffX + col, 10 * nOffY + row). The template coordinates (col, row) are what the
+ * slot reads take; the map coordinates are what the lookup takes. */
 void MapTemplate_ApplyToCells(const MapTemplate *pTpl,
                               MapCellLookup pfnLookup, void *pUser,
                               i32 nOffX, i32 nOffY,
                               TemplateSpriteLookup pfnGetSprite,
                               void *pSpriteUser)
 {
-    u32 nX;
-    u32 nY;
+    u32 nRow;
+    u32 nCol;
     u32 nZ;
 
     if (pTpl->pBlob == NULL || pfnLookup == NULL) {
         return;
     }
 
-    for (nZ = 0; nZ < pTpl->nLevels; ++nZ) {
-        for (nY = 0; nY < pTpl->nDimY; ++nY) {
-            for (nX = 0; nX < pTpl->nDimX; ++nX) {
-                MapCell *pCell = pfnLookup((i32)nX + nOffX, (i32)nY + nOffY,
+    for (nRow = 0; nRow < pTpl->nRows; ++nRow) {
+        for (nCol = 0; nCol < pTpl->nCols; ++nCol) {
+            for (nZ = 0; nZ < pTpl->nLevels; ++nZ) {
+                MapCell *pCell = pfnLookup(PUFO_CELLS_PER_TILE * nOffX + (i32)nCol,
+                                           PUFO_CELLS_PER_TILE * nOffY + (i32)nRow,
                                            (i32)nZ, pUser);
                 Mc1Rec  *pFloor  = NULL;
                 Mc1Rec  *pWallA  = NULL;
@@ -143,10 +158,10 @@ void MapTemplate_ApplyToCells(const MapTemplate *pTpl,
                     continue;
                 }
                 if (pfnGetSprite != NULL) {
-                    u8 nFloor = MapTemplate_GetSpriteIndex(pTpl, nX, nY, nZ, PUFO_MA1_SLOT_FLOOR);
-                    u8 nWA    = MapTemplate_GetSpriteIndex(pTpl, nX, nY, nZ, PUFO_MA1_SLOT_WALL_A);
-                    u8 nWB    = MapTemplate_GetSpriteIndex(pTpl, nX, nY, nZ, PUFO_MA1_SLOT_WALL_B);
-                    u8 nCeil  = MapTemplate_GetSpriteIndex(pTpl, nX, nY, nZ, PUFO_MA1_SLOT_CEIL);
+                    u8 nFloor = MapTemplate_GetSpriteIndex(pTpl, nCol, nRow, nZ, PUFO_MA1_SLOT_FLOOR);
+                    u8 nWA    = MapTemplate_GetSpriteIndex(pTpl, nCol, nRow, nZ, PUFO_MA1_SLOT_WALL_A);
+                    u8 nWB    = MapTemplate_GetSpriteIndex(pTpl, nCol, nRow, nZ, PUFO_MA1_SLOT_WALL_B);
+                    u8 nCeil  = MapTemplate_GetSpriteIndex(pTpl, nCol, nRow, nZ, PUFO_MA1_SLOT_CEIL);
 
                     if (nFloor != 0) {
                         pFloor = pfnGetSprite(nFloor, pSpriteUser);

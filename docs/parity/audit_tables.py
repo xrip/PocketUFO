@@ -55,6 +55,11 @@ TABLES = [
     ("alien composition divisor", 0xAA030, "s_aAlienCompositionDivisor", "src/pufo/game/pufo_tactctl.c", 8, "H", 0),
     ("alien belt objects",       0xAA008, "s_aAlienBeltObjects",      "src/pufo/game/pufo_tactctl.c",   8, "h", 0),
     ("alien unit stats",         0xA8F38, "s_aAlienUnitStats",        "src/pufo/game/pufo_tactctl.c", 224, "h", 0),
+    # The two shipped tables Map_BuildMissionTerrain reads. aTileSprIndex's real extent is 128 bytes:
+    # IDA declares aTileSprIndex[128] (256 bytes) and runs past the end into the module-name strings
+    # at 0xA6590, and the 40 bytes from 0xA6568 belong to Smap_InitCraftSelectState (0x61b94).
+    ("tile sprite slots",        0xA64E8, "g_aTileSprIndex",          "src/pufo/game/pufo_terrain.c",  64, "H", 0),
+    ("terrain module count",     0xA6AF0, "g_aTerrainModuleCount",    "src/pufo/game/pufo_terrain.c",  10, "B", 0),
 ]
 
 
