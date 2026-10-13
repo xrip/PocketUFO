@@ -6768,3 +6768,36 @@ If the count is non-zero the function then calls `Tact_SelectUnit(apXcomUnits[0]
 Both loops walk their arrays through the IDB's base-advancing form — `v6->apSoldiers[0]` with `v6 += 4`,
 `v10->apXcomUnits[0]` with `v10 += 4`. That is how IDA renders an index walk in this function and is not
 an off-by-one or a repeated-first-element bug; I initially read it as one and corrected the IDB comment.
+
+## `Tact_TallyCraftRecovery (0x344b4)`, decoded and not yet ported
+
+Post-mission craft cargo tally, 556 bytes. The second argument is a dword out-param set to 1 when loot was
+recorded.
+
+Which craft the tally applies to depends on the mission type:
+
+- **XCom base defence**: build a stack list of up to 20 craft indices by walking `apCraft` and recording the
+  index of every craft whose `bHomeBase` equals the byte at `0x158848`. The count of those is the loop bound
+  used per object.
+- **any other mission**: the list has exactly one entry, `Map.nDeployCraftIdx`.
+
+Then, for every object, it takes the first N entries of that list. For each craft index whose stored capacity
+is non-zero, recovery is capped: if `uRecovCount` is at most the capacity, `uRecovCount` is written into the
+object's per-craft quantity slot and `uRecovCount` is cleared; otherwise the capacity is subtracted from
+`uRecovCount` and the remainder carries on.
+
+The leftover then splits by mission type again:
+
+- **XCom base defence**: the remainder is added straight into `ObjectRec.auPerBaseVal[byte at 0x158848]`.
+- **otherwise**: if the remainder is non-zero it is stored into the record at `0x162030` indexed by the dword
+  at `0x186410`, at `auItemQty[object index]`; that record's `bHasLoot` is set to 1, `uRecovCount` is cleared,
+  and the out-param is set to 1.
+
+Two things stop this being ported today, and both are recorded in the IDB comment rather than guessed
+around:
+
+1. The entry gate is rendered as `result[414].aItemQty[29]` and `result[32].gap_0[33]`. Both are
+   base-advancing artifacts of the same kind that misled me in `Tact_SelectTeamUnits`, so the condition is
+   not known until read in ARM.
+2. The port owns no model for `0x158848`, `0x162030` or `0x186410`. The last two are the loot record and its
+   index, which belong to the geoscape state block rather than to the tact module.
