@@ -774,8 +774,7 @@ static void TestSelectUnit(void)
     unitB.pCell->nY = 2;
 
     memset(&ctx, 0, sizeof(ctx));
-    ctx.pSelUnit = NULL;
-    ctx.ppPrevSelUnit = &pPrev;
+    ctx.ppSelUnit = &pPrev;
     ctx.pCursorPos = &pos;
     ctx.pfnLookup = SelLookup;
     ctx.pStatus = &stack;
@@ -795,7 +794,7 @@ static void TestSelectUnit(void)
     CheckEqI32(stack.nCount, 1, "the name is still pushed");
     Check(strcmp(stack.aszMsg[0], "Squad: Hallow") == 0,
           "pushed in the mode 0 rank-colon-name form");
-    Check(pPrev == &unitA, "the last-selection slot at Map+0x15354 is written");
+    Check(pPrev == &unitA, "the selection slot at Map+0x15334 is written");
 
     /* Move the cursor for real, then select a different unit with the cursor busy. The park runs and
      * clears the previous cell while the move itself is suppressed. */
@@ -803,33 +802,31 @@ static void TestSelectUnit(void)
     Tact_SelectUnit(&ctx, &unitA);
     Check(FlagBit3(&s_aCursorGrid[0][1][2]), "the move marks the unit's cell");
     CheckEqI32(cursor.nX, 2, "and parks the cursor there");
-    CheckEqI32(stack.nCount, 2, "that move named the unit too, since nothing was displayed yet");
+    CheckEqI32(stack.nCount, 1,
+               "re-selecting the same unit names it again: the compare and the park read one slot");
 
     pos.bBusy = true;
-    ctx.pSelUnit = NULL;
     Tact_SelectUnit(&ctx, &unitB);
     Check(!FlagBit3(&s_aCursorGrid[0][2][3]),
           "the new cell is not marked, because the busy move is suppressed");
     CheckEqI32(cursor.nX, 2, "the park left the cursor where it was");
     CheckEqI32(cursor.nY, 1, "both coordinates");
-    CheckEqI32(stack.nCount, 3, "and the new unit was still named");
-    Check(strcmp(stack.aszMsg[2], "Squad: Sheeran") == 0, "with its own name");
-    Check(pPrev == &unitB, "the last-selection slot follows the last call, not the displayed one");
+    CheckEqI32(stack.nCount, 2, "and the new unit was still named");
+    Check(strcmp(stack.aszMsg[1], "Squad: Sheeran") == 0, "with its own name");
+    Check(pPrev == &unitB, "the slot follows the last call");
 
-    /* Re-selecting the displayed unit pushes nothing but still parks and moves. */
+    /* Re-selecting the stored unit pushes nothing but still parks and moves. */
     pos.bBusy = false;
-    ctx.pSelUnit = &unitB;
     Tact_SelectUnit(&ctx, &unitB);
-    CheckEqI32(stack.nCount, 3, "re-selecting the displayed unit pushes nothing");
+    CheckEqI32(stack.nCount, 2, "re-selecting the stored unit pushes nothing");
     CheckEqI32(cursor.nX, 3, "but it still moves the cursor");
     CheckEqI32(cursor.nY, 2, "both coordinates");
     Check(FlagBit3(&s_aCursorGrid[0][2][3]), "and marks the new cell");
 
     /* An inoperative unit moves the cursor but is never named. */
     unitA.bStatus = 3;
-    ctx.pSelUnit = NULL;
     Tact_SelectUnit(&ctx, &unitA);
-    CheckEqI32(stack.nCount, 3, "an inoperative unit pushes nothing");
+    CheckEqI32(stack.nCount, 2, "an inoperative unit pushes nothing");
     CheckEqI32(cursor.nX, 2, "and its cell is still selected");
     CheckEqI32(cursor.nY, 1, "both coordinates");
     unitA.bStatus = 0;

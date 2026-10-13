@@ -334,25 +334,26 @@ i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx);
  *
  * Tact_SelectUnit @ 0x2c6c4.
  *
- * Two different Map fields are involved and that is not a decompiler artifact. The comparison is
- * against Map.pSelUnit @ 0x15334, the unit the HUD is showing, while the store goes to Map+0x15354,
- * a separate "last selection" pointer whose only use is deciding whether the cursor has to be parked
- * first.
+ * One Map field is involved, read twice and then written. Hex-Rays renders the second and third uses
+ * as `*((_DWORD *)pCtx + 21709)`, which is Map+0x15354 - thirty-two bytes past the first use. That is a
+ * Hex-Rays artifact. The ARM is `MOV R3, #0x15334` followed by the pre-indexed `LDR R3, [R5, R3]!`, so
+ * R5 ends up pointing at Map+0x15334 and the following `STR R4, [R5]` writes that same slot. Both
+ * immediates decode to 0x15334 (0xE3A0CA15 + 0xE38CCFCD is 0x15000 + 0x334), and Map_pSelUnit is
+ * 0x1139B8 + 0x15334.
  *
  *   if pSelUnit != pUnit and pUnit is operative, push Unit_FormatDisplayName(pUnit, 0) as a status
  *     message, not forced
- *   if the last-selection pointer is non-null, park the cursor at (-2, -2)
- *   store pUnit as the last selection
+ *   if pSelUnit is non-null, park the cursor at (-2, -2)
+ *   store pUnit into pSelUnit
  *   move the cursor onto pUnit's cell
  *
- * So re-selecting the same unit pushes nothing; selecting an inoperative unit pushes nothing but still
- * moves the cursor; and the first selection in a mission does not park the cursor, because nothing was
- * selected before it.
+ * So re-selecting the same unit pushes nothing but still parks and re-stores; selecting an inoperative
+ * unit pushes nothing but still parks, stores and moves; and the first selection in a mission does not
+ * park the cursor, because the slot was null.
  *
  * Deviation: the original returns whatever MapCursor_SetPos leaves in R0. The port returns void. */
 typedef struct TactSelectCtx {
-    Soldier           *pSelUnit;      /* Map.pSelUnit @ 0x15334 */
-    Soldier          **ppPrevSelUnit; /* Map+0x15354, the last-selection slot */
+    Soldier          **ppSelUnit;     /* &Map.pSelUnit @ 0x15334: one slot, read twice then written */
     MapCursorPos      *pCursorPos;
     MapCellLookup      pfnLookup;
     void              *pLookupUser;

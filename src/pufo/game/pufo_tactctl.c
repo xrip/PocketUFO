@@ -463,20 +463,22 @@ i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
 
 void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit)
 {
-    /* The comparison is against the displayed selection, not the last-selection slot below. */
-    if (pCtx->pSelUnit != pUnit && Unit_bIsOperative(pUnit)) {
+    /* One slot, read twice then written. The comparison and the park test are the same field; only
+     * Hex-Rays renders them as two. */
+    if (*pCtx->ppSelUnit != pUnit && Unit_bIsOperative(pUnit)) {
         (void)StatusMsg_Push(pCtx->pStatus,
                              Unit_FormatDisplayName(pUnit, 0, pCtx->panRankLow,
                                                     pCtx->panRankOther),
                              false, pCtx->pStatusHooks);
     }
 
-    /* Nothing was selected before the first selection of a mission, so the cursor is not parked. */
-    if (*pCtx->ppPrevSelUnit != NULL) {
+    /* The slot is null only before the first selection of a mission, so that one selection does not
+     * park the cursor. */
+    if (*pCtx->ppSelUnit != NULL) {
         MapCursor_SetPos(pCtx->pCursorPos, -2, -2, pCtx->pfnLookup, pCtx->pLookupUser);
     }
 
-    *pCtx->ppPrevSelUnit = pUnit;
+    *pCtx->ppSelUnit = pUnit;
 
     MapCursor_SetPos(pCtx->pCursorPos, pUnit->pCell->nX, pUnit->pCell->nY,
                      pCtx->pfnLookup, pCtx->pLookupUser);
