@@ -7421,3 +7421,82 @@ test would change which objects contribute.
 
 Both readers also carry a `!= 0` test on each quantity before adding it. Adding zero is a no-op, so
 that test cannot change the total.
+
+## MapView_DrawUnit decoded, not yet ported
+
+`MapView_DrawUnit @ 0x1c958` is 3,220 bytes and 126 basic blocks. It is the last leaf the iso layer
+needs besides `MapView_DrawUnitFacingArrow`. This pass settled the parts that were guessable and
+recorded the parts that are not.
+
+### What is now proven
+
+**Visibility.** A unit draws when its own cell is visible. For a small unit that means
+`pIso->pCell->bFlags44 & 1`. For a large unit it means any of a 2 by 2 block anchored on the unit's
+cell: the cell itself, `nX + 1`, `nY + 1`, and `nX + 1` with `nY + 1`. The four loads are the Map cell
+array at dword displacements 21710, 21711, 21771 and the array form, and 21711 - 21710 = 1 while
+21771 - 21710 = 61, which is exactly one step in `nX` and one step in both.
+
+**Height offset.** `pIso->nObjParam` (IsoDrawCtx + 0x54) is the minimum over that same 2 by 2 block of
+the ceiling sprite's signed byte at `Mc1Rec + 0x24`, which the port already calls `iCeilParam`. It
+starts at 0. The unit's own cell only contributes when the byte is negative; the three neighbours only
+when the byte is strictly less than the running value. ARM at 0x1CDA8 is `LDRSB R3, [R0,#0x24]` for the
+own cell and `LDRSB R0, [R0,#0x24]` with `CMP` and `STRLT` for the neighbours, so both reads are the
+same field. Hex-Rays rendered the first as `pCeilSpr->gap_22[14]`, which is a different offset and is
+wrong.
+
+**New layout fact.** `Soldier.bFlags` is at **Soldier + 0x14**. ARM at 0x1CC06 is `LDRB R2, [R6,#0x14]`
+followed by `CMP R2, #2`, which is the `bFlags & 2` test Hex-Rays shows as `pUnit->bFlags & 2`. The
+same instruction sequence re-confirms `nUnitType` at Soldier + 0xA0.
+
+**Which animation clock.** Unit types 20 and 21 read IDA's `nAnimPhase`. Every other type reads
+`unk_1139EF`, which is Map + 0x37. ARM at 0x1CC08 is `CMP R0, #0x14`, `CMPNE R0, #0x15`, then
+`LDRNE` of `unk_1139EF` and `LDREQ` of `nAnimPhase`. Hex-Rays renders the two the other way round.
+Map + 0x37 is the same byte `UiModal_DrawDialog` uses to pick its horizontal band, so one byte serves
+both jobs.
+
+**The selection frame.** `unk_156928` is a PadImage. It is drawn only when `unk_157198->bQueueActive`
+is clear, `pIso->pUnit == Map.pSelUnit`, and `pSelUnit->bFlags & 2` is clear; for a large unit it also
+requires `pSelUnit->pCell == pIso->pCell`. Its position is
+
+    x = nDrawX + ((32 - uWidth) >> 1)      or ((33 - uWidth) >> 1) when uWidth > 32
+    y = aBobPhaseY[phase] - uHeight + nObjParam + nDrawY      plus 8 more for a large unit
+
+and it is put on screen with `PadImage_BlitEx(pad, 0xFF)`.
+
+**Palette is restored.** The function saves `pIso->nPal` on the stack at entry, zeroes it when the unit
+is operative, and writes the saved value back on every return path. So `MapView_DrawUnit` leaves
+`pIso->nPal` exactly as it found it, which matters because the caller reuses it for terrain.
+
+**Unoperative marker.** When the unit is not operative and `nPal > 7`, a glyph from the cursor group is
+drawn at the unit position: base + 18 before the body and base + 17 after it. Both additionally require
+`pCell->bFlags44 & 1` and (`Map.gap_86301[1] != 0` or `nPal != 255`).
+
+**Glyph arithmetic is a triple table.** `word_A7230` holds three u16 per frame: a base, a phase scale,
+and a facing scale. The pseudocode routes the product through `itos`, `muls` and `stoi`, which is how
+Hex-Rays renders a soft-float multiply it cannot resolve. The real computation is
+`nAnimParam = frame[0] + phase * frame[1] + facing * frame[2]`. The same chain appears twice, once for
+the walk branch and once for the pose branch.
+
+**Weapon icon column.** The weapon overlay takes its glyph from `ObjectRec.aItemQty[51]`, the same
+out-of-range-looking column that `TactHud_DrawSelectedUnitPanel` reads at 52. Neither is a quantity.
+
+### What is still open, and why it is not ported yet
+
+Nine static tables are used and none is modelled in the port: `byte_A6B00`, `word_A7230`,
+`aUnitWalkGlyph @ 0xA7408`, `aPoseFrameTable @ 0xA7660`, `aUnitTypePoseBase @ 0xA7958`,
+`aUnitHeightOff @ 0xA7A28`, `aUnitWeaponYOff @ 0xA9310`, `aUnitFacingDrawOff @ 0xA93A8`,
+`aBobPhaseY @ 0xA7BE0`.
+
+Their extents are not settled, and one pair disagrees with itself. `byte_A6B00` is indexed
+`5 * (bFacing + 16 * nUnitType + 8) + step`, which needs 5 * 16 * 23 = 1840 bytes, and the gap to
+`word_A7230` is exactly 0x730 = 1840, so that one is closed and implies 23 unit types. `aUnitWalkGlyph`
+is indexed `27 * nUnitType + 9 * bUnitFlag4 + step`, which needs 27 * 22 + 9 * 2 + 2 = 614 bytes, but
+the gap to `aPoseFrameTable` is only 0x258 = 600. Either the walk table covers fewer types than the
+facing table, or the index is not what the pseudocode says. That has to be settled from the bytes and
+from ARM before any of it is transcribed, because a wrong extent silently changes which units draw.
+
+`IsoDrawCtx` also needs about a dozen new fields the port does not model yet: the four direction bytes
+`bUnitFlag0..3`, `bUnitFlag4`, `bAnimStep`, `nAnimFrame`, `nAnimParam`, `nAnimAux`, `nDrawAux`,
+`nDrawMode`, `nScratch2`, `nSpriteX` and `nSpriteY`. Their offsets are not yet proven, and one of them
+is read through `(char *)pIso + pIso->bAnimStep` and then `[101]`, which is a self-referential index
+that needs ARM to resolve.
