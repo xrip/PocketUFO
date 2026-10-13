@@ -6830,3 +6830,38 @@ silent parity drift.
 Method note, because it bit me twice in one session: unpack these with a computation, not by hand. My own
 hand conversion of `1078646099` gave a value around 53.17 and made me think the port's 53.6666 was wrong.
 It is exact. `struct.unpack('<d', struct.pack('<II', lo, hi))` is the reliable route.
+
+## Verified: the craft ammo group table, `Base_StripAllCraftCargo (0x69a38)`
+
+`g_aCraftAmmoGroups[10]` matches the original exactly — kind, ammo objects, count and weapon object:
+
+| ammo objects | weapon | `Craft_LoadStoresFromBase` kind | its `nSrc` |
+|---|---|---|---|
+| 36 | 1 | 1 | 0x24 = 36 |
+| 37 | 3 | 3 | 0x25 = 37 |
+| 38 | 4 | 4 | 0x26 = 38 |
+| 39 | 6 | 6 | 0x27 = 39 |
+| 40, 41, 42 | 7 | 7 | **0** |
+| 43, 44, 45 | 8 | 8 | **0** |
+| 46, 47, 48 | 10 | 10 | **0** |
+| 49 | 11 | 11 | 0x31 = 49 |
+| 50 | 12 | 12 | 0x32 = 50 |
+| 51 | 13 | 13 | 0x33 = 51 |
+
+`nSrc` is the first ammo object index for the single-ammo groups and **0** for the three multi-ammo groups.
+That is not an oversight in the original; it is what the calls at 0x69CE4, 0x69DCC and 0x69EB4 pass.
+
+The gate was worth re-reading because the IDB's own comment had it wrong. Both sides of the comparison read
+`apObjects[obj]->aItemQty[craftIdx]`, which is what **that craft** carries. So the gate is
+
+```
+(sum of the group's ammo carried by this craft) < (weapons carried by this craft)
+```
+
+unsigned, and evaluated **before** any deposit — a group that already carries at least as many rounds as it
+has weapons is left completely alone. The IDB comment said "craft-carried against base-stock", which is not
+what the code does; corrected before saving. The port's gate was already right.
+
+Deviation worth recording: the port adds guards the original does not have — it skips a craft whose
+`bHomeBase` is outside 0..7, and it skips null entries in `apBases` and `apObjects`. The original
+dereferences whatever those hold.
