@@ -7500,3 +7500,39 @@ from ARM before any of it is transcribed, because a wrong extent silently change
 `nDrawMode`, `nScratch2`, `nSpriteX` and `nSpriteY`. Their offsets are not yet proven, and one of them
 is read through `(char *)pIso + pIso->bAnimStep` and then `[101]`, which is a self-referential index
 that needs ARM to resolve.
+
+### Table extents, settled against the image
+
+Reading the bytes rather than the pseudocode closes most of it, and confirms **23 unit types,
+indices 0 through 22**, independently of `g_aUnitMuzzleOffset`.
+
+`byte_A6B00 @ 0xA6B00` is 80 bytes per unit type, 23 types, 1840 bytes, which is exactly the gap to
+`word_A7230`. Each 5-entry group is a walk-kind permutation for one facing. Types 0 through 10 are
+mostly `0,1,2,3,4`; type 11 is `3,0,2,1,4`; types 13 and 15 through 22 are `4,1,0,0,0`. So the five
+animation slots are reordered per unit type, and several types share one reordering.
+
+`aUnitWalkGlyph @ 0xA7408` is 27 bytes per unit type: three rows of 9, one per value of `bUnitFlag4`.
+Types 0 through 21 have data. **Type 22 has none.** 27 * 22 = 594, and `aPoseFrameTable` starts at
+0xA7660, six bytes past the end of type 21. So the earlier contradiction was not a wrong stride: the
+walk table simply covers 22 of the 23 types, and a type 22 unit reaching the walk branch reads six
+bytes of its own and then runs into the pose table. Whether that is reachable is a separate question
+from what the table holds.
+
+`aPoseFrameTable @ 0xA7660` is **760 bytes, 152 rows of 5**, and that is provable rather than
+inferred. `aUnitTypePoseBase @ 0xA7958` is one byte per unit type holding a row base, and its values
+are 19, 38, 57, 76, 95, 114 and 133, all multiples of 19. The largest pose is 0x11 = 17, so the
+largest index is `5 * (133 + 17) + 4 = 754`, which fits 760 and does not fit anything smaller.
+
+`aUnitHeightOff @ 0xA7A28` is 8 signed bytes per unit type, and the pattern is `1, 0, -2, 0` or
+`1, 0, -1, 0` in the low four slots.
+
+`aBobPhaseY @ 0xA7BE0` is exactly 8 signed bytes: `0, -1, -2, -3, -3, -2, -1, 0`. That is a bob cycle,
+and the extent is not a guess because the very next bytes are the ASCII string `xcom_0`.
+
+`aUnitWeaponYOff @ 0xA9310` is one byte per unit type, and only two entries are not zero: type 9 is 5
+and type 11 is 255.
+
+`aUnitFacingDrawOff @ 0xA93A8` is 16 signed bytes per unit type, two per facing. Types 0 through 21
+are coherent, with 14 through 21 alternating between `0,0,8,0,1,0` and `4,0,12,0,5,0`. Type 22 starts
+with 80 and type 23 with 96, which do not fit the pattern, so this table's extent is the one still
+open.
