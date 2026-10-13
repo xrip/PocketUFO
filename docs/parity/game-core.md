@@ -6881,3 +6881,34 @@ match `g_aStepDir` exactly:
 
 This is the table the step legality test `Unit_CanStepTo @ 0x27bb8` and the flood fill both dispatch on, so a
 wrong entry here would corrupt movement and line of sight across the tactical layer. It is correct.
+
+## Verified: the two 148-entry combat sound tables
+
+`g_aShotSound` at `off_AA040 @ 0xAA040` and `g_aFireSoundBySortKey` at `word_AA168 @ 0xAA168`, both indexed by
+`ObjectRecFull.uSortKey`, both 148 u16 entries. Both match the image exactly, entry for entry.
+
+## The audit is now a tool: `docs/parity/audit_tables.py`
+
+Reading byte tables by eye cost me a wrong commit this session, so the comparison is now computed. The script
+reads `pufobeta.exe` directly, pulls each port table's initialiser list out of the source with comments
+stripped, and diffs them entry by entry.
+
+The address mapping was established by locating `aDirDeltaXY`: its ten signed step triples appear verbatim in
+the file at offset `0x94AE0`, and IDA shows it at `0xA7AE0`. So **IDA_VA − 0x13000 = file offset**, which
+agrees with the mapping recorded earlier for the `.data` section.
+
+Current run:
+
+```
+g_aShotSound               000AA040  148 entries  exact match
+g_aFireSoundBySortKey      000AA168  148 entries  exact match
+g_aStepDir                 000A7AE0   30 entries  exact match
+g_aUnitTypeFlag0           000A7B80   24 entries  exact match
+g_aUnitTypeIsLarge         000A7B81   24 entries  exact match
+
+5 tables checked, 0 mismatched
+```
+
+The unit type flags are registered with a stride of 4 because the image stores them as 24 rows of 4 bytes
+while the port keeps two separate 24-entry arrays. That stride is exactly what got mis-transcribed by hand
+earlier in the session, so it is the case worth having a tool for.
