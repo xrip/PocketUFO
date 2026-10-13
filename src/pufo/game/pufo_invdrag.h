@@ -238,4 +238,36 @@ bool Inv_HandlePointer(const InvDropCtx *pCtx);
  * item pointers. The port clears item slots only. */
 void Inv_ClearHitSlot(const InvHitTestCtx *pCtx);
 
+/* -------------------------------------------------- the loadout from the craft */
+
+/* The candidate order tables, read out of the executable. unk_A62F0 @ 0xA62F0 is the
+ * left-hand weapon order (13 dwords) and unk_A6328 @ 0xA6328 the third pickup's order (6). */
+#define PUFO_TACT_HAND_TABLE_COUNT 13
+#define PUFO_TACT_PACK_TABLE_COUNT 6
+
+typedef struct TactEquipCtx {
+    MapCell      *pItemListCell;   /* the container at 0x157204; its pItemList @ 0x34 holds the loose items */
+    Soldier     **apXcomUnits;     /* Map.apXcomUnits @ 0x15154 */
+    i32          *pnXcomUnitCount; /* Map.nXcomUnitCount @ 0x1511F */
+    ObjectRec    **apObjects;      /* Map.apObjects @ Map+0x108 */
+    InvHitState  *pHit;            /* drag offset and the dragged-item scratch */
+    InvDropCtx   *pDrop;           /* pointer position, selected unit, item pool, drop hooks */
+} TactEquipCtx;
+
+/* Tact_EquipTeamFromCraft @ 0x3be24. Put every XCom soldier's declared loadout onto them by driving the
+ * inventory drop path with a parked pointer, no mouse involved.
+ *
+ * The mechanism worth knowing: the original writes a hit rect origin into 0xAD714 and 0xAD718, and those two
+ * addresses ARE pBank+0x1044 and pBank+0x1048, which are the pointer position Inv_HandlePointer reads. So
+ * parking the pointer exactly on a slot's rect is what equips the item.
+ *
+ * Each soldier splits on Soldier.bUnk961 at +0x3C1, an already-equipped flag. Set, it re-runs the two 25-slot
+ * inventory passes. Clear, it equips from the craft: a left-hand weapon, then ammo for that weapon, then a
+ * third pickup that stores hit rect 10 and so lands in the backpack. Then it sets the flag.
+ *
+ * Deviations: the original dereferences a null soldier, a null object, and a null item pool entry without a
+ * test, calls __rt_sdiv with a zero strength when auStat[8] is 0, and writes the pool without a bound. The
+ * port refuses a null unit, treats a zero strength as too heavy, and bounds the pool. */
+void Tact_EquipTeamFromCraft(TactEquipCtx *pCtx);
+
 #endif /* PUFO_INVDRAG_H */

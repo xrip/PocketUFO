@@ -29,6 +29,9 @@ TABLES = [
     ("unit muzzle offsets",      0xA9768, "g_aUnitMuzzleOffset",   "src/pufo/game/pufo_unit.c",  1104, "h", 0),
     # aInvHitRects: 25 records of 14 bytes, seven i16 each.
     ("inventory hit rects",      0xA8DD8, "s_aHitRect",            "src/pufo/game/pufo_invdrag.c", 175, "h", 0),
+    # The two Tact_EquipTeamFromCraft candidate tables, plain dword object indices.
+    ("equip left-hand order",    0xA62F0, "s_aHandObjects",        "src/pufo/game/pufo_invdrag.c",  13, "i", 0),
+    ("equip third-pickup order", 0xA6328, "s_aPackObjects",        "src/pufo/game/pufo_invdrag.c",   6, "i", 0),
 ]
 
 

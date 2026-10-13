@@ -822,3 +822,269 @@ bool Inv_HandlePointer(const InvDropCtx *pCtx)
     Unit_UpdateAnimPose(pUnit, NULL, NULL);
     return bPlaced;
 }
+
+/* -------------------------------------------------- the loadout from the craft */
+
+/* unk_A62F0 @ 0xA62F0: 13 dwords, the order left-hand weapons are tried in. */static const i32 s_aHandObjects[PUFO_TACT_HAND_TABLE_COUNT] = {
+     6, 11, 5, 9, 3, 2, 4, 7, 8, 1, 12, 13, 10
+};
+
+/* unk_A6328 @ 0xA6328: 6 dwords, the order the third pickup is tried in. */
+static const i32 s_aPackObjects[PUFO_TACT_PACK_TABLE_COUNT] = {
+    18, 17, 15, 16, 19, 14
+};
+
+/* The strength gate. auStat[8] is loaded with LDRH so it is unsigned, and the divide is
+ * __rt_sdiv. ORIGINAL BUG (0x3C2A4), not reproduced: a zero strength is a divide by zero in the
+ * original. The port reports the item as too heavy, which is the only safe reading. */
+static i32 Equip_Divide(i32 nNumerator, i32 nStrength)
+{
+    if (nStrength == 0) {
+        return nNumerator;
+    }
+    return nNumerator / nStrength;
+}
+
+/* Park the pointer on a slot rect and run the drop.
+ *
+ * 0xAD714 and 0xAD718 are pBank+0x1044 and pBank+0x1048, which are the pointer position
+ * Inv_HandlePointer reads. Writing a hit rect origin into them is how the original equips
+ * an item with no mouse involved at all.
+ *
+ * bClearDrag is true for the two slot passes and the ammo pickup and FALSE for the third pickup.
+ * ORIGINAL BUG (0x3C4C8), reproduced: at 0x3C4C8 that pickup stores the unit, the item and the
+ * pointer but never zeroes the drag offset, unlike 0x3BF38, 0x3C1D8 and 0x3C3EC. It inherits
+ * whatever the last re-test left there. */
+static void Equip_Drive(TactEquipCtx *pCtx, Soldier *pUnit, TactItem *pItem,
+                        i32 nRectIdx, bool bClearDrag)
+{
+    const InvDropHooks *pHooks = pCtx->pDrop->pHooks;
+
+    pCtx->pDrop->nPtrX = s_aHitRect[nRectIdx].x0;
+    pCtx->pDrop->nPtrY = s_aHitRect[nRectIdx].y0;
+    if (bClearDrag) {
+        pCtx->pHit->nDragOffX = 0;
+        pCtx->pHit->nDragOffY = 0;
+    }
+    pCtx->pDrop->pSelUnit = pUnit;
+    pCtx->pHit->pHitItem = pItem;
+    (void)Inv_HandlePointer(pCtx->pDrop);
+    MapCell_ListRemove(pCtx->pItemListCell, pItem);
+    (void)Unit_RecalcInventoryStat(pUnit, pHooks->pInvStat);
+}
+
+/* The three candidate gates, all of the form "can this soldier carry this much more". */
+typedef enum {
+    PUFO_EQUIP_HAND,   /* nAmmo != 0 and 4*(burden+weight+3)/strength == 0 */
+    PUFO_EQUIP_AMMO,   /* 4*(burden+weight)/strength < 1 */
+    PUFO_EQUIP_PACK    /* 4*(burden+weight+3)/strength < 2 */
+} EquipGate;
+
+/* First loose item whose object is pWant and which passes the gate. The original walks the
+ * list once per candidate object, so a candidate that is not present costs a full walk. */
+static TactItem *Equip_FindLoose(TactEquipCtx *pCtx, Soldier *pUnit, ObjectRec *pWant,
+                                 EquipGate gate)
+{
+    if (pWant == NULL) {
+        return NULL;
+    }
+    for (TactItem *pItem = pCtx->pItemListCell->pItemList; pItem != NULL; pItem = pItem->pNext) {
+        i32 nQuot;
+        i32 nWeight;
+
+        if (pItem->pObj != pWant) {
+            continue;
+        }
+        nWeight = (i32)pItem->pObj->bWeight;
+        if (gate == PUFO_EQUIP_HAND) {
+            if (pItem->nAmmo == 0) {
+                continue;
+            }
+            nQuot = Equip_Divide(4 * (pUnit->uInvBurden + nWeight + 3), pUnit->auStat[8]);
+            if (nQuot != 0) {
+                continue;
+            }
+        } else if (gate == PUFO_EQUIP_AMMO) {
+            nQuot = Equip_Divide(4 * (pUnit->uInvBurden + nWeight), pUnit->auStat[8]);
+            if (nQuot >= 1) {
+                continue;
+            }
+        } else {
+            nQuot = Equip_Divide(4 * (pUnit->uInvBurden + nWeight + 3), pUnit->auStat[8]);
+            if (nQuot >= 2) {
+                continue;
+            }
+        }
+        return pItem;
+    }
+    return NULL;
+}
+
+/* Pass A, 0x3BE8C. The 25 declared slots whose object is not two-handed and not category 3.
+ *
+ * auUnk962[nSlot] at Soldier+0x3C2 is the object index the slot declares; abUnk1012[nSlot] at
+ * Soldier+0x3F4 is a byte naming the object index that slot should end up holding. Hex-Rays
+ * renders the cursor advancing by 2 and reading index 0 each time, which is this walk. */
+static void Equip_SlotPass(TactEquipCtx *pCtx, Soldier *pUnit)
+{
+    const InvDropHooks *pHooks = pCtx->pDrop->pHooks;
+
+    for (i32 nSlot = 0; nSlot < PUFO_INV_HITRECT_COUNT; ++nSlot) {
+        if (pUnit->auUnk962[nSlot] == 0) {
+            continue;
+        }
+        ObjectRec *pObj = pCtx->apObjects[pUnit->auUnk962[nSlot]];
+        if (pObj == NULL || pObj->bTwoHanded != 0 || pObj->nCategory == 3) {
+            continue;
+        }
+        for (TactItem *pItem = pCtx->pItemListCell->pItemList; pItem != NULL; pItem = pItem->pNext) {
+            if (pItem->pObj != pObj || pItem->nAmmo == 0) {
+                continue;
+            }
+            Equip_Drive(pCtx, pUnit, pItem, nSlot, true);
+
+            if (pItem->pObj->bAmmoCap == 255) {
+                break;
+            }
+            i32 nIndex = pItem->nIndex;
+            if (nIndex == pUnit->abUnk1012[nSlot]) {
+                break;
+            }
+
+            /* The slot wants object abUnk1012[nSlot]. Find a loose item whose object sort key is
+             * that index, move this item's rounds into a new item carrying the object this one was
+             * holding, and take the found item's rounds and identity for this slot. */
+            TactItem *pMatch = pCtx->pItemListCell->pItemList;
+            while (pMatch != NULL && pMatch->pObj != NULL &&
+                   pMatch->pObj->uSortKey != pUnit->abUnk1012[nSlot]) {
+                pMatch = pMatch->pNext;
+            }
+            if (pMatch != NULL) {
+                TactItem *pNew = pHooks->pfnAllocItem != NULL
+                    ? pHooks->pfnAllocItem(pHooks->pUser) : NULL;
+                if (pNew != NULL && pHooks->apItemPool != NULL && pHooks->pnItemCount != NULL &&
+                    *pHooks->pnItemCount < PUFO_INV_ITEM_POOL_MAX) {
+                    pHooks->apItemPool[*pHooks->pnItemCount] = pNew;   /* 0x3C04C */
+                    pNew->pObj = pCtx->apObjects[pItem->nIndex];       /* 0x3C070 */
+                    pNew->nAmmo = pItem->nAmmo;                        /* 0x3C08C */
+                    ++*pHooks->pnItemCount;
+                    /* Hex-Rays renders this as v12[36109] after a base advance. ARM loads
+                     * Map + 4*newCount + 0x23434, which is the slot just written. */
+                    MapCell_ListInsertByPri(pCtx->pItemListCell, pNew);
+                }
+                pItem->nAmmo = 0;                        /* 0x3C094 */
+                pItem->nIndex = pMatch->pObj->uSortKey;  /* 0x3C0D8 */
+                pItem->nAmmo = pMatch->nAmmo;            /* 0x3C0E0 */
+                MapCell_ListRemove(pCtx->pItemListCell, pMatch);
+            }
+            /* ORIGINAL BUG (0x3C0F0), not reproduced: when no entry matches by sort key the
+             * original walks the whole list a second time for a match its own entry gate has made
+             * impossible. It reaches this path only because nIndex != abUnk1012[nSlot], and the
+             * match at 0x3C000 needs nIndex == abUnk1012[nSlot] with the same two operands. So the
+             * swap at 0x3C0F0 is unreachable and the walk changes nothing. */
+            break;
+        }
+    }
+}
+
+/* Pass B, 0x3C140. The same 25 slots with the complementary gate, and no ammo bookkeeping. */
+static void Equip_TwoHandedPass(TactEquipCtx *pCtx, Soldier *pUnit)
+{
+    for (i32 nSlot = 0; nSlot < PUFO_INV_HITRECT_COUNT; ++nSlot) {
+        if (pUnit->auUnk962[nSlot] == 0) {
+            continue;
+        }
+        ObjectRec *pObj = pCtx->apObjects[pUnit->auUnk962[nSlot]];
+        if (pObj == NULL ||
+            (pObj->bTwoHanded == 0 && pObj->nCategory != 3 && pObj->nCategory != 5)) {
+            continue;
+        }
+        for (TactItem *pItem = pCtx->pItemListCell->pItemList; pItem != NULL; pItem = pItem->pNext) {
+            if (pItem->pObj != pObj) {
+                continue;
+            }
+            Equip_Drive(pCtx, pUnit, pItem, nSlot, true);
+            break;
+        }
+    }
+}
+
+/* A soldier that has never been equipped: left hand, then ammo for that weapon, then belt. */
+static void Equip_FromCraft(TactEquipCtx *pCtx, Soldier *pUnit)
+{
+    const InvDropHooks *pHooks = pCtx->pDrop->pHooks;
+
+    /* Left hand, 0x3C238. The only one of the four pickups that does not run the drop path:
+     * it stores the item straight into pHandL and takes it out of the list itself. */
+    for (i32 nTbl = 0; nTbl < PUFO_TACT_HAND_TABLE_COUNT; ++nTbl) {
+        TactItem *pItem = Equip_FindLoose(pCtx, pUnit, pCtx->apObjects[s_aHandObjects[nTbl]],
+                                          PUFO_EQUIP_HAND);
+        if (pItem == NULL) {
+            continue;
+        }
+        pUnit->pHandL = pItem;                                                    /* 0x3C2D8 */
+        MapCell_ListRemove(pCtx->pItemListCell, pItem);
+        (void)Unit_RecalcInventoryStat(pUnit, pHooks->pInvStat);
+        break;
+    }
+
+    /* Ammo for whatever ended up in the left hand, 0x3C2EC. The gate is the ITEM's nAmmo, not
+     * the weapon's ammo cap: nAmmo == 255 skips the search entirely. The weapon's three
+     * anAmmoTypeId entries are tried in order and only the first hit is taken. */
+    TactItem *pHand = pUnit->pHandL;
+    if (pHand != NULL && pHand->pObj != NULL && pHand->nAmmo != 255) {
+        for (i32 nSlot = 0; nSlot < 3; ++nSlot) {
+            u16 nAmmoObj = pHand->pObj->anAmmoTypeId[nSlot];
+            if (nAmmoObj == 0) {
+                continue;
+            }
+            TactItem *pAmmo = Equip_FindLoose(pCtx, pUnit, pCtx->apObjects[nAmmoObj],
+                                              PUFO_EQUIP_AMMO);
+            if (pAmmo == NULL) {
+                continue;
+            }
+            i32 nRect = (pAmmo->pObj->nFootW >= 3 || pAmmo->pObj->nFootH != 1) ? 16 : 4;
+            Equip_Drive(pCtx, pUnit, pAmmo, nRect, true);
+            break;
+        }
+    }
+
+    /* The third pickup, 0x3C430. It stores aInvHitRects[10], and rect 10 is x 160..179 /
+     * y 160..179, which is BACKPACK slot 0,0 - the belt rects are 16 through 24. So whatever
+     * these six objects were meant to be, they land in the backpack. The drag offset is
+     * deliberately left alone here, unlike the other three pickups. */
+    for (i32 nTbl = 0; nTbl < PUFO_TACT_PACK_TABLE_COUNT; ++nTbl) {
+        TactItem *pItem = Equip_FindLoose(pCtx, pUnit, pCtx->apObjects[s_aPackObjects[nTbl]],
+                                          PUFO_EQUIP_PACK);
+        if (pItem == NULL) {
+            continue;
+        }
+        Equip_Drive(pCtx, pUnit, pItem, 10, false);
+        break;
+    }
+}
+
+/* Tact_EquipTeamFromCraft @ 0x3be24. */
+void Tact_EquipTeamFromCraft(TactEquipCtx *pCtx)
+{
+    if (pCtx == NULL || pCtx->apXcomUnits == NULL || pCtx->pnXcomUnitCount == NULL ||
+        pCtx->apObjects == NULL || pCtx->pItemListCell == NULL || pCtx->pHit == NULL ||
+        pCtx->pDrop == NULL || pCtx->pDrop->pHooks == NULL) {
+        return;
+    }
+
+    for (i32 nUnit = 0; nUnit < *pCtx->pnXcomUnitCount; ++nUnit) {
+        Soldier *pUnit = pCtx->apXcomUnits[nUnit];
+
+        if (pUnit == NULL) {
+            continue;
+        }
+        if (pUnit->bUnk961 != 0) {
+            Equip_SlotPass(pCtx, pUnit);
+            Equip_TwoHandedPass(pCtx, pUnit);
+        } else {
+            Equip_FromCraft(pCtx, pUnit);
+            pUnit->bUnk961 = 1;   /* 0x3C510 */
+        }
+    }
+}

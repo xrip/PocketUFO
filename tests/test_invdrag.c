@@ -997,6 +997,265 @@ static void TestDropRestore(void)
     Check(g_apPool[0] == &g_aGround[0], "  no hole was closed because none was found");
 }
 
+/* --- Tact_EquipTeamFromCraft @ 0x3be24 -------------------------------------
+ *
+ * The mechanism these tests are really about: the original writes a hit rect origin into
+ * 0xAD714 / 0xAD718, and those are pBank+0x1044 / pBank+0x1048, the pointer position
+ * Inv_HandlePointer reads. It then re-tests at ptr + drag + 10. With the drag cleared that is
+ * rect.x0 + 10, rect.y0 + 10, which lands inside the very rect whose origin was written - for
+ * every one of the 25. That is how this function equips a soldier with no mouse at all. */
+
+static ObjectRec   s_aEquipObj[24];
+static ObjectRec  *s_apEquipObjects[24];
+static TactItem    s_aEquipItem[24];
+static MapCell     s_EquipCell;
+static Soldier    *s_apEquipUnits[4];
+static InvDropCtx  s_EquipDrop;
+static i32         g_nEquipCount;
+
+static void EquipFixture(void)
+{
+    ResetDrop();
+    memset(s_aEquipObj, 0, sizeof(s_aEquipObj));
+    memset(s_aEquipItem, 0, sizeof(s_aEquipItem));
+    memset(&s_EquipCell, 0, sizeof(s_EquipCell));
+
+    for (i32 i = 0; i < 24; ++i) {
+        s_aEquipObj[i].nFootW = 1;
+        s_aEquipObj[i].nFootH = 1;
+        s_aEquipObj[i].bWeight = 5;
+        s_aEquipObj[i].bTwoHanded = 0;
+        s_aEquipObj[i].nCategory = 1;
+        s_aEquipObj[i].bAmmoCap = 255;   /* no ammo bookkeeping unless a test asks for it */
+        s_aEquipObj[i].uSortKey = (u16)i;
+        s_apEquipObjects[i] = &s_aEquipObj[i];
+
+        s_aEquipItem[i].pObj = &s_aEquipObj[i];
+        s_aEquipItem[i].nAmmo = 8;
+        s_aEquipItem[i].nIndex = (u16)i;
+        s_aEquipItem[i].pNext = NULL;
+    }
+
+    /* 4 * (1 + 5 + 3) = 36, so a strength of 100 accepts everything and 36 rejects it. */
+    g_Unit.uInvBurden = 1;
+    g_Unit.auStat[8] = 100;
+    g_Hit.nHitRegion = 0;   /* the loose items came from the ground list */
+}
+
+/* Build the loose list in the given order. */
+static void EquipLoose(const i32 *aIds, i32 nCount)
+{
+    TactItem *pPrev = NULL;
+
+    s_EquipCell.pItemList = NULL;
+    for (i32 i = 0; i < nCount; ++i) {
+        TactItem *pItem = &s_aEquipItem[aIds[i]];
+        pItem->pNext = NULL;
+        if (pPrev == NULL) {
+            s_EquipCell.pItemList = pItem;
+        } else {
+            pPrev->pNext = pItem;
+        }
+        pPrev = pItem;
+    }
+}
+
+static bool EquipListHas(TactItem *pWant)
+{
+    for (TactItem *pItem = s_EquipCell.pItemList; pItem != NULL; pItem = pItem->pNext) {
+        if (pItem == pWant) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static TactEquipCtx EquipCtx(void)
+{
+    static InvDropHooks s_h;
+    TactEquipCtx ctx;
+
+    s_h = DropHooks();
+    memset(&s_EquipDrop, 0, sizeof(s_EquipDrop));
+    s_EquipDrop.pHit = &g_Hit;
+    s_EquipDrop.pUi = &g_Ui;
+    s_EquipDrop.pSelUnit = &g_Unit;
+    s_EquipDrop.pSentinel = &g_Sentinel;
+    s_EquipDrop.pHooks = &s_h;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pItemListCell = &s_EquipCell;
+    ctx.apXcomUnits = s_apEquipUnits;
+    ctx.pnXcomUnitCount = &g_nEquipCount;
+    ctx.apObjects = s_apEquipObjects;
+    ctx.pHit = &g_Hit;
+    ctx.pDrop = &s_EquipDrop;
+    return ctx;
+}
+
+static void TestEquipLeftHand(void)
+{
+    static const i32 aLoose[2] = { 11, 6 };
+    TactEquipCtx ctx;
+
+    printf("Tact_EquipTeamFromCraft: left hand\n");
+
+    /* Table order is 6, 11, 5, 9, ... while the list order is 11 then 6, so a correct
+     * implementation takes 6. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    g_Unit.bUnk961 = 0;
+    s_apEquipUnits[0] = &g_Unit;
+    g_nEquipCount = 1;
+
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+
+    Check(g_Unit.pHandL == &s_aEquipItem[6], "the left hand follows the candidate table, not the list order");
+    Check(!EquipListHas(&s_aEquipItem[6]), "the taken item left the loose list");
+    Check(EquipListHas(&s_aEquipItem[11]), "the item that was not chosen stays");
+    CheckEqI32(g_Unit.bUnk961, 1, "an unequipped soldier is marked equipped afterwards");
+
+    /* The gate boundary. 4 * (1 + 5 + 3) = 36: a strength of 36 divides to 1 and is refused,
+     * 37 divides to 0 and is accepted. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    g_Unit.bUnk961 = 0;
+    g_Unit.auStat[8] = 36;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+    Check(g_Unit.pHandL == NULL, "strength 36 cannot carry it: 36 / 36 is 1, not 0");
+
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    g_Unit.bUnk961 = 0;
+    g_Unit.auStat[8] = 37;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+    Check(g_Unit.pHandL == &s_aEquipItem[6], "strength 37 can: 36 / 37 is 0");
+
+    /* An empty candidate is skipped: the hand gate also needs nAmmo non-zero. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    g_Unit.bUnk961 = 0;
+    s_aEquipItem[6].nAmmo = 0;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+    Check(g_Unit.pHandL == &s_aEquipItem[11], "an empty first candidate falls through to the next");
+
+    /* A zero strength is a divide by zero in the original. The port reports too heavy. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    g_Unit.bUnk961 = 0;
+    g_Unit.auStat[8] = 0;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+    Check(g_Unit.pHandL == NULL, "a zero strength is refused rather than dividing by zero");
+}
+
+static void TestEquipThirdPickup(void)
+{
+    static const i32 aLoose[1] = { 18 };
+    TactEquipCtx ctx;
+
+    printf("Tact_EquipTeamFromCraft: the third pickup, and the drag offset it never clears\n");
+
+    /* unk_A6328 order is 18, 17, 15, 16, 19, 14. The pickup stores aInvHitRects[10], and rect 10 is
+     * x 160..179 / y 160..179 - BACKPACK slot 0,0. The belt rects are 16 through 24, so this is not a
+     * belt pickup at all. With the drag clear the re-test lands at 170,170, inside rect 10. */
+    EquipFixture();
+    EquipLoose(aLoose, 1);
+    g_Unit.bUnk961 = 0;
+    g_Hit.nDragOffX = 0;
+    g_Hit.nDragOffY = 0;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+
+    Check(g_Unit.apBackpack[0] == &s_aEquipItem[18], "the third pickup stores rect 10 and lands in backpack slot 0,0");
+    Check(!EquipListHas(&s_aEquipItem[18]), "and the item left the loose list");
+    Check(g_Unit.apBelt[0] == NULL, "nothing goes to the belt, whose rects start at 16");
+
+    /* ORIGINAL BUG, reproduced: at 0x3C4C8 this pickup stores the unit, the item and the pointer, but
+     * unlike the two slot passes and the ammo pickup it never zeroes nInvDragOffX/Y. It inherits the
+     * footprint offset the previous re-test left. A 2-wide item leaves -20, moving the re-test to 150,150,
+     * which is inside no rect at all, so the slot is missed. */
+    EquipFixture();
+    EquipLoose(aLoose, 1);
+    g_Unit.bUnk961 = 0;
+    g_Hit.nDragOffX = -20;
+    g_Hit.nDragOffY = -20;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+
+    Check(g_Unit.apBackpack[0] != &s_aEquipItem[18], "a stale drag offset makes it miss the slot it targets");
+    Check(!EquipListHas(&s_aEquipItem[18]), "but the item is taken out of the loose list either way");
+}
+
+static void TestEquipSlotSwap(void)
+{
+    static const i32 aLoose[2] = { 6, 9 };
+    TactEquipCtx ctx;
+
+    printf("Tact_EquipTeamFromCraft: the slot ammo swap\n");
+
+    /* Slot 0 declares object 6 and is meant to end up holding object 9. The item carrying
+     * object 6 has rounds, so its rounds move into a new item that keeps object 6, and the
+     * slot's item takes the found item's identity and rounds. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    s_aEquipObj[6].bAmmoCap = 24;
+    s_aEquipItem[6].nAmmo = 5;
+    s_aEquipItem[9].nAmmo = 3;
+    g_Unit.bUnk961 = 1;              /* the re-run half, not the equip-from-craft half */
+    g_Unit.auUnk962[0] = 6;
+    g_Unit.abUnk1012[0] = 9;
+    s_apEquipUnits[0] = &g_Unit;
+    g_nEquipCount = 1;
+
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+
+    CheckEqI32(g_nPool, 1, "the displaced rounds become a new pooled item");
+    Check(g_apPool[0] != NULL, "and the pool slot was filled");
+    if (g_apPool[0] != NULL) {
+        Check(g_apPool[0]->pObj == &s_aEquipObj[6], "the new item keeps the object the slot held");
+        CheckEqI32(g_apPool[0]->nAmmo, 5, "and carries the rounds that were in the slot");
+    }
+    CheckEqI32(s_aEquipItem[6].nIndex, 9, "the slot item takes the found item's index");
+    CheckEqI32(s_aEquipItem[6].nAmmo, 3, "and its rounds");
+    Check(!EquipListHas(&s_aEquipItem[9]), "the found item is removed from the loose list");
+    CheckEqI32(g_Unit.bUnk961, 1, "an already-equipped soldier keeps the flag");
+
+    /* No entry has the sort key the slot wants. The original walks the whole list a second time
+     * for a match its own entry gate made impossible - it only got here because nIndex differs
+     * from abUnk1012[slot], and the match needs them equal - reaches the end, and changes
+     * nothing. The swap at 0x3C0F0 is unreachable. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    s_aEquipObj[6].bAmmoCap = 24;
+    s_aEquipItem[6].nAmmo = 5;
+    g_Unit.bUnk961 = 1;
+    g_Unit.auUnk962[0] = 6;
+    g_Unit.abUnk1012[0] = 20;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+
+    CheckEqI32(g_nPool, 0, "an unmatched slot wants a new item but gets none");
+    CheckEqI32(s_aEquipItem[6].nIndex, 6, "and the slot item's index is left alone");
+
+    /* bAmmoCap 255 means the weapon never runs out, so no bookkeeping runs at all. */
+    EquipFixture();
+    EquipLoose(aLoose, 2);
+    s_aEquipItem[6].nAmmo = 5;
+    g_Unit.bUnk961 = 1;
+    g_Unit.auUnk962[0] = 6;
+    g_Unit.abUnk1012[0] = 9;
+    ctx = EquipCtx();
+    Tact_EquipTeamFromCraft(&ctx);
+    CheckEqI32(g_nPool, 0, "an uncapped weapon does no ammo bookkeeping");
+    CheckEqI32(s_aEquipItem[6].nIndex, 6, "so its index is not rewritten");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1014,6 +1273,9 @@ int main(void)
     Reset(); TestDropGround();
     Reset(); TestDropSplit();
     Reset(); TestDropRestore();
+    TestEquipLeftHand();
+    TestEquipThirdPickup();
+    TestEquipSlotSwap();
     Reset(); TestPockets();
     Reset(); TestHands();
     Reset(); TestBackpack();

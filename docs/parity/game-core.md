@@ -7127,3 +7127,43 @@ its `nFootH != 1`, otherwise **4**; the belt always uses hit rect **10**.
 `v12[36109]`, which reads like an out-of-range slot. ARM adds 1 to the count and then loads from
 `Map + 4*newCount + 0x23434`, which is `apTactItems[newCount - 1]` — the item stored a few instructions
 earlier at `0x3C04C`. It inserts the just-created item.
+
+## `Tact_EquipTeamFromCraft @ 0x3be24` — ported, and it equips soldiers with a parked pointer
+
+1,836 bytes, ported as `Tact_EquipTeamFromCraft` in `game/pufo_invdrag.c`.
+
+**The mechanism.** It writes a hit rect origin into `0xAD714` and `0xAD718`. Those two addresses *are*
+`pBank+0x1044` and `pBank+0x1048` — the pointer position `Inv_HandlePointer` reads at `0x12290` /
+`0x122A0`. It then re-tests at `ptr + drag + 10`. With the drag cleared that is `rect.x0 + 10`,
+`rect.y0 + 10`, and for all 25 rects that point falls inside the very rect whose origin was written.
+So the function equips a soldier by parking the virtual pointer exactly on each slot. No mouse is
+involved, and the fact that it works for every one of the 25 rects is what confirms the reading.
+
+**Three pickups when `Soldier.bUnk961` is clear**, each a table walk over candidate object indices:
+
+| pickup | table | gate | how it is placed |
+|---|---|---|---|
+| left hand | `aTactHandObjects` (13) `6 11 5 9 3 2 4 7 8 1 12 13 10` | `nAmmo != 0` and `4*(burden+weight+3)/strength == 0` | assigned straight to `pHandL`, **no drop path** |
+| ammo | `anAmmoTypeId[0..2]` | `4*(burden+weight)/strength < 1` | rect 16 if `nFootW >= 3` or `nFootH != 1`, else 4 |
+| third | `aTactPackObjects` (6) `18 17 15 16 19 14` | `4*(burden+weight+3)/strength < 2` | rect 10 |
+
+Both tables are now in `audit_tables.py` and match the image exactly.
+
+**The third pickup is not a belt pickup.** It stores `aInvHitRects[10]`, and rect 10 is
+`x 160..179 / y 160..179` — **backpack slot 0,0**. The belt rects are 16 through 24. My first test
+asserted a belt landing and failed; the port was right and my expectation was wrong.
+
+**Three original defects, all in the ledger.**
+
+- `0x3C4C8` — reproduced. The third pickup stores the unit, the item and the pointer but never zeroes
+  `nInvDragOffX/Y`, unlike `0x3BF38`, `0x3C1D8` and `0x3C3EC`. It inherits the footprint offset the
+  previous re-test left, so a 2-wide item picked up just before leaves `-20`, the re-test lands at
+  `150,150` which is inside no rect at all, and the slot is missed.
+- `0x3C0F0` — not reproduced. The slot ammo swap is **unreachable**. The branch is entered only when
+  `nIndex != abUnk1012[slot]` (`0x3BF9C`), and the match at `0x3C000` needs `nIndex == abUnk1012[slot]`
+  with the same two operands. The second walk always runs to the end of the list and changes nothing.
+- `0x3C2A4` — not reproduced. `auStat[8]` is the divisor of every carry gate, reached through
+  `__rt_sdiv` with no zero test, so a strength of 0 is a divide by zero.
+
+One layout detail worth keeping: `abUnk1012` at `Soldier+0x3F4` is a **byte** array while
+`TactItem.nIndex` is a **u16**, so the compare at `0x3BF9C` is 16-bit against 8-bit.
