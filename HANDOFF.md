@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD before this edit: `de8bbc4`. This document is committed together with
-`Tact_SpawnAliens` and its nine static alien-mission tables, which are now in the port (section 7,
-Priority 1 step 2).
+Date: 2026-10-13. HEAD before this edit: `36addee`. This document is committed together with
+`Tact_Shutdown` (0x3d568), ported in `src/pufo/game/pufo_tactend.{h,c}`, and with the
+`Map_BuildMissionTerrain` decode that is written up in `docs/parity/game-core.md` but not yet ported.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -40,15 +40,15 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 48
-                                             Total Test time (real) = 1.47 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 49
+                                             Total Test time (real) = 1.59 sec
 ```
 
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 667 / 1103 (60.5%)
-                                             bytes cited:     232924 / 598792 (38.9%)
+python docs/parity/coverage.py            -> functions cited: 668 / 1103 (60.6%)
+                                             bytes cited:     236712 / 598792 (39.5%)
 python docs/parity/audit_credits.py       -> NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
@@ -259,9 +259,11 @@ This is the shortest chain that produces a real game session, in dependency orde
    writes for `Tact_EquipTeamFromCraft`, and `0x158848` is the mission base index. All four are
    `TactCargoEnv` fields now.
 4. `Tact_InitMission` (0x3c550, 4,120 B) — blocked only by item 1, `Map_BuildMissionTerrain`.
-5. `Tact_Shutdown` (0x3d568, 3,788 B) — no callee blockers. Deliberately deferred: it frees the
-   tactical singletons that `Tact_InitMission` creates, so porting it first would mean inventing an
-   ownership model for objects the port does not yet allocate.
+5. Done: `Tact_Shutdown` (0x3d568, 3,788 B) — ported in `src/pufo/game/pufo_tactend.{h,c}`. It was
+   deferred on the grounds that it frees singletons the port does not yet allocate. That objection
+   dissolves the same way it does everywhere else in this port: the function takes every slot it
+   frees as a caller-owned pointer and owns nothing itself. It went first because it was the only
+   Priority 1 item whose callees were all already ported.
 6. `LoadGame` (0x44bbc, 3,400 B) — blocked by exactly three callees: `Geoscape_InitUI` (0x857f4,
    5,420 B), `Tact_Shutdown`, `Tact_InitMission`.
 
@@ -538,9 +540,15 @@ does.
 3. Done: `Tact_SetupCraftCargo` (0x38f00) is ported. The two globals it was blocked on turned out to
    be private scratch with no other reader, so they are caller-owned arrays in `TactCargoEnv` rather
    than new global models.
-4. Port `Map_BuildMissionTerrain` (0x22e10). Largest single gap on the critical path.
+4. Port `Map_BuildMissionTerrain` (0x22e10, 10,676 B). Largest single gap on the critical path, and
+   the only Priority 1 item still blocked. It is read end to end in ARM and the six phases are
+   written up in `docs/parity/game-core.md`; every callee except `CDialogTemplate_GetTemplateByte0`
+   and `GetTemplateByte1` (12 bytes each) is already ported. What is left open is listed there: the
+   module-grid values `0..4`, the `var_276` kind codes, the `0x10/0x11/0x12` tile-type guards, and
+   the three near-duplicate stamping blocks. This needs its own session, not a slot in a busy one.
 5. Port `Tact_InitMission` (0x3c550).
-6. Port `Tact_Shutdown` (0x3d568), then `LoadGame` (0x44bbc).
+6. Done: `Tact_Shutdown` (0x3d568) is ported. Next is `LoadGame` (0x44bbc), still blocked by
+   `Geoscape_InitUI` and `Tact_InitMission`.
 
 ### Priority 2 — finish the tactical renderer
 
