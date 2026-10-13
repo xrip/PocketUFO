@@ -1,658 +1,616 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Written 2026-10-11. Everything below was re-derived from the repository, the build,
-the tests, and Git history at this moment. No earlier handoff document was read or
-reused (none exists in the tree and none is tracked).
+Date: 2026-10-13. HEAD: `6121f6d`. Working tree: clean (no modified tracked files).
+
+This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
+build, a full test run, and five audit scripts run in the same session. Every number below comes
+from a command run while this file was written.
 
 ---
 
 ## 1. What this project is
 
-Recreate the game `pufobeta.exe` (PocketUFO beta, Windows CE / ARM32, ~641 KB,
-1103 functions) as a modern **Win64** program in **C23 + Clang + CMake**, with
-behavior parity against the original.
+`pufobeta.exe` is a 641 KB WinCE / ARM32 game binary (PocketUFO, an X-COM style tactics game).
+It has been loaded into IDA Pro and analysed to `pufobeta.exe.i64` (1103 functions, 598,792 bytes of
+code). The project recreates that binary as a native **Win64 C23 program** built with CMake and
+Clang, aiming for **behaviour parity** with the original rather than a redesign.
 
-The source of truth is the IDA database `pufobeta.exe.i64` (tracked in this repo,
-22.6 MB). Every recreated behavior must be traceable to a decompiled or disassembled
-original function, and the port records that as an `@ 0xADDR` citation in a comment.
-Guessing behavior is not allowed; ambiguous IDB output is documented and asked about.
+The rule that drives everything: **the IDB is the source of truth.** Every behaviour in the port
+must be traceable to a specific address in `pufobeta.exe.i64`. Guessing is not allowed; when
+Hex-Rays pseudocode is ambiguous, ARM disassembly decides.
 
-Target state, from the project goal file
-(`.pi/goals/active_goal_2026091719164895_mu5qflmn-o361c0.md`):
+Parity is measured by **citations**: a source comment of the form `Name @ 0xADDR` claims that the
+port answers to that original function. `docs/parity/coverage.py` counts those claims against the
+IDB inventory. A citation means "this original function is accounted for", not "this is correct" —
+correctness evidence is the per-subsystem notes in `docs/parity/` plus 48 test suites.
 
-- CMake + Clang builds a Win64 executable with zero errors and zero warnings
-  (warnings are errors).
-- Every original subsystem is recreated: startup/config, data loading
-  (`main.dat`, `lang.dat`, saves), map/world, entities, game logic, UI/input,
-  rendering, audio.
-- The binary launches on Win64 and the main playable flows work.
-- Per-subsystem parity evidence with deviations listed explicitly, plus a final
-  parity report mapping original functions to recreated code with no unexplained gaps.
+### Target state
 
-Out of scope by the goal's own boundaries: `save_editor.exe` and companion tools,
-original WinCE targets, mobile ports, new features, packaging/installer.
+A Win64 executable that boots, loads `main.dat` / `lang.dat`, renders the geoscape and the tactical
+map, accepts input, and plays, with every original subsystem recreated and every remaining gap
+explicitly recorded rather than hidden.
 
 ---
 
-## 2. Snapshot of the repository right now
+## 2. Current state, measured
 
-| Item | Value |
-|---|---|
-| Branch | `master` |
-| Work tip before this handoff | `165b3d9` - game-core: Base_DemolishFacility, the whole-base teardown |
-| Handoff commit | this document and the `game-core.md` note, committed on top of `471a4ad` |
-| Update 2026-10-12 | The render/HUD draw family was opened and the name audit was closed. `UiModal_DrawDialog @ 0x264a0` (2676 B), the tactical HUD draw family (`Menu_DrawLabeledPads 0x217e0`, `TactHud_DrawModalLeft/Right 0x21bac/0x21cec` merged, `TactHud_CopyStatusText 0x21688`, `TactHud_DrawActionButtons 0x21430`, `TactHud_DrawConfirmDialog 0x1eb68`, `TactHud_DrawStatusBanner 0x1e920`, `TactHud_DrawUnitRoster 0x21908`, `TactHud_DrawUnitMarkers 0x20c58`), `PadImage_BlitEx @ 0x11110`, `MapView_FocusSelected @ 0x16710`, `Save_ReadStrategVer @ 0x3f1c8`, and a new `titles` module with `Titles_DrawBackdrop @ 0x1e630`. `audit_names.py` unexplained flags went 116 -> 0; five false credits were removed and five wrong IDB names corrected. Coverage 599 -> 628 functions, 186152 -> 202688 bytes. |
-| Update 2026-10-13 | The isometric layer was opened as a cluster rather than one function. Ported: `MapView_bResolveIsoCell @ 0x1b0d4` (the gate, 428 B), `MapView_DrawCellSelectMarker @ 0x1b280` and `MapView_DrawCellSelectMarkerHi @ 0x1b584` (1,044 B), `TactUnit_DrawHpGlyphs @ 0x1b4b0` (212 B), `MapView_DrawViewportGuide @ 0x1aadc` (1,256 B), `TactUnit_DrawAnimGlyphs @ 0x1c6ac` and `TactUnit_DrawFacingGlyph @ 0x1c754` (304 B). Also `TactHud_DrawTopBar @ 0x20ef8` (1,336 B), `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0`, `SoftSurf_DrawBorderAndBlur @ 0x9e5c8`, and the `titles` module's `Titles_DrawBackdrop @ 0x1e630`. Two functions fully decoded and deliberately left unported with the reason recorded: `MapView_DrawUnitHeightGlyph @ 0x1c240` (no owner for the `angle` and `scale` .bss doubles) and `TactHud_DrawSelectedUnitPanel @ 0x1d5ec`. The sprite group bases in the font block at 0x158268 were decoded and named in the IDB. |
-| Tracked modifications | none (`git diff --stat` empty) |
-| Untracked files | listed in section 12, all intentional |
-| Build | clean, exit 0, no warnings under `/W4 /WX` |
-| Tests | `100% tests passed, 0 tests failed out of 48` |
-| Coverage | **638 / 1103 functions (57.8%)**, **207,528 / 598,792 bytes (34.7%)**, 0 negated citations, 0 unexplained name flags, 32 rows in `docs/parity/bugs.tsv` |
-| Executable | `build/src/pufo/Release/pocketufo.exe`, 27648 bytes |
-| Update 2026-10-11 | `Tact_ProcessMoveAction` is ported and now runs against a real context. `GameMap` (the IDB `Map` block, 152632 bytes, base `0x1139b8`) plus `Map_LookupCell` and the three real callbacks live in `src/pufo/game/pufo_mapctx.c`. Earlier in the same day: TactState layout proven, four flagged ARM ranges settled, both move tables pinned, and three wrong tables in the port corrected (unit-type rows 16 -> 24, `g_aUnitTypeIsLarge` types 11/13, shot-sound extent 180 -> 148). New `g_aUnitMuzzleOffset` and `g_aFireSoundBySortKey`. At that point 47 tests and 5701 checks; the current figures are in the rows above. |
+Build and test, run for this document:
 
-`pufobeta.exe.i64` is tracked on purpose. It is the analysis database, and commits
-that only re-save it (for example `b4b875c`, `eaa79b0`) carry the IDB comments and
-renames that the parity notes depend on.
+```
+cmake --build build --config Release      -> build_exit=0, no errors, no warnings
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 48
+                                             Total Test time (real) = 1.47 sec
+```
+
+Parity and audit scripts, same session:
+
+```
+python docs/parity/coverage.py            -> functions cited: 665 / 1103 (60.3%)
+                                             bytes cited:     227292 / 598792 (38.0%)
+python docs/parity/audit_credits.py       -> NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
+                                             credited addresses whose original name is not defined: 0
+python docs/parity/audit_bugs.py          -> ledger rows: 42, ORIGINAL BUG markers in src/pufo: 13
+                                             ledger and port agree: every marker is listed and every row resolves
+python docs/parity/audit_tables.py        -> 9 tables checked, 0 mismatched
+```
+
+Launch check, same session:
+
+```
+build/src/pufo/Release/pocketufo.exe
+  -> process alive (PID observed), window created, no crash
+  -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
+```
+
+Test checks run across the 48 suites: **6677**.
+
+### Per-subsystem status
+
+From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
+
+| Subsystem | Recreated | Total | Bytes covered | What it is |
+|---|---|---|---|---|
+| `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile), AssetReader |
+| `boot-assets` | 3 | 4 | 1892 / 2744 | startup asset load, text-table extraction, shutdown |
+| `render` | 48 | 51 | 10324 / 11108 | software surface, blitters, palette loading |
+| `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound behind a backend seam |
+| `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
+| `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
+| `platform` | 0 | 132 | 0 / 1908 | WinCE to Win32 seams (GDI display, registry) |
+| `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
+| `tact` | 178 | 214 | 83928 / 178344 | tactical map cells, entities, pathing, LOS, turns, action queue |
+| `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
+| `strat` | 107 | 205 | 34304 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `titles` | 7 | 13 | 3220 / 4444 | intro/outro animated scenes |
+
+`platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
+(`gx.dll` GAPI, registry helpers) that the port deliberately replaces with Win32 equivalents rather
+than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h,c}`.
 
 ---
 
-## 3. What has been implemented, and why
+## 3. What was done in this last stretch, and why
 
-Work is organized as the goal's task list. Four tasks are complete with recorded
-evidence, one is in progress, two are not started.
-
-| Task | Status | What it produced |
-|---|---|---|
-| `map-idb` | complete | `docs/idb/MAP.md`, `docs/idb/functions.tsv`, `docs/idb/imports.tsv`, `docs/idb/inventory-grouped.tsv` (all 1103 functions classified into 14 subsystems, zero unclassified). This is the subsystem map the whole source tree mirrors. |
-| `scaffold` | complete | CMake + Clang Win64 skeleton, `pufo_options` warnings gate, `wWinMain` app shell, `PtrArray`, `Game_RandU16`, GAPI replacement seam. PE verified `machine=0x8664`, `magic=0x20b`, `subsystem=2`. |
-| `data-layer` | complete | `pufo_dat.c` readers for the original archive layout, verified against the shipped `main.dat` / `lang.dat` (directory stride 21 confirmed from both file ends, lang-before-main archive order, case-insensitive lookup). |
-| `render-audio` | complete | `pufo_render.c` blitters and `pufo_audio.c` thin interface over the original audio dependency. Two real bugs were found and fixed here: a missing `y2` row term in all five blitters, and an init retry loop. |
-| `game-core` | **in progress** | Map/world, entities, unit records, pathing, LOS, turn/visibility, tactical state, combat, ballistics, saves, roster. See the port list below. |
-| `ui-input` | **in progress** | Keyboard handlers, the confirm key `Input_OnConfirm @ 0x15f3c`, the secondary key `Input_OnSecondary @ 0x156e0`, the control press/release handler `UiControl_HitTest @ 0x1a3d8`, screen/modal routing, cancel and escape paths. The modal dialogue renderer `UiModal_DrawDialog @ 0x264a0` and the tactical HUD draw family are now ported; the screen openers behind `Render_Frame @ 0x22310` are still to do. |
-| `integrate-parity` | not started | Full build + run of playable flows on Win64 + final parity report. |
-
-Recent `game-core` commits, newest first, each with its reason:
+Nine commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+transcription.
 
 | Commit | Change | Why |
 |---|---|---|
-| `471a4ad` | Port `Unit_RollChance @ 0x25e6c` + 14 checks | It was the last missing callee of `Tact_ProcessMoveAction`; the scatter triple lives at `Map+0x15058`. |
-| `c6ad716` | Decode `Unit_RollChance` constants | `0.27` and `0.01` are exact; the function is now fully specified. |
-| `6d4452f` | Resolve `Unit_RollChance` offsets from ARM | The base is `pCtxBase`, not `pUnit`; it reads the arc bound at `Map+0x14080`. |
-| `354bdf7` | Analyze `Unit_RollChance` | Roll structure and the `0..6.28` angle draws settled; Soldier scratch offsets were left open pending ARM. |
-| `1ca9a2f` | Dependency survey for `Tact_ProcessMoveAction` | Proved that of its callees only `Unit_RollChance` was missing. |
-| `f63dadf` | Coverage script: strip C comments before matching | Comment mentions were inflating coverage by 168 functions; the honest figure was 275/1103, not 443. |
-| `8569beb` | `Tact_KillUnit` corpse cell fix + test fix | The kill path moves `pUnit->pCell` to the landed corpse cell (`0x4eaa8`); a test had `pGeom` pointing at a dead compound literal, which collapsed the sweep bounds. |
-| `b4b875c` | IDB re-save | Kill-table comment corrections. |
-| `b7668b9` | Port `Tact_KillUnit @ 0x4e430` + 30 checks | Kill path, corpse placement, morale shock with both signs, chryssalid transform, fall damage. |
-| `eaa79b0` | Correct a Hex-Rays base-register error in the IDB | The chryssalid name copy reads `Map+0x230`, not `0xB1370`; added a `pCtxBase` offset map proven from ARM. |
-| `4211d96` | Analyze `Tact_TallyBattleStats` | Ordering decision: the tally subtree needs `Save_Read/WriteTGameData` and `Tact_InitMission` first. |
-| `17b4f52`, `465d688` | Fix and brief the `Tact_CheckBattleEnd` helpers | Six small helpers with the `Map` fields each one needs. |
-| `cb3cd9d` | Confirm the `Tact_KillUnit` fall-damage term from ARM at `0x4eefc` | Cell `nZ` byte minus the loop layer index, not two indices. |
-| `42ea9e5` | Port `UnitList_ForEachRefresh @ 0x22b54`; name three kill tables in the IDB | `g_aDeathSoundByType`, `g_aCorpseObjByType`, `g_aCorpseObjQuadrant`. |
-| `8755ada` | Port `Unit_DropAllItemsToCell @ 0x4b4f8` + 10 checks | Belt/backpack/pocket slot map proven from offsets; backpack slots 5 and 6 kept. |
-| `44982b1` | `TestTryOpportunityFire` + parity notes | Facing cone excludes straight ahead; the duel is decided by a raw roll, not stats. |
+| `62604e0` | decode the proximity-device pair | record behaviour before porting |
+| `c84309e` | port `Combat_DetonateNearbyItems` (0x32fa8) | arming chain reaction |
+| `8e03c37` | port `MapCell_TickProximityItems` (0x4b724) | arming countdown |
+| `29dbe26` | port `Tact_DeployTeamAndHwps` (0x39980) | last big `Tact_InitMission` blocker except terrain and aliens |
+| `3aef8e6` | decode `Tact_SpawnAliens` (0x3a2ac) | found it is blocked on data tables, not functions |
+| `ce45dcb` | port `Base_UpdateAlienContainmentNeeded`, `Base_CountAmmoItems`, `Base_CalcOccupiedSpace` | closed the last three small gaps in the base-capacity family |
+| `8717217` | decode `MapView_DrawUnit` (0x1c958) | last big iso leaf |
+| `885363b` | settle `MapView_DrawUnit` table extents from the image | a stride contradiction, resolved |
+| `6121f6d` | correct a fact committed wrongly in `8717217` | see below |
 
+### A real crash found in already-ported code
 
-### The commit table above is not exhaustive
+`Combat_ResolveShot` clears a 41x41x4 hit window and writes the outcome struct with no null test.
+The original reaches both through Map globals, so it always has them. The port lifted them into
+parameters — and two port call sites passed NULL for both. The detonation port crashed on the first
+call. Fixed by giving `Combat_ResolveShot` a static scratch window and outcome when the caller
+passes NULL, which reproduces the original's single shared window instead of inventing a new rule.
+Recorded in `docs/parity/game-core.md`, not in `bugs.tsv`, because it is a port-side defect.
 
-It stops at `44982b1`; 160+ commits have landed since. The short version of that stretch, by
-cluster, with details in `docs/parity/*.md`:
+### A committed error, corrected rather than left in place
 
-- **Save subsystem, 37 of 38 functions.** Every chunk writer and reader is ported: product, bases,
-  ships, flobjs, strateg, map, teamunits (four roster chunks), tgamedata, smap, rmp, plus
-  `SaveGame @ 0x44988` and `SaveSlot_FormatList @ 0x45904`. `LoadGame @ 0x44bbc` is the only one
-  left. Each chunk's on-disk layout, version gates on the save-format byte `0x18655C`, and read
-  order are recorded in `docs/parity/save-format.md`.
-- **Geoscape UI lifecycle.** `GeoscapeUi_FreeAll @ 0x86d20` is ported as a function over an
-  owned-object struct (`ui/pufo_geouimanage.{h,c}`), which also settles that 0x1864F8 is one
-  struct holding the thirteen root widgets, the strateg PtrArray at +0x3C and the mission-site
-  table at +0xC8. That leaves `LoadGame` blocked on three functions, not four:
-  `Geoscape_InitUI` (0x857f4), `Tact_Shutdown` (0x3d568) and `Tact_InitMission` (0x3c550).
-  `Tact_Shutdown`'s own five missing callees are down to one: `Base_TransferTacticalLoot`
-  (0x68344). `Map_FreeRmpNodes`, `Soldier_RemoveById`, `Ship_RemoveWithCargo @ 0x36830`,
-  `Craft_GetTypeCargoCap @ 0x65ac4`, `Base_CalcWeaponStorageUsed @ 0x65b30`,
-  `Craft_LoadStoresFromBase @ 0x693ec` and `Base_StripAllCraftCargo @ 0x69a38` are now ported,
-  and `Base_DemolishFacility @ 0x66b70` is fully mapped. That last port also fixed a real bug in
-  `PtrArray_Remove`, which dropped the whole array whenever the removal hit the last slot.
-- **Base facility layer.** All five `Base_Update*Needed` passes, their `Base_Calc*Cap` and
-  `Base_Count*` helpers, `Base_FindFacilityCell @ 0x6ae54`, `Base_CountEmptyFacilityCells @ 0x6aee0`
-  and `Base_ClearFacilityGridRow @ 0x6a0e0` (whose name is wrong: it classifies, it does not clear).
-  The three per-base grids and their strides are in `docs/parity/game-core.md`.
-- **Loadout weapon swap, whole.** `BasePlaneScreen_ApplyWeaponSwap @ 0x79748` with
-  `BasePlane_Load/UnloadWeaponStores @ 0x793e0/0x790e8` and the `InvSel_*ItemQty` cargo pair. The
-  key finding is that a weapon and its ammo are **separate object records**, which is why the swap's
-  call order does not move ammo.
-- **The UFO mission machine.** `Geoscape_SpawnMissionSite @ 0x7e49c` (4460 bytes) plus its whole
-  dependency chain: `StrategList_AddItem`, `RollCraftStats`, `AddUfoAt`, `AddAlienSiteIfValid`,
-  `Entry_InitTravel`, `MaybeSpawnCraft_Process`, `RemoveAt`, `PurgeType5` (whose cascade bug is
-  reproduced on purpose), `FindIdxForShip`, and `BasePlaneScreen_AddInterceptMission @ 0x7de14`.
-- **Parity report integrity.** Three audit tools now run before every commit:
-  `coverage.py --gaps`, `audit_credits.py` (a port claim on the same line as a port denial) and
-  `audit_names.py` (credited addresses with no definition). Six passes caught false credits, the
-  largest removing 19 functions and 14988 bytes at once. The trap and how to avoid it are in
-  section 7.
+`8717217` stated that `Soldier.bFlags` is at `Soldier + 0x14`. That is wrong: `Soldier + 0x14` is
+`nAnimPose`, which the port already models and static-asserts. `bFlags` is at `Soldier + 0x04`,
+confirmed by ARM at `0x1D504` (`LDRB R3, [R0,#4]` then `ANDS R3, R3, #2`). Corrected in `6121f6d`
+in both the docs and the IDB comment.
+
+### Facts settled that were previously guesses
+
+- **Cell array index is `60 * (60 * nZ + nY) + nX`.** The middle index is `nY`. Proven from ARM at
+  `Unit_PlaceOnMap` (0x49A70). This is why `Map_PatchCraftSprites` looks coordinate-swapped when it
+  is not.
+- **`apSoldiers` is at Map + 0x1198**, not 0x1194. That correction turns a meaningless Hex-Rays
+  gate into `apSoldiers[nSoldierCount - 1]->nUnitType == 6`.
+- **23 unit types, indices 0 through 22**, confirmed independently by `g_aUnitMuzzleOffset` and by
+  `aUnitWalkKind` occupying exactly the 1840 bytes up to `aUnitAnimFrame`.
+- **`IsoDrawCtx` is fully mapped** — 57 members, size 316. The index that looked like a bug,
+  `(char *)pIso + pIso->bAnimStep` then `[101]`, is not one: `bAnimStep` is at 0x44 and 101 is 0x65,
+  which is `bUnitFlag0`, so it reads `bUnitFlag[bAnimStep]`.
 
 ---
 
-## 4. Current architecture and the decisions that matter
+## 4. Architecture and the design decisions that matter
 
-### Build layout
+### Layout
 
-- Root `CMakeLists.txt`: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, Win32-only
-  with a 64-bit guard, `enable_testing()`, and an INTERFACE target `pufo_options`
-  that carries `/W4 /WX`. Warnings are build errors, and the build is currently clean.
-- `src/pufo/CMakeLists.txt`: static libraries `pufo_platform`, `pufo_util`,
-  `pufo_dat`, `pufo_render`, `pufo_game`, `pufo_ui`, `pufo_audio`, then
-  `add_executable(pocketufo ...)` with `WIN32_EXECUTABLE TRUE`. That property is
-  required: the original entry point is `WinMain @ 0x9fcc4`, the port uses
-  `wWinMain`, and without the property `lld-link` fails on `undefined symbol: main`.
-- Generator on this machine: `Visual Studio 17 2022`, `-A x64`, `-T ClangCL`.
-- Each test is a five-line block: `add_executable`, `target_link_libraries(... PRIVATE
-  pufo_options pufo_game pufo_util)`, `RUNTIME_OUTPUT_DIRECTORY` set to
-  `build/tests`, and `add_test(... WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})`. The
-  working directory matters: data tests read `main.dat` and `lang.dat` from the repo
-  root. 39 suites are registered.
+The source tree mirrors the IDB subsystem map (`docs/idb/inventory-grouped.tsv`). Directories are
+created when a subsystem's work starts; nothing speculative.
 
-### Source layout mirrors the IDB subsystem map
+```
+CMakeLists.txt
+src/pufo/CMakeLists.txt        libraries, the exe, one target per test suite
+src/pufo/pufo_common.h         base types + DisplayMode
+src/pufo/app/                  wWinMain + WndProc                        [app-shell]
+src/pufo/platform/             GAPI replacement, registry options        [platform]
+src/pufo/util/                 PtrArray, Game_RandU16, string helpers    [util]
+src/pufo/dat/  src/pufo/asset/ DatFile container, AssetReader            [dat]
+src/pufo/render/               software surfaces, blitters, palettes     [render]
+src/pufo/audio/                sound behind a backend seam               [audio]
+src/pufo/ui/                   panels, controls, menus, modal, linelist  [ui-core]
+src/pufo/game/                 35 files: everything else                 [tact, strat, save, titles]
+tests/                         48 suites + pufo_test.h
+docs/idb/                      IDB inventory exports
+docs/parity/                   parity reports, audits, bug ledger
+tools/                         PE and table dump helpers
+```
 
-`src/pufo/{platform,util,dat,render,audio,game,ui,asset,app}`. The `game/` group is
-the bulk of current work: `pufo_unit.c` (63 KB), `pufo_combat.c`, `pufo_tactui.c`,
-`pufo_tactstate.c`, `pufo_ballist.c`, `pufo_mapcell.c`, `pufo_los.c`, `pufo_path.c`,
-`pufo_turn.c`, `pufo_vistry.c`, `pufo_roster.c`, `pufo_save.c`, `pufo_tactctl.c`,
-`pufo_strateg.c`, `pufo_geoscape.c`, `pufo_clock.c`, `pufo_ship.c`, `pufo_enemyai.c`,
-`pufo_isodraw.c`, `pufo_font.c`, `pufo_rmp.c`, `pufo_template.c`, `pufo_boot.c`.
+108 files under `src/`, 49 under `tests/`.
 
-### Context injection instead of global state
+### Decision: env structs instead of inventing global owners
 
-The originals read `pCtxBase` and a dozen globals directly. The port passes that state
-in explicitly so the algorithms stay testable without a live game context:
+The original reaches hundreds of globals through a single `Map` object at `0x1139B8`. The port does
+not own most of that block yet. Rather than invent a global owner for state it does not model, a
+port function takes an explicit **env struct** describing exactly what it reads and writes.
 
-| Seam | File |
-|---|---|
-| `CombatCtx` + `ShotHooks` | `game/pufo_combat.h` |
-| `DoorActionCtx`, `FireBurstSpec` | `game/pufo_tactstate.h` |
-| `IsoAnimGlobals` | `game/pufo_isodraw.h` |
-| `MapCellLookup` function pointer | `game/pufo_mapcell.h` |
-| `TurnUpdateVisibilityFn` | `game/pufo_turn.h` |
-| `RosterHooks`, `StatusHooks` | `game/pufo_roster.h`, `game/pufo_statusmsg.h` |
-| `KillCtx`, `KillHooks` | `game/pufo_unit.h` |
+Examples in use: `GfxColorEnv`, `IsoAnimGlobals`, `IsoSpriteBases`, `IsoGrid`, `IsoSelectGate`,
+`IsoViewportGuide`, `IsoHeightGate`, `TactHudPanelEnv`, `TactTeamSelectEnv`, `CraftSpritePatchEnv`,
+`UnitCreateEnv`, `TactEquipCtx`, `ShipRemovalEnv`.
 
-Arithmetic is never changed by injection. Where the port had to deviate from the
-original, the deviation and its reason are written down in `docs/parity/*.md` — for
-example `Unit_RemoveAt` does not reproduce the original's out-of-range free, and
-`Path_EnqueueCell` refuses to enqueue when the frontier is full because the original
-has no capacity check.
+This is what makes teardown and draw functions testable: a test fills the struct and asserts on it.
 
-### ILP32 fidelity
+### Decision: reproduce original bugs by default
 
-The original is 32-bit. Struct layouts are pinned with `_Static_assert` so a Win64
-pointer widening cannot silently change a field offset: `Soldier` at
-`PUFO_SOLDIER_SIZE_ILP32` = 1044 bytes, `MapCell` 60 bytes, `Mc1Rec` 52 bytes,
-`TactItem` 24 bytes, `TactQueueEntry` 56 bytes. `TactQueueEntry` is the one place
-where the Win64 offsets deliberately differ from ILP32, because that queue is never
-serialised.
+`docs/parity/bugs.tsv` is the ledger. 42 rows, 13 `ORIGINAL BUG` markers in the source, and
+`docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
+canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
-### Soft-FPU thunks
+Original bugs are reproduced unless the row says otherwise. A `qol` column marks which ones a future
+quality-of-life patch should fix. This exists so a later QoL pass can be a diff against a list
+instead of a hunt.
 
-The original calls ARM soft-FPU helpers through `.idata`. The port maps them:
+### Decision: parity integrity is a deliverable, not a report
 
-| Thunk | Address | Note |
-|---|---|---|
-| `_itod` | `0xa6014` | int to double |
-| `_muld` | `0xa6024` | double multiply |
-| `_dtoi` | `0xa602c` | double to int, truncates toward zero (documented assumption) |
-| `_rt_sdiv` | `0xa600c` | divisor in R0, dividend in R1 |
+Three audits exist because claims drifted:
 
-### Random numbers
+- `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
+- `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 216 rows) or as a
+  real gap. Unexplained flags went 116 to 0.
+- `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
+  against the shipped image. 9 tables, 0 mismatches.
 
-`Game_RandU16` (`src/pufo/util/pufo_rand.c`) reproduces
-`(u16)((float)(rand() % 32768) * (1/32768f) * (float)nMax)`, range `[0, nMax)`.
-This depends on the CRT: MSVC's `rand()` returns `0..32767`, other CRTs do not. The
-modulo 32768 keeps the original distribution on MSVC. This is a real portability
-constraint, recorded in `docs/BUILD.md`.
+### Decision: ARM disassembly beats Hex-Rays
 
-### Audio seam
+Hex-Rays misrendered at least 20 things that ARM settled. The recurring failure modes:
 
-`Sound_Play(i32 nSample)` takes **one** argument in the original. `Sound_SetSfxMuted`
-is a port seam that deliberately keeps that shape rather than changing the signature.
+- Base-advancing array rendering. `v6 += 4` then `v6->field` is a normal index walk, not a bug.
+- Wrong struct member for a folded constant. `100 * v27` meant 100 four-byte elements, i.e. 400 bytes.
+- Swapped operands. `SoftSurf_FillRectEx` argument 4 and 5 are reversed in the pseudocode.
+- Wrong global. `MEMORY[0x158890].anLineAux[79]` was really the selected-base byte, loaded with
+  `LDRSB`.
+- Wrong offset. `pCeilSpr->gap_22[14]` and `*(pCeilSpr + 36)` are the same field, `Mc1Rec + 0x24`.
+- Modulo rendered as division. `MOVS / ADDMI #0xF / ASR #4 / SUB R0, R0, R3, LSL#4` is `% 16`.
+- Soft-float multiply rendered as string calls. `itos` / `muls` / `stoi` is a plain integer product.
 
-### Evidence rule
+### Decision: the map X/Y convention is genuinely swapped
 
-Every recreated behavior names `@ 0xADDR` in a comment. That is not decoration: both
-coverage scripts measure coverage by finding those citations. A port without a
-citation is invisible to the parity report.
+`Map_nCraftMapX` and `Map_nCraftMapY` are craft tile positions; multiplying by 10 gives cells.
+Several readers put `10 * nCraftMapY + row` into the slot others call `nMapX`. Confirmed
+independently three times (`Tact_GetCameraBounds`, `Tact_SelectTeamUnits`, `Map_PatchCraftSprites`).
+It is a game convention, not a port bug. Do not "fix" it.
 
 ---
 
 ## 5. What currently works
 
-- Configure, build, and a clean warning-free compile of all 47 test binaries plus the
-  game executable.
-- 47 test suites pass. They are behavior tests against values read out of the IDB, not
-  smoke tests. `PARITY.md` reports 377 checks for `test_tactui`, 199 for `test_unit`,
-  152 for `test_tactstate`, 112 for `test_mapcell`. Suites that print their own summary
-  line instead report 0 there even though they do count checks — see issue 3 in
-  section 7.
-- Data tests run against the real shipped `main.dat` and `lang.dat` in the repo root.
-- The executable launches, creates its window, and stays alive (no startup crash).
-- The IDB itself is being improved as part of the work: functions renamed, comments
-  added, and two Hex-Rays misreadings corrected in place.
+- The Win64 exe configures, builds with `/W4 /WX` and zero diagnostics, and launches.
+- It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
+- Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
+- C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
+- 48 test suites, 6677 checks, all passing in 1.5 s.
+- Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
+  flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
+- Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
+  proximity arming and chain detonation.
+- Tactical HUD drawing, inventory drag-and-drop, geoscape viewport and camera, base capacity and
+  facility accounting, craft cargo and loadout chains, the mission-site spawn machine, and the whole
+  titles animation cluster are ported and tested.
 
-What is **not** working yet: there is no end-to-end playable flow. The app shell does
-not yet drive the map, tactical, or strategic screens. That is exactly what the
-`ui-input` and `integrate-parity` tasks are for.
+What does **not** work yet: there is no end-to-end playable session. The tactical mission is never
+started, because `Tact_InitMission` is not ported, and the geoscape UI is not built.
 
 ---
 
 ## 6. What remains incomplete
 
-Coverage has **one agreed definition**: an original function counts as recreated when
-the port cites it in a source comment of the form `@ 0xADDR`, with slash-runs like
-`@ 0x17790/0x177fc/0x17868` split so every address in the run counts. That rule lives
-in `docs/parity/coverage.py`, and `docs/parity/gen_report.py` imports it, so the two
-cannot disagree.
+### The critical path to a playable mission
 
-That rule counts a citation, not an implementation, so three audits run beside it and each
-catches a different way of being wrong:
+This is the shortest chain that produces a real game session, in dependency order:
 
-- `audit_credits.py` flags a citation whose line also contains a denial ("not ported",
-  "unported", "hook", "seam", "stub"). A comment can describe a function as missing and
-  credit it in the same breath.
-- `audit_names.py` cross-checks every credited address against a definition in `src/pufo`.
-  This is the one that catches the **hook-field trap**: a comment naming an original the host
-  is expected to supply, written in the `Name @ 0xaddr` form on a field of a `Hooks` struct.
-  coverage.py cannot tell that from a real port, so the seam gets credited as the recreation.
-  Nineteen functions and 14988 bytes came out of that in one pass.
-- Both audits produce flags, not verdicts. The port renames and merges families on purpose,
-  so `MapView_FocusOnUnit @ 0x2c758` credited through `MapView_FocusOnCell` is correct and
-  must survive the check.
+1. `Map_BuildMissionTerrain` (0x22e10, 10,676 B) — the largest remaining `tact` gap. Its own
+   dependencies are already ported: `.ma1` templates, `Font_LoadTactSprites`, `Tact_BuildPaletteLuts`.
+2. `Tact_SpawnAliens` (0x3a2ac, 3,516 B) — **fully decoded**, all ten callees already ported. It is
+   blocked only on static data tables, which are now measured (see section 7).
+3. `Tact_SetupCraftCargo` (0x38f00, 2,116 B) — blocked on four globals the port does not own:
+   `0x156CD0` ammo-split table, `0x157208` per-object work triple, `0x157204`, `0x158848`.
+4. `Tact_InitMission` (0x3c550, 4,120 B) — blocked only by 1, 2 and 3.
+5. `Tact_Shutdown` (0x3d568, 3,788 B) — no callee blockers. Deliberately deferred: it frees the
+   tactical singletons that `Tact_InitMission` creates, so porting it first would mean inventing an
+   ownership model for objects the port does not yet allocate.
+6. `LoadGame` (0x44bbc, 3,400 B) — blocked by exactly three callees: `Geoscape_InitUI` (0x857f4,
+   5,420 B), `Tact_Shutdown`, `Tact_InitMission`.
 
-### The bug ledger, for the QoL pass
+### Largest unported functions by size
 
-`docs/parity/bugs.tsv` is the index of everything the original does wrong that we know about,
-and of every place the port deliberately differs. One row per finding: the address the evidence
-came from, what is wrong, where the reproduction lives in the port, whether the port reproduces
-it, and whether a QoL patch should fix it.
-
-It exists because the findings were otherwise spread over three places — a `ORIGINAL BUG` comment
-in the port, a section in `docs/parity/`, and an IDA listing comment that `git grep` cannot see at
-all. `audit_bugs.py` keeps the ledger honest: any `ORIGINAL BUG` marker in `src/pufo` that has no
-row is a flag, and any row whose port location no longer resolves is a flag. It found two of those
-immediately, both because a marker named a data address instead of the canonical one — which is why
-the convention is now `ORIGINAL BUG (0x67048), reproduced: ...` with the address in the marker.
-
-Eighteen rows today: six genuine original bugs found this session alone, four missing-test bugs,
-two register-residue return values, two misleading names, one duplicate function, and three
-deliberate port deviations.
-
-The safe form for anything the port does not implement is `Name (0xaddr)`: the tool does not
-give the parenthesized form any credit.
-
-| Measure | Result |
-|---|---|
-| `python docs/parity/coverage.py` (agreed) | **606 / 1103 cited** (54.9%), bytes 191232 / 598792 (31.9%) |
-| `python docs/parity/gen_report.py` | same numbers, plus the per-function map in `PARITY.md` |
-| `python docs/parity/audit_credits.py` | citations that sit next to a denial, which must be zero |
-| `python docs/parity/audit_names.py` | credited addresses whose original name has no definition; catches hook seams credited as recreations |
-| `python docs/parity/audit_bugs.py` | `ORIGINAL BUG` markers with no row in `docs/parity/bugs.tsv`, and ledger rows whose port location no longer resolves |
-| `python tools/coverage.py` (different question) | 276 / 1103 original **names** matched by a definition in `src/pufo` |
-
-`tools/coverage.py` is a name-match audit, not the coverage number: it asks "does a
-function with this name exist in the port?", which misses a ported family cited once
-and counts a renamed port function as unmatched. Use it to spot names the citation
-rule missed, not as a headline.
-
-Per-subsystem citation coverage from `docs/parity/coverage.py`:
-
-| Subsystem | Cited | Total | Pct |
+| Address | Function | Bytes | Note |
 |---|---|---|---|
-| audio | 6 | 6 | 100% |
-| save | 34 | 35 | 97% |
-| dat | 17 | 18 | 94% |
-| app-shell | 22 | 24 | 92% |
-| util | 18 | 21 | 86% |
-| tact | 173 | 214 | 81% |
-| ui-core | 65 | 85 | 76% |
-| render | 32 | 51 | 63% |
-| tact-ui | 33 | 52 | 63% |
-| boot-assets | 2 | 4 | 50% |
-| strat-ui | 103 | 243 | 42% |
-| strat | 68 | 205 | 33% |
-| titles | 0 | 13 | 0% |
-| platform | 2 | 132 | 2% |
+| 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
+| 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
+| 0x22e10 | `Map_BuildMissionTerrain` | 10,676 | on the critical path |
+| 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
+| 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
+| 0x632cc | `Ui_TextInputDialog` | 6,096 | |
+| 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
+| 0x34fbc | `Tact_CheckBattleEnd` | 5,748 | |
+| 0x52adc | `Tact_ProcessFallAction` | 5,716 | |
+| 0x857f4 | `Geoscape_InitUI` | 5,420 | blocks `LoadGame` |
+| 0x6f9a4 | `ManufScreen_DrawFrame` | 5,400 | |
+| 0x7fcb0 | `StrategList_ProcessEvents` | 4,904 | |
+| 0x3c550 | `Tact_InitMission` | 4,120 | on the critical path |
+| 0x1fc8c | `Tact_DrawCommandPads` | 4,044 | |
+| 0x94554 | `Game_StartNew` | 3,976 | |
 
-The two hard gaps are `platform` (WinCE API surface: 2 of 132) and `titles` (0 of 13),
-followed by the two strategy layers (`strat` 13%, `strat-ui` 11%). `tact` is the most
-complete large subsystem at 80%.
+`strat-ui` is the weakest subsystem by bytes: 8,000 of 117,008 (6.8%). It is 108 of 243 functions
+because most of its functions are small screen handlers, but almost none of the screens actually
+draw.
 
-Specific unfinished items inside `game-core`:
+### Decoded but deliberately not ported
 
-- `Tact_ProcessMoveAction @ 0x4f3f0` — ported, wired to `GameMap`, and every
-  handled command runs end to end in `test_mapctx`. See section 8 for the
-  analysis and `docs/parity/game-core.md` for the wiring.
-- The UI and inventory regions of the original `Map` block are not in `GameMap`
-  yet; they are added when a consumer needs them.
-- `Tact_TallyBattleStats @ 0x3348c` — analysed, deliberately not ported. It needs
-  `Save_Read/WriteTGameData` and `Tact_InitMission` first, because `unk_138E6C` and
-  `unk_138E70` are saved mission state.
-- `Tact_KillUnit @ 0x4e430` — ported, and the spotted-flag sweep is now
-  verified from ARM and asserted in `test_vis` (window `nX±8` / `nY±8` clamped to
-  `10 * nMapDim - 1`, four layers, `MapCell+0x2C` bit 0 cleared, gated on
-  `Map_bSweepArmed` @ `0x113A20`).
-- `Input_OnConfirm @ 0x15f3c` — ported (the confirm key: a 16-case `nUiScreen` switch),
-  asserted by `test_input` (94 checks). `Geoscape_CloseUI` and `Inv_CloseAndCommit` are
-  still injected hooks because neither is ported. One open IDB question came out of it:
-  the view-cell unit array at `Map+0x140F0` overlaps `Map.apCells @ 0x15338` in the `Map`
-  type, so the type's `aszStatusMsg` / `gap_TrajRest` split is suspect. See
-  `docs/parity/game-core.md`.
-- `PARITY.md` lists 132 citations that are not function starts, split by the image-base
-  rule into 31 struct-field offsets and 101 entries that mix global data symbols with
-  block-relative offsets. That split needs IDB triage before the final parity report can
-  claim "no unexplained gaps".
+These are analysed and recorded in `docs/parity/` and in IDB comments. Porting them is transcription,
+not research:
+
+- `Tact_SpawnAliens` (0x3a2ac) — see section 7 for the tables.
+- `MapView_DrawUnit` (0x1c958, 3,220 B, 126 blocks) — all offsets, all table extents, all semantics
+  settled. Nine tables measured and ready to inline.
+- `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
+  unmodelled globals: `0x158848`, `0x162030`, `0x186410`.
+- `BasePlaneScreen_CommitStores` (0x7ac38) — blocked on the hangar screen state block
+  (`0x161A40`, `0x161AC8`, `0x161AD0`, `0x161EE0`, `0x161EEC`, `0x161EF4`).
+- `App_ResizeMainWindow` (0x9ecb8) with `MenuBtn_ResizeWindow` (0x19930) — fully decoded, blocked on
+  the port having no owner for the stored window size (`0x188D40` / `0x188D50`).
+- `Smap_BeginCraftSelectBtn` (0x84634) — blocked on `Smap_BeginCraftSelect` (0x838dc) being unported.
 
 ---
 
-## 7. Known issues, assumptions, risks, and technical debt
+## 7. Known issues, constraints, assumptions, risks
 
-Reported so they can be handled as separate issues. Items 1-3 were open at the
-handoff and are now closed; the rest are still open.
+### The `MapView_DrawUnit` table set is measured but not yet in the port
 
-1. ~~**`docs/BUILD.md` is stale.**~~ **Closed.** Its "Source layout" section now lists
-   the real tree (`app`, `platform`, `util`, `dat`, `asset`, `render`, `audio`, `ui`,
-   `game`, `tests`) and a new "Test harness" section records the output format.
+Nine static tables, all extents settled against the shipped image:
 
-2. ~~**Three coverage numbers, two parsers.**~~ **Closed.** The citation rule in
-   `docs/parity/coverage.py` is the single agreed definition (see section 6), and
-   `gen_report.py` now imports `CITE_RE`, `ADDR_RE`, `INVENTORY`, and `load_inventory`
-   from it instead of keeping its own single-address regex. Both report
-   **429 / 1103 (38.9%)** and 198444 / 598792 bytes. `tools/coverage.py` is kept as a
-   name-match audit and is labelled as a different question.
+| Table | Address | Extent | Evidence |
+|---|---|---|---|
+| `aUnitWalkKind` | 0xA6B00 | 1840 B, 80 per unit type | exactly fills the gap to `aUnitAnimFrame` |
+| `aUnitAnimFrame` | 0xA7230 | 468 B, 78 triples of u16 | largest frame value in the pose table is 78 |
+| `aUnitWalkGlyph` | 0xA7408 | 594 B, 27 per type | covers types 0..21 only |
+| `aPoseFrameTable` | 0xA7660 | 760 B, 152 rows of 5 | `5 * (133 + 17) + 4 = 754` fits 760 and nothing smaller |
+| `aUnitTypePoseBase` | 0xA7958 | 23 B | values 19, 38, 57, 76, 95, 114, 133 |
+| `aUnitHeightOff` | 0xA7A28 | 184 B, 8 signed per type | |
+| `aBobPhaseY` | 0xA7BE0 | 8 signed bytes | next bytes are the ASCII `xcom_0`, which proves the end |
+| `aUnitWeaponYOff` | 0xA9310 | 23 B | only type 9 (5) and type 11 (-1) are non-zero |
+| `aUnitFacingDrawOff` | 0xA93A8 | 16 signed per type | **extent past type 21 is still open** |
 
-3. ~~**`PARITY.md` under-reports test checks for 9 suites.**~~ **Closed.**
-   `tests/pufo_test.h` is the shared harness: `TestCheck`, `TestEqI32`, `TestEqU16`,
-   `TestNear`, `TestSummary`, and the fixed output format
-   `  ok   <what>` / `  FAIL <what>` / `<suite>: N checks, M failures`. The 11 suites
-   that printed nothing on a pass (`ballist`, `blast`, `combat`, `cursordir`, `fov`,
-   `input`, `mapctx`, `moveaction`, `soldiername`, `vis`, `vistry`) now use it, keeping
-   their local helper names as thin wrappers so no call site changed. `gen_report.py`
-   reads the summary line (`count_checks`) and falls back to counting `ok`/`FAIL` lines.
-   All 41 suites report a real count. Side effect: `test_vis`'s old `CheckEqI32` printed
-   `FAIL` twice and counted the check once; the shared helper does both correctly.
+**Open risk.** `aUnitWalkGlyph` covers 22 of the 23 unit types. `27 * 22 = 594` and `aPoseFrameTable`
+begins six bytes past the end of type 21. A type 22 unit reaching the walk branch reads six bytes of
+its own and then reads into the pose table. Whether that is reachable is unresolved. Do not assume
+the table is 23 rows wide.
 
-4. **Hex-Rays base-register errors are a recurring hazard in this IDB.** Two confirmed
-   so far (`eaa79b0`, `b4b875c`). The `Map` type now has **156 members** (size 152632,
-   verified by `type_inspect`), so pseudocode renders named fields at the named offsets
-   — but about 40 members are still `gap_*` / `pad*` blobs, and some named members
-   disagree with ARM-proven reads. Example: the move FSM reads its shot-history cell
-   array at `Map+0x30` (`nStatusDrawY @ 0x2C` plus 4, indexed by the shot count) while
-   the type calls `Map+0x30` `nMapTileW` / `nMapTileH`. The working method is still
-   to prove offsets from ARM disassembly, not from pseudocode. A comment at `0x1139B8`
-   (`pCtxBase`) lists the offsets proven that way, including `+0x230`, `+0x51
-   bFireStatus1`, `+0x5A bGameTickHold`, the `+0x4EBC` hit windows, and the counter at
-   `+0x4EBC + 4*49940`.
+### `Tact_SpawnAliens` data model
 
-5. **`Map` member edits still need the IDA GUI.** IDA 9.4 has no `ida_struct` module and
-   no `put_udt_details`, so the remaining `gap_*` regions inside `Map` cannot be split
-   from a script. The type exists and is usable; only new or renamed members require the
-   GUI. Until those gaps are filled, expect pseudocode to keep lying about `Map` field
-   names in the unnamed regions.
+Four IDB symbols that looked like separate tables are one 80-byte block based at 0xA6618:
+`aAlienRaceComposition` (0xA6628) is base + 16 and `aAlienRankTypes` (0xA6650) is base + 56, verified
+byte for byte against the image. `aAlienBeltObjects` (0xAA008) is eight u16
+`18, 23, -1, 3, 6, 11, 12, 13`, walked backwards into `apBelt[7..0]` while a parallel counter runs
+14, 12, 10, 8, 6, 4, 2, 0 and skips the entry where the counter equals 4 — the `-1` sentinel is
+skipped by a counter, not by a test.
 
-6. **`docs/parity/game-core.md` is 3977 lines / 207 KB.** Append with `Add-Content`;
-   read a window with `Get-Content ... | Select-Object -Skip N -First M`. Never rewrite
-   the file in one pass.
+**Likely original stack bug at 0x3AB6C, recorded and not reproduced.** `v87` is `_DWORD[7]` at
+`bp-0x20`, ending at `bp-0x09`, but the composition loop writes eight dwords. The eighth lands at
+`bp-0x04`, which is `v88`, the stack byte later used as a `TactItem` stub at 0x3AD50. Decide
+explicitly whether to reproduce it before porting.
 
-7. **Assumption on record:** `_dtoi` truncates toward zero. It is used across the
-   combat and ballistics ports and has not been disproved, but it has not been proven
-   against the ARM either.
+### Assumptions carried forward
 
-8. **Deliberate deviations** are listed with reasons in `docs/parity/*.md` (the
-   "Deviations, each with its reason" tables). Do not "fix" those back toward the
-   original without reading the reason first — several reproduce a real bug in the
-   original, and the port chose not to.
+- `apObjects` is at Map + 0x108 and is an array of **pointers**, not records. `apCraft` at 0x10AC,
+  `apBases` at 0x1174, `apSoldiers` at 0x1198.
+- An empty facility cell is **255, not 0**. A zeroed 6x6 type block reads as 36 built facilities and
+  charges 1,800,000 per month.
+- Capacity weights are the capacities: one living-quarters cell houses 50, one stores cell 300 units,
+  one containment cell 10 aliens, one hangar cell 1 craft, one psi-lab cell 10.
+- `bUnk183 == 254` means away in a craft; `255` means not aboard anything.
+- `bAmmoCap == 255` means no finite ammo cap.
+- `ObjectRec.aItemQty[51]` and `[52]` are not quantities; they are out-of-range reads that land on
+  other fields. Weapon icons come from the bigobs sprite group.
+- `Map + 0x37` does double duty: it is the animation phase clock for unit types other than 20 and 21,
+  and it is the byte `UiModal_DrawDialog` uses to pick its horizontal band.
+- Win64 launch prints an asset-load line. The original `InitInstance` (0x9fd48) prints nothing. This
+  is a recorded deviation, added deliberately so a good launch is distinguishable without a screen.
 
----
+### Deliberate deviations from the original
 
-## 8. Tact_ProcessMoveAction @ 0x4f3f0 — ported and wired to `GameMap`
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (42 rows) and the subsystem
+notes. Notable ones:
 
-Everything the previous session left as a lead has now been re-derived from ARM and
-recorded in `docs/parity/game-core.md` (section "2026-10-11: Tact_ProcessMoveAction
-@ 0x4f3f0 pre-port verification + three table fixes"). Summary:
+- `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
+  buffer. Past 91 characters the original's behaviour is stack corruption, not defined behaviour.
+- `Gfx_PackRgb565Pair` reads the display format from the port's own `g_ffFormat`; the original
+  reaches it through a caller-supplied pointer.
+- `Soldiers_Reload` nulls freed slots and bounds allocation by the caller's array size. The original
+  frees without nulling and without a bounds check.
+- `Craft_LoadStoresFromBase` guards `bHomeBase` outside 0..7 and null object arrays; the original
+  dereferences whatever those hold.
+- `Base_CalcOccupiedSpace` and `Base_CountAmmoItems` reproduce the original's unguarded `char` index
+  into `auPerBaseVal` rather than adding a bounds test, because a bounds test would change which
+  objects contribute.
 
-- `TactState` layout proven end to end: header at 0x00..0x17 (bFlag0, bFlag1,
-  nStepFrameDiv 0x04, pStepFromCell 0x08, nStepZDelta 0x0C, nQueueCursor 0x10),
-  `aQueue[1250]` at 0x18, tail scratch from 0x11188 (nPhaseCounter 0x1118C,
-  nQueueLen 0x111D4, bQueueActive 0x111D6, nPhaseTick 0x111D8, nPhaseMax 0x111DC,
-  bUnk70114 0x111E2, bUnk70115 0x111E3). Total 0x111E8 = 70120, which matches the size
-  IDA reports for the type. The previous session's scratch offsets were right.
-- The entry address is folded as `(pState + 56*idx) + 0x18`, so ARM displacements are
-  entry offset + 0x18. The port's `TactQueueEntry` offsets are confirmed correct.
-- All four flagged ARM ranges are settled: the 2x2 probe (deltas +0/+1/+60/+61,
-  occupant at MapCell+0x30), the step-height pair (sprite height is the negated signed
-  byte at Mc1Rec+0x24, not Hex-Rays' `gap_22[14]`), the climb target cell (cell grid at
-  ctx+0x11AF8, index 3600*z + 60*y + x; the entry field at +0x3C really is reused as a
-  `MapCell *`), and the civilian swap (apCivilians ctx+0x15244, apEnemyUnits ctx+0x15240,
-  count ctx+0x15120; the real semantics are `apCivilians[idx] =
-  apCivilians[nCivilianUnitCount-1]` then decrement — Hex-Rays' `+29` is a base artifact).
-- OPEN, found while verifying range 3: the cell-pointer array the ARM actually uses
-  (ctx+0x11AF8, at 0x4FB4C and again in the map-wide `bFlags29 &= ~0x20` sweep at
-  0x4FE38) sits exactly one layer (14400 bytes) below the `apCells` base recorded in
-  `docs/parity/game-core.md` and `pufo_mapcell.h` (ctx+0x15338). Both cannot be
-  14400-dword arrays. Settle this before wiring the port's `MapCellLookup` to the real
-  context; the injected-lookup tests are unaffected either way.
-- Both move tables are pinned in the port and named in the IDB: `g_aUnitMuzzleOffset`
-  @ 0xA9768 (23 type blocks x 2 groups x 8 facings x 3 i16) and `g_aFireSoundBySortKey`
-  @ 0xAA168 (148 u16 by `ObjectRec.uSortKey`).
-- `tools/pe_off.py` and `tools/dump_muzzle.py` now dump pinned tables straight out of
-  `pufobeta.exe`. IDA addresses in this database are RVA + 0x10000.
+### Original bugs reproduced on purpose
 
-What is left: nothing structural. All 15 handled commands now run end to end
-against `GameMap` in `test_mapctx`. The context fields the FSM reads are all
-present in `GameMap` (`nLayerScratch`, `nMaxLayerClamp`, `nAimOffX/Y/Z`,
-`nShotCount`, the three rosters and their counts, `bFireStatus1`,
-`nFireTickProgress`, `adMtX/Y/Z`, `pSelWeapon`); `Map_BuildMoveActionCtx` points a
-`MoveActionCtx` at them.
+13 markers in the source, 42 ledger rows. Examples:
+
+- `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
+- `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
+  reuses the previous index's ammo total.
+- `0x3C4C8` — the third equipment pickup stores unit, item and pointer but never zeroes the drag
+  offset, unlike the other three sites, so a stale offset makes the re-test land inside no rect.
+- `0x398B0` — mode 1 loads the selected-base byte with `LDRSB`; a base byte of 0x80 or more
+  sign-extends and matches no soldier.
+- `0x37718` — the 24-bit palette branch reads only the low 16 bits and writes back 16 bits, dropping
+  blue on 24-bit displays.
+- `0x1B324` and `0x1B608` — unhandled action-latch modes draw with a stale glyph value.
+- `0x66B70` family — `Base_DemolishFacility` shifts the manufacturing quantity column to index `idx`
+  while every other array shifts to `idx - 1`, so that column lands one base late. It also has no
+  "found" test: if no facility type matches, it still drops the base count and deletes the last base.
 
 ---
 
-## 9. How to build, run, test, and verify
+## 8. How to build, run, test, verify
 
-```powershell
+### Build
+
+```bash
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL
 cmake --build build --config Release
+```
+
+Output: `build/src/pufo/Release/pocketufo.exe`.
+
+Verified toolchain on this machine: CMake 4.2.3, Clang 23.1.1 (`clang-cl.exe` from VS 2022
+BuildTools), MSVC toolset 14.44.35207, Windows SDK 10.0.26100.0. `/W4 /WX` is applied through the
+`pufo_options` interface target, so **any warning is a build error**.
+
+### Run
+
+`lang.dat` and `main.dat` must sit next to the executable. Copy them into
+`build/src/pufo/Release/` if they are not already there.
+
+```bash
+cd build/src/pufo/Release && ./pocketufo.exe
+```
+
+Expected: a window, the line `pocketufo: assets loaded (lang.dat=..., main.dat=...)`, and a live
+process.
+
+### Test
+
+```bash
 ctest --test-dir build -C Release
 ```
 
-Note the asymmetry above, because getting it wrong fails silently: `ctest` takes `-C Release`,
-`cmake --build` takes `--config Release`. `cmake --build build -C Release` prints a usage block and
-exits 1 — and if you pipe the build through `grep`, that usage text contains neither "error" nor
-"warning", so a filtered build looks clean while nothing was compiled. Worse, `echo "exit=$?"` after a
-pipeline reports the status of the last pipeline stage, not cmake. The stale binary from the previous
-build stays in place and still prints `PASS: 0 failure(s)`.
+Expected: `100% tests passed, 0 tests failed out of 48`.
 
-That cost a full unit of work this session: a port and its tests were reported as passing against a
-binary that had not been rebuilt. Check the binary's timestamp against the sources when in doubt.
+### Verify parity
 
-Run the game: `build\src\pufo\Release\pocketufo.exe`. Run one suite directly when you
-need its output, from the repo root (data tests need `main.dat` / `lang.dat` there):
-
-```powershell
-build\tests\Release\test_unit.exe
+```bash
+python docs/parity/gen_report.py      # regenerates PARITY.md
+python docs/parity/coverage.py        # coverage numbers only
+python docs/parity/audit_credits.py   # claims next to denials
+python docs/parity/audit_names.py     # cited addresses with no matching name
+python docs/parity/audit_bugs.py      # bug ledger vs source markers
+python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
-Regenerate the parity report:
+All five must be clean. Expected right now: 0 negated citations, 0 unexplained name flags, ledger
+and markers agree, 9 tables exact.
 
-```powershell
-python docs/parity/gen_report.py     # writes PARITY.md
-python docs/parity/coverage.py       # cited functions/bytes per subsystem
-python tools/coverage.py             # recreated functions by name match
-```
+### Traps that will cost you a unit if you ignore them
 
-Verification gates that must stay green: clean build under `/W4 /WX`, 39/39 tests, and
-`PARITY.md` regenerated byte-identical when nothing meaningful changed.
+These are all real, all paid for already.
 
-IDA: the live MCP session for this project is `pufobeta.exe.i64`. Use
-`decompile` with `include_addresses: true` for large functions (875 pseudocode lines
-fit); `analyze_function` truncates on them. Prefer xrefs, operand/immediate queries,
-call graphs, and byte patterns over plain text search.
-
----
-
-## 10. Current objective
-
-The active goal is `game-core` — "Recreate core game: map/world, entities, and game
-logic" — with `blockCompletion: true`, so the goal cannot be marked done while any task
-is open. Goal file: `.pi/goals/active_goal_2026091719164895_mu5qflmn-o361c0.md`
-(revision 3521).
-
-Note on state: the goal file itself still reads `status: active` / `phase: running`,
-but the user paused the goal for this handoff. No new feature work was done while
-preparing this document.
-
----
-
-## 11. Next milestones, in priority order
-
-1. ~~Wire `Tact_ProcessMoveAction @ 0x4f3f0` to the real context~~ — done. `GameMap`
-   (the IDB `Map` block) plus `Map_LookupCell`, `Map_BuildMoveActionCtx` and the
-   real `Unit_bArmorTuWarn` / `StatusMsg_Push` / `Unit_UpdateVisibility` callbacks
-   are in `src/pufo/game/pufo_mapctx.c`, with `test_mapctx` (83 checks) driving
-   commands 1, 3, 0xE, 0x11 and 0x12 against live state.
-2. ~~Dump the two move tables~~ — done. `g_aUnitMuzzleOffset` @ 0xA9768 and
-   `g_aFireSoundBySortKey` @ 0xAA168 are pinned in the port and named in the IDB.
-   Three existing tables were found wrong and corrected in the same commit.
-3. ~~Assert the `Tact_KillUnit` spotted-flag sweep~~ — done. The bounds are proven
-   from the ARM at `0x4F24C..0x4F2B8` and `test_vis` now asserts them (window,
-   clamp, all four layers, bit-only clear, and the gate off). The three gate bytes
-   are named in the IDB: `Map_bTickHold` @ `0x113A12`, `Map_bSweepArmed` @
-   `0x113A20`, `Map_bFrameScratch` @ `0x138E74`.
-4. ~~**Fix the reporting debt** before it distorts decisions~~ — done. One shared test
-   harness (`tests/pufo_test.h`) gives every suite the same output format; the agreed
-   coverage definition is the citation rule in `docs/parity/coverage.py`, which
-   `gen_report.py` now imports; `docs/BUILD.md` lists the real source layout. See
-   section 7 items 1-3.
-5. **`ui-input` task.** The whole pointer chain is ported and asserted:
-   `Input_OnConfirm @ 0x15f3c`, `Input_OnSecondary @ 0x156e0`,
-   `UiControl_HitTest @ 0x1a3d8`, `Input_OnPointer @ 0x13c6c` and the release
-   pass `Input_OnPointerUp @ 0x148d0` (`test_input` 246 checks, `test_control`
-   `TestHitTest`), including the door action, the face-and-kick tail, the widget
-   bank `pBank @ 0xAC6D0`, the camera drag and the action-cost table at
-   `Map+0x4E4C`. The HUD action buttons the pads call are ported too:
-   `TactHud_ToggleKneel @ 0x16570`, `TactHud_ClimbUp @ 0x1674c` and
-   `TactHud_ClimbDown @ 0x16af0` in `src/pufo/game/pufo_tacthud.c`, asserted by
-   `test_tacthud` (88 checks). `Unit_FaceToward @ 0x49bf0` is ported for real:
-   it enqueues a turn command, it does not write `Soldier.bFacing`.
-   Closed items: `MapCursor_SetPos @ 0x27014` reads **`Map+0x02`**, not `Map+0x22`
-   (`LDRB R3, [R4,#2]` at `0x2723C`); the wrong offset in the port header and in
-   `docs/parity/game-core.md` is corrected, and the field is now
-   `bActionLatch` / `pbActionLatch`. `anActionPhaseSave0` is at **`Map+0x15078`**,
-   not `Map+0x74` — the port's `0xD1/0xD7/0xD8/0xD9/0xE4` claims were wrong and are
-   now `0x150D5..0x150E4`, and the duplicate `bPhaseSave20` field (a second name for
-   `bLookCommitFlag @ 0x1508C`) is removed. The action tables are settled by literal
-   immediates at `0x170D0`: cost `Map+0x4E4C + 4*m`, enabled `Map+0x4E7C + 4*m`
-   (`Map+0x4EBC` is the unrelated combat hit-window array). The hand action menus
-   `Tact_OpenLeftHandMenu @ 0x17030` and `Tact_OpenRightHandMenu @ 0x17148` are ported
-   as one `Ui_OpenHandMenu`. So are the inventory button `Inv_OpenScreen @ 0x16ef4`
-   (`TactHud_OpenInventory`) and the special action pad `TactHud_UseSpecialItem20 @
-   0x17d54` (`TactHud_UseSpecialItem`), which covers the mark-nearby branch, the
-   medikit target search and its two refusal pairs, and the latch-4 branch. That
-   empties the tactical HUD handler block `0x163d4..0x17d54`. `MapView_FocusOnUnit @
-   0x2c758` is ported for real as `MapView_FocusOnCell` (it takes a `MapCell *`, not a
-   unit). `Unit_CanStepExitDir @
-   0x36d68` is retyped: both of its callers pass `Map.pSelUnit->pCell`, so the
-   argument is a `MapCell *` and the bytes it reads are `nX/nY/nZ`, not the Soldier
-   path triple Hex-Rays named. The widget bank itself is now ported too:
-   `Tact_InitUiControls @ 0x3b498` and `Tact_LoadUiPads @ 0x3b068` in
-   `src/pufo/ui/pufo_uibank.c`, with all thirteen `UiControlDesc` tables read out of
-   the executable (32-byte record: `xOff +0, yOff +2, szPad0 +4, szPad1 +13,
-   szPad2 +22, nMode +31`), 115 widgets laid out, 115 click handlers bound by widget
-   index, and the 54 pads (`MAN_0M0..MAN_3F3`, eleven named pads, `b0..b10`) named
-   and mode-checked. `test_uibank` asserts it (388 checks). Widgets 113..127 are
-   confirmed never laid out. The handler names for the slots whose handlers are not
-   ported yet are recorded in `g_aUiClickName`, which is the work list for the rest
-   of this task. That work list is now shorter: the fourteen `MenuBtn_*` click
-   adapters (`Confirm0..5 @ 0x19650..0x1a014`, `ConfirmSnd15 @ 0x198f0`,
-   `ConfirmClear @ 0x194c8`, `Secondary @ 0x19498`, `SecondaryDismiss @ 0x195e0`,
-   `ActionBack0/1 @ 0x195a8/0x19618`, `Cancel0/1 @ 0x1a24c/0x1a26c`) are ported in
-   `src/pufo/ui/pufo_menubtn.c` as six functions, together with
-   `Menu_OpenLoadSlots @ 0x18864` / `Menu_OpenSaveSlots @ 0x188a4` (screens 11 and
-   10) and `Menu_ConfirmQuitDialog @ 0x18e2c` / `Menu_CancelQuitDialog @ 0x18e04`.
-   `Options_SyncUiFromMap_GotoScreen12 @ 0x188e4` is `Menu_SyncOptionPads`, and it
-   proved the volume options are stored 1..5 (`Options_SetMusicVol1` writes the
-   immediate 1), which the port had wrong. `test_menubtn` adds 67 checks. The ground
-   item list `Inv_BuildVisibleList @ 0x2d580` is ported in `pufo_tactui.c` and now
-   replaces the `pfnRebuildVisibleList` hook in `TactUiHooks`, `RosterHooks` and
-   `TactHudInvOpenCtx`: merge by `ObjectRec` identity keeping the larger `nAmmo`,
-   skip `bTwoHanded == 2`, filter on `nCategory` against `nInvListSel` (0xFF = all),
-   then selection-sort ascending by `uSortKey @ 0xC8` with the `u16` count array
-   swapped in step. `apInvList @ 0x1A24` and `anInvCount @ 0x3A24` are 2048 entries
-   each. The inventory hit test `Ui_HitTestTactItem @ 0x11ac0` is ported in the new
-   module `src/pufo/game/pufo_invdrag.c` with the 25-record `aInvHitRects @ 0xA8DD8`
-   table read out of the executable: the 4-column ground window, the first-match
-   table rule, and the `unk_138EA0` slot mirror that redirects a hit through the
-   meta byte beside the slot (`test_invdrag` 75 checks). `Inv_ClearHitSlot @ 0x11f40`
-   is ported beside it, and its raw dword writes (`4*(sub0 + 67/70/73/76)`,
-   `4*(sub0 + 4*sub1 + 79)`, `4*(sub0 + 3*sub1 + 91)`) confirm the `aPockets` 12-byte
-   records, the 4-slot backpack rows and the 3-slot belt rows. The drop half
-   `Inv_HandlePointer @ 0x12260` is ported beside them: the anchor is the stored drag
-   offset plus the pen position at `pBank+0x1044/0x1048` plus 10, the per-target time
-   costs are 4/4, 5/5, 6, 7, 8, 5 and 6 with a latch and same-region exemption, the
-   clip load deletes the dragged item and closes the pool hole with `pool[count-1]`
-   (ARM `0x12DB4` builds it as `Map + 4*count + 0x23434`), and a failed drop restores
-   the item to the region the hit test recorded (`test_invdrag` 281 checks). The last
-   pBank widget handler is ported too: `Map_BuildDeployConfirmYesNo @ 0x18a68` reuses
-   the already-ported `Tact_GetCameraBounds` for its rectangle and adds the four
-   counting buckets, where `nUnitType > 8` is not counted at all and a civilian with
-   `uHp == 0` is skipped (`test_tactctl`). What is
-   left of this task is `LoadGame @ 0x44bbc`. The rest of the save/load slot screen is
-   ported: `SaveSlot_FormatList @ 0x45904`, `SaveGame @ 0x44988`,
-   `SaveLoad_Slot0..6 @ 0x19de4..0x19fc4` and `StartUi_Shutdown @ 0x38d7c`. What remains
-   there is the geoscape screens. See
-   `docs/parity/ui-core.md`, "The inventory hit test" and "Dropping the item", and
-   `docs/parity/game-core.md`, "The deploy confirm dialog". The `UiPanel` type
-   conflict is already resolved — the
-   7092-byte layout is the real one, and the two views (16-byte lines with colour slots at
-   `+0xC8..+0xD4` versus 4-byte `apLines[500]` at `+0xBE4`) are mutually exclusive. Start
-   from `src/pufo/ui/` and `docs/parity/ui-core.md`.
-6. **`Tact_TallyBattleStats @ 0x3348c` subtree**, once `Save_Read/WriteTGameData` and
-   `Tact_InitMission` are in place.
-7. **`integrate-parity` task.** Wire the app shell into a real playable flow on Win64,
-   triage the 126 uncited/not-in-inventory addresses, and produce the final parity
-   report with no unexplained gaps.
+- `cmake --build build -C Release` is **invalid**. CMake wants `--config Release`; only `ctest`
+  takes `-C`. The invalid form prints a usage block and exits 1, and piped through
+  `grep -iE "error|warning"` the usage text matches nothing, so a filtered build looks clean while
+  nothing compiled. `echo "exit=$?"` after a pipeline reports the last stage, not cmake. A stale
+  binary stays in place and still prints `PASS: 0 failure(s)`.
+- A failed link leaves the previous test binary. ctest can report green after a failed build. After
+  adding a cross-module call, run the test binary directly and check its timestamp against the
+  sources.
+- A running `pocketufo.exe` locks the executable and breaks the rebuild. Kill it first.
+- Coverage delta must match the byte sizes in `docs/idb/inventory-grouped.tsv`, not a guess from
+  decompile output. `Base_CountAmmoItems` is 116 bytes, not the 268 I predicted.
+- `coverage.py` scans `src/pufo` only, not docs. A `Name @ 0xADDR` in a markdown heading does not
+  credit anything. The false-credit trap is **source comments only**.
+- Never use the `@` form for a function that is a hook, a blocker, context, or an unported
+  dependency. Write `Name (0xADDR)`. This fired six separate times.
+- `edit` with a section heading as `oldText` deletes that heading. Anchor on the exact tail text of
+  the preceding section instead.
+- Do not transcribe long byte dumps by eye. A 96-byte dump was mis-read and produced a wrong table.
+  Compute from the image.
+- Test helper argument order is not consistent across suites. `test_combat.c` is
+  `Check(msg, cond)` / `CheckEqI32(msg, got, want)`. `test_tactctl.c`, `test_geoscape.c` and
+  `test_invdrag.c` are `Check(cond, msg)` / `CheckEqI32(got, want, msg)`. `test_ship.c` has
+  `CheckEqI32` only and no `Check`.
+- `strcpy` and `fopen` are banned under `/WX` as deprecated. Use `pufo_strcpy` from
+  `util/pufo_str.h` and `CreateFileW` plus `ReadFile`.
+- `TactItem.nAmmo` is a `u8` at offset 0x06. Passing 999 is a constant-conversion error.
+- An empty facility cell is 255. A zeroed grid fixture silently reads as 36 built facilities.
 
 ---
 
-## 12. Important files and entry points
+## 9. Current development objective
 
-| Path | Why it matters |
+The goal (`mu5qflmn-o361c0`) is **paused** at 4 of 7 tasks complete.
+
+- Complete: `scaffold`, `dat-layer`, `render-audio`, `ui-core`.
+- Current: `ui-input` — recreate UI and input: windows, menus, dialogues.
+- Pending: `game-core` — recreate core game: map/world, entities, game logic.
+- Pending: `integrate-parity`.
+
+The objective is unchanged: full behaviour parity across every subsystem, with per-subsystem parity
+evidence and a final report that has no unexplained gaps.
+
+---
+
+## 10. Next milestones, ordered
+
+### Priority 1 — make a tactical mission start
+
+This is the single highest-value thing in the repository, because nothing playable exists until it
+does.
+
+1. Inline the nine `MapView_DrawUnit` tables into `src/pufo/game/pufo_isodraw.c` and add them to
+   `docs/parity/audit_tables.py`. This is independent, verifiable work that can be committed on its
+   own. Resolve the `aUnitFacingDrawOff` extent past type 21 first.
+2. Port `Tact_SpawnAliens` (0x3a2ac). Decode is committed. Needs an env carrying `nTerrainVariant`,
+   `bUnk86290..86297`, `nEnemyUnitCount`, `nEnemyReserveCount`, `apEnemyUnits`, `apHiddenSoldiers`,
+   plus `aAlienRaceCounts`, `aAlienSecondaryCounts`, `aAlienBeltObjects`, `aAlienMissionTotals`,
+   `aAlienCompositionDivisors`, `aAlienUnitStats`. Decide explicitly about the 0x3AB6C stack overrun.
+3. Model `0x156CD0` and `0x157208`, then port `Tact_SetupCraftCargo` (0x38f00).
+4. Port `Map_BuildMissionTerrain` (0x22e10). Largest single gap on the critical path.
+5. Port `Tact_InitMission` (0x3c550).
+6. Port `Tact_Shutdown` (0x3d568), then `LoadGame` (0x44bbc).
+
+### Priority 2 — finish the tactical renderer
+
+`MapView_DrawIsoLayer` (0x21e2c, 1,252 B) is blocked by exactly two callees:
+
+1. `MapView_DrawUnit` (0x1c958, 3,220 B) — fully decoded, tables measured, ready to port.
+2. `MapView_DrawUnitFacingArrow` (0x1b7bc, 2,692 B) — needs a 10-entry trajectory roster modelled:
+   X doubles at 0x1278A0 stride 8, Y at 0x1278F0 stride 8, Z at 0x127940 stride 8, a glyph dword
+   table at 0x127990 stride 4, and `nHeightGlyphId` at 0x1279B8 as the entry after that table. Also
+   needs `byte_A9290`, `byte_A92D0`, `Map.gap_82056`, and `Map.adMtX/Y/Z`.
+
+Then `Tact_DrawCommandPads` (0x1fc8c) and `Render_Frame` (0x22310) itself.
+
+### Priority 3 — the geoscape
+
+`Geoscape_InitUI` (0x857f4) unblocks `LoadGame`. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
+function in the binary. `Geoscape_OnPointer` (0x872d0) and `Geoscape_OnPointerUp` (0x89450) are each
+large enough to need a fresh context window on their own.
+
+### Priority 4 — screens
+
+`strat-ui` is 6.8% by bytes. The screen-build family (`BaseInfoScreen_BuildPanels`,
+`BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `ManufScreen_DrawFrame`) is where the
+remaining bulk is.
+
+### Priority 5 — housekeeping
+
+- Extend `audit_tables.py` to the remaining hand-dumped tables: `s_aFilterPad[6]`, `g_aUiBankSpans`,
+  `g_aUiNamedPad`, and the eleven `aUiDesc*` control tables. Some are derived from code bounds
+  rather than image byte tables; record that distinction rather than forcing a byte comparison.
+- Decide the fate of the 0x3AB6C stack overrun before porting `Tact_SpawnAliens`.
+
+---
+
+## 11. Files to look at first
+
+| Path | Why |
 |---|---|
-| `pufobeta.exe.i64` | The source of truth. Tracked. |
-| `AGENTS.md` | Project rules: C23/Clang/CMake, ask don't assume, KISS/DRY/YAGNI, no unrelated edits. |
-| `.pi/goals/active_goal_2026091719164895_mu5qflmn-o361c0.md` | Objective, success criteria, boundaries, verification contract, task list. |
-| `CMakeLists.txt`, `src/pufo/CMakeLists.txt` | Build gates, library split, 39 test registrations. |
-| `src/pufo/app/pufo_app.c` | `wWinMain` + `WndProc`. The place where integration will happen. |
-| `src/pufo/game/pufo_unit.c` / `.h` | Largest module (63 KB). Units, kill path, `Unit_RollChance`. |
-| `src/pufo/game/pufo_tactstate.c` / `.h` | Tactical queue and action state; where `Tact_ProcessMoveAction` will land. |
-| `src/pufo/game/pufo_combat.c` / `.h` | Shot resolution, pinned tables such as `g_aShotSound`. |
-| `src/pufo/game/pufo_mapcell.c` / `.h` | `MapCell` layout and cell lookup seam. |
-| `docs/idb/inventory-grouped.tsv` | The 1103-function subsystem map that the tree mirrors. |
-| `docs/parity/game-core.md` | 3977 lines of current-task evidence. Append-only. |
-| `docs/parity/ui-core.md` | Starting point for the `ui-input` task. |
-| `PARITY.md` | Generated report. Do not hand-edit; regenerate with `gen_report.py`. |
-| `docs/BUILD.md` | Toolchain, commands, the real source layout, and the test harness format. |
+| `PARITY.md` | the generated parity report; start here for any "is X done" question |
+| `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
+| `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
+| `docs/parity/renames.tsv` | 216 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 42-row bug ledger, with a `qol` column |
+| `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
+| `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
+| `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |
+| `src/pufo/game/pufo_unit.h` | Soldier layout with `_Static_assert` on every offset |
+| `src/pufo/game/pufo_mapcell.h` | MapCell and Mc1Rec layouts |
+| `src/pufo/game/pufo_isodraw.h` | IsoDrawCtx field map and the iso draw env structs |
+| `src/pufo/app/pufo_app.c` | `wWinMain`, `WndProc`, the launch diagnostics |
+| `docs/BUILD.md` | verified toolchain versions and build commands |
+| `pufobeta.exe.i64` | the IDB. Session id for MCP is `f53a1851` |
 
-### Deliberately uncommitted files
+### IDA MCP usage notes
 
-These are original game assets, tools, and local scratch. They are not ignored by
-`.gitignore`, and they must stay untracked:
+- The `database` parameter is the **session id string** (`"f53a1851"`), never a file path.
+- Batch inner calls must **not** carry `database` in their `arguments`; only the batch top level does.
+- `rename` for data symbols takes `{old, new}`, not `{addr, name}`.
+- `set_comments` takes `items`, and can fail at an address that is not a valid comment anchor; record
+  the fact at a nearby valid anchor instead of forcing it.
+- `get_bytes` with `regions: [{addr, size}]` is the reliable way to read constants and tables.
+- Image mapping, verified independently: `IDA_VA - 0x13000 == file offset` into `pufobeta.exe`.
+  `.data` follows that rule; above `0xAC800` is `.bss`.
 
+---
+
+## 12. Files intentionally left uncommitted
+
+`git status` shows these as untracked. They are **not** accidental and are **not** to be committed.
+
+**Original game artifacts**, needed at runtime or as ground truth for the table audits:
+`pufobeta.exe`, `main.dat`, `lang.dat`, `fmodce.dll`, `gx.dll`, `save_editor.exe`,
+`pUFO1.26RUS.cab`, `7z.exe`, `7za.dll`, `7zxa.dll`, `_setup.xml`.
+
+`pufobeta.exe` is the reference binary that `audit_tables.py` reads. Without it that audit cannot run.
+
+**Agent and tooling directories**: `.agents/`, `.claude/`, `.pi/`, `.ida-mcp/`.
+
+**Scratch junk that should probably just be deleted**: `1`, `asd`, `test_bases.tmp`,
+`0000SKKV.000`, `Testing/`. These have no purpose and were never referenced.
+
+**Ignored by `.gitignore`**: `build/`, `.tmp/`, `__pycache__/`, `*.id0`, `*.id1`, `*.id2`, `*.nam`,
+`*.til`, `.tmp_analyze*.json`.
+
+`.tmp/` in particular holds IDA worker caches, decompile dumps and scratch C files from previous
+sessions. It is large and it is ignored. Do not commit it.
+
+No secrets are present in the repository.
+
+---
+
+## 13. Commit hygiene
+
+Commits in this repository use an **explicit path list**:
+
+```bash
+git add -A -- src/pufo tests docs pufobeta.exe.i64 PARITY.md
 ```
-.agents/  .claude/  .ida-mcp/  .pi/
-0000SKKV.000  1  7z.exe  7za.dll  7zxa.dll  _setup.xml  asd
-fmodce.dll  gx.dll  lang.dat  main.dat  pUFO1.26RUS.cab  pufobeta.exe
-save_editor.exe  wcecabinfo.exe
-```
 
-`lang.dat` and `main.dat` are needed at the repo root by the data tests, so they must
-not be deleted even though they are untracked. `build/`, `.tmp/`, `__pycache__/`,
-`*.id0/1/2`, `*.nam`, `*.til`, and `.tmp_analyze*.json` are ignored.
+Do not use a bare `git add -A`. The repository root contains the untracked game binaries and agent
+directories listed in section 12, and a bare `-A` would commit them.
+
+Before every commit: build, run ctest, run all five audits, and confirm the coverage delta equals
+the byte sizes in `docs/idb/inventory-grouped.tsv`. Quote coverage numbers from a run in the same
+message, never from memory.
