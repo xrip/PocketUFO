@@ -7206,9 +7206,22 @@ nY     = 10 * Map_nCraftMapY + byte_A6688[4k + 16*(nMapLayers-1) + 1]
 nLayer = aDeployCellOffsets[104*nMapLayers + 4k - 102]
 ```
 
-**What still blocks the port.** `byte_A67F0[0..2]` is `14, 12, 26` — per-layer deploy-point counts — but
-`0xA67F0` sits 248 bytes into a table whose records are 104 bytes, so `byte_A67F0` and
-`aDeployCellOffsets` overlap in the IDB. `byte_A6688` holds twelve 4-byte records:
-`(4,9,1,0) (4,11,1,0) (4,13,1,0)`, six zero records, then `(4,10,1,0) (4,12,1,0) (4,14,1,0) (4,16,1,0)`.
-With 14 points for layer 1 the index runs past those twelve records. That has to be settled from ARM before
-anyone ports this, because guessing it would silently place soldiers on the wrong cells.
+**The table question, settled.** Both readers address `aDeployCellOffsets` the same way — `Tact_SelectTeamUnits`
+at `0x39758` and this function at `0x39EDC` both compute `aDeployCellOffsets + 104*nMapLayers` and then read
+`[R0,#-0x68]`, `[R0,#-0x67]`, `[R0,#-0x66]`. So the table is **104-byte records indexed by `nMapLayers - 1`,
+each holding 26 four-byte entries**, and an entry is X cell offset at byte 0, Y offset at byte 1, layer at
+byte 2, facing at byte 3. `Tact_SelectTeamUnits` is therefore already right; my note's "`entry[0]`,
+`entry[1]`, `entry[2]`" meant entry *bytes*, not dword indices.
+
+`aDeployPointCounts` (`byte_A67F0`) is `14, 12, 26` — points used per layer — and 26 is exactly one record's
+capacity, so layer 3 uses every entry it has. It bounds the phase-3 scan only.
+
+`aHwpsDeployOffsets` (`byte_A6688`) is a separate table: **twelve 4-byte records, 3 layers × 4 hardware deploy
+points**, indexed `4*(nMapLayers-1) + k` with `k` the hardware-soldier index. Layer 1 gives
+`(4,9) (4,11) (4,13) (0,0)`, layer 2 is **all zero** — hardware soldiers deploy exactly at the craft — and
+layer 3 gives `(4,10) (4,12) (4,14) (4,16)`.
+
+One residual risk worth naming before a port: `k` is the running count of hardware soldiers spawned across all
+five object indices, and nothing caps it at 4. A fifth hardware soldier on layer 1 would read past the twelve
+records into `aDeployCellOffsets`. Whether that can happen depends on `uRecovCount` in shipped data, so it is
+worth checking rather than assuming.
