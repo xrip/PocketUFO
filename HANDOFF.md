@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD before this edit: `36addee`. This document is committed together with
-`Tact_Shutdown` (0x3d568), ported in `src/pufo/game/pufo_tactend.{h,c}`, and with the
-`Map_BuildMissionTerrain` decode that is written up in `docs/parity/game-core.md` but not yet ported.
+Date: 2026-10-13. HEAD before this edit: `2966ac1`. This document is committed together with
+`Map_BuildMissionTerrain` (0x22e10), ported in `src/pufo/game/pufo_terrain.{h,c}` with
+`tests/test_terrain.c`. The decode that made it possible is written up in `docs/parity/game-core.md`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -40,21 +40,21 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 49
-                                             Total Test time (real) = 1.59 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 50
+                                             Total Test time (real) = 1.55 sec
 ```
 
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 668 / 1103 (60.6%)
-                                             bytes cited:     236712 / 598792 (39.5%)
+python docs/parity/coverage.py            -> functions cited: 670 / 1103 (60.7%)
+                                             bytes cited:     250608 / 598792 (41.9%)
 python docs/parity/audit_credits.py       -> NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 44, ORIGINAL BUG markers in src/pufo: 13
+python docs/parity/audit_bugs.py          -> ledger rows: 51, ORIGINAL BUG markers in src/pufo: 16
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 28 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 34 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -65,7 +65,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 48 suites: **6680**.
+Test checks run across the 50 suites: **7043**.
 
 ### Per-subsystem status
 
@@ -250,15 +250,17 @@ started, because `Tact_InitMission` is not ported, and the geoscape UI is not bu
 
 This is the shortest chain that produces a real game session, in dependency order:
 
-1. `Map_BuildMissionTerrain` (0x22e10, 10,676 B) — the largest remaining `tact` gap. Its own
-   dependencies are already ported: `.ma1` templates, `Font_LoadTactSprites`, `Tact_BuildPaletteLuts`.
+1. Done: `Map_BuildMissionTerrain` (0x22e10, 10,676 B) — ported in `src/pufo/game/pufo_terrain.c`. Its
+   own dependencies were already ported; `Font_LoadTactSprites` (0x257c4) is a hook and
+   `Combat_ResolveShot` is a hook for context-ownership reasons, not because it is missing.
 2. Done: `Tact_SpawnAliens` (0x3a2ac, 3,516 B) — ported, with its nine static tables inlined and
    image-audited (see section 7).
 3. Done: `Tact_SetupCraftCargo` (0x38f00, 2,116 B). Its blockers were not shared state at all:
    `0x156CD0` and `0x157208` have no reader outside this function, `0x157204` is the deploy cell it
    writes for `Tact_EquipTeamFromCraft`, and `0x158848` is the mission base index. All four are
    `TactCargoEnv` fields now.
-4. `Tact_InitMission` (0x3c550, 4,120 B) — blocked only by item 1, `Map_BuildMissionTerrain`.
+4. `Tact_InitMission` (0x3c550, 4,120 B) — was blocked only by item 1, which is now ported, so this is
+   the next thing on the path.
 5. Done: `Tact_Shutdown` (0x3d568, 3,788 B) — ported in `src/pufo/game/pufo_tactend.{h,c}`. It was
    deferred on the grounds that it frees singletons the port does not yet allocate. That objection
    dissolves the same way it does everywhere else in this port: the function takes every slot it
@@ -273,7 +275,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 |---|---|---|---|
 | 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
-| 0x22e10 | `Map_BuildMissionTerrain` | 10,676 | on the critical path |
 | 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
@@ -358,6 +359,58 @@ and runs 128 bytes past the real end into the module-name strings at `0xA6590`; 
 `[64]` and the 40 bytes at `0xA6568` are named separately as belonging to `Smap_InitCraftSelectState
 (0x61b94)`.
 
+### `Map_BuildMissionTerrain`: what the port had to settle that the decode left open
+
+Ported in this commit into `src/pufo/game/pufo_terrain.c`. The full write-up is in
+`docs/parity/game-core.md`; these are the decisions and corrections a later reader needs.
+
+**The builder owns the cell allocation.** `MapTerrainEnv.apCells` is a caller-owned `MapCell *[14400]`
+and the builder mallocs every `MapCell` into it, reproducing the original's allocation-failure path:
+it stores NULL and still calls `MapCell_Init(NULL, x, y, layer)`, and the tail writes through the cell
+pointer with no null test either. Both are in `bugs.tsv` as reproduced. `MapCtx`'s inline `aCells`
+stays a separate, simpler model for the other tests — the two are not the same thing and are not
+meant to be.
+
+**Two hooks, for two different reasons.** `pfnLoadTactSprites` stands for `Font_LoadTactSprites`
+(0x257c4), genuinely unported. `pfnResolveShot` stands for `Combat_ResolveShot @ 0x2f12c`, which IS
+ported — the hook exists because its `CombatCtx` (`TactState`, the three rosters, the two 41×41 hit
+windows) belongs to whoever owns the tactical context, and a terrain builder cannot construct one.
+That is a context-ownership hook, not a missing-function hook, and the header says so.
+
+**The tail mask is weaker than it looks.** `nFlags32 &= 0xFFFFFF87` clears bits 3..6 and keeps 0, 1, 2
+and 7. `MapCell_Init` already masks with `0xFFFFFF80`. On a grid the builder just allocated the tail is
+a no-op. An IDB comment of mine said it "clears the low 7 bits and bit 7", which is wrong both ways,
+and is corrected.
+
+**Both kind-array passes read `kind[row][col + 1]`.** Pass A's guard is `LDR R0, [R3, #4]` at 0x25338;
+pass B starts one dword into the array and reads `[R3, #0]`. Same element. Neither reads past the 36
+entries because pass A stops at column `nDimX-2` and pass B at row `nDimY-2`.
+
+**The two XCom-base guards look at different neighbours, and their sentinel sets differ.** Pass 1
+checks the tile one COLUMN right and skips `0x10`, `0x12`, `0x14`; pass 2 checks the tile one ROW
+below and skips `0x10`, `0x11`, `0x14`. `test_terrain.c` pins both directions in both senses.
+
+**The craft pad tile and `Map_nCraftMapX/Y` are the same two bytes.** The plane placement writes
+`Map+0x15139` / `Map+0x1513A`; `Map_PatchCraftSprites` reads exactly those (its literal pool at
+0x25E64 / 0x25E68). So the builder writes the craft's tile and the tail consumes it, and the env has
+one field for it rather than two. `CraftSpritePatchEnv`'s comment in `pufo_font.h` claimed
+`0x15199` / `0x1519A` — that was wrong and is fixed. The same byte pair also shows up in the sprite
+group: a template's slots resolve through `*(u16 *)(fontSys + 2 * nFlag)`, the pad loads with
+`nFlag 3`, and `Map_PatchCraftSprites` reads the u16 at `fontSys + 0x06`. One group, reached twice.
+
+**The fallback appends the literal `"4"`.** `pDefault @ 0xAAD4C` is `"4"`, not the per-mission-type
+`aTerrainNameSuffix0` entry, so even a jungle fallback loads `jungle4.ma1`.
+
+**The shot sweep's selector indexes an object array.** The shot's object argument is
+`*(Map + 0x108 + 4*selector)` — selector 18 is `Map+0x150`, selector 51 is `Map+0x1D4`. The two
+`Game_RandU16(3)` draws that set the X and Y steps run even when the count is gated to zero, so they
+are not inside the `if`.
+
+**A correction to my own earlier IDB work.** The comment at `0x24150` listed the four cell slots as
+`pFloorSpr / pWallSprB / pWallSprA / pCeilSpr`. `MapCell` puts wall A at `+0x04` and wall B at
+`+0x08`; the ARM agrees. Fixed. `aUfo1a` was declared `char[216]`, 81 bytes past its real end into the
+alien tables; it is now `[135]`, fifteen nine-byte slots, seven of which are empty strings.
+
 ### `Tact_SpawnAliens` data model
 
 Four IDB symbols that looked like separate tables are one 80-byte block based at 0xA6618:
@@ -400,7 +453,7 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
 
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (42 rows) and the subsystem
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (51 rows) and the subsystem
 notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
@@ -414,10 +467,14 @@ notes. Notable ones:
 - `Base_CalcOccupiedSpace` and `Base_CountAmmoItems` reproduce the original's unguarded `char` index
   into `auPerBaseVal` rather than adding a bounds test, because a bounds test would change which
   objects contribute.
+- `Map_BuildMissionTerrain` bounds-checks its cell lookup and its two name-table indexes. The original
+  indexes the 14400-dword cell array with no test, reads `aPlane[9*(nMissionType-1)]` for mission type
+  0 (nine bytes before the table) and `aUfo1a[3*(variant-1)+tier]` past slot 14. Out of range the port
+  yields an empty name, which fails the `.ma1` load the way a missing member does.
 
 ### Original bugs reproduced on purpose
 
-13 markers in the source, 42 ledger rows. Examples:
+16 markers in the source, 51 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -432,6 +489,10 @@ notes. Notable ones:
 - `0x66B70` family — `Base_DemolishFacility` shifts the manufacturing quantity column to index `idx`
   while every other array shifts to `idx - 1`, so that column lands one base late. It also has no
   "found" test: if no facility type matches, it still drops the base count and deletes the last base.
+- `0x22EF4` — `Map_BuildMissionTerrain` stores the result of `operator new(0x3C)` whether or not it
+  succeeded and then calls `MapCell_Init` on it. `MapCell_Init` has no null guard, so a failed
+  allocation is a write to address zero. `0x25740` is the same shape at the tail: the cell pointer is
+  written through with no null test.
 
 ---
 
@@ -562,13 +623,11 @@ does.
 3. Done: `Tact_SetupCraftCargo` (0x38f00) is ported. The two globals it was blocked on turned out to
    be private scratch with no other reader, so they are caller-owned arrays in `TactCargoEnv` rather
    than new global models.
-4. Port `Map_BuildMissionTerrain` (0x22e10, 10,676 B). Largest single gap on the critical path, and
-   the only Priority 1 item still blocked. It is read end to end in ARM and the six phases are
-   written up in `docs/parity/game-core.md`; every callee except `CDialogTemplate_GetTemplateByte0`
-   and `GetTemplateByte1` (12 bytes each) is already ported. What is left open is listed there: the
-   module-grid values `0..4`, the `var_276` kind codes, the `0x10/0x11/0x12` tile-type guards, and
-   the three near-duplicate stamping blocks. This needs its own session, not a slot in a busy one.
-5. Port `Tact_InitMission` (0x3c550).
+4. Done: `Map_BuildMissionTerrain` (0x22e10, 10,676 B) is ported in `src/pufo/game/pufo_terrain.c` as
+   `Map_BuildMissionTerrain(MapTerrainEnv *)`, with `tests/test_terrain.c` (59 checks) and the four
+   module-name tables generated by `tools/gen_terrain_tables.py`. It was the last Priority 1 item
+   blocked on another Priority 1 item. The open decode questions closed on the way in; see §7.
+5. Port `Tact_InitMission` (0x3c550) — now unblocked.
 6. Done: `Tact_Shutdown` (0x3d568) is ported. Next is `LoadGame` (0x44bbc), still blocked by
    `Geoscape_InitUI` and `Tact_InitMission`.
 7. Done: `MapView_DrawUnit` (0x1c958) is ported in `pufo_isodraw.c` behind `IsoUnitDrawGate`. Re-reading

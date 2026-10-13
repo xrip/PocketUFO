@@ -112,14 +112,22 @@ void Font_BuildIndex(PufoFont *pFont);
 /* Record lookup by flat index. Returns NULL when out of range. */
 Mc1Rec *Font_GetSprByIndex(const PufoFont *pFont, u16 nIndex);
 
+/* The sprite-index base a .ma1 template's four slots are added to. Map_ApplyTemplateToCells @ 0x54cf4
+ * resolves every slot as Font_GetSprByIndex(fontSys, *(u16 *)(fontSys + 2 * nFlag) + value - 2), where
+ * nFlag is the byte Map_LoadMa1 stored at CDialogTemplate + 4. So the base is chosen by the flag the
+ * template was loaded with: 2 for terrain modules, 3 for the craft pad, 4 for the UFO module. The
+ * flag-3 base is the u16 at fontSys + 0x06, which is also what Map_PatchCraftSprites reads as the
+ * craft sprite group -- the craft pad and the craft sprites come from the same group. */
+u16 Font_GetFlagSprBase(const PufoFont *pFont, u8 nFlag);
+
 /* What Map_PatchCraftSprites @ 0x25ab4 reads out of the font block and the Map block. The port owns
  * neither, so both come in here. */
 typedef struct CraftSpritePatchEnv {
     u16     nCraftSprBase;   /* fontSys + 0x06, the craft sprite group */
     MapCell *const *apCells; /* Map.apCells @ 0x15338, flattened [4][60][60] */
     i32     nMapLayers;      /* Map+0x15114 */
-    i32     nCraftMapX;      /* Map_nCraftMapX @ 0x15199 */
-    i32     nCraftMapY;      /* Map_nCraftMapY @ 0x1519A */
+    i32     nCraftMapX;      /* Map_nCraftMapX @ Map+0x15139 (0x128AF1) */
+    i32     nCraftMapY;      /* Map_nCraftMapY @ Map+0x1513A (0x128AF2) */
 } CraftSpritePatchEnv;
 
 /* Map_PatchCraftSprites @ 0x25ab4. Only runs when the map has exactly two layers: it recolours three

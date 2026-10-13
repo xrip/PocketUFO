@@ -577,7 +577,6 @@ drop-in once the working-set contract is ported.
 | Function | Size | Why not yet |
 |---|---|---|
 | `Unit_CanStepTo` @ `0x27bb8` | 14,716 | Cell addressing is now resolved (see above), but it needs a ~15-global working-set contract plus `Map_ProbeStepOccupants`. The path flood injects a probe, so it is a drop-in once that contract is ported |
-| `Map_BuildMissionTerrain` @ `0x22e10` | 10,676 | Terrain generation from the `.ma1`/template data. Depends on `Font_LoadTactSprites` and the palette LUTs |
 | `Map_QueueDoorAction` @ `0x2bd00`, `Map_ProbeStepOccupants` @ `0x2778c` | 1,448 / 1,068 | Move-resolution helpers; belong with `Unit_CanStepTo` |
 | `Combat_ResolveShot` @ `0x2f12c`, `Combat_SplashDamageCells` @ `0x2e7d8`, `Map_TraceLos` @ `0x30890`, `Tact_ProcessFireAction` @ `0x50adc` | 2,828 / 2,388 / 1,948 / 8,192 | Combat, LOS and ballistics. Large and interlinked; the next game-core block |
 | `Tact_ProcessMoveAction` @ `0x4f3f0` | 5,868 | The queue *consumer*; the queue itself is done, the driver is not |
@@ -6391,7 +6390,7 @@ behind them.
 
 | callee | bytes | status |
 |---|---|---|
-| `Map_BuildMissionTerrain @ 0x22e10` | 10,676 | unported, the largest single gap in the tact subsystem |
+| `Map_BuildMissionTerrain @ 0x22e10` | 10,676 | **ported** — `src/pufo/game/pufo_terrain.c` |
 | `Tact_SpawnAliens @ 0x3a2ac` | 3,516 | **ported** |
 | `Tact_DeployTeamAndHwps` (0x39980) | 2,348 | ported |
 | `Tact_SetupCraftCargo @ 0x38f00` | 2,116 | **ported** |
@@ -7691,11 +7690,12 @@ is what makes the row counts safe to hard-code:
 padding run is part of a table. `python tools/gen_isodraw_tables.py --check` prints the boundary bytes on
 both sides of all nine, which is the check to rerun if an extent is ever in doubt.
 
-## `Map_BuildMissionTerrain @ 0x22e10` — read end to end in ARM, decode in progress
+## `Map_BuildMissionTerrain @ 0x22e10` — read end to end in ARM, ported
 
 10,676 bytes, 313 basic blocks, 2,669 instructions, one caller (`Tact_InitMission @ 0x3c550`). Read in
-full in ARM on 2026-10-13. This records what the ARM settles and what still has to be settled. It is
-deliberately **not** a port plan yet — the open list at the bottom has to close first.
+full in ARM on 2026-10-13 and ported the same day into `src/pufo/game/pufo_terrain.c`. This section
+records what the ARM settles; the port and the questions it closed are in the section after the last
+one.
 
 ### The frame, and the grid that lives in the wrong place
 
@@ -7903,3 +7903,95 @@ destructors in the order `v266`, `pTpl`, `v273`, `pOut`.
 - `unk_128B00` is the `"0"` / `"15"` name-suffix selector, and `word_128B04` / `word_128B08` are the
   random 6×6 tile position (`rand(5)`, `rand(4)`) that both grids and the `.rmp` load agree on.
 - The module-number filter above is a hard rule, not a guess — it is written out in the ARM.
+
+## `Map_BuildMissionTerrain` ported, and what the port settled
+
+Ported 2026-10-13 into `src/pufo/game/pufo_terrain.c` as `Map_BuildMissionTerrain(MapTerrainEnv *)`,
+with `tests/test_terrain.c` (59 checks). Coverage moved 669 → 670 functions and 239,932 → 250,608
+bytes, exactly the function's 10,676.
+
+### The env struct replaces the globals the original reaches through
+
+The builder touches the `Map` block at eleven offsets and the font block at one. All of them are
+caller-owned in the port: the 14400-slot cell array, the Map dimension/type/variant/tier bytes, the
+shot origin pair, the random spawn tile, `aMissionTileTypes`, the shot-object array at `Map+0x108`,
+and the `.rmp` scratch. Two hooks stand for things the builder cannot own: `Font_LoadTactSprites`
+(0x257c4, not ported) and `Combat_ResolveShot @ 0x2f12c`, which IS ported but whose `CombatCtx`
+(`TactState`, the three rosters, the 41×41 hit windows) belongs to whoever owns the tactical context.
+
+### The cell array is the port's to allocate
+
+The builder mallocs the 14400 `MapCell` objects and fills a caller-owned `MapCell *[14400]`, including
+the allocation-failure path: it stores NULL and still calls `MapCell_Init(NULL, x, y, layer)`, which
+has no null guard in the original either. The tail's flag clear has no null test either. Both are in
+`bugs.tsv` and both are reproduced rather than papered over.
+
+### The tail mask is weaker than it looks
+
+`nFlags32 &= 0xFFFFFF87` clears bits 3..6 and KEEPS bits 0, 1, 2 and 7. `MapCell_Init` already masks
+with `0xFFFFFF80`, which clears bits 0..6. So on a grid the builder just allocated, the tail is a
+no-op; it only matters for a cell whose flags were set between allocation and the tail. An earlier
+note in the IDB described it as "clears the low 7 bits and bit 7", which is wrong in both directions.
+
+### The two kind-array passes read `kind[row][col + 1]`, not `kind[row][col]`
+
+This is the one thing the pseudocode made unobvious. Pass A walks the 6×6 dword array from its start
+and its guard is `LDR R0, [R3, #4]` at 0x25338. Pass B starts one dword into the array (`&v277`) and
+reads `[R3, #0]`. Both therefore test the same element: the kind one column to the right. Pass A
+walks columns `0 .. nDimX-2`, pass B walks `0 .. nDimX-1` and its rows stop at `nDimY-2`, so neither
+reads past the 36 entries.
+
+### The two XCom-base guards look at different neighbours
+
+Pass 1's second guard is `MOV LR,#0x5F0 / ORR LR,#5` → `aMissionTileTypes[6*tileRow + col + 1]`, the
+tile one COLUMN right (0x24194). Pass 2's is `ADD R3, R8, #0xFF` → `aMissionTileTypes[6*(tileRow+1) +
+col]`, the tile one ROW below (0x24394). Each pass also has its own sentinel set: pass 1 skips
+`0x10`, `0x12` and `0x14`; pass 2 skips `0x10`, `0x11` and `0x14`. `test_terrain.c` pins all of it,
+including the neighbour direction in both senses.
+
+`aMissionTileTypes` is reached as `0x159768 + 6*tileRow + 0x5F4`, so its row stride is six BYTES and
+the block base at `0x159768` is 0x5F4 bytes before it.
+
+### The craft pad tile and `Map_nCraftMapX/Y` are the same two bytes
+
+The plane placement writes `Map+0x15139` / `Map+0x1513A`, which IDA already names `Map_nCraftMapX` /
+`Map_nCraftMapY`. `Map_PatchCraftSprites @ 0x25ab4` reads exactly those two bytes (its literal pool
+at 0x25E64 / 0x25E68 is `0x15139` / `0x1513A`). So the builder writes the craft's tile and the tail
+immediately consumes it — one env field, not two. `CraftSpritePatchEnv`'s comment in `pufo_font.h`
+said `0x15199` / `0x1519A`; that was wrong and is corrected.
+
+The flag that selects the pad's sprite group is also the same value twice over: a template's slots
+resolve through `*(u16 *)(fontSys + 2 * nFlag)`, the pad is loaded with `nFlag 3`, and
+`Map_PatchCraftSprites` reads the u16 at `fontSys + 0x06`. The craft pad and the craft sprites come
+from one sprite group.
+
+### The fallback always appends the literal "4"
+
+The `nMapLayers == 0` non-XcomBase path builds `<terrain name>` + `pDefault`, and `pDefault @ 0xAAD4C`
+is the two-byte string `"4"`. It is NOT the per-mission-type `aTerrainNameSuffix0` entry — so even a
+jungle fallback loads `jungle4.ma1`. The other fallback name is `<terrain name>` + (`Map_bSpawnAlt ?
+"15" : "0"`).
+
+### The shot sweep, and what its selector indexes
+
+Variant 2 selects 18 and variant 3 selects 51; anything else selects 0 and the sweep is skipped. The
+shot's object argument is `*(Map + 0x108 + 4*selector)`, so 18 is `Map+0x150` and 51 is `Map+0x1D4` —
+entries of the object-pointer array that starts at `Map+0x108`, not a mode value. The count is
+`Game_RandU16(0x1E)`, forced to 0 when `Map_bUnk15115 < 0x32`. The two `Game_RandU16(3)` draws that
+produce the X and Y steps happen **whether or not** the count survives that gate, so they are not
+inside the `if`. The second, randomised sweep runs `(Map_bUnk15115 - 30) / 10` shots and always uses
+object slot 0.
+
+### Deviations the port makes on purpose
+
+- The original reuses the interior bytes of its four `CDialogTemplate` objects as scratch (the module
+  name at `pOut + 8`, the `itoa` buffer at `v273 + 0xC`). The port uses its own buffers.
+- The cell lookup bounds-checks. The original indexes the 14400-dword array with no test at all.
+- `aPlane[9*(nMissionType-1)]` with mission type 0 and `aUfo1a[3*(variant-1)+tier]` past slot 14 both
+  read out of the table in the original. The port yields an empty name, which fails the `.ma1` load
+  the way a missing member does. Both are in `bugs.tsv`.
+
+### Still open
+
+The meaning of the `aMissionTileTypes` sentinels `0x10`, `0x11` and `0x12` is not settled — only that
+they suppress the stamping passes, and that `0x14` additionally suppresses that tile's `.rmp` load.

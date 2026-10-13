@@ -225,6 +225,13 @@ Mc1Rec *Font_GetSprByIndex(const PufoFont *pFont, u16 nIndex)
     return pFont->apMc1Index[nIndex];
 }
 
+/* The ARM is `LDRH R2, [R0,#2*nFlag]` off fontSys, where fontSys is the struct itself: bInited is at
+ * offset 0, so indexing the block as a u16 array by nFlag lands on the right two bytes. */
+u16 Font_GetFlagSprBase(const PufoFont *pFont, u8 nFlag)
+{
+    return ((const u16 *)pFont)[nFlag];
+}
+
 /* The original writes the palette bytes of a craft sprite with a counted byte loop (STRB [R3],#1 /
  * SUBS / BPL) starting at record offset 8. Two of the three calls run twelve bytes, one runs five. */
 static void Font_SetPalBytes6(Mc1Rec *pSpr, i32 nCount)

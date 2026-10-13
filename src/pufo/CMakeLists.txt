@@ -269,6 +269,18 @@ add_test(NAME test_template
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# Mission terrain: the cell grid the builder allocates, the tail's flag mask, the XCom-base
+# tile-sprite stamping passes and their tile-type guards, and the empty-layers fallback.
+add_executable(test_terrain ${CMAKE_SOURCE_DIR}/tests/test_terrain.c)
+target_link_libraries(test_terrain PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+set_target_properties(test_terrain PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_terrain
+    COMMAND test_terrain
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # Route/spawn nodes (.rmp): record geometry, the truncating node count, link
 # sentinels, and spawn-node acceptance.
 add_executable(test_rmp ${CMAKE_SOURCE_DIR}/tests/test_rmp.c)

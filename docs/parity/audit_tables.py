@@ -60,6 +60,13 @@ TABLES = [
     # at 0xA6590, and the 40 bytes from 0xA6568 belong to Smap_InitCraftSelectState (0x61b94).
     ("tile sprite slots",        0xA64E8, "g_aTileSprIndex",          "src/pufo/game/pufo_terrain.c",  64, "H", 0),
     ("terrain module count",     0xA6AF0, "g_aTerrainModuleCount",    "src/pufo/game/pufo_terrain.c",  10, "B", 0),
+    # The four module-name tables, all nine-byte stride. Extents are the gap to the next named symbol:
+    # aUfo1a ends at 0xA6617 (aAlienRaceCounts starts at 0xA6618) and aPlane at 0xA6687
+    # (aHwpsDeployOffsets starts at 0xA6688). IDA declares char aUfo1a[216], 81 bytes too long.
+    ("ufo module names",         0xA6590, "g_aUfoModuleName",         "src/pufo/game/pufo_terrain.c", 135, "B", 0),
+    ("craft pad names",          0xA6668, "g_aPlaneName",             "src/pufo/game/pufo_terrain.c",  27, "B", 0),
+    ("terrain name by mission",  0xA67F8, "g_aTerrainNameByMission",  "src/pufo/game/pufo_terrain.c",  90, "B", 0),
+    ("terrain name suffix",      0xA7B20, "g_aTerrainNameSuffix",     "src/pufo/game/pufo_terrain.c",  90, "B", 0),
 ]
 
 

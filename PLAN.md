@@ -52,45 +52,50 @@ Order is by what unblocks what. Each item ends with gates + commit.
     weapon/ammo boundary and the tail's read-after-add
   - [x] four tests in `tests/test_tactctl.c` (73 new checks, 6813 total), one of which calls the
     function twice to pin the scratch persistence
-- [~] `Map_BuildMissionTerrain (0x22e10)` — 10,676 B, 313 blocks. Read end to end in ARM; the six
-  phases and the cell-array extent are settled and written to `docs/parity/game-core.md`, and the phase
-  boundaries carry IDB comments. Not ported yet.
-  - [x] the cell array is inline in `Map`: `Map + 0x15338 + 4*(60*nY + nX) + 0x3840*nLayer`, 3600 cells
-    per layer, 4 layers, 14400 dwords = `0xE100` B, ending exactly at `Map+0x23438` = `apTactItems`
-  - [x] the 6×6 module grid lives at `&pTpl.pDim1` and overruns the 20-byte `CDialogTemplate`
-  - [x] every template dimension is read as `_rt_sdiv(headerByte, 10)` — cells to tiles
-  - [x] `byte_A6AF0` resolved: ten-entry per-mission-type module-count table (jungle 12, culta 19,
-    forest 12, xbase 21, ubase 16, urban 15, desert 12, mount 13, polar 14, mars 11); urban is
-    `rand(12)+3` so its module numbers are 3..14 and every other terrain starts at 0
-  - [x] `aMissionTileTypes @ 0x159D5C` is runtime `.bss` state, not a shipped table; `0x14` skips the
-    tile's `Map_LoadRmp`
-  - [x] the shot-count selector is a Map dword-index offset: the shot's object-array argument is
-    `*(Map + 0x108 + 4*selector)`, selector 18 for variant 2 and 51 for variant 3
-  - [ ] open: the module-grid values `0..4`, the `var_276` kind codes, `unk_128B00`,
-    `word_128B04/128B08`, the `0x10/0x11/0x12` tile-type guards, and the three near-duplicate
-    stamping copies
-  - [ ] `CDialogTemplate_GetTemplateByte0 @ 0x54c68` and `GetTemplateByte1 @ 0x54c5c` (12 B each) are
-    the only unported callees; both are `pBlob[0]` / `pBlob[1]` accessors
-  - [x] name tables verified from the image, nine bytes per entry:
-    `aTerrainNameByMissionType @ 0xA67F8` = jungle, culta, forest, xbase_, ubase_, urban, desert,
-    mount, polar, mars (indexed by `Map_nMissionType`); `aTerrainNameSuffix0 @ 0xA7B20` = `"0"` for
-    every type except urban which is `"4"`; `aPlane @ 0xA6668` = plane, lightnin, avenger (indexed by
-    `Map_nMissionType - 1`); the UFO module table at `0xA6590` = ufo1a, ufo_110, ufo_120, ufo_130,
-    ufo_140, ufo_150, ufo_170, ufo_160 (indexed by `3*(variant-1) + tier`)
-  - [x] IDB: named `Map_nMapDimX @ 0x128AD3` and `Map_nMapDimY @ 0x128AD4` (the tile bounds the cell
-    grid loops use), commented the four name tables, and recorded that Hex-Rays renders the
-    `Map_nTerrainVariant` read as `Map+0x15110` while the ARM literal at `0x23170` is `0x15111`
-  - [ ] reading aid: the full Hex-Rays text is in `.tmp/bmt/bmt1.c` (scratch, untracked). The MCP
-    `decompile` truncates at ~52 KB; `curl` to `http://127.0.0.1:13337/mcp` truncates too, so the
-    dump has to come from a session that already holds it. Do not trust its offsets — ARM wins.
-  - [x] open question 1 closed: the 6×6 module grid holds 0 = empty, 1 = occupied by the generic
-    terrain module, and 2/3/4 = Urban module numbers 0/1/2 — Urban re-loads a flagged cell as
-    `<terrain><value-2>`. The `var_90` dword array is a separate per-tile kind, written `0,1,2,3` at
-    the random tile and read by the two final stamping passes that skip kinds 1+3 and 2+3.
-  - [x] open question 2 closed: every "alternate cell-array base" is a cell index into the same
-    14400-dword array. The XcomBase passes use `543 + 600*tileRow + 10*tileCol + col`, that is
-    `y = 9 + 10*tileRow`, `x = 3 + col + 10*tileCol`; and `189 + 600*tileRow + 60*k + 10*tileCol`,
-    that is `y = 3 + k + 10*tileRow`, `x = 9 + 10*tileCol`.
+- [x] `Map_BuildMissionTerrain @ 0x22e10` — ported, 10,676 B cited, in `src/pufo/game/pufo_terrain.c`
+  - [x] `MapTerrainEnv` replaces the eleven `Map`-block offsets and the font block the original reaches
+    through. Two hooks: `pfnLoadTactSprites` for `Font_LoadTactSprites (0x257c4)`, and `pfnResolveShot`
+    for `Combat_ResolveShot @ 0x2f12c` — that one IS ported, but its `CombatCtx` (TactState, the three
+    rosters, the 41×41 hit windows) belongs to the caller that owns the tactical context
+  - [x] the builder allocates the 14400 `MapCell` objects into a caller-owned `MapCell *[14400]`,
+    reproducing the allocation-failure path (`MapCell_Init(NULL, x, y, layer)`) and the tail's untested
+    cell dereference
+  - [x] `tests/test_terrain.c`: 59 checks. Cell allocation and per-cell coordinates, the tail's mask,
+    the craft-patch side effect as proof the tail ran, the two XCom-base stamping passes cell by cell,
+    and the four tile-type guards in both neighbour directions
+  - [x] the four module-name tables inlined and audited — 34 tables, 0 mismatched — emitted by the new
+    `tools/gen_terrain_tables.py`
+  - [x] `Font_GetFlagSprBase @ fontSys + 2*nFlag` added: a template's slots resolve through the base
+    chosen by the flag it was loaded with, and the flag-3 base is the same u16
+    `Map_PatchCraftSprites` reads as the craft sprite group
+  - [x] the craft pad tile and `Map_nCraftMapX/Y` are the same two bytes (`Map+0x15139/0x1513A`), so
+    the builder writes the craft's tile and the tail reads it back. `CraftSpritePatchEnv`'s comment in
+    `pufo_font.h` said `0x15199/0x1519A` — corrected
+  - [x] IDB: `aUfo1a` re-declared `[135]` (IDA had `[216]`, 81 bytes into the alien tables); named
+    `Map_nMissionTier` (was `Map_bUnk15112`), `Map_nMissionTierRaw`, `Map_bSpawnAlt`,
+    `Map_nSpawnTileX/Y`, `Map_nFireOrigX/Y`; corrected my own wrong slot-order comment at `0x24150`
+    (wall A is 0x04, wall B is 0x08); comments at `0x24174`, `0x24194`, `0x2436c`, `0x24394`,
+    `0x25338`, `0x246A0`, `0x25740`, `0x23170` and the function header
+  - [x] four rows added to `bugs.tsv` (51 total): the null `MapCell_Init`, the untested tail deref,
+    `aPlane[-1]` for mission type 0, and the unbounded `aUfo1a` index
+  - [x] the last open questions closed: both kind-array passes read `kind[row][col+1]`; pass 1's tile
+    guard looks one COLUMN right and pass 2's one ROW down; the fallback appends the literal `"4"`
+    (`pDefault @ 0xAAD4C`), not the per-type suffix; the shot's object argument is
+    `*(Map + 0x108 + 4*selector)`, an entry of the object-pointer array, not a mode
+  - [~] still open: what the `aMissionTileTypes` sentinels `0x10`, `0x11` and `0x12` mean. Only their
+    effect is proven — they suppress the stamping passes, and `0x14` also suppresses the `.rmp` load
+  - Decode facts the port rests on, all settled earlier: the cell array is inline in `Map` at
+    `Map + 0x15338 + 4*(60*nY + nX) + 0x3840*nLayer`, 14400 dwords ending at `Map+0x23438`; the 6×6
+    module grid lives at `&pTpl.pDim1` and overruns the 20-byte `CDialogTemplate`; every template
+    dimension becomes tiles by `/10`; the module grid means 0 empty, 1 generic module, 2/3/4 Urban
+    module numbers 0/1/2; the `var_90` dword array is a separate per-tile kind; the stamping bases
+    `189`, `190`, `543`, `543+60` and `3050` are cell indices into the same array
+    (`189` → y 3+k+10·tileRow, x 9+10·tileCol; `543` → y 9+10·tileRow, x 3+j+10·tileCol)
+  - [x] every callee is now ported except `Font_LoadTactSprites (0x257c4)`, which is a hook
+  - [x] reading aid: the full Hex-Rays text is in `.tmp/bmt/bmt1.c` (scratch, untracked). The MCP
+    `decompile` truncates at ~52 KB; `curl` to `http://127.0.0.1:13337/mcp` truncates too. Do not
+    trust its offsets — ARM wins, and it did: the compact `disasm` listing and the pseudocode both
+    hid the `kind[row][col+1]` read and the guard-neighbour directions
 - [x] `.ma1` header direction fixed — **header byte 0 is the row count, byte 1 the column count**
   - Proved three ways: `Map_ApplyTemplateToCells (0x54cf4)` builds `10*(6*(10*nOffY + row) + nOffX) + col`
     with `row` looping to byte 0; `GetCellByte (0x54c80)` uses byte 1 as the row stride; every
@@ -175,4 +180,5 @@ Refresh after each commit. A coverage delta must match the function size in
 | `89022a5`, `887fed8`, `36addee` — decode + IDB only | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
 | `36addee` + `Tact_Shutdown` | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
 | `7c29217` + `MapView_DrawUnit` | 49/49 | 6977 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 28 checked, 0 mismatched |
-| this commit (`.ma1` direction fix) | 49/49 | 6984 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 30 checked, 0 mismatched |
+| `.ma1` direction fix | 49/49 | 6984 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 30 checked, 0 mismatched |
+| this commit (`Map_BuildMissionTerrain`) | 50/50 | 7043 | 670/1103 (60.7%) | 250608/598792 (41.9%) | 34 checked, 0 mismatched |
