@@ -225,6 +225,12 @@ typedef struct MapGeom {
     u8 nDimY; /* map tiles down  */
 } MapGeom;
 
+/* The craft position is held in map tiles and the tactical grid is ten cells to a tile. Every
+ * deploy anchor, camera bound and cell index converts between them with this factor: the geoscape
+ * byte times PUFO_CELLS_PER_TILE plus a per-mission offset is the cell coordinate. Proven from the
+ * ARM at 0x3975C, 0x39980, 0x38F34 and 0x3331C, which all multiply the same two bytes by 10. */
+#define PUFO_CELLS_PER_TILE 10
+
 /* Cell grid accessor. The original reads its grid through pCtxBase globals
  * (`apCells` @ 0x15338, stride 14400 per layer). Callers that own a grid inject
  * one of these so the algorithms stay testable without the full context.

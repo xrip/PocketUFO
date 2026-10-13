@@ -60,4 +60,9 @@ _Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
 /* Three fire modes; abCostPct and abArmorTu are parallel arrays indexed by them. */
 #define PUFO_FIRE_MODE_COUNT 3
 
+/* bAmmoCap 255 means the weapon never runs out of ammo. Readers test this exact value rather than
+ * treating 255 as a large count: the shot gate (pufo_combat.c), the inventory drag stack
+ * (pufo_invdrag.c), the ammo display (pufo_unit.c) and the cargo pass all branch on it. */
+#define PUFO_AMMO_CAP_UNLIMITED 0xFF
+
 #endif /* PUFO_OBJECTREC_H */

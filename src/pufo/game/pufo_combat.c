@@ -22,7 +22,7 @@ static i32 Combat_HandCost(Soldier *pUnit, TactItem *pHand, const FireGate *pGat
     if (pHand == NULL || pHand->pObj == NULL) {
         return 0xFFFF;
     }
-    if (!(pHand->nAmmo > 2 || pHand->pObj->bAmmoCap == 255)) {
+    if (!(pHand->nAmmo > 2 || pHand->pObj->bAmmoCap == PUFO_AMMO_CAP_UNLIMITED)) {
         return 0xFFFF;
     }
     if (pHand->pObj->bTwoHanded != 0
@@ -656,8 +656,8 @@ static void Combat_AttenuateLayer(const CombatCtx *pCtx, u32 *apHits,
  * fall. */
 static void Combat_DropCellItems(const CombatCtx *pCtx)
 {
-    const i32 nCellsX = 10 * (i32)pCtx->pGeom->nDimX;
-    const i32 nCellsY = 10 * (i32)pCtx->pGeom->nDimY;
+    const i32 nCellsX = PUFO_CELLS_PER_TILE * (i32)pCtx->pGeom->nDimX;
+    const i32 nCellsY = PUFO_CELLS_PER_TILE * (i32)pCtx->pGeom->nDimY;
 
     for (i32 nLayer = 1; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
         for (i32 nY = 0; nY < nCellsY; ++nY) {

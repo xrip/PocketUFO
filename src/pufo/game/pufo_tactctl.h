@@ -433,10 +433,12 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv);
 /* MissionType_XcomBase. ARM at 0x3A058 is CMP R2, #3 on Map_nMissionType. */
 #define PUFO_MISSION_TYPE_XCOM_BASE 3u
 
-/* The hardware store slots Tact_DeployTeamAndHwps spawns soldiers from. The unit type each one
- * produces is the object index minus 27, so 31..35 give types 4..8. */
-#define PUFO_HWPS_OBJECT_FIRST 31
-#define PUFO_HWPS_OBJECT_LAST  35
+/* The craft store slots: one object record per hardware type the launching craft carries.
+ * Tact_DeployTeamAndHwps spawns soldiers from them (the unit type is the object index minus 27, so
+ * 31..35 give types 4..8), and Tact_SetupCraftCargo skips them in both scratch walks because they
+ * are cargo, not equipment. */
+#define PUFO_CRAFT_STORE_FIRST 31
+#define PUFO_CRAFT_STORE_LAST  35
 
 /* The tile type that seeds a scatter cluster in the phase-5 table build. ARM at 0x3A098 is
  * CMP against 7 over unk_159D5C. */
@@ -603,5 +605,94 @@ typedef struct TactSpawnAliensEnv {
  * Deviation: the original returns loop-counter residue. The port returns the number of units
  * spawned into apEnemyUnits. */
 i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv);
+
+/* ---------------------------------------------------- pre-mission craft cargo */
+
+/* The two scratch blocks Tact_SetupCraftCargo works through. Both are .bss in the original and
+ * neither has any other reader, but the function does not clear either one wholesale: it zeroes one
+ * entry per object it actually processes, so an object it skips keeps whatever an earlier call left.
+ * The caller owns the buffers and passes the same pair every call, which is what the original's
+ * .bss residency means.
+ *
+ *   unk_156CD0  one i32 per object: the running ammo split.
+ *   unk_157208  three i32 per object: all three hold the same value once the object's pass ends,
+ *               and only the first two are ever read back. */
+#define PUFO_CARGO_WORK_PER_OBJ 3
+
+/* The object ranges the function treats as stores rather than as equipment. The craft store slots
+ * are PUFO_CRAFT_STORE_FIRST..LAST; 56, 57, 58 and 105 are the base store records, and 105 is the
+ * one the XCom base tail works on. 34 is the seed record whose base column is captured on entry. */
+#define PUFO_CARGO_BASE_FIRST   56
+#define PUFO_CARGO_BASE_LAST    58
+#define PUFO_CARGO_SEED_OBJECT  34
+#define PUFO_CARGO_BASE_OBJECT  105
+
+/* Everything Tact_SetupCraftCargo reaches through the Map block. */
+typedef struct TactCargoEnv {
+    ObjectRecFull   **apObjects;       /* Map.apObjects @ Map+0x108 */
+    u16              *pnObjectCount;   /* Map_nObjectCount @ Map+0x10A8 */
+    struct Ship     **apCraft;         /* Map.apCraft @ Map+0x10AC */
+    u8               *pnCraftCount;    /* Map_nCraftCount @ Map+0x1194 */
+    TactItem        **apTactItems;     /* Map.apTactItems @ Map+0x23438 */
+    i32              *pnTactItemCount; /* Map_nTactItemCount @ Map+0x1513C */
+    MapCell         **ppDeployCell;    /* 0x157204. Written here, read by
+                                        * Tact_EquipTeamFromCraft (0x3be24). */
+    i32              *panCargoSplit;   /* unk_156CD0, one entry per object */
+    i32              *panCargoWork;    /* unk_157208, PUFO_CARGO_WORK_PER_OBJ per object */
+    MapCellLookup     pfnLookupCell;
+    void             *pLookupUser;
+    const u8         *pDeployOffsets;  /* aDeployCellOffsets @ 0xA66B8, 104-byte records */
+    u8   nMissionType;                 /* Map_nMissionType @ Map+0x1511A */
+    u8   nCraftIndex;                  /* Map_nCraftIndex @ Map+0x15113, the launching craft */
+    u8   nMapLayers;                   /* Map_nMapLayers @ Map+0x15114, the record index */
+    u8   nCraftMapX;                   /* Map_nCraftMapX @ Map+0x15199, in tiles */
+    u8   nCraftMapY;                   /* Map_nCraftMapY @ Map+0x1519A, in tiles */
+    i8   nBaseIndex;                   /* 0x158848, loaded with LDRSB */
+} TactCargoEnv;
+
+/* Tact_SetupCraftCargo @ 0x38f00. Turn the cargo the launching craft (or the mission base) carries
+ * into the tactical item list, before any unit is deployed. Called once, from Tact_InitMission
+ * (0x3c550).
+ *
+ * Nine steps, in the order the ARM runs them:
+ *
+ *   1. Capture apObjects[34]->auPerBaseVal[nBaseIndex] on entry. Step 9 needs it as it was before
+ *      anything moved, which is why the arithmetic there looks circular.
+ *   2. Resolve the deploy cell from the mission layer record and store it at 0x157204. The index is
+ *      3600*layer + 60*(10*nCraftMapY + rec[1]) + (10*nCraftMapX + rec[0]) over the cell array at
+ *      Map+0x15338, so it is the same anchor Tact_SelectTeamUnits builds. A layer count of zero
+ *      reads cell (0, 0, 0).
+ *   3. Not the XCom base mission: every object's uRecovScore becomes its own column in the
+ *      launching craft's aItemQty. That is the whole cargo pass.
+ *   4. XCom base mission: walk objects and STOP at the first one whose uSortKey is 59 or more --
+ *      the walk ends, it does not skip. Each visited object's score is cleared first; then, for
+ *      every object that passes the tally filter, the score takes the mission base's column and
+ *      that column is zeroed. Cargo moves off the base and onto the mission.
+ *   5. XCom base mission, second pass: every craft whose bHomeBase is the mission base and that is
+ *      actually at base gets bWeaponsHot = 1, and its own aItemQty column is added into every
+ *      filtered object's score. This pass has no uSortKey stop.
+ *   6. Ammo split. For each object outside the craft store slots, with a finite ammo cap, a
+ *      non-zero score and bTwoHanded == 0, walk its three ammo type ids and rebalance the running
+ *      split against the ammo record's own score, then store the split into all three slots of the
+ *      object's work triple.
+ *   7. Item build. For each object outside the store slots whose score exceeds its split, create
+ *      exactly score - split TactItems at the deploy cell, each with pObj set and inserted by
+ *      priority. While the counter is below the split the item is a weapon: its cap comes from the
+ *      ammo record the work triple selects and its index is that ammo type id. Once the counter
+ *      reaches the split the item is the ammo itself: its cap is the object's own and its index is
+ *      the object index.
+ *   8. Any item whose object has bTwoHanded == 1 takes its cap from the object, overriding step 7.
+ *   9. Hand the launching craft's four cargo counts to the base store records -- 56, 57, 105, 58,
+ *      with 105 taking cargo[2] / 10 -- and zero each count. For the XCom base mission, object 105
+ *      also takes back the base column into its score, and the column is then reduced by five times
+ *      the value object 34 held on entry, clamped at zero rather than wrapping.
+ *
+ * The tally filter used by steps 4 and 5: an object joins unless bTwoHanded is 2, except the craft
+ * store slots 31..35 and the base store records 56..58, which always join.
+ *
+ * Deviation: the original's return register is residue -- Map_nMissionType on the non-XCom-base
+ * path and the recomputed base column on the XCom-base path. Its only caller ignores it, so the
+ * port returns void. */
+void Tact_SetupCraftCargo(TactCargoEnv *pEnv);
 
 #endif /* PUFO_TACTCTL_H */

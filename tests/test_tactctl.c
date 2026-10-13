@@ -1645,6 +1645,304 @@ static void TestSpawnAliensSpriteSlotSkipped(void)
     SpawnFixture_Free(&env);
 }
 
+/* ============================================================================
+ * Tact_SetupCraftCargo @ 0x38f00
+ *
+ * The cargo pass turns what the launching craft (or the mission base) carries into the tactical
+ * item list, before any unit is deployed. The fixture keeps 128 object records, two craft, and a
+ * cell lookup that records what the function asked for.
+ */
+
+static MapCell      s_aCargoCell[2];
+static MapCell     *s_pCargoDeployCell;
+static Ship         s_aCargoShip[2];
+static Ship        *s_apCargoShip[2];
+static TactItem    *s_apCargoItems[256];
+static ObjectRecFull s_aCargoObj[128];
+static ObjectRecFull *s_apCargoObj[128];
+static i32          s_aCargoSplit[128];
+static i32          s_aCargoWork[128 * PUFO_CARGO_WORK_PER_OBJ];
+static u8           s_aCargoOffsets[104 * 2];
+static u16          s_nCargoObjects;
+static u8           s_nCargoCraft;
+static i32          s_nCargoItems;
+static i32          s_nCargoX, s_nCargoY, s_nCargoLayer;
+
+static MapCell *Cargo_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    s_nCargoX = nX;
+    s_nCargoY = nY;
+    s_nCargoLayer = nLayer;
+    return &s_aCargoCell[0];
+}
+
+static void CargoFixture_Reset(void)
+{
+    memset(s_aCargoCell, 0, sizeof(s_aCargoCell));
+    memset(s_aCargoShip, 0, sizeof(s_aCargoShip));
+    memset(s_apCargoShip, 0, sizeof(s_apCargoShip));
+    memset(s_apCargoItems, 0, sizeof(s_apCargoItems));
+    memset(s_aCargoObj, 0, sizeof(s_aCargoObj));
+    memset(s_aCargoSplit, 0, sizeof(s_aCargoSplit));
+    memset(s_aCargoWork, 0, sizeof(s_aCargoWork));
+    memset(s_aCargoOffsets, 0, sizeof(s_aCargoOffsets));
+    s_pCargoDeployCell = NULL;
+    s_nCargoObjects = 128;
+    s_nCargoCraft = 1;
+    s_nCargoItems = 0;
+    s_nCargoX = -1;
+    s_nCargoY = -1;
+    s_nCargoLayer = -1;
+
+    for (i32 i = 0; i < 128; ++i) {
+        s_apCargoObj[i] = &s_aCargoObj[i];
+        s_aCargoObj[i].bAmmoCap = 100;   /* finite, so step 6 processes it */
+    }
+
+    s_apCargoShip[0] = &s_aCargoShip[0];
+    s_apCargoShip[1] = &s_aCargoShip[1];
+
+    /* Layer 1's deploy record: x offset 3, y offset 5, layer 2. */
+    s_aCargoOffsets[104 * 1 + 0] = 3;
+    s_aCargoOffsets[104 * 1 + 1] = 5;
+    s_aCargoOffsets[104 * 1 + 2] = 2;
+}
+
+static void CargoEnv_Init(TactCargoEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->apObjects = s_apCargoObj;
+    pEnv->pnObjectCount = &s_nCargoObjects;
+    pEnv->apCraft = s_apCargoShip;
+    pEnv->pnCraftCount = &s_nCargoCraft;
+    pEnv->apTactItems = s_apCargoItems;
+    pEnv->pnTactItemCount = &s_nCargoItems;
+    pEnv->ppDeployCell = &s_pCargoDeployCell;
+    pEnv->panCargoSplit = s_aCargoSplit;
+    pEnv->panCargoWork = s_aCargoWork;
+    pEnv->pfnLookupCell = Cargo_Lookup;
+    pEnv->pDeployOffsets = s_aCargoOffsets;
+    pEnv->nMissionType = 1;              /* not the XCom base mission: the craft-column branch */
+    pEnv->nCraftIndex = 0;
+    pEnv->nMapLayers = 1;
+    pEnv->nCraftMapX = 20;               /* tiles; the cell index is 10 per tile */
+    pEnv->nCraftMapY = 30;
+    pEnv->nBaseIndex = 0;
+}
+
+static void CargoFixture_Free(void)
+{
+    for (i32 i = 0; i < s_nCargoItems; ++i) {
+        free(s_apCargoItems[i]);
+        s_apCargoItems[i] = NULL;
+    }
+    s_nCargoItems = 0;
+}
+
+static void TestCargoCraftColumns(void)
+{
+    TactCargoEnv env;
+
+    printf("Tact_SetupCraftCargo - the launching craft's columns and its four cargo counts\n");
+
+    CargoFixture_Reset();
+    CargoEnv_Init(&env);
+
+    s_aCargoObj[5].aItemQty[0] = 7;      /* becomes its score, then seven items */
+    s_aCargoObj[5].bAmmoCap = 120;
+
+    s_aCargoShip[0].anCargoQty[0] = 4;
+    s_aCargoShip[0].anCargoQty[1] = 5;
+    s_aCargoShip[0].anCargoQty[2] = 30;  /* 30 / 10 into object 105 */
+    s_aCargoShip[0].anCargoQty[3] = 6;
+
+    Tact_SetupCraftCargo(&env);
+
+    CheckEqI32(s_nCargoX, 203, "cell x is 10 * craft x + record[0]");
+    CheckEqI32(s_nCargoY, 305, "cell y is 10 * craft y + record[1]");
+    CheckEqI32(s_nCargoLayer, 2, "the layer is record[2]");
+    Check(s_pCargoDeployCell == &s_aCargoCell[0], "the resolved cell is stored at 0x157204");
+    Check(s_aCargoCell[0].pItemList == s_apCargoItems[0], "the items are inserted into that cell");
+
+    CheckEqI32(s_nCargoItems, 7, "seven items for object 5");
+    for (i32 i = 0; i < 7; ++i) {
+        Check(s_apCargoItems[i]->pObj == &s_aCargoObj[5], "the item carries object 5");
+        CheckEqI32(s_apCargoItems[i]->nIndex, 5, "past the split the index is the object index");
+        CheckEqI32(s_apCargoItems[i]->nAmmo, 120, "and the cap is the object's own");
+    }
+
+    CheckEqI32(s_aCargoObj[5].uRecovScore, 7, "the score is the launching craft's column");
+    CheckEqI32(s_aCargoObj[56].uRecovScore, 4, "cargo 0 goes to object 56");
+    CheckEqI32(s_aCargoObj[57].uRecovScore, 5, "cargo 1 to object 57");
+    CheckEqI32(s_aCargoObj[105].uRecovScore, 3, "cargo 2 goes as 30 / 10 to object 105");
+    CheckEqI32(s_aCargoObj[58].uRecovScore, 6, "cargo 3 to object 58");
+    CheckEqI32(s_aCargoShip[0].anCargoQty[0], 0, "cargo 0 is cleared after handing over");
+    CheckEqI32(s_aCargoShip[0].anCargoQty[2], 0, "cargo 2 is cleared after handing over");
+    CheckEqI32(s_aCargoShip[0].anCargoQty[3], 0, "cargo 3 is cleared after handing over");
+
+    CargoFixture_Free();
+}
+
+static void TestCargoXcomBaseSplit(void)
+{
+    TactCargoEnv env;
+
+    printf("Tact_SetupCraftCargo - XCom base: base columns, the sort-key stop, and the ammo split\n");
+
+    CargoFixture_Reset();
+    CargoEnv_Init(&env);
+    env.nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    env.nBaseIndex = 2;
+    s_nCargoCraft = 2;
+
+    s_aCargoObj[1].uSortKey = 10;
+    s_aCargoObj[1].auPerBaseVal[2] = 9;
+    s_aCargoObj[1].anAmmoTypeId[0] = 45;
+
+    /* Object 45 sits past the stop, so its score survives step 4 and is the ammo record's own. */
+    s_aCargoObj[45].uRecovScore = 4;
+    s_aCargoObj[45].bAmmoCap = 50;
+
+    s_aCargoObj[2].uSortKey = 10;
+    s_aCargoObj[2].bTwoHanded = 2;        /* filtered out of the tally */
+    s_aCargoObj[2].auPerBaseVal[2] = 5;   /* so its column must survive */
+
+    s_aCargoObj[33].uSortKey = 10;
+    s_aCargoObj[33].bTwoHanded = 2;       /* a store slot is always in the tally */
+    s_aCargoObj[33].auPerBaseVal[2] = 4;
+
+    s_aCargoObj[10].uSortKey = 10;        /* score comes only from the craft that is at base */
+    s_aCargoObj[10].aItemQty[0] = 6;
+    s_aCargoObj[10].aItemQty[1] = 50;
+
+    s_aCargoObj[40].uSortKey = 59;        /* the walk ENDS here */
+    s_aCargoObj[41].uSortKey = 10;
+    s_aCargoObj[41].auPerBaseVal[2] = 7;  /* never reached */
+
+    s_aCargoShip[0].bHomeBase = 2;
+    s_aCargoShip[0].bAtBase = 1;
+    s_aCargoShip[1].bHomeBase = 2;
+    s_aCargoShip[1].bAtBase = 0;          /* being at base is required */
+
+    Tact_SetupCraftCargo(&env);
+
+    CheckEqI32(s_aCargoObj[1].uRecovScore, 9, "the base column moves into the score");
+    CheckEqI32(s_aCargoObj[1].auPerBaseVal[2], 0, "and the column is then cleared");
+    CheckEqI32(s_aCargoObj[2].uRecovScore, 0, "bTwoHanded 2 is filtered out");
+    CheckEqI32(s_aCargoObj[2].auPerBaseVal[2], 5, "so its column is left alone");
+    CheckEqI32(s_aCargoObj[33].uRecovScore, 4, "a store slot is always in the tally");
+    CheckEqI32(s_aCargoObj[10].uRecovScore, 6, "only the craft at base adds its column");
+    CheckEqI32(s_aCargoObj[41].uRecovScore, 0, "the walk stopped at object 40");
+    CheckEqI32(s_aCargoObj[41].auPerBaseVal[2], 7, "so object 41 is untouched");
+    CheckEqI32(s_aCargoShip[0].bWeaponsHot, 1, "the craft at base arms its weapons");
+    CheckEqI32(s_aCargoShip[1].bWeaponsHot, 0, "the craft not at base does not");
+
+    CheckEqI32(s_aCargoSplit[1], 4, "the split takes the ammo record's score");
+    CheckEqI32(s_aCargoWork[1 * PUFO_CARGO_WORK_PER_OBJ + 0], 4, "all three work slots hold it");
+    CheckEqI32(s_aCargoWork[1 * PUFO_CARGO_WORK_PER_OBJ + 2], 4, "including the unused ammo slot");
+
+    CheckEqI32(s_nCargoItems, 15, "nine for object 1, six for object 10, none for object 45");
+    CheckEqI32(s_apCargoItems[0]->nIndex, 45, "the first four copies are weapons of ammo 45");
+    CheckEqI32(s_apCargoItems[0]->nAmmo, 50, "and take their cap from the ammo record");
+    CheckEqI32(s_apCargoItems[3]->nIndex, 45, "the fourth is still under the split");
+    CheckEqI32(s_apCargoItems[4]->nIndex, 1, "the fifth reaches the split and is the ammo itself");
+    CheckEqI32(s_apCargoItems[4]->nAmmo, 100, "so it takes object 1's own cap");
+    CheckEqI32(s_apCargoItems[14]->nIndex, 10, "object 10 has no split, so every copy is ammo");
+
+    CargoFixture_Free();
+}
+
+static void TestCargoScratchPersists(void)
+{
+    TactCargoEnv env;
+
+    printf("Tact_SetupCraftCargo - the two scratch blocks are .bss, not per-call state\n");
+
+    CargoFixture_Reset();
+    CargoEnv_Init(&env);
+    env.nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    env.nBaseIndex = 2;
+
+    s_aCargoObj[1].uSortKey = 10;
+    s_aCargoObj[1].auPerBaseVal[2] = 9;
+    s_aCargoObj[1].anAmmoTypeId[0] = 45;
+    /* 59 makes object 45 the object the walk stops AT, so its own score is never cleared. */
+    s_aCargoObj[45].uSortKey = 59;
+    s_aCargoObj[45].uRecovScore = 4;
+    s_aCargoObj[45].bAmmoCap = 50;
+
+    Tact_SetupCraftCargo(&env);
+    CheckEqI32(s_aCargoSplit[1], 4, "the first pass splits object 1 at 4");
+    CargoFixture_Free();
+
+    /* Second pass. Object 1 now has an infinite ammo cap, so step 6 leaves before it clears the
+     * split entry, and the value the first pass left is what step 7 reads. */
+    memset(s_aCargoCell, 0, sizeof(s_aCargoCell));
+    s_aCargoObj[1].bAmmoCap = 255;
+    s_aCargoObj[1].bTwoHanded = 1;
+    s_aCargoObj[1].auPerBaseVal[2] = 6;
+    s_aCargoObj[45].uRecovScore = 0;   /* the walk stops before it, so this has to be set here */
+
+    Tact_SetupCraftCargo(&env);
+
+    CheckEqI32(s_aCargoSplit[1], 4, "the split entry survived; step 6 never reached it");
+    CheckEqI32(s_nCargoItems, 6, "six items for object 1");
+    CheckEqI32(s_apCargoItems[0]->nIndex, 45, "the stale split still selects the ammo record");
+    CheckEqI32(s_apCargoItems[3]->nIndex, 45, "for the first four copies");
+    CheckEqI32(s_apCargoItems[4]->nIndex, 1, "and the object itself from the fifth");
+    for (i32 i = 0; i < 6; ++i) {
+        CheckEqI32(s_apCargoItems[i]->nAmmo, 255,
+                   "step 8 overrides every cap once, because the object is two-handed");
+    }
+
+    CargoFixture_Free();
+}
+
+static void TestCargoXcomBaseTail(void)
+{
+    TactCargoEnv env;
+
+    printf("Tact_SetupCraftCargo - the XCom base tail on objects 105 and 34\n");
+
+    CargoFixture_Reset();
+    CargoEnv_Init(&env);
+    env.nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    env.nBaseIndex = 0;
+
+    s_aCargoObj[1].uSortKey = 59;         /* the walk stops at once, so nothing is scored */
+    s_aCargoObj[34].auPerBaseVal[0] = 4;  /* the seed column, captured on entry */
+    s_aCargoObj[105].auPerBaseVal[0] = 30;
+    s_aCargoShip[0].anCargoQty[2] = 50;
+
+    Tact_SetupCraftCargo(&env);
+
+    CheckEqI32(s_nCargoItems, 0, "nothing was scored, so nothing was built");
+    CheckEqI32(s_aCargoObj[105].uRecovScore, 35, "5 from cargo[2] / 10, then the column back in");
+    CheckEqI32(s_aCargoObj[105].auPerBaseVal[0], 10, "30 minus 5 * 4, against the grown score");
+    CheckEqI32(s_aCargoObj[34].auPerBaseVal[0], 4, "the seed column is only ever read");
+
+    CargoFixture_Free();
+
+    /* The clamp: five times the seed exceeds the column, so the column goes to zero rather than
+     * wrapping. */
+    CargoFixture_Reset();
+    CargoEnv_Init(&env);
+    env.nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    env.nBaseIndex = 0;
+    s_aCargoObj[1].uSortKey = 59;
+    s_aCargoObj[34].auPerBaseVal[0] = 8;
+    s_aCargoObj[105].auPerBaseVal[0] = 30;
+    s_aCargoShip[0].anCargoQty[2] = 50;
+
+    Tact_SetupCraftCargo(&env);
+
+    CheckEqI32(s_aCargoObj[105].uRecovScore, 35, "the score path is the same");
+    CheckEqI32(s_aCargoObj[105].auPerBaseVal[0], 0, "and the column clamps at zero");
+
+    CargoFixture_Free();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1670,6 +1968,10 @@ int main(void)
     TestSpawnAliensLeadRaceGate();
     TestSpawnAliensXcomBase();
     TestSpawnAliensSpriteSlotSkipped();
+    TestCargoCraftColumns();
+    TestCargoXcomBaseSplit();
+    TestCargoScratchPersists();
+    TestCargoXcomBaseTail();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -50,6 +50,9 @@ _Static_assert(sizeof(BaseRec) == 20, "BaseRec must be 20 bytes");
 BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
                       ObjectRecFull *const *apObjects, i32 nObjectCount);
 
+/* The craft carries four cargo counts, at +0x24 through +0x33. */
+#define PUFO_SHIP_CARGO_COLUMNS 4
+
 typedef struct Ship {
     u8   bType;        /* +0x00 record kind */
     u8   bId;          /* +0x01 craft id, matched against StrategItem.nDisplayId */
@@ -75,7 +78,7 @@ typedef struct Ship {
     u8   bCanDogfight; /* +0x21 */
     i8   bWeaponL;     /* +0x22 */
     i8   bWeaponR;     /* +0x23 */
-    i32  anCargoQty[4];/* +0x24 */
+    i32  anCargoQty[PUFO_SHIP_CARGO_COLUMNS]; /* +0x24 */
     u8   bWeaponsHot;  /* +0x34 gates proximity detection growth */
     u8   bIntercepting;/* +0x35 */
     u8   gap_54[2];
@@ -90,6 +93,21 @@ typedef struct Ship {
 } Ship;
 
 _Static_assert(sizeof(Ship) == 68, "Ship must be 68 bytes");
+
+/* The base store record each cargo column answers to: column 0 -> object 56, 1 -> 57, 2 -> 105,
+ * 3 -> 58. Two independent ARM sites use exactly this mapping, Ship_ReturnToBase at 0x686F0 and
+ * Tact_SetupCraftCargo at 0x39600, which is what makes the order a fact rather than a guess.
+ * Column 2 is the odd one out: it is handed over in tens at both sites (0x68730 and 0x3963C). The
+ * ten itself is not explained by anything in the binary, so it stays a literal.
+ *
+ * These are defines rather than one shared array because pufo_game and pufo_ui already depend on
+ * each other (pufo_strateg.c calls UiLineList_Remove), and a shared symbol here drags that cycle
+ * into every test link. Recorded in HANDOFF.md as a separate problem. */
+#define PUFO_CARGO_TENS_COLUMN 2
+#define PUFO_CARGO_STORE_0 56
+#define PUFO_CARGO_STORE_1 57
+#define PUFO_CARGO_STORE_2 105
+#define PUFO_CARGO_STORE_3 58
 
 /* Ship_TickRangeRecover @ 0x45f80. While at base and not needing supply, add
  * uRangeRate toward uRangeMax; the clamp to uRangeMax is unconditional. */

@@ -324,22 +324,22 @@ void Tact_GetCameraBounds(const CameraBoundsCtx *pCtx, i32 *pnX0, i32 *pnY0,
     if (!pCtx->bUseCraft) {
         *pnX0 = 0;
         *pnY0 = 0;
-        *pnX1 = 10 * (i32)pCtx->nMapDimX;
-        *pnY1 = 10 * (i32)pCtx->nMapDimY;
+        *pnX1 = PUFO_CELLS_PER_TILE * (i32)pCtx->nMapDimX;
+        *pnY1 = PUFO_CELLS_PER_TILE * (i32)pCtx->nMapDimY;
         return;
     }
     if (pCtx->nMissionType == 4) {
-        i32 nBase = 10 * (i32)pCtx->nMapDimY;
+        i32 nBase = PUFO_CELLS_PER_TILE * (i32)pCtx->nMapDimY;
         *pnY0 = nBase - 10;
         *pnY1 = nBase;
         *pnX0 = 10 * ((i32)pCtx->nMapDimX - 3);
         *pnX1 = 10 * ((i32)pCtx->nMapDimX - 3) + 30;
         return;
     }
-    *pnX0 = 10 * (i32)pCtx->nCraftMapX;
-    *pnY0 = 10 * (i32)pCtx->nCraftMapY;
-    *pnX1 = 10 * (i32)pCtx->nCraftMapX;
-    *pnY1 = 10 * (i32)pCtx->nCraftMapY;
+    *pnX0 = PUFO_CELLS_PER_TILE * (i32)pCtx->nCraftMapX;
+    *pnY0 = PUFO_CELLS_PER_TILE * (i32)pCtx->nCraftMapY;
+    *pnX1 = PUFO_CELLS_PER_TILE * (i32)pCtx->nCraftMapX;
+    *pnY1 = PUFO_CELLS_PER_TILE * (i32)pCtx->nCraftMapY;
     if (pCtx->bCraftType == 1) {
         *pnX1 += 20;
         *pnY1 += 10;
@@ -497,8 +497,8 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
     /* 0x3975c: the record index is the mission layer count, and a zero count skips the table entirely. */
     if (pEnv->nMapLayers != 0) {
         const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * (i32)pEnv->nMapLayers;
-        nX     = 10 * (i32)pEnv->nCraftMapX + (i32)pRec[0];
-        nY     = 10 * (i32)pEnv->nCraftMapY + (i32)pRec[1];
+        nX     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pRec[0];
+        nY     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pRec[1];
         nLayer = (i32)pRec[2];
     }
 
@@ -635,7 +635,7 @@ i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
      * whatever the previous object index left. */
     i32 nAmmoTotal = 0;
 
-    for (i32 nObjectIdx = PUFO_HWPS_OBJECT_FIRST; nObjectIdx <= PUFO_HWPS_OBJECT_LAST; ++nObjectIdx) {
+    for (i32 nObjectIdx = PUFO_CRAFT_STORE_FIRST; nObjectIdx <= PUFO_CRAFT_STORE_LAST; ++nObjectIdx) {
         ObjectRecFull *pObj = pEnv->apObjects[nObjectIdx];
         i32 nSpawn = (i32)pObj->uRecovScore;         /* 0x39A24: LDRH R11, [R3,#0xCA] */
 
@@ -712,8 +712,8 @@ i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
                 const u8 *pDep = pEnv->pDeployOffsets + 4 * nDeployed + 104 * (pEnv->nMapLayers - 1);
 
                 Unit_PlaceOnMap(pUnit,
-                                10 * (i32)pEnv->nCraftMapX + (i32)pHw[0],
-                                10 * (i32)pEnv->nCraftMapY + (i32)pHw[1],
+                                PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pHw[0],
+                                PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pHw[1],
                                 (i32)pDep[2],
                                 pEnv->pfnLookupCell, pEnv->pLookupUser);
             } else {
@@ -770,8 +770,8 @@ i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
         while (nPoint < nPoints) {
             const u8 *pRec = pEnv->pDeployOffsets + 4 * nPoint + 104 * pEnv->nMapLayers;
 
-            nCellX = 10 * (i32)pEnv->nCraftMapX + (i32)pRec[-104 + 0];
-            nCellY = 10 * (i32)pEnv->nCraftMapY + (i32)pRec[-104 + 1];
+            nCellX = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pRec[-104 + 0];
+            nCellY = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pRec[-104 + 1];
             nLayer = (i32)pRec[-104 + 2];
 
             MapCell *pCell = pEnv->pfnLookupCell(nCellX, nCellY, nLayer, pEnv->pLookupUser);
@@ -1403,4 +1403,231 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
     }
 
     return *pEnv->pnEnemyUnitCount;
+}
+
+/* ---------------------------------------------------- pre-mission craft cargo */
+
+/* The mission base index is a byte the original never bounds before indexing auPerBaseVal with it.
+ * The port clamps, matching what it already does for the same column in pufo_geoscape.c and
+ * pufo_ship.c. */
+static bool Cargo_BaseColValid(i32 nBase)
+{
+    return nBase >= 0 &&
+           nBase < (i32)(sizeof(((ObjectRecFull *)0)->auPerBaseVal) /
+                        sizeof(((ObjectRecFull *)0)->auPerBaseVal[0]));
+}
+
+/* 0x3907C and 0x39184: the same filter in both XCom-base passes. bTwoHanded == 2 keeps an object
+ * out of the tally, except the craft store slots and the base store records, which always join. */
+static bool Cargo_InTally(const ObjectRecFull *pObj, i32 nObjIdx)
+{
+    if (pObj->bTwoHanded != 2) {
+        return true;
+    }
+    if (nObjIdx >= PUFO_CRAFT_STORE_FIRST && nObjIdx <= PUFO_CRAFT_STORE_LAST) {
+        return true;
+    }
+    return nObjIdx >= PUFO_CARGO_BASE_FIRST && nObjIdx <= PUFO_CARGO_BASE_LAST;
+}
+
+/* Both scratch walks carry a byte counter that advances 12 per object and skip the range 372..420.
+ * 372 is 12*31 and 420 is 12*35, so what they skip is object indices 31 through 35. */
+static bool Cargo_IsStoreSlot(i32 nObjIdx)
+{
+    return nObjIdx >= PUFO_CRAFT_STORE_FIRST && nObjIdx <= PUFO_CRAFT_STORE_LAST;
+}
+
+void Tact_SetupCraftCargo(TactCargoEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->apObjects == NULL || pEnv->pnObjectCount == NULL ||
+        pEnv->apCraft == NULL || pEnv->pnCraftCount == NULL ||
+        pEnv->apTactItems == NULL || pEnv->pnTactItemCount == NULL ||
+        pEnv->ppDeployCell == NULL || pEnv->panCargoSplit == NULL ||
+        pEnv->panCargoWork == NULL || pEnv->pfnLookupCell == NULL ||
+        pEnv->pDeployOffsets == NULL) {
+        return;
+    }
+
+    const i32 nBase    = (i32)pEnv->nBaseIndex;
+    const bool bBaseOk = Cargo_BaseColValid(nBase);
+    const i32 nObjects = (i32)*pEnv->pnObjectCount;
+
+    /* 0x38F30: the seed column, read before anything moves. Step 9 needs it as it was on entry. */
+    i32 nSeedCol = 0;
+    if (bBaseOk) {
+        nSeedCol = (i32)pEnv->apObjects[PUFO_CARGO_SEED_OBJECT]->auPerBaseVal[nBase];
+    }
+
+    /* 0x38F34..0x38FCC: the deploy cell. The original folds the index as
+     * 3600*rec[2] + 60*(10*nCraftMapY + rec[1]) + (10*nCraftMapX + rec[0]) over the cell array at
+     * Map+0x15338, which is the same anchor Tact_SelectTeamUnits builds at 0x3975C. */
+    i32 nX = 0;
+    i32 nY = 0;
+    i32 nLayer = 0;
+    if (pEnv->nMapLayers != 0) {
+        const u8 *pRec = pEnv->pDeployOffsets + PUFO_DEPLOY_RECORD_SIZE * (i32)pEnv->nMapLayers;
+        nX     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapX + (i32)pRec[0];
+        nY     = PUFO_CELLS_PER_TILE * (i32)pEnv->nCraftMapY + (i32)pRec[1];
+        nLayer = (i32)pRec[2];
+    }
+    *pEnv->ppDeployCell = pEnv->pfnLookupCell(nX, nY, nLayer, pEnv->pLookupUser);
+
+    if (pEnv->nMissionType != PUFO_MISSION_TYPE_XCOM_BASE) {
+        for (i32 i = 0; i < nObjects; ++i) {                                          /* 0x39018 */
+            pEnv->apObjects[i]->uRecovScore =
+                pEnv->apObjects[i]->aItemQty[(i32)pEnv->nCraftIndex];
+        }
+    } else {
+        for (i32 i = 0; i < nObjects; ++i) {
+            /* 0x3906C: the walk ENDS at the first object with uSortKey >= 59, it does not skip it. */
+            if (pEnv->apObjects[i]->uSortKey >= 59) {
+                break;
+            }
+            pEnv->apObjects[i]->uRecovScore = 0;                                     /* 0x39070 */
+            if (!Cargo_InTally(pEnv->apObjects[i], i)) {
+                continue;
+            }
+            if (bBaseOk) {
+                /* 0x390B4 then 0x390C8: the base column moves into the score and is then cleared.
+                 * Both writes reach the same u16 -- 2*(base+21) is 0x2a + 2*base. */
+                pEnv->apObjects[i]->uRecovScore   = pEnv->apObjects[i]->auPerBaseVal[nBase];
+                pEnv->apObjects[i]->auPerBaseVal[nBase] = 0;
+            }
+        }
+
+        for (i32 j = 0; j < (i32)*pEnv->pnCraftCount; ++j) {                         /* 0x39108 */
+            Ship *pShip = pEnv->apCraft[j];
+            /* bHomeBase is loaded unsigned and the base index signed, exactly as the ARM does. */
+            if ((i32)pShip->bHomeBase != nBase || pShip->bAtBase == 0) {
+                continue;
+            }
+            pShip->bWeaponsHot = 1;                                                  /* 0x39138 */
+            for (i32 i = 0; i < nObjects; ++i) {
+                if (!Cargo_InTally(pEnv->apObjects[i], i)) {
+                    continue;
+                }
+                pEnv->apObjects[i]->uRecovScore =
+                    (u16)((i32)pEnv->apObjects[i]->uRecovScore
+                          + (i32)pEnv->apObjects[i]->aItemQty[j]);                   /* 0x391A8 */
+            }
+        }
+    }
+
+    /* 0x391F4: operator new(4 * nObjectCount) then a zero loop. This one IS cleared wholesale; the
+     * two .bss scratch blocks below are not. */
+    i32 *anAlloc = (i32 *)calloc((size_t)nObjects, sizeof(i32));
+
+    for (i32 i = 0; i < nObjects; ++i) {
+        if (Cargo_IsStoreSlot(i)) {                                                  /* 0x39284 */
+            continue;
+        }
+        ObjectRecFull *pObj = pEnv->apObjects[i];
+        if (pObj->bAmmoCap == PUFO_AMMO_CAP_UNLIMITED) {                            /* 0x3929C */
+            continue;
+        }
+        pEnv->panCargoSplit[i] = 0;                                                  /* 0x392AC */
+        if (pObj->uRecovScore == 0 || pObj->bTwoHanded != 0) {                       /* 0x392C4 */
+            continue;
+        }
+        for (i32 k = 0; k < PUFO_CARGO_WORK_PER_OBJ; ++k) {
+            u16 nAmmoId = pObj->anAmmoTypeId[k];
+            if (nAmmoId != 0) {
+                i32 nCur   = pEnv->panCargoSplit[i];                                 /* 0x392A4 */
+                i32 nHave  = anAlloc[nAmmoId];                                       /* 0x392EC */
+                i32 nScore = (i32)pEnv->apObjects[nAmmoId]->uRecovScore;             /* 0x39304 */
+                i32 nDiff  = nCur - nHave + nScore;
+                if ((i32)pObj->uRecovScore < nDiff) {                                /* 0x3930C */
+                    anAlloc[nAmmoId]       = nHave - nCur + (i32)pObj->uRecovScore;  /* 0x39318 */
+                    pEnv->panCargoSplit[i] = (i32)pObj->uRecovScore;                 /* 0x39324 */
+                } else {
+                    pEnv->panCargoSplit[i] = nDiff;                                  /* 0x39328 */
+                    anAlloc[nAmmoId]       = nScore;                                 /* 0x39344 */
+                }
+            }
+            /* 0x39360: every slot of the triple gets the split, including the ones whose ammo id
+             * was zero. All three end up holding the same value. */
+            pEnv->panCargoWork[i * PUFO_CARGO_WORK_PER_OBJ + k] = pEnv->panCargoSplit[i];
+        }
+    }
+
+    for (i32 i = 0; i < nObjects; ++i) {
+        if (Cargo_IsStoreSlot(i)) {                                                  /* 0x393DC */
+            continue;
+        }
+        ObjectRecFull *pObj = pEnv->apObjects[i];
+        i32 nBuild = (i32)pObj->uRecovScore - anAlloc[i];                            /* 0x39400 */
+        if (nBuild <= 0) {
+            continue;
+        }
+        for (i32 k = 0; k < nBuild; ++k) {
+            TactItem *pItem = (TactItem *)malloc(sizeof(TactItem));                  /* 0x39414 */
+            if (pItem != NULL) {
+                TactItem_ctor(pItem);
+            }
+            i32 nItemIdx = *pEnv->pnTactItemCount;
+            pEnv->apTactItems[nItemIdx]      = pItem;                                /* 0x39444 */
+            pEnv->apTactItems[nItemIdx]->pObj = pObj;                                /* 0x39460 */
+            MapCell_ListInsertByPri(*pEnv->ppDeployCell,
+                                    pEnv->apTactItems[nItemIdx]);                    /* 0x39480 */
+
+            if (k >= pEnv->panCargoSplit[i]) {                                       /* 0x3948C */
+                /* Past the split the item is the ammo itself. The original tests bAmmoCap against
+                 * 255 and then stores either 255 or the cap, which is the same byte either way. */
+                pEnv->apTactItems[nItemIdx]->nAmmo  = pObj->bAmmoCap;               /* 0x39530 */
+                pEnv->apTactItems[nItemIdx]->nIndex  = (u16)i;                      /* 0x39538 */
+            } else {
+                /* Before the split it is a weapon, and the work triple says which of the three
+                 * ammo types this copy is loaded with. */
+                i32 nSlot = 0;                                                       /* 0x3949C */
+                if (k >= pEnv->panCargoWork[i * PUFO_CARGO_WORK_PER_OBJ]) {
+                    nSlot = (k >= pEnv->panCargoWork[i * PUFO_CARGO_WORK_PER_OBJ + 1]) ? 2 : 1;
+                }
+                u16 nAmmoId = pObj->anAmmoTypeId[nSlot];                             /* 0x394EC */
+                pEnv->apTactItems[nItemIdx]->nAmmo =
+                    pEnv->apObjects[nAmmoId]->bAmmoCap;                              /* 0x394E0 */
+                pEnv->apTactItems[nItemIdx]->nIndex = nAmmoId;
+            }
+            ++*pEnv->pnTactItemCount;                                                /* 0x39570 */
+        }
+    }
+
+    for (i32 i = 0; i < *pEnv->pnTactItemCount; ++i) {                               /* 0x395C4 */
+        TactItem *pItem = pEnv->apTactItems[i];
+        if (pItem->pObj->bTwoHanded == 1) {
+            pItem->nAmmo = pItem->pObj->bAmmoCap;
+        }
+    }
+
+    free(anAlloc);                                                                   /* 0x395FC */
+
+    /* 0x39600: the launching craft's four cargo counts go to the base store records, in the order
+     * 56, 57, 105, 58. 105 takes cargo[2] / 10 through _rt_sdiv; the other three take the count
+     * whole. Each count is then zeroed. */
+    static const i32 s_anCargoStore[PUFO_SHIP_CARGO_COLUMNS] = {
+        PUFO_CARGO_STORE_0, PUFO_CARGO_STORE_1, PUFO_CARGO_STORE_2, PUFO_CARGO_STORE_3
+    };
+    Ship *pCraft = pEnv->apCraft[(i32)pEnv->nCraftIndex];
+    for (i32 j = 0; j < PUFO_SHIP_CARGO_COLUMNS; ++j) {
+        i32 nDelta = (j == PUFO_CARGO_TENS_COLUMN)
+                       ? pCraft->anCargoQty[PUFO_CARGO_TENS_COLUMN] / 10
+                       : pCraft->anCargoQty[j];
+        ObjectRecFull *pObj = pEnv->apObjects[s_anCargoStore[j]];
+        /* 0x39674 truncates the delta to 16 bits before the add, so a negative count adds as its
+         * unsigned half. */
+        pObj->uRecovScore = (u16)((i32)pObj->uRecovScore + (i32)(u16)nDelta);        /* 0x39680 */
+        pCraft->anCargoQty[j] = 0;                                                   /* 0x396A8 */
+    }
+
+    if (pEnv->nMissionType == PUFO_MISSION_TYPE_XCOM_BASE) {
+        ObjectRecFull *pBase = pEnv->apObjects[PUFO_CARGO_BASE_OBJECT];
+        if (bBaseOk) {
+            pBase->uRecovScore =
+                (u16)((i32)pBase->uRecovScore + (i32)pBase->auPerBaseVal[nBase]);    /* 0x396F0 */
+            /* 0x39700 re-reads the column AFTER the add, so the deduction is against the grown
+             * value. It clamps at zero instead of wrapping. */
+            i32 nCol = (i32)pBase->auPerBaseVal[nBase];
+            pBase->auPerBaseVal[nBase] =
+                (u16)((nCol < 5 * nSeedCol) ? 0 : nCol - 5 * nSeedCol);              /* 0x39728 */
+        }
+    }
 }

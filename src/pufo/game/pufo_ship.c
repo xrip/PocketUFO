@@ -1059,30 +1059,32 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
             }
 
             /* 5. The craft gives back what it was carrying. 0x686F0. Slot 34 comes back in tens. */
-            static const i32 aStoreObj[4] = { 56, 57, 105, 58 };
-            static const i32 aWeaponObj[4] = { 31, 32, 34, 35 };
-            static const i32 aWeight[4] = { 30, 8, 5, 8 };
+            static const i32 s_anCargoStore[PUFO_SHIP_CARGO_COLUMNS] = {
+                PUFO_CARGO_STORE_0, PUFO_CARGO_STORE_1, PUFO_CARGO_STORE_2, PUFO_CARGO_STORE_3
+            };
+            static const i32 aWeaponObj[PUFO_SHIP_CARGO_COLUMNS] = { 31, 32, 34, 35 };
+            static const i32 aWeight[PUFO_SHIP_CARGO_COLUMNS] = { 30, 8, 5, 8 };
 
-            for (int j = 0; j < 4; ++j) {
-                if (aStoreObj[j] >= pEnv->nObjectCount || pEnv->apObjects[aStoreObj[j]] == NULL) {
+            for (int j = 0; j < PUFO_SHIP_CARGO_COLUMNS; ++j) {
+                if (s_anCargoStore[j] >= pEnv->nObjectCount || pEnv->apObjects[s_anCargoStore[j]] == NULL) {
                     continue;
                 }
                 i32 nGive = pShip->anCargoQty[j];
-                if (j == 2) {
+                if (j == PUFO_CARGO_TENS_COLUMN) {
                     nGive /= 10; /* 0x68730 */
                 }
-                BaseRec_AddItemQty(pBase, pEnv->apObjects[aStoreObj[j]], nGive);
+                BaseRec_AddItemQty(pBase, pEnv->apObjects[s_anCargoStore[j]], nGive);
                 pShip->anCargoQty[j] = 0;
             }
 
             /* 6. Top up. Anything the craft carries beyond what the base can hold for that many
              * units is moved from the craft to the base. 0x68784..0x688F4. */
-            for (int j = 0; j < 4; ++j) {
-                if (aWeaponObj[j] >= pEnv->nObjectCount || aStoreObj[j] >= pEnv->nObjectCount) {
+            for (int j = 0; j < PUFO_SHIP_CARGO_COLUMNS; ++j) {
+                if (aWeaponObj[j] >= pEnv->nObjectCount || s_anCargoStore[j] >= pEnv->nObjectCount) {
                     continue;
                 }
                 ObjectRecFull *pWeapon = pEnv->apObjects[aWeaponObj[j]];
-                ObjectRecFull *pStore = pEnv->apObjects[aStoreObj[j]];
+                ObjectRecFull *pStore = pEnv->apObjects[s_anCargoStore[j]];
                 if (pWeapon == NULL || pStore == NULL) {
                     continue;
                 }
@@ -1091,7 +1093,7 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
                     i32 nDelta = (i32)pWeapon->aItemQty[nShip] - nStock / aWeight[j];
                     InvSel_SubItemQty(pShip, pWeapon, (i16)nDelta);
                     BaseRec_AddItemQty(pBase, pWeapon, nDelta);
-                    nReportObj = aStoreObj[j];
+                    nReportObj = s_anCargoStore[j];
                     bStoresShort = true;
                 }
             }
@@ -1108,13 +1110,13 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
             /* 7. Reload from base stores. The base is charged 30, 8, 5 and 8 per unit; the craft is
              * credited 30, 8, 50 and 8. Slot 34 is asymmetric, and that is the same asymmetry
              * BasePlaneScreen_CommitStores shows on the manual path. 0x68948..0x689E4. */
-            static const i32 aCraftCredit[4] = { 30, 8, 50, 8 };
-            for (int j = 0; j < 4; ++j) {
-                if (aWeaponObj[j] >= pEnv->nObjectCount || aStoreObj[j] >= pEnv->nObjectCount) {
+            static const i32 aCraftCredit[PUFO_SHIP_CARGO_COLUMNS] = { 30, 8, 50, 8 };
+            for (int j = 0; j < PUFO_SHIP_CARGO_COLUMNS; ++j) {
+                if (aWeaponObj[j] >= pEnv->nObjectCount || s_anCargoStore[j] >= pEnv->nObjectCount) {
                     continue;
                 }
                 ObjectRecFull *pWeapon = pEnv->apObjects[aWeaponObj[j]];
-                ObjectRecFull *pStore = pEnv->apObjects[aStoreObj[j]];
+                ObjectRecFull *pStore = pEnv->apObjects[s_anCargoStore[j]];
                 if (pWeapon == NULL || pStore == NULL) {
                     continue;
                 }

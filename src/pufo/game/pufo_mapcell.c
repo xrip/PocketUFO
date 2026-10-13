@@ -431,8 +431,8 @@ i32 Map_CellCentreZ(const MapCell *pCell)
 void Map_ClearShotTraceFlags(MapCellLookup pfnLookup, void *pUser,
                              const MapGeom *pMap)
 {
-    const i32 nRows = 10 * (i32)pMap->nDimY;
-    const i32 nCols = 10 * (i32)pMap->nDimX;
+    const i32 nRows = PUFO_CELLS_PER_TILE * (i32)pMap->nDimY;
+    const i32 nCols = PUFO_CELLS_PER_TILE * (i32)pMap->nDimX;
 
     for (i32 nLayer = 0; nLayer < 4; ++nLayer) {
         for (i32 nRow = 0; nRow < nRows; ++nRow) {

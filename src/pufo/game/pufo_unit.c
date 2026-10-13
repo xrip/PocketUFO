@@ -969,7 +969,7 @@ static void Unit_AddItemBurden(Soldier *pUnit, TactItem *pItem, const InvStatHoo
         return;
     }
     /* A loaded weapon (ammo present, not unlimited) adds its ammo object too. */
-    if (pItem->nAmmo == 0 || bAmmoCap == 255) {
+    if (pItem->nAmmo == 0 || bAmmoCap == PUFO_AMMO_CAP_UNLIMITED) {
         return;
     }
     pUnit->uInvBurden = (u16)(pUnit->uInvBurden

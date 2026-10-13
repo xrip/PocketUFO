@@ -943,7 +943,7 @@ static void Equip_SlotPass(TactEquipCtx *pCtx, Soldier *pUnit)
             }
             Equip_Drive(pCtx, pUnit, pItem, nSlot, true);
 
-            if (pItem->pObj->bAmmoCap == 255) {
+            if (pItem->pObj->bAmmoCap == PUFO_AMMO_CAP_UNLIMITED) {
                 break;
             }
             i32 nIndex = pItem->nIndex;

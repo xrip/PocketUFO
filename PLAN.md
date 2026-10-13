@@ -42,7 +42,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
     and the false `0.2` scaling constant (it is 0.8) in both
   - [x] two genuine original defects recorded in `bugs.tsv`: unread `var_24` (0x3A8BC) and unread
     `var_48` (0x3A2F0); both enter the port as explicit env fields
-- [ ] model `0x156CD0` / `0x157208`, then `Tact_SetupCraftCargo (0x38f00)`
+- [x] `Tact_SetupCraftCargo @ 0x38f00` — ported, 2,116 B cited
+  - [x] the "model 0x156CD0 / 0x157208" step dissolved: both have xrefs from this function and
+    nothing else, so they are private scratch. They are still `.bss` state (entries are cleared per
+    object reached, not wholesale), so they enter as caller-owned arrays in `TactCargoEnv`.
+  - [x] IDB: named `Map_nMapLayers`, `Map_nObjectCount`, `Map_nCraftCount`, `Map_apObjects34`,
+    `Map_apObjects105`, `Map_apCells0`, `TactCargo_aSplit`, `TactCargo_aWork`, `Tact_pDeployCell`;
+    commented the sort-key stop, the `2*(base+21)` rendering trap, the split rebalance, the
+    weapon/ammo boundary and the tail's read-after-add
+  - [x] four tests in `tests/test_tactctl.c` (73 new checks, 6813 total), one of which calls the
+    function twice to pin the scratch persistence
 - [ ] `Map_BuildMissionTerrain (0x22e10)`
 - [ ] `Tact_InitMission (0x3c550)`
 - [ ] `Tact_Shutdown (0x3d568)`
@@ -52,6 +61,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
 
 2. Tactical renderer leftovers. 3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
+## Separate issues, not folded into the porting steps
+
+- [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
+  `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
+  `pufo_game` without `pufo_ui` only link because nothing pulls `pufo_strateg.obj` out of the
+  archive; one new shared symbol pulled it in and 19 targets failed to link while ctest still
+  reported 48/48. Until this is fixed, share a value across modules as a header define, not an
+  `extern` symbol.
+
 ## Measured state
 
 Refresh after each commit. A coverage delta must match the function size in
@@ -60,4 +78,5 @@ Refresh after each commit. A coverage delta must match the function size in
 | HEAD | tests | checks | functions | bytes | tables |
 |---|---|---|---|---|---|
 | `de8bbc4` | 48/48 | 6680 | 665/1103 (60.3%) | 227292/598792 (38.0%) | 18 checked, 0 mismatched |
-| this commit (parent `de8bbc4`) | 48/48 | 6740 | 666/1103 (60.4%) | 230808/598792 (38.5%) | 28 checked, 0 mismatched |
+| `d4c74f1` | 48/48 | 6740 | 666/1103 (60.4%) | 230808/598792 (38.5%) | 28 checked, 0 mismatched |
+| this commit (parent `d4c74f1`) | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
