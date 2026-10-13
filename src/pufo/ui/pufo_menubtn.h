@@ -59,6 +59,24 @@
 #define PUFO_BTN_SAMPLE_CONFIRM     16
 #define PUFO_BTN_SAMPLE_CONFIRM_ALT 15
 
+/* The gamma row on the options screen.
+ *
+ * MenuBtn_SetGamma0 @ 0x19070, SetGamma1 @ 0x190d0, SetGamma2 @ 0x19130, SetGamma3 @ 0x19190 and
+ * SetGamma4 @ 0x191f0 are five copies of one function that differ only in which button they light and
+ * which value they store. Each plays sample 17, sets nState on exactly one of five bank widgets and
+ * clears the other four, writes the gamma byte, and tail-calls Tact_LoadPalettes.
+ *
+ * The five widgets are bank widgets 65..69. The addresses the originals write are 0xACEFA, 0xACF1A,
+ * 0xACF3A, 0xACF5A and 0xACF7A; against pBank @ 0xAC6D0 those are 32*w + 10 for w = 65..69, and 10 is
+ * UiControl.nState. So the selected flag is the control's own state field, not a separate table. */
+#define PUFO_BTN_SAMPLE_GAMMA     17
+#define PUFO_BANK_GAMMA_FIRST     65
+#define PUFO_BANK_GAMMA_COUNT      5
+
+/* The gamma value the originals store at unk_128AB8 (Map+0x15100). The port does not own the Map block,
+ * so the caller supplies the storage; NULL means "no store modelled". */
+void MenuBtn_SetGamma(UiControl *pBank, i32 nGamma, i32 *pnGamma, const MenuHooks *pHooks);
+
 /* The screens the two slot-list buttons open. SaveLoad_Slot0..6 @ 0x19de4..0x19fc4
  * pick SaveGame or LoadGame by testing nUiScreen == 10, so 10 is the save list. */
 #define PUFO_UI_SCREEN_SAVE_SLOTS  10u

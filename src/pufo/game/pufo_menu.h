@@ -114,7 +114,8 @@ typedef struct MenuHooks {
      * through pUser's owner, so these take no argument. */
     void (*pfnApplyMusicVolume)(void *pUser);
     void (*pfnApplySfxVolume)(void *pUser);
-    /* Tact_LoadPalettes (0x377ec), NOT ported; it rebuilds the gamma LUTs. */
+    /* The original tail-calls Tact_LoadPalettes (0x377ec), which is ported in pufo_render.c as
+     * Tact_LoadPalettes; the hook exists so a caller can observe or replace the palette rebuild. */
     void (*pfnLoadPalettes)(void *pUser);
     void *pUser;
 } MenuHooks;

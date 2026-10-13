@@ -228,3 +228,8 @@ AssetReader_ClearGlobal	AssetReader_Clear	the original clears the global reader 
 TactHud_DrawModalLeft	TactHud_DrawModalPanel	identical to 0x21cec except the modal text record, 1102 versus 1103
 TactHud_DrawModalRight	TactHud_DrawModalPanel	merged
 Cydonia_Blit_Then_UiPanelMsg_Draw	Cydonia_BlitThenDrawPanel	the IDB name describes the two calls; the port name says the same thing in the port's naming style
+MenuBtn_SetGamma0	MenuBtn_SetGamma	five handlers at 0x19070, 0x190d0, 0x19130, 0x19190 and 0x191f0 that are the same code with a different button index and a different stored value
+MenuBtn_SetGamma1	MenuBtn_SetGamma	merged
+MenuBtn_SetGamma2	MenuBtn_SetGamma	merged
+MenuBtn_SetGamma3	MenuBtn_SetGamma	merged
+MenuBtn_SetGamma4	MenuBtn_SetGamma	merged

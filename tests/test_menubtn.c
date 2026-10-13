@@ -597,6 +597,58 @@ static void TestStartUiShutdown(void)
     TestEqI32("and the screen id is still set", nUiScreen, 22);
 }
 
+/* MenuBtn_SetGamma0 @ 0x19070, SetGamma1 @ 0x190d0, SetGamma2 @ 0x19130, SetGamma3 @ 0x19190,
+ * SetGamma4 @ 0x191f0.
+ *
+ * The interesting claim is which five widgets light. The originals write 0xACEFA, 0xACF1A, 0xACF3A,
+ * 0xACF5A and 0xACF7A; against pBank @ 0xAC6D0 those are 32*w + 10 for w = 65..69, and 10 is
+ * UiControl.nState. The sentinels on the neighbours prove the range is exactly those five. */
+static void TestGamma(void)
+{
+    UiControl aBank[PUFO_BANK_GAMMA_FIRST + PUFO_BANK_GAMMA_COUNT + 1];
+    const i32 nBankCount = (i32)(sizeof(aBank) / sizeof(aBank[0]));
+    i32 nGamma;
+    i32 k;
+
+    Reset();
+
+    for (nGamma = 0; nGamma <= PUFO_PAL_GAMMA_MAX; ++nGamma) {
+        i32 nStore = -1;
+        g_nSamples = 0;
+        g_nOrder = 0;
+        g_szOrder[0] = '\0';
+
+        for (k = 0; k < nBankCount; ++k) {
+            aBank[k].nState = 5;    /* sentinel: 1 or 0 is expected only on 65..69 */
+        }
+
+        MenuBtn_SetGamma(aBank, nGamma, &nStore, &g_MenuHooks);
+
+        for (k = 0; k < PUFO_BANK_GAMMA_COUNT; ++k) {
+            TestEqI32("  the gamma row lights exactly one widget",
+                      (i32)aBank[PUFO_BANK_GAMMA_FIRST + k].nState,
+                      (nGamma == k) ? 1 : 0);
+        }
+        TestEqI32("  the widget below the row is untouched",
+                  (i32)aBank[PUFO_BANK_GAMMA_FIRST - 1].nState, 5);
+        TestEqI32("  the widget above the row is untouched",
+                  (i32)aBank[PUFO_BANK_GAMMA_FIRST + PUFO_BANK_GAMMA_COUNT].nState, 5);
+        TestEqI32("  the gamma value is stored", nStore, nGamma);
+        TestEqI32("  one sample is played", g_nSamples, 1);
+        TestEqI32("  and it is sample 17", g_anSamples[0], PUFO_BTN_SAMPLE_GAMMA);
+    }
+
+    /* A gamma outside the row must clear all five rather than light something out of range. */
+    for (k = 0; k < nBankCount; ++k) {
+        aBank[k].nState = 5;
+    }
+    MenuBtn_SetGamma(aBank, 9, NULL, &g_MenuHooks);
+    for (k = 0; k < PUFO_BANK_GAMMA_COUNT; ++k) {
+        TestEqI32("  an out of range gamma clears the row",
+                  (i32)aBank[PUFO_BANK_GAMMA_FIRST + k].nState, 0);
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -612,6 +664,7 @@ int main(void)
     TestStartMenu();
     TestStartUiShutdown();
     TestSaveLoadSlot();
+    TestGamma();
 
     return TestSummary("test_menubtn");
 }

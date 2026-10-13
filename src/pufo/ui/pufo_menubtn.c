@@ -82,6 +82,30 @@ i32 MenuBtn_Cancel(const UiButtonCtx *pCtx)
     return UiScreen_OnCancel(pCtx->pState, pCtx->pHooks);
 }
 
+/* MenuBtn_SetGamma0 @ 0x19070, SetGamma1 @ 0x190d0, SetGamma2 @ 0x19130, SetGamma3 @ 0x19190,
+ * SetGamma4 @ 0x191f0 - one function, five values.
+ *
+ * The originals are literally the same five stores in the same order with a different 1 and a different
+ * constant, so the port keeps one implementation and takes the index. Which widget lights is the only
+ * difference between the five click handlers; the interesting part is that changing gamma reloads and
+ * rebuilds every palette, which is why the tail call is Tact_LoadPalettes and not just a flag write. */
+void MenuBtn_SetGamma(UiControl *pBank, i32 nGamma, i32 *pnGamma, const MenuHooks *pHooks)
+{
+    i32 k;
+
+    Btn_Play(pHooks, PUFO_BTN_SAMPLE_GAMMA);              /* 0x1907C and friends */
+
+    for (k = 0; k < PUFO_BANK_GAMMA_COUNT; ++k) {
+        pBank[PUFO_BANK_GAMMA_FIRST + k].nState = (u8)(k == nGamma ? 1 : 0);
+    }
+
+    if (pnGamma != NULL) {
+        *pnGamma = nGamma;                                /* unk_128AB8, Map+0x15100 */
+    }
+
+    Tact_LoadPalettes(nGamma);                            /* tail call */
+}
+
 void Menu_OpenSlotList(u16 *pnUiScreen, i32 *pnListMode, bool bSaveMode,
                        void (*pfnFormatList)(void *pUser), const MenuHooks *pHooks)
 {

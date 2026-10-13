@@ -6912,3 +6912,64 @@ g_aUnitTypeIsLarge         000A7B81   24 entries  exact match
 The unit type flags are registered with a stride of 4 because the image stores them as 24 rows of 4 bytes
 while the port keeps two separate 24-entry arrays. That stride is exactly what got mis-transcribed by hand
 earlier in the session, so it is the case worth having a tool for.
+
+## The gamma setting, and what the palette ramp actually does
+
+Ported: `Tact_LoadPalettes @ 0x377ec` (760 B), `Tact_BuildPaletteLuts @ 0x3734c` (1,184 B), and the five
+`MenuBtn_SetGamma` handlers at `0x19070`, `0x190d0`, `0x19130`, `0x19190`, `0x191f0` (5 × 96 B).
+
+**`unk_128AB8` is `Map_nGamma`, Map+0x15100.** Its only writers are the five gamma buttons, which store
+0..4, plus `Map_InitAndLoadRegistry @ 0x22648` and the options screen. Its readers are
+`Tact_BuildPaletteLuts` and `Gfx_PackRgb565Pair @ 0x2d82c`. The LUT divisor is
+
+```
+0.1 * gamma + 0.7        gamma 0 -> 0.7   1 -> 0.8   2 -> 0.9   3 -> 1.0   4 -> 1.1
+```
+
+so **gamma 3 is the neutral setting** and the pass is the identity there. Gamma 0 brightens by 1/0.7,
+gamma 4 dims by 1/1.1.
+
+The five gamma buttons are **bank widgets 65..69**, and the flag they set is `UiControl.nState` — the
+addresses the originals write (`nGammaSel0..4` in the IDB now) are `pBank + 32*w + 10` for w = 65..69, and
+10 is `nState`. There is no separate selected-state table.
+
+### The ramp is per-channel, and the negatives cancel
+
+`Tact_LoadPalettes` loads eight palettes and then derives 20 slots (34..53) from `tactical.pal` at slot 34.
+For each `i` the scale is `1 / (0.07 * i * i + 2)`. The inner loop splits each colour into three 5-bit
+fields, multiplies **two of them by negative scale** and one by positive scale, converts each with `dtou`,
+then recombines as `lo - 32 * (a + 64 * b)`.
+
+Read as arithmetic instead of as register moves, the same pass is
+
+```
+out = floor(2s*blue) + 32*floor(2s*green) + 2048*floor(2s*red)
+```
+
+Two things that matter:
+
+- It is **per channel**, not per colour. Each field is truncated on its own, so no carry crosses a field
+  boundary. Scaling the whole 16-bit value once gives different results.
+- `dtou` on a negative double must **wrap**, not clamp. Slot 34 is both the source and the destination at
+  `i = 0`, where the scale is exactly 0.5, so the pass has to be the identity or it would destroy the very
+  palette the rest of the ramp reads from. Only the wrapping reading makes it the identity. That is
+  evidence, not assumption.
+
+Slot 53 (`i = 19`) is forced to zero at `0x37A58`, so the ramp ends in black.
+
+The port reproduces the original's operations literally (negative scale through `dtou`) and the test checks
+the result against the algebraic form above, on the **real `tactical.pal` from main.dat**, across all 256
+entries and all 19 derived slots. Two independent readings of the same original have to agree 4,864 times.
+
+### A Hex-Rays member error worth naming
+
+`Tact_BuildPaletteLuts` reads the display format from **`0x1883AC`**, not the GX format at `0x188398`. ARM
+at `0x37350` loads `[R0,#0x14]`. Hex-Rays renders it as `MEMORY[0x188398].ffFormat`, which is the wrong
+member of that block — the same operand `Gfx_PackRgb565Pair` and `Palette_Load` use. Corrected in the IDB.
+
+### Original bug found here
+
+`0x37718`: the 24-bit branch reads `HIBYTE(w)` and `(u8)w`, so it only ever sees the low 16 bits of a
+palette entry, and it writes back 16 bits. `Palette_Load` packs the `0x100` format as `R | G<<8 | B<<16`,
+so on a 24-bit display this pass drops the whole blue channel out of every palette. Reproduced, and pinned
+by a test that feeds in `0x00AABB1234` and asserts the entry comes out `0x00001234`.

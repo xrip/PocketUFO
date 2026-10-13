@@ -202,6 +202,33 @@ void Palette_Load(const char *pszName, u8 nSlot);
 #define PUFO_FF_888 0x0100 /* bit 8 */
 extern u32 g_ffFormat;
 
+/* Palette slots the tactical brightness ramp occupies.
+ *
+ * Tact_LoadPalettes @ 0x377ec loads tactical.pal into slot 34 and then derives 20 slots from it,
+ * 34 through 53. Tact_BuildPaletteLuts @ 0x3734c then walks slots 0 through 56, so the LUT pass covers
+ * every slot the ramp writes and nothing above it. */
+#define PUFO_PAL_TACTICAL   34
+#define PUFO_PAL_RAMP_COUNT 20
+#define PUFO_PAL_LUT_SLOTS  57
+
+/* Map_nGamma (IDB name for unk_128AB8), Map+0x15100. Written only by MenuBtn_SetGamma0..4,
+ * which set 0..4. Read by Tact_BuildPaletteLuts @ 0x3734c, Gfx_PackRgb565Pair @ 0x2d82c and
+ * Options_SyncUiFromMap_GotoScreen12 @ 0x188e4.
+ *
+ * It is also read back from the registry by Map_InitAndLoadRegistry (0x22648) and written there by
+ * Options_SaveToRegistry (0x114d8). Neither of those two is ported.
+ * The LUT divisor is 0.1 * gamma + 0.7, so 3 is neutral (divisor 1.0), 0 brightens (1/0.7) and 4 dims
+ * (1/1.1). The port does not own the Map block, so gamma is passed in. */
+#define PUFO_PAL_GAMMA_MAX 4
+
+/* Tact_BuildPaletteLuts @ 0x3734c. Rescale every channel of palette slots 0..56 in place by
+ * 1 / (0.1 * nGamma + 0.7), in the field layout selected by g_ffFormat. */
+void Tact_BuildPaletteLuts(i32 nGamma);
+
+/* Tact_LoadPalettes @ 0x377ec. Load the eight tactical palettes, derive the 20-slot brightness ramp
+ * from tactical.pal, then run the gamma pass. */
+void Tact_LoadPalettes(i32 nGamma);
+
 /* Pad image (PadImage, 20 bytes). pData is a glyph record. */
 typedef struct PadImage {
     i32  nOriginX; /* 0x00 */

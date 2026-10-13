@@ -949,6 +949,154 @@ void Palette_Load(const char *pszName, u8 nSlot)
     }
 }
 
+/* Soft-float conversions, reproduced rather than simplified.
+ *
+ * The original calls the WinCE runtime helpers through pointer tables: _itod, _muld, _addd, _divd,
+ * _dtou (0xa6078) and _dtoi (0xa602c). dtou on a NEGATIVE double is the interesting one: it truncates
+ * toward zero and the result is reinterpreted as unsigned, so dtou(-x) is (-x) mod 2^32. That is not a
+ * guess - Tact_LoadPalettes writes slot 34 over the top of the slot it reads from, and at i = 0 the
+ * scale is exactly 0.5, so the pass has to be the identity or it would destroy tactical.pal. Only the
+ * wrapping reading makes it the identity. */
+static u32 Pufo_dtou(double d)
+{
+    return (u32)(i32)d;
+}
+
+static i32 Pufo_dtoi(double d)
+{
+    return (i32)d;
+}
+
+/* Tact_BuildPaletteLuts @ 0x3734c.
+ *
+ * Walks 57 palette slots and 256 entries each, in place. For every entry it takes the low u16 of the
+ * 4-byte slot, splits it into the channels the display format says, divides each channel by
+ * 0.1 * gamma + 0.7, clamps to the channel width, and repacks.
+ *
+ * The divisor comes from soft-float constants 0.1 and 0.7 (ARM at 0x373CC loads lo 0x9A6C04DA /
+ * hi 0x3FB1EB85, and 0x37408 loads 0x9A6C04DA / 0x3F81EB85 - unpacked those are exactly 0.1 and 0.7),
+ * applied to unk_128AB8, which the five MenuBtn_SetGamma handlers write as 0..4.
+ *
+ * One thing to get right: the format word is NOT the GX format at 0x188398. ARM at 0x37350 loads
+ * [R0,#0x14], so the operand is the dword at 0x1883AC - the same one Gfx_PackRgb565Pair and
+ * Palette_Load use. Hex-Rays renders it as MEMORY[0x188398].ffFormat, which is the wrong member.
+ *
+ * The repack looks like it can overflow a signed short - 32 * (31 << 6 | 63) is 65504 - and it does,
+ * but the wrap is the answer: the original keeps only 16 bits anyway, so computing in u32 and masking
+ * gives the same value. */
+void Tact_BuildPaletteLuts(i32 nGamma)
+{
+    u32 ff = g_ffFormat;
+    i32 nSlot;
+    i32 i;
+
+    for (nSlot = 0; nSlot < PUFO_PAL_LUT_SLOTS; ++nSlot) {
+        for (i = 0; i < PUFO_PAL_SIZE; ++i) {
+            u16 w = (u16)g_aPalette[nSlot][i];
+            double dDiv = (double)nGamma * 0.1 + 0.7;
+            u32 out;
+
+            if ((ff & PUFO_FF_555) != 0) {
+                i32 nHi = Pufo_dtoi((double)((w & 0x7C00) >> 10) / dDiv);
+                i32 nMid = Pufo_dtoi((double)((w & 0x3E0) >> 5) / dDiv);
+                i32 nLo = Pufo_dtoi((double)(w & 0x1F) / dDiv);
+                if (nHi > 31) { nHi = 31; }
+                if (nMid > 31) { nMid = 31; }
+                if (nLo > 31) { nLo = 31; }
+                out = ((u32)(32 * (32 * nHi + nMid)) + (u32)nLo) & 0xFFFFu;
+            } else if ((ff & PUFO_FF_565) != 0) {
+                i32 nHi = Pufo_dtoi((double)(w >> 11) / dDiv);
+                i32 nMid = Pufo_dtoi((double)((w & 0x7E0) >> 5) / dDiv);
+                i32 nLo = Pufo_dtoi((double)(w & 0x1F) / dDiv);
+                if (nHi > 31) { nHi = 31; }
+                if (nMid > 63) { nMid = 63; }
+                if (nLo > 31) { nLo = 31; }
+                out = ((u32)(32 * (((u32)nHi << 6) + (u32)nMid)) + (u32)nLo) & 0xFFFFu;
+            } else if ((ff & PUFO_FF_888) != 0) {
+                /* ORIGINAL BUG (0x37718), reproduced: this branch reads HIBYTE(w) and (u8)w, so it only
+                 * ever sees the low 16 bits of the entry, and it writes back a 16-bit value. Palette_Load
+                 * packs 888 as R | G<<8 | B<<16, so on a 24-bit display this pass drops the whole blue
+                 * channel from every palette. Harmless on the 16bpp devices the game shipped on. */
+                i32 nHi = Pufo_dtoi((double)(w >> 8) / dDiv);
+                i32 nLo = Pufo_dtoi((double)(w & 0xFF) / dDiv);
+                if (nHi > 255) { nHi = 255; }
+                if (nLo > 255) { nLo = 255; }
+                out = (((u32)nHi << 8) + (u32)nLo) & 0xFFFFu;
+            } else {
+                /* No format bit set: the entry is stored back unchanged. */
+                out = w;
+            }
+
+            g_aPalette[nSlot][i] = out;
+        }
+    }
+}
+
+/* Tact_LoadPalettes @ 0x377ec.
+ *
+ * Eight named palettes, then a 20-slot brightness ramp derived from tactical.pal, then the gamma pass.
+ *
+ * The ramp is the part that looks complicated and is not. For each i in 0..19 the original builds
+ * scale = 1 / (0.07 * i * i + 2.0), splits every source colour into its three 5-bit fields, multiplies
+ * two of them by NEGATIVE scale and one by positive scale, converts each with dtou, then recombines as
+ * lo - 32 * (hi + 64 * mid). The two negatives cancel against the subtraction, so the whole inner loop
+ * is per-field scaling of the colour by 2 * scale:
+ *
+ *     out = trunc(2*lo*scale) + 32*ceil(2*hi*scale) + 2048*ceil(2*mid*scale)   (mod 2^16)
+ *
+ * It is per-field, not per-colour: each 5-bit field is rounded on its own, so no carry crosses a field
+ * boundary. That is a real difference from trunc(w * 2 * scale) and the port reproduces the original's
+ * operations rather than the algebra, so the rounding matches.
+ *
+ * Slot 34 is both the source and the destination at i = 0, where scale is exactly 0.5 and the pass is
+ * the identity. Slot 53 (i = 19) is forced to zero, so the ramp ends in black. */
+void Tact_LoadPalettes(i32 nGamma)
+{
+    static const struct {
+        const char *szName;
+        u8          nSlot;
+    } aPalettes[8] = {
+        { "tactical.pal", 0x22 },
+        { "menu.pal",     0x01 },
+        { "enemystp.pal", 0x09 },
+        { "endmiss.pal",  0x0B },
+        { "twonone.pal",  0x0F },
+        { "scanner.pal",  0x10 },
+        { "class.pal",    0x12 },
+        { "soldier.pal",  0x08 },
+    };
+    i32 i;
+    i32 j;
+
+    for (i = 0; i < 8; ++i) {
+        Palette_Load(aPalettes[i].szName, aPalettes[i].nSlot);
+    }
+
+    for (i = 0; i < PUFO_PAL_RAMP_COUNT; ++i) {
+        /* ARM builds these as divd(-1.0, v) and divd(1.0, v) in two calls. IEEE division is sign
+         * symmetric, so one magnitude and a negation is the same pair of doubles. */
+        double dScale = 1.0 / (0.07 * (double)(i * i) + 2.0);
+        double dNeg = -dScale;
+        u32 *pSrc = g_aPalette[PUFO_PAL_TACTICAL];
+        u32 *pDst = g_aPalette[PUFO_PAL_TACTICAL + i];
+
+        for (j = 0; j < PUFO_PAL_SIZE; ++j) {
+            u16 w = (u16)pSrc[j];
+            u32 nHi = Pufo_dtou((double)((w & 0x7E0) >> 5) * dNeg * 2.0);
+            u32 nMid = Pufo_dtou((double)(w >> 11) * dNeg * 2.0);
+            u32 nLo = Pufo_dtou((double)(w & 0x1F) * dScale * 2.0);
+            u32 out = (nLo - ((nHi + (nMid << 6)) << 5)) & 0xFFFFu;
+
+            if (i == 19) {
+                out = 0;                                  /* 0x37A58: MOVEQ R0, #0 */
+            }
+            pDst[j] = out;
+        }
+    }
+
+    Tact_BuildPaletteLuts(nGamma);
+}
+
 /* PadImage_ctor @ 0x11000. The original clears only pData. */
 void PadImage_ctor(PadImage *pPad)
 {

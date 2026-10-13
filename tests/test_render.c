@@ -682,6 +682,184 @@ static void TestPackRgb565Pair(void)
                "  blue alone fills the low field");
 }
 
+/* Tact_BuildPaletteLuts @ 0x3734c and Tact_LoadPalettes @ 0x377ec.
+ *
+ * The LUT expectations below were computed offline from the decoded specification - divisor
+ * 0.1 * gamma + 0.7, per-channel division, truncation toward zero, clamp to the channel width - and are
+ * written here as literals rather than recomputed in C, so a change in the port shows up as a failure
+ * instead of changing with it. */
+static void TestPaletteLut(void)
+{
+    static const u32 aWant565[5][3] = {
+        /* gamma 0..4, entries 0x39E7 (R7 G15 B7), 0xFFFF, 0x0001 */
+        { 0x52AA, 0xFFFF, 0x0001 },
+        { 0x4248, 0xFFFF, 0x0001 },
+        { 0x3A07, 0xFFFF, 0x0001 },
+        { 0x39E7, 0xFFFF, 0x0001 },
+        { 0x31A6, 0xE73C, 0x0000 },
+    };
+    static const u32 aWant555[5][2] = {
+        /* gamma 0..4, entries 0x7FFF and 0x1234 */
+        { 0x7FFF, 0x171C },
+        { 0x7FFF, 0x16B9 },
+        { 0x7FFF, 0x1256 },
+        { 0x7FFF, 0x1234 },
+        { 0x739C, 0x0DF2 },
+    };
+    u32 ffSave = g_ffFormat;
+    i32 nGamma;
+    i32 i;
+
+    for (i = 0; i < PUFO_PAL_SLOTS; ++i) {
+        memset(g_aPalette[i], 0, sizeof(g_aPalette[i]));
+    }
+
+    /* 16bpp RGB565. Slot 57 and above must not be touched: the pass covers 57 slots, 0 through 56. */
+    g_ffFormat = PUFO_FF_565;
+    g_aPalette[0][0] = 0x39E7;
+    g_aPalette[0][1] = 0xFFFF;
+    g_aPalette[0][2] = 0x0001;
+    g_aPalette[57][0] = 0xBEEF;
+
+    for (nGamma = 0; nGamma <= PUFO_PAL_GAMMA_MAX; ++nGamma) {
+        g_aPalette[0][0] = 0x39E7;
+        g_aPalette[0][1] = 0xFFFF;
+        g_aPalette[0][2] = 0x0001;
+        Tact_BuildPaletteLuts(nGamma);
+        CheckEqU32(g_aPalette[0][0], aWant565[nGamma][0], "lut 565 R7 G15 B7");
+        CheckEqU32(g_aPalette[0][1], aWant565[nGamma][1], "lut 565 white");
+        CheckEqU32(g_aPalette[0][2], aWant565[nGamma][2], "lut 565 blue 1");
+    }
+
+    /* gamma 3 is the neutral setting: divisor is exactly 1.0, so the pass must be the identity. */
+    g_aPalette[0][0] = 0x39E7;
+    Tact_BuildPaletteLuts(3);
+    CheckEqU32(g_aPalette[0][0], 0x39E7, "lut 565 gamma 3 is identity");
+    CheckEqU32(g_aPalette[57][0], 0xBEEF, "lut covers slots 0..56 only");
+
+    /* 15bpp RGB555. */
+    g_ffFormat = PUFO_FF_555;
+    for (nGamma = 0; nGamma <= PUFO_PAL_GAMMA_MAX; ++nGamma) {
+        g_aPalette[0][0] = 0x7FFF;
+        g_aPalette[0][1] = 0x1234;
+        Tact_BuildPaletteLuts(nGamma);
+        CheckEqU32(g_aPalette[0][0], aWant555[nGamma][0], "lut 555 white");
+        CheckEqU32(g_aPalette[0][1], aWant555[nGamma][1], "lut 555 0x1234");
+    }
+
+    /* ORIGINAL BUG (0x37718): the 888 branch reads HIBYTE(w) and (u8)w, so it only ever sees the low
+     * 16 bits, and it writes back 16 bits. Palette_Load packs 888 as R | G<<8 | B<<16, so on a 24-bit
+     * display this drops the blue channel out of every palette. Reproduced, so the test pins it. */
+    g_ffFormat = PUFO_FF_888;
+    g_aPalette[0][0] = 0x00AABB1234ULL & 0xFFFFFFFFu;   /* R 0x34, G 0x12, B 0xBB, A 0xAA in the top byte */
+    Tact_BuildPaletteLuts(3);
+    CheckEqU32(g_aPalette[0][0], 0x00001234u, "lut 888 drops the high half of the entry");
+
+    g_ffFormat = ffSave;
+}
+
+/* The ramp cross-check.
+ *
+ * The port reproduces the original's operations literally: two fields scaled by NEGATIVE scale through
+ * dtou, one by positive scale, then lo - 32 * (a + 64 * b). Read as arithmetic instead of as register
+ * moves, the same pass is per-channel floor with the weights restored:
+ *
+ *     out = floor(2*s*blue) + 32*floor(2*s*green) + 2048*floor(2*s*red),  s = 1/(0.07*i*i + 2)
+ *
+ * The test uses that second form and the port uses the first, on the real tactical.pal from main.dat,
+ * over all 256 entries and all 19 derived slots. If either reading of the original is wrong, the two
+ * disagree thousands of times. It also pins the per-channel reading: scaling the whole 16-bit value and
+ * truncating once gives different results. */
+static void TestPaletteRamp(void)
+{
+    u32 ffSave = g_ffFormat;
+    u32 aSrc[PUFO_PAL_SIZE];
+    u32 aBefore[PUFO_PAL_SLOTS];
+    i32 i, j;
+
+    g_ffFormat = PUFO_FF_565;
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    Palette_Load("tactical.pal", PUFO_PAL_TACTICAL);
+    memcpy(aSrc, g_aPalette[PUFO_PAL_TACTICAL], sizeof(aSrc));
+
+    Check(aSrc[0] != 0 || aSrc[1] != 0, "tactical.pal loaded from main.dat");
+
+    for (i = 0; i < PUFO_PAL_SLOTS; ++i) {
+        aBefore[i] = g_aPalette[i][0];
+    }
+
+    Tact_LoadPalettes(3);   /* gamma 3: the LUT pass is the identity, so the ramp is all that is visible */
+
+    /* Slot 34 is both the source and the destination at i = 0, where the scale is exactly 0.5. If that
+     * pass were not the identity it would destroy the palette the rest of the ramp reads from. */
+    {
+        bool bSame = true;
+        for (j = 0; j < PUFO_PAL_SIZE; ++j) {
+            if (g_aPalette[PUFO_PAL_TACTICAL][j] != aSrc[j]) {
+                bSame = false;
+            }
+        }
+        Check(bSame, "ramp slot 34 is the identity, tactical.pal survives its own pass");
+    }
+
+    /* Slot 53 is forced to zero, so the ramp ends in black. */
+    {
+        bool bZero = true;
+        for (j = 0; j < PUFO_PAL_SIZE; ++j) {
+            if (g_aPalette[PUFO_PAL_TACTICAL + 19][j] != 0) {
+                bZero = false;
+            }
+        }
+        Check(bZero, "ramp slot 53 is all zero");
+    }
+
+    for (i = 0; i < PUFO_PAL_RAMP_COUNT - 1; ++i) {
+        double dScale = 1.0 / (0.07 * (double)(i * i) + 2.0);
+        i32 nDiff = 0;
+        for (j = 0; j < PUFO_PAL_SIZE; ++j) {
+            u32 w = aSrc[j];
+            u32 nBlue = (u32)(i32)((double)(w & 0x1F) * dScale * 2.0);
+            u32 nGreen = (u32)(i32)((double)((w & 0x7E0) >> 5) * dScale * 2.0);
+            u32 nRed = (u32)(i32)((double)(w >> 11) * dScale * 2.0);
+            u32 nWant = (nBlue + 32u * nGreen + 2048u * nRed) & 0xFFFFu;
+            if (g_aPalette[PUFO_PAL_TACTICAL + i][j] != nWant) {
+                ++nDiff;
+            }
+        }
+        CheckEqI32(nDiff, 0, "ramp matches the per-channel reading");
+    }
+
+    /* Each channel is scaled on its own, so no channel may grow and no channel may cross its neighbour. */
+    {
+        bool bMonotone = true;
+        for (i = 1; i < PUFO_PAL_RAMP_COUNT - 1; ++i) {
+            for (j = 0; j < PUFO_PAL_SIZE; ++j) {
+                u32 a = aSrc[j];
+                u32 b = g_aPalette[PUFO_PAL_TACTICAL + i][j];
+                if (((b & 0x1F) > (a & 0x1F)) ||
+                    (((b & 0x7E0) >> 5) > ((a & 0x7E0) >> 5)) ||
+                    ((b >> 11) > (a >> 11))) {
+                    bMonotone = false;
+                }
+            }
+        }
+        Check(bMonotone, "ramp darkens every channel independently");
+    }
+
+    /* The ramp writes 34..53 and the LUT pass writes 0..56, so 57 and above must be untouched. */
+    {
+        bool bSame = true;
+        for (i = 57; i < PUFO_PAL_SLOTS; ++i) {
+            if (g_aPalette[i][0] != aBefore[i]) {
+                bSame = false;
+            }
+        }
+        Check(bSame, "palettes above slot 56 are untouched");
+    }
+
+    g_ffFormat = ffSave;
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -705,6 +883,8 @@ int main(void)
     TestBlurPixels();
     TestBlitRawGlyph();
     TestPackRgb565Pair();
+    TestPaletteLut();
+    TestPaletteRamp();
 
     Asset_CloseArchives();
 
