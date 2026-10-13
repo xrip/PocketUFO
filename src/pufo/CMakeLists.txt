@@ -44,6 +44,7 @@ add_library(pufo_game STATIC
     game/pufo_template.c
     game/pufo_rmp.c
     game/pufo_tactctl.c
+    game/pufo_tactend.c
     game/pufo_turn.c
     game/pufo_save.c
     game/pufo_roster.c
@@ -356,6 +357,21 @@ set_target_properties(test_timer PROPERTIES
 )
 add_test(NAME test_timer
     COMMAND test_timer
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Tactical mission teardown. The two pufo_ui callees are hooks so pufo_game does not
+# depend on pufo_ui, but Tact_Shutdown calls StrategList_RemoveAt, which pulls
+# pufo_strateg.obj, and that object reaches UiLineList_Remove in pufo_ui. This is the
+# module cycle recorded as a separate issue in PLAN.md, not something this suite adds.
+add_executable(test_tactend ${CMAKE_SOURCE_DIR}/tests/test_tactend.c)
+target_link_libraries(test_tactend PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat
+                      pufo_util)
+set_target_properties(test_tactend PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_tactend
+    COMMAND test_tactend
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

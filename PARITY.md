@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 667 / 1103 (60.5%) |
-| Bytes of original code cited | 232924 / 598792 (38.9%) |
+| Functions cited as evidence | 668 / 1103 (60.6%) |
+| Bytes of original code cited | 236712 / 598792 (39.5%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 48 |
-| Test checks run | 6813 |
+| Test suites | 49 |
+| Test checks run | 6913 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 180 | 214 | 89560 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 181 | 214 | 93348 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 107 | 205 | 34304 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -235,11 +235,12 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (180 functions)
+### `tact` (181 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
+| `0x3d568` | `Tact_Shutdown` | 3788 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
@@ -503,7 +504,7 @@ is the module that answers to it.
 | `0x2d798` | `Text_DrawString` | 148 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
 | `0x46144` | `Font_Free` | 148 | `src/pufo/game/pufo_font.h` |
 | `0x2dd20` | `StatusMsg_Shift` | 132 | `src/pufo/game/pufo_statusmsg.h` |
-| `0x1a2c8` | `UiControl_FreePads` | 120 | `src/pufo/ui/pufo_control.h` |
+| `0x1a2c8` | `UiControl_FreePads` | 120 | `src/pufo/game/pufo_tactend.h`, `src/pufo/ui/pufo_control.h` |
 | `0x5a3dc` | `UiPanel_RemoveLine` | 116 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x15670` | `UiScreen_OnBack` | 112 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
 | `0x9ec48` | `Font_BlitGlyphToSoft` | 112 | `src/pufo/game/pufo_font.h` |
@@ -969,7 +970,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 34 functions, 88784 bytes remaining
+### `tact` — 33 functions, 84996 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -979,7 +980,6 @@ whose port work they belong to.
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3c550` | `Tact_InitMission` | 4120 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x3d568` | `Tact_Shutdown` | 3788 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | 3440 B enemy AI driver; injected as a hook in pufo_turn |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
@@ -1335,6 +1335,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
 | `test_tactctl` | PASS | 378 |
+| `test_tactend` | PASS | 100 |
 | `test_tacthud` | PASS | 266 |
 | `test_tactstate` | PASS | 152 |
 | `test_tactui` | PASS | 423 |
@@ -1347,7 +1348,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**48 / 48 suites passing.**
+**49 / 49 suites passing.**
 
 ## Per-subsystem parity notes
 

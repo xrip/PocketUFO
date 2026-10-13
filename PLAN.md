@@ -83,8 +83,21 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [ ] reading aid: the full Hex-Rays text is in `.tmp/bmt/bmt1.c` (scratch, untracked). The MCP
     `decompile` truncates at ~52 KB; `curl` to `http://127.0.0.1:13337/mcp` truncates too, so the
     dump has to come from a session that already holds it. Do not trust its offsets — ARM wins.
+- [x] `Tact_Shutdown @ 0x3d568` — ported, 3,788 B cited, in `src/pufo/game/pufo_tactend.{h,c}`
+  - [x] it was the only Priority 1 item whose callees were all already ported, so it went first;
+    `Tact_InitMission` is still blocked by `Map_BuildMissionTerrain`
+  - [x] the bank pad walk settled: thirteen groups cover widgets 0..112 and 128..129, and
+    `StartUi_Shutdown (0x38d7c)` covers 113..127. Together 130, each slot exactly once. The inner
+    step is four BYTES, so the three pointers are one widget's `pPad0/pPad1/pPad2`
+  - [x] hooks for `Sound_Shutdown`, `KillTimers_BySpeed`, `UiPanel_FreeLines` and
+    `UiControl_FreePads` — the first two need a caller-owned backend, the last two keep
+    `pufo_game` from depending on `pufo_ui`
+  - [x] `tests/test_tactend.c`: 100 checks. Pins the group coverage, the line counts set before the
+    null test, the cell-array bounds, and the shrinking-roster walk (three enemies leave one
+    survivor)
+  - [x] IDB: the function header no longer claims unported callees, and the pad-group comment now
+    records the 115 + 15 = 130 cross-check
 - [ ] `Tact_InitMission (0x3c550)`
-- [ ] `Tact_Shutdown (0x3d568)`
 - [ ] `LoadGame (0x44bbc)`
 
 ## Later priorities
@@ -99,6 +112,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   archive; one new shared symbol pulled it in and 19 targets failed to link while ctest still
   reported 48/48. Until this is fixed, share a value across modules as a header define, not an
   `extern` symbol.
+  - It fired again when `test_tactend` was added: `Tact_Shutdown` calls `StrategList_RemoveAt`,
+    which pulls `pufo_strateg.obj`, which reaches `UiLineList_Remove` in `pufo_ui`. The test target
+    now links `pufo_ui` like the other fifteen that already had to.
 
 ## Measured state
 
@@ -109,4 +125,6 @@ Refresh after each commit. A coverage delta must match the function size in
 |---|---|---|---|---|---|
 | `de8bbc4` | 48/48 | 6680 | 665/1103 (60.3%) | 227292/598792 (38.0%) | 18 checked, 0 mismatched |
 | `d4c74f1` | 48/48 | 6740 | 666/1103 (60.4%) | 230808/598792 (38.5%) | 28 checked, 0 mismatched |
-| this commit (parent `d4c74f1`) | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
+| `8043c2b` | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
+| `89022a5`, `887fed8`, `36addee` — decode + IDB only | 48/48 | 6813 | 667/1103 (60.5%) | 232924/598792 (38.9%) | 28 checked, 0 mismatched |
+| this commit (parent `36addee`) | 49/49 | 6913 | 668/1103 (60.6%) | 236712/598792 (39.5%) | 28 checked, 0 mismatched |
