@@ -7006,6 +7006,43 @@ distinctive cells sit at the decoded positions, twelve decoys sit at the same tw
 coordinates the other way round, and every other grid slot points at one shared sink. The two index sets
 are disjoint, so the wrong order writes decoys and the sink instead.
 
+## `Soldiers_Reload @ 0x430cc` — the allocation half of a load
+
+224 bytes, ported as `Soldiers_Reload`. It is easy to mistake for a load and it is not one:
+
+1. free `apSoldiers[0 .. nSoldierCount-1]` with `operator delete`;
+2. `DatFile_FindChunk("soldiers")` and read **only the 2-byte count**;
+3. allocate that many soldiers through `Soldier_ctor`.
+
+The bodies come from `Save_ReadSoldiers @ 0x416bc`, which runs afterwards. So after this the roster is the
+right size and every entry is a fresh empty soldier. The test pairs them: reload, then read, and asserts the
+written values land in the objects the reload allocated.
+
+Two things worth naming. The store at `0x43188` writes the **result** of `Soldier_ctor` rather than the
+pointer that was allocated — harmless, because `Soldier_ctor` returns its argument, but it is why the
+pseudocode reads like a type error. And the free loop nulls nothing and leaves the count alone, so a failed
+`FindChunk` or count read leaves `nSoldierCount` naming memory that is already gone. That is ledger row
+`0x430D8`; the port nulls the slots.
+
+## `TactItem_bTryReloadClip @ 0x4b6a4` — already ported, and how I nearly duplicated it
+
+This one was **already** in the port as `TactItem_TryReloadClip` in `game/pufo_tactui.c`, with six checks in
+`test_tactui.c` and a row in `renames.tsv`. A scan that asks "which original function names do not appear in
+the sources" listed it as unported, because the port renamed it. I wrote a second implementation before
+checking, and removed it. The name-based scan is the same weakness `audit_names.py` exists to work around;
+the fix is to check `renames.tsv` before porting anything the scan reports.
+
+What the function does, since it is worth having written down. Two records are involved and they do different
+jobs: the gate tests the **weapon's** `bAmmoCap` at `ObjectRec + 0xAE`, while the value written into
+`TactItem.nAmmo` comes from `apObjects[weapon.anAmmoTypeId[0]]->bAmmoCap`, i.e. the **ammo** record's cap.
+Setting only the weapon to zero still loads the ammo cap — which is exactly why the port injects both numbers
+instead of reaching them through globals. The action spent is `Soldier.bHumanoidInv` at `+0x1A2`, decremented
+with `ADD R3, R3, #0xFF` on a byte and only when already non-zero (`BLS` at `0x4B6CC`), so it cannot wrap.
+The return is not "did a reload happen": an item that already had rounds returns true without spending
+anything, and a weapon with `bAmmoCap == 255` returns true even when it is empty and nothing happened.
+
+The first argument is genuinely unused — ARM overwrites `R0` with `#0x1A2` before reading any incoming value.
+
 ## `Soldier_CreateAndClassify @ 0x22ba0` — and a fallback that cannot be reached
 
 Ported as `Unit_CreateAndClassify` (624 B), with the classification split out as `Unit_ClassFromStats` so the

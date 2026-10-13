@@ -110,6 +110,17 @@ bool Save_WriteSoldiers(DatFile *pDat, Soldier *const *apSoldiers, i32 nCount);
 bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
                        i32 nCapacity);
 
+/* Soldiers_Reload @ 0x430cc. Free the whole roster, find the "soldiers" chunk in an open save, read the
+ * count out of it, and allocate that many empty soldiers.
+ *
+ * It reads only the 2-byte count. The soldier bodies are read by Save_ReadSoldiers, which runs after this.
+ * So this is the allocation step of a load, not a load by itself: after it the roster is the right size and
+ * every entry is a freshly constructed empty soldier.
+ *
+ * The original frees with operator delete and does not null the slots it freed, and it does not check that
+ * the count it just read fits the roster array. The port bounds the allocation by nCapacity. */
+bool Soldiers_Reload(DatFile *pDat, Soldier **apSoldiers, i32 *pnCount, i32 nCapacity);
+
 /* Writes one soldier's non-tactical record prefix (740 bytes) through pDat.
  * The `soldiers` chunk must already be open. */
 bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit);

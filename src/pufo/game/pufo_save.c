@@ -456,6 +456,54 @@ bool Save_ReadSoldiers(DatFile *pDat, Soldier **apapSoldiers, i32 *pnCount,
     return true;
 }
 
+/* Soldiers_Reload @ 0x430cc.
+ *
+ * It reads only the 2-byte count from the "soldiers" chunk. The bodies come from Save_ReadSoldiers, which
+ * runs after this, so this is the allocation half of a load: afterwards the roster is the saved size and
+ * every entry is a freshly constructed empty soldier.
+ *
+ * Two things the original does that are worth naming. It frees with operator delete and never nulls the
+ * slots it freed, so a stale count would make a later pass free the same memory twice; the port nulls them.
+ * And it stores the RESULT of Soldier_ctor rather than the pointer it allocated - harmless here because
+ * Soldier_ctor returns its argument, but it is why the code looks like a type error. */
+bool Soldiers_Reload(DatFile *pDat, Soldier **apSoldiers, i32 *pnCount, i32 nCapacity)
+{
+    u16 uCount = 0;
+
+    if (pDat == NULL || apSoldiers == NULL || pnCount == NULL) {
+        return false;
+    }
+
+    /* 0x430D8: free the roster as it stands before the chunk is even looked at. */
+    for (i32 i = 0; i < *pnCount; ++i) {
+        free(apSoldiers[i]);
+        apSoldiers[i] = NULL;
+    }
+
+    if (!DatFile_FindChunk(pDat, PUFO_SAVE_TAG_SOLDIERS)) {
+        return false;
+    }
+    if (!DatFile_Read(pDat, &uCount, 2)) {
+        return false;
+    }
+
+    /* Deviation: the original writes straight into apSoldiers with no bound on the count it just read. */
+    if ((i32)uCount > nCapacity) {
+        uCount = (u16)nCapacity;
+    }
+
+    for (i32 i = 0; i < (i32)uCount; ++i) {
+        Soldier *pUnit = (Soldier *)malloc(sizeof(Soldier));
+        if (pUnit != NULL) {
+            Unit_ctor(pUnit);
+        }
+        apSoldiers[i] = pUnit;
+    }
+
+    *pnCount = (i32)uCount;
+    return true;
+}
+
 /* ------------------------------------------------------------ the small chunks */
 
 bool Save_WriteGameState(DatFile *pDat, u8 bTactFlag)

@@ -2483,6 +2483,92 @@ static void TestReadTGameData(void)
     remove("test_tload2.tmp");
 }
 
+/* Soldiers_Reload @ 0x430cc.
+ *
+ * It is the allocation half of a load: free the roster, read the saved count, and build that many empty
+ * soldiers. The bodies come from Save_ReadSoldiers afterwards, so the two are tested together - a reload
+ * followed by a read has to land the written values in the objects the reload allocated. */
+static void TestSoldiersReload(void)
+{
+    static DatFile dat;
+    static Soldier aWritten[3];
+    Soldier       *apRoster[8];
+    Soldier       *pOld0, *pOld1;
+    i32            nCount = 2;
+    i32            nRead = 0;
+
+    printf("Soldiers_Reload\n");
+
+    remove("test_reload.tmp");
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_reload.tmp", PUFO_DAT_CREATE, 4), "  container opened");
+    for (i32 i = 0; i < 3; ++i) {
+        FillSoldier(&aWritten[i]);
+        aWritten[i].nUnk440 = 500 + i;
+    }
+    {
+        Soldier *apWrite[3];
+        apWrite[0] = &aWritten[0];
+        apWrite[1] = &aWritten[1];
+        apWrite[2] = &aWritten[2];
+        Check(Save_WriteSoldiers(&dat, apWrite, 3), "  three soldiers written");
+    }
+    DatFile_Close(&dat);
+
+    /* A roster of two heap soldiers standing in for a previous mission. Soldiers_Reload frees what the count
+     * says is live, so the test must not free them again. */
+    memset(apRoster, 0, sizeof(apRoster));
+    apRoster[0] = (Soldier *)malloc(sizeof(Soldier));
+    apRoster[1] = (Soldier *)malloc(sizeof(Soldier));
+    apRoster[0]->nUnk440 = 111;
+    apRoster[1]->nUnk440 = 222;
+    pOld0 = apRoster[0];
+    pOld1 = apRoster[1];
+    (void)pOld0;
+    (void)pOld1;
+
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_reload.tmp", PUFO_DAT_READ, 0), "  reopened for read");
+
+    Check(Soldiers_Reload(&dat, apRoster, &nCount, 8), "  reload succeeded");
+    CheckEqI32(nCount, 3, "  the roster size comes from the saved count");
+    Check(apRoster[0] != NULL && apRoster[1] != NULL && apRoster[2] != NULL, "  three soldiers allocated");
+    Check(apRoster[0] != pOld0 || apRoster[1] != pOld1, "  the old roster was replaced, not reused");
+    Check(apRoster[3] == NULL, "  nothing is allocated past the count");
+
+    /* Freshly constructed, not loaded: every field the writer set is still zero here. */
+    CheckEqI32(apRoster[0]->nUnk440, 0, "  a reloaded soldier starts empty");
+    CheckEqI32(apRoster[0]->bFlags, 0, "  flags are zero before the body read");
+
+    /* The pairing the original relies on: reload allocates, then the read fills the same objects. */
+    Check(Save_ReadSoldiers(&dat, apRoster, &nRead, 8), "  bodies read into the reloaded roster");
+    CheckEqI32(nRead, 3, "  three bodies read");
+    CheckEqI32(apRoster[0]->nUnk440, 500, "  first soldier landed in the reloaded object");
+    CheckEqI32(apRoster[2]->nUnk440, 502, "  and so did the last");
+    CheckEqI32(apRoster[0]->bFlags, 0x3F, "  flags round-trip through the reloaded object");
+    DatFile_Close(&dat);
+
+    for (i32 i = 0; i < 3; ++i) {
+        free(apRoster[i]);
+    }
+
+    /* The capacity clamp. The original has none; the port stops at the caller's array size. */
+    memset(apRoster, 0, sizeof(apRoster));
+    nCount = 0;
+    DatFile_ctor(&dat);
+    Check(DatFile_Open(&dat, "test_reload.tmp", PUFO_DAT_READ, 0), "  reopened again");
+    Check(Soldiers_Reload(&dat, apRoster, &nCount, 2), "  reload into a smaller array succeeded");
+    CheckEqI32(nCount, 2, "  the count is clamped to the array the caller owns");
+    Check(apRoster[0] != NULL && apRoster[1] != NULL, "  the two slots that fit are filled");
+    Check(apRoster[2] == NULL, "  and the third is left alone");
+    DatFile_Close(&dat);
+    for (i32 i = 0; i < 2; ++i) {
+        free(apRoster[i]);
+    }
+
+    remove("test_reload.tmp");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2509,6 +2595,7 @@ int main(void)
     TestStrategChunk();
     TestSaveGame();
     TestReadTGameData();
+    TestSoldiersReload();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
