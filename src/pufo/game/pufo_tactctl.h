@@ -20,6 +20,7 @@
 #define PUFO_TACTCTL_H
 
 #include "game/pufo_mapcell.h"
+#include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks for TactSelectCtx */
 #include "pufo_common.h"
 
 typedef struct TactUiState TactUiState;
@@ -328,5 +329,39 @@ typedef struct DeployConfirmCtx {
 i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx);
 #define PUFO_MISSION_TYPE_FOREST 2u   /* MissionType_Forest */
 #define PUFO_MISSION_TYPE_DESERT   6u   /* MissionType_Desert */
+
+/* --- selecting a unit -------------------------------------------------------------
+ *
+ * Tact_SelectUnit @ 0x2c6c4.
+ *
+ * Two different Map fields are involved and that is not a decompiler artifact. The comparison is
+ * against Map.pSelUnit @ 0x15334, the unit the HUD is showing, while the store goes to Map+0x15354,
+ * a separate "last selection" pointer whose only use is deciding whether the cursor has to be parked
+ * first.
+ *
+ *   if pSelUnit != pUnit and pUnit is operative, push Unit_FormatDisplayName(pUnit, 0) as a status
+ *     message, not forced
+ *   if the last-selection pointer is non-null, park the cursor at (-2, -2)
+ *   store pUnit as the last selection
+ *   move the cursor onto pUnit's cell
+ *
+ * So re-selecting the same unit pushes nothing; selecting an inoperative unit pushes nothing but still
+ * moves the cursor; and the first selection in a mission does not park the cursor, because nothing was
+ * selected before it.
+ *
+ * Deviation: the original returns whatever MapCursor_SetPos leaves in R0. The port returns void. */
+typedef struct TactSelectCtx {
+    Soldier           *pSelUnit;      /* Map.pSelUnit @ 0x15334 */
+    Soldier          **ppPrevSelUnit; /* Map+0x15354, the last-selection slot */
+    MapCursorPos      *pCursorPos;
+    MapCellLookup      pfnLookup;
+    void              *pLookupUser;
+    StatusStack       *pStatus;
+    const StatusHooks *pStatusHooks;
+    const char        *panRankLow;   /* aRankNameLow @ 0xB2200 */
+    const char        *panRankOther; /* aRankNameOther @ 0xB2148 */
+} TactSelectCtx;
+
+void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit);
 
 #endif /* PUFO_TACTCTL_H */

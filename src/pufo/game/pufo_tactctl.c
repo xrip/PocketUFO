@@ -6,6 +6,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_statusmsg.h" /* StatusMsg_Push */
 #include "audio/pufo_audio.h"
 
 #include <string.h>
@@ -458,4 +459,25 @@ i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx)
         pCtx->pUi->nUiScreen = 9;
     }
     return 9;
+}
+
+void Tact_SelectUnit(TactSelectCtx *pCtx, Soldier *pUnit)
+{
+    /* The comparison is against the displayed selection, not the last-selection slot below. */
+    if (pCtx->pSelUnit != pUnit && Unit_bIsOperative(pUnit)) {
+        (void)StatusMsg_Push(pCtx->pStatus,
+                             Unit_FormatDisplayName(pUnit, 0, pCtx->panRankLow,
+                                                    pCtx->panRankOther),
+                             false, pCtx->pStatusHooks);
+    }
+
+    /* Nothing was selected before the first selection of a mission, so the cursor is not parked. */
+    if (*pCtx->ppPrevSelUnit != NULL) {
+        MapCursor_SetPos(pCtx->pCursorPos, -2, -2, pCtx->pfnLookup, pCtx->pLookupUser);
+    }
+
+    *pCtx->ppPrevSelUnit = pUnit;
+
+    MapCursor_SetPos(pCtx->pCursorPos, pUnit->pCell->nX, pUnit->pCell->nY,
+                     pCtx->pfnLookup, pCtx->pLookupUser);
 }

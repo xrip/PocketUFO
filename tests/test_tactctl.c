@@ -7,6 +7,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
+#include "util/pufo_str.h" /* pufo_strcpy: strcpy is deprecated under /WX */
 
 #include <stdio.h>
 #include <string.h>
@@ -699,6 +700,141 @@ static void TestDeployUnits(void)
     Check(strcmp(g_szMsg2, "1 in1 out") == 0, "  message 2 uses the outside counts");
 }
 
+/* A lookup that records every coordinate MapCursor_SetPos asks for, so the park at (-2,-2) is
+ * observable. Out-of-range requests get a scratch cell instead of walking off the grid. */
+static i32     s_aSelReqX[64];
+static i32     s_aSelReqY[64];
+static i32     s_nSelReq;
+static MapCell s_selOob;
+
+static MapCell *SelLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (s_nSelReq < 64) {
+        s_aSelReqX[s_nSelReq] = nX;
+        s_aSelReqY[s_nSelReq] = nY;
+    }
+    s_nSelReq += 1;
+    if (nX < 0 || nX >= 40 || nY < 0 || nY >= 30 || nLayer < 0 || nLayer >= 4) {
+        return &s_selOob;
+    }
+    return &s_aCursorGrid[nLayer][nY][nX];
+}
+
+static bool Sel_NotBusy(void *pUser)    { (void)pUser; return false; }
+static bool Sel_NoRepaint(void *pUser)  { (void)pUser; return false; }
+static void Sel_NoRender(void *pUser)   { (void)pUser; }
+
+static char s_aSelRankLow[9][PUFO_RANK_NAME_STRIDE];
+
+static void TestSelectUnit(void)
+{
+    TactCursor    cursor;
+    MapCursorPos  pos;
+    StatusStack   stack;
+    StatusHooks   hooks = { Sel_NotBusy, Sel_NoRepaint, Sel_NoRender, NULL };
+    TactSelectCtx ctx;
+    Soldier       unitA, unitB;
+    Soldier      *pPrev = NULL;
+
+    printf("Tact_SelectUnit @ 0x2c6c4\n");
+
+    MapCell_Init(&s_selOob, 0, 0, 0);
+    for (i32 i = 0; i < 9; ++i) {
+        pufo_strcpy(s_aSelRankLow[i], "Squad");
+    }
+
+    memset(s_aCursorGrid, 0, sizeof(s_aCursorGrid));
+    memset(&cursor, 0, sizeof(cursor));
+    cursor.nX = 1;
+    cursor.nY = 1;
+    pos.pCursor = &cursor;
+    pos.geom.nDimX = 4;
+    pos.geom.nDimY = 3;
+    pos.bBusy = false;
+    pos.bSelUnitLarge = false;
+    pos.bSuppressLarge = false;
+
+    memset(&stack, 0, sizeof(stack));
+
+    memset(&unitA, 0, sizeof(unitA));
+    unitA.nUnitType = 0;
+    unitA.bStatus = 0;
+    pufo_strcpy(unitA.szName, "Hallow");
+    unitA.pCell = &s_aCursorGrid[0][1][2];
+    unitA.pCell->nX = 2;
+    unitA.pCell->nY = 1;
+
+    memset(&unitB, 0, sizeof(unitB));
+    unitB.nUnitType = 0;
+    unitB.bStatus = 0;
+    pufo_strcpy(unitB.szName, "Sheeran");
+    unitB.pCell = &s_aCursorGrid[0][2][3];
+    unitB.pCell->nX = 3;
+    unitB.pCell->nY = 2;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pSelUnit = NULL;
+    ctx.ppPrevSelUnit = &pPrev;
+    ctx.pCursorPos = &pos;
+    ctx.pfnLookup = SelLookup;
+    ctx.pStatus = &stack;
+    ctx.pStatusHooks = &hooks;
+    ctx.panRankLow = &s_aSelRankLow[0][0];
+    ctx.panRankOther = &s_aSelRankLow[0][0];
+
+    /* The first selection of a mission: nothing was selected before, so there is no park. The park is
+     * only visible through bBusy, because (-2,-2) fails MapCursor_SetPos's bounds check and so it
+     * clears the old markers without moving the cursor. */
+    pos.bBusy = true;
+    Tact_SelectUnit(&ctx, &unitA);
+    Check(!FlagBit3(&s_aCursorGrid[0][1][2]),
+          "with nothing selected before, there is no park to clear the old cell");
+    CheckEqI32(cursor.nX, 1, "and the busy cursor is not moved at all");
+    CheckEqI32(cursor.nY, 1, "both coordinates");
+    CheckEqI32(stack.nCount, 1, "the name is still pushed");
+    Check(strcmp(stack.aszMsg[0], "Squad: Hallow") == 0,
+          "pushed in the mode 0 rank-colon-name form");
+    Check(pPrev == &unitA, "the last-selection slot at Map+0x15354 is written");
+
+    /* Move the cursor for real, then select a different unit with the cursor busy. The park runs and
+     * clears the previous cell while the move itself is suppressed. */
+    pos.bBusy = false;
+    Tact_SelectUnit(&ctx, &unitA);
+    Check(FlagBit3(&s_aCursorGrid[0][1][2]), "the move marks the unit's cell");
+    CheckEqI32(cursor.nX, 2, "and parks the cursor there");
+    CheckEqI32(stack.nCount, 2, "that move named the unit too, since nothing was displayed yet");
+
+    pos.bBusy = true;
+    ctx.pSelUnit = NULL;
+    Tact_SelectUnit(&ctx, &unitB);
+    Check(!FlagBit3(&s_aCursorGrid[0][2][3]),
+          "the new cell is not marked, because the busy move is suppressed");
+    CheckEqI32(cursor.nX, 2, "the park left the cursor where it was");
+    CheckEqI32(cursor.nY, 1, "both coordinates");
+    CheckEqI32(stack.nCount, 3, "and the new unit was still named");
+    Check(strcmp(stack.aszMsg[2], "Squad: Sheeran") == 0, "with its own name");
+    Check(pPrev == &unitB, "the last-selection slot follows the last call, not the displayed one");
+
+    /* Re-selecting the displayed unit pushes nothing but still parks and moves. */
+    pos.bBusy = false;
+    ctx.pSelUnit = &unitB;
+    Tact_SelectUnit(&ctx, &unitB);
+    CheckEqI32(stack.nCount, 3, "re-selecting the displayed unit pushes nothing");
+    CheckEqI32(cursor.nX, 3, "but it still moves the cursor");
+    CheckEqI32(cursor.nY, 2, "both coordinates");
+    Check(FlagBit3(&s_aCursorGrid[0][2][3]), "and marks the new cell");
+
+    /* An inoperative unit moves the cursor but is never named. */
+    unitA.bStatus = 3;
+    ctx.pSelUnit = NULL;
+    Tact_SelectUnit(&ctx, &unitA);
+    CheckEqI32(stack.nCount, 3, "an inoperative unit pushes nothing");
+    CheckEqI32(cursor.nX, 2, "and its cell is still selected");
+    CheckEqI32(cursor.nY, 1, "both coordinates");
+    unitA.bStatus = 0;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -714,6 +850,7 @@ int main(void)
     TestFocusOnCell();
     TestCameraBounds();
     TestDeployUnits();
+    TestSelectUnit();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
