@@ -1199,3 +1199,106 @@ bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
     }
     return true;
 }
+
+/* One icon draw, shared by all six regions: the index is always the object's icon id offset into the
+ * bigobs group, and the position always adds the footprint centring pair. */
+static void DrawItemIcon(TactHudItemStripEnv *pEnv, const TactItem *pItem,
+                         i32 nBaseX, i32 nBaseY, bool bCentreFootW, bool bCentreFootH)
+{
+    const ObjectRec *pObj = pItem->pObj;
+    i32 nOffW = bCentreFootW ? (19 * (2 - (i32)pObj->nFootW)) / 2 : 0;
+    i32 nOffH = bCentreFootH ? (17 * (3 - (i32)pObj->nFootH)) / 2 : 0;
+    i32 nDelta = TactItem_GetEquipDelta((i32)pObj->uSortKey);
+    i32 nSlot  = TactItem_GetHandSlot((i32)pObj->uSortKey);
+
+    Font_DrawGlyph(nBaseX + nSlot + nOffW, nBaseY + nDelta + nOffH,
+                   (u16)(pObj->uIconId + pEnv->nBigObsBase - 1), 0);
+}
+
+/* True for a slot that holds something. 0x138EA0 is a sentinel TactItem pointer meaning empty, and it
+ * is tested alongside null. */
+static bool ItemSlotFilled(const TactItem *pItem, const TactItem *pEmptySlot)
+{
+    return pItem != NULL && pItem != pEmptySlot;
+}
+
+/* TactHud_DrawItemStrip @ 0x2cdac. */
+void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
+{
+    TactUiState *pUi = pEnv->pUi;
+    Soldier *pUnit = pEnv->pSelUnit;
+    const i32 nFilter = (i32)pUi->nInvFilterType;
+
+    (void)Gfx_PackRgb565Pair(pColor, 55, 255, 55, 10, 93, 10);
+
+    /* The four-column strip along the bottom, and the count under each column. */
+    for (i32 nCol = 0; nCol < 4; ++nCol) {
+        i32 nIdx = nCol + nFilter;
+        i32 nX = 38 * nCol;
+        char szNum[52];
+        i32 nTextW;
+
+        if (nIdx >= (i32)pUi->nInvListCount) {
+            break;
+        }
+        DrawItemIcon(pEnv, pUi->apInvList[nIdx], nX + 24, 265, true, true);
+
+        snprintf(szNum, sizeof(szNum), "%d", (int)pUi->anInvCount[nIdx]);
+        nTextW = Text_MeasureWidth(szNum);
+        Text_DrawString(nX - nTextW + 52, 301, szNum);
+    }
+
+    if (pUnit->pHandR != NULL) {
+        DrawItemIcon(pEnv, pUnit->pHandR, 124, 63, true, true);
+    }
+    if (pUnit->pHandL != NULL) {
+        DrawItemIcon(pEnv, pUnit->pHandL, 5, 63, true, true);
+    }
+
+    /* One hand holds a one-handed item and the other is empty: mark the empty one. */
+    if (pUnit->pHandL != NULL && pUnit->pHandR == NULL &&
+        pUnit->pHandL->pObj->bListPri == 1) {
+        pEnv->pEmptyHandPad->nOriginX = 126;
+        pEnv->pEmptyHandPad->nOriginY = 64;
+        PadImage_Blit(pEnv->pEmptyHandPad);
+    }
+    if (pUnit->pHandR != NULL && pUnit->pHandL == NULL &&
+        pUnit->pHandR->pObj->bListPri == 1) {
+        pEnv->pEmptyHandPad->nOriginX = 7;
+        pEnv->pEmptyHandPad->nOriginY = 64;
+        PadImage_Blit(pEnv->pEmptyHandPad);
+    }
+
+    for (i32 nRow = 0; nRow < 2; ++nRow) {
+        for (i32 nCol = 0; nCol < 4; ++nCol) {
+            TactItem *pItem = pUnit->apBackpack[4 * nRow + nCol];
+            if (ItemSlotFilled(pItem, pEnv->pEmptySlot)) {
+                DrawItemIcon(pEnv, pItem, 19 * nCol + 162, 19 * nRow + 163, false, false);
+            }
+        }
+    }
+
+    for (i32 nRow = 0; nRow < 3; ++nRow) {
+        for (i32 nCol = 0; nCol < 3; ++nCol) {
+            TactItem *pItem = pUnit->apBelt[3 * nRow + nCol];
+            if (ItemSlotFilled(pItem, pEnv->pEmptySlot)) {
+                DrawItemIcon(pEnv, pItem, 19 * nCol + 172, 19 * nRow + 25, false, false);
+            }
+        }
+    }
+
+    /* Two columns per pocket, and the pockets are visited in the order 2, 3, 0, 1. Pocket 2 sits at 23
+     * while pocket 0, its upper neighbour, sits at 24. */
+    for (i32 nCol = 0; nCol < 2; ++nCol) {
+        static const i32 anPocketOrder[4] = { 2, 3, 0, 1 };
+        static const i32 anPocketX[4]     = { 23, 105, 24, 105 };
+        static const i32 anPocketY[4]     = { 163, 163, 25, 25 };
+
+        for (i32 k = 0; k < 4; ++k) {
+            TactItem *pItem = pUnit->aPockets[anPocketOrder[k]].apItem[nCol];
+            if (ItemSlotFilled(pItem, pEnv->pEmptySlot)) {
+                DrawItemIcon(pEnv, pItem, 19 * nCol + anPocketX[k], anPocketY[k], false, false);
+            }
+        }
+    }
+}

@@ -1506,8 +1506,8 @@ What is still missing, with sizes:
 | `Tact_DrawCommandPads @ 0x1fc8c` | 4,044 | |
 | `MainMenu_Draw @ 0x1dbb8` | 2,680 | |
 | `MapView_DrawMinimap @ 0x1ed4c` | 2,112 | |
-| `TactHud_DrawInventoryScreen (0x1f58c)` | 1,792 | blocked only by `TactHud_DrawItemStrip (0x2cdac)` below |
-| `TactHud_DrawItemStrip (0x2cdac)` | 2,004 | fully decoded, see below; needs six state models the port does not own |
+| `TactHud_DrawInventoryScreen (0x1f58c)` | 1,792 | its only remaining blocker was `TactHud_DrawItemStrip`, now ported |
+| `TactHud_DrawItemStrip @ 0x2cdac` | 2,004 | **ported** in `src/pufo/game/pufo_tacthud.c`, see below |
 | `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnit (0x1c958)` and `MapView_DrawUnitFacingArrow (0x1b7bc)` |
 | `Titles_DrawAnimatedFrame (0x1a83c)` | 672 | needs the titles state block at `0x158804` modelled first |
 | `Titles_DrawBackdrop @ 0x1e630` | 600 | **ported** in `src/pufo/game/pufo_titles.c` |
@@ -1515,7 +1515,7 @@ What is still missing, with sizes:
 | `TactHud_DrawUnitRoster @ 0x21908` | 676 | **ported** |
 | `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` | 40 | **ported** as `Cydonia_BlitThenDrawPanel` in `src/pufo/ui/pufo_panel.c` |
 
-## `TactHud_DrawItemStrip (0x2cdac)`, decoded and not yet ported
+## `TactHud_DrawItemStrip @ 0x2cdac`, ported
 
 Six draw regions, each with its own fixed anchor. Every icon in the function is
 `pObj->uIconId + nBigObsSprBase - 1`, the bigobs sprite group — the same rule
@@ -1538,10 +1538,12 @@ throughout the tactical HUD.
 Three facts worth carrying into the port:
 
 - An empty slot is `item == NULL` **or** `item == unk_138EA0`. So `0x138EA0` is a sentinel `TactItem`
-  pointer meaning "empty" alongside null, and the port has to test both.
+  pointer meaning "empty" alongside null, and a single null test is not enough. The port passes the
+  sentinel through `TactHudItemStripEnv::pEmptySlot`.
 - `unk_10DBA8` and `unk_10DBAC` are `.bss` loop counters reused across three separate loops. They are
-  shared scratch, not locals, so the original is not re-entrant. The port should use locals and record
-  that as a deviation.
+  shared scratch, not locals, so the original is not re-entrant. **Deviation:** the port uses locals.
+  The original's return value is loop residue, always 2, and no caller reads it, so the port returns
+  `void`.
 - The empty-hand marker pad `dword_156A70` is blitted at `(126, 64)` when `pHandL != NULL` and
   `pHandR == NULL` and `pHandL->pObj->bListPri == 1`, and at `(7, 64)` when `pHandR != NULL` and
   `pHandL == NULL` and `pHandR->pObj->bListPri == 1`. Hex-Rays renders this as a confusing double
@@ -1550,7 +1552,15 @@ Three facts worth carrying into the port:
 
 The strip loop reads its list through `Map.gap_6691` with a `4 * index + 1` byte offset, and the count
 from a parallel u16 array at `Map.gap_6691 + 8193`, both indexed by `row + Map.nInvFilterType`. The
-filter is a scroll offset: the loop breaks when `row + nInvFilterType >= nInvListCount`.
+filter is a scroll offset: the loop breaks when `row + nInvFilterType >= nInvListCount`. In the port
+those are `TactUiState::apInvList` and `TactUiState::anInvCount`, which `Inv_BuildVisibleList @ 0x2d580`
+already fills.
+
+Pocket 2 sits at x 23 while pocket 0, its upper neighbour, sits at 24. That one pixel is reproduced, not
+tidied. The pockets are visited in the order 2, 3, 0, 1.
+
+Verified by 28 checks in `tests/test_tacthud.c` using a probe font in which glyph `k` inks `k` pixels
+below the requested row, so one assertion pins both the icon index and its position.
 
 `Render_Frame` itself is not ported until its callees are. It is written as `Render_Frame (0x22310)`
 in the port's comments, never with an `@`, so the audit does not count it as recreated.

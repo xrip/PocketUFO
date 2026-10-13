@@ -1418,6 +1418,193 @@ static void TestSelectedUnitPanel(void)
     g_fontSys.apSprIndex = NULL;
 }
 
+/* A probe font: glyph k starts k pixels below the requested y, so the inked row reports the index the
+ * function asked for. One assertion then pins both the icon index and its position. */
+static u8  g_aProbeGlyph[256][4];
+static u8 *g_apProbeSpr[256];
+
+static void InstallProbeFont(void)
+{
+    for (i32 i = 0; i < 256; ++i) {
+        g_aProbeGlyph[i][0] = (u8)i;   /* start Y offset */
+        g_aProbeGlyph[i][1] = 0;       /* start X offset */
+        g_aProbeGlyph[i][2] = 0x30;    /* one run */
+        g_aProbeGlyph[i][3] = 0xFF;    /* end of stream */
+        g_apProbeSpr[i] = g_aProbeGlyph[i];
+        g_fontMetrics.aAdvance[i] = 8;
+    }
+    g_fontSys.apSprIndex = g_apProbeSpr;
+    g_fontSys.nSprIndexCount = 256;
+    g_fontSys.nGlyphBase = 0;
+    memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
+    g_blitState.nPixelMode = 2;
+}
+
+static void ClearStrip(void)
+{
+    memset(g_pTestPix, 0, (size_t)240 * 320 * sizeof(u16));
+}
+
+static void TestItemStrip(void)
+{
+    static TactUiState ui;
+    static ObjectRec aObj[10];
+    static TactItem  aItem[10];
+    static TactItem  sentinelSlot;   /* stand-in for unk_138EA0 */
+    static u8 aHandData[8];
+    TactHudItemStripEnv env;
+    GfxColorEnv color;
+    PadImage emptyHand;
+    Soldier unit;
+    SoftSurf surf;
+    i32 i;
+
+    printf("Item strip @ 0x2cdac\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+    g_pTestPix = (u16 *)surf.pPixels;
+    InstallProbeFont();
+
+    /* Sort key 5 is answered zero by both TactItem_GetHandSlot and TactItem_GetEquipDelta, and a 2 x 3
+     * footprint makes the centring pair zero, so every anchor shows up unshifted. */
+    for (i = 0; i < 10; ++i) {
+        memset(&aObj[i], 0, sizeof(aObj[i]));
+        aObj[i].uIconId  = (u16)(i + 1);
+        aObj[i].nFootW   = 2;
+        aObj[i].nFootH   = 3;
+        aObj[i].uSortKey = 5;
+        memset(&aItem[i], 0, sizeof(aItem[i]));
+        aItem[i].pObj = &aObj[i];
+    }
+    sentinelSlot.pObj = &aObj[0];
+
+    memset(&ui, 0, sizeof(ui));
+    memset(&unit, 0, sizeof(unit));
+    memset(&color, 0, sizeof(color));
+    memset(&emptyHand, 0, sizeof(emptyHand));
+    aHandData[0] = 4; aHandData[1] = 0; aHandData[2] = 0; aHandData[3] = 0;
+    emptyHand.pData  = aHandData;
+    emptyHand.uWidth = 4;
+
+    memset(&env, 0, sizeof(env));
+    env.pUi           = &ui;
+    env.pSelUnit      = &unit;
+    env.pEmptyHandPad = &emptyHand;
+    env.pEmptySlot    = &sentinelSlot;
+    env.nBigObsBase   = 10;
+
+    /* Four strip columns: x 38*col + 24, y 265, index uIconId + 10 - 1. */
+    ClearStrip();
+    ui.nInvListCount = 4;
+    for (i = 0; i < 4; ++i) {
+        ui.apInvList[i] = &aItem[i];
+    }
+    TactHud_DrawItemStrip(&env, &color);
+    Check("strip column 0 draws at x 24, y 265 with index 10", PixAt(24, 275) != 0);
+    Check("the inked row is the glyph index, not a fixed offset", PixAt(24, 276) == 0);
+    Check("strip column 1 is 38 pixels right", PixAt(62, 276) != 0);
+    Check("strip column 2", PixAt(100, 277) != 0);
+    Check("strip column 3", PixAt(138, 278) != 0);
+
+    /* The column loop stops as soon as col + filter reaches nInvListCount. */
+    ClearStrip();
+    ui.nInvListCount = 2;
+    TactHud_DrawItemStrip(&env, &color);
+    Check("two entries still draw the first two columns", PixAt(24, 275) != 0 && PixAt(62, 276) != 0);
+    Check("and stop there", PixAt(100, 277) == 0);
+
+    /* nInvFilterType is a scroll offset into the same list. */
+    ClearStrip();
+    ui.nInvFilterType  = 1;
+    ui.nInvListCount   = 3;
+    TactHud_DrawItemStrip(&env, &color);
+    Check("with the filter at 1 the first column shows the second entry", PixAt(24, 276) != 0);
+    Check("and the third entry lands in the first column's slot", PixAt(62, 277) != 0);
+    Check("nothing is drawn past the end of the list", PixAt(100, 278) == 0);
+    ui.nInvFilterType = 0;
+
+    /* Both hands. */
+    ClearStrip();
+    unit.pHandR = &aItem[4];   /* icon 5, index 14 */
+    unit.pHandL = &aItem[5];   /* icon 6, index 15 */
+    TactHud_DrawItemStrip(&env, &color);
+    Check("the right hand draws at x 124, y 63", PixAt(124, 77) != 0);
+    Check("the left hand at x 5", PixAt(5, 78) != 0);
+    Check("with both hands full no empty-hand marker is placed", emptyHand.nOriginX == 0);
+
+    /* One hand holds a bListPri 1 item and the other is empty: mark the empty one. */
+    ClearStrip();
+    unit.pHandR = NULL;
+    aObj[5].bListPri = 1;
+    TactHud_DrawItemStrip(&env, &color);
+    ChkEq(emptyHand.nOriginX, 126, "an empty right hand is marked at x 126");
+    ChkEq(emptyHand.nOriginY, 64, "and y 64");
+
+    ClearStrip();
+    aObj[5].bListPri = 0;
+    emptyHand.nOriginX = 0;
+    emptyHand.nOriginY = 0;
+    TactHud_DrawItemStrip(&env, &color);
+    Check("a two-handed item in the left hand marks nothing", emptyHand.nOriginX == 0 && emptyHand.nOriginY == 0);
+
+    ClearStrip();
+    unit.pHandL = NULL;
+    unit.pHandR = &aItem[4];
+    aObj[4].bListPri = 1;
+    emptyHand.nOriginX = 0;
+    TactHud_DrawItemStrip(&env, &color);
+    ChkEq(emptyHand.nOriginX, 7, "an empty left hand is marked at x 7");
+    unit.pHandR = NULL;
+    aObj[4].bListPri = 0;
+
+    /* Backpack 2 x 4, belt 3 x 3, and the sentinel slot. */
+    ClearStrip();
+    unit.apBackpack[0] = &aItem[6];   /* icon 7, index 16 -> 163 + 16 = 179 */
+    unit.apBackpack[1] = &sentinelSlot;
+    unit.apBelt[5]     = &aItem[7];   /* row 1 col 2: x 19*2 + 172 = 210, y 19 + 25 = 44, index 17 */
+    TactHud_DrawItemStrip(&env, &color);
+    Check("backpack row 0 col 0 draws at x 162, y 163", PixAt(162, 179) != 0);
+    Check("a slot holding the 0x138EA0 sentinel draws nothing", PixAt(181, 173) == 0);
+    Check("belt row 1 col 2 draws at x 210, y 44", PixAt(210, 61) != 0);
+    unit.apBackpack[0] = NULL;
+    unit.apBackpack[1] = NULL;
+    unit.apBelt[5] = NULL;
+
+    /* Pockets are visited 2, 3, 0, 1 and pocket 2 sits one pixel left of pocket 0. */
+    ClearStrip();
+    unit.aPockets[2].apItem[0] = &aItem[8];  /* icon 9, index 18 -> 163 + 18 = 181 */
+    unit.aPockets[0].apItem[0] = &aItem[9];  /* icon 10, index 19 -> 25 + 19 = 44 */
+    TactHud_DrawItemStrip(&env, &color);
+    Check("pocket 2 col 0 draws at x 23, y 163", PixAt(23, 181) != 0);
+    Check("pocket 0 col 0 draws at x 24, y 25 - one pixel right of pocket 2", PixAt(24, 44) != 0);
+    Check("and pocket 2 is not at 24", PixAt(24, 181) == 0);
+    unit.aPockets[2].apItem[0] = NULL;
+    unit.aPockets[0].apItem[0] = NULL;
+
+    /* Footprint centring, and the truncation of a negative half. */
+    ClearStrip();
+    ui.nInvListCount = 1;
+    ui.apInvList[0]  = &aItem[0];
+    aObj[0].nFootW   = 3;
+    TactHud_DrawItemStrip(&env, &color);
+    Check("a 3-wide footprint shifts the icon left by 19/2 truncated to 9", PixAt(15, 275) != 0);
+    Check("and no longer at the unshifted x", PixAt(24, 275) == 0);
+    aObj[0].nFootW = 2;
+
+    /* The count under each column is right aligned, so a wider number starts further left. */
+    ClearStrip();
+    InstallFakeFont();
+    ui.nInvListCount = 1;
+    ui.apInvList[0]  = &aItem[0];
+    ui.anInvCount[0] = 42;
+    TactHud_DrawItemStrip(&env, &color);
+    Check("a two digit count starts at x 36 on row 301", PixAt(36, 301) != 0);
+    Check("and its second digit eight pixels right", PixAt(44, 301) != 0);
+    Check("nothing is drawn left of the number", PixAt(28, 301) == 0);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1438,5 +1625,7 @@ int main(void)
     TestHudDraw();
     Reset();
     TestSelectedUnitPanel();
+    Reset();
+    TestItemStrip();
     return TestSummary("test_tacthud");
 }

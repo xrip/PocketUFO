@@ -431,4 +431,43 @@ bool TactHud_DrawSelectedUnitPanel(UiControl *pBank, TactHudPanelEnv *pEnv,
                                    UiControlBlitFn pfnCtlBlit, UiControlBlitFn pfnCtlBlitEx,
                                    void *pCtlUser);
 
+/* TactHud_DrawItemStrip @ 0x2cdac: the item art of the tactical inventory screen.
+ *
+ * Six regions, each with its own fixed anchor, all drawn from the bigobs sprite group with the index
+ * pObj->uIconId + nBigObsBase - 1. The footprint centring is the same 19 by 17 recipe the selected-unit
+ * panel uses.
+ *
+ *   strip, 4 columns   x = 38*col + HandSlot + 19*(2 - nFootW)/2 + 24,  y = EquipDelta + 17*(3 - nFootH)/2 + 265
+ *   strip count        x = 38*col - Text_MeasureWidth + 52 (right aligned), y = 301
+ *   right hand         x = HandSlot + 19*(2 - nFootW)/2 + 124,           y = EquipDelta + 17*(3 - nFootH)/2 + 63
+ *   left hand          x = HandSlot + 19*(2 - nFootW)/2 + 5,             y = the same 63 row
+ *   backpack 2 x 4     x = 19*col + HandSlot + 162,                      y = 19*row + EquipDelta + 163
+ *   belt 3 x 3         x = 19*col + HandSlot + 172,                      y = 19*row + EquipDelta + 25
+ *   pockets 2 and 3    x = 19*col + HandSlot + 23 and + 105,             y = EquipDelta + 163
+ *   pockets 0 and 1    x = 19*col + HandSlot + 24 and + 105,             y = EquipDelta + 25
+ *
+ * An empty slot is pItem == NULL or pItem == pEmptySlot. 0x138EA0 is a sentinel TactItem pointer that
+ * means "empty" alongside null, so one null test is not enough.
+ *
+ * The strip reads the ground-item list the way the hit test does: index col + nInvFilterType, and the
+ * column stops as soon as that index reaches nInvListCount. The count under each icon comes from the
+ * parallel anInvCount array at the same index.
+ *
+ * The empty-hand marker is drawn when exactly one hand holds an item and that item has bListPri == 1, at
+ * (126, 64) for an empty right hand and (7, 64) for an empty left hand.
+ *
+ * Deviation: the original uses two .bss globals, unk_10DBA8 and unk_10DBAC, as loop counters shared by
+ * three separate loops, which makes it non-reentrant. The port uses locals. The original's return value
+ * is loop residue (always 2) and no caller reads it, so the port returns void.
+ */
+typedef struct TactHudItemStripEnv {
+    TactUiState *pUi;           /* nInvFilterType, nInvListCount, apInvList, anInvCount */
+    Soldier     *pSelUnit;      /* Map.pSelUnit */
+    PadImage    *pEmptyHandPad; /* dword_156A70, the "this hand is empty" marker */
+    TactItem    *pEmptySlot;    /* unk_138EA0, the sentinel that means empty alongside NULL */
+    u16          nBigObsBase;   /* fontSys + 0x26, the bigobs group */
+} TactHudItemStripEnv;
+
+void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor);
+
 #endif /* PUFO_TACTHUD_H */
