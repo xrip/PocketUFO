@@ -7180,10 +7180,18 @@ One layout detail worth keeping: `abUnk1012` at `Soldier+0x3F4` is a **byte** ar
 5. Only when `nMapLayers == 0`: build a scatter list and move every `apTactItems[j]` from the head of
    `apCells[0][0][0]->pItemList` onto layer-1 cells.
 
-**`apBases[nSoldierCount + 8]` is a naming artifact.** ARM at `0x39B48` is `MOV R2, #0x1194` then
-`LDR R4, [R3, R2]` — it is `apSoldiers[nSoldierCount]`. `apSoldiers` is at **Map+0x1194** and the count is
-the u16 at **Map+0x1998**. `apBases` at Map+0x1174 plus eight entries is the same address, which is why
-Hex-Rays picked the wrong array.
+**`apBases[nSoldierCount + 8]` is a naming artifact, and it is one slot *inside* the roster.** ARM at
+`0x39B48` is `MOV R2, #0x1194` then `LDR R4, [R3, R2]` over `Map + 4*nSoldierCount`. **`apSoldiers` is at
+Map+0x1198**, proven from `Soldier_CreateAndClassify` at `0x22BE8`, which builds `0x1180 ORR 0x18 = 0x1198`.
+So the address is `Map + 0x1198 + 4*(count - 1)`, which is **`apSoldiers[nSoldierCount - 1]`** — the soldier
+just created. `apBases` at Map+0x1174 with nine entries ends at 0x1194, which is why Hex-Rays picked it.
+
+The same addressing appears in the gate at `0x39A14`, where Hex-Rays renders
+`apBases[nSoldierCount + 8][8].nUnk0 == 6` as if it tested a base record byte. ARM is
+`LDR R3, [R3, #0x1194]` then `LDRB R3, [R3, #0xA0]`, and `0xA0` is `nUnitType`. **The gate is: the last
+soldier in the roster has `nUnitType == 6`.** Since `nUnitType = object index - 27`, that is object 33, so
+deploying object 33 makes the *next* object index skip its ammo computation. No null dereference and no
+off-by-one — the read is inside the roster, not past it.
 
 **A hardware soldier is named after the object it carries**: the name is copied from the ObjectRec's own
 first bytes at `ObjectRec + 0`.
