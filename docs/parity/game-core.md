@@ -7234,7 +7234,9 @@ five object indices, and nothing caps it at 4. A fifth hardware soldier on layer
 records into `aDeployCellOffsets`. Whether that can happen depends on `uRecovCount` in shipped data, so it is
 worth checking rather than assuming.
 
-## Proximity devices: `MapCell_TickProximityItems @ 0x4b724` and `Combat_DetonateNearbyItems @ 0x32fa8`
+## Proximity devices: `MapCell_TickProximityItems` (0x4b724) and `Combat_DetonateNearbyItems` (0x32fa8)
+
+`MapCell_TickProximityItems` is decoded but not ported yet.
 
 Both decoded, neither ported yet. Together they are the arming countdown and the chain reaction.
 
@@ -7262,3 +7264,15 @@ head of that cell's list**.
 `&result->pWallSprA`, and the sort key as `result[3].nUnk20`. ARM at `0x32FC8` is plain: `LDRB R0,[R1,#0x1A]`
 is `MapCell.nX`, `SUB`/`ADD #4` give the bounds, `0x1B` is `nY`, and the sort key is `ObjectRec + 0xC8`.
 Reading the pseudocode here would have produced a nonsense loop range.
+
+### A latent crash this port exposed in its own shot resolution
+
+`Combat_ResolveShot @ 0x2f12c` clears the 41 x 41 x 4 hit window and writes `pOut->nDamage`
+with no null test. The original reaches both through Map globals, so it always has them. The
+port lifted them into parameters, and two port call sites pass NULL for both: the type-18 death
+explosion in `pufo_unit.c` and this detonation. The proximity test crashed on the first call.
+
+Fixed by giving `Combat_ResolveShot` a static scratch window and outcome when the caller passes
+NULL, which reproduces the original's single shared window rather than inventing a new rule.
+Callers that want to inspect the result still pass their own. This is a port-side defect, not an
+original bug, so it is recorded here rather than in `bugs.tsv`.

@@ -2,6 +2,7 @@
 #include "pufo_combat.h"
 #include "audio/pufo_audio.h"
 #include "game/pufo_unit.h"
+#include "game/pufo_vistry.h"   /* Map_ScanBlastFootprint, the second gate on every proximity device */
 #include "util/pufo_rand.h"
 
 size_t Combat_HitIndex(i32 nRow, i32 nCol, i32 nSlot)
@@ -694,11 +695,100 @@ static void Combat_DropCellItems(const CombatCtx *pCtx)
     }
 }
 
+/* Combat_DetonateNearbyItems @ 0x32fa8.
+ *
+ * Hex-Rays renders the loop bounds as &result[-1].bUnk56 and &result->pWallSprA, which is
+ * nonsense produced by treating a coordinate as a MapCell *. ARM at 0x32FC8 is plain:
+ * LDRB R0,[R1,#0x1A] is MapCell.nX and SUB/ADD #4 give the x bounds; LDRB R0,[R1,#0x1B] is
+ * MapCell.nY and SUB/ADD #4 give the y bounds. The outer loop is v5 += 60 while v5 < 240,
+ * which is the four layers. */
+void Combat_DetonateNearbyItems(ProximityCtx *pCtx, const MapCell *pSrcCell)
+{
+    i32 nX0, nX1, nY0, nY1;
+
+    if (pCtx == NULL || pSrcCell == NULL || pCtx->pCombat == NULL ||
+        pCtx->pGeom == NULL || pCtx->pfnLookupCell == NULL || pCtx->paSteps == NULL) {
+        return;
+    }
+
+    if (pCtx->pbBlastScanFlag != NULL) {
+        *pCtx->pbBlastScanFlag = 0;                 /* 0x32FCC */
+    }
+
+    nX0 = (i32)pSrcCell->nX - PUFO_PROXIMITY_BOX_RADIUS;
+    nX1 = (i32)pSrcCell->nX + PUFO_PROXIMITY_BOX_RADIUS;
+    nY0 = (i32)pSrcCell->nY - PUFO_PROXIMITY_BOX_RADIUS;
+    nY1 = (i32)pSrcCell->nY + PUFO_PROXIMITY_BOX_RADIUS;
+
+    for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+        for (i32 nY = nY0; nY < nY1; ++nY) {
+            for (i32 nX = nX0; nX < nX1; ++nX) {
+                if (!Map_IsValidCell(pCtx->pGeom, nX, nY, nLayer)) {
+                    continue;
+                }
+
+                MapCell *pCell = pCtx->pfnLookupCell(nX, nY, nLayer, pCtx->pLookupUser);
+                if (pCell == NULL) {
+                    continue;
+                }
+
+                /* 0x33104: after a detonation the walk starts again at the head of this
+                 * cell's list, so a cell with several devices is drained one at a time. */
+                for (;;) {
+                    bool bDetonated = false;
+
+                    for (TactItem *pItem = pCell->pItemList; pItem != NULL; pItem = pItem->pNext) {
+                        ObjectRec *pObj = pItem->pObj;
+
+                        if (pObj == NULL || pObj->nCategory != 3 || pItem->bUnk8 == 0 ||
+                            pObj->uSortKey != PUFO_PROXIMITY_KEY_BLAST ||
+                            (i8)pItem->bUnk7 > 0) {
+                            continue;
+                        }
+                        if (!Map_ScanBlastFootprint(pCtx->pGeom, pCtx->pfnLookupCell,
+                                                    pCtx->pLookupUser, pCtx->paSteps, pCell)) {
+                            continue;
+                        }
+
+                        pCtx->pCombat->nShotOriginX = pCell->nX;   /* 0x330C0 */
+                        pCtx->pCombat->nShotOriginY = pCell->nY;   /* 0x330D0 */
+                        Combat_ResolveShot(pCtx->pCombat, pCtx->pShotHooks, pCtx->pRosters,
+                                           pCell->nX, pCell->nY, pCell->nZ, 0, pObj,
+                                           NULL, NULL, NULL);
+                        MapCell_ListRemove(pCell, pItem);
+                        bDetonated = true;
+                        break;
+                    }
+                    if (!bDetonated) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
                         const UnitRosters *pRosters, i32 nTgtX, i32 nTgtY,
                         i32 nLayer, i32 nSlot, const ObjectRecFull *pWeapon,
                         u32 *apHits, u32 *apHitsSave, ShotOutcome *pOut)
 {
+    /* The original reaches the 41 x 41 x 4 window and the outcome through Map globals,
+     * so it always has both. The port lifted them into parameters, and two callers -
+     * the type-18 death explosion at 0x2f12c's caller in pufo_unit.c and the proximity
+     * detonation - pass NULL for both, which writes through a null window. A shared
+     * scratch pair reproduces the original's single window for callers that do not
+     * inspect the result. */
+    static u32        s_aScratchHits[PUFO_SPLASH_DWORDS];
+    static ShotOutcome s_scratchOut;
+
+    if (apHits == NULL) {
+        apHits = s_aScratchHits;
+    }
+    if (pOut == NULL) {
+        pOut = &s_scratchOut;
+    }
+
     Combat_ClearShotFlags(pRosters);
 
     /* 0x2f254: the splash walk reads the firing weapon back out of the map. */

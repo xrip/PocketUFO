@@ -147,6 +147,46 @@ void Combat_ResolveShot(CombatCtx *pCtx, const ShotHooks *pHooks,
                         i32 nLayer, i32 nSlot, const ObjectRecFull *pWeapon,
                         u32 *apHits, u32 *apHitsSave, ShotOutcome *pOut);
 
+/* ---------------------------------------------------------- proximity devices */
+
+/* A proximity device is a TactItem whose ObjectRec has nCategory == 3 and whose own
+ * bUnk8 byte at TactItem + 0x08 is set. TactItem.bUnk7 at +0x07 is the arming
+ * countdown.
+ *
+ * The blast device, the one this function looks for, is ObjectRec.uSortKey 16. The
+ * switch in MapCell_TickProximityItems (0x4b724) also knows 14 and 15. */
+#define PUFO_PROXIMITY_KEY_BLAST 16
+
+/* Half-width of the detonation box: SUB R6,R0,#4 / ADD R4,R0,#4 at 0x32FD8 and
+ * 0x32FE0, so the box is [nX-4, nX+4) by [nY-4, nY+4), nine cells across. */
+#define PUFO_PROXIMITY_BOX_RADIUS 4
+
+/* The state both proximity functions reach through the Map block in the original. */
+typedef struct ProximityCtx {
+    CombatCtx          *pCombat;      /* nShotOriginX/Y live here, Map+0x14054 and +0x14058 */
+    const ShotHooks    *pShotHooks;
+    const UnitRosters  *pRosters;
+    const MapGeom      *pGeom;
+    MapCellLookup       pfnLookupCell;
+    void               *pLookupUser;
+    const u8           *paSteps;      /* the step table Map_ScanBlastFootprint walks */
+    u8                 *pbBlastScanFlag; /* unk_157198 + 70112, cleared at 0x32FCC */
+} ProximityCtx;
+
+/* Combat_DetonateNearbyItems @ 0x32fa8. Detonate the armed blast devices in a nine by
+ * nine box around a source cell, on every layer.
+ *
+ * It TESTS the countdown rather than decrementing it, unlike MapCell_TickProximityItems
+ * function at 0x4b724 is the one that runs it down. Every candidate is gated a second time
+ * by Map_ScanBlastFootprint, and after a successful detonation the walk restarts from
+ * the head of that cell's list, so a cell holding several devices is drained one at a
+ * time from the front.
+ *
+ * Deviation: the original indexes the cell array directly and only asks Map_IsValidCell
+ * whether the coordinate is inside the map; the port takes the cell from the lookup it
+ * was given. */
+void Combat_DetonateNearbyItems(ProximityCtx *pCtx, const MapCell *pSrcCell);
+
 /* Research gate. The original asks the in-memory research table directly:
  *     aFacTypeTable[4 + 34 * byte_AA968[weapon.uSortKey]] != 0
  * A weapon may not be fired unless its research topic allows it. The table's

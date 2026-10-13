@@ -2,6 +2,7 @@
  * Evidence: Combat_SplashDamageCells @ 0x2e7d8, Unit_ApplyCellDamage @ 0x2e5d0. */
 #include "game/pufo_combat.h"
 #include "game/pufo_mapcell.h"
+#include "game/pufo_vistry.h"   /* VisRay, PUFO_VIS_RAY_COUNT, Map_ScanBlastFootprint */
 #include "util/pufo_rand.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_unit.h"
@@ -716,6 +717,171 @@ static void TestResolveShot(void)
     Check("the two sound tables are distinct",
           g_aShotSound[147] != g_aFireSoundBySortKey[0]);
 }
+/* --- Combat_DetonateNearbyItems @ 0x32fa8 -----------------------------------
+ *
+ * The box is [nX-4, nX+4) by [nY-4, nY+4), so the far edge is excluded. A device is
+ * only a candidate when its object is category 3 with sort key 16, its own bUnk8 is set,
+ * and its countdown has reached zero. This function TESTS the countdown; the tick
+ * function at 0x4b724 is the one that runs it down. */
+
+static TactItem      s_aDev[6];
+static ObjectRecFull s_objBlast;   /* category 3, sort key 16 */
+static ObjectRecFull s_objMark;    /* category 3, sort key 14 */
+static Soldier       s_occ;
+static VisRay        s_aRays[PUFO_VIS_RAY_COUNT];
+static u8            s_aSteps[PUFO_VIS_TABLE_BYTES];
+static u8            s_bFlag;
+static ProximityCtx  s_prox;
+
+#define PROX_X 30
+#define PROX_Y 30
+
+static MapCell *ProxCell(i32 nOffX, i32 nOffY, i32 nLayer)
+{
+    return &g_aCells[nLayer][PROX_Y + nOffY][PROX_X + nOffX];
+}
+
+static void ProxFixture(void)
+{
+    /* Reuse the shot-resolution fixture: Combat_ResolveShot needs the rosters, the
+     * weapon, and the map fire context already in place. */
+    ResolveSetup();
+
+    memset(s_aDev, 0, sizeof(s_aDev));
+    memset(&s_objBlast, 0, sizeof(s_objBlast));
+    memset(&s_objMark, 0, sizeof(s_objMark));
+    memset(&s_occ, 0, sizeof(s_occ));
+    s_bFlag = 0xAA;
+
+    for (i32 z = 0; z < PUFO_MAP_LAYERS; ++z) {
+        for (i32 y = 0; y < 60; ++y) {
+            for (i32 x = 0; x < 60; ++x) {
+                g_aCells[z][y][x].nX = (u8)x;
+                g_aCells[z][y][x].nY = (u8)y;
+                g_aCells[z][y][x].nZ = (u8)z;
+            }
+        }
+    }
+
+    s_objBlast.nCategory = 3;
+    s_objBlast.uSortKey = 16;
+    s_objMark.nCategory = 3;
+    s_objMark.uSortKey = 14;
+
+    for (i32 i = 0; i < 6; ++i) {
+        s_aDev[i].pObj = &s_objBlast;
+        s_aDev[i].bUnk8 = 1;
+        s_aDev[i].bUnk7 = 0;   /* elapsed */
+        s_aDev[i].pNext = NULL;
+    }
+
+    memset(s_aRays, 0, sizeof(s_aRays));
+    memset(s_aSteps, 0, sizeof(s_aSteps));
+    Tact_BuildVisRayTable(s_aRays, s_aSteps);
+
+    memset(&s_prox, 0, sizeof(s_prox));
+    s_prox.pCombat = &g_c;
+    s_prox.pShotHooks = &g_hooks;
+    s_prox.pRosters = &g_rost;
+    s_prox.pGeom = &g_geom;
+    s_prox.pfnLookupCell = CellLookup;
+    s_prox.pLookupUser = NULL;
+    s_prox.paSteps = s_aSteps;
+    s_prox.pbBlastScanFlag = &s_bFlag;
+}
+
+/* Map_ScanBlastFootprint is the second gate on every candidate: it has to find an
+ * occupant within its radius. One neighbour over is enough. */
+static void ArmBlastAt(MapCell *pCell)
+{
+    MapCell *pOcc = &g_aCells[pCell->nZ][pCell->nY][pCell->nX + 1];
+
+    pOcc->pUnit = &s_occ;
+    s_occ.pCell = pOcc;
+    s_occ.bStatus = 0;
+}
+
+static bool ListHas(MapCell *pCell, TactItem *pWant)
+{
+    for (TactItem *pItem = pCell->pItemList; pItem != NULL; pItem = pItem->pNext) {
+        if (pItem == pWant) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void TestDetonateNearbyItems(void)
+{
+    printf("Combat_DetonateNearbyItems @ 0x32fa8\n");
+
+    /* An elapsed blast device in the origin cell goes off and leaves the list. */
+    ProxFixture();
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    g_c.nShotOriginX = -1;
+    g_c.nShotOriginY = -1;
+
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+
+    Check("the device left the cell list", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    CheckEqI32("origin x recorded", g_c.nShotOriginX, PROX_X);
+    CheckEqI32("origin y recorded", g_c.nShotOriginY, PROX_Y);
+    CheckEqI32("the blast scan flag is cleared", s_bFlag, 0);
+
+    /* The countdown is only tested here, never decremented. */
+    ProxFixture();
+    s_aDev[0].bUnk7 = 3;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("an unelapsed device is not detonated", ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    CheckEqI32("and its countdown is left alone", s_aDev[0].bUnk7, 3);
+
+    /* Only sort key 16 is a candidate, and bUnk8 must be set. */
+    ProxFixture();
+    s_aDev[0].pObj = &s_objMark;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("sort key 14 is not a blast device", ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+
+    ProxFixture();
+    s_aDev[0].bUnk8 = 0;
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("an item without bUnk8 is not a proximity device", ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+
+    /* The box is nine cells across and the far edge is excluded: three cells out is
+     * inside, four cells out is not. */
+    ProxFixture();
+    ProxCell(3, 0, 0)->pItemList = &s_aDev[0];
+    ProxCell(4, 0, 0)->pItemList = &s_aDev[1];
+    ArmBlastAt(ProxCell(3, 0, 0));
+    ArmBlastAt(ProxCell(4, 0, 0));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("three cells out is inside the box", !ListHas(ProxCell(3, 0, 0), &s_aDev[0]));
+    Check("four cells out is outside it", ListHas(ProxCell(4, 0, 0), &s_aDev[1]));
+
+    /* Every layer is swept, not just the source layer. */
+    ProxFixture();
+    ProxCell(0, 0, 2)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 2));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("layer 2 is swept as well", !ListHas(ProxCell(0, 0, 2), &s_aDev[0]));
+
+    /* Two devices in one cell: the walk restarts at the head after each detonation, so
+     * both go off and the list drains from the front. */
+    ProxFixture();
+    s_aDev[0].pNext = &s_aDev[1];
+    ProxCell(0, 0, 0)->pItemList = &s_aDev[0];
+    ArmBlastAt(ProxCell(0, 0, 0));
+    Combat_DetonateNearbyItems(&s_prox, ProxCell(0, 0, 0));
+    Check("the first device went off", !ListHas(ProxCell(0, 0, 0), &s_aDev[0]));
+    Check("and the walk restarted for the second", !ListHas(ProxCell(0, 0, 0), &s_aDev[1]));
+}
+
 int main(void)
 {
     TestIndex();
@@ -728,6 +894,7 @@ int main(void)
     TestThrowMode();
     TestSelectFireMode();
     TestResolveShot();
+    TestDetonateNearbyItems();
 
     return TestSummary("test_combat");
 }
