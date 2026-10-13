@@ -7995,3 +7995,94 @@ object slot 0.
 
 The meaning of the `aMissionTileTypes` sentinels `0x10`, `0x11` and `0x12` is not settled — only that
 they suppress the stamping passes, and that `0x14` additionally suppresses that tile's `.rmp` load.
+
+## `Tact_InitMission @ 0x3c550` — ported, and the mission-start contract it fixes
+
+`src/pufo/game/pufo_tactinit.{h,c}`, asserted by `tests/test_tactinit.c` (8 cases). 4,120 bytes cited,
+which is exactly `0x1018`, the function size in `docs/idb/inventory-grouped.tsv`.
+
+### The prologue flag block, in the ARM's order
+
+`0x3C64C..0x3C734` is a flat run of stores with no structure, and the order is the ARM's, not a
+sorted one. Two things in it are easy to get wrong:
+
+- `Map+0x00` is set to **1**. `0x3C678` is `MOV R0,#1` followed by `STRB`, so the tactical flag is
+  raised here, not cleared. `Map_InitFacingScratch` at `0x3CB30` then reads it as the tactical
+  argument.
+- `Map_nUiScreen @ Map+0x3A` is cleared with `STRH` at `0x3C67C`. It is a **u16**, and it is cleared
+  here — which is why the briefing's save of it (below) always saves zero.
+
+`var_s28` is `nMode`, stored once at `0x3C560` and re-read at `0x3CBB8` (the mode split) and `0x3D298`
+(the briefing guard). The port keeps it as the `nMode` parameter.
+
+### The deploy-point sweep reads the craft tile the terrain builder just re-rolled
+
+`0x3CC20` is the sweep. Its record address is built as `4*n + 104*(Map_nMapLayers-1)` bytes into
+`aDeployCellOffsets @ 0xA66B8`, so the table is 26 four-byte records per 104-byte group and the group
+index is `nMapLayers - 1`. Record bytes 0, 1 and 2 are `dx`, `dy` and `layer`, loaded unsigned, and the
+cell it names is
+
+```
+3600*entry[2] + 60*(10*Map_nCraftMapY + entry[1]) + (10*Map_nCraftMapX + entry[0])
+```
+
+The two craft bytes are `Map_nCraftMapX/Y @ 0x128AF1 / 0x128AF2` (`Map+0x15139 / 0x1513A`) — the same
+two bytes `Map_BuildMissionTerrain` writes when it picks the plane tile. So the sweep does **not** use
+the caller's craft position; it uses whatever the terrain pass left. A test that pins the craft tile in
+the fixture and then asserts the stamped cells is wrong, and it was wrong here until this step caught
+it. The assertion now reads the position back after the run.
+
+`Tact_SelectTeamUnits` builds its anchor from the same table and the same two bytes, which is the
+cross-check that the stride is right.
+
+### The layer switch has a hole, and the showship reveal falls into it
+
+`0x3CE70` switches on `Map_nMapLayers`: 1 and 3 store `(5,10)` into `var_350`/`var_354`, 2 stores
+`(5,5)`, and there is no default. A layer count of 0 skips the consumer, so the hole is only reachable
+at 4 or more — and the consumer is the showship reveal centre at `0x3CEA4`, which reads both. Recorded
+in `bugs.tsv`; the port initialises both to zero.
+
+The reveal header order is the other easy mistake: word 0 is the **entry count** and drives the outer
+loop, word 1 is the **entry length** and drives the inner one, and `0xFF` means this entry reveals
+nothing. The centre is `10*craft - half-extent + (var_350, var_354)`, and every revealed column is run
+over all four layers — the `+0x3840` step in the ARM is 3600 dwords, one layer.
+
+`AssetReader_Find` for `showship.dat` at `0x3CADC` is not tested. A missing member leaves the reader
+size at zero, the code allocates zero bytes, and the reveal block reads its two header words through
+that allocation. The port stores NULL for a zero-size member, which the reveal already treats as
+"nothing to reveal".
+
+### The briefing, and the value it saves
+
+`0x3D29C` is `LDRH R0,[Map_nUiScreen]` then `STR R0,[Map+0x8C]` — `apUiSlotsA[11]` gets the screen
+field as a dword — and `0x3D2B0` sets the field to 20 with `STRH`. Because the prologue cleared the
+field, the saved value is always 0 on this path. A test that sets the field before the run and expects
+to find it in slot 11 is testing the fixture, not the game.
+
+The tail at `0x3D434` is `nLineCount += 2`, and `UiPanel_WrapText @ 0x37144` ends with
+`pPanel->nLineCount = nLineStart + committed`. So a one-line wrap from line 0 leaves 1, and the
+briefing panel finishes at 3, not 2.
+
+Two original defects sit in this block. When `operator new(0x14)` fails, `0x3D2CC` stores `R11` — the
+zero the prologue set at `0x3C598`, never a pad pointer — into the pad global and calls
+`PadImage_Load` anyway; `0x3D2E8` then writes through the stored NULL. And the pad global `unk_15692C`
+is overwritten without freeing what the previous mission allocated, both on the skip path at `0x3D548`
+and on the run path at `0x3D2D0`.
+
+### Deviations the port makes on purpose
+
+- The three singletons (`TactState`, `TactCtx272`, `TactBuf11408`) and the five panels are caller-owned
+  in the port; the original allocates them into globals.
+- `Tact_LoadPalettes` is called with `*pEnv->pnGamma`. In ARM it takes no argument at all —
+  `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8` itself. The argument is residue in the
+  original and harmless; the port keeps its existing signature.
+- The briefing pad is dropped rather than freed, matching `0x3D548`.
+- `pufo_ui` calls (`UiPanel_ctor`, `UiPanel_SetBytes6to11`, `UiPanel_WrapText`, `Tact_LoadUiPads`,
+  `Tact_InitUiControls`) and the audio calls go through hooks so `pufo_game` does not link `pufo_ui`.
+
+### What this step found in the fixture rather than in the port
+
+`Tact_BuildVisRayTable` writes `PUFO_VIS_TABLE_BYTES` = 14,880 step bytes. The new fixture sized its
+step array at 256, so the builder overran into the asset registry's statics and the next
+`AssetReader_Find` dereferenced a clobbered directory pointer. The ray table itself was correct; the
+buffer was not. Worth remembering because the symptom was a crash three calls away from the cause.

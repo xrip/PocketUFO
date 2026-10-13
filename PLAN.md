@@ -151,7 +151,44 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Font_Init`, `TactCtx272_ctor`, `StartTimers_BySpeed` and `Inv_OpenScreen` were already ported under
   other names. Deviation recorded: the original sizes each block as `2 * (size / 2)` and reads the full
   member size into it (a one-byte overflow on an odd member) and never frees the previous pair.
-- [ ] `Tact_InitMission (0x3c550)`
+- [x] `Tact_InitMission @ 0x3c550` — ported, 4,120 B cited, in `src/pufo/game/pufo_tactinit.{h,c}`
+  - [x] `TactInitEnv` carries the whole Map-block half of the function as caller-owned pointers, plus
+    the five `UiPanel *`, the 14400-entry cell array, and the embedded contexts for every callee it
+    fills (`terrain`, `select`, `teamSelect`, `spawnAliens`, `cargo`, `equip`, `deploy`, `focus`,
+    `cursorPos`, `vis`, `invOpen`)
+  - [x] hooks for the `pufo_ui` seam (`PanelCtor`, `PanelStyle6to11`, `PanelWrapText`, `LoadUiPads`,
+    `InitUiControls`), the audio backend (`SoundInit`, `SoundPlayMusic`, both volume passes), the
+    sprite loader and the inventory screen
+  - [x] the flag block decoded from ARM in its own order: `Map+0x00` is set to **1**, not 0
+    (`MOV R0,#1` at 0x3C678), and `apUiSlotsA[2]` @ `Map+0x68` is the sweep gate the tail arms
+  - [x] the deploy-point sweep stride: `4*n + 104*(nMapLayers-1)` bytes into `aDeployCellOffsets
+    @ 0xA66B8` — 26 four-byte records per 104-byte group, bytes 0/1/2 are dx, dy, layer. Its base is
+    `Map_nCraftMapX/Y @ 0x15139/3A`, which `Map_BuildMissionTerrain` re-rolls, so the sweep follows
+    the terrain pass rather than the caller's value
+  - [x] the showship header order settled: word 0 is the entry count (outer), word 1 the entry length
+    (inner), `0xFF` reveals nothing, and every revealed column runs all four layers
+  - [x] the briefing text assembly settled, including the `nLineCount += 2` tail at `0x3D434` and the
+    fact that `UiPanel_WrapText @ 0x37144` ends with `nLineCount = nLineStart + committed`
+  - [x] `apUiSlotsA[11] @ Map+0x8C` is written by `LDRH Map_nUiScreen` at `0x3D29C` — and the prologue
+    has already cleared `Map_nUiScreen`, so the saved value is always 0 on this path
+  - [x] `tests/test_tactinit.c`: 8 cases. The prologue flag block, the weapon-select record and the
+    object pointer copies, the five panel layouts, the deploy-point sweep, the `bFlags29` bit-4 rule,
+    the showship reveal against the shipped `showship.dat`, the briefing, the briefing skip, and the
+    save-load mode leaving `unk_138E8C` alone
+  - [x] IDB: named `Map_bBattleEnded` (0x113A14), `Map_bAltOutcomePath` (0x1153D9),
+    `Map_bPlayerInputEnabled` (0x1139F0) and `Map_nUiScreen` (0x1139F2, u16 — the briefing writes it
+    with `STRH`); commented the function header, the deploy sweep at `0x3CC20`, the layer switch at
+    `0x3CE70`, the reveal at `0x3CEA4`, the slot-11 save at `0x3D29C`, the pad global at `0x3D548`,
+    the failed allocation at `0x3D2CC`, the weapon record at `0x3C720`, the drag sentinel at `0x3CB40`,
+    and the globals `0x138E6C`, `0x138E70`, `0x138E8C`, `0x128AD6`, `0x10DB90`, `0x138EA0`,
+    `0x113A1C`, `0x113A44`
+  - [x] four rows added to `bugs.tsv` (58 total): the layer switch leaving `var_350`/`var_354`
+    unwritten for a layer count of 0 or 4+, the failed `new(0x14)` storing NULL and then writing
+    through it, the pad global overwritten without a free, and the untested `AssetReader_Find` for
+    `showship.dat`
+  - [x] a fixture bug this step exposed: `Tact_BuildVisRayTable` writes `PUFO_VIS_TABLE_BYTES`
+    (14,880) step bytes, and the new fixture sized its step array at 256. It overran into the asset
+    registry's statics and crashed the next `AssetReader_Find`. The ray table itself was correct.
 - [ ] `LoadGame (0x44bbc)`
 
 ## Later priorities
@@ -171,6 +208,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - It fired again when `test_tactend` was added: `Tact_Shutdown` calls `StrategList_RemoveAt`,
     which pulls `pufo_strateg.obj`, which reaches `UiLineList_Remove` in `pufo_ui`. The test target
     now links `pufo_ui` like the other fifteen that already had to.
+- [ ] Three test targets fail in the **Debug** configuration and pass in Release. All three already
+  fail at `04f1155` — verified by building that commit in a clean worktree with the same ClangCL
+  toolset — so none of them came from the `Tact_InitMission` step. They are Debug-CRT artefacts:
+  uninitialised memory and allocator block reuse, both of which the tests assume away.
+  - `test_titles`: `Titles_DrawBackdrop @ 0x1e630` returns 3 at a scroll of 0 but still draws a
+    credit row, while the test asserts it draws none. Either the row rule or the test is wrong;
+    needs a fresh ARM read of `0x1e630`.
+  - `test_save`: "the first item is unaffected" reads `0xCDCDCDCD` — the Debug CRT's uninitialised
+    heap marker. Something on that path is read before it is written.
+  - `test_template`: asserts that `MapTemplate_Load` produced a *different* `pBlob` pointer than the
+    one it freed. The allocator is free to reuse the block, so the check passes or fails with heap
+    state; it passed on rerun. This is the pointer-identity trap already noted in `HANDOFF.md`.
+  These are not folded into the porting steps. They need their own pass.
+- [ ] `Tact_LoadPalettes(i32 nGamma)` / `Tact_BuildPaletteLuts(i32 nGamma)` take an argument the
+  original does not: in ARM both take none, and `Tact_BuildPaletteLuts` reads `Map_nGamma @ 0x128AB8`
+  itself. `Tact_InitMission` passes `*pEnv->pnGamma` to keep the existing signature. Harmless, but it
+  is a signature deviation carried in already-ported code.
+- [ ] `TactShutdownEnv.pbActionLatch /* Map+0x00 */` conflicts with `Map_bActionLatch @ Map+0x02`;
+  `Tact_InitMission` sets `Map+0x00` to 1 and `Map+0x02` to 0, so the two are different fields and one
+  of the two comments is wrong.
+- [ ] The cell grid is modelled twice: `GameMap.aCells` and `TactInitEnv.apCells` are the same
+  14400-entry array reached through two different fields. One owner should be picked.
 
 ## Measured state
 
@@ -188,3 +247,9 @@ Refresh after each commit. A coverage delta must match the function size in
 | `.ma1` direction fix | 49/49 | 6984 | 669/1103 (60.7%) | 239932/598792 (40.1%) | 30 checked, 0 mismatched |
 | `Map_BuildMissionTerrain` | 50/50 | 7043 | 670/1103 (60.7%) | 250608/598792 (41.9%) | 34 checked, 0 mismatched |
 | this commit (`Tact_LoadLoftData`) | 50/50 | 7048 | 671/1103 (60.8%) | 250792/598792 (41.9%) | 34 checked, 0 mismatched |
+| `Tact_InitMission` | 51/51 (Release) | 7133 | 672/1103 (60.9%) | 254912/598792 (42.6%) | 34 checked, 0 mismatched |
+
+Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
+fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
+commit in a clean worktree with the same ClangCL toolset), so none came from this step. See "Separate
+issues".

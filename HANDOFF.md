@@ -41,19 +41,27 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 50
-                                             Total Test time (real) = 1.55 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 51
+                                             Total Test time (real) = 1.75 sec
 ```
+
+In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
+three already fail at `04f1155` (checked by building that commit in a clean worktree with the same
+ClangCL toolset), so they are not from the last step. They are Debug-CRT artefacts — `test_save` reads
+the `0xCDCDCDCD` uninitialised-heap marker, `test_template` asserts that a `malloc` after a `free`
+returns a different pointer, and `test_titles` disagrees with `Titles_DrawBackdrop @ 0x1e630` about
+whether a scroll of 0 draws a credit row. The first two are test bugs; the third needs a fresh ARM
+read. See §7.
 
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 671 / 1103 (60.8%)
-                                             bytes cited:     250792 / 598792 (41.9%)
+python docs/parity/coverage.py            -> functions cited: 672 / 1103 (60.9%)
+                                             bytes cited:     254912 / 598792 (42.6%)
 python docs/parity/audit_credits.py       -> NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 52, ORIGINAL BUG markers in src/pufo: 16
+python docs/parity/audit_bugs.py          -> ledger rows: 56, ORIGINAL BUG markers in src/pufo: 16
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 34 tables checked, 0 mismatched
 ```
@@ -66,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 50 suites: **7048**.
+Test checks run across the 51 suites: **7133**.
 
 ### Per-subsystem status
 
@@ -240,8 +248,9 @@ It is a game convention, not a port bug. Do not "fix" it.
   facility accounting, craft cargo and loadout chains, the mission-site spawn machine, and the whole
   titles animation cluster are ported and tested.
 
-What does **not** work yet: there is no end-to-end playable session. The tactical mission is never
-started, because `Tact_InitMission` is not ported, and the geoscape UI is not built.
+What does **not** work yet: there is no end-to-end playable session. `Tact_InitMission` is ported and
+the tactical mission now runs end to end in the test fixture, but nothing in the built executable calls
+it — the geoscape UI that would start a mission is not ported.
 
 ---
 
@@ -260,21 +269,19 @@ This is the shortest chain that produces a real game session, in dependency orde
    `0x156CD0` and `0x157208` have no reader outside this function, `0x157204` is the deploy cell it
    writes for `Tact_EquipTeamFromCraft`, and `0x158848` is the mission base index. All four are
    `TactCargoEnv` fields now.
-4. `Tact_InitMission` (0x3c550, 4,120 B) — was blocked only by item 1, which is now ported, so this is
-   the next thing on the path. Its callee list was checked against the port for this commit and only
-   one callee is genuinely missing: `Tact_LoadLoftData` (0x3bd6c), now ported in `pufo_los.c`.
-   `Font_Init` is `PufoFont_Init`, `TactCtx272_ctor` is `TactCtx_ctor`, `StartTimers_BySpeed` is
-   `Timer_StartBySpeed` and `Inv_OpenScreen` is `TactHud_OpenInventory` — all ported under other names
-   and all listed in `docs/parity/renames.tsv`. What makes this function hard is not its callees but
-   the ten global singletons it allocates and the roughly thirty flags it clears before it calls
-   anything.
+4. Done: `Tact_InitMission` (0x3c550, 4,120 B) — ported in `src/pufo/game/pufo_tactinit.{h,c}`. The
+   prediction held: the callees were never the problem, the state was. The function allocates ten
+   singletons and clears roughly thirty flags before it calls anything, and it hands eleven populated
+   contexts to its callees, so `TactInitEnv` carries all of it as caller-owned pointers and the port
+   fills the mission-derived half in `Init_FillCalleeEnvs`.
 5. Done: `Tact_Shutdown` (0x3d568, 3,788 B) — ported in `src/pufo/game/pufo_tactend.{h,c}`. It was
    deferred on the grounds that it frees singletons the port does not yet allocate. That objection
    dissolves the same way it does everywhere else in this port: the function takes every slot it
    frees as a caller-owned pointer and owns nothing itself. It went first because it was the only
    Priority 1 item whose callees were all already ported.
-6. `LoadGame` (0x44bbc, 3,400 B) — blocked by exactly three callees: `Geoscape_InitUI` (0x857f4,
-   5,420 B), `Tact_Shutdown`, `Tact_InitMission`.
+6. `LoadGame` (0x44bbc, 3,400 B) — was blocked by three callees; `Tact_Shutdown` and
+   `Tact_InitMission` are now ported, so it is blocked by exactly one: `Geoscape_InitUI` (0x857f4,
+   5,420 B). That makes `Geoscape_InitUI` the next item on the critical path.
 
 ### Largest unported functions by size
 
@@ -634,9 +641,16 @@ does.
    `Map_BuildMissionTerrain(MapTerrainEnv *)`, with `tests/test_terrain.c` (59 checks) and the four
    module-name tables generated by `tools/gen_terrain_tables.py`. It was the last Priority 1 item
    blocked on another Priority 1 item. The open decode questions closed on the way in; see §7.
-5. Port `Tact_InitMission` (0x3c550) — now unblocked.
-6. Done: `Tact_Shutdown` (0x3d568) is ported. Next is `LoadGame` (0x44bbc), still blocked by
-   `Geoscape_InitUI` and `Tact_InitMission`.
+5. Done: `Tact_InitMission` (0x3c550, 4,120 B) is ported in `src/pufo/game/pufo_tactinit.{h,c}` as
+   `Tact_InitMission(TactInitEnv *, int nMode)`, with `tests/test_tactinit.c` (8 cases). It fills the
+   eleven callee contexts the mission-start sequence hands out, so the tactical mission now runs end
+   to end through the ported terrain builder, team select, alien spawn, cargo, equip, the two cell
+   sweeps, the visibility walk and the showship reveal. What the step settled is in
+   `docs/parity/game-core.md`; the short version is that the deploy-point sweep and the showship reveal
+   both centre on `Map_nCraftMapX/Y @ 0x15139/3A`, which the terrain builder re-rolls, so neither
+   follows the caller's craft position.
+6. Done: `Tact_Shutdown` (0x3d568) is ported. Next is `LoadGame` (0x44bbc) — `Tact_InitMission` is no
+   longer in its way.
 7. Done: `MapView_DrawUnit` (0x1c958) is ported in `pufo_isodraw.c` behind `IsoUnitDrawGate`. Re-reading
    every branch in ARM changed four things the pseudocode had wrong or left unstated: the pose-frame
    branch converges on a store that happens before the zero test, so a zero entry is stored as 0; the

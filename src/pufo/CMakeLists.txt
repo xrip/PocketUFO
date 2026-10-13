@@ -46,6 +46,7 @@ add_library(pufo_game STATIC
     game/pufo_rmp.c
     game/pufo_tactctl.c
     game/pufo_tactend.c
+    game/pufo_tactinit.c
     game/pufo_turn.c
     game/pufo_save.c
     game/pufo_roster.c
@@ -583,6 +584,19 @@ set_target_properties(test_geoscape PROPERTIES
 )
 add_test(NAME test_geoscape
     COMMAND test_geoscape
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Tactical mission start: the prologue flag block, the five panels, the deploy and
+# bFlags29 sweeps, the showship reveal against the shipped showship.dat, and the briefing.
+add_executable(test_tactinit ${CMAKE_SOURCE_DIR}/tests/test_tactinit.c)
+target_link_libraries(test_tactinit PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat
+                      pufo_util pufo_audio)
+set_target_properties(test_tactinit PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_tactinit
+    COMMAND test_tactinit
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
