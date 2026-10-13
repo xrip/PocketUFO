@@ -7233,3 +7233,32 @@ One residual risk worth naming before a port: `k` is the running count of hardwa
 five object indices, and nothing caps it at 4. A fifth hardware soldier on layer 1 would read past the twelve
 records into `aDeployCellOffsets`. Whether that can happen depends on `uRecovCount` in shipped data, so it is
 worth checking rather than assuming.
+
+## Proximity devices: `MapCell_TickProximityItems @ 0x4b724` and `Combat_DetonateNearbyItems @ 0x32fa8`
+
+Both decoded, neither ported yet. Together they are the arming countdown and the chain reaction.
+
+**What a proximity device is.** A `TactItem` whose object has `nCategory == 3` and whose own `bUnk8` byte
+(`TactItem + 0x08`) is set. `TactItem.bUnk7` at `+0x07` is the **arming countdown**: the tick function
+decrements it once per call for every such item in the cell, and the device goes off when it reaches zero.
+
+**`MapCell_TickProximityItems` (516 B)** walks one cell's item list and switches on `ObjectRec.uSortKey`:
+
+| sort key | behaviour |
+|---|---|
+| 14 | does **not** detonate. Sets `pCell->nFlags40 = (nFlags40 & ~0x78) \| 0x38`, removes the item |
+| 15 | sets `Map.nFireOrigX/Y`, focuses the view when `pCell->bFlags44` bit 0 is set, resolves the shot, removes |
+| 16 | `Map_ScanBlastFootprint` first — if it returns 0 the **whole function returns**. Otherwise resolves the shot and returns **without removing the item** |
+| other | sets the origin, removes the item, focuses, resolves the shot, returns |
+
+So only key 14 is removed without detonating, and key 16 detonates but stays in the list.
+
+**`Combat_DetonateNearbyItems` (416 B)** is a **9 × 9 box** `[nX-4, nX+4) × [nY-4, nY+4)` over all four
+layers. Its gate *tests* `bUnk7 <= 0` but does **not** decrement it, unlike the tick function. Every candidate
+is gated again by `Map_ScanBlastFootprint`, and after a successful detonation the walk **restarts from the
+head of that cell's list**.
+
+**Hex-Rays mangled both of these.** For the detonation box it rendered the bounds as `&result[-1].bUnk56` and
+`&result->pWallSprA`, and the sort key as `result[3].nUnk20`. ARM at `0x32FC8` is plain: `LDRB R0,[R1,#0x1A]`
+is `MapCell.nX`, `SUB`/`ADD #4` give the bounds, `0x1B` is `nY`, and the sort key is `ObjectRec + 0xC8`.
+Reading the pseudocode here would have produced a nonsense loop range.
