@@ -59,11 +59,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
     per layer, 4 layers, 14400 dwords = `0xE100` B, ending exactly at `Map+0x23438` = `apTactItems`
   - [x] the 6×6 module grid lives at `&pTpl.pDim1` and overruns the 20-byte `CDialogTemplate`
   - [x] every template dimension is read as `_rt_sdiv(headerByte, 10)` — cells to tiles
-  - [ ] open: the module-grid values `0..4`, the `var_90` kind codes, `byte_A6AF0`, `aMissionTileTypes`
+  - [ ] open: the module-grid values `0..4`, the `var_276` kind codes, `byte_A6AF0`, `aMissionTileTypes`
     at `0x159768+0x5F0/+0x5F4`, `unk_128B00`, `word_128B04/128B08`, and the three near-duplicate
     stamping copies
   - [ ] `CDialogTemplate_GetTemplateByte0 @ 0x54c68` and `GetTemplateByte1 @ 0x54c5c` (12 B each) are
     the only unported callees; both are `pBlob[0]` / `pBlob[1]` accessors
+  - [x] name tables verified from the image, nine bytes per entry:
+    `aTerrainNameByMissionType @ 0xA67F8` = jungle, culta, forest, xbase_, ubase_, urban, desert,
+    mount, polar, mars (indexed by `Map_nMissionType`); `aTerrainNameSuffix0 @ 0xA7B20` = `"0"` for
+    every type except urban which is `"4"`; `aPlane @ 0xA6668` = plane, lightnin, avenger (indexed by
+    `Map_nMissionType - 1`); the UFO module table at `0xA6590` = ufo1a, ufo_110, ufo_120, ufo_130,
+    ufo_140, ufo_150, ufo_170, ufo_160 (indexed by `3*(variant-1) + tier`)
+  - [x] IDB: named `Map_nMapDimX @ 0x128AD3` and `Map_nMapDimY @ 0x128AD4` (the tile bounds the cell
+    grid loops use), commented the four name tables, and recorded that Hex-Rays renders the
+    `Map_nTerrainVariant` read as `Map+0x15110` while the ARM literal at `0x23170` is `0x15111`
+  - [ ] reading aid: the full Hex-Rays text is in `.tmp/bmt/bmt1.c` (scratch, untracked). The MCP
+    `decompile` truncates at ~52 KB; `curl` to `http://127.0.0.1:13337/mcp` truncates too, so the
+    dump has to come from a session that already holds it. Do not trust its offsets — ARM wins.
 - [ ] `Tact_InitMission (0x3c550)`
 - [ ] `Tact_Shutdown (0x3d568)`
 - [ ] `LoadGame (0x44bbc)`
