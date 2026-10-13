@@ -5,7 +5,9 @@
 #include "game/pufo_path.h"
 #include "game/pufo_boot.h"
 #include "game/pufo_font.h"
+#include "game/pufo_invdrag.h" /* InvHitState */
 #include "util/pufo_rand.h" /* Game_RandU16, the panel's next animation mode */
+#include "util/pufo_str.h"   /* pufo_strcpy / pufo_strcat; strcat is a -Werror error here */
 
 #include <math.h>
 #include <stddef.h>
@@ -1299,6 +1301,112 @@ void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor)
             if (ItemSlotFilled(pItem, pEnv->pEmptySlot)) {
                 DrawItemIcon(pEnv, pItem, 19 * nCol + anPocketX[k], anPocketY[k], false, false);
             }
+        }
+    }
+}
+
+/* The nine-case hit highlight. Regions 1 to 4 and 7 to 8 read the hit item's object with no test, the
+ * way the original does. */
+static void InventoryHighlight(const TactHudInventoryEnv *pEnv)
+{
+    const InvHitState *pHit = pEnv->pHit;
+    const ObjectRec   *pObj = pHit->pHitItem->pObj;
+    i32 nX, nY, nW, nH;
+
+    switch (pHit->nHitRegion) {
+    case 0: nX = 38 * pHit->nHitSub0 + 22;  nY = 263; nW = 37; nH = 52; break;
+    case 1: nX = 19 * pHit->nHitSub0 + 23;  nY = 23;  nW = 19 * (i32)pObj->nFootW - 1; nH = 19; break;
+    case 2: nX = 19 * pHit->nHitSub0 + 104; nY = 23;  nW = 19 * (i32)pObj->nFootW - 1; nH = 19; break;
+    case 3: nX = 19 * pHit->nHitSub0 + 23;  nY = 161; nW = 19 * (i32)pObj->nFootW - 1; nH = 19; break;
+    case 4: nX = 19 * pHit->nHitSub0 + 104; nY = 161; nW = 19 * (i32)pObj->nFootW - 1; nH = 19; break;
+    case 5: nX = 4;   nY = 62; nW = 37; nH = 50; break;
+    case 6: nX = 123; nY = 62; nW = 37; nH = 50; break;
+    case 7: nX = 19 * pHit->nHitSub0 + 161; nY = 19 * pHit->nHitSub1 + 161;
+            nW = 19 * (i32)pObj->nFootW - 1; nH = 19 * (i32)pObj->nFootH - 1; break;
+    case 8: nX = 19 * (pHit->nHitSub0 + 9); nY = 19 * pHit->nHitSub1 + 23;
+            nW = 19 * (i32)pObj->nFootW - 1; nH = 19 * (i32)pObj->nFootH - 1; break;
+    default: return; /* any other region draws no highlight at all */
+    }
+
+    SoftSurf_BlitRectProxy(0, nX, nY, nW, nH, 0, 0x78, 0x78);
+}
+
+/* TactHud_DrawInventoryScreen @ 0x1f58c. */
+void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *pColor,
+                                 UiControlBlitFn pfnPadBlit, UiControlBlitFn pfnPadBlitEx,
+                                 void *pPadUser)
+{
+    Soldier *pUnit = pEnv->pSelUnit;
+    char szText[100];
+    char szNum[16];
+    i32 nBurdenLevel;
+
+    PadImage_Blit(pEnv->pInvPad);
+
+    for (i32 i = 0; i < PUFO_HUD_INV_CONTROLS; ++i) {
+        (void)UiControl_BlitActivePad(&pEnv->aControls[i], pfnPadBlit, pfnPadBlitEx, pPadUser);
+    }
+
+    if (pEnv->bInvPanelOpen != 0 && pEnv->nDragActive != 0) {
+        InventoryHighlight(pEnv);
+    }
+
+    /* The burden bar: green when the ratio is zero, yellow at one, red at two or more. */
+    (void)Gfx_PackRgb565Pair(pColor, 55, 255, 55, 10, 93, 10);
+    Text_DrawString(113, 140, pEnv->pszBurdenLabel);
+
+    nBurdenLevel = (4 * (i32)pUnit->uInvBurden) / (i32)pUnit->auStat[8];
+    if (nBurdenLevel == 0) {
+        (void)Gfx_PackRgb565Pair(pColor, 55, 255, 55, 10, 93, 10);
+    } else if (nBurdenLevel < 2) {
+        (void)Gfx_PackRgb565Pair(pColor, 255, 255, 55, 93, 93, 10);
+    } else {
+        (void)Gfx_PackRgb565Pair(pColor, 255, 55, 55, 93, 10, 10);
+    }
+
+    snprintf(szText, sizeof(szText), "%d", (int)pUnit->uInvBurden - 1);
+    (void)pufo_strcat(szText, pEnv->pszBurdenSuffix, sizeof(szText));
+    Text_DrawString(185, 140, szText);
+
+    /* The unit header line: "Rank: Name (TU)". */
+    pufo_strcpy(szText, Unit_FormatDisplayName(pUnit, 0, pEnv->panRankLow, pEnv->panRankOther));
+    (void)pufo_strcat(szText, " (", sizeof(szText));
+    snprintf(szNum, sizeof(szNum), "%d", (int)pUnit->uTu);
+    (void)pufo_strcat(szText, szNum, sizeof(szText));
+    (void)pufo_strcat(szText, ")", sizeof(szText));
+
+    (void)Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+    Text_DrawString(3, 2, szText);
+
+    TactHud_DrawItemStrip(&pEnv->Strip, pColor);
+
+    PadImage_BlitEx(pEnv->apPortraitPad[8 * (i32)pUnit->nUnitType
+                                           + 4 * pUnit->bFemale
+                                           + pUnit->nLook], 0);
+
+    if (pEnv->bInvPanelOpen != 0) {
+        const TactItem  *pHit = pEnv->pHit->pHitItem;
+        const ObjectRec *pObj = pHit->pObj;
+
+        pufo_strcpy(szText, (const char *)pObj->gap_0);
+
+        if (pObj->bTwoHanded == 0 || pObj->bTwoHanded == 1) {
+            if (pObj->nCategory != 3 && pObj->nCategory != 5 && pObj->bAmmoCap != 255) {
+                (void)pufo_strcat(szText, " (", sizeof(szText));
+                snprintf(szNum, sizeof(szNum), "%d", (int)pHit->nAmmo);
+                (void)pufo_strcat(szText, szNum, sizeof(szText));
+                (void)pufo_strcat(szText, ")", sizeof(szText));
+            }
+        }
+
+        (void)Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
+        Text_DrawString(3, 203, szText);
+
+        /* The drag ghost is gated on the OPPOSITE sense of the highlight above. */
+        if (pEnv->nDragActive == 0) {
+            Font_DrawGlyph(pEnv->pHit->nDragOffX + pEnv->nCursorX,
+                           pEnv->pHit->nDragOffY + pEnv->nCursorY,
+                           (u16)(pObj->uIconId + pEnv->nBigObsBase - 1), 0);
         }
     }
 }

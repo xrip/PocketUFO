@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "pufo_test.h"
+#include "util/pufo_str.h"
 
 static inline void Check(const char *pWhat, int bOk) { TestCheck(pWhat, bOk); }
 
@@ -1605,6 +1606,245 @@ static void TestItemStrip(void)
     Check("nothing is drawn left of the number", PixAt(28, 301) == 0);
 }
 
+static char s_aInvRank[9][PUFO_RANK_NAME_STRIDE];
+
+static void TestInventoryScreen(void)
+{
+    static TactUiState ui;
+    static PadImage aPortrait[16];
+    static PadImage *apPortrait[16];
+    static u8 aPortraitData[16][6];
+    static PadImage invPad;
+    static u8 aInvPadData[6];
+    static PadImage aCtlPad[PUFO_HUD_INV_CONTROLS];
+    static PadImage aHandPad;
+    static u8 aHandData[6];
+    static ObjectRec obj;
+    static TactItem item;
+    static UiControl aCtl[PUFO_HUD_INV_CONTROLS];
+    TactHudInventoryEnv env;
+    InvHitState hit;
+    GfxColorEnv color;
+    Soldier unit;
+    SoftSurf surf;
+    i32 i;
+
+    printf("Inventory screen @ 0x1f58c\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &surf;
+    g_pTestPix = (u16 *)surf.pPixels;
+    InstallFakeFont();
+
+    for (i = 0; i < 9; ++i) {
+        pufo_strcpy(s_aInvRank[i], "Squad");
+    }
+
+    memset(&unit, 0, sizeof(unit));
+    unit.uTu = 25;
+    unit.auStat[8] = 20;
+    unit.uInvBurden = 1;
+    pufo_strcpy(unit.szName, "Hallow");
+
+    memset(&obj, 0, sizeof(obj));
+    pufo_strcpy((char *)obj.gap_0, "RIF");
+    obj.nFootW = 2;
+    obj.nFootH = 3;
+    obj.bTwoHanded = 0;
+    obj.nCategory = 0;
+    obj.bAmmoCap = 30;
+    obj.uIconId = 4;
+
+    memset(&item, 0, sizeof(item));
+    item.pObj = &obj;
+    item.nAmmo = 7;
+
+    memset(&hit, 0, sizeof(hit));
+    hit.pHitItem = &item;
+
+    /* An empty ground list keeps the item strip from drawing anything of its own. */
+    memset(&ui, 0, sizeof(ui));
+
+    /* PadImage_Blit and PadImage_BlitEx have no NULL guard, so every pad needs a real blob:
+     * u16 width, u16 height, then indexed pixels. */
+    for (i = 0; i < 16; ++i) {
+        aPortraitData[i][0] = 1; aPortraitData[i][1] = 0;   /* uWidth 1 */
+        aPortraitData[i][2] = 1; aPortraitData[i][3] = 0;   /* uHeight 1 */
+        aPortraitData[i][4] = 1;                            /* one indexed pixel */
+        PadImage_ctor(&aPortrait[i]);
+        aPortrait[i].pData  = aPortraitData[i];
+        aPortrait[i].uWidth = 1;
+        aPortrait[i].uHeight = 1;
+        aPortrait[i].nOriginX = 10 + 14 * i;
+        aPortrait[i].nOriginY = 315;
+        apPortrait[i] = &aPortrait[i];
+    }
+
+    aInvPadData[0] = 1; aInvPadData[1] = 0; aInvPadData[2] = 1; aInvPadData[3] = 0; aInvPadData[4] = 1;
+    PadImage_ctor(&invPad);
+    invPad.pData = aInvPadData;
+    invPad.uWidth = 1;
+    invPad.uHeight = 1;
+    invPad.nOriginX = 235;
+    invPad.nOriginY = 315;
+
+    aHandData[0] = 1; aHandData[1] = 0; aHandData[2] = 1; aHandData[3] = 0; aHandData[4] = 1;
+    PadImage_ctor(&aHandPad);
+    aHandPad.pData = aHandData;
+    aHandPad.uWidth = 1;
+    aHandPad.uHeight = 1;
+
+    memset(&color, 0, sizeof(color));
+
+    for (i = 0; i < PUFO_HUD_INV_CONTROLS; ++i) {
+        memset(&aCtl[i], 0, sizeof(aCtl[i]));
+        memset(&aCtlPad[i], 0, sizeof(aCtlPad[i]));
+        aCtl[i].apPads[0] = &aCtlPad[i];
+        aCtl[i].bEnabled  = 1;   /* a disabled control blits nothing at all */
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.pInvPad        = &invPad;
+    env.aControls      = aCtl;
+    env.pSelUnit       = &unit;
+    env.pHit           = &hit;
+    env.apPortraitPad  = apPortrait;
+    env.pszBurdenLabel = "";
+    env.pszBurdenSuffix = "";
+    env.panRankLow     = &s_aInvRank[0][0];
+    env.panRankOther   = &s_aInvRank[0][0];
+    env.nCursorX       = 100;
+    env.nCursorY       = 100;
+    env.nDragActive    = 1;
+    env.bInvPanelOpen  = 1;
+    env.nBigObsBase    = 10;
+    env.Strip.pUi           = &ui;
+    env.Strip.pSelUnit      = &unit;
+    env.Strip.pEmptyHandPad = &aHandPad;
+    env.Strip.pEmptySlot    = NULL;
+    env.Strip.nBigObsBase   = 10;
+
+    /* Region 0, ground column 2: x 38*2 + 22 = 98, y 263, 37 x 52. */
+    ClearStrip();
+    hit.nHitRegion = 0;
+    hit.nHitSub0   = 2;
+    g_nPadBlits = 0;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    ChkEq(g_nPadBlits, 13, "all thirteen panel controls are blitted");
+    Check("region 0 highlights from x 98, y 263", PixAt(98, 263) != 0);
+    Check("to x 134, y 314", PixAt(134, 314) != 0);
+    Check("and no further right", PixAt(135, 263) == 0);
+    Check("and no further down", PixAt(98, 315) == 0);
+
+    /* Region 1, pocket column 1: x 19 + 23 = 42, y 23, width 19*nFootW - 1 = 37, height 19. */
+    ClearStrip();
+    hit.nHitRegion = 1;
+    hit.nHitSub0   = 1;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("region 1 highlights from x 42, y 23", PixAt(42, 23) != 0);
+    Check("to x 78, y 41", PixAt(78, 41) != 0);
+    Check("its width comes from the item footprint", PixAt(79, 23) == 0);
+
+    /* Region 7, backpack row 2 col 1: x 19 + 161 = 180, y 38 + 161 = 199, 37 x 56. */
+    ClearStrip();
+    hit.nHitRegion = 7;
+    hit.nHitSub0   = 1;
+    hit.nHitSub1   = 2;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("region 7 highlights from x 180, y 199", PixAt(180, 199) != 0);
+    Check("and its height also comes from the footprint", PixAt(216, 254) != 0);
+    Check("stopping at x 216", PixAt(217, 199) == 0);
+
+    /* Region 8, belt: x 19*(1 + 9) = 190, y 38 + 23 = 61. */
+    ClearStrip();
+    hit.nHitRegion = 8;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("region 8 highlights from x 190, y 61", PixAt(190, 61) != 0);
+    Check("to x 226, y 116", PixAt(226, 116) != 0);
+
+    /* A region outside 0..8 draws no highlight, and both gates have to hold. */
+    ClearStrip();
+    hit.nHitRegion = 9;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("region 9 draws no highlight", PixAt(190, 61) == 0);
+
+    ClearStrip();
+    hit.nHitRegion = 0;
+    env.bInvPanelOpen = 0;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("a closed panel draws no highlight", PixAt(98, 263) == 0);
+    env.bInvPanelOpen = 1;
+
+    ClearStrip();
+    env.nDragActive = 0;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("no drag flag means no highlight either", PixAt(98, 263) == 0);
+    Check("while the drag ghost is drawn instead, the opposite gate", PixAt(100, 100) != 0);
+    hit.nDragOffX = 5;
+    hit.nDragOffY = 7;
+    ClearStrip();
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("the ghost lands at the drag offset plus the cursor pair", PixAt(105, 107) != 0);
+    Check("and the highlight is absent in the same call", PixAt(98, 263) == 0);
+    hit.nDragOffX = 0;
+    hit.nDragOffY = 0;
+    env.nDragActive = 1;
+
+    /* The burden number is uInvBurden - 1, drawn left aligned at x 185, row 140. */
+    ClearStrip();
+    unit.uInvBurden = 10;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("a burden of ten prints the single digit nine", PixAt(185, 140) != 0);
+    Check("so nothing is drawn at the second glyph column", PixAt(193, 140) == 0);
+
+    ClearStrip();
+    unit.uInvBurden = 12;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("a burden of twelve prints two digits", PixAt(193, 140) != 0);
+
+    /* The hit item line at (3, 203) appends " (ammo)" only under three conditions. */
+    ClearStrip();
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("the item name starts at x 3, row 203", PixAt(3, 203) != 0);
+    Check("and the ammo suffix follows it", PixAt(27, 203) != 0);
+
+    ClearStrip();
+    obj.bAmmoCap = 255;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("a weapon that never runs out shows no ammo count", PixAt(27, 203) == 0);
+    obj.bAmmoCap = 30;
+
+    ClearStrip();
+    obj.nCategory = 3;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("category 3 shows no ammo count", PixAt(27, 203) == 0);
+    obj.nCategory = 0;
+
+    ClearStrip();
+    obj.bTwoHanded = 2;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("a bTwoHanded value other than 0 or 1 shows no ammo count", PixAt(27, 203) == 0);
+    obj.bTwoHanded = 0;
+
+    /* Portrait pad index is 8*nUnitType + 4*bFemale + nLook. Each pad sits at its own x on row 315. */
+    ClearStrip();
+    unit.nUnitType = 0;
+    unit.bFemale   = 1;
+    unit.nLook     = 2;   /* 0 + 4 + 2 = 6 -> x 10 + 14*6 = 94 */
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("portrait index 8*type + 4*female + look picks entry 6", PixAt(94, 315) != 0);
+    Check("and not its neighbour", PixAt(108, 315) == 0);
+
+    ClearStrip();
+    unit.nUnitType = 1;
+    unit.bFemale   = 0;
+    unit.nLook     = 0;   /* 8 -> x 10 + 14*8 = 122 */
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("unit type 1 starts the second block of eight", PixAt(122, 315) != 0);
+    Check("so entry 6 is no longer used", PixAt(94, 315) == 0);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1627,5 +1867,7 @@ int main(void)
     TestSelectedUnitPanel();
     Reset();
     TestItemStrip();
+    Reset();
+    TestInventoryScreen();
     return TestSummary("test_tacthud");
 }

@@ -1506,7 +1506,7 @@ What is still missing, with sizes:
 | `Tact_DrawCommandPads @ 0x1fc8c` | 4,044 | |
 | `MainMenu_Draw @ 0x1dbb8` | 2,680 | |
 | `MapView_DrawMinimap @ 0x1ed4c` | 2,112 | |
-| `TactHud_DrawInventoryScreen (0x1f58c)` | 1,792 | its only remaining blocker was `TactHud_DrawItemStrip`, now ported |
+| `TactHud_DrawInventoryScreen @ 0x1f58c` | 1,792 | **ported** in `src/pufo/game/pufo_tacthud.c` |
 | `TactHud_DrawItemStrip @ 0x2cdac` | 2,004 | **ported** in `src/pufo/game/pufo_tacthud.c`, see below |
 | `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnit (0x1c958)` and `MapView_DrawUnitFacingArrow (0x1b7bc)` |
 | `Titles_DrawAnimatedFrame (0x1a83c)` | 672 | needs the titles state block at `0x158804` modelled first |

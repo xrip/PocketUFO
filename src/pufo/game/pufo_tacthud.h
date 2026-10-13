@@ -13,6 +13,7 @@
 #include "game/pufo_tactctl.h"
 #include "game/pufo_tactstate.h"
 #include "game/pufo_tactui.h"
+#include "game/pufo_invdrag.h"  /* InvHitState */
 #include "render/pufo_render.h"
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"
@@ -469,5 +470,64 @@ typedef struct TactHudItemStripEnv {
 } TactHudItemStripEnv;
 
 void TactHud_DrawItemStrip(TactHudItemStripEnv *pEnv, const GfxColorEnv *pColor);
+
+/* TactHud_DrawInventoryScreen @ 0x1f58c: the whole tactical inventory screen.
+ *
+ * Order matters. The backdrop pad, then the 13 panel controls at pBank + 0x260, then the hit highlight,
+ * then the burden bar, then the unit header, then the item strip, then the unit portrait, then the hit
+ * item's name and the drag ghost.
+ *
+ * The hit highlight is a nine-case switch on nInvHitRegion, drawn only when the panel is open AND
+ * anActionPhaseSave0[108] is set. Every case uses colour key 0x78:
+ *
+ *   0  ground column:  x 38*sub0 + 22,            y 263,             37 x 52
+ *   1  pocket 0 col:   x 19*sub0 + 23,            y 23,              19*nFootW - 1 x 19
+ *   2  pocket 1 col:   x 19*sub0 + 104,           y 23,              19*nFootW - 1 x 19
+ *   3  pocket 2 col:   x 19*sub0 + 23,            y 161,             19*nFootW - 1 x 19
+ *   4  pocket 3 col:   x 19*sub0 + 104,           y 161,             19*nFootW - 1 x 19
+ *   5  left hand:      x 4,                       y 62,              37 x 50
+ *   6  right hand:     x 123,                     y 62,              37 x 50
+ *   7  backpack:       x 19*sub0 + 161,           y 19*sub1 + 161,   19*nFootW - 1 x 19*nFootH - 1
+ *   8  belt:           x 19*(sub0 + 9),           y 19*sub1 + 23,    19*nFootW - 1 x 19*nFootH - 1
+ *
+ * Any other region draws nothing. Regions 1 to 4 and 7 to 8 read the hit item's object with no test,
+ * exactly as the original does.
+ *
+ * The burden bar colour comes from 4 * uInvBurden / auStat[8]: zero is green, one is yellow, two or more
+ * is red. The number shown is uInvBurden - 1.
+ *
+ * The unit portrait pad table is at Map+0x199C, indexed 8*nUnitType + 4*bFemale + nLook.
+ *
+ * The hit item line appends " (" + nAmmo + ")" only when bTwoHanded is 0 or 1, nCategory is neither 3
+ * nor 5, and bAmmoCap is not 255.
+ *
+ * The drag ghost is drawn only when anActionPhaseSave0[108] is CLEAR - the opposite of the highlight
+ * gate - at the drag offset plus the cursor pixel pair.
+ *
+ * Deviation: the original builds both text lines in scratch at Map+0xAC and returns whatever the last
+ * call left in R0. The port uses local buffers and returns void. */
+#define PUFO_HUD_INV_CONTROLS 13
+
+typedef struct TactHudInventoryEnv {
+    PadImage    *pInvPad;          /* dword_113AB8, Map+0x100: the inventory backdrop */
+    UiControl   *aControls;        /* pBank + 0x260, 13 controls of stride 32 */
+    Soldier     *pSelUnit;         /* Map.pSelUnit */
+    InvHitState *pHit;             /* region, sub0, sub1, hit item, drag offsets */
+    PadImage   **apPortraitPad;    /* Map+0x199C, indexed 8*nUnitType + 4*bFemale + nLook */
+    const char  *pszBurdenLabel;   /* text record 55 */
+    const char  *pszBurdenSuffix;  /* text record 68 */
+    const char  *panRankLow;       /* rank table for Unit_FormatDisplayName, 0xB2200 */
+    const char  *panRankOther;     /* rank table for Unit_FormatDisplayName, 0xB2148 */
+    i32          nCursorX;         /* 0xAD714, the drag ghost position */
+    i32          nCursorY;         /* 0xAD718 */
+    i32          nDragActive;      /* anActionPhaseSave0[108] */
+    u8           bInvPanelOpen;    /* Map_bInvPanelOpen, Map+0x3C */
+    u16          nBigObsBase;      /* fontSys + 0x26, the bigobs group */
+    TactHudItemStripEnv Strip;     /* the item strip, drawn with the same context */
+} TactHudInventoryEnv;
+
+void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *pColor,
+                                 UiControlBlitFn pfnPadBlit, UiControlBlitFn pfnPadBlitEx,
+                                 void *pPadUser);
 
 #endif /* PUFO_TACTHUD_H */
