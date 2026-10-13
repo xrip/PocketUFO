@@ -11,6 +11,7 @@
 #include "util/pufo_str.h" /* pufo_strcpy: strcpy is deprecated under /WX */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
@@ -1043,6 +1044,308 @@ static void TestSelectTeamUnits(void)
     CheckEqI32(cursor.nY, 26, "  and the placement y");
 }
 
+/* --- Tact_DeployTeamAndHwps @ 0x39980 ----------------------------------------------------
+ *
+ * The fixture keeps nMapLayers at 1 for the deploy tests so the rmp spawn path is never reached,
+ * and drops it to 0 only for the scatter test, where nothing is spawned either. */
+
+static MapCell       s_aDCells[4][60][60];
+static Soldier      *s_aDSoldiers[64];
+static TactItem     *s_aDItems[64];
+static TactItem      s_aDItemStore[32];
+static Soldier      *s_aDXcom[32];
+static Soldier       s_aDXcomUnit[4];
+static ObjectRecFull s_aDObjRec[128];
+static ObjectRecFull *s_aDObjects[128];
+static i32           s_nDSoldiers, s_nDNextId, s_nDItems, s_nDXcom, s_nDHwps, s_nDScatter;
+static i32           s_aDMid[64], s_aDLast[64];
+static u8            s_aDHwps[48];
+static u8            s_aDDeploy[208];
+static u8            s_aDCounts[3] = { 14, 12, 26 };
+static char          s_aDRank[20];
+
+static MapCell *D_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nX < 0 || nY < 0 || nLayer < 0 || nX >= 60 || nY >= 60) {
+        return NULL;
+    }
+    return &s_aDCells[nLayer][nY][nX];
+}
+
+static void D_Fixture(void)
+{
+    for (i32 i = 0; i < s_nDSoldiers; ++i) {
+        free(s_aDSoldiers[i]);
+        s_aDSoldiers[i] = NULL;
+    }
+
+    memset(s_aDCells, 0, sizeof(s_aDCells));
+    memset(s_aDItems, 0, sizeof(s_aDItems));
+    memset(s_aDItemStore, 0, sizeof(s_aDItemStore));
+    memset(s_aDXcom, 0, sizeof(s_aDXcom));
+    memset(s_aDXcomUnit, 0, sizeof(s_aDXcomUnit));
+    memset(s_aDObjRec, 0, sizeof(s_aDObjRec));
+    for (i32 i = 0; i < 128; ++i) {
+        s_aDObjects[i] = &s_aDObjRec[i];
+    }
+    memset(s_aDMid, 0, sizeof(s_aDMid));
+    memset(s_aDLast, 0, sizeof(s_aDLast));
+    memset(s_aDHwps, 0, sizeof(s_aDHwps));
+    memset(s_aDDeploy, 0, sizeof(s_aDDeploy));
+    memset(s_aDRank, 0, sizeof(s_aDRank));
+
+    s_nDSoldiers = 0;
+    s_nDNextId = 1;
+    s_nDItems = 0;
+    s_nDXcom = 0;
+    s_nDHwps = 0;
+    s_nDScatter = 0;
+
+    for (i32 z = 0; z < 4; ++z) {
+        for (i32 y = 0; y < 60; ++y) {
+            for (i32 x = 0; x < 60; ++x) {
+                s_aDCells[z][y][x].nX = (u8)x;
+                s_aDCells[z][y][x].nY = (u8)y;
+                s_aDCells[z][y][x].nZ = (u8)z;
+            }
+        }
+    }
+
+    /* Hardware objects 31..35. A hardware soldier is named from the object's own first bytes. */
+    for (i32 i = 31; i <= 35; ++i) {
+        s_aDObjRec[i].gap_0[0] = (u8)('A' + (i - 31));
+        s_aDObjRec[i].uSortKey = (u16)(100 + i);
+    }
+
+    s_aDObjRec[56].uRecovScore = 50;   /* feeds object 31 */
+    s_aDObjRec[57].uRecovScore = 40;   /* feeds object 32 */
+    s_aDObjRec[58].uRecovScore = 70;   /* feeds 35, and is debited by 34 */
+    s_aDObjRec[105].uRecovScore = 3;   /* feeds 34 */
+
+    /* Layer-1 hardware deploy points, as the shipped table has them. */
+    static const u8 aHw[12] = { 4, 9, 1, 0, 4, 11, 1, 0, 4, 13, 1, 0 };
+    memcpy(s_aDHwps, aHw, sizeof(aHw));
+
+    /* Deploy record for nMapLayers == 1 sits at offset 0. Four points, all on layer 1. */
+    for (i32 k = 0; k < 4; ++k) {
+        s_aDDeploy[4 * k + 0] = (u8)(k);        /* X cell offset */
+        s_aDDeploy[4 * k + 1] = 0;              /* Y cell offset */
+        s_aDDeploy[4 * k + 2] = 1;              /* layer */
+        s_aDDeploy[4 * k + 3] = (u8)(5 + k);    /* facing */
+    }
+}
+
+static void D_BuildEnv(TactDeployEnv *pEnv, i32 nMapLayers, u8 nMissionType)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->create.apSoldiers = s_aDSoldiers;
+    pEnv->create.pnSoldierCount = &s_nDSoldiers;
+    pEnv->create.pnNextSoldierId = &s_nDNextId;
+    pEnv->apXcomUnits = s_aDXcom;
+    pEnv->pnXcomUnitCount = &s_nDXcom;
+    pEnv->apTactItems = s_aDItems;
+    pEnv->pnTactItemCount = &s_nDItems;
+    pEnv->pnDeployedHwps = &s_nDHwps;
+    pEnv->apObjects = s_aDObjects;
+    pEnv->pfnLookupCell = D_Lookup;
+    pEnv->pLookupUser = NULL;
+    pEnv->nMapLayers = nMapLayers;
+    pEnv->nCraftMapX = 2;
+    pEnv->nCraftMapY = 2;
+    pEnv->nMissionType = nMissionType;
+    pEnv->pDeployOffsets = s_aDDeploy;
+    pEnv->pDeployPointCounts = s_aDCounts;
+    pEnv->pHwpsOffsets = s_aDHwps;
+    pEnv->pRmp = NULL;
+    pEnv->pSelect = NULL;
+    pEnv->panScatterMid = s_aDMid;
+    pEnv->panScatterLast = s_aDLast;
+    pEnv->pnScatterCount = &s_nDScatter;
+    pEnv->pTileTypes = NULL;
+}
+
+static void TestDeployHwpsSpawn(void)
+{
+    TactDeployEnv env;
+
+    printf("Tact_DeployTeamAndHwps @ 0x39980: hardware soldiers\n");
+
+    D_Fixture();
+    s_aDObjRec[31].uRecovScore = 3;   /* three copies of object 31 */
+    D_BuildEnv(&env, 1, 2);
+
+    i32 nReturn = Tact_DeployTeamAndHwps(&env);
+
+    CheckEqI32(s_nDSoldiers, 3, "three soldiers were created");
+    CheckEqI32(s_nDXcom, 3, "all three joined the XCom roster");
+    CheckEqI32(s_nDHwps, 3, "the deployed counter counts them");
+    CheckEqI32(nReturn, 3, "the return is the tactical item count");
+
+    Soldier *pUnit = s_aDSoldiers[0];
+
+    CheckEqI32(pUnit->nUnitType, 4, "object 31 gives unit type 4");
+    Check(strcmp(pUnit->szName, "A") == 0, "the soldier is named after the object");
+    CheckEqI32(pUnit->auStat[0], 70, "preset stat 0");
+    CheckEqI32(pUnit->auStat[1], 90, "preset stat 1");
+    CheckEqI32(pUnit->auStat[3], 20, "preset stat 3");
+    CheckEqI32(pUnit->auStat[4], 60, "preset stat 4");
+    CheckEqI32(pUnit->auStat[8], 60, "preset stat 8");
+    CheckEqI32(pUnit->auStat[9], 70, "preset stat 9");
+    CheckEqI32(pUnit->uHp, 90, "health comes from stat 1");
+    CheckEqI32(pUnit->uTu, 70, "time units come from stat 0");
+    CheckEqI32(pUnit->uStunOrArmor, 70, "stun comes from stat 9");
+    CheckEqI32(pUnit->bMorale, 100, "morale is fixed at 100");
+    CheckEqI32(pUnit->bUnk248, 40, "bUnk248 is 40 for objects 31 to 33");
+    CheckEqI32(pUnit->bUnk422, 0, "bUnk422 is cleared");
+    CheckEqI32(pUnit->bStatus, 0, "status is cleared");
+
+    Check(pUnit->pHandL == pUnit->pHandR, "both hands hold the same item");
+    CheckEqI32(pUnit->pHandL->nIndex, 131, "nIndex is the object sort key");
+    Check(pUnit->pHandL->pObj == &s_aDObjRec[31], "the item carries the object");
+
+    /* min(50, 30 * 3) = 50, so two copies get the floor and the last takes the remainder. */
+    CheckEqI32(s_aDItems[0]->nAmmo, 16, "first copy gets 50 / 3");
+    CheckEqI32(s_aDItems[1]->nAmmo, 16, "second copy gets 50 / 3");
+    CheckEqI32(s_aDItems[2]->nAmmo, 18, "the last copy gets the remainder plus the floor");
+
+    /* Hardware deploy points for layer 1 are (4,9), (4,11) and (4,13) tiles-cells off the craft. */
+    Check(s_aDSoldiers[0]->pCell == &s_aDCells[1][29][24], "first soldier at craft plus (4,9)");
+    Check(s_aDSoldiers[1]->pCell == &s_aDCells[1][31][24], "second at craft plus (4,11)");
+    Check(s_aDSoldiers[2]->pCell == &s_aDCells[1][33][24], "third at craft plus (4,13)");
+
+    D_Fixture();
+}
+
+static void TestDeployHwpsStaleAmmoAndGate(void)
+{
+    TactDeployEnv env;
+
+    printf("Tact_DeployTeamAndHwps @ 0x39980: the object 33 hole and the unit type 6 gate\n");
+
+    D_Fixture();
+
+    /* Only objects 32 and 33 spawn. 32 sets the ammo total; 33 has no case at all and reuses it. */
+    s_aDObjRec[32].uRecovScore = 1;
+    s_aDObjRec[33].uRecovScore = 1;
+
+    /* The gate writes into the slot the next iteration has not created yet, so the fixture has to
+     * put something there or the reproduced bug would write through null. */
+    s_aDItems[2] = &s_aDItemStore[2];
+    s_aDItemStore[2].nAmmo = 231;
+
+    D_BuildEnv(&env, 1, 2);
+    Tact_DeployTeamAndHwps(&env);
+
+    /* min(40, 8 * 1) = 8. */
+    CheckEqI32(s_aDItems[0]->nAmmo, 8, "object 32 computes 8");
+    CheckEqI32(s_aDItems[1]->nAmmo, 8, "object 33 reuses the stale total");
+    CheckEqI32(s_aDSoldiers[1]->nUnitType, 6, "object 33 gives unit type 6");
+
+    /* ORIGINAL BUG: the gate then writes nAmmo into apTactItems[nTactItemCount], which is slot 2. */
+    CheckEqI32(s_aDItemStore[2].nAmmo, 0, "the gate zeroed a slot that was never created");
+
+    /* Object 34's own computation was skipped, so its soldier also inherits the stale total. */
+    CheckEqI32(s_nDSoldiers, 2, "objects 34 and 35 spawned nothing");
+
+    D_Fixture();
+}
+
+static void TestDeployReplacesParkedTeam(void)
+{
+    TactDeployEnv env;
+    TactSelectCtx sel;
+    TactCursor cursor;
+    MapCursorPos pos;
+    StatusStack stack;
+    StatusHooks hooks = { Sel_NotBusy, Sel_NoRepaint, Sel_NoRender, NULL };
+    Soldier *pSel = NULL;
+
+    printf("Tact_DeployTeamAndHwps @ 0x39980: parking and re-placement\n");
+
+    D_Fixture();
+
+    /* One XCom unit already in the roster, and nothing to spawn. */
+    s_aDXcomUnit[0].nUnitType = 0;
+    s_aDXcom[0] = &s_aDXcomUnit[0];
+    s_nDXcom = 1;
+
+    /* The first deploy point is taken, so the scan has to move on to the second. */
+    s_aDXcomUnit[1].nUnitType = 0;
+    s_aDXcomUnit[1].bStatus = 0;
+    s_aDCells[1][20][20].pUnit = &s_aDXcomUnit[1];
+
+    memset(&cursor, 0, sizeof(cursor));
+    pos.pCursor = &cursor;
+    pos.geom.nDimX = 6;
+    pos.geom.nDimY = 6;
+    pos.bBusy = false;
+    pos.bSelUnitLarge = false;
+    pos.bSuppressLarge = false;
+    memset(&stack, 0, sizeof(stack));
+    memset(&sel, 0, sizeof(sel));
+    sel.ppSelUnit = &pSel;
+    sel.pCursorPos = &pos;
+    sel.pfnLookup = D_Lookup;
+    sel.pStatus = &stack;
+    sel.pStatusHooks = &hooks;
+    sel.panRankLow = s_aDRank;
+    sel.panRankOther = s_aDRank;
+
+    D_BuildEnv(&env, 1, 2);
+    env.pSelect = &sel;
+    Tact_DeployTeamAndHwps(&env);
+
+    Check(s_aDXcomUnit[0].pCell == &s_aDCells[1][20][21],
+          "the unit moved to the second free deploy point");
+    CheckEqI32(s_aDXcomUnit[0].bFacing, 6, "facing comes from the entry's fourth byte");
+    CheckEqI32(s_nDXcom, 1, "no hardware soldiers were added");
+    Check(pSel == &s_aDXcomUnit[0], "phase 4 selects apXcomUnits[0]");
+
+    D_Fixture();
+}
+
+static void TestDeployScatterNoLayers(void)
+{
+    TactDeployEnv env;
+
+    printf("Tact_DeployTeamAndHwps @ 0x39980: scattering items when there are no layers\n");
+
+    D_Fixture();
+
+    /* Four items sitting on cell (0,0,0). MapCell_ListInsertByPri compares the objects' list
+     * priority bytes, so each item needs an object. */
+    for (i32 i = 0; i < 4; ++i) {
+        s_aDItemStore[i].pObj = &s_aDObjRec[10];
+        s_aDItemStore[i].pNext = (i + 1 < 4) ? &s_aDItemStore[i + 1] : NULL;
+    }
+    s_aDCells[0][0][0].pItemList = &s_aDItemStore[0];
+
+    /* The scatter walk is bounded by the tactical item count, not by the scatter table or by what
+     * is actually sitting on the source cell, so the count has to be set for the walk to run. */
+    s_nDItems = 4;
+
+    D_BuildEnv(&env, 0, 2);   /* not the XCom base defence mission */
+    Tact_DeployTeamAndHwps(&env);
+
+    CheckEqI32(s_nDScatter, 3, "a non-base mission gets three scatter points");
+    CheckEqI32(s_aDMid[0], 55, "point 0 middle index");
+    CheckEqI32(s_aDLast[0], 55, "point 0 last index");
+    CheckEqI32(s_aDMid[1], 55, "point 1 middle index");
+    CheckEqI32(s_aDLast[1], 45, "point 1 last index");
+    CheckEqI32(s_aDMid[2], 55, "point 2 middle index");
+    CheckEqI32(s_aDLast[2], 35, "point 2 last index");
+
+    Check(s_aDCells[0][0][0].pItemList == NULL, "the source cell was drained");
+
+    /* Four items over three points, so the table wraps and the first point takes two. */
+    Check(s_aDCells[1][55][55].pItemList != NULL, "point 0 received items");
+    Check(s_aDCells[1][55][45].pItemList != NULL, "point 1 received an item");
+    Check(s_aDCells[1][55][35].pItemList != NULL, "point 2 received an item");
+
+    D_Fixture();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1060,6 +1363,10 @@ int main(void)
     TestDeployUnits();
     TestSelectUnit();
     TestSelectTeamUnits();
+    TestDeployHwpsSpawn();
+    TestDeployHwpsStaleAmmoAndGate();
+    TestDeployReplacesParkedTeam();
+    TestDeployScatterNoLayers();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

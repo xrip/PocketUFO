@@ -6367,7 +6367,7 @@ behind them.
 |---|---|---|
 | `Map_BuildMissionTerrain @ 0x22e10` | 10,676 | unported, the largest single gap in the tact subsystem |
 | `Tact_SpawnAliens @ 0x3a2ac` | 3,516 | unported |
-| `Tact_DeployTeamAndHwps @ 0x39980` | 2,348 | unported |
+| `Tact_DeployTeamAndHwps` (0x39980) | 2,348 | ported |
 | `Tact_SetupCraftCargo @ 0x38f00` | 2,116 | unported; needs the ammo-split table at `0x156CD0` and the per-object work triple at `0x157208`, neither owned by the port yet |
 
 `Tact_SetupCraftCargo` is worth one note before anyone ports it. Its guard reads
@@ -7168,7 +7168,7 @@ asserted a belt landing and failed; the port was right and my expectation was wr
 One layout detail worth keeping: `abUnk1012` at `Soldier+0x3F4` is a **byte** array while
 `TactItem.nIndex` is a **u16**, so the compare at `0x3BF9C` is 16-bit against 8-bit.
 
-## `Tact_DeployTeamAndHwps @ 0x39980` — decoded, one table question still open
+## `Tact_DeployTeamAndHwps @ 0x39980` — ported
 
 2,348 bytes, 64 blocks. Five phases.
 
@@ -7231,8 +7231,31 @@ layer 3 gives `(4,10) (4,12) (4,14) (4,16)`.
 
 One residual risk worth naming before a port: `k` is the running count of hardware soldiers spawned across all
 five object indices, and nothing caps it at 4. A fifth hardware soldier on layer 1 would read past the twelve
-records into `aDeployCellOffsets`. Whether that can happen depends on `uRecovCount` in shipped data, so it is
-worth checking rather than assuming.
+records into `aDeployCellOffsets`. Whether that can happen depends on the spawn counts in shipped
+data, so it is worth checking rather than assuming.
+
+### What porting settled
+
+**The spawn count is `ObjectRec.uRecovScore` at 0xCA, not `uRecovCount` at 0xCC.** ARM at 0x39A24 is
+`LDR R3, [R8,#0x108]` then `LDRH R11, [R3,#0xCA]`. Worth naming because the two fields sit next to each
+other and the nearby `objbefore` save chunk also serialises 0xCA.
+
+**The cell array index is `60 * (60 * nZ + nY) + nX`.** `Unit_PlaceOnMap @ 0x49a0c` builds it from a cell
+pointer at 0x49A70: `LDRB [R0,#0x1C]`, `MUL #60`, `LDRB [R0,#0x1B]`, `ADD`, `MUL #60`, `LDRB [R0,#0x1A]`,
+`ADD`. So the middle index is **nY** and the last is **nX**. The port's `MapCellLookup(nX, nY, nLayer)`
+resolves exactly that, which is why `Tact_SelectTeamUnits` can pass its coordinates straight through.
+It is also why `Map_PatchCraftSprites` looks swapped: the deploy and stamp tables feed the craft's Y into
+the middle index, and the middle index is nY.
+
+**Phase 5's scatter walk is bounded by `nTactItemCount`, not by the scatter table.** It stops early when
+the source cell `(0,0,0)` runs dry, so the item count and the scatter count do not have to agree. The
+non-base-defence branch is three cells in a column: nY = 55 with nX = 55, 45 and 35.
+
+**The XCom base defence branch builds four 2 × 2 blocks per matching tile.** Read off the store sequence
+at 0x3A0A4..0x3A184, which fills 16 pairs: X offsets {-1,0} then {3,4}, Y offsets {1,2} then {5,6}, in
+blocks (-1,0)×(1,2), (-1,0)×(5,6), (3,4)×(1,2), (3,4)×(5,6). A tile matches when its byte in `unk_159D5C`
+is 7, and the grid is 6 tile rows by 6 tile columns with the cell anchor at tile × 10 + 2 and tile × 10.
+`MissionType_XcomBase` is 3 (ARM `CMP R2, #3` at 0x3A058).
 
 ## Proximity devices: `MapCell_TickProximityItems` (0x4b724) and `Combat_DetonateNearbyItems` (0x32fa8)
 

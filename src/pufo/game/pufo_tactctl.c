@@ -4,6 +4,7 @@
  *           GameSpeed_Set @ 0x260c0, GameTime_Pause @ 0x5d6ac.
  */
 #include "game/pufo_tactctl.h"
+#include "game/pufo_rmp.h"   /* Rmp_PickSpawnForUnit, RmpData */
 #include "game/pufo_tactui.h"
 #include "game/pufo_unit.h"
 #include "game/pufo_ship.h"
@@ -556,4 +557,315 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv)
     }
 
     return (i32)*pEnv->pnXcomCount;
+}
+
+/* -------------------------------------------------- Tact_DeployTeamAndHwps @ 0x39980 */
+
+/* The two hardware stat presets, ARM 0x39B94..0x39C0C. Objects 31, 32 and 33 take the first;
+ * 34 and 35 take the second. The original reaches them with two ifs and a goto into the tail of
+ * the second, which is just a way of covering 31..35 with no third case. */
+static void Deploy_ApplyHwpsPreset(Soldier *pUnit, i32 nObjectIdx)
+{
+    u8 bUnk248;
+
+    if (nObjectIdx <= 33) {
+        pUnit->auStat[0] = 70;
+        pUnit->auStat[1] = 90;
+        pUnit->auStat[2] = 110;
+        pUnit->auStat[3] = 20;
+        pUnit->auStat[9] = 70;
+        bUnk248 = 40;
+    } else {
+        pUnit->auStat[0] = 100;
+        pUnit->auStat[1] = 90;
+        pUnit->auStat[2] = 110;
+        pUnit->auStat[3] = 30;
+        pUnit->auStat[9] = 100;
+        bUnk248 = 55;
+    }
+
+    pUnit->bMorale = 100;
+    pUnit->auStat[4] = 60;
+    pUnit->auStat[8] = 60;
+    pUnit->bUnk422 = 0;
+    pUnit->bUnk248 = bUnk248;
+}
+
+/* A hardware soldier is named after the object it carries: the name is the ObjectRec's own bytes
+ * at offset 0. The original copies until the NUL with no bound, and Soldier.szName is 40 bytes, so
+ * an object name of 40 bytes or more runs off the end. Reproduced as-is. */
+static void Deploy_NameFromObject(Soldier *pUnit, const ObjectRecFull *pObj)
+{
+    const u8 *pSrc = pObj->gap_0;
+    char *pDst = pUnit->szName;
+    u8 bByte;
+
+    do {
+        bByte = *pSrc++;
+        *pDst++ = (char)bByte;
+    } while (bByte != 0);
+}
+
+/* The four 2x2 blocks phase 5 writes per matching tile, as offsets from the tile's own cell
+ * anchor. Read straight off the store sequence at 0x3A0A4..0x3A184, which fills 16 pairs in the
+ * order low-X/low-Y, low-X/high-Y, high-X/low-Y, high-X/high-Y for each block. */
+static const i8 s_aScatterXOff[4][2] = { { -1, 0 }, { -1, 0 }, { 3, 4 }, { 3, 4 } };
+static const i8 s_aScatterYOff[4][2] = { { 1, 2 }, { 5, 6 }, { 1, 2 }, { 5, 6 } };
+
+i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->create.apSoldiers == NULL || pEnv->create.pnSoldierCount == NULL ||
+        pEnv->apObjects == NULL || pEnv->apTactItems == NULL || pEnv->pnTactItemCount == NULL ||
+        pEnv->apXcomUnits == NULL || pEnv->pnXcomUnitCount == NULL || pEnv->pnDeployedHwps == NULL ||
+        pEnv->pDeployOffsets == NULL || pEnv->pHwpsOffsets == NULL ||
+        pEnv->pDeployPointCounts == NULL || pEnv->pfnLookupCell == NULL) {
+        return 0;
+    }
+
+    /* Phase 1, 0x3999C: park every unit already in the list at cell (1,1,0). */
+    for (i32 i = 0; i < *pEnv->pnXcomUnitCount; ++i) {
+        Unit_PlaceOnMap(pEnv->apXcomUnits[i], 1, 1, 0, pEnv->pfnLookupCell, pEnv->pLookupUser);
+    }
+
+    *pEnv->pnDeployedHwps = 0;                       /* 0x399E8 */
+
+    /* Deliberately outside the loop: object index 33 never assigns it, so the split below reuses
+     * whatever the previous object index left. */
+    i32 nAmmoTotal = 0;
+
+    for (i32 nObjectIdx = PUFO_HWPS_OBJECT_FIRST; nObjectIdx <= PUFO_HWPS_OBJECT_LAST; ++nObjectIdx) {
+        ObjectRecFull *pObj = pEnv->apObjects[nObjectIdx];
+        i32 nSpawn = (i32)pObj->uRecovScore;         /* 0x39A24: LDRH R11, [R3,#0xCA] */
+
+        /* 0x39A14. Hex-Rays renders this as a base-record byte, but ARM is LDRH count /
+         * LDR apSoldiers[count - 1] / LDRB [R3,#0xA0] / CMP #6: the last soldier in the roster has
+         * nUnitType 6. That is the soldier the previous object index created, because
+         * nUnitType = object index - 27 and 33 - 27 = 6. */
+        i32 nSoldierCount = *pEnv->create.pnSoldierCount;
+        Soldier *pLast = (nSoldierCount > 0) ? pEnv->create.apSoldiers[nSoldierCount - 1] : NULL;
+
+        if (pLast != NULL && pLast->nUnitType == 6) {
+            /* ORIGINAL BUG (0x39A5C), reproduced: this writes into apTactItems[nTactItemCount], a
+             * slot this iteration has not created yet. */
+            pEnv->apTactItems[*pEnv->pnTactItemCount]->nAmmo = 0;
+        } else {
+            switch (nObjectIdx) {
+            case 31: {
+                i32 nScore = (i32)pEnv->apObjects[56]->uRecovScore;
+                nAmmoTotal = (nScore < 30 * nSpawn) ? nScore : 30 * nSpawn;
+                break;
+            }
+            case 32: {
+                i32 nScore = (i32)pEnv->apObjects[57]->uRecovScore;
+                nAmmoTotal = (nScore < 8 * nSpawn) ? nScore : 8 * nSpawn;
+                break;
+            }
+            case 34: {
+                /* The score is read from object 105 and the deduction is taken from object 58. */
+                i32 nScore = (i32)pEnv->apObjects[105]->uRecovScore;
+                nAmmoTotal = (nScore < 5 * nSpawn) ? 10 * nScore : 50 * nSpawn;
+                pEnv->apObjects[58]->uRecovScore =
+                    (u16)(pEnv->apObjects[58]->uRecovScore - nAmmoTotal / 10);
+                break;
+            }
+            case 35: {
+                i32 nScore = (i32)pEnv->apObjects[58]->uRecovScore;
+                nAmmoTotal = (nScore < 8 * nSpawn) ? nScore : 8 * nSpawn;
+                break;
+            }
+            default:
+                /* ORIGINAL BUG (0x39B20), reproduced: object index 33 has no case, so the ammo
+                 * total carried into this iteration is the one used below. */
+                break;
+            }
+        }
+
+        for (i32 nCopy = 0; nCopy < nSpawn; ++nCopy) {
+            Unit_CreateAndClassify(&pEnv->create, 0);
+
+            i32 nCount = *pEnv->create.pnSoldierCount;
+            Soldier *pUnit = pEnv->create.apSoldiers[nCount - 1];
+            if (pUnit == NULL) {
+                /* Deviation: the original stores whatever operator new returned and dereferences
+                 * it here without a test. */
+                continue;
+            }
+
+            pUnit->nUnitType = (u8)(nObjectIdx - 27);
+            /* The original passes only the unit and facing 0; the port's signature also carries the
+             * unit type and stat table for the armour tail, which types 2 and 3 alone reach. */
+            Unit_ResetBattleState(pUnit, 0, pUnit->nUnitType, pUnit->auStat, PUFO_UNIT_STAT_COUNT);
+            pUnit->bStatus = 0;
+
+            Deploy_ApplyHwpsPreset(pUnit, nObjectIdx);
+            pUnit->uHp = pUnit->auStat[1];
+            pUnit->uTu = pUnit->auStat[0];
+            pUnit->uStunOrArmor = pUnit->auStat[9];
+            Deploy_NameFromObject(pUnit, pObj);
+
+            i32 nDeployed = *pEnv->pnDeployedHwps;
+
+            if (pEnv->nMapLayers != 0) {
+                const u8 *pHw = pEnv->pHwpsOffsets + 4 * nDeployed + 16 * (pEnv->nMapLayers - 1);
+                const u8 *pDep = pEnv->pDeployOffsets + 4 * nDeployed + 104 * (pEnv->nMapLayers - 1);
+
+                Unit_PlaceOnMap(pUnit,
+                                10 * (i32)pEnv->nCraftMapX + (i32)pHw[0],
+                                10 * (i32)pEnv->nCraftMapY + (i32)pHw[1],
+                                (i32)pDep[2],
+                                pEnv->pfnLookupCell, pEnv->pLookupUser);
+            } else {
+                (void)Rmp_PickSpawnForUnit(pEnv->pRmp, pUnit, pEnv->pfnLookupCell,
+                                           pEnv->pLookupUser,
+                                           pEnv->nMissionType == PUFO_MISSION_TYPE_XCOM_BASE);
+            }
+
+            TactItem *pItem = (TactItem *)malloc(sizeof(TactItem));
+            if (pItem != NULL) {
+                TactItem_ctor(pItem);
+            }
+
+            i32 nItemIdx = *pEnv->pnTactItemCount;
+            pEnv->apTactItems[nItemIdx] = pItem;
+            pEnv->apTactItems[nItemIdx]->pObj = pObj;
+
+            /* Every copy gets the even share; the last one takes the whole remainder. */
+            i32 nAmmo = (nCopy == nSpawn - 1) ? (nAmmoTotal % nSpawn + nAmmoTotal / nSpawn)
+                                              : (nAmmoTotal / nSpawn);
+            pEnv->apTactItems[nItemIdx]->nAmmo = (u8)nAmmo;
+            pEnv->apTactItems[nItemIdx]->nIndex = pObj->uSortKey;
+
+            /* Both hands are the same item. */
+            pUnit->pHandL = pEnv->apTactItems[nItemIdx];
+            pUnit->pHandR = pEnv->apTactItems[nItemIdx];
+            *pEnv->pnTactItemCount = nItemIdx + 1;
+
+            pEnv->apXcomUnits[*pEnv->pnXcomUnitCount] = pUnit;
+            *pEnv->pnXcomUnitCount = *pEnv->pnXcomUnitCount + 1;
+            *pEnv->pnDeployedHwps = nDeployed + 1;
+        }
+    }
+
+    /* Phase 3, 0x39E9C: re-place the units that phase 1 parked. The bound is the roster minus the
+     * deployed count, so only the pre-existing team is moved. */
+    i32 nToPlace = *pEnv->pnXcomUnitCount - *pEnv->pnDeployedHwps;
+
+    for (i32 i = 0; i < nToPlace; ++i) {
+        if (pEnv->nMapLayers == 0) {
+            (void)Rmp_PickSpawnForUnit(pEnv->pRmp, pEnv->apXcomUnits[i], pEnv->pfnLookupCell,
+                                       pEnv->pLookupUser,
+                                       pEnv->nMissionType == PUFO_MISSION_TYPE_XCOM_BASE);
+            continue;
+        }
+
+        i32 nPoints = (i32)pEnv->pDeployPointCounts[pEnv->nMapLayers - 1];
+        i32 nPoint = 0;
+        i32 nCellX = 0;
+        i32 nCellY = 0;
+        i32 nLayer = 0;
+        bool bFound = false;
+
+        while (nPoint < nPoints) {
+            const u8 *pRec = pEnv->pDeployOffsets + 4 * nPoint + 104 * pEnv->nMapLayers;
+
+            nCellX = 10 * (i32)pEnv->nCraftMapX + (i32)pRec[-104 + 0];
+            nCellY = 10 * (i32)pEnv->nCraftMapY + (i32)pRec[-104 + 1];
+            nLayer = (i32)pRec[-104 + 2];
+
+            MapCell *pCell = pEnv->pfnLookupCell(nCellX, nCellY, nLayer, pEnv->pLookupUser);
+            if (pCell == NULL || !MapCell_HasOccupant(pCell)) {
+                bFound = true;
+                break;
+            }
+            ++nPoint;
+        }
+
+        if (bFound) {
+            /* 0x39FBC: the facing comes from the fourth byte of the same entry. */
+            pEnv->apXcomUnits[i]->bFacing =
+                pEnv->pDeployOffsets[4 * nPoint + 104 * pEnv->nMapLayers - 104 + 3];
+            Unit_PlaceOnMap(pEnv->apXcomUnits[i], nCellX, nCellY, nLayer,
+                            pEnv->pfnLookupCell, pEnv->pLookupUser);
+        }
+    }
+
+    /* Phase 4, 0x3A024. */
+    if (*pEnv->pnXcomUnitCount != 0 && pEnv->pSelect != NULL) {
+        Tact_SelectUnit(pEnv->pSelect, pEnv->apXcomUnits[0]);
+    }
+
+    /* Phase 5, 0x3A038: only a mission with no stacked layers scatters its items. */
+    if (pEnv->nMapLayers != 0 || pEnv->panScatterMid == NULL || pEnv->panScatterLast == NULL ||
+        pEnv->pnScatterCount == NULL) {
+        return *pEnv->pnTactItemCount;
+    }
+
+    *pEnv->pnScatterCount = 0;
+
+    if (pEnv->nMissionType == PUFO_MISSION_TYPE_XCOM_BASE && pEnv->pTileTypes != NULL) {
+        /* Six tile rows by six tile columns. The cell anchor is tile * 10 + 2 across, and tile * 10
+         * down, and every matching tile contributes four 2x2 blocks. */
+        const u8 *pTile = pEnv->pTileTypes;
+        i32 nMid = 2;
+
+        for (i32 nRow = 0; nRow < 6; ++nRow) {
+            i32 nLast = 0;
+
+            for (i32 nCol = 0; nCol < 6; ++nCol) {
+                if (*pTile == PUFO_SCATTER_TILE_TYPE) {
+                    i32 nBase = *pEnv->pnScatterCount;
+
+                    for (i32 b = 0; b < 4; ++b) {
+                        for (i32 k = 0; k < 2; ++k) {
+                            for (i32 m = 0; m < 2; ++m) {
+                                pEnv->panScatterMid[nBase + b * 4 + k * 2 + m] =
+                                    nMid + (i32)s_aScatterXOff[b][k];
+                                pEnv->panScatterLast[nBase + b * 4 + k * 2 + m] =
+                                    nLast + (i32)s_aScatterYOff[b][m];
+                            }
+                        }
+                    }
+                    *pEnv->pnScatterCount = nBase + 16;
+                }
+                ++pTile;
+                nLast += 10;
+            }
+            nMid += 10;
+        }
+    } else {
+        /* Three cells in a column near the map edge. */
+        pEnv->panScatterMid[0] = 55; pEnv->panScatterLast[0] = 55;
+        pEnv->panScatterMid[1] = 55; pEnv->panScatterLast[1] = 45;
+        pEnv->panScatterMid[2] = 55; pEnv->panScatterLast[2] = 35;
+        *pEnv->pnScatterCount = 3;
+    }
+
+    /* Every tactical item is taken off the head of cell (0,0,0) and inserted by priority onto a
+     * layer-1 cell, cycling through the table. The walk stops as soon as the source cell runs dry,
+     * which is what makes the item count and the scatter count need not agree. */
+    i32 nSlot = 0;
+
+    for (i32 j = 0; j < *pEnv->pnTactItemCount; ++j) {
+        MapCell *pFrom = pEnv->pfnLookupCell(0, 0, 0, pEnv->pLookupUser);
+
+        if (pFrom == NULL || pFrom->pItemList == NULL) {
+            break;
+        }
+
+        TactItem *pItem = pFrom->pItemList;
+        MapCell_ListRemove(pFrom, pItem);
+
+        MapCell *pTo = pEnv->pfnLookupCell(pEnv->panScatterLast[nSlot], pEnv->panScatterMid[nSlot], 1,
+                                           pEnv->pLookupUser);
+        if (pTo != NULL) {
+            MapCell_ListInsertByPri(pTo, pItem);
+        }
+
+        ++nSlot;
+        if (nSlot == *pEnv->pnScatterCount) {
+            nSlot = 0;
+        }
+    }
+
+    return *pEnv->pnTactItemCount;
 }

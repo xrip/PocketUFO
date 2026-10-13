@@ -20,7 +20,9 @@
 #define PUFO_TACTCTL_H
 
 #include "game/pufo_mapcell.h"
+#include "game/pufo_objectrec.h"  /* ObjectRecFull for TactDeployEnv */
 #include "game/pufo_statusmsg.h" /* StatusStack, StatusHooks for TactSelectCtx */
+#include "game/pufo_unit.h"      /* Soldier, UnitCreateEnv for TactDeployEnv */
 #include "pufo_common.h"
 
 typedef struct TactUiState TactUiState;
@@ -424,5 +426,72 @@ typedef struct TactTeamSelectEnv {
 } TactTeamSelectEnv;
 
 i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv);
+
+/* ---------------------------------------------------- deploying the team and hardware soldiers */
+
+/* MissionType_XcomBase. ARM at 0x3A058 is CMP R2, #3 on Map_nMissionType. */
+#define PUFO_MISSION_TYPE_XCOM_BASE 3u
+
+/* The hardware store slots Tact_DeployTeamAndHwps spawns soldiers from. The unit type each one
+ * produces is the object index minus 27, so 31..35 give types 4..8. */
+#define PUFO_HWPS_OBJECT_FIRST 31
+#define PUFO_HWPS_OBJECT_LAST  35
+
+/* The tile type that seeds a scatter cluster in the phase-5 table build. ARM at 0x3A098 is
+ * CMP against 7 over unk_159D5C. */
+#define PUFO_SCATTER_TILE_TYPE 7
+
+struct RmpData; /* game/pufo_rmp.h */
+
+/* Everything Tact_DeployTeamAndHwps reaches through the Map block. */
+typedef struct TactDeployEnv {
+    /* apSoldiers is Map+0x1198 and the count is the u16 at Map+0x1998. */
+    UnitCreateEnv   create;
+    Soldier       **apXcomUnits;         /* Map.apXcomUnits @ Map+0x15154 */
+    i32            *pnXcomUnitCount;     /* nXcomUnitCount @ Map+0x1511F, a u8 in the original */
+    TactItem      **apTactItems;         /* Map.apTactItems @ Map+0x23438 */
+    i32            *pnTactItemCount;     /* Map_nTactItemCount @ Map+0x1513C */
+    i32            *pnDeployedHwps;      /* unk_128AF8 @ Map+0x15140, the running hardware count */
+    ObjectRecFull **apObjects;           /* Map.apObjects @ Map+0x108 */
+    MapCellLookup   pfnLookupCell;
+    void           *pLookupUser;
+    i32             nMapLayers;          /* Map.nMapLayers @ Map+0x15114 */
+    u8              nCraftMapX;          /* Map_nCraftMapX @ Map+0x15199, in tiles */
+    u8              nCraftMapY;          /* Map_nCraftMapY @ Map+0x1519A, in tiles */
+    u8              nMissionType;        /* Map_nMissionType @ Map+0x1511A */
+    const u8       *pDeployOffsets;      /* aDeployCellOffsets @ 0xA66B8, 104-byte records */
+    const u8       *pDeployPointCounts;  /* aDeployPointCounts @ 0xA67F0: 14, 12, 26 */
+    const u8       *pHwpsOffsets;        /* aHwpsDeployOffsets @ 0xA6688, twelve 4-byte records */
+    struct RmpData *pRmp;                /* unk_15881C, used when nMapLayers is 0 */
+    TactSelectCtx  *pSelect;             /* phase 4 selects apXcomUnits[0] */
+
+    /* Phase 5 scatter tables, only touched when nMapLayers is 0. The original indexes its cell
+     * array as 60 * (60 * layer + nY) + nX, so the table named Mid feeds the middle index and the
+     * table named Last feeds the final one. */
+    i32            *panScatterMid;       /* unk_1556D0 */
+    i32            *panScatterLast;      /* unk_155FD0 */
+    i32            *pnScatterCount;      /* unk_157200 */
+    const u8       *pTileTypes;          /* unk_159D5C, 36 tile bytes in 6 rows of 6 */
+} TactDeployEnv;
+
+/* Tact_DeployTeamAndHwps @ 0x39980. Put the team into the mission and spawn the hardware soldiers
+ * that came with the craft.
+ *
+ * Five phases:
+ *
+ *   1. Park every XCom unit already in the list at cell (1,1,0).
+ *   2. For object indices 31..35, create apObjects[i]->uRecovScore soldiers, give each the stat
+ *      preset for its object, name it after the object, place it on a hardware deploy point, and
+ *      hand it one TactItem carrying that object.
+ *   3. Re-place the units parked in phase 1, scanning deploy points for the first cell with no
+ *      occupant. The bound is nXcomUnitCount minus the deployed count, so only the pre-existing
+ *      team is re-placed.
+ *   4. Select apXcomUnits[0].
+ *   5. Only when nMapLayers is 0: build a scatter table and move every tactical item off cell
+ *      (0,0,0) onto layer-1 cells, cycling through the table.
+ *
+ * The number of soldiers is read from ObjectRec.uRecovScore at 0xCA, not uRecovCount at 0xCC.
+ * ARM at 0x39A24 is LDRH R11, [R3,#0xCA]. */
+i32 Tact_DeployTeamAndHwps(TactDeployEnv *pEnv);
 
 #endif /* PUFO_TACTCTL_H */
