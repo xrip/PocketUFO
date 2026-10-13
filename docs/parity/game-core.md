@@ -6375,10 +6375,10 @@ behind them.
 object, 372 is 12 × 31 and 420 is 12 × 35, so it skips **object indices 31 through 35** — the craft
 store slots. The same guard appears twice. Reading it as a byte range would silently include the
 craft stores in a tally the original excludes them from.
-| `Tact_EquipTeamFromCraft @ 0x3be24` | 1,836 | unported |
-| `Tact_SelectTeamUnits @ 0x39744` | 572 | unported; needs `Tact_SelectUnit` and the deploy-cell table at `byte_A66B8` |
-| `Map_PatchCraftSprites @ 0x25ab4` | 952 | unported |
-| `Tact_SelectUnit @ 0x2c6c4` | 148 | unported; its only unported dependency was `Unit_FormatDisplayName (0x476d4)`, now ported — so it is unblocked |
+| `Tact_EquipTeamFromCraft @ 0x3be24` | 1,836 | **ported** (6daa141) |
+| `Tact_SelectTeamUnits @ 0x39744` | 572 | **ported** (2883497) |
+| `Map_PatchCraftSprites @ 0x25ab4` | 952 | **ported** (5fdd234) |
+| `Tact_SelectUnit @ 0x2c6c4` | 148 | **ported** (32057bf, corrected in e34ce4a) |
 | `Unit_FormatDisplayName @ 0x476d4` | 528 | **ported** |
 
 Already ported and callable from here: `Tact_LoadUiPads`, `Tact_InitUiControls`,
