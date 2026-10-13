@@ -194,12 +194,212 @@ static void TestBorderAndBlur(void)
     g_pTitlesSurface = NULL;
 }
 
+static SoftSurf g_titlesSurf;
+static TitlesParticle g_aParticles[4];
+static TitlesStar g_aStars[4];
+static i32 g_nSceneCalls;
+
+static void CountScene(void *pUser)
+{
+    (void)pUser;
+    g_nSceneCalls += 1;
+}
+
+static void ClearTitles(void)
+{
+    memset(g_titlesSurf.pPixels, 0, (size_t)g_titlesSurf.nWidth * (size_t)g_titlesSurf.nHeight);
+}
+
+static i32 TitlesPix(i32 x, i32 y)
+{
+    return (i32)g_titlesSurf.pPixels[y * 240 + x];
+}
+
+static TitlesAnimation MakeAnimEnv(void)
+{
+    TitlesAnimation env;
+
+    memset(&env, 0, sizeof(env));
+    env.aParticles       = g_aParticles;
+    env.nParticleCount   = 0;
+    env.aStars           = g_aStars;
+    env.nStarCount       = 0;
+    env.pTitlesSurface   = &g_titlesSurf;
+    env.nFillPalSlot     = 0;
+    env.nPresentPalSlot  = 12;
+    env.pfnLoadScene     = CountScene;
+    env.Credits          = MakeEnv(0);
+    return env;
+}
+
+static void TestAnimation(void)
+{
+    TitlesAnimation env = MakeAnimEnv();
+    TitlesParticle *p = &g_aParticles[0];
+    TitlesStar *pStar = &g_aStars[0];
+
+    printf("titles animation state\n");
+
+    SoftSurf_ctor(&g_titlesSurf);
+    SoftSurf_AllocPixels(&g_titlesSurf, 240, 320, PIXMODE_8BPP);
+    /* TestBorderAndBlur leaves g_pMainSurface NULL, and the titles surface is 8bpp indexed in the
+     * original, which is what lets Titles_PresentToSoftSurf blit it as a glyph. */
+    g_pMainSurface = &g_surf;
+    g_pTitlesSurface = &g_titlesSurf;
+    memset(g_aPalette[0], 0x33, sizeof(g_aPalette[0]));
+    memset(g_aPalette[12], 0x22, sizeof(g_aPalette[12]));
+
+    /* The step is (target - current) / 15, with a sign fallback so a gap under 15 still moves one
+     * pixel per frame instead of stalling. */
+    env.nParticleCount = 1;
+    p->nX = 100; p->nY = 100; p->nTargetX = 250; p->nTargetY = 40;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a gap of 150 moves 10", p->nX, 110);
+    CheckEqI32("and a gap of -60 moves -4", p->nY, 96);
+
+    p->nX = 100; p->nY = 100; p->nTargetX = 107; p->nTargetY = 94;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a gap of 7 is under 15, so the fallback moves +1", p->nX, 101);
+    CheckEqI32("and a gap of -6 moves -1", p->nY, 99);
+
+    p->nX = 100; p->nY = 100; p->nTargetX = 100; p->nTargetY = 100;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a particle already at its target does not move", p->nX, 100);
+    CheckEqI32("in either axis", p->nY, 100);
+
+    /* The timer: positive counts down, zero re-arms and goes negative, negative never counts down and
+     * only moves the target. */
+    env.nFrame = 5;
+    p->nTimer = 5; p->nTargetX = 100; p->nTargetY = 100;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a positive timer counts down by one", p->nTimer, 4);
+
+    p->nTimer = 0; p->nTargetX = 100; p->nTargetY = 100;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a zero timer sends the target to the right edge", p->nTargetX, 230);
+    Check(p->nTargetY >= 200 && p->nTargetY <= 299, "and picks a target between 200 and 299");
+    CheckEqI32("which makes the timer negative", p->nTimer, -1);
+
+    p->nTimer = -1; p->nTargetX = 100; p->nTargetY = 305;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a negative timer with the target low moves the target left", p->nTargetX, 90);
+    CheckEqI32("and never counts down further", p->nTimer, -1);
+
+    p->nTimer = -1; p->nTargetX = 100; p->nTargetY = 250;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("with the target high it raises the target instead", p->nTargetY, 260);
+    CheckEqI32("leaving x alone", p->nTargetX, 100);
+
+    /* Frame 21 restores the targets from the home pair and re-arms the timer. */
+    env.nFrame = 21;
+    p->nX = 10; p->nY = 10; p->nTargetX = 200; p->nTargetY = 200;
+    p->nHomeX = 40; p->nHomeY = 60; p->nTimer = 7;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("frame 21 restores the target x from the home pair", p->nTargetX, 40);
+    CheckEqI32("and the target y", p->nTargetY, 60);
+    Check(p->nTimer >= 0 && p->nTimer <= 29, "and re-arms the timer in 0..29");
+
+    /* Frame 20 and 22 through 500 run the step but not the timer. */
+    env.nFrame = 20;
+    p->nX = 100; p->nY = 100; p->nTargetX = 115; p->nTargetY = 100; p->nTimer = 9;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("frame 20 still steps the particle", p->nX, 101);
+    CheckEqI32("but leaves the timer alone", p->nTimer, 9);
+
+    env.nFrame = 300;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("a mid-sequence frame leaves the timer alone too", p->nTimer, 9);
+
+    /* 681 hands over to the scene loader. */
+    g_nSceneCalls = 0;
+    env.nFrame = 681;
+    (void)Titles_AnimateParticles(&env);
+    CheckEqI32("frame 681 or more calls the scene loader", g_nSceneCalls, 1);
+
+    /* Stars advance by speed and are reborn past the bottom. */
+    env.nStarCount = 1;
+    pStar->nBaseX = 100; pStar->nY = 318; pStar->nSpeed = 3; pStar->nAmplitude = 50;
+    Titles_UpdateStars(&env);
+    CheckEqI32("318 + 3 passes 320, so the star is reborn in the same call", pStar->nY, 0);
+    Check(pStar->nBaseX >= 0 && pStar->nBaseX <= 239, "at a fresh x inside the screen");
+    Check(pStar->nSpeed >= 1 && pStar->nSpeed <= 3, "with speed 1..3");
+    Check(pStar->nAmplitude >= 1 && pStar->nAmplitude <= 100, "and amplitude 1..100");
+
+    pStar->nBaseX = 100; pStar->nY = 100; pStar->nSpeed = 2; pStar->nAmplitude = 50;
+    Titles_UpdateStars(&env);
+    CheckEqI32("below the wrap it just advances", pStar->nY, 102);
+    CheckEqI32("without touching the amplitude", pStar->nAmplitude, 50);
+
+    /* The frame driver: a 1x1 particle fill, a 3x3 star fill, and the frame counter. With speed 0 the
+     * angle is 0 and cos is 1, so the star lands exactly at baseX + amplitude.
+     *
+     * The driver runs the border fill and the blur AFTER the fills, so the top row is erased and ink
+     * bleeds one pixel outwards. Everything here is therefore placed in the interior and asserted by
+     * comparison rather than at the exact edge of a block. */
+    ClearTitles();
+    env.nFrame = 0;
+    env.nParticleCount = 1;
+    p->nX = 100; p->nY = 100;
+    env.nStarCount = 1;
+    pStar->nBaseX = 100; pStar->nY = 160; pStar->nSpeed = 0; pStar->nAmplitude = 5;
+    env.Credits.nMaxRows = 0;
+    env.Credits.nScroll = 0;
+    (void)Titles_DrawAnimatedFrame(&env);
+    CheckEqI32("the frame counter advances once", env.nFrame, 1);
+    Check(TitlesPix(106, 161) != 0, "a zero speed puts the star at baseX + amplitude = 105");
+    Check(TitlesPix(121, 161) == 0, "so nothing is drawn where amplitude 20 would land");
+
+    ClearTitles();
+    env.nFrame = 0;
+    pStar->nAmplitude = 20;
+    (void)Titles_DrawAnimatedFrame(&env);
+    Check(TitlesPix(121, 161) != 0, "amplitude 20 moves the star to 120");
+    Check(TitlesPix(106, 161) == 0, "and leaves the old place");
+
+    ClearTitles();
+    env.nFrame = 0;
+    pStar->nSpeed = 100;   /* angle = 100 * 160 * 0.01 = 160 rad, cos is not 1 */
+    (void)Titles_DrawAnimatedFrame(&env);
+    Check(TitlesPix(121, 161) == 0,
+          "a non-zero speed swings the star off baseX + amplitude");
+
+    {
+        i32 nFound = 0;
+        for (i32 y = 100; y <= 105 && !nFound; ++y) {
+            for (i32 x = 100; x <= 105; ++x) {
+                if (TitlesPix(x, y) != 0) { nFound = 1; break; }
+            }
+        }
+        Check(nFound != 0, "the particle is drawn as a 1x1 fill within its 0..4 jitter box");
+    }
+    Check(TitlesPix(112, 100) == 0 && TitlesPix(100, 112) == 0,
+          "and the jitter never reaches past 4");
+
+    /* The credit-line window, which is the same rule Titles_DrawBackdrop uses. */
+    env.nStarCount = 0;
+    env.nParticleCount = 0;
+    env.Credits = MakeEnv(340);
+    env.Credits.nMaxRows = 3;
+    CheckEqI32("a scroll of 340 draws from row 0", Titles_DrawCreditLines(&env.Credits), 3);
+
+    env.Credits = MakeEnv(400);
+    env.Credits.nMaxRows = 3;
+    CheckEqI32("a scroll of 400 starts at row 3 and is clamped by the row count",
+               Titles_DrawCreditLines(&env.Credits), 3);
+
+    env.Credits = MakeEnv(400);
+    env.Credits.nMaxRows = 2;
+    CheckEqI32("with only two rows the window is empty but the count is still returned",
+               Titles_DrawCreditLines(&env.Credits), 2);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestBackdrop();
     TestBorderAndBlur();
+    TestAnimation();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -1509,11 +1509,37 @@ What is still missing, with sizes:
 | `TactHud_DrawInventoryScreen @ 0x1f58c` | 1,792 | **ported** in `src/pufo/game/pufo_tacthud.c` |
 | `TactHud_DrawItemStrip @ 0x2cdac` | 2,004 | **ported** in `src/pufo/game/pufo_tacthud.c`, see below |
 | `MapView_DrawIsoLayer (0x21e2c)` | 1,252 | blocked by `MapView_DrawUnit (0x1c958)` and `MapView_DrawUnitFacingArrow (0x1b7bc)` |
-| `Titles_DrawAnimatedFrame (0x1a83c)` | 672 | needs the titles state block at `0x158804` modelled first |
+| `Titles_DrawAnimatedFrame @ 0x1a83c` | 672 | **ported**; its four callees `Titles_PresentToSoftSurf @ 0x466dc`, `Titles_AnimateParticles @ 0x46acc`, `Titles_UpdateStars @ 0x46dbc` and `Titles_DrawCreditLines @ 0x46738` are ported with it |
 | `Titles_DrawBackdrop @ 0x1e630` | 600 | **ported** in `src/pufo/game/pufo_titles.c` |
 | `TactHud_DrawTopBar @ 0x20ef8` | 1,336 | **ported** |
 | `TactHud_DrawUnitRoster @ 0x21908` | 676 | **ported** |
 | `Cydonia_Blit_Then_UiPanelMsg_Draw @ 0x1a7a0` | 40 | **ported** as `Cydonia_BlitThenDrawPanel` in `src/pufo/ui/pufo_panel.c` |
+
+## The titles animation state, `g_pTitlesState @ 0x158804`
+
+One block, offsets proven from ARM displacements rather than inferred:
+
+| offset | what it is |
+|---|---|
+| `+8` | frame counter, advanced once per animated frame |
+| `+12` | particle count |
+| `+20` | particle array, stride 28 |
+| `+256` | a scratch loop cursor the original resets before each of the two draw loops |
+| `+84020` | star array, stride 16: base x, y, speed, amplitude |
+| `+87220` | star count |
+| `+87228` | the scroll position the credit lines use |
+
+The particle record is 28 bytes read as `base + 28*i + {20, 24, 28, 32, 36, 40, 44}`. Read as offsets
+from the block base that looks like it runs past the end of a record; the array simply starts at `+20`, so
+the fields are `+0 x`, `+4 y`, `+8 target x`, `+12 target y`, `+16 home x`, `+20 home y`, `+24 timer`.
+
+Two constants worth naming: the star angle scale is the double `0x3F847AE147AE147B`, which is **0.01
+exactly**, and `aPaletteSlot12 @ 0x14A2D0` is `aPalette @ 0x1472D0 + 0x3000`, i.e. palette slot 12, since
+a slot is 1024 bytes.
+
+`Titles_PresentToSoftSurf @ 0x466dc` blits the titles surface into the main surface using
+`SoftSurf_GetAlloc`, the raw allocation whose 4-byte header is `u16 width, u16 height`, so the surface
+blits itself as a 240x320 indexed glyph. That only works because the titles surface is 8bpp indexed.
 
 ## `TactHud_DrawItemStrip @ 0x2cdac`, ported
 

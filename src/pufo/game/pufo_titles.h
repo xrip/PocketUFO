@@ -62,4 +62,84 @@ extern SoftSurf *g_pTitlesSurface;
  * 320, while the blur is given the surface's real width and height read through the accessors. */
 u8 *SoftSurf_DrawBorderAndBlur(void);
 
+/* --- the titles animation state ------------------------------------------------------------
+ *
+ * The original keeps this in one block at g_pTitlesState (0x158804). Offsets below are proven from ARM
+ * displacements, not inferred:
+ *
+ *   +8      frame counter, incremented once per animated frame
+ *   +12     particle count
+ *   +20     particle array, stride 28
+ *   +256    a scratch loop cursor, reset to 0 at the start of each of the two draw loops
+ *   +84020  star array, stride 16
+ *   +87220  star count
+ *   +87228  the scroll position the credit lines use
+ *
+ * The particle record is 28 bytes and the ARM reads it as base + 28*i + {20, 24, 28, 32, 36, 40, 44},
+ * which is a 28-byte record starting at +20 with fields at +0, +4, +8, +12, +16, +20, +24. Reading the
+ * same fields as offsets from the block base makes them look like they run past the end of a record.
+ */
+#define PUFO_TITLES_PARTICLE_STRIDE 28
+#define PUFO_TITLES_STAR_STRIDE     16
+#define PUFO_TITLES_STAR_COLS       3   /* both the width and the height of a star fill are 3 */
+
+/* The angle constant is 0.01 exactly: the double pair 1065646817 / 1202590843 is 0x3F847AE147AE147B. */
+#define PUFO_TITLES_STAR_ANGLE_SCALE 0.01
+
+typedef struct TitlesParticle {
+    i32 nX;         /* +0  where it is drawn, jittered by RandU16(5) at draw time */
+    i32 nY;         /* +4 */
+    i32 nTargetX;   /* +8  the point it walks towards */
+    i32 nTargetY;   /* +12 */
+    i32 nHomeX;     /* +16  restored into the target at frame 21 */
+    i32 nHomeY;     /* +20 */
+    i32 nTimer;     /* +24 counts down; a negative value sends it back up the screen */
+} TitlesParticle;
+
+typedef struct TitlesStar {
+    i32 nBaseX;     /* +0  the centre the streak swings about */
+    i32 nY;         /* +4  advances every frame and wraps above 320 */
+    i32 nSpeed;     /* +8  also the angle rate: angle = nSpeed * nY * 0.01 */
+    i32 nAmplitude; /* +12 how far the streak swings in x */
+} TitlesStar;
+
+typedef struct TitlesAnimation {
+    TitlesParticle *aParticles;      /* g_pTitlesState + 20 */
+    i32             nParticleCount;  /* g_pTitlesState + 12 */
+    TitlesStar     *aStars;          /* g_pTitlesState + 84020 */
+    i32             nStarCount;      /* g_pTitlesState + 87220 */
+    i32             nFrame;          /* g_pTitlesState + 8 */
+    i32             nScroll;         /* g_pTitlesState + 87228 */
+    SoftSurf       *pTitlesSurface;  /* g_pTitlesSurface, 0x158808 */
+    /* aPalette is at 0x1472D0 with 1024 bytes per slot, so the two palettes this module passes are
+     * slot 0 (the original writes MEMORY[0x1472D0]) and slot 12 (the original writes &unk_14A2D0,
+     * which is 0x1472D0 + 0x3000). */
+    i32             nFillPalSlot;    /* 0 */
+    i32             nPresentPalSlot; /* 12 */
+    TitlesBackdrop  Credits;         /* the credit lines; note their scroll is this nScroll */
+    void (*pfnLoadScene)(void *pUser); /* Titles_LoadScene (0x468cc), not ported */
+    void           *pSceneUser;
+} TitlesAnimation;
+
+/* Titles_PresentToSoftSurf @ 0x466dc. Copies the titles surface into the main surface at (0, 0), using
+ * the surface's own allocation as the glyph and palette slot 12. */
+void Titles_PresentToSoftSurf(SoftSurf *pTitlesSurface, i32 nPresentPalSlot);
+
+/* Titles_UpdateStars @ 0x46dbc. Every star advances by its speed; above 320 it is reborn at a random
+ * x with speed 1..4 and amplitude 1..101. */
+void Titles_UpdateStars(TitlesAnimation *pEnv);
+
+/* Titles_AnimateParticles @ 0x46acc. Each particle steps towards its target by (target - current) / 15,
+ * with a sign fallback so a gap under 15 still moves one pixel per frame. */
+i32 Titles_AnimateParticles(TitlesAnimation *pEnv);
+
+/* Titles_DrawCreditLines @ 0x46738. Same window rule as Titles_DrawBackdrop, same "@ means a glyph
+ * index" rule, but the glyph is drawn with palette 31 and text is centred as (240 - width) / 2. */
+i32 Titles_DrawCreditLines(TitlesBackdrop *pEnv);
+
+/* Titles_DrawAnimatedFrame @ 0x1a83c. Draws the particles as 1x1 fills and the stars as 3x3 fills whose
+ * x is dtoi(amplitude * cos(speed * y * 0.01) + baseX), then advances the frame counter and runs the
+ * border blur, the present, the particle step, the star step and the credit lines. */
+i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv);
+
 #endif /* PUFO_TITLES_H */
