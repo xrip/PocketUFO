@@ -228,6 +228,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
   (0x66930, 576 B) and `Geoscape_BuildNavControls` (0x67b1c, 588 B), both leaves.
 - [ ] `GameTime_Set5Sec (0x84f00, 100 B)` — needs a model for the six UI control pointers at
   0x186500..0x186514 and the byte at 0x187070.
+- [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
+  Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
+  array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
+  `NewBaseScreen_Open`, `BaseInfoScreen_Open`, `SoldierScreen_Toggle`, `BasePlaneScreen_Open`,
+  `BaseFacScreen_Open`, `ResearchScreen_Open`, `ManufScreen_Open`, `TransferScreen_Open`,
+  `BuySellScreen_OpenBuy`, `BuySellScreen_OpenSell`, `SoldierScreen_PanelPrev`,
+  `SoldierScreen_PanelNext`, `SoldierScreen_FindNextAtBase`, `SoldierScreen_FindPrevAtBase`,
+  `Ui_SetTransferFlag`. Every one of those is an unported screen. So `LoadGame` does not end at the
+  geoscape — it runs through Priority 4.
+  - Useful by-product: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
+    the original's `BaseFacilityGrid` is this control-pointer array, not padding.
+- **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
+  `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. Priority 2's
+  `MapView_DrawUnitFacingArrow (0x1b7bc)` is fully unblocked and self-contained, so it is the next
+  item actually workable. This is a change of order, not of goal: the geoscape chain stays open and
+  is listed above.
 
 ## Later priorities
 
