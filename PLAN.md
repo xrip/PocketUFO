@@ -210,10 +210,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
     `aFacBuildSpec`, both function headers and the diagonal `buildDays` store at 0x62484
   - [x] five rows added to `bugs.tsv` (61 total)
   - [x] `tests/test_geoscape.c`: 37 new checks
+- [x] `Ship_SpawnAtSlot @ 0x2cb14` (664 B) — ported in `src/pufo/game/pufo_ship.c` behind
+  `ShipSpawnEnv`, with 19 new checks in `tests/test_ship.c`.
+  - [x] the hangar scan settled: `facType[v10][result] == 11` AND `layer2[1][result+1] == 0` AND
+    `buildDays[v10][result] == 0`, over 0..4 in both axes — a 5×5 search of a 6×6 grid.
+  - [x] the stamp offset settled as `fac[nBase] + 6*v10 + result + 79`, which is
+    `layer2[v10+1][result+1]`. The first pass of the port dropped the 72 and wrote into tileA; the
+    test caught it.
+  - [x] three original quirks recorded in `bugs.tsv` (66 rows total): the `layer2` test pinned to
+    row 1 while the stamp follows `v10`, the 5×5 corner search, and a craft type outside 0..4
+    writing the hangar coordinates and then falling through the switch without stamping.
+  - [x] IDB: function header comment at 0x2cb14
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
-  `BaseFac_SetCellBuildState` and `Base_GrantStarterItems` (both now ported), plus
-  `Base_CreateNamedEntry`, `Ship_SpawnAtSlot`, `InvSel_AddItemQty`, `Geoscape_BuildNavControls`,
-  `Smap_ZoomOut` and `StrategList_MaybeSpawnCraft_Process`, which still need checking.
+  `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
+  plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
+  `Soldier_CreateAndClassify` (ported), leaving exactly two unported: `Base_CreateNamedEntry`
+  (0x66930, 576 B) and `Geoscape_BuildNavControls` (0x67b1c, 588 B), both leaves.
 - [ ] `GameTime_Set5Sec (0x84f00, 100 B)` — needs a model for the six UI control pointers at
   0x186500..0x186514 and the byte at 0x187070.
 
@@ -276,6 +288,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Tact_InitMission` | 51/51 (Release) | 7133 | 672/1103 (60.9%) | 254912/598792 (42.6%) | 34 checked, 0 mismatched |
 
 | `BaseFac_SetCellBuildState` + `Base_GrantStarterItems` | 51/51 (Release) | 7170 | 674/1103 (61.1%) | 255372/598792 (42.6%) | 35 checked, 0 mismatched |
+| `Ship_SpawnAtSlot` | 51/51 (Release) | 7189 | 675/1103 (61.2%) | 256036/598792 (42.8%) | 35 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

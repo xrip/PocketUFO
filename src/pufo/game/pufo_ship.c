@@ -1157,3 +1157,87 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
         }
     }
 }
+
+/* Ship_SpawnAtSlot @ 0x2cb14. The header has the scan and its two asymmetries.
+ *
+ * The grid offsets below are the ARM's own arithmetic, unrolled:
+ *   fac block base  0x159768 + 0x174 + 144*nHomeBase   (0x2CBFC: MUL by 0x90, then +0x174)
+ *   facType layer   block + 108, and LR advances by 6 per row (0x2CC0C: ADD R9,LR,#0x174)
+ *   layer2 test     block + 79 + result, which is layer2[1][result+1] and does NOT follow v10
+ *   stamp           block + 6*(v10+1) + (result+1)
+ *   buildDays       0x159768 + 36*nHomeBase + 6*v10 + result
+ */
+i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase)
+{
+    Ship *pNew = (Ship *)malloc(sizeof(Ship)); /* 0x2CB2C: operator new(0x44) */
+    const i32 nSlot = (i8)*pEnv->pnCraftCount; /* 0x2CB6C: the count byte at Map+0x1194 */
+    u8 *pFac;
+    u8 *pDays;
+    BaseRec *pBase;
+    i32 v10;
+    i32 result;
+
+    if (pNew != NULL) {
+        (void)Ship_Ctor(pNew, nCraftType, *pEnv->pnNextCraftId, nHomeBase, 0, pEnv->pCtorEnv);
+    }
+
+    /* 0x2CB7C: the store happens before either counter is bumped, so the slot is the count
+     * as it stands. A failed allocation still stores NULL -- the original does. */
+    pEnv->apCraft[nSlot] = pNew;
+
+    pBase = pEnv->apBases[nHomeBase];
+    if (pBase != NULL) {
+        (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnStrategSeed, *pEnv->pnZoomMode,
+                                  1, 0, (i8)nCraftType, pBase->nUnk8, pBase->nUnk12,
+                                  *pEnv->pnNextCraftId, 0);
+    }
+
+    ++*pEnv->pnNextCraftId;                        /* 0x2CBD4 */
+    *pEnv->pnCraftCount = (u8)(nSlot + 1);         /* 0x2CBE8 */
+
+    if (nHomeBase < 0 || nHomeBase >= 8) {
+        return 5; /* deviation: the original bounds nothing */
+    }
+
+    pFac  = pEnv->abFacilityGrid + 0x174 + 144 * nHomeBase;
+    pDays = pEnv->abFacilityGrid + 36 * nHomeBase;
+
+    for (v10 = 0; v10 < 5; ++v10) {          /* 0x2CCD8: five rows of a six-row grid */
+        for (result = 0; result < 5; ++result) { /* 0x2CC18: five columns of a six-column grid */
+            Ship *pShip;
+            u8 nGlyph;
+
+            if (pFac[108 + 6 * v10 + result] != PUFO_FAC_TYPE_HANGAR) {
+                continue; /* 0x2CC14 */
+            }
+            if (pFac[79 + result] != 0) {
+                continue; /* 0x2CC2C: layer2[1][result+1], pinned to row 1 */
+            }
+            if (pDays[6 * v10 + result] != 0) {
+                continue; /* 0x2CC44 */
+            }
+
+            pShip = pEnv->apCraft[nSlot]; /* 0x2CC74: re-read through the array, not the local */
+            if (pShip != NULL) {
+                pShip->bHangarX = (u8)(result + 1); /* 0x2CC8C, Ship + 0x12 */
+                pShip->bHangarY = (u8)(v10 + 1);    /* 0x2CC98, Ship + 0x13 */
+            }
+
+            switch (nCraftType) {
+                case 0: nGlyph = 33; break; /* 0x2CD9C */
+                case 1: nGlyph = 34; break; /* 0x2CD78 */
+                case 2: nGlyph = 35; break; /* 0x2CD54 */
+                case 3: nGlyph = 36; break; /* 0x2CD30 */
+                case 4: nGlyph = 37; break; /* 0x2CD0C */
+                default: continue;          /* 0x2CCC0: the switch falls into the inner increment */
+            }
+
+            /* 0x2CDA0: the store is [R3,#0x4F] off fac[nBase] + 6*v10 + result, and 79 is
+             * 72 + 6*1 + 1, so the glyph lands in layer2 at row v10+1, column result+1. */
+            pFac[72 + 6 * (v10 + 1) + (result + 1)] = nGlyph;
+            return result;                               /* 0x2CDA4: the column index */
+        }
+    }
+
+    return result; /* 5: loop residue, and no caller uses it */
+}

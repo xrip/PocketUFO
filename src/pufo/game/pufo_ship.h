@@ -405,4 +405,50 @@ typedef struct TacticalLootEnv {
 
 void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoShortage);
 
+/* ------------------------------------------------- spawning a craft and finding its hangar cell
+ *
+ * Evidence: Ship_SpawnAtSlot @ 0x2cb14, called from BaseFacScreen (0x6f650), four times from
+ * Game_StartNew (0x94F7C, 0x951B4, 0x95268) and from 0x993B8.
+ *
+ * It allocates one 68-byte Ship, runs Ship_Ctor with the CURRENT value of the next-craft id, stores
+ * the pointer at apCraft[nCraftCount] (Map+0x10AC, count byte at Map+0x1194), adds a StrategItem of
+ * type 1 at the home base's own x/y, and only then increments both the id and the count.
+ *
+ * The second half searches the home base's facility grid for a hangar cell to attach the craft to:
+ *
+ *     fac[nBase].facType[v10][result] == 11
+ *     fac[nBase].layer2[1][result+1]  == 0
+ *     buildDays[nBase][v10][result]   == 0
+ *
+ * with v10 and result each running 0..4 -- a 5 by 5 scan of a 6 by 6 grid, so the sixth row and the
+ * sixth column are never considered. On the first match it writes Ship.bHangarX = result+1 (+0x12)
+ * and Ship.bHangarY = v10+1 (+0x13), and stamps the craft-type glyph into the grid at
+ * fac[nBase] + 6*(v10+1) + (result+1): 33 for type 0, 34 for 1, 35 for 2, 36 for 3, 37 for 4. Any
+ * other type matches the cell and then falls through the switch without stamping, and the loop does
+ * NOT continue -- it returns immediately with the hangar coordinates set and nothing stamped.
+ *
+ * Two asymmetries are the original's, not the port's:
+ *
+ *   - The layer2 test is pinned to row 1 whatever v10 is, while the stamp goes to row v10+1. So for
+ *     v10 > 0 the cell that was tested and the cell that is written are different cells.
+ *   - The return value is the inner counter: the column index on a match, and 5 when nothing
+ *     matched. It is loop residue, and no caller uses it.
+ *
+ * Deviations: the original stores the new pointer even when operator new returned NULL and then, if a
+ * hangar cell matches, writes the two coordinates through that NULL. The port skips the coordinate
+ * write in that case. The port also bounds the base index against the eight base blocks. */
+typedef struct ShipSpawnEnv {
+    Ship        **apCraft;        /* Map.apCraft @ Map+0x10AC */
+    u8           *pnCraftCount;   /* Map_nCraftCount @ Map+0x1194 */
+    i32          *pnNextCraftId;  /* dword_186550, the id handed to the new craft */
+    BaseRec      *const *apBases; /* Map.apBases @ Map+0x1174 */
+    u8           *abFacilityGrid; /* gBaseFacGrid @ 0x159768, 1524 bytes */
+    ShipCtorEnv  *pCtorEnv;
+    PtrArray     *pStrategList;
+    i32          *pnStrategSeed;  /* 0x18640C */
+    i32          *pnZoomMode;     /* the viewport nMode at 0x1863E8 */
+} ShipSpawnEnv;
+
+i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase);
+
 #endif /* PUFO_SHIP_H */

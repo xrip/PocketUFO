@@ -10,6 +10,7 @@
 #include "util/pufo_ptrarray.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
@@ -1085,6 +1086,113 @@ static void TestTransferTacticalLoot(void)
     CheckEqI32(g_bLootRefresh, 1, "and the refresh flag is raised either way");
 }
 
+static void TestSpawnAtSlot(void)
+{
+    static Ship *apCraft[8];
+    static BaseRec aBases[8];
+    static BaseRec *apBases[8];
+    static u8 grid[1524];
+    static ObjectRecFull objs[1];
+    static ObjectRecFull *apObjs[1];
+    static ShipCtorEnv ctorEnv;
+    static PtrArray list;
+    static u8 nCountByte;
+    static i32 nNextId;
+    static i32 nSeed;
+    static i32 nZoom;
+    ShipSpawnEnv env;
+
+    printf("Ship_SpawnAtSlot @ 0x2cb14\n");
+
+    /* fac[] is grid + 0x174 with tileA at +0, tileB at +36, layer2 at +72 and facType at +108;
+     * buildDays is its own array at grid + 36*nBase. Base 0 only, so no base term here. */
+#define FAC(l, y, x) grid[0x174 + (l) + 6 * (y) + (x)]
+#define DAYS(y, x)   grid[6 * (y) + (x)]
+
+    for (i32 i = 0; i < 8; ++i) {
+        memset(&aBases[i], 0, sizeof(aBases[i]));
+        apBases[i] = &aBases[i];
+        aBases[i].nUnk8 = 100 + i;  /* +0x08, the x the strateg item is placed at */
+        aBases[i].nUnk12 = 200 + i; /* +0x0C, the y */
+    }
+    apObjs[0] = &objs[0];
+    PtrArray_ctor(&list);
+    nCountByte = 0;
+    nNextId = 7;
+    nSeed = 0;
+    nZoom = 0;
+    ctorEnv.apObjects = apObjs;
+    ctorEnv.nObjectCount = 1;
+
+    env.apCraft = apCraft;
+    env.pnCraftCount = &nCountByte;
+    env.pnNextCraftId = &nNextId;
+    env.apBases = apBases;
+    env.abFacilityGrid = grid;
+    env.pCtorEnv = &ctorEnv;
+    env.pStrategList = &list;
+    env.pnStrategSeed = &nSeed;
+    env.pnZoomMode = &nZoom;
+
+    /* Nothing is a hangar, so the scan finds nothing. */
+    memset(grid, 0, sizeof(grid));
+    CheckEqI32(Ship_SpawnAtSlot(&env, 0, 0), 5, "with no hangar cell the scan returns 5");
+    CheckEqI32(nCountByte, 1, "the craft count grows whether or not a cell was found");
+    CheckEqI32(nNextId, 8, "and so does the next craft id");
+    CheckEqI32(apCraft[0] != NULL ? 1 : 0, 1, "the craft is stored at the slot the count named");
+    CheckEqI32(list.nCount, 1, "one strateg item was added");
+    CheckEqI32(((StrategItem *)PtrArray_Get(&list, 0))->nDisplayId, 7,
+               "the item carries the id the craft got, before it was bumped");
+    CheckEqI32(((StrategItem *)PtrArray_Get(&list, 0))->nSiteId, -1,
+               "a type 1 item sets nSiteId to -1");
+
+    /* A hangar at facType[2][3]. layer2[1][4] is the cell the test looks at and it is clear. */
+    memset(grid, 0, sizeof(grid));
+    FAC(108, 2, 3) = PUFO_FAC_TYPE_HANGAR;
+    CheckEqI32(Ship_SpawnAtSlot(&env, 2, 0), 3, "the scan returns the column it matched");
+    CheckEqI32(apCraft[1]->bHangarX, 4, "bHangarX is result + 1");
+    CheckEqI32(apCraft[1]->bHangarY, 3, "bHangarY is v10 + 1");
+    CheckEqI32(FAC(72, 3, 4), 35,
+               "the stamp lands at layer2[v10+1][result+1], which is 35 for craft type 2");
+    CheckEqI32(FAC(108, 2, 3), PUFO_FAC_TYPE_HANGAR, "the facType byte is left alone");
+
+    /* The layer2 test is pinned to row 1 whatever row the scan is on. Block row 1 and the
+     * facType match at row 3 must be refused even though layer2[4][1] is clear. */
+    memset(grid, 0, sizeof(grid));
+    FAC(108, 3, 0) = PUFO_FAC_TYPE_HANGAR;
+    FAC(72, 1, 1) = 1;   /* the cell the test actually reads */
+    FAC(72, 4, 1) = 0;   /* the cell the stamp would use, and it is clear */
+    CheckEqI32(Ship_SpawnAtSlot(&env, 1, 0), 5,
+               "the layer2 test reads row 1, not row v10+1, so the match is refused");
+    CheckEqI32(FAC(72, 4, 1), 0, "and nothing is stamped");
+
+    /* A craft type outside the table matches the cell, sets the coordinates, and then falls
+     * through the switch without stamping -- and the loop keeps going. */
+    memset(grid, 0, sizeof(grid));
+    FAC(108, 2, 3) = PUFO_FAC_TYPE_HANGAR;
+    CheckEqI32(Ship_SpawnAtSlot(&env, 5, 0), 5,
+               "an unknown craft type stamps nothing and the scan runs to the end");
+    /* This is the fourth craft, so it lives at slot 3: the refused scan before it took slot 2. */
+    CheckEqI32(apCraft[3]->bHangarX, 4, "but the coordinates were already written");
+    CheckEqI32(apCraft[3]->bHangarY, 3, "and they stay written");
+    CheckEqI32(FAC(72, 3, 4), 0, "with no glyph in the grid");
+
+    /* Only five rows and five columns are ever considered. */
+    memset(grid, 0, sizeof(grid));
+    FAC(108, 5, 5) = PUFO_FAC_TYPE_HANGAR;
+    CheckEqI32(Ship_SpawnAtSlot(&env, 0, 0), 5,
+               "a hangar at row 5 column 5 is never seen: the scan is 5 by 5 of a 6 by 6 grid");
+
+    for (i32 i = 0; i < 8; ++i) {
+        free(apCraft[i]);
+        apCraft[i] = NULL;
+    }
+    PtrArray_DeleteAll(&list);
+
+#undef FAC
+#undef DAYS
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -1099,6 +1207,7 @@ int main(void)
     TestCrewAndStoresTotals();
     TestInterceptRetarget();
     TestTransferTacticalLoot();
+    TestSpawnAtSlot();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

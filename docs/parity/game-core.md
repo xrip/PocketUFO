@@ -8138,3 +8138,45 @@ callers pass the grid they mean, so the difference is latent rather than behavio
 
 The return value `6*(24*nBaseIndex + nY + 18)` is the address delta the `facType` store used. It is
 reproduced unchanged, because no caller uses it and inventing a status would be a guess.
+
+## `Ship_SpawnAtSlot @ 0x2cb14` — ported, and the hangar scan has three quirks
+
+`src/pufo/game/pufo_ship.c` behind `ShipSpawnEnv`, asserted by `tests/test_ship.c` (19 new checks).
+664 bytes cited.
+
+The first half is ordinary: `new(0x44)`, `Ship_Ctor` with the **current** value of the next-craft id,
+store at `apCraft[nCraftCount]` (Map+0x10AC, count byte at Map+0x1194), a `StrategList_AddItem` of
+type 1 at the home base's own x/y read from `BaseRec+8` and `BaseRec+12`, and only then bump the id
+and the count. The store uses the count before the bump, which is why the scan's later re-read through
+`Map+0x10A8 + 4*count_after` lands on the same slot — the two offsets differ by exactly one element.
+
+The second half searches the home base's facility grid for a hangar cell to attach the craft to:
+
+```
+fac[nBase].facType[v10][result] == 11
+fac[nBase].layer2[1][result+1]  == 0
+buildDays[nBase][v10][result]   == 0
+```
+
+and on the first match writes `Ship.bHangarX = result+1`, `Ship.bHangarY = v10+1`, and the craft glyph
+33..37 (for types 0..4) at `fac[nBase] + 6*v10 + result + 79`, which is `layer2[v10+1][result+1]`.
+
+Three things about it are the original's, not the port's:
+
+- **The `layer2` test is pinned to row 1.** The ARM forms the test address as `144*nBase + result +
+  451` with no `v10` term, so it always reads `layer2[1][result+1]`, while the stamp it authorises
+  goes to row `v10+1`. For any row below the first, the tested cell and the written cell are different
+  cells. A hangar at `facType[3][0]` is therefore refused by whatever happens to be in
+  `layer2[1][1]`, not by `layer2[4][1]`.
+- **The scan is 5×5 of a 6×6 grid.** Both counters stop at 5, so a hangar cell in the last row or the
+  last column is never found.
+- **An unknown craft type writes the coordinates and stamps nothing.** The switch is five `CMP`/`BEQ`
+  pairs with no default, so type 5 falls into the inner loop's increment. The hangar coordinates were
+  already stored at that point and stay stored, the loop carries on, and the function returns 5.
+
+A failed `new(0x44)` still stores NULL into `apCraft` and still bumps both counters; if the scan then
+matches, the coordinate write goes through that NULL. The port skips the write in that case.
+
+The port's own first attempt at this got the stamp offset wrong — it used `6*(v10+1) + (result+1)`
+without the 72 and wrote into `tileA`. The test caught it, which is the reason the offset is written
+out in the source comment rather than folded into a helper.

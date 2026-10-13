@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 674 / 1103 (61.1%) |
-| Bytes of original code cited | 255372 / 598792 (42.6%) |
+| Functions cited as evidence | 675 / 1103 (61.2%) |
+| Bytes of original code cited | 256036 / 598792 (42.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 51 |
-| Test checks run | 7170 |
+| Test checks run | 7189 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 185 | 214 | 111548 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 186 | 214 | 112212 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 109 | 205 | 34764 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
@@ -235,7 +235,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (185 functions)
+### `tact` (186 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -281,6 +281,7 @@ is the module that answers to it.
 | `0x54cf4` | `Map_ApplyTemplateToCells` | 772 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.c` (+2) |
 | `0x377ec` | `Tact_LoadPalettes` | 760 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x32cd4` | `Map_ScanBlastFootprint` | 724 | `src/pufo/game/pufo_mapcell.h`, `src/pufo/game/pufo_vistry.c` (+1) |
+| `0x2cb14` | `Ship_SpawnAtSlot` | 664 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x4b080` | `TactState_EnqueueFireBurst` | 628 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x22ba0` | `Soldier_CreateAndClassify` | 624 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x25e6c` | `Unit_RollChance` | 596 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` |
@@ -976,7 +977,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
 
-### `tact` — 29 functions, 66796 bytes remaining
+### `tact` — 28 functions, 66132 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1003,7 +1004,6 @@ whose port work they belong to.
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x3348c` | `Tact_TallyBattleStats` | 756 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x2cb14` | `Ship_SpawnAtSlot` | 664 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x344b4` | `Tact_TallyCraftRecovery` | 556 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1330,7 +1330,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 62 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 689 |
-| `test_ship` | PASS | 166 |
+| `test_ship` | PASS | 185 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
