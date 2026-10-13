@@ -7297,6 +7297,73 @@ head of that cell's list**.
 is `MapCell.nX`, `SUB`/`ADD #4` give the bounds, `0x1B` is `nY`, and the sort key is `ObjectRec + 0xC8`.
 Reading the pseudocode here would have produced a nonsense loop range.
 
+## `Tact_SpawnAliens @ 0x3a2ac` — decoded, blocked on data tables rather than functions
+
+3,516 bytes. Every callee it needs is already ported: `Soldier_CreateAndClassify`, `Unit_bIsLarge`,
+`Unit_ResetBattleState`, `Unit_RecalcInventoryStat`, `Unit_UpdateAnimPose`, `Map_PickRmpSpawnForUnit`,
+`Font_LoadSpr`, `Font_BuildIndex`, `TactItem_ctor`, `Tact_KillUnit`. What is missing is the static data.
+
+**The biggest correction: `byte_A6618`, `byte_A6628`, `byte_A6650` and `unk_A6658` are one block.**
+`byte_A6628` is `byte_A6618 + 16`, and `byte_A6650` is `byte_A6618 + 56`. Verified byte for byte: the 40
+bytes at 0xA6628 equal the 40 bytes at 0xA6618+16, and 0xA6650 holds `3, 5, 7, 4, 8`, which is
+0xA6618[56..60]. The IDB currently presents them as four unrelated tables.
+
+Read as one 80-byte block from 0xA6618:
+
+| offset | bytes | how the original uses it |
+|---|---|---|
+| +0 | `1 0 0 3 5 0 7 10 0 13 15 0 20 0 0` | primary enemy count, index `3*(nTerrainVariant-1) + bUnk86290` |
+| +64 | `0 0 0 0 0 0 0 0 0 1 1 0 2 0 0 0` | secondary count, same index, only when the lead race is not 10 or 12 |
+| +56 | `3 5 7 4 8` | `bRankType` per race slot, index `v25` 0..4 |
+
+`byte_A6628` is the **race composition** row: `v87[i] = byte_A6628[5 * v76 + i]` for i in 0..4, where `v76`
+selects the alien set. `v76` comes from `gap_86301[0]`: 0 means `nTerrainVariant - 1`, 1 means 7, 2 means 6,
+3 means 5, and a Mars-or-special mission overrides it to 5.
+
+**The alien equipment list is eight u16 object indices at `off_AA008`, walked backwards.**
+`0xAA008..0xAA017` is `18, 23, -1, 3, 6, 11, 12, 13`. The loop starts at `unk_AA016` (13) and steps down to
+`off_AA008` (18), assigning to `apBelt[7]` down to `apBelt[0]`, while a parallel counter runs 14, 12, 10, 8,
+6, 4, 2, 0 and **skips the entry where it equals 4** — which is exactly the `-1` sentinel at 0xAA00C. So the
+sentinel is skipped by a counter, not by a test.
+
+**`word_AA020` is eight mission-set totals**: `1, 35, 100, 300, 400, 350, 400, 300`, indexed by the same
+`v76`. The race composition is then recomputed as `(word_AA020[v76] + unk_1472C8) / unk_AA030[i]`.
+
+### An original stack bug at 0x3AB6C
+
+```
+v47 = v87;  v48 = 8;
+do { --v48; *v47++ = v50 / *v49++; } while (v48 != 0);
+```
+
+`v87` is `_DWORD v87[7]` at `bp-0x20`, which ends at `bp-0x09`. The loop writes **eight** dwords, so the
+eighth lands at `bp-0x04` — which is `v88`, the one-byte stack variable that becomes the `TactItem` stub at
+0x3AD50. The composition loop therefore writes four bytes over the head of a stub it later reads as a
+`TactItem *`. Worth reproducing deliberately, or fixing, but it should not be done silently.
+
+### The rest of the shape
+
+- Enemy counts by mission type: type 5 gives `15 - rand(5)` and `5 - rand(3)` plus `rand(5) + 5` reserves;
+  type 3 gives `15 - rand(5)` and `3 - rand(3)`; types 4 and 9 give `20 - rand(5)` and `4 - rand(3)`;
+  everything else reads the terrain tables. A lead race of 10 or 12 forces the secondary count to 0.
+- The primary count is halved through a **string round trip**: `itos` then `stod` then multiply by the
+  double at `0x3F4CCCCD` (0.2) then `dtoi`. That is `floor(v5 * 0.2)` reached through decimal text, which is
+  what the WinCE runtime does.
+- Race assignment is by position: the first `v84` soldiers get the lead race, the next `v85` get the second,
+  the next `v86` get the third, and anything past that gets `rand(2) + 16`. A race value of 23 means
+  "none" and falls through.
+- Unit stats come from 32-byte records at `unk_A8F38 + 32 * nUnitType - 288`, names from 40-byte records at
+  `0xB1140 + 40 * nUnitType`. Three of the stats get `+ rand(0x14) - 10`, so a jitter of -10..+9.
+- A `-1` in record word 6 means "roll it": `auStat[6] = rand(0x32) + 30` and `auStat[7] = rand(0x32) + 30`
+  with `bUnk422 = 1`; otherwise both are taken from the record and `bUnk422 = 0`.
+- `bUnk435` is set on up to `v78` non-large aliens, excluding unit types 16 and 17. `v78` is
+  `(bUnk86293 - 20) * v5 / something`, and it is reduced by one when it would equal the whole enemy count.
+- For the XCom base defence mission the soldiers go into `apHiddenSoldiers` and `nEnemyReserveCount` instead
+  of `apEnemyUnits`, and they are **not** placed by `Map_PickRmpSpawnForUnit`.
+- Unit types 18 and 21 are handed `apObjects[11]` with `nAmmo = -2`, which in a u8 field is 255.
+- Finally: any enemy with `bUnk435` set is killed outright — `uHp = 0` then `Tact_KillUnit` — and the scan
+  restarts from index 0 each time it kills one.
+
 ### A latent crash this port exposed in its own shot resolution
 
 `Combat_ResolveShot @ 0x2f12c` clears the 41 x 41 x 4 hit window and writes `pOut->nDamage`
