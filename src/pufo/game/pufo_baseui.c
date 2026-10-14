@@ -5,6 +5,7 @@
 #include "util/pufo_str.h" /* pufo_strcpy/pufo_strcat, the line writes of ResearchScreen_RefreshPanels */
 #include "audio/pufo_audio.h" /* Sound_Play, the screen-open sample of SoldierScreen_Toggle */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
+#include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -1810,4 +1811,145 @@ i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv)
     }
 
     return 0;
+}
+
+/* --- BaseFacScreen_DrawBuildDialog @ 0x59b60 --- */
+
+/* 0x59CEC and 0x5A168: MOVS, ADDMI #1, ASR#1. A negative width is nudged up by one before the
+ * halving, which is what the ARM's arithmetic shift then does to it. */
+static i32 BuildDialog_HalfWidth(i32 nWidth)
+{
+    if (nWidth < 0) {
+        nWidth += 1;
+    }
+    return nWidth / 2;
+}
+
+/* The label copy loops (0x59BCC, 0x5A02C): LDRSB/STRB until the terminator. The original writes
+ * straight into the 56-byte psz with no bound; the port stops at the buffer end. */
+static void BuildDialog_CopyLabel(char *pszDst, size_t cchDst, const char *pszSrc)
+{
+    size_t i = 0;
+
+    if (pszSrc == NULL) {
+        pszDst[0] = 0;
+        return;
+    }
+    while (i + 1 < cchDst && pszSrc[i] != 0) {
+        pszDst[i] = pszSrc[i];
+        ++i;
+    }
+    pszDst[i] = 0;
+}
+
+/* The eight runtime-loaded labels may be absent in the port's env; the original always has bytes at
+ * those addresses, possibly just a terminator. */
+static void BuildDialog_DrawLabel(i32 x, i32 y, const char *psz)
+{
+    if (psz != NULL) {
+        Text_DrawString(x, y, psz);
+    }
+}
+
+/* 0x59BAC..0x59C1C and 0x5A078..0x5A0E4: the funds label, the funds value and a dollar sign,
+ * drawn at (5, 20). */
+static void BuildDialog_DrawFundsLine(const BuildDialogEnv *pEnv, char *psz)
+{
+    char szNum[16];
+
+    BuildDialog_CopyLabel(psz, PUFO_BUILD_LABEL_MAX, pEnv->pszFundsPrefix);
+    snprintf(szNum, sizeof(szNum), "%d", *pEnv->pnFunds); /* j_itoa (0x9e9f0), base 10 */
+    (void)pufo_strcat(psz, szNum, PUFO_BUILD_LABEL_MAX);
+    (void)pufo_strcat(psz, "$", PUFO_BUILD_LABEL_MAX);    /* asc_AB1D8 @ 0xab1d8 */
+    Text_DrawString(5, 20, psz);
+}
+
+i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
+{
+    char szLabel[PUFO_BUILD_LABEL_MAX]; /* psz @ sp+0x18 */
+    const BaseFacFlag *pRec;
+    i32 nKind;
+    i32 nWidth;
+
+    if (pEnv == NULL || pEnv->pbDialogOpen == NULL || *pEnv->pbDialogOpen == 0) {
+        return 0; /* 0x59B6C: a closed dialog draws nothing at all */
+    }
+    if (pEnv->pnFunds == NULL) {
+        return 0;
+    }
+
+    if (pEnv->pbPlaceArmed != NULL && *pEnv->pbPlaceArmed != 0) {
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 130, 130, 250, 20, 20, 90); /* 0x59BAC */
+        BuildDialog_DrawFundsLine(pEnv, szLabel);
+
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0, 228, 236, 85, 4, 0x46, 0x4B, 0xC8, 0); /* 0x59C60 */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 50, 255, 50, 0, 20, 0);                /* 0x59C80 */
+        nKind = (pEnv->pPanel != NULL && pEnv->paFac != NULL)
+                    ? UiPanel_GetLineAux(pEnv->pPanel, pEnv->nPanelSel)                /* 0x59CB4 */
+                    : -1;
+        pRec = (nKind >= 0 && nKind < PUFO_BASEFAC_COUNT) ? &pEnv->paFac[nKind] : NULL;
+
+        if (pRec != NULL) {
+            BuildDialog_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pRec->szName);
+            nWidth = Text_MeasureWidth(szLabel);                                       /* 0x59CEC */
+            Text_DrawString(120 - BuildDialog_HalfWidth(nWidth), 236, pRec->szName);  /* 0x59D0C */
+        }
+
+        BuildDialog_DrawLabel(6, 257, pEnv->pszRowCost);    /* 0x59D2C, unk_B7B47 */
+        BuildDialog_DrawLabel(6, 275, pEnv->pszRowBuild);   /* 0x59D4C, unk_B7C14 */
+        BuildDialog_DrawLabel(6, 293, pEnv->pszRowNewBase); /* 0x59D6C, unk_B7CE1 */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 50, 150, 255, 0, 0, 20);               /* 0x59D8C */
+        if (pRec != NULL) {
+            snprintf(szLabel, sizeof(szLabel), "%d", (i32)pRec->uCost);               /* 0x59DB4 */
+            Text_DrawString(185, 257, szLabel);                                        /* 0x59DCC */
+        }
+        Text_DrawString(185, 293, "50000"); /* 0x59DE4, a50000 @ 0xab260: the new-base row */
+
+        if (pRec != NULL) {
+            snprintf(szLabel, sizeof(szLabel), "%d",
+                     (i32)FacBuildSpec_GetDays(pRec->bFlag21));                       /* 0x59E20 */
+            (void)pufo_strcat(szLabel, " ", PUFO_BUILD_LABEL_MAX);                    /* 0x59E2C */
+            (void)pufo_strcat(szLabel, pEnv->pszDaysSuffix, PUFO_BUILD_LABEL_MAX);    /* 0x59E40 */
+        }
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 50, 150, 255, 0, 0, 20);               /* 0x59E60 */
+        Text_DrawString(185, 275, szLabel);                                           /* 0x59E78 */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);              /* 0x59EA4 */
+        BuildDialog_DrawLabel(6, 4, pEnv->pszTitleArmed);                             /* 0x59EC0 */
+        (void)UiControl_BlitActivePad(pEnv->pCtl, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlUser);            /* 0x59ECC */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30);              /* 0x59EF4 */
+        (void)BaseFacScreen_DrawPlacementOverlay(pEnv->pOverlayEnv);                  /* 0x59EF8 */
+    } else {
+        if (pEnv->pbOverlayShown != NULL) {
+            *pEnv->pbOverlayShown = 0;                                               /* 0x59FAC */
+        }
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, 0, 228, 236, 85, 4, 0x46, 0x4B, 0xC8, 0); /* 0x59FE0 */
+        if (pEnv->pPanel != NULL) {
+            UiPanel_DrawText(pEnv->pPanel);                                          /* 0x59FEC */
+        }
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);             /* 0x5A00C */
+        BuildDialog_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pEnv->pszTitleList);
+        Text_DrawString(6, 4, szLabel);                                              /* 0x5A050 */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 130, 130, 250, 20, 20, 90);           /* 0x5A078 */
+        BuildDialog_DrawFundsLine(pEnv, szLabel);
+        (void)UiControl_BlitActivePad(pEnv->pCtl, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlUser);            /* 0x5A0F0 */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30);             /* 0x5A118 */
+    }
+
+    /* 0x5A138: the tail both branches share, reached only when a purchase was refused. */
+    if (pEnv->pdwShortfall != NULL && *pEnv->pdwShortfall == 1
+        && pEnv->pnResidue != NULL && *pEnv->pnResidue == 0) {
+        (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1);         /* 0x5A138 */
+        if (pEnv->pszShortfall != NULL) {
+            nWidth = Text_MeasureWidth(pEnv->pszShortfall);                          /* 0x5A168 */
+            Text_DrawString(120 - BuildDialog_HalfWidth(nWidth), 158,
+                            pEnv->pszShortfall);                                     /* 0x5A188 */
+        }
+    }
+
+    return 1;
 }

@@ -657,6 +657,11 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
 i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
                               i32 nX, i8 nY, u8 bClear);
 
+/* aFacBuildSpec @ 0xAA8F8: the build days of one facility kind, the third byte of the three-byte
+ * record. The original indexes the 18-record table unguarded (0x59E14, 0x623EC); the port returns 0
+ * for a kind outside 0..17. */
+i8 FacBuildSpec_GetDays(u8 nKind);
+
 /* byte_A6568 @ 0xA6568: facility type -> placement code for the tactical tile-type grid. The
  * hangar entry (11) is 20, the empty sentinel, because the hangar's 2x2 stamp (16..19) overwrites
  * the anchor right after. See Smap_InitCraftSelectState below. */

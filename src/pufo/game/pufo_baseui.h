@@ -974,4 +974,76 @@ typedef struct FacOverlayEnv {
 
 i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv);
 
+/* --- BaseFacScreen_DrawBuildDialog @ 0x59b60 (1592 B) : the build dialog's whole frame ---
+ *
+ * Nothing is drawn while bBaseFacDialogOpen (0x158884) is zero (0x59B6C). The two branches then
+ * split on bBaseFacPlaceArmed (0x158888, 0x59B84), the byte BaseFacScreen_TryBuySelected sets when
+ * a purchase is affordable.
+ *
+ * Armed (0x59B84..0x59EF8). The funds line goes first: the label unk_BB5BC, the funds value and a
+ * "$" (asc_AB1D8), drawn at (5, 20) in the blue pair 130,130,250 / 20,20,90 (0x59BAC..0x59C1C). The
+ * panel frame is Ui_AnimExpandBlit(0, 228, 236, 85, idx 4, src 0x46/0x4B, key 0xC8, mode 0)
+ * (0x59C60). In the green pair 50,255,50 / 0,20,0 the selected record's name is measured and drawn
+ * centred at y = 236 (0x59C80..0x59D0C), then the three row labels unk_B7B47, unk_B7C14 and
+ * unk_B7CE1 at (6, 257), (6, 275), (6, 293). In the blue pair 50,150,255 / 0,0,20 the record's
+ * uCost goes at (185, 257), the literal "50000" (a50000 @ 0xAB260) at (185, 293), and
+ * "<days> <unk_BB422>" — days being aFacBuildSpec[record.bFlag21].nBuildDays — at (185, 275)
+ * (0x59D8C..0x59E78). The title unk_B7DAE is drawn at (6, 4) in 68,244,252 / 4,70,75 (0x59EA4), the
+ * dialog's pad control (*unk_186B00) blits (0x59ECC), the red pair 220,80,80 / 50,30,30 is set up
+ * (0x59EF4) and BaseFacScreen_DrawPlacementOverlay runs (0x59EF8).
+ *
+ * Not armed (0x59F98..0x5A118). bBaseFacOverlayShown (0x15888C) is cleared (0x59FAC), the same panel
+ * frame runs (0x59FE0), the panel's own rows draw through UiPanelMsg_Draw (0x59FEC), the title is
+ * unk_ED01C at (6, 4) in the cyan pair (0x5A00C), the funds line repeats in the blue pair
+ * (0x5A078..0x5A0E4), the pad control blits (0x5A0F0) and the red pair is set up (0x5A118).
+ *
+ * Shared tail (0x5A138..0x5A188). When the shortfall dword byte_1870C8 is 1 and dword_1870B4[0] is
+ * 0 — the state an unaffordable purchase leaves behind in BaseFacScreen_TryBuySelected and in the
+ * overlay's commit — a 200x70 panel animates at (20, 130) through Ui_AnimExpandBlit_IfEnabled (its
+ * first argument is the grid pointer, never read) and the shortfall message unk_C7DEE is drawn
+ * centred at y = 158.
+ *
+ * Centring is `120 - w/2` with the ARM's negative fix-up (MOVS / ADDMI / ASR#1 at 0x59CEC and
+ * 0x5A168): a negative width gets +1 before the arithmetic shift.
+ *
+ * Deviations: the original builds every string in a 56-byte stack buffer (psz at sp+0x18) with
+ * unbounded copy loops and three strcats, so a long label overflows the frame; the port bounds each
+ * build to the same 56 bytes (bugs.tsv). It indexes anLineAux[nBaseFacPanelSel], aBaseFacFlags[kind]
+ * and aFacBuildSpec[bFlag21] unchecked; the port skips the record rows when any of them is out of
+ * range. UiControl_BlitActivePad takes one argument in the original and calls PadImage_Blit /
+ * PadImage_BlitEx(pPad, 0) itself; the port keeps its existing injected-blit seam. The original
+ * returns register residue (the last callee's value); the port returns 1 when it drew the dialog and
+ * 0 when the dialog is closed. The eight unk_0xBxxxx/0xCxxxx/0xEDxxx labels are runtime-loaded
+ * buffers the original reads directly; the port takes them through the env. */
+#define PUFO_BUILD_LABEL_MAX 56 /* psz @ sp+0x18 in the original */
+
+typedef struct BuildDialogEnv {
+    const GfxColorEnv *pColor;      /* pGX @ 0x1139B8, the colour-pair owner */
+    UiAnimBlitEnv *pAnim;           /* the geoscape anim root @ 0x1864F8 */
+    UiPanel *pPanel;                /* pBaseFacPanel @ 0x15886C */
+    i32 nPanelSel;                  /* nBaseFacPanelSel @ 0x158868 */
+    const BaseFacFlag *paFac;       /* aBaseFacFlags @ 0x186E48 */
+    i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
+    UiControl *pCtl;                /* *unk_186B00, the dialog's pad control */
+    UiControlBlitFn pfnCtlBlit;     /* PadImage_Blit */
+    UiControlBlitFn pfnCtlBlitEx;   /* PadImage_BlitEx(pPad, 0) */
+    void *pCtlUser;
+    u8 *pbDialogOpen;               /* bBaseFacDialogOpen @ 0x158884 */
+    u8 *pbPlaceArmed;               /* bBaseFacPlaceArmed @ 0x158888 */
+    u8 *pbOverlayShown;             /* bBaseFacOverlayShown @ 0x15888C */
+    const u32 *pdwShortfall;        /* byte_1870C8, read as a dword */
+    const i32 *pnResidue;           /* dword_1870B4[0] */
+    const char *pszFundsPrefix;     /* unk_BB5BC */
+    const char *pszRowCost;         /* unk_B7B47 */
+    const char *pszRowBuild;        /* unk_B7C14 */
+    const char *pszRowNewBase;      /* unk_B7CE1 */
+    const char *pszDaysSuffix;      /* unk_BB422 */
+    const char *pszTitleArmed;      /* unk_B7DAE */
+    const char *pszTitleList;       /* unk_ED01C */
+    const char *pszShortfall;       /* unk_C7DEE */
+    const FacOverlayEnv *pOverlayEnv; /* BaseFacScreen_DrawPlacementOverlay's env */
+} BuildDialogEnv;
+
+i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

@@ -9405,3 +9405,45 @@ looks like 0x187055; the ARM is `LDRSB R0,[R6]` with `R6 = 0x187058`.
 
 Deviations: a mode outside 0..4 or a style byte of 3 or more reads an uninitialised stack slot in the
 original; the port falls back to the full rect and the ordinary frame.
+
+### `BaseFacScreen_DrawBuildDialog` (done)
+
+`src/pufo/game/pufo_baseui.{h,c}`, 23 new checks in `tests/test_baseui.c`. The whole build-dialog
+frame, and the only caller of `BaseFacScreen_DrawPlacementOverlay` in the image.
+
+Nothing draws unless `bBaseFacDialogOpen @ 0x158884` is non-zero (0x59B6C); the branches split on
+`bBaseFacPlaceArmed @ 0x158888` (0x59B84), the byte `BaseFacScreen_TryBuySelected` sets when a
+purchase is affordable.
+
+Armed (0x59B84..0x59EF8): the funds line `aTextRec156 + nFunds + "$"` at (5, 20) in 130,130,250 /
+20,20,90; `Ui_AnimExpandBlit(0, 228, 236, 85, idx 4, src 0x46/0x4B, key 0xC8, mode 0)`; then in
+50,255,50 / 0,20,0 the selected record's name centred at y = 236 and the three row labels
+`aTextRec83`, `aTextRec84` and `aTextRec85` at (6, 257), (6, 275) and (6, 293); then in 50,150,255 /
+0,0,20 the record's `uCost` at (185, 257), the literal "50000" (`a50000 @ 0xAB260`) at (185, 293) and
+`<days> <aFacDaysSuffix>` at (185, 275), days being `aFacBuildSpec[record + 0x15].nBuildDays`; then
+the title `aTextRec86` at (6, 4) in 68,244,252 / 4,70,75, the `*unk_186B00` pad blit, the red pair
+220,80,80 / 50,30,30 and `BaseFacScreen_DrawPlacementOverlay`.
+
+Unarmed (0x59F98..0x5A118): `bBaseFacOverlayShown @ 0x15888C` is cleared (0x59FAC), the same panel
+frame, the panel's own rows through `UiPanelMsg_Draw`, the title `aTextRec1148` at (6, 4), the funds
+line again and the pad blit.
+
+Shared tail (0x5A138..0x5A188): `byte_1870C8 == 1` and `dword_1870B4[0] == 0` -- the state an
+unaffordable purchase leaves behind in `BaseFacScreen_TryBuySelected` and in the overlay's commit --
+animates a 200x70 panel at (20, 130) through `Ui_AnimExpandBlit_IfEnabled` and centres `aTextRec406`
+at y = 158.
+
+The eight runtime labels are `aTextRecs @ 0xB38D0` records at stride 205, and the IDB now names them
+`aTextRec83/84/85/86/156/406/1148`. `aFacDaysSuffix @ 0xBB422` is the one exception: record 154 + 4,
+a slice rather than a record start.
+
+Centring is `120 - w/2` with the ARM's negative fix-up (`MOVS`, `ADDMI #1`, `ASR#1` at 0x59CEC and
+0x5A168): a negative width is nudged up by one before the halving.
+
+Deviations: the original builds every string in the 56-byte stack buffer psz (sp+0x18) with unbounded
+copy loops and three `strcat`s (bugs.tsv); it indexes `anLineAux[nBaseFacPanelSel]`,
+`aBaseFacFlags[kind]` and `aFacBuildSpec[bFlag21]` unchecked, and the port skips the three record
+rows instead. `UiControl_BlitActivePad` takes one argument in the original and calls `PadImage_Blit`
+/ `PadImage_BlitEx(pPad, 0)` itself; the port keeps its existing injected-blit seam. The original
+returns register residue; the port returns 1 when it drew and 0 when the dialog is closed. The shell
+wiring waits for `Geoscape_DrawScreen @ 0x6c16c`, the draw that calls this one.

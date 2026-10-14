@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 730 / 1103 (66.2%) |
-| Bytes of original code cited | 327288 / 598792 (54.7%) |
+| Functions cited as evidence | 731 / 1103 (66.3%) |
+| Bytes of original code cited | 328880 / 598792 (54.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8219 |
+| Test checks run | 8242 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 73 | 85 | 22276 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 133 | 205 | 70388 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 122 | 243 | 17308 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 123 | 243 | 18900 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -705,12 +705,13 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (122 functions)
+### `strat-ui` (123 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x58e10` | `BaseFacScreen_DrawPlacementOverlay` | 3396 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
+| `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x589ec` | `BaseFacScreen_Toggle` | 1060 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x65290` | `SoldierScreen_Draw` | 716 | `src/pufo/game/pufo_baseui.h` |
@@ -1148,7 +1149,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 121 functions, 99700 bytes remaining
+### `strat-ui` — 120 functions, 98108 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1173,7 +1174,6 @@ whose port work they belong to.
 | `0x74270` | `ResearchScreen_RebuildTopicList` | 1700 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6f34c` | `ManufScreen_CommitProduction` | 1408 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 567 |
+| `test_baseui` | PASS | 590 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 316 citations.
+parity report. Total: 321 citations.
 
 ### Offsets below the image base (39)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (277)
+### At or above the image base (282)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1483,7 +1483,9 @@ against the IDB when the final report is assembled.
 - `0x158849`
 - `0x158868`
 - `0x15886c`
+- `0x158884`
 - `0x158888`
+- `0x15888c`
 - `0x158890`
 - `0x159618`
 - `0x159758`
@@ -1506,6 +1508,7 @@ against the IDB when the final report is assembled.
 - `0x170d0`
 - `0x1863e8`
 - `0x1864dd`
+- `0x1864f8`
 - `0x186500`
 - `0x186534`
 - `0x186544`
@@ -1641,7 +1644,9 @@ against the IDB when the final report is assembled.
 - `0xaa8f8`
 - `0xaad28`
 - `0xaad4c`
+- `0xab1d8`
 - `0xab220`
+- `0xab260`
 - `0xab270`
 - `0xab488`
 - `0xab4b0`

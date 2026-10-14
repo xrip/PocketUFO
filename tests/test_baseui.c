@@ -2246,6 +2246,187 @@ static void TestFacOverlay(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* BaseFacScreen_DrawBuildDialog @ 0x59b60. The dialog is a draw function, so the checks go through
+ * the state it drives: the overlay flag, the placement overlay it calls on the dialog's own panel
+ * selection, the funds that commit spends, and the shortfall panel the shared tail animates. The
+ * pixel probes sit where only the shortfall panel can reach them: the dialog's own frame is at
+ * y = 228 and the overlay outline at columns 96 and 127. */
+static void TestBuildDialog(void)
+{
+    static u8 abGrid[PUFO_GRID_SIZE];
+    static UiPanel panel;
+    static BaseFacFlag aFac[PUFO_BASEFAC_COUNT];
+    static FacOverlayEnv overlayEnv;
+    static BuildDialogEnv env;
+    static UiAnimBlitEnv anim;
+    static GfxColorEnv color;
+    static UiControl ctl;
+    static SoftSurf gDialogSurf;
+    static u8 bAnimStarted;
+    static i8 nAnimProgress;
+    static u8 bPreviewActive;
+    static u8 bPreviewOk;
+    static u8 bOverlayShown;
+    static u8 bNewBaseMode;
+    static u8 bDialogOpen;
+    static u8 bPlaceArmed;
+    static i32 nFunds;
+    static i32 nTapX;
+    static i32 nTapY;
+    static i32 nResidue;
+    static u32 nShortfall;
+    static char szLabel[108];
+    const u16 *pPix;
+    i32 i;
+
+    printf("BaseFacScreen_DrawBuildDialog @ 0x59b60\n");
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&gDialogSurf);
+    SoftSurf_AllocPixels(&gDialogSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &gDialogSurf;
+    pPix = (const u16 *)gDialogSurf.pPixels;
+
+    memset(abGrid, 0, sizeof(abGrid));
+    memset(aFac, 0, sizeof(aFac));
+    for (i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        aFac[i].bFlag21 = (u8)i;              /* InitUI stores the record index here */
+        aFac[i].uCost = (u32)(1000 * (i + 1));
+    }
+
+    memset(&panel, 0, sizeof(panel));
+    if (!UiPanel_ctor(&panel, 2)) {
+        printf("  FAIL the facility panel could not be constructed\n");
+        return;
+    }
+    UiPanel_SetLineAux(&panel, 0, 3);         /* an ordinary facility */
+    UiPanel_SetLineAux(&panel, 1, 11);        /* the hangar */
+
+    memset(&ctl, 0, sizeof(ctl));             /* disabled: the dialog's pad blit draws nothing */
+
+    memset(&anim, 0, sizeof(anim));
+    anim.pbStarted = &bAnimStarted;
+    anim.pnProgress = &nAnimProgress;
+    anim.nFrameStyle = 0;
+
+    memset(&overlayEnv, 0, sizeof(overlayEnv));
+    overlayEnv.abFacilityGrid = abGrid;
+    overlayEnv.pPanel = &panel;
+    overlayEnv.nPanelSel = 0;
+    overlayEnv.paFac = aFac;
+    overlayEnv.pnFunds = &nFunds;
+    overlayEnv.nSelectedBaseIdx = 0;
+    overlayEnv.pnTapX = &nTapX;
+    overlayEnv.pnTapY = &nTapY;
+    overlayEnv.nPendingX = 3;
+    overlayEnv.nPendingY = 2;
+    overlayEnv.nCursorX = 100;                /* tap = (100/32, (100-36)/32) = (3, 2) */
+    overlayEnv.nCursorY = 100;
+    overlayEnv.pbPreviewActive = &bPreviewActive;
+    overlayEnv.pbPreviewOk = &bPreviewOk;
+    overlayEnv.pbOverlayShown = &bOverlayShown;
+    overlayEnv.pbNewBaseMode = &bNewBaseMode;
+    overlayEnv.nPhaseByte = 0;
+    overlayEnv.pdwShortfall = &nShortfall;
+    overlayEnv.pnResidue = &nResidue;
+    overlayEnv.pszLabel = szLabel;
+    overlayEnv.cchLabel = sizeof(szLabel);
+    overlayEnv.nPlaceX = -6000;
+    overlayEnv.nPlaceY = -6000;
+
+    memset(&env, 0, sizeof(env));
+    env.pColor = &color;
+    env.pAnim = &anim;
+    env.pPanel = &panel;
+    env.nPanelSel = 0;
+    env.paFac = aFac;
+    env.pnFunds = &nFunds;
+    env.pCtl = &ctl;
+    env.pbDialogOpen = &bDialogOpen;
+    env.pbPlaceArmed = &bPlaceArmed;
+    env.pbOverlayShown = &bOverlayShown;
+    env.pdwShortfall = &nShortfall;
+    env.pnResidue = &nResidue;
+    env.pszFundsPrefix = "funds ";
+    env.pszRowCost = "cost";
+    env.pszRowBuild = "build time";
+    env.pszRowNewBase = "new base";
+    env.pszDaysSuffix = "days";
+    env.pszTitleArmed = "build";
+    env.pszTitleList = "facilities";
+    env.pszShortfall = "not enough funds";
+    env.pOverlayEnv = &overlayEnv;
+
+    bDialogOpen = 0;
+    bPlaceArmed = 1;
+    bOverlayShown = 1;
+    nTapX = 9;
+    nFunds = 5000;
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(&env), 0, "a closed dialog draws nothing (0x59B6C)");
+    CheckEqI32(bOverlayShown, 1, "and it touches no state");
+    CheckEqI32(nTapX, 9, "the placement overlay never ran");
+
+    /* The unarmed branch: the overlay flag goes down and the overlay is not called at all. */
+    bDialogOpen = 1;
+    bPlaceArmed = 0;
+    bOverlayShown = 1;
+    memset(gDialogSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(&env), 1, "an open dialog draws (0x59B84)");
+    CheckEqI32(bOverlayShown, 0, "the unarmed branch clears bBaseFacOverlayShown (0x59FAC)");
+    CheckEqI32(nTapX, 9, "and never reaches the placement overlay");
+    Check(pPix[130 * 240 + 20] == 0, "the shortfall panel is not drawn (0x5A138)");
+
+    /* Armed: the overlay runs, on the dialog's own panel selection. */
+    bPlaceArmed = 1;
+    bOverlayShown = 0;
+    bPreviewActive = 1;
+    bPreviewOk = 1;
+    bNewBaseMode = 0;
+    nFunds = 5000;
+    nShortfall = 0;
+    nResidue = 7;
+    GridTileA(abGrid, 0, 2, 2) = 9;           /* a finished neighbour makes the tap legal */
+    memset(gDialogSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(&env), 1, "the armed branch runs the overlay (0x59EF8)");
+    CheckEqI32(nTapX, 3, "the tap column comes from the cursor (0x58EC0)");
+    CheckEqI32(nTapY, 2, "and the tap row too (0x58EC8)");
+    CheckEqI32(nFunds, 5000 - 4000, "the commit spends aBaseFacFlags[3].uCost (0x59AB4)");
+    CheckEqI32(GridFacType(abGrid, 0, 2, 3), 3, "the cell kind is the panel selection (0x59CB4)");
+    CheckEqI32(bOverlayShown, 1, "the preview block raised the overlay flag (0x59234)");
+    Check(pPix[130 * 240 + 20] == 0, "an affordable purchase skips the shortfall panel");
+
+    /* Unaffordable: the overlay leaves the shortfall state behind and the shared tail draws. */
+    memset(abGrid, 0, sizeof(abGrid));
+    GridTileA(abGrid, 0, 2, 2) = 9;
+    nFunds = 100;
+    nShortfall = 0;
+    nResidue = 7;
+    bPreviewOk = 1;
+    memset(gDialogSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(&env), 1, "the dialog still draws when the purchase fails");
+    CheckEqI32(nShortfall, 1, "the overlay records the shortfall (0x59A24)");
+    CheckEqI32(nResidue, 0, "and clears the residue slot");
+    CheckEqI32(nFunds, 100, "with nFunds untouched");
+    Check(pPix[130 * 240 + 20] != 0, "the shortfall panel animates at (20, 130) (0x5A138)");
+
+    /* The hangar row: the same selection drives the 2x2 stamp. */
+    memset(abGrid, 0, sizeof(abGrid));
+    GridTileA(abGrid, 0, 1, 3) = 7;           /* the up neighbour of the 2x2 anchor */
+    nFunds = 20000;
+    nShortfall = 0;
+    nResidue = 7;
+    bPreviewOk = 1;
+    env.nPanelSel = 1;
+    overlayEnv.nPanelSel = 1;
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(&env), 1, "the hangar row commits through the same path");
+    CheckEqI32(GridFacType(abGrid, 0, 2, 3), 11, "one facType byte at the anchor");
+    CheckEqI32(GridTileA(abGrid, 0, 3, 4), 12, "with the 2x2 stamp reaching the diagonal");
+
+    CheckEqI32(BaseFacScreen_DrawBuildDialog(NULL), 0, "a null env does nothing");
+
+    UiPanel_FreeLines(&panel);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2283,6 +2464,7 @@ int main(void)
     TestSoldierSelectListed();
     TestSoldierEquipSelected();
     TestFacOverlay();
+    TestBuildDialog();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

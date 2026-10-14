@@ -392,6 +392,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `BaseFacScreen_DrawBuildDialog @ 0x59b60` (1592 B) — ported in `game/pufo_baseui.{h,c}` behind
+  `BuildDialogEnv`, 23 new checks in `tests/test_baseui.c`. The whole build-dialog frame and the only
+  caller of `BaseFacScreen_DrawPlacementOverlay`: the funds line, the animated panel frame, the
+  selected `aBaseFacFlags` record name centred at y = 236, the three row labels, the cost, the literal
+  "50000", the build-days line, the title, the pad blit and the overlay; the unarmed branch clears
+  `bBaseFacOverlayShown`, draws the panel's own rows and swaps the title; both branches end on the
+  shared shortfall tail (0x5A138). IDB: function comment at 0x59b60, and the seven runtime labels
+  turned out to be `aTextRecs @ 0xB38D0` records at stride 205 — `unk_BB5BC/B7B47/B7C14/B7CE1/B7DAE/
+  C7DEE/ED01C` → `aTextRec156/83/84/85/86/406/1148`, with `unk_BB422` → `aFacDaysSuffix` (record 154
+  + 4, the only slice). New `FacBuildSpec_GetDays` in `game/pufo_geoscape.{h,c}` for the days byte.
 - [x] `Ui_AnimExpandBlit @ 0x95bf0` (948 B) + `Ui_AnimExpandBlit_IfEnabled @ 0x663c4` (88 B) — ported
   in `ui/pufo_panel.{h,c}` behind `UiAnimBlitEnv`, 19 new checks in `tests/test_panel.c`. The animated
   panel frame every geoscape screen draws: a started byte, a signed 0..100 progress byte, five growth
@@ -703,6 +713,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the soldier equip rows (`SoldierScreen_EquipSelected`) + the two false citations removed | 56/56 (Release) | 8165 | 727/1103 (65.9%) | 322856/598792 (53.9%) | 38 checked, 0 mismatched |
 | the placement preview and its commit (`BaseFacScreen_DrawPlacementOverlay`) | 56/56 (Release) | 8200 | 728/1103 (66.0%) | 326252/598792 (54.5%) | 38 checked, 0 mismatched |
 | the animated panel frame (`Ui_AnimExpandBlit`, `Ui_AnimExpandBlit_IfEnabled`) | 56/56 (Release) | 8219 | 730/1103 (66.2%) | 327288/598792 (54.7%) | 38 checked, 0 mismatched |
+| the build dialog frame (`BaseFacScreen_DrawBuildDialog`) | 56/56 (Release) | 8242 | 731/1103 (66.3%) | 328880/598792 (54.9%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

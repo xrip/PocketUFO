@@ -307,6 +307,14 @@ static const FacBuildSpec g_aFacBuildSpec[PUFO_FAC_SPEC_COUNT] = {
     { 0x03, 0x1C, 0x22 }, { 0x00, 0x00, 0x00 },
 };
 
+i8 FacBuildSpec_GetDays(u8 nKind)
+{
+    if (nKind >= PUFO_FAC_SPEC_COUNT) {
+        return 0; /* deviation: 0x59E14 and 0x623EC index the 18 records unguarded */
+    }
+    return g_aFacBuildSpec[nKind].nBuildDays;
+}
+
 /* BaseFac_SetCellBuildState @ 0x623bc. The header has the two row bases and the hangar case.
  *
  * The offsets below are the ARM's own: 0x159768 is buildDays and 0x159768 + 0x174 is fac[], and
