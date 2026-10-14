@@ -3,6 +3,8 @@
 #include "util/pufo_rand.h"
 #include "game/pufo_geoscape.h"   /* Base_FindFacilityCell */
 #include "game/pufo_ship.h"      /* BaseRec */
+#include "game/pufo_tactctl.h"   /* PUFO_MISSION_TYPE_* */
+#include "audio/pufo_audio.h"    /* Sound_Play, behind the AppendWithSound hook */
 #include "util/pufo_ptrarray.h"
 #include "ui/pufo_linelist.h"  /* UiLineList_Remove, for Smap_ClearSelection */
 
@@ -925,10 +927,10 @@ u8 Smap_ClearSelection(UiLineList *pLines, GameTime *pTime, u8 *pbSelectionFlag)
 u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, UiLineList *pLines,
                         GameTime *pTime, u8 *pbSelectionFlag)
 {
-    const i32 nShipIdx = (i32)UiLineList_GetColor(pLines, 0, 0); /* 0x8443C */
+        const i32 nShipIdx = (i32)UiLineList_GetColor(pLines, 0, 0); /* 0x8443C */
 
     (void)Ship_RetargetTravel(pShipEnv, nShipIdx); /* 0x84448 */
-    UiLineList_Remove(pLines, 0);                  /* 0x84454 */
+        UiLineList_Remove(pLines, 0);                  /* 0x84454 */
 
     if (pLines != NULL && pLines->nLineCount == 0 && pTime != NULL) {
         GameTime_Unpause(pTime); /* 0x84464 */
@@ -939,6 +941,291 @@ u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, UiLineList *pLines,
         return *pbSelectionFlag;
     }
     return 0;
+}
+
+/* The five race sprite sets. The bRace switch (0x83BB0..0x83C40) and the nAssaultBaseRace switch
+ * (0x84054..0x840E4) store the same table; 23 means "no race in this slot". */
+static const u8 g_aRaceSpriteSet[5][4] = {
+    {  9, 18, 23, 23 },  /* race 0 */
+    { 10, 15, 19, 23 },  /* race 1 */
+    { 11, 20, 23, 23 },  /* race 2 */
+    { 12, 14, 23, 22 },  /* race 3 */
+    { 13, 21, 23, 23 }   /* race 4 */
+};
+
+/* The craft-class tier table, the 0x83D2C jumptable: the terrain-variant base, the
+ * Map_nMissionTierRaw dword, and the HP budget. Classes 6 and 7 store 0x890 and 0xBB0 and then
+ * OR 8, which is 2200 and 3000. */
+static const struct {
+    u8  bVariant;
+    i32 nTierRaw;
+    i32 nBudget;
+} g_aCraftClassTier[8] = {
+    { 0, 0,   50 }, { 1, 0,  200 }, { 1, 1,  250 }, { 2, 0,  500 },
+    { 2, 1,  500 }, { 3, 0, 1200 }, { 3, 1, 2200 }, { 4, 0, 3000 }
+};
+
+static void StrategPlaySample(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    Sound_Play(nSample);
+}
+
+/* Smap_BeginCraftSelect @ 0x838dc. The header carries the decision tree and the evidence
+ * addresses; the body below follows the ARM order block by block. */
+i32 Smap_BeginCraftSelect(const SmapCraftSelectEnv *pEnv)
+{
+    const i32 nCraftCount = (i32)*pEnv->pnCraftCount;
+
+    /* 1. Visibility pass (0x838FC..0x83988): a craft that is at base, or has no hot weapons,
+     * is parked at base with weapons cold and hidden from the strateg list. */
+    for (i32 i = 0; i < nCraftCount; ++i) {
+        Ship *pShip = pEnv->apCraft[i];
+
+        if (pShip == NULL) {
+            continue; /* deviation: the original dereferences the slot */
+        }
+        if (pShip->bAtBase != 0 || pShip->bWeaponsHot == 0) {
+            pShip->bWeaponsHot = 0; /* 0x8393C */
+            pShip->bAtBase = 1;     /* 0x83950 */
+
+            const StrategList view = {
+                (StrategItem **)pEnv->pStrategList->apItems, pEnv->pStrategList->nCount, 0, 0
+            };
+            const i32 nIdx = StrategList_FindIdxForShip(&view, pEnv->pShipEnv->pWorld, i);
+            StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nIdx);
+            if (pItem != NULL) {
+                pItem->bVisible = 0; /* 0x83968; deviation: the original faults on a miss */
+            }
+        }
+    }
+
+    /* 2. Selection pass, skipped entirely when the mission is already configured (0x83994). */
+    if (*pEnv->pbMissionMode != 1) {
+    *pEnv->pbUnk1511E = 1; /* 0x839B0 */
+
+        const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x839CC */
+        *pEnv->pnSelectedShipIdx = nShipIdx;
+        *pEnv->pnStrategIndex = nShipIdx;
+        *pEnv->pnCraftIndex = (u8)nShipIdx;
+
+        const i32 nStratIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1); /* 0x839E4 */
+        *pEnv->pnSelectedStrategIdx = nStratIdx;
+
+        if (*pEnv->pbAssaultFlag != 0) {
+            *pEnv->pbUnk1511E = 0; /* 0x839FC */
+    goto tail;             /* 0x83A00 re-reads the flag and takes the type-9 arm */
+        }
+
+        /* 0x83B18: both lookups read the same item, the one at 0x186BE4. */
+        StrategItem *pSel = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nStratIdx);
+        if (pSel != NULL &&
+            Smap_GetOverlayAtMode(pEnv->pView, pEnv->apOverlay, pEnv->nOverlayOriginX,
+                                  pSel->nX, pSel->nY) < 0x32) {
+            *pEnv->pbUnk1511E = 0; /* 0x83B58 */
+        }
+
+        /* 0x83B70: the selected craft's own strateg entry picks the sprite set by race. A race
+         * outside 0..4 leaves the set at whatever the previous mission left. */
+        const Ship *pCraft = (nShipIdx >= 0 && nShipIdx < nCraftCount) ? pEnv->apCraft[nShipIdx]
+                                                                      : NULL;
+        const StrategItem *pOwn = (pCraft != NULL)
+                                      ? (StrategItem *)PtrArray_Get(pEnv->pStrategList,
+                                                                    pCraft->nStrategIdx)
+                                      : NULL;
+        if (pOwn != NULL) {
+            const i8 nRace = (i8)pOwn->bRace;
+            if (nRace >= 0 && nRace < 5) {
+                for (i32 k = 0; k < 4; ++k) {
+                    pEnv->abSpriteSet[k] = g_aRaceSpriteSet[nRace][k];
+                }
+            }
+        }
+    }
+
+    /* 3. The line flag branch (LABEL_31, 0x83C60). */
+    {
+    const u8 bFlag = (u8)UiLineList_GetFlag(pEnv->pLines, 0);
+
+        if (bFlag != 23) {
+            if (bFlag == 21) {
+                *pEnv->pnMissionType = PUFO_MISSION_TYPE_URBAN; /* 5, 0x83F28 */
+                *pEnv->pbMissionMode = 3;                       /* 0x83F34 */
+                *pEnv->pbUnk15115 = 0;
+                *pEnv->pnTerrainVariant = 0;
+                const i32 nSel = *pEnv->pnSelectedShipIdx;
+                const Ship *pCraft = (nSel >= 0 && nSel < nCraftCount) ? pEnv->apCraft[nSel] : NULL;
+                if (pCraft != NULL) {
+                    *pEnv->pnMapLayers = (u8)(pCraft->bCraftType + 1); /* 0x83F68 */
+                }
+                const i32 nTarget = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1); /* 0x83F70 */
+                (void)StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld, nTarget,
+                                           pEnv->pbSpawnOnceFlag, pEnv->pSpawnCtx); /* 0x83F7C */
+            } else if (bFlag == 22) {
+                *pEnv->pnSelectedShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);   /* 0x83FA8 */
+                *pEnv->pnSelectedStrategIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1); /* 0x83FB4 */
+                *pEnv->pbUnk1511E = 0;                        /* 0x83FBC */
+                *pEnv->pnMissionType = PUFO_MISSION_TYPE_ALIEN_BASE; /* 4, 0x83FD0 */
+                *pEnv->pbMissionMode = 2;                     /* 0x83FD8 */
+                *pEnv->pbUnk15115 = 0;
+                *pEnv->pnMapLayers = 0;
+                *pEnv->pnTerrainVariant = 0;
+            }
+    goto mode_gate; /* 0x83F80 */
+        }
+
+        /* Flag 23: crash / intercept landing (0x83C70..0x83EF0). */
+        *pEnv->pnSelectedShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);      /* 0x83C70 */
+        *pEnv->pnSelectedStrategIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1);   /* 0x83C80 */
+
+        StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList,
+                                                         *pEnv->pnSelectedStrategIdx);
+        if (pItem != NULL) {
+            const u8 nTile = Tilemap_GetAt(pEnv->pTilemapAlt, pItem->nX, pItem->nY); /* 0x83CB0 */
+            switch (nTile) {
+                case 240: *pEnv->pnMissionType = PUFO_MISSION_TYPE_DESERT; break; /* 6, 0x83D00 */
+                case 241: *pEnv->pnMissionType = PUFO_MISSION_TYPE_JUNGLE;  break; /* 0, 0x83CF4 */
+                case 242: *pEnv->pnMissionType = PUFO_MISSION_TYPE_POLAR;   break; /* 8, 0x83CEC */
+                case 243: *pEnv->pnMissionType = PUFO_MISSION_TYPE_FOREST;  break; /* 2, 0x83CE4 */
+                case 244: *pEnv->pnMissionType = PUFO_MISSION_TYPE_CULTA;   break; /* 1, 0x83CD4 */
+                default: break; /* the type is left at whatever it was */
+            }
+        }
+        *pEnv->pbMissionMode = 0; /* 0x83D18 */
+
+        i32 nBudget = 0; /* R5 */
+        if (pItem != NULL) {
+            const i8 nClass = (i8)pItem->bCraftClass;
+            if (nClass >= 0 && nClass < 8) {
+                *pEnv->pnTierRaw = g_aCraftClassTier[nClass].nTierRaw;
+                nBudget = g_aCraftClassTier[nClass].nBudget;
+                *pEnv->pnTerrainVariant = (u8)(g_aCraftClassTier[nClass].bVariant + 1); /* 0x83E24 */
+            } else {
+                *pEnv->pnTerrainVariant = (u8)(*pEnv->pnTerrainVariant + 1); /* 0x83E20 default */
+            }
+
+            if (pItem->nHp == -1) {
+                *pEnv->pbUnk15115 = 0; /* 0x83E4C */
+            } else if (nBudget != 0) {
+                /* 0x83E6C: signed rt_sdiv, truncated toward zero, then the byte mask. */
+                i32 nBand = (100 * (nBudget - pItem->nHp)) / nBudget;
+                nBand &= 0xFF;
+                if (nBand > 70) {
+                    nBand = 70; /* 0x83E8C: clamped, and the /3 is skipped */
+                } else {
+                    nBand /= 3; /* 0x83EA0: utod/muld(0x55555555,0x3FFFFFFD)/dtou, a >>32 /3 */
+                }
+                *pEnv->pbUnk15115 = (u8)nBand; /* 0x83ED0 */
+            }
+            /* deviation: the default class arm leaves the budget at 0, and the original then
+             * divides by it; the port skips the band */
+        }
+
+        const i32 nSel = *pEnv->pnSelectedShipIdx;
+        const Ship *pCraft = (nSel >= 0 && nSel < nCraftCount) ? pEnv->apCraft[nSel] : NULL;
+        if (pCraft != NULL) {
+            *pEnv->pnMapLayers = (u8)(pCraft->bCraftType + 1); /* 0x83EF0 */
+        }
+    }
+
+mode_gate:
+    if (*pEnv->pbMissionMode != 1) {
+        goto tail; /* 0x84004 */
+    }
+
+    /* 4. The Xcom base assault (0x84018..0x84240). */
+    {
+        const i8 nBaseRace = *pEnv->pbBaseRace;
+        if (nBaseRace >= 0 && nBaseRace < 5) {
+            for (i32 k = 0; k < 4; ++k) {
+                pEnv->abSpriteSet[k] = g_aRaceSpriteSet[nBaseRace][k];
+            }
+        }
+        *pEnv->pbUnk1511E = 0; /* 0x840EC */
+        *pEnv->pnMissionType = PUFO_MISSION_TYPE_XCOM_BASE; /* 3, 0x840FC */
+        *pEnv->pbUnk15115 = 0;
+        *pEnv->pnMapLayers = 0;
+        *pEnv->pnTerrainVariant = 0;
+
+        const i32 nBaseIdx = (i32)*pEnv->pbHomeBase;
+        Smap_InitCraftSelectState(pEnv->abFacilityGrid, pEnv->abTileTypes, nBaseIdx); /* 0x84124 */
+        *pEnv->pbSelectedBaseIdx = (u8)nBaseIdx; /* 0x84130 */
+
+        if (Base_CountSoldiersAssigned(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                       pEnv->apCraft, nCraftCount, nBaseIdx) != 0) {
+            goto tail; /* 0x8413C: soldiers available -> launch */
+        }
+
+        UiLineList_AppendWithSound(pEnv->pLines, 17, (u32)nBaseIdx, 0, 0, 0,
+                                   StrategPlaySample, NULL); /* 0x84158 */
+        *pEnv->pnRadarPulseTimer = 250; /* 0x84164 */
+
+        *pEnv->pnFunding -= 800; /* 0x84180 */
+        for (i32 i = 0; i < nCraftCount; ++i) { /* 0x84198 */
+            const Ship *pShip = pEnv->apCraft[i];
+            if (pShip != NULL && (i32)pShip->bHomeBase == nBaseIdx) {
+                *pEnv->pnFunding -= 400;
+            }
+        }
+        *pEnv->pnFunding -= 30 * Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                        pEnv->apObjects, pEnv->nObjectCount,
+                                                        nBaseIdx); /* 0x841DC */
+
+        *pEnv->pbGeoscapeFlag = 1;   /* 0x841F0: the dword at 0x15961C */
+        *pEnv->pbFlag187084 = 0;     /* 0x841FC: a byte nothing ever reads */
+
+        const BaseRec *pBase = (nBaseIdx >= 0 && nBaseIdx < PUFO_FAC_BASE_COUNT)
+                                   ? pEnv->apBases[nBaseIdx]
+                                   : NULL;
+        if (pBase != NULL) {
+            (void)Base_DemolishFacility(pEnv->pDemolishEnv, (i8)pBase->bUnk4); /* 0x84208 */
+        }
+
+        const i8 nBaseCount = (i8)*pEnv->pbBaseCount; /* 0x84214, LDRSB */
+        if (nBaseCount == 0) {
+            pEnv->pfnFreeGeoscapeUi(1, pEnv->pHookUser);  /* 0x84228 */
+            pEnv->pfnInitEndScreen(0, pEnv->pHookUser);   /* 0x84230 */
+            *pEnv->pbTickHold = 1;    /* 0x84238 */
+            *pEnv->pbBattleEnded = 1; /* 0x84240 */
+            return 1;
+        }
+        return (i32)nBaseCount; /* 0x83ACC: the LDRSB result, register residue */
+    }
+
+tail:
+    /* 5. The launch tail (LABEL_10, 0x83A0C). */
+    if (*pEnv->pbAssaultFlag != 0) {
+        *pEnv->pnMissionType = PUFO_MISSION_TYPE_MARS_SPECIAL; /* 9, 0x83A1C */
+        *pEnv->pbUnk1511E = 0;                                 /* 0x83A28 */
+        pEnv->abSpriteSet[0] = 13; /* 0x83A34 */
+        pEnv->abSpriteSet[1] = 21; /* 0x83A40 */
+        pEnv->abSpriteSet[2] = 23; /* 0x83A50 */
+        pEnv->abSpriteSet[3] = 23; /* 0x83A5C */
+        *pEnv->pbMissionMode = 0;  /* 0x83A68 */
+        *pEnv->pbSpawnAlt = 1;     /* 0x83A74 */
+        *pEnv->pbUnk15115 = 0;
+        *pEnv->pnTerrainVariant = 0;
+        const i32 nSel = *pEnv->pnSelectedShipIdx;
+        const Ship *pCraft = (nSel >= 0 && nSel < nCraftCount) ? pEnv->apCraft[nSel] : NULL;
+        if (pCraft != NULL) {
+            *pEnv->pnMapLayers = (u8)(pCraft->bCraftType + 1); /* 0x83A9C */
+        }
+    }
+
+        if (*pEnv->pbMissionMode != 1) { /* 0x83AA0: the Xcom launch keeps mode 1 and skips this */
+        (void)Smap_DismissSelected(pEnv->pShipEnv, pEnv->pLines, pEnv->pTime,
+                                   pEnv->pbSelectionFlag);
+    }
+        *pEnv->pbSelectionFlag = 0; /* 0x83AB4 */
+    pEnv->pfnFreeGeoscapeUi(0, pEnv->pHookUser); /* 0x83ABC */
+        return pEnv->pfnInitMission(0, pEnv->pHookUser); /* 0x83AC4 */
+}
+
+/* Smap_BeginCraftSelectBtn @ 0x84634. The assault-confirm nav button: set the flag, run. */
+i32 Smap_BeginCraftSelectBtn(const SmapCraftSelectEnv *pEnv)
+{
+    *pEnv->pbAssaultFlag = 1; /* 0x8463C */
+    return Smap_BeginCraftSelect(pEnv);
 }
 
 i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,

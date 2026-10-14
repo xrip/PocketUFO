@@ -1285,6 +1285,367 @@ static void TestInitCraftSelectState(void)
 #undef C_F
 }
 
+/* --- Smap_BeginCraftSelect fixtures -------------------------------------------------------- */
+
+static i32 g_nFreeAll0, g_nFreeAll1, g_nInitMissionCalls, g_nEndScreenCalls;
+
+static void SelHookFreeAll(i32 bFreeWorld, void *pUser)
+{
+    (void)pUser;
+    if (bFreeWorld != 0) { ++g_nFreeAll1; } else { ++g_nFreeAll0; }
+}
+static i32 SelHookInitMission(i32 nMode, void *pUser)
+{
+    (void)nMode; (void)pUser;
+    ++g_nInitMissionCalls;
+    return 7;
+}
+static void SelHookEndScreen(u8 bGoodEnd, void *pUser)
+{
+    (void)bGoodEnd; (void)pUser;
+    ++g_nEndScreenCalls;
+}
+
+static void TestBeginCraftSelect(void)
+{
+    static Ship *g_apShip[1];
+    static BaseRec *g_apBase[8];
+    static Soldier *g_apSol[1];
+    static ObjectRecFull *g_apObj[1];
+    static BaseSiteRec g_aSite[8];
+    static u8 g_abGrid[1524];
+    static u8 g_abTiles[36];
+    static u8 g_abOverlay[256];
+    static u8 g_abAlt[256];
+    static PadImage aOverlay[3];
+    static PadImage g_AltMap;
+    static SmapView g_View;
+    static UiLineList g_Lines;
+    static GameTime g_Time;
+    static PtrArray g_List;
+    static GeoscapeWorld g_World;
+    static StrategSpawnCtx g_Ctx;
+    static ShipRemovalEnv g_Rem;
+    static BaseDemolishEnv g_Dem;
+    static SmapSite g_aSites[4];
+    static u16 g_aManuf[200], g_aProdC[200], g_aResearch[144];
+    static i32 g_aProdB[200];
+    static u16 g_nResearchEntries, g_nObjectCount, g_nSoldierCount;
+    static i32 g_nSeed, g_nTotalSec, g_nAssignedCount;
+    static u8 g_abHangar[64];
+    static i32 g_anAssigned[1];
+    static i32 nSelectedShip, nStratIdx2, nSelStrat, nRadar, nFunding;
+    static u8 bAssault, bSelFlag, bFlag187084, bGeoFlag, bSelBaseIdx;
+    static u8 nCraftCount, bSpawnOnce, bTickHold, bBattleEnded, nCraftIndex;
+    static u8 bMissionMode, bUnk1511E, nMissionType, abSprite[4], bSpawnAlt, bUnk15115;
+    static u8 nTerrainVariant, nMapLayers;
+    static i32 nTierRaw;
+    static u8 bBaseCount;
+    static i8 bHomeBase, bBaseRace;
+    static u8 nShipCountByte;
+    SmapCraftSelectEnv env;
+    Ship *pShip;
+    StrategItem *pItem;
+    StrategItem *pTarget;
+    i32 nRet;
+
+    printf("\nSmap_BeginCraftSelect @ 0x838dc\n");
+    (void)fflush(stdout);
+
+    /* Shared static furniture, built once. */
+    /* The base record is heap-allocated because Base_DemolishFacility frees it (0x6715C,
+     * operator delete); case 5 is the only case that reaches that free. */
+    BaseRec *pBaseRec = (BaseRec *)calloc(1, sizeof(BaseRec));
+    pBaseRec->bUnk4  = 7;
+    pBaseRec->nUnk8  = 100;
+    pBaseRec->nUnk12 = 200;
+    g_apBase[0] = pBaseRec;
+    memset(g_aSite, 0, sizeof(g_aSite));
+    g_aSite[0].nFacType = 7;
+    memset(g_abGrid, 0, sizeof(g_abGrid));
+    memset(g_abGrid + 480, 0xFF, 36); /* base 0's facType lane: an empty base, every cell 0xFF */
+    memset(g_abOverlay, 0x10, sizeof(g_abOverlay)); /* every overlay tile is under 0x32 */
+    memset(g_abAlt, 0, sizeof(g_abAlt));
+    g_abAlt[5 * 16 + 10] = 242;                    /* polar, at the item's (10, 5) */
+    for (i32 k = 0; k < 3; ++k) {
+        PadImage_ctor(&aOverlay[k]);
+        aOverlay[k].uWidth = 16;
+        aOverlay[k].uHeight = 16;
+        aOverlay[k].pData = g_abOverlay;
+    }
+    PadImage_ctor(&g_AltMap);
+    g_AltMap.uWidth = 16;
+    g_AltMap.uHeight = 16;
+    g_AltMap.pData = g_abAlt;
+    memset(&g_View, 0, sizeof(g_View));
+
+    g_World.apCraft = g_apShip;
+    g_World.nShipCount = 1;
+    memset(&g_Ctx, 0, sizeof(g_Ctx));
+    g_nSeed = 0;
+    g_Ctx.pnSeed = &g_nSeed;
+
+    /* Each case rebuilds the mutable decision state and a fresh craft + strateg entry. */
+#define RESET(flag, mode)                                                                          \
+    do {                                                                                           \
+        pShip = (Ship *)calloc(1, sizeof(Ship));                                                   \
+        pShip->bId = 10;                                                                           \
+        pShip->bHomeBase = 0;                                                                      \
+        pShip->bAtBase = 1;                                                                        \
+        pShip->bWeaponsHot = 1;                                                                    \
+        pShip->bCraftType = 2;                                                                     \
+        pShip->nStrategIdx = 0;                                                                    \
+        g_apShip[0] = pShip;                                                                       \
+        nShipCountByte = 1;                                                                        \
+                                                                                                   \
+        PtrArray_ctor(&g_List);                                                                    \
+        (void)StrategItem_AllocAdd(&g_List, 0);                                                    \
+        (void)StrategItem_AllocAdd(&g_List, 1);                                                    \
+        pItem = (StrategItem *)g_List.apItems[0];  /* the craft's own entry */                     \
+        pItem->nType = 1;                                                                          \
+        pItem->bActive = 0;                                                                        \
+        pItem->nDisplayId = 10;                                                                    \
+        pItem->nSiteId = STRATEG_ID_UNASSIGNED;                                                    \
+        pItem->bRace = 1;                                                                          \
+        pItem->nTimer = 777;                                                                       \
+        pItem->bVisible = 1;                                                                       \
+        pTarget = (StrategItem *)g_List.apItems[1]; /* the selected target item */                 \
+        pTarget->nType = 1;                                                                        \
+        pTarget->bActive = 0;                                                                      \
+        pTarget->nDisplayId = 99999;                                                               \
+        pTarget->nSiteId = STRATEG_ID_UNASSIGNED;                                                  \
+        pTarget->bCraftClass = 2;                                                                  \
+        pTarget->nHp = 200;                                                                        \
+        pTarget->nX = 10;                                                                          \
+        pTarget->nY = 5;                                                                           \
+        pTarget->bVisible = 1;                                                                     \
+                                                                                                   \
+        memset(&g_Lines, 0, sizeof(g_Lines));                                                      \
+        g_Lines.nLineCount = 1;                                                                    \
+        g_Lines.abLineFlags[0] = (u8)(flag);                                                       \
+        g_Lines.anColor[0][0] = 0;                                                                 \
+        g_Lines.anColor[0][1] = 1;                                                                 \
+        memset(&g_Time, 0, sizeof(g_Time));                                                        \
+        g_Time.bPaused = 1;                                                                        \
+                                                                                                   \
+        bMissionMode = (u8)(mode);                                                                 \
+        bUnk1511E = 0;                                                                             \
+        nMissionType = 0;                                                                          \
+        memset(abSprite, 0, sizeof(abSprite));                                                     \
+        bSpawnAlt = 0;                                                                             \
+        bUnk15115 = 0;                                                                             \
+        nTerrainVariant = 0;                                                                       \
+        nMapLayers = 0;                                                                            \
+        nTierRaw = -1;                                                                             \
+        nCraftIndex = 0xFF;                                                                        \
+        bTickHold = 0;                                                                             \
+        bBattleEnded = 0;                                                                          \
+        nSelectedShip = -1;                                                                        \
+        nStratIdx2 = -1;                                                                           \
+        nSelStrat = -1;                                                                            \
+        bAssault = 0;                                                                              \
+        bSelFlag = 1;                                                                              \
+        bFlag187084 = 1;                                                                           \
+        bGeoFlag = 0;                                                                              \
+        nCraftCount = 1;                                                                           \
+        bSpawnOnce = 0;                                                                            \
+        nRadar = 0;                                                                                \
+        nFunding = 10000;                                                                          \
+        bBaseCount = 1;                                                                            \
+        bHomeBase = 0;                                                                             \
+        bBaseRace = 1;                                                                             \
+        bSelBaseIdx = 0xFF;                                                                        \
+        memset(g_abTiles, 0xCC, sizeof(g_abTiles));                                                \
+        g_nFreeAll0 = g_nFreeAll1 = g_nInitMissionCalls = g_nEndScreenCalls = 0;                   \
+                                                                                                   \
+        g_Rem.apCraft = g_apShip;                                                                  \
+        g_Rem.pnShipCount = &nShipCountByte;                                                       \
+        g_Rem.apSoldiers = g_apSol;                                                                \
+        g_nSoldierCount = 0;                                                                       \
+        g_Rem.pnSoldierCount = &g_nSoldierCount;                                                   \
+        g_Rem.apObjects = g_apObj;                                                                 \
+        g_nObjectCount = 0;                                                                        \
+        g_Rem.nObjectCount = 0;                                                                    \
+        g_Rem.pStrategList = &g_List;                                                              \
+        g_Rem.pWorld = &g_World;                                                                   \
+        g_Rem.pnSpawnOnceFlag = &bSpawnOnce;                                                       \
+        g_Rem.pSpawnCtx = &g_Ctx;                                                                  \
+        g_Rem.abHangarFlag = g_abHangar;                                                           \
+        g_Rem.nHangarFlagCap = 64;                                                                 \
+        g_Rem.anAssignedShip = g_anAssigned;                                                       \
+        g_nAssignedCount = 0;                                                                      \
+        g_Rem.pnAssignedShipCount = &g_nAssignedCount;                                             \
+        g_Rem.apBases = g_apBase;                                                                  \
+        g_Rem.pnGameTotalSec = &g_nTotalSec;                                                       \
+        g_nTotalSec = 0;                                                                           \
+                                                                                                   \
+        memset(&g_Dem, 0, sizeof(g_Dem));                                                          \
+        g_Dem.apCraft = g_apShip;                                                                  \
+        g_Dem.pnShipCount = &nShipCountByte;                                                       \
+        g_Dem.apSoldiers = g_apSol;                                                                \
+        g_Dem.pnSoldierCount = &g_nSoldierCount;                                                   \
+        g_Dem.apBases = g_apBase;                                                                  \
+        g_Dem.apObjects = g_apObj;                                                                 \
+        g_Dem.pnObjectCount = &g_nObjectCount;                                                     \
+        g_Dem.abFacilityGrid = g_abGrid;                                                           \
+        g_Dem.apSiteRecs = g_aSite;                                                                \
+        g_Dem.apManufCols = g_aManuf;                                                              \
+        g_Dem.apProductC = g_aProdC;                                                               \
+        g_Dem.apProductB = g_aProdB;                                                               \
+        g_Dem.apResearchCols = g_aResearch;                                                        \
+        g_Dem.pnResearchEntries = &g_nResearchEntries;                                             \
+        g_Dem.apSites = g_aSites;                                                                  \
+        g_Dem.nSiteCount = 0;                                                                      \
+        g_Dem.pbBaseCount = &bBaseCount;                                                           \
+        g_Dem.pShipEnv = &g_Rem;                                                                   \
+                                                                                                   \
+        env.apCraft = g_apShip;                                                                    \
+        env.pnCraftCount = &nCraftCount;                                                           \
+        env.pbMissionMode = &bMissionMode;                                                         \
+        env.pbUnk1511E = &bUnk1511E;                                                               \
+        env.pnMissionType = &nMissionType;                                                         \
+        env.abSpriteSet = abSprite;                                                                \
+        env.pbSpawnAlt = &bSpawnAlt;                                                               \
+        env.pbUnk15115 = &bUnk15115;                                                               \
+        env.pnTerrainVariant = &nTerrainVariant;                                                   \
+        env.pnMapLayers = &nMapLayers;                                                             \
+        env.pnTierRaw = &nTierRaw;                                                                 \
+        env.pnCraftIndex = &nCraftIndex;                                                           \
+        env.pbTickHold = &bTickHold;                                                               \
+        env.pbBattleEnded = &bBattleEnded;                                                         \
+        env.apBases = g_apBase;                                                                    \
+        env.pbHomeBase = &bHomeBase;                                                               \
+        env.pbBaseRace = &bBaseRace;                                                               \
+        env.pStrategList = &g_List;                                                                \
+        env.pLines = &g_Lines;                                                                     \
+        env.pTime = &g_Time;                                                                       \
+        env.pnSelectedShipIdx = &nSelectedShip;                                                    \
+        env.pnStrategIndex = &nStratIdx2;                                                          \
+        env.pnSelectedStrategIdx = &nSelStrat;                                                     \
+        env.pbAssaultFlag = &bAssault;                                                             \
+        env.pbSelectionFlag = &bSelFlag;                                                           \
+        env.pbFlag187084 = &bFlag187084;                                                           \
+        env.pbGeoscapeFlag = &bGeoFlag;                                                            \
+        env.pnRadarPulseTimer = &nRadar;                                                           \
+        env.pnFunding = &nFunding;                                                                 \
+        env.pbBaseCount = &bBaseCount;                                                             \
+        env.pbSelectedBaseIdx = &bSelBaseIdx;                                                      \
+        env.abFacilityGrid = g_abGrid;                                                             \
+        env.abTileTypes = g_abTiles;                                                               \
+        env.apSoldiers = g_apSol;                                                                  \
+        env.nSoldierCount = 0;                                                                     \
+        env.apObjects = g_apObj;                                                                   \
+        env.nObjectCount = 0;                                                                      \
+        env.pView = &g_View;                                                                       \
+        env.apOverlay[0] = &aOverlay[0];                                                           \
+        env.apOverlay[1] = &aOverlay[1];                                                           \
+        env.apOverlay[2] = &aOverlay[2];                                                           \
+        env.nOverlayOriginX = 0;                                                                   \
+        env.pTilemapAlt = &g_AltMap;                                                               \
+        env.pShipEnv = &g_Rem;                                                                     \
+        env.pbSpawnOnceFlag = &bSpawnOnce;                                                         \
+        env.pSpawnCtx = &g_Ctx;                                                                    \
+        env.pDemolishEnv = &g_Dem;                                                                 \
+        env.pfnFreeGeoscapeUi = SelHookFreeAll;                                                    \
+        env.pfnInitMission = SelHookInitMission;                                                   \
+        env.pfnInitEndScreen = SelHookEndScreen;                                                   \
+        env.pHookUser = NULL;                                                                      \
+    } while (0)
+
+    /* Case 1: flag 21 - urban mission. */
+    RESET(21, 0);
+    nRet = Smap_BeginCraftSelect(&env);
+    CheckEqI32(pShip->bWeaponsHot, 0, "the visibility pass parks the craft with cold weapons");
+    /* The visibility pass hid the entry, but the tail's DismissSelected retargets the craft and
+     * Ship_RetargetTravel -> StrategEntry_InitTravel re-raises bVisible (its bB argument is 1).
+     * The original re-raises it the same way. */
+    CheckEqI32(pItem->bVisible, 1, "and the retarget re-raises the entry's visibility");
+    CheckEqI32(bUnk1511E, 0, "the overlay tile under the item (0x10 < 0x32) clears unk_128AD6");
+    CheckEqI32(abSprite[0], 10, "race 1 picks sprite set 10/15/19/23");
+    CheckEqI32(abSprite[3], 23, "down to the no-race marker");
+    CheckEqI32(nMissionType, 5, "flag 21 makes it an urban mission (type 5)");
+    CheckEqI32(bMissionMode, 3, "mode 3");
+    CheckEqI32(nMapLayers, 3, "map layers from the craft's bCraftType + 1");
+    CheckEqI32(g_List.nCount, 1, "the target item is removed from the strateg list");
+    CheckEqI32(pItem->nTimer, 0, "DismissSelected retargets the selected craft's own entry");
+    CheckEqI32(g_Lines.nLineCount, 0, "the tail's DismissSelected drops the line");
+    CheckEqI32(g_Time.bPaused, 0, "and unpauses because the list is now empty");
+    CheckEqI32(bSelFlag, 0, "the selection flag is cleared");
+    CheckEqI32(g_nFreeAll0, 1, "GeoscapeUi_FreeAll(0) runs once");
+    CheckEqI32(g_nInitMissionCalls, 1, "and the mission launches");
+    CheckEqI32(nRet, 7, "the return is Tact_InitMission's value");
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
+    /* Case 2: flag 22 - alien base. */
+    RESET(22, 0);
+    nRet = Smap_BeginCraftSelect(&env);
+    CheckEqI32(nMissionType, 4, "flag 22 makes it an alien base mission (type 4)");
+    CheckEqI32(bMissionMode, 2, "mode 2");
+    CheckEqI32(nMapLayers, 0, "with no map layers");
+    CheckEqI32(nRet, 7, "and the same launch tail");
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
+    /* Case 3: flag 23 - crash landing on a polar tile. */
+    RESET(23, 0);
+    nRet = Smap_BeginCraftSelect(&env);
+    CheckEqI32(nMissionType, 8, "alt tile 242 picks polar (type 8)");
+    CheckEqI32(nTerrainVariant, 2, "craft class 2 sets the terrain variant");
+    CheckEqI32(nTierRaw, 1, "and the tier raw");
+    CheckEqI32(bUnk15115, 6, "the band is 100*(250-200)/250 = 20, then /3 = 6");
+    CheckEqI32(bMissionMode, 0, "mode 0");
+    CheckEqI32(nRet, 7, "launch tail");
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
+    /* Case 4: mode 1, flag 17 - Xcom base assault WITH soldiers: straight to launch, and
+     * DismissSelected is skipped because mode stays 1. */
+    RESET(17, 1);
+    {
+        static Soldier sol;
+        memset(&sol, 0, sizeof(sol));
+        sol.nKind = 0;    /* this base */
+        sol.bUnk183 = 255; /* not aboard anything */
+        g_apSol[0] = &sol;
+        env.nSoldierCount = 1;
+    }
+    nRet = Smap_BeginCraftSelect(&env);
+    CheckEqI32(nMissionType, 3, "the assault is an Xcom base mission (type 3)");
+    CheckEqI32(abSprite[1], 15, "with the base race's sprite set");
+    CheckEqI32(g_abTiles[0], 20, "Smap_InitCraftSelectState built the tile grid (all empty)");
+    CheckEqI32(bSelBaseIdx, 0, "nSelectedBaseIdx = nCraftHomeBase");
+    CheckEqI32(bMissionMode, 1, "mode stays 1");
+    CheckEqI32(g_Lines.nLineCount, 1, "so DismissSelected is skipped and the line survives");
+    CheckEqI32(g_Time.bPaused, 1, "and the game stays paused");
+    CheckEqI32(bSelFlag, 0, "but the selection flag is still cleared");
+    CheckEqI32(nRet, 7, "and the mission launches");
+    g_apSol[0] = NULL;
+    free(pShip);
+    PtrArray_DeleteAll(&g_List);
+
+    /* Case 5: the same assault WITHOUT soldiers: funding is deducted, the base is demolished,
+     * the base count hits zero, and the bad ending runs. */
+    RESET(17, 1);
+    nRet = Smap_BeginCraftSelect(&env);
+    /* 10000 - 800 - 400 (the one craft homed at base 0) - 30*0 (no soldiers, no objects). */
+    CheckEqI32(nFunding, 8800, "funding loses 800 + 400 per craft at the base + 30*occupied");
+    CheckEqI32(bGeoFlag, 1, "the geoscape flag at 0x15961C is set");
+    CheckEqI32(bFlag187084, 0, "and the write-only byte is cleared");
+    CheckEqI32(bBaseCount, 0, "Base_DemolishFacility removed the base (site nFacType 7)");
+    CheckEqI32(nShipCountByte, 0, "with the craft homed there");
+    CheckEqI32(g_nFreeAll1, 1, "GeoscapeUi_FreeAll(1) releases the world");
+    CheckEqI32(g_nEndScreenCalls, 1, "EndScreen_Init(0) runs the bad ending");
+    CheckEqI32(bTickHold, 1, "the tick hold is set");
+    CheckEqI32(bBattleEnded, 1, "and the battle-end flag");
+    CheckEqI32(nRet, 1, "the return is 1 on the bad-end path");
+    CheckEqI32(g_nInitMissionCalls, 0, "and no mission launches");
+    /* pShip was freed by Ship_RemoveWithCargo inside the demolish - do not free it again. */
+    PtrArray_DeleteAll(&g_List);
+
+#undef RESET
+}
+
 static void TestPsiCapAndUpkeep(void)
 {
     static u8 g_abGrid[700];
@@ -1941,6 +2302,7 @@ int main(void)
     TestClearSelection();
     TestDismissSelected();
     TestInitCraftSelectState();
+    TestBeginCraftSelect();
     TestDemolishBase();
     TestPsiCapAndUpkeep();
     TestFindFacilityCell();

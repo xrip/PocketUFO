@@ -381,6 +381,10 @@ const u8 g_aCraftPlacementCodeByFacType[32] = {
  * original returns the grid base as register residue; the port returns void. */
 void Smap_InitCraftSelectState(u8 *abFacilityGrid, u8 *abTileTypes, i32 nBaseIndex)
 {
+    if (nBaseIndex < 0 || nBaseIndex >= PUFO_FAC_BASE_COUNT) {
+        return; /* deviation: the original bounds nothing */
+    }
+
     for (i32 i = 0; i < 36; ++i) {
         abTileTypes[i] = 20; /* 0x61BB4 */
     }

@@ -2743,6 +2743,57 @@ passes the option block's volumes explicitly where the original reads them from 
 Named this step: `nNextBaseSiteId` (0x186558), `abBaseKindTable` (0x1864DD), and `nSmapParam3` →
 `nStrategSeedCounter` (0x18640C, the per-item seed `StrategItem_ctor` writes).
 
+### `Smap_BeginCraftSelect (0x838dc, 2424 B)` + `Smap_BeginCraftSelectBtn (0x84634, 20 B)` (done)
+
+The whole craft-select decision tree, ported in `pufo_strateg.c` behind a `SmapCraftSelectEnv`
+(Map-block pointers, geoscape state, the `SmapView` + overlay tiles + alt map, the ship-removal and
+base-demolish envs, and three injected hooks standing in for `GeoscapeUi_FreeAll`,
+`Tact_InitMission` and `EndScreen_Init`). 46 new checks in `tests/test_geoscape.c`.
+`Smap_BeginCraftSelectBtn` is the assault-confirm nav button: set `bCraftSelectAssaultFlag`,
+tail-call.
+
+The order Hex-Rays garbled but ARM pins:
+
+1. **Visibility pass first** (0x8391C..0x8398C), before any mode gate: every craft with
+   `bAtBase != 0 || bWeaponsHot == 0` is parked (`bWeaponsHot = 0`, `bAtBase = 1`) and its strateg
+   entry hidden (`bVisible = 0`).
+2. **Selection pass** (mode != 1, 0x839A8..0x83C64): `unk_128AD6 = 1`; the ship index is line 0
+   colour 0 (→ `0x187054`, `0x159E74`, `Map_nCraftIndex`), the strateg index colour 1 (→ `0x186BE4`);
+   the overlay tile under the item below 0x32 clears `unk_128AD6`; the item's race picks one of five
+   sprite sets (`g_aRaceSpriteSet`: {9,18,23,23}, {10,15,19,23}, {11,20,23,23}, {12,14,23,22},
+   {13,21,23,23}).
+3. **Line flag branch** (0x83C64..0x83F10): flag 21 → urban type 5 mode 3 + `StrategList_RemoveAt`
+   of the selected item; flag 22 → alien base type 4 mode 2; flag 23 → crash landing, mission type
+   from the alt-map tile (240→desert 6, 241→jungle 0, 242→polar 8, 243→forest 2, 244→culta 1 —
+   cross-checked against `g_aTerrainModuleCount`'s order). Then the craft-class tier jumptable
+   (0x83D2C): budgets 50/200/250/500/500/1200/2200/3000, variants 0,1,1,2,2,3,3,4; the damage band
+   is `100*(budget-nHp)/budget` (signed `rt_sdiv`), clamped to 70 then divided by 3 (magic
+   0x55555555>>32); `nHp == -1` → 0. `nMapLayers = bCraftType + 1`.
+4. **Xcom base assault** (mode == 1, 0x84018..0x84240): sprite set by `nAssaultBaseRace`, type 3,
+   `Smap_InitCraftSelectState(nCraftHomeBase)`, `nSelectedBaseIdx = base`. Soldiers assigned →
+   straight to the tail (mode stays 1). Otherwise: message 17 append (flag 0x11, a3 = base idx),
+   radar pulse 250, funding `-= 800 + 400*(crafts with bHomeBase == base, sign-extended i8 compare)
+   + 30*Base_CalcOccupiedSpace`, `0x15961C = 1`, `unk_187084 = 0` (a write-only byte),
+   `Base_DemolishFacility(apBases[base]->bUnk4)`; base count 0 → `FreeAll(1)` + `EndScreen_Init(0)`
+   + tick-hold + battle-ended + return 1, else return the count.
+5. **Tail** (LABEL_10, 0x83A0C): assault flag → Mars-special type 9 + sprite {13,21,23,23} + mode 0
+   + spawn-alt 1; mode != 1 → `Smap_DismissSelected` — the Xcom launch keeps mode 1 so it is
+   **skipped** and the line survives, game stays paused; then `bMapSelectionFlag = 0`, `FreeAll(0)`,
+   return `Tact_InitMission(0)`.
+
+Two behaviors worth knowing. The retarget inside `DismissSelected` runs
+`Ship_RetargetTravel → StrategEntry_InitTravel`, whose `bB` argument is 1, so it **re-raises**
+`bVisible` over the visibility clear — the entry is visible again after the launch. And the funding
+loop compares `bHomeBase` sign-extended: a base index of 0 matches byte 0, so a craft homed at base
+0 is charged 400.
+
+Deviations (recorded in the header): the default craft-class arm leaves the budget 0 and the
+original divides by it — the port skips the band; the `apBases[base]->bUnk4` dereference is
+unchecked in the original. IDB: call edges from 0x838dc verified against `Smap_InitCraftSelectState`
+(0x84124), `Base_CountSoldiersAssigned` (0x84134), `Base_CalcOccupiedSpace` (0x841c0),
+`Base_DemolishFacility` (0x84208) and `UiPanel_AppendLineWithSound` (0x84158, port name
+`UiLineList_AppendWithSound` recorded in renames.tsv).
+
 ### The pause byte is one global, not a per-module flag
 
 `GameTime_Pause @ 0x5d6ac` is two instructions: `LOBYTE(gUiRootPanel.apLines[106])

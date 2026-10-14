@@ -330,8 +330,15 @@ typedef struct DeployConfirmCtx {
 
 /* Returns 9, the screen id the original returns and stores in nUiScreen. */
 i32 Map_BuildDeployConfirmYesNo(const DeployConfirmCtx *pCtx);
-#define PUFO_MISSION_TYPE_FOREST 2u   /* MissionType_Forest */
+/* The full mission-type enum, the immediates Smap_BeginCraftSelect @ 0x83CB8 stores for crash
+ * tiles 240..244, cross-checked against g_aTerrainModuleCount's index order (jungle 12, culta 19,
+ * forest 12, xbase 21, ubase 16, urban 15, desert 12, mount 13, polar 14, mars 11). */
+#define PUFO_MISSION_TYPE_JUNGLE   0u   /* MissionType_Jungle */
+#define PUFO_MISSION_TYPE_CULTA    1u   /* MissionType_Culta */
+#define PUFO_MISSION_TYPE_FOREST   2u   /* MissionType_Forest */
 #define PUFO_MISSION_TYPE_DESERT   6u   /* MissionType_Desert */
+#define PUFO_MISSION_TYPE_MOUNTAIN 7u   /* MissionType_Mountain, no writer found */
+#define PUFO_MISSION_TYPE_POLAR    8u   /* MissionType_Polar */
 
 /* --- selecting a unit -------------------------------------------------------------
  *

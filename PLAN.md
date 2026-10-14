@@ -350,6 +350,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `pTitlesBackdrop`, `nTitlesScroll`, `fontSys_nGlyphBase` (0x158290 = fontSys + 0x28, the glyph
   base set before "font" loads), `nSelectedBaseIdx`, `nAssaultBaseRace`, `bCraftSelectAssaultFlag`,
   `bMapSelectionFlag`; function headers at 0x84428, 0x61b94, 0x388b0, 0x84634 and 0x838dc.
+- [x] `Smap_BeginCraftSelect (0x838dc, 2424 B)` + `Smap_BeginCraftSelectBtn (0x84634, 20 B)` —
+  the whole craft-select decision tree, ported in `pufo_strateg.c` behind a `SmapCraftSelectEnv`
+  that models the Map-block globals, the geoscape state and the three injected hooks
+  (`GeoscapeUi_FreeAll`, `Tact_InitMission`, `EndScreen_Init`); 46 new checks in
+  `tests/test_geoscape.c` (urban/alien-base/crash flags, the Xcom launch with and without
+  assigned soldiers, the bad-end path). ARM pinned the decision order Hex-Rays garbled: the
+  visibility pass runs before the mode gate; the Xcom launch keeps mode 1 so the tail's
+  `Smap_DismissSelected` is skipped and the line survives; the funding deduction is
+  `800 + 400*(crafts homed at the base) + 30*Base_CalcOccupiedSpace`; the retarget inside
+  `DismissSelected` re-raises the strateg entry's `bVisible` over the visibility clear. Deviations
+  recorded in the header: the default craft-class arm's divide-by-zero budget, the unchecked
+  `apBases[base]->bUnk4` dereference. IDB: call edges from 0x838dc verified against
+  `Smap_InitCraftSelectState`, `Base_CountSoldiersAssigned`, `Base_CalcOccupiedSpace`,
+  `Base_DemolishFacility`, `UiPanel_AppendLineWithSound` (port name recorded in renames.tsv).
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -450,6 +464,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `GameTime_Set5Sec..SetSpeedIdx5` | 53/53 (Release) | 7377 | 686/1103 (62.2%) | 269428/598792 (45.0%) | 37 checked, 0 mismatched |
 | `Base_CreateNamedEntry` | 53/53 (Release) | 7410 | 687/1103 (62.3%) | 270004/598792 (45.1%) | 37 checked, 0 mismatched |
 | craft-select leaves (`Smap_DismissSelected`, `Smap_InitCraftSelectState`, `EndScreen_Init`) | 53/53 (Release) | 7452 | 690/1103 (62.6%) | 270672/598792 (45.2%) | 37 checked, 0 mismatched |
+| `Smap_BeginCraftSelect` + `Smap_BeginCraftSelectBtn` | 53/53 (Release) | 7498 | 692/1103 (62.7%) | 273116/598792 (45.6%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

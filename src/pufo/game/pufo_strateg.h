@@ -519,6 +519,119 @@ u8 Smap_ClearSelection(struct UiLineList *pLines, GameTime *pTime, u8 *pbSelecti
 u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, struct UiLineList *pLines,
                         GameTime *pTime, u8 *pbSelectionFlag);
 
+/* ------------------------------------------------- craft select / mission launch
+ *
+ * Evidence: Smap_BeginCraftSelect @ 0x838dc (2,424 B) and its button wrapper
+ * Smap_BeginCraftSelectBtn @ 0x84634 (sets bCraftSelectAssaultFlag and tail-calls it).
+ *
+ * The function is the geoscape's decision tree for "the selected line means launch".
+ *
+ * 1. Visibility pass (0x838FC): every craft that is at base OR has no hot weapons gets
+ *    bWeaponsHot = 0, bAtBase = 1, and its strateg entry's bVisible cleared.
+ *
+ * 2. When Map_bMissionMode != 1 (0x83994): unk_128AD6 = 1; the selected craft index is line 0
+ *    colour slot 0 (stored to 0x187054, 0x159E74 and Map_nCraftIndex) and the selected strateg
+ *    index is colour slot 1 (stored to 0x186BE4). If the assault flag is set the whole selection
+ *    is skipped and the tail runs. Otherwise: the overlay tile under the selected item below 0x32
+ *    clears unk_128AD6 (0x83B54), and the selected craft's own strateg entry's bRace picks the
+ *    mission sprite set (five races, anything else leaves the set alone).
+ *
+ * 3. The line flag branch (LABEL_31, 0x83C60): flag 21 -> urban mission (type 5, mode 3, the
+ *    target item is removed from the strateg list); flag 22 -> alien base (type 4, mode 2);
+ *    flag 23 -> crash/intercept landing: the alt tilemap tile under the item picks the mission
+ *    type (240 desert 6, 241 jungle 0, 242 polar 8, 243 forest 2, 244 culta 1 - the ARM
+ *    immediates, cross-checked against g_aTerrainModuleCount), the item's bCraftClass picks the
+ *    tier budget (50/200/250/500/500/1200/2200/3000 - the last two are 0x890|8 and 0xBB0|8) and
+ *    the terrain variant, and the damage band is min(70, 100*(budget - nHp)/budget) divided by 3
+ *    (the utod/muld/dtoi triple at 0x83EA0 is the magic multiply by 0x55555555 >> 32), or 0 when
+ *    nHp is -1.
+ *
+ * 4. Mode gate (LABEL_67, 0x84004): mode != 1 goes to the tail. Mode == 1 is the Xcom base
+ *    assault: sprite set by nAssaultBaseRace, type 3, Smap_InitCraftSelectState for
+ *    nCraftHomeBase, nSelectedBaseIdx = nCraftHomeBase. Soldiers assigned at the base -> tail
+ *    (launch). None -> message 17, radar pulse 250, funding 0x1865BC loses 800 + 400 per craft
+ *    homed at the base + 30 * Base_CalcOccupiedSpace, 0x15961C = 1, unk_187084 = 0, and
+ *    Base_DemolishFacility(apBases[nCraftHomeBase]->bUnk4). If the base count then hits zero:
+ *    GeoscapeUi_FreeAll(1), EndScreen_Init(0), Map_bTickHold = Map_bBattleEnded = 1, return 1;
+ *    otherwise return the base count.
+ *
+ * 5. Tail (LABEL_10, 0x83A0C): if the assault flag is set, mission type 9 with sprite set
+ *    13/21/23/23, mode 0, spawnAlt 1, and nMapLayers from the selected craft's bCraftType. Then
+ *    Smap_DismissSelected runs unless mode is still 1 (the Xcom launch keeps mode 1 and skips
+ *    it), bMapSelectionFlag = 0, GeoscapeUi_FreeAll(0), and the return is Tact_InitMission(0).
+ *
+ * Deviations: the original dereferences apCraft / strateg entries / apBases with no bounds or
+ * null tests (a negative selected index faults); the port refuses those steps instead. The
+ * default craft-class arm leaves the tier budget at 0, which makes the band division a divide by
+ * zero in the original; the port skips the band. */
+typedef struct SmapCraftSelectEnv {
+    /* Map block */
+    Ship *const *apCraft;        /* Map.apCraft @ Map+0x10AC */
+    u8   *pnCraftCount;          /* Map_nCraftCount @ Map+0x1194 */
+    u8   *pbMissionMode;         /* Map_bMissionMode @ Map+0x1511D */
+    u8   *pbUnk1511E;            /* unk_128AD6 @ Map+0x1511E */
+    u8   *pnMissionType;         /* Map_nMissionType @ Map+0x1511A */
+    u8   *abSpriteSet;           /* Map_abSpriteSet @ Map+0x15116..19 */
+    u8   *pbSpawnAlt;            /* Map_bSpawnAlt @ Map+0x15148 */
+    u8   *pbUnk15115;            /* Map_bUnk15115 @ Map+0x15115, the stealth-budget scale */
+    u8   *pnTerrainVariant;      /* Map_nTerrainVariant @ Map+0x15111 */
+    u8   *pnMapLayers;           /* Map_nMapLayers @ Map+0x15114 */
+    i32  *pnTierRaw;             /* Map_nMissionTierRaw @ Map+0x1510C */
+    u8   *pnCraftIndex;          /* Map_nCraftIndex @ Map+0x15113 */
+    u8   *pbTickHold;            /* Map_bTickHold @ Map+0x5A */
+    u8   *pbBattleEnded;         /* unk_113A14 @ Map+0x5C */
+    BaseRec *const *apBases;     /* Map.apBases @ Map+0x1174 */
+    i8   *pbHomeBase;            /* nCraftHomeBase @ 0x158848, loaded with LDRSB */
+    i8   *pbBaseRace;            /* nAssaultBaseRace @ 0x158849, loaded with LDRSB */
+
+    /* Geoscape state */
+    PtrArray   *pStrategList;    /* 0x186534 */
+    struct UiLineList *pLines;   /* the root line list @ 0x158890 */
+    GameTime   *pTime;           /* 0x159618 */
+    i32 *pnSelectedShipIdx;      /* 0x187054 */
+    i32 *pnStrategIndex;         /* 0x159E74 */
+    i32 *pnSelectedStrategIdx;   /* 0x186BE4 */
+    u8  *pbAssaultFlag;          /* bCraftSelectAssaultFlag @ 0x1870A8 */
+    u8  *pbSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
+    u8  *pbFlag187084;           /* unk_187084: write-only in the whole image */
+    u8  *pbGeoscapeFlag;         /* 0x15961C */
+    i32 *pnRadarPulseTimer;      /* nRadarPulseTimer @ 0xAC224 */
+    i32 *pnFunding;              /* 0x1865BC */
+    u8  *pbBaseCount;            /* 0x159D80, read with LDRSB */
+    u8  *pbSelectedBaseIdx;      /* nSelectedBaseIdx @ 0x159D81 */
+    u8  *abFacilityGrid;         /* gBaseFacGrid @ 0x159768 */
+    u8  *abTileTypes;            /* abTactTileTypes @ 0x159D5C */
+    Soldier *const *apSoldiers;
+    i32 nSoldierCount;           /* the u16 at Map+0x1998 */
+    ObjectRecFull *const *apObjects;
+    i32 nObjectCount;
+
+    /* Map view for the overlay test */
+    const SmapView *pView;
+    const PadImage *apOverlay[3]; /* 0x186C28 / 0x186C1C / 0x186BB8 */
+    i32 nOverlayOriginX;                /* 0x186C20 */
+    const PadImage *pTilemapAlt;        /* 0x186C18 */
+
+    /* Plumbing the callees need */
+    const ShipRemovalEnv *pShipEnv;     /* DismissSelected and RemoveAt */
+    u8 *pbSpawnOnceFlag;                /* 0x162028 */
+    const StrategSpawnCtx *pSpawnCtx;
+    const struct BaseDemolishEnv *pDemolishEnv;
+
+    /* Hooks into the layers this function hands over to */
+    void (*pfnFreeGeoscapeUi)(i32 bFreeWorld, void *pUser); /* GeoscapeUi_FreeAll @ 0x86d20 */
+    i32  (*pfnInitMission)(i32 nMode, void *pUser);         /* Tact_InitMission @ 0x3c550 */
+    void (*pfnInitEndScreen)(u8 bGoodEnd, void *pUser);     /* EndScreen_Init @ 0x388b0 */
+    void *pHookUser;
+} SmapCraftSelectEnv;
+
+/* Smap_BeginCraftSelect @ 0x838dc. Returns Tact_InitMission's value on the launch paths, the
+ * base count on the Xcom-assault-without-soldiers path, and 1 on the bad-end path. */
+i32 Smap_BeginCraftSelect(const SmapCraftSelectEnv *pEnv);
+
+/* Smap_BeginCraftSelectBtn @ 0x84634. Set the assault flag and run it. */
+i32 Smap_BeginCraftSelectBtn(const SmapCraftSelectEnv *pEnv);
+
 /* ------------------------------------------------------------- zoom levels
  *
  * Each zoom step swaps three layer globals and takes the map size from the second
