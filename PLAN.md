@@ -392,6 +392,21 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `BaseFacScreen_DrawPlacementOverlay @ 0x58e10` (3396 B) — ported in `pufo_baseui.{h,c}` behind
+  `FacOverlayEnv`, 35 new checks in `tests/test_baseui.c`. It is the preview and the commit at once:
+  the tap comes from the pending pair or (with `bBaseFacPreviewActive`) from the cursor, the score is
+  the 2x2-or-1x1 footprint plus the four-side walk gated by `buildDays == 0`, the outline is four
+  rects in the phase colour or its inverse, and a legal tap with enough funds runs
+  `BaseFac_SetCellBuildState` and spends `aBaseFacFlags[kind].uCost` — in new-base mode also
+  `Base_CreateNamedEntry` plus `aNewBaseCostByRace[kind - 0x80]`, then closes the dialog and puts
+  `nGeoscapeScreen` back to 1. The facility's grid type is `aBaseFacFlags[kind].bFlag21`, which InitUI
+  fills with the record index. Two Hex-Rays renderings were corrected against the ARM: the "up"
+  neighbour guard is the ROW (0x592C8), and the span reads below it are +384 and +385, not two +385.
+  IDB: function comment at 0x58e10, line comment at 0x592C8, `qword_15887C` → `nPendingPlaceX` /
+  `nPendingPlaceY`, `unk_15888C` → `bBaseFacOverlayShown`, `unk_159DC4` / `unk_159DC8` →
+  `nSmapOriginX` / `nSmapOriginY`, `word_186BD0` / `word_186BD4` → `nSmapCursorX` / `nSmapCursorY`
+  (`__int16`, LDRSH), `unk_18652C` → `bBaseFacPreviewActive`, `unk_18652D` → `bBaseFacPreviewOk`,
+  `unk_1139EF` → `nMapPhase`. One ledger row (93 total).
 - [x] `SoldierScreen_EquipSelected @ 0x619cc` (448 B) — ported in `pufo_baseui.{h,c}` behind
   `SoldierEquipEnv`, 28 new checks in `tests/test_baseui.c`, and the soldier screen's equip panel now
   runs for real in the shell (`World_SoldierEquipThunk`). The gate is `Soldier.bUnk183 >= 0xFE ||
@@ -677,6 +692,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the build dialog itself (`BaseFacScreen_Toggle`, `BaseFacScreen_TryBuySelected`) | 56/56 (Release) | 8084 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 | the soldier screen (`SoldierScreen_Toggle`, `SoldierScreen_SelectListed`), shell-wired | 56/56 (Release) | 8137 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 | the soldier equip rows (`SoldierScreen_EquipSelected`) + the two false citations removed | 56/56 (Release) | 8165 | 727/1103 (65.9%) | 322856/598792 (53.9%) | 38 checked, 0 mismatched |
+| the placement preview and its commit (`BaseFacScreen_DrawPlacementOverlay`) | 56/56 (Release) | 8200 | 728/1103 (66.0%) | 326252/598792 (54.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

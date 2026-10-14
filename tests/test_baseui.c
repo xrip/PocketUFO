@@ -2060,6 +2060,192 @@ static void TestSoldierEquipSelected(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 --- */
+
+#define GridTileA(g, b, r, c) ((g)[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * (b) + 6 * (r) + (c)])
+#define GridDays(g, b, r, c) ((g)[PUFO_GRID_DAYS_STRIDE * (b) + 6 * (r) + (c)])
+#define GridFacType(g, b, r, c)                                                    \
+    ((g)[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * (b) + PUFO_GRID_FAC_TYPE_OFF + \
+         6 * (r) + (c)])
+
+static void TestFacOverlay(void)
+{
+    static u8 abGrid[PUFO_GRID_SIZE];
+    static UiPanel panel;
+    static BaseFacFlag aFac[PUFO_BASEFAC_COUNT];
+    static FacOverlayEnv env;
+    static BaseFacToggleEnv toggleEnv;
+    static UiPanel *pDialogPanel = NULL;
+    static i32 nFunds;
+    static i32 nScreen;
+    static i32 nTapX;
+    static i32 nTapY;
+    static u8 bPreviewActive;
+    static u8 bPreviewOk;
+    static u8 bOverlayShown;
+    static u8 bNewBaseMode;
+    static u8 bDialogOpen;
+    static u32 nShortfall;
+    static i32 nResidue;
+    static char szLabel[108];
+    static SoftSurf gOverlaySurf;
+    i32 i;
+
+    printf("BaseFacScreen_DrawPlacementOverlay @ 0x58e10\n");
+
+    /* The preview draws through SoftSurf_BlitRectProxy, so the blit target has to exist. */
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&gOverlaySurf);
+    SoftSurf_AllocPixels(&gOverlaySurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &gOverlaySurf;
+
+    memset(abGrid, 0, sizeof(abGrid));
+    memset(aFac, 0, sizeof(aFac));
+    for (i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        aFac[i].bFlag21 = (u8)i;              /* InitUI stores the record index here */
+        aFac[i].uCost = (u32)(1000 * (i + 1));
+    }
+
+    memset(&panel, 0, sizeof(panel));
+    if (!UiPanel_ctor(&panel, 2)) {
+        printf("  FAIL the facility panel could not be constructed\n");
+        return;
+    }
+    UiPanel_SetLineAux(&panel, 0, 3);         /* an ordinary facility */
+    UiPanel_SetLineAux(&panel, 1, 11);        /* the hangar */
+
+    nFunds = 5000;
+    nScreen = 2;
+    nTapX = 9;
+    nTapY = 9;
+    bPreviewActive = 1;
+    bPreviewOk = 1;
+    bOverlayShown = 0;
+    bNewBaseMode = 0;
+    bDialogOpen = 1;
+    nShortfall = 0;
+    nResidue = 7;
+
+    memset(&toggleEnv, 0, sizeof(toggleEnv));
+    toggleEnv.pbOpen = &bDialogOpen;
+    toggleEnv.ppPanel = &pDialogPanel;
+    toggleEnv.paFac = aFac;
+    toggleEnv.abFacilityGrid = abGrid;
+
+    memset(&env, 0, sizeof(env));
+    env.abFacilityGrid = abGrid;
+    env.pPanel = &panel;
+    env.nPanelSel = 0;                        /* row 0 -> facility 3 */
+    env.paFac = aFac;
+    env.pnFunds = &nFunds;
+    env.nSelectedBaseIdx = 0;
+    env.pnTapX = &nTapX;
+    env.pnTapY = &nTapY;
+    env.nPendingX = 3;
+    env.nPendingY = 2;
+    env.nOriginX = 0;
+    env.nOriginY = 0;
+    env.nCursorX = 100;                       /* tap = (100/32, (100-36)/32) = (3, 2) */
+    env.nCursorY = 100;
+    env.pbPreviewActive = &bPreviewActive;
+    env.pbPreviewOk = &bPreviewOk;
+    env.pbOverlayShown = &bOverlayShown;
+    env.pbNewBaseMode = &bNewBaseMode;
+    env.nPendingKind = 0x80 + 2;
+    env.paNewBaseCost = g_anNewBaseCostByKind;
+    env.nPhaseByte = 0;
+    env.pdwShortfall = &nShortfall;
+    env.pnResidue = &nResidue;
+    env.pnScreenId = &nScreen;
+    env.pszLabel = szLabel;
+    env.cchLabel = sizeof(szLabel);
+    env.pToggleEnv = &toggleEnv;
+    env.nPlaceX = -6000;
+    env.nPlaceY = -6000;
+
+    /* An empty grid with nothing next to the tap is not a legal placement. */
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "an isolated tap does not commit");
+    CheckEqI32(bOverlayShown, 1, "the overlay flag is raised (0x59234)");
+    CheckEqI32(nTapX, 3, "the tap column comes from the cursor (0x58EC0)");
+    CheckEqI32(nTapY, 2, "and the tap row too (0x58EC8)");
+    CheckEqI32(bPreviewOk, 0, "a zero score clears bFacPreviewOk (0x599AC)");
+    CheckEqI32(nFunds, 5000, "and nothing is spent");
+
+    /* A finished neighbour makes it legal. */
+    GridTileA(abGrid, 0, 2, 2) = 9;
+    bPreviewOk = 1;
+    bOverlayShown = 0;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 1, "a neighbour to the left makes it legal");
+    CheckEqI32(nFunds, 1000, "the facility cost comes off nFunds (0x59AB4)");
+    CheckEqI32(GridFacType(abGrid, 0, 2, 3), 3, "the cell kind is aBaseFacFlags[3].bFlag21");
+    CheckEqI32(bOverlayShown, 1, "the preview block ran");
+
+    /* Not enough funds. */
+    memset(abGrid, 0, sizeof(abGrid));
+    GridTileA(abGrid, 0, 2, 2) = 9;
+    nFunds = 100;
+    nShortfall = 0;
+    nResidue = 7;
+    bPreviewOk = 1;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "an unaffordable facility stops (0x59A24)");
+    CheckEqI32(nShortfall, 1, "the shortfall byte is written as a dword");
+    CheckEqI32(nResidue, 0, "and the residue slot is cleared");
+    CheckEqI32(nFunds, 100, "with nFunds untouched");
+    CheckEqI32(GridFacType(abGrid, 0, 2, 3), 0, "and no cell written");
+
+    /* The three commit guards. */
+    nFunds = 5000;
+    bPreviewOk = 0;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "a cleared bFacPreviewOk stops the commit");
+    bPreviewOk = 1;
+    env.nPendingX = 4;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "a tap that is not the pending one stops it");
+    env.nPendingX = 3;
+    bPreviewActive = 0;
+    nTapX = 9;
+    nTapY = 9;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 0, "and so does a cleared bFacPreviewActive");
+    CheckEqI32(nFunds, 5000, "with nothing spent");
+    CheckEqI32(nTapX, 3, "the tap then comes from the pending pair, not the cursor");
+    bPreviewActive = 1;
+    env.nCursorX = 100;
+
+    /* The hangar: a 2x2 footprint, and the side limit drops from 5 to 4. */
+    memset(abGrid, 0, sizeof(abGrid));
+    GridTileA(abGrid, 0, 1, 3) = 7;           /* the up neighbour of the 2x2 anchor */
+    nFunds = 20000;
+    bPreviewOk = 1;
+    env.nPanelSel = 1;                        /* row 1 -> facility 11, the hangar */
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 1, "the hangar commits through the same path");
+    CheckEqI32(nFunds, 20000 - 12000, "at its own cost");
+    CheckEqI32(GridFacType(abGrid, 0, 2, 3), 11, "one facType byte at the anchor");
+    CheckEqI32(GridTileA(abGrid, 0, 2, 3), 9, "with the 2x2 stamp 9 at the anchor");
+    CheckEqI32(GridTileA(abGrid, 0, 2, 4), 10, "10 to the right");
+    CheckEqI32(GridTileA(abGrid, 0, 3, 3), 11, "11 below");
+    CheckEqI32(GridTileA(abGrid, 0, 3, 4), 12, "and 12 on the diagonal");
+
+    /* New-base mode forces the score, spends the base cost too and closes the dialog. */
+    env.nPanelSel = 0;
+    memset(abGrid, 0, sizeof(abGrid));
+    nFunds = 5000;
+    bPreviewOk = 1;
+    bNewBaseMode = 1;
+    bDialogOpen = 1;
+    nScreen = 2;
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 1, "new-base mode commits with an empty grid");
+    CheckEqI32(nFunds, 5000 - 4000 - g_anNewBaseCostByKind[2],
+               "the facility cost and aNewBaseCostByRace[kind - 0x80] both come off");
+    CheckEqI32(bPreviewActive, 0, "bFacPreviewActive is cleared (0x59B20)");
+    CheckEqI32(nScreen, 1, "nGeoscapeScreen goes back to 1 (0x59B28)");
+    CheckEqI32(bNewBaseMode, 0, "new-base mode is cleared (0x59B2C)");
+    CheckEqI32(bPreviewOk, 0, "and so is bFacPreviewOk (0x59B34)");
+    CheckEqI32(bDialogOpen, 0, "the dialog closed through BaseFacScreen_Toggle");
+
+    CheckEqI32(BaseFacScreen_DrawPlacementOverlay(NULL), 0, "a null env does nothing");
+
+    UiPanel_FreeLines(&panel);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2096,6 +2282,7 @@ int main(void)
     TestSoldierScreenToggle();
     TestSoldierSelectListed();
     TestSoldierEquipSelected();
+    TestFacOverlay();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

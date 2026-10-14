@@ -9316,3 +9316,59 @@ the equip and stores panels with one row per item that has stock at the selected
 Deviations: the port returns 1/0 where the original hands back `&bTransferFlag` or the soldier
 pointer, and it bounds the cursor, the base index, the craft index and the old `nUnitType` to the
 121..124 group (0x61A1C, bugs.tsv).
+
+### `BaseFacScreen_DrawPlacementOverlay` (done)
+
+`src/pufo/game/pufo_baseui.c`, 35 new checks in `tests/test_baseui.c`. Its only code caller is
+`BaseFacScreen_DrawBuildDialog` (0x59EF8), so the shell wiring waits for that draw chain.
+
+The selected facility is `pBaseFacPanel->anLineAux[nBaseFacPanelSel]` (0x58E20) and its grid type is
+`aBaseFacFlags[kind].bFlag21` (record + 0x15, LDRSB). InitUI stores the record index into `bFlag21`,
+so it is the kind; 11 is the hangar and it makes the footprint 2x2, carried everywhere as the byte
+32 or 0.
+
+`nSmapTapX` / `nSmapTapY` take the pending pair `nPendingPlaceX` / `nPendingPlaceY` (0x58E58,
+0x58E60); with `bBaseFacPreviewActive` set they come from the cursor instead --
+`tapX = (nSmapCursorX - nSmapOriginX) / 32`, `tapY = (nSmapCursorY - nSmapOriginY - 36) / 32`, the
+ARM's `+31` before the `ASR#5` being C's truncate-toward-zero division. A tap outside 0..5 skips the
+clamped 2x2 edge outline (the lines at `y = nOriginY + 196` and `x = nOriginX + 160`, always in the
+invalid colour `10*(nMapPhase + 15)`).
+
+The preview block (0x5917C) runs when `bBaseFacOverlayShown` or `bBaseFacPreviewActive` is set and
+the cursor lies inside `0 < dx < 192 - span`, `36 < dy < 227 - span`; it raises
+`bBaseFacOverlayShown` and scores the tap:
+
+```
+footprint = span ? tileA[r][c] + tileA[r+1][c] + tileA[r+1][c+1] + tileA[r][c+1]
+                 : tileA[r][c]
+```
+
+With an empty footprint the four sides are walked and a neighbour counts only when its `buildDays`
+byte is 0:
+
+| side | guard | cells |
+|---|---|---|
+| up | `r > 0` | `tileA[r-1][c]`, and with span `tileA[r-1][c+1]` |
+| down | `r < 5 - span/32` | `tileA[r+1][c]`, and with span `tileA[r+2][c]` (+384), `tileA[r+2][c+1]` (+385) |
+| left | `c > 0` | `tileA[r][c-1]`, and with span `tileA[r+1][c-1]` |
+| right | `c < 5 - span/32` | `tileA[r][c+1]`, and with span `tileA[r][c+2]`, `tileA[r+1][c+2]` |
+
+The score is a byte (every accumulate is a STRB) and new-base mode forces it to 1. Two Hex-Rays
+renderings are wrong against the ARM and the port follows the ARM: the "up" guard is the **row**
+(0x592C8 `CMP R1,#0` -- R1 is added before the `MUL #6` that builds the cell index), not the column,
+and the two span reads below are +384 = `tileA[r+2][c]` and +385 = `tileA[r+2][c+1]`, which Hex-Rays
+collapses onto +385. The outline is four rects, `nIdx` 0 with `nColorLow` at the phase colour when
+the score is non-zero and the other way round when it is zero.
+
+The commit (0x599A0..0x59B38) needs a non-zero score (a zero one clears `bBaseFacPreviewOk`),
+`bBaseFacPreviewOk` set, the tap equal to the pending pair and `bBaseFacPreviewActive`. The cost is
+`aBaseFacFlags[kind].uCost`; `nFunds - cost < 0` writes the shortfall as a dword and clears
+`dword_1870B4[0]`. Otherwise `BaseFac_SetCellBuildState(grid, nSelectedBaseIdx, bFlag21, tapX, tapY,
+0)` writes the facility and `nFunds` drops. In new-base mode the label comes from
+`BaseFac_FormatCostLabel(bPendingBaseKind)`, `Base_CreateNamedEntry` runs at the pending coordinates,
+`aNewBaseCostByRace[kind - 0x80]` comes off `nFunds`, `BaseFacScreen_Toggle` closes the dialog, and
+`bBaseFacPreviewActive` / `nGeoscapeScreen = 1` / new-base mode / `bBaseFacPreviewOk` are cleared.
+
+Deviations: the port returns 1/0 where the original returns register residue; it bounds the panel
+selection, the kind index and the pending kind (0x58E20, bugs.tsv); and it scores only a tap inside
+0..5, which is every tap the in-bounds cursor test can produce.

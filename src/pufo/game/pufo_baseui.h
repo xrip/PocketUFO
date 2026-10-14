@@ -886,4 +886,92 @@ typedef struct SoldierEquipEnv {
 
 i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv);
 
+/* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 (3396 B) : the placement preview and its commit
+ *
+ * The selected facility is `pBaseFacPanel->anLineAux[nBaseFacPanelSel]` (0x58E20) and its grid type
+ * is `aBaseFacFlags[kind].bFlag21` (0x58E34, LDRSB record + 0x15 — InitUI stores the record index
+ * there, so it is the kind). Type 11 is the hangar and it makes the footprint 2x2; the original
+ * keeps that as the byte 32 or 0 and adds it to every size and bound below.
+ *
+ * 1. nSmapTapX / nSmapTapY take the pending pair qword_15887C (0x58E58, 0x58E60). With
+ *    bFacPreviewActive (unk_18652C) set they come from the cursor instead:
+ *    `tapX = (nCursorX - nOriginX) / 32` and `tapY = (nCursorY - nOriginY - 36) / 32`; the ARM adds
+ *    31 to a negative delta before the ASR#5 (0x58EAC..0x58EC8), which is C's truncate-toward-zero
+ *    division.
+ * 2. A tap outside 0..5 skips the clamp geometry (0x58EE4, 0x58EEC) but still reaches the rest.
+ * 3. When a 2x2 would hang off the last row or column the outline is drawn clamped and in the
+ *    invalid colour (nIdx = 10*(Map+0x37 + 15), nColorMid = nColorLow = 0): the bottom edge line at
+ *    y = nOriginY + 196, the right edge line at x = nOriginX + 160, and both at the corner.
+ * 4. The preview block (0x5917C) runs when bFacOverlayShown (unk_15888C) or bFacPreviewActive is
+ *    set and the cursor lies inside `0 < dx < 192 - span` and `36 < dy < 227 - span`; it sets
+ *    bFacOverlayShown and scores the tap:
+ *
+ *        footprint = span ? tileA[r][c] + tileA[r+1][c] + tileA[r+1][c+1] + tileA[r][c+1]
+ *                         : tileA[r][c]
+ *
+ *    With an empty footprint the four sides are walked, and a neighbour counts only when its
+ *    buildDays byte is 0 (nothing under construction there):
+ *
+ *        up    (r > 0):           tileA[r-1][c];   span: tileA[r-1][c+1]
+ *        down  (r < 5 - span/32): tileA[r+1][c];   span: tileA[r+2][c], tileA[r+2][c+1]
+ *        left  (c > 0):           tileA[r][c-1];   span: tileA[r+1][c-1]
+ *        right (c < 5 - span/32): tileA[r][c+1];   span: tileA[r][c+2], tileA[r+1][c+2]
+ *
+ *    The score is a byte (every accumulate is a STRB) and new-base mode (byte_187074[4]) forces it
+ *    to 1. Hex-Rays mis-renders two of these against the ARM: the "up" guard is the ROW (0x592C8
+ *    `CMP R1,#0`), not the column, and the two span reads below it are +384 = tileA[r+2][c] and
+ *    +385 = tileA[r+2][c+1]. The outline is then four rects — nIdx 0 with nColorLow at the phase
+ *    colour when the score is non-zero, the other way round when it is zero.
+ * 5. The commit (0x599A0..0x59B38) needs a non-zero score, bFacPreviewOk (unk_18652D) set (a zero
+ *    score clears it), the tap equal to the pending pair, and bFacPreviewActive. The cost is
+ *    `aBaseFacFlags[kind].uCost`; `nFunds - cost < 0` sets the shortfall dword and stops. Otherwise
+ *    `BaseFac_SetCellBuildState(grid, nSelectedBaseIdx, bFlag21, tapX, tapY, 0)` writes the facility
+ *    and nFunds drops by the cost. In new-base mode the label is BaseFac_FormatCostLabel for
+ *    bPendingBaseKind, Base_CreateNamedEntry runs at the pending coordinates,
+ *    aNewBaseCostByRace[kind - 0x80] comes off nFunds, BaseFacScreen_Toggle closes the dialog, and
+ *    bFacPreviewActive / nGeoscapeScreen = 1 / new-base mode / bFacPreviewOk are cleared.
+ *
+ * Deviations: the port returns 1 when it committed and 0 otherwise where the original returns
+ * register residue; it bounds the panel selection, the kind index and the pending kind where the
+ * original indexes anLineAux, aBaseFacFlags and aNewBaseCostByRace unchecked; and it scores only a
+ * tap inside 0..5, which is every tap the in-bounds cursor test can produce. */
+#define PUFO_FAC_OVERLAY_SPAN 32 /* the byte the original uses for "this facility is 2x2" */
+
+typedef struct FacOverlayEnv {
+    u8 *abFacilityGrid;             /* gBaseFacGrid @ 0x159768 */
+    UiPanel *pPanel;                /* pBaseFacPanel @ 0x15886C */
+    i32 nPanelSel;                  /* nBaseFacPanelSel @ 0x158868 */
+    const BaseFacFlag *paFac;       /* aBaseFacFlags @ 0x186E48 */
+    i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
+    i8 nSelectedBaseIdx;            /* nSelectedBaseIdx @ 0x159D81 */
+    i32 *pnTapX;                    /* nSmapTapX @ 0x186B7C */
+    i32 *pnTapY;                    /* nSmapTapY @ 0x186B80 */
+    i32 nPendingX;                  /* qword_15887C */
+    i32 nPendingY;                  /* qword_15887C + 4 */
+    i32 nOriginX;                   /* unk_159DC4 */
+    i32 nOriginY;                   /* unk_159DC8 */
+    i16 nCursorX;                   /* word_186BD0 */
+    i16 nCursorY;                   /* word_186BD4 */
+    u8 *pbPreviewActive;            /* unk_18652C */
+    u8 *pbPreviewOk;                /* unk_18652D */
+    u8 *pbOverlayShown;             /* unk_15888C */
+    u8 *pbNewBaseMode;              /* byte_187074[4] */
+    u8 nPendingKind;                /* bPendingBaseKind @ 0x159DF4 */
+    const i32 *paNewBaseCost;       /* g_anNewBaseCostByKind, indexed by nPendingKind - 0x80 */
+    u8 nPhaseByte;                  /* Map + 0x37, the cycling outline colour */
+    u32 *pdwShortfall;              /* byte_1870C8, written as a dword */
+    i32 *pnResidue;                 /* dword_1870B4[0] */
+    i32 *pnScreenId;                /* nGeoscapeScreen @ 0x186BC4 */
+    const u8 *pTextRecs;            /* the TEXTS blob, for the new-base label */
+    char *pszLabel;                 /* szRadarMsg @ 0x186B10 */
+    size_t cchLabel;
+    i8 *abKindTable;                /* abBaseKindTable @ 0x1864DD */
+    const BaseCreateEnv *pCreateEnv;/* Base_CreateNamedEntry's env */
+    const BaseFacToggleEnv *pToggleEnv; /* the closing BaseFacScreen_Toggle */
+    i32 nPlaceX;                    /* unk_159D94 */
+    i32 nPlaceY;                    /* unk_159D98 */
+} FacOverlayEnv;
+
+i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

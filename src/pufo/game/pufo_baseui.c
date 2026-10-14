@@ -1581,3 +1581,233 @@ i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv)
     *pEnv->pbTransferFlag = 0;                               /* 0x61B78 */
     return 1;
 }
+
+/* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 --- */
+
+/* The ARM keeps one flat pointer per layer (grid + 0x174 + 144*base for the fac block, grid + 36*base
+ * for buildDays) and adds small deltas to it, so a 2x2 at the last row reads on into the next layer.
+ * Both stay inside the 1524-byte grid for every tap the in-bounds test can produce. */
+static u8 FacOverlay_TileA(const u8 *pGrid, i32 nBase, i32 nRow, i32 nCol)
+{
+    return pGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase + 6 * nRow + nCol];
+}
+
+static u8 FacOverlay_Days(const u8 *pGrid, i32 nBase, i32 nRow, i32 nCol)
+{
+    return pGrid[PUFO_GRID_DAYS_STRIDE * nBase + 6 * nRow + nCol];
+}
+
+/* The four-side walk (0x592D0..0x5957C). A neighbour only counts when its buildDays byte is zero. */
+static i32 FacOverlay_Score(const FacOverlayEnv *pEnv, i32 nSpan, i32 nTapX, i32 nTapY)
+{
+    const u8 *pGrid = pEnv->abFacilityGrid;
+    i32 nBase = pEnv->nSelectedBaseIdx;
+    i32 nLimit = 5 - (nSpan / PUFO_FAC_OVERLAY_SPAN);
+    i32 nFoot;
+    i32 nScore = 0;
+
+    if (nSpan != 0) {
+        nFoot = FacOverlay_TileA(pGrid, nBase, nTapY, nTapX)
+              + FacOverlay_TileA(pGrid, nBase, nTapY + 1, nTapX)
+              + FacOverlay_TileA(pGrid, nBase, nTapY + 1, nTapX + 1)
+              + FacOverlay_TileA(pGrid, nBase, nTapY, nTapX + 1);
+    } else {
+        nFoot = FacOverlay_TileA(pGrid, nBase, nTapY, nTapX);
+    }
+    nFoot &= 0xFF;                                           /* 0x592CC AND #0xFF */
+    if (nFoot != 0) {
+        return 0;                                            /* the footprint is occupied */
+    }
+
+    if (nTapY > 0) {                                         /* 0x592C8 CMP R1 -- the ROW */
+        if (FacOverlay_Days(pGrid, nBase, nTapY - 1, nTapX) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY - 1, nTapX);
+        if (nSpan != 0 && FacOverlay_Days(pGrid, nBase, nTapY - 1, nTapX + 1) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY - 1, nTapX + 1);
+    }
+    if (nTapY < nLimit) {
+        if (FacOverlay_Days(pGrid, nBase, nTapY + 1, nTapX) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY + 1, nTapX);
+        if (nSpan != 0) {
+            if (FacOverlay_Days(pGrid, nBase, nTapY + 2, nTapX) == 0)
+                nScore += FacOverlay_TileA(pGrid, nBase, nTapY + 2, nTapX);   /* v19[384] */
+            if (FacOverlay_Days(pGrid, nBase, nTapY + 2, nTapX + 1) == 0)
+                nScore += FacOverlay_TileA(pGrid, nBase, nTapY + 2, nTapX + 1); /* v19[385] */
+        }
+    }
+    if (nTapX > 0) {
+        if (FacOverlay_Days(pGrid, nBase, nTapY, nTapX - 1) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY, nTapX - 1);
+        if (nSpan != 0 && FacOverlay_Days(pGrid, nBase, nTapY + 1, nTapX - 1) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY + 1, nTapX - 1);
+    }
+    if (nTapX < nLimit) {
+        if (FacOverlay_Days(pGrid, nBase, nTapY, nTapX + 1) == 0)
+            nScore += FacOverlay_TileA(pGrid, nBase, nTapY, nTapX + 1);
+        if (nSpan != 0) {
+            if (FacOverlay_Days(pGrid, nBase, nTapY, nTapX + 2) == 0)
+                nScore += FacOverlay_TileA(pGrid, nBase, nTapY, nTapX + 2);
+            if (FacOverlay_Days(pGrid, nBase, nTapY + 1, nTapX + 2) == 0)
+                nScore += FacOverlay_TileA(pGrid, nBase, nTapY + 1, nTapX + 2);
+        }
+    }
+    return nScore & 0xFF;                                    /* every accumulate is a STRB */
+}
+
+static void FacOverlay_Outline(const FacOverlayEnv *pEnv, i32 nSpan, i32 nTapX, i32 nTapY,
+                               u8 nColor, bool bOk)
+{
+    i32 nX = pEnv->nOriginX + 32 * nTapX;
+    i32 nY = pEnv->nOriginY + 32 * nTapY + 36;
+    i32 nW = (nSpan != 0) ? 64 : 32;
+    i32 nH = (nSpan != 0) ? 64 : 32;
+    u8 nIdx = bOk ? 0 : nColor;
+    u8 nLow = bOk ? nColor : 0;
+
+    SoftSurf_BlitRectProxy(0, nX, nY, nW, 2, nIdx, 0, nLow);            /* top */
+    SoftSurf_BlitRectProxy(0, nX, nY, 2, nH, nIdx, 0, nLow);            /* left */
+    SoftSurf_BlitRectProxy(0, nX + nW - 1, nY, 2, nH, nIdx, 0, nLow);   /* right */
+    SoftSurf_BlitRectProxy(0, nX, nY + nH - 1, nW, 2, nIdx, 0, nLow);   /* bottom */
+}
+
+i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv)
+{
+    i32 nSpan;
+    i32 nTapX;
+    i32 nTapY;
+    i32 nColor;
+    i32 nScore;
+    i32 nKind;
+    u8 *pGrid;
+
+    if (pEnv == NULL || pEnv->abFacilityGrid == NULL || pEnv->pPanel == NULL ||
+        pEnv->paFac == NULL || pEnv->pnFunds == NULL || pEnv->pnTapX == NULL ||
+        pEnv->pnTapY == NULL || pEnv->pbPreviewActive == NULL || pEnv->pbPreviewOk == NULL ||
+        pEnv->pbOverlayShown == NULL || pEnv->pbNewBaseMode == NULL) {
+        return 0;
+    }
+
+    pGrid = pEnv->abFacilityGrid;
+
+    nKind = UiPanel_GetLineAux(pEnv->pPanel, pEnv->nPanelSel);          /* 0x58E20 */
+    if (nKind < 0 || nKind >= PUFO_BASEFAC_COUNT) {
+        return 0;
+    }
+
+    nSpan = (pEnv->paFac[nKind].bFlag21 == PUFO_FAC_TYPE_HANGAR) ? PUFO_FAC_OVERLAY_SPAN : 0;
+    nColor = (u8)(10 * ((i32)pEnv->nPhaseByte + 15));                   /* 0x5909C..0x590AC */
+
+    nTapX = pEnv->nPendingX;                                            /* 0x58E58 */
+    nTapY = pEnv->nPendingY;                                            /* 0x58E60 */
+    *pEnv->pnTapX = nTapX;
+    *pEnv->pnTapY = nTapY;
+
+    if (*pEnv->pbPreviewActive != 0) {                                  /* 0x58E8C..0x58EC8 */
+        nTapX = ((i32)pEnv->nCursorX - pEnv->nOriginX) / 32;
+        nTapY = ((i32)pEnv->nCursorY - pEnv->nOriginY - 36) / 32;
+        *pEnv->pnTapX = nTapX;
+        *pEnv->pnTapY = nTapY;
+    }
+
+    /* The clamped outline for a 2x2 that would hang off the last row or column (0x58EDC..0x59168).
+     * Always the invalid colour. */
+    if (nTapX <= 5 && nTapY <= 5) {
+        i32 nX = pEnv->nOriginX + 32 * nTapX;
+        i32 nY = pEnv->nOriginY + 32 * nTapY + 36;
+
+        if (nTapY == 5 && nSpan != 0) {
+            if (nTapX == 5) {
+                SoftSurf_BlitRectProxy(0, pEnv->nOriginX + 160, pEnv->nOriginY + 196, 32, 2,
+                                       nColor, 0, 0);
+                SoftSurf_BlitRectProxy(0, nX, nY, 2, 32, nColor, 0, 0);
+            } else {
+                SoftSurf_BlitRectProxy(0, nX, pEnv->nOriginY + 196, 64, 2, nColor, 0, 0);
+                SoftSurf_BlitRectProxy(0, nX, nY, 2, 32, nColor, 0, 0);
+                SoftSurf_BlitRectProxy(0, nX + 63, nY, 2, 32, nColor, 0, 0);
+            }
+        } else if (nTapX == 5 && nSpan != 0) {
+            SoftSurf_BlitRectProxy(0, pEnv->nOriginX + 160, nY, 32, 2, nColor, 0, 0);
+            SoftSurf_BlitRectProxy(0, nX, nY, 2, 64, nColor, 0, 0);
+            SoftSurf_BlitRectProxy(0, nX, pEnv->nOriginY + 32 * nTapY + 99, 32, 2, nColor, 0, 0);
+        }
+    }
+
+    nScore = 0;
+
+    if (*pEnv->pbOverlayShown != 0 || *pEnv->pbPreviewActive != 0) {    /* 0x5917C */
+        i32 nDx = (i32)pEnv->nCursorX - pEnv->nOriginX;
+        i32 nDy = (i32)pEnv->nCursorY - pEnv->nOriginY;
+
+        if (nDx > 0 && nDx < 192 - nSpan && nDy > 36 && nDy < 227 - nSpan) {
+            *pEnv->pbOverlayShown = 1;                                  /* 0x59234 */
+            if (nTapX >= 0 && nTapX <= 5 && nTapY >= 0 && nTapY <= 5) {
+                nScore = FacOverlay_Score(pEnv, nSpan, nTapX, nTapY);
+                if (*pEnv->pbNewBaseMode != 0) {
+                    nScore = 1;                                         /* 0x597A0 */
+                }
+                FacOverlay_Outline(pEnv, nSpan, nTapX, nTapY, nColor, nScore != 0);
+            }
+        }
+
+        if (nScore == 0) {                                              /* 0x599A0 */
+            *pEnv->pbPreviewOk = 0;
+            return 0;
+        }
+        if (*pEnv->pbPreviewOk == 0) {
+            return 0;
+        }
+        if (nTapX != pEnv->nPendingX || nTapY != pEnv->nPendingY) {
+            return 0;
+        }
+        if (*pEnv->pbPreviewActive == 0) {
+            return 0;
+        }
+
+        {
+            i32 nCost = (i32)pEnv->paFac[nKind].uCost;                 /* 0x59A1C */
+
+            if (*pEnv->pnFunds - nCost < 0) {                          /* 0x59A24 */
+                if (pEnv->pdwShortfall != NULL) {
+                    *pEnv->pdwShortfall = 1;
+                }
+                if (pEnv->pnResidue != NULL) {
+                    *pEnv->pnResidue = 0;
+                }
+                return 0;
+            }
+
+            (void)BaseFac_SetCellBuildState(pGrid, pEnv->nSelectedBaseIdx,
+                                            pEnv->paFac[nKind].bFlag21, nTapX, (i8)nTapY, 0);
+            *pEnv->pnFunds -= nCost;                                   /* 0x59AB4 */
+        }
+
+        if (*pEnv->pbNewBaseMode == 0) {
+            return 1;
+        }
+
+        if (pEnv->pTextRecs != NULL && pEnv->pszLabel != NULL && pEnv->abKindTable != NULL) {
+            (void)BaseFac_FormatCostLabel(pEnv->pszLabel, pEnv->cchLabel, pEnv->pTextRecs,
+                                          pEnv->nPendingKind, pEnv->abKindTable);
+        }
+        if (pEnv->pCreateEnv != NULL) {
+            (void)Base_CreateNamedEntry(pEnv->pCreateEnv, pEnv->nPlaceX, pEnv->nPlaceY,
+                                        (i32)pEnv->nPendingKind, pEnv->pszLabel);
+        }
+        if (pEnv->paNewBaseCost != NULL && pEnv->nPendingKind >= 0x80 &&
+            (i32)(pEnv->nPendingKind - 0x80) < PUFO_NEW_BASE_COST_COUNT) {
+            *pEnv->pnFunds -= pEnv->paNewBaseCost[pEnv->nPendingKind - 0x80];
+        }
+        if (pEnv->pToggleEnv != NULL) {
+            BaseFacScreen_Toggle(pEnv->pToggleEnv);
+        }
+        *pEnv->pbPreviewActive = 0;
+        if (pEnv->pnScreenId != NULL) {
+            *pEnv->pnScreenId = 1;
+        }
+        *pEnv->pbNewBaseMode = 0;
+        *pEnv->pbPreviewOk = 0;
+        return 1;
+    }
+
+    return 0;
+}
