@@ -10140,3 +10140,56 @@ Still open in these two families: `ManufScreen_IncEngineers` (0x6e13c, 500 B), `
 `ManufScreen_BuildPanels` (0x6e9e8, 2404 B), `ResearchScreen_Init` (0x749a8, 592 B),
 `ResearchScreen_BuildPanels` (0x733f4, 1600 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B),
 `ResearchScreen_Draw` (0x73a34, 2108 B) and `ResearchScreen_Open` (0x616ac, 232 B).
+
+## The site score, the build-mode handler, and the waypoint click (done)
+
+Evidence: `Smap_SumSiteScores` @ 0x96894 (120 B), `Base_EnterBuildMode` @ 0x84e20 (124 B),
+`Smap_SetWaypoint` @ 0x85440 (132 B). Ported as `Smap_SumSiteScores` in `pufo_geoscape.c` and
+`Base_EnterBuildMode` / `Smap_SetWaypoint` in `pufo_baseui.c`. 61 checks in `test_geoscape.c`
+(`TestSiteScore`) and `test_baseui.c` (`TestEnterBuildMode`, `TestSetWaypoint`).
+
+**The site score reads the working slot, not the last used one.** Hex-Rays shows it plainly:
+`v1 = &MEMORY[0x162030][MEMORY[0x186410][0]]` -- the site array indexed by the site *count*, not
+count-1. That is not an off-by-one. `Transfer_ResetSite` @ 0x9690c clears exactly
+`aSites[nSiteCount]`'s recovered-soldier fields and item quantities, so the record at the count is
+the transfer flow's scratch slot and this function scores it. Three LDRH chains, and the ARM
+constants pin the ranges: `ADD R2,R2,#0x9A` (154) then `LDRH [R3,#2]!` 28 times walks record
+offsets 156..210, and `auItemQty` starts at offset 2, so that is `auItemQty[77..104]`;
+`LDRH [R2,#0xE6]` is `auItemQty[114]`; `ADD R2,R2,#0x11A` (282) then `LDRH [R2,#2]!` 8 times is
+`auItemQty[141..148]`. 37 halfwords, zero-extended into a dword accumulator, so the maximum score
+37 * 0xFFFF = 2424795 never wraps. The port guards the array bound the original does not: at
+`nSiteCount == 200` the original adds 742 to the array base and reads past `aSites[200]`.
+
+**Colour slots are dwords in memory but bytes at every store.** This one is worth stating because
+it is invisible until a value above 255 appears. `UiPanel_InsertLine` @ 0x5a294 masks its slot-0
+argument with `AND R3, R3, #0xFF` at 0x5A2F4 and byte-loads slots 1..3 from the stack
+(`LDRB R3, [SP,#arg_0/4/8]`); `UiPanel_SetLineColors` @ 0x5a450 does the same at 0x5A454. So no
+store through either can put a value above 255 into a colour slot, while `UiPanel_GetLineColor`
+reads them back as plain dwords. `Smap_SetWaypoint` shows the caller side of it: it stores the
+full dword ship index to 0x159E74 and 0x187054 (0x85464, 0x85468), then *reloads it with `LDRB`
+from 0x187054 at 0x85490* as InsertLine's slot-0 argument. The port casts to match. Asserted both
+ways with a ship index of 300: the two globals keep 300, the re-inserted line's colour slot holds
+44. The same byte load sits at 0x85560 in `Geoscape_OnRadarListClick`, and that call site now
+carries the same cast.
+
+**`Base_EnterBuildMode` is a widget handler, and its R0 is a red herring.** It calls
+`Geoscape_BuildNavControls` with `MOV R0, R4` where R4 is `abFacilityGrid` -- but that function
+takes no arguments at all (IDA types it `int Geoscape_BuildNavControls()`, and it reaches every
+global it needs directly), so the grid pointer is dead. The order is: sample 17, the workshop and
+lab needed passes for `nSelectedBaseIdx`, `nGeoscapeScreen = 1`, the nav rebuild, then park
+`*unk_186BB4` at 1000,1000 with two `STRH` at +0 and +2. `unk_186BB4` is *not* one named control:
+it is a scratch `UiControl *` slot with over a hundred cross-references spread across
+`OptionsScreen_*`, `ManufScreen_*`, `ResearchScreen_*`, `Geoscape_InitUI`, `GeoscapeUi_FreeAll` and
+`Geoscape_OnPointer`, which is why the port keeps it as an injected pointer rather than naming it.
+Parking it at 1000,1000 -- off every 240x320 surface -- is how the original hides a widget it has
+no slot for instead of freeing it.
+
+Deviation, recorded: the original passes `nSelectedBaseIdx` through with no range check, so an
+index outside 0..7 reads `auManufCol`/`auResearchCol` outside the eight-block array and, for base
+8, writes the needed grid at 1632..1667 past its 1524 bytes. The port refuses the pair the way
+`ResearchQtyIndex` already does; the sample, the screen id, the nav rebuild and the parked control
+are unaffected either way.
+
+Remaining in this cluster: `Smap_CancelTarget` (0x84254, 152 B) is still open because its callee
+`Ship_AbortCourse` (0x5a64c) is not ported, and the two big geoscape pointer handlers
+`Geoscape_OnPointer` (0x872d0, 8576 B) and `Geoscape_OnPointerUp` (0x89450, 6992 B) stay open.

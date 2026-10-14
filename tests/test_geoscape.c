@@ -2637,6 +2637,77 @@ static void TestFacCostLabel(void)
     CheckEqI32(szLabel[1], 'X', "and the byte past the capacity is untouched");
 }
 
+/* Smap_SumSiteScores @ 0x96894: the 37 halfwords of the transfer flow's working site slot. */
+static void TestSiteScore(void)
+{
+    static SmapSite aSites[4];
+
+    printf("Smap_SumSiteScores\n");
+
+    memset(aSites, 0, sizeof(aSites));
+
+    /* Every scored slot of the working record -- index 3, the one AT the count -- carries 10. */
+    for (i32 i = PUFO_SITE_SCORE_A_FIRST; i <= PUFO_SITE_SCORE_A_LAST; ++i) {
+        aSites[3].auItemQty[i] = 10;
+    }
+    aSites[3].auItemQty[PUFO_SITE_SCORE_SINGLE] = 10;
+    for (i32 i = PUFO_SITE_SCORE_B_FIRST; i <= PUFO_SITE_SCORE_B_LAST; ++i) {
+        aSites[3].auItemQty[i] = 10;
+    }
+
+    CheckEqI32(Smap_SumSiteScores(aSites, 3), 37 * 10,
+               "28 + 1 + 8 halfwords, each counted once (0x968C0..0x968F8)");
+
+    /* The record before the count is not the one read. */
+    for (i32 i = 0; i < 256; ++i) {
+        aSites[2].auItemQty[i] = 999;
+    }
+    CheckEqI32(Smap_SumSiteScores(aSites, 3), 37 * 10,
+               "the slot at the count is read, not the last used one (0x96898)");
+
+    /* Slots outside the three ranges are ignored, even inside the same record. */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_A_FIRST - 1] = 5000; /* 76  */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_A_LAST + 1]  = 5000; /* 105 */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_SINGLE - 1]  = 5000; /* 113 */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_SINGLE + 1]  = 5000; /* 115 */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_B_FIRST - 1] = 5000; /* 140 */
+    aSites[3].auItemQty[PUFO_SITE_SCORE_B_LAST + 1]  = 5000; /* 149 */
+    aSites[3].auItemQty[0] = 5000;
+    aSites[3].auItemQty[255] = 5000;
+    CheckEqI32(Smap_SumSiteScores(aSites, 3), 37 * 10,
+               "the neighbour of each range is outside the sum");
+
+    /* The two gaps between the three LDRH chains are really skipped: 105..113 and 115..140. */
+    for (i32 i = PUFO_SITE_SCORE_A_LAST + 1; i < PUFO_SITE_SCORE_SINGLE; ++i) {
+        aSites[3].auItemQty[i] = 1;
+    }
+    for (i32 i = PUFO_SITE_SCORE_SINGLE + 1; i < PUFO_SITE_SCORE_B_FIRST; ++i) {
+        aSites[3].auItemQty[i] = 1;
+    }
+    CheckEqI32(Smap_SumSiteScores(aSites, 3), 37 * 10,
+               "the 9 + 26 halfwords between the ranges add nothing");
+
+    /* Halfwords are zero-extended into a dword accumulator, and 37 * 0xFFFF fits in it. */
+    memset(aSites, 0, sizeof(aSites));
+    for (i32 i = PUFO_SITE_SCORE_A_FIRST; i <= PUFO_SITE_SCORE_A_LAST; ++i) {
+        aSites[0].auItemQty[i] = 0xFFFF;
+    }
+    aSites[0].auItemQty[PUFO_SITE_SCORE_SINGLE] = 0xFFFF;
+    for (i32 i = PUFO_SITE_SCORE_B_FIRST; i <= PUFO_SITE_SCORE_B_LAST; ++i) {
+        aSites[0].auItemQty[i] = 0xFFFF;
+    }
+    CheckEqI32(Smap_SumSiteScores(aSites, 0), 37 * 0xFFFF,
+               "the maximum score 2424795 stays positive in the dword accumulator");
+    Check(Smap_SumSiteScores(aSites, 0) != 0, "a count of 0 reads slot 0: the count is an index");
+
+    /* Deviation: the original bounds nothing -- it just adds 742 to the array base. */
+    CheckEqI32(Smap_SumSiteScores(NULL, 3), 0, "a null array returns 0 instead of faulting");
+    CheckEqI32(Smap_SumSiteScores(aSites, -1), 0, "a negative count returns 0");
+    CheckEqI32(Smap_SumSiteScores(aSites, PUFO_SMAP_SITE_COUNT), 0,
+               "count == 200 is the original's read past aSites[200]");
+    CheckEqI32(Smap_SumSiteScores(aSites, PUFO_SMAP_SITE_COUNT + 1), 0, "and further out too");
+}
+
 /* RadarScreen_RollWeaponHit @ 0x5db24 and RadarScreen_BlitOverlay @ 0x5d6d4. The roll is random, so
  * the checks are invariants over many draws: every HP change has to sit inside the event's band, a
  * gate that fails changes nothing, and an event outside 25..30 never fires. */
@@ -2761,6 +2832,7 @@ int main(void)
     TestBudgetHelpers();
     TestHangarPlacement();
     TestFacCostLabel();
+    TestSiteScore();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

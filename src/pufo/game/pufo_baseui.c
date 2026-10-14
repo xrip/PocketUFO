@@ -864,6 +864,77 @@ i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)
     return 0;
 }
 
+/* Base_EnterBuildMode @ 0x84e20. */
+void Base_EnterBuildMode(const BaseBuildModeEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pSampleUser); /* 0x84E2C */
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->puResearchEntries != NULL) ? (i32)*pEnv->puResearchEntries : 0;
+
+    /* Deviation: the original feeds nSelectedBaseIdx straight through, so an index outside 0..7
+     * reads auManufCol/auResearchCol outside the eight-block array and, for base 8, writes the
+     * needed grid past its 1524 bytes. The port refuses the pair the same way ResearchQtyIndex
+     * does; the sample, the screen id, the nav rebuild and the parked control are unaffected. */
+    if (pEnv->abFacilityGrid != NULL && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT) {
+        const i32 nActiveManuf = (pEnv->apManufCols != NULL)
+                                     ? Base_CountActiveManuf(pEnv->apManufCols +
+                                                             PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
+                                                             nEntries)
+                                     : 0;
+        (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, nBase, nActiveManuf); /* 0x84E44 */
+        const i32 nActiveResearch = (pEnv->apResearchCols != NULL)
+                                        ? Base_CountActiveResearch(pEnv->apResearchCols +
+                                                                   PUFO_RESEARCH_TOPIC_COUNT * nBase,
+                                                                   nEntries)
+                                        : 0;
+        (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, nBase, nActiveResearch); /* 0x84E58 */
+    }
+
+    if (pEnv->pnScreenId != NULL) {
+        *pEnv->pnScreenId = 1; /* 0x84E64 */
+    }
+    (void)Geoscape_BuildNavControls(pEnv->pNavOut, pEnv->pNavEnv); /* 0x84E6C */
+
+    if (pEnv->pParkCtl != NULL) {
+        pEnv->pParkCtl->x = 1000; /* 0x84E80 */
+        pEnv->pParkCtl->y = 1000; /* 0x84E88 */
+    }
+}
+
+/* Smap_SetWaypoint @ 0x85440. Colour slot 0 of message line 0 carries the ship index. */
+void Smap_SetWaypoint(const SmapWaypointEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x85460 */
+    if (pEnv->pnStrategIndex != NULL) {
+        *pEnv->pnStrategIndex = nShipIdx; /* 0x85460 */
+    }
+    if (pEnv->pnSelectedShipIdx != NULL) {
+        *pEnv->pnSelectedShipIdx = nShipIdx; /* 0x85468 */
+    }
+
+    (void)Ship_ClearWaypointIntercept(pEnv->pShipEnv, nShipIdx); /* 0x85470 */
+    UiLineList_Remove(pEnv->pLines, 0); /* 0x8547C */
+
+    /* 0x85490 reloads the ship index with LDRB from 0x187054, and UiPanel_InsertLine masks its
+     * slot-0 argument with AND R3,R3,#0xFF (0x5A2F4) and byte-loads slots 1..3 from the stack.
+     * Every colour slot this call can write is therefore a byte; the cast is the original's LDRB. */
+    UiLineList_Insert(pEnv->pLines, 0, 11, (u32)(u8)nShipIdx, 0, 0, 0); /* 0x854A0 */
+
+    if (pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = 1; /* 0x854B0: GameTime_Pause is STRB #1 at 0x15961C */
+    }
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])
@@ -1266,7 +1337,9 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
     if (pItem->nType == 1 && pItem->bActive == 1) {     /* 0x85538 */
         pEnv->pTime->bPaused = 1;                       /* GameTime_Pause @ 0x5d6ac */
         UiLineList_Remove(pEnv->pLines, 0);             /* 0x8554C */
-        UiLineList_Insert(pEnv->pLines, 0, 10, (u32)nItemIdx, 0u, 0u, 0u); /* 0x8556C */
+        /* 0x85560 reloads the index with LDRB, so the stored colour slot is its low byte --
+         * UiPanel_InsertLine masks slot 0 to a byte (0x5A2F4). */
+        UiLineList_Insert(pEnv->pLines, 0, 10, (u32)(u8)nItemIdx, 0u, 0u, 0u); /* 0x8556C */
     }
 
     if (pItem->nType == 0 && pItem->bActive == 0) {     /* 0x8559C */

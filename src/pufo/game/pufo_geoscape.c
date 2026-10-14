@@ -1306,6 +1306,27 @@ i32 Base_CalcMonthlyUpkeep(Ship *const *apCraft, i32 nCraftCount,
     return nTotal;
 }
 
+/* Smap_SumSiteScores @ 0x96894. The working transfer site is the slot AT the site count, which is
+ * the same record Transfer_ResetSite (0x9690c) clears out. */
+i32 Smap_SumSiteScores(const SmapSite *aSites, i32 nSiteCount)
+{
+    if (aSites == NULL || nSiteCount < 0 || nSiteCount >= PUFO_SMAP_SITE_COUNT) {
+        return 0; /* the original reads one record past the array here */
+    }
+
+    const SmapSite *pSite = &aSites[nSiteCount];
+    i32 nTotal = 0;
+
+    for (i32 i = PUFO_SITE_SCORE_A_FIRST; i <= PUFO_SITE_SCORE_A_LAST; ++i) {
+        nTotal += pSite->auItemQty[i]; /* 0x968C0..0x968D0, 28 halfwords */
+    }
+    nTotal += pSite->auItemQty[PUFO_SITE_SCORE_SINGLE]; /* 0x968D4 */
+    for (i32 i = PUFO_SITE_SCORE_B_FIRST; i <= PUFO_SITE_SCORE_B_LAST; ++i) {
+        nTotal += pSite->auItemQty[i]; /* 0x968EC..0x968F8, 8 halfwords */
+    }
+    return nTotal;
+}
+
 /* ------------------------------------------------------------ the geoscape speed buttons */
 
 const i32 g_aGeoscapeSpeedSec[PUFO_GEOSCAPE_SPEED_COUNT] = { 5, 60, 300, 1380, 2460, 3600 };

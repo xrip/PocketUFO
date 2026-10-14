@@ -676,6 +676,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   second confirmation of the live record layout. It also needs the manufacturing column, because
   `Base_UpdateWorkshopNeeded` takes its budget from `Base_CountActiveManuf`.
 
+- [x] part 5, three strategic/geoscape leaves: `Smap_SumSiteScores (0x96894)`,
+  `Base_EnterBuildMode (0x84e20)`, `Smap_SetWaypoint (0x85440)` — 61 more checks. The site score
+  reads `aSites[nSiteCount]`, the transfer flow's **working** slot: `Transfer_ResetSite (0x9690c)`
+  clears exactly that record, so it is not an off-by-one. Three LDRH chains give
+  `auItemQty[77..104]`, `[114]`, `[141..148]` — 37 halfwords, dword accumulator, max 2424795.
+  `UiPanel_InsertLine` and `UiPanel_SetLineColors` mask colour slot 0 with `AND R3,R3,#0xFF` and
+  byte-load slots 1..3 (`LDRB [SP,#arg_N]`), so **no store through either can exceed 255** even
+  though the record holds four dwords; `Smap_SetWaypoint` reloads the ship index with `LDRB` at
+  0x85490 and the port casts to match (300 → colour 44, globals keep 300). `unk_186BB4` is a
+  scratch `UiControl *` shared by the Options/Manuf/Research/Geoscape screens, not one named
+  control — parking it at 1000,1000 is how the original hides a widget it has no slot for.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -812,6 +824,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | research allocate / cancel / hourly accumulate (`ResearchScreen_UpdateProgress`, `ResearchScreen_CancelSelectedAndClose`, `ResearchScreen_AccumulateAllocated`) | 56/56 (Release) | 8736 | 783/1103 (71.0%) | 320156/598792 (53.5%) | 38 checked, 0 mismatched |
 | manufacturing quantity buttons (`ManufScreen_IncSelectedQty`, `DecSelectedQty`, `ReduceSelectedQtyToOne`, `DecEngineers`, `UpdateProgress`) | 56/56 (Release) | 8780 | 788/1103 (71.4%) | 321184/598792 (53.6%) | 38 checked, 0 mismatched |
 | the two row clicks + the research start button (`ManufScreen_SelectListed`, `ResearchScreen_StartSelected`) | 56/56 (Release) | 8807 | 790/1103 (71.6%) | 321536/598792 (53.7%) | 38 checked, 0 mismatched |
+| three strategic/geoscape leaves (`Smap_SumSiteScores`, `Base_EnterBuildMode`, `Smap_SetWaypoint`) | 56/56 (Release) | 8868 | 793/1103 (71.9%) | 321912/598792 (53.8%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

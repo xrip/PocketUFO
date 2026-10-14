@@ -522,6 +522,7 @@ typedef struct ResearchStartEnv {
 
 i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv);
 
+
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
  * anLineAux[134..139] (sfx). The handler writes zero into byte +10 of every one of them,
@@ -727,6 +728,49 @@ extern const UiControlDesc g_aGeodescPanel[PUFO_NAV_PANEL_CTLS]; /* stru_AB5F0 @
 extern const UiControlDesc g_aGeodescFind[PUFO_NAV_FIND_CTLS];   /* stru_AB630 @ 0xAB630 */
 
 bool Geoscape_BuildNavControls(NavControls *pOut, const NavCtlEnv *pEnv);
+
+/* ------------------------------------------------- two geoscape widget handlers
+ *
+ * Evidence: Base_EnterBuildMode @ 0x84e20 (124 B) and Smap_SetWaypoint @ 0x85440 (132 B). Both are
+ * installed as widget handlers -- Base_EnterBuildMode by Geoscape_InitUI (0x865A8, 0x86640),
+ * Smap_SetWaypoint by Geoscape_Draw (0x8F938, 0x8FD2C) -- and neither return value is read, so
+ * both are void here. The originals leave a pointer in R0 (Base_EnterBuildMode returns the control
+ * it parked, Smap_SetWaypoint returns GameTime_Pause's leftover clock address 0x159618); the port
+ * drops them, the same policy it applies to UiLineList_AppendWithSound.
+ *
+ * Base_EnterBuildMode plays sample 17, re-runs the workshop and lab needed passes for the selected
+ * base, sets the geoscape screen id to 1, rebuilds the fifteen nav controls, and then parks the
+ * control at 0x186BB4 at 1000,1000 -- off every 240x320 surface, which is how the original hides a
+ * widget it has no slot for rather than freeing it.
+ *
+ * Smap_SetWaypoint reads colour slot 0 of message line 0, and that value IS the ship index: it
+ * stores it into both 0x159E74 and 0x187054, clears that craft's waypoint/intercept assignment,
+ * drops message line 0, re-inserts it as flag 11 carrying the ship index, and pauses the clock. */
+typedef struct BaseBuildModeEnv {
+    NavControls     *pNavOut;             /* the fifteen nav-control pointers Geoscape_BuildNavControls fills */
+    const NavCtlEnv *pNavEnv;             /* their wiring */
+    u8              *abFacilityGrid;      /* gBaseFacGrid @ 0x159768 */
+    const u16       *apManufCols;         /* auManufCol @ 0x15E19C, the workshop pass's budget source */
+    const u16       *apResearchCols;      /* auResearchCol @ 0x16022C, the lab pass's budget source */
+    const u16       *puResearchEntries;   /* nResearchEntryCount @ 0x160C4C */
+    const i8        *pnSelectedBaseIdx;   /* nSelectedBaseIdx @ 0x159D81 */
+    i32             *pnScreenId;          /* nGeoscapeScreen @ 0x186BC4 */
+    UiControl       *pParkCtl;            /* unk_186BB4, moved to 1000,1000 */
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void *pSampleUser;
+} BaseBuildModeEnv;
+
+void Base_EnterBuildMode(const BaseBuildModeEnv *pEnv);
+
+typedef struct SmapWaypointEnv {
+    UiLineList           *pLines;            /* the root message list @ 0x158890 */
+    i32                  *pnStrategIndex;    /* 0x159E74 */
+    i32                  *pnSelectedShipIdx; /* 0x187054 */
+    const ShipRemovalEnv *pShipEnv;          /* Ship_ClearWaypointIntercept's env */
+    GameTime             *pTime;             /* GameTime_Pause is one store to bPaused */
+} SmapWaypointEnv;
+
+void Smap_SetWaypoint(const SmapWaypointEnv *pEnv);
 
 /* ------------------------------------------------- the status-panel (radar list) click
  *

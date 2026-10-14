@@ -46,6 +46,15 @@ typedef struct UiLineList {
     u8  nLineCount;
 } UiLineList;
 
+/* Colour slots are dwords in memory but BYTES at every write boundary. UiPanel_InsertLine
+ * (0x5A2F4) and UiPanel_SetLineColors (0x5A454) both mask slot 0 with `AND R3, R3, #0xFF` and
+ * byte-load slots 1..3 from their stack arguments (`LDRB R3, [SP,#arg_N]`), so no store through
+ * either can put a value above 255 into a colour slot. Reads (UiLineList_GetColor) are plain
+ * dwords. The four nC parameters stay u32 because the record really is four dwords; callers that
+ * carry an index in a colour slot pass the byte the original loaded, e.g. Smap_SetWaypoint's
+ * `LDRB R3, [R4]` at 0x85490. */
+#define PUFO_LINE_COLOR_MAX 0xFFu
+
 /* UiPanel_InsertLine @ 0x5a294. Insert at `nLine`.
  *
  * When the current count is above `nLine`, entries are shifted up one place starting

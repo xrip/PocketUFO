@@ -3705,6 +3705,300 @@ static void TestSaveLoadSlots(void)
     SaveGame_Slot0_CloseUI(NULL);
     Check(true, "a null slot env saves nothing");
 }
+
+/* --- Base_EnterBuildMode @ 0x84e20 and Smap_SetWaypoint @ 0x85440 --- */
+
+static i32 g_aBuildSamples[4];
+static i32 g_nBuildSamples;
+
+static void BuildPlaySample(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (g_nBuildSamples < 4) {
+        g_aBuildSamples[g_nBuildSamples] = (i32)nSample;
+    }
+    g_nBuildSamples++;
+}
+
+/* Cell offset inside one base's 36-cell block, in the order the two passes visit it:
+ * row 0 across all six columns, then row 1. The pass writes 6*col + row. */
+#define GRID_CELL(nBase, nRow, nCol) (480 + 144 * (nBase) + 6 * (nCol) + (nRow))
+#define GRID_NEED(nBase, nRow, nCol) (444 + 144 * (nBase) + 6 * (nCol) + (nRow))
+
+static void TestEnterBuildMode(void)
+{
+    static u8 aGrid[1524];
+    static u16 aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 8];
+    static u16 aResearch[PUFO_RESEARCH_TOPIC_COUNT * 8];
+    static NavControls ctl;
+    static NavCtlEnv navEnv;
+    static UiControl parkCtl;
+    i8 nBase;
+    u16 nEntries;
+    i32 nScreen;
+    BaseBuildModeEnv env;
+    i32 i;
+
+    printf("Base_EnterBuildMode @ 0x84e20\n");
+
+    memset(&navEnv, 0, sizeof(navEnv));
+    navEnv.pfnLoadPads = NavLoadPads;
+
+#define BUILD_BEGIN()                                                        \
+    memset(aGrid, 0, sizeof(aGrid));                                         \
+    memset(aManuf, 0, sizeof(aManuf));                                       \
+    memset(aResearch, 0, sizeof(aResearch));                                 \
+    memset(&ctl, 0, sizeof(ctl));                                            \
+    memset(&parkCtl, 0, sizeof(parkCtl));                                    \
+    parkCtl.x = 3; parkCtl.y = 4;                                            \
+    nBase = 2;                                                               \
+    nEntries = 4;                                                            \
+    nScreen = 9;                                                             \
+    g_nBuildSamples = 0;                                                     \
+    g_nPadLoads = 0;                                                         \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pNavOut = &ctl; env.pNavEnv = &navEnv;                               \
+    env.abFacilityGrid = aGrid;                                              \
+    env.apManufCols = aManuf; env.apResearchCols = aResearch;                \
+    env.puResearchEntries = &nEntries;                                       \
+    env.pnSelectedBaseIdx = &nBase;                                          \
+    env.pnScreenId = &nScreen;                                               \
+    env.pParkCtl = &parkCtl;                                                 \
+    env.pfnPlaySample = BuildPlaySample;
+
+    /* 1. the whole handler runs, in order, on a base with no facilities at all. */
+    BUILD_BEGIN();
+    Base_EnterBuildMode(&env);
+    CheckEqI32(g_nBuildSamples, 1, "one sample played");
+    CheckEqI32(g_aBuildSamples[0], 17, "  sample 17 (0x84E2C)");
+    CheckEqI32(nScreen, 1, "the geoscape screen id becomes 1 (0x84E64)");
+    CheckEqI32(g_nPadLoads, PUFO_NAV_CTLS + PUFO_NAV_PANEL_CTLS + PUFO_NAV_FIND_CTLS,
+               "the fifteen nav controls were rebuilt (0x84E6C)");
+    CheckEqI32(parkCtl.x, 1000, "unk_186BB4 parked at x 1000 (0x84E80)");
+    CheckEqI32(parkCtl.y, 1000, "  and y 1000 (0x84E88)");
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        free(ctl.apNav[i]);
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+        free(ctl.apPanel[i]);
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+        free(ctl.apFind[i]);
+    }
+
+    /* 2. the workshop pass: three workshop cells, a quantity total of 60, so the budget is
+     * 60/50 + 1 = 2. The first two cells in visit order get 1, the third gets 0. */
+    BUILD_BEGIN();
+    aGrid[GRID_CELL(2, 0, 0)] = 3;
+    aGrid[GRID_CELL(2, 0, 1)] = 3;
+    aGrid[GRID_CELL(2, 0, 2)] = 3;
+    aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 2 + 0] = 30;
+    aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 2 + 1] = 30;
+    aGrid[GRID_NEED(2, 0, 2)] = 1; /* stale, must be overwritten with 0 */
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 0)], 1, "the first workshop cell is marked needed");
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 1)], 1, "  the second spends the rest of the budget");
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 2)], 0, "  the third is cleared, not left stale");
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 3)], 0, "  and a cell that is not a workshop is untouched");
+
+    /* 3. the lab pass runs on the same grid with kind 2 and its own quantity column. */
+    BUILD_BEGIN();
+    aGrid[GRID_CELL(2, 1, 0)] = 2;
+    aGrid[GRID_CELL(2, 1, 1)] = 2;
+    aResearch[PUFO_RESEARCH_TOPIC_COUNT * 2 + 0] = 10; /* budget 10/50 + 1 = 1 */
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(2, 1, 0)], 1, "the lab pass marks its own kind");
+    CheckEqI32(aGrid[GRID_NEED(2, 1, 1)], 0, "  and stops when its budget runs out");
+
+    /* 4. the two passes read different columns: manufacturing quantity does not feed the lab. */
+    BUILD_BEGIN();
+    aGrid[GRID_CELL(2, 0, 0)] = 3;
+    aGrid[GRID_CELL(2, 1, 0)] = 2;
+    aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 2] = 500; /* workshop budget 11 */
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 0)], 1, "the workshop cell is marked");
+    CheckEqI32(aGrid[GRID_NEED(2, 1, 0)], 0, "  the lab cell sees a zero research total");
+
+    /* 5. a zero total gives a zero budget, which still writes 0 over every matching cell. */
+    BUILD_BEGIN();
+    aGrid[GRID_CELL(2, 0, 0)] = 3;
+    aGrid[GRID_NEED(2, 0, 0)] = 1;
+    aGrid[GRID_CELL(2, 1, 0)] = 2;
+    aGrid[GRID_NEED(2, 1, 0)] = 1;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 0)], 0, "no active manufacturing clears the workshop mark");
+    CheckEqI32(aGrid[GRID_NEED(2, 1, 0)], 0, "  and no active research clears the lab mark");
+
+    /* 6. only the selected base's 144-byte block is walked. */
+    BUILD_BEGIN();
+    aGrid[GRID_CELL(3, 0, 0)] = 3;
+    aGrid[GRID_NEED(3, 0, 0)] = 1;
+    aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 3] = 500;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(3, 0, 0)], 1,
+               "base 3 keeps its mark: the passes use nSelectedBaseIdx, not a scan");
+
+    /* 7. the count is an unsigned byte, so entries past 255 are outside the sum. */
+    BUILD_BEGIN();
+    nEntries = 300;
+    aGrid[GRID_CELL(2, 0, 0)] = 3;
+    aManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * 2 + 255] = 9000;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(2, 0, 0)], 0,
+               "a count of 300 is capped at 255, so the 9000 at index 255 is not summed");
+
+    /* 8. deviation: an index outside 0..7 is refused. The original sign-extends the byte and
+     * walks whatever block that lands on -- base 8 would write needed at grid[1632..1667], past
+     * the 1524-byte grid, and read the quantity column 400 bytes past its eight blocks. */
+    BUILD_BEGIN();
+    nBase = -1;
+    aGrid[GRID_CELL(0, 0, 0)] = 3;
+    aGrid[GRID_NEED(0, 0, 0)] = 1;
+    aManuf[0] = 500;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(0, 0, 0)], 1, "a negative base index marks nothing");
+    CheckEqI32(nScreen, 1, "  but the rest of the handler still runs");
+
+    BUILD_BEGIN();
+    nBase = 8;
+    aGrid[GRID_CELL(7, 0, 0)] = 3;
+    aGrid[GRID_NEED(7, 0, 0)] = 1;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(aGrid[GRID_NEED(7, 0, 0)], 1, "base index 8 is refused too, so nothing is written");
+
+    /* 9. without a grid the two passes are skipped and the widget work still happens. */
+    BUILD_BEGIN();
+    env.abFacilityGrid = NULL;
+    env.apManufCols = NULL;
+    env.apResearchCols = NULL;
+    Base_EnterBuildMode(&env);
+    CheckEqI32(nScreen, 1, "no grid: the screen id is still set");
+    CheckEqI32(g_nPadLoads, 15, "  the nav controls are still built");
+    CheckEqI32(parkCtl.x, 1000, "  and the control is still parked");
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        free(ctl.apNav[i]);
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+        free(ctl.apPanel[i]);
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+        free(ctl.apFind[i]);
+    }
+
+    Base_EnterBuildMode(NULL);
+    Check(true, "a null env does nothing");
+#undef BUILD_BEGIN
+#undef GRID_CELL
+#undef GRID_NEED
+}
+
+static void TestSetWaypoint(void)
+{
+    static UiLineList lines;
+    static GameTime clock;
+    static Ship *apCraft[2];
+    static Ship aCraft[2];
+    static GeoscapeWorld world;
+    static PtrArray list;
+    static ShipRemovalEnv shipEnv;
+    static StrategItem item;
+    u8 nShipCount;
+    i32 nStratIdx, nShipSel;
+    SmapWaypointEnv env;
+
+    printf("Smap_SetWaypoint @ 0x85440\n");
+
+#define WP_BEGIN(nColor0)                                                    \
+    memset(&lines, 0, sizeof(lines));                                        \
+    lines.nLineCount = 2;                                                    \
+    lines.abLineFlags[0] = 7;                                                \
+    lines.abLineFlags[1] = 8;                                                \
+    lines.anColor[0][0] = (u32)(nColor0);                                    \
+    lines.anColor[1][0] = 999u;                                              \
+    memset(&clock, 0, sizeof(clock));                                        \
+    clock.bPaused = 0;                                                       \
+    memset(aCraft, 0, sizeof(aCraft));                                       \
+    aCraft[0].bId = 41;                                                      \
+    aCraft[1].bId = 42;                                                      \
+    aCraft[1].bIntercepting = 1;                                             \
+    aCraft[1].nStrategIdx = 0;                                               \
+    apCraft[0] = &aCraft[0]; apCraft[1] = &aCraft[1];                        \
+    memset(&world, 0, sizeof(world));                                        \
+    world.apCraft = apCraft; world.nShipCount = 2;                           \
+    nShipCount = 2;                                                          \
+    PtrArray_ctor(&list);                                                    \
+    memset(&item, 0, sizeof(item));                                          \
+    item.nType = 1; item.bActive = 0; item.nDisplayId = 42;                  \
+    item.nTimer = 1234;                                                      \
+    PtrArray_Add(&list, &item);                                              \
+    memset(&shipEnv, 0, sizeof(shipEnv));                                    \
+    shipEnv.apCraft = apCraft; shipEnv.pnShipCount = &nShipCount;            \
+    shipEnv.pStrategList = &list; shipEnv.pWorld = &world;                   \
+    nStratIdx = -1; nShipSel = -1;                                           \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pLines = &lines; env.pnStrategIndex = &nStratIdx;                    \
+    env.pnSelectedShipIdx = &nShipSel; env.pShipEnv = &shipEnv;              \
+    env.pTime = &clock;
+
+    /* 1. the ship index lives in colour slot 0 of message line 0. */
+    WP_BEGIN(1);
+    Smap_SetWaypoint(&env);
+    CheckEqI32(nShipSel, 1, "colour slot 0 of line 0 is the ship index (0x85460)");
+    CheckEqI32(nStratIdx, 1, "  0x159E74 mirrors it (0x85464)");
+    CheckEqI32(aCraft[1].bIntercepting, 0, "the craft's intercept flag is cleared (0x5A8B8)");
+    CheckEqI32(item.nTimer, 0xFFFF, "its strateg timer is parked, not restarted (0x5A8B0)");
+    CheckEqI32(lines.nLineCount, 2, "drop line 0 then insert at 0 keeps the count");
+    CheckEqI32(lines.abLineFlags[0], 11, "the re-inserted line carries flag 11 (0x85494)");
+    CheckEqI32((i32)lines.anColor[0][0], 1, "  colour slot 0 is the ship index");
+    CheckEqI32((i32)lines.anColor[0][1], 0, "  slots 1..3 are the three zero stack bytes");
+    CheckEqI32(lines.abLineFlags[1], 8, "the old line 1 slid back to 1");
+    CheckEqI32((i32)lines.anColor[1][0], 999, "  and its record moved with it");
+    CheckEqI32(clock.bPaused, 1, "the clock is paused (0x854B0)");
+
+    /* 2. the ship index reaches the two globals as a full dword, but the colour slot is the
+     * byte the original reloaded with LDRB at 0x85490 and InsertLine masks at 0x5A2F4. */
+    WP_BEGIN(300);
+    Smap_SetWaypoint(&env);
+    CheckEqI32(nShipSel, 300, "the global keeps the whole dword");
+    CheckEqI32(nStratIdx, 300, "  both of them do");
+    CheckEqI32((i32)lines.anColor[0][0], 44, "the colour slot holds only the low byte (300 & 0xFF)");
+    CheckEqI32(aCraft[1].bIntercepting, 1, "  and the out-of-range index clears nothing");
+    CheckEqI32(item.nTimer, 1234, "  nor parks any timer");
+
+    /* 3. a craft with no type-1 inactive entry still has its intercept flag cleared. */
+    WP_BEGIN(0);
+    Smap_SetWaypoint(&env);
+    CheckEqI32(aCraft[0].bIntercepting, 0, "the flag is cleared even with no matching entry");
+    CheckEqI32(item.nTimer, 1234, "  the entry for craft 42 is not the one for craft 41");
+    CheckEqI32((i32)lines.anColor[0][0], 0, "  ship index 0 still re-inserts line 0");
+
+    /* 4. the optional seams. */
+    WP_BEGIN(1);
+    env.pTime = NULL;
+    Smap_SetWaypoint(&env);
+    CheckEqI32(lines.abLineFlags[0], 11, "no clock: the message line is still rewritten");
+    CheckEqI32(nShipSel, 1, "  and the ship index is still stored");
+
+    WP_BEGIN(1);
+    env.pShipEnv = NULL;
+    Smap_SetWaypoint(&env);
+    CheckEqI32(aCraft[1].bIntercepting, 1, "no ship env: nothing is cleared on the craft");
+    CheckEqI32(lines.abLineFlags[0], 11, "  the line work still runs");
+
+    WP_BEGIN(1);
+    env.pnStrategIndex = NULL;
+    env.pnSelectedShipIdx = NULL;
+    Smap_SetWaypoint(&env);
+    CheckEqI32(lines.abLineFlags[0], 11, "two null index outputs still leave the rest intact");
+
+    Smap_SetWaypoint(NULL);
+    Check(true, "a null env does nothing");
+    WP_BEGIN(1);
+    env.pLines = NULL;
+    Smap_SetWaypoint(&env);
+    CheckEqI32(clock.bPaused, 0, "a null line list stops the whole handler, pause included");
+#undef WP_BEGIN
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -3751,6 +4045,8 @@ int main(void)
     TestSoldierScreenDraw();
     TestOptionsAudioTab();
     TestSaveLoadSlots();
+    TestEnterBuildMode();
+    TestSetWaypoint();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

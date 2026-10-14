@@ -396,6 +396,30 @@ i32 Base_CalcMonthlyUpkeep(Ship *const *apCraft, i32 nCraftCount,
                            ObjectRecFull *const *apObjects, const u8 *abFacilityGrid,
                            i32 nBaseIndex);
 
+/* Smap_SumSiteScores @ 0x96894 (120 B): the loot score of the site the transfer flow is working
+ * on. That site lives in the slot AT the site count, not the last used one -- Transfer_ResetSite
+ * (0x9690c) clears exactly `aSites[nSiteCount]`'s recovered fields and item quantities, and this
+ * reads the same record -- so it is the working slot, not an off-by-one. The array is
+ * PUFO_SMAP_SITE_COUNT (200) records, so the slot exists while the count is below 200.
+ *
+ * It sums three ranges of that record's 256-entry item-quantity array. The ARM composes each range
+ * as post-increment halfword reads with writeback, which is why each starts one entry past the
+ * address it loads:
+ *
+ *     ADD R2, R2, #0x9A ; LDRH R11,[R3,#2]! x28   offsets 156..210 -> auItemQty[77..104]
+ *     LDRH R3, [R2,#0xE6]                          offset 230       -> auItemQty[114]
+ *     ADD R2, R2, #0x11A ; LDRH R3,[R2,#2]! x8    offsets 284..298 -> auItemQty[141..148]
+ *
+ * Deviation: the original does not bound the site index, so a count of 200 reads one record past
+ * the array; the port returns 0 there. */
+#define PUFO_SITE_SCORE_A_FIRST 77
+#define PUFO_SITE_SCORE_A_LAST  104
+#define PUFO_SITE_SCORE_SINGLE  114
+#define PUFO_SITE_SCORE_B_FIRST 141
+#define PUFO_SITE_SCORE_B_LAST  148
+
+i32 Smap_SumSiteScores(const SmapSite *aSites, i32 nSiteCount);
+
 /* Base_CountSoldiersAssigned @ 0x66230. How many soldiers are actually available at this
  * base. A soldier counts when their base slot (Soldier.nKind) is this base, they are not
  * away in a craft (bUnk183 != 254), and either they are not in a craft at all (bUnk183 == 255)
