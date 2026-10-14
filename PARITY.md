@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 728 / 1103 (66.0%) |
-| Bytes of original code cited | 326252 / 598792 (54.5%) |
+| Functions cited as evidence | 730 / 1103 (66.2%) |
+| Bytes of original code cited | 327288 / 598792 (54.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8200 |
+| Test checks run | 8219 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,7 +42,7 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 71 | 85 | 21240 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 73 | 85 | 22276 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 133 | 205 | 70388 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 122 | 243 | 17308 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
@@ -489,7 +489,7 @@ is the module that answers to it.
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (71 functions)
+### `ui-core` (73 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -497,6 +497,7 @@ is the module that answers to it.
 | `0x264a0` | `UiModal_DrawDialog` | 2676 | `src/pufo/ui/pufo_modal.c`, `src/pufo/ui/pufo_modal.h` |
 | `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` (+1) |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
+| `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
@@ -529,6 +530,7 @@ is the module that answers to it.
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x26430` | `UiModal_Begin` | 92 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tactctl.h` (+1) |
 | `0x5a33c` | `UiPanel_GetLineColor` | 88 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
+| `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3e8c8` | `UiPanel_FreeLines` | 76 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x3f06c` | `UiPanel_SetLineMeta` | 72 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x460e8` | `Font_Init` | 72 | `src/pufo/game/pufo_font.h` |
@@ -1052,21 +1054,19 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 14 functions, 17128 bytes remaining
+### `ui-core` — 12 functions, 16092 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x9b5f4` | `Ui_DrawBaseInfo` | 10196 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x996e4` | `Ui_ShowTError` | 2196 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x62d78` | `Ui_DrawTextInputDialog` | 960 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x95bf0` | `Ui_AnimExpandBlit` | 948 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9955c` | `Ui_InitTransfer` | 392 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84bf8` | `Ui_OpenResearch` | 288 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x663c4` | `Ui_AnimExpandBlit_IfEnabled` | 88 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
@@ -1316,7 +1316,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_menubtn` | PASS | 180 |
 | `test_modal` | PASS | 30 |
 | `test_moveaction` | PASS | 48 |
-| `test_panel` | PASS | 148 |
+| `test_panel` | PASS | 167 |
 | `test_path` | PASS | 48 |
 | `test_plane` | PASS | 93 |
 | `test_render` | PASS | 177 |

@@ -221,4 +221,50 @@ bool UiPanel_SwapLines(UiPanel *pPanel, i32 nIdxA, i32 nIdxB);
  * and nothing else; the screens themselves are not ported. */
 void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel);
 
+/* ------------------------------------------------- the animated panel frame
+ *
+ * Evidence: Ui_AnimExpandBlit @ 0x95bf0 (948 B) and Ui_AnimExpandBlit_IfEnabled @ 0x663c4 (88 B).
+ * Sixteen call sites: BaseFacScreen_DrawBuildDialog, RadarScreen_Update, Geoscape_Draw,
+ * Geoscape_DrawScreen, Geoscape_DrawGlobeHover, Geoscape_DrawBaseStatsPanel, ManufScreen_DrawFrame,
+ * BuySellScreen_Draw, BasePlaneScreen_DrawCraftDetail, ResearchScreen_Draw, Ui_TextInputDialog and
+ * the wrapper.
+ *
+ * The animation state is two globals: the byte at 0x187080 says whether the animation has started
+ * (the first call sets it and zeroes the progress), and the SIGNED byte at 0x187058 is the 0..100
+ * progress. nMode picks how the rect grows:
+ *
+ *   0: the full rect, x/y/nW/nH unchanged.
+ *   1: a 50*progress square anchored at (x, y).
+ *   2: full width, height 50*progress centred: y becomes nH/2 - 25*progress.
+ *   3: width 50*progress, full height, anchored at (x, y).
+ *   4: a 50*progress square centred: x becomes nW/2 - 25*progress, y becomes nH/2 - 25*progress.
+ *
+ * The width and height are then clamped to nW / nH and the origin back up to x / y. When all four
+ * match the full rect the progress byte is set to 100 -- the animation is only "done" once the
+ * clamped rect is exactly the requested one. SoftSurf_BlitSrcRect draws the panel body, and eight
+ * SoftSurf_BlitRectProxy calls draw the bevelled frame: the outer bars at (x, y, w+4, 6),
+ * (x, y+h, w+4, 6), (x, y+4, 6, h-2), (x+w-2, y+4, 6, h-2) and the inner bars at (x+2, y+2, w, 2),
+ * (x+2, y+h+2, w, 2), (x+2, y+2, 2, h), (x+w, y+2, 2, h).
+ *
+ * The frame colours come from the byte at root + 0x6E (0x186566): 1 gives the bright frame
+ * (outer 40,120,200 / inner 60,150,220) and 0 or 2 the ordinary one (outer 10,80,90 / inner
+ * 20,90,100). Returns whether the progress byte is 100.
+ *
+ * Deviations: a mode outside 0..4 or a style byte of 3 or more reads an uninitialised stack slot in
+ * the original; the port falls back to the full rect and the ordinary frame. */
+typedef struct UiAnimBlitEnv {
+    u8 *pbStarted;   /* byte_187080: the "the animation has already started" flag */
+    i8 *pnProgress;  /* the signed byte at 0x187058, the 0..100 progress */
+    i8  nFrameStyle; /* the byte at 0x186566 (root + 0x6E) */
+} UiAnimBlitEnv;
+
+bool Ui_AnimExpandBlit(const UiAnimBlitEnv *pEnv, i32 x, i32 y, i32 nW, i32 nH,
+                       u8 nIdx, u8 nSrcX, u8 nSrcY, u8 nKey, i8 nMode);
+
+/* Ui_AnimExpandBlit_IfEnabled @ 0x663c4: the fixed-parameter wrapper -- panel index 4, source
+ * origin 0x46/0x4B, key 0xC8, mode 0 -- and only when bEnabled is exactly 1. The original's first
+ * argument (a grid pointer) is never read. Returns bEnabled when it does not draw. */
+i32 Ui_AnimExpandBlit_IfEnabled(const UiAnimBlitEnv *pEnv, i32 x, i32 y, i32 nW, i32 nH,
+                                i8 bEnabled);
+
 #endif /* PUFO_PANEL_H */

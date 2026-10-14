@@ -392,6 +392,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `Ui_AnimExpandBlit @ 0x95bf0` (948 B) + `Ui_AnimExpandBlit_IfEnabled @ 0x663c4` (88 B) — ported
+  in `ui/pufo_panel.{h,c}` behind `UiAnimBlitEnv`, 19 new checks in `tests/test_panel.c`. The animated
+  panel frame every geoscape screen draws: a started byte, a signed 0..100 progress byte, five growth
+  modes, width/height clamped down and origin clamped back up, the progress byte set to 100 only when
+  the clamped rect is exactly the requested one, then the body blit plus the eight-bar bevelled frame
+  in one of two colour sets picked by the byte at root + 0x6E. IDB: function comments at 0x95bf0 and
+  0x663c4, `byte_187080` → `bUiAnimStarted`, the progress byte at 0x187058 → `cUiAnimProgress`
+  (`__int8`, LDRSB — Hex-Rays renders it as `MEMORY[0x187054][1]`, a dword-scaled index that reads as
+  0x187055), the frame-style byte at root + 0x6E → `bUiFrameStyle`.
 - [x] `BaseFacScreen_DrawPlacementOverlay @ 0x58e10` (3396 B) — ported in `pufo_baseui.{h,c}` behind
   `FacOverlayEnv`, 35 new checks in `tests/test_baseui.c`. It is the preview and the commit at once:
   the tap comes from the pending pair or (with `bBaseFacPreviewActive`) from the cursor, the score is
@@ -693,6 +702,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the soldier screen (`SoldierScreen_Toggle`, `SoldierScreen_SelectListed`), shell-wired | 56/56 (Release) | 8137 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 | the soldier equip rows (`SoldierScreen_EquipSelected`) + the two false citations removed | 56/56 (Release) | 8165 | 727/1103 (65.9%) | 322856/598792 (53.9%) | 38 checked, 0 mismatched |
 | the placement preview and its commit (`BaseFacScreen_DrawPlacementOverlay`) | 56/56 (Release) | 8200 | 728/1103 (66.0%) | 326252/598792 (54.5%) | 38 checked, 0 mismatched |
+| the animated panel frame (`Ui_AnimExpandBlit`, `Ui_AnimExpandBlit_IfEnabled`) | 56/56 (Release) | 8219 | 730/1103 (66.2%) | 327288/598792 (54.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

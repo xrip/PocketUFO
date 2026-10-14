@@ -9372,3 +9372,36 @@ The commit (0x599A0..0x59B38) needs a non-zero score (a zero one clears `bBaseFa
 Deviations: the port returns 1/0 where the original returns register residue; it bounds the panel
 selection, the kind index and the pending kind (0x58E20, bugs.tsv); and it scores only a tap inside
 0..5, which is every tap the in-bounds cursor test can produce.
+
+### `Ui_AnimExpandBlit` + `Ui_AnimExpandBlit_IfEnabled` (done)
+
+`src/pufo/ui/pufo_panel.{h,c}`, 19 new checks in `tests/test_panel.c`. Sixteen call sites across the
+geoscape screens (`BaseFacScreen_DrawBuildDialog`, `RadarScreen_Update`, `Geoscape_Draw`,
+`Geoscape_DrawScreen`, `Geoscape_DrawGlobeHover`, `Geoscape_DrawBaseStatsPanel`,
+`ManufScreen_DrawFrame`, `BuySellScreen_Draw`, `BasePlaneScreen_DrawCraftDetail`,
+`ResearchScreen_Draw`, `Ui_TextInputDialog`), and it is the helper the build dialog draws its panel
+through.
+
+Two globals hold the animation: `bUiAnimStarted @ 0x187080` says whether it has started (the first
+call sets it and zeroes the progress), and `cUiAnimProgress @ 0x187058` is the SIGNED 0..100
+progress. `nMode` picks how the rect grows: 0 the full rect; 1 a `50*progress` square anchored at
+(x, y); 2 full width with height `50*progress` centred (`y` becomes `nH/2 - 25*progress`); 3 width
+`50*progress` with full height; 4 a `50*progress` square centred (`x = nW/2 - 25*progress`,
+`y = nH/2 - 25*progress`). Width and height are then clamped down to `nW`/`nH` and the origin back up
+to `x`/`y` (0x95D28..0x95D4C), and only when all four equal the full rect does the progress byte go
+to 100 (0x95D60..0x95D74) -- the animation is done exactly when the clamped rect is the requested
+one. `SoftSurf_BlitSrcRect` draws the body and eight `SoftSurf_BlitRectProxy` calls the bevelled
+frame: outer bars `(x, y, w+4, 6)`, `(x, y+h, w+4, 6)`, `(x, y+4, 6, h-2)`, `(x+w-2, y+4, 6, h-2)`
+and inner bars `(x+2, y+2, w, 2)`, `(x+2, y+h+2, w, 2)`, `(x+2, y+2, 2, h)`, `(x+w, y+2, 2, h)`. The
+colours come from `bUiFrameStyle @ 0x186566` (root + 0x6E): 1 gives outer 40,120,200 / inner
+60,150,220, and 0 or 2 gives outer 10,80,90 / inner 20,90,100. Returns `progress == 100`.
+
+`Ui_AnimExpandBlit_IfEnabled` (0x663c4) is the fixed-parameter wrapper -- panel index 4, source origin
+0x46/0x4B, key 0xC8, mode 0 -- and it only draws when `bEnabled` is exactly 1; otherwise it returns
+`bEnabled` unchanged. Its first argument (a grid pointer) is never read.
+
+IDB note: Hex-Rays renders the progress byte as `MEMORY[0x187054][1]`, a dword-scaled index that
+looks like 0x187055; the ARM is `LDRSB R0,[R6]` with `R6 = 0x187058`.
+
+Deviations: a mode outside 0..4 or a style byte of 3 or more reads an uninitialised stack slot in the
+original; the port falls back to the full rect and the ordinary frame.

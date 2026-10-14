@@ -550,6 +550,92 @@ static void TestCydoniaHandler(void)
     g_pMainSurface = NULL;
 }
 
+/* Ui_AnimExpandBlit @ 0x95bf0 and Ui_AnimExpandBlit_IfEnabled @ 0x663c4. The state machine is the
+ * interesting half: the started byte, the 0..100 progress, and the fact that the animation only
+ * reports "done" once the clamped rect is exactly the requested one. The geometry is checked through
+ * where the frame lands on the surface. */
+static void TestAnimExpandBlit(void)
+{
+    SoftSurf surf;
+    UiAnimBlitEnv env;
+    static u8 bStarted;
+    static i8 nProgress;
+    u16 *pPix;
+    u16 uCentrePlain;
+    u16 uCentreBright;
+
+    printf("Ui_AnimExpandBlit @ 0x95bf0\n");
+
+    SoftSurf_ctor(&surf);
+    SoftSurf_AllocPixels(&surf, 240, 320, PIXMODE_16BPP);
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_pMainSurface = &surf;
+    g_blitState.nPixelMode = 2;
+    pPix = (u16 *)surf.pPixels;
+
+    bStarted = 0;
+    nProgress = 0;
+    memset(&env, 0, sizeof(env));
+    env.pbStarted = &bStarted;
+    env.pnProgress = &nProgress;
+    env.nFrameStyle = 0;
+
+    /* Mode 4 with no progress is a zero-size square at the centre of the rect. */
+    Check(!Ui_AnimExpandBlit(&env, 0, 0, 200, 100, 4, 0x46, 0x4B, 0xC8, 4),
+          "          progress 0 is not the finished frame");
+    CheckEqI32(bStarted, 1, "          the first call raises the started byte (0x95C14)");
+    CheckEqI32(nProgress, 0, "          and zeroes the progress");
+    Check(pPix[50 * 240 + 100] != 0, "          mode 4 draws at (nW/2, nH/2) = (100, 50)");
+    Check(pPix[0] == 0, "          with nothing at the rect origin");
+    uCentrePlain = pPix[50 * 240 + 100];
+
+    /* Half the progress overshoots, so the clamps pull it back to the full rect and the animation
+     * reports done. */
+    nProgress = 50;
+    Check(Ui_AnimExpandBlit(&env, 0, 0, 200, 100, 4, 0x46, 0x4B, 0xC8, 4),
+          "          progress 50 clamps to the full rect and reports done (0x95D60)");
+    CheckEqI32(nProgress, 100, "          the progress byte goes to 100 (0x95D74)");
+
+    /* Mode 1 at progress 1 is a 50x50 square anchored at the origin: not the full rect. */
+    nProgress = 1;
+    Check(!Ui_AnimExpandBlit(&env, 10, 20, 200, 100, 4, 0x46, 0x4B, 0xC8, 1),
+          "          mode 1 at progress 1 is 50x50, not the full rect");
+    CheckEqI32(nProgress, 1, "          so the progress is left alone");
+
+    /* Mode 0 is the full rect whatever the progress. */
+    Check(Ui_AnimExpandBlit(&env, 10, 20, 200, 100, 4, 0x46, 0x4B, 0xC8, 0),
+          "          mode 0 is the full rect (0x95D08)");
+    CheckEqI32(nProgress, 100, "          and that reports done");
+
+    /* The frame colour comes from the style byte at root + 0x6E. */
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    nProgress = 0;
+    env.nFrameStyle = 0;
+    (void)Ui_AnimExpandBlit(&env, 0, 0, 200, 100, 4, 0x46, 0x4B, 0xC8, 4);
+    uCentrePlain = pPix[50 * 240 + 100];
+    memset(surf.pPixels, 0, (size_t)240 * 320u * 2u);
+    nProgress = 0;
+    env.nFrameStyle = 1;
+    (void)Ui_AnimExpandBlit(&env, 0, 0, 200, 100, 4, 0x46, 0x4B, 0xC8, 4);
+    uCentreBright = pPix[50 * 240 + 100];
+    Check(uCentrePlain != 0 && uCentreBright != 0 && uCentrePlain != uCentreBright,
+          "          style 1 draws the bright frame, style 0 the ordinary one (0x95DE4)");
+
+    /* The wrapper only draws when bEnabled is exactly 1. */
+    nProgress = 50;
+    CheckEqI32(Ui_AnimExpandBlit_IfEnabled(&env, 0, 0, 200, 100, 0), 0,
+               "          bEnabled 0 returns its own value (0x663CC)");
+    CheckEqI32(nProgress, 50, "          and touches nothing");
+    CheckEqI32(Ui_AnimExpandBlit_IfEnabled(&env, 0, 0, 200, 100, 2), 2,
+               "          nor does any other value (0x66414)");
+    CheckEqI32(nProgress, 50, "          progress still 50");
+    CheckEqI32(Ui_AnimExpandBlit_IfEnabled(&env, 0, 0, 200, 100, 1), 1,
+               "          bEnabled 1 runs the fixed-parameter blit (0x6640C)");
+    CheckEqI32(nProgress, 100, "          mode 0, so the animation completes");
+
+    Check(!Ui_AnimExpandBlit(NULL, 0, 0, 10, 10, 4, 0, 0, 0, 0), "          a null env draws nothing");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -573,6 +659,7 @@ int main(void)
     TestLineList();
     TestSwapLines();
     TestCydoniaHandler();
+    TestAnimExpandBlit();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

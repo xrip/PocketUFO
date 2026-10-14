@@ -485,3 +485,124 @@ void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel)
     PadImage_Blit(pPad);
     UiPanel_DrawText(pPanel);
 }
+
+/* --- Ui_AnimExpandBlit @ 0x95bf0 --- */
+
+bool Ui_AnimExpandBlit(const UiAnimBlitEnv *pEnv, i32 x, i32 y, i32 nW, i32 nH,
+                       u8 nIdx, u8 nSrcX, u8 nSrcY, u8 nKey, i8 nMode)
+{
+    i32 nProg;
+    i32 nX;
+    i32 nY;
+    i32 nW2;
+    i32 nH2;
+    u8 nOuterIdx;
+    u8 nOuterMid;
+    u8 nOuterLow;
+    u8 nInnerIdx;
+    u8 nInnerMid;
+    u8 nInnerLow;
+
+    if (pEnv == NULL || pEnv->pbStarted == NULL || pEnv->pnProgress == NULL) {
+        return false;
+    }
+
+    if (*pEnv->pbStarted != 0) {                                   /* 0x95C24 */
+        nProg = *pEnv->pnProgress;
+    } else {                                                       /* 0x95C14..0x95C20 */
+        *pEnv->pbStarted = 1;
+        *pEnv->pnProgress = 0;
+        nProg = 0;
+    }
+
+    switch (nMode) {
+    case 1:                                                        /* 0x95CEC */
+        nX = x;
+        nY = y;
+        nW2 = 50 * nProg;
+        nH2 = nW2;
+        break;
+    case 2:                                                        /* 0x95CB0 */
+        nX = x;
+        nY = nH / 2 - 25 * nProg;
+        nW2 = nW;
+        nH2 = 50 * nProg;
+        break;
+    case 3:                                                        /* 0x95C9C */
+        nX = x;
+        nY = y;
+        nW2 = 50 * nProg;
+        nH2 = nH;
+        break;
+    case 4:                                                        /* 0x95C50 */
+        nX = nW / 2 - 25 * nProg;
+        nY = nH / 2 - 25 * nProg;
+        nW2 = 50 * nProg;
+        nH2 = nW2;
+        break;
+    default:                                                       /* 0x95D08 (mode 0) */
+        nX = x;
+        nY = y;
+        nW2 = nW;
+        nH2 = nH;
+        break;
+    }
+
+    if (nW2 > nW) {                                                /* 0x95D28 */
+        nW2 = nW;
+    }
+    if (nH2 > nH) {                                                /* 0x95D3C */
+        nH2 = nH;
+    }
+    if (nX < x) {                                                  /* 0x95D44 */
+        nX = x;
+    }
+    if (nY < y) {                                                  /* 0x95D4C */
+        nY = y;
+    }
+    if (nW2 == nW && nH2 == nH && nX == x && nY == y) {            /* 0x95D60..0x95D74 */
+        *pEnv->pnProgress = 100;
+    }
+
+    SoftSurf_BlitSrcRect(nX, nY, nW2, nH2, nIdx, (i32)nSrcX, (i32)nSrcY, nKey); /* 0x95DA8 */
+
+    if (pEnv->nFrameStyle == 1) {                                  /* 0x95DE4 */
+        nOuterIdx = 40;
+        nOuterMid = 120;
+        nOuterLow = (u8)(-56);                                     /* 200 */
+        nInnerIdx = 60;
+        nInnerMid = (u8)(-106);                                    /* 150 */
+        nInnerLow = (u8)(-36);                                     /* 220 */
+    } else {                                                       /* 0x95DC8 */
+        nOuterIdx = 10;
+        nOuterMid = 80;
+        nOuterLow = 90;
+        nInnerIdx = 20;
+        nInnerMid = 90;
+        nInnerLow = 100;
+    }
+
+    SoftSurf_BlitRectProxy(0, nX, nY, nW2 + 4, 6, nOuterIdx, nOuterMid, nOuterLow);        /* 0x95E18 */
+    SoftSurf_BlitRectProxy(0, nX + 2, nY + 2, nW2, 2, nInnerIdx, nInnerMid, nInnerLow);    /* 0x95E6C */
+    SoftSurf_BlitRectProxy(0, nX, nY + nH2, nW2 + 4, 6, nOuterIdx, nOuterMid, nOuterLow);  /* 0x95EA0 */
+    SoftSurf_BlitRectProxy(0, nX + 2, nY + nH2 + 2, nW2, 2, nInnerIdx, nInnerMid,          /* 0x95ECC */
+                           nInnerLow);
+    SoftSurf_BlitRectProxy(0, nX, nY + 4, 6, nH2 - 2, nOuterIdx, nOuterMid, nOuterLow);    /* 0x95F00 */
+    SoftSurf_BlitRectProxy(0, nX + 2, nY + 2, 2, nH2, nInnerIdx, nInnerMid, nInnerLow);    /* 0x95F28 */
+    SoftSurf_BlitRectProxy(0, nX + nW2 - 2, nY + 4, 6, nH2 - 2, nOuterIdx, nOuterMid,      /* 0x95F58 */
+                           nOuterLow);
+    SoftSurf_BlitRectProxy(0, nX + nW2, nY + 2, 2, nH2, nInnerIdx, nInnerMid, nInnerLow);  /* 0x95F80 */
+
+    return *pEnv->pnProgress == 100;                               /* 0x95F9C */
+}
+
+/* --- Ui_AnimExpandBlit_IfEnabled @ 0x663c4 --- */
+
+i32 Ui_AnimExpandBlit_IfEnabled(const UiAnimBlitEnv *pEnv, i32 x, i32 y, i32 nW, i32 nH,
+                                i8 bEnabled)
+{
+    if (bEnabled != 1) {
+        return bEnabled;
+    }
+    return Ui_AnimExpandBlit(pEnv, x, y, nW, nH, 4, 0x46, 0x4B, 0xC8, 0) ? 1 : 0;
+}
