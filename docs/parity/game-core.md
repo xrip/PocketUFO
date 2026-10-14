@@ -9477,3 +9477,28 @@ IDB: the seven labels are now `aTextRec93/137/138/139/140/418/419` -- every one 
 `0xB38D0 + 205*n` record start -- and both functions carry a comment. On the shell side
 `SoldierScreen_Toggle`'s craft column no longer goes through a stub: `World_SoldierName` calls the
 ported formatter with the world's own copy of the scratch buffer.
+
+### `RadarScreen_RollWeaponHit` + `RadarScreen_BlitOverlay` (done)
+
+`src/pufo/game/pufo_geoscape.{h,c}`, 21 new checks in `tests/test_geoscape.c`. Two radar-screen
+leaves, and the first look at the intercept-target state the radar screen keeps.
+
+`RadarScreen_RollWeaponHit` (0x5db24) rolls `Game_RandU16(100)` once as the event gate and a second
+time for the damage band: event 25 is a flat -50 under a 50 gate; 26 adds `RandU16(20) - 100` under
+80; 27 adds `RandU16(20) - 120` under 90; 28 adds `RandU16(30) - 90` under 70; 29 adds
+`RandU16(50) - 140` under 70; 30 -- the switch's default arm at 0x5DB70 -- adds `RandU16(30) - 230`
+under 95. Anything else, or a gate that fails, changes nothing. The HP accumulator
+`nInterceptTargetHp @ 0x159698` is written at 0x5DB90 and then mirrored into
+`StrategItem.nHp @ +0x6C` of `strategList[nInterceptStrategIdx @ 0x159680]` at 0x5DBB0. Nothing
+clamps the HP, so a big band drives it negative. The original dereferences that strateg lookup with
+no bounds or null test; the port skips the mirror when the lookup fails.
+
+`RadarScreen_BlitOverlay` (0x5d6d4) is the whole 16-byte body `PadImage_Blit(pRadarOverlayPad @
+0x1596E4)`, the pad `RadarScreen_Init` (0x5F490) allocates.
+
+IDB: `unk_159698` → `nInterceptTargetHp` and `unk_1596E4` → `pRadarOverlayPad`, with function
+comments at 0x5d6d4 and 0x5db24.
+
+Also fixed: the port cited `GameTime_Unpause @ 0x5d6c4`, which is four bytes inside the function --
+the original starts at `0x5d6c0`. The citation in `game/pufo_clock.h` now names the real address, so
+that function counts.

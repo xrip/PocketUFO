@@ -1579,3 +1579,76 @@ char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRe
 
     return pszLabel; /* 0x6A4A8 */
 }
+
+/* --- RadarScreen_BlitOverlay @ 0x5d6d4 --- */
+
+void RadarScreen_BlitOverlay(PadImage *pOverlayPad)
+{
+    if (pOverlayPad != NULL) {
+        PadImage_Blit(pOverlayPad); /* 0x5d6e0 */
+    }
+}
+
+/* --- RadarScreen_RollWeaponHit @ 0x5db24 --- */
+
+bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType)
+{
+    StrategItem *pItem;
+    u16 nRoll;
+    i32 nHp;
+
+    if (pEnv == NULL || pEnv->pStrategList == NULL || pEnv->pnStrategIdx == NULL
+        || pEnv->pnTargetHp == NULL) {
+        return false;
+    }
+
+    nRoll = Game_RandU16(100);                                                       /* 0x5DB3C */
+
+    switch (nEventType) {
+        case 25:
+            if (nRoll >= 50) {
+                return false;                                                        /* 0x5DC6C */
+            }
+            nHp = *pEnv->pnTargetHp - 50;
+            break;
+        case 26:
+            if (nRoll >= 80) {
+                return false;                                                        /* 0x5DC44 */
+            }
+            nHp = *pEnv->pnTargetHp + (i32)Game_RandU16(20) - 100;                   /* 0x5DC60 */
+            break;
+        case 27:
+            if (nRoll >= 90) {
+                return false;                                                        /* 0x5DC1C */
+            }
+            nHp = *pEnv->pnTargetHp + (i32)Game_RandU16(20) - 120;                   /* 0x5DC38 */
+            break;
+        case 28:
+            if (nRoll >= 70) {
+                return false;                                                        /* 0x5DBF4 */
+            }
+            nHp = *pEnv->pnTargetHp + (i32)Game_RandU16(30) - 90;                    /* 0x5DC10 */
+            break;
+        case 29:
+            if (nRoll >= 70) {
+                return false;                                                        /* 0x5DBCC */
+            }
+            nHp = *pEnv->pnTargetHp + (i32)Game_RandU16(50) - 140;                   /* 0x5DBE8 */
+            break;
+        case 30:
+            if (nRoll >= 95) {
+                return false;                                                        /* 0x5DB70 */
+            }
+            nHp = *pEnv->pnTargetHp + (i32)Game_RandU16(30) - 230;                   /* 0x5DB8C */
+            break;
+        default:
+            return false;                                                            /* 0x5DC80 */
+    }
+
+    *pEnv->pnTargetHp = nHp;                                                         /* 0x5DB90 */
+    pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, *pEnv->pnStrategIdx);
+    if (pItem != NULL) {
+        pItem->nHp = nHp;                                                            /* 0x5DBB0 */
+    }
+    return true;                                                                     /* 0x5DBB8 */
+}

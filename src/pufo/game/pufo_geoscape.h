@@ -853,4 +853,36 @@ i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY);
 char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRecs,
                               u8 nFacType, i8 *abKindTable);
 
+/* --- RadarScreen_BlitOverlay @ 0x5d6d4 (16 B) ---
+ *
+ * The whole function is `PadImage_Blit(pRadarOverlayPad @ 0x1596E4)`, the pad RadarScreen_Init
+ * (0x5F490) allocates. The port takes the pad as an argument. */
+void RadarScreen_BlitOverlay(PadImage *pOverlayPad);
+
+/* --- RadarScreen_RollWeaponHit @ 0x5db24 (352 B) : the intercept weapon roll ---
+ *
+ * One roll of Game_RandU16(100) gates the event, and a second roll picks the damage band. The
+ * target is the intercept pair the radar screen keeps: nInterceptStrategIdx @ 0x159680 selects the
+ * strateg item and nInterceptTargetHp @ 0x159698 is its running HP, which the function writes back
+ * into StrategItem.nHp @ +0x6c.
+ *
+ *   event 25 (0x5DC6C): roll < 50,  hp -= 50
+ *   event 26 (0x5DC44): roll < 80,  hp += RandU16(20) - 100
+ *   event 27 (0x5DC1C): roll < 90,  hp += RandU16(20) - 120
+ *   event 28 (0x5DBF4): roll < 70,  hp += RandU16(30) - 90
+ *   event 29 (0x5DBCC): roll < 70,  hp += RandU16(50) - 140
+ *   event 30 (0x5DB70): roll < 95,  hp += RandU16(30) - 230
+ *
+ * Any other event, or a roll that fails its gate, changes nothing and returns false. The HP write
+ * at 0x5DB90 comes before the strateg write at 0x5DBB0, and the HP can go negative -- nothing
+ * clamps it here. Deviation: the original dereferences PtrArray_Get(strategList, nInterceptStrategIdx)
+ * without a bounds or null test; the port skips the strateg write when the lookup fails. */
+typedef struct RadarHitRollEnv {
+    PtrArray *pStrategList;   /* strategList @ 0x186534 */
+    const i32 *pnStrategIdx;  /* nInterceptStrategIdx @ 0x159680 */
+    i32 *pnTargetHp;          /* nInterceptTargetHp @ 0x159698 */
+} RadarHitRollEnv;
+
+bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
+
 #endif /* PUFO_GEOSCAPE_H */

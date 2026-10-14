@@ -392,6 +392,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `RadarScreen_RollWeaponHit @ 0x5db24` (352 B) + `RadarScreen_BlitOverlay @ 0x5d6d4` (16 B) —
+  ported in `game/pufo_geoscape.{h,c}` behind `RadarHitRollEnv`, 21 new checks in
+  `tests/test_geoscape.c`. The intercept weapon roll: one `Game_RandU16(100)` gates the event and a
+  second picks the band (25 flat -50 under 50; 26 `+RandU16(20)-100` under 80; 27 `+RandU16(20)-120`
+  under 90; 28 `+RandU16(30)-90` under 70; 29 `+RandU16(50)-140` under 70; 30 `+RandU16(30)-230`
+  under 95), the HP accumulator written first and then mirrored into `StrategItem.nHp` of
+  `strategList[nInterceptStrategIdx]`, unclamped. IDB: `unk_159698` → `nInterceptTargetHp`,
+  `unk_1596E4` → `pRadarOverlayPad`, comments at 0x5d6d4 and 0x5db24. Citation fix: `GameTime_Unpause`
+  was cited at 0x5d6c4, four bytes inside the function; the original starts at 0x5d6c0.
 - [x] `Soldier_FormatDisplayName @ 0x6654c` (384 B) + `Ship_FormatDisplayName @ 0x666cc` (424 B) —
   ported in `game/pufo_baseui.{h,c}` and `game/pufo_ship.{h,c}`, 18 new checks in
   `tests/test_baseui.c` and `tests/test_ship.c`. The two craft-name formatters: `Ship.bCraftType`
@@ -727,6 +736,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the animated panel frame (`Ui_AnimExpandBlit`, `Ui_AnimExpandBlit_IfEnabled`) | 56/56 (Release) | 8219 | 730/1103 (66.2%) | 327288/598792 (54.7%) | 38 checked, 0 mismatched |
 | the build dialog frame (`BaseFacScreen_DrawBuildDialog`) | 56/56 (Release) | 8242 | 731/1103 (66.3%) | 328880/598792 (54.9%) | 38 checked, 0 mismatched |
 | the two craft-name formatters (`Soldier_FormatDisplayName`, `Ship_FormatDisplayName`) | 56/56 (Release) | 8260 | 733/1103 (66.5%) | 329688/598792 (55.1%) | 38 checked, 0 mismatched |
+| radar intercept roll + overlay blit (`RadarScreen_RollWeaponHit`, `RadarScreen_BlitOverlay`) | 56/56 (Release) | 8281 | 736/1103 (66.7%) | 330076/598792 (55.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

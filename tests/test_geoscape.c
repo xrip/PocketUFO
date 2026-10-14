@@ -2592,6 +2592,96 @@ static void TestFacCostLabel(void)
     CheckEqI32(szLabel[1], 'X', "and the byte past the capacity is untouched");
 }
 
+/* RadarScreen_RollWeaponHit @ 0x5db24 and RadarScreen_BlitOverlay @ 0x5d6d4. The roll is random, so
+ * the checks are invariants over many draws: every HP change has to sit inside the event's band, a
+ * gate that fails changes nothing, and an event outside 25..30 never fires. */
+static void TestRadarWeaponHit(void)
+{
+    static PtrArray list;
+    static i32 nStrategIdx;
+    static i32 nHp;
+    static RadarHitRollEnv env;
+    StrategItem *pItem;
+    i32 nIter;
+    i32 nFired;
+    i32 nBad;
+
+    printf("RadarScreen_RollWeaponHit @ 0x5db24\n");
+
+    PtrArray_ctor(&list);
+    (void)StrategItem_AllocAdd(&list, 0);
+    pItem = (StrategItem *)PtrArray_Get(&list, 0);
+    if (pItem == NULL) {
+        printf("  FAIL the strateg entry could not be created\n");
+        return;
+    }
+
+    nStrategIdx = 0;
+    memset(&env, 0, sizeof(env));
+    env.pStrategList = &list;
+    env.pnStrategIdx = &nStrategIdx;
+    env.pnTargetHp = &nHp;
+
+    /* event 25 is the fixed -50; the other five add a RandU16 band. */
+    struct { i32 nEvent; i32 nLo; i32 nHi; } aCases[] = {
+        { 25, -50, -50 }, { 26, -100, -81 }, { 27, -120, -101 },
+        { 28, -90, -61 }, { 29, -140, -91 }, { 30, -230, -201 },
+    };
+    for (i32 c = 0; c < 6; ++c) {
+        nFired = 0;
+        nBad = 0;
+        for (nIter = 0; nIter < 400; ++nIter) {
+            i32 nBefore = 1000;
+            bool bHit;
+            nHp = nBefore;
+            bHit = RadarScreen_RollWeaponHit(&env, aCases[c].nEvent);
+            if (bHit) {
+                i32 nDelta = nHp - nBefore;
+                nFired += 1;
+                if (nDelta < aCases[c].nLo || nDelta > aCases[c].nHi) {
+                    nBad += 1;
+                }
+                if (pItem->nHp != nHp) {
+                    nBad += 1;      /* 0x5DBB0 mirrors the global into StrategItem.nHp */
+                }
+            } else if (nHp != nBefore) {
+                nBad += 1;          /* a failed gate must leave the target alone */
+            }
+        }
+        Check(nBad == 0, aCases[c].nEvent == 25
+              ? "event 25 is exactly -50 and mirrors StrategItem.nHp (0x5DC74)"
+              : "every band stays inside its RandU16 range (0x5DB90, 0x5DBB0)");
+        Check(nFired > 0 && nFired < 400, "the gate both passes and fails across draws");
+    }
+
+    /* An event outside 25..30 never fires. */
+    nHp = 777;
+    pItem->nHp = 777;
+    Check(!RadarScreen_RollWeaponHit(&env, 24), "event 24 is outside the switch (0x5DC80)");
+    Check(!RadarScreen_RollWeaponHit(&env, 31), "and so is event 31");
+    CheckEqI32(nHp, 777, "neither touches the target HP");
+    CheckEqI32(pItem->nHp, 777, "nor the strateg entry");
+
+    /* Nothing clamps the HP, so a big band can drive it negative. */
+    nHp = 10;
+    for (nIter = 0; nIter < 200; ++nIter) {
+        (void)RadarScreen_RollWeaponHit(&env, 30);
+    }
+    Check(nHp < 0, "event 30 drives the target HP negative, nothing clamps it (0x5DB8C)");
+
+    /* Deviation: the original dereferences the strateg lookup unchecked. */
+    nStrategIdx = 9999;
+    nHp = 400;
+    Check(RadarScreen_RollWeaponHit(&env, 25), "an out-of-range strateg index still rolls");
+    CheckEqI32(nHp, 350, "the global HP is still written (0x5DB90)");
+    nStrategIdx = 0;
+
+    Check(!RadarScreen_RollWeaponHit(NULL, 25), "a null env rolls nothing");
+
+    RadarScreen_BlitOverlay(NULL);
+    Check(true, "RadarScreen_BlitOverlay @ 0x5d6d4 tolerates the null pad");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -2607,6 +2697,7 @@ int main(void)
     TestSoldiersAssigned();
     TestShipsAtBase();
     TestClearSelection();
+    TestRadarWeaponHit();
     TestDismissSelected();
     TestInitCraftSelectState();
     TestBeginCraftSelect();
