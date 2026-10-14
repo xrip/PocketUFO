@@ -297,6 +297,28 @@ i32 Base_CalcPsiLabCap(const u8 *abFacilityGrid, i32 nBaseIndex);
  * asks whether the soldier is reachable. */
 i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex);
 
+typedef struct SmapSite SmapSite; /* forward, the two site helpers below need it */
+
+/* Base_CountPsiSoldiers @ 0x65a08. Soldiers assigned to this base (nKind) that also carry the
+ * psi marker bUnk149 @ 0x95. The budget of Base_UpdatePsiLabNeeded (divisor 10). */
+i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex);
+
+/* Base_CountOutboundTransferSpace @ 0x68044. The recovery load (uRecoveredSoldiers +
+ * bRecoveredSoldierAssign + auItemQty[112] + auItemQty[113]) of site nSiteIdx, plus, when
+ * bScanSites, of every other site whose bFlag1 equals apBases[nBaseIndex]->bUnk4. Budget term
+ * of Base_UpdateLivingQuartersNeeded. The original's first argument is never read. */
+i32 Base_CountOutboundTransferSpace(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                                    BaseRec *const *apBases, i32 nBaseIndex, bool bScanSites);
+
+/* Base_CountItemQtyAcrossBases @ 0x67d68. Cargo volume (bCargoSize * auItemQty column) over the
+ * filtered object indices 1..69, 105..111, 122..124, 140: site nSiteIdx itself, then — gated on
+ * site nSiteIdx holding that item — every other site of this base's type. Budget term of
+ * Base_UpdateStoresNeeded. A negative nSiteIdx means a zero gate (see the .c deviation note). */
+i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                                 BaseRec *const *apBases, i32 nBaseIndex,
+                                 ObjectRecFull *const *apObjects, i32 nObjectCount,
+                                 bool bScanSites);
+
 /* Base_SumCraftAtBase @ 0x6a230, renamed: the IDB name describes one of the five terms. This is
  * the monthly cost of one base.
  *

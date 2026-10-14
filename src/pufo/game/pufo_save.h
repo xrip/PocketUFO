@@ -1071,9 +1071,9 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
  * as a chunk read fails but still runs the re-derivation passes, because they are what make
  * a partially loaded world consistent. The original's unchecked pointer dereferences
  * (apObjects[0], the shot object, the craft slots) are guarded. The three budget helpers
- * Base_CountOutboundTransferSpace (0x68044), Base_CountItemQtyAcrossBases (0x67d68) and
- * Base_CountPsiSoldiers (0x65a08) are not ported and arrive as hooks, same as the four UI
- * teardown/init calls whose envs belong to the caller. */
+ * Base_CountOutboundTransferSpace @ 0x68044, Base_CountItemQtyAcrossBases @ 0x67d68 and
+ * Base_CountPsiSoldiers @ 0x65a08 are ported in pufo_geoscape.c and called directly; only
+ * the four UI teardown/init calls whose envs belong to the caller remain hooks. */
 typedef struct LoadGameHooks {
     void (*pfnRenderFrame)(void *pUser);               /* Render_Frame (0x22310), caller's frame env */
     void (*pfnStartUiShutdown)(void *pUser);           /* StartUi_Shutdown (0x38d7c), caller's shutdown env */
@@ -1081,9 +1081,6 @@ typedef struct LoadGameHooks {
     void (*pfnTactShutdown)(void *pUser);              /* Tact_Shutdown(0) (0x3d568), caller's env */
     void (*pfnGeoscapeUiFreeAll)(void *pUser);         /* GeoscapeUi_FreeAll(0) (0x86d20), caller's env */
     bool (*pfnTactInitMission)(i32 nMode, void *pUser);/* Tact_InitMission(1) (0x3c550), caller's env */
-    i32 (*pfnOutboundTransferSpace)(i32 nBase, void *pUser); /* Base_CountOutboundTransferSpace (0x68044), NOT ported */
-    i32 (*pfnItemQtyAcrossBases)(i32 nBase, void *pUser);    /* Base_CountItemQtyAcrossBases (0x67d68), NOT ported */
-    i32 (*pfnPsiSoldiers)(i32 nBase, void *pUser);           /* Base_CountPsiSoldiers (0x65a08), NOT ported */
     void *pUser;
 } LoadGameHooks;
 

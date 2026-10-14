@@ -193,8 +193,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   (`LoadGame` + `LoadGameEnv` + `LoadGameHooks`), verified by a sav7 round-trip in `test_save`.
   The callees that belong to other subsystems arrive as hooks and remain unported:
   `Geoscape_InitUI (0x857f4, 5,420 B)` (itself blocked by `Game_StartNew (0x94554)` and
-  `GameTime_Set5Sec (0x84f00)`), `Base_CountOutboundTransferSpace (0x68044)`,
-  `Base_CountItemQtyAcrossBases (0x67d68)`, `Base_CountPsiSoldiers (0x65a08)`. Two IDB errors
+  `GameTime_Set5Sec (0x84f00)`). The three budget helpers `Base_CountOutboundTransferSpace @
+  0x68044`, `Base_CountItemQtyAcrossBases @ 0x67d68`, `Base_CountPsiSoldiers @ 0x65a08` are
+  ported in `pufo_geoscape.c` and called directly. Two IDB errors
   this step fixed: the tactver value goes to slot-context + 0x118 (`MainMenu_pSlotCtx+0x118`,
   write-only residue), NOT `apObjects[4]`; and the "shot object" whose words 29.. are zeroed is
   `apObjects[0]` itself (Map+0x108), not a separate global. In Priority 2 the map frame, the
@@ -537,6 +538,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | start menu click wiring (`--click` dump verified) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 | credits opener (`Titles_Init`, `Titles_ctor`) | 54/54 (Release) | 7564 | 700/1103 (63.5%) | 276464/598792 (46.2%) | 37 checked, 0 mismatched |
 | `LoadGame` driver (`pufo_save.c`, sav7 round-trip) | 54/54 (Release) | 7599 | 701/1103 (63.6%) | 279864/598792 (46.7%) | 37 checked, 0 mismatched |
+| budget leaves (`Base_CountOutboundTransferSpace`, `Base_CountItemQtyAcrossBases`, `Base_CountPsiSoldiers`) | 54/54 (Release) | 7608 | 704/1103 (63.8%) | 280724/598792 (46.9%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

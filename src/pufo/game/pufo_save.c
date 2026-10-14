@@ -2517,6 +2517,7 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
     i32    nVer;
     i32    nCraftCount;
     i32    nBaseCount;
+    i32    nSiteCount;
     bool   bOk = true;
 
     if (pDat == NULL || pHooks == NULL) {
@@ -2593,6 +2594,11 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
 
     if (!Save_ReadSmap(pDat, pEnv->pSmap, pEnv->pView, pEnv->paZoomSets,
                        pEnv->pWorldSize, *pEnv->pbGameState != 0)) { bOk = false; }
+    /* 0x40D94/0x40DAC: the smap chunk also restores the strateg seed counter (0x18640C) and the
+     * site count (0x186410, held behind a pointer in the original). The port keeps both in the
+     * wire record; hand the seed to the caller's counter and take the count for the budget passes. */
+    *pEnv->pnSeed = pEnv->pSmap->nParam3;
+    nSiteCount = pEnv->pSmap->nParam4;
     if (!Save_ReadStrateg(pDat, pEnv->pStrateg, pEnv->pStrategList)) { bOk = false; }
     if (!Save_ReadTime(pDat, pEnv->pTimeRec)) { bOk = false; }
     /* The original reads the time chunk straight into the live clock block (apLines[101..115]);
@@ -2808,13 +2814,15 @@ i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
                                              pEnv->apObjects, pEnv->nObjectCount, b);
         i32 nStores = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, b);
         (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, b,
-            nSpace + ((pHooks->pfnOutboundTransferSpace != NULL)
-                          ? pHooks->pfnOutboundTransferSpace(b, pHooks->pUser) : 0)); /* 0x45888 */
+            nSpace + Base_CountOutboundTransferSpace(pEnv->pSmap->aSites, nSiteCount, -1,
+                                                     pEnv->apBases, b, true)); /* 0x45888 */
         (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, b,
-            nStores + ((pHooks->pfnItemQtyAcrossBases != NULL)
-                           ? pHooks->pfnItemQtyAcrossBases(b, pHooks->pUser) : 0)); /* 0x45894 */
+            nStores + Base_CountItemQtyAcrossBases(pEnv->pSmap->aSites, nSiteCount, -1,
+                                                   pEnv->apBases, b,
+                                                   pEnv->apObjects, pEnv->nObjectCount,
+                                                   true)); /* 0x45894: the -1 gate is zero, see the helper */
         (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, b,
-            (pHooks->pfnPsiSoldiers != NULL) ? pHooks->pfnPsiSoldiers(b, pHooks->pUser) : 0); /* 0x458A0 */
+            Base_CountPsiSoldiers(pEnv->apSoldiers, *pEnv->pnSoldierCount, b)); /* 0x458A0 */
         (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, b,
             Base_CountActiveResearch(pEnv->apResearchCols + 144 * b, (i32)*pEnv->puResearchEntries)); /* 0x458AC */
         (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, b,

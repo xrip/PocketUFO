@@ -2239,9 +2239,6 @@ static void LoadInitUiProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; 
 static void LoadTactShutProbe(void *pUser) { (void)pUser; g_nLoadTactShut++; }
 static void LoadFreeAllProbe(void *pUser) { (void)pUser; g_nLoadFreeAll++; }
 static bool LoadTactInitProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; g_nLoadTactInit++; return true; }
-static i32 LoadOutboundProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
-static i32 LoadItemQtyProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
-static i32 LoadPsiProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
 
 static void TestLoadGame(void)
 {
@@ -2446,9 +2443,6 @@ static void TestLoadGame(void)
     hooks.pfnTactShutdown = LoadTactShutProbe;
     hooks.pfnGeoscapeUiFreeAll = LoadFreeAllProbe;
     hooks.pfnTactInitMission = LoadTactInitProbe;
-    hooks.pfnOutboundTransferSpace = LoadOutboundProbe;
-    hooks.pfnItemQtyAcrossBases = LoadItemQtyProbe;
-    hooks.pfnPsiSoldiers = LoadPsiProbe;
     hooks.pUser = NULL;
 
     memset(&env, 0, sizeof(env));

@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 54 suites: **7599**.
+Test checks run across the 54 suites: **7608**.
 
 ### Per-subsystem status
 
@@ -666,10 +666,11 @@ does.
    follows the caller's craft position.
 6. Done: `Tact_Shutdown` (0x3d568) is ported. Also done: `LoadGame` (0x44bbc, 3,400 B) is ported in
    `pufo_save.c` as `LoadGame(DatFile*, LoadGameEnv*)` with a `LoadGameHooks` seam for
-   `Geoscape_InitUI (0x857f4)`, `Base_CountOutboundTransferSpace (0x68044)`,
-   `Base_CountItemQtyAcrossBases (0x67d68)`, `Base_CountPsiSoldiers (0x65a08)` and the env-heavy UI
-   calls; `test_save` round-trips a sav7 slot through it. Two IDB errors fixed on the way (tactver
-   lands at `MainMenu_pSlotCtx+0x118`, not `apObjects[4]`; the shot object is `apObjects[0]`).
+   `Geoscape_InitUI (0x857f4)` and the env-heavy UI calls; the budget helpers
+   `Base_CountOutboundTransferSpace @ 0x68044`, `Base_CountItemQtyAcrossBases @ 0x67d68`,
+   `Base_CountPsiSoldiers @ 0x65a08` are ported in `pufo_geoscape.c` and called directly;
+   `test_save` round-trips a sav7 slot through it. Two IDB errors fixed on the way (tactver lands
+   at `MainMenu_pSlotCtx+0x118`, not `apObjects[4]`; the shot object is `apObjects[0]`).
 7. Done: `MapView_DrawUnit` (0x1c958) is ported in `pufo_isodraw.c` behind `IsoUnitDrawGate`. Re-reading
    every branch in ARM changed four things the pseudocode had wrong or left unstated: the pose-frame
    branch converges on a store that happens before the zero test, so a zero entry is stored as 0; the

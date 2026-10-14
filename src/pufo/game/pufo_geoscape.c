@@ -1081,6 +1081,133 @@ i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseI
     return nCount;
 }
 
+/* Base_CountPsiSoldiers @ 0x65a08. Soldiers assigned to this base (nKind @ 0xB6 equals the base
+ * index, compared as the original does: the byte against the sign-extended char argument) that
+ * also have bUnk149 @ 0x95 set — the psi marker. The budget of Base_UpdatePsiLabNeeded. */
+i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex)
+{
+    i32 nCount = 0;
+
+    if (apSoldiers == NULL) {
+        return 0;
+    }
+
+    for (i32 i = 0; i < nSoldierCount; ++i) {
+        Soldier *pSol = apSoldiers[i];
+        if (pSol == NULL) {
+            continue;
+        }
+        if ((i32)pSol->nKind == (i8)nBaseIndex && pSol->bUnk149 != 0) {
+            ++nCount; /* 0x65A2C */
+        }
+    }
+
+    return nCount;
+}
+
+/* One site's recovery load, the quantity Base_CountOutboundTransferSpace sums: the u16 soldier
+ * count, the signed-char assignment byte, and the two item columns 112 and 113 (0x68078). */
+static i32 SmapSite_RecoveryLoad(const SmapSite *pSite)
+{
+    return (i32)pSite->uRecoveredSoldiers
+         + (i32)(i8)pSite->bRecoveredSoldierAssign
+         + (i32)pSite->auItemQty[113]
+         + (i32)pSite->auItemQty[112];
+}
+
+/* Base_CountOutboundTransferSpace @ 0x68044. The recovery load of site nSiteIdx (when it is not
+ * -1) plus, when bScanSites, the same load of every OTHER site whose bFlag1 equals this base's
+ * type byte apBases[nBaseIndex]->bUnk4 — the sites that hand their recovery to this base type.
+ * The first argument of the original (&0x159768, the product block) is never read. */
+i32 Base_CountOutboundTransferSpace(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                                    BaseRec *const *apBases, i32 nBaseIndex, bool bScanSites)
+{
+    i32 nTotal = 0;
+
+    if (aSites == NULL || apBases == NULL) {
+        return 0;
+    }
+    if (nSiteIdx >= 0 && nSiteIdx < nSiteCount) {
+        nTotal += SmapSite_RecoveryLoad(&aSites[nSiteIdx]); /* 0x68068 */
+    }
+    if (bScanSites) {
+        for (i32 i = 0; i < nSiteCount; ++i) {
+            if (i == nSiteIdx) {
+                continue;
+            }
+            if ((i8)apBases[nBaseIndex]->bUnk4 == (i8)aSites[i].bFlag1) {
+                nTotal += SmapSite_RecoveryLoad(&aSites[i]); /* 0x680B4 */
+            }
+        }
+    }
+    return nTotal;
+}
+
+/* The object-index filter of Base_CountItemQtyAcrossBases (0x67E00..0x67E20): the first clause
+ * `v6 > &Map` is always true (the slot walk starts at Map+4), so what remains is the index set
+ * 1..69, 105..111, 122..124 and 140. Object 0 is never counted. */
+static bool ItemQtyObjIndexInFilter(i32 nObj)
+{
+    return nObj < 70 || (nObj > 104 && nObj < 112) || (nObj > 121 && nObj < 125) || nObj == 140;
+}
+
+/* Base_CountItemQtyAcrossBases @ 0x67d68. Cargo volume, not item count: every term is
+ * ObjectRecFull.bCargoSize (0xC6) times a site's auItemQty column.
+ *
+ * Block 1 (nSiteIdx != -1): the filtered columns of site nSiteIdx itself.
+ * Block 2 (bScanSites): for every OTHER site whose bFlag1 equals this base's type byte, the
+ * filtered columns of THAT site, but gated on site nSiteIdx having a non-zero quantity in the
+ * same column (0x67EE0: the gate reads [0x173*nSiteIdx + v]*2+2, the contribution reads the
+ * scanned site).
+ *
+ * Deviation: the needed-pass callers pass nSiteIdx = -1, and the original then gates on
+ * aSmapSites[-1] — 742 bytes below the array, which is the buy/sell screen scratch (zero in the
+ * image, written only by screens). The port treats a negative index as a zero gate, which is the
+ * same value at every load-time call site. */
+i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                                 BaseRec *const *apBases, i32 nBaseIndex,
+                                 ObjectRecFull *const *apObjects, i32 nObjectCount,
+                                 bool bScanSites)
+{
+    i32 nTotal = 0;
+
+    if (aSites == NULL || apBases == NULL || apObjects == NULL) {
+        return 0;
+    }
+
+    if (nSiteIdx >= 0 && nSiteIdx < nSiteCount && nObjectCount > 1) {
+        for (i32 v = 1; v < nObjectCount; ++v) {
+            if (!ItemQtyObjIndexInFilter(v)) {
+                continue;
+            }
+            if (aSites[nSiteIdx].auItemQty[v] != 0 && apObjects[v] != NULL) {
+                nTotal += (i32)apObjects[v]->bCargoSize * (i32)aSites[nSiteIdx].auItemQty[v];
+            }
+        }
+    }
+
+    if (bScanSites && nSiteIdx >= 0 && nObjectCount > 1) {
+        for (i32 i = 0; i < nSiteCount; ++i) {
+            if (i == nSiteIdx) {
+                continue;
+            }
+            if ((i8)apBases[nBaseIndex]->bUnk4 != (i8)aSites[i].bFlag1) {
+                continue;
+            }
+            for (i32 v = 1; v < nObjectCount; ++v) {
+                if (!ItemQtyObjIndexInFilter(v)) {
+                    continue;
+                }
+                if (aSites[nSiteIdx].auItemQty[v] != 0 && apObjects[v] != NULL) {
+                    nTotal += (i32)apObjects[v]->bCargoSize * (i32)aSites[i].auItemQty[v];
+                }
+            }
+        }
+    }
+
+    return nTotal;
+}
+
 /* Base_SumCraftAtBase @ 0x6a230, renamed Base_CalcMonthlyUpkeep: the IDB name describes one of
  * the five terms. What it returns is the monthly cost of one base.
  *

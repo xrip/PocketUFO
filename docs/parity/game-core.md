@@ -8786,3 +8786,31 @@ not ported)`, `Base_CountPsiSoldiers (0x65a08, not ported)`, plus the env-heavy 
 `StartUi_Shutdown`, `Tact_Shutdown`, `GeoscapeUi_FreeAll`, `Tact_InitMission` calls. IDB: the
 `LoadGame` function comment rewritten (the apObjects[4] claim removed), first arg retyped
 `void *pSlotCtx`, comment at 0x44C94.
+
+## The three budget leaves: `Base_CountOutboundTransferSpace @ 0x68044`, `Base_CountItemQtyAcrossBases @ 0x67d68`, `Base_CountPsiSoldiers @ 0x65a08`
+
+All three are budget terms of the five `Base_Update*Needed` passes, and `LoadGame` now calls them
+directly instead of through hooks. Ported in `src/pufo/game/pufo_geoscape.c`, unit-checked in
+`test_geoscape` (9 checks).
+
+- **`Base_CountOutboundTransferSpace`** sums a site's recovery load — `uRecoveredSoldiers +
+  (i8)bRecoveredSoldierAssign + auItemQty[113] + auItemQty[112]` — of site `a2` (when not -1) plus
+  every other site whose `bFlag1` equals `apBases[a3]->bUnk4`. With `a2 = -1` the `i != a2` test
+  matches every index, so site 0 is scanned too — the needed-pass budget is the full matching-type
+  sum. The original's first argument (`&0x159768`) is never read.
+- **`Base_CountItemQtyAcrossBases`** is cargo volume, not item count: `ObjectRecFull.bCargoSize`
+  (0xC6) times a site's `auItemQty` column, over the filtered object indices — the ARM's
+  always-true `v6 > &Map` clause leaves the index set 1..69, 105..111, 122..124, 140 (object 0 is
+  never counted). Block 1 is site `a2`'s own columns; block 2 scans the matching-type sites and
+  adds `site[i].qty[v] * bCargoSize[v]` gated on `site[a2].qty[v] != 0` (0x67EE0: the gate reads
+  `0x173*a2 + v`, the contribution reads the scanned site — two different sites, confirmed in ARM).
+  The needed-pass call passes `a2 = -1`, and the original then gates on `aSmapSites[-1]` = 0x161D46
+  — the buy/sell screen scratch below the site array, zero in the image and written only by
+  screens — so at load time the term is 0. The port models a negative index as a zero gate.
+- **`Base_CountPsiSoldiers`** counts soldiers with `nKind` (0xB6) == base and `bUnk149` (0x95) != 0
+  — the psi marker. Budget of `Base_UpdatePsiLabNeeded` (divisor 10).
+
+`LoadGame` also restores the strateg seed counter from the smap chunk (`nParam3` -> `pnSeed`, the
+original's 0x18640C write at 0x40D94) and takes the site count (`nParam4`, 0x186410) for the budget
+passes. IDB: comments rewritten at 0x68044 / 0x67d68 / 0x65a08 and at the three `Base_Update*Needed`
+hosts (the "budget contributors unported" notes removed).

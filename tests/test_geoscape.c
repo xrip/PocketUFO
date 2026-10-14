@@ -2285,6 +2285,78 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(apBases[1]->bUnk16, 2, "kindTable[0] - 1 for the second base");
 }
 
+static void TestBudgetHelpers(void)
+{
+    static SmapSite sites[3];
+    static BaseRec base0;
+    static BaseRec *apBases[1];
+    static ObjectRecFull objs[3];
+    static ObjectRecFull *apObjs[3];
+    static Soldier sols[3];
+    static Soldier *apSols[3];
+    i32 i;
+
+    printf("\nBudget helpers: Base_CountOutboundTransferSpace @ 0x68044, "
+           "Base_CountItemQtyAcrossBases @ 0x67d68, Base_CountPsiSoldiers @ 0x65a08\n");
+
+    memset(sites, 0, sizeof(sites));
+    memset(objs, 0, sizeof(objs));
+    memset(sols, 0, sizeof(sols));
+    sites[0].bFlag1 = 4;
+    sites[0].uRecoveredSoldiers = 3;
+    sites[0].bRecoveredSoldierAssign = (u8)(i8)-2; /* signed in the sum */
+    sites[0].auItemQty[112] = 7;
+    sites[0].auItemQty[113] = 11;
+    sites[0].auItemQty[1] = 5;
+    sites[1].bFlag1 = 4;
+    sites[1].uRecoveredSoldiers = 5;
+    sites[1].bRecoveredSoldierAssign = 1;
+    sites[1].auItemQty[112] = 1;
+    sites[1].auItemQty[113] = 2;
+    sites[1].auItemQty[1] = 4;
+    sites[2].bFlag1 = 9; /* a different base type: never scanned */
+    sites[2].auItemQty[1] = 99;
+    sites[2].uRecoveredSoldiers = 50;
+
+    base0.bUnk4 = 4;
+    apBases[0] = &base0;
+    for (i = 0; i < 3; ++i) {
+        apObjs[i] = &objs[i];
+    }
+    objs[1].bCargoSize = 2;
+    objs[2].bCargoSize = 3;
+
+    /* Own site: 3 + (-2) + 11 + 7 = 19; scanned site 1: 5 + 1 + 2 + 1 = 9; site 2 has the
+     * wrong bFlag1 and site 0 is the own site, skipped by the i != a2 test. */
+    CheckEqI32(Base_CountOutboundTransferSpace(sites, 3, 0, apBases, 0, true), 28,
+               "outbound transfer: own load plus matching-type sites");
+    /* With nSiteIdx -1 the own-site block is skipped but the scan's `i != a2` test matches
+     * every index, so site 0 is scanned too: 19 + 9. */
+    CheckEqI32(Base_CountOutboundTransferSpace(sites, 3, -1, apBases, 0, true), 28,
+               "with nSiteIdx -1 the scan covers every matching site including 0");
+    CheckEqI32(Base_CountOutboundTransferSpace(sites, 3, 0, apBases, 0, false), 19,
+               "and without the scan only the own site counts");
+
+    /* Item qty across bases: block 1 = 2*5 = 10 (column 2 is zero at the own site);
+     * block 2 = 2*4 = 8 (gate column 1 non-zero at site 0, contribution from site 1). */
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, 0, apBases, 0, apObjs, 3, true), 18,
+               "item qty across bases: own cargo plus matching-site cargo");
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, 0, apBases, 0, apObjs, 3, false), 10,
+               "without the scan only the own site");
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, -1, apBases, 0, apObjs, 3, true), 0,
+               "the needed-pass call (nSiteIdx -1) gates on zero and adds nothing");
+
+    sols[0].nKind = 0; sols[0].bUnk149 = 1;
+    sols[1].nKind = 0; sols[1].bUnk149 = 0; /* assigned but not psi */
+    sols[2].nKind = 1; sols[2].bUnk149 = 1; /* psi at another base */
+    for (i = 0; i < 3; ++i) {
+        apSols[i] = &sols[i];
+    }
+    CheckEqI32(Base_CountPsiSoldiers(apSols, 3, 0), 1, "psi soldiers at base 0");
+    CheckEqI32(Base_CountPsiSoldiers(apSols, 3, 1), 1, "and at base 1");
+    CheckEqI32(Base_CountPsiSoldiers(apSols, 3, 2), 0, "none at base 2");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -2314,6 +2386,7 @@ int main(void)
     TestFacilityPlaceAndGrant();
     TestSpeedButtons();
     TestCreateNamedEntry();
+    TestBudgetHelpers();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
