@@ -9,6 +9,7 @@
  */
 #include "app/pufo_world.h"
 
+#include "dat/pufo_dat.h"    /* DatFile, the slot file LoadGame opens */
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
 
 #include <stdio.h>
@@ -367,4 +368,109 @@ void World_Free(PufoWorldState *pW)
     }
     free(pW->apSites);
     pW->apSites = NULL;
+}
+
+/* The LoadGame teardown hooks. Tact_Shutdown (0x3d568) and Tact_InitMission (0x3c550) are not
+ * ported, and the start-menu re-entry (Geoscape_InitUI from the load path) is not mapped yet, so
+ * those three are stubs. The sav7 path tests/test_save.c pins (a geoscape save with no tactical
+ * state) reaches none of them. */
+static void Load_HookInitUi(i32 nMode, void *pUser)
+{
+    (void)nMode;
+    (void)pUser;
+}
+
+static void Load_HookTactShutdown(void *pUser)
+{
+    (void)pUser;
+}
+
+static bool Load_HookTactInitMission(i32 nMode, void *pUser)
+{
+    (void)nMode;
+    (void)pUser;
+    return false;
+}
+
+static void Load_HookFreeAll(void *pUser)
+{
+    (void)pUser;
+}
+
+i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
+                   const PufoOptions *pOptions, const WorldHooks *pHooks)
+{
+    LoadGameEnv env;
+    LoadGameHooks hooks;
+    DatFile dat;
+    i32 nRet;
+
+    (void)pOptions;
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnRenderFrame = pHooks->pfnRenderFrame;
+    hooks.pfnStartUiShutdown = pHooks->pfnStartUiShutdown;
+    hooks.pfnGeoscapeInitUi = Load_HookInitUi;
+    hooks.pfnTactShutdown = Load_HookTactShutdown;
+    hooks.pfnGeoscapeUiFreeAll = Load_HookFreeAll;
+    hooks.pfnTactInitMission = Load_HookTactInitMission;
+    hooks.pUser = pW;
+
+    /* The live world mirrors the roster the readers rebuild. */
+    pW->world.apCraft = pW->apCraft;
+    pW->world.nShipCount = pW->bCraftCount;
+    pW->world.apSiteState = pW->abSiteState;
+    pW->world.apRadarPct = pW->abRadarPct;
+    pW->world.pTime = &pW->time;
+
+    memset(&env, 0, sizeof(env));
+    env.pszAppDir = pszAppDir;
+    env.nSlot = nSlot;
+    env.pbTactFlag = &pW->bTactFlag;
+    env.pbGeoscapeUi = &pW->bGeoscapeUi;
+    env.pbGameState = &pW->bGameState;
+    env.puUiScreen = &pW->nUiScreen;
+    env.pnSoldierCount = &pW->nSoldierCount;
+    env.pnListMode = &pW->nListMode;
+    env.pbMissionCount = &pW->bMissionCount;
+    env.pbCraftSelectAssaultFlag = &pW->bCraftSelectAssaultFlag;
+    env.pBases = &pW->saveBases;
+    env.apBases = pW->apBases;
+    env.nOldBaseCount = pW->nBaseCount;
+    env.pProductBlock = pW->abProductBlock;
+    env.pResearch = &pW->saveResearch;
+    env.apCraft = pW->apCraft;
+    env.pbCraftCount = &pW->bCraftCount;
+    env.pShipEnv = &pW->ctorEnv;
+    env.pSmap = &pW->saveSmap;
+    env.pView = &pW->view;
+    env.paZoomSets = pW->sets;
+    env.pWorldSize = &pW->loadWorldSize;
+    env.pStrateg = &pW->saveStrateg;
+    env.pStrategList = &pW->strategList;
+    env.pnSeed = &pW->nStrategSeed;
+    env.apSoldiers = pW->apSoldiers;
+    env.nSoldierCapacity = PUFO_SOLDIER_CAPACITY;
+    env.apObjects = pAssets->apObjects;
+    env.nObjectCount = pAssets->nObjectCount;
+    env.pnTactVerOut = &pW->nTactVerOut;
+    env.pWorld = &pW->world;
+    env.abFacilityGrid = pW->abFacilityGrid;
+    env.apResearchCols = pW->auResearchCol;
+    env.apManufCols = pW->auManufCol;
+    env.puResearchEntries = &pW->nResearchEntries;
+    env.puShotObjectWords = (u16 *)pAssets->apObjects[0]; /* 0x45764: the shot object's aItemQty words */
+    env.pTimeRec = &pW->saveTime;
+    env.pTime = &pW->time;
+    env.pSpawnCtx = NULL;   /* StrategList_PurgeType5 and Geoscape_SpawnMissionSite need the
+                             * mission-spawn leaf, which is not ported; the load path runs with
+                             * them absent, as tests/test_save.c does. */
+    env.pMissionCtx = NULL;
+    env.pbSpawnOnceFlag = NULL;
+    env.pHooks = &hooks;
+
+    DatFile_ctor(&dat);
+    nRet = LoadGame(&dat, &env);
+    DatFile_Close(&dat);
+    return nRet;
 }

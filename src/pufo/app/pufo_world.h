@@ -54,6 +54,14 @@ typedef struct PufoWorldState {
     u8      abFlags18655D[10];                  /* InitUI sets nine, StartNew sets ten */
     i8      nSaveVersion;                       /* nSaveFmtVer @ 0x18655C */
 
+    /* The menu/load-path flags LoadGame writes through its env. */
+    u8      bTactFlag;                          /* Map.bTactFlag @ 0x1139B8 */
+    u8      bGameState;                         /* unk_15821C */
+    u16     nUiScreen;                          /* Map_nUiScreen */
+    i32     nListMode;                          /* MainMenu_nListMode @ 0x157188 */
+    u8      bMissionCount;                      /* byte_138E8C */
+    u8      bCraftSelectAssaultFlag;            /* 0x1870A8 */
+
     /* Grid and the per-base columns. */
     u8  abFacilityGrid[PUFO_GRID_SIZE];         /* gBaseFacGrid @ 0x159768 */
     u16 auProductU16[4096];                     /* unk_15D09C, 200 per base + the +2176 spill */
@@ -106,6 +114,17 @@ typedef struct PufoWorldState {
     GameTime          time;
     AssetReader       rdr;                      /* pRdr @ 0x187028 */
 
+    /* Save-load state (LoadGame @ 0x44bbc). The chunk states the readers fill, plus the
+     * 17152-byte product block (A u32, B u32, C u16, facility->item map). */
+    SaveBasesState    saveBases;      /* includes the base count byte and the type-byte array */
+    SaveResearchState saveResearch;
+    SaveSmapState     saveSmap;       /* the 200 site records, on-disk order */
+    StrategSaveState  saveStrateg;
+    SaveTimeRecord    saveTime;
+    u8                abProductBlock[17152];
+    u32               nTactVerOut;    /* write-only residue, handed out by the port */
+    SmapWorldSize     loadWorldSize;  /* 0x186BC0 on the load path (InitUI owns it on the new-game path) */
+
     /* The callees' own environments, kept here so their by-value state survives a spawn. */
     ShipCtorEnv ctorEnv;
     BootAssets *pAssets; /* set by World_NewGame; the StartNew hook reaches it through here */
@@ -123,6 +142,9 @@ typedef struct WorldHooks {
     void *pLoadPadsUser;
     void (*pfnPlaySample)(i32 nSample, void *pUser); /* the message-list sound seam */
     void *pSoundUser;
+    /* The LoadGame teardown/frame hooks (LoadGameHooks @ pufo_save.h). */
+    void (*pfnRenderFrame)(void *pUser);
+    void (*pfnStartUiShutdown)(void *pUser);
 } WorldHooks;
 
 /* Allocate the heap-held parts (the 200 site records) and set the defaults the original's
@@ -132,6 +154,11 @@ bool World_Init(PufoWorldState *pW);
 /* Geoscape_InitUI(0) + Game_StartNew over this state. Returns Game_StartNew's result. */
 i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
                   const PufoOptions *pOptions, const WorldHooks *pHooks);
+
+/* LoadGame @ 0x44bbc over this state: the slot file is szAppDir + "sav" + slot + ".sav".
+ * Returns LoadGame's result (0 when the file is absent). */
+i32 World_LoadSlot(PufoWorldState *pW, const char *pszAppDir, i32 nSlot, BootAssets *pAssets,
+                   const PufoOptions *pOptions, const WorldHooks *pHooks);
 
 /* GeoscapeUi_FreeAll(bFreeWorld 1) plus the nav controls and the site records. */
 void World_Free(PufoWorldState *pW);

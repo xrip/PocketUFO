@@ -349,7 +349,12 @@ Order is by what unblocks what. Each item ends with gates + commit.
   columns, sites, economy, UI state, viewport, nav controls) and `App_HookNewGame` runs
   `Geoscape_InitUI(0)` + `Game_StartNew` for real. `pocketufo --new-game --dump-frame <png>` reports
   4147000 funds, 1 base, 8 soldiers, 3 craft, screen 2, zoom 0. The geoscape click handlers and the
-  two spawn hooks are no-op thunks until those screens are ported.
+  two spawn hooks are no-op thunks until those screens are ported. `World_LoadSlot` wires
+  `LoadGame @ 0x44bbc` over the same state (the chunk blobs live in `PufoWorldState`);
+  `pocketufo --load-slot 7 --dump-frame <png>` loads the test save and reports
+  "load slot 7: loaded (0 funds, 1 bases, 0 soldiers, 1 craft, ui screen 0)". The three teardown
+  hooks the load path can reach (`Geoscape_InitUI` re-entry, `Tact_Shutdown`, `Tact_InitMission`)
+  are stubs until those paths are mapped.
 - [x] `Geoscape_OnRadarListClick @ 0x854c4` — the status panel's click, ported in `pufo_baseui.{h,c}`
   behind `RadarClickEnv`, 36 checks in `tests/test_baseui.c`. The panel row's `anLineAux` value IS the
   strateg item index (stored to 0x186BE4); six (nType, bActive) branches pause the clock and edit the

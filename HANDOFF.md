@@ -297,8 +297,9 @@ This is the shortest chain that produces a real game session, in dependency orde
    done too: `app/pufo_world.{h,c}` owns the geoscape state (`PufoWorldState`) and
    `App_HookNewGame` runs `Geoscape_InitUI(0)` + `Game_StartNew` for real; `pocketufo
    --new-game --dump-frame <png>` prints the resulting state (4147000 funds, 1 base, 8
-   soldiers, 3 craft, screen 2, zoom 0). The geoscape click handlers and the spawn hooks are
-   no-op thunks until those screens land.
+   soldiers, 3 craft, screen 2, zoom 0), and `World_LoadSlot` wires `LoadGame` over the same
+   state so `--load-slot 7` loads a save for real. The geoscape click handlers (except the
+   radar list) and the spawn hooks are no-op thunks until those screens land.
 
 ### Largest unported functions by size
 

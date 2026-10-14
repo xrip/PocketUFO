@@ -237,11 +237,42 @@ static void App_HookQuit(void *pUser)
     (void)PostQuitMessage(0); /* the shell's App_QuitDisplay @ 0xa0388 equivalent */
 }
 
+static void App_DrawFrame(void);        /* defined below with the render path */
+static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
+
+static void App_DrawFrameHook(void *pUser)
+{
+    (void)pUser;
+    App_DrawFrame();
+}
+
+/* LoadGame @ 0x44bbc over the shell's world state. The slot path is szAppDir + "sav" + slot +
+ * ".sav"; the shell uses the working directory (DEVIATION: the original resolves szAppDir from
+ * the exe path in InitInstance). The state line is the shell's own report, as in App_HookNewGame. */
 static i32 App_HookLoadGame(i32 nSlot, void *pUser)
 {
-    (void)nSlot;
+    WorldHooks hooks;
+
     (void)pUser;
-    return 0; /* LoadGame (0x44bbc) is not ported; Menu_LoadSlot restores list mode 2 */
+    if (!g_bWorldReady) {
+        return 0;
+    }
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnLoadPads = App_LoadPads;
+    hooks.pfnPlaySample = App_HookPlaySampleI;
+    hooks.pfnRenderFrame = App_DrawFrameHook;
+    hooks.pfnStartUiShutdown = App_ShutdownStartUi;
+
+    {
+        i32 nRet = World_LoadSlot(&g_world, "", nSlot, &g_assets, &g_options, &hooks);
+        printf("pocketufo: load slot %d: %s (%d funds, %d bases, %d soldiers, %d craft, ui screen %d)\n",
+               (int)nSlot, nRet != 0 ? "loaded" : "no save", (int)g_world.nFunds,
+               (int)g_world.saveBases.bBaseCount, (int)g_world.nSoldierCount,
+               (int)g_world.bCraftCount, (int)g_world.nUiScreen);
+        fflush(stdout);
+        return nRet;
+    }
 }
 
 static void App_HookClearDrawMode(void *pUser)
@@ -601,6 +632,36 @@ static void App_FindNewGameFlag(LPCWSTR pwszCmd)
     g_bNewGameFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
 }
 
+/* `--load-slot <n>` on the command line: run the load path (LoadGame @ 0x44bbc) once before the
+ * frame dump. Not part of the original. */
+static i32 g_nLoadSlot = -1;
+
+static void App_FindLoadSlotFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--load-slot";
+    WCHAR awcArg[16];
+    int i = 0;
+
+    if (pwszCmd == NULL) {
+        return;
+    }
+    pwszCmd = wcsstr(pwszCmd, awcFlag);
+    if (pwszCmd == NULL) {
+        return;
+    }
+    pwszCmd += (int)(sizeof(awcFlag) / sizeof(WCHAR)) - 1;
+    while (*pwszCmd == L' ') {
+        ++pwszCmd;
+    }
+    while (*pwszCmd != L'\0' && *pwszCmd != L' ' && i < 15) {
+        awcArg[i++] = *pwszCmd++;
+    }
+    awcArg[i] = L'\0';
+    if (i != 0) {
+        g_nLoadSlot = (i32)_wtoi(awcArg);
+    }
+}
+
 /* `--click <x> <y>` on the command line: with --dump-frame this performs one press+release at
  * logical 240x320 coordinates before the dump, so the menu's click path (hover mark, then release
  * fires the row's handler) can be checked headlessly. Not part of the original. */
@@ -852,6 +913,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     pszDumpPath = App_FindDumpFlag(lpCmdLine);
     App_FindClickFlag(lpCmdLine);
     App_FindNewGameFlag(lpCmdLine);
+    App_FindLoadSlotFlag(lpCmdLine);
 
     if (!App_InitInstance(hInstance, nCmdShow)) {
         return 0;
@@ -870,6 +932,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         g_bWorldReady = World_Init(&g_world);
         if (g_bNewGameFlag) {
             App_HookNewGame(NULL); /* the menu's new-game row runs the same path on a click */
+        }
+        if (g_nLoadSlot >= 0) {
+            (void)App_HookLoadGame(g_nLoadSlot, NULL); /* the load-slot rows run the same path */
         }
         App_DrawFrame();
         if (pszDumpPath != NULL) {
