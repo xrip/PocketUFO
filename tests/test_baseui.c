@@ -2808,6 +2808,105 @@ static void TestOptionsAudioTab(void)
     OptionsScreen_Init(NULL);
     Check(true, "a null init env is tolerated");
 }
+/* SaveGame_Slot0..6_CloseUI @ 0x6af80..0x6b148 and LoadGame_Slot0..6_InitOptions @ 0x6b194..0x6b404.
+ * Both drivers are ported, so the handlers run for real. The slot path names a directory that does
+ * not exist, which is the one input that makes each driver fail before it touches any save state. */
+
+static i32 g_nSlotListMode;
+static i32 g_nSlotListModeAtRender;
+static i32 g_nSlotListModeAtClose;
+static i32 g_nSlotRenderCalls;
+static i32 g_nSlotCloseCalls;
+
+static void Slot_RenderFrame(void *pUser)
+{
+    (void)pUser;
+    g_nSlotRenderCalls += 1;
+    g_nSlotListModeAtRender = g_nSlotListMode;
+}
+
+static void Slot_CloseUi(void *pUser)
+{
+    (void)pUser;
+    g_nSlotCloseCalls += 1;
+    g_nSlotListModeAtClose = g_nSlotListMode;
+}
+
+static void TestSaveLoadSlots(void)
+{
+    static DatFile dat;
+    static SaveGameInput in;
+    static LoadGameEnv loadEnv;
+    static LoadGameHooks loadHooks;
+    static SaveSlotEnv env;
+    static i32 nGeoscapeScreen;
+    static u8 bControlsExist;
+    static ScreenScratch scratch;
+
+    printf("SaveGame_SlotN_CloseUI @ 0x6af80 and LoadGame_SlotN_InitOptions @ 0x6b194\n");
+
+    memset(&in, 0, sizeof(in));
+    in.pszAppDir = "pufo_slot_test_dir_zz\\";
+    in.pfnRenderFrame = Slot_RenderFrame;
+
+    memset(&loadHooks, 0, sizeof(loadHooks));
+    memset(&loadEnv, 0, sizeof(loadEnv));
+    loadEnv.pszAppDir = "pufo_slot_test_dir_zz\\";
+    loadEnv.pHooks = &loadHooks;
+
+    memset(&env, 0, sizeof(env));
+    env.pDat = &dat;
+    env.pIn = &in;
+    env.pLoadEnv = &loadEnv;
+    env.pnListMode = &g_nSlotListMode;
+    env.pScratch = &scratch;
+    env.pbControlsExist = &bControlsExist;
+    env.pnGeoscapeScreen = &nGeoscapeScreen;
+    env.pOptionsInit = &g_optInit; /* the options fixture the previous test built */
+    env.pfnCloseUi = Slot_CloseUi;
+
+    /* The save handler. The render hook is the only place the transient mode 4 is visible. */
+    g_nSlotListMode = 0;
+    bControlsExist = 0;
+    nGeoscapeScreen = 7;
+    scratch.nLineAux145 = 9;
+    g_nSlotRenderCalls = 0;
+    g_nSlotCloseCalls = 0;
+
+    DatFile_ctor(&dat);
+    SaveGame_Slot3_CloseUI(&env);
+    DatFile_Close(&dat);
+
+    CheckEqI32(in.nSlot, 3, "the handler hands slot 3 to SaveGame (0x6B07C)");
+    CheckEqI32(g_nSlotRenderCalls, 1, "SaveGame renders a frame before it opens the file (0x4499C)");
+    CheckEqI32(g_nSlotListModeAtRender, 4, "  and the list mode is 4 while it writes (0x6AF90)");
+    CheckEqI32(scratch.nLineAux145, 0, "the tab byte goes back to 0 (0x6AFA4)");
+    CheckEqI32(g_nSlotCloseCalls, 1, "Geoscape_CloseUI runs last (0x6AFB8)");
+    CheckEqI32(g_nSlotListModeAtClose, 1, "  with the list mode already back to 1 (0x6AFAC)");
+
+    /* The load handler: the flag it sets makes OptionsScreen_Init take its teardown branch. */
+    g_nSlotListMode = 0;
+    bControlsExist = 0;
+    nGeoscapeScreen = 7;
+    scratch.nLineAux145 = 9;
+    g_bOptBuilt = 1;
+    g_nSetupCalls = 0;
+
+    DatFile_ctor(&dat);
+    CheckEqI32(LoadGame_Slot5_InitOptions(&env), 1, "a missing slot is the failure path, which returns 1 (0x6B1E0)");
+    DatFile_Close(&dat);
+
+    CheckEqI32(loadEnv.nSlot, 5, "the handler hands slot 5 to LoadGame (0x6B1D4)");
+    CheckEqI32(scratch.nLineAux145, 0, "the tab byte is cleared first (0x6B1A4)");
+    CheckEqI32(nGeoscapeScreen, 0, "the geoscape screen id is cleared (0x6B1B0)");
+    CheckEqI32(g_nSlotListMode, 1, "the failed load puts the list mode back to 1 (0x6B1E0)");
+    CheckEqI32(g_bOptBuilt, 0, "OptionsScreen_Init ran and took its teardown branch (0x6B1C4, 0x6B1C8)");
+    CheckEqI32(g_nSetupCalls, 0, "  which positions nothing");
+
+    CheckEqI32(LoadGame_Slot_InitOptions(NULL, 0), 0, "a null slot env loads nothing");
+    SaveGame_Slot0_CloseUI(NULL);
+    Check(true, "a null slot env saves nothing");
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2848,6 +2947,7 @@ int main(void)
     TestBuildDialog();
     TestSoldierDisplayName();
     TestOptionsAudioTab();
+    TestSaveLoadSlots();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

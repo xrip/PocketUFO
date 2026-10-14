@@ -9542,3 +9542,31 @@ step and tests nothing (0x6B93C, 0x6B984) — a step outside 0..5 writes 2 into 
 lands on; the port clamps. `OptionsScreen_LayoutButtons` centres the return hotspot on the SAVE
 control's width: the uWidth read at 0x6B764 reloads R1 from the same R0 (unk_186BB4) while the store
 at 0x6B778 lands on unk_186BB0. The port reproduces it.
+
+### The options screen's save and load slots (done)
+
+`src/pufo/game/pufo_baseui.{h,c}`, 15 new checks in `tests/test_baseui.c`. The fourteen handlers the
+save and load tabs install: `SaveGame_Slot0..6_CloseUI` (0x6af80..0x6b148, 76 B each) and
+`LoadGame_Slot0..6_InitOptions` (0x6b194..0x6b404, 104 B each). Fourteen copies of two bodies that
+differ only in the slot number, so the port has one body each plus fourteen thin wrappers.
+
+The save body: `MainMenu_nListMode = 4`, `SaveGame(&MainMenu_pSlotCtx, N)`, the tab byte back to 0,
+`MainMenu_nListMode = 1`, then `Geoscape_CloseUI` over the 0x1864F8 control block as a tail call. Mode
+4 is the value `MainMenu_Draw` (0x1dbb8) has no layout for, so the start screen drops its rows while
+the slot file is being written; the port names it `PUFO_MAINMENU_MODE_SAVING`. The test sees the
+transient mode through `SaveGame`'s own render hook, which runs before the file is opened.
+
+The load body: tab byte 0, `nGeoscapeScreen = 0`, `MainMenu_nListMode = 3`, the "controls exist" flag
+set, `OptionsScreen_Init` — which therefore takes its teardown branch and releases the options
+controls before the load replaces the world — then `LoadGame(&MainMenu_pSlotCtx, N)`. A zero LOW BYTE
+of the result restores list mode 1 and returns 1; any other value is returned unchanged. The test is
+on the low byte, not the value, so a `LoadGame` that returned 256 would read as a failure; the port
+reproduces the byte test.
+
+Both drivers were already ported (`SaveGame @ 0x44988`, `LoadGame @ 0x44bbc`), so the handlers run for
+real in the test: the slot path names a directory that does not exist, which is the one input that
+makes each driver fail before it touches any save state. `pufo_save.h`'s header still claimed LoadGame
+was "NOT ported"; that line is corrected.
+
+IDB: comments on 0x6af80 and 0x6b194 describing both bodies and naming the six copies each, and the
+two `Bind*Slots` comments updated now that the handlers they install exist.

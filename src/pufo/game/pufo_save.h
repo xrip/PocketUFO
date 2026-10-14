@@ -3,10 +3,10 @@
  * Evidence: Save_WriteSoldiers @ 0x42350, Save_ReadSoldiers @ 0x416bc,
  *           Save_ReadStrategVer @ 0x3f1c8, Save_ReadGameState @ 0x44958.
  *
- * NOT ported, and deliberately not cited here: the load driver LoadGame (0x44bbc).
- * This module recreates the chunk writers and readers the drivers call, and now the
- * save driver itself. The whole file is described below because the format is needed
- * to read a save, but describing a function is not the same as recreating it.
+ * Both drivers are ported: the save driver SaveGame @ 0x44988 and the load driver
+ * LoadGame @ 0x44bbc. This module recreates the chunk writers and readers they call, and
+ * the drivers themselves. The whole file is described below because the format is needed
+ * to read a save.
  *
  * ## Container
  *

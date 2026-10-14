@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 753 / 1103 (68.3%) |
-| Bytes of original code cited | 332812 / 598792 (55.6%) |
+| Functions cited as evidence | 767 / 1103 (69.5%) |
+| Bytes of original code cited | 334072 / 598792 (55.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8329 |
+| Test checks run | 8344 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 73 | 85 | 22276 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 137 | 205 | 71200 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 140 | 243 | 21636 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 154 | 243 | 22896 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -710,7 +710,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (140 functions)
+### `strat-ui` (154 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -741,6 +741,13 @@ is the module that answers to it.
 | `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x618c4` | `SoldierScreen_FindPrevAtBase` | 104 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6b194` | `LoadGame_Slot0_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b1fc` | `LoadGame_Slot1_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b264` | `LoadGame_Slot2_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b2cc` | `LoadGame_Slot3_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b334` | `LoadGame_Slot4_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b39c` | `LoadGame_Slot5_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b404` | `LoadGame_Slot6_InitOptions` | 104 | `src/pufo/game/pufo_baseui.h` |
 | `0x6bc1c` | `OptionsScreen_SetSfxVol0` | 100 | `src/pufo/game/pufo_baseui.h` |
 | `0x6bc80` | `OptionsScreen_SetSfxVol1` | 100 | `src/pufo/game/pufo_baseui.h` |
 | `0x6bce4` | `OptionsScreen_SetSfxVol2` | 100 | `src/pufo/game/pufo_baseui.h` |
@@ -779,6 +786,13 @@ is the module that answers to it.
 | `0x19f74` | `SaveLoad_Slot5` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19fc4` | `SaveLoad_Slot6` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/game/pufo_baseui.c` |
+| `0x6af80` | `SaveGame_Slot0_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6afcc` | `SaveGame_Slot1_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b018` | `SaveGame_Slot2_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b064` | `SaveGame_Slot3_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b0b0` | `SaveGame_Slot4_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b0fc` | `SaveGame_Slot5_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
+| `0x6b148` | `SaveGame_Slot6_CloseUI` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6ba70` | `OptionsScreen_SetMusicVol1` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x6bbd0` | `OptionsScreen_SetMusicVol5` | 76 | `src/pufo/game/pufo_baseui.h` |
 | `0x64a9c` | `SoldierScreen_SelectListed` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -1166,7 +1180,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 103 functions, 95372 bytes remaining
+### `strat-ui` — 89 functions, 94112 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1244,13 +1258,6 @@ whose port work they belong to.
 | `0x73380` | `ResearchScreen_CancelSelectedAndClose` | 116 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7cbc8` | `BasePlaneScreen_SelectCraft` | 116 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x55754` | `BaseInfoScreen_TogglePanelMode` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b194` | `LoadGame_Slot0_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b1fc` | `LoadGame_Slot1_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b264` | `LoadGame_Slot2_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b2cc` | `LoadGame_Slot3_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b334` | `LoadGame_Slot4_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b39c` | `LoadGame_Slot5_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b404` | `LoadGame_Slot6_InitOptions` | 104 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x715e8` | `PsiScreen_PanelPrev` | 96 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x71648` | `PsiScreen_PanelNext` | 96 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e98c` | `ManufScreen_ConfirmAndClose` | 92 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1263,13 +1270,6 @@ whose port work they belong to.
 | `0x9683c` | `Transfer_ScrollNextAll` | 88 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x96ad8` | `Transfer_RoleToIconId` | 88 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7cc3c` | `BasePlaneScreen_SelectListed` | 80 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6af80` | `SaveGame_Slot0_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6afcc` | `SaveGame_Slot1_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b018` | `SaveGame_Slot2_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b064` | `SaveGame_Slot3_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b0b0` | `SaveGame_Slot4_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b0fc` | `SaveGame_Slot5_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6b148` | `SaveGame_Slot6_CloseUI` | 76 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x577c0` | `BaseAtScreen_CloseThunk` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd4c` | `ManufScreen_PanelPrev` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 646 |
+| `test_baseui` | PASS | 661 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

@@ -392,6 +392,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] The options screen's save and load slots — `SaveGame_Slot0..6_CloseUI @ 0x6af80..0x6b148`
+  (76 B each) and `LoadGame_Slot0..6_InitOptions @ 0x6b194..0x6b404` (104 B each). 14 functions,
+  1260 bytes, 15 new checks in `tests/test_baseui.c`. The save body sets list mode 4 (the value
+  `MainMenu_Draw` has no layout for, now `PUFO_MAINMENU_MODE_SAVING`), writes the slot, clears the tab
+  byte, restores mode 1 and tail-calls `Geoscape_CloseUI`. The load body clears the tab byte and the
+  geoscape screen id, sets mode 3 and the "controls exist" flag — so `OptionsScreen_Init` takes its
+  teardown branch before the world is replaced — runs `LoadGame`, and treats a zero LOW BYTE of the
+  result as failure (mode back to 1, return 1). Both drivers were already ported, so the test runs
+  them for real against a slot path that cannot exist. `pufo_save.h`'s stale "LoadGame is NOT ported"
+  header line is corrected. IDB comments on 0x6af80 and 0x6b194.
 - [x] The options screen's audio tab — `OptionsScreen_Init @ 0x6be74` (760 B),
   `OptionsScreen_LayoutButtons @ 0x6b6c4` (232 B), `OptionsScreen_BindSaveSlots @ 0x6b49c` (236 B),
   `OptionsScreen_BindLoadSlots @ 0x6b588` (236 B), `OptionsScreen_RefreshVolumeHighlight @ 0x6b8fc`
@@ -751,6 +761,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the two craft-name formatters (`Soldier_FormatDisplayName`, `Ship_FormatDisplayName`) | 56/56 (Release) | 8260 | 733/1103 (66.5%) | 329688/598792 (55.1%) | 38 checked, 0 mismatched |
 | radar intercept roll + overlay blit (`RadarScreen_RollWeaponHit`, `RadarScreen_BlitOverlay`) | 56/56 (Release) | 8281 | 736/1103 (66.7%) | 330076/598792 (55.1%) | 38 checked, 0 mismatched |
 | options screen audio tab (17 functions: Init, LayoutButtons, Bind*Slots, RefreshVolumeHighlight, 12 radio handlers) | 56/56 (Release) | 8329 | 753/1103 (68.3%) | 332812/598792 (55.6%) | 38 checked, 0 mismatched |
+| options screen save/load slots (14 handlers) | 56/56 (Release) | 8344 | 767/1103 (69.5%) | 334072/598792 (55.8%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -27,6 +27,7 @@
 #include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
 #include "render/pufo_render.h"  /* PadImage, SoldierScreen_Toggle's "soldier" pad */
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
+#include "game/pufo_save.h"      /* DatFile, SaveGameInput, LoadGameEnv, the save/load slot handlers */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -1132,7 +1133,8 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
  * BindSaveSlots (0x6b49c) and BindLoadSlots (0x6b588) are the same shape over all seven rows:
  * scratch byte 1 or 2, the seven SaveGame_SlotN_CloseUI / LoadGame_SlotN_InitOptions handlers,
  * x = 120 - (uWidth >> 1), y = 40 + 22*i, unk_186BB4->y = 215, and SaveSlot_FormatList over the main
- * menu's slot context. Neither slot-handler family is ported, so they enter here as hooks.
+ * menu's slot context. The fourteen slot handlers are ported below; they arrive here as the caller's
+ * thunks because the click slot takes no arguments.
  *
  * Deviations: the original allocates every control with operator new(0x20) into fixed .bss slots and
  * tears them down with UiControl_FreePads plus operator delete; the port takes caller-owned controls,
@@ -1188,8 +1190,8 @@ typedef struct OptionsTabEnv {
     void (*pfnBindLoadSlots)(void); /* OptionsScreen_BindLoadSlots (0x6b588) */
     void (*pfnSetTab3)(void);       /* Set_byte_159E88_3_SetUiY (0x6b674) */
     void (*pfnSetTab4)(void);       /* Set_byte_159E88_4 (0x6b6b0) */
-    void (*apfnSaveSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* SaveGame_SlotN_CloseUI (0x6af80..0x6b148), not ported */
-    void (*apfnLoadSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* LoadGame_SlotN_InitOptions (0x6b194..0x6b404), not ported */
+    void (*apfnSaveSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* SaveGame_SlotN_CloseUI (0x6af80..0x6b148) */
+    void (*apfnLoadSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* LoadGame_SlotN_InitOptions (0x6b194..0x6b404) */
     void (*pfnFormatSlots)(void *pUser);   /* SaveSlot_FormatList (0x45904), reads the save files */
     void *pUser;
 } OptionsTabEnv;
@@ -1216,5 +1218,60 @@ typedef struct OptionsInitEnv {
 } OptionsInitEnv;
 
 void OptionsScreen_Init(OptionsInitEnv *pEnv); /* 0x6be74 */
+
+/* ------------------------------------------------- the options screen's save and load slots
+ *
+ * Evidence: SaveGame_Slot0..6_CloseUI @ 0x6af80 / 0x6afcc / 0x6b018 / 0x6b064 / 0x6b0b0 / 0x6b0fc / 0x6b148
+ * and LoadGame_Slot0..6_InitOptions @ 0x6b194 / 0x6b1fc / 0x6b264 / 0x6b2cc / 0x6b334 / 0x6b39c / 0x6b404.
+ * Fourteen copies (76 B and 104 B) of two bodies that differ only in the slot number, installed on the
+ * seven rows by OptionsScreen_BindSaveSlots and OptionsScreen_BindLoadSlots.
+ *
+ * SaveGame_SlotN_CloseUI: MainMenu_nListMode = 4, SaveGame(&MainMenu_pSlotCtx, N), the tab byte back
+ * to 0, MainMenu_nListMode = 1, then Geoscape_CloseUI over the 0x1864F8 control block as a tail call.
+ * Mode 4 is what MainMenu_Draw (0x1dbb8) has no layout for — the start screen drops its rows while
+ * the file is being written — and mode 1 is the "second four rows" menu it comes back to.
+ *
+ * LoadGame_SlotN_InitOptions: tab byte 0, nGeoscapeScreen = 0, MainMenu_nListMode = 3 (the loading
+ * layout), the "controls exist" flag set, OptionsScreen_Init — which therefore takes its teardown
+ * branch and releases the options controls before the load replaces the world — then
+ * LoadGame(&MainMenu_pSlotCtx, N). A zero LOW BYTE of the result puts the list mode back to 1 and
+ * returns 1; any other value is returned unchanged. The test is on the low byte, not the value, so a
+ * LoadGame that returned 256 would read as a failure; the port reproduces the byte test.
+ *
+ * Deviations: the original reaches both drivers through the fixed slot context at 0x156938; the port
+ * takes the caller's DatFile and its SaveGameInput / LoadGameEnv and writes the handler's slot into
+ * pIn->nSlot / pLoadEnv->nSlot before the driver runs. Geoscape_CloseUI (0x8b94c) is not ported and
+ * enters as a hook. The original's return register is Geoscape_CloseUI's; the port returns 0. */
+typedef struct SaveSlotEnv {
+    DatFile        *pDat;       /* the slot file the driver opens */
+    SaveGameInput  *pIn;        /* nSlot is set to this handler's slot before SaveGame runs */
+    LoadGameEnv    *pLoadEnv;   /* nSlot is set to this handler's slot before LoadGame runs */
+    i32            *pnListMode;      /* MainMenu_nListMode @ 0x157188 */
+    ScreenScratch  *pScratch;        /* byte_159E88[0], the tab byte */
+    u8             *pbControlsExist; /* byte_159E88[4] */
+    i32            *pnGeoscapeScreen;/* nGeoscapeScreen @ 0x186BC4 */
+    OptionsInitEnv *pOptionsInit;    /* re-initialised before the load */
+    void (*pfnCloseUi)(void *pUser); /* Geoscape_CloseUI (0x8b94c), not ported */
+    void *pCloseUser;
+} SaveSlotEnv;
+
+i32 SaveGame_Slot_CloseUI(SaveSlotEnv *pEnv, i32 nSlot);
+i32 LoadGame_Slot_InitOptions(SaveSlotEnv *pEnv, i32 nSlot);
+
+void SaveGame_Slot0_CloseUI(SaveSlotEnv *pEnv); /* 0x6af80 */
+void SaveGame_Slot1_CloseUI(SaveSlotEnv *pEnv); /* 0x6afcc */
+void SaveGame_Slot2_CloseUI(SaveSlotEnv *pEnv); /* 0x6b018 */
+void SaveGame_Slot3_CloseUI(SaveSlotEnv *pEnv); /* 0x6b064 */
+void SaveGame_Slot4_CloseUI(SaveSlotEnv *pEnv); /* 0x6b0b0 */
+void SaveGame_Slot5_CloseUI(SaveSlotEnv *pEnv); /* 0x6b0fc */
+void SaveGame_Slot6_CloseUI(SaveSlotEnv *pEnv); /* 0x6b148 */
+
+i32 LoadGame_Slot0_InitOptions(SaveSlotEnv *pEnv); /* 0x6b194 */
+i32 LoadGame_Slot1_InitOptions(SaveSlotEnv *pEnv); /* 0x6b1fc */
+i32 LoadGame_Slot2_InitOptions(SaveSlotEnv *pEnv); /* 0x6b264 */
+i32 LoadGame_Slot3_InitOptions(SaveSlotEnv *pEnv); /* 0x6b2cc */
+i32 LoadGame_Slot4_InitOptions(SaveSlotEnv *pEnv); /* 0x6b334 */
+i32 LoadGame_Slot5_InitOptions(SaveSlotEnv *pEnv); /* 0x6b39c */
+i32 LoadGame_Slot6_InitOptions(SaveSlotEnv *pEnv); /* 0x6b404 */
 
 #endif /* PUFO_BASEUI_H */

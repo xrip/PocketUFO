@@ -7,6 +7,7 @@
 #include "game/pufo_strateg.h" /* StrategList_Clear */
 #include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
+#include "game/pufo_mainmenu.h" /* PUFO_MAINMENU_MODE_*, the list mode the slot handlers set */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -2315,4 +2316,124 @@ void OptionsScreen_Init(OptionsInitEnv *pEnv)
 
     (void)OptionsScreen_RefreshVolumeHighlight(pEnv->pVolEnv); /* 0x6C0B4 */
     (void)OptionsScreen_LayoutButtons(pEnv->pTabEnv);          /* 0x6C0B8 */
+}
+
+/* ------------------------------------------------- the options screen's save and load slots */
+
+i32 SaveGame_Slot_CloseUI(SaveSlotEnv *pEnv, i32 nSlot)
+{
+    if (pEnv == NULL || pEnv->pDat == NULL || pEnv->pIn == NULL || pEnv->pnListMode == NULL
+        || pEnv->pScratch == NULL) {
+        return 0;
+    }
+
+    *pEnv->pnListMode = PUFO_MAINMENU_MODE_SAVING;              /* 0x6AF90: no rows while writing */
+    pEnv->pIn->nSlot = nSlot;                                   /* the original's second argument */
+    (void)SaveGame(pEnv->pDat, pEnv->pIn);                      /* 0x6AF98 */
+    pEnv->pScratch->nLineAux145 = 0;                            /* 0x6AFA4 */
+    *pEnv->pnListMode = PUFO_MAINMENU_MODE_SLOTCLICK;           /* 0x6AFAC */
+
+    if (pEnv->pfnCloseUi != NULL) {
+        pEnv->pfnCloseUi(pEnv->pCloseUser);                     /* 0x6AFB8, the tail call */
+    }
+    return 0;
+}
+
+i32 LoadGame_Slot_InitOptions(SaveSlotEnv *pEnv, i32 nSlot)
+{
+    i32 nRet;
+
+    if (pEnv == NULL || pEnv->pDat == NULL || pEnv->pLoadEnv == NULL || pEnv->pnListMode == NULL
+        || pEnv->pScratch == NULL) {
+        return 0;
+    }
+
+    pEnv->pScratch->nLineAux145 = 0;                            /* 0x6B1A4 */
+    if (pEnv->pnGeoscapeScreen != NULL) {
+        *pEnv->pnGeoscapeScreen = 0;                            /* 0x6B1B0 */
+    }
+    *pEnv->pnListMode = PUFO_MAINMENU_MODE_LOADING;             /* 0x6B1B8 */
+    if (pEnv->pbControlsExist != NULL) {
+        *pEnv->pbControlsExist = 1;                             /* 0x6B1C4 */
+    }
+    OptionsScreen_Init(pEnv->pOptionsInit);                     /* 0x6B1C8, so this is the teardown */
+
+    pEnv->pLoadEnv->nSlot = nSlot;                              /* the original's second argument */
+    nRet = LoadGame(pEnv->pDat, pEnv->pLoadEnv);               /* 0x6B1D4 */
+
+    if (((u8)nRet) == 0) {                                      /* 0x6B1DC: the test is on the low byte */
+        *pEnv->pnListMode = PUFO_MAINMENU_MODE_SLOTCLICK;       /* 0x6B1E0 */
+        return 1;
+    }
+    return nRet;
+}
+
+void SaveGame_Slot0_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 0); /* 0x6af80 */
+}
+
+void SaveGame_Slot1_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 1); /* 0x6afcc */
+}
+
+void SaveGame_Slot2_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 2); /* 0x6b018 */
+}
+
+void SaveGame_Slot3_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 3); /* 0x6b064 */
+}
+
+void SaveGame_Slot4_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 4); /* 0x6b0b0 */
+}
+
+void SaveGame_Slot5_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 5); /* 0x6b0fc */
+}
+
+void SaveGame_Slot6_CloseUI(SaveSlotEnv *pEnv)
+{
+    (void)SaveGame_Slot_CloseUI(pEnv, 6); /* 0x6b148 */
+}
+
+i32 LoadGame_Slot0_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 0); /* 0x6b194 */
+}
+
+i32 LoadGame_Slot1_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 1); /* 0x6b1fc */
+}
+
+i32 LoadGame_Slot2_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 2); /* 0x6b264 */
+}
+
+i32 LoadGame_Slot3_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 3); /* 0x6b2cc */
+}
+
+i32 LoadGame_Slot4_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 4); /* 0x6b334 */
+}
+
+i32 LoadGame_Slot5_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 5); /* 0x6b39c */
+}
+
+i32 LoadGame_Slot6_InitOptions(SaveSlotEnv *pEnv)
+{
+    return LoadGame_Slot_InitOptions(pEnv, 6); /* 0x6b404 */
 }

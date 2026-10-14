@@ -51,6 +51,9 @@
 #define PUFO_MAINMENU_MODE_SLOTCLICK 1
 #define PUFO_MAINMENU_MODE_LOADLIST 2
 #define PUFO_MAINMENU_MODE_LOADING  3
+/* SaveGame_SlotN_CloseUI (0x6af80..0x6b148) sets this around the write. MainMenu_Draw has no layout
+ * for it, so the start screen drops its rows while the slot file is being written. */
+#define PUFO_MAINMENU_MODE_SAVING   4
 
 typedef struct MainMenuEnv {
     const u8   *pBgGlyph;            /* the start-screen backdrop block, blitted at (0,0) with
