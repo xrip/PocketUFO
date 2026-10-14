@@ -1320,7 +1320,7 @@ static Ship g_aHngCraft[6];
 static Ship *g_apHngCraft[6];
 static u8 g_aHngText[PUFO_TEXT_REC_STRIDE * 153];
 static char g_aHngName[108];
-static BasePlaneScreenObjects g_hngObj;
+static BasePlaneScreen g_hngObj;
 static PlaneCraftPanels g_hngOut;
 static PlaneBuildEnv g_hngEnv;
 static PlaneCraftSelectEnv g_hngSel;
@@ -1558,6 +1558,175 @@ static void TestBuildCraftPanels(void)
     TestEqI32("and so does BasePlaneScreen_SelectListed", BasePlaneScreen_SelectListed(NULL), 0);
 }
 
+/* ------------------------------------------------- the hangar's object block
+ *
+ * Evidence: BasePlaneScreen_Init @ 0x7d9e4. */
+
+static BasePlaneScreen g_hngScr;
+static UiControl g_hngCloseCtl;
+static UiControl g_hngBuySellCtl;
+static PlaneCraftPanels g_hngInitOut;
+static BasePlaneScreenInitEnv g_hngInitEnv;
+static i32 g_nPadLoadCalls;
+static const char *g_szPad0Seen[11];
+
+static void HngMain0(void)
+{
+}
+static void HngMain1(void)
+{
+}
+static void HngMain2(void)
+{
+}
+static void HngMain3(void)
+{
+}
+static void HngWpn0(void)
+{
+}
+static void HngWpn1(void)
+{
+}
+static void HngWpn2(void)
+{
+}
+static void HngWpn3(void)
+{
+}
+static void HngWpn4(void)
+{
+}
+static void HngWpn5(void)
+{
+}
+static void HngWpn6(void)
+{
+}
+static void HngClose(void)
+{
+}
+static void HngBuySell(void)
+{
+}
+
+static bool HngLoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser)
+{
+    (void)pCtl;
+    (void)psz1;
+    (void)psz2;
+    (void)pUser;
+
+    if (g_nPadLoadCalls < 11) {
+        g_szPad0Seen[g_nPadLoadCalls] = psz0;
+    }
+    ++g_nPadLoadCalls;
+    return false; /* no archives in this test */
+}
+
+static void TestPlaneInit(void)
+{
+    printf("BasePlaneScreen_Init @ 0x7d9e4\n");
+
+    HngReset();
+    /* In the original both Init and BuildPanels reach the same fixed block at 0x161A48, so the build
+     * env has to point at the block Init allocates into. */
+    g_hngEnv.pObjects = &g_hngScr;
+    memset(&g_hngScr, 0, sizeof(g_hngScr));
+    memset(&g_hngCloseCtl, 0, sizeof(g_hngCloseCtl));
+    memset(&g_hngBuySellCtl, 0, sizeof(g_hngBuySellCtl));
+    memset(&g_hngInitOut, 0, sizeof(g_hngInitOut));
+    memset(g_szPad0Seen, 0, sizeof(g_szPad0Seen));
+    g_nPadLoadCalls = 0;
+
+    memset(&g_hngInitEnv, 0, sizeof(g_hngInitEnv));
+    g_hngInitEnv.pScreen = &g_hngScr;
+    g_hngInitEnv.pCloseCtl = &g_hngCloseCtl;
+    g_hngInitEnv.pBuySellCtl = &g_hngBuySellCtl;
+    g_hngInitEnv.apfnMainClick[0] = HngMain0;
+    g_hngInitEnv.apfnMainClick[1] = HngMain1;
+    g_hngInitEnv.apfnMainClick[2] = HngMain2;
+    g_hngInitEnv.apfnMainClick[3] = HngMain3;
+    g_hngInitEnv.apfnWeaponClick[0] = HngWpn0;
+    g_hngInitEnv.apfnWeaponClick[1] = HngWpn1;
+    g_hngInitEnv.apfnWeaponClick[2] = HngWpn2;
+    g_hngInitEnv.apfnWeaponClick[3] = HngWpn3;
+    g_hngInitEnv.apfnWeaponClick[4] = HngWpn4;
+    g_hngInitEnv.apfnWeaponClick[5] = HngWpn5;
+    g_hngInitEnv.apfnWeaponClick[6] = HngWpn6;
+    g_hngInitEnv.pfnCloseClick = HngClose;
+    g_hngInitEnv.pfnBuySellClick = HngBuySell;
+    g_hngInitEnv.pfnLoadPads = HngLoadPads;
+    g_hngInitEnv.pPanels = &g_hngInitOut;
+    g_hngInitEnv.pBuildEnv = &g_hngEnv;
+
+    BasePlaneScreen_Init(&g_hngInitEnv);
+
+    TestCheck("the backdrop pad exists", g_hngScr.pBackdropPad != NULL);
+    TestEqI32("  at the origin (0x7DA28)", g_hngScr.pBackdropPad->nOriginX, 0);
+    TestEqI32("  x and y (0x7DA30)", g_hngScr.pBackdropPad->nOriginY, 0);
+
+    TestCheck("four main controls allocated", g_hngScr.apMainCtl[0] != NULL && g_hngScr.apMainCtl[3] != NULL);
+    TestCheck("their clicks are the four handlers in order (0x7DA7C..0x7DAA0)",
+              g_hngScr.apMainCtl[0]->pfnClick == HngMain0 && g_hngScr.apMainCtl[1]->pfnClick == HngMain1
+              && g_hngScr.apMainCtl[2]->pfnClick == HngMain2 && g_hngScr.apMainCtl[3]->pfnClick == HngMain3);
+    TestEqI32("the first sits at the descriptor's 20,100", g_hngScr.apMainCtl[0]->x, 20);
+    TestEqI32("  (0xABCC8 record 0)", g_hngScr.apMainCtl[0]->y, 100);
+    TestEqI32("the second at 197,100", g_hngScr.apMainCtl[1]->x, 197);
+    TestEqI32("the third at 20,200", g_hngScr.apMainCtl[2]->y, 200);
+    TestEqI32("the fourth at 20,240", g_hngScr.apMainCtl[3]->y, 240);
+
+    TestCheck("seven weapon controls allocated",
+              g_hngScr.apWeaponCtl[0] != NULL && g_hngScr.apWeaponCtl[6] != NULL);
+    TestCheck("their clicks are Rearm plus the six weapon slots (0x7DB2C..0x7DB74)",
+              g_hngScr.apWeaponCtl[0]->pfnClick == HngWpn0
+              && g_hngScr.apWeaponCtl[6]->pfnClick == HngWpn6);
+    TestEqI32("the first sits at 15,92 (0xABD48 record 0)", g_hngScr.apWeaponCtl[0]->y, 92);
+    TestEqI32("  and the rest share x 15 with y 0", g_hngScr.apWeaponCtl[6]->y, 0);
+
+    TestEqI32("the setup ran once per control", g_nPadLoadCalls, 11);
+    TestCheck("the main pair loads the initg pads",
+              g_szPad0Seen[0] != NULL && strcmp(g_szPad0Seen[0], "initg") == 0);
+    TestCheck("  and the lower two the emptyb1 pads",
+              g_szPad0Seen[2] != NULL && strcmp(g_szPad0Seen[2], "emptyb1") == 0);
+    TestCheck("  and every weapon control the emptyb pad",
+              g_szPad0Seen[4] != NULL && strcmp(g_szPad0Seen[4], "emptyb") == 0);
+
+    TestCheck("five craft art pads allocated",
+              g_hngScr.apCraftPads[0] != NULL && g_hngScr.apCraftPads[4] != NULL);
+    TestEqI32("centred at 120 - (uWidth >> 1); the load fails with no archives and the port zero-fills "
+              "the pad the original leaves uninitialised (0x7DC60)",
+              g_hngScr.apCraftPads[0]->nOriginX, 120);
+    TestEqI32("  at y 80 (0x7DCBC)", g_hngScr.apCraftPads[4]->nOriginY, 80);
+
+    TestCheck("six weapon icon pads allocated",
+              g_hngScr.apWeaponPads[0] != NULL && g_hngScr.apWeaponPads[5] != NULL);
+    TestEqI32("all six at y 95 (0x7DD98)", g_hngScr.apWeaponPads[5]->nOriginY, 95);
+
+    TestEqI32("the close control moves to x 224 (0x7DDB4)", g_hngCloseCtl.x, 224);
+    TestEqI32("  y 1 (0x7DDC0)", g_hngCloseCtl.y, 1);
+    TestCheck("  and takes BasePlaneScreen_Close (0x7DDCC)", g_hngCloseCtl.pfnClick == HngClose);
+    TestCheck("the confirm slot takes the buy/sell apply (0x7DDDC)", g_hngBuySellCtl.pfnClick == HngBuySell);
+
+    /* The tail call: Init builds the craft list on the block it just made. */
+    TestEqI32("BuildPanels ran from Init (0x7DDE8)", g_bHngBuilt, 1);
+    TestCheck("  and both craft-list panels exist",
+              g_hngInitOut.pCraftPanel != NULL && g_hngInitOut.pStatusPanel != NULL);
+    TestEqI32("  with the base's five craft listed", g_hngInitOut.pCraftPanel->nLineCount, 5);
+
+    /* Releasing everything: the teardown branch frees Init's allocations too. */
+    BasePlaneScreen_BuildPanels(&g_hngInitOut, &g_hngEnv);
+    TestCheck("the backdrop pad is released", g_hngScr.pBackdropPad == NULL);
+    TestCheck("the four main controls (0x7D2A0)", g_hngScr.apMainCtl[0] == NULL);
+    TestCheck("the seven weapon controls (0x7D338)", g_hngScr.apWeaponCtl[6] == NULL);
+    TestCheck("the five craft pads (0x7D2D4)", g_hngScr.apCraftPads[0] == NULL);
+    TestCheck("  and the six weapon pads (0x7D304)", g_hngScr.apWeaponPads[0] == NULL);
+
+    BasePlaneScreen_Init(NULL);
+    TestCheck("a null init env does nothing", true);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1576,6 +1745,7 @@ int main(void)
     TestWeaponSlotsCarried();
     TestBuildListPanels();
     TestBuildCraftPanels();
+    TestPlaneInit();
 
     return TestSummary("test_plane");
 }

@@ -30,6 +30,8 @@ DESCS = [
     ("g_aOptionsListDesc",  0xAB750,  7, "OptionsScreen_Init @ 0x6be74, the seven option list rows (uniform)"),
     ("g_aOptionsVolDesc",   0xAB830, 12, "OptionsScreen_Init @ 0x6be74, the twelve volume radio buttons (uniform)"),
     ("g_aPlaneListNav",     0xABC48,  2, "BasePlaneScreen_BuildListPanels @ 0x7a3f4, the crew list prev/next pair"),
+    ("g_aPlaneMainDesc",    0xABCC8,  4, "BasePlaneScreen_Init @ 0x7d9e4, the four main hangar controls"),
+    ("g_aPlaneWeaponDesc",  0xABD48,  7, "BasePlaneScreen_Init @ 0x7d9e4, the seven weapon controls"),
 ]
 
 

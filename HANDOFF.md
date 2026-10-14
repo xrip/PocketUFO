@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **8624**.
+Test checks run across the 56 suites: **8660**.
 
 ### Per-subsystem status
 

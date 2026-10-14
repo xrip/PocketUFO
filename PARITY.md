@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 775 / 1103 (70.3%) |
-| Bytes of original code cited | 317968 / 598792 (53.1%) |
+| Functions cited as evidence | 776 / 1103 (70.4%) |
+| Bytes of original code cited | 319040 / 598792 (53.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8624 |
+| Test checks run | 8660 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 72 | 85 | 16180 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 136 | 205 | 54160 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 164 | 243 | 29928 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 165 | 243 | 31000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -564,7 +564,7 @@ is the module that answers to it.
 | `0x3f05c` | `UiPanel_SetBytes0to2` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x99f78` | `UiPanel_ScrollNext` | 16 | `src/pufo/ui/pufo_panel.h` |
 | `0x99f88` | `UiPanel_ScrollPrev` | 16 | `src/pufo/ui/pufo_panel.h` |
-| `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_plane.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
 ### `strat` (136 functions)
@@ -708,7 +708,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (164 functions)
+### `strat-ui` (165 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -717,6 +717,7 @@ is the module that answers to it.
 | `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | `src/pufo/game/pufo_plane.h` |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x7d9e4` | `BasePlaneScreen_Init` | 1072 | `src/pufo/game/pufo_plane.h` |
 | `0x589ec` | `BaseFacScreen_Toggle` | 1060 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x7ac38` | `BasePlaneScreen_CommitStores` | 948 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_plane.h` |
 | `0x6be74` | `OptionsScreen_Init` | 760 | `src/pufo/game/pufo_baseui.h` |
@@ -1190,7 +1191,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 79 functions, 87080 bytes remaining
+### `strat-ui` — 78 functions, 86008 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1221,7 +1222,6 @@ whose port work they belong to.
 | `0x75b88` | `BuySellScreen_ValidateCapacity` | 1280 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x97aa4` | `TransferScreen_CommitTransfer` | 1280 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x74bf8` | `BuySellScreen_CommitTransaction` | 1176 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x7d9e4` | `BasePlaneScreen_Init` | 1072 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x75464` | `BuySellScreen_FillSellPanel` | 1044 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x71298` | `PsiScreen_SelectListed` | 848 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x75878` | `BuySellScreen_UpdatePrices` | 784 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1318,7 +1318,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 167 |
 | `test_path` | PASS | 48 |
-| `test_plane` | PASS | 328 |
+| `test_plane` | PASS | 364 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 18 |
 | `test_rmp` | PASS | 62 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 346 citations.
+parity report. Total: 351 citations.
 
 ### Offsets below the image base (40)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (306)
+### At or above the image base (311)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1675,7 +1675,12 @@ against the IDB when the final report is assembled.
 - `0xab630`
 - `0xab750`
 - `0xab830`
+- `0xabcc8`
+- `0xabd48`
 - `0xabe28`
+- `0xabe7c`
+- `0xabeb8`
+- `0xabec4`
 - `0xac224`
 - `0xac680`
 - `0xac6a8`

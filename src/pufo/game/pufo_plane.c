@@ -956,7 +956,7 @@ void BasePlaneScreen_BuildPanels(PlaneCraftPanels *pOut, const PlaneBuildEnv *pE
         pOut->pStatusPanel = NULL;
 
         if (pEnv->pObjects != NULL) {
-            BasePlaneScreenObjects *pObj = pEnv->pObjects;
+            BasePlaneScreen *pObj = pEnv->pObjects;
 
             PlaneFreePad(&pObj->pBackdropPad); /* 0x7D280..0x7D298 */
             for (i32 i = 0; i < 4; ++i) {
@@ -1108,4 +1108,149 @@ i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv)
     pEnv->pnSelCraftIdx[0] = nIdx;
     pEnv->pnSelectedCraftIdx[0] = nIdx;
     return nIdx;
+}
+
+/* ------------------------------------------------- the hangar's object block */
+
+/* g_aPlaneMainDesc @ 0xABCC8 and g_aPlaneWeaponDesc @ 0xABD48: 4 and 7 UiControlDesc records, printed
+ * and verified by tools/gen_geoiinit_tables.py. They sit back to back and run straight into
+ * aPlaneCraftTypeOrder @ 0xABE28. */
+static const UiControlDesc g_aPlaneMainDesc[PUFO_PLANE_MAIN_CTLS] = {
+    { 20, 100, "initg", "cinitg", "", 0 },
+    { 197, 100, "initg", "cinitg", "", 0 },
+    { 20, 200, "emptyb1", "cemptyb1", "", 0 },
+    { 20, 240, "emptyb1", "cemptyb1", "", 0 }
+};
+
+static const UiControlDesc g_aPlaneWeaponDesc[PUFO_PLANE_WEAPON_CTLS] = {
+    { 15, 92, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 },
+    { 15, 0, "emptyb", "cemptyb", "", 0 }
+};
+
+/* The pad names, straight from the IDB's string refs: aBaseb001..005 @ 0xABEB8..0xABE88 and
+ * aBaseb049/050/051/053/054/052 @ 0xABE7C..0xABE40. The last two are swapped relative to their numbers,
+ * which is what the six PadImage_Load calls at 0x7DD30..0x7DD80 do. */
+static const char *const g_aPlaneCraftPads[PUFO_PLANE_CRAFT_PADS] = {
+    "baseb001", "baseb002", "baseb003", "baseb004", "baseb005"
+};
+static const char *const g_aPlaneWeaponPads[PUFO_PLANE_WEAPON_PADS] = {
+    "baseb049", "baseb050", "baseb051", "baseb053", "baseb054", "baseb052"
+};
+
+#define PUFO_PLANE_BACKDROP_PAD "plane"  /* aPlane_0 @ 0xABEC4, loaded at mode 0 */
+#define PUFO_PLANE_BACKDROP_MODE 0
+#define PUFO_PLANE_ART_MODE 3            /* every craft and weapon pad loads at mode 3 */
+#define PUFO_PLANE_CRAFT_CENTRE_X 120    /* nOriginX = 120 - (uWidth >> 1) */
+#define PUFO_PLANE_CRAFT_Y 80
+#define PUFO_PLANE_WEAPON_Y 95
+
+static PadImage *PlanePadNew(void)
+{
+    /* deviation: the original's operator new 0x14 leaves uWidth / uHeight / nOriginX / nOriginY
+     * uninitialised - PadImage_ctor @ 0x11000 only sets pData to null - and PadImage_Load does not touch
+     * them when the load fails. The port zeroes the block, which only shows up on a failed load. */
+    PadImage *pPad = (PadImage *)calloc(1, sizeof(PadImage)); /* operator new 0x14 */
+
+    if (pPad == NULL) {
+        return NULL;
+    }
+    PadImage_ctor(pPad); /* 0x7DA00 */
+    return pPad;
+}
+
+static UiControl *PlaneCtlNew(void)
+{
+    UiControl *pCtl = (UiControl *)malloc(sizeof(UiControl)); /* operator new 0x20 */
+
+    if (pCtl == NULL) {
+        return NULL;
+    }
+    UiControl_ctor(pCtl); /* 0x7DA44 */
+    return pCtl;
+}
+
+void BasePlaneScreen_Init(const BasePlaneScreenInitEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pScreen == NULL) {
+        return;
+    }
+
+    BasePlaneScreen *pScr = pEnv->pScreen;
+
+    pScr->pBackdropPad = PlanePadNew(); /* 0x7D9F0..0x7DA14 */
+    if (pScr->pBackdropPad != NULL) {
+        (void)PadImage_Load(pScr->pBackdropPad, PUFO_PLANE_BACKDROP_PAD, PUFO_PLANE_BACKDROP_MODE);
+        pScr->pBackdropPad->nOriginX = 0; /* 0x7DA28 */
+        pScr->pBackdropPad->nOriginY = 0; /* 0x7DA30 */
+    }
+
+    for (i32 i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) {
+        pScr->apMainCtl[i] = PlaneCtlNew(); /* 0x7DA38..0x7DA64 */
+    }
+    for (i32 i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) { /* 0x7DA7C..0x7DAA0 */
+        if (pScr->apMainCtl[i] != NULL) {
+            pScr->apMainCtl[i]->pfnClick = pEnv->apfnMainClick[i];
+        }
+    }
+    for (i32 i = 0; i < PUFO_PLANE_MAIN_CTLS; ++i) { /* 0x7DAB4..0x7DAC8 */
+        if (pScr->apMainCtl[i] != NULL) {
+            UiControl_Setup(pScr->apMainCtl[i], 0, 0, &g_aPlaneMainDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) {
+        pScr->apWeaponCtl[i] = PlaneCtlNew(); /* 0x7DAD8..0x7DB08 */
+    }
+    for (i32 i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) { /* 0x7DB2C..0x7DB74 */
+        if (pScr->apWeaponCtl[i] != NULL) {
+            pScr->apWeaponCtl[i]->pfnClick = pEnv->apfnWeaponClick[i];
+        }
+    }
+    for (i32 i = 0; i < PUFO_PLANE_WEAPON_CTLS; ++i) { /* 0x7DB88..0x7DB9C */
+        if (pScr->apWeaponCtl[i] != NULL) {
+            UiControl_Setup(pScr->apWeaponCtl[i], 0, 0, &g_aPlaneWeaponDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_PLANE_CRAFT_PADS; ++i) {
+        pScr->apCraftPads[i] = PlanePadNew(); /* 0x7DBAC..0x7DBE8 */
+    }
+    for (i32 i = 0; i < PUFO_PLANE_CRAFT_PADS; ++i) { /* 0x7DC04..0x7DCDC */
+        if (pScr->apCraftPads[i] == NULL) {
+            continue;
+        }
+        (void)PadImage_Load(pScr->apCraftPads[i], g_aPlaneCraftPads[i], PUFO_PLANE_ART_MODE);
+        pScr->apCraftPads[i]->nOriginX = PUFO_PLANE_CRAFT_CENTRE_X
+                                       - ((i32)pScr->apCraftPads[i]->uWidth >> 1);
+        pScr->apCraftPads[i]->nOriginY = PUFO_PLANE_CRAFT_Y;
+    }
+
+    for (i32 i = 0; i < PUFO_PLANE_WEAPON_PADS; ++i) {
+        pScr->apWeaponPads[i] = PlanePadNew(); /* 0x7DCE4..0x7DD14 */
+    }
+    for (i32 i = 0; i < PUFO_PLANE_WEAPON_PADS; ++i) { /* 0x7DD30..0x7DD80 */
+        if (pScr->apWeaponPads[i] == NULL) {
+            continue;
+        }
+        (void)PadImage_Load(pScr->apWeaponPads[i], g_aPlaneWeaponPads[i], PUFO_PLANE_ART_MODE);
+        pScr->apWeaponPads[i]->nOriginY = PUFO_PLANE_WEAPON_Y; /* 0x7DD98, the six slots at +0x18..+0x2C */
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = 224;                    /* 0x7DDB4 */
+        pEnv->pCloseCtl->y = 1;                      /* 0x7DDC0 */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x7DDCC */
+    }
+    if (pEnv->pBuySellCtl != NULL) {
+        pEnv->pBuySellCtl->pfnClick = pEnv->pfnBuySellClick; /* 0x7DDDC */
+    }
+
+    BasePlaneScreen_BuildPanels(pEnv->pPanels, pEnv->pBuildEnv); /* 0x7DDE8, the tail call */
 }

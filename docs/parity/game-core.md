@@ -9857,3 +9857,44 @@ Ship.bBusy != 0 sets bHangarCraftBusy" -- the field is `bAtBase` @ +0x06 and the
 Still open in this family: `BasePlaneScreen_Init` (0x7d9e4, 1072 B) -- which the teardown map above now
 fully describes -- `BasePlaneScreen_Draw` (0x7d374, 1648 B) and `BasePlaneScreen_DrawCraftDetail`
 (0x7baf8, 3824 B).
+
+### Building the whole hangar object block (done)
+
+`BasePlaneScreen_Init @ 0x7d9e4` (1072 B) lands in `src/pufo/game/pufo_plane.{h,c}` behind
+`BasePlaneScreenInitEnv`, with 36 checks in `tests/test_plane.c`. It is the allocation half of the pair
+whose teardown half `BasePlaneScreen_BuildPanels` already carried, and the IDB already had the shape: its
+local `BasePlaneScreen` type (size 92) is exactly the block at 0x161A48, so the port's struct takes that
+name and layout -- backdrop pad at +0, five craft pads at +4, six weapon pads at +0x18, four main
+controls at +0x30, seven weapon controls at +0x40.
+
+What it wires:
+
+- the backdrop pad, loaded with `"plane"` (`aPlane_0` @ 0xABEC4) at mode 0, origin 0,0;
+- four main controls with the clicks `DrawStatLabelA`, `DrawStatLabelB`, `BuildListPanels` and
+  `BuildControls`, positioned by the four `UiControlDesc` records at 0xABCC8 (now `aPlaneMainDesc`,
+  ported as `g_aPlaneMainDesc`): 20,100 and 197,100 on the `initg`/`cinitg` pair, 20,200 and 20,240 on
+  `emptyb1`/`cemptyb1`;
+- seven weapon controls with `BasePlane_RearmFromStores` plus `SelectWeapon25..30`, positioned by the
+  seven records at 0xABD48 (renamed `aPlaneWeaponDesc`, ported as `g_aPlaneWeaponDesc`): all `emptyb`/`cemptyb` at x 15, the
+  first at y 92 and the rest at y 0;
+- five craft art pads `baseb001..005` at mode 3, centred with `nOriginX = 120 - (uWidth >> 1)` at y 80;
+- six weapon icon pads at mode 3, loaded `baseb049, 050, 051, 053, 054, 052` -- the last two swapped
+  relative to their numbers, which is what the six `PadImage_Load` calls at 0x7DD30..0x7DD80 actually do
+  -- and all six given `nOriginY` 95;
+- `unk_186B00` moved to 224,1 with `BasePlaneScreen_Close` as its click, and `unk_186BA4` given
+  `BuySellScreen_ApplyQtyChanges` (0x78d90, not ported) -- the same confirm slot the build dialog uses;
+- a tail call into `BasePlaneScreen_BuildPanels`.
+
+One original defect surfaced here and went on the ledger: `PadImage_ctor` (0x11000) stores only
+`pData = 0`, so `operator new 0x14` leaves `uWidth` / `uHeight` / `nOriginX` / `nOriginY` uninitialised,
+and the six `PadImage_Load` calls discard their result. A craft pad missing from the archives is
+therefore centred on whatever the allocator handed back (0x7DC60). The port zero-fills the pad, so a
+failed load centres at 120; the row is in `docs/parity/bugs.tsv` with `reproduced = no`.
+
+IDB: `stru_ABCC8` and `stru_ABD48` renamed `aPlaneMainDesc` / `aPlaneWeaponDesc` (both are now in
+`tools/gen_geoiinit_tables.py`, whose `--check` mode prints and verifies all eleven descriptor tables), and
+the full wiring description is on 0x7d9e4.
+
+Still open in this family: `BasePlaneScreen_BuildControls` (0x7b014, 2788 B), `BasePlaneScreen_Draw`
+(0x7d374, 1648 B), `BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3824 B) and `BuySellScreen_ApplyQtyChanges`
+(0x78d90).

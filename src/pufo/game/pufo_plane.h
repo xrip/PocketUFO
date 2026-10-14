@@ -477,13 +477,14 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
 #define PUFO_PLANE_STATUS_FULL      151 /* "На миссии", at base, not refuelling, range at max */
 #define PUFO_PLANE_STATUS_OUT       152 /* "Статус", not at base */
 
-typedef struct BasePlaneScreenObjects {
-    PadImage  *pBackdropPad;   /* 0x161A48 */
+/* The IDB's own BasePlaneScreen type (size 92), laid over the block at 0x161A48. */
+typedef struct BasePlaneScreen {
+    PadImage  *pBackdropPad;   /* 0x161A48, the "plane" backdrop */
     PadImage  *apCraftPads[5]; /* 0x161A4C..0x161A5C, the baseb001..005 craft art */
     PadImage  *apWeaponPads[6];/* 0x161A60..0x161A74, the baseb049..054 weapon icons */
     UiControl *apMainCtl[4];   /* 0x161A78..0x161A84 */
     UiControl *apWeaponCtl[7]; /* 0x161A88..0x161AA0 */
-} BasePlaneScreenObjects;
+} BasePlaneScreen;
 
 typedef struct PlaneCraftPanels {
     UiPanel *pCraftPanel;  /* pPlaneCraftPanel @ 0x161EFC */
@@ -492,7 +493,7 @@ typedef struct PlaneCraftPanels {
 
 typedef struct PlaneBuildEnv {
     u8      *pbBuilt;             /* bPlanePanelsBuilt @ 0x161F08 */
-    BasePlaneScreenObjects *pObjects; /* the block at 0x161A48 */
+    BasePlaneScreen *pObjects;  /* the block at 0x161A48 */
     Ship *const *apCraft;         /* apCraft @ 0x114A64 */
     const u8 *pnCraftCount;       /* Map_nCraftCount @ 0x114B4C, a byte */
     const i8 *pnSelectedBaseIdx;  /* nSelectedBaseIdx @ 0x159D81 */
@@ -538,5 +539,53 @@ typedef struct PlaneCraftSelectEnv {
 
 i32 BasePlaneScreen_SelectCraft(const PlaneCraftSelectEnv *pEnv);
 i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv);
+
+/* --- BasePlaneScreen_Init @ 0x7d9e4 (1072 B) : allocate and wire the whole hangar object block ---
+ *
+ * In the original's order:
+ *   1. a PadImage (operator new 0x14 + PadImage_ctor) at +0, loaded with the pad "plane" (aPlane_0
+ *      @ 0xABEC4) at mode 0, nOriginX / nOriginY 0 (0x7D9F0..0x7DA30).
+ *   2. four UiControls (operator new 0x20 + UiControl_ctor) at +0x30..+0x3C. Their clicks are
+ *      BasePlaneScreen_DrawStatLabelA (0x79e00), DrawStatLabelB (0x79fc4), BuildListPanels (0x7a3f4)
+ *      and BuildControls (0x7b014); then each gets UiControl_Setup(ctl, 0, 0, g_aPlaneMainDesc[i]) over
+ *      the four 32-byte records at 0xABCC8 (0x7DA7C..0x7DAC8).
+ *   3. seven UiControls at +0x40..+0x58. Their clicks are BasePlane_RearmFromStores (0x78ed0) and
+ *      BasePlaneScreen_SelectWeapon25..30 (0x79b20..0x79c74); then UiControl_Setup over the seven
+ *      records at 0xABD48 (0x7DB2C..0x7DB9C).
+ *   4. five PadImages at +0x04..+0x14, loaded baseb001..baseb005 at mode 3, centred with
+ *      nOriginX = 120 - (uWidth >> 1) and nOriginY 80 (0x7DBA4..0x7DCDC).
+ *   5. six PadImages at +0x18..+0x2C, loaded baseb049, baseb050, baseb051, baseb053, baseb054,
+ *      baseb052 at mode 3 — note the last two are swapped relative to their numbers — and all six get
+ *      nOriginY 95 from the offset loop at 0x7DD88..0x7DD9C.
+ *   6. unk_186B00 goes to x 224, y 1 with BasePlaneScreen_Close (0x7c9e8) as its click, and unk_186BA4
+ *      gets BuySellScreen_ApplyQtyChanges (0x78d90) — the same confirm slot the buy/sell screen uses.
+ *   7. it tail calls BasePlaneScreen_BuildPanels.
+ *
+ * Deviations: the original dereferences every allocation it just made without a null test; the port
+ * skips the wiring of a control or pad that failed to allocate. PadImage_ctor (0x11000) only sets
+ * pData, so the original's freshly allocated pads carry an uninitialised uWidth into the
+ * `120 - (uWidth >> 1)` at 0x7DC60 whenever the load fails; the port zero-fills the pad.
+ * BasePlaneScreen_BuildControls and BuySellScreen_ApplyQtyChanges are not ported and enter as hooks. */
+#define PUFO_PLANE_MAIN_CTLS 4
+#define PUFO_PLANE_WEAPON_CTLS 7
+#define PUFO_PLANE_CRAFT_PADS 5
+#define PUFO_PLANE_WEAPON_PADS 6
+
+typedef struct BasePlaneScreenInitEnv {
+    BasePlaneScreen *pScreen;             /* the block at 0x161A48 */
+    UiControl *pCloseCtl;                 /* unk_186B00 */
+    UiControl *pBuySellCtl;               /* unk_186BA4 */
+    void (*apfnMainClick[PUFO_PLANE_MAIN_CTLS])(void);   /* DrawStatLabel, BuildListPanels, BuildControls */
+    void (*apfnWeaponClick[PUFO_PLANE_WEAPON_CTLS])(void); /* RearmFromStores, SelectWeapon25..30 */
+    void (*pfnCloseClick)(void);          /* BasePlaneScreen_Close @ 0x7c9e8 */
+    void (*pfnBuySellClick)(void);        /* BuySellScreen_ApplyQtyChanges (0x78d90), not ported */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser);
+    void *pPadUser;
+    PlaneCraftPanels *pPanels;            /* out: the two craft-list panels BuildPanels allocates */
+    const PlaneBuildEnv *pBuildEnv;       /* what BuildPanels needs, on the same object block */
+} BasePlaneScreenInitEnv;
+
+void BasePlaneScreen_Init(const BasePlaneScreenInitEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */
