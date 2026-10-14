@@ -1001,4 +1001,139 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
                         MapGeom *pMap, MapCellLookup pfnLookup, void *pLookupUser,
                         TactResetState *pReset, const TactLoadHooks *pHooks);
 
+/* ------------------------------------------------- the load driver
+ *
+ * Evidence: LoadGame @ 0x44bbc. The mirror of SaveGame for `sav<n>.sav`, and the keystone
+ * of a cold start: it reads every chunk, tears down whatever UI generation the save
+ * replaces, and re-derives the geoscape state the readers do not carry themselves.
+ *
+ * Order, all of it load-bearing:
+ *
+ *   1. build `<dir>sav<n>.sav`; if the file does not exist return 0 immediately;
+ *   2. one Render_Frame, then open the slot as a 100-entry container (mode 1 = read);
+ *   3. `tactver`: if the chunk is present read 2 bytes into a zero-initialised dword and
+ *      store the VALUE at slot-context + 0x118 (`STR R3,[R7,#0x118]`, 0x44C94). R7 is the
+ *      first argument, which every caller passes as &MainMenu_pSlotCtx @ 0x156938 — the
+ *      7x40-byte save/load line buffer — so the dword lands right after the lines at
+ *      0x156A50. No code ever reads it (the only 0x118 access on that base is this store),
+ *      so it is write-only residue; the port hands the value to the caller through
+ *      pnTactVerOut. It is NOT the object table: apObjects is Map+0x108, a different block.
+ *   4. Save_ReadGameState — this is what fills bGameState (0x15821C), "the save was made
+ *      inside a mission", and every gate below reads it after this point;
+ *   5. when the current screen is 17 (the start menu): StartUi_Shutdown, Geoscape_InitUI(1),
+ *      and zero the soldier count low half, the base count byte, the craft count byte and
+ *      the strateg count — the start-menu load starts from an empty world;
+ *   6. the three-way teardown on bTactFlag / bGeoscapeUi / bGameState:
+ *        bTactFlag && !bGameState -> Tact_Shutdown(0) then Geoscape_InitUI(1)
+ *        bGeoscapeUi && bGameState -> GeoscapeUi_FreeAll(0)
+ *        bGeoscapeUi && !bGameState -> NOTHING (the one combination that frees no UI)
+ *        !bGeoscapeUi -> Tact_Shutdown(0)
+ *   7. Save_ReadStrategVer FIRST (the version byte that sizes the other chunks lives in
+ *      the strateg chunk), then bases, product, research, ships, smap, strateg, time,
+ *      and soldiers only when bGameState is clear;
+ *   8. MainMenu_nListMode = 1; when bGameState is set, read the 1-byte `mcnt` into the
+ *      mission counter (0 when the chunk is absent) and run Tact_InitMission(1);
+ *   9. close, GameTime_Decode, then the re-derivation passes below.
+ *
+ * The re-derivation passes, in order:
+ *
+ *   - per base: Base_ClearFacilityGridRow into the site-state array;
+ *   - version < 3 only: StrategList_PurgeType5, then every active craft item whose
+ *     coordinates exceed +/-1000 is teleported to (150, 250) and gets a mission site;
+ *   - per craft: find its strateg item by nDisplayId; when there is none, add one from the
+ *     craft's home base (inactive, invisible, id = Ship.bId) and take the new last index;
+ *     then if Ship.bWeaponsHot is set and the item is beyond +/-1000, clear bWeaponsHot and
+ *     set Ship.bAtBase; then if bAtBase and the item is visible, clear bVisible;
+ *   - version < 3 only: every active craft item whose target exceeds (800, 600) gets its
+ *     target reset to its destination;
+ *   - per base: the product-C/manuf-cols byte at grid+1620 (the type-byte array) is set to
+ *     -(C[119]) & 0xFF - C[120] - C[121] + lowbyte(B[121]) + lowbyte(B[120]) + lowbyte(B[119])
+ *     of that base's product columns, looked up by the base's own bUnk4 type byte;
+ *   - the 6x6 facType fill: for every cell whose tileA byte is 0 AND whose facType byte is 0,
+ *     facType becomes 255;
+ *   - version < 3 only: the research-unlock switch — topics 0..16 (10 excluded) with the
+ *     permuted map {0..5,13,6,7,14,-,15,16,12,10,8,9} set that base-facility flag byte to 1
+ *     when the topic record's byte +0x0D is non-zero;
+ *   - version < 3 only: the product rebuild — the four arrays are copied to scratch, zeroed,
+ *     and re-spread through the facility->item map at block+16000 (144 bytes per base, one
+ *     byte per research topic, the byte is the item index);
+ *   - the shot object is apObjects[0] itself (0x45750 reads [Map+0x108]): nCraftCount words
+ *     starting at word 29 (byte 58) and word 101 (byte 0xCA) are zeroed;
+ *   - every active craft item: bDetected = bVisible;
+ *   - per base: the radar byte = Base_CountEmptyFacilityCells, then the five
+ *     Base_Update*Needed passes with budgets computed the original's way (occupied space +
+ *     outbound transfer space; storage used + item quantity across bases; psi soldiers;
+ *     active research; active manufacturing);
+ *   - bCraftSelectAssaultFlag = 0, the save version byte is stamped 3, return 1.
+ *
+ * Deviations: the original checks no DatFile result after the existence test — a missing
+ * chunk leaves the state at whatever the previous load left; the port reports false as soon
+ * as a chunk read fails but still runs the re-derivation passes, because they are what make
+ * a partially loaded world consistent. The original's unchecked pointer dereferences
+ * (apObjects[0], the shot object, the craft slots) are guarded. The three budget helpers
+ * Base_CountOutboundTransferSpace (0x68044), Base_CountItemQtyAcrossBases (0x67d68) and
+ * Base_CountPsiSoldiers (0x65a08) are not ported and arrive as hooks, same as the four UI
+ * teardown/init calls whose envs belong to the caller. */
+typedef struct LoadGameHooks {
+    void (*pfnRenderFrame)(void *pUser);               /* Render_Frame (0x22310), caller's frame env */
+    void (*pfnStartUiShutdown)(void *pUser);           /* StartUi_Shutdown (0x38d7c), caller's shutdown env */
+    void (*pfnGeoscapeInitUi)(i32 nMode, void *pUser); /* Geoscape_InitUI (0x857f4), NOT ported */
+    void (*pfnTactShutdown)(void *pUser);              /* Tact_Shutdown(0) (0x3d568), caller's env */
+    void (*pfnGeoscapeUiFreeAll)(void *pUser);         /* GeoscapeUi_FreeAll(0) (0x86d20), caller's env */
+    bool (*pfnTactInitMission)(i32 nMode, void *pUser);/* Tact_InitMission(1) (0x3c550), caller's env */
+    i32 (*pfnOutboundTransferSpace)(i32 nBase, void *pUser); /* Base_CountOutboundTransferSpace (0x68044), NOT ported */
+    i32 (*pfnItemQtyAcrossBases)(i32 nBase, void *pUser);    /* Base_CountItemQtyAcrossBases (0x67d68), NOT ported */
+    i32 (*pfnPsiSoldiers)(i32 nBase, void *pUser);           /* Base_CountPsiSoldiers (0x65a08), NOT ported */
+    void *pUser;
+} LoadGameHooks;
+
+typedef struct LoadGameEnv {
+    const char *pszAppDir;             /* szAppDir @ 0x1883B0 */
+    i32         nSlot;
+
+    u8   *pbTactFlag;                  /* Map.bTactFlag @ 0x1139B8 */
+    u8   *pbGeoscapeUi;                /* unk_1139FC */
+    u8   *pbGameState;                 /* unk_15821C, written by Save_ReadGameState */
+    u16  *puUiScreen;                  /* Map_nUiScreen */
+    i32  *pnSoldierCount;              /* unk_115350 @ Map+0x1998; the start-menu clear hits its LOW half */
+    i32  *pnListMode;                  /* MainMenu_nListMode @ 0x157188, set to 1 */
+    u8   *pbMissionCount;              /* byte_138E8C, from the mcnt chunk */
+    u8   *pbCraftSelectAssaultFlag;    /* bCraftSelectAssaultFlag @ 0x1870A8 */
+
+    SaveBasesState    *pBases;         /* includes the base count byte and the type-byte array */
+    BaseRec          **apBases;        /* Map+0x1174 */
+    i32               nOldBaseCount;   /* the count BEFORE Save_ReadBases frees */
+    u8               *pProductBlock;   /* 17152 bytes: A u32, B u32, C u16, facility->item map */
+    SaveResearchState *pResearch;
+    Ship             **apCraft;        /* Map+0x10AC */
+    u8               *pbCraftCount;    /* Map_nCraftCount @ Map+0x1194 */
+    ShipCtorEnv      *pShipEnv;
+    SaveSmapState    *pSmap;
+    SmapView         *pView;
+    const SmapZoomSet *paZoomSets;     /* the three zoom levels Save_ReadSmap restores */
+    SmapWorldSize    *pWorldSize;
+    StrategSaveState *pStrateg;
+    PtrArray         *pStrategList;    /* the list at 0x186534 */
+    i32              *pnSeed;          /* 0x18640C, the per-item seed counter */
+    Soldier         **apSoldiers;
+    i32              nSoldierCapacity;
+    ObjectRecFull *const *apObjects;     /* the object table Map+0x108, for the per-base/per-ship u16 columns */
+    i32              nObjectCount;
+    u32             *pnTactVerOut;       /* the tactver value, original slot: MainMenu_pSlotCtx+0x118 (write-only) */
+    GeoscapeWorld    *pWorld;          /* apCraft / nShipCount / apSiteState / apRadarPct / pTime */
+    u8              *abFacilityGrid;   /* the 1524-byte grid */
+    const u16       *apResearchCols;   /* 0x16022C, 144 u16 per base */
+    const u16       *apManufCols;      /* 0x15E19C, 200 u16 per base */
+    u16             *puResearchEntries;/* 0x160C4C, shared by every base */
+    u16             *puShotObjectWords;/* the word array of the shot object = apObjects[0] */
+    SaveTimeRecord  *pTimeRec;         /* the time chunk's wire record */
+    GameTime        *pTime;            /* 0x159618, the live clock the record is copied into */
+    const StrategSpawnCtx  *pSpawnCtx; /* StrategList_PurgeType5 */
+    const SpawnMissionCtx  *pMissionCtx; /* Geoscape_SpawnMissionSite */
+    u8              *pbSpawnOnceFlag;  /* PurgeType5's spawn-once gate */
+    const LoadGameHooks *pHooks;
+} LoadGameEnv;
+
+i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv);
+
 #endif /* PUFO_SAVE_H */

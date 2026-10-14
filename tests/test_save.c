@@ -6,6 +6,7 @@
  * any omission or double-write would change the total.
  */
 #include "asset/pufo_asset.h"
+#include "game/pufo_geoscape.h"
 #include "game/pufo_save.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_str.h"
@@ -2222,6 +2223,344 @@ static void TestSaveGame(void)
     (void)DeleteFileW(L"sav6.sav");
 }
 
+/* LoadGame @ 0x44bbc. Round-trip against the SaveGame driver above: write a geoscape slot,
+ * then load it into a fresh state and check the re-derivation passes the readers do not do
+ * themselves. */
+static int  g_nLoadRenders;
+static int  g_nLoadShutdowns;
+static int  g_nLoadInitUi;
+static int  g_nLoadTactShut;
+static int  g_nLoadFreeAll;
+static int  g_nLoadTactInit;
+
+static void LoadRenderProbe(void *pUser) { (void)pUser; g_nLoadRenders++; }
+static void LoadShutdownProbe(void *pUser) { (void)pUser; g_nLoadShutdowns++; }
+static void LoadInitUiProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; g_nLoadInitUi++; }
+static void LoadTactShutProbe(void *pUser) { (void)pUser; g_nLoadTactShut++; }
+static void LoadFreeAllProbe(void *pUser) { (void)pUser; g_nLoadFreeAll++; }
+static bool LoadTactInitProbe(i32 nMode, void *pUser) { (void)nMode; (void)pUser; g_nLoadTactInit++; return true; }
+static i32 LoadOutboundProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
+static i32 LoadItemQtyProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
+static i32 LoadPsiProbe(i32 nBase, void *pUser) { (void)nBase; (void)pUser; return 0; }
+
+static void TestLoadGame(void)
+{
+    static u8 aProduct[17152 + 3200];
+    static u8 aGrid[1524];
+    static u8 aSiteState[8];
+    static u8 aRadarPct[8];
+    static u16 aManuf[200];
+    static u16 aResearchCols[144];
+    static u16 uResearchEntries;
+    static u16 aShotWords[128];
+    static Ship aShip;
+    static Ship *apShips[1];
+    static BaseRec aBase;
+    static BaseRec *apBases[1];
+    static ObjectRecFull aObj[5];
+    static ObjectRecFull *apObj[5];
+    static Soldier aSol[1];
+    static Soldier *apSol[1];
+    static SaveBasesState bases;
+    static SaveResearchState research;
+    static SaveSmapState smap;
+    static StrategSaveState strateg;
+    static SaveTimeRecord timeRec;
+    static GameTime clock;
+    static SmapView view;
+    static SmapWorldSize worldSize;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static ShipCtorEnv shipEnv;
+    static i32 nSeed;
+    static LoadGameHooks hooks;
+    static LoadGameEnv env;
+    static i32 nListMode;
+    static i32 nSoldierCount;
+    static u32 nTactVerOut;
+    static u8 bTactFlag, bGeoscapeUi, bGameState, bCraftCount, bMissionCount, bAssaultFlag;
+    static u16 nUiScreen;
+    static i32 nPtrA, nPtrB;
+    static SaveGameInput in;
+    static TactSaveState tact;
+    static TeamUnitsState rosters;
+    static FlobjsState flobjs;
+    static MapGeom geom;
+    static TactItem aItem[1];
+    static TactItem *apItem[1];
+    static LoadGameEnv bad;
+    DatFile dat;
+
+    printf("LoadGame @ 0x44bbc\n");
+
+    /* Write a geoscape slot (no tactical chunks) with one base, one craft and one item. */
+    memset(&bases, 0, sizeof(bases));
+    memset(&research, 0, sizeof(research));
+    memset(&smap, 0, sizeof(smap));
+    memset(&timeRec, 0, sizeof(timeRec));
+    memset(&strateg, 0, sizeof(strateg));
+    memset(aProduct, 0, sizeof(aProduct));
+    bases.bBaseCount = 1;
+    strateg.bSaveVersion = 3;
+    strateg.nStrategCount = 1;
+    strateg.pnUnk1865A8 = &nPtrA; /* Save_WriteStrateg hands these to DatFile_Write as addresses */
+    strateg.pnUnk186594 = &nPtrB;
+    timeRec.nSlot105 = 31536000u; /* one year, for the decode check */
+
+    /* The ship must be heap-allocated: Save_ReadShips frees the slots it is handed. */
+    memset(&aShip, 0, sizeof(aShip));
+    aShip.bId = 7;
+    aShip.bCraftType = 2;
+    aShip.bHomeBase = 0;
+    aShip.bWeaponsHot = 1;   /* the off-map item must clear this and set bAtBase */
+    aShip.bAtBase = 0;
+    apShips[0] = (Ship *)malloc(sizeof(Ship));
+    Check(apShips[0] != NULL, "  test ship allocated");
+    memcpy(apShips[0], &aShip, sizeof(Ship));
+
+    memset(&aBase, 0, sizeof(aBase));
+    aBase.bUnk4 = 4;
+    aBase.bSlot = 0;
+    aBase.nUnk8 = 120;
+    aBase.nUnk12 = 80;
+    apBases[0] = &aBase;
+
+    memset(aObj, 0, sizeof(aObj));
+    for (int i = 0; i < 5; ++i) {
+        apObj[i] = &aObj[i];
+    }
+
+    memset(&list, 0, sizeof(list));
+    {
+        StrategItem *pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+        Check(pItem != NULL, "  test item allocated");
+        pItem->nType = 1;
+        pItem->bActive = 1;
+        pItem->nDisplayId = 7;      /* matches Ship.bId */
+        pItem->nX = 1500;           /* beyond 1000 */
+        pItem->nY = 40;
+        pItem->bVisible = 1;
+        pItem->nTargetX = 900;      /* beyond 800 */
+        pItem->nTargetY = 100;
+        pItem->nDestX = 120;
+        pItem->nDestY = 80;
+        PtrArray_Add(&list, pItem);
+    }
+
+    memset(&in, 0, sizeof(in));
+    memset(&tact, 0, sizeof(tact));
+    memset(&rosters, 0, sizeof(rosters));
+    memset(&flobjs, 0, sizeof(flobjs));
+    memset(&geom, 0, sizeof(geom));
+    memset(aItem, 0, sizeof(aItem));
+    memset(aSol, 0, sizeof(aSol));
+    apItem[0] = &aItem[0];
+    apSol[0] = &aSol[0];
+    geom.nDimX = 1;
+    geom.nDimY = 1;
+    in.pszAppDir = "";
+    in.nSlot = 7;
+    in.bTactFlag = 0;
+    in.pBases = &bases;
+    in.apBases = (const BaseRec *const *)apBases;
+    in.pProductBlock = aProduct;
+    in.pResearch = &research;
+    in.apShips = (const Ship *const *)apShips;
+    in.nShipCount = 1;
+    in.pSmap = &smap;
+    in.pStrateg = &strateg;
+    in.pStrategList = &list;
+    in.pTime = &timeRec;
+    in.apSoldiers = apSol;
+    in.nSoldierCount = 1;
+    in.apTactItems = apItem;
+    in.nTactItemCount = 1;
+    in.apObjects = (ObjectRecFull *const *)apObj;
+    in.nObjectCount = 5;
+    in.pTact = &tact;
+    in.pRosters = &rosters;
+    in.pFlobjs = &flobjs;
+    in.pMap = &geom;
+    in.pfnLookup = MapTestLookup;
+    in.pfnRenderFrame = RenderFrameProbe;
+    (void)DeleteFileW(L"sav7.sav");
+    g_pszRenderProbe = "sav7.sav";
+    DatFile_ctor(&dat);
+    Check(SaveGame(&dat, &in), "  slot 7 written for the load round-trip");
+    DatFile_Close(&dat);
+
+    /* Fresh state for the load: the readers re-read everything the writer wrote. */
+    memset(aGrid, 0, sizeof(aGrid));
+    memset(aSiteState, 0, sizeof(aSiteState));
+    memset(aRadarPct, 0, sizeof(aRadarPct));
+    memset(aManuf, 0, sizeof(aManuf));
+    memset(aResearchCols, 0, sizeof(aResearchCols));
+    memset(aShotWords, 0xEE, sizeof(aShotWords));
+    memset(&world, 0, sizeof(world));
+    memset(&view, 0, sizeof(view));
+    memset(&clock, 0, sizeof(clock));
+    memset(&shipEnv, 0, sizeof(shipEnv));
+    memset(&bases, 0, sizeof(bases));
+    bases.bBaseCount = 0;
+    memset(&strateg, 0, sizeof(strateg));
+    strateg.bSaveVersion = 3;
+    strateg.nStrategCount = 1;
+    memset(&list, 0, sizeof(list));
+    {
+        StrategItem *pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+        pItem->nType = 1;
+        pItem->bActive = 1;
+        pItem->nDisplayId = 7;
+        pItem->nX = 1500;
+        pItem->nY = 40;
+        pItem->bVisible = 1;
+        pItem->nTargetX = 900;
+        pItem->nTargetY = 100;
+        pItem->nDestX = 120;
+        pItem->nDestY = 80;
+        PtrArray_Add(&list, pItem);
+    }
+    world.apCraft = (Ship *const *)apShips;
+    world.nShipCount = 1;
+    world.apSiteState = aSiteState;
+    world.apRadarPct = aRadarPct;
+    world.pTime = &clock;
+    shipEnv.apObjects = apObj;
+    shipEnv.nObjectCount = 5;
+
+    bTactFlag = 0;
+    bGeoscapeUi = 1;
+    bGameState = 0;
+    bCraftCount = 1;
+    bMissionCount = 99;
+    bAssaultFlag = 1;
+    nUiScreen = 3;
+    nListMode = 0;
+    nSoldierCount = 0;
+    nSeed = 5;
+    uResearchEntries = 0;
+
+    hooks.pfnRenderFrame = LoadRenderProbe;
+    hooks.pfnStartUiShutdown = LoadShutdownProbe;
+    hooks.pfnGeoscapeInitUi = LoadInitUiProbe;
+    hooks.pfnTactShutdown = LoadTactShutProbe;
+    hooks.pfnGeoscapeUiFreeAll = LoadFreeAllProbe;
+    hooks.pfnTactInitMission = LoadTactInitProbe;
+    hooks.pfnOutboundTransferSpace = LoadOutboundProbe;
+    hooks.pfnItemQtyAcrossBases = LoadItemQtyProbe;
+    hooks.pfnPsiSoldiers = LoadPsiProbe;
+    hooks.pUser = NULL;
+
+    memset(&env, 0, sizeof(env));
+    env.pszAppDir = "";
+    env.nSlot = 7;
+    env.pbTactFlag = &bTactFlag;
+    env.pbGeoscapeUi = &bGeoscapeUi;
+    env.pbGameState = &bGameState;
+    env.puUiScreen = &nUiScreen;
+    env.pnSoldierCount = &nSoldierCount;
+    env.pnListMode = &nListMode;
+    env.pbMissionCount = &bMissionCount;
+    env.pbCraftSelectAssaultFlag = &bAssaultFlag;
+    env.pBases = &bases;
+    env.apBases = apBases;
+    env.nOldBaseCount = 0;
+    env.pProductBlock = aProduct;
+    env.pResearch = &research;
+    env.apCraft = apShips;
+    env.pbCraftCount = &bCraftCount;
+    env.pShipEnv = &shipEnv;
+    env.pSmap = &smap;
+    env.pView = &view;
+    env.paZoomSets = NULL;
+    env.pWorldSize = &worldSize;
+    env.pStrateg = &strateg;
+    env.pStrategList = &list;
+    env.pnSeed = &nSeed;
+    env.apSoldiers = apSol;
+    env.nSoldierCapacity = 1;
+    env.apObjects = apObj;
+    env.nObjectCount = 5;
+    env.pnTactVerOut = &nTactVerOut;
+    env.pWorld = &world;
+    env.abFacilityGrid = aGrid;
+    env.apResearchCols = aResearchCols;
+    env.apManufCols = aManuf;
+    env.puResearchEntries = &uResearchEntries;
+    env.puShotObjectWords = aShotWords;
+    env.pTimeRec = &timeRec;
+    env.pTime = &clock;
+    env.pSpawnCtx = NULL;
+    env.pMissionCtx = NULL;
+    env.pbSpawnOnceFlag = NULL;
+    env.pHooks = &hooks;
+
+    g_nLoadRenders = g_nLoadShutdowns = g_nLoadInitUi = 0;
+    g_nLoadTactShut = g_nLoadFreeAll = g_nLoadTactInit = 0;
+
+    bad = env;
+    bad.nSlot = 98;
+    DatFile_ctor(&dat);
+    CheckEqI32(LoadGame(&dat, &bad), 0, "LoadGame(missing slot) == 0");
+    CheckEqI32(g_nLoadRenders, 0, "  and no frame was rendered for it");
+    DatFile_Close(&dat);
+
+    DatFile_ctor(&dat);
+    CheckEqI32(LoadGame(&dat, &env), 1, "LoadGame(sav7) == 1");
+    CheckEqI32(g_nLoadRenders, 1, "  one frame rendered first");
+    CheckEqI32(g_nLoadInitUi, 0, "  screen 3 is not the start menu: no InitUI");
+    /* 0x44D4C..0x44D84: bGeoscapeUi && !bGameState is the one teardown combination that
+     * frees NOTHING — the original's own path (verified in ARM: the FreeAll call sits
+     * behind a second bGameState test that this combination fails). */
+    CheckEqI32(g_nLoadFreeAll, 0, "  geoscape UI without a tactical save: the no-free path");
+    CheckEqI32(g_nLoadTactShut, 0, "  and Tact_Shutdown did not");
+    CheckEqI32(g_nLoadTactInit, 0, "  a geoscape save does not re-init a mission");
+    CheckEqI32(nListMode, 1, "  MainMenu_nListMode becomes 1");
+    CheckEqI32(bMissionCount, 99, "  the mission counter is untouched without mcnt");
+    CheckEqI32(bGameState, 0, "  bGameState read from the gamestate chunk");
+
+    {
+        StrategItem *pItem = (StrategItem *)list.apItems[0];
+        Check(pItem != NULL, "  the strateg item survived the read");
+        if (pItem != NULL) {
+            CheckEqI32(pItem->nX, 1500, "  version 3 does not teleport craft items");
+            CheckEqI32(pItem->nTargetX, 900, "  and does not reset travel targets");
+            /* The craft pass set bAtBase (off-map + weapons hot) and then cleared
+             * bVisible, so the detection mirror lands on 0, not on the saved 1. */
+            CheckEqI32(pItem->bVisible, 0, "  bAtBase cleared the item's bVisible");
+            CheckEqI32(pItem->bDetected, 0, "  bDetected mirrors bVisible");
+        }
+    }
+    /* Save_ReadShips replaced the slot with a freshly allocated ship; the checks read that. */
+    Check(apShips[0] != NULL && apShips[0] != &aShip, "  the ship slot was re-allocated by the read");
+    CheckEqI32(apShips[0] ? apShips[0]->bWeaponsHot : -1, 0, "  the off-map item cleared Ship.bWeaponsHot");
+    CheckEqI32(apShips[0] ? apShips[0]->bAtBase : -1, 1, "  and set Ship.bAtBase");
+    {
+        StrategItem *pItem = (StrategItem *)list.apItems[0];
+        Check(pItem != NULL && pItem->bVisible == 0, "  bAtBase then cleared the item's bVisible");
+    }
+    CheckEqI32(bCraftCount, 1, "  the craft count round-tripped");
+    CheckEqI32((i32)bases.bBaseCount, 1, "  the base count round-tripped");
+    CheckEqI32((i32)strateg.bSaveVersion, 3, "  the version byte is stamped 3 after the load");
+    CheckEqI32(bAssaultFlag, 0, "  bCraftSelectAssaultFlag cleared");
+    CheckEqI32((i32)timeRec.nSlot105, 31536000, "  the time chunk round-trips nSlot105");
+    CheckEqI32(clock.nTotalSec, 31536000, "  and lands on the live clock");
+    CheckEqI32(clock.nYear, 2000, "  GameTime_Decode ran on the loaded clock (1999 + 1 year)");
+    Check(aShotWords[29] == 0 && aShotWords[101] == 0, "  the shot object's words 29 and 101 zeroed");
+    Check(aShotWords[30] == 0xEEEE, "  word 30 is past the nCraftCount-1 stores and stays");
+    CheckEqI32((i32)nTactVerOut, 1, "  tactver value handed to the slot-context slot");
+    Check(apObj[4] == &aObj[4], "  and the object table is NOT touched by tactver");
+    CheckEqI32((i32)aRadarPct[0], Base_CountEmptyFacilityCells(aGrid, 0), "  radar byte recomputed");
+
+    DatFile_Close(&dat);
+    for (int i = 0; i < list.nCount; ++i) {
+        free(list.apItems[i]);
+    }
+    free(apShips[0]);   /* allocated by Save_ReadShips */
+    free(apBases[0]);   /* allocated by Save_ReadBases */
+    (void)DeleteFileW(L"sav7.sav");
+}
+
 /* Save_ReadTGameData @ 0x44248. */
 static int  g_nTactSpriteLoads;
 static int  g_nSprCalls;
@@ -2606,6 +2945,7 @@ int main(void)
     TestSlotList();
     TestStrategChunk();
     TestSaveGame();
+    TestLoadGame();
     TestReadTGameData();
     TestSoldiersReload();
 

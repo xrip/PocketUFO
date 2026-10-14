@@ -147,6 +147,23 @@ void Ship_ClearExpiredIntercepts(GeoscapeWorld *pWorld, StrategList *pList,
  * id counters sit beside it at 0x186544 / 0x186548. These two wrappers act on the
  * PtrArray itself, which is what the original calls. */
 
+/* The port carries the strateg list as a PtrArray (the shape StrategList_RemoveAt wants) and
+ * searches it as a StrategList (the shape StrategList_FindByShipId / FindIdxForShip want). The
+ * two structs have their fields in the opposite order, so they cannot alias one another. This
+ * builds the search view FRESH from the array each time, which is the only way to keep it from
+ * going stale across a removal: StrategList_RemoveAt compacts the array, and a view built
+ * before it would still report the old count. */
+static inline StrategList StrategViewOf(const PtrArray *pArr)
+{
+    StrategList v;
+
+    v.apItems = (StrategItem **)pArr->apItems;
+    v.nCount = pArr->nCount;
+    v.nNextDisplayId = 0;
+    v.nNextSiteId = 0;
+    return v;
+}
+
 /* StrategList_ctor @ 0x83890: PtrArray_ctor over strategList. */
 void StrategList_ctor(PtrArray *pList);
 

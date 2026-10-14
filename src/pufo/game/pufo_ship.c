@@ -711,22 +711,8 @@ i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectC
     return nUsed;
 }
 
-/* The port carries the strateg list as a PtrArray (that is the shape StrategList_RemoveAt wants)
- * and searches it as a StrategList (that is the shape StrategList_FindByShipId wants). The two
- * structs have their fields in the opposite order, so they cannot alias one another. This builds
- * the search view FRESH from the array each time, which is the only way to keep it from going
- * stale across a removal: StrategList_RemoveAt compacts the array, and a view built before it
- * would still report the old count. */
-static StrategList StrategViewOf(const PtrArray *pArr)
-{
-    StrategList v;
-
-    v.apItems = (StrategItem **)pArr->apItems;
-    v.nCount = pArr->nCount;
-    v.nNextDisplayId = 0;
-    v.nNextSiteId = 0;
-    return v;
-}
+/* StrategViewOf, the PtrArray -> StrategList search view, now lives in pufo_strateg.h so the
+ * load driver can use it too. */
 
 /* BaseRec_Create @ 0x32c88. Allocate one 20-byte base record, run BaseRec_Ctor over it, and put
  * it in the first free roster slot -- index nBaseCount, which the CALLER increments. This function

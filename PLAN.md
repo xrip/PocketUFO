@@ -189,13 +189,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [x] a fixture bug this step exposed: `Tact_BuildVisRayTable` writes `PUFO_VIS_TABLE_BYTES`
     (14,880) step bytes, and the new fixture sized its step array at 256. It overran into the asset
     registry's statics and crashed the next `AssetReader_Find`. The ray table itself was correct.
-- [ ] `LoadGame (0x44bbc)` — blocked by exactly one callee now: `Geoscape_InitUI (0x857f4, 5,420 B)`,
-  which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
-  Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
-  `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain. In Priority 2
-  the map frame, the minimap and the start screen are now drawn; what is left there is
-  `Tact_DrawCommandPads (0x1fc8c)` and the caller `Render_Frame (0x22310)`, which also wants
-  `Geoscape_Draw (0x8c180)` from Priority 3.
+- [x] `LoadGame (0x44bbc, 3,400 B)` — the whole driver is ported in `src/pufo/game/pufo_save.c`
+  (`LoadGame` + `LoadGameEnv` + `LoadGameHooks`), verified by a sav7 round-trip in `test_save`.
+  The callees that belong to other subsystems arrive as hooks and remain unported:
+  `Geoscape_InitUI (0x857f4, 5,420 B)` (itself blocked by `Game_StartNew (0x94554)` and
+  `GameTime_Set5Sec (0x84f00)`), `Base_CountOutboundTransferSpace (0x68044)`,
+  `Base_CountItemQtyAcrossBases (0x67d68)`, `Base_CountPsiSoldiers (0x65a08)`. Two IDB errors
+  this step fixed: the tactver value goes to slot-context + 0x118 (`MainMenu_pSlotCtx+0x118`,
+  write-only residue), NOT `apObjects[4]`; and the "shot object" whose words 29.. are zeroed is
+  `apObjects[0]` itself (Map+0x108), not a separate global. In Priority 2 the map frame, the
+  minimap and the start screen are now drawn; what is left there is `Tact_DrawCommandPads
+  (0x1fc8c)` and the caller `Render_Frame (0x22310)`, which also wants `Geoscape_Draw (0x8c180)`
+  from Priority 3.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
   - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
@@ -531,6 +536,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Render_Frame` dispatcher (`pufo_renderframe.c`) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 | start menu click wiring (`--click` dump verified) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 | credits opener (`Titles_Init`, `Titles_ctor`) | 54/54 (Release) | 7564 | 700/1103 (63.5%) | 276464/598792 (46.2%) | 37 checked, 0 mismatched |
+| `LoadGame` driver (`pufo_save.c`, sav7 round-trip) | 54/54 (Release) | 7599 | 701/1103 (63.6%) | 279864/598792 (46.7%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

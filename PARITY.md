@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 700 / 1103 (63.5%) |
-| Bytes of original code cited | 276464 / 598792 (46.2%) |
+| Functions cited as evidence | 701 / 1103 (63.6%) |
+| Bytes of original code cited | 279864 / 598792 (46.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 54 |
-| Test checks run | 7564 |
+| Test checks run | 7599 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -39,7 +39,7 @@ the per-subsystem notes and the tests listed at the end.
 | `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
-| `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
+| `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 69 | 85 | 15108 / 38368 | shared UI panel, text engine, menus |
@@ -199,10 +199,11 @@ is the module that answers to it.
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c74` | `CDialogTemplate_GetLevelCount` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 
-### `save` (34 functions)
+### `save` (35 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x44bbc` | `LoadGame` | 3400 | `src/pufo/game/pufo_save.h` |
 | `0x416bc` | `Save_ReadSoldiers` | 3220 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x42350` | `Save_WriteSoldiers` | 2896 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+2) |
 | `0x40f4c` | `Save_ReadStrateg` | 1664 | `src/pufo/game/pufo_save.h` |
@@ -988,12 +989,6 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `save` — 1 functions, 3400 bytes remaining
-
-| Address | Original | Size | Note |
-|---|---|---|---|
-| `0x44bbc` | `LoadGame` | 3400 | not yet ported; scheduled with the `save` subsystem work |
-
 ### `tact` — 25 functions, 60076 bytes remaining
 
 | Address | Original | Size | Note |
@@ -1327,7 +1322,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_renderframe` | PASS | 18 |
 | `test_rmp` | PASS | 62 |
 | `test_roster` | PASS | 114 |
-| `test_save` | PASS | 689 |
+| `test_save` | PASS | 724 |
 | `test_ship` | PASS | 185 |
 | `test_soldiername` | PASS | 22 |
 | `test_statusmsg` | PASS | 106 |

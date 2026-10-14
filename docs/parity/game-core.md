@@ -8740,3 +8740,49 @@ Verified visually: `--dump-frame out.ppm --click 120 170` clicks mode-0 row 2 (`
 credit line ("Kuznetsov Mikhail", record 0x587) at y 300 with the stars' first dots entering at the
 top edge. IDB: comments at 0x380d8 / 0x46e88 / 0x1571A0 / 0x156930, rename unk_1571A0 →
 Titles_apGlyphs.
+
+## The load driver opens: `LoadGame @ 0x44bbc` (3,400 B) ported with hook seams
+
+`LoadGame` is the mirror of `SaveGame` for `sav<n>.sav` and the keystone of a cold start. The whole
+driver now lives in `src/pufo/game/pufo_save.c` as `LoadGame(DatFile*, LoadGameEnv*)` with a
+`LoadGameHooks` seam for the callees whose environments belong to other subsystems. `test_save`
+verifies it with a sav7 round-trip: `SaveGame` writes a geoscape slot (one base, one craft, one
+strateg item, one soldier, time = 1 year), then `LoadGame` reads it back and every re-derivation
+pass is checked.
+
+Two long-standing IDB errors died in this step, both caught by reading the ARM instead of the
+pseudocode:
+
+- **The tactver value is NOT `apObjects[4]`.** `0x44C94` is `STR R3,[R7,#0x118]` where R7 is the
+  first argument -- and every caller (`SaveLoad_Slot0..6`, `MenuCtl8..14_OnClick`) passes
+  `&MainMenu_pSlotCtx @ 0x156938`, the 7x40-byte save/load line buffer. So the dword lands at
+  0x156A50, right after the lines, and nothing in the binary ever reads it (the only 0x118 access
+  on that base is the store). It is write-only residue, like `unk_156930`. The object table is
+  `Map+0x108` (`unk_113AC0`), a different block -- the earlier "stores the value 1 as a
+  live-looking pointer into the object table" reading was wrong, and the port hands the value out
+  through `pnTactVerOut` instead of corrupting the table.
+- **The "shot object" is `apObjects[0]` itself.** The word-zeroing pass at 0x45750 reads
+  `[Map+0x108]` -- the object table's first entry -- and zeroes `nCraftCount` u16 words starting
+  at byte 58 (word 29, `aItemQty[0]`), then byte 0xCA (word 101) even when the craft count is zero
+  (the loop gate is a `BLS` that jumps straight to the 0xCA store). There is no separate global at
+  Map+0x1108.
+
+The teardown truth table, re-verified in ARM at 0x44D08..0x44D84: `bTactFlag && !bGameState` ->
+`Tact_Shutdown(0)` + `Geoscape_InitUI(1)`; `!bGeoscapeUi` -> `Tact_Shutdown(0)`;
+`bGeoscapeUi && bGameState` -> `GeoscapeUi_FreeAll(0)`; `bGeoscapeUi && !bGameState` -> **nothing**
+-- the FreeAll call sits behind a second `bGameState` test that this combination fails (the two
+redundant `BEQ loc_44D7C` after it are dead code). A geoscape save loaded over a live geoscape UI
+frees no UI at all; that is the original's own path.
+
+`Save_ReadStrateg`'s two pointer header fields (globals 0x1865A8 / 0x186594) are read
+unconditionally in the original. The port models them as caller pointers, and a NULL must NOT skip
+the 4 bytes -- skipping desynchronises the whole rest of the chunk (this exact bug corrupted every
+item field in the first round-trip). The reader now sends the bytes to a scratch when the pointer
+is NULL.
+
+Hook seams (unported callees, cited without `@`): `Geoscape_InitUI (0x857f4, not ported)`,
+`Base_CountOutboundTransferSpace (0x68044, not ported)`, `Base_CountItemQtyAcrossBases (0x67d68,
+not ported)`, `Base_CountPsiSoldiers (0x65a08, not ported)`, plus the env-heavy `Render_Frame`,
+`StartUi_Shutdown`, `Tact_Shutdown`, `GeoscapeUi_FreeAll`, `Tact_InitMission` calls. IDB: the
+`LoadGame` function comment rewritten (the apObjects[4] claim removed), first arg retyped
+`void *pSlotCtx`, comment at 0x44C94.

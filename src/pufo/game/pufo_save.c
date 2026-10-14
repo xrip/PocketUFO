@@ -4,6 +4,10 @@
  */
 #include "game/pufo_save.h"
 
+#include "game/pufo_clock.h"   /* GameTime_Decode, the load tail */
+#include "game/pufo_geoscape.h" /* Base_ClearFacilityGridRow, BaseGrid_SetTypeByte, the five Update*Needed */
+#include "game/pufo_strateg.h"  /* StrategList_PurgeType5 / FindIdxForShip / AddItem, Geoscape_SpawnMissionSite */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +31,12 @@ bool Save_BuildSlotPath(char *pszOut, size_t cchOut, const char *pszAppDir, i32 
 static bool W(DatFile *pDat, const void *pBuf, u32 nSize)
 {
     return DatFile_Write(pDat, pBuf, nSize);
+}
+
+/* The original's abs is the ARM MOVS/ASR sign-flip idiom; the port spells it the plain way. */
+static i32 Abs32(i32 n)
+{
+    return n < 0 ? -n : n;
 }
 
 /* The flags are stored as six separate booleans, one per bit, NOT as a byte. That
@@ -2201,11 +2211,15 @@ bool Save_ReadStrateg(DatFile *pDat, StrategSaveState *pSt, PtrArray *pList)
     (void)DatFile_Read(pDat, &pSt->nUnk1865A4, 4);
     (void)DatFile_Read(pDat, &pSt->nUnk186590, 4);
     (void)DatFile_Read(pDat, &pSt->nUnk186578, 4);
-    if (pSt->pnUnk1865A8 != NULL) {
-        (void)DatFile_Read(pDat, pSt->pnUnk1865A8, 4); /* 0x410E8, a POINTER */
-    }
-    if (pSt->pnUnk186594 != NULL) {
-        (void)DatFile_Read(pDat, pSt->pnUnk186594, 4); /* 0x410F8, a POINTER */
+    /* 0x410E8/0x410F8: these two header fields are read as POINTERS into the globals
+     * 0x1865A8 and 0x186594, and the reads are NEVER conditional — skipping one would
+     * desynchronise the whole rest of the chunk. The port models the globals as caller
+     * pointers; when one is NULL the 4 bytes still go to a scratch so the stream stays
+     * aligned. */
+    {
+        i32 nScratch;
+        (void)DatFile_Read(pDat, pSt->pnUnk1865A8 != NULL ? pSt->pnUnk1865A8 : &nScratch, 4);
+        (void)DatFile_Read(pDat, pSt->pnUnk186594 != NULL ? pSt->pnUnk186594 : &nScratch, 4);
     }
     (void)DatFile_Read(pDat, &pSt->nUnk186580, 4);
     (void)DatFile_Read(pDat, &pSt->nUnk186568, 4);
@@ -2480,4 +2494,335 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
         }
     }
     return bOk;
+}
+
+/* The research-unlock switch's topic -> base-facility-flag map, read off the jumptable at
+ * 0x4539C: topics 0..16 in order, -1 for topic 10 (the jumptable's default case). */
+static const i8 s_abResearchUnlockFlag[17] = {
+    0, 1, 2, 3, 4, 5, 13, 6, 7, 14, -1, 15, 16, 12, 10, 8, 9
+};
+
+/* The product columns the type-byte computation reads: 119..121 of the base's 200-entry
+ * columns, proven from the ARM displacements 0x32F2/0x32F4/0x32F6 (C, u16, +238/240/242)
+ * and 0x1AE0/0x1AE4/0x1AE8 (B, u32, +476/480/484). */
+#define PUFO_PRODUCT_TYPE_COL_A 119
+#define PUFO_PRODUCT_TYPE_COL_B 120
+#define PUFO_PRODUCT_TYPE_COL_C 121
+#define PUFO_PRODUCT_ENTRIES_PER_BASE 200
+
+i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
+{
+    const LoadGameHooks *pHooks = pEnv->pHooks;
+    char   szPath[296];
+    i32    nVer;
+    i32    nCraftCount;
+    i32    nBaseCount;
+    bool   bOk = true;
+
+    if (pDat == NULL || pHooks == NULL) {
+        return 0;
+    }
+    if (!Save_BuildSlotPath(szPath, sizeof(szPath), pEnv->pszAppDir, pEnv->nSlot)) {
+        return 0;
+    }
+    if (!DatFile_Exists(szPath)) { /* 0x44C38: no file, no load, no teardown */
+        return 0;
+    }
+
+    if (pHooks->pfnRenderFrame != NULL) { /* 0x44C44 */
+        pHooks->pfnRenderFrame(pHooks->pUser);
+    }
+    if (!DatFile_Open(pDat, szPath, PUFO_DAT_READ, 100)) { /* 0x44C58: 100 entries */
+        return 0;
+    }
+
+    /* 0x44C64..0x44C94: tactver. The 2 bytes are read into a zero-initialised dword and the
+     * VALUE is stored at slot-context + 0x118 — R7 is &MainMenu_pSlotCtx @ 0x156938 (every
+     * caller passes it), so the dword lands right after the 7x40-byte line buffer at 0x156A50.
+     * Nothing in the binary reads that dword (the only 0x118 access on this base is the store),
+     * so it is write-only residue; the port hands the value out through pnTactVerOut. */
+    (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_TACTVER);
+    {
+        u32 nTactVer = 0;
+        if (DatFile_ChunkPresent(pDat)) {
+            (void)DatFile_Read(pDat, &nTactVer, 2); /* 0x44C8C: 2 bytes into the low half */
+        }
+        if (pEnv->pnTactVerOut != NULL) {
+            *pEnv->pnTactVerOut = nTactVer; /* 0x44C94 */
+        }
+    }
+
+    if (!Save_ReadGameState(pDat, pEnv->pbGameState)) { bOk = false; } /* 0x44C98 */
+
+    /* 0x44CB0: loading from the start menu starts from an empty world. */
+    if (*pEnv->puUiScreen == 17) {
+        if (pHooks->pfnStartUiShutdown != NULL) { pHooks->pfnStartUiShutdown(pHooks->pUser); }
+        if (pHooks->pfnGeoscapeInitUi != NULL)   { pHooks->pfnGeoscapeInitUi(1, pHooks->pUser); }
+        *(u16 *)pEnv->pnSoldierCount = 0;        /* 0x44CCC: STRH, the LOW half only */
+        pEnv->pBases->bBaseCount = 0;            /* 0x44CD4 */
+        *pEnv->pbCraftCount = 0;                 /* 0x44CE4 */
+        pEnv->pStrateg->nStrategCount = 0;       /* 0x44CEC */
+    }
+
+    /* 0x44D08..0x44D80: the three-way teardown. The combination bGeoscapeUi && !bGameState
+     * frees NOTHING — that is the original's own path, reproduced. */
+    if (*pEnv->pbTactFlag != 0 && *pEnv->pbGameState == 0) {
+        if (pHooks->pfnTactShutdown != NULL)      { pHooks->pfnTactShutdown(pHooks->pUser); }
+        if (pHooks->pfnGeoscapeInitUi != NULL)    { pHooks->pfnGeoscapeInitUi(1, pHooks->pUser); }
+    } else if (*pEnv->pbGeoscapeUi != 0) {
+        if (*pEnv->pbGameState != 0 && pHooks->pfnGeoscapeUiFreeAll != NULL) {
+            pHooks->pfnGeoscapeUiFreeAll(pHooks->pUser);
+        }
+    } else {
+        if (pHooks->pfnTactShutdown != NULL) { pHooks->pfnTactShutdown(pHooks->pUser); }
+    }
+
+    /* 0x44D84..0x44DB8: the version byte comes from the strateg chunk BEFORE any chunk body
+     * is read, because it sizes the other readers. */
+    if (!Save_ReadStrategVersion(pDat, &pEnv->pStrateg->bSaveVersion)) { bOk = false; }
+    nVer = (i32)pEnv->pStrateg->bSaveVersion;
+
+    if (!Save_ReadBases(pDat, nVer, pEnv->pBases, pEnv->apBases, pEnv->nOldBaseCount,
+                        (u8)pEnv->pStrateg->nUnk186558, pEnv->apObjects, pEnv->nObjectCount)) { bOk = false; }
+    if (!Save_ReadProduct(pDat, nVer, pEnv->pProductBlock)) { bOk = false; }
+    if (!Save_ReadResearch(pDat, pEnv->pResearch)) { bOk = false; }
+
+    nCraftCount = (i32)*pEnv->pbCraftCount; /* in/out: the count held before the read frees the old array */
+    if (!Save_ReadShips(pDat, pEnv->apCraft, &nCraftCount, pEnv->pShipEnv)) { bOk = false; }
+    *pEnv->pbCraftCount = (u8)nCraftCount;
+
+    if (!Save_ReadSmap(pDat, pEnv->pSmap, pEnv->pView, pEnv->paZoomSets,
+                       pEnv->pWorldSize, *pEnv->pbGameState != 0)) { bOk = false; }
+    if (!Save_ReadStrateg(pDat, pEnv->pStrateg, pEnv->pStrategList)) { bOk = false; }
+    if (!Save_ReadTime(pDat, pEnv->pTimeRec)) { bOk = false; }
+    /* The original reads the time chunk straight into the live clock block (apLines[101..115]);
+     * the port reads it into the wire record and copies it over, leaving nUnkC (apLines[104],
+     * never saved) alone. */
+    pEnv->pTime->nLastTickMinSec = (i32)pEnv->pTimeRec->nSlot101;
+    pEnv->pTime->nLastTickHourSec = (i32)pEnv->pTimeRec->nSlot102;
+    pEnv->pTime->nLastTickDaySec = (i32)pEnv->pTimeRec->nSlot103;
+    pEnv->pTime->nTotalSec = (i32)pEnv->pTimeRec->nSlot105;
+    pEnv->pTime->bPaused = pEnv->pTimeRec->nSlot106;
+    pEnv->pTime->nUnk34 = (i32)pEnv->pTimeRec->nSlot114;
+    pEnv->pTime->nMonthEpochSec = (i32)pEnv->pTimeRec->nSlot115;
+    if (*pEnv->pbGameState == 0) { /* 0x44DAC: soldiers only for a non-tactical save */
+        if (!Save_ReadSoldiers(pDat, pEnv->apSoldiers, pEnv->pnSoldierCount,
+                               pEnv->nSoldierCapacity)) { bOk = false; }
+    }
+
+    *pEnv->pnListMode = 1; /* 0x44DC8 */
+
+    if (*pEnv->pbGameState != 0) { /* 0x44DD8..0x44E24 */
+        (void)DatFile_FindChunk(pDat, PUFO_SAVE_TAG_MCNT);
+        if (DatFile_ChunkPresent(pDat)) {
+            if (!DatFile_Read(pDat, pEnv->pbMissionCount, 1)) { bOk = false; }
+        } else {
+            *pEnv->pbMissionCount = 0;
+        }
+        if (pHooks->pfnTactInitMission != NULL) {
+            (void)pHooks->pfnTactInitMission(1, pHooks->pUser);
+        }
+    }
+
+    (void)DatFile_Close(pDat); /* 0x44E2C */
+    (void)GameTime_Decode(pEnv->pTime); /* 0x44E34 */
+
+    nBaseCount = (i32)pEnv->pBases->bBaseCount; /* signed char throughout */
+    nVer       = (i32)pEnv->pStrateg->bSaveVersion;
+
+    /* 0x44E44..0x44E7C: per-base site state. */
+    for (i32 i = 0; i < nBaseCount; ++i) {
+        pEnv->pWorld->apSiteState[i] =
+            (u8)Base_ClearFacilityGridRow(pEnv->abFacilityGrid, i, pEnv->pWorld->apSiteState);
+    }
+
+    /* 0x44E8C..0x44F64: an old save purges unclaimed type-5 items, then teleports any active
+     * craft item that is off the map to (150, 250) and gives it a mission site. */
+    if (nVer < 3) {
+        (void)StrategList_PurgeType5(pEnv->pStrategList, pEnv->pWorld,
+                                     pEnv->pbSpawnOnceFlag, pEnv->pSpawnCtx);
+        for (i32 i = 0; i < pEnv->pStrateg->nStrategCount; ++i) {
+            StrategItem *pItem = PtrArray_Get(pEnv->pStrategList, i);
+            if (pItem != NULL && pItem->nType == 1 && pItem->bActive == 1 &&
+                (Abs32(pItem->nX) > 1000 || Abs32(pItem->nY) > 1000)) {
+                pItem->nX = 150;  /* 0x44F3C */
+                pItem->nY = 250;  /* 0x44F50 */
+                (void)Geoscape_SpawnMissionSite(pItem, 0, pEnv->pMissionCtx); /* 0x44F64 */
+            }
+        }
+    }
+
+    /* 0x44F7C..0x450E8: per craft, find or create its strateg item, then the two ship flags. */
+    for (i32 n = 0; n < nCraftCount; ++n) {
+        Ship *pShip = pEnv->apCraft[n];
+        const StrategList view = StrategViewOf(pEnv->pStrategList);
+        i32   nIdx  = StrategList_FindIdxForShip(&view, pEnv->pWorld, n); /* 0x44FB0, signed char result */
+        if (nIdx == -1) { /* 0x44FC0..0x45014: none — add one from the home base */
+            BaseRec *pHome = (pShip != NULL && pEnv->apBases != NULL)
+                                 ? pEnv->apBases[pShip->bHomeBase] : NULL;
+            (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnSeed, pEnv->pView->nMode,
+                                      1, 0, (pShip != NULL) ? (i32)pShip->bCraftType : 0,
+                                      (pHome != NULL) ? pHome->nUnk8 : 0,
+                                      (pHome != NULL) ? pHome->nUnk12 : 0,
+                                      (pShip != NULL) ? (i32)pShip->bId : 0, 0);
+            nIdx = pEnv->pStrategList->nCount - 1; /* 0x45014: the new last entry */
+        }
+        if (pShip == NULL) {
+            continue; /* deviation: the original dereferences the craft slot unchecked */
+        }
+        StrategItem *pItem = PtrArray_Get(pEnv->pStrategList, nIdx);
+        if (pShip->bWeaponsHot != 0 && pItem != NULL &&
+            (Abs32(pItem->nX) > 1000 || Abs32(pItem->nY) > 1000)) { /* 0x45074..0x4508C */
+            pShip->bWeaponsHot = 0;
+            pShip->bAtBase     = 1;
+        }
+        if (pShip->bAtBase != 0 && pItem != NULL && pItem->bVisible != 0) { /* 0x450B8..0x450CC */
+            pItem->bVisible = 0;
+        }
+    }
+
+    /* 0x450EC..0x451D0: an old save resets out-of-range travel targets to the destination. */
+    if (nVer < 3) {
+        for (i32 i = 0; i < pEnv->pStrateg->nStrategCount; ++i) {
+            StrategItem *pItem = PtrArray_Get(pEnv->pStrategList, i);
+            if (pItem != NULL && pItem->bActive == 1 && pItem->nType == 1 &&
+                (Abs32(pItem->nTargetX) > 800 || Abs32(pItem->nTargetY) > 600)) {
+                pItem->nTargetX = pItem->nDestX; /* 0x451B0 */
+                pItem->nTargetY = pItem->nDestY; /* 0x451D0 */
+            }
+        }
+    }
+
+    /* 0x451E8..0x452AC: each base's type byte in the grid+1620 array, computed from its own
+     * product columns and looked up by the base's bUnk4 type byte. */
+    for (i32 b = 0; b < nBaseCount; ++b) {
+        BaseRec *pBase = (pEnv->apBases != NULL) ? pEnv->apBases[b] : NULL;
+        if (pBase == NULL) {
+            continue;
+        }
+        const u16 *pC = (const u16 *)(pEnv->pProductBlock + 12800) + b * PUFO_PRODUCT_ENTRIES_PER_BASE;
+        const i32 *pB = (const i32 *)(pEnv->pProductBlock + 6400)  + b * PUFO_PRODUCT_ENTRIES_PER_BASE;
+        i32 nValue = (-(i32)pC[PUFO_PRODUCT_TYPE_COL_A]) & 0xFF; /* 0x45230: RSB then AND #0xFF */
+        nValue -= (i32)(u8)pC[PUFO_PRODUCT_TYPE_COL_B];          /* 0x45244: LDRB of the u16's low byte */
+        nValue -= (i32)(u8)pC[PUFO_PRODUCT_TYPE_COL_C];          /* 0x45258 */
+        nValue += (u8)pB[PUFO_PRODUCT_TYPE_COL_C];               /* 0x4526C */
+        nValue += (u8)pB[PUFO_PRODUCT_TYPE_COL_B];               /* 0x45280 */
+        nValue += (u8)pB[PUFO_PRODUCT_TYPE_COL_A];               /* 0x45294 */
+        (void)BaseGrid_SetTypeByte(pEnv->apBases, nBaseCount, pEnv->pBases->abUnk159DBC,
+                                   pBase->bUnk4, (i8)nValue);
+    }
+
+    /* 0x452BC..0x4535C: the facType fill. For every cell whose tileA byte is 0 AND whose
+     * facType byte is 0, facType becomes 255. The ARM's 6*(24*b + row + 18) + k + 372 is
+     * fac[b] + 108 + 6*row + k — the facType layer of the same 144-byte block. */
+    for (i32 b = 0; b < nBaseCount; ++b) {
+        u8 *pFac = pEnv->abFacilityGrid + 372 + 144 * b;
+        for (i32 k = 0; k < 6; ++k) {
+            for (i32 row = 0; row < 6; ++row) {
+                if (pFac[6 * row + k] == 0 && pFac[108 + 6 * row + k] == 0) {
+                    pFac[108 + 6 * row + k] = 0xFF; /* 0x45324 */
+                }
+            }
+        }
+    }
+
+    /* 0x45388..0x45588: an old save re-opens the base-facility flags for every unlocked
+     * research topic, through the jumptable's permuted topic -> flag map. */
+    if (nVer < 3 && *pEnv->puResearchEntries != 0) {
+        i32 nTopics = (i32)*pEnv->puResearchEntries;
+        for (i32 topic = 0; topic < nTopics && topic < 17; ++topic) {
+            i8 nFlag = s_abResearchUnlockFlag[topic];
+            if (nFlag >= 0 && pEnv->pResearch->aTopics[topic].abUnk10[3] != 0) { /* LDRB [R2,#0xD] */
+                pEnv->pBases->abFlag20[nFlag] = 1;
+            }
+        }
+    }
+
+    /* 0x45590..0x45734: an old save rebuilds the product arrays through the facility->item
+     * map. The four arrays go to scratch, get zeroed, and each facility cell (144 bytes per
+     * base at block+16000, one byte per topic, the byte is the item index) re-spreads the
+     * scratch entry [200*base + topic] into [item + 200*base]. */
+    if (nVer < 3) {
+        static u8  aScratchA[6400];
+        static u8  aScratchB[6400];
+        static u8  aScratchC[3200];
+        static u8  aScratchD[3200];
+        u8     *pA   = pEnv->pProductBlock;
+        u8     *pB   = pEnv->pProductBlock + 6400;
+        u8     *pC   = pEnv->pProductBlock + 12800;
+        u8     *pMap = pEnv->pProductBlock + 16000;
+        u8     *pD   = pEnv->pProductBlock + 17152; /* apManufCols sits right after the block */
+        i32     nTopics = (i32)*pEnv->puResearchEntries;
+
+        memcpy(aScratchA, pA, sizeof(aScratchA)); /* 0x455A4 */
+        memcpy(aScratchB, pB, sizeof(aScratchB)); /* 0x455C0 */
+        memcpy(aScratchC, pC, sizeof(aScratchC)); /* 0x455DC */
+        memcpy(aScratchD, pD, sizeof(aScratchD)); /* 0x455F8 */
+        memset(pA, 0, 6400);                      /* 0x45608 */
+        memset(pB, 0, 6400);                      /* 0x45618 */
+        memset(pC, 0, 3200);                      /* 0x45628 */
+        memset(pD, 0, 3200);                      /* 0x45638 */
+
+        for (i32 b = 0; b < nBaseCount; ++b) {
+            i32 nBaseOff = 200 * b;
+            for (i32 col = 0; col < nTopics; ++col) {
+                u8 nItem = pMap[144 * b + col]; /* 0x45688 */
+                if (nItem == 0) {
+                    continue; /* 0x45690: an empty cell carries nothing */
+                }
+                ((i32 *)pA)[nItem + nBaseOff] = ((const i32 *)aScratchA)[nBaseOff + col]; /* 0x456AC */
+                ((i32 *)pB)[nItem + nBaseOff] = ((const i32 *)aScratchB)[nBaseOff + col]; /* 0x456C8 */
+                ((u16 *)pC)[nItem + nBaseOff] = ((const u16 *)aScratchC)[nBaseOff + col]; /* 0x456F0 */
+                ((u16 *)pD)[nItem + nBaseOff] = ((const u16 *)aScratchD)[nBaseOff + col]; /* 0x45714 */
+            }
+        }
+    }
+
+    /* 0x45740..0x45794: the shot object is apObjects[0] (the load at 0x45750 reads
+     * [Map+0x108], i.e. the object table's first entry — there is no separate global).
+     * nCraftCount words starting at word 29 (byte 58 = aItemQty[0]) are zeroed, then word
+     * 101 (byte 0xCA) is zeroed even when the craft count is zero — the loop gate is a
+     * BLS that jumps straight to the 0xCA store. */
+    if (pEnv->puShotObjectWords != NULL) {
+        for (i32 i = 0; i < nCraftCount; ++i) {
+            pEnv->puShotObjectWords[29 + i] = 0; /* 0x45764: STRH R7,[0x3A + apObjects[0] + 2*i] */
+        }
+        pEnv->puShotObjectWords[101] = 0; /* 0x4578C: STRH R7,[apObjects[0],#0xCA] */
+    }
+
+    /* 0x4579C..0x457F0: detection mirrors visibility after a load. */
+    for (i32 i = 0; i < PtrArray_GetCount(pEnv->pStrategList); ++i) {
+        StrategItem *pItem = PtrArray_Get(pEnv->pStrategList, i);
+        if (pItem != NULL && pItem->nType == 1 && pItem->bActive == 1) {
+            pItem->bDetected = pItem->bVisible; /* 0x457F0 */
+        }
+    }
+
+    /* 0x4580C..0x458B8: per base, the radar byte and the five needed-flag passes with the
+     * budgets the original computes internally. */
+    for (i32 b = 0; b < nBaseCount; ++b) {
+        pEnv->pWorld->apRadarPct[b] = (u8)Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b);
+    }
+    for (i32 b = 0; b < nBaseCount; ++b) {
+        i32 nSpace  = Base_CalcOccupiedSpace(pEnv->apSoldiers, *pEnv->pnSoldierCount,
+                                             pEnv->apObjects, pEnv->nObjectCount, b);
+        i32 nStores = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, b);
+        (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, b,
+            nSpace + ((pHooks->pfnOutboundTransferSpace != NULL)
+                          ? pHooks->pfnOutboundTransferSpace(b, pHooks->pUser) : 0)); /* 0x45888 */
+        (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, b,
+            nStores + ((pHooks->pfnItemQtyAcrossBases != NULL)
+                           ? pHooks->pfnItemQtyAcrossBases(b, pHooks->pUser) : 0)); /* 0x45894 */
+        (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, b,
+            (pHooks->pfnPsiSoldiers != NULL) ? pHooks->pfnPsiSoldiers(b, pHooks->pUser) : 0); /* 0x458A0 */
+        (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, b,
+            Base_CountActiveResearch(pEnv->apResearchCols + 144 * b, (i32)*pEnv->puResearchEntries)); /* 0x458AC */
+        (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, b,
+            Base_CountActiveManuf(pEnv->apManufCols + 200 * b, PUFO_PRODUCT_ENTRIES_PER_BASE)); /* 0x458B8 */
+    }
+
+    *pEnv->pbCraftSelectAssaultFlag = 0;          /* 0x458DC */
+    pEnv->pStrateg->bSaveVersion = 3;             /* 0x458E4: the loaded world is stamped current */
+    (void)bOk; /* deviation: the original ignores every read failure after the existence test */
+    return 1; /* 0x458F8 */
 }
