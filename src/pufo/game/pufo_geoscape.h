@@ -20,6 +20,49 @@
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"   /* UiControl, for the nav speed controls */
 
+/* ------------------------------------------------- the facility grid layout
+ *
+ * Evidence: the original's own IDA type names for gBaseFacGrid @ 0x159768, size 1524:
+ * buildDays u8[8][6][6] at +0x000 followed by fac BaseFacBlock[8] at +0x174, each block
+ * 144 bytes of tileA, tileB, layer2 and facType, each a 6 by 6 BaseFacLayer6. The long
+ * note at Base_UpdateWorkshopNeeded below maps these onto the offsets the port used
+ * before the original's names were recovered. Game_StartNew @ 0x94554 stamps the whole
+ * grid (0x9485C..0x948EC): buildDays and layers 0/1/2 zero, facType 0xFF. */
+#define PUFO_GRID_SIZE          1524 /* gBaseFacGrid @ 0x159768 */
+#define PUFO_GRID_DAYS_STRIDE   36   /* buildDays[nBase], 6 by 6 cells */
+#define PUFO_GRID_FAC_OFF       0x174 /* fac BaseFacBlock[8] */
+#define PUFO_GRID_FAC_STRIDE    144  /* one BaseFacBlock */
+#define PUFO_GRID_TILEA_OFF     0    /* fac[nBase].tileA */
+#define PUFO_GRID_TILEB_OFF     36   /* fac[nBase].tileB */
+#define PUFO_GRID_LAYER2_OFF    72   /* the needed-flag layer, grid + 444 + 144*nBase */
+#define PUFO_GRID_FAC_TYPE_OFF  108  /* the cell kind, grid + 480 + 144*nBase */
+#define PUFO_GRID_CELL_COUNT    36   /* 6 by 6 cells per layer */
+#define PUFO_FAC_TYPE_NONE      0xFF /* the empty-cell sentinel Game_StartNew stamps */
+
+/* The facility kinds, 0..16. The same numbers index the 17 aBaseFacFlags records
+ * @ 0x186E48 (PUFO_BASEFAC_COUNT) and fill fac[nBase].facType. The names are the shipped
+ * text records Geoscape_InitUI @ 0x86A58 copies into each record: main.dat TEXTS.DAT
+ * records 106..118, 463 and 120..122, in the order g_anFacNameRec uses. */
+typedef enum FacilityKind {
+    FAC_ACCESS_LIFT         = 0,  /* rec 106 "Access Lift" */
+    FAC_LIVING_QUARTERS     = 1,  /* rec 107 "Living Quarters" */
+    FAC_LABORATORY          = 2,  /* rec 108 "Laboratory" */
+    FAC_WORKSHOP            = 3,  /* rec 109 "Workshop" */
+    FAC_SHORT_RANGE_RADAR   = 4,  /* rec 110 "Short Range Radar" */
+    FAC_LONG_RANGE_RADAR    = 5,  /* rec 111 "Long Range Radar" */
+    FAC_GENERAL_STORES      = 6,  /* rec 112 "General stores" */
+    FAC_ALIEN_CONTAINMENT   = 7,  /* rec 113 "Alien Containment" */
+    FAC_PSI_LABORATORY      = 8,  /* rec 114 "Psi Laboratory" */
+    FAC_HYPER_WAVE_DECODER  = 9,  /* rec 115 "Hyper Wave Decoder" */
+    FAC_MIND_SHIELD         = 10, /* rec 116 "Mind Shield" */
+    FAC_HANGAR              = 11, /* rec 117 "Hangar" */
+    FAC_GRAVITY_SHIELD      = 12, /* rec 118 "Gravity shield" */
+    FAC_MISSILE_DEFENCES    = 13, /* rec 463 "Missile Defences" */
+    FAC_LASER_DEFENCE       = 14, /* rec 120 "Laser Defence" */
+    FAC_PLASMA_DEFENCE      = 15, /* rec 121 "Plasma Defence" */
+    FAC_FUSION_BALL_DEFENCE = 16  /* rec 122 "Fusion Ball Defence" */
+} FacilityKind;
+
 typedef struct GeoscapeState {
     GameTime     time;
     GeoscapeWorld world;
@@ -594,9 +637,9 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
  *   17 reads past it. The port refuses out-of-range indices (deviation).
  * - The return value is 6*(24*nBaseIndex + nY + 18), the address delta the facType store used. It
  *   is register residue, not a status, and the port reproduces it. */
-#define PUFO_FAC_TYPE_HANGAR 11
+#define PUFO_FAC_TYPE_HANGAR FAC_HANGAR /* 11, the FacilityKind above */
 #define PUFO_FAC_SPEC_COUNT  18
-#define PUFO_FAC_BASE_COUNT  8
+#define PUFO_FAC_BASE_COUNT  8 /* the eight base slots the grid and the columns size for */
 
 i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
                               i32 nX, i8 nY, u8 bClear);

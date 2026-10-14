@@ -56,7 +56,7 @@ BaseRec *BaseRec_Ctor(BaseRec *pBase, i32 nSlotIndex, u8 bUnk186558,
 typedef struct Ship {
     u8   bType;        /* +0x00 record kind */
     u8   bId;          /* +0x01 craft id, matched against StrategItem.nDisplayId */
-    u8   bCraftType;   /* +0x02 0 interceptor .. 4 ; drives fuel rate and detect radius */
+    u8   bCraftType;   /* +0x02 CraftType 0..4 (see the enum above); drives fuel rate and detect radius */
     u8   bHomeBase;    /* +0x03 index into the base array */
     u16  uUnk4;        /* +0x04 */
     u8   bAtBase;      /* +0x06 */
@@ -277,10 +277,10 @@ i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
  *
  * The hold cap is chosen by Ship.bCraftType @ 0x02 and nothing else:
  *
- *     0 interceptor      140
- *     1                  120
- *     2                  260
- *     3 or 4               0
+ *     0 Skyranger        140
+ *     1 Lightning        120
+ *     2 Avenger          260
+ *     3 Interceptor or 4 Firestorm   0
  *     anything else       -1
  *
  * The -1 is not a cap, it is "unknown craft type", and a caller that compares against it
@@ -301,6 +301,32 @@ i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
  * Deviation: the original takes the craft index as a signed char and does not bound it
  * against nObjectCount or the ship array. The port takes an i32 and refuses out-of-range
  * indices. */
+/* Ship.bCraftType @ 0x02 values, named by what Ship_Ctor @ 0x45c20 actually gives them:
+ *
+ *     type  crew  dogfight  rangeMax  rangeRate  supply  fuelMax  fuelCap  cargo cap
+ *     0       0       1       10000      20       no      150      760      140
+ *     1       1       1       30000       2       yes      800     3100      120
+ *     2       2       1       60000       2       yes     1200     5400      260
+ *     3       2       0        1000      20       no      100     3000        0
+ *     4       2       0       20000       2       yes      500     4500        0
+ *
+ * The names are mapped 1:1 onto the only five craft names the data ships, main.dat TEXTS
+ * records 522..526 (Skyranger, Lightning, Avenger, Interceptor, Firestorm). ASSUMPTION,
+ * recorded: no code in the image indexes a text record by bCraftType, so the order is the
+ * shipped order, not a verified mapping. Two counter-indications to keep in mind: the
+ * auto-name prefixes at 137..139 (Skyranger-, Lightning-, Avenger-) are three names while
+ * Game_StartNew @ 0x94554 spawns types 0, 3 and 3; and the cargo caps (140, 120, 260, 0, 0)
+ * give the "Firestorm" no hold at all. unk_18653C..unk_186540 (abTypeCounters) counts one
+ * construction per type. */
+#define PUFO_CRAFT_TYPE_COUNT 5
+typedef enum CraftType {
+    CRAFT_TYPE_SKYRANGER   = 0, /* crew 0, dogfight 1, rangeMax 10000, cap 140: Game_StartNew's cargo hauler */
+    CRAFT_TYPE_LIGHTNING   = 1,
+    CRAFT_TYPE_AVENGER     = 2,
+    CRAFT_TYPE_INTERCEPTOR = 3, /* crew 2, dogfight 0, rangeMax 1000, cap 0: the two starter crew craft */
+    CRAFT_TYPE_FIRESTORM   = 4
+} CraftType;
+
 typedef enum CraftCargoCap {
     CRAFT_CARGO_CAP_NONE = 0,
     CRAFT_CARGO_CAP_TYPE0 = 140,

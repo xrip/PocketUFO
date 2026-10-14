@@ -622,6 +622,16 @@ add_test(NAME test_geoiinit
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+add_executable(test_startnew ${CMAKE_SOURCE_DIR}/tests/test_startnew.c)
+target_link_libraries(test_startnew PRIVATE pufo_ui pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_audio)
+set_target_properties(test_startnew PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_startnew
+    COMMAND test_startnew
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # The geoscape tick chain and its wiring to the clock.
 add_executable(test_geoscape ${CMAKE_SOURCE_DIR}/tests/test_geoscape.c)
 target_link_libraries(test_geoscape PRIVATE pufo_options pufo_ui pufo_game pufo_render pufo_dat pufo_util)

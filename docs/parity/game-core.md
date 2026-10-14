@@ -8942,3 +8942,78 @@ Five click handlers came with it:
 `SoldierScreen_Toggle @ 0x64af0` and `ResearchScreen_Open @ 0x616ac` (two of the fifteen click
 handlers) arrive as env click thunks; `Geoscape_OnMapClick @ 0x8b4a8` (TryConfirm's tail call)
 is a hook.
+
+### `Game_StartNew` (done)
+
+`Game_StartNew @ 0x94554` (3,976 B, `Geoscape_InitUI`'s mode-0 hook at 0x86974, R0 = the
+0x1864F8 block) is recreated as `Game_StartNew(const StartNewEnv *)` in `ui/pufo_geoiinit.{h,c}`,
+with `tests/test_startnew.c` (107 checks) running it over the real objects.dat and TEXTS records.
+Every callee was already ported; the order and the state it leaves behind are pinned:
+
+- 0x94584: every object record's `auPerBaseVal[0..7]` and `aItemQty[0..49]` cleared (of 52).
+- 0x945D4: placement pending (0x1870AC) = 1, the three id counters (0x186544/48/4C) = 1, the five
+  craft-type counters (0x18653C..0x186540) = 0.
+- 0x94600: the per-base radar byte (unk_162008) from `Base_CountEmptyFacilityCells`, over the base
+  count AS IT STANDS (the count is only zeroed later, at 0x94700).
+- 0x94650: ten save-state bytes (0x18655D) = 1; strateg count byte (0x186530) = 0.
+- 0x94680: the economy dwords 1625000 / 383000 / 1668000 / 968000 with the 0x14B4C8 zero buffer
+  installed at 0x18659C; month counter, base count and selected base = 0; `GameTime_Reset`.
+- 0x94730: the research mirror (byte_160BBC from the topics' bActive, unk_160B2C zeroed).
+- 0x94798: eight bases' research (144) and product (200) columns cleared, including the +2176 /
+  +1600 stores that reach into the NEXT base -- the same spill `Base_CreateNamedEntry` has.
+- 0x947EC: the site count's LOW byte only (0x186410); all 200 site records cleared over
+  `auItemQty[0..nObjectCount-1]`.
+- 0x9485C: the facility grid reset, eight bases: buildDays and layers 0/1/2 zero, facType 0xFF.
+- 0x94964: `Base_CreateNamedEntry(-6000, -6000, 0, "new")`.
+- 0x94984: the 17 facility records (names from TEXTS 106..118, 463, 120..122; bFlag20 from the
+  init table; bFlag21 = i; uCost from the 0x85B58..0x85F58 literal pool).
+- 0x94DC0: ten `BaseFac_SetCellBuildState` calls -- hangar (2,0), access lift (2,2), living
+  quarters (3,2), short-range radar (1,3), general stores (2,3), workshop (3,3), laboratory (4,3),
+  general stores (5,3), hangar (0,4), hangar (4,4).
+- 0x94E34: base stock +1 heavy cannon clip, +20 sectopod remains, +15/+10 operative corpses;
+  funds 4147000; soldier and craft counts 0.
+- 0x94E60: type-0 craft with 20 cargo adds (silacoid corpse 3, operative corpse 6, male/female
+  corpse 2/2, hovertank wreckage 1, sectoid leader/commander 4/4, snakeman soldier/engineer 4/4,
+  ethereal leader 4, chryssalid 10, riper/silacoid/celacid/sectopod/elerium/alloys/power source
+  2 each, alien surgery + ufo navigation 1 each); then type-3 twice, each with fuel filled,
+  floater navigator + floater leader, weapons 25/26 and ammo 10/3.
+- 0x95310: eight soldiers via `Soldier_CreateAndClassify(0)`, each pinned to type 0 with a zero
+  history (bUnk248 from the 0xABED0 table, {0,30,45,60} read at 2*type).
+- 0x953A4: the five `Base_Update*Needed` passes with the budgets the LoadGame port lifts.
+- 0x95400: `Base_GrantStarterItems(base 0, bGrant 0)` -- with the flag clear it adds nothing;
+  alien pool addend 0; nullsub_7 carries no behaviour and is not ported.
+- 0x95418: screen id 1, `Geoscape_BuildNavControls`, the research panel parked at (1000,1000),
+  screen id 2, the confirm control gets `NewBaseScreen_TryConfirm`, `Smap_ZoomOut` twice,
+  byte_187080 = 0; then `StrategList_MaybeSpawnCraft_Process(..., bSpawn 1)`.
+
+**The starter facilities arrive already built.** All ten placement calls pass bClear 1, and
+`BaseFac_SetCellBuildState` writes `nBuildDays = (bClear != 0) ? 0 : spec.nBuildDays`, so the
+starter grid has placed facilities with zero build days (the hangar's 2x2 stamp 9/10/11/12 in
+tileA is still written).
+
+**`Ship_ctor` reads the live ship count for the cargo column.** 0x45C98 takes `nSlotIdx` from
+`Map_nCraftCount`, and every object's `aItemQty[nSlotIdx]` is zeroed with it. The port's
+`ShipCtorEnv` carries that count BY VALUE, so `Ship_SpawnAtSlot` now syncs
+`pCtorEnv->nShipCount` from `pnCraftCount` before calling the ctor. Without the sync all three
+starting craft share column 0 and each ctor wipes the previous craft's cargo. Found by
+`tests/test_startnew.c`; the same by-value wart applies to `ShipCtorEnv.abTypeCounters`, which is
+why the test asserts the ctor-side counters separately from the ones `Game_StartNew` zeroes.
+
+**Craft types have no shipped names, and the port says so.** main.dat TEXTS ships five craft names
+at 522..526 (Skyranger, Lightning, Avenger, Interceptor, Firestorm) and three auto-name prefixes at
+137..139 (Skyranger-, Lightning-, Avenger-), but no code in the image indexes a text record by
+`bCraftType`: `Game_StartNew` spawns types 0, 3 and 3 while the three starting prefixes differ, and
+the cargo caps (140, 120, 260, 0, 0) give the "Firestorm" no hold. `CraftType` is mapped 1:1 onto
+the shipped order as a recorded ASSUMPTION, not a verified mapping. The old port docs calling type
+0 "the interceptor" had no evidence either.
+
+**IDB enums.** `FacilityKind` (0..16, named from TEXTS 106..118/463/120..122), `ObjectSlot` (28
+slots, named from TEXTS 1447+slot) and `CraftType` (redefined from an unevidenced lore mapping to
+the shipped order) are now local types in the IDB, applied to `Ship_ctor`'s `nCraftType` and
+`BaseFac_SetCellBuildState`'s `nFacType`, with comments at 0x45c20, 0x18653C, 0x186E48, 0x6aee0 and
+0x94554. The same names are the port's enums, so a number in either place reads the same way.
+
+Recorded deviations: the radar pass runs over the base count before it is zeroed (reproduced); the
+site count store hits only the low byte (reproduced); `nullsub_7` dropped; the original's unused
+first arguments (0x1864F8 for `Base_GrantStarterItems`, the MaybeSpawnCraft a1..a3) replaced by the
+port's real state pointers; the soldier count held as i32 with u16 semantics, as LoadGameEnv does.

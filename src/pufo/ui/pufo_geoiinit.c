@@ -455,3 +455,277 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
     Sound_ApplyMusicVolume(Options_MusicLevel(pEnv->pOptions), pEnv->pOptions->bMusicOff);
     Sound_ApplySfxVolume(Options_SfxLevel(pEnv->pOptions), pEnv->pOptions->bSoundOff);
 }
+
+/* bFlag20 of each facility record, as Game_StartNew writes it (0x94984..0x94D94). InitUI
+ * does not touch this byte; StartNew is the only writer in the image. */
+static const u8 g_abFacFlag20Init[PUFO_BASEFAC_COUNT] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0
+};
+
+/* The ten starter facilities, in call order: nFacType, nX, nY (0x94DC0..0x94E5C). The
+ * kinds are FacilityKind values (see pufo_geoscape.h); the names are the shipped text
+ * records the same table fills the facility records from. */
+static const i32 g_aStartFacCells[][3] = {
+    { FAC_HANGAR,            2, 0 }, { FAC_ACCESS_LIFT,     2, 2 },
+    { FAC_LIVING_QUARTERS,   3, 2 }, { FAC_SHORT_RANGE_RADAR, 1, 3 },
+    { FAC_GENERAL_STORES,    2, 3 }, { FAC_WORKSHOP,        3, 3 },
+    { FAC_LABORATORY,        4, 3 }, { FAC_GENERAL_STORES,  5, 3 },
+    { FAC_HANGAR,            0, 4 }, { FAC_HANGAR,          4, 4 },
+};
+
+/* The Skyranger's cargo: object slot, quantity (0x94E60..0x94A5C). */
+static const i16 g_aType0Cargo[][2] = {
+    { OBJ_SILACOID_CORPSE,      3 }, { OBJ_OPERATIVE_CORPSE_ALT, 6 },
+    { OBJ_MALE_CORPSE,          2 }, { OBJ_FEMALE_CORPSE,        2 },
+    { OBJ_HOVERTANK_WRECKAGE,   1 }, { OBJ_SECTOID_LEADER,       4 },
+    { OBJ_SECTOID_COMMANDER,    4 }, { OBJ_SNAKEMAN_SOLDIER,     4 },
+    { OBJ_SNAKEMAN_ENGINEER,    4 }, { OBJ_ETHEREAL_LEADER,      4 },
+    { OBJ_CHRYSSALID,          10 }, { OBJ_RIPER,                2 },
+    { OBJ_SILACOID,             2 }, { OBJ_CELACID,              2 },
+    { OBJ_SECTOPOD,             2 }, { OBJ_ELERIUM_115,          2 },
+    { OBJ_ALIEN_ALLOYS,         2 }, { OBJ_UFO_POWER_SOURCE,     2 },
+    { OBJ_ALIEN_SURGERY,        1 }, { OBJ_UFO_NAVIGATION,       1 },
+};
+
+/* The byte table at 0xABED0, read as byte_ABED0[2 * nUnitType]: four u16 entries
+ * {0, 30, 45, 60} just before the root descriptor block at 0xABED8. */
+static const u8 g_abSoldierUnk248ByType[4] = { 0, 30, 45, 60 };
+
+static const char *StartNew_TextRec(const StartNewEnv *pEnv, i32 nRec)
+{
+    return (const char *)(pEnv->pTextRecs) + PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+}
+
+/* Game_StartNew @ 0x94554. See the header for the evidence and the deviations. */
+i32 Game_StartNew(const StartNewEnv *pEnv)
+{
+    i32 i, b, c;
+
+    /* 0x94584..0x945C8: every object record's per-base column and item quantities. */
+    for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
+        ObjectRecFull *pObj = pEnv->apObjects[i];
+        for (c = 0; c < PUFO_FAC_BASE_COUNT; ++c) {
+            pObj->auPerBaseVal[c] = 0;   /* +42..+56 */
+        }
+        for (c = 0; c < 50; ++c) {
+            pObj->aItemQty[c] = 0;       /* +58..+156: aItemQty[0..49] of PUFO_ITEM_QTY_COUNT */
+        }
+    }
+
+    /* 0x945D4..0x945FC: the placement flag, the strateg id counters, the craft types. */
+    *pEnv->pbPlacementPending = 1;
+    *pEnv->pnNextDisplayId = 1;
+    *pEnv->pnNextSiteId = 1;
+    *pEnv->pnMissionId = 1;
+    for (i = 0; i < PUFO_CRAFT_TYPE_COUNT; ++i) {
+        pEnv->abTypeCounters[i] = 0; /* unk_18653C..unk_186540, one per CraftType */
+    }
+
+    /* 0x94600..0x94648: the radar byte per base (dword stores in the original, the
+     * port's u8 array as in LoadGame). */
+    for (b = 0; b < (i32)*pEnv->pbBaseCount; ++b) {
+        pEnv->apRadarPct[b] = (u8)Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b);
+    }
+
+    /* 0x94650..0x94680: ten save-state bytes, then the strateg count byte. */
+    for (i = 0; i < 10; ++i) {
+        pEnv->abSaveFlags[i] = 1;
+    }
+    *pEnv->pbStrategCount = 0;
+
+    /* 0x94680..0x9472C: the economy dwords of the 0x1864F8 block. The original's stores
+     * are scattered; the net effect is this block. */
+    for (i = 0; i < 11; ++i) {
+        pEnv->pEconomy->aZero28_38[i] = 0;
+    }
+    pEnv->pEconomy->nFundA = 1625000;
+    pEnv->pEconomy->nFundB = 383000;
+    pEnv->pEconomy->pvFundTable = pEnv->pvFundTable;
+    pEnv->pEconomy->nFundC = 1668000;
+    pEnv->pEconomy->nFundD = 968000;
+    for (i = 0; i < 6; ++i) {
+        pEnv->pEconomy->aZero44_49[i] = 0;
+    }
+
+    /* 0x94700..0x94728: month, base count, selected base, clock. */
+    *pEnv->pnMonthCounter = 0;
+    *pEnv->pbBaseCount = 0;
+    *pEnv->pnSelectedBaseIdx = 0;
+    (void)GameTime_Reset(pEnv->pTime);
+
+    /* 0x94730..0x94768: the research mirror. */
+    for (i = 0; i < (i32)pEnv->bResearchCount; ++i) {
+        pEnv->abResearchActive[i] = pEnv->paTopics[i].bActive; /* 0x94740 */
+        pEnv->abResearchZero[i] = 0;                           /* 0x9474C */
+    }
+
+    /* 0x94798..0x94840: eight bases' research and product columns. The +2176 / +1600
+     * entries belong to the next base -- reproduced, as in Base_CreateNamedEntry. */
+    for (b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        if (pEnv->bResearchCount != 0) {
+            for (i = 0; i < (i32)pEnv->bResearchCount; ++i) {
+                pEnv->pResearchCol[PUFO_RESEARCH_TOPIC_COUNT * b + i] = 0;
+            }
+        }
+        for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
+            pEnv->pProductU16Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i] = 0;
+            pEnv->pProductU16Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i + 2176] = 0;
+            pEnv->pProductU32Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i] = 0;
+            pEnv->pProductU32Col[PUFO_PRODUCT_ENTRIES_PER_BASE * b + i + 1600] = 0;
+        }
+    }
+
+    /* 0x947EC..0x94858: the site count's low byte, then all 200 site records. */
+    *(u8 *)pEnv->pnSiteCount = 0;
+    for (i = 0; i < PUFO_SMAP_SITE_COUNT; ++i) {
+        SmapSite *pSite = &pEnv->apSites[i];
+        pSite->bFlag1 = 0;
+        pSite->bFlag0 = 0;
+        pSite->bUnk518 = 0;
+        pSite->bRecoveredSoldierAssign = 0;
+        pSite->uRecoveredSoldiers = 0;
+        pSite->bRecoveredCraftCount = 0;
+        for (c = 0; c < (i32)pEnv->nObjectCount; ++c) {
+            pSite->auItemQty[c] = 0;
+        }
+    }
+
+    /* 0x9485C..0x948EC: the facility grid. The ARM writes four overlapping byte layers
+     * per cell; the net per base is layers 0/1/2 zero, layer 3 (-1), buildDays zero. */
+    for (b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        const i32 nFac = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * b;
+        for (c = 0; c < PUFO_GRID_CELL_COUNT; ++c) {
+            pEnv->abFacilityGrid[nFac + PUFO_GRID_TILEA_OFF + c] = 0;
+            pEnv->abFacilityGrid[PUFO_GRID_DAYS_STRIDE * b + c] = 0;
+            pEnv->abFacilityGrid[nFac + PUFO_GRID_TILEB_OFF + c] = 0;
+            pEnv->abFacilityGrid[nFac + PUFO_GRID_LAYER2_OFF + c] = 0;
+            pEnv->abFacilityGrid[nFac + PUFO_GRID_FAC_TYPE_OFF + c] = PUFO_FAC_TYPE_NONE;
+        }
+    }
+
+    /* 0x94964: the starting base. */
+    (void)Base_CreateNamedEntry(pEnv->pCreateEnv, -6000, -6000, 0, "new");
+
+    /* 0x94984..0x94D94: the 17 facility records. */
+    for (i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        InitUI_CopyName(pEnv->paFacFlags[i].szName, sizeof(pEnv->paFacFlags[i].szName),
+                        StartNew_TextRec(pEnv, g_anFacNameRec[i]));
+        pEnv->paFacFlags[i].bFlag20 = g_abFacFlag20Init[i];
+        pEnv->paFacFlags[i].bFlag21 = (u8)i;
+        pEnv->paFacFlags[i].uCost = g_aFacCostInit[i];
+    }
+
+    /* 0x94DC0..0x94E5C: the starter facilities. */
+    for (i = 0; i < (i32)(sizeof(g_aStartFacCells) / sizeof(g_aStartFacCells[0])); ++i) {
+        (void)BaseFac_SetCellBuildState(pEnv->abFacilityGrid, 0, (u8)g_aStartFacCells[i][0],
+                                        g_aStartFacCells[i][1], (i8)g_aStartFacCells[i][2], 1);
+    }
+
+    /* 0x94E34..0x94E58: four starter items at base 0. */
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_HEAVY_CANNON_CLIP], 1);
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SECTOPOD_REMAINS], 20);
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE], 15);
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE_ALT], 10);
+
+    /* 0x94E5C..0x94E60: the counters the rosters start from. */
+    *pEnv->pnSelectedBaseIdx = 0;
+    *pEnv->pnFunds = 4147000;
+    *pEnv->pnSoldierCount = 0;
+    *pEnv->pbCraftCount = 0;
+
+    /* 0x94E60..0x94A5C: the Skyranger and its cargo. */
+    (void)Ship_SpawnAtSlot(pEnv->pShipEnv, CRAFT_TYPE_SKYRANGER, 0);
+    Ship *pCraft = pEnv->apCraft[0];
+    pCraft->uRangeRemain = pCraft->uRangeMax; /* 0x94E8C */
+    for (i = 0; i < (i32)(sizeof(g_aType0Cargo) / sizeof(g_aType0Cargo[0])); ++i) {
+        (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[g_aType0Cargo[i][0]],
+                                g_aType0Cargo[i][1]);
+    }
+
+    /* 0x94A5C..0x94B0C: the first interceptor. */
+    (void)Ship_SpawnAtSlot(pEnv->pShipEnv, CRAFT_TYPE_INTERCEPTOR, 0);
+    pCraft = pEnv->apCraft[1];
+    pCraft->uRangeRemain = pCraft->uRangeMax; /* +8 = +10 */
+    pCraft->nFuel = (i16)pCraft->uFuelMax;    /* +24 = +22 */
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_LEADER], 1);
+    pCraft->bWeaponL = 25;
+    pCraft->bWeaponR = 26;
+    pCraft->bAmmo25 = 10; /* +61 */
+    pCraft->bAmmo26 = 3;  /* +62 */
+
+    /* 0x94B0C..0x94DB4: the second interceptor, same kit, ammo stores in the other order. */
+    (void)Ship_SpawnAtSlot(pEnv->pShipEnv, CRAFT_TYPE_INTERCEPTOR, 0);
+    pCraft = pEnv->apCraft[2];
+    pCraft->uRangeRemain = pCraft->uRangeMax;
+    pCraft->nFuel = (i16)pCraft->uFuelMax;
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_LEADER], 1);
+    pCraft->bWeaponL = 25;
+    pCraft->bWeaponR = 26;
+    pCraft->bAmmo26 = 3;
+    pCraft->bAmmo25 = 10;
+
+    /* 0x95310..0x9538C: eight soldiers, each pinned to type 0 and a zero history. */
+    for (i = 0; i < PUFO_STARTNEW_SOLDIER_COUNT; ++i) {
+        (void)Unit_CreateAndClassify(pEnv->pUnitEnv, 0);
+        Soldier *pSol = pEnv->apSoldiers[i];
+        pSol->nUnitType = 0;
+        pSol->bUnk248 = g_abSoldierUnk248ByType[0]; /* byte_ABED0[2 * 0] */
+        pSol->nKind = 0;
+        pSol->bUnk183 = 0;
+        pSol->uMissions = 0;
+        pSol->uKills = 0;
+        pSol->bUnk422 = 0;
+        pSol->bRankType = 0;
+        pSol->bUnk247 = 0;
+    }
+
+    /* 0x953A4..0x953F8: the five needed-flag passes, with the budgets LoadGame lifts. */
+    for (b = 0; b < (i32)*pEnv->pbBaseCount; ++b) {
+        i32 nSpace = Base_CalcOccupiedSpace(pEnv->apSoldiers, *pEnv->pnSoldierCount,
+                                            pEnv->apObjects, pEnv->nObjectCount, b);
+        i32 nStores = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, b);
+        (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, b,
+            nSpace + Base_CountOutboundTransferSpace(pEnv->apSites, *pEnv->pnSiteCount, -1,
+                                                     pEnv->apBases, b, true));
+        (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, b,
+            nStores + Base_CountItemQtyAcrossBases(pEnv->apSites, *pEnv->pnSiteCount, -1,
+                                                   pEnv->apBases, b, pEnv->apObjects,
+                                                   pEnv->nObjectCount, true));
+        (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, b,
+            Base_CountPsiSoldiers(pEnv->apSoldiers, *pEnv->pnSoldierCount, b));
+        (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, b,
+            Base_CountActiveResearch(pEnv->pResearchCol + PUFO_RESEARCH_TOPIC_COUNT * b,
+                                     (i32)pEnv->bResearchCount));
+        (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, b,
+            Base_CountActiveManuf(pEnv->pManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * b,
+                                  PUFO_PRODUCT_ENTRIES_PER_BASE));
+    }
+
+    /* 0x95400..0x95414: the starter items again through the grant leaf, then the alien
+     * pool addend. nullsub_7 carries no behaviour and is not ported. */
+    Base_GrantStarterItems(pEnv->apBases[0], pEnv->apObjects, 0);
+    *pEnv->pnAlienPoolAddend = 0;
+
+    /* 0x95418..0x95428: the nav controls, the parked research panel, the confirm wiring. */
+    pEnv->pScreen->nGeoscapeScreen = 1;
+    (void)Geoscape_BuildNavControls(pEnv->pNav, pEnv->pNavEnv);
+    pEnv->pCtlResearchPanel->x = 1000; /* 0x95438 STRH */
+    pEnv->pCtlResearchPanel->y = 1000; /* 0x95440 STRH */
+    pEnv->pScreen->nGeoscapeScreen = 2;
+    pEnv->pCtlConfirm->pfnClick = pEnv->pfnTryConfirmClick;
+    (void)Smap_ZoomOut(pEnv->pView, pEnv->pZoomSets, pEnv->pWorldOut);
+    (void)Smap_ZoomOut(pEnv->pView, pEnv->pZoomSets, pEnv->pWorldOut);
+    *pEnv->pbFlag187080 = 0;
+
+    /* 0x9542C: the spawn pass. The original's a1..a3 are unused inside the callee; the
+     * port passes its own list and spawn context. */
+    return StrategList_MaybeSpawnCraft_Process(pEnv->pStrategList, pEnv->pSpawnCtx->pnSeed,
+                                               pEnv->pSpawnCtx->nZoomMode, pEnv->pSpawnCtx->pTables,
+                                               pEnv->pSpawnCtx->nDifficulty,
+                                               pEnv->pSpawnCtx->nEarlyGate, 1,
+                                               pEnv->pSpawnCtx->pfnSpawnMission,
+                                               pEnv->pSpawnCtx->pfnProcessEvents,
+                                               pEnv->pSpawnCtx->pUser);
+}

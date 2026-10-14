@@ -47,7 +47,7 @@
  *      array, zeroes the u16 at +6 of every topic (ARM `STRH R4,[R1,#6]` - Hex-Rays
  *      renders this as wProgress through its save-order ResearchTopic type; in the
  *      in-memory order it is ResearchTopicLive.wUnk6), clears the viewport scroll and
- *      drag deltas, and runs Game_StartNew (hooked - not ported yet).
+ *      drag deltas, and runs Game_StartNew through the pfnStartNew hook.
  *  10. GameTime_Decode; per base Base_ClearFacilityGridRow into the site-state array;
  *      the initial object prices from dword_AA2C0 into ObjectRecFull.uPrice (slots
  *      1..nObjectCount-1); object names from text records 1447..1594 into slots 0..147
@@ -164,7 +164,8 @@ typedef struct GeoscapeInitEnv {
     void (*pfnCraftSelectClick)(void); /* Smap_BeginCraftSelectBtn @ 0x84634 -> 186B8C */
     void (*pfnRadarClick)(void);       /* Geoscape_OnRadarListClick @ 0x854c4, not ported */
 
-    /* Game_StartNew @ 0x94554 is not ported yet; the mode-0 branch calls this hook. */
+    /* Game_StartNew @ 0x94554 is ported below; the mode-0 branch still calls through this
+     * hook because the shell owns the StartNewEnv it needs. */
     void (*pfnStartNew)(void *pUser);
     void *pHookUser;
 
@@ -178,5 +179,152 @@ typedef struct GeoscapeInitEnv {
  * branch (research.dat load, viewport clear, Game_StartNew); any other value skips it
  * and leaves the loaded world alone. */
 void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
+
+/* ------------------------------------------------- the new game
+ *
+ * Evidence: Game_StartNew @ 0x94554 (3,976 B), called from Geoscape_InitUI's mode-0
+ * branch @ 0x86974 with the 0x1864F8 block in R0.
+ *
+ * The order, with the original's addresses:
+ *   1. 0x94584: every object record's per-base column (+42..+56, eight u16) and item
+ *      quantities (+58..+156, aItemQty[0..49] of 52) are zeroed, for nObjectCount records.
+ *   2. 0x945D4: placement-pending 0x1870AC = 1; the strateg id counters 0x186544 /
+ *      0x186548 / 0x18654C = 1; the five craft-type counters 0x18653C..40 = 0.
+ *   3. 0x94620: while the SIGNED base count is above zero, each base's radar byte
+ *      (0x162008) gets Base_CountEmptyFacilityCells.
+ *   4. 0x94650: ten bytes at 0x18655D = 1 (the save block is nine; the tenth is not
+ *      serialised); the strateg count byte 0x186530 = 0.
+ *   5. 0x94680: the economy dwords of the 0x1864F8 block: 0x186568..0x186590 = 0,
+ *      0x186594 = 1625000, 0x186598 = 383000, 0x18659C = the zero buffer at 0x14B4C8,
+ *      0x1865A0 = 1668000, 0x1865A4 = 968000, 0x1865A8..0x1865BC = 0.
+ *   6. 0x94700: month counter 0x159648 = 0, base count 0x159D80 = 0, selected base 0,
+ *      GameTime_Reset on the clock at 0x159618.
+ *   7. 0x94730: the research mirror: the 144 bytes at 0x160B2C are zeroed and
+ *      byte_160BBC[i] = aResearchTopics[i].bActive, for the count byte at 0x160C4C.
+ *   8. 0x94798: eight bases: the 144-entry research column (0x16022C) is zeroed, and for
+ *      every object the u16 product column (0x15D09C) entries [i] and [i + 2176] and the
+ *      u32 column (0x159E9C) entries [i] and [i + 1600] are zeroed -- the +2176 / +1600
+ *      stores reach into the NEXT base, exactly as Base_CreateNamedEntry's clear does.
+ *   9. 0x947EC: the site count's low byte (0x186410) = 0; all 200 SmapSite records at
+ *      0x162030 have bFlag0/bFlag1/bUnk518/bRecoveredSoldierAssign/uRecoveredSoldiers/
+ *      bRecoveredCraftCount cleared and auItemQty[0..nObjectCount-1] zeroed.
+ *  10. 0x9485C: the facility grid reset, eight bases: fac layers 0/1/2 (grid + 0x174 +
+ *      144*b + {0,36,72} + cell) = 0, layer 3 (+108) = -1, and the 36 buildDays bytes
+ *      (grid + 36*b) = 0. The ARM walks it as four overlapping byte layers per cell; the
+ *      net stores are what matters and they are reproduced per layer.
+ *  11. 0x94964: Base_CreateNamedEntry(-6000, -6000, 0, "new") -- the starting base.
+ *  12. 0x94984: the 17 facility records: names copied from text records
+ *      {106..118, 463, 120, 121, 122} (the same records InitUI used), bFlag20 from
+ *      g_abFacFlag20Init, bFlag21 = i, uCost from g_aFacCostInit.
+ *  13. 0x94DC0: ten BaseFac_SetCellBuildState calls place the starter facilities.
+ *  14. 0x94E34: four starter items at base 0 (objects 43/68/69/70, deltas 1/20/15/10);
+ *      selected base = 0; funds = 4147000; soldier count = 0 (u16); craft count = 0 (byte).
+ *  15. 0x94E60: Ship_SpawnAtSlot(0) then uRangeRemain = uRangeMax and twenty cargo adds;
+ *      Ship_SpawnAtSlot(3) twice, each with uRangeRemain = uRangeMax, nFuel = uFuelMax,
+ *      two cargo adds, weapons 25/26 and ammo bytes 10/3.
+ *  16. 0x95310: eight soldiers via Unit_CreateAndClassify(0), each then pinned to
+ *      nUnitType 0 (bUnk248 from the byte table at 0xABED0, {0,30,45,60} read at 2*type,
+ *      so 0 here), nKind 0, bUnk183/uMissions/uKills/bUnk422/bRankType/bUnk247 = 0.
+ *  17. 0x953A4: per base, the five Base_Update*Needed passes with the same budgets the
+ *      LoadGame port lifts (CalcOccupiedSpace + OutboundTransferSpace, CalcStorageUsed +
+ *      ItemQtyAcrossBases, CountPsiSoldiers, CountActiveResearch, CountActiveManuf).
+ *  18. 0x95400: Base_GrantStarterItems(base 0, bGrant 0); nAlienPoolAddend (word_1472C8)
+ *      = 0 (STRH); nullsub_7 carries no behaviour and is not ported.
+ *  19. 0x95418: screen id 1; Geoscape_BuildNavControls; the research panel control
+ *      (unk_186BB4) parked at (1000, 1000) as two STRH stores; screen id 2; the confirm
+ *      control (unk_186BA4) gets NewBaseScreen_TryConfirm; Smap_ZoomOut twice;
+ *      byte_187080 = 0.
+ *  20. 0x9542C: return StrategList_MaybeSpawnCraft_Process(list, ..., bSpawn 1). The
+ *      original's first three arguments are unused inside it (the list is the hardcoded
+ *      0x1864F8 + 0x3C); the port passes its own strateg list and spawn context.
+ *
+ * Deviations: the radar byte is stored as the port's u8 (the original stores dwords at
+ * 0x162008 -- the same choice LoadGame's port already makes); the nullsub_7 call is
+ * dropped; the original's unused first arguments (0x1864F8 for GrantStarterItems, the
+ * MaybeSpawnCraft a1..a3) are replaced by the port's real state pointers. */
+typedef struct GeoscapeEconomy {
+    i32  aZero28_38[11];  /* 0x186568..0x186590 */
+    i32  nFundA;          /* 0x186594, StartNew 1625000 */
+    i32  nFundB;          /* 0x186598, StartNew 383000 */
+    void *pvFundTable;    /* 0x18659C, StartNew installs the zero buffer at 0x14B4C8 */
+    i32  nFundC;          /* 0x1865A0, StartNew 1668000 */
+    i32  nFundD;          /* 0x1865A4, StartNew 968000 */
+    i32  aZero44_49[6];   /* 0x1865A8..0x1865BC */
+} GeoscapeEconomy;
+
+/* The eight soldiers Game_StartNew creates (0x95310..0x9538C). apSoldiers must have room
+ * for them and pnSoldierCount ends at 8. */
+#define PUFO_STARTNEW_SOLDIER_COUNT 8
+
+typedef struct StartNewEnv {
+    /* Map block and rosters. */
+    ObjectRecFull *const *apObjects;  /* Map + 0x108 */
+    u16   nObjectCount;               /* Map_nObjectCount */
+    Soldier **apSoldiers;             /* Map + 0x1198 */
+    i32   *pnSoldierCount;            /* unk_115350 @ Map + 0x1998; the original's field is a
+                                       * u16, the port holds it as i32 with u16 semantics, as
+                                       * LoadGameEnv and UnitCreateEnv do */
+    Ship  **apCraft;                  /* Map + 0x10AC */
+    u8    *pbCraftCount;              /* Map + 0x1194 */
+    BaseRec *const *apBases;          /* Map + 0x1174 */
+    i8    *pbBaseCount;               /* 0x159D80, signed */
+    i8    *pnSelectedBaseIdx;         /* 0x159D81 */
+    i32   *pnFunds;                   /* nFunds @ 0x1598D8 */
+    i32   *pnMonthCounter;            /* unk_159648 */
+    u16   *pnAlienPoolAddend;         /* nAlienPoolAddend @ 0x1472c8 */
+    GameTime *pTime;                  /* the clock at 0x159618 */
+
+    /* Grid and the per-base economy columns. */
+    u8    *abFacilityGrid;            /* gBaseFacGrid @ 0x159768, 1524 bytes */
+    u16   *pProductU16Col;            /* unk_15D09C, 200 u16 per base */
+    u32   *pProductU32Col;            /* unk_159E9C, 200 dwords per base */
+    u16   *pManufCol;                 /* 0x15E19C, Base_CountActiveManuf's column */
+    u16   *pResearchCol;              /* unk_16022C, 144 u16 per base */
+    u8    *abResearchZero;            /* unk_160B2C, 144 bytes */
+    u8    *abResearchActive;          /* byte_160BBC, 144 bytes */
+    u8     bResearchCount;            /* 0x160C4C */
+    ResearchTopicLive *paTopics;      /* aResearchTopics @ 0x15EF08 */
+
+    /* Sites and the spawn pass. */
+    SmapSite *apSites;                /* 0x162030, 200 records */
+    i32   *pnSiteCount;               /* 0x186410; only its low byte is stored */
+    u8    *apRadarPct;                /* unk_162008, per base */
+    PtrArray *pStrategList;           /* the list MaybeSpawnCraft works on */
+    const StrategSpawnCtx *pSpawnCtx; /* its roll tables, difficulty and hooks */
+
+    /* The 0x1864F8 block's flags and economy. */
+    u8    *pbPlacementPending;        /* 0x1870AC */
+    u8    *pbStrategCount;            /* 0x186530 */
+    u8    *abTypeCounters;            /* 0x18653C..0x186540, five bytes */
+    i32   *pnNextDisplayId;           /* 0x186544 */
+    i32   *pnNextSiteId;              /* 0x186548 */
+    i32   *pnMissionId;               /* 0x18654C */
+    u8    *abSaveFlags;               /* 0x18655D, ten bytes set to 1 */
+    GeoscapeEconomy *pEconomy;
+    void  *pvFundTable;               /* the 0x14B4C8 zero buffer */
+
+    /* Facility table. */
+    BaseFacFlag *paFacFlags;          /* aBaseFacFlags @ 0x186E48 */
+    const u8 *pTextRecs;              /* aTextRecs @ 0xB38D0 */
+
+    /* Geoscape UI and viewport. */
+    GeoscapeScreenState *pScreen;     /* the screen id at 0x186BC4 */
+    UiControl *pCtlResearchPanel;     /* unk_186BB4, parked at (1000, 1000) */
+    UiControl *pCtlConfirm;           /* unk_186BA4, TryConfirm installed */
+    SmapView *pView;                  /* 0x1863E8 */
+    const SmapZoomSet *pZoomSets;
+    SmapWorldSize *pWorldOut;         /* the u16 pair at 0x186BC0 */
+    u8    *pbFlag187080;              /* byte_187080 */
+    void (*pfnTryConfirmClick)(void); /* the widget thunk for TryConfirm */
+    NavControls *pNav;                /* out: the fifteen nav controls */
+    const NavCtlEnv *pNavEnv;         /* their fifteen click thunks */
+
+    /* The ported callees' own environments. */
+    UnitCreateEnv *pUnitEnv;
+    ShipSpawnEnv  *pShipEnv;
+    BaseCreateEnv *pCreateEnv;
+} StartNewEnv;
+
+i32 Game_StartNew(const StartNewEnv *pEnv);
 
 #endif /* PUFO_GEOIINIT_H */

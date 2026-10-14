@@ -2502,14 +2502,6 @@ static const i8 s_abResearchUnlockFlag[17] = {
     0, 1, 2, 3, 4, 5, 13, 6, 7, 14, -1, 15, 16, 12, 10, 8, 9
 };
 
-/* The product columns the type-byte computation reads: 119..121 of the base's 200-entry
- * columns, proven from the ARM displacements 0x32F2/0x32F4/0x32F6 (C, u16, +238/240/242)
- * and 0x1AE0/0x1AE4/0x1AE8 (B, u32, +476/480/484). */
-#define PUFO_PRODUCT_TYPE_COL_A 119
-#define PUFO_PRODUCT_TYPE_COL_B 120
-#define PUFO_PRODUCT_TYPE_COL_C 121
-#define PUFO_PRODUCT_ENTRIES_PER_BASE 200
-
 i32 LoadGame(DatFile *pDat, LoadGameEnv *pEnv)
 {
     const LoadGameHooks *pHooks = pEnv->pHooks;

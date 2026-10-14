@@ -252,6 +252,15 @@ typedef struct SaveResearchState {
 bool Save_WriteResearch(DatFile *pDat, const SaveResearchState *pState);
 bool Save_ReadResearch(DatFile *pDat, SaveResearchState *pState);
 
+/* The product columns the LoadGame type-byte computation reads: 119..121 of the base's
+ * 200-entry columns, proven from the ARM displacements 0x32F2/0x32F4/0x32F6 (C, u16,
+ * +238/240/242) and 0x1AE0/0x1AE4/0x1AE8 (B, u32, +476/480/484). Game_StartNew @ 0x94554
+ * clears the same 200-entry columns for all eight bases. */
+#define PUFO_PRODUCT_TYPE_COL_A 119
+#define PUFO_PRODUCT_TYPE_COL_B 120
+#define PUFO_PRODUCT_TYPE_COL_C 121
+#define PUFO_PRODUCT_ENTRIES_PER_BASE 200
+
 /* The `smap` chunk. Save_WriteSmap @ 0x3fa28.
  *
  * Five header dwords, then 200 SmapSite records, then 5 + 8 + 8 trailing bytes.

@@ -20,8 +20,8 @@ python docs/parity/coverage.py            # coverage numbers only
 | Functions cited as evidence | 722 / 1103 (65.5%) |
 | Bytes of original code cited | 319208 / 598792 (53.3%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 55 |
-| Test checks run | 7773 |
+| Test suites | 56 |
+| Test checks run | 7880 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -573,7 +573,7 @@ is the module that answers to it.
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_baseui.h` |
 | `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/game/pufo_font.h`, `src/pufo/ui/pufo_geoiinit.c` (+1) |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
-| `0x94554` | `Game_StartNew` | 3976 | `src/pufo/ui/pufo_geoiinit.c`, `src/pufo/ui/pufo_geoiinit.h` |
+| `0x94554` | `Game_StartNew` | 3976 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_save.h` (+3) |
 | `0x68344` | `Base_TransferTacticalLoot` | 3048 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x838dc` | `Smap_BeginCraftSelect` | 2424 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h` |
@@ -1326,6 +1326,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_save` | PASS | 724 |
 | `test_ship` | PASS | 185 |
 | `test_soldiername` | PASS | 22 |
+| `test_startnew` | PASS | 107 |
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 271 |
 | `test_tactctl` | PASS | 378 |
@@ -1344,7 +1345,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**55 / 55 suites passing.**
+**56 / 56 suites passing.**
 
 ## Per-subsystem parity notes
 
@@ -1363,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 287 citations.
+parity report. Total: 290 citations.
 
 ### Offsets below the image base (39)
 
@@ -1372,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (248)
+### At or above the image base (251)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1482,6 +1483,7 @@ against the IDB when the final report is assembled.
 - `0x158890`
 - `0x159618`
 - `0x159768`
+- `0x1598d8`
 - `0x159d5c`
 - `0x159d80`
 - `0x159d81`
@@ -1533,6 +1535,7 @@ against the IDB when the final report is assembled.
 - `0x3ad48`
 - `0x3f2cc`
 - `0x44d84`
+- `0x45c98`
 - `0x58e7c`
 - `0x5d6c4`
 - `0x7d3d0`
@@ -1542,6 +1545,7 @@ against the IDB when the final report is assembled.
 - `0x84230`
 - `0x84cbc`
 - `0x84e6c`
+- `0x86974`
 - `0x86a14`
 - `0x86a58`
 - `0x86c34`

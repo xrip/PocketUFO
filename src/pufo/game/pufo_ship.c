@@ -1164,6 +1164,12 @@ i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase)
     i32 result;
 
     if (pNew != NULL) {
+        /* Ship_ctor @ 0x45C98 reads the LIVE Map_nCraftCount for the cargo column, and the
+         * port's ShipCtorEnv carries that count by value, so the spawn syncs it here. Without
+         * this every craft would share column 0. */
+        if (pEnv->pCtorEnv != NULL) {
+            pEnv->pCtorEnv->nShipCount = nSlot;
+        }
         (void)Ship_Ctor(pNew, nCraftType, *pEnv->pnNextCraftId, nHomeBase, 0, pEnv->pCtorEnv);
     }
 

@@ -334,11 +334,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   - [x] IDB: named `pPadSoldier` (0x128AC0, `PadImage *`), `pCmdPadCs0/1/2` (0x186C30/34/38,
     `PadImage *`, the 'cs0'/'cs1'/'cs2' pads loaded by `Assets_LoadStartup`), `aTextRec56..66`;
     function header at 0x1fc8c and line comments at 0x1FCEC, 0x1FE84, 0x1FFB4, 0x20AD4, 0x20C00.
-- [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
-  `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
-  plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
-  `Soldier_CreateAndClassify` (ported) and `Base_CreateNamedEntry` (0x66930, now ported), leaving
-  exactly one unported: `Geoscape_BuildNavControls` (0x67b1c, 588 B), a leaf blocked by 15 screens.
+- [x] `Game_StartNew @ 0x94554` (3,976 B) — ported in `pufo_geoiinit.{h,c}` behind `StartNewEnv`,
+  107 checks in `tests/test_startnew.c` run over the real objects.dat and TEXTS records. All its
+  callees were already ported (`Geoscape_BuildNavControls` landed in the previous commit). Found by
+  the test: `Ship_ctor` reads the LIVE `Map_nCraftCount` for the cargo column (0x45C98), so
+  `Ship_SpawnAtSlot` now syncs `pCtorEnv->nShipCount` before calling the ctor — without it every
+  craft shares column 0. The starter facilities are placed with bClear 1, i.e. zero build days.
+  Magic numbers replaced by IDB-verified enums: `FacilityKind` (0..16, main.dat TEXTS 106..118/463/
+  120..122), `ObjectSlot` (28 slots, TEXTS 1447+slot), `CraftType` (mapped 1:1 onto TEXTS 522..526,
+  recorded as an assumption), the `PUFO_GRID_*` layout macros, `PUFO_ITEM_QTY_COUNT`,
+  `PUFO_CRAFT_TYPE_COUNT`, `PUFO_STARTNEW_SOLDIER_COUNT`, `PUFO_PRODUCT_ENTRIES_PER_BASE` promoted
+  to `pufo_save.h`. Same enums added to the IDB and applied to `Ship_ctor` / `BaseFac_SetCellBuildState`.
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -555,6 +561,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | budget leaves (`Base_CountOutboundTransferSpace`, `Base_CountItemQtyAcrossBases`, `Base_CountPsiSoldiers`) | 54/54 (Release) | 7608 | 704/1103 (63.8%) | 280724/598792 (46.9%) | 37 checked, 0 mismatched |
 | `Geoscape_InitUI` (`pufo_geoiinit.c`, real-archive test) | 55/55 (Release) | 7673 | 708/1103 (64.2%) | 291100/598792 (48.6%) | 37 checked, 0 mismatched |
 | nav controls + new-base screen (`pufo_baseui.c`) | 55/55 (Release) | 7773 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
+| `Game_StartNew` + the verified enums (`pufo_geoiinit.c`) | 56/56 (Release) | 7880 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

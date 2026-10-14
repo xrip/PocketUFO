@@ -423,10 +423,10 @@ void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 
     if (bGrant == 0 || pBase == NULL || apObjects == NULL) {
         return; /* 0x95FB0: with the flag clear nothing is added at all */
     }
-    BaseRec_AddItemQty(pBase, apObjects[105], 10); /* 0x95FCC, Map_apObjects105 */
-    BaseRec_AddItemQty(pBase, apObjects[34], 2);   /* 0x95FE4, Map_apObjects34 */
-    BaseRec_AddItemQty(pBase, apObjects[31], 1);   /* 0x95FFC, Map_apObjects31 */
-    BaseRec_AddItemQty(pBase, apObjects[56], 33);  /* 0x96014, Map_apObjects56 */
+    BaseRec_AddItemQty(pBase, apObjects[OBJ_ALIEN_ALLOYS], 10);      /* 0x95FCC, Map_apObjects105 */
+    BaseRec_AddItemQty(pBase, apObjects[OBJ_HOVERTANK_BLASTER], 2);  /* 0x95FE4, Map_apObjects34 */
+    BaseRec_AddItemQty(pBase, apObjects[OBJ_TANK_ROCKET_LAUNCHER], 1); /* 0x95FFC, Map_apObjects31 */
+    BaseRec_AddItemQty(pBase, apObjects[OBJ_HWP_ROCKETS], 33);       /* 0x96014, Map_apObjects56 */
 }
 
 /* Base_ClearFacilityGridRow @ 0x6a0e0. Despite the name it clears nothing; see the

@@ -67,6 +67,44 @@ _Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
 /* Three fire modes; abCostPct and abArmorTu are parallel arrays indexed by them. */
 #define PUFO_FIRE_MODE_COUNT 3
 
+/* aItemQty has 52 entries; Game_StartNew clears [0..49] and leaves the last two. */
+#define PUFO_ITEM_QTY_COUNT 52
+
+/* The object slots the port reaches by number. Each name is the shipped text record
+ * 1447+slot that Geoscape_InitUI @ 0x86A58 copies into szName (main.dat TEXTS.DAT); the
+ * record number is in the comment. Slots 69 and 70 carry the same shipped name. The two
+ * corpse names are Russian in the shipped data and glossed here. */
+typedef enum ObjectSlot {
+    OBJ_TANK_ROCKET_LAUNCHER     = 31, /* rec 1478 "Tank - rocket launcher" */
+    OBJ_HOVERTANK_BLASTER        = 34, /* rec 1481 "Hovertank - blaster launcher" */
+    OBJ_HEAVY_CANNON_CLIP        = 43, /* rec 1490 "Heavy cannon [HE] clip" */
+    OBJ_HWP_ROCKETS              = 56, /* rec 1503 "HWP Rockets" */
+    OBJ_SILACOID_CORPSE          = 67, /* rec 1514 "Silacoid corpse" */
+    OBJ_SECTOPOD_REMAINS         = 68, /* rec 1515 "Sectopod remains" */
+    OBJ_OPERATIVE_CORPSE         = 69, /* rec 1516, Russian for "operative corpse" */
+    OBJ_OPERATIVE_CORPSE_ALT     = 70, /* rec 1517, the same shipped name again */
+    OBJ_MALE_CORPSE              = 72, /* rec 1519, Russian for "male corpse" */
+    OBJ_FEMALE_CORPSE            = 73, /* rec 1520, Russian for "female corpse" */
+    OBJ_HOVERTANK_WRECKAGE       = 75, /* rec 1522, Russian for "hovertank wreckage" */
+    OBJ_SECTOID_LEADER           = 79, /* rec 1526 "Sectoid lider" (sic) */
+    OBJ_SECTOID_COMMANDER        = 80, /* rec 1527 "Sectoid commander" */
+    OBJ_SNAKEMAN_SOLDIER         = 81, /* rec 1528 "Snakeman soldier" */
+    OBJ_SNAKEMAN_ENGINEER        = 82, /* rec 1529 "Snakeman engineer" */
+    OBJ_FLOATER_NAVIGATOR        = 88, /* rec 1535 "Floater navigator" */
+    OBJ_FLOATER_LEADER           = 89, /* rec 1536 "Floater lider" (sic) */
+    OBJ_ETHEREAL_LEADER          = 96, /* rec 1543 "Ethereal lider" (sic) */
+    OBJ_CHRYSSALID               = 99, /* rec 1546 "Chryssalid" */
+    OBJ_RIPER                    = 100, /* rec 1547 "Riper" */
+    OBJ_SILACOID                 = 101, /* rec 1548 "Silacoid" */
+    OBJ_CELACID                  = 102, /* rec 1549 "Celacid" */
+    OBJ_SECTOPOD                 = 103, /* rec 1550 "Sectopod" */
+    OBJ_ELERIUM_115              = 104, /* rec 1551 "Elerium-115" */
+    OBJ_ALIEN_ALLOYS             = 105, /* rec 1552 "Alien alloys" */
+    OBJ_UFO_POWER_SOURCE         = 106, /* rec 1553 "UFO power source" */
+    OBJ_ALIEN_SURGERY            = 107, /* rec 1554 "Alien surgery" */
+    OBJ_UFO_NAVIGATION           = 108  /* rec 1555 "UFO navigation" */
+} ObjectSlot;
+
 /* bAmmoCap 255 means the weapon never runs out of ammo. Readers test this exact value rather than
  * treating 255 as a large count: the shot gate (pufo_combat.c), the inventory drag stack
  * (pufo_invdrag.c), the ammo display (pufo_unit.c) and the cargo pass all branch on it. */
