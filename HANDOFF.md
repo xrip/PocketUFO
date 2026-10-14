@@ -41,8 +41,8 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 53
-                                             Total Test time (real) = 1.68 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 54
+                                             Total Test time (real) = 1.6 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -56,9 +56,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 696 / 1103 (63.1%)
-                                             bytes cited:     275016 / 598792 (45.9%)
-python docs/parity/audit_credits.py       -> credited functions: 696, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 698 / 1103 (63.3%)
+                                             bytes cited:     275776 / 598792 (46.1%)
+python docs/parity/audit_credits.py       -> credited functions: 698, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 83, ORIGINAL BUG markers in src/pufo: 26
@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 53 suites: **7522**.
+Test checks run across the 54 suites: **7540**.
 
 ### Per-subsystem status
 

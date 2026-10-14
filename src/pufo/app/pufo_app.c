@@ -26,6 +26,7 @@
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
 #include "game/pufo_mainmenu.h" /* GameUI_InitStartup / MainMenu_Draw / MainMenu_TickRowKeys */
 #include "game/pufo_options.h"  /* Options_LoadFromRegistry */
+#include "game/pufo_renderframe.h" /* Render_Frame, the frame dispatcher */
 #include "game/pufo_timer.h"    /* Timer_SetWindow, the ids the WM_TIMER branch dispatches on */
 #include "platform/pufo_gx.h"
 #include "render/pufo_render.h"
@@ -121,12 +122,22 @@ static void App_InitStartupUi(void)
     g_bStartupUi = (g_nUiScreen == 17);
 }
 
-/* The screen-17 branch of Render_Frame (0x22310, not ported; its case 0x11 calls
- * MainMenu_Draw at 0x225E4). The shell reaches the menu branch directly until the
- * dispatcher is ported. */
+/* The shell's stand-in for GX_Present @ 0x27788 (the thunk to GX_PresentFrame @ 0x9ea7c):
+ * copy the logical surface to the window DIB and present it. */
+static i32 App_PresentHook(void *pUser)
+{
+    (void)pUser;
+    App_PresentLoadedSurface();
+    (void)Gx_Present(&g_gx);
+    return 0;
+}
+
+/* Render_Frame @ 0x22310 for the shell. The shell only ever reaches the start-menu screen
+ * (17); the tactical branches need the subsystem envs the shell does not own yet. */
 static void App_DrawFrame(void)
 {
-    MainMenuEnv mm;
+    MainMenuEnv    mm;
+    RenderFrameEnv rf;
 
     if (!g_bStartupUi || g_nUiScreen != 17) {
         return;
@@ -144,9 +155,12 @@ static void App_DrawFrame(void)
     mm.pColor               = &g_color;
     mm.pfnCtlBlit           = App_BlitPad;
     mm.pfnCtlBlitEx         = App_BlitPadEx;
-    MainMenu_Draw(&mm);
-    App_PresentLoadedSurface();
-    (void)Gx_Present(&g_gx);
+
+    memset(&rf, 0, sizeof(rf));
+    rf.nUiScreen   = g_nUiScreen;
+    rf.pMainMenu   = &mm;
+    rf.pfnPresent  = App_PresentHook;
+    (void)Render_Frame(&rf);
 }
 
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);

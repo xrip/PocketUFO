@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 696 / 1103 (63.1%) |
-| Bytes of original code cited | 275016 / 598792 (45.9%) |
+| Functions cited as evidence | 698 / 1103 (63.3%) |
+| Bytes of original code cited | 275776 / 598792 (46.1%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 53 |
-| Test checks run | 7522 |
+| Test suites | 54 |
+| Test checks run | 7540 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -34,7 +34,7 @@ the per-subsystem notes and the tests listed at the end.
 |---|---|---|---|---|
 | `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
 | `boot-assets` | 4 | 4 | 2744 / 2744 | startup asset load, text-table extraction, shutdown |
-| `render` | 48 | 51 | 10324 / 11108 | software surface, blitters, palette loading |
+| `render` | 50 | 51 | 11084 / 11108 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
@@ -83,13 +83,14 @@ is the module that answers to it.
 | `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
-### `render` (48 functions)
+### `render` (50 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x2d82c` | `Gfx_PackRgb565Pair` | 1148 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x2d82c` | `Gfx_PackRgb565Pair` | 1148 | `src/pufo/game/pufo_font.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0xa306c` | `SoftSurf_BlitIndexed_Inner` | 860 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3638` | `SoftSurf_BlitIndexedKeyed_Inner` | 812 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x22310` | `Render_Frame` | 756 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_renderframe.h` |
 | `0xa33c8` | `SoftSurf_BlitRawGlyph` | 604 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3f94` | `SoftSurf_FillRect_Inner` | 576 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3bb8` | `Blit_CopyRows_HiRes` | 512 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
@@ -100,7 +101,7 @@ is the module that answers to it.
 | `0xa3db8` | `SoftSurf_BlitCopyRaw` | 420 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa42e4` | `Blit_CopyToXY` | 364 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa4630` | `SoftSurf_SamplePixel` | 364 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x9ea7c` | `GX_PresentFrame` | 308 | `src/pufo/app/pufo_app.c`, `src/pufo/platform/pufo_gx.c` (+2) |
+| `0x9ea7c` | `GX_PresentFrame` | 308 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_renderframe.h` (+3) |
 | `0x3e47c` | `Palette_Load` | 288 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa41d4` | `SoftSurf_BlitGlyph_Inner` | 268 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_font.c` (+1) |
 | `0x9e5c8` | `SoftSurf_DrawBorderAndBlur` | 220 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
@@ -135,6 +136,7 @@ is the module that answers to it.
 | `0x9f99c` | `SoftSurf_GetHeight` | 8 | `src/pufo/render/pufo_render.h` |
 | `0x9fcb4` | `SoftSurf_GetPixels` | 8 | `src/pufo/render/pufo_render.h` |
 | `0x9fcbc` | `SoftSurf_GetAlloc` | 8 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0x27788` | `GX_Present` | 4 | `src/pufo/app/pufo_app.c` |
 
 ### `audio` (6 functions)
 
@@ -513,7 +515,7 @@ is the module that answers to it.
 | `0x6aaac` | `Ui_SwapStringSlots` | 172 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x5a294` | `UiPanel_InsertLine` | 160 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x1a340` | `UiControl_BlitActivePad` | 152 | `src/pufo/ui/pufo_control.h` |
-| `0x2d798` | `Text_DrawString` | 148 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
+| `0x2d798` | `Text_DrawString` | 148 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+1) |
 | `0x46144` | `Font_Free` | 148 | `src/pufo/game/pufo_font.h` |
 | `0x2dd20` | `StatusMsg_Shift` | 132 | `src/pufo/game/pufo_statusmsg.h` |
 | `0x1a2c8` | `UiControl_FreePads` | 120 | `src/pufo/game/pufo_tactend.h`, `src/pufo/ui/pufo_control.h` |
@@ -826,13 +828,11 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `render` — 3 functions, 784 bytes remaining
+### `render` — 1 functions, 24 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x22310` | `Render_Frame` | 756 | not yet ported; scheduled with the `render` subsystem work |
 | `0x36818` | `Render_Frame_DecRef` | 24 | not yet ported; scheduled with the `render` subsystem work |
-| `0x27788` | `GX_Present` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
 ### `util` — 2 functions, 24 bytes remaining
 
@@ -1324,6 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_path` | PASS | 48 |
 | `test_plane` | PASS | 93 |
 | `test_render` | PASS | 177 |
+| `test_renderframe` | PASS | 18 |
 | `test_rmp` | PASS | 62 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 689 |
@@ -1347,7 +1348,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**53 / 53 suites passing.**
+**54 / 54 suites passing.**
 
 ## Per-subsystem parity notes
 

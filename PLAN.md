@@ -390,6 +390,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Render_SetTarget` — without that call `blitState+0x20` stays 0 and no glyph ever draws, so the
   shell now calls it in `App_PresentLoadedSurface`. IDB: comments at 0x38a28/0x1a604/0x9ec48/
   0x2d798/0x2d82c/0xa41d4/0xa0ac8/0x1183f4, rename unk_1183F4 → Map_nGlyphPalBase.
+- [x] `Render_Frame (0x22310, 756 B)` — the frame dispatcher itself — ported as
+  `src/pufo/game/pufo_renderframe.c` behind `RenderFrameEnv`, tested by `tests/test_renderframe.c`
+  (18 new checks). Every callee except `Geoscape_Draw (0x8c180)` was already ported, so the env
+  carries the dispatch scalars (`unk_1139FC`, `Map_nUiScreen`, `unk_138E68`, the modal
+  `apUiSlotsA[12..19]` cells, the fade `apUiSlotsA[1]/[10]`) plus the per-branch sub-envs, and
+  `Geoscape_Draw` / the `GX_Present (0x27788)` thunk are injected hooks. The geoscape branch
+  returns `Geoscape_Draw`'s value and skips the present (0x22328/0x22330) — reproduced. The shell
+  now reaches the menu through the dispatcher instead of calling `MainMenu_Draw` directly. IDB:
+  comment at 0x22310.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -493,6 +502,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Smap_BeginCraftSelect` + `Smap_BeginCraftSelectBtn` | 53/53 (Release) | 7498 | 692/1103 (62.7%) | 273116/598792 (45.6%) | 37 checked, 0 mismatched |
 | `Research_TopicNeedsItem` + `ResearchScreen_RefreshPanels` | 53/53 (Release) | 7522 | 694/1103 (62.9%) | 273820/598792 (45.7%) | 37 checked, 0 mismatched |
 | start menu pipeline (`GameUI_InitStartup`, `UiControl_LoadPads`) | 53/53 (Release) | 7522 | 696/1103 (63.1%) | 275016/598792 (45.9%) | 37 checked, 0 mismatched |
+| `Render_Frame` dispatcher (`pufo_renderframe.c`) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

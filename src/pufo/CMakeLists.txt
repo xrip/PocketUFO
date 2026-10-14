@@ -37,6 +37,7 @@ add_library(pufo_game STATIC
     game/pufo_tacthud.c
     game/pufo_titles.c
     game/pufo_mainmenu.c
+    game/pufo_renderframe.c
     game/pufo_invdrag.c
     game/pufo_mapctx.c
     game/pufo_path.c
@@ -215,6 +216,16 @@ add_test(NAME test_titles
 )
 
 # The start menu renderer.
+add_executable(test_renderframe ${CMAKE_SOURCE_DIR}/tests/test_renderframe.c)
+target_link_libraries(test_renderframe PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_ui)
+set_target_properties(test_renderframe PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_renderframe
+    COMMAND test_renderframe
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_executable(test_mainmenu ${CMAKE_SOURCE_DIR}/tests/test_mainmenu.c)
 target_link_libraries(test_mainmenu PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_ui)
 set_target_properties(test_mainmenu PROPERTIES

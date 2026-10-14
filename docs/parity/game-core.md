@@ -7184,8 +7184,38 @@ further 5% chance, armed rows only) or zeroes every source and re-arms only this
 
 **Visual verification:** `pocketufo --dump-frame <path>` runs `GameUI_InitStartup`, 40 anim
 ticks, one `MainMenu_Draw` frame, writes the 240x320 RGB565 surface as a P6 PPM, and exits. The
-dump shows the backdrop, the four teal rows with black Cyrillic labels (lang.dat text records
-1076..1079) and the SMK logo — the start menu as the original draws it.
+dump shows the backdrop, the four teal rows with key-scaled cyan labels (lang.dat text records
+1076..1079), the white/grey "V1.26" stamp and the SMK logo — the start menu as the original
+draws it.
+
+### `Render_Frame @ 0x22310` — the frame dispatcher
+
+Ported as `src/pufo/game/pufo_renderframe.c` behind `RenderFrameEnv`, tested by
+`tests/test_renderframe.c` (18 checks). Every callee except `Geoscape_Draw (0x8c180)` was
+already ported, so the env carries the dispatch scalars and the per-branch sub-envs;
+`Geoscape_Draw` and the `GX_Present (0x27788)` thunk (a 4-byte jump to `GX_PresentFrame`) are
+injected hooks.
+
+**The geoscape branch returns early** (0x22328 / 0x22330): when `unk_1139FC` (Map+0x44) is set,
+`Render_Frame` returns `Geoscape_Draw`'s value and never reaches `GX_Present` — `Geoscape_Draw`
+presents itself. The three title/menu screens (0x10 animated titles, 0x11 `MainMenu_Draw`, 0x12
+credits backdrop) each end with the present.
+
+**The tactical default branch** ticks the cursor direction, writes 34 into `Map_nGlyphPalBase`
+(0x22370 — the non-text glyph palette base), then dispatches: screens {0,3,5,7,8,9,0xA,0xB,0xC,0xF}
+draw the iso layer when `unk_138E68` is set, with per-screen HUD panels (roster 3, status text 5,
+labeled pads 7, modal panel right 0xA / left 0xB — the same body with records 1103/1102 — top bar
+0xC, action buttons 0xF); 1 inventory, 2 minimap, 4 command pads, 6 unit markers, 0xD status
+banner, 0x13 confirm dialog, 0x14/0x15 the Cydonia pad+panel. Then the modal dialog from
+`apUiSlotsA[12..19]` when slot 19 is set, then the fade block: a positive `apUiSlotsA[1]`
+dark-blits the whole 240x320 screen (key 20, blending toward `Blit_PackedColor(0,0,0)` = black);
+otherwise a `apUiSlotsA[10]` counter under 10 blits the "enemystp" fade pad full-screen with
+alpha 255 at 0 and `24*(10-counter)` otherwise, and the status stack draws when the iso layer is
+on. Everything ends with `GX_Present`.
+
+The shell now reaches the start menu through the dispatcher (`App_DrawFrame` builds a
+`RenderFrameEnv` with the menu branch and the present hook) instead of calling `MainMenu_Draw`
+directly.
 
 ### `Tact_DrawCommandPads @ 0x1fc8c` — the screen-4 status panel
 
