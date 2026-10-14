@@ -612,4 +612,52 @@ void GameTime_SetSpeedIdx3(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
 void GameTime_SetSpeedIdx4(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
 void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
 
+/* ------------------------------------------------- creating a new base entry
+ *
+ * Evidence: Base_CreateNamedEntry @ 0x66930. Two callers: Game_StartNew @ 0x94964 with
+ * (-6000, -6000, 0, "new") for the starting base, and BaseFacScreen_DrawPlacementOverlay @
+ * 0x59AFC with the pending placement coordinates (Map+0x62C / +0x630) and nFacType (0x159DF4).
+ *
+ * What it does, in the original's order:
+ *   1. BaseRec_Create: a new 20-byte BaseRec at apBases[nBaseCount] (the count is NOT raised
+ *      yet). The original then dereferences apBases[nBaseCount] with no null test (0x66A08);
+ *      the port guards (deviation).
+ *   2. StrategList_AddItem: a type-0, inactive, invisible-flag-1 site entry at (x, y) with
+ *      nId = the next site id (dword_186558).
+ *   3. The strateg entry at index nBaseCount gets bRandA = nKind - 0x80 (0x669B4; Hex-Rays
+ *      renders the SUB as + 0x80, the ARM is `SUB R11, R10, #0x80`).
+ *   4. The BaseSiteRec for this base (0x186C40 + 64*nBaseCount): abName = the name copied to its
+ *      NUL with no bound (0x669D0 - ORIGINAL BUG, the field is 20 bytes and the overflow tail
+ *      lands in the four dwords and past the record), bType = nKind - 0x80, nUnk48 /
+ *      nDemolishState / nBuildState = 0, nFacType = the site id.
+ *   5. The BaseRec: bUnk17 = nKind, nUnk8 = x, nUnk12 = y, bUnk16 = abKindTable[nKind] - 1,
+ *      where abKindTable is the runtime block at 0x1864DD (all zero in the image).
+ *   6. When Map_nObjectCount is non-zero, clear this base's economy columns: the first
+ *      nObjectCount u16 of the research column (144 entries per base, so 149 objects spill five
+ *      into the next base - reproduced), and entries [i] and [i + 2176] of the u16 product
+ *      column, [i] and [i + 1600] of the u32 product column. The column pointers are passed
+ *      already offset to this base: 0x159E9C + 800*n (u32), 0x15D09C + 400*n (u16),
+ *      0x16022C + 288*n (u16).
+ *   7. ++site id, ++base count.
+ *
+ * The return value is the constant 1560 (0x618, the offset the count store used - register
+ * residue). Reproduced. */
+typedef struct BaseCreateEnv {
+    BaseRec **apBases;          /* Map + 0x1174 */
+    ObjectRecFull *const *apObjects;
+    u16 nObjectCount;           /* Map_nObjectCount */
+    i8 *pbBaseCount;            /* 0x159D80, signed: the new base's slot, raised at the end */
+    PtrArray *pStrategList;     /* strategList @ 0x186534 */
+    i32 *pnSeed;                /* 0x18640C, the per-item seed counter */
+    i32 nZoomMode;              /* 0x1863E8; type 0 does not scale coordinates */
+    i32 *pnNextSiteId;          /* dword_186558 */
+    BaseSiteRec *apSiteRecs;    /* 0x186C40, eight 64-byte records */
+    const u8 *abKindTable;      /* 0x1864DD, indexed by nKind */
+    u32 *pProductU32Col;        /* 0x159E9C + 800 * nBaseCount */
+    u16 *pProductU16Col;        /* 0x15D09C + 400 * nBaseCount */
+    u16 *pResearchCol;          /* 0x16022C + 288 * nBaseCount */
+} BaseCreateEnv;
+
+i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, const char *pszName);
+
 #endif /* PUFO_GEOSCAPE_H */

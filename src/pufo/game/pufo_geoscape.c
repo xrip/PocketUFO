@@ -1120,3 +1120,79 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
 {
     GameTime_SetSpeedIdx(pWorld, apSpeedCtl, 5);
 }
+
+/* ------------------------------------------------------------ creating a new base entry */
+
+i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, const char *pszName)
+{
+    i32 nBaseCount = (i32)*pEnv->pbBaseCount;
+    BaseRec *pBase;
+    BaseSiteRec *pSite;
+    StrategItem *pItem;
+    i32 i;
+
+    (void)BaseRec_Create(pEnv->apBases, nBaseCount, pEnv->apObjects, (i32)pEnv->nObjectCount);
+
+    (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnSeed, pEnv->nZoomMode, 0, 0, 0,
+                              x, y, *pEnv->pnNextSiteId, 1);
+
+    /* 0x669B4: the strateg entry this base owns gets bRandA. The ARM is SUB R11, R10, #0x80;
+     * Hex-Rays renders it as + 0x80. */
+    pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nBaseCount);
+    if (pItem != NULL) {
+        pItem->bRandA = (u8)(nKind - 0x80);
+    }
+
+    pSite = &pEnv->apSiteRecs[nBaseCount];
+
+    /* ORIGINAL BUG (0x669D0): the name is copied byte by byte to its NUL with no bound into a
+     * 20-byte field; the overflow tail lands in the four dwords below (which the next stores
+     * then overwrite) and past the end of the record. The port bounds the copy. */
+    {
+        i32 n = 0;
+        while (n < (i32)sizeof(pSite->abName) - 1 && pszName[n] != 0) {
+            pSite->abName[n] = pszName[n];
+            ++n;
+        }
+        pSite->abName[n] = 0;
+    }
+
+    /* The original re-reads apBases[nBaseCount] before every store and never tests it for
+     * null (0x66A08); the port reads it once and guards. */
+    pBase = (pEnv->apBases != NULL && nBaseCount >= 0) ? pEnv->apBases[nBaseCount] : NULL;
+
+    if (pBase != NULL) {
+        pBase->bUnk17 = (u8)nKind;
+    }
+
+    pSite->bType = (u8)(nKind - 0x80);
+    pSite->nUnk48 = 0;        /* 0x66A28 */
+    pSite->nDemolishState = 0;
+    pSite->nBuildState = 0;
+    pSite->nFacType = *pEnv->pnNextSiteId; /* 0x66A34 */
+
+    if (pBase != NULL) {
+        pBase->nUnk8 = x;     /* 0x66A38 */
+        pBase->nUnk12 = y;    /* 0x66A50 */
+        pBase->bUnk16 = (u8)((i8)pEnv->abKindTable[nKind] - 1); /* 0x66A74: LDRSB then SUB #1 */
+    }
+
+    if (pEnv->nObjectCount != 0) {
+        /* 0x66B0C: the research column is 144 entries per base, and the loop runs
+         * nObjectCount (149) times, so five entries spill into the next base. Reproduced. */
+        for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
+            pEnv->pResearchCol[i] = 0;
+        }
+        for (i = 0; i < (i32)pEnv->nObjectCount; ++i) {
+            pEnv->pProductU16Col[i] = 0;         /* 0x66B24 */
+            pEnv->pProductU16Col[i + 2176] = 0;  /* 0x66B1C: + 0x1100 bytes */
+            pEnv->pProductU32Col[i] = 0;         /* 0x66B34 */
+            pEnv->pProductU32Col[i + 1600] = 0;  /* 0x66B2C: + 0x1900 bytes */
+        }
+    }
+
+    *pEnv->pnNextSiteId += 1;                        /* 0x66B50 */
+    *pEnv->pbBaseCount = (i8)(*pEnv->pbBaseCount + 1); /* 0x66B64 */
+
+    return 1560; /* 0x66B6C: the 0x618 offset the count store used - register residue */
+}

@@ -321,8 +321,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
-  `Soldier_CreateAndClassify` (ported), leaving exactly two unported: `Base_CreateNamedEntry`
-  (0x66930, 576 B) and `Geoscape_BuildNavControls` (0x67b1c, 588 B), both leaves.
+  `Soldier_CreateAndClassify` (ported) and `Base_CreateNamedEntry` (0x66930, now ported), leaving
+  exactly one unported: `Geoscape_BuildNavControls` (0x67b1c, 588 B), a leaf blocked by 15 screens.
+- [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
+  33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
+  `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
+  bType = kind - 0x80, nFacType = site id), the strateg entry's bRandA, and clears the base's
+  research/product columns; ++site id, ++base count, returns the 1560 residue. Two ledger rows added
+  (81 total): the unbounded name copy (0x669D0, port truncates) and the research-column spill
+  (0x66B0C, reproduced). ARM fixed Hex-Rays again: `SUB R11,R10,#0x80`, not `+ 0x80`.
 - [x] The six geoscape speed buttons — `GameTime_Set5Sec (0x84f00)`, `GameTime_Set1Min (0x84f64)`,
   `GameTime_Set5Min (0x84fc8)`, `GameTime_SetSpeedIdx3/4/5 (0x8502c/0x85094/0x850fc)`, 612 B total —
   ported in `pufo_geoscape.c` as six wrappers over one `GameTime_SetSpeedIdx`, 13 new checks in
@@ -427,6 +434,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `MainMenu_Draw` | 52/52 (Release) | 7322 | 679/1103 (61.6%) | 264772/598792 (44.2%) | 37 checked, 0 mismatched |
 | `Tact_DrawCommandPads` | 53/53 (Release) | 7364 | 680/1103 (61.7%) | 268816/598792 (44.9%) | 37 checked, 0 mismatched |
 | `GameTime_Set5Sec..SetSpeedIdx5` | 53/53 (Release) | 7377 | 686/1103 (62.2%) | 269428/598792 (45.0%) | 37 checked, 0 mismatched |
+| `Base_CreateNamedEntry` | 53/53 (Release) | 7410 | 687/1103 (62.3%) | 270004/598792 (45.1%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

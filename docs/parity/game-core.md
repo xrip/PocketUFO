@@ -2676,6 +2676,32 @@ exactly the button's own control is 1 and the other five are 0. Intervals: 5, 60
 3600 seconds. `SetSpeedIdx5` is the only one that ever lights control 5. Each original returns the
 sixth control pointer (register residue); no caller tests it, so the port returns void.
 
+### `Base_CreateNamedEntry @ 0x66930` — creating a new base entry (done)
+
+Ported in `pufo_geoscape.c` behind `BaseCreateEnv`, 33 new checks in `tests/test_geoscape.c`. Two
+callers: `Game_StartNew @ 0x94964` with (-6000, -6000, 0, "new") for the starting base, and
+`BaseFacScreen_DrawPlacementOverlay @ 0x59AFC` with the pending placement coordinates and
+`nFacType`.
+
+It chains two already-ported helpers and then fills three records. `BaseRec_Create` puts a fresh
+20-byte `BaseRec` at `apBases[nBaseCount]` (the count is raised only at the end); `StrategList_AddItem`
+appends a type-0 site entry at (x, y) with `nId = nNextBaseSiteId` (`dword_186558`, renamed). The
+strateg entry at index `nBaseCount` gets `bRandA = nKind - 0x80` — the ARM is `SUB R11, R10, #0x80`
+at 0x669B4; Hex-Rays renders it as `+ 0x80`. The `aBaseFacilities` record (0x186C40) gets the name
+(copied to its NUL with no bound — ORIGINAL BUG 0x669D0, the field is 20 bytes; the port truncates),
+`bType = nKind - 0x80`, three zeroed scratch dwords, and `nFacType = ` the site id. The `BaseRec`
+gets `bUnk17 = nKind`, `nUnk8/nUnk12 = x/y`, and `bUnk16 = abBaseKindTable[nKind] - 1` (the runtime
+byte table at 0x1864DD, 15 entries, all zero in the image).
+
+Then the economy clear for this base: the research column's first `Map_nObjectCount` u16 (149
+iterations over a 144-entry column — five spill into the next base, reproduced), and entries `[i]`
+and `[i + 2176]` of the u16 product column (0x15D09C + 400n) and `[i]` and `[i + 1600]` of the u32
+column (0x159E9C + 800n). Finally `++nNextBaseSiteId` and `++base count`; the return is the
+constant 1560 (the 0x618 count-store offset — register residue, reproduced).
+
+Named this step: `nNextBaseSiteId` (0x186558), `abBaseKindTable` (0x1864DD), and `nSmapParam3` →
+`nStrategSeedCounter` (0x18640C, the per-item seed `StrategItem_ctor` writes).
+
 ### The pause byte is one global, not a per-module flag
 
 `GameTime_Pause @ 0x5d6ac` is two instructions: `LOBYTE(gUiRootPanel.apLines[106])

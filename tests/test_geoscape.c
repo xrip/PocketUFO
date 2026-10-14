@@ -1657,6 +1657,106 @@ static void TestSpeedButtons(void)
     CheckEqI32(nLit, 1, "exactly one control is lit after a set");
 }
 
+static void TestCreateNamedEntry(void)
+{
+    static BaseRec *apBases[8];
+    static ObjectRecFull objs[3];
+    static ObjectRecFull *apObjs[3];
+    static BaseSiteRec sites[8];
+    static u32 prodU32[1600 + 3];
+    static u16 prodU16[2176 + 3];
+    static u16 research[3];
+    static const u8 kindTable[8] = { 3, 9, 4, 0, 0, 0, 0, 0 };
+    static PtrArray list;
+    BaseCreateEnv env;
+    StrategItem *pItem;
+    i8 bBaseCount = 0;
+    i32 seed = 5;
+    i32 siteId = 500;
+    i32 i;
+    i32 nRet;
+
+    memset(apBases, 0, sizeof(apBases));
+    memset(objs, 0, sizeof(objs));
+    memset(sites, 0, sizeof(sites));
+    for (i = 0; i < 3; ++i) {
+        apObjs[i] = &objs[i];
+        objs[i].auPerBaseVal[0] = 7;
+        objs[i].auPerBaseVal[1] = 7;
+    }
+    for (i = 0; i < 1600 + 3; ++i) {
+        prodU32[i] = 0xAAAAAAAAu;
+    }
+    for (i = 0; i < 2176 + 3; ++i) {
+        prodU16[i] = 0xAAAA;
+    }
+    for (i = 0; i < 3; ++i) {
+        research[i] = 0xAAAA;
+    }
+    PtrArray_ctor(&list);
+
+    env.apBases = apBases;
+    env.apObjects = apObjs;
+    env.nObjectCount = 3;
+    env.pbBaseCount = &bBaseCount;
+    env.pStrategList = &list;
+    env.pnSeed = &seed;
+    env.nZoomMode = 0;
+    env.pnNextSiteId = &siteId;
+    env.apSiteRecs = sites;
+    env.abKindTable = kindTable;
+    env.pProductU32Col = prodU32;
+    env.pProductU16Col = prodU16;
+    env.pResearchCol = research;
+
+    printf("\nBase_CreateNamedEntry @ 0x66930\n");
+
+    nRet = Base_CreateNamedEntry(&env, -6000, -6000, 1, "alpha");
+
+    CheckEqI32(nRet, 1560, "the return is the 0x618 residue");
+    CheckEqI32(bBaseCount, 1, "the base count is raised");
+    CheckEqI32(siteId, 501, "and the next site id");
+
+    Check(apBases[0] != NULL, "BaseRec_Create stored a record at slot 0");
+    CheckEqI32(apBases[0]->bUnk17, 1, "bUnk17 = the kind");
+    CheckEqI32(apBases[0]->nUnk8, -6000, "nUnk8 = x");
+    CheckEqI32(apBases[0]->nUnk12, -6000, "nUnk12 = y");
+    CheckEqI32(apBases[0]->bUnk16, 8, "bUnk16 = kindTable[1] - 1");
+    CheckEqI32(objs[0].auPerBaseVal[0], 0, "the ctor zeroed slot 0 in every object");
+    CheckEqI32(objs[0].auPerBaseVal[1], 7, "and left the other slots alone");
+
+    CheckEqI32(list.nCount, 1, "one strateg entry was added");
+    pItem = (StrategItem *)PtrArray_Get(&list, 0);
+    CheckEqI32(pItem->nType, 0, "type 0");
+    CheckEqI32(pItem->nX, -6000, "at x");
+    CheckEqI32(pItem->nSiteId, 500, "with the site id (type 0 writes nSiteId)");
+    CheckEqI32(pItem->nDisplayId, -1, "and nDisplayId -1");
+    CheckEqI32(pItem->bRandA, 0x81, "bRandA = 1 - 0x80 as a byte");
+    CheckEqI32(pItem->bVisible, 1, "visible");
+    CheckEqI32(pItem->nSeed, 5, "seeded from the counter");
+    CheckEqI32(seed, 6, "and the counter advanced");
+
+    CheckEqI32(sites[0].bType, 0x81, "site bType = kind - 0x80");
+    Check(strcmp(sites[0].abName, "alpha") == 0, "the name landed in abName");
+    CheckEqI32(sites[0].nFacType, 500, "nFacType = the site id");
+    CheckEqI32(sites[0].nUnk48, 0, "the three scratch dwords are cleared");
+
+    CheckEqI32((i32)research[0], 0, "research column cleared");
+    CheckEqI32((i32)prodU16[2], 0, "product u16 column cleared");
+    CheckEqI32((i32)prodU16[2178], 0, "and its +2176 twin");
+    CheckEqI32((i32)prodU32[1602], 0, "product u32 column and its +1600 twin");
+    Check(prodU32[3] == 0xAAAAAAAAu, "the entry past the object count is untouched");
+
+    /* A 30-character name: the original would run past the 20-byte field; the port truncates
+     * at 19 + NUL and the record's own fields stay clean. */
+    (void)Base_CreateNamedEntry(&env, 100, 200, 0, "012345678901234567890123456789");
+    CheckEqI32(bBaseCount, 2, "second base created");
+    Check(strcmp(sites[1].abName, "0123456789012345678") == 0, "the long name is truncated to 19");
+    CheckEqI32(sites[1].nUnk48, 0, "and nothing spilled into the fields below");
+    CheckEqI32(sites[1].bType, 0x80, "kind 0 gives bType 0x80");
+    CheckEqI32(apBases[1]->bUnk16, 2, "kindTable[0] - 1 for the second base");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1682,6 +1782,7 @@ int main(void)
     TestEmptyFacilityCells();
     TestFacilityPlaceAndGrant();
     TestSpeedButtons();
+    TestCreateNamedEntry();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
