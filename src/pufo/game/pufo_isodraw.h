@@ -82,10 +82,13 @@ typedef struct IsoDrawCtx {
                              * bAnimStep; 0x68 is the number of steps to walk */
     u8       bUnitGlyphRow;  /* 0x69, the aUnitWalkGlyph row: 2 when nAnimPose is 18,
                               * otherwise (bFlags & 2) ? 1 : 0 */
-    char     szText[84];     /* 0xAC, the scratch string MapView_DrawIsoLayer fills with itoa output
+    char     szText[80];     /* 0xAC, the scratch string MapView_DrawIsoLayer fills with itoa output
                               * and with a copy of the active pad's label. The label copy runs to its
                               * NUL with no bound test (0x22254), so the buffer is only as safe as the
-                              * text record it is copied from. */
+                              * text record it is copied from. It stops at 0xF4 because the minimap
+                              * keeps a dword scratch at 0xFC. */
+    i32      nScratch;       /* 0xFC, the glyph-index scratch MapView_DrawMinimap stores per sprite
+                              * and per marker, and reads back as a u16 when it draws */
     i32      nScratch2;      /* 0x100 */
     i32      nRosterIndex;   /* 0x114, IDA nRosterAux2: the multi-target roster cursor
                               * MapView_DrawUnitFacingArrow walks over 0..9 */
@@ -125,6 +128,7 @@ typedef struct IsoSpriteBases {
     u16 nCursorBase;  /* fontSys + 0x02, the cursor group. Both select markers draw from it. */
     u16 nFloorobBase; /* fontSys + 0x22 */
     u16 nBulletsBase; /* fontSys + 0x2A */
+    u16 nScangBase;   /* fontSys + 0x2E, the minimap glyph group MapView_DrawMinimap draws from */
     u16 nSmokeBase;   /* fontSys + 0x30 */
     u16 nExplBase;    /* fontSys + 0x32 */
     u16 nGlyphBase;   /* fontSys + 0x28, the same base Text_DrawString adds a character to */
@@ -504,6 +508,67 @@ typedef struct IsoLayerEnv {
  *
  * The original returns register debris and no caller tests it; the port returns void. */
 void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv);
+
+/* ------------------------------------------------------------ the minimap
+ *
+ * Everything MapView_DrawMinimap @ 0x1ed4c reaches outside the draw context.
+ *
+ * The two span globals have no writer anywhere in the IDB: unk_1139E8 / unk_1139EA (Map+0x30 /
+ * Map+0x32) are read as the loop bounds (value >> 2) here and as the camera-centre input of
+ * MapView_EnterLookMode (value >> 1), but nothing ever stores to them. In the shipped beta they are
+ * 0, so both cell passes of the minimap never run and only the pad, the label and the three controls
+ * are drawn. The port reproduces the arithmetic as written. */
+#define PUFO_PBANK_MINIMAP_FIRST 98 /* pBank + 0xC40: the three screen-2 (look mode) controls */
+#define PUFO_PBANK_MINIMAP_COUNT  3
+
+typedef struct IsoMinimapEnv {
+    i32 *pnScrollX;      /* Map_nMinimapScrollX @ 0x118864 (Map+0x4EAC): clamped here, panned by
+                          * Input_OnLeft / Input_OnRight while Map_nUiScreen is 2 */
+    i32 *pnScrollY;      /* Map_nMinimapScrollY @ 0x118868 (Map+0x4EB0) */
+    u16  nSpanX;         /* unk_1139E8 @ Map+0x30: the x loop bound is this >> 2. No writer exists. */
+    u16  nSpanY;         /* unk_1139EA @ Map+0x32: the y loop bound is this >> 2. No writer exists. */
+    i8   nLayerCount;    /* Map.nLayerScratch @ 0x15138, signed byte, read with LDRSB */
+    u8   nMapPhase;      /* Map+0x37 */
+    const IsoGrid        *pGrid;   /* apCells is the cell grid; nMapDimX/Y feed the scroll clamp */
+    const IsoSpriteBases *pBases;  /* nScangBase is the glyph group */
+    const char  *pLabel;           /* aTextRecs @ 0xB38D0 + 205*17 (0xB466D): text record 17, loaded
+                                    * from lang.dat and never rewritten - the copy at 0x1f4dc is the
+                                    * only reference to it in the whole binary */
+    const PadImage *pMiniCursor;   /* unk_1571F0: the 'minimcur' pad stored by Tact_LoadUiPads
+                                    * @ 0x3b068 and cleared by Tact_Shutdown @ 0x3d568 */
+    UiControl         *pBank;      /* pBank @ 0xAC6D0; widgets 98..100 are blitted */
+    const GfxColorEnv *pColor;
+    UiControlBlitFn   pfnCtlBlit;
+    UiControlBlitFn   pfnCtlBlitEx;
+    void             *pCtlUser;
+} IsoMinimapEnv;
+
+/* MapView_DrawMinimap @ 0x1ed4c — the look-mode overview: every map cell as a 4 by 4 block.
+ *
+ * It clears the whole 240 by 320 surface to index 0, clamps the scroll to
+ *   -30 <= scrollX <= 40 * (nMapDimX - 3) / 4   and   -40 <= scrollY <= 40 * (nMapDimY - 4) / 4
+ * (the ARM's MOVS / ADDMI #3 / ASR #2 is truncating division, like C's), then runs two passes that
+ * paint each valid cell at 4 * (tile - scroll):
+ *
+ *   Pass 1 (layer 0 only, and it runs even when nLayerCount is 0): every valid cell gets one ground
+ *     glyph, nScangBase + (sprite2->uUnk20 + 35) with the cell's bUnk56 as palette. The sprite is
+ *     Font_GetSprByIndex(fontSys, 2) - a fixed record, so the pass paints one uniform glyph. The
+ *     original dereferences the lookup result with no null test (0x1eea4).
+ *   Pass 2 (layers 0..nLayerCount-1, validity still tested at layer 0): the cell's four sprite
+ *     records in order (floor, wall A, wall B, ceiling), each drawn as nScangBase + (uUnk20 + 35)
+ *     and skipped when uUnk20 is 0; then the item marker nScangBase + (nMapPhase / 3 + 9) when the
+ *     cell has an item list AND bFlags29 bit 4; then the occupant marker - a large unit picks its
+ *     glyph by how its own cell sits against the drawn one (same cell 4*(phase/3+3), same column
+ *     +14, same row +13, neither +15), a small unit uses phase/3, and either adds 12 or 3 when
+ *     bStatus is not OPERATIVE. The sprite palette is the cell's bUnk56 when bFlags29 bit 4 is set,
+ *     else 255; the markers always use 0.
+ *
+ * Then the furniture: the 'minimcur' pad at key 0x3F, the label (text record 17 copied to its NUL
+ * with no bound - ORIGINAL BUG (0x1f4dc) - with the decimal layer count appended at szText[50]), the
+ * white/grey colour pair, the label drawn at (0,0), and the three screen-2 controls.
+ *
+ * The original returns the control-loop counter; no caller tests it, so the port returns void. */
+void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv);
 
 /* ------------------------------------------------------------ iso unit animation tables
  *

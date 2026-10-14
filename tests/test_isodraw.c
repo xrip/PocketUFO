@@ -15,6 +15,7 @@
 
 #include "game/pufo_font.h"
 #include "game/pufo_isodraw.h"
+#include "game/pufo_mapctx.h" /* PUFO_MAP_CELL_DIM, the minimap grid extent */
 #include "game/pufo_unit.h"
 #include "render/pufo_render.h"
 
@@ -1950,6 +1951,295 @@ static void TestUnitNulls(void)
     Check(true, "NULL context, gate, unit or cell is safe");
 }
 
+/* ------------------------------------------------------------ MapView_DrawMinimap @ 0x1ed4c
+ *
+ * The shipped beta never writes the span globals, so its minimap only ever draws the pad, the label
+ * and the three controls. The fixture sets the spans explicitly to exercise the cell passes the
+ * original leaves dormant, and keeps one dormant case to pin the shipped behaviour.
+ *
+ * Probe-glyph rule: glyph k inks one pixel at (x, y + k). The ground glyph is sprite record 2's
+ * uUnk20 + 35 = 35, so pass 1 inks row y + 35 and every marker lands on its own row. Palette slot 0
+ * is visible and slot 19 (what nPal 255 clamps to) is zero, which makes the bFlags29 palette gate
+ * observable. */
+#define MINI_GRID_CELLS (PUFO_MAP_CELL_DIM * PUFO_MAP_CELL_DIM * 4)
+
+static MapCell       *g_apMiniGrid[MINI_GRID_CELLS];
+static MapCell        g_miniCell;
+static MapCell        g_miniHome;
+static Mc1Rec         g_aMiniSpr[4];
+static Mc1Rec        *g_apMiniMc1[3];
+static Soldier        g_miniUnit;
+static TactItem       g_miniItem;
+static IsoGrid        g_miniGrid;
+static IsoDrawCtx     g_miniIso;
+static IsoMinimapEnv  g_miniEnv;
+static IsoSpriteBases g_miniBases;
+static UiControl      g_miniBank[PUFO_PBANK_WIDGET_COUNT];
+static PadImage       g_miniCtlPad;
+static PadImage       g_miniCursor;
+static u8             g_aMiniCursorBlob[5];
+static GfxColorEnv    g_miniColor;
+static i32            g_nMiniScrollX;
+static i32            g_nMiniScrollY;
+static i32            g_nMiniCtlBlits;
+
+static void MiniHook_BlitPad(const PadImage *pPad, void *pUser)
+{
+    (void)pPad; (void)pUser;
+    ++g_nMiniCtlBlits;
+}
+
+static void MiniFixture_Reset(void)
+{
+    i32 k;
+
+    memset(&g_miniCell, 0, sizeof(g_miniCell));
+    memset(&g_miniHome, 0, sizeof(g_miniHome));
+    memset(g_aMiniSpr, 0, sizeof(g_aMiniSpr));
+    memset(&g_miniUnit, 0, sizeof(g_miniUnit));
+    memset(&g_miniItem, 0, sizeof(g_miniItem));
+    memset(&g_miniGrid, 0, sizeof(g_miniGrid));
+    memset(&g_miniIso, 0, sizeof(g_miniIso));
+    memset(&g_miniEnv, 0, sizeof(g_miniEnv));
+    memset(&g_miniBases, 0, sizeof(g_miniBases));
+    memset(g_miniBank, 0, sizeof(g_miniBank));
+    memset(&g_miniCtlPad, 0, sizeof(g_miniCtlPad));
+    memset(&g_miniCursor, 0, sizeof(g_miniCursor));
+    memset(&g_miniColor, 0, sizeof(g_miniColor));
+
+    for (k = 0; k < MINI_GRID_CELLS; ++k) {
+        g_apMiniGrid[k] = &g_miniCell;
+    }
+
+    /* Sprite record 2 is the ground sprite the layer-0 pass looks up; uUnk20 0 gives glyph 35. */
+    g_apMiniMc1[0] = &g_aMiniSpr[0];
+    g_apMiniMc1[1] = &g_aMiniSpr[1];
+    g_apMiniMc1[2] = &g_aMiniSpr[2];
+    g_fontSys.apMc1Index = g_apMiniMc1;
+    g_fontSys.nMc1IndexCount = 3;
+
+    g_miniGrid.apCells = g_apMiniGrid;
+    g_miniGrid.nDimX   = 6;
+    g_miniGrid.nDimY   = 6;
+
+    g_miniEnv.pnScrollX    = &g_nMiniScrollX;
+    g_miniEnv.pnScrollY    = &g_nMiniScrollY;
+    g_miniEnv.nSpanX       = 0;   /* the shipped value: no writer exists in the original */
+    g_miniEnv.nSpanY       = 0;
+    g_miniEnv.nLayerCount  = 1;
+    g_miniEnv.nMapPhase    = 3;
+    g_miniEnv.pGrid        = &g_miniGrid;
+    g_miniEnv.pBases       = &g_miniBases;
+    g_miniEnv.pLabel       = "";
+    g_miniEnv.pMiniCursor  = &g_miniCursor;
+    g_miniEnv.pBank        = g_miniBank;
+    g_miniEnv.pColor       = &g_miniColor;
+    g_miniEnv.pfnCtlBlit   = MiniHook_BlitPad;
+    g_miniEnv.pfnCtlBlitEx = MiniHook_BlitPad;
+
+    g_nMiniScrollX = 0;
+    g_nMiniScrollY = 0;
+    g_nMiniCtlBlits = 0;
+
+    /* The three screen-2 controls, made drawable: mode 0, state 1, a pad in slot 1. */
+    for (k = 0; k < PUFO_PBANK_MINIMAP_COUNT; ++k) {
+        UiControl *pCtl = &g_miniBank[PUFO_PBANK_MINIMAP_FIRST + k];
+        pCtl->bEnabled  = 1;
+        pCtl->nMode     = 0;
+        pCtl->nState    = 1;
+        pCtl->apPads[1] = &g_miniCtlPad;
+    }
+
+    /* The cursor pad: 1 by 1, pixel 0x30 (the key is 0x3F, so it is not skipped), palette slot 0. */
+    g_aMiniCursorBlob[0] = 1; g_aMiniCursorBlob[1] = 0;
+    g_aMiniCursorBlob[2] = 1; g_aMiniCursorBlob[3] = 0;
+    g_aMiniCursorBlob[4] = 0x30;
+    PadImage_ctor(&g_miniCursor);
+    g_miniCursor.pData   = g_aMiniCursorBlob;
+    g_miniCursor.uWidth  = 1;
+    g_miniCursor.uHeight = 1;
+    g_miniCursor.nMode   = 0;
+    g_miniCursor.nOriginX = 5;
+    g_miniCursor.nOriginY = 5;
+}
+
+static void TestMinimap(void)
+{
+    printf("MapView_DrawMinimap @ 0x1ed4c\n");
+
+    /* --- the scroll clamp, max first then min --- */
+    MiniFixture_Reset();
+    g_nMiniScrollX = 1000;
+    g_nMiniScrollY = 1000;
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(g_nMiniScrollX, 30, "scroll X clamps to 40 * (6 - 3) / 4");
+    CheckEqI32(g_nMiniScrollY, 20, "scroll Y clamps to 40 * (6 - 4) / 4");
+
+    MiniFixture_Reset();
+    g_nMiniScrollX = -100;
+    g_nMiniScrollY = -100;
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(g_nMiniScrollX, -30, "and to -30 at the bottom");
+    CheckEqI32(g_nMiniScrollY, -40, "and -40 for Y");
+
+    /* --- the shipped case: no span, so no cell glyphs, but the furniture still runs --- */
+    MiniFixture_Reset();
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(InkRow(4), -1, "the span globals are never written, so no cell is ever drawn");
+    CheckEqI32(g_nMiniCtlBlits, 3, "the three screen-2 controls blit regardless");
+    Check(InkAt(5, 5) != 0, "the minimap cursor pad blits at its origin");
+    CheckEqI32(g_miniIso.szText[0], '1', "the label is the layer count, the text record being empty");
+    CheckEqI32(g_miniIso.szText[1], 0, "and nothing follows it");
+    CheckEqI32(g_miniIso.nScratch2, 3, "the control counter ends at three");
+
+    /* --- pass 1 runs even with no layers, and paints the fixed ground glyph --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 240;   /* bound 60 = 10 * nMapDimX */
+    g_miniEnv.nSpanY = 240;
+    g_miniEnv.nLayerCount = 0;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 35) != 0, "cell (0,0) gets the ground glyph at 4 * (tile - scroll)");
+    Check(InkAt(236, 271) != 0, "cell (59,59) gets it too");
+    CheckEqI32(g_miniIso.nScratch, 35, "the ground glyph is sprite 2's uUnk20 + 35");
+    CheckEqI32(g_miniIso.nTileX, 60, "the inner counter ends at the span bound");
+    CheckEqI32(g_miniIso.nTileY, 60, "and so does the outer one");
+    CheckEqI32(g_miniIso.nLayer, 0, "no layers, so pass 2 never ran");
+
+    /* --- pass 2: the four sprite glyphs, the palette gate, and the uUnk20 0 skip --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;     /* bound 1: only cell (0,0) */
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags29 = 0x10;
+    g_miniCell.bUnk56   = 0;  /* visible palette slot */
+    g_miniCell.pFloorSpr = &g_aMiniSpr[0];
+    g_aMiniSpr[0].uUnk20 = 1; /* glyph 36 */
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 35) != 0, "the ground glyph is still there");
+    Check(InkAt(0, 36) != 0, "and the floor sprite draws its own glyph");
+    CheckEqI32(g_miniIso.nScratch, 36, "stored in the context scratch");
+    CheckEqI32(g_miniIso.nPal, 0, "bFlags29 bit 4 selects the cell's bUnk56 as palette");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.pFloorSpr = &g_aMiniSpr[0];   /* uUnk20 stays 0 */
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(InkAt(0, 36), 0, "uUnk20 0 means the sprite has no minimap glyph");
+    Check(InkAt(0, 35) != 0, "while the ground glyph uses bUnk56 directly and is visible");
+    CheckEqI32(g_miniIso.nPal, 255, "without bFlags29 bit 4 the sprite palette is 255");
+
+    /* --- the item marker: item list AND bFlags29 bit 4 --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags29 = 0x10;
+    g_miniCell.bUnk56   = 0;
+    g_miniCell.pItemList = &g_miniItem;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 10) != 0, "phase 3 gives the item marker glyph 3 / 3 + 9 = 10");
+    CheckEqI32(g_miniIso.nScratch, 10, "and it lands in the scratch");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.pItemList = &g_miniItem;   /* bFlags29 clear */
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(InkAt(0, 10), 0, "an item list without the flag draws no marker");
+
+    /* --- the small-unit marker --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;    /* type 0: small */
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 1) != 0, "an operative small unit draws glyph phase / 3 = 1");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;
+    g_miniUnit.bStatus  = 1;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 4) != 0, "a non-operative small unit adds 3");
+
+    /* --- the large-unit marker: direction from its home cell, +12 when not operative --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;
+    g_miniUnit.nUnitType = 4;             /* large */
+    g_miniUnit.pCell     = &g_miniHome;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 16) != 0, "same cell gives 4 * (phase / 3 + 3) = 16");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;
+    g_miniUnit.nUnitType = 4;
+    g_miniUnit.pCell     = &g_miniHome;
+    g_miniHome.nX = 0; g_miniHome.nY = 1;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 18) != 0, "same column gives 4 * (phase / 3) + 14");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;
+    g_miniUnit.nUnitType = 4;
+    g_miniUnit.pCell     = &g_miniHome;
+    g_miniHome.nX = 1; g_miniHome.nY = 0;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 17) != 0, "same row gives 4 * (phase / 3) + 13");
+
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniCell.bFlags44 = 1;
+    g_miniCell.pUnit    = &g_miniUnit;
+    g_miniUnit.nUnitType = 4;
+    g_miniUnit.pCell     = &g_miniHome;
+    g_miniHome.nX = 1; g_miniHome.nY = 1;
+    g_miniUnit.bStatus   = 1;
+    ClearSurface();
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    Check(InkAt(0, 31) != 0, "neither gives 4 * (phase / 3) + 15, plus 12 when not operative");
+
+    /* --- the label: text record copy with the layer count appended --- */
+    MiniFixture_Reset();
+    g_miniEnv.pLabel      = "AB";
+    g_miniEnv.nLayerCount = 2;
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(g_miniIso.szText[0], 'A', "the label is copied first");
+    CheckEqI32(g_miniIso.szText[1], 'B', "byte for byte");
+    CheckEqI32(g_miniIso.szText[2], '2', "and the decimal layer count is appended");
+    CheckEqI32(g_miniIso.szText[3], 0, "with the terminator after it");
+
+    /* --- the layer counter ends one past the last layer drawn --- */
+    MiniFixture_Reset();
+    g_miniEnv.nSpanX = 4;
+    g_miniEnv.nSpanY = 4;
+    g_miniEnv.nLayerCount = 2;
+    MapView_DrawMinimap(&g_miniIso, &g_miniEnv);
+    CheckEqI32(g_miniIso.nLayer, 2, "two layers run the pass twice");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1976,6 +2266,7 @@ int main(void)
     TestUnitPoseTable();
     TestUnitWeaponPass();
     TestUnitNulls();
+    TestMinimap();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

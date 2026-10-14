@@ -56,12 +56,12 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 677 / 1103 (61.4%)
-                                             bytes cited:     259980 / 598792 (43.4%)
-python docs/parity/audit_credits.py       -> credited functions: 676, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 678 / 1103 (61.5%)
+                                             bytes cited:     262092 / 598792 (43.8%)
+python docs/parity/audit_credits.py       -> credited functions: 678, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 75, ORIGINAL BUG markers in src/pufo: 19
+python docs/parity/audit_bugs.py          -> ledger rows: 78, ORIGINAL BUG markers in src/pufo: 22
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 37 tables checked, 0 mismatched
 ```
@@ -74,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 51 suites: **7260**.
+Test checks run across the 51 suites: **7297**.
 
 ### Per-subsystem status
 
@@ -673,8 +673,16 @@ does.
    so `IsoLayerEnv` is where the seven per-cell gates get assembled — `Render_Frame` will own it. Two
    passes per layer (floors first, everything else second), and the unresolved-cell fallback runs on
    layer 0 only.
-3. `Tact_DrawCommandPads` (0x1fc8c) and then `Render_Frame` (0x22310) itself, which is the caller that
-   fills `IsoLayerEnv`.
+3. Done: `MapView_DrawMinimap` (0x1ed4c, 2,112 B) is ported in `src/pufo/game/pufo_isodraw.c` behind
+   `IsoMinimapEnv`, with 37 checks in `tests/test_isodraw.c`. Its two loop-bound globals
+   `Map_nMinimapSpanX/Y` (Map+0x30/0x32) have no writer anywhere in the binary, so the shipped beta
+   never runs the cell passes; the port models them as env inputs. Named this step:
+   `Map_nMinimapScrollX/Y` (0x118864/0x118868), `pMinimapCursorPad` (0x1571F0) and `aTextRec17`
+   (0xB466D). `IsoDrawCtx.szText` corrected to 80 bytes (the scratch dword sits at 0xFC) and
+   `IsoSpriteBases` gained `nScangBase` (fontSys+0x2E).
+4. `Tact_DrawCommandPads` (0x1fc8c), `MainMenu_Draw` (0x1dbb8) and then `Render_Frame` (0x22310)
+   itself, which is the caller that fills `IsoLayerEnv` and `IsoMinimapEnv`; `Render_Frame` also needs
+   `Geoscape_Draw` (0x8c180) from Priority 3.
 
 ### Priority 3 — the geoscape
 

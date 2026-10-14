@@ -6880,6 +6880,57 @@ Four globals this function reads are now named: `nTileCountX` (Map+0x34) and `nT
 written by the camera-scroll input handlers; `bDeployPanelOpen` (Map+0x15110); and `pActiveLookCtl`
 (`dword_1571E4`), the control `Input_OnPointer` last touched.
 
+### `MapView_DrawMinimap @ 0x1ed4c` — the look-mode overview
+
+A sibling of the iso layer rather than a callee: `Render_Frame @ 0x22310` calls it when `Map_nUiScreen`
+is 2, and it reuses the same `IsoDrawCtx` (nTileX/nTileY/nLayer/nPal/pUnit/nScratch/nScratch2/szText)
+while reaching none of the per-cell chain. Ported in `src/pufo/game/pufo_isodraw.c` behind
+`IsoMinimapEnv`, tested by `TestMinimap` in `tests/test_isodraw.c` (37 checks).
+
+**The cell passes are dead in the shipped beta.** The loop bounds are `Map_nMinimapSpanX >> 2` and
+`Map_nMinimapSpanY >> 2` (Map+0x30 / Map+0x32, u16), and no instruction in the binary ever stores to
+them — the only ten references are LDRH reads here and in `MapView_EnterLookMode @ 0x163d4`, which
+reads them as `>> 1` for its camera-centre input and gets 0 there too. The shipped minimap therefore
+draws only the cursor pad, the label and the three controls. The port reproduces the arithmetic, takes
+the spans as env inputs, and the test pins both the dormant case and an explicit span.
+
+**The scroll clamp.** `Map_nMinimapScrollX` / `Map_nMinimapScrollY` (Map+0x4EAC / 0x4EB0) are clamped
+max-first then min: `40 * (nMapDimX - 3) / 4` and `40 * (nMapDimY - 4) / 4` as ceilings, -30 and -40
+as floors, each comparison against the value the previous clamp left. The ARM's
+`MOVS / ADDMI #3 / ASR #2` is truncating division, so C's `/` reproduces it. `Input_OnLeft` /
+`Input_OnRight` pan X while screen 2 is active, `Input_OnPointer` drags both, and
+`MapView_EnterLookMode` seeds them from the iso camera offset plus the camera-centre bytes
+(Map+0x4A40/41, written by `MapView_SetCamOffset`) minus the visible half-extent 30/40.
+
+**Pass 1** (layer 0, and it runs even when `nLayerScratch` is 0) paints every valid cell with one
+ground glyph, `nScangSprBase + (sprite2->uUnk20 + 35)` — the sprite is the fixed record at flat index
+2, so the pass paints a uniform ground — with the cell's `bUnk56` as palette, at
+`4 * (tile - scroll)`. The lookup result is dereferenced with no null test (0x1EEA4).
+
+**Pass 2** walks `nLayerScratch` layers (validity still tested at layer 0 — the bounds are
+layer-independent) and draws per cell: the four sprite records in order (floor, wall A, wall B,
+ceiling), each as `nScangSprBase + (uUnk20 + 35)` and skipped when `uUnk20` is 0, with palette
+`bUnk56` when `bFlags29` bit 4 is set and 255 otherwise; the item marker
+`nScangSprBase + (nMapPhase / 3 + 9)` when the cell has an item list AND `bFlags29` bit 4; and the
+occupant marker — a large unit (`byte_A7B80[4*type+1] == 1`) picks its glyph by how its home cell
+(`unit + 0x10`, nX@0x1A nY@0x1B) sits against the drawn one (same cell `4*(phase/3+3)`, same column
+`+14`, same row `+13`, neither `+15`, plus 12 when `bStatus` is not OPERATIVE), a small unit uses
+`phase/3` plus 3 when not operative. The markers always use palette 0.
+
+**The furniture.** The `minimcur` pad (`pMinimapCursorPad`, the only centre-origin pad
+`Tact_LoadUiPads @ 0x3b068` loads, cleared by `Tact_Shutdown`) blitted at key 0x3F; the label —
+`aTextRec17` (`aTextRecs` record 17, 0xB38D0 + 205*17, loaded from lang.dat and never rewritten: the
+copy at 0x1F4DC is its only reference in the whole binary) copied to its NUL with no bound
+(ORIGINAL BUG, 0x1F4DC) with the decimal `nLayerScratch` appended at `szText[50]` — drawn at (0,0)
+after the white/grey colour pair; and the three screen-2 controls at `pBank + 0xC40` (widgets 98..100,
+the same bank the iso panel re-bases).
+
+**Context layout fix.** The scratch dword the minimap stores per glyph and reads back as a u16 sits at
+`IsoDrawCtx + 0xFC`, which is why `szText` is 80 bytes (0xAC..0xF3) rather than the 84 previously
+assumed; the IDB struct already had `nScratch` at that offset. Five globals named this step:
+`Map_nMinimapSpanX/Y`, `Map_nMinimapScrollX/Y`, `pMinimapCursorPad` (`unk_1571F0`) and `aTextRec17`
+(`unk_B466D`).
+
 ## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
 
 All four of its callees are ported (`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Tact_SelectUnit`,

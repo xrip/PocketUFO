@@ -8,6 +8,8 @@
 #include "game/pufo_unit.h"   /* Unit_bIsOperative / Unit_bIsLarge */
 #include "render/pufo_render.h" /* SoftSurf_BlitSrcRect / PadImage_BlitEx */
 
+#include "util/pufo_str.h" /* pufo_strcat, the bounded label append */
+
 #include <math.h>
 #include <stdio.h>  /* snprintf, the bounded stand-in for the original's itoa and byte copy */
 
@@ -740,6 +742,175 @@ void MapView_DrawIsoLayer(IsoDrawCtx *pIso, const IsoLayerEnv *pEnv)
     if (pEnv->nUiScreen != 0 && pEnv->nUiScreen != 13) {
         SoftSurf_BlitSrcRectEx(g_pMainSurface, 0, 0, 240, 320, 0x37, 55, 140, 128);
     }
+}
+
+/* ------------------------------------------------------------ the minimap
+ *
+ * MapView_DrawMinimap @ 0x1ed4c. The look-mode overview; see the header for the env and for the
+ * dead span globals that keep both cell passes from ever running in the shipped beta. */
+
+/* One of the cell's four sprite records: uUnk20 is its minimap glyph id, and 0 means the sprite has
+ * no minimap glyph at all. The glyph index is stored in the context scratch exactly as the original
+ * stores it, even when nothing is drawn. */
+static void DrawMinimapSpriteGlyph(IsoDrawCtx *pIso, const IsoSpriteBases *pBases,
+                                   const Mc1Rec *pSpr, i32 x, i32 y, i32 nPal)
+{
+    i32 nIdx;
+
+    if (pSpr == NULL) {
+        return;
+    }
+    nIdx = (i32)pSpr->uUnk20 + 35;
+    pIso->nScratch = nIdx;
+    if (nIdx == 35) {
+        return;
+    }
+    (void)Font_DrawGlyph(x, y, (u16)((i32)pBases->nScangBase + nIdx), nPal);
+}
+
+void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
+{
+    const IsoGrid   *pGrid = pEnv->pGrid;
+    MapCell         *pCell;
+    MapGeom          geom;
+    i32              nScrollX, nScrollY;
+    i32              nIdx;
+
+    SoftSurf_BlitRectProxy(0, 0, 0, 240, 320, 0, 0, 0);
+
+    /* The scroll clamp, max first then min, each comparing the value the previous clamp left. The
+     * ARM's MOVS / ADDMI #3 / ASR #2 is truncating division, which C's / reproduces; the dimension
+     * is a u8 byte read with LDRB before the subtraction. */
+    nScrollX = *pEnv->pnScrollX;
+    if (nScrollX > 40 * (pGrid->nDimX - 3) / 4) {
+        nScrollX = 40 * (pGrid->nDimX - 3) / 4;
+        *pEnv->pnScrollX = nScrollX;
+    }
+    nScrollY = *pEnv->pnScrollY;
+    if (nScrollY > 40 * (pGrid->nDimY - 4) / 4) {
+        nScrollY = 40 * (pGrid->nDimY - 4) / 4;
+        *pEnv->pnScrollY = nScrollY;
+    }
+    if (nScrollX < -30) {
+        nScrollX = -30;
+        *pEnv->pnScrollX = nScrollX;
+    }
+    if (nScrollY < -40) {
+        nScrollY = -40;
+        *pEnv->pnScrollY = nScrollY;
+    }
+
+    geom.nDimX = (u8)pGrid->nDimX;
+    geom.nDimY = (u8)pGrid->nDimY;
+
+    /* Pass 1: the ground glyph on every valid layer-0 cell. It runs even when there are no layers,
+     * and its sprite is the fixed record at flat index 2. ORIGINAL BUG (0x1EEA4): the original
+     * dereferences the lookup result with no null test. */
+    for (pIso->nTileY = nScrollY; pIso->nTileY < (i32)pEnv->nSpanY >> 2; ++pIso->nTileY) {
+        for (pIso->nTileX = nScrollX; pIso->nTileX < (i32)pEnv->nSpanX >> 2; ++pIso->nTileX) {
+            if (Map_IsValidCell(&geom, pIso->nTileX, pIso->nTileY, 0)) {
+                Mc1Rec *pGround = Font_GetSprByIndex(&g_fontSys, 2u);
+
+                nIdx = (i32)pGround->uUnk20 + 35;
+                pIso->nScratch = nIdx;
+                pCell = pGrid->apCells[PUFO_MAP_CELL_DIM * pIso->nTileY + pIso->nTileX];
+                (void)Font_DrawGlyph(4 * (pIso->nTileX - nScrollX), 4 * (pIso->nTileY - nScrollY),
+                                     (u16)((i32)pEnv->pBases->nScangBase + nIdx),
+                                     (i32)pCell->bUnk56);
+            }
+        }
+    }
+
+    /* Pass 2: the per-layer content. Validity is still tested at layer 0 - the bounds are
+     * layer-independent, so that is enough for the cell fetch below. */
+    pIso->nLayer = 0;
+    if ((i32)pEnv->nLayerCount > 0) {
+        do {
+            const i32 nLayer = (i32)pIso->nLayer;
+
+            for (pIso->nTileY = nScrollY; pIso->nTileY < (i32)pEnv->nSpanY >> 2; ++pIso->nTileY) {
+                for (pIso->nTileX = nScrollX; pIso->nTileX < (i32)pEnv->nSpanX >> 2; ++pIso->nTileX) {
+                    if (Map_IsValidCell(&geom, pIso->nTileX, pIso->nTileY, 0)) {
+                        const i32 nX = pIso->nTileX;
+                        const i32 nY = pIso->nTileY;
+                        const i32 nXs = 4 * (nX - nScrollX);
+                        const i32 nYs = 4 * (nY - nScrollY);
+
+                        pCell = pGrid->apCells[PUFO_MAP_CELL_DIM * (PUFO_MAP_CELL_DIM * nLayer + nY)
+                                               + nX];
+                        pIso->nPal = ((pCell->bFlags29 & 0x10u) != 0) ? (i32)pCell->bUnk56 : 255;
+
+                        DrawMinimapSpriteGlyph(pIso, pEnv->pBases, pCell->pFloorSpr, nXs, nYs,
+                                               pIso->nPal);
+                        DrawMinimapSpriteGlyph(pIso, pEnv->pBases, pCell->pWallSprA, nXs, nYs,
+                                               pIso->nPal);
+                        DrawMinimapSpriteGlyph(pIso, pEnv->pBases, pCell->pWallSprB, nXs, nYs,
+                                               pIso->nPal);
+                        DrawMinimapSpriteGlyph(pIso, pEnv->pBases, pCell->pCeilSpr, nXs, nYs,
+                                               pIso->nPal);
+
+                        if (pCell->pItemList != NULL && (pCell->bFlags29 & 0x10u) != 0) {
+                            nIdx = (i32)pEnv->nMapPhase / 3 + 9;
+                            pIso->nScratch = nIdx;
+                            (void)Font_DrawGlyph(nXs, nYs,
+                                                 (u16)((i32)pEnv->pBases->nScangBase + nIdx), 0);
+                        }
+
+                        if ((pCell->bFlags44 & 1u) != 0 && MapCell_HasOccupant(pCell)) {
+                            Soldier *pUnit = pCell->pUnit;
+                            pIso->pUnit = pUnit;
+
+                            if (Unit_bIsLarge(pUnit)) {
+                                const MapCell *pHome = pUnit->pCell;
+                                const i32      nPhase = (i32)pEnv->nMapPhase / 3;
+
+                                if ((i32)pHome->nX == nX) {
+                                    nIdx = ((i32)pHome->nY == nY) ? 4 * (nPhase + 3)
+                                                                  : 4 * nPhase + 14;
+                                } else {
+                                    nIdx = ((i32)pHome->nY == nY) ? 4 * nPhase + 13
+                                                                  : 4 * nPhase + 15;
+                                }
+                                if (pUnit->bStatus != UNIT_STATUS_OPERATIVE) {
+                                    nIdx += 12;
+                                }
+                            } else {
+                                nIdx = (i32)pEnv->nMapPhase / 3;
+                                if (pUnit->bStatus != UNIT_STATUS_OPERATIVE) {
+                                    nIdx += 3;
+                                }
+                            }
+                            pIso->nScratch = nIdx;
+                            (void)Font_DrawGlyph(nXs, nYs,
+                                                 (u16)((i32)pEnv->pBases->nScangBase
+                                                      + (u16)pIso->nScratch), 0);
+                        }
+                    }
+                }
+            }
+
+            pIso->nLayer = (u8)(pIso->nLayer + 1);
+        } while ((i32)pIso->nLayer < (i32)pEnv->nLayerCount);
+    }
+
+    PadImage_BlitEx(pEnv->pMiniCursor, 0x3F);
+
+    /* ORIGINAL BUG (0x1F4DC): the label is copied byte by byte to its NUL with no bound; the source
+     * is a 205-byte text record and the context buffer is 80. snprintf bounds the copy. The layer
+     * count is itoa'd into szText[50] and then appended, exactly as the original does it. */
+    (void)snprintf(pIso->szText, sizeof(pIso->szText), "%s", pEnv->pLabel);
+    (void)snprintf(&pIso->szText[50], sizeof(pIso->szText) - 50, "%d", (i32)pEnv->nLayerCount);
+    (void)pufo_strcat(pIso->szText, &pIso->szText[50], sizeof(pIso->szText));
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 255, 255, 255, 90, 90, 90);
+    Text_DrawString(0, 0, pIso->szText);
+
+    pIso->nScratch2 = 0;
+    do {
+        (void)UiControl_BlitActivePad(&pEnv->pBank[PUFO_PBANK_MINIMAP_FIRST + pIso->nScratch2],
+                                      pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+        pIso->nScratch2 = pIso->nScratch2 + 1;
+    } while (pIso->nScratch2 < PUFO_PBANK_MINIMAP_COUNT);
 }
 
 /* ------------------------------------------------------------ iso unit animation tables

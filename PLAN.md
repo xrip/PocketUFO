@@ -193,8 +193,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
   Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
   `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain. In Priority 2
-  the map frame is now assembled; what is left there is `Tact_DrawCommandPads (0x1fc8c)` and the
-  caller `Render_Frame (0x22310)`.
+  the map frame and the minimap are now assembled; what is left there is `Tact_DrawCommandPads
+  (0x1fc8c)`, `MainMenu_Draw (0x1dbb8)` and the caller `Render_Frame (0x22310)`, which also wants
+  `Geoscape_Draw (0x8c180)` from Priority 3.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
   - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
@@ -262,6 +263,26 @@ Order is by what unblocks what. Each item ends with gates + commit.
     draw context instead of the Map
   - [x] `test_isodraw` now links `pufo_ui`, because `pufo_isodraw.obj` reaches
     `UiControl_BlitActivePad` through `pufo_tacthud.obj`. That is the known cycle, not a new one.
+- [x] `MapView_DrawMinimap @ 0x1ed4c` (2,112 B) — ported in the same file behind `IsoMinimapEnv`, with
+  37 new checks in `tests/test_isodraw.c`. It is `Render_Frame`'s screen-2 branch and reuses
+  `IsoDrawCtx` without touching the per-cell chain.
+  - [x] the two loop-bound globals `Map_nMinimapSpanX/Y` (Map+0x30/0x32) have no writer anywhere in
+    the binary: the shipped minimap never runs its cell passes and draws only the pad, the label and
+    the three controls. The port models them as env inputs and reproduces the arithmetic; the test
+    pins both the dormant case and an explicit span.
+  - [x] the scroll clamp settled: max `40*(nMapDimX-3)/4` and `40*(nMapDimY-4)/4` first, then min
+    -30 / -40, each comparing the value the previous clamp left; the ARM's `MOVS / ADDMI #3 / ASR #2`
+    is truncating division, so C's `/` reproduces it.
+  - [x] `IsoDrawCtx` corrected: the scratch dword the minimap stores per glyph sits at 0xFC, so
+    `szText` is 80 bytes and not the 84 previously assumed; `IsoSpriteBases` gained `nScangBase`
+    (fontSys+0x2E, the minimap glyph group).
+  - [x] IDB: named `Map_nMinimapSpanX/Y` (0x1139E8/0x1139EA, u16), `Map_nMinimapScrollX/Y`
+    (0x118864/0x118868), `pMinimapCursorPad` (0x1571F0, `PadImage *`, the 'minimcur' pad
+    `Tact_LoadUiPads` loads), `aTextRec17` (0xB466D = aTextRecs + 205*17); comments at 0xAD310
+    (pBank+0xC40 = widgets 98..100, the screen-2 controls), 0x16440 (look-mode scroll seeding), and
+    line comments at 0x1EEA4 and 0x1F4DC.
+  - [x] three rows added to `bugs.tsv` (78 total): the dead span globals, the unguarded
+    `Font_GetSprByIndex` dereference at 0x1EEA4, and the unbounded label copy at 0x1F4DC.
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
@@ -282,15 +303,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
-  items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow` and `MapView_DrawIsoLayer` are
-  both done and only `Tact_DrawCommandPads` and `Render_Frame` remain. This is a change of order, not
-  of goal: the geoscape chain stays open and is listed above.
+  items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer` and
+  `MapView_DrawMinimap` are done and only `Tact_DrawCommandPads` and `MainMenu_Draw` remain before
+  `Render_Frame` can be assembled. This is a change of order, not of goal: the geoscape chain stays
+  open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer` is done, so what is left in this priority is
-   `Tact_DrawCommandPads (0x1fc8c)` and `Render_Frame (0x22310)` itself — the caller that will own the
-   `IsoLayerEnv` this step introduced. 3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer` and `MapView_DrawMinimap` are done, so what is
+   left in this priority is `Tact_DrawCommandPads (0x1fc8c)`, `MainMenu_Draw (0x1dbb8)` and
+   `Render_Frame (0x22310)` itself — the caller that will own the `IsoLayerEnv` and `IsoMinimapEnv`
+   these steps introduced, and which also needs `Geoscape_Draw (0x8c180)` from Priority 3.
+   3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
 
@@ -361,7 +385,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `BaseFac_SetCellBuildState` + `Base_GrantStarterItems` | 51/51 (Release) | 7170 | 674/1103 (61.1%) | 255372/598792 (42.6%) | 35 checked, 0 mismatched |
 | `Ship_SpawnAtSlot` | 51/51 (Release) | 7189 | 675/1103 (61.2%) | 256036/598792 (42.8%) | 35 checked, 0 mismatched |
 | `MapView_DrawUnitFacingArrow` | 51/51 (Release) | 7235 | 676/1103 (61.3%) | 258728/598792 (43.2%) | 37 checked, 0 mismatched |
-| `MapView_DrawIsoLayer` | 51/51 (Release) | 7260 | 677/1103 (61.4%) | 259980/598792 (43.4%) | 37 checked, 0 mismatched |
+| `MapView_DrawMinimap` | 51/51 (Release) | 7297 | 678/1103 (61.5%) | 262092/598792 (43.8%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
