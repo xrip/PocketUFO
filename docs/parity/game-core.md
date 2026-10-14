@@ -8873,3 +8873,72 @@ order is the original's own: slot i gets descriptor {0,1,2,3,4,7,8,9,10,11,12,5,
 `Game_StartNew @ 0x94554` (mode-0 branch) and `Geoscape_OnRadarListClick @ 0x854c4`
 (status panel) are hooks. The 13 root click handlers and the craft-select handler are
 env function pointers because `UiControl.pfnClick` takes no arguments.
+
+## Geoscape_BuildNavControls and the new-base screen
+
+Evidence: `Geoscape_BuildNavControls @ 0x67b1c`, `SoldierScreen_FindNextAtBase @ 0x6192c`,
+`SoldierScreen_FindPrevAtBase @ 0x618c4`, `Ui_SetTransferFlag @ 0x619a8`,
+`NewBaseScreen_Open @ 0x615d0`, `NewBaseScreen_TryConfirm @ 0x6152c`. Ported in
+`src/pufo/game/pufo_baseui.{h,c}`, tested by `tests/test_baseui.c`.
+
+### What the unit is
+
+`Geoscape_BuildNavControls` (callers: `Game_StartNew @ 0x9542C`, `Base_EnterBuildMode @
+0x84E6C`, `Ui_OpenResearch @ 0x84CBC`) builds three groups of heap `UiControl`s - ten nav
+buttons (`apNavCtl` @ 0x159888), the soldier-list page pair (`apSoldierPanelCtl` @ 0x1598B0)
+and the soldier-find trio (`apSoldierFindCtl` @ 0x1598B8). Each group: create all, wire all
+`pfnClick`, then `UiControl_Setup(0, 0, desc)` for all. The descriptors are `aGeodescNav` @
+0xAB4B0 (x = 1 for the first five and 120 for the second five, y = 229..301 step 18, pads
+"emptyb"/"cemptyb"), `aGeodescPanel` @ 0xAB5F0 ((210,20) up/sup, (210,40) down/sdown) and
+`aGeodescFind` @ 0xAB630 ((35,37) bnexts/bnext, (3,37) bprevs/bprev, (70,37)
+emptyb1/cemptyb1); `tools/gen_geoiinit_tables.py --check` prints all three and the port's
+tables match the image.
+
+Five click handlers came with it:
+
+- `SoldierScreen_FindNextAtBase` / `FindPrevAtBase`: move the soldier cursor
+  (`nSoldierCursor` @ 0x159E08) to the next / previous soldier whose base byte
+  `Soldier.nKind` (+0xB6, LDRB) equals `nSelectedBaseIdx` (0x159D81, LDRSB). On failure the
+  cursor is untouched and the return is the u16 count (next) or -1 (prev); FindPrev never
+  reads the count at all.
+- `Ui_SetTransferFlag`: Sound_Play(17, 4), then `bTransferFlag` (0x159E10) = 1.
+- `NewBaseScreen_Open`: sample 17; return if the signed base count (0x159D80) is 8; frame
+  control (unk_186B00) to (224, 1) as two STRH stores; screen id 2; confirm control
+  (unk_186BA4) gets `TryConfirm`; `Smap_ZoomOut` twice (2 -> 1 -> 0); `unk_187080` cleared;
+  frame control gets the close thunk.
+- `NewBaseScreen_TryConfirm`: sample 17; if the placement-pending byte (0x1870AC) is non-zero
+  the funds test is skipped; otherwise `nFunds (0x1598D8) - aNewBaseCostByRace[kind-128] >= 0`
+  also passes; on shortfall 0x1870C8 = 1, dword_1870B4 = 0, return 0. Passing runs
+  `Geoscape_OnMapClick`.
+
+### ARM facts the decompiler hides
+
+- The cost read is `ADD R3, base, byte, LSL#2` + `LDR R3,[R3,#-0x200]` (0x61554..0x61568). The
+  literal pool at 0x615A4 holds 0xAB488, so the table base is 0xAB488 and the index is
+  `byte_159DF4 - 128` - the -128 is the compiler's fold of -0x200/4, not a second table.
+  `byte_159DF4` (now `bPendingBaseKind`) is 128+kind; 0xFF marks "no pending placement" in the
+  pointer handlers.
+- 0x1870AC is read as a byte (LDRB at 0x6153C); the shortfall store into 0x1870C8 is a dword
+  (STRMI at 0x61574) while every reader in the image loads a byte.
+- The funds test is `SUBS R3, funds, cost` with MI = shortfall (0x61570): funds - cost == 0 passes.
+- `NewBaseScreen_Open`'s gate is LDRSB == 8 (0x615F0); its x/y stores are STRH.
+- FindNext/FindPrev compare LDRB (0..255) against a sign-extended LDRSB value: a negative
+  selected base matches nothing.
+
+### Deviations (all deliberate, all in the header)
+
+- The original stores a NULL from a failed `operator new` and dereferences slot 0 anyway
+  (0x67B74); the port guards every store and reports the failure through the return value.
+- The original never frees the fifteen controls (no code outside this function touches the
+  slots), so a second call leaks the first set; the port hands the pointers to the caller in
+  `NavControls`.
+- An out-of-range cost kind reads adjacent image bytes in the original; the port treats it as
+  cost 0 (the 0xFF sentinel reads zero padding at 0xAB684).
+- The 0x1870C8 shortfall store is a byte in the port (dword in the original, byte reads
+  everywhere).
+
+### Still hooked out
+
+`SoldierScreen_Toggle @ 0x64af0` and `ResearchScreen_Open @ 0x616ac` (two of the fifteen click
+handlers) arrive as env click thunks; `Geoscape_OnMapClick @ 0x8b4a8` (TryConfirm's tail call)
+is a hook.

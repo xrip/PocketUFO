@@ -627,3 +627,208 @@ i32 Funding_DeltaToArrow(i32 nDelta, i32 nTotal)
     }
     return 1; /* 0x5ABD4 */
 }
+
+/* SoldierScreen_FindNextAtBase @ 0x6192c. See the header for the evidence. */
+i32 SoldierScreen_FindNextAtBase(i32 *pnCursor, Soldier *const *apSoldiers, u16 nSoldierCount,
+                                 i8 nSelectedBaseIdx)
+{
+    i32 nIdx = *pnCursor + 1;                    /* 0x61948 ADD R0, #1 */
+    if (nIdx >= (i32)nSoldierCount) {            /* 0x61950 CMP/BGE, LDRH count at 0x61940 */
+        return nIdx;                             /* cursor untouched */
+    }
+    while ((i32)apSoldiers[nIdx]->nKind != (i32)nSelectedBaseIdx) { /* 0x61968..0x6198C */
+        nIdx += 1;                               /* 0x61978/0x6197C */
+        if (nIdx >= (i32)nSoldierCount) {        /* 0x6198C */
+            return nIdx;                         /* == the count, cursor untouched */
+        }
+    }
+    *pnCursor = nIdx;                            /* 0x619A0 */
+    return nIdx;
+}
+
+/* SoldierScreen_FindPrevAtBase @ 0x618c4: the same walk downward. It never reads the soldier
+ * count (0x618C4..0x61928 has no LDRH) — the walk is bounded by zero, not by the count. */
+i32 SoldierScreen_FindPrevAtBase(i32 *pnCursor, Soldier *const *apSoldiers, i8 nSelectedBaseIdx)
+{
+    i32 nIdx = *pnCursor - 1;                    /* 0x618D0 SUBS R0, #1 */
+    if (nIdx < 0) {                              /* 0x618D4 BMI */
+        return nIdx;                             /* cursor untouched */
+    }
+    while ((i32)apSoldiers[nIdx]->nKind != (i32)nSelectedBaseIdx) { /* 0x618F0..0x61910 */
+        nIdx -= 1;                               /* 0x61900/0x61904 */
+        if (nIdx < 0) {                          /* 0x61910 BPL falls out */
+            return nIdx;                         /* == -1, cursor untouched */
+        }
+    }
+    *pnCursor = nIdx;                            /* 0x61924 */
+    return nIdx;
+}
+
+/* Ui_SetTransferFlag @ 0x619a8. */
+void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser),
+                        void *pUser)
+{
+    if (pfnPlaySample != NULL) {
+        pfnPlaySample(17, 4, pUser); /* 0x619B4, MOV R1, #4 */
+    }
+    if (pbTransferFlag != NULL) {
+        *pbTransferFlag = 1;         /* 0x619C0 STRB */
+    }
+}
+
+/* aNewBaseCostByRace @ 0xAB488, ten dwords, indexed by (byte_159DF4 - 128). */
+const i32 g_anNewBaseCostByKind[PUFO_NEW_BASE_COST_COUNT] = {
+    800000, 600000, 1000000, 800000, 750000, 650000, 900000, 950000, 800000, 0
+};
+
+/* NewBaseScreen_Open @ 0x615d0. */
+void NewBaseScreen_Open(GeoscapeScreenState *pState, const NewBaseOpenEnv *pEnv)
+{
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, 4, pEnv->pUser); /* 0x615DC */
+    }
+    if (*pEnv->pbBaseCount == 8) {               /* 0x615F0 LDRSB, 0x615F4 CMP #8 */
+        return;
+    }
+    if (pEnv->pCtlFrame != NULL) {
+        pEnv->pCtlFrame->x = 224;                /* 0x61608 STRH #0xE0 */
+        pEnv->pCtlFrame->y = 1;                  /* 0x61614 STRH #1 */
+    }
+    pState->nGeoscapeScreen = 2;                 /* 0x61620, the screen id at 0x186BC4 */
+    if (pEnv->pCtlConfirm != NULL) {
+        pEnv->pCtlConfirm->pfnClick = pEnv->pfnTryConfirm; /* 0x6162C */
+    }
+    (void)Smap_ZoomOut(pEnv->pView, pEnv->pZoomSets, pEnv->pWorldOut); /* 0x61634 */
+    (void)Smap_ZoomOut(pEnv->pView, pEnv->pZoomSets, pEnv->pWorldOut); /* 0x6163C */
+    *pEnv->pbFlag187080 = 0;                     /* 0x6164C STRB */
+    if (pEnv->pCtlFrame != NULL) {
+        pEnv->pCtlFrame->pfnClick = pEnv->pfnCloseThunk; /* 0x61654 */
+    }
+}
+
+/* NewBaseScreen_TryConfirm @ 0x6152c. */
+i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv)
+{
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, 4, pEnv->pUser); /* 0x61538 */
+    }
+
+    if (bPlacementPending == 0) {                /* 0x6153C LDRB 0x1870AC, ANDS/BNE */
+        i32 nKind = (i32)pEnv->bPendingKind - 128;
+        i32 nCost = 0; /* deviation: the original reads the table unguarded (0x61554..0x61568);
+                        * an out-of-range kind reads adjacent image bytes, which are zero for
+                        * the 0xFF sentinel the pointer handlers use. */
+        if (nKind >= 0 && nKind < PUFO_NEW_BASE_COST_COUNT) {
+            nCost = g_anNewBaseCostByKind[nKind];
+        }
+        if (*pEnv->pnFunds - nCost < 0) {        /* 0x61570 SUBS, MI */
+            *pEnv->pbFlag1870C8 = 1;             /* 0x61574 STRMI (dword in the original, byte
+                                                  * everywhere it is read; see the header) */
+            *pEnv->pnFlag1870B4 = 0;             /* 0x61580 */
+            return 0;                            /* 0x61590 returns dword_1870B4, just cleared */
+        }
+    }
+
+    return pEnv->pfnMapClick(pEnv->pUser);       /* 0x61588 LDR R0,=0x1864F8; BL Geoscape_OnMapClick */
+}
+
+/* stru_AB4B0 @ 0xAB4B0: the ten nav-button descriptors. All ten carry pads "emptyb"/"cemptyb"
+ * with no third pad and mode 0; only the offsets differ. */
+const UiControlDesc g_aGeodescNav[PUFO_NAV_CTLS] = {
+    {   1, 229, "emptyb", "cemptyb", "", 0 },
+    {   1, 247, "emptyb", "cemptyb", "", 0 },
+    {   1, 265, "emptyb", "cemptyb", "", 0 },
+    {   1, 283, "emptyb", "cemptyb", "", 0 },
+    {   1, 301, "emptyb", "cemptyb", "", 0 },
+    { 120, 229, "emptyb", "cemptyb", "", 0 },
+    { 120, 247, "emptyb", "cemptyb", "", 0 },
+    { 120, 265, "emptyb", "cemptyb", "", 0 },
+    { 120, 283, "emptyb", "cemptyb", "", 0 },
+    { 120, 301, "emptyb", "cemptyb", "", 0 },
+};
+
+/* stru_AB5F0 @ 0xAB5F0: the soldier-list page buttons. */
+const UiControlDesc g_aGeodescPanel[PUFO_NAV_PANEL_CTLS] = {
+    { 210, 20, "up",   "sup",   "", 0 },
+    { 210, 40, "down", "sdown", "", 0 },
+};
+
+/* stru_AB630 @ 0xAB630: the soldier-find buttons. */
+const UiControlDesc g_aGeodescFind[PUFO_NAV_FIND_CTLS] = {
+    { 35, 37, "bnexts",  "bnext",  "", 0 },
+    {  3, 37, "bprevs",  "bprev",  "", 0 },
+    { 70, 37, "emptyb1", "cemptyb1", "", 0 },
+};
+
+/* operator new(0x20) + UiControl_ctor, as the three creation loops do (0x67B30, 0x67C18, 0x67CC8). */
+static UiControl *NavCtl_New(void)
+{
+    UiControl *pCtl = (UiControl *)malloc(sizeof(UiControl));
+    if (pCtl != NULL) {
+        UiControl_ctor(pCtl);
+    }
+    return pCtl;
+}
+
+/* Geoscape_BuildNavControls @ 0x67b1c. See the header for the evidence and the deviations. */
+bool Geoscape_BuildNavControls(NavControls *pOut, const NavCtlEnv *pEnv)
+{
+    i32 i;
+    bool bOk = true;
+
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {           /* 0x67B2C..0x67B5C */
+        pOut->apNav[i] = NavCtl_New();
+        if (pOut->apNav[i] == NULL) {
+            bOk = false;
+        }
+    }
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {           /* 0x67B74..0x67BE0 */
+        if (pOut->apNav[i] != NULL) {
+            pOut->apNav[i]->pfnClick = pEnv->apfnNavClick[i];
+        }
+    }
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {           /* 0x67BF4, UiControl_Setup(ctl, 0, 0, desc) */
+        if (pOut->apNav[i] != NULL) {
+            UiControl_Setup(pOut->apNav[i], 0, 0, &g_aGeodescNav[i],
+                            pEnv->pfnLoadPads, pEnv->pLoadPadsUser);
+        }
+    }
+
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {     /* 0x67C10..0x67C60 */
+        pOut->apPanel[i] = NavCtl_New();
+        if (pOut->apPanel[i] == NULL) {
+            bOk = false;
+        }
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {     /* 0x67C84/0x67C90 */
+        if (pOut->apPanel[i] != NULL) {
+            pOut->apPanel[i]->pfnClick = pEnv->apfnPanelClick[i];
+        }
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {     /* 0x67CA4 */
+        if (pOut->apPanel[i] != NULL) {
+            UiControl_Setup(pOut->apPanel[i], 0, 0, &g_aGeodescPanel[i],
+                            pEnv->pfnLoadPads, pEnv->pLoadPadsUser);
+        }
+    }
+
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {      /* 0x67CC0..0x67CF0 */
+        pOut->apFind[i] = NavCtl_New();
+        if (pOut->apFind[i] == NULL) {
+            bOk = false;
+        }
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {      /* 0x67D10..0x67D28 */
+        if (pOut->apFind[i] != NULL) {
+            pOut->apFind[i]->pfnClick = pEnv->apfnFindClick[i];
+        }
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {      /* 0x67D3C */
+        if (pOut->apFind[i] != NULL) {
+            UiControl_Setup(pOut->apFind[i], 0, 0, &g_aGeodescFind[i],
+                            pEnv->pfnLoadPads, pEnv->pLoadPadsUser);
+        }
+    }
+
+    return bOk;
+}

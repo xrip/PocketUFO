@@ -20,6 +20,8 @@
 #include "ui/pufo_control.h" /* UiControl, whose nState these handlers clear */
 #include "util/pufo_ptrarray.h" /* PtrArray, for StrategList_RegisterAtexit */
 #include "game/pufo_objectrec.h" /* ObjectRecFull, for Research_TopicNeedsItem */
+#include "game/pufo_unit.h"      /* Soldier, the array the Find* handlers walk */
+#include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -379,5 +381,150 @@ void OptionsScreen_PanelNext(struct UiPanel *const apPanels[4]);
  * current selected row and raises the flag; once raised it does nothing, so the cached row is never
  * refreshed by this path. Returns whether it cached. */
 bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow);
+
+/* ------------------------------------------------- the soldier-screen cursor movers
+ *
+ * Evidence: SoldierScreen_FindNextAtBase @ 0x6192c, SoldierScreen_FindPrevAtBase @ 0x618c4.
+ *
+ * The soldier screen keeps its selected soldier in the dword cursor at 0x159E08 (read by
+ * SoldierScreen_Draw @ 0x65290, EquipSelected @ 0x619cc, CopyNameToEdit @ 0x6318c and
+ * SelectListed @ 0x64a9c). These two handlers move it to the next / previous soldier that
+ * belongs to the base the screen is showing.
+ *
+ * FindNext (ARM 0x61930..0x619A4): nIdx = cursor + 1; if nIdx >= the u16 soldier count
+ * (unk_115350, LDRH at 0x61940) it returns nIdx with the cursor UNCHANGED. Otherwise it walks
+ * the soldier pointer array (Map + 0x1198, reached as `LDR R11,[R1,#0x1198]` at 0x61964) and
+ * compares each soldier's base byte at +0xB6 (Soldier.nKind, LDRB) against the selected base
+ * index (nSelectedBaseIdx @ 0x159D81, loaded SIGNED with LDRSB at 0x61960). On a match it
+ * stores the cursor and returns the index; running off the end returns the count itself.
+ *
+ * FindPrev mirrors it downward: cursor - 1, walk down, return -1 when nothing matches. It never
+ * reads the soldier count — the walk is bounded by zero, so the port drops the count argument.
+ *
+ * The compare is `CMP R11, R2` between a 0..255 byte and a sign-extended -128..127 byte: a
+ * negative selected index matches nothing, and the port reproduces that by widening both to
+ * i32. The original tests neither the count nor the pointers it walks. Deviation: the port
+ * keeps the unguarded dereference (the shipped arrays are dense), so a NULL entry is a crash
+ * in both binaries. */
+i32 SoldierScreen_FindNextAtBase(i32 *pnCursor, Soldier *const *apSoldiers, u16 nSoldierCount,
+                                 i8 nSelectedBaseIdx);
+i32 SoldierScreen_FindPrevAtBase(i32 *pnCursor, Soldier *const *apSoldiers, i8 nSelectedBaseIdx);
+
+/* Ui_SetTransferFlag @ 0x619a8: Sound_Play(17, 4) then byte_159E10 = 1 (STRB at 0x619C0).
+ * The transfer flag gates the soldier-transfer UI (read by EquipSelected @ 0x619cc,
+ * TextInputDialog @ 0x632cc, OnPointer @ 0x872d0, OnPointerUp @ 0x89450 and CloseUI @ 0x8b94c).
+ * The original returns the byte_159E10 address; no caller tests it, so the port returns void. */
+void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser),
+                        void *pUser);
+
+/* ------------------------------------------------- the new-base screen
+ *
+ * Evidence: NewBaseScreen_Open @ 0x615d0, NewBaseScreen_TryConfirm @ 0x6152c.
+ *
+ * Open (ARM 0x615D0..0x61658): Sound_Play(17, 4); if the SIGNED base count (0x159D80, LDRSB
+ * at 0x615F0) is already 8 it returns without touching anything. Otherwise it positions the
+ * frame control (unk_186B00) at x=224, y=1 (both STRH, so 16-bit stores), sets the geoscape
+ * screen id (0x186BC4) to 2, installs TryConfirm as the confirm control's (unk_186BA4) click
+ * handler, calls Smap_ZoomOut twice on the viewport at 0x1863E8 (2 -> 1 -> 0), clears
+ * byte_187080 (STRB at 0x6164C), and installs the close thunk on the frame control.
+ *
+ * TryConfirm (ARM 0x6152C..0x61590): Sound_Play(17, 4). If the placement-pending byte at
+ * 0x1870AC is non-zero the funds test is skipped entirely and Geoscape_OnMapClick runs.
+ * Otherwise cost = aNewBaseCostByRace[byte_159DF4 - 128] (the ARM composes it as
+ * `ADD R3, R0, R3, LSL#2` + `LDR R3,[R3,#-0x200]` at 0x61554..0x61568, so the byte is
+ * 128+kind and the table index is kind), and funds (unk_1598D8) - cost >= 0 also runs
+ * OnMapClick. On shortfall it stores 1 into 0x1870C8 and 0 into dword_1870B4 and returns
+ * dword_1870B4 (0); OnMapClick's result is returned otherwise.
+ *
+ * Width notes the source only shows in ARM: 0x1870AC is read as a BYTE (LDRB at 0x6153C);
+ * the failure store into 0x1870C8 is a DWORD store (STRMI at 0x61574) while every reader in
+ * the image loads it as a byte, so the port stores a byte (deviation, unobservable).
+ * byte_159DF4 is 128+kind (0xFF marks "no pending placement" in the pointer handlers); the
+ * original indexes the 10-entry cost table unguarded, so a kind outside 0..9 reads adjacent
+ * image bytes. The shipped paths reach kinds 0..9 only; the port treats out-of-range as cost 0
+ * (deviation, documented in pufo_baseui.c). */
+#define PUFO_NEW_BASE_COST_COUNT 10
+extern const i32 g_anNewBaseCostByKind[PUFO_NEW_BASE_COST_COUNT]; /* aNewBaseCostByRace @ 0xAB488 */
+
+typedef struct NewBaseOpenEnv {
+    void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
+    UiControl *pCtlFrame;          /* unk_186B00 (GEOUI_CTL_186B00) */
+    UiControl *pCtlConfirm;        /* unk_186BA4 (GEOUI_CTL_186BA4) */
+    SmapView *pView;               /* gSmapCam @ 0x1863E8 */
+    const SmapZoomSet *pZoomSets;  /* the three zoom layer sets */
+    SmapWorldSize *pWorldOut;      /* the u16 pair at 0x186BC0 */
+    i8 *pbBaseCount;               /* 0x159D80, signed */
+    u8 *pbFlag187080;              /* unk_187080 */
+    void (*pfnTryConfirm)(void);   /* NewBaseScreen_TryConfirm, installed at +0xC */
+    void (*pfnCloseThunk)(void);   /* NewBaseScreen_CloseThunk @ 0x615b0, installed at +0xC */
+    void *pUser;
+} NewBaseOpenEnv;
+
+void NewBaseScreen_Open(GeoscapeScreenState *pState, const NewBaseOpenEnv *pEnv);
+
+typedef struct NewBaseConfirmEnv {
+    void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
+    u8 bPendingKind;      /* byte_159DF4: 0xFF = none, else 128+kind */
+    i32 *pnFunds;         /* unk_1598D8 */
+    u8 *pbFlag1870C8;     /* 0x1870C8, the GeoscapeState low-supply flag */
+    i32 *pnFlag1870B4;    /* dword_1870B4 */
+    i32 (*pfnMapClick)(void *pUser); /* Geoscape_OnMapClick(&MEMORY[0x1864F8]), not ported */
+    void *pUser;
+} NewBaseConfirmEnv;
+
+i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv);
+
+/* ------------------------------------------------- the geoscape nav controls
+ *
+ * Evidence: Geoscape_BuildNavControls @ 0x67b1c. Callers: Game_StartNew @ 0x9542C,
+ * Base_EnterBuildMode @ 0x84E6C, Ui_OpenResearch @ 0x84CBC.
+ *
+ * Three groups of heap controls, each: operator new(0x20) + UiControl_ctor for all of them,
+ * then the pfnClick stores, then UiControl_Setup(ctl, 0, 0, desc) for all of them.
+ *
+ *   1. ten nav buttons at 0x159888..0x1598AC (Map + 0x120): NewBaseScreen_Open,
+ *      BaseInfoScreen_Open, SoldierScreen_Toggle, BasePlaneScreen_Open, BaseFacScreen_Open,
+ *      ResearchScreen_Open, ManufScreen_Open, TransferScreen_Open, BuySellScreen_OpenBuy,
+ *      BuySellScreen_OpenSell. Descriptors stru_AB4B0: x = 1 for the first five and 120 for
+ *      the second five, y = 229, 247, 265, 283, 301 (step 18), pads "emptyb"/"cemptyb", mode 0.
+ *   2. two soldier-list page buttons at 0x1598B0/B4: SoldierScreen_PanelPrev / PanelNext.
+ *      stru_AB5F0: (210, 20) "up"/"sup" and (210, 40) "down"/"sdown".
+ *   3. three soldier-find buttons at 0x1598B8..C0: SoldierScreen_FindNextAtBase,
+ *      SoldierScreen_FindPrevAtBase, Ui_SetTransferFlag. stru_AB630: (35, 37) "bnexts"/"bnext",
+ *      (3, 37) "bprevs"/"bprev", (70, 37) "emptyb1"/"cemptyb1".
+ *
+ * Two handlers are not ported yet (SoldierScreen_Toggle @ 0x64af0, ResearchScreen_Open @
+ * 0x616ac), so all fifteen handlers arrive through the env as plain click thunks, the same
+ * seam Geoscape_InitUI uses for its root controls.
+ *
+ * Deviations: the original stores a NULL from a failed operator new and then dereferences the
+ * first slot anyway (0x67B74); the port guards every store and reports the failure through the
+ * return value. The original never frees these fifteen controls (no code outside this function
+ * touches the slots), so a second call leaks the first set; the port hands the pointers to the
+ * caller in NavControls so the caller can release them. */
+#define PUFO_NAV_CTLS 10
+#define PUFO_NAV_PANEL_CTLS 2
+#define PUFO_NAV_FIND_CTLS 3
+
+typedef struct NavControls {
+    UiControl *apNav[PUFO_NAV_CTLS];         /* 0x159888..0x1598AC */
+    UiControl *apPanel[PUFO_NAV_PANEL_CTLS]; /* 0x1598B0/B4 */
+    UiControl *apFind[PUFO_NAV_FIND_CTLS];   /* 0x1598B8..0x1598C0 */
+} NavControls;
+
+typedef struct NavCtlEnv {
+    void (*apfnNavClick[PUFO_NAV_CTLS])(void);
+    void (*apfnPanelClick[PUFO_NAV_PANEL_CTLS])(void);
+    void (*apfnFindClick[PUFO_NAV_FIND_CTLS])(void);
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser);
+    void *pLoadPadsUser;
+} NavCtlEnv;
+
+extern const UiControlDesc g_aGeodescNav[PUFO_NAV_CTLS];         /* stru_AB4B0 @ 0xAB4B0 */
+extern const UiControlDesc g_aGeodescPanel[PUFO_NAV_PANEL_CTLS]; /* stru_AB5F0 @ 0xAB5F0 */
+extern const UiControlDesc g_aGeodescFind[PUFO_NAV_FIND_CTLS];   /* stru_AB630 @ 0xAB630 */
+
+bool Geoscape_BuildNavControls(NavControls *pOut, const NavCtlEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

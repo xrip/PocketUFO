@@ -20,6 +20,7 @@ IDA_VA_TO_FILE = 0x13000
 
 # name, IDA VA, port symbol, port file, entry count, struct format, byte stride (0 = packed)
 TABLES = [
+    ("new base cost by kind",    0xAB488, "g_anNewBaseCostByKind", "src/pufo/game/pufo_baseui.c",  10, "i", 0),
     ("shot sound by sort key",   0xAA040, "g_aShotSound",          "src/pufo/game/pufo_combat.c", 148, "H", 0),
     ("fire sound by sort key",   0xAA168, "g_aFireSoundBySortKey", "src/pufo/game/pufo_combat.c", 148, "H", 0),
     ("step deltas",              0xA7AE0, "g_aStepDir",            "src/pufo/game/pufo_path.c",    30, "b", 0),

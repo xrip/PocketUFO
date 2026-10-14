@@ -1,5 +1,6 @@
 /* test_baseui.c - base-screen scratch-cell helpers. */
 #include <stdio.h>
+#include <stdlib.h> /* free, the nav controls the test releases */
 #include <string.h>
 
 #include "game/pufo_baseui.h"
@@ -822,6 +823,306 @@ static void TestTopicNeedsItem(void)
     CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 60, 7), 1, "and base 7 holds 5");
 }
 
+/* ------------------------------------------------- the soldier cursor movers, the transfer
+ * flag, the new-base screen and the nav controls. */
+
+static void TestFindAtBase(void)
+{
+    static Soldier g_aSold[5];
+    static Soldier *g_apSold[5];
+    i32 nCursor;
+
+    printf("\nSoldierScreen_FindNextAtBase @ 0x6192c / FindPrevAtBase @ 0x618c4\n");
+    for (i32 i = 0; i < 5; ++i) {
+        g_apSold[i] = &g_aSold[i];
+    }
+    g_aSold[0].nKind = 1; /* the base byte at +0xB6 */
+    g_aSold[1].nKind = 2;
+    g_aSold[2].nKind = 1;
+    g_aSold[3].nKind = 2;
+    g_aSold[4].nKind = 1;
+
+    nCursor = 0;
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 5, 2), 1, "next from 0 finds 1");
+    CheckEqI32(nCursor, 1, "  cursor moved to 1");
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 5, 2), 3, "next from 1 skips base 1");
+    CheckEqI32(nCursor, 3, "  cursor moved to 3");
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 5, 2), 5, "no match past 3 returns the count");
+    CheckEqI32(nCursor, 3, "  cursor untouched on failure");
+    nCursor = 4;
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 5, 2), 5, "cursor + 1 == count returns early");
+    CheckEqI32(nCursor, 4, "  cursor untouched");
+
+    nCursor = 3;
+    CheckEqI32(SoldierScreen_FindPrevAtBase(&nCursor, g_apSold, 2), 1, "prev from 3 finds 1");
+    CheckEqI32(nCursor, 1, "  cursor moved to 1");
+    CheckEqI32(SoldierScreen_FindPrevAtBase(&nCursor, g_apSold, 2), -1, "prev from 1 runs off the bottom");
+    CheckEqI32(nCursor, 1, "  cursor untouched");
+
+    /* LDRB (0..255) against LDRSB (-128..127): a negative selected base matches nothing. */
+    nCursor = 0;
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 5, -1), 5, "negative base matches nothing");
+    CheckEqI32(SoldierScreen_FindPrevAtBase(&nCursor, g_apSold, -1), -1, "  nor backwards");
+
+    nCursor = 0;
+    CheckEqI32(SoldierScreen_FindNextAtBase(&nCursor, g_apSold, 0, 1), 1, "empty roster: 1 >= 0 returns 1");
+}
+
+static void TestTransferFlag(void)
+{
+    u8 bFlag = 0;
+
+    printf("\nUi_SetTransferFlag @ 0x619a8\n");
+    g_nOpenSample = 0;
+    g_nOpenSampleArg = 0;
+    Ui_SetTransferFlag(&bFlag, OpenSample, NULL);
+    Check(bFlag == 1, "byte_159E10 raised");
+    CheckEqI32(g_nOpenSample, 17, "sample 17");
+    CheckEqI32(g_nOpenSampleArg, 4, "  second argument 4");
+}
+
+static i32 g_nMapClickCalls;
+static i32 g_nMapClickResult;
+
+static i32 RecMapClick(void *pUser)
+{
+    (void)pUser;
+    g_nMapClickCalls++;
+    return g_nMapClickResult;
+}
+
+static void ThunkTryConfirm(void) {}
+static void ThunkClose(void) {}
+
+static void TestNewBaseScreen(void)
+{
+    static SmapView view;
+    static SmapZoomSet aSets[3];
+    static SmapWorldSize world;
+    UiControl frame, confirm;
+    GeoscapeScreenState state;
+    i8 bBaseCount;
+    u8 bFlag187080;
+    i32 nFunds;
+    u8 bFlag1870C8;
+    i32 nFlag1870B4;
+    NewBaseOpenEnv openEnv;
+    NewBaseConfirmEnv confEnv;
+
+    printf("\nNewBaseScreen_Open @ 0x615d0 / NewBaseScreen_TryConfirm @ 0x6152c\n");
+
+    memset(&openEnv, 0, sizeof(openEnv));
+    openEnv.pfnPlaySample = OpenSample;
+    openEnv.pCtlFrame = &frame;
+    openEnv.pCtlConfirm = &confirm;
+    openEnv.pView = &view;
+    openEnv.pZoomSets = aSets;
+    openEnv.pWorldOut = &world;
+    openEnv.pbBaseCount = &bBaseCount;
+    openEnv.pbFlag187080 = &bFlag187080;
+    openEnv.pfnTryConfirm = ThunkTryConfirm;
+    openEnv.pfnCloseThunk = ThunkClose;
+
+    UiControl_ctor(&frame);
+    UiControl_ctor(&confirm);
+    memset(&view, 0, sizeof(view));
+    view.nMode = 2;
+    aSets[0].uWorldW = 800; aSets[0].uWorldH = 400;
+    aSets[1].uWorldW = 600; aSets[1].uWorldH = 300;
+    aSets[2].uWorldW = 472; aSets[2].uWorldH = 236;
+    bBaseCount = 3;
+    bFlag187080 = 1;
+    state.nGeoscapeScreen = 9;
+    g_nOpenSample = 0;
+
+    NewBaseScreen_Open(&state, &openEnv);
+    CheckEqI32(g_nOpenSample, 17, "open plays sample 17");
+    CheckEqI32(frame.x, 224, "frame x = 224 (STRH)");
+    CheckEqI32(frame.y, 1, "frame y = 1 (STRH)");
+    CheckEqI32(state.nGeoscapeScreen, 2, "screen id 2 at 0x186BC4");
+    Check(confirm.pfnClick == ThunkTryConfirm, "confirm control wired to TryConfirm");
+    Check(frame.pfnClick == ThunkClose, "frame control wired to the close thunk");
+    CheckEqI32(view.nMode, 0, "two zoom steps take 2 -> 1 -> 0");
+    CheckEqI32((i32)world.uW, 800, "level 0 world width published");
+    CheckEqI32((i32)world.uH, 400, "level 0 world height published");
+    CheckEqI32(bFlag187080, 0, "byte_187080 cleared");
+
+    /* Eight bases: the sample plays, then nothing else happens (0x615F4 BEQ). */
+    UiControl_ctor(&frame);
+    UiControl_ctor(&confirm);
+    view.nMode = 2;
+    bBaseCount = 8;
+    bFlag187080 = 1;
+    state.nGeoscapeScreen = 9;
+    g_nOpenSample = 0;
+    NewBaseScreen_Open(&state, &openEnv);
+    CheckEqI32(g_nOpenSample, 17, "the sample plays before the count test");
+    CheckEqI32(frame.x, 0, "frame untouched");
+    CheckEqI32(state.nGeoscapeScreen, 9, "screen id untouched");
+    CheckEqI32(view.nMode, 2, "no zoom step");
+    CheckEqI32(bFlag187080, 1, "byte_187080 untouched");
+
+    memset(&confEnv, 0, sizeof(confEnv));
+    confEnv.pfnPlaySample = OpenSample;
+    confEnv.pfnMapClick = RecMapClick;
+    confEnv.pnFunds = &nFunds;
+    confEnv.pbFlag1870C8 = &bFlag1870C8;
+    confEnv.pnFlag1870B4 = &nFlag1870B4;
+
+    /* Pending placement (0x1870AC != 0) skips the funds test entirely. */
+    nFunds = 0;
+    confEnv.bPendingKind = 128 + 2; /* cost 1,000,000 */
+    bFlag1870C8 = 0;
+    nFlag1870B4 = 5;
+    g_nMapClickCalls = 0;
+    g_nMapClickResult = 77;
+    CheckEqI32(NewBaseScreen_TryConfirm(1, &confEnv), 77, "pending placement goes straight to OnMapClick");
+    CheckEqI32(g_nMapClickCalls, 1, "  OnMapClick reached despite zero funds");
+    Check(bFlag1870C8 == 0 && nFlag1870B4 == 5, "  failure flags untouched");
+
+    /* funds - cost == 0 passes (SUBS is not MI). */
+    nFunds = 1000000;
+    confEnv.bPendingKind = 128 + 2;
+    g_nMapClickCalls = 0;
+    CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "exact funds pass");
+    CheckEqI32(g_nMapClickCalls, 1, "  OnMapClick reached");
+
+    /* One short fails: 0x1870C8 = 1, dword_1870B4 = 0, return 0. */
+    nFunds = 999999;
+    confEnv.bPendingKind = 128 + 2;
+    bFlag1870C8 = 0;
+    nFlag1870B4 = 5;
+    g_nMapClickCalls = 0;
+    CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 0, "shortfall returns dword_1870B4");
+    CheckEqI32(g_nMapClickCalls, 0, "  OnMapClick not reached");
+    Check(bFlag1870C8 == 1, "  0x1870C8 raised");
+    CheckEqI32(nFlag1870B4, 0, "  dword_1870B4 cleared");
+
+    /* The table boundary: kind 0 costs 800000, kind 9 costs 0, 0xFF costs nothing (deviation). */
+    nFunds = 799999;
+    confEnv.bPendingKind = 128;
+    g_nMapClickCalls = 0;
+    CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 0, "kind 0 costs 800000");
+    nFunds = 0;
+    confEnv.bPendingKind = 128 + 9;
+    g_nMapClickCalls = 0;
+    CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "kind 9 costs 0");
+    confEnv.bPendingKind = 0xFF;
+    g_nMapClickCalls = 0;
+    CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "the 0xFF sentinel costs nothing");
+}
+
+static i32 g_nNavClick;
+static void NavClick0(void) { g_nNavClick = 0; }
+static void NavClick1(void) { g_nNavClick = 1; }
+static void NavClick2(void) { g_nNavClick = 2; }
+static void NavClick3(void) { g_nNavClick = 3; }
+static void NavClick4(void) { g_nNavClick = 4; }
+static void NavClick5(void) { g_nNavClick = 5; }
+static void NavClick6(void) { g_nNavClick = 6; }
+static void NavClick7(void) { g_nNavClick = 7; }
+static void NavClick8(void) { g_nNavClick = 8; }
+static void NavClick9(void) { g_nNavClick = 9; }
+static void NavClick10(void) { g_nNavClick = 10; }
+static void NavClick11(void) { g_nNavClick = 11; }
+static void NavClick12(void) { g_nNavClick = 12; }
+static void NavClick13(void) { g_nNavClick = 13; }
+static void NavClick14(void) { g_nNavClick = 14; }
+
+static i32 g_nPadLoads;
+
+static bool NavLoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser)
+{
+    (void)pCtl;
+    (void)psz0;
+    (void)psz1;
+    (void)psz2;
+    (void)pUser;
+    g_nPadLoads++;
+    return true;
+}
+
+static void TestBuildNavControls(void)
+{
+    static const i16 aNavPos[PUFO_NAV_CTLS][2] = {
+        { 1, 229 }, { 1, 247 }, { 1, 265 }, { 1, 283 }, { 1, 301 },
+        { 120, 229 }, { 120, 247 }, { 120, 265 }, { 120, 283 }, { 120, 301 },
+    };
+    static const i16 aPanelPos[PUFO_NAV_PANEL_CTLS][2] = { { 210, 20 }, { 210, 40 } };
+    static const i16 aFindPos[PUFO_NAV_FIND_CTLS][2] = { { 35, 37 }, { 3, 37 }, { 70, 37 } };
+    NavControls ctl;
+    NavCtlEnv env;
+    i32 i;
+
+    printf("\nGeoscape_BuildNavControls @ 0x67b1c\n");
+
+    memset(&ctl, 0, sizeof(ctl));
+    memset(&env, 0, sizeof(env));
+    env.apfnNavClick[0] = NavClick0;   env.apfnNavClick[1] = NavClick1;
+    env.apfnNavClick[2] = NavClick2;   env.apfnNavClick[3] = NavClick3;
+    env.apfnNavClick[4] = NavClick4;   env.apfnNavClick[5] = NavClick5;
+    env.apfnNavClick[6] = NavClick6;   env.apfnNavClick[7] = NavClick7;
+    env.apfnNavClick[8] = NavClick8;   env.apfnNavClick[9] = NavClick9;
+    env.apfnPanelClick[0] = NavClick10; env.apfnPanelClick[1] = NavClick11;
+    env.apfnFindClick[0] = NavClick12;  env.apfnFindClick[1] = NavClick13;
+    env.apfnFindClick[2] = NavClick14;
+    env.pfnLoadPads = NavLoadPads;
+    g_nPadLoads = 0;
+
+    Check(Geoscape_BuildNavControls(&ctl, &env), "all fifteen controls allocated");
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        Check(ctl.apNav[i] != NULL, "nav control allocated");
+    }
+    Check(ctl.apPanel[0] != NULL && ctl.apPanel[1] != NULL, "panel controls allocated");
+    Check(ctl.apFind[0] != NULL && ctl.apFind[1] != NULL && ctl.apFind[2] != NULL,
+          "find controls allocated");
+    CheckEqI32(g_nPadLoads, PUFO_NAV_CTLS + PUFO_NAV_PANEL_CTLS + PUFO_NAV_FIND_CTLS,
+               "UiControl_Setup ran once per control");
+
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        Check(ctl.apNav[i]->x == aNavPos[i][0] && ctl.apNav[i]->y == aNavPos[i][1],
+              "nav control at its stru_AB4B0 offset");
+        Check(ctl.apNav[i]->nMode == 0, "  descriptor mode 0");
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+        Check(ctl.apPanel[i]->x == aPanelPos[i][0] && ctl.apPanel[i]->y == aPanelPos[i][1],
+              "panel control at its stru_AB5F0 offset");
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+        Check(ctl.apFind[i]->x == aFindPos[i][0] && ctl.apFind[i]->y == aFindPos[i][1],
+              "find control at its stru_AB630 offset");
+    }
+
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        g_nNavClick = -1;
+        ctl.apNav[i]->pfnClick();
+        CheckEqI32(g_nNavClick, i, "nav click handler wired to its slot");
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+        g_nNavClick = -1;
+        ctl.apPanel[i]->pfnClick();
+        CheckEqI32(g_nNavClick, 10 + i, "panel click handler wired to its slot");
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+        g_nNavClick = -1;
+        ctl.apFind[i]->pfnClick();
+        CheckEqI32(g_nNavClick, 12 + i, "find click handler wired to its slot");
+    }
+
+    /* The original never frees these; the port hands them over, so the test releases them. */
+    for (i = 0; i < PUFO_NAV_CTLS; ++i) {
+        free(ctl.apNav[i]);
+    }
+    for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
+        free(ctl.apPanel[i]);
+    }
+    for (i = 0; i < PUFO_NAV_FIND_CTLS; ++i) {
+        free(ctl.apFind[i]);
+    }
+    Check(1, "controls released by the caller");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -846,6 +1147,10 @@ int main(void)
     TestAtAndHangarOpeners();
     TestTopicNeedsItem();
     TestRefreshPanels();
+    TestFindAtBase();
+    TestTransferFlag();
+    TestNewBaseScreen();
+    TestBuildNavControls();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

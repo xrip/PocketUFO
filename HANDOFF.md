@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 55 suites: **7673**.
+Test checks run across the 55 suites: **7773**.
 
 ### Per-subsystem status
 
@@ -285,12 +285,13 @@ This is the shortest chain that produces a real game session, in dependency orde
    Priority 1 item whose callees were all already ported.
 6. Done: `LoadGame` (0x44bbc) and its last blocking callee `Geoscape_InitUI` (0x857f4, 5,420 B) —
    InitUI is ported in `src/pufo/ui/pufo_geoiinit.{h,c}` with a real-archive test
-   (`tests/test_geoiinit.c`). What is left on the geoscape bring-up path: `Game_StartNew` (0x94554,
-   3,976 B, InitUI's mode-0 hook), `Geoscape_BuildNavControls` (0x67b1c) and its six unported click
-   handlers (`NewBaseScreen_Open`, `SoldierScreen_Toggle`, `ResearchScreen_Open`,
-   `SoldierScreen_FindNextAtBase/FindPrevAtBase`, `Ui_SetTransferFlag`), and `Geoscape_OnRadarListClick`
-   (0x854c4, the status panel click). The shell wiring (app-owned `GeoscapeInitEnv` + roster state,
-   replacing the `App_HookNewGame` notice) is the next step.
+   (`tests/test_geoiinit.c`). `Geoscape_BuildNavControls` (0x67b1c) and its click handlers are now
+   ported too (`pufo_baseui.c`: `NewBaseScreen_Open/TryConfirm`, `SoldierScreen_Find*AtBase`,
+   `Ui_SetTransferFlag`; `SoldierScreen_Toggle` and `ResearchScreen_Open` stay env thunks,
+   `Geoscape_OnMapClick` a hook). What is left on the geoscape bring-up path: `Game_StartNew` (0x94554,
+   3,976 B, InitUI's mode-0 hook) and `Geoscape_OnRadarListClick` (0x854c4, the status panel click).
+   The shell wiring (app-owned `GeoscapeInitEnv` + roster state, replacing the `App_HookNewGame`
+   notice) is the next step.
 
 ### Largest unported functions by size
 

@@ -440,16 +440,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   write-only residue (cleared here and in `Map_ComputeReachable`, never read). Verified: `--click
   120 170` (MenuCtl2) dumps the first credit line at y 300 with stars entering. IDB: comments at
   0x380d8/0x46e88/0x1571A0/0x156930, rename unk_1571A0 → Titles_apGlyphs.
-- [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
-  Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
-  array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
-  `NewBaseScreen_Open`, `BaseInfoScreen_Open`, `SoldierScreen_Toggle`, `BasePlaneScreen_Open`,
-  `BaseFacScreen_Open`, `ResearchScreen_Open`, `ManufScreen_Open`, `TransferScreen_Open`,
-  `BuySellScreen_OpenBuy`, `BuySellScreen_OpenSell`, `SoldierScreen_PanelPrev`,
-  `SoldierScreen_PanelNext`, `SoldierScreen_FindNextAtBase`, `SoldierScreen_FindPrevAtBase`,
-  `Ui_SetTransferFlag`. Every one of those is an unported screen. So `LoadGame` does not end at the
-  geoscape — it runs through Priority 4.
-  - Useful by-product: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
+- [x] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — ported in `src/pufo/game/pufo_baseui.{h,c}`,
+  tested by `tests/test_baseui.c`. It allocates 15 `UiControl` objects into the pointer array at
+  0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each. Nine handlers were already
+  ported; this unit adds `SoldierScreen_FindNextAtBase (0x6192c)`, `SoldierScreen_FindPrevAtBase
+  (0x618c4)`, `Ui_SetTransferFlag (0x619a8)`, `NewBaseScreen_Open (0x615d0)` and
+  `NewBaseScreen_TryConfirm (0x6152c)`. Still hooked: `SoldierScreen_Toggle (0x64af0)`,
+  `ResearchScreen_Open (0x616ac)` (env click thunks) and `Geoscape_OnMapClick (0x8b4a8)`
+  (TryConfirm's tail call). The descriptors are `aGeodescNav/Panel/Find` (0xAB4B0/0xAB5F0/0xAB630),
+  printed by `tools/gen_geoiinit_tables.py --check`. ARM facts: the cost read is
+  `ADD base+byte*4` then `LDR [R3,#-0x200]` (index = `byte_159DF4 - 128`, literal pool confirms the
+  0xAB488 base); 0x1870AC is a byte read; the shortfall store at 0x1870C8 is a dword while every
+  reader loads a byte; FindNext/Prev compare LDRB against a sign-extended LDRSB, so a negative
+  selected base matches nothing; FindPrev never reads the soldier count.
+  - By-product kept: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
@@ -550,6 +554,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `LoadGame` driver (`pufo_save.c`, sav7 round-trip) | 54/54 (Release) | 7599 | 701/1103 (63.6%) | 279864/598792 (46.7%) | 37 checked, 0 mismatched |
 | budget leaves (`Base_CountOutboundTransferSpace`, `Base_CountItemQtyAcrossBases`, `Base_CountPsiSoldiers`) | 54/54 (Release) | 7608 | 704/1103 (63.8%) | 280724/598792 (46.9%) | 37 checked, 0 mismatched |
 | `Geoscape_InitUI` (`pufo_geoiinit.c`, real-archive test) | 55/55 (Release) | 7673 | 708/1103 (64.2%) | 291100/598792 (48.6%) | 37 checked, 0 mismatched |
+| nav controls + new-base screen (`pufo_baseui.c`) | 55/55 (Release) | 7773 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
