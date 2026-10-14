@@ -9286,3 +9286,33 @@ pSolPanelNames->nUnk3032]` (0x64AD0) -- the roster index the row pass stored -- 
 returns `&nSoldierCursor` (0x64AD4).
 
 Deviation: the port returns the cursor value instead of a pointer.
+
+### `SoldierScreen_EquipSelected` (done)
+
+`src/pufo/game/pufo_baseui.c`, 28 new checks in `tests/test_baseui.c`. Installed by
+`SoldierScreen_Toggle` as the equip panel's +3020 click handler and wired in the shell through
+`World_SoldierEquipThunk`.
+
+`Sound_Play(17)` (0x619D8), then `pSol = apSoldiers[nSoldierCursor]` (0x619F4). The gate (0x61A1C)
+is `Soldier.bUnk183 >= 0xFE || apCraft[bUnk183].bAtBase != 0`: `bUnk183` (+0xB7) is the assigned
+craft index with 254/255 as the "no craft" sentinels and `bAtBase` is Ship +0x06, so a soldier on a
+craft that is off-base cannot be re-equipped and the handler changes nothing.
+
+The row is `pSolPanelEquip->anLineAux[pSolPanelEquip->nUnk3032]` (0x61A44) and the equipment is
+`apObjects[121 + nUnitType]`:
+
+| row | effect |
+|---|---|
+| 0 (0x61B30) | with `nUnitType` non-zero, `BaseRec_AddItemQty(base, apObjects[121 + nUnitType], 1)` returns the equipped item (0x61B60) and `nUnitType` goes to 0 (0x61B74) |
+| 1..3 (0x61AF0 / 0x61AE0 / 0x61A6C) | `nUnitType` takes the row number; with an old type non-zero the new item leaves the base (`BaseRec_SubItemQty`, 0x61A80) and the old one comes back (`BaseRec_AddItemQty`, 0x61AC4); with zero only the new item leaves (0x61B04) |
+| anything else | the tail only |
+
+The tail (0x61B78) clears `bTransferFlag @ 0x159E10`. The base is `apBases[nSelectedBaseIdx]` in all
+four calls (1117 dwords = Map + 0x1174), and the aux values the switch reads are written by
+`SoldierScreen_DrawEquipPanels` (0x62d78, renamed this step from `Ui_DrawTextInputDialog`): it fills
+the equip and stores panels with one row per item that has stock at the selected base and stores
+0..3 in `anLineAux`.
+
+Deviations: the port returns 1/0 where the original hands back `&bTransferFlag` or the soldier
+pointer, and it bounds the cursor, the base index, the craft index and the old `nUnitType` to the
+121..124 group (0x61A1C, bugs.tsv).

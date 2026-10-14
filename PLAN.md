@@ -392,6 +392,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `SoldierScreen_EquipSelected @ 0x619cc` (448 B) — ported in `pufo_baseui.{h,c}` behind
+  `SoldierEquipEnv`, 28 new checks in `tests/test_baseui.c`, and the soldier screen's equip panel now
+  runs for real in the shell (`World_SoldierEquipThunk`). The gate is `Soldier.bUnk183 >= 0xFE ||
+  apCraft[bUnk183].bAtBase` (a soldier on a craft that is off-base cannot be re-equipped); the row
+  comes from `pSolPanelEquip->anLineAux[nUnk3032]` and the equipment is `apObjects[121 + nUnitType]`,
+  so row 0 returns the equipped item to the base and rows 1..3 swap objects 122..124 against it, and
+  the tail clears `bTransferFlag @ 0x159E10`. IDB: function comments at 0x619cc and 0x62d78,
+  `Ui_DrawTextInputDialog` renamed `SoldierScreen_DrawEquipPanels` (its body fills and draws the
+  equip/stores panels from the selected base's stock — nothing to do with text input),
+  `unk_113CA4/113CA8/113CAC/113CB0` → `Map_apObjects121..124`, `dword_159D84/88/8C` →
+  `nEquipStock122/123/124`, `byte_AB710` → `nEquipRowCount`. One ledger row (92 total).
+- [x] citation hygiene: the two NEGATED citations `audit_credits` flagged are gone — `pufo_baseui.h`
+  no longer claims `SoldierScreen_Toggle @ 0x64af0` in the same breath as denying it, and
+  `pufo_world.c` writes `StrategList_ProcessEvents (0x7fcb0)`. Dropping the unported 4904-byte event
+  driver makes the headline honest rather than bigger: 727/1103 (65.9%) and 322856 bytes, not
+  728 / 327760.
 - [x] `SoldierScreen_Toggle @ 0x64af0` (1952 B) + `SoldierScreen_SelectListed @ 0x64a9c` (72 B)
   — ported in `pufo_baseui.{h,c}` behind `SoldierScreenEnv` / `SoldierSelectEnv`, 53 new checks in
   `tests/test_baseui.c`, and nav control slot 2 now opens the soldier screen for real
@@ -608,13 +624,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   one of the three is wrong. Not folded into this step — the arrow port takes the pointer through
   `IsoArrowGate.pThrownItem` and leaves the Map model alone.
 - [ ] The coverage metric counts **every** `@ 0xADDR` citation in `src/pufo`, so a comment that cites
-  an unported callee inflates the headline number. `pufo_baseui.h:418` cites `OnPointer @ 0x872d0`,
-  `OnPointerUp @ 0x89450` and `CloseUI @ 0x8b94c` — none of them ported — which is 3 functions and
-  17,668 bytes of the 727. New code writes unported callees as `Name (0xADDR)` so they stay out of the
-  count; that one line needs the same fix, and `coverage.py` could gain a check that a cited address
-  has a definition of the same name. The `pufo_uibank.c` handler-name table is the same class of
-  credit: it quotes the original bank entry's name and address as data, which counts even when only
-  the name string is recreated. Not folded into this step.
+  an unported callee inflates the headline number. `audit_names.py` reports the live list: 5 credited
+  addresses whose original name is not defined (24480 bytes, 4.1% of the binary) — `Geoscape_OnPointer
+  @ 0x872d0`, `Geoscape_OnPointerUp @ 0x89450`, `Ui_TextInputDialog @ 0x632cc`,
+  `Geoscape_CloseUI @ 0x8b94c` and `SoldierScreen_Draw @ 0x65290`. New code writes unported callees
+  as `Name (0xADDR)` so they stay out of the count, and `audit_credits.py` now reports zero negated
+  citations. The
+  `pufo_uibank.c` handler-name table is the same class of credit: it quotes the original bank entry's
+  name and address as data, which counts even when only the name string is recreated.
 
 ## Measured state
 
@@ -659,6 +676,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the geoscape map click + the build-dialog init (`pufo_baseui.c`, shell-wired) | 56/56 (Release) | 8029 | 727/1103 (65.9%) | 326700/598792 (54.6%) | 38 checked, 0 mismatched |
 | the build dialog itself (`BaseFacScreen_Toggle`, `BaseFacScreen_TryBuySelected`) | 56/56 (Release) | 8084 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 | the soldier screen (`SoldierScreen_Toggle`, `SoldierScreen_SelectListed`), shell-wired | 56/56 (Release) | 8137 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
+| the soldier equip rows (`SoldierScreen_EquipSelected`) + the two false citations removed | 56/56 (Release) | 8165 | 727/1103 (65.9%) | 322856/598792 (53.9%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

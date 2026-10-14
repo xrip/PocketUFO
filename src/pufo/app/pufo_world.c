@@ -126,6 +126,32 @@ static void World_SoldierSelectThunk(void)
     (void)SoldierScreen_SelectListed(&env);
 }
 
+/* SoldierScreen_EquipSelected @ 0x619cc, panel A's equip-row click. */
+static void World_SoldierEquipThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    SoldierEquipEnv env;
+    u16 nCount;
+
+    if (pW == NULL || pW->pSolPanelEquip == NULL || pW->pAssets == NULL) {
+        return;
+    }
+
+    nCount = (u16)pW->nSoldierCount;
+
+    memset(&env, 0, sizeof(env));
+    env.apSoldiers = pW->apSoldiers;
+    env.pnSoldierCount = &nCount;
+    env.apCraft = pW->apCraft;
+    env.apBases = pW->apBases;
+    env.apObjects = pW->pAssets->apObjects;
+    env.pnCursor = &pW->nSoldierCursor;
+    env.pnSelectedBaseIdx = &pW->nSelectedBase;
+    env.pPanelEquip = pW->pSolPanelEquip;
+    env.pbTransferFlag = &pW->bTransferFlag;
+    (void)SoldierScreen_EquipSelected(&env);
+}
+
 static void World_SoldierToggleThunk(void)
 {
     PufoWorldState *pW = g_pActiveWorld;
@@ -153,7 +179,7 @@ static void World_SoldierToggleThunk(void)
     /* The original installs SoldierScreen_CloseThunk (0x64ae4), which only tail-calls
      * Geoscape_CloseUI (0x8b94c); until that dispatcher is ported the seam stays a no-op. */
     pW->solEnv.pfnCloseSoldierThunk = World_NoopClick;
-    pW->solEnv.pfnEquipThunk = World_NoopClick;        /* SoldierScreen_EquipSelected, not ported */
+    pW->solEnv.pfnEquipThunk = World_SoldierEquipThunk;
     pW->solEnv.pfnSelectThunk = World_SoldierSelectThunk;
     pW->solEnv.pfnFormatName = World_SoldierNameStub;
     SoldierScreen_Toggle(&pW->solEnv);
@@ -263,7 +289,7 @@ static int World_SpawnMissionStub(StrategItem *pUfo, i32 nMissionSub, void *pUse
 static int World_ProcessEventsStub(void *pUser)
 {
     (void)pUser;
-    return 0; /* StrategList_ProcessEvents @ 0x7fcb0 is not ported */
+    return 0; /* StrategList_ProcessEvents (0x7fcb0) is not ported */
 }
 
 bool World_Init(PufoWorldState *pW)

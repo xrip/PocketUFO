@@ -148,6 +148,7 @@ typedef struct PufoWorldState {
     UiPanel  *pSolPanelCraft;           /* 0x159DEC */
     PadImage *pSolPad;                  /* unk_1598D4 */
     i32       nSoldierCursor;           /* nSoldierCursor @ 0x159E08 */
+    u8        bTransferFlag;            /* bTransferFlag @ 0x159E10, cleared by EquipSelected */
     HangarPlaceEnv hangarEnv;           /* the placement test's env */
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */

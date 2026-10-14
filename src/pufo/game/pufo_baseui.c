@@ -1476,7 +1476,7 @@ void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
     }
 
     if (pEnv->pCloseCtl != NULL) {
-        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseSoldierThunk;       /* 0x651A0 */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseSoldierThunk;       /* 0x651AC */
     }
 }
 
@@ -1492,4 +1492,92 @@ i32 SoldierScreen_SelectListed(const SoldierSelectEnv *pEnv)
     }
     *pEnv->pnCursor = UiPanel_GetLineAux(pEnv->pPanel, pEnv->pPanel->nUnk3032); /* 0x64AD0 */
     return *pEnv->pnCursor;
+}
+
+/* --- SoldierScreen_EquipSelected @ 0x619cc --- */
+
+i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv)
+{
+    Soldier *pSol;
+    BaseRec *pBase;
+    i32 nCursor;
+    i32 nOld;
+    i32 nRow;
+
+    if (pEnv == NULL || pEnv->apSoldiers == NULL || pEnv->pnCursor == NULL ||
+        pEnv->pnSoldierCount == NULL || pEnv->pPanelEquip == NULL ||
+        pEnv->pbTransferFlag == NULL) {
+        return 0;
+    }
+
+    Sound_Play(17);                                          /* 0x619D8 */
+
+    nCursor = *pEnv->pnCursor;
+    if (nCursor < 0 || nCursor >= (i32)*pEnv->pnSoldierCount) {
+        return 0;
+    }
+    pSol = pEnv->apSoldiers[nCursor];                        /* 0x619F4 */
+    if (pSol == NULL) {
+        return 0;
+    }
+
+    /* 0x61A1C: run when the soldier has no craft (the 254/255 sentinels) or when its craft is
+     * sitting at a base; a soldier on a craft that is off-base is left alone. */
+    if (pSol->bUnk183 < 0xFE) {
+        Ship *pCraft;
+        if (pEnv->apCraft == NULL || pSol->bUnk183 >= PUFO_FAC_BASE_COUNT) {
+            return 0;
+        }
+        pCraft = pEnv->apCraft[pSol->bUnk183];
+        if (pCraft == NULL || pCraft->bAtBase == 0) {
+            return 0;
+        }
+    }
+
+    if (pEnv->apBases == NULL || pEnv->pnSelectedBaseIdx == NULL ||
+        *pEnv->pnSelectedBaseIdx < 0 || *pEnv->pnSelectedBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return 0;
+    }
+    pBase = pEnv->apBases[*pEnv->pnSelectedBaseIdx];         /* index 1117 dwords = Map + 0x1174 */
+
+    nOld = pSol->nUnitType;
+    nRow = UiPanel_GetLineAux(pEnv->pPanelEquip, pEnv->pPanelEquip->nUnk3032); /* 0x61A44 */
+
+    switch (nRow) {
+    case 0:
+        if (nOld != 0) {
+            if (pEnv->apObjects != NULL && nOld <= 3) {      /* 0x61B60 */
+                BaseRec_AddItemQty(pBase,
+                                   pEnv->apObjects[PUFO_SOLDIER_EQUIP_OBJ_BASE + nOld], 1);
+            }
+            pSol->nUnitType = 0;                             /* 0x61B74 */
+        }
+        break;
+    case 1:
+    case 2:
+    case 3: {
+        ObjectRecFull *pNew;
+        pSol->nUnitType = (u8)nRow;                          /* 0x61AF0 / 0x61AE0 / 0x61A6C */
+        if (pEnv->apObjects == NULL) {
+            break;
+        }
+        pNew = pEnv->apObjects[PUFO_SOLDIER_EQUIP_OBJ_BASE + nRow];
+        if (nOld != 0) {
+            if (nOld <= 3) {
+                /* BaseRec_AddItemQty with a negated delta is BaseRec_SubItemQty @ 0x5571c. */
+                BaseRec_AddItemQty(pBase, pNew, -1);         /* 0x61A80 */
+                BaseRec_AddItemQty(pBase,
+                                   pEnv->apObjects[PUFO_SOLDIER_EQUIP_OBJ_BASE + nOld], 1); /* 0x61AC4 */
+            }
+        } else {
+            BaseRec_AddItemQty(pBase, pNew, -1);             /* 0x61B04 */
+        }
+        break;
+    }
+    default:
+        break;
+    }
+
+    *pEnv->pbTransferFlag = 0;                               /* 0x61B78 */
+    return 1;
 }

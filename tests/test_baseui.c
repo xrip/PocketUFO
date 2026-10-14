@@ -1928,6 +1928,138 @@ static void TestSoldierSelectListed(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* --- SoldierScreen_EquipSelected @ 0x619cc --- */
+
+static void TestSoldierEquipSelected(void)
+{
+    static Soldier aSol[2];
+    static Soldier *apSol[2];
+    static Ship aCraft[PUFO_FAC_BASE_COUNT];
+    static Ship *apCraft[PUFO_FAC_BASE_COUNT];
+    static BaseRec aBase;
+    static BaseRec *apBases[PUFO_FAC_BASE_COUNT];
+    static ObjectRecFull aObj[125];
+    static ObjectRecFull *apObj[125];
+    static UiPanel panel;
+    static SoldierEquipEnv env;
+    static u16 nCount;
+    static i32 nCursor;
+    static i8 nSelBase;
+    static u8 bTransfer;
+    i32 i;
+
+    printf("SoldierScreen_EquipSelected @ 0x619cc\n");
+
+    memset(aObj, 0, sizeof(aObj));
+    memset(aCraft, 0, sizeof(aCraft));
+    memset(&aBase, 0, sizeof(aBase));
+    for (i = 0; i < 125; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    for (i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+        apCraft[i] = &aCraft[i];
+    }
+    apBases[0] = &aBase;
+    aBase.bSlot = 3;
+    aBase.nStoresTotal = 13;
+    aObj[122].auPerBaseVal[3] = 4;
+    aObj[123].auPerBaseVal[3] = 2;
+    aObj[124].auPerBaseVal[3] = 7;
+
+    memset(aSol, 0, sizeof(aSol));
+    aSol[0].bUnk183 = 255; /* no craft */
+    aSol[0].nUnitType = 0;
+    aSol[1].bUnk183 = 0;   /* craft 0 */
+    aSol[1].nUnitType = 2;
+    apSol[0] = &aSol[0];
+    apSol[1] = &aSol[1];
+
+    nCount = 2;
+    nSelBase = 0;
+    bTransfer = 1;
+
+    memset(&panel, 0, sizeof(panel));
+    if (!UiPanel_ctor(&panel, 4)) {
+        printf("  FAIL the equip panel could not be constructed\n");
+        return;
+    }
+    for (i = 0; i < 4; ++i) {
+        UiPanel_SetLineAux(&panel, i, i); /* the row numbers the panel fill would store */
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.apSoldiers = apSol;
+    env.pnSoldierCount = &nCount;
+    env.apCraft = apCraft;
+    env.apBases = apBases;
+    env.apObjects = apObj;
+    env.pnCursor = &nCursor;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.pPanelEquip = &panel;
+    env.pbTransferFlag = &bTransfer;
+
+    nCursor = 0;
+    panel.nUnk3032 = 1;
+    bTransfer = 1;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 1, "row 1 runs the body");
+    CheckEqI32(aSol[0].nUnitType, 1, "the soldier takes equipment 1");
+    CheckEqI32(aObj[122].auPerBaseVal[3], 3, "one unit leaves the base stock (0x61B04)");
+    CheckEqI32(aBase.nStoresTotal, 12, "and the base total drops with it");
+    CheckEqI32(bTransfer, 0, "bTransferFlag is cleared (0x61B78)");
+
+    panel.nUnk3032 = 0;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 1, "row 0 is the unequip row");
+    CheckEqI32(aSol[0].nUnitType, 0, "the equipment goes back to 0");
+    CheckEqI32(aObj[122].auPerBaseVal[3], 4, "and the item returns to the base (0x61B60)");
+    CheckEqI32(aBase.nStoresTotal, 13, "with the total");
+
+    /* Craft 0 is off-base, so soldier 1 cannot be re-equipped. */
+    nCursor = 1;
+    aCraft[0].bAtBase = 0;
+    panel.nUnk3032 = 3;
+    bTransfer = 1;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 0, "a soldier on a craft that is off-base is refused");
+    CheckEqI32(aSol[1].nUnitType, 2, "its equipment is untouched");
+    CheckEqI32(aObj[124].auPerBaseVal[3], 7, "the stock is untouched");
+    CheckEqI32(bTransfer, 1, "and the tail never runs, so the flag stays set");
+
+    aCraft[0].bAtBase = 1;
+    panel.nUnk3032 = 3;
+    bTransfer = 1;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 1, "with the craft at base the swap runs");
+    CheckEqI32(aSol[1].nUnitType, 3, "the soldier moves from equipment 2 to 3");
+    CheckEqI32(aObj[124].auPerBaseVal[3], 6, "the new item leaves the base (0x61A80)");
+    CheckEqI32(aObj[123].auPerBaseVal[3], 3, "the old one comes back (0x61AC4)");
+    CheckEqI32(aBase.nStoresTotal, 13, "so the base total is unchanged");
+    CheckEqI32(bTransfer, 0, "and the tail clears the flag");
+
+    UiPanel_SetLineAux(&panel, 2, 7); /* an aux value outside the four rows */
+    panel.nUnk3032 = 2;
+    bTransfer = 1;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 1, "an out-of-range row only runs the tail");
+    CheckEqI32(aSol[1].nUnitType, 3, "with no equipment change");
+    CheckEqI32(aObj[124].auPerBaseVal[3], 6, "and no stock change");
+
+    /* The bounds deviation: an old type outside the 121..124 group still clears, but no item moves. */
+    aSol[1].nUnitType = 9;
+    panel.nUnk3032 = 0;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 1, "row 0 with an out-of-range old type");
+    CheckEqI32(aSol[1].nUnitType, 0, "the type still goes to 0");
+    CheckEqI32(aBase.nStoresTotal, 13, "but nothing is added to the base");
+
+    nCursor = 99;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 0, "a cursor past the roster is refused");
+
+    nCursor = 1;
+    nSelBase = 40;
+    CheckEqI32(SoldierScreen_EquipSelected(&env), 0, "and so is a base index outside the eight");
+
+    SoldierScreen_EquipSelected(NULL);
+    CheckEqI32(aBase.nStoresTotal, 13, "a null env changes nothing");
+
+    UiPanel_FreeLines(&panel);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1963,6 +2095,7 @@ int main(void)
     TestBaseFacBuy();
     TestSoldierScreenToggle();
     TestSoldierSelectListed();
+    TestSoldierEquipSelected();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

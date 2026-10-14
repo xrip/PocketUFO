@@ -23,6 +23,7 @@
 #include "game/pufo_unit.h"      /* Soldier, the array the Find* handlers walk */
 #include "game/pufo_clock.h"     /* GameTime, whose pause byte the radar click sets */
 #include "game/pufo_geoscape.h"  /* HangarPlaceEnv / BaseRec / BaseSiteRec, the map-click chain */
+#include "game/pufo_ship.h"      /* Ship, the craft EquipSelected's gate reads */
 #include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
 #include "render/pufo_render.h"  /* PadImage, SoldierScreen_Toggle's "soldier" pad */
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
@@ -497,9 +498,9 @@ i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv
  *      SoldierScreen_FindPrevAtBase, Ui_SetTransferFlag. stru_AB630: (35, 37) "bnexts"/"bnext",
  *      (3, 37) "bprevs"/"bprev", (70, 37) "emptyb1"/"cemptyb1".
  *
- * Two handlers are not ported yet (SoldierScreen_Toggle @ 0x64af0, ResearchScreen_Open @
- * 0x616ac), so all fifteen handlers arrive through the env as plain click thunks, the same
- * seam Geoscape_InitUI uses for its root controls.
+ * ResearchScreen_Open (0x616ac) is still unported, and SoldierScreen_Toggle (0x64af0) is ported but
+ * installed through the env like the rest, so all fifteen handlers arrive as plain click thunks --
+ * the same seam Geoscape_InitUI uses for its root controls.
  *
  * Deviations: the original stores a NULL from a failed operator new and then dereferences the
  * first slot anyway (0x67B74); the port guards every store and reports the failure through the
@@ -773,7 +774,7 @@ i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv);
  * decides which way to go.
  *
  * CLOSE (0x651BC..0x65288): screen id back to 1, the flag cleared, then the two fixed 4-line
- * panels get nLineCount = 4 again (0x651D4 / 0x651DC -- stored through the panel pointers with no
+ * panels get nLineCount = 4 again (0x651E4 / 0x651EC -- stored through the panel pointers with no
  * null test, bugs.tsv) and all five objects are released: the 0x159DF0 and 0x159758 panels, the
  * PadImage at unk_1598D4 (PadImage_FreeData + delete), and the 0x15975C and 0x159DEC panels.
  *
@@ -818,7 +819,7 @@ typedef struct SoldierScreenEnv {
     const char *pszPadName;       /* the pad loaded at mode 8 ("soldier"); NULL skips the load */
     UiControl *pCloseCtl;         /* unk_186B00 */
     void (*pfnCloseSoldierThunk)(void); /* SoldierScreen_CloseThunk @ 0x64ae4, stored at +12 */
-    void (*pfnEquipThunk)(void);  /* SoldierScreen_EquipSelected (0x619cc), not ported yet */
+    void (*pfnEquipThunk)(void);  /* SoldierScreen_EquipSelected @ 0x619cc */
     void (*pfnSelectThunk)(void); /* SoldierScreen_SelectListed @ 0x64a9c */
     const char *(*pfnFormatName)(void *pUser, Soldier *pSol); /* Soldier_FormatDisplayName (0x6654c) */
     void *pFormatUser;
@@ -838,5 +839,51 @@ typedef struct SoldierSelectEnv {
 } SoldierSelectEnv;
 
 i32 SoldierScreen_SelectListed(const SoldierSelectEnv *pEnv);
+
+/* --- SoldierScreen_EquipSelected @ 0x619cc (448 B) : panel A's click, the four equip rows ---
+ *
+ * Sound_Play(17) (0x619D8); the soldier is apSoldiers[nSoldierCursor] (0x619F4).
+ *
+ * The gate (0x61A1C) is `craft byte >= 0xFE || apCraft[craft byte].bAtBase != 0`, where the craft
+ * byte is Soldier.bUnk183 @ +0xB7 (254/255 mean "no craft") and bAtBase is Ship +0x06. A soldier
+ * riding a craft that is off-base is left alone: the handler returns the soldier pointer and
+ * changes nothing.
+ *
+ * The row is pSolPanelEquip->anLineAux[pSolPanelEquip->nUnk3032] (0x61A44). The equipment is
+ * apObjects[121 + nUnitType] -- nUnitType 0 means nothing equipped, and rows 1..3 select objects
+ * 122, 123 and 124, the three the original keeps as globals at 0x113CA8, 0x113CAC and 0x113CB0.
+ *
+ *   row 0 (0x61B30): with nUnitType non-zero, BaseRec_AddItemQty puts apObjects[121 + nUnitType]
+ *      back into the base stores (0x61B60) and nUnitType goes to 0 (0x61B74).
+ *   rows 1..3 (0x61AF0 / 0x61AE0 / 0x61A6C): nUnitType takes the row number; with the old type
+ *      non-zero the new item leaves the base (BaseRec_SubItemQty at 0x61A80) and the old one comes
+ *      back (BaseRec_AddItemQty at 0x61AC4); with the old type zero only the new item leaves
+ *      (0x61B04).
+ *   any other row: nothing but the tail.
+ *
+ * The tail (0x61B78) clears bTransferFlag @ 0x159E10 and returns &bTransferFlag. The base is
+ * apBases[nSelectedBaseIdx] in all four calls (index 1117 dwords = Map + 0x1174).
+ *
+ * Deviations: the port returns 1 when the body ran and 0 when the gate refused (the original hands
+ * back a pointer); it bounds the cursor, the base index and the old nUnitType to the 121..124 group
+ * where the original indexes apSoldiers, apBases and apObjects unchecked; and it reads the row
+ * through UiPanel_GetLineAux, which yields 0 for a selection outside the panel where the original
+ * reads anLineAux at whatever nUnk3032 holds. */
+#define PUFO_SOLDIER_EQUIP_ROWS   4
+#define PUFO_SOLDIER_EQUIP_OBJ_BASE 121 /* apObjects[121 + nUnitType]; 122..124 are the three items */
+
+typedef struct SoldierEquipEnv {
+    Soldier *const *apSoldiers;      /* apSoldiers @ Map + 0x1198 */
+    const u16 *pnSoldierCount;       /* nSoldierCount @ 0x115350 */
+    Ship *const *apCraft;            /* Map + 0x10AC */
+    BaseRec *const *apBases;         /* apBases @ Map + 0x1174 */
+    ObjectRecFull *const *apObjects; /* Map + 0x108 */
+    const i32 *pnCursor;             /* nSoldierCursor @ 0x159E08 */
+    const i8 *pnSelectedBaseIdx;     /* nSelectedBaseIdx @ 0x159D81 */
+    UiPanel *pPanelEquip;            /* pSolPanelEquip @ 0x159DF0 */
+    u8 *pbTransferFlag;              /* bTransferFlag @ 0x159E10 */
+} SoldierEquipEnv;
+
+i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */
