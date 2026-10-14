@@ -615,6 +615,139 @@ static void TestEndScreen(void)
     Asset_CloseArchives();
 }
 
+static void TestTitlesInit(void)
+{
+    static PufoOptions opts;
+    static TitlesAnimation anim;
+    static TitlesParticle  aParts[3000];
+    static TitlesStar      aStars[190];
+    static i32             aRowRec[44];
+    static u8             *apGlyphs[5];
+    static i32             nMaxRows;
+    static u16             nUiScreen;
+    TitlesInitEnv env;
+    TimerBackend tb;
+    const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    i32 nPalInk;
+
+    printf("Titles_Init @ 0x380d8\n");
+
+    if (!Asset_OpenArchives(apszPaths)) {
+        Check(false, "Asset_OpenArchives(lang.dat, main.dat)");
+        return;
+    }
+
+    Sound_SetBackend(&g_fakeAudio);
+    tb.pfnSet = TimerRecSet;
+    tb.pfnKill = TimerRecKill;
+    tb.pUser = NULL;
+    Timer_SetBackend(&tb);
+    Options_InitDefaults(&opts);
+
+    memset(&g_fontSys, 0, sizeof(g_fontSys));
+    memset(&anim, 0, sizeof(anim));
+    anim.aParticles      = aParts;
+    anim.aStars          = aStars;
+    anim.nFillPalSlot    = 0;
+    anim.nPresentPalSlot = 12;
+    memset(aRowRec, 0xEE, sizeof(aRowRec));
+    memset(apGlyphs, 0, sizeof(apGlyphs));
+    memset(g_aPalette[12], 0, sizeof(g_aPalette[12]));
+    memset(g_aPalette[31], 0, sizeof(g_aPalette[31]));
+    nMaxRows = 0;
+    nUiScreen = 0;
+    g_nMusicLoads = 0;
+    g_cbMusic = 0;
+    g_nTimerSets = 0;
+    g_pTitlesSurface = NULL;
+
+    env.pFont      = &g_fontSys;
+    env.pAnim      = &anim;
+    env.pnMaxRows  = &nMaxRows;
+    env.anRowRec   = aRowRec;
+    env.apGlyphs   = apGlyphs;
+    env.puUiScreen = &nUiScreen;
+    env.pOptions   = &opts;
+
+    Titles_Init(&env);
+
+    CheckEqI32("the opening credits have 44 rows", nMaxRows, 44);
+    CheckEqI32("starting at record 0x587", aRowRec[0], 0x587);
+    CheckEqI32("the 22nd is 0x59C", aRowRec[21], 0x59C);
+    CheckEqI32("then come the two 0x65x rows", aRowRec[22], 0x655);
+    CheckEqI32("and the last is 0x5A2", aRowRec[43], 0x5A2);
+    CheckEqI32("the screen id becomes 16", (i32)nUiScreen, 16);
+    CheckEqI32("the credits scroll is zeroed", anim.nScroll, 0);
+
+    CheckEqI32("190 stars are seeded", anim.nStarCount, 190);
+    {
+        bool bOk = true;
+        for (int i = 0; i < 190; ++i) {
+            if (aStars[i].nBaseX < 0 || aStars[i].nBaseX > 239) bOk = false;
+            if (aStars[i].nSpeed < 1 || aStars[i].nSpeed > 4) bOk = false;
+            if (aStars[i].nAmplitude < 1 || aStars[i].nAmplitude > 101) bOk = false;
+            /* seeded at -320..-1, then Titles_UpdateStars adds the speed once */
+            if (aStars[i].nY < -319 || aStars[i].nY > 3) bOk = false;
+        }
+        Check(bOk, "x in 0..239, speed 1..4, amplitude 1..101, y in -319..3 after one step");
+    }
+
+    CheckEqI32("scene 0 was loaded and the index advanced to 1", anim.nSceneIndex, 1);
+    CheckEqI32("the frame counter was reset", anim.nFrame, 0);
+    CheckEqI32("the particle count is the pair count of title0.dat",
+               anim.nParticleCount, (i32)((ArchiveMemberSize("title0.dat") - 2u) / 2u));
+
+    {
+        bool bOk = (apGlyphs[0] != NULL) && (apGlyphs[4] != NULL);
+        Check(bOk, "the five titles0..4.pad glyph blobs were allocated and read");
+        Check(bOk && *(const u16 *)apGlyphs[0] > 0u,
+              "and the first blob carries a real u16 width header");
+    }
+
+    nPalInk = 0;
+    for (size_t i = 0; i < sizeof(g_aPalette[12]); ++i) {
+        if (g_aPalette[12][i] != 0u) { nPalInk = 1; break; }
+    }
+    Check(nPalInk != 0, "fade.pal filled palette slot 12");
+    nPalInk = 0;
+    for (size_t i = 0; i < sizeof(g_aPalette[31]); ++i) {
+        if (g_aPalette[31][i] != 0u) { nPalInk = 1; break; }
+    }
+    Check(nPalInk != 0, "titles.pal filled palette slot 31");
+
+    Check(g_pTitlesSurface != NULL, "Titles_ctor created the titles surface");
+    Check(g_pTitlesSurface != NULL && g_pTitlesSurface->nWidth == 240 &&
+          g_pTitlesSurface->nHeight == 320,
+          "it is 240x320");
+    Check(g_pTitlesSurface != NULL && SoftSurf_GetPixels(g_pTitlesSurface)[0] == 0u &&
+          SoftSurf_GetPixels(g_pTitlesSurface)[240 * 320 - 1] == 0u,
+          "and the whole 0x12C00-byte surface was memset to 0");
+
+    CheckEqI32("one music track was loaded", g_nMusicLoads, 1);
+    CheckEqI32("it is track 3, the credits track", (i32)g_cbMusic,
+               (i32)ArchiveMemberSize("back3.it"));
+
+    Check(g_nTimerSets == 2 && g_aTimerId[0] == PUFO_TIMER_RENDER &&
+          g_aTimerMs[0] == PUFO_TIMER_MS_RENDER && g_aTimerId[1] == PUFO_TIMER_ANIM &&
+          g_aTimerMs[1] == PUFO_TIMER_MS_ANIM,
+          "StartTimers_C re-arms the render (40 ms) and animation (25 ms) timers");
+
+    CheckEqI32("the glyph base is the frame count recorded BEFORE the font group loads",
+               (i32)g_fontSys.nGlyphBase, 0);
+    Check(g_fontSys.nTotalSprFrames > 0, "and the font group loaded after it");
+
+    if (g_pTitlesSurface != NULL) {
+        SoftSurf_dtor(g_pTitlesSurface);
+        free(g_pTitlesSurface);
+        g_pTitlesSurface = NULL;
+    }
+    for (int i = 0; i < 5; ++i) {
+        free(apGlyphs[i]);
+    }
+    Sound_Shutdown();
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -623,6 +756,7 @@ int main(void)
     TestBorderAndBlur();
     TestAnimation();
     TestEndScreen();
+    TestTitlesInit();
     if (TestLoadScene() != 0) {
         printf("\n%s: %d failure(s)\n", "FAIL", g_nFailures);
         return 1;

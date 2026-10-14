@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 698 / 1103 (63.3%) |
-| Bytes of original code cited | 275776 / 598792 (46.1%) |
+| Functions cited as evidence | 700 / 1103 (63.5%) |
+| Bytes of original code cited | 276464 / 598792 (46.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 54 |
-| Test checks run | 7540 |
+| Test checks run | 7564 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -45,7 +45,7 @@ the per-subsystem notes and the tests listed at the end.
 | `ui-core` | 69 | 85 | 15108 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 120 | 205 | 38736 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 110 | 243 | 8704 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
-| `titles` | 8 | 13 | 3548 / 4444 | intro/outro animated scenes |
+| `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
 
@@ -270,7 +270,7 @@ is the module that answers to it.
 | `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x21e2c` | `MapView_DrawIsoLayer` | 1252 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x3734c` | `Tact_BuildPaletteLuts` | 1184 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
+| `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x1c240` | `MapView_DrawUnitHeightGlyph` | 1132 | `src/pufo/game/pufo_isodraw.h` |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
@@ -802,7 +802,7 @@ is the module that answers to it.
 | `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x75154` | `BuySellScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `titles` (8 functions)
+### `titles` (10 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -810,8 +810,10 @@ is the module that answers to it.
 | `0x1a83c` | `Titles_DrawAnimatedFrame` | 672 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x1e630` | `Titles_DrawBackdrop` | 600 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x468cc` | `Titles_LoadScene` | 512 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
+| `0x380d8` | `Titles_Init` | 404 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_titles.c` (+1) |
 | `0x46738` | `Titles_DrawCreditLines` | 404 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x388b0` | `EndScreen_Init` | 328 | `src/pufo/game/pufo_strateg.h`, `src/pufo/game/pufo_titles.c` (+1) |
+| `0x46e88` | `Titles_ctor` | 284 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x46dbc` | `Titles_UpdateStars` | 204 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x466dc` | `Titles_PresentToSoftSurf` | 76 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 
@@ -1277,12 +1279,10 @@ whose port work they belong to.
 | `0x6dd4c` | `ManufScreen_PanelPrev` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6dd94` | `ManufScreen_PanelNext` | 72 | not yet ported; scheduled with the `strat-ui` subsystem work |
 
-### `titles` — 5 functions, 896 bytes remaining
+### `titles` — 3 functions, 208 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x380d8` | `Titles_Init` | 404 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x46e88` | `Titles_ctor` | 284 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x3826c` | `Titles_Shutdown` | 100 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x46fa4` | `Titles_dtor` | 60 | not yet ported; scheduled with the `titles` subsystem work |
 | `0x389f8` | `EndScreen_Shutdown` | 48 | not yet ported; scheduled with the `titles` subsystem work |
@@ -1341,7 +1341,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_template` | PASS | 48 |
 | `test_terrain` | PASS | 59 |
 | `test_timer` | PASS | 78 |
-| `test_titles` | PASS | 86 |
+| `test_titles` | PASS | 110 |
 | `test_turn` | PASS | 63 |
 | `test_uibank` | PASS | 388 |
 | `test_unit` | PASS | 281 |
@@ -1367,7 +1367,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 254 citations.
+parity report. Total: 257 citations.
 
 ### Offsets below the image base (37)
 
@@ -1376,7 +1376,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (217)
+### At or above the image base (220)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1467,6 +1467,7 @@ against the IDB when the final report is assembled.
 - `0x156ab8`
 - `0x157188`
 - `0x157190`
+- `0x157194`
 - `0x157198`
 - `0x1571b4`
 - `0x1571b8`
@@ -1475,6 +1476,7 @@ against the IDB when the final report is assembled.
 - `0x15821c`
 - `0x158268`
 - `0x15827a`
+- `0x158804`
 - `0x158808`
 - `0x15881c`
 - `0x158848`
@@ -1600,5 +1602,6 @@ against the IDB when the final report is assembled.
 - `0xb2148`
 - `0xb2200`
 - `0xb2278`
+- `0xb35d8`
 - `0xb38d0`
 

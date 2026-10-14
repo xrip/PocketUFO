@@ -333,7 +333,94 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
     Titles_PresentToSoftSurf(pSurf, pEnv->nPresentPalSlot);
     (void)Titles_AnimateParticles(pEnv);
     Titles_UpdateStars(pEnv);
+    /* The original hands the state block itself to Titles_DrawCreditLines, whose scroll is the
+     * dword at state +87228. The port's Credits env carries that scroll as a value, so copy it
+     * here to reproduce the aliasing. */
+    pEnv->Credits.nScroll = pEnv->nScroll;
     return Titles_DrawCreditLines(&pEnv->Credits);
+}
+
+/* Titles_ctor @ 0x46e88. Scene index zero, the titles surface (240x320, mode 0 = one byte per
+ * pixel, which is why the whole surface is 0x12C00 bytes), 190 stars seeded above the top edge,
+ * then one star step. */
+void Titles_ctor(TitlesAnimation *pEnv)
+{
+    pEnv->nSceneIndex = 0; /* 0x46E98: state +16 */
+
+    pEnv->pTitlesSurface = (SoftSurf *)malloc(sizeof(SoftSurf)); /* 0x46E9C: new(0x28) */
+    if (pEnv->pTitlesSurface != NULL) {
+        SoftSurf_ctor(pEnv->pTitlesSurface); /* 0x46EA8 */
+        (void)SoftSurf_AllocPixels(pEnv->pTitlesSurface, 240, 320, 0); /* 0x46EC8 */
+    }
+    g_pTitlesSurface = pEnv->pTitlesSurface; /* 0x46EC4/0x46EB0: the global, NULL on failure */
+
+    pEnv->nStarCount = 190; /* 0x46EF8: state +87220 */
+    for (i32 i = 0; i < pEnv->nStarCount; ++i) { /* 0x46F1C..0x46F8C */
+        TitlesStar *p = &pEnv->aStars[i];
+        p->nBaseX     = (i32)Game_RandU16(0xF0u);          /* 0x46F1C */
+        p->nY         = (i32)Game_RandU16(0x140u) - 320;   /* 0x46F3C: -320..-1, above the top edge */
+        p->nSpeed     = (i32)Game_RandU16(3u) + 1;         /* 0x46F5C: 1..4 */
+        p->nAmplitude = (i32)Game_RandU16(0x64u) + 1;      /* 0x46F78: 1..101 */
+    }
+    Titles_UpdateStars(pEnv); /* 0x46F94 */
+}
+
+/* The opening credits' row table, verbatim from the image blob unk_A63A8 (44 dwords). Record 0x5A0
+ * recurs as a spacer row between the three blocks. */
+const i32 g_aTitlesRowRecs[44] = {
+    0x587, 0x588, 0x589, 0x58A, 0x58B, 0x58C, 0x58D, 0x58E, 0x58F, 0x590,
+    0x591, 0x592, 0x593, 0x594, 0x595, 0x596, 0x597, 0x598, 0x599, 0x59A,
+    0x59B, 0x59C, 0x655, 0x656, 0x5A0, 0x64A, 0x64B, 0x64C, 0x64D, 0x64E,
+    0x64F, 0x650, 0x651, 0x652, 0x5A0, 0x653, 0x654, 0x5A0, 0x59D, 0x59E,
+    0x59F, 0x5A0, 0x5A1, 0x5A2
+};
+
+/* Titles_Init @ 0x380d8: the opening credits screen, in the original's order. */
+void Titles_Init(TitlesInitEnv *pEnv)
+{
+    AssetReader rdr;
+    char szName[16];
+    u32  cb;
+
+    AssetReader_Clear(&rdr); /* 0x380E4 */
+    Titles_ctor(pEnv->pAnim); /* 0x380F0..0x38118: new(0x154C0) + Titles_ctor; the block is caller-owned */
+    *pEnv->pnMaxRows = 44; /* 0x38128 */
+    memcpy(pEnv->anRowRec, g_aTitlesRowRecs, 44u * sizeof(i32)); /* 0x38134 */
+
+    PufoFont_Init(pEnv->pFont); /* 0x38140 */
+    pEnv->pFont->nGlyphBase = pEnv->pFont->nTotalSprFrames; /* 0x3814C: before "font" is loaded */
+    (void)Font_LoadSpr(pEnv->pFont, "font"); /* 0x38154 */
+    Font_BuildIndex(pEnv->pFont); /* 0x3815C */
+
+    Palette_Load("fade.pal", 12u); /* 0x38168 */
+    *pEnv->puUiScreen = 16; /* 0x38174 */
+    /* 0x3817C: unk_156930 = 0. No reader anywhere in the binary (the only other write is
+     * Map_ComputeReachable @ 0x2b820); the port does not model it. */
+
+    (void)Titles_LoadScene(pEnv->pAnim); /* 0x38184 */
+    Timer_StartC(); /* 0x38188 */
+    pEnv->pAnim->nScroll = 0; /* 0x38198: state +87228, the credits scroll */
+    Palette_Load("titles.pal", 31u); /* 0x381A4 */
+
+    for (i32 i = 0; i < 5; ++i) { /* 0x381B8..0x381F8: the original steps 20 bytes between names */
+        snprintf(szName, sizeof(szName), "titles%d.pad", i);
+        (void)AssetReader_Find(&rdr, szName); /* 0x381BC */
+        cb = AssetReader_Size(&rdr); /* 0x381C4 */
+        pEnv->apGlyphs[i] = (u8 *)malloc(cb); /* 0x381CC: operator new, unchecked in the original */
+        cb = AssetReader_Size(&rdr); /* 0x381D4: the size is re-read, not kept */
+        if (pEnv->apGlyphs[i] != NULL) { /* deviation: the original reads whatever new returned */
+            (void)AssetReader_Read(&rdr, pEnv->apGlyphs[i], cb); /* 0x381E4 */
+        }
+    }
+
+    (void)Sound_InitAndLoadSamples("tact"); /* 0x38200 */
+    Sound_LoadAndPlayMusic(3); /* 0x38208 */
+    Sound_ApplyMusicVolume(Options_MusicLevel(pEnv->pOptions), pEnv->pOptions->bMusicOff); /* 0x3820C */
+    Sound_ApplySfxVolume(Options_SfxLevel(pEnv->pOptions), pEnv->pOptions->bSoundOff); /* 0x38210 */
+
+    if (g_pTitlesSurface != NULL) { /* deviation: the original dereferences GetPixels' result */
+        (void)memset(SoftSurf_GetPixels(g_pTitlesSurface), 0, 0x12C00u); /* 0x38220/0x38234 */
+    }
 }
 
 /* The two ending row-record tables, verbatim from the image blobs unk_A6458 (40 bytes) and

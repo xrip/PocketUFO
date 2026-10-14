@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 54 suites: **7540**.
+Test checks run across the 54 suites: **7564**.
 
 ### Per-subsystem status
 
@@ -719,6 +719,10 @@ does.
    first marked row's handler. `--dump-frame out.ppm --click 120 148` proves it headlessly: the click
    lands on `MenuCtl1_OnClick` (0x1a034) and the dump shows the seven-slot load list. Priority 2 is
    closed.
+8. Done: the credits screen opens. `Titles_Init` (0x380d8) and `Titles_ctor` (0x46e88) are ported in
+   `pufo_titles.c` (24 checks in `tests/test_titles.c`); the shell's `--click 120 170` (MenuCtl2)
+   dumps the first credit line with stars entering. The credits scroll is state +87228, advanced by
+   the 0xC352 screen-0x10 branch (`App_TickAnim`).
 
 ### Priority 3 — the geoscape
 

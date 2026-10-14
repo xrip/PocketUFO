@@ -32,6 +32,7 @@
 #include "game/pufo_renderframe.h" /* Render_Frame, the frame dispatcher */
 #include "game/pufo_save.h"     /* SaveSlot_FormatList, the load-slot list labels */
 #include "game/pufo_timer.h"    /* Timer_SetWindow, the ids the WM_TIMER branch dispatches on */
+#include "game/pufo_titles.h"   /* Titles_Init / TitlesAnimation, the credits screen */
 #include "platform/pufo_gx.h"
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"    /* UiControl_LoadPads, the start controls' pad loader */
@@ -88,6 +89,15 @@ static TactInputHooks   g_tactHooks;
 static TactPointerWorld g_pointerWorld;
 static StartMenuHooks   g_startHooks;
 static SaveSlotFormatCtx g_slotCtx;
+/* The credits state block (g_pTitlesState @ 0x158804, 0x154C0 bytes in the original). The particle
+ * array holds (84020 - 20) / 28 = 3000 records before the star array starts; 190 stars is the
+ * ctor's own count. */
+static TitlesAnimation  g_titlesAnim;
+static TitlesParticle   g_aTitlesParticles[3000];
+static TitlesStar       g_aTitlesStars[190];
+static i32              g_nTitlesMaxRows;
+static i32              g_aTitlesRowRec[44];   /* aTitlesRowRecs @ 0xB35D8 */
+static u8              *g_apTitlesGlyphs[5];   /* unk_1571A0..0x1571B0 */
 
 static void App_PresentLoadedSurface(void);
 
@@ -168,8 +178,36 @@ static void App_HookFormatSlots(void *pUser)
 
 static void App_HookTitles(void *pUser)
 {
+    TitlesInitEnv env;
+    u16           nScreen;
+
     (void)pUser;
-    printf("pocketufo: credits want Titles_Init (0x380d8), not ported yet\n");
+    nScreen = 0;
+    memset(&g_titlesAnim, 0, sizeof(g_titlesAnim));
+    g_titlesAnim.aParticles      = g_aTitlesParticles;
+    g_titlesAnim.aStars          = g_aTitlesStars;
+    g_titlesAnim.nFillPalSlot    = 0;  /* the original fills with MEMORY[0x1472D0] */
+    g_titlesAnim.nPresentPalSlot = 12; /* fade.pal, loaded by Titles_Init itself */
+
+    memset(&env, 0, sizeof(env));
+    env.pFont      = &g_fontSys;
+    env.pAnim      = &g_titlesAnim;
+    env.pnMaxRows  = &g_nTitlesMaxRows;
+    env.anRowRec   = g_aTitlesRowRec;
+    env.apGlyphs   = g_apTitlesGlyphs;
+    env.puUiScreen = &nScreen;
+    env.pOptions   = &g_options;
+    Titles_Init(&env); /* Titles_Init @ 0x380d8 */
+    g_nUiScreen = nScreen; /* 16 */
+
+    /* The credit-lines env mirrors the globals the original's Titles_DrawCreditLines reads: the
+     * row table, the glyph blobs, the row count and the text records. Its scroll is aliased from
+     * the state block inside Titles_DrawAnimatedFrame. */
+    g_titlesAnim.Credits.anRowRec   = g_aTitlesRowRec;
+    g_titlesAnim.Credits.apGlyphs   = (const u8 *const *)g_apTitlesGlyphs;
+    g_titlesAnim.Credits.pTextRecs  = g_assets.pTextRecs;
+    g_titlesAnim.Credits.pColor     = &g_color;
+    g_titlesAnim.Credits.nMaxRows   = g_nTitlesMaxRows;
 }
 
 static void App_HookQuit(void *pUser)
@@ -326,7 +364,9 @@ static void App_DrawFrame(void)
     MainMenuEnv    mm;
     RenderFrameEnv rf;
 
-    if (!g_bStartupUi || g_nUiScreen != 17) {
+    /* Screen 17 is the start menu (GameUI_InitStartup); 0x10 is the credits (Titles_Init). No
+     * other screen has a shell env yet. */
+    if (g_nUiScreen != 17 && g_nUiScreen != 0x10) {
         return;
     }
     memset(&mm, 0, sizeof(mm));
@@ -346,8 +386,28 @@ static void App_DrawFrame(void)
     memset(&rf, 0, sizeof(rf));
     rf.nUiScreen   = g_nUiScreen;
     rf.pMainMenu   = &mm;
+    rf.pTitlesAnim = &g_titlesAnim;
     rf.pfnPresent  = App_PresentHook;
     (void)Render_Frame(&rf);
+}
+
+/* The WM_TIMER 0xC352 body (PocketUFO_WndProc @ 0xA0944): advance the anim phase counter
+ * (0xA0978..0xA098C, >=7 wraps to 0), then per screen: 17 runs the row-key flicker (0xA0AC8),
+ * 0x10 advances the credits scroll by one and wraps it past 20 * (nTitlesMaxRows + 48) (0xA0C58). */
+static void App_TickAnim(void)
+{
+    if (g_nAnimPhase >= 7) {
+        g_nAnimPhase = 0; /* 0xA0988 */
+    } else {
+        ++g_nAnimPhase;   /* 0xA098C */
+    }
+    if (g_nUiScreen == 17) {
+        MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nKeyAccum);
+    } else if (g_nUiScreen == 0x10) {
+        if (++g_titlesAnim.nScroll > 20 * (g_nTitlesMaxRows + 48)) {
+            g_titlesAnim.nScroll = 0;
+        }
+    }
 }
 
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -712,14 +772,7 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
          * calls Render_Frame); 0xC352 is the anim tick, which advances the phase counter
          * (0xA0978..0xA098C: >=7 wraps to 0) and runs the screen-17 row-key flicker (0xA0AC8). */
         if (wParam == PUFO_TIMER_ANIM) {
-            if (g_nAnimPhase >= 7) {
-                g_nAnimPhase = 0; /* 0xA0988 */
-            } else {
-                ++g_nAnimPhase;   /* 0xA098C */
-            }
-            if (g_nUiScreen == 17) {
-                MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nKeyAccum);
-            }
+            App_TickAnim();
         } else if (wParam == PUFO_TIMER_RENDER) {
             App_DrawFrame();
         }
@@ -789,14 +842,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
              * body WM_TIMER 0xC352 runs) so the row keys reach their steady value, render one
              * frame, write it out, and leave. */
             for (int i = 0; i < 40; ++i) {
-                if (g_nAnimPhase >= 7) {
-                    g_nAnimPhase = 0;
-                } else {
-                    ++g_nAnimPhase;
-                }
-                if (g_nUiScreen == 17) {
-                    MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nKeyAccum);
-                }
+                App_TickAnim();
             }
             App_DrawFrame();
             App_DumpFramePpm(pszDumpPath);

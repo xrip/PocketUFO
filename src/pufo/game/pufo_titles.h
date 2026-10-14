@@ -157,6 +157,46 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv);
  * that case and still resets the frame counter and advances the scene index. */
 i32 Titles_LoadScene(TitlesAnimation *pEnv);
 
+/* Titles_ctor @ 0x46e88. Zeroes the scene index (state +16), creates the titles surface — new(0x28),
+ * SoftSurf_ctor, AllocPixels(240, 320, mode 0), i.e. 240x320 at one byte per pixel, which is why the
+ * whole surface is 0x12C00 bytes — and stores it in g_pTitlesSurface, then seeds 190 stars (state
+ * +87220): x = RandU16(0xF0), y = RandU16(0x140) - 320 (so every star starts above the top edge,
+ * -320..-1), speed = RandU16(3) + 1, amplitude = RandU16(0x64) + 1 — and runs one Titles_UpdateStars.
+ *
+ * Deviation: the original calls SoftSurf_AllocPixels on the new(0x28) result even when it is NULL; the
+ * port only constructs the surface when the allocation succeeded. */
+void Titles_ctor(TitlesAnimation *pEnv);
+
+/* The opening credits' 44 row-record indices, verbatim from the image blob unk_A63A8 (0xB0 bytes).
+ * Records 0x587..0x59C, then 0x655/0x656, 0x5A0, 0x64A..0x652, 0x5A0, 0x653/0x654, 0x5A0,
+ * 0x59D..0x5A2. Record 0x5A0 recurs as a spacer row. */
+extern const i32 g_aTitlesRowRecs[44];
+
+/* Titles_Init @ 0x380d8: the opening credits screen. In the original's order: clear the reader,
+ * new(0x154C0) + Titles_ctor (the port's state block and its particle/star arrays are caller-owned),
+ * 44 rows + the row table copy, re-init the font with the glyph base taken from the running frame
+ * count before "font" is loaded, build the index, fade.pal into slot 12, screen id 16, load scene 0,
+ * StartTimers_C, zero the credits scroll (state +87228), titles.pal into slot 31, load the five
+ * titles0..4.pad glyph blobs into unk_1571A0 (the '@' glyph table Titles_DrawCreditLines indexes),
+ * the "tact" samples, music track 3, both volumes, and a memset of the whole titles surface.
+ *
+ * The original also clears unk_156930 (0x3817C); that global has no reader anywhere in the binary —
+ * its only other write is Map_ComputeReachable @ 0x2b820 — so the port does not model it.
+ *
+ * Deviation: the original's operator new for each glyph blob is unchecked and the read runs on
+ * whatever it returned; the port skips the read when the allocation failed. */
+typedef struct TitlesInitEnv {
+    PufoFont          *pFont;        /* fontSys @ 0x158268 */
+    TitlesAnimation   *pAnim;        /* the 0x154C0 state block, caller-owned */
+    i32               *pnMaxRows;    /* nTitlesMaxRows @ 0x157194 */
+    i32               *anRowRec;     /* aTitlesRowRecs @ 0xB35D8, 44 slots */
+    u8               **apGlyphs;     /* unk_1571A0..0x1571B0, five blobs */
+    u16               *puUiScreen;   /* Map_nUiScreen @ Map+0x3A */
+    const PufoOptions *pOptions;     /* the option block the two volume calls read */
+} TitlesInitEnv;
+
+void Titles_Init(TitlesInitEnv *pEnv);
+
 /* --- the ending screens ---------------------------------------------------------------------
  *
  * Evidence: EndScreen_Init @ 0x388b0, called from Tact_CheckBattleEnd @ 0x3501C/0x35188,

@@ -8701,3 +8701,42 @@ dumped frame shows the seven-slot load list (all seven rows labelled from text r
 saves", because the run directory has no `.sav` files) with the "Отмена" back control (record 1083)
 at y 230. The menu click path is therefore live end to end: pointer → hover mark → release →
 handler → layout change → next frame.
+
+## The credits screen opens: `Titles_Init @ 0x380d8` and `Titles_ctor @ 0x46e88`
+
+Both ported in `src/pufo/game/pufo_titles.c` (24 new checks in `tests/test_titles.c`), 688 bytes
+cited. Everything they set up was already ported (`Titles_LoadScene`, the star/particle animation,
+`Titles_DrawAnimatedFrame`, `Titles_DrawCreditLines`); what was missing was the opener.
+
+`Titles_ctor` is smaller than the state block suggests: it zeroes the scene index (state +16),
+creates the titles surface — `new(0x28)`, `SoftSurf_ctor`, `AllocPixels(240, 320, mode 0)` — and
+seeds 190 stars (state +87220) with `x = RandU16(0xF0)`, `y = RandU16(0x140) - 320`, `speed =
+RandU16(3) + 1`, `amplitude = RandU16(0x64) + 1`, then runs one `Titles_UpdateStars`. The mode is
+the fact that matters: **mode 0 is one byte per pixel**, so the 240x320 surface is 0x12C00 bytes —
+which is exactly the size of the `memset` at the end of `Titles_Init`, and why
+`Titles_PresentToSoftSurf` can blit the surface as an 8-bit indexed glyph through palette 12. The
+seeded `y` range is −320..−1: every star starts above the top edge and walks in.
+
+`Titles_Init` runs the whole opener in one order: ctor the 0x154C0 state block, 44 credit rows from
+the image blob `unk_A63A8` (records 0x587..0x59C, then 0x655/0x656, a 0x5A0 spacer, 0x64A..0x652,
+spacer, 0x653/0x654, spacer, 0x59D..0x5A2 — the spacer record recurs four times as a blank line),
+font re-init with the glyph base taken from the running frame count **before** `Font_LoadSpr("font")`,
+`fade.pal` into slot 12, screen id 16, scene 0, `StartTimers_C`, zero the credits scroll (state
++87228), `titles.pal` into slot 31, load the five `titles0..4.pad` glyph blobs into `Titles_apGlyphs`
+(renamed from unk_1571A0 — the table `Titles_DrawCreditLines` indexes for '@' records), the "tact"
+samples, music track 3, both volumes, and the surface memset.
+
+Two facts the pseudocode left implicit:
+
+- **The credits scroll is state +87228, not `nTitlesScroll` (unk_138E88).** `Titles_DrawCreditLines`
+  reads it through the state pointer it is handed, and the WndProc 0xC352 branch for screen 0x10
+  advances it by one per tick, wrapping past `20 * (nTitlesMaxRows + 48)` (0xA0C58). The port
+  aliases it: `Titles_DrawAnimatedFrame` copies `nScroll` into the credit-lines env before the call.
+- **`unk_156930` is write-only residue.** Cleared here and in `Map_ComputeReachable`, never read
+  anywhere in the binary; the port does not model it.
+
+Verified visually: `--dump-frame out.ppm --click 120 170` clicks mode-0 row 2 (`MenuCtl2_OnClick @
+0x1a064`: shutdown, then `Titles_Init`), and the dumped frame after 40 anim ticks shows the first
+credit line ("Kuznetsov Mikhail", record 0x587) at y 300 with the stars' first dots entering at the
+top edge. IDB: comments at 0x380d8 / 0x46e88 / 0x1571A0 / 0x156930, rename unk_1571A0 →
+Titles_apGlyphs.

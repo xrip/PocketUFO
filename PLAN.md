@@ -413,6 +413,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   the seven-slot load list (all labels from text record 1074 — no `.sav` files in the run directory)
   plus the "Отмена" back control (record 1083) at y 230. No new functions credited; IDB comments at
   0x13c6c / 0x148d0.
+- [x] The credits screen opens. `Titles_Init (0x380d8, 404 B)` and `Titles_ctor (0x46e88, 284 B)`
+  ported in `pufo_titles.c` (24 new checks in `tests/test_titles.c`), wiring the already-ported
+  scene loader / star / particle / credit-lines chain. The titles surface is 240x320 at **mode 0 =
+  one byte per pixel** (hence the 0x12C00 memset and the indexed-glyph present); 190 stars seed at
+  y −320..−1 and walk in; the 44-row table comes from `unk_A63A8` with record 0x5A0 as a recurring
+  spacer. The credits scroll is state +87228 (not unk_138E88): the WndProc 0xC352 screen-0x10 branch
+  advances it by 1 per tick wrapping past 20*(rows+48) (0xA0C58) — ported as `App_TickAnim`, and
+  `Titles_DrawAnimatedFrame` aliases it into the credit-lines env. `unk_156930` confirmed
+  write-only residue (cleared here and in `Map_ComputeReachable`, never read). Verified: `--click
+  120 170` (MenuCtl2) dumps the first credit line at y 300 with stars entering. IDB: comments at
+  0x380d8/0x46e88/0x1571A0/0x156930, rename unk_1571A0 → Titles_apGlyphs.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -519,6 +530,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | start menu pipeline (`GameUI_InitStartup`, `UiControl_LoadPads`) | 53/53 (Release) | 7522 | 696/1103 (63.1%) | 275016/598792 (45.9%) | 37 checked, 0 mismatched |
 | `Render_Frame` dispatcher (`pufo_renderframe.c`) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 | start menu click wiring (`--click` dump verified) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
+| credits opener (`Titles_Init`, `Titles_ctor`) | 54/54 (Release) | 7564 | 700/1103 (63.5%) | 276464/598792 (46.2%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
