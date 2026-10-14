@@ -399,6 +399,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   returns `Geoscape_Draw`'s value and skips the present (0x22328/0x22330) — reproduced. The shell
   now reaches the menu through the dispatcher instead of calling `MainMenu_Draw` directly. IDB:
   comment at 0x22310.
+- [x] The start menu is clickable end to end. `Input_OnPointer (0x13c6c)` / `Input_OnPointerUp
+  (0x148d0)` were already ported; the shell now feeds them from `WM_MOUSEMOVE` / `WM_LBUTTONDOWN` /
+  `WM_LBUTTONUP` through the letterbox inverse (`App_MapPointer`, the exact inverse of
+  `Gx_Present`'s scale-and-center), with a `TactPointerWorld` whose `pBank` is the same bank slice
+  `GameUI_InitStartup` installed the menu handlers into (widgets 113..127). Press marks the rows
+  under the pointer in `abRowDisabled` (mode 0/1: 4 rows x[50,190] y[115+22i..]; mode 2: 7 rows
+  x[24,216] y[65+22i..83+22i], plus the start-control hit test); release fires the first marked
+  row's handler and clears the marks (mode 0 clears only the rows BEFORE the hit row; the hit row
+  itself only when the row-sticky byte unk_188D4C is 0). A new `--click <x> <y>` debug flag drives
+  the same path headlessly: `--dump-frame out.ppm --click 120 148` clicks mode-0 row 1
+  (`MenuCtl1_OnClick @ 0x1a034`: sample 16, `SaveSlot_FormatList`, list mode 2) and the dump shows
+  the seven-slot load list (all labels from text record 1074 — no `.sav` files in the run directory)
+  plus the "Отмена" back control (record 1083) at y 230. No new functions credited; IDB comments at
+  0x13c6c / 0x148d0.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -413,15 +427,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
   items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer`,
-  `MapView_DrawMinimap`, `MainMenu_Draw` and `Tact_DrawCommandPads` are done; what remains there is
-  `Render_Frame` itself. This is a change of order, not of goal: the geoscape chain stays
+  `MapView_DrawMinimap`, `MainMenu_Draw`, `Tact_DrawCommandPads`, `Render_Frame` itself and the
+  screen-17 click wiring are done. This is a change of order, not of goal: the geoscape chain stays
   open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer`, `MapView_DrawMinimap`, `MainMenu_Draw` and
-   `Tact_DrawCommandPads` are done, so what is left in this priority is `Render_Frame (0x22310)` itself — the caller that will own the `IsoLayerEnv` and `IsoMinimapEnv`
-   these steps introduced, and which also needs `Geoscape_Draw (0x8c180)` from Priority 3.
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer`, `MapView_DrawMinimap`, `MainMenu_Draw`,
+   `Tact_DrawCommandPads` and `Render_Frame (0x22310)` itself are done — the dispatcher owns the
+   `IsoLayerEnv` / `IsoMinimapEnv` those steps introduced and injects `Geoscape_Draw (0x8c180)` from
+   Priority 3. This priority is closed.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
@@ -503,6 +518,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Research_TopicNeedsItem` + `ResearchScreen_RefreshPanels` | 53/53 (Release) | 7522 | 694/1103 (62.9%) | 273820/598792 (45.7%) | 37 checked, 0 mismatched |
 | start menu pipeline (`GameUI_InitStartup`, `UiControl_LoadPads`) | 53/53 (Release) | 7522 | 696/1103 (63.1%) | 275016/598792 (45.9%) | 37 checked, 0 mismatched |
 | `Render_Frame` dispatcher (`pufo_renderframe.c`) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
+| start menu click wiring (`--click` dump verified) | 54/54 (Release) | 7540 | 698/1103 (63.3%) | 275776/598792 (46.1%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

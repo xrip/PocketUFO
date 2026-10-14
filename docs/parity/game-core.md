@@ -8671,3 +8671,33 @@ matches, the coordinate write goes through that NULL. The port skips the write i
 The port's own first attempt at this got the stamp offset wrong — it used `6*(v10+1) + (result+1)`
 without the 72 and wrote into `tileA`. The test caught it, which is the reason the offset is written
 out in the source comment rather than folded into a helper.
+
+## The start menu is clickable: `Input_OnPointer @ 0x13c6c` + `Input_OnPointerUp @ 0x148d0` on screen 17
+
+Both functions were already ported in `src/pufo/game/pufo_input.c`; what landed now is the shell side
+(`src/pufo/app/pufo_app.c`): `WM_MOUSEMOVE` / `WM_LBUTTONDOWN` / `WM_LBUTTONUP` map the window
+coordinates back through the letterbox inverse (`App_MapPointer`, the exact inverse of
+`Gx_Present`'s scale-and-center) into logical 240x320 coordinates and call the two handlers with a
+`TactPointerWorld` whose `pBank` is the same `UiWidgetBank` the menu controls live in
+(widgets 113..127 = `0xAD4F0`), so `Input_OnPointerUp` reaches the controls `GameUI_InitStartup`
+installed the handlers into.
+
+The screen-17 mechanism, re-verified in ARM:
+
+- **Press** (`0x13c6c`): first clears all seven `MainMenu_abRowDisabled` bytes at `0x156AB0`, then
+  marks the rows whose box contains the pointer. Mode 0/1: four rows, x∈[50,190], y∈[115+22i, …].
+  Mode 2: seven rows, x∈[24,216], y∈[65+22i..83+22i], plus `UiControl_HitTest` on the standalone
+  start control at `0x1571B4`. A mark does two things: `MainMenu_Draw` forces that row's blend key
+  to 255 (the bright row), and the release fires that row's `pfnClick`.
+- **Release** (`0x148d0`): runs the release half of `UiControl_HitTest` (x=0, y=0, bDown=0) over the
+  menu controls, then fires `pfnClick` of the first marked row and clears the marks. In mode 0 the
+  clear only covers the rows **before** the hit row; the hit row itself is cleared only when
+  `unk_188D4C` (row-sticky) is 0 — the port passes that byte through `TactPointerWorld`.
+
+Verified visually with a new debug flag: `pocketufo --dump-frame out.ppm --click 120 148` performs one
+press+release at logical coordinates before the dump. The click lands on mode-0 row 1 (y 137..159),
+whose handler is `MenuCtl1_OnClick @ 0x1a034` — sample 16, `SaveSlot_FormatList`, list mode 2 — and the
+dumped frame shows the seven-slot load list (all seven rows labelled from text record 1074, "no
+saves", because the run directory has no `.sav` files) with the "Отмена" back control (record 1083)
+at y 230. The menu click path is therefore live end to end: pointer → hover mark → release →
+handler → layout change → next frame.

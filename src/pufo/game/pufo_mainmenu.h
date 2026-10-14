@@ -99,7 +99,9 @@ void MainMenu_Draw(const MainMenuEnv *pEnv);
  * descriptor mode byte as stack residue; the port zeroes it. */
 typedef struct GameUiStartupEnv {
     PufoFont    *pFont;                    /* fontSys @ 0x158268 */
-    UiControl    aMenuControls[15];        /* the static block at 0xAD4F0 */
+    UiControl   *paMenuControls;           /* the static block at 0xAD4F0 = pBank widgets 113..127;
+                                            * the shell passes the bank slice so Input_OnPointerUp
+                                            * reaches the same controls */
     void       (*apfnMenuClick[15])(void); /* the handlers installed at +0xC (0..3 and 8..14) */
     void       (*pfnEmptyClick)(void);     /* the standalone control's EmptyBtn_OnClick thunk */
     UiControl   *pStartCtl;                /* MainMenu_pStartCtl @ 0x1571B4, caller-owned */

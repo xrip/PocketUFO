@@ -131,17 +131,17 @@ void GameUI_InitStartup(GameUiStartupEnv *pEnv)
     AssetReader_Clear(&rdr); /* 0x38A34 */
     PufoFont_Init(pEnv->pFont); /* 0x38A40 */
 
-    pEnv->aMenuControls[0].pfnClick  = pEnv->apfnMenuClick[0];  /* 0x38A58, unk_AD4FC */
-    pEnv->aMenuControls[1].pfnClick  = pEnv->apfnMenuClick[1];  /* 0x38A60 */
-    pEnv->aMenuControls[2].pfnClick  = pEnv->apfnMenuClick[2];  /* 0x38A68 */
-    pEnv->aMenuControls[3].pfnClick  = pEnv->apfnMenuClick[3];  /* 0x38A70 */
-    pEnv->aMenuControls[8].pfnClick  = pEnv->apfnMenuClick[8];  /* 0x38A78, unk_AD5FC */
-    pEnv->aMenuControls[9].pfnClick  = pEnv->apfnMenuClick[9];  /* 0x38A80 */
-    pEnv->aMenuControls[10].pfnClick = pEnv->apfnMenuClick[10]; /* 0x38A88 */
-    pEnv->aMenuControls[11].pfnClick = pEnv->apfnMenuClick[11]; /* 0x38A90 */
-    pEnv->aMenuControls[12].pfnClick = pEnv->apfnMenuClick[12]; /* 0x38A98 */
-    pEnv->aMenuControls[13].pfnClick = pEnv->apfnMenuClick[13]; /* 0x38AA0 */
-    pEnv->aMenuControls[14].pfnClick = pEnv->apfnMenuClick[14]; /* 0x38AA8 */
+    pEnv->paMenuControls[0].pfnClick  = pEnv->apfnMenuClick[0];  /* 0x38A58, unk_AD4FC */
+    pEnv->paMenuControls[1].pfnClick  = pEnv->apfnMenuClick[1];  /* 0x38A60 */
+    pEnv->paMenuControls[2].pfnClick  = pEnv->apfnMenuClick[2];  /* 0x38A68 */
+    pEnv->paMenuControls[3].pfnClick  = pEnv->apfnMenuClick[3];  /* 0x38A70 */
+    pEnv->paMenuControls[8].pfnClick  = pEnv->apfnMenuClick[8];  /* 0x38A78, unk_AD5FC */
+    pEnv->paMenuControls[9].pfnClick  = pEnv->apfnMenuClick[9];  /* 0x38A80 */
+    pEnv->paMenuControls[10].pfnClick = pEnv->apfnMenuClick[10]; /* 0x38A88 */
+    pEnv->paMenuControls[11].pfnClick = pEnv->apfnMenuClick[11]; /* 0x38A90 */
+    pEnv->paMenuControls[12].pfnClick = pEnv->apfnMenuClick[12]; /* 0x38A98 */
+    pEnv->paMenuControls[13].pfnClick = pEnv->apfnMenuClick[13]; /* 0x38AA0 */
+    pEnv->paMenuControls[14].pfnClick = pEnv->apfnMenuClick[14]; /* 0x38AA8 */
 
     for (i32 i = 0; i < 15; ++i) { /* 0x38AB0..0x38AE4 */
         UiControlDesc d;
@@ -151,10 +151,10 @@ void GameUI_InitStartup(GameUiStartupEnv *pEnv)
         d.szPad1 = "";
         d.szPad2 = "";
         d.nMode  = s_aMenuCtlDesc[i].nMode;
-        UiControl_Setup(&pEnv->aMenuControls[i], 0, 0, &d,
+        UiControl_Setup(&pEnv->paMenuControls[i], 0, 0, &d,
                         pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x38AC4 */
-        pEnv->aMenuControls[i].uWidth  = 140; /* 0x38ACC */
-        pEnv->aMenuControls[i].uHeight = 18;  /* 0x38AD4 */
+        pEnv->paMenuControls[i].uWidth  = 140; /* 0x38ACC */
+        pEnv->paMenuControls[i].uHeight = 18;  /* 0x38AD4 */
     }
 
     Palette_Load("startg.pal", 0x14u); /* 0x38AF0 */

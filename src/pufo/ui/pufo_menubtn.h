@@ -143,13 +143,14 @@ void Menu_CancelQuitDialog(u16 *pnUiScreen);
  * Evidence: MenuCtl0_OnClick @ 0x1a09c, MenuCtl1_OnClick @ 0x1a034,
  * MenuCtl2_OnClick @ 0x1a064, MenuCtl3_OnClick @ 0x1a080.
  *
- * All four play sample 16 and then shut the start UI down (StartUi_Shutdown (0x38d7c), not
- * ported, so it is a hook). What runs afterwards is the whole of the main menu:
+ * All four play sample 16. Buttons 0, 2 and 3 then shut the start UI down (StartUi_Shutdown
+ * @ 0x38d7c); button 1 (load) does NOT — it stays on the start screen and switches the list
+ * mode. What runs afterwards is the whole of the main menu:
  *
- *   0  Geoscape_InitUI(0)                                  new game
- *   1  SaveSlot_FormatList(ctx), then the list mode becomes 2   load
- *   2  Titles_Init                                        credits
- *   3  App_QuitDisplay                                    quit
+ *   0  StartUi_Shutdown, then Geoscape_InitUI(0)               new game
+ *   1  SaveSlot_FormatList(ctx), then the list mode becomes 2   load (no shutdown)
+ *   2  StartUi_Shutdown, then Titles_Init                       credits
+ *   3  StartUi_Shutdown, then App_QuitDisplay                   quit
  *
  * Only button 1 touches the list mode, and it does so AFTER the list is built (0x1A048 then
  * 0x1A054). The mode is the same global Menu_OpenSlotList clears to 0 and MenuCtl8..14 set

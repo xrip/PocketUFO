@@ -22,18 +22,25 @@
  *     could not scale; Win64 letterboxes instead.
  */
 #include "pufo_common.h"
+#include "audio/pufo_audio.h"
 #include "game/pufo_boot.h"
+#include "game/pufo_clock.h"    /* GameTime, the scratch clock SaveSlot_FormatList uses */
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
+#include "game/pufo_input.h"    /* Input_OnPointer / Input_OnPointerUp, the menu click path */
 #include "game/pufo_mainmenu.h" /* GameUI_InitStartup / MainMenu_Draw / MainMenu_TickRowKeys */
 #include "game/pufo_options.h"  /* Options_LoadFromRegistry */
 #include "game/pufo_renderframe.h" /* Render_Frame, the frame dispatcher */
+#include "game/pufo_save.h"     /* SaveSlot_FormatList, the load-slot list labels */
 #include "game/pufo_timer.h"    /* Timer_SetWindow, the ids the WM_TIMER branch dispatches on */
 #include "platform/pufo_gx.h"
 #include "render/pufo_render.h"
 #include "ui/pufo_control.h"    /* UiControl_LoadPads, the start controls' pad loader */
+#include "ui/pufo_menubtn.h"    /* MenuCtl*_OnClick / Menu_LoadSlot / StartUi_Shutdown */
 #include "util/pufo_rand.h"
+#include "util/pufo_str.h"
 
 #include <stdio.h>
+#include <stdlib.h> /* _wtoi, the --click coordinates */
 #include <string.h>
 
 #include <windows.h>
@@ -49,27 +56,38 @@ static char       g_szLangPath[MAX_PATH];
 static char       g_szMainPath[MAX_PATH];
 
 /* The start-menu state GameUI_InitStartup builds and MainMenu_Draw reads. The shell owns the
- * blocks the original keeps in its global bank: the 15 menu controls (0xAD4F0), the standalone
- * control (0x1571B4), the backdrop glyph (0x1568D8), the empty-button pad (0x1568EC), the seven
- * row keys (0x1568F0), the seven disabled bytes (0x156AB0), the seven key sources (0x1571C8),
- * the list mode (0x157188) and the ui screen (Map_nUiScreen). The font is the module global
- * g_fontSys (fontSys @ 0x158268): Text_DrawString reaches it directly, so the shell must not
- * keep a private copy. */
-static PufoOptions g_options;
-static UiControl   g_aMenuCtl[15];
-static UiControl   g_startCtl;
-static u8         *g_pBgGlyph;
-static u8         *g_pEmptyPad;
-static i32         g_aRowKeys[7];
-static u8          g_abRowDisabled[7];
-static i32         g_aRowKeySrc[7];
-static i32         g_nListMode;
-static i32         g_nUiScreen;
-static i32         g_nAnimPhase;  /* unk_1139EF, the 0xC352 anim counter */
-static i32         g_nKeyAccum;   /* unk_161A38, write-only residue of the flicker */
-static i32         g_nPhaseSave112;
-static GfxColorEnv g_color;
-static bool        g_bStartupUi;
+ * blocks the original keeps in its global bank: the widget bank (pBank @ 0xAC6D0 — the 15 menu
+ * controls are its widgets 113..127 at 0xAD4F0, which is what Input_OnPointerUp and
+ * StartUi_Shutdown index), the standalone control (0x1571B4, heap-allocated like the original's
+ * operator new), the backdrop glyph (0x1568D8), the empty-button pad (0x1568EC), the seven row
+ * keys (0x1568F0), the seven hover bytes (0x156AB0 — modelled by the input world's abListHit),
+ * the seven key sources (0x1571C8), the slot-label block (0x156938), the list mode (0x157188)
+ * and the ui screen (Map_nUiScreen). The font is the module global g_fontSys (fontSys @ 0x158268):
+ * Text_DrawString reaches it directly, so the shell must not keep a private copy. */
+static PufoOptions      g_options;
+static UiWidgetBank     g_bank;
+static UiControl       *g_pStartCtl;        /* MainMenu_pStartCtl @ 0x1571B4 */
+static u8              *g_pBgGlyph;
+static u8              *g_pEmptyPad;
+static i32              g_aRowKeys[7];
+static i32              g_aRowKeySrc[7];
+static i32              g_nListMode;
+static i32              g_nUiScreen;
+static i32              g_nAnimPhase;       /* unk_1139EF, the 0xC352 anim counter */
+static i32              g_nKeyAccum;        /* unk_161A38, write-only residue of the flicker */
+static i32              g_nPhaseSave112;
+static u32              g_nUiSlot0;         /* apUiSlotsA[0] @ Map+0x60, cleared by UiControl_HitTest */
+static GfxColorEnv      g_color;
+static bool             g_bStartupUi;
+static char             g_aSlotLabels[7][40]; /* MainMenu_pSlotCtx @ 0x156938 */
+static GameTime         g_gameTime;
+static u8               g_bGameState;       /* bGameState @ 0x15821C */
+static char             g_szAppDir[MAX_PATH];
+static TactInputState   g_tactState;
+static TactInputHooks   g_tactHooks;
+static TactPointerWorld g_pointerWorld;
+static StartMenuHooks   g_startHooks;
+static SaveSlotFormatCtx g_slotCtx;
 
 static void App_PresentLoadedSurface(void);
 
@@ -93,10 +111,133 @@ static void App_BlitPadEx(const PadImage *pPad, void *pUser)
     PadImage_BlitEx(pPad, 255u);
 }
 
-/* GameUI_InitStartup @ 0x38a28 for the shell. The eleven menu click handlers and the
- * empty-button handler are left NULL here: their hook blocks (StartUi_Shutdown, Geoscape_InitUI,
- * SaveSlot_FormatList, Titles_Init) belong to the menu-button and geoscape steps, and the port's
- * handlers tolerate a missing hook. */
+/* --- the menu-button hook blocks -------------------------------------------------------
+ *
+ * MenuCtl0..3 (0x1a09c/0x1a034/0x1a064/0x1a080) play sample 16, run StartUi_Shutdown, then
+ * branch: new game (Geoscape_InitUI 0x857f4, not ported), load list (SaveSlot_FormatList,
+ * ported), credits (Titles_Init 0x380d8, not ported), quit (App_QuitDisplay). The hooks the
+ * ported functions already take are filled here; the two unported callees print a notice. */
+static void App_HookPlaySample(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    Sound_Play((i32)nSample);
+}
+
+static void App_HookPlaySampleI(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    Sound_Play(nSample);
+}
+
+static void App_HookSoundShutdown(void *pUser)
+{
+    (void)pUser;
+    Sound_Shutdown(); /* 0x9e3d4 */
+}
+
+static void App_HookKillTimersB(void *pUser)
+{
+    (void)pUser;
+    Timer_KillB(); /* 0x9e754 */
+}
+
+static void App_HookFontFree(void *pFont, void *pUser)
+{
+    (void)pUser;
+    PufoFont_Free((PufoFont *)pFont); /* 0x46144 */
+}
+
+static void *App_HookFree(void *pBlock, void *pUser)
+{
+    (void)pUser;
+    free(pBlock); /* the original's operator delete */
+    return NULL;
+}
+
+static void App_HookNewGame(void *pUser)
+{
+    (void)pUser;
+    printf("pocketufo: new game wants Geoscape_InitUI (0x857f4), not ported yet\n");
+}
+
+static void App_HookFormatSlots(void *pUser)
+{
+    (void)pUser;
+    SaveSlot_FormatList(&g_slotCtx); /* 0x45904 */
+}
+
+static void App_HookTitles(void *pUser)
+{
+    (void)pUser;
+    printf("pocketufo: credits want Titles_Init (0x380d8), not ported yet\n");
+}
+
+static void App_HookQuit(void *pUser)
+{
+    (void)pUser;
+    (void)PostQuitMessage(0); /* the shell's App_QuitDisplay @ 0xa0388 equivalent */
+}
+
+static i32 App_HookLoadGame(i32 nSlot, void *pUser)
+{
+    (void)nSlot;
+    (void)pUser;
+    return 0; /* LoadGame (0x44bbc) is not ported; Menu_LoadSlot restores list mode 2 */
+}
+
+static void App_HookClearDrawMode(void *pUser)
+{
+    (void)pUser; /* EmptyBtn_OnClick's geoscape draw-mode clear has no shell state yet */
+}
+
+/* StartUi_Shutdown @ 0x38d7c for the shell: frees the bank tail pads, the font, the standalone
+ * control and the two blocks, then sets the ui screen to 22. */
+static void App_ShutdownStartUi(void *pUser)
+{
+    StartUiShutdownEnv env;
+
+    (void)pUser;
+    memset(&env, 0, sizeof(env));
+    env.pBank             = &g_bank.aCtl[0];
+    env.pStartCtl         = g_pStartCtl;
+    env.pFont             = &g_fontSys;
+    env.pBlockA           = g_pBgGlyph;
+    env.pBlockB           = g_pEmptyPad;
+    env.pnUiScreen        = &g_nUiScreen;
+    env.hooks.pfnSoundShutdown = App_HookSoundShutdown;
+    env.hooks.pfnKillTimers    = App_HookKillTimersB;
+    env.hooks.pfnFontFree      = App_HookFontFree;
+    env.hooks.pfnFree          = App_HookFree;
+    StartUi_Shutdown(&env);
+
+    g_pStartCtl = NULL;
+    g_pBgGlyph  = NULL;
+    g_pEmptyPad = NULL;
+    g_bStartupUi = false;
+}
+
+static void App_MenuCtl0Click(void) { MenuCtl0_OnClick(&g_startHooks); }
+static void App_MenuCtl1Click(void) { MenuCtl1_OnClick(&g_nListMode, &g_startHooks); }
+static void App_MenuCtl2Click(void) { MenuCtl2_OnClick(&g_startHooks); }
+static void App_MenuCtl3Click(void) { MenuCtl3_OnClick(&g_startHooks); }
+
+/* MenuCtl8..14 (0x1a0bc..0x1a1f4): the seven load slots. */
+static void App_Slot0Click(void) { (void)Menu_LoadSlot(&g_nListMode, 0, App_HookLoadGame, NULL); }
+static void App_Slot1Click(void) { (void)Menu_LoadSlot(&g_nListMode, 1, App_HookLoadGame, NULL); }
+static void App_Slot2Click(void) { (void)Menu_LoadSlot(&g_nListMode, 2, App_HookLoadGame, NULL); }
+static void App_Slot3Click(void) { (void)Menu_LoadSlot(&g_nListMode, 3, App_HookLoadGame, NULL); }
+static void App_Slot4Click(void) { (void)Menu_LoadSlot(&g_nListMode, 4, App_HookLoadGame, NULL); }
+static void App_Slot5Click(void) { (void)Menu_LoadSlot(&g_nListMode, 5, App_HookLoadGame, NULL); }
+static void App_Slot6Click(void) { (void)Menu_LoadSlot(&g_nListMode, 6, App_HookLoadGame, NULL); }
+
+static void App_EmptyBtnClick(void)
+{
+    EmptyBtn_OnClick(App_HookPlaySampleI, App_HookClearDrawMode, NULL); /* 0x1a228 */
+}
+
+/* GameUI_InitStartup @ 0x38a28 for the shell. The menu controls live in the widget bank at
+ * 113..127 so Input_OnPointerUp (0x148d0) and StartUi_Shutdown reach the same controls the
+ * original's 0xAD4F0 block is. */
 static void App_InitStartupUi(void)
 {
     GameUiStartupEnv env;
@@ -104,22 +245,68 @@ static void App_InitStartupUi(void)
     Options_LoadFromRegistry(&g_options);
     Timer_SetWindow(g_hWndMain);
 
+    g_pStartCtl = (UiControl *)malloc(sizeof(UiControl)); /* the original's operator new(0x20) */
+
     memset(&env, 0, sizeof(env));
-    memset(g_aMenuCtl, 0, sizeof(g_aMenuCtl));
-    memset(&g_startCtl, 0, sizeof(g_startCtl));
+    memset(&g_bank, 0, sizeof(g_bank));
     env.pFont          = &g_fontSys; /* fontSys @ 0x158268 — the same object Text_DrawString reads */
-    env.pStartCtl      = &g_startCtl;
+    env.paMenuControls = &g_bank.aCtl[113]; /* 0xAD4F0 = pBank + 32*113 */
+    env.pStartCtl      = g_pStartCtl;
     env.ppBgGlyph      = &g_pBgGlyph;
     env.ppEmptyBtnPad  = &g_pEmptyPad;
     env.anRowKeys      = g_aRowKeys;
-    env.abRowDisabled  = g_abRowDisabled;
+    env.abRowDisabled  = g_pointerWorld.abListHit; /* unk_156AB0, shared with the input path */
     env.anRowKeySrc    = g_aRowKeySrc;
     env.pnListMode     = &g_nListMode;
     env.pnUiScreen     = &g_nUiScreen;
     env.pOptions       = &g_options;
     env.pfnLoadPads    = App_LoadPads;
+    env.apfnMenuClick[0]  = App_MenuCtl0Click;
+    env.apfnMenuClick[1]  = App_MenuCtl1Click;
+    env.apfnMenuClick[2]  = App_MenuCtl2Click;
+    env.apfnMenuClick[3]  = App_MenuCtl3Click;
+    env.apfnMenuClick[8]  = App_Slot0Click;
+    env.apfnMenuClick[9]  = App_Slot1Click;
+    env.apfnMenuClick[10] = App_Slot2Click;
+    env.apfnMenuClick[11] = App_Slot3Click;
+    env.apfnMenuClick[12] = App_Slot4Click;
+    env.apfnMenuClick[13] = App_Slot5Click;
+    env.apfnMenuClick[14] = App_Slot6Click;
+    env.pfnEmptyClick  = App_EmptyBtnClick;
     GameUI_InitStartup(&env);
     g_bStartupUi = (g_nUiScreen == 17);
+
+    /* The input world: the screen-17 list state the pointer handlers read and write. */
+    memset(&g_pointerWorld, 0, sizeof(g_pointerWorld));
+    g_pointerWorld.pBank          = &g_bank;
+    g_pointerWorld.pListCtl       = g_pStartCtl;
+    g_pointerWorld.nListMode      = g_nListMode;
+    g_pointerWorld.bListRowSticky = false; /* unk_188D4C */
+    g_pointerWorld.hit.pnUiSlot0  = &g_nUiSlot0;
+    g_pointerWorld.hit.pfnBlit    = App_BlitPad;
+    g_pointerWorld.hit.pfnBlitEx  = App_BlitPadEx;
+
+    memset(&g_tactState, 0, sizeof(g_tactState));
+    memset(&g_tactHooks, 0, sizeof(g_tactHooks));
+
+    /* The menu-button hooks. */
+    memset(&g_startHooks, 0, sizeof(g_startHooks));
+    g_startHooks.pfnPlaySample      = App_HookPlaySample;
+    g_startHooks.pfnShutdownStartUi = App_ShutdownStartUi;
+    g_startHooks.pfnNewGame         = App_HookNewGame;
+    g_startHooks.pfnFormatSlots     = App_HookFormatSlots;
+    g_startHooks.pfnTitles          = App_HookTitles;
+    g_startHooks.pfnQuit            = App_HookQuit;
+
+    /* The load-slot label context (SaveSlot_FormatList @ 0x45904). */
+    memset(&g_slotCtx, 0, sizeof(g_slotCtx));
+    g_slotCtx.apLines      = g_aSlotLabels;
+    g_slotCtx.pszSaveDir   = g_szAppDir;
+    g_slotCtx.pTime        = &g_gameTime;
+    g_slotCtx.pbGameState  = &g_bGameState;
+    g_slotCtx.pszPrefix    = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1800);
+    g_slotCtx.pszNotSaved  = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1074);
+    g_slotCtx.pszMission   = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1075);
 }
 
 /* The shell's stand-in for GX_Present @ 0x27788 (the thunk to GX_PresentFrame @ 0x9ea7c):
@@ -146,9 +333,9 @@ static void App_DrawFrame(void)
     mm.pBgGlyph             = g_pBgGlyph;
     mm.nListMode            = g_nListMode;
     mm.anRowKeys            = g_aRowKeys;
-    mm.abRowDisabled        = g_abRowDisabled;
-    mm.pSlotLabels          = NULL; /* modes 2/3 only */
-    mm.pStartCtl            = &g_startCtl;
+    mm.abRowDisabled        = g_pointerWorld.abListHit; /* the hover flags the pointer path sets */
+    mm.pSlotLabels          = &g_aSlotLabels[0][0];     /* modes 2/3 only */
+    mm.pStartCtl            = g_pStartCtl;
     mm.pTextRecs            = g_assets.pTextRecs;
     mm.pnActionPhaseSave112 = &g_nPhaseSave112;
     mm.pModalAnim           = NULL; /* mode 3 only */
@@ -165,6 +352,71 @@ static void App_DrawFrame(void)
 
 LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 static void App_PresentLoadedSurface(void);
+
+/* Client pixels to the 240x320 logical surface, inverting Gx_Present's integer-scale
+ * letterbox. The original's WinCE pointers were already in logical space (WM_LBUTTONDOWN
+ * feeds Input_OnPointer straight through, 0xa03ec). */
+static void App_MapPointer(LPARAM lParam, i32 *pnX, i32 *pnY)
+{
+    RECT  rc;
+    int   nWinW, nWinH, nScale, nOX, nOY;
+
+    if (!GetClientRect(g_hWndMain, &rc)) {
+        *pnX = 0;
+        *pnY = 0;
+        return;
+    }
+    nWinW = rc.right - rc.left;
+    nWinH = rc.bottom - rc.top;
+    nScale = nWinW / 240;
+    if (nWinH / 320 < nScale) {
+        nScale = nWinH / 320;
+    }
+    if (nScale < 1) {
+        nScale = 1;
+    }
+    nOX = (nWinW - 240 * nScale) / 2;
+    nOY = (nWinH - 320 * nScale) / 2;
+    *pnX = ((i32)(short)LOWORD(lParam) - nOX) / nScale;
+    *pnY = ((i32)(short)HIWORD(lParam) - nOY) / nScale;
+}
+
+/* Input_OnPointer @ 0x13c6c for the shell, in logical 240x320 coordinates. On screen 17 this
+ * is the hover path: it marks the list rows under the pointer in abListHit, which both
+ * brightens the row (key forced to 255) and, on release, selects which row's click handler
+ * fires. */
+static void App_PointerLogical(i32 nX, i32 nY, bool bDown)
+{
+    if (!g_bStartupUi) {
+        return;
+    }
+    g_tactState.nUiScreen  = (u16)g_nUiScreen;
+    g_tactState.bGeoscapeUi = false;
+    g_pointerWorld.nListMode = g_nListMode;
+    Input_OnPointer(&g_tactState, &g_tactHooks, &g_pointerWorld, nX, nY, bDown);
+}
+
+/* WM_MOUSEMOVE (bDown false) and WM_LBUTTONDOWN (bDown true). */
+static void App_OnPointer(LPARAM lParam, bool bDown)
+{
+    i32 nX, nY;
+
+    App_MapPointer(lParam, &nX, &nY);
+    App_PointerLogical(nX, nY, bDown);
+}
+
+/* Input_OnPointerUp @ 0x148d0 for the shell: WM_LBUTTONUP. It takes no coordinates; the
+ * row marked under the pointer by the hover path is the one whose handler runs. */
+static void App_OnPointerUp(void)
+{
+    if (!g_bStartupUi) {
+        return;
+    }
+    g_tactState.nUiScreen   = (u16)g_nUiScreen;
+    g_tactState.bGeoscapeUi = false;
+    g_pointerWorld.nListMode = g_nListMode;
+    Input_OnPointerUp(&g_tactState, &g_tactHooks, &g_pointerWorld);
+}
 
 /* Builds the exe-directory-relative asset paths, as InitInstance @ 0x9fd48 does:
  * GetModuleFileNameW, strip to the last backslash, then append lang.dat and
@@ -196,6 +448,7 @@ static void App_BuildAssetPaths(void)
     /* Same directory, two file names. snprintf keeps the bounds explicit. */
     (void)snprintf(g_szLangPath, sizeof(g_szLangPath), "%s%s", szDir, "lang.dat");
     (void)snprintf(g_szMainPath, sizeof(g_szMainPath), "%s%s", szDir, "main.dat");
+    pufo_strcpy(g_szAppDir, szDir); /* szAppDir @ 0x1883b0, the save-file directory */
 }
 
 /* Copy the loaded 240x320 logical surface onto the window DIB so the data path
@@ -249,6 +502,49 @@ static LPCWSTR App_FindDumpFlag(LPCWSTR pwszCmd)
     }
     g_wszDumpPath[i] = L'\0';
     return (i == 0) ? NULL : g_wszDumpPath;
+}
+
+static bool g_bClickAt;
+static i32  g_nClickX;
+static i32  g_nClickY;
+
+/* `--click <x> <y>` on the command line: with --dump-frame this performs one press+release at
+ * logical 240x320 coordinates before the dump, so the menu's click path (hover mark, then release
+ * fires the row's handler) can be checked headlessly. Not part of the original. */
+static void App_FindClickFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--click";
+    WCHAR awcArg[32];
+    int   i;
+
+    g_bClickAt = false;
+    if (pwszCmd == NULL) {
+        return;
+    }
+    pwszCmd = wcsstr(pwszCmd, awcFlag);
+    if (pwszCmd == NULL) {
+        return;
+    }
+    pwszCmd += (int)(sizeof(awcFlag) / sizeof(WCHAR)) - 1;
+    for (int n = 0; n < 2; ++n) {
+        while (*pwszCmd == L' ') {
+            ++pwszCmd;
+        }
+        i = 0;
+        while (*pwszCmd != L'\0' && *pwszCmd != L' ' && i < 31) {
+            awcArg[i++] = *pwszCmd++;
+        }
+        awcArg[i] = L'\0';
+        if (i == 0) {
+            return;
+        }
+        if (n == 0) {
+            g_nClickX = (i32)_wtoi(awcArg);
+        } else {
+            g_nClickY = (i32)_wtoi(awcArg);
+        }
+    }
+    g_bClickAt = true;
 }
 
 /* Writes the logical 240x320 RGB565 surface as a binary PPM (P6). A debug hook for
@@ -428,6 +724,15 @@ LRESULT CALLBACK PocketUFO_WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
             App_DrawFrame();
         }
         return 0;
+    case WM_MOUSEMOVE:
+        App_OnPointer(lParam, false); /* 0x13c6c, hover marks */
+        return 0;
+    case WM_LBUTTONDOWN:
+        App_OnPointer(lParam, true);
+        return 0;
+    case WM_LBUTTONUP:
+        App_OnPointerUp(); /* 0x148d0, fires the hovered row's handler */
+        return 0;
     case WM_KEYDOWN:
         /* Scaffold: Esc quits, mirroring the original's escape path. */
         if (wParam == VK_ESCAPE) {
@@ -455,6 +760,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     (void)hPrevInstance;
     pszDumpPath = App_FindDumpFlag(lpCmdLine);
+    App_FindClickFlag(lpCmdLine);
 
     if (!App_InitInstance(hInstance, nCmdShow)) {
         return 0;
@@ -472,6 +778,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         App_InitStartupUi();
         App_DrawFrame();
         if (pszDumpPath != NULL) {
+            if (g_bClickAt) {
+                /* Debug path: one press+release at logical coordinates. Input_OnPointer marks the
+                 * row under the pointer, Input_OnPointerUp fires that row's handler (a MenuCtl
+                 * thunk), which is how the real window delivers a menu click. */
+                App_PointerLogical(g_nClickX, g_nClickY, true);
+                App_OnPointerUp();
+            }
             /* Debug path: run the anim clock for about a second (40 x 25 ms ticks, the same
              * body WM_TIMER 0xC352 runs) so the row keys reach their steady value, render one
              * frame, write it out, and leave. */

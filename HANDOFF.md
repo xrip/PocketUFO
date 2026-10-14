@@ -539,7 +539,18 @@ cd build/src/pufo/Release && ./pocketufo.exe
 ```
 
 Expected: a window, the line `pocketufo: assets loaded (lang.dat=..., main.dat=...)`, and a live
-process.
+process. Kill it with `taskkill //F //IM pocketufo.exe` — killing the shell's job PID does not kill
+the window process.
+
+Two debug flags (not part of the original) render headlessly and exit:
+
+```bash
+./pocketufo.exe --dump-frame out.ppm            # one start-menu frame as a 240x320 PPM
+./pocketufo.exe --dump-frame out.ppm --click 120 148   # press+release at logical coords first
+```
+
+`--click` drives the real menu click path (`Input_OnPointer` marks the row, `Input_OnPointerUp`
+fires its handler), so `--click 120 148` opens the seven-slot load list in the dump.
 
 ### Test
 
@@ -547,7 +558,7 @@ process.
 ctest --test-dir build -C Release
 ```
 
-Expected: `100% tests passed, 0 tests failed out of 48`.
+Expected: `100% tests passed, 0 tests failed out of 54`.
 
 ### Verify parity
 
@@ -699,8 +710,15 @@ does.
    56..66 with current/max bars, and bank widgets 101..103. The ruler at 0x20AD4 (12x24 5x1 ticks
    over the label rows) is an original bug, reproduced and logged. Named this step: `pPadSoldier`,
    `pCmdPadCs0/1/2`, `aTextRec56..66`.
-6. `Render_Frame` (0x22310) itself, which is the caller that fills `IsoLayerEnv`, `IsoMinimapEnv` and
-   `TactCmdPadEnv`; it also needs `Geoscape_Draw` (0x8c180) from Priority 3.
+6. Done: `Render_Frame` (0x22310, 756 B) is ported as `src/pufo/game/pufo_renderframe.c` behind
+   `RenderFrameEnv` (18 checks in `tests/test_renderframe.c`); its geoscape branch injects
+   `Geoscape_Draw` (0x8c180) from Priority 3.
+7. Done: the start menu is clickable. The shell feeds the already-ported `Input_OnPointer` (0x13c6c)
+   and `Input_OnPointerUp` (0x148d0) from the mouse messages through the letterbox inverse, on the
+   same bank slice the menu controls live in. Press marks rows in `abRowDisabled`, release fires the
+   first marked row's handler. `--dump-frame out.ppm --click 120 148` proves it headlessly: the click
+   lands on `MenuCtl1_OnClick` (0x1a034) and the dump shows the seven-slot load list. Priority 2 is
+   closed.
 
 ### Priority 3 — the geoscape
 

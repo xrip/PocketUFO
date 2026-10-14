@@ -80,7 +80,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
 | `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` |
-| `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
+| `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
 ### `render` (50 functions)
@@ -213,7 +213,7 @@ is the module that answers to it.
 | `0x438e0` | `Save_WriteMap` | 932 | `src/pufo/game/pufo_save.h` |
 | `0x402c0` | `Save_ReadBases` | 876 | `src/pufo/game/pufo_save.h` |
 | `0x3f6dc` | `Save_WriteShips` | 844 | `src/pufo/game/pufo_save.h` |
-| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/game/pufo_mainmenu.h`, `src/pufo/game/pufo_save.h` |
+| `0x45904` | `SaveSlot_FormatList` | 796 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` (+1) |
 | `0x40c4c` | `Save_ReadSmap` | 768 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` (+1) |
 | `0x3f1fc` | `Save_WriteBases` | 760 | `src/pufo/game/pufo_save.h` |
 | `0x446a8` | `Save_WriteTGameData` | 640 | `src/pufo/game/pufo_save.h` |
@@ -438,10 +438,10 @@ is the module that answers to it.
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
 | `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
-| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
+| `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.c` (+2) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
-| `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` |
+| `0x148d0` | `Input_OnPointerUp` | 2140 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_input.c` (+1) |
 | `0x2cdac` | `TactHud_DrawItemStrip` | 2004 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
@@ -1367,7 +1367,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 253 citations.
+parity report. Total: 254 citations.
 
 ### Offsets below the image base (37)
 
@@ -1376,7 +1376,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (216)
+### At or above the image base (217)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1460,6 +1460,7 @@ against the IDB when the final report is assembled.
 - `0x1568d0`
 - `0x1568d8`
 - `0x1568f0`
+- `0x156938`
 - `0x156a54`
 - `0x156a7c`
 - `0x156ab0`
