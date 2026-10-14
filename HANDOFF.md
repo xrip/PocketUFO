@@ -56,9 +56,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 678 / 1103 (61.5%)
-                                             bytes cited:     262092 / 598792 (43.8%)
-python docs/parity/audit_credits.py       -> credited functions: 678, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 679 / 1103 (61.6%)
+                                             bytes cited:     264772 / 598792 (44.2%)
+python docs/parity/audit_credits.py       -> credited functions: 679, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 78, ORIGINAL BUG markers in src/pufo: 22
@@ -74,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 51 suites: **7297**.
+Test checks run across the 52 suites: **7322**.
 
 ### Per-subsystem status
 
@@ -680,9 +680,17 @@ does.
    `Map_nMinimapScrollX/Y` (0x118864/0x118868), `pMinimapCursorPad` (0x1571F0) and `aTextRec17`
    (0xB466D). `IsoDrawCtx.szText` corrected to 80 bytes (the scratch dword sits at 0xFC) and
    `IsoSpriteBases` gained `nScangBase` (fontSys+0x2E).
-4. `Tact_DrawCommandPads` (0x1fc8c), `MainMenu_Draw` (0x1dbb8) and then `Render_Frame` (0x22310)
-   itself, which is the caller that fills `IsoLayerEnv` and `IsoMinimapEnv`; `Render_Frame` also needs
-   `Geoscape_Draw` (0x8c180) from Priority 3.
+4. Done: `MainMenu_Draw` (0x1dbb8, 2,680 B) is ported as `src/pufo/game/pufo_mainmenu.c` behind
+   `MainMenuEnv`, with 25 checks in `tests/test_mainmenu.c`. It is the start-screen branch of
+   `Render_Frame`: mode 0/1 draws four menu rows (labels from `aTextRecs` records 1076-1079 /
+   1080-1083), mode 2/3 draws seven slot rows plus the standalone control, mode 3 also writes 40
+   into `anActionPhaseSave0[112]` and opens the 1-line modal (record 1102). Named this step:
+   `MainMenu_nListMode`, `MainMenu_pBgGlyph`, `MainMenu_anRowKeys`, `MainMenu_abRowDisabled`,
+   `MainMenu_pStartCtl`, `MainMenu_pSlotCtx`, `anActionPhaseSave0_112`, `aTextRec1076/1080/1083`,
+   `pszGameVersion`.
+5. `Tact_DrawCommandPads` (0x1fc8c) and then `Render_Frame` (0x22310) itself, which is the caller
+   that fills `IsoLayerEnv` and `IsoMinimapEnv`; `Render_Frame` also needs `Geoscape_Draw` (0x8c180)
+   from Priority 3.
 
 ### Priority 3 — the geoscape
 

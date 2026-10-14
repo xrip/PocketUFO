@@ -193,8 +193,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
   which is itself blocked by `Game_StartNew (0x94554, 3,976 B)` and `GameTime_Set5Sec (0x84f00, 100 B)`.
   Everything else in `LoadGame` is ported (`DatFile_*`, `Save_ReadGameState/Research/Time`,
   `GameTime_Decode`, `PtrArray_*`). So the Priority 1 tail is really the geoscape chain. In Priority 2
-  the map frame and the minimap are now assembled; what is left there is `Tact_DrawCommandPads
-  (0x1fc8c)`, `MainMenu_Draw (0x1dbb8)` and the caller `Render_Frame (0x22310)`, which also wants
+  the map frame, the minimap and the start screen are now drawn; what is left there is
+  `Tact_DrawCommandPads (0x1fc8c)` and the caller `Render_Frame (0x22310)`, which also wants
   `Geoscape_Draw (0x8c180)` from Priority 3.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
@@ -283,6 +283,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
     line comments at 0x1EEA4 and 0x1F4DC.
   - [x] three rows added to `bugs.tsv` (78 total): the dead span globals, the unguarded
     `Font_GetSprByIndex` dereference at 0x1EEA4, and the unbounded label copy at 0x1F4DC.
+- [x] `MainMenu_Draw @ 0x1dbb8` (2,680 B) — ported as `src/pufo/game/pufo_mainmenu.c` behind
+  `MainMenuEnv`, with 25 new checks in `tests/test_mainmenu.c`. It is `Render_Frame`'s start-screen
+  branch.
+  - [x] the mode dispatch on `MainMenu_nListMode` (0x157188): 0/1 draw four menu rows at x 50,
+    w 140, y 115 + 22*i with labels from `aTextRecs` records 1076-1079 (mode 0) or 1080-1083
+    (mode 1); 2/3 draw seven slot rows at x 25, w 190, y 65 + 22*i with labels from the slot
+    context (`MainMenu_pSlotCtx` at 0x156938, 40 bytes each) plus the standalone control; mode 3
+    additionally writes 40 into `anActionPhaseSave0[112]` and opens `UiModal_DrawDialog(150,
+    record 1102, 1 line, no buttons)`.
+  - [x] row frame = body (index 0, colours 87/94) + four 1-pixel strips (index 1, colours 159/171)
+    via `SoftSurf_BlitSrcRect`, keyed by `MainMenu_anRowKeys[i]` forced to 255 by
+    `MainMenu_abRowDisabled[i]`; the row text colour is the cyan pair (26,244,252)/(13,122,126)
+    scaled by key/256 — the six WinCE float constants decode exactly to those fractions.
+  - [x] IDB: named `MainMenu_nListMode` (int), `MainMenu_pBgGlyph`, `MainMenu_anRowKeys` (int[7]),
+    `MainMenu_abRowDisabled` (u8[7]), `MainMenu_pStartCtl` (UiControl*), `MainMenu_pSlotCtx`,
+    `anActionPhaseSave0_112` (int), `aTextRec1076/1080/1083`, `pszGameVersion` ("V1.26" @ 0xAAD28);
+    function header at 0x1dbb8 and line comments on the mode branches.
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
@@ -303,15 +320,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
-  items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer` and
-  `MapView_DrawMinimap` are done and only `Tact_DrawCommandPads` and `MainMenu_Draw` remain before
+  items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer`,
+  `MapView_DrawMinimap` and `MainMenu_Draw` are done and only `Tact_DrawCommandPads` remains before
   `Render_Frame` can be assembled. This is a change of order, not of goal: the geoscape chain stays
   open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer` and `MapView_DrawMinimap` are done, so what is
-   left in this priority is `Tact_DrawCommandPads (0x1fc8c)`, `MainMenu_Draw (0x1dbb8)` and
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer`, `MapView_DrawMinimap` and `MainMenu_Draw`
+   are done, so what is left in this priority is `Tact_DrawCommandPads (0x1fc8c)` and
    `Render_Frame (0x22310)` itself — the caller that will own the `IsoLayerEnv` and `IsoMinimapEnv`
    these steps introduced, and which also needs `Geoscape_Draw (0x8c180)` from Priority 3.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
@@ -386,6 +403,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Ship_SpawnAtSlot` | 51/51 (Release) | 7189 | 675/1103 (61.2%) | 256036/598792 (42.8%) | 35 checked, 0 mismatched |
 | `MapView_DrawUnitFacingArrow` | 51/51 (Release) | 7235 | 676/1103 (61.3%) | 258728/598792 (43.2%) | 37 checked, 0 mismatched |
 | `MapView_DrawMinimap` | 51/51 (Release) | 7297 | 678/1103 (61.5%) | 262092/598792 (43.8%) | 37 checked, 0 mismatched |
+| `MainMenu_Draw` | 52/52 (Release) | 7322 | 679/1103 (61.6%) | 264772/598792 (44.2%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

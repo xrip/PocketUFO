@@ -6931,6 +6931,47 @@ assumed; the IDB struct already had `nScratch` at that offset. Five globals name
 `Map_nMinimapSpanX/Y`, `Map_nMinimapScrollX/Y`, `pMinimapCursorPad` (`unk_1571F0`) and `aTextRec17`
 (`unk_B466D`).
 
+### `MainMenu_Draw @ 0x1dbb8` — the start screen
+
+Ported as a new module `src/pufo/game/pufo_mainmenu.c` behind `MainMenuEnv`, tested by
+`tests/test_mainmenu.c` (25 checks). Another `Render_Frame` callee, and the draw side of the start
+menu whose buttons (`MenuCtl0..3`, `MenuCtl8..14`) and teardown (`StartUi_Shutdown`) were already
+ported in `pufo_menubtn.c`.
+
+**The layout is chosen by the list mode dword at 0x157188** (`MainMenu_nListMode`, named this step) —
+the same value `Menu_OpenSlotList` clears, `MenuCtl1_OnClick` sets to 2, `Menu_LoadSlot` sets to 3 and
+`SaveLoad_Slot` sets to 1:
+
+| mode | rows | labels |
+|---|---|---|
+| 0 | 4 menu rows at x 50, w 140, y 115 + 22*i | `aTextRecs` records 1076..1079 |
+| 1 | the same four rows | records 1080..1083 |
+| 2, 3 | 7 slot rows at x 25, w 190, y 65 + 22*i, then `MainMenu_pStartCtl` and its centred label | the 7 x 40-byte block `SaveSlot_FormatList` writes through `MainMenu_pSlotCtx`, plus record 1083 |
+| other | none | — |
+
+**Each row is five keyed blits.** A body `(x, y, w, 18)` at index 0 with colours (87, 94) and four
+1-pixel strips at index 1 with colours (159, 171) — top at y-1, bottom at y+18, left at x-1, right at
+x+w — all through `SoftSurf_BlitSrcRect`, so the row's key byte blends them over the backdrop. The key
+comes from `MainMenu_anRowKeys` (0x1568F0, 7 dwords) and is forced to 255 when `MainMenu_abRowDisabled`
+(0x156AB0) is set. The same key scales the row's text colour: the cyan pair (26,244,252)/(13,122,126)
+times key/256. The original computes each channel with `itod / muld / dtoi` against six constants that
+decode to exactly 26/256, 244/256, 252/256, 13/256, 122/256 and 126/256 — so the products are exact
+binary fractions and `dtoi` is C's truncation.
+
+**Mode 3 is the "loading" frame:** it writes 40 into `anActionPhaseSave0[112]` (0x128AA0, named) and
+draws a one-line `UiModal_DrawDialog` 150 wide from text record 1102 with no buttons. Every mode ends
+with the white/grey pair and `pszGameVersion` — the literal "V1.26" at 0xAAD28 — drawn at (5, 300).
+
+**Labels are text records.** `unk_E9674 / unk_E99A8 / unk_E9C0F` are `aTextRecs` records 1076, 1080 and
+1083 (0xB38D0 + 205*n) and are now named `aTextRec1076/1080/1083`. The slot labels are not text
+records: they are 40-byte strings `SaveSlot_FormatList @ 0x45904` writes through the context pointer
+kept at `MainMenu_pSlotCtx` (0x156938).
+
+Ten globals named this step: `MainMenu_nListMode`, `MainMenu_pBgGlyph` (0x1568D8, the backdrop block
+`GameUI_InitStartup` allocates and `StartUi_Shutdown` frees as `pBlockA`), `MainMenu_anRowKeys`,
+`MainMenu_abRowDisabled`, `MainMenu_pStartCtl` (0x1571B4, the standalone control), `MainMenu_pSlotCtx`,
+`anActionPhaseSave0_112`, `aTextRec1076/1080/1083` and `pszGameVersion`.
+
 ## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
 
 All four of its callees are ported (`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Tact_SelectUnit`,
