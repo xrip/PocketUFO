@@ -2614,6 +2614,162 @@ static const PufoAudioBackend g_fakeOptBackend = {
     Fake_MusicOpt, Fake_MusicPlay, Fake_MusicVol, Fake_MusicPause, Fake_MusicFree, Fake_Close
 };
 
+/* ------------------------------------------------- the soldier screen's frame
+ *
+ * Evidence: SoldierScreen_Draw @ 0x65290. */
+
+static SoftSurf g_solSurf;
+static PadImage g_solPad;
+static u8 g_aSolPad[8];
+static UiPanel g_solPanelNames, g_solPanelCraft;
+static SoldierDrawEnv g_solEnv;
+static i32 g_nSolScreenId;
+static u8 g_bSolOpen;
+static i32 g_nSolCursor;
+static i32 g_nSolTextCalls;
+static i32 g_nSolTextCursor;
+
+static i32 SolTextInputThunk(i32 nCursor, void *pUser)
+{
+    (void)pUser;
+    ++g_nSolTextCalls;
+    g_nSolTextCursor = nCursor;
+    return 0x5A5;
+}
+
+/* Blit_PackedColor with all three colour arguments equal, which is the only shape this draw uses. */
+static u16 SolPix(u32 c)
+{
+    return (u16)(((c >> 3) << 11) + 32u * (c >> 2) + (c >> 3));
+}
+
+static void SolReset(void)
+{
+    g_nSolScreenId = 4;
+    g_bSolOpen = 1;
+    g_nSolCursor = 17;
+    g_nSolTextCalls = 0;
+    g_nSolTextCursor = -1;
+
+    /* PadImage_Blit has no NULL guard, so the pad needs a real blob: u16 width, u16 height, indices. */
+    memset(&g_solPad, 0, sizeof(g_solPad));
+    memset(g_aSolPad, 0, sizeof(g_aSolPad));
+    g_aSolPad[0] = 1; g_aSolPad[1] = 0;   /* uWidth 1 */
+    g_aSolPad[2] = 1; g_aSolPad[3] = 0;   /* uHeight 1 */
+    g_aSolPad[4] = 1;                     /* one indexed pixel */
+    PadImage_ctor(&g_solPad);
+    g_solPad.pData = g_aSolPad;
+    g_solPad.uWidth = 1;
+    g_solPad.uHeight = 1;
+    g_solPad.nMode = 8;                   /* the mode SoldierScreen_Toggle loads the "soldier" pad at */
+
+    memset(&g_solEnv, 0, sizeof(g_solEnv));
+    g_solEnv.pnScreenId = &g_nSolScreenId;
+    g_solEnv.pbOpen = &g_bSolOpen;
+    g_solEnv.pnCursor = &g_nSolCursor;
+    g_solEnv.pPad = &g_solPad;
+    g_solEnv.pPanelNames = &g_solPanelNames;
+    g_solEnv.pPanelCraft = &g_solPanelCraft;
+    g_solEnv.pfnTextInput = SolTextInputThunk;
+}
+
+static void TestSoldierScreenDraw(void)
+{
+    const u16 *pPix;
+
+    printf("SoldierScreen_Draw @ 0x65290\n");
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_solSurf);
+    SoftSurf_AllocPixels(&g_solSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_solSurf;
+    pPix = (const u16 *)g_solSurf.pPixels;
+    memset(g_solSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    memset(g_aPalette[8], 0, sizeof(g_aPalette[8]));
+    g_aPalette[8][1] = 0x1234u;
+
+    memset(&g_solPanelNames, 0, sizeof(g_solPanelNames));
+    memset(&g_solPanelCraft, 0, sizeof(g_solPanelCraft));
+    SolReset();
+
+    /* CLOSED (0x652CC): the open byte gates the whole draw. */
+    g_bSolOpen = 0;
+    CheckEqI32(SoldierScreen_Draw(&g_solEnv), 0, "a closed soldier screen draws nothing (0x652CC)");
+    Check(pPix[23 * 240 + 69] == 0, "  not the header bevel");
+    Check(pPix[6 * 240 + 2] == 0, "  nor the side rails");
+    Check(pPix[0] == 0, "  nor the pad");
+    g_bSolOpen = 1;
+
+    /* SCREEN 5 (0x652A4): the name-edit dialog that SoldierScreen_SelectListed arms. */
+    g_nSolScreenId = 5;
+    CheckEqI32(SoldierScreen_Draw(&g_solEnv), 0x5A5, "screen 5 hands back the dialog's value");
+    CheckEqI32(g_nSolTextCalls, 1, "the text-input hook ran once (0x652B0)");
+    CheckEqI32(g_nSolTextCursor, 17, "  with nSoldierCursor as its argument");
+    Check(pPix[23 * 240 + 69] == 0, "and no frame was drawn");
+    g_nSolScreenId = 4;
+
+    g_nSolScreenId = 5;
+    g_solEnv.pfnTextInput = NULL;
+    CheckEqI32(SoldierScreen_Draw(&g_solEnv), 0, "with no dialog hook installed nothing happens");
+    CheckEqI32(g_nSolTextCalls, 1, "  and the frame is still not drawn");
+    g_nSolScreenId = 4;
+    g_solEnv.pfnTextInput = SolTextInputThunk;
+
+    /* OPEN (0x652D4..0x65538): the pad, then the frame. */
+    CheckEqI32(SoldierScreen_Draw(&g_solEnv), 0, "the open path draws and returns nothing useful");
+    CheckEqI32(g_nSolTextCalls, 1, "the dialog hook is not reached on the draw path");
+    CheckEqI32((i32)pPix[0], 0x1234, "the soldier pad is blitted first (0x652D4)");
+
+    /* The header bevel: light top and right, dark bottom and left (0x65318..0x65390). */
+    CheckEqI32((i32)pPix[23 * 240 + 69], SolPix(0xB4), "the bevel's top edge starts at 69,23 in 0xB4");
+    CheckEqI32((i32)pPix[23 * 240 + 165], SolPix(0xB4), "  and runs 97 wide to 165");
+    CheckEqI32((i32)pPix[44 * 240 + 69], SolPix(0x64), "the bottom edge at 69,44 is 0x64");
+    CheckEqI32((i32)pPix[44 * 240 + 165], SolPix(0x64), "  over the same 97 columns");
+    CheckEqI32((i32)pPix[24 * 240 + 69], SolPix(0x64), "the left edge at 69,24 is 0x64");
+    CheckEqI32((i32)pPix[44 * 240 + 166], SolPix(0xB4), "the right edge at 166,23 is 0xB4 down to y 44");
+    Check(pPix[22 * 240 + 69] == 0, "nothing is drawn above the top edge");
+    Check(pPix[45 * 240 + 69] == 0, "  or below the bottom one");
+
+    /* The side rails at x 2 and x 235: a climbing 1x8 on a 7 step (so they overlap by one row), and a
+     * falling 1x6 on a 6 step from y 174. */
+    CheckEqI32((i32)pPix[6 * 240 + 2], SolPix(100), "the left rail starts at 5 with 5*(0+20) = 100");
+    CheckEqI32((i32)pPix[166 * 240 + 2], SolPix(215), "  and the 24th step at 5 + 7*23 = 166 is 215");
+    CheckEqI32((i32)pPix[174 * 240 + 2], SolPix(230), "the falling half starts at 174 with 0xE6 - 0 = 230");
+    CheckEqI32((i32)pPix[317 * 240 + 2], SolPix(115), "  and the last 1x6 at 174 + 6*23 ends at 317 as 115");
+    CheckEqI32((i32)pPix[11 * 240 + 235], SolPix(100), "the right rail climbs with the same values");
+    CheckEqI32((i32)pPix[317 * 240 + 235], SolPix(115), "  and falls with them");
+    /* The climbing blocks are 8 tall but step 7, so each one overwrites the previous block's last row. */
+    CheckEqI32((i32)pPix[165 * 240 + 2], SolPix(210), "the 23rd block (5 + 7*22 = 159) still owns y 165");
+    CheckEqI32((i32)pPix[166 * 240 + 2], SolPix(215), "  and the 24th takes 166, its own first row");
+    CheckEqI32((i32)pPix[173 * 240 + 2], SolPix(215), "the last climbing block reaches 166 + 7 = 173");
+    CheckEqI32((i32)pPix[179 * 240 + 2], SolPix(230), "the falling blocks are 6 tall on a 6 step, so "
+                                                      "the first one owns 174..179 with no overlap");
+    CheckEqI32((i32)pPix[180 * 240 + 2], SolPix(225), "  and the next starts at 180 with 0xE6 - 5 = 225");
+
+    /* The top and bottom rails: 24 blocks of 5, climbing on the left half and falling on the right. */
+    CheckEqI32((i32)pPix[5 * 240 + 1], SolPix(100), "the top rail starts at x 1 with 100");
+    CheckEqI32((i32)pPix[5 * 240 + 116], SolPix(215), "  and the climbing half ends at 1 + 5*23 = 116");
+    CheckEqI32((i32)pPix[5 * 240 + 121], SolPix(250), "the falling half starts at 119 + 0 = 119 with 0xFA = 250");
+    CheckEqI32((i32)pPix[5 * 240 + 234], SolPix(135), "  and the last block at 119 + 115 = 234 is 135");
+    CheckEqI32((i32)pPix[315 * 240 + 1], SolPix(100), "the bottom rail mirrors the top one");
+    CheckEqI32((i32)pPix[315 * 240 + 234], SolPix(135), "  down to the same last block");
+    CheckEqI32((i32)pPix[5 * 240 + 119], SolPix(215), "the two halves overlap at 119..120 and the later "
+                                                      "climbing block wins, as in the original's order");
+    Check(pPix[4 * 240 + 1] == 0, "the rails are one row thick");
+    Check(pPix[6 * 240 + 1] == 0, "  at y 5 and y 315 only");
+
+    /* The guards the original does not have. */
+    memset(g_solSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_solEnv.pPad = NULL;
+    g_solEnv.pPanelNames = NULL;
+    g_solEnv.pPanelCraft = NULL;
+    CheckEqI32(SoldierScreen_Draw(&g_solEnv), 0, "a missing pad or panel is skipped, not dereferenced");
+    Check(pPix[0] == 0, "the pad blit is skipped");
+    CheckEqI32((i32)pPix[23 * 240 + 69], SolPix(0xB4), "  while the frame still draws");
+
+    CheckEqI32(SoldierScreen_Draw(NULL), 0, "a null env does nothing");
+}
+
 static void TestOptionsAudioTab(void)
 {
     i32 nBad;
@@ -2946,6 +3102,7 @@ int main(void)
     TestFacOverlay();
     TestBuildDialog();
     TestSoldierDisplayName();
+    TestSoldierScreenDraw();
     TestOptionsAudioTab();
     TestSaveLoadSlots();
 

@@ -393,8 +393,8 @@ bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow);
  * Evidence: SoldierScreen_FindNextAtBase @ 0x6192c, SoldierScreen_FindPrevAtBase @ 0x618c4.
  *
  * The soldier screen keeps its selected soldier in the dword cursor at 0x159E08 (read by
- * SoldierScreen_Draw (0x65290, not ported), EquipSelected @ 0x619cc, CopyNameToEdit (0x6318c, not
- * ported) and SelectListed @ 0x64a9c). These two handlers move it to the next / previous soldier that
+ * SoldierScreen_Draw @ 0x65290, EquipSelected @ 0x619cc, SelectListed @ 0x64a9c and CopyNameToEdit
+ * (0x6318c, not ported)). These two handlers move it to the next / previous soldier that
  * belongs to the base the screen is showing.
  *
  * FindNext (ARM 0x61930..0x619A4): nIdx = cursor + 1; if nIdx >= the u16 soldier count
@@ -887,6 +887,63 @@ typedef struct SoldierEquipEnv {
 } SoldierEquipEnv;
 
 i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv);
+
+/* --- SoldierScreen_Draw @ 0x65290 (716 B) : the soldier screen's pad, lists and frame ---
+ *
+ * Reached three times from Geoscape_Draw (0x8c180, not ported) at 0x92DD0 / 0x92F38 / 0x93094, plus a
+ * data reference from the handler table entry at 0x18A2B0.
+ *
+ * SCREEN 5 (0x652A4): while nGeoscapeScreen is 5 this is not a draw at all - it returns
+ * Ui_TextInputDialog(nSoldierCursor[0]), the name-edit dialog that SoldierScreen_SelectListed (0x64a9c)
+ * arms by putting 5 into the screen id. Ui_TextInputDialog (0x632cc) is not ported and enters as a hook.
+ *
+ * CLOSED (0x652CC): while the screen-open byte at 0x159DE0 is zero nothing is drawn.
+ *
+ * OPEN (0x652D4..0x65538): the "soldier" pad, then the two list panels through UiPanelMsg_Draw, then
+ * the frame in three parts:
+ *   - the header bevel (0x65318..0x65390): a 98x22 box whose top edge (97x1 at 69,23) and right edge
+ *     (1x22 at 166,23) use index 0xB4 and whose bottom edge (97x1 at 69,44) and left edge (1x21 at
+ *     69,24) use index 0x64;
+ *   - the two side rails (0x6539C..0x6546C): 24 steps, at x 2 and x 235. Each step draws a 1x8 at
+ *     y 5 + 7*k with index 5*(k + 20) - 100, 105, ... 215 - and a 1x6 at y 174 + 6*k with index
+ *     0xE6 - 5*k - 230, 225, ... 115 - so the ramp climbs down the upper half and falls down the lower.
+ *     The climbing blocks are 8 tall on a 7 step, so each one repaints the previous block's last row;
+ *     the falling blocks are 6 on a 6 and never overlap. The two halves meet cleanly at 173 / 174.
+ *   - the top and bottom rails (0x6547C..0x65538): 24 steps of 5. Each draws a 5x1 at x 1 + 5*k and a
+ *     5x1 at x 119 + 5*k, on y 5 and on y 315, with 5*(k + 20) on the left half and 0xFA - 5*k
+ *     (250, 245, ... 135) on the right. The halves meet at x 119..120, where the climbing block of the
+ *     last step is drawn after the falling block of the first one and wins.
+ *
+ * Hex-Rays renders the two descending indices as -26 - 5*k and -6 - 5*k. They are not negative values:
+ * the ARM computes 0xE6 - 5*k (0x653E8 `RSB R5, R3, #0xE6`) and 0xFA - 5*k (0x654E0 `RSB R4, R3, #0xFA`)
+ * and stores all three colour arguments with STRB into the unsigned __int8 slots SoftSurf_BlitRectProxy
+ * reads, so the byte is what matters. The port writes the ARM's own expressions.
+ *
+ * Deviations: the original reaches the pad, both panels and the cursor through the fixed context block
+ * at 0x159768 (the pad is *(ctx + 364) = 0x1598D4); the port takes them from the env. The original
+ * returns its context pointer and Geoscape_Draw discards it; the port returns the dialog hook's value on
+ * the screen-5 path and 0 elsewhere. The port null-guards the pad and both panels, where the original
+ * dereferences whatever SoldierScreen_Toggle left there. */
+#define PUFO_SOL_SCREEN_TEXT_INPUT 5 /* the screen id that turns this draw into the name-edit dialog */
+#define PUFO_SOL_BEVEL_LIGHT 0xB4    /* the header box's top and right edges */
+#define PUFO_SOL_BEVEL_DARK  0x64    /*  and its bottom and left edges */
+#define PUFO_SOL_RAMP_BASE   20      /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
+#define PUFO_SOL_RAMP_STEP   5       /* and gains 5 per step, in both ramp directions */
+#define PUFO_SOL_RAMP_SIDE   0xE6    /* the ARM's RSB #0xE6: the descending side-ramp index */
+#define PUFO_SOL_RAMP_EDGE   0xFA    /* the ARM's RSB #0xFA: the descending top/bottom ramp index */
+
+typedef struct SoldierDrawEnv {
+    i32      *pnScreenId;   /* nGeoscapeScreen @ 0x186BC4 */
+    u8       *pbOpen;       /* 0x159DE0, the screen-open byte */
+    i32      *pnCursor;     /* nSoldierCursor @ 0x159E08 */
+    PadImage *pPad;         /* *(ctx + 364) = 0x1598D4, the "soldier" pad */
+    UiPanel  *pPanelNames;  /* pSolPanelNames @ 0x15975C */
+    UiPanel  *pPanelCraft;  /* pSolPanelCraft @ 0x159DEC */
+    i32 (*pfnTextInput)(i32 nCursor, void *pUser); /* Ui_TextInputDialog (0x632cc), not ported */
+    void *pTextInputUser;
+} SoldierDrawEnv;
+
+i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv);
 
 /* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 (3396 B) : the placement preview and its commit
  *

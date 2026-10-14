@@ -9760,3 +9760,48 @@ Measured effect: credited functions 776 -> 771, bytes cited 339768 -> 315288 (56
 `audit_names`' "credited addresses whose original name is not defined" goes from 5 to **0** -- every
 address the port now credits is one the port actually defines. No behaviour changed; the number just
 stopped lying.
+
+### The soldier screen's frame (done)
+
+`SoldierScreen_Draw @ 0x65290` (716 B) is the soldier screen's draw: three call sites inside
+`Geoscape_Draw` (0x8c180) at 0x92DD0 / 0x92F38 / 0x93094, plus a data reference from the handler table
+entry at 0x18A2B0. It is ported in `src/pufo/game/pufo_baseui.{h,c}` behind `SoldierDrawEnv`, with 45
+checks in `tests/test_baseui.c`.
+
+Three paths, separated by one screen id and one byte:
+
+- `nGeoscapeScreen == 5` (0x652A4): not a draw at all -- it hands back `Ui_TextInputDialog(nSoldierCursor)`,
+  the name-edit dialog `SoldierScreen_SelectListed` (0x64a9c) arms by putting 5 into the screen id.
+  `Ui_TextInputDialog` (0x632cc, 6096 B) is still unported and enters as a hook.
+- `bSoldierScreenOpen == 0` (0x652CC): nothing is drawn.
+- open (0x652D4..0x65538): the "soldier" pad, the two list panels through `UiPanelMsg_Draw`, then the
+  frame -- a 98x22 header bevel at 69,23 with light (0xB4) top and right edges and dark (0x64) bottom and
+  left edges; two side rails at x 2 and x 235, each 24 climbing 1x8 blocks at y 5+7*k with index
+  5*(k+20) (100..215) plus 24 falling 1x6 blocks at y 174+6*k with index 0xE6-5*k (230..115); and top and
+  bottom rails on y 5 and y 315, each 24 5x1 blocks at x 1+5*k with 5*(k+20) and at x 119+5*k with
+  0xFA-5*k (250..135).
+
+Two geometry details the decompiler flattens, pinned down by pixel probes. The climbing side blocks are
+8 tall on a 7 step, so each one repaints the previous block's last row: the 23rd block (y 159) still owns
+165 and the 24th takes 166, the last climbing block reaches 173, and the falling half starts on 174. The
+falling blocks are 6 tall on a 6 step and never overlap. The two halves of the top and bottom rails
+overlap at x 119..120, where the last climbing block is drawn after the first falling one and wins.
+
+Hex-Rays renders the two descending indices as `-26 - 5*k` and `-6 - 5*k`. They are not negative values:
+the ARM computes `RSB R5, R3, #0xE6` (0x653E8) and `RSB R4, R3, #0xFA` (0x654E0) and stores all three
+colour arguments with STRB into the `unsigned __int8` slots `SoftSurf_BlitRectProxy` reads -- the stack
+frame really has `nIdx` at +4, `nColorMid` at +8 and `nColorLow` at +12, one byte each. The byte is what
+matters, and the port writes the ARM's own expressions.
+
+IDB fixes found on the way. `pSolPanelStores` (0x159758), `pSolPanelNames` (0x15975C), `pSolPanelCraft`
+(0x159DEC) and `pSolPanelEquip` (0x159DF0) were 1-byte items although ARM loads them with `LDR` (0x64AB0)
+and Hex-Rays dereferences them as panels; they are 4-byte `UiPanel *` now. The same shape was wrong for
+the options screen's four panel slots `pOptPanelShips` (0x159E18), `pOptPanelRight` (0x159E1C),
+`pOptPanelMidA` (0x159E78) and `pOptPanelMidB` (0x159E7C) -- `OptionsScreen_OnConfirm` (0x6cf18) reads
+`MEMORY[0x159E18]->anLineAux[...]`, which only makes sense for a pointer -- and they are typed the same
+way. `nSoldierCursor` (0x159E08) is left at 8 bytes with a comment instead: every direct access is a
+single dword and 0x159E0C has no cross-reference of its own, so the extra width is unexplained rather
+than provably wrong.
+
+Still open in this family: `Ui_TextInputDialog` (0x632cc, 6096 B) itself, `SoldierScreen_CopyNameToEdit`
+(0x6318c, 124 B), and `Geoscape_Draw` (0x8c180, 33744 B), the dispatcher that calls this draw.

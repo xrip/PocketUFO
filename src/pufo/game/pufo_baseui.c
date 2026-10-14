@@ -1585,6 +1585,72 @@ i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv)
     return 1;
 }
 
+/* --- SoldierScreen_Draw @ 0x65290 --- */
+
+i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pnScreenId == NULL || pEnv->pbOpen == NULL) {
+        return 0;
+    }
+
+    if (*pEnv->pnScreenId == PUFO_SOL_SCREEN_TEXT_INPUT) {   /* 0x652A4 */
+        if (pEnv->pfnTextInput == NULL) {
+            return 0;
+        }
+        return pEnv->pfnTextInput(pEnv->pnCursor != NULL ? pEnv->pnCursor[0] : 0,
+                                  pEnv->pTextInputUser);     /* 0x652B0 Ui_TextInputDialog */
+    }
+
+    if (*pEnv->pbOpen == 0) {                                /* 0x652CC */
+        return 0;
+    }
+
+    if (pEnv->pPad != NULL) {
+        PadImage_Blit(pEnv->pPad);                           /* 0x652D4 */
+    }
+    if (pEnv->pPanelNames != NULL) {
+        UiPanel_DrawText(pEnv->pPanelNames);                 /* 0x652E0 */
+    }
+    if (pEnv->pPanelCraft != NULL) {
+        UiPanel_DrawText(pEnv->pPanelCraft);                 /* 0x652EC */
+    }
+
+    SoftSurf_BlitRectProxy(0, 69, 23, 97, 1,
+                           PUFO_SOL_BEVEL_LIGHT, PUFO_SOL_BEVEL_LIGHT, PUFO_SOL_BEVEL_LIGHT);   /* 0x65318 */
+    SoftSurf_BlitRectProxy(0, 69, 44, 97, 1,
+                           PUFO_SOL_BEVEL_DARK, PUFO_SOL_BEVEL_DARK, PUFO_SOL_BEVEL_DARK);      /* 0x65340 */
+    SoftSurf_BlitRectProxy(0, 69, 24, 1, 21,
+                           PUFO_SOL_BEVEL_DARK, PUFO_SOL_BEVEL_DARK, PUFO_SOL_BEVEL_DARK);      /* 0x65368 */
+    SoftSurf_BlitRectProxy(0, 166, 23, 1, 22,
+                           PUFO_SOL_BEVEL_LIGHT, PUFO_SOL_BEVEL_LIGHT, PUFO_SOL_BEVEL_LIGHT);   /* 0x65390 */
+
+    /* The side rails: 24 steps, i runs 174..312 while the climbing half runs 5..166 in jumps of 7. */
+    for (i32 k = 0, yUp = 5, i = 174; i < 318; ++k, yUp += 7, i += 6) {                          /* 0x6539C */
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));                   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_SIDE - PUFO_SOL_RAMP_STEP * k);                     /* 230..115 */
+
+        SoftSurf_BlitRectProxy(0, 2, yUp, 1, 8, nRise, nRise, nRise);                           /* 0x653D8 */
+        SoftSurf_BlitRectProxy(0, 2, i, 1, 6, nFall, nFall, nFall);                             /* 0x65408 */
+        SoftSurf_BlitRectProxy(0, 235, yUp, 1, 8, nRise, nRise, nRise);                         /* 0x65430 */
+        SoftSurf_BlitRectProxy(0, 235, i, 1, 6, nFall, nFall, nFall);                           /* 0x65458 */
+    }
+
+    /* The top and bottom rails: 24 steps of 5, the left half climbing and the right half falling. */
+    for (i32 j = 0, k = 0; j < 120; j += PUFO_SOL_RAMP_STEP, ++k) {                             /* 0x6547C */
+        const i32 nXLo = j + 1;
+        const i32 nXHi = j + 119;
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));                   /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);                     /* 250..135 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);                          /* 0x654B0 */
+        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise);                        /* 0x654D8 */
+        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);                          /* 0x65508 */
+        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall);                        /* 0x65530 */
+    }
+
+    return 0;
+}
+
 /* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 --- */
 
 /* The ARM keeps one flat pointer per layer (grid + 0x174 + 144*base for the fac block, grid + 36*base
