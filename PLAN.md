@@ -336,6 +336,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `tests/test_geoscape.c`. Each: `Sound_Play(17)`, store the interval (5/60/300/1380/2460/3600) into
   `nGeoscapeTickSeconds` (the port's `GeoscapeWorld.nTickSeconds`), and light exactly one of the six
   nav controls (`apGeoscapeSpeedCtl`, 0x186500..0x186514, typed this step).
+- [x] The three leaves of the craft-select chain — `Smap_DismissSelected (0x84428, 92 B)`,
+  `Smap_InitCraftSelectState (0x61b94, 248 B)`, `EndScreen_Init (0x388b0, 328 B)` — ported in
+  `pufo_strateg.c` (beside `Smap_ClearSelection`), `pufo_geoscape.c` (beside
+  `BaseFac_SetCellBuildState`) and `pufo_titles.c`, 42 new checks in `tests/test_geoscape.c` and
+  `tests/test_titles.c`. These were the last unported callees of `Smap_BeginCraftSelect (0x838dc)`,
+  so that function and its 20-byte button wrapper are now fully unblocked. ARM pinned the
+  tile→mission-type map Hex-Rays only named: 240→desert 6, 241→jungle 0, 242→polar 8, 243→forest 2,
+  244→culta 1, cross-checked against `g_aTerrainModuleCount`'s index order. One ledger row added
+  (82 total): the hangar stamp's past-the-grid stores (0x61C34, latent, port guards). IDB: typed
+  `abTactTileTypes` (0x159D5C), `aCraftPlacementCodeByFacType` (0xA6568), `aGoodEndRowRecs` /
+  `aBadEndRowRecs` (0xA6458/0xA6480), `aTitlesRowRecs` (0xB35D8); renamed `nTitlesMaxRows`,
+  `pTitlesBackdrop`, `nTitlesScroll`, `fontSys_nGlyphBase` (0x158290 = fontSys + 0x28, the glyph
+  base set before "font" loads), `nSelectedBaseIdx`, `nAssaultBaseRace`, `bCraftSelectAssaultFlag`,
+  `bMapSelectionFlag`; function headers at 0x84428, 0x61b94, 0x388b0, 0x84634 and 0x838dc.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -435,6 +449,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Tact_DrawCommandPads` | 53/53 (Release) | 7364 | 680/1103 (61.7%) | 268816/598792 (44.9%) | 37 checked, 0 mismatched |
 | `GameTime_Set5Sec..SetSpeedIdx5` | 53/53 (Release) | 7377 | 686/1103 (62.2%) | 269428/598792 (45.0%) | 37 checked, 0 mismatched |
 | `Base_CreateNamedEntry` | 53/53 (Release) | 7410 | 687/1103 (62.3%) | 270004/598792 (45.1%) | 37 checked, 0 mismatched |
+| craft-select leaves (`Smap_DismissSelected`, `Smap_InitCraftSelectState`, `EndScreen_Init`) | 53/53 (Release) | 7452 | 690/1103 (62.6%) | 270672/598792 (45.2%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

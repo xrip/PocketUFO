@@ -2699,6 +2699,47 @@ and `[i + 2176]` of the u16 product column (0x15D09C + 400n) and `[i]` and `[i +
 column (0x159E9C + 800n). Finally `++nNextBaseSiteId` and `++base count`; the return is the
 constant 1560 (the 0x618 count-store offset — register residue, reproduced).
 
+### The craft-select leaves (done)
+
+`Smap_DismissSelected @ 0x84428` (92 B), `Smap_InitCraftSelectState @ 0x61b94` (248 B) and
+`EndScreen_Init @ 0x388b0` (328 B) — the last unported callees of `Smap_BeginCraftSelect @ 0x838dc`,
+which is now fully unblocked. 42 new checks across `tests/test_geoscape.c` and `tests/test_titles.c`.
+
+**`Smap_DismissSelected`** (ported in `pufo_strateg.c` beside `Smap_ClearSelection`) is that function
+plus one step: the selected craft — its index lives in **colour slot 0 of line 0** of the root line
+list, the same slot `Smap_BeginCraftSelect` reads at 0x839CC — is sent home via `Ship_RetargetTravel`
+(0x84448) before the line is dropped (0x84454), the game unpauses only if the removal left the list
+empty (0x84460), and `bMapSelectionFlag` (byte_159E84, renamed) is cleared. Deviation: the original
+hands `Ship_RetargetTravel` the root panel pointer 0x158890, which that function never reads; the
+port passes the removal env it actually needs.
+
+**`Smap_InitCraftSelectState`** (ported in `pufo_geoscape.c` beside `BaseFac_SetCellBuildState`)
+builds the 36-byte tactical tile-type grid `abTactTileTypes @ 0x159D5C` (read by
+`Map_BuildMissionTerrain` at 0x22EA4 and `Tact_DeployTeamAndHwps` at 0x3A06C) for an assault on one
+base. The grid starts as 36 copies of 20 ("empty"). A cell with zero `buildDays` (lane
+`grid + 36*base`) takes `aCraftPlacementCodeByFacType[facType]` (byte_A6568, renamed) where facType
+is the fac-lane byte at lane offset +108 — the same `6*(row+18)` offset `BaseFac_SetCellBuildState`
+returns as residue; facType 0xFF and cells under construction contribute nothing, and a cell already
+stamped by a hangar is skipped (the `== 20` gate). The hangar (11) stamps 16/17/18/19 at byte offsets
++0/+1/+6/+7 from its anchor — the ARM's own displacements at 0x61C3C..0x61C60, the same arithmetic
+`BaseFac_SetCellBuildState` uses for its tileA quadrants, so at column 5 the +1 wraps to the next
+row. Latent original bug 0x61C34 (ledger): an anchor at row 5 writes past the 36-byte grid into
+0x159D80, the base count byte; the port refuses the past-the-grid stores. Deviation: the original
+reaches the tile grid at `grid + 1524` (the two blocks are adjacent globals); the port takes them as
+separate pointers and returns void where the original returns the grid base.
+
+**`EndScreen_Init`** (ported in `pufo_titles.c`) sets up the credits screen for an ending. The two
+endings differ in four values only: rows 10/16 into `nTitlesMaxRows`, the row table
+`aGoodEndRowRecs`/`aBadEndRowRecs` (the image blobs at 0xA6458/0xA6480 — text records 0x56B..0x574
+and 0x575..0x584, copied 40/64 bytes into `aTitlesRowRecs @ 0xB35D8`), `goodend.pal`/`badend.pal`
+into palette slot 0x15, and music track 4/3. The font step is the easy one to misread:
+`fontSys_nGlyphBase` (0x158290 = fontSys + 0x28, renamed) is set to the running frame count BEFORE
+`Font_LoadSpr("font")`, so the glyph base becomes the first frame index of the font group. Then the
+"z" samples, the pad glyph (`goodend.pad`/`badend.pad` allocated to the archive-reported size into
+`pTitlesBackdrop`), both volume applications, `StartTimers_A`, screen id 18, scroll 0. Deviation: the
+original's `operator new` is unchecked; the port skips the read when the allocation failed, and
+passes the option block's volumes explicitly where the original reads them from globals.
+
 Named this step: `nNextBaseSiteId` (0x186558), `abBaseKindTable` (0x1864DD), and `nSmapParam3` →
 `nStrategSeedCounter` (0x18640C, the per-item seed `StrategItem_ctor` writes).
 
@@ -7057,10 +7098,10 @@ ignores it, so the port returns void.
 Five globals named this step: `pPadSoldier`, `pCmdPadCs0/1/2` (0x186C30/34/38, `PadImage *`) and
 `aTextRec56..66`.
 
-## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
+## `Tact_SelectTeamUnits (0x39744)`, decoded and ported (2883497, `pufo_tactctl.c:491`)
 
 All four of its callees are ported (`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Tact_SelectUnit`,
-`Unit_RecalcInventoryStat`), so this is ready to do.
+`Unit_RecalcInventoryStat`).
 
 The deployment position comes from `byte_A66B8`, a table of 104-byte records indexed by the selector byte
 `unk_128ACC`:

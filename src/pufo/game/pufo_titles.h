@@ -21,6 +21,8 @@
 #include "pufo_common.h"
 
 #include "game/pufo_boot.h"
+#include "game/pufo_font.h"
+#include "game/pufo_options.h"
 #include "render/pufo_render.h"
 
 #define PUFO_TITLES_W        240
@@ -154,5 +156,42 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv);
  * allocate zero bytes and then read the header out of that allocation. The port skips the record loop in
  * that case and still resets the frame counter and advances the scene index. */
 i32 Titles_LoadScene(TitlesAnimation *pEnv);
+
+/* --- the ending screens ---------------------------------------------------------------------
+ *
+ * Evidence: EndScreen_Init @ 0x388b0, called from Tact_CheckBattleEnd @ 0x3501C/0x35188,
+ * Smap_BeginCraftSelect @ 0x84230, and Geoscape_CloseUI @ 0x8BBF8.
+ *
+ * The two endings share one body and differ in four values: the row count (10 good / 16 bad), the
+ * row-record table (the image blobs unk_A6458 and unk_A6480 - text records 0x56B..0x574 for the
+ * good end, 0x575..0x584 for the bad end), the palette (goodend.pal / badend.pal, both into slot
+ * 0x15), and the music track (4 / 3). The backdrop glyph is goodend.pad / badend.pad, allocated to
+ * the byte size the archive reports and read into it.
+ *
+ * The font step is the one that is easy to misread: unk_158290 is fontSys + 0x28, the glyph index
+ * base Text_DrawString adds character bytes to, and the original sets it to the running sprite
+ * frame count BEFORE loading "font" - so the glyph base becomes the first frame index of the font
+ * group. Sound samples come from the "z" prefix. The tail is StartTimers_A, screen id 18, and a
+ * zeroed scroll.
+ */
+extern const i32 g_aGoodEndRowRecs[10];
+extern const i32 g_aBadEndRowRecs[16];
+
+typedef struct EndScreenInitEnv {
+    PufoFont        *pFont;      /* fontSys @ 0x158268 */
+    i32             *pnMaxRows;  /* unk_157194 */
+    i32             *anRowRec;   /* unk_B35D8: 16 u32 slots; the good end fills the first 10 */
+    u8             **ppBackdrop; /* unk_1571C0: the end-screen backdrop glyph */
+    i32             *pnScroll;   /* unk_138E88 */
+    u16             *puUiScreen; /* Map_nUiScreen @ Map+0x3A */
+    const PufoOptions *pOptions; /* the option block the two volume calls read */
+} EndScreenInitEnv;
+
+/* EndScreen_Init @ 0x388b0. bGoodEnd picks the good-ending values; zero picks the bad ones.
+ *
+ * Deviation: the original's operator new is unchecked and AssetReader_Read runs on it whatever
+ * the archive lookup found; the port skips the read when the allocation failed. The two volume
+ * calls read the option block in the original; the port passes its values explicitly. */
+void EndScreen_Init(const EndScreenInitEnv *pEnv, u8 bGoodEnd);
 
 #endif /* PUFO_TITLES_H */

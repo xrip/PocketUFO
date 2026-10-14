@@ -345,6 +345,74 @@ i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
     return 6 * (nFacRow + 18); /* 0x624F8: the facType address delta, returned as residue */
 }
 
+/* byte_A6568 @ 0xA6568: the placement code a facility type earns in the tactical tile-type grid.
+ * Index 11 (the hangar) maps to 20 - the empty sentinel - because the hangar's own 2x2 stamp
+ * (16, 17, 18, 19) overwrites the anchor right after. Facility types run 0..17 plus the 0xFF
+ * sentinel, so entries 18..23 (zero) and 24..31 are never reached by Smap_InitCraftSelectState;
+ * they are kept because the original's table is 32 bytes wide. */
+const u8 g_aCraftPlacementCodeByFacType[32] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x07, 0x08,
+    0x0E, 0x0D, 0x0F, 0x10, 0x0C, 0x06, 0x09, 0x0A,
+    0x0B, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x1C, 0x0E, 0x0F, 0x10, 0x12, 0x13, 0x14, 0x16
+};
+
+/* Smap_InitCraftSelectState @ 0x61b94. Build the 36-byte tactical tile-type grid (0x159D5C, read
+ * by Map_BuildMissionTerrain at 0x22EA4 and Tact_DeployTeamAndHwps at 0x3A06C) for an assault on
+ * base nBaseIndex.
+ *
+ * The grid starts as 36 copies of 20 ("empty"). For each cell of the base's 6x6 buildDays lane
+ * (grid + 36*nBaseIndex, the same lane BaseFac_SetCellBuildState writes): a cell that is still
+ * under construction (non-zero buildDays) contributes nothing; otherwise the facType layer byte
+ * (lane offset +108 - the same 6*(row+18) offset BaseFac_SetCellBuildState returns) picks a
+ * placement code through g_aCraftPlacementCodeByFacType, unless it is the 0xFF empty sentinel or
+ * the grid cell was already stamped by an earlier hangar block (the `== 20` test).
+ *
+ * Facility 11 is the hangar: it stamps 16, 17, 18, 19 at byte offsets +0, +1, +6, +7 from the
+ * anchor - the ARM's own displacements at 0x61C3C..0x61C60. Note these are byte offsets in a
+ * 6-wide grid, so at column 5 the +1 wraps to the next row, exactly as the identical +1/+6/+7
+ * arithmetic in BaseFac_SetCellBuildState does.
+ *
+ * Two deviations. The original reaches the tile grid through the facility grid base + 1524 (the
+ * two blocks are adjacent globals 0x159768 and 0x159D5C); the port takes them as separate
+ * pointers. And the stamp has no bound: an anchor at row 5 writes up to six bytes past the 36-byte
+ * grid, into 0x159D80 - the base count byte. The port refuses the past-the-grid stores (the
+ * original's own placement path bounds hangar anchors below row 5, so the spill is latent). The
+ * original returns the grid base as register residue; the port returns void. */
+void Smap_InitCraftSelectState(u8 *abFacilityGrid, u8 *abTileTypes, i32 nBaseIndex)
+{
+    for (i32 i = 0; i < 36; ++i) {
+        abTileTypes[i] = 20; /* 0x61BB4 */
+    }
+
+    for (i32 nRow = 0; nRow < 6; ++nRow) {
+        for (i32 nCol = 0; nCol < 6; ++nCol) {
+            const i32 nCell = 6 * nRow + nCol;
+
+            if (abFacilityGrid[36 * nBaseIndex + nCell] != 0) { /* 0x61BE8: buildDays lane */
+                continue;
+            }
+
+            const u8 nFacType = abFacilityGrid[480 + 144 * nBaseIndex + nCell]; /* 0x61C0C */
+            if (nFacType == 0xFF) { /* 0x61C20 */
+                continue;
+            }
+            if (abTileTypes[nCell] != 20) { /* 0x61C20: already stamped */
+                continue;
+            }
+
+            abTileTypes[nCell] = g_aCraftPlacementCodeByFacType[nFacType]; /* 0x61C28 */
+
+            if (nFacType == PUFO_FAC_TYPE_HANGAR) { /* 0x61C34: the 2x2 stamp */
+                abTileTypes[nCell] = 16; /* 0x61C3C */
+                if (nCell + 1 < 36) { abTileTypes[nCell + 1] = 17; } /* 0x61C48 */
+                if (nCell + 6 < 36) { abTileTypes[nCell + 6] = 18; } /* 0x61C54 */
+                if (nCell + 7 < 36) { abTileTypes[nCell + 7] = 19; } /* 0x61C60 */
+            }
+        }
+    }
+}
+
 /* Base_GrantStarterItems @ 0x95fa4. Four adds against one base, in the original's order. */
 void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 bGrant)
 {

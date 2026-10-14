@@ -909,6 +909,38 @@ u8 Smap_ClearSelection(UiLineList *pLines, GameTime *pTime, u8 *pbSelectionFlag)
     return pbSelectionFlag != NULL ? *pbSelectionFlag : 0;
 }
 
+/* Smap_DismissSelected @ 0x84428. The dismiss half of the map selection, the same shape as
+ * Smap_ClearSelection plus one step: the selected craft is sent home first.
+ *
+ * The craft index is COLOUR SLOT 0 of line 0 - the contact message stores the ship index in its
+ * own record, which is also how Smap_BeginCraftSelect picks the craft (0x839CC). Then, in the
+ * original's order: Ship_RetargetTravel (0x84448), drop line 0 (0x84454), unpause only if the
+ * removal left the list empty (0x84460, the count byte at +3400), clear the selection flag
+ * (0x84470).
+ *
+ * Deviation: the original passes the root panel pointer 0x158890 as Ship_RetargetTravel's first
+ * argument, which that function never reads; the port passes the removal env the retarget
+ * actually needs. Like Smap_ClearSelection the port returns the flag's value where the original
+ * hands back the address of byte_159E84. */
+u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, UiLineList *pLines,
+                        GameTime *pTime, u8 *pbSelectionFlag)
+{
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pLines, 0, 0); /* 0x8443C */
+
+    (void)Ship_RetargetTravel(pShipEnv, nShipIdx); /* 0x84448 */
+    UiLineList_Remove(pLines, 0);                  /* 0x84454 */
+
+    if (pLines != NULL && pLines->nLineCount == 0 && pTime != NULL) {
+        GameTime_Unpause(pTime); /* 0x84464 */
+    }
+
+    if (pbSelectionFlag != NULL) {
+        *pbSelectionFlag = 0; /* 0x84470 */
+        return *pbSelectionFlag;
+    }
+    return 0;
+}
+
 i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *pList,
                                 i32 nStrategIdx)
 {

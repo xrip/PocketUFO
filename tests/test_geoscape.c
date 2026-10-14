@@ -1118,6 +1118,173 @@ static void TestClearSelection(void)
                "and only now does the same call unpause - that conditional is the function");
 }
 
+static void TestDismissSelected(void)
+{
+    static UiLineList lines;
+    static GameTime time;
+    static u8 bSelected;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static Ship g_aShip[1];
+    static Ship *g_apShip[1];
+    static BaseRec g_Base;
+    static BaseRec *g_apBase[1];
+    static Soldier *g_apSol[1];
+    static ObjectRecFull *g_apObj[1];
+    static u8 g_abHangar[64];
+    static i32 g_anAssigned[1];
+    static i32 nSeed, nTotalSec, nAssignedCount;
+    static u8 nShipCount, once;
+    static u16 nSoldierCount;
+    ShipRemovalEnv env;
+    StrategItem *pEntry;
+    void **apSlots;
+
+    printf("Smap_DismissSelected\n");
+
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    lines.anColor[0][0] = 0; /* the selected craft index lives in colour slot 0 of line 0 */
+    lines.anColor[1][0] = 0;
+    time.bPaused = 1;
+    bSelected = 1;
+
+    memset(&g_aShip[0], 0, sizeof(g_aShip[0]));
+    g_aShip[0].bId = 10;
+    g_aShip[0].bHomeBase = 0;
+    g_aShip[0].bIntercepting = 1;
+    g_aShip[0].nStrategIdx = 0;
+    g_apShip[0] = &g_aShip[0];
+
+    pEntry = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pEntry->nType = 1;
+    pEntry->bActive = 0;
+    pEntry->nDisplayId = 10; /* the craft's own entry, found by bId */
+    pEntry->nTimer = 777;
+    pEntry->nX = 40;
+    pEntry->nY = 60;
+    apSlots = (void **)malloc(sizeof(void *) * 2);
+    apSlots[0] = pEntry;
+    list.nCount = 1;
+    list.apItems = apSlots;
+
+    memset(&g_Base, 0, sizeof(g_Base));
+    g_Base.nUnk8 = 100;
+    g_Base.nUnk12 = 200;
+    g_apBase[0] = &g_Base;
+
+    nShipCount = 1;
+    nSoldierCount = 0;
+    nAssignedCount = 0;
+    once = 0;
+    nTotalSec = 0;
+    nSeed = 0;
+    world.apCraft = g_apShip;
+    world.nShipCount = 1;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+
+    env.apCraft = g_apShip;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = g_apSol;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = g_apObj;
+    env.nObjectCount = 0;
+    env.pStrategList = &list;
+    env.pWorld = &world;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctx;
+    env.abHangarFlag = g_abHangar;
+    env.nHangarFlagCap = 64;
+    env.anAssignedShip = g_anAssigned;
+    env.pnAssignedShipCount = &nAssignedCount;
+    env.apBases = g_apBase;
+    env.pnGameTotalSec = &nTotalSec;
+
+    /* Two messages on screen: the selected craft is sent home, line 0 is dropped, and a message
+     * is still up, so the game stays paused. */
+    CheckEqI32((i32)Smap_DismissSelected(&env, &lines, &time, &bSelected), 0,
+               "returns the cleared flag value");
+    CheckEqI32(lines.nLineCount, 1, "the first line is dropped");
+    CheckEqI32(time.bPaused, 1, "the game stays paused while a message is still on screen");
+    CheckEqI32(bSelected, 0, "the selection flag is cleared either way");
+    CheckEqI32(pEntry->nTimer, 0, "the selected craft's own entry timer is restarted at zero");
+    CheckEqI32(pEntry->nDestX, 100, "and its travel heads for the home base x");
+    CheckEqI32(pEntry->nDestY, 200, "and its y");
+    CheckEqI32(g_aShip[0].bIntercepting, 0, "and the intercept flag is cleared");
+
+    /* Now the list is empty, so the same call is allowed to resume the game. */
+    (void)Smap_DismissSelected(&env, &lines, &time, &bSelected);
+    CheckEqI32(lines.nLineCount, 0, "the list is empty");
+    CheckEqI32(time.bPaused, 0,
+               "and only now does the call unpause - the same conditional as Smap_ClearSelection");
+
+    free(apSlots);
+    free(pEntry);
+}
+
+static void TestInitCraftSelectState(void)
+{
+    static u8 g_abGrid[1524];
+    static u8 g_abTiles[44];
+
+    printf("Smap_InitCraftSelectState\n");
+
+/* buildDays lane and facType layer, the two row bases the ARM forms */
+#define C_D(b, r, c) g_abGrid[36 * (b) + 6 * (r) + (c)]
+#define C_F(b, r, c) g_abGrid[480 + 144 * (b) + 6 * (r) + (c)]
+
+    /* An empty base: buildDays all zero, facType all the 0xFF sentinel -> the grid is all 20,
+     * and the guard bytes past the grid are untouched. */
+    memset(g_abGrid, 0, sizeof(g_abGrid));
+    memset(g_abGrid + 480, 0xFF, sizeof(g_abGrid) - 480);
+    memset(g_abTiles, 0xCC, sizeof(g_abTiles));
+    Smap_InitCraftSelectState(g_abGrid, g_abTiles, 0);
+    {
+        int bAll20 = 1;
+        for (int i = 0; i < 36; ++i) {
+            if (g_abTiles[i] != 20) { bAll20 = 0; }
+        }
+        Check(bAll20, "an empty base fills the grid with the 20 sentinel");
+        Check(g_abTiles[36] == 0xCC && g_abTiles[43] == 0xCC,
+              "and never writes past the 36-byte grid");
+    }
+
+    /* Base 1: a plain facility maps through the table; a cell under construction contributes
+     * nothing even when its facType is set. */
+    C_D(1, 0, 0) = 0;  C_F(1, 0, 0) = 6;  /* code 7 */
+    C_D(1, 1, 1) = 5;  C_F(1, 1, 1) = 3;  /* under construction */
+    Smap_InitCraftSelectState(g_abGrid, g_abTiles, 1);
+    CheckEqI32(g_abTiles[0], 7, "facType 6 maps to placement code 7");
+    CheckEqI32(g_abTiles[7], 20, "a cell under construction stays empty");
+
+    /* The hangar stamp wins over the later cell's own code: the anchor at (2,3) stamps
+     * 16/17/18/19 at +0/+1/+6/+7, and the loop reaches cell (2,4) afterwards - its facType 0
+     * would give code 0, but the `== 20` gate skips the already-stamped cell. */
+    C_F(1, 2, 3) = 11;
+    C_F(1, 2, 4) = 0;
+    Smap_InitCraftSelectState(g_abGrid, g_abTiles, 1);
+    CheckEqI32(g_abTiles[15], 16, "the hangar anchor is stamped 16");
+    CheckEqI32(g_abTiles[16], 17, "the +1 cell 17");
+    CheckEqI32(g_abTiles[21], 18, "the +6 cell 18");
+    CheckEqI32(g_abTiles[22], 19, "and the diagonal +7 cell 19");
+    Check(g_abTiles[0] == 7 && g_abTiles[7] == 20,
+          "and the earlier cells are rebuilt the same way - the grid is re-derived, not merged");
+
+    /* The guard: a hangar anchored at (5,5) would write six bytes past the grid in the original
+     * (into 0x159D80, the base count byte); the port refuses those stores. */
+    C_F(2, 5, 5) = 11;
+    Smap_InitCraftSelectState(g_abGrid, g_abTiles, 2);
+    CheckEqI32(g_abTiles[35], 16, "the (5,5) hangar still stamps its anchor");
+    Check(g_abTiles[36] == 0xCC && g_abTiles[42] == 0xCC,
+          "but the past-the-grid stamp stores are refused (deviation, latent original bug)");
+
+#undef C_D
+#undef C_F
+}
+
 static void TestPsiCapAndUpkeep(void)
 {
     static u8 g_abGrid[700];
@@ -1772,6 +1939,8 @@ int main(void)
     TestSoldiersAssigned();
     TestShipsAtBase();
     TestClearSelection();
+    TestDismissSelected();
+    TestInitCraftSelectState();
     TestDemolishBase();
     TestPsiCapAndUpkeep();
     TestFindFacilityCell();

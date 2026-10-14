@@ -579,6 +579,19 @@ void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
 i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
                               i32 nX, i8 nY, u8 bClear);
 
+/* byte_A6568 @ 0xA6568: facility type -> placement code for the tactical tile-type grid. The
+ * hangar entry (11) is 20, the empty sentinel, because the hangar's 2x2 stamp (16..19) overwrites
+ * the anchor right after. See Smap_InitCraftSelectState below. */
+extern const u8 g_aCraftPlacementCodeByFacType[32];
+
+/* Smap_InitCraftSelectState @ 0x61b94. Fill the 36-byte tactical tile-type grid (0x159D5C) for an
+ * assault on base nBaseIndex: 20 = empty; a built facility cell contributes
+ * g_aCraftPlacementCodeByFacType[facType] (facType 0xFF and cells under construction contribute
+ * nothing); the hangar stamps 16/17/18/19 at byte offsets +0/+1/+6/+7 from its anchor. The port
+ * takes the tile grid as a separate pointer (the original reaches it at grid + 1524) and refuses
+ * stamp stores past the 36-byte grid. */
+void Smap_InitCraftSelectState(u8 *abFacilityGrid, u8 *abTileTypes, i32 nBaseIndex);
+
 /* Base_GrantStarterItems @ 0x95fa4. Four BaseRec_AddItemQty calls against the base the original
  * keeps at Map+0x1174 and nothing else: object 105 gets +10, object 34 +2, object 31 +1 and object
  * 56 +33. The four are Map_apObjects105, Map_apObjects34, Map_apObjects31 and Map_apObjects56 --

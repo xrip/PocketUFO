@@ -2,7 +2,9 @@
 #include "game/pufo_titles.h"
 
 #include "game/pufo_font.h"
+#include "game/pufo_timer.h" /* Timer_StartA, the StartTimers_A the ending re-arms */
 #include "asset/pufo_asset.h" /* AssetReader, the titleN.dat lookup */
+#include "audio/pufo_audio.h" /* Sound_InitAndLoadSamples / LoadAndPlayMusic, the ending audio */
 #include "util/pufo_rand.h" /* Game_RandU16, the star and particle rolls */
 
 #include <math.h>
@@ -332,4 +334,76 @@ i32 Titles_DrawAnimatedFrame(TitlesAnimation *pEnv)
     (void)Titles_AnimateParticles(pEnv);
     Titles_UpdateStars(pEnv);
     return Titles_DrawCreditLines(&pEnv->Credits);
+}
+
+/* The two ending row-record tables, verbatim from the image blobs unk_A6458 (40 bytes) and
+ * unk_A6480 (64 bytes): text-record indices, ten for the good end, sixteen for the bad end. */
+const i32 g_aGoodEndRowRecs[10] = {
+    0x56B, 0x56C, 0x56D, 0x56E, 0x56F, 0x570, 0x571, 0x572, 0x573, 0x574
+};
+const i32 g_aBadEndRowRecs[16] = {
+    0x575, 0x576, 0x577, 0x578, 0x579, 0x57A, 0x57B, 0x57C,
+    0x57D, 0x57E, 0x57F, 0x580, 0x581, 0x582, 0x583, 0x584
+};
+
+/* EndScreen_Init @ 0x388b0. Set up the credits screen for an ending, in the original's order:
+ * clear the reader, re-init the font, pick the four ending-dependent values, copy the row table
+ * (40 or 64 bytes - the good end leaves slots 10..15 at whatever a previous run left), record the
+ * glyph base as the frame count before the "font" group is loaded, load and index the font, load
+ * the "z" samples, load the ending palette into slot 0x15, find the ending pad, start the music
+ * track, apply both volumes, allocate the backdrop to the pad's reported size and read it in,
+ * re-arm the A timers, set screen id 18, and zero the scroll. */
+void EndScreen_Init(const EndScreenInitEnv *pEnv, u8 bGoodEnd)
+{
+    AssetReader rdr;
+    const i32 *pRecs;
+    const char *pszPalette;
+    const char *pszPad;
+    i32 nRows;
+    i32 nTrack;
+    u32 cb;
+
+    AssetReader_Clear(&rdr); /* 0x388C0 */
+    PufoFont_Init(pEnv->pFont); /* 0x388CC */
+
+    if (bGoodEnd != 0) {
+        *pEnv->pnMaxRows = 10; /* 0x388DC */
+        nRows = 10;
+        pRecs = g_aGoodEndRowRecs;
+        pszPalette = "goodend.pal";
+        pszPad = "goodend.pad";
+        nTrack = 4; /* 0x38944 */
+    } else {
+        *pEnv->pnMaxRows = 16; /* 0x388EC */
+        nRows = 16;
+        pRecs = g_aBadEndRowRecs;
+        pszPalette = "badend.pal";
+        pszPad = "badend.pad";
+        nTrack = 3; /* 0x38984 */
+    }
+
+    memcpy(pEnv->anRowRec, pRecs, (size_t)nRows * sizeof(i32)); /* 0x388FC */
+
+    pEnv->pFont->nGlyphBase = pEnv->pFont->nTotalSprFrames; /* 0x38908: unk_158290 = fontSys + 0x28 */
+    (void)Font_LoadSpr(pEnv->pFont, "font"); /* 0x38910 */
+    Font_BuildIndex(pEnv->pFont); /* 0x38918 */
+
+    (void)Sound_InitAndLoadSamples("z"); /* 0x38920 */
+
+    Palette_Load(pszPalette, 0x15u); /* 0x38934 / 0x38974 */
+    (void)AssetReader_Find(&rdr, pszPad); /* 0x38940 / 0x38980 */
+    Sound_LoadAndPlayMusic(nTrack); /* 0x38988 */
+    Sound_ApplyMusicVolume(Options_MusicLevel(pEnv->pOptions), pEnv->pOptions->bMusicOff); /* 0x3898C */
+    Sound_ApplySfxVolume(Options_SfxLevel(pEnv->pOptions), pEnv->pOptions->bSoundOff); /* 0x38990 */
+
+    cb = AssetReader_Size(&rdr); /* 0x38998 */
+    *pEnv->ppBackdrop = (u8 *)malloc(cb); /* 0x389A4: operator new, unchecked in the original */
+    cb = AssetReader_Size(&rdr); /* 0x389AC: the size is re-read, not kept */
+    if (*pEnv->ppBackdrop != NULL) { /* deviation: the original reads whatever new returned */
+        (void)AssetReader_Read(&rdr, *pEnv->ppBackdrop, cb); /* 0x389BC */
+    }
+
+    Timer_StartA(); /* 0x389C0: StartTimers_A */
+    *pEnv->puUiScreen = 18; /* 0x389CC: Map_nUiScreen */
+    *pEnv->pnScroll = 0; /* 0x389DC: unk_138E88 */
 }

@@ -9,7 +9,10 @@
 
 #include "game/pufo_titles.h"
 #include "game/pufo_font.h"
+#include "game/pufo_options.h"
+#include "game/pufo_timer.h"
 #include "asset/pufo_asset.h"
+#include "audio/pufo_audio.h"
 #include "render/pufo_render.h"
 
 static int g_nFailures;
@@ -445,6 +448,173 @@ static int TestLoadScene(void)
     return 0;
 }
 
+/* --- EndScreen_Init --------------------------------------------------------------------------
+ *
+ * A recording audio backend (the built-in stub reports "not ready", which would skip the music
+ * path) and a recording timer backend, so the ending's side effects are observable without audio
+ * or a window. */
+static i32 g_nMusicLoads;
+static u32 g_cbMusic;
+static i32 g_nTimerSets;
+static u32 g_aTimerId[4];
+static u32 g_aTimerMs[4];
+
+static bool Fake_Init(u32 nRate, i32 nChannels, u32 nFlags)
+{
+    (void)nRate; (void)nChannels; (void)nFlags;
+    return true;
+}
+static void Fake_SetWindow(void *hWnd) { (void)hWnd; }
+static void *Fake_SampleLoad(const void *pData, u32 cb, u32 nMode)
+{
+    (void)pData; (void)cb; (void)nMode;
+    return (void *)0x1;
+}
+static void Fake_SampleSetMode(void *pSample, u32 nMode) { (void)pSample; (void)nMode; }
+static void Fake_SampleFree(void *pSample) { (void)pSample; }
+static i32 Fake_PlaySound(void *pSample) { (void)pSample; return 0; }
+static void Fake_SetSfxVolume(i32 nVolume) { (void)nVolume; }
+static void Fake_SetSfxPaused(i32 nPaused) { (void)nPaused; }
+static void *Fake_MusicLoad(const void *pData, u32 cb, u32 nMode)
+{
+    (void)pData; (void)nMode;
+    ++g_nMusicLoads;
+    g_cbMusic = cb;
+    return (void *)0x2;
+}
+static void Fake_MusicLoop(void *pMod, i32 bLoop) { (void)pMod; (void)bLoop; }
+static void Fake_MusicOptimize(void *pMod, i32 nA, i32 nB) { (void)pMod; (void)nA; (void)nB; }
+static void Fake_MusicPlay(void *pMod) { (void)pMod; }
+static void Fake_MusicVolume(void *pMod, i32 nVolume) { (void)pMod; (void)nVolume; }
+static void Fake_MusicPaused(void *pMod, i32 bPaused) { (void)pMod; (void)bPaused; }
+static void Fake_MusicFree(void *pMod) { (void)pMod; }
+static void Fake_Close(void) { }
+
+static const PufoAudioBackend g_fakeAudio = {
+    Fake_Init, Fake_SetWindow, Fake_SampleLoad, Fake_SampleSetMode, Fake_SampleFree,
+    Fake_PlaySound, Fake_SetSfxVolume, Fake_SetSfxPaused, Fake_MusicLoad,
+    Fake_MusicLoop, Fake_MusicOptimize, Fake_MusicPlay, Fake_MusicVolume,
+    Fake_MusicPaused, Fake_MusicFree, Fake_Close
+};
+
+static void TimerRecSet(HWND hWnd, u32 nId, u32 nMs, void *pUser)
+{
+    (void)hWnd; (void)pUser;
+    if (g_nTimerSets < 4) {
+        g_aTimerId[g_nTimerSets] = nId;
+        g_aTimerMs[g_nTimerSets] = nMs;
+    }
+    ++g_nTimerSets;
+}
+static void TimerRecKill(HWND hWnd, u32 nId, void *pUser) { (void)hWnd; (void)nId; (void)pUser; }
+
+static u32 ArchiveMemberSize(const char *pszName)
+{
+    AssetReader rdr;
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, pszName)) {
+        return 0u;
+    }
+    return AssetReader_Size(&rdr);
+}
+
+static void TestEndScreen(void)
+{
+    static PufoOptions opts;
+    static i32 aRowRec[16];
+    static i32 nMaxRows, nScroll;
+    static u16 nUiScreen;
+    static u8 *pBackdrop;
+    EndScreenInitEnv env;
+    const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    TimerBackend tb;
+    i32 nPalInk;
+
+    printf("EndScreen_Init @ 0x388b0\n");
+
+    if (!Asset_OpenArchives(apszPaths)) {
+        Check(false, "Asset_OpenArchives(lang.dat, main.dat)");
+        return;
+    }
+
+    Sound_SetBackend(&g_fakeAudio);
+    tb.pfnSet = TimerRecSet;
+    tb.pfnKill = TimerRecKill;
+    tb.pUser = NULL;
+    Timer_SetBackend(&tb);
+    Options_InitDefaults(&opts);
+
+    memset(&g_fontSys, 0, sizeof(g_fontSys));
+    memset(aRowRec, 0xEE, sizeof(aRowRec));
+    memset(g_aPalette[21], 0, sizeof(g_aPalette[21]));
+    nScroll = 999;
+    nUiScreen = 0;
+    pBackdrop = NULL;
+    g_nMusicLoads = 0;
+    g_cbMusic = 0;
+    g_nTimerSets = 0;
+
+    env.pFont      = &g_fontSys;
+    env.pnMaxRows  = &nMaxRows;
+    env.anRowRec   = aRowRec;
+    env.ppBackdrop = &pBackdrop;
+    env.pnScroll   = &nScroll;
+    env.puUiScreen = &nUiScreen;
+    env.pOptions   = &opts;
+
+    EndScreen_Init(&env, 1);
+
+    CheckEqI32("the good end has 10 credit rows", nMaxRows, 10);
+    CheckEqI32("its first row record is 0x56B", aRowRec[0], 0x56B);
+    CheckEqI32("and its last 0x574", aRowRec[9], 0x574);
+    Check(aRowRec[10] == (i32)0xEEEEEEEE, "slots past the ten are left at whatever was there");
+    CheckEqI32("the screen id becomes 18", (i32)nUiScreen, 18);
+    CheckEqI32("and the scroll is zeroed", nScroll, 0);
+
+    Check(g_nTimerSets == 2 && g_aTimerId[0] == PUFO_TIMER_RENDER &&
+          g_aTimerMs[0] == PUFO_TIMER_MS_RENDER && g_aTimerId[1] == PUFO_TIMER_ANIM &&
+          g_aTimerMs[1] == PUFO_TIMER_MS_ANIM,
+          "StartTimers_A re-arms the render (40 ms) and animation (25 ms) timers");
+
+    Check(pBackdrop != NULL, "the backdrop glyph was allocated");
+    Check(pBackdrop != NULL && (pBackdrop[0] != 0u || pBackdrop[1] != 0u),
+          "and goodend.pad was read into it");
+
+    Check(Sound_IsInitialised(), "the z samples went through the audio init");
+    CheckEqI32("one music track was loaded", g_nMusicLoads, 1);
+    CheckEqI32("and it is track 4, the good ending", (i32)g_cbMusic,
+               (i32)ArchiveMemberSize("back4.it"));
+    Check(Sound_HasMusic(), "which is now playing");
+
+    nPalInk = 0;
+    for (size_t i = 0; i < sizeof(g_aPalette[21]); ++i) {
+        if (g_aPalette[21][i] != 0u) { nPalInk = 1; break; }
+    }
+    Check(nPalInk != 0, "goodend.pal filled palette slot 0x15");
+
+    CheckEqI32("the glyph base is the frame count recorded BEFORE the font group loads",
+               (i32)g_fontSys.nGlyphBase, 0);
+    Check(g_fontSys.nTotalSprFrames > 0, "and the font group loaded after it");
+
+    free(pBackdrop);
+    pBackdrop = NULL;
+    memset(aRowRec, 0xEE, sizeof(aRowRec));
+    g_nMusicLoads = 0;
+    g_cbMusic = 0;
+
+    EndScreen_Init(&env, 0);
+
+    CheckEqI32("the bad end has 16 credit rows", nMaxRows, 16);
+    CheckEqI32("starting at record 0x575", aRowRec[0], 0x575);
+    CheckEqI32("and ending at 0x584", aRowRec[15], 0x584);
+    Check(pBackdrop != NULL, "badend.pad was allocated and read too");
+    CheckEqI32("on track 3, the bad ending", (i32)g_cbMusic, (i32)ArchiveMemberSize("back3.it"));
+
+    free(pBackdrop);
+    Sound_Shutdown();
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -452,6 +622,7 @@ int main(void)
     TestBackdrop();
     TestBorderAndBlur();
     TestAnimation();
+    TestEndScreen();
     if (TestLoadScene() != 0) {
         printf("\n%s: %d failure(s)\n", "FAIL", g_nFailures);
         return 1;

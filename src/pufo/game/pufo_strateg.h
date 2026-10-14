@@ -512,6 +512,13 @@ i32 Ship_FindIndexByStrategType(const GeoscapeWorld *pWorld, const StrategList *
 struct UiLineList;
 u8 Smap_ClearSelection(struct UiLineList *pLines, GameTime *pTime, u8 *pbSelectionFlag);
 
+/* Smap_DismissSelected @ 0x84428. The dismiss half of the map selection: retarget the selected
+ * craft home first (its index is colour slot 0 of line 0), then drop line 0, unpause only when the
+ * removal empties the list, and clear the selection flag. The original hands Ship_RetargetTravel
+ * the unused root panel pointer; the port passes the removal env it actually needs. */
+u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, struct UiLineList *pLines,
+                        GameTime *pTime, u8 *pbSelectionFlag);
+
 /* ------------------------------------------------------------- zoom levels
  *
  * Each zoom step swaps three layer globals and takes the map size from the second
