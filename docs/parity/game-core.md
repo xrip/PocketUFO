@@ -10042,3 +10042,59 @@ Still open in this family: `ResearchScreen_Init` (0x749a8, 592 B), `ResearchScre
 (0x733f4, 1600 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B), `ResearchScreen_Draw`
 (0x73a34, 2108 B), `ResearchScreen_Open` (0x616ac, 232 B) and `ResearchScreen_StartSelected`
 (0x73240, 232 B).
+
+
+## The manufacturing quantity buttons, the research pair's mirror (done)
+
+`ManufScreen_IncSelectedQty @ 0x6dddc` (228 B), `ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0`
+(172 B), `ManufScreen_DecSelectedQty @ 0x6e09c` (160 B), `ManufScreen_DecEngineers @ 0x6e330`
+(164 B) and `ManufScreen_UpdateProgress @ 0x6df6c` (304 B) are the manufacturing screen's quantity
+controls, and they are the research pair with the crew and facility kinds swapped: engineers for
+scientists, workshops for labs, `auManufCol` (0x15E19C, 200 u16 per base) for `auResearchCol`.
+
+The same panel trick carries the selection. `pManufProductPanel` @ 0x15EE44 holds a product number
+per row in `anLineAux`, and `nManufProductRowCache` @ 0x15EE3C caches that panel's `nUnk3032` row
+cursor -- `ManufScreen_SelectListed` @ 0x6E944 writes it, exactly as
+`PlaySample7_SetFlags_Cache0xBD8` does the research one. The entry index is
+`auManufCol[product + 200*base]`, composed over the 0x159E98 product-block anchor plus 0x4304
+(17156), and three of the buttons return that 17156 -- the same address residue the research
+buttons return as 4900.
+
+`ManufScreen_ReduceSelectedQtyToOne` is renamed in the IDB from `ManufScreen_GetSelectedProductId`.
+It never returns a product id. It steps the selected product's quantity down one at a time while the
+value is above 1 (0x6DF30..0x6DF54, re-reading `anLineAux` on every pass), which is a clamp to 1; a
+zero entry is left at zero.
+
+`ManufScreen_DecEngineers` is the one that is not a mirror. It works on the 32-bit half of the
+product block, `aManufProductB` @ 0x15B79C (200 dwords per base -- the engineers assigned to each
+product), and its rule is that the assignment may drop by one only while it is strictly greater
+than `auManufCol[product + 200*base] + 1` (`LDR R4`, `LDRH R1`, `ADD R1,R1,#1`, `CMP R4,R1`,
+`SUBGT` at 0x6E394..0x6E3B8). It returns the 0x159E98 anchor itself: `ADDGT R2, R0, R2` is the last
+thing that touches R0, so the return is register residue, reproduced rather than interpreted.
+
+`ManufScreen_UpdateProgress` is the manufacturing twin of `ResearchScreen_UpdateProgress`: the
+engineer TOTAL fixes the iteration count, both gates get worse by one per store, and the loop
+returns the total re-read at 0x6E084. One difference -- the gate byte is re-read on every iteration
+(0x6DFA8), and when it is set the iteration skips the gates and the store but still counts.
+
+All five open by reading `bManufQtyGate` @ 0x15EE50 and bail out returning that byte when it is
+non-zero. **No code in the binary ever writes a non-zero value to that byte.** A search of the whole
+listing for `15EE50` returns 17 hits and the only store among them is `ManufScreen_SelectListed`
+writing 0 at 0x6E970, so in the shipped build the gate is dead and the buttons are never blocked.
+Recorded in `docs/parity/bugs.tsv` as `dead_code`, reproduced by the port because the original has
+it.
+
+IDB: `unk_15EE44` renamed `pManufProductPanel` (`UiPanel *`), `unk_15EE3C` renamed
+`nManufProductRowCache` (`int`), `unk_15EE34` renamed `bManufProductSelected` (the manufacturing
+counterpart of the research screen's 0x160C80 detail flag), `byte_15EE50` renamed `bManufQtyGate`,
+`unk_15E19C` renamed `auManufCol` (`unsigned __int16[1600]`), `unk_15B79C` renamed `aManufProductB`
+(`int[1600]`), and `ManufScreen_GetSelectedProductId` renamed `ManufScreen_ReduceSelectedQtyToOne`
+(`docs/idb/functions.tsv` and the regenerated `inventory-grouped.tsv` follow the rename). Comments
+on 0x6dddc, 0x6dec0, 0x6e09c, 0x6e330 and 0x6df6c.
+
+Deviation: the five take the panel, the row cache, the count byte, the base index, the gate byte and
+both columns as arguments and refuse or clamp where the original derefs blindly.
+
+Still open in this family: `ManufScreen_IncEngineers` (0x6e13c, 500 B), `ManufScreen_SelectListed`
+(0x6e914, 120 B), `ManufScreen_ClearProductSlot` (0x6f8cc, 216 B), `ManufScreen_Draw` (0x6e3e0,
+1332 B), `ManufScreen_DrawFrame` (0x6f9a4, 5400 B) and `ManufScreen_BuildPanels` (0x6e9e8, 2404 B).

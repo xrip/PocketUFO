@@ -619,6 +619,175 @@ i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv)
     return 0;
 }
 
+/* Which auManufCol entry the manufacturing buttons act on: the product number the panel carries
+ * for the cached row, plus that base's 200-entry column offset. */
+static i32 ManufQtyIndex(const ManufQtyEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pProductPanel == NULL || pEnv->apManufCols == NULL) {
+        return -1;
+    }
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    if (nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT) {
+        return -1;
+    }
+    const i32 nRow = (pEnv->pnProductRow != NULL) ? *pEnv->pnProductRow : 0;
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return -1;
+    }
+    const i32 nProduct = pEnv->pProductPanel->anLineAux[nRow]; /* 0x6DEF8, 0x6E0F0, 0x6DF30 */
+    if (nProduct < 0 || nProduct >= PUFO_PRODUCT_ENTRIES_PER_BASE) {
+        return -1;
+    }
+    return nProduct + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase; /* MUL #0xC8, ADD product */
+}
+
+/* ORIGINAL BUG (dead code): the gate every one of these buttons opens with. A non-zero
+ * bManufQtyGate @ 0x15EE50 stops it dead and the byte itself becomes the return value -- 0x6DDE0,
+ * 0x6DEC4, 0x6E0A0, 0x6E140, 0x6E334 and 0x6DFA8 all read it and bail -- but no code in the
+ * original ever writes a non-zero value to that byte: the only store to it anywhere is
+ * ManufScreen_SelectListed @ 0x6E970 writing 0. The gate never fires in the shipped build. The
+ * port keeps it because the original has it. */
+static i32 ManufQtyGateValue(const ManufQtyEnv *pEnv)
+{
+    return (pEnv->pbQtyGate != NULL) ? (i32)*pEnv->pbQtyGate : 0;
+}
+
+/* ManufScreen_IncSelectedQty @ 0x6dddc. The engineer gate first, then the workshop-slot gate,
+ * then the increment -- the research pair's shape with the crew and facility kinds swapped. */
+i32 ManufScreen_IncSelectedQty(const ManufQtyEnv *pEnv)
+{
+    const i32 nIdx = ManufQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+    const i32 nGate = ManufQtyGateValue(pEnv);
+    if (nGate != 0) {
+        return nGate; /* 0x6DDE4 */
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->puManufEntries != NULL) ? (i32)*pEnv->puManufEntries : 0;
+    const u16 *pCol = pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
+    u16 *pEntry = &pEnv->apManufCols[nIdx];
+
+    const i32 nEng = Base_GetEngineerCount(pEnv->pEngineerRec, pCol, nBase, nEntries);
+    if (nEng <= 0) {
+        return nEng; /* 0x6DE0C: R0 still holds the count the compare tested */
+    }
+    const i32 nActive = Base_CountActiveManuf(pCol, nEntries); /* 0x6DE20 */
+    if (!Base_HasWorkshopSlotFree(pEnv->abFacilityGrid, nBase, nActive + 1)) { /* 0x6DE38 */
+        return 0;
+    }
+    *pEntry = (u16)(*pEntry + 1); /* 0x6DEA4 */
+    return PUFO_MANUF_COL_OFFSET; /* 0x6DE88 */
+}
+
+/* ManufScreen_DecSelectedQty @ 0x6e09c. No gate beyond the entry being non-zero, and 17156 in R0
+ * whether it stored anything or not. */
+i32 ManufScreen_DecSelectedQty(const ManufQtyEnv *pEnv)
+{
+    const i32 nIdx = ManufQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+    const i32 nGate = ManufQtyGateValue(pEnv);
+    if (nGate != 0) {
+        return nGate; /* 0x6E0A4 */
+    }
+
+    u16 *pEntry = &pEnv->apManufCols[nIdx];
+    if (*pEntry != 0) { /* 0x6E108 */
+        *pEntry = (u16)(*pEntry - 1); /* 0x6E120 */
+    }
+    return PUFO_MANUF_COL_OFFSET; /* 0x6E0FC */
+}
+
+/* ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0, renamed in the IDB from
+ * ManufScreen_GetSelectedProductId because it never returns a product id. The ARM steps the value
+ * down one at a time while it is above 1 (0x6DF30..0x6DF54, re-reading anLineAux each pass), which
+ * is exactly a clamp to 1; the port writes the clamp directly and gets the same result. */
+i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv)
+{
+    const i32 nIdx = ManufQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+    const i32 nGate = ManufQtyGateValue(pEnv);
+    if (nGate != 0) {
+        return nGate; /* 0x6DEC8 */
+    }
+
+    u16 *pEntry = &pEnv->apManufCols[nIdx];
+    if (*pEntry > 1) { /* 0x6DF64: CMP R2, #1 / BHI */
+        *pEntry = 1;
+    }
+    return PUFO_MANUF_COL_OFFSET; /* 0x6DF10 */
+}
+
+/* ManufScreen_DecEngineers @ 0x6e330. The engineers assigned to this product (aManufProductB, a
+ * dword per product per base) may not fall to or below the quantity being made plus one. */
+i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv)
+{
+    const i32 nIdx = ManufQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+    const i32 nGate = ManufQtyGateValue(pEnv);
+    if (nGate != 0) {
+        return nGate; /* 0x6E338 */
+    }
+
+    if (pEnv->apProductB != NULL) {
+        const i32 nAlloc = pEnv->apProductB[nIdx]; /* 0x6E394 */
+        const i32 nQty = (i32)pEnv->apManufCols[nIdx] + 1; /* 0x6E3A4..0x6E3AC */
+        if (nAlloc > nQty) { /* 0x6E3B0: CMP R4, R1 / SUBGT */
+            pEnv->apProductB[nIdx] = nAlloc - 1; /* 0x6E3B8 */
+        }
+    }
+    return PUFO_MANUF_ANCHOR; /* 0x6E3BC: R0 still holds the 0x159E98 product-block anchor */
+}
+
+/* ManufScreen_UpdateProgress @ 0x6df6c. The manufacturing twin of ResearchScreen_UpdateProgress:
+ * the engineer total fixes the iteration count, the two gates decide what stores. The gate byte is
+ * re-read on every iteration (0x6DFA8), and when it is set the iteration skips the gates and the
+ * store but still counts. */
+i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv)
+{
+    const i32 nIdx = ManufQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->puManufEntries != NULL) ? (i32)*pEnv->puManufEntries : 0;
+    const u16 *pCol = pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase;
+    u16 *pEntry = &pEnv->apManufCols[nIdx];
+
+    i32 nTotal = Base_GetItemQty(pEnv->pEngineerRec, nBase); /* Base_GetItemQtyB, 0x6DF80 */
+    if (nTotal <= 0) {
+        return nTotal; /* 0x6DF88 */
+    }
+
+    i32 nIter = 0; /* R9 */
+    for (;;) {
+        if (ManufQtyGateValue(pEnv) == 0) { /* 0x6DFA8..0x6DFB4 */
+            const i32 nEng = Base_GetEngineerCount(pEnv->pEngineerRec, pCol, nBase, nEntries);
+            if (nEng > 0) { /* 0x6DFD8 */
+                const i32 nActive = Base_CountActiveManuf(pCol, nEntries); /* 0x6DFEC */
+                if (Base_HasWorkshopSlotFree(pEnv->abFacilityGrid, nBase, nActive + 1)) { /* 0x6E010 */
+                    *pEntry = (u16)(*pEntry + 1); /* 0x6E040 */
+                }
+            }
+        }
+        ++nIter; /* 0x6E078 */
+        nTotal = Base_GetItemQty(pEnv->pEngineerRec, nBase); /* 0x6E084 */
+        if (nIter >= nTotal) {
+            break; /* 0x6E090: CMP R9, R0 / BLT */
+        }
+    }
+    return nTotal; /* 0x6E098 */
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

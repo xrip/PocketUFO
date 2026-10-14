@@ -979,6 +979,182 @@ static void TestResearchAllocate(void)
     CheckEqI32(ResearchScreen_AccumulateAllocated(NULL), 0, "and a missing environment returns 0");
 }
 
+static void TestManufQty(void)
+{
+    static UiPanel g_Panel;
+    static u16 g_aCols[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
+    static i32 g_aProdB[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
+    static u8 g_aGrid[PUFO_GRID_SIZE];
+    static ObjectRecFull g_EngRec;
+    static i32 g_nRow;
+    static i8 g_nBase;
+    static u16 g_nEntries;
+    static u8 g_nGate;
+    ManufQtyEnv env;
+
+    printf("\nManufScreen_IncSelectedQty @ 0x6dddc / DecSelectedQty @ 0x6e09c / "
+           "ReduceSelectedQtyToOne @ 0x6dec0 / DecEngineers @ 0x6e330 / UpdateProgress @ 0x6df6c\n");
+
+    memset(&g_Panel, 0, sizeof(g_Panel));
+    memset(g_aCols, 0, sizeof(g_aCols));
+    memset(g_aProdB, 0, sizeof(g_aProdB));
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(&g_EngRec, 0, sizeof(g_EngRec));
+
+    g_Panel.anLineAux[0] = 7; /* product 7 */
+    g_Panel.anLineAux[1] = 199;
+    g_aGrid[480 + 144 * 0 + 6 * 1 + 2] = 3; /* one free workshop cell for base 0: capacity 50 */
+    g_EngRec.auPerBaseVal[0] = 6;
+    g_EngRec.auPerBaseVal[1] = 3;
+
+    memset(&env, 0, sizeof(env));
+    env.pProductPanel = &g_Panel;
+    env.pnProductRow = &g_nRow;
+    env.apManufCols = g_aCols;
+    env.apProductB = g_aProdB;
+    env.puManufEntries = &g_nEntries;
+    env.pEngineerRec = &g_EngRec;
+    env.abFacilityGrid = g_aGrid;
+    env.pnSelectedBaseIdx = &g_nBase;
+    env.pbQtyGate = &g_nGate;
+    g_nRow = 0;
+    g_nBase = 0;
+    g_nEntries = 8;
+    g_nGate = 0;
+
+    g_aCols[7] = 3;
+    CheckEqI32(ManufScreen_IncSelectedQty(&env), 17156,
+               "the increment returns 17156, the column's offset from the product-block anchor");
+    CheckEqI32(g_aCols[7], 4, "product 7's quantity went 3 to 4");
+    CheckEqI32(g_aCols[6], 0, "the neighbour is untouched");
+    CheckEqI32(g_aCols[200 + 7], 0, "and base 1's copy of the same product is untouched");
+
+    /* The gate byte. It is dead in the shipped build -- nothing writes it non-zero -- but the
+     * original tests it, so the port does too. */
+    g_nGate = 1;
+    CheckEqI32(ManufScreen_IncSelectedQty(&env), 1, "a set gate returns the byte itself");
+    CheckEqI32(g_aCols[7], 4, "and nothing is stored");
+    CheckEqI32(ManufScreen_DecSelectedQty(&env), 1, "the decrement is gated too");
+    CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&env), 1, "so is the clamp");
+    CheckEqI32(ManufScreen_DecEngineers(&env), 1, "and the engineer step");
+    g_nGate = 0;
+
+    /* The engineer gate: 0 total against 4 allocated is -4, returned verbatim. */
+    g_EngRec.auPerBaseVal[0] = 0;
+    CheckEqI32(ManufScreen_IncSelectedQty(&env), -4, "no engineers to spare: the negative is returned");
+    CheckEqI32(g_aCols[7], 4, "and the quantity is not touched");
+    g_EngRec.auPerBaseVal[0] = 6;
+
+    /* The workshop gate: 60 already active needs 61 over a capacity of 50. The engineer total has
+     * to clear the first gate for this one to be the one that answers. */
+    g_EngRec.auPerBaseVal[0] = 100;
+    for (i32 i = 0; i < 8; ++i) {
+        g_aCols[i] = 8; /* 64 active */
+    }
+    CheckEqI32(ManufScreen_IncSelectedQty(&env), 0, "64 active against a capacity of 50 is refused");
+    for (i32 i = 0; i < 8; ++i) {
+        g_aCols[i] = 0;
+    }
+    g_EngRec.auPerBaseVal[0] = 6;
+
+    /* DecSelectedQty: no gate beyond non-zero, and 17156 either way. */
+    g_aCols[7] = 9;
+    CheckEqI32(ManufScreen_DecSelectedQty(&env), 17156, "the decrement returns 17156");
+    CheckEqI32(g_aCols[7], 8, "9 to 8");
+    g_aCols[7] = 0;
+    CheckEqI32(ManufScreen_DecSelectedQty(&env), 17156, "a zero entry still returns 17156");
+    CheckEqI32(g_aCols[7], 0, "and stays zero");
+
+    /* ReduceSelectedQtyToOne: the ARM steps it down while above 1, which is a clamp to 1. Zero is
+     * not raised. */
+    g_aCols[7] = 5;
+    CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&env), 17156, "the clamp returns 17156");
+    CheckEqI32(g_aCols[7], 1, "5 lands on 1, not 0");
+    g_aCols[7] = 0;
+    (void)ManufScreen_ReduceSelectedQtyToOne(&env);
+    CheckEqI32(g_aCols[7], 0, "a zero entry is left alone");
+    g_aCols[7] = 1;
+    (void)ManufScreen_ReduceSelectedQtyToOne(&env);
+    CheckEqI32(g_aCols[7], 1, "and an entry already at 1 stays there");
+
+    /* DecEngineers: the assigned engineers may not fall to or below quantity + 1. */
+    g_aCols[7] = 3;
+    g_aProdB[7] = 10;
+    CheckEqI32(ManufScreen_DecEngineers(&env), PUFO_MANUF_ANCHOR,
+               "the engineer step returns the product-block anchor, register residue");
+    CheckEqI32(g_aProdB[7], 9, "10 assigned over a quantity of 3 drops to 9");
+    g_aProdB[7] = 4;
+    CheckEqI32(ManufScreen_DecEngineers(&env), PUFO_MANUF_ANCHOR, "again");
+    CheckEqI32(g_aProdB[7], 4, "4 assigned is exactly quantity + 1, so it stops there");
+    g_aProdB[7] = 0;
+    (void)ManufScreen_DecEngineers(&env);
+    CheckEqI32(g_aProdB[7], 0, "and a zero assignment never goes negative");
+
+    /* UpdateProgress: six engineers spare, all six land. */
+    g_aCols[7] = 0;
+    CheckEqI32(ManufScreen_UpdateProgress(&env), 6, "the return is the engineer total");
+    CheckEqI32(g_aCols[7], 6, "and the whole spare landed on product 7");
+
+    /* The workshop capacity binding: 55 spare over a capacity of 50 stores 50 and still returns 55. */
+    g_EngRec.auPerBaseVal[0] = 55;
+    memset(g_aCols, 0, sizeof(g_aCols));
+    CheckEqI32(ManufScreen_UpdateProgress(&env), 55, "the loop count is the total");
+    CheckEqI32(g_aCols[7], 50, "the workshop capacity stops it at 50");
+
+    /* With the gate set the loop still runs its full count but stores nothing. */
+    g_nGate = 1;
+    memset(g_aCols, 0, sizeof(g_aCols));
+    CheckEqI32(ManufScreen_UpdateProgress(&env), 55, "a gated loop still counts its 55");
+    CheckEqI32(g_aCols[7], 0, "and stores nothing");
+    g_nGate = 0;
+    g_EngRec.auPerBaseVal[0] = 6;
+    memset(g_aCols, 0, sizeof(g_aCols));
+
+    /* Row and base selection. */
+    g_nRow = 1; /* product 199, the last of base 0's column */
+    g_aCols[199] = 1;
+    (void)ManufScreen_IncSelectedQty(&env);
+    CheckEqI32(g_aCols[199], 2, "row 1 selects product 199");
+    CheckEqI32(g_aCols[198], 0, "the entry before it is untouched");
+
+    g_nRow = 0;
+    g_nBase = 1;
+    g_aGrid[480 + 144 * 1 + 6 * 0 + 0] = 3; /* give base 1 a workshop cell */
+    g_aCols[7] = 20;
+    g_aCols[200 + 7] = 1;
+    (void)ManufScreen_IncSelectedQty(&env);
+    CheckEqI32(g_aCols[200 + 7], 2, "base 1's copy of product 7 is the one that moved");
+    CheckEqI32(g_aCols[7], 20, "base 0's copy is untouched");
+    g_nBase = 0;
+
+    /* The guards the original does not have. */
+    CheckEqI32(ManufScreen_IncSelectedQty(NULL), 0, "a missing environment is refused");
+    CheckEqI32(ManufScreen_UpdateProgress(NULL), 0, "so is the progress loop");
+    {
+        ManufQtyEnv bad = env;
+        bad.pProductPanel = NULL;
+        CheckEqI32(ManufScreen_DecSelectedQty(&bad), 0, "a missing product panel is refused");
+        bad = env;
+        bad.apManufCols = NULL;
+        CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&bad), 0, "a missing column is refused");
+        bad = env;
+        bad.apProductB = NULL;
+        CheckEqI32(ManufScreen_DecEngineers(&bad), PUFO_MANUF_ANCHOR,
+                   "a missing product-B array skips the store but keeps the return");
+    }
+    g_nRow = PUFO_PANEL_LINES;
+    CheckEqI32(ManufScreen_IncSelectedQty(&env), 0, "a row past the panel's rows is refused");
+    g_nRow = 0;
+    g_Panel.anLineAux[0] = PUFO_PRODUCT_ENTRIES_PER_BASE;
+    CheckEqI32(ManufScreen_DecEngineers(&env), 0, "a product number past the 200 is refused");
+    g_Panel.anLineAux[0] = -1;
+    CheckEqI32(ManufScreen_ReduceSelectedQtyToOne(&env), 0, "and a negative one");
+    g_Panel.anLineAux[0] = 7;
+    g_nBase = PUFO_FAC_BASE_COUNT;
+    CheckEqI32(ManufScreen_UpdateProgress(&env), 0, "a base index past the eight is refused");
+    g_nBase = 0;
+}
+
 static void TestResearchQty(void)
 {
     static UiPanel g_Panel;
@@ -3412,6 +3588,7 @@ int main(void)
     TestRefreshPanels();
     TestResearchQty();
     TestResearchAllocate();
+    TestManufQty();
     TestFindAtBase();
     TestTransferFlag();
     TestNewBaseScreen();

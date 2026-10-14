@@ -427,6 +427,50 @@ typedef struct ResearchAccumulateEnv {
 
 i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv);
 
+/* ------------------------------------------------- the manufacturing quantity buttons
+ *
+ * The manufacturing screen is the mirror of the research one: a product panel whose anLineAux
+ * carries a product number per row, a cached copy of that panel's nUnk3032 row cursor, a per-base
+ * quantity column, and the same two gates with engineers and workshops in place of scientists and
+ * labs. Evidence: ManufScreen_IncSelectedQty @ 0x6dddc (228 B), ManufScreen_ReduceSelectedQtyToOne
+ * @ 0x6dec0 (172 B), ManufScreen_DecSelectedQty @ 0x6e09c (160 B), ManufScreen_DecEngineers @
+ * 0x6e330 (164 B), ManufScreen_UpdateProgress @ 0x6df6c (304 B).
+ *
+ * The entry index is auManufCol[product + 200*base], composed over the 0x159E98 product-block
+ * anchor plus 0x4304 (17156), and three of the buttons return that 17156 -- the same kind of
+ * address residue the research buttons return as 4900.
+ *
+ * All five open by reading bManufQtyGate @ 0x15EE50 and bail out returning that byte when it is
+ * non-zero. Worth stating plainly: no code in the binary ever writes a non-zero value to that
+ * byte -- the only store to it anywhere is ManufScreen_SelectListed writing 0 at 0x6E970 -- so in
+ * the shipped build the gate is dead. The port keeps it because the original has it.
+ *
+ * ManufScreen_ReduceSelectedQtyToOne is renamed in the IDB from ManufScreen_GetSelectedProductId:
+ * it never returns a product id. It decrements the selected product's quantity one at a time while
+ * the value is above 1 (0x6DF30..0x6DF54), which is a clamp to 1. */
+#define PUFO_MANUF_COL_OFFSET 17156 /* 0x4304: auManufCol @ 0x15E19C minus the product-block
+                                     * anchor @ 0x159E98. The value three buttons return. */
+#define PUFO_MANUF_ANCHOR 0x159E98  /* ManufScreen_DecEngineers leaves the product-block anchor in
+                                     * R0 (ADDGT R2,R0,R2 is the last thing that touches it).
+                                     * Register residue; reproduced, not interpreted. */
+typedef struct ManufQtyEnv {
+    UiPanel             *pProductPanel;   /* pManufProductPanel @ 0x15EE44 */
+    const i32           *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C, a cached nUnk3032 */
+    u16                 *apManufCols;     /* auManufCol @ 0x15E19C, 200 u16 per base */
+    i32                 *apProductB;      /* aManufProductB @ 0x15B79C, 200 u32 per base */
+    const u16           *puManufEntries;  /* nResearchEntryCount @ 0x160C4C, shared with research */
+    const ObjectRecFull *pEngineerRec;    /* Map_apObjects112 @ 0x113C80, the engineers item */
+    const u8            *abFacilityGrid;  /* gBaseFacGrid @ 0x159768 */
+    const i8            *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
+    const u8            *pbQtyGate;       /* bManufQtyGate @ 0x15EE50 */
+} ManufQtyEnv;
+
+i32 ManufScreen_IncSelectedQty(const ManufQtyEnv *pEnv);
+i32 ManufScreen_DecSelectedQty(const ManufQtyEnv *pEnv);
+i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv);
+i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv);
+i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv);
+
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
  * anLineAux[134..139] (sfx). The handler writes zero into byte +10 of every one of them,

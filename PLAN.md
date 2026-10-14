@@ -655,6 +655,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   base slots and its inner loop bound is re-read from the count byte on each non-zero iteration
   (`LDRBHI` 0x7497C). `unk_186B94` was left unnamed — `ManufScreen_DrawFrame` uses the same control.
 
+- [x] part 3, the manufacturing mirror: `ManufScreen_IncSelectedQty (0x6dddc)`,
+  `ManufScreen_ReduceSelectedQtyToOne (0x6dec0)`, `ManufScreen_DecSelectedQty (0x6e09c)`,
+  `ManufScreen_DecEngineers (0x6e330)` and `ManufScreen_UpdateProgress (0x6df6c)` — 44 more checks.
+  Engineers for scientists, workshops for labs, `auManufCol` @ 0x15E19C for `auResearchCol`, and the
+  same 17156 address residue in place of 4900. IDB: `unk_15EE44` → `pManufProductPanel`,
+  `unk_15EE3C` → `nManufProductRowCache`, `unk_15EE34` → `bManufProductSelected`, `byte_15EE50` →
+  `bManufQtyGate`, `unk_15E19C` → `auManufCol`, `unk_15B79C` → `aManufProductB`, and
+  `ManufScreen_GetSelectedProductId` renamed — it never returns a product id, it clamps the selected
+  quantity to 1. `docs/idb/functions.tsv` and the regenerated `inventory-grouped.tsv` follow it.
+  New ledger row: `bManufQtyGate` is a **dead gate** — no code in the binary writes it non-zero, the
+  only store anywhere is `ManufScreen_SelectListed` writing 0 at 0x6E970.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -789,6 +801,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | hangar object block (`BasePlaneScreen_Init`) | 56/56 (Release) | 8660 | 776/1103 (70.4%) | 319040/598792 (53.3%) | 38 checked, 0 mismatched |
 | research quantity buttons + crew getters (`ResearchScreen_IncSelectedQty`, `ResearchScreen_DecSelectedQty`, `Base_GetScientistCount`, `Base_GetEngineerCount`) | 56/56 (Release) | 8702 | 780/1103 (70.7%) | 319608/598792 (53.4%) | 38 checked, 0 mismatched |
 | research allocate / cancel / hourly accumulate (`ResearchScreen_UpdateProgress`, `ResearchScreen_CancelSelectedAndClose`, `ResearchScreen_AccumulateAllocated`) | 56/56 (Release) | 8736 | 783/1103 (71.0%) | 320156/598792 (53.5%) | 38 checked, 0 mismatched |
+| manufacturing quantity buttons (`ManufScreen_IncSelectedQty`, `DecSelectedQty`, `ReduceSelectedQtyToOne`, `DecEngineers`, `UpdateProgress`) | 56/56 (Release) | 8780 | 788/1103 (71.4%) | 321184/598792 (53.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

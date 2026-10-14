@@ -713,7 +713,7 @@ addr	name	size	subsystem
 6dd4c	ManufScreen_PanelPrev	72	strat-ui
 6dd94	ManufScreen_PanelNext	72	strat-ui
 6dddc	ManufScreen_IncSelectedQty	228	strat-ui
-6dec0	ManufScreen_GetSelectedProductId	172	strat-ui
+6dec0	ManufScreen_ReduceSelectedQtyToOne	172	strat-ui
 6df6c	ManufScreen_UpdateProgress	304	strat-ui
 6e09c	ManufScreen_DecSelectedQty	160	strat-ui
 6e13c	ManufScreen_IncEngineers	500	strat-ui
