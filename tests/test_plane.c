@@ -451,6 +451,248 @@ static void TestAddInterceptMission(void)
     PtrArray_DeleteAll(&list);
 }
 
+/* ------------------------------------------------- the loadout screen's stat panels
+ *
+ * Evidence: BasePlaneScreen_DrawStatLabelA @ 0x79e00 and BasePlaneScreen_DrawStatLabelB @ 0x79fc4. */
+
+static SoftSurf g_planeSurf;
+static u8 g_aPlaneText[PUFO_TEXT_REC_STRIDE * 144];
+static GfxColorEnv g_planeColor;
+
+static void PlanePutRec(i32 nRec, const char *psz)
+{
+    char *p = (char *)(g_aPlaneText + PUFO_TEXT_REC_STRIDE * nRec);
+    i32 i = 0;
+
+    while (psz[i] != 0) {
+        p[i] = psz[i];
+        ++i;
+    }
+    p[i] = 0;
+}
+
+static const char *PlaneRec(i32 nRec)
+{
+    return (const char *)(g_aPlaneText + PUFO_TEXT_REC_STRIDE * nRec);
+}
+
+static void TestStatPanelLabels(void)
+{
+    PlaneWeaponPanels p;
+
+    printf("BasePlaneScreen_DrawStatLabelA/B @ 0x79e00 / 0x79fc4\n");
+
+    /* The frame draws through SoftSurf_BlitRectProxy, so the blit target has to exist. */
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_planeSurf);
+    SoftSurf_AllocPixels(&g_planeSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_planeSurf;
+
+    memset(g_aPlaneText, 0, sizeof(g_aPlaneText));
+    PlanePutRec(141, "AAAAAAAAAA"); /* ten characters, drawn whole */
+    PlanePutRec(142, "BBBBBBBBBB"); /* ten, cut to seven at 0x79F34 */
+    PlanePutRec(143, "CCCCCCCC");   /* eight, cut to five at 0x79F78 */
+
+    g_planeColor.nScaleSource = 3;
+    g_planeColor.nFadeCount = 0;
+
+    memset(&p, 0, sizeof(p));
+    BasePlaneScreen_DrawStatLabel(&p, 0, g_aPlaneText, &g_planeColor, 3);
+
+    TestEqI32("panel A's gate opens (0x79E28)", p.bPanelAOpen, 1);
+    TestEqI32("  panel B's does not", p.bPanelBOpen, 0);
+    TestEqI32("record 141 is drawn whole", (i32)strlen(PlaneRec(141)), 10);
+    TestEqI32("record 142 is cut to 7 characters (0x79F34)", (i32)strlen(PlaneRec(142)), 7);
+    TestEqI32("record 143 is cut to 5 characters (0x79F78)", (i32)strlen(PlaneRec(143)), 5);
+
+    /* Three nested fills, so the colour a pixel carries says which rect reached it last. The outer
+     * one is 5,75 230 wide and 20 * (3 + 1) = 80 tall; the two inner ones start at 6,76 and 7,77,
+     * so the single-pixel band at the outer edge keeps index 0x44's colour. */
+    const u16 *pPix = (const u16 *)g_planeSurf.pPixels;
+    TestEqI32("the outer rect fills 5,75 230x80", pPix[75 * 240 + 5], ((0x44 >> 3) << 11) + 32 * (0xF4 >> 2) + (0xFC >> 3));
+    TestEqI32("  and the inner rects repaint 6,76 with index 0x14", pPix[76 * 240 + 6], ((0x14 >> 3) << 11) + 32 * (0x50 >> 2) + (0x63 >> 3));
+    TestEqI32("  down to 232,152 inclusive", pPix[152 * 240 + 232], ((0x14 >> 3) << 11) + 32 * (0x50 >> 2) + (0x63 >> 3));
+    TestEqI32("  the outer rect's own corner 234,154 keeps the outer colour", pPix[154 * 240 + 234], ((0x44 >> 3) << 11) + 32 * (0xF4 >> 2) + (0xFC >> 3));
+    TestEqI32("  the field outside the panel is untouched", pPix[80 * 240 + 239], 0);
+
+    /* The truncation is idempotent, so a second visit shortens nothing further. */
+    BasePlaneScreen_DrawStatLabel(&p, 1, g_aPlaneText, &g_planeColor, 3);
+    TestEqI32("panel B's gate opens on the second call (0x79FEC)", p.bPanelBOpen, 1);
+    TestEqI32("  panel A's stays open too", p.bPanelAOpen, 1);
+    TestEqI32("  record 142 is still seven characters", (i32)strlen(PlaneRec(142)), 7);
+    TestEqI32("  record 143 is still five", (i32)strlen(PlaneRec(143)), 5);
+
+    BasePlaneScreen_DrawStatLabel(NULL, 0, g_aPlaneText, &g_planeColor, 3);
+    BasePlaneScreen_DrawStatLabel(&p, 0, NULL, &g_planeColor, 3);
+    TestCheck("a null panel set or a null text table draws nothing", true);
+}
+
+/* ------------------------------------------------- putting carried weapon ammo back
+ *
+ * Evidence: BasePlane_RearmFromStores @ 0x78ed0. */
+
+static Ship g_aRearmCraft[1];
+static Ship *g_apRearmCraft[1];
+static BaseRec g_aRearmBase[1];
+static BaseRec *g_apRearmBases[1];
+static ObjectRecFull g_aRearmObj[106];
+static ObjectRecFull *g_apRearmObjects[106];
+
+static void TestRearmFromStores(void)
+{
+    PlaneWeaponPanels p;
+    PlaneWeaponEnv env;
+
+    printf("BasePlane_RearmFromStores @ 0x78ed0\n");
+
+    memset(g_aRearmCraft, 0, sizeof(g_aRearmCraft));
+    memset(g_aRearmBase, 0, sizeof(g_aRearmBase));
+    memset(g_aRearmObj, 0, sizeof(g_aRearmObj));
+    for (i32 i = 0; i < 106; ++i) {
+        g_apRearmObjects[i] = &g_aRearmObj[i];
+    }
+    g_apRearmCraft[0] = &g_aRearmCraft[0];
+    g_apRearmBases[0] = &g_aRearmBase[0];
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apRearmCraft;
+    env.apObjects = g_apRearmObjects;
+    env.apBases = g_apRearmBases;
+    env.nCraftIdx = 0;
+    env.nBaseIdx = 0;
+    env.nObjectCount = 26;
+
+    /* The craft carries weapon 25 in its left hand and nothing in its right. */
+    g_aRearmCraft[0].nSlotIdx = 0;
+    g_aRearmCraft[0].bWeaponL = 25;
+    g_aRearmCraft[0].bWeaponR = 0;
+    g_aRearmObj[25].aItemQty[0] = 2;
+    g_aRearmObj[25].auPerBaseVal[0] = 7;
+    g_aRearmBase[0].bSlot = 0;
+    g_aRearmBase[0].nStoresTotal = 7;
+
+    memset(&p, 0, sizeof(p));
+    p.bPanelAOpen = 1;
+    TestEqI32("the object count read at entry is what the function returns",
+              BasePlane_RearmFromStores(&env, &p), 26);
+    TestEqI32("the carried weapon went back to the base", g_aRearmObj[25].auPerBaseVal[0], 8);
+    TestEqI32("  and left the craft's per-craft column", g_aRearmObj[25].aItemQty[0], 1);
+    TestEqI32("  and the base total followed", g_aRearmBase[0].nStoresTotal, 8);
+    TestEqI32("the left weapon byte is cleared (0x78FBC)", g_aRearmCraft[0].bWeaponL, 0);
+    TestEqI32("the right byte was never touched", g_aRearmCraft[0].bWeaponR, 0);
+    TestEqI32("both gates are cleared afterwards (0x790C4)", p.bPanelAOpen, 0);
+    TestEqI32("  including the one that was already closed", p.bPanelBOpen, 0);
+
+    /* A weapon the craft does not carry changes nothing, even with the gate open. */
+    g_aRearmCraft[0].bWeaponL = 25;
+    g_aRearmObj[25].aItemQty[0] = 0;
+    memset(&p, 0, sizeof(p));
+    p.bPanelAOpen = 1;
+    (void)BasePlane_RearmFromStores(&env, &p);
+    TestEqI32("an uncarried weapon leaves the base stock alone", g_aRearmObj[25].auPerBaseVal[0], 8);
+    TestEqI32("  and the weapon byte stays put", g_aRearmCraft[0].bWeaponL, 25);
+
+    /* With both gates closed nothing runs at all. */
+    g_aRearmObj[25].aItemQty[0] = 2;
+    memset(&p, 0, sizeof(p));
+    (void)BasePlane_RearmFromStores(&env, &p);
+    TestEqI32("closed gates mean no rearm", g_aRearmObj[25].auPerBaseVal[0], 8);
+    TestEqI32("  and the craft still carries it", g_aRearmObj[25].aItemQty[0], 2);
+
+    TestEqI32("a null env returns nothing", BasePlane_RearmFromStores(NULL, &p), 0);
+}
+
+/* ------------------------------------------------- closing the loadout screen
+ *
+ * Evidence: BasePlaneScreen_Close @ 0x7c9e8. */
+
+static Ship g_aCloseCraft[1];
+static Ship *g_apCloseCraft[1];
+static BaseRec g_aCloseBase[1];
+static BaseRec *g_apCloseBases[1];
+static ObjectRecFull g_aCloseObj[106];
+static ObjectRecFull *g_apCloseObjects[106];
+static i32 g_anCloseSlot[36];
+static i32 g_nCloseQuota;
+static i32 g_nCloseUiCalls;
+
+static void PlaneCloseUiHook(void *pUser)
+{
+    (void)pUser;
+    ++g_nCloseUiCalls;
+}
+
+static void TestPlaneClose(void)
+{
+    PlaneCloseEnv env;
+
+    printf("BasePlaneScreen_Close @ 0x7c9e8\n");
+
+    memset(g_aCloseCraft, 0, sizeof(g_aCloseCraft));
+    memset(g_aCloseBase, 0, sizeof(g_aCloseBase));
+    memset(g_aCloseObj, 0, sizeof(g_aCloseObj));
+    for (i32 i = 0; i < 106; ++i) {
+        g_apCloseObjects[i] = &g_aCloseObj[i];
+    }
+    memset(g_anCloseSlot, 0, sizeof(g_anCloseSlot));
+    g_apCloseCraft[0] = &g_aCloseCraft[0];
+    g_apCloseBases[0] = &g_aCloseBase[0];
+
+    g_aCloseBase[0].bSlot = 0;
+    g_aCloseCraft[0].nSlotIdx = 0;
+    for (i32 c = 0; c < PUFO_SHIP_CARGO_COLUMNS; ++c) {
+        g_aCloseCraft[0].anCargoQty[c] = 100;
+    }
+
+    /* slot 31: 2 rows, slot 32: 1, slot 34: 3, slot 35: 4. Slot 33 has no arm. */
+    g_anCloseSlot[31] = 2;
+    g_anCloseSlot[32] = 1;
+    g_anCloseSlot[33] = 9;
+    g_anCloseSlot[34] = 3;
+    g_anCloseSlot[35] = 4;
+    g_nCloseQuota = 5;
+    g_nCloseUiCalls = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apCloseCraft;
+    env.apObjects = g_apCloseObjects;
+    env.apBases = g_apCloseBases;
+    env.nCraftIdx = 0;
+    env.nBaseIdx = 0;
+    env.bStoresCommitted = 1;
+    env.anSlotCount = g_anCloseSlot;
+    env.pnCrewQuota = &g_nCloseQuota;
+    env.pfnCloseUi = PlaneCloseUiHook;
+
+    BasePlaneScreen_Close(&env);
+
+    TestEqI32("slot 31 hands back 30 per row", g_aCloseObj[56].auPerBaseVal[0], 60);
+    TestEqI32("  and the craft loses the same", g_aCloseCraft[0].anCargoQty[0], 40);
+    TestEqI32("slot 32 hands back 8 per row", g_aCloseObj[57].auPerBaseVal[0], 8);
+    TestEqI32("  and the craft loses 8", g_aCloseCraft[0].anCargoQty[1], 92);
+    TestEqI32("slot 34 hands back 5 base items per row", g_aCloseObj[105].auPerBaseVal[0], 15);
+    TestEqI32("  but the craft counts it in rounds of ten, so it loses 50",
+              g_aCloseCraft[0].anCargoQty[2], -50);
+    TestEqI32("slot 35 hands back 8 per row", g_aCloseObj[58].auPerBaseVal[0], 32);
+    TestEqI32("  and the craft loses 8", g_aCloseCraft[0].anCargoQty[3], 68);
+    TestEqI32("slot 33 has no arm and moves nothing", g_aCloseObj[0].auPerBaseVal[0], 0);
+    TestEqI32("the base total follows the four credits", g_aCloseBase[0].nStoresTotal, 115);
+    TestEqI32("the crew quota counter is cleared (0x7CBAC)", g_nCloseQuota, 0);
+    TestEqI32("and the geoscape UI closes (0x7CBB4)", g_nCloseUiCalls, 1);
+
+    /* Nothing committed: the close still runs, the stores do not move. */
+    env.bStoresCommitted = 0;
+    g_nCloseQuota = 4;
+    g_nCloseUiCalls = 0;
+    BasePlaneScreen_Close(&env);
+    TestEqI32("an uncommitted close moves no stock", g_aCloseObj[56].auPerBaseVal[0], 60);
+    TestEqI32("  but still clears the quota", g_nCloseQuota, 0);
+    TestEqI32("  and still closes the UI", g_nCloseUiCalls, 1);
+
+    BasePlaneScreen_Close(NULL);
+    TestCheck("a null close env is tolerated", true);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -460,6 +702,9 @@ int main(void)
     TestLoadWeaponStores();
     TestApplyWeaponSwap();
     TestAddInterceptMission();
+    TestStatPanelLabels();
+    TestRearmFromStores();
+    TestPlaneClose();
 
     return TestSummary("test_plane");
 }

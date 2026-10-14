@@ -7157,8 +7157,9 @@ branch — then the "tact" samples, music track 0, both volumes and `StartTimers
 **The row flicker** is a `PocketUFO_WndProc` fragment at 0xA0AC8 inside the WM_TIMER 0xC352
 branch (screen 0x11), ported as `MainMenu_TickRowKeys`: armed rows get key `32*acc-1` (acc is
 the anim phase, plus one `Game_RandU16(8-phase)` roll while the phase is under 4; 0xA0AEC
-re-seeds the accumulator from the phase every row, so the global at 0x161A38 is write-only
-residue), unarmed rows a steady 200; then a 1-in-400 roll either clears this row's source (a
+re-seeds the accumulator from the phase every row, so the flicker never reads the global at
+0x161A38 back -- but it is NOT write-only: BasePlaneScreen_DrawStatLabelA/B (0x79E00 / 0x79FC4)
+read it as their panel row count), unarmed rows a steady 200; then a 1-in-400 roll either clears this row's source (a
 further 5% chance, armed rows only) or zeroes every source and re-arms only this row.
 
 **Three font-path facts the first rendered frame exposed:**
@@ -9570,3 +9571,53 @@ was "NOT ported"; that line is corrected.
 
 IDB: comments on 0x6af80 and 0x6b194 describing both bodies and naming the six copies each, and the
 two `Bind*Slots` comments updated now that the handlers they install exist.
+
+### The loadout screen's stat panels, rearm and close (done)
+
+`src/pufo/game/pufo_plane.{h,c}`, 44 new checks in `tests/test_plane.c`. Four functions, 2372 bytes:
+`BasePlaneScreen_DrawStatLabelA @ 0x79e00`, `BasePlaneScreen_DrawStatLabelB @ 0x79fc4` (452 B each),
+`BasePlane_RearmFromStores @ 0x78ed0` (536 B) and `BasePlaneScreen_Close @ 0x7c9e8` (480 B).
+
+The two stat-label bodies are the same eleven operations and differ in exactly one store: A sets
+`bStatPanelAOpen` (`0x161F18`) and B sets `bStatPanelBOpen` (`0x161F1C`). Those gates are what
+`BasePlane_RearmFromStores` and `BasePlane_LoadWeaponStores` consult, so drawing a panel is what marks
+it open. The frame is three nested `SoftSurf_BlitRectProxy` fills - 5,75 230 x 20*(n+1) at index 0x44
+with 0xF4/0xFC, then 6,76 228 x 20*n+18 and 7,77 226 x 20*n+16, both inner ones index 0x14 with
+0x50/0x63 - where `n` is the global at 0x161A38. Then the cyan pair (68,244,252)/(4,70,75) and three
+column headers centred on 70, 164 and 210 at y 75.
+
+The headers are text records 141, 142 and 143, and the original SHORTENS two of them by writing a NUL
+straight into the loaded table: byte 7 of record 142 and byte 5 of record 143. In the shipped Russian
+table those records are `Кол-во` (6), `Боеприпасы` (10, cut to `Боеприп`) and `Топливо ` (8, cut to
+`Топли`) - the shortening IS the label, so the port writes through the caller's table exactly as the
+original does, and the store lands before that header is measured. The truncation is idempotent.
+
+`BasePlane_RearmFromStores` is two halves gated by those flags, each walking object index
+0..Map_nObjectCount-1 and acting only on the record whose INDEX equals `Ship.bWeaponL` (left) or
+`Ship.bWeaponR` (right) AND only when that record's per-craft column is non-zero: one back to the base,
+one out of the craft, `BasePlane_LoadWeaponStores` for that weapon, then the weapon byte to 0. The walk
+exists only to prove the craft carries the weapon, and that carry test is the function's whole gate.
+Both gates are cleared at 0x790C4/0x790CC whether or not either half ran.
+
+`BasePlaneScreen_Close` hands back every committed row when `bPlaneStoresCommitted` is set, over a
+31..35 loop whose 33 arm is empty:
+
+| slot | object | cargo column | base delta | cargo delta |
+|---|---|---|---|---|
+| 31 | 56 | +0x24 | 30 * n | 30 * n |
+| 32 | 57 | +0x28 | 8 * n | 8 * n |
+| 34 | 105 | +0x2C | 5 * n | 50 * n |
+| 35 | 58 | +0x30 | 8 * n | 8 * n |
+
+Slot 34 first reads as a mismatch and is not one: object 105 is weapon 29's ammo, which the game counts
+in rounds of ten per base item, and `BasePlaneScreen_CommitStores @ 0x7ac38` moves the same 5-for-50 on
+the way in. Then `nPlaneCrewQuota` (`0x161EE0`) is cleared and `Geoscape_CloseUI` runs over the 0x1864F8
+control block.
+
+IDB fixes found on the way: `byte_161AC4` was misnamed - the craft index is loaded with `LDR [R8]` at
+0x7CA2C and 0x78E08, so it is a DWORD, now `nSelectedCraftIdx`. `0x161AD0` is one 106-entry dword table
+(`anSlotCarryCount`), not four loose globals: `BasePlane_CalcWeaponStoresUsed` sums it over every object
+index while `BasePlaneScreen_Close` reads 31/32/34/35. The three header records are now `aTextRec141`,
+`aTextRec142`, `aTextRec143`, and the panel globals are `bStatPanelASel/BSel/AOpen/BOpen`. The global at
+0x161A38 is READ here as the panel row count, which falsifies the "write-only residue" note the port had
+been carrying for it: `pufo_app.c` and the flicker paragraph above are corrected.

@@ -1,6 +1,7 @@
 /* pufo_plane.c - see pufo_plane.h for evidence. */
 #include "game/pufo_plane.h"
 #include "game/pufo_geoscape.h"   /* BaseRec_AddItemQty */
+#include "game/pufo_font.h"       /* Text_DrawString / Text_MeasureWidth, the panel headers */
 
 /* One body for BasePlaneScreen_SelectWeapon25..30; only the constant differs. */
 i32 BasePlaneScreen_SelectWeapon(PlaneWeaponPanels *pPanels, i32 nWeaponIndex,
@@ -316,4 +317,133 @@ i32 BasePlaneScreen_AddInterceptMission(i32 bCraftClass, const InterceptMissionC
 
     *pCtx->pnMissionId = *pCtx->pnMissionId + 1;       /* 0x7DEAC */
     return *pCtx->pnMissionId;                         /* the incremented value */
+}
+
+/* ------------------------------------------------- the loadout screen's two stat panels */
+
+static const char *PlaneLabel(const u8 *pTextRecs, i32 nRec)
+{
+    return (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE * nRec);
+}
+
+void BasePlaneScreen_DrawStatLabel(PlaneWeaponPanels *pPanels, i32 nPanel, u8 *pTextRecs,
+                                   const GfxColorEnv *pColor, i32 nRowCount)
+{
+    if (pPanels == NULL || pTextRecs == NULL) {
+        return;
+    }
+
+    if (nPanel == 0) {
+        pPanels->bPanelAOpen = 1;                     /* 0x79E28, DrawStatLabelA */
+    } else {
+        pPanels->bPanelBOpen = 1;                     /* 0x79FEC, DrawStatLabelB */
+    }
+
+    SoftSurf_BlitRectProxy(0, 5, 75, 230, 20 * (nRowCount + 1), 0x44, 0xF4, 0xFC); /* 0x79E54 */
+    SoftSurf_BlitRectProxy(0, 6, 76, 228, 20 * nRowCount + 18, 0x14, 0x50, 0x63);   /* 0x79E8C */
+    SoftSurf_BlitRectProxy(0, 7, 77, 226, 20 * nRowCount + 16, 0x14, 0x50, 0x63);   /* 0x79EBC */
+    (void)Gfx_PackRgb565Pair(pColor, 68, 244, 252, 4, 70, 75);                      /* 0x79EE8 */
+
+    i32 nWidth = Text_MeasureWidth(PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_A));  /* 0x79F08 */
+    Text_DrawString(70 - nWidth / 2, 75, PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_A)); /* 0x79F20 */
+
+    pTextRecs[PUFO_TEXT_REC_STRIDE * PUFO_PLANE_LABEL_REC_B + PUFO_PLANE_LABEL_B_KEEP] = 0; /* 0x79F34 */
+    nWidth = Text_MeasureWidth(PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_B));      /* 0x79F44 */
+    Text_DrawString(164 - nWidth / 2, 75, PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_B)); /* 0x79F64 */
+
+    pTextRecs[PUFO_TEXT_REC_STRIDE * PUFO_PLANE_LABEL_REC_C + PUFO_PLANE_LABEL_C_KEEP] = 0; /* 0x79F78 */
+    nWidth = Text_MeasureWidth(PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_C));      /* 0x79F90 */
+    Text_DrawString(210 - nWidth / 2, 75, PlaneLabel(pTextRecs, PUFO_PLANE_LABEL_REC_C)); /* 0x79FB0 */
+}
+
+/* ------------------------------------------------- putting carried weapon ammo back */
+
+static void Plane_RearmOneSide(PlaneWeaponEnv *pEnv, const PlaneWeaponPanels *pPanels, i32 nSide)
+{
+    Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[pEnv->nCraftIdx] : NULL;
+
+    if (pShip == NULL) {
+        return;
+    }
+
+    i8 *pbWeapon = (nSide == 0) ? &pShip->bWeaponL : &pShip->bWeaponR;
+
+    for (i32 i = 0; i < pEnv->nObjectCount; ++i) {
+        ObjectRecFull *pItem = (pEnv->apObjects != NULL) ? pEnv->apObjects[i] : NULL;
+
+        if (pItem == NULL || pItem->aItemQty[pEnv->nCraftIdx] == 0) {
+            continue;                                   /* 0x78F3C / 0x7901C: the craft carries nothing */
+        }
+        if (i != (i32)*pbWeapon) {
+            continue;                                   /* 0x78F54 / 0x79034 */
+        }
+
+        BaseRec_AddItemQty(pEnv->apBases[pEnv->nBaseIdx], pItem, 1);      /* 0x78F78 / 0x79058 */
+        (void)InvSel_SubItemQty(pShip, pItem, 1);                         /* 0x78F98 / 0x79078 */
+        (void)BasePlane_LoadWeaponStores(i, pEnv, pPanels);               /* 0x78FAC / 0x7908C */
+        *pbWeapon = 0;                                                    /* 0x78FBC / 0x7909C */
+    }
+}
+
+i32 BasePlane_RearmFromStores(PlaneWeaponEnv *pEnv, PlaneWeaponPanels *pPanels)
+{
+    if (pEnv == NULL || pPanels == NULL) {
+        return 0;
+    }
+
+    if (pPanels->bPanelAOpen != 0) {
+        Plane_RearmOneSide(pEnv, pPanels, 0);           /* 0x78F0C: the left-hand weapon */
+    }
+    if (pPanels->bPanelBOpen != 0) {
+        Plane_RearmOneSide(pEnv, pPanels, 1);           /* 0x78FEC: the right-hand weapon */
+    }
+
+    pPanels->bPanelAOpen = 0;                           /* 0x790C4 */
+    pPanels->bPanelBOpen = 0;                           /* 0x790CC */
+    return pEnv->nObjectCount;                          /* 0x790D0: the count read at entry */
+}
+
+/* ------------------------------------------------- closing the loadout screen */
+
+void BasePlaneScreen_Close(const PlaneCloseEnv *pEnv)
+{
+    /* slot, object slot, cargo column, base delta, cargo delta. Slot 33 has no arm in the original's
+     * 31..35 loop. Object 105 is weapon 29's ammo, counted in rounds of ten per base item, which is
+     * why its two deltas differ by ten - the same 5-for-50 BasePlaneScreen_CommitStores runs inbound. */
+    static const struct {
+        i32 nSlot; i32 nObjSlot; i32 nCargoCol; i32 nBaseMul; i32 nCargoMul;
+    } aRows[4] = {
+        { 31,  56, 0, 30, 30 },
+        { 32,  57, 1,  8,  8 },
+        { 34, 105, 2,  5, 50 },
+        { 35,  58, 3,  8,  8 },
+    };
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    if (pEnv->bStoresCommitted != 0) {
+        BaseRec *pBase = (pEnv->apBases != NULL) ? pEnv->apBases[pEnv->nBaseIdx] : NULL;
+        Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[pEnv->nCraftIdx] : NULL;
+
+        for (i32 r = 0; r < 4; ++r) {
+            const i32 nCount = (pEnv->anSlotCount != NULL) ? pEnv->anSlotCount[aRows[r].nSlot] : 0;
+            ObjectRecFull *pItem = (pEnv->apObjects != NULL) ? pEnv->apObjects[aRows[r].nObjSlot] : NULL;
+
+            if (nCount == 0 || pItem == NULL || pBase == NULL || pShip == NULL) {
+                continue; /* deviation: the original tests none of these */
+            }
+
+            BaseRec_AddItemQty(pBase, pItem, aRows[r].nBaseMul * nCount);
+            pShip->anCargoQty[aRows[r].nCargoCol] -= aRows[r].nCargoMul * nCount;
+        }
+    }
+
+    if (pEnv->pnCrewQuota != NULL) {
+        *pEnv->pnCrewQuota = 0;                         /* 0x7CBAC */
+    }
+    if (pEnv->pfnCloseUi != NULL) {
+        pEnv->pfnCloseUi(pEnv->pUser);                  /* 0x7CBB4 */
+    }
 }

@@ -78,7 +78,8 @@ static i32              g_aRowKeySrc[7];
 static i32              g_nListMode;
 static i32              g_nUiScreen;
 static i32              g_nAnimPhase;       /* unk_1139EF, the 0xC352 anim counter */
-static i32              g_nKeyAccum;        /* unk_161A38, write-only residue of the flicker */
+static i32              g_nKeyAccum;        /* nPlaneStatRowCount @ 0x161A38: the flicker only writes it,
+                             *  but BasePlaneScreen_DrawStatLabelA/B (0x79E00 / 0x79FC4) read it as their panel row count */
 static i32              g_nPhaseSave112;
 static u32              g_nUiSlot0;         /* apUiSlotsA[0] @ Map+0x60, cleared by UiControl_HitTest */
 static GfxColorEnv      g_color;

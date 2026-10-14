@@ -27,6 +27,7 @@
 #include "game/pufo_boot.h"   /* ObjectRecFull */
 #include "game/pufo_strateg.h" /* StrategItem, StrategList_AddItem */
 #include "util/pufo_ptrarray.h" /* PtrArray */
+#include "render/pufo_render.h" /* GfxColorEnv, SoftSurf_BlitRectProxy */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -76,6 +77,7 @@ typedef struct PlaneWeaponEnv {
     BaseRec *const *apBases;
     i32 nCraftIdx;
     i32 nBaseIdx;   /* the SIGNED byte at gUiRootPanel.anLineAux[79] */
+    i32 nObjectCount; /* Map_nObjectCount @ 0x114A60, the walk BasePlane_RearmFromStores needs */
 } PlaneWeaponEnv;
 
 i32 BasePlane_UnloadWeaponStores(i32 nWeapon, const PlaneWeaponEnv *pEnv);
@@ -160,5 +162,93 @@ typedef struct InterceptMissionCtx {
 } InterceptMissionCtx;
 
 i32 BasePlaneScreen_AddInterceptMission(i32 bCraftClass, const InterceptMissionCtx *pCtx);
+
+/* ------------------------------------------------- the loadout screen's two stat panels
+ *
+ * Evidence: BasePlaneScreen_DrawStatLabelA @ 0x79e00 and BasePlaneScreen_DrawStatLabelB @ 0x79fc4
+ * (452 B each). The two bodies are the same eleven operations and differ in exactly one store: A
+ * opens the first panel's gate and B opens the second's. They are the reason BasePlane_RearmFromStores
+ * and BasePlane_LoadWeaponStores have gates to consult — drawing a panel is what marks it open.
+ *
+ * The frame is three nested rectangles through SoftSurf_BlitRectProxy: 5,75 230 wide and
+ * 20 * (rowCount + 1) tall in index 0x44 with colours 0xF4/0xFC, then 6,76 228 wide and
+ * 20 * rowCount + 18, then 7,77 226 wide and 20 * rowCount + 16, both inner ones index 0x14 with
+ * 0x50/0x63. The row count is the global the port calls g_nKeyAccum in the app shell; here it is
+ * read as a row count, so "write-only residue" is not the whole story for that global.
+ *
+ * Then the cyan pair (68,244,252)/(4,70,75) and three centred column headers at y 75, centred on
+ * 70, 164 and 210. The headers are text records 141, 142 and 143, and the original SHORTENS two of
+ * them by writing a NUL straight into the loaded table: byte 7 of record 142 (the shipped record is
+ * 10 characters, so it becomes 7) and byte 5 of record 143 (8 characters, becomes 5). The store
+ * happens before that header is measured, so it applies to the header drawn next, and it is
+ * idempotent — the second visit truncates an already-truncated record. The port writes through the
+ * caller's table for the same reason the original does: the shortening IS the label.
+ *
+ * Deviation: the original returns the last Text_DrawString's value; nothing reads it. The port
+ * returns nothing. */
+#define PUFO_PLANE_LABEL_REC_A  141
+#define PUFO_PLANE_LABEL_REC_B  142
+#define PUFO_PLANE_LABEL_REC_C  143
+#define PUFO_PLANE_LABEL_B_KEEP 7    /* 0x79F34: record 142 is cut to 7 characters */
+#define PUFO_PLANE_LABEL_C_KEEP 5    /* 0x79F78: record 143 is cut to 5 characters */
+
+void BasePlaneScreen_DrawStatLabel(PlaneWeaponPanels *pPanels, i32 nPanel, u8 *pTextRecs,
+                                   const GfxColorEnv *pColor, i32 nRowCount);
+
+/* ------------------------------------------------- putting carried weapon ammo back
+ *
+ * Evidence: BasePlane_RearmFromStores @ 0x78ed0 (536 B).
+ *
+ * Two halves, one per panel gate, and they are the same loop with the weapon byte swapped: walk
+ * every object record 0..nObjectCount-1, and for the one whose INDEX equals the craft's
+ * Ship.bWeaponL (left half) or Ship.bWeaponR (right half), and only if the craft actually carries
+ * that object (ObjectRecFull.aItemQty[craft] non-zero), give one back to the base, take one out of
+ * the craft, run BasePlane_LoadWeaponStores for that weapon, and clear the weapon byte to 0.
+ *
+ * The object walk is the odd part: the weapon byte is already an index into apObjects, so the loop
+ * exists only to prove the craft carries it. The port keeps the walk because the carry test is the
+ * function's whole gate, and it is what makes a craft carrying nothing change nothing.
+ *
+ * Both gates are cleared at the end whether or not either half did anything, and the original
+ * returns Map_nObjectCount read at entry; nothing reads it. */
+i32 BasePlane_RearmFromStores(PlaneWeaponEnv *pEnv, PlaneWeaponPanels *pPanels);
+
+/* ------------------------------------------------- closing the loadout screen
+ *
+ * Evidence: BasePlaneScreen_Close @ 0x7c9e8 (480 B).
+ *
+ * If the screen committed stores, every committed row is handed back: the base gets the items and
+ * the craft loses the cargo. Four rows, walked as a 31..35 loop whose 33 arm is empty:
+ *
+ *     slot  object  cargo column  base delta   cargo delta
+ *     31    56      +0x24         30 * count   30 * count
+ *     32    57      +0x28          8 * count    8 * count
+ *     34    105     +0x2C          5 * count   50 * count
+ *     35    58      +0x30          8 * count    8 * count
+ *
+ * Slot 34 is not a mismatch: object 105 is weapon 29's ammo, which the game counts in rounds of ten
+ * per base item, and BasePlaneScreen_CommitStores @ 0x7ac38 moves it the same 5-for-50 on the way
+ * in. The other three rows are one-for-one.
+ *
+ * Then the crew-quota counter (unk_161EE0, the one CommitStores increments per committed row) is
+ * cleared and Geoscape_CloseUI runs over the 0x1864F8 control block.
+ *
+ * Deviation: the original dereferences apCraft[craft] and apBases[base] with no test; the port skips
+ * a row whose craft or object is missing. Geoscape_CloseUI (0x8b94c) is not ported and enters as a
+ * hook. */
+typedef struct PlaneCloseEnv {
+    Ship *const        *apCraft;
+    ObjectRecFull *const *apObjects;
+    BaseRec *const     *apBases;
+    i32   nCraftIdx;      /* unk_161AC4, the craft the screen is editing */
+    i8    nBaseIdx;       /* nSelectedBaseIdx @ 0x159D81, the signed byte */
+    u8    bStoresCommitted; /* byte_161F28: the screen committed at least one row */
+    const i32 *anSlotCount; /* unk_161AD0, indexed 31..35: how many of each row were committed */
+    i32 *pnCrewQuota;       /* unk_161EE0 */
+    void (*pfnCloseUi)(void *pUser); /* Geoscape_CloseUI (0x8b94c), not ported */
+    void *pUser;
+} PlaneCloseEnv;
+
+void BasePlaneScreen_Close(const PlaneCloseEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */

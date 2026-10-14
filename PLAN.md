@@ -762,6 +762,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | radar intercept roll + overlay blit (`RadarScreen_RollWeaponHit`, `RadarScreen_BlitOverlay`) | 56/56 (Release) | 8281 | 736/1103 (66.7%) | 330076/598792 (55.1%) | 38 checked, 0 mismatched |
 | options screen audio tab (17 functions: Init, LayoutButtons, Bind*Slots, RefreshVolumeHighlight, 12 radio handlers) | 56/56 (Release) | 8329 | 753/1103 (68.3%) | 332812/598792 (55.6%) | 38 checked, 0 mismatched |
 | options screen save/load slots (14 handlers) | 56/56 (Release) | 8344 | 767/1103 (69.5%) | 334072/598792 (55.8%) | 38 checked, 0 mismatched |
+| loadout stat panels + rearm + close (`BasePlaneScreen_DrawStatLabelA/B`, `BasePlane_RearmFromStores`, `BasePlaneScreen_Close`) | 56/56 (Release) | 8388 | 772/1103 (70.0%) | 336940/598792 (56.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
