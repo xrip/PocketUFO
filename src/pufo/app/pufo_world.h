@@ -113,6 +113,28 @@ typedef struct PufoWorldState {
     OptionsScreenHooks optionsHooks;            /* the radar click's options branch */
     NavControls       nav;
     NavCtlEnv         navEnv;
+
+    /* The geoscape map click (Geoscape_OnMapClick @ 0x8b4a8) and the base-facility screen it can
+     * open. The tap coordinates stay zero until Geoscape_OnPointer (0x872d0) is ported. */
+    i32          nSmapTapX;             /* nSmapTapX @ 0x186B7C */
+    i32          nSmapTapY;             /* nSmapTapY @ 0x186B80 */
+    u8           bPlaceActive;          /* bBasePlaceActive @ 0x1870BC */
+    u8           bPlaceFail;            /* bBasePlaceFail @ 0x1870B8 */
+    u8           bFacDone;              /* bBaseFacDone @ 0x187078 */
+    u8           bPendingFacilityKind;  /* bPendingBaseKind @ 0x159DF4: 0xFF is the "nothing pending"
+                                         * sentinel, but the image's .data value is 0 and the port
+                                         * keeps it (see World_Init) */
+    i32          nPlaceX;               /* 0x159D94 */
+    i32          nPlaceY;               /* 0x159D98 */
+    char         szLabelScratch[108];   /* szRadarMsg @ 0x186B10 */
+    UiControl    ctlFacClose;           /* unk_186B00 */
+    UiControl    ctlFacUp;              /* the control the original allocates at 0x158874 */
+    UiControl    ctlFacDown;            /* ... and 0x158878 */
+    i32          nUnk15887C;            /* 0x15887C */
+    i32          nUnk158880;            /* 0x158880 */
+    i32          nUnk158888;            /* 0x158888 */
+    HangarPlaceEnv hangarEnv;           /* the placement test's env */
+    BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     GeoscapeWorld     world;
     GameTime          time;
     AssetReader       rdr;                      /* pRdr @ 0x187028 */

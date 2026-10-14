@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 725 / 1103 (65.7%) |
-| Bytes of original code cited | 325264 / 598792 (54.3%) |
+| Functions cited as evidence | 727 / 1103 (65.9%) |
+| Bytes of original code cited | 326700 / 598792 (54.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 7955 |
+| Test checks run | 8029 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,8 +43,8 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 71 | 85 | 21240 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 133 | 205 | 74108 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 119 | 243 | 12600 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 134 | 205 | 75292 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 120 | 243 | 12852 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -565,7 +565,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (133 functions)
+### `strat` (134 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -584,6 +584,7 @@ is the module that answers to it.
 | `0x69a38` | `Base_StripAllCraftCargo` | 1476 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | `src/pufo/game/pufo_strateg.h`, `src/pufo/ui/pufo_geoiinit.h` (+2) |
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | `src/pufo/game/pufo_strateg.h` |
+| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x629b0` | `Base_CanPlaceHangarAt` | 968 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
@@ -703,7 +704,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (119 functions)
+### `strat-ui` (120 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -715,12 +716,13 @@ is the module that answers to it.
 | `0x619cc` | `SoldierScreen_EquipSelected` | 448 | `src/pufo/game/pufo_baseui.h` |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h`, `src/pufo/render/pufo_render.h` |
 | `0x217e0` | `Menu_DrawLabeledPads` | 296 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x5a198` | `BaseFacScreen_Init` | 252 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x63208` | `SoldierScreen_AppendNameGlyph` | 196 | `src/pufo/game/pufo_soldiername.h` |
 | `0x58910` | `BaseFacScreen_TryBuySelected` | 176 | `src/pufo/ui/pufo_geoiinit.c`, `src/pufo/ui/pufo_geoiinit.h` |
 | `0x615d0` | `NewBaseScreen_Open` | 172 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7de14` | `BasePlaneScreen_AddInterceptMission` | 168 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` (+1) |
 | `0x72c8c` | `Research_TopicNeedsItem` | 136 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
-| `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6192c` | `SoldierScreen_FindNextAtBase` | 124 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_soldiername.h` |
 | `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
@@ -1068,7 +1070,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 72 functions, 88348 bytes remaining
+### `strat` — 71 functions, 87164 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1089,7 +1091,6 @@ whose port work they belong to.
 | `0x6a4bc` | `BaseFac_BuildStatusMsg` | 1520 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b1fc` | `FundingScreen_Draw` | 868 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1145,7 +1146,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 124 functions, 104408 bytes remaining
+### `strat-ui` — 123 functions, 104156 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1211,7 +1212,6 @@ whose port work they belong to.
 | `0x6ad30` | `BuySell_ItemIdToCategory` | 292 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x72d14` | `ResearchScreen_UpdateProgress` | 284 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6cf18` | `OptionsScreen_OnConfirm` | 260 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x5a198` | `BaseFacScreen_Init` | 252 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6b49c` | `OptionsScreen_BindSaveSlots` | 236 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6b588` | `OptionsScreen_BindLoadSlots` | 236 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x616ac` | `ResearchScreen_Open` | 232 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 322 |
+| `test_baseui` | PASS | 396 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 295 citations.
+parity report. Total: 306 citations.
 
 ### Offsets below the image base (39)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (256)
+### At or above the image base (267)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1487,6 +1487,7 @@ against the IDB when the final report is assembled.
 - `0x159d5c`
 - `0x159d80`
 - `0x159d81`
+- `0x159df4`
 - `0x159e84`
 - `0x15ef08`
 - `0x15ef0c`
@@ -1501,13 +1502,20 @@ against the IDB when the final report is assembled.
 - `0x186548`
 - `0x18655c`
 - `0x18655d`
+- `0x186b10`
+- `0x186b7c`
+- `0x186b80`
 - `0x186bc4`
 - `0x186bf0`
 - `0x186c30`
 - `0x186e48`
 - `0x187028`
 - `0x187054`
+- `0x187078`
 - `0x1870a8`
+- `0x1870ac`
+- `0x1870b8`
+- `0x1870bc`
 - `0x187320`
 - `0x187324`
 - `0x187328`
@@ -1539,6 +1547,7 @@ against the IDB when the final report is assembled.
 - `0x45c98`
 - `0x58e7c`
 - `0x5d6c4`
+- `0x61868`
 - `0x62ad8`
 - `0x62b80`
 - `0x6a49c`
@@ -1554,6 +1563,7 @@ against the IDB when the final report is assembled.
 - `0x86a58`
 - `0x86c34`
 - `0x8b550`
+- `0x8b654`
 - `0x8bbf8`
 - `0x94964`
 - `0x9542c`
@@ -1621,6 +1631,7 @@ against the IDB when the final report is assembled.
 - `0xaa8f8`
 - `0xaad28`
 - `0xaad4c`
+- `0xab220`
 - `0xab270`
 - `0xab488`
 - `0xab4b0`

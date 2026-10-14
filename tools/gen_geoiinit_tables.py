@@ -26,6 +26,7 @@ DESCS = [
     ("g_aGeodescFind",    0xAB630,  3, "SoldierScreen_Find pair plus Ui_SetTransferFlag"),
     ("g_aGeodescRoot",    0xABED8, 13, "the 13 root controls at 0x1864F8 + 4*i"),
     ("g_aGeodescSingle",  0xAC078, 13, "the 13 control singletons"),
+    ("g_aBaseFacPanelDesc", 0xAB220, 2, "BaseFacScreen_Init @ 0x5a198, the build-dialog up/down pair"),
 ]
 
 

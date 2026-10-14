@@ -22,6 +22,7 @@
 #include "game/pufo_objectrec.h" /* ObjectRecFull, for Research_TopicNeedsItem */
 #include "game/pufo_unit.h"      /* Soldier, the array the Find* handlers walk */
 #include "game/pufo_clock.h"     /* GameTime, whose pause byte the radar click sets */
+#include "game/pufo_geoscape.h"  /* HangarPlaceEnv / BaseRec / BaseSiteRec, the map-click chain */
 #include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
 
@@ -576,5 +577,117 @@ typedef struct RadarClickEnv {
 } RadarClickEnv;
 
 i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
+
+/* ------------------------------------------------- the base-facility screen's bring-up
+ *
+ * Evidence: BaseFacScreen_Init @ 0x5a198. Two callers: BaseFacScreen_Open @ 0x61868 and
+ * Geoscape_OnMapClick @ 0x8B654 (the screen-2 branch with no pending confirm).
+ *
+ * In the original's order:
+ *
+ *   1. the close control (unk_186B00) gets BaseFacScreen_CloseThunkA as its click handler FIRST
+ *      (0x5A1C4) and BaseFacScreen_CloseThunk at the END (0x5A254). In the IDB both are separate
+ *      functions and both are one tail call to Geoscape_CloseUI, so the same handler is installed
+ *      twice with the whole allocation between them. Then x = 224 and y = 229 (0x5A260, 0x5A26C).
+ *   2. 0x15887C and 0x158880 are cleared, then two controls are allocated (operator new 0x20 +
+ *      UiControl_ctor) into the pointer slots at 0x158874 and 0x158878 (0x5A1CC..0x5A200).
+ *   3. the first control's +12 handler slot gets BaseFacScreen_PanelPrev and the second's gets
+ *      BaseFacScreen_PanelNext (0x5A214, 0x5A220) - the pair that scrolls the panel the original
+ *      keeps at unk_15886C.
+ *   4. both controls are then positioned with the two descriptors at 0xAB220 (the "up"/"sup" and
+ *      "down"/"sdown" pads, offsets 11/252 and 11/277) at base (0, 0) (0x5A224..0x5A244).
+ *   5. 0x158888 is cleared and BaseFacScreen_Toggle (0x589ec) runs last as a tail call, and its
+ *      result is this function's return value. Toggle builds the panel and installs
+ *      BaseFacScreen_TryBuySelected; it is not ported yet, so it enters here as a hook.
+ *
+ * Deviations: the original allocates with operator new and stores into fixed .bss slots; the port
+ * takes caller-owned controls. The port's handler slot is `void (*)(void)`, so the panel pair
+ * arrives as the env's own thunks rather than as BaseFacScreen_PanelPrev itself. The Toggle hook
+ * returns nothing, so the port returns 0 where the original returns Toggle's register. */
+#define PUFO_BASEFAC_PANEL_DESC_COUNT 2
+
+typedef struct BaseFacInitEnv {
+    UiControl *pCloseCtl;        /* unk_186B00, the control that closes the screen */
+    UiControl *pUpCtl;           /* the control the original allocates into 0x158874 */
+    UiControl *pDownCtl;         /* ... and 0x158878 */
+    i32  *pnUnk15887C;           /* 0x15887C, cleared before the allocation */
+    i32  *pnUnk158880;           /* 0x158880, cleared before the allocation */
+    i32  *pnUnk158888;           /* 0x158888, cleared just before Toggle */
+    void (*pfnPanelPrev)(void);  /* the original stores BaseFacScreen_PanelPrev @ 0x589cc */
+    void (*pfnPanelNext)(void);  /* ... and BaseFacScreen_PanelNext @ 0x589dc */
+    void (*pfnCloseThunk)(void); /* the original stores BaseFacScreen_CloseThunkA / CloseThunk */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+    void (*pfnToggle)(void *pUser); /* BaseFacScreen_Toggle (0x589ec), not ported yet */
+    void *pToggleUser;
+} BaseFacInitEnv;
+
+i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv);
+
+/* ------------------------------------------------- a click on the geoscape map
+ *
+ * Evidence: Geoscape_OnMapClick @ 0x8b4a8 (1184 B). It is installed as the map click handler and
+ * tail-called by NewBaseScreen_TryConfirm @ 0x6152c; nothing reads its return value.
+ *
+ * It branches on the screen id (nGeoscapeScreen @ 0x186BC4) and does nothing for any other id.
+ *
+ * Screen 1 - the hangar placement, gated on bBasePlaceActive (0x1870BC):
+ *
+ *   - `Base_CanPlaceHangarAt(grid, nSmapTapX, nSmapTapY, bBasePlaceActive)` decides. A zero sets
+ *     bBasePlaceFail (0x1870B8) and stops.
+ *   - A non-zero result clears the tapped cells. Which cells depends on the tileA byte already
+ *     there: 9..12 are the hangar's four quadrants, so the whole 2 by 2 footprint goes; anything
+ *     else clears the single cell. Both paths clear tileA, tileB, layer2 and buildDays and write
+ *     the 0xFF facType sentinel.
+ *   - The 2 by 2 path is a three-iteration loop (0x8B6FC..0x8B7B8) whose index arithmetic is worth
+ *     spelling out: the four stores per iteration land at 36*i + 6*nY + nX + {0, 1, 6, 7} inside
+ *     the base's 144-byte block, so i walks the three 36-byte layers tileA, tileB and layer2 and
+ *     {0,1,6,7} is the 2x2 footprint within each. buildDays is cleared separately at +0, +6, +1
+ *     and +7 - the same four cells of the days lane.
+ *
+ * Screen 2 - the pending facility, gated on the pending kind (0x159DF4) not being 0xFF:
+ *
+ *   - With bBaseFacConfirm (0x1870AC) set, the pending placement is committed: apBases[0] gets
+ *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bUnk17 = the kind and
+ *     bUnk16 = 1; the aBaseFacilities record gets bType = kind + 0x80 and its abName field (the
+ *     label at 0x186C5A) gets the string BaseFac_FormatCostLabel builds. Then the strateg list is
+ *     searched for the entry whose nSiteId equals apBases[0]->bUnk4 and that entry's nX / nY are
+ *     set to the pending coordinates. The screen id becomes 1, bBaseFacConfirm and bBaseFacDone
+ *     (0x187078) are cleared.
+ *   - Without the confirm flag, nSelectedBaseIdx takes the base COUNT (0x159D80, signed), the
+ *     screen id becomes 7, and BaseFacScreen_Init runs as a tail call.
+ *
+ * Deviations: the strateg search has no bound - on a miss the index equals the count and the
+ * original writes nX / nY past the last entry. The port skips that write. The original returns
+ * register residue and, in two branches, the address of a flag; the port returns a status
+ * instead (see the .c). */
+typedef struct MapClickEnv {
+    u8   *abFacilityGrid;          /* gBaseFacGrid @ 0x159768 */
+    i32  *pnScreenId;              /* nGeoscapeScreen @ 0x186BC4 */
+    u8   *pbPlaceActive;           /* bBasePlaceActive @ 0x1870BC */
+    u8   *pbPlaceFail;             /* bBasePlaceFail @ 0x1870B8 */
+    i32   nTapX;                   /* nSmapTapX @ 0x186B7C */
+    i32   nTapY;                   /* nSmapTapY @ 0x186B80 */
+    const HangarPlaceEnv *pHangar; /* the placement test's own env (grid, base, rosters) */
+
+    u8   bPendingKind;             /* 0x159DF4, the facility kind awaiting placement */
+    u8   *pbConfirm;               /* bBaseFacConfirm @ 0x1870AC */
+    u8   *pbFacDone;               /* bBaseFacDone @ 0x187078 */
+    i32   nPlaceX;                 /* 0x159D94 */
+    i32   nPlaceY;                 /* 0x159D98 */
+    BaseRec **apBases;             /* 0x114B2C */
+    BaseSiteRec *apSiteRecs;       /* 0x186C40, eight 64-byte records */
+    PtrArray *pStrategList;        /* strategList @ 0x186534 */
+    const u8 *pTextRecs;           /* TEXTS, for the cost label */
+    i8   *abKindTable;             /* abBaseKindTable @ 0x1864DD */
+    char *pszLabelScratch;         /* szRadarMsg @ 0x186B10, where the label is built */
+    i32   cchLabelScratch;
+    i8   *pbBaseCount;             /* 0x159D80, signed */
+    i8   *pnSelectedBaseIdx;       /* 0x159D81 */
+    const BaseFacInitEnv *pFacInit; /* the screen-7 branch */
+} MapClickEnv;
+
+i32 Geoscape_OnMapClick(const MapClickEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

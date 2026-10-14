@@ -49,6 +49,57 @@ static const StrategRollTables g_WorldRoll = {
 
 static void World_NoopClick(void) { }
 
+static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
+
+/* BaseFacScreen_Toggle (0x589ec) is not ported yet: it builds the build dialog and installs
+ * BaseFacScreen_TryBuySelected. The shell runs the rest of BaseFacScreen_Init around it. */
+static void World_FacToggleStub(void *pUser)
+{
+    (void)pUser;
+}
+
+/* NewBaseScreen_TryConfirm @ 0x6152c tail-calls Geoscape_OnMapClick @ 0x8b4a8; this is the seam. */
+static void World_TryConfirmClick(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    MapClickEnv env;
+
+    if (pW == NULL) {
+        return;
+    }
+
+    /* The rosters and the selected base can change between clicks; the env holds them by value. */
+    pW->hangarEnv.nSelectedBaseIdx = pW->nSelectedBase;
+    pW->hangarEnv.nCraftCount = pW->bCraftCount;
+    pW->hangarEnv.nBaseCount = pW->nBaseCount;
+
+    memset(&env, 0, sizeof(env));
+    env.abFacilityGrid = pW->abFacilityGrid;
+    env.pnScreenId = &pW->screen.nGeoscapeScreen;
+    env.pbPlaceActive = &pW->bPlaceActive;
+    env.pbPlaceFail = &pW->bPlaceFail;
+    env.nTapX = pW->nSmapTapX;
+    env.nTapY = pW->nSmapTapY;
+    env.pHangar = &pW->hangarEnv;
+    env.bPendingKind = pW->bPendingFacilityKind;
+    env.pbConfirm = &pW->bPlacementPending;
+    env.pbFacDone = &pW->bFacDone;
+    env.nPlaceX = pW->nPlaceX;
+    env.nPlaceY = pW->nPlaceY;
+    env.apBases = pW->apBases;
+    env.apSiteRecs = pW->aSiteRecs;
+    env.pStrategList = &pW->strategList;
+    env.pTextRecs = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
+    env.abKindTable = (i8 *)pW->abKindTable;
+    env.pszLabelScratch = pW->szLabelScratch;
+    env.cchLabelScratch = (i32)sizeof(pW->szLabelScratch);
+    env.pbBaseCount = &pW->nBaseCount;
+    env.pnSelectedBaseIdx = &pW->nSelectedBase;
+    env.pFacInit = &pW->facInitEnv;
+
+    (void)Geoscape_OnMapClick(&env);
+}
+
 /* The options screen is not ported yet; the radar click's type-0 branch reaches it through
  * these stubs (the sample still plays). */
 static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
@@ -68,8 +119,6 @@ static void World_OptionsOpenStub(i32 nMode, void *pUser)
     (void)nMode;
     (void)pUser; /* the options screen itself is not ported */
 }
-
-static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
 
 static void World_RadarClickThunk(void)
 {
@@ -131,6 +180,13 @@ bool World_Init(PufoWorldState *pW)
     pW->nNextSoldierId = 1;
     pW->nCreateNextSiteId = 1;
     pW->nUnk159DC4 = 10; /* the original's 0x159DC4 starts at 10 */
+    /* bPendingBaseKind @ 0x159DF4 keeps the image's .data value 0. Nothing in the new-game path
+     * writes it: Game_StartNew ends on geoscape screen 2 (NewBaseScreen_Open 0x61620) with the
+     * pending kind 0 and the pending cell 0,0 (0x159D94/0x159D98 are only written by
+     * BaseFacScreen_DrawPlacementOverlay 0x59AF4). 0xFF is the "nothing pending" sentinel the
+     * readers use (Geoscape_OnMapClick 0x8B4CC, Geoscape_OnPointerUp 0x89694); the build flow
+     * installs it, the startup path does not. */
+    pW->bPendingFacilityKind = 0;
     pW->view.nMode = 2;  /* the geoscape starts at the closest zoom; StartNew zooms out twice */
     return true;
 }
@@ -248,7 +304,30 @@ static void World_StartNewHook(void *pUser)
     env.pZoomSets = pW->sets;
     env.pWorldOut = pW->ui.pWorldSize; /* the pair InitUI allocated at 0x186BC0 */
     env.pbFlag187080 = &pW->bFlag187080;
-    env.pfnTryConfirmClick = World_NoopClick; /* NewBaseScreen_TryConfirm needs the map-click seam */
+    /* The map click's own envs. The rosters and the selected base are refreshed on every click,
+     * so only the pointers are wired here. */
+    memset(&pW->hangarEnv, 0, sizeof(pW->hangarEnv));
+    pW->hangarEnv.abFacilityGrid = pW->abFacilityGrid;
+    pW->hangarEnv.abGridBytes = pW->saveBases.abUnk159DBC; /* the 0x159DBC byte table */
+    pW->hangarEnv.apCraft = pW->apCraft;
+    pW->hangarEnv.apBases = pW->apBases;
+
+    memset(&pW->facInitEnv, 0, sizeof(pW->facInitEnv));
+    pW->facInitEnv.pCloseCtl = &pW->ctlFacClose;
+    pW->facInitEnv.pUpCtl = &pW->ctlFacUp;
+    pW->facInitEnv.pDownCtl = &pW->ctlFacDown;
+    pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
+    pW->facInitEnv.pnUnk158880 = &pW->nUnk158880;
+    pW->facInitEnv.pnUnk158888 = &pW->nUnk158888;
+    pW->facInitEnv.pfnPanelPrev = World_NoopClick; /* BaseFacScreen_PanelPrev/Next, panel not wired */
+    pW->facInitEnv.pfnPanelNext = World_NoopClick;
+    pW->facInitEnv.pfnCloseThunk = World_NoopClick; /* Geoscape_CloseUI is not wired yet */
+    pW->facInitEnv.pfnLoadPads = pW->pfnLoadPads;
+    pW->facInitEnv.pPadUser = pW->pLoadPadsUser;
+    pW->facInitEnv.pfnToggle = World_FacToggleStub;
+    pW->facInitEnv.pToggleUser = pW;
+
+    env.pfnTryConfirmClick = World_TryConfirmClick; /* NewBaseScreen_TryConfirm's tail call */
     env.pNav = &pW->nav;
     env.pNavEnv = &pW->navEnv;
     env.pUnitEnv = &unitEnv;

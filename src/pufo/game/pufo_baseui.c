@@ -914,3 +914,207 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
 
     return 0; /* the original hands back the item pointer here; nothing reads it */
 }
+
+/* stru_AB220 @ 0xAB220: the two build-dialog panel buttons BaseFacScreen_Init positions. Printed
+ * and checked by tools/gen_geoiinit_tables.py. */
+static const UiControlDesc g_aBaseFacPanelDesc[PUFO_BASEFAC_PANEL_DESC_COUNT] = {
+    { 11, 252, "up", "sup", "", 0 },
+    { 11, 277, "down", "sdown", "", 0 },
+};
+
+/* BaseFacScreen_Init @ 0x5a198. See the header for the five steps and the deviations. */
+i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv)
+{
+    UiControl *apCtl[PUFO_BASEFAC_PANEL_DESC_COUNT];
+    i32 i;
+
+    if (pEnv == NULL) {
+        return 0;
+    }
+    apCtl[0] = pEnv->pUpCtl;
+    apCtl[1] = pEnv->pDownCtl;
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseThunk; /* 0x5A1C4 */
+    }
+    if (pEnv->pnUnk15887C != NULL) {
+        *pEnv->pnUnk15887C = 0;                          /* 0x5A1AC */
+    }
+    if (pEnv->pnUnk158880 != NULL) {
+        *pEnv->pnUnk158880 = 0;                          /* 0x5A1B4 */
+    }
+
+    /* 0x5A1CC..0x5A200: operator new(0x20) then UiControl_ctor, stored into 0x158874 and 0x158878.
+     * The port's controls are caller-owned, but the ctor still runs, as the original runs it. */
+    for (i = 0; i < PUFO_BASEFAC_PANEL_DESC_COUNT; ++i) {
+        if (apCtl[i] != NULL) {
+            UiControl_ctor(apCtl[i]);
+        }
+    }
+
+    if (apCtl[0] != NULL) {
+        apCtl[0]->pfnClick = pEnv->pfnPanelPrev;         /* 0x5A214: STR [R0,#0xC] */
+    }
+    if (apCtl[1] != NULL) {
+        apCtl[1]->pfnClick = pEnv->pfnPanelNext;         /* 0x5A220 */
+    }
+
+    for (i = 0; i < PUFO_BASEFAC_PANEL_DESC_COUNT; ++i) { /* 0x5A224..0x5A244 */
+        if (apCtl[i] != NULL) {
+            UiControl_Setup(apCtl[i], 0, 0, &g_aBaseFacPanelDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseThunk; /* 0x5A254, the same handler again */
+        pEnv->pCloseCtl->x = 224;                        /* 0x5A260 */
+        pEnv->pCloseCtl->y = 229;                        /* 0x5A26C */
+    }
+    if (pEnv->pnUnk158888 != NULL) {
+        *pEnv->pnUnk158888 = 0;                          /* 0x5A274 */
+    }
+
+    if (pEnv->pfnToggle != NULL) {
+        pEnv->pfnToggle(pEnv->pToggleUser);              /* 0x5A27C, the tail call */
+    }
+    return 0; /* the original returns BaseFacScreen_Toggle's register; the hook returns nothing */
+}
+
+/* Geoscape_OnMapClick @ 0x8b4a8. The header carries the two branches and the loop arithmetic.
+ *
+ * The port returns a status instead of the original's residue:
+ *   0  nothing ran (any other screen id, an inactive hangar placement, or one that was applied)
+ *   1  the hangar placement was refused and bBasePlaceFail was set
+ *   2  the pending facility was committed to base 0
+ *   3  the base-facility screen was opened
+ * The original returns 6, &bBasePlaceFail (0x1870B8), &bBaseFacDone (0x187078) and
+ * BaseFacScreen_Init's value in those four cases; nothing reads any of them - the function is
+ * installed as a widget click handler and NewBaseScreen_TryConfirm tail-calls it. */
+i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pnScreenId == NULL || pEnv->abFacilityGrid == NULL) {
+        return 0;
+    }
+
+    if (*pEnv->pnScreenId == 1) {
+        i32 nSel, nFac, nDays, nTile, i;
+        u8 *abGrid = pEnv->abFacilityGrid;
+
+        if (pEnv->pbPlaceActive == NULL || *pEnv->pbPlaceActive == 0) {
+            return 0;                                   /* 0x8B664: the gate is the active byte */
+        }
+        if (pEnv->pHangar == NULL) {
+            return 0;
+        }
+        if (Base_CanPlaceHangarAt(pEnv->pHangar, pEnv->nTapX, pEnv->nTapY) == 0) {
+            if (pEnv->pbPlaceFail != NULL) {
+                *pEnv->pbPlaceFail = 1;                 /* 0x8B93C */
+            }
+            return 1;
+        }
+
+        nSel  = (i32)pEnv->pHangar->nSelectedBaseIdx;
+        nFac  = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nSel + 6 * pEnv->nTapY + pEnv->nTapX;
+        nDays = PUFO_GRID_DAYS_STRIDE * nSel + 6 * pEnv->nTapY + pEnv->nTapX;
+        nTile = abGrid[nFac + PUFO_GRID_TILEA_OFF];
+
+        if (nTile <= 8 || nTile >= 13) {
+            /* 0x8B88C..0x8B92C: not a hangar quadrant, so only the tapped cell goes. */
+            abGrid[nDays]                    = 0;
+            abGrid[nFac + PUFO_GRID_TILEA_OFF]  = 0;
+            abGrid[nFac + PUFO_GRID_TILEB_OFF]  = 0;
+            abGrid[nFac + PUFO_GRID_LAYER2_OFF] = 0;
+            abGrid[nFac + PUFO_GRID_FAC_TYPE_OFF] = PUFO_FAC_TYPE_NONE;
+        } else {
+            /* 0x8B6FC..0x8B7B8: the three-iteration loop. Its index arithmetic is worth spelling
+             * out because Hex-Rays scrambles it: the four stores per iteration land at
+             * 144*nBase + 36*i + 6*nY + nX + {0, 1, 6, 7}, so i walks the three 36-byte layers
+             * tileA, tileB and layer2 and {0,1,6,7} is the 2 by 2 footprint inside each. */
+            for (i = 0; i < 3; ++i) {
+                const i32 nLayer = nFac + 36 * i;
+                abGrid[nLayer]     = 0;                 /* 0x8B728 */
+                abGrid[nLayer + 1] = 0;                 /* 0x8B754 */
+                abGrid[nLayer + 6] = 0;                 /* 0x8B780 */
+                abGrid[nLayer + 7] = 0;                 /* 0x8B7B4 */
+            }
+            abGrid[nFac + PUFO_GRID_FAC_TYPE_OFF] = PUFO_FAC_TYPE_NONE; /* 0x8B7E4 */
+            abGrid[nDays]     = 0;                      /* 0x8B804 */
+            abGrid[nDays + 6] = 0;                      /* 0x8B828: (nY+1,nX) */
+            abGrid[nDays + 1] = 0;                      /* 0x8B84C: (nY,nX+1) */
+            abGrid[nDays + 7] = 0;                      /* 0x8B870: the diagonal */
+        }
+        return 0;
+    }
+
+    if (*pEnv->pnScreenId == 2) {
+        BaseRec *pBase;
+        i32 i, nCount;
+
+        if (pEnv->bPendingKind == 0xFF) {
+            return 0;                                   /* 0x8B4D0 */
+        }
+
+        if (pEnv->pbConfirm != NULL && *pEnv->pbConfirm != 0) {
+            pBase = (pEnv->apBases != NULL) ? pEnv->apBases[0] : NULL;
+
+            if (pBase != NULL) {
+                pBase->nUnk8  = pEnv->nPlaceX;          /* 0x8B504 */
+                pBase->nUnk12 = pEnv->nPlaceY;          /* 0x8B518 */
+                pBase->bUnk17 = pEnv->bPendingKind;     /* 0x8B52C */
+                pBase->bUnk16 = 1;                      /* 0x8B53C */
+            }
+            if (pEnv->apSiteRecs != NULL) {
+                pEnv->apSiteRecs[0].bType = (u8)(pEnv->bPendingKind + 0x80); /* 0x8B548 */
+            }
+
+            /* 0x8B550..0x8B56C: the label is built in the shared scratch string and then copied
+             * into the facility record's name field (0x186C5A, record + 26). */
+            if (pEnv->pszLabelScratch != NULL && pEnv->apSiteRecs != NULL) {
+                (void)BaseFac_FormatCostLabel(pEnv->pszLabelScratch, (size_t)pEnv->cchLabelScratch,
+                                              pEnv->pTextRecs, pEnv->bPendingKind,
+                                              pEnv->abKindTable);
+                pufo_strncpy(pEnv->apSiteRecs[0].abName, pEnv->pszLabelScratch,
+                             sizeof(pEnv->apSiteRecs[0].abName));
+            }
+
+            /* 0x8B570..0x8B5B4: the entry whose site id equals the base's type byte. The compare
+             * is a SIGNED byte (LDRSB at 0x8B598) against the entry's dword. */
+            nCount = (pEnv->pStrategList != NULL) ? PtrArray_GetCount(pEnv->pStrategList) : 0;
+            for (i = 0; i < nCount; ++i) {
+                StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, i);
+                if (pItem != NULL && pBase != NULL &&
+                    (i32)(i8)pBase->bUnk4 == pItem->nSiteId) {
+                    break;
+                }
+            }
+            if (i < nCount) {
+                StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, i);
+                if (pItem != NULL) {
+                    pItem->nX = pEnv->nPlaceX;          /* 0x8B5E4 */
+                    pItem->nY = pEnv->nPlaceY;          /* 0x8B5F8 */
+                }
+            }
+            /* Deviation: on a miss the original leaves i at the count and writes nX / nY past the
+             * last entry. The port skips the write. */
+
+            *pEnv->pnScreenId = 1;                      /* 0x8B600 */
+            if (pEnv->pbConfirm != NULL) {
+                *pEnv->pbConfirm = 0;                   /* 0x8B608 */
+            }
+            if (pEnv->pbFacDone != NULL) {
+                *pEnv->pbFacDone = 0;                   /* 0x8B60C */
+            }
+            return 2;
+        }
+
+        if (pEnv->pnSelectedBaseIdx != NULL && pEnv->pbBaseCount != NULL) {
+            *pEnv->pnSelectedBaseIdx = *pEnv->pbBaseCount; /* 0x8B644: the base COUNT, signed */
+        }
+        *pEnv->pnScreenId = 7;                          /* 0x8B64C */
+        (void)BaseFacScreen_Init(pEnv->pFacInit);       /* 0x8B654, the tail call */
+        return 3;
+    }
+
+    return 0; /* any other screen id: the original returns the screen id itself */
+}

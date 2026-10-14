@@ -5,6 +5,7 @@
 
 #include "game/pufo_baseui.h"
 #include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, for the cost label */
 
 static int g_nFailures;
 
@@ -1323,6 +1324,280 @@ static void TestRadarListClick(void)
 #undef RADAR_BEGIN
 }
 
+/* --- BaseFacScreen_Init @ 0x5a198 --- */
+
+static int g_nToggleRuns;
+static int g_nPadLoads;
+static char g_szLastPad0[16];
+
+static void RecordToggle(void *pUser)
+{
+    (void)pUser;
+    g_nToggleRuns += 1;
+}
+
+static bool RecordPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                       const char *psz2, void *pUser)
+{
+    (void)pCtl;
+    (void)psz1;
+    (void)psz2;
+    (void)pUser;
+    g_nPadLoads += 1;
+    snprintf(g_szLastPad0, sizeof(g_szLastPad0), "%s", psz0);
+    return true;
+}
+
+static void NopClick(void) { }
+
+static void TestBaseFacScreenInit(void)
+{
+    static UiControl closeCtl, upCtl, downCtl;
+    static i32 n7C, n80, n88;
+    BaseFacInitEnv env;
+    i32 nRet;
+
+    printf("BaseFacScreen_Init @ 0x5a198\n");
+
+    memset(&closeCtl, 0x5A, sizeof(closeCtl));
+    memset(&upCtl, 0x5A, sizeof(upCtl));
+    memset(&downCtl, 0x5A, sizeof(downCtl));
+    n7C = 7; n80 = 8; n88 = 9;
+    g_nToggleRuns = 0;
+    g_nPadLoads = 0;
+    g_szLastPad0[0] = '\0';
+
+    memset(&env, 0, sizeof(env));
+    env.pCloseCtl = &closeCtl;
+    env.pUpCtl = &upCtl;
+    env.pDownCtl = &downCtl;
+    env.pnUnk15887C = &n7C;
+    env.pnUnk158880 = &n80;
+    env.pnUnk158888 = &n88;
+    env.pfnPanelPrev = NopClick;
+    env.pfnPanelNext = NopClick;
+    env.pfnCloseThunk = NopClick;
+    env.pfnLoadPads = RecordPads;
+    env.pfnToggle = RecordToggle;
+
+    nRet = BaseFacScreen_Init(&env);
+    CheckEqI32(nRet, 0, "the return is 0 where the original returns Toggle's register");
+    CheckEqI32(n7C, 0, "0x15887C is cleared before the controls are built");
+    CheckEqI32(n80, 0, "and so is 0x158880");
+    CheckEqI32(n88, 0, "0x158888 is cleared just before Toggle");
+    CheckEqI32(g_nToggleRuns, 1, "BaseFacScreen_Toggle runs once, last");
+    CheckEqI32(upCtl.uWidth, 10, "UiControl_ctor runs on the first control (10x10 enabled)");
+    CheckEqI32(downCtl.uWidth, 10, "and on the second");
+    CheckEqI32(g_nPadLoads, 2, "both get UiControl_Setup, each with its own descriptor");
+    Check(strcmp(g_szLastPad0, "down") == 0, "the second descriptor is the down/sdown pair");
+    CheckEqI32(upCtl.x, 11, "the up control lands at the descriptor's x offset");
+    CheckEqI32(upCtl.y, 252, "and y 252");
+    CheckEqI32(downCtl.x, 11, "the down control at the same x");
+    CheckEqI32(downCtl.y, 277, "and y 277");
+    CheckEqI32(upCtl.nMode, 0, "the descriptor's mode lands on the control");
+    Check(upCtl.pfnClick == NopClick, "the +12 handler is stored BEFORE Setup and survives it");
+    Check(downCtl.pfnClick == NopClick, "for both controls");
+    CheckEqI32(closeCtl.x, 224, "the close control is moved to x 224");
+    CheckEqI32(closeCtl.y, 229, "and y 229");
+    Check(closeCtl.pfnClick == NopClick, "its click handler is installed at both ends of the init");
+
+    CheckEqI32(BaseFacScreen_Init(NULL), 0, "a null env is refused");
+}
+
+/* --- Geoscape_OnMapClick @ 0x8b4a8 --- */
+
+static u8 g_aMapGrid[1524];
+#define MFAC(l, y, x) g_aMapGrid[0x174 + 144 * 0 + (l) + 6 * (y) + (x)]
+#define MDAYS(y, x)   g_aMapGrid[36 * 0 + 6 * (y) + (x)]
+
+static void TestMapClick(void)
+{
+    static u8 abGridBytes[8];
+    static Ship aCraft[1];
+    static Ship *apCraft[1];
+    static BaseRec aBase;
+    static BaseRec *apBases[1];
+    static BaseSiteRec aSiteRecs[1];
+    static PtrArray list;
+    static StrategItem *pItem;
+    static u8 abKind[17];
+    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + 17)];
+    static char szLabel[64];
+    static UiControl closeCtl, upCtl, downCtl;
+    static i8 nBaseCount, nSelBase;
+    HangarPlaceEnv hEnv;
+    BaseFacInitEnv facEnv;
+    MapClickEnv env;
+    i32 nScreen;
+    u8 bActive, bFail, bConfirm, bDone;
+
+    printf("Geoscape_OnMapClick @ 0x8b4a8\n");
+
+    memset(aTexts, 0, sizeof(aTexts));
+    memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * PUFO_FAC_NAME_REC_BASE,
+           "Fac905", 6);
+
+    memset(&facEnv, 0, sizeof(facEnv));
+    facEnv.pCloseCtl = &closeCtl;
+    facEnv.pUpCtl = &upCtl;
+    facEnv.pDownCtl = &downCtl;
+    facEnv.pfnCloseThunk = NopClick;
+    facEnv.pfnLoadPads = RecordPads;
+    facEnv.pfnToggle = RecordToggle;
+
+#define MAP_BEGIN(ID)                                                          \
+    memset(g_aMapGrid, 0, sizeof(g_aMapGrid));                                 \
+    memset(abGridBytes, 0, sizeof(abGridBytes));                               \
+    memset(aCraft, 0, sizeof(aCraft));                                         \
+    aCraft[0].bHomeBase = 255; /* homed nowhere: the craft total starts at 0 */\
+    apCraft[0] = &aCraft[0];                                                   \
+    memset(&aBase, 0, sizeof(aBase));                                          \
+    aBase.bUnk4 = 7;                                                           \
+    apBases[0] = &aBase;                                                       \
+    memset(aSiteRecs, 0, sizeof(aSiteRecs));                                   \
+    memset(abKind, 0, sizeof(abKind));                                         \
+    szLabel[0] = '\0';                                                         \
+    PtrArray_ctor(&list);                                                      \
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));                    \
+    pItem->nSiteId = 7;                                                        \
+    pItem->nX = -1;                                                            \
+    pItem->nY = -1;                                                            \
+    PtrArray_Add(&list, pItem);                                                \
+    nScreen = (ID); bActive = 1; bFail = 0; bConfirm = 1; bDone = 1;          \
+    nBaseCount = 3; nSelBase = 0;                                              \
+    g_nToggleRuns = 0; g_nPadLoads = 0;                                        \
+    memset(&hEnv, 0, sizeof(hEnv));                                            \
+    hEnv.abFacilityGrid = g_aMapGrid;                                          \
+    hEnv.abGridBytes = abGridBytes;                                            \
+    hEnv.nSelectedBaseIdx = 0;                                                 \
+    hEnv.apCraft = apCraft;                                                    \
+    hEnv.nCraftCount = 1;                                                      \
+    hEnv.apBases = apBases;                                                    \
+    hEnv.nBaseCount = 1;                                                       \
+    memset(&env, 0, sizeof(env));                                              \
+    env.abFacilityGrid = g_aMapGrid;                                           \
+    env.pnScreenId = &nScreen;                                                 \
+    env.pbPlaceActive = &bActive;                                              \
+    env.pbPlaceFail = &bFail;                                                  \
+    env.nTapX = 2;                                                             \
+    env.nTapY = 2;                                                             \
+    env.pHangar = &hEnv;                                                       \
+    env.bPendingKind = 0;                                                      \
+    env.pbConfirm = &bConfirm;                                                 \
+    env.pbFacDone = &bDone;                                                    \
+    env.nPlaceX = 1234;                                                        \
+    env.nPlaceY = 5678;                                                        \
+    env.apBases = apBases;                                                     \
+    env.apSiteRecs = aSiteRecs;                                                \
+    env.pStrategList = &list;                                                  \
+    env.pTextRecs = aTexts;                                                    \
+    env.abKindTable = (i8 *)abKind;                                            \
+    env.pszLabelScratch = szLabel;                                             \
+    env.cchLabelScratch = (i32)sizeof(szLabel);                                \
+    env.pbBaseCount = &nBaseCount;                                             \
+    env.pnSelectedBaseIdx = &nSelBase;                                         \
+    env.pFacInit = &facEnv
+
+    /* 1. any other screen id does nothing at all. */
+    MAP_BEGIN(0);
+    CheckEqI32(Geoscape_OnMapClick(&env), 0, "screen 0: the function does nothing");
+    CheckEqI32(MFAC(108, 2, 2), 0, "and writes no grid byte");
+
+    /* 2. screen 1 is gated on bBasePlaceActive. */
+    MAP_BEGIN(1);
+    bActive = 0;
+    CheckEqI32(Geoscape_OnMapClick(&env), 0, "screen 1 with the placement byte clear: nothing runs");
+    CheckEqI32(bFail, 0, "and bBasePlaceFail is not touched");
+
+    /* 3. a refused placement sets the fail byte and writes nothing. */
+    MAP_BEGIN(1);
+    CheckEqI32(Geoscape_OnMapClick(&env), 1, "empty ground refuses the hangar");
+    CheckEqI32(bFail, 1, "bBasePlaceFail (0x1870B8) is set");
+    CheckEqI32(MFAC(108, 2, 2), 0, "and no cell is cleared");
+
+    /* 4. an accepted single cell: tileA, tileB and facType go, the footprint does not. */
+    MAP_BEGIN(1);
+    MFAC(0, 2, 2) = 1;   MFAC(36, 2, 2) = 5;   MFAC(108, 2, 2) = 1;
+    MFAC(0, 2, 3) = 1;   MFAC(36, 2, 3) = 5;   MFAC(108, 2, 3) = 1;
+    CheckEqI32(Geoscape_OnMapClick(&env), 0, "a plain facility cell is accepted");
+    CheckEqI32(bFail, 0, "with no fail byte");
+    CheckEqI32(MFAC(0, 2, 2), 0, "tileA of the tapped cell is cleared");
+    CheckEqI32(MFAC(36, 2, 2), 0, "and its tileB");
+    CheckEqI32(MFAC(108, 2, 2), 0xFF, "with the 0xFF facType sentinel written in its place");
+    CheckEqI32(MFAC(0, 2, 3), 1, "the neighbouring cell keeps its tileA - no footprint here");
+    CheckEqI32(MFAC(108, 2, 3), 1, "and keeps its facType");
+
+    /* 5. a hangar quadrant: the whole 2 by 2 footprint goes, across all three layers. The tap is
+     * at (nY,nX) = (2,3), the quadrant stamped 10. */
+    MAP_BEGIN(1);
+    env.nTapX = 3;
+    MFAC(0, 2, 2) = 9;   MFAC(0, 2, 3) = 10;  MFAC(0, 3, 2) = 11;  MFAC(0, 3, 3) = 12;
+    MFAC(108, 2, 2) = 11;                     MFAC(108, 2, 3) = 11;
+    MFAC(36, 2, 3) = 4;  MFAC(36, 2, 4) = 4;  MFAC(36, 3, 3) = 4;  MFAC(36, 3, 4) = 4;
+    MFAC(72, 2, 3) = 4;  MFAC(72, 2, 4) = 4;  MFAC(72, 3, 3) = 4;  MFAC(72, 3, 4) = 4;
+    MDAYS(4, 4) = 9;
+    CheckEqI32(Geoscape_OnMapClick(&env), 0, "a hangar quadrant is accepted (two free slots, no craft)");
+    CheckEqI32(MFAC(0, 2, 3), 0, "tileA cleared at the tapped cell");
+    CheckEqI32(MFAC(0, 2, 4), 0, "tileA cleared at (nY,nX+1)");
+    CheckEqI32(MFAC(0, 3, 3), 0, "tileA cleared at (nY+1,nX)");
+    CheckEqI32(MFAC(0, 3, 4), 0, "and at the diagonal");
+    CheckEqI32(MFAC(36, 2, 3), 0, "the same four cells of tileB");
+    CheckEqI32(MFAC(36, 3, 4), 0, "including the diagonal");
+    CheckEqI32(MFAC(72, 2, 3), 0, "and of layer2");
+    CheckEqI32(MFAC(72, 3, 4), 0, "again at the diagonal");
+    CheckEqI32(MFAC(108, 2, 3), 0xFF, "facType is the sentinel at the tapped cell only");
+    CheckEqI32(MFAC(108, 2, 4), 0, "the facType of (nY,nX+1) is left alone");
+    CheckEqI32(MDAYS(2, 3), 0, "buildDays cleared at the tapped cell");
+    CheckEqI32(MDAYS(3, 3), 0, "at (nY+1,nX)");
+    CheckEqI32(MDAYS(2, 4), 0, "at (nY,nX+1)");
+    CheckEqI32(MDAYS(3, 4), 0, "and at the diagonal");
+    CheckEqI32(MFAC(0, 2, 2), 9, "the anchor quadrant is NOT cleared: the footprint starts at the tap");
+    CheckEqI32(MDAYS(4, 4), 9, "a cell outside the footprint keeps its build days");
+
+    /* 6. screen 2 with no pending kind does nothing. */
+    MAP_BEGIN(2);
+    env.bPendingKind = 0xFF;
+    CheckEqI32(Geoscape_OnMapClick(&env), 0, "screen 2 with the pending kind 0xFF: nothing runs");
+    CheckEqI32(nScreen, 2, "and the screen id stays 2");
+
+    /* 7. the confirm branch commits the pending facility. */
+    MAP_BEGIN(2);
+    CheckEqI32(Geoscape_OnMapClick(&env), 2, "the confirm branch commits the pending facility");
+    CheckEqI32(aBase.nUnk8, 1234, "the base takes the pending x");
+    CheckEqI32(aBase.nUnk12, 5678, "and the pending y");
+    CheckEqI32(aBase.bUnk17, 0, "bUnk17 becomes the pending kind");
+    CheckEqI32(aBase.bUnk16, 1, "and bUnk16 is set to 1");
+    CheckEqI32(aSiteRecs[0].bType, 0x80, "the facility record's type is kind + 0x80");
+    Check(strcmp(aSiteRecs[0].abName, "Fac905-0") == 0,
+          "its name field gets the cost label the counter builds");
+    CheckEqI32(abKind[0], 1, "and the counter behind the label is incremented");
+    CheckEqI32(pItem->nX, 1234, "the strateg entry found by site id gets the pending x");
+    CheckEqI32(pItem->nY, 5678, "and the pending y");
+    CheckEqI32(nScreen, 1, "the screen id becomes 1");
+    CheckEqI32(bConfirm, 0, "bBaseFacConfirm is cleared");
+    CheckEqI32(bDone, 0, "and bBaseFacDone (0x187078)");
+
+    /* 8. a miss in the strateg search: the original would write past the last entry. */
+    MAP_BEGIN(2);
+    pItem->nSiteId = 99;
+    CheckEqI32(Geoscape_OnMapClick(&env), 2, "the commit still runs when no entry matches");
+    CheckEqI32(pItem->nX, -1, "and the port does not write nX past the end of the list");
+    CheckEqI32(pItem->nY, -1, "nor nY");
+
+    /* 9. without the confirm flag the base-facility screen is opened instead. */
+    MAP_BEGIN(2);
+    bConfirm = 0;
+    CheckEqI32(Geoscape_OnMapClick(&env), 3, "no confirm: the base-facility screen opens");
+    CheckEqI32(nSelBase, 3, "nSelectedBaseIdx takes the base COUNT (0x159D80)");
+    CheckEqI32(nScreen, 7, "and the screen id becomes 7");
+    CheckEqI32(g_nToggleRuns, 1, "BaseFacScreen_Init ran, Toggle included");
+    CheckEqI32(g_nPadLoads, 2, "with both panel buttons positioned");
+
+#undef MAP_BEGIN
+#undef MFAC
+#undef MDAYS
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1352,6 +1627,8 @@ int main(void)
     TestNewBaseScreen();
     TestBuildNavControls();
     TestRadarListClick();
+    TestBaseFacScreenInit();
+    TestMapClick();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

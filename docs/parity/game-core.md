@@ -9128,3 +9128,59 @@ and write into `pSmapPadZoom2 @ 0x1864EC` and the gap before `pSmapPadZoom1` (`b
 The counter is loaded SIGNED and the `+1` is sign-extended before the byte store, so 127 wraps to
 -128 and a negative entry prints a label with two dashes (`Fac908--3`). The first argument (the
 grid pointer) is never read — R0 becomes the label buffer at 0x6A458 — so the port drops it.
+
+### `BaseFacScreen_Init` (done)
+
+`src/pufo/game/pufo_baseui.c`, 20 new checks in `tests/test_baseui.c`. Caller:
+`Geoscape_OnMapClick @ 0x8B654`, the screen-2 branch taken without `bBaseFacConfirm`.
+
+Five steps, in the original's order:
+
+1. **The close handler first** (0x5A1C4): it is installed on the control slot at `unk_186B00`, which
+   is then moved to x 224 / y 229. The SAME install runs again at 0x5A254, after the panel buttons
+   exist, so the port installs it twice.
+2. `0x15887C` and `0x158880` are cleared before anything is allocated.
+3. Two controls are allocated (`operator new 0x20` + `UiControl_ctor`) into the pointer slots
+   `0x158874` and `0x158878`. Their `+12` click handlers — `BaseFacScreen_PanelPrev` (0x5A214) and
+   `BaseFacScreen_PanelNext` (0x5A220) — are stored BEFORE `UiControl_Setup`, and Setup does not
+   overwrite them (the test pins this).
+4. `UiControl_Setup` runs over the two 32-byte descriptors at `stru_AB220`: `{11,252,"up","sup"}` and
+   `{11,277,"down","sdown"}`. `tools/gen_geoiinit_tables.py --check` prints them.
+5. `0x158888` is cleared (0x5A274) and `BaseFacScreen_Toggle (0x589ec)` is tail-called; its register
+   is the return value. The port returns 0.
+
+`BaseFacScreen_Toggle` is not ported: the shell injects a no-op through `BaseFacInitEnv.pfnToggle`.
+
+### `Geoscape_OnMapClick` (done)
+
+`src/pufo/game/pufo_baseui.c`, 54 new checks in `tests/test_baseui.c`. Callers:
+`NewBaseScreen_TryConfirm @ 0x6158C` (tail call), 0x15594, 0x857EC. The shell reaches it through the
+confirm control (`app/pufo_world.c:World_TryConfirmClick`).
+
+Branches on `nGeoscapeScreen @ 0x186BC4`; anything but 1 or 2 returns without touching anything.
+
+**Screen 1** (0x8B660, gated on `bBasePlaceActive @ 0x1870BC`): `Base_CanPlaceHangarAt(grid,
+nSmapTapX, nSmapTapY, 1)`. A refusal sets `bBasePlaceFail @ 0x1870B8` and writes nothing. An
+acceptance clears the tapped cell:
+
+- `tileA <= 8` or `>= 13` (0x8B6DC..0x8B878): the single cell — tileA/tileB/layer2 = 0,
+  facType = 0xFF, buildDays = 0.
+- `tileA` in 9..12 (0x8B6E4..0x8B7BC): the 2x2 footprint. The original's four stores look garbled;
+  they decode to `144*nBase + 36*i + 6*nY + nX + {0,1,6,7}` with `i` walking tileA/tileB/layer2 over
+  three iterations, plus facType 0xFF at the anchor only and buildDays cleared at +0, +6, +1, +7. The
+  footprint starts at the tapped cell — the anchor quadrant is NOT cleared — and every store stays
+  inside the 1524-byte grid.
+
+**Screen 2** (0x8B4BC, gated on `bPendingBaseKind @ 0x159DF4 != 0xFF`):
+
+- With `bBaseFacConfirm @ 0x1870AC` (0x8B4E4..0x8B614): commit. `apBases[0]` (renamed from
+  `unk_114B2C`, Map + 0x1174) gets `nUnk8`/`nUnk12` = 0x159D94/0x159D98, `bUnk17` = the pending kind,
+  `bUnk16` = 1; the `aBaseFacilities` record's `bType` (byte_186C24+0x1C) = kind + 0x80 and its
+  `abName` at record+26 (0x186C5A) gets `BaseFac_FormatCostLabel`'s text; the strateg entry whose
+  `nSiteId` equals the SIGNED `apBases[0]->bUnk4` gets nX/nY; screen -> 1; confirm and
+  `bBaseFacDone @ 0x187078` cleared.
+- Without confirm (0x8B634): `nSelectedBaseIdx @ 0x159D81` (LDRSB) takes the base COUNT at 0x159D80
+  (signed), screen -> 7, tail-calls `BaseFacScreen_Init`.
+
+Deviation: the strateg write is unbounded on a miss (0x8B5E4/0x8B5F8, bugs.tsv) — the port bounds it.
+The port also returns an explicit status (0/1/2/3) where the original returns register residue.

@@ -374,6 +374,24 @@ Order is by what unblocks what. Each item ends with gates + commit.
   and `abBaseKindTable @ 0x1864DD` is described (15 bytes, no xrefs, indexed by facility kind).
   Three ledger rows (86 total): the dead 2x2 marking (0x62AD8), the scratch overrun at row 5
   (0x62B80), the kind 15/16 spill past `abBaseKindTable` (0x6A49C).
+- [x] `Geoscape_OnMapClick @ 0x8b4a8` (1184 B) + `BaseFacScreen_Init @ 0x5a198` (252 B) — ported in
+  `pufo_baseui.{h,c}` behind `MapClickEnv` / `BaseFacInitEnv`, 74 new checks in `tests/test_baseui.c`,
+  and the shell runs the map click for real through the confirm control (`app/pufo_world.c:
+  World_TryConfirmClick`). The click branches on `nGeoscapeScreen`. Screen 1 runs the hangar test with
+  `nSmapTapX/nSmapTapY` (0x186B7C/0x186B80) and clears the tapped cell: tileA 9..12 takes the whole
+  2x2 footprint, whose four garbled stores decode to `144*nBase + 36*i + 6*nY + nX + {0,1,6,7}` with
+  `i` walking tileA/tileB/layer2, the footprint starting at the tapped cell (the anchor quadrant
+  survives). Screen 2 commits the pending facility — the base scalars, `bType = kind + 0x80`, the cost
+  label into the record's `abName` at +26, the strateg entry found by the SIGNED `bUnk4` — or, without
+  `bBaseFacConfirm`, sets `nSelectedBaseIdx` to the base COUNT and tail-calls `BaseFacScreen_Init`,
+  which builds the dialog's up/down pair from the `stru_AB220` descriptors and installs their +12
+  handlers BEFORE `UiControl_Setup`; Setup does not overwrite them (verified). IDB: function comments
+  at 0x8b4a8 / 0x5a198, `unk_114B2C` renamed `apBases` (Map + 0x1174, the `BaseRec *` roster), line
+  comments at 0x159DF4 (`bPendingBaseKind`: 0xFF is the "nothing pending" sentinel, the .data value is
+  0, nothing in the new-game path writes it, and the writer is `Geoscape_Draw` 0x91D90), 0x186B00,
+  0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
+  miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
+  original returns register residue.
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -553,6 +571,12 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Tact_SimulateThrowArc` (0x319F4). A byte pair and a pointer cannot both own the same four bytes, so
   one of the three is wrong. Not folded into this step — the arrow port takes the pointer through
   `IsoArrowGate.pThrownItem` and leaves the Map model alone.
+- [ ] The coverage metric counts **every** `@ 0xADDR` citation in `src/pufo`, so a comment that cites
+  an unported callee inflates the headline number. `pufo_baseui.h:418` cites `OnPointer @ 0x872d0`,
+  `OnPointerUp @ 0x89450` and `CloseUI @ 0x8b94c` — none of them ported — which is 3 functions and
+  17,668 bytes of the 727. New code writes unported callees as `Name (0xADDR)` so they stay out of the
+  count; that one line needs the same fix, and `coverage.py` could gain a check that a cited address
+  has a definition of the same name. Not folded into this step.
 
 ## Measured state
 
@@ -594,6 +618,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Game_StartNew` + the verified enums (`pufo_geoiinit.c`) | 56/56 (Release) | 7880 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 | radar-list click + shell wiring (`pufo_baseui.c`, `app/pufo_world.c`) | 56/56 (Release) | 7916 | 723/1103 (65.5%) | 324112/598792 (54.1%) | 38 checked, 0 mismatched |
 | hangar placement + the facility cost label (`pufo_geoscape.c`) | 56/56 (Release) | 7955 | 725/1103 (65.7%) | 325264/598792 (54.3%) | 38 checked, 0 mismatched |
+| the geoscape map click + the build-dialog init (`pufo_baseui.c`, shell-wired) | 56/56 (Release) | 8029 | 727/1103 (65.9%) | 326700/598792 (54.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
