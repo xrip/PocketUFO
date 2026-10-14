@@ -27,6 +27,7 @@
 #include "game/pufo_clock.h"    /* GameTime, the scratch clock SaveSlot_FormatList uses */
 #include "game/pufo_font.h"     /* PufoFont, the shell owns the fontSys block */
 #include "game/pufo_input.h"    /* Input_OnPointer / Input_OnPointerUp, the menu click path */
+#include "app/pufo_world.h"   /* PufoWorldState, the geoscape bring-up state */
 #include "game/pufo_mainmenu.h" /* GameUI_InitStartup / MainMenu_Draw / MainMenu_TickRowKeys */
 #include "game/pufo_options.h"  /* Options_LoadFromRegistry */
 #include "game/pufo_renderframe.h" /* Render_Frame, the frame dispatcher */
@@ -53,6 +54,8 @@ static HWND       g_hWndMain = NULL;
 static GxSurface  g_gx;
 static BootAssets g_assets;
 static bool       g_bAssetsLoaded;
+static PufoWorldState g_world;
+static bool       g_bWorldReady;
 static char       g_szLangPath[MAX_PATH];
 static char       g_szMainPath[MAX_PATH];
 
@@ -164,10 +167,27 @@ static void *App_HookFree(void *pBlock, void *pUser)
     return NULL;
 }
 
+/* The new-game path: Geoscape_InitUI @ 0x857f4 mode 0, whose hook runs Game_StartNew
+ * @ 0x94554 over the shell's PufoWorldState. The state line is the shell's own report (a
+ * DEVIATION: the original shows the geoscape instead of printing); it is what makes the
+ * bring-up observable from a headless run. */
 static void App_HookNewGame(void *pUser)
 {
+    WorldHooks hooks;
+
     (void)pUser;
-    printf("pocketufo: new game wants Geoscape_InitUI (0x857f4), not ported yet\n");
+    if (!g_bWorldReady) {
+        return;
+    }
+
+    memset(&hooks, 0, sizeof(hooks));
+    hooks.pfnLoadPads = App_LoadPads;
+
+    (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
+    printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",
+           (int)g_world.nFunds, (int)g_world.nBaseCount, (int)g_world.nSoldierCount,
+           (int)g_world.bCraftCount, (int)g_world.screen.nGeoscapeScreen, (int)g_world.view.nMode);
+    fflush(stdout);
 }
 
 static void App_HookFormatSlots(void *pUser)
@@ -568,6 +588,18 @@ static bool g_bClickAt;
 static i32  g_nClickX;
 static i32  g_nClickY;
 
+/* `--new-game` on the command line: run the new-game bring-up (Geoscape_InitUI mode 0 +
+ * Game_StartNew) once before the frame dump, so the geoscape state is checkable headlessly.
+ * Not part of the original. */
+static bool g_bNewGameFlag;
+
+static void App_FindNewGameFlag(LPCWSTR pwszCmd)
+{
+    static const WCHAR awcFlag[] = L"--new-game";
+
+    g_bNewGameFlag = (pwszCmd != NULL && wcsstr(pwszCmd, awcFlag) != NULL);
+}
+
 /* `--click <x> <y>` on the command line: with --dump-frame this performs one press+release at
  * logical 240x320 coordinates before the dump, so the menu's click path (hover mark, then release
  * fires the row's handler) can be checked headlessly. Not part of the original. */
@@ -741,6 +773,10 @@ static bool App_InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 static void App_QuitDisplay(void)
 {
+    if (g_bWorldReady) {
+        World_Free(&g_world);
+        g_bWorldReady = false;
+    }
     if (g_bAssetsLoaded) {
         Boot_Shutdown(&g_assets);
         g_bAssetsLoaded = false;
@@ -814,6 +850,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     (void)hPrevInstance;
     pszDumpPath = App_FindDumpFlag(lpCmdLine);
     App_FindClickFlag(lpCmdLine);
+    App_FindNewGameFlag(lpCmdLine);
 
     if (!App_InitInstance(hInstance, nCmdShow)) {
         return 0;
@@ -829,6 +866,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * and arms the 0xC351/0xC352 timers through StartTimers_B. */
     if (g_bAssetsLoaded) {
         App_InitStartupUi();
+        g_bWorldReady = World_Init(&g_world);
+        if (g_bNewGameFlag) {
+            App_HookNewGame(NULL); /* the menu's new-game row runs the same path on a click */
+        }
         App_DrawFrame();
         if (pszDumpPath != NULL) {
             if (g_bClickAt) {
@@ -846,6 +887,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             }
             App_DrawFrame();
             App_DumpFramePpm(pszDumpPath);
+            if (g_bWorldReady) {
+                World_Free(&g_world);
+                g_bWorldReady = false;
+            }
             Boot_Shutdown(&g_assets);
             g_bAssetsLoaded = false;
             Gx_Close(&g_gx);

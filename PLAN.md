@@ -345,6 +345,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   recorded as an assumption), the `PUFO_GRID_*` layout macros, `PUFO_ITEM_QTY_COUNT`,
   `PUFO_CRAFT_TYPE_COUNT`, `PUFO_STARTNEW_SOLDIER_COUNT`, `PUFO_PRODUCT_ENTRIES_PER_BASE` promoted
   to `pufo_save.h`. Same enums added to the IDB and applied to `Ship_ctor` / `BaseFac_SetCellBuildState`.
+- [x] shell wiring — `app/pufo_world.{h,c}` owns the geoscape state (`PufoWorldState`: rosters, grid,
+  columns, sites, economy, UI state, viewport, nav controls) and `App_HookNewGame` runs
+  `Geoscape_InitUI(0)` + `Game_StartNew` for real. `pocketufo --new-game --dump-frame <png>` reports
+  4147000 funds, 1 base, 8 soldiers, 3 craft, screen 2, zoom 0. The geoscape click handlers and the
+  two spawn hooks are no-op thunks until those screens are ported.
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -461,8 +466,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   selected base matches nothing; FindPrev never reads the soldier count.
   - By-product kept: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
-- **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
-  `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
+- **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
+  `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
+  screens subsystem for anything visible. The workable
   items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer`,
   `MapView_DrawMinimap`, `MainMenu_Draw`, `Tact_DrawCommandPads`, `Render_Frame` itself and the
   screen-17 click wiring are done. This is a change of order, not of goal: the geoscape chain stays

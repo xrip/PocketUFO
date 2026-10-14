@@ -292,9 +292,12 @@ This is the shortest chain that produces a real game session, in dependency orde
    `pufo_geoiinit.{h,c}` behind `StartNewEnv`, with `tests/test_startnew.c` (107 checks) over the
    real archives; it also brought the verified enums (`FacilityKind`, `ObjectSlot`, `CraftType`,
    the `PUFO_GRID_*` layout) into the port and the IDB. What is left on the geoscape bring-up
-   path: `Geoscape_OnRadarListClick` (0x854c4, the status panel click). The shell wiring
-   (app-owned `GeoscapeInitEnv` + `StartNewEnv` + roster state, replacing the `App_HookNewGame`
-   notice) is the next step.
+   path: `Geoscape_OnRadarListClick` (0x854c4, the status panel click). The shell wiring is
+   done too: `app/pufo_world.{h,c}` owns the geoscape state (`PufoWorldState`) and
+   `App_HookNewGame` runs `Geoscape_InitUI(0)` + `Game_StartNew` for real; `pocketufo
+   --new-game --dump-frame <png>` prints the resulting state (4147000 funds, 1 base, 8
+   soldiers, 3 craft, screen 2, zoom 0). The geoscape click handlers and the spawn hooks are
+   no-op thunks until those screens land.
 
 ### Largest unported functions by size
 
@@ -738,7 +741,7 @@ does.
 
 ### Priority 3 — the geoscape
 
-`Geoscape_InitUI` (0x857f4) and `Game_StartNew` (0x94554) are ported; the shell wiring is the remaining link. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
+`Geoscape_InitUI` (0x857f4), `Game_StartNew` (0x94554) and the shell wiring (`app/pufo_world.c`) are done; `Geoscape_Draw` is the remaining link. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
 function in the binary. `Geoscape_OnPointer` (0x872d0) and `Geoscape_OnPointerUp` (0x89450) are each
 large enough to need a fresh context window on their own.
 

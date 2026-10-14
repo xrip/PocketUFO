@@ -100,6 +100,7 @@ target_link_libraries(pufo_audio PUBLIC pufo_options pufo_dat pufo_util)
 
 add_executable(pocketufo
     app/pufo_app.c
+    app/pufo_world.c
 )
 
 # Parity tests. These read the shipped main.dat / lang.dat and compare against
