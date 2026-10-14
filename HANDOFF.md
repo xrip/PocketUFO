@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **8084**.
+Test checks run across the 56 suites: **8137**.
 
 ### Per-subsystem status
 
@@ -299,7 +299,7 @@ This is the shortest chain that produces a real game session, in dependency orde
    --new-game --dump-frame <png>` prints the resulting state (4147000 funds, 1 base, 8
    soldiers, 3 craft, screen 2, zoom 0), and `World_LoadSlot` wires `LoadGame` over the same
    state so `--load-slot 7` loads a save for real. The geoscape click handlers (except the
-   radar list) and the spawn hooks are no-op thunks until those screens land. All three leaves `Geoscape_OnMapClick` (0x8b4a8) needs are in now: `Base_CanPlaceHangarAt` (0x629b0) — a connectivity flood over the base's finished stamped cells, refused exactly when clearing the tapped 2x2 footprint would cut one off — `BaseFac_FormatCostLabel` (0x6a404), the `TEXTS[905 + kind]-<counter>` label that also increments `abBaseKindTable`, and `BaseFacScreen_Init` (0x5a198), the build dialog's up/down pair. `Geoscape_OnMapClick` itself is ported in `pufo_baseui.c` behind `MapClickEnv` and the shell runs it for real through the confirm control (`World_TryConfirmClick`): screen 1 places or clears a facility cell, screen 2 commits the pending facility or opens the build dialog. 74 checks in `tests/test_baseui.c`. The dialog itself is live too: `BaseFacScreen_Toggle` (0x589ec) builds the 17-row facility panel and wipes the selected base in new-base mode, and `BaseFacScreen_TryBuySelected` (0x58910) is its OK button -- 55 more checks in the same file.
+   radar list) and the spawn hooks are no-op thunks until those screens land. All three leaves `Geoscape_OnMapClick` (0x8b4a8) needs are in now: `Base_CanPlaceHangarAt` (0x629b0) — a connectivity flood over the base's finished stamped cells, refused exactly when clearing the tapped 2x2 footprint would cut one off — `BaseFac_FormatCostLabel` (0x6a404), the `TEXTS[905 + kind]-<counter>` label that also increments `abBaseKindTable`, and `BaseFacScreen_Init` (0x5a198), the build dialog's up/down pair. `Geoscape_OnMapClick` itself is ported in `pufo_baseui.c` behind `MapClickEnv` and the shell runs it for real through the confirm control (`World_TryConfirmClick`): screen 1 places or clears a facility cell, screen 2 commits the pending facility or opens the build dialog. 74 checks in `tests/test_baseui.c`. The dialog itself is live too: `BaseFacScreen_Toggle` (0x589ec) builds the 17-row facility panel and wipes the selected base in new-base mode, and `BaseFacScreen_TryBuySelected` (0x58910) is its OK button -- 55 more checks in the same file. The soldier screen is live too: `SoldierScreen_Toggle` (0x64af0) builds the pad, the four panels and one row per soldier on the selected base, and `SoldierScreen_SelectListed` (0x64a9c) is its row click -- 53 more checks.
 
 ### Largest unported functions by size
 

@@ -140,9 +140,18 @@ typedef struct PufoWorldState {
     u8           abLastRowName[4];      /* the 0x187024 slot the dialog's 17th row reads */
     u32          nShortfall1870C8;      /* byte_1870C8, written as a dword */
     i32          nResidue1870B4;        /* dword_1870B4[0] */
+    /* The soldier screen (SoldierScreen_Toggle @ 0x64af0), opened by nav control slot 2. */
+    u8        bSolScreenOpen;           /* 0x159DE0 */
+    UiPanel  *pSolPanelEquip;           /* 0x159DF0 */
+    UiPanel  *pSolPanelStores;          /* 0x159758 */
+    UiPanel  *pSolPanelNames;           /* 0x15975C */
+    UiPanel  *pSolPanelCraft;           /* 0x159DEC */
+    PadImage *pSolPad;                  /* unk_1598D4 */
+    i32       nSoldierCursor;           /* nSoldierCursor @ 0x159E08 */
     HangarPlaceEnv hangarEnv;           /* the placement test's env */
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
     BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */
+    SoldierScreenEnv solEnv;            /* the soldier screen's open/close switch */
     GeoscapeWorld     world;
     GameTime          time;
     AssetReader       rdr;                      /* pRdr @ 0x187028 */

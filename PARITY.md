@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 327760 / 598792 (54.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8084 |
+| Test checks run | 8137 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -708,7 +708,7 @@ is the module that answers to it.
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
-| `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/game/pufo_baseui.h` |
+| `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x589ec` | `BaseFacScreen_Toggle` | 1060 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x65290` | `SoldierScreen_Draw` | 716 | `src/pufo/game/pufo_baseui.h` |
@@ -756,7 +756,7 @@ is the module that answers to it.
 | `0x19f74` | `SaveLoad_Slot5` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x19fc4` | `SaveLoad_Slot6` | 80 | `src/pufo/ui/pufo_menubtn.h` |
 | `0x617f4` | `BasePlaneScreen_Open` | 80 | `src/pufo/game/pufo_baseui.c` |
-| `0x64a9c` | `SoldierScreen_SelectListed` | 72 | `src/pufo/game/pufo_baseui.h` |
+| `0x64a9c` | `SoldierScreen_SelectListed` | 72 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x6d01c` | `OptionsScreen_PanelPrev` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6d064` | `OptionsScreen_PanelNext` | 72 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x588cc` | `BaseAtScreen_Open` | 68 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_strateg.h` |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 451 |
+| `test_baseui` | PASS | 504 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 307 citations.
+parity report. Total: 312 citations.
 
 ### Offsets below the image base (39)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (268)
+### At or above the image base (273)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1483,12 +1483,17 @@ against the IDB when the final report is assembled.
 - `0x158888`
 - `0x158890`
 - `0x159618`
+- `0x159758`
+- `0x15975c`
 - `0x159768`
 - `0x1598d8`
 - `0x159d5c`
 - `0x159d80`
 - `0x159d81`
+- `0x159dec`
+- `0x159df0`
 - `0x159df4`
+- `0x159e08`
 - `0x159e84`
 - `0x15ef08`
 - `0x15ef0c`

@@ -392,6 +392,25 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `SoldierScreen_Toggle @ 0x64af0` (1952 B) + `SoldierScreen_SelectListed @ 0x64a9c` (72 B)
+  — ported in `pufo_baseui.{h,c}` behind `SoldierScreenEnv` / `SoldierSelectEnv`, 53 new checks in
+  `tests/test_baseui.c`, and nav control slot 2 now opens the soldier screen for real
+  (`World_SoldierToggleThunk`). Toggle is a byte switch on `bSoldierScreenOpen @ 0x159DE0`: sound 17
+  and `nGeoscapeScreen = 4` on either direction; the open branch builds the pad
+  (`PadImage_Load("soldier", 8)`) and four `UiPanel`s — equip (4 lines) and stores (4 lines) fixed,
+  names and craft one row per soldier whose `Soldier+0xB6` byte equals `nSelectedBaseIdx @ 0x159D81`
+  (that byte is the assigned base, not a kind) — then the row pass copies the name into the names
+  panel with `anLineAux` = the **roster** index, the `Soldier_FormatDisplayName` result into the
+  craft panel, and the 254 → (250,150,150) / 255 → (150,150,250) line colours; the close branch
+  restores screen 1 and releases five objects. `SoldierScreen_SelectListed` sets screen 5 and
+  `nSoldierCursor @ 0x159E08` from that aux. IDB: function comments at 0x64af0 / 0x64a9c, line
+  comments at 0x651E4 and 0x651EC, `unk_1598D4` → `pSoldierPad` (`PadImage *`), `unk_115350` →
+  `nSoldierCount` (`u16`, LDRH at every read), the panels renamed `pSolPanelStores` / `pSolPanelNames`
+  / `pSolPanelCraft` (`pSolPanelEquip` already matched), and the 512-entry `Soldier *apSoldiers[512]`
+  array created at Map + 0x1198 (0x114B50 — it ends exactly at `nSoldierCount`). No coverage delta:
+  both addresses were already `@`-cited at HEAD in `pufo_baseui.h` while unported, so this unit turns
+  two false credits into honest ones (2024 B). One ledger row (91 total): the unguarded `nLineCount`
+  stores (0x651E4 / 0x651EC).
 - [x] `BaseFacScreen_Toggle @ 0x589ec` (1060 B) + `BaseFacScreen_TryBuySelected @ 0x58910` (176 B)
   — ported in `pufo_baseui.{h,c}` behind `BaseFacToggleEnv` / `BaseFacBuyEnv`, 55 new checks in
   `tests/test_baseui.c`, and the shell's `pfnToggle` now builds the dialog for real. Toggle is a
@@ -593,7 +612,9 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `OnPointerUp @ 0x89450` and `CloseUI @ 0x8b94c` — none of them ported — which is 3 functions and
   17,668 bytes of the 727. New code writes unported callees as `Name (0xADDR)` so they stay out of the
   count; that one line needs the same fix, and `coverage.py` could gain a check that a cited address
-  has a definition of the same name. Not folded into this step.
+  has a definition of the same name. The `pufo_uibank.c` handler-name table is the same class of
+  credit: it quotes the original bank entry's name and address as data, which counts even when only
+  the name string is recreated. Not folded into this step.
 
 ## Measured state
 
@@ -637,6 +658,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | hangar placement + the facility cost label (`pufo_geoscape.c`) | 56/56 (Release) | 7955 | 725/1103 (65.7%) | 325264/598792 (54.3%) | 38 checked, 0 mismatched |
 | the geoscape map click + the build-dialog init (`pufo_baseui.c`, shell-wired) | 56/56 (Release) | 8029 | 727/1103 (65.9%) | 326700/598792 (54.6%) | 38 checked, 0 mismatched |
 | the build dialog itself (`BaseFacScreen_Toggle`, `BaseFacScreen_TryBuySelected`) | 56/56 (Release) | 8084 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
+| the soldier screen (`SoldierScreen_Toggle`, `SoldierScreen_SelectListed`), shell-wired | 56/56 (Release) | 8137 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

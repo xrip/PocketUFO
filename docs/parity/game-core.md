@@ -9234,3 +9234,55 @@ Otherwise `bBaseFacPlaceArmed = 1` (0x5897C) arms the placement, and with `byte_
 
 Deviation: the port returns 1/0 where the original returns the panel pointer or `&dword_1870B4`, and
 it refuses an out-of-range kind instead of reading the table out of bounds (0x58944, bugs.tsv).
+
+### `SoldierScreen_Toggle` (done)
+
+`src/pufo/game/pufo_baseui.c`, 49 new checks in `tests/test_baseui.c`. Nav control slot 2 installs
+it (the `Geoscape_InitUI` write at 0x67B88) and the shell runs it through `World_SoldierToggleThunk`.
+
+`Sound_Play(17)` (0x64B00) and `nGeoscapeScreen = 4` (0x64B14) happen on **either** direction; the
+switch is the byte `bSoldierScreenOpen @ 0x159DE0` (LDRB 0x64B1C, STRB 0x64B24 / 0x651CC).
+
+Open branch: `operator new(0x14)` + `PadImage_ctor` into `pSoldierPad @ 0x1598D4`
+(0x64B2C..0x64B54), `PadImage_Load("soldier", 8)` (0x64B5C -- unconditional in the original),
+origins 0 (0x64B6C, 0x64B74). Then four `operator new(0x1BB4)` + `UiPanel_ctor` panels:
+
+| global | ctor lines | style | geometry |
+|---|---|---|---|
+| `pSolPanelEquip @ 0x159DF0` | 4 | nStyle 4, nFont 18, pfnClick = `SoldierScreen_EquipSelected`, bFlag7073 1, bUnk7088 -1 | x 55, y 102, nUnk7052 46, nUnk7056 102, nViewW 167, gap_0 44 F4 FC / 32 A0 BD / C8 F4 FC 04 46 4B |
+| `pSolPanelStores @ 0x159758` | 4 | nStyle 4, nFont 18, bFlag7072 0, no pfnClick | x 190, y 102, nUnk7052 46, nUnk7056 102, nViewW 167, gap_0 44 F4 FC / 32 32 FA / 44 F4 FC 04 46 4B |
+| `pSolPanelNames @ 0x15975C` | nAtBase | nStyle 13, nFont 18, pfnClick = `SoldierScreen_SelectListed`, bFlag7073 1, bUnk7088 -106 | x 10, y 70, nUnk7052 2, nUnk7056 70, nViewW 234, gap_0 B4 B4 B4 / 32 32 FA / F0 F0 F0 14 14 14 |
+| `pSolPanelCraft @ 0x159DEC` | nAtBase | nStyle 13, nFont 18, bFlag7073 0, nUnk7076 2, bUnk7088 -106, no pfnClick | x 230, y 70, nUnk7052 5, nUnk7056 70, nViewW 40, gap_0 B4 B4 B4 / -- / F0 F0 F0 14 14 14 |
+
+`nAtBase` (0x64D94..0x64DE0) counts `apSoldiers[i]` for `i < nSoldierCount` (`u16 @ 0x115350`,
+Map + 0x1998) whose byte `Soldier+0xB6` equals `nSelectedBaseIdx @ 0x159D81` -- so that byte is the
+assigned base, not a "kind".
+
+Row pass (0x65018..0x6519C) walks the same roster and, for each soldier on the base, writes the name
+at `Soldier+0xBA` into the names panel line (0x65058), `anLineAux[row] = ` the **roster** index
+(0x65088, not the row number -- that is what the select handler reads back), the
+`Soldier_FormatDisplayName` result into the craft panel line (0x65090), and the line colours:
+`Soldier+0xB7 == 254` gives (250,150,150,20,20,20) on both panels (0x65148, 0x6516C), `255` gives
+(150,150,250,20,20,20) (0x650F4, 0x65118), anything else sets nothing. Finally
+`unk_186B00->pfnClick = SoldierScreen_CloseThunk` (0x651AC).
+
+Close branch: `nGeoscapeScreen = 1` (0x651C4), clear the byte (0x651CC), `nLineCount = 4` on the
+equip and stores panels (0x651E4, 0x651EC), then `UiPanel_FreeLines` + `operator delete` on equip,
+stores, `pSoldierPad`, names and craft.
+
+Deviations: the port sets `nLineCount` only when the panel pointer is non-null (0x651E4, bugs.tsv);
+the original's `Soldier_FormatDisplayName` call passes a scratch buffer that Hex-Rays renders as
+`&abFacilityGrid`, so the port takes the formatted name through `pfnFormatName` instead; the close
+control keeps the shell's thunk because `SoldierScreen_CloseThunk` (0x64ae4) only tail-calls the
+unported `Geoscape_CloseUI` (0x8b94c).
+
+### `SoldierScreen_SelectListed` (done)
+
+`src/pufo/game/pufo_baseui.c`, 4 new checks in `tests/test_baseui.c`. Installed by
+`SoldierScreen_Toggle` as the names panel's +3020 click handler.
+
+`nGeoscapeScreen = 5` (0x64AA8); `nSoldierCursor @ 0x159E08 = pSolPanelNames->anLineAux[
+pSolPanelNames->nUnk3032]` (0x64AD0) -- the roster index the row pass stored -- and the original
+returns `&nSoldierCursor` (0x64AD4).
+
+Deviation: the port returns the cursor value instead of a pointer.

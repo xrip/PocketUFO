@@ -3,6 +3,7 @@
 #include <stdlib.h>  /* atexit, for StrategList_RegisterAtexit @ 0x838a0 */
 #include <stdio.h>   /* snprintf, the bounded stand-in for the original's j_itoa */
 #include "util/pufo_str.h" /* pufo_strcpy/pufo_strcat, the line writes of ResearchScreen_RefreshPanels */
+#include "audio/pufo_audio.h" /* Sound_Play, the screen-open sample of SoldierScreen_Toggle */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
@@ -1268,4 +1269,227 @@ i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv)
         *pEnv->pnPanelSel = nSel;                  /* 0x58994 */
     }
     return 1;
+}
+
+/* --- SoldierScreen_Toggle @ 0x64af0 --- */
+
+static UiPanel *SoldierScreen_AllocPanel(i32 nLineCount)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel)); /* 0x64B78: operator new(0x1BB4) */
+
+    if (pPanel == NULL) {
+        return NULL;
+    }
+    if (!UiPanel_ctor(pPanel, nLineCount)) {
+        free(pPanel);
+        return NULL;
+    }
+    return pPanel;
+}
+
+static void SoldierScreen_FreePanel(UiPanel **ppPanel)
+{
+    UiPanel *pPanel;
+
+    if (ppPanel == NULL) {
+        return;
+    }
+    pPanel = *ppPanel;
+    if (pPanel != NULL) {
+        UiPanel_FreeLines(pPanel);
+        free(pPanel);
+        *ppPanel = NULL;
+    }
+}
+
+void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv)
+{
+    UiPanel *pEquip;
+    UiPanel *pStores;
+    UiPanel *pNames;
+    UiPanel *pCraft;
+    PadImage *pPad;
+    Soldier *const *apSoldiers;
+    i32 nCount;
+    i32 nRows;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbOpen == NULL || pEnv->pnScreenId == NULL) {
+        return;
+    }
+
+    Sound_Play(17);                                /* 0x64AFC */
+    *pEnv->pnScreenId = 4;                         /* 0x64B08 */
+
+    if (*pEnv->pbOpen != 0) {
+        /* The close branch (0x651BC..0x65288). */
+        *pEnv->pnScreenId = 1;                     /* 0x651C4 */
+        *pEnv->pbOpen = 0;                         /* 0x651CC */
+        if (pEnv->ppPanelEquip != NULL && *pEnv->ppPanelEquip != NULL) {
+            (*pEnv->ppPanelEquip)->nLineCount = 4; /* 0x651D4, unguarded in the original */
+        }
+        if (pEnv->ppPanelStores != NULL && *pEnv->ppPanelStores != NULL) {
+            (*pEnv->ppPanelStores)->nLineCount = 4;/* 0x651DC, unguarded in the original */
+        }
+        SoldierScreen_FreePanel(pEnv->ppPanelEquip);
+        SoldierScreen_FreePanel(pEnv->ppPanelStores);
+        if (pEnv->ppPad != NULL && *pEnv->ppPad != NULL) {
+            pPad = *pEnv->ppPad;
+            PadImage_FreeData(pPad);               /* 0x65230 */
+            free(pPad);                            /* 0x65238 */
+            *pEnv->ppPad = NULL;
+        }
+        SoldierScreen_FreePanel(pEnv->ppPanelNames);
+        SoldierScreen_FreePanel(pEnv->ppPanelCraft);
+        return;
+    }
+
+    *pEnv->pbOpen = 1;                             /* 0x64B28 */
+
+    pPad = (PadImage *)malloc(sizeof(PadImage));   /* 0x64B30: operator new(0x14) */
+    if (pPad != NULL) {
+        PadImage_ctor(pPad);                       /* 0x64B40 */
+        if (pEnv->pszPadName != NULL) {
+            (void)PadImage_Load(pPad, pEnv->pszPadName, 8); /* 0x64B50 */
+        }
+        pPad->nOriginX = 0;                        /* 0x64B5C */
+        pPad->nOriginY = 0;                        /* 0x64B64 */
+    }
+    if (pEnv->ppPad != NULL) {
+        *pEnv->ppPad = pPad;
+    }
+
+    pEquip = SoldierScreen_AllocPanel(4);
+    if (pEnv->ppPanelEquip != NULL) {
+        *pEnv->ppPanelEquip = pEquip;
+    }
+    if (pEquip != NULL) {
+        pEquip->nStyle   = 4;                      /* 0x64BA8 */
+        pEquip->nFont    = 18;                     /* 0x64BAC */
+        pEquip->pfnClick = pEnv->pfnEquipThunk;    /* 0x64BC0, +3020 */
+        pEquip->nPosX    = 55;                     /* 0x64BD4 */
+        pEquip->nPosY    = 102;                    /* 0x64BE0 */
+        pEquip->nUnk7052 = 46;                     /* 0x64BE8 */
+        pEquip->nUnk7056 = 102;                    /* 0x64BF0 */
+        pEquip->nViewW   = 167;                    /* 0x64BF8 */
+        UiPanel_SetBytes0to2(pEquip, 0x44, 0xF4, 0xFC);                     /* 0x64C08 */
+        UiPanel_SetBytes6to11(pEquip, 0xC8, 0xF4, 0xFC, 0x04, 0x46, 0x4B);  /* 0x64C28 */
+        UiPanel_SetBytes3to5(pEquip, 0x32, 0xA0, 0xBD);                     /* 0x64C84 */
+        pEquip->bFlag7073 = 1;                     /* 0x64C90 */
+        pEquip->bUnk7088  = 0xFF;                  /* 0x64C9C, the byte -1 */
+    }
+
+    pStores = SoldierScreen_AllocPanel(4);
+    if (pEnv->ppPanelStores != NULL) {
+        *pEnv->ppPanelStores = pStores;
+    }
+    if (pStores != NULL) {
+        pStores->nStyle   = 4;                     /* 0x64CC8 */
+        pStores->nFont    = 18;                    /* 0x64CE0 */
+        pStores->nPosX    = 190;                   /* 0x64CE4 */
+        pStores->nPosY    = 102;                   /* 0x64CEC */
+        pStores->nUnk7052 = 46;                    /* 0x64CF4 */
+        pStores->nUnk7056 = 102;                   /* 0x64D00 */
+        pStores->nViewW   = 167;                   /* 0x64D08 */
+        UiPanel_SetBytes0to2(pStores, 0x44, 0xF4, 0xFC);                    /* 0x64D14 */
+        UiPanel_SetBytes6to11(pStores, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B); /* 0x64D24 */
+        UiPanel_SetBytes3to5(pStores, 0x32, 0x32, 0xFA);                    /* 0x64D68 */
+        pStores->bFlag7072 = 0;                    /* 0x64D78 */
+    }
+
+    /* 0x64BA4..0x64CC4: how many soldiers are on the selected base. */
+    nCount = 0;
+    apSoldiers = pEnv->apSoldiers;
+    if (apSoldiers != NULL && pEnv->pnSoldierCount != NULL && pEnv->pnSelectedBaseIdx != NULL) {
+        for (i = 0; i < (i32)*pEnv->pnSoldierCount; ++i) {
+            if (apSoldiers[i] != NULL &&
+                (i32)apSoldiers[i]->nKind == (i32)*pEnv->pnSelectedBaseIdx) {
+                ++nCount;
+            }
+        }
+    }
+
+    pNames = SoldierScreen_AllocPanel(nCount);
+    if (pEnv->ppPanelNames != NULL) {
+        *pEnv->ppPanelNames = pNames;
+    }
+    if (pNames != NULL) {
+        pNames->nStyle   = 13;                     /* 0x64E14 */
+        pNames->nFont    = 18;                     /* 0x64E28 */
+        pNames->pfnClick = pEnv->pfnSelectThunk;   /* 0x64E38, +3020 */
+        pNames->nPosX    = 10;                     /* 0x64E44 */
+        pNames->nPosY    = 70;                     /* 0x64E48 */
+        pNames->nUnk7052 = 2;                      /* 0x64E4C */
+        pNames->nUnk7056 = 70;                     /* 0x64E58 */
+        pNames->nViewW   = 234;                    /* 0x64E68 */
+        UiPanel_SetBytes0to2(pNames, 0xB4, 0xB4, 0xB4);                     /* 0x64E74 */
+        UiPanel_SetBytes6to11(pNames, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x64E88 */
+        UiPanel_SetBytes3to5(pNames, 0x32, 0x32, 0xFA);                     /* 0x64EA8 */
+        pNames->bFlag7073 = 1;                     /* 0x64EC8 */
+        pNames->bUnk7088  = 0x96;                  /* 0x64ED8, the byte -106 */
+    }
+
+    pCraft = SoldierScreen_AllocPanel(nCount);
+    if (pEnv->ppPanelCraft != NULL) {
+        *pEnv->ppPanelCraft = pCraft;
+    }
+    if (pCraft != NULL) {
+        pCraft->nStyle   = 13;                     /* 0x64F1C */
+        pCraft->nFont    = 18;                     /* 0x64F20 */
+        pCraft->nPosX    = 230;                    /* 0x64F28 */
+        pCraft->nPosY    = 70;                     /* 0x64F34 */
+        pCraft->nUnk7052 = 5;                      /* 0x64F40 */
+        pCraft->nUnk7056 = 70;                      /* 0x64F48 */
+        pCraft->nViewW   = 40;                     /* 0x64F54 */
+        UiPanel_SetBytes0to2(pCraft, 0xB4, 0xB4, 0xB4);                     /* 0x64F64 */
+        UiPanel_SetBytes6to11(pCraft, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);  /* 0x64F74 */
+        pCraft->bFlag7073 = 0;                     /* 0x64FB8 */
+        pCraft->nUnk7076  = 2;                     /* 0x64FC4 */
+        pCraft->bUnk7088  = 0x96;                  /* 0x64FD8, the byte -106 */
+    }
+
+    /* 0x65018..0x651A0: the row pass. */
+    nRows = 0;
+    if (pNames != NULL && pCraft != NULL && apSoldiers != NULL &&
+        pEnv->pnSoldierCount != NULL && pEnv->pnSelectedBaseIdx != NULL) {
+        for (i = 0; i < (i32)*pEnv->pnSoldierCount; ++i) {
+            Soldier *pSol = apSoldiers[i];
+            const char *pszName;
+
+            if (pSol == NULL || (i32)pSol->nKind != (i32)*pEnv->pnSelectedBaseIdx) {
+                continue;
+            }
+            UiPanel_SetLineText(pNames, nRows, pSol->szName);       /* 0x65048, soldier + 0xBA */
+            UiPanel_SetLineAux(pNames, nRows, i);                   /* 0x65078, the roster index */
+            pszName = (pEnv->pfnFormatName != NULL) ? pEnv->pfnFormatName(pEnv->pFormatUser, pSol)
+                                                    : "";
+            UiPanel_SetLineText(pCraft, nRows, (pszName != NULL) ? pszName : "");
+            if (pSol->bUnk183 == 254) {
+                UiPanel_SetLineMeta(pNames, nRows, 250, 150, 150, 20, 20, 20);  /* 0x650D0 */
+                UiPanel_SetLineMeta(pCraft, nRows, 250, 150, 150, 20, 20, 20);
+            } else if (pSol->bUnk183 == 255) {
+                UiPanel_SetLineMeta(pNames, nRows, 150, 150, 250, 20, 20, 20);  /* 0x65124 */
+                UiPanel_SetLineMeta(pCraft, nRows, 150, 150, 250, 20, 20, 20);
+            }
+            ++nRows;
+        }
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseSoldierThunk;       /* 0x651A0 */
+    }
+}
+
+/* --- SoldierScreen_SelectListed @ 0x64a9c --- */
+
+i32 SoldierScreen_SelectListed(const SoldierSelectEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pPanel == NULL || pEnv->pnCursor == NULL) {
+        return 0;
+    }
+    if (pEnv->pnScreenId != NULL) {
+        *pEnv->pnScreenId = 5;                     /* 0x64AA8 */
+    }
+    *pEnv->pnCursor = UiPanel_GetLineAux(pEnv->pPanel, pEnv->pPanel->nUnk3032); /* 0x64AD0 */
+    return *pEnv->pnCursor;
 }

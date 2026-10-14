@@ -1778,6 +1778,156 @@ static void TestBaseFacBuy(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* --- SoldierScreen_Toggle @ 0x64af0 --- */
+
+static int g_nFormatCalls;
+
+static const char *FormatNameStub(void *pUser, Soldier *pSol)
+{
+    (void)pUser;
+    g_nFormatCalls += 1;
+    return (pSol->bUnk183 == 254) ? "Craft 7 dead" : "Craft 7";
+}
+
+static void TestSoldierScreenToggle(void)
+{
+    static Soldier aSol[4];
+    static Soldier *apSol[4];
+    static UiPanel *pA, *pB, *pC, *pD;
+    static PadImage *pPad;
+    static UiControl closeCtl;
+    static u8 bOpen;
+    static u16 nSolCount;
+    static i32 nScreen;
+    static i8 nSelBase;
+    SoldierScreenEnv env;
+    i32 i;
+
+    printf("SoldierScreen_Toggle @ 0x64af0\n");
+
+    for (i = 0; i < 4; ++i) {
+        memset(&aSol[i], 0, sizeof(aSol[i]));
+        snprintf(aSol[i].szName, sizeof(aSol[i].szName), "Sol%d", i);
+        aSol[i].nKind = (u8)((i == 1) ? 2 : 1); /* the base byte at +0xB6 */
+        aSol[i].bUnk183 = (u8)((i == 2) ? 254 : 255);
+        apSol[i] = &aSol[i];
+    }
+    nSolCount = 4; nSelBase = 1; nScreen = 0; bOpen = 0;
+    pA = NULL; pB = NULL; pC = NULL; pD = NULL; pPad = NULL;
+    memset(&closeCtl, 0, sizeof(closeCtl));
+    g_nFormatCalls = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pbOpen = &bOpen;
+    env.pnScreenId = &nScreen;
+    env.apSoldiers = apSol;
+    env.pnSoldierCount = &nSolCount;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.ppPanelEquip = &pA;
+    env.ppPanelStores = &pB;
+    env.ppPanelNames = &pC;
+    env.ppPanelCraft = &pD;
+    env.ppPad = &pPad;
+    env.pszPadName = NULL; /* the test has no pad bank */
+    env.pCloseCtl = &closeCtl;
+    env.pfnCloseSoldierThunk = NopClick;
+    env.pfnEquipThunk = NopClick;
+    env.pfnSelectThunk = NopClick;
+    env.pfnFormatName = FormatNameStub;
+
+    SoldierScreen_Toggle(&env);
+    CheckEqI32(nScreen, 4, "the screen id goes to 4 on either direction");
+    CheckEqI32(bOpen, 1, "the first call takes the open branch");
+    Check(pPad != NULL, "the pad object is allocated");
+    CheckEqI32(pPad->nOriginX, 0, "with origin 0 on x");
+    CheckEqI32(pPad->nOriginY, 0, "and on y");
+    Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL, "all four panels are built");
+    CheckEqI32(pA->nLineCount, 4, "panel A keeps its fixed 4 lines");
+    CheckEqI32(pA->nStyle, 4, "nStyle 4");
+    CheckEqI32(pA->nFont, 18, "nFont 18");
+    CheckEqI32(pA->nPosX, 55, "panel A at x 55");
+    CheckEqI32(pA->nViewW, 167, "167 wide");
+    Check(pA->pfnClick == NopClick, "panel A's click is the equip thunk");
+    CheckEqI32(pA->bUnk7088, 0xFF, "panel A's bUnk7088 is the byte -1");
+    CheckEqI32(pA->gap_0[3], 0x32, "panel A's gap_0[3] 32");
+    CheckEqI32(pA->gap_0[5], 0xBD, "and gap_0[5] BD");
+    CheckEqI32(pA->gap_0[6], 0xC8, "gap_0[6] C8");
+    CheckEqI32(pB->nPosX, 190, "panel B at x 190");
+    Check(pB->pfnClick == NULL, "panel B has no click handler");
+    CheckEqI32(pB->gap_0[5], 0xFA, "panel B's gap_0[5] FA");
+    CheckEqI32(pC->nLineCount, 3, "panels C and D hold one line per soldier on the base");
+    CheckEqI32(pC->nStyle, 13, "nStyle 13");
+    CheckEqI32(pC->nViewW, 234, "panel C is 234 wide");
+    Check(pC->pfnClick == NopClick, "panel C's click is the select thunk");
+    CheckEqI32(pC->bUnk7088, 0x96, "panel C's bUnk7088 is the byte -106");
+    CheckEqI32(pD->nViewW, 40, "panel D is 40 wide");
+    CheckEqI32(pD->nUnk7076, 2, "panel D's nUnk7076 is 2");
+    CheckEqI32(pD->bFlag7073, 0, "panel D's bFlag7073 is clear");
+    Check(pD->pfnClick == NULL, "panel D has no click handler");
+
+    Check(strcmp(UiPanel_GetLineText(pC, 0), "Sol0") == 0, "row 0 is soldier 0");
+    CheckEqI32(UiPanel_GetLineAux(pC, 0), 0, "its aux is the ROSTER index");
+    Check(strcmp(UiPanel_GetLineText(pC, 1), "Sol2") == 0,
+          "soldier 1 is on another base, so row 1 is soldier 2");
+    CheckEqI32(UiPanel_GetLineAux(pC, 1), 2, "with aux 2");
+    Check(strcmp(UiPanel_GetLineText(pC, 2), "Sol3") == 0, "row 2 is soldier 3");
+    CheckEqI32(UiPanel_GetLineAux(pC, 2), 3, "with aux 3");
+    Check(strcmp(UiPanel_GetLineText(pD, 0), "Craft 7") == 0, "panel D takes the formatted name");
+    CheckEqI32(g_nFormatCalls, 3, "the formatter runs once per row");
+    CheckEqI32(pC->aLineMeta[6 * 0 + 0], 150, "a 255 craft byte gives the 150,150,250 triple");
+    CheckEqI32(pC->aLineMeta[6 * 0 + 2], 250, "with 250 last");
+    CheckEqI32(pC->aLineMeta[6 * 1 + 0], 250, "a 254 craft byte gives 250,150,150");
+    CheckEqI32(pC->aLineMeta[6 * 1 + 2], 150, "with 150 last");
+    CheckEqI32(pD->aLineMeta[6 * 1 + 0], 250, "panel D gets the same colours");
+    CheckEqI32(pD->aLineMeta[6 * 1 + 3], 20, "and the second triple is 20,20,20 on both");
+    CheckEqI32(pC->aLineMeta[6 * 2 + 0], 150, "row 2 is a 255 soldier again");
+    Check(closeCtl.pfnClick == NopClick, "the close control gets the soldier close thunk");
+
+    SoldierScreen_Toggle(&env);
+    CheckEqI32(nScreen, 1, "the close branch puts the screen id back to 1");
+    CheckEqI32(bOpen, 0, "and clears the flag");
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL, "all four panels are released");
+    Check(pPad == NULL, "and so is the pad");
+
+    SoldierScreen_Toggle(NULL);
+    CheckEqI32(nScreen, 1, "a null env changes nothing");
+}
+
+/* --- SoldierScreen_SelectListed @ 0x64a9c --- */
+
+static void TestSoldierSelectListed(void)
+{
+    static UiPanel panel;
+    static SoldierSelectEnv env;
+    static i32 nCursor;
+    static i32 nScreen;
+
+    printf("SoldierScreen_SelectListed @ 0x64a9c\n");
+
+    memset(&panel, 0, sizeof(panel));
+    if (!UiPanel_ctor(&panel, 3)) {
+        printf("  FAIL the panel could not be constructed\n");
+        return;
+    }
+    panel.nUnk3032 = 1;                    /* the visible selection */
+    UiPanel_SetLineAux(&panel, 1, 7);      /* the roster index the row pass stored */
+
+    nCursor = -1; nScreen = 4;
+    memset(&env, 0, sizeof(env));
+    env.pPanel = &panel;
+    env.pnCursor = &nCursor;
+    env.pnScreenId = &nScreen;
+
+    CheckEqI32(SoldierScreen_SelectListed(&env), 7, "the cursor takes the row's roster index");
+    CheckEqI32(nCursor, 7, "written into nSoldierCursor @ 0x159E08");
+    CheckEqI32(nScreen, 5, "and the screen id becomes 5");
+
+    panel.nUnk3032 = 999;
+    CheckEqI32(SoldierScreen_SelectListed(&env), 0, "an out-of-range selection reads 0");
+
+    UiPanel_FreeLines(&panel);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1811,6 +1961,8 @@ int main(void)
     TestMapClick();
     TestBaseFacToggle();
     TestBaseFacBuy();
+    TestSoldierScreenToggle();
+    TestSoldierSelectListed();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

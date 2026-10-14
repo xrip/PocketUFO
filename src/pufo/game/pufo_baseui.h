@@ -24,6 +24,7 @@
 #include "game/pufo_clock.h"     /* GameTime, whose pause byte the radar click sets */
 #include "game/pufo_geoscape.h"  /* HangarPlaceEnv / BaseRec / BaseSiteRec, the map-click chain */
 #include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
+#include "render/pufo_render.h"  /* PadImage, SoldierScreen_Toggle's "soldier" pad */
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
 
 typedef struct ScreenScratch {
@@ -765,5 +766,77 @@ typedef struct BaseFacBuyEnv {
 } BaseFacBuyEnv;
 
 i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv);
+
+/* --- SoldierScreen_Toggle @ 0x64af0 (1952 B) : the soldier screen's open/close switch ---
+ *
+ * Sound_Play(17), then nGeoscapeScreen = 4 (0x64B08) whatever the direction. The byte at 0x159DE0
+ * decides which way to go.
+ *
+ * CLOSE (0x651BC..0x65288): screen id back to 1, the flag cleared, then the two fixed 4-line
+ * panels get nLineCount = 4 again (0x651D4 / 0x651DC -- stored through the panel pointers with no
+ * null test, bugs.tsv) and all five objects are released: the 0x159DF0 and 0x159758 panels, the
+ * PadImage at unk_1598D4 (PadImage_FreeData + delete), and the 0x15975C and 0x159DEC panels.
+ *
+ * OPEN (0x64B20..0x651A0):
+ *   1. the flag is set; a PadImage (operator new 0x14 + PadImage_ctor) is loaded with the pad
+ *      "soldier" at mode 8 into unk_1598D4, with nOriginX / nOriginY 0.
+ *   2. panel A @ 0x159DF0 (4 lines): nStyle 4, nFont 18, +3020 = SoldierScreen_EquipSelected,
+ *      nPosX 55, nPosY 102, +7052 46, +7056 102, nViewW 167, gap_0[0..2] 44 F4 FC,
+ *      gap_0[3..5] 32 A0 BD, gap_0[6..11] C8 F4 FC 04 46 4B, bFlag7073 1, bUnk7088 0xFF.
+ *   3. panel B @ 0x159758 (4 lines): nStyle 4, nFont 18, nPosX 190, nPosY 102, +7052 46,
+ *      +7056 102, nViewW 167, gap_0[0..2] 44 F4 FC, gap_0[3..5] 32 32 FA,
+ *      gap_0[6..11] 44 F4 FC 04 46 4B, bFlag7072 0. No click handler.
+ *   4. n = how many of apSoldiers[0..count) have the base byte at +0xB6 equal to nSelectedBaseIdx
+ *      (0x64BA4..0x64CC4; the count is the u16 at unk_115350).
+ *   5. panel C @ 0x15975C (n lines): nStyle 13, nFont 18, +3020 = SoldierScreen_SelectListed,
+ *      nPosX 10, nPosY 70, +7052 2, +7056 70, nViewW 234, gap_0[0..2] B4 B4 B4,
+ *      gap_0[3..5] 32 32 FA, gap_0[6..11] F0 F0 F0 14 14 14, bFlag7073 1, bUnk7088 0x96.
+ *   6. panel D @ 0x159DEC (n lines): nStyle 13, nFont 18, nPosX 230, nPosY 70, +7052 5,
+ *      +7056 70, nViewW 40, gap_0[0..2] B4 B4 B4, gap_0[6..11] F0 F0 F0 14 14 14,
+ *      bFlag7073 0, nUnk7076 2, bUnk7088 0x96. No click handler.
+ *   7. the row pass (0x65018..0x651A0) walks the roster again; for every soldier on the selected
+ *      base, panel C gets szName (+0xBA) and anLineAux = the ROSTER index, panel D gets
+ *      Soldier_FormatDisplayName's string, and the row colours come from the craft byte at +0xB7:
+ *      254 gives (250,150,150 / 20,20,20) and 255 gives (150,150,250 / 20,20,20) on both panels.
+ *      Any other value leaves the row colours at the ctor defaults.
+ *   8. unk_186B00's +12 handler becomes SoldierScreen_CloseThunk -- the same control slot
+ *      BaseFacScreen_Init uses for the build dialog.
+ *
+ * Deviations: the port owns only the five heap objects; the controls stay caller-owned. The panel
+ * line-count stores are guarded where the original stores through the pointers unchecked. */
+typedef struct SoldierScreenEnv {
+    u8      *pbOpen;              /* 0x159DE0, the screen-open byte */
+    i32     *pnScreenId;          /* nGeoscapeScreen @ 0x186BC4 */
+    Soldier *const *apSoldiers;   /* Map + 0x1198 */
+    const u16 *pnSoldierCount;    /* unk_115350 */
+    const i8 *pnSelectedBaseIdx;  /* nSelectedBaseIdx @ 0x159D81 */
+    UiPanel **ppPanelEquip;       /* 0x159DF0, panel A */
+    UiPanel **ppPanelStores;      /* 0x159758, panel B */
+    UiPanel **ppPanelNames;       /* 0x15975C, panel C */
+    UiPanel **ppPanelCraft;       /* 0x159DEC, panel D */
+    PadImage **ppPad;             /* unk_1598D4 */
+    const char *pszPadName;       /* the pad loaded at mode 8 ("soldier"); NULL skips the load */
+    UiControl *pCloseCtl;         /* unk_186B00 */
+    void (*pfnCloseSoldierThunk)(void); /* SoldierScreen_CloseThunk @ 0x64ae4, stored at +12 */
+    void (*pfnEquipThunk)(void);  /* SoldierScreen_EquipSelected (0x619cc), not ported yet */
+    void (*pfnSelectThunk)(void); /* SoldierScreen_SelectListed @ 0x64a9c */
+    const char *(*pfnFormatName)(void *pUser, Soldier *pSol); /* Soldier_FormatDisplayName (0x6654c) */
+    void *pFormatUser;
+} SoldierScreenEnv;
+
+void SoldierScreen_Toggle(const SoldierScreenEnv *pEnv);
+
+/* --- SoldierScreen_SelectListed @ 0x64a9c (72 B) : panel C's click ---
+ *
+ * nGeoscapeScreen = 5 (0x64AA8) and nSoldierCursor @ 0x159E08 takes
+ * panel(0x15975C)->anLineAux[panel->nUnk3032] (0x64AD0) -- the roster index the row pass stored.
+ * The original returns &nSoldierCursor; the port returns the cursor value. */
+typedef struct SoldierSelectEnv {
+    UiPanel *pPanel;     /* 0x15975C */
+    i32     *pnCursor;   /* nSoldierCursor @ 0x159E08 */
+    i32     *pnScreenId; /* nGeoscapeScreen @ 0x186BC4 */
+} SoldierSelectEnv;
+
+i32 SoldierScreen_SelectListed(const SoldierSelectEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

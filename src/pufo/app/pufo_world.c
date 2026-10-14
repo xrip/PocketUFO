@@ -100,6 +100,65 @@ static void World_FacToggleThunk(void *pUser)
     BaseFacScreen_Toggle(&pW->facToggleEnv);
 }
 
+/* SoldierScreen_Toggle @ 0x64af0, the handler of nav control slot 2 (0x67B88).
+ * Soldier_FormatDisplayName (0x6654c) is not ported yet, so the craft-name column stays empty. */
+static const char *World_SoldierNameStub(void *pUser, Soldier *pSol)
+{
+    (void)pUser;
+    (void)pSol;
+    return "";
+}
+
+/* SoldierScreen_SelectListed @ 0x64a9c, panel C's click. */
+static void World_SoldierSelectThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    SoldierSelectEnv env;
+
+    if (pW == NULL || pW->pSolPanelNames == NULL) {
+        return;
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.pPanel = pW->pSolPanelNames;
+    env.pnCursor = &pW->nSoldierCursor;
+    env.pnScreenId = &pW->screen.nGeoscapeScreen;
+    (void)SoldierScreen_SelectListed(&env);
+}
+
+static void World_SoldierToggleThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    u16 nCount;
+
+    if (pW == NULL) {
+        return;
+    }
+
+    nCount = (u16)pW->nSoldierCount; /* unk_115350 is the u16 count */
+
+    memset(&pW->solEnv, 0, sizeof(pW->solEnv));
+    pW->solEnv.pbOpen = &pW->bSolScreenOpen;
+    pW->solEnv.pnScreenId = &pW->screen.nGeoscapeScreen;
+    pW->solEnv.apSoldiers = pW->apSoldiers;
+    pW->solEnv.pnSoldierCount = &nCount;
+    pW->solEnv.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->solEnv.ppPanelEquip = &pW->pSolPanelEquip;
+    pW->solEnv.ppPanelStores = &pW->pSolPanelStores;
+    pW->solEnv.ppPanelNames = &pW->pSolPanelNames;
+    pW->solEnv.ppPanelCraft = &pW->pSolPanelCraft;
+    pW->solEnv.ppPad = &pW->pSolPad;
+    pW->solEnv.pszPadName = "soldier";
+    pW->solEnv.pCloseCtl = &pW->ctlFacClose;
+    /* The original installs SoldierScreen_CloseThunk (0x64ae4), which only tail-calls
+     * Geoscape_CloseUI (0x8b94c); until that dispatcher is ported the seam stays a no-op. */
+    pW->solEnv.pfnCloseSoldierThunk = World_NoopClick;
+    pW->solEnv.pfnEquipThunk = World_NoopClick;        /* SoldierScreen_EquipSelected, not ported */
+    pW->solEnv.pfnSelectThunk = World_SoldierSelectThunk;
+    pW->solEnv.pfnFormatName = World_SoldierNameStub;
+    SoldierScreen_Toggle(&pW->solEnv);
+}
+
 /* NewBaseScreen_TryConfirm @ 0x6152c tail-calls Geoscape_OnMapClick @ 0x8b4a8; this is the seam. */
 static void World_TryConfirmClick(void)
 {
@@ -291,6 +350,7 @@ static void World_StartNewHook(void *pUser)
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
     }
+    pW->navEnv.apfnNavClick[2] = World_SoldierToggleThunk; /* SoldierScreen_Toggle, 0x67B88 */
     for (i = 0; i < PUFO_NAV_PANEL_CTLS; ++i) {
         pW->navEnv.apfnPanelClick[i] = World_NoopClick;
     }
@@ -479,6 +539,10 @@ void World_Free(PufoWorldState *pW)
     /* The build dialog's panel is the shell's own allocation; Toggle's close branch releases it. */
     if (pW->bFacDialogOpen != 0) {
         World_FacToggleThunk(pW);
+    }
+    /* Same for the soldier screen's four panels and its pad. */
+    if (pW->bSolScreenOpen != 0) {
+        World_SoldierToggleThunk();
     }
 
     /* Geoscape_BuildNavControls' fifteen controls are not part of pUi (the original never
