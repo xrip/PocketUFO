@@ -8814,3 +8814,62 @@ directly instead of through hooks. Ported in `src/pufo/game/pufo_geoscape.c`, un
 original's 0x18640C write at 0x40D94) and takes the site count (`nParam4`, 0x186410) for the budget
 passes. IDB: comments rewritten at 0x68044 / 0x67d68 / 0x65a08 and at the three `Base_Update*Needed`
 hosts (the "budget contributors unported" notes removed).
+
+## The geoscape bring-up: Geoscape_InitUI @ 0x857f4
+
+Ported in `src/pufo/ui/pufo_geoiinit.{h,c}`; tested by `tests/test_geoiinit.c` against the
+shipped archives (the pads, sprites, research.dat and the 56 .cts files all come out of
+main.dat / lang.dat for real).
+
+The function is the builder half of the lifecycle whose teardown half is
+`GeoscapeUi_FreeAll @ 0x86d20` (see the geouimanage section); the test runs InitUI(0),
+FreeAll, InitUI(1) and FreeAll again, which is exactly the new-game and load paths.
+
+### Facts the ARM corrected in the decompiler's rendering
+
+| Site | Hex-Rays said | ARM says |
+|---|---|---|
+| 0x85A44 | `*0x186BC0 = 800; [1] = 400` (dwords) | `STRH 0x320,[R0]` / `STRH 0x190,[R0,#2]` - a u16 pair at +0/+2 inside a 0x4E204-byte block |
+| 0x85DD8 | `unk_186F78 = &unk_13D620` (pointer) | literal pool value 0x13D620 = 1300000, read as a number by `BaseFacScreen_TryBuySelected @ 0x58910` |
+| 0x86938 | `v75->wProgress = 0` | `STRH R4,[R1,#6]` - zeroes the u16 at topic+6 (in-memory `wUnk6`), not the save-order wProgress |
+| 0x86534..0x865C4 | flat global writes | root click slots [8]=OpenScreen18, [9]=CloseScreen18, [10]=EnterBuildMode, [11]=OpenBaseInfo, [12]=OpenFunding (root dwords 0x186518/1C/20/24/28) |
+| 0x86AA4 | `*(unk_113AE4+182) = 110` | `STRH [R0,#0xB6]` - ObjectRecFull.uFirePower of object 1 |
+| 0x86A14 | `+188` write | u32 ObjectRecFull.uPrice, seeded from anObjectPriceInit (149 dwords at 0xAA2C0) for slots 1..nObjectCount-1 |
+| 0x86A58 | name copy loop | object name at apObjects+4 (szName[32]), text records 1447..1594, a fixed 148 copies |
+| 0x859E4 | `byte_160BBC[144] = -112` | `STRB 0x90` - the research entry count byte (144), the same byte every research/manuf loop gates on |
+
+### The text-record tail is real zero data
+
+`Assets_LoadStartup @ 0x384e0` reads TEXTS.DAT from the first archive that has it -
+lang.dat, 1650 records - into aTextRecs @ 0xB38D0 at stride 205. The static span runs to
+the next global at 0x113998 (1912 records) and is zero-filled .data: the binary has no
+bytes there (verified: dump_pe reads zero and the IDB reads zero). InitUI's mission-site
+names read records 1655..1710, which are past the loaded 1650, so with lang.dat present
+every mission-site name is empty in the original too. The port now allocates the blob at
+the full 1912-record capacity (`PUFO_TEXT_REC_CAPACITY`) so those reads land on zeros
+instead of past the buffer, and the test asserts the names are empty.
+
+### Tables read out of the binary
+
+`tools/gen_geoiinit_tables.py` emits the five descriptor blocks (0xAB4B0 nav, 0xAB5F0
+panel pair, 0xAB630 find pair, 0xABED8 root, 0xAC078 singletons) and the 149-entry price
+table at 0xAA2C0. InitUI uses the root and singleton blocks plus the prices; the nav /
+panel / find blocks belong to Geoscape_BuildNavControls (next unit). The singleton setup
+order is the original's own: slot i gets descriptor {0,1,2,3,4,7,8,9,10,11,12,5,6}[i].
+
+### Deviations (all deliberate, all in the header)
+
+- The world block is allocated as the 4-byte pair, not 0x4E204 bytes; nothing reads the tail.
+- Name copies are bounded to the destination field; the research.dat read is capped at the
+  topic array; the price loop also stops at the 149-entry table; the 148 name copies also
+  stop at nObjectCount. The original has no bounds at any of these.
+- The three zoom levels are published as data (`SmapZoomSet aSets[3]`) instead of the
+  level-0 globals 0x186E40 / 0x186B04 / 0x186BE0.
+- The research entry count is written as the port family's u16; the original's store is a
+  byte. Same value at startup.
+
+### Still hooked out
+
+`Game_StartNew @ 0x94554` (mode-0 branch) and `Geoscape_OnRadarListClick @ 0x854c4`
+(status panel) are hooks. The 13 root click handlers and the craft-select handler are
+env function pointers because `UiControl.pfnClick` takes no arguments.

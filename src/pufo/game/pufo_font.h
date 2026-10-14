@@ -63,6 +63,12 @@ typedef struct PufoFont {
     /* Glyph index base used by Text_DrawString @ 0x2d798, which reads a u16 at
      * Font+0x28 (IDA's fontSys.gap_32) and adds the character byte to it. */
     u16       nGlyphBase;                           /* 0x28 */
+    /* The three geoscape sprite-group bases Geoscape_InitUI @ 0x857f4 captures before
+     * Font_LoadSpr("bigobs"/"basebits"/"mapbits"), same rule as every group base: the
+     * running nTotalSprFrames at load time is the group's first frame index. */
+    u16       nBigObsBase;                          /* 0x26, nBigObsSprBase */
+    u16       nBaseBitsBase;                        /* 0x2C, fontSys_nBaseBitsSprBase */
+    u16       nMapBitsBase;                         /* 0x34, fontSys_nMapBitsSprBase */
     char      aszName[PUFO_FONT_SLOTS][PUFO_FONT_NAMELEN]; /* 0xe0 */
     void     *apSprData[PUFO_FONT_SLOTS];           /* 0x4f4 */
     Mc1Rec   *apMc1Data[PUFO_FONT_SLOTS];           /* 0x404 */

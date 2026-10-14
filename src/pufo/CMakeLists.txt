@@ -87,6 +87,7 @@ add_library(pufo_ui STATIC
     ui/pufo_uibank.c
     ui/pufo_menubtn.c
     ui/pufo_geouimanage.c
+    ui/pufo_geoiinit.c
 )
 target_include_directories(pufo_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(pufo_ui PUBLIC pufo_options pufo_game pufo_render pufo_util)
@@ -607,6 +608,17 @@ set_target_properties(test_geouimanage PROPERTIES
 )
 add_test(NAME test_geouimanage
     COMMAND test_geouimanage
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Geoscape_InitUI @ 0x857f4, the geoscape bring-up, against the shipped archives.
+add_executable(test_geoiinit ${CMAKE_SOURCE_DIR}/tests/test_geoiinit.c)
+target_link_libraries(test_geoiinit PRIVATE pufo_ui pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_audio)
+set_target_properties(test_geoiinit PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_geoiinit
+    COMMAND test_geoiinit
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 

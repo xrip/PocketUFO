@@ -60,17 +60,17 @@ typedef struct GeoscapeScreenState {
     i32 nLineAux119;       /* gUiRootPanel.anLineAux[119], the options-screen arg */
 } GeoscapeScreenState;
 
-typedef struct GeoscapeHooks {
+typedef struct GeoscapeScreenHooks {
     void (*pfnPlaySample)(u32 nSample, void *pUser);
     void (*pfnOptionsRebuildWithSound)(void *pUser); /* OptionsScreen_RebuildWithSound */
     void (*pfnOptionsOpenWithSound)(i32 nArg, void *pUser); /* OptionsScreen_OpenWithSound */
     void (*pfnFundingOpen)(void *pUser);             /* FundingScreen_Open */
     void *pUser;
-} GeoscapeHooks;
+} GeoscapeScreenHooks;
 
-void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
-void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
-void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks);
+void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks);
+void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks);
+void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks);
 
 /* ------------------------------------------------- strategic screen list paging
  *

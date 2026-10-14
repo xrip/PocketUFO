@@ -17,7 +17,10 @@
 
 /* All scalars, no pointers, so the layout must match on every target. */
 typedef struct ObjectRecFull {
-    u8   gap_0[36];        /* 0x00 */
+    u8   gap_0[4];         /* 0x00 */
+    char szName[32];       /* 0x04 the object name; Geoscape_InitUI @ 0x86A58 copies text
+                            * record 1447+slot here (slots 0..147). The field ends where
+                            * nObjParam begins; the shipped names fit. */
     i8   nObjParam;        /* 0x24 used by the LOS ceiling test */
     i8   nDrawH;           /* 0x25 */
     u8   bUnk38;           /* 0x26 */
@@ -38,7 +41,11 @@ typedef struct ObjectRecFull {
     u8   abArmorTu[3];     /* 0xb3 per-mode TU cost basis, auStat[0] * abArmorTu[m] / 100 */
     u16  uFirePower;       /* 0xb6 */
     u8   nCategory;        /* 0xb8 */
-    u8   gap_B9[11];       /* 0xb9 */
+    u8   gap_B9[3];        /* 0xb9 */
+    u32  uPrice;           /* 0xbc the item price: Geoscape_InitUI @ 0x86A14 seeds it from
+                            * dword_AA2C0 (g_anObjectPrice), and the BuySell screens read it
+                            * back. A dword store (`+188`), not a u16. */
+    u8   gap_C0[4];        /* 0xc0 */
     u8   bReadySel;        /* 0xc4 readiness source selector, read by
                             * Unit_ApplyCellDamage @ 0x2e5d0 and
                             * Combat_ResolveShot @ 0x2f12c */

@@ -192,8 +192,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [x] `LoadGame (0x44bbc, 3,400 B)` — the whole driver is ported in `src/pufo/game/pufo_save.c`
   (`LoadGame` + `LoadGameEnv` + `LoadGameHooks`), verified by a sav7 round-trip in `test_save`.
   The callees that belong to other subsystems arrive as hooks and remain unported:
-  `Geoscape_InitUI (0x857f4, 5,420 B)` (itself blocked by `Game_StartNew (0x94554)` and
-  `GameTime_Set5Sec (0x84f00)`). The three budget helpers `Base_CountOutboundTransferSpace @
+  `Geoscape_InitUI (0x857f4, 5,420 B)` — now ported (see the next entry), so the LoadGame hook
+  can be wired to it in the shell. The three budget helpers `Base_CountOutboundTransferSpace @
   0x68044`, `Base_CountItemQtyAcrossBases @ 0x67d68`, `Base_CountPsiSoldiers @ 0x65a08` are
   ported in `pufo_geoscape.c` and called directly. Two IDB errors
   this step fixed: the tactver value goes to slot-context + 0x118 (`MainMenu_pSlotCtx+0x118`,
@@ -202,6 +202,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   minimap and the start screen are now drawn; what is left there is `Tact_DrawCommandPads
   (0x1fc8c)` and the caller `Render_Frame (0x22310)`, which also wants `Geoscape_Draw (0x8c180)`
   from Priority 3.
+- [x] `Geoscape_InitUI (0x857f4, 5,420 B)` — ported in `src/pufo/ui/pufo_geoiinit.{h,c}`, tested by
+  `tests/test_geoiinit.c` against the shipped archives (real pads, real sprites, real research.dat,
+  all 56 .cts files). Hooked out: `Game_StartNew (0x94554)` and `Geoscape_OnRadarListClick (0x854c4)`;
+  the 13 root click handlers are env function pointers. ARM corrections over Hex-Rays: the 0x186BC0
+  world block is a u16 pair (STRH/STRH) inside a 0x4E204 allocation; facility 10's "pointer" literal
+  is the number 1300000; the research zero loop stores at topic+6 not the save-order wProgress; root
+  click slots [8..12] are OpenScreen18/CloseScreen18/EnterBuildMode/OpenBaseInfo/OpenFunding;
+  `+0xB6` on object 1 is uFirePower=110; prices are the u32 at +188. Text-record tail fact: lang.dat
+  loads only 1650 records, records 1655..1710 are zero .data, so mission-site names are empty in the
+  original too — the boot blob is now allocated at the full 1912-record capacity.
 - [x] The first two links of that chain: `BaseFac_SetCellBuildState @ 0x623bc` (336 B) and
   `Base_GrantStarterItems @ 0x95fa4` (124 B), both leaves, both in `src/pufo/game/pufo_geoscape.c`.
   - [x] `aFacBuildSpec @ 0xAA8F8` inlined as `g_aFacBuildSpec` (18 records of tileA, tileB, signed
@@ -539,6 +549,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | credits opener (`Titles_Init`, `Titles_ctor`) | 54/54 (Release) | 7564 | 700/1103 (63.5%) | 276464/598792 (46.2%) | 37 checked, 0 mismatched |
 | `LoadGame` driver (`pufo_save.c`, sav7 round-trip) | 54/54 (Release) | 7599 | 701/1103 (63.6%) | 279864/598792 (46.7%) | 37 checked, 0 mismatched |
 | budget leaves (`Base_CountOutboundTransferSpace`, `Base_CountItemQtyAcrossBases`, `Base_CountPsiSoldiers`) | 54/54 (Release) | 7608 | 704/1103 (63.8%) | 280724/598792 (46.9%) | 37 checked, 0 mismatched |
+| `Geoscape_InitUI` (`pufo_geoiinit.c`, real-archive test) | 55/55 (Release) | 7673 | 708/1103 (64.2%) | 291100/598792 (48.6%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

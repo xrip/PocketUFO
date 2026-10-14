@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 54 suites: **7608**.
+Test checks run across the 55 suites: **7673**.
 
 ### Per-subsystem status
 
@@ -283,9 +283,14 @@ This is the shortest chain that produces a real game session, in dependency orde
    dissolves the same way it does everywhere else in this port: the function takes every slot it
    frees as a caller-owned pointer and owns nothing itself. It went first because it was the only
    Priority 1 item whose callees were all already ported.
-6. `LoadGame` (0x44bbc, 3,400 B) — was blocked by three callees; `Tact_Shutdown` and
-   `Tact_InitMission` are now ported, so it is blocked by exactly one: `Geoscape_InitUI` (0x857f4,
-   5,420 B). That makes `Geoscape_InitUI` the next item on the critical path.
+6. Done: `LoadGame` (0x44bbc) and its last blocking callee `Geoscape_InitUI` (0x857f4, 5,420 B) —
+   InitUI is ported in `src/pufo/ui/pufo_geoiinit.{h,c}` with a real-archive test
+   (`tests/test_geoiinit.c`). What is left on the geoscape bring-up path: `Game_StartNew` (0x94554,
+   3,976 B, InitUI's mode-0 hook), `Geoscape_BuildNavControls` (0x67b1c) and its six unported click
+   handlers (`NewBaseScreen_Open`, `SoldierScreen_Toggle`, `ResearchScreen_Open`,
+   `SoldierScreen_FindNextAtBase/FindPrevAtBase`, `Ui_SetTransferFlag`), and `Geoscape_OnRadarListClick`
+   (0x854c4, the status panel click). The shell wiring (app-owned `GeoscapeInitEnv` + roster state,
+   replacing the `App_HookNewGame` notice) is the next step.
 
 ### Largest unported functions by size
 
@@ -299,7 +304,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
 | 0x34fbc | `Tact_CheckBattleEnd` | 5,748 | |
 | 0x52adc | `Tact_ProcessFallAction` | 5,716 | |
-| 0x857f4 | `Geoscape_InitUI` | 5,420 | blocks `LoadGame` |
 | 0x6f9a4 | `ManufScreen_DrawFrame` | 5,400 | |
 | 0x7fcb0 | `StrategList_ProcessEvents` | 4,904 | |
 | 0x3c550 | `Tact_InitMission` | 4,120 | on the critical path |
@@ -731,7 +735,7 @@ does.
 
 ### Priority 3 — the geoscape
 
-`Geoscape_InitUI` (0x857f4) unblocks `LoadGame`. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
+`Geoscape_InitUI` (0x857f4) is ported; `Game_StartNew` (0x94554) is the remaining link. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
 function in the binary. `Geoscape_OnPointer` (0x872d0) and `Geoscape_OnPointerUp` (0x89450) are each
 large enough to need a fresh context window on their own.
 

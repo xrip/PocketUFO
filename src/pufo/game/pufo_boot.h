@@ -41,6 +41,14 @@
 #define PUFO_TEXT_REC_SIZE_DISK 200
 #define PUFO_TEXT_REC_STRIDE    205 /* 5 bytes of slack per record in memory */
 #define PUFO_TEXT_HDR_SIZE      2
+/* The blob is allocated to the full static span aTextRecs occupies in the original's
+ * .data: 0xB38D0 up to the next global at 0x113998, i.e. (0x113998 - 0xB38D0) / 205 =
+ * 1912 records. TEXTS.DAT only overwrites the first nTextRecCount of them (1650 with
+ * lang.dat present); the rest stay zero, exactly as the zero-filled .data does. The
+ * original's Geoscape_InitUI @ 0x86C34 reads records 1655..1710, which is why the tail
+ * has to exist: with lang.dat winning the lookup those names are empty, and that is the
+ * original's own behaviour, not a port gap. */
+#define PUFO_TEXT_REC_CAPACITY 1912
 
 /* String tables extracted from the texts.dat blob by Assets_LoadStartup @ 0x382d0.
  *

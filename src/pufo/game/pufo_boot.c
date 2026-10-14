@@ -82,14 +82,20 @@ bool Boot_LoadStartup(BootAssets *pAssets, const char *const *ppszArchivePaths)
             if (!AssetReader_Read(&rdr, aHdr, PUFO_TEXT_HDR_SIZE)) {
                 goto fail;
             }
-            pAssets->pTextRecs = malloc((size_t)nRecords * PUFO_TEXT_REC_STRIDE);
+            pAssets->pTextRecs = malloc((size_t)PUFO_TEXT_REC_CAPACITY * PUFO_TEXT_REC_STRIDE);
             if (pAssets->pTextRecs == NULL) {
                 goto fail;
             }
             /* The original leaves the 5 slack bytes per record untouched. Zeroing
              * them is equivalent for string reads (each record is NUL-terminated
-             * within its 200 bytes) and avoids reading uninitialised memory. */
-            memset(pAssets->pTextRecs, 0, (size_t)nRecords * PUFO_TEXT_REC_STRIDE);
+             * within its 200 bytes) and avoids reading uninitialised memory. The
+             * records past the loaded count stay zero, as the original's zero-filled
+             * .data does (see PUFO_TEXT_REC_CAPACITY). */
+            memset(pAssets->pTextRecs, 0, (size_t)PUFO_TEXT_REC_CAPACITY * PUFO_TEXT_REC_STRIDE);
+            if (nRecords > (u32)PUFO_TEXT_REC_CAPACITY) {
+                nRecords = PUFO_TEXT_REC_CAPACITY; /* deviation: the original would run past
+                                                    * aTextRecs into the Map block */
+            }
             for (i = 0; i < nRecords; ++i) {
                 if (!AssetReader_Read(&rdr, pAssets->pTextRecs + (size_t)i * PUFO_TEXT_REC_STRIDE,
                                       PUFO_TEXT_REC_SIZE_DISK)) {

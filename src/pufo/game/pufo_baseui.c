@@ -49,7 +49,7 @@ i32 BaseUi_PlaySample7Cache160C74(ScreenScratch *pScratch, i32 nUnk3032,
 }
 
 /* Ui_OpenScreen18 @ 0x84e9c. */
-void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
+void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
         pHooks->pfnPlaySample(17, pHooks->pUser);
@@ -63,7 +63,7 @@ void Ui_OpenScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
 }
 
 /* Ui_CloseScreen18 @ 0x84ecc. Note it also sets the screen id to 18. */
-void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
+void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
         pHooks->pfnPlaySample(17, pHooks->pUser);
@@ -78,7 +78,7 @@ void Ui_CloseScreen18(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
 }
 
 /* Ui_OpenFunding @ 0x85164. */
-void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeHooks *pHooks)
+void Ui_OpenFunding(GeoscapeScreenState *pState, const GeoscapeScreenHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
         pHooks->pfnPlaySample(17, pHooks->pUser);

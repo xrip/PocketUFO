@@ -89,7 +89,7 @@ static void TestScratch(void)
 static void TestGeoscapeScreens(void)
 {
     GeoscapeScreenState st;
-    GeoscapeHooks h;
+    GeoscapeScreenHooks h;
 
     printf("Geoscape screen openers\n");
     memset(&st, 0, sizeof(st));
