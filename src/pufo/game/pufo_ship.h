@@ -352,6 +352,10 @@ i32 Base_CraftWeaponItemId(ObjectRecFull *const *apObjects, i32 nSlot, i32 nBase
  * nCraftIdx everywhere else. */
 i32 Craft_CountSoldiersAboard(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nCraftIndex);
 
+/* Craft_CountWeaponSlotsCarried @ 0x664f0 (IDB: was Base_CountAmmoObjectsAtBase). Weapon-slot
+ * objects 31..35 carried by one craft, counted in the object record's per-craft column. */
+i32 Craft_CountWeaponSlotsCarried(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nCraftIdx);
+
 /* BasePlane_CalcWeaponStoresUsed @ 0x78e78. Sum of bCargoSize * carried count over every object
  * index. The carried counts are what the hangar screen accumulated, so no filtering happens here. */
 i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectCount,

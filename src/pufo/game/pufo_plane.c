@@ -2,6 +2,7 @@
 #include "game/pufo_plane.h"
 #include "game/pufo_geoscape.h"   /* BaseRec_AddItemQty */
 #include "game/pufo_font.h"       /* Text_DrawString / Text_MeasureWidth, the panel headers */
+#include "game/pufo_baseui.h"      /* Soldier_FormatDisplayName, the crew status column */
 
 /* One body for BasePlaneScreen_SelectWeapon25..30; only the constant differs. */
 i32 BasePlaneScreen_SelectWeapon(PlaneWeaponPanels *pPanels, i32 nWeaponIndex,
@@ -645,4 +646,94 @@ i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv)
     }
 
     return 1;
+}
+
+/* ------------------------------------------------- the crew list's click */
+
+static void PanelLineCopy(UiPanel *pPanel, i32 nLine, const char *psz)
+{
+    if (nLine < 0 || nLine >= PUFO_PANEL_LINES) {
+        return;
+    }
+
+    u8 *pLine = pPanel->apLines[nLine];
+
+    if (pLine == NULL) {
+        return;
+    }
+
+    i32 i = 0;
+
+    while (psz[i] != 0 && i < PUFO_PANEL_LINE_BYTES - 1) {
+        pLine[i] = (u8)psz[i];
+        ++i;
+    }
+    pLine[i] = 0;
+}
+
+void BasePlaneScreen_FillCrewPanel(PlaneCrewPanelEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCrewPanel == NULL || pEnv->pStatusPanel == NULL) {
+        return;
+    }
+
+    const i32 nRow = pEnv->pCrewPanel->nUnk3032;
+
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return; /* deviation: the original has no bound */
+    }
+
+    const i32 nSol = pEnv->pCrewPanel->anLineAux[nRow];
+    Soldier *pSol = (pEnv->apSoldiers != NULL && nSol >= 0 && nSol < pEnv->nSoldierCount)
+                        ? pEnv->apSoldiers[nSol]
+                        : NULL;
+
+    if (pSol == NULL) {
+        return; /* deviation: the original faults */
+    }
+
+    if (pSol->bUnk183 == PUFO_SOLDIER_CRAFT_NONE) {
+        const Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[pEnv->nCraftIdx] : NULL;
+        const i32 nAboard = Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                      pEnv->nCraftIdx); /* 0x7A1E8 */
+        const i32 nWeapons = Craft_CountWeaponSlotsCarried(pEnv->apObjects, pEnv->nObjectCount,
+                                                           pEnv->nCraftIdx); /* 0x7A1F0 */
+        bool bRoom;
+
+        switch ((pShip != NULL) ? (i32)pShip->bCraftType : -1) {
+        case 0:
+            bRoom = (nAboard + 4 * nWeapons + 1 <= 14); /* 0x7A21C */
+            break;
+        case 1:
+            bRoom = (nAboard + 1 <= 12);                /* 0x7A230 */
+            break;
+        case 2:
+            bRoom = (nAboard + 4 * nWeapons + 1 <= 26); /* 0x7A250 */
+            break;
+        default:
+            bRoom = true; /* 0x7A268: any other craft type has no crew gate here */
+            break;
+        }
+
+        if (!bRoom) {
+            return; /* 0x7A27C: refusing changes nothing at all */
+        }
+
+        UiPanel_SetLineMeta(pEnv->pCrewPanel, nRow, 255, 200, 20, 10, 10, 10);   /* 0x7A2C0 */
+        UiPanel_SetLineMeta(pEnv->pStatusPanel, nRow, 255, 200, 20, 10, 10, 10); /* 0x7A2E8 */
+        pSol->bUnk183 = (u8)pEnv->nCraftIdx;                                     /* 0x7A2F8 */
+
+        char *pszName = (pEnv->pszNameBuf != NULL)
+                            ? Soldier_FormatDisplayName(pSol, pEnv->apCraft, pEnv->pTextRecs,
+                                                        pEnv->pszNameBuf, (size_t)pEnv->cchNameBuf)
+                            : (char *)"";
+        PanelLineCopy(pEnv->pStatusPanel, nRow, pszName); /* 0x7A310 */
+        return;
+    }
+
+    UiPanel_SetLineMeta(pEnv->pCrewPanel, nRow, 240, 240, 240, 20, 20, 20);   /* 0x7A338 */
+    UiPanel_SetLineMeta(pEnv->pStatusPanel, nRow, 240, 240, 240, 20, 20, 20); /* 0x7A360 */
+    PanelLineCopy(pEnv->pStatusPanel, nRow,
+                  (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLANE_CREW_UNASSIGNED_REC));
+    pSol->bUnk183 = PUFO_SOLDIER_CRAFT_NONE; /* 0x7A388: the original stores -1 into the byte */
 }

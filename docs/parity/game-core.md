@@ -9662,3 +9662,45 @@ functions carry the full gate description. `BaseRec_SubItemQty @ 0x5571c` was `s
 is now declared next to its mirror `BaseRec_AddItemQty`, because CommitStores needs it.
 
 Covered by `TestCommitStores` and `TestAdjustSelectedQty`, 66 checks.
+
+### The crew list's click: assign a soldier, or let them go (done)
+
+`src/pufo/game/pufo_plane.{h,c}`, 24 new checks in `tests/test_plane.c`. `BasePlaneScreen_FillCrewPanel
+@ 0x7a188` (620 B) and `Craft_CountWeaponSlotsCarried @ 0x664f0` (92 B).
+
+The crew panel is `pPlaneCrewPanel @ 0x161EDC` and its right-hand column is `pPlaneCrewStatusPanel @
+0x161A3C`, both built by `BasePlaneScreen_BuildListPanels @ 0x7a3f4` (not ported). The panel's aux
+column carries a SOLDIER index, so a click means `apSoldiers[pCrewPanel->anLineAux[nUnk3032]]`, and the
+function toggles that soldier between the selected craft and nothing:
+
+- `Soldier.bUnk183 == 255` (not aboard anything) -> **try to assign**, gated by `Ship.bCraftType`:
+
+  | craft type | rule |
+  |---|---|
+  | 0 | `soldiersAboard + 4 * weaponSlotsCarried + 1 <= 14` |
+  | 1 | `soldiersAboard + 1 <= 12` -- weapon slots are not charged at all |
+  | 2 | `soldiersAboard + 4 * weaponSlotsCarried + 1 <= 26` |
+  | 3, 4, other | no gate |
+
+  Refusing changes nothing whatsoever -- no colour, no name, no byte. Accepting paints both panels' row
+  `(255,200,20)/(10,10,10)`, writes the craft index into `bUnk183`, and puts
+  `Soldier_FormatDisplayName`'s string into the status column.
+- `Soldier.bUnk183 != 255` -> **unassign**, with no gate on that half: paint `(240,240,240)/(20,20,20)`,
+  put text record 93 (`Персон. броня` -- what an unassigned soldier becomes) into the status column, and
+  store -1 into `bUnk183`.
+
+`Craft_CountWeaponSlotsCarried` is the "4 crew per weapon" term, and its IDB name was wrong on both
+halves. It was `Base_CountAmmoObjectsAtBase`, but it sums `apObjects[i]->aItemQty[a2]` over object index
+31..35 only: the field is `aItemQty @ +0x3A` (`auPerBaseVal` is `+0x2A`), which is the **per-craft**
+column, and objects 31..35 are the weapon slots, not the ammo records (those are 56/57/105/58). Both
+callers pass a craft index -- this one passes `nSelectedCraftIdx`, and `OptionsScreen_Open` passes the
+same register it hands `Craft_CountSoldiersAboard`.
+
+Two housekeeping fixes found on the way: `docs/idb/functions.tsv` was stale against the IDB for
+`0xa33c8` / `0xa3624` / `0xa3f5c` (it held pre-rename names), and regenerating the inventory from it
+briefly flagged those three as unexplained. The dump is now synced and the inventory regenerated, so
+`0x664f0` carries its new name through the coverage tooling. A citation of `BasePlaneScreen_BuildListPanels
+@ 0x7a3f4` that this unit briefly introduced was removed -- that function is not ported, and the `@`
+form credits it as one (1472 bytes of false coverage).
+
+Covered by `TestCrewPanelClick` and `TestWeaponSlotsCarried`, 24 checks.

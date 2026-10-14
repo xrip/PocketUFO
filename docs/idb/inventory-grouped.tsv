@@ -628,7 +628,7 @@ addr	name	size	subsystem
 663c4	Ui_AnimExpandBlit_IfEnabled	88	ui-core
 6641c	Base_CraftWeaponItemId	128	strat
 6649c	Craft_CountSoldiersAboard	84	strat
-664f0	Base_CountAmmoObjectsAtBase	92	strat
+664f0	Craft_CountWeaponSlotsCarried	92	strat
 6654c	Soldier_FormatDisplayName	384	tact
 666cc	Ship_FormatDisplayName	424	strat
 66874	Base_RemoveAllShips	116	strat
@@ -1084,7 +1084,7 @@ a1760	LocalSize	12	platform
 a2000	SoftSurf_BlurPixels	116	render
 a306c	SoftSurf_BlitIndexed_Inner	860	render
 a33c8	SoftSurf_BlitRawGlyph	604	render
-a3624	Blit_SetColorKey	20	util
+a3624	Blit_SetColorKey	20	render
 a3638	SoftSurf_BlitIndexedKeyed_Inner	812	render
 a3964	Blit_LoadSurface	72	render
 a39ac	Blit_SetTargetParams	104	render

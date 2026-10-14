@@ -764,6 +764,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | options screen save/load slots (14 handlers) | 56/56 (Release) | 8344 | 767/1103 (69.5%) | 334072/598792 (55.8%) | 38 checked, 0 mismatched |
 | loadout stat panels + rearm + close (`BasePlaneScreen_DrawStatLabelA/B`, `BasePlane_RearmFromStores`, `BasePlaneScreen_Close`) | 56/56 (Release) | 8388 | 772/1103 (70.0%) | 336940/598792 (56.3%) | 38 checked, 0 mismatched |
 | hangar stores take/undo (`BasePlaneScreen_CommitStores`, `BasePlaneScreen_AdjustSelectedQty`) | 56/56 (Release) | 8454 | 773/1103 (70.1%) | 337584/598792 (56.4%) | 38 checked, 0 mismatched |
+| crew list click + weapon-slot count (`BasePlaneScreen_FillCrewPanel`, `Craft_CountWeaponSlotsCarried`) | 56/56 (Release) | 8478 | 775/1103 (70.3%) | 338296/598792 (56.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

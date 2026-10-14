@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 773 / 1103 (70.1%) |
-| Bytes of original code cited | 337584 / 598792 (56.4%) |
+| Functions cited as evidence | 775 / 1103 (70.3%) |
+| Bytes of original code cited | 338296 / 598792 (56.5%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 8454 |
+| Test checks run | 8478 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -34,17 +34,17 @@ the per-subsystem notes and the tests listed at the end.
 |---|---|---|---|---|
 | `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
 | `boot-assets` | 4 | 4 | 2744 / 2744 | startup asset load, text-table extraction, shutdown |
-| `render` | 50 | 51 | 11084 / 11108 | software surface, blitters, palette loading |
+| `render` | 51 | 52 | 11104 / 11128 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
-| `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
+| `util` | 18 | 20 | 1136 / 1160 | growable pointer array, RNG, string helpers |
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 73 | 85 | 22276 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 138 | 205 | 71736 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 159 | 243 | 25872 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 139 | 205 | 71828 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 160 | 243 | 26492 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -83,7 +83,7 @@ is the module that answers to it.
 | `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
-### `render` (50 functions)
+### `render` (51 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -130,6 +130,7 @@ is the module that answers to it.
 | `0x9f97c` | `SoftSurf_dtor` | 24 | `src/pufo/render/pufo_render.h` |
 | `0x9fa7c` | `Render_BlitSoft_LoRes` | 20 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fa90` | `Render_BlitSoft_HiRes` | 20 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
+| `0xa3624` | `Blit_SetColorKey` | 20 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa479c` | `BlitState_Get` | 20 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9f96c` | `SoftSurf_ctor` | 16 | `src/pufo/render/pufo_render.h` |
 | `0x9f994` | `SoftSurf_GetWidth` | 8 | `src/pufo/render/pufo_render.h` |
@@ -149,7 +150,7 @@ is the module that answers to it.
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 
-### `util` (19 functions)
+### `util` (18 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -167,7 +168,6 @@ is the module that answers to it.
 | `0xa1130` | `PtrArray_Get` | 36 | `src/pufo/util/pufo_ptrarray.h` |
 | `0x3f040` | `DecDwordIfPos_AtPlus0xBD4` | 28 | `src/pufo/game/pufo_baseui.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x6b6b0` | `Set_byte_159E88_4` | 20 | `src/pufo/game/pufo_baseui.h` |
-| `0xa3624` | `Blit_SetColorKey` | 20 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa0f80` | `PtrArray_ctor` | 16 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1044` | `PtrArray_Add` | 16 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa1120` | `PtrArray_Clear` | 16 | `src/pufo/util/pufo_ptrarray.h` |
@@ -568,7 +568,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (138 functions)
+### `strat` (139 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -673,6 +673,7 @@ is the module that answers to it.
 | `0x84fc8` | `GameTime_Set5Min` | 100 | `src/pufo/game/pufo_geoscape.h` |
 | `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
+| `0x664f0` | `Craft_CountWeaponSlotsCarried` | 92 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x68198` | `Base_CountActiveResearch` | 92 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x84428` | `Smap_DismissSelected` | 92 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x661d8` | `Base_CountSoldiers` | 88 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -711,7 +712,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (159 functions)
+### `strat-ui` (160 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -724,6 +725,7 @@ is the module that answers to it.
 | `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x65290` | `SoldierScreen_Draw` | 716 | `src/pufo/game/pufo_baseui.h` |
 | `0x7a9b4` | `BasePlaneScreen_AdjustSelectedQty` | 644 | `src/pufo/game/pufo_plane.h` |
+| `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | `src/pufo/game/pufo_plane.h`, `src/pufo/game/pufo_unit.h` |
 | `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x7c9e8` | `BasePlaneScreen_Close` | 480 | `src/pufo/game/pufo_plane.h` |
@@ -1113,7 +1115,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 67 functions, 90720 bytes remaining
+### `strat` — 66 functions, 90628 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1174,7 +1176,6 @@ whose port work they belong to.
 | `0x69ffc` | `Ship_FindIndexById` | 96 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x664f0` | `Base_CountAmmoObjectsAtBase` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x845d8` | `Smap_ConfirmSelected` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x853e4` | `Smap_ConfirmSelectedAlt` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x65a6c` | `BaseFac_RaceCharToIndex` | 88 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1185,7 +1186,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 84 functions, 91136 bytes remaining
+### `strat-ui` — 83 functions, 90516 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1223,7 +1224,6 @@ whose port work they belong to.
 | `0x71298` | `PsiScreen_SelectListed` | 848 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x75878` | `BuySellScreen_UpdatePrices` | 784 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x75160` | `BuySellScreen_FillBuyPanel` | 772 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x9602c` | `Transfer_MoveOneItem` | 604 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x749a8` | `ResearchScreen_Init` | 592 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1318,7 +1318,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 167 |
 | `test_path` | PASS | 48 |
-| `test_plane` | PASS | 203 |
+| `test_plane` | PASS | 227 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 18 |
 | `test_rmp` | PASS | 62 |

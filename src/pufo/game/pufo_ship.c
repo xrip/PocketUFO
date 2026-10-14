@@ -714,6 +714,32 @@ i32 BasePlane_CalcWeaponStoresUsed(ObjectRecFull *const *apObjects, i32 nObjectC
     return nUsed;
 }
 
+/* Craft_CountWeaponSlotsCarried @ 0x664f0, renamed in the IDB from Base_CountAmmoObjectsAtBase.
+ * Sums apObjects[i]->aItemQty[nCraftIdx] over object index 31..35 only. Neither half of the old name
+ * was true: the field is aItemQty @ +0x3A (auPerBaseVal is @ +0x2A), which is the PER-CRAFT column,
+ * and objects 31..35 are the weapon slots, not the ammo records (those are 56/57/105/58). Both
+ * callers pass a craft index -- BasePlaneScreen_FillCrewPanel passes nSelectedCraftIdx, and
+ * OptionsScreen_Open passes the same register it hands Craft_CountSoldiersAboard.
+ *
+ * Deviation: the original bounds nothing and faults on an empty record. The port bounds the craft
+ * column to the 52 real entries and skips a NULL record. */
+i32 Craft_CountWeaponSlotsCarried(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nCraftIdx)
+{
+    i32 nTotal = 0;
+
+    if (apObjects == NULL || nCraftIdx < 0 || nCraftIdx >= 52) {
+        return 0;
+    }
+
+    for (i32 i = 0; i < nObjectCount; ++i) {
+        if (i > 30 && i < 36 && apObjects[i] != NULL) {
+            nTotal += (i32)apObjects[i]->aItemQty[nCraftIdx]; /* 0x66520 */
+        }
+    }
+
+    return nTotal;
+}
+
 /* StrategViewOf, the PtrArray -> StrategList search view, now lives in pufo_strateg.h so the
  * load driver can use it too. */
 

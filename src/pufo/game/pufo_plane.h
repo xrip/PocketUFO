@@ -319,4 +319,50 @@ typedef struct PlaneStoresEnv {
 i32 BasePlaneScreen_CommitStores(PlaneStoresEnv *pEnv);
 i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv);
 
+/* ------------------------------------------------- the crew list's click: assign or unassign
+ *
+ * Evidence: BasePlaneScreen_FillCrewPanel @ 0x7a188 (620 B). It is installed as the crew panel's
+ * pfnClick by BasePlaneScreen_BuildListPanels (0x7a3f4, not ported), and it toggles ONE soldier
+ * selected craft and unassigned.
+ *
+ * The row is the crew panel's nUnk3032, and the panel's aux column carries the SOLDIER index
+ * (anLineAux[row] -> apSoldiers[...]), filled by BuildListPanels. Two outcomes:
+ *
+ *   Soldier.bUnk183 == 255 (not aboard anything) -> try to assign. The gate is per craft type and it
+ *   charges FOUR crew per weapon slot the craft already carries, where the count comes from
+ *   Craft_CountWeaponSlotsCarried over object records 31..35:
+ *
+ *       type 0  soldiersAboard + 4 * weaponSlots + 1 <= 14
+ *       type 1  soldiersAboard + 1                 <= 12
+ *       type 2  soldiersAboard + 4 * weaponSlots + 1 <= 26
+ *       other   no gate at all
+ *
+ *   Refusing changes nothing. Accepting paints both panels' row (255,200,20)/(10,10,10), writes the
+ *   craft index into bUnk183, and puts Soldier_FormatDisplayName's string into the status column.
+ *
+ *   Soldier.bUnk183 != 255 -> unassign. Both rows are painted (240,240,240)/(20,20,20), the status
+ *   column gets text record 93 ("Персон. броня" - what the soldier becomes once unassigned), and -1
+ *   goes into bUnk183. There is no gate on this half.
+ *
+ * Deviation: the original copies the status string into the 50-byte line buffer with an unbounded
+ * loop and indexes apSoldiers without a bound; the port bounds both to the line buffer and the
+ * roster. The original's return value is register residue and nothing reads it. */
+#define PUFO_PLANE_CREW_UNASSIGNED_REC 93 /* 0x7A364: the status column when a soldier is let go */
+
+typedef struct PlaneCrewPanelEnv {
+    UiPanel *pCrewPanel;    /* dword_161EDC, the crew list; this function is its pfnClick */
+    UiPanel *pStatusPanel;  /* dword_161A3C, the right-hand column drawn beside it */
+    Ship *const *apCraft;
+    i32 nCraftIdx;          /* nSelectedCraftIdx @ 0x161AC4 */
+    Soldier *const *apSoldiers;
+    i32 nSoldierCount;
+    ObjectRecFull *const *apObjects;
+    i32 nObjectCount;       /* Map_nObjectCount @ 0x114A60 */
+    const u8 *pTextRecs;    /* aTextRecs @ 0xB38D0 */
+    char *pszNameBuf;       /* the original's shared scratch at 0x186B10 (szRadarMsg, 108 B) */
+    i32 cchNameBuf;
+} PlaneCrewPanelEnv;
+
+void BasePlaneScreen_FillCrewPanel(PlaneCrewPanelEnv *pEnv);
+
 #endif /* PUFO_PLANE_H */

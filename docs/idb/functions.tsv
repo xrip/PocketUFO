@@ -628,7 +628,7 @@ addr	name	size
 663c4	Ui_AnimExpandBlit_IfEnabled	88
 6641c	Base_CraftWeaponItemId	128
 6649c	Craft_CountSoldiersAboard	84
-664f0	Base_CountAmmoObjectsAtBase	92
+664f0	Craft_CountWeaponSlotsCarried	92
 6654c	Soldier_FormatDisplayName	384
 666cc	Ship_FormatDisplayName	424
 66874	Base_RemoveAllShips	116
@@ -1083,15 +1083,15 @@ a1754	LocalAlloc	12
 a1760	LocalSize	12
 a2000	SoftSurf_BlurPixels	116
 a306c	SoftSurf_BlitIndexed_Inner	860
-a33c8	SoftSurf_BlitIndexed_Mode12	604
-a3624	Store_dword_A3028	20
+a33c8	SoftSurf_BlitRawGlyph	604
+a3624	Blit_SetColorKey	20
 a3638	SoftSurf_BlitIndexedKeyed_Inner	812
 a3964	Blit_LoadSurface	72
 a39ac	Blit_SetTargetParams	104
 a3a14	Blit_CopyRows	420
 a3bb8	Blit_CopyRows_HiRes	512
 a3db8	SoftSurf_BlitCopyRaw	420
-a3f5c	Blit_SetSrcRect	56
+a3f5c	Blit_SetRectAndColor	56
 a3f94	SoftSurf_FillRect_Inner	576
 a41d4	SoftSurf_BlitGlyph_Inner	268
 a42e0	nullsub_10	4

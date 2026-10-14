@@ -948,6 +948,190 @@ static void TestAdjustSelectedQty(void)
 
     TestEqI32("a null env puts nothing back", BasePlaneScreen_AdjustSelectedQty(NULL), 0);
 }
+/* ------------------------------------------------- the crew list's click
+ *
+ * Evidence: BasePlaneScreen_FillCrewPanel @ 0x7a188 and Craft_CountWeaponSlotsCarried @ 0x664f0. */
+
+static UiPanel g_pCrewPanel, g_pCrewStatus;
+static u8 g_aCrewLineA[PUFO_PANEL_LINE_BYTES];
+static u8 g_aCrewLineB[PUFO_PANEL_LINE_BYTES];
+static u8 g_aCrewText[PUFO_TEXT_REC_STRIDE * 141];
+static char g_aCrewName[108];
+static Ship g_aCrewCraft[1];
+static Ship *g_apCrewCraft[1];
+static Soldier g_aCrewSol[30];
+static Soldier *g_apCrewSol[30];
+static ObjectRecFull g_aCrewObj[106];
+static ObjectRecFull *g_apCrewObjects[106];
+static PlaneCrewPanelEnv g_crewEnv;
+
+static void CrewPutRec(i32 nRec, const char *psz)
+{
+    char *p = (char *)(g_aCrewText + PUFO_TEXT_REC_STRIDE * nRec);
+    i32 i = 0;
+
+    while (psz[i] != 0) {
+        p[i] = psz[i];
+        ++i;
+    }
+    p[i] = 0;
+}
+
+static const char *CrewRec(i32 nRec)
+{
+    return (const char *)(g_aCrewText + PUFO_TEXT_REC_STRIDE * nRec);
+}
+
+static void CrewReset(i32 nCraftType, i32 nAboard, i32 nWeaponSlots)
+{
+    memset(&g_pCrewPanel, 0, sizeof(g_pCrewPanel));
+    memset(&g_pCrewStatus, 0, sizeof(g_pCrewStatus));
+    memset(g_aCrewLineA, 0, sizeof(g_aCrewLineA));
+    memset(g_aCrewLineB, 0, sizeof(g_aCrewLineB));
+    memset(g_aCrewCraft, 0, sizeof(g_aCrewCraft));
+    memset(g_aCrewSol, 0, sizeof(g_aCrewSol));
+    memset(g_aCrewObj, 0, sizeof(g_aCrewObj));
+    memset(g_aCrewName, 0, sizeof(g_aCrewName));
+
+    if (g_aCrewText[PUFO_TEXT_REC_STRIDE * 93] == 0) {
+        memset(g_aCrewText, 0, sizeof(g_aCrewText));
+        CrewPutRec(93, "PERSONNEL");
+        CrewPutRec(137, "CRAFT");
+    }
+
+    g_pCrewPanel.apLines[0] = g_aCrewLineA;
+    g_pCrewStatus.apLines[0] = g_aCrewLineB;
+    g_pCrewPanel.nUnk3032 = 0;
+    g_pCrewPanel.anLineAux[0] = 0; /* row 0 lists soldier 0 */
+
+    for (i32 i = 0; i < 106; ++i) {
+        g_apCrewObjects[i] = &g_aCrewObj[i];
+    }
+    for (i32 i = 0; i < 30; ++i) {
+        g_apCrewSol[i] = &g_aCrewSol[i];
+    }
+    g_apCrewCraft[0] = &g_aCrewCraft[0];
+
+    g_aCrewCraft[0].nSlotIdx = 0;
+    g_aCrewCraft[0].bCraftType = (i8)nCraftType;
+    g_aCrewCraft[0].bType = 3;
+
+    /* The soldiers already aboard (indices 1..nAboard, so the count is exactly nAboard), and the
+     * weapon slots the craft carries. Index 0 is the row under the click and starts unassigned. */
+    for (i32 i = 0; i < 30; ++i) {
+        g_aCrewSol[i].bUnk183 = (i >= 1 && i <= nAboard) ? 0 : PUFO_SOLDIER_CRAFT_ABOARD_OUT;
+    }
+    g_aCrewSol[0].bUnk183 = PUFO_SOLDIER_CRAFT_NONE;
+    for (i32 i = 31; i < 36; ++i) {
+        g_aCrewObj[i].aItemQty[0] = (nWeaponSlots > 0) ? 1 : 0;
+        nWeaponSlots--;
+    }
+
+    memset(&g_crewEnv, 0, sizeof(g_crewEnv));
+    g_crewEnv.pCrewPanel = &g_pCrewPanel;
+    g_crewEnv.pStatusPanel = &g_pCrewStatus;
+    g_crewEnv.apCraft = g_apCrewCraft;
+    g_crewEnv.nCraftIdx = 0;
+    g_crewEnv.apSoldiers = g_apCrewSol;
+    g_crewEnv.nSoldierCount = 30;
+    g_crewEnv.apObjects = g_apCrewObjects;
+    g_crewEnv.nObjectCount = 106;
+    g_crewEnv.pTextRecs = g_aCrewText;
+    g_crewEnv.pszNameBuf = g_aCrewName;
+    g_crewEnv.cchNameBuf = (i32)sizeof(g_aCrewName);
+}
+
+static void TestCrewPanelClick(void)
+{
+    u8 r, g, b;
+
+    printf("BasePlaneScreen_FillCrewPanel @ 0x7a188\n");
+
+    /* An unassigned soldier boards a type-0 craft: 0 aboard + 4*0 slots + 1 fits under 14. */
+    CrewReset(0, 0, 0);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("the soldier is assigned to the craft", g_aCrewSol[0].bUnk183, 0);
+    TestCheck("the crew row is painted (255,200,20)",
+              UiPanel_GetLineMeta(&g_pCrewPanel, 0, 1, &r, &g, &b) && r == 255 && g == 200 && b == 20);
+    TestCheck("  with the highlight triple (10,10,10)",
+              UiPanel_GetLineMeta(&g_pCrewPanel, 0, 2, &r, &g, &b) && r == 10 && g == 10 && b == 10);
+    TestCheck("the status panel gets the same colours",
+              UiPanel_GetLineMeta(&g_pCrewStatus, 0, 1, &r, &g, &b) && r == 255 && g == 200 && b == 20);
+    TestEqI32("the status column is the formatter's own string", strcmp((const char *)g_aCrewLineB, g_aCrewName), 0);
+    TestCheck("  and it is not empty", g_aCrewLineB[0] != 0);
+
+    /* The type-0 gate: 14 aboard is one too many. */
+    CrewReset(0, 14, 0);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("14 aboard plus this one is over 14, so the click does nothing", g_aCrewSol[0].bUnk183,
+              PUFO_SOLDIER_CRAFT_NONE);
+    TestCheck("  and the row is not repainted", g_pCrewPanel.aLineMeta[0] == 0);
+
+    CrewReset(0, 13, 0);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("13 aboard plus this one is exactly 14", g_aCrewSol[0].bUnk183, 0);
+
+    /* Each weapon slot the craft already carries costs four crew. */
+    CrewReset(0, 0, 4);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("four weapon slots cost 16 crew, so the soldier cannot board", g_aCrewSol[0].bUnk183,
+              PUFO_SOLDIER_CRAFT_NONE);
+
+    CrewReset(0, 0, 3);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("three slots cost 12, which still leaves room", g_aCrewSol[0].bUnk183, 0);
+
+    /* A type-1 craft has a different rule: 12 total, and weapon slots are not charged at all. */
+    CrewReset(1, 12, 4);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("type 1 counts only bodies: 12 aboard is over 12", g_aCrewSol[0].bUnk183,
+              PUFO_SOLDIER_CRAFT_NONE);
+
+    CrewReset(1, 11, 4);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("  and 11 aboard boards even with four weapon slots", g_aCrewSol[0].bUnk183, 0);
+
+    /* Type 2 goes to 26; types 3 and 4 have no gate at all. */
+    CrewReset(2, 25, 0);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("type 2 boards at 25 + 1 = 26", g_aCrewSol[0].bUnk183, 0);
+
+    CrewReset(3, 4, 4);
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("type 3 has no crew gate here", g_aCrewSol[0].bUnk183, 0);
+
+    /* Clicking an assigned soldier lets them go, with no gate on that half. */
+    CrewReset(0, 4, 4);
+    g_aCrewSol[0].bUnk183 = 0; /* this row is already aboard */
+    BasePlaneScreen_FillCrewPanel(&g_crewEnv);
+    TestEqI32("the gate is not consulted on the way out", g_aCrewSol[0].bUnk183, PUFO_SOLDIER_CRAFT_NONE);
+    TestCheck("the row is repainted (240,240,240)",
+              UiPanel_GetLineMeta(&g_pCrewPanel, 0, 1, &r, &g, &b) && r == 240 && g == 240 && b == 240);
+    TestCheck("  with the highlight triple (20,20,20)",
+              UiPanel_GetLineMeta(&g_pCrewPanel, 0, 2, &r, &g, &b) && r == 20 && g == 20 && b == 20);
+    TestEqI32("the status column reads the unassigned label",
+              strcmp((const char *)g_aCrewLineB, CrewRec(93)), 0);
+
+    BasePlaneScreen_FillCrewPanel(NULL);
+    TestCheck("a null crew env is tolerated", true);
+}
+
+static void TestWeaponSlotsCarried(void)
+{
+    printf("Craft_CountWeaponSlotsCarried @ 0x664f0\n");
+
+    CrewReset(0, 0, 0);
+    for (i32 i = 0; i < 106; ++i) {
+        g_aCrewObj[i].aItemQty[0] = (u16)i;
+    }
+    TestEqI32("only object indices 31..35 count", Craft_CountWeaponSlotsCarried(g_apCrewObjects, 106, 0),
+              31 + 32 + 33 + 34 + 35);
+    TestEqI32("the walk stops at the object count", Craft_CountWeaponSlotsCarried(g_apCrewObjects, 34, 0),
+              31 + 32 + 33);
+    TestEqI32("a craft column outside the 52 reads as nothing",
+              Craft_CountWeaponSlotsCarried(g_apCrewObjects, 106, 52), 0);
+    TestEqI32("a null object table counts nothing", Craft_CountWeaponSlotsCarried(NULL, 106, 0), 0);
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -962,6 +1146,8 @@ int main(void)
     TestPlaneClose();
     TestCommitStores();
     TestAdjustSelectedQty();
+    TestCrewPanelClick();
+    TestWeaponSlotsCarried();
 
     return TestSummary("test_plane");
 }

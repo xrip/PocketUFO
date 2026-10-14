@@ -24,6 +24,13 @@
 #include "pufo_common.h"
 
 #define PUFO_SOLDIER_SIZE_ILP32 1044
+/* Soldier.bUnk183 sentinels. Below 254 the byte is a craft index; the two top values are the ones
+ * every reader tests. 254 means "aboard a craft that is out" and 255 means "not aboard anything" --
+ * Ship_RemoveWithCargo leaves both alone, and BasePlaneScreen_FillCrewPanel @ 0x7a188 toggles a
+ * soldier between a craft index and 255. */
+#define PUFO_SOLDIER_CRAFT_ABOARD_OUT 254
+#define PUFO_SOLDIER_CRAFT_NONE       255
+
 #define PUFO_UNIT_STAT_COUNT    10
 
 /* Unit type table, byte_A7B80 @ 0xa7b80. Stride 4, 24 rows (96 bytes; the byte
@@ -153,7 +160,7 @@ typedef struct Soldier {
     u8         gap_161;        /* 0x0a1 */
     u16        auStat[PUFO_UNIT_STAT_COUNT]; /* 0x0a2 */
     u8         nKind;          /* 0x0b6 */
-    u8         bUnk183;        /* 0x0b7 */
+    u8         bUnk183;        /* 0x0b7, the craft this soldier is assigned to; see the two sentinels below */
     u16        uMissions;      /* 0x0b8 */
     char       szName[40];     /* 0x0ba */
     u8         bRankType;      /* 0x0e2 */
