@@ -29,6 +29,7 @@
 #include "util/pufo_ptrarray.h" /* PtrArray */
 #include "render/pufo_render.h" /* GfxColorEnv, SoftSurf_BlitRectProxy */
 #include "ui/pufo_panel.h"   /* UiPanel: nUnk3032 @ 0xBD8, anLineAux @ 0x13B4 */
+#include "ui/pufo_control.h" /* UiControl + UiControlDesc, the list nav pair */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -364,5 +365,69 @@ typedef struct PlaneCrewPanelEnv {
 } PlaneCrewPanelEnv;
 
 void BasePlaneScreen_FillCrewPanel(PlaneCrewPanelEnv *pEnv);
+
+/* ------------------------------------------------- building the crew list's two panels
+ *
+ * Evidence: BasePlaneScreen_BuildListPanels @ 0x7a3f4 (1472 B).
+ *
+ * One flag decides the whole function: unk_161F24. Set, the function is a teardown -- free the two
+ * controls' pads and the controls themselves, then the two panels' line buffers and the panels.
+ * Clear, it builds them and fills the rows, and sets the flag.
+ *
+ * Building: two UiControls from the descriptor pair at 0xABC48 (g_aPlaneListNav: 205,20 "up"/"sup" and
+ * 205,40 "down"/"sdown"), installed with the BuySellScreen_ListPanelPrev/Next pair @ 0x79a20 / 0x79a48,
+ * which page the SAME two panels. Then two UiPanels of 0x1BB4 bytes each with nLineCount =
+ * unk_161AB4 + unk_161AB8: the crew list at x 10 (view width 230) and its status column at x 190 (view
+ * width 30), both y 70, nStyle 14, nFont 16, colours B4/B4/B4 then F0,F0,F0/14,14,14 and 32,32,250. The
+ * status panel additionally clears bFlag7073 and sets nUnk7076 to 1; the crew panel gets
+ * pfnClick = BasePlaneScreen_FillCrewPanel.
+ *
+ * Filling walks every soldier and keeps the ones whose Soldier.nKind equals the selected base AND whose
+ * craft byte is either 255 (unassigned) or the selected craft. The crew column gets Soldier.szName, the
+ * status column gets Soldier_FormatDisplayName's craft label, and the panel's aux column gets the
+ * soldier index -- which is what BasePlaneScreen_FillCrewPanel later clicks. A row already aboard the
+ * selected craft is painted (255,200,20)/(10,10,10); a row with the 254 sentinel (aboard a craft that is
+ * out) is painted (255,100,100)/(10,10,10).
+ *
+ * The status column formats soldier `scroll + i` (the panel's nUnk3028 is added at 0x7A7B8) while the
+ * crew column shows soldier `i`'s name and the aux column records `i`. That reads like a scrolled-list
+ * bug and is not one: the panel is allocated earlier in this same call, so its scroll cursor is always
+ * zero when the fill runs, and the addition is dead code as written. The port keeps the addition because
+ * that is the code, and bounds it.
+ *
+ * The 254 sentinel only paints a row when the SELECTED CRAFT index is itself 254: the row filter admits
+ * 255 or the selected craft index, so the (255,100,100) arm is reachable only through that pairing.
+ *
+ * Deviation: the original dereferences a soldier roster slot and a panel line buffer with no test and
+ * indexes apSoldiers past its end when the scroll runs off the roster; the port skips a NULL slot,
+ * bounds the scroll index, and frees a panel whose line buffers could not be allocated (the original
+ * would keep a panel with unallocated lines). */
+#define PUFO_PLANE_LIST_NAV 2
+
+typedef struct PlaneListPanels {
+    UiControl *apNav[PUFO_PLANE_LIST_NAV]; /* 0x161AA4, 0x161AA8 */
+    UiPanel   *pCrewPanel;                 /* 0x161EDC */
+    UiPanel   *pCrewStatusPanel;           /* 0x161A3C */
+} PlaneListPanels;
+
+typedef struct PlaneListPanelsEnv {
+    bool  *pbBuilt;             /* unk_161F24 */
+    i32    nLineCount;          /* unk_161AB4 + unk_161AB8 */
+    Ship *const *apCraft;
+    Soldier *const *apSoldiers;
+    i32    nSoldierCount;
+    i8     nBaseIdx;            /* nSelectedBaseIdx @ 0x159D81 */
+    i32    nCraftIdx;           /* nSelectedCraftIdx @ 0x161AC4 */
+    const u8 *pTextRecs;        /* aTextRecs @ 0xB38D0 */
+    char  *pszNameBuf;          /* the shared scratch at 0x186B10 (szRadarMsg, 108 B) */
+    i32    cchNameBuf;
+    void (*apfnNavClick[PUFO_PLANE_LIST_NAV])(void); /* BuySellScreen_ListPanelPrev / ListPanelNext */
+    void (*pfnCrewClick)(void);                      /* BasePlaneScreen_FillCrewPanel */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser);
+    void *pPadUser;
+} PlaneListPanelsEnv;
+
+void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanelsEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */

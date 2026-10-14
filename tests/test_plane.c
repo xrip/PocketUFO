@@ -1132,6 +1132,184 @@ static void TestWeaponSlotsCarried(void)
               Craft_CountWeaponSlotsCarried(g_apCrewObjects, 106, 52), 0);
     TestEqI32("a null object table counts nothing", Craft_CountWeaponSlotsCarried(NULL, 106, 0), 0);
 }
+/* ------------------------------------------------- building the crew list's two panels
+ *
+ * Evidence: BasePlaneScreen_BuildListPanels @ 0x7a3f4. */
+
+static PlaneListPanels g_listOut;
+static PlaneListPanelsEnv g_listEnv;
+static bool g_bListBuilt;
+static i32 g_nNavThunkCalls;
+static i32 g_nCrewThunkCalls;
+
+static void ListNavThunk(void)
+{
+    ++g_nNavThunkCalls;
+}
+
+static void ListCrewThunk(void)
+{
+    ++g_nCrewThunkCalls;
+}
+
+static void ListPutName(Soldier *pSol, const char *psz)
+{
+    i32 i = 0;
+
+    while (psz[i] != 0) {
+        pSol->szName[i] = psz[i];
+        ++i;
+    }
+    pSol->szName[i] = 0;
+}
+
+static void ListReset(i32 nCraftIdx)
+{
+    memset(&g_listOut, 0, sizeof(g_listOut));
+    memset(g_aCrewCraft, 0, sizeof(g_aCrewCraft));
+    memset(g_aCrewSol, 0, sizeof(g_aCrewSol));
+    memset(g_aCrewObj, 0, sizeof(g_aCrewObj));
+    memset(g_aCrewName, 0, sizeof(g_aCrewName));
+
+    if (g_aCrewText[PUFO_TEXT_REC_STRIDE * 93] == 0) {
+        memset(g_aCrewText, 0, sizeof(g_aCrewText));
+        CrewPutRec(93, "PERSONNEL");
+        CrewPutRec(137, "CRAFT");
+    }
+
+    for (i32 i = 0; i < 106; ++i) {
+        g_apCrewObjects[i] = &g_aCrewObj[i];
+    }
+    for (i32 i = 0; i < 30; ++i) {
+        g_apCrewSol[i] = &g_aCrewSol[i];
+    }
+    g_apCrewCraft[0] = &g_aCrewCraft[0];
+
+    g_aCrewCraft[0].nSlotIdx = 0;
+    g_aCrewCraft[0].bCraftType = 0;
+    g_aCrewCraft[0].bType = 3;
+
+    /* Four soldiers at the selected base, one elsewhere. */
+    g_aCrewSol[0].nKind = 0;
+    g_aCrewSol[0].bUnk183 = PUFO_SOLDIER_CRAFT_NONE;
+    ListPutName(&g_aCrewSol[0], "ALPHA");
+    g_aCrewSol[1].nKind = 0;
+    g_aCrewSol[1].bUnk183 = 0; /* aboard the selected craft */
+    ListPutName(&g_aCrewSol[1], "BRAVO");
+    g_aCrewSol[2].nKind = 1; /* a different base, so it is not listed */
+    g_aCrewSol[2].bUnk183 = PUFO_SOLDIER_CRAFT_NONE;
+    ListPutName(&g_aCrewSol[2], "CHARLIE");
+    g_aCrewSol[3].nKind = 0;
+    g_aCrewSol[3].bUnk183 = PUFO_SOLDIER_CRAFT_ABOARD_OUT;
+    ListPutName(&g_aCrewSol[3], "DELTA");
+
+    g_bListBuilt = false;
+    g_nNavThunkCalls = 0;
+    g_nCrewThunkCalls = 0;
+
+    memset(&g_listEnv, 0, sizeof(g_listEnv));
+    g_listEnv.pbBuilt = &g_bListBuilt;
+    g_listEnv.nLineCount = 20;
+    g_listEnv.apCraft = g_apCrewCraft;
+    g_listEnv.apSoldiers = g_apCrewSol;
+    g_listEnv.nSoldierCount = 30;
+    g_listEnv.nBaseIdx = 0;
+    g_listEnv.nCraftIdx = nCraftIdx;
+    g_listEnv.pTextRecs = g_aCrewText;
+    g_listEnv.pszNameBuf = g_aCrewName;
+    g_listEnv.cchNameBuf = (i32)sizeof(g_aCrewName);
+    g_listEnv.apfnNavClick[0] = ListNavThunk;
+    g_listEnv.apfnNavClick[1] = ListNavThunk;
+    g_listEnv.pfnCrewClick = ListCrewThunk;
+}
+
+static void TestBuildListPanels(void)
+{
+    u8 r, g, b;
+
+    printf("BasePlaneScreen_BuildListPanels @ 0x7a3f4\n");
+
+    ListReset(0);
+    BasePlaneScreen_BuildListPanels(&g_listOut, &g_listEnv);
+
+    TestEqI32("the built flag is set (0x7A4BC)", g_bListBuilt, 1);
+    TestCheck("the two nav controls exist", g_listOut.apNav[0] != NULL && g_listOut.apNav[1] != NULL);
+    TestEqI32("the up control sits at the descriptor's 205,20", g_listOut.apNav[0]->x, 205);
+    TestEqI32("  and y 20", g_listOut.apNav[0]->y, 20);
+    TestEqI32("the down control takes the second descriptor's y 40", g_listOut.apNav[1]->y, 40);
+    TestEqI32("  and the same x", g_listOut.apNav[1]->x, 205);
+    TestCheck("both nav handlers are installed (0x7A51C / 0x7A528)",
+              g_listOut.apNav[0]->pfnClick == ListNavThunk && g_listOut.apNav[1]->pfnClick == ListNavThunk);
+
+    TestCheck("the crew panel exists", g_listOut.pCrewPanel != NULL);
+    TestCheck("and the status panel exists", g_listOut.pCrewStatusPanel != NULL);
+    TestEqI32("crew list at x 10", g_listOut.pCrewPanel->nPosX, 10);
+    TestEqI32("  with a 230 wide view", g_listOut.pCrewPanel->nViewW, 230);
+    TestEqI32("the status column at x 190", g_listOut.pCrewStatusPanel->nPosX, 190);
+    TestEqI32("  with a 30 wide view", g_listOut.pCrewStatusPanel->nViewW, 30);
+    TestEqI32("both are 14 rows of font 16", g_listOut.pCrewPanel->nStyle, 14);
+    TestEqI32("  and the status panel too", g_listOut.pCrewStatusPanel->nStyle, 14);
+    TestEqI32("the status panel clears the ctor's bFlag7073 (0x7A664)",
+              g_listOut.pCrewStatusPanel->bFlag7073, 0);
+    TestEqI32("  and sets nUnk7076 (0x7A670)", g_listOut.pCrewStatusPanel->nUnk7076, 1);
+    TestEqI32("the crew panel keeps it", g_listOut.pCrewPanel->bFlag7073, 1);
+    TestEqI32("the panel colour is B4/B4/B4", g_listOut.pCrewPanel->gap_0[0], 0xB4);
+    TestEqI32("  and the row colours F0,F0,F0 over 14,14,14", g_listOut.pCrewPanel->gap_0[6], 0xF0);
+    TestEqI32("  with the third triple at 14", g_listOut.pCrewPanel->gap_0[9], 0x14);
+    TestEqI32("bUnk7088 is 0x96", g_listOut.pCrewPanel->bUnk7088, 0x96);
+    TestCheck("the crew panel's click is FillCrewPanel (0x7A574)",
+              g_listOut.pCrewPanel->pfnClick == ListCrewThunk);
+
+    /* Only the two soldiers at this base whose craft byte is 255 or the selected craft are listed. */
+    TestEqI32("row 0 is the unassigned soldier", g_listOut.pCrewPanel->anLineAux[0], 0);
+    TestEqI32("row 1 is the soldier aboard the selected craft", g_listOut.pCrewPanel->anLineAux[1], 1);
+    TestEqI32("  and the aux column is what FillCrewPanel clicks",
+              (i32)strcmp((const char *)g_listOut.pCrewPanel->apLines[1], "BRAVO"), 0);
+    TestEqI32("the soldier at another base is not listed",
+              (i32)strcmp((const char *)g_listOut.pCrewPanel->apLines[2], ""), 0);
+    TestEqI32("the 254 soldier is not listed either",
+              (i32)strcmp((const char *)g_listOut.pCrewPanel->apLines[3], ""), 0);
+
+    TestCheck("an unassigned row keeps the ctor's zero meta",
+              UiPanel_GetLineMeta(g_listOut.pCrewPanel, 0, 1, &r, &g, &b) && r == 0 && g == 0 && b == 0);
+    TestEqI32("its status column reads the unassigned label",
+              (i32)strcmp((const char *)g_listOut.pCrewStatusPanel->apLines[0], CrewRec(93)), 0);
+    TestCheck("the aboard row is painted (255,200,20) (0x7A87C)",
+              UiPanel_GetLineMeta(g_listOut.pCrewPanel, 1, 1, &r, &g, &b) && r == 255 && g == 200 && b == 20);
+    TestCheck("  with the highlight triple (10,10,10)",
+              UiPanel_GetLineMeta(g_listOut.pCrewPanel, 1, 2, &r, &g, &b) && r == 10 && g == 10 && b == 10);
+    TestCheck("and the status panel gets the same",
+              UiPanel_GetLineMeta(g_listOut.pCrewStatusPanel, 1, 1, &r, &g, &b) && r == 255 && g == 200 && b == 20);
+    TestCheck("the status column names the craft",
+              (i32)strcmp((const char *)g_listOut.pCrewStatusPanel->apLines[1], g_aCrewName) == 0);
+    TestCheck("  which is the type-0 label plus the ship number",
+              (i32)strcmp((const char *)g_listOut.pCrewStatusPanel->apLines[1], "CRAFT3") == 0);
+
+    /* Teardown: the same call with the flag set frees everything and clears the flag. */
+    BasePlaneScreen_BuildListPanels(&g_listOut, &g_listEnv);
+    TestEqI32("the built flag is cleared (0x7A400)", g_bListBuilt, 0);
+    TestCheck("every object is released and nulled",
+              g_listOut.apNav[0] == NULL && g_listOut.apNav[1] == NULL &&
+              g_listOut.pCrewPanel == NULL && g_listOut.pCrewStatusPanel == NULL);
+
+    /* The 254 arm is only reachable when the selected craft index IS 254. */
+    ListReset(PUFO_SOLDIER_CRAFT_ABOARD_OUT);
+    BasePlaneScreen_BuildListPanels(&g_listOut, &g_listEnv);
+    TestEqI32("with craft index 254 the 254 soldier is listed", g_listOut.pCrewPanel->anLineAux[1], 3);
+    TestCheck("  and painted (255,100,100) (0x7A8E0)",
+              UiPanel_GetLineMeta(g_listOut.pCrewPanel, 1, 1, &r, &g, &b) && r == 255 && g == 100 && b == 100);
+    TestEqI32("  while the unassigned soldier is still listed first",
+              (i32)strcmp((const char *)g_listOut.pCrewPanel->apLines[0], "ALPHA"), 0);
+    TestCheck("  and keeps its zero meta",
+              UiPanel_GetLineMeta(g_listOut.pCrewPanel, 0, 1, &r, &g, &b) && r == 0 && g == 0 && b == 0);
+    TestEqI32("  and only two rows are listed",
+              (i32)strcmp((const char *)g_listOut.pCrewPanel->apLines[2], ""), 0);
+
+    BasePlaneScreen_BuildListPanels(&g_listOut, &g_listEnv); /* free what the last build allocated */
+    BasePlaneScreen_BuildListPanels(NULL, &g_listEnv);
+    BasePlaneScreen_BuildListPanels(&g_listOut, NULL);
+    TestCheck("a null out or env is tolerated", true);
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1148,6 +1326,7 @@ int main(void)
     TestAdjustSelectedQty();
     TestCrewPanelClick();
     TestWeaponSlotsCarried();
+    TestBuildListPanels();
 
     return TestSummary("test_plane");
 }

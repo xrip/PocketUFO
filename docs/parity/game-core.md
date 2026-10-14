@@ -9704,3 +9704,41 @@ briefly flagged those three as unexplained. The dump is now synced and the inven
 form credits it as one (1472 bytes of false coverage).
 
 Covered by `TestCrewPanelClick` and `TestWeaponSlotsCarried`, 24 checks.
+
+### Building the crew list's two panels (done)
+
+`src/pufo/game/pufo_plane.{h,c}`, 43 new checks in `tests/test_plane.c`. `BasePlaneScreen_BuildListPanels
+@ 0x7a3f4` (1472 B).
+
+One byte decides the whole function: `bPlaneListPanelsBuilt @ 0x161F24`. Set, it is a teardown -- free the
+two nav controls' pads and the controls (`pPlaneNavUpCtl @ 0x161AA4`, `pPlaneNavDownCtl @ 0x161AA8`), then
+`UiPanel_FreeLines` plus delete on `pPlaneCrewPanel` and `pPlaneCrewStatusPanel`, and clear the flag.
+Clear, it builds them, fills the rows, and sets the flag.
+
+The build half is a fixed shape: two `UiControl`s from the descriptor pair at `0xABC48` (205,20 "up"/"sup"
+and 205,40 "down"/"sdown", now `g_aPlaneListNav`, printed by `tools/gen_geoiinit_tables.py`) carrying
+`BuySellScreen_ListPanelPrev` / `ListPanelNext` -- the same pair the buy/sell screen uses, and they page
+**both** panels. Then two `UiPanel`s of 0x1BB4 bytes with `nLineCount = unk_161AB4 + unk_161AB8`: the crew
+list at x 10 with a 230-wide view, the status column at x 190 with a 30-wide view, both y 70, `nStyle` 14,
+`nFont` 16, colours B4/B4/B4 then F0,F0,F0 over 14,14,14 and 32,32,250, `bUnk7088` 0x96. The status panel
+additionally clears `bFlag7073` (which `UiPanel_ctor` had set to 1) and sets `nUnk7076` to 1. The crew
+panel gets `pfnClick = BasePlaneScreen_FillCrewPanel`.
+
+The fill keeps a soldier when `Soldier.nKind` equals the selected base **and** the craft byte is 255 or the
+selected craft index. Crew column = `Soldier.szName`; status column = `Soldier_FormatDisplayName`'s craft
+label; and `anLineAux[row]` records the soldier index, which is exactly what `BasePlaneScreen_FillCrewPanel`
+later clicks. A row already aboard the selected craft is painted (255,200,20)/(10,10,10); a row whose craft
+byte is the 254 sentinel is painted (255,100,100)/(10,10,10) -- and that arm is reachable **only** when the
+selected craft index is itself 254, because the row filter admits 255 or the selected index and nothing
+else.
+
+One thing that reads like a bug and is not: the status column formats `apSoldiers[nUnk3028 + i]` (the panel's
+scroll cursor, added at 0x7A7B8) while the crew column shows soldier `i`'s own name. That would make the two
+columns disagree on a scrolled list -- except the panel is allocated earlier in this same call, so its scroll
+cursor is always zero when the fill runs. The addition is dead code as written; the port keeps it rather than
+silently simplifying it away.
+
+IDB: `0x161AA4` / `0x161AA8` typed `UiControl *`, `0x161F24` a byte, and the full build/teardown description
+on 0x7a3f4.
+
+Covered by `TestBuildListPanels`, 43 checks.

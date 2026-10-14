@@ -737,3 +737,161 @@ void BasePlaneScreen_FillCrewPanel(PlaneCrewPanelEnv *pEnv)
                   (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_PLANE_CREW_UNASSIGNED_REC));
     pSol->bUnk183 = PUFO_SOLDIER_CRAFT_NONE; /* 0x7A388: the original stores -1 into the byte */
 }
+
+/* ------------------------------------------------- building the crew list's two panels */
+
+/* g_aPlaneListNav @ 0x000ABC48: 2 UiControlDesc records. BasePlaneScreen_BuildListPanels @ 0x7a3f4,
+ * the crew list prev/next pair. Printed by tools/gen_geoiinit_tables.py. */
+static const UiControlDesc g_aPlaneListNav[PUFO_PLANE_LIST_NAV] = {
+    { 205, 20, "up", "sup", "", 0 },
+    { 205, 40, "down", "sdown", "", 0 }
+};
+
+static UiPanel *PlanePanelNew(i32 nLineCount)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel));
+
+    if (pPanel == NULL) {
+        return NULL; /* 0x7A4EC: operator new may return null and the original stores it anyway */
+    }
+    if (!UiPanel_ctor(pPanel, nLineCount)) {
+        free(pPanel); /* deviation: the original keeps a panel whose lines failed to allocate */
+        return NULL;
+    }
+    return pPanel;
+}
+
+static void PlanePanelFree(UiPanel *pPanel)
+{
+    if (pPanel == NULL) {
+        return;
+    }
+    UiPanel_FreeLines(pPanel); /* 0x7A468 / 0x7A4B0 */
+    free(pPanel);
+}
+
+static void PlaneListStyle(UiPanel *pPanel)
+{
+    pPanel->nStyle = 14;   /* 0x7A554 / 0x7A62C: fourteen visible rows */
+    pPanel->nFont = 16;
+    pPanel->nPosY = 70;
+    pPanel->nUnk7052 = 5;
+    pPanel->nUnk7056 = 70;
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
+    pPanel->bUnk7088 = 0x96;
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+    UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);
+}
+
+void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanelsEnv *pEnv)
+{
+    if (pOut == NULL || pEnv == NULL || pEnv->pbBuilt == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbBuilt) {
+        *pEnv->pbBuilt = false; /* 0x7A400 */
+
+        for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+            if (pOut->apNav[i] != NULL) {
+                UiControl_FreePads(pOut->apNav[i]); /* 0x7A418 */
+                free(pOut->apNav[i]);
+                pOut->apNav[i] = NULL;
+            }
+        }
+        PlanePanelFree(pOut->pCrewPanel);
+        PlanePanelFree(pOut->pCrewStatusPanel);
+        pOut->pCrewPanel = NULL;
+        pOut->pCrewStatusPanel = NULL;
+        return;
+    }
+
+    *pEnv->pbBuilt = true; /* 0x7A4BC */
+
+    for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+        pOut->apNav[i] = (UiControl *)malloc(sizeof(UiControl));
+        if (pOut->apNav[i] != NULL) {
+            UiControl_ctor(pOut->apNav[i]);
+        }
+    }
+    for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+        if (pOut->apNav[i] != NULL) {
+            pOut->apNav[i]->pfnClick = pEnv->apfnNavClick[i]; /* 0x7A51C / 0x7A528 */
+        }
+    }
+    for (i32 i = 0; i < PUFO_PLANE_LIST_NAV; ++i) {
+        UiControl_Setup(pOut->apNav[i], 0, 0, &g_aPlaneListNav[i], pEnv->pfnLoadPads, pEnv->pPadUser);
+    }
+
+    pOut->pCrewPanel = PlanePanelNew(pEnv->nLineCount);
+
+    if (pOut->pCrewPanel != NULL) {
+        PlaneListStyle(pOut->pCrewPanel);
+        pOut->pCrewPanel->pfnClick = pEnv->pfnCrewClick; /* 0x7A574 */
+        pOut->pCrewPanel->nPosX = 10;
+        pOut->pCrewPanel->nViewW = 230;
+    }
+
+    pOut->pCrewStatusPanel = PlanePanelNew(pEnv->nLineCount);
+
+    if (pOut->pCrewStatusPanel != NULL) {
+        PlaneListStyle(pOut->pCrewStatusPanel);
+        pOut->pCrewStatusPanel->nPosX = 190;
+        pOut->pCrewStatusPanel->nViewW = 30;
+        pOut->pCrewStatusPanel->bFlag7073 = 0; /* 0x7A664: UiPanel_ctor had set it to 1 */
+        pOut->pCrewStatusPanel->nUnk7076 = 1;  /* 0x7A670 */
+    }
+
+    if (pOut->pCrewPanel == NULL || pOut->pCrewStatusPanel == NULL) {
+        return; /* deviation: the original walks on with a null panel */
+    }
+
+    const i32 nScroll = pOut->pCrewPanel->nUnk3028;
+    i32 nRow = 0;
+
+    for (i32 i = 0; i < pEnv->nSoldierCount; ++i) {
+        Soldier *pSol = (pEnv->apSoldiers != NULL) ? pEnv->apSoldiers[i] : NULL;
+
+        if (pSol == NULL) {
+            continue; /* deviation: the original faults */
+        }
+        if ((i32)pSol->nKind != (i32)pEnv->nBaseIdx) {
+            continue; /* 0x7A75C: LDRB against a sign-extended base index, so a negative base matches nothing */
+        }
+
+        const i32 nCraft = (i32)pSol->bUnk183;
+
+        if (nCraft != PUFO_SOLDIER_CRAFT_NONE && nCraft != pEnv->nCraftIdx) {
+            continue; /* 0x7A770 / 0x7A784 */
+        }
+
+        PanelLineCopy(pOut->pCrewPanel, nRow, pSol->szName); /* 0x7A794 */
+
+        /* 0x7A7B8: the status column adds the panel's scroll cursor to the walk index. The panel was
+         * allocated earlier in this same call, so the cursor is always zero here and the addition is
+         * dead code as written; the port keeps it rather than silently simplifying it away. */
+        const i32 nNamed = i + nScroll;
+        Soldier *pNamed = (pEnv->apSoldiers != NULL && nNamed >= 0 && nNamed < pEnv->nSoldierCount)
+                              ? pEnv->apSoldiers[nNamed]
+                              : NULL;
+        char *pszName = (pNamed != NULL && pEnv->pszNameBuf != NULL)
+                            ? Soldier_FormatDisplayName(pNamed, pEnv->apCraft, pEnv->pTextRecs,
+                                                        pEnv->pszNameBuf, (size_t)pEnv->cchNameBuf)
+                            : (char *)"";
+        PanelLineCopy(pOut->pCrewStatusPanel, nRow, pszName); /* 0x7A7FC */
+
+        if (nCraft == pEnv->nCraftIdx) {
+            UiPanel_SetLineMeta(pOut->pCrewPanel, nRow, 255, 200, 20, 10, 10, 10);   /* 0x7A87C */
+            UiPanel_SetLineMeta(pOut->pCrewStatusPanel, nRow, 255, 200, 20, 10, 10, 10);
+        }
+        if (nCraft == PUFO_SOLDIER_CRAFT_ABOARD_OUT) {
+            UiPanel_SetLineMeta(pOut->pCrewPanel, nRow, 255, 100, 100, 10, 10, 10);  /* 0x7A8E0 */
+            UiPanel_SetLineMeta(pOut->pCrewStatusPanel, nRow, 255, 100, 100, 10, 10, 10);
+        }
+
+        if (nRow < PUFO_PANEL_LINES) {
+            pOut->pCrewPanel->anLineAux[nRow] = i; /* 0x7A934: what FillCrewPanel will click */
+        }
+        ++nRow;
+    }
+}

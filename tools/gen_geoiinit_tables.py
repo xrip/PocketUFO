@@ -29,6 +29,7 @@ DESCS = [
     ("g_aBaseFacPanelDesc", 0xAB220, 2, "BaseFacScreen_Init @ 0x5a198, the build-dialog up/down pair"),
     ("g_aOptionsListDesc",  0xAB750,  7, "OptionsScreen_Init @ 0x6be74, the seven option list rows (uniform)"),
     ("g_aOptionsVolDesc",   0xAB830, 12, "OptionsScreen_Init @ 0x6be74, the twelve volume radio buttons (uniform)"),
+    ("g_aPlaneListNav",     0xABC48,  2, "BasePlaneScreen_BuildListPanels @ 0x7a3f4, the crew list prev/next pair"),
 ]
 
 
