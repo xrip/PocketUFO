@@ -3999,6 +3999,385 @@ static void TestSetWaypoint(void)
     CheckEqI32(clock.bPaused, 0, "a null line list stops the whole handler, pause included");
 #undef WP_BEGIN
 }
+
+/* --- ManufScreen_ClearProductSlot @ 0x6f8cc, ConfirmAndClose @ 0x6e98c, IncEngineers @ 0x6e13c --- */
+
+static u32 g_aProdA[1600];
+static i32 g_aProdB[1600];
+static u16 g_aProdC[1600];
+static u16 g_aManufCol[1600];
+static u8 g_aGridBytes[8];
+static BaseRec g_aBases[3];
+static BaseRec *g_apBases[3];
+static UiPanel g_ClearPanel;
+static i32 g_nClearRow;
+static i8 g_nClearBase;
+static i32 g_nCloseCalls2;
+
+static void Close2Thunk(void *pUser)
+{
+    (void)pUser;
+    ++g_nCloseCalls2;
+}
+
+static void TestClearProductSlot(void)
+{
+    ManufClearEnv env;
+    GeoscapeCloseHooks hooks;
+    i32 i;
+
+    printf("ManufScreen_ClearProductSlot @ 0x6f8cc\n");
+
+#define CLEAR_RESET()                                                        \
+    memset(g_aProdA, 0, sizeof(g_aProdA));                                   \
+    memset(g_aProdB, 0, sizeof(g_aProdB));                                   \
+    memset(g_aProdC, 0, sizeof(g_aProdC));                                   \
+    memset(g_aManufCol, 0, sizeof(g_aManufCol));                             \
+    memset(g_aGridBytes, 0, sizeof(g_aGridBytes));                           \
+    memset(g_aBases, 0, sizeof(g_aBases));                                   \
+    memset(&g_ClearPanel, 0, sizeof(g_ClearPanel));                          \
+    for (i = 0; i < 3; ++i) { g_apBases[i] = &g_aBases[i]; }                \
+    g_nClearRow = 7;                                                         \
+    g_nClearBase = 1;                                                        \
+    g_nCloseCalls2 = 0;                                                      \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pProductPanel = &g_ClearPanel; env.pnProductRow = &g_nClearRow;      \
+    env.apProductA = g_aProdA; env.apProductB = g_aProdB;                    \
+    env.apProductC = g_aProdC; env.apManufCols = g_aManufCol;                \
+    env.abGridBytes = g_aGridBytes;                                          \
+    env.apBases = g_apBases; env.nBaseCount = 3;                             \
+    env.pnSelectedBaseIdx = &g_nClearBase;                                   \
+    memset(&hooks, 0, sizeof(hooks));                                        \
+    hooks.pfnCloseUi = Close2Thunk;
+
+    /* 1. one index of all four columns goes to zero, its neighbours do not move. */
+    CLEAR_RESET();
+    for (i = 238; i <= 242; ++i) {
+        g_aProdA[i] = 11u; g_aProdB[i] = 22; g_aProdC[i] = 33; g_aManufCol[i] = 44;
+    }
+    ManufScreen_ClearProductSlot(&env, 1, 40); /* idx = 200*1 + 40 = 240 */
+    CheckEqI32((i32)g_aProdA[240], 0, "the u32 column at 0x159E9C is cleared (0x6F918)");
+    CheckEqI32(g_aProdB[240], 0, "  the u32 column at 0x15B79C is cleared (0x6F8FC)");
+    CheckEqI32((i32)g_aProdC[240], 0, "  the u16 column at 0x15D09C is cleared (0x6F92C)");
+    CheckEqI32((i32)g_aManufCol[240], 0, "  and auManufCol at 0x15E19C (0x6F910)");
+    CheckEqI32(g_aProdB[239], 22, "the entry before it is untouched");
+    CheckEqI32(g_aProdB[241], 22, "  and the entry after");
+
+    /* 2. the product argument is masked to a byte (AND R3,R2,#0xFF at 0x6F8D0). */
+    CLEAR_RESET();
+    g_aProdB[240] = 5;
+    ManufScreen_ClearProductSlot(&env, 1, 296); /* 296 & 0xFF == 40 */
+    CheckEqI32(g_aProdB[240], 0, "product 296 lands on the same index as 40");
+
+    /* 3. deviation: an index outside the 1600-entry columns is refused. The original would write
+     * 200*(-1)+40 = -160 and 200*8+40 = 1640 straight through the arrays. */
+    CLEAR_RESET();
+    g_aProdB[39] = 5; /* what idx -160+200 would land on, if the port allowed it */
+    ManufScreen_ClearProductSlot(&env, -1, 40);
+    CheckEqI32(g_aProdB[39], 5, "a negative base index clears nothing");
+    CLEAR_RESET();
+    g_aProdB[1599] = 5;
+    ManufScreen_ClearProductSlot(&env, 8, 40);
+    CheckEqI32(g_aProdB[1599], 5, "  and base index 8 clears nothing either");
+
+    /* 4. products 119..121 also clear the selected base's byte in the 0x159DBC table, and they do
+     * it by reading the byte and subtracting that same amount back. */
+    CLEAR_RESET();
+    g_aBases[1].bUnk4 = 5; /* the selected base's type */
+    g_aGridBytes[1] = 7;
+    ManufScreen_ClearProductSlot(&env, 1, 119);
+    CheckEqI32(g_aGridBytes[1], 0, "product 119 clears the base's grid byte (0x6F96C..0x6F990)");
+
+    CLEAR_RESET();
+    g_aBases[1].bUnk4 = 5;
+    g_aGridBytes[1] = 7;
+    ManufScreen_ClearProductSlot(&env, 1, 121);
+    CheckEqI32(g_aGridBytes[1], 0, "product 121 does too");
+
+    CLEAR_RESET();
+    g_aBases[1].bUnk4 = 5;
+    g_aGridBytes[1] = 7;
+    ManufScreen_ClearProductSlot(&env, 1, 118);
+    CheckEqI32(g_aGridBytes[1], 7, "product 118 is outside the range and leaves it (0x6F934)");
+    CLEAR_RESET();
+    g_aBases[1].bUnk4 = 5;
+    g_aGridBytes[1] = 7;
+    ManufScreen_ClearProductSlot(&env, 1, 122);
+    CheckEqI32(g_aGridBytes[1], 7, "  so is product 122 (0x6F93C)");
+
+    /* 5. the byte is found by TYPE, not by the selected base's index: the search answers the first
+     * base that matches, so with two bases of the same type it is the earlier one that clears. */
+    CLEAR_RESET();
+    g_aBases[0].bUnk4 = 5;
+    g_aBases[1].bUnk4 = 5;
+    g_aGridBytes[0] = 9;
+    g_aGridBytes[1] = 9;
+    ManufScreen_ClearProductSlot(&env, 1, 120);
+    CheckEqI32(g_aGridBytes[0], 0, "the first base with the type is the one cleared (0x6AC30)");
+    CheckEqI32(g_aGridBytes[1], 9, "  the selected base's own byte is not the target");
+
+    /* 6. no base has the type: Base_FindIndexByTypeByte answers -1 and the port refuses, where the
+     * original reads and writes abGrid[-1]. */
+    CLEAR_RESET();
+    g_aBases[1].bUnk4 = 5;
+    g_aBases[0].bUnk4 = 6;
+    g_aBases[2].bUnk4 = 7;
+    g_aGridBytes[0] = 4;
+    ManufScreen_ClearProductSlot(&env, 1, 119);
+    CheckEqI32(g_aGridBytes[0], 4, "no matching type writes nothing (deviation at 0x6AD1C)");
+
+    /* 7. the four column stores happen before the product range test. */
+    CLEAR_RESET();
+    g_aProdB[259] = 5;
+    ManufScreen_ClearProductSlot(&env, 1, 59);
+    CheckEqI32(g_aProdB[259], 0, "a non-hangar product still clears its slot");
+
+    /* 8. null columns are skipped rather than dereferenced. */
+    CLEAR_RESET();
+    env.apProductA = NULL; env.apProductB = NULL;
+    env.apProductC = NULL; env.apManufCols = NULL;
+    ManufScreen_ClearProductSlot(&env, 1, 40);
+    Check(true, "null columns are skipped");
+    ManufScreen_ClearProductSlot(NULL, 1, 40);
+    Check(true, "a null env does nothing");
+
+    /* --- ManufScreen_ConfirmAndClose @ 0x6e98c --- */
+    printf("ManufScreen_ConfirmAndClose @ 0x6e98c\n");
+
+    CLEAR_RESET();
+    g_ClearPanel.anLineAux[7] = 40;
+    g_aProdB[240] = 5;
+    ManufScreen_ConfirmAndClose(&env, &hooks);
+    CheckEqI32(g_aProdB[240], 0, "the product comes from the panel row's aux cell (0x6E9A0)");
+    CheckEqI32(g_nCloseCalls2, 1, "and Geoscape_CloseUI runs afterwards (0x6E9C8)");
+
+    CLEAR_RESET();
+    g_ClearPanel.anLineAux[7] = 119;
+    g_aBases[1].bUnk4 = 5;
+    g_aGridBytes[1] = 6;
+    g_aProdB[319] = 5;
+    ManufScreen_ConfirmAndClose(&env, &hooks);
+    CheckEqI32(g_aProdB[319], 0, "a hangar product clears its slot here too");
+    CheckEqI32(g_aGridBytes[1], 0, "  and the base grid byte");
+
+    CLEAR_RESET();
+    g_ClearPanel.anLineAux[7] = 40;
+    g_aProdB[240] = 5;
+    ManufScreen_ConfirmAndClose(&env, NULL);
+    CheckEqI32(g_aProdB[240], 0, "no close hook: the clear still runs");
+    CheckEqI32(g_nCloseCalls2, 0, "  and nothing is called");
+
+    ManufScreen_ConfirmAndClose(NULL, &hooks);
+    CheckEqI32(g_nCloseCalls2, 0, "a null env closes nothing");
+#undef CLEAR_RESET
+}
+
+static void TestIncEngineers(void)
+{
+    static Ship aCraft[3];
+    static Ship *apCraft[3];
+    static ObjectRecFull aObjs[2];
+    static ObjectRecFull *apObjects[2];
+    static SmapSite aSites[2];
+    static BaseRec aBases[2];
+    static BaseRec *apBases[2];
+    static i32 aProdB[1600];
+    static u8 aGrid[1524];
+    static u8 aGridBytes[8];
+    static UiPanel panel;
+    ManufEngineerEnv env;
+    i32 nRow;
+    i8 nBase;
+    u8 nGate;
+    u32 dwShortfall;
+    i32 nResidue;
+    i32 i;
+
+    printf("ManufScreen_IncEngineers @ 0x6e13c\n");
+
+#define ENG_RESET(nProduct)                                                  \
+    memset(aProdB, 0, sizeof(aProdB));                                       \
+    memset(aGrid, 0, sizeof(aGrid));                                         \
+    memset(aGridBytes, 0, sizeof(aGridBytes));                               \
+    memset(aCraft, 0, sizeof(aCraft));                                       \
+    memset(aObjs, 0, sizeof(aObjs));                                         \
+    memset(aSites, 0, sizeof(aSites));                                       \
+    memset(aBases, 0, sizeof(aBases));                                       \
+    memset(&panel, 0, sizeof(panel));                                        \
+    for (i = 0; i < 2; ++i) { apBases[i] = &aBases[i]; apCraft[i] = &aCraft[i]; } \
+    apCraft[2] = &aCraft[2];                                                 \
+    apObjects[0] = &aObjs[0]; apObjects[1] = &aObjs[1];                      \
+    panel.anLineAux[3] = (nProduct);                                         \
+    nRow = 3;                                                                \
+    nBase = 0;                                                               \
+    nGate = 0;                                                               \
+    dwShortfall = 0;                                                         \
+    nResidue = 7;                                                            \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pProductPanel = &panel; env.pnProductRow = &nRow;                    \
+    env.apProductB = aProdB;                                                 \
+    env.abFacilityGrid = aGrid; env.abGridBytes = aGridBytes;                \
+    env.pnSelectedBaseIdx = &nBase; env.pbQtyGate = &nGate;                  \
+    env.apCraft = apCraft; env.nCraftCount = 0; /* a zeroed Ship is homed at base 0 */  \
+    env.apBases = apBases; env.nBaseCount = 2;                               \
+    env.apObjects = apObjects; env.nObjectCount = 1;                         \
+    env.aSites = aSites; env.nSiteCount = 0;                                 \
+    env.pdwShortfall = &dwShortfall; env.pnResidue = &nResidue;
+
+    /* The hangar products, 119..121. One free hangar cell is one slot. */
+    ENG_RESET(119);
+    aGrid[480 + 0] = 11; /* facType[base 0, row 0, col 0], buildDays 0 so it is free */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 1, "one free hangar cell lets the allocation reach 1 (0x6E228)");
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 1, "a second press stops at the free-slot count (0x6E21C)");
+    CheckEqI32(dwShortfall, 0, "  and a hangar with room sets no shortfall");
+
+    ENG_RESET(120);
+    aGrid[480 + 0] = 11;
+    aGrid[480 + 6] = 11; /* row 0, col 1 */
+    aProdB[120] = 1;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[120], 2, "two hangar cells allow two units");
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[120], 2, "  and stops there");
+
+    /* A hangar cell under construction is not capacity: the capacity pass wants buildDays zero. */
+    ENG_RESET(119);
+    aGrid[480 + 0] = 11;
+    aGrid[0] = 3; /* buildDays[base 0, row 0, col 0] */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 0, "a hangar still being built gives no free slot (0x6611C)");
+    CheckEqI32(dwShortfall, 1, "  cap 0 == at 0, so the shortfall dword is set (0x6E1BC)");
+    CheckEqI32(nResidue, 1, "  and dword_1870B4[0] becomes 1 here (0x6E1C8)");
+
+    /* Craft homed at the base count against the free slots. */
+    ENG_RESET(119);
+    env.nCraftCount = 3;
+    aGrid[480 + 0] = 11;
+    aCraft[0].bHomeBase = 0;
+    aCraft[1].bHomeBase = 1; /* a different base */
+    aCraft[2].bHomeBase = 1;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 0, "the craft at this base fills the only slot");
+    CheckEqI32(dwShortfall, 1, "  shortfall dword set");
+    CheckEqI32(nResidue, 1, "  residue 1 on this path");
+
+    /* Base_CountShipsAtBase adds the 0x159DBC byte for the base's type, and that counts too. */
+    ENG_RESET(119);
+    aGrid[480 + 0] = 11;
+    aGrid[480 + 6] = 11;
+    aGrid[480 + 12] = 11; /* three slots */
+    aBases[0].bUnk4 = 4;
+    aGridBytes[0] = 3;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 0, "the grid byte fills all three slots (0x66110)");
+    CheckEqI32(dwShortfall, 1, "  so this is the full-hangar path");
+
+    /* The dead gate still short-circuits, and it is read a second time after the two flag stores. */
+    ENG_RESET(119);
+    nGate = 1;
+    aGrid[480 + 0] = 11;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[119], 0, "a non-zero gate stops the button before anything else (0x6E14C)");
+    CheckEqI32(dwShortfall, 0, "  no capacity call, so no shortfall store either");
+
+    /* --- the stores path: every other product --- */
+    ENG_RESET(0);
+    aGrid[480 + 0] = 6; /* one free stores cell -> capacity 300 */
+    aObjs[0].bCargoSize = 7;
+    aProdB[0] = 42; /* 42 * 7 = 294 < 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 43, "below the stores capacity the quantity rises by one (0x6E30C)");
+    aProdB[0] = 43; /* 43 * 7 = 301 >= 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 43, "at the capacity it stops");
+    CheckEqI32(dwShortfall, 1, "  shortfall dword set (0x6E314)");
+    CheckEqI32(nResidue, 0, "  and residue 0 here, where the full-hangar path wrote 1 (0x6E320)");
+
+    ENG_RESET(0);
+    aGrid[480 + 0] = 6;
+    aGrid[480 + 6] = 6; /* two cells -> 600 */
+    aObjs[0].bCargoSize = 7;
+    aProdB[0] = 85; /* 595 < 600 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 86, "a second stores cell doubles the capacity");
+
+    ENG_RESET(0);
+    aGrid[480 + 6] = 6; /* facType at 480 + 6*col + row, here row 0 col 1 */
+    aGrid[6] = 5;       /* buildDays at 6*col + row, the same cell */
+    aObjs[0].bCargoSize = 7;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 0, "a stores cell under construction gives no capacity (0x65720)");
+    CheckEqI32(dwShortfall, 1, "  capacity 0 == pressure 0, so the shortfall dword is set");
+
+    /* Base_CalcStorageUsed adds bCargoSize * auPerBaseVal[base] over the filtered object indices,
+     * and object 0 is never in that set -- so the product's own cargo size is not double counted. */
+    ENG_RESET(0);
+    env.nObjectCount = 2; /* the storage sum walks indices 1..nObjectCount-1 */
+    aGrid[480 + 0] = 6;
+    aObjs[0].bCargoSize = 7;
+    aObjs[1].bCargoSize = 10;
+    aObjs[1].auPerBaseVal[0] = 4; /* index 1 is inside the 1..69 filter */
+    aProdB[0] = 37; /* 259 + 40 = 299 < 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 38, "the base's own stock counts against the capacity (0x6E274)");
+    aProdB[0] = 38; /* 266 + 40 = 306 >= 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 38, "  and pushes it over");
+
+    /* Base_CountItemQtyAcrossBases adds the site cargo, gated on the site index being the base. */
+    ENG_RESET(0);
+    env.nObjectCount = 2; /* the site walk also needs more than one object */
+    aGrid[480 + 0] = 6;
+    aObjs[0].bCargoSize = 7;
+    aObjs[1].bCargoSize = 10;
+    env.nSiteCount = 1;
+    aSites[0].auItemQty[1] = 5; /* 10 * 5 = 50 */
+    aProdB[0] = 35; /* 245 + 50 = 295 < 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 36, "the site cargo counts too (0x6E294)");
+    aProdB[0] = 36; /* 252 + 50 = 302 >= 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[0], 36, "  and pushes it over");
+
+    /* The object whose cargo size is read is apObjects[PRODUCT], not apObjects[base]. */
+    ENG_RESET(1);
+    env.nObjectCount = 2; /* product 1 has to be inside the object table to be read at all */
+    aGrid[480 + 0] = 6;
+    aObjs[0].bCargoSize = 100; /* if the base index were used here, 42*100 would blow the cap */
+    aObjs[1].bCargoSize = 7;
+    aProdB[1] = 42; /* base 0, product 1 -> idx 1, and 42*7 = 294 < 300 */
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[1], 43, "the cargo size comes from the product's object record (0x6E214)");
+
+    ENG_RESET(0);
+    nBase = 1;
+    aGrid[480 + 144] = 6; /* base 1's stores cell */
+    aObjs[0].bCargoSize = 7;
+    aProdB[200] = 42;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(aProdB[200], 43, "the column index is 200*nSelectedBaseIdx + product");
+
+    ENG_RESET(0);
+    nGate = 200;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(dwShortfall, 0, "the gate short-circuits the stores path too");
+
+    ENG_RESET(0);
+    env.apProductB = NULL;
+    ManufScreen_IncEngineers(&env);
+    CheckEqI32(dwShortfall, 0, "no product column: nothing is stored");
+
+    ENG_RESET(0);
+    env.pnProductRow = NULL;
+    ManufScreen_IncEngineers(&env);
+    Check(true, "a missing row cache is not dereferenced");
+
+    ManufScreen_IncEngineers(NULL);
+    Check(true, "a null env does nothing");
+#undef ENG_RESET
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -4047,6 +4426,8 @@ int main(void)
     TestSaveLoadSlots();
     TestEnterBuildMode();
     TestSetWaypoint();
+    TestClearProductSlot();
+    TestIncEngineers();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

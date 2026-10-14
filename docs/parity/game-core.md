@@ -10193,3 +10193,61 @@ are unaffected either way.
 Remaining in this cluster: `Smap_CancelTarget` (0x84254, 152 B) is still open because its callee
 `Ship_AbortCourse` (0x5a64c) is not ported, and the two big geoscape pointer handlers
 `Geoscape_OnPointer` (0x872d0, 8576 B) and `Geoscape_OnPointerUp` (0x89450, 6992 B) stay open.
+
+## Clearing a product slot, and the engineer "+" button (done)
+
+Evidence: `ManufScreen_ClearProductSlot` @ 0x6f8cc (216 B), `ManufScreen_ConfirmAndClose` @ 0x6e98c
+(92 B), `ManufScreen_IncEngineers` @ 0x6e13c (500 B). Ported in `pufo_baseui.c` as
+`ManufScreen_ClearProductSlot`, `ManufScreen_ConfirmAndClose`, `ManufScreen_IncEngineers`. 58 checks
+in `test_baseui.c` (`TestClearProductSlot`, `TestIncEngineers`).
+
+**The product table is four parallel 200-per-base columns, and clearing a slot zeroes one index of
+each.** `idx = 200*base + product`, and the four stores land on 0x15B79C (u32), 0x15E19C (u16,
+`auManufCol`), 0x159E9C (u32) and 0x15D09C (u16). The product argument is masked to a byte at
+0x6F8D0 but the base is sign-extended from a signed byte at 0x6F8D4, and nothing bounds the sum --
+`200*(-1) + 40` and `200*8 + 40` both go straight through the arrays. The port refuses the four
+stores outside 0..1599.
+
+**Products 119..121 clear a byte by reading it and subtracting it back.** After the four stores,
+that range reads `apBases[nSelectedBaseIdx]->bUnk4` (0x6F968) and calls `BaseGrid_GetByte0x654`
+followed by `BaseGrid_SubByte0x654` with *the amount the getter just returned*. So the net effect is
+"zero the byte if it was non-zero" -- and it is not just a store, because `SubByte0x654` leaves a
+zero alone. Two things this exposes. The byte is found by **type**, not by the selected base's
+index: `Base_FindIndexByTypeByte` answers the first base that matches, so with two bases of the same
+type the earlier base's byte is the one cleared (asserted). And the grid pointer these functions are
+handed is dead -- `BaseGrid_GetByte0x654` reaches the table through the global at
+`abFacilityGrid + 1620 = 0x159DBC`, which is why the port's `ManufClearEnv` carries that byte table
+rather than the 1524-byte facility grid.
+
+**`ManufScreen_IncEngineers` splits on the same 119..121 range, and the two halves differ in more
+than their budget.** The hangar half's budget is `Base_CalcHangarCap - Base_CountShipsAtBase`, and
+when that is zero it stores 1 into `byte_1870C8` (as a **dword**) and 1 into `dword_1870B4[0]`, then
+re-reads `bManufQtyGate` *after* those two stores. The other half's budget is
+`Base_CalcStoresCapacity` against `bCargoSize * aManufProductB[idx] + Base_CalcStorageUsed +
+Base_CountItemQtyAcrossBases`, and at or above capacity it writes 1 into `byte_1870C8` and **0** into
+`dword_1870B4[0]`. The residue differs between the two full paths, 1 versus 0 -- asserted both ways.
+
+**The object whose cargo size gates the stores path is `apObjects[PRODUCT]`, not
+`apObjects[base]`.** 0x6E214 is `ADD R2, R5, R2,LSL#2` where R2 still holds the product number read
+from the panel's aux column, then `LDR R2, [R2,#0x108]` (the 0x1139B8 anchor plus 0x108 is
+`apObjects` @ 0x113AC0) and `LDRB R2, [R2,#0xC6]` (`ObjectRecFull.bCargoSize`). Asserted with a
+fixture where the base-indexed object would have blown the cap. Note also that this function uses the
+aux cell's **raw dword** for both the column index and the object lookup, where
+`ManufScreen_ClearProductSlot` masks it to a byte -- the two siblings are not identical there.
+
+**`Base_CountShipsAtBase` is not just a craft count**, and `ManufScreen_IncEngineers` is where that
+shows up in the UI: its free-slot test is `Base_CalcHangarCap - (craft homed at the base + the
+0x159DBC byte for the base's type)`. Three hangar cells with `aGridBytes[0] = 3` is a full hangar
+(asserted). A facility cell under construction is not capacity at all -- both capacity passes want
+`buildDays == 0` -- which is what makes a half-built hangar or stores block the button.
+
+IDB: comments on 0x6f8cc, 0x6e98c, 0x6e13c. `apBases` @ 0x114B2C was typed as a 1-byte global; it is
+`BaseRec *[8]`, 32 bytes, ending exactly at `Map_nCraftCount` @ 0x114B4C. Retyped.
+
+Open item found while doing this, not folded in: `apCraft` @ 0x114A64 is also typed as 1 byte, and
+the gap to `apBases` is 200 bytes (50 pointers), but the port models it as 8. The real slot count is
+not pinned by anything I have verified, so it is left alone rather than guessed.
+
+Remaining in this cluster: `ManufScreen_CommitProduction` (0x6f34c, 1408 B), `ManufScreen_Draw`
+(0x6e3e0, 1332 B), `ManufScreen_RefreshBaseTabs` (0x70ebc, 500 B), `ManufScreen_BuildPanels`
+(0x6e9e8, 2404 B) and `ManufScreen_DrawFrame` (0x6f9a4, 5400 B).

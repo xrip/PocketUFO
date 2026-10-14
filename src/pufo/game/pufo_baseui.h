@@ -497,6 +497,106 @@ typedef struct ManufSelectEnv {
 
 i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv);
 
+/* ------------------------------------------------- clearing a product slot, and the engineer "+"
+ *
+ * Evidence: ManufScreen_ClearProductSlot @ 0x6f8cc (216 B), ManufScreen_ConfirmAndClose @ 0x6e98c
+ * (92 B), ManufScreen_IncEngineers @ 0x6e13c (500 B).
+ *
+ * The product table is three parallel arrays plus the quantity column, all contiguous and all
+ * 200 entries per base (see the product chunk note in game/pufo_save.h):
+ *
+ *     A  u32  @ 0x159E9C   B  u32 @ 0x15B79C (aManufProductB)
+ *     C  u16 @ 0x15D09C    quantity column u16 @ 0x15E19C (auManufCol)
+ *
+ * ClearProductSlot zeroes one index of all four. Its first argument is never read. Products
+ * 119..121 -- the three hangar products, the same range ManufScreen_IncEngineers splits on --
+ * additionally clear the selected base's byte in the eight-byte base grid table at
+ * abFacilityGrid + 1620 = 0x159DBC, and they do it by reading it and subtracting that same value
+ * back (BaseGrid_GetByte0x654 then BaseGrid_SubByte0x654 with the amount it just returned), so
+ * the net effect is "zero it if it was non-zero".
+ *
+ * Deviation: the original bounds nothing. nProduct is masked to a byte but 200*nBase + 255 runs
+ * past the 1600-entry arrays, and apBases[nSelectedBaseIdx] is dereferenced whatever that signed
+ * byte holds. The port refuses the four stores outside 0..1599 and the base lookup outside
+ * 0..nBaseCount-1.
+ *
+ * Return value: the original leaves 200*nBase + nProduct in R0 on the bail-out paths and 1620 (the
+ * constant residue BaseGrid_SubByte0x654 returns) on the hangar path. All four call sites --
+ * ManufScreen_Draw 0x6E48C, ManufScreen_ConfirmAndClose 0x6E9C4, ManufScreen_CommitProduction
+ * 0x6F7C4 and 0x6F888, ManufScreen_RefreshBaseTabs 0x710A0 -- overwrite R0 on the next
+ * instruction, so the port returns void. */
+#define PUFO_MANUF_HANGAR_PRODUCT_FIRST 119 /* the three products the hangar branch covers */
+#define PUFO_MANUF_HANGAR_PRODUCT_LAST  121
+
+typedef struct ManufClearEnv {
+    UiPanel     *pProductPanel;     /* pManufProductPanel @ 0x15EE44, read by ConfirmAndClose only */
+    const i32   *pnProductRow;      /* nManufProductRowCache @ 0x15EE3C, likewise */
+    u32         *apProductA;        /* unk_159E9C, 200 u32 per base */
+    i32         *apProductB;        /* aManufProductB @ 0x15B79C, 200 u32 per base */
+    u16         *apProductC;        /* unk_15D09C, 200 u16 per base */
+    u16         *apManufCols;       /* auManufCol @ 0x15E19C, 200 u16 per base */
+    u8          *abGridBytes;       /* 0x159DBC = abFacilityGrid + 1620, the eight base bytes the
+                                     * hangar products clear. BaseGrid_Get/SubTypeByte take THIS
+                                     * table, not the 1524-byte facility grid -- the original hands
+                                     * abFacilityGrid to BaseGrid_GetByte0x654 as a first argument
+                                     * that function never reads. */
+    BaseRec *const *apBases;        /* apBases @ 0x114B2C, read for apBases[base]->bUnk4 */
+    i32          nBaseCount;
+    const i8    *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
+} ManufClearEnv;
+
+void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32 nProduct);
+
+/* ManufScreen_ConfirmAndClose @ 0x6e98c (92 B): clear the selected product's slot for the selected
+ * base and tail-call the screen-close dispatcher. The product index comes from the panel's aux
+ * column at the cached row, exactly as the quantity buttons read it. Its first argument to
+ * ClearProductSlot is the 0x159E98 anchor, which that function never reads. Geoscape_CloseUI is
+ * not ported, so the close is the same hook ResearchScreen_CancelSelectedAndClose uses. */
+void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks);
+
+/* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
+ * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like
+ * them the gate is dead in the shipped build. It then splits on the selected product:
+ *
+ *   product 119..121 (the hangar products) -- the budget is free hangar slots,
+ *     Base_CalcHangarCap - Base_CountShipsAtBase. When that is zero it stores 1 into byte_1870C8
+ *     (as a dword) and 1 into dword_1870B4[0], re-reads the gate, and then -- because a full
+ *     hangar means alloc >= 0 == free -- leaves. Otherwise it raises aManufProductB[idx] by one
+ *     while it is below the free-slot count.
+ *
+ *   every other product -- the budget is Base_CalcStoresCapacity, and the pressure on it is
+ *     ObjectRecFull[product].bCargoSize * aManufProductB[idx]  (0x6E214: the object is found by the
+ *     PRODUCT index, not the base)  + Base_CalcStorageUsed + Base_CountItemQtyAcrossBases. Below
+ *     capacity the quantity goes up by one; at or above it, byte_1870C8 = 1 and
+ *     dword_1870B4[0] = 0 -- note the residue differs from the hangar path, 1 versus 0.
+ *
+ * Base_CountItemQtyAcrossBases is called with the site count at 0x186410, the selected base as the
+ * site index, and scan-sites = 1.
+ *
+ * Return value: the gate byte, or 4*idx (hangar path), or the capacity, or &dword_1870B4. It is
+ * installed as a click handler (0x711D0, 0x7127C) and nothing reads it, so the port returns void. */
+typedef struct ManufEngineerEnv {
+    UiPanel              *pProductPanel;   /* pManufProductPanel @ 0x15EE44 */
+    const i32            *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C */
+    i32                  *apProductB;      /* aManufProductB @ 0x15B79C */
+    const u8             *abFacilityGrid;  /* gBaseFacGrid @ 0x159768, for the two capacity calls */
+    const u8             *abGridBytes;     /* 0x159DBC, for Base_CountShipsAtBase's extra term */
+    const i8             *pnSelectedBaseIdx;
+    const u8             *pbQtyGate;       /* bManufQtyGate @ 0x15EE50 */
+    Ship *const          *apCraft;         /* apCraft @ 0x114A64 */
+    i32                   nCraftCount;
+    BaseRec *const       *apBases;         /* apBases @ 0x114B2C */
+    i32                   nBaseCount;
+    ObjectRecFull *const *apObjects;       /* apObjects @ 0x113AC0: the storage sum and the product */
+    i32                   nObjectCount;
+    const SmapSite       *aSites;          /* aSmapSites @ 0x162030 */
+    i32                   nSiteCount;      /* 0x186410 */
+    u32                  *pdwShortfall;    /* byte_1870C8, written as a dword here too */
+    i32                  *pnResidue;       /* dword_1870B4[0] */
+} ManufEngineerEnv;
+
+void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv);
+
 /* ResearchScreen_StartSelected @ 0x73240 (232 B): the research screen's start button. It clears
  * the detail flag, plays sample 17, and then -- only if the selected topic's wProgress is zero AND
  * that topic's allocation for this base is non-zero -- sets wProgress to 1, which is what moves a

@@ -688,6 +688,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   scratch `UiControl *` shared by the Options/Manuf/Research/Geoscape screens, not one named
   control — parking it at 1000,1000 is how the original hides a widget it has no slot for.
 
+- [x] part 6, the manufacturing pair: `ManufScreen_ClearProductSlot (0x6f8cc)`,
+  `ManufScreen_ConfirmAndClose (0x6e98c)`, `ManufScreen_IncEngineers (0x6e13c)` — 58 more checks.
+  Clearing a slot zeroes `idx = 200*base + product` in all four parallel columns (0x159E9C u32,
+  0x15B79C u32, 0x15D09C u16, 0x15E19C u16). Products 119..121 then clear the base's byte in the
+  0x159DBC table by reading it and subtracting that same amount back, and the byte is found by
+  **type** — two bases of one type means the earlier base is the one cleared. In
+  `IncEngineers` the two halves write different residues into the same two globals: a full hangar
+  writes 1 into `dword_1870B4[0]`, an over-capacity stores block writes 0. And the cargo size that
+  gates the stores path comes from `apObjects[PRODUCT]` (0x6E214), not the base. `apBases` @ 0x114B2C
+  was a 1-byte global in the IDB; it is `BaseRec *[8]`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -825,6 +836,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | manufacturing quantity buttons (`ManufScreen_IncSelectedQty`, `DecSelectedQty`, `ReduceSelectedQtyToOne`, `DecEngineers`, `UpdateProgress`) | 56/56 (Release) | 8780 | 788/1103 (71.4%) | 321184/598792 (53.6%) | 38 checked, 0 mismatched |
 | the two row clicks + the research start button (`ManufScreen_SelectListed`, `ResearchScreen_StartSelected`) | 56/56 (Release) | 8807 | 790/1103 (71.6%) | 321536/598792 (53.7%) | 38 checked, 0 mismatched |
 | three strategic/geoscape leaves (`Smap_SumSiteScores`, `Base_EnterBuildMode`, `Smap_SetWaypoint`) | 56/56 (Release) | 8868 | 793/1103 (71.9%) | 321912/598792 (53.8%) | 38 checked, 0 mismatched |
+| the product-slot clear and the engineer "+" button (`ManufScreen_ClearProductSlot`, `ConfirmAndClose`, `IncEngineers`) | 56/56 (Release) | 8926 | 796/1103 (72.2%) | 322720/598792 (53.9%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

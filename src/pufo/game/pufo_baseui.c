@@ -818,6 +818,159 @@ i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv)
     return nRow;
 }
 
+/* The manufacturing screen's selected product: the panel's cached row cursor indexes its aux
+ * column, and that cell holds the product number -- the same row-to-entity mapping the hangar crew
+ * list uses. -1 means the row is outside the panel, which the original never checks. */
+static i32 ManufSelectedProduct(const UiPanel *pPanel, const i32 *pnRow)
+{
+    if (pPanel == NULL || pnRow == NULL) {
+        return -1;
+    }
+    const i32 nRow = *pnRow;
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return -1;
+    }
+    return pPanel->anLineAux[nRow];
+}
+
+#define PUFO_PRODUCT_COLUMN_TOTAL (PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT)
+
+void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32 nProduct)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    nProduct &= 0xFF;                  /* 0x6F8D0 AND R3,R2,#0xFF */
+    nBaseIndex = (i32)(i8)nBaseIndex;  /* 0x6F8D4 LSL#24 then ASR#24 sign-extends the byte */
+
+    const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBaseIndex + nProduct;
+    if (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL) {
+        if (pEnv->apProductB != NULL) {
+            pEnv->apProductB[nIdx] = 0; /* 0x6F8FC, the u32 column at 0x15B79C */
+        }
+        if (pEnv->apManufCols != NULL) {
+            pEnv->apManufCols[nIdx] = 0; /* 0x6F910, auManufCol @ 0x15E19C */
+        }
+        if (pEnv->apProductA != NULL) {
+            pEnv->apProductA[nIdx] = 0; /* 0x6F918, the u32 column at 0x159E9C */
+        }
+        if (pEnv->apProductC != NULL) {
+            pEnv->apProductC[nIdx] = 0; /* 0x6F92C, the u16 column at 0x15D09C */
+        }
+    }
+
+    if (nProduct < PUFO_MANUF_HANGAR_PRODUCT_FIRST || nProduct > PUFO_MANUF_HANGAR_PRODUCT_LAST) {
+        return; /* 0x6F930 BLS and 0x6F938 BCS both bail on the range test */
+    }
+
+    const i32 nSelBase = (pEnv->pnSelectedBaseIdx != NULL)
+                             ? (i32)(i8)*pEnv->pnSelectedBaseIdx
+                             : 0;
+    if (pEnv->apBases == NULL || nSelBase < 0 || nSelBase >= pEnv->nBaseCount) {
+        return; /* deviation: the original dereferences apBases[byte] with no check at all */
+    }
+
+    /* 0x6F968 LDRB [R3,#4]: the selected base's type byte. GetByte0x654 reads the grid byte for
+     * that type and SubByte0x654 then subtracts that very amount from the same cell, so the pair
+     * zeroes it -- and SubByte0x654 leaves a zero alone, which is why this is not just a store. */
+    const u8 bType = pEnv->apBases[nSelBase]->bUnk4;
+    const i32 nAmount = BaseGrid_GetTypeByte(pEnv->apBases, pEnv->nBaseCount,
+                                             pEnv->abGridBytes, bType);
+    (void)BaseGrid_SubTypeByte(pEnv->apBases, pEnv->nBaseCount, pEnv->abGridBytes,
+                               bType, (i8)nAmount);
+}
+
+void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    const i32 nProduct = ManufSelectedProduct(pEnv->pProductPanel, pEnv->pnProductRow);
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)(i8)*pEnv->pnSelectedBaseIdx : 0;
+    ManufScreen_ClearProductSlot(pEnv, nBase, nProduct); /* 0x6E9C4 */
+
+    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
+        pHooks->pfnCloseUi(pHooks->pUser); /* 0x6E9C8, tail-call into Geoscape_CloseUI */
+    }
+}
+
+void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pbQtyGate != NULL && (*pEnv->pbQtyGate & 0xFFu) != 0) {
+        return; /* 0x6E14C */
+    }
+
+    /* No byte mask here, unlike ClearProductSlot: this function uses the aux cell's raw dword for
+     * both the column index and the object lookup. */
+    const i32 nProduct = ManufSelectedProduct(pEnv->pProductPanel, pEnv->pnProductRow);
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)(i8)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBase + nProduct;
+    const bool bWritable = (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL &&
+                            pEnv->apProductB != NULL);
+
+    if (nProduct >= PUFO_MANUF_HANGAR_PRODUCT_FIRST && nProduct <= PUFO_MANUF_HANGAR_PRODUCT_LAST) {
+        const i32 nCap = Base_CalcHangarCap(pEnv->abFacilityGrid, nBase);
+        const i32 nAt = Base_CountShipsAtBase(pEnv->apCraft, pEnv->nCraftCount,
+                                              pEnv->apBases, pEnv->nBaseCount,
+                                              pEnv->abGridBytes, nBase);
+        const i32 nFree = nCap - nAt; /* 0x6E1B0 SUBS LR, R11, R0 */
+
+        if (nCap == nAt) { /* 0x6E1B4: a full hangar, so the free-slot count is zero */
+            if (pEnv->pdwShortfall != NULL) {
+                *pEnv->pdwShortfall = 1; /* 0x6E1BC, a dword store into byte_1870C8 */
+            }
+            if (pEnv->pnResidue != NULL) {
+                *pEnv->pnResidue = 1; /* 0x6E1C8 */
+            }
+        }
+
+        if (pEnv->pbQtyGate != NULL && (*pEnv->pbQtyGate & 0xFFu) != 0) {
+            return; /* 0x6E1CC: the gate is read a second time, after those two stores */
+        }
+
+        /* With a full hangar nFree is 0 and the allocation is never negative, so this test fails
+         * and the flags above are the whole result. */
+        if (bWritable && pEnv->apProductB[nIdx] < nFree) {
+            pEnv->apProductB[nIdx] = pEnv->apProductB[nIdx] + 1; /* 0x6E228 */
+        }
+        return;
+    }
+
+    const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);   /* 0x6E274 */
+    const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, nBase,
+                                                     pEnv->apBases, nBase,
+                                                     pEnv->apObjects, pEnv->nObjectCount, true);
+    const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase);                /* 0x6E29C */
+
+    /* 0x6E214: the object is apObjects[nProduct] -- the PRODUCT number indexes the object table,
+     * not the base -- and only its bCargoSize byte at +0xC6 is read. */
+    i32 nCargo = 0;
+    if (pEnv->apObjects != NULL && nProduct >= 0 && nProduct < pEnv->nObjectCount) {
+        nCargo = (i32)pEnv->apObjects[nProduct]->bCargoSize;
+    }
+
+    if (!bWritable) {
+        return;
+    }
+
+    const i32 nAlloc = pEnv->apProductB[nIdx];
+    if (nCargo * nAlloc + nAcross + nUsed < nCap) { /* 0x6E300 CMP R2, R0 */
+        pEnv->apProductB[nIdx] = nAlloc + 1;        /* 0x6E30C */
+    } else {
+        if (pEnv->pdwShortfall != NULL) {
+            *pEnv->pdwShortfall = 1; /* 0x6E314 */
+        }
+        if (pEnv->pnResidue != NULL) {
+            *pEnv->pnResidue = 0; /* 0x6E320: 0 here, 1 on the full-hangar path */
+        }
+    }
+}
+
 /* ResearchScreen_StartSelected @ 0x73240. Allocation turns into running work only when the topic
  * is idle and this base has actually allocated something to it. */
 i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)
