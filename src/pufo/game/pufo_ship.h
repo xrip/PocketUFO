@@ -477,4 +477,22 @@ typedef struct ShipSpawnEnv {
 
 i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase);
 
+/* --- Ship_FormatDisplayName @ 0x666cc (424 B) : the craft's display name ---
+ *
+ * Twelve call sites (BaseInfoScreen_BuildPanels, RadarScreen_Update, BaseFac_BuildStatusMsg,
+ * OptionsScreen_Open, BasePlaneScreen_DrawCraftDetail, BasePlaneScreen_BuildPanels,
+ * Smap_HitTestStrategSelect and Geoscape_Draw four times). The name is the CraftType label plus the
+ * craft's own ordinal: `aTextRecs @ 0xB38D0` records 137, 138 and 139 for types 0..2 and 418 and 419
+ * for types 3 and 4, and the last two put a "-" (asc_AB340 @ 0xAB340) between the label and the
+ * number. The number is Ship.bType @ +0x00 — the per-craft-type counter Ship_Ctor took from
+ * 0x18653C..0x186540 — not the craft id.
+ *
+ * Deviations: a CraftType outside 0..4 falls through the original's switch and it then copies its own
+ * uninitialised 104-byte local into the scratch string (bugs.tsv); the port returns an empty string.
+ * `apCraft[nShipIdx]` is unbounded in the original. The original builds the string in that local and
+ * then copies it into the shared scratch at 0x186B10 (szRadarMsg, 108 bytes) with an unbounded loop;
+ * the port writes straight into the caller's buffer with the bound the caller supplies. */
+char *Ship_FormatDisplayName(Ship *const *apCraft, i32 nShipIdx, const u8 *pTextRecs,
+                             char *pszOut, size_t cchOut);
+
 #endif /* PUFO_SHIP_H */

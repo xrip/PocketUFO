@@ -1046,4 +1046,22 @@ typedef struct BuildDialogEnv {
 
 i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv);
 
+/* --- Soldier_FormatDisplayName @ 0x6654c (384 B) : the soldier screen's craft column ---
+ *
+ * Called from SoldierScreen_Toggle (0x64AF0), BasePlaneScreen_FillCrewPanel (0x7A188) and
+ * BasePlaneScreen_BuildListPanels (0x7A3F4). The soldier's craft byte is Soldier.bUnk183 @ +0xB7.
+ *
+ *   0xFF (0x66560): aTextRec93, and the function returns without looking at the 0xFE branch.
+ *   0xFE (0x66694): aTextRec140, reached because the craft branch is skipped by `BCS` at 0x665AC.
+ *   below 0xFE (0x665AC): apCraft[byte], whose Ship.bCraftType @ +0x02 picks aTextRec137, 138 or 139
+ *   for types 0, 1 and 2, then Ship.bType @ +0x00 is appended as a number. Types 3 and 4 branch
+ *   straight past the name and the number and write nothing at all: the original hands back the
+ *   shared scratch string exactly as the previous call left it.
+ *
+ * The result is the shared scratch at 0x186B10 (szRadarMsg, 108 bytes), which the original fills
+ * with unbounded copy loops and one strcat (bugs.tsv). The port writes into the caller's buffer with
+ * the bound the caller supplies, and returns an empty string where the original left stale text. */
+char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const u8 *pTextRecs,
+                                char *pszOut, size_t cchOut);
+
 #endif /* PUFO_BASEUI_H */

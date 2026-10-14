@@ -1,9 +1,12 @@
 /* pufo_ship.c - see pufo_ship.h for the evidence map. */
 #include "game/pufo_ship.h"
 
+#include <stdio.h>   /* snprintf, the bounded stand-in for the original's j_itoa */
 #include <stdlib.h>
 #include <string.h>
 
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
+#include "util/pufo_str.h"     /* pufo_strcat */
 #include "game/pufo_strateg.h" /* StrategList_RemoveAt, StrategItem */
 #include "game/pufo_unit.h"    /* Soldier */
 #include "game/pufo_geoscape.h" /* BaseRec_AddItemQty */
@@ -1232,4 +1235,59 @@ i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase)
     }
 
     return result; /* 5: loop residue, and no caller uses it */
+}
+
+/* --- Ship_FormatDisplayName @ 0x666cc --- */
+
+/* aTextRecs @ 0xB38D0 record index per CraftType, and the separator the last two put between the
+ * label and the number. Types 0..2 are records 137, 138 and 139 -- the same three
+ * Soldier_FormatDisplayName (0x6654c) uses -- and types 3 and 4 are 418 and 419. */
+static const i32  g_anCraftNameRec[PUFO_CRAFT_TYPE_COUNT] = { 137, 138, 139, 418, 419 };
+static const char g_abCraftNameSep[PUFO_CRAFT_TYPE_COUNT] = { 0, 0, 0, '-', '-' };
+
+/* The label copy loops (0x66818, 0x667E4, ...): byte-at-a-time until the terminator, with no bound.
+ * The port stops at the caller's buffer end. */
+static void Ship_CopyLabel(char *pszDst, size_t cchDst, const char *pszSrc)
+{
+    size_t i = 0;
+
+    while (i + 1 < cchDst && pszSrc[i] != 0) {
+        pszDst[i] = pszSrc[i];
+        ++i;
+    }
+    pszDst[i] = 0;
+}
+
+char *Ship_FormatDisplayName(Ship *const *apCraft, i32 nShipIdx, const u8 *pTextRecs,
+                             char *pszOut, size_t cchOut)
+{
+    char szNum[16];
+    char szSep[2];
+    Ship *pShip;
+    u8 nType;
+
+    if (pszOut == NULL || cchOut == 0) {
+        return pszOut;
+    }
+    pszOut[0] = 0;
+
+    if (apCraft == NULL || pTextRecs == NULL || nShipIdx < 0) {
+        return pszOut;
+    }
+    pShip = apCraft[nShipIdx];
+    if (pShip == NULL || pShip->bCraftType >= PUFO_CRAFT_TYPE_COUNT) {
+        return pszOut; /* the original's default, which then copies an uninitialised local */
+    }
+    nType = pShip->bCraftType;
+
+    Ship_CopyLabel(pszOut, cchOut,
+                   (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE * g_anCraftNameRec[nType]));
+    if (g_abCraftNameSep[nType] != 0) {
+        szSep[0] = g_abCraftNameSep[nType];
+        szSep[1] = 0;
+        (void)pufo_strcat(pszOut, szSep, cchOut);                    /* 0x6677C, asc_AB340 */
+    }
+    snprintf(szNum, sizeof(szNum), "%d", (i32)pShip->bType);         /* 0x6682C, j_itoa (0x9e9f0) */
+    (void)pufo_strcat(pszOut, szNum, cchOut);                        /* 0x66844 */
+    return pszOut;
 }

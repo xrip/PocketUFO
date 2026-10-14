@@ -392,6 +392,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `Soldier_FormatDisplayName @ 0x6654c` (384 B) + `Ship_FormatDisplayName @ 0x666cc` (424 B) —
+  ported in `game/pufo_baseui.{h,c}` and `game/pufo_ship.{h,c}`, 18 new checks in
+  `tests/test_baseui.c` and `tests/test_ship.c`. The two craft-name formatters: `Ship.bCraftType`
+  picks `aTextRecs` records 137/138/139 for types 0..2 and 418/419 for types 3/4 (those two also put
+  a "-" before the number), and the number is `Ship.bType` @ +0, the per-craft-type ordinal, not the
+  craft id. The soldier side keys off `Soldier.bUnk183`: 0xFF is record 93, 0xFE is record 140, and
+  below 0xFE only craft types 0..2 get named — types 3 and 4 write nothing and the original returns
+  the scratch string as the previous call left it. Both copy into `szRadarMsg @ 0x186B10` (108 bytes
+  before `nSmapTapX @ 0x186B7C`) with unbounded loops, and the ship one copies an uninitialised local
+  for a type outside 0..4 (three new bugs.tsv rows). IDB: seven labels renamed to
+  `aTextRec93/137/138/139/140/418/419`, function comments at 0x6654c and 0x666cc. Shell: the soldier
+  screen's craft column now runs the real formatter instead of `World_SoldierNameStub`.
 - [x] `BaseFacScreen_DrawBuildDialog @ 0x59b60` (1592 B) — ported in `game/pufo_baseui.{h,c}` behind
   `BuildDialogEnv`, 23 new checks in `tests/test_baseui.c`. The whole build-dialog frame and the only
   caller of `BaseFacScreen_DrawPlacementOverlay`: the funds line, the animated panel frame, the
@@ -714,6 +726,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the placement preview and its commit (`BaseFacScreen_DrawPlacementOverlay`) | 56/56 (Release) | 8200 | 728/1103 (66.0%) | 326252/598792 (54.5%) | 38 checked, 0 mismatched |
 | the animated panel frame (`Ui_AnimExpandBlit`, `Ui_AnimExpandBlit_IfEnabled`) | 56/56 (Release) | 8219 | 730/1103 (66.2%) | 327288/598792 (54.7%) | 38 checked, 0 mismatched |
 | the build dialog frame (`BaseFacScreen_DrawBuildDialog`) | 56/56 (Release) | 8242 | 731/1103 (66.3%) | 328880/598792 (54.9%) | 38 checked, 0 mismatched |
+| the two craft-name formatters (`Soldier_FormatDisplayName`, `Ship_FormatDisplayName`) | 56/56 (Release) | 8260 | 733/1103 (66.5%) | 329688/598792 (55.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

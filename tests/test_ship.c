@@ -8,12 +8,36 @@
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_ptrarray.h"
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
+
+static void Check(bool bCond, const char *pszWhat)
+{
+    if (bCond) {
+        printf("  ok   %s\n", pszWhat);
+    } else {
+        printf("  FAIL %s\n", pszWhat);
+        g_nFailures += 1;
+    }
+}
+
+static void PutStr(char *pszDst, const char *pszSrc)
+{
+    while (*pszSrc != 0) {
+        *pszDst++ = *pszSrc++;
+    }
+    *pszDst = 0;
+}
+
+static void PutTextRec(u8 *pText, i32 nRec, const char *psz)
+{
+    PutStr((char *)(pText + PUFO_TEXT_REC_STRIDE * nRec), psz);
+}
 
 static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
 {
@@ -1193,6 +1217,69 @@ static void TestSpawnAtSlot(void)
 #undef DAYS
 }
 
+/* Ship_FormatDisplayName @ 0x666cc. The five craft labels are aTextRecs records 137, 138, 139, 418
+ * and 419 -- one per CraftType -- and the number is Ship.bType, the per-craft-type ordinal
+ * Ship_Ctor took from 0x18653C..0x186540, not the craft id. Types 3 and 4 also put a dash between
+ * the label and the number. */
+static void TestCraftDisplayName(void)
+{
+    static u8 aText[PUFO_TEXT_REC_STRIDE * 420];
+    static Ship aShips[5];
+    static Ship *apCraft[5];
+    static char szOut[108];
+    i32 i;
+
+    printf("Ship_FormatDisplayName @ 0x666cc\n");
+
+    PutTextRec(aText, 137, "INTERCEPTOR");
+    PutTextRec(aText, 138, "TRANSPORT");
+    PutTextRec(aText, 139, "BOMBER");
+    PutTextRec(aText, 418, "UFO");
+    PutTextRec(aText, 419, "RECON");
+
+    for (i = 0; i < 5; ++i) {
+        memset(&aShips[i], 0, sizeof(aShips[i]));
+        aShips[i].bCraftType = (u8)i;
+        aShips[i].bType = (u8)(i + 3);
+        apCraft[i] = &aShips[i];
+    }
+
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 0, aText, szOut, sizeof(szOut)), "INTERCEPTOR3") == 0,
+          "type 0 is record 137 plus bType (0x66808)");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 1, aText, szOut, sizeof(szOut)), "TRANSPORT4") == 0,
+          "type 1 is record 138 (0x667D4)");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 2, aText, szOut, sizeof(szOut)), "BOMBER5") == 0,
+          "type 2 is record 139 (0x667A0)");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 3, aText, szOut, sizeof(szOut)), "UFO-6") == 0,
+          "type 3 is record 418 with the dash before the number (0x6675C, 0x6677C)");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 4, aText, szOut, sizeof(szOut)), "RECON-7") == 0,
+          "type 4 is record 419, also dashed (0x66720)");
+
+    /* The number is bType, not bId. */
+    aShips[0].bType = 9;
+    aShips[0].bId = 42;
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 0, aText, szOut, sizeof(szOut)), "INTERCEPTOR9") == 0,
+          "the number is Ship.bType @ +0, not the craft id (0x6682C)");
+
+    /* A type outside the five falls through the switch; the original then copies an uninitialised
+     * local into the scratch, the port writes nothing. */
+    aShips[0].bCraftType = 5;
+    PutStr(szOut, "stale");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 0, aText, szOut, sizeof(szOut)), "") == 0,
+          "an unknown craft type yields the empty string (0x666F8 default)");
+
+    /* The caller's bound is honoured, where the original copies without one. */
+    aShips[0].bCraftType = 0;
+    aShips[0].bType = 99;
+    Check(strlen(Ship_FormatDisplayName(apCraft, 0, aText, szOut, 8)) == 7,
+          "the label is cut to the caller's buffer (0x66854 copies without a bound)");
+
+    Check(strcmp(Ship_FormatDisplayName(NULL, 0, aText, szOut, sizeof(szOut)), "") == 0,
+          "a null roster yields the empty string");
+    Check(strcmp(Ship_FormatDisplayName(apCraft, 0, NULL, szOut, sizeof(szOut)), "") == 0,
+          "and so does a missing TEXTS blob");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -1208,6 +1295,7 @@ int main(void)
     TestInterceptRetarget();
     TestTransferTacticalLoot();
     TestSpawnAtSlot();
+    TestCraftDisplayName();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

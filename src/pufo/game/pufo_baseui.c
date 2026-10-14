@@ -6,6 +6,7 @@
 #include "audio/pufo_audio.h" /* Sound_Play, the screen-open sample of SoldierScreen_Toggle */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
 #include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -1825,9 +1826,9 @@ static i32 BuildDialog_HalfWidth(i32 nWidth)
     return nWidth / 2;
 }
 
-/* The label copy loops (0x59BCC, 0x5A02C): LDRSB/STRB until the terminator. The original writes
- * straight into the 56-byte psz with no bound; the port stops at the buffer end. */
-static void BuildDialog_CopyLabel(char *pszDst, size_t cchDst, const char *pszSrc)
+/* The label copy loops (0x59BCC, 0x5A02C, 0x66580, 0x66650): LDRSB/STRB until the terminator, with
+ * no bound on the destination. The port stops at the caller's buffer end. */
+static void BaseUi_CopyLabel(char *pszDst, size_t cchDst, const char *pszSrc)
 {
     size_t i = 0;
 
@@ -1857,7 +1858,7 @@ static void BuildDialog_DrawFundsLine(const BuildDialogEnv *pEnv, char *psz)
 {
     char szNum[16];
 
-    BuildDialog_CopyLabel(psz, PUFO_BUILD_LABEL_MAX, pEnv->pszFundsPrefix);
+    BaseUi_CopyLabel(psz, PUFO_BUILD_LABEL_MAX, pEnv->pszFundsPrefix);
     snprintf(szNum, sizeof(szNum), "%d", *pEnv->pnFunds); /* j_itoa (0x9e9f0), base 10 */
     (void)pufo_strcat(psz, szNum, PUFO_BUILD_LABEL_MAX);
     (void)pufo_strcat(psz, "$", PUFO_BUILD_LABEL_MAX);    /* asc_AB1D8 @ 0xab1d8 */
@@ -1891,7 +1892,7 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
         pRec = (nKind >= 0 && nKind < PUFO_BASEFAC_COUNT) ? &pEnv->paFac[nKind] : NULL;
 
         if (pRec != NULL) {
-            BuildDialog_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pRec->szName);
+            BaseUi_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pRec->szName);
             nWidth = Text_MeasureWidth(szLabel);                                       /* 0x59CEC */
             Text_DrawString(120 - BuildDialog_HalfWidth(nWidth), 236, pRec->szName);  /* 0x59D0C */
         }
@@ -1931,7 +1932,7 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
             UiPanel_DrawText(pEnv->pPanel);                                          /* 0x59FEC */
         }
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);             /* 0x5A00C */
-        BuildDialog_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pEnv->pszTitleList);
+        BaseUi_CopyLabel(szLabel, PUFO_BUILD_LABEL_MAX, pEnv->pszTitleList);
         Text_DrawString(6, 4, szLabel);                                              /* 0x5A050 */
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 130, 130, 250, 20, 20, 90);           /* 0x5A078 */
         BuildDialog_DrawFundsLine(pEnv, szLabel);
@@ -1952,4 +1953,63 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
     }
 
     return 1;
+}
+
+/* --- Soldier_FormatDisplayName @ 0x6654c --- */
+
+/* aTextRecs @ 0xB38D0 record indices. 93 is the "no craft" label the 0xFF sentinel gets and 140 the
+ * label the 0xFE sentinel gets; 137, 138 and 139 are the three craft types this function names.
+ * Ship_FormatDisplayName (0x666cc) uses the same three plus 418 and 419 for the two types that are
+ * named on the craft side only. */
+#define PUFO_SOLDIER_CRAFT_REC_BASE 137
+#define PUFO_SOLDIER_NO_CRAFT_REC   93
+#define PUFO_SOLDIER_UNASSIGNED_REC 140
+
+char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const u8 *pTextRecs,
+                                char *pszOut, size_t cchOut)
+{
+    char szNum[16];
+    Ship *pShip;
+    u8 nCraft;
+
+    if (pszOut == NULL || cchOut == 0) {
+        return pszOut;
+    }
+    pszOut[0] = 0;
+    if (pSol == NULL) {
+        return pszOut;
+    }
+    nCraft = pSol->bUnk183;
+
+    if (nCraft == 0xFF) {                                                          /* 0x66560 */
+        if (pTextRecs != NULL) {
+            BaseUi_CopyLabel(pszOut, cchOut,
+                             (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE
+                                            * PUFO_SOLDIER_NO_CRAFT_REC));
+        }
+        return pszOut;                                                             /* 0x66590 */
+    }
+
+    if (nCraft < 0xFE) {                                                           /* 0x665AC */
+        if (apCraft != NULL && pTextRecs != NULL) {
+            pShip = apCraft[nCraft];
+            if (pShip != NULL && pShip->bCraftType < 3) {                          /* 0x665CC */
+                BaseUi_CopyLabel(pszOut, cchOut,
+                                 (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE
+                                                * (PUFO_SOLDIER_CRAFT_REC_BASE
+                                                   + pShip->bCraftType)));
+                snprintf(szNum, sizeof(szNum), "%d", (i32)pShip->bType);           /* 0x66664 */
+                (void)pufo_strcat(pszOut, szNum, cchOut);                          /* 0x66688 */
+            }
+        }
+    }
+
+    if (nCraft == 0xFE) {                                                          /* 0x66694 */
+        if (pTextRecs != NULL) {
+            BaseUi_CopyLabel(pszOut, cchOut,
+                             (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE
+                                            * PUFO_SOLDIER_UNASSIGNED_REC));
+        }
+    }
+    return pszOut;                                                                 /* 0x666C8 */
 }

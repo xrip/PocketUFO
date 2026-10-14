@@ -100,13 +100,18 @@ static void World_FacToggleThunk(void *pUser)
     BaseFacScreen_Toggle(&pW->facToggleEnv);
 }
 
-/* SoldierScreen_Toggle @ 0x64af0, the handler of nav control slot 2 (0x67B88).
- * Soldier_FormatDisplayName (0x6654c) is not ported yet, so the craft-name column stays empty. */
-static const char *World_SoldierNameStub(void *pUser, Soldier *pSol)
+/* Soldier_FormatDisplayName @ 0x6654c: the soldier screen's craft column. The original writes into
+ * the shared scratch string at 0x186B10 and returns it; the port uses the world's own copy of that
+ * buffer, szLabelScratch, which is the same slot the placement overlay's label uses. */
+static const char *World_SoldierName(void *pUser, Soldier *pSol)
 {
-    (void)pUser;
-    (void)pSol;
-    return "";
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW == NULL || pW->pAssets == NULL) {
+        return "";
+    }
+    return Soldier_FormatDisplayName(pSol, pW->apCraft, pW->pAssets->pTextRecs,
+                                     pW->szLabelScratch, sizeof(pW->szLabelScratch));
 }
 
 /* SoldierScreen_SelectListed @ 0x64a9c, panel C's click. */
@@ -181,7 +186,8 @@ static void World_SoldierToggleThunk(void)
     pW->solEnv.pfnCloseSoldierThunk = World_NoopClick;
     pW->solEnv.pfnEquipThunk = World_SoldierEquipThunk;
     pW->solEnv.pfnSelectThunk = World_SoldierSelectThunk;
-    pW->solEnv.pfnFormatName = World_SoldierNameStub;
+    pW->solEnv.pfnFormatName = World_SoldierName;   /* Soldier_FormatDisplayName @ 0x6654c */
+    pW->solEnv.pFormatUser = pW;
     SoldierScreen_Toggle(&pW->solEnv);
 }
 

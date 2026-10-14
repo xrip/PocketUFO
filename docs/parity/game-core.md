@@ -9447,3 +9447,33 @@ rows instead. `UiControl_BlitActivePad` takes one argument in the original and c
 / `PadImage_BlitEx(pPad, 0)` itself; the port keeps its existing injected-blit seam. The original
 returns register residue; the port returns 1 when it drew and 0 when the dialog is closed. The shell
 wiring waits for `Geoscape_DrawScreen @ 0x6c16c`, the draw that calls this one.
+
+### `Soldier_FormatDisplayName` + `Ship_FormatDisplayName` (done)
+
+`src/pufo/game/pufo_baseui.{h,c}` and `src/pufo/game/pufo_ship.{h,c}`, 18 new checks in
+`tests/test_baseui.c` and `tests/test_ship.c`. The two craft-name formatters, and the point where it
+became clear that the five craft labels are one per CraftType.
+
+`Ship_FormatDisplayName` (0x666cc, 424 B, twelve call sites) picks the label from `Ship.bCraftType`
+@ +0x02: `aTextRecs` records 137, 138 and 139 for types 0, 1 and 2 and 418 and 419 for types 3 and 4,
+and the last two put a "-" (`asc_AB340 @ 0xAB340`) between the label and the number. The number is
+`Ship.bType` @ +0x00 -- the per-craft-type ordinal `Ship_Ctor` took from 0x18653C..0x186540 -- not the
+craft id.
+
+`Soldier_FormatDisplayName` (0x6654c, 384 B) keys off `Soldier.bUnk183` @ +0xB7: 0xFF is record 93 and
+returns early, 0xFE is record 140 (reached because `BCS` at 0x665AC skips the craft branch), and
+anything below 0xFE looks the craft up and names it with records 137/138/139 plus `Ship.bType` -- but
+only for craft types 0..2. Types 3 and 4 branch from 0x665CC past both the label and the number and
+write nothing, so the original hands back the shared scratch string exactly as the previous call left
+it.
+
+Both write into `szRadarMsg @ 0x186B10`, the 108-byte scratch that ends at `nSmapTapX @ 0x186B7C`,
+with unbounded copy loops and a strcat (bugs.tsv); the port writes into the caller's buffer with the
+bound the caller supplies. A CraftType outside 0..4 makes `Ship_FormatDisplayName` fall out of its
+switch and copy its own uninitialised 104-byte local into the scratch (0x66848..0x66864); the port
+returns an empty string.
+
+IDB: the seven labels are now `aTextRec93/137/138/139/140/418/419` -- every one an exact
+`0xB38D0 + 205*n` record start -- and both functions carry a comment. On the shell side
+`SoldierScreen_Toggle`'s craft column no longer goes through a stub: `World_SoldierName` calls the
+ported formatter with the world's own copy of the scratch buffer.

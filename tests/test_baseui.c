@@ -9,6 +9,19 @@
 
 static int g_nFailures;
 
+static void PutStr(char *pszDst, const char *pszSrc)
+{
+    while (*pszSrc != 0) {
+        *pszDst++ = *pszSrc++;
+    }
+    *pszDst = 0;
+}
+
+static void PutTextRec(u8 *pText, i32 nRec, const char *psz)
+{
+    PutStr((char *)(pText + PUFO_TEXT_REC_STRIDE * nRec), psz);
+}
+
 static void Check(bool bCond, const char *pszWhat)
 {
     if (bCond) {
@@ -2427,6 +2440,69 @@ static void TestBuildDialog(void)
     UiPanel_FreeLines(&panel);
 }
 
+/* Soldier_FormatDisplayName @ 0x6654c. The soldier's craft byte (Soldier.bUnk183 @ +0xB7) picks the
+ * label: 0xFF is record 93, 0xFE is record 140, and anything below 0xFE looks the craft up and names
+ * it with records 137/138/139 for craft types 0..2 plus Ship.bType. Craft types 3 and 4 name nothing
+ * at all -- the original hands back the shared scratch string as the previous call left it. */
+static void TestSoldierDisplayName(void)
+{
+    static u8 aText[PUFO_TEXT_REC_STRIDE * 420];
+    static Ship aShips[2];
+    static Ship *apCraft[2];
+    static Soldier sol;
+    static char szOut[108];
+
+    printf("Soldier_FormatDisplayName @ 0x6654c\n");
+
+    PutTextRec(aText, 93, "no craft");
+    PutTextRec(aText, 137, "INTERCEPTOR");
+    PutTextRec(aText, 138, "TRANSPORT");
+    PutTextRec(aText, 139, "BOMBER");
+    PutTextRec(aText, 140, "on foot");
+
+    memset(aShips, 0, sizeof(aShips));
+    aShips[0].bCraftType = 1;
+    aShips[0].bType = 7;
+    aShips[1].bCraftType = 4;
+    aShips[1].bType = 2;
+    apCraft[0] = &aShips[0];
+    apCraft[1] = &aShips[1];
+
+    memset(&sol, 0, sizeof(sol));
+    sol.bUnk183 = 0xFF;
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "no craft") == 0,
+          "0xFF is record 93 and returns early (0x66560)");
+
+    sol.bUnk183 = 0xFE;
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "on foot") == 0,
+          "0xFE skips the craft branch and gets record 140 (0x66694)");
+
+    sol.bUnk183 = 0;
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "TRANSPORT7") == 0,
+          "a type-1 craft is record 138 plus Ship.bType (0x66610, 0x66664)");
+
+    aShips[0].bCraftType = 0;
+    aShips[0].bType = 12;
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "INTERCEPTOR12") == 0,
+          "type 0 is record 137 (0x6663C)");
+
+    aShips[0].bCraftType = 2;
+    aShips[0].bType = 1;
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "BOMBER1") == 0,
+          "type 2 is record 139 (0x665EC)");
+
+    /* Types 3 and 4 branch past both the label and the number. */
+    sol.bUnk183 = 1;
+    PutStr(szOut, "stale");
+    Check(strcmp(Soldier_FormatDisplayName(&sol, apCraft, aText, szOut, sizeof(szOut)), "") == 0,
+          "a type-4 craft names nothing (0x665CC default)");
+
+    Check(strcmp(Soldier_FormatDisplayName(NULL, apCraft, aText, szOut, sizeof(szOut)), "") == 0,
+          "a null soldier yields the empty string");
+    Check(strcmp(Soldier_FormatDisplayName(&sol, NULL, aText, szOut, sizeof(szOut)), "") == 0,
+          "and so does a null roster");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2465,6 +2541,7 @@ int main(void)
     TestSoldierEquipSelected();
     TestFacOverlay();
     TestBuildDialog();
+    TestSoldierDisplayName();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
