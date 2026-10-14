@@ -366,7 +366,8 @@ typedef struct ResearchQtyEnv {
     u16                 *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
     const u16           *puResearchEntries; /* nResearchEntryCount @ 0x160C4C, shared by every base */
     const ObjectRecFull *pScientistRec;     /* Map_apObjects113 @ 0x113C84, the scientists item */
-    const u8            *abFacilityGrid;    /* gBaseFacGrid @ 0x159768 */
+    u8                  *abFacilityGrid;    /* gBaseFacGrid @ 0x159768; mutable because the start
+                                             * button re-runs the two needed passes over it */
     const i8            *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
 } ResearchQtyEnv;
 
@@ -470,6 +471,56 @@ i32 ManufScreen_DecSelectedQty(const ManufQtyEnv *pEnv);
 i32 ManufScreen_ReduceSelectedQtyToOne(const ManufQtyEnv *pEnv);
 i32 ManufScreen_DecEngineers(const ManufQtyEnv *pEnv);
 i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv);
+
+/* ManufScreen_SelectListed @ 0x6e914 (120 B): the manufacturing product list's row click, the
+ * sibling of PlaySample7_SetFlags_Cache0xBD8 @ 0x73328 on the research screen. It plays sample 7,
+ * caches the panel's nUnk3032 row cursor into nManufProductRowCache, sets bManufProductSelected,
+ * clears bUiAnimStarted and clears bManufQtyGate.
+ *
+ * Two things it does that the research sibling does not. It also clears the panel's own nUnk3032,
+ * and it clears it with a byte store (MOV R2,#0 / STRB R2,[R0,#0xBD8] at 0x6E958) rather than a
+ * word store, so only the low byte of the dword cursor is zeroed and the upper 24 bits survive --
+ * for any cursor under 256 that is a full clear, and the port reproduces the byte width exactly.
+ * And it clears bManufQtyGate, which is the only write that address ever gets.
+ *
+ * Deviation: the original leaves the address of bManufQtyGate in R0 (0x6E974, residue from the
+ * last LDR); the port returns the cached row, which is what the research sibling returns. */
+typedef struct ManufSelectEnv {
+    UiPanel *pProductPanel;      /* pManufProductPanel @ 0x15EE44 */
+    i32     *pnProductRow;       /* nManufProductRowCache @ 0x15EE3C */
+    u8      *pbProductSelected;  /* bManufProductSelected @ 0x15EE34 */
+    u8      *pbQtyGate;          /* bManufQtyGate @ 0x15EE50 */
+    u8      *pbAnimStarted;      /* bUiAnimStarted @ 0x187080 */
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void *pSampleUser;
+} ManufSelectEnv;
+
+i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv);
+
+/* ResearchScreen_StartSelected @ 0x73240 (232 B): the research screen's start button. It clears
+ * the detail flag, plays sample 17, and then -- only if the selected topic's wProgress is zero AND
+ * that topic's allocation for this base is non-zero -- sets wProgress to 1, which is what moves a
+ * topic from "allocated" to "running". The two reads are 0x732C8 (LDRH [topic*34 + 0xA]) and
+ * 0x732F8 (LDRH of auResearchCol[topic + 144*base]); the store at 0x732D8 is the same wProgress
+ * reached through the 0x15EF0C anchor plus 6, the same address.
+ *
+ * It then refreshes the three panels, re-runs both needed passes (workshops and labs, which is why
+ * the manufacturing column has to be handed in too), and tail-calls ResearchScreen_RebuildTopicList
+ * (0x74270, not ported), so the rebuild is a hook and this returns what that hook returns. */
+typedef struct ResearchStartEnv {
+    ResearchQtyEnv qty;                  /* panel, row cache, research column, count, scientists, grid, base */
+    ResearchTopicLive *aTopics;          /* aResearchTopics @ 0x15EF08 */
+    UiPanel         *pPanelQty;          /* unk_15EEFC, the second of the three research panels */
+    UiPanel         *pPanelProgress;     /* unk_15EF00, the third */
+    const u16       *apManufCols;        /* auManufCol @ 0x15E19C, for the workshop needed pass */
+    u8              *pbTopicSelected;    /* unk_160C80, cleared here */
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void *pSampleUser;
+    i32 (*pfnRebuild)(void *pUser);      /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    void *pRebuildUser;
+} ResearchStartEnv;
+
+i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv);
 
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and

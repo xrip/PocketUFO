@@ -979,6 +979,149 @@ static void TestResearchAllocate(void)
     CheckEqI32(ResearchScreen_AccumulateAllocated(NULL), 0, "and a missing environment returns 0");
 }
 
+static u32 g_aSampleLog[8];
+static int g_nSampleCount;
+static void SampleThunk(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    if (g_nSampleCount < (int)(sizeof(g_aSampleLog) / sizeof(g_aSampleLog[0]))) {
+        g_aSampleLog[g_nSampleCount] = nSample;
+    }
+    ++g_nSampleCount;
+}
+
+static int g_nStartRebuilds;
+static i32 StartRebuildThunk(void *pUser) { (void)pUser; ++g_nStartRebuilds; return 4242; }
+
+static void TestScreenSelect(void)
+{
+    static UiPanel g_ManufPanel;
+    static UiPanel g_TopicPanel, g_QtyPanel, g_ProgPanel;
+    static u8 (*g_aLines)[PUFO_PANEL_LINE_BYTES];
+    static ResearchTopicLive g_aTopics[PUFO_RESEARCH_TOPIC_COUNT];
+    static u16 g_aResCols[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
+    static u16 g_aManufCols[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
+    static u8 g_aGrid[PUFO_GRID_SIZE];
+    static ObjectRecFull g_SciRec;
+    static i32 g_nRow, g_nManufRow;
+    static i8 g_nBase;
+    static u16 g_nEntries;
+    static u8 g_bSelected, g_bGate, g_bAnim, g_bTopicSel;
+    ManufSelectEnv sel;
+    ResearchStartEnv start;
+
+    printf("\nManufScreen_SelectListed @ 0x6e914 / ResearchScreen_StartSelected @ 0x73240\n");
+
+    memset(&g_ManufPanel, 0, sizeof(g_ManufPanel));
+    memset(&g_TopicPanel, 0, sizeof(g_TopicPanel));
+    memset(&g_QtyPanel, 0, sizeof(g_QtyPanel));
+    memset(&g_ProgPanel, 0, sizeof(g_ProgPanel));
+    g_aLines = calloc(6, PUFO_PANEL_LINE_BYTES);
+    Check(g_aLines != NULL, "line buffers allocated");
+    for (i32 i = 0; i < 3; ++i) {
+        g_QtyPanel.apLines[i] = g_aLines[i];
+        g_ProgPanel.apLines[i] = g_aLines[3 + i];
+    }
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+    memset(g_aResCols, 0, sizeof(g_aResCols));
+    memset(g_aManufCols, 0, sizeof(g_aManufCols));
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(&g_SciRec, 0, sizeof(g_SciRec));
+
+    /* The row click: cache the cursor, set the flags, clear the gate -- and clear the panel's own
+     * cursor with a BYTE store, so the upper 24 bits of the dword survive. */
+    memset(&sel, 0, sizeof(sel));
+    sel.pProductPanel = &g_ManufPanel;
+    sel.pnProductRow = &g_nManufRow;
+    sel.pbProductSelected = &g_bSelected;
+    sel.pbQtyGate = &g_bGate;
+    sel.pbAnimStarted = &g_bAnim;
+    sel.pfnPlaySample = SampleThunk;
+    g_ManufPanel.nUnk3032 = 5;
+    g_bSelected = 0;
+    g_bGate = 1;
+    g_bAnim = 1;
+    g_nSampleCount = 0;
+
+    CheckEqI32(ManufScreen_SelectListed(&sel), 5, "the click returns the cached row");
+    CheckEqI32(g_nManufRow, 5, "the panel's nUnk3032 is cached into nManufProductRowCache");
+    CheckEqI32(g_ManufPanel.nUnk3032, 0, "and the panel's own cursor is cleared");
+    CheckEqI32(g_bSelected, 1, "bManufProductSelected is set");
+    CheckEqI32(g_bAnim, 0, "bUiAnimStarted is cleared");
+    CheckEqI32(g_bGate, 0, "and so is the quantity gate -- the only write it ever gets");
+    CheckEqI32(g_nSampleCount, 1, "one sample played");
+    CheckEqI32((i32)g_aSampleLog[0], 7, "sample 7");
+
+    g_ManufPanel.nUnk3032 = 0x123456;
+    (void)ManufScreen_SelectListed(&sel);
+    CheckEqI32(g_nManufRow, 0x123456, "the cached row is the whole dword");
+    CheckEqI32(g_ManufPanel.nUnk3032, 0x123400,
+               "but the clear is a byte store: only the low byte of the cursor goes to zero");
+    CheckEqI32(ManufScreen_SelectListed(NULL), 0, "a missing environment does nothing");
+
+    /* The research start button. Topic 2 is allocated 3 units for base 0 and is idle. */
+    g_TopicPanel.anLineAux[0] = 2;
+    g_nRow = 0;
+    g_nBase = 0;
+    g_nEntries = 3;
+    g_aResCols[2] = 3;
+    g_aTopics[1].bActive = 1;
+    g_aTopics[2].bActive = 1;
+    g_aTopics[2].wProgress = 0;
+    g_aManufCols[0] = 60; /* a workshop budget of 60/50+1 = 2 */
+    g_aGrid[480 + 144 * 0 + 6 * 0 + 0] = 3; /* two workshop cells */
+    g_aGrid[480 + 144 * 0 + 6 * 1 + 0] = 3;
+    g_aGrid[480 + 144 * 0 + 6 * 3 + 0] = 2; /* one lab cell, past the three workshop cells */
+    g_SciRec.auPerBaseVal[0] = 4;
+    g_bTopicSel = 1;
+    g_nSampleCount = 0;
+
+    memset(&start, 0, sizeof(start));
+    start.qty.pTopicPanel = &g_TopicPanel;
+    start.qty.pnTopicRow = &g_nRow;
+    start.qty.apResearchCols = g_aResCols;
+    start.qty.puResearchEntries = &g_nEntries;
+    start.qty.pScientistRec = &g_SciRec;
+    start.qty.abFacilityGrid = g_aGrid;
+    start.qty.pnSelectedBaseIdx = &g_nBase;
+    start.aTopics = g_aTopics;
+    start.pPanelQty = &g_QtyPanel;
+    start.pPanelProgress = &g_ProgPanel;
+    start.apManufCols = g_aManufCols;
+    start.pbTopicSelected = &g_bTopicSel;
+    start.pfnPlaySample = SampleThunk;
+    start.pfnRebuild = StartRebuildThunk;
+    g_nStartRebuilds = 0;
+
+    CheckEqI32(ResearchScreen_StartSelected(&start), 4242, "the tail-called rebuild is the return");
+    CheckEqI32(g_bTopicSel, 0, "the detail flag is cleared first");
+    CheckEqI32(g_nSampleCount, 1, "sample 17 played once");
+    CheckEqI32((i32)g_aSampleLog[0], 17, "sample 17");
+    CheckEqI32(g_aTopics[2].wProgress, 1, "an idle topic with an allocation starts at 1");
+    CheckEqI32(g_QtyPanel.nLineCount, 2, "the panels were refreshed: two active topics");
+    CheckEqI32(g_ProgPanel.nLineCount, 2, "all three of them");
+    CheckEqI32(g_aGrid[444 + 144 * 0 + 6 * 0 + 0], 1, "the workshop pass marked the first cell");
+    CheckEqI32(g_aGrid[444 + 144 * 0 + 6 * 1 + 0], 1, "and the second, a budget of 60/50+1 = 2");
+    CheckEqI32(g_aGrid[444 + 144 * 0 + 6 * 2 + 0], 0, "the third workshop cell is past the budget");
+    CheckEqI32(g_nStartRebuilds, 1, "rebuild ran once");
+
+    /* A topic already running is not restarted, and an unallocated one is not started. */
+    g_aTopics[2].wProgress = 5;
+    (void)ResearchScreen_StartSelected(&start);
+    CheckEqI32(g_aTopics[2].wProgress, 5, "a running topic keeps its progress");
+    g_aTopics[2].wProgress = 0;
+    g_aResCols[2] = 0;
+    (void)ResearchScreen_StartSelected(&start);
+    CheckEqI32(g_aTopics[2].wProgress, 0, "an idle topic with no allocation stays idle");
+    g_aResCols[2] = 3;
+
+    /* Without the rebuild hook there is no tail call and no return value. */
+    start.pfnRebuild = NULL;
+    CheckEqI32(ResearchScreen_StartSelected(&start), 0, "no hook, no return");
+    CheckEqI32(ResearchScreen_StartSelected(NULL), 0, "and a missing environment does nothing");
+    free(g_aLines);
+}
+
 static void TestManufQty(void)
 {
     static UiPanel g_Panel;
@@ -3589,6 +3732,7 @@ int main(void)
     TestResearchQty();
     TestResearchAllocate();
     TestManufQty();
+    TestScreenSelect();
     TestFindAtBase();
     TestTransferFlag();
     TestNewBaseScreen();

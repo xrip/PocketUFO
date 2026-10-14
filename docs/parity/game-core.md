@@ -10098,3 +10098,45 @@ both columns as arguments and refuse or clamp where the original derefs blindly.
 Still open in this family: `ManufScreen_IncEngineers` (0x6e13c, 500 B), `ManufScreen_SelectListed`
 (0x6e914, 120 B), `ManufScreen_ClearProductSlot` (0x6f8cc, 216 B), `ManufScreen_Draw` (0x6e3e0,
 1332 B), `ManufScreen_DrawFrame` (0x6f9a4, 5400 B) and `ManufScreen_BuildPanels` (0x6e9e8, 2404 B).
+
+
+## The two row clicks, and the research start button (done)
+
+`ManufScreen_SelectListed @ 0x6e914` (120 B) and `ResearchScreen_StartSelected @ 0x73240`
+(232 B) close the selection side of the two screens.
+
+`ManufScreen_SelectListed` is the manufacturing product list's row click and the sibling of
+`PlaySample7_SetFlags_Cache0xBD8` (0x73328): play sample 7, cache the panel's `nUnk3032` row cursor
+into `nManufProductRowCache`, set `bManufProductSelected`, clear `bUiAnimStarted`, clear
+`bManufQtyGate`. Two things the research sibling does not. It also clears the panel's **own**
+`nUnk3032`, and it clears it with a byte store -- `MOV R2,#0` / `STRB R2,[R0,#0xBD8]` at 0x6E958 --
+into a dword field, so only the low byte goes to zero and the upper 24 bits survive. A cursor of
+0x123456 becomes 0x123400, which the test asserts. And it is the only place `bManufQtyGate` is ever
+written.
+
+`ResearchScreen_StartSelected` is where allocation becomes work. It clears the detail flag
+(`unk_160C80`), plays sample 17, and then starts the selected topic only under two conditions
+tested in sequence: the topic's `wProgress` is zero (`LDRH [topic*34 + 0x15EF08 + 0xA]` at 0x732C8)
+and that topic's allocation for this base is non-zero (`auResearchCol[topic + 144*base]` at
+0x732F8). The store at 0x732D8 reaches the same `wProgress` through the other anchor --
+`ADDHI R3, R4, #4` then `STRHHI R2, [R3,#6]`, which is 0x15EF0C + 34*topic + 6, the same address.
+That is the second confirmation that the live topic record starts at 0x15EF08 with `wProgress` at
++0xA, the first being `ResearchScreen_RefreshPanels` walking from 0x15EF2A = anchor + 34.
+
+It then refreshes the three panels and re-runs both needed passes -- workshops and labs -- which is
+why a research handler has to be handed the **manufacturing** column: `Base_UpdateWorkshopNeeded`
+takes its budget from `Base_CountActiveManuf`. Then it tail-calls `ResearchScreen_RebuildTopicList`
+(0x74270, not ported), so the rebuild is a hook.
+
+Deviation: `ManufScreen_SelectListed` returns the cached row rather than the address of
+`bManufQtyGate` the original leaves in R0, matching what the research sibling's port returns; and
+both take their globals as arguments and refuse when one is missing.
+
+IDB: comments on 0x6e914 and 0x73240 recording the byte-width cursor clear, the two-anchor
+`wProgress` identity and the reason the manufacturing column appears in a research handler.
+
+Still open in these two families: `ManufScreen_IncEngineers` (0x6e13c, 500 B), `ManufScreen_ClearProductSlot`
+(0x6f8cc, 216 B), `ManufScreen_Draw` (0x6e3e0, 1332 B), `ManufScreen_DrawFrame` (0x6f9a4, 5400 B),
+`ManufScreen_BuildPanels` (0x6e9e8, 2404 B), `ResearchScreen_Init` (0x749a8, 592 B),
+`ResearchScreen_BuildPanels` (0x733f4, 1600 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B),
+`ResearchScreen_Draw` (0x73a34, 2108 B) and `ResearchScreen_Open` (0x616ac, 232 B).

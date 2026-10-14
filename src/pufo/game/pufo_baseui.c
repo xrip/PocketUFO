@@ -788,6 +788,82 @@ i32 ManufScreen_UpdateProgress(const ManufQtyEnv *pEnv)
     return nTotal; /* 0x6E098 */
 }
 
+/* ManufScreen_SelectListed @ 0x6e914. The product list's row click. */
+i32 ManufScreen_SelectListed(const ManufSelectEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pProductPanel == NULL) {
+        return 0;
+    }
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(7, pEnv->pSampleUser); /* 0x6E920 */
+    }
+
+    const i32 nRow = pEnv->pProductPanel->nUnk3032; /* 0x6E938: LDR [R0,#0xBD8] */
+    if (pEnv->pnProductRow != NULL) {
+        *pEnv->pnProductRow = nRow; /* 0x6E944 */
+    }
+    if (pEnv->pbProductSelected != NULL) {
+        *pEnv->pbProductSelected = 1; /* 0x6E950 */
+    }
+    /* 0x6E958: MOV R2,#0 / STRB R2,[R0,#0xBD8]. A byte store into a dword field, so only the low
+     * byte of the cursor is cleared and the upper 24 bits survive. */
+    pEnv->pProductPanel->nUnk3032 =
+        (i32)(((u32)pEnv->pProductPanel->nUnk3032) & 0xFFFFFF00u);
+    if (pEnv->pbAnimStarted != NULL) {
+        *pEnv->pbAnimStarted = 0; /* 0x6E964 */
+    }
+    if (pEnv->pbQtyGate != NULL) {
+        *pEnv->pbQtyGate = 0; /* 0x6E970: the only write bManufQtyGate ever gets */
+    }
+    return nRow;
+}
+
+/* ResearchScreen_StartSelected @ 0x73240. Allocation turns into running work only when the topic
+ * is idle and this base has actually allocated something to it. */
+i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)
+{
+    const i32 nIdx = ResearchQtyIndex(&pEnv->qty);
+    if (nIdx < 0 || pEnv->aTopics == NULL) {
+        return 0;
+    }
+
+    if (pEnv->pbTopicSelected != NULL) {
+        *pEnv->pbTopicSelected = 0; /* 0x7324C */
+    }
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pSampleUser); /* 0x73258 */
+    }
+
+    const i32 nBase = (pEnv->qty.pnSelectedBaseIdx != NULL) ? (i32)*pEnv->qty.pnSelectedBaseIdx : 0;
+    const i32 nTopic = nIdx - PUFO_RESEARCH_TOPIC_COUNT * nBase;
+    const i32 nEntries = (pEnv->qty.puResearchEntries != NULL) ? (i32)*pEnv->qty.puResearchEntries : 0;
+    const u16 *pResearchCol = pEnv->qty.apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase;
+
+    if (pEnv->aTopics[nTopic].wProgress == 0 && pEnv->qty.apResearchCols[nIdx] != 0) {
+        pEnv->aTopics[nTopic].wProgress = 1; /* 0x732C8 tests, 0x732D8 stores */
+    }
+
+    (void)ResearchScreen_RefreshPanels(pEnv->aTopics, nEntries, pResearchCol,
+                                       pEnv->qty.pTopicPanel, pEnv->pPanelQty,
+                                       pEnv->pPanelProgress); /* 0x732DC */
+
+    if (pEnv->qty.abFacilityGrid != NULL) {
+        const i32 nActiveManuf = (pEnv->apManufCols != NULL)
+                                     ? Base_CountActiveManuf(pEnv->apManufCols +
+                                                             PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
+                                                             nEntries)
+                                     : 0;
+        (void)Base_UpdateWorkshopNeeded(pEnv->qty.abFacilityGrid, nBase, nActiveManuf); /* 0x732F0 */
+        (void)Base_UpdateLabNeeded(pEnv->qty.abFacilityGrid, nBase,
+                                   Base_CountActiveResearch(pResearchCol, nEntries)); /* 0x73304 */
+    }
+
+    if (pEnv->pfnRebuild != NULL) {
+        return pEnv->pfnRebuild(pEnv->pRebuildUser); /* 0x73320: tail call */
+    }
+    return 0;
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

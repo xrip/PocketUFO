@@ -667,6 +667,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   New ledger row: `bManufQtyGate` is a **dead gate** — no code in the binary writes it non-zero, the
   only store anywhere is `ManufScreen_SelectListed` writing 0 at 0x6E970.
 
+- [x] part 4, the selection side: `ManufScreen_SelectListed (0x6e914)` and
+  `ResearchScreen_StartSelected (0x73240)` — 27 more checks. The row click clears the panel's own
+  `nUnk3032` with a **byte** store (`STRB [R0,#0xBD8]` at 0x6E958) into a dword field, so only the
+  low byte goes to zero (0x123456 → 0x123400, asserted). The start button begins a topic only when
+  `wProgress == 0` AND `auResearchCol[topic + 144*base] != 0`, and it reaches `wProgress` through
+  both anchors (0x15EF08 + 34*topic + 0xA at 0x732C8, 0x15EF0C + 34*topic + 6 at 0x732D8) — the
+  second confirmation of the live record layout. It also needs the manufacturing column, because
+  `Base_UpdateWorkshopNeeded` takes its budget from `Base_CountActiveManuf`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -802,6 +811,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | research quantity buttons + crew getters (`ResearchScreen_IncSelectedQty`, `ResearchScreen_DecSelectedQty`, `Base_GetScientistCount`, `Base_GetEngineerCount`) | 56/56 (Release) | 8702 | 780/1103 (70.7%) | 319608/598792 (53.4%) | 38 checked, 0 mismatched |
 | research allocate / cancel / hourly accumulate (`ResearchScreen_UpdateProgress`, `ResearchScreen_CancelSelectedAndClose`, `ResearchScreen_AccumulateAllocated`) | 56/56 (Release) | 8736 | 783/1103 (71.0%) | 320156/598792 (53.5%) | 38 checked, 0 mismatched |
 | manufacturing quantity buttons (`ManufScreen_IncSelectedQty`, `DecSelectedQty`, `ReduceSelectedQtyToOne`, `DecEngineers`, `UpdateProgress`) | 56/56 (Release) | 8780 | 788/1103 (71.4%) | 321184/598792 (53.6%) | 38 checked, 0 mismatched |
+| the two row clicks + the research start button (`ManufScreen_SelectListed`, `ResearchScreen_StartSelected`) | 56/56 (Release) | 8807 | 790/1103 (71.6%) | 321536/598792 (53.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
