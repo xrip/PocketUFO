@@ -1612,6 +1612,51 @@ static void TestFacilityPlaceAndGrant(void)
 #undef DAYS
 }
 
+static void TestSpeedButtons(void)
+{
+    GeoscapeWorld world;
+    UiControl ctl[6];
+    UiControl *apCtl[6];
+    i32 i;
+    i32 nLit;
+
+    memset(&world, 0, sizeof(world));
+    memset(ctl, 0, sizeof(ctl));
+    for (i = 0; i < 6; ++i) {
+        apCtl[i] = &ctl[i];
+    }
+
+    printf("\nGameTime_Set5Sec..SetSpeedIdx5 @ 0x84f00..0x85158\n");
+
+    GameTime_Set5Sec(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 5, "Set5Sec stores 5 seconds");
+    CheckEqI32(ctl[0].nState, 1, "and lights control 0");
+    CheckEqI32(ctl[5].nState, 0, "control 5 stays dark");
+
+    GameTime_Set1Min(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 60, "Set1Min stores 60");
+    CheckEqI32(ctl[1].nState, 1, "lights control 1");
+    CheckEqI32(ctl[0].nState, 0, "and darkens control 0");
+
+    GameTime_Set5Min(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 300, "Set5Min stores 300");
+    GameTime_SetSpeedIdx3(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 1380, "SetSpeedIdx3 stores 1380");
+    GameTime_SetSpeedIdx4(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 2460, "SetSpeedIdx4 stores 2460");
+
+    GameTime_SetSpeedIdx5(&world, apCtl);
+    CheckEqI32(world.nTickSeconds, 3600, "SetSpeedIdx5 stores 3600");
+    CheckEqI32(ctl[5].nState, 1, "and lights control 5, the only one it ever lights");
+    CheckEqI32(ctl[4].nState, 0, "control 4 goes dark");
+
+    nLit = 0;
+    for (i = 0; i < 6; ++i) {
+        nLit += ctl[i].nState != 0;
+    }
+    CheckEqI32(nLit, 1, "exactly one control is lit after a set");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -1636,6 +1681,7 @@ int main(void)
     TestRemainingNeededPasses();
     TestEmptyFacilityCells();
     TestFacilityPlaceAndGrant();
+    TestSpeedButtons();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -56,9 +56,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 680 / 1103 (61.7%)
-                                             bytes cited:     268816 / 598792 (44.9%)
-python docs/parity/audit_credits.py       -> credited functions: 680, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 686 / 1103 (62.2%)
+                                             bytes cited:     269428 / 598792 (45.0%)
+python docs/parity/audit_credits.py       -> credited functions: 686, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 79, ORIGINAL BUG markers in src/pufo: 24
@@ -74,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 53 suites: **7364**.
+Test checks run across the 53 suites: **7377**.
 
 ### Per-subsystem status
 

@@ -18,6 +18,7 @@
 #include "game/pufo_ship.h"
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
+#include "ui/pufo_control.h"   /* UiControl, for the nav speed controls */
 
 typedef struct GeoscapeState {
     GameTime     time;
@@ -586,5 +587,29 @@ i32 BaseFac_SetCellBuildState(u8 *abFacilityGrid, i32 nBaseIndex, u8 nFacType,
  * unused there because the base comes from the global. The port takes the base and the object array
  * and returns nothing. */
 void Base_GrantStarterItems(BaseRec *pBase, ObjectRecFull *const *apObjects, u8 bGrant);
+
+/* ------------------------------------------------- the geoscape speed buttons
+ *
+ * Evidence: GameTime_Set5Sec @ 0x84f00, GameTime_Set1Min @ 0x84f64, GameTime_Set5Min @ 0x84fc8,
+ * GameTime_SetSpeedIdx3 @ 0x8502c, GameTime_SetSpeedIdx4 @ 0x85094, GameTime_SetSpeedIdx5 @ 0x850fc.
+ *
+ * Six one-button handlers, all the same shape: play sample 17, store the tick interval into
+ * GeoscapeWorld.nTickSeconds (dword_187070, read by StrategList_UpdateMotion and by the unported
+ * Geoscape_PulseUpdate, cleared by Geoscape_CloseUI), and set the nState of the six nav speed
+ * controls - the UiControl pointers Geoscape_InitUI keeps at 0x186500..0x186514 - so exactly the
+ * button's own control is 1 and the other five are 0. The intervals are 5, 60, 300, 1380, 2460 and
+ * 3600 seconds.
+ *
+ * Each original returns the sixth control pointer (register residue); no caller tests it, so the
+ * port returns void. */
+#define PUFO_GEOSCAPE_SPEED_COUNT 6
+extern const i32 g_aGeoscapeSpeedSec[PUFO_GEOSCAPE_SPEED_COUNT];
+
+void GameTime_Set5Sec(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
+void GameTime_Set1Min(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
+void GameTime_Set5Min(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
+void GameTime_SetSpeedIdx3(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
+void GameTime_SetSpeedIdx4(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
+void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PUFO_GEOSCAPE_SPEED_COUNT]);
 
 #endif /* PUFO_GEOSCAPE_H */

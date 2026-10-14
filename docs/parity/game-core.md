@@ -2663,6 +2663,19 @@ flips the flag and writes its pad indicator as the INVERSE of the new value
 Tests: `tests/test_clock.c`, `tests/test_ship.c`, `tests/test_strateg.c`,
 `tests/test_geoscape.c`.
 
+### The six geoscape speed buttons (done)
+
+`GameTime_Set5Sec @ 0x84f00`, `GameTime_Set1Min @ 0x84f64`, `GameTime_Set5Min @ 0x84fc8`,
+`GameTime_SetSpeedIdx3 @ 0x8502c`, `GameTime_SetSpeedIdx4 @ 0x85094`, `GameTime_SetSpeedIdx5 @
+0x850fc` — ported in `pufo_geoscape.c` as six thin wrappers over one `GameTime_SetSpeedIdx`
+(13 new checks in `tests/test_geoscape.c`). Each plays sample 17, stores the tick interval into
+`nGeoscapeTickSeconds` (`unk_187070`, renamed; the port's `GeoscapeWorld.nTickSeconds`, read by
+`StrategList_UpdateMotion`), and sets the `nState` of the six nav speed controls — the `UiControl`
+pointers `Geoscape_InitUI` keeps at 0x186500..0x186514, now typed as `apGeoscapeSpeedCtl[6]` — so
+exactly the button's own control is 1 and the other five are 0. Intervals: 5, 60, 300, 1380, 2460,
+3600 seconds. `SetSpeedIdx5` is the only one that ever lights control 5. Each original returns the
+sixth control pointer (register residue); no caller tests it, so the port returns void.
+
 ### The pause byte is one global, not a per-module flag
 
 `GameTime_Pause @ 0x5d6ac` is two instructions: `LOBYTE(gUiRootPanel.apLines[106])

@@ -323,8 +323,12 @@ Order is by what unblocks what. Each item ends with gates + commit.
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
   `Soldier_CreateAndClassify` (ported), leaving exactly two unported: `Base_CreateNamedEntry`
   (0x66930, 576 B) and `Geoscape_BuildNavControls` (0x67b1c, 588 B), both leaves.
-- [ ] `GameTime_Set5Sec (0x84f00, 100 B)` — needs a model for the six UI control pointers at
-  0x186500..0x186514 and the byte at 0x187070.
+- [x] The six geoscape speed buttons — `GameTime_Set5Sec (0x84f00)`, `GameTime_Set1Min (0x84f64)`,
+  `GameTime_Set5Min (0x84fc8)`, `GameTime_SetSpeedIdx3/4/5 (0x8502c/0x85094/0x850fc)`, 612 B total —
+  ported in `pufo_geoscape.c` as six wrappers over one `GameTime_SetSpeedIdx`, 13 new checks in
+  `tests/test_geoscape.c`. Each: `Sound_Play(17)`, store the interval (5/60/300/1380/2460/3600) into
+  `nGeoscapeTickSeconds` (the port's `GeoscapeWorld.nTickSeconds`), and light exactly one of the six
+  nav controls (`apGeoscapeSpeedCtl`, 0x186500..0x186514, typed this step).
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -422,6 +426,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `MapView_DrawMinimap` | 51/51 (Release) | 7297 | 678/1103 (61.5%) | 262092/598792 (43.8%) | 37 checked, 0 mismatched |
 | `MainMenu_Draw` | 52/52 (Release) | 7322 | 679/1103 (61.6%) | 264772/598792 (44.2%) | 37 checked, 0 mismatched |
 | `Tact_DrawCommandPads` | 53/53 (Release) | 7364 | 680/1103 (61.7%) | 268816/598792 (44.9%) | 37 checked, 0 mismatched |
+| `GameTime_Set5Sec..SetSpeedIdx5` | 53/53 (Release) | 7377 | 686/1103 (62.2%) | 269428/598792 (45.0%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
