@@ -638,6 +638,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
   selected base matches nothing; FindPrev never reads the soldier count.
   - By-product kept: the 84-byte gap between `buildDays` (288 bytes) and `fac` (at +0x174) inside
     the original's `BaseFacilityGrid` is this control-pointer array, not padding.
+- [x] the research allocation family, part 1: `ResearchScreen_IncSelectedQty (0x72ea0)`,
+  `ResearchScreen_DecSelectedQty (0x72f70)`, `Base_GetScientistCount (0x6812c)` and
+  `Base_GetEngineerCount (0x681f4)` — ported in `pufo_baseui.c` / `pufo_geoscape.c`, 42 new checks.
+  The two crew getters are one expression (a crew item's per-base total minus that base's allocated
+  column sum) with no floor. IDB: `unk_113C80/84` → `Map_apObjects112/113` (`ObjectRec *`),
+  `Map_apObjects105` retyped 1 → 4 bytes, `unk_160C68` → `pResearchTopicPanel`, `unk_160C74` →
+  `nResearchTopicRowCache` (a cached `nUnk3032`, written by 0x73328), `unk_16022C` → `auResearchCol`
+  (`u16[1152]`), and the misnamed `abBaseCraftLoot` at 0x160C4C → `nResearchEntryCount`.
+- [x] part 2: `ResearchScreen_UpdateProgress (0x72d14)`, `ResearchScreen_CancelSelectedAndClose
+  (0x73380)` and `ResearchScreen_AccumulateAllocated (0x74914)` — 34 more checks. ARM facts: the
+  allocate button's two cross-references are `ResearchScreen_Draw` storing it as `pfnClick` of the
+  control at 0x186B94 (0x7417C), not calls; the loop count is the scientist TOTAL while both gates
+  sum only the first `nResearchEntryCount` entries, so a count that does not cover the topic being
+  written makes both gates blind to the loop's own stores; the hourly accumulate walks a fixed eight
+  base slots and its inner loop bound is re-read from the count byte on each non-zero iteration
+  (`LDRBHI` 0x7497C). `unk_186B94` was left unnamed — `ManufScreen_DrawFrame` uses the same control.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -771,6 +788,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | hangar craft list + its teardown (`BasePlaneScreen_BuildPanels`, `BasePlaneScreen_SelectCraft`, `BasePlaneScreen_SelectListed`) | 56/56 (Release) | 8624 | 775/1103 (70.3%) | 317968/598792 (53.1%) | 38 checked, 0 mismatched |
 | hangar object block (`BasePlaneScreen_Init`) | 56/56 (Release) | 8660 | 776/1103 (70.4%) | 319040/598792 (53.3%) | 38 checked, 0 mismatched |
 | research quantity buttons + crew getters (`ResearchScreen_IncSelectedQty`, `ResearchScreen_DecSelectedQty`, `Base_GetScientistCount`, `Base_GetEngineerCount`) | 56/56 (Release) | 8702 | 780/1103 (70.7%) | 319608/598792 (53.4%) | 38 checked, 0 mismatched |
+| research allocate / cancel / hourly accumulate (`ResearchScreen_UpdateProgress`, `ResearchScreen_CancelSelectedAndClose`, `ResearchScreen_AccumulateAllocated`) | 56/56 (Release) | 8736 | 783/1103 (71.0%) | 320156/598792 (53.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

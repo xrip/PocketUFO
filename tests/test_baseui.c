@@ -805,6 +805,180 @@ static void TestRefreshPanels(void)
     CheckEqI32(pCount.nLineCount, 0, "and no topic is walked");
 }
 
+static int g_nCloseCalls;
+static void CloseUiThunk(void *pUser) { (void)pUser; ++g_nCloseCalls; }
+
+static int g_nRebuildCalls;
+static i32 RebuildThunk(void *pUser) { (void)pUser; ++g_nRebuildCalls; return 4242; }
+
+static void TestResearchAllocate(void)
+{
+    static UiPanel g_Panel;
+    static u16 g_aCols[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
+    static u8 g_aGrid[PUFO_GRID_SIZE];
+    static ObjectRecFull g_SciRec;
+    static ResearchTopicLive g_aTopics[PUFO_RESEARCH_TOPIC_COUNT];
+    static i32 g_nRow;
+    static i8 g_nBase;
+    static u16 g_nEntries;
+    ResearchQtyEnv env;
+    ResearchCancelEnv cancel;
+    ResearchAccumulateEnv accum;
+
+    printf("\nResearchScreen_UpdateProgress @ 0x72d14 / CancelSelectedAndClose @ 0x73380 / "
+           "AccumulateAllocated @ 0x74914\n");
+
+    memset(&g_Panel, 0, sizeof(g_Panel));
+    memset(g_aCols, 0, sizeof(g_aCols));
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(&g_SciRec, 0, sizeof(g_SciRec));
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+
+    g_Panel.anLineAux[0] = 3; /* topic 3 */
+    g_aGrid[480 + 144 * 0 + 6 * 0 + 0] = 2; /* one free lab cell for base 0: capacity 50 */
+    g_SciRec.auPerBaseVal[0] = 6;
+
+    memset(&env, 0, sizeof(env));
+    env.pTopicPanel = &g_Panel;
+    env.pnTopicRow = &g_nRow;
+    env.apResearchCols = g_aCols;
+    env.puResearchEntries = &g_nEntries;
+    env.pScientistRec = &g_SciRec;
+    env.abFacilityGrid = g_aGrid;
+    env.pnSelectedBaseIdx = &g_nBase;
+    g_nRow = 0;
+    g_nBase = 0;
+    g_nEntries = 0;
+
+    /* Six iterations, all six gates pass, so the whole spare goes to topic 3. */
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 6, "the return is the scientist total");
+    CheckEqI32(g_aCols[3], 6, "topic 3 took all six spare scientists");
+    CheckEqI32(g_aCols[2], 0, "no other topic moves");
+
+    /* With the entry count at zero both gates sum an empty prefix, so neither one ever notices
+     * what this loop is writing: 55 iterations, 55 stores, over a capacity of 50 and against a
+     * total of 6 that is already spent. That is the original's behaviour, not a port artefact. */
+    g_SciRec.auPerBaseVal[0] = 55;
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 55, "a zero entry count makes both gates blind");
+    CheckEqI32(g_aCols[3], 61, "and the entry takes all 55 more units on top of the 6");
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 55, "again, because the total never changes");
+    CheckEqI32(g_aCols[3], 116, "and again 55 more land");
+    g_SciRec.auPerBaseVal[0] = 6;
+    memset(g_aCols, 0, sizeof(g_aCols));
+
+    /* The lab capacity is the binding limit here: one free lab cell is a capacity of 50, and the
+     * gate asks for Base_CountActiveResearch + 1, so the 51st allocation is refused even though
+     * five scientists are still spare. The loop still runs its full 55 iterations.
+     *
+     * The entry count has to cover the topic being written for that to show at all: both gates
+     * sum only the first nResearchEntryCount entries, so with a count of 0 the allocation the
+     * loop is making is invisible to them and nothing ever binds. */
+    g_SciRec.auPerBaseVal[0] = 55;
+    g_nEntries = 6;
+    memset(g_aCols, 0, sizeof(g_aCols));
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 55, "the loop count is the total, not what landed");
+    CheckEqI32(g_aCols[3], 50, "the lab capacity stops it at 50");
+    g_nEntries = 0;
+
+    /* A total of zero never reaches the loop. */
+    g_SciRec.auPerBaseVal[0] = 0;
+    g_nEntries = 2;
+    g_aCols[0] = 5;
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 0, "a total of zero returns 0");
+    CheckEqI32(g_aCols[3], 50, "and stores nothing");
+    g_nEntries = 0;
+
+    /* A positive total with a negative availability runs the loop and stores nothing: gate 1
+     * fails on every iteration. */
+    g_SciRec.auPerBaseVal[0] = 3;
+    g_nEntries = 1;
+    g_aCols[0] = 10;
+    CheckEqI32(ResearchScreen_UpdateProgress(&env), 3, "the total still decides the iteration count");
+    CheckEqI32(g_aCols[3], 50, "but the negative availability stores nothing");
+    g_aCols[0] = 0;
+    g_nEntries = 0;
+    g_SciRec.auPerBaseVal[0] = 6;
+
+    /* Cancel: no gate, and the close runs whatever the store did. */
+    memset(&cancel, 0, sizeof(cancel));
+    cancel.qty = env;
+    cancel.close.pfnCloseUi = CloseUiThunk;
+    g_aCols[3] = 7;
+    g_nCloseCalls = 0;
+    ResearchScreen_CancelSelectedAndClose(&cancel);
+    CheckEqI32(g_aCols[3], 0, "cancel zeroes the same entry the buttons use");
+    CheckEqI32(g_nCloseCalls, 1, "and tail-calls Geoscape_CloseUI");
+
+    g_aCols[3] = 0;
+    g_nCloseCalls = 0;
+    ResearchScreen_CancelSelectedAndClose(&cancel);
+    CheckEqI32(g_aCols[3], 0, "a zero entry stays zero");
+    CheckEqI32(g_nCloseCalls, 1, "and the close still runs");
+
+    /* The port's guard skips the store but must not skip the tail call. */
+    g_aCols[3] = 9;
+    g_nCloseCalls = 0;
+    cancel.qty.pTopicPanel = NULL;
+    ResearchScreen_CancelSelectedAndClose(&cancel);
+    CheckEqI32(g_aCols[3], 9, "a missing panel skips the store");
+    CheckEqI32(g_nCloseCalls, 1, "but not the close");
+    cancel.qty.pTopicPanel = &g_Panel;
+    g_nCloseCalls = 0;
+    ResearchScreen_CancelSelectedAndClose(NULL);
+    CheckEqI32(g_nCloseCalls, 0, "a missing environment does nothing at all");
+
+    /* Accumulate: eight bases, the topic index is the column index, so every base feeds the
+     * same 144 records. */
+    memset(g_aCols, 0, sizeof(g_aCols));
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+    g_aCols[0] = 1;          /* base 0, topic 0 */
+    g_aCols[144] = 2;        /* base 1, topic 0 */
+    g_aCols[145] = 0;        /* base 1, topic 1: zero is skipped */
+    g_aCols[2 * 144 + 1] = 4; /* base 2, topic 1 */
+    g_aCols[7 * 144 + 2] = 5; /* base 7, topic 2 */
+    g_aTopics[0].wProgress = 10;
+    g_aTopics[1].wProgress = 20;
+    g_aTopics[2].wProgress = 0;
+    g_aTopics[3].wProgress = 30;
+    g_nEntries = 3;
+
+    memset(&accum, 0, sizeof(accum));
+    accum.aTopics = g_aTopics;
+    accum.apResearchCols = g_aCols;
+    accum.puResearchEntries = &g_nEntries;
+    accum.pfnRebuild = RebuildThunk;
+    g_nRebuildCalls = 0;
+
+    CheckEqI32(ResearchScreen_AccumulateAllocated(&accum), 4242,
+               "the function returns the tail-called rebuild");
+    CheckEqI32(g_nRebuildCalls, 1, "and rebuilds exactly once");
+    CheckEqI32(g_aTopics[0].wProgress, 13, "base 0's 1 and base 1's 2 both land on topic 0");
+    CheckEqI32(g_aTopics[1].wProgress, 24, "only base 2's 4 lands on topic 1, the zero is skipped");
+    CheckEqI32(g_aTopics[2].wProgress, 5, "base 7 is walked too, so topic 2 gets its 5");
+    CheckEqI32(g_aTopics[3].wProgress, 30, "a topic past the entry count is untouched");
+
+    /* The add is a u16 LDRH/ADD/STRH triple, so it wraps. */
+    g_aTopics[0].wProgress = 65535;
+    CheckEqI32(ResearchScreen_AccumulateAllocated(&accum), 4242, "the second pass runs");
+    CheckEqI32(g_aTopics[0].wProgress, 2, "65535 + 1 + 2 wraps to 2 in 16 bits");
+
+    /* A zero entry count walks nothing but still rebuilds. */
+    g_nEntries = 0;
+    g_nRebuildCalls = 0;
+    const u16 wTopic2Before = g_aTopics[2].wProgress;
+    const u16 wTopic1Before = g_aTopics[1].wProgress;
+    CheckEqI32(ResearchScreen_AccumulateAllocated(&accum), 4242, "a zero count still rebuilds");
+    CheckEqI32(g_nRebuildCalls, 1, "once");
+    CheckEqI32(g_aTopics[2].wProgress, wTopic2Before, "and changes no topic");
+    CheckEqI32(g_aTopics[1].wProgress, wTopic1Before, "not even the one a base had for it");
+    g_nEntries = 3;
+
+    /* No rebuild hook means no tail call and no return value. */
+    accum.pfnRebuild = NULL;
+    CheckEqI32(ResearchScreen_AccumulateAllocated(&accum), 0, "without the hook it returns 0");
+    CheckEqI32(ResearchScreen_AccumulateAllocated(NULL), 0, "and a missing environment returns 0");
+}
+
 static void TestResearchQty(void)
 {
     static UiPanel g_Panel;
@@ -3237,6 +3411,7 @@ int main(void)
     TestTopicNeedsItem();
     TestRefreshPanels();
     TestResearchQty();
+    TestResearchAllocate();
     TestFindAtBase();
     TestTransferFlag();
     TestNewBaseScreen();

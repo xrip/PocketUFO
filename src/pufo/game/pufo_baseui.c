@@ -535,6 +535,90 @@ i32 ResearchScreen_DecSelectedQty(const ResearchQtyEnv *pEnv)
     return PUFO_RESEARCH_COL_OFFSET;
 }
 
+/* ResearchScreen_UpdateProgress @ 0x72d14. The total scientist count fixes the iteration count;
+ * the two gates decide how many of those iterations actually store, and because both gates get
+ * worse by one per store the button commits everything the base can spare. */
+i32 ResearchScreen_UpdateProgress(const ResearchQtyEnv *pEnv)
+{
+    const i32 nIdx = ResearchQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->puResearchEntries != NULL) ? (i32)*pEnv->puResearchEntries : 0;
+    const u16 *pCol = pEnv->apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase;
+    u16 *pEntry = &pEnv->apResearchCols[nIdx];
+
+    i32 nTotal = Base_GetItemQty(pEnv->pScientistRec, nBase); /* Base_GetItemQtyA, 0x72D30 */
+    if (nTotal <= 0) {
+        return nTotal; /* 0x72D38: the loop never runs */
+    }
+
+    i32 nIter = 0; /* R9 */
+    for (;;) {
+        const i32 nSci = Base_GetScientistCount(pEnv->pScientistRec, pCol, nBase, nEntries);
+        if (nSci > 0) { /* 0x72D94 */
+            const i32 nActive = Base_CountActiveResearch(pCol, nEntries); /* 0x72DA8 */
+            if (Base_HasResearchSlotFree(pEnv->abFacilityGrid, nBase, nActive + 1)) { /* 0x72DC4 */
+                *pEntry = (u16)(*pEntry + 1); /* 0x72DF4 */
+            }
+        }
+        ++nIter; /* 0x72E1C */
+        nTotal = Base_GetItemQty(pEnv->pScientistRec, nBase); /* 0x72E20 */
+        if (nIter >= nTotal) {
+            break; /* 0x72E28: CMP R9, R0 / BLT */
+        }
+    }
+    return nTotal; /* 0x72E2C */
+}
+
+/* ResearchScreen_CancelSelectedAndClose @ 0x73380. The store has no gate at all, and the close is
+ * a tail call, so it runs whatever the store did. */
+void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    const i32 nIdx = ResearchQtyIndex(&pEnv->qty);
+    if (nIdx >= 0) {
+        pEnv->qty.apResearchCols[nIdx] = 0; /* 0x733D8: MOV R2,#0 / STRH R2 */
+    }
+    if (pEnv->close.pfnCloseUi != NULL) {
+        pEnv->close.pfnCloseUi(pEnv->close.pUser); /* 0x733DC */
+    }
+}
+
+/* ResearchScreen_AccumulateAllocated @ 0x74914. Eight base slots regardless of how many bases
+ * exist, and the topic index is the column index, so every base feeds the same 144 records. */
+i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->aTopics == NULL || pEnv->apResearchCols == NULL) {
+        return 0;
+    }
+
+    i32 nEntries = (pEnv->puResearchEntries != NULL) ? (i32)*pEnv->puResearchEntries : 0;
+    if (nEntries > PUFO_RESEARCH_TOPIC_COUNT) {
+        nEntries = PUFO_RESEARCH_TOPIC_COUNT; /* deviation: the original would run one base's
+                                               * column straight into the next one */
+    }
+
+    for (i32 nBase = 0; nBase < PUFO_FAC_BASE_COUNT; ++nBase) { /* 0x7491C: MOV R6,#8 */
+        const u16 *pCol = pEnv->apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase;
+        for (i32 nTopic = 0; nTopic < nEntries; ++nTopic) {
+            const u16 w = pCol[nTopic]; /* 0x74950 */
+            if (w != 0) { /* 0x74960 */
+                pEnv->aTopics[nTopic].wProgress = (u16)(pEnv->aTopics[nTopic].wProgress + w); /* 0x7496C */
+            }
+        }
+    }
+
+    if (pEnv->pfnRebuild != NULL) {
+        return pEnv->pfnRebuild(pEnv->pRebuildUser); /* 0x749A4: tail call */
+    }
+    return 0;
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

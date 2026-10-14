@@ -111,7 +111,8 @@ typedef struct GeoscapeHooks {
     void (*pfnGrantSiteRecovery)(void *pUser);
     /* ManufScreen_RefreshBaseTabs (0x70ebc), NOT ported. */
     void (*pfnRefreshBaseTabs)(void *pUser);
-    /* ResearchScreen_AccumulateAllocated (0x74914), NOT ported. */
+    /* ResearchScreen_AccumulateAllocated @ 0x74914, ported in pufo_baseui.c behind
+     * ResearchAccumulateEnv; the shell wires this hook to it. */
     void (*pfnAccumulateResearch)(void *pUser);
     /* Base_TickFacilityConstruction (0x62824), NOT ported. */
     void (*pfnTickFacilityConstruction)(void *pUser);

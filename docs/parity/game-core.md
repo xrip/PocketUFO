@@ -9975,3 +9975,70 @@ Still open in this family: `ResearchScreen_UpdateProgress` (0x72d14, 284 B), whi
 gate in a loop, `ResearchScreen_StartSelected` (0x73240, 232 B), `ResearchScreen_CancelSelectedAndClose`
 (0x73380, 116 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B) and `ResearchScreen_Draw`
 (0x73a34, 2108 B).
+
+
+## The research screen's allocate, cancel and hourly accumulate (done)
+
+`ResearchScreen_UpdateProgress @ 0x72d14` (284 B), `ResearchScreen_CancelSelectedAndClose @
+0x73380` (116 B) and `ResearchScreen_AccumulateAllocated @ 0x74914` (148 B) finish the small
+allocation family the two quantity buttons started.
+
+`ResearchScreen_UpdateProgress` looks like a draw-time helper from its cross-references but is not
+one: `ResearchScreen_Draw` installs it as the click handler of the control at 0x186B94 at 0x7417C
+and positions that control at 100,164, so the two references to it are stores of a function
+pointer. It is the allocate button.
+
+Its shape is a fixed-count loop over a self-worsening gate:
+
+    result = Base_GetItemQtyA(base)            0x72D30, the scientist TOTAL, not the spare
+    if (result <= 0) return result             0x72D38
+    do {
+        if (Base_GetScientistCount > 0                          0x72D94
+            && Base_HasResearchSlotFree(Base_CountActiveResearch + 1))  { 0x72DA8, 0x72DC4
+            auResearchCol[topic + 144*base] += 1;               0x72DF4, truncated to 16 bits
+        }
+        ++iter; result = Base_GetItemQtyA(base);               0x72E1C, 0x72E20
+    } while (iter < result);                                    0x72E28, CMP/BLT signed
+    return result;
+
+The total never changes inside the loop, so the iteration count is fixed, but both gates get worse
+by one on every successful store -- the availability half because the getter subtracts the column
+sum, the lab half because it asks for `active + 1` and `active` is that same sum. So the button
+commits `min(spare, capacity - already active)` units in one press, then keeps looping without
+storing until the counter reaches the total. With one free lab cell (capacity 50) and a total of
+55 it lands exactly 50 and returns 55 -- asserted.
+
+The quirk that took a test to see clearly: **both gates sum only the first `nResearchEntryCount`
+entries**. If that count does not cover the topic being written, neither gate ever notices the
+allocations this loop is making, and a total of 55 stores all 55 units over a capacity of 50. That
+is the original's behaviour, not a port artefact; in a running game the count is the full 144, so
+it does not bite.
+
+`ResearchScreen_CancelSelectedAndClose` is the cancel button, installed twice by
+`ResearchScreen_Init` (0x74AC0, 0x74BD0). It zeroes the same entry with no gate at all -- `MOV R2,
+#0` / `STRH R2` at 0x733D4 -- and then tail-calls `Geoscape_CloseUI(&MEMORY[0x1864F8])`. The port
+keeps the order even when its own guards skip the store: the close still runs.
+
+`ResearchScreen_AccumulateAllocated` is the hourly tick, called from `Geoscape_TickHourly` at
+0x5D30C. For each of the eight base slots -- a fixed `MOV R6,#8`, not the live base count, so empty
+slots are walked -- it adds every non-zero `auResearchCol[base][i]` into
+`aResearchTopics[i].wProgress`. The topic index is the column index, so all eight bases accumulate
+into the same 144 records, and the `LDRH` / `ADD` / `STRH` triple at 0x74964 wraps at 16 bits. It
+ends in a tail call to `ResearchScreen_RebuildTopicList` (0x74270, not ported), so the rebuild is a
+hook and the function returns what the hook returns. Two ARM oddities are recorded rather than
+smoothed over: the inner loop bound is re-read from `nResearchEntryCount` on every iteration that
+saw a non-zero entry (`LDRBHI` at 0x7497C), which cannot change the outcome because nothing here
+writes that byte; and the port clamps the walk to 144 entries where the original would run one
+base's column straight into the next.
+
+Deviation: the three functions take the panel, the row cache, the count byte, the base index and
+the topic array as arguments and refuse or clamp where the original derefs blindly.
+
+IDB: comments on 0x72d14, 0x73380 and 0x74914 record the handler-install sites, the fixed eight
+base slots and the loop-bound reload. `unk_186B94` was left unnamed: `ManufScreen_DrawFrame` uses
+the same control, so it is a shared dialog widget rather than a research one.
+
+Still open in this family: `ResearchScreen_Init` (0x749a8, 592 B), `ResearchScreen_BuildPanels`
+(0x733f4, 1600 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B), `ResearchScreen_Draw`
+(0x73a34, 2108 B), `ResearchScreen_Open` (0x616ac, 232 B) and `ResearchScreen_StartSelected`
+(0x73240, 232 B).

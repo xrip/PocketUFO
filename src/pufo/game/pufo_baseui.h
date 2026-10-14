@@ -373,6 +373,60 @@ typedef struct ResearchQtyEnv {
 i32 ResearchScreen_IncSelectedQty(const ResearchQtyEnv *pEnv);
 i32 ResearchScreen_DecSelectedQty(const ResearchQtyEnv *pEnv);
 
+/* ResearchScreen_UpdateProgress @ 0x72d14 (284 B): the research screen's allocate button. Its
+ * handler pointer is installed by ResearchScreen_Draw (0x73a34) at 0x7417C and 0x74208 onto the
+ * control at 0x186B94, positioned at 100,164 -- the two cross-references to this function are
+ * those stores, not calls.
+ *
+ * It reads the base's scientist total first, through Base_GetItemQtyA @ 0x66198, which is
+ * Map_apObjects113->auPerBaseVal[base], and returns it when it is <= 0 without touching
+ * anything. Otherwise it runs exactly that many iterations of the SAME two gates
+ * ResearchScreen_IncSelectedQty uses, incrementing the SAME auResearchCol entry each time they
+ * pass. The total never changes inside the loop, so the iteration count is fixed, but the
+ * availability half of the gate falls by one on every successful allocation and so does the lab
+ * half (it asks for Base_CountActiveResearch + 1, and that sum grows by one per allocation). The
+ * button therefore commits as much of the base's spare scientists as the topic can take --
+ * min(available, lab capacity - already active) units -- and then keeps looping without storing
+ * until the counter reaches the total. The loop re-reads the total at 0x72E20 and compares signed
+ * (CMP R9, R0 / BLT), and the function returns that last read. */
+i32 ResearchScreen_UpdateProgress(const ResearchQtyEnv *pEnv);
+
+/* ResearchScreen_CancelSelectedAndClose @ 0x73380 (116 B): the research screen's cancel button,
+ * installed twice by ResearchScreen_Init (0x749a8) at 0x74AC0 and 0x74BD0. It writes 0 into the
+ * same auResearchCol entry the quantity buttons use -- no gate, not even a non-zero test, just
+ * MOV R2,#0 / STRH R2 at 0x733D4 -- and then tail-calls Geoscape_CloseUI(&MEMORY[0x1864F8]).
+ * Because the close is a tail call it runs whatever the store did, and the port keeps that order
+ * even when its own guards skip the store. */
+typedef struct ResearchCancelEnv {
+    ResearchQtyEnv     qty;   /* the panel, row cache, column and base the entry is found through */
+    GeoscapeCloseHooks close; /* Geoscape_CloseUI (&MEMORY[0x1864F8]), not ported */
+} ResearchCancelEnv;
+
+void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv);
+
+/* ResearchScreen_AccumulateAllocated @ 0x74914 (148 B): the hourly research tick, called from
+ * Geoscape_TickHourly @ 0x5D30C. For each of the eight base slots it walks the first
+ * nResearchEntryCount entries of that base's allocation column and adds every non-zero one into
+ * aResearchTopics[i].wProgress -- the topic index is the column index, so all eight bases
+ * accumulate into the same 144 topic records. The add is an LDRH / ADD / STRH triple
+ * (0x74964..0x7496C) with the result truncated to 16 bits, so it wraps. It ends with a tail call
+ * into ResearchScreen_RebuildTopicList (0x74270, not ported), so the rebuild is a hook and this
+ * returns what that hook returns.
+ *
+ * Two ARM quirks worth recording. The inner loop bound is re-read from nResearchEntryCount on
+ * every iteration that saw a non-zero entry (LDRBHI at 0x7497C), which cannot change the outcome
+ * because nothing here writes that byte. And the outer loop is a fixed eight (MOV R6,#8 / SUB /
+ * BHI), not the live base count, so empty base slots are walked too. */
+typedef struct ResearchAccumulateEnv {
+    ResearchTopicLive *aTopics;           /* aResearchTopics @ 0x15EF08, 144 records of 34 bytes */
+    const u16         *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
+    const u16         *puResearchEntries; /* nResearchEntryCount @ 0x160C4C */
+    i32 (*pfnRebuild)(void *pUser);       /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    void              *pRebuildUser;
+} ResearchAccumulateEnv;
+
+i32 ResearchScreen_AccumulateAllocated(const ResearchAccumulateEnv *pEnv);
+
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
  * anLineAux[134..139] (sfx). The handler writes zero into byte +10 of every one of them,
