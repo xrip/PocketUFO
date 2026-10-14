@@ -9742,3 +9742,21 @@ IDB: `0x161AA4` / `0x161AA8` typed `UiControl *`, `0x161F24` a byte, and the ful
 on 0x7a3f4.
 
 Covered by `TestBuildListPanels`, 43 checks.
+
+### Five false citations removed from the coverage metric (correction)
+
+`src/pufo/game/pufo_baseui.h`, two comment lines. Five functions were being counted as recreated because
+a comment named them in the citing form while saying in the same breath that they are not ported:
+`Geoscape_OnPointer @ 0x872d0` (8576 B), `Geoscape_OnPointerUp @ 0x89450` (6992 B),
+`Ui_TextInputDialog @ 0x632cc` (6096 B), `Geoscape_CloseUI @ 0x8b94c` (2100 B) and
+`SoldierScreen_Draw @ 0x65290` (716 B). Both sites were prose lists of the form "the flag is read by
+X @ addr, Y @ addr" -- a statement about the ORIGINAL's readers, not a claim about the port, but the
+coverage tool cannot tell those apart because `@ 0xADDR` is the citation form.
+
+They are now written in the paren form the codebase already uses for unported callees
+(`Geoscape_CloseUI (0x8b94c)`), which names the function without crediting it.
+
+Measured effect: credited functions 776 -> 771, bytes cited 339768 -> 315288 (56.7% -> 52.7%), and
+`audit_names`' "credited addresses whose original name is not defined" goes from 5 to **0** -- every
+address the port now credits is one the port actually defines. No behaviour changed; the number just
+stopped lying.

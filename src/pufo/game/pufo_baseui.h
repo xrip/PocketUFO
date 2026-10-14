@@ -393,8 +393,8 @@ bool Ufopaedia_CacheSelRow(u8 *pbFlag, i32 *pnCachedRow, i32 nPanelSelectedRow);
  * Evidence: SoldierScreen_FindNextAtBase @ 0x6192c, SoldierScreen_FindPrevAtBase @ 0x618c4.
  *
  * The soldier screen keeps its selected soldier in the dword cursor at 0x159E08 (read by
- * SoldierScreen_Draw @ 0x65290, EquipSelected @ 0x619cc, CopyNameToEdit @ 0x6318c and
- * SelectListed @ 0x64a9c). These two handlers move it to the next / previous soldier that
+ * SoldierScreen_Draw (0x65290, not ported), EquipSelected @ 0x619cc, CopyNameToEdit (0x6318c, not
+ * ported) and SelectListed @ 0x64a9c). These two handlers move it to the next / previous soldier that
  * belongs to the base the screen is showing.
  *
  * FindNext (ARM 0x61930..0x619A4): nIdx = cursor + 1; if nIdx >= the u16 soldier count
@@ -418,7 +418,8 @@ i32 SoldierScreen_FindPrevAtBase(i32 *pnCursor, Soldier *const *apSoldiers, i8 n
 
 /* Ui_SetTransferFlag @ 0x619a8: Sound_Play(17, 4) then byte_159E10 = 1 (STRB at 0x619C0).
  * The transfer flag gates the soldier-transfer UI (read by EquipSelected @ 0x619cc,
- * TextInputDialog @ 0x632cc, OnPointer @ 0x872d0, OnPointerUp @ 0x89450 and CloseUI @ 0x8b94c).
+ * TextInputDialog (0x632cc), OnPointer (0x872d0), OnPointerUp (0x89450) and CloseUI (0x8b94c) - none
+ * of those four are ported, so they are named without a citation on purpose).
  * The original returns the byte_159E10 address; no caller tests it, so the port returns void. */
 void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser),
                         void *pUser);
