@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **7916**.
+Test checks run across the 56 suites: **7955**.
 
 ### Per-subsystem status
 
@@ -299,7 +299,12 @@ This is the shortest chain that produces a real game session, in dependency orde
    --new-game --dump-frame <png>` prints the resulting state (4147000 funds, 1 base, 8
    soldiers, 3 craft, screen 2, zoom 0), and `World_LoadSlot` wires `LoadGame` over the same
    state so `--load-slot 7` loads a save for real. The geoscape click handlers (except the
-   radar list) and the spawn hooks are no-op thunks until those screens land.
+   radar list) and the spawn hooks are no-op thunks until those screens land. Two of the three
+   leaves `Geoscape_OnMapClick` (0x8b4a8) needs are in now: `Base_CanPlaceHangarAt` (0x629b0) —
+   a connectivity flood over the base's finished stamped cells, refused exactly when clearing the
+   tapped 2x2 footprint would cut one off — and `BaseFac_FormatCostLabel` (0x6a404), the
+   `TEXTS[905 + kind]-<counter>` label that also increments `abBaseKindTable`. Both in
+   `pufo_geoscape.c`, 39 checks in `tests/test_geoscape.c`.
 
 ### Largest unported functions by size
 

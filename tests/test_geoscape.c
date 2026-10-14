@@ -8,7 +8,8 @@
  * site-state table, soldier timers.
  */
 #include "game/pufo_geoscape.h"
-#include "game/pufo_save.h" /* SmapSite, for the monthly upkeep fixture */
+#include "game/pufo_boot.h"  /* PUFO_TEXT_REC_STRIDE, for the cost label fixture */
+#include "game/pufo_save.h"  /* SmapSite, for the monthly upkeep fixture */
 #include "game/pufo_ship.h"
 #include "game/pufo_unit.h"
 #include "util/pufo_ptrarray.h"
@@ -2357,6 +2358,240 @@ static void TestBudgetHelpers(void)
     CheckEqI32(Base_CountPsiSoldiers(apSols, 3, 2), 0, "none at base 2");
 }
 
+/* Base_CanPlaceHangarAt @ 0x629b0: the scratch map, the flood, and the two tails. */
+static void TestHangarPlacement(void)
+{
+    static u8 grid[1524];
+    static u8 abGridBytes[8];
+    static Ship aShips[2];
+    static Ship *apShips[2];
+    static BaseRec aBase;
+    static BaseRec *apBases[1];
+    HangarPlaceEnv env;
+
+    printf("Base_CanPlaceHangarAt\n");
+
+#define FAC(l, b, y, x) grid[0x174 + 144 * (b) + (l) + 6 * (y) + (x)]
+#define DAYS(b, y, x)   grid[36 * (b) + 6 * (y) + (x)]
+#define RESET()                                                      \
+    do {                                                            \
+        memset(grid, 0, sizeof(grid));                              \
+        memset(abGridBytes, 0, sizeof(abGridBytes));                \
+        memset(aShips, 0, sizeof(aShips));                          \
+        memset(&aBase, 0, sizeof(aBase));                           \
+        aBase.bUnk4 = 3;                                            \
+        aShips[0].bHomeBase = 255;                                  \
+        aShips[1].bHomeBase = 255; /* homed nowhere: the count starts at zero */ \
+        apShips[0] = &aShips[0];                                    \
+        apShips[1] = &aShips[1];                                    \
+        apBases[0] = &aBase;                                        \
+        env.abFacilityGrid = grid;                                  \
+        env.abGridBytes = abGridBytes;                              \
+        env.nSelectedBaseIdx = 0;                                   \
+        env.apCraft = apShips;                                      \
+        env.nCraftCount = 2;                                        \
+        env.apBases = apBases;                                      \
+        env.nBaseCount = 1;                                         \
+    } while (0)
+
+    /* 1. an anchor that is still under construction is accepted outright (0x62A30 / 0x62A50 both
+     * jump to the MOV R0,#1 tail at 0x62D44), and none of the connectivity work runs. */
+    RESET();
+    DAYS(0, 2, 2) = 7;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "a cell with build days left is accepted without any other test");
+    RESET();
+    DAYS(0, 2, 2) = 7;
+    FAC(108, 0, 2, 2) = 11;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "the same through the facType 11 early test");
+    RESET();
+    DAYS(0, 2, 2) = 7;
+    FAC(0, 0, 0, 0) = 1;  FAC(108, 0, 0, 0) = 1;   /* a facility on its own at the far corner */
+    FAC(0, 0, 5, 5) = 1;  FAC(108, 0, 5, 5) = 1;   /* and another one, disconnected */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "even with two disconnected facilities: the flood never runs for an unfinished anchor");
+
+    /* 2. the tail at 0x62D50..0x62D6C: layer2 first, then facType == 0. */
+    RESET();
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0, "empty ground cannot host a hangar");
+    RESET();
+    FAC(0, 0, 2, 2) = 1; /* a stamp, but no facType byte */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0,
+               "a stamped cell whose facType is still 0 is refused too - facType decides, not the stamp");
+    RESET();
+    FAC(0, 0, 2, 2) = 1;
+    FAC(108, 0, 2, 2) = 0xFF; /* the empty sentinel the grid reset writes */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "0xFF is not 0, so the sentinel cell passes the facType test");
+    RESET();
+    FAC(0, 0, 2, 2) = 1;  FAC(108, 0, 2, 2) = 1;
+    FAC(72, 0, 2, 2) = 1; /* the needed-flag layer has claimed this cell */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0, "a cell layer2 has claimed is refused");
+    RESET();
+    FAC(0, 0, 2, 2) = 1;  FAC(108, 0, 2, 2) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1, "a plain facility cell is accepted");
+
+    /* 3. the flood: every finished stamped cell has to be reachable from the first one. */
+    RESET();
+    FAC(0, 0, 0, 0) = 1;  FAC(108, 0, 0, 0) = 1;
+    FAC(0, 0, 5, 5) = 1;  FAC(108, 0, 5, 5) = 1;
+    FAC(0, 0, 2, 2) = 1;  FAC(108, 0, 2, 2) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0,
+               "a facility the flood never reaches means the placement is refused");
+    RESET();
+    FAC(0, 0, 0, 0) = 1;  FAC(108, 0, 0, 0) = 1;
+    FAC(0, 0, 0, 1) = 1;  FAC(108, 0, 0, 1) = 1;
+    FAC(0, 0, 2, 2) = 1;  FAC(108, 0, 2, 2) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1, "cells connected to the seed are fine");
+    RESET();
+    for (i32 x = 0; x < 4; ++x) { FAC(0, 0, 0, x) = 1; FAC(108, 0, 0, x) = 1; }
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 1, 0), 0,
+               "tapping the middle of a row of four cuts the far half off");
+    RESET();
+    for (i32 x = 0; x < 4; ++x) { FAC(0, 0, 0, x) = 1; FAC(108, 0, 0, x) = 1; }
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 0, 0), 1, "tapping the end of the row does not");
+    RESET();
+    for (i32 x = 0; x < 4; ++x) { FAC(0, 0, 0, x) = 1; FAC(108, 0, 0, x) = 1; }
+    DAYS(0, 0, 2) = 5; /* under construction: scratch 0, so it blocks the flood */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 0, 0), 0,
+               "a cell that is still being built blocks the flood, so the far cells are cut off");
+
+    /* 4. The hangar footprint marking (0x62AB8..0x62B10) is dead code, and this is the case that
+     * shows it. The marking writes 1 into the three cells beyond the anchor, but the very same
+     * loop visits those cells afterwards, in row-major order, and writes each one's own value
+     * over the mark. So a hangar whose quadrants are not stamped marks nothing that survives. */
+    RESET();
+    FAC(0, 0, 0, 0) = 9;   /* only the anchor quadrant is stamped */
+    FAC(108, 0, 0, 0) = 11;
+    FAC(0, 0, 2, 0) = 1;   FAC(108, 0, 2, 0) = 1;
+    FAC(0, 0, 4, 4) = 1;   FAC(108, 0, 4, 4) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 4, 4), 0,
+               "the 2x2 marking does NOT link the block: the loop overwrites it at (nY+1,nX)");
+    RESET();
+    FAC(0, 0, 0, 0) = 9;   FAC(0, 0, 0, 1) = 10;
+    FAC(0, 0, 1, 0) = 11;  FAC(0, 0, 1, 1) = 12;
+    FAC(108, 0, 0, 0) = 11;
+    FAC(0, 0, 2, 0) = 1;   FAC(108, 0, 2, 0) = 1;
+    FAC(0, 0, 4, 4) = 1;   FAC(108, 0, 4, 4) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 4, 4), 1,
+               "a fully stamped hangar links it instead - through its own four tileA bytes");
+
+    /* 5. the hangar tail (0x62D14..0x62D40): capacity minus craft has to be positive. */
+    RESET();
+    FAC(0, 0, 2, 2) = 9;  FAC(0, 0, 2, 3) = 10; FAC(0, 0, 3, 2) = 11; FAC(0, 0, 3, 3) = 12;
+    FAC(108, 0, 2, 2) = 11;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "one hangar slot, no craft homed: the capacity test passes");
+    aShips[0].bHomeBase = 0;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0,
+               "one hangar slot taken by a craft homed here: it fails");
+    RESET();
+    FAC(0, 0, 2, 2) = 9;  FAC(0, 0, 2, 3) = 10; FAC(0, 0, 3, 2) = 11; FAC(0, 0, 3, 3) = 12;
+    FAC(108, 0, 2, 2) = 11;
+    FAC(0, 0, 0, 0) = 9;  FAC(0, 0, 0, 1) = 10; FAC(0, 0, 1, 0) = 11; FAC(0, 0, 1, 1) = 12;
+    FAC(108, 0, 0, 0) = 11;
+    aShips[0].bHomeBase = 0;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1,
+               "two hangar slots and one craft still leaves one free");
+    RESET();
+    FAC(0, 0, 2, 2) = 9;  FAC(0, 0, 2, 3) = 10; FAC(0, 0, 3, 2) = 11; FAC(0, 0, 3, 3) = 12;
+    FAC(108, 0, 2, 2) = 11;
+    abGridBytes[0] = 1; /* the byte BaseGrid_GetByte0x654 adds for this base's type byte */
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0,
+               "the 0x159DBC grid byte is added to the craft total, and one slot is not enough");
+
+    /* 6. the selected base, not the argument, picks the block. */
+    RESET();
+    env.nSelectedBaseIdx = 1;
+    FAC(0, 1, 2, 2) = 1;  FAC(108, 1, 2, 2) = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 1, "base 1's own cell is the one tested");
+    RESET();
+    FAC(0, 0, 2, 2) = 1;  FAC(108, 0, 2, 2) = 1;
+    env.nSelectedBaseIdx = 1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0,
+               "and a facility in base 0 does not make base 1's empty cell valid");
+
+    /* 7. deviations: the original bounds nothing. */
+    RESET();
+    env.nSelectedBaseIdx = 8;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0, "base index 8 is refused");
+    RESET();
+    env.nSelectedBaseIdx = -1;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 2), 0, "a negative base index is refused");
+    RESET();
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 6, 2), 0, "a column of 6 is refused");
+    RESET();
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 2, 6), 0, "and a row of 6");
+
+    /* 8. the clamp: a hangar anchor at row 5 would write scratch[36..42] past the original's
+     * 36 dword buffer (into its saved registers). The port keeps the stores inside the 36 cells,
+     * and the grid itself is not touched outside the base's own block. */
+    RESET();
+    FAC(0, 0, 5, 5) = 9;
+    FAC(108, 0, 5, 5) = 11;
+    CheckEqI32(Base_CanPlaceHangarAt(&env, 5, 5), 1,
+               "a row 5 hangar anchor still answers, through the capacity tail");
+    CheckEqI32(grid[0x174 + 144], 0,
+               "and the clamped footprint stores wrote nothing: this function only reads the grid");
+
+#undef FAC
+#undef DAYS
+#undef RESET
+}
+
+/* BaseFac_FormatCostLabel @ 0x6a404: the TEXTS name, the dash, the counter, and the increment. */
+static void TestFacCostLabel(void)
+{
+    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + 17)];
+    static i8 abKind[PUFO_BASE_KIND_TABLE_LEN];
+    static char szLabel[64];
+    const char *psz;
+
+    printf("BaseFac_FormatCostLabel\n");
+
+    memset(aTexts, 0, sizeof(aTexts));
+    for (i32 k = 0; k < 17; ++k) {
+        char szName[16];
+        (void)snprintf(szName, sizeof(szName), "Fac%d", PUFO_FAC_NAME_REC_BASE + k);
+        memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + k),
+               szName, strlen(szName));
+    }
+
+    memset(abKind, 0, sizeof(abKind));
+    psz = BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 0, abKind);
+    Check(psz == (const char *)szLabel, "the return is the label buffer it was given");
+    Check(strcmp(szLabel, "Fac905-0") == 0, "TEXTS[905 + kind], a dash, then the counter");
+    CheckEqI32(abKind[0], 1, "and the counter is incremented for next time");
+
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 0, abKind);
+    Check(strcmp(szLabel, "Fac905-1") == 0, "the second call shows the incremented counter");
+    CheckEqI32(abKind[0], 2, "which is one more again");
+
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 16, abKind);
+    Check(strcmp(szLabel, "Fac921-0") == 0, "kind 16 reads TEXTS[921] and its own counter slot");
+
+    /* The counter is loaded SIGNED and printed as a signed decimal, so a negative entry gives a
+     * label with two dashes. */
+    abKind[3] = -3;
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 3, abKind);
+    Check(strcmp(szLabel, "Fac908--3") == 0, "a negative counter prints as a negative number");
+    CheckEqI32(abKind[3], -2, "and +1 moves it towards zero");
+
+    /* The increment is sign-extended before the byte store, so 127 wraps to -128. */
+    abKind[4] = 127;
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 4, abKind);
+    Check(strcmp(szLabel, "Fac909-127") == 0, "127 prints as 127");
+    CheckEqI32(abKind[4], -128, "and the stored +1 wraps to -128");
+
+    /* Deviation: the original copies the name with no bound at all. */
+    szLabel[0] = 'X';
+    szLabel[1] = 'X';
+    (void)BaseFac_FormatCostLabel(szLabel, 1, aTexts, 0, abKind);
+    CheckEqI32(szLabel[0], 0, "a one byte buffer holds only the NUL");
+    CheckEqI32(szLabel[1], 'X', "and the byte past the capacity is untouched");
+}
+
 int main(void)
 {
     TestTickShips();
@@ -2387,6 +2622,8 @@ int main(void)
     TestSpeedButtons();
     TestCreateNamedEntry();
     TestBudgetHelpers();
+    TestHangarPlacement();
+    TestFacCostLabel();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

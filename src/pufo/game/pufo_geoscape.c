@@ -1,8 +1,11 @@
 /* pufo_geoscape.c - see pufo_geoscape.h for the evidence map. */
 #include "game/pufo_geoscape.h"
-#include "audio/pufo_audio.h" /* Sound_Play, the click the speed buttons play */
-#include "game/pufo_save.h"   /* SmapSite, for the monthly upkeep of a base */
+#include <stdio.h>             /* snprintf, the bounded stand-in for the original's j_itoa */
+#include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
+#include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "util/pufo_rand.h"
+#include "util/pufo_str.h"     /* pufo_strncpy/pufo_strcat, the cost label */
 
 static i32 Abs32(i32 n)
 {
@@ -1394,4 +1397,177 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, co
     *pEnv->pbBaseCount = (i8)(*pEnv->pbBaseCount + 1); /* 0x66B64 */
 
     return 1560; /* 0x66B6C: the 0x618 offset the count store used - register residue */
+}
+
+/* Base_CanPlaceHangarAt @ 0x629b0. Whether one cell of the selected base can host a hangar; the
+ * header carries the evidence map and the seven-step decision. */
+i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY)
+{
+    u8 abScratch[PUFO_GRID_CELL_COUNT];
+    const u8 *abFacilityGrid;
+    i32 nBase, nFac, nDays, nFacType;
+    i32 nRow, nCol, nIdx, bChanged;
+    bool bSeeded = false;
+
+    if (pEnv == NULL || pEnv->abFacilityGrid == NULL) {
+        return 0;
+    }
+    abFacilityGrid = pEnv->abFacilityGrid;
+    nBase = (i32)pEnv->nSelectedBaseIdx;
+
+    if (nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT || nX < 0 || nX >= 6 || nY < 0 || nY >= 6) {
+        return 0; /* deviation: the original bounds none of these */
+    }
+
+    nFac     = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase + 6 * nY + nX;
+    nDays    = PUFO_GRID_DAYS_STRIDE * nBase + 6 * nY + nX;
+    nFacType = abFacilityGrid[nFac + PUFO_GRID_FAC_TYPE_OFF]; /* 0x62A04: [R1,#0x1E0] */
+
+    /* 0x62A1C..0x62A50. The original tests this twice - once gated on facType == 11 at 0x62A30
+     * and once ungated at 0x62A50 - and both jump to the `MOV R0,#1` tail at 0x62D44, so the
+     * facType gate is dead and one compare covers both. An unfinished cell is accepted outright
+     * and none of the connectivity work below runs. */
+    if (abFacilityGrid[nDays] != 0) {
+        return 1;
+    }
+
+    /* 0x62A5C..0x62B34: the scratch map. A cell is 1 when it carries a tileA stamp AND its build
+     * days are finished; everything else is 0. A hangar cell marks its whole 2 by 2 footprint. */
+    for (nRow = 0; nRow < 6; ++nRow) {
+        for (nCol = 0; nCol < 6; ++nCol) {
+            const i32 nCell = 6 * nRow + nCol;
+            const i32 nFacCell = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase + nCell;
+            const i32 nDayCell = PUFO_GRID_DAYS_STRIDE * nBase + nCell;
+
+            abScratch[nCell] = (abFacilityGrid[nFacCell] != 0
+                                && abFacilityGrid[nDayCell] == 0) ? 1 : 0;
+
+            /* ORIGINAL BUG @ 0x62AD8: the three footprint stores below land on cells this same
+             * loop visits in a later iteration, and each one's own store above replaces the mark,
+             * so the marking does nothing. At row 5 they are worse: scratch is 36 dwords and
+             * scratch[36], scratch[37] and scratch[42] are the function's own saved registers.
+             * The marking is reproduced as written; the stores are clamped. */
+            if (abFacilityGrid[nFacCell + PUFO_GRID_FAC_TYPE_OFF] == PUFO_FAC_TYPE_HANGAR
+                && abFacilityGrid[nDayCell] == 0) {
+                abScratch[nCell] = 1;                                    /* 0x62AC8 */
+                if (nCell + 6 < PUFO_GRID_CELL_COUNT) abScratch[nCell + 6] = 1; /* 0x62AD8 */
+                if (nCell + 1 < PUFO_GRID_CELL_COUNT) abScratch[nCell + 1] = 1; /* 0x62AE8 */
+                if (nCell + 7 < PUFO_GRID_CELL_COUNT) abScratch[nCell + 7] = 1; /* 0x62B0C: +7, the diagonal */
+            }
+        }
+    }
+
+    /* 0x62B3C..0x62B60: the candidate footprint is cleared, so the site being tested for does
+     * not block the flood below. */
+    nIdx = 6 * nY + nX;
+    abScratch[nIdx] = 0;
+    if (nFacType == PUFO_FAC_TYPE_HANGAR) {
+        /* ORIGINAL BUG @ 0x62B80: the +6, +1 and +7 stores have no bound test either, so a
+         * footprint anchored on row 5 writes scratch[36..42] - the original's saved registers -
+         * past its 36 dword scratch array. The port clamps all three. */
+        if (nIdx + 6 < PUFO_GRID_CELL_COUNT) abScratch[nIdx + 6] = 0;
+        if (nIdx + 1 < PUFO_GRID_CELL_COUNT) abScratch[nIdx + 1] = 0;
+        if (nIdx + 7 < PUFO_GRID_CELL_COUNT) abScratch[nIdx + 7] = 0;
+    }
+
+    /* 0x62B8C..0x62BD0: the first 1 in row-major order seeds the flood. */
+    for (nIdx = 0; nIdx < PUFO_GRID_CELL_COUNT && !bSeeded; ++nIdx) {
+        if (abScratch[nIdx] == 1) {
+            abScratch[nIdx] = 2;
+            bSeeded = true;
+        }
+    }
+
+    /* 0x62BE0..0x62CC8: the flood. A 2 spreads to every 4-neighbour that is neither 0 nor 3, and
+     * the source becomes 3 once anything in the sweep has changed - the flag is shared across
+     * the sweep in the original (R5 is only cleared at 0x62BE0), and a neighbour that is already
+     * 2 counts as a change. Both are reproduced. */
+    do {
+        bChanged = 0;
+        for (nRow = 0; nRow < 6; ++nRow) {
+            for (nCol = 0; nCol < 6; ++nCol) {
+                const i32 nCell = 6 * nRow + nCol;
+
+                if (abScratch[nCell] != 2) {
+                    continue;
+                }
+                if (nRow > 0 && abScratch[nCell - 6] != 0 && abScratch[nCell - 6] != 3) {
+                    abScratch[nCell - 6] = 2; /* 0x62C14 */
+                    bChanged = 1;
+                }
+                if (nRow < 5 && abScratch[nCell + 6] != 0 && abScratch[nCell + 6] != 3) {
+                    abScratch[nCell + 6] = 2; /* 0x62C44 */
+                    bChanged = 1;
+                }
+                if (nCol > 0 && abScratch[nCell - 1] != 0 && abScratch[nCell - 1] != 3) {
+                    abScratch[nCell - 1] = 2; /* 0x62C68 */
+                    bChanged = 1;
+                }
+                if (nCol < 5 && abScratch[nCell + 1] != 0 && abScratch[nCell + 1] != 3) {
+                    abScratch[nCell + 1] = 2; /* 0x62C90 */
+                    bChanged = 1;
+                }
+                if (bChanged != 0) {
+                    abScratch[nCell] = 3; /* 0x62CA0 */
+                }
+            }
+        }
+    } while (bChanged != 0);
+
+    /* 0x62CE0..0x62D0C: a 1 the flood never reached means the footprint would cut that cell off. */
+    for (nIdx = 0; nIdx < PUFO_GRID_CELL_COUNT; ++nIdx) {
+        if (abScratch[nIdx] == 1) {
+            return 0;
+        }
+    }
+
+    if (nFacType == PUFO_FAC_TYPE_HANGAR) {
+        /* 0x62D14..0x62D40: a hangar cell needs a free hangar slot. Both callees get the
+         * selected base index, which is what the original passes (0x62D14 and 0x62D30). */
+        const i32 nCap = Base_CalcHangarCap(abFacilityGrid, nBase);
+        const i32 nShips = Base_CountShipsAtBase(pEnv->apCraft, pEnv->nCraftCount,
+                                                 pEnv->apBases, pEnv->nBaseCount,
+                                                 pEnv->abGridBytes, nBase);
+        return (nCap - nShips) > 0 ? 1 : 0;
+    }
+
+    if (abFacilityGrid[nFac + PUFO_GRID_LAYER2_OFF] != 0) {
+        return 0; /* 0x62D54: [R3,#0x1BC], the needed-flag layer */
+    }
+    return (nFacType != 0) ? 1 : 0; /* 0x62D60..0x62D6C */
+}
+
+/* BaseFac_FormatCostLabel @ 0x6a404. "TEXTS[905 + kind]-<abBaseKindTable[kind]>" into the shared
+ * scratch label, then the table entry is incremented. See the header for the evidence. */
+char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRecs,
+                              u8 nFacType, i8 *abKindTable)
+{
+    char szNum[100]; /* 0x6A40C: var_64, the itoa scratch */
+    const char *pszName;
+    i8 nCount;
+
+    if (pszLabel == NULL || cchLabel == 0 || pTextRecs == NULL || abKindTable == NULL) {
+        return pszLabel;
+    }
+
+    /* 0x6A42C..0x6A450: the copy loop walks the TEXTS record from its first byte, NUL included.
+     * The original has no bound; pufo_strncpy is the port's bounded form. */
+    pszName = (const char *)(pTextRecs
+                             + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + nFacType));
+    pufo_strncpy(pszLabel, pszName, cchLabel);
+
+    (void)pufo_strcat(pszLabel, "-", cchLabel); /* 0x6A45C, asc_AB340 */
+
+    nCount = abKindTable[nFacType]; /* 0x6A46C: LDRSB [R7,#-0x1B] */
+    (void)snprintf(szNum, sizeof(szNum), "%d", (int)nCount); /* 0x6A474: j_itoa, base 10 */
+    (void)pufo_strcat(pszLabel, szNum, cchLabel); /* 0x6A480 */
+
+    /* ORIGINAL BUG @ 0x6A49C: the index is the facility kind, which runs 0..16, while
+     * abBaseKindTable @ 0x1864DD is 15 bytes - kinds 15 and 16 read and write past it into the
+     * pSmapPadZoom2 / pSmapPadZoom1 globals. The port sizes its copy for all 17 kinds.
+     *
+     * 0x6A490..0x6A49C: +1, sign-extended through LSL/ASR #24, stored as a byte. */
+    abKindTable[nFacType] = (i8)(nCount + 1);
+
+    return pszLabel; /* 0x6A4A8 */
 }

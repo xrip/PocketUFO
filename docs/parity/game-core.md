@@ -9055,3 +9055,76 @@ it — the widget callback type is `void` — so the port returns 0 there.
 The shell now wires `pfnRadarClick` to this handler (`app/pufo_world.c` owns the message list,
 the selected-index/ship/strateg globals, the four 0x1870xx flags and the radar pulse timer);
 the options branch runs through stub hooks until the options screen path is ported.
+
+
+### `Base_CanPlaceHangarAt` (done)
+
+`src/pufo/game/pufo_geoscape.c` behind `HangarPlaceEnv`, 27 new checks in
+`tests/test_geoscape.c`. Its only code caller is `Geoscape_OnMapClick @ 0x8b688`.
+
+**The IDA signature was wrong.** It read `(pGrid, nBase, nX, nY)`. The ARM sign-extends only R1
+and R2 (0x629E0, 0x629E8), and the one it multiplies by 6 is R2 — so the arguments are
+`(pGrid, nX, nY, unused)` and the base is not an argument at all: it is `nSelectedBaseIdx`, the
+signed byte at `grid + 0x619` (0x629C8), 1561 bytes past a 1524-byte grid. The fourth argument is
+never read. The IDB arguments are renamed and the function carries the corrected comment.
+
+**An unfinished cell is accepted outright.** Both `buildDays > 0` branches (0x62A30 gated on
+facType 11, 0x62A50 ungated) jump to the `MOV R0,#1` tail at **0x62D44**, which is a return of 1 —
+not the layer2 tail Hex-Rays suggests. The facType gate on the first is redundant. A test pins
+that the connectivity work is skipped entirely in that case.
+
+**The rest is a connectivity test on the finished cells.** A 36-dword scratch map marks a cell 1
+when `tileA != 0` **and** `buildDays == 0`; the tapped 2x2 footprint is cleared to 0; the first
+remaining 1 seeds a flood that turns every 4-neighbour that is neither 0 nor 3 into 2 and marks
+the source 3, sweeping until a sweep changes nothing. Any 1 left over means clearing the footprint
+would cut that facility off, and the answer is 0. A cell that is still being built is scratch 0,
+so it blocks the flood — a row of four with one under construction splits.
+
+**The hangar's 2x2 footprint marking is dead code.** 0x62AC8..0x62B10 write 1 into the three
+cells beyond the anchor, but the very same loop visits those cells in a later iteration and its
+own `*v14 = v15` store (0x62AA8) replaces each mark. A test pins it: a hangar anchor with only
+its own quadrant stamped links nothing, while the same layout with all four quadrants stamped
+links through the tileA bytes themselves. Recorded in `bugs.tsv` at `0x62AD8`.
+
+**The scratch array is overrun at row 5.** The frame is `SUB SP,SP,#0xA0` with the array at
+sp+0x10, so it is 36 dwords; the footprint stores at row 5 reach scratch[36], scratch[37] and
+scratch[42] — the function's own saved registers. Hex-Rays sizes the array as `var90[46]`
+precisely because it sees those stores. The port clamps them (`bugs.tsv` `0x62B80`).
+
+**The hangar tail is a capacity test.** `Base_CalcHangarCap - Base_CountShipsAtBase > 0`
+(0x62D14..0x62D40), both callees passed `nSelectedBaseIdx`. The grid pointer the original hands
+`Base_CountShipsAtBase` is dead: the callee forwards it to `BaseGrid_GetByte0x654`, whose first
+argument is never read because it reaches the byte table through the global
+`abFacilityGrid + 1620 = 0x159DBC` (0x6ACE4). That settles the arity question left open in the
+IDB comment, which is now corrected; the port passes the 0x159DBC table explicitly.
+
+**The non-hangar tail** (0x62D50..0x62D6C): `layer2[nY][nX] != 0` → 0, `facType == 0` → 0, else 1.
+Empty ground cannot host a hangar, and neither can a cell the needed-flag layer has claimed. The
+0xFF empty sentinel is not 0, so it passes.
+
+
+### `BaseFac_FormatCostLabel` (done)
+
+`src/pufo/game/pufo_geoscape.c`, 12 new checks in `tests/test_geoscape.c`. Callers:
+`BaseFacScreen_DrawPlacementOverlay @ 0x59AE4` and `Geoscape_OnMapClick @ 0x8B550`, which copies
+the result into the `aBaseFacilities` record's label field at 0x186C5A.
+
+It writes `TEXTS[905 + nFacType] name` + `"-"` + `itoa(abBaseKindTable[nFacType])` into the shared
+scratch string at 0x186B10 (`szRadarMsg`, the buffer the radar screen and
+`Soldier_FormatDisplayName` also use) and then **increments** the table entry, so the number in
+the label is the value before the call.
+
+**`abBaseKindTable @ 0x1864DD` had no xref in the IDB at all**, which is why Hex-Rays renders the
+access as an expression on the unrelated `pObj` global: every access is computed as
+`0x1864F8 + nKind - 0x1B` for the load (0x6A46C) and `0x1864F8 + 0x65 + nKind - 0x80` for the
+store (0x6A49C), both landing on `0x1864DD + nKind`. It is 15 bytes, all zero in the image, and it
+is the same table `Base_CreateNamedEntry` reads for `BaseRec.bUnk16`. The IDB now names and
+describes it.
+
+**Kinds 15 and 16 spill.** Facility kinds run 0..16 while the table is 15 bytes, so those two read
+and write into `pSmapPadZoom2 @ 0x1864EC` and the gap before `pSmapPadZoom1` (`bugs.tsv`
+`0x6A49C`). The port sizes its copy for all 17 kinds.
+
+The counter is loaded SIGNED and the `+1` is sign-extended before the byte store, so 127 wraps to
+-128 and a negative entry prints a label with two dashes (`Fac908--3`). The first argument (the
+grid pointer) is never read — R0 becomes the label buffer at 0x6A458 — so the port drops it.

@@ -360,6 +360,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   strateg item index (stored to 0x186BE4); six (nType, bActive) branches pause the clock and edit the
   root message list through the ported `UiLineList` leaves; `GameTime_Pause` is a plain store of 1 to
   0x15961C. The shell wires `pfnRadarClick` to it. IDB comments at 0x854c4, 0x186BE4, 0x1870A0, 0xAC224.
+- [x] `Base_CanPlaceHangarAt @ 0x629b0` (968 B) + `BaseFac_FormatCostLabel @ 0x6a404` (184 B)
+  — ported in `pufo_geoscape.{h,c}` (the first behind `HangarPlaceEnv`), 39 new checks in
+  `tests/test_geoscape.c`. The placement test is a connectivity flood over the base's finished
+  stamped cells: clearing the tapped 2x2 footprint must not cut any of them off; a hangar cell
+  answers `Base_CalcHangarCap - Base_CountShipsAtBase > 0` instead, and `buildDays > 0` is
+  accepted outright (both branches land on the `MOV R0,#1` tail at 0x62D44, not the layer2 tail
+  Hex-Rays suggests). IDA's signature was wrong — the base is `nSelectedBaseIdx` at grid + 0x619,
+  not an argument, and the fourth argument is dead — so the arguments are renamed and the function
+  commented, with line comments at 0x629C8, 0x62A30, 0x62AD8, 0x62BE0, 0x62CE0, 0x62D44, 0x62D50.
+  The stale "Not ported / OPEN QUESTION" comment on `Base_CountShipsAtBase` is corrected (its grid
+  argument is dead; the byte table is the global at 0x159DBC), `byte_186B80` is named `nSmapTapY`,
+  and `abBaseKindTable @ 0x1864DD` is described (15 bytes, no xrefs, indexed by facility kind).
+  Three ledger rows (86 total): the dead 2x2 marking (0x62AD8), the scratch overrun at row 5
+  (0x62B80), the kind 15/16 spill past `abBaseKindTable` (0x6A49C).
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -579,6 +593,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | nav controls + new-base screen (`pufo_baseui.c`) | 55/55 (Release) | 7773 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 | `Game_StartNew` + the verified enums (`pufo_geoiinit.c`) | 56/56 (Release) | 7880 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 | radar-list click + shell wiring (`pufo_baseui.c`, `app/pufo_world.c`) | 56/56 (Release) | 7916 | 723/1103 (65.5%) | 324112/598792 (54.1%) | 38 checked, 0 mismatched |
+| hangar placement + the facility cost label (`pufo_geoscape.c`) | 56/56 (Release) | 7955 | 725/1103 (65.7%) | 325264/598792 (54.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -81,7 +81,10 @@ typedef struct PufoWorldState {
     PtrArray  strategList;                      /* 0x186534 */
     i32       nStrategSeed;                     /* 0x18640C */
     BaseSiteRec aSiteRecs[PUFO_FAC_BASE_COUNT]; /* 0x186C40 */
-    u8        abKindTable[8];                   /* 0x1864DD */
+    /* abBaseKindTable @ 0x1864DD. The original's table is 15 bytes, so facility kinds 15 and 16
+     * read and write past it into the pSmapPadZoom2 / pSmapPadZoom1 globals (bugs.tsv). The port
+     * sizes it for all 17 kinds so the index is always in range. */
+    u8        abKindTable[17];                  /* 0x1864DD */
 
     /* Geoscape UI and viewport. */
     GeoscapeUiState   ui;

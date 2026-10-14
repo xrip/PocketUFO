@@ -738,4 +738,101 @@ typedef struct BaseCreateEnv {
 
 i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, const char *pszName);
 
+/* ------------------------------------------------- can this cell host a hangar
+ *
+ * Evidence: Base_CanPlaceHangarAt @ 0x629b0. Its only code caller is Geoscape_OnMapClick @
+ * 0x8B688, in the screen-1 branch: a non-zero result lets the caller clear the tapped cells, a
+ * zero result sets bBasePlaceFail (0x1870B8).
+ *
+ * IDA's signature is wrong and the port corrects it. The original's arguments are
+ * (grid, nX, nY, unused). The base index is not an argument at all: it is the SIGNED byte at
+ * grid + 0x619 -- nSelectedBaseIdx @ 0x159D81, which sits 1561 bytes into a 1524-byte grid and
+ * is reached as `LDRSB R0,[R10,#0x619]` at 0x629C8 -- and the fourth argument is never read (the
+ * ARM sign-extends only R1 and R2, at 0x629E0 and 0x629E8). Both coordinates are sign-extended
+ * bytes, and the one multiplied by 6 is nY, the same row base BaseFac_SetCellBuildState forms.
+ *
+ * The decision, in the original's order:
+ *
+ *   1. buildDays[nBase][nY][nX] > 0 -> 1. Both tests (0x62A30 for a hangar cell, 0x62A50 for any
+ *      other) jump to the `MOV R0,#1` tail at 0x62D44, so a cell that is under construction is
+ *      accepted outright and none of the rest runs. The facType == 11 gate on the first test is
+ *      redundant: the second test covers it.
+ *   2. scratch[row][col] = 1 for a cell that carries a tileA stamp AND has finished build days,
+ *      0 for everything else (0x62A7C..0x62AA8). A cell whose facType is 11 with finished build
+ *      days also writes 1 into the three other cells of its 2 by 2 footprint (0x62AB8..0x62B10) -
+ *      and that marking is dead. The very same loop visits those three cells afterwards, in
+ *      row-major order, and its own `*v14 = v15` store overwrites each mark with the cell's own
+ *      value. Only the row 5 marks escape that, and they are the stack overrun below. A real
+ *      hangar is connected by its four stamped tileA bytes, not by this marking.
+ *   3. the tapped footprint is cleared back to 0 (0x62B3C..0x62B60): the candidate site counts as
+ *      free ground for the test that follows.
+ *   4. the first remaining 1 in row-major order becomes 2 (0x62B8C..0x62BD0), then a sweep
+ *      (0x62BE0..0x62CC8) turns every 2's four neighbours that are neither 0 nor 3 into 2 and
+ *      marks the source 3, repeating the whole sweep while any sweep changed something. That is
+ *      a flood fill of the connected component of finished cells. Note the "changed" flag is
+ *      shared across the sweep rather than per cell, and a neighbour that is already 2 counts as
+ *      a change -- both reproduced, because both change which cells end up marked 3.
+ *   5. any 1 still left -> 0 (0x62CE0). So the placement is refused exactly when clearing the
+ *      tapped footprint would cut some finished facility off from the rest of the base.
+ *   6. a tapped cell whose facType is 11 answers instead `Base_CalcHangarCap -
+ *      Base_CountShipsAtBase > 0` (0x62D14..0x62D40): a free hangar slot has to exist. Both
+ *      callees are passed nSelectedBaseIdx.
+ *   7. otherwise (0x62D50..0x62D6C): layer2[nY][nX] != 0 -> 0, facType == 0 -> 0, else 1. Empty
+ *      ground cannot host a hangar, and neither can a cell the needed-flag layer has claimed.
+ *
+ * The hangar branch's second callee is the reason the env carries the rosters. The original hands
+ * Base_CountShipsAtBase the facility grid pointer (0x62D38), but that pointer is dead: the callee
+ * passes it to BaseGrid_GetByte0x654, whose own first argument is unused because it reads the
+ * fixed table at abFacilityGrid + 1620 = 0x159DBC (0x6ACE4) -- the eight base grid bytes the save
+ * layer carries as SaveBasesState.abUnk159DBC. The port passes that table instead.
+ *
+ * Deviations: the original bounds nothing (nBaseIndex, nX and nY are used raw), and its scratch
+ * buffer is the 36 dwords between sp+0x10 and the end of the 0xA0 frame while the 2 by 2 marking
+ * at row 5 writes scratch[36..42] into the saved registers -- Hex-Rays sizes the array as
+ * var90[46] precisely because it sees those overrun stores. The port bounds the base index and
+ * the coordinates and clamps the footprint stores to the 36 cells; both rows are in bugs.tsv. */
+typedef struct HangarPlaceEnv {
+    const u8 *abFacilityGrid;    /* gBaseFacGrid @ 0x159768 */
+    const u8 *abGridBytes;       /* 0x159DBC, the eight bytes Base_CountShipsAtBase adds on */
+    i8  nSelectedBaseIdx;        /* nSelectedBaseIdx @ 0x159D81, the original's grid + 0x619 */
+    Ship *const *apCraft;
+    i32 nCraftCount;
+    BaseRec *const *apBases;
+    i32 nBaseCount;
+} HangarPlaceEnv;
+
+i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY);
+
+/* ------------------------------------------------- the facility label of the build dialog
+ *
+ * Evidence: BaseFac_FormatCostLabel @ 0x6a404. Two callers: BaseFacScreen_DrawPlacementOverlay @
+ * 0x59AE4, and Geoscape_OnMapClick @ 0x8B550, which copies the result into the aBaseFacilities
+ * record's label field (0x186C5A, that is record + 26) after storing kind + 0x80 at record + 0.
+ *
+ * It builds `TEXTS[905 + nFacType] name` + "-" + decimal(abBaseKindTable[nFacType]) into the
+ * shared scratch string at 0x186B10 (szRadarMsg, dword_186B08 + 8 -- the same buffer the radar
+ * screen, Soldier_FormatDisplayName and Ship_FormatDisplayName write), and then INCREMENTS
+ * abBaseKindTable[nFacType]. So the number the label shows is the table's value before the call,
+ * and calling it twice for the same kind shows one more the second time.
+ *
+ * abBaseKindTable @ 0x1864DD is a 15-byte runtime table, all zero in the image, and it has no
+ * xref in the IDB at all: every access is computed as 0x1864F8 + nFacType - 0x1B for the load
+ * (0x6A46C) and 0x1864F8 + 0x65 + nFacType - 0x80 for the store (0x6A49C), which is why Hex-Rays
+ * renders it as an expression on the unrelated pObj global instead. It is the same table
+ * Base_CreateNamedEntry reads for BaseRec.bUnk16.
+ *
+ * The value is loaded SIGNED (LDRSB) and the increment is sign-extended before the byte store
+ * (0x6A490..0x6A49C), so 127 wraps to -128. Facility kinds run 0..16 while the table has 15
+ * slots, so kinds 15 and 16 read and write past it into the pSmapPadZoom2 / pSmapPadZoom1
+ * globals -- recorded in bugs.tsv.
+ *
+ * The original's first argument (the grid pointer) is never read: R0 is replaced by the label
+ * buffer before the first strcat (0x6A458). The port drops it. The name copy is bounded here
+ * (pufo_strncpy) where the original copies with no bound at all. */
+#define PUFO_FAC_NAME_REC_BASE   905 /* TEXTS record of facility kind 0 */
+#define PUFO_BASE_KIND_TABLE_LEN 15  /* abBaseKindTable @ 0x1864DD */
+
+char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRecs,
+                              u8 nFacType, i8 *abKindTable);
+
 #endif /* PUFO_GEOSCAPE_H */
