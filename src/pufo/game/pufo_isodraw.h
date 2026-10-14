@@ -92,6 +92,9 @@ typedef struct IsoDrawCtx {
     i32      nScratch2;      /* 0x100 */
     i32      nRosterIndex;   /* 0x114, IDA nRosterAux2: the multi-target roster cursor
                               * MapView_DrawUnitFacingArrow walks over 0..9 */
+    i32      nCmdTickCol;    /* 0x124, the command pad ruler column counter Tact_DrawCommandPads
+                              * runs 0..23 (the ARM masks it to a byte before scaling) */
+    i32      nCmdTickRow;    /* 0x128, its row counter 0..11 */
     u8       bTwoHandWeapon; /* 0x12C, set from the two hands and cleared when the unit is
                               * armed with a weapon whose ObjectRec+0xA4 is zero */
     i32      nPal;        /* 0x6c */
@@ -569,6 +572,73 @@ typedef struct IsoMinimapEnv {
  *
  * The original returns the control-loop counter; no caller tests it, so the port returns void. */
 void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv);
+
+/* ------------------------------------------------------------ the command pad panel (screen 4)
+ *
+ * Everything Tact_DrawCommandPads @ 0x1fc8c reaches outside the draw context. It is
+ * Render_Frame's screen-4 branch: the selected unit's status panel. */
+#define PUFO_PBANK_CMD_FIRST 101 /* pBank + 0xCA0 (0xAD370): the panel's bclose / bprevs / bnexts */
+#define PUFO_PBANK_CMD_COUNT  3
+
+/* The row labels are aTextRecs records 56..66 (0xB65A8 .. 0xB6DAA at stride 205). They are read
+ * straight from the loaded blob and never rewritten. */
+#define PUFO_CMDPAD_REC_FIRST 56
+
+typedef struct TactCmdPadEnv {
+    Soldier *pSelUnit;           /* Map_pSelUnit @ 0x128CEC: the original dereferences it with no
+                                  * null test (0x1fcc4); Render_Frame only reaches screen 4 with a
+                                  * selection, so the port takes it as given */
+    const PadImage *pSoldierPad; /* unk_128AC0 (Map+0x15108): the 'soldier' pad stored by
+                                  * Tact_LoadUiPads, blitted as the panel backdrop */
+    PadImage *apCsPad[3];        /* 0x186C30 / 0x186C34 / 0x186C38: the 'cs0' / 'cs1' / 'cs2' pads,
+                                  * loaded by Assets_LoadStartup @ 0x387f4..0x38894 (mode 0x12,
+                                  * origin zeroed) and freed by GameAssets_Shutdown. The panel
+                                  * rewrites their origins to (5,2) and (39,2) before each blit,
+                                  * so they are not const */
+    const u8 *pTextRecs;         /* aTextRecs @ 0xB38D0: records 56..66 are the row labels */
+    const char *panRankLow;      /* aszTextE @ 0xB2200, for Unit_FormatDisplayName */
+    const char *panRankOther;    /* aszTextA @ 0xB2148 */
+    u8  bLookCommitFlag;         /* bLookCommitFlag @ 0x128A44: when zero, widgets 102 and 103 are
+                                  * blitted too */
+    UiControl         *pBank;    /* pBank @ 0xAC6D0; widgets 101..103 */
+    const GfxColorEnv *pColor;
+    UiControlBlitFn   pfnCtlBlit;
+    UiControlBlitFn   pfnCtlBlitEx;
+    void             *pCtlUser;
+} TactCmdPadEnv;
+
+/* Tact_DrawCommandPads @ 0x1fc8c — the selected unit's status panel.
+ *
+ * Backdrop first: the 'soldier' pad. Then the two 32x32 command pad slots at (5,2) and (39,2),
+ * unless the unit type is in the craft family (4..8, 14..20, 22 — the gate at 0x1FCEC):
+ *   uMissions <= 3  -> empty slots: a grey 32x32 frame with a black 30x30 inside at each position.
+ *   otherwise       -> nClass 0..5 picks two of the three cs pads: 0=(cs0,cs0) 1=(cs1,cs1)
+ *                      2=(cs2,cs2) 3=(cs0,cs1) 4=(cs1,cs2) 5=(cs0,cs2); any other class draws
+ *                      nothing. The pads' own origins are rewritten before every blit.
+ *
+ * Then the text: Unit_FormatDisplayName mode 1 at (75,2); mode 2 at (75,20) for the normal
+ * families, or centred as 120 - width/2 at y 24 for the craft family (the original calls mode 2
+ * twice there, 0x1FFB4 / 0x1FFC4 — the second call only feeds Text_MeasureWidth and returns the
+ * same buffer, so the port calls once). Then eleven label/value rows, each a colour pair, the
+ * label record at (10,y) and the value built in szText at (170,y), most with a bar under them:
+ *   45  TU as uTu/auStat[0]        69  stun as uStunOrArmor/auStat[9]   93  HP as uHp/auStat[1]
+ *   117 bKneelOrPrimed alone, plus one 12x6 block per point at y 133
+ *   141 auStat[2]                  165 morale as bMorale "/100", bar fixed 200 wide
+ *   189 auStat[4]                  213 auStat[5]      237 auStat[8]
+ *   261/285 auStat[7] / auStat[6], only when bUnk422
+ * The "remaining" bars are (max>>1) - (cur>>1) - 2 wide at (cur>>1)+11 — negative when the unit is
+ * at full value, which the bounds check simply drops.
+ *
+ * Then the ruler - ORIGINAL BUG (0x20ad4): 12 rows x 24 columns of 5x1 ticks at y = 24*row + 45,
+ * x = 5*(col+1) with index 5*(col+20) and x = 5*(col+23) with index 250 - 5*col, all with
+ * idx == mid == low. The rows land exactly on the label rows the function has just drawn, so the
+ * ruler cuts a 1-pixel colour ramp through every label and value. Reproduced as written.
+ *
+ * Then the panel frame (top 230x1 at (5,2), left and right 1x308 at x 5 and 235, index 0x96) and
+ * the controls: bank widget 101 always, 102 and 103 only while bLookCommitFlag is zero.
+ *
+ * The original returns the control-loop counter; Render_Frame ignores it, so the port returns void. */
+void Tact_DrawCommandPads(IsoDrawCtx *pIso, const TactCmdPadEnv *pEnv);
 
 /* ------------------------------------------------------------ iso unit animation tables
  *

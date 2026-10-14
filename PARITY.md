@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 679 / 1103 (61.6%) |
-| Bytes of original code cited | 264772 / 598792 (44.2%) |
+| Functions cited as evidence | 680 / 1103 (61.7%) |
+| Bytes of original code cited | 268816 / 598792 (44.9%) |
 | Subsystems in the IDB map | 14 |
-| Test suites | 52 |
-| Test checks run | 7322 |
+| Test suites | 53 |
+| Test checks run | 7364 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -41,7 +41,7 @@ the per-subsystem notes and the tests listed at the end.
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 50 | 52 | 38452 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 109 | 205 | 34764 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
@@ -429,11 +429,12 @@ is the module that answers to it.
 | `0x476c8` | `Soldier_ctor` | 12 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x548b8` | `MapCell_SetOccupant` | 8 | `src/pufo/game/pufo_mapcell.h` |
 
-### `tact-ui` (50 functions)
+### `tact-ui` (51 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x12260` | `Inv_HandlePointer` | 6668 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.c` (+2) |
+| `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | `src/pufo/game/pufo_isodraw.h` |
 | `0x13c6c` | `Input_OnPointer` | 3172 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
 | `0x1dbb8` | `MainMenu_Draw` | 2680 | `src/pufo/game/pufo_mainmenu.h` |
 | `0x3b498` | `Tact_InitUiControls` | 2260 | `src/pufo/game/pufo_tacthud.h`, `src/pufo/ui/pufo_menubtn.h` (+1) |
@@ -1011,11 +1012,10 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `tact-ui` — 2 functions, 5312 bytes remaining
+### `tact-ui` — 1 functions, 1268 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x1fc8c` | `Tact_DrawCommandPads` | 4044 | not yet ported; scheduled with the `tact-ui` subsystem work |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
 ### `ui-core` — 17 functions, 23604 bytes remaining
@@ -1304,6 +1304,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
+| `test_cmdpads` | PASS | 42 |
 | `test_combat` | PASS | 139 |
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
@@ -1351,7 +1352,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_vis` | PASS | 77 |
 | `test_vistry` | PASS | 42 |
 
-**52 / 52 suites passing.**
+**53 / 53 suites passing.**
 
 ## Per-subsystem parity notes
 
@@ -1370,7 +1371,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 230 citations.
+parity report. Total: 233 citations.
 
 ### Offsets below the image base (37)
 
@@ -1379,7 +1380,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (193)
+### At or above the image base (196)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1397,8 +1398,10 @@ against the IDB when the final report is assembled.
 - `0x113a00`
 - `0x118864`
 - `0x118868`
+- `0x128a44`
 - `0x128a8`
 - `0x128aa0`
+- `0x128cec`
 - `0x1330c`
 - `0x133a4`
 - `0x14004`
@@ -1504,6 +1507,7 @@ against the IDB when the final report is assembled.
 - `0x254b0`
 - `0x2fd30`
 - `0x319f4`
+- `0x387f4`
 - `0x3ad48`
 - `0x44d84`
 - `0x5d6c4`

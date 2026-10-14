@@ -6972,6 +6972,52 @@ Ten globals named this step: `MainMenu_nListMode`, `MainMenu_pBgGlyph` (0x1568D8
 `MainMenu_abRowDisabled`, `MainMenu_pStartCtl` (0x1571B4, the standalone control), `MainMenu_pSlotCtx`,
 `anActionPhaseSave0_112`, `aTextRec1076/1080/1083` and `pszGameVersion`.
 
+### `Tact_DrawCommandPads @ 0x1fc8c` — the screen-4 status panel
+
+Ported in `src/pufo/game/pufo_isodraw.c` behind `TactCmdPadEnv`, tested by `tests/test_cmdpads.c`
+(42 checks). `Render_Frame`'s screen-4 branch: the selected unit's status panel.
+
+**Backdrop and slots.** The 'soldier' pad (`pPadSoldier`, `unk_128AC0`, Map+0x15108, stored by
+`Tact_LoadUiPads`) is blitted first. The two 32x32 pad slots sit at (5,2) and (39,2). The unit-type
+gate at 0x1FCEC — types 4..8, 14..20 and 22, the craft family — skips the slots entirely. Otherwise
+`uMissions <= 3` draws empty slots: a grey (0x96) 32x32 frame with a black 30x30 inside at each
+position. Otherwise `nClass` 0..5 picks the pad pair from the three 'cs' pads loaded by
+`Assets_LoadStartup` at 0x387f4..0x38894 (mode 0x12, origins zeroed there): 0=(cs0,cs0) 1=(cs1,cs1)
+2=(cs2,cs2) 3=(cs0,cs1) 4=(cs1,cs2) 5=(cs0,cs2); class >5 draws nothing. The panel rewrites each
+pad's own `nOriginX/nOriginY` to (5,2) then (39,2) before every blit (0x1FD84..0x1FE80), so the
+loaded pads keep the last slot they were drawn at.
+
+**Name lines.** `Unit_FormatDisplayName` mode 1 at (75,2). Mode 2 at (75,20) for the normal families;
+for the craft family it is centred as `120 - Text_MeasureWidth/2` at y 24, and the original calls it
+twice there (0x1FFB4 / 0x1FFC4) — the second call only feeds the width measurement and returns the
+same `szDisplayName` buffer, so the port calls once.
+
+**Eleven label/value rows.** Labels are `aTextRecs` records 56..66 (0xB65A8..0xB6DAA at stride 205 —
+named `aTextRec56..66` this step; they are read straight from the loaded blob, never rewritten). The
+value is built in `IsoDrawCtx.szText` (itoa into szText[50], copy down, append "/" or "/100", append
+the second itoa). Rows: TU `uTu/auStat[0]` (45), stun `uStunOrArmor/auStat[9]` (69), HP `uHp/auStat[1]`
+(93), `bKneelOrPrimed` alone (117) plus one 12x6 block per point at y 133, `auStat[2]` (141), morale
+`bMorale "/100"` (165) with a fixed 200-wide bar and a `2*(99-morale)` remainder, `auStat[4]` (189),
+`auStat[5]` (213), `auStat[8]` (237), and `auStat[7]` / `auStat[6]` (261/285) only while `bUnk422`.
+The current/max bars are `max>>1` wide with a remainder `(max>>1) - (cur>>1) - 2` at `(cur>>1)+11` —
+negative at full value, which the clip drops.
+
+**The ruler is an original bug (0x20AD4).** After all the text, the function paints 12 rows x 24
+columns of 5x1 ticks at y = 24*row + 45 — exactly the label rows — left ticks at x = 5*(col+1) with
+index 5*(col+20), right ticks at x = 5*(col+23) with index 250 - 5*col, each with idx == mid == low.
+It cuts a colour ramp through every label and value. Hex-Rays renders the right index as
+`-6 - 5*col`, a sign-extension artifact of the STRB byte store; the ARM is `RSB R0, R2, #0xFA` =
+250 - 5*col. The loop counters are the context dwords at 0x124/0x128 (now `IsoDrawCtx.nCmdTickCol /
+nCmdTickRow`). Reproduced as written and recorded in `bugs.tsv`.
+
+**Frame and controls.** Top 230x1 at (5,2), left and right 1x308 at x 5 / 235, index 0x96. Then bank
+widget 101 (`pBank + 0xCA0` = 0xAD370, the bclose / bprevs / bnexts descriptors) always, and 102/103
+only while `bLookCommitFlag` is zero. The original returns the control-loop counter; `Render_Frame`
+ignores it, so the port returns void.
+
+Five globals named this step: `pPadSoldier`, `pCmdPadCs0/1/2` (0x186C30/34/38, `PadImage *`) and
+`aTextRec56..66`.
+
 ## `Tact_SelectTeamUnits (0x39744)`, decoded and not yet ported
 
 All four of its callees are ported (`Unit_ResetBattleState`, `Unit_PlaceOnMap`, `Tact_SelectUnit`,

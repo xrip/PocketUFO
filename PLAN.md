@@ -300,6 +300,24 @@ Order is by what unblocks what. Each item ends with gates + commit.
     `MainMenu_abRowDisabled` (u8[7]), `MainMenu_pStartCtl` (UiControl*), `MainMenu_pSlotCtx`,
     `anActionPhaseSave0_112` (int), `aTextRec1076/1080/1083`, `pszGameVersion` ("V1.26" @ 0xAAD28);
     function header at 0x1dbb8 and line comments on the mode branches.
+- [x] `Tact_DrawCommandPads @ 0x1fc8c` (4,044 B) — ported in `pufo_isodraw.c` behind `TactCmdPadEnv`,
+  with 42 new checks in `tests/test_cmdpads.c`. It is `Render_Frame`'s screen-4 branch, the selected
+  unit's status panel.
+  - [x] the unit-type gate (craft family 4..8 / 14..20 / 22 skips the pad slots), the `uMissions <= 3`
+    empty-slot frames, and the class 0..5 -> cs pad pairs (0=(cs0,cs0) 1=(cs1,cs1) 2=(cs2,cs2)
+    3=(cs0,cs1) 4=(cs1,cs2) 5=(cs0,cs2)); the panel rewrites the pads' own origins to (5,2)/(39,2)
+    before every blit.
+  - [x] eleven label/value rows from `aTextRecs` records 56..66 with current/max bars
+    (`max>>1`, remainder `(max>>1)-(cur>>1)-2`, negative dropped by the clip), the kneel blocks, the
+    fixed 200-wide morale bar with `2*(99-morale)` remainder, and the `bUnk422`-gated extra rows.
+  - [x] the ruler at 0x20AD4 is an original bug: 12x24 5x1 colour-ramp ticks land exactly on the
+    label rows just drawn and cut through them. Hex-Rays' `-6 - 5*col` right index is a sign-extension
+    artifact; the ARM is `RSB R0,R2,#0xFA` = 250 - 5*col. Reproduced, logged in `bugs.tsv` (79 rows).
+  - [x] ARM corrected Hex-Rays here: the loop scratch dwords are at 0x124/0x128 (now
+    `IsoDrawCtx.nCmdTickCol/nCmdTickRow`), not what the pseudocode rendered.
+  - [x] IDB: named `pPadSoldier` (0x128AC0, `PadImage *`), `pCmdPadCs0/1/2` (0x186C30/34/38,
+    `PadImage *`, the 'cs0'/'cs1'/'cs2' pads loaded by `Assets_LoadStartup`), `aTextRec56..66`;
+    function header at 0x1fc8c and line comments at 0x1FCEC, 0x1FE84, 0x1FFB4, 0x20AD4, 0x20C00.
 - [ ] `Game_StartNew (0x94554, 3,976 B)` — its callees are `GameTime_Reset` (ported),
   `BaseFac_SetCellBuildState`, `Base_GrantStarterItems` and `Ship_SpawnAtSlot` (all now ported),
   plus `InvSel_AddItemQty`, `Smap_ZoomOut`, `StrategList_MaybeSpawnCraft_Process` and
@@ -321,15 +339,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - **Consequence for the ordering.** Priority 1's remaining tail is `Game_StartNew` →
   `Geoscape_InitUI` → `LoadGame`, and both of the first two want the screens subsystem. The workable
   items are therefore in Priority 2, where `MapView_DrawUnitFacingArrow`, `MapView_DrawIsoLayer`,
-  `MapView_DrawMinimap` and `MainMenu_Draw` are done and only `Tact_DrawCommandPads` remains before
-  `Render_Frame` can be assembled. This is a change of order, not of goal: the geoscape chain stays
+  `MapView_DrawMinimap`, `MainMenu_Draw` and `Tact_DrawCommandPads` are done; what remains there is
+  `Render_Frame` itself. This is a change of order, not of goal: the geoscape chain stays
   open and is listed above.
 
 ## Later priorities
 
-2. Tactical renderer leftovers. `MapView_DrawIsoLayer`, `MapView_DrawMinimap` and `MainMenu_Draw`
-   are done, so what is left in this priority is `Tact_DrawCommandPads (0x1fc8c)` and
-   `Render_Frame (0x22310)` itself — the caller that will own the `IsoLayerEnv` and `IsoMinimapEnv`
+2. Tactical renderer leftovers. `MapView_DrawIsoLayer`, `MapView_DrawMinimap`, `MainMenu_Draw` and
+   `Tact_DrawCommandPads` are done, so what is left in this priority is `Render_Frame (0x22310)` itself — the caller that will own the `IsoLayerEnv` and `IsoMinimapEnv`
    these steps introduced, and which also needs `Geoscape_Draw (0x8c180)` from Priority 3.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
@@ -404,6 +421,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `MapView_DrawUnitFacingArrow` | 51/51 (Release) | 7235 | 676/1103 (61.3%) | 258728/598792 (43.2%) | 37 checked, 0 mismatched |
 | `MapView_DrawMinimap` | 51/51 (Release) | 7297 | 678/1103 (61.5%) | 262092/598792 (43.8%) | 37 checked, 0 mismatched |
 | `MainMenu_Draw` | 52/52 (Release) | 7322 | 679/1103 (61.6%) | 264772/598792 (44.2%) | 37 checked, 0 mismatched |
+| `Tact_DrawCommandPads` | 53/53 (Release) | 7364 | 680/1103 (61.7%) | 268816/598792 (44.9%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -225,6 +225,17 @@ add_test(NAME test_mainmenu
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# The screen-4 command pad panel.
+add_executable(test_cmdpads ${CMAKE_SOURCE_DIR}/tests/test_cmdpads.c)
+target_link_libraries(test_cmdpads PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util pufo_ui)
+set_target_properties(test_cmdpads PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_cmdpads
+    COMMAND test_cmdpads
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_executable(test_tactstate ${CMAKE_SOURCE_DIR}/tests/test_tactstate.c)
 target_link_libraries(test_tactstate PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
 set_target_properties(test_tactstate PROPERTIES

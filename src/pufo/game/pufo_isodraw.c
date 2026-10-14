@@ -913,6 +913,221 @@ void MapView_DrawMinimap(IsoDrawCtx *pIso, const IsoMinimapEnv *pEnv)
     } while (pIso->nScratch2 < PUFO_PBANK_MINIMAP_COUNT);
 }
 
+/* ------------------------------------------------------------ the command pad panel (screen 4) */
+
+/* The unit-type gate at 0x1FCEC and 0x1FFA4. Types 4..8, 14..20 and 22 are the craft family: they
+ * skip the command pad slots and centre the second name line. */
+static bool CmdPadSkipsUnit(u8 nUnitType)
+{
+    return nUnitType >= 4 &&
+           (nUnitType <= 8 || (nUnitType > 0xD && (nUnitType <= 0x14 || nUnitType == 22)));
+}
+
+/* The two pad slots: pad A at (5, 2), pad B at (39, 2). The original rewrites the loaded pads' own
+ * origins before every blit (0x1FD84..0x1FE80), so each cs pad keeps the last slot it was drawn at.
+ * For classes 0..2 both slots use the same pad: x = 5, blit, x += 34, blit. */
+static void BlitCmdPadPair(PadImage *pPadA, PadImage *pPadB)
+{
+    pPadA->nOriginX = 5;
+    pPadA->nOriginY = 2;
+    PadImage_Blit(pPadA);
+    pPadB->nOriginX = 5;
+    pPadB->nOriginY = 2;
+    pPadB->nOriginX += 34;
+    PadImage_Blit(pPadB);
+}
+
+/* szText = decimal(nA) "/" decimal(nB). The original runs j_itoa into szText[50], copies it down to
+ * szText[0], appends the separator, then itoa's the second value into szText[50] and appends that
+ * (0x20064..0x200c0). snprintf gives the same digits, bounded. */
+static void CmdPadPair(IsoDrawCtx *pIso, i32 nA, i32 nB, const char *pszSep)
+{
+    (void)snprintf(&pIso->szText[50], sizeof(pIso->szText) - 50, "%d", nA);
+    pufo_strcpy(pIso->szText, &pIso->szText[50]);
+    (void)pufo_strcat(pIso->szText, pszSep, sizeof(pIso->szText));
+    (void)snprintf(&pIso->szText[50], sizeof(pIso->szText) - 50, "%d", nB);
+    (void)pufo_strcat(pIso->szText, &pIso->szText[50], sizeof(pIso->szText));
+}
+
+/* szText = decimal(nVal) alone. */
+static void CmdPadNumber(IsoDrawCtx *pIso, i32 nVal)
+{
+    (void)snprintf(&pIso->szText[50], sizeof(pIso->szText) - 50, "%d", nVal);
+    pufo_strcpy(pIso->szText, &pIso->szText[50]);
+}
+
+void Tact_DrawCommandPads(IsoDrawCtx *pIso, const TactCmdPadEnv *pEnv)
+{
+    Soldier *pUnit = pEnv->pSelUnit;
+
+    PadImage_Blit(pEnv->pSoldierPad);
+
+    if (!CmdPadSkipsUnit(pUnit->nUnitType)) {
+        if (pUnit->uMissions <= 3) {
+            /* Empty slots: a grey 32x32 frame with a black 30x30 inside at each position. */
+            SoftSurf_BlitRectProxy(0, 5, 2, 32, 32, 0x96, 0x96, 0x96);
+            SoftSurf_BlitRectProxy(0, 39, 2, 32, 32, 0x96, 0x96, 0x96);
+            SoftSurf_BlitRectProxy(0, 6, 3, 30, 30, 0, 0, 0);
+            SoftSurf_BlitRectProxy(0, 40, 3, 30, 30, 0, 0, 0);
+        } else {
+            switch (pUnit->nClass) {
+            case 0: BlitCmdPadPair(pEnv->apCsPad[0], pEnv->apCsPad[0]); break;
+            case 1: BlitCmdPadPair(pEnv->apCsPad[1], pEnv->apCsPad[1]); break;
+            case 2: BlitCmdPadPair(pEnv->apCsPad[2], pEnv->apCsPad[2]); break;
+            case 3: BlitCmdPadPair(pEnv->apCsPad[0], pEnv->apCsPad[1]); break;
+            case 4: BlitCmdPadPair(pEnv->apCsPad[1], pEnv->apCsPad[2]); break;
+            case 5: BlitCmdPadPair(pEnv->apCsPad[0], pEnv->apCsPad[2]); break;
+            default: break;
+            }
+        }
+    }
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 255, 255, 255, 90, 90, 90);
+    Text_DrawString(75, 2, Unit_FormatDisplayName(pUnit, 1, pEnv->panRankLow, pEnv->panRankOther));
+
+    if (CmdPadSkipsUnit(pUnit->nUnitType)) {
+        /* The original calls mode 2 twice here (0x1FFB4 / 0x1FFC4); the second call only feeds
+         * Text_MeasureWidth and returns the same buffer. The divide is the compiler's
+         * truncating divide-by-two (MOVS / ADDMI #1 / ASR #1). */
+        const char *pszName = Unit_FormatDisplayName(pUnit, 2, pEnv->panRankLow, pEnv->panRankOther);
+        Text_DrawString(120 - Text_MeasureWidth(pszName) / 2, 24, pszName);
+    } else {
+        Text_DrawString(75, 20, Unit_FormatDisplayName(pUnit, 2, pEnv->panRankLow, pEnv->panRankOther));
+    }
+
+    /* TU, green: uTu / auStat[0], bar at y 61, remainder at y 62. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 20, 250, 20, 4, 90, 4);
+    Text_DrawString(10, 45, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 56));
+    CmdPadPair(pIso, pUnit->uTu, pUnit->auStat[0], "/");
+    Text_DrawString(170, 45, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 61, (i32)pUnit->auStat[0] >> 1, 6, 0x14, 0xFA, 0x14);
+    SoftSurf_BlitRectProxy(0, ((i32)pUnit->uTu >> 1) + 11, 62,
+                           ((i32)pUnit->auStat[0] >> 1) - ((i32)pUnit->uTu >> 1) - 2, 4,
+                           0x14, 0x14, 0x14);
+
+    /* Stun / armour, yellow: uStunOrArmor / auStat[9]. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 20, 90, 90, 4);
+    Text_DrawString(10, 69, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 57));
+    CmdPadPair(pIso, pUnit->uStunOrArmor, pUnit->auStat[9], "/");
+    Text_DrawString(170, 69, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 85, (i32)pUnit->auStat[9] >> 1, 6, 0xFA, 0xFA, 0x14);
+    SoftSurf_BlitRectProxy(0, ((i32)pUnit->uStunOrArmor >> 1) + 11, 86,
+                           ((i32)pUnit->auStat[9] >> 1) - ((i32)pUnit->uStunOrArmor >> 1) - 2, 4,
+                           0x14, 0x14, 0x14);
+
+    /* Hit points, red: uHp / auStat[1]. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 20, 20, 90, 4, 4);
+    Text_DrawString(10, 93, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 58));
+    CmdPadPair(pIso, pUnit->uHp, pUnit->auStat[1], "/");
+    Text_DrawString(170, 93, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 109, (i32)pUnit->auStat[1] >> 1, 6, 0xFA, 0x14, 0x14);
+    SoftSurf_BlitRectProxy(0, ((i32)pUnit->uHp >> 1) + 11, 110,
+                           ((i32)pUnit->auStat[1] >> 1) - ((i32)pUnit->uHp >> 1) - 2, 4,
+                           0x14, 0x14, 0x14);
+
+    /* Crouch / primed state, pink: the value alone, then one 12x6 block per point at y 133. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 20, 150, 90, 4, 30);
+    Text_DrawString(10, 117, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 59));
+    CmdPadNumber(pIso, pUnit->bKneelOrPrimed);
+    Text_DrawString(170, 117, pIso->szText);
+    pIso->nScratch2 = 0;
+    if (pUnit->bKneelOrPrimed != 0) {
+        do {
+            SoftSurf_BlitRectProxy(0, 14 * pIso->nScratch2 + 10, 133, 12, 6, 0xFA, 0x14, 0x96);
+            pIso->nScratch2 = pIso->nScratch2 + 1;
+        } while (pIso->nScratch2 < (i32)pUnit->bKneelOrPrimed);
+    }
+
+    /* auStat[2], pink-white. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 255, 156, 190, 90, 31, 38);
+    Text_DrawString(10, 141, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 60));
+    CmdPadNumber(pIso, pUnit->auStat[2]);
+    Text_DrawString(170, 141, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 157, (i32)pUnit->auStat[2] >> 1, 6, 0xFF, 0x9C, 0xBE);
+
+    /* Morale, purple: bMorale "/100", full bar 200 wide, remainder 2 * (99 - morale). */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 20, 250, 80, 5, 90);
+    Text_DrawString(10, 165, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 61));
+    CmdPadNumber(pIso, pUnit->bMorale);
+    (void)pufo_strcat(pIso->szText, "/100", sizeof(pIso->szText));
+    Text_DrawString(170, 165, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 181, 200, 6, 0xC8, 0x14, 0xFA);
+    SoftSurf_BlitRectProxy(0, 2 * (i32)pUnit->bMorale + 11, 182,
+                           2 * (99 - (i32)pUnit->bMorale), 4, 0x14, 0x14, 0x14);
+
+    /* auStat[4] and auStat[5], purple pair. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 120, 250, 80, 40, 90);
+    Text_DrawString(10, 189, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 62));
+    CmdPadNumber(pIso, pUnit->auStat[4]);
+    Text_DrawString(170, 189, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 205, (i32)pUnit->auStat[4] >> 1, 6, 0xC8, 0x78, 0xFA);
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 120, 250, 80, 40, 90);
+    Text_DrawString(10, 213, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 63));
+    CmdPadNumber(pIso, pUnit->auStat[5]);
+    Text_DrawString(170, 213, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 229, (i32)pUnit->auStat[5] >> 1, 6, 0xC8, 0x78, 0xFA);
+
+    /* auStat[8], red. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 20, 20, 90, 4, 4);
+    Text_DrawString(10, 237, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 64));
+    CmdPadNumber(pIso, pUnit->auStat[8]);
+    Text_DrawString(170, 237, pIso->szText);
+    SoftSurf_BlitRectProxy(0, 10, 253, (i32)pUnit->auStat[8] >> 1, 6, 0xFF, 0x14, 0x32);
+
+    /* The two extra rows, only while bUnk422. */
+    if (pUnit->bUnk422 != 0) {
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 210, 250, 20, 20, 20);
+        Text_DrawString(10, 261, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 65));
+        CmdPadNumber(pIso, pUnit->auStat[7]);
+        Text_DrawString(170, 261, pIso->szText);
+        SoftSurf_BlitRectProxy(0, 10, 277, (i32)pUnit->auStat[7] >> 1, 6, 0xD2, 0xD2, 0xFA);
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 210, 250, 20, 20, 20);
+        Text_DrawString(10, 285, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 66));
+        CmdPadNumber(pIso, pUnit->auStat[6]);
+        Text_DrawString(170, 285, pIso->szText);
+        SoftSurf_BlitRectProxy(0, 10, 301, (i32)pUnit->auStat[6] >> 1, 6, 0xC8, 0xD2, 0xFA);
+    }
+
+    /* ORIGINAL BUG (0x20AD4): the ruler runs over the label rows that were just drawn. 12 rows at
+     * y = 24 * row + 45, 24 columns each: a left tick at x = 5 * (col + 1) with index 5 * (col + 20)
+     * and a right tick at x = 5 * (col + 23) with index 250 - 5 * col, each 5x1 with idx == mid ==
+     * low, so it paints a colour ramp straight through every label and value. The ARM masks the
+     * column counter to a byte before scaling (AND #0xFF at 0x20AE8); the counters are the context
+     * dwords at 0x124 / 0x128. Reproduced as written. */
+    pIso->nCmdTickRow = 0;
+    do {
+        pIso->nCmdTickCol = 0;
+        do {
+            u8 nLeft  = (u8)(5 * ((pIso->nCmdTickCol & 0xFF) + 20));
+            u8 nRight = (u8)(250 - 5 * (pIso->nCmdTickCol & 0xFF));
+            SoftSurf_BlitRectProxy(0, 5 * (pIso->nCmdTickCol + 1), 24 * pIso->nCmdTickRow + 45,
+                                   5, 1, nLeft, nLeft, nLeft);
+            SoftSurf_BlitRectProxy(0, 5 * (pIso->nCmdTickCol + 23), 24 * pIso->nCmdTickRow + 45,
+                                   5, 1, nRight, nRight, nRight);
+            pIso->nCmdTickCol = pIso->nCmdTickCol + 1;
+        } while (pIso->nCmdTickCol < 24);
+        pIso->nCmdTickRow = pIso->nCmdTickRow + 1;
+    } while (pIso->nCmdTickRow < 12);
+
+    /* The panel frame. */
+    SoftSurf_BlitRectProxy(0, 5, 2, 230, 1, 0x96, 0x96, 0x96);
+    SoftSurf_BlitRectProxy(0, 5, 2, 1, 308, 0x96, 0x96, 0x96);
+    SoftSurf_BlitRectProxy(0, 235, 2, 1, 308, 0x96, 0x96, 0x96);
+
+    (void)UiControl_BlitActivePad(&pEnv->pBank[PUFO_PBANK_CMD_FIRST],
+                                  pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+    if (pEnv->bLookCommitFlag == 0) {
+        pIso->nScratch2 = 1;
+        do {
+            (void)UiControl_BlitActivePad(&pEnv->pBank[PUFO_PBANK_CMD_FIRST + pIso->nScratch2],
+                                          pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+            pIso->nScratch2 = pIso->nScratch2 + 1;
+        } while (pIso->nScratch2 < PUFO_PBANK_CMD_COUNT);
+    }
+}
+
 /* ------------------------------------------------------------ iso unit animation tables
  *
  * The nine static tables MapView_DrawUnit (0x1c958) reads. Dumped from pufobeta.exe and

@@ -56,12 +56,12 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 679 / 1103 (61.6%)
-                                             bytes cited:     264772 / 598792 (44.2%)
-python docs/parity/audit_credits.py       -> credited functions: 679, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 680 / 1103 (61.7%)
+                                             bytes cited:     268816 / 598792 (44.9%)
+python docs/parity/audit_credits.py       -> credited functions: 680, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 78, ORIGINAL BUG markers in src/pufo: 22
+python docs/parity/audit_bugs.py          -> ledger rows: 79, ORIGINAL BUG markers in src/pufo: 24
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 37 tables checked, 0 mismatched
 ```
@@ -74,7 +74,7 @@ build/src/pufo/Release/pocketufo.exe
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
 ```
 
-Test checks run across the 52 suites: **7322**.
+Test checks run across the 53 suites: **7364**.
 
 ### Per-subsystem status
 
@@ -688,9 +688,15 @@ does.
    `MainMenu_nListMode`, `MainMenu_pBgGlyph`, `MainMenu_anRowKeys`, `MainMenu_abRowDisabled`,
    `MainMenu_pStartCtl`, `MainMenu_pSlotCtx`, `anActionPhaseSave0_112`, `aTextRec1076/1080/1083`,
    `pszGameVersion`.
-5. `Tact_DrawCommandPads` (0x1fc8c) and then `Render_Frame` (0x22310) itself, which is the caller
-   that fills `IsoLayerEnv` and `IsoMinimapEnv`; `Render_Frame` also needs `Geoscape_Draw` (0x8c180)
-   from Priority 3.
+5. Done: `Tact_DrawCommandPads` (0x1fc8c, 4,044 B) is ported in `src/pufo/game/pufo_isodraw.c` behind
+   `TactCmdPadEnv`, with 42 checks in `tests/test_cmdpads.c`. It is the screen-4 status panel: the
+   'soldier' pad, the two cs pad slots (class 0..5 picks the pair; craft types 4..8/14..20/22 skip
+   them; `uMissions <= 3` draws empty frames), eleven label/value rows from `aTextRecs` records
+   56..66 with current/max bars, and bank widgets 101..103. The ruler at 0x20AD4 (12x24 5x1 ticks
+   over the label rows) is an original bug, reproduced and logged. Named this step: `pPadSoldier`,
+   `pCmdPadCs0/1/2`, `aTextRec56..66`.
+6. `Render_Frame` (0x22310) itself, which is the caller that fills `IsoLayerEnv`, `IsoMinimapEnv` and
+   `TactCmdPadEnv`; it also needs `Geoscape_Draw` (0x8c180) from Priority 3.
 
 ### Priority 3 — the geoscape
 
