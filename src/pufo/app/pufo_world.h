@@ -67,7 +67,7 @@ typedef struct PufoWorldState {
     u16 auProductU16[4096];                     /* unk_15D09C, 200 per base + the +2176 spill */
     u32 auProductU32[3600];                     /* unk_159E9C, 200 per base + the +1600 spill */
     u16 auManufCol[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT]; /* 0x15E19C */
-    u16 auResearchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];  /* unk_16022C */
+    u16 auResearchCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];  /* auResearchCol @ 0x16022C */
     u8  abResearchZero[PUFO_RESEARCH_TOPIC_COUNT];   /* unk_160B2C */
     u8  abResearchActive[PUFO_RESEARCH_TOPIC_COUNT]; /* byte_160BBC */
     u16 nResearchEntries;                       /* 0x160C4C, the shared entry count */

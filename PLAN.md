@@ -770,6 +770,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | soldier screen frame (`SoldierScreen_Draw`) | 56/56 (Release) | 8566 | 772/1103 (70.0%) | 316004/598792 (52.8%) | 38 checked, 0 mismatched |
 | hangar craft list + its teardown (`BasePlaneScreen_BuildPanels`, `BasePlaneScreen_SelectCraft`, `BasePlaneScreen_SelectListed`) | 56/56 (Release) | 8624 | 775/1103 (70.3%) | 317968/598792 (53.1%) | 38 checked, 0 mismatched |
 | hangar object block (`BasePlaneScreen_Init`) | 56/56 (Release) | 8660 | 776/1103 (70.4%) | 319040/598792 (53.3%) | 38 checked, 0 mismatched |
+| research quantity buttons + crew getters (`ResearchScreen_IncSelectedQty`, `ResearchScreen_DecSelectedQty`, `Base_GetScientistCount`, `Base_GetEngineerCount`) | 56/56 (Release) | 8702 | 780/1103 (70.7%) | 319608/598792 (53.4%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

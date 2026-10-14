@@ -9898,3 +9898,80 @@ the full wiring description is on 0x7d9e4.
 Still open in this family: `BasePlaneScreen_BuildControls` (0x7b014, 2788 B), `BasePlaneScreen_Draw`
 (0x7d374, 1648 B), `BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3824 B) and `BuySellScreen_ApplyQtyChanges`
 (0x78d90).
+
+
+## The research screen's quantity buttons, and the two crew getters (done)
+
+`ResearchScreen_IncSelectedQty @ 0x72ea0` (208 B) and `ResearchScreen_DecSelectedQty @ 0x72f70`
+(140 B) are the research screen's "+1 / -1" allocation buttons, and they are where the port first
+reaches the crew availability question: how many scientists a base has that are not already
+committed to a project.
+
+Both buttons address one entry of the research allocation column through the topic panel:
+
+    LDR  R0, =pResearchTopicPanel ; LDR R0, [R0]      the panel pointer, 0x160C68
+    LDR  R1, =nResearchTopicRowCache ; LDR R1, [R1]   the row, 0x160C74
+    LDR  R3, [R0, R1,LSL#2 + 0x13B4]                 panel->anLineAux[row], the topic number
+    MUL  R0, nSelectedBaseIdx, #0x90                  144 entries per base
+    ADD  R1, R3, R0                                  topic + 144*base
+    LDRH R3, [0x15EF08 + 2*R1 + 0x1324]              auResearchCol[topic + 144*base]
+
+`nResearchTopicRowCache` is not a cursor these buttons move. `PlaySample7_SetFlags_Cache0xBD8`
+@ 0x73328 writes it as `pResearchTopicPanel->nUnk3032`, the panel's own row cursor -- which is why
+IDA's auto-name for that handler already said Cache0xBD8. The topic number in `anLineAux` is what
+`ResearchScreen_RebuildTopicList` (0x74270, not ported) fills, the same trick the hangar craft list
+uses to map a visible row back to a roster index.
+
+Inc gates the store on two tests, in this order: `Base_GetScientistCount > 0` (0x72EB8), then
+`Base_HasResearchSlotFree(Base_CountActiveResearch + 1)` (0x72ED4, 0x72EEC). Dec has no gate at all
+beyond the entry being non-zero. Both truncate the result to 16 bits (LSL #16 / LSR #16 at 0x72F50,
+and `ADDHI R3, R3, #0xFFFF` at 0x72FDC for the decrement), so 65535 + 1 wraps to 0 -- asserted in
+the test.
+
+Neither return value is a status code. On success both leave 4900 in R0, which is the research
+column's byte offset from the 0x15EF08 anchor, register residue from `MOV R0,#0x1300` then
+`ORR R0,R0,#0x24`. Inc's early exits return whatever the last call left there: the scientist count
+when it is <= 0, so a negative availability is returned verbatim, or `Base_HasResearchSlotFree`'s 0
+when the lab gate fails. Dec returns 4900 even when it stored nothing.
+
+The two gates lean on `Base_GetScientistCount @ 0x6812c` (108 B) and `Base_GetEngineerCount @
+0x681f4` (112 B), which are one expression over a different item and a different column:
+
+    available = <crew item>->auPerBaseVal[base] - sum(<that base's quantity column>[0 .. nEntries))
+
+The crew item is a slot of the map object pointer array, loaded out of the map root block:
+
+    Base_GetScientistCount  LDR R0, =0x1139B8 / LDR R0, [R0,#0x2CC] -> 0x113C84, slot 113
+    Base_GetEngineerCount   LDR R0, =0x1139B8 / LDR R0, [R0,#0x2C8] -> 0x113C80, slot 112
+
+The slot numbering is pinned by the neighbours: `Map_apObjects105` at 0x113C64 puts the array base at
+0x113AC0, so slot 112 lands on 0x113C80 and slot 113 on 0x113C84 exactly. What makes them engineers
+and scientists rather than two anonymous items is `Base_SumCraftAtBase @ 0x6a230` (ported as
+`Base_CalcMonthlyUpkeep`): it weights slot 112 with 20,000 right next to the soldier count and slot
+113 with 30,000, and the geoscape site records use the same two offsets with the same weights
+(`aItemQty[224]` and `aItemQty[226]`).
+
+The subtraction has no floor: a base whose column already holds more than its total returns a
+negative count, and every caller tests `> 0`, so a negative behaves exactly like zero. The port
+keeps that instead of clamping.
+
+IDB: `unk_113C80` / `unk_113C84` renamed `Map_apObjects112` / `Map_apObjects113` and typed
+`ObjectRec *`; `Map_apObjects105` was carried as a 1-byte item and is now a 4-byte `ObjectRec *`
+like its neighbours; `unk_160C68` renamed `pResearchTopicPanel` (`UiPanel *`); `unk_160C74` renamed
+`nResearchTopicRowCache` (`int`); `unk_16022C` renamed `auResearchCol` and typed
+`unsigned __int16[1152]`, which is 144 entries for each of the eight base slots and ends exactly at
+0x160B2C where `abResearchZero` starts; and `abBaseCraftLoot` at 0x160C4C renamed
+`nResearchEntryCount` (`unsigned __int8`) -- all 78 references to that address come from research or
+manufacturing code that reads it as an entry count, nothing references 0x160C50..0x160C5F, and it
+sits immediately after `abResearchActive` (byte_160BBC, 144 bytes), so the old name was wrong.
+
+Deviation: the port takes the panel, the row cache, the count byte and the base index as arguments
+and refuses, returning 0, when the panel, the column, the base index, the row or the topic number is
+missing or out of range; the original derefs all of them blindly. `Base_GetItemQty` also refuses an
+index past the eight per-base slots where the original indexes past the array, which is already on
+record.
+
+Still open in this family: `ResearchScreen_UpdateProgress` (0x72d14, 284 B), which inlines the same
+gate in a loop, `ResearchScreen_StartSelected` (0x73240, 232 B), `ResearchScreen_CancelSelectedAndClose`
+(0x73380, 116 B), `ResearchScreen_RebuildTopicList` (0x74270, 1700 B) and `ResearchScreen_Draw`
+(0x73a34, 2108 B).

@@ -805,6 +805,155 @@ static void TestRefreshPanels(void)
     CheckEqI32(pCount.nLineCount, 0, "and no topic is walked");
 }
 
+static void TestResearchQty(void)
+{
+    static UiPanel g_Panel;
+    static u16 g_aCols[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
+    static u8 g_aGrid[PUFO_GRID_SIZE];
+    static ObjectRecFull g_SciRec;
+    static i32 g_nRow;
+    static i8 g_nBase;
+    static u16 g_nEntries;
+    ResearchQtyEnv env;
+
+    printf("\nResearchScreen_IncSelectedQty @ 0x72ea0 / ResearchScreen_DecSelectedQty @ 0x72f70\n");
+
+    memset(&g_Panel, 0, sizeof(g_Panel));
+    memset(g_aCols, 0, sizeof(g_aCols));
+    memset(g_aGrid, 0, sizeof(g_aGrid));
+    memset(&g_SciRec, 0, sizeof(g_SciRec));
+
+    /* The topic panel carries a topic number per row in anLineAux, which is what
+     * ResearchScreen_RebuildTopicList fills; the row cache picks one of those rows. */
+    g_Panel.anLineAux[0] = 5;
+    g_Panel.anLineAux[1] = 7;
+    g_Panel.anLineAux[2] = 143;
+
+    /* One free lab cell (facType 2, zero build days) gives base 0 a capacity of 50. */
+    g_aGrid[480 + 144 * 0 + 6 * 2 + 3] = 2;
+    g_SciRec.auPerBaseVal[0] = 4;
+    g_SciRec.auPerBaseVal[1] = 3;
+
+    memset(&env, 0, sizeof(env));
+    env.pTopicPanel = &g_Panel;
+    env.pnTopicRow = &g_nRow;
+    env.apResearchCols = g_aCols;
+    env.puResearchEntries = &g_nEntries;
+    env.pScientistRec = &g_SciRec;
+    env.abFacilityGrid = g_aGrid;
+    env.pnSelectedBaseIdx = &g_nBase;
+
+    g_nRow = 1; /* topic 7 */
+    g_nBase = 0;
+    g_nEntries = 0;
+
+    g_aCols[7] = 3;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 4900,
+               "the return is 4900, the research column's offset, not a status code");
+    CheckEqI32(g_aCols[7], 4, "topic 7's entry went 3 to 4");
+    CheckEqI32(g_aCols[6], 0, "the entry below it is untouched");
+    CheckEqI32(g_aCols[8], 0, "and the entry above it");
+    CheckEqI32(g_aCols[144 + 7], 0, "base 1's copy of the same topic is untouched");
+
+    /* 65535 + 1 becomes 0: the ARM truncates with LSL #16 / LSR #16 at 0x72F50. */
+    g_aCols[7] = 65535;
+    (void)ResearchScreen_IncSelectedQty(&env);
+    CheckEqI32(g_aCols[7], 0, "the store is truncated to 16 bits");
+
+    /* Dec has no gate at all beyond the entry being non-zero. */
+    g_aCols[7] = 9;
+    CheckEqI32(ResearchScreen_DecSelectedQty(&env), 4900, "the decrement returns 4900 too");
+    CheckEqI32(g_aCols[7], 8, "topic 7's entry went 9 to 8");
+    g_aCols[7] = 0;
+    CheckEqI32(ResearchScreen_DecSelectedQty(&env), 4900,
+               "a zero entry still returns 4900");
+    CheckEqI32(g_aCols[7], 0, "and stays zero: the ARM has no floor to go below");
+
+    /* Gate 1: the scientist count. With 1 and 2 allocated against a total of 0 the getter
+     * returns -3, and Inc returns that count rather than a status. */
+    g_SciRec.auPerBaseVal[0] = 0;
+    g_nEntries = 2;
+    g_aCols[0] = 1;
+    g_aCols[1] = 2;
+    g_aCols[7] = 5;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), -3,
+               "no scientists left: Inc returns the negative availability it tested");
+    CheckEqI32(g_aCols[7], 5, "and the topic entry is not touched");
+    g_SciRec.auPerBaseVal[0] = 4;
+    g_nEntries = 0;
+    g_aCols[0] = 0;
+    g_aCols[1] = 0;
+
+    /* Gate 2: the lab capacity. Base 1 has no lab cell, so even with scientists going spare
+     * the increment is refused. */
+    g_nBase = 1;
+    g_nRow = 0; /* topic 5 */
+    g_aCols[144 + 5] = 11;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 0,
+               "no free lab slot: Inc returns the 0 that Base_HasResearchSlotFree left in R0");
+    CheckEqI32(g_aCols[144 + 5], 11, "and nothing is stored");
+
+    /* The same gate from the other side. The scientist total has to be high enough to clear
+     * gate 1 first, otherwise it is the scientist gate that answers: 100 - 60 allocated leaves
+     * 40 spare, and it is the lab capacity that then refuses 61 needed over 50. */
+    g_nBase = 0;
+    g_nEntries = 6;
+    g_SciRec.auPerBaseVal[0] = 100;
+    for (i32 i = 0; i < 6; ++i) {
+        g_aCols[i] = 10;
+    }
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 0,
+               "60 allocated against a capacity of 50 is refused too");
+    for (i32 i = 0; i < 6; ++i) {
+        g_aCols[i] = 0;
+    }
+    g_nEntries = 0;
+    g_SciRec.auPerBaseVal[0] = 4;
+
+    /* Row and base selection: row 2 is topic 143, the last entry of base 0's column. */
+    g_nRow = 2;
+    g_aCols[143] = 1;
+    (void)ResearchScreen_IncSelectedQty(&env);
+    CheckEqI32(g_aCols[143], 2, "row 2 selects topic 143");
+    CheckEqI32(g_aCols[142], 0, "the entry before it is untouched");
+
+    /* Base 1's column starts 144 entries in, so the same row must land 144 further on. */
+    g_aGrid[480 + 144 * 1] = 2; /* give base 1 a lab cell too */
+    g_nRow = 0; /* topic 5 */
+    g_nBase = 1;
+    g_aCols[5] = 20;
+    g_aCols[144 + 5] = 1;
+    (void)ResearchScreen_IncSelectedQty(&env);
+    CheckEqI32(g_aCols[144 + 5], 2, "base 1's copy of topic 5 is the one that moved");
+    CheckEqI32(g_aCols[5], 20, "base 0's copy is untouched");
+
+    /* The guards the original does not have. */
+    CheckEqI32(ResearchScreen_IncSelectedQty(NULL), 0, "a missing environment is refused");
+    CheckEqI32(ResearchScreen_DecSelectedQty(NULL), 0, "for the decrement too");
+    {
+        ResearchQtyEnv bad = env;
+        bad.pTopicPanel = NULL;
+        CheckEqI32(ResearchScreen_IncSelectedQty(&bad), 0, "a missing topic panel is refused");
+        CheckEqI32(ResearchScreen_DecSelectedQty(&bad), 0, "and the same for the decrement");
+        bad = env;
+        bad.apResearchCols = NULL;
+        CheckEqI32(ResearchScreen_IncSelectedQty(&bad), 0, "a missing quantity column is refused");
+    }
+    g_nRow = PUFO_PANEL_LINES;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 0, "a row past the panel's rows is refused");
+    g_nRow = -1;
+    CheckEqI32(ResearchScreen_DecSelectedQty(&env), 0, "and a negative row");
+    g_nRow = 0;
+    g_Panel.anLineAux[0] = PUFO_RESEARCH_TOPIC_COUNT;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 0, "a topic number past the 144 is refused");
+    g_Panel.anLineAux[0] = -1;
+    CheckEqI32(ResearchScreen_DecSelectedQty(&env), 0, "and a negative one");
+    g_Panel.anLineAux[0] = 5;
+    g_nBase = PUFO_FAC_BASE_COUNT;
+    CheckEqI32(ResearchScreen_IncSelectedQty(&env), 0, "a base index past the eight is refused");
+    g_nBase = 1;
+}
+
 static void TestTopicNeedsItem(void)
 {
     static ResearchTopicLive g_aTopics[144];
@@ -3087,6 +3236,7 @@ int main(void)
     TestAtAndHangarOpeners();
     TestTopicNeedsItem();
     TestRefreshPanels();
+    TestResearchQty();
     TestFindAtBase();
     TestTransferFlag();
     TestNewBaseScreen();

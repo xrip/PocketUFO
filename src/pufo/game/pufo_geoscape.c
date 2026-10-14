@@ -639,6 +639,29 @@ i32 Base_CountActiveResearch(const u16 *apResearchQty, i32 nEntries)
     return QuantitySumColumn(apResearchQty, nEntries); /* 0x681EC */
 }
 
+/* The crew availability expression the two getters share: one per-base total minus the
+ * already allocated column sum. No floor, exactly as the original's SUB leaves it. */
+static i32 CrewAvailable(const ObjectRecFull *pCrewRec, const u16 *apBaseCol,
+                         i32 nBaseIndex, i32 nEntries)
+{
+    return Base_GetItemQty(pCrewRec, nBaseIndex) - QuantitySumColumn(apBaseCol, nEntries);
+}
+
+/* Base_GetScientistCount @ 0x6812c. Slot 113 of the map object array (0x113C84), and the
+ * research column of the base being asked about. */
+i32 Base_GetScientistCount(const ObjectRecFull *pScientistRec, const u16 *apResearchCol,
+                           i32 nBaseIndex, i32 nEntries)
+{
+    return CrewAvailable(pScientistRec, apResearchCol, nBaseIndex, nEntries); /* 0x68148 - 0x68188 */
+}
+
+/* Base_GetEngineerCount @ 0x681f4. Slot 112 (0x113C80), and the manufacturing column. */
+i32 Base_GetEngineerCount(const ObjectRecFull *pEngineerRec, const u16 *apManufCol,
+                          i32 nBaseIndex, i32 nEntries)
+{
+    return CrewAvailable(pEngineerRec, apManufCol, nBaseIndex, nEntries); /* 0x68218 - 0x68250 */
+}
+
 /* The needed-marking pass, shared by the workshop and lab versions. It walks row 0 across
  * all six columns, then row 1, and so on, spending a budget of 1 per matching cell. */
 static i32 FacilityMarkNeeded(u8 *abFacilityGrid, i32 nBaseIndex, u8 nKind, i32 nBudget)

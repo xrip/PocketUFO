@@ -465,6 +465,76 @@ i32 ResearchScreen_RefreshPanels(const ResearchTopicLive *aTopics, i32 nTopicCou
     return nTopicCount; /* 0x73218, 0x73238 */
 }
 
+/* Which auResearchCol entry the two quantity buttons act on: the topic number the panel
+ * carries for the cached row, plus that base's 144-entry column offset. -1 when the original
+ * would have dereferenced something the port does not have. */
+static i32 ResearchQtyIndex(const ResearchQtyEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pTopicPanel == NULL || pEnv->apResearchCols == NULL) {
+        return -1;
+    }
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    if (nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT) {
+        return -1;
+    }
+    const i32 nRow = (pEnv->pnTopicRow != NULL) ? *pEnv->pnTopicRow : 0;
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return -1;
+    }
+    const i32 nTopic = pEnv->pTopicPanel->anLineAux[nRow]; /* 0x72F30 / 0x72F88 */
+    if (nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return -1;
+    }
+    return nTopic + PUFO_RESEARCH_TOPIC_COUNT * nBase; /* MUL #0x90, ADD topic */
+}
+
+/* ResearchScreen_IncSelectedQty @ 0x72ea0. The scientist gate first, then the lab-slot gate,
+ * then the increment. Base_HasResearchSlotFree returns a plain 0/1 (MOV R0,#0 / MOVLE R0,#1 at
+ * 0x66334), so the original's ANDS R3,R0,#0xFF test and this one agree. */
+i32 ResearchScreen_IncSelectedQty(const ResearchQtyEnv *pEnv)
+{
+    const i32 nIdx = ResearchQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->puResearchEntries != NULL) ? (i32)*pEnv->puResearchEntries : 0;
+    /* nIdx already carries the 144*base term, so the count functions get the base's own column
+     * while the store goes straight into the flat array. */
+    const u16 *pCol = pEnv->apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase;
+
+    const i32 nSci = Base_GetScientistCount(pEnv->pScientistRec, pCol, nBase, nEntries);
+    if (nSci <= 0) {
+        return nSci; /* 0x72EC8: R0 still holds the count the compare tested */
+    }
+
+    const i32 nActive = Base_CountActiveResearch(pCol, nEntries); /* 0x72ED4 */
+    if (!Base_HasResearchSlotFree(pEnv->abFacilityGrid, nBase, nActive + 1)) { /* 0x72EEC */
+        return 0; /* 0x72F5C: R0 holds that call's 0 */
+    }
+
+    u16 *pEntry = &pEnv->apResearchCols[nIdx];
+    *pEntry = (u16)(*pEntry + 1); /* 0x72F58, the LSL #16 / LSR #16 truncation */
+    return PUFO_RESEARCH_COL_OFFSET; /* 0x72F3C left 4900 in R0 */
+}
+
+/* ResearchScreen_DecSelectedQty @ 0x72f70. No gate at all beyond the entry being non-zero, and
+ * 4900 in R0 whether it stored anything or not. */
+i32 ResearchScreen_DecSelectedQty(const ResearchQtyEnv *pEnv)
+{
+    const i32 nIdx = ResearchQtyIndex(pEnv);
+    if (nIdx < 0) {
+        return 0;
+    }
+
+    u16 *pEntry = &pEnv->apResearchCols[nIdx];
+    if (*pEntry != 0) { /* 0x72FC8 */
+        *pEntry = (u16)(*pEntry - 1); /* 0x72FE4 */
+    }
+    return PUFO_RESEARCH_COL_OFFSET;
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

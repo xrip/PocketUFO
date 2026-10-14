@@ -491,6 +491,46 @@ i32 Base_CountActiveResearch(const u16 *apResearchQty, i32 nEntries);
  * port drops it and takes the column directly. */
 i32 Base_CountActiveManuf(const u16 *apManufQty, i32 nEntries);
 
+/* Base_GetScientistCount @ 0x6812c and Base_GetEngineerCount @ 0x681f4: the two crew
+ * availability getters, one per crew kind, and both the same expression
+ *
+ *     available = that crew item's per-base total - what this base already allocated
+ *
+ * The total is the u16 at record + 2*nBaseIndex + 42, which is ObjectRecFull.auPerBaseVal
+ * [nBaseIndex] of the crew item the map block points at. The disassembly loads the pointer
+ * out of the map root block and then indexes it, so the two originals differ only in the
+ * slot they reach:
+ *
+ *     Base_GetScientistCount  LDR R0, =0x1139B8 / LDR R0, [R0,#0x2CC] -> 0x113C84, slot 113
+ *     Base_GetEngineerCount   LDR R0, =0x1139B8 / LDR R0, [R0,#0x2C8] -> 0x113C80, slot 112
+ *
+ * (slots of the object pointer array whose slot 105 is Map_apObjects105 at 0x113C64, so the
+ * array base is 0x113AC0 and slots 112 and 113 land exactly on 0x113C80 and 0x113C84). What
+ * identifies the two as engineers and scientists is Base_CalcMonthlyUpkeep: it weights slot
+ * 112 with 20000 next to the soldier count and slot 113 with 30000, and the site records use
+ * the same two offsets, aItemQty[224] and aItemQty[226], with the same weights.
+ *
+ * The "already allocated" half is the quantity column sum over the SAME first nEntries
+ * entries Base_CountActiveResearch / Base_CountActiveManuf sum, read with the same count
+ * byte at 0x160C4C; only the column differs. The disassembly gives the two column bases:
+ *
+ *     scientists  MUL nBase,#0x120 (288 bytes) then MOV R2,#0x1324 (4900) over 0x15EF08
+ *                 -> auResearchCol @ 0x16022C, 144 u16 per base
+ *     engineers   MUL nBase,#0x190 (400 bytes) then MOV R3,#0x4304 (17156) over 0x159E98
+ *                 -> the manufacturing column @ 0x15E19C, 200 u16 per base
+ *
+ * The subtraction has NO floor: a base whose column already holds more than its total
+ * returns a negative count, and every caller tests `> 0`, so a negative behaves exactly like
+ * zero. As with the two count functions, the original's first argument is never read -- it
+ * gets the grid pointer anyway -- and the port drops it.
+ *
+ * Deviation: the port reads the total through Base_GetItemQty, which refuses an index outside
+ * the eight per-base slots and yields 0 there; the original indexes blindly. */
+i32 Base_GetScientistCount(const ObjectRecFull *pScientistRec, const u16 *apResearchCol,
+                           i32 nBaseIndex, i32 nEntries);
+i32 Base_GetEngineerCount(const ObjectRecFull *pEngineerRec, const u16 *apManufCol,
+                          i32 nBaseIndex, i32 nEntries);
+
 /* ------------------------------------------------- the workshop needed pass
  *
  * Evidence: Base_UpdateWorkshopNeeded @ 0x65bb4.

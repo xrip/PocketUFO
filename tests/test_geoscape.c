@@ -778,6 +778,51 @@ static void TestLabChain(void)
 #undef L_N
 }
 
+static void TestCrewAvailable(void)
+{
+    printf("Base_GetScientistCount / Base_GetEngineerCount\n");
+    static ObjectRecFull sci, eng;
+    static u16 col[400];
+
+    memset(&sci, 0, sizeof(sci));
+    memset(&eng, 0, sizeof(eng));
+    memset(col, 0, sizeof(col));
+
+    sci.auPerBaseVal[0] = 10;
+    sci.auPerBaseVal[1] = 20;
+    eng.auPerBaseVal[0] = 7;
+    eng.auPerBaseVal[1] = 300;
+
+    col[0] = 3;
+    col[1] = 4;
+    col[2] = 100;
+    col[144] = 2;  /* base 1's research window starts 144 u16 in */
+    col[145] = 3;
+    col[200] = 5;  /* base 1's manufacturing window starts 200 u16 in */
+    col[201] = 6;
+
+    CheckEqI32(Base_GetScientistCount(&sci, col, 0, 2), 3, "10 scientists minus 7 allocated");
+    CheckEqI32(Base_GetScientistCount(&sci, col, 0, 0), 10, "a zero entry count subtracts nothing");
+    CheckEqI32(Base_GetScientistCount(&sci, col, 0, 1), 7, "only the first entry counts");
+    CheckEqI32(Base_GetScientistCount(&sci, col + 144, 1, 2), 15,
+               "base 1 reads its own total and its own 144-entry window");
+    CheckEqI32(Base_GetScientistCount(&sci, NULL, 0, 2), 10, "a NULL column subtracts nothing");
+    CheckEqI32(Base_GetScientistCount(&sci, col, 0, 3), -97, "the subtraction has no floor");
+    CheckEqI32(Base_GetScientistCount(NULL, col, 0, 2), -7, "a missing item contributes 0");
+    CheckEqI32(Base_GetScientistCount(&sci, col, 8, 2), -7,
+               "an index past the eight per-base slots gives a total of 0");
+
+    CheckEqI32(Base_GetEngineerCount(&eng, col, 0, 2), 0, "7 engineers minus 7 allocated");
+    CheckEqI32(Base_GetEngineerCount(&eng, col, 0, 1), 4, "7 minus only the first entry");
+    CheckEqI32(Base_GetEngineerCount(&eng, col + 200, 1, 2), 289, "300 minus base 1's window");
+    CheckEqI32(Base_GetEngineerCount(&eng, col, 0, 300), 7 - 123,
+               "the entry count is capped at 255, the width of the original's byte read");
+
+    /* The two getters are the same expression over a different item and column, so a column
+     * that is not the base's own window reads the wrong entries: this is the caller's job. */
+    CheckEqI32(Base_GetEngineerCount(&eng, col + 200, 1, 1), 295, "base 1's first entry only");
+}
+
 static void TestRemainingNeededPasses(void)
 {
     printf("LivingQuarters / Stores / PsiLab needed passes\n");
@@ -2707,6 +2752,7 @@ int main(void)
     TestActiveManuf();
     TestWorkshopNeeded();
     TestLabChain();
+    TestCrewAvailable();
     TestRemainingNeededPasses();
     TestEmptyFacilityCells();
     TestFacilityPlaceAndGrant();

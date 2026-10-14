@@ -7,7 +7,7 @@
  *
  * The original writes scattered globals: `gUiRootPanel.anLineAux[145]`, two
  * controls' `y` fields (`dword_186BB0`/`dword_186BB4`), and two cached
- * `nUnk3032` copies (`dword_186BE8` and `unk_160C74`) plus the `unk_160C80` /
+ * `nUnk3032` copies (`dword_186BE8` and `nResearchTopicRowCache` @ 0x160C74) plus the `unk_160C80` /
  * `byte_187080` flags. The port carries them in a ScreenScratch so the helpers
  * are testable without the global bank. The `nUnk3032` source values differ per
  * caller and are passed in.
@@ -327,6 +327,51 @@ i32 Research_TopicNeedsItem(const ResearchTopicLive *aTopics,
 i32 ResearchScreen_RefreshPanels(const ResearchTopicLive *aTopics, i32 nTopicCount,
                                  const u16 *apResearchQty, UiPanel *pPanelCount,
                                  UiPanel *pPanelQty, UiPanel *pPanelProgress);
+
+/* ResearchScreen_IncSelectedQty @ 0x72ea0 and ResearchScreen_DecSelectedQty @ 0x72f70: the
+ * research screen's "+1 / -1" buttons, applied to the topic the topic panel is sitting on.
+ *
+ * Both reach the topic through the same pair of globals. The topic panel at 0x160C68 carries a
+ * topic number per row in its anLineAux (ResearchScreen_RebuildTopicList (0x74270, not ported)
+ * fills it),
+ * and 0x160C74 caches that panel's nUnk3032 row cursor -- PlaySample7_SetFlags_Cache0xBD8
+ * @ 0x73328 is the write, `unk_160C74 = unk_160C68->nUnk3032`, which is why IDA's own name for
+ * that handler already says Cache0xBD8. The quantity entry is then auResearchCol[topic +
+ * 144*base]: the ARM composes it as MUL base,#0x90, ADD topic, LSL #1, over the 0x15EF08 anchor
+ * plus 0x1324 (0x72F0C..0x72F58), and reads and writes that one slot.
+ *
+ * Inc gates the write on two tests in this order:
+ *   1. Base_GetScientistCount > 0                  (0x72EB8) the base has a scientist to spare
+ *   2. Base_HasResearchSlotFree(nActiveResearch+1)  (0x72ED4, 0x72EEC) a lab slot is free
+ * and only then stores qty + 1 truncated to 16 bits (LSL #16 / LSR #16 at 0x72F50). Dec has no
+ * gate beyond the entry being non-zero, and stores qty - 1 the same truncated way -- ADDHI R3,
+ * R3, #0xFFFF at 0x72FDC is the ARM's way of writing minus one.
+ *
+ * The return value is not a status code. On success both leave 4900 in R0, which is the research
+ * column's byte offset from the 0x15EF08 anchor, register residue from the address arithmetic
+ * (MOV R0,#0x1300 then ORR R0,R0,#0x24). Inc's early exits instead return what the last call
+ * left there: the scientist count when it is <= 0, or Base_HasResearchSlotFree's 0 when the lab
+ * gate fails. Dec returns 4900 always, including when it stored nothing.
+ *
+ * Deviations: the original reads the panel pointer, the row cache, the count byte and the base
+ * index straight out of globals and derefs the panel without testing it; the port takes them as
+ * arguments and refuses (returning 0) when the panel, the column, the base index or the row is
+ * missing or out of range. */
+#define PUFO_RESEARCH_COL_OFFSET 4900 /* 0x1324: auResearchCol @ 0x16022C minus the
+                                       * aResearchTopics anchor @ 0x15EF08. The value both
+                                       * quantity buttons return. */
+typedef struct ResearchQtyEnv {
+    UiPanel             *pTopicPanel;       /* pResearchTopicPanel @ 0x160C68 */
+    const i32           *pnTopicRow;        /* nResearchTopicRowCache @ 0x160C74, a cached nUnk3032 */
+    u16                 *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
+    const u16           *puResearchEntries; /* nResearchEntryCount @ 0x160C4C, shared by every base */
+    const ObjectRecFull *pScientistRec;     /* Map_apObjects113 @ 0x113C84, the scientists item */
+    const u8            *abFacilityGrid;    /* gBaseFacGrid @ 0x159768 */
+    const i8            *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
+} ResearchQtyEnv;
+
+i32 ResearchScreen_IncSelectedQty(const ResearchQtyEnv *pEnv);
+i32 ResearchScreen_DecSelectedQty(const ResearchQtyEnv *pEnv);
 
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
