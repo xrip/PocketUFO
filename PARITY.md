@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 722 / 1103 (65.5%) |
-| Bytes of original code cited | 319208 / 598792 (53.3%) |
+| Functions cited as evidence | 723 / 1103 (65.5%) |
+| Bytes of original code cited | 324112 / 598792 (54.1%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 7880 |
+| Test checks run | 7916 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 71 | 85 | 21240 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 130 | 205 | 68052 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 131 | 205 | 72956 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 119 | 243 | 12600 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -565,15 +565,16 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (130 functions)
+### `strat` (131 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x872d0` | `Geoscape_OnPointer` | 8576 | `src/pufo/game/pufo_baseui.h` |
 | `0x89450` | `Geoscape_OnPointerUp` | 6992 | `src/pufo/game/pufo_baseui.h` |
-| `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/game/pufo_font.h`, `src/pufo/ui/pufo_geoiinit.c` (+1) |
+| `0x857f4` | `Geoscape_InitUI` | 5420 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+5) |
+| `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | `src/pufo/app/pufo_world.c` |
 | `0x7e49c` | `Geoscape_SpawnMissionSite` | 4464 | `src/pufo/game/pufo_strateg.h` |
-| `0x94554` | `Game_StartNew` | 3976 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_save.h` (+3) |
+| `0x94554` | `Game_StartNew` | 3976 | `src/pufo/app/pufo_app.c`, `src/pufo/app/pufo_world.c` (+6) |
 | `0x68344` | `Base_TransferTacticalLoot` | 3048 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x838dc` | `Smap_BeginCraftSelect` | 2424 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | `src/pufo/game/pufo_baseui.h` |
@@ -585,7 +586,7 @@ is the module that answers to it.
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | `src/pufo/game/pufo_strateg.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
-| `0x854c4` | `Geoscape_OnRadarListClick` | 804 | `src/pufo/ui/pufo_geoiinit.h` |
+| `0x854c4` | `Geoscape_OnRadarListClick` | 804 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
 | `0x790e8` | `BasePlane_UnloadWeaponStores` | 760 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
@@ -688,7 +689,7 @@ is the module that answers to it.
 | `0x661b8` | `Base_GetItemQtyB` | 32 | `src/pufo/game/pufo_geoscape.h` |
 | `0x84ab8` | `Smap_OnZoomOut` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x84ad8` | `Smap_OnZoomIn` | 32 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
-| `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_clock.h`, `src/pufo/game/pufo_geoscape.c` (+5) |
+| `0x5d6ac` | `GameTime_Pause` | 20 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+7) |
 | `0x82bd4` | `StrategItem_ctor` | 20 | `src/pufo/game/pufo_strateg.h` |
 | `0x84634` | `Smap_BeginCraftSelectBtn` | 20 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` (+1) |
 | `0x83890` | `StrategList_ctor` | 16 | `src/pufo/game/pufo_strateg.h` |
@@ -1065,12 +1066,11 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat` — 75 functions, 94404 bytes remaining
+### `strat` — 74 functions, 89500 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x8c180` | `Geoscape_Draw` | 33744 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x7fcb0` | `StrategList_ProcessEvents` | 4904 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x60570` | `RadarScreen_Update` | 3804 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5f490` | `RadarScreen_Init` | 3600 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6c16c` | `Geoscape_DrawScreen` | 3476 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 286 |
+| `test_baseui` | PASS | 322 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

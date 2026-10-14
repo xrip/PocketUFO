@@ -350,6 +350,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Geoscape_InitUI(0)` + `Game_StartNew` for real. `pocketufo --new-game --dump-frame <png>` reports
   4147000 funds, 1 base, 8 soldiers, 3 craft, screen 2, zoom 0. The geoscape click handlers and the
   two spawn hooks are no-op thunks until those screens are ported.
+- [x] `Geoscape_OnRadarListClick @ 0x854c4` — the status panel's click, ported in `pufo_baseui.{h,c}`
+  behind `RadarClickEnv`, 36 checks in `tests/test_baseui.c`. The panel row's `anLineAux` value IS the
+  strateg item index (stored to 0x186BE4); six (nType, bActive) branches pause the clock and edit the
+  root message list through the ported `UiLineList` leaves; `GameTime_Pause` is a plain store of 1 to
+  0x15961C. The shell wires `pfnRadarClick` to it. IDB comments at 0x854c4, 0x186BE4, 0x1870A0, 0xAC224.
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -568,6 +573,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Geoscape_InitUI` (`pufo_geoiinit.c`, real-archive test) | 55/55 (Release) | 7673 | 708/1103 (64.2%) | 291100/598792 (48.6%) | 37 checked, 0 mismatched |
 | nav controls + new-base screen (`pufo_baseui.c`) | 55/55 (Release) | 7773 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
 | `Game_StartNew` + the verified enums (`pufo_geoiinit.c`) | 56/56 (Release) | 7880 | 722/1103 (65.5%) | 319208/598792 (53.3%) | 38 checked, 0 mismatched |
+| radar-list click + shell wiring (`pufo_baseui.c`, `app/pufo_world.c`) | 56/56 (Release) | 7916 | 723/1103 (65.5%) | 324112/598792 (54.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

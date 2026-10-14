@@ -9,6 +9,8 @@
  */
 #include "app/pufo_world.h"
 
+#include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +47,59 @@ static const StrategRollTables g_WorldRoll = {
 };
 
 static void World_NoopClick(void) { }
+
+/* The options screen is not ported yet; the radar click's type-0 branch reaches it through
+ * these stubs (the sample still plays). */
+static void World_OptionsPlaySampleStub(u32 nSample, u32 nArg, void *pUser)
+{
+    (void)nArg;
+    (void)pUser;
+    (void)Sound_Play((i32)nSample);
+}
+
+static void World_OptionsInitStub(void *pUser)
+{
+    (void)pUser; /* OptionsScreen_Init is not ported */
+}
+
+static void World_OptionsOpenStub(i32 nMode, void *pUser)
+{
+    (void)nMode;
+    (void)pUser; /* the options screen itself is not ported */
+}
+
+static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
+
+static void World_RadarClickThunk(void)
+{
+    PufoWorldState *pW = g_pActiveWorld;
+    RadarClickEnv env;
+
+    if (pW == NULL || pW->ui.pStatusPanel == NULL) {
+        return;
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.pLines = &pW->msgLines;
+    env.pStatusPanel = pW->ui.pStatusPanel;
+    env.pStrategList = &pW->strategList;
+    env.pnSelectedStrategIdx = &pW->nSelectedStrategIdx;
+    env.pTime = &pW->time;
+    env.pWorld = &pW->world;
+    env.pnSelectedShipIdx = &pW->nSelectedShipIdx;
+    env.pnStrategIndex = &pW->nStrategIndex;
+    env.pnScreenId = &pW->screen.nGeoscapeScreen;
+    env.pbFlag1870A0 = &pW->bFlag1870A0;
+    env.pbFlag18708C = &pW->bFlag18708C;
+    env.pbFlag187090 = &pW->bFlag187090;
+    env.pbFlag187098 = &pW->bFlag187098;
+    env.pnRadarPulseTimer = &pW->nRadarPulseTimer;
+    env.pOptionsHooks = &pW->optionsHooks;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pSoundUser = pW->pSoundUser;
+
+    (void)Geoscape_OnRadarListClick(&env);
+}
 
 static int World_SpawnMissionStub(StrategItem *pUfo, i32 nMissionSub, void *pUser)
 {
@@ -217,6 +272,14 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     pW->pAssets = pAssets;
     pW->pfnLoadPads = pHooks->pfnLoadPads;
     pW->pLoadPadsUser = pHooks->pLoadPadsUser;
+    pW->pfnPlaySample = pHooks->pfnPlaySample;
+    pW->pSoundUser = pHooks->pSoundUser;
+    g_pActiveWorld = pW;
+
+    memset(&pW->optionsHooks, 0, sizeof(pW->optionsHooks));
+    pW->optionsHooks.pfnPlaySample = World_OptionsPlaySampleStub;
+    pW->optionsHooks.pfnInit = World_OptionsInitStub;
+    pW->optionsHooks.pfnOpen = World_OptionsOpenStub;
 
     memset(&pW->ctorEnv, 0, sizeof(pW->ctorEnv));
     pW->ctorEnv.apObjects = pAssets->apObjects;
@@ -264,7 +327,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
         env.apfnRootClick[i] = World_NoopClick;
     }
     env.pfnCraftSelectClick = World_NoopClick;
-    env.pfnRadarClick = World_NoopClick;
+    env.pfnRadarClick = World_RadarClickThunk; /* Geoscape_OnRadarListClick @ 0x854c4 */
     env.pfnStartNew = World_StartNewHook;
     env.pHookUser = pW;
     env.pfnLoadPads = pHooks->pfnLoadPads;

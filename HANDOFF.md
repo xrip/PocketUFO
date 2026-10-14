@@ -78,7 +78,7 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **7880**.
+Test checks run across the 56 suites: **7916**.
 
 ### Per-subsystem status
 
@@ -292,7 +292,8 @@ This is the shortest chain that produces a real game session, in dependency orde
    `pufo_geoiinit.{h,c}` behind `StartNewEnv`, with `tests/test_startnew.c` (107 checks) over the
    real archives; it also brought the verified enums (`FacilityKind`, `ObjectSlot`, `CraftType`,
    the `PUFO_GRID_*` layout) into the port and the IDB. What is left on the geoscape bring-up
-   path: `Geoscape_OnRadarListClick` (0x854c4, the status panel click). The shell wiring is
+   path is clear: `Geoscape_OnRadarListClick` (0x854c4) is ported in `pufo_baseui.c` behind
+   `RadarClickEnv` (36 checks in `tests/test_baseui.c`). The shell wiring is
    done too: `app/pufo_world.{h,c}` owns the geoscape state (`PufoWorldState`) and
    `App_HookNewGame` runs `Geoscape_InitUI(0)` + `Game_StartNew` for real; `pocketufo
    --new-game --dump-frame <png>` prints the resulting state (4147000 funds, 1 base, 8

@@ -21,7 +21,9 @@
 #include "util/pufo_ptrarray.h" /* PtrArray, for StrategList_RegisterAtexit */
 #include "game/pufo_objectrec.h" /* ObjectRecFull, for Research_TopicNeedsItem */
 #include "game/pufo_unit.h"      /* Soldier, the array the Find* handlers walk */
+#include "game/pufo_clock.h"     /* GameTime, whose pause byte the radar click sets */
 #include "game/pufo_strateg.h"   /* SmapView/SmapZoomSet/SmapWorldSize, NewBaseScreen_Open's zoom pair */
+#include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -526,5 +528,53 @@ extern const UiControlDesc g_aGeodescPanel[PUFO_NAV_PANEL_CTLS]; /* stru_AB5F0 @
 extern const UiControlDesc g_aGeodescFind[PUFO_NAV_FIND_CTLS];   /* stru_AB630 @ 0xAB630 */
 
 bool Geoscape_BuildNavControls(NavControls *pOut, const NavCtlEnv *pEnv);
+
+/* ------------------------------------------------- the status-panel (radar list) click
+ *
+ * Evidence: Geoscape_OnRadarListClick @ 0x854c4, installed as the status panel's pfnClick by
+ * Geoscape_InitUI @ 0x857f4 (see the header comment in ui/pufo_geoiinit.h).
+ *
+ * The row index the panel selected (pStatusPanel->nUnk3032) indexes anLineAux, and THAT value
+ * is the strateg item index: the panel lists strateg items and the aux column carries their
+ * list position. The index is stored at 0x186BE4 (Hex-Rays renders it as the dword at
+ * word_186BD4[8]), byte_18709C[4] is cleared, and the clock is unpaused before the dispatch.
+ * Then five (nType, bActive) cases and one tail case, each of which pauses the clock
+ * (GameTime_Pause @ 0x5d6ac is a plain store of 1 to 0x15961C) and edits the root message list
+ * at 0x158890 through the UiLineList leaves:
+ *
+ *   type 1, active   : drop line 0, insert at 0 with flag 10 and the item index as colour slot 0
+ *   type 0, inactive : screen id 18, OptionsScreen_OpenWithSound(item->nSiteId)
+ *   type 1, inactive : 0x187054 and 0x159E74 = Ship_FindIndexByStrategType(item index),
+ *                      append flag 11 with the ship index, radar pulse timer 250
+ *   type 4, active   : flag 0x18708C = 1, drop line 0, append flag 20 (row index, item index)
+ *   type 3, active   : flag 0x187090 = 1, drop line 0, append flag 19, timer 250
+ *   type 0, active   : flag 0x187098 = 1, drop line 0, append flag 18, timer 250, return 250
+ *
+ * Deviations: the original re-reads the item through PtrArray_Get in every test and never
+ * bounds it - an out-of-range index dereferences whatever comes back; the port reads the item
+ * once and returns 0 when the list has no such entry. The original's non-250 return value is
+ * the item POINTER (register residue); nothing reads it (the widget callback type is void), so
+ * the port returns 0 there. */
+typedef struct RadarClickEnv {
+    UiLineList   *pLines;                /* the root message list @ 0x158890 */
+    UiPanel      *pStatusPanel;          /* unk_18641C, the panel whose row was clicked */
+    PtrArray     *pStrategList;          /* the strateg list @ 0x186534 */
+    i32          *pnSelectedStrategIdx;  /* 0x186BE4 */
+    GameTime     *pTime;                 /* 0x159618; bPaused is the byte at 0x15961C */
+    GeoscapeWorld *pWorld;               /* Ship_FindIndexByStrategType's craft array */
+    i32          *pnSelectedShipIdx;     /* 0x187054 */
+    i32          *pnStrategIndex;        /* 0x159E74 */
+    i32          *pnScreenId;            /* nGeoscapeScreen @ 0x186BC4 */
+    u8           *pbFlag1870A0;          /* byte_18709C[4] */
+    u8           *pbFlag18708C;
+    u8           *pbFlag187090;
+    u8           *pbFlag187098;
+    i32          *pnRadarPulseTimer;     /* nRadarPulseTimer @ 0xAC224 */
+    const OptionsScreenHooks *pOptionsHooks; /* the type-0 inactive branch */
+    void (*pfnPlaySample)(i32 nSample, void *pUser); /* UiLineList_AppendWithSound's seam */
+    void *pSoundUser;
+} RadarClickEnv;
+
+i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

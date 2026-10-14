@@ -9017,3 +9017,41 @@ Recorded deviations: the radar pass runs over the base count before it is zeroed
 site count store hits only the low byte (reproduced); `nullsub_7` dropped; the original's unused
 first arguments (0x1864F8 for `Base_GrantStarterItems`, the MaybeSpawnCraft a1..a3) replaced by the
 port's real state pointers; the soldier count held as i32 with u16 semantics, as LoadGameEnv does.
+
+### `Geoscape_OnRadarListClick` (done)
+
+`Geoscape_OnRadarListClick @ 0x854c4` — the status panel's `pfnClick`, installed by
+`Geoscape_InitUI` — is ported as `Geoscape_OnRadarListClick(const RadarClickEnv *)` in
+`game/pufo_baseui.{h,c}`, with 36 checks in `tests/test_baseui.c`.
+
+The clicked row (`pStatusPanel->nUnk3032`) indexes `anLineAux`, and that value IS the strateg
+item index: the panel lists strateg items and the aux column carries their list position. The
+index is stored at 0x186BE4 (Hex-Rays renders it as the dword at `word_186BD4[8]`),
+`byte_18709C[4]` is cleared, and the clock is unpaused (0x15961C = 0) before the dispatch. Six
+branches then run, each pausing the clock (`GameTime_Pause @ 0x5d6ac` is a plain store of 1)
+and editing the root message list at 0x158890 through the already-ported `UiLineList` leaves:
+
+| item | action |
+|---|---|
+| type 1, active | drop line 0, insert at 0 with flag 10 and the item index in colour slot 0 |
+| type 0, inactive | screen id 18, `OptionsScreen_OpenWithSound(item->nSiteId)` |
+| type 1, inactive | 0x187054 and 0x159E74 = `Ship_FindIndexByStrategType`, append flag 11 with the ship index, radar pulse timer 250 |
+| type 4, active | flag 0x18708C = 1, drop line 0, append flag 20 (row index, item index) — no timer |
+| type 3, active | flag 0x187090 = 1, drop line 0, append flag 19, timer 250 |
+| type 0, active | flag 0x187098 = 1, drop line 0, append flag 18, timer 250, return 250 |
+
+**`GameTime_Pause` is not a toggle.** 0x5d6ac is `MEMORY[0x15961C] = 1` and a return of the
+clock base — the port writes `GameTime.bPaused` directly, and the two tail branches do the same
+store inline (0x856EC, 0x85764) rather than calling it.
+
+**The original re-reads the item in every test** (six `PtrArray_Get` calls on the same index)
+and bounds nothing: an out-of-range aux value dereferences whatever `PtrArray_Get` hands back.
+The port reads the item once and returns 0 when the list has no such entry — the entry effects
+(the index store, the flag clear, the unpause) still happen, which the test pins.
+
+**The non-250 return value is the item pointer** (register residue at 0x85738). Nothing reads
+it — the widget callback type is `void` — so the port returns 0 there.
+
+The shell now wires `pfnRadarClick` to this handler (`app/pufo_world.c` owns the message list,
+the selected-index/ship/strateg globals, the four 0x1870xx flags and the radar pulse timer);
+the options branch runs through stub hooks until the options screen path is ported.

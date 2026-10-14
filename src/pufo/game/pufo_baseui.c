@@ -832,3 +832,85 @@ bool Geoscape_BuildNavControls(NavControls *pOut, const NavCtlEnv *pEnv)
 
     return bOk;
 }
+
+/* Geoscape_OnRadarListClick @ 0x854c4. See the header for the six branches and the deviations. */
+i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
+{
+    StrategList view;
+    StrategItem *pItem;
+    i32 nRowIdx;
+    i32 nItemIdx;
+    i32 nShipIdx;
+
+    if (pEnv == NULL || pEnv->pLines == NULL || pEnv->pStatusPanel == NULL ||
+        pEnv->pStrategList == NULL || pEnv->pnSelectedStrategIdx == NULL ||
+        pEnv->pTime == NULL) {
+        return 0;
+    }
+
+    nRowIdx = pEnv->pStatusPanel->nUnk3032;
+    nItemIdx = pEnv->pStatusPanel->anLineAux[nRowIdx]; /* 0x85500: the aux column is the list index */
+
+    *pEnv->pbFlag1870A0 = 0;                            /* 0x85504, byte_18709C[4] */
+    *pEnv->pnSelectedStrategIdx = nItemIdx;             /* 0x8550C, the dword at 0x186BE4 */
+    pEnv->pTime->bPaused = 0;                           /* 0x85510: unpause before the dispatch */
+
+    pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nItemIdx);
+    if (pItem == NULL) {
+        return 0; /* deviation: the original dereferences whatever PtrArray_Get hands back */
+    }
+
+    if (pItem->nType == 1 && pItem->bActive == 1) {     /* 0x85538 */
+        pEnv->pTime->bPaused = 1;                       /* GameTime_Pause @ 0x5d6ac */
+        UiLineList_Remove(pEnv->pLines, 0);             /* 0x8554C */
+        UiLineList_Insert(pEnv->pLines, 0, 10, (u32)nItemIdx, 0u, 0u, 0u); /* 0x8556C */
+    }
+
+    if (pItem->nType == 0 && pItem->bActive == 0) {     /* 0x8559C */
+        pEnv->pTime->bPaused = 1;
+        *pEnv->pnScreenId = 18;                         /* 0x855B0 */
+        OptionsScreen_OpenWithSound(0, pItem->nSiteId, pEnv->pOptionsHooks); /* 0x855C8 */
+    }
+
+    if (pItem->nType == 1 && pItem->bActive == 0) {     /* 0x855FC */
+        pEnv->pTime->bPaused = 1;
+        view.apItems = (StrategItem **)pEnv->pStrategList->apItems;
+        view.nCount = pEnv->pStrategList->nCount;
+        view.nNextDisplayId = 0; /* not read by the lookup */
+        nShipIdx = Ship_FindIndexByStrategType(pEnv->pWorld, &view, nItemIdx); /* 0x85624 */
+        *pEnv->pnSelectedShipIdx = nShipIdx;            /* 0x187054, then 0x159E74 at 0x85630 */
+        *pEnv->pnStrategIndex = nShipIdx;
+        UiLineList_AppendWithSound(pEnv->pLines, 11, (u32)nShipIdx, 0u, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x8563C */
+        *pEnv->pnRadarPulseTimer = 250;                 /* 0x85644 */
+    }
+
+    if (pItem->nType == 4 && pItem->bActive == 1) {     /* 0x85674 */
+        pEnv->pTime->bPaused = 1;
+        *pEnv->pbFlag18708C = 1;                        /* 0x85688 */
+        UiLineList_Remove(pEnv->pLines, 0);             /* 0x85694 */
+        UiLineList_AppendWithSound(pEnv->pLines, 20, (u32)nRowIdx, (u32)nItemIdx, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x856B4 */
+    }
+
+    if (pItem->nType == 3 && pItem->bActive == 1) {     /* 0x856E4 */
+        pEnv->pTime->bPaused = 1;                       /* 0x856EC, a direct store here */
+        *pEnv->pbFlag187090 = 1;                        /* 0x856F8 */
+        UiLineList_Remove(pEnv->pLines, 0);             /* 0x85704 */
+        UiLineList_AppendWithSound(pEnv->pLines, 19, (u32)nRowIdx, (u32)nItemIdx, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x85724 */
+        *pEnv->pnRadarPulseTimer = 250;                 /* 0x8572C */
+    }
+
+    if (pItem->nType == 0 && pItem->bActive == 1) {     /* 0x85744, the tail case */
+        pEnv->pTime->bPaused = 1;                       /* 0x85764 */
+        *pEnv->pbFlag187098 = 1;                        /* 0x85770 */
+        UiLineList_Remove(pEnv->pLines, 0);             /* 0x8577C */
+        UiLineList_AppendWithSound(pEnv->pLines, 18, (u32)nRowIdx, (u32)nItemIdx, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x8579C */
+        *pEnv->pnRadarPulseTimer = 250;                 /* 0x857A4 */
+        return 250;
+    }
+
+    return 0; /* the original hands back the item pointer here; nothing reads it */
+}

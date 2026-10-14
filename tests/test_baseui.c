@@ -1123,6 +1123,206 @@ static void TestBuildNavControls(void)
     Check(1, "controls released by the caller");
 }
 
+/* --- Geoscape_OnRadarListClick @ 0x854c4 --- */
+
+static int g_nRadarSamples;
+static int g_nRadarOptionsOpens;
+static int g_nRadarOptionMode;
+
+static void RadarPlaySample(i32 nSample, void *pUser)
+{
+    (void)nSample;
+    (void)pUser;
+    ++g_nRadarSamples;
+}
+
+static void RadarOptPlay(u32 nSample, u32 nArg, void *pUser)
+{
+    (void)nSample;
+    (void)nArg;
+    (void)pUser;
+}
+
+static void RadarOptInit(void *pUser)
+{
+    (void)pUser;
+}
+
+static void RadarOptOpen(i32 nMode, void *pUser)
+{
+    (void)pUser;
+    ++g_nRadarOptionsOpens;
+    g_nRadarOptionMode = nMode;
+}
+
+/* One item in the list, the panel row pointing at it, two seeded message lines. */
+static void RadarSetup(UiLineList *pLines, UiPanel *pPanel, PtrArray *pList, GameTime *pClock,
+                       GeoscapeWorld *pWorld, Ship **apCraft, Ship *aCraft,
+                       i32 nType, i32 bActive, i32 nDisplayId, i32 nSiteId)
+{
+    StrategItem *pItem;
+
+    memset(pLines, 0, sizeof(*pLines));
+    pLines->nLineCount = 2;
+    pLines->abLineFlags[0] = 7;
+    pLines->abLineFlags[1] = 8;
+    pLines->anColor[0][0] = 111u;
+    pLines->anColor[1][0] = 222u;
+
+    memset(pPanel, 0, sizeof(*pPanel));
+    pPanel->nUnk3032 = 3;              /* the clicked row */
+    pPanel->anLineAux[3] = 0;          /* its aux column is the item index */
+
+    PtrArray_ctor(pList);
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pItem->nType = (u8)nType;
+    pItem->bActive = (u8)bActive;
+    pItem->nDisplayId = nDisplayId;
+    pItem->nSiteId = nSiteId;
+    PtrArray_Add(pList, pItem);
+
+    memset(pClock, 0, sizeof(*pClock));
+    pClock->bPaused = 1;               /* the entry clears it before the dispatch */
+
+    memset(aCraft, 0, sizeof(Ship) * 2);
+    aCraft[0].bId = 41;
+    aCraft[1].bId = 42;
+    apCraft[0] = &aCraft[0];
+    apCraft[1] = &aCraft[1];
+    memset(pWorld, 0, sizeof(*pWorld));
+    pWorld->apCraft = apCraft;
+    pWorld->nShipCount = 2;
+}
+
+static void RadarFree(PtrArray *pList)
+{
+    PtrArray_DeleteAll(pList);
+}
+
+static void TestRadarListClick(void)
+{
+    static UiLineList lines;
+    static UiPanel panel;
+    static PtrArray list;
+    static GameTime clock;
+    static GeoscapeWorld world;
+    static Ship *apCraft[2];
+    static Ship aCraft[2];
+    RadarClickEnv env;
+    OptionsScreenHooks optHooks;
+    i32 nScreen, nSelIdx, nShipSel, nStratIdx, nTimer;
+    u8 f1870A0, f18708C, f187090, f187098;
+    i32 nRet;
+
+    printf("Geoscape_OnRadarListClick @ 0x854c4\n");
+
+    memset(&optHooks, 0, sizeof(optHooks));
+    optHooks.pfnPlaySample = RadarOptPlay;
+    optHooks.pfnInit = RadarOptInit;
+    optHooks.pfnOpen = RadarOptOpen;
+
+#define RADAR_BEGIN(nType, bActive, nDisp, nSite)                                             \
+    RadarSetup(&lines, &panel, &list, &clock, &world, apCraft, aCraft, (nType), (bActive),   \
+               (nDisp), (nSite));                                                             \
+    nScreen = 1;                                                                              \
+    nSelIdx = -1;                                                                             \
+    nShipSel = -1;                                                                            \
+    nStratIdx = -1;                                                                           \
+    nTimer = 0;                                                                               \
+    f1870A0 = 1;                                                                              \
+    f18708C = 0;                                                                              \
+    f187090 = 0;                                                                              \
+    f187098 = 0;                                                                              \
+    g_nRadarSamples = 0;                                                                      \
+    g_nRadarOptionsOpens = 0;                                                                 \
+    memset(&env, 0, sizeof(env));                                                             \
+    env.pLines = &lines;                                                                      \
+    env.pStatusPanel = &panel;                                                                \
+    env.pStrategList = &list;                                                                 \
+    env.pnSelectedStrategIdx = &nSelIdx;                                                      \
+    env.pTime = &clock;                                                                       \
+    env.pWorld = &world;                                                                      \
+    env.pnSelectedShipIdx = &nShipSel;                                                        \
+    env.pnStrategIndex = &nStratIdx;                                                          \
+    env.pnScreenId = &nScreen;                                                                \
+    env.pbFlag1870A0 = &f1870A0;                                                              \
+    env.pbFlag18708C = &f18708C;                                                              \
+    env.pbFlag187090 = &f187090;                                                              \
+    env.pbFlag187098 = &f187098;                                                              \
+    env.pnRadarPulseTimer = &nTimer;                                                          \
+    env.pOptionsHooks = &optHooks;                                                            \
+    env.pfnPlaySample = RadarPlaySample;
+
+    RADAR_BEGIN(1, 1, 42, 50000);
+    nRet = Geoscape_OnRadarListClick(&env);
+    CheckEqI32(nSelIdx, 0, "  the item index lands at 0x186BE4");
+    CheckEqI32(f1870A0, 0, "  byte_18709C[4] cleared");
+    CheckEqI32(clock.bPaused, 1, "  type 1 active pauses the clock");
+    CheckEqI32(lines.nLineCount, 2, "  drop line 0 then insert at 0 keeps the count");
+    CheckEqI32(lines.abLineFlags[0], 10, "  the inserted line carries flag 10");
+    CheckEqI32(lines.abLineFlags[1], 8, "  the old line 1 slid back to 1");
+    CheckEqI32((i32)lines.anColor[0][0], 0, "  colour slot 0 is the item index");
+    CheckEqI32(nRet, 0, "  no radar timer for this case");
+    RadarFree(&list);
+
+    RADAR_BEGIN(0, 0, 42, 777);
+    (void)Geoscape_OnRadarListClick(&env);
+    CheckEqI32(nScreen, 18, "  type 0 inactive sets screen 18");
+    CheckEqI32(g_nRadarOptionsOpens, 1, "  OptionsScreen_OpenWithSound ran");
+    CheckEqI32(g_nRadarOptionMode, 777, "  with the item's site id as the mode");
+    CheckEqI32(lines.nLineCount, 2, "  the message list is untouched");
+    CheckEqI32(lines.abLineFlags[0], 7, "  line 0 keeps its flag");
+    RadarFree(&list);
+
+    RADAR_BEGIN(1, 0, 42, 50000);
+    (void)Geoscape_OnRadarListClick(&env);
+    CheckEqI32(nShipSel, 1, "  Ship_FindIndexByStrategType found craft 1 (bId 42)");
+    CheckEqI32(nStratIdx, 1, "  0x159E74 mirrors the ship index");
+    CheckEqI32(lines.nLineCount, 3, "  the append grew the list");
+    CheckEqI32(lines.abLineFlags[2], 11, "  the appended line carries flag 11");
+    CheckEqI32((i32)lines.anColor[2][0], 1, "  colour slot 0 is the ship index");
+    CheckEqI32(nTimer, 250, "  the radar pulse timer is armed");
+    CheckEqI32(g_nRadarSamples, 1, "  the append played sample 7");
+    RadarFree(&list);
+
+    RADAR_BEGIN(4, 1, 42, 50000);
+    (void)Geoscape_OnRadarListClick(&env);
+    CheckEqI32(f18708C, 1, "  flag 0x18708C set");
+    CheckEqI32(lines.nLineCount, 2, "  drop then append keeps the count");
+    CheckEqI32(lines.abLineFlags[1], 20, "  the appended line carries flag 20");
+    CheckEqI32((i32)lines.anColor[1][0], 3, "  colour slot 0 is the panel row index");
+    CheckEqI32((i32)lines.anColor[1][1], 0, "  colour slot 1 is the item index");
+    CheckEqI32(nTimer, 0, "  this case does not arm the radar timer");
+    RadarFree(&list);
+
+    RADAR_BEGIN(3, 1, 42, 50000);
+    (void)Geoscape_OnRadarListClick(&env);
+    CheckEqI32(f187090, 1, "  flag 0x187090 set");
+    CheckEqI32(lines.abLineFlags[1], 19, "  the appended line carries flag 19");
+    CheckEqI32(nTimer, 250, "  the radar pulse timer is armed");
+    RadarFree(&list);
+
+    RADAR_BEGIN(0, 1, 42, 50000);
+    nRet = Geoscape_OnRadarListClick(&env);
+    CheckEqI32(nRet, 250, "  the tail case returns 250");
+    CheckEqI32(f187098, 1, "  flag 0x187098 set");
+    CheckEqI32(lines.abLineFlags[1], 18, "  the appended line carries flag 18");
+    CheckEqI32(nTimer, 250, "  the radar pulse timer is armed");
+    RadarFree(&list);
+
+    /* The panel's aux value points past the list: the port returns 0 where the original
+     * would dereference whatever PtrArray_Get handed back. */
+    RADAR_BEGIN(1, 1, 42, 50000);
+    panel.anLineAux[3] = 9;
+    nRet = Geoscape_OnRadarListClick(&env);
+    CheckEqI32(nRet, 0, "  an out-of-range item index returns 0");
+    CheckEqI32(clock.bPaused, 0, "  but the entry unpause still happened");
+    CheckEqI32(lines.nLineCount, 2, "  and no branch ran");
+    RadarFree(&list);
+
+#undef RADAR_BEGIN
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1151,6 +1351,7 @@ int main(void)
     TestTransferFlag();
     TestNewBaseScreen();
     TestBuildNavControls();
+    TestRadarListClick();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

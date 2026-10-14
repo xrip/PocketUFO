@@ -90,6 +90,16 @@ typedef struct PufoWorldState {
     UiControl         ctlResearchPanel;         /* unk_186BB4 */
     UiControl         ctlConfirm;               /* unk_186BA4 */
     u8                bFlag187080;
+    UiLineList        msgLines;                 /* the root message list @ 0x158890 */
+    i32               nSelectedStrategIdx;      /* 0x186BE4 */
+    i32               nSelectedShipIdx;         /* 0x187054 */
+    i32               nStrategIndex;            /* 0x159E74 */
+    i32               nRadarPulseTimer;         /* nRadarPulseTimer @ 0xAC224 */
+    u8                bFlag1870A0;              /* byte_18709C[4] */
+    u8                bFlag18708C;
+    u8                bFlag187090;
+    u8                bFlag187098;
+    OptionsScreenHooks optionsHooks;            /* the radar click's options branch */
     NavControls       nav;
     NavCtlEnv         navEnv;
     GeoscapeWorld     world;
@@ -102,6 +112,8 @@ typedef struct PufoWorldState {
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser); /* the nav controls reuse it */
     void *pLoadPadsUser;
+    void (*pfnPlaySample)(i32 nSample, void *pUser);    /* the message-list sound seam */
+    void *pSoundUser;
     i32 nLastStartNewRet; /* what Game_StartNew handed back */
 } PufoWorldState;
 
@@ -109,6 +121,8 @@ typedef struct WorldHooks {
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
     void *pLoadPadsUser;
+    void (*pfnPlaySample)(i32 nSample, void *pUser); /* the message-list sound seam */
+    void *pSoundUser;
 } WorldHooks;
 
 /* Allocate the heap-held parts (the 200 site records) and set the defaults the original's

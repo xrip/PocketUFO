@@ -182,6 +182,7 @@ static void App_HookNewGame(void *pUser)
 
     memset(&hooks, 0, sizeof(hooks));
     hooks.pfnLoadPads = App_LoadPads;
+    hooks.pfnPlaySample = App_HookPlaySampleI; /* the message-list samples */
 
     (void)World_NewGame(&g_world, &g_assets, &g_fontSys, &g_options, &hooks);
     printf("pocketufo: new game: %d funds, %d bases, %d soldiers, %d craft, screen %d, zoom %d\n",

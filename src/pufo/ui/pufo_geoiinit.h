@@ -162,7 +162,7 @@ typedef struct GeoscapeInitEnv {
      * over its own environments. */
     void (*apfnRootClick[PUFO_GEOUI_ROOT_CTLS])(void);
     void (*pfnCraftSelectClick)(void); /* Smap_BeginCraftSelectBtn @ 0x84634 -> 186B8C */
-    void (*pfnRadarClick)(void);       /* Geoscape_OnRadarListClick @ 0x854c4, not ported */
+    void (*pfnRadarClick)(void);       /* Geoscape_OnRadarListClick @ 0x854c4 (ported, pufo_baseui.c) */
 
     /* Game_StartNew @ 0x94554 is ported below; the mode-0 branch still calls through this
      * hook because the shell owns the StartNewEnv it needs. */
