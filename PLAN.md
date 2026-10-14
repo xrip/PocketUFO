@@ -392,6 +392,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] The options screen's audio tab — `OptionsScreen_Init @ 0x6be74` (760 B),
+  `OptionsScreen_LayoutButtons @ 0x6b6c4` (232 B), `OptionsScreen_BindSaveSlots @ 0x6b49c` (236 B),
+  `OptionsScreen_BindLoadSlots @ 0x6b588` (236 B), `OptionsScreen_RefreshVolumeHighlight @ 0x6b8fc`
+  (152 B) and the twelve radio handlers `OptionsScreen_SetMusicVol0..5 @ 0x6ba14..0x6bbd0` /
+  `OptionsScreen_SetSfxVol0..5 @ 0x6bc1c..0x6be10` (1128 B). 17 functions, 2744 bytes, 48 new checks
+  in `tests/test_baseui.c`. Each handler clears its radio group, lights its own button, writes the
+  step, and mutes only at step 0; sfx then tail-calls `Sound_Play(17)` so the player hears the new
+  level; the level is `4 * (muted ? 0 : 12 * step + 4) - 1`. IDB: the control block is typed as
+  `aOptionsListCtl[7]` @ 0x159E20, `aOptionsMusicBtn[6]` @ 0x159E44, `aOptionsSfxBtn[6]` @ 0x159E5C
+  (`UiControl *`), the two descriptor tables at 0xAB750 / 0xAB830 are labelled and added to
+  `tools/gen_geoiinit_tables.py`, and the stale "NOT ported" comment on 0x6be74 is gone. Two ledger
+  rows: the unguarded radio lookup (0x6B93C / 0x6B984, not reproduced) and the return hotspot centred
+  on the save control's width (0x6B764, reproduced).
 - [x] `RadarScreen_RollWeaponHit @ 0x5db24` (352 B) + `RadarScreen_BlitOverlay @ 0x5d6d4` (16 B) —
   ported in `game/pufo_geoscape.{h,c}` behind `RadarHitRollEnv`, 21 new checks in
   `tests/test_geoscape.c`. The intercept weapon roll: one `Game_RandU16(100)` gates the event and a
@@ -737,6 +750,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the build dialog frame (`BaseFacScreen_DrawBuildDialog`) | 56/56 (Release) | 8242 | 731/1103 (66.3%) | 328880/598792 (54.9%) | 38 checked, 0 mismatched |
 | the two craft-name formatters (`Soldier_FormatDisplayName`, `Ship_FormatDisplayName`) | 56/56 (Release) | 8260 | 733/1103 (66.5%) | 329688/598792 (55.1%) | 38 checked, 0 mismatched |
 | radar intercept roll + overlay blit (`RadarScreen_RollWeaponHit`, `RadarScreen_BlitOverlay`) | 56/56 (Release) | 8281 | 736/1103 (66.7%) | 330076/598792 (55.1%) | 38 checked, 0 mismatched |
+| options screen audio tab (17 functions: Init, LayoutButtons, Bind*Slots, RefreshVolumeHighlight, 12 radio handlers) | 56/56 (Release) | 8329 | 753/1103 (68.3%) | 332812/598792 (55.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

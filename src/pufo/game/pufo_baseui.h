@@ -1064,4 +1064,157 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv);
 char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const u8 *pTextRecs,
                                 char *pszOut, size_t cchOut);
 
+/* ------------------------------------------------- the options screen's audio tab
+ *
+ * Evidence: OptionsScreen_Init @ 0x6be74 (760 B), OptionsScreen_LayoutButtons @ 0x6b6c4,
+ * OptionsScreen_BindSaveSlots @ 0x6b49c, OptionsScreen_BindLoadSlots @ 0x6b588,
+ * OptionsScreen_RefreshVolumeHighlight @ 0x6b8fc, and the twelve radio handlers
+ * OptionsScreen_SetMusicVol0..5 @ 0x6ba14 / 0x6ba70 / 0x6babc / 0x6bb18 / 0x6bb74 / 0x6bbd0 and
+ * OptionsScreen_SetSfxVol0..5 @ 0x6bc1c / 0x6bc80 / 0x6bce4 / 0x6bd48 / 0x6bdac / 0x6be10.
+ *
+ * ## The control block
+ *
+ * The screen owns nineteen controls through .bss pointer slots: seven "list" rows at
+ * 0x159E20..0x159E38, a two-slot gap, then six music radio buttons at 0x159E44..0x159E58 and six
+ * sfx radio buttons at 0x159E5C..0x159E70. Two more controls live in the geoscape control block:
+ * unk_186BB4 (the "save" hotspot) and unk_186BB0 (the "return to title" hotspot). The tab byte is
+ * the scratch byte the helpers above already model (byte_159E88[0], ScreenScratch.nLineAux145):
+ * 0 audio, 1 save, 2 load, 3 and 4 the two pen rows. A different byte at 0x159E8C is the "the
+ * controls exist" flag OptionsScreen_Init branches on.
+ *
+ * ## OptionsScreen_Init @ 0x6be74
+ *
+ * Two modes off that flag. Set (0x6C0FC..0x6C15C): clear it, then UiControl_FreePads plus operator
+ * delete over the seven list rows and the twelve radio buttons. Clear (0x6BE90..0x6C0B8): set it,
+ * allocate and ctor seven list rows and position them with the seven identical records at 0xAB750
+ * ("firebtn"/"cfirebtn", offset 1/229, mode 0); allocate and ctor twelve radio buttons; install
+ * Options_SaveAudioSettings (0x6b7ac) on unk_186BB4 and OptionsScreen_ReturnToTitle (0x6b46c) on
+ * unk_186BB0; position the twelve with the twelve identical records at 0xAB830
+ * ("initg"/"cinitg"/"cinitg", offset 1/229, mode 0). Then the two position loops: music buttons get
+ * y = 107 and x = 46 + 25*i, sfx buttons get y = 147 and x = 46 + 25*i, i = 0..5 (the y store lands
+ * at +2 and the x store at +0, so both survive). Then the twelve +12 handler slots get the twelve
+ * radio handlers in slot order, and RefreshVolumeHighlight and LayoutButtons run last.
+ *
+ * Both descriptor tables are uniform repeats of one record, so the port keeps one record each.
+ *
+ * ## The radio handlers
+ *
+ * Each clears its group (OptionsScreen_ClearMusicButtons / OptionsScreen_ClearSfxButtons), selects
+ * its own button with nState = 2, writes the volume global, and mutes only at step 0: Map_bMusicOff /
+ * Map_bSoundOff become 1 for step 0 and 0 for steps 1..5. Music ends with Sound_ApplyMusicVolume;
+ * sfx calls Sound_ApplySfxVolume and then tail-calls Sound_Play(17) so the player hears the new
+ * level. Four music handlers (0, 2, 3, 4) store the volume before clearing the group and reach their
+ * button through the 0x159E44 + 4*n array; the other two (1, 5) clear first and name the pointer
+ * directly. The order is not observable — the group clear only zeroes nState and the selected button
+ * is written after it — so the port uses one body for all six.
+ *
+ * The level the appliers get is the original's own arithmetic, which Sound_ApplyMusicVolume @ 0x9E470
+ * / 0x9E488 reads back out of the globals: 4 * (muted ? 0 : 12 * step + 4) - 1, muted yielding -1.
+ * pufo_options.c carries the same formula for the startup options screen's copy of the state; the
+ * duplication is a candidate cleanup, not this unit.
+ *
+ * ## OptionsScreen_RefreshVolumeHighlight @ 0x6b8fc
+ *
+ * Re-selects both groups from the current state: a muted group resets its step to 0 and selects
+ * button 0, an unmuted one selects the button of its stored step. The original indexes the 0x159E44 /
+ * 0x159E5C arrays with that step and tests nothing; the port clamps it into 0..5 first.
+ *
+ * ## The three tab binders
+ *
+ * LayoutButtons (0x6b6c4) is the audio tab: scratch byte 0; the first four list rows get
+ * OptionsScreen_BindSaveSlots, OptionsScreen_BindLoadSlots, Set_byte_159E88_3_SetUiY (0x6b674) and
+ * Set_byte_159E88_4 (0x6b6b0); those four are centred at x = 120 - (uWidth >> 1) with y = 90 + 25*i.
+ * unk_186BB4 then gets x = 120 - (its own uWidth >> 1) and y = 198, and unk_186BB0 gets
+ * x = 120 - (unk_186BB4's uWidth >> 1): the second hotspot is centred on the FIRST control's width,
+ * because the ARM reloads R1 from the same R0 (unk_186BB4) for the uWidth read at 0x6B764 and only
+ * then switches the store target to unk_186BB0 at 0x6B778.
+ *
+ * BindSaveSlots (0x6b49c) and BindLoadSlots (0x6b588) are the same shape over all seven rows:
+ * scratch byte 1 or 2, the seven SaveGame_SlotN_CloseUI / LoadGame_SlotN_InitOptions handlers,
+ * x = 120 - (uWidth >> 1), y = 40 + 22*i, unk_186BB4->y = 215, and SaveSlot_FormatList over the main
+ * menu's slot context. Neither slot-handler family is ported, so they enter here as hooks.
+ *
+ * Deviations: the original allocates every control with operator new(0x20) into fixed .bss slots and
+ * tears them down with UiControl_FreePads plus operator delete; the port takes caller-owned controls,
+ * so its teardown branch runs UiControl_FreePads and leaves the storage to the caller. The port's
+ * click slot is `void (*)(void)`, so the twelve radio handlers, the fourteen slot handlers and
+ * OptionsScreen_ReturnToTitle arrive as the caller's thunks; Options_SaveAudioSettings (0x6b7ac) is
+ * not ported and arrives the same way. The original returns the applier's register from the radio
+ * handlers; the port returns 0, which nothing reads. */
+#define PUFO_OPTIONS_LIST_COUNT 7
+#define PUFO_OPTIONS_VOL_COUNT  6
+
+typedef struct OptionsScreenCtl {
+    UiControl *apList[PUFO_OPTIONS_LIST_COUNT]; /* 0x159E20..0x159E38 */
+    UiControl *apMusic[PUFO_OPTIONS_VOL_COUNT]; /* 0x159E44..0x159E58 */
+    UiControl *apSfx[PUFO_OPTIONS_VOL_COUNT];   /* 0x159E5C..0x159E70 */
+} OptionsScreenCtl;
+
+typedef struct OptionsVolumeEnv {
+    OptionsScreenCtl *pCtl;
+    i32 *pnMusicVol;  /* Map_nMusicVolume @ 0x128A98 */
+    u8  *pbMusicOff;  /* Map_bMusicOff @ 0x128A92 */
+    i32 *pnSfxVol;    /* Map_nSoundVolume @ 0x128A94 */
+    u8  *pbSfxOff;    /* Map_bSoundOff @ 0x128A93 */
+} OptionsVolumeEnv;
+
+/* The shared body behind the twelve handlers. nStep is the step the handler names. */
+i32 OptionsScreen_SetMusicVol(OptionsVolumeEnv *pEnv, i32 nStep);
+i32 OptionsScreen_SetSfxVol(OptionsVolumeEnv *pEnv, i32 nStep);
+
+i32 OptionsScreen_SetMusicVol0(OptionsVolumeEnv *pEnv); /* 0x6ba14 */
+i32 OptionsScreen_SetMusicVol1(OptionsVolumeEnv *pEnv); /* 0x6ba70 */
+i32 OptionsScreen_SetMusicVol2(OptionsVolumeEnv *pEnv); /* 0x6babc */
+i32 OptionsScreen_SetMusicVol3(OptionsVolumeEnv *pEnv); /* 0x6bb18 */
+i32 OptionsScreen_SetMusicVol4(OptionsVolumeEnv *pEnv); /* 0x6bb74 */
+i32 OptionsScreen_SetMusicVol5(OptionsVolumeEnv *pEnv); /* 0x6bbd0 */
+i32 OptionsScreen_SetSfxVol0(OptionsVolumeEnv *pEnv);   /* 0x6bc1c */
+i32 OptionsScreen_SetSfxVol1(OptionsVolumeEnv *pEnv);   /* 0x6bc80 */
+i32 OptionsScreen_SetSfxVol2(OptionsVolumeEnv *pEnv);   /* 0x6bce4 */
+i32 OptionsScreen_SetSfxVol3(OptionsVolumeEnv *pEnv);   /* 0x6bd48 */
+i32 OptionsScreen_SetSfxVol4(OptionsVolumeEnv *pEnv);   /* 0x6bdac */
+i32 OptionsScreen_SetSfxVol5(OptionsVolumeEnv *pEnv);   /* 0x6be10 */
+
+i32 OptionsScreen_RefreshVolumeHighlight(OptionsVolumeEnv *pEnv); /* 0x6b8fc */
+
+typedef struct OptionsTabEnv {
+    OptionsScreenCtl *pCtl;
+    ScreenScratch    *pScratch;
+    UiControl *pSaveCtl;   /* unk_186BB4, the "save" hotspot */
+    UiControl *pBackCtl;   /* unk_186BB0, the "return to title" hotspot */
+    /* The four handlers LayoutButtons installs on the first four rows. They land in a control's
+     * click slot, so they are `void (*)(void)` thunks over the caller's own env. */
+    void (*pfnBindSaveSlots)(void); /* OptionsScreen_BindSaveSlots (0x6b49c) */
+    void (*pfnBindLoadSlots)(void); /* OptionsScreen_BindLoadSlots (0x6b588) */
+    void (*pfnSetTab3)(void);       /* Set_byte_159E88_3_SetUiY (0x6b674) */
+    void (*pfnSetTab4)(void);       /* Set_byte_159E88_4 (0x6b6b0) */
+    void (*apfnSaveSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* SaveGame_SlotN_CloseUI (0x6af80..0x6b148), not ported */
+    void (*apfnLoadSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* LoadGame_SlotN_InitOptions (0x6b194..0x6b404), not ported */
+    void (*pfnFormatSlots)(void *pUser);   /* SaveSlot_FormatList (0x45904), reads the save files */
+    void *pUser;
+} OptionsTabEnv;
+
+UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv);  /* 0x6b6c4 */
+void OptionsScreen_BindSaveSlots(OptionsTabEnv *pEnv);        /* 0x6b49c */
+void OptionsScreen_BindLoadSlots(OptionsTabEnv *pEnv);        /* 0x6b588 */
+
+typedef struct OptionsInitEnv {
+    OptionsScreenCtl *pCtl;
+    OptionsVolumeEnv *pVolEnv;  /* the state RefreshVolumeHighlight re-selects from */
+    OptionsTabEnv    *pTabEnv;  /* the state LayoutButtons lays out */
+    u8 *pbControlsExist;        /* byte_159E88[4] @ 0x159E8C */
+    UiControl *pSaveCtl;        /* unk_186BB4 */
+    UiControl *pBackCtl;        /* unk_186BB0 */
+    void (*pfnSaveAudio)(void);          /* Options_SaveAudioSettings (0x6b7ac), not ported */
+    void (*pfnReturnToTitle)(void);      /* OptionsScreen_ReturnToTitle (0x6b46c), as a thunk */
+    void (*apfnMusicVol[PUFO_OPTIONS_VOL_COUNT])(void); /* the twelve radio handlers, as thunks */
+    void (*apfnSfxVol[PUFO_OPTIONS_VOL_COUNT])(void);
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+    void *pUser;
+} OptionsInitEnv;
+
+void OptionsScreen_Init(OptionsInitEnv *pEnv); /* 0x6be74 */
+
 #endif /* PUFO_BASEUI_H */

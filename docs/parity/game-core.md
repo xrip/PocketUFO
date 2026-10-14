@@ -9502,3 +9502,43 @@ comments at 0x5d6d4 and 0x5db24.
 Also fixed: the port cited `GameTime_Unpause @ 0x5d6c4`, which is four bytes inside the function --
 the original starts at `0x5d6c0`. The citation in `game/pufo_clock.h` now names the real address, so
 that function counts.
+
+### The options screen's audio tab (done)
+
+`src/pufo/game/pufo_baseui.{h,c}`, 48 new checks in `tests/test_baseui.c`. Seventeen functions that
+bring the options screen up and wire its two volume radio groups.
+
+`OptionsScreen_Init` (0x6be74) branches on a "the controls exist" byte at 0x159E8C. Set: clear it and
+tear down nineteen controls. Clear: build seven list rows at `aOptionsListCtl @ 0x159E20` from the
+seven identical records at 0xAB750 ("firebtn"/"cfirebtn"), build twelve radio buttons at
+`aOptionsMusicBtn @ 0x159E44` / `aOptionsSfxBtn @ 0x159E5C` from the twelve identical records at
+0xAB830 ("initg"/"cinitg"/"cinitg"), put the music row at y = 107 and the sfx row at y = 147 with
+x = 46 + 25*i, install the twelve handlers, then run `OptionsScreen_RefreshVolumeHighlight` (0x6b8fc)
+and `OptionsScreen_LayoutButtons` (0x6b6c4).
+
+The twelve handlers (0x6ba14..0x6be10) are one shape: clear the group, light this button with
+`nState = 2`, write the step, and mute only at step 0 — `Map_bMusicOff` / `Map_bSoundOff` become 1 for
+step 0 and 0 for 1..5. Music ends with `Sound_ApplyMusicVolume`; sfx calls `Sound_ApplySfxVolume` and
+then `Sound_Play(17)` so the player hears the new level. Four of the six music handlers store the step
+before clearing the group and reach their button through the array; the other two clear first and name
+the pointer. The order is not observable, so the port uses one body for all six. The level is the
+original's own arithmetic — `4 * (muted ? 0 : 12 * step + 4) - 1`, muted giving -1 — observed in the
+test through the backend seam (step 0 → -1, step 1 → 63, step 5 → 255).
+
+`OptionsScreen_BindSaveSlots` (0x6b49c) and `OptionsScreen_BindLoadSlots` (0x6b588) are the save and
+load tabs: scratch byte 1 or 2, seven slot handlers, rows centred at x = 120 - (uWidth >> 1) with
+y = 40 + 22*i, the save hotspot dropped to y = 215, and `SaveSlot_FormatList` over the main menu's
+slot context. The fourteen slot handlers themselves are not ported and enter as hooks.
+
+IDB: the control block is now typed — `aOptionsListCtl[7]` at 0x159E20, `aOptionsMusicBtn[6]` at
+0x159E44, `aOptionsSfxBtn[6]` at 0x159E5C, all `UiControl *` — which is what makes
+`OptionsScreen_RefreshVolumeHighlight` read as `aOptionsSfxBtn[0]->nState = 2` instead of a byte
+offset off `bTransferFlag`. The two descriptor tables at 0xAB750 and 0xAB830 are labelled and added
+to `tools/gen_geoiinit_tables.py`. Comments on 0x6be74 (replacing a stale "NOT ported"), 0x6b6c4,
+0x6b49c, 0x6b588, 0x6b8fc, 0x6ba14, 0x6bc1c and the flag byte at 0x159E8C.
+
+Two ledger rows. `OptionsScreen_RefreshVolumeHighlight` indexes both button arrays with the stored
+step and tests nothing (0x6B93C, 0x6B984) — a step outside 0..5 writes 2 into whatever pointer it
+lands on; the port clamps. `OptionsScreen_LayoutButtons` centres the return hotspot on the SAVE
+control's width: the uWidth read at 0x6B764 reloads R1 from the same R0 (unk_186BB4) while the store
+at 0x6B778 lands on unk_186BB0. The port reproduces it.

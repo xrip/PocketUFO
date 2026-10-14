@@ -6,6 +6,7 @@
 #include "game/pufo_baseui.h"
 #include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, for the cost label */
+#include "audio/pufo_audio.h"  /* PufoAudioBackend / Sound_SetBackend, the volume seam */
 
 static int g_nFailures;
 
@@ -2503,6 +2504,310 @@ static void TestSoldierDisplayName(void)
           "and so does a null roster");
 }
 
+/* OptionsScreen_Init @ 0x6be74, the twelve volume handlers @ 0x6ba14..0x6be10,
+ * OptionsScreen_RefreshVolumeHighlight @ 0x6b8fc and the three tab binders
+ * @ 0x6b6c4 / 0x6b49c / 0x6b588. */
+
+static UiControl g_aOptList[7];
+static UiControl g_aOptMusic[6];
+static UiControl g_aOptSfx[6];
+static UiControl g_ctlSave;  /* unk_186BB4 */
+static UiControl g_ctlBack;  /* unk_186BB0 */
+static OptionsScreenCtl g_optCtl;
+static ScreenScratch g_optScratch;
+static i32 g_nMusicVol;
+static u8 g_bMusicOff;
+static i32 g_nSfxVol;
+static u8 g_bSfxOff;
+static u8 g_bOptBuilt;
+static OptionsVolumeEnv g_optVol;
+static OptionsTabEnv g_optTab;
+static OptionsInitEnv g_optInit;
+
+static i32 g_nSetupCalls;
+static char g_szRowPad0[16];
+static char g_szRowPad1[16];
+static char g_szVolPad0[16];
+static char g_szVolPad1[16];
+
+static bool Opt_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                         const char *psz2, void *pUser)
+{
+    (void)pCtl;
+    (void)psz2;
+    (void)pUser;
+    g_nSetupCalls += 1;
+    if (g_nSetupCalls == 1) {
+        PutStr(g_szRowPad0, psz0);
+        PutStr(g_szRowPad1, psz1);
+    }
+    if (g_nSetupCalls == 8) { /* the first of the twelve radio buttons */
+        PutStr(g_szVolPad0, psz0);
+        PutStr(g_szVolPad1, psz1);
+    }
+    return true;
+}
+
+/* The twelve handlers the app would install, and the tab/slot stubs. */
+static void OptMusic0(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 0); }
+static void OptMusic1(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 1); }
+static void OptMusic2(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 2); }
+static void OptMusic3(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 3); }
+static void OptMusic4(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 4); }
+static void OptMusic5(void) { (void)OptionsScreen_SetMusicVol(&g_optVol, 5); }
+static void OptSfx0(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 0); }
+static void OptSfx1(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 1); }
+static void OptSfx2(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 2); }
+static void OptSfx3(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 3); }
+static void OptSfx4(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 4); }
+static void OptSfx5(void) { (void)OptionsScreen_SetSfxVol(&g_optVol, 5); }
+
+static i32 g_nTabFired;
+static void OptTabSave(void) { g_nTabFired = 1; }
+static void OptTabLoad(void) { g_nTabFired = 2; }
+static void OptTab3(void) { g_nTabFired = 3; }
+static void OptTab4(void) { g_nTabFired = 4; }
+static void OptSaveAudio(void) { g_nTabFired = 5; }
+static void OptReturnTitle(void) { g_nTabFired = 6; }
+
+static i32 g_nSlotFired;
+static void OptSave0(void) { g_nSlotFired = 100; }
+static void OptSave1(void) { g_nSlotFired = 101; }
+static void OptSave2(void) { g_nSlotFired = 102; }
+static void OptSave3(void) { g_nSlotFired = 103; }
+static void OptSave4(void) { g_nSlotFired = 104; }
+static void OptSave5(void) { g_nSlotFired = 105; }
+static void OptSave6(void) { g_nSlotFired = 106; }
+static void OptLoad0(void) { g_nSlotFired = 200; }
+static void OptLoad1(void) { g_nSlotFired = 201; }
+static void OptLoad2(void) { g_nSlotFired = 202; }
+static void OptLoad3(void) { g_nSlotFired = 203; }
+static void OptLoad4(void) { g_nSlotFired = 204; }
+static void OptLoad5(void) { g_nSlotFired = 205; }
+static void OptLoad6(void) { g_nSlotFired = 206; }
+static void OptFormatSlots(void *pUser) { (void)pUser; g_nSlotFired = 7; }
+
+/* The level the sfx applier hands the backend is observable through this seam. */
+static i32 g_nSfxLevel;
+static i32 g_nSfxLevelCalls;
+
+static bool Fake_Init(u32 nMix, i32 nCh, u32 nFlags) { (void)nMix; (void)nCh; (void)nFlags; return false; }
+static void Fake_SetWindow(void *h) { (void)h; }
+static void *Fake_SampleLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return NULL; }
+static void Fake_SampleSetMode(void *p, u32 m) { (void)p; (void)m; }
+static void Fake_SampleFree(void *p) { (void)p; }
+static i32 Fake_PlaySound(void *p) { (void)p; return 0; }
+static void Fake_SetSfxVolume(i32 n) { g_nSfxLevel = n; g_nSfxLevelCalls += 1; }
+static void Fake_SetSfxPaused(i32 n) { (void)n; }
+static void *Fake_MusicLoad(const void *p, u32 cb, u32 m) { (void)p; (void)cb; (void)m; return NULL; }
+static void Fake_MusicLoop(void *p, i32 b) { (void)p; (void)b; }
+static void Fake_MusicOpt(void *p, i32 a, i32 b) { (void)p; (void)a; (void)b; }
+static void Fake_MusicPlay(void *p) { (void)p; }
+static void Fake_MusicVol(void *p, i32 n) { (void)p; (void)n; }
+static void Fake_MusicPause(void *p, i32 b) { (void)p; (void)b; }
+static void Fake_MusicFree(void *p) { (void)p; }
+static void Fake_Close(void) { }
+
+static const PufoAudioBackend g_fakeOptBackend = {
+    Fake_Init, Fake_SetWindow, Fake_SampleLoad, Fake_SampleSetMode, Fake_SampleFree,
+    Fake_PlaySound, Fake_SetSfxVolume, Fake_SetSfxPaused, Fake_MusicLoad, Fake_MusicLoop,
+    Fake_MusicOpt, Fake_MusicPlay, Fake_MusicVol, Fake_MusicPause, Fake_MusicFree, Fake_Close
+};
+
+static void TestOptionsAudioTab(void)
+{
+    i32 nBad;
+
+    printf("OptionsScreen_Init @ 0x6be74 and the volume radio group\n");
+
+    memset(&g_optCtl, 0, sizeof(g_optCtl));
+    memset(&g_optScratch, 0, sizeof(g_optScratch));
+    for (i32 i = 0; i < 7; ++i) {
+        g_optCtl.apList[i] = &g_aOptList[i];
+    }
+    for (i32 i = 0; i < 6; ++i) {
+        g_optCtl.apMusic[i] = &g_aOptMusic[i];
+        g_optCtl.apSfx[i] = &g_aOptSfx[i];
+    }
+    g_ctlSave.uWidth = 30; /* the hotspots are pre-existing geoscape controls */
+    g_ctlBack.uWidth = 50;
+
+    g_nMusicVol = 3;
+    g_bMusicOff = 1;
+    g_nSfxVol = 2;
+    g_bSfxOff = 0;
+    g_bOptBuilt = 0;
+    g_nSetupCalls = 0;
+
+    g_optVol.pCtl = &g_optCtl;
+    g_optVol.pnMusicVol = &g_nMusicVol;
+    g_optVol.pbMusicOff = &g_bMusicOff;
+    g_optVol.pnSfxVol = &g_nSfxVol;
+    g_optVol.pbSfxOff = &g_bSfxOff;
+
+    g_optTab.pCtl = &g_optCtl;
+    g_optTab.pScratch = &g_optScratch;
+    g_optTab.pSaveCtl = &g_ctlSave;
+    g_optTab.pBackCtl = &g_ctlBack;
+    g_optTab.pfnBindSaveSlots = OptTabSave;
+    g_optTab.pfnBindLoadSlots = OptTabLoad;
+    g_optTab.pfnSetTab3 = OptTab3;
+    g_optTab.pfnSetTab4 = OptTab4;
+    g_optTab.apfnSaveSlot[0] = OptSave0;
+    g_optTab.apfnSaveSlot[1] = OptSave1;
+    g_optTab.apfnSaveSlot[2] = OptSave2;
+    g_optTab.apfnSaveSlot[3] = OptSave3;
+    g_optTab.apfnSaveSlot[4] = OptSave4;
+    g_optTab.apfnSaveSlot[5] = OptSave5;
+    g_optTab.apfnSaveSlot[6] = OptSave6;
+    g_optTab.apfnLoadSlot[0] = OptLoad0;
+    g_optTab.apfnLoadSlot[1] = OptLoad1;
+    g_optTab.apfnLoadSlot[2] = OptLoad2;
+    g_optTab.apfnLoadSlot[3] = OptLoad3;
+    g_optTab.apfnLoadSlot[4] = OptLoad4;
+    g_optTab.apfnLoadSlot[5] = OptLoad5;
+    g_optTab.apfnLoadSlot[6] = OptLoad6;
+    g_optTab.pfnFormatSlots = OptFormatSlots;
+    g_optTab.pUser = NULL;
+
+    g_optInit.pCtl = &g_optCtl;
+    g_optInit.pVolEnv = &g_optVol;
+    g_optInit.pTabEnv = &g_optTab;
+    g_optInit.pbControlsExist = &g_bOptBuilt;
+    g_optInit.pSaveCtl = &g_ctlSave;
+    g_optInit.pBackCtl = &g_ctlBack;
+    g_optInit.pfnSaveAudio = OptSaveAudio;
+    g_optInit.pfnReturnToTitle = OptReturnTitle;
+    g_optInit.apfnMusicVol[0] = OptMusic0;
+    g_optInit.apfnMusicVol[1] = OptMusic1;
+    g_optInit.apfnMusicVol[2] = OptMusic2;
+    g_optInit.apfnMusicVol[3] = OptMusic3;
+    g_optInit.apfnMusicVol[4] = OptMusic4;
+    g_optInit.apfnMusicVol[5] = OptMusic5;
+    g_optInit.apfnSfxVol[0] = OptSfx0;
+    g_optInit.apfnSfxVol[1] = OptSfx1;
+    g_optInit.apfnSfxVol[2] = OptSfx2;
+    g_optInit.apfnSfxVol[3] = OptSfx3;
+    g_optInit.apfnSfxVol[4] = OptSfx4;
+    g_optInit.apfnSfxVol[5] = OptSfx5;
+    g_optInit.pfnLoadPads = Opt_LoadPads;
+    g_optInit.pPadUser = NULL;
+
+    OptionsScreen_Init(&g_optInit);
+
+    CheckEqI32(g_bOptBuilt, 1, "the bring-up branch builds the controls (0x6BE90)");
+    CheckEqI32(g_nSetupCalls, 19, "seven rows plus twelve radio buttons get positioned (0x6BEF0, 0x6BF90)");
+    Check(strcmp(g_szRowPad0, "firebtn") == 0 && strcmp(g_szRowPad1, "cfirebtn") == 0,
+          "the rows use the 0xAB750 record firebtn/cfirebtn");
+    Check(strcmp(g_szVolPad0, "initg") == 0 && strcmp(g_szVolPad1, "cinitg") == 0,
+          "the buttons use the 0xAB830 record initg/cinitg");
+
+    nBad = 0;
+    for (i32 i = 0; i < 6; ++i) {
+        if (g_aOptMusic[i].y != 107 || g_aOptMusic[i].x != 46 + 25 * i) {
+            nBad += 1;
+        }
+        if (g_aOptSfx[i].y != 147 || g_aOptSfx[i].x != 46 + 25 * i) {
+            nBad += 1;
+        }
+    }
+    CheckEqI32(nBad, 0, "music at y 107 and sfx at y 147, both x = 46 + 25*i (0x6BFBC..0x6C018)");
+
+    Check(g_aOptMusic[0].pfnClick == OptMusic0 && g_aOptMusic[5].pfnClick == OptMusic5
+          && g_aOptSfx[0].pfnClick == OptSfx0 && g_aOptSfx[5].pfnClick == OptSfx5,
+          "the twelve click slots hold the twelve radio handlers (0x6C02C..0x6C0B0)");
+    Check(g_ctlSave.pfnClick == OptSaveAudio, "unk_186BB4 gets the save handler (0x6BF1C)");
+    Check(g_ctlBack.pfnClick == OptReturnTitle, "unk_186BB0 gets the return handler (0x6BF2C)");
+
+    /* RefreshVolumeHighlight ran last: music was muted, sfx was not. */
+    CheckEqI32(g_nMusicVol, 0, "a muted group resets its step to 0 (0x6B91C)");
+    CheckEqI32(g_aOptMusic[0].nState, 2, "  and lights button 0 (0x6B944)");
+    CheckEqI32(g_aOptMusic[1].nState, 0, "  the rest of the group stays clear");
+    CheckEqI32(g_nSfxVol, 2, "an unmuted group keeps its stored step (0x6B93C)");
+    CheckEqI32(g_aOptSfx[2].nState, 2, "  and lights that step's button (0x6B984)");
+
+    CheckEqI32(g_optScratch.nLineAux145, 0, "LayoutButtons selects the audio tab (0x6B6D0)");
+    Check(g_aOptList[0].pfnClick == OptTabSave && g_aOptList[1].pfnClick == OptTabLoad
+          && g_aOptList[2].pfnClick == OptTab3 && g_aOptList[3].pfnClick == OptTab4,
+          "the first four rows get the four tab handlers (0x6B6DC..0x6B700)");
+    nBad = 0;
+    for (i32 i = 0; i < 4; ++i) {
+        if (g_aOptList[i].x != 120 - (g_aOptList[i].uWidth >> 1) || g_aOptList[i].y != 90 + 25 * i) {
+            nBad += 1;
+        }
+    }
+    CheckEqI32(nBad, 0, "those four centre at x = 120 - (uWidth >> 1), y = 90 + 25*i (0x6B718)");
+    CheckEqI32(g_aOptList[4].y, 229, "the fifth row keeps the descriptor's y — only four move");
+    CheckEqI32(g_ctlSave.x, 105, "the save hotspot centres on its OWN 30-wide pad (0x6B75C)");
+    CheckEqI32(g_ctlSave.y, 198, "  and sits at y 198 (0x6B784)");
+    CheckEqI32(g_ctlBack.x, 105, "the return hotspot uses the SAVE width, not its own 50 (0x6B778)");
+
+    (void)OptionsScreen_SetMusicVol3(&g_optVol);
+    CheckEqI32(g_nMusicVol, 3, "SetMusicVol3 writes step 3 (0x6BAD0)");
+    CheckEqI32(g_bMusicOff, 0, "  and unmutes (0x6BB04)");
+    CheckEqI32(g_aOptMusic[3].nState, 2, "  and lights button 3 (0x6BAF8)");
+    CheckEqI32(g_aOptMusic[0].nState, 0, "  the group clear took button 0's light away (0x6BAD4)");
+
+    (void)OptionsScreen_SetMusicVol0(&g_optVol);
+    CheckEqI32(g_bMusicOff, 1, "music step 0 is the mute step (0x6BA5C)");
+    CheckEqI32(g_aOptMusic[0].nState, 2, "  and lights button 0 (0x6BA50)");
+
+    (void)OptionsScreen_SetSfxVol0(&g_optVol);
+    CheckEqI32(g_nSfxVol, 0, "SetSfxVol0 writes step 0 (0x6BC38)");
+    CheckEqI32(g_bSfxOff, 1, "  and mutes sfx (0x6BC54)");
+    CheckEqI32(g_aOptSfx[0].nState, 2, "  and lights button 0 (0x6BC48)");
+    CheckEqI32(g_aOptSfx[2].nState, 0, "  the group was cleared first (0x6BC20)");
+
+    /* The level the applier hands the backend: 4 * (muted ? 0 : 12 * step + 4) - 1. */
+    Sound_SetBackend(&g_fakeOptBackend);
+    g_nSfxLevel = 999;
+    g_nSfxLevelCalls = 0;
+    (void)OptionsScreen_SetSfxVol0(&g_optVol);
+    CheckEqI32(g_nSfxLevel, -1, "muted sfx applies -1, the original's arithmetic (0x9E470)");
+    (void)OptionsScreen_SetSfxVol1(&g_optVol);
+    CheckEqI32(g_nSfxLevel, 63, "step 1 applies 4 * (12 * 1 + 4) - 1 = 63 (0x9E488)");
+    (void)OptionsScreen_SetSfxVol5(&g_optVol);
+    CheckEqI32(g_nSfxLevel, 255, "step 5 applies 255");
+    CheckEqI32(g_nSfxLevelCalls, 3, "one applier call per handler");
+    Sound_SetBackend(NULL);
+
+    g_nSlotFired = -1;
+    OptionsScreen_BindSaveSlots(&g_optTab);
+    CheckEqI32(g_optScratch.nLineAux145, 1, "the save tab is scratch byte 1 (0x6B4A8)");
+    Check(g_aOptList[0].pfnClick == OptSave0 && g_aOptList[6].pfnClick == OptSave6,
+          "all seven rows get their save-slot handler (0x6B4B4..0x6B4FC)");
+    nBad = 0;
+    for (i32 i = 0; i < 7; ++i) {
+        if (g_aOptList[i].y != 40 + 22 * i) {
+            nBad += 1;
+        }
+    }
+    CheckEqI32(nBad, 0, "seven rows at y = 40 + 22*i (0x6B538)");
+    CheckEqI32(g_ctlSave.y, 215, "the save hotspot drops to y 215 (0x6B550)");
+    CheckEqI32(g_nSlotFired, 7, "  and the slot list is formatted (0x6B558)");
+
+    OptionsScreen_BindLoadSlots(&g_optTab);
+    CheckEqI32(g_optScratch.nLineAux145, 2, "the load tab is scratch byte 2 (0x6B594)");
+    Check(g_aOptList[0].pfnClick == OptLoad0 && g_aOptList[6].pfnClick == OptLoad6,
+          "  and the rows get the load-slot handlers (0x6B5A0..0x6B5E8)");
+
+    /* The installed handlers drive the real setters. */
+    if (g_aOptMusic[4].pfnClick != NULL) {
+        g_aOptMusic[4].pfnClick();
+    }
+    CheckEqI32(g_nMusicVol, 4, "clicking the installed handler drives the setter");
+
+    g_nSetupCalls = 0;
+    OptionsScreen_Init(&g_optInit); /* the flag is set now, so this is the teardown branch */
+    CheckEqI32(g_bOptBuilt, 0, "the second call tears the controls down (0x6C0FC)");
+    CheckEqI32(g_nSetupCalls, 0, "  and positions nothing");
+    CheckEqI32(g_aOptMusic[0].y, 107, "  the positions survive it (only the pads are dropped)");
+
+    CheckEqI32(OptionsScreen_SetMusicVol(NULL, 0), 0, "a null volume env changes nothing");
+    Check(OptionsScreen_LayoutButtons(NULL) == NULL, "a null tab env lays out nothing");
+    OptionsScreen_Init(NULL);
+    Check(true, "a null init env is tolerated");
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2542,6 +2847,7 @@ int main(void)
     TestFacOverlay();
     TestBuildDialog();
     TestSoldierDisplayName();
+    TestOptionsAudioTab();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -2013,3 +2013,306 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
     }
     return pszOut;                                                                 /* 0x666C8 */
 }
+
+/* ------------------------------------------------- the options screen's audio tab */
+
+/* stru_AB750 @ 0xAB750: seven identical UiControlDesc records, the options screen's list rows.
+ * stru_AB830 @ 0xAB830: twelve identical records, the volume radio buttons. Both tables are uniform
+ * repeats of one record (dumped by tools/gen_geoiinit_tables.py), so the port keeps one each. */
+static const UiControlDesc g_aOptionsListDesc = { 1, 229, "firebtn", "cfirebtn", "", 0 };
+static const UiControlDesc g_aOptionsVolDesc  = { 1, 229, "initg", "cinitg", "cinitg", 0 };
+
+/* The level the two appliers take, from Sound_ApplyMusicVolume @ 0x9E470/0x9E488:
+ * 4 * (muted ? 0 : 12 * step + 4) - 1. Muted yields -1, which is the original's arithmetic. */
+static i32 Options_MapLevel(i32 nStep, u8 bMuted)
+{
+    i32 v = (bMuted != 0) ? 0 : 12 * nStep + 4;
+
+    return 4 * v - 1;
+}
+
+/* ORIGINAL BUG (0x6B93C / 0x6B984), not reproduced: the original indexes the 0x159E44 / 0x159E5C
+ * arrays with the stored step and tests nothing, so a step outside 0..5 reads past the six pointers
+ * and writes 2 into whatever it lands on. The port picks button 0 instead. */
+static i32 Options_ClampStep(i32 nStep)
+{
+    return (nStep < 0 || nStep >= PUFO_OPTIONS_VOL_COUNT) ? 0 : nStep;
+}
+
+static void Options_SelectRadio(UiControl *pBtn)
+{
+    if (pBtn != NULL) {
+        pBtn->nState = PUFO_CONTROL_MAX_STATE; /* 2: the selected state of a radio group */
+    }
+}
+
+static void Options_SetClick(UiControl *pCtl, void (*pfn)(void))
+{
+    if (pCtl != NULL) {
+        pCtl->pfnClick = pfn;
+    }
+}
+
+/* Centre one list row on the 240-pixel field and drop it at nY. */
+static void Options_CentreRow(UiControl *pCtl, i32 nY)
+{
+    if (pCtl != NULL) {
+        pCtl->x = (i16)(120 - (pCtl->uWidth >> 1)); /* 0x6B718 / 0x6B514 */
+        pCtl->y = (i16)nY;                          /* 0x6B73C / 0x6B538 */
+    }
+}
+
+i32 OptionsScreen_SetMusicVol(OptionsVolumeEnv *pEnv, i32 nStep)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnMusicVol == NULL || pEnv->pbMusicOff == NULL) {
+        return 0;
+    }
+
+    *pEnv->pnMusicVol = nStep;                                            /* 0x6BA28 / 0x6BAD0 */
+    OptionsScreen_ClearMusicButtons(pEnv->pCtl->apMusic);                 /* 0x6BA2C */
+    Options_SelectRadio(pEnv->pCtl->apMusic[Options_ClampStep(nStep)]);   /* 0x6BA50 */
+    *pEnv->pbMusicOff = (nStep == 0) ? 1 : 0;                             /* 0x6BA5C / 0x6BAA8 */
+    Sound_ApplyMusicVolume(Options_MapLevel(*pEnv->pnMusicVol, *pEnv->pbMusicOff),
+                           *pEnv->pbMusicOff);                             /* 0x9e454, the tail call */
+    return 0;
+}
+
+i32 OptionsScreen_SetSfxVol(OptionsVolumeEnv *pEnv, i32 nStep)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnSfxVol == NULL || pEnv->pbSfxOff == NULL) {
+        return 0;
+    }
+
+    OptionsScreen_ClearSfxButtons(pEnv->pCtl->apSfx);                     /* 0x6BC20 */
+    *pEnv->pnSfxVol = nStep;                                              /* 0x6BC38 */
+    Options_SelectRadio(pEnv->pCtl->apSfx[Options_ClampStep(nStep)]);     /* 0x6BC48 */
+    *pEnv->pbSfxOff = (nStep == 0) ? 1 : 0;                               /* 0x6BC54 / 0x6BCB8 */
+    Sound_ApplySfxVolume(Options_MapLevel(*pEnv->pnSfxVol, *pEnv->pbSfxOff),
+                         *pEnv->pbSfxOff);                                /* 0x6BC58 */
+    Sound_Play(17);                                                       /* 0x6BC64: hear the new level */
+    return 0;
+}
+
+i32 OptionsScreen_SetMusicVol0(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 0); /* 0x6ba14: step 0 is the mute step */
+}
+
+i32 OptionsScreen_SetMusicVol1(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 1); /* 0x6ba70 */
+}
+
+i32 OptionsScreen_SetMusicVol2(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 2); /* 0x6babc */
+}
+
+i32 OptionsScreen_SetMusicVol3(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 3); /* 0x6bb18 */
+}
+
+i32 OptionsScreen_SetMusicVol4(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 4); /* 0x6bb74 */
+}
+
+i32 OptionsScreen_SetMusicVol5(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetMusicVol(pEnv, 5); /* 0x6bbd0 */
+}
+
+i32 OptionsScreen_SetSfxVol0(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 0); /* 0x6bc1c: step 0 is the mute step */
+}
+
+i32 OptionsScreen_SetSfxVol1(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 1); /* 0x6bc80 */
+}
+
+i32 OptionsScreen_SetSfxVol2(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 2); /* 0x6bce4 */
+}
+
+i32 OptionsScreen_SetSfxVol3(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 3); /* 0x6bd48 */
+}
+
+i32 OptionsScreen_SetSfxVol4(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 4); /* 0x6bdac */
+}
+
+i32 OptionsScreen_SetSfxVol5(OptionsVolumeEnv *pEnv)
+{
+    return OptionsScreen_SetSfxVol(pEnv, 5); /* 0x6be10 */
+}
+
+i32 OptionsScreen_RefreshVolumeHighlight(OptionsVolumeEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pnMusicVol == NULL || pEnv->pbMusicOff == NULL
+        || pEnv->pnSfxVol == NULL || pEnv->pbSfxOff == NULL) {
+        return 0;
+    }
+
+    if (*pEnv->pbMusicOff != 0) {
+        *pEnv->pnMusicVol = 0;                                            /* 0x6B91C */
+    }
+    Options_SelectRadio(pEnv->pCtl->apMusic[Options_ClampStep(*pEnv->pnMusicVol)]); /* 0x6B944 */
+
+    if (*pEnv->pbSfxOff != 0) {
+        *pEnv->pnSfxVol = 0;                                              /* 0x6B968 */
+    }
+    Options_SelectRadio(pEnv->pCtl->apSfx[Options_ClampStep(*pEnv->pnSfxVol)]); /* 0x6B96C / 0x6B984 */
+    return 0;
+}
+
+UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+        return NULL;
+    }
+
+    pEnv->pScratch->nLineAux145 = 0;                        /* 0x6B6D0: the audio tab */
+    Options_SetClick(pEnv->pCtl->apList[0], pEnv->pfnBindSaveSlots); /* 0x6B6DC */
+    Options_SetClick(pEnv->pCtl->apList[1], pEnv->pfnBindLoadSlots); /* 0x6B6E8 */
+    Options_SetClick(pEnv->pCtl->apList[2], pEnv->pfnSetTab3);       /* 0x6B6F4 */
+    Options_SetClick(pEnv->pCtl->apList[3], pEnv->pfnSetTab4);       /* 0x6B700 */
+
+    for (i32 i = 0; i < 4; ++i) {                           /* 0x6B704..0x6B744 */
+        Options_CentreRow(pEnv->pCtl->apList[i], 90 + 25 * i);
+    }
+
+    if (pEnv->pSaveCtl != NULL) {
+        pEnv->pSaveCtl->x = (i16)(120 - (pEnv->pSaveCtl->uWidth >> 1)); /* 0x6B75C */
+        pEnv->pSaveCtl->y = 198;                                        /* 0x6B784 */
+    }
+    if (pEnv->pBackCtl != NULL) {
+        u16 w = (pEnv->pSaveCtl != NULL) ? pEnv->pSaveCtl->uWidth : 0;
+
+        /* ORIGINAL BUG (0x6B764), reproduced: the width read for the return hotspot comes from
+         * *unk_186BB4 again (R1 is reloaded from the same R0), while the store at 0x6B778 lands on
+         * *unk_186BB0. The two hotspots share a pad in practice, so the game does not show it. */
+        pEnv->pBackCtl->x = (i16)(120 - (w >> 1));
+    }
+    return pEnv->pSaveCtl;
+}
+
+/* The save and load tabs are the same seven rows with a different tab byte and handler set. */
+static void Options_BindSlotRows(OptionsTabEnv *pEnv, u8 nTab, void (*apfnSlot[])(void))
+{
+    pEnv->pScratch->nLineAux145 = nTab;                     /* 0x6B4A8 (save) / 0x6B594 (load) */
+
+    for (i32 i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {
+        Options_SetClick(pEnv->pCtl->apList[i], apfnSlot[i]);        /* 0x6B4B4..0x6B4FC */
+        Options_CentreRow(pEnv->pCtl->apList[i], 40 + 22 * i);       /* 0x6B514 / 0x6B538 */
+    }
+
+    if (pEnv->pSaveCtl != NULL) {
+        pEnv->pSaveCtl->y = 215;                                     /* 0x6B550 / 0x6B63C */
+    }
+    if (pEnv->pfnFormatSlots != NULL) {
+        pEnv->pfnFormatSlots(pEnv->pUser);                           /* 0x6B558 / 0x6B644 */
+    }
+}
+
+void OptionsScreen_BindSaveSlots(OptionsTabEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+        return;
+    }
+    Options_BindSlotRows(pEnv, 1, pEnv->apfnSaveSlot); /* 0x6b49c */
+}
+
+void OptionsScreen_BindLoadSlots(OptionsTabEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pScratch == NULL) {
+        return;
+    }
+    Options_BindSlotRows(pEnv, 2, pEnv->apfnLoadSlot); /* 0x6b588 */
+}
+
+void OptionsScreen_Init(OptionsInitEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pbControlsExist == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbControlsExist != 0) {                        /* 0x6BE84 takes the teardown branch */
+        *pEnv->pbControlsExist = 0;                           /* 0x6C0FC */
+
+        for (i32 i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {   /* 0x6C108..0x6C130 */
+            UiControl_FreePads(pEnv->pCtl->apList[i]);        /* 0x6C118; 0x6C120 deletes, caller-owned here */
+        }
+        for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {    /* 0x6C134..0x6C15C, the twelve buttons */
+            UiControl_FreePads(pEnv->pCtl->apMusic[i]);
+            UiControl_FreePads(pEnv->pCtl->apSfx[i]);
+        }
+        return;
+    }
+
+    *pEnv->pbControlsExist = 1;                               /* 0x6BE90 */
+
+    for (i32 i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {       /* 0x6BEA0..0x6BED0 */
+        if (pEnv->pCtl->apList[i] != NULL) {
+            UiControl_ctor(pEnv->pCtl->apList[i]);
+        }
+    }
+    for (i32 i = 0; i < PUFO_OPTIONS_LIST_COUNT; ++i) {       /* 0x6BED4..0x6BEF0 */
+        if (pEnv->pCtl->apList[i] != NULL) {
+            UiControl_Setup(pEnv->pCtl->apList[i], 0, 0, &g_aOptionsListDesc,
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {        /* 0x6BF34..0x6BF70, music then sfx */
+        if (pEnv->pCtl->apMusic[i] != NULL) {
+            UiControl_ctor(pEnv->pCtl->apMusic[i]);
+        }
+    }
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+        if (pEnv->pCtl->apSfx[i] != NULL) {
+            UiControl_ctor(pEnv->pCtl->apSfx[i]);
+        }
+    }
+
+    Options_SetClick(pEnv->pSaveCtl, pEnv->pfnSaveAudio);     /* 0x6BF1C */
+    Options_SetClick(pEnv->pBackCtl, pEnv->pfnReturnToTitle); /* 0x6BF2C */
+
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {        /* 0x6BF74..0x6BF90 */
+        if (pEnv->pCtl->apMusic[i] != NULL) {
+            UiControl_Setup(pEnv->pCtl->apMusic[i], 0, 0, &g_aOptionsVolDesc,
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+        if (pEnv->pCtl->apSfx[i] != NULL) {
+            UiControl_Setup(pEnv->pCtl->apSfx[i], 0, 0, &g_aOptionsVolDesc,
+                            pEnv->pfnLoadPads, pEnv->pPadUser);
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {
+        if (pEnv->pCtl->apMusic[i] != NULL) {
+            pEnv->pCtl->apMusic[i]->y = 107;                  /* 0x6BFBC */
+            pEnv->pCtl->apMusic[i]->x = (i16)(46 + 25 * i);   /* 0x6BFDC */
+        }
+        if (pEnv->pCtl->apSfx[i] != NULL) {
+            pEnv->pCtl->apSfx[i]->y = 147;                    /* 0x6BFF8 */
+            pEnv->pCtl->apSfx[i]->x = (i16)(46 + 25 * i);     /* 0x6C018: 25 * (i + 6) - 104 */
+        }
+    }
+
+    for (i32 i = 0; i < PUFO_OPTIONS_VOL_COUNT; ++i) {        /* 0x6C02C..0x6C0B0 */
+        Options_SetClick(pEnv->pCtl->apMusic[i], pEnv->apfnMusicVol[i]);
+        Options_SetClick(pEnv->pCtl->apSfx[i], pEnv->apfnSfxVol[i]);
+    }
+
+    (void)OptionsScreen_RefreshVolumeHighlight(pEnv->pVolEnv); /* 0x6C0B4 */
+    (void)OptionsScreen_LayoutButtons(pEnv->pTabEnv);          /* 0x6C0B8 */
+}
