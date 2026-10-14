@@ -201,7 +201,8 @@ static void TestBlitIntoSurface(void)
     CheckEqU32(pPix[2 * 8 + 4], 0x2006, "  row 1 pixel at new X");
     CheckEqU32(pPix[2 * 8 + 5], 0, "  row 1 not continued");
 
-    /* Index 0 is a real pixel in this format, not transparency. */
+    /* Index 0 is transparency: the ARM at 0xa4288 tests `*v5 != 0` and writes only when the
+     * run byte is non-zero, so the pen advances and the pixel is left alone. */
     for (i = 0; i < 64; ++i) {
         pPix[i] = 0xFFFF;
     }
@@ -209,7 +210,7 @@ static void TestBlitIntoSurface(void)
     aGlyph[2] = 0;
     aGlyph[3] = 0xFF;
     Font_BlitGlyph(aGlyph, 0, 0, g_aPalette[0]);
-    CheckEqU32(pPix[0], 0x2000, "  index 0 draws palette entry 0");
+    CheckEqU32(pPix[0], 0xFFFF, "  index 0 leaves the pixel alone");
 
     /* Clipping: a glyph entirely off-surface must not fault or wrap. */
     for (i = 0; i < 64; ++i) {

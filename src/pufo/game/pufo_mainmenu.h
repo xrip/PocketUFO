@@ -29,6 +29,8 @@
 #include "pufo_common.h"
 
 #include "game/pufo_boot.h"     /* PUFO_TEXT_REC_STRIDE */
+#include "game/pufo_font.h"     /* PufoFont, for GameUI_InitStartup */
+#include "game/pufo_options.h"  /* PufoOptions, for GameUI_InitStartup */
 #include "render/pufo_render.h" /* GfxColorEnv */
 #include "ui/pufo_control.h"    /* UiControl, UiControlBlitFn */
 #include "ui/pufo_modal.h"      /* UiModalAnim, UiModalLayout */
@@ -73,5 +75,57 @@ typedef struct MainMenuEnv {
  * (mode 3), then the version stamp. The original returns the version draw's value; no caller tests
  * it, so the port returns void. */
 void MainMenu_Draw(const MainMenuEnv *pEnv);
+
+/* GameUI_InitStartup @ 0x38a28: everything the start menu needs before the first frame.
+ *
+ * The order is the original's own: clear the reader, Font_Init, install the eleven click handlers
+ * (controls 0..3 and 8..14 -- 4..7 keep whatever the static block held), set up the fifteen
+ * controls from the a2s descriptors at 0xA7CF8 with 140x18 extents, load startg.pal into slot 20
+ * and menu.pal into slot 1, read startg.pad into MainMenu_pBgGlyph and emptyb.pad into 0x1568EC,
+ * set the glyph base to the running frame count BEFORE Font_LoadSpr("font"), build the index,
+ * zero the seven row keys / seven disabled bytes / seven key-source dwords at 0x1571C8, build the
+ * standalone control (desc "V", y 230, pads emptyb1/cemptyb1/empty, click EmptyBtn_OnClick), set
+ * the list mode to 0 and the ui screen to 17, then the "tact" samples, music track 0, both
+ * volumes and StartTimers_B.
+ *
+ * a2s @ 0xA7CF8 is 15 descriptors of 32 bytes: xOff 50 for all of them; yOff 115/137/159/181 for
+ * the four main rows (repeated for controls 4..7) and 65..197 step 22 for the seven slot rows;
+ * every pad name is empty (these are click zones) and every mode is 2.
+ *
+ * Deviations: the original installs fixed function addresses into the control block's +0xC; the
+ * port installs the eleven handlers the caller supplies (the MenuCtl thunks live in the shell,
+ * which owns the hook block). The original's operator new for the two pad blobs and the control
+ * is unchecked; the port skips a failed allocation. The original leaves the standalone control's
+ * descriptor mode byte as stack residue; the port zeroes it. */
+typedef struct GameUiStartupEnv {
+    PufoFont    *pFont;                    /* fontSys @ 0x158268 */
+    UiControl    aMenuControls[15];        /* the static block at 0xAD4F0 */
+    void       (*apfnMenuClick[15])(void); /* the handlers installed at +0xC (0..3 and 8..14) */
+    void       (*pfnEmptyClick)(void);     /* the standalone control's EmptyBtn_OnClick thunk */
+    UiControl   *pStartCtl;                /* MainMenu_pStartCtl @ 0x1571B4, caller-owned */
+    u8         **ppBgGlyph;                /* MainMenu_pBgGlyph @ 0x1568D8 */
+    u8         **ppEmptyBtnPad;            /* 0x1568EC */
+    i32         *anRowKeys;                /* MainMenu_anRowKeys @ 0x1568F0, 7 */
+    u8          *abRowDisabled;            /* MainMenu_abRowDisabled @ 0x156AB0, 7 */
+    i32         *anRowKeySrc;              /* unk_1571C8..0x1571E0, 7 dwords */
+    i32         *pnListMode;               /* MainMenu_nListMode @ 0x157188 */
+    i32         *pnUiScreen;               /* Map_nUiScreen @ Map+0x3A */
+    const PufoOptions *pOptions;           /* the option block the two volume calls read */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser); /* UiControl_Setup's pad loader */
+    void *pPadUser;
+} GameUiStartupEnv;
+
+void GameUI_InitStartup(GameUiStartupEnv *pEnv);
+
+/* PocketUFO_WndProc (0xa0944, not ported) fragment at 0xA0AC8, the WM_TIMER 0xC352 branch for
+ * screen 0x11: the start-menu row flicker. Per row: when the row's key source is armed the key is 32*acc-1, where acc is the
+ * anim phase plus one random roll while the phase is under 4 (0xA0AEC re-seeds the accumulator
+ * from the phase every row, so it never carries between rows -- the global is write-only
+ * residue); when the source is 0 the key is a steady 200. Then a 1-in-400 roll either clears
+ * this row's source (a further 5% chance, armed rows only) or zeroes every source and re-arms
+ * only this row. nAnimPhase is the 0xC352 counter (unk_1139EF, incremented and wrapped 0..6 by
+ * the shell's timer branch at 0xA0978). */
+void MainMenu_TickRowKeys(i32 *anRowKeys, i32 *anRowKeySrc, i32 nAnimPhase, i32 *pnAccum);
 
 #endif /* PUFO_MAINMENU_H */

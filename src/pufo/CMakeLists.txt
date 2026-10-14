@@ -714,4 +714,5 @@ target_link_libraries(pocketufo PRIVATE
     pufo_render
     pufo_game
     pufo_audio
+    pufo_ui
 )

@@ -17,8 +17,8 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 694 / 1103 (62.9%) |
-| Bytes of original code cited | 273820 / 598792 (45.7%) |
+| Functions cited as evidence | 696 / 1103 (63.1%) |
+| Bytes of original code cited | 275016 / 598792 (45.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 53 |
 | Test checks run | 7522 |
@@ -33,7 +33,7 @@ the per-subsystem notes and the tests listed at the end.
 | Subsystem | Recreated | Total | Bytes covered | What it is |
 |---|---|---|---|---|
 | `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
-| `boot-assets` | 3 | 4 | 1892 / 2744 | startup asset load, text-table extraction, shutdown |
+| `boot-assets` | 4 | 4 | 2744 / 2744 | startup asset load, text-table extraction, shutdown |
 | `render` | 48 | 51 | 10324 / 11108 | software surface, blitters, palette loading |
 | `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
 | `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
@@ -42,7 +42,7 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
 | `tact` | 189 | 214 | 118268 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 69 | 85 | 15108 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 120 | 205 | 38736 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 110 | 243 | 8704 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 8 | 13 | 3548 / 4444 | intro/outro animated scenes |
@@ -74,11 +74,12 @@ is the module that answers to it.
 | `0x9f95c` | `AssetReader_Found` | 8 | `src/pufo/asset/pufo_asset.h` |
 | `0x9f964` | `AssetReader_Size` | 8 | `src/pufo/asset/pufo_asset.h` |
 
-### `boot-assets` (3 functions)
+### `boot-assets` (4 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
+| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` |
 | `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/ui/pufo_menubtn.c`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
@@ -101,25 +102,25 @@ is the module that answers to it.
 | `0xa4630` | `SoftSurf_SamplePixel` | 364 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9ea7c` | `GX_PresentFrame` | 308 | `src/pufo/app/pufo_app.c`, `src/pufo/platform/pufo_gx.c` (+2) |
 | `0x3e47c` | `Palette_Load` | 288 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0xa41d4` | `SoftSurf_BlitGlyph_Inner` | 268 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` |
+| `0xa41d4` | `SoftSurf_BlitGlyph_Inner` | 268 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_font.c` (+1) |
 | `0x9e5c8` | `SoftSurf_DrawBorderAndBlur` | 220 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x9f9a4` | `SoftSurf_AllocPixels` | 216 | `src/pufo/render/pufo_render.h` |
 | `0xa2000` | `SoftSurf_BlurPixels` | 116 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0xa39ac` | `Blit_SetTargetParams` | 104 | `src/pufo/render/pufo_render.h` |
+| `0xa39ac` | `Blit_SetTargetParams` | 104 | `src/pufo/app/pufo_app.c`, `src/pufo/render/pufo_render.h` |
 | `0x9ebf8` | `SoftSurf_BlitSrcRect` | 80 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9ea34` | `SoftSurf_BlitIndexedKeyed` | 72 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9ebb0` | `SoftSurf_BlitRect` | 72 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3964` | `Blit_LoadSurface` | 72 | `src/pufo/render/pufo_render.h` |
 | `0x9fbbc` | `SoftSurf_FillRectEx` | 68 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fc70` | `SoftSurf_BlitSrcRectEx` | 68 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x9e9f4` | `SoftSurf_BlitIndexed` | 64 | `src/pufo/render/pufo_render.h` |
+| `0x9e9f4` | `SoftSurf_BlitIndexed` | 64 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fc30` | `SoftSurf_BlitRectEx` | 64 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x2dce4` | `SoftSurf_BlitRectProxy` | 60 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fb44` | `SoftSurf_BlitEx` | 60 | `src/pufo/render/pufo_render.h` |
 | `0x9fb80` | `SoftSurf_BlitFlipEx` | 60 | `src/pufo/render/pufo_render.h` |
 | `0x9e558` | `SoftSurf_Blit` | 56 | `src/pufo/render/pufo_render.h` |
 | `0x9e590` | `SoftSurf_BlitFlip` | 56 | `src/pufo/render/pufo_render.h` |
-| `0x9faa4` | `Render_SetTarget` | 56 | `src/pufo/render/pufo_render.h` |
+| `0x9faa4` | `Render_SetTarget` | 56 | `src/pufo/app/pufo_app.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fb0c` | `SoftSurf_BlitIndexedKeyedEx` | 56 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3f5c` | `Blit_SetRectAndColor` | 56 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x9fadc` | `SoftSurf_BlitIndexedEx` | 48 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
@@ -485,7 +486,7 @@ is the module that answers to it.
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (68 functions)
+### `ui-core` (69 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -502,6 +503,7 @@ is the module that answers to it.
 | `0x3ed44` | `UiScrollList_TrackHold` | 412 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.c` (+1) |
 | `0x3e730` | `UiPanel_ctor` | 408 | `src/pufo/ui/pufo_panel.h` |
 | `0x46480` | `Font_BuildIndex` | 384 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+1) |
+| `0x1a604` | `UiControl_LoadPads` | 344 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_control.c` (+1) |
 | `0x3eee0` | `UiScrollList_ClickRow` | 300 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -517,7 +519,7 @@ is the module that answers to it.
 | `0x1a2c8` | `UiControl_FreePads` | 120 | `src/pufo/game/pufo_tactend.h`, `src/pufo/ui/pufo_control.h` |
 | `0x5a3dc` | `UiPanel_RemoveLine` | 116 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 | `0x15670` | `UiScreen_OnBack` | 112 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
-| `0x9ec48` | `Font_BlitGlyphToSoft` | 112 | `src/pufo/game/pufo_font.h` |
+| `0x9ec48` | `Font_BlitGlyphToSoft` | 112 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
 | `0x19948` | `Ui_ToggleMusicMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x199ac` | `Ui_ToggleSfxMute` | 100 | `src/pufo/game/pufo_menu.h` |
 | `0x159ec` | `UiScreen_DismissHigh` | 92 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_menubtn.h` |
@@ -824,12 +826,6 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `boot-assets` — 1 functions, 852 bytes remaining
-
-| Address | Original | Size | Note |
-|---|---|---|---|
-| `0x38a28` | `GameUI_InitStartup` | 852 | not yet ported; scheduled with the `boot-assets` subsystem work |
-
 ### `render` — 3 functions, 784 bytes remaining
 
 | Address | Original | Size | Note |
@@ -1032,7 +1028,7 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 17 functions, 23604 bytes remaining
+### `ui-core` — 16 functions, 23260 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1044,7 +1040,6 @@ whose port work they belong to.
 | `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9955c` | `Ui_InitTransfer` | 392 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x1a604` | `UiControl_LoadPads` | 344 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84bf8` | `Ui_OpenResearch` | 288 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -1371,7 +1366,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 245 citations.
+parity report. Total: 253 citations.
 
 ### Offsets below the image base (37)
 
@@ -1380,7 +1375,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (208)
+### At or above the image base (216)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1396,6 +1391,7 @@ against the IDB when the final report is assembled.
 - `0x1139a8`
 - `0x1139b8`
 - `0x113a00`
+- `0x1183f4`
 - `0x118864`
 - `0x118868`
 - `0x128a44`
@@ -1461,11 +1457,16 @@ against the IDB when the final report is assembled.
 - `0x15338`
 - `0x15674`
 - `0x1568d0`
+- `0x1568d8`
+- `0x1568f0`
 - `0x156a54`
 - `0x156a7c`
+- `0x156ab0`
 - `0x156ab8`
+- `0x157188`
 - `0x157190`
 - `0x157198`
+- `0x1571b4`
 - `0x1571b8`
 - `0x157204`
 - `0x157b0`
@@ -1525,6 +1526,7 @@ against the IDB when the final report is assembled.
 - `0x8bbf8`
 - `0x94964`
 - `0x9e27c`
+- `0xa0944`
 - `0xa3028`
 - `0xa302c`
 - `0xa3030`
@@ -1566,6 +1568,7 @@ against the IDB when the final report is assembled.
 - `0xa7b80`
 - `0xa7be0`
 - `0xa7be8`
+- `0xa7cf8`
 - `0xa7ed8`
 - `0xa8138`
 - `0xa8dd8`

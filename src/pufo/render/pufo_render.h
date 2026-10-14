@@ -52,6 +52,10 @@
 
 extern u32 g_aPalette[PUFO_PAL_SLOTS][PUFO_PAL_SIZE];
 
+/* unk_1183F4 @ 0x1183f4: palette slot base added to the glyph palette index by
+ * Font_BlitGlyphToSoft @ 0x9ec48 only. 0 at startup; Render_Frame's default branch sets 34. */
+extern i32 g_nGlyphPalSlotBase;
+
 /* Pixel modes seen in the code. 2 is the surface the game renders into
  * (16bpp RGB565); 3 is 24bpp, used only for direct-to-framebuffer panels. */
 typedef enum PixelMode {

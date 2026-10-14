@@ -192,9 +192,13 @@ typedef struct UiControlDesc {
     u8          nMode;
 } UiControlDesc;
 
+/* UiControl_LoadPads @ 0x1a604: free the three pad slots, then load each non-empty descriptor
+ * name into a fresh PadImage in mode 1. The mode is fixed at 1 here, not the control's mode. */
+void UiControl_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2);
+
 /* UiControl_Setup @ 0x1a75c.
  *
- * Loads the three pads (through UiControl_LoadPads (0x1a604), not ported) and then positions the
+ * Loads the three pads (through UiControl_LoadPads below) and then positions the
  * control at `base + desc offset` in the description's mode. The pad loading is
  * injected because it reads the asset archives. */
 void UiControl_Setup(UiControl *pCtl, i16 xBase, i16 yBase, const UiControlDesc *pDesc,

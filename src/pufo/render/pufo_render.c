@@ -21,6 +21,14 @@ SoftSurf *g_pMainSurface;
  * slot any caller passes is 0x3F, so 64 slots is what that requires. */
 u32 g_aPalette[PUFO_PAL_SLOTS][PUFO_PAL_SIZE];
 
+/* unk_1183F4 @ 0x1183f4 (Map + 0x4A3C): the palette slot base that
+ * Font_BlitGlyphToSoft @ 0x9ec48 adds to the glyph palette index
+ * (`0x1472D0 + 256 * (unk_1183F4 + nPal)`). Render_Frame's default branch writes 34 and
+ * Geoscape_InitUI writes per screen; it is 0 at startup, which is why the start-menu text
+ * draws from the still-empty slot 0 (black glyphs). Only the font path adds this base --
+ * SoftSurf_BlitIndexed @ 0x9e9f4 uses its slot argument directly. */
+i32 g_nGlyphPalSlotBase;
+
 /* gxDisp.ffFormat @ 0x188398+0x14. The Win64 target is RGB565. */
 u32 g_ffFormat = PUFO_FF_565;
 

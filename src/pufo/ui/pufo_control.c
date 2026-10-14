@@ -4,7 +4,9 @@
  */
 #include "ui/pufo_control.h"
 
+#include <stdlib.h>  /* malloc/free, the pad allocations of UiControl_LoadPads */
 #include <string.h>
+#include "render/pufo_render.h" /* PadImage_ctor / FreeData / Load */
 
 void UiControl_ctor(UiControl *pCtl)
 {
@@ -212,6 +214,39 @@ void UiControl_SetPosMode(UiControl *pCtl, i16 x, i16 y, u8 nMode)
     }
     pCtl->nMode  = nMode;
     pCtl->nState = 0;
+}
+
+/* UiControl_LoadPads @ 0x1a604. Free whatever the three pad slots hold, null them, then load
+ * each non-empty descriptor name into a fresh PadImage in mode 1 (the mode is fixed at 1 here,
+ * not the control's mode). Deviation: the original runs PadImage_Load on the allocation even
+ * when operator new returned null; the port skips the load when the pad is NULL. The original
+ * returns the third strcmp's value; no caller uses it, so the port returns void. */
+void UiControl_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2)
+{
+    const char *const apsz[3] = { psz0, psz1, psz2 };
+
+    if (pCtl == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < PUFO_CONTROL_PADS; ++i) { /* 0x1A60C..0x1A698 */
+        if (pCtl->apPads[i] != NULL) {
+            PadImage_FreeData(pCtl->apPads[i]);
+            free(pCtl->apPads[i]);
+            pCtl->apPads[i] = NULL;
+        }
+    }
+    for (i32 i = 0; i < PUFO_CONTROL_PADS; ++i) { /* 0x1A6A4..0x1A754 */
+        if (strcmp(apsz[i], "") != 0) {
+            PadImage *pPad = (PadImage *)malloc(sizeof(PadImage));
+            if (pPad != NULL) {
+                PadImage_ctor(pPad);
+            }
+            pCtl->apPads[i] = pPad;
+            if (pPad != NULL) {
+                (void)PadImage_Load(pPad, apsz[i], 1);
+            }
+        }
+    }
 }
 
 void UiControl_Setup(UiControl *pCtl, i16 xBase, i16 yBase, const UiControlDesc *pDesc,

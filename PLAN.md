@@ -374,6 +374,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   apLines offset leaking through R4, not a column header. One ledger row added (83 total): the
   progress division tests only the numerator (0x73184). IDB: function comments at 0x72c8c/0x73008
   and the record layout at 0x15EF08.
+- [x] The start-menu render pipeline runs end to end on Win64 — `GameUI_InitStartup (0x38a28, 852 B)`
+  and `UiControl_LoadPads (0x1a604, 344 B)` ported (`pufo_mainmenu.c`, `pufo_control.c`), plus the
+  WndProc 0xC352 screen-11 fragment ported as `MainMenu_TickRowKeys`. The shell reaches the
+  screen-17 branch of `Render_Frame (0x22310, dispatcher still unported)` and the first visual
+  result is confirmed through a `--dump-frame` PPM dump: backdrop, four teal rows with black
+  Cyrillic labels, SMK logo. Three font-path facts came out of it: glyph run byte 0 is
+  **transparency** (ARM 0xa4288 gates the write on `*v5 != 0` — the port wrote it as a real pixel);
+  `Font_BlitGlyphToSoft @ 0x9ec48` picks the palette as slot `Map_nGlyphPalBase + nPal`
+  (renamed from unk_1183F4; 0 at startup, which is why menu text is black); and `GX_PresentFrame
+  @ 0x9ea7c` arms the blit target through `Render_SetTarget` — without that call `blitState+0x20`
+  stays 0 and no glyph ever draws, so the shell now calls it in `App_PresentLoadedSurface`. IDB:
+  comments at 0x38a28/0x1a604/0x9ec48/0xa41d4/0xa0ac8/0x1183f4, rename unk_1183F4 →
+  Map_nGlyphPalBase.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -476,6 +489,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | craft-select leaves (`Smap_DismissSelected`, `Smap_InitCraftSelectState`, `EndScreen_Init`) | 53/53 (Release) | 7452 | 690/1103 (62.6%) | 270672/598792 (45.2%) | 37 checked, 0 mismatched |
 | `Smap_BeginCraftSelect` + `Smap_BeginCraftSelectBtn` | 53/53 (Release) | 7498 | 692/1103 (62.7%) | 273116/598792 (45.6%) | 37 checked, 0 mismatched |
 | `Research_TopicNeedsItem` + `ResearchScreen_RefreshPanels` | 53/53 (Release) | 7522 | 694/1103 (62.9%) | 273820/598792 (45.7%) | 37 checked, 0 mismatched |
+| start menu pipeline (`GameUI_InitStartup`, `UiControl_LoadPads`) | 53/53 (Release) | 7522 | 696/1103 (63.1%) | 275016/598792 (45.9%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

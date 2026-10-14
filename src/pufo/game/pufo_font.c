@@ -377,9 +377,10 @@ void Font_BlitGlyph(const u8 *pGlyph, i32 x, i32 y, const u32 *pPal)
             nPenX = (i32)nNewX + x;
             continue;
         }
-        /* Any other byte draws a palette entry (0 draws index 0, which the
-         * original treats as a real pixel, not as transparency). */
-        if (nPenX >= 0 && nPenY >= 0 && nPenX < nSurf0 && nPenY < nSurf1) {
+        /* Any other byte is a palette entry -- except 0. The ARM at 0xa4288 tests
+         * `*v5 != 0` and writes only when it is non-zero, so index 0 is transparency:
+         * the pen advances and the pixel is left alone. */
+        if (nRun != 0 && nPenX >= 0 && nPenY >= 0 && nPenX < nSurf0 && nPenY < nSurf1) {
             u16 *pDst = (u16 *)((u8 *)g_blitState.pSrc
                                 + 2 * (nSurf0 * nPenY + nPenX));
 
@@ -402,8 +403,10 @@ void Font_DrawGlyph(i32 x, i32 y, u16 nIdx, i32 nPal)
     }
     pGlyph = g_fontSys.apSprIndex[nIdx];
     Blit_LoadSurface(g_pMainSurface);
+    /* Font_BlitGlyphToSoft @ 0x9ec48 picks the palette as slot (unk_1183F4 + nPal) -- the
+     * glyph base the shell's Render_Frame step will maintain. At startup it is 0. */
     Font_BlitGlyph(pGlyph, x, y,
-                   g_aPalette[(nPal + 0) & (PUFO_PAL_SLOTS - 1)]);
+                   g_aPalette[(g_nGlyphPalSlotBase + nPal) & (PUFO_PAL_SLOTS - 1)]);
 }
 
 void Font_DrawGlyph_IndexedOffset(i32 x, i32 y, const Mc1Rec *pTbl, u8 nIdx, i32 nPal)

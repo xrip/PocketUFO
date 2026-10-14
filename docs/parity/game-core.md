@@ -127,6 +127,7 @@ u8 nStartX
 then one byte at a time:
   0xFF  end of glyph
   0xFE  end of row; the NEXT byte is the new nStartX
+  0     transparency: advance x, leave the pixel alone (ARM 0xa4288 gates the write on `*v5 != 0`)
   else  draw palette index = byte, advance x
 ```
 
@@ -266,7 +267,7 @@ ILP32 offsets and drops the size assert rather than forcing misleading packing.
 | `.spr` header parses; first offset `== 2 + 256*2` | assert 514 |
 | RLE decode matches the independently decoded glyph | 6 assertions on `'A'` |
 | `0xFE` starts a row at a **literal** x, not a delta | blit positions asserted |
-| Index 0 is a real pixel, not transparency | asserted |
+| Index 0 is **transparency** (ARM 0xa4288 `*v5 != 0` gates the write) | asserted |
 | Off-surface glyphs are a no-op | asserted |
 | Advance table from `fontsize.dat` | `advance[0]==0`, `[space]==3`, `['A']==9` |
 
@@ -7136,6 +7137,50 @@ Ten globals named this step: `MainMenu_nListMode`, `MainMenu_pBgGlyph` (0x1568D8
 `GameUI_InitStartup` allocates and `StartUi_Shutdown` frees as `pBlockA`), `MainMenu_anRowKeys`,
 `MainMenu_abRowDisabled`, `MainMenu_pStartCtl` (0x1571B4, the standalone control), `MainMenu_pSlotCtx`,
 `anActionPhaseSave0_112`, `aTextRec1076/1080/1083` and `pszGameVersion`.
+
+### `GameUI_InitStartup @ 0x38a28` — the start menu before the first frame
+
+Ported in `src/pufo/game/pufo_mainmenu.c` behind `GameUiStartupEnv`, together with
+`UiControl_LoadPads @ 0x1a604` (`pufo_control.c`: free the three pad slots, then load each
+non-empty descriptor name as a `PadImage` in mode 1 — the mode is fixed 1, not the control's
+mode). The order is the original's own: reader clear, `Font_Init`, eleven click handlers into
+controls 0..3 and 8..14 (4..7 keep the static block's values), fifteen `UiControl_Setup` calls
+from the `a2s` descriptors at 0xA7CF8 (xOff 50; yOff 115/137/159/181 for rows 0..3 and 65..197
+step 22 for the seven slot rows; all pad names empty; mode 2) with 140x18 extents,
+`startg.pal` into slot 20 and `menu.pal` into slot 1, `startg.pad` into `MainMenu_pBgGlyph` and
+`emptyb.pad` into 0x1568EC, glyph base set to the running frame count **before**
+`Font_LoadSpr("font")`, `Font_BuildIndex`, zero the seven row keys / disabled bytes / key
+sources, build the standalone control (desc "V", y 230, pads emptyb1/cemptyb1/empty, click
+`EmptyBtn_OnClick`), list mode 0, **`Map_nUiScreen = 17`** — `Render_Frame`'s `MainMenu_Draw`
+branch — then the "tact" samples, music track 0, both volumes and `StartTimers_B`.
+
+**The row flicker** is a `PocketUFO_WndProc` fragment at 0xA0AC8 inside the WM_TIMER 0xC352
+branch (screen 0x11), ported as `MainMenu_TickRowKeys`: armed rows get key `32*acc-1` (acc is
+the anim phase, plus one `Game_RandU16(8-phase)` roll while the phase is under 4; 0xA0AEC
+re-seeds the accumulator from the phase every row, so the global at 0x161A38 is write-only
+residue), unarmed rows a steady 200; then a 1-in-400 roll either clears this row's source (a
+further 5% chance, armed rows only) or zeroes every source and re-arms only this row.
+
+**Three font-path facts the first rendered frame exposed:**
+
+1. `Font_BlitGlyphToSoft @ 0x9ec48` picks the glyph palette as slot `Map_nGlyphPalBase + nPal`
+   (renamed from unk_1183F4; `nPal` clamped to 19 first). It is 0 at startup — only
+   `Render_Frame`'s default branch (34) and `Geoscape_InitUI` write it — so the start-menu text
+   draws from the still-empty palette slot 0: **black glyphs**. The cyan pair that
+   `MainMenu_Draw` computes per row goes to `Gfx_PackRgb565Pair` (the row-frame blend colours),
+   not to the glyph palette.
+2. Glyph run byte 0 is **transparency**: the ARM at 0xa4288 gates the pixel write on `*v5 != 0`;
+   the pen advances regardless. The port previously wrote index 0 as a real pixel.
+3. `GX_PresentFrame @ 0x9ea7c` arms the blit target through `Render_SetTarget(240,320,2,
+   pitchX,pitchY,framebuffer)` → `Blit_SetTargetParams` writes `blitState+0x20`. That field is
+   what `SoftSurf_BlitGlyph_Inner @ 0xa41d4` gates every glyph draw on (`nPixelMode != 0`), so
+   without the call no text ever appears. The Win64 shell calls `Render_SetTarget` in
+   `App_PresentLoadedSurface` for the same reason.
+
+**Visual verification:** `pocketufo --dump-frame <path>` runs `GameUI_InitStartup`, 40 anim
+ticks, one `MainMenu_Draw` frame, writes the 240x320 RGB565 surface as a P6 PPM, and exits. The
+dump shows the backdrop, the four teal rows with black Cyrillic labels (lang.dat text records
+1076..1079) and the SMK logo — the start menu as the original draws it.
 
 ### `Tact_DrawCommandPads @ 0x1fc8c` — the screen-4 status panel
 

@@ -149,7 +149,9 @@ u16 Spr_ParseHeader(const u8 *pSpr, u32 cbSpr, u16 *pOutOffsets, u16 nOutCap);
 i32  Text_MeasureWidth(const char *psz);
 void Text_DrawString(i32 x, i32 y, const char *psz);
 
-/* Glyph helpers from the original, exposed for the UI layer. */
+/* Glyph helpers from the original, exposed for the UI layer.
+ * Font_DrawGlyph @ 0x4661c tail-calls Font_BlitGlyphToSoft @ 0x9ec48, which clamps nPal to 19
+ * and picks the palette as slot (g_nGlyphPalSlotBase + nPal) -- unk_1183F4 is 0 at startup. */
 void Font_DrawGlyph(i32 x, i32 y, u16 nIdx, i32 nPal);
 /* nIdx is added to pFont->anSprBase[pTbl->nSlot]; see Font_DrawGlyph_IndexedOffset
  * @ 0x46630. */

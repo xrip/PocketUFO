@@ -41,8 +41,8 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 51
-                                             Total Test time (real) = 1.75 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 53
+                                             Total Test time (real) = 1.68 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -56,9 +56,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 694 / 1103 (62.9%)
-                                             bytes cited:     273820 / 598792 (45.7%)
-python docs/parity/audit_credits.py       -> credited functions: 694, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 696 / 1103 (63.1%)
+                                             bytes cited:     275016 / 598792 (45.9%)
+python docs/parity/audit_credits.py       -> credited functions: 696, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 83, ORIGINAL BUG markers in src/pufo: 26
@@ -72,6 +72,10 @@ Launch check, same session:
 build/src/pufo/Release/pocketufo.exe
   -> process alive (PID observed), window created, no crash
   -> prints: pocketufo: assets loaded (lang.dat=..., main.dat=...)
+build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
+  -> runs GameUI_InitStartup + 40 anim ticks + one MainMenu_Draw frame, writes the 240x320
+     RGB565 surface as a P6 PPM, and exits (exit=0). The dump shows the start menu: backdrop,
+     four teal rows with black Cyrillic labels, SMK logo.
 ```
 
 Test checks run across the 53 suites: **7522**.
