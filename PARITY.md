@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 692 / 1103 (62.7%) |
-| Bytes of original code cited | 273116 / 598792 (45.6%) |
+| Functions cited as evidence | 694 / 1103 (62.9%) |
+| Bytes of original code cited | 273820 / 598792 (45.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 53 |
-| Test checks run | 7498 |
+| Test checks run | 7522 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 120 | 205 | 38736 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 108 | 243 | 8000 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 110 | 243 | 8704 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 8 | 13 | 3548 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -683,16 +683,18 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (108 functions)
+### `strat-ui` (110 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x79748` | `BasePlaneScreen_ApplyWeaponSwap` | 728 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x73008` | `ResearchScreen_RefreshPanels` | 568 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x114d8` | `Options_SaveToRegistry` | 488 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_options.c` (+2) |
 | `0x188e4` | `Options_SyncUiFromMap_GotoScreen12` | 352 | `src/pufo/game/pufo_menu.h`, `src/pufo/render/pufo_render.h` |
 | `0x217e0` | `Menu_DrawLabeledPads` | 296 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x63208` | `SoldierScreen_AppendNameGlyph` | 196 | `src/pufo/game/pufo_soldiername.h` |
 | `0x7de14` | `BasePlaneScreen_AddInterceptMission` | 168 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` (+1) |
+| `0x72c8c` | `Research_TopicNeedsItem` | 136 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x6318c` | `SoldierScreen_CopyNameToEdit` | 124 | `src/pufo/game/pufo_soldiername.h` |
 | `0x18e2c` | `Menu_ConfirmQuitDialog` | 112 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.h` |
 | `0x19070` | `MenuBtn_SetGamma0` | 96 | `src/pufo/game/pufo_menu.h`, `src/pufo/ui/pufo_menubtn.c` (+1) |
@@ -1142,7 +1144,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
 
-### `strat-ui` — 135 functions, 109008 bytes remaining
+### `strat-ui` — 133 functions, 108304 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1191,7 +1193,6 @@ whose port work they belong to.
 | `0x7a188` | `BasePlaneScreen_FillCrewPanel` | 620 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x9602c` | `Transfer_MoveOneItem` | 604 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x749a8` | `ResearchScreen_Init` | 592 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x73008` | `ResearchScreen_RefreshPanels` | 568 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e13c` | `ManufScreen_IncEngineers` | 500 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x70ebc` | `ManufScreen_RefreshBaseTabs` | 500 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x710b0` | `ManufScreen_Init` | 488 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1231,7 +1232,6 @@ whose port work they belong to.
 | `0x6b8fc` | `OptionsScreen_RefreshVolumeHighlight` | 152 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x74914` | `ResearchScreen_AccumulateAllocated` | 148 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x72f70` | `ResearchScreen_DecSelectedQty` | 140 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x72c8c` | `Research_TopicNeedsItem` | 136 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6152c` | `NewBaseScreen_TryConfirm` | 132 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6192c` | `SoldierScreen_FindNextAtBase` | 124 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e914` | `ManufScreen_SelectListed` | 120 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1300,7 +1300,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 162 |
+| `test_baseui` | PASS | 186 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

@@ -1,6 +1,8 @@
 /* pufo_baseui.c - see pufo_baseui.h for evidence. */
 #include "game/pufo_baseui.h"
 #include <stdlib.h>  /* atexit, for StrategList_RegisterAtexit @ 0x838a0 */
+#include <stdio.h>   /* snprintf, the bounded stand-in for the original's j_itoa */
+#include "util/pufo_str.h" /* pufo_strcpy/pufo_strcat, the line writes of ResearchScreen_RefreshPanels */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
@@ -386,6 +388,77 @@ void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird
     if (pThird != NULL) {
         UiPanel_ScrollNext(pThird); /* 0x72E8C */
     }
+}
+
+/* Research_TopicNeedsItem @ 0x72c8c. The gate is two ARM bands, not the boolean the
+ * pseudocode reconstructed: 0x72C9C branches on <=54 into the 117/143 test, so a topic at or
+ * below 54 answers 0; 55..65 fall through to the body; 66..117 reach the same test and answer
+ * 0; 118..142 reach the body; >=143 answers 0. 135 and 140 are excluded first, at 0x72C8C and
+ * 0x72C94. The body reads the item id from the in-memory record at +14 and answers whether the
+ * object's per-base count at the selected base is above zero (LDRH/CMP/BHI at 0x72D00). */
+i32 Research_TopicNeedsItem(const ResearchTopicLive *aTopics,
+                            ObjectRecFull *const *apObjects, i32 nTopic, i8 nBaseIdx)
+{
+    if (nTopic == 135 || nTopic == 140) { /* 0x72C8C, 0x72C94 */
+        return 0;
+    }
+    if (!(nTopic > 54 && nTopic < 66) && !(nTopic > 117 && nTopic < 143)) {
+        return 0; /* 0x72C9C..0x72CB8 */
+    }
+    const ObjectRecFull *pItem = apObjects[aTopics[nTopic].nItemId]; /* 0x72CD4, 0x72CEC */
+    return pItem->auPerBaseVal[nBaseIdx] != 0 ? 1 : 0; /* 0x72CF4..0x72D04 */
+}
+
+/* ResearchScreen_RefreshPanels @ 0x73008. Both passes walk topics 1..count-1 (the walk starts
+ * at 0x15EF2A, one record past the table base), and only bActive topics take a line. The
+ * quantity entry index is the topic number itself: the ARM composes 0x15EF08 + 4900 + 288*base
+ * + 2*topic (MUL #0x90, ADD topic, LSL #1 at 0x730C0..0x730E4) — the "+4" Hex-Rays showed is
+ * the 0xBE4 apLines offset leaking through register R4, not a column header. */
+i32 ResearchScreen_RefreshPanels(const ResearchTopicLive *aTopics, i32 nTopicCount,
+                                 const u16 *apResearchQty, UiPanel *pPanelCount,
+                                 UiPanel *pPanelQty, UiPanel *pPanelProgress)
+{
+    i32 nActive = 0; /* 0x73014 */
+    if (nTopicCount > 1) { /* 0x73028 */
+        for (i32 nTopic = 1; nTopic < nTopicCount; ++nTopic) {
+            if (aTopics[nTopic].bActive == 1) { /* 0x73034, 0x73044 */
+                ++nActive;
+            }
+        }
+    }
+
+    if (pPanelCount != NULL)    { pPanelCount->nLineCount    = nActive; } /* 0x73070 */
+    if (pPanelQty != NULL)      { pPanelQty->nLineCount      = nActive; } /* 0x7307C */
+    if (pPanelProgress != NULL) { pPanelProgress->nLineCount = nActive; } /* 0x73084 */
+
+    if (nTopicCount > 1) { /* 0x7309C */
+        i32 nLine = 0; /* R5 counts line bytes, /4 here */
+        for (i32 nTopic = 1; nTopic < nTopicCount; ++nTopic) { /* 0x73228..0x73234 */
+            if (aTopics[nTopic].bActive != 1) { /* 0x730B8 */
+                continue;
+            }
+            char szNum[16];
+            const u16 wQty = apResearchQty[nTopic]; /* 0x730E8 */
+            if (wQty != 0) { /* 0x730EC */
+                (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)wQty); /* j_itoa, 0x730F8 */
+            } else {
+                szNum[0] = '\0'; /* the empty string at 0x10DA38, 0x7313C */
+            }
+            pufo_strcpy((char *)pPanelQty->apLines[nLine], szNum); /* the LDRSB/STRB copy at 0x73108 */
+
+            if (aTopics[nTopic].wProgress != 0 && aTopics[nTopic].wTotal != 0) { /* 0x73160 */
+                const i32 nPct = (100 * (i32)aTopics[nTopic].wProgress) / (i32)aTopics[nTopic].wTotal;
+                (void)snprintf(szNum, sizeof(szNum), "%d", nPct); /* rt_sdiv 0x73184, itoa 0x73198 */
+                pufo_strcpy((char *)pPanelProgress->apLines[nLine], szNum);
+                (void)pufo_strcat((char *)pPanelProgress->apLines[nLine], "%",
+                                  PUFO_PANEL_LINE_BYTES); /* 0x731D0 */
+            } else {
+                *(char *)pPanelProgress->apLines[nLine] = '\0'; /* 0x731EC: the empty string */
+            }
+            ++nLine; /* 0x7321C */
+        }
+    }
+    return nTopicCount; /* 0x73218, 0x73238 */
 }
 
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the

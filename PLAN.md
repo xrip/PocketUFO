@@ -364,6 +364,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `apBases[base]->bUnk4` dereference. IDB: call edges from 0x838dc verified against
   `Smap_InitCraftSelectState`, `Base_CountSoldiersAssigned`, `Base_CalcOccupiedSpace`,
   `Base_DemolishFacility`, `UiPanel_AppendLineWithSound` (port name recorded in renames.tsv).
+- [x] The first two pieces of the research screen chain — `Research_TopicNeedsItem (0x72c8c, 136 B)`
+  and `ResearchScreen_RefreshPanels (0x73008, 568 B)` — ported in `pufo_baseui.c`, 24 new checks in
+  `tests/test_baseui.c`. This opened the in-memory research topic table (144 × 34 bytes at
+  0x15EF08, `ResearchTopicLive`): +4 fire gate, +8 progress total, +10 progress value, +12
+  active-on-list flag, +13 menu gate, +14 required item id. ARM corrected two Hex-Rays artifacts:
+  the topic gate is two bands (55..65, 118..142 minus 135/140), not the reconstructed boolean; and
+  the research quantity entry is `column + 2*topic` — the "+4" the pseudocode showed is the 0xBE4
+  apLines offset leaking through R4, not a column header. One ledger row added (83 total): the
+  progress division tests only the numerator (0x73184). IDB: function comments at 0x72c8c/0x73008
+  and the record layout at 0x15EF08.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:
@@ -465,6 +475,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | `Base_CreateNamedEntry` | 53/53 (Release) | 7410 | 687/1103 (62.3%) | 270004/598792 (45.1%) | 37 checked, 0 mismatched |
 | craft-select leaves (`Smap_DismissSelected`, `Smap_InitCraftSelectState`, `EndScreen_Init`) | 53/53 (Release) | 7452 | 690/1103 (62.6%) | 270672/598792 (45.2%) | 37 checked, 0 mismatched |
 | `Smap_BeginCraftSelect` + `Smap_BeginCraftSelectBtn` | 53/53 (Release) | 7498 | 692/1103 (62.7%) | 273116/598792 (45.6%) | 37 checked, 0 mismatched |
+| `Research_TopicNeedsItem` + `ResearchScreen_RefreshPanels` | 53/53 (Release) | 7522 | 694/1103 (62.9%) | 273820/598792 (45.7%) | 37 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

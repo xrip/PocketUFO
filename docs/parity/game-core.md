@@ -2794,6 +2794,40 @@ unchecked in the original. IDB: call edges from 0x838dc verified against `Smap_I
 `Base_DemolishFacility` (0x84208) and `UiPanel_AppendLineWithSound` (0x84158, port name
 `UiLineList_AppendWithSound` recorded in renames.tsv).
 
+### The research screen chain, first pieces (done)
+
+`Research_TopicNeedsItem @ 0x72c8c` (136 B) and `ResearchScreen_RefreshPanels @ 0x73008` (568 B),
+ported in `pufo_baseui.c` with 24 checks in `tests/test_baseui.c`. They open the **in-memory**
+research topic table — 144 records of 34 bytes at `0x15EF08` (`MUL R3, R0, #34` at 0x72CC8), which
+is NOT the on-disk field order `pufo_save.h` writes. The fields the original itself names:
+
+| offset | field | evidence |
+|---|---|---|
+| +4 | u16, the weapon fire gate reads it | `pufo_combat.h` FireGate (`aFacTypeTable[4 + 34*topic]`) |
+| +8 | u16, progress total (divisor) | 0x73174 `LDRH R0,[R9,#8]` |
+| +10 | u16, progress value (numerator) | 0x73160 `LDRH R3,[R9,#0xA]` |
+| +12 | byte, 1 = the topic is on the screen list | 0x73034, 0x730B8 |
+| +13 | byte, the weapon menu gate reads it | `pufo_tactui.h` (0x17078..0x17094) |
+| +14 | u8, the item the topic needs | 0x72CE4 `LDRB R3,[R3,#0xE]` |
+
+`Research_TopicNeedsItem` answers one question — does the topic's item exist at the base being
+shown — and its gate is **two ARM bands**, not the boolean Hex-Rays reconstructed: 0x72C9C branches
+on `<= 54` straight into the 117/143 test, so topics 55..65 and 118..142 need an item (135 and 140
+excluded by name at 0x72C8C/0x72C94) and everything else does not. The lookup is
+`apObjects[item]->auPerBaseVal[nSelectedBaseIdx] > 0`, unguarded on both the index and the pointer.
+
+`ResearchScreen_RefreshPanels` rebuilds the three-panel trio the paging handlers page
+(`unk_160C68` / `unk_15EEFC` / `unk_15EF00`): pass 1 counts topics 1..count-1 with `bActive == 1`
+(topic 0 is never walked — the walk starts at 0x15EF2A) and writes that count into all three
+panels' `nLineCount`; pass 2 writes the quantity column entry and the progress percentage into the
+two text panels. The quantity entry address is `0x15EF08 + 4900 + 288*base + 2*topic` — the ARM
+composes it as `MUL base,#0x90`, `ADD topic`, `LSL #1` (0x730C0..0x730E4), so the entry index is
+the topic number itself; the `+4` Hex-Rays showed is the 0xBE4 `apLines` offset leaking through
+register R4, not a column header. Progress is `100*wProgress/wTotal` (`rt_sdiv` at 0x73184) with
+`%` appended; a zero entry or zero progress gets the empty string at 0x10DA38. Ledger row: the
+original tests only the numerator, so `wProgress != 0 && wTotal == 0` divides by zero — the port
+skips the store (same policy as the craft-class band).
+
 ### The pause byte is one global, not a per-module flag
 
 `GameTime_Pause @ 0x5d6ac` is two instructions: `LOBYTE(gUiRootPanel.apLines[106])

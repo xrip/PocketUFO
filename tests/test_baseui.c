@@ -740,6 +740,88 @@ static void TestAtAndHangarOpeners(void)
     CheckEqI32(g_nOptInitCalls, 1, "and the Init runs once");
 }
 
+static void TestRefreshPanels(void)
+{
+    static ResearchTopicLive g_aTopics[8];
+    static u16 g_aQty[144];
+    static u8 g_aBuf[3][3][50];
+    UiPanel pCount, pQty, pProg;
+    i32 nRet;
+
+    printf("\nResearchScreen_RefreshPanels @ 0x73008\n");
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+    memset(g_aQty, 0, sizeof(g_aQty));
+    memset(g_aBuf, 0, sizeof(g_aBuf));
+    memset(&pCount, 0, sizeof(pCount));
+    memset(&pQty, 0, sizeof(pQty));
+    memset(&pProg, 0, sizeof(pProg));
+
+    /* Five topics. Topic 0 is active but never walked. Topics 1, 3, 4 are active; 2 is not. */
+    g_aTopics[0].bActive = 1;
+    g_aTopics[1].bActive = 1; g_aTopics[1].wProgress = 50; g_aTopics[1].wTotal = 200;
+    g_aTopics[2].bActive = 0;
+    g_aTopics[3].bActive = 1; g_aTopics[3].wProgress = 0;  g_aTopics[3].wTotal = 100;
+    g_aTopics[4].bActive = 1; g_aTopics[4].wProgress = 1;  g_aTopics[4].wTotal = 3;
+    g_aQty[1] = 12; g_aQty[3] = 0; g_aQty[4] = 7;
+
+    for (i32 i = 0; i < 3; ++i) {
+        pCount.apLines[i] = g_aBuf[0][i];
+        pQty.apLines[i]   = g_aBuf[1][i];
+        pProg.apLines[i]  = g_aBuf[2][i];
+    }
+
+    nRet = ResearchScreen_RefreshPanels(g_aTopics, 5, g_aQty, &pCount, &pQty, &pProg);
+    CheckEqI32(nRet, 5, "the return is the topic count");
+    CheckEqI32(pCount.nLineCount, 3, "three active topics set all three line counts");
+    CheckEqI32(pQty.nLineCount, 3, "including the quantity panel");
+    CheckEqI32(pProg.nLineCount, 3, "and the progress panel");
+    Check(strcmp((char *)pQty.apLines[0], "12") == 0, "topic 1's quantity is itoa'd");
+    Check(strcmp((char *)pQty.apLines[1], "") == 0, "a zero quantity gets the empty string");
+    Check(strcmp((char *)pQty.apLines[2], "7") == 0, "and the line index skips the inactive topic");
+    Check(strcmp((char *)pProg.apLines[0], "25%") == 0, "50/200 renders as 25%");
+    Check(strcmp((char *)pProg.apLines[1], "") == 0, "zero progress gets the empty string");
+    Check(strcmp((char *)pProg.apLines[2], "33%") == 0, "1/3 truncates to 33%");
+
+    /* A count of 1 walks nothing: topic 0 alone never reaches the loop. */
+    memset(&pCount, 0, sizeof(pCount));
+    nRet = ResearchScreen_RefreshPanels(g_aTopics, 1, g_aQty, &pCount, NULL, NULL);
+    CheckEqI32(nRet, 1, "count 1 returns 1");
+    CheckEqI32(pCount.nLineCount, 0, "and no topic is walked");
+}
+
+static void TestTopicNeedsItem(void)
+{
+    static ResearchTopicLive g_aTopics[144];
+    static ObjectRecFull g_aObj[1];
+    static ObjectRecFull *g_apObj[256];
+
+    printf("\nResearch_TopicNeedsItem @ 0x72c8c\n");
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+    memset(g_aObj, 0, sizeof(g_aObj));
+    memset(g_apObj, 0, sizeof(g_apObj));
+    /* Every topic in a gate band asks for object 7; the band test is about the topic index,
+     * not the item. Object 7 holds 5 at base 7 and nothing at base 3. */
+    for (i32 i = 0; i < 144; ++i) {
+        g_aTopics[i].nItemId = 7;
+    }
+    g_apObj[7] = &g_aObj[0];
+    g_aObj[0].auPerBaseVal[7] = 5;
+
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 54, 7), 0, "topic 54 is outside the bands");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 55, 7), 1, "topic 55 opens the first band");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 65, 7), 1, "topic 65 closes it");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 66, 7), 0, "topic 66 is out again");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 117, 7), 0, "topic 117 is out");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 118, 7), 1, "topic 118 opens the second band");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 135, 7), 0, "topic 135 is excluded by name");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 140, 7), 0, "and topic 140");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 142, 7), 1, "topic 142 still answers");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 143, 7), 0, "topic 143 is out");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 60, 3), 0,
+               "the count is read at the selected base (base 3 holds nothing)");
+    CheckEqI32(Research_TopicNeedsItem(g_aTopics, g_apObj, 60, 7), 1, "and base 7 holds 5");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -762,6 +844,8 @@ int main(void)
     TestAtexitRegistration();
     TestOptionsSoundWrappers();
     TestAtAndHangarOpeners();
+    TestTopicNeedsItem();
+    TestRefreshPanels();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

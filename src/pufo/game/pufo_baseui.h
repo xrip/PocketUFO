@@ -19,6 +19,7 @@
 #include "ui/pufo_panel.h"   /* UiPanel, the list these handlers page through */
 #include "ui/pufo_control.h" /* UiControl, whose nState these handlers clear */
 #include "util/pufo_ptrarray.h" /* PtrArray, for StrategList_RegisterAtexit */
+#include "game/pufo_objectrec.h" /* ObjectRecFull, for Research_TopicNeedsItem */
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
@@ -260,6 +261,64 @@ i32 Geoscape_OnMapClick_Thunk(const MapClickHooks *pHooks);
  * call is the one the original returns. */
 void ResearchScreen_PanelPrev(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird);
 void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird);
+
+/* Research_TopicNeedsItem @ 0x72c8c: the research screen's per-topic gate. One question:
+ * does this topic's required item exist at the base the screen is showing?
+ *
+ * The gate (ARM 0x72C8C..0x72CB8): topics 55..65 and 118..142 need an item; everything else
+ * does not; 135 and 140 are pulled out of the second range by name.
+ *
+ * The record read is the IN-MEMORY one at 0x15EF08 + 34*topic (MUL R3, R0, #34 at 0x72CC8),
+ * not the on-disk field order pufo_save.h writes. The required item id is the byte at +14
+ * (LDRB R3, [R3,#0xE] at 0x72CE4); the rest of the in-memory layout stays a gap until the
+ * screen chain reads more of it.
+ *
+ * The lookup is apObjects[item]->auPerBaseVal[nSelectedBaseIdx]: LDR [R3,#0x108] at 0x72CEC
+ * picks the pointer out of the Map-block array at 0x1139B8+0x108, LDRH [R3,#0x2A] at 0x72D00
+ * reads the u16. The original tests neither the pointer nor the item index, and reads the base
+ * index as the signed byte at 0x159D81; the port takes both as arguments and reproduces the
+ * unguarded dereference. */
+typedef struct ResearchTopicLive {
+    u8  abUnk0[4];
+    u16 wGate4;   /* +0x4: the weapon fire gate reads it (pufo_combat.h, FireGate evidence) */
+    u16 wUnk6;
+    u16 wTotal;   /* +0x8: the progress divisor, 0x73174 LDRH [R9,#8] */
+    u16 wProgress;/* +0xA: the progress numerator, 0x73160 LDRH [R9,#0xA] */
+    u8  bActive;  /* +0xC: 1 = the topic is on the screen list (0x73034, 0x730B8) */
+    u8  bGate13;  /* +0xD: the weapon menu gate reads it (pufo_tactui.h, 0x17078..0x17094) */
+    u8  nItemId;  /* +0xE: the item this topic needs (0x72CE4) */
+    u8  abUnkF[19];
+} ResearchTopicLive;
+_Static_assert(sizeof(ResearchTopicLive) == 34, "the in-memory topic record is 34 bytes");
+
+i32 Research_TopicNeedsItem(const ResearchTopicLive *aTopics,
+                            ObjectRecFull *const *apObjects, i32 nTopic, i8 nBaseIdx);
+
+/* ResearchScreen_RefreshPanels @ 0x73008: rebuild the three research panels' line counts and
+ * the two text columns, for the base the screen is showing.
+ *
+ * Pass 1 (0x73028..0x7304C): count the topics 1..nTopicCount-1 whose bActive is 1 (topic 0 is
+ * skipped — the walk starts at 0x15EF2A, one record in). That count becomes nLineCount of all
+ * three panels (0x73070/0x7307C/0x73084, the unk_160C68 / unk_15EEFC / unk_15EF00 trio the
+ * paging handlers page).
+ *
+ * Pass 2 (0x730B0..0x73234): walk the same topics; for each active one, line index v6 advances
+ * by one. The quantity column entry is u16 at 0x15EF08 + 4900 + 288*base + 2*topic — the ARM
+ * composes it as MUL base,#0x90 then ADD topic then LSL #1 (0x730C0..0x730E4), so the entry
+ * index is the topic number itself and the Hex-Rays "+4" is register residue from the 0xBE4
+ * apLines offset, not a header. A non-zero entry is itoa'd into the unk_15EEFC line; a zero one
+ * gets the empty string at 0x10DA38. The progress line (unk_15EF00) is 100*wProgress/wTotal
+ * (rt_sdiv at 0x73184) with "%" appended when wProgress is non-zero, else the empty string.
+ *
+ * Deviations: the original reads the count byte at 0x160C4C and the base index at 0x159D81
+ * through the 0x15EF08 anchor; the port takes the count and the selected base's 144-entry
+ * column as arguments. The original tests only the NUMERATOR (0x73160 tests wProgress) and
+ * divides by wTotal untested — a topic with wProgress != 0 and wTotal == 0 divides by zero; the
+ * port also skips the progress store when wTotal is 0 (same policy as the craft-class band in
+ * Smap_BeginCraftSelect). Returns the topic count. */
+i32 ResearchScreen_RefreshPanels(const ResearchTopicLive *aTopics, i32 nTopicCount,
+                                 const u16 *apResearchQty, UiPanel *pPanelCount,
+                                 UiPanel *pPanelQty, UiPanel *pPanelProgress);
 
 /* OptionsScreen_ClearMusicButtons @ 0x6b994 and OptionsScreen_ClearSfxButtons @ 0x6b9d4:
  * six widget pointers each, held in gUiRootPanel.anLineAux[128..133] (music) and
