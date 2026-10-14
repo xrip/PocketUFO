@@ -5,6 +5,7 @@
 #include "pufo_test.h"
 
 #include <stdio.h>
+#include <stdlib.h> /* calloc / free, the hangar object block the teardown releases */
 #include <string.h>
 
 static i32 g_nSwapCalls;
@@ -1310,6 +1311,253 @@ static void TestBuildListPanels(void)
     BasePlaneScreen_BuildListPanels(&g_listOut, NULL);
     TestCheck("a null out or env is tolerated", true);
 }
+/* ------------------------------------------------- the hangar craft list
+ *
+ * Evidence: BasePlaneScreen_BuildPanels @ 0x7cc8c, BasePlaneScreen_SelectCraft @ 0x7cbc8 and
+ * BasePlaneScreen_SelectListed @ 0x7cc3c. */
+
+static Ship g_aHngCraft[6];
+static Ship *g_apHngCraft[6];
+static u8 g_aHngText[PUFO_TEXT_REC_STRIDE * 153];
+static char g_aHngName[108];
+static BasePlaneScreenObjects g_hngObj;
+static PlaneCraftPanels g_hngOut;
+static PlaneBuildEnv g_hngEnv;
+static PlaneCraftSelectEnv g_hngSel;
+static u8 g_bHngBuilt;
+static u8 g_bHngDetail;
+static i32 g_nHngSelIdx;
+static i32 g_nHngCraftIdx;
+static i8 g_nHngBase;
+static u8 g_nHngCount;
+
+static void HngPutRec(i32 nRec, const char *psz)
+{
+    char *p = (char *)(g_aHngText + PUFO_TEXT_REC_STRIDE * nRec);
+    i32 i = 0;
+
+    while (psz[i] != 0) {
+        p[i] = psz[i];
+        ++i;
+    }
+    p[i] = 0;
+}
+
+static const char *HngRec(i32 nRec)
+{
+    return (const char *)(g_aHngText + PUFO_TEXT_REC_STRIDE * nRec);
+}
+
+static void HngThunk(void)
+{
+}
+
+static void HngReset(void)
+{
+    memset(g_aHngCraft, 0, sizeof(g_aHngCraft));
+    memset(g_apHngCraft, 0, sizeof(g_apHngCraft));
+    memset(g_aHngName, 0, sizeof(g_aHngName));
+    memset(&g_hngObj, 0, sizeof(g_hngObj));
+    memset(&g_hngOut, 0, sizeof(g_hngOut));
+
+    if (g_aHngText[PUFO_TEXT_REC_STRIDE * 152] == 0) {
+        memset(g_aHngText, 0, sizeof(g_aHngText));
+        HngPutRec(137, "SKY");
+        HngPutRec(138, "LIGHT");
+        HngPutRec(139, "AVENGER");
+        HngPutRec(149, "REFUEL");
+        HngPutRec(150, "READY");
+        HngPutRec(151, "MISSION");
+        HngPutRec(152, "OUT");
+    }
+
+    /* Five craft at base 0 and one elsewhere. The types are deliberately interleaved so the
+     * aPlaneCraftTypeOrder walk shows up in the row order. */
+    for (i32 i = 0; i < 6; ++i) {
+        g_apHngCraft[i] = &g_aHngCraft[i];
+    }
+    g_aHngCraft[0].bType = 1; g_aHngCraft[0].bCraftType = 0; g_aHngCraft[0].bHomeBase = 0;
+    g_aHngCraft[0].bAtBase = 1; g_aHngCraft[0].bRefueling = 1;
+    g_aHngCraft[0].uRangeRemain = 5000; g_aHngCraft[0].uRangeMax = 10000;
+
+    g_aHngCraft[1].bType = 2; g_aHngCraft[1].bCraftType = 0; g_aHngCraft[1].bHomeBase = 0;
+    g_aHngCraft[1].bAtBase = 1; g_aHngCraft[1].bRefueling = 0;
+    g_aHngCraft[1].uRangeRemain = 5000; g_aHngCraft[1].uRangeMax = 10000;
+
+    g_aHngCraft[2].bType = 1; g_aHngCraft[2].bCraftType = 1; g_aHngCraft[2].bHomeBase = 0;
+    g_aHngCraft[2].bAtBase = 1; g_aHngCraft[2].bRefueling = 0;
+    g_aHngCraft[2].uRangeRemain = 10000; g_aHngCraft[2].uRangeMax = 10000;
+
+    g_aHngCraft[3].bType = 2; g_aHngCraft[3].bCraftType = 1; g_aHngCraft[3].bHomeBase = 0;
+    g_aHngCraft[3].bAtBase = 0;
+
+    g_aHngCraft[4].bType = 3; g_aHngCraft[4].bCraftType = 0; g_aHngCraft[4].bHomeBase = 1;
+    g_aHngCraft[4].bAtBase = 1;
+
+    g_aHngCraft[5].bType = 1; g_aHngCraft[5].bCraftType = 2; g_aHngCraft[5].bHomeBase = 0;
+    g_aHngCraft[5].bAtBase = 1; g_aHngCraft[5].bRefueling = 1;
+    g_aHngCraft[5].uRangeRemain = 10000; g_aHngCraft[5].uRangeMax = 10000;
+
+    g_bHngBuilt = 0;
+    g_bHngDetail = 0;
+    g_nHngSelIdx = -1;
+    g_nHngCraftIdx = -1;
+    g_nHngBase = 0;
+    g_nHngCount = 6;
+
+    memset(&g_hngEnv, 0, sizeof(g_hngEnv));
+    g_hngEnv.pbBuilt = &g_bHngBuilt;
+    g_hngEnv.pObjects = &g_hngObj;
+    g_hngEnv.apCraft = g_apHngCraft;
+    g_hngEnv.pnCraftCount = &g_nHngCount;
+    g_hngEnv.pnSelectedBaseIdx = &g_nHngBase;
+    g_hngEnv.pTextRecs = g_aHngText;
+    g_hngEnv.pszNameBuf = g_aHngName;
+    g_hngEnv.cchNameBuf = (i32)sizeof(g_aHngName);
+    g_hngEnv.pfnCraftClick = HngThunk;
+    g_hngEnv.pfnStatusClick = HngThunk;
+}
+
+static void TestBuildCraftPanels(void)
+{
+    u8 r, g, b;
+
+    printf("BasePlaneScreen_BuildPanels @ 0x7cc8c\n");
+
+    HngReset();
+    BasePlaneScreen_BuildPanels(&g_hngOut, &g_hngEnv);
+
+    TestEqI32("the built flag is raised (0x7CCAC)", g_bHngBuilt, 1);
+    TestCheck("both panels exist", g_hngOut.pCraftPanel != NULL && g_hngOut.pStatusPanel != NULL);
+    TestEqI32("five craft live at base 0, so five rows", g_hngOut.pCraftPanel->nLineCount, 5);
+    TestEqI32("  and the status panel gets the same", g_hngOut.pStatusPanel->nLineCount, 5);
+
+    TestEqI32("eight visible rows", g_hngOut.pCraftPanel->nStyle, 8);
+    TestEqI32("  in font 16", g_hngOut.pCraftPanel->nFont, 16);
+    TestEqI32("  at y 110", g_hngOut.pCraftPanel->nPosY, 110);
+    TestEqI32("the click rect starts at 5,110", g_hngOut.pCraftPanel->nUnk7052, 5);
+    TestEqI32("  and the craft column is 230 wide at x 10", g_hngOut.pCraftPanel->nViewW, 230);
+    TestEqI32("  with the status column 30 wide at x 230", g_hngOut.pStatusPanel->nViewW, 30);
+    TestEqI32("the status column is right-aligned (0x7CF24)", g_hngOut.pStatusPanel->nUnk7076, 2);
+    TestEqI32("  while the craft column keeps the ctor's left alignment",
+              g_hngOut.pCraftPanel->nUnk7076, 0);
+    TestEqI32("both panels are B4", g_hngOut.pCraftPanel->gap_0[0], 0xB4);
+    TestEqI32("only panel A gets the row colours (0x7CDFC)", g_hngOut.pCraftPanel->gap_0[6], 0xF0);
+    TestEqI32("  and panel B's stay at the ctor's zero", g_hngOut.pStatusPanel->gap_0[6], 0);
+    TestEqI32("bUnk7088 is 0x96 on both", g_hngOut.pStatusPanel->bUnk7088, 0x96);
+    TestCheck("panel A's click is SelectCraft (0x7CD74)", g_hngOut.pCraftPanel->pfnClick == HngThunk);
+    TestCheck("panel B's is SelectListed (0x7CE8C)", g_hngOut.pStatusPanel->pfnClick == HngThunk);
+
+    /* Grouped by craft type: 0,1,2,3,4 - so craft 0,1 (type 0), then 2,3 (type 1), then 5 (type 2).
+     * Craft 4 is at another base and never appears. */
+    TestEqI32("row 0 is craft 0", g_hngOut.pCraftPanel->anLineAux[0], 0);
+    TestEqI32("row 1 is craft 1", g_hngOut.pCraftPanel->anLineAux[1], 1);
+    TestEqI32("row 2 is craft 2 (type 1, so it comes after both type 0 craft)",
+              g_hngOut.pCraftPanel->anLineAux[2], 2);
+    TestEqI32("row 3 is craft 3", g_hngOut.pCraftPanel->anLineAux[3], 3);
+    TestEqI32("row 4 is craft 5 (type 2)", g_hngOut.pCraftPanel->anLineAux[4], 5);
+    TestEqI32("the craft at another base is not listed",
+              (i32)strcmp((const char *)g_hngOut.pCraftPanel->apLines[4], "AVENGER1"), 0);
+    TestEqI32("the names are the type label plus Ship.bType",
+              (i32)strcmp((const char *)g_hngOut.pCraftPanel->apLines[0], "SKY1"), 0);
+    TestEqI32("  row 1", (i32)strcmp((const char *)g_hngOut.pCraftPanel->apLines[1], "SKY2"), 0);
+    TestEqI32("  row 2", (i32)strcmp((const char *)g_hngOut.pCraftPanel->apLines[2], "LIGHT1"), 0);
+    TestEqI32("  row 3", (i32)strcmp((const char *)g_hngOut.pCraftPanel->apLines[3], "LIGHT2"), 0);
+
+    /* The four status arms. */
+    TestEqI32("refuelling reads text 149",
+              (i32)strcmp((const char *)g_hngOut.pStatusPanel->apLines[0], HngRec(149)), 0);
+    TestCheck("  painted (250,50,50) (0x7D060)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 0, 1, &r, &g, &b)
+              && r == 250 && g == 50 && b == 50);
+    TestCheck("  with the highlight triple (25,10,10)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 0, 2, &r, &g, &b)
+              && r == 25 && g == 10 && b == 10);
+
+    TestEqI32("at base with range below max reads text 150",
+              (i32)strcmp((const char *)g_hngOut.pStatusPanel->apLines[1], HngRec(150)), 0);
+    TestCheck("  painted (100,200,100) (0x7D0F4)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 1, 1, &r, &g, &b)
+              && r == 100 && g == 200 && b == 100);
+    TestCheck("  with the highlight triple (10,25,10)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 1, 2, &r, &g, &b)
+              && r == 10 && g == 25 && b == 10);
+
+    TestEqI32("at base with range at max reads text 151",
+              (i32)strcmp((const char *)g_hngOut.pStatusPanel->apLines[2], HngRec(151)), 0);
+    TestCheck("  painted (250,250,250) (0x7D170)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 2, 1, &r, &g, &b)
+              && r == 250 && g == 250 && b == 250);
+
+    TestEqI32("a craft that is out reads text 152",
+              (i32)strcmp((const char *)g_hngOut.pStatusPanel->apLines[3], HngRec(152)), 0);
+    TestCheck("  painted (150,150,250) (0x7D1D4)",
+              UiPanel_GetLineMeta(g_hngOut.pStatusPanel, 3, 1, &r, &g, &b)
+              && r == 150 && g == 150 && b == 250);
+
+    /* Refuelling wins over the range arms: the two range tests both require bRefueling == 0, so craft 5
+     * (refuelling AND range at max) gets only text 149. */
+    TestEqI32("refuelling takes the row even with range at max",
+              (i32)strcmp((const char *)g_hngOut.pStatusPanel->apLines[4], HngRec(149)), 0);
+
+    /* The clicks. */
+    memset(&g_hngSel, 0, sizeof(g_hngSel));
+    g_hngSel.pCraftPanel = g_hngOut.pCraftPanel;
+    g_hngSel.pStatusPanel = g_hngOut.pStatusPanel;
+    g_hngSel.pnSelCraftIdx = &g_nHngSelIdx;
+    g_hngSel.pnSelectedCraftIdx = &g_nHngCraftIdx;
+    g_hngSel.apCraft = g_apHngCraft;
+    g_hngSel.pbShowCraftDetail = &g_bHngDetail;
+
+    g_hngOut.pCraftPanel->nUnk3032 = 1;
+    TestEqI32("SelectCraft takes the row's roster index", BasePlaneScreen_SelectCraft(&g_hngSel), 1);
+    TestEqI32("  into nPlaneSelCraftIdx (0x7CBF8)", g_nHngSelIdx, 1);
+    TestEqI32("  and nSelectedCraftIdx (0x7CC00)", g_nHngCraftIdx, 1);
+    TestEqI32("craft 1 is at base, so the detail view is armed (0x7CC20)", g_bHngDetail, 1);
+
+    g_hngOut.pCraftPanel->nUnk3032 = 3;
+    (void)BasePlaneScreen_SelectCraft(&g_hngSel);
+    TestEqI32("craft 3 is out, so the roster index still moves", g_nHngCraftIdx, 3);
+    TestEqI32("  but the flag is never cleared - SelectCraft only sets it", g_bHngDetail, 1);
+
+    g_bHngDetail = 0;
+    g_hngOut.pStatusPanel->nUnk3032 = 2;
+    TestEqI32("SelectListed reads panel B's cursor (0x7CC54)", BasePlaneScreen_SelectListed(&g_hngSel), 2);
+    TestEqI32("  and indexes panel A's aux with it (0x7CC68)", g_nHngCraftIdx, 2);
+    TestEqI32("  and touches the detail flag not at all", g_bHngDetail, 0);
+
+    /* Teardown: the same call with the flag set releases the panels and the whole object block. */
+    for (i32 i = 0; i < 5; ++i) {
+        g_hngObj.apCraftPads[i] = (PadImage *)calloc(1, sizeof(PadImage));
+    }
+    for (i32 i = 0; i < 6; ++i) {
+        g_hngObj.apWeaponPads[i] = (PadImage *)calloc(1, sizeof(PadImage));
+    }
+    for (i32 i = 0; i < 4; ++i) {
+        g_hngObj.apMainCtl[i] = (UiControl *)calloc(1, sizeof(UiControl));
+    }
+    for (i32 i = 0; i < 7; ++i) {
+        g_hngObj.apWeaponCtl[i] = (UiControl *)calloc(1, sizeof(UiControl));
+    }
+    g_hngObj.pBackdropPad = (PadImage *)calloc(1, sizeof(PadImage));
+
+    BasePlaneScreen_BuildPanels(&g_hngOut, &g_hngEnv);
+    TestEqI32("the built flag is cleared (0x7D238)", g_bHngBuilt, 0);
+    TestCheck("both panels are released",
+              g_hngOut.pCraftPanel == NULL && g_hngOut.pStatusPanel == NULL);
+    TestCheck("the backdrop pad is released", g_hngObj.pBackdropPad == NULL);
+    TestCheck("the five craft art pads too (0x7D2D4)", g_hngObj.apCraftPads[4] == NULL);
+    TestCheck("the six weapon icon pads (0x7D304)", g_hngObj.apWeaponPads[5] == NULL);
+    TestCheck("the four main controls (0x7D2A0)", g_hngObj.apMainCtl[3] == NULL);
+    TestCheck("  and the seven weapon controls (0x7D338)", g_hngObj.apWeaponCtl[6] == NULL);
+
+    BasePlaneScreen_BuildPanels(NULL, &g_hngEnv);
+    BasePlaneScreen_BuildPanels(&g_hngOut, NULL);
+    TestCheck("a null out or env is tolerated", true);
+    TestEqI32("BasePlaneScreen_SelectCraft tolerates a null env", BasePlaneScreen_SelectCraft(NULL), 0);
+    TestEqI32("and so does BasePlaneScreen_SelectListed", BasePlaneScreen_SelectListed(NULL), 0);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1327,6 +1575,7 @@ int main(void)
     TestCrewPanelClick();
     TestWeaponSlotsCarried();
     TestBuildListPanels();
+    TestBuildCraftPanels();
 
     return TestSummary("test_plane");
 }

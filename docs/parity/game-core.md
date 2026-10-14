@@ -9805,3 +9805,55 @@ than provably wrong.
 
 Still open in this family: `Ui_TextInputDialog` (0x632cc, 6096 B) itself, `SoldierScreen_CopyNameToEdit`
 (0x6318c, 124 B), and `Geoscape_Draw` (0x8c180, 33744 B), the dispatcher that calls this draw.
+
+### The hangar craft list, and the teardown that frees the whole hangar block (done)
+
+`BasePlaneScreen_BuildPanels @ 0x7cc8c` (1768 B) with its two row clicks `BasePlaneScreen_SelectCraft @
+0x7cbc8` (116 B) and `BasePlaneScreen_SelectListed @ 0x7cc3c` (80 B) land in
+`src/pufo/game/pufo_plane.{h,c}` behind `PlaneBuildEnv` / `PlaneCraftSelectEnv`, with 58 checks in
+`tests/test_plane.c`.
+
+One byte decides the direction, and the teardown half turned out to be the more interesting one. With
+`bPlanePanelsBuilt` (0x161F08) set, the function releases the two list panels **and the entire object
+block `BasePlaneScreen_Init` (0x7d9e4) allocated at 0x161A48**: the backdrop pad at +0, five craft art
+pads at +4..+0x14, six weapon icon pads at +0x18..+0x2C, four main controls at +0x30..+0x3C and seven
+weapon controls at +0x40..+0x58. That is the hangar's whole allocation map, read off the four free loops
+(0x7D2A0, 0x7D2D4, 0x7D304, 0x7D338), and it is what `BasePlaneScreen_Init` will need when it is ported.
+The original frees through the slots without nulling them; the port nulls them.
+
+The build half lists the base's craft in two panels -- names at x 10 view 230, status at x 230 view 30,
+both eight rows of font 16 at y 110 -- and the row pass walks `aPlaneCraftTypeOrder` @ 0xABE28 (five
+dwords: 0, 1, 2, 3, 4), so the list is grouped by craft type rather than roster order. Panel B's status
+column and its row colours come from four `Ship` fields:
+
+| condition | text | row colours |
+|---|---|---|
+| `bAtBase == 0` | 152 "Статус" | (150,150,250) / (25,10,10) |
+| at base and `bRefueling` | 149 "Заправка" | (250,50,50) / (25,10,10) |
+| at base, not refuelling, `uRangeRemain != uRangeMax` | 150 "Готов" | (100,200,100) / (10,25,10) |
+| at base, not refuelling, `uRangeRemain == uRangeMax` | 151 "На миссии" | (250,250,250) / (25,10,10) |
+
+The last two read backwards for a craft sitting at base -- full range is labelled "on a mission" and
+short range "ready" -- which is what the ARM does at 0x7D088..0x7D174 and what the port reproduces
+rather than "corrects". Refuelling wins over both range arms because each range test re-checks
+`bRefueling == 0`.
+
+The two clicks differ in a way that looks like a bug and is not. Panel A's click reads panel A's own
+cursor; panel B's click reads **panel B's** `nUnk3032` and then indexes **panel A's** `anLineAux` with it
+(0x7CC54..0x7CC68, confirmed in ARM: `LDR R0,[=pPlaneCraftStatusPanel]`, `LDR R3,[R0,#0xBD8]`, then
+`pPlaneCraftPanel`'s `anLineAux` at +0x13B4). It works because both panels are built with the same line
+count and their cursors only ever move together through `UiPanel_ClickRow`. Panel A's click additionally
+tests `apCraft[i]->bAtBase` -- `LDRB [R3,#Ship.bAtBase]` at 0x7CC14 -- and when the craft is at base sets
+`bPlaneShowCraftDetail` (0x161F20) with a STRB; `BasePlaneScreen_Draw` (0x7d374) reads that byte first
+and draws the detail view instead of the list. The flag is only ever set, never cleared.
+
+IDB: `pPlaneCraftPanel` (0x161EFC) and `pPlaneCraftStatusPanel` (0x161ED0) typed `UiPanel *`,
+`nPlaneSelCraftIdx` (0x161F04) an int, `bPlanePanelsBuilt` (0x161F08) and `bPlaneShowCraftDetail`
+(0x161F20) bytes (both read with LDRB), `pPlaneBackdropPad` (0x161A48) a `PadImage *` as the head of the
+object block, and `aPlaneCraftTypeOrder` (0xABE28) an `int[5]`. The comment on 0x7cbc8 said "if
+Ship.bBusy != 0 sets bHangarCraftBusy" -- the field is `bAtBase` @ +0x06 and the flag is
+`bPlaneShowCraftDetail`; the comment is corrected.
+
+Still open in this family: `BasePlaneScreen_Init` (0x7d9e4, 1072 B) -- which the teardown map above now
+fully describes -- `BasePlaneScreen_Draw` (0x7d374, 1648 B) and `BasePlaneScreen_DrawCraftDetail`
+(0x7baf8, 3824 B).

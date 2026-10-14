@@ -895,3 +895,217 @@ void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanel
         ++nRow;
     }
 }
+
+/* ------------------------------------------------- the hangar craft list */
+
+/* aPlaneCraftTypeOrder @ 0xABE28: five dwords read straight from the IDB (00 00 00 00, 01 ..., 02 ...,
+ * 03 ..., 04 ...). The row pass walks this outer loop, which is what groups the list by craft type. */
+static const i32 g_aPlaneCraftTypeOrder[PUFO_CRAFT_TYPE_COUNT] = { 0, 1, 2, 3, 4 };
+
+static const char *PlaneTextRec(const PlaneBuildEnv *pEnv, i32 nRec)
+{
+    return (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec);
+}
+
+/* The two panels share everything except their x origin, their view width, their click and the fact
+ * that only panel A gets the SetBytes6to11 call. */
+static void PlaneCraftPanelStyle(UiPanel *pPanel)
+{
+    pPanel->nStyle = 8;    /* 0x7CD44 / 0x7CE68: eight visible rows */
+    pPanel->nFont = 16;
+    pPanel->nPosY = 110;
+    pPanel->nUnk7052 = 5;
+    pPanel->nUnk7056 = 110;
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
+    pPanel->bFlag7073 = 1;
+    pPanel->bUnk7088 = 0x96;
+}
+
+static void PlaneFreePad(PadImage **ppPad)
+{
+    if (*ppPad == NULL) {
+        return;
+    }
+    PadImage_FreeData(*ppPad); /* 0x7D290 / 0x7D2E8 / 0x7D318 */
+    free(*ppPad);
+    *ppPad = NULL;             /* deviation: the original leaves the slot dangling */
+}
+
+static void PlaneFreeCtl(UiControl **ppCtl)
+{
+    if (*ppCtl == NULL) {
+        return;
+    }
+    UiControl_FreePads(*ppCtl); /* 0x7D2B4 / 0x7D34C */
+    free(*ppCtl);
+    *ppCtl = NULL;
+}
+
+void BasePlaneScreen_BuildPanels(PlaneCraftPanels *pOut, const PlaneBuildEnv *pEnv)
+{
+    if (pOut == NULL || pEnv == NULL || pEnv->pbBuilt == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbBuilt) {
+        *pEnv->pbBuilt = 0; /* 0x7D238 */
+
+        PlanePanelFree(pOut->pCraftPanel);  /* 0x7D244..0x7D258 */
+        pOut->pCraftPanel = NULL;
+        PlanePanelFree(pOut->pStatusPanel); /* 0x7D264..0x7D278 */
+        pOut->pStatusPanel = NULL;
+
+        if (pEnv->pObjects != NULL) {
+            BasePlaneScreenObjects *pObj = pEnv->pObjects;
+
+            PlaneFreePad(&pObj->pBackdropPad); /* 0x7D280..0x7D298 */
+            for (i32 i = 0; i < 4; ++i) {
+                PlaneFreeCtl(&pObj->apMainCtl[i]);   /* 0x7D2A0..0x7D2C4, +0x30..+0x3C */
+            }
+            for (i32 j = 0; j < 5; ++j) {
+                PlaneFreePad(&pObj->apCraftPads[j]); /* 0x7D2D4..0x7D2F4, +0x04..+0x14 */
+            }
+            for (i32 k = 0; k < 6; ++k) {
+                PlaneFreePad(&pObj->apWeaponPads[k]); /* 0x7D304..0x7D328, +0x18..+0x2C */
+            }
+            for (i32 m = 0; m < 7; ++m) {
+                PlaneFreeCtl(&pObj->apWeaponCtl[m]);  /* 0x7D338..0x7D35C, +0x40..+0x58 */
+            }
+        }
+        return;
+    }
+
+    *pEnv->pbBuilt = 1; /* 0x7CCAC */
+
+    i32 nCount = (pEnv->pnCraftCount != NULL) ? (i32)*pEnv->pnCraftCount : 0; /* Map_nCraftCount is a byte */
+    i32 nRows = 0;
+
+    if (pEnv->apCraft != NULL && pEnv->pnSelectedBaseIdx != NULL) {
+        for (i32 i = 0; i < nCount; ++i) { /* 0x7CCD8..0x7CCFC */
+            Ship *pShip = pEnv->apCraft[i];
+
+            if (pShip != NULL && (i32)pShip->bHomeBase == (i32)*pEnv->pnSelectedBaseIdx) {
+                ++nRows;
+            }
+        }
+    }
+
+    pOut->pCraftPanel = PlanePanelNew(nRows);  /* 0x7CD08..0x7CD3C */
+    pOut->pStatusPanel = PlanePanelNew(nRows); /* 0x7CE30..0x7CE60 */
+
+    UiPanel *pCraft = pOut->pCraftPanel;
+
+    if (pCraft != NULL) {
+        PlaneCraftPanelStyle(pCraft);
+        pCraft->pfnClick = pEnv->pfnCraftClick; /* 0x7CD74 */
+        pCraft->nPosX = 10;                     /* 0x7CD88 */
+        pCraft->nViewW = 230;                   /* 0x7CDCC */
+        UiPanel_SetBytes6to11(pCraft, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x7CDFC */
+    }
+
+    UiPanel *pStatus = pOut->pStatusPanel;
+
+    if (pStatus != NULL) {
+        PlaneCraftPanelStyle(pStatus);
+        pStatus->pfnClick = pEnv->pfnStatusClick; /* 0x7CE8C */
+        pStatus->nPosX = 230;                     /* 0x7CEA0 */
+        pStatus->nViewW = 30;                     /* 0x7CED8 */
+        pStatus->nUnk7076 = 2;                    /* 0x7CF24: right-aligned */
+    }
+
+    if (pCraft == NULL || pStatus == NULL || pEnv->apCraft == NULL || pEnv->pnSelectedBaseIdx == NULL
+        || pEnv->pTextRecs == NULL || pEnv->pszNameBuf == NULL) {
+        return;
+    }
+
+    i32 nRow = 0;
+
+    for (i32 t = 0; t < PUFO_CRAFT_TYPE_COUNT; ++t) { /* 0x7CF30: aPlaneCraftTypeOrder, five steps */
+        for (i32 i = 0; i < nCount; ++i) {            /* 0x7CF58..0x7D20C */
+            Ship *pShip = pEnv->apCraft[i];
+
+            if (pShip == NULL) {
+                continue;
+            }
+            if ((i32)pShip->bHomeBase != (i32)*pEnv->pnSelectedBaseIdx) { /* 0x7CF9C */
+                continue;
+            }
+            if ((i32)pShip->bCraftType != g_aPlaneCraftTypeOrder[t]) {    /* 0x7CF9C */
+                continue;
+            }
+
+            PanelLineCopy(pCraft, nRow, Ship_FormatDisplayName(pEnv->apCraft, i, pEnv->pTextRecs,
+                                                               pEnv->pszNameBuf,
+                                                               (size_t)pEnv->cchNameBuf)); /* 0x7CFA8 */
+            if (nRow < PUFO_PANEL_LINES) {
+                pCraft->anLineAux[nRow] = i; /* 0x7CFE4: the roster index the clicks read */
+            }
+
+            if (pShip->bAtBase == 0) { /* 0x7CFF4, the else arm at 0x7D184 */
+                PanelLineCopy(pStatus, nRow, PlaneTextRec(pEnv, PUFO_PLANE_STATUS_OUT));
+                UiPanel_SetLineMeta(pStatus, nRow, 150, 150, 250, 25, 10, 10); /* 0x7D1D4 */
+            } else {
+                if (pShip->bRefueling != 0) { /* 0x7D000 */
+                    PanelLineCopy(pStatus, nRow, PlaneTextRec(pEnv, PUFO_PLANE_STATUS_REFUELING));
+                    UiPanel_SetLineMeta(pStatus, nRow, 250, 50, 50, 25, 10, 10); /* 0x7D060 */
+                }
+                if (pShip->uRangeRemain != pShip->uRangeMax && pShip->bRefueling == 0) { /* 0x7D098 */
+                    PanelLineCopy(pStatus, nRow, PlaneTextRec(pEnv, PUFO_PLANE_STATUS_READY));
+                    UiPanel_SetLineMeta(pStatus, nRow, 100, 200, 100, 10, 25, 10); /* 0x7D0F4 */
+                }
+                if (pShip->bRefueling == 0 && pShip->uRangeRemain == pShip->uRangeMax) { /* 0x7D114 */
+                    PanelLineCopy(pStatus, nRow, PlaneTextRec(pEnv, PUFO_PLANE_STATUS_FULL));
+                    UiPanel_SetLineMeta(pStatus, nRow, 250, 250, 250, 25, 10, 10); /* 0x7D170 */
+                }
+            }
+            ++nRow; /* 0x7D1DC */
+        }
+    }
+}
+
+/* ------------------------------------------------- the hangar craft list's two clicks */
+
+static i32 PlaneRowCraftIdx(const UiPanel *pPanel, i32 nRow)
+{
+    if (pPanel == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return -1;
+    }
+    return pPanel->anLineAux[nRow];
+}
+
+i32 BasePlaneScreen_SelectCraft(const PlaneCraftSelectEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCraftPanel == NULL || pEnv->pnSelCraftIdx == NULL
+        || pEnv->pnSelectedCraftIdx == NULL) {
+        return 0;
+    }
+
+    i32 nIdx = PlaneRowCraftIdx(pEnv->pCraftPanel, pEnv->pCraftPanel->nUnk3032); /* 0x7CBEC */
+
+    pEnv->pnSelCraftIdx[0] = nIdx;      /* 0x7CBF8: nPlaneSelCraftIdx @ 0x161F04 */
+    pEnv->pnSelectedCraftIdx[0] = nIdx; /* 0x7CC00: nSelectedCraftIdx @ 0x161AC4 */
+
+    /* 0x7CC14 LDRB [R3,#Ship.bAtBase] - at base, the hangar switches to the detail view. The original
+     * indexes apCraft with no bound at all; the port checks it. */
+    if (pEnv->pbShowCraftDetail != NULL && pEnv->apCraft != NULL && nIdx >= 0
+        && pEnv->apCraft[nIdx] != NULL && pEnv->apCraft[nIdx]->bAtBase != 0) {
+        *pEnv->pbShowCraftDetail = 1; /* 0x7CC20 STRB */
+    }
+    return nIdx;
+}
+
+i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pStatusPanel == NULL || pEnv->pnSelCraftIdx == NULL
+        || pEnv->pnSelectedCraftIdx == NULL) {
+        return 0;
+    }
+
+    /* 0x7CC54..0x7CC68: panel B's cursor indexes panel A's anLineAux. The two panels are built with the
+     * same line count and their cursors move together, which is why the original works. */
+    i32 nIdx = PlaneRowCraftIdx(pEnv->pCraftPanel, pEnv->pStatusPanel->nUnk3032);
+
+    pEnv->pnSelCraftIdx[0] = nIdx;
+    pEnv->pnSelectedCraftIdx[0] = nIdx;
+    return nIdx;
+}

@@ -430,4 +430,113 @@ typedef struct PlaneListPanelsEnv {
 
 void BasePlaneScreen_BuildListPanels(PlaneListPanels *pOut, const PlaneListPanelsEnv *pEnv);
 
+/* --- BasePlaneScreen_BuildPanels @ 0x7cc8c (1768 B) : the hangar craft list, and the teardown that
+ *     frees the whole hangar object block ---
+ *
+ * One byte decides the direction: bPlanePanelsBuilt @ 0x161F08 (LDRB / STRB, so a byte).
+ *
+ * BUILT (0x7D234..0x7D368): the flag goes down and everything the hangar owns is released - the two
+ * list panels (pPlaneCraftPanel 0x161EFC, pPlaneCraftStatusPanel 0x161ED0, each UiPanel_FreeLines +
+ * delete), then the object block BasePlaneScreen_Init (0x7d9e4, not ported) allocated at 0x161A48: the
+ * backdrop pad
+ * at +0, five craft art pads at +4..+0x14, six weapon icon pads at +0x18..+0x2C, four main controls at
+ * +0x30..+0x3C (UiControl_FreePads + delete) and seven weapon controls at +0x40..+0x58. The original
+ * frees through the slots without nulling them; the port nulls them, which is the deviation that makes
+ * a second teardown harmless.
+ *
+ * NOT BUILT (0x7CCAC..0x7D22C): the flag goes up, then
+ *   1. nRows = how many of apCraft[0..Map_nCraftCount) have Ship.bHomeBase @ +0x03 equal to
+ *      nSelectedBaseIdx (0x7CCD8..0x7CCFC; Map_nCraftCount is a byte, read with LDRB).
+ *   2. panel A @ 0x161EFC, nRows lines: nStyle 8, nFont 16, pfnClick = BasePlaneScreen_SelectCraft,
+ *      nPosX 10, nPosY 110, nUnk7052 5, nUnk7056 110, nViewW 230, gap_0[0..2] B4 B4 B4,
+ *      gap_0[6..11] F0 F0 F0 14 14 14, bFlag7073 1, bUnk7088 0x96. nUnk7076 keeps the ctor's 0, so the
+ *      names are left-aligned.
+ *   3. panel B @ 0x161ED0, nRows lines: the same style, pfnClick = BasePlaneScreen_SelectListed,
+ *      nPosX 230, nViewW 30, gap_0[0..2] B4 B4 B4, bFlag7073 1, bUnk7088 0x96, nUnk7076 2 (right
+ *      aligned). It gets no SetBytes6to11 call, so gap_0[6..11] stays at the ctor's zero.
+ *   4. the row pass (0x7CF30..0x7D22C) walks aPlaneCraftTypeOrder @ 0xABE28 - five dwords, 0,1,2,3,4 -
+ *      and for each type walks every craft, so the list is grouped by craft type rather than roster
+ *      order. A craft is listed when bHomeBase == nSelectedBaseIdx and bCraftType == the table entry.
+ *      Panel A gets Ship_FormatDisplayName's string and anLineAux = the ROSTER index. Panel B's status
+ *      column and its row colours come from four Ship fields:
+ *        bAtBase @ +0x06 == 0        -> text 152 "Статус",            (150,150,250 / 25,10,10)
+ *        bAtBase and bRefueling @ +0x07 -> text 149 "Заправка",       (250, 50, 50 / 25,10,10)
+ *        at base, not refuelling, uRangeRemain @ +0x08 != uRangeMax @ +0x0A
+ *                                     -> text 150 "Готов",            (100,200,100 / 10,25,10)
+ *        at base, not refuelling, uRangeRemain == uRangeMax
+ *                                     -> text 151 "На миссии",        (250,250,250 / 25,10,10)
+ *      The last two read backwards for a craft that is sitting at base - full range is labelled "on a
+ *      mission" and short range "ready" - which is what the ARM does (0x7D088..0x7D174) and what the
+ *      port reproduces rather than "corrects".
+ *
+ * Deviations: the original reaches the object block through the fixed global at 0x161A48 and the two
+ * panels through their own globals; the port takes all of them from the env and the out struct. The
+ * original copies each name with an unbounded loop into a 50-byte line buffer; the port bounds it. */
+#define PUFO_PLANE_STATUS_REFUELING 149 /* aTextRecs: "Заправка", at base and bRefueling */
+#define PUFO_PLANE_STATUS_READY     150 /* "Готов", at base, not refuelling, range below max */
+#define PUFO_PLANE_STATUS_FULL      151 /* "На миссии", at base, not refuelling, range at max */
+#define PUFO_PLANE_STATUS_OUT       152 /* "Статус", not at base */
+
+typedef struct BasePlaneScreenObjects {
+    PadImage  *pBackdropPad;   /* 0x161A48 */
+    PadImage  *apCraftPads[5]; /* 0x161A4C..0x161A5C, the baseb001..005 craft art */
+    PadImage  *apWeaponPads[6];/* 0x161A60..0x161A74, the baseb049..054 weapon icons */
+    UiControl *apMainCtl[4];   /* 0x161A78..0x161A84 */
+    UiControl *apWeaponCtl[7]; /* 0x161A88..0x161AA0 */
+} BasePlaneScreenObjects;
+
+typedef struct PlaneCraftPanels {
+    UiPanel *pCraftPanel;  /* pPlaneCraftPanel @ 0x161EFC */
+    UiPanel *pStatusPanel; /* pPlaneCraftStatusPanel @ 0x161ED0 */
+} PlaneCraftPanels;
+
+typedef struct PlaneBuildEnv {
+    u8      *pbBuilt;             /* bPlanePanelsBuilt @ 0x161F08 */
+    BasePlaneScreenObjects *pObjects; /* the block at 0x161A48 */
+    Ship *const *apCraft;         /* apCraft @ 0x114A64 */
+    const u8 *pnCraftCount;       /* Map_nCraftCount @ 0x114B4C, a byte */
+    const i8 *pnSelectedBaseIdx;  /* nSelectedBaseIdx @ 0x159D81 */
+    const u8 *pTextRecs;          /* aTextRecs @ 0xB38D0 */
+    char *pszNameBuf;             /* the shared scratch at 0x186B10 (szRadarMsg, 108 B) */
+    i32  cchNameBuf;
+    void (*pfnCraftClick)(void);  /* BasePlaneScreen_SelectCraft @ 0x7cbc8, panel A's click */
+    void (*pfnStatusClick)(void); /* BasePlaneScreen_SelectListed @ 0x7cc3c, panel B's click */
+} PlaneBuildEnv;
+
+void BasePlaneScreen_BuildPanels(PlaneCraftPanels *pOut, const PlaneBuildEnv *pEnv);
+
+/* --- BasePlaneScreen_SelectCraft @ 0x7cbc8 (116 B) and BasePlaneScreen_SelectListed @ 0x7cc3c (80 B)
+ *     : the two craft-list row clicks ---
+ *
+ * Both take `pPlaneCraftPanel->anLineAux[cursor]` - the roster index the row pass stored - into
+ * nPlaneSelCraftIdx @ 0x161F04 and nSelectedCraftIdx @ 0x161AC4. They differ in two ways:
+ *
+ *   - SelectCraft (panel A's click) reads the cursor from panel A itself; SelectListed (panel B's
+ *     click) reads it from panel B's nUnk3032 and then indexes panel A's anLineAux with it (0x7CC54..
+ *     0x7CC68, confirmed in ARM: LDR R0,[=unk_161ED0]; LDR R3,[R0,#0xBD8]; then unk_161EFC's
+ *     anLineAux at +0x13B4). The two panels are built with the same line count and their cursors move
+ *     together through UiPanel_ClickRow, so it works - but it is the original's shape, not a
+ *     simplification the port is free to make.
+ *   - SelectCraft then tests apCraft[index]->bAtBase (LDRB [R3,#Ship.bAtBase] at 0x7CC14 - the IDB
+ *     comment said bBusy and that was wrong) and, when the craft is at base, sets
+ *     bPlaneShowCraftDetail @ 0x161F20 with a STRB. BasePlaneScreen_Draw (0x7d374, not ported) reads
+ *     that byte
+ *     first: set, it draws BasePlaneScreen_DrawCraftDetail and returns; clear, it draws the two list
+ *     panels. So selecting a craft that is at base switches the hangar to the detail view.
+ *     SelectListed touches neither.
+ *
+ * The original returns the craft index (SelectCraft returns &bPlaneShowCraftDetail on the at-base
+ * path); neither return value is used - both are installed as pfnClick, which is void. */
+typedef struct PlaneCraftSelectEnv {
+    UiPanel *pCraftPanel;  /* pPlaneCraftPanel @ 0x161EFC */
+    UiPanel *pStatusPanel; /* pPlaneCraftStatusPanel @ 0x161ED0, SelectListed reads its cursor */
+    i32     *pnSelCraftIdx;      /* nPlaneSelCraftIdx @ 0x161F04 */
+    i32     *pnSelectedCraftIdx; /* nSelectedCraftIdx @ 0x161AC4 */
+    Ship *const *apCraft;        /* apCraft @ 0x114A64 */
+    u8      *pbShowCraftDetail;  /* bPlaneShowCraftDetail @ 0x161F20 */
+} PlaneCraftSelectEnv;
+
+i32 BasePlaneScreen_SelectCraft(const PlaneCraftSelectEnv *pEnv);
+i32 BasePlaneScreen_SelectListed(const PlaneCraftSelectEnv *pEnv);
+
 #endif /* PUFO_PLANE_H */
