@@ -41,10 +41,14 @@ static i32 s_nRectH;      /* blitRectH @ 0xa3038: fill height, and its clip boun
 static i32 s_nMaskPtr;    /* dword_A303C, mask pointer for the Flip blend */
 static i32 s_nBlendAlpha; /* dword_A3040 */
 
-/* unk_147B54 and unk_147B3C @ 0x147b54 / 0x147b3c: scratch stores of Gfx_PackRgb565Pair.
- * Each has exactly one xref in the original - the write - so nothing reads them. */
-static u32 s_nPackScratchFirst;
-static u32 s_nPackScratchSecond;
+/* unk_147B54 and unk_147B3C @ 0x147b54 / 0x147b3c are not scratch: they are palette slot 2
+ * entries 33 and 27 (0x1472D0 + 2*1024 + 4*33 / + 4*27). Gfx_PackRgb565Pair writes the packed
+ * pair there, and Text_DrawString @ 0x2d798 forces the glyph palette base to 2 while it draws,
+ * so the font's two glyph indices (27 main, 33 secondary - measured over FONT.SPR) pick up
+ * exactly the pair the caller just packed. That is how all game text gets its colour. */
+#define PUFO_TEXT_PAL_SLOT 2
+#define PUFO_TEXT_PAL_IDX_FIRST 33  /* unk_147B54 = the (r1,g1,b1) pack */
+#define PUFO_TEXT_PAL_IDX_SECOND 27 /* unk_147B3C = the (r2,g2,b2) pack, the returned value */
 
 void SoftSurf_ctor(SoftSurf *pSurf)
 {
@@ -533,8 +537,10 @@ void SoftSurf_BlitRawGlyph(i32 x, i32 y, const u8 *pGlyph)
  * into the GX display block (LDR R0,[R0,#0x14] at 0x2d840). The port already owns g_ffFormat, so
  * it reads that instead - recorded as a deviation, not hidden.
  *
- * The two globals it stores into, 0x147B54 and 0x147B3C, each have exactly one xref: the write
- * here. Nothing reads them, so callers use the return value and the stores are scratch. */
+ * The two stores, 0x147B54 and 0x147B3C, are palette slot 2 entries 33 and 27. They have one
+ * xref each (the write here) because the reader reaches them through the palette table:
+ * Text_DrawString forces the glyph palette base to 2, and the font glyphs index 27/33. That is
+ * the text colour mechanism. */
 u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
                        i32 r2, i32 g2, i32 b2)
 {
@@ -565,7 +571,7 @@ u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
     if (nB1 > 31) { nB1 = 31; }
 
     nFirst  = (u32)(nB1 + 32 * (nG1 + (nR1 << 6)));
-    s_nPackScratchFirst = nFirst;   /* unk_147B54 */
+    g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_FIRST] = nFirst; /* unk_147B54 */
 
     nR2 = (i32)((double)(r2 >> 3) / dFactor);
     nG2 = (i32)((double)(g2 >> 2) / dFactor);
@@ -582,7 +588,7 @@ u32 Gfx_PackRgb565Pair(const GfxColorEnv *pEnv, i32 r1, i32 g1, i32 b1,
     if (nB2 > 31) { nB2 = 31; }
 
     nSecond = (u32)(nB2 + 32 * (nG2 + (nR2 << 6)));
-    s_nPackScratchSecond = nSecond; /* unk_147B3C */
+    g_aPalette[PUFO_TEXT_PAL_SLOT][PUFO_TEXT_PAL_IDX_SECOND] = nSecond; /* unk_147B3C */
 
     return nSecond;
 }

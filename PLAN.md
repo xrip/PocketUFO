@@ -379,14 +379,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   WndProc 0xC352 screen-11 fragment ported as `MainMenu_TickRowKeys`. The shell reaches the
   screen-17 branch of `Render_Frame (0x22310, dispatcher still unported)` and the first visual
   result is confirmed through a `--dump-frame` PPM dump: backdrop, four teal rows with black
-  Cyrillic labels, SMK logo. Three font-path facts came out of it: glyph run byte 0 is
+  Cyrillic labels, SMK logo. Four font-path facts came out of it: glyph run byte 0 is
   **transparency** (ARM 0xa4288 gates the write on `*v5 != 0` — the port wrote it as a real pixel);
-  `Font_BlitGlyphToSoft @ 0x9ec48` picks the palette as slot `Map_nGlyphPalBase + nPal`
-  (renamed from unk_1183F4; 0 at startup, which is why menu text is black); and `GX_PresentFrame
-  @ 0x9ea7c` arms the blit target through `Render_SetTarget` — without that call `blitState+0x20`
-  stays 0 and no glyph ever draws, so the shell now calls it in `App_PresentLoadedSurface`. IDB:
-  comments at 0x38a28/0x1a604/0x9ec48/0xa41d4/0xa0ac8/0x1183f4, rename unk_1183F4 →
-  Map_nGlyphPalBase.
+  `Font_BlitGlyphToSoft @ 0x9ec48` picks the palette as slot `Map_nGlyphPalBase + nPal` (renamed
+  from unk_1183F4); `Text_DrawString @ 0x2d798` forces that base to **2** while drawing, because
+  `Gfx_PackRgb565Pair @ 0x2d82c` writes the caller's colour pair into slot 2 entries 27/33
+  (unk_147B3C/unk_147B54 — not scratch, palette entries) and the font glyphs use exactly those
+  indices (measured over FONT.SPR: only 0/27/33) — that is the text colour mechanism the port had
+  missed (text came out black); and `GX_PresentFrame @ 0x9ea7c` arms the blit target through
+  `Render_SetTarget` — without that call `blitState+0x20` stays 0 and no glyph ever draws, so the
+  shell now calls it in `App_PresentLoadedSurface`. IDB: comments at 0x38a28/0x1a604/0x9ec48/
+  0x2d798/0x2d82c/0xa41d4/0xa0ac8/0x1183f4, rename unk_1183F4 → Map_nGlyphPalBase.
 - [ ] `Geoscape_BuildNavControls (0x67b1c, 588 B)` — decoded, NOT ported, and the reason the
   Priority 1 tail is no longer a short chain. It allocates 15 `UiControl` objects into the pointer
   array at 0x159888 (15 slots: 10 + 2 + 3) and installs a click handler in each:

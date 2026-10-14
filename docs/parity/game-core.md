@@ -7163,12 +7163,17 @@ further 5% chance, armed rows only) or zeroes every source and re-arms only this
 
 **Three font-path facts the first rendered frame exposed:**
 
-1. `Font_BlitGlyphToSoft @ 0x9ec48` picks the glyph palette as slot `Map_nGlyphPalBase + nPal`
-   (renamed from unk_1183F4; `nPal` clamped to 19 first). It is 0 at startup — only
-   `Render_Frame`'s default branch (34) and `Geoscape_InitUI` write it — so the start-menu text
-   draws from the still-empty palette slot 0: **black glyphs**. The cyan pair that
-   `MainMenu_Draw` computes per row goes to `Gfx_PackRgb565Pair` (the row-frame blend colours),
-   not to the glyph palette.
+1. **Text colour is a palette-base trick.** `Font_BlitGlyphToSoft @ 0x9ec48` picks the glyph
+   palette as slot `Map_nGlyphPalBase + nPal` (renamed from unk_1183F4; `nPal` clamped to 19).
+   `Text_DrawString @ 0x2d798` saves that dword, **forces it to 2** for the duration of the draw
+   (0x2d7bc) and restores it (0x2d818). `Gfx_PackRgb565Pair @ 0x2d82c` writes its packed colour
+   pair into palette slot 2 entries 33 (`unk_147B54`, the r1/g1/b1 pack) and 27 (`unk_147B3C`,
+   the r2/g2/b2 pack, also the return value) — the two globals are not scratch, they are those
+   palette entries. Measured over FONT.SPR, the glyphs use only indices 0 (transparent), 27
+   (main, 228 px over A/V/i/a/а/е/space) and 33 (secondary, 90 px). So forcing the base to 2
+   routes every glyph through the pair the caller just packed: the menu rows get the cyan pair
+   scaled by the row key, the version stamp gets the white/grey pair. `Render_Frame`'s default
+   branch writes 34 into the base and `Geoscape_InitUI` writes 3 — those are the non-text bases.
 2. Glyph run byte 0 is **transparency**: the ARM at 0xa4288 gates the pixel write on `*v5 != 0`;
    the pen advances regardless. The port previously wrote index 0 as a real pixel.
 3. `GX_PresentFrame @ 0x9ea7c` arms the blit target through `Render_SetTarget(240,320,2,

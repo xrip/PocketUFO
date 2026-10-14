@@ -808,9 +808,11 @@ static void InstallFakeFont(void)
     g_fontSys.nSprIndexCount = 256;
     g_fontSys.nGlyphBase = 0;
 
-    /* Font_DrawGlyph writes pPal[nRun] with nPal 0, so palette slot 0 needs a non-zero entry at the
-     * index the fake glyph uses. */
-    memset(g_aPalette[0], 0x7F, sizeof(g_aPalette[0]));
+    /* Font_DrawGlyph writes pPal[nRun] with nPal 0, and Text_DrawString @ 0x2d798 forces the glyph
+     * palette base to 2 while it draws (the original's text-colour trick: Gfx_PackRgb565Pair writes
+     * the pair into slot 2 entries 27/33), so palette slot 2 needs a non-zero entry at the index
+     * the fake glyph uses. */
+    memset(g_aPalette[2], 0x7F, sizeof(g_aPalette[2]));
 
     /* Font_BlitGlyph refuses to draw unless the blit state's pixel mode is 1 or 2, and
      * Blit_LoadSurface does not set that field - only Blit_SetTargetParams does. Nothing in this

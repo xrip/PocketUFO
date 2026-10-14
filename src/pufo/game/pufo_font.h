@@ -145,7 +145,10 @@ void FontMetrics_Load(void);
  * Returns the glyph count, or 0 if the member is too small. */
 u16 Spr_ParseHeader(const u8 *pSpr, u32 cbSpr, u16 *pOutOffsets, u16 nOutCap);
 
-/* Text_DrawString @ 0x2d798 / Text_MeasureWidth @ 0x2dca8. */
+/* Text_DrawString @ 0x2d798 / Text_MeasureWidth @ 0x2dca8. Text_DrawString forces the glyph
+ * palette slot base (g_nGlyphPalSlotBase, Map + 0x4A3C) to 2 for the duration of the draw and
+ * restores it: Gfx_PackRgb565Pair writes the current colour pair into slot 2 entries 27/33, and
+ * the font glyphs use exactly those indices. */
 i32  Text_MeasureWidth(const char *psz);
 void Text_DrawString(i32 x, i32 y, const char *psz);
 

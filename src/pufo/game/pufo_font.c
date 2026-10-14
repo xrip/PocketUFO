@@ -431,16 +431,23 @@ i32 Text_MeasureWidth(const char *psz)
     return nWidth;
 }
 
-/* Text_DrawString @ 0x2d798. Note the original saves a dword at pCtx+19004 and
- * overwrites it with 2 for the duration of the draw, then restores it. That
- * cell is a text-mode/state flag; it is reproduced via a local so the visible
- * behaviour (glyph index base nGlyphBase + char) is what matters here. */
+/* Text_DrawString @ 0x2d798. The original saves the dword at pCtx+19004 (Map + 0x4A3C =
+ * Map_nGlyphPalBase, the glyph palette slot base) and overwrites it with 2 for the duration of
+ * the draw, then restores it (0x2d7b0 / 0x2d7bc / 0x2d818). That is not a mode flag: it is what
+ * makes text coloured. Gfx_PackRgb565Pair @ 0x2d82c writes its packed pair into palette slot 2
+ * entries 27 and 33 (unk_147B3C / unk_147B54), and the font glyphs use exactly those two indices
+ * (measured over FONT.SPR: only 0 = transparent, 27 = main colour, 33 = secondary), so forcing
+ * the base to 2 routes every glyph through the pair the caller just packed. */
 void Text_DrawString(i32 x, i32 y, const char *psz)
 {
+    i32 nSavedBase = g_nGlyphPalSlotBase; /* 0x2d7b0 */
+
+    g_nGlyphPalSlotBase = 2;             /* 0x2d7bc */
     for (; *psz != '\0'; ++psz) {
         u8 ch = (u8)*psz;
 
         Font_DrawGlyph(x, y, (u16)(g_fontSys.nGlyphBase + ch), 0);
         x += g_fontMetrics.aAdvance[ch];
     }
+    g_nGlyphPalSlotBase = nSavedBase;    /* 0x2d818 */
 }
