@@ -1353,7 +1353,8 @@ static void NopClick(void) { }
 static void TestBaseFacScreenInit(void)
 {
     static UiControl closeCtl, upCtl, downCtl;
-    static i32 n7C, n80, n88;
+    static i32 n7C, n80;
+    static u8 n88;
     BaseFacInitEnv env;
     i32 nRet;
 
@@ -1373,7 +1374,7 @@ static void TestBaseFacScreenInit(void)
     env.pDownCtl = &downCtl;
     env.pnUnk15887C = &n7C;
     env.pnUnk158880 = &n80;
-    env.pnUnk158888 = &n88;
+    env.pbArmed = &n88;
     env.pfnPanelPrev = NopClick;
     env.pfnPanelNext = NopClick;
     env.pfnCloseThunk = NopClick;
@@ -1384,7 +1385,7 @@ static void TestBaseFacScreenInit(void)
     CheckEqI32(nRet, 0, "the return is 0 where the original returns Toggle's register");
     CheckEqI32(n7C, 0, "0x15887C is cleared before the controls are built");
     CheckEqI32(n80, 0, "and so is 0x158880");
-    CheckEqI32(n88, 0, "0x158888 is cleared just before Toggle");
+    CheckEqI32((i32)n88, 0, "0x158888 is cleared just before Toggle");
     CheckEqI32(g_nToggleRuns, 1, "BaseFacScreen_Toggle runs once, last");
     CheckEqI32(upCtl.uWidth, 10, "UiControl_ctor runs on the first control (10x10 enabled)");
     CheckEqI32(downCtl.uWidth, 10, "and on the second");
@@ -1598,6 +1599,185 @@ static void TestMapClick(void)
 #undef MDAYS
 }
 
+/* --- BaseFacScreen_Toggle @ 0x589ec --- */
+
+static BaseFacFlag g_aToggleFac[PUFO_BASEFAC_COUNT];
+
+static void ToggleFacTable(void)
+{
+    i32 i;
+    for (i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        memset(&g_aToggleFac[i], 0, sizeof(g_aToggleFac[i]));
+        snprintf(g_aToggleFac[i].szName, sizeof(g_aToggleFac[i].szName), "Fac%02d", i);
+        /* The shipped InitUI table (g_abFacFlag20Init): 0..7, 11 and 13 are placeable. */
+        g_aToggleFac[i].bFlag20 = (u8)((i <= 7 || i == 11 || i == 13) ? 1 : 0);
+        g_aToggleFac[i].bFlag21 = (u8)i;
+        g_aToggleFac[i].uCost = (u32)(1000 * (i + 1));
+    }
+}
+
+static void TestBaseFacToggle(void)
+{
+    static u8 abGrid[1524];
+    static UiControl upCtl, downCtl;
+    static UiPanel *pPanel;
+    static u8 bOpen, bArmed, bNewBase;
+    static i32 nSel;
+    static i8 nSelBase;
+    static const char szLast[4] = { 0, 0, 0, 0 };
+    BaseFacToggleEnv env;
+    UiPanel *p;
+    i32 i;
+
+    printf("BaseFacScreen_Toggle @ 0x589ec\n");
+
+    ToggleFacTable();
+    memset(abGrid, 0, sizeof(abGrid));
+    memset(&upCtl, 0, sizeof(upCtl));
+    memset(&downCtl, 0, sizeof(downCtl));
+    pPanel = NULL;
+    bOpen = 0; bArmed = 0; bNewBase = 0; nSel = -1; nSelBase = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pbOpen = &bOpen;
+    env.apPanelCtl[0] = &upCtl;
+    env.apPanelCtl[1] = &downCtl;
+    env.ppPanel = &pPanel;
+    env.pnPanelSel = &nSel;
+    env.pbArmed = &bArmed;
+    env.pbNewBaseMode = &bNewBase;
+    env.abFacilityGrid = abGrid;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.paFac = g_aToggleFac;
+    env.pszLastRowName = szLast;
+    env.pfnBuyThunk = NopClick;
+
+    BaseFacScreen_Toggle(&env);
+    CheckEqI32(bOpen, 1, "the first call takes the build branch");
+    Check(pPanel != NULL, "the panel is allocated");
+    p = pPanel;
+    CheckEqI32(p->nLineCount, 9, "nLineCount is the ctor count 10 minus the 0x58C68 decrement");
+    CheckEqI32(p->nStyle, 5, "nStyle 5");
+    CheckEqI32(p->nFont, 16, "nFont 16");
+    CheckEqI32(p->nPosX, 120, "nPosX 120");
+    CheckEqI32(p->nPosY, 234, "nPosY 234");
+    CheckEqI32(p->nUnk7052, 5, "nUnk7052 5");
+    CheckEqI32(p->nUnk7056, 234, "nUnk7056 234");
+    CheckEqI32(p->nViewW, 230, "nViewW 230");
+    CheckEqI32(p->nUnk7076, 1, "nUnk7076 1");
+    CheckEqI32(p->bUnk7088, 0x96, "bUnk7088 is the byte -106");
+    CheckEqI32(p->bFlag7072, 0, "bFlag7072 cleared");
+    CheckEqI32(p->bFlag7073, 1, "bFlag7073 set");
+    CheckEqI32(p->gap_0[0], 0xB4, "gap_0[0] B4");
+    CheckEqI32(p->gap_0[3], 0x46, "gap_0[3] 46");
+    CheckEqI32(p->gap_0[6], 0x44, "gap_0[6] 44");
+    CheckEqI32(p->gap_0[11], 0x4B, "gap_0[11] 4B");
+    Check(p->pfnClick == NopClick, "the +3020 handler is the buy thunk");
+
+    /* Rows: the flagged records 1..16, each carrying its record number as the aux. */
+    Check(strcmp(UiPanel_GetLineText(p, 0), "Fac01") == 0, "row 0 is facility 1");
+    CheckEqI32(UiPanel_GetLineAux(p, 0), 1, "with aux 1, the facility kind");
+    Check(strcmp(UiPanel_GetLineText(p, 7), "Fac11") == 0,
+          "row 7 is facility 11: records 8, 9 and 10 are unflagged");
+    CheckEqI32(UiPanel_GetLineAux(p, 7), 11, "with aux 11");
+    Check(strcmp(UiPanel_GetLineText(p, 8), "Fac13") == 0,
+          "row 8 is facility 13: records 9, 10, 12, 14..16 are unflagged");
+    CheckEqI32(UiPanel_GetLineAux(p, 8), 13, "with aux 13");
+    CheckEqI32(UiPanel_GetLineAux(p, 9), 0, "the 17th row's aux is 0");
+    CheckEqI32((p->apLines[9] != NULL) ? (i32)p->apLines[9][0] : -1, 0,
+               "the 17th row's name comes from the 0x187024 slot, empty here");
+
+    /* The close branch. */
+    upCtl.x = 77;
+    BaseFacScreen_Toggle(&env);
+    CheckEqI32(bOpen, 0, "the second call takes the close branch");
+    Check(pPanel == NULL, "the panel is freed and its slot cleared");
+    CheckEqI32(upCtl.x, 77, "the caller-owned controls keep their fields; only their pads go");
+
+    /* The new-base wipe, on a freshly built dialog. */
+    for (i = 0; i < (i32)sizeof(abGrid); ++i) {
+        abGrid[i] = 0x33;
+    }
+    bNewBase = 1;
+    nSelBase = 2;
+    nSel = -1;
+    bArmed = 0;
+    BaseFacScreen_Toggle(&env);
+    CheckEqI32(nSel, 9, "unk_158868 takes the row count");
+    CheckEqI32(bArmed, 1, "unk_158888 is armed");
+    CheckEqI32(abGrid[36 * 2 + 10], 0, "the selected base's buildDays are cleared");
+    CheckEqI32(abGrid[0x174 + 144 * 2 + 10], 0, "its tileA");
+    CheckEqI32(abGrid[0x174 + 144 * 2 + 36 + 10], 0, "its tileB");
+    CheckEqI32(abGrid[0x174 + 144 * 2 + 72 + 10], 0, "its needed-flag layer");
+    CheckEqI32(abGrid[0x174 + 144 * 2 + 108 + 10], 0xFF, "and its facType takes the 0xFF sentinel");
+    CheckEqI32(abGrid[36 * 1 + 10], 0x33, "the previous base is untouched");
+    CheckEqI32(abGrid[0x174 + 144 * 3 + 108 + 10], 0x33, "and so is the next one");
+    CheckEqI32(abGrid[36 * 2 + 35], 0, "the whole 6 by 6 base goes, last cell included");
+
+    BaseFacScreen_Toggle(&env); /* release the dialog the new-base call built */
+    Check(pPanel == NULL, "the close branch releases that panel too");
+    BaseFacScreen_Toggle(NULL);
+    CheckEqI32(bOpen, 0, "a null env changes nothing");
+}
+
+/* --- BaseFacScreen_TryBuySelected @ 0x58910 --- */
+
+static void TestBaseFacBuy(void)
+{
+    static UiPanel panel;
+    static BaseFacBuyEnv env;
+    static u8 bArmed, bNewBase;
+    static i32 nSel, nResidue;
+    static u32 nShort;
+    static i32 nFunds;
+
+    printf("BaseFacScreen_TryBuySelected @ 0x58910\n");
+
+    ToggleFacTable();
+    memset(&panel, 0, sizeof(panel));
+    if (!UiPanel_ctor(&panel, 3)) {
+        printf("  FAIL the panel could not be constructed\n");
+        return;
+    }
+    panel.nUnk3032 = 1;                    /* the selected row */
+    UiPanel_SetLineAux(&panel, 1, 11);     /* the hangar, cost 12000 in this table */
+
+    nFunds = 20000; bArmed = 0; bNewBase = 1; nSel = -1; nResidue = 7; nShort = 7;
+    memset(&env, 0, sizeof(env));
+    env.pPanel = &panel;
+    env.paFac = g_aToggleFac;
+    env.pnFunds = &nFunds;
+    env.pbArmed = &bArmed;
+    env.pbNewBaseMode = &bNewBase;
+    env.pnPanelSel = &nSel;
+    env.pdwShortfall = &nShort;
+    env.pnResidue = &nResidue;
+
+    CheckEqI32(BaseFacScreen_TryBuySelected(&env), 1, "an affordable facility is accepted");
+    CheckEqI32(bArmed, 1, "unk_158888 is armed (0x5897C)");
+    CheckEqI32(nSel, -1, "with the new-base byte set, unk_158868 is not touched");
+    CheckEqI32((i32)nShort, 7, "the shortfall global is not written");
+    CheckEqI32(nResidue, 7, "nor the residue");
+
+    bNewBase = 0;
+    CheckEqI32(BaseFacScreen_TryBuySelected(&env), 1, "the same call without the new-base byte");
+    CheckEqI32(nSel, 1, "unk_158868 takes panel->nUnk3032 (0x58994)");
+
+    nFunds = 1000;
+    bArmed = 0;
+    CheckEqI32(BaseFacScreen_TryBuySelected(&env), 0, "an unaffordable facility is refused");
+    CheckEqI32((i32)nShort, 1, "byte_1870C8 is set, as a dword");
+    CheckEqI32(nResidue, 0, "dword_1870B4[0] is cleared");
+    CheckEqI32(bArmed, 0, "and the placement is not armed");
+
+    UiPanel_SetLineAux(&panel, 1, 99);
+    nShort = 7;
+    CheckEqI32(BaseFacScreen_TryBuySelected(&env), 0, "an out-of-range kind is refused, not read");
+    CheckEqI32((i32)nShort, 7, "and the shortfall global stays untouched");
+
+    UiPanel_FreeLines(&panel);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1629,6 +1809,8 @@ int main(void)
     TestRadarListClick();
     TestBaseFacScreenInit();
     TestMapClick();
+    TestBaseFacToggle();
+    TestBaseFacBuy();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

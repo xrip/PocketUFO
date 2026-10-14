@@ -971,8 +971,8 @@ i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv)
         pEnv->pCloseCtl->x = 224;                        /* 0x5A260 */
         pEnv->pCloseCtl->y = 229;                        /* 0x5A26C */
     }
-    if (pEnv->pnUnk158888 != NULL) {
-        *pEnv->pnUnk158888 = 0;                          /* 0x5A274 */
+    if (pEnv->pbArmed != NULL) {
+        *pEnv->pbArmed = 0;                              /* 0x5A274 */
     }
 
     if (pEnv->pfnToggle != NULL) {
@@ -1117,4 +1117,155 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
     }
 
     return 0; /* any other screen id: the original returns the screen id itself */
+}
+
+/* --- BaseFacScreen_Toggle @ 0x589ec --- */
+
+void BaseFacScreen_Toggle(const BaseFacToggleEnv *pEnv)
+{
+    UiPanel *pPanel;
+    i32 nCount = 0;
+    i32 nRows = 0;
+    i32 nAux;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbOpen == NULL || pEnv->ppPanel == NULL || pEnv->paFac == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbOpen != 0) {
+        /* The close branch (0x58D98..0x58E04). */
+        *pEnv->pbOpen = 0;
+        for (i = 0; i < PUFO_BASEFAC_PANEL_CTL_COUNT; ++i) {
+            UiControl *pCtl = pEnv->apPanelCtl[i]; /* unk_158874, unk_158878 */
+            if (pCtl != NULL) {
+                UiControl_FreePads(pCtl);          /* 0x58DB4 */
+            }
+            /* The original also operator delete's the control (0x58DBC). The port's controls are
+             * caller-owned, so only their pads are released. */
+        }
+        pPanel = *pEnv->ppPanel;
+        if (pPanel != NULL) {
+            pPanel->nLineCount += 1;               /* 0x58DE4: the build branch left it one short */
+            UiPanel_FreeLines(pPanel);             /* 0x58DF8 */
+            free(pPanel);                          /* 0x58E00 */
+            *pEnv->ppPanel = NULL;
+        }
+        return;
+    }
+
+    *pEnv->pbOpen = 1;                             /* 0x58A10 */
+
+    for (i = 0; i < PUFO_BASEFAC_COUNT; ++i) {     /* 0x58A1C..0x58A30: records 0..16 */
+        if (pEnv->paFac[i].bFlag20 != 0) {
+            ++nCount;
+        }
+    }
+
+    pPanel = (UiPanel *)malloc(sizeof(UiPanel));   /* 0x58A44: operator new(0x1BB4) */
+    if (pPanel == NULL) {
+        return; /* deviation: the original stores through the null panel at 0x58A7C */
+    }
+    if (!UiPanel_ctor(pPanel, nCount)) {           /* 0x58A54 */
+        free(pPanel);
+        return;
+    }
+    *pEnv->ppPanel = pPanel;
+
+    pPanel->nStyle   = 5;                          /* 0x58A7C */
+    pPanel->nFont    = 16;                         /* 0x58A88 */
+    pPanel->pfnClick = pEnv->pfnBuyThunk;          /* 0x58A9C, the +3020 handler */
+    pPanel->nPosX    = 120;                        /* 0x58AB0 */
+    pPanel->nPosY    = 234;                        /* 0x58AC4 */
+    pPanel->nUnk7052 = 5;                          /* 0x58AD4 */
+    pPanel->nUnk7056 = 234;                        /* 0x58AE8 */
+    pPanel->nViewW   = 230;                        /* 0x58AFC */
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);                        /* 0x58B0C */
+    UiPanel_SetBytes6to11(pPanel, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);    /* 0x58B38 */
+    UiPanel_SetBytes3to5(pPanel, 0x46, 0x96, 0xAA);                        /* 0x58B4C */
+    pPanel->bUnk7088  = 0x96;                      /* 0x58B60, the byte -106 */
+    pPanel->bFlag7073 = 1;                         /* 0x58B74 */
+    pPanel->bFlag7072 = 0;                         /* 0x58B88 */
+    pPanel->nUnk7076  = 1;                         /* 0x58B9C */
+
+    nAux = 1;
+    for (i = 0; i < PUFO_BASEFAC_COUNT - 1; ++i) { /* 0x58BAC..0x58C0C: records 1..16 */
+        const BaseFacFlag *pFac = &pEnv->paFac[i + 1];
+        if (pFac->bFlag20 != 0) {
+            UiPanel_SetLineText(pPanel, nRows, pFac->szName);
+            UiPanel_SetLineAux(pPanel, nRows, nAux); /* the record number is the facility kind */
+            ++nRows;
+        }
+        ++nAux;
+    }
+
+    /* 0x58C18: the 17th row, read from aBaseFacFlags[17] -- the four bytes at 0x187024, which is
+     * a UiControl pointer slot rather than a facility record (bugs.tsv). */
+    UiPanel_SetLineText(pPanel, nRows, (pEnv->pszLastRowName != NULL) ? pEnv->pszLastRowName : "");
+    UiPanel_SetLineAux(pPanel, nRows, 0);          /* 0x58C50 */
+    pPanel->nLineCount -= 1;                       /* 0x58C68 */
+
+    if (pEnv->pbNewBaseMode != NULL && *pEnv->pbNewBaseMode != 0) {
+        const i32 nBase = (i32)((pEnv->pnSelectedBaseIdx != NULL) ? *pEnv->pnSelectedBaseIdx : 0);
+        if (pEnv->pnPanelSel != NULL) {
+            *pEnv->pnPanelSel = nRows;             /* 0x58C88 */
+        }
+        if (pEnv->pbArmed != NULL) {
+            *pEnv->pbArmed = 1;                    /* 0x58C94 */
+        }
+        for (i = 0; i < 6; ++i) {                  /* 0x58C9C..0x58D74: the whole 6 by 6 base */
+            i32 k;
+            for (k = 0; k < 6; ++k) {
+                const i32 nCell = 6 * i + k;
+                const i32 nFac = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase;
+                pEnv->abFacilityGrid[PUFO_GRID_DAYS_STRIDE * nBase + nCell] = 0;
+                pEnv->abFacilityGrid[nFac + PUFO_GRID_TILEA_OFF + nCell] = 0;
+                pEnv->abFacilityGrid[nFac + PUFO_GRID_TILEB_OFF + nCell] = 0;
+                pEnv->abFacilityGrid[nFac + PUFO_GRID_LAYER2_OFF + nCell] = 0;
+                pEnv->abFacilityGrid[nFac + PUFO_GRID_FAC_TYPE_OFF + nCell] = PUFO_FAC_TYPE_NONE;
+            }
+        }
+    }
+}
+
+/* --- BaseFacScreen_TryBuySelected @ 0x58910 --- */
+
+i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv)
+{
+    i32 nSel;
+    i32 nKind;
+    u32 uCost;
+    i32 nLeft;
+
+    if (pEnv == NULL || pEnv->pPanel == NULL || pEnv->paFac == NULL || pEnv->pnFunds == NULL) {
+        return 0;
+    }
+
+    nSel = pEnv->pPanel->nUnk3032;                 /* 0x58920, +0xBD8 */
+    nKind = UiPanel_GetLineAux(pEnv->pPanel, nSel);/* 0x58938, anLineAux[sel] */
+    if (nKind < 0 || nKind >= PUFO_BASEFAC_COUNT) {
+        /* Deviation: the original indexes aBaseFacFlags with the unchecked aux value (0x5894C).
+         * The port refuses the purchase instead of reading past the table. */
+        return 0;
+    }
+    uCost = pEnv->paFac[nKind].uCost;              /* 0x5894C..0x58954, record + 0x18 */
+    nLeft = *pEnv->pnFunds - (i32)uCost;           /* 0x58958 */
+
+    if (nLeft < 0) {
+        if (pEnv->pdwShortfall != NULL) {
+            *pEnv->pdwShortfall = 1;               /* 0x58960, a dword store into a byte global */
+        }
+        if (pEnv->pnResidue != NULL) {
+            *pEnv->pnResidue = 0;                  /* 0x5896C */
+        }
+        return 0;
+    }
+
+    if (pEnv->pbArmed != NULL) {
+        *pEnv->pbArmed = 1;                        /* 0x5897C, arms the placement */
+    }
+    if (pEnv->pbNewBaseMode != NULL && *pEnv->pbNewBaseMode == 0 && pEnv->pnPanelSel != NULL) {
+        *pEnv->pnPanelSel = nSel;                  /* 0x58994 */
+    }
+    return 1;
 }

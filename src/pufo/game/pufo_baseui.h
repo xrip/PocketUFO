@@ -612,7 +612,7 @@ typedef struct BaseFacInitEnv {
     UiControl *pDownCtl;         /* ... and 0x158878 */
     i32  *pnUnk15887C;           /* 0x15887C, cleared before the allocation */
     i32  *pnUnk158880;           /* 0x158880, cleared before the allocation */
-    i32  *pnUnk158888;           /* 0x158888, cleared just before Toggle */
+    u8   *pbArmed;               /* bBaseFacPlaceArmed @ 0x158888, a byte (STRB at 0x5A274) */
     void (*pfnPanelPrev)(void);  /* the original stores BaseFacScreen_PanelPrev @ 0x589cc */
     void (*pfnPanelNext)(void);  /* ... and BaseFacScreen_PanelNext @ 0x589dc */
     void (*pfnCloseThunk)(void); /* the original stores BaseFacScreen_CloseThunkA / CloseThunk */
@@ -689,5 +689,81 @@ typedef struct MapClickEnv {
 } MapClickEnv;
 
 i32 Geoscape_OnMapClick(const MapClickEnv *pEnv);
+
+/* --- BaseFacScreen_Toggle @ 0x589ec (1060 B) : the build dialog's open/close switch ---
+ *
+ * One byte decides the direction: unk_158884 is 1 while the dialog exists.
+ *
+ * CLOSE (0x58D98..0x58E04): unk_158884 = 0; the two panel controls at unk_158874 and unk_158878
+ * (the pair BaseFacScreen_Init allocated) are released with UiControl_FreePads + operator delete;
+ * the panel's nLineCount is raised back by 1 (0x58DE4, see step 5); then the UiPanel at unk_15886C
+ * has its lines freed and the panel itself deleted.
+ *
+ * BUILD (0x58A10..0x58D74):
+ *   1. nCount = how many of aBaseFacFlags[0..16] have bFlag20 set (0x58A1C..0x58A30).
+ *   2. operator new(0x1BB4) + UiPanel_ctor(nCount) -> unk_15886C. The nStyle store at 0x58A7C
+ *      dereferences the result even when the allocation failed (bugs.tsv).
+ *   3. nStyle 5, nFont 16, the +3020 click handler = BaseFacScreen_TryBuySelected, nPosX 120,
+ *      nPosY 234, nUnk7052 5, nUnk7056 234, nViewW 230, gap_0[0..2] = B4 B4 B4,
+ *      gap_0[3..5] = 46 96 AA, gap_0[6..11] = 44 F4 FC 04 46 4B, bUnk7088 0x96, bFlag7072 0,
+ *      bFlag7073 1, nUnk7076 1.
+ *   4. rows (0x58BAC..0x58C0C): aBaseFacFlags[1..16] in order, 16 iterations. Each record with
+ *      bFlag20 set gets its szName copied into the next apLines slot and anLineAux = the record
+ *      number, which is the facility kind BaseFacScreen_TryBuySelected looks up. A 17th row is
+ *      then written UNCONDITIONALLY from aBaseFacFlags[17] -- 0x187024, four bytes before pRdr,
+ *      which is a UiControl pointer slot and not a facility record (bugs.tsv). Its aux is 0.
+ *   5. nLineCount -= 1 (0x58C68). The count loop includes record 0 while the row loop starts at
+ *      record 1, so with record 0 flagged the two agree and the ctor allocated exactly the rows
+ *      written; the close branch adds the one back before freeing.
+ *   6. With byte_187074[4] (the new-base mode) set: unk_158868 = the row count, unk_158888 = 1,
+ *      and every cell of the selected base is wiped -- buildDays, tileA, tileB and layer2 to 0 and
+ *      facType to 0xFF (0x58C9C..0x58D74; the `6*(24*base + row + 18) + col` index is the facType
+ *      array at grid + 0x174 + 144*base + 108).
+ *
+ * Deviations: the original allocates the controls and the panel with operator new into fixed .bss
+ * slots; the port owns only the panel and takes caller-owned controls, so it frees their pads but
+ * not the objects. The port returns early on a failed allocation where the original dereferences
+ * the null panel. */
+#define PUFO_BASEFAC_PANEL_CTL_COUNT 2
+
+typedef struct BaseFacToggleEnv {
+    u8   *pbOpen;                  /* unk_158884: 1 while the dialog is built */
+    UiControl *apPanelCtl[PUFO_BASEFAC_PANEL_CTL_COUNT]; /* unk_158874, unk_158878 */
+    UiPanel **ppPanel;             /* unk_15886C */
+    i32  *pnPanelSel;              /* unk_158868 */
+    u8   *pbArmed;                 /* unk_158888 */
+    const u8 *pbNewBaseMode;       /* byte_187074[4] */
+    u8   *abFacilityGrid;          /* abFacilityGrid @ 0x159768 */
+    const i8 *pnSelectedBaseIdx;   /* nSelectedBaseIdx @ 0x159D81 */
+    const BaseFacFlag *paFac;      /* aBaseFacFlags @ 0x186E48, PUFO_BASEFAC_COUNT records */
+    const char *pszLastRowName;    /* the 4 bytes at 0x187024, the 17th row's "name" */
+    void (*pfnBuyThunk)(void);     /* installed as the panel's +3020 handler */
+} BaseFacToggleEnv;
+
+void BaseFacScreen_Toggle(const BaseFacToggleEnv *pEnv);
+
+/* --- BaseFacScreen_TryBuySelected @ 0x58910 (176 B) : the build dialog's OK ---
+ *
+ * sel = panel->nUnk3032; kind = panel->anLineAux[sel]; cost = aBaseFacFlags[kind].uCost (+24).
+ * nFunds - cost < 0 (0x58958, SUBS then the MI stores): byte_1870C8 = 1 as a DWORD (every reader
+ * loads a byte) and dword_1870B4[0] = 0, and the original returns &dword_1870B4. Otherwise
+ * unk_158888 = 1 (0x5897C, arming the placement) and, when byte_187074[4] == 0, unk_158868 takes
+ * panel->nUnk3032 (0x58994). Neither index is bounds-checked: an out-of-range sel reads anLineAux
+ * past the array and an out-of-range kind reads aBaseFacFlags past the table (bugs.tsv).
+ *
+ * Deviation: the port returns 1 when the purchase is affordable and 0 on the shortfall, where the
+ * original hands back the panel pointer or &dword_1870B4. */
+typedef struct BaseFacBuyEnv {
+    UiPanel *pPanel;               /* unk_15886C */
+    const BaseFacFlag *paFac;      /* aBaseFacFlags @ 0x186E48 */
+    const i32 *pnFunds;            /* nFunds @ 0x1598D8 */
+    u8   *pbArmed;                 /* unk_158888 */
+    const u8 *pbNewBaseMode;       /* byte_187074[4] */
+    i32  *pnPanelSel;              /* unk_158868 */
+    u32  *pdwShortfall;            /* byte_1870C8, written as a dword */
+    i32  *pnResidue;               /* dword_1870B4[0] */
+} BaseFacBuyEnv;
+
+i32 BaseFacScreen_TryBuySelected(const BaseFacBuyEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

@@ -96,17 +96,9 @@
 #include "ui/pufo_geouimanage.h"
 #include "ui/pufo_panel.h"
 
-/* The 28-byte facility record at aBaseFacFlags @ 0x186E48. Save_WriteBases @ 0x3F2CC saves
- * one byte per record (bFlag20), which is why the save docs call this table BaseFacFlag. */
-#define PUFO_BASEFAC_COUNT 17
-typedef struct BaseFacFlag {
-    char szName[20]; /* +0, from a text record */
-    u8   bFlag20;    /* +20, the saved place flag; Game_StartNew sets it, InitUI leaves 0 */
-    u8   bFlag21;    /* +21, InitUI stores the record index here */
-    u8   gap22[2];   /* +22 */
-    u32  uCost;      /* +24, read as a number by BaseFacScreen_TryBuySelected @ 0x58910 */
-} BaseFacFlag;
-_Static_assert(sizeof(BaseFacFlag) == 28, "aBaseFacFlags records are 28 bytes");
+/* The 28-byte facility record at aBaseFacFlags @ 0x186E48 (BaseFacFlag, PUFO_BASEFAC_COUNT) now
+ * lives in game/pufo_geoscape.h, which this header includes: the map click and the build dialog
+ * index it too. */
 
 /* The 24-byte mission-site record at unk_1865C0 (the root block's +0xC8). The u32 comes
  * from the "<i>.cts" file; the name is copied from text record 1655+i over +4. */

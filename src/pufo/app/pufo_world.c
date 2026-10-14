@@ -51,11 +51,53 @@ static void World_NoopClick(void) { }
 
 static PufoWorldState *g_pActiveWorld; /* UiControl.pfnClick takes no arguments */
 
-/* BaseFacScreen_Toggle (0x589ec) is not ported yet: it builds the build dialog and installs
- * BaseFacScreen_TryBuySelected. The shell runs the rest of BaseFacScreen_Init around it. */
-static void World_FacToggleStub(void *pUser)
+/* The build dialog's OK (BaseFacScreen_TryBuySelected @ 0x58910), installed by BaseFacScreen_Toggle
+ * as the panel's +3020 handler. UiControl.pfnClick takes no arguments, so it reaches the world
+ * through the active pointer. */
+static void World_FacBuyThunk(void)
 {
-    (void)pUser;
+    PufoWorldState *pW = g_pActiveWorld;
+    BaseFacBuyEnv env;
+
+    if (pW == NULL || pW->pFacPanel == NULL) {
+        return;
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.pPanel = pW->pFacPanel;
+    env.paFac = pW->aFac;
+    env.pnFunds = &pW->nFunds;
+    env.pbArmed = &pW->bArmedPlacement;
+    env.pbNewBaseMode = &pW->bNewBaseMode;
+    env.pnPanelSel = &pW->nPanelSel;
+    env.pdwShortfall = &pW->nShortfall1870C8;
+    env.pnResidue = &pW->nResidue1870B4;
+    (void)BaseFacScreen_TryBuySelected(&env);
+}
+
+/* BaseFacScreen_Toggle @ 0x589ec: the build dialog's open/close switch. */
+static void World_FacToggleThunk(void *pUser)
+{
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+
+    if (pW == NULL) {
+        return;
+    }
+
+    memset(&pW->facToggleEnv, 0, sizeof(pW->facToggleEnv));
+    pW->facToggleEnv.pbOpen = &pW->bFacDialogOpen;
+    pW->facToggleEnv.apPanelCtl[0] = &pW->ctlFacUp;
+    pW->facToggleEnv.apPanelCtl[1] = &pW->ctlFacDown;
+    pW->facToggleEnv.ppPanel = &pW->pFacPanel;
+    pW->facToggleEnv.pnPanelSel = &pW->nPanelSel;
+    pW->facToggleEnv.pbArmed = &pW->bArmedPlacement;
+    pW->facToggleEnv.pbNewBaseMode = &pW->bNewBaseMode;
+    pW->facToggleEnv.abFacilityGrid = pW->abFacilityGrid;
+    pW->facToggleEnv.pnSelectedBaseIdx = &pW->nSelectedBase;
+    pW->facToggleEnv.paFac = pW->aFac;
+    pW->facToggleEnv.pszLastRowName = (const char *)pW->abLastRowName;
+    pW->facToggleEnv.pfnBuyThunk = World_FacBuyThunk;
+    BaseFacScreen_Toggle(&pW->facToggleEnv);
 }
 
 /* NewBaseScreen_TryConfirm @ 0x6152c tail-calls Geoscape_OnMapClick @ 0x8b4a8; this is the seam. */
@@ -318,13 +360,13 @@ static void World_StartNewHook(void *pUser)
     pW->facInitEnv.pDownCtl = &pW->ctlFacDown;
     pW->facInitEnv.pnUnk15887C = &pW->nUnk15887C;
     pW->facInitEnv.pnUnk158880 = &pW->nUnk158880;
-    pW->facInitEnv.pnUnk158888 = &pW->nUnk158888;
+    pW->facInitEnv.pbArmed = &pW->bArmedPlacement;
     pW->facInitEnv.pfnPanelPrev = World_NoopClick; /* BaseFacScreen_PanelPrev/Next, panel not wired */
     pW->facInitEnv.pfnPanelNext = World_NoopClick;
     pW->facInitEnv.pfnCloseThunk = World_NoopClick; /* Geoscape_CloseUI is not wired yet */
     pW->facInitEnv.pfnLoadPads = pW->pfnLoadPads;
     pW->facInitEnv.pPadUser = pW->pLoadPadsUser;
-    pW->facInitEnv.pfnToggle = World_FacToggleStub;
+    pW->facInitEnv.pfnToggle = World_FacToggleThunk; /* BaseFacScreen_Toggle @ 0x589ec */
     pW->facInitEnv.pToggleUser = pW;
 
     env.pfnTryConfirmClick = World_TryConfirmClick; /* NewBaseScreen_TryConfirm's tail call */
@@ -433,6 +475,11 @@ void World_Free(PufoWorldState *pW)
     roster.pStrategList = &pW->strategList;
 
     GeoscapeUi_FreeAll(&pW->ui, &roster, 1); /* 0x86d20: the UI plus the roster */
+
+    /* The build dialog's panel is the shell's own allocation; Toggle's close branch releases it. */
+    if (pW->bFacDialogOpen != 0) {
+        World_FacToggleThunk(pW);
+    }
 
     /* Geoscape_BuildNavControls' fifteen controls are not part of pUi (the original never
      * freed them either); the shell does. */

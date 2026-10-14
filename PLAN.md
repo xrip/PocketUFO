@@ -392,6 +392,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x158874, 0x158888. One ledger row (87 total): the strateg write past the last entry on a search
   miss (0x8B5E4). Deviations: the port bounds that write and returns an explicit status where the
   original returns register residue.
+- [x] `BaseFacScreen_Toggle @ 0x589ec` (1060 B) + `BaseFacScreen_TryBuySelected @ 0x58910` (176 B)
+  — ported in `pufo_baseui.{h,c}` behind `BaseFacToggleEnv` / `BaseFacBuyEnv`, 55 new checks in
+  `tests/test_baseui.c`, and the shell's `pfnToggle` now builds the dialog for real. Toggle is a
+  one-byte switch on `bBaseFacDialogOpen @ 0x158884`: the close branch releases the two panel
+  controls and the `UiPanel`; the build branch counts the flagged `aBaseFacFlags` records, allocates
+  the panel (0x1BB4 + `UiPanel_ctor`), sets the twelve style fields, writes one row per flagged
+  record 1..16 with `anLineAux` = the record number (the facility kind the buy handler looks up),
+  adds a 17th row unconditionally, drops `nLineCount` by 1, and in new-base mode wipes the selected
+  base — buildDays/tileA/tileB/layer2 to 0 and facType to 0xFF (Hex-Rays'
+  `unk_1598DC[0].tileA.cell[0][6*(24*base+row+18)+col]` is the facType array at grid + 0x174 +
+  144*base + 108). IDB: function comments at 0x589ec / 0x58910, line comments at 0x58C18 and
+  0x58A7C, and the four dialog globals typed and named — `unk_158884` → `bBaseFacDialogOpen` (byte),
+  `unk_158888` → `bBaseFacPlaceArmed` (byte, STRB at 0x5A274 — the port had it as an i32),
+  `unk_15886C` → `pBaseFacPanel`, `unk_158868` → `nBaseFacPanelSel`. `BaseFacFlag` moved from
+  `ui/pufo_geoiinit.h` to `game/pufo_geoscape.h` so the map click and the dialog can both name it
+  without an include cycle. Three ledger rows (90 total): the 17th row read out of `aBaseFacFlags`
+  (0x58C18), the untested panel store (0x58A7C), the unchecked facility-kind index (0x58944).
 - [x] `Base_CreateNamedEntry @ 0x66930` (576 B) — ported in `pufo_geoscape.c` behind `BaseCreateEnv`,
   33 new checks in `tests/test_geoscape.c`. Chains `BaseRec_Create` + `StrategList_AddItem`, fills the
   `BaseRec` (bUnk17/nUnk8/nUnk12/bUnk16 from `abBaseKindTable`), the `aBaseFacilities` record (name,
@@ -619,6 +636,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | radar-list click + shell wiring (`pufo_baseui.c`, `app/pufo_world.c`) | 56/56 (Release) | 7916 | 723/1103 (65.5%) | 324112/598792 (54.1%) | 38 checked, 0 mismatched |
 | hangar placement + the facility cost label (`pufo_geoscape.c`) | 56/56 (Release) | 7955 | 725/1103 (65.7%) | 325264/598792 (54.3%) | 38 checked, 0 mismatched |
 | the geoscape map click + the build-dialog init (`pufo_baseui.c`, shell-wired) | 56/56 (Release) | 8029 | 727/1103 (65.9%) | 326700/598792 (54.6%) | 38 checked, 0 mismatched |
+| the build dialog itself (`BaseFacScreen_Toggle`, `BaseFacScreen_TryBuySelected`) | 56/56 (Release) | 8084 | 728/1103 (66.0%) | 327760/598792 (54.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

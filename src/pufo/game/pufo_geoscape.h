@@ -63,6 +63,19 @@ typedef enum FacilityKind {
     FAC_FUSION_BALL_DEFENCE = 16  /* rec 122 "Fusion Ball Defence" */
 } FacilityKind;
 
+/* The 28-byte facility record at aBaseFacFlags @ 0x186E48, indexed by FacilityKind.
+ * Save_WriteBases @ 0x3F2CC saves one byte per record (bFlag20), which is why the save docs
+ * call this table BaseFacFlag. */
+#define PUFO_BASEFAC_COUNT 17
+typedef struct BaseFacFlag {
+    char szName[20]; /* +0, from a text record */
+    u8   bFlag20;    /* +20, the saved place flag; Game_StartNew sets it, InitUI leaves 0 */
+    u8   bFlag21;    /* +21, InitUI stores the record index here */
+    u8   gap22[2];   /* +22 */
+    u32  uCost;      /* +24, read as a number by BaseFacScreen_TryBuySelected @ 0x58910 */
+} BaseFacFlag;
+_Static_assert(sizeof(BaseFacFlag) == 28, "aBaseFacFlags records are 28 bytes");
+
 typedef struct GeoscapeState {
     GameTime     time;
     GeoscapeWorld world;

@@ -132,9 +132,17 @@ typedef struct PufoWorldState {
     UiControl    ctlFacDown;            /* ... and 0x158878 */
     i32          nUnk15887C;            /* 0x15887C */
     i32          nUnk158880;            /* 0x158880 */
-    i32          nUnk158888;            /* 0x158888 */
+    u8           bArmedPlacement;       /* bBaseFacPlaceArmed @ 0x158888, a byte */
+    u8           bFacDialogOpen;        /* unk_158884: 1 while the build dialog exists */
+    UiPanel     *pFacPanel;             /* unk_15886C, the dialog's UiPanel */
+    i32          nPanelSel;             /* unk_158868 */
+    u8           bNewBaseMode;          /* byte_187074[4] */
+    u8           abLastRowName[4];      /* the 0x187024 slot the dialog's 17th row reads */
+    u32          nShortfall1870C8;      /* byte_1870C8, written as a dword */
+    i32          nResidue1870B4;        /* dword_1870B4[0] */
     HangarPlaceEnv hangarEnv;           /* the placement test's env */
     BaseFacInitEnv facInitEnv;          /* the screen-7 branch's env */
+    BaseFacToggleEnv facToggleEnv;      /* the build dialog's open/close switch */
     GeoscapeWorld     world;
     GameTime          time;
     AssetReader       rdr;                      /* pRdr @ 0x187028 */

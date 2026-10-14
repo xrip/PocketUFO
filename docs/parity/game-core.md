@@ -9184,3 +9184,53 @@ acceptance clears the tapped cell:
 
 Deviation: the strateg write is unbounded on a miss (0x8B5E4/0x8B5F8, bugs.tsv) — the port bounds it.
 The port also returns an explicit status (0/1/2/3) where the original returns register residue.
+
+### `BaseFacScreen_Toggle` (done)
+
+`src/pufo/game/pufo_baseui.c`, 42 new checks in `tests/test_baseui.c`. Callers:
+`BaseFacScreen_Init @ 0x5A27C` (tail call), `Geoscape_CloseUI` case 7 (0x8BF80/0x8BF84). The shell
+installs it as `BaseFacInitEnv.pfnToggle`, so the build dialog is now built for real.
+
+`bBaseFacDialogOpen @ 0x158884` decides the direction.
+
+**Close** (0x58D98..0x58E04): clear the flag, release the two panel controls at 0x158874/0x158878
+with `UiControl_FreePads`, raise the panel's `nLineCount` back by 1, then `UiPanel_FreeLines` and
+delete the panel.
+
+**Build** (0x58A10..0x58D74):
+
+1. Count the `aBaseFacFlags` records 0..16 with `bFlag20` set (0x58A1C). With the shipped
+   `g_abFacFlag20Init` table that is 10.
+2. `operator new(0x1BB4)` + `UiPanel_ctor(count)` into `pBaseFacPanel @ 0x15886C`.
+3. `nStyle` 5, `nFont` 16, the +3020 handler = `BaseFacScreen_TryBuySelected`, `nPosX` 120,
+   `nPosY` 234, +7052 5, +7056 234, `nViewW` 230, `gap_0[0..2]` B4 B4 B4, `gap_0[3..5]` 46 96 AA,
+   `gap_0[6..11]` 44 F4 FC 04 46 4B, +7088 0x96, +7072 0, +7073 1, +7076 1.
+4. Rows (0x58BAC..0x58C0C) walk records 1..16; each flagged record gets its `szName` into the next
+   `apLines` slot and `anLineAux` = the record number, which is the facility kind the buy handler
+   looks up. A 17th row follows unconditionally, its name read from `aBaseFacFlags[17]` = 0x187024
+   (a UiControl pointer slot -- bugs.tsv), aux 0.
+5. `nLineCount -= 1` (0x58C68). The count loop covers record 0 while the row loop starts at 1, so
+   with record 0 flagged the ctor allocated exactly the rows written and the close branch's `+1`
+   restores the freed-buffer count.
+6. With `byte_187074[4]` (the new-base mode) set: `nBaseFacPanelSel` = the row count,
+   `bBaseFacPlaceArmed` = 1, and every cell of the selected base is wiped -- buildDays, tileA,
+   tileB and layer2 to 0 and facType to 0xFF. The `6*(24*base + row + 18) + col` index Hex-Rays
+   renders as `unk_1598DC[0].tileA.cell[0][...]` is the facType array at grid + 0x174 + 144*base + 108.
+
+Deviations: the port owns only the panel -- the two controls are caller-owned, so their pads are
+released but the objects are not freed; a failed allocation returns instead of storing through null
+(0x58A7C, bugs.tsv).
+
+### `BaseFacScreen_TryBuySelected` (done)
+
+`src/pufo/game/pufo_baseui.c`, 13 new checks in `tests/test_baseui.c`. Installed by
+`BaseFacScreen_Toggle` as the panel's +3020 click handler.
+
+`sel = panel->nUnk3032` (0x58924), `kind = anLineAux[sel]` (0x5892C),
+`cost = aBaseFacFlags[kind].uCost` (0x58944, record + 0x18). `nFunds - cost < 0` (0x5894C):
+`byte_1870C8 = 1` as a **dword** (0x58960 -- every reader loads a byte) and `dword_1870B4[0] = 0`.
+Otherwise `bBaseFacPlaceArmed = 1` (0x5897C) arms the placement, and with `byte_187074[4] == 0`
+`nBaseFacPanelSel` takes `panel->nUnk3032` (0x58994).
+
+Deviation: the port returns 1/0 where the original returns the panel pointer or `&dword_1870B4`, and
+it refuses an out-of-range kind instead of reading the table out of bounds (0x58944, bugs.tsv).
