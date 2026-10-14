@@ -76,6 +76,35 @@ UI_PANEL_CONFLICT = {
 }
 
 
+# The original's import-stub and CRT-startup block. IDA placed every Win32 API,
+# C runtime, MFC operator and fmodce.dll entry point the game calls through as a
+# small stub here, followed by the CRT's own start/_cinit/atexit/_onexit chain.
+# The port reaches the same behaviour through Win64 Win32 calls, the C standard
+# library and the audio backend seam, so these stubs are not recreated as
+# functions -- see the constraint in CLAUDE.md about not re-linking original DLLs.
+IMPORT_BLOCK_START = 0xA115C
+IMPORT_BLOCK_END = 0xA1760
+
+# Names that really are glue: IDA's nullsubs, `j_` jump thunks, MFC mangled import
+# names, and the atexit registrar pairs the runtime helpers install. A small
+# function with any other name is real game behaviour that simply is not ported
+# yet, and the gap note has to say so rather than call it behaviour-free.
+GLUE_NAME_RE = re.compile(r"^(nullsub_|j_|\?)|(RegisterAtexit|AtexitThunk|Atexit_nullsub\w*)$")
+
+
+def thunk_target(name):
+    """The callee a `j_`-prefixed jump thunk calls, or None if it is not a thunk.
+
+    IDA names a one-instruction `B target` thunk `j_<target>`, and a thunk to a thunk
+    `j_j_<target>`. Stripping the prefixes gives the real callee."""
+    if not name.startswith("j_"):
+        return None
+    target = name[2:]
+    while target.startswith("j_"):
+        target = target[2:]
+    return target or None
+
+
 def load_citations():
     """addr -> sorted list of source files citing it.
 
@@ -235,6 +264,11 @@ def main():
     A("registrations are named as such; the rest are attributed to the subsystem")
     A("whose port work they belong to.")
     A("")
+    # Names the port already cites, so a `j_` thunk can be attributed to its target
+    # instead of being called a thunk that carries no behaviour.
+    ported_names = {inv[a][0] for a in covered}
+    all_names = {v[0] for v in inv.values()}
+
     for sub, _desc in SUBSYSTEMS:
         d = by_sub.get(sub)
         if d is None or not d["gap"]:
@@ -246,14 +280,28 @@ def main():
         A("| Address | Original | Size | Note |")
         A("|---|---|---|---|")
         for addr, name, size, _files in sorted(d["gap"], key=lambda r: -r[2]):
+            target = thunk_target(name)
             if name in UI_PANEL_CONFLICT:
                 note = ("belongs to a **second struct** merged under the name "
                         "`UiPanel`; see docs/parity/ui-core.md")
             elif name in GAP_REASONS and GAP_REASONS[name]:
                 note = GAP_REASONS[name]
-            elif size <= 20:
-                note = ("platform thunk / atexit registration or a one-instruction "
-                        "nullsub; carries no game behaviour to recreate")
+            elif target is not None and target in ported_names:
+                note = ("jump thunk to `%s`, which is ported; the port calls the target "
+                        "directly, so the thunk wrapper has no behaviour of its own" % target)
+            elif target is not None and target in all_names:
+                note = ("jump thunk to `%s`; the thunk itself is a call-site wrapper and "
+                        "follows that function's port work" % target)
+            elif IMPORT_BLOCK_START <= int(addr, 16) <= IMPORT_BLOCK_END:
+                note = ("import stub in the original's import/CRT-startup block "
+                        "(`0x%X..0x%X`): the Win32 API, C runtime, MFC operator or fmodce.dll "
+                        "entry the game calls through. The port reaches the same behaviour "
+                        "through Win64 Win32 calls, the C standard library and the audio "
+                        "backend seam, so the stub is not recreated as a function"
+                        % (IMPORT_BLOCK_START, IMPORT_BLOCK_END))
+            elif size <= 20 and GLUE_NAME_RE.search(name):
+                note = ("glue only: a nullsub, jump thunk, MFC import stub or atexit "
+                        "registrar; carries no game behaviour to recreate")
             else:
                 note = ("not yet ported; scheduled with the `%s` subsystem work" % sub)
             A("| `%s` | `%s` | %d | %s |" % (addr, name, size, note))

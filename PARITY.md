@@ -861,7 +861,7 @@ whose port work they belong to.
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x3f0d0` | `DatFile_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `render` — 1 functions, 24 bytes remaining
 
@@ -873,153 +873,153 @@ whose port work they belong to.
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x11164` | `Bank_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x11170` | `Bank_AtexitThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x11164` | `Bank_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x11170` | `Bank_AtexitThunk` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `app-shell` — 3 functions, 124 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x9ecb8` | `App_ResizeMainWindow` | 84 | not yet ported; scheduled with the `app-shell` subsystem work |
-| `0x18e18` | `App_QuitFromTact` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x18e18` | `App_QuitFromTact` | 20 | not yet ported; scheduled with the `app-shell` subsystem work |
+| `0x54c48` | `??1CDialogTemplate@@QAA@XZ` | 20 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `platform` — 132 functions, 1908 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0xa1694` | `Crt_DoExit` | 180 | not yet ported; scheduled with the `platform` subsystem work |
-| `0xa1568` | `_onexit` | 168 | not yet ported; scheduled with the `platform` subsystem work |
-| `0xa1534` | `start` | 52 | not yet ported; scheduled with the `platform` subsystem work |
-| `0xa1628` | `_cinit` | 48 | not yet ported; scheduled with the `platform` subsystem work |
-| `0xa1658` | `Crt_CallFnTable` | 48 | not yet ported; scheduled with the `platform` subsystem work |
-| `0xa1610` | `atexit` | 24 | not yet ported; scheduled with the `platform` subsystem work |
-| `0x11148` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x22604` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x3f0b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x460b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x46728` | `j_SoftSurf_DrawBorderAndBlur` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x61498` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_3` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x83880` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_4` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x9e0b0` | `nullsub_GeoscapeStub` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x11158` | `j_UiBank_CtorAll` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x22614` | `j_Map_InitAndLoadRegistry` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x2263c` | `j_TactItem_ctor_pItem` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37078` | `j_TactItem_ctor_138EA0` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37088` | `j_TactItem_ctor_156A88` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37124` | `j_TactItem_ctor_156910` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37134` | `j_TactItem_ctor_156A58` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x3f0c4` | `j_DatFile_ctor` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x3f0dc` | `j_DatFile_dtor` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x460c4` | `j_Font_Init_ReturnArg` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x460dc` | `j_Font_Free` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa115c` | `??3@YAXPAX@Z` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1168` | `??2@YAPAXI@Z` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1174` | `strcat` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1180` | `sqrt` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa118c` | `strcmp` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1198` | `cos` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11a4` | `sin` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11b0` | `atoi` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11bc` | `memset` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11c8` | `strlen` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11d4` | `memmove` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11e0` | `atan2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11ec` | `tan` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa11f8` | `ReadFile` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1204` | `SetFilePointer` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1210` | `CreateFileW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa121c` | `memcpy` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1228` | `CloseHandle` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1234` | `rand` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1240` | `fclose` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa124c` | `fwrite` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1258` | `fopen` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1264` | `Sleep` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1270` | `KillTimer` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa127c` | `SetTimer` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1288` | `itoa` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1294` | `SetWindowPos` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12a0` | `RegCloseKey` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12ac` | `RegSetValueExW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12b8` | `mbstowcs` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12c4` | `RegCreateKeyExW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12d0` | `RegQueryValueExW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12dc` | `WriteFile` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12e8` | `FindClose` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa12f4` | `FindFirstFileW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1300` | `GetFileSize` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa130c` | `strupr` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1318` | `GetMessageW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1324` | `DispatchMessageW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1330` | `TranslateMessage` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa133c` | `TranslateAcceleratorW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1348` | `LoadAcceleratorsW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1354` | `wcstombs` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1360` | `GetModuleFileNameW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa136c` | `srand` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1378` | `GetSystemTime` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1384` | `ReleaseDC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1390` | `ExtEscape` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa139c` | `GetDC` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13a8` | `UpdateWindow` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13b4` | `ShowWindow` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13c0` | `CreateWindowExW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13cc` | `GetSystemMetrics` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13d8` | `RegisterClassW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13e4` | `GetStockObject` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13f0` | `LoadIconW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa13fc` | `SetForegroundWindow` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1408` | `FindWindowW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1414` | `PostQuitMessage` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1420` | `SendMessageW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa142c` | `DefWindowProcW` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1438` | `EndPaint` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1444` | `GetClientRect` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1450` | `BeginPaint` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa145c` | `SHHandleWMSettingChange` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1468` | `SHHandleWMActivate` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1474` | `FSOUND_PlaySound` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1480` | `FMUSIC_SetPaused` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa148c` | `FMUSIC_PlaySong` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1498` | `FMUSIC_OptimizeChannels` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14a4` | `FMUSIC_SetLooping` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14b0` | `FMUSIC_LoadSongEx` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14bc` | `FSOUND_Sample_SetMode` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14c8` | `FSOUND_Sample_Load` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14d4` | `FSOUND_SetHWND` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14e0` | `FSOUND_Init` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14ec` | `FSOUND_Close` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa14f8` | `FMUSIC_FreeSong` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1504` | `FSOUND_Sample_Free` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1510` | `FMUSIC_SetMasterVolume` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa151c` | `FSOUND_SetPaused` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1528` | `FSOUND_SetSFXMasterVolume` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1688` | `Crt_Exit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1748` | `LocalReAlloc` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1754` | `LocalAlloc` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa1760` | `LocalSize` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x163d0` | `nullsub_1` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x22638` | `j_j_TactItem_ctor_pItem` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x22b4c` | `nullsub_2` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x22b50` | `nullsub_3` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37074` | `j_j_TactItem_ctor_138EA0` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37084` | `j_j_TactItem_ctor_156A88` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37094` | `j_Math_StoreSqrtConst` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x370e4` | `j_Math_StoreAtan2Const` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37120` | `j_j_TactItem_ctor_156910` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37130` | `j_j_TactItem_ctor_156A58` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x37140` | `nullsub_4` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x61b8c` | `nullsub_5` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x61b90` | `nullsub_6` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x81a28` | `nullsub_7` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x83870` | `j_AssetReader_ClearGlobal` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x8b948` | `nullsub_8` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x94550` | `nullsub_9` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x9e9f0` | `j_itoa` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa0f90` | `j_PtrArray_Clear` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0xa42e0` | `nullsub_10` | 4 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0xa1694` | `Crt_DoExit` | 180 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1568` | `_onexit` | 168 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1534` | `start` | 52 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1628` | `_cinit` | 48 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1658` | `Crt_CallFnTable` | 48 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1610` | `atexit` | 24 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0x11148` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | jump thunk to `Tact_CheckBattleEnd`; the thunk itself is a call-site wrapper and follows that function's port work |
+| `0x22604` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x3f0b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x460b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x46728` | `j_SoftSurf_DrawBorderAndBlur` | 16 | jump thunk to `SoftSurf_DrawBorderAndBlur`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x61498` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_3` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x83880` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_4` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x9e0b0` | `nullsub_GeoscapeStub` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x11158` | `j_UiBank_CtorAll` | 12 | jump thunk to `UiBank_CtorAll`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x22614` | `j_Map_InitAndLoadRegistry` | 12 | jump thunk to `Map_InitAndLoadRegistry`; the thunk itself is a call-site wrapper and follows that function's port work |
+| `0x2263c` | `j_TactItem_ctor_pItem` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37078` | `j_TactItem_ctor_138EA0` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37088` | `j_TactItem_ctor_156A88` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37124` | `j_TactItem_ctor_156910` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37134` | `j_TactItem_ctor_156A58` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x3f0c4` | `j_DatFile_ctor` | 12 | jump thunk to `DatFile_ctor`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x3f0dc` | `j_DatFile_dtor` | 12 | jump thunk to `DatFile_dtor`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x460c4` | `j_Font_Init_ReturnArg` | 12 | jump thunk to `Font_Init_ReturnArg`; the thunk itself is a call-site wrapper and follows that function's port work |
+| `0x460dc` | `j_Font_Free` | 12 | jump thunk to `Font_Free`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0xa115c` | `??3@YAXPAX@Z` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1168` | `??2@YAPAXI@Z` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1174` | `strcat` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1180` | `sqrt` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa118c` | `strcmp` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1198` | `cos` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11a4` | `sin` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11b0` | `atoi` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11bc` | `memset` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11c8` | `strlen` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11d4` | `memmove` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11e0` | `atan2` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11ec` | `tan` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa11f8` | `ReadFile` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1204` | `SetFilePointer` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1210` | `CreateFileW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa121c` | `memcpy` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1228` | `CloseHandle` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1234` | `rand` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1240` | `fclose` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa124c` | `fwrite` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1258` | `fopen` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1264` | `Sleep` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1270` | `KillTimer` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa127c` | `SetTimer` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1288` | `itoa` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1294` | `SetWindowPos` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12a0` | `RegCloseKey` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12ac` | `RegSetValueExW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12b8` | `mbstowcs` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12c4` | `RegCreateKeyExW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12d0` | `RegQueryValueExW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12dc` | `WriteFile` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12e8` | `FindClose` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa12f4` | `FindFirstFileW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1300` | `GetFileSize` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa130c` | `strupr` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1318` | `GetMessageW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1324` | `DispatchMessageW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1330` | `TranslateMessage` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa133c` | `TranslateAcceleratorW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1348` | `LoadAcceleratorsW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1354` | `wcstombs` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1360` | `GetModuleFileNameW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa136c` | `srand` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1378` | `GetSystemTime` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1384` | `ReleaseDC` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1390` | `ExtEscape` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa139c` | `GetDC` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13a8` | `UpdateWindow` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13b4` | `ShowWindow` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13c0` | `CreateWindowExW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13cc` | `GetSystemMetrics` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13d8` | `RegisterClassW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13e4` | `GetStockObject` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13f0` | `LoadIconW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa13fc` | `SetForegroundWindow` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1408` | `FindWindowW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1414` | `PostQuitMessage` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1420` | `SendMessageW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa142c` | `DefWindowProcW` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1438` | `EndPaint` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1444` | `GetClientRect` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1450` | `BeginPaint` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa145c` | `SHHandleWMSettingChange` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1468` | `SHHandleWMActivate` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1474` | `FSOUND_PlaySound` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1480` | `FMUSIC_SetPaused` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa148c` | `FMUSIC_PlaySong` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1498` | `FMUSIC_OptimizeChannels` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14a4` | `FMUSIC_SetLooping` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14b0` | `FMUSIC_LoadSongEx` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14bc` | `FSOUND_Sample_SetMode` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14c8` | `FSOUND_Sample_Load` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14d4` | `FSOUND_SetHWND` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14e0` | `FSOUND_Init` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14ec` | `FSOUND_Close` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa14f8` | `FMUSIC_FreeSong` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1504` | `FSOUND_Sample_Free` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1510` | `FMUSIC_SetMasterVolume` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa151c` | `FSOUND_SetPaused` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1528` | `FSOUND_SetSFXMasterVolume` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1688` | `Crt_Exit` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1748` | `LocalReAlloc` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1754` | `LocalAlloc` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0xa1760` | `LocalSize` | 12 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
+| `0x163d0` | `nullsub_1` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x22638` | `j_j_TactItem_ctor_pItem` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x22b4c` | `nullsub_2` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x22b50` | `nullsub_3` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37074` | `j_j_TactItem_ctor_138EA0` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37084` | `j_j_TactItem_ctor_156A88` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37094` | `j_Math_StoreSqrtConst` | 4 | jump thunk to `Math_StoreSqrtConst`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x370e4` | `j_Math_StoreAtan2Const` | 4 | jump thunk to `Math_StoreAtan2Const`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x37120` | `j_j_TactItem_ctor_156910` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37130` | `j_j_TactItem_ctor_156A58` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x37140` | `nullsub_4` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x61b8c` | `nullsub_5` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x61b90` | `nullsub_6` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x81a28` | `nullsub_7` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x83870` | `j_AssetReader_ClearGlobal` | 4 | jump thunk to `AssetReader_ClearGlobal`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0x8b948` | `nullsub_8` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x94550` | `nullsub_9` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x9e9f0` | `j_itoa` | 4 | jump thunk to `itoa`; the thunk itself is a call-site wrapper and follows that function's port work |
+| `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
+| `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `tact` — 24 functions, 59692 bytes remaining
 
@@ -1047,8 +1047,8 @@ whose port work they belong to.
 | `0x3348c` | `Tact_TallyBattleStats` | 756 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x344b4` | `Tact_TallyCraftRecovery` | 556 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x22620` | `Map_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x2262c` | `Map_Atexit_nullsub2` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x22620` | `Map_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x2262c` | `Map_Atexit_nullsub2` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `tact-ui` — 1 functions, 1268 bytes remaining
 
@@ -1069,9 +1069,9 @@ whose port work they belong to.
 | `0x84bf8` | `Ui_OpenResearch` | 288 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x46130` | `Font_Init_ReturnArg` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x12254` | `UiModal_EndThunk` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x460d0` | `Font_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x46130` | `Font_Init_ReturnArg` | 20 | not yet ported; scheduled with the `ui-core` subsystem work |
+| `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
+| `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `strat` — 71 functions, 91644 bytes remaining
 
@@ -1143,11 +1143,11 @@ whose port work they belong to.
 | `0x6144c` | `RadarScreen_SetActive` | 76 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x668e8` | `Base_RemoveAllSoldiers` | 72 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b560` | `FundingScreen_Open` | 60 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x5d6c0` | `GameTime_Unpause` | 20 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614a8` | `BaseGrid_Atexit_nullsub5` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
-| `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | platform thunk / atexit registration or a one-instruction nullsub; carries no game behaviour to recreate |
+| `0x5d6c0` | `GameTime_Unpause` | 20 | not yet ported; scheduled with the `strat` subsystem work |
+| `0x5d6d4` | `RadarScreen_BlitOverlay` | 16 | not yet ported; scheduled with the `strat` subsystem work |
+| `0x614a8` | `BaseGrid_Atexit_nullsub5` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
+| `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
 ### `strat-ui` — 120 functions, 98108 bytes remaining
 
