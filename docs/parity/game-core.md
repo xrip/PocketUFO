@@ -6295,10 +6295,10 @@ accepts. Unlike `Base_CalcWeaponStorageUsed`, it does not filter indices: index 
 already happened when the counts were recorded.
 
 `BasePlaneScreen_CommitStores` adds the two together with `apObjects[slot].bCargoSize` and compares
-against `Craft_GetTypeCargoCap`. Its own port is blocked on modelling the hangar screen's state
-block (`0x161A40`, `0x161AC8`, `0x161AD0`, `0x161EE0`, `0x161EEC`, `0x161EF4`); the full decode, including
-the crew quota per craft class and the slot-34 asymmetry (5 leaves the base, 50 lands on the craft),
-is recorded in the IDB.
+against `Craft_GetTypeCargoCap`. Its own port was blocked on modelling the hangar screen's state
+block (`0x161A40`, `0x161AC8`, `0x161AD0`, `0x161EE0`, `0x161EEC`, `0x161EF4`) -- that block is now
+modelled as five `UiPanel *` slots plus `anSlotCarryCount`, and the function is ported; see "The hangar
+stores list: take a row, put one back".
 
 Covered by `TestCrewAndStoresTotals`, 10 checks.
 
@@ -9621,3 +9621,44 @@ index while `BasePlaneScreen_Close` reads 31/32/34/35. The three header records 
 `aTextRec142`, `aTextRec143`, and the panel globals are `bStatPanelASel/BSel/AOpen/BOpen`. The global at
 0x161A38 is READ here as the panel row count, which falsifies the "write-only residue" note the port had
 been carrying for it: `pufo_app.c` and the flicker paragraph above are corrected.
+
+### The hangar stores list: take a row, put one back (done)
+
+`src/pufo/game/pufo_plane.{h,c}`, 66 new checks in `tests/test_plane.c`. `BasePlaneScreen_CommitStores
+@ 0x7ac38` (948 B) and `BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4` (644 B). The blocker the earlier
+note named -- modelling the hangar screen's state block -- turned out to be five `UiPanel` pointers in
+.bss, and the ARM says so literally: `LDR R0, =unk_161F00; LDR R0, [R0]; LDR R3, [R0,#0xBD8]`.
+
+| slot | what it holds |
+|---|---|
+| `pPlaneSelRowPanel @ 0x161F00` | AdjustSelectedQty reads the selected ROW from `nUnk3032` |
+| `pPlaneCommitRowPanel @ 0x161EEC` | CommitStores reads the selected ROW from `nUnk3032` |
+| `pPlaneSlotPanel @ 0x161AC8` | `anLineAux[row]` is the row's SLOT id |
+| `pPlaneAvailPanel @ 0x161A40` | `anLineAux[row]` is how many are still available |
+| `pPlaneTakenPanel @ 0x161EF4` | `anLineAux[row]` is how many have been taken |
+
+CommitStores bails when the available count is not positive, then splits on the slot. A slot OUTSIDE
+31..35 is a weapon row and is gated on hold space: `BasePlane_CalcWeaponStoresUsed +
+apObjects[slot].bCargoSize + Base_CalcWeaponStorageUsed` against `Craft_GetTypeCargoCap`, with 1 into
+0x1870C8 (a dword store into a byte global) and 0 into `dword_1870B4` on refusal. A slot INSIDE 31..35
+is a crew row, and here `Craft_GetTypeCargoCap` is used as a **craft class selector, not a capacity**:
+cap 0 and cap 120 refuse outright, cap 140 needs the crew quota at most 3 with
+`soldiersAboard + 4*quota <= 14`, cap 260 needs at most 4 and at most 26, and an unknown craft type
+skips the crew gate entirely. The quota is pre-incremented BEFORE the gate and handed back on either
+refusal -- which is why `BasePlaneScreen_Close` clearing it matters.
+
+Then `Base_CraftWeaponItemId` must cover 30 / 8 / 5 / 8 for slots 31 / 32 / 34 / 35, else 1 goes to
+0x1870C8 and **2** to `dword_1870B4`: the two refusal reasons are distinguishable through that residue
+flag. Slot 33 has no object record, clears every gate, spends the quota and moves no stock. On
+acceptance the base loses 30/8/5/8 items and the craft gains 30/8/**50**/8 cargo units -- the same
+5-for-50 for object 105 that `BasePlaneScreen_Close` runs in reverse.
+
+AdjustSelectedQty is the undo, and it carries one asymmetry the port must not smooth over: its cargo
+debit is **clamped at zero** (`if (cargo < delta) cargo = 0` at 0x7AB10 and its three siblings), while
+`BasePlaneScreen_Close` subtracts without a floor. Same rows, same deltas, different floor.
+
+IDB: the five slots are now typed `UiPanel *` with those names, `unk_114A64` is `apCraft`, and both
+functions carry the full gate description. `BaseRec_SubItemQty @ 0x5571c` was `static` in the port and
+is now declared next to its mirror `BaseRec_AddItemQty`, because CommitStores needs it.
+
+Covered by `TestCommitStores` and `TestAdjustSelectedQty`, 66 checks.

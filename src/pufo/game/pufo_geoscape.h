@@ -604,6 +604,10 @@ i32 Base_CalcOccupiedSpace(Soldier *const *apSoldiers, i32 nSoldierCount,
  * both adds when the slot is outside the eight entries (deviation). */
 void BaseRec_AddItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
 
+/* BaseRec_SubItemQty @ 0x5571c. The mirror: subtract, with the same no-clamp rule and the same
+ * unchecked slot byte. BasePlaneScreen_CommitStores @ 0x7ac38 is the caller that needs it. */
+void BaseRec_SubItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta);
+
 /* ------------------------------------------------- writing one facility into a base grid
  *
  * Evidence: BaseFac_SetCellBuildState @ 0x623bc, called from BaseFacScreen_DrawPlacementOverlay

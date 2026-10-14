@@ -447,3 +447,202 @@ void BasePlaneScreen_Close(const PlaneCloseEnv *pEnv)
         pEnv->pfnCloseUi(pEnv->pUser);                  /* 0x7CBB4 */
     }
 }
+
+/* ------------------------------------------------- the hangar stores list */
+
+/* The four crew rows, in the order the original's 31..35 switch walks them. Slot 33 is in neither
+ * switch: it has no object record, so it clears every gate and moves nothing. */
+static const struct PlaneStoreRow {
+    i32 nSlot;
+    i32 nObject;
+    i32 nCargoCol;
+    i32 nBaseDelta;  /* items the base moves */
+    i32 nCargoDelta; /* cargo units the craft moves */
+} g_aStoreRows[4] = {
+    { 31,  56, 0, 30, 30 },
+    { 32,  57, 1,  8,  8 },
+    { 34, 105, 2,  5, 50 },
+    { 35,  58, 3,  8,  8 },
+};
+
+static const struct PlaneStoreRow *StoreRowFind(i32 nSlot)
+{
+    for (i32 i = 0; i < 4; ++i) {
+        if (g_aStoreRows[i].nSlot == nSlot) {
+            return &g_aStoreRows[i];
+        }
+    }
+    return NULL;
+}
+
+static ObjectRecFull *StoreRowObject(const PlaneStoresEnv *pEnv, i32 nObject)
+{
+    return (pEnv->apObjects != NULL && nObject >= 0 && nObject < pEnv->nObjectCount)
+               ? pEnv->apObjects[nObject]
+               : NULL;
+}
+
+i32 BasePlaneScreen_CommitStores(PlaneStoresEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCommitPanel == NULL || pEnv->pSlotPanel == NULL ||
+        pEnv->pAvailPanel == NULL || pEnv->pTakenPanel == NULL ||
+        pEnv->anSlotCarryCount == NULL || pEnv->pnCrewQuota == NULL) {
+        return 0;
+    }
+
+    const i32 nRow = pEnv->pCommitPanel->nUnk3032;
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return 0; /* deviation: the original indexes anLineAux with no bound */
+    }
+
+    const i32 nSlot = pEnv->pSlotPanel->anLineAux[nRow]; /* 0x7AC58 */
+    if (pEnv->pAvailPanel->anLineAux[nRow] <= 0) {
+        return 0; /* 0x7AC68 */
+    }
+
+    const bool bCrewRow = (nSlot > 30 && nSlot < 36);
+    Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[pEnv->nCraftIdx] : NULL;
+    BaseRec *pBase = (pEnv->apBases != NULL) ? pEnv->apBases[pEnv->nBaseIdx] : NULL;
+
+    if (!bCrewRow) {
+        /* 0x7AD38..0x7AE50: what is already carried, plus this one unit, against the hold cap. */
+        const i32 nPending = BasePlane_CalcWeaponStoresUsed(pEnv->apObjects, pEnv->nObjectCount,
+                                                            pEnv->anSlotCarryCount);
+        const i32 nCarried = Base_CalcWeaponStorageUsed(pEnv->apObjects, pEnv->nObjectCount,
+                                                        pEnv->nCraftIdx);
+        const ObjectRecFull *pItem = StoreRowObject(pEnv, nSlot);
+        const i32 nSize = (pItem != NULL) ? (i32)pItem->bCargoSize : 0;
+
+        if (nPending + nSize + nCarried > (i32)Craft_GetTypeCargoCap(pShip)) {
+            if (pEnv->pbShortfallFlag != NULL) {
+                *pEnv->pbShortfallFlag = 1; /* 0x7AE54: a dword store into a byte global */
+            }
+            if (pEnv->pnResidueFlag != NULL) {
+                *pEnv->pnResidueFlag = 0; /* 0x7AE5C */
+            }
+            return 0;
+        }
+    }
+
+    i32 nQuota = *pEnv->pnCrewQuota;
+    if (bCrewRow) {
+        nQuota = ++(*pEnv->pnCrewQuota); /* 0x7AE88: the quota is spent before the gate is asked */
+    }
+
+    const i32 nAboard = Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                  pEnv->nCraftIdx); /* 0x7AD38 */
+
+    if (bCrewRow) {
+        bool bCrewOk;
+
+        switch (Craft_GetTypeCargoCap(pShip)) {
+        case CRAFT_CARGO_CAP_NONE:
+        case CRAFT_CARGO_CAP_TYPE1:
+            bCrewOk = false; /* cap 0 and cap 120 refuse outright */
+            break;
+        case CRAFT_CARGO_CAP_TYPE0:
+            bCrewOk = (nQuota <= 3 && nAboard + 4 * nQuota <= 14);
+            break;
+        case CRAFT_CARGO_CAP_TYPE2:
+            bCrewOk = (nQuota <= 4 && nAboard + 4 * nQuota <= 26);
+            break;
+        default:
+            bCrewOk = true; /* an unknown craft type has no crew gate at all */
+            break;
+        }
+
+        if (!bCrewOk) {
+            if (pEnv->pbShortfallFlag != NULL) {
+                *pEnv->pbShortfallFlag = 1;
+            }
+            if (pEnv->pnResidueFlag != NULL) {
+                *pEnv->pnResidueFlag = 0;
+            }
+            --(*pEnv->pnCrewQuota); /* 0x7AF98: the spent quota is handed back */
+            return 0;
+        }
+
+        const struct PlaneStoreRow *pRow = StoreRowFind(nSlot);
+
+        if (pRow != NULL) {
+            const i32 nStock = Base_CraftWeaponItemId(pEnv->apObjects, nSlot, (i32)pEnv->nBaseIdx);
+
+            if (nStock < pRow->nBaseDelta) {
+                if (pEnv->pbShortfallFlag != NULL) {
+                    *pEnv->pbShortfallFlag = 1;
+                }
+                if (pEnv->pnResidueFlag != NULL) {
+                    *pEnv->pnResidueFlag = 2; /* 0x7AF90: 2 is the "not enough stock" reason */
+                }
+                --(*pEnv->pnCrewQuota);
+                return 0;
+            }
+
+            BaseRec_SubItemQty(pBase, StoreRowObject(pEnv, pRow->nObject), pRow->nBaseDelta);
+            if (pShip != NULL) {
+                pShip->anCargoQty[pRow->nCargoCol] += pRow->nCargoDelta;
+            }
+        }
+    }
+
+    pEnv->pTakenPanel->anLineAux[nRow] += 1; /* 0x7AFB4 */
+    pEnv->pAvailPanel->anLineAux[nRow] -= 1; /* 0x7AFC4 */
+    if (nSlot >= 0 && nSlot < pEnv->nObjectCount) {
+        pEnv->anSlotCarryCount[nSlot] += 1; /* 0x7AFD8 */
+    }
+    return 1;
+}
+
+i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pRowPanel == NULL || pEnv->pSlotPanel == NULL ||
+        pEnv->pAvailPanel == NULL || pEnv->pTakenPanel == NULL ||
+        pEnv->anSlotCarryCount == NULL) {
+        return 0;
+    }
+
+    const i32 nRow = pEnv->pRowPanel->nUnk3032;
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return 0; /* deviation: the original indexes anLineAux with no bound */
+    }
+
+    const i32 nTaken = pEnv->pTakenPanel->anLineAux[nRow]; /* 0x7A9E4 */
+    const i32 nSlot = pEnv->pSlotPanel->anLineAux[nRow];   /* 0x7A9F0 */
+
+    if (nTaken <= 0) {
+        return 0; /* 0x7A9F8 */
+    }
+
+    pEnv->pTakenPanel->anLineAux[nRow] = nTaken - 1; /* 0x7AA08 */
+    pEnv->pAvailPanel->anLineAux[nRow] += 1;         /* 0x7AA18 */
+    if (nSlot >= 0 && nSlot < pEnv->nObjectCount) {
+        pEnv->anSlotCarryCount[nSlot] -= 1;          /* 0x7AA28 */
+    }
+
+    if (nSlot <= 30 || nSlot >= 36) {
+        return 1;
+    }
+
+    if (pEnv->pnCrewQuota != NULL) {
+        --(*pEnv->pnCrewQuota); /* 0x7AA50 */
+    }
+
+    const struct PlaneStoreRow *pRow = StoreRowFind(nSlot);
+
+    if (pRow == NULL) {
+        return 1; /* slot 33: the quota moved, no stock did */
+    }
+
+    BaseRec_AddItemQty((pEnv->apBases != NULL) ? pEnv->apBases[pEnv->nBaseIdx] : NULL,
+                       StoreRowObject(pEnv, pRow->nObject), pRow->nBaseDelta);
+
+    Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[pEnv->nCraftIdx] : NULL;
+
+    if (pShip != NULL) {
+        /* 0x7AB10 and friends: here the debit IS clamped at zero, which BasePlaneScreen_Close is not. */
+        const i32 nCargo = pShip->anCargoQty[pRow->nCargoCol];
+        pShip->anCargoQty[pRow->nCargoCol] = (nCargo < pRow->nCargoDelta) ? 0 : nCargo - pRow->nCargoDelta;
+    }
+
+    return 1;
+}

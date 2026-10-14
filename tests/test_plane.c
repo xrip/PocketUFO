@@ -1,6 +1,7 @@
 /* test_plane.c - the craft loadout screen's weapon selection.
  * (BasePlaneScreen_SelectWeapon25..30 @ 0x79b20..0x79c74.) */
 #include "game/pufo_plane.h"
+#include "game/pufo_unit.h"   /* Soldier.bUnk183, the craft a soldier is assigned to */
 #include "pufo_test.h"
 
 #include <stdio.h>
@@ -693,6 +694,260 @@ static void TestPlaneClose(void)
     TestCheck("a null close env is tolerated", true);
 }
 
+/* ------------------------------------------------- the hangar stores list
+ *
+ * Evidence: BasePlaneScreen_CommitStores @ 0x7ac38 and BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4. */
+
+static UiPanel g_pRowPanel, g_pCommitPanel, g_pSlotPanel, g_pAvailPanel, g_pTakenPanel;
+static Ship g_aStoreCraft[1];
+static Ship *g_apStoreCraft[1];
+static BaseRec g_aStoreBase[1];
+static BaseRec *g_apStoreBases[1];
+static ObjectRecFull g_aStoreObj[106];
+static ObjectRecFull *g_apStoreObjects[106];
+static Soldier g_aStoreSoldier[12];
+static Soldier *g_apStoreSoldier[12];
+static i32 g_anStoreCarry[106];
+static i32 g_nStoreQuota;
+static u8 g_bStoreShortfall;
+static i32 g_nStoreResidue;
+static PlaneStoresEnv g_storeEnv;
+
+static void StoresReset(i32 nCraftType, i32 nAboard)
+{
+    memset(&g_pRowPanel, 0, sizeof(g_pRowPanel));
+    memset(&g_pCommitPanel, 0, sizeof(g_pCommitPanel));
+    memset(&g_pSlotPanel, 0, sizeof(g_pSlotPanel));
+    memset(&g_pAvailPanel, 0, sizeof(g_pAvailPanel));
+    memset(&g_pTakenPanel, 0, sizeof(g_pTakenPanel));
+    memset(g_aStoreCraft, 0, sizeof(g_aStoreCraft));
+    memset(g_aStoreBase, 0, sizeof(g_aStoreBase));
+    memset(g_aStoreObj, 0, sizeof(g_aStoreObj));
+    memset(g_aStoreSoldier, 0, sizeof(g_aStoreSoldier));
+    memset(g_anStoreCarry, 0, sizeof(g_anStoreCarry));
+
+    for (i32 i = 0; i < 106; ++i) {
+        g_apStoreObjects[i] = &g_aStoreObj[i];
+    }
+    for (i32 i = 0; i < 12; ++i) {
+        g_apStoreSoldier[i] = &g_aStoreSoldier[i];
+        g_aStoreSoldier[i].bUnk183 = (u8)((i < nAboard) ? 0 : 254);
+    }
+    g_apStoreCraft[0] = &g_aStoreCraft[0];
+    g_apStoreBases[0] = &g_aStoreBase[0];
+
+    g_aStoreCraft[0].nSlotIdx = 0;
+    g_aStoreCraft[0].bCraftType = (i8)nCraftType;
+    g_aStoreBase[0].bSlot = 0;
+
+    /* One row, row 0, selected by both panels. */
+    g_pRowPanel.nUnk3032 = 0;
+    g_pCommitPanel.nUnk3032 = 0;
+
+    memset(&g_storeEnv, 0, sizeof(g_storeEnv));
+    g_storeEnv.pRowPanel = &g_pRowPanel;
+    g_storeEnv.pCommitPanel = &g_pCommitPanel;
+    g_storeEnv.pSlotPanel = &g_pSlotPanel;
+    g_storeEnv.pAvailPanel = &g_pAvailPanel;
+    g_storeEnv.pTakenPanel = &g_pTakenPanel;
+    g_storeEnv.anSlotCarryCount = g_anStoreCarry;
+    g_storeEnv.pnCrewQuota = &g_nStoreQuota;
+    g_storeEnv.apCraft = g_apStoreCraft;
+    g_storeEnv.nCraftIdx = 0;
+    g_storeEnv.apBases = g_apStoreBases;
+    g_storeEnv.nBaseIdx = 0;
+    g_storeEnv.apObjects = g_apStoreObjects;
+    g_storeEnv.nObjectCount = 106;
+    g_storeEnv.apSoldiers = g_apStoreSoldier;
+    g_storeEnv.nSoldierCount = 12;
+    g_storeEnv.pbShortfallFlag = &g_bStoreShortfall;
+    g_storeEnv.pnResidueFlag = &g_nStoreResidue;
+}
+
+static void StoreRow(i32 nSlot, i32 nAvail, i32 nTaken)
+{
+    g_pSlotPanel.anLineAux[0] = nSlot;
+    g_pAvailPanel.anLineAux[0] = nAvail;
+    g_pTakenPanel.anLineAux[0] = nTaken;
+    g_nStoreQuota = 0;
+    g_bStoreShortfall = 0;
+    g_nStoreResidue = 7;
+}
+
+static void TestCommitStores(void)
+{
+    printf("BasePlaneScreen_CommitStores @ 0x7ac38\n");
+
+    /* A crew row on a type-0 craft (cap 140): quota 1, 4 crew units, 30 items out of 40. */
+    StoresReset(0, 0);
+    StoreRow(31, 5, 0);
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    g_aStoreBase[0].nStoresTotal = 40;
+    TestEqI32("the row is taken", BasePlaneScreen_CommitStores(&g_storeEnv), 1);
+    TestEqI32("the row's taken count rises", g_pTakenPanel.anLineAux[0], 1);
+    TestEqI32("  and its available count falls", g_pAvailPanel.anLineAux[0], 4);
+    TestEqI32("the slot's carried count rises (0x7AFD8)", g_anStoreCarry[31], 1);
+    TestEqI32("the crew quota is spent (0x7AE88)", g_nStoreQuota, 1);
+    TestEqI32("the base loses 30 items", g_aStoreObj[56].auPerBaseVal[0], 10);
+    TestEqI32("  and the base total follows", g_aStoreBase[0].nStoresTotal, 10);
+    TestEqI32("the craft gains 30 cargo units", g_aStoreCraft[0].anCargoQty[0], 30);
+    TestEqI32("no shortfall was flagged", g_bStoreShortfall, 0);
+
+    /* The quota gate: a type-0 craft takes at most 3 crew rows. */
+    StoresReset(0, 0);
+    StoreRow(31, 5, 0);
+    g_nStoreQuota = 3;
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("the fourth crew row is refused", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("the shortfall flag is set", g_bStoreShortfall, 1);
+    TestEqI32("  and the residue flag reads 0 (the crew reason)", g_nStoreResidue, 0);
+    TestEqI32("the quota is handed back (0x7AF98)", g_nStoreQuota, 3);
+    TestEqI32("nothing was taken", g_pTakenPanel.anLineAux[0], 0);
+    TestEqI32("  and no stock moved", g_aStoreObj[56].auPerBaseVal[0], 40);
+
+    /* The crew-count gate: soldiersAboard + 4 * quota must stay under 14 for a type-0 craft. */
+    StoresReset(0, 11);
+    StoreRow(31, 5, 0);
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("11 aboard plus 4 for this row is over 14", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("  so the quota is handed back too", g_nStoreQuota, 0);
+
+    /* A type-1 craft (cap 120) has no crew rows at all. */
+    StoresReset(1, 0);
+    StoreRow(31, 5, 0);
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("cap 120 refuses crew rows outright", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("  with the residue flag at 0", g_nStoreResidue, 0);
+
+    /* An unknown craft type skips the crew gate entirely. */
+    StoresReset(9, 11);
+    StoreRow(31, 5, 0);
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("an unknown craft type has no crew gate", BasePlaneScreen_CommitStores(&g_storeEnv), 1);
+    TestEqI32("  and the row is taken", g_anStoreCarry[31], 1);
+
+    /* The stock gate: 7 in the base does not cover the 8 a slot-32 row needs. */
+    StoresReset(0, 0);
+    StoreRow(32, 5, 0);
+    g_aStoreObj[57].auPerBaseVal[0] = 7;
+    TestEqI32("insufficient stock refuses", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("  and the residue flag reads 2 (the stock reason)", g_nStoreResidue, 2);
+    TestEqI32("  with the quota handed back", g_nStoreQuota, 0);
+    TestEqI32("  and the stock untouched", g_aStoreObj[57].auPerBaseVal[0], 7);
+
+    /* Slot 34 is the 5-for-50 row: 5 base items, 50 cargo units. */
+    StoresReset(0, 0);
+    StoreRow(34, 2, 0);
+    g_aStoreObj[105].auPerBaseVal[0] = 5;
+    TestEqI32("the ammo row is taken", BasePlaneScreen_CommitStores(&g_storeEnv), 1);
+    TestEqI32("the base loses 5 items", g_aStoreObj[105].auPerBaseVal[0], 0);
+    TestEqI32("  but the craft gains 50 cargo units", g_aStoreCraft[0].anCargoQty[2], 50);
+    TestEqI32("  and the carry count is the row count, not the units", g_anStoreCarry[34], 1);
+
+    /* Slot 33 has no object record: it clears every gate and moves nothing. */
+    StoresReset(0, 0);
+    StoreRow(33, 1, 0);
+    TestEqI32("slot 33 is accepted", BasePlaneScreen_CommitStores(&g_storeEnv), 1);
+    TestEqI32("  it spends the quota", g_nStoreQuota, 1);
+    TestEqI32("  and counts as carried", g_anStoreCarry[33], 1);
+    TestEqI32("  while object 0 is untouched", g_aStoreObj[0].auPerBaseVal[0], 0);
+
+    /* A weapon row (slot outside 31..35) is gated on hold space instead, and never spends quota. */
+    StoresReset(2, 0);
+    StoreRow(10, 3, 0);
+    g_aStoreObj[10].bCargoSize = 200; /* cap 260 cannot fit 200 pending plus 200 for this one */
+    g_anStoreCarry[10] = 1;
+    TestEqI32("a weapon row over the hold cap is refused", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("  with the residue flag at 0", g_nStoreResidue, 0);
+    TestEqI32("  and the crew quota untouched (0x7AE80)", g_nStoreQuota, 0);
+
+    StoresReset(2, 0);
+    StoreRow(10, 3, 0);
+    g_aStoreObj[10].bCargoSize = 10;
+    TestEqI32("the same row fits once it is small enough", BasePlaneScreen_CommitStores(&g_storeEnv), 1);
+    TestEqI32("  and it still spends no quota", g_nStoreQuota, 0);
+    TestEqI32("  and it carries no cargo units", g_aStoreCraft[0].anCargoQty[0], 0);
+
+    /* A row with nothing left to take does not even reach the gates. */
+    StoresReset(2, 0);
+    StoreRow(31, 0, 4);
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("a row with no available count is skipped (0x7AC68)", BasePlaneScreen_CommitStores(&g_storeEnv), 0);
+    TestEqI32("  so the quota is not spent", g_nStoreQuota, 0);
+    TestEqI32("  and no flag is written", g_bStoreShortfall, 0);
+
+    TestEqI32("a null env commits nothing", BasePlaneScreen_CommitStores(NULL), 0);
+}
+
+static void TestAdjustSelectedQty(void)
+{
+    printf("BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4\n");
+
+    /* Undo one taken row: the count goes back, the stock goes back, the cargo debit is clamped. */
+    StoresReset(0, 0);
+    StoreRow(31, 4, 2);
+    g_anStoreCarry[31] = 2;
+    g_nStoreQuota = 2;
+    g_aStoreObj[56].auPerBaseVal[0] = 10;
+    g_aStoreBase[0].nStoresTotal = 10;
+    g_aStoreCraft[0].anCargoQty[0] = 100;
+    TestEqI32("the row is put back", BasePlaneScreen_AdjustSelectedQty(&g_storeEnv), 1);
+    TestEqI32("the taken count falls", g_pTakenPanel.anLineAux[0], 1);
+    TestEqI32("  and the available count rises", g_pAvailPanel.anLineAux[0], 5);
+    TestEqI32("the carried count falls (0x7AA28)", g_anStoreCarry[31], 1);
+    TestEqI32("the crew quota is handed back (0x7AA50)", g_nStoreQuota, 1);
+    TestEqI32("the base gets 30 items back", g_aStoreObj[56].auPerBaseVal[0], 40);
+    TestEqI32("  and the base total follows", g_aStoreBase[0].nStoresTotal, 40);
+    TestEqI32("the craft loses 30 cargo units", g_aStoreCraft[0].anCargoQty[0], 70);
+
+    /* The clamp that BasePlaneScreen_Close does NOT have: 10 units cannot pay a 30-unit debit. */
+    StoresReset(0, 0);
+    StoreRow(31, 4, 1);
+    g_aStoreObj[56].auPerBaseVal[0] = 0;
+    g_aStoreCraft[0].anCargoQty[0] = 10;
+    (void)BasePlaneScreen_AdjustSelectedQty(&g_storeEnv);
+    TestEqI32("the cargo debit clamps at zero (0x7AB10)", g_aStoreCraft[0].anCargoQty[0], 0);
+    TestEqI32("  while the base still gets the full 30", g_aStoreObj[56].auPerBaseVal[0], 30);
+
+    /* Slot 34 hands back 5 items and takes 50 units. */
+    StoresReset(0, 0);
+    StoreRow(34, 1, 1);
+    g_aStoreObj[105].auPerBaseVal[0] = 0;
+    g_aStoreCraft[0].anCargoQty[2] = 50;
+    (void)BasePlaneScreen_AdjustSelectedQty(&g_storeEnv);
+    TestEqI32("the ammo row returns 5 base items", g_aStoreObj[105].auPerBaseVal[0], 5);
+    TestEqI32("  and gives back 50 cargo units", g_aStoreCraft[0].anCargoQty[2], 0);
+
+    /* Nothing taken: the whole function is skipped. */
+    StoresReset(0, 0);
+    StoreRow(31, 5, 0);
+    g_nStoreQuota = 3;
+    g_aStoreObj[56].auPerBaseVal[0] = 40;
+    TestEqI32("a row with nothing taken is left alone (0x7A9F8)", BasePlaneScreen_AdjustSelectedQty(&g_storeEnv), 0);
+    TestEqI32("  including the quota", g_nStoreQuota, 3);
+    TestEqI32("  and the available count", g_pAvailPanel.anLineAux[0], 5);
+
+    /* A weapon row gives the count back but touches neither the quota nor the stock. */
+    StoresReset(0, 0);
+    StoreRow(10, 2, 1);
+    g_anStoreCarry[10] = 1;
+    g_nStoreQuota = 2;
+    TestEqI32("a weapon row is put back", BasePlaneScreen_AdjustSelectedQty(&g_storeEnv), 1);
+    TestEqI32("  its carried count falls", g_anStoreCarry[10], 0);
+    TestEqI32("  and the crew quota is not touched", g_nStoreQuota, 2);
+    TestEqI32("  and no object moves", g_aStoreObj[10].auPerBaseVal[0], 0);
+
+    /* Slot 33 hands the quota back and moves no stock. */
+    StoresReset(0, 0);
+    StoreRow(33, 0, 1);
+    g_anStoreCarry[33] = 1;
+    g_nStoreQuota = 1;
+    TestEqI32("slot 33 is put back", BasePlaneScreen_AdjustSelectedQty(&g_storeEnv), 1);
+    TestEqI32("  its quota is handed back", g_nStoreQuota, 0);
+    TestEqI32("  and object 0 stays empty", g_aStoreObj[0].auPerBaseVal[0], 0);
+
+    TestEqI32("a null env puts nothing back", BasePlaneScreen_AdjustSelectedQty(NULL), 0);
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -705,6 +960,8 @@ int main(void)
     TestStatPanelLabels();
     TestRearmFromStores();
     TestPlaneClose();
+    TestCommitStores();
+    TestAdjustSelectedQty();
 
     return TestSummary("test_plane");
 }

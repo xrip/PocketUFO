@@ -28,6 +28,7 @@
 #include "game/pufo_strateg.h" /* StrategItem, StrategList_AddItem */
 #include "util/pufo_ptrarray.h" /* PtrArray */
 #include "render/pufo_render.h" /* GfxColorEnv, SoftSurf_BlitRectProxy */
+#include "ui/pufo_panel.h"   /* UiPanel: nUnk3032 @ 0xBD8, anLineAux @ 0x13B4 */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -250,5 +251,72 @@ typedef struct PlaneCloseEnv {
 } PlaneCloseEnv;
 
 void BasePlaneScreen_Close(const PlaneCloseEnv *pEnv);
+
+/* ------------------------------------------------- the hangar stores list: take a row, put one back
+ *
+ * Evidence: BasePlaneScreen_CommitStores @ 0x7ac38 (948 B) and BasePlaneScreen_AdjustSelectedQty
+ * @ 0x7a9b4 (644 B).
+ *
+ * The stores list is drawn by a panel, and these two handlers work entirely through panels reached
+ * from .bss POINTER slots. Each is a UiPanel (7092 B, nUnk3032 @ +0xBD8, anLineAux @ +0x13B4), and
+ * the ARM loads the slot then dereferences it - `LDR R0, =unk_161F00; LDR R0, [R0]; LDR R3, [R0,#0xBD8]`
+ * - so the model is a pointer per slot, not an inline object:
+ *
+ *     0x161F00  the panel AdjustSelectedQty reads the selected ROW from (nUnk3032)
+ *     0x161EEC  the panel CommitStores reads the selected ROW from (nUnk3032)
+ *     0x161AC8  anLineAux[row] = the row's SLOT id (31..35 for the four weapon rows)
+ *     0x161A40  anLineAux[row] = how many of that row are still available
+ *     0x161EF4  anLineAux[row] = how many of that row have been taken
+ *
+ * CommitStores: bail when the available count is not positive. Then TWO gates.
+ *
+ * A row whose slot is OUTSIDE 31..35 is a weapon row and is gated on hold space:
+ * BasePlane_CalcWeaponStoresUsed + apObjects[slot].bCargoSize + Base_CalcWeaponStorageUsed must fit
+ * inside Craft_GetTypeCargoCap, else 1 goes to 0x1870C8 (a dword store into a byte global), 0 goes to
+ * dword_1870B4, and nothing is taken.
+ *
+ * A row whose slot IS 31..35 is a crew row, and Craft_GetTypeCargoCap is used as a CRAFT CLASS
+ * selector rather than as a capacity: cap 0 and cap 120 refuse outright, cap 140 needs the crew quota
+ * (pre-incremented) at most 3 with soldiersAboard + 4*quota at most 14, cap 260 needs at most 4 and at
+ * most 26, and an unknown craft type skips the crew gate entirely. The quota is incremented BEFORE the
+ * gate and put back on either refusal. Then Base_CraftWeaponItemId must cover 30 / 8 / 5 / 8 for slots
+ * 31 / 32 / 34 / 35, else 1 goes to 0x1870C8 and 2 to dword_1870B4. Slot 33 has no object record and
+ * passes the stock gate without moving anything. On acceptance the base loses the items, the craft
+ * gains 30 / 8 / 50 / 8 cargo units - the same 5-for-50 for object 105 that BasePlaneScreen_Close
+ * runs in reverse - and the row's taken count goes up, its available count down, and
+ * anSlotCarryCount[slot] goes up.
+ *
+ * AdjustSelectedQty is the undo: it needs the taken count positive, lowers it, raises the available
+ * count, lowers anSlotCarryCount[slot], and for slots 31..35 lowers the crew quota and hands the row
+ * back exactly the way BasePlaneScreen_Close does - EXCEPT that here the cargo debit is clamped at
+ * zero (`if (cargo < delta) cargo = 0`), which BasePlaneScreen_Close does not do. That asymmetry is
+ * the original's, not a port choice.
+ *
+ * Deviation: the original returns register residue on every path (a panel pointer, the quota address,
+ * dword_1870B4) and no caller reads it; the port returns 1 when the row changed and 0 when it did not.
+ * The original also indexes anLineAux with an unbounded row and faults on a NULL craft, base or object;
+ * the port bounds the row to the panel's 500 slots and skips a row whose objects are missing. */
+typedef struct PlaneStoresEnv {
+    UiPanel *pRowPanel;      /* unk_161F00, the panel AdjustSelectedQty reads the selected row from */
+    UiPanel *pCommitPanel;   /* unk_161EEC, the panel CommitStores reads the selected row from */
+    UiPanel *pSlotPanel;     /* unk_161AC8, anLineAux[row] is the row's slot id */
+    UiPanel *pAvailPanel;    /* unk_161A40, anLineAux[row] is how many are still available */
+    UiPanel *pTakenPanel;    /* unk_161EF4, anLineAux[row] is how many have been taken */
+    i32 *anSlotCarryCount;   /* anSlotCarryCount @ 0x161AD0 */
+    i32 *pnCrewQuota;        /* nPlaneCrewQuota @ 0x161EE0 */
+    Ship *const *apCraft;
+    i32 nCraftIdx;           /* nSelectedCraftIdx @ 0x161AC4, a DWORD */
+    BaseRec *const *apBases;
+    i8 nBaseIdx;             /* nSelectedBaseIdx @ 0x159D81, the signed byte */
+    ObjectRecFull *const *apObjects;
+    i32 nObjectCount;        /* Map_nObjectCount @ 0x114A60 */
+    Soldier *const *apSoldiers;
+    i32 nSoldierCount;
+    u8 *pbShortfallFlag;     /* byte_1870C8, written as a dword */
+    i32 *pnResidueFlag;      /* dword_1870B4[0] */
+} PlaneStoresEnv;
+
+i32 BasePlaneScreen_CommitStores(PlaneStoresEnv *pEnv);
+i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */

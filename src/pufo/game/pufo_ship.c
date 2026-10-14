@@ -232,7 +232,7 @@ Ship *InvSel_SubItemQty(Ship *pSel, ObjectRecFull *pItem, i16 nDelta)
 }
 
 /* BaseRec_SubItemQty @ 0x5571c. */
-static void BaseRec_SubItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
+void BaseRec_SubItemQty(BaseRec *pBase, ObjectRecFull *pItem, i32 nDelta)
 {
     pItem->auPerBaseVal[(u8)pBase->bSlot] = (u16)(pItem->auPerBaseVal[(u8)pBase->bSlot] - nDelta);
     pBase->nStoresTotal -= nDelta;
