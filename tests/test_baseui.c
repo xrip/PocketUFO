@@ -359,6 +359,80 @@ static void TestBuySellPaging(void)
     Check(1, "NULL panels are tolerated");
 }
 
+static UiPanel g_aScrollPanels[5];
+
+static void ResetScrollPanels(void)
+{
+    for (i32 i = 0; i < 5; ++i) {
+        memset(&g_aScrollPanels[i], 0, sizeof(g_aScrollPanels[i]));
+        g_aScrollPanels[i].nUnk3028 = 2;
+        g_aScrollPanels[i].nLineCount = 10;
+        g_aScrollPanels[i].nStyle = 4; /* so next stops at 10 - 4 == 6 */
+    }
+}
+
+static void TestPanelScrollFamily(void)
+{
+    printf("the panel scroll family\n");
+
+    UiPanel *apFour[4] = { &g_aScrollPanels[0], &g_aScrollPanels[1],
+                           &g_aScrollPanels[2], &g_aScrollPanels[3] };
+    UiPanel *apFive[5] = { &g_aScrollPanels[0], &g_aScrollPanels[1], &g_aScrollPanels[2],
+                           &g_aScrollPanels[3], &g_aScrollPanels[4] };
+
+    ResetScrollPanels();
+    ManufScreen_PanelNext(apFour);
+    CheckEqI32(g_aScrollPanels[0].nUnk3028, 3, "ManufScreen_PanelNext pages its four");
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 3, "the tail-called one last, same effect");
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 2, "and the fifth panel is not in that set");
+    ManufScreen_PanelPrev(apFour);
+    CheckEqI32(g_aScrollPanels[0].nUnk3028, 2, "ManufScreen_PanelPrev moves them back");
+
+    PsiScreen_PanelNext(apFour);
+    CheckEqI32(g_aScrollPanels[2].nUnk3028, 3, "PsiScreen_PanelNext pages its own four");
+    PsiScreen_PanelPrev(apFour);
+    CheckEqI32(g_aScrollPanels[2].nUnk3028, 2, "and PsiScreen_PanelPrev returns them");
+
+    BuySellScreen_PanelNext(apFive);
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 3, "the buy/sell set carries five panels");
+
+    /* Next stops at nLineCount - nStyle and prev stops at zero: no wrap either way. */
+    g_aScrollPanels[0].nUnk3028 = 6;
+    BuySellScreen_PanelNext(apFive);
+    CheckEqI32(g_aScrollPanels[0].nUnk3028, 6, "next stops at nLineCount - nStyle");
+    for (i32 i = 0; i < 5; ++i) {
+        g_aScrollPanels[i].nUnk3028 = 0;
+    }
+    BuySellScreen_PanelPrev(apFive);
+    CheckEqI32(g_aScrollPanels[4].nUnk3028, 0, "prev stops at zero");
+
+    BuySellScreen_DetailPanelNext(apFive);
+    CheckEqI32(g_aScrollPanels[1].nUnk3028, 1, "the detail set pages the same way");
+    BuySellScreen_DetailPanelPrev(apFive);
+    CheckEqI32(g_aScrollPanels[1].nUnk3028, 0, "and back again");
+
+    apFive[2] = NULL;
+    BuySellScreen_PanelNext(apFive);
+    CheckEqI32(g_aScrollPanels[3].nUnk3028, 1,
+               "a NULL slot is stepped over and the panels after it still move");
+    apFive[2] = &g_aScrollPanels[2];
+}
+
+static void TestRoleToItemId(void)
+{
+    printf("BuySell_RoleToItemId @ 0x76d88\n");
+
+    CheckEqI32(BuySell_RoleToItemId(0), 117, "role 0");
+    CheckEqI32(BuySell_RoleToItemId(1), 120, "role 1");
+    CheckEqI32(BuySell_RoleToItemId(2), 121, "role 2");
+    CheckEqI32(BuySell_RoleToItemId(3), 118, "role 3");
+    CheckEqI32(BuySell_RoleToItemId(4), 119, "role 4, the fall-through");
+    CheckEqI32(BuySell_RoleToItemId(5), 0xFF, "anything else is 255");
+    CheckEqI32(BuySell_RoleToItemId(-1), 0xFF,
+               "and so is a negative role: 0x76D88 widens the byte as a signed char");
+    CheckEqI32(BuySell_RoleToItemId(256), 117, "only the low byte counts");
+}
+
 static i32 g_nIdAtInit;
 static i32 g_nOpenSample;
 static i32 g_nOpenSampleArg;
@@ -5385,6 +5459,8 @@ int main(void)
     TestSelectionCaches();
     TestBaseInfoOk();
     TestBuySellPaging();
+    TestPanelScrollFamily();
+    TestRoleToItemId();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

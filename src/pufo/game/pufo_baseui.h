@@ -105,6 +105,65 @@ void SoldierScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond);
 void BuySellScreen_ListPanelPrev(UiPanel *pFirst, UiPanel *pSecond);
 void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond);
 
+/* ------------------------------------------------- the rest of the panel scroll family
+ *
+ * Evidence: ManufScreen_PanelPrev @ 0x6dd4c / PanelNext @ 0x6dd94, PsiScreen_PanelPrev @
+ * 0x715e8 / PanelNext @ 0x71648, BuySellScreen_PanelPrev @ 0x76088 / PanelNext @ 0x760e0,
+ * BuySellScreen_DetailPanelPrev @ 0x79a70 / DetailPanelNext @ 0x79ac8, Transfer_ScrollPrevAll
+ * @ 0x967e4 / ScrollNextAll @ 0x9683c.
+ *
+ * Ten handlers, and every one is the same loop: read the panel pointer out of its global and
+ * run the already ported scroll mover on it -- UiPanel_ScrollPrev (DecDwordIfPos_AtPlus0xBD4
+ * @ 0x3f040) for the previous button, UiPanel_ScrollNext (IncDwordIfInRange_AtPlus0xBD4
+ * @ 0x3f00c) for the next. Nothing else: no redraw, no return value, no wrap. Only the last
+ * mover call in each body is a tail call (B rather than BL), which is the sole difference from
+ * the calls before it.
+ *
+ * The panel sets, in the order each handler walks them:
+ *
+ *   ManufScreen_Panel*          pManufProductPanel @ 0x15EE44, unk_15EE48, unk_15EE40,
+ *                               unk_15EE38
+ *   PsiScreen_Panel*            unk_15EED0, unk_15EE88, unk_15EEA8, unk_15EE58 -- four parallel
+ *                               arrays, one entry per base, all indexed by the SIGNED byte at
+ *                               unk_1870F4 (the psi screen's selected base), so the handler picks
+ *                               one entry out of every array for that base. The loops that walk
+ *                               them (PsiScreen_ApplyAssignments, 0x72250, not ported) bound the
+ *                               index by the base count at 0x159D80, at most PUFO_FAC_BASE_COUNT.
+ *   BuySellScreen_Panel*        unk_161A1C, unk_161A00, unk_161A20, unk_160C88, unk_1615F8
+ *   BuySellScreen_DetailPanel*  pPlaneSlotPanel @ 0x161AC8, pPlaneSelRowPanel @ 0x161F00,
+ *                               pPlaneCommitRowPanel @ 0x161EEC, pPlaneTakenPanel @ 0x161EF4,
+ *                               pPlaneAvailPanel @ 0x161A40
+ *   Transfer_Scroll*            the same five globals as BuySellScreen_Panel*, same order
+ *
+ * BuySellScreen_PanelPrev @ 0x76088 and Transfer_ScrollPrevAll @ 0x967e4 are the same eleven
+ * instructions over the same five globals -- only the BL displacements differ -- and the next
+ * pair (0x760e0 / 0x9683c) likewise. The port keeps one implementation of each and cites both
+ * addresses; the pair is on record in docs/parity/renames.tsv.
+ *
+ * The port takes the panels as arguments instead of reaching through the globals, as the
+ * earlier handlers in this family do. PsiScreen_Panel* takes the four panels already resolved
+ * for the selected base: the byte read is the caller's, not this function's. */
+void ManufScreen_PanelPrev(UiPanel *const apPanels[4]);
+void ManufScreen_PanelNext(UiPanel *const apPanels[4]);
+void PsiScreen_PanelPrev(UiPanel *const apPanels[4]);
+void PsiScreen_PanelNext(UiPanel *const apPanels[4]);
+void BuySellScreen_PanelPrev(UiPanel *const apPanels[5]);
+void BuySellScreen_PanelNext(UiPanel *const apPanels[5]);
+void BuySellScreen_DetailPanelPrev(UiPanel *const apPanels[5]);
+void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5]);
+
+/* BuySell_RoleToItemId @ 0x76d88. The object slot of the item a buy/sell row stands for, from
+ * the SIGNED role byte the row carries (BuySellScreen_BuildPanels reads it with LDRSB at
+ * 0x77964 and stores the result into the row panel at +0x1380):
+ *
+ *   0 -> 117, 1 -> 120, 2 -> 121, 3 -> 118, 4 -> 119, anything else -> 255
+ *
+ * The argument is sign-extended from a byte first (0x76D88..0x76D8C), so a negative role takes
+ * the 255 branch too. 117..121 are the five craft-type item slots the buy/sell screen sells; the
+ * shipped records for those slots are the subject of a separate open question (see PLAN.md), so
+ * only the numbers are claimed here. */
+i32 BuySell_RoleToItemId(i32 nRole);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

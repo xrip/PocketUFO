@@ -1042,6 +1042,91 @@ static void CrewReset(i32 nCraftType, i32 nAboard, i32 nWeaponSlots)
     g_crewEnv.cchNameBuf = (i32)sizeof(g_aCrewName);
 }
 
+static i32 g_nApplyCloseCalls;
+
+static void ApplyClose(void *pUser)
+{
+    (void)pUser;
+    ++g_nApplyCloseCalls;
+}
+
+static void TestApplyQtyChanges(void)
+{
+    printf("BuySellScreen_ApplyQtyChanges @ 0x78d90\n");
+
+    StoresReset(0, 0);
+
+    BuySellApplyQtyEnv env;
+    memset(&env, 0, sizeof(env));
+    env.anSlotCarryCount = g_anStoreCarry;
+    env.apObjects = g_apStoreObjects;
+    env.nObjectCount = 106;
+    env.apBases = g_apStoreBases;
+    env.nBaseIdx = 0;
+    env.apCraft = g_apStoreCraft;
+    env.nCraftIdx = 0;
+    env.nCraftCount = 1;
+    env.pfnCloseUi = ApplyClose;
+
+    g_aStoreObj[5].auPerBaseVal[0] = 10;
+    g_aStoreObj[5].aItemQty[0] = 0;
+    g_aStoreObj[6].auPerBaseVal[0] = 10;
+    g_aStoreObj[6].aItemQty[0] = 5;
+    g_aStoreObj[7].auPerBaseVal[0] = 10;
+    g_aStoreObj[7].aItemQty[0] = 0;
+    g_aStoreBase[0].nStoresTotal = 30;
+    g_aStoreCraft[0].uUnk4 = 10;
+    g_anStoreCarry[5] = 2;  /* the craft takes two */
+    g_anStoreCarry[6] = -3; /* the craft gives three */
+    g_anStoreCarry[7] = 0;  /* and this row is untouched */
+
+    g_nApplyCloseCalls = 0;
+    BuySellScreen_ApplyQtyChanges(&env);
+
+    TestEqI32("a positive carry leaves the base", g_aStoreObj[5].auPerBaseVal[0], 8);
+    TestEqI32("  and lands in the craft column", g_aStoreObj[5].aItemQty[0], 2);
+    TestEqI32("a negative carry lands in the base", g_aStoreObj[6].auPerBaseVal[0], 13);
+    TestEqI32("  and leaves the craft column", g_aStoreObj[6].aItemQty[0], 2);
+    TestEqI32("a zero carry moves nothing", g_aStoreObj[7].auPerBaseVal[0], 10);
+    TestEqI32("  in either direction", g_aStoreObj[7].aItemQty[0], 0);
+    TestEqI32("the base total follows both moves", g_aStoreBase[0].nStoresTotal, 31);
+    TestEqI32("  and so does the craft total", g_aStoreCraft[0].uUnk4, 9);
+    TestEqI32("the close runs once, after the walk", g_nApplyCloseCalls, 1);
+
+    /* The staged amounts are not cleared here: the next pass sees the same numbers. */
+    BuySellScreen_ApplyQtyChanges(&env);
+    TestEqI32("so a second commit moves the same amounts again",
+              g_aStoreObj[5].auPerBaseVal[0], 6);
+
+    /* A non-positive object count skips the walk and still closes (0x78DC8 -> 0x78E68). */
+    env.nObjectCount = 0;
+    g_nApplyCloseCalls = 0;
+    BuySellScreen_ApplyQtyChanges(&env);
+    TestEqI32("no stock moves", g_aStoreObj[6].auPerBaseVal[0], 16);
+    TestEqI32("  but the close still runs", g_nApplyCloseCalls, 1);
+    env.nObjectCount = 106;
+
+    /* Deviation: the original indexes apBases with the signed byte whatever it holds. */
+    g_aStoreObj[5].auPerBaseVal[0] = 10;
+    g_aStoreObj[5].aItemQty[0] = 0;
+    env.nBaseIdx = -1;
+    BuySellScreen_ApplyQtyChanges(&env);
+    TestEqI32("a -1 base index moves no base stock", g_aStoreObj[5].auPerBaseVal[0], 10);
+    TestEqI32("  while the craft side still runs", g_aStoreObj[5].aItemQty[0], 2);
+    env.nBaseIdx = 0;
+
+    env.nCraftIdx = 7;
+    g_aStoreObj[5].auPerBaseVal[0] = 10;
+    g_aStoreObj[5].aItemQty[0] = 0;
+    BuySellScreen_ApplyQtyChanges(&env);
+    TestEqI32("an out-of-range craft index moves no cargo", g_aStoreObj[5].aItemQty[0], 0);
+    TestEqI32("  and the base still pays", g_aStoreObj[5].auPerBaseVal[0], 8);
+    env.nCraftIdx = 0;
+
+    BuySellScreen_ApplyQtyChanges(NULL);
+    TestCheck("a null env is tolerated", true);
+}
+
 static void TestCrewPanelClick(void)
 {
     u8 r, g, b;
@@ -1741,6 +1826,7 @@ int main(void)
     TestPlaneClose();
     TestCommitStores();
     TestAdjustSelectedQty();
+    TestApplyQtyChanges();
     TestCrewPanelClick();
     TestWeaponSlotsCarried();
     TestBuildListPanels();

@@ -791,6 +791,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `BuySellScreen_CommitTransaction` (0x74bf8), both unported. `Base_RemoveAllSoldiers` is ported
   against the list as an explicit input; what fills it is settled when those two screens are done.
 
+- [x] part 16, the panel scroll family and the staged stores commit: `ManufScreen_PanelPrev/Next
+  (0x6dd4c / 0x6dd94)`, `PsiScreen_PanelPrev/Next (0x715e8 / 0x71648)`, `BuySellScreen_PanelPrev/
+  Next (0x76088 / 0x760e0)` merged with `Transfer_ScrollPrevAll/ScrollNextAll (0x967e4 / 0x9683c)`,
+  `BuySellScreen_DetailPanelPrev/Next (0x79a70 / 0x79ac8)`, `BuySell_RoleToItemId (0x76d88)` and
+  `BuySellScreen_ApplyQtyChanges (0x78d90)` — 37 more checks. All ten scroll bodies are the same
+  straight line over their panel globals, and the buy/sell and transfer pairs are byte-identical
+  apart from the BL displacements, so the port keeps one implementation of each (the merge is on
+  record in `docs/parity/renames.tsv`). The psi set is four parallel arrays indexed by the signed
+  byte `byte_1870F4`, one entry per base. `BuySellScreen_ApplyQtyChanges` is the commit of the
+  hangar's staged `anSlotCarryCount` delta: negative adds to the base and subtracts from the craft
+  (with the delta re-read as a halfword and negated twice), zero-or-positive is the mirror, and it
+  ends in a tail call to `Geoscape_CloseUI`. The two unbounded indexes there and the missing NULL
+  test in the scroll family are recorded in `docs/parity/bugs.tsv`.
+  **Coverage integrity:** two new mentions of unported functions were first written in the `@`
+  form — `Geoscape_CloseUI (0x8b94c)` and `PsiScreen_ApplyAssignments (0x72250)` — and both are
+  the paren form now, so neither is credited. `audit_names.py` is back to 0 unresolved.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -938,6 +955,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar palette cycle and the range animation (`RadarScreen_CyclePalette`) | 56/56 (Release) | 9211 | 817/1103 (74.1%) | 327360/598792 (54.7%) | 38 checked, 0 mismatched |
 | the map-target confirm (`Smap_ConfirmCraftTarget`) | 56/56 (Release) | 9237 | 818/1103 (74.2%) | 327676/598792 (54.7%) | 38 checked, 0 mismatched |
 | the wrapped distance and the craft range gate (`Smap_DistWrapped`, `Smap_CraftRangeExhausted`, `Ship_FindIndexById`, `Base_RemoveAllSoldiers`) | 56/56 (Release) | 9293 | 823/1103 (74.6%) | 328948/598792 (54.9%) | 38 checked, 0 mismatched |
+| the panel scroll family, the role map and the stores commit (10 scroll handlers, `BuySell_RoleToItemId`, `BuySellScreen_ApplyQtyChanges`) | 56/56 (Release) | 9330 | 834/1103 (75.6%) | 330036/598792 (55.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

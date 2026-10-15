@@ -648,6 +648,45 @@ i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv)
     return 1;
 }
 
+/* BuySellScreen_ApplyQtyChanges @ 0x78d90. Commit what the hangar rows staged. */
+void BuySellScreen_ApplyQtyChanges(const BuySellApplyQtyEnv *pEnv)
+{
+    if (pEnv != NULL && pEnv->anSlotCarryCount != NULL && pEnv->apObjects != NULL) {
+        BaseRec *const *apBases = pEnv->apBases;
+        Ship *const *apCraft = pEnv->apCraft;
+        BaseRec *pBase = (apBases != NULL && pEnv->nBaseIdx >= 0 &&
+                          pEnv->nBaseIdx < PUFO_FAC_BASE_COUNT)
+                             ? apBases[pEnv->nBaseIdx]
+                             : NULL;
+        Ship *pShip = (apCraft != NULL && pEnv->nCraftIdx >= 0 &&
+                       pEnv->nCraftIdx < pEnv->nCraftCount)
+                          ? apCraft[pEnv->nCraftIdx]
+                          : NULL;
+
+        for (i32 i = 0; i < pEnv->nObjectCount; ++i) { /* 0x78DC0..0x78E50 */
+            ObjectRecFull *pItem = pEnv->apObjects[i]; /* Map + i * 4 + 0x108 */
+            const i32 nDelta = pEnv->anSlotCarryCount[i]; /* 0x78DF4 */
+
+            if (nDelta < 0) { /* 0x78DF8 CMP R2,#0 / BPL */
+                if (pBase != NULL) {
+                    BaseRec_AddItemQty(pBase, pItem, -nDelta); /* 0x78E00 */
+                }
+                /* 0x78E1C re-reads the array and negates again rather than reusing v4. */
+                (void)InvSel_SubItemQty(pShip, pItem, (i16)(-pEnv->anSlotCarryCount[i]));
+            } else {
+                if (pBase != NULL) {
+                    BaseRec_SubItemQty(pBase, pItem, nDelta); /* 0x78E34 */
+                }
+                (void)InvSel_AddItemQty(pShip, pItem, (i16)nDelta); /* 0x78E4C */
+            }
+        }
+    }
+
+    if (pEnv != NULL && pEnv->pfnCloseUi != NULL) {
+        pEnv->pfnCloseUi(pEnv->pUser); /* 0x78E74, tail call into Geoscape_CloseUI */
+    }
+}
+
 /* ------------------------------------------------- the crew list's click */
 
 static void PanelLineCopy(UiPanel *pPanel, i32 nLine, const char *psz)

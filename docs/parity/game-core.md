@@ -10690,3 +10690,86 @@ ignores.
 Measured: 56/56 Release, 9293 checks, 823/1103 functions (74.6%), 328948/598792 bytes (54.9%).
 IDB: `Smap_CanInterceptReach` renamed to `Smap_CraftRangeExhausted`, `dword_160C90` renamed to
 `g_aSoldierIdList`, comments added at 0x7df80, 0x69ffc, 0x668e8, 0x5d4e4 and 0x160C90.
+
+The panel scroll family, the buy/sell role map and the staged stores commit (done)
+----------------------------------------------------------------------------------
+
+Ten scroll handlers, one straight line each.  ManufScreen_PanelPrev @ 0x6dd4c / PanelNext @
+0x6dd94, PsiScreen_PanelPrev @ 0x715e8 / PanelNext @ 0x71648, BuySellScreen_PanelPrev @ 0x76088
+/ PanelNext @ 0x760e0, BuySellScreen_DetailPanelPrev @ 0x79a70 / DetailPanelNext @ 0x79ac8 and
+Transfer_ScrollPrevAll @ 0x967e4 / ScrollNextAll @ 0x9683c.  Every body is: load the panel
+pointer out of its global, call the mover, repeat, and tail-call the mover one last time.  The
+previous button is DecDwordIfPos_AtPlus0xBD4 @ 0x3f040 (the scroll cursor at +0xBD4 steps down
+and never below zero, no wrap); the next button is IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c (it
+steps up while the cursor stays below nLineCount - nStyle, +0xBDC minus +0xBE0).  No redraw, no
+return value, no test on the loaded pointer.
+
+Panel sets, in the order each handler walks them:
+
+  ManufScreen_Panel*          pManufProductPanel @ 0x15EE44, 0x15EE48, 0x15EE40, 0x15EE38
+  PsiScreen_Panel*            0x15EED0, 0x15EE88, 0x15EEA8, 0x15EE58 -- four parallel arrays,
+                              one entry per base, all indexed by the SIGNED byte byte_1870F4
+                              (the base the psi screen selected), so the handler picks one entry
+                              out of every array for that base.  PsiScreen_ApplyAssignments @
+                              0x72250 is the clearest reader: its loop is bounded by the base
+                              count at 0x159D80 and it walks the selected entry's nLineCount and
+                              anLineAux[] to reach the soldier record at Map+0x1198.
+  BuySellScreen_Panel*        0x161A1C, 0x161A00, 0x161A20, 0x160C88, 0x1615F8
+  BuySellScreen_DetailPanel*  pPlaneSlotPanel @ 0x161AC8, pPlaneSelRowPanel @ 0x161F00,
+                              pPlaneCommitRowPanel @ 0x161EEC, pPlaneTakenPanel @ 0x161EF4,
+                              pPlaneAvailPanel @ 0x161A40
+  Transfer_Scroll*            the same five globals as BuySellScreen_Panel*, same order
+
+BuySellScreen_PanelPrev @ 0x76088 and Transfer_ScrollPrevAll @ 0x967e4 are the same eleven
+instructions over the same five globals -- a byte dump shows only the BL displacements differ --
+and the next pair (0x760e0 / 0x9683c) likewise.  The port keeps one implementation of each and
+cites both addresses; the merge is on record in docs/parity/renames.tsv.
+
+Deviation: no handler tests the pointer it loads and both movers dereference +0xBD4 immediately.
+The psi set is the exposed one -- an unselected base picks an array entry BuildPanels never
+filled -- so the port skips a NULL slot and scrolls the rest (docs/parity/bugs.tsv, 0x6DD4C).
+
+BuySell_RoleToItemId @ 0x76d88 maps the role byte a buy/sell row carries to the object slot that
+row stands for: 0 -> 117, 1 -> 120, 2 -> 121, 3 -> 118, 4 -> 119 (the fall-through), anything
+else -> 0xFF.  The argument is sign-extended from a byte first (0x76D88..0x76D8C), so a negative
+role takes the 0xFF branch too.  BuySellScreen_BuildPanels reads the role with LDRSB at 0x77964
+and stores the result into the row panel at +0x1380.  Only the numbers are claimed: what the
+five shipped records at slots 117..121 actually say is a separate open question (see PLAN.md --
+reading szName at record+0x04 right after Boot_LoadStartup drops the first few characters of
+every name, which suggests the shipped name starts at record+0x08).
+
+BuySellScreen_ApplyQtyChanges @ 0x78d90 commits the change the hangar rows staged.  The staging
+array is anSlotCarryCount @ 0x161AD0 (256 dwords): BasePlaneScreen_CommitStores raises an entry
+at 0x7AFD8, BasePlaneScreen_AdjustSelectedQty lowers it at 0x7AA28.  The commit walks
+Map_nObjectCount @ 0x114A60 slots and moves each entry's amount between the selected base and
+the selected craft, the sign saying which way:
+
+  negative (the craft gives): BaseRec_AddItemQty @ 0x78E00 with -delta, then InvSel_SubItemQty
+    @ 0x78E1C with -delta.  The amount is re-read from the array as a HALFWORD and negated a
+    second time at 0x78E18 instead of reusing the first negation.
+  zero or positive (the craft takes): BaseRec_SubItemQty @ 0x78E34, then InvSel_AddItemQty @
+    0x78E4C.  A zero amount takes this branch and moves nothing.
+
+The loop runs over Map_nObjectCount whatever the array's real length is, and the function ends
+in a tail call to Geoscape_CloseUI(&0x1864F8) -- including when the object count is not positive,
+where only the close runs.
+
+Deviation: the base is apBases[nSelectedBaseIdx @ 0x159D81] with the SIGNED byte and no bound
+(0x78DD0 LDRSB / 0x78DF0 LDR [R3,#0x1174]), so the -1 a screen leaves there reads a pointer past
+the eight-slot array; the craft is apCraft[nSelectedCraftIdx @ 0x161AC4] with the raw dword,
+reloaded on every iteration (0x78E18 / 0x78E44).  The port resolves both to NULL when out of
+range; the two InvSel calls still run because ShipCargoApply @ 0x45E8C already refuses a NULL
+owner, and the NULL base still reaches the two BaseRec calls, which is what the original does
+too (docs/parity/bugs.tsv, 0x78D90).
+
+Port: ManufScreen_PanelPrev/Next, PsiScreen_PanelPrev/Next, BuySellScreen_PanelPrev/Next,
+BuySellScreen_DetailPanelPrev/Next, BuySell_RoleToItemId in src/pufo/game/pufo_baseui.c, and
+BuySellScreen_ApplyQtyChanges with BuySellApplyQtyEnv in src/pufo/game/pufo_plane.c.  The port
+takes the panels as arguments instead of reaching through the globals, as the earlier handlers in
+this family do.  Tests: TestPanelScrollFamily and TestRoleToItemId in tests/test_baseui.c,
+TestApplyQtyChanges in tests/test_plane.c.
+
+Coverage after this unit: 834/1103 functions (75.6%), 330036/598792 bytes (55.1%).
+IDB: comments added at 0x6dd4c, 0x6dd94, 0x715e8, 0x71648, 0x76088, 0x760e0, 0x79a70, 0x79ac8,
+0x967e4, 0x9683c, 0x76d88, 0x78d90 and on the panel globals 0x15EE38, 0x15EE40, 0x15EE48,
+0x15EE58, 0x15EE88, 0x15EEA8, 0x15EED0, 0x161A00, 0x161A1C, 0x161A20.

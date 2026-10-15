@@ -320,6 +320,46 @@ typedef struct PlaneStoresEnv {
 i32 BasePlaneScreen_CommitStores(PlaneStoresEnv *pEnv);
 i32 BasePlaneScreen_AdjustSelectedQty(PlaneStoresEnv *pEnv);
 
+/* ------------------------------------------------- the staged stores change, committed
+ *
+ * Evidence: BuySellScreen_ApplyQtyChanges @ 0x78d90 (232 B).
+ *
+ * The hangar rows stage their pending change in anSlotCarryCount[slot]: BasePlaneScreen_CommitStores
+ * raises it (0x7AFD8), BasePlaneScreen_AdjustSelectedQty lowers it (0x7AA28). This is the commit.
+ * Walk every object slot the map knows about and, for each one, move the amount the array holds
+ * between the selected base and the selected craft -- the sign says which way:
+ *
+ *   negative, the craft is giving: BaseRec_AddItemQty(base, item, -delta) at 0x78E00, then
+ *     InvSel_SubItemQty(craft, item, -delta) at 0x78E24. The amount is re-read from the array and
+ *     negated a SECOND time at 0x78E1C instead of reusing the first negation.
+ *   zero or positive, the craft is taking: BaseRec_SubItemQty(base, item, delta) at 0x78E34, then
+ *     InvSel_AddItemQty(craft, item, delta) at 0x78E4C.
+ *
+ * A zero amount takes the positive branch and moves nothing. The loop runs over Map_nObjectCount
+ * slots whatever the array's real length is (the global is 256 dwords), and the whole function ends
+ * in a tail call to Geoscape_CloseUI (0x8b94c, not ported) -- including when the object count is
+ * not positive,
+ * where the loop is skipped and only the close runs.
+ *
+ * Deviation: the base is apBases[nSelectedBaseIdx] with the SIGNED byte and no bound, so a -1 or an
+ * out-of-range byte reads outside the eight-slot array, and apCraft[nSelectedCraftIdx] is
+ * dereferenced whatever that dword holds. The port resolves both to NULL when out of range; the two
+ * InvSel calls still run, because ShipCargoApply @ 0x45E8C already refuses a NULL owner. */
+typedef struct BuySellApplyQtyEnv {
+    i32 *anSlotCarryCount;             /* anSlotCarryCount @ 0x161AD0, 256 dwords */
+    ObjectRecFull *const *apObjects;   /* Map.apObjects @ Map+0x108 */
+    i32 nObjectCount;                  /* Map_nObjectCount @ 0x114A60 */
+    BaseRec *const *apBases;           /* Map.apBases @ Map+0x1174 */
+    i8 nBaseIdx;                       /* nSelectedBaseIdx @ 0x159D81, the signed byte */
+    Ship *const *apCraft;              /* Map.apCraft @ Map+0x10AC */
+    i32 nCraftIdx;                     /* nSelectedCraftIdx @ 0x161AC4, a DWORD */
+    i32 nCraftCount;                   /* Map_nCraftCount @ Map+0x1194 */
+    void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI (0x8b94c), not ported */
+    void *pUser;
+} BuySellApplyQtyEnv;
+
+void BuySellScreen_ApplyQtyChanges(const BuySellApplyQtyEnv *pEnv);
+
 /* ------------------------------------------------- the crew list's click: assign or unassign
  *
  * Evidence: BasePlaneScreen_FillCrewPanel @ 0x7a188 (620 B). It is installed as the crew panel's

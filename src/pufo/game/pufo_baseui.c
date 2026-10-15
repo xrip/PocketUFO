@@ -192,6 +192,80 @@ void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond)
     }
 }
 
+/* The mover loop every handler below is. The original writes the last call of each body as a
+ * tail call (B rather than BL); that is a code-generation detail, not a behaviour. */
+static void ScrollPanelsPrev(UiPanel *const apPanels[], i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        if (apPanels[i] != NULL) {
+            UiPanel_ScrollPrev(apPanels[i]);
+        }
+    }
+}
+
+static void ScrollPanelsNext(UiPanel *const apPanels[], i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        if (apPanels[i] != NULL) {
+            UiPanel_ScrollNext(apPanels[i]);
+        }
+    }
+}
+
+void ManufScreen_PanelPrev(UiPanel *const apPanels[4])
+{
+    ScrollPanelsPrev(apPanels, 4); /* 0x6DD54, 0x6DD64, 0x6DD74, 0x6DD84 */
+}
+
+void ManufScreen_PanelNext(UiPanel *const apPanels[4])
+{
+    ScrollPanelsNext(apPanels, 4); /* 0x6DD9C, 0x6DDAC, 0x6DDBC, 0x6DDCC */
+}
+
+void PsiScreen_PanelPrev(UiPanel *const apPanels[4])
+{
+    ScrollPanelsPrev(apPanels, 4); /* 0x715F8, 0x71610, 0x71628, 0x71640 */
+}
+
+void PsiScreen_PanelNext(UiPanel *const apPanels[4])
+{
+    ScrollPanelsNext(apPanels, 4); /* 0x71658, 0x71670, 0x71688, 0x716A0 */
+}
+
+/* BuySellScreen_PanelPrev @ 0x76088 / PanelNext @ 0x760e0, and the byte-for-byte identical
+ * Transfer_ScrollPrevAll @ 0x967e4 / ScrollNextAll @ 0x9683c over the same five globals. */
+void BuySellScreen_PanelPrev(UiPanel *const apPanels[5])
+{
+    ScrollPanelsPrev(apPanels, 5); /* 0x76090, 0x760A0, 0x760B0, 0x760C0, 0x760D0 */
+}
+
+void BuySellScreen_PanelNext(UiPanel *const apPanels[5])
+{
+    ScrollPanelsNext(apPanels, 5); /* 0x760E8, 0x760F8, 0x76108, 0x76118, 0x76128 */
+}
+
+void BuySellScreen_DetailPanelPrev(UiPanel *const apPanels[5])
+{
+    ScrollPanelsPrev(apPanels, 5); /* 0x79A78, 0x79A88, 0x79A98, 0x79AA8, 0x79AB8 */
+}
+
+void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5])
+{
+    ScrollPanelsNext(apPanels, 5); /* 0x79AD0, 0x79AE0, 0x79AF0, 0x79B00, 0x79B10 */
+}
+
+i32 BuySell_RoleToItemId(i32 nRole)
+{
+    switch ((i8)nRole) { /* 0x76D88..0x76D8C sign-extends the low byte first */
+    case 0: return 117;  /* 0x76DD8 */
+    case 1: return 120;  /* 0x76DD0 */
+    case 2: return 121;  /* 0x76DC8 */
+    case 3: return 118;  /* 0x76DC0 */
+    case 4: return 119;  /* 0x76DB8, the fall-through */
+    default: return 0xFF; /* 0x76DB0, MOVNE R0,#0xFF */
+    }
+}
+
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
  * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
  * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */
