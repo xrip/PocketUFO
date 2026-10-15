@@ -1736,6 +1736,43 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `nCraftTileX` / `nCraftTileY`, which read as though the 2x2 probe started at the deployed craft; the
   three addresses it really reads are `Map_bSpawnAlt`, `Map_nSpawnTileX`, `Map_nSpawnTileY`.
 
+- [x] part 62, the fall processor: `Unit_ApplyFallDamage (0x4a7b0, 1000 B)` + `Tact_ProcessFallAction (0x52adc, 5716 B)`.
+  **Fall damage is soft-float, not fixed point.** `damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f)`
+  — the constant 1053609165 is `0x3ECCCCCD`, the IEEE-754 single **0.4f**, and `_itos` / `_muls` / `_stoi`
+  are coredll's soft-float helpers. `nZ - nLayer - 1` counts **floors**, not layers, so a one-layer step is
+  zero damage; both descent paths test the unit's own layer first, so the clamp at 0x4AA0C is unreachable.
+  **A large unit descends only when all three footprint cells are open** (0x4A91C ANDs the first two tests
+  and routes the third through the shared LABEL_14), and the landing sweep reuses the footprint cells the
+  loop last computed, so they sit on the stopping layer. A small unit landing ON a large one dies with its
+  HP untouched (0x4AAE4); a large occupant is HP-zeroed first (0x4AAFC).
+  **`_rt_sdiv` takes R0 = divisor, R1 = dividend.** Re-proven here at 0x1B118 (`MOVS LR,R1` tests the
+  remainder of `nTileY % 2`), and it decides the psi gate: `ratio = max(1600, victimProduct) / actorProduct`,
+  so a weaker attacker **cannot fail** (ratio 1 or less skips the roll); above 1 the roll must land at or
+  below `100 / ratio` out of 150. Morale left behind is `actorProduct / -150 - <600|1000> / reaction + morale`,
+  clamped at zero, byte-truncated; above 50 the victim holds, at or below 50 mode 5 panics and mode 10 stuns.
+  **The label graph is not a straight line.** LABEL_101 (the message-only exit, 0x5359C) and the two
+  "morale survived" exits (0x52D48, 0x53620) jump straight to the tail LABEL_186, skipping LABEL_111's
+  `Unit_UpdateVisibility(pActor)`. The port carries that as an explicit flag. `Map_bTickHold` skips the
+  whole tail, cursor included.
+  **The medikit sort key is tested before modes 10 and 13** (0x53058), so a medikit carried by a psi or
+  alien-melee action heals instead of attacking.
+  **Original bugs found (7 ledger rows).** `auStat[4]` is written twice at 0x531EC/0x531F4 and `auStat[5]`
+  is never loaded, so the transformed victim keeps its old stat 5. The attacker-based `uTu` at 0x53194 is
+  overwritten by `Unit_ResetBattleState` (0x49994). The chryssalid kill test uses the full half-HP figure
+  while the damage dealt is half of it again (0x532D4). The door-span trace's two `bFlags29` writes both
+  index with the entry's own `nZ`, so they hit one cell (0x53A54). The proximity marker tests validity at
+  layer 0 and writes at the landing layer (0x54058). `Unit_bIsOperative` is called with its result dropped
+  (0x4AB04). No fall cell access has a bounds test at all (0x4A820).
+  **`Unit_ResetBattleState` clears `pCell`** (0x498E0), which is why the transform saves the cell into
+  `pStepFromCell` first and places from it — the port's first version dereferenced the NULL and crashed.
+  189 new checks (11980 total), 11 renames on record (363), coverage 896/1103 (81.2%), 426312/598792 (71.2%).
+  IDB: `Map_bEnemySpotted @ 0x118800`, `Map_apXcomUnits @ 0x128B0C`, `Map_apEnemyUnits @ 0x128B84`,
+  `Map_bFallDamagePending @ 0x113A0A`, `Map_bThrowPending @ 0x127A25`, `Map_nMeleeCellX/Y/Layer @
+  0x1279F8/0x1279FC/0x127A00`, `Map_dThrowX/Y/Layer @ 0x1278A8/0x1278F8/0x127948` (typed `double`),
+  comments at 0x52ADC, 0x4A7B0, 0x531EC, 0x53194, 0x532D4, 0x53A54, 0x54058.
+  **Naming fixed on the way:** the three `PUFO_SPECIAL_SORT_*` values moved from the tactical HUD header to
+  `game/pufo_objectrec.h`, next to the `uSortKey` field they name, because two subsystems now branch on them.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2013,6 +2050,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the victory-flag naming fix (`unk_128A8C` → `Map_bMissionVictory`, `Map_szMissionCaption`, `Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome` named; the register-built-offset trap recorded) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 | the post-mission soldier cleanup (`Tact_ClearSoldierBattleFlags`, `Soldier_PromoteByTypeScores`; the five-rung rank ladder, `g_aClassStatGrowth` byte-checked, the auStatBase index bug found) | 56/56 (Release) | 11661 | 891/1103 (80.8%) | 411568/598792 (68.7%) | 40 checked, 0 mismatched |
 | the battle-end and debrief emitter (`Tact_CheckBattleEnd`; the four exits, the 19 debrief lines and their three meta shapes, the loot commit into `aSmapSites`, the Mars restart tail, the signed `abFacilityGrid` byte trap found) | 56/56 (Release) | 11791 | 892/1103 (80.9%) | 417316/598792 (69.7%) | 40 checked, 0 mismatched |
+| the fall processor (`Unit_ApplyFallDamage` + `Tact_ProcessFallAction`; the 0.4f soft-float damage formula, the `_rt_sdiv` operand order behind the psi gate, the LABEL_101/LABEL_111 split, the medikit-before-modes order, 7 original bugs found) | 56/56 (Release) | 11980 | 896/1103 (81.2%) | 426312/598792 (71.2%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

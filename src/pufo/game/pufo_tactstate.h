@@ -26,6 +26,8 @@
 #define PUFO_TACTSTATE_H
 
 #include "game/pufo_ballist.h"
+#include "game/pufo_roster.h"   /* SideLists, for Tact_ProcessFallAction's side-list removals */
+#include "game/pufo_tactctl.h"  /* TactSelectCtx, MapCursorPos */
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -366,5 +368,189 @@ typedef struct MoveActionCtx {
  * port therefore returns nothing; no caller in the original tests the value in a
  * way the port can reproduce. */
 void Tact_ProcessMoveAction(TactState *pState, const MoveActionCtx *pCtx);
+
+/* --- Tact_ProcessFallAction @ 0x52adc and Unit_ApplyFallDamage @ 0x4a7b0 -----
+ *
+ * The third of the three queue processors. Tact_TickActiveUnit @ 0x54130 runs
+ * ProcessFire or ProcessMove for the entry at nQueueCursor and then this one when
+ * TactState.bFlag1 is set; ProcessFallAction clears bFlag0 and advances the cursor
+ * at its tail (0x540E0), and a set Map_bTickHold skips the advance entirely.
+ *
+ * The switch is on nCmd - 1 with 18 slots and handles nCmd 1, 3, 4, 5, 8, 0xA,
+ * 0xC, 0xE, 0xF, 0x10, 0x11 and 0x12; nCmd 2, 6, 7, 9, 11 and 13 fall to the
+ * default and only advance the cursor. Despite the IDB name it is not only the
+ * fall case: nCmd 0xF (the Unit_ApplyFallDamage sweep) is one case of twelve.
+ *
+ * Case 0x12 is the resolution of the command-18 action. It branches on the weapon
+ * record's uSortKey (23 = the look/mind-control device, 21 = the medikit) and then
+ * on the queue entry's nMode: 5 and 4 and 10 are the psi attacks, 6 is the human
+ * melee (TactAction_ConfirmMeleeMode6 @ 0x17bb8 sets exactly that mode), 13 is the
+ * alien melee resolved by the attacker's unit type. Which psi variant is which is
+ * not established by the code; they differ only in the morale constant (600, 1000,
+ * 600) and in what happens to the victim.
+ */
+
+/* TEXTS records this pair pushes, by aTextRecs @ 0xb38d0 index (stride 205). The
+ * address in the comment is the original's raw pointer into the loaded block. */
+#define PUFO_TXTREC_SPOTTED        3  /* unk_B3B37  "Я вижу врага" */
+#define PUFO_TXTREC_WOUNDS_HEALED  8  /* 1640       "Все смертельные раны излечены" */
+#define PUFO_TXTREC_PART_HEALED   13  /* 2665       "частично поправился" */
+#define PUFO_TXTREC_MORALE_BACK   14  /* 2870       "мораль восстановлена" */
+#define PUFO_TXTREC_CONSCIOUS     46  /* 9430       "Пришел в себя" */
+#define PUFO_TXTREC_PSI_OK        37  /* unk_B5671  "Пси атака успешна" */
+#define PUFO_TXTREC_PSI_FAILED    38  /* unk_B573E  "Пси атака не удалась" */
+#define PUFO_TXTREC_ALIEN_CONTROL 54  /* unk_B640E  " под контролем пришельцев" */
+
+/* The psi power test. Both products are auStat[6] * auStat[7]; the victim's is
+ * floored at PUFO_FALL_POWER_MIN before it divides the attacker's, so a weak
+ * attacker against a weak victim gives ratio 1 and the attack cannot fail. The
+ * roll is Game_RandU16(150) against 100 / ratio. */
+#define PUFO_FALL_POWER_MIN     1600
+#define PUFO_FALL_PSI_RAND_MAX   150
+#define PUFO_FALL_PSI_PERCENT    100
+#define PUFO_FALL_MORALE_PANIC    50  /* morale > 50 stops short of the panic tail */
+#define PUFO_FALL_MORALE_MAX     100
+
+/* TU costs and fixed hits. */
+#define PUFO_FALL_TU_STEP          4  /* nCmd 4, charged on the queue entry's unit */
+#define PUFO_FALL_TU_VERT          8  /* nCmd 5 */
+#define PUFO_FALL_TU_MELEE        20  /* case 0x12 LABEL_93, charged on the attacker */
+#define PUFO_FALL_MORALE_DIVISOR 150  /* attacker product / -150 */
+#define PUFO_FALL_PSI_REACT_600  600  /* modes 5 and 10 */
+#define PUFO_FALL_PSI_REACT_1000 1000 /* mode 4 */
+#define PUFO_FALL_CELACID_BASE    90  /* the celacid power before the roll */
+#define PUFO_FALL_FIXED_HIT       80  /* silacoid and riper, and the uHp+80 stun */
+#define PUFO_FALL_CELACID_TU     100  /* the celacid's uTuSpent charge */
+
+/* The thrown-item landing search descends at most this many layers. */
+#define PUFO_FALL_THROW_DESCEND    3
+#define PUFO_FALL_SOUND_ITEM_LANDED 13
+
+/* The unit types case 0x12 mode 13 special-cases, and the type the chryssalid
+ * transform writes. Types 16 and 17 are the two civilians the transform accepts. */
+#define PUFO_FALL_TYPE_CHRYSSALID 14
+#define PUFO_FALL_TYPE_CELACID    15
+#define PUFO_FALL_TYPE_SILACOID   19
+#define PUFO_FALL_TYPE_RIPER      20
+#define PUFO_FALL_TYPE_TRANSFORMED 22
+
+/* The cell-flag bits case 4 writes on the door span: bit 0 cleared on the near
+ * cell, bit 2 set on the far one. Both lookups use the same nZ, so in the
+ * original they are the same cell. */
+#define PUFO_FALL_CELLFLAG_CLEAR   0x01u
+#define PUFO_FALL_CELLFLAG_DOOR    0x04u
+
+/* Unit_ApplyFallDamage @ 0x4a7b0.
+ *
+ * The fall is resolved in three steps, all of them reading the unit's own cell:
+ *
+ *   1. Three early returns: the cell has a floor sprite (MapCell_TestFlag 5), the
+ *      unit's type has g_aUnitTypeFlag0 set (the levitating types - floater 11 and
+ *      celacid 15 - are immune), or the unit is already on layer 0.
+ *   2. A descent. nLayer starts at the unit's nZ and steps down while the tested
+ *      cell has no floor sprite. A small unit tests its own column; a large unit
+ *      tests the other three cells of its 2x2 footprint and descends only when all
+ *      three are open (0x4A91C: the AND of the first two tests, then the third one
+ *      through the shared LABEL_14). The loop stops at the first layer that HAS a
+ *      floor, or at nLayer == -1 when the whole column is open. The three footprint
+ *      cells the sweep then uses are the ones the loop last computed, so they sit on
+ *      the stopping layer.
+ *   3. damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f), clamped
+ *      at zero. The constant is the float 0x3ECCCCCD = 0.4f, and _itos / _muls /
+ *      _stoi are coredll's soft-float helpers, not fixed point.
+ *
+ * Then the landing cells are swept - one for a small unit, the full 2x2 for a
+ * large one - and every occupant is killed. A small unit that lands ON a large one
+ * dies itself (0x4AAE4) without its HP being touched first. Finally, unless the
+ * unit is already flagged dead, it is placed on the landing layer, loses the
+ * damage from uHp with a floor at zero, and runs Unit_EnqueueIfApSpent. */
+typedef struct FallDamageCtx {
+    MapCellLookup   pfnLookup;
+    void           *pUser;
+    TactState      *pState;      /* pMapTactical @ 0x157198, for Unit_EnqueueIfApSpent */
+    const KillCtx  *pKillCtx;    /* for the two Tact_KillUnit calls @ 0x4AB10, 0x4AB40 */
+    const KillHooks *pKillHooks;
+} FallDamageCtx;
+
+void Unit_ApplyFallDamage(Soldier *pUnit, const FallDamageCtx *pCtx);
+
+/* Tact_ProcessFallAction @ 0x52adc reaches the same context block MoveActionCtx
+ * models, plus the rosters, the side lists and the object the case-0x12 branches
+ * drive. Every field names the original offset it stands for. */
+typedef struct FallActionCtx {
+    MapGeom        geom;         /* nMapDimX @ 0x1511B, nMapDimY @ 0x1511C */
+    MapCellLookup  pfnLookup;
+    void          *pUser;
+
+    /* Scratch globals. */
+    i8            *pnLayerScratch;      /* nLayerScratch @ 0x128AF0 (Map+0x15138) */
+    i32           *pnMaxLayerClamp;     /* nMaxLayerClamp @ 0x128A2C (Map+0x15074) */
+    i32           *pnAnimPhase;         /* nAnimPhase @ 0x113AB0 (Map+0x10F8) */
+    i32           *pnFireTickProgress;  /* nFireTickProgress @ 0x127A14 (Map+0x1405C) */
+    u8            *pbEnemySpotted;      /* unk_118800 @ Map+0x4E48: set by
+                                         * Unit_SpotCellOccupant @ 0x48344, cleared by
+                                         * Unit_ScanVisibleUnits @ 0x4836C. Gates the
+                                         * TEXTS[3] "I see the enemy" push. */
+    u8            *pbFallDamagePending; /* byte_113A0A @ Map+0x52: arms the nCmd 0xF sweep */
+    u8            *pbThrowPending;      /* byte_127A25 @ Map+0x1406D: arms the nCmd 0x11 landing */
+    u8            *pbTickHold;          /* Map_bTickHold @ 0x113A12 */
+    u16           *pnUiScreen;          /* Map_nUiScreen @ 0x1139F2 */
+    TactItem      **ppSelWeapon;        /* pSelWeapon @ 0x113A00 (Map+0x48) */
+    Soldier       **ppThrowTarget;      /* pThrowTargetUnit @ 0x128AA8 (Map+0x150F0) */
+    Soldier       **ppLookCommitUnit;   /* pLookCommitUnit @ 0x128A40 (Map+0x15088) */
+    u8            *pbLookCommitFlag;    /* bLookCommitFlag @ 0x128A44 (Map+0x1508C) */
+    i32           *pnCursorX;           /* Map_nCursorX @ 0x128AE0 */
+    i32           *pnCursorY;           /* Map_nCursorY @ 0x128AE4 */
+
+    /* The melee target cell, written by TactAction_ConfirmMeleeMode6 @ 0x17bb8. */
+    const i32     *pnMeleeCellX;        /* unk_1279F8 */
+    const i32     *pnMeleeCellY;        /* unk_1279FC */
+    const i32     *pnMeleeCellLayer;    /* unk_127A00 */
+
+    /* The thrown item's flight end, in sub-cell units: 16 to a cell in X and Y,
+     * 12 to a layer. Read through coredll's _dtoi. */
+    const double  *pdThrowX;            /* unk_1278A8 */
+    const double  *pdThrowY;            /* unk_1278F8 */
+    const double  *pdThrowLayer;        /* unk_127948 */
+
+    /* Rosters. The counts are the original's bytes; SideLists carries its own copy
+     * by value, so Fall_SyncCounts writes the removal back. */
+    Soldier      **apXcomUnits;         /* apXcomUnits @ 0x15154 */
+    Soldier      **apEnemyUnits;        /* apEnemyUnits @ 0x151CC */
+    u8            *pnXcomCount;         /* nXcomUnitCount @ 0x1511F */
+    u8            *pnEnemyCount;        /* nEnemyUnitCount @ 0x15124 */
+    SideLists     *pLists;              /* the same two rosters, for SideLists_RemoveUnit */
+
+    /* Context objects for the callees this function drives. */
+    struct TactCtx272 *pTactCtx;        /* pTactCtx272 @ 0x157180: bBusy, nPhase, pTrackUnit */
+    VisCtx           *pVisCtx;          /* Unit_UpdateVisibility, UnitList_ForEachRefresh */
+    KillCtx          *pKillCtx;         /* Tact_KillUnit @ 0x4E430 */
+    KillHooks        *pKillHooks;
+    struct ProximityCtx *pProximity;    /* Combat_DetonateNearbyItems @ 0x32FA8 */
+    struct UnitRosters *pRosters;       /* UnitList_ForEachRefresh @ 0x22B54 */
+    StatusStack      *pStatus;
+    const StatusHooks *pStatusHooks;
+    TactSelectCtx    *pSelectCtx;       /* Tact_SelectUnit @ 0x2C6C4 */
+    MapCursorPos     *pCursorPos;       /* MapCursor_SetPos @ 0x27014 */
+    const char       *pszTransformName; /* unk_B14B0: the chryssalid transform name */
+    bool              bLightEnabled;    /* Map_RefreshCellMeta's light gate */
+    const u8         *pLightmap;
+
+    /* Seams. pfnPushStatus takes a TEXTS record index because the port has no raw
+     * text-record accessor; pfnPushForcedText carries the one message the original
+     * builds itself (the panicked unit's name plus PUFO_TXTREC_ALIEN_CONTROL) and
+     * pushes it with bForce set. pszAlienControlSuffix is that record's text.
+     * pfnUpdateVisibility, when set, stands for Unit_UpdateVisibility @ 0x48580 at
+     * every call site here (including LABEL_111); pVisCtx is used when it is NULL. */
+    void (*pfnUpdateVisibility)(Soldier *pUnit, void *pUser);
+    void (*pfnTryOpportunityFire)(Soldier *pTarget, Soldier *pShooter, void *pUser);
+    void (*pfnCheckBattleEnd)(u8 bAbort, void *pUser);
+    void (*pfnPushStatus)(i32 nTextRecIndex, void *pUser);
+    void (*pfnPushForcedText)(const char *pszMsg, void *pUser);
+    const char *pszAlienControlSuffix;    /* unk_B640E */
+    void  *pCallbackUser;
+} FallActionCtx;
+
+void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx);
 
 #endif /* PUFO_TACTSTATE_H */

@@ -102,6 +102,13 @@ typedef struct ObjectRecFull {
 
 _Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
 
+/* uSortKey values the special-item action branches on. TactHud_UseSpecialItem
+ * @ 0x17bb8 picks the mode from these and Tact_ProcessFallAction @ 0x52ADC
+ * resolves command 18 against the same three values (0x52C2C, 0x53054). */
+#define PUFO_SPECIAL_SORT_MARK    20 /* the mark-nearby branch  */
+#define PUFO_SPECIAL_SORT_MEDIKIT 21 /* the medikit branch      */
+#define PUFO_SPECIAL_SORT_LATCH   23 /* the latch-4 branch      */
+
 /* Three fire modes; abCostPct and abArmorTu are parallel arrays indexed by them. */
 #define PUFO_FIRE_MODE_COUNT 3
 

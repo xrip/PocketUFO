@@ -137,10 +137,9 @@ bool TactHud_OpenInventory(const TactHudInvOpenCtx *pCtx);
  * returns NULL out of range and the target search then falls through to the
  * civilian scan. */
 #define PUFO_ACTION_MODE_SPECIAL 8
-#define PUFO_SPECIAL_SORT_MARK    20 /* the mark-nearby branch  */
-#define PUFO_SPECIAL_SORT_MEDIKIT 21 /* the medikit branch      */
-#define PUFO_SPECIAL_SORT_LATCH   23 /* the latch-4 branch      */
 #define PUFO_SPECIAL_MARK_RADIUS  10.0
+/* The three uSortKey values these branches test are defined next to the record
+ * field they name, in game/pufo_objectrec.h. */
 
 /* The four medikit refusal records, pushed in pairs. aTextRecs + 205*9 = 0xB4005
  * and + 205*10 = 0xB40E2 at ARM 0x17F74/0x17F90; + 205*11 = 0xB419F and

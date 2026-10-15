@@ -370,3 +370,14 @@ unk_158810	nPromoteBestPick	renamed in the IDB. Soldier_PickBestScoreAmong's win
 unk_113A13	Map_bEnemyTurnActive	renamed in the IDB (Map+0x5B). Set by Tact_BeginEnemyTurn (0x4ca18) and GameTick_Step (0x27324), cleared by Tact_EndEnemyTurn (0x4cb74) and by Tact_CheckBattleEnd at 0x3523C; Save_ReadTGameData restores it.
 dword_113A1C	Map_nBannerFadeTicks	renamed in the IDB (Map+0x64). The status-banner fade counter TactHud_DrawStatusBanner (0x1e920) gates on; Tact_CheckBattleEnd sets it to 10 at 0x351FC and Tact_InitMission seeds it.
 unk_157180	pTactCtx272	renamed in the IDB. The pointer to the TactCtx272 tactical context singleton (272 bytes, bBusy at +0xF8, nPhase at +0xFC), allocated by Tact_InitMission and read by MapCursor_SetPos, StatusMsg_Push, MenuBtn_EndTurn, MapView_DrawViewportGuide and TactHud_TickCursorDir. Tact_CheckBattleEnd clears bBusy at 0x35228.
+unk_118800	Map_bEnemySpotted	renamed in the IDB (Map+0x4E48). Set by Unit_SpotCellOccupant (0x48344), cleared by Unit_ScanVisibleUnits (0x4836C). Gates the TEXTS[3] "I see the enemy" push in Tact_ProcessFallAction at 0x5376C, 0x53960, 0x53AF8 and 0x538A0.
+unk_128B0C	Map_apXcomUnits	renamed in the IDB (Map+0x15154). The Xcom roster array the fall processor appends a panicked unit to at 0x52D80, and that the visibility sweeps at 0x53908, 0x53BB0 and 0x52EC8 walk. Counted by nXcomUnitCount (Map+0x1511F).
+unk_128B84	Map_apEnemyUnits	renamed in the IDB (Map+0x151CC). The enemy roster array the fall processor appends to at 0x52DFC (psi panic) and 0x53288 (chryssalid transform). Counted by nEnemyUnitCount (Map+0x15124).
+byte_113A0A	Map_bFallDamagePending	renamed in the IDB (Map+0x52). Arms the nCmd 0xF Unit_ApplyFallDamage roster sweep (tested at 0x53BF0, cleared at 0x53C7C).
+byte_127A25	Map_bThrowPending	renamed in the IDB (Map+0x1406D). Arms the nCmd 0x11 thrown-item landing (tested at 0x53CEC, cleared at 0x53D0C).
+unk_1279F8	Map_nMeleeCellX	renamed in the IDB (Map+0x14040). The melee target cell X; Tact_ProcessFallAction looks the cell up at 0x52BE0 and clears its bFlags29 bit 5.
+unk_1279FC	Map_nMeleeCellY	renamed in the IDB (Map+0x14044). The melee target cell Y.
+unk_127A00	Map_nMeleeCellLayer	renamed in the IDB (Map+0x14048). The melee target cell layer.
+unk_1278A8	Map_dThrowX	renamed in the IDB (Map+0x140F0). The thrown item's flight end X, in sub-cell units: 16 to a cell. Read through _dtoi at 0x53DB4.
+unk_1278F8	Map_dThrowY	renamed in the IDB (Map+0x14140). The thrown item's flight end Y, 16 sub-cells to a cell.
+unk_127948	Map_dThrowLayer	renamed in the IDB (Map+0x14190). The thrown item's flight end layer, 12 sub-units to a layer.

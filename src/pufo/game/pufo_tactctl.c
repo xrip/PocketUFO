@@ -1000,6 +1000,15 @@ static const AlienUnitStatRec s_aAlienUnitStats[14] = {
     {    45,    30,    50,    30,   150,    20,     0,     0,     5, {     0,     0,     0,     0,     0 },     0,     0 },
 };
 
+const AlienUnitStatRec *AlienUnitStats_ForType(i32 nUnitType)
+{
+    if (nUnitType < 9 || nUnitType >= 9 + (i32)(sizeof(s_aAlienUnitStats)
+                                                / sizeof(s_aAlienUnitStats[0]))) {
+        return NULL;
+    }
+    return &s_aAlienUnitStats[nUnitType - 9];
+}
+
 /* --- Tact_SpawnAliens helpers --- */
 
 /* The gate on the hand-weapon branch at 0x3AE68. ARM is

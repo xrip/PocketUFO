@@ -544,6 +544,12 @@ typedef struct AlienUnitStatRec {
 } AlienUnitStatRec;
 _Static_assert(sizeof(AlienUnitStatRec) == 32, "aAlienUnitStats records are 32 bytes");
 
+/* The record for a unit type, or NULL when the type is outside 9..22. The original
+ * computes `aAlienUnitStats + 32 * nUnitType - 288` with no bound test at all
+ * (0x3A934, and the same shape at 0x53180 in Tact_ProcessFallAction); the NULL is
+ * the port's guard, and every caller here passes a type the table covers. */
+const AlienUnitStatRec *AlienUnitStats_ForType(i32 nUnitType);
+
 /* The sprite-set name table aXcom0 @ 0xa7be8: 23 nine-byte names, index nUnitType. */
 #define PUFO_ALIEN_SPRITE_SET_NAME_COUNT 23
 

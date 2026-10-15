@@ -6,7 +6,8 @@
 #include "game/pufo_path.h"   /* g_aStepDir, Map_FacingDelta, Map_bFacingTurnPositive */
 #include "audio/pufo_audio.h" /* Sound_Play */
 #include "game/pufo_turn.h"    /* Tact_RefreshTeamVisibility */
-#include "game/pufo_combat.h"  /* g_aFireSoundBySortKey */
+#include "game/pufo_combat.h"  /* g_aFireSoundBySortKey, ProximityCtx */
+#include "util/pufo_rand.h"    /* Game_RandU16 */
 
 #include <string.h>
 
@@ -1122,4 +1123,885 @@ void Tact_ProcessMoveAction(TactState *pState, const MoveActionCtx *pCtx)
         /* 6, 9, 12 and 13 do nothing. */
         break;
     }
+}
+
+/* ==========================================================================
+ * Unit_ApplyFallDamage @ 0x4a7b0 and Tact_ProcessFallAction @ 0x52adc
+ * ========================================================================== */
+
+/* coredll's _rt_sdiv is called with R0 = divisor and R1 = dividend; the quotient
+ * comes back in R0 and the remainder in R1 (proven at 0x1B118, where MOVS LR,R1
+ * tests the remainder of nTileY % 2). A zero divisor is not defined behaviour in
+ * C, and the ARM runtime has no check for it, so the port returns 0 and every
+ * call site below says which divisor it stands for. */
+static i32 Fall_Div(i32 nDivisor, i32 nDividend)
+{
+    return nDivisor != 0 ? nDividend / nDivisor : 0;
+}
+
+static void Fall_Push(const FallActionCtx *pCtx, i32 nTextRec)
+{
+    if (pCtx->pfnPushStatus != NULL) {
+        pCtx->pfnPushStatus(nTextRec, pCtx->pCallbackUser);
+    }
+}
+
+/* Unit_UpdateVisibility @ 0x48580. The original calls it directly; the port prefers
+ * the ctx's visibility hook when one is supplied, because that is the same seam
+ * Tact_RefreshTeamVisibility is driven through, and it lets a test see whether an
+ * exit reached LABEL_111 or jumped past it to LABEL_101/LABEL_186. */
+static void Fall_UpdateVisibility(const FallActionCtx *pCtx, Soldier *pUnit)
+{
+    if (pCtx->pfnUpdateVisibility != NULL) {
+        pCtx->pfnUpdateVisibility(pUnit, pCtx->pCallbackUser);
+    } else if (pCtx->pVisCtx != NULL) {
+        Unit_UpdateVisibility(pUnit, pCtx->pVisCtx);
+    }
+}
+
+/* 0x52EC4..0x52EE0, 0x53B8C..0x53BC8 and 0x53C04..0x53C30: the Xcom roster
+ * visibility sweep. The count is re-read every iteration in the original because
+ * a sweep can end a mission; the port reads it once, which is the same unless a
+ * callee shrinks the roster mid-loop. */
+static void Fall_RefreshXcom(const FallActionCtx *pCtx)
+{
+    for (i32 i = 0; i < (i32)*pCtx->pnXcomCount; ++i) {
+        Fall_UpdateVisibility(pCtx, pCtx->apXcomUnits[i]);
+    }
+}
+
+/* LABEL_150. */
+static void Fall_TeamVisibility(const FallActionCtx *pCtx, TactState *pState)
+{
+    Tact_RefreshTeamVisibility(pState, pCtx->apXcomUnits, (i32)*pCtx->pnXcomCount,
+                               pCtx->pfnUpdateVisibility, pCtx->pCallbackUser);
+}
+
+/* SideLists carries its counts by value, so the byte globals every other tactical
+ * reader uses have to be written back after a removal. See "Separate issues" in
+ * PLAN.md: the by-value counts are the design problem, not this call site. */
+static void Fall_SyncCounts(const FallActionCtx *pCtx)
+{
+    if (pCtx->pLists == NULL) {
+        return;
+    }
+    if (pCtx->pnXcomCount != NULL)  { *pCtx->pnXcomCount  = (u8)pCtx->pLists->nXcom; }
+    if (pCtx->pnEnemyCount != NULL) { *pCtx->pnEnemyCount = (u8)pCtx->pLists->nEnemy; }
+}
+
+/* 0x53960..0x539AC and 0x53AF8..0x53B40: the "I see the enemy" message is pushed
+ * when the visibility pass that just ran spotted someone (unk_118800, set by
+ * Unit_SpotCellOccupant @ 0x48344), and a command-2 entry is spliced in right
+ * after the entry being executed so the walk-in animation runs next. */
+static void Fall_SpotTail(const FallActionCtx *pCtx, TactState *pState)
+{
+    if (*pCtx->pbEnemySpotted == 0) {
+        return;
+    }
+    Fall_Push(pCtx, PUFO_TXTREC_SPOTTED);
+    pState->nQueueLen    = (u16)(pState->nQueueCursor + 2);
+    pState->aQueue[pState->nQueueCursor + 1].nCmd = TACTCMD_OPEN;
+}
+
+/* LABEL_186 (0x540E0..0x54128). A set Map_bTickHold skips the whole tail, so the
+ * cursor stays on the entry that ran. */
+static void Fall_Tail(TactState *pState, const FallActionCtx *pCtx)
+{
+    if (*pCtx->pbTickHold != 0) {
+        return;
+    }
+    pState->bFlag0 = 0;
+    const i32 nNext = pState->nQueueCursor + 1;
+    pState->nQueueCursor = nNext;
+    if (nNext >= (i32)pState->nQueueLen) {
+        Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                            pCtx->bLightEnabled, pCtx->pLightmap);
+        pState->nQueueLen    = 0;
+        pState->bQueueActive = 0;
+        *pCtx->pnAnimPhase   = 0;
+    }
+}
+
+/* --- Unit_ApplyFallDamage @ 0x4a7b0 ------------------------------------------ */
+
+/* The footprint cell at (nX + dx, nY + dy) on nLayer. The original indexes the
+ * cell array with no bounds test at all (0x4A820..0x4A854), so an out-of-map
+ * footprint reads a neighbouring row; the port's lookup returns NULL instead. */
+static MapCell *Fall_FootprintCell(const FallDamageCtx *pCtx, const MapCell *pCell,
+                                   i32 nLayer, i32 nDx, i32 nDy)
+{
+    return pCtx->pfnLookup(pCell->nX + nDx, pCell->nY + nDy, nLayer, pCtx->pUser);
+}
+
+static bool Fall_CellHasFloor(const MapCell *pCell)
+{
+    return pCell != NULL && MapCell_TestFlag(pCell, CELLFLAG_HAS_FLOOR);
+}
+
+void Unit_ApplyFallDamage(Soldier *pUnit, const FallDamageCtx *pCtx)
+{
+    MapCell *pOrigin = pUnit->pCell;
+
+    if (MapCell_TestFlag(pOrigin, CELLFLAG_HAS_FLOOR)) { return; }   /* 0x4A7C4 */
+    if (g_aUnitTypeFlag0[pUnit->nUnitType] != 0)        { return; }   /* 0x4A7E0 */
+    if (pOrigin->nZ == 0)                               { return; }   /* 0x4A7F0 */
+
+    const bool bLarge = Unit_bIsLarge(pUnit);
+
+    /* 0x4A858..0x4A89C: a large unit with a floor anywhere in its footprint at its
+     * own layer is standing on something, so there is no fall at all. */
+    if (bLarge) {
+        if (Fall_CellHasFloor(Fall_FootprintCell(pCtx, pOrigin, pOrigin->nZ, 1, 0))
+            || Fall_CellHasFloor(Fall_FootprintCell(pCtx, pOrigin, pOrigin->nZ, 0, 1))
+            || Fall_CellHasFloor(Fall_FootprintCell(pCtx, pOrigin, pOrigin->nZ, 1, 1))) {
+            return;
+        }
+    }
+
+    /* The descent. A small unit tests its own column; a large unit tests the other
+     * three cells of its footprint and only descends when all three are open. The
+     * walk stops at the first layer that HAS a floor, or at -1 when the whole
+     * column down to layer 0 is open (0x4A8B8..0x4A988). */
+    i32     nLayer = (i32)pOrigin->nZ;
+    MapCell *pCellX = NULL, *pCellY = NULL, *pCellXY = NULL;
+
+    for (;;) {
+        if (!bLarge) {
+            if (Fall_CellHasFloor(pCtx->pfnLookup(pOrigin->nX, pOrigin->nY, nLayer,
+                                                  pCtx->pUser))) {
+                break;
+            }
+        } else {
+            pCellX  = Fall_FootprintCell(pCtx, pOrigin, nLayer, 1, 0);
+            pCellY  = Fall_FootprintCell(pCtx, pOrigin, nLayer, 0, 1);
+            pCellXY = Fall_FootprintCell(pCtx, pOrigin, nLayer, 1, 1);
+            if (Fall_CellHasFloor(pCellX) || Fall_CellHasFloor(pCellY)
+                || Fall_CellHasFloor(pCellXY)) {
+                break;
+            }
+        }
+        if (nLayer == 0) {
+            nLayer = -1;   /* --nLayer >= 0 failed: the column never had a floor */
+            break;
+        }
+        --nLayer;
+    }
+
+    /* 0x4A98C..0x4AA14. _itos / _muls / _stoi are coredll's soft-float helpers and
+     * 0x3ECCCCCD is the float 0.4f, so the damage is 40% of max HP per floor
+     * fallen. The clamp is the MOVMI/STRMI pair at 0x4AA0C. */
+    i32 nDamage = (i32)((float)(pOrigin->nZ - nLayer - 1)
+                        * (float)pUnit->auStat[1] * 0.4f);
+    if (nDamage < 0) {
+        nDamage = 0;
+    }
+
+    /* 0x4AA3C..0x4AB1C: sweep the landing cells - one for a small unit, the whole
+     * 2x2 for a large one - and kill every occupant. */
+    const i32 nCells = bLarge ? 4 : 1;
+    bool      bBlockedByLarge = false;
+
+    for (i32 n = 0; n < nCells; ++n) {
+        MapCell *pLand = (n == 0) ? pCtx->pfnLookup(pOrigin->nX, pOrigin->nY, nLayer,
+                                                    pCtx->pUser)
+                                  : (n == 1) ? pCellX
+                                  : (n == 2) ? pCellY
+                                  : pCellXY;
+
+        /* The original indexes the cell array with no bounds test, so a landing
+         * below layer 0 reads whatever sits before the array; the port's lookup
+         * returns NULL and there is nothing to sweep there. */
+        if (pLand == NULL || !MapCell_HasOccupant(pLand)) {
+            continue;
+        }
+        Soldier *pOcc = pLand->pUnit;
+        if (Unit_bIsLarge(pOcc) && !bLarge) {
+            bBlockedByLarge = true;   /* 0x4AAE4: a small unit landing on a large one */
+            break;
+        }
+        if (Unit_bIsLarge(pOcc)) {
+            pOcc->uHp = 0;            /* 0x4AAFC */
+        }
+        (void)Unit_bIsOperative(pOcc);   /* 0x4AB04: called, result dropped */
+        Tact_KillUnit(pCtx->pKillCtx, pCtx->pKillHooks, pOcc);
+    }
+
+    if (bBlockedByLarge) {
+        if (bLarge) {
+            pUnit->uHp = 0;
+        }
+        Tact_KillUnit(pCtx->pKillCtx, pCtx->pKillHooks, pUnit);
+    }
+
+    /* 0x4AB4C..0x4AB8C. A unit the sweep already killed has bFlags bit 5 set and
+     * skips the placement and the damage. */
+    if ((pUnit->bFlags & 0x20) == 0) {
+        Unit_PlaceOnMap(pUnit, pOrigin->nX, pOrigin->nY, nLayer,
+                        pCtx->pfnLookup, pCtx->pUser);
+        const i32 nHp = pUnit->uHp;
+        pUnit->uHp = (u16)(nHp <= nDamage ? 0 : nHp - nDamage);
+        Unit_EnqueueIfApSpent(pCtx->pState, pUnit, 0);
+    }
+}
+
+/* --- Tact_ProcessFallAction @ 0x52adc ---------------------------------------- */
+
+/* auStat[6] * auStat[7], the power product both psi gates divide. */
+static i32 Fall_PowerProduct(const Soldier *pUnit)
+{
+    return (i32)pUnit->auStat[6] * (i32)pUnit->auStat[7];
+}
+
+/* 0x52C90..0x52CD8, 0x52F18..0x52F60, 0x53548..0x53590: the victim's power is
+ * floored at PUFO_FALL_POWER_MIN, divided by the attacker's, and the attack cannot
+ * fail while that ratio is 1 or less. Above 1 the roll has to land at or below
+ * 100 / ratio out of 150. */
+static bool Fall_bPsiHits(i32 nActorPower, i32 nVictimPower)
+{
+    if (nVictimPower < PUFO_FALL_POWER_MIN) {
+        nVictimPower = PUFO_FALL_POWER_MIN;
+    }
+    const i32 nRatio = Fall_Div(nActorPower, nVictimPower);
+    if (nRatio <= 1) {
+        return true;
+    }
+    return (i32)Game_RandU16(PUFO_FALL_PSI_RAND_MAX)
+           <= PUFO_FALL_PSI_PERCENT / nRatio;
+}
+
+/* 0x52D0C..0x52D40, 0x52FEC..0x52FE4, 0x535FC..0x53618: the morale a successful
+ * psi attack leaves behind. The MOVMI clamp is the zero floor and the AND #0xFF is
+ * the byte truncation. */
+static void Fall_PsiMorale(Soldier *pVictim, i32 nActorPower, i32 nReactDiv)
+{
+    i32 n = Fall_Div(-PUFO_FALL_MORALE_DIVISOR, nActorPower)
+          - Fall_Div((i32)pVictim->auStat[2], nReactDiv)
+          + (i32)pVictim->bMorale;
+    if (n < 0) {
+        n = 0;
+    }
+    pVictim->bMorale = (u8)n;
+}
+
+/* 0x52E70..0x52EA4: "<name> под контролем пришельцев", pushed forced. The original
+ * copies the name terminator-inclusive into a 140-byte stack buffer and strcat's
+ * the suffix onto it; the port bounds both copies. */
+static void Fall_PushControlMessage(const FallActionCtx *pCtx, Soldier *pVictim)
+{
+    char  szMsg[140];
+    i32   n = 0;
+
+    while (n < (i32)sizeof(szMsg) - 1 && pVictim->szName[n] != 0) {
+        szMsg[n] = pVictim->szName[n];
+        ++n;
+    }
+    szMsg[n] = 0;
+    /* The original copies the name terminator-inclusive and then strcat's the
+     * suffix onto it: the suffix starts AT the terminator and brings its own. */
+    i32 nSuffix = 0;
+    if (pCtx->pszAlienControlSuffix != NULL) {
+        while (n + nSuffix < (i32)sizeof(szMsg) - 1
+               && pCtx->pszAlienControlSuffix[nSuffix] != 0) {
+            szMsg[n + nSuffix] = pCtx->pszAlienControlSuffix[nSuffix];
+            ++nSuffix;
+        }
+    }
+    szMsg[n + nSuffix] = 0;
+    if (pCtx->pfnPushForcedText != NULL) {
+        pCtx->pfnPushForcedText(szMsg, pCtx->pCallbackUser);
+    }
+}
+
+/* 0x52CDC..0x52EE0: the psi attack that breaks the victim. The panicked unit is
+ * taken out of its side list and put into the other roster - the enemy one while
+ * the animation is running, the Xcom one otherwise. */
+static void Fall_PanicVictim(TactState *pState, const FallActionCtx *pCtx,
+                             Soldier *pActor, Soldier *pVictim)
+{
+    SideLists_RemoveUnit(pCtx->pLists, pVictim);
+    Fall_SyncCounts(pCtx);
+
+    /* Both arms refill the victim's TU from its own maximum (0x52E64, 0x52DC8). */
+    pVictim->uTu = pVictim->auStat[0];
+
+    if (pCtx->pTactCtx != NULL && pCtx->pTactCtx->bBusy != 0) {
+        pVictim->bStatus = 1;
+        pCtx->apEnemyUnits[(i32)(*pCtx->pnEnemyCount)++] = pVictim;
+        Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                            pCtx->bLightEnabled, pCtx->pLightmap);
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
+        pVictim->bFlags &= (u8)~0x01u;
+        Unit_UpdateAnimPose(pVictim, NULL, NULL);
+        Fall_PushControlMessage(pCtx, pVictim);
+    } else {
+        pVictim->bStatus = 0;
+        pCtx->apXcomUnits[(i32)(*pCtx->pnXcomCount)++] = pVictim;
+        Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                            pCtx->bLightEnabled, pCtx->pLightmap);
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
+        Tact_SelectUnit(pCtx->pSelectCtx, pVictim);
+    }
+    pVictim->pLinked1040 = pActor;
+    Fall_RefreshXcom(pCtx);
+    if (pCtx->pfnCheckBattleEnd != NULL) {
+        pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+    }
+    (void)pState;
+}
+
+/* 0x53130..0x53294: the chryssalid transform. The victim leaves its side list,
+ * becomes unit type 22 with the type-22 alien record's stats, and joins the enemy
+ * roster. Its current TU comes from the ATTACKER's maximum, not its own. */
+static void Fall_ChryssalidTransform(TactState *pState, const FallActionCtx *pCtx,
+                                     Soldier *pActor, Soldier *pVictim)
+{
+    SideLists_RemoveUnit(pCtx->pLists, pVictim);
+    Fall_SyncCounts(pCtx);
+
+    pVictim->bStatus   = 1;
+    pVictim->nUnitType = PUFO_FALL_TYPE_TRANSFORMED;
+
+    if (pCtx->pszTransformName != NULL) {
+        i32 n = 0;
+        while (n < (i32)sizeof(pVictim->szName) - 1 && pCtx->pszTransformName[n] != 0) {
+            pVictim->szName[n] = pCtx->pszTransformName[n];
+            ++n;
+        }
+        pVictim->szName[n] = 0;
+    }
+
+    const AlienUnitStatRec *pRec = AlienUnitStats_ForType(PUFO_FALL_TYPE_TRANSFORMED);
+    if (pRec != NULL) {
+        pVictim->auStat[0] = (u16)pRec->nTu;
+        /* ORIGINAL QUIRK (0x53194): the attacker's maximum TU is written here, and
+         * Unit_ResetBattleState @ 0x49994 then refills uTu from auStat[0], so the
+         * value that survives is the record's. Reproduced, not corrected. */
+        pVictim->uTu = pActor->auStat[0];
+        pVictim->auStat[9] = (u16)pRec->nStat9;
+        pVictim->auStat[1] = (u16)(Game_RandU16(0x14) - 10 + pRec->nHp);
+        pVictim->auStat[2] = (u16)(Game_RandU16(0x14) - 10 + pRec->nStat2);
+        pVictim->auStat[3] = (u16)(Game_RandU16(0x14) - 10 + pRec->nStat3);
+        /* ORIGINAL BUG (0x531EC..0x531F4): the record's stat 5 is stored over
+         * auStat[4], so stat 5 is never written and the stat-4 value is lost. */
+        pVictim->auStat[4] = (u16)pRec->nStat4;
+        pVictim->auStat[4] = (u16)pRec->nStat5;
+        pVictim->auStat[8] = (u16)(Game_RandU16(0x14) - 10 + pRec->nStat8);
+        pVictim->bUnk248   = (u8)pRec->nUnk248;
+        for (i32 n = 0; n < 5; ++n) {
+            pVictim->abReady252[n] = (u8)pRec->nReady[n];
+        }
+    }
+
+    pVictim->bUnk422 = 0;
+    /* The cell is saved first because Unit_ResetBattleState clears pCell (0x498E0).
+     * The original then places from the saved cell (0x53268), not from pCell. */
+    pState->pStepFromCell = pVictim->pCell;
+    Unit_ResetBattleState(pVictim, pVictim->bFacing, pVictim->nUnitType,
+                          pVictim->auStat, PUFO_UNIT_STAT_COUNT);
+    Unit_PlaceOnMap(pVictim, pState->pStepFromCell->nX, pState->pStepFromCell->nY,
+                    pState->pStepFromCell->nZ, pCtx->pfnLookup, pCtx->pUser);
+    pActor->bUnk422 = 0;
+    pCtx->apEnemyUnits[(i32)(*pCtx->pnEnemyCount)++] = pVictim;
+}
+
+/* LABEL_93: the melee attacker spends 20 TU and the victim's out-of-TU check runs. */
+static void Fall_MeleeTail(TactState *pState, Soldier *pActor, Soldier *pVictim)
+{
+    Unit_EnqueueIfApSpent(pState, pVictim, 1);
+    pActor->uTu = (pActor->uTu <= PUFO_FALL_TU_MELEE)
+                ? 0 : (u16)(pActor->uTu - PUFO_FALL_TU_MELEE);
+}
+
+/* 0x530F8..0x534F0: the alien melee, resolved by the attacker's unit type. */
+static void Fall_AlienMelee(TactState *pState, const FallActionCtx *pCtx,
+                            Soldier *pActor, Soldier *pVictim)
+{
+    switch (pActor->nUnitType) {
+    case PUFO_FALL_TYPE_CHRYSSALID: {
+        Unit_DropAllItemsToCell(pVictim);
+        if (!Unit_bIsLarge(pVictim)
+            && (pVictim->nUnitType <= 3 || pVictim->nUnitType == 16
+                || pVictim->nUnitType == 17)) {
+            Fall_ChryssalidTransform(pState, pCtx, pActor, pVictim);
+        } else {
+            /* 0x532B4..0x532F8: the kill test uses the full half-HP figure while
+             * the damage actually dealt is half of it. */
+            const i32 nHalf = Unit_bIsLarge(pVictim) ? ((i32)pVictim->auStat[1] >> 1)
+                                                     : (i32)pVictim->auStat[1];
+            if ((i32)pVictim->uHp <= nHalf) {
+                pVictim->uHp = 0;
+                Tact_KillUnit(pCtx->pKillCtx, pCtx->pKillHooks, pVictim);
+            } else {
+                pVictim->uHp    = (u16)((i32)pVictim->uHp - nHalf / 2);
+                pVictim->nUnk436 += nHalf / 2;
+            }
+        }
+        if (pCtx->pfnCheckBattleEnd != NULL) {
+            pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+        }
+        return;
+    }
+    case PUFO_FALL_TYPE_CELACID: {
+        /* 0x53320..0x533E0. The acid power falls as the victim's readiness byte
+         * rises, the roll is subtracted from it, and the kneel counter grows by one
+         * per ten points over half the victim's HP. */
+        const i32 nPower = PUFO_FALL_CELACID_BASE
+                         - (1 - Fall_Div(100, (i32)pVictim->abReady252[2]))
+                           * (i32)pVictim->bUnk248;
+        i32 nDamage = nPower - (i32)Game_RandU16((u16)(nPower / 4));
+        if (nDamage < 0) {
+            nDamage = 0;
+        }
+        if (nDamage > (i32)pVictim->uHp) {
+            pVictim->uHp = 0;
+        } else {
+            pVictim->uHp     = (u16)((i32)pVictim->uHp - nDamage);
+            pVictim->nUnk436 += nDamage;
+        }
+        if (nDamage >= ((i32)pVictim->auStat[1] >> 1) && !Unit_bIsLarge(pVictim)) {
+            pVictim->bKneelOrPrimed = (u8)(pVictim->bKneelOrPrimed
+                                           + (nDamage - ((i32)pVictim->auStat[1] >> 1)) / 10 + 1);
+        }
+        pVictim->uTuSpent = (u16)(pVictim->uTuSpent + PUFO_FALL_CELACID_TU);
+        Fall_MeleeTail(pState, pActor, pVictim);
+        return;
+    }
+    case PUFO_FALL_TYPE_SILACOID:
+    case PUFO_FALL_TYPE_RIPER: {
+        /* 0x533F4..0x534F0: a flat 80, and the kneel counter only grows when the
+         * victim's HP is low enough for the 80 to matter. */
+        if ((i32)pVictim->uHp < PUFO_FALL_FIXED_HIT) {
+            pVictim->uHp = 0;
+        } else {
+            pVictim->uHp     = (u16)((i32)pVictim->uHp - PUFO_FALL_FIXED_HIT);
+            pVictim->nUnk436 += PUFO_FALL_FIXED_HIT;
+        }
+        if (((i32)pVictim->auStat[1] & 0xFFFE) > 0xA0 || Unit_bIsLarge(pVictim)) {
+            Fall_MeleeTail(pState, pActor, pVictim);
+            return;
+        }
+        pVictim->bKneelOrPrimed = (u8)(pVictim->bKneelOrPrimed
+                                       + (PUFO_FALL_FIXED_HIT - ((i32)pVictim->auStat[1] >> 1)) / 10 + 1);
+        Fall_MeleeTail(pState, pActor, pVictim);
+        return;
+    }
+    default:
+        return;
+    }
+}
+
+/* 0x52C5C..0x530E4: the command-18 resolution. */
+static void Fall_Action18(TactState *pState, const FallActionCtx *pCtx,
+                          TactQueueEntry *pEntry, Soldier *pActor, Soldier *pVictim)
+{
+    /* 0x52BE0..0x52BFC: the melee target cell loses its shot-trace flag and the
+     * fire animation flag goes down with it. */
+    MapCell *pMelee = pCtx->pfnLookup(*pCtx->pnMeleeCellX, *pCtx->pnMeleeCellY,
+                                      *pCtx->pnMeleeCellLayer, pCtx->pUser);
+    if (pMelee != NULL) {
+        pMelee->bFlags29 &= (u8)~0x20u;
+    }
+    pState->gap_70112[1] = 0;
+
+    TactItem *pWeapon = (TactItem *)pEntry->pWeapon;
+    const u16 uSortKey = pWeapon->pObj->uSortKey;
+    const i32 nMode    = pEntry->nMode;
+
+    if (uSortKey == PUFO_SPECIAL_SORT_LATCH) {
+        /* 0x52C2C..0x52C4C: the look device commits the attacker and opens the
+         * look screen on the target. */
+        *pCtx->ppLookCommitUnit = pActor;
+        *pCtx->pbLookCommitFlag = 1;
+        Tact_SelectUnit(pCtx->pSelectCtx, pVictim);
+        *pCtx->pnUiScreen = 4;
+        Fall_UpdateVisibility(pCtx, pActor);
+        return;
+    }
+
+    const i32 nActorPower  = Fall_PowerProduct(pActor);
+    const i32 nVictimPower = Fall_PowerProduct(pVictim);
+
+    /* LABEL_111 is Unit_UpdateVisibility(pActor), and not every exit reaches it:
+     * the message-only exit LABEL_101 (0x5359C) jumps straight to the queue tail,
+     * as do the two "morale survived" exits at 0x52D48 and 0x53620. The flag keeps
+     * that difference visible instead of flattening it. */
+    bool bUpdateVis = true;
+
+    switch (nMode) {
+    case 5: {
+        if (!Fall_bPsiHits(nActorPower, nVictimPower)) {
+            Fall_Push(pCtx, PUFO_TXTREC_PSI_FAILED);   /* LABEL_100 -> LABEL_101 */
+            bUpdateVis = false;
+            break;
+        }
+        Fall_Push(pCtx, PUFO_TXTREC_PSI_OK);
+        Fall_PsiMorale(pVictim, nActorPower, PUFO_FALL_PSI_REACT_600);
+        if ((i32)pVictim->bMorale > PUFO_FALL_MORALE_PANIC) {
+            bUpdateVis = false;
+            break;
+        }
+        Fall_PanicVictim(pState, pCtx, pActor, pVictim);   /* ends at LABEL_66 */
+        break;
+    }
+    case 4: {
+        if (Fall_bPsiHits(nActorPower, nVictimPower)) {
+            Fall_Push(pCtx, PUFO_TXTREC_PSI_OK);
+            Fall_PsiMorale(pVictim, nActorPower, PUFO_FALL_PSI_REACT_1000);
+        } else {
+            Fall_Push(pCtx, PUFO_TXTREC_PSI_FAILED);
+        }
+        break;
+    }
+    case 6: {
+        /* 0x52FF8..0x53050: the human melee. The weapon's fire power is added to
+         * the victim's spent-TU counter; once that reaches HP the counter is
+         * re-rolled to 10 * (rand(6) + 7) + HP, which is what makes the stun last. */
+        const i32 nHp = pVictim->uHp;
+        pVictim->uTuSpent = (u16)(pVictim->uTuSpent + pWeapon->pObj->uFirePower);
+        if ((i32)pVictim->uTuSpent >= nHp) {
+            pVictim->uTuSpent = (u16)(10 * ((i32)Game_RandU16(6) + 7) + nHp);
+        }
+        if ((i32)pVictim->uTuSpent >= nHp && !Unit_bIsLarge(pVictim)) {
+            pVictim->pLinked1040 = pActor;
+        }
+        Unit_EnqueueIfApSpent(pState, pVictim, 0);   /* LABEL_106 -> LABEL_111 */
+        break;
+    }
+    default:
+        /* 0x53058: the switch's default tests the medikit sort key FIRST, so a
+         * medikit carried by a mode-10 or mode-13 action takes the healing branch,
+         * not the psi or alien-melee one. */
+        if (uSortKey == PUFO_SPECIAL_SORT_MEDIKIT) {
+            /* 0x53054..0x530E0: the medikit. Four outcomes, one message each. */
+            i32 nMsg = -1;
+            if ((i32)pVictim->uTuSpent <= ((i32)pVictim->uHp >> 1)) {
+                if (pVictim->bKneelOrPrimed != 0) {
+                    pVictim->bKneelOrPrimed = 0;
+                    nMsg = PUFO_TXTREC_WOUNDS_HEALED;
+                } else if ((i32)pVictim->uHp >= (i32)pVictim->auStat[1]) {
+                    if ((i32)pVictim->bMorale >= PUFO_FALL_MORALE_MAX) {
+                        nMsg = -1;   /* 0x530C4: no message, straight to LABEL_111 */
+                    } else {
+                        i32 nMorale = (i32)pVictim->bMorale + (i32)pVictim->auStat[2];
+                        if (nMorale > PUFO_FALL_MORALE_MAX) {
+                            nMorale = PUFO_FALL_MORALE_MAX;
+                        }
+                        pVictim->bMorale = (u8)nMorale;
+                        nMsg = PUFO_TXTREC_MORALE_BACK;
+                    }
+                } else {
+                    if ((i32)pVictim->auStat[1] - (i32)pVictim->uHp < 20) {
+                        pVictim->uHp = pVictim->auStat[1];
+                    } else {
+                        pVictim->uHp = (u16)((i32)pVictim->uHp + 20);
+                    }
+                    nMsg = PUFO_TXTREC_PART_HEALED;
+                }
+            } else {
+                pVictim->uTuSpent = 0;
+                nMsg = PUFO_TXTREC_CONSCIOUS;
+            }
+            if (nMsg >= 0) {
+                Fall_Push(pCtx, nMsg);   /* LABEL_101 -> LABEL_186 */
+                bUpdateVis = false;
+            }
+        } else if (nMode == 13) {
+            Fall_AlienMelee(pState, pCtx, pActor, pVictim);
+        } else if (nMode == 10) {
+            if (!Fall_bPsiHits(nActorPower, nVictimPower)) {
+                Fall_Push(pCtx, PUFO_TXTREC_PSI_FAILED);
+                bUpdateVis = false;
+            } else {
+                Fall_Push(pCtx, PUFO_TXTREC_PSI_OK);
+                Fall_PsiMorale(pVictim, nActorPower, PUFO_FALL_PSI_REACT_600);
+                if ((i32)pVictim->bMorale > PUFO_FALL_MORALE_PANIC) {
+                    bUpdateVis = false;
+                } else {
+                    /* 0x53624..0x53658: no panic here - the victim is stunned in place. */
+                    const i32 nHp = pVictim->uHp;
+                    pVictim->uTuSpent = (u16)(nHp + PUFO_FALL_FIXED_HIT);
+                    if ((i32)pVictim->uTuSpent >= nHp && !Unit_bIsLarge(pVictim)) {
+                        pVictim->pLinked1040 = pActor;
+                    }
+                    Unit_EnqueueIfApSpent(pState, pVictim, 0);
+                }
+            }
+        }
+        break;
+    }
+
+    if (bUpdateVis) {
+        Fall_UpdateVisibility(pCtx, pActor);   /* LABEL_111 @ 0x5365C */
+    }
+}
+
+/* 0x53CDC..0x540D4: the thrown item's landing. The flight end is held as three
+ * doubles (16 sub-cells to a cell in X and Y, 12 to a layer); the search steps the
+ * layer down while the cell has no floor sprite, for at most three layers. */
+static void Fall_ThrowLanding(TactState *pState, const FallActionCtx *pCtx)
+{
+    (void)pState;
+
+    const i32 nLayerBase = (i32)*pCtx->pdThrowLayer / 12;
+    const i32 nX = (i32)*pCtx->pdThrowX / 16;
+    const i32 nY = (i32)*pCtx->pdThrowY / 16;
+
+    i32  nStep  = 0;
+    i32  nLayer = nLayerBase;
+    bool bClamp = false;
+
+    for (;;) {
+        nLayer = nLayerBase - nStep;
+        if (!Map_IsValidCell(&pCtx->geom, nX, nY, nLayer)) {
+            bClamp = true;                       /* 0x53E98 -> 0x53EC8 */
+            break;
+        }
+        MapCell *pTry = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+        if (pTry != NULL && pTry->pFloorSpr == NULL) {
+            nStep += 1;
+            if (nStep < PUFO_FALL_THROW_DESCEND) {
+                continue;
+            }
+        }
+        break;
+    }
+    if (bClamp) {
+        nLayer = nLayerBase - nStep;
+        if (nLayer < 0) { nLayer = 0; }
+        if (nLayer > 3) { nLayer = 3; }
+    }
+
+    if (Map_IsValidCell(&pCtx->geom, nX, nY, nLayer)) {
+        MapCell     *pLand   = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+        TactItem    *pItem   = *pCtx->ppSelWeapon;
+
+        MapCell_ListInsertByPri(pLand, pItem);
+        Sound_Play(PUFO_FALL_SOUND_ITEM_LANDED);
+
+        if (pItem->pObj->uSortKey == PUFO_PROXIMITY_KEY_MARK) {
+            /* 0x54020..0x540B4: a proximity marker is taken back off the cell and
+             * stamps the animated-tile field over the 3x3 around the landing. The
+             * validity test uses layer 0 while the lookup uses the landing layer -
+             * that is what the original does. */
+            MapCell_ListRemove(pLand, pItem);
+            Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                                pCtx->bLightEnabled, pCtx->pLightmap);
+            for (i32 nDy = -1; nDy < 2; ++nDy) {
+                for (i32 nDx = -1; nDx < 2; ++nDx) {
+                    if (!Map_IsValidCell(&pCtx->geom, pLand->nX + nDx,
+                                         pLand->nY + nDy, 0)) {
+                        continue;
+                    }
+                    MapCell *pC = pCtx->pfnLookup(pLand->nX + nDx, pLand->nY + nDy,
+                                                  pLand->nZ, pCtx->pUser);
+                    if (pC != NULL) {
+                        pC->nFlags40 = (pC->nFlags40 & 0xFFFFFF87u) | 0x18u;
+                    }
+                }
+            }
+        }
+    }
+    *pCtx->pnLayerScratch = (i8)*pCtx->pnMaxLayerClamp;
+}
+
+/* nCmd 1 (0x53668..0x537E4): the tail of a step. */
+static void FallStepTail(TactState *pState, const FallActionCtx *pCtx, Soldier *pActor)
+{
+    const u8 bFlags = pActor->bFlags;
+
+    if ((bFlags & 0x20) != 0) {
+        return;
+    }
+    pActor->nDrawOffX = 0;
+    pActor->nDrawOffY = 0;
+    if ((bFlags & 0x10) == 0) {
+        /* 0x536A0..0x536BC: carrying weight costs stun, scaled by strength. The
+         * quotient is cut to 16 signed bits by the LSL#16 / LSR#16 pair. */
+        const i32 nQuot = Fall_Div((i32)pActor->auStat[8],
+                                   (i32)pActor->uInvBurden * 4) & 0xFFFF;
+        pActor->uStunOrArmor = (u16)((i32)pActor->uStunOrArmor - 2 - nQuot);
+    }
+
+    MapCell *pCell = pActor->pCell;
+    *pCtx->pnLayerScratch = (pCell->pCeilSpr != NULL && pCell->pCeilSpr->iCeilParam < -15)
+                          ? (i8)(pCell->nZ + 2) : (i8)(pCell->nZ + 1);
+
+    Combat_DetonateNearbyItems(pCtx->pProximity, pCell);
+
+    if (Unit_bScanOpportunityFire(pCtx->pTactCtx, pActor, pCtx->apEnemyUnits,
+                                  pCtx->pnEnemyCount, pCtx->apXcomUnits,
+                                  pCtx->pnXcomCount, pCtx->pfnTryOpportunityFire,
+                                  pCtx->pCallbackUser)) {
+        pActor->bFlags &= (u8)~0x02u;
+        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Fall_TeamVisibility(pCtx, pState);
+        pCtx->pTactCtx->nPhase = 1;
+        return;
+    }
+
+    Fall_UpdateVisibility(pCtx, pActor);
+
+    if (*pCtx->pbEnemySpotted != 0 && pState->bUnk70114 == 0) {
+        Fall_Push(pCtx, PUFO_TXTREC_SPOTTED);
+        pActor->bFlags &= (u8)~0x02u;
+        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Fall_TeamVisibility(pCtx, pState);
+        return;
+    }
+    if (pState->gap_70112[0] != 0) {
+        pActor->bFlags &= (u8)~0x02u;
+        Unit_UpdateAnimPose(pActor, NULL, NULL);
+        Fall_TeamVisibility(pCtx, pState);
+        return;
+    }
+    if (pCtx->pTactCtx->pTrackUnit != NULL && (pCell->bFlags44 & 1) == 0) {
+        pCtx->pTactCtx->pTrackUnit = NULL;
+    }
+}
+
+void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx)
+{
+    TactQueueEntry *pEntry  = &pState->aQueue[pState->nQueueCursor];
+    Soldier        *pActor  = pEntry->pUnit;
+    Soldier        *pVictim = pEntry->pTarget;
+    const i32       nFacing = (i8)pEntry->nFacing;
+
+    switch (pEntry->nCmd) {
+    case 1:
+        FallStepTail(pState, pCtx, pActor);
+        break;
+
+    case 3:
+        Combat_DetonateNearbyItems(pCtx->pProximity, pActor->pCell);
+        if (pState->gap_70112[0] != 0) {
+            Fall_TeamVisibility(pCtx, pState);
+            break;
+        }
+        Fall_UpdateVisibility(pCtx, pActor);
+        Fall_SpotTail(pCtx, pState);
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
+        break;
+
+    case 4: {
+        /* 0x539B0..0x53AB: the door span. Both cell writes use the entry's own nZ,
+         * so in the original they land on the same cell: bit 0 off, bit 2 on. */
+        if ((i32)pEntry->nTurnDir > 0) {
+            const StepDir *pDelta = &g_aStepDir[nFacing];
+            for (i32 n = 0; n < (i32)pEntry->nTurnDir; ++n) {
+                pState->nTraceX = (i32)pDelta->dx * n + (i32)pEntry->nX;
+                pState->nTraceY = (i32)pDelta->dy * n + (i32)pEntry->nY;
+                pState->nTraceZ = (i32)pEntry->nZ;
+                MapCell *pC = pCtx->pfnLookup(pState->nTraceX, pState->nTraceY,
+                                              pState->nTraceZ, pCtx->pUser);
+                if (pC != NULL) {
+                    pC->bFlags29 = (u8)(((pC->bFlags29 & (u8)~PUFO_FALL_CELLFLAG_CLEAR)
+                                        | PUFO_FALL_CELLFLAG_DOOR));
+                }
+            }
+        }
+        pActor->uTu = (u16)(pActor->uTu - PUFO_FALL_TU_STEP);
+        Fall_UpdateVisibility(pCtx, pActor);
+        Fall_SpotTail(pCtx, pState);
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
+        Combat_DetonateNearbyItems(pCtx->pProximity, pActor->pCell);
+        if (pState->gap_70112[0] != 0) {
+            Fall_TeamVisibility(pCtx, pState);
+        }
+        break;
+    }
+
+    case 5: {
+        /* 0x5381C..0x53920: the vertical step. nFacing is signed, so 9 means down. */
+        pActor->uTu = (u16)(pActor->uTu - PUFO_FALL_TU_VERT);
+        Unit_PlaceOnMap(pActor, pActor->pCell->nX, pActor->pCell->nY,
+                        (i32)pActor->pCell->nZ + nFacing, pCtx->pfnLookup, pCtx->pUser);
+        pActor->nDrawOffY = 0;
+        if (pActor->pCell->pFloorSpr != NULL) {
+            pActor->bFlags &= (u8)~0x10u;
+            Unit_UpdateAnimPose(pActor, NULL, NULL);
+        }
+        Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                            pCtx->bLightEnabled, pCtx->pLightmap);
+        if (nFacing == -1) {
+            *pCtx->pnLayerScratch = (i8)(pActor->pCell->nZ + 1);
+        }
+        if (*pCtx->pbEnemySpotted != 0) {
+            Fall_Push(pCtx, PUFO_TXTREC_SPOTTED);
+            Fall_TeamVisibility(pCtx, pState);
+            break;
+        }
+        Combat_DetonateNearbyItems(pCtx->pProximity, pActor->pCell);
+        if (pState->gap_70112[0] != 0) {
+            Fall_TeamVisibility(pCtx, pState);
+            break;
+        }
+        Fall_RefreshXcom(pCtx);
+        break;
+    }
+
+    case 8:
+        Tact_KillUnit(pCtx->pKillCtx, pCtx->pKillHooks, pActor);
+        break;
+
+    case 0xA:
+        MapCursor_SetPos(pCtx->pCursorPos, *pCtx->pnCursorX, *pCtx->pnCursorY,
+                         pCtx->pfnLookup, pCtx->pUser);
+        break;
+
+    case 0xC:
+        Map_RefreshCellMeta(pCtx->pfnLookup, pCtx->pUser, &pCtx->geom,
+                            pCtx->bLightEnabled, pCtx->pLightmap);
+        (*pCtx->pSelectCtx->ppSelUnit)->bFlags &= (u8)~0x02u;
+        Unit_UpdateAnimPose(*pCtx->pSelectCtx->ppSelUnit, NULL, NULL);
+        break;
+
+    case 0xE:
+        Fall_RefreshXcom(pCtx);
+        if (pCtx->pfnCheckBattleEnd != NULL) {
+            pCtx->pfnCheckBattleEnd(0, pCtx->pCallbackUser);
+        }
+        break;
+
+    case 0xF: {
+        if (*pCtx->pbFallDamagePending == 0) {
+            break;
+        }
+        FallDamageCtx fall = { pCtx->pfnLookup, pCtx->pUser, pState,
+                               pCtx->pKillCtx, pCtx->pKillHooks };
+        for (i32 i = 0; i < (i32)*pCtx->pnXcomCount; ++i) {
+            Unit_ApplyFallDamage(pCtx->apXcomUnits[i], &fall);
+        }
+        for (i32 i = 0; i < (i32)*pCtx->pnEnemyCount; ++i) {
+            Unit_ApplyFallDamage(pCtx->apEnemyUnits[i], &fall);
+        }
+        *pCtx->pbFallDamagePending = 0;
+        *pCtx->pnFireTickProgress  = 0;
+        *pCtx->pnLayerScratch      = (i8)*pCtx->pnMaxLayerClamp;
+        UnitList_ForEachRefresh(pCtx->pRosters, pCtx->pVisCtx);
+        break;
+    }
+
+    case 0x10:
+        pState->bPhaseActive = 0;
+        break;
+
+    case 0x11:
+        if (*pCtx->pbThrowPending == 0) {
+            break;
+        }
+        *pCtx->ppThrowTarget = NULL;
+        *pCtx->pbThrowPending = 0;
+        Fall_ThrowLanding(pState, pCtx);
+        break;
+
+    case 0x12:
+        Fall_Action18(pState, pCtx, pEntry, pActor, pVictim);
+        break;
+
+    default:
+        /* nCmd 2, 6, 7, 9, 11 and 13 only advance the cursor. */
+        break;
+    }
+
+    Fall_Tail(pState, pCtx);
 }

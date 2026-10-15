@@ -13641,3 +13641,161 @@ Map_nMapLayers = 0, Map_bUnk15115 = 0, Tact_InitMission(0), and Map_bFrameScratc
   facility byte, the full ten-line won debrief with its aux values, meta shapes, score, site commit
   and per-object recovery tallies, the lost debrief's base-lost and craft-lost lines, the empty
   debrief of an aborted win, and the Mars restart tail.
+
+## Unit_ApplyFallDamage (0x4a7b0) and Tact_ProcessFallAction (0x52adc): the fall processor
+
+Ported in src/pufo/game/pufo_tactstate.c as `Unit_ApplyFallDamage` plus
+`Tact_ProcessFallAction` with static helpers `Fall_*`. 6,716 bytes, the largest
+tact pair ported so far.
+
+### Unit_ApplyFallDamage @ 0x4a7b0
+
+Three early returns, in order: the unit's own cell has a floor sprite
+(`MapCell_TestFlag` 5, 0x4A7C4), `g_aUnitTypeRecord[4*nUnitType + 0]` is set
+(0x4A7E0 - the fall-immune types), or the cell is already at layer 0 (0x4A7F0).
+
+A large unit then returns if ANY of its three footprint cells at its own layer has
+a floor (0x4A86C, 0x4A880, 0x4A894) - it is standing on something.
+
+The descent (0x4A8AC..0x4A988). `nLayer` starts at the unit's `nZ`. A small unit
+tests its own column; a large unit tests the other three footprint cells and
+descends only when all three are open (0x4A91C is the AND of the first two tests,
+then the third goes through the shared LABEL_14). The loop stops ON the first layer
+that HAS a floor, or leaves `nLayer` at -1 when the column runs out. The three
+footprint cells the landing sweep then uses are the ones the loop last computed, so
+they sit on the stopping layer.
+
+Damage (0x4A98C..0x4AA14):
+
+    damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f)
+
+clamped at zero by the MOVMI/STRMI pair at 0x4AA0C. `_itos` / `_muls` / `_stoi` are
+coredll's soft-float helpers, not a fixed-point format, and the constant
+1053609165 = 0x3ECCCCCD is the IEEE-754 single 0.4f. So a fall costs 40% of max HP
+per floor fallen, and `nZ - nLayer - 1` counts FLOORS, not layers: a one-layer step
+is zero damage. The clamp is unreachable in practice - both descent paths test the
+unit's own layer first, so `nLayer < nZ` always holds - and the port keeps it anyway.
+
+The landing sweep (0x4AA3C..0x4AB1C) covers one cell for a small unit and the full
+2x2 for a large one. For each occupant: a small unit landing ON a large one breaks
+out of the sweep (0x4AAE4) and is then killed with its HP untouched (0x4AB28 tests
+the falling unit, not the occupant); a large occupant has `uHp` zeroed first
+(0x4AAFC); `Unit_bIsOperative` is called and its result dropped (0x4AB04). Then,
+unless the falling unit already has `bFlags` bit 5 set (0x4AB4C), it is placed on
+the landing layer, loses the damage from `uHp` with a floor at zero, and runs
+`Unit_EnqueueIfApSpent`.
+
+### Tact_ProcessFallAction @ 0x52adc
+
+`switch(nCmd)` over 1, 3, 4, 5, 8, 0xA, 0xC, 0xE, 0xF, 0x10, 0x11, 0x12; commands
+2, 6, 7, 9, 11 and 13 only advance the cursor.
+
+**LABEL_186 (0x540E0)** is the shared tail and `Map_bTickHold` skips all of it:
+`bFlag0 = 0`, cursor + 1, and when the cursor reaches `nQueueLen` the queue is
+closed (`nQueueLen = 0`, `bQueueActive = 0`, `nAnimPhase = 0`).
+
+**LABEL_150** is `Tact_RefreshTeamVisibility` (0x4F368), which rewrites the current
+entry into command 12, sets `nQueueLen = cursor + 2` and `bFlag1 = 1`, then runs the
+visibility hook per Xcom unit.
+
+**LABEL_111** is `Unit_UpdateVisibility(pActor)` (0x5365C). Not every exit reaches
+it: the message-only exit LABEL_101 (0x5359C) and the two "morale survived" exits
+(0x52D48, 0x53620) jump straight to LABEL_186. The port carries that as an explicit
+flag rather than flattening it.
+
+- **nCmd 1 (0x53668)** - the move tail. Bit 5 set: nothing. Otherwise the draw
+  offsets clear and, when bit 4 is clear, `uStunOrArmor += -2 - 4*burden/strength`
+  with the quotient cut to 16 bits by the `LSL#16`/`LSR#16` pair at 0x536B0. The
+  layer scratch is `nZ + 2` when the ceiling sprite's signed byte at Mc1Rec+0x24 is
+  strictly below -15 (`LDRSB` / `CMP #-15` at 0x536D4), else `nZ + 1`. Then the
+  proximity detonation, then opportunity fire (which sets `pTactCtx272->nPhase = 1`
+  and skips the rest), then LABEL_111, then the spotted-message tail gated by
+  `Map_bEnemySpotted != 0 && bUnk70114 == 0` - one condition, so `bUnk70114`
+  suppresses the message AND the team pass. Finally the tracked unit is dropped when
+  the cell has no `bFlags44` bit 0.
+- **nCmd 3 (0x53930)** - detonate, blast-scan flag to LABEL_150, else visibility,
+  the spot tail, then `UnitList_ForEachRefresh`.
+- **nCmd 4 (0x539B0)** - the door span. `aDirDeltaXY[nFacing] * n` for
+  `n < nTurnDir` writes `nTraceX/Y/Z`, and both `bFlags29` writes index with the
+  entry's own `nZ`, so they land on the same cell (bit 0 off, bit 2 on). Then 4 TU,
+  visibility, the spot tail, `UnitList_ForEachRefresh`, detonation, blast-scan flag.
+- **nCmd 5 (0x5381C)** - the vertical step. 8 TU, `Unit_PlaceOnMap` at
+  `nZ + nFacing` (nFacing is read signed), `nDrawOffY = 0`, and a floor sprite at the
+  new cell clears bit 4 and re-poses. `nLayerScratch = new nZ + 1` only when
+  `nFacing == -1`.
+- **nCmd 0xF (0x53BF0)** - gated on `Map_bFallDamagePending`; runs
+  `Unit_ApplyFallDamage` over both rosters, clears the arming byte and
+  `nFireTickProgress`, sets `nLayerScratch = nMaxLayerClamp`, then LABEL_164.
+- **nCmd 0x11 (0x53CEC)** - the thrown-item landing. The flight end is three doubles
+  with 16 sub-cells to a cell in X and Y and 12 to a layer. The search steps the
+  layer down while the cell has no floor sprite, for at most three tests, so three
+  open layers land at `base - 2`; running off the map clamps the layer into 0..3.
+  The item is inserted by priority, `Sound_Play(13)`, and a `uSortKey` 14 marker is
+  taken back off the cell and stamps `nFlags40 = old & 0xFFFFFF87 | 0x18` over the
+  3x3 around the landing.
+- **nCmd 0x12 (0x52BE0)** - the special action. First the melee target cell loses
+  `bFlags29` bit 5 and the fire-animation flag `gap_70112[1]` goes down. Then
+  `pWeapon->pObj->uSortKey`: 23 commits the attacker as the look unit, selects the
+  target and opens screen 4. Otherwise `switch(nMode)` on 5, 4, 6, and the default
+  arm tests the medikit sort key FIRST - so a medikit carried by a mode-10 or
+  mode-13 action heals instead of attacking - then mode 13 (alien melee) and mode 10.
+
+### The psi gate (0x52C90, 0x52F18, 0x53548)
+
+    ratio = max(1600, victim.auStat[6] * victim.auStat[7])
+            / (actor.auStat[6] * actor.auStat[7])
+    hit   = ratio <= 1 || Game_RandU16(150) <= 100 / ratio
+
+`_rt_sdiv` takes R0 = divisor and R1 = dividend here (proven independently at
+0x1B118, where `MOVS LR,R1` tests the remainder of `nTileY % 2`), so the quotient
+is victim-over-actor: a weaker attacker cannot fail.
+
+The morale a hit leaves behind (0x52D0C, 0x52FDC, 0x535FC):
+
+    morale = actorProduct / -150 - <600|1000> / victim.auStat[2] + victim.bMorale
+
+clamped at zero by `MOVMI R0, R11` and truncated to a byte by `AND R0, R0, #0xFF`.
+Mode 4 uses 1000, modes 5 and 10 use 600. Above 50 the victim holds; at or below 50
+mode 5 panics and mode 10 stuns in place.
+
+### The panic tail (0x52D54) and the chryssalid transform (0x53130)
+
+Panic: the victim leaves its side list, both arms refill `uTu` from its own
+`auStat[0]` (0x52E64, 0x52DC8), and then the arms differ. With
+`pTactCtx272->bBusy` set the victim joins `Map_apEnemyUnits` with `bStatus = 1`,
+loses `bFlags` bit 0, and the composed "<name> under alien control" is pushed forced
+(the name is copied terminator-inclusive and `strcat` appends the suffix AT the
+terminator). Otherwise it joins `Map_apXcomUnits` with `bStatus = 0` and becomes the
+selected unit. Both arms then link `pLinked1040` to the attacker, sweep the Xcom
+roster and reach LABEL_66 - `Tact_CheckBattleEnd(0)`.
+
+Transform: the victim leaves its side list, becomes type 22 with the transform name,
+and takes the type-22 record's stats with a `rand(20) - 10` jitter on HP, stat 2,
+stat 3 and stat 8. Its current TU is written from the ATTACKER's maximum at 0x53194
+and then overwritten by `Unit_ResetBattleState` (0x49994) - see the ledger. The cell
+is saved into `pStepFromCell` before that reset because the reset clears `pCell`
+(0x498E0), and the placement uses the saved cell. The victim joins the enemy roster.
+
+Alien melee by attacker type: 14 chryssalid (converts types 0..3, 16, 17, otherwise
+the HP path), 15 celacid (`90 - (1 - readiness/100) * bUnk248`, minus
+`rand(power/4)`, then 100 TU charged on the victim), 19 silacoid and 20 riper (a flat
+80, knock-down counter `(80 - auStat[1]/2)/10 + 1` only when
+`(auStat[1] & 0xFFFE) <= 0xA0`). All three end at LABEL_93, which runs
+`Unit_EnqueueIfApSpent(victim, 1)` and charges the attacker 20 TU.
+
+### Deviations
+
+- Cell lookups go through the port's bounds-checked `MapCellLookup`, so an out of
+  map footprint or a landing below layer 0 yields NULL and is skipped, where the
+  original reads a neighbouring row or the memory before the cell array.
+- `_rt_sdiv` with a zero divisor is undefined in C and the ARM runtime has no test
+  for it, so the port's `Fall_Div` returns 0. It guards `auStat[8]` (strength) in
+  the burden term, `auStat[2]` (reaction) in the morale term and `abReady252[2]` in
+  the celacid term. This is an assumption, not an observation.
+- `pfnUpdateVisibility` stands for `Unit_UpdateVisibility` at every call site here
+  when it is supplied, which is what makes the LABEL_111 / LABEL_101 difference
+  observable in a test.
+- The composed panic message is built into a bounded 140-byte buffer instead of a
+  `strcat` into an unbounded one.
+- `Tact_SelectUnit` and `MapCursor_SetPos` are called through their port contexts
+  rather than through the Map block.

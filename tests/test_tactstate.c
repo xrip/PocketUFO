@@ -5,6 +5,9 @@
  * asserted explicitly.
  */
 #include "game/pufo_tactstate.h"
+#include "game/pufo_turn.h"    /* TactCtx272 */
+#include "game/pufo_combat.h"  /* CombatCtx, ProximityCtx, UnitRosters */
+#include "util/pufo_rand.h"   /* Game_RandU16 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -728,6 +731,1352 @@ static void TestQueueDoorAction(void)
     Check(!Map_QueueDoorAction(&state, &cellA, &cellB, 1, &ctx), "bad dir refused");
 }
 
+/* ==========================================================================
+ * Unit_ApplyFallDamage @ 0x4a7b0 and Tact_ProcessFallAction @ 0x52adc
+ *
+ * Fixture: a 4x4x4 cell grid, one shared floor-sprite record, one shared ceiling
+ * record whose iCeilParam each test sets, and the FallActionCtx the processor
+ * reads. Convention: g_aFallUnits[0] is the acting unit, [1] the target, [2] and
+ * [3] cell occupants.
+ * ========================================================================== */
+
+#define FALL_DIM 4
+
+static MapCell   g_aFallCells[PUFO_MAP_LAYERS][FALL_DIM][FALL_DIM];
+static Mc1Rec    g_FallFloor;
+static Mc1Rec    g_FallCeil;
+static Soldier   g_aFallUnits[4];
+static Soldier  *g_apFallXcom[4];
+static Soldier  *g_apFallEnemy[4];
+static Soldier  *g_apFallCiv[8];   /* Tact_KillUnit parks corpses here */
+static u8        g_nFallXcom;
+static u8        g_nFallEnemy;
+
+/* The scratch globals the original reaches through the Map block. */
+static i8       g_nLayerScratch;
+static i32      g_nMaxLayerClamp;
+static i32      g_nAnimPhase;
+static i32      g_nFireTickProgress;
+static u8       g_bEnemySpotted;
+static u8       g_bFallPending;
+static u8       g_bThrowPending;
+static u8       g_bTickHold;
+static u16      g_nUiScreen;
+static TactItem *g_pSelWeapon;
+static Soldier  *g_pThrowTarget;
+static Soldier  *g_pLookCommit;
+static u8        g_bLookFlag;
+static i32       g_nCursorX;
+static i32       g_nCursorY;
+static i32       g_nMeleeX, g_nMeleeY, g_nMeleeLayer;
+static double    g_dThrowX, g_dThrowY, g_dThrowLayer;
+
+/* Objects the processor drives. */
+static TactCursor    g_FallCursor;
+static MapCursorPos  g_FallPos;
+static Soldier      *g_pFallSelUnit;
+static TactSelectCtx g_FallSel;
+static TactCtx272    g_FallTactCtx;
+static SideLists     g_FallLists;
+static UnitRosters   g_FallRosters;
+static CombatCtx     g_FallCombat;
+static ProximityCtx  g_FallProx;
+static MapGeom       g_FallGeom = { FALL_DIM, FALL_DIM };
+static ObjectRecFull  g_aFallObjTable[132];
+static ObjectRecFull *g_apFallObjTable[132];
+static TactItem       g_aFallItemTable[8];
+static TactItem      *g_apFallItemTable[8];
+static i32            g_nFallItemCnt;
+static i32            g_nFallKillCount;
+static KillCtx        g_FallKillCtx;
+static KillHooks      g_FallKillHooks;
+static ObjectRecFull  g_FallWeaponObj;
+static TactItem       g_FallWeapon;
+static FallActionCtx  g_FallCtx;
+static FallDamageCtx  g_FallDmg;
+
+/* What the seams saw. */
+static i32     g_nVisCalls;
+static i32     g_nStatusCalls;
+static i32     g_nForcedCalls;
+static i32     g_nBattleEndCalls;
+static i32     g_nKillBattleEndCalls;
+static i32     g_nLastStatusRec;
+static Soldier *g_pVisLastUnit;
+static char     g_szForced[256];
+
+static MapCell *FallLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nX < 0 || nX >= FALL_DIM || nY < 0 || nY >= FALL_DIM) {
+        return NULL;
+    }
+    if (nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        return NULL;
+    }
+    return &g_aFallCells[nLayer][nY][nX];
+}
+
+static void FallHookVisibility(Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    ++g_nVisCalls;
+    g_pVisLastUnit = pUnit;
+}
+
+static void FallHookStatus(i32 nRec, void *pUser)
+{
+    (void)pUser;
+    ++g_nStatusCalls;
+    g_nLastStatusRec = nRec;
+}
+
+static void FallHookForced(const char *pszMsg, void *pUser)
+{
+    (void)pUser;
+    ++g_nForcedCalls;
+    snprintf(g_szForced, sizeof(g_szForced), "%s", pszMsg);
+}
+
+static void FallHookBattleEnd(u8 bAbort, void *pUser)
+{
+    (void)bAbort;
+    (void)pUser;
+    ++g_nBattleEndCalls;
+}
+
+static void FallHookKillBattleEnd(void *pUser)
+{
+    (void)pUser;
+    ++g_nKillBattleEndCalls;
+}
+
+/* SideLists keeps its counts by value, so the fixture has to copy the byte counts
+ * into it before each call, the way the game's single shared block does. */
+static void FallSyncLists(void)
+{
+    g_FallLists.nXcom  = (i32)g_nFallXcom;
+    g_FallLists.nEnemy = (i32)g_nFallEnemy;
+}
+
+static void FallSetup(void)
+{
+    i32 z, y, x, n;
+
+    Reset();
+    memset(g_aFallCells, 0, sizeof(g_aFallCells));
+    for (z = 0; z < PUFO_MAP_LAYERS; ++z) {
+        for (y = 0; y < FALL_DIM; ++y) {
+            for (x = 0; x < FALL_DIM; ++x) {
+                MapCell_Init(&g_aFallCells[z][y][x], x, y, z);
+            }
+        }
+    }
+    memset(g_aFallUnits, 0, sizeof(g_aFallUnits));
+    memset(g_apFallXcom, 0, sizeof(g_apFallXcom));
+    memset(g_apFallEnemy, 0, sizeof(g_apFallEnemy));
+    memset(g_apFallCiv, 0, sizeof(g_apFallCiv));
+    memset(&g_FallCeil, 0, sizeof(g_FallCeil));
+    memset(&g_FallFloor, 0, sizeof(g_FallFloor));
+    memset(&g_FallTactCtx, 0, sizeof(g_FallTactCtx));
+    memset(&g_FallCursor, 0, sizeof(g_FallCursor));
+
+    g_nFallXcom = 0;
+    g_nFallEnemy = 0;
+    g_nLayerScratch = 0;
+    g_nMaxLayerClamp = 2;
+    g_nAnimPhase = 0;
+    g_nFireTickProgress = 7;
+    g_bEnemySpotted = 0;
+    g_bFallPending = 0;
+    g_bThrowPending = 0;
+    g_bTickHold = 0;
+    g_nUiScreen = 0;
+    g_pThrowTarget = &g_aFallUnits[2];   /* a non-NULL sentinel */
+    g_pLookCommit = NULL;
+    g_bLookFlag = 0;
+    g_nCursorX = 0;
+    g_nCursorY = 0;
+    g_nMeleeX = 1;
+    g_nMeleeY = 1;
+    g_nMeleeLayer = 2;
+    g_dThrowX = 0;
+    g_dThrowY = 0;
+    g_dThrowLayer = 0;
+    g_nVisCalls = 0;
+    g_nStatusCalls = 0;
+    g_nForcedCalls = 0;
+    g_nBattleEndCalls = 0;
+    g_nKillBattleEndCalls = 0;
+    g_nLastStatusRec = -1;
+    g_pVisLastUnit = NULL;
+    g_szForced[0] = 0;
+
+    memset(&g_FallWeaponObj, 0, sizeof(g_FallWeaponObj));
+    memset(&g_FallWeapon, 0, sizeof(g_FallWeapon));
+    g_FallWeapon.pObj = &g_FallWeaponObj;
+    g_pSelWeapon = &g_FallWeapon;
+
+    /* Tact_KillUnit's own context, mirroring tests/test_vis.c. */
+    memset(g_aFallObjTable, 0, sizeof(g_aFallObjTable));
+    memset(g_aFallItemTable, 0, sizeof(g_aFallItemTable));
+    for (n = 0; n < 132; ++n) {
+        g_apFallObjTable[n] = &g_aFallObjTable[n];
+    }
+    for (n = 0; n < 8; ++n) {
+        g_aFallItemTable[n].pObj = &g_aFallObjTable[n];
+        g_apFallItemTable[n] = &g_aFallItemTable[n];
+    }
+    g_nFallItemCnt = 0;
+    g_nFallKillCount = 0;
+    memset(&g_FallCombat, 0, sizeof(g_FallCombat));
+    g_FallCombat.pfnLookup = FallLookup;
+    g_FallCombat.pGeom = &g_FallGeom;
+    memset(&g_FallKillCtx, 0, sizeof(g_FallKillCtx));
+    g_FallKillCtx.pCombat = &g_FallCombat;
+    g_FallKillCtx.apTactItems = g_apFallItemTable;
+    g_FallKillCtx.pnTactItem = &g_nFallItemCnt;
+    g_FallKillCtx.apObjects = g_apFallObjTable;
+    g_FallKillCtx.ppSelUnit = &g_pFallSelUnit;
+    g_FallKillCtx.pnKillCount = &g_nFallKillCount;
+    g_FallKillCtx.pszTransformName = "Chryssalid";
+    g_FallKillCtx.pRosters = &g_FallRosters;
+    memset(&g_FallKillHooks, 0, sizeof(g_FallKillHooks));
+    g_FallKillHooks.pfnCheckBattleEnd = FallHookKillBattleEnd;
+
+    /* UnitList_ForEachRefresh calls Unit_UpdateVisibility directly, and a real
+     * VisCtx needs the LOS tables that tests/test_vis.c builds. The roster here is
+     * therefore empty; the fall tests drive visibility through the ctx hook. */
+    memset(&g_FallRosters, 0, sizeof(g_FallRosters));
+    g_FallRosters.apXcom = g_apFallXcom;
+    g_FallRosters.apEnemy = g_apFallEnemy;
+    g_FallRosters.apCiv = g_apFallCiv;
+
+    /* Combat_DetonateNearbyItems is NULL-safe on an unfilled ctx, which is what the
+     * original's Map block looks like when no proximity device is armed. */
+    memset(&g_FallProx, 0, sizeof(g_FallProx));
+
+    memset(&g_FallSel, 0, sizeof(g_FallSel));
+    g_pFallSelUnit = &g_aFallUnits[1];   /* matches the usual target: no name push */
+    g_FallSel.ppSelUnit = &g_pFallSelUnit;
+    g_FallSel.pCursorPos = &g_FallPos;
+    g_FallSel.pfnLookup = FallLookup;
+
+    memset(&g_FallPos, 0, sizeof(g_FallPos));
+    g_FallPos.pCursor = &g_FallCursor;
+    g_FallPos.geom.nDimX = FALL_DIM;
+    g_FallPos.geom.nDimY = FALL_DIM;
+
+    memset(&g_FallCtx, 0, sizeof(g_FallCtx));
+    g_FallCtx.geom.nDimX = FALL_DIM;
+    g_FallCtx.geom.nDimY = FALL_DIM;
+    g_FallCtx.pfnLookup = FallLookup;
+    g_FallCtx.pnLayerScratch = &g_nLayerScratch;
+    g_FallCtx.pnMaxLayerClamp = &g_nMaxLayerClamp;
+    g_FallCtx.pnAnimPhase = &g_nAnimPhase;
+    g_FallCtx.pnFireTickProgress = &g_nFireTickProgress;
+    g_FallCtx.pbEnemySpotted = &g_bEnemySpotted;
+    g_FallCtx.pbFallDamagePending = &g_bFallPending;
+    g_FallCtx.pbThrowPending = &g_bThrowPending;
+    g_FallCtx.pbTickHold = &g_bTickHold;
+    g_FallCtx.pnUiScreen = &g_nUiScreen;
+    g_FallCtx.ppSelWeapon = &g_pSelWeapon;
+    g_FallCtx.ppThrowTarget = &g_pThrowTarget;
+    g_FallCtx.ppLookCommitUnit = &g_pLookCommit;
+    g_FallCtx.pbLookCommitFlag = &g_bLookFlag;
+    g_FallCtx.pnCursorX = &g_nCursorX;
+    g_FallCtx.pnCursorY = &g_nCursorY;
+    g_FallCtx.pnMeleeCellX = &g_nMeleeX;
+    g_FallCtx.pnMeleeCellY = &g_nMeleeY;
+    g_FallCtx.pnMeleeCellLayer = &g_nMeleeLayer;
+    g_FallCtx.pdThrowX = &g_dThrowX;
+    g_FallCtx.pdThrowY = &g_dThrowY;
+    g_FallCtx.pdThrowLayer = &g_dThrowLayer;
+    g_FallCtx.apXcomUnits = g_apFallXcom;
+    g_FallCtx.apEnemyUnits = g_apFallEnemy;
+    g_FallCtx.pnXcomCount = &g_nFallXcom;
+    g_FallCtx.pnEnemyCount = &g_nFallEnemy;
+    g_FallCtx.pLists = &g_FallLists;
+    g_FallCtx.pTactCtx = &g_FallTactCtx;
+    g_FallCtx.pKillCtx = &g_FallKillCtx;
+    g_FallCtx.pKillHooks = &g_FallKillHooks;
+    g_FallCtx.pProximity = &g_FallProx;
+    g_FallCtx.pRosters = &g_FallRosters;
+    g_FallCtx.pSelectCtx = &g_FallSel;
+    g_FallCtx.pCursorPos = &g_FallPos;
+    g_FallCtx.pszTransformName = "Chryssalid";
+    g_FallCtx.pfnUpdateVisibility = FallHookVisibility;
+    g_FallCtx.pfnCheckBattleEnd = FallHookBattleEnd;
+    g_FallCtx.pfnPushStatus = FallHookStatus;
+    g_FallCtx.pfnPushForcedText = FallHookForced;
+    g_FallCtx.pszAlienControlSuffix = " under alien control";
+
+    g_FallLists.apXcom = g_apFallXcom;
+    g_FallLists.apEnemy = g_apFallEnemy;
+    FallSyncLists();
+
+    memset(&g_FallDmg, 0, sizeof(g_FallDmg));
+    g_FallDmg.pfnLookup = FallLookup;
+    g_FallDmg.pState = &g_state;
+    g_FallDmg.pKillCtx = &g_FallKillCtx;
+    g_FallDmg.pKillHooks = &g_FallKillHooks;
+}
+
+static void FallQueueEntry(i32 nCmd, Soldier *pActor, Soldier *pTarget)
+{
+    TactQueueEntry *pE = &g_state.aQueue[0];
+
+    memset(g_state.aQueue, 0, sizeof(g_state.aQueue));
+    g_state.nQueueCursor = 0;
+    g_state.nQueueLen    = 1;
+    g_state.bQueueActive = 1;
+    pE->nCmd    = nCmd;
+    pE->pUnit   = pActor;
+    pE->pTarget = pTarget;
+    pE->pWeapon = &g_FallWeapon;   /* command 18 dereferences it */
+}
+
+static void TestFallDamageRefusals(void)
+{
+    Soldier *pU = &g_aFallUnits[0];
+
+    printf("Unit_ApplyFallDamage refusals\n");
+
+    /* A floor under the unit: no fall, no move, no queue entry. */
+    FallSetup();
+    pU->nUnitType = 0;
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[3][1][1].pFloorSpr = &g_FallFloor;
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[3][1][1], "  floor under the unit: not moved");
+    CheckEqI32(pU->uHp, 100, "  floor under the unit: no damage");
+    CheckEqI32(g_state.nQueueLen, 0, "  nothing queued");
+
+    /* The levitating types are immune: g_aUnitTypeRecord[4*type + 0] is their flag. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 11;
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(g_aUnitTypeFlag0[11] != 0, "  type 11 carries the immunity flag");
+    Check(pU->pCell == &g_aFallCells[3][1][1], "  immune type is not moved");
+    CheckEqI32(pU->uHp, 100, "  immune type takes no damage");
+
+    /* Already on layer 0. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 0;
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[0][1][1];
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[0][1][1], "  layer 0 is not moved");
+    CheckEqI32(pU->uHp, 100, "  layer 0 takes no damage");
+
+    /* A large unit whose own-layer footprint has a floor anywhere is standing. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 4;   /* large */
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[3][2][2].pFloorSpr = &g_FallFloor;   /* footprint (x+1,y+1) */
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[3][1][1], "  large unit on a footprint floor: not moved");
+    CheckEqI32(pU->uHp, 100, "  and no damage");
+}
+
+static void TestFallDamageDescent(void)
+{
+    Soldier *pU;
+
+    printf("Unit_ApplyFallDamage descent and damage\n");
+
+    /* Column (1,1): open at layers 3 and 2, floor at layer 1. The descent stops ON
+     * the floor layer, so the fall is 3 -> 1 and the distance is 3 - 1 - 1 = 1. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 0;
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[1][1][1].pFloorSpr = &g_FallFloor;
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[1][1][1], "  lands on the floor layer");
+    CheckEqI32(pU->uHp, 60, "  damage = (3-1-1) * 100 max HP * 0.4 = 40");
+    CheckEqI32(g_state.nQueueLen, 0, "  15 spent TU under 60 HP queues nothing");
+
+    /* Two layers down is one floor fallen: the distance is nZ - nLayer - 1, so a
+     * single step costs nothing and 20 max HP pays 20 * 0.4 = 8 only from two down. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 0;
+    pU->auStat[1] = 20;
+    pU->uHp       = 20;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[1][1][1].pFloorSpr = &g_FallFloor;
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[1][1][1], "  stops two layers down");
+    CheckEqI32(pU->uHp, 12, "  damage = (3-1-1) * 20 * 0.4 = 8");
+
+    /* No floor anywhere down to layer 0: the loop runs the column out and leaves
+     * nLayer at -1, so the distance is 3 - (-1) - 1 = 3 and the unit leaves the map. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 0;
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == NULL, "  an open column places the unit off the map");
+    CheckEqI32(pU->uHp, 0, "  120 damage empties a 100 HP unit");
+    CheckEqI32(g_state.nQueueLen, 1, "  0 HP queues the death flash");
+
+    /* A large unit descends only while all three footprint cells are open, and the
+     * sweep then covers the whole 2x2 at the stopping layer. */
+    FallSetup();
+    pU = &g_aFallUnits[0];
+    pU->nUnitType = 4;   /* large, origin (1,1,3) */
+    pU->auStat[1] = 100;
+    pU->uHp       = 100;
+    pU->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[2][2][2].pFloorSpr = &g_FallFloor;   /* footprint (x+1,y+1) at layer 2 */
+    Unit_ApplyFallDamage(pU, &g_FallDmg);
+    Check(pU->pCell == &g_aFallCells[2][1][1], "  large unit stops with the footprint floor");
+    CheckEqI32(pU->uHp, 100, "  a one-layer step is 0 damage: (3-2-1) * 100 * 0.4");
+}
+
+static void TestFallDamageSweep(void)
+{
+    Soldier *pSmall;
+    Soldier *pBig;
+
+    printf("Unit_ApplyFallDamage landing sweep\n");
+
+    /* A small unit landing on a large one dies without its HP being touched first
+     * (0x4AAE4), and the placement/damage tail is skipped because the kill set
+     * bFlags bit 5. */
+    FallSetup();
+    pSmall = &g_aFallUnits[0];
+    pSmall->nUnitType = 0;
+    pSmall->auStat[1] = 100;
+    pSmall->uHp       = 100;
+    pSmall->pCell     = &g_aFallCells[3][1][1];
+    pBig = &g_aFallUnits[2];
+    pBig->nUnitType = 4;
+    pBig->auStat[1] = 200;
+    pBig->uHp       = 200;
+    pBig->pCell     = &g_aFallCells[2][1][1];
+    g_aFallCells[2][1][1].pUnit     = pBig;
+    g_aFallCells[2][1][1].pFloorSpr = &g_FallFloor;
+    Unit_ApplyFallDamage(pSmall, &g_FallDmg);
+    CheckEqI32(pSmall->uHp, 100, "  the blocked fall leaves the small unit's HP alone");
+    Check((pSmall->bFlags & 0x20) != 0, "  and kills it");
+    CheckEqI32(pSmall->bStatus, 4, "  the kill turns it into a corpse (bStatus 4)");
+    Check(pBig->pCell == &g_aFallCells[2][1][1], "  the large unit is untouched");
+    CheckEqI32(g_nFallKillCount, 0, "  a human death does not raise the alien kill count");
+
+    /* A large unit landing on a small one kills the occupant outright; the small
+     * occupant's HP is not pre-zeroed because only a large occupant is. */
+    FallSetup();
+    pBig = &g_aFallUnits[0];
+    pBig->nUnitType = 4;
+    pBig->auStat[1] = 100;
+    pBig->uHp       = 100;
+    pBig->pCell     = &g_aFallCells[3][1][1];
+    pSmall = &g_aFallUnits[2];
+    pSmall->nUnitType = 0;
+    pSmall->auStat[1] = 60;
+    pSmall->uHp       = 60;
+    pSmall->pCell     = &g_aFallCells[2][2][2];
+    g_aFallCells[2][2][2].pUnit     = pSmall;
+    g_aFallCells[2][2][2].pFloorSpr = &g_FallFloor;
+    Unit_ApplyFallDamage(pBig, &g_FallDmg);
+    Check((pSmall->bFlags & 0x20) != 0, "  the occupant is killed by the landing");
+    CheckEqI32(pSmall->uHp, 60, "  a small occupant is killed without its HP being zeroed");
+    Check(pBig->pCell == &g_aFallCells[2][1][1], "  the large unit lands at (1,1,2)");
+    CheckEqI32(pBig->uHp, 100, "  and takes no damage from a one-layer step");
+}
+
+static void TestFallActionTail(void)
+{
+    printf("Tact_ProcessFallAction queue tail (LABEL_186 @ 0x540E0)\n");
+
+    /* A command with no case (2) still advances the cursor, and reaching the end of
+     * the queue closes it. */
+    FallSetup();
+    FallQueueEntry(TACTCMD_OPEN, &g_aFallUnits[0], NULL);
+    g_state.bFlag0    = 1;
+    g_nAnimPhase      = 7;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_state.nQueueCursor, 1, "  cursor advanced");
+    CheckEqI32(g_state.bFlag0, 0, "  bFlag0 cleared");
+    CheckEqI32(g_state.nQueueLen, 0, "  queue closed at the end");
+    CheckEqI32(g_state.bQueueActive, 0, "  queue deactivated");
+    CheckEqI32(g_nAnimPhase, 0, "  nAnimPhase cleared");
+
+    /* Not at the end yet: the queue stays open. */
+    FallSetup();
+    FallQueueEntry(TACTCMD_OPEN, &g_aFallUnits[0], NULL);
+    g_state.nQueueLen = 3;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_state.nQueueCursor, 1, "  cursor advanced");
+    CheckEqI32(g_state.nQueueLen, 3, "  queue still open");
+    CheckEqI32(g_state.bQueueActive, 1, "  queue still active");
+
+    /* Map_bTickHold skips the whole tail, cursor included. */
+    FallSetup();
+    FallQueueEntry(TACTCMD_OPEN, &g_aFallUnits[0], NULL);
+    g_state.bFlag0    = 1;
+    g_nAnimPhase      = 7;
+    g_bTickHold       = 1;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_state.nQueueCursor, 0, "  tick hold leaves the cursor in place");
+    CheckEqI32(g_state.bFlag0, 1, "  and bFlag0 set");
+    CheckEqI32(g_state.nQueueLen, 1, "  and the queue open");
+    CheckEqI32(g_nAnimPhase, 7, "  and nAnimPhase untouched");
+}
+
+static void TestFallActionMoveTail(void)
+{
+    Soldier *pActor = &g_aFallUnits[0];
+
+    printf("Tact_ProcessFallAction nCmd 1 (0x53668)\n");
+
+    /* A unit the shot resolution already killed (bit 5) is skipped entirely. */
+    FallSetup();
+    pActor->bFlags = 0x20;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nVisCalls, 0, "  a dead unit gets no visibility pass");
+    CheckEqI32(g_nLayerScratch, 0, "  and no layer scratch is written");
+    CheckEqI32(g_state.nQueueCursor, 1, "  the cursor still advances");
+
+    /* Carrying weight costs stun: uStunOrArmor += -2 - 4*burden/strength, with the
+     * quotient cut to 16 bits by the LSL#16 / LSR#16 pair at 0x536B0. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags       = 0;
+    pActor->pCell        = &g_aFallCells[2][1][1];
+    pActor->uInvBurden   = 10;
+    pActor->auStat[8]    = 4;
+    pActor->uStunOrArmor = 50;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pActor->uStunOrArmor, 38, "  50 - 2 - 4*10/4 = 38");
+    CheckEqI32(g_nLayerScratch, 3, "  layer scratch = nZ + 1 with no ceiling sprite");
+    CheckEqI32(g_nVisCalls, 1, "  LABEL_111 runs the visibility pass once");
+
+    /* A zero strength would divide by zero; the port's guard contributes 0. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags       = 0;
+    pActor->pCell        = &g_aFallCells[2][1][1];
+    pActor->uInvBurden   = 10;
+    pActor->auStat[8]    = 0;
+    pActor->uStunOrArmor = 50;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pActor->uStunOrArmor, 48, "  zero strength contributes 0, not a crash");
+
+    /* The ceiling rule is a strict signed compare against -15 (LDRSB / CMP at
+     * 0x536D4): -16 pushes the scratch layer up by two, -15 does not. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    pActor->pCell->pCeilSpr = &g_FallCeil;
+    g_FallCeil.iCeilParam   = -16;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nLayerScratch, 4, "  iCeilParam -16 -> nZ + 2");
+
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    pActor->pCell->pCeilSpr = &g_FallCeil;
+    g_FallCeil.iCeilParam   = -15;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nLayerScratch, 3, "  iCeilParam -15 -> nZ + 1");
+
+    /* The tracked unit is dropped when the cell it stands on has no bFlags44 bit 0. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0x10;   /* skip the burden term */
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    g_FallTactCtx.pTrackUnit = &g_aFallUnits[1];
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(g_FallTactCtx.pTrackUnit == NULL, "  track unit cleared on a bit-0-clear cell");
+
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0x10;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    pActor->pCell->bFlags44 = 1;
+    g_FallTactCtx.pTrackUnit = &g_aFallUnits[1];
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(g_FallTactCtx.pTrackUnit == &g_aFallUnits[1], "  track unit kept on a bit-0-set cell");
+
+    /* The spotted flag pushes TEXTS[3] and then runs the team pass, which rewrites
+     * the current entry into END MARK and extends the queue by one. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0x10;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    g_bEnemySpotted = 1;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nStatusCalls, 1, "  the spotted message pushed once");
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_SPOTTED, "  and it is TEXTS[3]");
+    CheckEqI32(g_state.aQueue[0].nCmd, TACTCMD_END_MARK, "  team pass rewrites the entry to 12");
+    CheckEqI32(g_state.nQueueLen, 2, "  team pass sets nQueueLen = cursor + 2");
+    CheckEqI32(g_state.bFlag1, 1, "  and bFlag1");
+    CheckEqI32(g_state.nQueueCursor, 1, "  cursor advances into the new entry");
+    CheckEqI32(g_nVisCalls, 1, "  LABEL_111 still runs after the team pass");
+
+    /* bUnk70114 set suppresses the message but not the team pass. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->bFlags = 0x10;
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    g_bEnemySpotted = 1;
+    g_state.bUnk70114 = 1;
+    FallQueueEntry(1, pActor, NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    /* The guard is one condition, not two: bUnk70114 set skips the message AND the
+     * team pass that follows it (0x5376C). */
+    CheckEqI32(g_nStatusCalls, 0, "  bUnk70114 suppresses the spotted message");
+    CheckEqI32(g_state.aQueue[0].nCmd, 1, "  and the team pass is skipped too");
+    CheckEqI32(g_state.nQueueLen, 0, "  the queue closes at its own length, not cursor + 2");
+}
+
+static void TestFallActionDoorAndVert(void)
+{
+    Soldier *pActor;
+
+    printf("Tact_ProcessFallAction nCmd 4 (0x539B0)\n");
+
+    /* Facing 2 is the E delta {+1,0,0}; nTurnDir 3 traces (1,1,2), (2,1,2), (3,1,2).
+     * Both writes use the entry's own nZ, so they hit the same cell: bit 0 off,
+     * bit 2 on. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->pCell = &g_aFallCells[2][1][1];
+    pActor->uTu   = 30;
+    FallQueueEntry(4, pActor, NULL);
+    g_state.aQueue[0].nFacing  = 2;
+    g_state.aQueue[0].nTurnDir = 3;
+    g_state.aQueue[0].nX       = 1;
+    g_state.aQueue[0].nY       = 1;
+    g_state.aQueue[0].nZ       = 2;
+    for (i32 n = 0; n < 3; ++n) {
+        g_aFallCells[2][1][1 + n].bFlags29 = 0xFF;
+    }
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_state.nTraceX, 3, "  trace X ends at the last step");
+    CheckEqI32(g_state.nTraceY, 1, "  trace Y holds the entry Y");
+    CheckEqI32(g_state.nTraceZ, 2, "  trace Z holds the entry Z");
+    for (i32 n = 0; n < 3; ++n) {
+        MapCell *pC = &g_aFallCells[2][1][1 + n];
+        Check((pC->bFlags29 & PUFO_FALL_CELLFLAG_CLEAR) == 0 &&
+              (pC->bFlags29 & PUFO_FALL_CELLFLAG_DOOR) != 0,
+              "  traced cell gets bit 2 and loses bit 0");
+    }
+    CheckEqI32(pActor->uTu, 26, "  the door step costs 4 TU");
+    CheckEqI32(g_nVisCalls, 1, "  visibility pass runs once");
+
+    /* nTurnDir 0 skips the trace loop entirely. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->pCell = &g_aFallCells[2][1][1];
+    pActor->uTu   = 30;
+    FallQueueEntry(4, pActor, NULL);
+    g_state.aQueue[0].nFacing  = 2;
+    g_state.aQueue[0].nTurnDir = 0;
+    g_state.aQueue[0].nX       = 1;
+    g_state.aQueue[0].nY       = 1;
+    g_state.aQueue[0].nZ       = 2;
+    g_aFallCells[2][1][1].bFlags29 = 0x01;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_aFallCells[2][1][1].bFlags29, 0x01, "  no trace, no flag change");
+    CheckEqI32(pActor->uTu, 26, "  the TU cost is charged anyway");
+
+    printf("Tact_ProcessFallAction nCmd 5 (0x5381C)\n");
+
+    /* nFacing is signed: 9 in the table is the down delta, but the entry stores the
+     * layer step directly, so -1 means down one layer. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->pCell = &g_aFallCells[2][1][1];
+    pActor->uTu   = 30;
+    FallQueueEntry(5, pActor, NULL);
+    g_state.aQueue[0].nFacing = (u8)(i8)-1;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(pActor->pCell == &g_aFallCells[1][1][1], "  placed one layer down");
+    CheckEqI32(pActor->uTu, 22, "  the vertical step costs 8 TU");
+    CheckEqI32(g_nLayerScratch, 2, "  nFacing -1 writes the new nZ + 1");
+    CheckEqI32(g_nVisCalls, 0, "  no spotted flag, no detonation flag: no visibility pass");
+
+    /* Going up leaves the scratch layer alone. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->pCell = &g_aFallCells[1][1][1];
+    pActor->uTu   = 30;
+    g_nLayerScratch = 99;
+    FallQueueEntry(5, pActor, NULL);
+    g_state.aQueue[0].nFacing = 1;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(pActor->pCell == &g_aFallCells[2][1][1], "  placed one layer up");
+    CheckEqI32(g_nLayerScratch, 99, "  an upward step leaves the scratch layer alone");
+
+    /* A floor sprite at the new cell stands the unit up and clears bit 4. */
+    FallSetup();
+    pActor = &g_aFallUnits[0];
+    pActor->pCell = &g_aFallCells[2][1][1];
+    pActor->bFlags = 0x10;
+    FallQueueEntry(5, pActor, NULL);
+    g_state.aQueue[0].nFacing = (u8)(i8)-1;
+    g_aFallCells[1][1][1].pFloorSpr = &g_FallFloor;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check((pActor->bFlags & 0x10) == 0, "  a floor at the landing cell clears bit 4");
+}
+
+static void TestFallActionSmallCases(void)
+{
+    Soldier *pSel;
+
+    printf("Tact_ProcessFallAction nCmd 0xA, 0xC, 0xE, 0x10\n");
+
+    /* 0xA parks the cursor on the Map cursor position. */
+    FallSetup();
+    g_nCursorX = 2;
+    g_nCursorY = 3;
+    FallQueueEntry(0xA, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_FallCursor.nX, 2, "  cursor X from Map_nCursorX");
+    CheckEqI32(g_FallCursor.nY, 3, "  cursor Y from Map_nCursorY");
+
+    /* 0xC refreshes the cell meta and stands the selected unit up. */
+    FallSetup();
+    pSel = &g_aFallUnits[1];
+    pSel->bFlags = 0x02 | 0x10;
+    g_FallSel.ppSelUnit = &g_pFallSelUnit;
+    g_pFallSelUnit = pSel;
+    FallQueueEntry(0xC, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pSel->bFlags & 0x02, 0, "  the selected unit loses bit 1");
+    CheckEqI32(pSel->bFlags & 0x10, 0x10, "  and keeps the other bits");
+
+    /* 0xE refreshes the Xcom roster and asks whether the battle is over. */
+    FallSetup();
+    FallQueueEntry(0xE, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nBattleEndCalls, 1, "  Tact_CheckBattleEnd called once with abort 0");
+    CheckEqI32(g_state.nQueueCursor, 1, "  and the cursor advances");
+
+    /* 0x10 clears the phase-active flag. */
+    FallSetup();
+    g_state.bPhaseActive = 1;
+    FallQueueEntry(0x10, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_state.bPhaseActive, 0, "  nCmd 0x10 clears bPhaseActive");
+}
+
+static void TestFallActionDamageSweep(void)
+{
+    Soldier *pUnit;
+
+    printf("Tact_ProcessFallAction nCmd 0xF (0x53BF0)\n");
+
+    /* The pending byte gates the whole case. */
+    FallSetup();
+    g_bFallPending = 0;
+    g_nFireTickProgress = 7;
+    FallQueueEntry(0xF, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nFireTickProgress, 7, "  unarmed sweep leaves nFireTickProgress alone");
+
+    /* Armed: every roster entry is run through Unit_ApplyFallDamage, then the
+     * arming byte, the fire progress and the scratch layer are reset. */
+    FallSetup();
+    pUnit = &g_aFallUnits[0];
+    pUnit->nUnitType = 0;
+    pUnit->auStat[1] = 100;
+    pUnit->uHp       = 100;
+    pUnit->pCell     = &g_aFallCells[3][1][1];
+    g_aFallCells[1][1][1].pFloorSpr = &g_FallFloor;
+    g_apFallXcom[0]  = pUnit;
+    g_nFallXcom      = 1;
+    g_bFallPending   = 1;
+    g_nMaxLayerClamp = 3;
+    FallSyncLists();
+    FallQueueEntry(0xF, &g_aFallUnits[1], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(pUnit->pCell == &g_aFallCells[1][1][1], "  the roster unit fell to the floor layer");
+    CheckEqI32(pUnit->uHp, 60, "  and took the fall damage");
+    CheckEqI32(g_bFallPending, 0, "  the arming byte is cleared");
+    CheckEqI32(g_nFireTickProgress, 0, "  nFireTickProgress cleared");
+    CheckEqI32(g_nLayerScratch, 3, "  layer scratch set from nMaxLayerClamp");
+}
+
+static void TestFallActionThrowLanding(void)
+{
+    MapCell *pLand;
+
+    printf("Tact_ProcessFallAction nCmd 0x11 (0x53CEC)\n");
+
+    /* Not armed: nothing at all happens, the throw target included. */
+    FallSetup();
+    g_bThrowPending = 0;
+    FallQueueEntry(0x11, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(g_pThrowTarget == &g_aFallUnits[2], "  an unarmed landing leaves the throw target alone");
+
+    /* Armed. Sub-cell units: 16 per cell in X and Y, 12 per layer. The flight ends
+     * over (2,1) at layer 3; the column has no floor at 3 or 2 and one at 1, so the
+     * item lands at layer 1. */
+    FallSetup();
+    g_bThrowPending  = 1;
+    g_dThrowX        = 2 * 16 + 7;
+    g_dThrowY        = 1 * 16 + 9;
+    g_dThrowLayer    = 3 * 12;
+    g_nMaxLayerClamp = 2;
+    g_aFallCells[1][1][2].pFloorSpr = &g_FallFloor;
+    FallQueueEntry(0x11, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    pLand = &g_aFallCells[1][1][2];
+    Check(g_pThrowTarget == NULL, "  the throw target is cleared");
+    CheckEqI32(g_bThrowPending, 0, "  the arming byte is cleared");
+    Check(pLand->pItemList == &g_FallWeapon, "  the item lands on the floor layer");
+    CheckEqI32(g_nLayerScratch, 2, "  layer scratch set from nMaxLayerClamp");
+
+    /* Three open layers is the cap: the search tests base, base-1, base-2 and stops
+     * there even though nothing was found. */
+    FallSetup();
+    g_bThrowPending = 1;
+    g_dThrowX       = 2 * 16;
+    g_dThrowY       = 1 * 16;
+    g_dThrowLayer   = 3 * 12;
+    FallQueueEntry(0x11, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(g_aFallCells[1][1][2].pItemList == &g_FallWeapon,
+          "  three open layers land at base - 2");
+
+    /* Running off the bottom clamps the layer to 0. */
+    FallSetup();
+    g_bThrowPending = 1;
+    g_dThrowX       = 2 * 16;
+    g_dThrowY       = 1 * 16;
+    g_dThrowLayer   = 0;
+    FallQueueEntry(0x11, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    Check(g_aFallCells[0][1][2].pItemList == &g_FallWeapon,
+          "  a layer below 0 clamps to 0");
+
+    /* A proximity marker (uSortKey 14) is taken back off the cell and stamps the
+     * animated-tile field over the 3x3 around the landing. */
+    FallSetup();
+    g_bThrowPending      = 1;
+    g_dThrowX            = 2 * 16;
+    g_dThrowY            = 1 * 16;
+    g_dThrowLayer        = 3 * 12;
+    g_FallWeaponObj.uSortKey = PUFO_PROXIMITY_KEY_MARK;
+    for (i32 z = 0; z < PUFO_MAP_LAYERS; ++z) {
+        for (i32 y = 0; y < FALL_DIM; ++y) {
+            for (i32 x = 0; x < FALL_DIM; ++x) {
+                g_aFallCells[z][y][x].nFlags40 = 0xFFFFFFFFu;
+            }
+        }
+    }
+    FallQueueEntry(0x11, &g_aFallUnits[0], NULL);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    pLand = &g_aFallCells[1][1][2];
+    Check(pLand->pItemList == NULL, "  the marker is removed from the landing cell");
+    CheckEqI32((i32)(pLand->nFlags40 & 0xFFFFFFFFu), (i32)0xFFFFFF9Fu,
+               "  landing cell nFlags40 = old & 0xFFFFFF87 | 0x18");
+    Check(g_aFallCells[1][0][1].nFlags40 == 0xFFFFFF9Fu &&
+          g_aFallCells[1][2][3].nFlags40 == 0xFFFFFF9Fu,
+          "  the 3x3 around the landing is stamped");
+    Check(g_aFallCells[1][0][0].nFlags40 == 0xFFFFFFFFu,
+          "  a cell outside the 3x3 is left alone");
+    Check(g_aFallCells[0][1][2].nFlags40 == 0xFFFFFFFFu &&
+          g_aFallCells[2][1][2].nFlags40 == 0xFFFFFFFFu,
+          "  the stamp stays on the landing layer; only the validity test uses layer 0");
+}
+
+static void TestFallActionLookDevice(void)
+{
+    Soldier *pActor = &g_aFallUnits[0];
+    Soldier *pVictim = &g_aFallUnits[1];
+
+    printf("Tact_ProcessFallAction nCmd 0x12, sort key 23 (0x52C2C)\n");
+
+    FallSetup();
+    pActor->pCell  = &g_aFallCells[2][1][1];
+    pVictim->pCell = &g_aFallCells[2][2][2];
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_LATCH;
+    g_aFallCells[2][1][1].bFlags29 = 0xFF;   /* the melee target cell */
+    g_state.gap_70112[1] = 1;
+    FallQueueEntry(0x12, pActor, pVictim);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_aFallCells[2][1][1].bFlags29 & 0x20, 0,
+               "  the melee target cell loses its shot-trace bit");
+    CheckEqI32(g_state.gap_70112[1], 0, "  and the fire-animation flag goes down");
+    Check(g_pLookCommit == pActor, "  the attacker is committed as the look unit");
+    CheckEqI32(g_bLookFlag, 1, "  and the commit flag is set");
+    CheckEqI32(g_nUiScreen, 4, "  the look screen opens");
+    Check(g_pFallSelUnit == pVictim, "  the target becomes the selected unit");
+    CheckEqI32(g_FallCursor.nX, 2, "  the cursor moves onto the target cell");
+    CheckEqI32(g_nVisCalls, 1, "  LABEL_111 runs");
+}
+
+/* The psi gate is a roll, so the test draws the roll first with the same seed and
+ * then asserts that the branch taken matches it against 100 / ratio. */
+static void TestFallActionPsiGate(void)
+{
+    Soldier *pActor  = &g_aFallUnits[0];
+    Soldier *pVictim = &g_aFallUnits[1];
+    i32 nHits = 0;
+    i32 nMisses = 0;
+    bool bMatch = true;
+
+    printf("Tact_ProcessFallAction nCmd 0x12 mode 5 psi gate (0x52C90)\n");
+
+    /* Ratio 1 or less cannot fail, so no roll is drawn at all. */
+    FallSetup();
+    pActor->auStat[6]  = 50;
+    pActor->auStat[7]  = 30;   /* product 1500 */
+    pVictim->auStat[6] = 40;
+    pVictim->auStat[7] = 40;   /* product 1600, ratio 1600/1500 = 1 */
+    pVictim->auStat[2] = 600;
+    pVictim->bMorale   = 90;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 5;
+    srand(7);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_PSI_OK, "  ratio 1 always hits");
+    CheckEqI32(pVictim->bMorale, 79,
+               "  morale = 1500/-150 - 600/600 + 90 = -10 - 1 + 90");
+    CheckEqI32(g_nBattleEndCalls, 0, "  morale above 50 stops short of the panic tail");
+    CheckEqI32(g_nVisCalls, 0, "  morale above 50 jumps to LABEL_186, past LABEL_111");
+
+    /* Ratio 2: the roll must land at or below 100/2 = 50 out of 150. The seeds are
+     * spread by a stride because the CRT's first rand() value for a small seed is
+     * itself small, which would make every draw a hit. */
+    for (i32 nSeed = 1; nSeed <= 40; ++nSeed) {
+        i32 nRoll;
+
+        srand(nSeed * 977);
+        nRoll = (i32)Game_RandU16(PUFO_FALL_PSI_RAND_MAX);
+
+        FallSetup();
+        pActor  = &g_aFallUnits[0];
+        pVictim = &g_aFallUnits[1];
+        pActor->auStat[6]  = 40;
+        pActor->auStat[7]  = 20;   /* product 800 */
+        pVictim->auStat[6] = 40;
+        pVictim->auStat[7] = 40;   /* product 1600, ratio 2, threshold 50 */
+        pVictim->auStat[2] = 600;
+        pVictim->bMorale   = 90;
+        pVictim->pCell     = &g_aFallCells[2][2][2];
+        FallQueueEntry(0x12, pActor, pVictim);
+        g_state.aQueue[0].nMode = 5;
+
+        srand(nSeed * 977);
+        Tact_ProcessFallAction(&g_state, &g_FallCtx);
+
+        if (g_nLastStatusRec == PUFO_TXTREC_PSI_OK) {
+            ++nHits;
+            if (nRoll > 50) {
+                bMatch = false;
+            }
+        } else if (g_nLastStatusRec == PUFO_TXTREC_PSI_FAILED) {
+            ++nMisses;
+            if (nRoll <= 50) {
+                bMatch = false;
+            }
+        } else {
+            bMatch = false;
+        }
+    }
+    Check(bMatch, "  every seed's outcome matches its drawn roll against 100/2");
+    Check(nHits > 0 && nMisses > 0, "  both gate outcomes are exercised");
+
+    /* The failure exit pushes the message and jumps past LABEL_111 to the tail. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->auStat[6]  = 40;
+    pActor->auStat[7]  = 20;
+    pVictim->auStat[6] = 40;
+    pVictim->auStat[7] = 40;
+    pVictim->auStat[2] = 600;
+    pVictim->bMorale   = 90;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 5;
+    for (i32 nSeed = 1; nSeed <= 40; ++nSeed) {
+        srand(nSeed * 977);
+        if ((i32)Game_RandU16(PUFO_FALL_PSI_RAND_MAX) > 50) {
+            srand(nSeed * 977);
+            break;
+        }
+    }
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_PSI_FAILED, "  a failed attack pushes TEXTS[38]");
+    CheckEqI32(g_nVisCalls, 0, "  LABEL_101 skips LABEL_111's visibility pass");
+    CheckEqI32(pVictim->bMorale, 90, "  and leaves the victim's morale alone");
+    CheckEqI32(g_state.nQueueCursor, 1, "  the tail still advances the cursor");
+}
+
+static void TestFallActionPanic(void)
+{
+    Soldier *pActor  = &g_aFallUnits[0];
+    Soldier *pVictim = &g_aFallUnits[1];
+
+    printf("Tact_ProcessFallAction nCmd 0x12 mode 5 panic tail (0x52D54)\n");
+
+    /* Morale at or below 50: the victim leaves its side list and rejoins the Xcom
+     * roster because no action phase is running. */
+    FallSetup();
+    pActor->auStat[6]  = 50;
+    pActor->auStat[7]  = 30;   /* 1500 */
+    pVictim->auStat[6] = 40;
+    pVictim->auStat[7] = 40;
+    pVictim->auStat[2] = 600;
+    pVictim->auStat[0] = 55;
+    pVictim->bMorale   = 40;   /* -10 - 1 + 40 = 29 */
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    g_apFallXcom[0] = pVictim;
+    g_nFallXcom     = 1;
+    FallSyncLists();
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 5;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->bMorale, 29, "  morale 40 - 10 - 1 = 29");
+    CheckEqI32(pVictim->uTu, 55, "  the victim's TU is refilled from its own maximum");
+    CheckEqI32(pVictim->bStatus, 0, "  the Xcom arm clears bStatus");
+    Check(pVictim->pLinked1040 == pActor, "  and links the victim to the attacker");
+    CheckEqI32(g_nFallXcom, 1, "  the roster count is back to one after the removal");
+    Check(g_apFallXcom[0] == pVictim, "  and the victim is in it");
+    CheckEqI32(g_nBattleEndCalls, 1, "  LABEL_66 asks whether the battle is over");
+    CheckEqI32(g_nForcedCalls, 0, "  the Xcom arm builds no forced message");
+    CheckEqI32(g_nVisCalls, 2, "  the roster sweep plus LABEL_111");
+
+    /* With an action phase running the victim goes to the enemy roster instead, and
+     * the composed "<name> under alien control" message is pushed forced. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->auStat[6]  = 50;
+    pActor->auStat[7]  = 30;
+    pVictim->auStat[6] = 40;
+    pVictim->auStat[7] = 40;
+    pVictim->auStat[2] = 600;
+    pVictim->bMorale   = 40;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    snprintf(pVictim->szName, sizeof(pVictim->szName), "%s", "Reyes");
+    g_apFallXcom[0] = pVictim;
+    g_nFallXcom     = 1;
+    g_FallTactCtx.bBusy = 1;
+    FallSyncLists();
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 5;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nFallEnemy, 1, "  the enemy roster gains the victim");
+    Check(g_apFallEnemy[0] == pVictim, "  at the first free slot");
+    CheckEqI32(pVictim->bStatus, 1, "  the enemy arm sets bStatus");
+    CheckEqI32((pVictim->bFlags & 0x01), 0, "  and clears bFlags bit 0");
+    CheckEqI32(g_nForcedCalls, 1, "  one forced message");
+    Check(strcmp(g_szForced, "Reyes under alien control") == 0,
+          "  the message is the name plus the alien-control suffix");
+    CheckEqI32(g_nBattleEndCalls, 1, "  LABEL_66 still runs");
+}
+
+static void TestFallActionMedikit(void)
+{
+    Soldier *pActor  = &g_aFallUnits[0];
+    Soldier *pVictim = &g_aFallUnits[1];
+
+    printf("Tact_ProcessFallAction nCmd 0x12 medikit (0x53054)\n");
+
+    /* A stunned soldier: the kneel counter is cleared and TEXTS[8] is pushed. */
+    FallSetup();
+    pVictim->pCell         = &g_aFallCells[2][2][2];
+    pVictim->uTuSpent      = 10;
+    pVictim->uHp           = 100;
+    pVictim->bKneelOrPrimed = 3;
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, pActor, pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->bKneelOrPrimed, 0, "  the kneel counter is cleared");
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_WOUNDS_HEALED, "  TEXTS[8] pushed");
+    CheckEqI32(g_nVisCalls, 0, "  LABEL_101 skips LABEL_111");
+
+    /* Fully healed but low on morale: TEXTS[14], morale clamped at 100. */
+    FallSetup();
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uTuSpent = 0;
+    pVictim->uHp      = 100;
+    pVictim->auStat[1] = 100;
+    pVictim->auStat[2] = 10;
+    pVictim->bMorale  = 95;
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, &g_aFallUnits[0], pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->bMorale, 100, "  95 + 10 clamps to 100");
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_MORALE_BACK, "  TEXTS[14] pushed");
+
+    /* Morale already at 100: no message at all, but LABEL_111 does run. */
+    FallSetup();
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uHp      = 100;
+    pVictim->auStat[1] = 100;
+    pVictim->auStat[2] = 10;
+    pVictim->bMorale  = 100;
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, &g_aFallUnits[0], pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(g_nStatusCalls, 0, "  full morale pushes nothing");
+    CheckEqI32(g_nVisCalls, 1, "  and goes straight to LABEL_111");
+
+    /* Wounded: a gap of 20 or more heals a flat 20, a smaller gap heals to full. */
+    FallSetup();
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uHp      = 80;
+    pVictim->auStat[1] = 100;
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, &g_aFallUnits[0], pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 100, "  100 - 80 = 20 is not below 20, so +20");
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_PART_HEALED, "  TEXTS[13] pushed");
+
+    FallSetup();
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uHp      = 85;
+    pVictim->auStat[1] = 100;
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, &g_aFallUnits[0], pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 100, "  a gap of 15 heals to the maximum");
+
+    /* Too much stun for a medikit: the spent counter is zeroed and TEXTS[46]. */
+    FallSetup();
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uTuSpent = 60;
+    pVictim->uHp      = 100;   /* 60 > 100/2 */
+    g_FallWeaponObj.uSortKey = PUFO_SPECIAL_SORT_MEDIKIT;
+    FallQueueEntry(0x12, &g_aFallUnits[0], pVictim);
+    /* Mode 0 is none of the five the switch knows, so the sort key alone picks the
+     * medikit branch. */
+    g_state.aQueue[0].nMode = 0;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uTuSpent, 0, "  the spent counter is cleared");
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_CONSCIOUS, "  TEXTS[46] pushed");
+}
+
+static void TestFallActionMelee(void)
+{
+    Soldier *pActor  = &g_aFallUnits[0];
+    Soldier *pVictim = &g_aFallUnits[1];
+
+    printf("Tact_ProcessFallAction nCmd 0x12 mode 6 human melee (0x52FF8)\n");
+
+    /* Under the stun threshold: the fire power is added and nothing else happens. */
+    FallSetup();
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uTuSpent = 10;
+    pVictim->uHp      = 100;
+    g_FallWeaponObj.uFirePower = 5;
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 6;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uTuSpent, 15, "  10 + 5 fire power");
+    Check(pVictim->pLinked1040 == NULL, "  under HP: no stun link");
+    CheckEqI32(g_state.nQueueLen, 0, "  no death flash: the tail closes the queue at 1");
+
+    /* Over the threshold: the counter is re-rolled to 10 * (rand(6) + 7) + HP. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pVictim->pCell    = &g_aFallCells[2][2][2];
+    pVictim->uTuSpent = 90;
+    pVictim->uHp      = 100;
+    g_FallWeaponObj.uFirePower = 20;
+    srand(11);
+    const i32 nRoll = (i32)Game_RandU16(6);
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 6;
+    srand(11);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uTuSpent, 10 * (nRoll + 7) + 100, "  re-rolled to 10*(rand(6)+7)+HP");
+    Check(pVictim->pLinked1040 == pActor, "  and the victim links to the attacker");
+
+    printf("Tact_ProcessFallAction nCmd 0x12 alien melee (0x530F8)\n");
+
+    /* Chryssalid against a human: the transform. Type 22's record drives the stats,
+     * the TU comes from the ATTACKER's maximum, and the victim joins the enemy list. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_CHRYSSALID;
+    pActor->auStat[0]  = 60;
+    pVictim->nUnitType = 0;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    pVictim->auStat[5] = 77;   /* the record's stat 5 is never loaded */
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    srand(5);
+    const i32 r1 = (i32)Game_RandU16(0x14);
+    const i32 r2 = (i32)Game_RandU16(0x14);
+    const i32 r3 = (i32)Game_RandU16(0x14);
+    const i32 r8 = (i32)Game_RandU16(0x14);
+    srand(5);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->nUnitType, PUFO_FALL_TYPE_TRANSFORMED, "  the victim becomes type 22");
+    CheckEqI32(pVictim->auStat[0], 45, "  auStat[0] from the type-22 record's TU");
+    CheckEqI32(pVictim->uTu, 45,
+               "  ORIGINAL QUIRK: the attacker's 60 TU is overwritten by the reset's auStat[0]");
+    CheckEqI32(pVictim->auStat[9], 50, "  auStat[9] from the record");
+    CheckEqI32(pVictim->auStat[1], r1 - 10 + 150, "  auStat[1] = rand(20) - 10 + 150");
+    CheckEqI32(pVictim->auStat[2], r2 - 10 + 30, "  auStat[2] = rand(20) - 10 + 30");
+    CheckEqI32(pVictim->auStat[3], r3 - 10 + 20, "  auStat[3] = rand(20) - 10 + 20");
+    CheckEqI32(pVictim->auStat[8], r8 - 10 + 30, "  auStat[8] = rand(20) - 10 + 30");
+    CheckEqI32(pVictim->auStat[4], 0, "  auStat[4] written twice, record stat 5 last");
+    CheckEqI32(pVictim->auStat[5], 77,
+               "  ORIGINAL BUG: auStat[5] is never loaded, the old value survives");
+    CheckEqI32(pVictim->bUnk248, 5, "  bUnk248 from the record");
+    Check(pVictim->abReady252[0] == 0 && pVictim->abReady252[4] == 0,
+          "  the five readiness bytes from the record");
+    CheckEqI32(pVictim->bStatus, 1, "  bStatus set");
+    Check(strcmp(pVictim->szName, "Chryssalid") == 0, "  the transform name is written");
+    Check(g_state.pStepFromCell == pVictim->pCell, "  pStepFromCell remembers the cell");
+    CheckEqI32(g_nFallEnemy, 1, "  the victim joins the enemy roster");
+    Check(g_apFallEnemy[0] == pVictim, "  at the first free slot");
+    CheckEqI32(g_nBattleEndCalls, 1, "  LABEL_66 runs after the transform");
+
+    /* Chryssalid against something it cannot convert (type 5): the HP path. The
+     * kill test uses the full half-HP figure while the damage dealt is half of it. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_CHRYSSALID;
+    pVictim->nUnitType = 10;   /* small, and outside the convertible types 0..3, 16, 17 */
+    pVictim->auStat[1] = 100;
+    pVictim->uHp       = 90;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 0, "  90 <= 100 kills");
+    Check((pVictim->bFlags & 0x20) != 0, "  and runs Tact_KillUnit");
+    CheckEqI32(pVictim->nUnitType, 10, "  no transform on a non-convertible type");
+
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_CHRYSSALID;
+    pVictim->nUnitType = 10;   /* small, and outside the convertible types 0..3, 16, 17 */
+    pVictim->auStat[1] = 100;
+    pVictim->uHp       = 150;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 100, "  150 - 100/2 = 100");
+    CheckEqI32(pVictim->nUnk436, 50, "  and the damage counter records 50");
+
+    /* Celacid: power 90 - (1 - readiness/100) * bUnk248, roll rand(power/4). */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_CELACID;
+    pActor->uTu        = 50;
+    pVictim->nUnitType = 0;
+    pVictim->auStat[1] = 100;
+    pVictim->uHp       = 200;
+    pVictim->abReady252[2] = 150;   /* 150/100 = 1, so the bUnk248 term drops out */
+    pVictim->bUnk248   = 20;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    srand(3);
+    const i32 nAci = (i32)Game_RandU16((u16)(PUFO_FALL_CELACID_BASE / 4));
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    srand(3);
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 200 - (PUFO_FALL_CELACID_BASE - nAci),
+               "  damage = 90 - rand(22)");
+    CheckEqI32(pVictim->nUnk436, PUFO_FALL_CELACID_BASE - nAci, "  recorded damage");
+    CheckEqI32(pVictim->uTuSpent, PUFO_FALL_CELACID_TU, "  the celacid charges 100");
+    CheckEqI32(pActor->uTu, 30, "  LABEL_93 charges the attacker 20 TU");
+
+    /* Silacoid: a flat 80, and the kneel counter only moves when the victim is
+     * small enough for 80 to matter. */
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_SILACOID;
+    pActor->uTu        = 50;
+    pVictim->nUnitType = 0;
+    pVictim->auStat[1] = 200;   /* (200 & 0xFFFE) > 0xA0: no kneel */
+    pVictim->uHp       = 100;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 20, "  100 - 80");
+    CheckEqI32(pVictim->nUnk436, 80, "  recorded 80");
+    CheckEqI32(pVictim->bKneelOrPrimed, 0, "  a 200 max-HP victim is not knocked down");
+    CheckEqI32(pActor->uTu, 30, "  attacker charged 20 TU");
+
+    FallSetup();
+    pActor  = &g_aFallUnits[0];
+    pVictim = &g_aFallUnits[1];
+    pActor->nUnitType  = PUFO_FALL_TYPE_RIPER;
+    pActor->uTu        = 10;
+    pVictim->nUnitType = 0;
+    pVictim->auStat[1] = 60;    /* (60 & 0xFFFE) <= 0xA0: knock down */
+    pVictim->uHp       = 200;
+    pVictim->pCell     = &g_aFallCells[2][2][2];
+    FallQueueEntry(0x12, pActor, pVictim);
+    g_state.aQueue[0].nMode = 13;
+    Tact_ProcessFallAction(&g_state, &g_FallCtx);
+    CheckEqI32(pVictim->uHp, 120, "  200 - 80");
+    CheckEqI32(pVictim->bKneelOrPrimed, (80 - 30) / 10 + 1,
+               "  knock-down counter = (80 - 60/2)/10 + 1");
+    CheckEqI32(pActor->uTu, 0, "  10 TU is below the 20 charge, so it goes to 0");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -744,6 +2093,20 @@ int main(void)
     TestFireBurst();
     TestThrowAndAction18();
     TestQueueDoorAction();
+    TestFallDamageRefusals();
+    TestFallDamageDescent();
+    TestFallDamageSweep();
+    TestFallActionTail();
+    TestFallActionMoveTail();
+    TestFallActionDoorAndVert();
+    TestFallActionSmallCases();
+    TestFallActionDamageSweep();
+    TestFallActionThrowLanding();
+    TestFallActionLookDevice();
+    TestFallActionPsiGate();
+    TestFallActionPanic();
+    TestFallActionMedikit();
+    TestFallActionMelee();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
