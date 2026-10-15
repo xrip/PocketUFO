@@ -11815,3 +11815,37 @@ a5 = 0 (STRB R9) and a6 = 6*nBase (var_8, +6 per base). So the call is
 Deviation: the original returns the last day byte it read (register residue); the port returns void.
 
 IDB: comments at 0x62824 and 0x62948 (the payload correction).
+
+## ManufScreen_RefreshBaseTabs (0x70ebc, 500 B) -- the manufacturing refresh at the hourly tick
+
+Ported as `ManufScreen_RefreshBaseTabs` in `src/pufo/game/pufo_baseui.c` with the env
+`ManufRefreshEnv`, tested by `TestManufRefreshBaseTabs` in `tests/test_baseui.c`.
+
+Called from `Geoscape_TickHourly @ 0x5d304` with the product-block anchor 0x159E98. Per base and
+product slot it reads `auManufCol[200*base + product]` (the u16 table at 0x15E19C, reached as
+anchor + 400*base + 2*product + 17156) and, when non-zero, adds it into
+`auProductU32[200*base + product]` @ 0x159E9C.
+
+  - Products 119..121 -- the three the hangar branch of `ManufScreen_ClearProductSlot` covers -- are
+    added with no capacity test at all (0x70F54..0x70F6C).
+  - Every other product is tested first (0x70F70..0x70FCC): `Base_CalcStorageUsed` for the base,
+    plus `Base_CountItemQtyAcrossBases` with the scan ON and the -1 gate, plus that product's own
+    `ObjectRecFull.bCargoSize`, against `Base_CalcStoresCapacity`. Strictly under capacity the
+    quantity is added (0x70FE8); at or over it, it is not. Both capacity terms are recomputed for
+    EVERY product -- that is what the original does, and the port keeps it.
+  - At or over capacity (0x71060): the shortfall dword is raised, message 32 is posted, and the
+    product slot is cleared through `ManufScreen_ClearProductSlot`. Then the function RETURNS --
+    0x710A4 branches past the commit call -- so one over-budget product ends the whole refresh,
+    including the remaining bases.
+
+The message payload is the ARM's own stack slots at 0x7107C..0x71090: `(32, base, product, 0,
+base)`. Hex-Rays shows `(32, base, base, product, 0)`; the port passes what the ARM passes.
+
+When the loop finishes with no over-budget product the original calls `ManufScreen_CommitProduction`
+(0x6f34c, not ported) on the way out, and makes the same call when the base count is zero. The port
+leaves that call out and records it.
+
+Deviation: the original walks the quantity and accumulator tables with running pointers and bounds
+nothing; the port indexes them as 200*nBase + product.
+
+IDB: comment at 0x70ebc.

@@ -1024,6 +1024,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   The `pfnTickFacilityConstruction` hook is no longer "not ported". IDB: comments at 0x62824 and
   0x62948.
 
+- [x] part 35, the manufacturing refresh: `ManufScreen_RefreshBaseTabs (0x70ebc)`, 500 bytes — 25
+  more checks. The last unported callee of `Geoscape_TickHourly`, so the hourly tick is now
+  completely ported apart from `ManufScreen_CommitProduction` (0x6f34c). Products 119..121 go into
+  the accumulator with **no capacity test at all**; every other product is tested per product
+  (storage used + item quantity across bases + that product's own `bCargoSize` against
+  `Base_CalcStoresCapacity`, both capacity terms recomputed each time). Over budget: shortfall,
+  message 32, the slot cleared, and the function **returns** — 0x710A4 branches past the commit
+  call, so one over-budget product ends the refresh for the remaining bases too. The message payload
+  is again the ARM's, not Hex-Rays': `(32, base, product, 0, base)`. IDB: comment at 0x70ebc.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1233,6 +1243,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the craft re-arm pass (`Base_DistributeRecoveredItems`, the five weapon mounts named) | 56/56 (Release) | 9930 | 855/1103 (77.5%) | 357384/598792 (59.7%) | 38 checked, 0 mismatched |
 | the mission-recovery pass (`Smap_GrantSiteRecovery`, the function-wide containment counter, the corpse remap) | 56/56 (Release) | 9987 | 856/1103 (77.6%) | 359956/598792 (60.1%) | 38 checked, 0 mismatched |
 | the daily build-timer countdown (`Base_TickFacilityConstruction`, the hangar's three extra clears, the message payload corrected) | 56/56 (Release) | 10016 | 857/1103 (77.7%) | 360352/598792 (60.2%) | 38 checked, 0 mismatched |
+| the manufacturing refresh (`ManufScreen_RefreshBaseTabs`, the untested hangar products, the early return) | 56/56 (Release) | 10041 | 858/1103 (77.8%) | 360852/598792 (60.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

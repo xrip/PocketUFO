@@ -8444,6 +8444,184 @@ static void TestGrantSiteRecovery(void)
     CheckEqI32(g_aGrantSites[0].bFlag0, 4, "aged from 5 to 4");
 }
 
+/* ManufScreen_RefreshBaseTabs @ 0x70ebc. Fixture: the quantity table auManufCol (200 u16 per
+ * base), the accumulator auProductU32 (200 u32 per base), the three other product columns the
+ * clear writes, 150 object records with bCargoSize 1, and the facility grid. */
+static u16 g_aMfQty[200 * 8];
+static u32 g_aMfA[200 * 8];
+static i32 g_aMfB[200 * 8];
+static u16 g_aMfC[200 * 8];
+static u8 g_aMfGridBytes[8];
+static u8 g_aMfGrid[1524];
+static BaseRec g_aMfBases[2];
+static BaseRec *g_apMfBases[2];
+static ObjectRecFull g_aMfObj[150];
+static ObjectRecFull *g_apMfObj[150];
+static SmapSite g_aMfSites[2];
+static UiLineList g_mfLines;
+static u32 g_dwMfShortfall;
+static u8 g_nMfBaseCount;
+static i8 g_nMfSelBase;
+static i32 g_nMfSamples;
+static ManufClearEnv g_mfClear;
+static ManufRefreshEnv g_mfEnv;
+
+static void MfSample(i32 nSample, void *pUser)
+{
+    (void)nSample;
+    (void)pUser;
+    ++g_nMfSamples;
+}
+
+#define MFIDX(nBase, nProduct) (200 * (nBase) + (nProduct))
+#define MFCAP(nBase) g_aMfGrid[0x174 + 144 * (nBase) + 108] /* fac[nBase].facType cell (0,0) */
+
+#define MF_RESET()                                                                          \
+    do {                                                                                    \
+        memset(g_aMfQty, 0, sizeof(g_aMfQty));                                              \
+        memset(g_aMfA, 0, sizeof(g_aMfA));                                                  \
+        memset(g_aMfB, 0, sizeof(g_aMfB));                                                  \
+        memset(g_aMfC, 0, sizeof(g_aMfC));                                                  \
+        memset(g_aMfGridBytes, 0, sizeof(g_aMfGridBytes));                                  \
+        memset(g_aMfGrid, 0, sizeof(g_aMfGrid));                                            \
+        memset(g_aMfSites, 0, sizeof(g_aMfSites));                                          \
+        memset(&g_mfLines, 0, sizeof(g_mfLines));                                           \
+        for (i = 0; i < 2; ++i) {                                                           \
+            memset(&g_aMfBases[i], 0, sizeof(g_aMfBases[i]));                               \
+            g_apMfBases[i] = &g_aMfBases[i];                                                \
+            g_aMfBases[i].bUnk4 = (u8)i;                                                    \
+            g_aMfBases[i].bSlot = (u8)i;                                                    \
+        }                                                                                   \
+        for (i = 0; i < 150; ++i) {                                                         \
+            g_apMfObj[i] = &g_aMfObj[i];                                                    \
+            g_aMfObj[i].bCargoSize = 1;                                                     \
+        }                                                                                   \
+        g_dwMfShortfall = 0;                                                                \
+        g_nMfBaseCount = 1;                                                                 \
+        g_nMfSelBase = 0;                                                                   \
+        g_nMfSamples = 0;                                                                   \
+        memset(&g_mfClear, 0, sizeof(g_mfClear));                                           \
+        g_mfClear.apProductA = g_aMfA;                                                      \
+        g_mfClear.apProductB = g_aMfB;                                                      \
+        g_mfClear.apProductC = g_aMfC;                                                      \
+        g_mfClear.apManufCols = g_aMfQty;                                                   \
+        g_mfClear.abGridBytes = g_aMfGridBytes;                                             \
+        g_mfClear.apBases = g_apMfBases;                                                    \
+        g_mfClear.nBaseCount = 1;                                                           \
+        g_mfClear.pnSelectedBaseIdx = &g_nMfSelBase;                                        \
+        memset(&g_mfEnv, 0, sizeof(g_mfEnv));                                               \
+        g_mfEnv.apManufCols = g_aMfQty;                                                     \
+        g_mfEnv.apProductA = g_aMfA;                                                        \
+        g_mfEnv.apObjects = g_apMfObj;                                                      \
+        g_mfEnv.nObjectCount = 150;                                                         \
+        g_mfEnv.abFacilityGrid = g_aMfGrid;                                                 \
+        g_mfEnv.pbBaseCount = &g_nMfBaseCount;                                              \
+        g_mfEnv.apBases = g_apMfBases;                                                      \
+        g_mfEnv.aSites = g_aMfSites;                                                        \
+        g_mfEnv.nSiteCount = 0;                                                             \
+        g_mfEnv.pdwShortfall = &g_dwMfShortfall;                                            \
+        g_mfEnv.pLines = &g_mfLines;                                                        \
+        g_mfEnv.pClearEnv = &g_mfClear;                                                     \
+        g_mfEnv.pfnPlaySample = MfSample;                                                   \
+    } while (0)
+
+static void TestManufRefreshBaseTabs(void)
+{
+    i32 i;
+
+    printf("ManufScreen_RefreshBaseTabs @ 0x70ebc\n");
+
+    /* A product whose base has room takes its quantity into the accumulator column. */
+    MF_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;   /* one stores cell: capacity 300 */
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 1)], 5, "a product under capacity is added to its column");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "and nothing is reported");
+    CheckEqI32((i32)g_dwMfShortfall, 0, "with the shortfall dword clear");
+
+    /* A zero quantity is skipped outright. */
+    MF_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    g_aMfQty[MFIDX(0, 1)] = 0;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 1)], 0, "a zero quantity adds nothing");
+
+    /* With no stores cells the capacity is 0, so an ordinary product is over budget: shortfall,
+     * message 32 with the ARM's payload (base, product, 0, base), and the slot cleared. */
+    MF_RESET();
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    g_aMfB[MFIDX(0, 1)] = 9;
+    g_aMfC[MFIDX(0, 1)] = 9;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_dwMfShortfall, 1, "a product at zero capacity raises the shortfall");
+    CheckEqI32(g_mfLines.abLineFlags[0], 32, "message 32");
+    CheckEqI32((i32)g_mfLines.anColor[0][0], 0, "colour 0 is the base");
+    CheckEqI32((i32)g_mfLines.anColor[0][1], 1, "colour 1 is the product, not the base again");
+    CheckEqI32((i32)g_mfLines.anColor[0][2], 0, "colour 2 is zero");
+    CheckEqI32((i32)g_mfLines.anColor[0][3], 0, "colour 3 is the base");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 1)], 0, "the product slot is cleared");
+    CheckEqI32(g_aMfB[MFIDX(0, 1)], 0, "in every one of the four columns");
+    CheckEqI32(g_aMfC[MFIDX(0, 1)], 0, "including the u16 column");
+
+    /* The over-budget product ENDS the refresh: a later product with quantity is never reached. */
+    MF_RESET();
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    g_aMfQty[MFIDX(0, 2)] = 3;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_mfLines.nLineCount, 1, "one report for the first over-budget product");
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 2)], 0, "and the later product is never added");
+
+    /* Products 119..121 skip the capacity test entirely, even at zero capacity. */
+    MF_RESET();
+    g_aMfQty[MFIDX(0, 120)] = 7;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 120)], 7, "product 120 is added with no capacity test");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "and reports nothing");
+    CheckEqI32((i32)g_dwMfShortfall, 0, "with no shortfall");
+
+    /* A product above 121 takes the tested path again. */
+    MF_RESET();
+    g_aMfQty[MFIDX(0, 130)] = 4;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 130)], 0, "product 130 is tested like an ordinary one");
+    CheckEqI32(g_mfLines.abLineFlags[0], 32, "and is over budget at zero capacity");
+    CheckEqI32((i32)g_mfLines.anColor[0][1], 130, "naming product 130");
+
+    /* Base 1 reads and writes its own 200-entry slice. */
+    MF_RESET();
+    g_nMfBaseCount = 2;
+    g_mfClear.nBaseCount = 2;
+    MFCAP(1) = FAC_GENERAL_STORES;   /* base 1 has room, base 0 has none */
+    g_aMfQty[MFIDX(1, 1)] = 6;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(1, 1)], 6, "base 1's slice is added into");
+
+    /* Base 0 first: with no capacity its product aborts the whole refresh before base 1 is seen. */
+    MF_RESET();
+    g_nMfBaseCount = 2;
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    g_aMfQty[MFIDX(1, 1)] = 6;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(1, 1)], 0, "an over-budget product in base 0 stops base 1 too");
+
+    /* No bases: nothing runs. */
+    MF_RESET();
+    g_nMfBaseCount = 0;
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 1)], 0, "a zero base count adds nothing");
+
+    /* A missing table is refused. */
+    MF_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    g_aMfQty[MFIDX(0, 1)] = 5;
+    g_mfEnv.apProductA = NULL;
+    ManufScreen_RefreshBaseTabs(&g_mfEnv);
+    CheckEqI32(g_aMfQty[MFIDX(0, 1)], 5, "a missing accumulator table changes nothing");
+
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -8474,6 +8652,7 @@ int main(void)
     TestTransferDraw();
     TestBaseStripDrawer();
     TestGrantSiteRecovery();
+    TestManufRefreshBaseTabs();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

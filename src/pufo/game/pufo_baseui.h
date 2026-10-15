@@ -1653,6 +1653,54 @@ typedef struct ManufClearEnv {
 
 void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32 nProduct);
 
+/* ------------------------------------------------- the manufacturing refresh at the hourly tick
+ *
+ * Evidence: ManufScreen_RefreshBaseTabs @ 0x70ebc (500 B), called from Geoscape_TickHourly @
+ * 0x5d304 with the product-block anchor 0x159E98.
+ *
+ * For every base and every product slot it reads auManufCol[200*base + product] (the u16 quantity
+ * table at 0x15E19C, reached as anchor + 400*base + 2*product + 17156) and, when it is non-zero,
+ * adds it into the u32 accumulator column auProductU32[200*base + product] @ 0x159E9C.
+ *
+ *   - Products 119..121 -- the three the hangar branch of ManufScreen_ClearProductSlot covers --
+ *     are added with no capacity test at all (0x70F54..0x70F6C).
+ *   - Every other product is tested first (0x70F70..0x70FCC): Base_CalcStorageUsed for the base,
+ *     plus Base_CountItemQtyAcrossBases with the scan ON and the -1 gate, plus that product's own
+ *     ObjectRecFull.bCargoSize, against Base_CalcStoresCapacity. Strictly under capacity the
+ *     quantity is added (0x70FE8); at or over it, it is not. Both capacity terms are recomputed
+ *     for EVERY product, which is what the original does.
+ *   - At or over capacity (0x71060): the shortfall dword is raised, message 32 is posted, and the
+ *     product slot is cleared through ManufScreen_ClearProductSlot. The message payload is the
+ *     ARM's own stack slots at 0x7107C..0x71090 -- (32, base, product, 0, base) -- not the
+ *     (32, base, base, product, 0) Hex-Rays shows. Then the function RETURNS: 0x710A4 branches
+ *     past the commit call, so one over-budget product ends the whole refresh.
+ *
+ * When the loop finishes with no over-budget product the original calls ManufScreen_CommitProduction
+ * (0x6f34c, not ported) on the way out, and makes the same call when the base count is zero. The
+ * port leaves that call out and records it here.
+ *
+ * Deviation: the original walks the quantity and accumulator tables with running pointers and
+ * bounds nothing; the port indexes them as 200*nBase + product and refuses when either table is
+ * missing from the environment. */
+typedef struct ManufRefreshEnv {
+    u16              *apManufCols;   /* auManufCol @ 0x15E19C, 200 u16 per base: the quantity read */
+    u32              *apProductA;    /* unk_159E9C, 200 u32 per base: the accumulator written */
+    ObjectRecFull    **apObjects;    /* Map.apObjects @ Map + 0x108 */
+    i32               nObjectCount;  /* Map_nObjectCount @ 0x114A60, u16 semantics */
+    u8              *abFacilityGrid; /* abFacilityGrid @ 0x159768 */
+    const u8        *pbBaseCount;    /* nBaseCount @ 0x159D80, read signed */
+    BaseRec         **apBases;       /* Map.apBases @ Map + 0x1174 */
+    SmapSite        *aSites;         /* aSmapSites @ 0x162030 */
+    i32               nSiteCount;    /* nSmapSiteCount @ 0x186410 */
+    u32             *pdwShortfall;   /* byte_1870C8, written as a dword */
+    UiLineList      *pLines;         /* the root message list @ 0x158890 */
+    const ManufClearEnv *pClearEnv;  /* ManufScreen_ClearProductSlot's tables */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pSoundUser;
+} ManufRefreshEnv;
+
+void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
+
 /* ManufScreen_ConfirmAndClose @ 0x6e98c (92 B): clear the selected product's slot for the selected
  * base and tail-call the screen-close dispatcher. The product index comes from the panel's aux
  * column at the cached row, exactly as the quantity buttons read it. Its first argument to

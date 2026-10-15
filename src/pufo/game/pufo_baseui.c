@@ -3556,6 +3556,60 @@ void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32
                                bType, (i8)nAmount);
 }
 
+/* ManufScreen_RefreshBaseTabs @ 0x70ebc. The header block has the two product classes, the
+ * per-product capacity test, the message payload and the early return. */
+void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->apManufCols == NULL || pEnv->apProductA == NULL ||
+        pEnv->pbBaseCount == NULL) {
+        return;
+    }
+
+    const i32 nBaseCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x70EE0: LDRSB of abFacilityGrid + 0x618 */
+    if (nBaseCount <= 0) {
+        return; /* 0x71048: ManufScreen_CommitProduction (0x6f34c, not ported) */
+    }
+
+    for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+        for (i32 nProduct = 0; nProduct < pEnv->nObjectCount; ++nProduct) {
+            const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBase + nProduct;
+            const u16 nQty = pEnv->apManufCols[nIdx]; /* 0x70F50 */
+
+            if (nQty == 0) {
+                continue;
+            }
+
+            if (nProduct >= PUFO_MANUF_HANGAR_PRODUCT_FIRST &&
+                nProduct <= PUFO_MANUF_HANGAR_PRODUCT_LAST) {
+                pEnv->apProductA[nIdx] += (u32)nQty; /* 0x70F68: no capacity test at all */
+                continue;
+            }
+
+            const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);
+            const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, -1,
+                                                             pEnv->apBases, nBase, pEnv->apObjects,
+                                                             pEnv->nObjectCount, true);
+            const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase);
+            const i32 nCargo = (pEnv->apObjects[nProduct] != NULL)
+                                   ? (i32)pEnv->apObjects[nProduct]->bCargoSize
+                                   : 0;
+
+            if (nAcross + nCargo + nUsed < nCap) {  /* 0x70FC8: BGE takes the over branch */
+                pEnv->apProductA[nIdx] += (u32)nQty; /* 0x70FE8 */
+                continue;
+            }
+
+            *pEnv->pdwShortfall = 1; /* 0x71070 */
+            UiLineList_AppendWithSound(pEnv->pLines, 32, (u32)nBase, (u32)nProduct, 0u, (u32)nBase,
+                                       pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x71090 */
+            ManufScreen_ClearProductSlot(pEnv->pClearEnv, nBase, nProduct);    /* 0x710A0 */
+            return; /* 0x710A4: B past the commit call -- one over-budget product ends the refresh */
+        }
+    }
+
+    /* 0x71048: ManufScreen_CommitProduction (0x6f34c, not ported). */
+}
+
 void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks)
 {
     if (pEnv == NULL) {
