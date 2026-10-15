@@ -8957,6 +8957,188 @@ static void TestManufCommitProduction(void)
     CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "a missing committed-count table changes nothing");
 }
 
+/* Stubs for the bring-up. Each handler gets its own counter so a wrong slot is visible, and the
+ * panel builder records the first control's x at the moment it runs: the original tail-calls
+ * ManufScreen_BuildPanels last (0x71268), so the controls must already be positioned there. That
+ * is the opposite of Ui_InitTransfer, which builds the panels before the controls exist. */
+static UiControl g_aManufInitCtl[6], g_manufClose, g_manufDraw, g_manufConfirm;
+static i32 g_nManufStub[10];
+static i32 g_nBuildCtlX;
+
+static void ManufStubClose(void)       { ++g_nManufStub[0]; }
+static void ManufStubDraw(void)        { ++g_nManufStub[1]; }
+static void ManufStubConfirm(void)     { ++g_nManufStub[2]; }
+static void ManufStubPanelPrev(void)   { ++g_nManufStub[3]; }
+static void ManufStubPanelNext(void)   { ++g_nManufStub[4]; }
+static void ManufStubIncQty(void)      { ++g_nManufStub[5]; }
+static void ManufStubDecQty(void)      { ++g_nManufStub[6]; }
+static void ManufStubIncEng(void)      { ++g_nManufStub[7]; }
+static void ManufStubDecEng(void)      { ++g_nManufStub[8]; }
+static void ManufStubBuildPanels(void) { ++g_nManufStub[9]; g_nBuildCtlX = g_aManufInitCtl[0].x; }
+
+/* The pad seam runs for real here: the archives are open, so the descriptor names either resolve
+ * to members of main.dat or the pad slot stays empty. That is what makes the six descriptor pad
+ * names a checked claim instead of a transcription. */
+static bool ManufLoadPadsReal(UiControl *pCtl, const char *psz0, const char *psz1,
+                              const char *psz2, void *pUser)
+{
+    (void)pUser;
+    UiControl_LoadPads(pCtl, psz0, psz1, psz2);
+    return true;
+}
+
+static void ManufFreeCtlPads(void)
+{
+    for (i32 c = 0; c < 6; ++c) {
+        for (i32 p = 0; p < PUFO_CONTROL_PADS; ++p) {
+            if (g_aManufInitCtl[c].apPads[p] != NULL) {
+                PadImage_FreeData(g_aManufInitCtl[c].apPads[p]);
+                free(g_aManufInitCtl[c].apPads[p]);
+                g_aManufInitCtl[c].apPads[p] = NULL;
+            }
+        }
+    }
+}
+
+static void TestManufInit(void)
+{
+    static void *aRoot[7];
+    ManufInitEnv env;
+    PadImage *pPad;
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    i32 i, nLoaded, nEmpty;
+
+    printf("the manufacturing screen's bring-up\n");
+
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL main.dat / lang.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    memset(aRoot, 0, sizeof(aRoot));
+    memset(g_aManufInitCtl, 0, sizeof(g_aManufInitCtl));
+    memset(&g_manufClose, 0, sizeof(g_manufClose));
+    memset(&g_manufDraw, 0, sizeof(g_manufDraw));
+    memset(&g_manufConfirm, 0, sizeof(g_manufConfirm));
+    memset(g_nManufStub, 0, sizeof(g_nManufStub));
+    g_nBuildCtlX = -1;
+
+    memset(&env, 0, sizeof(env));
+    env.ppRoot = aRoot;
+    for (i = 0; i < 6; ++i) {
+        env.apCtl[i] = &g_aManufInitCtl[i];
+    }
+    env.pCloseCtl = &g_manufClose;
+    env.pDrawCtl = &g_manufDraw;
+    env.pConfirmCtl = &g_manufConfirm;
+    env.pfnCloseClick = ManufStubClose;
+    env.pfnDrawClick = ManufStubDraw;
+    env.pfnConfirmClick = ManufStubConfirm;
+    env.pfnPanelPrev = ManufStubPanelPrev;
+    env.pfnPanelNext = ManufStubPanelNext;
+    env.pfnIncQty = ManufStubIncQty;
+    env.pfnDecQty = ManufStubDecQty;
+    env.pfnIncEngineers = ManufStubIncEng;
+    env.pfnDecEngineers = ManufStubDecEng;
+    env.pfnBuildPanels = ManufStubBuildPanels;
+    env.pfnLoadPads = ManufLoadPadsReal;
+
+    ManufScreen_Init(&env);
+
+    /* Step 1: the screen pad. The two origin stores at 0x710F8 / 0x7110C are not observable here
+     * because the port's allocation already zeroes the block, so they are recorded in the header
+     * rather than asserted. */
+    Check(aRoot[0] != NULL, "the screen's pad object is allocated");
+    pPad = (PadImage *)aRoot[0];
+    Check(pPad != NULL && pPad->pData != NULL, "manuf.pad really loads out of main.dat");
+    Check(pPad != NULL && pPad->uWidth == 240 && pPad->uHeight == 320,
+          "manuf.pad is the 240 x 320 member (76804 bytes with its 4-byte header)");
+    Check(pPad != NULL && pPad->nMode == 7, "loaded in mode 7, the MOV R2,#7 at 0x710DC");
+
+    /* Step 3: the six slots. */
+    for (i = 0; i < 6; ++i) {
+        Check(aRoot[i + 1] == (void *)&g_aManufInitCtl[i],
+              "the six controls land in the root array's slots 1..6");
+    }
+
+    /* Step 4: the handlers, in slot order. */
+    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev, "slot 1 scrolls the panels back");
+    Check(g_aManufInitCtl[1].pfnClick == ManufStubPanelNext, "slot 2 scrolls them forward");
+    Check(g_aManufInitCtl[2].pfnClick == ManufStubIncQty, "slot 3 is the quantity +");
+    Check(g_aManufInitCtl[3].pfnClick == ManufStubDecQty, "slot 4 is the quantity -");
+    Check(g_aManufInitCtl[4].pfnClick == ManufStubIncEng, "slot 5 is the engineers +");
+    Check(g_aManufInitCtl[5].pfnClick == ManufStubDecEng, "slot 6 is the engineers -");
+
+    /* Step 6: the positions come straight out of g_aManufCtlDesc, both bases being zero. */
+    CheckEqI32(g_aManufInitCtl[0].x, 0xCD, "the tab scroll pair sits at x 0xCD");
+    CheckEqI32(g_aManufInitCtl[0].y, 0x12, "the up arrow at y 0x12");
+    CheckEqI32(g_aManufInitCtl[1].y, 0x26, "the down arrow 20 pixels below it");
+    CheckEqI32(g_aManufInitCtl[1].x, 0xCD, "at the same x");
+    CheckEqI32(g_aManufInitCtl[2].x, 0x0A, "the quantity pair at x 0x0A");
+    CheckEqI32(g_aManufInitCtl[2].y, 0xFB, "the quantity + at y 0xFB");
+    CheckEqI32(g_aManufInitCtl[3].x, 0x0A, "the quantity - under it");
+    CheckEqI32(g_aManufInitCtl[3].y, 0x10F, "at y 0x10F");
+    CheckEqI32(g_aManufInitCtl[4].x, 0x8C, "the engineers pair at x 0x8C");
+    CheckEqI32(g_aManufInitCtl[4].y, 0xFB, "the engineers + at y 0xFB");
+    CheckEqI32(g_aManufInitCtl[5].x, 0x8C, "the engineers - under it");
+    CheckEqI32(g_aManufInitCtl[5].y, 0x10F, "at y 0x10F");
+    for (i = 0; i < 6; ++i) {
+        CheckEqI32(g_aManufInitCtl[i].nMode, 0, "every one of the six is a mode-0 button");
+    }
+
+    /* The pads the descriptors name are real members of main.dat: up / sup / down / sdown are each
+     * 23 x 17, and the empty third name gets no pad at all. */
+    nLoaded = 0;
+    nEmpty = 0;
+    for (i = 0; i < 6; ++i) {
+        if (g_aManufInitCtl[i].apPads[0] != NULL && g_aManufInitCtl[i].apPads[1] != NULL &&
+            g_aManufInitCtl[i].apPads[0]->pData != NULL &&
+            g_aManufInitCtl[i].apPads[0]->uWidth == 23 &&
+            g_aManufInitCtl[i].apPads[0]->uHeight == 17 &&
+            g_aManufInitCtl[i].apPads[1]->pData != NULL &&
+            g_aManufInitCtl[i].apPads[0]->nMode == 1 &&
+            g_aManufInitCtl[i].apPads[1]->nMode == 1) {
+            ++nLoaded;
+        }
+        if (g_aManufInitCtl[i].apPads[2] == NULL) {
+            ++nEmpty;
+        }
+    }
+    CheckEqI32(nLoaded, 6, "up/sup and down/sdown load for all six, in UiControl_LoadPads' mode 1");
+    CheckEqI32(nEmpty, 6, "the empty third pad name gets no pad");
+
+    /* Step 2 and step 5: the three controls that already exist as globals. */
+    CheckEqI32(g_manufClose.x, 224, "the close control lands at 224, 1");
+    CheckEqI32(g_manufClose.y, 1, "as 16-bit stores");
+    Check(g_manufClose.pfnClick == ManufStubClose, "with the close thunk");
+    CheckEqI32(g_manufDraw.x, 40, "the draw control at 40, 0x126");
+    CheckEqI32(g_manufDraw.y, 0x126, "bottom left of the screen");
+    Check(g_manufDraw.pfnClick == ManufStubDraw, "with the screen drawer as its handler");
+    CheckEqI32(g_manufConfirm.x, 130, "the confirm control at 130, 0x126");
+    CheckEqI32(g_manufConfirm.y, 0x126, "to its right");
+    Check(g_manufConfirm.pfnClick == ManufStubConfirm, "with confirm-and-close");
+
+    /* Step 7: the panel build is the last thing the function does. */
+    CheckEqI32(g_nManufStub[9], 1, "the panels are built once");
+    CheckEqI32(g_nBuildCtlX, 0xCD,
+               "and only after the six controls are positioned, unlike the transfer bring-up");
+
+    ManufFreeCtlPads();
+    free(aRoot[0]);
+    aRoot[0] = NULL;
+
+    ManufScreen_Init(NULL);
+    env.ppRoot = NULL;
+    ManufScreen_Init(&env);
+    env.ppRoot = aRoot;
+    Check(aRoot[0] == NULL, "a missing root array makes it do nothing at all");
+    CheckEqI32(g_nManufStub[9], 1, "including the panel build");
+    Check(g_aManufInitCtl[0].pfnClick == ManufStubPanelPrev, "and no handler is rewired");
+
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -8989,6 +9171,7 @@ int main(void)
     TestGrantSiteRecovery();
     TestManufRefreshBaseTabs();
     TestManufCommitProduction();
+    TestManufInit();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

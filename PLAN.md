@@ -1081,6 +1081,23 @@ Order is by what unblocks what. Each item ends with gates + commit.
   recorded: `RefreshBaseTabs` tail-calls this function and the port keeps the two envs separate until
   the hourly tick is wired into the shell.
 
+- [x] part 39, the manufacturing screen's bring-up: `ManufScreen_Init (0x710b0)`, 488 bytes — 50 more
+  checks. Pad, six click controls, three pre-existing controls, then the panel build. Two things this
+  settled. (1) The two stores Hex-Rays shows as `->x` and `->uWidth` at 0x710F8 / 0x7110C are one dword
+  each at PadImage +0 and +4 — the slot holds a PadImage (new(0x14), PadImage_ctor) and Hex-Rays types
+  it as `UiControl*`. Wrong struct, not a Hex-Rays bug; the same class of mistake as part 37. (2)
+  `unk_186BB4` and `unk_186BB0` are **not** manufacturing controls: each has over 100 xrefs across
+  OptionsScreen_*, ResearchScreen_*, Geoscape_DrawScreen, Geoscape_OnPointer/Up and Geoscape_Draw. They
+  are shared geoscape controls each screen repositions on open, so they stay unnamed — checked before
+  renaming, which is the point. `g_aManufCtlDesc @ 0xAB9F8` (6 × UiControlDesc, only xref here) is now
+  typed and named in the IDB, and the test opens main.dat for real: manuf.pad is 240×320, up/sup/
+  down/sdown are each 23×17, so the descriptor pad names are a checked claim and not a transcription.
+  The panel build is the LAST thing this function does (0x71268), the opposite of `Ui_InitTransfer`
+  (0x995A4); the build stub records the first control's x when it runs and the check wants 0xCD. The
+  two origin stores are recorded rather than asserted — the port's `calloc` allocation already zeroes
+  them, so a check there could not fail. The stale `stru_AC3B8` citation was corrected to the IDB's own
+  `g_aTransferCtlDesc`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1294,6 +1311,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the craft slot -> CraftType map (`Ship_ProductSlotToType`, renamed in the IDB, shared with the recovery pass) | 56/56 (Release) | 10059 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 | the message-payload audit (38 and 32 corrected, five other sites re-checked, 39's radar byte recorded) | 56/56 (Release) | 10062 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 | the manufacturing commit pass (`ManufScreen_CommitProduction`, the work-per-unit reading, the blocked early return) | 56/56 (Release) | 10123 | 860/1103 (78.0%) | 362348/598792 (60.5%) | 38 checked, 0 mismatched |
+| the manufacturing bring-up (`ManufScreen_Init`, the six control descriptors, the shared geoscape controls) | 56/56 (Release) | 10173 | 861/1103 (78.1%) | 362836/598792 (60.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

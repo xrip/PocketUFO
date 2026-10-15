@@ -11991,3 +11991,86 @@ not wired into the shell yet; that wiring is recorded as an open item, not silen
 
 IDB: full function comment at 0x6f34c, field comments at 0x6F3EC and 0x6F580, and `ObjectRec`
 redefined with the 0xba..0xc7 fields named.
+
+## ManufScreen_Init (0x710b0, 488 B)
+
+Ported as `void ManufScreen_Init(ManufInitEnv *pEnv)` in `src/pufo/game/pufo_baseui.c`, env declared
+in `pufo_baseui.h`. It is the tail call of `ManufScreen_Open @ 0x614cc`, which reaches it through
+`Geoscape_OpenScreen(pState, 9, true, pHooks)`.
+
+### The seven steps, in the ARM's order
+
+1. 0x710BC / 0x710CC: `operator new(0x14)` then `PadImage_ctor`. The ctor's result -- not the raw
+   allocation -- is stored into `*ppScreen` at 0x710E0 (the null branch at 0x710D4 stores 0).
+   `PadImage_Load("manuf", 7)` at 0x710E4, then the two origins zeroed: 0x710F8 `STR R8,[R3]` and
+   0x7110C `STR R8,[R3,#4]`, one dword each at PadImage +0 and +4. Hex-Rays renders both as `->x`
+   and `->uWidth` because it types the slot as `UiControl*`; the object is a PadImage (new(0x14),
+   PadImage_ctor), so this is the wrong struct, not a Hex-Rays error.
+2. 0x710F0..0x71130: the close control `unk_186B00` gets x 224 (0x71118), y 1 (0x71124) and
+   `ManufScreen_CloseThunk` (0x71130). Same control and same position the transfer bring-up uses.
+3. 0x71134..0x7116C: six `operator new(0x20)` + `UiControl_ctor`, stored into the six slots the ARM
+   computes as `ppScreen + (0x4F00 | 0x84) + 4*i` -- byte offsets 0x4F84..0x4F98, array indices
+   5089..5094, which is the `ppScreen[5089]` Hex-Rays shows.
+4. 0x71184..0x711EC: their `pfnClick` in slot order -- `ManufScreen_PanelPrev` (0x6dd4c),
+   `ManufScreen_PanelNext` (0x6dd94), `ManufScreen_IncSelectedQty` (0x6dddc),
+   `ManufScreen_DecSelectedQty` (0x6e09c), `ManufScreen_IncEngineers` (0x6e13c),
+   `ManufScreen_DecEngineers` (0x6e330). All six are already ported.
+5. 0x71200..0x71238: two controls that already exist as globals are positioned and wired here, not
+   allocated: `unk_186BB4` at x 40 y 294 with `ManufScreen_Draw`, and `unk_186BB0` at x 130 y 294
+   with `ManufScreen_ConfirmAndClose`.
+6. 0x7123C..0x71260: `UiControl_Setup(slot[5089+i], 0, 0, &g_aManufCtlDesc[i])`. Both bases are
+   zero, so each control lands exactly on its descriptor offset.
+7. 0x71268: tail call `ManufScreen_BuildPanels` (0x6e9e8, not ported).
+
+Step 7 is the last thing the function does. `Ui_InitTransfer @ 0x9955c` builds its panels at 0x995A4,
+before the controls exist; the manufacturing bring-up does it after the handlers and after the Setup
+pass. Nothing reads a control in between, so the difference is not observable, but the port keeps the
+original's order and the test pins it: the panel-build stub records the first control's x at the
+moment it runs and the check wants 0xCD.
+
+### g_aManufCtlDesc @ 0xAB9F8
+
+Six `UiControlDesc` records, 192 bytes, referenced only from this function (2 xrefs, both here). In
+the order the six handlers are installed:
+
+    { 0xCD, 0x12, "up",   "sup",   "", 0 }   tab scroll back     205, 18
+    { 0xCD, 0x26, "down", "sdown", "", 0 }   tab scroll forward  205, 38
+    { 0x0A, 0xFB, "up",   "sup",   "", 0 }   quantity +           10, 251
+    { 0x0A, 0x10F,"down", "sdown", "", 0 }   quantity -           10, 271
+    { 0x8C, 0xFB, "up",   "sup",   "", 0 }   engineers +         140, 251
+    { 0x8C, 0x10F,"down", "sdown", "", 0 }   engineers -         140, 271
+
+All six are mode 0, so every one is a press/release button in `UiControl_HitTest`'s mode-0 branch.
+The four pad names are real members of main.dat -- up / sup / down / sdown are each 23 x 17 (395
+bytes with the 4-byte header) -- and `manuf.pad` is 240 x 320 (76804 bytes). The test opens the
+archives and asserts all of that, so the descriptor names are a checked claim and not a transcription.
+The transfer screen's counterpart `g_aTransferCtlDesc @ 0xAC3B8` has the same first pair and two
+`emptyb`/`cemptyb` buttons instead.
+
+### unk_186BB4 and unk_186BB0 are not manufacturing controls
+
+This was worth checking before naming anything. Each has over 100 xrefs, spread over
+`OptionsScreen_BindSaveSlots`, `OptionsScreen_BindLoadSlots`, `OptionsScreen_LayoutButtons`,
+`OptionsScreen_Init`, `OptionsScreen_Open`, `Set_byte_159E88_3_SetUiY`, `Geoscape_DrawScreen`,
+`ResearchScreen_Draw`, `ResearchScreen_Init`, `Ui_OpenResearch`, `Base_EnterBuildMode`,
+`Geoscape_InitUI`, `GeoscapeUi_FreeAll`, `Geoscape_OnPointer`, `Geoscape_OnPointerUp`,
+`Geoscape_Draw` and `ManufScreen_DrawFrame`. They are shared geoscape UI controls that each screen
+repositions and re-wires on open. The manufacturing screen only borrows them, so they stay unnamed
+here; naming them needs their role across all those screens, which is a separate question.
+
+### Deviations
+
+The original allocates the six controls with `operator new` and dereferences every allocation with no
+test; the port takes caller-owned controls and installs them into `ppRoot[1..6]`, exactly as the
+BuySell and Transfer bring-ups do.
+
+The two origin stores at 0x710F8 and 0x7110C are not observable through the port: `BuySellPadNew`
+allocates with `calloc`, so the block is already zero. They are recorded here rather than asserted --
+a check that cannot fail would test nothing.
+
+`ManufScreen_Draw` (0x6e3e0) and `ManufScreen_BuildPanels` (0x6e9e8) are not ported yet, so both
+arrive as env seams (`pfnDrawClick`, `pfnBuildPanels`).
+
+IDB: `stru_AB9F8` typed as `UiControlDesc[6]` and named `g_aManufCtlDesc`; function comment at
+0x710b0 and a data comment at 0xAB9F8. The stale `stru_AC3B8` citation in the port was corrected to
+the IDB's own `g_aTransferCtlDesc`.

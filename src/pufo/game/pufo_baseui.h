@@ -774,7 +774,7 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
  *      buy/sell Init installs BuySellScreen_CloseThunk @ 0x75154 there instead.
  *   8. 0x9965C: the confirm control unk_186BA4 gets that same close thunk -- before UiControl_Setup,
  *      where BuySellScreen_Init installs its confirm handler after the pad and delta clearing.
- *   9. 0x99660..0x99680: UiControl_Setup(ctl, 0, 0, stru_AC3B8[i]) for the four controls. The reset
+ *   9. 0x99660..0x99680: UiControl_Setup(ctl, 0, 0, g_aTransferCtlDesc[i]) for the four controls. The reset
  *      and confirm descriptors are (1, 0x12C) and (0x78, 0x12C), both drawing "emptyb" / "cemptyb".
  *  10. 0x99698, 0x996B8: the confirm control goes to `x = 120 - (uWidth >> 1)` and
  *      `y = 28 * nBaseCount + 10`, the base count at 0x159D80 read as a signed byte. The confirm
@@ -1793,6 +1793,65 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv);
  * ClearProductSlot is the 0x159E98 anchor, which that function never reads. Geoscape_CloseUI is
  * not ported, so the close is the same hook ResearchScreen_CancelSelectedAndClose uses. */
 void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks);
+
+/* ManufScreen_Init @ 0x710b0 (488 B): the tail call of ManufScreen_Open @ 0x614cc.
+ *
+ * Order, straight from the ARM:
+ *   1. 0x710BC..0x7110C: operator new(0x14) + PadImage_ctor; the ctor's result goes into slot 0 of
+ *      the screen block; PadImage_Load("manuf", 7) at 0x710E4; then the two origins zeroed. Those
+ *      two stores are one dword each at PadImage +0 and +4 (0x710F8 STR R8,[R3] and 0x7110C
+ *      STR R8,[R3,#4]); Hex-Rays renders them as ->x and ->uWidth because it types the slot as
+ *      UiControl*, which is the wrong struct, not a Hex-Rays bug.
+ *   2. 0x710F0..0x71130: the close control (unk_186B00) at x 224, y 1, handler CloseThunk.
+ *   3. 0x71134..0x7116C: six operator new(0x20) + UiControl_ctor into the six slots the ARM builds
+ *      as ppScreen + (0x4F00 | 0x84) + 4*i, i.e. byte offsets 0x4F84..0x4F98 -- array indices
+ *      5089..5094, which is what Hex-Rays shows.
+ *   4. 0x71184..0x711EC: their handlers in slot order -- PanelPrev, PanelNext, IncSelectedQty,
+ *      DecSelectedQty, IncEngineers, DecEngineers.
+ *   5. 0x71200..0x71238: two controls that already exist as globals, unk_186BB4 at x 40 y 294 with
+ *      handler ManufScreen_Draw, and unk_186BB0 at x 130 y 294 with handler
+ *      ManufScreen_ConfirmAndClose. Neither is allocated here.
+ *   6. 0x7123C..0x71260: UiControl_Setup(slot[5089+i], 0, 0, &g_aManufCtlDesc[i]). Both bases are zero,
+ *      so every control lands exactly on its descriptor offset.
+ *   7. 0x71268: tail call ManufScreen_BuildPanels (0x6e9e8, not ported).
+ *
+ * The six handlers are installed before the Setup pass. Ui_InitTransfer does it the other way
+ * round; nothing reads a control in between, so the difference is not observable, and the port
+ * keeps the original's order.
+ *
+ * g_aManufCtlDesc @ 0xAB9F8 is six 32-byte descriptors. Read against the handler order of step 4 they
+ * are the base-tab scroll pair at x 205 y 18/38, the quantity pair at x 10 y 251/271, and the
+ * engineers pair at x 140 y 251/271. All six use the "up"/"sup" or "down"/"sdown" pad pair and mode
+ * 0, so every one of them is a press/release button in UiControl_HitTest's mode-0 branch.
+ *
+ * Deviation: the original allocates the six controls with operator new and stores them into the
+ * screen block; the port takes caller-owned controls and installs them into ppRoot[1..6], as the
+ * BuySell and Transfer inits do. The original also dereferences every allocation with no test. */
+#define PUFO_MANUF_PAD_NAME "manuf" /* aManuf @ 0xABABC */
+#define PUFO_MANUF_PAD_MODE 7       /* 0x710DC: MOV R2,#7 */
+
+typedef struct ManufInitEnv {
+    void **ppRoot;                  /* the screen block; [0] the PadImage, [1..6] the six controls */
+    UiControl *apCtl[6];            /* caller-owned, stored into ppRoot[1..6] */
+    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pDrawCtl;            /* unk_186BB4 */
+    UiControl *pConfirmCtl;         /* unk_186BB0 */
+    void (*pfnCloseClick)(void);    /* ManufScreen_CloseThunk @ 0x6e3d4 */
+    void (*pfnDrawClick)(void);     /* ManufScreen_Draw (0x6e3e0), not ported */
+    void (*pfnConfirmClick)(void);  /* ManufScreen_ConfirmAndClose @ 0x6e98c */
+    void (*pfnPanelPrev)(void);     /* ManufScreen_PanelPrev @ 0x6dd4c */
+    void (*pfnPanelNext)(void);     /* ManufScreen_PanelNext @ 0x6dd94 */
+    void (*pfnIncQty)(void);        /* ManufScreen_IncSelectedQty @ 0x6dddc */
+    void (*pfnDecQty)(void);        /* ManufScreen_DecSelectedQty @ 0x6e09c */
+    void (*pfnIncEngineers)(void);  /* ManufScreen_IncEngineers @ 0x6e13c */
+    void (*pfnDecEngineers)(void);  /* ManufScreen_DecEngineers @ 0x6e330 */
+    void (*pfnBuildPanels)(void);   /* ManufScreen_BuildPanels (0x6e9e8), not ported */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} ManufInitEnv;
+
+void ManufScreen_Init(ManufInitEnv *pEnv);
 
 /* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
  * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like

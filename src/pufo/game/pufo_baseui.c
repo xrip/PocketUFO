@@ -1778,7 +1778,7 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
     BuySellSortRows(pA, pE, pB, pC, pD, pEnv->nObjectCount - 1);
 }
 
-/* stru_AC3B8 @ 0xAC3B8: the transfer screen's four control descriptors. The first two are the
+/* g_aTransferCtlDesc @ 0xAC3B8: the transfer screen's four control descriptors. The first two are the
  * scroll pair at the same x as the buy/sell pair; the third and fourth are the reset and confirm
  * buttons, both drawn from the "emptyb" / "cemptyb" pad pair. */
 static const UiControlDesc g_aTransferCtlDesc[4] = {
@@ -3777,6 +3777,88 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseH
 
     if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
         pHooks->pfnCloseUi(pHooks->pUser); /* 0x6E9C8, tail-call into Geoscape_CloseUI */
+    }
+}
+
+/* g_aManufCtlDesc @ 0xAB9F8: the manufacturing screen's six control descriptors -- the base-tab scroll
+ * pair, then the quantity pair, then the engineers pair. Same order as the six handlers
+ * ManufScreen_Init installs onto them. */
+static const UiControlDesc g_aManufCtlDesc[6] = {
+    { 0x00CD, 0x0012, "up",   "sup",   "", 0 }, /* 0xAB9F8 */
+    { 0x00CD, 0x0026, "down", "sdown", "", 0 }, /* 0xABA18 */
+    { 0x000A, 0x00FB, "up",   "sup",   "", 0 }, /* 0xABA38 */
+    { 0x000A, 0x010F, "down", "sdown", "", 0 }, /* 0xABA58 */
+    { 0x008C, 0x00FB, "up",   "sup",   "", 0 }, /* 0xABA78 */
+    { 0x008C, 0x010F, "down", "sdown", "", 0 }, /* 0xABA98 */
+};
+
+/* ManufScreen_Init @ 0x710b0. The header block has the seven steps, the descriptor source and the
+ * deviation. */
+void ManufScreen_Init(ManufInitEnv *pEnv)
+{
+    PadImage *pPad;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppRoot == NULL) {
+        return;
+    }
+
+    pPad = BuySellPadNew(); /* 0x710BC / 0x710CC: operator new(0x14) then PadImage_ctor */
+    pEnv->ppRoot[0] = pPad; /* 0x710E0: the ctor's result, not the raw allocation */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_MANUF_PAD_NAME, PUFO_MANUF_PAD_MODE); /* 0x710E4 */
+        pPad->nOriginX = 0; /* 0x710F8 */
+        pPad->nOriginY = 0; /* 0x7110C */
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = 224; /* 0x71118 */
+        pEnv->pCloseCtl->y = 1;   /* 0x71124 */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x71130 */
+    }
+
+    for (i = 0; i < 6; ++i) {
+        pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x71160, the original's operator new(0x20) slots */
+    }
+    if (pEnv->apCtl[0] != NULL) {
+        pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x71184 */
+    }
+    if (pEnv->apCtl[1] != NULL) {
+        pEnv->apCtl[1]->pfnClick = pEnv->pfnPanelNext; /* 0x7119C */
+    }
+    if (pEnv->apCtl[2] != NULL) {
+        pEnv->apCtl[2]->pfnClick = pEnv->pfnIncQty; /* 0x711B0 */
+    }
+    if (pEnv->apCtl[3] != NULL) {
+        pEnv->apCtl[3]->pfnClick = pEnv->pfnDecQty; /* 0x711C4 */
+    }
+    if (pEnv->apCtl[4] != NULL) {
+        pEnv->apCtl[4]->pfnClick = pEnv->pfnIncEngineers; /* 0x711D8 */
+    }
+    if (pEnv->apCtl[5] != NULL) {
+        pEnv->apCtl[5]->pfnClick = pEnv->pfnDecEngineers; /* 0x711EC */
+    }
+
+    if (pEnv->pDrawCtl != NULL) {
+        pEnv->pDrawCtl->x = 40; /* 0x71200 */
+        pEnv->pDrawCtl->y = 294; /* 0x71208 */
+        pEnv->pDrawCtl->pfnClick = pEnv->pfnDrawClick; /* 0x7122C */
+    }
+    if (pEnv->pConfirmCtl != NULL) {
+        pEnv->pConfirmCtl->x = 130; /* 0x71214 */
+        pEnv->pConfirmCtl->y = 294; /* 0x71220 */
+        pEnv->pConfirmCtl->pfnClick = pEnv->pfnConfirmClick; /* 0x71238 */
+    }
+
+    for (i = 0; i < 6; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_Setup(pEnv->apCtl[i], 0, 0, &g_aManufCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x7124C */
+        }
+    }
+
+    if (pEnv->pfnBuildPanels != NULL) {
+        pEnv->pfnBuildPanels(); /* 0x71268, tail call into ManufScreen_BuildPanels */
     }
 }
 
