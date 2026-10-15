@@ -1,9 +1,39 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `4ba666b`. This document is committed together with the fire
-phase: **`Tact_ProcessFireAction` (0x50adc, 8,192 B)** — the largest single function ported so far, and the
-half of every tactical action that runs while a unit is shooting. Three things about it are worth knowing
-before you touch it:
+Date: 2026-10-16. HEAD before this edit: `b43a42c`. This document is committed together with the queue
+walker: **`Tact_TickActiveUnit` (0x54130, 1,868 B)** — the loop `GameTick_OnTimer` runs over the action queue,
+and the link that connected the three phase processors to the game tick. Three things about it are worth
+knowing before you touch it:
+
+- **`bFlag0` picks the processor; it is not a gate on one of them.** Set runs `Tact_ProcessFireAction`, clear
+  runs `Tact_ProcessMoveAction` — alternatives. The move processor's prologue raising `bFlag0` is what hands
+  the next tick to the fire phase.
+- **`TactState+0x111C8` and `+0x111E2` are one pair and neither had a name.** `+0x111E2` was `bUnk70114`;
+  `+0x111C8` was the head of `gap_70088`. `EnemyAi_TryFireOrWander (0x4ABC8, unported)` stores the acting unit at
+  +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C) together, **unconditionally — before** the branch at 0x4ACA0
+  that picks its fire-burst path or its weapon-drop-and-wander path. So the flag means "an AI action is in
+  progress": the move processor suppresses the "not enough time" record while it is set and the fire processor
+  skips the enemy-spotted reaction while it is set. The walker clears it at 0x544D8 and zeroes the acting unit's
+  `uTu` through the pointer at 0x544E0. Found by searching the disassembly for the `#0x1C8` offset — the field has
+  no xref, exactly the blind spot §8 describes. Now `pAiActionUnit` / `bAiActionActive` in the IDB struct and in
+  the port; the first draft's `pAiWanderUnit` / `bAiWanderActive` was too narrow and is corrected.
+- **Hex-Rays double-counts the queue index.** ARM computes `R0 = pState + 56*nQueueCursor` and then reads
+  `[R0,#0x18]`; Hex-Rays renders it as `v5->aQueue[offsetof(TactState,bFlag0)]`, adding the 0x18 twice. Recorded
+  as an IDB comment at 0x54258.
+
+The camera follow is per command and the two halves are ordered differently: commands 0/1/8 follow
+`pUnit->pCell` and adopt the tracked unit *before* the focus, command 0xE follows the cell the last aim sample
+fell into and adopts `Map_apXcomUnits[0]` *after*, command 0x12 is gated on `pTarget->pCell`'s `bFlags44` and
+adopts `pTarget` *after*. With a unit already tracked, a shot re-centres only when `(int)Map_dTravel % 60 == 0`
+(0x54750). The kill credit at `TactState+0x111D0` (u16) is paid to the first shooter with `nUnitType <= 8` that
+is operative, over `aQueue[0 .. nQueueCursor-1]` measured *after* `Fall_Tail` advanced the cursor — so the range
+is every entry that already ran. 96 new checks, 6 original bugs recorded (five unguarded dereferences and one
+missing bounds test on the move path's camera follow). Written up in `docs/parity/game-core.md` under
+`## Tact_TickActiveUnit (0x54130): the queue walker`.
+
+The unit before it (`b43a42c`) ported the fire phase: **`Tact_ProcessFireAction` (0x50adc, 8,192 B)** — the
+largest single function ported so far, and the half of every tactical action that runs while a unit is
+shooting. Three things about it are worth knowing before you touch it:
 
 - **The phase keeps no state; the Map block is its register file.** `Map_dTravel @ 0x14020` is the FSM's own
   counter (the aim setup zeroes it), `Map_dTravelSave @ 0x14038` is the distance the aim's arc walk took
@@ -109,15 +139,16 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 898 / 1103 (81.4%)
+python docs/parity/coverage.py            -> functions cited: 898 / 1103 (81.4%)   [unchanged, see below]
                                              bytes cited:     435608 / 598792 (72.7%)
 python docs/parity/audit_credits.py       -> credited functions: 898, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 380 (explain 212 citations)
-                                             credited addresses whose original name is not defined: 3
-                                             (0x54130 Tact_TickActiveUnit, 0x1512c Tact_HandleMapClick,
-                                              0x17bb8 TactAction_ConfirmMeleeMode6 - all three cited by port
-                                              names the IDB does not carry yet)
-python docs/parity/audit_bugs.py          -> ledger rows: 136, ORIGINAL BUG markers in src/pufo: 51
+                                             credited addresses whose original name is not defined: 2
+                                             (0x1512c Tact_HandleMapClick 1104 B,
+                                              0x17bb8 TactAction_ConfirmMeleeMode6 412 B - cited by port
+                                              names the IDB does not carry yet; 0x54130 left the list when
+                                              the walker itself was ported)
+python docs/parity/audit_bugs.py          -> ledger rows: 142, ORIGINAL BUG markers in src/pufo: 54
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -134,8 +165,22 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **12130**. Coverage as of the latest commit: **898 / 1103
-functions (81.4%)**, **435608 / 598792 bytes (72.7%)**. This unit ported `Tact_ProcessFireAction`
+Test checks run across the 56 suites: **12226**. Coverage as of the latest commit: **898 / 1103
+functions (81.4%)**, **435608 / 598792 bytes (72.7%)** — **unchanged from the previous unit**, and that is
+worth understanding rather than reading as a mistake: `0x54130` was already credited by the `@ 0x54130`
+citations in the move- and fall-processor comments, so porting the walker adds no new citation and moves no
+coverage number. What it does move is `audit_names`: the flag list drops from 3 to 2 because the port name is
+now backed by a real port function. (Mid-unit the numbers briefly read 899 / 436816 because a comment cited
+`EnemyAi_TryFireOrWander @ 0x4ABC8`, 1208 B of an unported function; that citation is now the
+`Name (0xADDR, unported)` form the metric ignores. The metric counts every `@ 0xADDR` citation, which is why
+unported callees must be written in the paren form — see "Separate issues" in `PLAN.md`.) This unit ported `Tact_TickActiveUnit`
+(0x54130, 1,868 B) — the queue walker `GameTick_OnTimer` drives: the empty-queue phase call, the
+`bFlag0` fire-or-move choice, the busy multi-entry pre-dispatch, the per-command camera follow and its
+60-voxel recentre stride, the AI-action clear, the kill-credit collection, the opportunity-fire epilogue
+and the busy re-run loop. 96 new checks, `pAiActionUnit` / `uKillCredit` / `bAiActionActive` named in the
+IDB's `TactState`, 6 original bugs recorded in the ledger, and `Map_BuildMoveActionCtx` now wires the two real
+trace-exclusion sources (`Map.pSelUnit @ 0x15334`, `Map.pThrowTargetUnit @ 0x150F0`). The unit before it
+ported `Tact_ProcessFireAction`
 (0x50adc, 8,192 B) — the fire-phase interpreter, twelve command cases, the ten muzzle-relative flight
 samples, the two disagreeing 1/12 conversions, the throw's ballistic-drop landing, the cell-flag decay
 sweep — and closed the two producer-side gaps it reads but nothing produced yet: `Map_dTravelSave` and the
@@ -480,7 +525,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 136 rows, 51 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 142 rows, 54 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -805,7 +850,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-51 markers in the source, 136 ledger rows. Examples:
+54 markers in the source, 142 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -895,8 +940,8 @@ python docs/parity/audit_bugs.py      # bug ledger vs source markers
 python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
-All six must be clean. Expected right now: 0 negated citations, 3 name flags (all three are port names the
-IDB does not carry yet — `Tact_TickActiveUnit`, `Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`),
+All six must be clean. Expected right now: 0 negated citations, 2 name flags (both are port names the
+IDB does not carry yet — `Tact_HandleMapClick` (0x1512c) and `TactAction_ConfirmMeleeMode6` (0x17bb8)),
 ledger and markers agree, 40 tables exact.
 
 ### Traps that will cost you a unit if you ignore them
@@ -924,6 +969,13 @@ These are all real, all paid for already.
   auStat[8], auStatBase[8] holds auStat[9] — so the port's single-index version read `auStatBase[9]`,
   past the end of the array. Whenever a read and a write in one block carry different offsets, the
   array is compacted and the pairing is part of the behaviour, not noise.
+- **Hex-Rays can add a struct offset twice.** `TactState.aQueue` is at +0x18 and an entry is 56 bytes. The
+  ARM computes `R0 = pState + 56*nQueueCursor` and then reads `[R0,#0x18]`; Hex-Rays renders that as
+  `v5->aQueue[offsetof(TactState,bFlag0)]` — the 0x18 appears once in the pointer arithmetic and once again
+  as the subscript, which reads as a 24-byte entry stride. The real stride is 56 and the real index is
+  `nQueueCursor`. Recorded as an IDB comment at 0x54258. Whenever the pseudocode subscripts an array by
+  `offsetof(<struct>, <some earlier member>)`, the field is not indexed by that member: recompute the stride
+  from the ARM (`MOV R2,#0x38; MUL`, `ADD R0,R0,R2,LSL#3` shapes) before believing the subscript.
 - **A byte flag compared to 1 may be read signed.** `abFacilityGrid[0x618]` is loaded with `LDRSB` at
   0x35160 and tested against 1, so -1 is *not* "set"; Hex-Rays renders the same test as an unsigned
   `char` comparison and a `!= 0` reading would take the failed-base-defence exit on a -1 cell. When a
@@ -1060,12 +1112,14 @@ does.
    the group-base index is unclamped, so `PUFO_ISO_GROUP_BASE_COUNT` is 28 rather than 18. Note also
    that the compact `disasm` listing dropped the instruction at `0x1CE34` — the address-anchored
    listing is the one to trust for exact code.
-8. The tactical action chain is ported at the processor level: `Tact_ProcessMoveAction`,
-   `Tact_ProcessFallAction` and now `Tact_ProcessFireAction` (0x50adc, 8,192 B) all run in the port and
-   are driven from `tests/test_tactstate.c`. What is still missing is the walker that dispatches them —
-   `Tact_TickActiveUnit (0x54130, 1,868 B)` — so no `FireActionCtx` / `FallActionCtx` is built by the app
-   layer yet. That function is the next link and it is also the last unresolved name flag in
-   `audit_names.py`.
+8. The tactical action chain is now ported end to end at the processor level: `Tact_ProcessMoveAction`,
+   `Tact_ProcessFallAction`, `Tact_ProcessFireAction` (0x50adc, 8,192 B) and the walker that dispatches them,
+   `Tact_TickActiveUnit` (0x54130, 1,868 B), all driven from `tests/test_tactstate.c`. What is still missing
+   is the **app-layer wiring**: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is unfilled because the app
+   layer owns no `TactTickCtx` yet, and the walker's `pAiActionUnit` / `bAiActionActive` pair is written only
+   by `EnemyAi_TryFireOrWander (0x4ABC8, 1,208 B)`, which is unported. The enemy-AI group is the natural next
+   link: `EnemyAi_TryFireOrWander`, `BeforeEnemyStep (0x4b9b8, 2,792 B)`, `AfterEnemyStep (0x4c4a0, 1,368 B)`
+   and `Tact_EnemyAiTick (0x4cbe0, 3,440 B)`.
 
 ### Priority 2 — finish the tactical renderer
 
@@ -1171,7 +1225,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 380 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 136-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 142-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

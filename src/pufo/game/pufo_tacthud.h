@@ -419,7 +419,7 @@ typedef struct TactHudPanelEnv {
     Soldier           *pSelUnit;             /* Map.pSelUnit */
     u8                 bDeployPanelOpen;     /* Map+0x15110 */
     u8                 bPlayerInputEnabled;  /* Map+0x38 */
-    u8                 bTuSuppressed;        /* unk_157198->bUnk70114 */
+    u8                 bTuSuppressed;        /* pMapTactical (0x157198)->bAiActionActive, TactState+0x111E2 */
     u16                nBigObsBase;          /* fontSys + 0x26, the bigobs group */
     i32                nAnimCounter;         /* Map.apUiSlotsA[25] */
     i32                nAnimMode;            /* Map.apUiSlotsA[26] */

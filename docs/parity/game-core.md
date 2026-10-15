@@ -13944,3 +13944,86 @@ visible.
   helper does not reproduce that side effect.
 - No app-layer wiring exists yet for `FireActionCtx`: the queue walker
   `Tact_TickActiveUnit` @ 0x54130 is unported, so the phase is driven from tests only.
+
+
+## Tact_TickActiveUnit (0x54130): the queue walker
+
+`Tact_TickActiveUnit` is the only thing `GameTick_OnTimer @ 0x274f0` does with the action
+queue, and it is the link that was missing between the three phase processors and the game
+tick. It is a loop, not a single dispatch.
+
+### The gates
+
+1. If `nQueueLen == 0`, `Tact_ProcessActionPhase` runs first - the phase machine can
+   enqueue the opportunity-fire action, and 0x54198 re-reads the length, so a queue that
+   looked empty is dispatched on the same call.
+2. Return when `nQueueLen == 0` or `bQueueActive == 0`. These are two independent gates.
+3. **`bFlag0` selects the processor**: set runs `Tact_ProcessFireAction`, clear runs
+   `Tact_ProcessMoveAction`. They are alternatives, not both - which is why the move
+   processor's prologue raising `bFlag0` matters: it flips the next tick to the fire phase.
+
+### The camera follow
+
+Only while `pTactCtx272->bBusy`. The current entry is `aQueue[nQueueCursor]` (aQueue is at
+`TactState+0x18`, an entry is 56 bytes), and its command decides what the camera follows:
+
+| nCmd | follows | tracked unit adopted |
+|---|---|---|
+| 0, 1, 8 | `pUnit->pCell`, gated on `pCell->bFlags44 & 1` | the unit, **before** the focus |
+| 0xE | the cell the last aim sample fell into | `Map_apXcomUnits[0]`, **after** the focus |
+| 0x12 | the same sample cell, gated on `pTarget->pCell->bFlags44 & 1` | `pTarget`, **after** the focus |
+
+With nothing tracked the camera always follows. With a unit already tracked, a shot
+re-centres only when `(int)Map_dTravel % 60 == 0` (0x54750).
+
+The move path has a step the fire path does not: when the context is busy and
+`nQueueLen > 1` it clears `Map_pSelUnit`'s `bUnk148` and, if the selected unit is not the
+camera unit, drops `pCameraUnit` and calls `Render_Frame`. And when `nQueueCursor == 0` it
+zeroes the kill accumulator before the move processor runs.
+
+### The completion tail (bFlag1 raised)
+
+`Tact_ProcessFallAction` runs, then `Map_bTickHold` or `Map_bFrameScratch` returns. Then:
+
+- **The AI-action pair.** `TactState+0x111C8` and `+0x111E2` are one pair and neither was
+  named before this unit (`gap_70088` head, `bUnk70114`). `EnemyAi_TryFireOrWander (0x4ABC8,
+  unported)` stores the acting unit at +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C)
+  together, and it does so **unconditionally, before** the branch at 0x4ACA0 that chooses
+  between the random fire burst and the weapon-drop-and-wander. So the flag means "an AI
+  action is in progress", not "a wander is running" - which is what its two other readers
+  need it to mean: the move processor suppresses the player-facing "not enough time" record
+  while it is set, and the fire processor skips the enemy-spotted reaction while it is set.
+  It is cleared on the wander path's failure (0x4B024) - the fire path never clears it - by
+  `Tact_InitMission`, and by the walker: when the queue has finished it clears the flag and
+  zeroes the acting unit's `uTu` through the pointer (0x544E0, `STRHEQ R1,[R3,#6]`). Named
+  `pAiActionUnit` / `bAiActionActive` in the IDB struct and in the port.
+- **The kill credit.** `TactState+0x111D0` is a u16 accumulator. The walker walks
+  `aQueue[0 .. nQueueCursor-1]` - and because `Fall_Tail` has already advanced the cursor
+  past the entry it just ran, that range is every executed entry - and stops at the first
+  one whose command is 14, whose unit has `nUnitType <= 8` and is operative. That unit's
+  `uKills` (Soldier+0xFA) gets the accumulator, which is then zeroed as a dword.
+- **The opportunity-fire epilogue.** On `bUnk70103`: park the cursor at (-2,-2), select
+  `pTactCtx272->pScanUnit` - falling back to `Map_apXcomUnits[0]` when that unit carries
+  `bFlags` bit 0x20 - and clear the flag. Then `Tact_ProcessActionPhase` runs once more.
+
+### The re-run
+
+After the tail (and also when `bFlag1` was never raised): re-run while the context is busy,
+`pTrackUnit` is NULL, `pMapTactical->bUnk70115` is clear and `apUiSlotsA[10]`
+(`dword_113A40`, the cursor-direction countdown) is 0, calling `GameTick_Step` on each pass.
+The countdown is read **after** the game tick, so a running countdown still allows one tick.
+
+### Deviations
+
+- The walker reaches everything the original reads through the Map block as context fields:
+  `Map_pSelUnit`, `Map_apXcomUnits[0]`, `Map_bTickHold`, `Map_bFrameScratch`,
+  `apUiSlotsA[10]`, the aim samples and `Map_dTravel`. The three phase processors get their
+  own contexts, so `TactTickCtx` is where the port wires them to the queue.
+- The five world calls (`Tact_ProcessActionPhase`, `Render_Frame`, `MapView_FocusOnCell`,
+  `MapCursor_SetPos`, `GameTick_Step`) are injected through `TickHooks`, so the walker is
+  testable without a renderer or a camera.
+- The port guards `pUnit`, `pCell`, `pTarget` and `pAiActionUnit` before dereferencing, and
+  routes the sample-cell index through the bounds-checked lookup. Six ledger rows record
+  where the original does not.
+- No app-layer wiring yet: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is still unfilled,
+  because the app layer does not yet own a `TactTickCtx`.

@@ -346,7 +346,7 @@ static void RunCmd(u8 nCmd, i32 nTuCost)
 
     memset(&g_State, 0, sizeof(g_State));
     g_State.nQueueCursor = 0;
-    g_State.bUnk70114 = (u8)g_bSuppressNoTime;
+    g_State.bAiActionActive = (u8)g_bSuppressNoTime;
     pEntry->nCmd    = nCmd;
     pEntry->pUnit   = &g_aUnits[0];
     pEntry->pWeapon = &g_aItems[0];
@@ -374,7 +374,7 @@ static void TestFsmOnMap(void)
           g_Map.status.nCount == 1
           && strcmp(g_Map.status.aszMsg[0], "not enough time") == 0);
 
-    /* bUnk70114 suppresses the message but not the abort. */
+    /* bAiActionActive suppresses the message but not the abort. */
     Reset();
     Map_BuildMoveActionCtx(&g_Map, &g_Tables, &g_Ctx);
     Map_WireMoveActionCtx(&g_Ctx, &g_Wiring);
@@ -384,7 +384,7 @@ static void TestFsmOnMap(void)
     g_bSuppressNoTime = 1;
     RunCmd(3, 4);
     g_bSuppressNoTime = 0;
-    Check("bUnk70114 suppresses the message", g_Map.status.nCount == 0);
+    Check("bAiActionActive suppresses the message", g_Map.status.nCount == 0);
     Check("and still aborts", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
 
     /* Command 3 with TU and armour pressure: the armour callback's two records
@@ -660,12 +660,12 @@ static void TestFsmOnMap(void)
     g_aUnits[0].nUnitType = 0;
     g_aUnits[0].uTu = 0;
     g_aUnits[0].pCell = At(10, 10, 0);
-    g_State.bUnk70114 = 1;
+    g_State.bAiActionActive = 1;
     g_bSuppressNoTime = 1;
     RunCmd(0x11, 4);
     g_bSuppressNoTime = 0;
     Check("a throw with no TU aborts", g_State.aQueue[0].nCmd == TACTCMD_END_MARK);
-    Check("and pushes the no-time record even with bUnk70114 set",
+    Check("and pushes the no-time record even with bAiActionActive set",
           g_Map.status.nCount == 1
           && strcmp(g_Map.status.aszMsg[0], "not enough time") == 0);
 }

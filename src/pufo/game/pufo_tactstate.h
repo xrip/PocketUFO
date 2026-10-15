@@ -115,14 +115,31 @@ typedef struct TactState {
     i32            nTraceX;          /* 0x111BC */
     i32            nTraceY;          /* 0x111C0 */
     i32            nTraceZ;          /* 0x111C4 */
-    u8             gap_70088[12];    /* 0x111C8 */
+    Soldier       *pAiActionUnit;    /* 0x111C8, the unit an AI action is running for.
+                                      * EnemyAi_TryFireOrWander (0x4ABC8, unported) stores it at
+                                      * 0x4AC04 *before* choosing between its fire-burst path and
+                                      * its wander path, so the field names the acting unit, not a
+                                      * walking one. Tact_TickActiveUnit @ 0x544E0 clears this unit's
+                                      * uTu through the pointer when the queue finishes. Widened
+                                      * from the original's i32 because Win64 pointers are 64-bit. */
+    u8             gap_7008C[4];     /* 0x111CC */
+    u16            uKillCredit;      /* 0x111D0, added to the first operative shooter's uKills
+                                      * at 0x54788 and then zeroed as a dword at 0x54790 */
+    u8             gap_700D2[2];     /* 0x111D2 */
     u16            nQueueLen;        /* 0x111D4 */
     u8             bQueueActive;     /* 0x111D6 */
     u8             bUnk70103;        /* 0x111D7 */
     i32            nPhaseTick;       /* 0x111D8 */
     i32            nPhaseMax;        /* 0x111DC */
     u8             gap_70112[2];     /* 0x111E0 */
-    u8             bUnk70114;        /* 0x111E2 */
+    u8             bAiActionActive;  /* 0x111E2, raised unconditionally with pAiActionUnit at
+                                      * 0x4AC1C, before EnemyAi_TryFireOrWander (0x4ABC8, unported)
+                                      * picks fire or wander. Cleared on the wander path's failure
+                                      * (0x4B024), by Tact_InitMission, and by the walker's completion
+                                      * tail (0x544D8). Read as "the AI is driving this action": it
+                                      * suppresses the player-facing "not enough time" record in the
+                                      * move processor and gates the enemy-spotted reaction in the
+                                      * fire processor. */
     u8             bPhaseActive;     /* 0x111E3, IDA bUnk70115 */
     u8             bUnk70116;        /* 0x111E4 */
     u8             gap_70117[3];     /* 0x111E5 */
@@ -262,6 +279,10 @@ bool TactState_EnqueueFireBurst(TactState *pState, const FireBurstSpec *pSpec,
  * they are only emitted here. */
 #define TACTCMD_FIRE_SHOT 14u
 #define TACTCMD_FIRE_MARK 15u
+
+/* 0x54750: while a unit is being tracked, the camera re-centres on a shot's sample cell
+ * only when the travelled distance is a whole multiple of this many voxels. */
+#define PUFO_CAMERA_RECENTRE_STRIDE 60
 
 /* TactState_KickQueue @ 0x4f334. Starts consuming: cursor 0, active set, and
  * both scratch flags cleared. No-op when the queue is empty. */
@@ -680,5 +701,80 @@ typedef struct FireActionCtx {
 } FireActionCtx;
 
 void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx);
+
+/* --- Tact_TickActiveUnit @ 0x54130: the queue walker --------------------------------
+ *
+ * The one caller is GameTick_OnTimer @ 0x274f0 (the 0xC350 WM_TIMER handler), which
+ * already carries a pfnTickActiveUnit seam for exactly this.
+ *
+ * The function drives the queue entry at nQueueCursor and re-runs itself from the tail:
+ *
+ *   1. If nQueueLen == 0, run the action phase first (the phase may fill the queue).
+ *   2. Return when nQueueLen == 0 or bQueueActive == 0.
+ *   3. bFlag0 selects the processor: set -> Tact_ProcessFireAction, clear ->
+ *      Tact_ProcessMoveAction. So a queued action runs the FIRE phase when bFlag0 is
+ *      raised and the MOVE phase otherwise -- the two processors are not both run.
+ *   4. While the context is busy, follow the camera to the action:
+ *        nCmd 0 or 1 or 8 : the unit's own cell, if its bFlags44 bit 0 is set
+ *        nCmd 0xE         : the cell the last aim sample fell into
+ *        nCmd 0x12        : the same, gated on pTarget->pCell->bFlags44 bit 0
+ *      and when pTrackUnit is still NULL, adopt the action's own unit (0xE adopts the
+ *      first XCom unit instead).
+ *   5. If bFlag1 is raised, run Tact_ProcessFallAction, then the queue-completion tail.
+ *   6. Re-run from step 1 while the context is busy, pTrackUnit is NULL, the queue's
+ *      bPhaseActive is clear and Map+0x88 (the cursor-direction countdown) is 0.
+ *
+ * The queue-completion tail (bFlag1 set, bQueueActive cleared) does three things:
+ *   - if bAiActionActive is raised it clears it and zeroes pAiActionUnit's uTu;
+ *   - it walks aQueue[0 .. nQueueCursor-1] for the first nCmd 0xE entry whose unit has
+ *     nUnitType <= 8 and is operative, and adds uKillCredit to that unit's uKills
+ *     before zeroing uKillCredit as a dword;
+ *   - if bUnk70103 is raised it parks the cursor at (-2,-2), re-selects pScanUnit
+ *     (falling back to the first XCom unit when that unit carries bFlags bit 0x20)
+ *     and clears bUnk70103; then runs the action phase once more.
+ *
+ * The move path also has a pre-dispatch step the fire path does not: when the context is
+ * busy and nQueueLen > 1 it clears Map_pSelUnit's bUnk148 and, if the selected unit is
+ * not the tracked camera unit, drops the camera unit and calls Render_Frame. And when
+ * nQueueCursor == 0 it zeroes uKillCredit before the move processor runs.
+ */
+
+/* The five calls that need the world rather than the queue. Injected so the walker is
+ * testable without a renderer or a camera. */
+typedef struct TickHooks {
+    void (*pfnProcessActionPhase)(void *pUser);            /* Tact_ProcessActionPhase @ 0x4d950 */
+    void (*pfnRenderFrame)(void *pUser);                   /* Render_Frame @ 0x22310 */
+    void (*pfnFocusOnCell)(const MapCell *pCell, void *pUser); /* MapView_FocusOnCell @ 0x2c758 */
+    void (*pfnSetCursorPos)(i32 nX, i32 nY, void *pUser);  /* MapCursor_SetPos @ 0x27014 */
+    void (*pfnGameTickStep)(void *pUser);                  /* GameTick_Step @ 0x27324 */
+    void  *pUser;
+} TickHooks;
+
+typedef struct TactTickCtx {
+    struct TactCtx272 *pTactCtx;      /* pTactCtx272 @ 0x157180: bBusy, pCameraUnit,
+                                       * pTrackUnit, pScanUnit */
+    const TickHooks   *pHooks;
+    /* The three phase processors the walker dispatches. The original reaches their
+     * state through the Map block; the port hands each one its own context, so the
+     * walker is where those contexts get wired to the queue. */
+    MoveActionCtx     *pMoveCtx;
+    FireActionCtx     *pFireCtx;
+    FallActionCtx     *pFallCtx;
+    MapCellLookup      pfnLookup;     /* the cell the camera follows */
+    void              *pLookupUser;
+    const MapGeom     *pGeom;         /* Map_nMapDimX/Y, for Map_IsValidCell */
+    AimState          *pAim;          /* Map_adMtX/Y/Z[0] and Map_dTravel */
+    Soldier          **ppSelUnit;     /* Map_pSelUnit @ 0x128CEC */
+    Soldier          **apXcomUnits;   /* Map_apXcomUnits @ 0x128B0C; only [0] is read */
+    TactState         *pMapTactical;  /* pMapTactical @ 0x157198, the queue the walker
+                                       * re-reads bPhaseActive from */
+    u8                *pbTickHold;    /* Map_bTickHold @ 0x5A */
+    u8                *pbFrameScratch;/* Map_bFrameScratch @ 0x254BC */
+    i32               *pnUiSlot10;    /* apUiSlotsA[10] @ 0x88, dword_113A40 */
+} TactTickCtx;
+
+/* Tact_TickActiveUnit @ 0x54130. Returns false when the walker stopped early, which is
+ * what the original's five early returns mean. */
+bool Tact_TickActiveUnit(TactState *pState, const TactTickCtx *pCtx);
 
 #endif /* PUFO_TACTSTATE_H */

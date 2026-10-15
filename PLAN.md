@@ -1830,6 +1830,50 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `game/pufo_objectrec.h` — four sites compare the raw 13 and 35, and none of them says which weapons they are,
   so the names say what the code does instead of guessing.
 
+- [x] **part 64, the queue walker: `Tact_TickActiveUnit (0x54130, 1868 B)`** — the link between the three
+  phase processors and `GameTick_OnTimer`, and the last thing `GameTickHooks.pfnTickActiveUnit` was waiting for.
+  **`bFlag0` picks the processor, it does not gate one of them.** Set runs the fire phase, clear runs the move
+  phase — alternatives, never both. That is why the move processor's prologue raising `bFlag0` matters: it hands
+  the next tick to the fire phase.
+  **The camera follow is per command, and the order of the two halves differs.** Commands 0/1/8 follow
+  `pUnit->pCell` and adopt the tracked unit *before* the focus; command 0xE follows the cell the last aim sample
+  fell into and adopts `Map_apXcomUnits[0]` *after*; command 0x12 is gated on `pTarget->pCell`'s
+  `bFlags44` and adopts `pTarget` *after*. With nothing tracked the camera always follows; with a unit tracked a
+  shot re-centres only when `(int)Map_dTravel % 60 == 0` (0x54750).
+  **`TactState+0x111C8` and `+0x111E2` are one pair, and neither was named.** `+0x111E2` was `bUnk70114`,
+  `+0x111C8` was the first 12 bytes of `gap_70088`. `EnemyAi_TryFireOrWander (0x4ABC8, unported)` stores the acting
+  unit at +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C) together — **unconditionally, before** the branch at
+  0x4ACA0 that picks between its random fire burst and its weapon-drop-and-wander. So the flag is "an AI action is
+  in progress", not "a wander is running", and that is the reading its other two sites need: the move processor
+  suppresses the "not enough time" record while it is set, the fire processor skips the enemy-spotted reaction
+  while it is set. It is cleared on the wander path's failure (0x4B024) — the fire path never clears it — by
+  `Tact_InitMission` and by the walker at 0x544D8, which also zeroes the acting unit's `uTu` through the pointer
+  (0x544E0). Found by searching the disassembly for the `#0x1C8` offset, not by an xref — the field has no xref
+  either. Now `pAiActionUnit` / `bAiActionActive`; the first draft called them `pAiWanderUnit` / `bAiWanderActive`,
+  which was too narrow and is corrected here.
+  **The kill credit is collected over `aQueue[0 .. nQueueCursor-1]` measured *after* `Fall_Tail` moved the
+  cursor.** So the range is every entry that already ran, not "everything but the last". The accumulator at
+  `TactState+0x111D0` is a u16 added to the first shooter with `nUnitType <= 8` that is operative, then zeroed as
+  a dword (0x54790). The first test for this asserted the wrong bound and was rewritten as a bound test.
+  **Hex-Rays double-counts the queue index.** ARM computes `R0 = pState + 56*nQueueCursor` and then `[R0,#0x18]`;
+  Hex-Rays renders that as `v5->aQueue[offsetof(TactState,bFlag0)]`, adding the 0x18 twice. Recorded as an IDB
+  comment at 0x54258 so the next reader does not re-derive a 0x18-entry stride.
+  **Original bugs found (6 ledger rows).** Five unguarded dereferences — `pUnit->pCell->bFlags44` (0x54558),
+  `pTarget->pCell` (0x54288), the AI action-unit pointer (0x544D8), `Map_pSelUnit` (0x54208), `pScanUnit`
+  (0x547E0) — and one asymmetry: the move path's command-0xE camera follow indexes the cell grid straight off the
+  raw aim sample with no bounds test (0x54390), while the fire path calls `Map_IsValidCell` first at 0x54654.
+  96 new checks (12226 total), 2 renames on record (380 per `audit_names.py`), 6 ledger rows (142), coverage
+  **unchanged at 898/1103 (81.4%) and 435608/598792 (72.7%)** — `0x54130` was already credited by the comments
+  the move and fall processors carry, so porting it moves no coverage number, only the `audit_names` flag list
+  (3 → 2). A transient 899/436816 seen mid-unit was inflation from citing `EnemyAi_TryFireOrWander @ 0x4ABC8`
+  (1208 B) in a comment; that citation is now the `Name (0xADDR, unported)` form and is not counted, which is
+  exactly the metric weakness already recorded under "Separate issues". IDB: `TactState` redeclared with
+  `pAiActionUnit` (`Soldier *` @ +0x111C8), `uKillCredit` (u16 @ +0x111D0) and `bAiActionActive` (@ +0x111E2,
+  was `bUnk70114`); comments at 0x544D8, 0x4AC04, 0x4AC1C, 0x4B024, 0x54788, 0x54750, 0x54258 and a function
+  comment at 0x54130. **`GameMap`'s `apTraceExclude` pair is gone for good:** the two exclusion sources are
+  `Map.pSelUnit @ 0x15334` and `Map.pThrowTargetUnit @ 0x150F0`, and `Map_BuildMoveActionCtx` now wires them.
+  **Deviation, recorded not hidden:** no app-layer `TactTickCtx` yet, so `GameTick_OnTimer`'s seam stays unfilled.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2109,6 +2153,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the battle-end and debrief emitter (`Tact_CheckBattleEnd`; the four exits, the 19 debrief lines and their three meta shapes, the loot commit into `aSmapSites`, the Mars restart tail, the signed `abFacilityGrid` byte trap found) | 56/56 (Release) | 11791 | 892/1103 (80.9%) | 417316/598792 (69.7%) | 40 checked, 0 mismatched |
 | the fall processor (`Unit_ApplyFallDamage` + `Tact_ProcessFallAction`; the 0.4f soft-float damage formula, the `_rt_sdiv` operand order behind the psi gate, the LABEL_101/LABEL_111 split, the medikit-before-modes order, 7 original bugs found) | 56/56 (Release) | 11980 | 896/1103 (81.2%) | 426312/598792 (71.2%) | 40 checked, 0 mismatched |
 | the fire-phase processor (`Tact_ProcessFireAction` + the aim's `dTravelSave`/sample-array writes; the muzzle-relative samples, the two disagreeing 1/12 forms, the arc-off-map flag whose register-built writes an xref search misses, 7 original bugs found) | 56/56 (Release) | 12130 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
+| the queue walker (`Tact_TickActiveUnit`; the `bFlag0` fire-or-move choice, the per-command camera rules and their adopt-before/after ordering, the 60-voxel recentre stride, the AI-action pair named, the kill-credit bound, 6 original bugs found; coverage unchanged — the walker was already credited by comment citations) | 56/56 (Release) | 12226 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

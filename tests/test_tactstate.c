@@ -1343,18 +1343,18 @@ static void TestFallActionMoveTail(void)
     CheckEqI32(g_state.nQueueCursor, 1, "  cursor advances into the new entry");
     CheckEqI32(g_nVisCalls, 1, "  LABEL_111 still runs after the team pass");
 
-    /* bUnk70114 set suppresses the message but not the team pass. */
+    /* bAiActionActive set suppresses the message but not the team pass. */
     FallSetup();
     pActor = &g_aFallUnits[0];
     pActor->bFlags = 0x10;
     pActor->pCell  = &g_aFallCells[2][1][1];
     g_bEnemySpotted = 1;
-    g_state.bUnk70114 = 1;
+    g_state.bAiActionActive = 1;
     FallQueueEntry(1, pActor, NULL);
     Tact_ProcessFallAction(&g_state, &g_FallCtx);
-    /* The guard is one condition, not two: bUnk70114 set skips the message AND the
+    /* The guard is one condition, not two: bAiActionActive set skips the message AND the
      * team pass that follows it (0x5376C). */
-    CheckEqI32(g_nStatusCalls, 0, "  bUnk70114 suppresses the spotted message");
+    CheckEqI32(g_nStatusCalls, 0, "  bAiActionActive suppresses the spotted message");
     CheckEqI32(g_state.aQueue[0].nCmd, 1, "  and the team pass is skipped too");
     CheckEqI32(g_state.nQueueLen, 0, "  the queue closes at its own length, not cursor + 2");
 }
@@ -2358,9 +2358,9 @@ static void TestFireTurn(void)
     pE->pUnit->uTu = 20;
     pE->pUnit->bAiDone = 1;
     g_bEnemySpotted = 1;
-    g_state.bUnk70114 = 1;
+    g_state.bAiActionActive = 1;
     Tact_ProcessFireAction(&g_state, &g_FireCtx);
-    CheckEqI32(g_nStatusCalls, 0, "bUnk70114 suppresses the sighting");
+    CheckEqI32(g_nStatusCalls, 0, "bAiActionActive suppresses the sighting");
     CheckEqI32(pE->pUnit->bAiDone, 1, "and leaves AI-done set");
     CheckEqI32(g_nVisCalls, 1, "but the own refresh still runs");
 }
@@ -2962,6 +2962,590 @@ static void TestFireMeleeStamp(void)
     Check(g_state.bFlag1 == 1, "and raises bFlag1");
 }
 
+/* ==========================================================================
+ * Tact_TickActiveUnit @ 0x54130 -- the queue walker
+ * ========================================================================== */
+
+static TactCtx272   g_TickTact;
+static MoveActionCtx g_TickMove;
+static TactTickCtx  g_Tick;
+static Soldier     *g_pTickSelUnit;
+static MapCell     *g_pFocusCell;
+static u8           g_bTickFrameScratch;
+static u8           g_bActionLatch;
+static i32          g_nTickUiSlot10;
+static i32          g_nTickCursorX, g_nTickCursorY;
+static i32          g_nPhaseCalls, g_nFrameCalls, g_nFocusCalls;
+static i32          g_nCursorCalls, g_nStepCalls;
+static bool         g_bPhaseFillsQueue;
+
+static void TickHookPhase(void *pUser)
+{
+    (void)pUser;
+    g_nPhaseCalls++;
+    /* The phase machine can enqueue the opportunity-fire action, which is how a
+     * queue that looked empty gets dispatched on the same call. */
+    if (g_bPhaseFillsQueue) {
+        g_state.nQueueLen    = 1;
+        g_state.bQueueActive = 1;
+    }
+}
+static void TickHookFrame(void *pUser)
+{
+    (void)pUser;
+    g_nFrameCalls++;
+}
+static void TickHookFocus(const MapCell *pCell, void *pUser)
+{
+    (void)pUser;
+    g_nFocusCalls++;
+    g_pFocusCell = (MapCell *)pCell;
+}
+static void TickHookCursor(i32 nX, i32 nY, void *pUser)
+{
+    (void)pUser;
+    g_nCursorCalls++;
+    g_nTickCursorX = nX;
+    g_nTickCursorY = nY;
+}
+static void TickHookStep(void *pUser)
+    { (void)pUser; g_nStepCalls++; }
+
+static const TickHooks g_TickHooks = {
+    TickHookPhase, TickHookFrame, TickHookFocus, TickHookCursor, TickHookStep, NULL
+};
+
+static void TickSetup(void)
+{
+    FireSetup();
+    memset(&g_TickTact, 0, sizeof(g_TickTact));
+    memset(&g_TickMove, 0, sizeof(g_TickMove));
+    memset(&g_Tick, 0, sizeof(g_Tick));
+
+    g_pTickSelUnit      = &g_aFallUnits[1];
+    g_pFocusCell        = NULL;
+    g_bTickFrameScratch = 0;
+    g_bActionLatch      = 0;
+    g_nTickUiSlot10     = 0;
+    g_nTickCursorX      = 0;
+    g_nTickCursorY      = 0;
+    g_nPhaseCalls       = 0;
+    g_nFrameCalls       = 0;
+    g_nFocusCalls       = 0;
+    g_nCursorCalls      = 0;
+    g_nStepCalls        = 0;
+    g_bPhaseFillsQueue  = false;
+
+    g_TickMove.geom.nDimX    = FALL_DIM;
+    g_TickMove.geom.nDimY    = FALL_DIM;
+    g_TickMove.pfnLookup     = FallLookup;
+    g_TickMove.pnLayerScratch  = &g_nLayerScratch;
+    g_TickMove.pnMaxLayerClamp = &g_nMaxLayerClamp;
+    g_TickMove.pnAnimPhase     = &g_nAnimPhase;
+    g_TickMove.pnShotCount     = &g_nShotCount;
+    g_TickMove.pbActionLatch   = &g_bActionLatch;
+    g_TickMove.pbFireStatus1   = &g_bFireStatus1;
+    g_TickMove.ppSelWeapon     = &g_pSelWeapon;
+    g_TickMove.ppThrowTarget   = &g_pThrowTarget;
+    g_TickMove.apXcomUnits     = g_apFallXcom;
+    g_TickMove.apEnemyUnits    = g_apFallEnemy;
+    g_TickMove.apCivilians     = g_apFallCiv;
+    g_TickMove.pnXcomCount     = &g_nFallXcom;
+    g_TickMove.pnEnemyCount    = &g_nFallEnemy;
+    g_TickMove.pfnUpdateVisibility = FallHookVisibility;
+    g_TickMove.pfnPushStatus       = FallHookStatus;
+
+    g_Tick.pTactCtx       = &g_TickTact;
+    g_Tick.pHooks         = &g_TickHooks;
+    g_Tick.pfnLookup      = FireLookup;
+    g_Tick.pGeom          = &g_FireGeom;
+    g_Tick.pAim           = &g_FireAim;
+    g_Tick.ppSelUnit      = &g_pTickSelUnit;
+    g_Tick.apXcomUnits    = g_apFallXcom;
+    g_Tick.pMapTactical   = &g_state;
+    g_Tick.pbTickHold     = &g_bTickHold;
+    g_Tick.pbFrameScratch = &g_bTickFrameScratch;
+    g_Tick.pnUiSlot10     = &g_nTickUiSlot10;
+    g_Tick.pMoveCtx       = &g_TickMove;
+    g_Tick.pFireCtx       = &g_FireCtx;
+    g_Tick.pFallCtx       = &g_FallCtx;
+}
+
+static void TickEntry(u8 nCmd)
+{
+    memset(&g_state, 0, sizeof(g_state));
+    g_state.nQueueLen         = 1;
+    g_state.nQueueCursor      = 0;
+    g_state.bQueueActive      = 1;
+    g_state.nPhaseMax         = 5;
+    g_state.aQueue[0].nCmd    = nCmd;
+    g_state.aQueue[0].pUnit   = &g_aFallUnits[0];
+    g_state.aQueue[0].pTarget = &g_aFallUnits[2];
+    g_state.aQueue[0].pWeapon = &g_FallWeapon;
+}
+
+/* A queue whose current entry the fall processor only tails: nCmd 13 is outside its
+ * switch, so Fall_Tail runs and -- with the cursor at the last entry -- empties the
+ * queue and clears bQueueActive, which is what arms the walker's completion tail.
+ * The walker dispatches aQueue[nQueueCursor], so entry 1 is the live one and entry 0
+ * is the part of the queue already executed. */
+static void TickCompletedTail(void)
+{
+    TickEntry(13);
+    g_state.nQueueLen    = 2;
+    g_state.nQueueCursor = 1;
+    g_state.bFlag0       = 1;   /* the fire phase's default case ends the phase, which
+                                 * is what raises bFlag1 and lets the fall processor run */
+    g_state.bFlag1       = 1;
+    g_state.aQueue[1]    = g_state.aQueue[0];
+    g_aFallUnits[0].bFlags = 0; /* not aiming: a command-14 entry ends the phase too */
+}
+
+static void TestTickQueueGates(void)
+{
+    printf("Tact_TickActiveUnit, the queue gates\n");
+
+    TickSetup();
+    TickEntry(TACTCMD_ACTION18);
+    g_state.nQueueLen = 0;
+    g_state.bFlag0    = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "an empty queue stops the walker");
+    CheckEqI32(g_nPhaseCalls, 1, "the phase machine got the turn");
+    CheckEqI32(g_state.bFlag1, 0, "and no action processor ran");
+
+    /* The phase machine may fill the queue, and the walker picks it up on the
+     * same call because 0x54198 re-reads the length. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_state.nQueueLen  = 0;
+    g_state.nQueueCursor = 0;
+    g_state.bFlag0     = 1;
+    g_state.nPhaseTick = 3;
+    g_state.nPhaseMax  = 5;
+    g_aFallUnits[0].uTu = 10;
+    g_FirePhase.nPhase  = 1;
+    g_bPhaseFillsQueue  = true;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker still stops once");
+    CheckEqI32(g_nPhaseCalls, 1, "the phase machine ran once");
+    CheckEqI32(g_state.nPhaseTick, 4, "  and the queue it filled was dispatched");
+
+    /* bQueueActive is a second, independent gate. */
+    TickSetup();
+    TickEntry(TACTCMD_ACTION18);
+    g_state.nQueueLen    = 2;
+    g_state.bQueueActive = 0;
+    g_state.bFlag0       = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "an inactive queue stops the walker");
+    CheckEqI32(g_nPhaseCalls, 0, "the phase machine is not called for a non-empty queue");
+    CheckEqI32(g_state.bFlag1, 0, "and no processor ran");
+}
+
+static void TestTickDispatch(void)
+{
+    printf("Tact_TickActiveUnit, bFlag0 selects the processor\n");
+
+    /* bFlag0 set runs the FIRE phase. Its turn case advances nPhaseTick; the move
+     * turn case zeroes it, so the two are distinguishable from one number. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_state.bFlag0     = 1;
+    g_state.nPhaseTick = 3;
+    g_state.nPhaseMax  = 5;
+    g_aFallUnits[0].uTu = 10;
+    g_FirePhase.nPhase  = 1;   /* mid-turn: the fire phase charges no TU */
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "an idle context ticks once");
+    CheckEqI32(g_state.nPhaseTick, 4, "the fire phase advanced the phase tick");
+    CheckEqI32(g_aFallUnits[0].uTu, 10, "  a mid-turn phase charges no TU");
+    CheckEqI32(g_state.bFlag1, 0, "4 of 5 ticks does not end the phase");
+
+    /* bFlag0 clear runs the MOVE phase, whose prologue raises bFlag0 for the next
+     * tick and clears bFlag1. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_state.bFlag0     = 0;
+    g_state.nPhaseTick = 3;
+    g_state.nPhaseMax  = 5;
+    g_aFallUnits[0].uTu = 10;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops once here too");
+    CheckEqI32(g_state.nPhaseTick, 0, "the move phase reset the phase tick");
+    CheckEqI32(g_state.bFlag0, 1, "  and its prologue raised bFlag0");
+    CheckEqI32(g_state.bFlag1, 0, "the turn is not finished");
+}
+
+static void TestTickCameraFollow(void)
+{
+    printf("Tact_TickActiveUnit, following the camera to the action\n");
+
+    /* A busy context follows a turn to the unit's own cell when that cell carries
+     * the bFlags44 bit-0 mark, and adopts the unit as the tracked unit. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy        = 1;
+    g_aFallUnits[0].uTu     = 10;
+    g_aFallUnits[0].pCell   = &g_aFallCells[0][1][1];
+    g_aFallCells[0][1][1].bFlags44 = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false,
+          "the adopted tracked unit stops the re-run loop");
+    CheckEqI32(g_nFocusCalls, 1, "the camera focused once");
+    Check(g_pFocusCell == &g_aFallCells[0][1][1], "  on the unit's own cell");
+    Check(g_TickTact.pTrackUnit == &g_aFallUnits[0], "and the walker adopted the unit");
+    CheckEqI32(g_nFrameCalls, 0, "a one-entry queue does not repaint");
+
+    /* No mark, no follow. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy        = 1;
+    g_TickTact.pTrackUnit   = &g_aFallUnits[3];   /* already tracked, so the loop stops */
+    g_aFallUnits[0].uTu     = 10;
+    g_aFallUnits[0].pCell   = &g_aFallCells[0][1][1];
+    g_aFallCells[0][1][1].bFlags44 = 0;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "an unmarked cell stops the walker");
+    CheckEqI32(g_nFocusCalls, 0, "the camera did not move");
+    Check(g_TickTact.pTrackUnit == &g_aFallUnits[3], "  and the tracked unit is unchanged");
+
+    /* 0x541E0: a busy multi-entry queue clears the selected unit's bUnk148 and, when
+     * the selected unit is not the camera unit, drops the camera unit and repaints. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy       = 1;
+    g_TickTact.pTrackUnit  = &g_aFallUnits[3];
+    g_TickTact.pCameraUnit = &g_aFallUnits[2];
+    g_state.nQueueLen      = 2;
+    g_aFallUnits[0].uTu    = 10;
+    g_pTickSelUnit         = &g_aFallUnits[1];
+    g_aFallUnits[1].bUnk148 = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops on the tracked unit");
+    CheckEqI32(g_aFallUnits[1].bUnk148, 0, "the selected unit's bUnk148 is cleared");
+    Check(g_TickTact.pCameraUnit == NULL, "the camera unit is dropped");
+    CheckEqI32(g_nFrameCalls, 1, "  and the frame is repainted");
+
+    /* The same step when the selected unit IS the camera unit: cleared, not dropped. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy       = 1;
+    g_TickTact.pTrackUnit  = &g_aFallUnits[3];
+    g_pTickSelUnit         = &g_aFallUnits[1];
+    g_TickTact.pCameraUnit = &g_aFallUnits[1];
+    g_state.nQueueLen      = 2;
+    g_aFallUnits[0].uTu    = 10;
+    g_aFallUnits[1].bUnk148 = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops here too");
+    CheckEqI32(g_aFallUnits[1].bUnk148, 0, "bUnk148 is still cleared");
+    Check(g_TickTact.pCameraUnit == &g_aFallUnits[1], "the camera unit is kept");
+    CheckEqI32(g_nFrameCalls, 0, "  and nothing is repainted");
+}
+
+static void TestTickCameraFollowShot(void)
+{
+    printf("Tact_TickActiveUnit, following a shot to its sample cell\n");
+
+    /* The fire path follows command 14 only. The unit is not aiming, so the fire
+     * phase ends the phase and touches nothing else -- the camera rule is what is
+     * under test. Sample cell is (x=3, y=2, layer=1). */
+    TickSetup();
+    TickEntry(TACTCMD_FIRE_SHOT);
+    g_state.bFlag0        = 1;
+    g_TickTact.bBusy      = 1;
+    g_TickTact.pTrackUnit = &g_aFallUnits[3];
+    g_aFallUnits[0].bFlags = 0;
+    g_adMtX[0] = 16 * 3 + 5;
+    g_adMtY[0] = 16 * 2 + 5;
+    g_adMtZ[0] = 12 * 1 + 6;
+    g_aFireCells[1][2][3].bFlags44 = 1;
+    g_FireAim.dTravel = 120.0;   /* a whole multiple of the 60-voxel stride */
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the tracked unit stops the walker");
+    CheckEqI32(g_nFocusCalls, 1, "a tracked unit re-centres on a whole stride");
+    Check(g_pFocusCell == &g_aFireCells[1][2][3], "  on the cell the last sample fell into");
+
+    /* Off the stride, the camera holds. */
+    TickSetup();
+    TickEntry(TACTCMD_FIRE_SHOT);
+    g_state.bFlag0        = 1;
+    g_TickTact.bBusy      = 1;
+    g_TickTact.pTrackUnit = &g_aFallUnits[3];
+    g_aFallUnits[0].bFlags = 0;
+    g_adMtX[0] = 16 * 3 + 5;
+    g_adMtY[0] = 16 * 2 + 5;
+    g_adMtZ[0] = 12 * 1 + 6;
+    g_aFireCells[1][2][3].bFlags44 = 1;
+    g_FireAim.dTravel = 125.0;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops here too");
+    CheckEqI32(g_nFocusCalls, 0, "125 of 60 does not re-centre");
+
+    /* With nothing tracked the camera follows regardless of the stride, and the
+     * first XCom unit becomes the tracked unit. */
+    TickSetup();
+    TickEntry(TACTCMD_FIRE_SHOT);
+    g_state.bFlag0        = 1;
+    g_TickTact.bBusy      = 1;
+    g_aFallUnits[0].bFlags = 0;
+    g_apFallXcom[0]       = &g_aFallUnits[2];
+    g_adMtX[0] = 16 * 3 + 5;
+    g_adMtY[0] = 16 * 2 + 5;
+    g_adMtZ[0] = 12 * 1 + 6;
+    g_aFireCells[1][2][3].bFlags44 = 1;
+    g_FireAim.dTravel = 125.0;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the adopted unit stops the walker");
+    CheckEqI32(g_nFocusCalls, 1, "an untracked shot always re-centres");
+    Check(g_TickTact.pTrackUnit == &g_aFallUnits[2], "  and the first XCom unit is adopted");
+
+    /* The sample cell is only followed when it carries the mark. */
+    TickSetup();
+    TickEntry(TACTCMD_FIRE_SHOT);
+    g_state.bFlag0        = 1;
+    g_TickTact.bBusy      = 1;
+    g_TickTact.pTrackUnit = &g_aFallUnits[3];
+    g_aFallUnits[0].bFlags = 0;
+    g_adMtX[0] = 16 * 3 + 5;
+    g_adMtY[0] = 16 * 2 + 5;
+    g_adMtZ[0] = 12 * 1 + 6;
+    g_aFireCells[1][2][3].bFlags44 = 0;
+    g_FireAim.dTravel = 120.0;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops here too");
+    CheckEqI32(g_nFocusCalls, 0, "an unmarked sample cell is not followed");
+}
+
+static void TestTickKillCredit(void)
+{
+    printf("Tact_TickActiveUnit, crediting the kill to the shooter\n");
+
+    /* The first already-executed entry that is a shot by an operative unit of type
+     * 8 or below collects the accumulated kill count. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.aQueue[0].nCmd  = TACTCMD_FIRE_SHOT;
+    g_state.aQueue[0].pUnit = &g_aFallUnits[0];
+    g_aFallUnits[0].nUnitType = 0;
+    g_aFallUnits[0].bStatus   = 0;      /* operative */
+    g_aFallUnits[0].uKills    = 5;
+    g_state.uKillCredit       = 3;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the emptied queue stops the walker");
+    CheckEqI32(g_aFallUnits[0].uKills, 8, "the shooter collects the credit");
+    CheckEqI32(g_state.uKillCredit, 0, "  and the accumulator is cleared");
+
+    /* A unit above type 8 does not collect -- civilians and aliens are excluded. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.aQueue[0].nCmd  = TACTCMD_FIRE_SHOT;
+    g_state.aQueue[0].pUnit = &g_aFallUnits[0];
+    g_aFallUnits[0].nUnitType = 9;
+    g_aFallUnits[0].bStatus   = 0;
+    g_aFallUnits[0].uKills    = 5;
+    g_state.uKillCredit       = 3;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops");
+    CheckEqI32(g_aFallUnits[0].uKills, 5, "type 9 does not collect");
+    CheckEqI32(g_state.uKillCredit, 3, "  and the credit survives");
+
+    /* A non-operative unit does not collect. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.aQueue[0].nCmd  = TACTCMD_FIRE_SHOT;
+    g_state.aQueue[0].pUnit = &g_aFallUnits[0];
+    g_aFallUnits[0].nUnitType = 0;
+    g_aFallUnits[0].bStatus   = 1;      /* not operative */
+    g_aFallUnits[0].uKills    = 5;
+    g_state.uKillCredit       = 3;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops");
+    CheckEqI32(g_aFallUnits[0].uKills, 5, "a non-operative unit does not collect");
+
+    /* Only a shot entry qualifies. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.aQueue[0].nCmd  = TACTCMD_STEP;
+    g_state.aQueue[0].pUnit = &g_aFallUnits[0];
+    g_aFallUnits[0].nUnitType = 0;
+    g_aFallUnits[0].bStatus   = 0;
+    g_aFallUnits[0].uKills    = 5;
+    g_state.uKillCredit       = 3;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops");
+    CheckEqI32(g_aFallUnits[0].uKills, 5, "a step entry does not collect");
+    CheckEqI32(g_state.uKillCredit, 3, "  and the credit survives");
+
+    /* The walk covers 0 .. nQueueCursor-1, and the fall tail has already moved the
+     * cursor past the entry it just ran -- so every executed entry is in range and
+     * the first unexecuted one is not. */
+    TickSetup();
+    TickEntry(13);
+    g_state.nQueueLen    = 3;
+    g_state.nQueueCursor = 2;
+    g_state.bFlag0       = 1;
+    g_state.bFlag1       = 1;
+    g_state.aQueue[1] = g_state.aQueue[0];
+    g_state.aQueue[2] = g_state.aQueue[0];   /* the current entry */
+    g_aFallUnits[0].bFlags    = 0;
+    g_aFallUnits[0].nUnitType = 0;
+    g_aFallUnits[0].bStatus   = 0;
+    g_aFallUnits[0].uKills    = 5;
+    g_aFallUnits[1].nUnitType = 0;
+    g_aFallUnits[1].bStatus   = 0;
+    g_aFallUnits[1].uKills    = 7;
+    g_state.aQueue[1].nCmd    = TACTCMD_FIRE_SHOT;   /* executed */
+    g_state.aQueue[1].pUnit   = &g_aFallUnits[0];
+    g_state.aQueue[3].nCmd    = TACTCMD_FIRE_SHOT;   /* never executed */
+    g_state.aQueue[3].pUnit   = &g_aFallUnits[1];
+    g_state.uKillCredit       = 3;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the emptied queue stops the walker");
+    CheckEqI32(g_aFallUnits[0].uKills, 8, "an executed entry is collected from");
+    CheckEqI32(g_aFallUnits[1].uKills, 7, "  an unexecuted entry is not");
+    CheckEqI32(g_state.uKillCredit, 0, "and the credit is cleared");
+}
+
+static void TestTickAiActionTail(void)
+{
+    printf("Tact_TickActiveUnit, the finished AI action\n");
+
+    TickSetup();
+    TickCompletedTail();
+    g_state.bAiActionActive  = 1;
+    g_state.pAiActionUnit    = &g_aFallUnits[3];
+    g_aFallUnits[3].uTu      = 40;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the emptied queue stops the walker");
+    CheckEqI32(g_state.bAiActionActive, 0, "the AI-action flag is cleared");
+    CheckEqI32(g_aFallUnits[3].uTu, 0, "  and the acting unit is left with no TU");
+
+    /* While the queue is still active the AI action is left alone. */
+    TickSetup();
+    TickEntry(13);
+    g_state.nQueueLen        = 2;
+    g_state.nQueueCursor     = 0;   /* Fall_Tail advances to 1 of 2, queue stays active */
+    g_state.bFlag0           = 1;
+    g_state.bFlag1           = 1;
+    g_aFallUnits[0].bFlags   = 0;
+    g_state.bAiActionActive  = 1;
+    g_state.pAiActionUnit    = &g_aFallUnits[3];
+    g_aFallUnits[3].uTu      = 40;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "an idle context stops the walker");
+    CheckEqI32(g_state.bAiActionActive, 1, "an active queue leaves the AI action up");
+    CheckEqI32(g_aFallUnits[3].uTu, 40, "  and leaves the unit's TU");
+}
+
+static void TestTickSelectEpilogue(void)
+{
+    printf("Tact_TickActiveUnit, the opportunity-fire epilogue\n");
+
+    /* bUnk70103 parks the cursor off the map and re-selects; a scan unit carrying
+     * bFlags bit 0x20 cannot be selected, so the first XCom unit takes its place. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103       = 1;
+    g_TickTact.pScanUnit    = &g_aFallUnits[1];
+    g_aFallUnits[1].bFlags  = 0x20;
+    g_apFallXcom[0]         = &g_aFallUnits[2];
+    g_pTickSelUnit          = &g_aFallUnits[1];
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the emptied queue stops the walker");
+    CheckEqI32(g_nCursorCalls, 1, "the cursor is repositioned once");
+    CheckEqI32(g_nTickCursorX, -2, "  at (-2, -2)");
+    CheckEqI32(g_nTickCursorY, -2, "");
+    Check(g_pTickSelUnit == &g_aFallUnits[2], "a flagged scan unit falls back to the first XCom unit");
+    CheckEqI32(g_state.bUnk70103, 0, "and the flag is cleared");
+    CheckEqI32(g_nPhaseCalls, 1, "the phase machine runs once at the end");
+
+    /* An unflagged scan unit is selected directly. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103       = 1;
+    g_TickTact.pScanUnit    = &g_aFallUnits[1];
+    g_aFallUnits[1].bFlags  = 0x00;
+    g_apFallXcom[0]         = &g_aFallUnits[2];
+    g_pTickSelUnit          = &g_aFallUnits[0];
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops");
+    Check(g_pTickSelUnit == &g_aFallUnits[1], "the scan unit itself is selected");
+
+    /* Without the flag nothing of the epilogue happens, but the phase still runs. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103       = 0;
+    g_TickTact.pScanUnit    = &g_aFallUnits[1];
+    g_pTickSelUnit          = &g_aFallUnits[0];
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops");
+    CheckEqI32(g_nCursorCalls, 0, "no cursor move without the flag");
+    Check(g_pTickSelUnit == &g_aFallUnits[0], "  and the selection is untouched");
+    CheckEqI32(g_nPhaseCalls, 1, "the phase machine still runs");
+}
+
+static void TestTickReRun(void)
+{
+    printf("Tact_TickActiveUnit, the busy re-run loop\n");
+
+    /* Busy, nothing tracked, no phase-active flag and no countdown: the walker steps
+     * the game tick and re-runs itself until the queue empties. The move phase raises
+     * bFlag0, so the second pass runs the fire phase, whose turn case ends the phase
+     * at 1 of 0 ticks; the fall tail then empties the queue. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy      = 1;
+    g_aFallUnits[0].uTu   = 10;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker stops when the queue empties");
+    CheckEqI32(g_nStepCalls, 2, "GameTick_Step ran on each busy pass");
+    CheckEqI32(g_state.nQueueLen, 0, "the queue was emptied");
+    CheckEqI32(g_state.bQueueActive, 0, "  and the queue was deactivated");
+    CheckEqI32(g_nPhaseCalls, 2, "the phase machine ran after the emptying and on the empty queue");
+
+    /* bPhaseActive on the queue stops the re-run before any game tick. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy      = 1;
+    g_aFallUnits[0].uTu   = 10;
+    g_state.bPhaseActive  = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "a raised phase flag stops the walker");
+    CheckEqI32(g_nStepCalls, 0, "no game tick ran");
+
+    /* A tracked unit stops it just as hard. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy       = 1;
+    g_TickTact.pTrackUnit  = &g_aFallUnits[3];
+    g_aFallUnits[0].uTu    = 10;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "a tracked unit stops the walker");
+    CheckEqI32(g_nStepCalls, 0, "no game tick ran");
+
+    /* The countdown slot is read AFTER the game tick, so one tick runs and then stops. */
+    TickSetup();
+    TickEntry(TACTCMD_TURN);
+    g_TickTact.bBusy      = 1;
+    g_aFallUnits[0].uTu   = 10;
+    g_nTickUiSlot10       = 5;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "a running countdown stops the walker");
+    CheckEqI32(g_nStepCalls, 1, "exactly one game tick ran");
+}
+
+static void TestTickHoldReturns(void)
+{
+    printf("Tact_TickActiveUnit, the tick-hold and frame-scratch returns\n");
+
+    /* Map_bFrameScratch stops the walker right after the fall processor, before the
+     * completion tail -- the epilogue that would otherwise run does not. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103       = 1;
+    g_TickTact.pScanUnit    = &g_aFallUnits[1];
+    g_bTickFrameScratch     = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "frame scratch stops the walker");
+    CheckEqI32(g_nCursorCalls, 0, "the epilogue did not run");
+    CheckEqI32(g_nPhaseCalls, 0, "  nor did the phase machine");
+
+    /* Map_bTickHold does the same. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103    = 1;
+    g_TickTact.pScanUnit = &g_aFallUnits[1];
+    g_bTickHold          = 1;
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "tick hold stops the walker");
+    CheckEqI32(g_nCursorCalls, 0, "the epilogue did not run");
+
+    /* And with neither set, the same fixture does run the epilogue -- the two
+     * returns are the only difference. */
+    TickSetup();
+    TickCompletedTail();
+    g_state.bUnk70103       = 1;
+    g_TickTact.pScanUnit    = &g_aFallUnits[1];
+    g_aFallUnits[1].bFlags  = 0x00;
+    g_pTickSelUnit          = &g_aFallUnits[0];
+    Check(Tact_TickActiveUnit(&g_state, &g_Tick) == false, "the walker runs to the end");
+    CheckEqI32(g_nCursorCalls, 1, "the epilogue ran");
+    CheckEqI32(g_nPhaseCalls, 1, "  and so did the phase machine");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -3002,6 +3586,16 @@ int main(void)
     TestFireDecaySweep();
     TestFireThrowFlight();
     TestFireMeleeStamp();
+
+    TestTickQueueGates();
+    TestTickDispatch();
+    TestTickCameraFollow();
+    TestTickCameraFollowShot();
+    TestTickKillCredit();
+    TestTickAiActionTail();
+    TestTickSelectEpilogue();
+    TestTickReRun();
+    TestTickHoldReturns();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

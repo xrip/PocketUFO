@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 435608 / 598792 (72.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 12130 |
+| Test checks run | 12226 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -90,7 +90,7 @@ is the module that answers to it.
 | `0x2d82c` | `Gfx_PackRgb565Pair` | 1148 | `src/pufo/game/pufo_font.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0xa306c` | `SoftSurf_BlitIndexed_Inner` | 860 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3638` | `SoftSurf_BlitIndexedKeyed_Inner` | 812 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
-| `0x22310` | `Render_Frame` | 756 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_renderframe.h` |
+| `0x22310` | `Render_Frame` | 756 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_renderframe.h` (+1) |
 | `0xa33c8` | `SoftSurf_BlitRawGlyph` | 604 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3f94` | `SoftSurf_FillRect_Inner` | 576 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0xa3bb8` | `Blit_CopyRows_HiRes` | 512 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
@@ -287,7 +287,7 @@ is the module that answers to it.
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
 | `0x55060` | `Map_LoadRmp` | 952 | `src/pufo/game/pufo_rmp.c`, `src/pufo/game/pufo_rmp.h` |
 | `0x49ef0` | `Unit_RecalcInventoryStat` | 940 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_tacthud.h` (+2) |
-| `0x4d950` | `Tact_ProcessActionPhase` | 932 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
+| `0x4d950` | `Tact_ProcessActionPhase` | 932 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x18a68` | `Map_BuildDeployConfirmYesNo` | 924 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x49410` | `Soldier_Generate` | 892 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x36830` | `Ship_RemoveWithCargo` | 860 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
@@ -334,7 +334,7 @@ is the module that answers to it.
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x48028` | `Unit_bScanOpportunityFire` | 272 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
-| `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/game/pufo_timer.h` |
+| `0x274f0` | `GameTick_OnTimer` | 268 | `src/pufo/game/pufo_tactstate.h`, `src/pufo/game/pufo_timer.h` |
 | `0x18774` | `TactAction_ConfirmFireBurst` | 240 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` (+1) |
 | `0x178d4` | `TactAction_ConfirmUseItem` | 236 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x430cc` | `Soldiers_Reload` | 224 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
@@ -353,7 +353,7 @@ is the module that answers to it.
 | `0x179e4` | `Tact_TryFireMode4` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x17a80` | `Tact_TryFireMode10` | 156 | `src/pufo/game/pufo_tactui.h` |
 | `0x17b1c` | `Tact_TryFireMode5` | 156 | `src/pufo/game/pufo_tactui.h` |
-| `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_input.h` (+3) |
+| `0x2c758` | `MapView_FocusOnUnit` | 156 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_input.h` (+4) |
 | `0x18380` | `Tact_BeginMultiTarget` | 152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_tactui.c` (+1) |
 | `0x276f0` | `MapView_SetCamOffset` | 152 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
@@ -1328,7 +1328,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactend` | PASS | 395 |
 | `test_tacthud` | PASS | 266 |
 | `test_tactinit` | PASS | 85 |
-| `test_tactstate` | PASS | 486 |
+| `test_tactstate` | PASS | 582 |
 | `test_tactui` | PASS | 423 |
 | `test_template` | PASS | 48 |
 | `test_terrain` | PASS | 59 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 529 citations.
+parity report. Total: 532 citations.
 
 ### Offsets below the image base (40)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (489)
+### At or above the image base (492)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1421,6 +1421,7 @@ against the IDB when the final report is assembled.
 - `0x128b00`
 - `0x128b04`
 - `0x128b08`
+- `0x128b0c`
 - `0x128cec`
 - `0x1330c`
 - `0x133a4`
@@ -1699,6 +1700,7 @@ against the IDB when the final report is assembled.
 - `0x1b114`
 - `0x21fc8`
 - `0x254b0`
+- `0x254bc`
 - `0x2fd30`
 - `0x319f4`
 - `0x33618`
@@ -1721,6 +1723,7 @@ against the IDB when the final report is assembled.
 - `0x5171c`
 - `0x52ac8`
 - `0x5365c`
+- `0x544e0`
 - `0x58e7c`
 - `0x5d30c`
 - `0x5d514`

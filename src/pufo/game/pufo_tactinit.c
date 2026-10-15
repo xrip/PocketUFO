@@ -662,7 +662,7 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
     pEnv->pMap->status.nCount  = 0;                 /* unk_113A0C @ Map+0x54 */
     *pEnv->pbFire2             = 0;                 /* byte_113A0A @ Map+0x52 */
     pEnv->pTactState->gap_70112[1] = 0;             /* TactState+0x111E1 */
-    pEnv->pTactState->bUnk70114    = 0;             /* TactState+0x111E2 */
+    pEnv->pTactState->bAiActionActive    = 0;             /* TactState+0x111E2 */
     pEnv->pTactState->bPhaseActive = 0;             /* TactState+0x111E3 */
     pEnv->pMap->nCivilianCount = 0;                 /* nCivilianUnitCount @ Map+0x15120 */
     *pEnv->pbSlot8Byte2 = 0;                        /* Map+0x82 */

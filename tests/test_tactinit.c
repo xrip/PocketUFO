@@ -538,7 +538,7 @@ static void TestPrologueFlags(void)
     CheckEqI32(s_State.nQueueLen, 0, "TactState.nQueueLen cleared");
     CheckEqI32(s_State.bQueueActive, 0, "TactState.bQueueActive cleared");
     CheckEqI32(s_State.gap_70112[1], 0, "TactState+0x111E1 cleared");
-    CheckEqI32(s_State.bUnk70114, 0, "TactState.bUnk70114 cleared");
+    CheckEqI32(s_State.bAiActionActive, 0, "TactState.bAiActionActive cleared");
     CheckEqI32(s_State.bPhaseActive, 0, "TactState.bPhaseActive cleared");
     CheckEqI32(s_bSweepArmed, 1, "apUiSlotsA[2] armed by the tail");
     CheckEqI32(s_bDrawIso, 1, "bDrawIsoLayer set by the tail");

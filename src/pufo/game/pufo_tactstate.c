@@ -612,11 +612,11 @@ static void MoveAbortMsg(TactState *pState, const MoveActionCtx *pCtx, i32 nMsg)
 }
 
 /* LABEL_98 and LABEL_124: the "not enough time" record, suppressed while
- * bUnk70114 is set. Cases 1, 3, 4, 5, 7 and 0xE land here; cases 0x11 and 0x12
+ * bAiActionActive is set. Cases 1, 3, 4, 5, 7 and 0xE land here; cases 0x11 and 0x12
  * use LABEL_3, which pushes unconditionally. */
 static void MoveAbortNoTime(TactState *pState, const MoveActionCtx *pCtx)
 {
-    if (pState->bUnk70114 == 0) {
+    if (pState->bAiActionActive == 0) {
         pCtx->pfnPushStatus(MOVE_MSG_NO_TIME, pCtx->pCallbackUser);
     }
     MoveAbort(pState, pCtx);
@@ -1848,7 +1848,7 @@ static void FallStepTail(TactState *pState, const FallActionCtx *pCtx, Soldier *
 
     Fall_UpdateVisibility(pCtx, pActor);
 
-    if (*pCtx->pbEnemySpotted != 0 && pState->bUnk70114 == 0) {
+    if (*pCtx->pbEnemySpotted != 0 && pState->bAiActionActive == 0) {
         Fall_Push(pCtx, PUFO_TXTREC_SPOTTED);
         pActor->bFlags &= (u8)~0x02u;
         Unit_UpdateAnimPose(pActor, NULL, NULL);
@@ -2200,7 +2200,7 @@ void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx)
         }
         pUnit->bFacing = (u8)nFacing;
         Fire_UpdateVisibility(pCtx, pUnit);
-        if (*pCtx->pbEnemySpotted != 0 && pState->bUnk70114 == 0) {
+        if (*pCtx->pbEnemySpotted != 0 && pState->bAiActionActive == 0) {
             pUnit->bAiDone = 0;
             Fire_Push(pCtx, PUFO_TXTREC_SPOTTED);
             Fire_TeamVisibility(pCtx, pState);
@@ -2563,5 +2563,210 @@ void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx)
     default:
         Fire_EndPhase(pState);
         return;
+    }
+}
+
+/* --- Tact_TickActiveUnit @ 0x54130 -------------------------------------------------- */
+
+/* 0x5429C..0x54344 and 0x545B8..0x54700: the cell the last aim sample fell into.
+ *   layer = (int)Map_adMtZ[0] / 12   (_rt_sdiv at 0x542C4)
+ *   y     = (int)Map_adMtY[0] / 16   (MOVS / ADDMI #0xF / ASR#4 at 0x54304 = C truncation)
+ *   x     = (int)Map_adMtX[0] / 16   (0x5432C)
+ * and the index 60*(60*layer + y) + x is applied to Map.apCells with no bounds test.
+ * The port goes through the injected lookup instead, so an out-of-map sample gives NULL
+ * and the camera simply does not follow. */
+static MapCell *Tick_SampleCell(const TactTickCtx *pCtx)
+{
+    const AimState *pAim = pCtx->pAim;
+    i32 nLayer = (i32)pAim->padMtZ[0] / PUFO_VOX_PER_CELL_Z;
+    i32 nY     = (i32)pAim->padMtY[0] / PUFO_VOX_PER_CELL_Y;
+    i32 nX     = (i32)pAim->padMtX[0] / PUFO_VOX_PER_CELL_X;
+    return pCtx->pfnLookup(nX, nY, nLayer, pCtx->pLookupUser);
+}
+
+static void Tick_Focus(const TactTickCtx *pCtx, const MapCell *pCell)
+{
+    const TickHooks *h = pCtx->pHooks;
+    if (h != NULL && h->pfnFocusOnCell != NULL) {
+        h->pfnFocusOnCell(pCell, h->pUser);
+    }
+}
+
+bool Tact_TickActiveUnit(TactState *pState, const TactTickCtx *pCtx)
+{
+    const TickHooks *h = pCtx->pHooks;
+    struct TactCtx272 *pTact = pCtx->pTactCtx;
+
+    for (;;) {
+        /* 0x54188: an empty queue hands the turn to the phase machine, which may fill
+         * the queue before the re-read at 0x54198. */
+        if (pState->nQueueLen == 0 && h != NULL && h->pfnProcessActionPhase != NULL) {
+            h->pfnProcessActionPhase(h->pUser);
+        }
+        if (pState->nQueueLen == 0 || pState->bQueueActive == 0) {
+            return false;
+        }
+
+        TactQueueEntry *pEntry = &pState->aQueue[pState->nQueueCursor];
+
+        if (pState->bFlag0 != 0) {
+            /* --- the fire phase (0x54584) --- */
+            Tact_ProcessFireAction(pState, pCtx->pFireCtx);
+
+            /* 0x5458c: only a busy context follows the camera, and only for a shot. */
+            if (pTact->bBusy != 0 && pEntry->nCmd == TACTCMD_FIRE_SHOT) {
+                MapCell *pCell = Tick_SampleCell(pCtx);
+                if (pCell != NULL && (pCell->bFlags44 & 1) != 0) {
+                    /* 0x54710: with no tracked unit the camera always follows; with one
+                     * it re-centres only every 60 voxels of travelled distance. */
+                    if (pTact->pTrackUnit == NULL
+                        || (i32)pCtx->pAim->dTravel % PUFO_CAMERA_RECENTRE_STRIDE == 0) {
+                        Tick_Focus(pCtx, pCell);
+                        if (pTact->pTrackUnit == NULL) {
+                            pTact->pTrackUnit = pCtx->apXcomUnits[0]; /* 0x5446C */
+                        }
+                    }
+                }
+            }
+        } else {
+            /* --- the move phase (0x541c8) --- */
+            if (pState->nQueueCursor == 0) {
+                pState->uKillCredit = 0; /* 0x541DC, a dword store */
+            }
+            /* 0x541E0: a multi-entry busy queue drops the camera unit and repaints. */
+            if (pTact->bBusy != 0 && pState->nQueueLen > 1) {
+                Soldier *pSel = *pCtx->ppSelUnit;
+                pSel->bUnk148 = 0;
+                if (pSel != pTact->pCameraUnit) {
+                    pTact->pCameraUnit = NULL;
+                    if (h != NULL && h->pfnRenderFrame != NULL) {
+                        h->pfnRenderFrame(h->pUser);
+                    }
+                }
+            }
+
+            Tact_ProcessMoveAction(pState, pCtx->pMoveCtx);
+
+            if (pTact->bBusy != 0) {
+                switch (pEntry->nCmd) {
+                case TACTCMD_TURN:
+                case TACTCMD_STEP:
+                case TACTCMD_DEATH_FLASH:
+                    /* 0x54558: the unit's own cell. ORIGINAL BUG (0x54558): pUnit and
+                     * pCell are dereferenced with no test that the entry carries either. */
+                    if (pEntry->pUnit != NULL && pEntry->pUnit->pCell != NULL
+                        && (pEntry->pUnit->pCell->bFlags44 & 1) != 0) {
+                        if (pTact->pTrackUnit == NULL) {
+                            pTact->pTrackUnit = pEntry->pUnit; /* 0x54574, before the focus */
+                        }
+                        Tick_Focus(pCtx, pEntry->pUnit->pCell);
+                    }
+                    break;
+
+                case TACTCMD_FIRE_SHOT:
+                    /* 0x54390: the sample cell, with NO bounds test here -- unlike the
+                     * fire path, which tests Map_IsValidCell first at 0x54654. */
+                    {
+                        MapCell *pCell = Tick_SampleCell(pCtx);
+                        if (pCell != NULL && (pCell->bFlags44 & 1) != 0) {
+                            Tick_Focus(pCtx, pCell);
+                            if (pTact->pTrackUnit == NULL) {
+                                pTact->pTrackUnit = pCtx->apXcomUnits[0];
+                            }
+                        }
+                    }
+                    break;
+
+                case TACTCMD_ACTION18:
+                    /* 0x54288: gated on the target's own cell, then focused on the
+                     * sample cell, then the target is adopted. ORIGINAL BUG (0x54288):
+                     * pTarget and its pCell are dereferenced with no test; only the
+                     * psi command writes pTarget. */
+                    if (pEntry->pTarget != NULL && pEntry->pTarget->pCell != NULL
+                        && (pEntry->pTarget->pCell->bFlags44 & 1) != 0) {
+                        MapCell *pCell = Tick_SampleCell(pCtx);
+                        if (pCell != NULL) {
+                            Tick_Focus(pCtx, pCell);
+                        }
+                        if (pTact->pTrackUnit == NULL) {
+                            pTact->pTrackUnit = pEntry->pTarget; /* 0x54374, after the focus */
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
+                }
+            }
+        }
+
+        /* --- 0x54478: the fall processor and the queue-completion tail --- */
+        if (pState->bFlag1 != 0) {
+            Tact_ProcessFallAction(pState, pCtx->pFallCtx);
+
+            if (*pCtx->pbTickHold != 0 || *pCtx->pbFrameScratch != 0) {
+                return false;
+            }
+
+            /* 0x544AC: a finished AI action parks the unit it was running. ORIGINAL BUG
+             * (0x544D8): pAiActionUnit is dereferenced with no NULL test. */
+            if (pState->bAiActionActive != 0 && pState->bQueueActive == 0) {
+                pState->bAiActionActive = 0;
+                pState->pAiActionUnit->uTu = 0;
+            }
+
+            /* 0x544E4: credit the kills to the first shooter in the part of the queue
+             * already executed. The gate is nUnitType <= 8 AND operative (0x5451C,
+             * 0x5452C) -- a civilian or a panicking unit does not collect. */
+            if (pState->bQueueActive == 0) {
+                bool bCredited = false;
+                for (i32 i = 0; i < pState->nQueueCursor && !bCredited; ++i) {
+                    if (pState->aQueue[i].nCmd != TACTCMD_FIRE_SHOT) {
+                        continue;
+                    }
+                    Soldier *pUnit = pState->aQueue[i].pUnit;
+                    if (pUnit->nUnitType > 8 || !Unit_bIsOperative(pUnit)) {
+                        continue;
+                    }
+                    pUnit->uKills += pState->uKillCredit;
+                    pState->uKillCredit = 0; /* 0x54790, a dword store */
+                    bCredited = true;
+                }
+            }
+
+            if (*pCtx->pbTickHold != 0) {
+                return false;
+            }
+
+            if (pState->bQueueActive == 0) {
+                /* 0x547B4: the opportunity-fire epilogue parks the cursor and re-selects. */
+                if (pState->bUnk70103 != 0) {
+                    if (h != NULL && h->pfnSetCursorPos != NULL) {
+                        h->pfnSetCursorPos(-2, -2, h->pUser);
+                    }
+                    Soldier *pScan = pTact->pScanUnit;
+                    if ((pScan->bFlags & 0x20) != 0) {
+                        pScan = pCtx->apXcomUnits[0];
+                    }
+                    *pCtx->ppSelUnit = pScan;
+                    pState->bUnk70103 = 0;
+                }
+                if (h != NULL && h->pfnProcessActionPhase != NULL) {
+                    h->pfnProcessActionPhase(h->pUser);
+                }
+            }
+        }
+
+        /* --- 0x54814: keep ticking while the context is busy and nothing is tracked --- */
+        if (pTact->bBusy == 0 || pTact->pTrackUnit != NULL
+            || pCtx->pMapTactical->bPhaseActive != 0) {
+            return false;
+        }
+        if (h != NULL && h->pfnGameTickStep != NULL) {
+            h->pfnGameTickStep(h->pUser);
+        }
+        if (pCtx->pMapTactical->bPhaseActive != 0 || *pCtx->pnUiSlot10 != 0) {
+            return false;
+        }
     }
 }
