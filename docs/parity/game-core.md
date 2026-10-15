@@ -11129,3 +11129,71 @@ Deviations:
 
 IDB: `unk_161A2C` named `BuySell_nTransTotal`; function comments at 0x75464 and 0x75160 giving the
 row-kind branches, the two meta colour triples and the timer-bound loop.
+## BuySellScreen_ValidateCapacity / BuySellScreen_UpdatePrices -- the buy screen's quantity controls
+
+Port: `BuySellScreen_ValidateCapacity` and `BuySellScreen_UpdatePrices` in
+src/pufo/game/pufo_baseui.c, with `BuySellCapacityEnv`, the `PufoBuySellRowMarker` and
+`PufoBuySellShortfall` enums and the three price macros in pufo_baseui.h. Evidence: 0x75b88
+(1280 bytes) and 0x75878 (784 bytes) -- the click handlers BuySellScreen_BuildControls installs into
+the panel click slot at +0xBCC: UpdatePrices onto pBuySellPanelB (0x765CC) and ValidateCapacity onto
+pBuySellPanelC (0x766EC). Test: `TestBuySellCapacityGate` in tests/test_baseui.c, 61 checks.
+
+Both read the selected row from the cached index at unk_186BE8 and take the row kind from
+`pBuySellPanelA.anLineAux[nRow]`, the same marker BuySellScreen_BuildPanels writes, and both repeat
+`nRadarPulseTimer / 10 + 1` times -- the radar screen's pulse countdown again, so the defect already
+recorded for 0x75160 and 0x75464 applies here too.
+
+Everything they change lands on the transfer flow's working site, `aSmapSites[nSiteCount]`: the
+record AT the site count, the slot Transfer_ResetSite (0x9690c, not ported) clears and
+BuySellScreen_ConfirmSiteAndClose commits. The ARM builds the address as `0x162030 + 2*(371*count +
+slot) + 2` (0x75D88: `MOV R3,#0x170; ORR R3,R3,#3` for 371, `MUL` by the count), which is the u16
+column of a 742-byte site record.
+
+ValidateCapacity buys one unit per pass, and the capacity test depends on the row kind:
+
+1. 117 and 118, the two craft products (0x75C28..0x75C84). Budget `Base_CalcHangarCap`, pressure
+   `Base_CountShipsAtBase + Base_CountInboundTransfers + 1`. Over it: shortfall 2. Note that
+   Base_CountInboundTransfers is called with the site count as the site index, so the pending craft
+   already queued on the working site counts against the hangar -- which is why a second pass in the
+   same click fails even though nothing else changed.
+2. Every other product row (0x75C88..0x75D10). Budget `Base_CalcStoresCapacity`, pressure
+   `Base_CountItemQtyAcrossBases + ObjectRecFull.bCargoSize (0xC6) + Base_CalcStorageUsed`. Over it:
+   shortfall 3.
+3. Then, for any product row, `uPrice (0xBC) > (unsigned)nFunds` (0x75D18, `CMP`/`BHI`): shortfall 1.
+4. The pass itself: 117/118 also bump the site's signed `bUnk518` (0x206, `LDRSB`/`STRB` at
+   0x75D54); panel D's `anLineAux[nRow] += 1`; `site.auItemQty[nAux] += 1`; `nFunds -= uPrice`;
+   `BuySell_nTransTotal += uPrice`.
+5. 1000 / 112 / 113 take the other branch (0x75E08..0x75E64). Budget `Base_CalcLivingQuartersCap`,
+   pressure `Base_CalcOccupiedSpace + Base_CountOutboundTransferSpace + 1`. Over it: shortfall 0.
+   Then the fixed prices -- 40000 a soldier (0x9C40), 50000 an engineer (0xC350), 60000 a scientist
+   (0xEA60) -- against nFunds, shortfall 1. A soldier bumps nSoldierHireCount (0x159D90) and the
+   site's `uRecoveredSoldiers` (0x202) and the pass continues; an engineer bumps `auItemQty[112]` and
+   a scientist `auItemQty[113]`, and both `return` out of the whole function (0x76008, 0x7607C), so
+   one click queues at most one crew member however long the loop is.
+
+UpdatePrices is the mirror and sells one unit per pass with no capacity test at all: panel D's count
+is the only guard, and a zero count skips the body without leaving the loop. 1000 gives back 40000
+and decrements nSoldierHireCount and `uRecoveredSoldiers`; 112 and 113 give back 50000 and 60000,
+decrement `auItemQty[112]` / `[113]` and return; any other row decrements panel D, decrements the
+signed `bUnk518` for 117/118, decrements `auItemQty[nAux]` and moves the price back.
+
+The shortfall flag byte_1870C8 is written in three shapes, and the difference is real: the
+living-quarters path (0x75F98) and the crew-price path (0x75F74) store 1 unconditionally, the hangar
+and stores paths (0x75F34, 0x75F54) store 1 only when it is still clear, and the product-price path
+(0x75F64) stores 1 only when clear and then uses the flag's own value as the reason code -- 1 either
+way, because nothing in the program writes a different value there. The reason always lands in
+dword_1870B4[0]: 0 living quarters, 1 funds, 2 hangar, 3 stores.
+
+Deviations:
+- The original bounds nothing. It indexes `aSmapSites[nSiteCount]`, `apObjects[nAux]` and the panel
+  arrays blindly, so an alien row (aux = slot + 2000) would write `auItemQty` past the 256 columns of
+  the site record; the port bounds the row, the slot and the site.
+- The original's return value is a residue -- the site pointer, the loop limit, or `&dword_1870B4` --
+  that no caller reads; the port returns the shortfall code, or -1 when every pass completed.
+- Missing panels, cursor, funds and total pointers are skipped; the original dereferences them.
+
+IDB: `unk_159D90` named `nSoldierHireCount` (typed `int`, with the observed use recorded in a comment),
+function comments at 0x75b88 and 0x75878. The `PufoBuySellRowMarker` enum gained PUFO_ROW_ENGINEER,
+PUFO_ROW_SCIENTIST, PUFO_ROW_CRAFT_FIRST and PUFO_ROW_CRAFT_SECOND; its two older members stay named
+BUYSELL_ROW_SOLDIER and BUYSELL_ROW_ALIEN_BIAS because enum members are not globals and the rename
+tool cannot retitle them.

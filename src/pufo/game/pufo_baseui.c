@@ -535,7 +535,8 @@ void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv)
     if (pEnv->pPanelA != NULL && pEnv->pPanelC != NULL && pEnv->pPanelE != NULL) {
         for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
             i32 nAux = pEnv->pPanelA->anLineAux[i];
-            if (nAux > 116 && nAux < 122 && pEnv->pPanelE->anLineAux[i] == 1) {
+            if (nAux >= PUFO_ROW_CRAFT_FIRST && nAux <= PUFO_ROW_CRAFT_LAST
+                && pEnv->pPanelE->anLineAux[i] == 1) {
                 i32 nIdx = Ship_FindIndexById(pEnv->apCrafts, pEnv->nCraftCount,
                                               pEnv->pPanelC->anLineAux[i]); /* 0x74DF4 */
                 if (pEnv->anAssignedList != NULL && nCraftRows < pEnv->nAssignedCapacity) {
@@ -577,7 +578,7 @@ void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv)
     nSoldierRows = 0;
     if (pEnv->pPanelA != NULL && pEnv->pPanelC != NULL && pEnv->pPanelE != NULL) {
         for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
-            if (pEnv->pPanelA->anLineAux[i] == 1000 && pEnv->pPanelE->anLineAux[i] == 1) {
+            if (pEnv->pPanelA->anLineAux[i] == PUFO_ROW_SOLDIER && pEnv->pPanelE->anLineAux[i] == 1) {
                 if (pEnv->anSoldierIdList != NULL && nSoldierRows < pEnv->nSoldierIdCapacity) {
                     pEnv->anSoldierIdList[nSoldierRows] = pEnv->pPanelC->anLineAux[i]; /* 0x74F88 */
                 }
@@ -640,12 +641,17 @@ static void BuySellRowDeltaAdd(BuySellRowEditEnv *pEnv, i32 nSlot, i32 nDelta)
     }
 }
 
-static ObjectRecFull *BuySellSlotRec(const BuySellRowEditEnv *pEnv, i32 nSlot)
+static ObjectRecFull *BuySellObjectAt(ObjectRecFull *const *apObjects, i32 nObjectCount, i32 nSlot)
 {
-    if (pEnv->apObjects == NULL || nSlot < 0 || nSlot >= pEnv->nObjectCount) {
+    if (apObjects == NULL || nSlot < 0 || nSlot >= nObjectCount) {
         return NULL;
     }
-    return pEnv->apObjects[nSlot];
+    return apObjects[nSlot];
+}
+
+static ObjectRecFull *BuySellSlotRec(const BuySellRowEditEnv *pEnv, i32 nSlot)
+{
+    return BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nSlot);
 }
 
 /* BuySellScreen_FillSellPanel @ 0x75464, panel C's click: mark one more unit to sell. */
@@ -666,7 +672,7 @@ void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv)
     }
     nAux = pEnv->pPanelA->anLineAux[nRow];
 
-    if (nAux == 1000 || (nAux > 116 && nAux < 122)) {
+    if (nAux == PUFO_ROW_SOLDIER || (nAux >= PUFO_ROW_CRAFT_FIRST && nAux <= PUFO_ROW_CRAFT_LAST)) {
         /* A soldier row (0x754A8) and a craft row (0x7558C) share one body. */
         if (pEnv->pPanelD->anLineAux[nRow] <= 0) {
             return;
@@ -680,11 +686,11 @@ void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv)
         return;
     }
 
-    if (nAux > 2000) { /* an alien row, 0x75514 */
+    if (nAux > PUFO_ROW_ALIEN_OFFSET) { /* an alien row, 0x75514 */
         if (pEnv->pPanelD->anLineAux[nRow] <= 0) {
             return;
         }
-        BuySellRowDeltaAdd(pEnv, nAux - 2000, -1); /* 0x75548 */
+        BuySellRowDeltaAdd(pEnv, nAux - PUFO_ROW_ALIEN_OFFSET, -1); /* 0x75548 */
         pEnv->pPanelE->anLineAux[nRow] += 1;       /* 0x75570 */
         pEnv->pPanelD->anLineAux[nRow] -= 1;       /* 0x755FC */
         return;
@@ -697,8 +703,8 @@ void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv)
                                                           pEnv->nSelectedBaseIdx) <= 0) {
             break; /* 0x75694 */
         }
-        if (nAux == 112 || nAux == 113) {
-            i32 nCrew = (nAux == 112)
+        if (nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
+            i32 nCrew = (nAux == PUFO_ROW_ENGINEER)
                             ? Base_GetEngineerCount(BuySellSlotRec(pEnv, nAux), pEnv->apManufCol,
                                                     pEnv->nSelectedBaseIdx, pEnv->nCrewEntries)
                             : Base_GetScientistCount(BuySellSlotRec(pEnv, nAux),
@@ -749,7 +755,7 @@ void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv)
     }
     nAux = pEnv->pPanelA->anLineAux[nRow];
 
-    if (nAux == 1000 || (nAux > 116 && nAux < 122)) {
+    if (nAux == PUFO_ROW_SOLDIER || (nAux >= PUFO_ROW_CRAFT_FIRST && nAux <= PUFO_ROW_CRAFT_LAST)) {
         /* Soldier (0x7519C) and craft (0x75278) rows share one body. */
         if (pEnv->pPanelE->anLineAux[nRow] <= 0) {
             return;
@@ -762,11 +768,11 @@ void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv)
         return;
     }
 
-    if (nAux > 2000) { /* an alien row, 0x751F4 */
+    if (nAux > PUFO_ROW_ALIEN_OFFSET) { /* an alien row, 0x751F4 */
         if (pEnv->pPanelE->anLineAux[nRow] <= 0) {
             return;
         }
-        BuySellRowDeltaAdd(pEnv, nAux - 2000, 1);  /* 0x75234 */
+        BuySellRowDeltaAdd(pEnv, nAux - PUFO_ROW_ALIEN_OFFSET, 1);  /* 0x75234 */
         pEnv->pPanelE->anLineAux[nRow] -= 1;       /* 0x75250 */
         pEnv->pPanelD->anLineAux[nRow] += 1;       /* 0x752E8 */
         return;
@@ -783,7 +789,7 @@ void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv)
         }
         pEnv->pPanelD->anLineAux[nRow] += 1; /* 0x7537C */
         BuySellRowDeltaAdd(pEnv, nAux, 1);   /* 0x7538C */
-        if (nAux == 112 || nAux == 113) {
+        if (nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
             UiPanel_SetLineMeta(pEnv->pPanelE, nRow, PUFO_BUYSELL_META_BUY_A,
                                 PUFO_BUYSELL_META_BUY_A, PUFO_BUYSELL_META_BUY_A,
                                 PUFO_BUYSELL_META_BUY_B, PUFO_BUYSELL_META_BUY_B,
@@ -802,6 +808,288 @@ void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv)
             pEnv->pPanelE->anLineAux[nRow] -= nPrice; /* 0x753D8 */
         }
     }
+}
+
+/* 0x75F28 / 0x75F48 / 0x75F64 / 0x75F74 / 0x75F90: the five ways a pass can fail. The flag is set
+ * only when it is still clear on the hangar, stores and product-price paths, and unconditionally on
+ * the living-quarters and crew-price paths; the reason code always lands in dword_1870B4. */
+static void BuySellSetShortfallFlag(const BuySellCapacityEnv *pEnv, bool bOnlyIfClear)
+{
+    if (pEnv->pdwShortfall == NULL) {
+        return;
+    }
+    if (!bOnlyIfClear || *pEnv->pdwShortfall == 0) {
+        *pEnv->pdwShortfall = 1;
+    }
+}
+
+static i32 BuySellShortfall(const BuySellCapacityEnv *pEnv, i32 nReason, bool bOnlyIfClear)
+{
+    BuySellSetShortfallFlag(pEnv, bOnlyIfClear);
+    if (pEnv->pnResidue != NULL) {
+        *pEnv->pnResidue = nReason;
+    }
+    return nReason;
+}
+
+/* 0x75F64: the product-price shortfall stores the flag's own value as the reason -- 1 either way,
+ * because nothing in the program writes a different one into byte_1870C8. */
+static i32 BuySellFundsShortfall(const BuySellCapacityEnv *pEnv)
+{
+    BuySellSetShortfallFlag(pEnv, true);
+    if (pEnv->pnResidue != NULL) {
+        *pEnv->pnResidue = (pEnv->pdwShortfall != NULL) ? (i32)*pEnv->pdwShortfall
+                                                        : PUFO_BUYSELL_SHORTFALL_FUNDS;
+    }
+    return PUFO_BUYSELL_SHORTFALL_FUNDS;
+}
+
+/* The transfer flow's working site: the record AT the site count, which Transfer_ResetSite
+ * (0x9690c, not ported) clears and BuySellScreen_ConfirmSiteAndClose commits. */
+static SmapSite *BuySellWorkingSite(const BuySellCapacityEnv *pEnv)
+{
+    if (pEnv->aSites == NULL || pEnv->nSiteCount < 0 || pEnv->nSiteCount >= PUFO_SMAP_SITE_COUNT) {
+        return NULL; /* deviation: the original indexes aSmapSites[nSiteCount] blindly */
+    }
+    return &pEnv->aSites[pEnv->nSiteCount];
+}
+
+static void BuySellPanelCountAdd(const BuySellCapacityEnv *pEnv, i32 nRow, i32 nDelta)
+{
+    if (pEnv->pPanelD == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return;
+    }
+    pEnv->pPanelD->anLineAux[nRow] += nDelta;
+}
+
+/* BuySellScreen_ValidateCapacity @ 0x75b88, the buy screen's ">" control: queue one more unit to
+ * buy, if the base can take it. The header carries the branch map. */
+i32 BuySellScreen_ValidateCapacity(const BuySellCapacityEnv *pEnv)
+{
+    i32 nRow;
+    i32 nAux;
+    i32 nLimit;
+    i32 k;
+
+    if (pEnv == NULL || pEnv->pPanelA == NULL || pEnv->pPanelD == NULL || pEnv->pnRowCursor == NULL) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+    nRow = *pEnv->pnRowCursor;
+    if (nRow < 0 || nRow >= pEnv->pPanelA->nLineCount) {
+        return PUFO_BUYSELL_SHORTFALL_NONE; /* deviation: the original trusts the row */
+    }
+    nAux = pEnv->pPanelA->anLineAux[nRow];
+    nLimit = BuySellRepeatLimit(pEnv->pnRadarPulseTimer);
+    if (nLimit < 0) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+
+    for (k = 0; k <= nLimit; ++k) {
+        SmapSite *pSite = BuySellWorkingSite(pEnv);
+
+        if (nAux == PUFO_ROW_SOLDIER || nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
+            const i32 nOccupied = Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                         pEnv->apObjects, pEnv->nObjectCount,
+                                                         pEnv->nSelectedBaseIdx); /* 0x75E2C */
+            const i32 nOutbound = Base_CountOutboundTransferSpace(pEnv->aSites, pEnv->nSiteCount,
+                                                                  pEnv->nSiteCount, pEnv->apBases,
+                                                                  pEnv->nSelectedBaseIdx,
+                                                                  true); /* 0x75E48 */
+            const i32 nCap = Base_CalcLivingQuartersCap(pEnv->abFacilityGrid,
+                                                        pEnv->nSelectedBaseIdx); /* 0x75E54 */
+
+            if (nOutbound + nOccupied + 1 > nCap) { /* 0x75E60 */
+                return BuySellShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_LIVING, false);
+            }
+
+            if (nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
+                const i32 nPrice = (nAux == PUFO_ROW_ENGINEER) ? PUFO_BUYSELL_PRICE_ENGINEER
+                                                               : PUFO_BUYSELL_PRICE_SCIENTIST;
+                if (pEnv->pnFunds == NULL || *pEnv->pnFunds < nPrice) { /* 0x75FB0, 0x76018 */
+                    BuySellSetShortfallFlag(pEnv, false); /* 0x75F74 */
+                    if (pEnv->pnResidue != NULL) {
+                        *pEnv->pnResidue = PUFO_BUYSELL_SHORTFALL_FUNDS;
+                    }
+                    return PUFO_BUYSELL_SHORTFALL_FUNDS;
+                }
+                *pEnv->pnFunds -= nPrice;                        /* 0x75FBC, 0x76030 */
+                BuySellPanelCountAdd(pEnv, nRow, 1);             /* 0x75FDC, 0x76050 */
+                if (pEnv->pnTransTotal != NULL) {
+                    *pEnv->pnTransTotal += nPrice;               /* 0x75FEC, 0x76060 */
+                }
+                if (pSite != NULL) {
+                    pSite->auItemQty[nAux] = (u16)(pSite->auItemQty[nAux] + 1); /* 0x75FF8, 0x76078 */
+                }
+                /* 0x76008 / 0x7607C: both crew paths return out of the whole function, so one click
+                 * queues at most one crew member however long the loop is. */
+                return PUFO_BUYSELL_SHORTFALL_NONE;
+            }
+
+            if (pEnv->pnFunds == NULL || *pEnv->pnFunds < PUFO_BUYSELL_PRICE_SOLDIER) { /* 0x75E84 */
+                BuySellSetShortfallFlag(pEnv, false); /* 0x75F74 */
+                if (pEnv->pnResidue != NULL) {
+                    *pEnv->pnResidue = PUFO_BUYSELL_SHORTFALL_FUNDS;
+                }
+                return PUFO_BUYSELL_SHORTFALL_FUNDS;
+            }
+            if (pEnv->pnSoldierHireCount != NULL) {
+                *pEnv->pnSoldierHireCount += 1; /* 0x75E94, unk_159D90 */
+            }
+            *pEnv->pnFunds -= PUFO_BUYSELL_PRICE_SOLDIER;        /* 0x75E9C */
+            BuySellPanelCountAdd(pEnv, nRow, 1);                 /* 0x75EC0 */
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal += PUFO_BUYSELL_PRICE_SOLDIER; /* 0x75ED8 */
+            }
+            if (pSite != NULL) {
+                pSite->uRecoveredSoldiers = (u16)(pSite->uRecoveredSoldiers + 1); /* 0x75EF0 */
+            }
+            continue; /* 0x75EF0 -> LABEL_22 */
+        }
+
+        if (nAux == PUFO_ROW_CRAFT_FIRST || nAux == PUFO_ROW_CRAFT_SECOND) {
+            const i32 nShips = Base_CountShipsAtBase(pEnv->apCraft, pEnv->nCraftCount, pEnv->apBases,
+                                                     pEnv->nBaseCount, pEnv->abGridBytes,
+                                                     pEnv->nSelectedBaseIdx); /* 0x75C4C */
+            const i32 nInbound = Base_CountInboundTransfers(pEnv->aSites, pEnv->nSiteCount,
+                                                            pEnv->nSiteCount, pEnv->apBases,
+                                                            pEnv->nSelectedBaseIdx,
+                                                            true); /* 0x75C68 */
+            const i32 nCap = Base_CalcHangarCap(pEnv->abFacilityGrid,
+                                                pEnv->nSelectedBaseIdx); /* 0x75C74 */
+            if (nInbound + nShips + 1 > nCap) { /* 0x75C80 */
+                return BuySellShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_HANGAR, true);
+            }
+        } else {
+            const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount,
+                                                   pEnv->nSelectedBaseIdx); /* 0x75CBC */
+            const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount,
+                                                             pEnv->nSiteCount, pEnv->apBases,
+                                                             pEnv->nSelectedBaseIdx, pEnv->apObjects,
+                                                             pEnv->nObjectCount, true); /* 0x75CE0 */
+            const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid,
+                                                     pEnv->nSelectedBaseIdx); /* 0x75CF8 */
+            const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nAux);
+            const i32 nCargo = (pRec != NULL) ? (i32)pRec->bCargoSize : 0;
+            if (nAcross + nCargo + nUsed > nCap) { /* 0x75D0C */
+                return BuySellShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_STORES, true);
+            }
+        }
+
+        {
+            const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nAux);
+            const i32 nPrice = (pRec != NULL) ? (i32)pRec->uPrice : 0;
+            const i32 nFunds = (pEnv->pnFunds != NULL) ? *pEnv->pnFunds : 0;
+
+            if ((u32)nPrice > (u32)nFunds) { /* 0x75D28, an unsigned compare */
+                return BuySellFundsShortfall(pEnv);
+            }
+            if (nAux == PUFO_ROW_CRAFT_FIRST || nAux == PUFO_ROW_CRAFT_SECOND) {
+                if (pSite != NULL) {
+                    pSite->bUnk518 = (u8)(pSite->bUnk518 + 1); /* 0x75D54, read as a signed byte */
+                }
+            }
+            BuySellPanelCountAdd(pEnv, nRow, 1); /* 0x75D84 */
+            if (pSite != NULL && nAux >= 0 && nAux < (i32)(sizeof(pSite->auItemQty) /
+                                                           sizeof(pSite->auItemQty[0]))) {
+                pSite->auItemQty[nAux] = (u16)(pSite->auItemQty[nAux] + 1); /* 0x75DB8 */
+            }
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds = nFunds - nPrice; /* 0x75DC8 */
+            }
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal += nPrice; /* 0x75DD8 */
+            }
+        }
+    }
+    return PUFO_BUYSELL_SHORTFALL_NONE;
+}
+
+/* BuySellScreen_UpdatePrices @ 0x75878, the buy screen's "<" control: take one queued unit back. No
+ * capacity test at all -- panel D's count is the only guard, and a zero count just skips the body. */
+i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv)
+{
+    i32 nRow;
+    i32 nAux;
+    i32 nLimit;
+    i32 k;
+
+    if (pEnv == NULL || pEnv->pPanelA == NULL || pEnv->pPanelD == NULL || pEnv->pnRowCursor == NULL) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+    nRow = *pEnv->pnRowCursor;
+    if (nRow < 0 || nRow >= pEnv->pPanelA->nLineCount) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+    nAux = pEnv->pPanelA->anLineAux[nRow];
+    nLimit = BuySellRepeatLimit(pEnv->pnRadarPulseTimer);
+    if (nLimit < 0) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+
+    for (k = 0; k <= nLimit; ++k) {
+        if (pEnv->pPanelD->anLineAux[nRow] <= 0) { /* 0x75928, 0x75A08 */
+            continue;
+        }
+        if (nAux == PUFO_ROW_ENGINEER || nAux == PUFO_ROW_SCIENTIST) {
+            const i32 nPrice = (nAux == PUFO_ROW_ENGINEER) ? PUFO_BUYSELL_PRICE_ENGINEER
+                                                           : PUFO_BUYSELL_PRICE_SCIENTIST;
+            SmapSite *pSite = BuySellWorkingSite(pEnv);
+
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds += nPrice; /* 0x75B38, 0x75ADC */
+            }
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal -= nPrice; /* 0x75B44, 0x75AE8 */
+            }
+            BuySellPanelCountAdd(pEnv, nRow, -1); /* 0x75B5C, 0x75B00 */
+            if (pSite != NULL) {
+                pSite->auItemQty[nAux] = (u16)(pSite->auItemQty[nAux] - 1); /* 0x75B7C, 0x75B20 */
+            }
+            return PUFO_BUYSELL_SHORTFALL_NONE; /* 0x75B7C / 0x75B24: out of the whole function */
+        }
+
+        if (nAux == PUFO_ROW_SOLDIER) {
+            SmapSite *pSite = BuySellWorkingSite(pEnv);
+
+            if (pEnv->pnSoldierHireCount != NULL) {
+                *pEnv->pnSoldierHireCount -= 1; /* 0x75A24 */
+            }
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds += PUFO_BUYSELL_PRICE_SOLDIER; /* 0x75A38 */
+            }
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal -= PUFO_BUYSELL_PRICE_SOLDIER; /* 0x75A3C */
+            }
+            BuySellPanelCountAdd(pEnv, nRow, -1); /* 0x75A50 */
+            if (pSite != NULL) {
+                pSite->uRecoveredSoldiers = (u16)(pSite->uRecoveredSoldiers - 1); /* 0x75A80 */
+            }
+            continue;
+        }
+
+        {
+            SmapSite *pSite = BuySellWorkingSite(pEnv);
+            const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nAux);
+            const i32 nPrice = (pRec != NULL) ? (i32)pRec->uPrice : 0;
+
+            BuySellPanelCountAdd(pEnv, nRow, -1); /* 0x75938 */
+            if (pSite != NULL) {
+                if (nAux == PUFO_ROW_CRAFT_FIRST || nAux == PUFO_ROW_CRAFT_SECOND) {
+                    pSite->bUnk518 = (u8)(pSite->bUnk518 - 1); /* 0x75974, read as a signed byte */
+                }
+                if (nAux >= 0 && nAux < (i32)(sizeof(pSite->auItemQty) / sizeof(pSite->auItemQty[0]))) {
+                    pSite->auItemQty[nAux] = (u16)(pSite->auItemQty[nAux] - 1); /* 0x759A0 */
+                }
+            }
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds += nPrice; /* 0x759B8 */
+            }
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal -= nPrice; /* 0x759C8 */
+            }
+        }
+    }
+    return PUFO_BUYSELL_SHORTFALL_NONE;
 }
 
 /* BuySellScreen_BuildPanels @ 0x76de0. See the header for the branch map and the row model. */
@@ -913,7 +1201,7 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
             abInclude[i] = 1;
             ++nRows;
         }
-        if (i == 112) {
+        if (i == PUFO_ROW_ENGINEER) {
             nEngineers = Base_GetEngineerCount(pEnv->apObjects != NULL ? pEnv->apObjects[112] : NULL,
                                                pEnv->apManufCol, pEnv->nSelectedBaseIdx,
                                                pEnv->nCrewEntries);
@@ -923,7 +1211,7 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
             abInclude[112] = 1;
             ++nRows;
         }
-        if (i == 113) {
+        if (i == PUFO_ROW_SCIENTIST) {
             nScientists = Base_GetScientistCount(pEnv->apObjects != NULL ? pEnv->apObjects[113] : NULL,
                                                  pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
                                                  pEnv->nCrewEntries);
@@ -1039,7 +1327,7 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
         BuySellCopyName(szName, pSol->szName);
         if (pA != NULL) {
             UiPanel_SetLineText(pA, nRow, szName);
-            UiPanel_SetLineAux(pA, nRow, 1000); /* the soldier row marker */
+            UiPanel_SetLineAux(pA, nRow, PUFO_ROW_SOLDIER); /* the soldier row marker */
         }
         if (pD != NULL) {
             UiPanel_SetLineAux(pD, nRow, 1);
@@ -1099,17 +1387,17 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
             UiPanel_SetLineText(pA, nRow, szName);
         }
         BuySellFillQtyColumns(pB, pC, pE, nRow);
-        if (i == 112) {
+        if (i == PUFO_ROW_ENGINEER) {
             if (pD != NULL) {
                 UiPanel_SetLineAux(pD, nRow, nEngineers); /* 0x77C20 */
             }
-        } else if (i == 113) {
+        } else if (i == PUFO_ROW_SCIENTIST) {
             if (pD != NULL) {
                 UiPanel_SetLineAux(pD, nRow, nScientists);
             }
         } else {
             if (BuySellSlotIsAlien(i)) {
-                nAux = i + 2000; /* 0x77BAC */
+                nAux = i + PUFO_ROW_ALIEN_OFFSET; /* 0x77BAC */
             }
             if (pD != NULL) {
                 UiPanel_SetLineAux(pD, nRow,

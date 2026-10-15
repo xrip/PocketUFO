@@ -1098,6 +1098,243 @@ static void TestBuySellRowEditors(void)
     UiPanel_FreeLines(&pE);
 }
 
+static void TestBuySellCapacityGate(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Ship aShip[1];
+    static Ship *apShip[1];
+    static SmapSite aSites[2];
+    static BaseRec aBase;
+    static BaseRec *apBases[8];
+    static u8 aGrid[PUFO_GRID_SIZE];
+    static u8 aGridBytes[64];
+    static UiPanel pA, pD;
+    BuySellCapacityEnv env;
+    i32 nRowCursor = 0;
+    i32 nTimer = 25;
+    i32 nFunds = 100000;
+    i32 nTotal = 0;
+    i32 nHire = 0;
+    u32 nShortfall = 0;
+    i32 nResidue = -999;
+    i32 i;
+
+    printf("the buy screen's capacity gate\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[10].uPrice = 100;  aObj[10].bCargoSize = 2;  /* a plain object row */
+    aObj[117].uPrice = 5000;                           /* the Skyranger product */
+
+    aShip[0].bHomeBase = 1; /* based at another base, so it never fills this hangar */
+    apShip[0] = &aShip[0];
+
+    aBase.bUnk4 = 7;
+    for (i = 0; i < 8; ++i) {
+        apBases[i] = &aBase;
+    }
+    aSites[0].bFlag1 = 99; /* matches no base, so the site scan contributes nothing */
+
+    /* Base 0 gets one living-quarters cell (50), one stores cell (300) and one hangar slot (1). */
+    aGrid[480 + 144 * 0 + 6 * 0 + 0] = 1;
+    aGrid[480 + 144 * 0 + 6 * 0 + 1] = 6;
+    aGrid[480 + 144 * 0 + 6 * 0 + 2] = 11;
+
+    (void)UiPanel_ctor(&pA, 6);
+    (void)UiPanel_ctor(&pD, 6);
+    pA.anLineAux[0] = PUFO_ROW_SOLDIER;
+    pA.anLineAux[1] = PUFO_ROW_ENGINEER;
+    pA.anLineAux[2] = PUFO_ROW_SCIENTIST;
+    pA.anLineAux[3] = 10;
+    pA.anLineAux[4] = PUFO_ROW_CRAFT_FIRST;
+    pA.anLineAux[5] = 2077; /* an alien row: the gate treats it as a plain product */
+
+    memset(&env, 0, sizeof(env));
+    env.pPanelA = &pA;
+    env.pPanelD = &pD;
+    env.pnRowCursor = &nRowCursor;
+    env.pnRadarPulseTimer = &nTimer;
+    env.abFacilityGrid = aGrid;
+    env.abGridBytes = aGridBytes;
+    env.aSites = aSites;
+    env.nSiteCount = 1; /* the working site is the record AT the count, aSites[1] */
+    env.apBases = apBases;
+    env.nBaseCount = 1;
+    env.apCraft = apShip;
+    env.nCraftCount = 1;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.nSelectedBaseIdx = 0;
+    env.pnFunds = &nFunds;
+    env.pnTransTotal = &nTotal;
+    env.pnSoldierHireCount = &nHire;
+    env.pdwShortfall = &nShortfall;
+    env.pnResidue = &nResidue;
+
+    /* A soldier row runs the whole loop and then hits the funds guard. */
+    nRowCursor = 0;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_FUNDS,
+               "100000 buys two soldiers and the third pass reports the funds shortfall");
+    CheckEqI32(nFunds, 20000, "two soldiers at 40000 each");
+    CheckEqI32(nHire, 2, "unk_159D90 counts the hires");
+    CheckEqI32(nTotal, 80000, "and the transaction total follows");
+    CheckEqI32(aSites[1].uRecoveredSoldiers, 2, "the working site carries them");
+    CheckEqI32(pD.anLineAux[0], 2, "with two on the count column");
+    CheckEqI32((i32)nShortfall, 1, "the shortfall flag is set");
+    CheckEqI32(nResidue, 1, "and the reason is the funds code");
+
+    nRowCursor = 1;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_FUNDS,
+               "20000 cannot cover a 50000 engineer");
+    CheckEqI32(aSites[1].auItemQty[112], 0, "and nothing is queued");
+
+    nFunds = 60000;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "with the money the engineer goes through");
+    CheckEqI32(aSites[1].auItemQty[112], 1, "queued on the working site");
+    CheckEqI32(pD.anLineAux[1], 1, "one on the count column");
+    CheckEqI32(nFunds, 10000, "and 50000 is gone");
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_FUNDS,
+               "a crew row returns out of the function, so a second pass needs a second click");
+
+    nRowCursor = 2;
+    nFunds = 70000;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "the scientist row costs 60000");
+    CheckEqI32(aSites[1].auItemQty[113], 1, "and lands in the scientist column");
+    CheckEqI32(nFunds, 10000, "leaving 10000");
+
+    /* A plain object row: the stores budget, then the price. */
+    nRowCursor = 3;
+    nFunds = 10000;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "three units of a 100-price object fit 300 units of stores");
+    CheckEqI32(aSites[1].auItemQty[10], 3, "three queued on the working site");
+    CheckEqI32(pD.anLineAux[3], 3, "three on the count column");
+    CheckEqI32(nFunds, 9700, "and 300 spent");
+
+    nFunds = 50;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_FUNDS,
+               "50 cannot cover a 100 price: an unsigned compare at 0x75D28");
+    CheckEqI32(aSites[1].auItemQty[10], 3, "the queue stays where it was");
+    CheckEqI32(nResidue, 1, "and this path writes the flag's own value as the reason");
+
+    /* The craft row: one hangar slot, and the working site's own pending craft counts against it. */
+    nRowCursor = 4;
+    nFunds = 10000;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_HANGAR,
+               "the first Skyranger fits, the second pass sees it and reports the hangar full");
+    CheckEqI32(aSites[1].bUnk518, 1, "the pending craft byte carries the one that got through");
+    CheckEqI32(aSites[1].auItemQty[117], 1, "and its column holds it");
+    CheckEqI32(nResidue, 2, "with the hangar reason code");
+    CheckEqI32(nFunds, 5000, "one craft at 5000, no more");
+
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_HANGAR,
+               "the hangar path sets the flag only when it is still clear");
+    CheckEqI32((i32)nShortfall, 1, "so a clear flag becomes 1");
+    CheckEqI32(nResidue, 2, "with the reason beside it");
+
+    /* Living quarters full: the flag is written unconditionally here, 0x75F98. */
+    aGrid[480 + 144 * 0 + 6 * 0 + 0] = 0;
+    nRowCursor = 0;
+    nShortfall = 5;
+    nResidue = -999;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_LIVING,
+               "with no living-quarters cell even one soldier does not fit");
+    CheckEqI32((i32)nShortfall, 1, "and this path overwrites the flag whatever it held");
+    CheckEqI32(nResidue, 0, "with the living-quarters reason 0");
+    CheckEqI32(nFunds, 5000, "no money moves on a capacity failure");
+    aGrid[480 + 144 * 0 + 6 * 0 + 0] = 1;
+
+    /* An alien row is a product row here: no object record, so no price and no cargo. */
+    nRowCursor = 5;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "slot 2077 passes the gate with a zero price");
+    CheckEqI32(pD.anLineAux[5], 3, "three passes, three on the count column");
+    CheckEqI32(aSites[1].auItemQty[0], 0, "and the port does not write auItemQty out of range");
+
+    /* The "<" control takes it all back, with no capacity test at all. */
+    nRowCursor = 3;
+    nFunds = 50;
+    nTotal = 195300;
+    CheckEqI32(BuySellScreen_UpdatePrices(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "the count column is the only guard on the sell side");
+    CheckEqI32(pD.anLineAux[3], 0, "three units back off a count of three");
+    CheckEqI32(aSites[1].auItemQty[10], 0, "the working site empties");
+    CheckEqI32(nFunds, 350, "and the money comes back");
+    CheckEqI32(nTotal, 195000, "with the total unwound");
+
+    BuySellScreen_UpdatePrices(&env);
+    CheckEqI32(nFunds, 350, "an empty count column makes the sell side do nothing");
+
+    nRowCursor = 0;
+    pD.anLineAux[0] = 2;
+    nHire = 2;
+    aSites[1].uRecoveredSoldiers = 2;
+    BuySellScreen_UpdatePrices(&env);
+    CheckEqI32(nHire, 0, "the soldier row gives the hires back");
+    CheckEqI32(aSites[1].uRecoveredSoldiers, 0, "and the working site's soldier count with them");
+    CheckEqI32(pD.anLineAux[0], 0, "the third pass skips on the empty count");
+
+    nRowCursor = 1;
+    pD.anLineAux[1] = 3;
+    aSites[1].auItemQty[112] = 1;
+    nFunds = 80350;
+    nTotal = 115000;
+    BuySellScreen_UpdatePrices(&env);
+    CheckEqI32(pD.anLineAux[1], 2, "a crew row returns after one unit, whatever the count held");
+    CheckEqI32(aSites[1].auItemQty[112], 0, "one engineer back to the base");
+    CheckEqI32(nFunds, 130350, "with 50000 refunded");
+
+    nRowCursor = 4;
+    pD.anLineAux[4] = 1;
+    aSites[1].bUnk518 = 1;
+    aSites[1].auItemQty[117] = 1;
+    nFunds = 130350;
+    nTotal = 65000;
+    BuySellScreen_UpdatePrices(&env);
+    CheckEqI32(aSites[1].bUnk518, 0, "the craft row clears the pending-craft byte too");
+    CheckEqI32(aSites[1].auItemQty[117], 0, "and the craft column");
+    CheckEqI32(nTotal, 60000, "with the 5000 back out of the total");
+
+    /* The repeat bound is the same radar timer the row editors use. */
+    nTimer = 0;
+    nRowCursor = 3;
+    pD.anLineAux[3] = 30;
+    aSites[1].auItemQty[10] = 0;
+    nFunds = 100000;
+    nTotal = 0;
+    BuySellScreen_ValidateCapacity(&env);
+    CheckEqI32(aSites[1].auItemQty[10], 1, "a timer of 0 runs the loop once");
+    nTimer = 255;
+    aSites[1].auItemQty[10] = 0;
+    nTotal = 0;
+    BuySellScreen_ValidateCapacity(&env);
+    CheckEqI32(aSites[1].auItemQty[10], 26, "the radar screen's 255 makes one click buy 26 units");
+    CheckEqI32(nTotal, 2600, "at 100 each");
+    nTimer = 25;
+
+    /* Guards the original does not have. */
+    nRowCursor = 99;
+    CheckEqI32(BuySellScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_NONE,
+               "a row past the end reports no shortfall");
+    CheckEqI32(aSites[1].auItemQty[10], 26, "and changes nothing");
+    BuySellScreen_ValidateCapacity(NULL);
+    BuySellScreen_UpdatePrices(NULL);
+    env.pnRowCursor = NULL;
+    BuySellScreen_ValidateCapacity(&env);
+    BuySellScreen_UpdatePrices(&env);
+    env.pnRowCursor = &nRowCursor;
+    CheckEqI32(aSites[1].auItemQty[10], 26, "a missing cursor makes both handlers do nothing");
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pD);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -6199,6 +6436,7 @@ int main(void)
     TestBuySellBuildPanels();
     TestBuySellCommitTransaction();
     TestBuySellRowEditors();
+    TestBuySellCapacityGate();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

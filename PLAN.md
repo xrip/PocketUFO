@@ -875,6 +875,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `panel E aux -= price` has no floor. IDB: `unk_161A2C` → `BuySell_nTransTotal`, comments at
   0x75464 and 0x75160.
 
+- [x] part 23, the buy screen's quantity controls: `BuySellScreen_ValidateCapacity (0x75b88)`, 1280
+  bytes, and `BuySellScreen_UpdatePrices (0x75878)`, 784 bytes — 61 more checks. These are the ">"
+  and "<" click handlers `BuySellScreen_BuildControls` installs onto panels C and B, and they work on
+  the transfer flow's working site `aSmapSites[nSiteCount]` rather than on the base: buying checks
+  `Base_CalcHangarCap` (117/118), `Base_CalcStoresCapacity` (every other product) or
+  `Base_CalcLivingQuartersCap` (1000/112/113) and reports a failure as a reason code in
+  `dword_1870B4` — 0 living quarters, 1 funds, 2 hangar, 3 stores — while selling has no capacity
+  test at all. Crew rows cost a fixed 50000 / 60000 and return out of the function, so one click
+  queues at most one engineer or scientist. `unk_159D90` turned out to be a counter the buy/sell
+  screen owns (Init clears it, buying increments it, selling decrements it, saved with the bases) and
+  is now `nSoldierHireCount`. The row-marker magic numbers across the buy/sell family are now the
+  `PufoBuySellRowMarker` enum, in the port and in the IDB.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1051,6 +1064,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy/sell list panels (`BuySellScreen_BuildPanels`, the row-marker encoding, the sort table) | 56/56 (Release) | 9440 | 838/1103 (76.0%) | 335756/598792 (56.1%) | 38 checked, 0 mismatched |
 | the buy/sell commit (`BuySellScreen_CommitTransaction`, the delta array, the corpse pairing) | 56/56 (Release) | 9457 | 839/1103 (76.1%) | 336932/598792 (56.3%) | 38 checked, 0 mismatched |
 | the buy/sell row editors (`BuySellScreen_FillSellPanel`, `BuySellScreen_FillBuyPanel`, the timer-bound repeat loop) | 56/56 (Release) | 9511 | 841/1103 (76.2%) | 338748/598792 (56.6%) | 38 checked, 0 mismatched |
+| the buy screen's quantity controls (`BuySellScreen_ValidateCapacity`, `BuySellScreen_UpdatePrices`, the shortfall codes) | 56/56 (Release) | 9572 | 843/1103 (76.4%) | 340812/598792 (56.9%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

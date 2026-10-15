@@ -212,6 +212,21 @@ typedef enum PufoAlienRaceId {
 
 PufoAlienRaceId BuySell_ItemIdToAlienRaceId(i32 nSlotId);
 
+/* The row-kind marker the buy/sell screen writes into pBuySellPanelA.anLineAux and reads back in
+ * every one of its handlers -- see the BuySellScreen_BuildPanels block for how it is produced. The
+ * IDB carries the same enum as `PufoBuySellRowMarker`; its two older members are named
+ * BUYSELL_ROW_SOLDIER (1000) and BUYSELL_ROW_ALIEN_BIAS (2000), which the IDB rename tool cannot
+ * retitle because enum members are not globals. */
+typedef enum PufoBuySellRowMarker {
+    PUFO_ROW_ENGINEER      = 112, /* the crew slot, Base_GetEngineerCount's item */
+    PUFO_ROW_SCIENTIST     = 113, /* and Base_GetScientistCount's */
+    PUFO_ROW_CRAFT_FIRST   = 117, /* BuySell_RoleToItemId's five craft slots are 117..121 */
+    PUFO_ROW_CRAFT_SECOND  = 118, /* the buy screen offers only 117 Skyranger and 118 Interceptor */
+    PUFO_ROW_CRAFT_LAST    = 121,
+    PUFO_ROW_SOLDIER       = 1000, /* a soldier row, the one marker that is not an object slot */
+    PUFO_ROW_ALIEN_OFFSET  = 2000  /* an alien row carries its object slot plus this */
+} PufoBuySellRowMarker;
+
 /* ------------------------------------------------- the screen-id scroll dispatcher
  *
  * Evidence: Geoscape_UiFocusPrev @ 0x8afa0 (596 B) and Geoscape_UiFocusNext @ 0x8b1f4
@@ -491,6 +506,101 @@ typedef struct BuySellRowEditEnv {
 
 void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv);  /* panel B, the "<" column */
 void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv); /* panel C, the ">" column */
+
+/* ------------------------------------------------- the buy screen's capacity gate
+ *
+ * Evidence: BuySellScreen_ValidateCapacity @ 0x75b88 (1280 B) and BuySellScreen_UpdatePrices
+ * @ 0x75878 (784 B) -- the two click handlers BuySellScreen_BuildControls installs into the panel
+ * click slot at +0xBCC: UpdatePrices onto pBuySellPanelB (the "<" column, 0x765CC) and
+ * ValidateCapacity onto pBuySellPanelC (the ">" column, 0x766EC).
+ *
+ * Both work on the row the screen has selected: the cached row index at unk_186BE8, whose kind is
+ * `pBuySellPanelA.anLineAux[nRow]` (PufoBuySellRowMarker), and both repeat
+ * `nRadarPulseTimer / 10 + 1` times -- the same radar-screen timer the two row editors bound
+ * themselves by, so the defect recorded in docs/parity/bugs.tsv for 0x75160 and 0x75464 applies to
+ * these two handlers too.
+ *
+ * The record they mutate is the transfer flow's working site: `aSmapSites[nSiteCount]`, the slot
+ * Transfer_ResetSite (0x9690c, not ported) clears and BuySellScreen_ConfirmSiteAndClose commits.
+ *
+ * ValidateCapacity buys one unit per pass:
+ *
+ *   117 / 118, the two craft products -- 0x75C28..0x75C84. Budget Base_CalcHangarCap, pressure
+ *     Base_CountShipsAtBase + Base_CountInboundTransfers + 1. Over it: shortfall 2.
+ *   every other product row -- 0x75C88..0x75D10. Budget Base_CalcStoresCapacity, pressure
+ *     Base_CountItemQtyAcrossBases + ObjectRecFull.bCargoSize (0xC6) + Base_CalcStorageUsed.
+ *     Over it: shortfall 3.
+ *   then, for any product row, `ObjectRecFull.uPrice (0xBC) > (unsigned)nFunds` -- 0x75D18:
+ *     shortfall 1.
+ *   the pass itself: 117 / 118 also bump the site's signed SmapSite.bUnk518 (0x206); panel D's
+ *     anLineAux[nRow] += 1; site.auItemQty[nAux] += 1; nFunds -= uPrice; BuySell_nTransTotal += uPrice.
+ *
+ *   1000 / 112 / 113 take the other branch, 0x75E08..0x75E64. Budget Base_CalcLivingQuartersCap,
+ *     pressure Base_CalcOccupiedSpace + Base_CountOutboundTransferSpace + 1. Over it: shortfall 0.
+ *     Then the fixed price -- 40000 a soldier, 50000 an engineer, 60000 a scientist -- against
+ *     nFunds, and a shortfall is 1. A soldier bumps unk_159D90 and the site's uRecoveredSoldiers
+ *     (0x202) and the pass continues; an engineer bumps auItemQty[112] and a scientist auItemQty[113],
+ *     and BOTH return out of the whole function, so one click queues at most one crew member.
+ *
+ * UpdatePrices is the mirror and sells one unit per pass, with no capacity test at all -- panel D's
+ * count is the only guard, and a row whose count is zero just skips the body:
+ *
+ *   1000 -- 0x75A08..0x75A80: unk_159D90 -= 1, nFunds += 40000, BuySell_nTransTotal -= 40000, panel D
+ *     -= 1, site.uRecoveredSoldiers -= 1, continue.
+ *   112 -- 0x75B38..0x75B7C: nFunds += 50000, total -= 50000, panel D -= 1, site.auItemQty[112] -= 1,
+ *     return. 113 the same at 60000 and auItemQty[113], also a return.
+ *   any other row -- 0x75920..0x759C8: panel D -= 1; 117 / 118 also decrement the signed
+ *     site.bUnk518; site.auItemQty[nAux] -= 1; nFunds += uPrice; BuySell_nTransTotal -= uPrice.
+ *
+ * The shortfall flag is written differently per path: the living-quarters and crew-price paths store
+ * 1 into byte_1870C8 unconditionally, the hangar, stores and product-price paths store it only when
+ * it is still clear -- and the product-price path's reason is the flag's own value afterwards, which
+ * is 1 either way because nothing else writes a different one. The reason code always lands in
+ * dword_1870B4[0].
+ *
+ * Deviations: the original bounds nothing -- it indexes aSmapSites[nSiteCount], apObjects[nAux] and
+ * the panel arrays blindly -- and returns a residue (the site pointer, the loop limit, or
+ * &dword_1870B4) that no caller reads; the port bounds the row, the slot and the site and returns
+ * the shortfall code, or PUFO_BUYSELL_SHORTFALL_NONE when every pass completed. */
+#define PUFO_BUYSELL_PRICE_SOLDIER   40000 /* 0x9C40, 0x75E80 */
+#define PUFO_BUYSELL_PRICE_ENGINEER  50000 /* 0xC350, 0x76010 */
+#define PUFO_BUYSELL_PRICE_SCIENTIST 60000 /* 0xEA60, 0x75FA4 */
+
+typedef enum PufoBuySellShortfall {
+    PUFO_BUYSELL_SHORTFALL_NONE    = -1, /* the pass completed; the original returns a residue here */
+    PUFO_BUYSELL_SHORTFALL_LIVING  = 0,  /* 0x75F90, living quarters full */
+    PUFO_BUYSELL_SHORTFALL_FUNDS   = 1,  /* 0x75F64 / 0x75F74, not enough funds */
+    PUFO_BUYSELL_SHORTFALL_HANGAR  = 2,  /* 0x75F28, hangar full */
+    PUFO_BUYSELL_SHORTFALL_STORES  = 3   /* 0x75F48, stores full */
+} PufoBuySellShortfall;
+
+typedef struct BuySellCapacityEnv {
+    UiPanel *pPanelA;                /* pBuySellPanelA @ 0x161A1C, the row-kind column */
+    UiPanel *pPanelD;                /* pBuySellPanelD @ 0x160C88, the available count */
+    i32 *pnRowCursor;                /* unk_186BE8, the cached selected row */
+    i32 *pnRadarPulseTimer;          /* nRadarPulseTimer @ 0xAC224, the repeat bound */
+    const u8 *abFacilityGrid;        /* gBaseFacGrid @ 0x159768, the four capacity calls */
+    const u8 *abGridBytes;           /* 0x159DBC, Base_CountShipsAtBase's extra term */
+    SmapSite *aSites;                /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                  /* nSiteCount @ 0x186410, also the working site's index */
+    BaseRec *const *apBases;         /* apBases @ 0x114B2C */
+    i32 nBaseCount;
+    Ship *const *apCraft;            /* apCraft @ 0x114A64 */
+    i32 nCraftCount;
+    Soldier *const *apSoldiers;      /* apSoldiers @ 0x114B50 */
+    i32 nSoldierCount;
+    ObjectRecFull *const *apObjects; /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;
+    i8 nSelectedBaseIdx;             /* nSelectedBaseIdx @ 0x159D81 */
+    i32 *pnFunds;                    /* nFunds @ 0x1598D8 */
+    i32 *pnTransTotal;               /* BuySell_nTransTotal @ 0x161A2C */
+    i32 *pnSoldierHireCount;         /* unk_159D90, saved with the bases and moved by soldier rows */
+    u32 *pdwShortfall;               /* byte_1870C8, written as a dword here too */
+    i32 *pnResidue;                  /* dword_1870B4[0], the reason code */
+} BuySellCapacityEnv;
+
+i32 BuySellScreen_ValidateCapacity(const BuySellCapacityEnv *pEnv); /* the ">" control, buys one */
+i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv);     /* the "<" control, sells one */
 
 /* ------------------------------------------------- screen selection caches
  *
