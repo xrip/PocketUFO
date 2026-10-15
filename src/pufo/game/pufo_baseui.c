@@ -266,6 +266,45 @@ i32 BuySell_RoleToItemId(i32 nRole)
     }
 }
 
+/* BuySell_ItemIdToAlienRaceId @ 0x6ad30. The original is a 25-case jump table over slots
+ * 77..101 (SUB R0,R1,#0x4D / CMP R0,#0x18 / ADDLS PC,PC,R0,LSL#2) plus a chain of signed
+ * compares for 102, 103, 104, 114 and 144..148. The ranges below are those groups; five of
+ * them land on the same MOV as a medic or the extra Ethereal rank, which is what the shared
+ * block addresses in the comments record. Everything else answers -1 (0x6AE38). */
+static const struct {
+    i16 nFirst;
+    i16 nLast;
+    PufoAlienRaceId nRace;
+} g_aAlienRaceSlots[] = {
+    { 77,  81,  PUFO_ALIEN_RACE_SECTOID },    /* 0x6AE3C, jumptable cases 0..4; 148 too */
+    { 82,  86,  PUFO_ALIEN_RACE_SNAKEMAN },   /* 0x6ADFC, cases 5..9; 144 too */
+    { 87,  91,  PUFO_ALIEN_RACE_FLOATER },    /* 0x6AE4C, cases 10..14; 146 too */
+    { 92,  94,  PUFO_ALIEN_RACE_MUTON },      /* 0x6AE14, cases 15..17; 145 too */
+    { 95,  98,  PUFO_ALIEN_RACE_ETHEREAL },   /* 0x6AE44, cases 18..21; 114 and 147 too */
+    { 99,  99,  PUFO_ALIEN_RACE_CYBERDISK },  /* 0x6ADB0, case 22 */
+    { 100, 100, PUFO_ALIEN_RACE_CHRYSSALID }, /* 0x6ADB8, case 23 */
+    { 101, 101, PUFO_ALIEN_RACE_REAPER },     /* 0x6ADC0, case 24 */
+    { 102, 102, PUFO_ALIEN_RACE_SILACOID },   /* 0x6ADC8, the CMP #0x66 before the table */
+    { 103, 103, PUFO_ALIEN_RACE_CELATID },    /* 0x6AE0C, the CMP #0x67 */
+    { 104, 104, PUFO_ALIEN_RACE_SECTOPOD },   /* 0x6AE04, the CMP #0x68 */
+    { 114, 114, PUFO_ALIEN_RACE_ETHEREAL },   /* 0x6AE44 again, the CMP #0x72 */
+    { 144, 144, PUFO_ALIEN_RACE_SNAKEMAN },   /* 0x6ADFC again, the CMP #0x90 */
+    { 145, 145, PUFO_ALIEN_RACE_MUTON },      /* 0x6AE14 again, the CMP #0x91 */
+    { 146, 146, PUFO_ALIEN_RACE_FLOATER },    /* 0x6AE4C again, the CMP #0x92 */
+    { 147, 147, PUFO_ALIEN_RACE_ETHEREAL },   /* 0x6AE44 again, the CMP #0x93 */
+    { 148, 148, PUFO_ALIEN_RACE_SECTOID },    /* 0x6AE3C again, the CMP #0x94 */
+};
+
+PufoAlienRaceId BuySell_ItemIdToAlienRaceId(i32 nSlotId)
+{
+    for (i32 k = 0; k < (i32)(sizeof(g_aAlienRaceSlots) / sizeof(g_aAlienRaceSlots[0])); ++k) {
+        if (nSlotId >= g_aAlienRaceSlots[k].nFirst && nSlotId <= g_aAlienRaceSlots[k].nLast) {
+            return g_aAlienRaceSlots[k].nRace;
+        }
+    }
+    return PUFO_ALIEN_RACE_NONE; /* 0x6AE38, MOV R0,#-1 */
+}
+
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
  * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
  * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */

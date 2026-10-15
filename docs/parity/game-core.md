@@ -10773,3 +10773,59 @@ Coverage after this unit: 834/1103 functions (75.6%), 330036/598792 bytes (55.1%
 IDB: comments added at 0x6dd4c, 0x6dd94, 0x715e8, 0x71648, 0x76088, 0x760e0, 0x79a70, 0x79ac8,
 0x967e4, 0x9683c, 0x76d88, 0x78d90 and on the panel globals 0x15EE38, 0x15EE40, 0x15EE48,
 0x15EE58, 0x15EE88, 0x15EEA8, 0x15EED0, 0x161A00, 0x161A1C, 0x161A20.
+
+The alien race ids, and a wrong IDB name fixed (done)
+-----------------------------------------------------
+
+`BuySell_ItemIdToCategory @ 0x6ad30` was misnamed, and the IDB now carries the corrected name
+`BuySell_ItemIdToAlienRaceId`. It does not read `ObjectRec.nCategory @ 0xB8`: that field is 0
+for every slot the function maps (255 for 145..147), so it cannot be the source. What the
+function answers is the alien RACE id of the item sitting in that object slot, or -1 for any
+other slot. All its compares are signed (BGT / BEQ / BNE, no unsigned branch), so a negative
+slot takes the -1 branch at 0x6AE38.
+
+The body is a 25-case jump table over slots 77..101 (`SUB R0,R1,#0x4D / CMP R0,#0x18 / ADDLS
+PC,PC,R0,LSL#2` at 0x6AD3C..0x6AD44) plus a chain of compares for 102, 103, 104, 114 and
+144..148. Five of the compare targets land on the same MOV as a jump-table group, which is what
+ties them to the same race:
+
+  77..81 -> 9    (0x6AE3C; 148 reaches it through the CMP #0x94)
+  82..86 -> 12   (0x6ADFC; 144 through the CMP #0x90)
+  87..91 -> 11   (0x6AE4C; 146 through the CMP #0x92)
+  92..94 -> 10   (0x6AE14; 145 through the CMP #0x91)
+  95..98 -> 13   (0x6AE44; 114 through the CMP #0x72 and 147 through the CMP #0x93)
+  99 -> 18, 100 -> 14, 101 -> 20, 102 -> 19, 103 -> 15, 104 -> 21
+  anything else -> -1
+
+Two independent checks pin the ids to races.
+
+1. The shipped OBJECTS.DAT names (main.dat, 149 records of 208 bytes, name at record+0x00):
+   77..81 are the five Sectoid ranks, 82..86 Snakeman, 87..91 Floater, 92..94 Muton, 95..98
+   Ethereal, 99 Cyberdisk, 100 Chryssalid, 101 Reaper, 102 Silacoid, 103 Celatid, 104 Sectopod,
+   114 is a sixth Ethereal rank and 144..148 are the five race medics. The groups above cut
+   exactly along those boundaries.
+
+2. The consumer. `BuySellScreen_CommitTransaction @ 0x74bf8` (not ported) switches on the
+   returned id at 0x74CA0 and picks one of eleven record pointers. Those eleven are
+   `Map+0x1F4..0x21C`, which is `apObjects[59..69]` -- part of the apObjects pointer array at
+   `Map+0x108`, not a separate table; the IDB globals there were unnamed `unk_113BAC..unk_113BD4`
+   and are now `Map_apObjects59..Map_apObjects69`. Those eleven records are the alien corpses:
+   59 Sectoid, 60 Snakeman, 61 Floater, 62 Muton, 63 Ethereal, 64 Cyberdisk, 65 Chryssalid,
+   66 Reaper, 67 Celatid, 68 Silacoid, 69 Sectopod. So a buy moves the item into the base and
+   the matching race corpse out of it. `Smap_GrantSiteRecovery @ 0x98b50` (not ported) hard-codes
+   the same pairing per slot instead of going through the race id (77..81 -> 59, 82..86 -> 60,
+   87..91 -> 61, 92..94 -> 62, 95..98 and 114 -> 63, 99 -> 64, 100 -> 65, 101 -> 66, 103 -> 67,
+   102 -> 68, 104 -> 69), and it agrees with the race ids slot for slot.
+
+Port: `PufoAlienRaceId` and `BuySell_ItemIdToAlienRaceId` in src/pufo/game/pufo_baseui.c, the
+mapping as a 17-entry range table. Tests: `TestAlienRaceId` in tests/test_baseui.c, 31 checks,
+including that exactly 34 of the 149 shipped slots carry a race.
+
+IDB: 0x6ad30 renamed and typed `AlienRaceId __fastcall (int pMap, int nSlotId)`; the enum
+`AlienRaceId` added to the local type library; `unk_113BAC..unk_113BD4` renamed to
+`Map_apObjects59..Map_apObjects69` with type `ObjectRec *`; `Map_apObjects56` re-typed from a
+1-byte global to `ObjectRec *` (it is `Map+0x1E8`, i.e. the object array's 57th pointer);
+comments added at 0x6ad30 and at the twelve record globals. `docs/idb/functions.tsv` and
+`inventory-grouped.tsv` carry the new function name.
+
+Coverage after this unit: 835/1103 functions (75.7%), 330328/598792 bytes (55.2%).

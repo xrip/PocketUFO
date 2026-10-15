@@ -662,7 +662,7 @@ addr	name	size	subsystem
 6ac90	BaseGrid_SetByteAtFound	48	strat
 6acc0	BaseGrid_GetByte0x654	44	strat
 6acec	BaseGrid_SubByte0x654	68	strat
-6ad30	BuySell_ItemIdToCategory	292	strat-ui
+6ad30	BuySell_ItemIdToAlienRaceId	292	strat-ui
 6ae54	Base_FindFacilityCell	140	strat
 6aee0	Base_CountEmptyFacilityCells	160	strat
 6af80	SaveGame_Slot0_CloseUI	76	strat-ui

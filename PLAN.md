@@ -808,6 +808,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   form — `Geoscape_CloseUI (0x8b94c)` and `PsiScreen_ApplyAssignments (0x72250)` — and both are
   the paren form now, so neither is credited. `audit_names.py` is back to 0 unresolved.
 
+- [x] part 17, the alien race ids: `BuySell_ItemIdToAlienRaceId (0x6ad30)` — 31 more checks, and
+  a wrong IDB name fixed. The function was `BuySell_ItemIdToCategory`; it does not read
+  `ObjectRec.nCategory @ 0xB8` (that field is 0 for every slot it maps, 255 for 145..147), it
+  answers the alien RACE id of the item in that object slot, or -1. Two independent checks pin
+  the ids to races: the shipped OBJECTS.DAT names cut exactly along the function's groups, and
+  its only reader `BuySellScreen_CommitTransaction (0x74bf8)` switches the id into
+  `apObjects[59..69]` — the eleven alien-corpse records — which is the same pairing
+  `Smap_GrantSiteRecovery (0x98b50)` hard-codes per slot. The eleven globals there were
+  `unk_113BAC..unk_113BD4` and are now `Map_apObjects59..Map_apObjects69` typed `ObjectRec *`;
+  the enum `AlienRaceId` is in the IDB type library, `Map_apObjects56` was re-typed from a
+  1-byte global to `ObjectRec *`, and `docs/idb/functions.tsv` / `inventory-grouped.tsv` carry
+  the renamed function.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -826,6 +839,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
 
 ## Separate issues, not folded into the porting steps
 
+- [ ] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
+  one slot short.** Found while verifying the alien race ids (part 17); it also explains the older
+  "names read short" observation. Three pieces of evidence. (1) The shipped OBJECTS.DAT records
+  carry a readable name at record+0x00 — slot 59 is "Sectoid corpse", slot 77 "Sectoid soldier" —
+  and the IDB's `ObjectRec` has `char gap_0[36]` exactly there. (2) `Geoscape_InitUI @ 0x86A64`
+  loads `LDR R0,[R3,#0x10C]`, i.e. `apObjects[i+1]` and not `apObjects[i]` (the price loop four
+  instructions earlier uses `#0x108`), and `STRB R2,[R0]` stores at offset 0 of the record.
+  (3) Matching against main.dat, the text record that names object slot j is 1446+j, not 1447+j.
+  The port has `gap_0[4] + szName[32]` and copies record 1447+i into slot i, so every object name
+  is one slot off and four bytes late — reading a name straight after `Boot_LoadStartup` gives
+  "oid soldier" for "Sectoid soldier". The fix touches the `ObjectRecFull` layout, the
+  `Geoscape_InitUI` loop, the `ObjectSlot` enum names (shifted by one from slot 67 up) and the
+  tests that assert them, so it is its own step.
 - [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
   `pufo_game` without `pufo_ui` only link because nothing pulls `pufo_strateg.obj` out of the
@@ -956,6 +982,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the map-target confirm (`Smap_ConfirmCraftTarget`) | 56/56 (Release) | 9237 | 818/1103 (74.2%) | 327676/598792 (54.7%) | 38 checked, 0 mismatched |
 | the wrapped distance and the craft range gate (`Smap_DistWrapped`, `Smap_CraftRangeExhausted`, `Ship_FindIndexById`, `Base_RemoveAllSoldiers`) | 56/56 (Release) | 9293 | 823/1103 (74.6%) | 328948/598792 (54.9%) | 38 checked, 0 mismatched |
 | the panel scroll family, the role map and the stores commit (10 scroll handlers, `BuySell_RoleToItemId`, `BuySellScreen_ApplyQtyChanges`) | 56/56 (Release) | 9330 | 834/1103 (75.6%) | 330036/598792 (55.1%) | 38 checked, 0 mismatched |
+| the alien race ids (`BuySell_ItemIdToAlienRaceId`, IDB name fixed) | 56/56 (Release) | 9361 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

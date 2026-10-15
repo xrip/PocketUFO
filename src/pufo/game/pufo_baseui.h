@@ -164,6 +164,53 @@ void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5]);
  * only the numbers are claimed here. */
 i32 BuySell_RoleToItemId(i32 nRole);
 
+/* ------------------------------------------------- the alien race ids
+ *
+ * Evidence: BuySell_ItemIdToAlienRaceId @ 0x6ad30 (292 B), renamed in the IDB from
+ * BuySell_ItemIdToCategory. Its only reader is BuySellScreen_CommitTransaction (0x74bf8, not
+ * ported).
+ *
+ * The old name was wrong and the IDB now says so: the function does NOT read
+ * ObjectRec.nCategory @ 0xB8. That field is 0 for every slot the function maps (255 for
+ * 145..147), so it could not be the source. What the function returns is the alien RACE id
+ * of the item in that object slot, or -1 for any other slot. The comparisons are signed
+ * (BGT / BEQ / BNE, no unsigned branch), so a negative slot takes the -1 branch.
+ *
+ * The race reading is verified two ways. First against the shipped OBJECTS.DAT names
+ * (main.dat, 149 records of 208 bytes, the name at record+0x00): 77..81 are the five Sectoid
+ * ranks, 82..86 Snakeman, 87..91 Floater, 92..94 Muton, 95..98 Ethereal, 99 Cyberdisk,
+ * 100 Chryssalid, 101 Reaper, 102 Silacoid, 103 Celatid, 104 Sectopod, 114 is a sixth Ethereal
+ * rank and 144..148 are the five race medics. The function's groups cut exactly along those
+ * race boundaries, and 114 shares Ethereal's id with 95..98 while each medic shares its own
+ * race's id.
+ *
+ * Second against the consumer. BuySellScreen_CommitTransaction turns the returned id into a
+ * record pointer through a switch (0x74CA0), and the eleven pointers are apObjects[59..69] --
+ * Map+0x1F4..0x21C, part of the apObjects array at Map+0x108, not a separate table. Those
+ * eleven records are the alien corpses: 59 Sectoid, 60 Snakeman, 61 Floater, 62 Muton,
+ * 63 Ethereal, 64 Cyberdisk, 65 Chryssalid, 66 Reaper, 67 Celatid, 68 Silacoid, 69 Sectopod.
+ * So the commit moves the bought item into the base and the matching race corpse out of it.
+ * Smap_GrantSiteRecovery (0x98b50, not ported) hard-codes the same pairing per slot instead of going
+ * through the race id (77..81 -> 59, 82..86 -> 60, 87..91 -> 61, 92..94 -> 62, 95..98 and 114
+ * -> 63, 99 -> 64, 100 -> 65, 101 -> 66, 103 -> 67, 102 -> 68, 104 -> 69), which is what
+ * pins the ids to races. Ids 16 and 17 are not used by this map. */
+typedef enum PufoAlienRaceId {
+    PUFO_ALIEN_RACE_SECTOID    = 9,   /* apObjects[59] "Sectoid corpse" */
+    PUFO_ALIEN_RACE_MUTON      = 10,  /* apObjects[62] "Muton corpse" */
+    PUFO_ALIEN_RACE_FLOATER    = 11,  /* apObjects[61] "Floater corpse" */
+    PUFO_ALIEN_RACE_SNAKEMAN   = 12,  /* apObjects[60] "Snakeman corpse" */
+    PUFO_ALIEN_RACE_ETHEREAL   = 13,  /* apObjects[63] "Ethereal corpse" */
+    PUFO_ALIEN_RACE_CHRYSSALID = 14,  /* apObjects[65] "Chryssalid corpse" */
+    PUFO_ALIEN_RACE_CELATID    = 15,  /* apObjects[67] "Celatid corpse" */
+    PUFO_ALIEN_RACE_CYBERDISK  = 18,  /* apObjects[64] "Cyberdisk remains" */
+    PUFO_ALIEN_RACE_SILACOID   = 19,  /* apObjects[68] "Silacoid corpse" */
+    PUFO_ALIEN_RACE_REAPER     = 20,  /* apObjects[66] "Reaper corpse" */
+    PUFO_ALIEN_RACE_SECTOPOD   = 21,  /* apObjects[69] "Sectopod remains" */
+    PUFO_ALIEN_RACE_NONE       = -1   /* the slot has no race behind it */
+} PufoAlienRaceId;
+
+PufoAlienRaceId BuySell_ItemIdToAlienRaceId(i32 nSlotId);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

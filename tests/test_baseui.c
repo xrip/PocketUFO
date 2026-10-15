@@ -433,6 +433,59 @@ static void TestRoleToItemId(void)
     CheckEqI32(BuySell_RoleToItemId(256), 117, "only the low byte counts");
 }
 
+static void TestAlienRaceId(void)
+{
+    printf("BuySell_ItemIdToAlienRaceId @ 0x6ad30\n");
+
+    /* Both ends of every group, so a range that is one short shows up. */
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(77), PUFO_ALIEN_RACE_SECTOID, "77 Sectoid soldier");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(81), PUFO_ALIEN_RACE_SECTOID, "81 Sectoid commander");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(82), PUFO_ALIEN_RACE_SNAKEMAN, "82 Snakeman soldier");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(86), PUFO_ALIEN_RACE_SNAKEMAN, "86 Snakeman commander");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(87), PUFO_ALIEN_RACE_FLOATER, "87 Floater soldier");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(91), PUFO_ALIEN_RACE_FLOATER, "91 Floater commander");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(92), PUFO_ALIEN_RACE_MUTON, "92 Muton soldier");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(94), PUFO_ALIEN_RACE_MUTON, "94 Muton navigator");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(95), PUFO_ALIEN_RACE_ETHEREAL, "95 Ethereal soldier");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(98), PUFO_ALIEN_RACE_ETHEREAL, "98 Ethereal commander");
+
+    /* The six singletons after the jump table. */
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(99), PUFO_ALIEN_RACE_CYBERDISK, "99 Cyberdisk");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(100), PUFO_ALIEN_RACE_CHRYSSALID, "100 Chryssalid");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(101), PUFO_ALIEN_RACE_REAPER, "101 Reaper");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(102), PUFO_ALIEN_RACE_SILACOID, "102 Silacoid");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(103), PUFO_ALIEN_RACE_CELATID, "103 Celatid");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(104), PUFO_ALIEN_RACE_SECTOPOD, "104 Sectopod");
+
+    /* The extra Ethereal rank and the five medics, each landing on its own race's id. */
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(114), PUFO_ALIEN_RACE_ETHEREAL, "114 Ethereal navigator");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(144), PUFO_ALIEN_RACE_SNAKEMAN, "144 Snakeman medic");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(145), PUFO_ALIEN_RACE_MUTON, "145 Muton medic");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(146), PUFO_ALIEN_RACE_FLOATER, "146 Floater medic");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(147), PUFO_ALIEN_RACE_ETHEREAL, "147 Ethereal medic");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(148), PUFO_ALIEN_RACE_SECTOID, "148 Sectoid medic");
+
+    /* The gaps the original's compares leave open. */
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(76), PUFO_ALIEN_RACE_NONE, "76, one before the table");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(105), PUFO_ALIEN_RACE_NONE, "105, one past it");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(113), PUFO_ALIEN_RACE_NONE, "113");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(115), PUFO_ALIEN_RACE_NONE, "115");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(143), PUFO_ALIEN_RACE_NONE, "143");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(149), PUFO_ALIEN_RACE_NONE, "149, past the shipped count");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(0), PUFO_ALIEN_RACE_NONE, "0");
+    CheckEqI32(BuySell_ItemIdToAlienRaceId(-1), PUFO_ALIEN_RACE_NONE,
+               "-1: every compare in 0x6AD34..0x6AE34 is signed");
+
+    /* Exactly 34 slots carry a race, which is the group widths summed. */
+    i32 nMapped = 0;
+    for (i32 i = 0; i < 149; ++i) {
+        if (BuySell_ItemIdToAlienRaceId(i) != PUFO_ALIEN_RACE_NONE) {
+            ++nMapped;
+        }
+    }
+    CheckEqI32(nMapped, 34, "34 of the 149 shipped slots carry an alien race");
+}
+
 static i32 g_nIdAtInit;
 static i32 g_nOpenSample;
 static i32 g_nOpenSampleArg;
@@ -5461,6 +5514,7 @@ int main(void)
     TestBuySellPaging();
     TestPanelScrollFamily();
     TestRoleToItemId();
+    TestAlienRaceId();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

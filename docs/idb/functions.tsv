@@ -662,7 +662,7 @@ addr	name	size
 6ac90	BaseGrid_SetByteAtFound	48
 6acc0	BaseGrid_GetByte0x654	44
 6acec	BaseGrid_SubByte0x654	68
-6ad30	BuySell_ItemIdToCategory	292
+6ad30	BuySell_ItemIdToAlienRaceId	292
 6ae54	Base_FindFacilityCell	140
 6aee0	Base_CountEmptyFacilityCells	160
 6af80	SaveGame_Slot0_CloseUI	76
