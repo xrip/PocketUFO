@@ -13403,3 +13403,104 @@ Every label the debrief copies comes from `aTextRecs + 205*n`, built as `LDR R0,
 Lost, 169 Base Destroyed, 170 Base Lost, 171..178 the alien-item lines, 198 Examination Room. IDA
 types none of them as strings (they are in the loaded-texts image, not in .rdata), which is why
 `get_string` returns nothing there.
+
+## Tact_ClearSoldierBattleFlags (0x346e0) and the rank ladder (0x47280)
+
+2268 + 1096 = 3364 bytes, ported as `Tact_ClearSoldierBattleFlags` in src/pufo/game/pufo_tactend.c
+and `Soldier_PromoteByTypeScores` in src/pufo/game/pufo_roster.c.
+
+### The five steps of 0x346e0
+
+1. clear `Soldier.bRankDirty` (0x1BC) over `Map_apSoldiers` (0x34724)
+2. `Soldier_PromoteByTypeScores` (0x47280) at 0x3473C -- whoever climbs sets bRankDirty
+3. per-soldier stat refresh, gated on `bInZone` (0x3C0) != 0 and `Unit_bIsOperative`
+   (bStatus @ 0x17 == 0)
+4. the promotion report, for the refreshed soldiers that still hold bRankDirty
+5. clear bRankDirty again (0x34F9C)
+
+Step 1 is why a bRankDirty the caller left behind is not a report row: the flag is wiped before
+the ladder runs, so at step 4 it means "promoted by this call" and nothing else.
+
+### The rank ladder (0x47280)
+
+Five rungs, run top-down, one step per rung per call -- a soldier promoted by the 2->3 rung is
+not reconsidered by the 3->4 rung, which already ran. Mission score is
+`5 * (uKills + 2 * uMissions)` (Soldier_MissionScore).
+
+  rung   gate on the target rank   candidates            threshold   ARM
+  4 -> 5 count(5) == 0            best of two rank-4    375         0x472C0
+  3 -> 4 count(4) < 2             best of two rank-3    270         0x47374
+  2 -> 3 count(3) < 2             best of two rank-2    125         0x47440
+  1 -> 2 count(2) < count(1)/3    count(1)/3 attempts   90          0x47504
+  0 -> 1 none                     every rank-0 soldier  > 45        0x47654
+
+`count(n)` is Soldier_CountSmallByType: live (uHp != 0) and non-large. The engineer rung tests
+`== 0` where the two above it test `< 2`, so one existing rank-5 soldier closes that rung while
+one rank-4 soldier does not close the leader rung.
+
+"Best of two" compares only the two lowest-indexed candidates through
+Soldier_PickBestScoreAmong (0x47190). With pick 0 (candidate A won) and the score short of the
+threshold the ARM jumps the whole rung -- candidate B is never tried (0x47308 -> 0x47338).
+
+The 1->2 rung is the odd one out. Its two scans test `bRankType` alone: no alive test and no
+large-unit test, so a DEAD rank-1 soldier holding the best score is the one that climbs, even
+though count(1) only counted the live ones. It also seeds its running score from
+`nPromoteBestPick` (0x47548, 0x47624) -- the previous rung's 0/1 pick, not a score. Harmless
+(0 and 1 sit under every real score and under the 90 gate) but reproduced.
+
+### The stat refresh: the base index is not the stat index
+
+    auStat[k] = (u16)((double)g_aClassStatGrowth[9 * nClass + j] * rate * (double)uMissions
+                      + (double)auStatBase[b])
+
+  j  k  b  rate                    auStat meaning
+  0  0  0  0.8166666666666667      auStat[0] -> uTu
+  8  9  8  0.31666666666666665     auStat[9] -> uStunOrArmor
+  1  1  1  0.4                     auStat[1] -> uHp
+  2  2  2  0.3833333333333333
+  3  3  3  0.35
+  4  4  4  0.31666666666666665
+  5  5  5  0.2833333333333333
+  7  8  7  0.4
+
+Class column 6 is never read and auStat[6]/auStat[7] are never recomputed. Each rate is a literal
+double written as two dword halves (`LDR R2,=0x22222222` / `LDR R3,=0x3FEA2222` at 0x347D8), and
+the product goes through _dtou -- truncated toward zero -- before STRH.
+
+**The bug this unit found in the port.** The first version used the stat index for the base too.
+The ARM spells the difference out in the operand offsets: the j=8 rule reads
+`LDRH R0,[R8,#Soldier.auStatBase+0x10]` (auStatBase[8]) and stores `STRH R0,[R8,#Soldier.auStat+0x12]`
+(auStat[9]); the j=7 rule reads `[R8,#0xF2]` (auStatBase[7]) and stores `[R8,#0xB2]` (auStat[8]).
+auStatBase has nine entries, so reading index 9 ran off the end of the array into the bytes before
+uKills (0x0FA). The pairing is exactly the compaction Unit_ResetBattleState (0x498b0) writes --
+auStatBase[7] = auStat[8], auStatBase[8] = auStat[9] -- so every rule reads the base of the stat it
+grows. Fixed by giving StatGrowthRule a `b` field.
+
+g_aClassStatGrowth @ 0xAA930 (was byte_AA930) is 6 x 9 bytes of 1..3, Tact_ClearSoldierBattleFlags
+is its only reader in the binary, and docs/parity/audit_tables.py now byte-checks all 54 entries
+against the shipped image: exact match.
+
+### The promotion report
+
+For each refreshed soldier still holding bRankDirty: `Soldier.szName` (0x0BA) into
+`pUiPanel2 @ 0x1568E0` apLines[n] (0x34E34) and `aszTextE[20 * bRankType]` into
+`pUiPanel3 @ 0x1568DC` apLines[n] (0x34E74), then both nLineCount += 1 (0x34EAC, 0x34EC0) and
+`Map_bPromotionReport` (0x1153D8) = 1 (0x34EDC). Both copies are terminator-inclusive byte walks,
+into 50-byte line buffers. aszTextE @ 0xB2200 is a loaded TEXTS block of six 20-byte entries --
+its text is not in the image (get_bytes there is all zero), so the port takes the names through
+the env and the test checks the 20 * bRankType indexing rather than the wording.
+
+Rows follow roster order, and the bInZone gate applies here too: a soldier the ladder promotes but
+that sits outside the zone changes rank and gets no row.
+
+### Deviations
+
+- The port bounds-checks `nClass` against 0..5 before indexing g_aClassStatGrowth. The original
+  indexes it blind. Unit_ClassFromStats only ever produces 0..5, so the branch is unreachable.
+- nPromoteBestScore / nPromoteBestPick stay locals in the port's shared scratch: nothing outside
+  Soldier_PickBestScoreAmong and Soldier_PromoteByTypeScores reads either global.
+- Tests: 33 new checks in tests/test_roster.c (each rung's threshold, the engineer `== 0` gate
+  against the leader `< 2` gate, the count(1)/3 attempt count, the dead high-scorer promoted by
+  the 1->2 rung, one-step-per-rung ordering) and 74 in tests/test_tactend.c (the exact auStat
+  values for class 0 and class 5, auStat[6]/[7] left alone, both gates, the report rows and their
+  order, a stale bRankDirty producing no row, Map_bPromotionReport clear when nobody is promoted).

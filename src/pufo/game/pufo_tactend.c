@@ -5,6 +5,7 @@
 
 #include "game/pufo_geoscape.h"
 #include "game/pufo_objectrec.h"
+#include "game/pufo_roster.h" /* Soldier_PromoteByTypeScores */
 #include "game/pufo_ship.h"
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
@@ -777,5 +778,131 @@ void Tact_TallyCraftRecovery(const TactCraftTallyEnv *pEnv, i32 *pbLootRecorded)
             pSite->bHasLoot = 1;
             *pbLootRecorded = 1;
         }
+    }
+}
+
+/* --- Tact_ClearSoldierBattleFlags @ 0x346e0 -------------------------------- */
+
+/* g_aClassStatGrowth @ 0xAA930 (was byte_AA930): six soldier classes x nine growth weights,
+ * values 1..3. Tact_ClearSoldierBattleFlags is its only reader in the binary, and the class
+ * index is Soldier.nClass, which Unit_ClassFromStats bounds to 0..5. Byte-checked against the
+ * image by docs/parity/audit_tables.py. */
+const u8 g_aClassStatGrowth[PUFO_SOLDIER_CLASS_COUNT * PUFO_CLASS_STAT_COUNT] = {
+    /* class 0 */ 3, 3, 2, 2, 2, 3, 1, 3, 3,
+    /* class 1 */ 2, 2, 1, 3, 3, 1, 1, 2, 2,
+    /* class 2 */ 2, 1, 3, 2, 1, 1, 3, 1, 2,
+    /* class 3 */ 3, 2, 2, 3, 2, 3, 1, 2, 3,
+    /* class 4 */ 2, 2, 2, 3, 2, 1, 2, 2, 2,
+    /* class 5 */ 3, 2, 2, 2, 2, 2, 2, 2, 3
+};
+
+/* The (class column, auStat index, auStatBase index, per-mission rate) quadruples, in the order
+ * the ARM emits them. Each rate is a literal double written as two dword halves, e.g. at 0x347D8:
+ * `LDR R2,=0x22222222` / `LDR R3,=0x3FEA2222`. Class column 6 is never read and auStat[6] and
+ * auStat[7] are never recomputed.
+ *
+ * The base index is not always the stat index, and the ARM spells the difference out in operand
+ * offsets: the class-8 rule reads `LDRH R0,[R8,#auStatBase+0x10]` (auStatBase[8]) and stores
+ * `STRH R0,[R8,#auStat+0x12]` (auStat[9]); the class-7 rule reads `[R8,#0xF2]` (auStatBase[7])
+ * and stores `[R8,#0xB2]` (auStat[8]). That is exactly the compaction Unit_ResetBattleState
+ * writes -- auStatBase[7] holds auStat[8] and auStatBase[8] holds auStat[9] -- so each rule reads
+ * the base of the stat it is growing. auStatBase has nine entries, so the class-8 rule reading
+ * index 9 would run off the end of the array. */
+typedef struct StatGrowthRule {
+    u8     nClassCol;
+    u8     nStatIdx;
+    u8     nBaseIdx;
+    double dRate;
+} StatGrowthRule;
+
+static const StatGrowthRule s_aStatGrowth[8] = {
+    { 0, 0, 0, 0.8166666666666667  }, /* 0x347D8 */
+    { 8, 9, 8, 0.31666666666666665 }, /* 0x348AC */
+    { 1, 1, 1, 0.4                   }, /* 0x34988 */
+    { 2, 2, 2, 0.3833333333333333  }, /* 0x34A54 */
+    { 3, 3, 3, 0.35                  }, /* 0x34B20 */
+    { 4, 4, 4, 0.31666666666666665 }, /* 0x34BEA */
+    { 5, 5, 5, 0.2833333333333333  }, /* 0x34CC8 */
+    { 7, 8, 7, 0.4                   }  /* 0x34D98 */
+};
+
+#define STAT_GROWTH_RULE_COUNT ((i32)(sizeof(s_aStatGrowth) / sizeof(s_aStatGrowth[0])))
+#define RANK_NAME_STRIDE 20 /* aszTextE @ 0xB2200, six 20-byte Xcom rank names */
+
+/* The original's byte copy, terminator included (0x34E34, 0x34E74). Both destinations are
+ * 50-byte line buffers (PUFO_PANEL_LINE_BYTES) and both sources are shorter than that, so no
+ * bound is needed here. */
+static void ClearFlags_CopyLine(UiPanel *pPanel, i32 nLine, const char *pszSrc)
+{
+    u8 *pDst = pPanel->apLines[nLine];
+    i32 i = 0;
+
+    for (;;) {
+        pDst[i] = (u8)pszSrc[i];
+        if (pszSrc[i] == 0) {
+            break;
+        }
+        ++i;
+    }
+}
+
+/* Tact_ClearSoldierBattleFlags @ 0x346e0. */
+void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv)
+{
+    Soldier **apSoldiers = pEnv->apSoldiers;
+    const i32 nCount = (i32)*pEnv->pnSoldierCount;
+    i32 nLine = 0;
+    i32 i;
+
+    for (i = 0; i < nCount; ++i) {
+        apSoldiers[i]->bRankDirty = 0;                        /* 0x34724 */
+    }
+
+    {
+        SoldierPromoteEnv promote;
+
+        promote.apSoldiers = apSoldiers;
+        promote.pnSoldierCount = pEnv->pnSoldierCount;
+        Soldier_PromoteByTypeScores(&promote);                /* 0x3473C */
+    }
+
+    for (i = 0; i < nCount; ++i) {
+        Soldier *pUnit = apSoldiers[i];
+        const u8 *pClass;
+
+        if (pUnit->bInZone == 0) {
+            continue;
+        }
+        if (!Unit_bIsOperative(pUnit)) {
+            continue;
+        }
+        if (pUnit->nClass < 0 || pUnit->nClass >= PUFO_SOLDIER_CLASS_COUNT) {
+            /* Deviation: the original indexes g_aClassStatGrowth with no test. Unit_ClassFromStats
+             * only ever produces 0..5, so this branch is unreachable in practice. */
+            continue;
+        }
+        pClass = &g_aClassStatGrowth[PUFO_CLASS_STAT_COUNT * pUnit->nClass];
+        for (i32 r = 0; r < STAT_GROWTH_RULE_COUNT; ++r) {
+            const StatGrowthRule *pRule = &s_aStatGrowth[r];
+            double dValue = (double)pClass[pRule->nClassCol] * pRule->dRate
+                          * (double)pUnit->uMissions
+                          + (double)pUnit->auStatBase[pRule->nBaseIdx];
+
+            pUnit->auStat[pRule->nStatIdx] = (u16)dValue;
+        }
+        if (pUnit->bRankDirty == 0) {
+            continue;
+        }
+        ClearFlags_CopyLine(pEnv->pPanelName, nLine, pUnit->szName);                  /* 0x34E34 */
+        ClearFlags_CopyLine(pEnv->pPanelRank, nLine,
+                            &pEnv->panRankName[RANK_NAME_STRIDE * pUnit->bRankType]); /* 0x34E74 */
+        pEnv->pPanelName->nLineCount += 1;                                            /* 0x34EAC */
+        pEnv->pPanelRank->nLineCount += 1;                                            /* 0x34EC0 */
+        ++nLine;
+        *pEnv->pbPromotionReport = 1;                                                 /* 0x34EDC */
+    }
+
+    for (i = 0; i < nCount; ++i) {
+        apSoldiers[i]->bRankDirty = 0;                        /* 0x34F9C */
     }
 }

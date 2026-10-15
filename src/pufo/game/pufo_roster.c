@@ -519,3 +519,157 @@ i32 Soldier_PickBestScoreAmong(Soldier *const *apSoldiers, const i32 anIdx[8],
     }
     return nBest;
 }
+
+/* --- Soldier_PromoteByTypeScores @ 0x47280 --------------------------------- */
+
+#define PROMOTE_SCORE_ENGINEER    375 /* MOV R1,#0x177 at 0x47318 */
+#define PROMOTE_SCORE_LEADER      270 /* MOV R2,#0x10E at 0x473F0 */
+#define PROMOTE_SCORE_NAVIGATOR   125 /* CMP  R0,#0x7D  at 0x474B4 */
+#define PROMOTE_SCORE_SOLDIER      90 /* CMP  R2,#0x5A  at 0x475F8 */
+#define PROMOTE_SCORE_ROOKIE       45 /* CMP  R8,#0x2D  at 0x4768C */
+
+/* The two scratch values the ladder shares with Soldier_PickBestScoreAmong. The original
+ * keeps them in globals (nPromoteBestScore @ 0x15880C, nPromoteBestPick @ 0x158810) that
+ * nothing outside these two functions reads, so the port keeps them here. */
+typedef struct PromoteScratch {
+    i32 nBestScore;
+    i32 nBestPick;
+} PromoteScratch;
+
+/* One "best of two" rung: the two lowest-indexed live non-large soldiers of nFromRank are
+ * compared by mission score and the better one is promoted if the score clears the rung's
+ * threshold. bEmptyTop picks the engineer rung's `count(to) == 0` test out of the other two
+ * rungs' `count(to) < 2`. */
+static void Promote_BestOfTwo(const SoldierPromoteEnv *pEnv, PromoteScratch *pScr,
+                              i32 nFromRank, i32 nToRank, bool bEmptyTop, i32 nThreshold)
+{
+    Soldier **apSoldiers = pEnv->apSoldiers;
+    const i32 nCount = (i32)*pEnv->pnSoldierCount;
+    const i32 nAtTop = Soldier_CountSmallByType(apSoldiers, nCount, (u8)nToRank);
+    i32 anIdx[8];
+    i32 nA;
+    i32 nB;
+    i32 i;
+
+    if (bEmptyTop ? (nAtTop != 0) : (nAtTop >= 2)) {
+        return;
+    }
+    if (Soldier_CountSmallByType(apSoldiers, nCount, (u8)nFromRank) < 2) {
+        return;
+    }
+    nA = Soldier_FindNextSmallByType(apSoldiers, nCount, (u8)nFromRank, 0);
+    nB = Soldier_FindNextSmallByType(apSoldiers, nCount, (u8)nFromRank, nA + 1);
+    anIdx[0] = nA;
+    anIdx[1] = nB;
+    for (i = 2; i < 8; ++i) {
+        anIdx[i] = -1;
+    }
+    Soldier_PickBestScoreAmong(apSoldiers, anIdx, &pScr->nBestScore, &pScr->nBestPick);
+
+    /* 0x47308: pick 0 means candidate A won, pick 1 means candidate B won. With pick 0 and the
+     * score short of the threshold the original jumps the whole rung, candidate B included. */
+    if (pScr->nBestPick == 0) {
+        if (pScr->nBestScore < nThreshold) {
+            return;
+        }
+        apSoldiers[nA]->bRankType = (u8)nToRank;   /* 0x47338 */
+        apSoldiers[nA]->bRankDirty = 1;            /* 0x47340 */
+    } else if (pScr->nBestPick == 1 && pScr->nBestScore >= nThreshold) {
+        apSoldiers[nB]->bRankType = (u8)nToRank;   /* 0x47368 */
+        apSoldiers[nB]->bRankDirty = 1;            /* 0x47370 */
+    }
+}
+
+/* 0x47504: rank 1 -> rank 2, count(1) / 3 attempts, skipped outright when the roster already
+ * holds at least that many rank-2 soldiers. Unlike the rungs above, the two scans here test
+ * bRankType alone -- no alive test and no large-unit test. */
+static void Promote_Soldiers(const SoldierPromoteEnv *pEnv, PromoteScratch *pScr)
+{
+    Soldier **apSoldiers = pEnv->apSoldiers;
+    const i32 nCount = (i32)*pEnv->pnSoldierCount;
+    const i32 nAttempts = Soldier_CountSmallByType(apSoldiers, nCount, 1) / 3;
+    i32 nScore;
+    i32 i;
+
+    if (Soldier_CountSmallByType(apSoldiers, nCount, 2) >= nAttempts || nAttempts <= 0) {
+        return;
+    }
+
+    /* 0x47548 seeds the running score from nPromoteBestPick -- the previous rung's 0/1 pick,
+     * not from a score. Harmless (0 and 1 sit below every real score and below the 90 gate)
+     * but reproduced. */
+    nScore = pScr->nBestPick;
+
+    for (i = nAttempts; i > 0; --i) {
+        i32 k;
+
+        /* 0x47570: a first scan that overwrites both scratch values for EVERY rank-1 soldier,
+         * so it leaves the LAST one as the seed for the real max scan below. Reproduced. */
+        for (k = 0; k < nCount; ++k) {
+            if (apSoldiers[k]->bRankType == 1) {
+                nScore = Soldier_MissionScore(apSoldiers[k]);
+                pScr->nBestScore = k;
+                pScr->nBestPick = nScore;
+            }
+        }
+        /* 0x475B4: the max scan. */
+        for (k = 0; k < nCount; ++k) {
+            i32 nCand;
+
+            if (apSoldiers[k]->bRankType != 1) {
+                continue;
+            }
+            nCand = Soldier_MissionScore(apSoldiers[k]);
+            if (nScore < nCand) {
+                nScore = nCand;
+                pScr->nBestScore = k;
+                pScr->nBestPick = nCand;
+            }
+        }
+        if (nScore >= PROMOTE_SCORE_SOLDIER) {
+            apSoldiers[pScr->nBestScore]->bRankType = 2;   /* 0x47610 */
+            apSoldiers[pScr->nBestScore]->bRankDirty = 1;  /* 0x47620 */
+        }
+        nScore = pScr->nBestPick;                           /* 0x47624 */
+    }
+}
+
+/* 0x47654: the bottom rung has no gate at all -- every rank-0 soldier whose score is above 45
+ * and that is still standing becomes rank 1. */
+static void Promote_Rookies(const SoldierPromoteEnv *pEnv)
+{
+    Soldier **apSoldiers = pEnv->apSoldiers;
+    const i32 nCount = (i32)*pEnv->pnSoldierCount;
+    i32 k;
+
+    for (k = 0; k < nCount; ++k) {
+        Soldier *pUnit = apSoldiers[k];
+
+        if (pUnit->bRankType != 0) {
+            continue;
+        }
+        if (Soldier_MissionScore(pUnit) <= PROMOTE_SCORE_ROOKIE) {
+            continue;
+        }
+        if (pUnit->uHp == 0) {
+            continue;
+        }
+        pUnit->bRankType = 1;      /* 0x47698 */
+        pUnit->bRankDirty = 1;     /* 0x476A0 */
+    }
+}
+
+/* Soldier_PromoteByTypeScores @ 0x47280. The rungs run from the top one down. */
+void Soldier_PromoteByTypeScores(const SoldierPromoteEnv *pEnv)
+{
+    PromoteScratch scr;
+
+    scr.nBestScore = 0;
+    scr.nBestPick = 0;
+
+    Promote_BestOfTwo(pEnv, &scr, 4, 5, true,  PROMOTE_SCORE_ENGINEER);  /* 0x472C0 */
+    Promote_BestOfTwo(pEnv, &scr, 3, 4, false, PROMOTE_SCORE_LEADER);    /* 0x47374 */
+    Promote_BestOfTwo(pEnv, &scr, 2, 3, false, PROMOTE_SCORE_NAVIGATOR); /* 0x47440 */
+    Promote_Soldiers(pEnv, &scr);                                        /* 0x47504 */
+    Promote_Rookies(pEnv);                                               /* 0x47654 */
+}

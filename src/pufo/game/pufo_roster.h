@@ -208,11 +208,46 @@ i32 Soldier_CountSmallByType(Soldier *const *apSoldiers, i32 nSoldierCount, u8 n
 /* Soldier_PickBestScoreAmong @ 0x46fe0.
  *
  * Scores each of eight roster slots as `5 * (uKills + 2 * uMissions)` and returns
- * the highest, storing the winning score and slot index through the two output
- * pointers (the original's `unk_15880C` / `unk_158810`). A slot index of -1 is
- * skipped. The original leaves the score uninitialised when slot 0 is -1; the port
- * starts from 0 and documents that deviation. */
+ * the highest, storing the winning score and the winning slot's POSITION (0..7)
+ * through the two output pointers (the original's `nPromoteBestScore` @ 0x15880C and
+ * `nPromoteBestPick` @ 0x158810). A slot index of -1 is skipped. The original leaves
+ * the score uninitialised when slot 0 is -1; the port starts from 0 and documents
+ * that deviation. */
 i32 Soldier_PickBestScoreAmong(Soldier *const *apSoldiers, const i32 anIdx[8],
                                i32 *pnBestScore, i32 *pnBestIndex);
+
+/* --- the post-mission rank ladder ------------------------------------------
+ *
+ * Soldier_PromoteByTypeScores @ 0x47280 (1,096 B). One step up per rung, run from the
+ * top rung down, each rung needing a live, non-large soldier of the rank below
+ * (Soldier_CountSmallByType / Soldier_FindNextSmallByType) and a high enough mission
+ * score `5 * (uKills + 2 * uMissions)`:
+ *
+ *   4 -> 5  count(5) == 0 (NOT < 2) and count(4) >= 2, best of two, score >= 375  0x472C0
+ *   3 -> 4  count(4) <  2 and count(3) >= 2, best of two, score >= 270            0x47374
+ *   2 -> 3  count(3) <  2 and count(2) >= 2, best of two, score >= 125            0x47440
+ *   1 -> 2  count(1) / 3 attempts, each promoting the best rank-1 soldier with
+ *           score >= 90, while count(2) < that attempt count                      0x47504
+ *   0 -> 1  every rank-0 soldier with score > 45 and uHp != 0, no gate            0x47664
+ *
+ * The engineer rung tests `count(5) == 0` while the two below it test `< 2`: with one
+ * engineer already on the roster no second engineer is ever promoted. Reproduced.
+ *
+ * The two scratch globals this shares with Soldier_PickBestScoreAmong have no reader
+ * outside these two functions (16 xrefs each, all inside them), so the port keeps them
+ * as locals. Note the original uses them with SWAPPED meanings between the rungs: the
+ * three "best of two" rungs store the score in nPromoteBestScore and the 0/1 candidate
+ * pick in nPromoteBestPick, while the 1 -> 2 rung stores the candidate INDEX in
+ * nPromoteBestScore and the score in nPromoteBestPick -- and it seeds its running score
+ * from nPromoteBestPick, i.e. from the previous rung's 0/1 pick, not from a score
+ * (0x47548). Reproduced; it is harmless because 0 and 1 are below every real score and
+ * below the 90 gate.
+ */
+typedef struct SoldierPromoteEnv {
+    Soldier **apSoldiers;        /* Map_apSoldiers @ Map+0x1198 */
+    const u16 *pnSoldierCount;   /* nSoldierCount @ 0x115350 */
+} SoldierPromoteEnv;
+
+void Soldier_PromoteByTypeScores(const SoldierPromoteEnv *pEnv);
 
 #endif /* PUFO_ROSTER_H */

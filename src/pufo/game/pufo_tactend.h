@@ -340,4 +340,79 @@ void Tact_TallyCraftRecovery(const TactCraftTallyEnv *pEnv, i32 *pbLootRecorded)
  * walk off the frame; the port stops at the capacity and records the difference. */
 #define PUFO_TALLY_CRAFT_LIST_MAX 20
 
+/* ================================================================== the post-mission stat refresh
+ *
+ * Evidence: Tact_ClearSoldierBattleFlags @ 0x346e0 (2,268 B).
+ *
+ * Five steps, in this order:
+ *
+ *   1. clear Soldier.bRankDirty over apSoldiers (0x34718)
+ *   2. Soldier_PromoteByTypeScores (0x47280) runs the rank ladder and sets bRankDirty on
+ *      whoever climbed
+ *   3. for every soldier with bInZone set and Unit_bIsOperative true, recompute eight stats
+ *      from g_aClassStatGrowth[Soldier.nClass] (0x347A8..0x34E10)
+ *   4. for each of those same soldiers that also has bRankDirty set, append one row to the
+ *      promotion report: Soldier.szName into the name panel and the rank name into the rank
+ *      panel, both at apLines[n], then bump both panels' nLineCount and set
+ *      Map_bPromotionReport (0x34E10..0x34EDC)
+ *   5. clear bRankDirty again (0x34F90)
+ *
+ * ## The stat refresh
+ *
+ *     auStat[k] = (u16)((double)g_aClassStatGrowth[9 * nClass + j] * dRate * (double)uMissions
+ *                       + (double)auStatBase[b])
+ *
+ * with these (class column j, auStat index k, auStatBase index b, rate) quadruples:
+ * in the order the ARM emits them. The rates are the literal doubles at 0x347D8..0x34D98; the original writes them as
+ * two dword halves, e.g. `LDR R2,=0x22222222; LDR R3,=0x3FEA2222`.
+ *
+ *   j  k  b  rate                    auStat meaning (Unit_ResetBattleState @ 0x498b0)
+ *   0  0  0  0.8166666666666667      auStat[0] -> uTu
+ *   8  9  8  0.31666666666666665     auStat[9] -> uStunOrArmor
+ *   1  1  1  0.4                     auStat[1] -> uHp
+ *   2  2  2  0.3833333333333333
+ *   3  3  3  0.35
+ *   4  4  4  0.31666666666666665
+ *   5  5  5  0.2833333333333333
+ *   7  8  7  0.4
+ *
+ * Class column 6 is never read, and auStat[6] and auStat[7] are never recomputed -- the two
+ * stats the classification averages call "C" keep whatever they had. b is the stat's own base
+ * slot, not a copy of k: the two rules that grow a compacted stat read the compacted slot, which
+ * is the mapping Soldier_GenerateRecords records (auStatBase[7] = auStat[8], auStatBase[8] =
+ * auStat[9]). The ARM spells it out in the operand offsets -- the j=8 rule reads
+ * `auStatBase+0x10` (index 8) and stores `auStat+0x12` (index 9), and the j=7 rule reads `0xF2`
+ * (index 7) and stores `0xB2` (index 8). auStatBase holds nine entries, so reading index 9 would
+ * run off the array. The double product is converted with
+ * _dtou, i.e. truncated toward zero, and then stored with STRH.
+ *
+ * ## The promotion report panels
+ *
+ * The name panel is `pUiPanel2 @ 0x1568E0` and the rank panel is `pUiPanel3 @ 0x1568DC`; both
+ * line buffers are 50 bytes (PUFO_PANEL_LINE_BYTES) and the original walks them with a byte
+ * cursor that advances 4 per row, which is just `apLines[n]`. Tact_CheckBattleEnd zeroes both
+ * panels' nLineCount at 0x352E0 / 0x352F0 before calling this, and Map_bPromotionReport is what
+ * UiScreen_OnCancel (0x162B8) later uses to send the debrief to screen 19 instead of shutting
+ * the mission down.
+ */
+#define PUFO_CLASS_STAT_COUNT      9  /* g_aClassStatGrowth stride per class */
+#define PUFO_SOLDIER_CLASS_COUNT   6  /* Unit_ClassFromStats yields 0..5 */
+
+/* g_aClassStatGrowth @ 0xAA930 (was byte_AA930): six classes x nine growth weights, values 1..3.
+ * Tact_ClearSoldierBattleFlags is its only reader in the binary. Byte-checked by
+ * docs/parity/audit_tables.py. */
+extern const u8 g_aClassStatGrowth[PUFO_SOLDIER_CLASS_COUNT * PUFO_CLASS_STAT_COUNT];
+
+typedef struct TactBattleFlagsEnv {
+    Soldier **apSoldiers;        /* Map_apSoldiers @ Map+0x1198 */
+    const u16 *pnSoldierCount;   /* nSoldierCount @ 0x115350 */
+    UiPanel *pPanelName;         /* pUiPanel2 @ 0x1568E0, the promotion report's name column */
+    UiPanel *pPanelRank;         /* pUiPanel3 @ 0x1568DC, its rank column */
+    const char *panRankName;     /* aszTextE @ 0xB2200, six 20-byte Xcom rank names */
+    u8   *pbPromotionReport;     /* Map_bPromotionReport @ 0x1153D8 */
+} TactBattleFlagsEnv;
+
+/* Tact_ClearSoldierBattleFlags @ 0x346e0. */
+void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv);
+
 #endif /* PUFO_TACTEND_H */

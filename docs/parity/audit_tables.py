@@ -80,6 +80,10 @@ TABLES = [
     # byte_AA548: the manufacturing row filter, 172 bytes of 0/1 closed by the dword table at 0xAA5F4.
     # ManufScreen_BuildPanels (0x6e9e8) is its only reader in the binary.
     ("manuf row filter",         0xAA548, "g_abManufRowFlag",         "src/pufo/game/pufo_baseui.c", 172, "B", 0),
+    # g_aClassStatGrowth (was byte_AA930): six soldier classes x nine growth weights, closed by
+    # g_aFacBuildSpec's neighbour at 0xAA966. Tact_ClearSoldierBattleFlags (0x346e0) is its only
+    # reader in the binary; the class index is Soldier.nClass, which Unit_ClassFromStats bounds to 0..5.
+    ("class stat growth",        0xAA930, "g_aClassStatGrowth",       "src/pufo/game/pufo_tactend.c", 54, "B", 0),
 ]
 
 

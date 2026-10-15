@@ -1666,6 +1666,39 @@ Order is by what unblocks what. Each item ends with gates + commit.
   types none of them as strings, which is why `get_string` returns nothing there.
   Coverage unchanged (889/1103); 5 renames on record (345).
 
+- [x] part 60, the post-mission soldier cleanup: `Tact_ClearSoldierBattleFlags (0x346e0, 2268 B)` and
+  its callee `Soldier_PromoteByTypeScores (0x47280, 1096 B)`.
+  **The rank ladder is five rungs, top-down, one step per rung per call** — 4→5 (gate `count(5) == 0`,
+  threshold 375), 3→4 (`count(4) < 2`, 270), 2→3 (`count(3) < 2`, 125), 1→2 (`count(2) < count(1)/3`,
+  that many attempts, 90), 0→1 (no gate, score `> 45`). Mission score is `5 * (uKills + 2 * uMissions)`.
+  The engineer rung tests `== 0` where the two above it test `< 2`, so one rank-5 soldier closes it
+  while one rank-4 soldier does not close the leader rung. The 1→2 rung is the odd one out: its two
+  scans test `bRankType` alone — no alive test, no large-unit test — so a **dead** rank-1 soldier with
+  the best score is the one that climbs, and it seeds its running score from `nPromoteBestPick`
+  (0x47548, 0x47624), the previous rung's 0/1 pick rather than a score.
+  **A real port bug found while testing the stat refresh.** The refresh is
+  `auStat[k] = (u16)(g_aClassStatGrowth[9*nClass + j] * rate * uMissions + auStatBase[b])`, and *b is
+  not k*. The ARM operand offsets say so: the j=8 rule reads `auStatBase+0x10` (index 8) and stores
+  `auStat+0x12` (index 9); the j=7 rule reads `0xF2` (index 7) and stores `0xB2` (index 8). That is the
+  auStatBase compaction Unit_ResetBattleState writes (auStatBase[7]=auStat[8], auStatBase[8]=auStat[9]).
+  The port used the stat index for both, so the j=8 rule read `auStatBase[9]` — past the end of a
+  nine-entry array, into the bytes before `uKills` (0x0FA). Fixed by giving `StatGrowthRule` a base
+  index. Class column 6 is never read and auStat[6]/auStat[7] are never recomputed.
+  **`g_aClassStatGrowth @ 0xAA930` (was `byte_AA930`)** is 6 classes × 9 weights of 1..3,
+  `Tact_ClearSoldierBattleFlags` is its only reader in the binary, and audit_tables.py now byte-checks
+  all 54 entries against the shipped image: exact match.
+  **The promotion report** writes `Soldier.szName` into `pUiPanel2 @ 0x1568E0` and
+  `aszTextE[20 * bRankType]` into `pUiPanel3 @ 0x1568DC` (0x34E34, 0x34E74), bumps both `nLineCount`,
+  and sets `Map_bPromotionReport @ 0x1153D8` (0x34EDC). `aszTextE @ 0xB2200` is a loaded TEXTS block of
+  six 20-byte entries — its text is not in the image, so the port takes the names through the env and
+  the test checks the `20 * bRankType` indexing rather than the wording. Step 1 clears `bRankDirty`
+  before the ladder runs, so a flag the caller left behind is not a report row, and the `bInZone` gate
+  applies to the report too: a promoted soldier outside the zone changes rank and gets no row.
+  106 new checks (11661 total), 4 renames on record (349), coverage 891/1103 (80.8%), 411568/598792
+  (68.7%). IDB: `Map_bPromotionReport`, `g_aClassStatGrowth` (typed `unsigned __int8[54]`),
+  `nPromoteBestScore`, `nPromoteBestPick`, and the function comment at 0x346e0 rewritten with the
+  (j, k, b, rate) quadruples.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1941,6 +1974,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the inventory close (`Inv_CloseAndCommit`, the 24-slot loadout snapshot, the clip merge) — **`tact-ui` complete at 52/52** | 56/56 (Release) | 11464 | 885/1103 (80.2%) | 403656/598792 (67.4%) | 39 checked, 0 mismatched |
 | the four post-battle tallies (`Tact_TallyBattleStats`, `Tact_TallyUnitResults`, `Tact_TallyItemRecovery`, `Tact_TallyCraftRecovery`; the debrief label table, `Mc1Rec+0x1E` named, the alien type/rank slot table) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 | the victory-flag naming fix (`unk_128A8C` → `Map_bMissionVictory`, `Map_szMissionCaption`, `Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome` named; the register-built-offset trap recorded) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
+| the post-mission soldier cleanup (`Tact_ClearSoldierBattleFlags`, `Soldier_PromoteByTypeScores`; the five-rung rank ladder, `g_aClassStatGrowth` byte-checked, the auStatBase index bug found) | 56/56 (Release) | 11661 | 891/1103 (80.8%) | 411568/598792 (68.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

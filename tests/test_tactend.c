@@ -1267,6 +1267,213 @@ static void TestCraftTallyDefendBase(void)
     TestEqI32("and no loot is reported", bLoot, 0);
 }
 
+/* --- Tact_ClearSoldierBattleFlags @ 0x346e0 -------------------------------- */
+
+static Soldier   s_aClear[4];
+static Soldier  *s_apClear[4];
+static u16       s_nClear;
+static u8        s_bPromotionReport;
+static UiPanel   s_PanelName;
+static UiPanel   s_PanelRank;
+
+/* aszTextE @ 0xB2200 is a loaded TEXTS block (six 20-byte entries), not image bytes, so the
+ * caller supplies the text and the test checks the 20 * bRankType indexing, not the wording. */
+static char s_asRankName[6][20];
+
+static void ClearFixture(void)
+{
+    i32 i;
+
+    for (i = 0; i < 4; ++i) {
+        memset(&s_aClear[i], 0, sizeof(s_aClear[i]));
+        s_apClear[i] = &s_aClear[i];
+    }
+    s_nClear = 4;
+    s_bPromotionReport = 0;
+
+    (void)UiPanel_ctor(&s_PanelName, 8);
+    (void)UiPanel_ctor(&s_PanelRank, 8);
+    s_PanelName.nLineCount = 0;
+    s_PanelRank.nLineCount = 0;
+
+    for (i = 0; i < 6; ++i) {
+        snprintf(s_asRankName[i], sizeof(s_asRankName[i]), "rank%d", i);
+    }
+}
+
+/* A live, operative, in-zone soldier with a known base array and every auStat slot pre-filled
+ * with a sentinel, so a stat the ARM does not recompute is still visible as the sentinel. */
+static Soldier *ClearMake(i32 i, u8 nRank, i32 nKills, i32 nMissions, i32 nClass)
+{
+    Soldier *pUnit = &s_aClear[i];
+
+    pUnit->nUnitType = 0;
+    pUnit->uHp = 50;
+    pUnit->bStatus = 0;   /* UNIT_STATUS_OPERATIVE */
+    pUnit->bInZone = 1;
+    pUnit->bRankType = nRank;
+    pUnit->uKills = (u16)nKills;
+    pUnit->uMissions = (u16)nMissions;
+    pUnit->nClass = nClass;
+    for (i32 k = 0; k < 9; ++k) {
+        pUnit->auStatBase[k] = (u16)(100 + k);
+    }
+    for (i32 k = 0; k < 10; ++k) {
+        pUnit->auStat[k] = 777;
+    }
+    snprintf(pUnit->szName, sizeof(pUnit->szName), "unit%d", i);
+    return pUnit;
+}
+
+static TactBattleFlagsEnv ClearEnv(void)
+{
+    TactBattleFlagsEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.apSoldiers = s_apClear;
+    env.pnSoldierCount = &s_nClear;
+    env.pPanelName = &s_PanelName;
+    env.pPanelRank = &s_PanelRank;
+    env.panRankName = &s_asRankName[0][0];
+    env.pbPromotionReport = &s_bPromotionReport;
+    return env;
+}
+
+static void TestClearFlagsStatGrowth(void)
+{
+    static const u16 aWant0[10] = { 124, 113, 109, 110, 110, 113, 777, 777, 119, 117 };
+    static const u16 aWant5[10] = { 124, 109, 109, 110, 110, 110, 777, 777, 115, 117 };
+    i32 i;
+
+    printf("Tact_ClearSoldierBattleFlags - the per-class stat refresh\n");
+    ClearFixture();
+    ClearMake(0, 0, 0, 10, 0);
+    ClearMake(1, 0, 0, 10, 5);
+    ClearMake(2, 0, 0, 10, 3)->bInZone = 0;   /* outside the zone: no refresh at all */
+    ClearMake(3, 0, 0, 10, 3)->bStatus = 2;   /* not an operative: no refresh at all */
+
+    {
+        TactBattleFlagsEnv env = ClearEnv();
+
+        Tact_ClearSoldierBattleFlags(&env);
+    }
+
+    for (i = 0; i < 10; ++i) {
+        TestEqU16("class 0 auStat", s_aClear[0].auStat[i], aWant0[i]);
+    }
+    for (i = 0; i < 10; ++i) {
+        TestEqU16("class 5 auStat", s_aClear[1].auStat[i], aWant5[i]);
+    }
+    for (i = 0; i < 10; ++i) {
+        TestEqU16("out-of-zone soldier keeps its stats", s_aClear[2].auStat[i], 777);
+        TestEqU16("non-operative soldier keeps its stats", s_aClear[3].auStat[i], 777);
+    }
+    /* auStat[6] and auStat[7] are the two slots the ARM never recomputes. */
+    TestEqU16("auStat[6] is never recomputed", s_aClear[0].auStat[6], 777);
+    TestEqU16("auStat[7] is never recomputed", s_aClear[0].auStat[7], 777);
+
+    UiPanel_FreeLines(&s_PanelName);
+    UiPanel_FreeLines(&s_PanelRank);
+}
+
+static void TestClearFlagsPromotionReport(void)
+{
+    printf("Tact_ClearSoldierBattleFlags - the promotion report rows\n");
+    ClearFixture();
+    /* Mission score is 5 * (kills + 2 * missions): 50 clears the 45 rookie gate, 45 and 40 do
+     * not. The rank-1 -> rank-2 rung ran before this one, when the roster held no rank-1
+     * soldier, so nothing climbs further. */
+    ClearMake(0, 0, 10, 0, 0);
+    ClearMake(1, 0, 9, 0, 0);
+    ClearMake(2, 0, 8, 0, 0);
+    ClearMake(3, 0, 10, 0, 0)->bInZone = 0;  /* promoted (score 50), but outside the zone */
+    s_aClear[1].bRankDirty = 1;              /* a stale flag the caller left behind */
+
+    {
+        TactBattleFlagsEnv env = ClearEnv();
+
+        Tact_ClearSoldierBattleFlags(&env);
+    }
+
+    TestEqI32("the promoted soldier changes rank", s_aClear[0].bRankType, 1);
+    TestEqI32("a score of exactly 45 does not", s_aClear[1].bRankType, 0);
+    TestEqI32("the out-of-zone soldier still changes rank", s_aClear[3].bRankType, 1);
+    TestEqI32("one report row", s_PanelName.nLineCount, 1);
+    TestEqI32("one rank row", s_PanelRank.nLineCount, 1);
+    TestCheck("the name column holds szName", strcmp((char *)s_PanelName.apLines[0], "unit0") == 0);
+    TestCheck("the rank column holds aszTextE[20 * bRankType]",
+              strcmp((char *)s_PanelRank.apLines[0], "rank1") == 0);
+    TestCheck("the out-of-zone soldier gets no row",
+              s_PanelName.apLines[1][0] == 0 && s_PanelRank.apLines[1][0] == 0);
+    TestEqI32("Map_bPromotionReport set", s_bPromotionReport, 1);
+
+    /* bRankDirty is cleared before the ladder runs, so a flag the caller left behind is not a
+     * report row. */
+    TestCheck("the stale flag is cleared", s_aClear[1].bRankDirty == 0);
+
+    for (i32 i = 0; i < 4; ++i) {
+        TestEqI32("bRankDirty ends clear", s_aClear[i].bRankDirty, 0);
+    }
+
+    UiPanel_FreeLines(&s_PanelName);
+    UiPanel_FreeLines(&s_PanelRank);
+}
+
+static void TestClearFlagsReportEmpty(void)
+{
+    printf("Tact_ClearSoldierBattleFlags - nobody promoted, no report\n");
+    ClearFixture();
+    ClearMake(0, 0, 8, 0, 0);   /* 40 */
+    ClearMake(1, 0, 7, 0, 0);   /* 35 */
+    ClearMake(2, 0, 6, 0, 0);   /* 30 */
+    ClearMake(3, 0, 5, 0, 0);   /* 25 */
+
+    {
+        TactBattleFlagsEnv env = ClearEnv();
+
+        Tact_ClearSoldierBattleFlags(&env);
+    }
+
+    TestEqI32("no rank change", s_aClear[0].bRankType, 0);
+    TestEqI32("no name rows", s_PanelName.nLineCount, 0);
+    TestEqI32("no rank rows", s_PanelRank.nLineCount, 0);
+    TestEqI32("Map_bPromotionReport stays clear", s_bPromotionReport, 0);
+
+    UiPanel_FreeLines(&s_PanelName);
+    UiPanel_FreeLines(&s_PanelRank);
+}
+
+static void TestClearFlagsReportOrder(void)
+{
+    printf("Tact_ClearSoldierBattleFlags - rows follow roster order\n");
+    ClearFixture();
+    ClearMake(0, 0, 20, 0, 0);  /* 100 */
+    ClearMake(1, 0, 18, 0, 0);  /* 90  */
+    ClearMake(2, 0, 16, 0, 0);  /* 80  */
+    ClearMake(3, 0, 14, 0, 0);  /* 70  */
+
+    {
+        TactBattleFlagsEnv env = ClearEnv();
+
+        Tact_ClearSoldierBattleFlags(&env);
+    }
+
+    TestEqI32("four name rows", s_PanelName.nLineCount, 4);
+    TestEqI32("four rank rows", s_PanelRank.nLineCount, 4);
+    for (i32 i = 0; i < 4; ++i) {
+        char szWant[16];
+        snprintf(szWant, sizeof(szWant), "unit%d", i);
+        TestCheck("the name column follows the roster",
+                  strcmp((char *)s_PanelName.apLines[i], szWant) == 0);
+        TestCheck("every row shows the rank it reached",
+                  strcmp((char *)s_PanelRank.apLines[i], "rank1") == 0);
+        TestEqI32("promoted to rank 1", s_aClear[i].bRankType, 1);
+    }
+
+    UiPanel_FreeLines(&s_PanelName);
+    UiPanel_FreeLines(&s_PanelRank);
+}
+
 int main(void)
 {
     TestBankGroups();
@@ -1284,6 +1491,10 @@ int main(void)
     TestItemTallyHwp();
     TestCraftTallyCap();
     TestCraftTallyDefendBase();
+    TestClearFlagsStatGrowth();
+    TestClearFlagsPromotionReport();
+    TestClearFlagsReportEmpty();
+    TestClearFlagsReportOrder();
 
     printf("test_tactend: %d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails == 0 ? 0 : 1;

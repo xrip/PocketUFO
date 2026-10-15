@@ -679,6 +679,256 @@ static void TestPickBestScore(void)
                "all-empty returns 0");
 }
 
+/* --- the post-mission rank ladder ------------------------------------------ */
+
+/* A live, small, operative soldier of the given rank with a chosen mission score.
+ * Score is 5 * (uKills + 2 * uMissions), so kills alone sets it exactly. */
+static Soldier *PromoteMake(Soldier *pUnit, u8 nRank, i32 nKills)
+{
+    memset(pUnit, 0, sizeof(*pUnit));
+    pUnit->nUnitType = 0;   /* a small, non-tank type */
+    pUnit->uHp       = 50;
+    pUnit->bStatus   = 0;   /* UNIT_STATUS_OPERATIVE */
+    pUnit->bRankType = nRank;
+    pUnit->uKills    = (u16)nKills;
+    return pUnit;
+}
+
+static void TestPromoteRookieRung(void)
+{
+    Soldier  aUnits[4];
+    Soldier *apUnits[4];
+    SoldierPromoteEnv env;
+    u16 nCount = 4;
+
+    printf("Soldier_PromoteByTypeScores - the bottom rung (0 -> 1)\n");
+    for (i32 i = 0; i < 4; ++i) {
+        apUnits[i] = &aUnits[i];
+    }
+    env.apSoldiers = apUnits;
+    env.pnSoldierCount = &nCount;
+
+    /* Score 50 clears the gate, 45 does not (the ARM test is `> 45`, BLE skips), and a dead
+     * soldier with a huge score does not. */
+    PromoteMake(&aUnits[0], 0, 10);   /* 50  */
+    PromoteMake(&aUnits[1], 0, 9);    /* 45  */
+    PromoteMake(&aUnits[2], 0, 20);   /* 100, but dead */
+    aUnits[2].uHp = 0;
+    PromoteMake(&aUnits[3], 1, 0);    /* one rank-1 unit: count(1)/3 == 0, so rung 1->2 is off */
+
+    Soldier_PromoteByTypeScores(&env);
+
+    CheckEqI32(aUnits[0].bRankType, 1, "  score 50 promotes");
+    CheckEqI32(aUnits[0].bRankDirty, 1, "  and marks the promotion");
+    CheckEqI32(aUnits[1].bRankType, 0, "  score exactly 45 does not");
+    CheckEqI32(aUnits[2].bRankType, 0, "  a dead soldier is not promoted");
+    CheckEqI32(aUnits[3].bRankType, 1, "  the rank-1 unit is untouched by this rung");
+}
+
+static void TestPromoteNavigatorRung(void)
+{
+    Soldier  aUnits[4];
+    Soldier *apUnits[4];
+    SoldierPromoteEnv env;
+    u16 nCount = 4;
+
+    printf("Soldier_PromoteByTypeScores - 2 -> 3, threshold 125\n");
+    for (i32 i = 0; i < 4; ++i) {
+        apUnits[i] = &aUnits[i];
+    }
+    env.apSoldiers = apUnits;
+    env.pnSoldierCount = &nCount;
+
+    /* The better of the two rank-2 soldiers is promoted; the other stays. */
+    PromoteMake(&aUnits[0], 2, 40);   /* 200 */
+    PromoteMake(&aUnits[1], 2, 26);   /* 130 */
+    PromoteMake(&aUnits[2], 0, 0);
+    PromoteMake(&aUnits[3], 0, 0);
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 3, "  the higher score is promoted");
+    CheckEqI32(aUnits[1].bRankType, 2, "  the lower one is left alone");
+
+    /* Candidate B wins when its score is the better one. */
+    PromoteMake(&aUnits[0], 2, 10);   /* 50  */
+    PromoteMake(&aUnits[1], 2, 40);   /* 200 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 2, "  candidate A stays");
+    CheckEqI32(aUnits[1].bRankType, 3, "  candidate B is promoted");
+
+    /* With the best score short of 125 the whole rung is skipped, candidate B included. */
+    PromoteMake(&aUnits[0], 2, 24);   /* 120 */
+    PromoteMake(&aUnits[1], 2, 20);   /* 100 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 2, "  120 is short of 125");
+    CheckEqI32(aUnits[1].bRankType, 2, "  and the second candidate is not tried either");
+
+    /* The rung needs count(3) < 2: two rank-3 soldiers already on the roster close it. */
+    PromoteMake(&aUnits[0], 2, 60);   /* 300 */
+    PromoteMake(&aUnits[1], 2, 50);   /* 250 */
+    PromoteMake(&aUnits[2], 3, 0);
+    PromoteMake(&aUnits[3], 3, 0);
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 2, "  two rank-3 soldiers close the rung");
+
+    /* And it needs count(2) >= 2: one rank-2 soldier opens nothing. */
+    PromoteMake(&aUnits[0], 2, 60);
+    PromoteMake(&aUnits[1], 0, 0);
+    PromoteMake(&aUnits[2], 0, 0);
+    PromoteMake(&aUnits[3], 0, 0);
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 2, "  one rank-2 soldier is not enough");
+}
+
+static void TestPromoteEngineerQuirk(void)
+{
+    Soldier  aUnits[3];
+    Soldier *apUnits[3];
+    SoldierPromoteEnv env;
+    u16 nCount = 3;
+
+    printf("Soldier_PromoteByTypeScores - the engineer rung tests == 0, the leader rung < 2\n");
+    for (i32 i = 0; i < 3; ++i) {
+        apUnits[i] = &aUnits[i];
+    }
+    env.apSoldiers = apUnits;
+    env.pnSoldierCount = &nCount;
+
+    /* Leader rung: one rank-4 soldier is still under the < 2 gate, so the best rank-3 climbs. */
+    PromoteMake(&aUnits[0], 4, 0);
+    PromoteMake(&aUnits[1], 3, 60);   /* 300 */
+    PromoteMake(&aUnits[2], 3, 56);   /* 280 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[1].bRankType, 4, "  one rank-4 soldier does not close the leader rung");
+
+    /* Engineer rung: one rank-5 soldier DOES close it, because the gate is == 0. */
+    PromoteMake(&aUnits[0], 5, 0);
+    PromoteMake(&aUnits[1], 4, 80);   /* 400 */
+    PromoteMake(&aUnits[2], 4, 76);   /* 380 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[1].bRankType, 4, "  one rank-5 soldier closes the engineer rung");
+    CheckEqI32(aUnits[2].bRankType, 4, "  so no second engineer is ever made");
+
+    /* With no engineer at all the best rank-4 clears 375 and becomes one. */
+    PromoteMake(&aUnits[0], 0, 0);
+    PromoteMake(&aUnits[1], 4, 80);   /* 400 */
+    PromoteMake(&aUnits[2], 4, 76);   /* 380 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[1].bRankType, 5, "  an empty engineer slot lets the best rank-4 in");
+    CheckEqI32(aUnits[2].bRankType, 4, "  only one of them");
+}
+
+static void TestPromoteSoldierRung(void)
+{
+    Soldier  aUnits[7];
+    Soldier *apUnits[7];
+    SoldierPromoteEnv env;
+    u16 nCount = 7;
+    i32 nAt2;
+
+    printf("Soldier_PromoteByTypeScores - 1 -> 2, count(1)/3 attempts, threshold 90\n");
+    for (i32 i = 0; i < 7; ++i) {
+        apUnits[i] = &aUnits[i];
+    }
+    env.apSoldiers = apUnits;
+    env.pnSoldierCount = &nCount;
+
+    /* Three rank-1 soldiers -> one attempt, and only the best clears 90. */
+    for (i32 i = 0; i < 7; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    PromoteMake(&aUnits[0], 1, 20);   /* 100 */
+    PromoteMake(&aUnits[1], 1, 19);   /* 95  */
+    PromoteMake(&aUnits[2], 1, 18);   /* 90  */
+    Soldier_PromoteByTypeScores(&env);
+    nAt2 = 0;
+    for (i32 i = 0; i < 7; ++i) {
+        if (aUnits[i].bRankType == 2) {
+            nAt2++;
+        }
+    }
+    CheckEqI32(nAt2, 1, "  three rank-1 soldiers buy exactly one promotion");
+    CheckEqI32(aUnits[0].bRankType, 2, "  it goes to the best score");
+    CheckEqI32(aUnits[1].bRankType, 1, "  the runner-up waits");
+
+    /* Six rank-1 soldiers -> two attempts, taken best first. */
+    for (i32 i = 0; i < 7; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    for (i32 i = 0; i < 6; ++i) {
+        PromoteMake(&aUnits[i], 1, 20 - i);   /* 100, 95, 90, 85, 80, 75 */
+    }
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 2, "  first attempt takes the best");
+    CheckEqI32(aUnits[1].bRankType, 2, "  second attempt takes the next best");
+    CheckEqI32(aUnits[2].bRankType, 1, "  third is left at rank 1");
+
+    /* The block is skipped outright when the roster already holds at least attempts rank-2
+     * soldiers: attempts 1, one rank-2 already there. */
+    for (i32 i = 0; i < 7; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    PromoteMake(&aUnits[0], 2, 0);
+    PromoteMake(&aUnits[1], 1, 40);   /* 200 */
+    PromoteMake(&aUnits[2], 1, 39);   /* 195 */
+    PromoteMake(&aUnits[3], 1, 38);   /* 190 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[1].bRankType, 1, "  attempts 1 against one existing rank-2 -> no promotion");
+
+    /* Three rank-1 soldiers all short of 90: the attempt runs and promotes nobody. */
+    for (i32 i = 0; i < 7; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    PromoteMake(&aUnits[0], 1, 17);   /* 85 */
+    PromoteMake(&aUnits[1], 1, 16);   /* 80 */
+    PromoteMake(&aUnits[2], 1, 15);   /* 75 */
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[0].bRankType, 1, "  85 is short of 90");
+    CheckEqI32(aUnits[1].bRankType, 1, "  nobody is promoted");
+
+    /* The 1 -> 2 scans test bRankType alone: a DEAD rank-1 soldier with the best score is the
+     * one that climbs, even though count(1) only counted the live ones. */
+    for (i32 i = 0; i < 7; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    for (i32 i = 0; i < 3; ++i) {
+        PromoteMake(&aUnits[i], 1, 10);   /* 50 each, live */
+    }
+    PromoteMake(&aUnits[4], 1, 40);       /* 200, dead */
+    aUnits[4].uHp = 0;
+    Soldier_PromoteByTypeScores(&env);
+    CheckEqI32(aUnits[4].bRankType, 2, "  the dead high-scorer is promoted -- no alive test here");
+    CheckEqI32(aUnits[0].bRankType, 1, "  the live ones are not");
+}
+
+static void TestPromoteRungOrder(void)
+{
+    Soldier  aUnits[4];
+    Soldier *apUnits[4];
+    SoldierPromoteEnv env;
+    u16 nCount = 4;
+
+    printf("Soldier_PromoteByTypeScores - rungs run top-down, one step per call\n");
+    for (i32 i = 0; i < 4; ++i) {
+        apUnits[i] = &aUnits[i];
+    }
+    env.apSoldiers = apUnits;
+    env.pnSoldierCount = &nCount;
+
+    for (i32 i = 0; i < 4; ++i) {
+        PromoteMake(&aUnits[i], 0, 0);
+    }
+    PromoteMake(&aUnits[0], 3, 60);   /* 300 */
+    PromoteMake(&aUnits[1], 3, 56);   /* 280 */
+    PromoteMake(&aUnits[2], 2, 40);   /* 200 */
+    PromoteMake(&aUnits[3], 2, 30);   /* 150 */
+    Soldier_PromoteByTypeScores(&env);
+
+    CheckEqI32(aUnits[0].bRankType, 4, "  the best rank-3 takes the 3 -> 4 rung");
+    CheckEqI32(aUnits[2].bRankType, 3, "  the best rank-2 takes the 2 -> 3 rung");
+    CheckEqI32(aUnits[2].bRankType != 4, 1,
+               "  and it does not then climb again -- the 3 -> 4 rung already ran");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -696,6 +946,11 @@ int main(void)
     TestMarkAllSoldiersSeen();
     TestSoldierSearches();
     TestPickBestScore();
+    TestPromoteRookieRung();
+    TestPromoteNavigatorRung();
+    TestPromoteEngineerQuirk();
+    TestPromoteSoldierRung();
+    TestPromoteRungOrder();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
