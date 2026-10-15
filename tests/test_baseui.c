@@ -2395,6 +2395,174 @@ static void TestTransferCapacityGate(void)
     UiPanel_FreeLines(&pE);
 }
 
+static i32 g_nCommitTErrorCalls;
+static i32 g_nCommitTErrorBase;
+static i32 g_nCommitTErrorObj;
+
+static void CommitStubTError(i32 nBaseIdx, i32 nObjectIdx, void *pUser)
+{
+    (void)pUser;
+    ++g_nCommitTErrorCalls;
+    g_nCommitTErrorBase = nBaseIdx;
+    g_nCommitTErrorObj = nObjectIdx;
+}
+
+static void TestTransferCommit(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Soldier aSol[2];
+    static Soldier *apSol[2];
+    static Ship aShip[2];
+    static Ship *apShip[2];
+    static SmapSite aSites[3];
+    static BaseRec aBase;
+    static BaseRec *apBases[8];
+    static u8 aGrid[PUFO_GRID_SIZE];
+    static UiPanel pA, pC, pE;
+    TransferCommitEnv env;
+    SmapSite *pNew;
+    i32 nSiteCount = 1;
+    i32 i;
+
+    printf("the transfer screen's commit\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[10].auPerBaseVal[0] = 5;
+    aObj[10].bCargoSize = 2;
+    aObj[20].auPerBaseVal[0] = 60001; /* the overflow report threshold is 60000 */
+
+    aSol[0].nKind = 0;
+    aSol[0].nUnk440 = 101; /* the roster id panel C carries on the soldier row */
+    aSol[1].nKind = 0;
+    aSol[1].nUnk440 = 102;
+    apSol[0] = &aSol[0];
+    apSol[1] = &aSol[1];
+
+    aShip[0].bId = 7;
+    aShip[0].bHomeBase = 0;
+    aShip[0].bHangarX = 2;
+    aShip[0].bHangarY = 1;
+    aShip[1].bId = 8;
+    aShip[1].bHomeBase = 1;
+    aShip[1].bHangarX = 0;
+    aShip[1].bHangarY = 0;
+    apShip[0] = &aShip[0];
+    apShip[1] = &aShip[1];
+
+    aBase.bSlot = 0;
+    aBase.bUnk4 = 7;
+    aBase.nStoresTotal = 100;
+    for (i = 0; i < 8; ++i) {
+        apBases[i] = &aBase;
+    }
+
+    /* The layer2 cells the two craft occupy: base 0 at (row 1, col 2), base 1 at (row 0, col 0). */
+    aGrid[444 + 144 * 0 + 6 * 1 + 2] = 11;
+    aGrid[444 + 144 * 1 + 6 * 0 + 0] = 11;
+
+    aSites[1].auItemQty[10] = 3; /* three pistols queued onto the working site */
+    aSites[2].bUnk518 = 9;
+    aSites[2].uRecoveredSoldiers = 4;
+    aSites[2].bRecoveredCraftCount = 3;
+    aSites[2].bRecoveredSoldierAssign = 2;
+    aSites[2].bHasLoot = 1;
+    aSites[2].auItemQty[5] = 7;
+
+    (void)UiPanel_ctor(&pA, 3);
+    (void)UiPanel_ctor(&pC, 3);
+    (void)UiPanel_ctor(&pE, 3);
+    pA.anLineAux[0] = PUFO_ROW_SOLDIER;
+    pC.anLineAux[0] = 101;
+    pE.anLineAux[0] = 1;
+    pA.anLineAux[1] = PUFO_ROW_CRAFT_FIRST;
+    pC.anLineAux[1] = 7;
+    pE.anLineAux[1] = 1;
+    pA.anLineAux[2] = 10;
+    pC.anLineAux[2] = 0;
+    pE.anLineAux[2] = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.pPanelA = &pA;
+    env.pPanelC = &pC;
+    env.pPanelE = &pE;
+    env.aSites = aSites;
+    env.pnSiteCount = &nSiteCount;
+    env.apBases = apBases;
+    env.apSoldiers = apSol;
+    env.nSoldierCount = 2;
+    env.apCraft = apShip;
+    env.nCraftCount = 2;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.abFacilityGrid = aGrid;
+    env.nSelectedBaseIdx = 0;
+    env.nTransferBaseIdx = 0;
+    env.pfnShowTError = CommitStubTError;
+
+    g_nCommitTErrorCalls = 0;
+    pNew = TransferScreen_CommitTransfer(&env);
+
+    Check(pNew == &aSites[2], "the commit returns the fresh working record at the new count");
+    CheckEqI32(nSiteCount, 2, "the site count is raised by the commit");
+    CheckEqI32(aSites[1].anSoldierIds[0], 101, "the queued soldier's roster id lands in the site list");
+    CheckEqI32(aSites[1].anCraftIds[0], 7, "and the queued craft's id in the craft list");
+    CheckEqI32(aSol[0].nKind, 255, "the queued soldier leaves the base roster (nKind = 255)");
+    CheckEqI32(aSol[1].nKind, 0, "the soldier nobody queued stays put");
+    CheckEqI32(aShip[0].bHomeBase, 255, "the queued craft is unhomed");
+    CheckEqI32(aShip[1].bHomeBase, 1, "and the craft nobody queued keeps its home");
+    CheckEqI32(aGrid[444 + 144 * 0 + 6 * 1 + 2], 0, "the queued craft's hangar cell is cleared");
+    CheckEqI32(aGrid[444 + 144 * 1 + 6 * 0 + 0], 11, "the other base's cell is left alone");
+    CheckEqI32(aSites[1].bFlag0, 24, "the completed record carries the commit flag 24");
+    CheckEqI32(aSites[1].bFlag1, 7, "and the destination base's type byte");
+    CheckEqI32(pE.anLineAux[0] + pE.anLineAux[1] + pE.anLineAux[2], 0,
+               "the pending column is zeroed over every row");
+    CheckEqI32(aObj[10].auPerBaseVal[0], 2, "the three queued pistols leave the selected base");
+    CheckEqI32(aBase.nStoresTotal, 97, "and the base's stores total drops by the same three");
+    CheckEqI32(g_nCommitTErrorCalls, 1, "the overfull stock reports once through Ui_ShowTError");
+    CheckEqI32(g_nCommitTErrorBase, 0, "against the selected base");
+    CheckEqI32(g_nCommitTErrorObj, 20, "with the object index");
+    CheckEqI32(aSites[2].bUnk518, 0, "the fresh record is cleared: bUnk518");
+    CheckEqI32(aSites[2].uRecoveredSoldiers, 0, "uRecoveredSoldiers");
+    CheckEqI32(aSites[2].bRecoveredCraftCount, 0, "bRecoveredCraftCount");
+    CheckEqI32(aSites[2].bRecoveredSoldierAssign, 0, "bRecoveredSoldierAssign");
+    CheckEqI32(aSites[2].bHasLoot, 0, "bHasLoot");
+    CheckEqI32(aSites[2].auItemQty[5], 0, "and the quantity columns up to the object count");
+
+    /* Nothing pending: the gate skips the whole commit. */
+    nSiteCount = 1;
+    memset(aSites[1].auItemQty, 0, sizeof(aSites[1].auItemQty));
+    aSites[1].bFlag0 = 8;
+    pE.anLineAux[0] = 0;
+    pE.anLineAux[1] = 0;
+    pE.anLineAux[2] = 0;
+    Check(TransferScreen_CommitTransfer(&env) == NULL,
+          "with nothing pending the commit does nothing at all");
+    CheckEqI32(nSiteCount, 1, "the site count is unchanged");
+    CheckEqI32(aSites[1].bFlag0, 8, "and the working record keeps its flag");
+
+    /* A row whose pending count is not exactly 1 is not queued. */
+    aSites[1].auItemQty[10] = 3; /* the gate still fires through the item quantity */
+    pE.anLineAux[0] = 2;
+    pE.anLineAux[1] = 2;
+    TransferScreen_CommitTransfer(&env);
+    CheckEqI32(aSites[1].anSoldierIds[1], 0, "a soldier row with pending 2 is not queued");
+    CheckEqI32(aSites[1].anCraftIds[1], 0, "and neither is a craft row with pending 2");
+
+    TransferScreen_CommitTransfer(NULL);
+    env.pnSiteCount = NULL;
+    Check(TransferScreen_CommitTransfer(&env) == NULL, "a missing site-count pointer makes it do nothing");
+    env.pnSiteCount = &nSiteCount;
+    env.aSites = NULL;
+    Check(TransferScreen_CommitTransfer(&env) == NULL, "and so does a missing site array");
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pC);
+    UiPanel_FreeLines(&pE);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -7501,6 +7669,7 @@ int main(void)
     TestTransferInitAndReset();
     TestTransferBuildAndMove();
     TestTransferCapacityGate();
+    TestTransferCommit();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

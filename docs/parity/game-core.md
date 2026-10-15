@@ -11530,3 +11530,40 @@ trusts both.
 IDB: function comment at 0x96288; the local enum PufoShortfallReason declared for the reason codes
 dword_1870B4[0] holds (-1 none, 0 living quarters, 1 funds, 2 hangar, 3 stores, 4 alien containment,
 5 transfer blocked); comment at 0x1870B4 listing which pass writes which code.
+
+TransferScreen_CommitTransfer (0x97aa4, 1280 B) is the confirm control Ui_InitTransfer wires at
+0x99608. It writes the queued rows into the working site, unhomes the queued soldiers and craft, and
+-- only when the transfer actually carries something -- closes the working record and opens a fresh
+one.
+
+The row pass (0x97AF8..0x97D24) walks panel A's rows and acts on two kinds, both gated on panel E aux
+being exactly 1, the value the capacity gate assigns. A soldier row (aux 1000) writes panel C aux --
+the roster id the row carries -- into aSmapSites[nSmapSiteCount].anSoldierIds[nSoldiersQueued]
+(0x97B58; the original stores a dead "+1" there first and then overwrites it with the id), then gives
+every soldier whose nUnk440 equals that roster id a Soldier.nKind (0x0B6) of 255 (0x97BB0, STRB #0xFF):
+the soldier leaves the base roster, the mirror of the craft branch. A craft row (aux 117..121) writes
+the craft id into anCraftIds[nCraftsQueued] (0x97C48, same dead "+1" first), then gives every craft
+whose Ship.bId equals that id a cleared hangar cell, abFacilityGrid[444 + 144*bHomeBase + 6*bHangarY +
+bHangarX] (0x97CCC, built as 6 * (24*bHomeBase + bHangarY + 12) + bHangarX over abFacilityGrid + 0x174),
+and a Ship.bHomeBase of 255 (0x97CD4). A row whose aux is 1000 but whose panel E aux is not 1 skips
+the craft test as well: 0x97B10 branches to the next row, not to the craft block.
+
+The commit gate (0x97D28..0x97D90) runs the commit only when at least one of: Base_CountItemQtyAcrossBases
+with the scan off, the site index at the count and the base at byte_1870F4 non-zero; a soldier or a
+craft queued; the working site's auItemQty[112] + auItemQty[113] non-zero; Smap_SumSiteScores above
+zero. With nothing pending nothing at all happens. The commit body then sets bFlag0 = 24 on the record
+just filled (0x97DA4 -- a completed transfer, where the shop's "open" flag is 8) and bFlag1 to the
+destination base's type byte (0x97DBC), zeroes panel E aux over every row (0x97DDC), subtracts every
+pending quantity from the SELECTED base through BaseRec_SubItemQty (0x97E5C), raises nSmapSiteCount
+(0x97E8C), reports every object whose auPerBaseVal[nSelectedBaseIdx] exceeds 60000 (0xEA60) through
+Ui_ShowTError (0x996e4) with the base index and the object index (0x97EE4), and finally clears the
+fresh working record at the new count: bUnk518, uRecoveredSoldiers, bRecoveredCraftCount,
+bRecoveredSoldierAssign, bHasLoot and auItemQty[0..nObjectCount-1].
+
+Deviation: when the gate skips, the original returns the Smap_SumSiteScores count reinterpreted as a
+pointer; the port returns NULL. The port bounds the two id arrays (100 and 10 entries) and the
+bHomeBase used to index the grid; the original trusts all three, so a craft already sitting at
+bHomeBase 255 would write 24*255 + ... bytes past the facility grid.
+
+IDB: function comments at 0x97aa4 and 0x186410; `nSmapParam4` -> `nSmapSiteCount`, the number of
+SmapSite records, with aSmapSites[nSmapSiteCount] the record the screens work on.

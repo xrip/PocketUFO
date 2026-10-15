@@ -717,6 +717,7 @@ void BuySellScreen_Init(const BuySellInitEnv *pEnv);
  * deletes the controls in its teardown; the port takes caller-owned controls and frees only the
  * panels it allocated. The original dereferences every allocation without a test. */
 #define PUFO_BUYSSELL_SITE_FLAG_NEW     8    /* 0x761A8: the working site's bFlag0 while the shop is open */
+#define PUFO_TRANSFER_SITE_FLAG_COMMIT  24   /* 0x97DA4: bFlag0 of a site whose transfer has been committed */
 #define PUFO_BUYSSELL_SOLDIER_TEXT_REC  159  /* aTextRecs + 205*159 = 0xBB823, "Soldier" */
 
 typedef struct BuySellControlsEnv {
@@ -1026,6 +1027,71 @@ typedef struct TransferCapacityEnv {
 } TransferCapacityEnv;
 
 i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv);
+
+/* ------------------------------------------------- the transfer screen's commit
+ *
+ * Evidence: TransferScreen_CommitTransfer @ 0x97aa4 (1280 B), the confirm control Ui_InitTransfer
+ * wires at 0x99608. It writes the queued rows into the working site, unhomes the queued soldiers and
+ * craft, and -- only when the transfer actually carries something -- closes the working record and
+ * opens a fresh one.
+ *
+ * The row pass (0x97AF8..0x97D24) walks panel A's rows and acts on two kinds, both gated on panel E
+ * aux being exactly 1 (the value the capacity gate assigns):
+ *
+ *   1. Slot 1000 (0x97B10): panel C aux -- the roster id the row carries -- is written into
+ *      aSmapSites[nSmapSiteCount].anSoldierIds[nSoldiersQueued] (0x97B58; the original stores a dead
+ *      "+1" there first, then overwrites it with the id). Then every soldier whose nUnk440 equals
+ *      that roster id gets Soldier.nKind (0x0B6) set to 255 (0x97BB0, STRB #0xFF): the soldier leaves
+ *      the base roster, the mirror of the craft branch's bHomeBase = -1.
+ *   2. Slot 117..121 (0x97C18): panel C aux -- the craft id -- goes into anCraftIds[nCraftsQueued]
+ *      (0x97C48, same dead "+1" first). Then every craft whose Ship.bId equals that id has its hangar
+ *      cell cleared, abFacilityGrid[444 + 144*bHomeBase + 6*bHangarY + bHangarX] (0x97CCC, built as
+ *      6 * (24*bHomeBase + bHangarY + 12) + bHangarX over abFacilityGrid + 0x174), and Ship.bHomeBase
+ *      set to 255 (0x97CD4).
+ *
+ * A row whose aux is 1000 but whose panel E aux is not 1 skips the craft test as well: 0x97B10
+ * branches to the next row, not to the craft block.
+ *
+ * The commit gate (0x97D28..0x97D90) runs the whole commit only when at least one of:
+ * Base_CountItemQtyAcrossBases with the scan OFF, the site index at the count and the base at
+ * byte_1870F4 is non-zero; a soldier or a craft was queued; the working site's auItemQty[112] +
+ * auItemQty[113] is non-zero; Smap_SumSiteScores > 0. With nothing pending nothing at all happens.
+ *
+ * The commit body: bFlag0 = 24 on the record just filled (0x97DA4 -- a completed transfer, where the
+ * shop's "open" flag is 8); bFlag1 = apBases[byte_1870F4]->bUnk4 (0x97DBC); panel E aux zeroed over
+ * every row (0x97DDC); BaseRec_SubItemQty(apBases[nSelectedBaseIdx], apObjects[i],
+ * site.auItemQty[i]) for every object (0x97E5C) -- the pending quantities leave the SELECTED base;
+ * nSmapSiteCount raised (0x97E8C); then every object whose auPerBaseVal[nSelectedBaseIdx] exceeds
+ * 60000 (0xEA60) reports through Ui_ShowTError (0x996e4, not ported) with the base index and the
+ * object index (0x97EE4); finally the fresh working record at the new count is cleared -- bUnk518,
+ * uRecoveredSoldiers, bRecoveredCraftCount, bRecoveredSoldierAssign, bHasLoot and
+ * auItemQty[0..nObjectCount-1].
+ *
+ * Deviation: when the gate skips, the original returns the Smap_SumSiteScores count reinterpreted as
+ * a pointer; the port returns NULL. The port bounds the two id arrays (100 and 10 entries) and the
+ * bHomeBase used to index the grid; the original trusts all three, so a craft already sitting at
+ * bHomeBase 255 would write 24*255 + ... bytes past the facility grid. */
+typedef struct TransferCommitEnv {
+    UiPanel *pPanelA;                /* pBuySellPanelA @ 0x161A1C, the row-kind column */
+    UiPanel *pPanelC;                /* pBuySellPanelC @ 0x161A20, aux holds the roster or craft id */
+    UiPanel *pPanelE;                /* pBuySellPanelE @ 0x1615F8, aux 1 marks a queued row */
+    SmapSite *aSites;                /* aSmapSites @ 0x162030 */
+    i32 *pnSiteCount;                /* nSmapSiteCount @ 0x186410, raised by the commit */
+    BaseRec *const *apBases;         /* apBases @ 0x114B2C */
+    Soldier *const *apSoldiers;      /* apSoldiers @ 0x114B50 */
+    i32 nSoldierCount;               /* nSoldierCount @ 0x115350 */
+    Ship *const *apCraft;            /* apCraft @ 0x114A64 */
+    i32 nCraftCount;                 /* Map_nCraftCount @ 0x114B4C */
+    ObjectRecFull *const *apObjects; /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                /* Map_nObjectCount @ 0x114A60 */
+    u8 *abFacilityGrid;              /* abFacilityGrid @ 0x159768, the hangar cell is cleared */
+    i8 nSelectedBaseIdx;             /* nSelectedBaseIdx @ 0x159D81, the base the items leave */
+    i8 nTransferBaseIdx;             /* byte_1870F4, the destination base */
+    void (*pfnShowTError)(i32 nBaseIdx, i32 nObjectIdx, void *pUser);
+    void *pUser;
+} TransferCommitEnv;
+
+SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *

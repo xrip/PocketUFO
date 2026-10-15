@@ -939,6 +939,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   checked against the destination. IDB: comment at 0x96288, local enum `PufoShortfallReason` declared
   for the reason codes `dword_1870B4[0]` holds.
 
+- [x] part 29, the transfer screen's commit: `TransferScreen_CommitTransfer (0x97aa4)`, 1280 bytes —
+  31 more checks. Queued rows (panel E aux exactly 1) write their roster / craft id into the working
+  site's `anSoldierIds` / `anCraftIds` and unhome the unit: `Soldier.nKind` (0x0B6) = 255, or the
+  hangar cell cleared and `Ship.bHomeBase` = 255. The commit only runs when the transfer carries
+  something; it stamps the completed record with `bFlag0 = 24`, subtracts the pending quantities from
+  the selected base, raises `nSmapSiteCount`, reports stock above 60000 through `Ui_ShowTError`
+  (0x996e4, not ported) and clears the fresh working record. IDB: comments at 0x97aa4 and 0x186410,
+  `nSmapParam4` → `nSmapSiteCount`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1121,6 +1130,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the transfer screen's bring-up (`Ui_InitTransfer`, `Transfer_ResetSite`, the blocked-transfer gate) | 56/56 (Release) | 9703 | 848/1103 (76.9%) | 345176/598792 (57.6%) | 38 checked, 0 mismatched |
 | the transfer screen's row list (`TransferScreen_BuildPanels`, `Transfer_MoveOneItem`, the count/fill mismatch) | 56/56 (Release) | 9750 | 850/1103 (77.1%) | 349736/598792 (58.4%) | 38 checked, 0 mismatched |
 | the transfer screen's capacity gate (`TransferScreen_ValidateCapacity`, the containment reason code) | 56/56 (Release) | 9793 | 851/1103 (77.2%) | 351108/598792 (58.6%) | 38 checked, 0 mismatched |
+| the transfer screen's commit (`TransferScreen_CommitTransfer`, the completed-record flag 24) | 56/56 (Release) | 9824 | 852/1103 (77.2%) | 352388/598792 (58.8%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

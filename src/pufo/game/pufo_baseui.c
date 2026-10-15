@@ -2500,6 +2500,132 @@ i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv)
     return nLimit;
 }
 
+/* TransferScreen_CommitTransfer @ 0x97aa4: the transfer screen's confirm control. The header carries
+ * the row pass, the commit gate and the commit body. */
+SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv)
+{
+    SmapSite *pSite;
+    i32 nSiteCount;
+    i32 nSoldiersQueued = 0;
+    i32 nCraftsQueued = 0;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pnSiteCount == NULL) {
+        return NULL;
+    }
+    if (pEnv->pPanelA == NULL || pEnv->pPanelC == NULL || pEnv->pPanelE == NULL) {
+        return NULL;
+    }
+
+    nSiteCount = *pEnv->pnSiteCount;
+    pSite = BuySellSiteAt(pEnv->aSites, nSiteCount);
+    if (pSite == NULL) {
+        return NULL; /* deviation: the original indexes aSmapSites[nSmapSiteCount] blindly */
+    }
+
+    for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
+        const i32 nAux = pEnv->pPanelA->anLineAux[i];
+        const i32 nRowId = pEnv->pPanelC->anLineAux[i];
+
+        if (pEnv->pPanelE->anLineAux[i] != 1) {
+            continue; /* 0x97B28 / 0x97C18: both branches want panel E aux exactly 1 */
+        }
+
+        if (nAux == PUFO_ROW_SOLDIER) {
+            /* 0x97B58: the roster id lands in the site's soldier list (the original stores a dead
+             * "+1" there first, then overwrites it). */
+            if (nSoldiersQueued < (i32)(sizeof(pSite->anSoldierIds) / sizeof(pSite->anSoldierIds[0]))) {
+                pSite->anSoldierIds[nSoldiersQueued] = (u16)nRowId;
+            }
+            ++nSoldiersQueued;
+            for (i32 s = 0; s < pEnv->nSoldierCount; ++s) {
+                Soldier *pSol = (pEnv->apSoldiers != NULL) ? pEnv->apSoldiers[s] : NULL;
+                if (pSol != NULL && pSol->nUnk440 == nRowId) {
+                    /* 0x97BB0: STRB #0xFF into Soldier.nKind (0x0B6) -- the soldier leaves the base. */
+                    pSol->nKind = 0xFF;
+                }
+            }
+        } else if (nAux > PUFO_TRANSFER_ROW_CRAFT_FIRST - 1 && nAux < PUFO_TRANSFER_ROW_CRAFT_LAST + 1) {
+            /* 0x97C48: the craft id lands in the site's craft list. */
+            if (nCraftsQueued < (i32)(sizeof(pSite->anCraftIds) / sizeof(pSite->anCraftIds[0]))) {
+                pSite->anCraftIds[nCraftsQueued] = (u16)nRowId;
+            }
+            ++nCraftsQueued;
+            for (i32 c = 0; c < pEnv->nCraftCount; ++c) {
+                Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[c] : NULL;
+                if (pShip != NULL && (i32)pShip->bId == nRowId) {
+                    const i32 nHome = (i32)pShip->bHomeBase;
+                    if (pEnv->abFacilityGrid != NULL && nHome >= 0 && nHome < PUFO_FAC_BASE_COUNT) {
+                        /* 0x97CCC: clear the hangar cell, layer2[bHangarY][bHangarX] of the home base. */
+                        pEnv->abFacilityGrid[444 + 144 * nHome + 6 * pShip->bHangarY + pShip->bHangarX] = 0;
+                    }
+                    pShip->bHomeBase = 0xFF; /* 0x97CD4 */
+                }
+            }
+        }
+    }
+
+    {
+        const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, nSiteCount, nSiteCount,
+                                                         pEnv->apBases, pEnv->nTransferBaseIdx,
+                                                         pEnv->apObjects, pEnv->nObjectCount,
+                                                         false); /* 0x97D30, scan off */
+        const i32 nCrew = (i32)pSite->auItemQty[112] + (i32)pSite->auItemQty[113]; /* 0x97D74 */
+        const i32 nScores = Smap_SumSiteScores(pEnv->aSites, nSiteCount);           /* 0x97D88 */
+
+        if (nAcross == 0 && nCraftsQueued == 0 && nSoldiersQueued == 0 && nCrew == 0 && nScores <= 0) {
+            return NULL; /* deviation: the original returns the score count as a pointer */
+        }
+    }
+
+    pSite->bFlag0 = PUFO_TRANSFER_SITE_FLAG_COMMIT; /* 0x97DA4 */
+    if (pEnv->apBases != NULL && pEnv->nTransferBaseIdx >= 0 && pEnv->nTransferBaseIdx < PUFO_FAC_BASE_COUNT
+        && pEnv->apBases[pEnv->nTransferBaseIdx] != NULL) {
+        pSite->bFlag1 = pEnv->apBases[pEnv->nTransferBaseIdx]->bUnk4; /* 0x97DBC */
+    }
+
+    for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
+        pEnv->pPanelE->anLineAux[i] = 0; /* 0x97DE8 */
+    }
+
+    if (pEnv->apBases != NULL && pEnv->nSelectedBaseIdx >= 0
+        && pEnv->nSelectedBaseIdx < PUFO_FAC_BASE_COUNT
+        && pEnv->apBases[pEnv->nSelectedBaseIdx] != NULL) {
+        BaseRec *pSrc = pEnv->apBases[pEnv->nSelectedBaseIdx];
+        for (i = 0; i < pEnv->nObjectCount; ++i) {
+            /* 0x97E5C: the pending quantities leave the selected base. */
+            if (pEnv->apObjects != NULL && pEnv->apObjects[i] != NULL) {
+                BaseRec_SubItemQty(pSrc, pEnv->apObjects[i], (i32)pSite->auItemQty[i]);
+            }
+        }
+    }
+
+    nSiteCount += 1; /* 0x97E8C */
+    *pEnv->pnSiteCount = nSiteCount;
+
+    for (i = 0; i < pEnv->nObjectCount; ++i) {
+        if (Base_GetItemQty((pEnv->apObjects != NULL) ? pEnv->apObjects[i] : NULL,
+                            pEnv->nSelectedBaseIdx) > 60000) { /* 0x97ED8, CMP #0xEA60 */
+            if (pEnv->pfnShowTError != NULL) {
+                pEnv->pfnShowTError(pEnv->nSelectedBaseIdx, i, pEnv->pUser); /* 0x97EE4 */
+            }
+        }
+    }
+
+    pSite = BuySellSiteAt(pEnv->aSites, nSiteCount);
+    if (pSite != NULL) {
+        pSite->bUnk518 = 0;                /* 0x97F30 */
+        pSite->uRecoveredSoldiers = 0;     /* 0x97F3C */
+        pSite->bRecoveredCraftCount = 0;   /* 0x97F48 */
+        pSite->bRecoveredSoldierAssign = 0; /* 0x97F54 */
+        pSite->bHasLoot = 0;               /* 0x97F58 */
+        for (i = 0; i < pEnv->nObjectCount; ++i) {
+            pSite->auItemQty[i] = 0;       /* 0x97F90 */
+        }
+    }
+    return pSite;
+}
+
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
  * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
  * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */
