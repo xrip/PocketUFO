@@ -2523,7 +2523,7 @@ static void TestTransferCommit(void)
                "the pending column is zeroed over every row");
     CheckEqI32(aObj[10].auPerBaseVal[0], 2, "the three queued pistols leave the selected base");
     CheckEqI32(aBase.nStoresTotal, 97, "and the base's stores total drops by the same three");
-    CheckEqI32(g_nCommitTErrorCalls, 1, "the overfull stock reports once through Ui_ShowTError");
+    CheckEqI32(g_nCommitTErrorCalls, 1, "the overfull stock reports once through the error dump");
     CheckEqI32(g_nCommitTErrorBase, 0, "against the selected base");
     CheckEqI32(g_nCommitTErrorObj, 20, "with the object index");
     CheckEqI32(aSites[2].bUnk518, 0, "the fresh record is cleared: bUnk518");
@@ -2599,58 +2599,6 @@ static void XfIconStripThunk(i32 nBaseIdx, void *pUser)
 static u16 XfPix(u32 nIdx, u32 nMid, u32 nLow)
 {
     return (u16)(((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3));
-}
-
-/* Writes the 240x320 16bpp logical surface out as a 24-bit BMP so the rendered screen can be
- * looked at, not only sampled. */
-static void XfDumpBmp(const wchar_t *pszPath)
-{
-    FILE *pFile = NULL;
-    if (_wfopen_s(&pFile, pszPath, L"wb") != 0) {
-        pFile = NULL;
-    }
-    const u32 nImg = 240u * 3u * 320u;
-    const u32 nSize = 54u + nImg;
-    u8 aHdr[54];
-    u8 aRow[240 * 3];
-    const u16 *pPix = (const u16 *)g_xfSurf.pPixels;
-
-    if (pFile == NULL) {
-        printf("  dump skipped: %ls\n", pszPath);
-        return;
-    }
-    memset(aHdr, 0, sizeof(aHdr));
-    aHdr[0] = 'B';
-    aHdr[1] = 'M';
-    aHdr[2] = (u8)nSize;
-    aHdr[3] = (u8)(nSize >> 8);
-    aHdr[4] = (u8)(nSize >> 16);
-    aHdr[5] = (u8)(nSize >> 24);
-    aHdr[10] = 54;   /* bits offset */
-    aHdr[14] = 40;   /* DIB header size */
-    aHdr[18] = (u8)240;  /* width, 32-bit LE */
-    aHdr[22] = (u8)320;  /* height, 32-bit LE: 320 needs the second byte too */
-    aHdr[23] = 1;
-    aHdr[26] = 1;    /* planes */
-    aHdr[28] = 24;   /* bpp */
-    aHdr[34] = (u8)nImg;
-    aHdr[35] = (u8)(nImg >> 8);
-    aHdr[36] = (u8)(nImg >> 16);
-    aHdr[37] = (u8)(nImg >> 24);
-    fwrite(aHdr, 1, sizeof(aHdr), pFile);
-
-    for (i32 y = 319; y >= 0; --y) { /* bottom-up rows */
-        for (i32 x = 0; x < 240; ++x) {
-            const u32 c = pPix[y * 240 + x];
-            const u32 nR = (c >> 11) & 0x1Fu, nG = (c >> 5) & 0x3Fu, nB = c & 0x1Fu;
-            aRow[x * 3 + 0] = (u8)((nB << 3) | (nB >> 2));
-            aRow[x * 3 + 1] = (u8)((nG << 2) | (nG >> 4));
-            aRow[x * 3 + 2] = (u8)((nR << 3) | (nR >> 2));
-        }
-        fwrite(aRow, 1, sizeof(aRow), pFile);
-    }
-    fclose(pFile);
-    printf("  dumped %ls\n", pszPath);
 }
 
 static void XfReset(void)
@@ -2784,14 +2732,6 @@ static void TestTransferDraw(void)
     PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_ALIEN, "Not enough containment space");
     PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_BLOCK, "Transfer is not complete");
 
-    const char *const apszArch[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
-
-    /* The dump at the end renders real labels, so the archives and the font have to be loaded. */
-    if (Asset_OpenArchives(apszArch)) {
-        PufoFont_Init(&g_fontSys);
-        (void)Font_LoadSpr(&g_fontSys, "font"); /* the glyph sprites, as Geoscape_InitUI loads them */
-    }
-
     (void)UiPanel_ctor(&g_xfA, 5);
     (void)UiPanel_ctor(&g_xfB, 5);
     (void)UiPanel_ctor(&g_xfC, 5);
@@ -2839,7 +2779,6 @@ static void TestTransferDraw(void)
     Check(pPix[0 * 240 + 208] == 0, "the destination overlay is not drawn (0x986CC)");
     CheckEqI32(g_nXfStripCalls, 0, "the icon-strip hook does not run");
     CheckEqI32(g_bXfTransferBase, 7, "and the destination byte is left alone");
-    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_closed.bmp");
 
     /* The shortfall panel short-circuits the rest of the draw. */
     memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
@@ -2848,7 +2787,6 @@ static void TestTransferDraw(void)
     CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "a shortfall returns after its own panel (0x98B44)");
     CheckEqI32(g_bXfStarted, 1, "the panel animation started (0x985DC)");
     Check(pPix[0 * 240 + 208] == 0, "and the overlay path never ran");
-    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_shortfall.bmp");
 
     /* The destination overlay. */
     g_dwXfShortfall = 0;
@@ -2872,7 +2810,6 @@ static void TestTransferDraw(void)
     CheckEqI32(g_nXfCursorX, 0, "both cursor coordinates are zeroed (0x989E8)");
     CheckEqI32(g_nXfCursorY, 0, "  including the y");
     CheckEqI32(g_nXfStripCalls, 1, "the strip is drawn once per call");
-    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_overlay.bmp");
 
     /* A tap on the source base keeps the overlay open. */
     g_bXfSelected = 0;

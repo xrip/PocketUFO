@@ -42,9 +42,9 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 76 | 85 | 17380 / 38368 | shared UI panel, text engine, menus |
+| `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 164 | 205 | 60836 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 210 | 243 | 59460 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 210 | 244 | 59460 / 119204 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -1176,13 +1176,12 @@ whose port work they belong to.
 |---|---|---|---|
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | not yet ported; scheduled with the `tact-ui` subsystem work |
 
-### `ui-core` — 9 functions, 20988 bytes remaining
+### `ui-core` — 8 functions, 18792 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x9b5f4` | `Ui_DrawBaseInfo` | 10196 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x632cc` | `Ui_TextInputDialog` | 6096 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x996e4` | `Ui_ShowTError` | 2196 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x62d78` | `Ui_DrawTextInputDialog` | 960 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -1236,7 +1235,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 33 functions, 57548 bytes remaining
+### `strat-ui` — 34 functions, 59744 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1250,6 +1249,7 @@ whose port work they belong to.
 | `0x716d4` | `PsiScreen_BuildPanels` | 2940 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x7b014` | `BasePlaneScreen_BuildControls` | 2788 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e9e8` | `ManufScreen_BuildPanels` | 2404 | not yet ported; scheduled with the `strat-ui` subsystem work |
+| `0x996e4` | `Transfer_WriteErrorDump` | 2196 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x73a34` | `ResearchScreen_Draw` | 2108 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x56fb8` | `BaseInfoScreen_Draw` | 1744 | not yet ported; scheduled with the `strat-ui` subsystem work |

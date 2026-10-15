@@ -900,7 +900,7 @@ addr	name	size	subsystem
 97fa4	TransferScreen_Draw	2988	strat-ui
 98b50	Smap_GrantSiteRecovery	2572	strat
 9955c	Ui_InitTransfer	392	ui-core
-996e4	Ui_ShowTError	2196	ui-core
+996e4	Transfer_WriteErrorDump	2196	strat-ui
 99f78	UiPanel_ScrollNext	16	ui-core
 99f88	UiPanel_ScrollPrev	16	ui-core
 99f98	UiPanel_ScrollNextSel	28	ui-core

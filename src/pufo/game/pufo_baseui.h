@@ -1062,8 +1062,9 @@ i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv);
  * every row (0x97DDC); BaseRec_SubItemQty(apBases[nSelectedBaseIdx], apObjects[i],
  * site.auItemQty[i]) for every object (0x97E5C) -- the pending quantities leave the SELECTED base;
  * nSmapSiteCount raised (0x97E8C); then every object whose auPerBaseVal[nSelectedBaseIdx] exceeds
- * 60000 (0xEA60) reports through Ui_ShowTError (0x996e4, not ported) with the base index and the
- * object index (0x97EE4); finally the fresh working record at the new count is cleared -- bUnk518,
+ * 60000 (0xEA60) reports through Transfer_WriteErrorDump (0x996e4, not ported -- a debug dump writer
+ * that opens t_error<rand>.txt, not a UI display) with the base index and the object index
+ * (0x97EE4); finally the fresh working record at the new count is cleared -- bUnk518,
  * uRecoveredSoldiers, bRecoveredCraftCount, bRecoveredSoldierAssign, bHasLoot and
  * auItemQty[0..nObjectCount-1].
  *

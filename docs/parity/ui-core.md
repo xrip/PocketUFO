@@ -104,7 +104,7 @@ wrap path. Symptom was "wrapped 8 lines, last one blank, `theta` missing".
 | `Ui_DrawBaseInfo` @ `0x9b5f4` | 10,196 | base screen drawing; needs the ported `UiPanel` draw plus the base data model |
 | `Ui_TextInputDialog` @ `0x632cc` | 6,096 | modal text entry; needs keyboard input routing, which is `tact-ui` |
 | `UiModal_DrawDialog` @ `0x264a0` | 2,676 | modal frame; needs the background/source-rect blits noted above |
-| `Ui_ShowTError` @ `0x996e4` | 2,196 | only reachable from the strategy screens |
+| `Transfer_WriteErrorDump` @ `0x996e4` | 2,196 | only reachable from the strategy screens |
 | the `UiPanel_InsertLine` family | — | **blocked by the struct conflict above** |
 
 ## UiControl button widget (done)

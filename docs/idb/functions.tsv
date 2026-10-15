@@ -900,7 +900,7 @@ addr	name	size
 97fa4	TransferScreen_Draw	2988
 98b50	Smap_GrantSiteRecovery	2572
 9955c	Ui_InitTransfer	392
-996e4	Ui_ShowTError	2196
+996e4	Transfer_WriteErrorDump	2196
 99f78	UiPanel_ScrollNext	16
 99f88	UiPanel_ScrollPrev	16
 99f98	UiPanel_ScrollNextSel	28

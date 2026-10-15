@@ -944,8 +944,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
   site's `anSoldierIds` / `anCraftIds` and unhome the unit: `Soldier.nKind` (0x0B6) = 255, or the
   hangar cell cleared and `Ship.bHomeBase` = 255. The commit only runs when the transfer carries
   something; it stamps the completed record with `bFlag0 = 24`, subtracts the pending quantities from
-  the selected base, raises `nSmapSiteCount`, reports stock above 60000 through `Ui_ShowTError`
-  (0x996e4, not ported) and clears the fresh working record. IDB: comments at 0x97aa4 and 0x186410,
+  the selected base, raises `nSmapSiteCount`, reports stock above 60000 through `Transfer_WriteErrorDump`
+  (0x996e4, not ported -- a debug dump writer, not a UI display) and clears the fresh working record. IDB: comments at 0x97aa4 and 0x186410,
   `nSmapParam4` → `nSmapSiteCount`.
 
 - [x] part 30, the transfer screen's frame: `TransferScreen_Draw (0x97fa4)`, 2988 bytes — 47 more
@@ -956,11 +956,13 @@ Order is by what unblocks what. Each item ends with gates + commit.
   1443, 1444), and the destination overlay: full-screen blend, one bevelled row per base, the tap
   through `Base_HitTestFacilityStrip` writing `byte_1870F4` and the working site's `bFlag1`,
   "Stop Transfer", "Select destination base" with its red channel at `250 - 40 * nMapPhase`.
-  `TestTransferDraw` now writes the rendered 240x320 surface out as a BMP for the closed, shortfall
-  and overlay states; the frames were inspected and the rails, separators, blend and base rows land
-  where the decode says. Text is absent in the harness dumps because `Text_DrawString` draws through
-  glyph palette slot 2, which no `Palette_Load` in the port fills — recorded as a separate issue, not
-  a port defect. IDB: comment at 0x97fa4, `aTextRec1264..aTextRec1269` and `aTextRec159` named.
+  IDB: comment at 0x97fa4, `aTextRec1264..aTextRec1269` and `aTextRec159` named.
+  A first attempt to eyeball this screen by dumping the harness surface as a BMP was tried and
+  dropped: it showed only the frame primitives the function itself paints, with synthetic panels and
+  no text, so it verified the transcription and nothing else. Visual verification belongs to the app's
+  own `--dump-frame` path, which renders the real screen from real data — and that path is blocked
+  until `Geoscape_Draw (0x8c180)` is ported, because the port has no geoscape screen at all. See
+  "Separate issues".
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -1008,6 +1010,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   archive; one new shared symbol pulled it in and 19 targets failed to link while ctest still
   reported 48/48. Until this is fixed, share a value across modules as a header define, not an
   `extern` symbol.
+- [ ] **Screen-level visual verification is blocked on `Geoscape_Draw (0x8c180)`.** The app renders
+  the titles and the main menu for real (`--dump-frame` proves it), but the geoscape screen — the
+  screen every other screen sits on — is a hook the port does not implement
+  (`RenderFrameEnv.pfnGeoscapeDraw`, `pufo_renderframe.h:66`). So the only way to look at a screen
+  like the transfer screen today is a unit-test harness that paints that one function's own
+  primitives onto a blank surface with synthetic panels. That picture is a transcription check, not
+  the game UI, and it was dropped from `test_baseui` for exactly that reason. Real visual checks
+  need the geoscape frame in the app: `Geoscape_Draw` is 33744 bytes, a jump-table dispatcher over
+  screen ids, and it is the largest single uncovered function in the binary (5.6% of it). Its
+  branches call the screens still queued below, so the screens come first and the dispatcher after
+  them; the shared frame block (`0x8C214..0x8C760`) is the part that would make the main screen
+  visible and is the natural first slice.
   - It fired again when `test_tactend` was added: `Tact_Shutdown` calls `StrategList_RemoveAt`,
     which pulls `pufo_strateg.obj`, which reaches `UiLineList_Remove` in `pufo_ui`. The test target
     now links `pufo_ui` like the other fifteen that already had to.
@@ -1145,7 +1159,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the transfer screen's row list (`TransferScreen_BuildPanels`, `Transfer_MoveOneItem`, the count/fill mismatch) | 56/56 (Release) | 9750 | 850/1103 (77.1%) | 349736/598792 (58.4%) | 38 checked, 0 mismatched |
 | the transfer screen's capacity gate (`TransferScreen_ValidateCapacity`, the containment reason code) | 56/56 (Release) | 9793 | 851/1103 (77.2%) | 351108/598792 (58.6%) | 38 checked, 0 mismatched |
 | the transfer screen's commit (`TransferScreen_CommitTransfer`, the completed-record flag 24) | 56/56 (Release) | 9824 | 852/1103 (77.2%) | 352388/598792 (58.8%) | 38 checked, 0 mismatched |
-| the transfer screen's frame (`TransferScreen_Draw`, the destination overlay, the first visual dump) | 56/56 (Release) | 9871 | 853/1103 (77.3%) | 355376/598792 (59.3%) | 38 checked, 0 mismatched |
+| the transfer screen's frame (`TransferScreen_Draw`, the destination overlay) | 56/56 (Release) | 9871 | 853/1103 (77.3%) | 355376/598792 (59.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

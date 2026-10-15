@@ -11556,7 +11556,7 @@ just filled (0x97DA4 -- a completed transfer, where the shop's "open" flag is 8)
 destination base's type byte (0x97DBC), zeroes panel E aux over every row (0x97DDC), subtracts every
 pending quantity from the SELECTED base through BaseRec_SubItemQty (0x97E5C), raises nSmapSiteCount
 (0x97E8C), reports every object whose auPerBaseVal[nSelectedBaseIdx] exceeds 60000 (0xEA60) through
-Ui_ShowTError (0x996e4) with the base index and the object index (0x97EE4), and finally clears the
+Transfer_WriteErrorDump (0x996e4) with the base index and the object index (0x97EE4), and finally clears the
 fresh working record at the new count: bUnk518, uRecoveredSoldiers, bRecoveredCraftCount,
 bRecoveredSoldierAssign, bHasLoot and auItemQty[0..nObjectCount-1].
 
