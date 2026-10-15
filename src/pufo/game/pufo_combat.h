@@ -216,10 +216,11 @@ void Combat_DetonateNearbyItems(ProximityCtx *pCtx, const MapCell *pSrcCell);
 void MapCell_TickProximityItems(ProximityCtx *pCtx, MapCell *pCell);
 
 /* Research gate. The original asks the in-memory research table directly:
- *     aFacTypeTable[4 + 34 * byte_AA968[weapon.uSortKey]] != 0
- * A weapon may not be fired unless its research topic allows it. The table's
- * in-memory field order is still unresolved (the port's ResearchTopic order is
- * the on-disk order), so the check is injected as a callback rather than baked
+ *     aResearchTopics[4 + 34 * byte_AA968[weapon.uSortKey]] != 0
+ * A weapon may not be fired unless its research topic allows it. The byte read is +0x4 of the
+ * in-memory record (ResearchTopicLive.wGate4); the table was named aFacTypeTable in the IDB until
+ * this was traced to the research chunk at 0x15EF08. The port's ResearchTopic order is still the
+ * on-disk order, so the check is injected as a callback rather than baked
  * into a layout guess here. */
 typedef struct FireGate {
     bool (*pfnWeaponFireable)(i32 nSortKey, void *pUser);

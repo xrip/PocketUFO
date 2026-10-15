@@ -77,6 +77,9 @@ TABLES = [
     # the port's single copy, which is what proves they are identical.
     ("arrow glyph x nudge",      0xA9290, "g_abArrowGlyphOff",        "src/pufo/game/pufo_isodraw.c", 64, "b", 0),
     ("arrow glyph y nudge",      0xA92D0, "g_abArrowGlyphOff",        "src/pufo/game/pufo_isodraw.c", 64, "b", 0),
+    # byte_AA548: the manufacturing row filter, 172 bytes of 0/1 closed by the dword table at 0xAA5F4.
+    # ManufScreen_BuildPanels (0x6e9e8) is its only reader in the binary.
+    ("manuf row filter",         0xAA548, "g_abManufRowFlag",         "src/pufo/game/pufo_baseui.c", 172, "B", 0),
 ]
 
 

@@ -78,9 +78,11 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10173**. Coverage as of the latest commit: **861 / 1103
-functions (78.1%)**, **362836 / 598792 bytes (60.6%)**. The last unit was `ManufScreen_Init`
-(0x710b0), the manufacturing screen's bring-up. The §2 numbers below are the snapshot taken
+Test checks run across the 56 suites: **10222**. Coverage as of the latest commit: **862 / 1103
+functions (78.2%)**, **365240 / 598792 bytes (61.0%)**. The last two units were `ManufScreen_Init`
+(0x710b0) and `ManufScreen_BuildPanels` (0x6e9e8): the manufacturing screen now comes up end to end, and
+`aFacTypeTable @ 0x15EF08` was found to be the research topic table under a wrong name. The §2 numbers
+below are the snapshot taken
 when this file was regenerated and are older than that line.
 
 ### Per-subsystem status

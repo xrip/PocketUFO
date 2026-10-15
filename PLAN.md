@@ -19,7 +19,9 @@ Do not rewrite it from scratch unless the plan itself changes.
 - Citations: `Name @ 0xADDR` only for something actually ported. For a blocker or an unported
   function write `Name (0xADDR)`.
 - Commit with explicit paths: `git add -A -- src/pufo tests docs tools pufobeta.exe.i64 PARITY.md HANDOFF.md PLAN.md`.
-- Image map: `IDA_VA - 0x13000 == file offset`. Verify table bytes from the image, never by eye.
+- Image map: `IDA_VA - 0x13000 == file offset`. Verify table bytes from the image, never by eye. Long
+  byte runs go through a tool end to end — read them with a script and write them with a script. Copying
+  an IDB byte dump through your own context is where part 40's wrong table came from.
 
 ## Now: Priority 1, make a tactical mission start
 
@@ -1098,6 +1100,24 @@ Order is by what unblocks what. Each item ends with gates + commit.
   them, so a check there could not fail. The stale `stru_AC3B8` citation was corrected to the IDB's own
   `g_aTransferCtlDesc`.
 
+- [x] part 40, the manufacturing panel build: `ManufScreen_BuildPanels (0x6e9e8)`, 2404 bytes — 49 more
+  checks, and the manufacturing screen is now brought up end to end. The row model is research-driven:
+  topics 1..n-1 with `bUnlocked` (+0xD) set, then the five object slot ids at +0x18..+0x1C filtered
+  through `abManufRowFlag @ 0xAA548`. That table turned out to be **exactly** the 35 shipped slots with
+  a non-zero `uManufWorkPerUnit` (all 149 checked, no disagreement), so the list is "unlocked by
+  research, and buildable". The two divisions confirm the four-column model again: the percent is
+  `100*apProductA / (workPerUnit*apProductB)` with the divisor in R0, and the unit column is
+  `apProductA / workPerUnit`. No sort pass, unlike the buy/sell and transfer builds. Two IDB fixes came
+  out of it: `aFacTypeTable @ 0x15EF08` was the **research topic table under a wrong name** (the ARM's
+  `MUL #34` + `ADD =0x15EF08` at 0x72CC0 and `ADD #0x22` here settle base and stride; the second
+  `aResearchTopics` label at 0x15EF0C had zero xrefs and was four bytes off a record boundary), so it is
+  now `aResearchTopics` typed `ResearchTopicLive[144]`, with `bUnlocked` at +0xD and `abItemIds[5]` at
+  +0x18 named for the first time. `byte_AA548` is now `abManufRowFlag`. **A process note worth keeping:
+  my first transcription of those 172 bytes from the IDB was wrong in the 106..125 region, and I had
+  written a whole paragraph claiming the two sets differed on six slots. `audit_tables.py` caught it
+  because it compares the port's table against the image byte for byte.** Long byte runs are transcribed
+  by a tool, not by eye.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1312,6 +1332,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the message-payload audit (38 and 32 corrected, five other sites re-checked, 39's radar byte recorded) | 56/56 (Release) | 10062 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 | the manufacturing commit pass (`ManufScreen_CommitProduction`, the work-per-unit reading, the blocked early return) | 56/56 (Release) | 10123 | 860/1103 (78.0%) | 362348/598792 (60.5%) | 38 checked, 0 mismatched |
 | the manufacturing bring-up (`ManufScreen_Init`, the six control descriptors, the shared geoscape controls) | 56/56 (Release) | 10173 | 861/1103 (78.1%) | 362836/598792 (60.6%) | 38 checked, 0 mismatched |
+| the manufacturing panel build (`ManufScreen_BuildPanels`, the research-driven row filter, `aFacTypeTable` found to be the research table) | 56/56 (Release) | 10222 | 862/1103 (78.2%) | 365240/598792 (61.0%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

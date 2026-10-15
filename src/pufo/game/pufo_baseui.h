@@ -1399,9 +1399,16 @@ typedef struct ResearchTopicLive {
     u16 wTotal;   /* +0x8: the progress divisor, 0x73174 LDRH [R9,#8] */
     u16 wProgress;/* +0xA: the progress numerator, 0x73160 LDRH [R9,#0xA] */
     u8  bActive;  /* +0xC: 1 = the topic is on the screen list (0x73034, 0x730B8) */
-    u8  bGate13;  /* +0xD: the weapon menu gate reads it (pufo_tactui.h, 0x17078..0x17094) */
+    u8  bUnlocked;/* +0xD: read as 1 by the manufacturing row filter (0x6EA30, 0x6EEB0) and as 0 by
+                   * Unit_SelectBestFireMode (0x47A10, 0x47B3C), which reaches the same record through
+                   * byte_AA968[ObjectRec.uSortKey] -- the topic that unlocks that weapon. The old name
+                   * here was bGate13, after the offset the tactical weapon menu read it at. */
     u8  nItemId;  /* +0xE: the item this topic needs (0x72CE4) */
-    u8  abUnkF[19];
+    u8  abUnkF[9];/* +0x0F..0x17 */
+    u8  abItemIds[5]; /* +0x18..0x1C: five object slot ids. ManufScreen_BuildPanels (0x6EA44, 0x6EEC8)
+                       * reads them with LDRB [R3,#0x18+j], tests abManufRowFlag[id] == 1, and then uses the
+                       * same byte as an apObjects index to copy the item's name (0x6EEDC). */
+    u8  abUnk1D[5];   /* +0x1D..0x21 */
 } ResearchTopicLive;
 _Static_assert(sizeof(ResearchTopicLive) == 34, "the in-memory topic record is 34 bytes");
 
@@ -1852,6 +1859,105 @@ typedef struct ManufInitEnv {
 } ManufInitEnv;
 
 void ManufScreen_Init(ManufInitEnv *pEnv);
+
+/* ManufScreen_BuildPanels @ 0x6e9e8 (2404 B): the manufacturing screen's panel build and teardown,
+ * tail-called by ManufScreen_Init @ 0x710b0 (0x71268).
+ *
+ * Evidence: ManufScreen_BuildPanels @ 0x6e9e8, ManufScreen_Init @ 0x710b0, and the four product
+ * columns documented on ManufScreen_CommitProduction below.
+ *
+ * One flag decides the branch: unk_15EE4C, the manufacturing sibling of bBuySellPanelsBuilt @
+ * 0x161A28 and unk_1870EC.
+ *
+ * Teardown, unk_15EE4C != 0 (0x6F264..0x6F340): the flag is cleared, the pad at unk_159E98[0] is
+ * PadImage_FreeData'd and deleted, then the four panels in the order A, C, B, D (0x6F28C, 0x6F2AC,
+ * 0x6F2CC, 0x6F2EC -- C before B), then the six click controls at unk_159E98 byte offsets
+ * 0x4F84..0x4F98 are UiControl_FreePads'd and deleted. No funds rollback: this screen spends none
+ * until CommitProduction runs. Nothing is stored back into any of the ten globals, so the original
+ * leaves ten dangling pointers behind.
+ *
+ * Build, unk_15EE4C == 0 (0x6EA00..0x6F344):
+ *
+ *   1. 0x6EA0C..0x6EA78: count the rows. Walk research topics 1..nTopicCount-1 (the walk starts at
+ *      aResearchTopics + 34, one record in -- the same off-by-one-record start ResearchScreen_
+ *      RefreshPanels @ 0x73008 has), and for each topic whose bUnlocked (+0xD) is 1, test the five
+ *      object slot ids at +0x18..+0x1C against abManufRowFlag[id] == 1. Each hit is one row. The count
+ *      byte is 0x160C4C, read as an unsigned byte and the loop runs only while it is above 1.
+ *   2. 0x6EA7C..0x6EE5C: four panels, all operator new(0x1BB4), all UiPanel_ctor(nLineCount) with
+ *      that count, all nStyle 13 and nFont 16, all with style bytes 0..2 = 0xB4 and 6..11 =
+ *      0xF0,0xF0,0xF0,0x14,0x14,0x14:
+ *
+ *          A  pManufProductPanel @ 0x15EE44   x 10  y 70  +7052 5    viewW 230  click
+ *             ManufScreen_SelectListed @ 0x6e914, bytes 3..5 = 0x32,0x32,0xFA, bFlag7073 1,
+ *             bUnk7088 0x96
+ *          B  pManufPanelB      @ 0x15EE48    x 150 y 70  +7052 155  viewW 30   nUnk7076 2
+ *          C  pManufPanelC      @ 0x15EE40    x 187 y 70  +7052 185  viewW 30   nUnk7076 2
+ *          D  pManufPanelD      @ 0x15EE38    x 233 y 70  +7052 5    viewW 230  nUnk7076 2, click
+ *             ManufScreen_SyncSelection @ 0x6dd24, bFlag7073 1, bUnk7088 0x96
+ *
+ *      Only A gets SetBytes3to5; B and C get neither it nor the two flag bytes. All four share
+ *      nPosY 70 and nUnk7056 70.
+ *   3. 0x6EE60..0x6F25C: the fill pass, same walk, same filter, one line per hit in panels A, B, C
+ *      and D at the same row index:
+ *        - A: the item's own name, copied out of apObjects[id] (the record's szName at +0, reached as
+ *          the Map-block pointer array at 0x113AC0), cut to 17 characters when strlen is above 0x11
+ *          (0x6EF18 STRBHI at var_64+17). A's aux is the slot id (0x6EF64).
+ *        - C's aux is the TOPIC index, not the slot id (0x6EF70 stores R8, the outer loop counter).
+ *        - B: auManufCol[200*nSelectedBaseIdx + id] as decimal, or the empty string at 0x10DA38 when
+ *          it is zero (0x6EF9C LDRH at anchor + 400*base + 2*id + 17156).
+ *        - C's line and D's line both depend on apProductB[200*base + id] (0x6F038 LDR at anchor +
+ *          4*(200*base+id) + 4). When it is zero both get the empty string (0x6F1C4). Otherwise:
+ *            C = 100 * apProductA / (uManufWorkPerUnit * apProductB) with "%" appended -- the ARM
+ *                composes _rt_sdiv with the DIVISOR R0 = workPerUnit * apProductB (0x6F064..0x6F068)
+ *                and the DIVIDEND R1 = apProductA * 100 (0x6F070), which is the same reading of the
+ *                four columns that ManufScreen_CommitProduction established.
+ *            D = itoa(apProductB) + "/" + itoa(apProductA / uManufWorkPerUnit) -- the requested count,
+ *                then the units the accumulated work has paid for (0x6F174 LDRH #0xBA, _rt_sdiv at
+ *                0x6F178 with the divisor in R0).
+ *      There is no sort pass here, unlike the buy/sell and transfer builds: the rows stay in topic
+ *      order.
+ *
+ * abManufRowFlag is a 172-byte 0/1 table in the image (0xAA548..0xAA5F3, closed by the dword table that
+ * starts at 0xAA5F4) and ManufScreen_BuildPanels is its only reader anywhere in the binary. It is
+ * ported as `g_abManufRowFlag` and audit_tables.py compares it byte for byte. 35 slots
+ * are set, and against the shipped OBJECTS.DAT that is exactly the set of slots with a non-zero
+ * uManufWorkPerUnit -- all 149 slots checked, no disagreement. So abManufRowFlag is the "this slot can be
+ * manufactured" flag, and the row list is: items unlocked by a research topic, restricted to items the
+ * game can actually build.
+ *
+ * Deviations: the original allocates the four panels with operator new and dereferences every
+ * allocation, every panel pointer and every apObjects slot with no test; the port allocates the four,
+ * tests the object slots, and bounds the row index against the 500-line panel capacity. The original
+ * leaves the ten freed globals dangling; the port clears them. Both divisions here can be by zero --
+ * the percent divides by `uManufWorkPerUnit * asked-for` and the unit count by `uManufWorkPerUnit` --
+ * and the original calls _rt_sdiv either way; the port answers zero, the same policy
+ * CommitProduction records. It is unreachable in the shipped data, because every slot abManufRowFlag
+ * flags has a non-zero work cost and a row only exists for a flagged slot. The teardown frees the six click
+ * controls in the original and only pads them in the port, because the port's controls are
+ * caller-owned. */
+#define PUFO_MANUF_ROW_NAME_CUT 17 /* 0x6EF18: the name is cut at 17 characters when strlen > 0x11 */
+
+typedef struct ManufBuildEnv {
+    u8   *pbPanelsBuilt;              /* unk_15EE4C */
+    void **ppRoot;                    /* unk_159E98; [0] the pad, [5089..5094] the six controls */
+    UiControl *apCtl[6];              /* the six controls, pads freed by the teardown */
+    UiPanel **ppPanelA;               /* pManufProductPanel @ 0x15EE44 */
+    UiPanel **ppPanelB;               /* pManufPanelB @ 0x15EE48 */
+    UiPanel **ppPanelC;               /* pManufPanelC @ 0x15EE40 */
+    UiPanel **ppPanelD;               /* pManufPanelD @ 0x15EE38 */
+    const ResearchTopicLive *aTopics; /* aResearchTopics @ 0x15EF08 */
+    const u8 *pbTopicCount;           /* nResearchEntryCount @ 0x160C4C */
+    ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
+    i32     nObjectCount;             /* Map_nObjectCount @ 0x114A60 */
+    u32   *apProductA;                /* unk_159E9C, 200 u32 per base: accumulated work */
+    u32   *apProductB;                /* unk_15B79C, 200 u32 per base: units asked for */
+    u16   *apManufCols;               /* auManufCol @ 0x15E19C, 200 u16 per base: allocated work */
+    i8     nSelectedBaseIdx;          /* nSelectedBaseIdx @ 0x159D81 */
+    void (*pfnSelectListed)(void);    /* ManufScreen_SelectListed @ 0x6e914 */
+    void (*pfnSyncSelection)(void);   /* ManufScreen_SyncSelection @ 0x6dd24 */
+} ManufBuildEnv;
+
+void ManufScreen_BuildPanels(ManufBuildEnv *pEnv);
 
 /* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
  * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like

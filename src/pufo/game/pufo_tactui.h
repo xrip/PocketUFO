@@ -211,10 +211,12 @@ typedef struct ActionCostInput ActionCostInput;
  *   pSelWeapon = pUnit->pHandL (or pHandR); bail when it is NULL
  *   nSortKey = pSelWeapon->pObj->uSortKey
  *   bail when the weapon's research record says this weapon has no action menu:
- *   aFacTypeTable[13 + 34 * byte_AA968[nSortKey]] == 0 (ARM 0x17078..0x17094).
- *   Injected as pfnWeaponHasMenu because aFacTypeTable @ 0x15EF08 is built at
- *   runtime (the shipped image is all 0xFF) and its in-memory field order is not
- *   yet recovered -- see the open item in docs/parity/game-core.md.
+ *   aResearchTopics[13 + 34 * byte_AA968[nSortKey]] == 0 (ARM 0x17078..0x17094).
+ *   Injected as pfnWeaponHasMenu because aResearchTopics @ 0x15EF08 is built at
+ *   runtime (the shipped image is all 0xFF there). The IDB held this table under
+ *   the wrong name aFacTypeTable; it is now aResearchTopics, typed as 144 x
+ *   ResearchTopicLive, and the byte read here is +0xD bUnlocked -- the same byte
+ *   the manufacturing row filter gates on at 0x6EA30.
  *   bail when nSortKey == 24 and the unit's byte at Soldier+0x1A6 is 0
  *   Ui_FillActionCosts, then scan modes 0..11 for the first one that is both
  *   enabled and affordable (cost <= uTu). None found -> push aTextRecs record 1

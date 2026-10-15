@@ -3862,6 +3862,254 @@ void ManufScreen_Init(ManufInitEnv *pEnv)
     }
 }
 
+/* abManufRowFlag @ 0xAA548: the manufacturing row filter, 172 bytes of 0/1 closed by the dword table at
+ * 0xAA5F4. ManufScreen_BuildPanels is its only reader in the binary (0x6EA50, 0x6EECC). Dumped from
+ * the image; audit_tables.py compares it. The 35 set slots are 2, 3, 5, 6, 9, 11, 12, 13, 18, 20, 21,
+ * 23, 24, 28, 29, 30, 33, 34, 35, 37, 39, 49, 50, 51, 55, 58, 106, 107, 109, 119, 120, 121, 122, 123,
+ * 124 -- and against the shipped OBJECTS.DAT that is exactly the set with a non-zero
+ * uManufWorkPerUnit, so this byte is the "can this slot be manufactured" flag. */
+static const u8 g_abManufRowFlag[172] = {
+    /*   0 */ 0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1,
+    /*  12 */ 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1,
+    /*  24 */ 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 1, 1,
+    /*  36 */ 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+    /*  48 */ 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0,
+    /*  60 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /*  72 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /*  84 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /*  96 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1,
+    /* 108 */ 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    /* 120 */ 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+    /* 132 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 144 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 156 */ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    /* 168 */ 0, 0, 0, 0,
+};
+
+/* One row of the manufacturing list, in the four panels at the same index. The header block has the
+ * four columns and the two _rt_sdiv calls; both divisions are 32-bit here, as the ARM's MUL and
+ * rt_sdiv are, so a large accumulated count wraps the same way it does on the original. */
+static void ManufFillRow(const ManufBuildEnv *pEnv, UiPanel *pA, UiPanel *pB, UiPanel *pC, UiPanel *pD,
+                         i32 nRow, i32 nTopic, i32 nSlot, const ObjectRecFull *pObj)
+{
+    const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * (i32)pEnv->nSelectedBaseIdx + nSlot;
+    const bool bIndexed = (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL);
+    const u16 nAllocated = (bIndexed && pEnv->apManufCols != NULL) ? pEnv->apManufCols[nIdx] : 0u;
+    const u32 nAccum = (bIndexed && pEnv->apProductA != NULL) ? pEnv->apProductA[nIdx] : 0u;
+    const u32 nTarget = (bIndexed && pEnv->apProductB != NULL) ? pEnv->apProductB[nIdx] : 0u;
+    const u16 nWork = (pObj != NULL) ? pObj->uManufWorkPerUnit : 0u;
+    char szName[18];
+    char szLine[PUFO_PANEL_LINE_BYTES];
+
+    BuySellCopyName(szName, (pObj != NULL) ? pObj->szName : ""); /* 0x6EEDC..0x6EF24, the 17-char cut */
+    if (pA != NULL) {
+        (void)UiPanel_SetLineText(pA, nRow, szName);   /* 0x6EF2C..0x6EF48 */
+        UiPanel_SetLineAux(pA, nRow, nSlot);           /* 0x6EF64, the slot id */
+    }
+    if (pC != NULL) {
+        UiPanel_SetLineAux(pC, nRow, nTopic);          /* 0x6EF70, the TOPIC index, not the slot */
+    }
+
+    /* Panel B: the allocated work, or the empty string at 0x10DA38 when nothing is allocated. */
+    if (nAllocated != 0) {
+        (void)snprintf(szLine, sizeof(szLine), "%u", (unsigned)nAllocated); /* j_itoa, 0x6EFB0 */
+    } else {
+        szLine[0] = '\0'; /* 0x6F000, the empty string at 0x10DA38 */
+    }
+    if (pB != NULL) {
+        (void)UiPanel_SetLineText(pB, nRow, szLine);   /* 0x6EFBC..0x6F014 */
+    }
+
+    if (nTarget == 0) {
+        /* 0x6F03C: with nothing asked for, both remaining columns get the empty string. */
+        if (pC != NULL) { (void)UiPanel_SetLineText(pC, nRow, ""); } /* 0x6F1D8 */
+        if (pD != NULL) { (void)UiPanel_SetLineText(pD, nRow, ""); } /* 0x6F200 */
+        return;
+    }
+
+    /* Panel C: 100 * accumulated / (work-per-unit * asked-for), then "%". The ARM puts the divisor in
+     * R0 (0x6F064..0x6F068) and the dividend in R1 (0x6F070), which is _rt_sdiv's argument order. */
+    {
+        const i32 nNum = (i32)(nAccum * 100u);
+        const i32 nDen = (i32)((u32)nWork * nTarget);
+        (void)snprintf(szLine, sizeof(szLine), "%d%%", (nDen != 0) ? (nNum / nDen) : 0);
+    }
+    if (pC != NULL) {
+        (void)UiPanel_SetLineText(pC, nRow, szLine);   /* 0x6F098..0x6F0B4, then strcat("%") at 0x6F0CC */
+    }
+
+    /* Panel D: what was asked for, then the units the accumulated work has paid for. */
+    {
+        const i32 nUnits = (nWork != 0u) ? ((i32)nAccum / (i32)nWork) : 0; /* 0x6F174..0x6F180 */
+        (void)snprintf(szLine, sizeof(szLine), "%u/%d", (unsigned)nTarget, nUnits);
+    }
+    if (pD != NULL) {
+        (void)UiPanel_SetLineText(pD, nRow, szLine);   /* 0x6F110..0x6F140, then strcat("/") at 0x6F140 */
+    }
+}
+
+/* Does this topic's fifth-of-five slot id take a row? Both passes ask the same question, so the row
+ * total and the lines written can never disagree. The original indexes abManufRowFlag with the raw byte
+ * (LDRSB at 0x6EA50) and so reads past its 172 bytes for a slot id of 172 or more; the port refuses
+ * those instead. */
+static bool ManufRowTakesLine(i32 nSlot)
+{
+    return (nSlot >= 0 && nSlot < (i32)sizeof(g_abManufRowFlag) && g_abManufRowFlag[nSlot] == 1);
+}
+
+/* ManufScreen_BuildPanels @ 0x6e9e8. The header block has the branch map, the four panels' geometry,
+ * the row model and the deviations. */
+void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
+{
+    UiPanel *apFree[4];
+    UiPanel *pA, *pB, *pC, *pD;
+    PadImage *pPad;
+    i32 nTopicCount;
+    i32 nRows = 0;
+    i32 nRow = 0;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbPanelsBuilt == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbPanelsBuilt != 0) {
+        /* The teardown, 0x6F264..0x6F340. No funds rollback: this screen spends none here. */
+        *pEnv->pbPanelsBuilt = 0; /* 0x6F26C */
+        pPad = (pEnv->ppRoot != NULL) ? (PadImage *)pEnv->ppRoot[0] : NULL;
+        if (pPad != NULL) {
+            PadImage_FreeData(pPad); /* 0x6F280 */
+            free(pPad);
+            pEnv->ppRoot[0] = NULL;
+        }
+        apFree[0] = (pEnv->ppPanelA != NULL) ? *pEnv->ppPanelA : NULL;
+        apFree[1] = (pEnv->ppPanelC != NULL) ? *pEnv->ppPanelC : NULL; /* C before B, as 0x6F2AC does */
+        apFree[2] = (pEnv->ppPanelB != NULL) ? *pEnv->ppPanelB : NULL;
+        apFree[3] = (pEnv->ppPanelD != NULL) ? *pEnv->ppPanelD : NULL;
+        for (i = 0; i < 4; ++i) {
+            if (apFree[i] != NULL) {
+                UiPanel_FreeLines(apFree[i]); /* 0x6F2A0, 0x6F2C0, 0x6F2E0, 0x6F300 */
+                free(apFree[i]);
+            }
+        }
+        /* The original stores nothing back and leaves ten dangling pointers; the port clears the four
+         * panel slots it owns. */
+        if (pEnv->ppPanelA != NULL) { *pEnv->ppPanelA = NULL; }
+        if (pEnv->ppPanelB != NULL) { *pEnv->ppPanelB = NULL; }
+        if (pEnv->ppPanelC != NULL) { *pEnv->ppPanelC = NULL; }
+        if (pEnv->ppPanelD != NULL) { *pEnv->ppPanelD = NULL; }
+        for (i = 0; i < 6; ++i) {
+            if (pEnv->apCtl[i] != NULL) {
+                UiControl_FreePads(pEnv->apCtl[i]); /* 0x6F328 */
+            }
+            /* 0x6F330 also operator delete's the control; the port's six are caller-owned. */
+        }
+        return;
+    }
+
+    *pEnv->pbPanelsBuilt = 1; /* 0x6EA04 */
+    nTopicCount = (pEnv->pbTopicCount != NULL) ? (i32)*pEnv->pbTopicCount : 0;
+
+    /* Count pass, 0x6EA0C..0x6EA78: topics 1..count-1, five slot ids each, abManufRowFlag as the filter. */
+    if (nTopicCount > 1 && pEnv->aTopics != NULL) {
+        for (i32 nTopic = 1; nTopic < nTopicCount; ++nTopic) {
+            if (pEnv->aTopics[nTopic].bUnlocked != 1) { /* 0x6EA30 LDRB [R2,#0xD] */
+                continue;
+            }
+            for (i = 0; i < 5; ++i) { /* 0x6EA64 CMP R0,#5 */
+                if (ManufRowTakesLine(pEnv->aTopics[nTopic].abItemIds[i])) { /* 0x6EA50 */
+                    ++nRows;
+                }
+            }
+        }
+    }
+
+    /* The four panels, 0x6EA7C..0x6EE5C. All four share nStyle 13, nFont 16, nPosY 70, nUnk7056 70 and
+     * the two style byte groups; only A gets bytes 3..5. */
+    pA = BuySellNewPanel(pEnv->ppPanelA, nRows);
+    if (pA != NULL) {
+        pA->nStyle = 13;   /* 0x6EAC0 */
+        pA->nFont = 16;    /* 0x6EAD4 */
+        pA->pfnClick = pEnv->pfnSelectListed; /* 0x6EAF0 */
+        pA->nPosX = 10;    /* 0x6EB04 */
+        pA->nPosY = 70;    /* 0x6EB18 */
+        pA->nUnk7052 = 5;  /* 0x6EB2C */
+        pA->nUnk7056 = 70; /* 0x6EB40 */
+        pA->nViewW = 230;  /* 0x6EB4C */
+        UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                        /* 0x6EB58 */
+        UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x6EB7C */
+        pA->bFlag7073 = 1;                                                 /* 0x6EB90 */
+        UiPanel_SetBytes3to5(pA, 0x32, 0x32, 0xFA);                        /* 0x6EBA4 */
+        pA->bUnk7088 = (u8)0x96;                                           /* 0x6EBB8 */
+    }
+    pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
+    if (pB != NULL) {
+        pB->nStyle = 13;
+        pB->nFont = 16;
+        pB->nPosX = 150;   /* 0x6EC20, R11 = 0x1B84 */
+        pB->nPosY = 70;
+        pB->nUnk7052 = 155; /* 0x6EC34, R8 = 0x1B8C */
+        pB->nUnk7056 = 70;
+        pB->nViewW = 30;   /* 0x6EC48, R6 = 0x1B94 */
+        UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pB->nUnk7076 = 2;  /* 0x6EC88 */
+    }
+    pC = BuySellNewPanel(pEnv->ppPanelC, nRows);
+    if (pC != NULL) {
+        pC->nStyle = 13;
+        pC->nFont = 16;
+        pC->nPosX = 187;   /* 0x6ECEC */
+        pC->nPosY = 70;
+        pC->nUnk7052 = 185; /* 0x6ED00 */
+        pC->nUnk7056 = 70;
+        pC->nViewW = 30;   /* 0x6ED14 */
+        UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pC->nUnk7076 = 2;  /* 0x6ED54 */
+    }
+    pD = BuySellNewPanel(pEnv->ppPanelD, nRows);
+    if (pD != NULL) {
+        pD->nStyle = 13;
+        pD->nFont = 16;
+        pD->pfnClick = pEnv->pfnSyncSelection; /* 0x6EDB8 */
+        pD->nPosX = 233;   /* 0x6EDC8 */
+        pD->nPosY = 70;
+        pD->nUnk7052 = 5;  /* 0x6EDDC */
+        pD->nUnk7056 = 70;
+        pD->nViewW = 230;  /* 0x6EDF0 */
+        UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pD->nUnk7076 = 2;  /* 0x6EE34 */
+        pD->bFlag7073 = 1; /* 0x6EE48 */
+        pD->bUnk7088 = (u8)0x96; /* 0x6EE5C */
+    }
+
+    /* Fill pass, 0x6EE60..0x6F25C. No sort pass after it: the rows stay in topic order, which is what
+     * tells this build apart from the buy/sell and transfer ones. */
+    if (nTopicCount > 1 && pEnv->aTopics != NULL) {
+        for (i32 nTopic = 1; nTopic < nTopicCount; ++nTopic) {
+            if (pEnv->aTopics[nTopic].bUnlocked != 1) { /* 0x6EEB0 */
+                continue;
+            }
+            for (i = 0; i < 5; ++i) { /* 0x6F23C */
+                const i32 nSlot = pEnv->aTopics[nTopic].abItemIds[i]; /* 0x6EEC8 LDRB [R7,R11]! */
+                const ObjectRecFull *pObj;
+
+                if (!ManufRowTakesLine(nSlot)) { /* 0x6EECC LDRSB abManufRowFlag, CMP #1 */
+                    continue;
+                }
+                pObj = (pEnv->apObjects != NULL && nSlot < pEnv->nObjectCount)
+                           ? pEnv->apObjects[nSlot] : NULL; /* deviation: 0x6EEDC derefs blindly */
+                if (nRow < PUFO_PANEL_LINES) {
+                    ManufFillRow(pEnv, pA, pB, pC, pD, nRow, nTopic, nSlot, pObj);
+                    ++nRow; /* 0x6F21C */
+                }
+            }
+        }
+    }
+}
+
 void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
 {
     if (pEnv == NULL) {

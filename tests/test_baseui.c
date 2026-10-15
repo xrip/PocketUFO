@@ -9139,6 +9139,201 @@ static void TestManufInit(void)
     Asset_CloseArchives();
 }
 
+static void TestManufBuildPanels(void)
+{
+    static ResearchTopicLive aTopic[4];
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static u16 aManufCol[1600];
+    static u32 aProdA[1600];
+    static u32 aProdB[1600];
+    static UiControl aCtl[6];
+    static void *aRoot[7];
+    UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL;
+    ManufBuildEnv env;
+    u8 bBuilt = 0;
+    u8 bTopicCount = 4;
+    i32 i;
+
+    printf("the manufacturing panel build and teardown\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    /* Names chosen to show the 17-character cut at 0x6EF18: 11 stays, 17 stays, 18 and 25 are cut. */
+    PutStr(aObj[2].szName,   "Laser pistol");
+    PutStr(aObj[3].szName,   "PlasmaPistol12345");           /* 17, stays whole */
+    PutStr(aObj[107].szName, "UFOPowerSource1234");          /* 18 -> "UFOPowerSource123" */
+    PutStr(aObj[120].szName, "LIGHTNINGCraftNameTwenty");    /* 25 -> "LIGHTNINGCraftNam" */
+    PutStr(aObj[108].szName, "Alien surgery");
+    aObj[2].uManufWorkPerUnit   = 576;    /* the shipped values */
+    aObj[3].uManufWorkPerUnit   = 1152;
+    aObj[107].uManufWorkPerUnit = 2544;
+    aObj[120].uManufWorkPerUnit = 0;      /* shipped 35712; zeroed here to reach the zero-divisor path,
+                                           * which the shipped data never hits because every slot
+                                           * abManufRowFlag flags has a work cost */
+    aObj[108].uManufWorkPerUnit = 0;      /* and abManufRowFlag leaves 108 clear, so it gets no row */
+
+    /* Topic 0 is never visited: the walk starts one record in, at 0x15EF2A. */
+    aTopic[0].bUnlocked = 1;
+    aTopic[0].abItemIds[0] = 2;
+    aTopic[1].bUnlocked = 1;
+    aTopic[1].abItemIds[0] = 2;    /* flagged -> row */
+    aTopic[1].abItemIds[1] = 108;  /* Alien surgery: abManufRowFlag leaves it clear, so no row */
+    aTopic[1].abItemIds[2] = 3;    /* flagged -> row */
+    aTopic[2].bUnlocked = 0;       /* 5, 6 and 9 are all flagged, so this proves the +0xD gate */
+    aTopic[2].abItemIds[0] = 5;
+    aTopic[2].abItemIds[1] = 6;
+    aTopic[2].abItemIds[2] = 9;
+    aTopic[3].bUnlocked = 1;
+    aTopic[3].abItemIds[0] = 107;
+    aTopic[3].abItemIds[1] = 120;
+    aTopic[3].abItemIds[2] = 107;  /* the same slot twice: nothing deduplicates rows */
+
+    /* Base 1, so every product index is 200 + slot. */
+    aManufCol[200 + 2]   = 100;
+    aManufCol[200 + 3]   = 0;
+    aManufCol[200 + 107] = 7;
+    aManufCol[200 + 120] = 3;
+    aProdA[200 + 2]   = 576u * 3u;   /* 1728 -> 3 units, 100*1728/(576*4) = 75 */
+    aProdB[200 + 2]   = 4;
+    aProdA[200 + 3]   = 1152;
+    aProdB[200 + 3]   = 0;           /* nothing asked for: both remaining columns get the empty string */
+    aProdA[200 + 107] = 0;
+    aProdB[200 + 107] = 1;
+    aProdA[200 + 120] = 10;
+    aProdB[200 + 120] = 5;           /* with work 0 this is the zero-divisor row: 0% and 5/0 */
+
+    memset(aCtl, 0, sizeof(aCtl));
+    memset(aRoot, 0, sizeof(aRoot));
+
+    memset(&env, 0, sizeof(env));
+    env.pbPanelsBuilt = &bBuilt;
+    env.ppRoot = aRoot;
+    for (i = 0; i < 6; ++i) {
+        env.apCtl[i] = &aCtl[i];
+    }
+    env.ppPanelA = &pA;
+    env.ppPanelB = &pB;
+    env.ppPanelC = &pC;
+    env.ppPanelD = &pD;
+    env.aTopics = aTopic;
+    env.pbTopicCount = &bTopicCount;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.apProductA = aProdA;
+    env.apProductB = aProdB;
+    env.apManufCols = aManufCol;
+    env.nSelectedBaseIdx = 1;
+    env.pfnSelectListed = ManufStubPanelPrev;
+    env.pfnSyncSelection = ManufStubPanelNext;
+
+    ManufScreen_BuildPanels(&env);
+
+    CheckEqI32(bBuilt, 1, "the build flag is raised");
+    Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL, "four panels are allocated");
+    if (pA == NULL || pB == NULL || pC == NULL || pD == NULL) {
+        return;
+    }
+
+    /* The count pass: topic 0 is skipped, topic 2 is gated out, 106 is filtered out, and 107 twice
+     * counts twice. Five rows. */
+    CheckEqI32(pA->nLineCount, 5, "five rows counted, topic 0 skipped and the locked topic ignored");
+    CheckEqI32(pB->nLineCount, 5, "the same count in panel B");
+    CheckEqI32(pC->nLineCount, 5, "and in C");
+    CheckEqI32(pD->nLineCount, 5, "and in D");
+
+    CheckEqI32(pA->nStyle, 13, "all four are nStyle 13");
+    CheckEqI32(pA->nFont, 16, "and nFont 16");
+    CheckEqI32(pB->nStyle, 13, "B too");
+    CheckEqI32(pC->nFont, 16, "C too");
+    CheckEqI32(pA->nPosX, 10, "A sits at x 10");
+    CheckEqI32(pB->nPosX, 150, "B at 150");
+    CheckEqI32(pC->nPosX, 187, "C at 187");
+    CheckEqI32(pD->nPosX, 233, "D at 233");
+    CheckEqI32(pA->nViewW, 230, "A and D are 230 wide");
+    CheckEqI32(pD->nViewW, 230, "D too");
+    CheckEqI32(pB->nViewW, 30, "B and C are 30 wide");
+    CheckEqI32(pC->nViewW, 30, "C too");
+    CheckEqI32(pA->nPosY, 70, "all four at y 70");
+    CheckEqI32(pC->nUnk7056, 70, "with +7056 70");
+    CheckEqI32(pA->nUnk7052, 5, "A's +7052 is 5");
+    CheckEqI32(pB->nUnk7052, 155, "B's is 155");
+    CheckEqI32(pC->nUnk7052, 185, "C's is 185");
+    CheckEqI32(pD->nUnk7052, 5, "D's is 5");
+    CheckEqI32(pA->nUnk7076, 0, "only B, C and D get nUnk7076 2");
+    CheckEqI32(pB->nUnk7076, 2, "B has it");
+    CheckEqI32(pD->nUnk7076, 2, "and D");
+    CheckEqI32(pA->bFlag7073, 1, "flag 7073 is 1 everywhere -- the constructor sets it and only A and "
+                                 "D write it again");
+    CheckEqI32(pB->bFlag7073, 1, "B keeps the constructor's 1");
+    CheckEqI32(pA->bUnk7088, 0x96, "A and D set +7088 to 0x96");
+    CheckEqI32(pD->bUnk7088, 0x96, "D too");
+    CheckEqI32(pB->bUnk7088, 0xFF, "B and C keep the constructor's 0xFF");
+    CheckEqI32(pA->gap_0[3], 0x32, "only A gets style bytes 3..5");
+    CheckEqI32(pA->gap_0[5], 0xFA, "0x32, 0x32, 0xFA");
+    CheckEqI32(pB->gap_0[5], 0, "B leaves them at zero");
+    Check(pA->pfnClick == ManufStubPanelPrev, "A gets the row click");
+    Check(pD->pfnClick == ManufStubPanelNext, "D gets the selection sync");
+    Check(pB->pfnClick == NULL, "B and C get no click here");
+
+    /* The rows, in topic order: 2, 3, 107, 120, 107. */
+    {
+        static const i32 anWantSlot[5] = { 2, 3, 107, 120, 107 };
+        static const i32 anWantTopic[5] = { 1, 1, 3, 3, 3 };
+        static const char *const apzName[5] = {
+            "Laser pistol", "PlasmaPistol12345", "UFOPowerSource123", "LIGHTNINGCraftNam",
+            "UFOPowerSource123"
+        };
+        static const char *const apzB[5] = { "100", "", "7", "3", "7" };
+        static const char *const apzC[5] = { "75%", "", "0%", "0%", "0%" };
+        static const char *const apzD[5] = { "4/3", "", "1/0", "5/0", "1/0" };
+        i32 nOk = 0;
+        for (i = 0; i < 5; ++i) {
+            const char *pszA = UiPanel_GetLineText(pA, i);
+            const char *pszB = UiPanel_GetLineText(pB, i);
+            const char *pszC = UiPanel_GetLineText(pC, i);
+            const char *pszD = UiPanel_GetLineText(pD, i);
+            if (pszA != NULL && strcmp(pszA, apzName[i]) == 0 &&
+                pszB != NULL && strcmp(pszB, apzB[i]) == 0 &&
+                pszC != NULL && strcmp(pszC, apzC[i]) == 0 &&
+                pszD != NULL && strcmp(pszD, apzD[i]) == 0 &&
+                pA->anLineAux[i] == anWantSlot[i] && pC->anLineAux[i] == anWantTopic[i]) {
+                ++nOk;
+            }
+        }
+        CheckEqI32(nOk, 5, "every row: name cut to 17, allocated work, percent, asked-for/units, "
+                           "A aux the slot id and C aux the topic index");
+        CheckEqI32(pB->anLineAux[0], 0, "B and D get no aux from this function");
+        CheckEqI32(pD->anLineAux[2], 0, "not even on a row that has values");
+    }
+
+    /* The teardown. */
+    aRoot[0] = calloc(1, sizeof(PadImage));
+    ManufScreen_BuildPanels(&env);
+    CheckEqI32(bBuilt, 0, "the second call takes the teardown branch and clears the flag");
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL, "the four panel slots are cleared");
+    Check(aRoot[0] == NULL, "and the screen pad is freed");
+
+    /* A third call builds again, with nothing queued: zero rows. */
+    bTopicCount = 1;
+    ManufScreen_BuildPanels(&env);
+    CheckEqI32(bBuilt, 1, "the third call builds again");
+    Check(pA != NULL, "and allocates");
+    if (pA != NULL) {
+        CheckEqI32(pA->nLineCount, 0, "one topic means the walk visits nothing, so zero rows");
+    }
+    ManufScreen_BuildPanels(&env);
+    CheckEqI32(bBuilt, 0, "and tears down again");
+
+    bTopicCount = 4;
+    bBuilt = 1; /* pretend the panels are up: with no flag pointer the call cannot even branch */
+    ManufScreen_BuildPanels(NULL);
+    env.pbPanelsBuilt = NULL;
+    ManufScreen_BuildPanels(&env);
+    CheckEqI32(bBuilt, 1, "a missing flag pointer makes it do nothing at all");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -9172,6 +9367,7 @@ int main(void)
     TestManufRefreshBaseTabs();
     TestManufCommitProduction();
     TestManufInit();
+    TestManufBuildPanels();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

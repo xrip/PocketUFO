@@ -12074,3 +12074,122 @@ arrive as env seams (`pfnDrawClick`, `pfnBuildPanels`).
 IDB: `stru_AB9F8` typed as `UiControlDesc[6]` and named `g_aManufCtlDesc`; function comment at
 0x710b0 and a data comment at 0xAB9F8. The stale `stru_AC3B8` citation in the port was corrected to
 the IDB's own `g_aTransferCtlDesc`.
+
+## ManufScreen_BuildPanels (0x6e9e8, 2404 B)
+
+Ported as `void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)` in `src/pufo/game/pufo_baseui.c`, env in
+`pufo_baseui.h`. It is the tail call of `ManufScreen_Init @ 0x710b0` (0x71268), so the manufacturing
+screen is now brought up end to end: pad, six click controls, four panels, rows.
+
+`unk_15EE4C` picks the branch -- the manufacturing sibling of `bBuySellPanelsBuilt @ 0x161A28` and
+`unk_1870EC`.
+
+### Teardown, unk_15EE4C != 0 (0x6F264..0x6F340)
+
+Flag cleared, pad at `unk_159E98[0]` PadImage_FreeData'd and deleted, then the four panels in the
+order **A, C, B, D** (0x6F28C, 0x6F2AC, 0x6F2CC, 0x6F2EC -- C before B), then the six click controls at
+`unk_159E98 + 0x4F84..0x4F98` UiControl_FreePads'd and deleted. No funds rollback: this screen spends
+nothing here, which is what tells it apart from the two buy/sell teardowns. Nothing is stored back into
+any of the ten globals, so the original leaves ten dangling pointers; the port clears the four panel
+slots and the pad slot it owns.
+
+### The row filter
+
+0x6EA0C..0x6EA78 counts the rows and 0x6EE60..0x6F25C fills them with the same walk, so the row total
+and the lines written cannot disagree:
+
+  research topics **1..n-1** (0x6EA28 `ADD R2, R0, #0x22` starts one record past the table base -- the
+  same off-by-one-record start ResearchScreen_RefreshPanels @ 0x73008 has), gate on
+  `aResearchTopics[t].bUnlocked` (+0xD, `LDRB [R2,#0xD]` at 0x6EA30 and 0x6EEB0), then the five object
+  slot ids at +0x18..+0x1C (`ADD R3, R2, #0x18` then `LDRB [R3,R0]`, 0x6EA44 / 0x6EEC8) against
+  `abManufRowFlag[id] == 1`. n is the byte at 0x160C4C, the same shared entry count the research screen
+  uses; the loop runs only while it is above 1.
+
+`abManufRowFlag @ 0xAA548` (named `byte_AA548` until this unit) is 172 bytes of 0/1 closed by the dword
+table at 0xAA5F4, and ManufScreen_BuildPanels is its only reader in the whole binary. 35 slots are set:
+2, 3, 5, 6, 9, 11, 12, 13, 18, 20, 21, 23, 24, 28, 29, 30, 33, 34, 35, 37, 39, 49, 50, 51, 55, 58, 106,
+107, 109, 119, 120, 121, 122, 123, 124. **Against the shipped OBJECTS.DAT that is exactly the set of
+slots with a non-zero `uManufWorkPerUnit`** -- all 149 slots checked, no disagreement. So the byte is the
+"this slot can be manufactured" flag and the manufacturing list is: items unlocked by a research topic,
+restricted to items the game can actually build. Ported as `g_abManufRowFlag`, registered in
+audit_tables.py, exact match.
+
+An honest note on how that was found: the first transcription of those 172 bytes from the IDB was wrong
+in the 106..125 region, and the first draft of this section claimed the two sets differed on six slots.
+`audit_tables.py` caught it -- it compares the port's table against the image byte for byte -- and the
+IDB re-read agrees with the image. The claim above is the corrected one.
+
+### The four panels (0x6EA7C..0x6EE5C)
+
+All four are `operator new(0x1BB4)` + `UiPanel_ctor(nRows)`, all nStyle 13 (+0xBE0), nFont 16 (+0x1B9C),
+nPosY 70, +0x1B8C 70, style bytes 0..2 = 0xB4,0xB4,0xB4 and 6..11 = 0xF0,0xF0,0xF0,0x14,0x14,0x14.
+
+| | global | x | +0x1B88 | viewW | extras |
+|---|---|---|---|---|---|
+| A | pManufProductPanel 0x15EE44 | 10 | 5 | 230 | click ManufScreen_SelectListed, bytes 3..5 = 0x32,0x32,0xFA, +0x1BA1 1, +0x1BB0 0x96 |
+| B | pManufPanelB 0x15EE48 | 150 | 155 | 30 | +0x1BA4 2 |
+| C | pManufPanelC 0x15EE40 | 187 | 185 | 30 | +0x1BA4 2 |
+| D | pManufPanelD 0x15EE38 | 233 | 5 | 230 | click ManufScreen_SyncSelection, +0x1BA4 2, +0x1BA1 1, +0x1BB0 0x96 |
+
+Only A gets `UiPanel_SetBytes3to5`. `bFlag7073` is 1 on all four because `UiPanel_ctor` sets it; only A
+and D write it again. B and C keep the constructor's 0xFF at +0x1BB0.
+
+### The four columns of a row
+
+One row index is shared by all four panels.
+
+  A line: the item's own name, copied out of `apObjects[id]` (the record's szName at +0, reached through
+     the Map-block pointer array at 0x113AC0), cut to 17 characters when strlen is above 0x11 (0x6EF18
+     `CMP R0,#0x11` / `STRBHI R3,[SP,#var_53]`, var_64+17). A's aux is the **slot id** (0x6EF64).
+  C aux: the **topic index**, not the slot id -- 0x6EF70 stores R8, the outer loop counter.
+  B line: `auManufCol[200*base + id]` as decimal (0x6EF9C `LDRH` at anchor + 400*base + 2*id + 17156),
+     or the empty string at 0x10DA38 when it is zero.
+  C line and D line both hang off `apProductB[200*base + id]` (0x6F038 `LDR [R0,#4]` at anchor +
+     4*(200*base+id) + 4). Zero means both get the empty string (0x6F1C4). Otherwise:
+       C = `100 * apProductA / (uManufWorkPerUnit * apProductB)` with "%" appended. The ARM composes
+           _rt_sdiv with the DIVISOR in R0 (`MUL R0, R3, R1` at 0x6F068, work-per-unit times the asked-for
+           count) and the DIVIDEND in R1 (`MUL R1, R2, #0x64` at 0x6F070) -- the argument order proved at
+           0x65BD0/0x65BDC, and the same reading of the four columns CommitProduction established.
+       D = `itoa(apProductB) + "/" + itoa(apProductA / uManufWorkPerUnit)` -- what was asked for, then the
+           units the accumulated work has paid for (0x6F174 `LDRH [R2,#0xBA]`, _rt_sdiv at 0x6F178).
+
+There is **no sort pass** here, unlike BuySellScreen_BuildPanels @ 0x76de0 and
+TransferScreen_BuildPanels @ 0x96b30: the rows stay in topic order.
+
+### IDB: aFacTypeTable was the research table under the wrong name
+
+0x15EF08 was named `aFacTypeTable` and a second label `aResearchTopics` sat at 0x15EF0C with no
+cross-references at all. The ARM settles it: `Research_TopicNeedsItem` does `MUL R3, R0, R3` (topic *
+34) then `ADD R3, R3, =0x15EF08` (0x72CC0..0x72CC8), and this function does `ADD R2, R0, #0x22` for
+topic 1 -- so the base is 0x15EF08 and the stride is 34, and 0x15EF0C is four bytes off a record
+boundary. 0x15EF08 is now `aResearchTopics`, typed as 144 x a new local struct `ResearchTopicLive`:
+
+    +0x00 abUnk0[4]   +0x04 wGate4   +0x06 wUnk6   +0x08 wTotal   +0x0A wProgress
+    +0x0C bActive     +0x0D bUnlocked +0x0E nItemId
+    +0x0F abUnkF[9]   +0x18 abItemIds[5]   +0x1D abUnk1D[5]
+
+`bUnlocked` (+0xD) is the byte this function gates on, the byte `Unit_SelectBestFireMode` tests at
+0x47A10 / 0x47B3C through `byte_AA968[ObjectRec.uSortKey]`, and the byte the tactical action-menu gate
+reads at 0x17078..0x17094 -- the earlier notes called that one `aFacTypeTable[13 + 34 * ...]`, which is
+this same table. `abItemIds` (+0x18..+0x1C) is named here for the first time: five object slot ids a
+topic unlocks, used both as the abManufRowFlag index and as the apObjects index for the name. The
+on-disk `ResearchTopic` order (pufo_save.h) and this in-memory order are still not mapped onto each
+other; LoadGame is the function that would show it and it is not ported.
+
+The port's `ResearchTopicLive.bGate13` was renamed to `bUnlocked` and its `abUnkF[19]` split into
+`abUnkF[9]`, `abItemIds[5]`, `abUnk1D[5]`.
+
+### Deviations
+
+The original allocates the four panels with `operator new` and dereferences every allocation, every
+panel pointer and every apObjects slot with no test; the port tests the object slots and bounds the row
+index against the 500-line panel capacity. It indexes abManufRowFlag with the raw byte (LDRSB at
+0x6EA50) and so reads past its 172 bytes for a slot id of 172 or more; the port refuses those. Both
+divisions can be by zero and the original calls _rt_sdiv either way; the port answers zero --
+unreachable in the shipped data, because every flagged slot has a non-zero work cost and only a flagged
+slot gets a row. The teardown deletes the six click controls in the original and only frees their pads
+in the port, because the port's controls are caller-owned.
+
+IDB: `byte_AA548` -> `abManufRowFlag` with a data comment; `aFacTypeTable` @ 0x15EF08 ->
+`aResearchTopics` typed `ResearchTopicLive[144]` with a data comment; the stale zero-xref
+`aResearchTopics` label at 0x15EF0C cleared; function comment at 0x6e9e8.
