@@ -10548,3 +10548,39 @@ two orders cannot be told apart from the outside. Recorded because the differenc
 binary and it is the only difference between them.
 
 **IDB updates.** Function comments on 0x845d8 and 0x853e4.
+
+The radar palette cycle and the range animation (done)
+------------------------------------------------------
+
+**Evidence:** `RadarScreen_CyclePalette` @ 0x5ed0c (232 B). Ported in `src/pufo/game/pufo_geoscape.c`;
+tests in `TestRadarPaletteCycle`.
+
+**The rotated block is a palette slot.** The ARM takes `aPalette @ 0x1472D0` as its base, walks a
+pointer from base+0x60 down to base+0x4 and each step copies `[v+0x57FC]` over `[v+0x5800]`, then
+stores the saved top entry into the bottom. base+0x5800 is `aPalette + 22 * 1024`, so the block is
+slot 22 entries 0..24 -- 0x14CAD0..0x14CB30, 25 entries shifted up one place with entry 24 wrapping
+into entry 0. A line comment now marks 0x14CAD0 as `aPalette` slot 22 entry 0.
+
+**Who reads those 25 entries is not pinned down.** The IDB gives the block's two endpoints exactly
+two xrefs each and all four are inside `RadarScreen_CyclePalette` itself; no other function names a
+dword in 0x14CAD0..0x14CB30. The radar draw path does take `aPalette` as a base
+(`RadarScreen_BlitMapBackdrop` @ 0x5eb10 at 0x5EBFC, `RadarScreen_Update` @ 0x60570 at 0x607E8,
+`RadarScreen_Init` @ 0x5f490 at 0x5FC30), and a rotating palette is what an animated map backdrop
+needs, but none of those three has a resolved reference to slot 22 specifically. Recorded as an open
+question rather than asserted.
+
+**The range animation is four conditional steps, not one.** Up, down, up, down, each storing:
+`if (cur < tgt) cur++; if (cur > tgt) cur--; if (cur < tgt) cur++; if (cur > tgt) cur--;`. The pairs
+are an overshoot-and-correct -- a value two or more away moves by two, a value one away moves by one,
+and a value already at the target does not move at all. Then, only when the flip byte `unk_159718` is
+set AND the value is still below the target, up to four more single steps. The flip branch is upward
+only: there is no matching branch for a value still above the target, which is why the SE corner --
+the one setter that sets the flip byte -- animates differently from the other three.
+
+**`unk_15965C` renamed `nRadarRangeTarget`, `unk_15966C` renamed `nRadarRangeCur`.** The four corner
+setters write the target and this function is the only thing that moves the current value, which is
+what the earlier note in this file already said in prose: setting the target is not the same as
+setting the range.
+
+**IDB updates.** Function comment on 0x5ed0c, line comments on 0x14CAD0, 0x15965C and 0x15966C, and
+the two renames.

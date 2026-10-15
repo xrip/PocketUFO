@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include "game/pufo_strateg.h"
 #include "game/pufo_clock.h"
+#include "render/pufo_render.h" /* g_aPalette, for the radar palette cycle */
 #include "ui/pufo_linelist.h"
 #include "util/pufo_rand.h"
 
@@ -3089,6 +3090,76 @@ static void TestBaseStripHit(void)
 #undef STRIP_RESET
 }
 
+static void TestRadarPaletteCycle(void)
+{
+    i32 nCur, nTgt;
+    u8 bFlip;
+    RadarPaletteEnv env;
+    u32 aBefore[PUFO_RADAR_PAL_CYCLE];
+    i32 i;
+
+    printf("\nRadarScreen_CyclePalette @ 0x5ed0c\n");
+
+    /* 1. The palette half: slot 22 entries 0..24 shift up one place, entry 24 wraps to entry 0. */
+    for (i = 0; i < PUFO_RADAR_PAL_CYCLE; ++i) {
+        g_aPalette[PUFO_RADAR_PAL_SLOT][i] = (u32)(100 + i);
+        aBefore[i] = (u32)(100 + i);
+    }
+    g_aPalette[PUFO_RADAR_PAL_SLOT][PUFO_RADAR_PAL_CYCLE] = 0xAAu;
+    g_aPalette[PUFO_RADAR_PAL_SLOT + 1][0] = 0xBBu;
+
+    nCur = 0; nTgt = 0; bFlip = 0;
+    env.pnRangeCur = &nCur; env.pnRangeTarget = &nTgt; env.pbFlip = &bFlip;
+    RadarScreen_CyclePalette(&env);
+
+    CheckEqI32((i32)g_aPalette[PUFO_RADAR_PAL_SLOT][0], (i32)aBefore[PUFO_RADAR_PAL_CYCLE - 1],
+               "entry 0 takes the old entry 24 (0x5ED50)");
+    CheckEqI32((i32)g_aPalette[PUFO_RADAR_PAL_SLOT][1], (i32)aBefore[0],
+               "every other entry takes the one below it");
+    CheckEqI32((i32)g_aPalette[PUFO_RADAR_PAL_SLOT][24], (i32)aBefore[23], "  up to entry 24");
+    CheckEqI32((i32)g_aPalette[PUFO_RADAR_PAL_SLOT][PUFO_RADAR_PAL_CYCLE], 0xAA,
+               "entry 25 of the slot is outside the cycle and untouched");
+    CheckEqI32((i32)g_aPalette[PUFO_RADAR_PAL_SLOT + 1][0], 0xBB, "  and the next slot is untouched");
+
+    /* 2. The range half without the flip byte: two steps toward the target, whichever way. */
+    nCur = 0; nTgt = 5; bFlip = 0;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 2, "below the target it moves up two (0x5ED64 then 0x5ED84)");
+
+    nCur = 5; nTgt = 0;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 3, "above the target it moves down two (0x5ED74 then 0x5ED94)");
+
+    nCur = 7; nTgt = 7;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 7, "already at the target it does not move at all");
+
+    nCur = 0; nTgt = 1;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 1, "one step short moves by exactly one, not two");
+
+    /* 3. With the flip byte set, a value still short of the target gets up to four more steps. */
+    nCur = 0; nTgt = 10; bFlip = 1;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 6, "flip set: two normal steps plus four more (0x5EDB0..0x5EDDC)");
+
+    nCur = 0; nTgt = 3; bFlip = 1;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 3, "  and the extra steps stop at the target, not past it");
+
+    nCur = 0; nTgt = 1; bFlip = 1;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 1, "  one step short still moves by one with the flip set");
+
+    /* The flip branch is upward only: a value above the target gets the same two steps either way. */
+    nCur = 10; nTgt = 0; bFlip = 1;
+    RadarScreen_CyclePalette(&env);
+    CheckEqI32(nCur, 8, "the flip byte adds no downward steps (0x5ED9C gates on cur < tgt)");
+
+    RadarScreen_CyclePalette(NULL);
+    CheckEqI32(nCur, 8, "a null env leaves the range alone");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -3127,6 +3198,7 @@ int main(void)
     TestFacCostLabel();
     TestSiteScore();
     TestRadarCursors();
+    TestRadarPaletteCycle();
     TestCountInbound();
     TestBaseStripHit();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);

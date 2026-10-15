@@ -1010,8 +1010,8 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
  *     and SE have no such guard.
  *   - SE is the only one that sets the flip byte to 1; NW, NE and SW all set it to 0.
  *
- * The range target is the value RadarScreen_CyclePalette (0x5ed0c, not ported) animates unk_15966C
- * toward, one step at a time, which is why setting it is not the same as setting the range.
+ * The range target is the value RadarScreen_CyclePalette @ 0x5ed0c animates nRadarRangeCur toward,
+ * one step at a time, which is why setting it is not the same as setting the range.
  *
  * All four are installed as click handlers (0x5FCB4..0x5FD24) and their return values -- the gate
  * byte, or &nRadarMsgTimer -- are never read, so the port returns void. */
@@ -1028,7 +1028,7 @@ typedef struct RadarCursorEnv {
     const u8 *pbGate;        /* byte_159714 */
     i32      *pnCursorX;     /* unk_1596D4 */
     i32      *pnCursorY;     /* unk_1596D8 */
-    i32      *pnRangeTarget; /* unk_15965C, animated toward by unk_15966C */
+    i32      *pnRangeTarget; /* nRadarRangeTarget @ 0x15965C, animated toward by nRadarRangeCur */
     u8       *pbFlip;        /* unk_159718 */
     i32      *pnMsgTimer;    /* nRadarMsgTimer */
     char     *pszMsg;        /* szRadarMsg @ 0x186B10 = dword_186B08 + 8 */
@@ -1044,6 +1044,39 @@ void RadarScreen_SetCursorNW(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv);
+
+/* ------------------------------------------------- the radar palette cycle and the range animation
+ *
+ * Evidence: RadarScreen_CyclePalette @ 0x5ed0c (232 B).
+ *
+ * Two jobs in one function.
+ *
+ * 1. Rotate a palette. The ARM takes aPalette @ 0x1472D0 as its base, works from base+0x60 down to
+ *    base+0x4, and each step copies [v+0x57FC] over [v+0x5800]; then it stores the saved top entry
+ *    back into the bottom. base+0x5800 is aPalette + 22 * 1024, so the block is slot 22 entries 0..24
+ *    (0x14CAD0..0x14CB30): 25 entries shifted up one place with entry 24 wrapping into entry 0. The
+ *    IDB gives those two endpoints no xref outside this function, so the reader is reached through the
+ *    aPalette base in the radar draw path -- RadarScreen_BlitMapBackdrop (0x5eb10, not ported),
+ *    RadarScreen_Update (0x60570, not ported) and RadarScreen_Init (0x5f490, not ported) all load
+ *    0x1472D0 -- but which of them picks slot 22 is not resolved in the IDB and is not asserted here.
+ *
+ * 2. Nudge the animated range toward its target. Four conditional steps, each storing:
+ *      if (cur < tgt) cur++;   if (cur > tgt) cur--;   if (cur < tgt) cur++;   if (cur > tgt) cur--;
+ *    The pairs are an overshoot-and-correct: a value well below the target ends up two steps closer,
+ *    a value well above ends up two steps lower, and a value already at the target does not move.
+ *    Then, only when the flip byte unk_159718 is set (SE is the corner that sets it) and the value is
+ *    still below the target, up to four more single steps. The flip branch is the only asymmetric
+ *    part: there is no matching branch for a value still ABOVE the target. */
+#define PUFO_RADAR_PAL_SLOT  22 /* aPalette + 22 * 1024 = 0x14CAD0 */
+#define PUFO_RADAR_PAL_CYCLE 25 /* 0x14CAD0 .. 0x14CB30 inclusive */
+
+typedef struct RadarPaletteEnv {
+    i32      *pnRangeCur;    /* nRadarRangeCur @ 0x15966C, the animated value */
+    i32      *pnRangeTarget; /* nRadarRangeTarget @ 0x15965C */
+    const u8 *pbFlip;        /* unk_159718, set by RadarScreen_SetCursorSE */
+} RadarPaletteEnv;
+
+void RadarScreen_CyclePalette(const RadarPaletteEnv *pEnv);
 
 /* --- the geoscape base-tab strip @ 0x671B0 ---
  *

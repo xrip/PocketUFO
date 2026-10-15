@@ -762,6 +762,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   which nothing outside the two functions can observe. The dismiss half of the pair,
   `Smap_DismissSelected (0x84428)`, was already ported in `game/pufo_strateg.c` and is not re-ported.
 
+- [x] part 13, `RadarScreen_CyclePalette (0x5ed0c)` — 14 more checks. Two jobs in one function: it
+  rotates `aPalette` slot 22 entries 0..24 (0x14CAD0..0x14CB30) up one place with entry 24 wrapping to
+  entry 0, and it animates the radar range with four conditional steps (up, down, up, down — an
+  overshoot-and-correct, so a value two or more away moves by two and one already at the target does
+  not move), plus up to four more upward steps when the SE corner's flip byte is set. `unk_15965C`
+  renamed `nRadarRangeTarget` and `unk_15966C` renamed `nRadarRangeCur`. Open question recorded rather
+  than asserted: which radar-draw function actually reads slot 22.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -906,6 +914,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the three siblings of the clock-resetting prologue (`Geoscape_PrepScreenOpenSfx`, `Ui_OpenBaseInfoAlt`, `Ui_OpenResearch`) | 56/56 (Release) | 9145 | 812/1103 (73.6%) | 326308/598792 (54.5%) | 38 checked, 0 mismatched |
 | the intercept launcher and the target dismiss (`Ship_LaunchIntercept`, `Smap_CancelTarget`) | 56/56 (Release) | 9180 | 814/1103 (73.8%) | 326944/598792 (54.6%) | 38 checked, 0 mismatched |
 | the two "keep the course" selection answers (`Smap_ConfirmSelected`, `Smap_ConfirmSelectedAlt`) | 56/56 (Release) | 9197 | 816/1103 (74.0%) | 327128/598792 (54.6%) | 38 checked, 0 mismatched |
+| the radar palette cycle and the range animation (`RadarScreen_CyclePalette`) | 56/56 (Release) | 9211 | 817/1103 (74.1%) | 327360/598792 (54.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

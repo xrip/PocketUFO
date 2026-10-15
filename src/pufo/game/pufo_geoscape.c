@@ -3,6 +3,7 @@
 #include <stdio.h>             /* snprintf, the bounded stand-in for the original's j_itoa */
 #include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
+#include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"     /* pufo_strncpy/pufo_strcat, the cost label */
@@ -1781,6 +1782,45 @@ void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv)
     }
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_SOUTH,
                    RadarScaleRange(pEnv, false), 0);
+}
+
+/* RadarScreen_CyclePalette @ 0x5ed0c. Rotate the 25 animated palette entries of aPalette slot 22,
+ * then nudge the animated radar range toward its target. */
+void RadarScreen_CyclePalette(const RadarPaletteEnv *pEnv)
+{
+    /* 0x5ED14..0x5ED50: the ARM walks v1 from aPalette+0x60 down to aPalette+0x4 copying
+     * [v1+0x57FC] over [v1+0x5800], which shifts slot 22 entries 0..23 up one place, then stores the
+     * saved entry 24 into entry 0. */
+    const u32 nTop = g_aPalette[PUFO_RADAR_PAL_SLOT][PUFO_RADAR_PAL_CYCLE - 1];
+    for (i32 i = PUFO_RADAR_PAL_CYCLE - 1; i >= 1; --i) {
+        g_aPalette[PUFO_RADAR_PAL_SLOT][i] = g_aPalette[PUFO_RADAR_PAL_SLOT][i - 1];
+    }
+    g_aPalette[PUFO_RADAR_PAL_SLOT][0] = nTop; /* 0x5ED50 */
+
+    if (pEnv == NULL || pEnv->pnRangeCur == NULL || pEnv->pnRangeTarget == NULL) {
+        return;
+    }
+
+    i32 nCur = *pEnv->pnRangeCur;
+    const i32 nTgt = *pEnv->pnRangeTarget;
+
+    /* 0x5ED5C..0x5ED98: four conditional steps, each storing. The pairs are an overshoot-and-correct,
+     * so a value two or more away moves by two and a value already at the target does not move. */
+    if (nCur < nTgt) { nCur += 1; *pEnv->pnRangeCur = nCur; } /* 0x5ED64 */
+    if (nCur > nTgt) { nCur -= 1; *pEnv->pnRangeCur = nCur; } /* 0x5ED74 */
+    if (nCur < nTgt) { nCur += 1; *pEnv->pnRangeCur = nCur; } /* 0x5ED84 */
+    if (nCur > nTgt) { nCur -= 1; *pEnv->pnRangeCur = nCur; } /* 0x5ED94 */
+
+    /* 0x5ED90..0x5EDDC: with the flip byte set and the value still short of the target, up to four
+     * more single steps. There is no matching branch for a value still above the target. */
+    if (pEnv->pbFlip != NULL && (*pEnv->pbFlip & 0xFFu) != 0 && nCur < nTgt) {
+        nCur += 1; *pEnv->pnRangeCur = nCur; /* 0x5EDB0 */
+        if (nCur < nTgt) {
+            nCur += 1; *pEnv->pnRangeCur = nCur; /* 0x5EDC0 */
+            if (nCur < nTgt) { nCur += 1; *pEnv->pnRangeCur = nCur; } /* 0x5EDCC */
+            if (nCur < nTgt) { nCur += 1; *pEnv->pnRangeCur = nCur; } /* 0x5EDD8 */
+        }
+    }
 }
 
 /* One site's inbound craft pair, the term Base_CountInboundTransfers sums. Both bytes are read with
