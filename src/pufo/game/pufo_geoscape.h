@@ -19,6 +19,7 @@
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "ui/pufo_control.h"   /* UiControl, for the nav speed controls */
+#include "ui/pufo_linelist.h"  /* UiLineList, the message list the build-complete report posts */
 
 /* ------------------------------------------------- the facility grid layout
  *
@@ -105,14 +106,14 @@ typedef struct GeoscapeHooks {
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
     /* Geoscape_SpawnMissionSite (0x7e49c). */
     void (*pfnSpawnMissionSite)(StrategItem *pUfo, i32 nMissionSub, void *pUser);
-    /* Smap_GrantSiteRecovery (0x98b50), NOT ported. */
+    /* Smap_GrantSiteRecovery @ 0x98b50, ported in pufo_baseui.c behind SmapGrantRecoveryEnv. */
     void (*pfnGrantSiteRecovery)(void *pUser);
     /* ManufScreen_RefreshBaseTabs (0x70ebc), NOT ported. */
     void (*pfnRefreshBaseTabs)(void *pUser);
     /* ResearchScreen_AccumulateAllocated @ 0x74914, ported in pufo_baseui.c behind
      * ResearchAccumulateEnv; the shell wires this hook to it. */
     void (*pfnAccumulateResearch)(void *pUser);
-    /* Base_TickFacilityConstruction (0x62824), NOT ported. */
+    /* Base_TickFacilityConstruction @ 0x62824, ported in this file behind BaseTickConstructionEnv. */
     void (*pfnTickFacilityConstruction)(void *pUser);
     /* Base_ClearFacilityGridRow @ 0x6a0e0; its byte result becomes the
      * per-base site state byte_161F38[i]. */
@@ -670,6 +671,53 @@ i32 Base_UpdatePsiLabNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nPsiSoldiers
  *
  * The base index is narrowed to a char at 0x65F0C, reproduced. */
 i32 Base_UpdateAlienContainmentNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nAmmoItems);
+
+/* ------------------------------------------------- the daily build-timer countdown
+ *
+ * Evidence: Base_TickFacilityConstruction @ 0x62824 (396 B), called from Geoscape_TickBases @
+ * 0x5d3bc with abFacilityGrid as its only argument.
+ *
+ * For every base (nBaseCount, read signed from abFacilityGrid + 0x618) it walks that base's
+ * buildDays 6x6 block and decrements every non-zero byte. When a byte reaches zero the build
+ * finished: the six needed-flag passes run for the base, the shortfall dword is raised, and
+ * message 38 is posted. If the finished cell's kind is a hangar (11) three MORE buildDays bytes
+ * are cleared too -- the cell directly below (0x628C4), the one below-right (0x628CC) and the one
+ * to the right (0x628D4). Those three stores are the original's own arithmetic (R8[j+7] and
+ * R8[j+1] on the running days pointer): they land in the days block rather than in any facility
+ * layer, and at the last row they reach into the NEXT base's days block. The grid is big enough
+ * for that, so the port reproduces it.
+ *
+ * The message payload is not what Hex-Rays shows. ARM at 0x6292C..0x62948 puts a4 = the COLUMN
+ * index, a5 = 0 and a6 = 6*nBase on the stack; the `AND R3, R7, #0xFF` at 0x6292C computes the row
+ * and then never stores it. The port passes what the ARM passes.
+ *
+ * The six needed passes take the budgets the original computes inside them: ammo items, active
+ * research, occupied space plus outbound transfer space (the -1 gate), psi soldiers, storage used
+ * plus item quantity across bases (the -1 gate), active manufacturing.
+ *
+ * Deviation: the original returns the last day byte it read (register residue); the port returns
+ * void. */
+typedef struct BaseTickConstructionEnv {
+    u8              *abFacilityGrid;   /* the argument, always abFacilityGrid @ 0x159768 */
+    const u8        *pbBaseCount;      /* nBaseCount @ 0x159D80, read signed */
+    Soldier         **apSoldiers;      /* Map.apSoldiers @ Map + 0x1198 */
+    const i32       *pnSoldierCount;   /* nSoldierCount @ 0x115350 (u16 semantics) */
+    BaseRec         **apBases;         /* Map.apBases @ Map + 0x1174 */
+    ObjectRecFull   **apObjects;       /* Map.apObjects @ Map + 0x108 */
+    i32              nObjectCount;     /* Map_nObjectCount @ 0x114A60 */
+    SmapSite        *aSites;           /* aSmapSites @ 0x162030 */
+    i32              nSiteCount;       /* nSmapSiteCount @ 0x186410 */
+    const u16       *apResearchCols;   /* 0x16022C, 144 u16 per base */
+    i32              nResearchEntries; /* 0x160C4C, shared by every base */
+    const u16       *apManufCols;      /* 0x15E19C, 200 u16 per base */
+    i32              nManufEntries;    /* PUFO_PRODUCT_ENTRIES_PER_BASE */
+    u32             *pdwShortfall;     /* byte_1870C8, written as a dword */
+    UiLineList      *pLines;           /* the root message list @ 0x158890 */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pSoundUser;
+} BaseTickConstructionEnv;
+
+void Base_TickFacilityConstruction(const BaseTickConstructionEnv *pEnv);
 
 /* Base_CountAmmoItems @ 0x656ac. How much ammo is stored for one base: the per-base quantity column
  * of every object whose index is 77..104 inclusive, plus object 114.

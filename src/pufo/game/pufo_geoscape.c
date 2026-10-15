@@ -1003,6 +1003,75 @@ i32 Base_UpdateAlienContainmentNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nA
                               FacilityBudget(nAmmoItems, 10));   /* 0x65F3C */
 }
 
+/* Base_TickFacilityConstruction @ 0x62824. The header block has the countdown, the three extra
+ * days stores a completed hangar makes, and the message payload the ARM actually passes. */
+void Base_TickFacilityConstruction(const BaseTickConstructionEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->abFacilityGrid == NULL || pEnv->pbBaseCount == NULL) {
+        return;
+    }
+
+    const i32 nBaseCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x62854: LDRSB of abFacilityGrid + 0x618 */
+    if (nBaseCount <= 0) {
+        return;
+    }
+
+    u8 *pGrid = pEnv->abFacilityGrid;
+
+    for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+        u8 *pDays = pGrid + PUFO_GRID_DAYS_STRIDE * nBase; /* 0x62860: R8 walks the days block, +6 a row */
+
+        for (i32 nRow = 0; nRow < 6; ++nRow) {
+            for (i32 nCol = 0; nCol < 6; ++nCol) {
+                u8 nDay = pDays[6 * nRow + nCol];          /* 0x62878 */
+
+                if (nDay == 0) {
+                    continue;                              /* 0x62880 */
+                }
+                nDay = (u8)(nDay - 1);                     /* 0x62888 */
+                pDays[6 * nRow + nCol] = nDay;
+                if (nDay != 0) {
+                    continue;                              /* 0x62890 */
+                }
+
+                const i32 nKindOff = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF +
+                                     PUFO_GRID_FAC_STRIDE * nBase;
+                if (pGrid[nKindOff + 6 * nRow + nCol] == (u8)FAC_HANGAR) { /* 0x628B4 */
+                    pDays[6 * nRow + nCol + 6] = 0;   /* 0x628C4: the cell directly below */
+                    pDays[6 * nRow + nCol + 7] = 0;   /* 0x628CC: R8[j+7], below-right */
+                    pDays[6 * nRow + nCol + 1] = 0;   /* 0x628D4: R8[j+1], to the right */
+                }
+
+                (void)Base_UpdateAlienContainmentNeeded(pGrid, nBase,
+                    Base_CountAmmoItems(pEnv->apObjects, pEnv->nObjectCount, nBase)); /* 0x628E4 */
+                (void)Base_UpdateLabNeeded(pGrid, nBase,
+                    Base_CountActiveResearch(pEnv->apResearchCols + 144 * nBase,
+                                             pEnv->nResearchEntries));                 /* 0x628F0 */
+                (void)Base_UpdateLivingQuartersNeeded(pGrid, nBase,
+                    Base_CalcOccupiedSpace(pEnv->apSoldiers, *pEnv->pnSoldierCount,
+                                           pEnv->apObjects, pEnv->nObjectCount, nBase) +
+                    Base_CountOutboundTransferSpace(pEnv->aSites, pEnv->nSiteCount, -1,
+                                                    pEnv->apBases, nBase, true));      /* 0x628FC */
+                (void)Base_UpdatePsiLabNeeded(pGrid, nBase,
+                    Base_CountPsiSoldiers(pEnv->apSoldiers, *pEnv->pnSoldierCount, nBase)); /* 0x62908 */
+                (void)Base_UpdateStoresNeeded(pGrid, nBase,
+                    Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase) +
+                    Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, -1,
+                                                 pEnv->apBases, nBase, pEnv->apObjects,
+                                                 pEnv->nObjectCount, true));           /* 0x62914 */
+                (void)Base_UpdateWorkshopNeeded(pGrid, nBase,
+                    Base_CountActiveManuf(pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
+                                          pEnv->nManufEntries));                       /* 0x62920 */
+
+                *pEnv->pdwShortfall = 1;                                             /* 0x62934 */
+                UiLineList_AppendWithSound(pEnv->pLines, 38, (u32)nBase, (u32)nCol, 0u,
+                                           (u32)(6 * nBase),
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser);   /* 0x62948 */
+            }
+        }
+    }
+}
+
 /* Base_CalcOccupiedSpace @ 0x655f8. */
 i32 Base_CalcOccupiedSpace(Soldier *const *apSoldiers, i32 nSoldierCount,
                            ObjectRecFull *const *apObjects, i32 nObjectCount,

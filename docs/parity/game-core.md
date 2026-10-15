@@ -11786,3 +11786,32 @@ count -- the port bounds it too. The original returns the viewport-mode global a
 residue, no caller reads it); the port returns void.
 
 IDB: comment at 0x98b50.
+
+## Base_TickFacilityConstruction (0x62824, 396 B) -- the daily build-timer countdown
+
+Ported as `Base_TickFacilityConstruction` in `src/pufo/game/pufo_geoscape.c` with the env
+`BaseTickConstructionEnv`, tested by `TestTickFacilityConstruction` in `tests/test_geoscape.c`.
+
+Called from `Geoscape_TickBases @ 0x5d3bc` with abFacilityGrid as its only argument. For every base
+(nBaseCount, read signed from abFacilityGrid + 0x618) it walks that base's buildDays 6x6 block and
+decrements every non-zero byte (0x62878..0x6288C). When a byte reaches zero the build finished:
+
+  - 0x628B4: if the finished cell's facType kind is 11 (hangar), three MORE buildDays bytes are
+    cleared -- grid + 36*base + 6*row + col + 6 (0x628C4, directly below), + 7 (0x628CC,
+    below-right) and + 1 (0x628D4, to the right). These are the days block's own arithmetic on the
+    running pointer R8 (j+7 and j+1), not a facility layer, and at row 5 they land in the NEXT
+    base's days block. The grid is big enough for that and the port reproduces it.
+  - 0x628E4..0x62920: the six needed-flag passes for the base, with the budgets the original
+    computes inside them (ammo items; active research; occupied space plus outbound transfer space
+    with the -1 gate; psi soldiers; storage used plus item quantity across bases with the -1 gate;
+    active manufacturing).
+  - 0x62934..0x62948: byte_1870C8 = 1 as a dword and message 38.
+
+The message payload is NOT what Hex-Rays shows. ARM at 0x6292C..0x62948 computes the row with
+`AND R3, R7, #0xFF` and never stores it; the stack arguments are a4 = the COLUMN counter (STRB R5),
+a5 = 0 (STRB R9) and a6 = 6*nBase (var_8, +6 per base). So the call is
+`AppendLineWithSound(0x158890, 38, nBase, col, 0, 6*nBase)`, and the port passes exactly that.
+
+Deviation: the original returns the last day byte it read (register residue); the port returns void.
+
+IDB: comments at 0x62824 and 0x62948 (the payload correction).

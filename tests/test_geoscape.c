@@ -3169,6 +3169,205 @@ static void TestRadarPaletteCycle(void)
     CheckEqI32(nCur, 8, "a null env leaves the range alone");
 }
 
+/* Base_TickFacilityConstruction @ 0x62824. Base 0 unless a case says otherwise:
+ * fac[] is grid + 0x174 (tileA +0, tileB +36, layer2 +72, facType +108) and buildDays is grid +
+ * 36*nBase. */
+static u8 g_aTickGrid[1524];
+static BaseRec g_aTickBases[2];
+static BaseRec *g_apTickBases[2];
+static ObjectRecFull g_aTickObj[4];
+static ObjectRecFull *g_apTickObj[4];
+static Soldier g_aTickSoldier;
+static Soldier *g_apTickSoldiers[1];
+static SmapSite g_aTickSites[2];
+static u16 g_aTickResearch[144 * 8];
+static u16 g_aTickManuf[200 * 8];
+static UiLineList g_tickLines;
+static u32 g_dwTickShortfall;
+static u8 g_nTickBaseCount;
+static i32 g_nTickSoldierCount;
+static i32 g_nTickSamples;
+
+static void TickSample(i32 nSample, void *pUser)
+{
+    (void)nSample;
+    (void)pUser;
+    ++g_nTickSamples;
+}
+
+#define TICKFAC(nLayer, nRow, nCol) g_aTickGrid[0x174 + (nLayer) + 6 * (nRow) + (nCol)]
+#define TICKDAYS(nRow, nCol)        g_aTickGrid[6 * (nRow) + (nCol)]
+
+#define TICK_RESET()                                                        \
+    do {                                                                    \
+        memset(g_aTickGrid, 0, sizeof(g_aTickGrid));                        \
+        memset(g_aTickObj, 0, sizeof(g_aTickObj));                          \
+        memset(g_aTickResearch, 0, sizeof(g_aTickResearch));                \
+        memset(g_aTickManuf, 0, sizeof(g_aTickManuf));                      \
+        memset(&g_aTickSoldier, 0, sizeof(g_aTickSoldier));                 \
+        memset(g_aTickSites, 0, sizeof(g_aTickSites));                      \
+        memset(&g_tickLines, 0, sizeof(g_tickLines));                       \
+        for (i = 0; i < 2; ++i) {                                           \
+            memset(&g_aTickBases[i], 0, sizeof(g_aTickBases[i]));           \
+            g_apTickBases[i] = &g_aTickBases[i];                            \
+            g_aTickBases[i].bSlot = (u8)i;                                  \
+        }                                                                   \
+        for (i = 0; i < 4; ++i) {                                           \
+            g_apTickObj[i] = &g_aTickObj[i];                                \
+        }                                                                   \
+        memset(g_apTickSoldiers, 0, sizeof(g_apTickSoldiers));              \
+        g_apTickSoldiers[0] = &g_aTickSoldier;                              \
+        g_aTickSoldier.nKind = 0;                                           \
+        g_dwTickShortfall = 0;                                              \
+        g_nTickBaseCount = 1;                                               \
+        g_nTickSoldierCount = 1;                                            \
+        g_nTickSamples = 0;                                                 \
+    } while (0)
+
+#define TICK_ENV(env)                                                     \
+    memset(&(env), 0, sizeof(env));                                       \
+    (env).abFacilityGrid = g_aTickGrid;                                   \
+    (env).pbBaseCount = &g_nTickBaseCount;                                \
+    (env).apSoldiers = g_apTickSoldiers;                                  \
+    (env).pnSoldierCount = &g_nTickSoldierCount;                          \
+    (env).apBases = g_apTickBases;                                        \
+    (env).apObjects = g_apTickObj;                                        \
+    (env).nObjectCount = 4;                                               \
+    (env).aSites = g_aTickSites;                                          \
+    (env).nSiteCount = 0;                                                 \
+    (env).apResearchCols = g_aTickResearch;                               \
+    (env).nResearchEntries = 1;                                           \
+    (env).apManufCols = g_aTickManuf;                                     \
+    (env).nManufEntries = 1;                                              \
+    (env).pdwShortfall = &g_dwTickShortfall;                              \
+    (env).pLines = &g_tickLines;                                          \
+    (env).pfnPlaySample = TickSample;                                     \
+    (env).pSoundUser = NULL
+
+static void TestTickFacilityConstruction(void)
+{
+    BaseTickConstructionEnv env;
+    i32 i;
+
+    printf("Base_TickFacilityConstruction @ 0x62824\n");
+
+    /* A non-zero day byte that does not reach zero is just decremented: no report, no passes. */
+    TICK_RESET();
+    TICKDAYS(0, 0) = 3;
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_GENERAL_STORES;
+    g_aTickManuf[0] = 100;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(0, 0), 2, "a build timer counts down by one");
+    CheckEqI32((i32)g_tickLines.nLineCount, 0, "and nothing is reported until it reaches zero");
+    CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 0, "and no needed pass runs");
+
+    /* Reaching zero reports message 38 and raises the shortfall dword. The payload is what the ARM
+     * puts on the stack at 0x62940: a4 is the COLUMN (row 1, column 2 here), a5 is 0 and a6 is
+     * 6*nBase -- not the row Hex-Rays shows. */
+    TICK_RESET();
+    TICKDAYS(1, 2) = 1;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(1, 2), 0, "a timer that reaches zero stays zero");
+    CheckEqI32((i32)g_tickLines.nLineCount, 1, "one report line");
+    CheckEqI32(g_tickLines.abLineFlags[0], 38, "message 38");
+    CheckEqI32((i32)g_tickLines.anColor[0][0], 0, "colour 0 is the base");
+    CheckEqI32((i32)g_tickLines.anColor[0][1], 2, "colour 1 is the column, not the row");
+    CheckEqI32((i32)g_tickLines.anColor[0][2], 0, "colour 2 is zero");
+    CheckEqI32((i32)g_tickLines.anColor[0][3], 0, "colour 3 is 6 * the base");
+    CheckEqI32((i32)g_dwTickShortfall, 1, "and the shortfall dword is raised");
+
+    /* A completed HANGAR also clears three more days bytes: below, below-right and right. */
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 1, 2) = FAC_HANGAR;
+    TICKDAYS(1, 2) = 1;
+    TICKDAYS(2, 2) = 5;
+    TICKDAYS(2, 3) = 5;
+    TICKDAYS(1, 3) = 5;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(2, 2), 0, "the cell below the finished hangar is cleared");
+    CheckEqI32(TICKDAYS(2, 3), 0, "the cell below-right is cleared");
+    CheckEqI32(TICKDAYS(1, 3), 0, "and the cell to the right");
+
+    /* A finished cell that is not a hangar clears nothing. */
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 1, 2) = FAC_LIVING_QUARTERS;
+    TICKDAYS(1, 2) = 1;
+    TICKDAYS(2, 2) = 5;
+    TICKDAYS(2, 3) = 5;
+    TICKDAYS(1, 3) = 5;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(2, 2), 4, "a non-hangar completion clears nothing below, it only counts down");
+    CheckEqI32(TICKDAYS(2, 3), 4, "clears nothing below-right");
+    CheckEqI32(TICKDAYS(1, 3), 4, "and clears nothing to the right");
+
+    /* The three clears are the days block's own arithmetic, so at the last row they reach into the
+     * NEXT base's days block. The grid is big enough and the original does it; the port does too. */
+    TICK_RESET();
+    g_nTickBaseCount = 1; /* only base 0 is walked, but base 1's bytes are still in the grid */
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 5, 5) = FAC_HANGAR;
+    TICKDAYS(5, 5) = 1;
+    g_aTickGrid[6 * 6 + 5 + 6] = 7;  /* grid[41], base 1's row 0 column 5 */
+    g_aTickGrid[6 * 6 + 5 + 7] = 7;  /* grid[42] */
+    g_aTickGrid[6 * 6 + 5 + 1] = 7;  /* grid[36], base 1's row 0 column 0 */
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(g_aTickGrid[41], 0, "the below-clear lands in the next base's days block");
+    CheckEqI32(g_aTickGrid[42], 0, "and the below-right clear does too");
+    CheckEqI32(g_aTickGrid[36], 0, "while the right clear lands on that base's first cell");
+
+    /* Completion runs the six needed passes: a workshop cell plus 100 active manufacturing buys a
+     * needed flag (100 / 50 + 1 = 3 cells of budget). */
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_WORKSHOP;
+    TICKDAYS(3, 3) = 1;
+    g_aTickManuf[0] = 100;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 1, "the workshop needed pass ran on completion");
+
+    /* The lab pass is the same shape from the research column. */
+    TICK_RESET();
+    TICKFAC(PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_LABORATORY;
+    TICKDAYS(3, 3) = 1;
+    g_aTickResearch[0] = 60;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 1, "the lab needed pass ran on completion");
+
+    /* Base 1 is walked through its own days block, and its base index reaches the report. */
+    TICK_RESET();
+    g_nTickBaseCount = 2;
+    g_aTickGrid[36 + 0] = 1; /* base 1, row 0, column 0 */
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(g_aTickGrid[36], 0, "base 1's days block is walked too");
+    CheckEqI32((i32)g_tickLines.nLineCount, 1, "and it reports once");
+    CheckEqI32((i32)g_tickLines.anColor[0][0], 1, "colour 0 names base 1");
+    CheckEqI32((i32)g_tickLines.anColor[0][3], 6, "colour 3 is 6 * 1");
+
+    /* No bases, no work. */
+    TICK_RESET();
+    g_nTickBaseCount = 0;
+    TICKDAYS(0, 0) = 4;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(0, 0), 4, "a zero base count leaves the timers alone");
+    CheckEqI32((i32)g_tickLines.nLineCount, 0, "and posts nothing");
+
+    /* A null environment or a null grid is refused. */
+    TICK_RESET();
+    TICKDAYS(0, 0) = 4;
+    TICK_ENV(env);
+    Base_TickFacilityConstruction(NULL);
+    env.abFacilityGrid = NULL;
+    Base_TickFacilityConstruction(&env);
+    CheckEqI32(TICKDAYS(0, 0), 4, "a null grid changes nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -3210,6 +3409,7 @@ int main(void)
     TestRadarPaletteCycle();
     TestCountInbound();
     TestBaseStripHit();
+    TestTickFacilityConstruction();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

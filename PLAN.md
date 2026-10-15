@@ -1012,6 +1012,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   from main.dat TEXTS.DAT (the eight corpses 59..66, the race-block bounds 77/81/86/87/91/94/98, the
   craft-count slots 117..121, the medics 144..148). IDB: comment at 0x98b50.
 
+- [x] part 34, the daily build-timer countdown: `Base_TickFacilityConstruction (0x62824)`, 396 bytes
+  — 29 more checks. `Geoscape_TickBases`' first act: every non-zero `buildDays` byte of every base
+  counts down, and a byte reaching zero finishes the build — the six needed-flag passes for that
+  base, the shortfall dword, message 38. Two things the decompiler had wrong. (1) A finished
+  **hangar** clears three *more* days bytes — below, below-right and right (0x628C4 / 0x628CC /
+  0x628D4) — which are the days block's own pointer arithmetic (`R8[j+7]`, `R8[j+1]`), not a
+  facility layer, and at row 5 they land in the *next* base's days block. (2) The message payload:
+  Hex-Rays shows `(38, base, row, col, 0)`, the ARM at 0x6292C..0x62948 computes the row and never
+  stores it, and really passes `(38, base, col, 0, 6*base)` — the port passes what the ARM passes.
+  The `pfnTickFacilityConstruction` hook is no longer "not ported". IDB: comments at 0x62824 and
+  0x62948.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1220,6 +1232,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the base-tab strip drawer (`Base_DrawFacilityIconStrip`, the dead overlay-close branch found) | 56/56 (Release) | 9904 | 854/1103 (77.4%) | 356168/598792 (59.5%) | 38 checked, 0 mismatched |
 | the craft re-arm pass (`Base_DistributeRecoveredItems`, the five weapon mounts named) | 56/56 (Release) | 9930 | 855/1103 (77.5%) | 357384/598792 (59.7%) | 38 checked, 0 mismatched |
 | the mission-recovery pass (`Smap_GrantSiteRecovery`, the function-wide containment counter, the corpse remap) | 56/56 (Release) | 9987 | 856/1103 (77.6%) | 359956/598792 (60.1%) | 38 checked, 0 mismatched |
+| the daily build-timer countdown (`Base_TickFacilityConstruction`, the hangar's three extra clears, the message payload corrected) | 56/56 (Release) | 10016 | 857/1103 (77.7%) | 360352/598792 (60.2%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
