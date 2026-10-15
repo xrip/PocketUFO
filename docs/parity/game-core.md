@@ -11017,3 +11017,61 @@ IDB: `unk_161A28` named `bBuySellPanelsBuilt` (byte), `unk_161A0C` named `g_aBuy
 (`UiControl *[4]`), `unk_AAA04` named `g_aBuySellRowOrder` (`int[148]`), and the enum
 `PufoBuySellRowMarker` (`BUYSELL_ROW_SOLDIER = 1000`, `BUYSELL_ROW_ALIEN_BIAS = 2000`) added. A
 function comment at 0x76de0 records the gate table and the aux encoding.
+
+## BuySellScreen_CommitTransaction -- confirming the buy/sell screen
+
+Original: BuySellScreen_CommitTransaction @ 0x74bf8 (1176 B), installed as the confirm control's
+handler for screen 12 by BuySellScreen_Init (0x78c30, not ported; screen 11 gets
+BuySellScreen_ConfirmSiteAndClose instead).
+Port: src/pufo/game/pufo_baseui.c, `BuySellScreen_CommitTransaction(BuySellCommitEnv *)`, with
+`BuySellCorpseSlotForRace` beside it. Test: tests/test_baseui.c, `TestBuySellCommitTransaction`
+(17 checks).
+
+Six phases.
+
+1. 0x74C0C..0x74D74. For every slot 0..nObjectCount-1, `BaseRec_SubItemQty(base, apObjects[slot],
+   -g_anBuySellSlotDelta[slot])` -- the IDB now names the array `g_anBuySellSlotDelta` @ 0x161600,
+   cleared over `Map_nObjectCount` entries by BuySellScreen_Init. That is `auPerBaseVal[base] +=
+   delta` and `nStoresTotal += delta`. If the slot has an alien race, the race's corpse record takes
+   `-delta` through `BaseRec_AddItemQty`, so buying aliens moves corpses the other way. The corpse
+   pairing is the switch at 0x74CA0: 59 Sectoid, 60 Snakeman, 61 Floater, 62 Muton, 63 Ethereal,
+   64 Cyberdisk, 65 Chryssalid, 66 Reaper, 67 Celatid, 68 Silacoid, 69 Sectopod -- the same pairing
+   Smap_GrantSiteRecovery (0x98b50, not ported) hard-codes per slot.
+
+2. 0x74D88..0x74E64. Panel A rows whose aux is 117..121 (a craft) and whose panel E aux is 1 (the
+   selection flag BuildPanels zeroes and the row handlers set) contribute
+   `Ship_FindIndexById(panelC aux)` -- panel C holds `Ship.bId` on a craft row -- to the assigned-ship
+   list at dword_161468[1..], count in [0].
+
+3. 0x74E70..0x74F14. For each of those craft indices and every object slot,
+   `apObjects[slot]->aItemQty[craftIndex]` is added to the base and subtracted from the craft, so
+   confirming unloads every selected craft. Note the two indices differ in kind: the read uses the
+   array index from Ship_FindIndexById, `InvSel_SubItemQty` writes through `Ship.nSlotIdx` (Ship +
+   0x1C, the hangar slot). They agree whenever a craft's array index is its hangar slot.
+
+4. 0x74F38..0x74FB0. Panel A rows whose aux is 1000 (a soldier) AND whose panel E aux is 1 fill
+   `g_aSoldierIdList[1..]` with panel C aux -- the soldier's roster id at `Soldier + 0x1B8`. Only
+   soldier rows qualify; an unselected soldier row is skipped.
+
+5. 0x74FB8..0x75064. For each roster id, the soldier whose `nUnk440` matches gives their equipped
+   armour back to the base: `apObjects[121 + Soldier.nUnitType]` +1. `Soldier.nUnitType` at +0xA0 is
+   the same byte SoldierScreen_EquipSelected writes, with 0 meaning nothing worn.
+
+6. 0x75070..0x75078. `BuySell_nFundsSnapshot = nFunds` -- the value BuildPanels' teardown restores
+   when the player leaves without confirming -- and a tail call to Geoscape_CloseUI (0x8b94c, not
+   ported) on the screen block at 0x1864F8, the same block whose two flag bytes
+   Geoscape_UiFocusPrev/Next set.
+
+This is what the deferred unit was waiting on: the aux encoding is now pinned from both ends --
+BuildPanels writes it, CommitTransaction reads it back.
+
+Deviations:
+- The original indexes `apObjects[121 + Soldier.nUnitType]` without bounding the byte and
+  `aItemQty[craftIndex]` with an unchecked index; the port bounds the armour index to 1..3 and
+  treats an out-of-range cargo column as zero.
+- The original writes the assigned-ship and soldier-id lists without a capacity check; the port
+  counts every match but stores only within the caller's array.
+- Null panel and array slots are skipped; the original dereferences them.
+
+IDB: `unk_161600` named `g_anBuySellSlotDelta` (`int[149]`), function comments at 0x74bf8 (the six
+phases) and 0x78c30 (the screen 11 / 12 wiring and the delta clear).

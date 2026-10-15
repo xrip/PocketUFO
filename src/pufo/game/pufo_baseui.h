@@ -311,7 +311,8 @@ void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv);
  *       panel C  ">" (the increment column), pfnClick BuySellScreen_FillSellPanel
  *       panel D  the available count: 1 for a soldier or a craft, auPerBaseVal[base] for an
  *                object, the engineer or scientist count for slots 112 / 113
- *       panel E  the pending quantity, always 0 here
+ *       panel E  the selection flag, 0 for every row here; BuySellScreen_CommitTransaction below
+ *                reads it back as "== 1" to find the rows the player marked
  *     Names are copied through an 18-byte buffer and cut to 17 characters when longer; the
  *     craft row is the exception -- its text goes straight into the line as
  *     TEXTS[415 + bCraftType] + "-" + itoa(Ship.bType), with no truncation.
@@ -364,6 +365,64 @@ typedef struct BuySellBuildEnv {
 } BuySellBuildEnv;
 
 void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv);
+
+/* ------------------------------------------------- the buy/sell commit
+ *
+ * Evidence: BuySellScreen_CommitTransaction @ 0x74bf8 (1176 B), wired as the click handler of
+ * screen 12 by BuySellScreen_Init (0x78c30, not ported).
+ *
+ * Six phases, in order:
+ *
+ *  1. 0x74C0C..0x74D74. For every object slot 0..nObjectCount-1, apply the pending delta the
+ *     screen accumulated in unk_161600 (one dword per slot, cleared by BuySellScreen_Init):
+ *     `BaseRec_SubItemQty(base, apObjects[slot], -delta)`, which is `auPerBaseVal[base] += delta`
+ *     and `nStoresTotal += delta`. If the slot has an alien race behind it
+ *     (BuySell_ItemIdToAlienRaceId), the same slot's race corpse moves the other way:
+ *     `BaseRec_AddItemQty(base, apObjects[corpse], -delta)`. The corpse pairing is the switch at
+ *     0x74CA0 and it is the one the PufoAlienRaceId block above records.
+ *  2. 0x74D88..0x74E64. Walk panel A; a row whose aux is 117..121 (a craft) and whose panel E aux
+ *     is 1 (selected) contributes `Ship_FindIndexById(panelC aux)` -- panel C holds Ship.bId on a
+ *     craft row -- into the assigned-ship list at dword_161468[1..], with the count in [0].
+ *  3. 0x74E70..0x74F14. For each of those craft indices, and for every object slot, move what the
+ *     craft carries into the base: `apObjects[slot]->aItemQty[craftIndex]` is added to the base and
+ *     subtracted from the craft. So confirming the screen unloads every selected craft.
+ *  4. 0x74F38..0x74FB0. Walk panel A again; a row whose aux is 1000 (a soldier) AND whose panel E
+ *     aux is 1 contributes its panel C aux -- the soldier's roster id at Soldier + 0x1B8 -- into
+ *     the scratch list g_aSoldierIdList[1..], with the count in [0].
+ *  5. 0x74FB8..0x75064. For each of those roster ids, find the soldier whose nUnk440 matches and,
+ *     when the soldier wears armour (Soldier.nUnitType, the same byte SoldierScreen_EquipSelected
+ *     writes), give that armour back to the base: `apObjects[121 + nUnitType]` +1.
+ *  6. 0x75070..0x75078. Take the funds snapshot (`BuySell_nFundsSnapshot = nFunds`, the value
+ *     BuildPanels' teardown later restores) and tail-call Geoscape_CloseUI on the screen block at
+ *     0x1864F8 -- the same block whose two flag bytes the scroll dispatcher sets.
+ *
+ * Deviation: the original indexes `apObjects[121 + Soldier.nUnitType]` without bounding the byte,
+ * and dereferences the panel and array pointers without a null test. The port bounds the armour
+ * index to 1..3 and skips null slots. */
+typedef struct BuySellCommitEnv {
+    const i32 *anSlotDelta;         /* unk_161600, one pending delta per object slot */
+    UiPanel *pPanelA;               /* pBuySellPanelA @ 0x161A1C */
+    UiPanel *pPanelC;               /* pBuySellPanelC @ 0x161A20 */
+    UiPanel *pPanelE;               /* pBuySellPanelE @ 0x1615F8, the selection flag */
+    BaseRec *pBase;                 /* apBases[nSelectedBaseIdx] */
+    ObjectRecFull *const *apObjects;/* Map + 0x108 */
+    i32 nObjectCount;               /* Map_nObjectCount @ 0x114A60 */
+    Ship *const *apCrafts;          /* Map + 0x10AC */
+    i32 nCraftCount;                /* Map_nCraftCount @ 0x114B4C */
+    Soldier *const *apSoldiers;     /* Map + 0x1198 */
+    i32 nSoldierCount;              /* nSoldierCount @ 0x115350 */
+    i32 *pnAssignedCount;           /* dword_161468[0] */
+    i32 *anAssignedList;            /* dword_161468[1..] */
+    i32 nAssignedCapacity;
+    i32 *pnSoldierIdCount;          /* g_aSoldierIdList[0] @ 0x160C90 */
+    i32 *anSoldierIdList;           /* g_aSoldierIdList[1..] */
+    i32 nSoldierIdCapacity;
+    i32 *pnFundsSnapshot;           /* BuySell_nFundsSnapshot @ 0x161460 */
+    i32 nFunds;                     /* nFunds @ 0x1598D8, read only */
+    void (*pfnCloseUi)(void);       /* Geoscape_CloseUI (0x8b94c, not ported) */
+} BuySellCommitEnv;
+
+void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *

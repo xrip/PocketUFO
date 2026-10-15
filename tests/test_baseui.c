@@ -780,6 +780,119 @@ static void TestBuySellBuildPanels(void)
     Check(1, "a missing environment does nothing at all");
 }
 
+static i32 g_nCommitClose;
+static void CommitTestClose(void) { ++g_nCommitClose; }
+
+static void TestBuySellCommitTransaction(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Soldier aSol[2];
+    static Soldier *apSol[2];
+    static Ship aShip[1];
+    static Ship *apShip[1];
+    static i32 aDelta[149];
+    static i32 aAssigned[8];
+    static i32 aSolIds[8];
+    static UiPanel pA, pC, pE;
+    BaseRec base;
+    BuySellCommitEnv env;
+    i32 nAssignedCount = -1;
+    i32 nSolCount = -1;
+    i32 nSnapshot = -1;
+    i32 i;
+
+    printf("the buy/sell commit\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[10].auPerBaseVal[0] = 5; /* the base holds five */
+    aObj[10].aItemQty[0] = 3;     /* and the craft carries three */
+    aObj[11].auPerBaseVal[0] = 0;
+    aObj[11].aItemQty[0] = 4;
+    aObj[59].auPerBaseVal[0] = 2; /* Sectoid corpse */
+    aObj[77].auPerBaseVal[0] = 4; /* Sectoid soldier */
+    aObj[122].auPerBaseVal[0] = 1; /* Personal armour */
+    aObj[123].auPerBaseVal[0] = 1; /* Power suit */
+
+    aDelta[10] = 3;  /* the screen queued three more of slot 10 */
+    aDelta[77] = -2; /* and two fewer Sectoid soldiers */
+
+    memset(&base, 0, sizeof(base));
+    base.bSlot = 0;
+
+    aShip[0].bId = 7; aShip[0].bType = 1; aShip[0].bCraftType = 0;
+    aShip[0].bHomeBase = 0; aShip[0].bAtBase = 1; aShip[0].nSlotIdx = 0;
+    apShip[0] = &aShip[0];
+
+    aSol[0].nUnk440 = 101; aSol[0].nUnitType = 2; /* selected, wears the power suit */
+    aSol[1].nUnk440 = 102; aSol[1].nUnitType = 1; /* not selected, wears personal armour */
+    apSol[0] = &aSol[0];
+    apSol[1] = &aSol[1];
+
+    (void)UiPanel_ctor(&pA, 4);
+    (void)UiPanel_ctor(&pC, 4);
+    (void)UiPanel_ctor(&pE, 4);
+    /* Row 0 a selected craft, row 1 a selected soldier, row 2 an unselected soldier, row 3 a
+     * plain object row. */
+    pA.anLineAux[0] = 117;  pC.anLineAux[0] = 7;   pE.anLineAux[0] = 1;
+    pA.anLineAux[1] = 1000; pC.anLineAux[1] = 101; pE.anLineAux[1] = 1;
+    pA.anLineAux[2] = 1000; pC.anLineAux[2] = 102; pE.anLineAux[2] = 0;
+    pA.anLineAux[3] = 1;    pC.anLineAux[3] = 0;   pE.anLineAux[3] = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.anSlotDelta = aDelta;
+    env.pPanelA = &pA;
+    env.pPanelC = &pC;
+    env.pPanelE = &pE;
+    env.pBase = &base;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.apCrafts = apShip;
+    env.nCraftCount = 1;
+    env.apSoldiers = apSol;
+    env.nSoldierCount = 2;
+    env.pnAssignedCount = &nAssignedCount;
+    env.anAssignedList = aAssigned;
+    env.nAssignedCapacity = 8;
+    env.pnSoldierIdCount = &nSolCount;
+    env.anSoldierIdList = aSolIds;
+    env.nSoldierIdCapacity = 8;
+    env.pnFundsSnapshot = &nSnapshot;
+    env.nFunds = 4147000;
+    env.pfnCloseUi = CommitTestClose;
+
+    g_nCommitClose = 0;
+    BuySellScreen_CommitTransaction(&env);
+
+    CheckEqI32(aObj[10].auPerBaseVal[0], 11,
+               "the pending delta lands, then the craft's three more arrive");
+    CheckEqI32(aObj[11].auPerBaseVal[0], 4, "and so does everything else the craft carried");
+    CheckEqI32(aObj[10].aItemQty[0], 0, "the craft's own cargo column empties");
+    CheckEqI32(aObj[11].aItemQty[0], 0, "for every slot");
+    CheckEqI32((i32)(i16)aShip[0].uUnk4, -7, "and the craft's carried total drops by the same");
+    CheckEqI32(aObj[77].auPerBaseVal[0], 2, "a negative delta takes Sectoid soldiers away");
+    CheckEqI32(aObj[59].auPerBaseVal[0], 4, "while the Sectoid corpse moves the other way");
+    CheckEqI32(nAssignedCount, 1, "the selected craft row lands in the assigned-ship list");
+    CheckEqI32(aAssigned[0], 0, "as the craft index Ship_FindIndexById found");
+    CheckEqI32(nSolCount, 1, "only the selected soldier row reaches the id list");
+    CheckEqI32(aSolIds[0], 101, "by the roster id panel C carries");
+    CheckEqI32(aObj[123].auPerBaseVal[0], 2, "the sold soldier's armour goes back to the base");
+    CheckEqI32(aObj[122].auPerBaseVal[0], 1,
+               "the unselected soldier keeps the armour he was wearing");
+    CheckEqI32(base.nStoresTotal, 11, "the store total is delta 3, cargo 7 and the armour 1");
+    CheckEqI32(nSnapshot, 4147000, "the funds snapshot is taken last");
+    CheckEqI32(g_nCommitClose, 1, "and the screen closes");
+
+    BuySellScreen_CommitTransaction(NULL);
+    CheckEqI32(g_nCommitClose, 1, "a missing environment does nothing at all");
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pC);
+    UiPanel_FreeLines(&pE);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -5879,6 +5992,7 @@ int main(void)
     TestAlienRaceId();
     TestFocusDispatcher();
     TestBuySellBuildPanels();
+    TestBuySellCommitTransaction();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

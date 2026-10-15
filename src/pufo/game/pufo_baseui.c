@@ -485,6 +485,138 @@ static void BuySellFillQtyColumns(UiPanel *pB, UiPanel *pC, UiPanel *pE, i32 nRo
     }
 }
 
+/* The corpse slot each alien race moves with, from the switch at 0x74CA0..0x74D38. */
+static i32 BuySellCorpseSlotForRace(PufoAlienRaceId nRace)
+{
+    switch (nRace) {
+    case PUFO_ALIEN_RACE_SECTOID:    return 59; /* 0x74CE8 */
+    case PUFO_ALIEN_RACE_SNAKEMAN:   return 60; /* 0x74CF0 */
+    case PUFO_ALIEN_RACE_FLOATER:    return 61; /* 0x74CF8 */
+    case PUFO_ALIEN_RACE_MUTON:      return 62; /* 0x74D00 */
+    case PUFO_ALIEN_RACE_ETHEREAL:   return 63; /* 0x74D0C */
+    case PUFO_ALIEN_RACE_CYBERDISK:  return 64; /* 0x74D10 */
+    case PUFO_ALIEN_RACE_CHRYSSALID: return 65; /* 0x74D1C */
+    case PUFO_ALIEN_RACE_REAPER:     return 66; /* 0x74D24 */
+    case PUFO_ALIEN_RACE_CELATID:    return 67; /* 0x74D34 */
+    case PUFO_ALIEN_RACE_SILACOID:   return 68; /* 0x74D2C */
+    case PUFO_ALIEN_RACE_SECTOPOD:   return 69; /* 0x74D38 */
+    default:                         return -1;
+    }
+}
+
+/* BuySellScreen_CommitTransaction @ 0x74bf8. See the header for the six phases. */
+void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv)
+{
+    i32 nCraftRows = 0;
+    i32 nSoldierRows = 0;
+    i32 i;
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    /* Phase 1, 0x74C0C..0x74D74: apply the pending per-slot delta, and move the matching race
+     * corpse the other way. SubItemQty with a negated delta is the base gaining. */
+    for (i = 0; i < pEnv->nObjectCount; ++i) {
+        i32 nDelta = pEnv->anSlotDelta != NULL ? pEnv->anSlotDelta[i] : 0;
+        ObjectRecFull *pItem = pEnv->apObjects != NULL ? pEnv->apObjects[i] : NULL;
+        i32 nCorpse;
+        if (pItem != NULL) {
+            BaseRec_SubItemQty(pEnv->pBase, pItem, -nDelta); /* 0x74C60 */
+        }
+        nCorpse = BuySellCorpseSlotForRace(BuySell_ItemIdToAlienRaceId(i));
+        if (nCorpse >= 0 && pEnv->apObjects != NULL && nCorpse < pEnv->nObjectCount &&
+            pEnv->apObjects[nCorpse] != NULL) {
+            BaseRec_AddItemQty(pEnv->pBase, pEnv->apObjects[nCorpse], -nDelta); /* 0x74D3C */
+        }
+    }
+
+    /* Phase 2, 0x74D88..0x74E64: the selected craft rows into the assigned-ship list. */
+    if (pEnv->pPanelA != NULL && pEnv->pPanelC != NULL && pEnv->pPanelE != NULL) {
+        for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
+            i32 nAux = pEnv->pPanelA->anLineAux[i];
+            if (nAux > 116 && nAux < 122 && pEnv->pPanelE->anLineAux[i] == 1) {
+                i32 nIdx = Ship_FindIndexById(pEnv->apCrafts, pEnv->nCraftCount,
+                                              pEnv->pPanelC->anLineAux[i]); /* 0x74DF4 */
+                if (pEnv->anAssignedList != NULL && nCraftRows < pEnv->nAssignedCapacity) {
+                    pEnv->anAssignedList[nCraftRows] = nIdx;
+                }
+                ++nCraftRows;
+            }
+        }
+    }
+    if (pEnv->pnAssignedCount != NULL) {
+        *pEnv->pnAssignedCount = nCraftRows; /* 0x74E64 */
+    }
+
+    /* Phase 3, 0x74E70..0x74F14: each listed craft unloads its whole cargo into the base. */
+    for (i = 0; i < nCraftRows; ++i) {
+        i32 nCraftIdx = (pEnv->anAssignedList != NULL && i < pEnv->nAssignedCapacity)
+                            ? pEnv->anAssignedList[i] : -1;
+        Ship *pCraft = (nCraftIdx >= 0 && pEnv->apCrafts != NULL && nCraftIdx < pEnv->nCraftCount)
+                           ? pEnv->apCrafts[nCraftIdx] : NULL;
+        i32 s;
+        for (s = 0; s < pEnv->nObjectCount; ++s) {
+            ObjectRecFull *pItem = pEnv->apObjects != NULL ? pEnv->apObjects[s] : NULL;
+            i32 nQty;
+            if (pItem == NULL) {
+                continue;
+            }
+            nQty = (nCraftIdx >= 0 && nCraftIdx < PUFO_ITEM_QTY_COUNT)
+                       ? (i32)pItem->aItemQty[nCraftIdx] /* 0x74E98 */
+                       : 0; /* deviation: the original indexes aItemQty with an unchecked index */
+            BaseRec_AddItemQty(pEnv->pBase, pItem, nQty);   /* 0x74EB4 */
+            if (pCraft != NULL) {
+                InvSel_SubItemQty(pCraft, pItem, (i16)nQty); /* 0x74ED4 */
+            }
+        }
+    }
+
+    /* Phase 4, 0x74F38..0x74FB0: the selected soldier rows into the scratch id list. Only rows
+     * marked 1000 qualify, and only when the row is selected. */
+    nSoldierRows = 0;
+    if (pEnv->pPanelA != NULL && pEnv->pPanelC != NULL && pEnv->pPanelE != NULL) {
+        for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
+            if (pEnv->pPanelA->anLineAux[i] == 1000 && pEnv->pPanelE->anLineAux[i] == 1) {
+                if (pEnv->anSoldierIdList != NULL && nSoldierRows < pEnv->nSoldierIdCapacity) {
+                    pEnv->anSoldierIdList[nSoldierRows] = pEnv->pPanelC->anLineAux[i]; /* 0x74F88 */
+                }
+                ++nSoldierRows;
+            }
+        }
+    }
+    if (pEnv->pnSoldierIdCount != NULL) {
+        *pEnv->pnSoldierIdCount = nSoldierRows; /* 0x74FB0 */
+    }
+
+    /* Phase 5, 0x74FB8..0x75064: a sold soldier's armour goes back to the base. */
+    for (i = 0; i < nSoldierRows; ++i) {
+        i32 nRosterId = (pEnv->anSoldierIdList != NULL && i < pEnv->nSoldierIdCapacity)
+                            ? pEnv->anSoldierIdList[i] : 0;
+        i32 s;
+        for (s = 0; s < pEnv->nSoldierCount; ++s) {
+            Soldier *pSol = pEnv->apSoldiers != NULL ? pEnv->apSoldiers[s] : NULL;
+            if (pSol == NULL || pSol->nUnk440 != nRosterId) {
+                continue; /* 0x74FFC, against Soldier.nUnk440 */
+            }
+            if (pSol->nUnitType != 0 && pEnv->apObjects != NULL && pSol->nUnitType <= 3 &&
+                PUFO_SOLDIER_EQUIP_OBJ_BASE + pSol->nUnitType < pEnv->nObjectCount) {
+                BaseRec_AddItemQty(pEnv->pBase,
+                                   pEnv->apObjects[PUFO_SOLDIER_EQUIP_OBJ_BASE + pSol->nUnitType],
+                                   1); /* 0x7502C */
+            }
+        }
+    }
+
+    /* Phase 6, 0x75070..0x75078. */
+    if (pEnv->pnFundsSnapshot != NULL) {
+        *pEnv->pnFundsSnapshot = pEnv->nFunds;
+    }
+    if (pEnv->pfnCloseUi != NULL) {
+        pEnv->pfnCloseUi(); /* Geoscape_CloseUI (0x8b94c, not ported) on the screen block at 0x1864F8 */
+    }
+}
+
 /* BuySellScreen_BuildPanels @ 0x76de0. See the header for the branch map and the row model. */
 void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
 {

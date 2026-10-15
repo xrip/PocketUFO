@@ -786,10 +786,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   (1/30000, 1/40000, 1/64000, 1/12000, 1/32000), so the port carries them as a divisor table.
   `Geoscape_TickShips`' 0xFF/0xFE home-base filter is dead code and the hook
   `pfnCanInterceptReach` is gone — the gate is a direct call now, as in the original.
-  **Open question, recorded not guessed:** `g_aSoldierIdList` (was `dword_160C90`) is a dword count
-  followed by dword ids, and its only writers are `BuySellScreen_BuildPanels` (0x76de0) and
-  `BuySellScreen_CommitTransaction` (0x74bf8), both unported. `Base_RemoveAllSoldiers` is ported
-  against the list as an explicit input; what fills it is settled when those two screens are done.
+  **Open question, resolved in part 20 and part 21:** `g_aSoldierIdList` (was `dword_160C90`) is a
+  dword count followed by dword ids, and its only writers are `BuySellScreen_BuildPanels` (0x76de0),
+  which zeroes the count, and `BuySellScreen_CommitTransaction` (0x74bf8), which fills it with the
+  roster id (`Soldier + 0x1B8`) of every selected soldier row. Both are ported now, so
+  `Base_RemoveAllSoldiers` no longer needs the list as a blind input.
 
 - [x] part 16, the panel scroll family and the staged stores commit: `ManufScreen_PanelPrev/Next
   (0x6dd4c / 0x6dd94)`, `PsiScreen_PanelPrev/Next (0x715e8 / 0x71648)`, `BuySellScreen_PanelPrev/
@@ -851,6 +852,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   whose 34 alien entries never match because alien rows carry slot + 2000. IDB: `unk_161A28` →
   `bBuySellPanelsBuilt`, `unk_161A0C` → `g_aBuySellCtl`, `unk_AAA04` → `g_aBuySellRowOrder`, the
   enum `PufoBuySellRowMarker`, and a function comment at 0x76de0.
+
+- [x] part 21, the buy/sell commit: `BuySellScreen_CommitTransaction (0x74bf8)` — 17 more checks.
+  Six phases: apply `g_anBuySellSlotDelta` per slot and move the race corpse by the opposite delta;
+  collect the selected craft rows into the assigned-ship list and unload each one's
+  `aItemQty[craftIndex]` column into the base; collect the selected soldier rows into
+  `g_aSoldierIdList`; give each sold soldier's armour (`apObjects[121 + Soldier.nUnitType]`) back to
+  the base; take the funds snapshot and close the screen. IDB: `unk_161600` →
+  `g_anBuySellSlotDelta`, comments at 0x74bf8 and at `BuySellScreen_Init` (0x78c30) recording that
+  screen 11 wires `BuySellScreen_ConfirmSiteAndClose` + `BuildControls` while screen 12 wires
+  `BuySellScreen_CommitTransaction` + `BuildPanels`.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -1026,6 +1037,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the object name field and the name loop (`ObjectRecFull.szName` at +0, `ObjectSlot` labels fixed) | 56/56 (Release) | 9364 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 | the screen-id scroll dispatcher (`Geoscape_UiFocusPrev`, `Geoscape_UiFocusNext`) | 56/56 (Release) | 9407 | 837/1103 (75.9%) | 331520/598792 (55.4%) | 38 checked, 0 mismatched |
 | the buy/sell list panels (`BuySellScreen_BuildPanels`, the row-marker encoding, the sort table) | 56/56 (Release) | 9440 | 838/1103 (76.0%) | 335756/598792 (56.1%) | 38 checked, 0 mismatched |
+| the buy/sell commit (`BuySellScreen_CommitTransaction`, the delta array, the corpse pairing) | 56/56 (Release) | 9457 | 839/1103 (76.1%) | 336932/598792 (56.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
