@@ -14027,3 +14027,100 @@ The countdown is read **after** the game tick, so a running countdown still allo
   where the original does not.
 - No app-layer wiring yet: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is still unfilled,
   because the app layer does not yet own a `TactTickCtx`.
+
+
+## EnemyAi_TryFireOrWander (0x4abc8): the low-morale AI
+
+The AI that runs when an alien's morale breaks. A LARGE unit does nothing at all -
+0x4abdc branches straight to the function epilogue, so it does not even push the status
+message, and `Map.pSelWeapon` is not even cleared.
+
+### The choice
+
+`Game_RandU16(2)` is drawn first, then the AI-action pair is raised -
+`pMapTactical->pAiActionUnit = pUnit` (0x4AC04) and `bAiActionActive = 1` (0x4AC1C) -
+and only then does 0x4ac94 choose: `roll == 0` AND a usable one-handed weapon gives the
+random fire burst, anything else gives the weapon-drop-and-wander. The pair is raised on
+BOTH paths, which is why it cannot mean "a wander is running".
+
+A usable weapon (0x4ac24..0x4ac90) is a hand that exists, whose `ObjectRec.bTwoHanded`
+is 0, and which either has ammo or whose `ObjectRec.bAmmoCap` is 255. Left hand first,
+right second; the winner is stored into `Map.pSelWeapon` (0x113A00), which was zeroed at
+0x4AC20. The store happens before the path choice, so a unit that ends up wandering still
+leaves its weapon in `Map.pSelWeapon` - and then, for `nUnitType <= 3`, drops that very
+item into a cell list, leaving the global pointing at an item the unit no longer holds.
+
+Both paths end at 0x4B028 pushing the unit's name through `StatusMsg_Push` with
+`bForce = 0`. The original strcat's `unk_104078` onto the name; that buffer is all zeros
+and its only three references in the whole binary are this call site, so it appends
+nothing.
+
+### The fire burst (0x4aca4..0x4ae28)
+
+`Map.nActionMode = 1`, then `Ui_FillActionCosts`. Shot count is
+`bAmmoCap == 255 ? 3 : min(nAmmo, 3)`; a count of 0 skips the loop but still clears the
+action latch and kicks the queue. Each pass draws `x = nX + rand(5) - 2`,
+`y = nY + rand(5) - 2`, `layer = rand(4)` into three Map scratch globals
+(`Map_nAiFireX/Y/Layer` @ 0x128A20/0x128A24/0x128A28, which have no other reference
+anywhere in the binary) and retries until `Map_IsValidCell` accepts it. Then:
+
+- drawn x is not the shooter's column -> burst at the drawn target;
+- drawn x IS the shooter's column -> the drawn row is replaced by the shooter's own row,
+  and **a shooter not on row 0 jumps back to the draw without spending a shot**
+  (0x4ada4 `BNE loc_4ACE0`, not to the 0x4ae0c decrement), while a shooter on row 0 fires
+  at its own cell.
+
+This is the one place Hex-Rays actively misleads: its pseudocode falls through to the
+decrement, which would fire zero shots where the ARM fires one. The test
+`TestSameColumnRedraw` pins it - one scripted shot, a rejected same-column draw, and the
+shot still lands, with 7 draws consumed (1 roll + 3 + 3).
+
+Each burst takes `nTuCost = Map.anActionCost[mode]` (Map+0x4E4C) and
+`nArg = Map.anActionEnabled[mode]` (Map+0x4E7C) - the same two tables
+`Tact_TryFireMode4` and `Input_OnPointerUp` read, and the same pair
+`Tact_TryFireMode4`'s UI path passes. The AI ignores the enqueue's result: a unit that
+cannot afford the burst gets nothing queued, and the latch clear, the queue kick and the
+name push still happen.
+
+### The wander (0x4ae2c..0x4b024)
+
+`nUnitType <= 3` first drops both hands. From the unit's own layer it walks DOWN while
+`MapCell.pFloorSpr == NULL`; `SUB R7,#1 / CMP R7,#0 / BGT` at 0x4ae84-0x4ae90 means
+layers nZ..1 are tested and **layer 0 is reached untested**. Both items go into that cell
+through `MapCell_ListInsertByPri`, the hands are cleared, `Unit_UpdateAnimPose` runs.
+Types 4..23 skip the whole block, including the pose refresh.
+
+Then it draws `x = nX + rand(20) - 10`, `y = nY + rand(20) - 10` and retries until
+`Map_IsValidCell(map, x, y, 0)` accepts it - the bounds test is always against layer 0.
+The candidate cell is taken at the UNIT'S OWN layer. If `g_aUnitTypeFlag0[type] == 0` the
+candidate is walked DOWN while `pFloorSpr == NULL`, and this walk's `SUBS / BPL` at
+0x4afcc-0x4afd0 tests layers nZ..0 inclusive - one layer deeper than the drop walk in the
+same function. The draw is retried while the candidate is the unit's own cell or
+`MapCell_HasOccupant` says it is occupied.
+
+Finally `Unit_PathToCell(map, cell->nX, cell->nY, cell->nZ, 1)`. On failure the unit is
+left with `uTu = 0` and `bAiActionActive` is cleared (0x4b00c..0x4b024); on success the
+flag stays up and the queue walker's completion tail (0x544D8) is what clears it.
+
+### Original bugs found (7 ledger rows)
+
+Four unguarded dereferences: the drop descent loads `apCells[layer][y][x]` and reads its
+`pFloorSpr` with no NULL test (0x4ae74), the wander walk does the same (0x4afbc), both
+hand drops pass that cell to `MapCell_ListInsertByPri`, which dereferences
+`pCell->pItemList` (0x4aec4), and `byte_A7B80` is indexed by `nUnitType` with no bounds
+test (0x4af8c). Three behavioural ones: the drop descent tests layers nZ..1 while the
+floor walk in the same function tests nZ..0 (0x4ae8c); the same-column redraw that spends
+no shot and lets a row-0 shooter fire at its own cell (0x4ada4); and `Map.pSelWeapon`
+left pointing at an item the wander path just dropped (0x4ac90).
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8) is unported - it needs `Unit_CanStepTo` (0x27bb8) - so it is
+  a hook on `EnemyAiActCtx`, as is `Ui_FillActionCosts` (the port's version takes an
+  explicit env the AI does not own) and `StatusMsg_Push` (which needs a `StatusStack`).
+- The port guards the four dereferences the original does not, and bounds the
+  `nUnitType` index against `PUFO_UNIT_TYPE_COUNT`.
+- The three draw scratch globals are kept as locals, which is faithful: they have no
+  reader outside this function.
+- The name copy is bounded to `Soldier.szName` (40) and to the 200-byte message buffer;
+  the original's `LDRSB` loop has neither bound.

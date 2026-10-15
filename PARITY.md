@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 898 / 1103 (81.4%) |
-| Bytes of original code cited | 435608 / 598792 (72.7%) |
+| Functions cited as evidence | 899 / 1103 (81.5%) |
+| Bytes of original code cited | 436816 / 598792 (72.9%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 12226 |
+| Test checks run | 12305 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 203 | 214 | 150604 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 204 | 214 | 151812 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -156,7 +156,7 @@ is the module that answers to it.
 |---|---|---|---|
 | `0xa1054` | `PtrArray_Remove` | 204 | `src/pufo/util/pufo_ptrarray.h` |
 | `0xa0f94` | `PtrArray_Insert` | 176 | `src/pufo/util/pufo_ptrarray.h` |
-| `0x3e59c` | `Game_RandU16` | 132 | `src/pufo/game/pufo_save.h`, `src/pufo/util/pufo_rand.c` (+1) |
+| `0x3e59c` | `Game_RandU16` | 132 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_save.h` (+2) |
 | `0x73328` | `PlaySample7_SetFlags_Cache0xBD8` | 88 | `src/pufo/game/pufo_baseui.h` |
 | `0x37098` | `Math_StoreSqrtConst` | 76 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x3e434` | `PtrArray_DeleteAll` | 72 | `src/pufo/util/pufo_ptrarray.h` |
@@ -239,7 +239,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (203 functions)
+### `tact` (204 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -276,6 +276,7 @@ is the module that answers to it.
 | `0x30368` | `Tact_ComputeAimVector` | 1320 | `src/pufo/game/pufo_ballist.h` |
 | `0x1aadc` | `MapView_DrawViewportGuide` | 1256 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x21e2c` | `MapView_DrawIsoLayer` | 1252 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
+| `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` |
 | `0x3734c` | `Tact_BuildPaletteLuts` | 1184 | `src/pufo/render/pufo_render.c`, `src/pufo/render/pufo_render.h` |
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x33780` | `Tact_TallyUnitResults` | 1136 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` (+1) |
@@ -512,7 +513,7 @@ is the module that answers to it.
 | `0x11ac0` | `Ui_HitTestTactItem` | 1152 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_invdrag.h` (+1) |
 | `0x3e94c` | `UiPanelMsg_Draw` | 1016 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
-| `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_input.h` (+1) |
+| `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_input.c` (+2) |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
@@ -528,7 +529,7 @@ is the module that answers to it.
 | `0x84bf8` | `Ui_OpenResearch` | 288 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x1afc4` | `StatusMsg_DrawStack` | 272 | `src/pufo/game/pufo_statusmsg.h` |
 | `0x36c58` | `PadImage_BlitDecimal` | 272 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_input.h`, `src/pufo/game/pufo_mapctx.c` (+4) |
+| `0x2dda4` | `StatusMsg_Push` | 264 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_input.h` (+5) |
 | `0x84d18` | `Ui_OpenBaseInfoAlt` | 264 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x84af8` | `Ui_OpenBaseInfo` | 256 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x16200` | `UiScreen_OnCancel` | 236 | `src/pufo/game/pufo_input.h` |
@@ -1186,7 +1187,7 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `tact` — 11 functions, 27740 bytes remaining
+### `tact` — 10 functions, 26532 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1195,7 +1196,6 @@ whose port work they belong to.
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x4c4a0` | `AfterEnemyStep` | 1368 | 1368 B of post-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | same working set as Unit_CanStepTo; needs the step-context contract |
 | `0x2c2a8` | `Unit_PathToCell` | 1052 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1294,7 +1294,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_control` | PASS | 253 |
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 55 |
-| `test_enemyai` | PASS | 22 |
+| `test_enemyai` | PASS | 101 |
 | `test_font` | PASS | 38 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |

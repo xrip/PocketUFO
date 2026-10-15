@@ -1874,6 +1874,41 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Map.pSelUnit @ 0x15334` and `Map.pThrowTargetUnit @ 0x150F0`, and `Map_BuildMoveActionCtx` now wires them.
   **Deviation, recorded not hidden:** no app-layer `TactTickCtx` yet, so `GameTick_OnTimer`'s seam stays unfilled.
 
+- [x] **part 65, the low-morale AI: `EnemyAi_TryFireOrWander (0x4abc8, 1208 B)`** — the function that writes the
+  `pAiActionUnit` / `bAiActionActive` pair part 64 named.
+  **A large unit does nothing at all** — 0x4abdc jumps to the epilogue, so it skips the RNG, the `pSelWeapon`
+  clear, the queue and the status message.
+  **The AI-action pair is raised before the path is chosen** (0x4AC04, 0x4AC1C), which is the direct proof that
+  the flag means "an AI action is in progress": a unit that ends up wandering still raises it and still leaves
+  its chosen weapon in `Map.pSelWeapon`.
+  **Hex-Rays actively misleads on the burst's target rule.** When the drawn column is the shooter's own, the
+  drawn row is replaced by the shooter's row and then 0x4ada4 `BNE loc_4ACE0` jumps back to the *draw*, not to
+  the shot decrement at 0x4ae0c — so a same-column draw spends no shot, and a shooter on row 0 fires at its own
+  cell. The pseudocode's fall-through-to-decrement would fire zero shots where the ARM fires one.
+  `TestSameColumnRedraw` pins it: one scripted shot, a rejected draw, the shot still lands, 7 draws consumed.
+  **Two floor walks in one function, different depths.** The weapon-drop descent (`SUB R7,#1; CMP R7,#0; BGT`,
+  0x4ae84-0x4ae90) tests layers nZ..1 and reaches layer 0 untested; the wander descent (`SUBS / BPL`,
+  0x4afcc-0x4afd0) tests nZ..0 inclusive. Recorded as a bug row rather than harmonised.
+  **The burst reads the same two action tables the UI writes**: `nTuCost = Map.anActionCost[mode]` (Map+0x4E4C)
+  and `nArg = Map.anActionEnabled[mode]` (Map+0x4E7C), the pair `Ui_FillActionCosts` fills and
+  `Tact_TryFireMode4`/`Input_OnPointerUp` read. The AI ignores the enqueue's result — an unaffordable burst
+  queues nothing and the latch clear, queue kick and name push still happen.
+  **`unk_104078` is another never-written scratch buffer**: the AI's status message is `name + unk_104078`, and
+  that buffer is all zeros with its only three references in the whole binary being this one call site.
+  **Original bugs found (7 ledger rows).** Four unguarded dereferences (the two floor walks' cell loads at
+  0x4ae74 and 0x4afbc, the `MapCell_ListInsertByPri` cell at 0x4aec4, the unbounded `byte_A7B80` index at
+  0x4af8c) plus the floor-depth asymmetry (0x4ae8c), the same-column redraw (0x4ada4) and `Map.pSelWeapon`
+  left pointing at an item the wander path just dropped (0x4ac90).
+  79 new checks (12305 total), 7 ledger rows (149), coverage 899/1103 (81.5%), 436816/598792 (72.9%). IDB:
+  `Map_nAiFireX/Y/Layer` named at 0x128A20/0x128A24/0x128A28 (all six/eight/four xrefs are inside this one
+  function, so they are private scratch, not a Map contract); comments at 0x104078, 0x4AC04, 0x4AC1C, 0x4ADA4
+  (the Hex-Rays correction), 0x4B024. **Two gates caught my own mistake:** the first draft cited
+  `Unit_PathToCell @ 0x2c2a8` and `Unit_CanStepTo @ 0x27bb8` in a comment, which credited 16,976 bytes of
+  unported code and produced a NEGATED citation; both are now the `Name (0xADDR, unported)` form and the
+  numbers went back to the true ones.
+  **Deviation:** `Unit_PathToCell` (0x2c2a8) is unported — it needs `Unit_CanStepTo` (0x27bb8) — so it is a hook
+  on `EnemyAiActCtx`, as are `Ui_FillActionCosts` and `StatusMsg_Push`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2154,6 +2189,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the fall processor (`Unit_ApplyFallDamage` + `Tact_ProcessFallAction`; the 0.4f soft-float damage formula, the `_rt_sdiv` operand order behind the psi gate, the LABEL_101/LABEL_111 split, the medikit-before-modes order, 7 original bugs found) | 56/56 (Release) | 11980 | 896/1103 (81.2%) | 426312/598792 (71.2%) | 40 checked, 0 mismatched |
 | the fire-phase processor (`Tact_ProcessFireAction` + the aim's `dTravelSave`/sample-array writes; the muzzle-relative samples, the two disagreeing 1/12 forms, the arc-off-map flag whose register-built writes an xref search misses, 7 original bugs found) | 56/56 (Release) | 12130 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 | the queue walker (`Tact_TickActiveUnit`; the `bFlag0` fire-or-move choice, the per-command camera rules and their adopt-before/after ordering, the 60-voxel recentre stride, the AI-action pair named, the kill-credit bound, 6 original bugs found; coverage unchanged — the walker was already credited by comment citations) | 56/56 (Release) | 12226 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
+| the low-morale AI (`EnemyAi_TryFireOrWander`; the large-unit early exit, the AI-action pair raised before the path choice, the same-column redraw Hex-Rays gets wrong, the two floor walks of different depth, 7 original bugs found) | 56/56 (Release) | 12305 | 899/1103 (81.5%) | 436816/598792 (72.9%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

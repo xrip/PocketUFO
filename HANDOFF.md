@@ -1,15 +1,43 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `b43a42c`. This document is committed together with the queue
-walker: **`Tact_TickActiveUnit` (0x54130, 1,868 B)** — the loop `GameTick_OnTimer` runs over the action queue,
-and the link that connected the three phase processors to the game tick. Three things about it are worth
-knowing before you touch it:
+Date: 2026-10-16. HEAD before this edit: `08450e3`. This document is committed together with the low-morale
+enemy AI: **`EnemyAi_TryFireOrWander` (0x4abc8, 1,208 B)** — the function that writes the
+`pAiActionUnit` / `bAiActionActive` pair the previous unit named. Three things about it are worth knowing
+before you touch it:
+
+- **Hex-Rays actively misleads on the burst's target rule.** When the drawn column is the shooter's own, the
+  drawn row is replaced by the shooter's row and then 0x4ada4 `BNE loc_4ACE0` jumps back to the *draw*, not to
+  the shot decrement at 0x4ae0c — so a same-column draw spends no shot, and a shooter on row 0 fires a burst at
+  its own cell. The pseudocode's fall-through-to-decrement would fire zero shots where the ARM fires one.
+  Recorded as an IDB comment at 0x4ada4 and pinned by `TestSameColumnRedraw`.
+- **Two floor walks in one function, different depths.** The weapon-drop descent (`SUB R7,#1; CMP R7,#0; BGT`,
+  0x4ae84-0x4ae90) tests layers nZ..1 and reaches layer 0 untested; the wander descent (`SUBS / BPL`,
+  0x4afcc-0x4afd0) tests nZ..0 inclusive. Kept as the asymmetry, recorded at 0x4ae8c.
+- **The gates caught my own citation error.** The first draft cited `Unit_PathToCell @ 0x2c2a8` and
+  `Unit_CanStepTo @ 0x27bb8` in a comment, which credited 16,976 bytes of unported code and produced a NEGATED
+  citation. `audit_credits` and `audit_names` both flagged it; both citations are now the
+  `Name (0xADDR, unported)` form the metric ignores. This is the trap §8 already records, caught by the gate
+  rather than by reading.
+
+A large unit does nothing at all (0x4abdc jumps to the epilogue, skipping the RNG, the `Map.pSelWeapon` clear,
+the queue and the status message). The AI-action pair is raised at 0x4AC04/0x4AC1C **before** 0x4ac94 chooses
+between the random fire burst and the weapon-drop-and-wander, which is the direct proof that the flag means "an
+AI action is in progress". The burst reads the two action tables `Ui_FillActionCosts` writes —
+`nTuCost = Map.anActionCost[mode]` (Map+0x4E4C) and `nArg = Map.anActionEnabled[mode]` (Map+0x4E7C) — and
+ignores the enqueue's result, so an unaffordable burst queues nothing while the latch clear, the queue kick and
+the name push still happen. `unk_104078`, which the status message strcat's onto the unit's name, is all zeros
+and has no writer anywhere in the binary. 79 new checks, 7 original bugs recorded. Written up in
+`docs/parity/game-core.md` under `## EnemyAi_TryFireOrWander (0x4abc8): the low-morale AI`.
+
+The unit before it (`08450e3`) ported the queue walker: **`Tact_TickActiveUnit` (0x54130, 1,868 B)** — the loop
+`GameTick_OnTimer` runs over the action queue, and the link that connected the three phase processors to the
+game tick. Three things about it are worth knowing before you touch it:
 
 - **`bFlag0` picks the processor; it is not a gate on one of them.** Set runs `Tact_ProcessFireAction`, clear
   runs `Tact_ProcessMoveAction` — alternatives. The move processor's prologue raising `bFlag0` is what hands
   the next tick to the fire phase.
 - **`TactState+0x111C8` and `+0x111E2` are one pair and neither had a name.** `+0x111E2` was `bUnk70114`;
-  `+0x111C8` was the head of `gap_70088`. `EnemyAi_TryFireOrWander (0x4ABC8, unported)` stores the acting unit at
+  `+0x111C8` was the head of `gap_70088`. `EnemyAi_TryFireOrWander @ 0x4abc8` stores the acting unit at
   +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C) together, **unconditionally — before** the branch at 0x4ACA0
   that picks its fire-burst path or its weapon-drop-and-wander path. So the flag means "an AI action is in
   progress": the move processor suppresses the "not enough time" record while it is set and the fire processor
@@ -139,16 +167,16 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 898 / 1103 (81.4%)   [unchanged, see below]
-                                             bytes cited:     435608 / 598792 (72.7%)
-python docs/parity/audit_credits.py       -> credited functions: 898, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 899 / 1103 (81.5%)
+                                             bytes cited:     436816 / 598792 (72.9%)
+python docs/parity/audit_credits.py       -> credited functions: 899, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 380 (explain 212 citations)
                                              credited addresses whose original name is not defined: 2
                                              (0x1512c Tact_HandleMapClick 1104 B,
                                               0x17bb8 TactAction_ConfirmMeleeMode6 412 B - cited by port
                                               names the IDB does not carry yet; 0x54130 left the list when
                                               the walker itself was ported)
-python docs/parity/audit_bugs.py          -> ledger rows: 142, ORIGINAL BUG markers in src/pufo: 54
+python docs/parity/audit_bugs.py          -> ledger rows: 149, ORIGINAL BUG markers in src/pufo: 57
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -165,15 +193,22 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **12226**. Coverage as of the latest commit: **898 / 1103
-functions (81.4%)**, **435608 / 598792 bytes (72.7%)** — **unchanged from the previous unit**, and that is
-worth understanding rather than reading as a mistake: `0x54130` was already credited by the `@ 0x54130`
-citations in the move- and fall-processor comments, so porting the walker adds no new citation and moves no
-coverage number. What it does move is `audit_names`: the flag list drops from 3 to 2 because the port name is
-now backed by a real port function. (Mid-unit the numbers briefly read 899 / 436816 because a comment cited
-`EnemyAi_TryFireOrWander @ 0x4ABC8`, 1208 B of an unported function; that citation is now the
-`Name (0xADDR, unported)` form the metric ignores. The metric counts every `@ 0xADDR` citation, which is why
-unported callees must be written in the paren form — see "Separate issues" in `PLAN.md`.) This unit ported `Tact_TickActiveUnit`
+Test checks run across the 56 suites: **12305**. Coverage as of the latest commit: **899 / 1103
+functions (81.5%)**, **436816 / 598792 bytes (72.9%)**. This unit ported `EnemyAi_TryFireOrWander`
+(0x4abc8, 1,208 B) — the low-morale AI: the large-unit early exit, the one-handed weapon test, the random fire
+burst with its `min(nAmmo,3)` / capacity-255 shot count and its two action tables, the same-column redraw rule
+Hex-Rays gets wrong, the weapon drop and the two floor walks, and the `Unit_PathToCell` hook. 79 new checks,
+7 original bugs recorded, and `Map_nAiFireX/Y/Layer` (0x128A20/0x128A24/0x128A28) named in the IDB as this
+function's private scratch — all twelve of their xrefs are inside 0x4abc8, so they are not a Map contract.
+The coverage delta is exactly the function's 1,208 bytes, which is the check the "Measured state" table asks
+for. The previous unit (`Tact_TickActiveUnit`, 0x54130) moved **nothing**: `0x54130` was already credited by
+the `@ 0x54130` citations in the move- and fall-processor comments, so porting it added no citation and only
+`audit_names` changed (3 flags → 2). That is worth understanding rather than reading as a mistake — the metric
+counts citations, not code. It also bit in reverse: mid-unit the numbers briefly read 899 / 436816 because a
+comment cited `EnemyAi_TryFireOrWander @ 0x4ABC8`, 1,208 B of then-unported code; that citation is now the
+`Name (0xADDR, unported)` form the metric ignores, and the same 1,208 bytes reappeared legitimately once the
+function was actually ported. The metric counts every `@ 0xADDR` citation, which is why unported callees must
+be written in the paren form — see "Separate issues" in `PLAN.md`. The unit before it ported `Tact_TickActiveUnit`
 (0x54130, 1,868 B) — the queue walker `GameTick_OnTimer` drives: the empty-queue phase call, the
 `bFlag0` fire-or-move choice, the busy multi-entry pre-dispatch, the per-command camera follow and its
 60-voxel recentre stride, the AI-action clear, the kill-credit collection, the opportunity-fire epilogue
@@ -525,7 +560,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 142 rows, 54 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 149 rows, 57 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -850,7 +885,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-54 markers in the source, 142 ledger rows. Examples:
+57 markers in the source, 149 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -1005,6 +1040,11 @@ These are all real, all paid for already.
 - **`audit_bugs.py` resolves a ledger row's `port_location` as `file:Function`.** `file:Foo and FooAlt`
   parses as a function named `FooAlt` and the row fails to resolve, which turns the gate red. One function
   per row; put the second site in the evidence column.
+- **A `@ 0xADDR` citation credits the address whether or not you ported it.** Writing an unported callee as
+  `Unit_PathToCell @ 0x2c2a8` in a comment added 2,260 bytes to the headline coverage and, because the same
+  comment said "unported", produced a NEGATED citation that `audit_credits.py` flags. Both gates caught it;
+  the fix is the paren form `Name (0xADDR, unported)`, which the metric ignores. Never let a coverage number
+  rise from a comment — a unit's delta must match that function's size in `docs/idb/inventory-grouped.tsv`.
 - **Check what a callee does to the pointer you are about to read.** The chryssalid transform reads
   `pVictim->pCell` after calling `Unit_ResetBattleState`, which nulls `pCell` at 0x498E0 — the port's
   first version dereferenced NULL and crashed the test suite. The original saves the cell into
@@ -1113,13 +1153,18 @@ does.
    that the compact `disasm` listing dropped the instruction at `0x1CE34` — the address-anchored
    listing is the one to trust for exact code.
 8. The tactical action chain is now ported end to end at the processor level: `Tact_ProcessMoveAction`,
-   `Tact_ProcessFallAction`, `Tact_ProcessFireAction` (0x50adc, 8,192 B) and the walker that dispatches them,
-   `Tact_TickActiveUnit` (0x54130, 1,868 B), all driven from `tests/test_tactstate.c`. What is still missing
-   is the **app-layer wiring**: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is unfilled because the app
-   layer owns no `TactTickCtx` yet, and the walker's `pAiActionUnit` / `bAiActionActive` pair is written only
-   by `EnemyAi_TryFireOrWander (0x4ABC8, 1,208 B)`, which is unported. The enemy-AI group is the natural next
-   link: `EnemyAi_TryFireOrWander`, `BeforeEnemyStep (0x4b9b8, 2,792 B)`, `AfterEnemyStep (0x4c4a0, 1,368 B)`
-   and `Tact_EnemyAiTick (0x4cbe0, 3,440 B)`.
+   `Tact_ProcessFallAction`, `Tact_ProcessFireAction` (0x50adc, 8,192 B), the walker that dispatches them
+   (`Tact_TickActiveUnit`, 0x54130, 1,868 B) and the AI that fills the queue
+   (`EnemyAi_TryFireOrWander`, 0x4abc8, 1,208 B), all driven from `tests/test_tactstate.c` and
+   `tests/test_enemyai.c`. Two things still stand between that and a playable mission:
+   - **App-layer wiring.** `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is unfilled because the app layer owns
+     no `TactTickCtx`, and nothing in the app builds an `EnemyAiActCtx` either.
+   - **`Unit_PathToCell` (0x2c2a8, 2,260 B) is unported**, and it is the hook the AI's wander path and the
+     walker's `pAiActionUnit` both depend on. It needs `Unit_CanStepTo` (0x27bb8, 14,716 B) plus its
+     `Map_ProbeStepOccupants` (0x2778c, 1,068 B) — 18 KB that is now the largest single blocker in the tact
+     subsystem.
+   The rest of the enemy-AI group is still open: `BeforeEnemyStep (0x4b9b8, 2,792 B)`,
+   `AfterEnemyStep (0x4c4a0, 1,368 B)` and `Tact_EnemyAiTick (0x4cbe0, 3,440 B)`.
 
 ### Priority 2 — finish the tactical renderer
 
@@ -1225,7 +1270,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 380 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 142-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 149-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |
