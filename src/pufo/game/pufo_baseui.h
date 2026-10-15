@@ -29,6 +29,18 @@
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
 #include "game/pufo_save.h"      /* DatFile, SaveGameInput, LoadGameEnv, the save/load slot handlers */
 
+/* The screen frame rails, shared by the three screens that draw the same 24+24 step border:
+ * TransferScreen_Draw (0x97FB8..0x98150), ManufScreen_DrawFrame (0x6F9C4..0x6FB54) and
+ * ResearchScreen_Draw (0x73A54..0x73BD8). The ARM is identical in all three -- same loop bounds
+ * (CMP #0xA8 over a step of 7, CMP #0x78 over a step of 5), same x/y pairs, same ramp formulas --
+ * and the three index values of every blit are stored with STRB, so each index is the low byte of
+ * the arithmetic: `RSB R5,R3,#0xE6` and `RSB R5,R3,#0xFA` are 230 - 5k and 250 - 5k as bytes. */
+#define PUFO_FRAME_RAIL_STEPS     24  /* both loops run 24 times */
+#define PUFO_FRAME_RAMP_BASE      20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
+#define PUFO_FRAME_RAMP_STEP      5   /* the ramp index steps by 5 per rail segment */
+#define PUFO_FRAME_RAMP_SIDE    0xE6  /* the descending side rail, 230 down to 115 */
+#define PUFO_FRAME_RAMP_EDGE    0xFA  /* the descending top/bottom rails, 250 down to 135 */
+
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
     i32 nControl0Y;    /* dword_186BB0->y */
@@ -1149,10 +1161,6 @@ SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
  * last callee's value, or nSmapSiteCount on the overlay path); the port returns the site count on the
  * overlay path and 0 on the two early returns. The port null-guards the panels, the controls, the
  * object array and the site array, where the original dereferences whatever the bring-up left there. */
-#define PUFO_TRANSFER_RAMP_BASE   20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
-#define PUFO_TRANSFER_RAMP_STEP   5
-#define PUFO_TRANSFER_RAMP_SIDE   0xE6 /* the ARM's RSB #0xE6: the descending side-ramp index */
-#define PUFO_TRANSFER_RAMP_EDGE   0xFA /* the ARM's RSB #0xFA: the descending top/bottom ramp index */
 #define PUFO_TRANSFER_SEP_INDEX   0xB4 /* the four column separators */
 #define PUFO_TRANSFER_LABEL_DEST_CAP  1264 /* "Destination Base", at (60, 300) */
 #define PUFO_TRANSFER_LABEL_XFER_CAP  1265 /* "Transfer", at (180, 300) */
@@ -2130,10 +2138,6 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv);
  * row out of panel D's cursor without bounds. The port bounds each label build at the same 104 bytes,
  * null-guards the panels and the controls, and resolves the selected product through the same bounded
  * aux read the other manufacturing functions use. */
-#define PUFO_MANUF_RAMP_BASE      20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
-#define PUFO_MANUF_RAMP_STEP      5
-#define PUFO_MANUF_RAMP_SIDE      0xE6 /* 0x6FA04 RSB #0xE6: the descending side rail */
-#define PUFO_MANUF_RAMP_EDGE      0xFA /* 0x6FAFC RSB #0xFA: the descending top/bottom rails */
 #define PUFO_MANUF_SEP_INDEX      0xB4 /* the three column separators */
 #define PUFO_MANUF_LABEL_MAX      104 /* psz @ sp+0x20 in the original */
 #define PUFO_MANUF_TEXT_HEADER    1173 /* "Производство          Инж. Вып. Зак./Гот." at (10, 52) */
@@ -3956,5 +3960,109 @@ typedef struct ResearchRebuildEnv {
 } ResearchRebuildEnv;
 
 i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv);
+
+/* ResearchScreen_Draw @ 0x73a34 (2108 B): the research screen's frame. Its only caller is
+ * Geoscape_Draw's screen-id-8 case (0x94114: R0 = 0x15EF08, the topic table itself), and the result
+ * is overwritten by `MOV R0,#0` at 0x94124, so the port returns void.
+ *
+ * Order, straight from the ARM.
+ *   1. 0x73A3C: `LDR R0,[R0]` then PadImage_Blit -- the screen pad pointer lives in the first four
+ *      bytes of aResearchTopics[0], because the screen block IS the topic table (ResearchScreen_Init
+ *      stores the PadImage there). This is the one screen frame of the three that blits its pad;
+ *      ManufScreen_DrawFrame opens straight into the rails.
+ *   2. 0x73A44..0x73B10 / 0x73B14..0x73BE0: the shared frame rails, byte-identical to the transfer
+ *      and manufacturing screens (see PUFO_FRAME_RAMP_*).
+ *   3. 0x73BE8: byte_160C7C == 0 ends the function there -- no panels, no labels, and not even the
+ *      close control. That byte is what ResearchScreen_BuildPanels (0x733f4) sets and clears.
+ *   4. 0x73BFC..0x73C14: the three panels' text, in the order topic / B / C.
+ *   5. 0x73C34..0x73CE0: white pair, TEXTS[1138] "Исследование  Учен. Вып." at (10, 52), then the
+ *      selected site's 64-byte name from 0x186C5A + 64 * nSelectedBaseIdx, centred at (120 - w/2, 13).
+ *   6. 0x73D00..0x73D60: the two column separators, height 16 * min(nLineCount, nStyle) + 2 of the
+ *      TOPIC panel, at x 170 and x 200, y 69, width 1, index 0xB4.
+ *   7. 0x73D64: unk_160C80 == 0 -- no topic row selected -- blits the shared close control
+ *      unk_186B00 and returns. With a row selected this function never blits the close control;
+ *      that is the original's shape, not an omission. unk_160C80 is set by panel A's click handler
+ *      PlaySample7_SetFlags_Cache0xBD8 (0x73328) and cleared by ResearchScreen_StartSelected.
+ *   8. 0x73DA0: Ui_AnimExpandBlit over the geoscape anim root 0x1864F8 at (0, 110) 236x100, index
+ *      0x32, source (0x96, 0x32), key 0x96, mode 4. Only the low byte of the result is tested
+ *      (0x73DA8), and a false result leaves through the same tail as step 7 without blitting
+ *      anything else.
+ *   9. 0x73DBC..0x73E64: the three read-out labels -- TEXTS[1139] "Ученых доступно" at (10, 118),
+ *      TEXTS[1140] "Свободн. мест в лаборатории" at (10, 132), TEXTS[1141] "Ученых задействовано"
+ *      at (10, 146).
+ *  10. 0x73E8C..0x73F04: the teal pair 68,244,252 / 4,70,75, then TEXTS[1142] "Добав." at (40, 164)
+ *      and TEXTS[1143] "Убрать" at (40, 184) -- the captions of the two quantity controls.
+ *  11. 0x73F24..0x74068: white pair, then the three numbers, each built through j_itoa and drawn at
+ *      x 195: Base_GetScientistCount at y 118, Base_CalcLabCap - Base_CountActiveResearch at y 132,
+ *      and auResearchCol[panel A's anLineAux[nResearchTopicRowCache] + 144 * base] at y 146. The row
+ *      index is the cached cursor 0x160C74, written by panel A's click handler.
+ *  12. 0x7406C..0x7408C: two UiControl_BlitActivePad calls. The pointers come from
+ *      `&aResearchTopics[0].wTotal + 1874` advanced by two u16 slots, i.e. the screen block's control
+ *      slots 1876 and 1877 at 0x160C58 and 0x160C5C -- the IncSelectedQty and DecSelectedQty controls
+ *      ResearchScreen_Init installed.
+ *  13. 0x7409C..0x74114: unk_186BB4 (the cancel control, which Init parked at (165, 188)), the teal
+ *      pair again, then TEXTS[1144] "Отмена" centred at (198 - w/2, 189).
+ *  14. 0x74120..0x74174: unk_186BB0 (the start control, (165, 166)), then TEXTS[1127] "ОК" centred at
+ *      (198 - w/2, 167). Note the caption pair is swapped against the controls' own order: "ОК" sits
+ *      under the upper control, "Отмена" under the lower one.
+ *  15. 0x74184..0x741A4: unk_186B94 is re-pointed at ResearchScreen_UpdateProgress (0x72d14) and moved
+ *      to (100, 164) on every frame, then blitted.
+ *  16. 0x741B4..0x741F8: TEXTS[1604] "ВСЕ" centred at (119 - w/2, 165), and that Text_DrawString is
+ *      the value the original returns.
+ *
+ * The nine labels are direct pointers into aTextRecs (stride 205): 0xEC81A, 0xEC8E7, 0xEC9B4,
+ * 0xECA81, 0xECB4E, 0xECC1B, 0xECCE8, 0xEBF4B and 0x103D44 are records 1138, 1139, 1140, 1141, 1142,
+ * 1143, 1144, 1127 and 1604. 1127/1142/1143/1144/1604 are the same records the manufacturing frame
+ * uses for its own buttons; only the positions differ.
+ *
+ * Deviations: the original copies every label into a 104-byte stack buffer with an unbounded
+ * byte-at-a-time loop, builds the three numbers through a second 52-byte buffer, derefs the three
+ * panels, the four controls, the three shared controls and the colour root with no test, and indexes
+ * anLineAux with the cached row cursor without bounds. The port bounds the label buffer, null-guards
+ * the panels and controls, and clamps the row read the same way ResearchScreen_IncSelectedQty does. */
+#define PUFO_RESEARCH_TEXT_HEADER     1138 /* "Исследование                         Учен. Вып." at (10, 52) */
+#define PUFO_RESEARCH_TEXT_SCI_FREE   1139 /* "Ученых доступно" at (10, 118) */
+#define PUFO_RESEARCH_TEXT_LAB_FREE   1140 /* "Свободн. мест в лаборатории " at (10, 132) */
+#define PUFO_RESEARCH_TEXT_SCI_USED   1141 /* "Ученых задействовано" at (10, 146) */
+#define PUFO_RESEARCH_TEXT_ADD        1142 /* "Добав." at (40, 164) */
+#define PUFO_RESEARCH_TEXT_REMOVE     1143 /* "Убрать" at (40, 184) */
+#define PUFO_RESEARCH_TEXT_CANCEL     1144 /* "Отмена" at (198 - w/2, 189) */
+#define PUFO_RESEARCH_TEXT_OK         1127 /* "ОК" at (198 - w/2, 167) */
+#define PUFO_RESEARCH_TEXT_ALL        1604 /* "ВСЕ" at (119 - w/2, 165) */
+#define PUFO_RESEARCH_BAR_INDEX       0xB4 /* the two column separators, 0x73D30 / 0x73D54 */
+#define PUFO_RESEARCH_LABEL_MAX       104  /* psz @ sp+0x18 in the original */
+#define PUFO_RESEARCH_ALLOC_X         100  /* 0x74190: unk_186B94->x, re-written every frame */
+#define PUFO_RESEARCH_ALLOC_Y         164  /* 0x7419C: unk_186B94->y, re-written every frame */
+
+typedef struct ResearchDrawEnv {
+    const PadImage    *pPad;              /* *ppScreen, the PadImage stored in aResearchTopics[0] */
+    const GfxColorEnv *pColor;            /* pGX @ 0x1139B8, the colour-pair owner */
+    UiAnimBlitEnv     *pAnim;             /* the geoscape anim root @ 0x1864F8 */
+    UiPanel           *pPanelTopic;       /* pResearchTopicPanel @ 0x160C68 */
+    UiPanel           *pPanelQty;         /* pResearchPanelB @ 0x15EEFC */
+    UiPanel           *pPanelProgress;    /* pResearchPanelC @ 0x15EF00 */
+    u8                *pbPanelsBuilt;     /* byte_160C7C, the BuildPanels flag */
+    const u8          *pbTopicSelected;   /* unk_160C80, set by panel A's click handler */
+    const i32         *pnTopicRow;        /* nResearchTopicRowCache @ 0x160C74, a cached nUnk3032 */
+    const i8          *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81, read with LDRSB */
+    const char        *pTextRecs;         /* aTextRecs @ 0xB38D0, stride 205 */
+    BaseSiteRec       *apSiteRecs;        /* 0x186C40, eight 64-byte records, name at +26 */
+    const u16         *apResearchCols;    /* auResearchCol @ 0x16022C, 144 u16 per base */
+    const u8          *pbEntryCount;      /* nResearchEntryCount @ 0x160C4C */
+    const ObjectRecFull *pScientistRec;   /* apObjects[113] @ 0x113C84 */
+    const u8          *abFacilityGrid;    /* abFacilityGrid @ 0x159768, for Base_CalcLabCap */
+    UiControl         *apCtlQty[2];       /* slots 1876/1877 @ 0x160C58 (IncSelectedQty) and
+                                           * 0x160C5C (DecSelectedQty), blitted in that order */
+    UiControl         *pCtlCancel;        /* unk_186BB4, parked at (165, 188) by Init */
+    UiControl         *pCtlStart;         /* unk_186BB0, parked at (165, 166) by Init */
+    UiControl         *pCtlAllocAll;      /* unk_186B94, moved to (100, 164) and re-pointed here */
+    UiControl         *pCtlClose;         /* unk_186B00, blitted only when no row is selected */
+    void (*pfnAllocAllClick)(void);       /* ResearchScreen_UpdateProgress @ 0x72d14 */
+    UiControlBlitFn    pfnCtlBlit;
+    UiControlBlitFn    pfnCtlBlitEx;
+    void              *pCtlUser;
+} ResearchDrawEnv;
+
+void ResearchScreen_Draw(const ResearchDrawEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

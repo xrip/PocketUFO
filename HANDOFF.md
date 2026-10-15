@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `054b2c5`. This document is committed together with
-`ResearchScreen_RebuildTopicList` (0x74270), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+Date: 2026-10-15. HEAD before this edit: `f9e2c6c`. This document is committed together with
+`ResearchScreen_Draw` (0x73a34), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
 the reading it came from is written up in `docs/parity/game-core.md` under
-`## ResearchScreen_RebuildTopicList (0x74270, 1700 B)`.
+`## ResearchScreen_Draw (0x73a34, 2108 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -25,7 +25,7 @@ Hex-Rays pseudocode is ambiguous, ARM disassembly decides.
 Parity is measured by **citations**: a source comment of the form `Name @ 0xADDR` claims that the
 port answers to that original function. `docs/parity/coverage.py` counts those claims against the
 IDB inventory. A citation means "this original function is accounted for", not "this is correct" —
-correctness evidence is the per-subsystem notes in `docs/parity/` plus 48 test suites.
+correctness evidence is the per-subsystem notes in `docs/parity/` plus 56 test suites.
 
 ### Target state
 
@@ -41,8 +41,8 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 54
-                                             Total Test time (real) = 1.6 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 56
+                                             Total Test time (real) = 3.98 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -56,10 +56,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 867 / 1103 (78.6%)
-                                             bytes cited:     375864 / 598792 (62.8%)
-python docs/parity/audit_credits.py       -> credited functions: 867, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 227 (explain 211 citations)
+python docs/parity/coverage.py            -> functions cited: 868 / 1103 (78.7%)
+                                             bytes cited:     377972 / 598792 (63.1%)
+python docs/parity/audit_credits.py       -> credited functions: 868, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 229 (explain 211 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 119, ORIGINAL BUG markers in src/pufo: 43
                                              ledger and port agree: every marker is listed and every row resolves
@@ -78,11 +78,13 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10520**. Coverage as of the latest commit: **867 / 1103
-functions (78.6%)**, **375864 / 598792 bytes (62.8%)**. The last unit was `ResearchScreen_RebuildTopicList`
-(0x74270): the research family's bring-up, panel build and topic rebuild are ported, and its drawer
-(0x73a34) is all that is left of it. An earlier unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port
-tested by drawing it for real: exact 565 values at the coordinates the original names. Three original
+Test checks run across the 56 suites: **10589**. Coverage as of the latest commit: **868 / 1103
+functions (78.7%)**, **377972 / 598792 bytes (63.1%)**. The last unit was `ResearchScreen_Draw` (0x73a34),
+which finishes the research screen family — bring-up, panel build, topic rebuild and now the frame. It is
+the second port tested pixel-by-pixel on the real surface, and the first one that also loads a real pad
+out of `main.dat` (research.pad, 240x320, mode 6) and blits it. Its rails turned out to be a fourth copy
+of the same 96 blits the transfer and manufacturing frames carry, so all three now share one
+`BaseUi_DrawFrameRails`. Three original
 inconsistencies are now on the record: `ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
 against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there;
 `ResearchScreen_BuildPanels` computes the progress percentage as `100 * (wProgress / wTotal)` while
@@ -255,7 +257,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 48 test suites, 6680 checks, all passing in 1.6 s.
+- 56 test suites, 10589 checks, all passing in 4.0 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,

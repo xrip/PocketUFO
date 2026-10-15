@@ -10111,6 +10111,497 @@ static void TestManufDrawFrame(void)
     FrameRestoreFont();
 }
 
+/* ---- ResearchScreen_Draw @ 0x73a34 ---------------------------------------------------------
+ *
+ * Checked on the real surface with the real font and the real research.pad, so every claim below is
+ * about pixels: which parts of the screen the function draws, in which order, and what the nine
+ * labels and the three numbers actually say. The label strings are ASCII stand-ins for the lang.dat
+ * records -- the record NUMBERS are the claim, and those come from the address arithmetic recorded in
+ * the header. */
+
+static PadImage g_rPad;
+static SoftSurf g_rPadRef;
+
+static void RPadRef(void)
+{
+    memset(g_rPadRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_rPadRef;
+    PadImage_Blit(&g_rPad);
+    g_pMainSurface = &g_frameSurf;
+}
+
+static u16 RPadPix(i32 x, i32 y)
+{
+    return ((u16 *)g_rPadRef.pPixels)[y * FRAME_W + x];
+}
+
+/* The screen against the bare pad: true where the frame drew nothing at all. */
+static bool RPadBandSame(i32 x0, i32 x1, i32 y0, i32 y1)
+{
+    const u16 *pa = (const u16 *)g_frameSurf.pPixels;
+    const u16 *pb = (const u16 *)g_rPadRef.pPixels;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (pa[y * FRAME_W + x] != pb[y * FRAME_W + x]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static bool RRefBandSame(i32 x0, i32 x1, i32 y0, i32 y1)
+{
+    const u16 *pa = (const u16 *)g_frameSurf.pPixels;
+    const u16 *pb = (const u16 *)g_frameRef.pPixels;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (pa[y * FRAME_W + x] != pb[y * FRAME_W + x]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* One label of the reference frame, with the exact colour pair the original had packed when it drew
+ * it. Both triples matter: the pen Text_DrawString paints with is the SECOND one, so a reference that
+ * passes 68,244,252 / 0,0,0 for a teal caption paints nothing at all. */
+typedef struct RRefLabel {
+    i32 x, y;
+    const char *psz;
+    i32 nR1, nG1, nB1, nR2, nG2, nB2;
+} RRefLabel;
+
+#define RREF_WHITE 250, 250, 250, 0, 0, 0     /* 0x73C34 and 0x73F24 */
+#define RREF_TEAL  68, 244, 252, 4, 70, 75    /* 0x73E8C and 0x740BC */
+
+/* The reference frame: the pad, then the detail panel, then the labels the claim is about. The rails
+ * are left out on purpose -- every band compared against this reference sits clear of x 5, x 234,
+ * y 5 and y 315. */
+static void RRefBuild(const RRefLabel *aLabels, i32 nLabels, bool bAnim)
+{
+    memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_frameRef;
+    PadImage_Blit(&g_rPad);
+    if (bAnim) {
+        (void)Ui_AnimExpandBlit(&g_frameAnim, 0, 110, 236, 100, 0x32, 0x96, 0x32, 0x96, 4);
+    }
+    for (i32 i = 0; i < nLabels; ++i) {
+        (void)Gfx_PackRgb565Pair(&g_frameColor, aLabels[i].nR1, aLabels[i].nG1, aLabels[i].nB1,
+                                 aLabels[i].nR2, aLabels[i].nG2, aLabels[i].nB2);
+        Text_DrawString(aLabels[i].x, aLabels[i].y, aLabels[i].psz);
+    }
+    g_pMainSurface = &g_frameSurf;
+}
+
+static i32 RCenterX(i32 nCenter, const char *psz)
+{
+    return nCenter - Text_MeasureWidth(psz) / 2;
+}
+
+static void ResearchStubAlloc(void) { }
+
+static void TestResearchDraw(void)
+{
+    static u8 bBuilt, bSelected, bEntryCount;
+    static i32 nRow;
+    static i8 nSelBase;
+    ResearchDrawEnv env;
+    const char *const pszSci = "SCI:";
+    const char *const pszLab = "LAB:";
+    const char *const pszUse = "USED:";
+    i32 i;
+
+    printf("the research screen's frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL the real font did not load, so the frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    memset(&g_rPad, 0, sizeof(g_rPad));
+    (void)PadImage_Load(&g_rPad, PUFO_RESEARCH_PAD_NAME, PUFO_RESEARCH_PAD_MODE);
+    Check(g_rPad.pData != NULL, "research.pad really loads out of main.dat");
+    if (g_rPad.pData == NULL) {
+        printf("  FAIL no research.pad, so the frame cannot be checked\n");
+        ++g_nFailures;
+        FrameRestoreFont();
+        return;
+    }
+    CheckEqI32(g_rPad.uWidth, 240, "research.pad is 240 wide");
+    CheckEqI32(g_rPad.uHeight, 320, "and 320 tall, the whole screen");
+    CheckEqI32(g_rPad.nMode, 6, "loaded in mode 6, the MOV R2,#6 at 0x749DC");
+
+    SoftSurf_ctor(&g_frameSurf);
+    (void)SoftSurf_AllocPixels(&g_frameSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_frameRef);
+    (void)SoftSurf_AllocPixels(&g_frameRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_rPadRef);
+    (void)SoftSurf_AllocPixels(&g_rPadRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_frameSurf;
+    g_blitState.nPixelMode = 2;
+
+    memset(g_aFrameText, 0, sizeof(g_aFrameText));
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_HEADER, "RESEARCH");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_SCI_FREE, pszSci);
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_LAB_FREE, pszLab);
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_SCI_USED, pszUse);
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_ADD, "ADD");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_REMOVE, "DEL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_CANCEL, "CANCEL");
+    PutStr(g_aFrameText + PUFO_RESEARCH_TEXT_OK * PUFO_TEXT_REC_STRIDE, "OK");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_RESEARCH_TEXT_ALL, "ALL");
+
+    memset(g_aFrameObj, 0, sizeof(g_aFrameObj));
+    memset(g_apFrameObj, 0, sizeof(g_apFrameObj));
+    memset(g_aFrameCol, 0, sizeof(g_aFrameCol));
+    memset(g_aFrameGrid, 0, sizeof(g_aFrameGrid));
+    memset(g_aFrameSite, 0, sizeof(g_aFrameSite));
+    memset(g_aFramePads, 0, sizeof(g_aFramePads));
+    memset(g_aFrameCtl, 0, sizeof(g_aFrameCtl));
+
+    for (i = 0; i < 8; ++i) {
+        PutStr(g_aFrameSite[i].abName, "NORTH");
+    }
+    PutStr(g_aFrameSite[1].abName, "ALPHA");
+
+    /* Base 1: three free lab cells (150), 50 allocated across the column, 130 scientists on hand. */
+    g_aFrameGrid[480 + 144 * 1 + 6 * 0 + 0] = 2;
+    g_aFrameGrid[480 + 144 * 1 + 6 * 0 + 1] = 2;
+    g_aFrameGrid[480 + 144 * 1 + 6 * 1 + 0] = 2;
+    g_aFrameCol[144 * 1 + 5] = 42;
+    g_aFrameCol[144 * 1 + 6] = 8;
+    g_aFrameObj[113].auPerBaseVal[1] = 130;
+
+    /* Three panels, parked at (10, 240) so no row of theirs lands on a label band or a bar column. */
+    for (i = 0; i < 3; ++i) {
+        if (!UiPanel_ctor(&g_aFramePanel[i], 4)) {
+            printf("  FAIL a research panel could not be constructed\n");
+            ++g_nFailures;
+            return;
+        }
+        g_aFramePanel[i].nLineCount = 4;
+        g_aFramePanel[i].nStyle = 3;
+        g_aFramePanel[i].nPosX = 10;
+        g_aFramePanel[i].nPosY = 240;
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 0, "ROW0");
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 1, "ROW1");
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 2, "ROW2");
+    }
+    UiPanel_SetLineAux(&g_aFramePanel[0], 0, 5);
+    UiPanel_SetLineAux(&g_aFramePanel[0], 1, 6);
+    UiPanel_SetLineAux(&g_aFramePanel[0], 2, 143);
+
+    for (i = 0; i < 6; ++i) {
+        g_aFrameCtl[i].bEnabled = 1;
+        g_aFrameCtl[i].nMode = 0;
+        g_aFrameCtl[i].nState = 0;
+        g_aFrameCtl[i].x = 6;
+        g_aFrameCtl[i].y = 260;
+        g_aFrameCtl[i].apPads[0] = &g_aFramePads[i];
+    }
+
+    g_bFrameAnimStarted = 1;
+    g_nFrameAnimProgress = 100;
+    memset(&g_frameAnim, 0, sizeof(g_frameAnim));
+    g_frameAnim.pbStarted = &g_bFrameAnimStarted;
+    g_frameAnim.pnProgress = &g_nFrameAnimProgress;
+    g_frameAnim.nFrameStyle = 0;
+
+    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.nFadeCount = 0;
+
+    bEntryCount = 144;
+    nSelBase = 1;
+    nRow = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pPad = &g_rPad;
+    env.pColor = &g_frameColor;
+    env.pAnim = &g_frameAnim;
+    env.pPanelTopic = &g_aFramePanel[0];
+    env.pPanelQty = &g_aFramePanel[1];
+    env.pPanelProgress = &g_aFramePanel[2];
+    env.pbPanelsBuilt = &bBuilt;
+    env.pbTopicSelected = &bSelected;
+    env.pnTopicRow = &nRow;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.pTextRecs = g_aFrameText;
+    env.apSiteRecs = g_aFrameSite;
+    env.apResearchCols = g_aFrameCol;
+    env.pbEntryCount = &bEntryCount;
+    env.pScientistRec = &g_aFrameObj[113];
+    env.abFacilityGrid = g_aFrameGrid;
+    env.apCtlQty[0] = &g_aFrameCtl[0];
+    env.apCtlQty[1] = &g_aFrameCtl[1];
+    env.pCtlCancel = &g_aFrameCtl[2];
+    env.pCtlStart = &g_aFrameCtl[3];
+    env.pCtlAllocAll = &g_aFrameCtl[4];
+    env.pCtlClose = &g_aFrameCtl[5];
+    env.pfnAllocAllClick = ResearchStubAlloc;
+    env.pfnCtlBlit = FrameBlitRec;
+    env.pfnCtlBlitEx = FrameBlitRec;
+
+    RPadRef();
+
+    /* ---- 1. the pad and the rails, with byte_160C7C clear ---- */
+    bBuilt = 0;
+    bSelected = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+
+    CheckEqI32(FramePix(5, 1), 0x632C, "the pad is blitted first and the left rail paints over it");
+    Check(RPadPix(5, 1) != 0x632C, "the pad's own pixel at (5, 1) is a different colour, so the rail really painted over it");
+    CheckEqI32(FramePix(5, 7), 0x632C, "and that rail step is seven rows tall");
+    CheckEqI32(FramePix(5, 8), 0x6B4D, "the next step climbs to index 105");
+    CheckEqI32(FramePix(234, 1), 0x632C, "the right rail mirrors the left one");
+    CheckEqI32(FramePix(1, 5), 0x632C, "the top rail starts at (1, 5)");
+    CheckEqI32(FramePix(234, 5), 0x8430, "and its falling half ends at 0xFA - 115 = 135");
+    CheckEqI32(FramePix(1, 315), 0x632C, "the bottom rail repeats it at y 315");
+    CheckEqI32(g_nFrameBlitCount, 0, "no control at all is blitted while byte_160C7C is clear");
+    Check(RPadBandSame(170, 171, 69, 119), "the column bars are past the byte_160C7C gate, so they are absent");
+    Check(RPadBandSame(10, 129, 50, 64), "and so is the header label");
+
+    /* ---- 2. the two column bars, and the min() that caps them ---- */
+    bBuilt = 1;
+    bSelected = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+
+    CheckEqI32(FramePix(170, 69), 0xB5B6, "the first bar is index 0xB4 at (170, 69)");
+    CheckEqI32(FramePix(170, 118), 0xB5B6, "16 * min(4, 3) + 2 = 50 rows, so (170, 118) is the last");
+    Check(RPadPix(170, 119) != 0xB5B6 && FramePix(170, 119) == RPadPix(170, 119),
+          "(170, 119) falls back to the pad -- the bar is capped by nStyle, not nLineCount");
+    Check(FramePix(170, 68) == RPadPix(170, 68), "and nothing is drawn above y 69");
+    CheckEqI32(FramePix(200, 69), 0xB5B6, "the second bar sits at x 200");
+    CheckEqI32(FramePix(200, 118), 0xB5B6, "with the same height");
+    Check(FramePix(200, 119) == RPadPix(200, 119), "and the same end");
+    Check(FramePix(171, 90) == RPadPix(171, 90), "the bar is one pixel wide, so x 171 is untouched");
+    CheckEqI32(g_nFrameBlitCount, 1, "with no row selected the close control is the only control blitted");
+    Check(g_nFrameBlitCount == 1 && g_aFrameBlitLog[0] == 5, "and it is the close control's pad");
+    Check(RPadBandSame(10, 129, 116, 130), "no read-out label on that path");
+    Check(RPadBandSame(195, 233, 120, 132), "and no read-out number either -- the bar column ends at y 118");
+
+    g_aFramePanel[0].nLineCount = 1;
+    g_aFramePanel[0].nStyle = 1; /* the bars become 16 * 1 + 2 = 18 tall from here on */
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    CheckEqI32(FramePix(170, 86), 0xB5B6, "with nLineCount 1 and nStyle 1 the bar ends at (170, 86)");
+    Check(FramePix(170, 87) == RPadPix(170, 87), "and (170, 87) is the pad again");
+
+    /* The panel cursor row does not change the bar -- only nLineCount and nStyle do. */
+    nRow = 2;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    CheckEqI32(FramePix(170, 86), 0xB5B6, "the bar height does not follow the cached row cursor");
+    nRow = 0;
+
+    /* ---- 3. a row selected, the detail animation not finished ---- */
+    bSelected = 1;
+    g_nFrameAnimProgress = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+
+    CheckEqI32(g_nFrameAnimProgress, 0, "mode 4 at progress 0 is a 0 x 0 square, so the panel is not done");
+    CheckEqI32(g_nFrameBlitCount, 0, "and nothing past it runs -- not even the close control");
+    Check(RPadBandSame(10, 129, 116, 130), "the read-out label band stays as the bare pad");
+    Check(RPadBandSame(195, 233, 162, 176), "so does the button-caption band");
+
+    /* ---- 4. the animation finished: the panel, then the labels ---- */
+    g_nFrameAnimProgress = 100;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+
+    CheckEqI32(g_nFrameAnimProgress, 100, "progress 100 clamps to the full 236 x 100 rect");
+    Check(!RPadBandSame(10, 129, 116, 130), "the detail panel now covers the read-out band");
+    CheckEqI32(g_nFrameBlitCount, 5, "two quantity controls, cancel, start and allocate-all");
+    Check(g_nFrameBlitCount == 5 && g_aFrameBlitLog[0] == 0 && g_aFrameBlitLog[1] == 1
+              && g_aFrameBlitLog[2] == 2 && g_aFrameBlitLog[3] == 3 && g_aFrameBlitLog[4] == 4,
+          "in slot order: IncSelectedQty, DecSelectedQty, cancel, start, allocate-all");
+    Check(g_nFrameBlitCount == 5 && g_aFrameBlitLog[0] != 5, "the close control is not blitted on this path");
+    CheckEqI32(g_aFrameCtl[4].x, PUFO_RESEARCH_ALLOC_X, "the allocate-all control is moved to x 100");
+    CheckEqI32(g_aFrameCtl[4].y, PUFO_RESEARCH_ALLOC_Y, "and y 164");
+    Check(g_aFrameCtl[4].pfnClick == ResearchStubAlloc, "and its handler is the one the environment gives");
+
+    {
+        const RRefLabel aLabels[] = {
+            { 10, 52, "RESEARCH", RREF_WHITE },
+            { RCenterX(120, "ALPHA"), 13, "ALPHA", RREF_WHITE },
+            { 10, 118, pszSci, RREF_WHITE },
+        };
+        RRefBuild(aLabels, 3, true);
+        Check(RRefBandSame(10, 129, 52, 66), "the header is TEXTS[1138] at (10, 52)");
+        Check(RRefBandSame(60, 180, 13, 27), "the site name is centred on x 120 at y 13");
+        Check(RRefBandSame(10, 129, 118, 132), "the first read-out label is TEXTS[1139] at (10, 118)");
+    }
+
+    {
+        const RRefLabel aWrong[] = { { 10, 118, "SC1:", RREF_WHITE } };
+        RRefBuild(aWrong, 1, true);
+        Check(!RRefBandSame(10, 129, 118, 132), "the band is not some other string, so the record index is pinned");
+    }
+
+    {
+        const RRefLabel aLabels[] = { { 10, 132, pszLab, RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(10, 129, 132, 146), "TEXTS[1140] at (10, 132)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 10, 146, pszUse, RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(10, 129, 146, 160), "TEXTS[1141] at (10, 146)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 40, 164, "ADD", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(40, 107, 164, 178), "TEXTS[1142] \"ADD\" at (40, 164), in the teal pair");
+    }
+    {
+        const RRefLabel aLabels[] = { { 40, 184, "DEL", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(40, 107, 184, 198), "TEXTS[1143] \"DEL\" at (40, 184)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 40, 164, "ADD", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(!RRefBandSame(40, 107, 164, 178), "the button captions are not the white pair -- 0x73E8C sets teal first");
+    }
+
+    /* ---- 5. the three numbers ---- */
+    {
+        const RRefLabel aLabels[] = { { 195, 118, "80", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 118, 132),
+              "130 scientists on hand minus 50 allocated is 80, drawn at (195, 118)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 195, 132, "100", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 132, 146),
+              "three free lab cells is 150, minus 50 allocated is 100, at (195, 132)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 195, 146, "42", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 146, 160),
+              "the cached row 0 maps to topic 5, whose column entry is 42, at (195, 146)");
+    }
+
+    /* Each number follows its own input. */
+    g_aFrameObj[113].auPerBaseVal[1] = 131;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 195, 118, "81", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 118, 132), "one more scientist on hand reads 81");
+    }
+    g_aFrameObj[113].auPerBaseVal[1] = 130;
+
+    g_aFrameGrid[480 + 144 * 1 + 6 * 1 + 1] = 2; /* a fourth free lab: 200 - 50 = 150 */
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 195, 132, "150", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 132, 146), "a fourth free lab cell reads 150");
+    }
+    g_aFrameGrid[480 + 144 * 1 + 6 * 1 + 1] = 0;
+
+    UiPanel_SetLineAux(&g_aFramePanel[0], 0, 6); /* the cached row now names topic 6 */
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 195, 146, "8", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 146, 160), "the number follows the cached row's aux topic");
+    }
+    UiPanel_SetLineAux(&g_aFramePanel[0], 0, 5);
+
+    /* The column is the selected base's, not a fixed one. */
+    nSelBase = 2;
+    g_aFrameCol[144 * 2 + 5] = 7;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 195, 146, "7", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 146, 160), "base 2 reads its own 144-entry column");
+    }
+    nSelBase = 1;
+    g_aFrameCol[144 * 2 + 5] = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+
+    /* ---- 6. the three captions, and the centring ---- */
+    {
+        const RRefLabel aLabels[] = { { RCenterX(198, "CANCEL"), 189, "CANCEL", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(160, 233, 189, 203), "TEXTS[1144] \"CANCEL\" is centred on x 198 at y 189");
+    }
+    {
+        const RRefLabel aLabels[] = { { RCenterX(198, "CANCEL") + 8, 189, "CANCEL", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(!RRefBandSame(160, 233, 189, 203), "eight pixels off is not the same, so the centring is pinned");
+    }
+    {
+        const RRefLabel aLabels[] = { { RCenterX(198, "OK"), 167, "OK", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(160, 233, 167, 181), "TEXTS[1127] \"OK\" is centred on x 198 at y 167");
+    }
+    {
+        const RRefLabel aLabels[] = { { RCenterX(119, "ALL"), 165, "ALL", RREF_TEAL } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(90, 160, 165, 179), "TEXTS[1604] \"ALL\" is centred on x 119 at y 165");
+    }
+    {
+        const RRefLabel aLabels[] = { { RCenterX(119, "ALL"), 165, "ALL", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(!RRefBandSame(90, 160, 165, 179), "and it is still the teal pair, the last one set");
+    }
+
+    /* ---- 7. the guards the port adds ---- */
+    nRow = 999; /* outside the panel's aux column */
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 195, 146, "0", RREF_WHITE } };
+        RRefBuild(aLabels, 1, true);
+        Check(RRefBandSame(195, 233, 146, 160), "a row cursor outside the panel reads 0, not whatever is there");
+    }
+    nRow = 0;
+
+    env.pPad = NULL;
+    bBuilt = 0;
+    bSelected = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    CheckEqI32(FramePix(5, 1), 0x632C, "with no pad the rails still draw");
+    Check(FramePix(120, 170) == 0, "and the interior stays empty");
+    env.pPad = &g_rPad;
+
+    env.pPanelTopic = NULL;
+    bBuilt = 1;
+    bSelected = 0;
+    FrameZero();
+    ResearchScreen_Draw(&env);
+    CheckEqI32(FramePix(170, 69), 0xB5B6, "with no topic panel the band is 0, so the bar is 0 + 2 tall");
+    CheckEqI32(FramePix(170, 70), 0xB5B6, "two rows of bar");
+    Check(FramePix(170, 71) == RPadPix(170, 71), "and (170, 71) is the pad again");
+    env.pPanelTopic = &g_aFramePanel[0];
+
+    for (i = 0; i < 3; ++i) {
+        UiPanel_FreeLines(&g_aFramePanel[i]);
+    }
+    PadImage_FreeData(&g_rPad);
+    FrameRestoreFont();
+}
+
 /* ---- ResearchScreen_Init @ 0x749a8 ---------------------------------------------------------
  *
  * The bring-up is mostly wiring, so the test checks the wiring and the ORDER of the wiring: two of
@@ -10893,6 +11384,7 @@ int main(void)
     TestResearchInit();
     TestResearchBuildPanels();
     TestResearchRebuild();
+    TestResearchDraw();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

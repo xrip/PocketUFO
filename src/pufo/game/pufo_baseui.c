@@ -2662,6 +2662,39 @@ static void TransferUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
     Text_DrawString(nCenterX - nWidth / 2, y, psz);
 }
 
+/* The shared screen frame rails: TransferScreen_Draw (0x97FB8..0x98150), ManufScreen_DrawFrame
+ * (0x6F9C4..0x6FB54) and ResearchScreen_Draw (0x73A54..0x73BD8) each carry the same 96 blits with the
+ * same constants -- the same loop bounds (CMP #0xA8 over a step of 7, CMP #0x78 over a step of 5), the
+ * same x/y pairs, the same ramp formulas. Every index triple is stored with STRB, so each index is the
+ * low byte of the ramp arithmetic. */
+static void BaseUi_DrawFrameRails(void)
+{
+    /* The two side rails, 24 steps of 7. */
+    for (i32 k = 0; k < PUFO_FRAME_RAIL_STEPS; ++k) {
+        const i32 nY = 7 * k;
+        const u8 nRise = (u8)(PUFO_FRAME_RAMP_STEP * (k + PUFO_FRAME_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_FRAME_RAMP_SIDE - PUFO_FRAME_RAMP_STEP * k);   /* 230..115 */
+
+        SoftSurf_BlitRectProxy(0, 5, nY + 1, 1, 7, nRise, nRise, nRise);     /* 0x98004 / 0x6F9F4 / 0x73A84 */
+        SoftSurf_BlitRectProxy(0, 5, nY + 151, 1, 7, nFall, nFall, nFall);   /* 0x98030 / 0x6FA24 / 0x73AB4 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 1, 1, 7, nRise, nRise, nRise);   /* 0x98054 / 0x6FA48 / 0x73AD8 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x98078 / 0x6FA6C / 0x73AFC */
+    }
+
+    /* The top and bottom rails, 24 steps of 5. */
+    for (i32 k = 0; k < PUFO_FRAME_RAIL_STEPS; ++k) {
+        const i32 nXLo = 5 * k + 1;
+        const i32 nXHi = 5 * k + 119;
+        const u8 nRise = (u8)(PUFO_FRAME_RAMP_STEP * (k + PUFO_FRAME_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_FRAME_RAMP_EDGE - PUFO_FRAME_RAMP_STEP * k);   /* 250..135 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);     /* 0x980C8 / 0x6FAC4 / 0x73B50 */
+        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise);   /* 0x980F0 / 0x6FAEC / 0x73B78 */
+        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);     /* 0x98120 / 0x6FB1C / 0x73BA8 */
+        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall);   /* 0x98148 / 0x6FB44 / 0x73BD0 */
+    }
+}
+
 /* TransferScreen_Draw @ 0x97fa4: the transfer screen's frame, panels, labels and destination
  * overlay. The header carries the branch map. */
 i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
@@ -2673,30 +2706,7 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
         return 0;
     }
 
-    /* 0x97FB8..0x98088: the two side rails, 24 steps of 7. */
-    for (i32 k = 0; k < 24; ++k) {
-        const i32 nY = 7 * k;
-        const u8 nRise = (u8)(PUFO_TRANSFER_RAMP_STEP * (k + PUFO_TRANSFER_RAMP_BASE)); /* 100..215 */
-        const u8 nFall = (u8)(PUFO_TRANSFER_RAMP_SIDE - PUFO_TRANSFER_RAMP_STEP * k);   /* 230..115 */
-
-        SoftSurf_BlitRectProxy(0, 5, nY + 1, 1, 7, nRise, nRise, nRise);   /* 0x98004 */
-        SoftSurf_BlitRectProxy(0, 5, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x98030 */
-        SoftSurf_BlitRectProxy(0, 234, nY + 1, 1, 7, nRise, nRise, nRise); /* 0x98054 */
-        SoftSurf_BlitRectProxy(0, 234, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x98078 */
-    }
-
-    /* 0x9808C..0x98150: the top and bottom rails, 24 steps of 5. */
-    for (i32 k = 0; k < 24; ++k) {
-        const i32 nXLo = 5 * k + 1;
-        const i32 nXHi = 5 * k + 119;
-        const u8 nRise = (u8)(PUFO_TRANSFER_RAMP_STEP * (k + PUFO_TRANSFER_RAMP_BASE)); /* 100..215 */
-        const u8 nFall = (u8)(PUFO_TRANSFER_RAMP_EDGE - PUFO_TRANSFER_RAMP_STEP * k);   /* 250..135 */
-
-        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);   /* 0x980C8 */
-        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise); /* 0x980F0 */
-        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);   /* 0x98120 */
-        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall); /* 0x98148 */
-    }
+    BaseUi_DrawFrameRails(); /* 0x97FB8..0x98150 */
 
     /* 0x98178: the row band is 16 pixels per row, capped by the panel's style. */
     nBand = (pEnv->pPanelB != NULL) ? 16 * pEnv->pPanelB->nLineCount : 0;
@@ -4290,30 +4300,7 @@ void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv)
     const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
     const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
 
-    /* 0x6F9C4..0x6FA84: the two side rails, 24 steps of 7. */
-    for (i32 k = 0; k < 24; ++k) {
-        const i32 nY = 7 * k;
-        const u8 nRise = (u8)(PUFO_MANUF_RAMP_STEP * (k + PUFO_MANUF_RAMP_BASE)); /* 100..215 */
-        const u8 nFall = (u8)(PUFO_MANUF_RAMP_SIDE - PUFO_MANUF_RAMP_STEP * k);   /* 230..115 */
-
-        SoftSurf_BlitRectProxy(0, 5, nY + 1, 1, 7, nRise, nRise, nRise);     /* 0x6F9F4 */
-        SoftSurf_BlitRectProxy(0, 5, nY + 151, 1, 7, nFall, nFall, nFall);   /* 0x6FA24 */
-        SoftSurf_BlitRectProxy(0, 234, nY + 1, 1, 7, nRise, nRise, nRise);   /* 0x6FA48 */
-        SoftSurf_BlitRectProxy(0, 234, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x6FA6C */
-    }
-
-    /* 0x6FA94..0x6FB54: the top and bottom rails, 24 steps of 5. */
-    for (i32 k = 0; k < 24; ++k) {
-        const i32 nXLo = 5 * k + 1;
-        const i32 nXHi = 5 * k + 119;
-        const u8 nRise = (u8)(PUFO_MANUF_RAMP_STEP * (k + PUFO_MANUF_RAMP_BASE)); /* 100..215 */
-        const u8 nFall = (u8)(PUFO_MANUF_RAMP_EDGE - PUFO_MANUF_RAMP_STEP * k);   /* 250..135 */
-
-        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);     /* 0x6FAC4 */
-        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise);   /* 0x6FAEC */
-        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);     /* 0x6FB1C */
-        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall);   /* 0x6FB44 */
-    }
+    BaseUi_DrawFrameRails(); /* 0x6F9C4..0x6FB54 */
 
     /* 0x6FC78..0x6FC98: the row band is 16 pixels per row, capped by the panel's style. */
     if (pEnv->pPanelA != NULL) {
@@ -7946,4 +7933,156 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
     }
 
     return nEntryCount; /* 0x74904: the loop leaves the count in R0 */
+}
+
+static const char *ResearchUi_Text(const ResearchDrawEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec; /* the original's own label pointers */
+}
+
+static void ResearchUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz); /* 0x73CC8, 0x740FC, 0x7415C, 0x741E0 */
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+/* ResearchScreen_Draw @ 0x73a34: the research screen's frame. The header carries the branch map. */
+void ResearchScreen_Draw(const ResearchDrawEnv *pEnv)
+{
+    char szLabel[PUFO_RESEARCH_LABEL_MAX];
+    char szNum[52]; /* var_34 @ sp+0x80, the j_itoa buffer */
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    if (pEnv->pPad != NULL) {
+        PadImage_Blit(pEnv->pPad); /* 0x73A40: *ppScreen, the pad inside aResearchTopics[0] */
+    }
+
+    BaseUi_DrawFrameRails(); /* 0x73A44..0x73BE0 */
+
+    if (pEnv->pbPanelsBuilt == NULL || *pEnv->pbPanelsBuilt == 0) {
+        return; /* 0x73BE8: no panels, no labels, and not even the close control */
+    }
+
+    if (pEnv->pPanelTopic != NULL) {
+        UiPanel_DrawText(pEnv->pPanelTopic); /* 0x73BFC */
+    }
+    if (pEnv->pPanelQty != NULL) {
+        UiPanel_DrawText(pEnv->pPanelQty); /* 0x73C08 */
+    }
+    if (pEnv->pPanelProgress != NULL) {
+        UiPanel_DrawText(pEnv->pPanelProgress); /* 0x73C14 */
+    }
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x73C34 */
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_HEADER), sizeof(szLabel));
+    Text_DrawString(10, 52, szLabel); /* 0x73C74 */
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+
+    pufo_strncpy(szLabel, (pEnv->apSiteRecs != NULL && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT)
+                              ? (const char *)pEnv->apSiteRecs[nBase].abName
+                              : "",
+                  sizeof(szLabel));
+    ResearchUi_DrawCentered(120, 13, szLabel); /* 0x73CE0 */
+
+    /* 0x73D00..0x73D60: the two column separators, over the TOPIC panel's row band. */
+    i32 nBand = 0;
+    if (pEnv->pPanelTopic != NULL) {
+        nBand = 16 * pEnv->pPanelTopic->nLineCount;
+        if (pEnv->pPanelTopic->nLineCount >= pEnv->pPanelTopic->nStyle) {
+            nBand = 16 * pEnv->pPanelTopic->nStyle; /* 0x73D1C */
+        }
+    }
+    SoftSurf_BlitRectProxy(0, 170, 69, 1, nBand + 2, PUFO_RESEARCH_BAR_INDEX,
+                           PUFO_RESEARCH_BAR_INDEX, PUFO_RESEARCH_BAR_INDEX); /* 0x73D30 */
+    SoftSurf_BlitRectProxy(0, 200, 69, 1, nBand + 2, PUFO_RESEARCH_BAR_INDEX,
+                           PUFO_RESEARCH_BAR_INDEX, PUFO_RESEARCH_BAR_INDEX); /* 0x73D54 */
+
+    if (pEnv->pbTopicSelected == NULL || *pEnv->pbTopicSelected == 0) {
+        /* 0x73D64: no topic row selected -- the close control, and nothing else. This is the only
+         * path in the function that blits unk_186B00. */
+        (void)UiControl_BlitActivePad(pEnv->pCtlClose, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser);
+        return;
+    }
+
+    /* 0x73DA0: the detail panel. Only the low byte of the result is tested (0x73DA8). */
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, 0, 110, 236, 100, 0x32, 0x96, 0x32, 0x96, 4)) {
+        return;
+    }
+
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_SCI_FREE), sizeof(szLabel));
+    Text_DrawString(10, 118, szLabel); /* 0x73DE8: "Ученых доступно" */
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_LAB_FREE), sizeof(szLabel));
+    Text_DrawString(10, 132, szLabel); /* 0x73E28: "Свободн. мест в лаборатории " */
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_SCI_USED), sizeof(szLabel));
+    Text_DrawString(10, 146, szLabel); /* 0x73E64: "Ученых задействовано" */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x73E8C */
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_ADD), sizeof(szLabel));
+    Text_DrawString(40, 164, szLabel); /* 0x73EC8: "Добав." */
+    pufo_strncpy(szLabel, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_REMOVE), sizeof(szLabel));
+    Text_DrawString(40, 184, szLabel); /* 0x73F04: "Убрать" */
+
+    /* 0x73F24..0x74068: the three numbers, each through j_itoa and drawn at x 195. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0);
+    const bool bBase = (nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT);
+    const u16 *pCol = (pEnv->apResearchCols != NULL && bBase)
+                          ? pEnv->apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase : NULL;
+    const i32 nScientists = (pEnv->pScientistRec != NULL && pCol != NULL)
+                                ? Base_GetScientistCount(pEnv->pScientistRec, pCol, nBase, nEntries)
+                                : 0;
+    (void)snprintf(szNum, sizeof(szNum), "%d", nScientists); /* 0x73F44 */
+    Text_DrawString(195, 118, szNum);
+
+    {
+        const i32 nCap = (pEnv->abFacilityGrid != NULL)
+                             ? Base_CalcLabCap(pEnv->abFacilityGrid, nBase) : 0;
+        const i32 nActive = (pCol != NULL) ? Base_CountActiveResearch(pCol, nEntries) : 0;
+        (void)snprintf(szNum, sizeof(szNum), "%d", nCap - nActive); /* 0x73FB0: SUB R0,R0,R1 */
+    }
+    Text_DrawString(195, 132, szNum);
+
+    {
+        const i32 nTopic = ManufSelectedProduct(pEnv->pPanelTopic, pEnv->pnTopicRow); /* 0x74028 */
+        const u16 nQty = (nTopic >= 0 && nTopic < PUFO_RESEARCH_TOPIC_COUNT && pCol != NULL)
+                             ? pCol[nTopic]
+                             : 0u;
+        (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)nQty); /* 0x74038 */
+    }
+    Text_DrawString(195, 146, szNum);
+
+    /* 0x7406C..0x7408C: the two quantity controls, screen-block slots 1876 and 1877. */
+    (void)UiControl_BlitActivePad(pEnv->apCtlQty[0], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser);
+    (void)UiControl_BlitActivePad(pEnv->apCtlQty[1], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser);
+
+    (void)UiControl_BlitActivePad(pEnv->pCtlCancel, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser); /* 0x7409C */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x740BC */
+    ResearchUi_DrawCentered(198, 189, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_CANCEL)); /* 0x74114 */
+
+    (void)UiControl_BlitActivePad(pEnv->pCtlStart, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser); /* 0x74120 */
+    ResearchUi_DrawCentered(198, 167, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_OK)); /* 0x74174 */
+
+    /* 0x74184..0x741A4: the allocate-all control is re-pointed and moved on every frame. Note the
+     * order against the manufacturing screen's two buttons: here the handler goes in first. */
+    if (pEnv->pCtlAllocAll != NULL) {
+        pEnv->pCtlAllocAll->pfnClick = pEnv->pfnAllocAllClick; /* 0x74184 */
+        pEnv->pCtlAllocAll->x = PUFO_RESEARCH_ALLOC_X;         /* 0x74190 */
+        pEnv->pCtlAllocAll->y = PUFO_RESEARCH_ALLOC_Y;         /* 0x7419C */
+        (void)UiControl_BlitActivePad(pEnv->pCtlAllocAll, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser); /* 0x741A4 */
+    }
+
+    ResearchUi_DrawCentered(119, 165, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_ALL)); /* 0x741F8 */
 }

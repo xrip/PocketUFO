@@ -1252,6 +1252,31 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `unk_15EEF8` → `nResearchFinishedTopic`, `unk_160C60` → `nResearchTopicShown`. IDB comments at 0x74270,
   0x74460 and 0x4539C.
 
+- [x] part 46, the research frame: `ResearchScreen_Draw (0x73a34)`, 2108 bytes — 69 more checks and four
+  findings.
+  **The screen pad is blitted out of the topic table itself.** 0x73A3C is `LDR R0,[R0]` on the argument,
+  and Geoscape_Draw's id-8 case (0x94114) passes 0x15EF08, so the `PadImage *` ResearchScreen_Init
+  installed lives in `aResearchTopics[0]`'s first four bytes. It is also the only one of the three
+  screen frames that blits a pad at all — `ManufScreen_DrawFrame` opens straight into the rails.
+  research.pad really loads, 240x320, mode 6 (the `MOV R2,#6` at 0x749DC).
+  **The close control is blitted only when no topic row is selected** (0x73D64 → 0x74260). With a row
+  picked, this function never redraws `unk_186B00`; the flag is panel A's click handler's
+  (PlaySample7_SetFlags_Cache0xBD8 @ 0x73328) and `ResearchScreen_StartSelected` clears it.
+  **The two column bars are capped by `nStyle`, not by the row cursor** — height
+  `16 * min(nLineCount, nStyle) + 2` of the TOPIC panel (0x73D00..0x73D20), at x 170 and x 200, y 69,
+  index 0xB4. The cached cursor at 0x160C74 only picks which `anLineAux` cell names the topic whose
+  `auResearchCol` entry is printed at (195, 146).
+  **The rails were a fourth copy of the same 96 blits.** TransferScreen_Draw (0x97FB8..0x98150),
+  ManufScreen_DrawFrame (0x6F9C4..0x6FB54) and this function (0x73A54..0x73BD8) carry the same loop
+  bounds, the same coordinates and the same ramp formulas, and the ARM stores each index triple with
+  STRB, so the falling ramps are the low bytes of `RSB #0xE6` and `RSB #0xFA`. They are now one
+  `BaseUi_DrawFrameRails` helper with all three call sites using it.
+  Housekeeping: `byte_160C7C` → `bResearchPanelsBuilt`, `unk_160C80` → `bUiRowSelected` (both u8), IDB
+  comments at 0x73a34, 0x73D64, 0x7406C, 0x74184 and on the two bytes. The test also pins something the
+  other screen tests should carry: the pen `Text_DrawString` paints with is the **second** triple of the
+  packed pair, so the "white" pair 250,250,250 / 0,0,0 draws black text and the teal captions come out
+  as 4,70,75.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1401,6 +1426,12 @@ Order is by what unblocks what. Each item ends with gates + commit.
   on-disk +0x1D but in-memory +0x0A. Closing it needs `LoadGame @ 0x44bbc` (0x45364/0x453EC are its two
   `aResearchTopics` references), which is not ported. Until then the port keeps the two layouts as
   separate types and does not pretend one converts into the other.
+- [ ] **`Text_DrawString` paints with the SECOND triple of the packed colour pair.** Part 46 pinned it on
+  the real surface: the "white" pair 250,250,250 / 0,0,0 draws black glyphs, and the research screen's
+  teal captions come out as 4,70,75 rather than 68,244,252. The research frame test builds every
+  reference with all six values; `TestManufDrawFrame` and `TestTransferDraw` still pass a bare triple, so
+  their colour claims are weaker than they look. Worth its own pass over those two older real-surface
+  tests rather than a fix folded into a porting step.
 
 ## Measured state
 
@@ -1506,6 +1537,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the research bring-up (`ResearchScreen_Init`, the four descriptors, the handlers-before-positions order) | 56/56 (Release) | 10386 | 865/1103 (78.4%) | 372564/598792 (62.2%) | 39 checked, 0 mismatched |
 | the research panels (`ResearchScreen_BuildPanels`, the divide-first percentage found, the topic table as the screen block) | 56/56 (Release) | 10434 | 866/1103 (78.5%) | 374164/598792 (62.5%) | 39 checked, 0 mismatched |
 | the research rebuild (`ResearchScreen_RebuildTopicList`, the topic→facility-kind permutation, the wrong-column clear found) | 56/56 (Release) | 10520 | 867/1103 (78.6%) | 375864/598792 (62.8%) | 39 checked, 0 mismatched |
+| the research frame (`ResearchScreen_Draw`, the pad inside the topic table, the close-control-only-when-no-row quirk, the rails deduped) | 56/56 (Release) | 10589 | 868/1103 (78.7%) | 377972/598792 (63.1%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

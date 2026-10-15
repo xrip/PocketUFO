@@ -12493,3 +12493,62 @@ pointer in it. The port reads the 0x160228 gap as zero.
 `ResearchTopicLive` fields renamed: `nItemId` plus `abUnkF[9]` became `abNeedItems[5]` (+0x0E..0x12)
 and `abPreTopics[5]` (+0x13..0x17), and `abUnk1D[5]` became `abActivateTopics[5]`. Comments at 0x74270,
 0x74460 and 0x4539C.
+
+## ResearchScreen_Draw (0x73a34, 2108 B)
+
+Ported as src/pufo/game/pufo_baseui.c:ResearchScreen_Draw, declared over a ResearchDrawEnv in
+pufo_baseui.h. Its only caller is Geoscape_Draw's screen-id-8 case (0x94114 loads R0 with 0x15EF08, the
+topic table itself, and 0x94124 overwrites the result with 0), so the port returns void. Tested by
+tests/test_baseui.c section "the research screen's frame" (69 checks) on the real 240x320 surface with
+the real font and the real research.pad.
+
+Order, from the ARM. 0x73A3C `LDR R0,[R0]` + PadImage_Blit: the screen pad pointer lives in the first
+four bytes of aResearchTopics[0], because the screen block IS the topic table. This is the one frame of
+the three research/manuf/transfer frames that blits its pad -- ManufScreen_DrawFrame opens straight into
+the rails. 0x73A44..0x73BE0: the rails, 24 side steps of 7 (CMP #0xA8) and 24 top/bottom steps of 5
+(CMP #0x78), with the climbing index 5*(k+20) and the falling ones 0xE6-5k and 0xFA-5k stored through
+STRB, so each of the three index arguments is the low byte. The three originals carry the same 96 blits
+with the same constants, so the port draws them from one BaseUi_DrawFrameRails helper shared with
+TransferScreen_Draw and ManufScreen_DrawFrame.
+
+0x73BE8: bResearchPanelsBuilt (was byte_160C7C) == 0 ends the function -- no panels, no labels, not even
+the close control. 0x73BFC..0x73C14: the three panels' text, topic / B / C. 0x73C34: the white pair,
+TEXTS[1138] at (10, 52), then the selected site's 64-byte name from 0x186C5A + 64 * nSelectedBaseIdx
+centred at (120 - w/2, 13). 0x73D00..0x73D60: two 1-pixel column separators at x 170 and x 200, y 69,
+index 0xB4, height 16 * min(nLineCount, nStyle) + 2 of the TOPIC panel -- note it is nStyle that caps
+the band, not the row cursor.
+
+0x73D64: bUiRowSelected (was unk_160C80) == 0 blits the shared close control unk_186B00 and returns.
+That is the only path in the function that blits the close control: with a topic row selected the close
+pad is never redrawn here. The flag is set by panel A's click handler PlaySample7_SetFlags_Cache0xBD8
+(0x73328) and cleared by ResearchScreen_StartSelected (0x73244). 0x73DA0: Ui_AnimExpandBlit over the
+anim root 0x1864F8 at (0, 110) 236x100, index 0x32, source (0x96, 0x32), key 0x96, mode 4; only the low
+byte of the result is tested (0x73DA8) and a false result leaves through the same tail.
+
+0x73DBC..0x73E64: TEXTS[1139] at (10, 118), TEXTS[1140] at (10, 132), TEXTS[1141] at (10, 146).
+0x73E8C: the teal pair 68,244,252 / 4,70,75, then TEXTS[1142] at (40, 164) and TEXTS[1143] at (40, 184).
+0x73F24..0x74068: white pair, then three j_itoa numbers at x 195 -- Base_GetScientistCount at y 118,
+Base_CalcLabCap - Base_CountActiveResearch at y 132, and auResearchCol[anLineAux[0x160C74] + 144*base]
+at y 146, the row index being the cursor 0x160C74 that panel A's click handler caches.
+
+0x7406C..0x7408C: two UiControl_BlitActivePad calls whose pointers come from `&aResearchTopics[0].wTotal
++ 1874` advanced by two u16 slots, i.e. screen-block control slots 1876 and 1877 at 0x160C58 and
+0x160C5C -- the IncSelectedQty and DecSelectedQty controls ResearchScreen_Init installed. 0x7409C:
+unk_186BB4 (cancel, parked at (165, 188)), the teal pair, TEXTS[1144] centred at (198 - w/2, 189).
+0x74120: unk_186BB0 (start, (165, 166)), TEXTS[1127] centred at (198 - w/2, 167) -- the caption pair is
+swapped against the controls' own order, "OK" under the upper control and the cancel caption under the
+lower one. 0x74184..0x741A4: unk_186B94 is re-pointed at ResearchScreen_UpdateProgress and moved to
+(100, 164) every frame, then blitted; TEXTS[1604] centred at (119 - w/2, 165) is the return value.
+
+The nine labels are direct pointers into aTextRecs (stride 205): 0xEC81A, 0xEC8E7, 0xEC9B4, 0xECA81,
+0xECB4E, 0xECC1B, 0xECCE8, 0xEBF4B and 0x103D44 are records 1138, 1139, 1140, 1141, 1142, 1143, 1144,
+1127 and 1604. 1127/1142/1143/1144/1604 are the same records the manufacturing frame uses for its own
+buttons; only the positions differ. research.pad loads 240x320 in mode 6, the MOV R2,#6 at 0x749DC.
+
+Deviation: the original copies every label into a 104-byte stack buffer with an unbounded
+byte-at-a-time loop, builds the three numbers through a second 52-byte buffer, derefs the three panels,
+the four screen-block controls, the three shared controls and the colour root with no test, and indexes
+anLineAux with the cached row cursor without bounds. The port bounds the label buffer, null-guards the
+panels and controls, and clamps the row read the way ResearchScreen_IncSelectedQty does. The test also
+shows the pen Text_DrawString paints with is the SECOND triple of the packed pair: the white pair
+250,250,250 / 0,0,0 draws black text, and the teal captions come out as 4,70,75.
