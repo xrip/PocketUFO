@@ -617,6 +617,193 @@ void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv)
     }
 }
 
+/* The repeat bound both row editors -- BuySellScreen_FillBuyPanel @ 0x75160 and
+ * BuySellScreen_FillSellPanel @ 0x75464 -- uses, re-read from the global on every iteration.
+ * ORIGINAL BUG, reproduced: 0xAC224 is nRadarPulseTimer, the radar screen's pulse countdown. */
+static i32 BuySellRepeatLimit(const i32 *pnTimer)
+{
+    return pnTimer != NULL ? *pnTimer / 10 : 0;
+}
+
+static i32 BuySellRowDelta(const BuySellRowEditEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->anSlotDelta == NULL || nSlot < 0 || nSlot >= pEnv->nSlotDeltaCount) {
+        return 0;
+    }
+    return pEnv->anSlotDelta[nSlot];
+}
+
+static void BuySellRowDeltaAdd(BuySellRowEditEnv *pEnv, i32 nSlot, i32 nDelta)
+{
+    if (pEnv->anSlotDelta != NULL && nSlot >= 0 && nSlot < pEnv->nSlotDeltaCount) {
+        pEnv->anSlotDelta[nSlot] += nDelta;
+    }
+}
+
+static ObjectRecFull *BuySellSlotRec(const BuySellRowEditEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->apObjects == NULL || nSlot < 0 || nSlot >= pEnv->nObjectCount) {
+        return NULL;
+    }
+    return pEnv->apObjects[nSlot];
+}
+
+/* BuySellScreen_FillSellPanel @ 0x75464, panel C's click: mark one more unit to sell. */
+void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv)
+{
+    i32 nRow;
+    i32 nAux;
+    i32 nLimit;
+    i32 k;
+
+    if (pEnv == NULL || pEnv->pPanelA == NULL || pEnv->pPanelC == NULL
+        || pEnv->pPanelD == NULL || pEnv->pPanelE == NULL) {
+        return;
+    }
+    nRow = pEnv->pPanelC->nUnk3032; /* 0x75484, the clicked panel's own row */
+    if (nRow < 0 || nRow >= pEnv->pPanelA->nLineCount) {
+        return; /* deviation: the original trusts the row */
+    }
+    nAux = pEnv->pPanelA->anLineAux[nRow];
+
+    if (nAux == 1000 || (nAux > 116 && nAux < 122)) {
+        /* A soldier row (0x754A8) and a craft row (0x7558C) share one body. */
+        if (pEnv->pPanelD->anLineAux[nRow] <= 0) {
+            return;
+        }
+        UiPanel_SetLineMeta(pEnv->pPanelE, nRow, PUFO_BUYSELL_META_SELL_A,
+                            PUFO_BUYSELL_META_SELL_G, PUFO_BUYSELL_META_SELL_A,
+                            PUFO_BUYSELL_META_SELL_B, PUFO_BUYSELL_META_SELL_BLUE,
+                            PUFO_BUYSELL_META_SELL_B); /* 0x755D8 */
+        pEnv->pPanelE->anLineAux[nRow] = 1;            /* 0x755F4, the selection CommitTransaction reads */
+        pEnv->pPanelD->anLineAux[nRow] -= 1;           /* 0x755FC */
+        return;
+    }
+
+    if (nAux > 2000) { /* an alien row, 0x75514 */
+        if (pEnv->pPanelD->anLineAux[nRow] <= 0) {
+            return;
+        }
+        BuySellRowDeltaAdd(pEnv, nAux - 2000, -1); /* 0x75548 */
+        pEnv->pPanelE->anLineAux[nRow] += 1;       /* 0x75570 */
+        pEnv->pPanelD->anLineAux[nRow] -= 1;       /* 0x755FC */
+        return;
+    }
+
+    /* A plain object row: the repeat loop, 0x75670..0x7586C. */
+    nLimit = BuySellRepeatLimit(pEnv->pnRadarPulseTimer);
+    for (k = 0; k <= nLimit; ++k) {
+        if (BuySellRowDelta(pEnv, nAux) + Base_GetItemQty(BuySellSlotRec(pEnv, nAux),
+                                                          pEnv->nSelectedBaseIdx) <= 0) {
+            break; /* 0x75694 */
+        }
+        if (nAux == 112 || nAux == 113) {
+            i32 nCrew = (nAux == 112)
+                            ? Base_GetEngineerCount(BuySellSlotRec(pEnv, nAux), pEnv->apManufCol,
+                                                    pEnv->nSelectedBaseIdx, pEnv->nCrewEntries)
+                            : Base_GetScientistCount(BuySellSlotRec(pEnv, nAux),
+                                                     pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
+                                                     pEnv->nCrewEntries);
+            if (BuySellRowDelta(pEnv, nAux) + nCrew > 0) { /* 0x75750 / 0x75700 */
+                BuySellRowDeltaAdd(pEnv, nAux, -1);
+                pEnv->pPanelD->anLineAux[nRow] -= 1;
+            }
+            /* LABEL_25, reached either way for the two crew slots. */
+            UiPanel_SetLineMeta(pEnv->pPanelE, nRow, PUFO_BUYSELL_META_SELL_A,
+                                PUFO_BUYSELL_META_SELL_G, PUFO_BUYSELL_META_SELL_A,
+                                PUFO_BUYSELL_META_SELL_B, PUFO_BUYSELL_META_SELL_BLUE,
+                                PUFO_BUYSELL_META_SELL_B); /* 0x7580C */
+            pEnv->pPanelE->anLineAux[nRow] = -BuySellRowDelta(pEnv, nAux); /* 0x7582C */
+        } else {
+            BuySellRowDeltaAdd(pEnv, nAux, -1);          /* 0x756B0 */
+            pEnv->pPanelD->anLineAux[nRow] -= 1;         /* 0x756D0 */
+            i32 nPrice = (i32)(BuySellSlotRec(pEnv, nAux) != NULL
+                                   ? BuySellSlotRec(pEnv, nAux)->uPrice
+                                   : 0);
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal += nPrice; /* 0x757AC, unk_161A2C */
+            }
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds += nPrice; /* 0x757BC */
+            }
+            pEnv->pPanelE->anLineAux[nRow] += nPrice; /* 0x757D4 */
+        }
+    }
+}
+
+/* BuySellScreen_FillBuyPanel @ 0x75160, panel B's click: take one marked unit back. */
+void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv)
+{
+    i32 nRow;
+    i32 nAux;
+    i32 nLimit;
+    i32 k;
+
+    if (pEnv == NULL || pEnv->pPanelA == NULL || pEnv->pPanelB == NULL
+        || pEnv->pPanelD == NULL || pEnv->pPanelE == NULL) {
+        return;
+    }
+    nRow = pEnv->pPanelB->nUnk3032; /* 0x75180 */
+    if (nRow < 0 || nRow >= pEnv->pPanelA->nLineCount) {
+        return;
+    }
+    nAux = pEnv->pPanelA->anLineAux[nRow];
+
+    if (nAux == 1000 || (nAux > 116 && nAux < 122)) {
+        /* Soldier (0x7519C) and craft (0x75278) rows share one body. */
+        if (pEnv->pPanelE->anLineAux[nRow] <= 0) {
+            return;
+        }
+        UiPanel_SetLineMeta(pEnv->pPanelE, nRow, PUFO_BUYSELL_META_BUY_A, PUFO_BUYSELL_META_BUY_A,
+                            PUFO_BUYSELL_META_BUY_A, PUFO_BUYSELL_META_BUY_B,
+                            PUFO_BUYSELL_META_BUY_B, PUFO_BUYSELL_META_BUY_B); /* 0x752BC */
+        pEnv->pPanelE->anLineAux[nRow] = 0;   /* 0x752D8 */
+        pEnv->pPanelD->anLineAux[nRow] += 1;  /* 0x752E8 */
+        return;
+    }
+
+    if (nAux > 2000) { /* an alien row, 0x751F4 */
+        if (pEnv->pPanelE->anLineAux[nRow] <= 0) {
+            return;
+        }
+        BuySellRowDeltaAdd(pEnv, nAux - 2000, 1);  /* 0x75234 */
+        pEnv->pPanelE->anLineAux[nRow] -= 1;       /* 0x75250 */
+        pEnv->pPanelD->anLineAux[nRow] += 1;       /* 0x752E8 */
+        return;
+    }
+
+    /* A plain object row, 0x7533C..0x75458 of BuySellScreen_FillBuyPanel @ 0x75160.
+     * ORIGINAL BUG, reproduced: the guard only skips the body and keeps the loop turning, unlike
+     * the sell side, which breaks out of it, and the money subtraction has no floor, so a row
+     * whose pending money is below one unit's price ends up negative. */
+    nLimit = BuySellRepeatLimit(pEnv->pnRadarPulseTimer);
+    for (k = 0; k <= nLimit; ++k) {
+        if (pEnv->pPanelE->anLineAux[nRow] <= 0) {
+            continue; /* 0x75350 */
+        }
+        pEnv->pPanelD->anLineAux[nRow] += 1; /* 0x7537C */
+        BuySellRowDeltaAdd(pEnv, nAux, 1);   /* 0x7538C */
+        if (nAux == 112 || nAux == 113) {
+            UiPanel_SetLineMeta(pEnv->pPanelE, nRow, PUFO_BUYSELL_META_BUY_A,
+                                PUFO_BUYSELL_META_BUY_A, PUFO_BUYSELL_META_BUY_A,
+                                PUFO_BUYSELL_META_BUY_B, PUFO_BUYSELL_META_BUY_B,
+                                PUFO_BUYSELL_META_BUY_B); /* 0x75418 */
+            pEnv->pPanelE->anLineAux[nRow] -= 1; /* 0x75428 */
+        } else {
+            i32 nPrice = (i32)(BuySellSlotRec(pEnv, nAux) != NULL
+                                   ? BuySellSlotRec(pEnv, nAux)->uPrice
+                                   : 0);
+            if (pEnv->pnTransTotal != NULL) {
+                *pEnv->pnTransTotal -= nPrice; /* 0x753B4, unk_161A2C */
+            }
+            if (pEnv->pnFunds != NULL) {
+                *pEnv->pnFunds -= nPrice; /* 0x753C4 */
+            }
+            pEnv->pPanelE->anLineAux[nRow] -= nPrice; /* 0x753D8 */
+        }
+    }
+}
+
 /* BuySellScreen_BuildPanels @ 0x76de0. See the header for the branch map and the row model. */
 void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
 {

@@ -893,6 +893,211 @@ static void TestBuySellCommitTransaction(void)
     UiPanel_FreeLines(&pE);
 }
 
+static void TestBuySellRowEditors(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static i32 aDelta[149];
+    static UiPanel pA, pB, pC, pD, pE;
+    BuySellRowEditEnv env;
+    i32 nTimer = 25;
+    i32 nTransTotal = 0;
+    i32 nFunds = 5000;
+    u8 r, g, b;
+    i32 i;
+
+    printf("the buy/sell row editors\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[10].auPerBaseVal[0] = 5; aObj[10].uPrice = 100;  /* a plain object row */
+    aObj[11].auPerBaseVal[0] = 1; aObj[11].uPrice = 250;  /* one the base can spare once */
+    aObj[77].auPerBaseVal[0] = 3; aObj[77].uPrice = 900;  /* Sectoid soldier, an alien row */
+    aObj[112].auPerBaseVal[0] = 5;                        /* the engineer crew slot */
+
+    (void)UiPanel_ctor(&pA, 6);
+    (void)UiPanel_ctor(&pB, 6);
+    (void)UiPanel_ctor(&pC, 6);
+    (void)UiPanel_ctor(&pD, 6);
+    (void)UiPanel_ctor(&pE, 6);
+    /* Row 0 a soldier, row 1 a craft, row 2 an alien, row 3 a plain object, row 4 the engineer
+     * crew slot, row 5 an object the base holds only one of. */
+    pA.anLineAux[0] = 1000;
+    pA.anLineAux[1] = 117;
+    pA.anLineAux[2] = 2077;
+    pA.anLineAux[3] = 10;
+    pA.anLineAux[4] = 112;
+    pA.anLineAux[5] = 11;
+    pD.anLineAux[0] = 2;
+    pD.anLineAux[1] = 1;
+    pD.anLineAux[2] = 3;
+    pD.anLineAux[3] = 5;
+    pD.anLineAux[4] = 5;
+    pD.anLineAux[5] = 4;
+
+    memset(&env, 0, sizeof(env));
+    env.pnRadarPulseTimer = &nTimer;
+    env.pPanelA = &pA;
+    env.pPanelB = &pB;
+    env.pPanelC = &pC;
+    env.pPanelD = &pD;
+    env.pPanelE = &pE;
+    env.anSlotDelta = aDelta;
+    env.nSlotDeltaCount = 149;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.nSelectedBaseIdx = 0;
+    env.pnTransTotal = &nTransTotal;
+    env.pnFunds = &nFunds;
+
+    /* The ">" column. A soldier row and a craft row share one body. */
+    pC.nUnk3032 = 0;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pE.anLineAux[0], 1, "one click marks one soldier");
+    CheckEqI32(pD.anLineAux[0], 1, "and takes him off the available count");
+    Check(UiPanel_GetLineMeta(&pE, 0, 1, &r, &g, &b) && r == PUFO_BUYSELL_META_SELL_A
+              && g == PUFO_BUYSELL_META_SELL_G && b == PUFO_BUYSELL_META_SELL_A,
+          "the marked row gets the green triple");
+    Check(UiPanel_GetLineMeta(&pE, 0, 2, &r, &g, &b) && r == PUFO_BUYSELL_META_SELL_B
+              && g == PUFO_BUYSELL_META_SELL_BLUE && b == PUFO_BUYSELL_META_SELL_B,
+          "and the blue one second");
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pE.anLineAux[0], 1,
+               "a second click leaves the flag at 1: 0x755F4 writes #1, it does not add");
+    CheckEqI32(pD.anLineAux[0], 0, "while the count column still drops");
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pE.anLineAux[0], 1, "the count column guards the row: nothing more can be marked");
+    CheckEqI32(pD.anLineAux[0], 0, "and it does not go negative");
+
+    pC.nUnk3032 = 1;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pE.anLineAux[1], 1, "a craft row behaves exactly like a soldier row");
+    CheckEqI32(pD.anLineAux[1], 0, "with the same guard on its count");
+
+    /* An alien row moves the slot delta instead of a selection flag. */
+    pC.nUnk3032 = 2;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(aDelta[77], -1, "the alien row writes 2077 - 2000 = slot 77 of the delta array");
+    CheckEqI32(pE.anLineAux[2], 1, "and counts the marked units in panel E");
+    CheckEqI32(pD.anLineAux[2], 2, "while the count column drops");
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(aDelta[77], -2, "one more click, one more unit queued for the commit");
+    CheckEqI32(pE.anLineAux[2], 2, "and the marked count follows");
+
+    /* A plain object row runs the repeat loop: 25 / 10 + 1 = three units per click. */
+    pC.nUnk3032 = 3;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(aDelta[10], -3, "a radar timer of 25 lets one click queue three units");
+    CheckEqI32(pD.anLineAux[3], 2, "three off the count column");
+    CheckEqI32(nTransTotal, 300, "the transaction total gains the price each time");
+    CheckEqI32(nFunds, 5300, "and so do the funds: the original adds the sale price straight back");
+    CheckEqI32(pE.anLineAux[3], 300, "panel E holds the money this row will bring");
+
+    /* The crew slots write panel E from the delta instead of adding to it, and move no money. */
+    pC.nUnk3032 = 4;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(aDelta[112], -3, "the engineer row repeats the same three times");
+    CheckEqI32(pE.anLineAux[4], 3, "but its quantity is the delta negated, not a running sum");
+    CheckEqI32(pD.anLineAux[4], 2, "and the count column still drops by one each pass");
+    CheckEqI32(nTransTotal, 300, "a crew row moves no money at all");
+
+    /* The sell guard breaks out of the loop as soon as the base cannot cover the delta. */
+    pC.nUnk3032 = 5;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(aDelta[11], -1, "one unit is all the base holds, so the loop breaks after one");
+    CheckEqI32(nTransTotal, 550, "one unit at 250, not three");
+    CheckEqI32(pE.anLineAux[5], 250, "and the row shows that one unit's price");
+
+    /* The "<" column. */
+    pB.nUnk3032 = 0;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(pE.anLineAux[0], 0, "the decrement column clears the soldier mark");
+    CheckEqI32(pD.anLineAux[0], 1, "and hands the soldier back to the count column");
+    Check(UiPanel_GetLineMeta(&pE, 0, 1, &r, &g, &b) && r == PUFO_BUYSELL_META_BUY_A
+              && g == PUFO_BUYSELL_META_BUY_A && b == PUFO_BUYSELL_META_BUY_A,
+          "the row goes back to the neutral triple");
+    Check(UiPanel_GetLineMeta(&pE, 0, 2, &r, &g, &b) && r == PUFO_BUYSELL_META_BUY_B
+              && g == PUFO_BUYSELL_META_BUY_B && b == PUFO_BUYSELL_META_BUY_B,
+          "in both triples");
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(pD.anLineAux[0], 1, "with nothing marked the buy side does nothing");
+
+    pB.nUnk3032 = 2;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[77], -1, "an alien row gives one queued unit back");
+    CheckEqI32(pE.anLineAux[2], 1, "and its marked count drops");
+    CheckEqI32(pD.anLineAux[2], 2, "with the count column restored");
+
+    pB.nUnk3032 = 3;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[10], 0, "the plain object row unwinds the same three units");
+    CheckEqI32(nTransTotal, 250, "the total unwinds by the price each time");
+    CheckEqI32(nFunds, 5250, "and the funds land 250 up: the one unit sold from the last row");
+    CheckEqI32(pE.anLineAux[3], 0, "the row's money column empties");
+    CheckEqI32(pD.anLineAux[3], 5, "and the count column is whole again");
+
+    pB.nUnk3032 = 4;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[112], 0, "the crew row unwinds to nothing queued");
+    CheckEqI32(pE.anLineAux[4], 0, "one unit off its quantity per pass");
+    CheckEqI32(pD.anLineAux[4], 5, "with the count column restored");
+    CheckEqI32(nTransTotal, 250, "and again no money moves");
+
+    /* The two loops are not symmetric: the buy guard skips the body but keeps the loop turning,
+     * and the subtraction has no floor. */
+    pB.nUnk3032 = 3;
+    pE.anLineAux[3] = 50; /* less than one unit's price */
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(pE.anLineAux[3], -50, "50 pending against a 100 price goes negative, no floor");
+    CheckEqI32(aDelta[10], 1, "only one unit moves: the guard skips the body, it does not break");
+    CheckEqI32(nTransTotal, 150, "and the total goes down by the full price once");
+
+    /* The repeat bound is nRadarPulseTimer / 10, re-read every iteration. */
+    nTimer = 0;
+    aDelta[10] = 0;
+    pD.anLineAux[3] = 0;
+    pE.anLineAux[3] = 1000;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[10], 1, "a timer of 0 still runs the loop once");
+    nTimer = 255;
+    aDelta[10] = 0;
+    pD.anLineAux[3] = 0;
+    pE.anLineAux[3] = 100000;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[10], 26, "the radar screen's 255 makes one click move 26 units");
+    CheckEqI32(pD.anLineAux[3], 26, "with no floor on the count column either");
+    env.pnRadarPulseTimer = NULL;
+    aDelta[10] = 0;
+    pD.anLineAux[3] = 0;
+    pE.anLineAux[3] = 1000;
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[10], 1, "a missing timer counts as zero, so one pass");
+    env.pnRadarPulseTimer = &nTimer;
+
+    /* Guards the original does not have. */
+    pC.nUnk3032 = 99;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pE.anLineAux[0], 0, "a row past the end changes nothing");
+    pC.nUnk3032 = -1;
+    BuySellScreen_FillSellPanel(&env);
+    CheckEqI32(pD.anLineAux[0], 1, "and neither does a negative one");
+
+    BuySellScreen_FillSellPanel(NULL);
+    BuySellScreen_FillBuyPanel(NULL);
+    env.pPanelD = NULL;
+    BuySellScreen_FillSellPanel(&env);
+    BuySellScreen_FillBuyPanel(&env);
+    CheckEqI32(aDelta[10], 1, "a missing panel makes both handlers do nothing");
+    env.pPanelD = &pD;
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pB);
+    UiPanel_FreeLines(&pC);
+    UiPanel_FreeLines(&pD);
+    UiPanel_FreeLines(&pE);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -5993,6 +6198,7 @@ int main(void)
     TestFocusDispatcher();
     TestBuySellBuildPanels();
     TestBuySellCommitTransaction();
+    TestBuySellRowEditors();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

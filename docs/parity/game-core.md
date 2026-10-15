@@ -11075,3 +11075,57 @@ Deviations:
 
 IDB: `unk_161600` named `g_anBuySellSlotDelta` (`int[149]`), function comments at 0x74bf8 (the six
 phases) and 0x78c30 (the screen 11 / 12 wiring and the delta clear).
+## BuySellScreen_FillSellPanel / BuySellScreen_FillBuyPanel -- the buy/sell row editors
+
+Port: `BuySellScreen_FillSellPanel` and `BuySellScreen_FillBuyPanel` in src/pufo/game/pufo_baseui.c,
+plus the shared `BuySellRepeatLimit`, `BuySellRowDelta`, `BuySellRowDeltaAdd` and `BuySellSlotRec`
+helpers and the six meta-colour macros in pufo_baseui.h. Evidence: 0x75464 (1044 bytes) and 0x75160
+(772 bytes) -- the click handlers BuySellScreen_BuildPanels wires onto panel C at 0x774EC and onto
+panel B at 0x773D0. Test: `TestBuySellRowEditors` in tests/test_baseui.c, 54 checks.
+
+Each handler reads the row from the clicked panel's own cursor at +0xBD8 (`nUnk3032`) and takes the
+row kind from `pBuySellPanelA.anLineAux[nRow]`, the encoding BuildPanels writes:
+
+1. aux == 1000 (a soldier) and 117..121 (a craft) share one body. Sell side, 0x754A8 and 0x7558C:
+   guard `pBuySellPanelD.anLineAux[nRow] > 0`, then panel E meta (100,255,100 / 10,50,10), panel E
+   aux = 1, panel D aux -= 1. Note the assignment: 0x755F4 is `MOV R3,#1` then `STR`, so panel E is
+   a selection FLAG on these rows, not a count -- a second click leaves it at 1 while the count
+   column keeps dropping. That is the flag BuySellScreen_CommitTransaction reads back at 0x74D88 and
+   0x74F38. Buy side, 0x7519C and 0x75278: guard panel E aux > 0, meta (240,240,240 / 20,20,20),
+   panel E aux = 0, panel D aux += 1.
+
+2. aux > 2000 (an alien row, object slot + 2000). Sell, 0x75514: guard panel D aux > 0, then
+   `g_anBuySellSlotDelta[aux - 2000] -= 1`, panel E aux += 1, panel D aux -= 1. Buy, 0x751F4: guard
+   panel E aux > 0, `delta[aux - 2000] += 1`, panel E aux -= 1, panel D aux += 1. Here panel E really
+   is a count -- the marked-unit total -- because the quantity itself lives in the delta array.
+
+3. Any other aux is a plain object slot, and the repeat loop runs. Sell, 0x75670..0x7586C: while
+   `delta[slot] + Base_GetItemQty(rec, nSelectedBaseIdx) > 0`, take one off the count column and off
+   the delta, and add `ObjectRecFull.uPrice` to `BuySell_nTransTotal` (0x161A2C), to `nFunds` and to
+   panel E aux -- the original credits the sale price to the funds straight away, before the commit.
+   Slots 112 and 113 (engineer / scientist) re-test `Base_GetEngineerCount` / `Base_GetScientistCount`
+   before spending, then write panel E aux = -delta[slot] instead of accumulating, and move no money.
+   Buy, 0x7533C..0x75458: the mirror -- panel D aux += 1, delta += 1, and the price comes back out of
+   the total, out of the funds and off panel E aux.
+
+The loop bound is the finding worth recording. Both loops compute their iteration count as
+`nRadarPulseTimer / 10` (0xAC224) through `_rt_sdiv` and re-load the global on every pass (0x75630,
+0x75440). 0xAC224 is the radar screen's pulse countdown -- the radar click leaves 250 in it and
+RadarScreen_DrawRangeBar draws it -- and nothing in the buy/sell screen owns or initialises it, so
+one click of ">" moves anywhere between one and 26 units depending on a timer from another screen.
+
+The two loops are also not symmetric, which is a second original defect: the sell guard is a branch
+to the loop exit (0x75694 `BMI loc_75870`), the buy guard only skips the body (0x75350, a branch to
+the loop tail) and lets the loop keep turning, and the buy side's `panel E aux -= price` (0x753D8)
+has no floor, so a row whose pending money is below one unit's price ends up negative and can drag
+`BuySell_nTransTotal` negative with it. Both are recorded in docs/parity/bugs.tsv.
+
+Deviations:
+- Neither handler tests the row cursor; the port bounds it against panel A's line count.
+- The original dereferences all five panel globals and the object array blindly; the port returns
+  when any is missing and treats a missing record's price as zero.
+- The port bounds the delta array to `nSlotDeltaCount`; 0x75548 and 0x7538C index
+  `g_anBuySellSlotDelta[aux - 2000]` with whatever aux holds.
+
+IDB: `unk_161A2C` named `BuySell_nTransTotal`; function comments at 0x75464 and 0x75160 giving the
+row-kind branches, the two meta colour triples and the timer-bound loop.

@@ -863,6 +863,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   screen 11 wires `BuySellScreen_ConfirmSiteAndClose` + `BuildControls` while screen 12 wires
   `BuySellScreen_CommitTransaction` + `BuildPanels`.
 
+- [x] part 22, the buy/sell row editors: `BuySellScreen_FillSellPanel (0x75464)`, 1044 bytes, and
+  `BuySellScreen_FillBuyPanel (0x75160)`, 772 bytes — 54 more checks. These are the "<" and ">"
+  clicks BuildPanels wires onto panels B and C, and they are what makes the row-marker encoding
+  usable: panel E's aux is a selection FLAG (0x755F4 writes `#1`, it does not add) on soldier and
+  craft rows, a marked-unit count on alien rows, and the pending money on plain object rows. Two
+  original defects came out of them and both are in `docs/parity/bugs.tsv`: the plain-object repeat
+  loop is bounded by `nRadarPulseTimer / 10` (0xAC224), the radar screen's pulse countdown, so one
+  click moves between 1 and 26 units depending on a timer from another screen; and the two loops are
+  not symmetric — the sell guard breaks out, the buy guard only skips the body, and the buy side's
+  `panel E aux -= price` has no floor. IDB: `unk_161A2C` → `BuySell_nTransTotal`, comments at
+  0x75464 and 0x75160.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1038,6 +1050,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the screen-id scroll dispatcher (`Geoscape_UiFocusPrev`, `Geoscape_UiFocusNext`) | 56/56 (Release) | 9407 | 837/1103 (75.9%) | 331520/598792 (55.4%) | 38 checked, 0 mismatched |
 | the buy/sell list panels (`BuySellScreen_BuildPanels`, the row-marker encoding, the sort table) | 56/56 (Release) | 9440 | 838/1103 (76.0%) | 335756/598792 (56.1%) | 38 checked, 0 mismatched |
 | the buy/sell commit (`BuySellScreen_CommitTransaction`, the delta array, the corpse pairing) | 56/56 (Release) | 9457 | 839/1103 (76.1%) | 336932/598792 (56.3%) | 38 checked, 0 mismatched |
+| the buy/sell row editors (`BuySellScreen_FillSellPanel`, `BuySellScreen_FillBuyPanel`, the timer-bound repeat loop) | 56/56 (Release) | 9511 | 841/1103 (76.2%) | 338748/598792 (56.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

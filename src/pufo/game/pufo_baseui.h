@@ -424,6 +424,74 @@ typedef struct BuySellCommitEnv {
 
 void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv);
 
+/* ------------------------------------------------- the buy/sell row editors
+ *
+ * Evidence: BuySellScreen_FillBuyPanel @ 0x75160 (772 B), the click handler of panel B (the "<"
+ * column), and BuySellScreen_FillSellPanel @ 0x75464 (1044 B), the handler of panel C (the ">").
+ * Both take the row from their own panel's nUnk3032 and branch on panel A's aux.
+ *
+ * What each column holds, now settled from both ends:
+ *   panel A aux  the row kind -- 1000 soldier, 117..121 craft, slot id plain object, slot+2000 alien
+ *   panel D aux  what the base still has to give: auPerBaseVal[base] (or the crew count), moved by
+ *                one per unit the player marks
+ *   panel E aux  for a soldier or craft row the selection flag (0 or 1); for an alien row the count
+ *                of units marked; for a plain object row the money the marks have moved
+ *   panel C aux  the soldier's roster id, or Ship.bId
+ *
+ * ">" (FillSellPanel), per row kind:
+ *   soldier  needs panel D aux > 0; highlights the row (100,255,100 / 10,10,50), sets panel E aux
+ *            to 1, decrements panel D aux
+ *   craft    the same, and it is the 1 CommitTransaction looks for
+ *   alien    needs panel D aux > 0; `g_anBuySellSlotDelta[aux - 2000]--`, panel E aux += 1,
+ *            panel D aux -= 1
+ *   object   a repeat loop (see the deviation note) that while `delta[slot] + auPerBaseVal[base]`
+ *            is positive decrements the delta, decrements panel D aux, and either adds the price to
+ *            the transaction total unk_161A2C and to nFunds and adds the price to panel E aux, or
+ *            for slots 112 / 113 uses the crew getter as the availability test, highlights the row
+ *            and sets panel E aux to `-delta[slot]`
+ *
+ * "<" (FillBuyPanel) undoes it: a soldier or craft row needs panel E aux > 0, highlights the row
+ * (240,240,240 / 20,20,20), clears panel E aux and puts one back into panel D aux; an alien row
+ * needs panel E aux > 0, then `delta[aux - 2000]++`, panel E aux -= 1, panel D aux += 1; a plain
+ * object row repeats while panel E aux > 0, putting one back into panel D aux, incrementing the
+ * delta, and either taking the price back out of the transaction total and nFunds and off panel E
+ * aux, or for 112 / 113 highlighting the row and stepping panel E aux by one.
+ *
+ * ORIGINAL BUG, reproduced in both BuySellScreen_FillBuyPanel @ 0x75160 and
+ * BuySellScreen_FillSellPanel @ 0x75464: the two repeat loops bound themselves by
+ * `nRadarPulseTimer / 10` (0xAC224) -- the radar screen's pulse countdown, which the radar click
+ * sets to 250 and the radar range bar draws. Nothing in the buy/sell screen owns it, so how many
+ * units one click moves depends on a timer from another screen. Recorded in docs/parity/bugs.tsv. */
+#define PUFO_BUYSELL_META_BUY_A 240 /* FillBuyPanel's row highlight, triple one */
+#define PUFO_BUYSELL_META_BUY_B  20 /* and triple two */
+#define PUFO_BUYSELL_META_SELL_A 100 /* FillSellPanel's highlight: (100,255,100) */
+#define PUFO_BUYSELL_META_SELL_G 255
+#define PUFO_BUYSELL_META_SELL_B  10 /* and (10,10,50) */
+#define PUFO_BUYSELL_META_SELL_BLUE 50
+
+typedef struct BuySellRowEditEnv {
+    i32 *pnRadarPulseTimer;         /* nRadarPulseTimer @ 0xAC224, the repeat bound */
+    UiPanel *pPanelA;               /* pBuySellPanelA @ 0x161A1C */
+    UiPanel *pPanelB;               /* pBuySellPanelB @ 0x161A00, the "<" column */
+    UiPanel *pPanelC;               /* pBuySellPanelC @ 0x161A20, the ">" column */
+    UiPanel *pPanelD;               /* pBuySellPanelD @ 0x160C88, the available count */
+    UiPanel *pPanelE;               /* pBuySellPanelE @ 0x1615F8, the selection / money column */
+    i32 *anSlotDelta;               /* g_anBuySellSlotDelta @ 0x161600 */
+    i32 nSlotDeltaCount;
+    BaseRec *pBase;                 /* apBases[nSelectedBaseIdx] */
+    ObjectRecFull *const *apObjects;/* Map + 0x108 */
+    i32 nObjectCount;
+    i8 nSelectedBaseIdx;            /* nSelectedBaseIdx @ 0x159D81 */
+    i32 *pnTransTotal;              /* unk_161A2C, the transaction total the screen shows */
+    i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
+    const u16 *apManufCol;          /* the engineer column @ 0x15E19C */
+    const u16 *apResearchCol;       /* the scientist column @ 0x16022C */
+    i32 nCrewEntries;               /* the crew column entry count byte @ 0x160C4C */
+} BuySellRowEditEnv;
+
+void BuySellScreen_FillBuyPanel(BuySellRowEditEnv *pEnv);  /* panel B, the "<" column */
+void BuySellScreen_FillSellPanel(BuySellRowEditEnv *pEnv); /* panel C, the ">" column */
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,
