@@ -138,8 +138,9 @@ static void Shutdown_RemoveUnits(const TactShutdownEnv *pEnv)
 }
 
 /* 0x3DE24 .. 0x3E058. The mission outcome decision table. Map_bMissionMode 0, 2 and 3
- * mean the craft leaves; 1 means the site is held. unk_128A8C says whether the mission
- * ended in a retreat rather than a completed landing. */
+ * mean the craft leaves; 1 means the site is held. Map_bMissionVictory @ Map+0x150D4 says
+ * whether the mission was won: on a held site it transfers the loot or demolishes the
+ * facility (0x3E00C / 0x3E058), on a leaving craft it loses the craft itself (0x3DFDC). */
 static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
 {
     i32 nStrategIdx = *pEnv->pnStrategIndex;
@@ -165,7 +166,7 @@ static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
 
     if (nMode == 0 || nMode == 3 || nMode == 2) {
         *pEnv->pbSpawnOnceFlag = 1;                        /* 0x3DF48 */
-        if (*pEnv->pbMissionAborted != 0) {
+        if (*pEnv->pbMissionVictory != 0) {
             StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld, nStrategIdx,
                                  pEnv->pbSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
         } else {
@@ -179,10 +180,10 @@ static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
             Ship_RemoveWithCargo(pEnv->pShipEnv, pCraft->bId); /* 0x3DFDC */
         }
     }
-    if (nMode == 1 && *pEnv->pbMissionAborted != 0) {
+    if (nMode == 1 && *pEnv->pbMissionVictory != 0) {
         Base_TransferTacticalLoot(pEnv->pLootEnv, true);   /* 0x3E00C */
     }
-    if (nMode == 1 && *pEnv->pbMissionAborted == 0) {
+    if (nMode == 1 && *pEnv->pbMissionVictory == 0) {
         BaseRec *pBase = (BaseRec *)pEnv->apBaseCopy[(i8)*pEnv->pbFacilityType];
 
         Base_DemolishFacility(pEnv->pDemolishEnv, pBase->bUnk4); /* 0x3E058 */
@@ -343,8 +344,9 @@ void Tact_TallyBattleStats(const TactTileTallyEnv *pEnv, TactBattleStats *pStats
      * gets a clean set. */
     memset(pStats, 0, sizeof(*pStats));
 
-    /* 0x334B4: the walk runs only with unk_128A8C set and the alternate outcome path clear. */
-    if (*pEnv->pbAltOutcomePath != 0 || *pEnv->pbMissionAborted == 0) {
+    /* 0x334B4: the walk runs only with Map_bMissionVictory set and the alternate outcome path clear,
+     * i.e. only after a mission that was won and not aborted. */
+    if (*pEnv->pbAltOutcomePath != 0 || *pEnv->pbMissionVictory == 0) {
         return;
     }
 
@@ -385,12 +387,14 @@ void Tact_TallyBattleStats(const TactTileTallyEnv *pEnv, TactBattleStats *pStats
 }
 
 /* The counting rule behind the debrief's "Operatives killed" and "Tanks Destroyed" lines: a unit is
- * lost when it is dead, or when unk_128A8C is clear and the alternate path is clear, or when the
- * alternate path is set and the unit is outside the camera box. ARM 0x33B50..0x33B98. */
-static bool UnitTally_bUnitLost(const Soldier *pUnit, u8 bAborted, u8 bAlt)
+ * lost when it is dead, or when Map_bMissionVictory is clear and the alternate path is clear (the
+ * mission was simply lost, so everyone is), or when the alternate path is set and the unit is
+ * outside the camera box (aborted, so whoever missed the extraction box is lost).
+ * ARM 0x33B50..0x33B98. */
+static bool UnitTally_bUnitLost(const Soldier *pUnit, u8 bVictory, u8 bAlt)
 {
     return pUnit->uHp == 0
-        || (bAborted == 0 && bAlt == 0)
+        || (bVictory == 0 && bAlt == 0)
         || (bAlt != 0 && pUnit->bInZone == 0);
 }
 
@@ -398,7 +402,7 @@ static bool UnitTally_bUnitLost(const Soldier *pUnit, u8 bAborted, u8 bAlt)
 void Tact_TallyUnitResults(const TactUnitTallyEnv *pEnv, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
                            TactUnitResults *pRes)
 {
-    const u8 bAborted = *pEnv->pbMissionAborted;
+    const u8 bVictory = *pEnv->pbMissionVictory;
     const u8 bAlt = *pEnv->pbAltOutcomePath;
     const i32 nCiv = *pEnv->pnCivilianCount;
     const i32 nXcom = (i32)*pEnv->pnXcomCount;
@@ -420,7 +424,7 @@ void Tact_TallyUnitResults(const TactUnitTallyEnv *pEnv, i32 nX0, i32 nY0, i32 n
         Soldier *pUnit = pEnv->apXcomUnits[i];
 
         pUnit->bInZone = 0;
-        if (bAborted == 0 && bAlt == 0) {          /* 0x33870 */
+        if (bVictory == 0 && bAlt == 0) {          /* 0x33870 */
             continue;
         }
         if (pUnit->nUnitType > PUFO_UNITTYPE_HUMANOID_MAX) {
@@ -438,7 +442,7 @@ void Tact_TallyUnitResults(const TactUnitTallyEnv *pEnv, i32 nX0, i32 nY0, i32 n
         Soldier *pUnit = pEnv->apCivilianUnits[i];
 
         pUnit->bInZone = 0;
-        if (bAborted == 0 && bAlt == 0) {          /* 0x33940 */
+        if (bVictory == 0 && bAlt == 0) {          /* 0x33940 */
             continue;
         }
         if (pUnit->uHp == 0 || pUnit->nUnitType > PUFO_UNITTYPE_HUMANOID_MAX) {
@@ -465,18 +469,18 @@ void Tact_TallyUnitResults(const TactUnitTallyEnv *pEnv, i32 nX0, i32 nY0, i32 n
         }
 
         if (pUnit->nUnitType <= 3u) {                                   /* 0x33A68 */
-            if (UnitTally_bUnitLost(pUnit, bAborted, bAlt)) {
+            if (UnitTally_bUnitLost(pUnit, bVictory, bAlt)) {
                 ++pRes->nOperativesLost;
             }
         } else if (pUnit->nUnitType <= PUFO_UNITTYPE_HUMANOID_MAX) {   /* 0x33A70 */
-            if (UnitTally_bUnitLost(pUnit, bAborted, bAlt)) {
+            if (UnitTally_bUnitLost(pUnit, bVictory, bAlt)) {
                 ++pRes->nTanksLost;
             }
         } else if (pUnit->nUnitType <= 0xFu || pUnit->nUnitType > 0x11u) { /* 0x33A80: the aliens */
             if (pUnit->uHp == 0) {
                 ++pRes->nAliensKilled;
             }
-        } else if (pUnit->uHp != 0 && bAborted != 0 && bAlt == 0) {    /* 0x33AB4 */
+        } else if (pUnit->uHp != 0 && bVictory != 0 && bAlt == 0) {    /* 0x33AB4 */
             ++pRes->nCiviliansRescued;
         } else {
             ++pRes->nCiviliansKilled;                                   /* 0x33AD0 */
@@ -539,7 +543,7 @@ static void ItemTally_CreditHwp(const TactItemTallyEnv *pEnv, const Soldier *pUn
 void Tact_TallyItemRecovery(const TactItemTallyEnv *pEnv, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
                             i32 *pnScore)
 {
-    const u8 bAborted = *pEnv->pbMissionAborted;
+    const u8 bVictory = *pEnv->pbMissionVictory;
     const u8 bAlt = *pEnv->pbAltOutcomePath;
     const i32 nObjCount = *pEnv->pnObjectCount;
     const i32 nCiv = *pEnv->pnCivilianCount;
@@ -629,7 +633,7 @@ void Tact_TallyItemRecovery(const TactItemTallyEnv *pEnv, i32 nX0, i32 nY0, i32 
             bool bCounted = false;
 
             pUnit = pEnv->apCivilianUnits[i];
-            if (bAborted == 0 && bAlt == 0) {              /* 0x33F78 */
+            if (bVictory == 0 && bAlt == 0) {              /* 0x33F78 */
                 continue;
             }
             pCell = Tally_Cell(pEnv->apCells, pUnit->pCell->nZ, pUnit->pCell->nY, pUnit->pCell->nX);
@@ -673,7 +677,7 @@ void Tact_TallyItemRecovery(const TactItemTallyEnv *pEnv, i32 nX0, i32 nY0, i32 
             || pUnit->nUnitType > (u8)UNIT_TYPE_HOVERTANK_BLASTER) {
             continue;
         }
-        if (bAborted == 0 && bAlt == 0) {
+        if (bVictory == 0 && bAlt == 0) {
             return;                                        /* 0x34330: the whole pass aborts */
         }
         if (!Tally_bInBox(pUnit->pCell, nX0, nY0, nX1, nY1)) {
@@ -724,7 +728,7 @@ void Tact_TallyCraftRecovery(const TactCraftTallyEnv *pEnv, i32 *pbLootRecorded)
     }
 
     /* 0x34554: the tally runs when either outcome flag is set. */
-    if (*pEnv->pbMissionAborted == 0 && *pEnv->pbAltOutcomePath == 0) {
+    if (*pEnv->pbMissionVictory == 0 && *pEnv->pbAltOutcomePath == 0) {
         return;
     }
 

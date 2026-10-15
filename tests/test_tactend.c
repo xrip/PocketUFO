@@ -50,7 +50,7 @@ static u8         s_nEnemy;
 static Soldier   *s_apXcom[4];
 static u8         s_nXcom;
 static u8         s_bMissionMode;
-static u8         s_bMissionAborted;
+static u8         s_bVictory;
 static u8         s_bAltPath;
 static u8         s_bFacType;
 static i32        s_nStrategIdx;
@@ -140,7 +140,7 @@ static void Fixture_Reset(void)
     s_nEnemy = 0;
     s_nXcom = 0;
     s_bMissionMode = 2;
-    s_bMissionAborted = 0;
+    s_bVictory = 0;
     s_bAltPath = 1;   /* mode 2 on this path calls nothing, which keeps the unit tests local */
     s_bFacType = 0;
     s_nStrategIdx = 0;
@@ -253,7 +253,7 @@ static TactShutdownEnv Env_Build(void)
     env.apXcomUnits = s_apXcom;
     env.pnXcomCount = &s_nXcom;
     env.pbMissionMode = &s_bMissionMode;
-    env.pbMissionAborted = &s_bMissionAborted;
+    env.pbMissionVictory = &s_bVictory;
     env.pbAlternateOutcomePath = &s_bAltPath;
     env.pbFacilityType = &s_bFacType;
     env.pnStrategIndex = &s_nStrategIdx;
@@ -560,7 +560,7 @@ static u8        t_nMissionType;
 static u8        t_nTerrainVariant;
 static i8        t_nHomeBase;
 static i32       t_nSiteCount;
-static u8        t_bAborted;
+static u8        t_bVictory;
 static u8        t_bAltPath;
 static u8        t_nDimX;
 static u8        t_nDimY;
@@ -674,7 +674,7 @@ static void Tally_Reset(void)
     t_nTerrainVariant = 0;
     t_nHomeBase = 0;
     t_nSiteCount = 0;
-    t_bAborted = 1;
+    t_bVictory = 1;
     t_bAltPath = 0;
     t_nDimX = 1;   /* 10 x 10 cells per layer */
     t_nDimY = 1;
@@ -692,7 +692,7 @@ static TactTileTallyEnv TileEnv(void)
     env.pnMapDimX = &t_nDimX;
     env.pnMapDimY = &t_nDimY;
     env.pbAltOutcomePath = &t_bAltPath;
-    env.pbMissionAborted = &t_bAborted;
+    env.pbMissionVictory = &t_bVictory;
     env.pnTerrainVariant = &t_nTerrainVariant;
     env.pnMissionType = &t_nMissionType;
     env.pnEleriumRoll = &t_nEleriumRoll;
@@ -713,7 +713,7 @@ static TactUnitTallyEnv UnitEnv(void)
     env.pnEnemyCount = &t_nEnemy;
     env.apCivilianUnits = t_apTactCiv;
     env.pnCivilianCount = &t_nCiv;
-    env.pbMissionAborted = &t_bAborted;
+    env.pbMissionVictory = &t_bVictory;
     env.pbAltOutcomePath = &t_bAltPath;
     return env;
 }
@@ -734,7 +734,7 @@ static TactItemTallyEnv ItemEnv(void)
     env.pnXcomCount = &t_nXcom;
     env.apCivilianUnits = t_apTactCiv;
     env.pnCivilianCount = &t_nCiv;
-    env.pbMissionAborted = &t_bAborted;
+    env.pbMissionVictory = &t_bVictory;
     env.pbAltOutcomePath = &t_bAltPath;
     return env;
 }
@@ -753,7 +753,7 @@ static TactCraftTallyEnv CraftEnv(void)
     env.pnHomeBase = &t_nHomeBase;
     env.aSites = t_aSites;
     env.pnSiteCount = &t_nSiteCount;
-    env.pbMissionAborted = &t_bAborted;
+    env.pbMissionVictory = &t_bVictory;
     env.pbAltOutcomePath = &t_bAltPath;
     return env;
 }
@@ -775,15 +775,15 @@ static void TestTileTallyGate(void)
     TestEqI32("and the counters are still zeroed, not left stale", stats.nPowerSource, 0);
 
     t_bAltPath = 0;
-    t_bAborted = 0;
+    t_bVictory = 0;
     env = TileEnv();
     Tact_TallyBattleStats(&env, &stats);
-    TestEqI32("an unk_128A8C clear gates the walk out too", stats.nAlloys, 0);
+    TestEqI32("a lost mission gates the walk out too", stats.nAlloys, 0);
 
-    t_bAborted = 1;
+    t_bVictory = 1;
     env = TileEnv();
     Tact_TallyBattleStats(&env, &stats);
-    TestEqI32("aborted and not alternate: the walk runs", stats.nAlloys, 1);
+    TestEqI32("won and not aborted: the walk runs", stats.nAlloys, 1);
 }
 
 static void TestTileTallyCounts(void)
@@ -873,7 +873,7 @@ static void TestTileTallyFood(void)
 
     Tally_Reset();
     t_nTerrainVariant = 9;
-    t_bAborted = 0;
+    t_bVictory = 0;
     env = TileEnv();
     Tact_TallyBattleStats(&env, &stats);
     TestEqI32("the gate returns before the tail, so the food line stays zero", stats.nFood, 0);
@@ -937,7 +937,7 @@ static void TestUnitTallyMarks(void)
     TestEqI32("and gains no mission", t_apTactCiv[2]->uMissions, 1);
 
     Tally_Reset();
-    t_bAborted = 0;
+    t_bVictory = 0;
     t_bAltPath = 0;
     t_apTactXcom[0] = NewTactUnit(10, 2, 2, 5, 5, 0, 10);
     t_nXcom = 1;
@@ -957,7 +957,7 @@ static void TestUnitTallyClassify(void)
 
     printf("Tact_TallyUnitResults @ 0x33A68 - the debrief lines\n");
 
-    /* A completed mission: unk_128A8C set, alternate path clear. Only dead units are lost, and a
+    /* A won mission: Map_bMissionVictory set, alternate path clear. Only dead units are lost, and a
      * live civilian is rescued. */
     Tally_Reset();
     t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 0);   /* dead operative */
@@ -984,7 +984,7 @@ static void TestUnitTallyClassify(void)
     /* Both flags clear: every operative and every hardware unit is counted as lost whatever its
      * hit points, and no civilian can be rescued. */
     Tally_Reset();
-    t_bAborted = 0;
+    t_bVictory = 0;
     t_bAltPath = 0;
     t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
     t_apTactXcom[1] = NewTactUnit(2, 8, 2, 5, 5, 0, 9);
@@ -1001,7 +1001,7 @@ static void TestUnitTallyClassify(void)
     /* Alternate path: the zone mark is what decides, so a unit the marking pass could not reach is
      * lost and one it marked is not. */
     Tally_Reset();
-    t_bAborted = 1;
+    t_bVictory = 1;
     t_bAltPath = 1;
     t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);   /* inside the box -> marked */
     t_apTactXcom[1] = NewTactUnit(2, 0, 2, 30, 30, 0, 9); /* outside it -> stays unmarked */
@@ -1121,7 +1121,7 @@ static void TestItemTallyAliens(void)
     TestEqI32("and scores", nScore, 1);
 
     Tally_Reset();
-    t_bAborted = 0;
+    t_bVictory = 0;
     t_bAltPath = 0;
     t_apTactCiv[0] = NewTactUnit(1, 9, 2, 5, 5, 0, 10);
     t_nCiv = 1;
@@ -1169,7 +1169,7 @@ static void TestItemTallyHwp(void)
     /* Both outcome flags clear: the hold is still emptied, then the pass aborts at the first
      * hardware unit, so nothing is credited. */
     Tally_Reset();
-    t_bAborted = 0;
+    t_bVictory = 0;
     t_bAltPath = 0;
     t_aCraft[0].anCargoQty[0] = 999;
     t_apTactXcom[0] = NewTactUnit(1, 4, 2, 5, 5, 0, 10);
@@ -1218,7 +1218,7 @@ static void TestCraftTallyCap(void)
     TestEqI32("and the out-param is set", bLoot, 1);
 
     Tally_Reset();
-    t_bAborted = 0;
+    t_bVictory = 0;
     t_bAltPath = 0;
     t_apObj[1]->aItemQty[1] = 3;
     t_apObj[1]->uRecovCount = 8;

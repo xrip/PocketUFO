@@ -129,8 +129,8 @@ typedef struct TactShutdownEnv {
 
     /* --- the mission outcome decision table --- */
     u8 *pbMissionMode;           /* Map_bMissionMode @ Map+0x1511D */
-    u8 *pbMissionAborted;        /* unk_128A8C @ Map+0x150D4 */
-    u8 *pbAlternateOutcomePath;  /* unk_1153D9 */
+    u8 *pbMissionVictory;        /* Map_bMissionVictory @ Map+0x150D4 */
+    u8 *pbAlternateOutcomePath;  /* Map_bAltOutcomePath @ 0x1153D9 */
     u8 *pbFacilityType;          /* unk_159D81, index into the base's facility grid */
     i32 *pnStrategIndex;         /* MEMORY[0x159E74], the current strateg item */
     u8 *pnCraftIndex;            /* Map_nCraftIndex @ Map+0x15113 */
@@ -207,20 +207,26 @@ void Tact_Shutdown(const TactShutdownEnv *pEnv, u8 bKeepSome);
  * mission type is the alien base (ARM 0x3373C..0x33768, CMP #3 BHI / CMP #4). The sixth counter is
  * dead: no tile value writes it and no reader reads it.
  *
- * The gate at 0x334B4 is `Map_bAltOutcomePath != 0 || unk_128A8C == 0`, so the walk runs only when
- * unk_128A8C is set and the alternate outcome path is not.
+ * The gate at 0x334B4 is `Map_bAltOutcomePath != 0 || Map_bMissionVictory == 0`, so the walk runs
+ * only when the mission was won and not aborted.
  *
- * ## The open question on unk_128A8C
+ * ## Map_bMissionVictory @ Map+0x150D4 (was unk_128A8C)
  *
- * The port calls this byte pbMissionAborted, "the mission ended in a retreat rather than a completed
- * landing" (docs/parity/game-core.md). The tally's counting rule reads more naturally the other way
- * round: a unit counts as lost when `uHp == 0`, or when the byte is CLEAR and the alternate path is
- * clear, or when the alternate path is set and the unit is outside the camera box -- so with the
- * byte clear every operative and every tank lands on the "killed"/"destroyed" line, and civilians
- * count as rescued only when the byte is set. That is consistent with the byte meaning "the team was
- * extracted", which is the opposite polarity. No writer of the byte is visible in the IDB (its eight
- * xrefs are all reads, in TactHud_DrawStatusBanner and Tact_Shutdown), so the name is left as it is
- * and the question is recorded in PLAN.md for the Tact_CheckBattleEnd unit.
+ * The port first called this byte pbMissionVictory, and that polarity was wrong. Tact_CheckBattleEnd
+ * writes it, and the writes settle it:
+ *
+ *   0x350F0  set when no enemy is left (Map_nEnemyReserveCount plus the live non-civilian enemies
+ *            counted off apEnemyUnits is zero, and it is not an unfinished alien base)
+ *   0x35070  cleared when Map_nXcomUnitCount is zero
+ *   0x351CC  cleared when the mission is aborted and Map_nMissionType is MissionType_XcomBase
+ *
+ * and the debrief reads it as the win/lose switch: 0x353C4 copies TEXTS[160] "Victory" into
+ * Map_szMissionCaption @ Map+0x15094 when it is set, 0x35400 copies TEXTS[161] "Defeat" when it is
+ * clear, and TactHud_DrawStatusBanner (0x1E968) draws that caption green when set, red when clear.
+ * The IDB's eight data xrefs are all reads because every write here goes through a register-built
+ * offset (`MOV R8,#0x15000; ORR R8,R8,#0xD4; STRB R7,[R5,R8]`), which is why no writer looked to
+ * exist. The companion dword Map_nMissionOutcome @ Map+0x1A1C gets 1 (no Xcom left), 0 (no enemies
+ * left) or 2 (aborted) and has no reader anywhere in the binary.
  */
 
 /* The debrief counters Tact_TallyBattleStats fills, named after the line each one feeds. */
@@ -242,7 +248,7 @@ typedef struct TactTileTallyEnv {
     const u8  *pnMapDimX;       /* Map_nMapDimX @ Map+0x1511B, in tiles */
     const u8  *pnMapDimY;       /* Map_nMapDimY @ Map+0x1511C, in tiles */
     const u8  *pbAltOutcomePath;/* Map_bAltOutcomePath @ Map+0x1A21 */
-    const u8  *pbMissionAborted;/* unk_128A8C @ Map+0x150D4, see the open question above */
+    const u8  *pbMissionVictory;/* Map_bMissionVictory @ Map+0x150D4, see the note above */
     const u8  *pnTerrainVariant;/* Map_nTerrainVariant @ Map+0x15111 */
     const u8  *pnMissionType;   /* Map_nMissionType @ Map+0x1511A */
     const i32 *pnEleriumRoll;   /* unk_138E6C @ Map+0x254B4 */
@@ -272,7 +278,7 @@ typedef struct TactUnitTallyEnv {
     const u8  *pnEnemyCount;    /* nEnemyUnitCount @ Map+0x15124 */
     Soldier **apCivilianUnits;  /* apCivilianUnits @ Map+0x15244 */
     const i32 *pnCivilianCount; /* nCivilianUnitCount @ Map+0x15120 */
-    const u8  *pbMissionAborted;
+    const u8  *pbMissionVictory;
     const u8  *pbAltOutcomePath;
 } TactUnitTallyEnv;
 
@@ -295,7 +301,7 @@ typedef struct TactItemTallyEnv {
     const u8  *pnXcomCount;     /* Map+0x1511F */
     Soldier **apCivilianUnits;  /* Map+0x15244 */
     const i32 *pnCivilianCount; /* Map+0x15120 */
-    const u8  *pbMissionAborted;
+    const u8  *pbMissionVictory;
     const u8  *pbAltOutcomePath;
 } TactItemTallyEnv;
 
@@ -319,7 +325,7 @@ typedef struct TactCraftTallyEnv {
     const i8  *pnHomeBase;      /* nCraftHomeBase @ 0x158848, the base being defended */
     SmapSite *aSites;           /* aSmapSites @ 0x162030 */
     const i32 *pnSiteCount;     /* nSmapSiteCount @ 0x186410, the working site slot */
-    const u8  *pbMissionAborted;
+    const u8  *pbMissionVictory;
     const u8  *pbAltOutcomePath;
 } TactCraftTallyEnv;
 

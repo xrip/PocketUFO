@@ -1,20 +1,20 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `ba0ab78`. This document is committed together with the four
-post-battle tallies — `Tact_TallyBattleStats (0x3348c, 756 B)`, `Tact_TallyUnitResults (0x33780,
-1136 B)`, `Tact_TallyItemRecovery (0x33c80, 2100 B)`, `Tact_TallyCraftRecovery (0x344b4, 556 B)` —
-the data side of the mission debrief, run back to back inside `Tact_CheckBattleEnd` (0x34fbc, not
-ported). Three things fell out of them. (1) Every counter's meaning came from the debrief label that
-prints it, built as `aTextRecs + 205*n`: TEXTS 162..166, 171..178, 198. The IDB's
-`pnSurvived` / `pnKilled` / `pnMIA` were wrong — all three feed *loss* lines. (2) `Mc1Rec+0x1E`, read
-exactly once in the whole binary (0x33618), is the tile facility byte: 2 power source, 3 navigation,
-5 reproduction, 7 entertainment, 8 surgery, 9 examination, 10 alloys — confirmed against the byte's
-distribution over the 1,163 records of the 27 shipped `.MC1` sets. (3) The alien
-`(nUnitType, bRankType)` → `apObjects` slot table decoded from the IDB's own `Map_apObjectsNN` names,
-which pins `UnitType` (9 Sectoid … 0x15 Sectopod) and `UnitRank` (2 soldier, 3 navigator, 4 leader,
-5 engineer, 7 medic, 8 commander); 37 `unk_113Bxx` globals renamed. The reading is written up in
-`docs/parity/game-core.md` under `## The four post-battle tallies (0x3348c, 0x33780, 0x33c80,
-0x344b4)`.
+Date: 2026-10-15. HEAD before this edit: `8a2f64e`. This document is committed together with the
+naming fix that the tally unit left open: **`unk_128A8C` @ Map+0x150D4 is the victory flag**, not an
+abort flag, and the port had it backwards. `Tact_CheckBattleEnd` (0x34fbc) writes it — set at 0x350F0
+when no enemy is left, cleared at 0x35070 when no Xcom unit is left and at 0x351CC when a
+`MissionType_XcomBase` mission is called off — and the debrief reads it as the win/lose switch
+(TEXTS[160] "Victory" at 0x353C4, TEXTS[161] "Defeat" at 0x35400, green/red caption in
+`TactHud_DrawStatusBanner` at 0x1E968). Renamed in the IDB to `Map_bMissionVictory` and in the port to
+`pbMissionVictory`. Four more Map fields named on the way: `Map_szMissionCaption` @ Map+0x15094,
+`Map_szMissionScore` @ Map+0x150B2, `Map_nDebriefLine` @ Map+0x150D0 and `Map_nMissionOutcome` @
+Map+0x1A1C (written 1/0/2 for lost/won/aborted, never read). The reason no writer looked to exist is
+recorded as a general trap: ARM cannot encode a 6684-byte displacement, so every far Map access is
+register-built and IDA records no data xref for it. Written up in `docs/parity/game-core.md` under
+`## Map_bMissionVictory: the byte the port had backwards (Map+0x150D4, was unk_128A8C)`. The unit
+before it (`8a2f64e`) ported the four post-battle tallies — 0x3348c, 0x33780, 0x33c80, 0x344b4 — and
+with them the debrief label table, the `Mc1Rec+0x1E` facility byte and the alien type/rank slot table.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -70,7 +70,7 @@ Parity and audit scripts, same session:
 python docs/parity/coverage.py            -> functions cited: 889 / 1103 (80.6%)
                                              bytes cited:     408204 / 598792 (68.2%)
 python docs/parity/audit_credits.py       -> credited functions: 889, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 340 (explain 212 citations)
+python docs/parity/audit_names.py         -> renames on record: 345 (explain 212 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 122, ORIGINAL BUG markers in src/pufo: 47
                                              ledger and port agree: every marker is listed and every row resolves
@@ -90,13 +90,16 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
 ```
 
 Test checks run across the 56 suites: **11555**. Coverage as of the latest commit: **889 / 1103
-functions (80.6%)**, **408204 / 598792 bytes (68.2%)**. The last unit was the four post-battle tallies
-— `Tact_TallyBattleStats` (0x3348c), `Tact_TallyUnitResults` (0x33780), `Tact_TallyItemRecovery`
-(0x33c80), `Tact_TallyCraftRecovery` (0x344b4), 4,548 bytes and 91 new checks: the debrief label table
-transcribed into the IDB, `Mc1Rec+0x1E` named `bFacilityKind` with a `TileFacilityKind` enum, the
-`UnitType` / `UnitRank` enums derived from the alien slot table, and 37 `Map_apObjectsNN` renames. The
-unit before it was `Inv_CloseAndCommit` (0x15a48, 1268 B), which closed the `tact-ui` subsystem at 52
-of 52 functions and 43,764 of 43,764 bytes.
+functions (80.6%)**, **408204 / 598792 bytes (68.2%)** — unchanged by this unit, which is a naming
+fix. The last unit renamed `unk_128A8C` → `Map_bMissionVictory` in the IDB and `pbMissionAborted` →
+`pbMissionVictory` in the port, and named four more Map fields (`Map_szMissionCaption`,
+`Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome`). The unit before it ported the four
+post-battle tallies — `Tact_TallyBattleStats` (0x3348c), `Tact_TallyUnitResults` (0x33780),
+`Tact_TallyItemRecovery` (0x33c80), `Tact_TallyCraftRecovery` (0x344b4), 4,548 bytes and 91 new
+checks: the debrief label table transcribed into the IDB, `Mc1Rec+0x1E` named `bFacilityKind` with a
+`TileFacilityKind` enum, the `UnitType` / `UnitRank` enums derived from the alien slot table, and 37
+`Map_apObjectsNN` renames. Before that, `Inv_CloseAndCommit` (0x15a48, 1268 B) closed the `tact-ui`
+subsystem at 52 of 52 functions and 43,764 of 43,764 bytes.
 
 The five rows of that report are five countries — lang.dat TEXTS[1302..1306] are США, Евро Альянс,
 Азиатский Альянс, Австралия, Африка — and they are **not** in race-score order: the row → slot
@@ -293,7 +296,7 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Twenty-two commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+Twenty-three commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
 transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, the
 radar (intercept) screen taken from its leaves inward until all sixteen functions were in, the funding
 screen taken from its arithmetic to its drawing, the inventory screen's close path — which closes the
@@ -321,9 +324,9 @@ screen taken from its arithmetic to its drawing, the inventory screen's close pa
 `88a8241` (port `FundingScreen_Init` 0x5c084 with `FundingScreen_OpenMonthly` 0x5d160) follows
 `94620a9`, `328171f` is the region naming fix, `f1a4daa` is the funding screen's own UI
 (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`),
-`ba0ab78` is `Inv_CloseAndCommit` (0x15a48) completing `tact-ui`, and the unit this document is
-committed with — the four post-battle tallies (0x3348c, 0x33780, 0x33c80, 0x344b4) — follows
-`ba0ab78`; all are described in §2.
+`ba0ab78` is `Inv_CloseAndCommit` (0x15a48) completing `tact-ui`, `8a2f64e` is the four post-battle
+tallies (0x3348c, 0x33780, 0x33c80, 0x344b4), and the unit this document is committed with — the
+victory-flag naming fix — follows `8a2f64e`; all are described in §2.
 
 ### A real crash found in already-ported code
 
@@ -421,7 +424,7 @@ Three audits exist because claims drifted:
 
 - `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
 - `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
-  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 340 rows) or as a
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 345 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
   against the shipped image. 28 tables, 0 mismatches.
@@ -689,12 +692,13 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
   other fields. Weapon icons come from the bigobs sprite group.
 - `Map + 0x37` does double duty: it is the animation phase clock for unit types other than 20 and 21,
   and it is the byte `UiModal_DrawDialog` uses to pick its horizontal band.
-- **`unk_128A8C` (Map + 0x150D4) is still named by guess, and the guess is recorded as a question.**
-  The port calls it `pbMissionAborted`. The debrief's counting rule reads the other way: with the byte
-  clear every operative and every tank lands on the "killed"/"destroyed" line and no civilian can be
-  rescued, which is what "the team was extracted" would look like. All eight xrefs are reads — no
-  writer anywhere in the IDB — so the name stands and the polarity is open until `Tact_CheckBattleEnd`
-  (0x34fbc) is ported and shows who sets it.
+- **`unk_128A8C` (Map + 0x150D4) is the victory flag — the port had this polarity backwards.** It is
+  now `Map_bMissionVictory` in the IDB and `pbMissionVictory` in the port. `Tact_CheckBattleEnd` sets
+  it at 0x350F0 when no enemy is left and clears it at 0x35070 when no Xcom unit is left or at 0x351CC
+  when a base-defence mission is called off, and the debrief uses it as the win/lose switch
+  (TEXTS[160] "Victory" / TEXTS[161] "Defeat", green/red caption). The earlier reading — "aborted" —
+  came from reasoning only from its eight IDB xrefs, which are all reads because every write is a
+  register-built offset. See §8.
 - Win64 launch prints an asset-load line. The original `InitInstance` (0x9fd48) prints nothing. This
   is a recorded deviation, added deliberately so a good launch is distinguishable without a screen.
 
@@ -807,6 +811,12 @@ and markers agree, 28 tables exact.
 
 These are all real, all paid for already.
 
+- **An xref search proves nothing about a far Map field.** ARM cannot encode a displacement larger
+  than 4095 in one instruction, so every access past `Map + 0xFFF` is built in a register
+  (`MOV R8,#0x15000; ORR R8,R8,#0xD4; STRB R7,[R5,R8]`) and IDA records no data xref for it. Reading
+  "all eight xrefs are reads" for `unk_128A8C` led the port to name a victory flag `pbMissionAborted`.
+  For any Map field past +0xFFF, search the listing for the constant halves (`#0x15000`, `#0x1A00`)
+  instead of trusting xrefs.
 - `cmake --build build -C Release` is **invalid**. CMake wants `--config Release`; only `ctest`
   takes `-C`. The invalid form prints a usage block and exits 1, and piped through
   `grep -iE "error|warning"` the usage text matches nothing, so a filtered build looks clean while

@@ -1640,6 +1640,32 @@ Order is by what unblocks what. Each item ends with gates + commit.
   function comments at 0x3348c, 0x33618, 0x33780, 0x33c80, 0x344b4, and 14 debrief-label comments
   inside `Tact_CheckBattleEnd`.
 
+- [x] part 59, the naming fix part 58 left open: `unk_128A8C` @ Map+0x150D4 is the **victory flag**,
+  not an abort flag. Renamed in the IDB to `Map_bMissionVictory`, and the port's
+  `pbMissionAborted` → `pbMissionVictory` in `pufo_tactend.{h,c}` and `tests/test_tactend.c`.
+  **`Tact_CheckBattleEnd` writes it**, which is what settles it: set at 0x350F0 when no enemy is left
+  (`Map_nEnemyReserveCount` plus the live non-civilian `apEnemyUnits` entries is zero, and it is not
+  an unfinished alien base), cleared at 0x35070 when `Map_nXcomUnitCount` is zero, cleared at 0x351CC
+  when a `MissionType_XcomBase` mission is called off. And the debrief reads it as the win/lose
+  switch: 0x353C4 copies TEXTS[160] "Victory" into `Map_szMissionCaption` @ Map+0x15094, 0x35400
+  copies TEXTS[161] "Defeat", and `TactHud_DrawStatusBanner` (0x1E968) draws the caption green when
+  set, red when clear. `Tact_Shutdown` already agreed — loot transferred on a held site when set,
+  facility demolished when clear, the craft itself lost only when clear.
+  **Why no writer looked to exist:** all eight IDB data xrefs are reads, because every write here
+  builds the offset in a register (`MOV R8,#0x15000; ORR R8,R8,#0xD4; STRB R7,[R5,R8]`) — ARM cannot
+  encode a 6684-byte displacement in one instruction, so IDA records no data xref. That is a general
+  trap for any Map field past +0xFFF, and it is now recorded in the parity notes.
+  **Also named:** `Map_szMissionCaption` (was `byte_128A4C`), `Map_szMissionScore` (was
+  `byte_128A6A`, the `itoa(debrief score)` the banner draws at 200,260), `Map_nDebriefLine` @
+  Map+0x150D0 (the debrief line cursor shared by `pUiPanel0 @ 0x1568E8` and `pUiPanel1 @ 0x1568E4`)
+  and `Map_nMissionOutcome` @ Map+0x1A1C (written 1/0/2 for lost/won/aborted and **never read** — a
+  dead store). 15 line comments and a function comment in `Tact_CheckBattleEnd`.
+  **The debrief labels are TEXTS records after all**, at `aTextRecs + 205*n`: the label block
+  0xBB8F0..0xBD75E is exactly stride 205 (160 Victory, 161 Defeat, 162..166, 167 live aliens
+  recovered, 168 Craft Lost, 169 Base Destroyed, 170 Base Lost, 171..178, 198 Examination Room). IDA
+  types none of them as strings, which is why `get_string` returns nothing there.
+  Coverage unchanged (889/1103); 5 renames on record (345).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1914,6 +1940,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`, the TEXTS[1307..1333] commentary table, the slot order confirmed by the names panel) | 56/56 (Release) | 11400 | 884/1103 (80.1%) | 402388/598792 (67.2%) | 39 checked, 0 mismatched |
 | the inventory close (`Inv_CloseAndCommit`, the 24-slot loadout snapshot, the clip merge) — **`tact-ui` complete at 52/52** | 56/56 (Release) | 11464 | 885/1103 (80.2%) | 403656/598792 (67.4%) | 39 checked, 0 mismatched |
 | the four post-battle tallies (`Tact_TallyBattleStats`, `Tact_TallyUnitResults`, `Tact_TallyItemRecovery`, `Tact_TallyCraftRecovery`; the debrief label table, `Mc1Rec+0x1E` named, the alien type/rank slot table) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
+| the victory-flag naming fix (`unk_128A8C` → `Map_bMissionVictory`, `Map_szMissionCaption`, `Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome` named; the register-built-offset trap recorded) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

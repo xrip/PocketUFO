@@ -13340,7 +13340,9 @@ that can reach "Civilians Rescued" / "Civilians Killed", while 9..0xF and 0x12..
    would walk off the frame.
 4. The HWP pass dereferences `pHandL` with no test; the port skips the cargo add when it is null.
 
-### Open question: the polarity of unk_128A8C
+### Open question: the polarity of unk_128A8C -- RESOLVED, and the answer was the other way
+### (see the later section "Map_bMissionVictory: the byte the port had backwards": the byte is the
+### victory flag, and the port's pbMissionAborted name was wrong)
 
 The port calls this byte `pbMissionAborted`, "the mission ended in a retreat rather than a completed
 landing". The counting rule reads more naturally the other way: with the byte clear every operative
@@ -13348,3 +13350,56 @@ and every tank is counted as lost and no civilian is rescued, while with it set 
 lost and live civilians are rescued. That is consistent with the byte meaning "the team was
 extracted". All eight of its xrefs are reads (TactHud_DrawStatusBanner, Tact_Shutdown), so no writer
 is visible in the IDB and the name is left as it is. To be settled with `Tact_CheckBattleEnd`.
+
+## Map_bMissionVictory: the byte the port had backwards (Map+0x150D4, was unk_128A8C)
+
+The four tallies gated on this byte and its counting rule read like "the team was extracted", so the
+port named it `pbMissionAborted` and recorded the polarity as an open question. `Tact_CheckBattleEnd`
+(0x34fbc) writes it, and the writes settle it the other way round: **the byte is the victory flag.**
+
+| site | condition | write |
+|---|---|---|
+| 0x350F0 | `Map_nEnemyReserveCount + (live apEnemyUnits entries of type != 0x10/0x11) == 0`, and not an unfinished alien base (`Map_nMissionType != 4 || Map_bSpawnAlt == 0`) | set |
+| 0x35070 | `Map_nXcomUnitCount == 0` | clear |
+| 0x351CC | `bAbort != 0 && Map_nMissionType == 3` (a base-defence mission called off) | clear |
+
+and the debrief reads it as the win/lose switch:
+
+- 0x353C4 copies TEXTS[160] "Victory" (`aTextRecs + 205*160 = 0xBB8F0`) into `Map_szMissionCaption`
+  @ Map+0x15094; 0x35400 copies TEXTS[161] "Defeat" (`0xBB9BD`) when it is clear.
+- `TactHud_DrawStatusBanner` (0x1E968) draws that caption green (0,255,0) when set, red (255,0,0)
+  when clear.
+- `Tact_Shutdown` (0x3DF48..0x3E058) transfers the tactical loot on a held site when set and
+  demolishes the facility when clear; on a leaving craft it removes the craft itself only when clear.
+
+So the tally rule reads correctly: won -> only dead units are lost and live civilians are rescued;
+lost outright -> every operative and every tank is lost and nobody is rescued; aborted -> whoever is
+outside the camera box is lost.
+
+**Why no writer looked to exist.** All eight IDB data xrefs to 0x128A8C are reads, in
+`TactHud_DrawStatusBanner` and `Tact_Shutdown`. Every write in `Tact_CheckBattleEnd` goes through a
+register-built offset -- `MOV R8,#0x15000; ORR R8,R8,#0xD4; ... STRB R7,[R5,R8]` -- and ARM cannot
+encode a 6684-byte displacement in one instruction, so IDA never records a data xref for them. Any
+Map field past +0xFFF has to be reached that way, which is a general trap for xref-based reasoning
+about this binary.
+
+### Two Map fields this function owns that had no name
+
+- `Map_nDebriefLine` @ Map+0x150D0 (was an unnamed gap): the debrief line cursor, shared by the label
+  panel `pUiPanel0 @ 0x1568E8` and the value panel `pUiPanel1 @ 0x1568E4`. Zeroed at 0x3539C, advanced
+  once per emitted line, and copied into both panels' `nStyle` at 0x36524 / 0x36530.
+- `Map_nMissionOutcome` @ Map+0x1A1C (was an unnamed gap): written 1 (no Xcom left), 0 (no enemies
+  left) or 2 (aborted), and **never read anywhere in the binary** -- a dead store, like the tallies'
+  sixth counter.
+
+`Map_szMissionScore` @ Map+0x150B2 (was `byte_128A6A`) holds `itoa(debrief score)` (0x36548) and is
+drawn at (200, 260); the same score is added to `g_nFundPending` at 0x3657C.
+
+### The debrief label addresses are TEXTS records, and the stride is 205
+
+Every label the debrief copies comes from `aTextRecs + 205*n`, built as `LDR R0,=0xB38D0` plus
+`MOV R3,#hi; ORR R3,#lo`. The label block runs 0xBB8F0..0xBD75E, and consecutive labels are exactly
+205 apart -- 160 Victory, 161 Defeat, 162..166 the unit lines, 167 live aliens recovered, 168 Craft
+Lost, 169 Base Destroyed, 170 Base Lost, 171..178 the alien-item lines, 198 Examination Room. IDA
+types none of them as strings (they are in the loaded-texts image, not in .rdata), which is why
+`get_string` returns nothing there.
