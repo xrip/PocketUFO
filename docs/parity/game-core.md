@@ -10527,3 +10527,24 @@ through a launch. The port bounds `bHomeBase` and looks the target up before any
 
 **IDB updates.** Function comments on 0x5a64c and 0x84254; `Ship_AbortCourse` renamed
 `Ship_LaunchIntercept`; `unk_1595D8` renamed `gUiRootPanel_nLineCount` with a line comment.
+
+The two "keep the course" selection answers (done)
+--------------------------------------------------
+
+**Evidence:** `Smap_ConfirmSelected` @ 0x845d8 (92 B) and `Smap_ConfirmSelectedAlt` @ 0x853e4 (92 B).
+Ported in `src/pufo/game/pufo_baseui.c` on one `SmapSelectedEnv`; tests in `TestSelectedAnswers`.
+
+**Both are eight instructions.** Read the ship index out of colour SLOT 0 of message line 0, answer it
+with `Ship_ClearWaypointIntercept` -- the craft keeps the course it was already on and its proximity
+timer is parked at 0xFFFF rather than restarted -- and then run the `Smap_ClearSelection` tail:
+remove line 0, unpause only if the root line-list count byte is now zero, clear `bMapSelectionFlag`.
+The dismiss half of the pair, `Smap_DismissSelected` @ 0x84428, was already ported in
+`game/pufo_strateg.c` and is the same shape with `Ship_RetargetTravel` in place of the intercept
+clear; it is not re-ported here.
+
+**The Alt variant differs only in tail order.** It clears `bMapSelectionFlag` at 0x85420 and tests the
+line count at 0x8542C; 0x845d8 has them the other way round. Nothing reads the flag in between, so the
+two orders cannot be told apart from the outside. Recorded because the difference is real in the
+binary and it is the only difference between them.
+
+**IDB updates.** Function comments on 0x845d8 and 0x853e4.

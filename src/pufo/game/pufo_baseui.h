@@ -996,6 +996,29 @@ typedef struct SmapCancelTargetEnv {
 
 void Smap_CancelTarget(const SmapCancelTargetEnv *pEnv);
 
+/* ------------------------------------------------- the two "keep the course" selection answers
+ *
+ * Evidence: Smap_ConfirmSelected @ 0x845d8 (92 B), Smap_ConfirmSelectedAlt @ 0x853e4 (92 B). Both
+ * are installed as click handlers by Geoscape_Draw, and both are the same eight instructions: read
+ * the ship index out of colour SLOT 0 of message line 0, answer it with Ship_ClearWaypointIntercept,
+ * then run Smap_ClearSelection @ 0x84648. The craft keeps the course it was already on and its
+ * proximity timer is parked at 0xFFFF; the dismiss half of the pair, Smap_DismissSelected @ 0x84428,
+ * is already ported in game/pufo_strateg.c and sends the craft home instead.
+ *
+ * Smap_ConfirmSelectedAlt is the same body with the tail reordered: it clears bMapSelectionFlag at
+ * 0x85420 BEFORE the line-count test at 0x8542C, where the other one clears it after. Nothing reads
+ * the flag in between, so the two orders cannot be told apart from the outside -- recorded because
+ * the difference is real in the binary and it is the only difference. */
+typedef struct SmapSelectedEnv {
+    UiLineList           *pLines;            /* the root message list @ 0x158890 */
+    const ShipRemovalEnv *pShipEnv;          /* the ship call's env */
+    GameTime             *pTime;
+    u8                   *pbSelectionFlag;   /* bMapSelectionFlag @ 0x159E84 */
+} SmapSelectedEnv;
+
+void Smap_ConfirmSelected(const SmapSelectedEnv *pEnv);      /* 0x845d8 */
+void Smap_ConfirmSelectedAlt(const SmapSelectedEnv *pEnv);   /* 0x853e4 */
+
 /* ------------------------------------------------- the status-panel (radar list) click
  *
  * Evidence: Geoscape_OnRadarListClick @ 0x854c4, installed as the status panel's pfnClick by

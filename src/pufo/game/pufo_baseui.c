@@ -1205,6 +1205,36 @@ void Smap_CancelTarget(const SmapCancelTargetEnv *pEnv)
     }
 }
 
+/* The two "keep the course" answers. Both read the ship index out of colour SLOT 0 of message line 0
+ * and both end on Smap_ClearSelection; the dismiss half of the pair lives in game/pufo_strateg.c. */
+void Smap_ConfirmSelected(const SmapSelectedEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x845EC */
+    (void)Ship_ClearWaypointIntercept(pEnv->pShipEnv, nShipIdx);       /* 0x845FC: keep the course */
+    (void)Smap_ClearSelection(pEnv->pLines, pEnv->pTime, pEnv->pbSelectionFlag); /* 0x84604 */
+}
+
+/* The same body with the tail reordered: the selection flag goes first at 0x85420 and the
+ * line-count test after it at 0x8542C, where the other two have them the other way round. */
+void Smap_ConfirmSelectedAlt(const SmapSelectedEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x853FC */
+    (void)Ship_ClearWaypointIntercept(pEnv->pShipEnv, nShipIdx);       /* 0x8540C */
+    UiLineList_Remove(pEnv->pLines, 0);                                /* 0x85414 */
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 0; /* 0x85420, BEFORE the count test */
+    }
+    if (pEnv->pLines->nLineCount == 0 && pEnv->pTime != NULL) {
+        GameTime_Unpause(pEnv->pTime); /* 0x8542C */
+    }
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

@@ -5135,6 +5135,84 @@ static void TestCancelTarget(void)
     Smap_CancelTarget(NULL);
     Check(true, "a null env and a null line list both do nothing");
 }
+
+static void TestSelectedAnswers(void)
+{
+    static UiLineList lines;
+    static GameTime clock;
+    u8 bSel;
+    SmapSelectedEnv env;
+
+    printf("\nSmap_ConfirmSelected @ 0x845d8, Smap_ConfirmSelectedAlt @ 0x853e4\n");
+
+    /* ConfirmSelected keeps the craft on its course and parks the timer. Slot 1 carries a decoy, so
+     * a wrong slot would show up as a bad ship index. */
+    CancelEnvReset();
+    g_shipCancel.bIntercepting = 0; /* no waypoint to drop here; test_ship covers that path */
+    g_ownCancel.nDestX = 555;
+    g_ownCancel.nDestY = 666;
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 2;
+    UiLineList_SetLine(&lines, 0, 11, 0, 999, 0, 0);
+    bSel = 1;
+    clock.bPaused = 1;
+    memset(&env, 0, sizeof(env));
+    env.pLines = &lines;
+    env.pShipEnv = &g_shipEnvCancel;
+    env.pTime = &clock;
+    env.pbSelectionFlag = &bSel;
+
+    Smap_ConfirmSelected(&env);
+    CheckEqI32(g_ownCancel.nTimer, 0xFFFF, "the timer is parked, not restarted (0x845FC)");
+    CheckEqI32(g_ownCancel.nDestX, 555, "and no travel runs: the destination is untouched");
+    CheckEqI32(g_ownCancel.nDestY, 666, "  in both axes");
+    CheckEqI32(lines.nLineCount, 1, "then Smap_ClearSelection drops line 0 (0x84604)");
+    CheckEqI32(clock.bPaused, 1, "  and a line is still standing, so the clock stays paused");
+    CheckEqI32(bSel, 0, "  and the selection flag is cleared last (0x84674)");
+
+    /* With the list emptied by the removal the clock is un-paused. */
+    CancelEnvReset();
+    g_shipCancel.bIntercepting = 0;
+    g_ownCancel.nDestX = 555;
+    g_ownCancel.nDestY = 666;
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 1;
+    UiLineList_SetLine(&lines, 0, 11, 0, 999, 0, 0);
+    bSel = 1;
+    clock.bPaused = 1;
+
+    Smap_ConfirmSelected(&env);
+    CheckEqI32(g_ownCancel.nTimer, 0xFFFF, "ConfirmSelected parks the timer instead of restarting it");
+    CheckEqI32(g_ownCancel.nDestX, 555, "and runs no travel at all: the destination is untouched");
+    CheckEqI32(g_ownCancel.nDestY, 666, "  in both axes");
+    CheckEqI32(lines.nLineCount, 0, "the line is dropped");
+    CheckEqI32(clock.bPaused, 0, "and with the list empty the clock is un-paused (0x84668)");
+
+    /* The Alt variant: same ship call, tail order swapped. */
+    CancelEnvReset();
+    g_shipCancel.bIntercepting = 0;
+    g_ownCancel.nTimer = 777;
+    g_ownCancel.nDestX = 555;
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 1;
+    UiLineList_SetLine(&lines, 0, 11, 0, 999, 0, 0);
+    bSel = 1;
+    clock.bPaused = 1;
+
+    Smap_ConfirmSelectedAlt(&env);
+    CheckEqI32(g_ownCancel.nTimer, 0xFFFF, "the Alt variant answers the same way (0x8540C)");
+    CheckEqI32(g_ownCancel.nDestX, 555, "  and still runs no travel");
+    CheckEqI32(lines.nLineCount, 0, "the line is dropped (0x85414)");
+    CheckEqI32(bSel, 0, "the selection flag is cleared BEFORE the count test here (0x85420)");
+    CheckEqI32(clock.bPaused, 0, "  and the clock is still un-paused (0x8542C)");
+
+    env.pLines = NULL;
+    Smap_ConfirmSelected(&env);
+    Smap_ConfirmSelectedAlt(&env);
+    Smap_ConfirmSelected(NULL);
+    Smap_ConfirmSelectedAlt(NULL);
+    Check(true, "both survive a null env and a null line list");
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -5191,6 +5269,7 @@ int main(void)
     TestScreenResetOpen();
     TestOpenSfxAndAltVariants();
     TestCancelTarget();
+    TestSelectedAnswers();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

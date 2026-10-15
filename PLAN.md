@@ -755,6 +755,13 @@ Order is by what unblocks what. Each item ends with gates + commit.
   test is on the root panel's line-list count byte at 0x158890+0xD48 — renamed
   `gUiRootPanel_nLineCount`.
 
+- [x] part 12, the two "keep the course" selection answers: `Smap_ConfirmSelected (0x845d8)`,
+  `Smap_ConfirmSelectedAlt (0x853e4)` — 17 more checks. Both are eight instructions: ship index from
+  colour slot 0 of message line 0, `Ship_ClearWaypointIntercept`, then the `Smap_ClearSelection` tail.
+  The Alt variant differs only in tail order — the selection flag goes before the line-count test —
+  which nothing outside the two functions can observe. The dismiss half of the pair,
+  `Smap_DismissSelected (0x84428)`, was already ported in `game/pufo_strateg.c` and is not re-ported.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -898,6 +905,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | three openers that also reset the clock (`ResearchScreen_Open`, `Ui_OpenBaseInfo`, `Geoscape_PrepScreenOpen`) | 56/56 (Release) | 9114 | 809/1103 (73.3%) | 325456/598792 (54.4%) | 38 checked, 0 mismatched |
 | the three siblings of the clock-resetting prologue (`Geoscape_PrepScreenOpenSfx`, `Ui_OpenBaseInfoAlt`, `Ui_OpenResearch`) | 56/56 (Release) | 9145 | 812/1103 (73.6%) | 326308/598792 (54.5%) | 38 checked, 0 mismatched |
 | the intercept launcher and the target dismiss (`Ship_LaunchIntercept`, `Smap_CancelTarget`) | 56/56 (Release) | 9180 | 814/1103 (73.8%) | 326944/598792 (54.6%) | 38 checked, 0 mismatched |
+| the two "keep the course" selection answers (`Smap_ConfirmSelected`, `Smap_ConfirmSelectedAlt`) | 56/56 (Release) | 9197 | 816/1103 (74.0%) | 327128/598792 (54.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
