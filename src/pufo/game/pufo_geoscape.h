@@ -955,4 +955,71 @@ typedef struct RadarHitRollEnv {
 
 bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType);
 
+/* --- the radar screen's four corner buttons @ 0x5e768 / 0x5e808 / 0x5e93c / 0x5ea70 ---
+ *
+ * Evidence: RadarScreen_SetCursorNW (160 B), RadarScreen_SetCursorNE (308 B),
+ * RadarScreen_SetCursorSW (308 B), RadarScreen_SetCursorSE (160 B).
+ *
+ * All four open on byte_159714: a non-zero value makes them do nothing. RadarScreen_Init clears it
+ * (0x5F4E0); RadarScreen_Update and RadarScreen_RollDetection read it, and neither is ported, so
+ * the port takes it as an injected byte.
+ *
+ * They park the radar cursor at one of four corners. That cursor really is a pixel position:
+ * RadarScreen_Update (0x60570, not ported) loads unk_1596D4 at its 0x60F4C into
+ * SoftSurf_BlitRectProxy's x argument (`ADD R1, R0, R1,ASR#1 ; ADD R1, R1, #1 ; x`). The four values
+ * pair up as west/east and
+ * north/south:
+ *
+ *     NW 117, 86    NE 161, 86    SW 117, 107    SE 161, 107
+ *
+ * and both halves clear the message timer and the shared scratch string at 0x186B10. The string
+ * "copy" is a clear, not a write: the loop runs from a source that is all zero in the image
+ * (0x10360F, 0x1036DC, 0x1037A9, 0x103876 -- each referenced only by its own setter), so exactly one
+ * NUL lands. Nothing in the binary fills those four sources.
+ *
+ * The two halves differ in three ways, and the differences are not symmetric:
+ *   - NW and SE write a fixed 560 into the range target. NE and SW compute
+ *     bound + 560 * (26 - nLevel) / 114 with a SIGNED divide (_rt_sdiv, which this binary calls with
+ *     the dividend in R1 and the divisor in R0 -- the same convention Base_UpdateWorkshopNeeded uses
+ *     for its total/50), taking the MAX of the two bounds for NE (0x5E884 BGT path) and the MIN for
+ *     SW (0x5E9B8 BGT path).
+ *   - NE and SW bail first when both intercept slots hold the -2 sentinel (0x5E818 / 0x5E94C). NW
+ *     and SE have no such guard.
+ *   - SE is the only one that sets the flip byte to 1; NW, NE and SW all set it to 0.
+ *
+ * The range target is the value RadarScreen_CyclePalette (0x5ed0c, not ported) animates unk_15966C
+ * toward, one step at a time, which is why setting it is not the same as setting the range.
+ *
+ * All four are installed as click handlers (0x5FCB4..0x5FD24) and their return values -- the gate
+ * byte, or &nRadarMsgTimer -- are never read, so the port returns void. */
+#define PUFO_RADAR_CURSOR_WEST    117
+#define PUFO_RADAR_CURSOR_EAST    161
+#define PUFO_RADAR_CURSOR_NORTH    86
+#define PUFO_RADAR_CURSOR_SOUTH   107
+#define PUFO_RADAR_RANGE_FULL     560 /* the fixed target NW and SE use, and the scale the other two use */
+#define PUFO_RADAR_LEVEL_MAX       26 /* 26 - nLevel is the fraction of that scale still to add */
+#define PUFO_RADAR_RANGE_DIVISOR  114
+#define PUFO_RADAR_NO_TARGET       (-2) /* both intercept slots hold this and NE/SW do nothing */
+
+typedef struct RadarCursorEnv {
+    const u8 *pbGate;        /* byte_159714 */
+    i32      *pnCursorX;     /* unk_1596D4 */
+    i32      *pnCursorY;     /* unk_1596D8 */
+    i32      *pnRangeTarget; /* unk_15965C, animated toward by unk_15966C */
+    u8       *pbFlip;        /* unk_159718 */
+    i32      *pnMsgTimer;    /* nRadarMsgTimer */
+    char     *pszMsg;        /* szRadarMsg @ 0x186B10 = dword_186B08 + 8 */
+    size_t    cchMsg;
+    const i32 *pnInterceptA; /* unk_159654, the NE/SW guard pair */
+    const i32 *pnInterceptB; /* unk_159664 */
+    const i32 *pnLevel;      /* unk_1596E0 */
+    const i32 *pnBoundA;     /* dword_1596E8 */
+    const i32 *pnBoundB;     /* dword_1596EC */
+} RadarCursorEnv;
+
+void RadarScreen_SetCursorNW(const RadarCursorEnv *pEnv);
+void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv);
+void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv);
+void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

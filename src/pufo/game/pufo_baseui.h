@@ -776,6 +776,32 @@ typedef struct NewBaseConfirmEnv {
 
 i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv);
 
+/* BaseInfoScreen_TogglePanelMode @ 0x55754 (104 B): the base-info screen's panel-mode button. It
+ * toggles one byte and writes a scroll cursor into all three of the screen's panels.
+ *
+ * The two numbers are not the same, and that is the whole trap. When the flag was ZERO it becomes 1
+ * and the cursor written is 0; when it was non-zero it becomes 0 and the cursor written is 16. The
+ * ANDS at 0x55764 sets the flags, and nothing between it and the MOVEQ at 0x55784 -- two MOVs and
+ * two conditional stores, none of which touch the flags -- changes them, so the MOVEQ answers the
+ * flag's ORIGINAL value, not the toggled one. Hex-Rays shows it as a separate `if (v0) v1 = 0;`
+ * after the branch for the same reason.
+ *
+ * The cursor field is UiPanel.nUnk3028 @ +0xBD4, the same scroll cursor the panel paging helpers
+ * read. The three panels are the base-info screen's own (unk_158820 / unk_158824 / unk_158838, all
+ * built by BaseInfoScreen_BuildPanels (0x557f4, not ported), and the stores go in the order
+ * 0x158824, 0x158820, 0x158838. Installed as a click handler (0x57714, 0x577BC); the original
+ * leaves the third panel pointer in R0 and nothing reads it, so the port returns void. */
+#define PUFO_BASEINFO_CURSOR_ON  16 /* the cursor written when the mode flag was already set */
+
+typedef struct BaseInfoToggleEnv {
+    u8      *pbModeFlag;  /* byte_AB190 @ 0xAB190 */
+    UiPanel *pPanelA;     /* unk_158820 */
+    UiPanel *pPanelB;     /* unk_158824, written first */
+    UiPanel *pPanelC;     /* unk_158838, written last */
+} BaseInfoToggleEnv;
+
+void BaseInfoScreen_TogglePanelMode(const BaseInfoToggleEnv *pEnv);
+
 /* ------------------------------------------------- the geoscape nav controls
  *
  * Evidence: Geoscape_BuildNavControls @ 0x67b1c. Callers: Game_StartNew @ 0x9542C,

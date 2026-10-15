@@ -1696,3 +1696,84 @@ bool RadarScreen_RollWeaponHit(const RadarHitRollEnv *pEnv, i32 nEventType)
     }
     return true;                                                                     /* 0x5DBB8 */
 }
+
+/* The four corner buttons share everything except the three differences listed in the header, so
+ * they share one body. The store order is the originals' order in every case. */
+static void RadarSetCursor(const RadarCursorEnv *pEnv, i32 nX, i32 nY, i32 nRange, u8 bFlip)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pbGate != NULL && (*pEnv->pbGate & 0xFFu) != 0) {
+        return; /* 0x5E774 / 0x5E840 / 0x5E974 / 0x5EA7C */
+    }
+    if (pEnv->pnCursorX != NULL) {
+        *pEnv->pnCursorX = nX;
+    }
+    if (pEnv->pnCursorY != NULL) {
+        *pEnv->pnCursorY = nY;
+    }
+    if (pEnv->pnRangeTarget != NULL) {
+        *pEnv->pnRangeTarget = nRange;
+    }
+    if (pEnv->pbFlip != NULL) {
+        *pEnv->pbFlip = bFlip;
+    }
+    /* The copy loop runs from an all-zero source, so the only byte it writes is the terminator. */
+    if (pEnv->pszMsg != NULL && pEnv->cchMsg > 0) {
+        pEnv->pszMsg[0] = 0;
+    }
+    if (pEnv->pnMsgTimer != NULL) {
+        *pEnv->pnMsgTimer = 0;
+    }
+}
+
+/* NE and SW take the range target from the map bounds and the level. The divide is signed and
+ * truncates toward zero, which is what C's / does for signed operands. */
+static i32 RadarScaleRange(const RadarCursorEnv *pEnv, bool bTakeMax)
+{
+    if (pEnv == NULL) {
+        return 0;
+    }
+    const i32 nLevel = (pEnv->pnLevel != NULL) ? *pEnv->pnLevel : 0;
+    const i32 nA = (pEnv->pnBoundA != NULL) ? *pEnv->pnBoundA : 0;
+    const i32 nB = (pEnv->pnBoundB != NULL) ? *pEnv->pnBoundB : 0;
+    const i32 nBound = bTakeMax ? ((nA < nB) ? nB : nA) : ((nA > nB) ? nB : nA);
+    const i32 nScaled = PUFO_RADAR_RANGE_FULL * (PUFO_RADAR_LEVEL_MAX - nLevel);
+
+    return nBound + nScaled / PUFO_RADAR_RANGE_DIVISOR;
+}
+
+void RadarScreen_SetCursorNW(const RadarCursorEnv *pEnv)
+{
+    RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_NORTH,
+                   PUFO_RADAR_RANGE_FULL, 0);
+}
+
+void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv)
+{
+    RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_EAST, PUFO_RADAR_CURSOR_SOUTH,
+                   PUFO_RADAR_RANGE_FULL, 1); /* the only one of the four that sets the flip byte */
+}
+
+void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv)
+{
+    if (pEnv != NULL && pEnv->pnInterceptA != NULL && pEnv->pnInterceptB != NULL &&
+        *pEnv->pnInterceptA == PUFO_RADAR_NO_TARGET &&
+        *pEnv->pnInterceptB == PUFO_RADAR_NO_TARGET) {
+        return; /* 0x5E818 / 0x5E830: no intercept target, nothing to point at */
+    }
+    RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_EAST, PUFO_RADAR_CURSOR_NORTH,
+                   RadarScaleRange(pEnv, true), 0);
+}
+
+void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv)
+{
+    if (pEnv != NULL && pEnv->pnInterceptA != NULL && pEnv->pnInterceptB != NULL &&
+        *pEnv->pnInterceptA == PUFO_RADAR_NO_TARGET &&
+        *pEnv->pnInterceptB == PUFO_RADAR_NO_TARGET) {
+        return; /* 0x5E94C / 0x5E964 */
+    }
+    RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_SOUTH,
+                   RadarScaleRange(pEnv, false), 0);
+}

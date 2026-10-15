@@ -268,6 +268,31 @@ i32 Ship_ClearInterceptByStrategIdx(const ShipRemovalEnv *pEnv, i32 nStrategIdx)
  * timer parked at 0xFFFF instead of restarted at 0. */
 struct StrategItem *Ship_ClearWaypointIntercept(const ShipRemovalEnv *pEnv, i32 nShipIdx);
 
+/* Base_RemoveAllShips @ 0x66874 (116 B): remove every craft the assigned-ship list names, then
+ * answer how many craft the base has left.
+ *
+ * The list is the one Ship_RemoveWithCargo already maintains: a signed count at 0x161468 and the
+ * indices at 0x16146C. Each entry is an index into apCraft, and the craft's Ship.bId @ +1 is what
+ * Ship_RemoveWithCargo is given -- it searches by id, not by position. The index is re-read from
+ * the list on every iteration (0x6689C), and that matters: Ship_RemoveWithCargo compacts apCraft
+ * and decrements every stored index above the gap (0x36AEC..0x36B20), so the list tracks the
+ * compaction as it goes and stays valid. The count is re-read too (0x668BC), though nothing here
+ * changes it.
+ *
+ * The tail call is Base_CountShipsAtBase(a1, a2), whose first argument is the Map base and is dead
+ * for the grid-byte half -- so the byte table at 0x159DBC has to be handed in separately, and the
+ * result is craft homed at this base plus that base's byte in that table.
+ *
+ * The original's first argument is never read by anything but that tail call's dead half, and it
+ * bounds nothing: an entry that is not a valid apCraft index is dereferenced. The port skips it. */
+typedef struct BaseClearShipsEnv {
+    ShipRemovalEnv ship;      /* Ship_RemoveWithCargo's wiring, including the assigned-ship list */
+    i32            nBaseCount; /* the apBases length ShipRemovalEnv does not carry */
+    const u8      *abGridBytes; /* 0x159DBC, the byte Base_CountShipsAtBase adds on */
+} BaseClearShipsEnv;
+
+i32 Base_RemoveAllShips(const BaseClearShipsEnv *pEnv, i32 nBaseIndex);
+
 /* Returns the ship count after the removal. */
 i32 Ship_RemoveWithCargo(const ShipRemovalEnv *pEnv, i32 nShipId);
 

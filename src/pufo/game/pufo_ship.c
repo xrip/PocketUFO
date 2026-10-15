@@ -895,6 +895,34 @@ StrategItem *Ship_ClearWaypointIntercept(const ShipRemovalEnv *pEnv, i32 nShipId
     return pEntry;
 }
 
+i32 Base_RemoveAllShips(const BaseClearShipsEnv *pEnv, i32 nBaseIndex)
+{
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    const ShipRemovalEnv *pShip = &pEnv->ship;
+    const i32 nListCount = (pShip->pnAssignedShipCount != NULL) ? *pShip->pnAssignedShipCount : 0;
+
+    for (i32 i = 0; i < nListCount; ++i) {
+        if (pShip->anAssignedShip == NULL) {
+            break;
+        }
+        const i32 nCraftIdx = pShip->anAssignedShip[i];
+        const i32 nCraftCount = (pShip->pnShipCount != NULL) ? (i32)*pShip->pnShipCount : 0;
+        if (nCraftIdx < 0 || nCraftIdx >= nCraftCount || pShip->apCraft == NULL ||
+            pShip->apCraft[nCraftIdx] == NULL) {
+            continue; /* deviation: the original dereferences apCraft[entry] with no check */
+        }
+        (void)Ship_RemoveWithCargo(pShip, (i32)pShip->apCraft[nCraftIdx]->bId); /* 0x668B8 */
+    }
+
+    return Base_CountShipsAtBase(pShip->apCraft,
+                                 (pShip->pnShipCount != NULL) ? (i32)*pShip->pnShipCount : 0,
+                                 pShip->apBases, pEnv->nBaseCount,
+                                 pEnv->abGridBytes, nBaseIndex); /* 0x668DC tail call */
+}
+
 /* ---- Base_TransferTacticalLoot @ 0x68344 ---------------------------------------- */
 
 /* The three facility grids, laid out as documented in pufo_geoscape.h:

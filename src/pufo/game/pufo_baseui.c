@@ -1359,6 +1359,36 @@ i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv
     return pEnv->pfnMapClick(pEnv->pUser);       /* 0x61588 LDR R0,=0x1864F8; BL Geoscape_OnMapClick */
 }
 
+void BaseInfoScreen_TogglePanelMode(const BaseInfoToggleEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pbModeFlag == NULL) {
+        return;
+    }
+
+    /* 0x55764 ANDS R3,R1,#0xFF. Every flag test below answers THIS value. */
+    const bool bWasZero = ((*pEnv->pbModeFlag & 0xFFu) == 0);
+
+    if (bWasZero) {
+        *pEnv->pbModeFlag = 1; /* 0x55778 STRBEQ */
+    } else {
+        *pEnv->pbModeFlag = 0; /* 0x5576C STRBNE */
+    }
+
+    /* 0x55770 MOVNE #0x10 then 0x55784 MOVEQ #0: the cursor follows the flag's ORIGINAL value, so
+     * a flag that was zero now holds 1 while the cursor written is 0. */
+    const i32 nCursor = bWasZero ? 0 : PUFO_BASEINFO_CURSOR_ON;
+
+    if (pEnv->pPanelB != NULL) {
+        pEnv->pPanelB->nUnk3028 = nCursor; /* 0x55788, unk_158824 */
+    }
+    if (pEnv->pPanelA != NULL) {
+        pEnv->pPanelA->nUnk3028 = nCursor; /* 0x55798, unk_158820 */
+    }
+    if (pEnv->pPanelC != NULL) {
+        pEnv->pPanelC->nUnk3028 = nCursor; /* 0x557A4, unk_158838 */
+    }
+}
+
 /* stru_AB4B0 @ 0xAB4B0: the ten nav-button descriptors. All ten carry pads "emptyb"/"cemptyb"
  * with no third pad and mode 0; only the offsets differ. */
 const UiControlDesc g_aGeodescNav[PUFO_NAV_CTLS] = {

@@ -2708,6 +2708,145 @@ static void TestSiteScore(void)
     CheckEqI32(Smap_SumSiteScores(aSites, PUFO_SMAP_SITE_COUNT + 1), 0, "and further out too");
 }
 
+/* RadarScreen_SetCursorNW / NE / SW / SE @ 0x5e768 / 0x5e808 / 0x5e93c / 0x5ea70 */
+static void TestRadarCursors(void)
+{
+    static char szMsg[108];
+    RadarCursorEnv env;
+    i32 nX, nY, nRange, nTimer;
+    i32 nInterceptA, nInterceptB, nLevel, nBoundA, nBoundB;
+    u8 bGate, bFlip;
+
+    printf("RadarScreen_SetCursorNW/NE/SW/SE\n");
+
+    /* The scratch string has to hold something before each setter runs, or "it was cleared" proves
+     * nothing. Assigned by hand rather than with strcpy, which this toolchain deprecates. */
+#define RC_RESET()                                                           \
+    szMsg[0] = 's'; szMsg[1] = 't'; szMsg[2] = 'a'; szMsg[3] = 'l';          \
+    szMsg[4] = 'e'; szMsg[5] = 0;                                            \
+    nX = -1; nY = -1; nRange = -1; nTimer = 55;                              \
+    nInterceptA = 0; nInterceptB = 0;                                        \
+    nLevel = 0; nBoundA = 100; nBoundB = 200;                                \
+    bGate = 0; bFlip = 9;                                                    \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pbGate = &bGate; env.pnCursorX = &nX; env.pnCursorY = &nY;           \
+    env.pnRangeTarget = &nRange; env.pbFlip = &bFlip;                        \
+    env.pnMsgTimer = &nTimer; env.pszMsg = szMsg; env.cchMsg = sizeof(szMsg);\
+    env.pnInterceptA = &nInterceptA; env.pnInterceptB = &nInterceptB;        \
+    env.pnLevel = &nLevel; env.pnBoundA = &nBoundA; env.pnBoundB = &nBoundB;
+
+    /* 1. the four corners. */
+    RC_RESET();
+    RadarScreen_SetCursorNW(&env);
+    CheckEqI32(nX, 117, "NW x (0x5E77C)");
+    CheckEqI32(nY, 86, "  y (0x5E788)");
+    CheckEqI32(nRange, 560, "  the range target is the fixed 560 (0x5E794)");
+    CheckEqI32(bFlip, 0, "  and the flip byte is cleared");
+    CheckEqI32(nTimer, 0, "  the message timer is reset (0x5E7DC)");
+    CheckEqI32(szMsg[0], 0, "  and the scratch string is cleared, not written (0x5E7C0)");
+
+    RC_RESET();
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nX, 161, "NE x (0x5E848)");
+    CheckEqI32(nY, 86, "  y, the same north row as NW");
+    CheckEqI32(bFlip, 0, "  flip cleared");
+
+    RC_RESET();
+    RadarScreen_SetCursorSW(&env);
+    CheckEqI32(nX, 117, "SW x, the same west column as NW");
+    CheckEqI32(nY, 107, "  y (0x5E98C)");
+    CheckEqI32(bFlip, 0, "  flip cleared");
+
+    RC_RESET();
+    RadarScreen_SetCursorSE(&env);
+    CheckEqI32(nX, 161, "SE x");
+    CheckEqI32(nY, 107, "  y");
+    CheckEqI32(nRange, 560, "  the fixed 560 again (0x5EA9C)");
+    CheckEqI32(bFlip, 1, "  and SE is the only corner that SETS the flip byte (0x5EAA8)");
+
+    /* 2. NE takes the MAX of the two bounds, SW the MIN, both over 560*(26-level)/114.
+     * level 0: 560*26 = 14560, 14560/114 = 127. */
+    RC_RESET();
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nRange, 200 + 127, "NE adds the scaled range to the larger bound (0x5E8D0)");
+    RC_RESET();
+    RadarScreen_SetCursorSW(&env);
+    CheckEqI32(nRange, 100 + 127, "SW adds it to the smaller bound (0x5EA04)");
+
+    /* level 26 leaves nothing to add, so the target is the bound itself. */
+    RC_RESET();
+    nLevel = 26;
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nRange, 200, "level 26 adds nothing");
+    RC_RESET();
+    nLevel = 26;
+    RadarScreen_SetCursorSW(&env);
+    CheckEqI32(nRange, 100, "  on both of them");
+
+    /* level 13: 560*13 = 7280, 7280/114 = 63. */
+    RC_RESET();
+    nLevel = 13;
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nRange, 200 + 63, "the scale is linear in the level");
+
+    /* equal bounds make max and min the same. */
+    RC_RESET();
+    nBoundA = 150; nBoundB = 150;
+    RadarScreen_SetCursorNE(&env);
+    nRange = -1;
+    RadarScreen_SetCursorSW(&env);
+    CheckEqI32(nRange, 150 + 127, "with equal bounds the two corners agree");
+
+    /* 3. NE and SW bail when both intercept slots are the -2 sentinel; NW and SE do not guard. */
+    RC_RESET();
+    nInterceptA = -2; nInterceptB = -2;
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nX, -1, "NE does nothing with no intercept target (0x5E818)");
+    CheckEqI32(nTimer, 55, "  not even the timer reset");
+    RC_RESET();
+    nInterceptA = -2; nInterceptB = -2;
+    RadarScreen_SetCursorSW(&env);
+    CheckEqI32(nX, -1, "  nor does SW (0x5E94C)");
+    RC_RESET();
+    nInterceptA = -2; nInterceptB = 3;
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nX, 161, "one real target is enough for NE to act");
+
+    RC_RESET();
+    nInterceptA = -2; nInterceptB = -2;
+    RadarScreen_SetCursorNW(&env);
+    CheckEqI32(nX, 117, "NW has no intercept guard at all");
+    RC_RESET();
+    nInterceptA = -2; nInterceptB = -2;
+    RadarScreen_SetCursorSE(&env);
+    CheckEqI32(nX, 161, "  nor does SE");
+
+    /* 4. the gate. */
+    RC_RESET();
+    bGate = 1;
+    RadarScreen_SetCursorNW(&env);
+    CheckEqI32(nX, -1, "a non-zero gate stops the button (0x5E774)");
+    CheckEqI32(szMsg[0], 's', "  the scratch string survives");
+    RC_RESET();
+    bGate = 200;
+    RadarScreen_SetCursorNE(&env);
+    CheckEqI32(nX, -1, "  on the guarded pair too");
+
+    /* 5. nulls. */
+    RadarScreen_SetCursorNW(NULL);
+    RadarScreen_SetCursorNE(NULL);
+    RadarScreen_SetCursorSW(NULL);
+    RadarScreen_SetCursorSE(NULL);
+    Check(true, "a null env does nothing in any of the four");
+
+    RC_RESET();
+    env.pnCursorX = NULL; env.pnCursorY = NULL; env.pnRangeTarget = NULL;
+    env.pbFlip = NULL; env.pnMsgTimer = NULL; env.pszMsg = NULL;
+    RadarScreen_SetCursorNW(&env);
+    Check(true, "every field is optional");
+#undef RC_RESET
+}
+
 /* RadarScreen_RollWeaponHit @ 0x5db24 and RadarScreen_BlitOverlay @ 0x5d6d4. The roll is random, so
  * the checks are invariants over many draws: every HP change has to sit inside the event's band, a
  * gate that fails changes nothing, and an event outside 25..30 never fires. */
@@ -2800,6 +2939,8 @@ static void TestRadarWeaponHit(void)
 
 int main(void)
 {
+    (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
+
     TestTickShips();
     TestTickHourly();
     TestTickBases();
@@ -2833,6 +2974,7 @@ int main(void)
     TestHangarPlacement();
     TestFacCostLabel();
     TestSiteScore();
+    TestRadarCursors();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -4378,6 +4378,74 @@ static void TestIncEngineers(void)
     Check(true, "a null env does nothing");
 #undef ENG_RESET
 }
+
+/* --- BaseInfoScreen_TogglePanelMode @ 0x55754 --- */
+static void TestTogglePanelMode(void)
+{
+    static UiPanel panelA, panelB, panelC;
+    BaseInfoToggleEnv env;
+    u8 bFlag;
+
+    printf("BaseInfoScreen_TogglePanelMode @ 0x55754\n");
+
+#define TOG_RESET()                                                          \
+    memset(&panelA, 0, sizeof(panelA));                                      \
+    memset(&panelB, 0, sizeof(panelB));                                      \
+    memset(&panelC, 0, sizeof(panelC));                                      \
+    panelA.nUnk3028 = 999; panelB.nUnk3028 = 999; panelC.nUnk3028 = 999;     \
+    bFlag = 0;                                                               \
+    memset(&env, 0, sizeof(env));                                            \
+    env.pbModeFlag = &bFlag;                                                 \
+    env.pPanelA = &panelA; env.pPanelB = &panelB; env.pPanelC = &panelC;
+
+    /* 1. from zero: the flag becomes 1, the cursor written is 0. */
+    TOG_RESET();
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(bFlag, 1, "a zero flag becomes 1 (0x55778)");
+    CheckEqI32(panelB.nUnk3028, 0, "the cursor written is 0, not the flag's new value (0x55784)");
+    CheckEqI32(panelA.nUnk3028, 0, "  all three panels get it");
+    CheckEqI32(panelC.nUnk3028, 0, "  including the last one");
+
+    /* 2. from non-zero: the flag becomes 0, the cursor written is 16. */
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(bFlag, 0, "the second press clears the flag (0x5576C)");
+    CheckEqI32(panelB.nUnk3028, PUFO_BASEINFO_CURSOR_ON, "and writes 16 into the cursor (0x55770)");
+
+    /* 3. the test is non-zero, not equal-to-one, so any other value takes the 16 path. */
+    TOG_RESET();
+    bFlag = 200;
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(bFlag, 0, "a flag of 200 is cleared");
+    CheckEqI32(panelB.nUnk3028, 16, "  and the cursor is 16");
+
+    TOG_RESET();
+    bFlag = 255;
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(bFlag, 0, "so is 255");
+    CheckEqI32(panelB.nUnk3028, 16, "  with the same cursor");
+
+    /* 4. the cursor is a dword field, and it is replaced outright rather than masked. */
+    TOG_RESET();
+    panelB.nUnk3028 = 0x123456;
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(panelB.nUnk3028, 0, "the old cursor is replaced, not partly cleared");
+
+    /* 5. a missing panel is skipped, and a missing flag stops the whole thing. */
+    TOG_RESET();
+    env.pPanelA = NULL; env.pPanelC = NULL;
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(bFlag, 1, "two null panels still toggle the flag");
+    CheckEqI32(panelB.nUnk3028, 0, "  and still write the one that exists");
+
+    TOG_RESET();
+    env.pbModeFlag = NULL;
+    BaseInfoScreen_TogglePanelMode(&env);
+    CheckEqI32(panelB.nUnk3028, 999, "a null flag writes nothing");
+
+    BaseInfoScreen_TogglePanelMode(NULL);
+    Check(true, "a null env does nothing");
+#undef TOG_RESET
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -4428,6 +4496,7 @@ int main(void)
     TestSetWaypoint();
     TestClearProductSlot();
     TestIncEngineers();
+    TestTogglePanelMode();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

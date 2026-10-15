@@ -10251,3 +10251,64 @@ not pinned by anything I have verified, so it is left alone rather than guessed.
 Remaining in this cluster: `ManufScreen_CommitProduction` (0x6f34c, 1408 B), `ManufScreen_Draw`
 (0x6e3e0, 1332 B), `ManufScreen_RefreshBaseTabs` (0x70ebc, 500 B), `ManufScreen_BuildPanels`
 (0x6e9e8, 2404 B) and `ManufScreen_DrawFrame` (0x6f9a4, 5400 B).
+
+## The base-info panel toggle, the assigned-ship sweep, and the four radar corners (done)
+
+Evidence: `BaseInfoScreen_TogglePanelMode` @ 0x55754 (104 B), `Base_RemoveAllShips` @ 0x66874 (116 B),
+`RadarScreen_SetCursorNW/NE/SW/SE` @ 0x5e768 / 0x5e808 / 0x5e93c / 0x5ea70 (160 + 308 + 308 + 160 B).
+Ported as `BaseInfoScreen_TogglePanelMode` (pufo_baseui.c), `Base_RemoveAllShips` (pufo_ship.c) and the
+four `RadarScreen_SetCursor*` (pufo_geoscape.c). 59 checks in `test_baseui.c`, `test_ship.c` and
+`test_geoscape.c`.
+
+**The toggle writes a number that is not the flag it just set.** `BaseInfoScreen_TogglePanelMode`
+flips `byte_AB190` and writes a scroll cursor (`UiPanel.nUnk3028`, +0xBD4) into all three base-info
+panels. When the flag was ZERO it becomes 1 and the cursor written is **0**; when it was non-zero it
+becomes 0 and the cursor is **16**. The reason is the flag lifetime: `ANDS R3,R1,#0xFF` at 0x55764 sets
+the flags, and everything between it and the `MOVEQ R1,#0` at 0x55784 is two MOVs and two conditional
+stores -- none of them touches the flags -- so the MOVEQ answers the flag's ORIGINAL value. Hex-Rays
+shows it as a second `if (v0) v1 = 0;` after the branch for the same reason. The test is non-zero, not
+equal-to-one: 200 and 255 both take the 16 path.
+
+**The assigned-ship list tracks the compaction it is being walked through.** `Base_RemoveAllShips`
+walks `dword_161468[1..count]` and hands each entry's craft to `Ship_RemoveWithCargo` by its
+`Ship.bId`, and it re-reads both the entry and the count on every iteration (0x6689C, 0x668BC). That
+is not paranoia: `Ship_RemoveWithCargo` compacts `apCraft` and decrements every stored index above the
+gap (0x36AEC..0x36B20), so a list of {0,1,2} becomes {0,0,1} then {0,0,0} and each position still
+names the right craft. Asserted end to end: three listed craft, three removals, count zero. The tail
+call is `Base_CountShipsAtBase`, so the answer is craft homed at the base plus that base's byte in the
+0x159DBC table -- and that byte is found by TYPE, so two bases of one type share the earlier base's
+byte (asserted: base 1 reads base 0's).
+
+**The four radar corners are two pairs, and the pairs differ in three unrelated ways.** All four gate
+on `byte_159714` (cleared by `RadarScreen_Init` at 0x5F4E0) and all four park the cursor at
+NW 117,86 / NE 161,86 / SW 117,107 / SE 161,107 -- the values pair up as west/east and north/south,
+and the x really is a pixel: `RadarScreen_Update` (0x60570, unported) loads it at 0x60F4C straight
+into `SoftSurf_BlitRectProxy`'s x argument. The differences:
+
+  - NW and SE write a fixed 560 into the range target. NE and SW compute
+    `bound + 560 * (26 - level) / 114` with a signed divide, NE taking the **max** of the two bounds
+    and SW the **min**.
+  - NE and SW bail when both intercept slots hold -2. NW and SE have no such guard.
+  - SE is the only one that sets the flip byte `unk_159718` to 1; the other three set it to 0.
+
+The divide is `_rt_sdiv`, and this binary calls it with the dividend in R1 and the divisor in R0 --
+the same convention `Base_UpdateWorkshopNeeded` uses for its `total / 50`, which is worth stating
+because the register order is the opposite of what the names suggest.
+
+**All four "copy" a string that does not exist.** Each one runs a strcpy-style loop from a source that
+is all zero in the image (0x10360F, 0x1036DC, 0x1037A9, 0x103876) and each of those four addresses has
+exactly four xrefs, all from its own setter. So nothing fills them, and what lands at `szRadarMsg`
+(0x186B10) is a single NUL: the scratch string is cleared, not written.
+
+IDB: comments on 0x55754, 0x66874 and the four setters. Two address corrections found while writing
+the notes: `RadarScreen_Update` is 0x60570 (0x60F4C is an address inside it), and
+`BaseInfoScreen_BuildPanels` is 0x557f4.
+
+A port bug this unit caught and fixed: `RadarScaleRange` dereferenced its env before the null check
+that `RadarSetCursor` performs, so `RadarScreen_SetCursorNE(NULL)` faulted. The test that found it is
+in `TestRadarCursors`.
+
+Remaining in this cluster: `RadarScreen_Init` (0x5f490, 3600 B), `RadarScreen_Update` (0x60570, 3804 B)
+and `RadarScreen_RollDetection` (0x602b0, ~1100 B) -- the three that own the gate byte, the level and
+the two bounds these setters poke. `BaseInfoScreen_BuildPanels` (0x557f4, 6084 B) and
+`BaseInfoScreen_Draw` (0x5726c) own the three panels the toggle writes.

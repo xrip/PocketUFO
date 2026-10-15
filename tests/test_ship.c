@@ -440,6 +440,122 @@ static void TestShipRemoveWithCargo(void)
 }
 
 
+/* Base_RemoveAllShips @ 0x66874 */
+static void TestRemoveAllShips(void)
+{
+    static Ship *apCraft[3];
+    static BaseRec aBases[2];
+    static BaseRec *apBases[2];
+    static ObjectRecFull aObjs[1];
+    static ObjectRecFull *apObjs[1];
+    static u8 abHangar[256];
+    static i32 anAssigned[4];
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static u8 aGridBytes[8];
+    Ship *apShip[3];
+    BaseClearShipsEnv env;
+    u8 nShipCount;
+    i32 nAssignedCount;
+    u8 once = 0;
+    i32 nSeed = 0;
+    int i;
+
+    printf("Base_RemoveAllShips @ 0x66874\n");
+
+    for (i = 0; i < 3; ++i) {
+        apShip[i] = (Ship *)calloc(1, sizeof(Ship));
+        apShip[i]->bId = (u8)(10 + i);
+        apShip[i]->nSlotIdx = i;
+        apCraft[i] = apShip[i];
+    }
+    apShip[0]->bHomeBase = 0;
+    apShip[1]->bHomeBase = 0;
+    apShip[2]->bHomeBase = 1;
+
+    aBases[0].bUnk4 = 4;
+    aBases[1].bUnk4 = 4; /* both bases share a type, which is what the grid-byte lookup keys on */
+    apBases[0] = &aBases[0];
+    apBases[1] = &aBases[1];
+
+    apObjs[0] = &aObjs[0];
+    memset(&list, 0, sizeof(list));
+    memset(&world, 0, sizeof(world));
+    world.apCraft = apCraft;
+    world.nShipCount = 3;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+
+    nShipCount = 3;
+    nAssignedCount = 3;
+    anAssigned[0] = 0; anAssigned[1] = 1; anAssigned[2] = 2; anAssigned[3] = 255;
+
+    memset(&env, 0, sizeof(env));
+    env.ship.apCraft = apCraft;
+    env.ship.pnShipCount = &nShipCount;
+    env.ship.apObjects = apObjs;
+    env.ship.nObjectCount = 1;
+    env.ship.pStrategList = &list;
+    env.ship.pWorld = &world;
+    env.ship.pnSpawnOnceFlag = &once;
+    env.ship.pSpawnCtx = &ctx;
+    env.ship.abHangarFlag = abHangar;
+    env.ship.nHangarFlagCap = (i32)sizeof(abHangar);
+    env.ship.apBases = apBases;
+    env.ship.anAssignedShip = anAssigned;
+    env.ship.pnAssignedShipCount = &nAssignedCount;
+    env.nBaseCount = 2;
+    env.abGridBytes = aGridBytes;
+
+    /* 1. the whole list goes, and the list tracks the compaction as it goes. */
+    TestEqI32Local("every listed craft is removed", Base_RemoveAllShips(&env, 0), 0);
+    TestEqI32Local("the craft count is empty", (i32)nShipCount, 0);
+    TestEqI32Local("the list itself is not emptied, only renumbered", nAssignedCount, 3);
+    TestEqI32Local("and its last entry followed the three gaps down to 0", anAssigned[2], 0);
+
+    /* 2. nothing listed: the return is Base_CountShipsAtBase, craft at the base plus the
+     * 0x159DBC byte for that base's type. */
+    for (i = 0; i < 3; ++i) {
+        apShip[i] = (Ship *)calloc(1, sizeof(Ship));
+        apShip[i]->bId = (u8)(10 + i);
+        apCraft[i] = apShip[i];
+    }
+    apShip[0]->bHomeBase = 0;
+    apShip[1]->bHomeBase = 0;
+    apShip[2]->bHomeBase = 1;
+    nShipCount = 3;
+    nAssignedCount = 0;
+    aGridBytes[0] = 3;
+
+    TestEqI32Local("two craft at base 0 plus the grid byte 3", Base_RemoveAllShips(&env, 0), 5);
+    TestEqI32Local("base 1 has one craft and reads the same byte", Base_RemoveAllShips(&env, 1), 4);
+    TestEqI32Local("nothing was removed", (i32)nShipCount, 3);
+
+    /* 3. the byte is found by TYPE: both bases are type 4, so the search answers base 0 and base 1
+     * gets base 0's byte. */
+    aGridBytes[0] = 0;
+    aGridBytes[1] = 9;
+    TestEqI32Local("base 1 sees base 0's byte, not its own", Base_RemoveAllShips(&env, 1), 1);
+
+    /* 4. deviation: an entry that is not a valid craft index is skipped, where the original
+     * dereferences apCraft[entry]. */
+    nAssignedCount = 1;
+    anAssigned[0] = 5;
+    TestEqI32Local("an out-of-range entry removes nothing", Base_RemoveAllShips(&env, 0), 2);
+    TestEqI32Local("and the count is unchanged", (i32)nShipCount, 3);
+
+    /* 5. a null env answers zero rather than faulting. */
+    TestEqI32Local("a null env removes nothing", Base_RemoveAllShips(NULL, 0), 0);
+
+    /* The removals already freed the craft objects they dropped. */
+    for (i = 0; i < 3; ++i) {
+        if (nShipCount > i) {
+            free(apShip[i]);
+        }
+    }
+}
+
 /* ------------------------------------------------- the cargo hold */
 
 static void TestCargoHold(void)
@@ -1287,6 +1403,7 @@ int main(void)
     TestSupplyConsume();
     TestCargoPair();
     TestShipRemoveWithCargo();
+    TestRemoveAllShips();
     TestCargoHold();
     TestLoadStores();
     TestStripCraftCargo();

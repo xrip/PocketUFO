@@ -699,6 +699,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   gates the stores path comes from `apObjects[PRODUCT]` (0x6E214), not the base. `apBases` @ 0x114B2C
   was a 1-byte global in the IDB; it is `BaseRec *[8]`.
 
+- [x] part 7, six small handlers: `BaseInfoScreen_TogglePanelMode (0x55754)`,
+  `Base_RemoveAllShips (0x66874)`, `RadarScreen_SetCursorNW/NE/SW/SE (0x5e768 / 0x5e808 / 0x5e93c /
+  0x5ea70)` — 59 more checks. The toggle writes a cursor that is *not* the flag it just set: a flag
+  that was zero becomes 1 while the cursor written is 0, because the flags from `ANDS` at 0x55764
+  survive to the `MOVEQ` at 0x55784. `Base_RemoveAllShips` re-reads its list entry and its count every
+  iteration because `Ship_RemoveWithCargo` decrements the stored indices as it compacts `apCraft`. The
+  four radar corners are two pairs differing in three unrelated ways (fixed 560 versus
+  `bound + 560*(26-level)/114` with max/min, the -2 intercept guard on NE/SW only, and SE alone
+  setting the flip byte), and all four "copy" a string whose source is all zero and referenced nowhere
+  else — they clear `szRadarMsg`, they do not write it. Port bug this unit caught and fixed:
+  `RadarScaleRange` dereferenced its env before `RadarSetCursor`'s null check.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -837,6 +849,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the two row clicks + the research start button (`ManufScreen_SelectListed`, `ResearchScreen_StartSelected`) | 56/56 (Release) | 8807 | 790/1103 (71.6%) | 321536/598792 (53.7%) | 38 checked, 0 mismatched |
 | three strategic/geoscape leaves (`Smap_SumSiteScores`, `Base_EnterBuildMode`, `Smap_SetWaypoint`) | 56/56 (Release) | 8868 | 793/1103 (71.9%) | 321912/598792 (53.8%) | 38 checked, 0 mismatched |
 | the product-slot clear and the engineer "+" button (`ManufScreen_ClearProductSlot`, `ConfirmAndClose`, `IncEngineers`) | 56/56 (Release) | 8926 | 796/1103 (72.2%) | 322720/598792 (53.9%) | 38 checked, 0 mismatched |
+| the base-info toggle, the assigned-ship sweep, the four radar corners (`BaseInfoScreen_TogglePanelMode`, `Base_RemoveAllShips`, `RadarScreen_SetCursorNW/NE/SW/SE`) | 56/56 (Release) | 8985 | 802/1103 (72.7%) | 323876/598792 (54.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
