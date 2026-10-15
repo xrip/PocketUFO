@@ -1387,6 +1387,21 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
     }
 }
 
+/* Ship_ProductSlotToType @ 0x65a6c. The header has the map and the two callers. The mask is the
+ * ARM's own AND R0,R1,#0xFF at 0x65A6C, so a slot id wider than a byte folds back into it: 0x175
+ * answers Skyranger. */
+i32 Ship_ProductSlotToType(i32 nProductSlot)
+{
+    switch (nProductSlot & 0xFF) {
+        case OBJ_CRAFT_COUNT_SKYRANGER:   return CRAFT_TYPE_SKYRANGER;   /* 0x65A74 -> 0x65ABC */
+        case OBJ_CRAFT_COUNT_INTERCEPTOR: return CRAFT_TYPE_INTERCEPTOR; /* 0x65A78 -> 0x65AB4 */
+        case OBJ_CRAFT_COUNT_FIRESTORM:   return CRAFT_TYPE_FIRESTORM;   /* 0x65A80 -> 0x65AAC */
+        case OBJ_CRAFT_COUNT_LIGHTNING:   return CRAFT_TYPE_LIGHTNING;   /* 0x65A88 -> 0x65AA4 */
+        case OBJ_CRAFT_COUNT_AVENGER:     return CRAFT_TYPE_AVENGER;     /* 0x65A90 -> 0x65A9C */
+        default:                          return -1;                     /* 0x65A94 MOVNE R0,#-1 */
+    }
+}
+
 /* Ship_SpawnAtSlot @ 0x2cb14. The header has the scan and its two asymmetries.
  *
  * The grid offsets below are the ARM's own arithmetic, unrolled:

@@ -4198,14 +4198,15 @@ void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv)
             }
         }
 
-        static const u8 g_anSiteSpawnType[5] = {
-            CRAFT_TYPE_SKYRANGER, CRAFT_TYPE_INTERCEPTOR, CRAFT_TYPE_FIRESTORM,
-            CRAFT_TYPE_LIGHTNING, CRAFT_TYPE_AVENGER
-        };
+        /* 0x99360..0x993A8 is the original's inline switch on the slot INDEX (0->0, 1->3, 2->4,
+         * 3->1, 4->2). Ship_ProductSlotToType @ 0x65a6c answers the same five values from the slot
+         * id itself, so the port shares that one map instead of carrying a second copy. */
         for (i32 i = 0; i < 5; ++i) {
-            const i32 nQty = (i32)pSite->auItemQty[OBJ_CRAFT_COUNT_SKYRANGER + i];
+            const i32 nSlot = OBJ_CRAFT_COUNT_SKYRANGER + i;
+            const i32 nQty = (i32)pSite->auItemQty[nSlot];
             for (i32 n = 0; n < nQty; ++n) {
-                (void)Ship_SpawnAtSlot(pEnv->pShipEnv, g_anSiteSpawnType[i], nBase); /* 0x993AC */
+                (void)Ship_SpawnAtSlot(pEnv->pShipEnv,
+                                       (u8)Ship_ProductSlotToType(nSlot), nBase); /* 0x993AC */
             }
         }
 

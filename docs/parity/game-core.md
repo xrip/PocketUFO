@@ -11849,3 +11849,38 @@ Deviation: the original walks the quantity and accumulator tables with running p
 nothing; the port indexes them as 200*nBase + product.
 
 IDB: comment at 0x70ebc.
+
+## Ship_ProductSlotToType (0x65a6c, 88 B) -- the craft product slot -> CraftType map
+
+Renamed in the IDB from `BaseFac_RaceCharToIndex`: nothing in the 88 bytes is a race, and the five
+values it compares are the craft-count object slots. Ported as `Ship_ProductSlotToType` in
+`src/pufo/game/pufo_ship.c`, tested by `TestProductSlotToType` in `tests/test_ship.c`.
+
+`AND R0, R1, #0xFF` at 0x65A6C, then a five-way compare chain on the masked byte:
+
+    117 -> 0 Skyranger   118 -> 3 Interceptor   119 -> 4 Firestorm
+    120 -> 1 Lightning   121 -> 2 Avenger       anything else -> -1
+
+Those five slots are the craft-count object records, and TEXTS.DAT records 1563..1567 (main.dat file
+offset 0x2a9ff6, record 1446 + slot) name them SKYRANGER, INTERCEPTOR, FIRE STORM, LIGTHNING (sic)
+and AVENGER. Each slot name lands on its own CraftType, so the map is a bijection over 0..4; the
+test asserts exactly that. The mask is real behaviour, not decoration: a slot id wider than a byte
+folds back onto the byte, so 0x175 answers Skyranger.
+
+Only one code caller, `ManufScreen_CommitProduction @ 0x6F638`. It masks the product index itself
+(AND R1, R7, #0xFF), leaves the grid pointer in R0 -- the callee never reads R0 -- and sign-extends
+the answer with LSL#24/ASR#24 into `Ship_SpawnAtSlot`'s nCraftType byte, so an unmapped slot would
+spawn a craft of type 0xFF. The caller's own guard at 0x6F5F4 (product <= 118 or product >= 122
+takes the item branch at 0x6F694) keeps the call to 119..121, so the -1 answer is unreachable there.
+
+`Smap_GrantSiteRecovery @ 0x98b50` carries the same map as an inline switch on the slot INDEX at
+0x99360..0x993A8 (0->0, 1->3, 2->4, 3->1, 4->2). The port calls this one function from both places
+instead of keeping a second copy, and the test asserts the two maps agree value by value.
+
+Deviation: the original takes two arguments and never reads the first; the port takes one.
+
+Also fixed while here: the `Ship_SpawnAtSlot` header comment named its 0x6F650 caller
+`BaseFacScreen`, a function name the IDB no longer has; it is `ManufScreen_CommitProduction`.
+
+IDB: renamed at 0x65a6c, with a comment there recording the map, the caller's byte extension and the
+inline copy at 0x99360.

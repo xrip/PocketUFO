@@ -542,8 +542,8 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
 
 /* ------------------------------------------------- spawning a craft and finding its hangar cell
  *
- * Evidence: Ship_SpawnAtSlot @ 0x2cb14, called from BaseFacScreen (0x6f650), four times from
- * Game_StartNew (0x94F7C, 0x951B4, 0x95268) and from 0x993B8.
+ * Evidence: Ship_SpawnAtSlot @ 0x2cb14, called from ManufScreen_CommitProduction (0x6f650), four
+ * times from Game_StartNew (0x94F7C, 0x951B4, 0x95268) and from 0x993B8.
  *
  * It allocates one 68-byte Ship, runs Ship_Ctor with the CURRENT value of the next-craft id, stores
  * the pointer at apCraft[nCraftCount] (Map+0x10AC, count byte at Map+0x1194), adds a StrategItem of
@@ -585,6 +585,29 @@ typedef struct ShipSpawnEnv {
 } ShipSpawnEnv;
 
 i32 Ship_SpawnAtSlot(ShipSpawnEnv *pEnv, u8 nCraftType, i32 nHomeBase);
+
+/* --- Ship_ProductSlotToType @ 0x65a6c (88 B) : a craft product slot -> its CraftType ---
+ *
+ * Renamed in the IDB from BaseFac_RaceCharToIndex: nothing about it is a race, and the five values
+ * it tests are the craft-count object slots, not characters. AND R0,R1,#0xFF, then a five-way
+ * compare chain on the masked byte:
+ *
+ *     117 -> 0 Skyranger   118 -> 3 Interceptor   119 -> 4 Firestorm
+ *     120 -> 1 Lightning   121 -> 2 Avenger       anything else -> -1
+ *
+ * The five slots are OBJ_CRAFT_COUNT_* (TEXTS.DAT records 1563..1567 name them SKYRANGER,
+ * INTERCEPTOR, FIRE STORM, LIGTHNING (sic) and AVENGER), so the slot name and the CraftType it maps
+ * to agree one to one. The first ARM argument -- the grid pointer the caller leaves in R0 -- is
+ * never read; the port drops it.
+ *
+ * One code caller, ManufScreen_CommitProduction @ 0x6F638, which masks the product index itself
+ * (AND R1,R7,#0xFF) and sign-extends the result with LSL#24/ASR#24 into Ship_SpawnAtSlot's
+ * nCraftType byte, so an unmapped slot would spawn a craft of type 0xFF. That caller's own guard
+ * (0x6F5F4: product <= 118 or product >= 122 takes the item branch) keeps the call to 119..121, so
+ * the -1 answer is unreachable there. Smap_GrantSiteRecovery carries the same map as an inline
+ * switch on the slot INDEX at 0x99360..0x993A8 (0->0, 1->3, 2->4, 3->1, 4->2), which is why the port
+ * shares this one function between the two. */
+i32 Ship_ProductSlotToType(i32 nProductSlot);
 
 /* --- Ship_FormatDisplayName @ 0x666cc (424 B) : the craft's display name ---
  *

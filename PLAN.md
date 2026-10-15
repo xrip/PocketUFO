@@ -1034,6 +1034,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   call, so one over-budget product ends the refresh for the remaining bases too. The message payload
   is again the ARM's, not Hex-Rays': `(32, base, product, 0, base)`. IDB: comment at 0x70ebc.
 
+- [x] part 36, the craft slot map `Ship_ProductSlotToType (0x65a6c)`, 88 bytes — 18 more checks, and
+  the last missing dependency of `ManufScreen_CommitProduction`. Renamed in the IDB from
+  `BaseFac_RaceCharToIndex`: it is not a race, it maps the five craft-count product slots to
+  `CraftType` (117->0, 118->3, 119->4, 120->1, 121->2, else -1) after `AND R0,R1,#0xFF`, and TEXTS.DAT
+  names those five slots after the five craft, so the map is a bijection over 0..4 — the test asserts
+  that. `Smap_GrantSiteRecovery` inlines the same map at 0x99360..0x993A8, so the port now shares one
+  copy. IDB: renamed at 0x65a6c with a comment; `docs/idb/functions.tsv` refreshed and the inventory
+  regenerated, so `audit_names` is back to 0 unresolved.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1244,6 +1253,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the mission-recovery pass (`Smap_GrantSiteRecovery`, the function-wide containment counter, the corpse remap) | 56/56 (Release) | 9987 | 856/1103 (77.6%) | 359956/598792 (60.1%) | 38 checked, 0 mismatched |
 | the daily build-timer countdown (`Base_TickFacilityConstruction`, the hangar's three extra clears, the message payload corrected) | 56/56 (Release) | 10016 | 857/1103 (77.7%) | 360352/598792 (60.2%) | 38 checked, 0 mismatched |
 | the manufacturing refresh (`ManufScreen_RefreshBaseTabs`, the untested hangar products, the early return) | 56/56 (Release) | 10041 | 858/1103 (77.8%) | 360852/598792 (60.3%) | 38 checked, 0 mismatched |
+| the craft slot -> CraftType map (`Ship_ProductSlotToType`, renamed in the IDB, shared with the recovery pass) | 56/56 (Release) | 10059 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

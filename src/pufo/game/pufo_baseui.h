@@ -2257,7 +2257,9 @@ void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv);
  *      type outside 0..4 CONTINUES the scan instead of returning unstamped.
  *   5. 0x99340..0x993CC: for i in 0..4, site->auItemQty[117 + i] new craft of type
  *      {0, 3, 4, 1, 2} -- the five slots carry the shipped craft names and the map lands each
- *      name on its own CraftType. Every spawn homes the craft at the same base.
+ *      name on its own CraftType. Ship_ProductSlotToType @ 0x65a6c answers that same map from the
+ *      slot id, so the port calls it instead of carrying a second copy. Every spawn homes the
+ *      craft at the same base.
  *   6. 0x993DC..0x99468: for i < bRecoveredSoldierAssign, the roster soldier whose nUnk440 equals
  *      site->anSoldierIds[i] gets Soldier.nKind = the base index.
  *   7. 0x99484..0x994A0: bFlag0 = -1 marks the site delivered, then the three needed passes run

@@ -1709,6 +1709,57 @@ static void TestFindIndexById(void)
     CheckEqI32(Ship_FindIndexById(apShips, 3, 5), -1, "and the craft behind it is simply absent");
 }
 
+static void TestProductSlotToType(void)
+{
+    static const i32 anSlot[5] = {
+        OBJ_CRAFT_COUNT_SKYRANGER, OBJ_CRAFT_COUNT_INTERCEPTOR, OBJ_CRAFT_COUNT_FIRESTORM,
+        OBJ_CRAFT_COUNT_LIGHTNING, OBJ_CRAFT_COUNT_AVENGER
+    };
+    /* Smap_GrantSiteRecovery's own switch on the slot INDEX, 0x99360..0x993A8. */
+    static const i32 anIndexMap[5] = { 0, 3, 4, 1, 2 };
+    i32 anSeen[PUFO_CRAFT_TYPE_COUNT] = { 0, 0, 0, 0, 0 };
+    bool bOneToOne = true;
+
+    printf("Ship_ProductSlotToType @ 0x65a6c\n");
+
+    CheckEqI32(Ship_ProductSlotToType(OBJ_CRAFT_COUNT_SKYRANGER), CRAFT_TYPE_SKYRANGER,
+               "117 answers Skyranger");
+    CheckEqI32(Ship_ProductSlotToType(OBJ_CRAFT_COUNT_INTERCEPTOR), CRAFT_TYPE_INTERCEPTOR,
+               "118 answers Interceptor");
+    CheckEqI32(Ship_ProductSlotToType(OBJ_CRAFT_COUNT_FIRESTORM), CRAFT_TYPE_FIRESTORM,
+               "119 answers Firestorm");
+    CheckEqI32(Ship_ProductSlotToType(OBJ_CRAFT_COUNT_LIGHTNING), CRAFT_TYPE_LIGHTNING,
+               "120 answers Lightning");
+    CheckEqI32(Ship_ProductSlotToType(OBJ_CRAFT_COUNT_AVENGER), CRAFT_TYPE_AVENGER,
+               "121 answers Avenger");
+
+    for (i32 i = 0; i < 5; ++i) {
+        const i32 nType = Ship_ProductSlotToType(anSlot[i]);
+        CheckEqI32(nType, anIndexMap[i],
+                   "the slot map is the same map Smap_GrantSiteRecovery inlines at 0x99360");
+        anSeen[nType] += 1;
+    }
+    for (i32 t = 0; t < PUFO_CRAFT_TYPE_COUNT; ++t) {
+        if (anSeen[t] != 1) {
+            bOneToOne = false;
+        }
+    }
+    Check(bOneToOne, "the five craft slots cover every CraftType exactly once");
+
+    CheckEqI32(Ship_ProductSlotToType(116), -1, "the slot below the block is unmapped");
+    CheckEqI32(Ship_ProductSlotToType(122), -1, "and so is the slot above it");
+    CheckEqI32(Ship_ProductSlotToType(0), -1, "an ordinary item slot is unmapped");
+    CheckEqI32(Ship_ProductSlotToType(255), -1, "0xFF is unmapped");
+    CheckEqI32(Ship_ProductSlotToType(-1), -1,
+               "the -1 a caller would pass masks to 0xFF and stays unmapped");
+
+    /* 0x65A6C is AND R0,R1,#0xFF, so only the low byte of the slot id is ever compared. */
+    CheckEqI32(Ship_ProductSlotToType(117 + 256), CRAFT_TYPE_SKYRANGER,
+               "a slot id one byte too wide folds back onto 117");
+    CheckEqI32(Ship_ProductSlotToType(121 + 0x10000), CRAFT_TYPE_AVENGER,
+               "and the same for a whole word too high");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -1729,6 +1780,7 @@ int main(void)
     TestSpawnAtSlot();
     TestCraftDisplayName();
     TestFindIndexById();
+    TestProductSlotToType();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

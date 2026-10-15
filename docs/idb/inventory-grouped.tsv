@@ -608,7 +608,7 @@ addr	name	size	subsystem
 65910	Base_CalcAlienContainmentCap	124	strat
 6598c	Base_CalcPsiLabCap	124	strat
 65a08	Base_CountPsiSoldiers	100	strat
-65a6c	BaseFac_RaceCharToIndex	88	strat
+65a6c	Ship_ProductSlotToType	88	strat
 65ac4	Craft_GetTypeCargoCap	108	strat
 65b30	Base_CalcWeaponStorageUsed	132	strat
 65bb4	Base_UpdateWorkshopNeeded	200	strat
