@@ -1400,6 +1400,41 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `pRadarFramePad`, `pRadarUfoPad`, `pRadarUfoFlashPad`, `pRadarUfoMissilePad`, `nRadarCursorX`,
   `nRadarCursorY`, `aTextRadarTraceLost`.
 
+- [x] part 51, the two weapon mounts on the radar screen: `RadarScreen_DrawCraftArmament (0x5edf4)`,
+  1692 bytes — 69 more checks, 9 more IDB names, one new enum, and the second real-surface test suite
+  in the project (this one on the shipped `font.dat` + `basebits.dat`).
+  **The mount ids are an enum, and the data names them.** `Ship.bWeaponL/bWeaponR` hold 24..30, now
+  `WeaponMount` in `pufo_ship.h` and in the IDB. The names come straight out of the shipped lang.dat
+  TEXTS blob at record `1446 + id`: 1471 "Корабельная пушка", 1472 "Уст-ка Стингер", 1473 "Уст-ка
+  Эваланш", 1474 "Лазерная пушка", 1475 "Плазменная пушка", 1476 "Термояд. рак. уст.". This also
+  corrects an older note that called id 24 "Psi-arm": 1470 is "Пси-усилитель", a psi *amplifier*, and
+  it is the one id no mount switch handles.
+  **The mount's range is a literal in the switch**, 140/260/360/180/300/420 for ids 25..30, and it is
+  what `nRadarBoundL/R` hold. The bar height is `_rt_sdiv(560, 114 * range)`, so the cannon's 140
+  scales to 28 pixels and `28 - 34` is negative: **the cannon draws no range bar at all**, while its
+  tick row — gated on `bWeaponL != 0`, not on the bar — is still drawn, at y 170. The laser's 180
+  scales to 36 and draws 2 rows but still gets its 3x3 cap, because the cap gate is `range > 170`.
+  **The engage gate is a distance test.** `nRadarRangeCur + _rt_sdiv(114, 560 * (nRadarCraftLevel -
+  26))` is the current reach in the same 560/114 scale the range bar uses; when it is *above* the
+  mount's range the target is out of gunshot and the ARM's predicated group (0x5EF88..0x5EFB0,
+  0x5F2A8..0x5F2C4) clears `bRadarEngageL/R`, forces that mount's cooldown to 255 and drops the
+  in-flight projectile. Hex-Rays shows the left test twice because the two store groups are separate
+  predicated instructions.
+  **The two cooldowns are the same kind of timer as the message and pulse timers.** `Geoscape_PulseUpdate
+  @ 0x95B80..0x95BCC` counts 0xAC218, 0xAC21C, 0xAC220 and 0xAC224 up to 255 one per tick; a completed
+  shot sets them to 255/240/235/251/249/230 by weapon. 0xAC218 is shared — BaseAtScreen, Smap_OnPointerUp
+  and Geoscape_OnPointer reuse it as a generic screen animation timer — so its old name
+  `nBaseAtAnimTimer` was renamed to `nRadarCooldownR` with that reuse written into the comment.
+  **The halves are not mirror images in order**: left draws bar, cap, label, ticks; right draws label,
+  bar, cap, ticks. The port keeps each half's own order.
+  **`Map_nGlyphPalBase` is ONE global and the port had two copies.** `Font_DrawGlyph` picks palette
+  slot `Map_nGlyphPalBase + nPal` and `Text_DrawString` forces it to 2 for its own duration, so the
+  copy the shell kept in `PufoWorldState` never reached the font. That copy is removed and every env is
+  wired to `g_nGlyphPalSlotBase`. A port modelling defect, not an original bug — no bugs.tsv row.
+  Named in the IDB: `nRadarShotYL`, `nRadarShotYR`, `bRadarLastShotHit`, `bRadarEngageL`,
+  `bRadarEngageR`, `nRadarBoundL`, `nRadarBoundR`, `nRadarCooldownL`, `nRadarCooldownR`, plus the
+  `WeaponMount` enum.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1666,6 +1701,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar backdrop (`RadarScreen_BlitMapBackdrop`, the phase toggle, the world-bits pointer misreading fixed) | 56/56 (Release) | 10723 | 870/1103 (78.9%) | 382004/598792 (63.8%) | 39 checked, 0 mismatched |
 | the radar gauge and range bar (the consumed percentage, the tens-digit branch shape, the level term that loosens the gate) | 56/56 (Release) | 10789 | 872/1103 (79.1%) | 383092/598792 (64.0%) | 39 checked, 0 mismatched |
 | the radar screen session (`RadarScreen_Init`, `RadarScreen_SetActive`, `RadarScreen_RollDetection`; the eight-row class table, the ammo draw and write-back, the slot-2 overrun found) | 56/56 (Release) | 10983 | 875/1103 (79.3%) | 387488/598792 (64.7%) | 39 checked, 0 mismatched |
+| the radar weapon mounts (`RadarScreen_DrawCraftArmament`, the mount-id enum, the cannon that draws no bar, the duplicated glyph-palette global fixed) | 56/56 (Release) | 11052 | 876/1103 (79.4%) | 389180/598792 (65.0%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -5,6 +5,7 @@
 #include <stddef.h>            /* size_t, the bounded text copy */
 #include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
+#include "game/pufo_font.h"    /* Font_DrawGlyph, g_fontSys.nBaseBitsBase, Text_DrawString */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
 #include "util/pufo_rand.h"
@@ -2605,4 +2606,183 @@ u8 RadarScreen_RollDetection(const RadarDetectEnv *pEnv, i32 nChance)
         pEnv->pszMsg[pEnv->cchMsg - 1] = '\0';
     }
     return bResult;
+}
+
+/* ------------------------------------------------- the two weapon mounts on the radar screen
+ * See the evidence block in pufo_geoscape.h for RadarScreen_DrawCraftArmament @ 0x5edf4. */
+
+const RadarMountDraw g_aRadarMountDraw[PUFO_RADAR_MOUNT_COUNT] = {
+    { WM_CANNON,    50, 140 }, /* 0x5EF20..0x5EF3C */
+    { WM_STINGRAY,  48, 260 }, /* 0x5EF00..0x5EF18 */
+    { WM_AVALANCHE, 49, 360 }, /* 0x5EECC..0x5EEF4 */
+    { WM_LASER,     52, 180 }, /* 0x5EEA8..0x5EED0 */
+    { WM_PLASMA,    53, 300 }, /* 0x5EE84..0x5EEAC */
+    { WM_FUSION,    51, 420 }, /* 0x5EE5C..0x5EE80 */
+};
+
+/* 0x5EE34..0x5EE38 and 0x5F15C..0x5F160: the switch tests the id against 25..30 and everything else,
+ * WM_PSI_AMP included, takes no row. */
+static const RadarMountDraw *Radar_MountRow(i8 nMount)
+{
+    const i32 n = (i32)nMount - (i32)WM_CANNON;
+    if (n < 0 || n >= PUFO_RADAR_MOUNT_COUNT) {
+        return NULL;
+    }
+    return &g_aRadarMountDraw[n];
+}
+
+/* 0x5EF4C..0x5EF7C and 0x5F26C..0x5F29C: how far the radar reaches right now. The divide is
+ * _rt_sdiv(divisor 114, dividend 560 * (nLevel - 26)) -- the dividend is zero or negative for every
+ * level the class table produces, and C's truncation toward zero is the same one. */
+static i32 Radar_RadarReach(i32 nRangeCur, i32 nLevel)
+{
+    return nRangeCur
+         + (PUFO_RADAR_RANGE_SCALE * (nLevel - PUFO_RADAR_LEVEL_MAX)) / PUFO_RADAR_RANGE_PITCH;
+}
+
+/* 0x5EF84..0x5EFB0 and 0x5F2A4..0x5F2C4: the predicated store group. Out of gunshot clears the engage
+ * byte (R8 is the function's zero register, MOV at 0x5EE24), forces the cooldown to 255 and drops the
+ * in-flight projectile. In gunshot only sets the engage byte and leaves the cooldown alone. */
+static void Radar_DrawMountGate(i32 nReach, i32 nBound, u8 *pbEngage,
+                                i32 *pnCooldown, i32 *pnShotY)
+{
+    if (nReach > nBound) {
+        *pbEngage = 0;
+        *pnCooldown = PUFO_RADAR_COOLDOWN_READY;
+        *pnShotY = 0;
+    } else {
+        *pbEngage = 1;
+    }
+}
+
+/* 0x5F044..0x5F0D4 and 0x5F2D4..0x5F354: the ammo count, centred on the mount's bar. -2 draws nothing,
+ * -1 draws the single '-' of asc_AB340, anything else the decimal digits.
+ * Deviation: the original's j_itoa writes into the 52-byte buffer at sp+0x18 with no bound. */
+static void Radar_DrawAmmoLabel(i32 nAmmo, i32 nCentreX, char *pszBuf, size_t cchBuf)
+{
+    if (nAmmo == PUFO_RADAR_AMMO_NONE) {
+        return;
+    }
+    if (nAmmo == PUFO_RADAR_AMMO_UNLIMITED) {
+        pszBuf[0] = '-';
+        pszBuf[1] = '\0';
+    } else {
+        (void)snprintf(pszBuf, cchBuf, "%d", nAmmo);
+    }
+    const i32 nWidth = Text_MeasureWidth(pszBuf);
+    Text_DrawString(nCentreX - nWidth / 2, PUFO_RADAR_AMMO_LABEL_Y, pszBuf);
+}
+
+void RadarScreen_DrawCraftArmament(const RadarArmamentEnv *pEnv)
+{
+    Ship *pCraft;
+    const RadarMountDraw *pRow;
+    i32 nBound, nBar, nReach, nX;
+    char szNum[52]; /* var_34 @ sp+0x18, the j_itoa buffer */
+
+    /* Port-side guard: the original reaches the craft through apCraft[nShipIdx] with no test at all
+     * (LDRSB [R3, #0x22] at 0x5EE2C), so an out-of-range index faults there. */
+    if (pEnv == NULL || pEnv->pnGlyphPalBase == NULL || pEnv->pnShipIdx == NULL
+        || pEnv->apCraft == NULL || pEnv->pnRangeCur == NULL || pEnv->pnCraftLevel == NULL
+        || pEnv->pnBoundL == NULL || pEnv->pnBoundR == NULL || pEnv->pbEngageL == NULL
+        || pEnv->pbEngageR == NULL || pEnv->pnCooldownL == NULL || pEnv->pnCooldownR == NULL
+        || pEnv->pnShotYL == NULL || pEnv->pnShotYR == NULL || pEnv->pnAmmoL == NULL
+        || pEnv->pnAmmoR == NULL) {
+        return;
+    }
+
+    *pEnv->pnGlyphPalBase = PUFO_RADAR_MOUNT_PAL_BASE; /* 0x5EE1C */
+
+    const i32 nShip = *pEnv->pnShipIdx;
+    pCraft = (nShip >= 0 && nShip < pEnv->nCraftCount) ? pEnv->apCraft[nShip] : NULL;
+    if (pCraft == NULL) {
+        return;
+    }
+
+    nReach = Radar_RadarReach(*pEnv->pnRangeCur, *pEnv->pnCraftLevel);
+
+    /* ------------------------------------------------ the left mount, 0x5EE28..0x5F14C */
+    pRow = Radar_MountRow(pCraft->bWeaponL);
+    nBound = 0;
+    if (pRow != NULL) {
+        Font_DrawGlyph(PUFO_RADAR_MOUNT_GLYPH_X_L, PUFO_RADAR_MOUNT_GLYPH_Y,
+                       (u16)(g_fontSys.nBaseBitsBase + pRow->nGlyphOff), 0);
+        nBound = pRow->nRange;
+    }
+    *pEnv->pnBoundL = nBound; /* 0x5EF48 */
+
+    Radar_DrawMountGate(nReach, nBound, pEnv->pbEngageL, pEnv->pnCooldownL, pEnv->pnShotYL);
+
+    nBar = (PUFO_RADAR_RANGE_PITCH * nBound) / PUFO_RADAR_RANGE_SCALE; /* 0x5EFC4 */
+    SoftSurf_BlitRectProxy(0, PUFO_RADAR_BAR_X_L, PUFO_RADAR_BAR_BASE_Y - nBar, 1,
+                           nBar - PUFO_RADAR_BAR_TRIM,
+                           PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                           PUFO_RADAR_BAR_COLOR_LOW);
+    if (nBound > PUFO_RADAR_BAR_CAP_MIN_RANGE) { /* 0x5F004 */
+        SoftSurf_BlitRectProxy(0, PUFO_RADAR_BAR_CAP_X_L, PUFO_RADAR_BAR_CAP_Y - nBar, 3, 3,
+                               PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                               PUFO_RADAR_BAR_COLOR_LOW);
+    }
+    Radar_DrawAmmoLabel(*pEnv->pnAmmoL, PUFO_RADAR_BAR_X_L, szNum, sizeof(szNum));
+
+    if (pCraft->bWeaponL != 0) { /* 0x5F0E8 */
+        for (nX = PUFO_RADAR_TICK_X_FIRST_L; nX < PUFO_RADAR_TICK_LAST_X_L;
+             nX += PUFO_RADAR_TICK_PITCH) {
+            SoftSurf_BlitRectProxy(0, nX, PUFO_RADAR_BAR_BASE_Y - nBar, 2, 1,
+                                   PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                                   PUFO_RADAR_BAR_COLOR_LOW);
+        }
+        SoftSurf_BlitRectProxy(0, PUFO_RADAR_TICK_CAP_X_L, PUFO_RADAR_BAR_CAP_Y - nBar, 3, 3,
+                               PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                               PUFO_RADAR_BAR_COLOR_LOW);
+    }
+
+    /* ------------------------------------------------ the right mount, 0x5F150..0x5F44C
+     * The label comes BEFORE the bar here, the opposite of the left half. */
+    pRow = Radar_MountRow(pCraft->bWeaponR);
+    nBound = 0;
+    if (pRow != NULL) {
+        Font_DrawGlyph(PUFO_RADAR_MOUNT_GLYPH_X_R, PUFO_RADAR_MOUNT_GLYPH_Y,
+                       (u16)(g_fontSys.nBaseBitsBase + pRow->nGlyphOff), 0);
+        nBound = pRow->nRange;
+    }
+    *pEnv->pnBoundR = nBound; /* 0x5F268 */
+
+    Radar_DrawMountGate(nReach, nBound, pEnv->pbEngageR, pEnv->pnCooldownR, pEnv->pnShotYR);
+
+    Radar_DrawAmmoLabel(*pEnv->pnAmmoR, PUFO_RADAR_BAR_X_R, szNum, sizeof(szNum));
+
+    nBar = (PUFO_RADAR_RANGE_PITCH * nBound) / PUFO_RADAR_RANGE_SCALE; /* 0x5F374 */
+    SoftSurf_BlitRectProxy(0, PUFO_RADAR_BAR_X_R, PUFO_RADAR_BAR_BASE_Y - nBar, 1,
+                           nBar - PUFO_RADAR_BAR_TRIM,
+                           PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                           PUFO_RADAR_BAR_COLOR_LOW);
+    if (nBound > PUFO_RADAR_BAR_CAP_MIN_RANGE) { /* 0x5F3B0 */
+        SoftSurf_BlitRectProxy(0, PUFO_RADAR_BAR_CAP_X_R, PUFO_RADAR_BAR_CAP_Y - nBar, 3, 3,
+                               PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                               PUFO_RADAR_BAR_COLOR_LOW);
+    }
+    if (pCraft->bWeaponR != 0) { /* 0x5F3EC */
+        for (nX = PUFO_RADAR_TICK_X_FIRST_R; nX < PUFO_RADAR_TICK_LAST_X_R;
+             nX += PUFO_RADAR_TICK_PITCH) {
+            SoftSurf_BlitRectProxy(0, nX, PUFO_RADAR_BAR_BASE_Y - nBar, 2, 1,
+                                   PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                                   PUFO_RADAR_BAR_COLOR_LOW);
+        }
+        SoftSurf_BlitRectProxy(0, PUFO_RADAR_TICK_CAP_X_R, PUFO_RADAR_BAR_CAP_Y - nBar, 3, 3,
+                               PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                               PUFO_RADAR_BAR_COLOR_LOW);
+    }
+
+    /* ------------------------------------------------ 0x5F45C..0x5F484: an empty mount inherits the
+     * other mount's bound. The original reads the surviving bound into R0 first, so with both empty
+     * the second copy just moves the first copy's value and both end at 0. */
+    const i32 nInherited = (*pEnv->pnAmmoL == PUFO_RADAR_AMMO_NONE)
+                             ? *pEnv->pnBoundR : *pEnv->pnBoundL;
+    if (*pEnv->pnAmmoL == PUFO_RADAR_AMMO_NONE) {
+        *pEnv->pnBoundL = *pEnv->pnBoundR;
+    }
+    if (*pEnv->pnAmmoR == PUFO_RADAR_AMMO_NONE) {
+        *pEnv->pnBoundR = nInherited;
+    }
 }

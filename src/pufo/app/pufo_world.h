@@ -95,7 +95,10 @@ typedef struct PufoWorldState {
     u8                bRoot34;                  /* unk_18652C */
     u8                bRoot35;                  /* unk_18652D */
     i32               nUnk159DC4;
-    i32               nGlyphPalBase;            /* Map_nGlyphPalBase @ 0x1183F4 */
+    /* Map_nGlyphPalBase @ 0x1183F4 is ONE global, and the font reads it directly
+     * (Font_DrawGlyph picks palette slot (Map_nGlyphPalBase + nPal), Text_DrawString temporarily
+     * forces it to 2). The shell therefore does not keep its own copy: every env that the original
+     * writes it through is wired to g_nGlyphPalSlotBase, the port's single instance of it. */
     BaseFacFlag       aFac[PUFO_BASEFAC_COUNT]; /* aBaseFacFlags @ 0x186E48 */
     MissionSiteRec    aMissionSites[PUFO_MISSION_SITE_COUNT]; /* unk_1865C0 */
     UiControl         ctlResearchPanel;         /* unk_186BB4 */

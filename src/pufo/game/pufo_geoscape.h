@@ -1601,4 +1601,106 @@ typedef struct RadarDetectEnv {
  * caller and it discards the value. */
 u8 RadarScreen_RollDetection(const RadarDetectEnv *pEnv, i32 nChance);
 
+/* ------------------------------------------------- the two weapon mounts on the radar screen
+ *
+ * Evidence: RadarScreen_DrawCraftArmament @ 0x5edf4 (1692 B). RadarScreen_Update @ 0x60870 is its
+ * only caller and it discards the returned bound, so the port returns void.
+ *
+ * It draws one half per mount, left first, and each half is the same five jobs: the weapon icon, the
+ * range bar, the ammo count, the mount's own range ticks, and the state globals the shot animation
+ * (RadarScreen_DrawOverlay, still unported) reads.
+ *
+ * 1. Map_nGlyphPalBase = 3 (0x5EE1C) for the whole call.
+ * 2. The icon. (i8)Ship.bWeaponL picks a row of g_aRadarMountDraw and Font_DrawGlyph draws
+ *    fontSys_nBaseBitsSprBase + nGlyphOff at (30, 136) in palette 0; the right half is the same row
+ *    at (91, 136). The row's nRange -- 140, 260, 360, 180, 300, 420 -- is the weapon's own range and
+ *    lands in nRadarBoundL / nRadarBoundR. Any id outside 25..30, WM_PSI_AMP included, draws no icon
+ *    and stores 0.
+ * 3. The engage gate. nRadarRangeCur + _rt_sdiv(114, 560 * (nRadarCraftLevel - 26)) is how far the
+ *    radar currently reaches -- the same 560/114 pair RadarScreen_DrawRangeBar and the NE/SW cursor
+ *    setters use. When that reach is GREATER than the mount's range the target is out of gunshot:
+ *    bRadarEngageL = 0, and that mount's cooldown is forced to 255, already "ready" because there is
+ *    nothing to shoot. Otherwise bRadarEngageL = 1 and the cooldown is left alone. The ARM writes both
+ *    halves with predicated STRB/STR pairs (0x5EF88..0x5EFB0 left, 0x5F2A8..0x5F2C4 right), which is
+ *    why Hex-Rays shows the left test twice.
+ * 4. The bar. h = _rt_sdiv(560, 114 * nRange) is the range in pixels, and the bar is the 1-wide rect
+ *    (37, 170 - h, 1, h - 34) -- it grows up from y 136, the row the icon sits on. When nRange > 170
+ *    a 3x3 cap is added at (36, 169 - h). All of it in the bar colour 0x78/0xC8/0x28.
+ * 5. The ammo count. nRadarAmmoL == -2 draws nothing (no weapon on that mount), -1 draws the single
+ *    "-" from asc_AB340 (unlimited), anything else draws j_itoa. The string is centred on the bar:
+ *    x = 37 - Text_MeasureWidth/2, y 153. The right half centres on 98.
+ * 6. The ticks. When bWeaponL != 0, five 2x1 rects at x 54, 57, 60, 63, 66 (0x5F0EC: i = 54; i < 69;
+ *    i += 3) sit on the bar's top edge at y 170 - h, with a 3x3 at (51, 169 - h). The right half uses
+ *    x 69, 72, 75, 78, 81 (0x5F3F0: j = 69; j < 84; j += 3) and the 3x3 at (83, 169 - h).
+ *
+ * The halves are NOT mirror images in order: the left draws bar, cap, label, ticks; the right draws
+ * label, bar, cap, ticks. The label and the bar overlap at the same x, so the port keeps each half's
+ * own order.
+ *
+ * 7. The tail (0x5F45C..0x5F484). A mount holding the -2 sentinel inherits the OTHER mount's bound:
+ *    nRadarAmmoL == -2 copies nRadarBoundR into nRadarBoundL, and nRadarAmmoR == -2 then copies
+ *    nRadarBoundL into nRadarBoundR. With both empty the second copy moves the first copy's value, so
+ *    both end at 0.
+ *
+ * Deviation: the original's j_itoa writes into a 52-byte stack buffer with no bound; the port uses
+ * snprintf into the same size. */
+#define PUFO_RADAR_MOUNT_PAL_BASE     3 /* 0x5EE1C: Map_nGlyphPalBase = 3 */
+#define PUFO_RADAR_MOUNT_GLYPH_Y    136 /* 0x5EE84: MOV R2, #0x88, both halves */
+#define PUFO_RADAR_MOUNT_GLYPH_X_L   30 /* 0x5EE7C: MOV R1, #0x1E */
+#define PUFO_RADAR_MOUNT_GLYPH_X_R   91 /* 0x5F1A0: MOV R1, #0x5B */
+#define PUFO_RADAR_BAR_BASE_Y       170 /* RSB R2, R6, #0xAA -- the bar's bottom edge */
+#define PUFO_RADAR_BAR_CAP_Y        169 /* RSB R2, R6, #0xA9 -- the 3x3 caps sit one higher */
+#define PUFO_RADAR_BAR_TRIM          34 /* SUB R3, R6, #0x22 -- the drawn height */
+#define PUFO_RADAR_BAR_CAP_MIN_RANGE 170 /* 0x5F004: CMP R4, #0xAA -- a cap only for a longer range */
+#define PUFO_RADAR_BAR_X_L           37 /* MOV R1, #0x25 */
+#define PUFO_RADAR_BAR_X_R           98 /* MOV R1, #0x62 */
+#define PUFO_RADAR_BAR_CAP_X_L       36 /* MOV R1, #0x24 */
+#define PUFO_RADAR_BAR_CAP_X_R       97 /* MOV R1, #0x61 */
+#define PUFO_RADAR_AMMO_LABEL_Y     153 /* MOV R2, #0x99 */
+#define PUFO_RADAR_TICK_X_FIRST_L    54 /* 0x5F0EC: MOV R4, #0x36 */
+#define PUFO_RADAR_TICK_X_FIRST_R    69 /* 0x5F3F0: MOV R4, #0x45 */
+#define PUFO_RADAR_TICK_PITCH         3 /* ADD R4, R4, #3 */
+#define PUFO_RADAR_TICK_LAST_X_L     69 /* 0x5F0E8: CMP R4, #0x45 */
+#define PUFO_RADAR_TICK_LAST_X_R     84 /* 0x5F3EC: CMP R4, #0x54 */
+#define PUFO_RADAR_TICK_CAP_X_L      51 /* MOV R1, #0x33 */
+#define PUFO_RADAR_TICK_CAP_X_R      83 /* MOV R1, #0x53 */
+#define PUFO_RADAR_BAR_COLOR_IDX   0x78 /* the three SoftSurf_BlitRectProxy colour arguments */
+#define PUFO_RADAR_BAR_COLOR_MID   0xC8
+#define PUFO_RADAR_BAR_COLOR_LOW   0x28
+#define PUFO_RADAR_COOLDOWN_READY   255 /* 0x5EF90 / 0x5F2B0: MOVGT R1, #0xFF */
+
+/* One row per mount id 25..30, read out of the two switches' literal pools (0x5EE7C..0x5EF3C left,
+ * 0x5F1A4..0x5F25C right). The glyph offset is added to g_fontSys.nBaseBitsBase; the range is the
+ * weapon's own reach, in the same units as nRadarRangeCur. */
+typedef struct RadarMountDraw {
+    i8   nMount;    /* the WeaponMount id the switch tests */
+    u16  nGlyphOff; /* g_fontSys.nBaseBitsBase + this */
+    i32  nRange;    /* nRadarBoundL / nRadarBoundR */
+} RadarMountDraw;
+
+#define PUFO_RADAR_MOUNT_COUNT 6 /* mount ids 25..30 */
+
+extern const RadarMountDraw g_aRadarMountDraw[PUFO_RADAR_MOUNT_COUNT];
+
+typedef struct RadarArmamentEnv {
+    i32         *pnGlyphPalBase; /* Map_nGlyphPalBase @ 0x1183F4 */
+    const i32   *pnShipIdx;      /* nInterceptShipIdx @ 0x15967C */
+    Ship *const *apCraft;        /* Map.apCraft @ 0x114A64 */
+    i32          nCraftCount;
+    const i32   *pnRangeCur;     /* nRadarRangeCur @ 0x15966C */
+    const i32   *pnCraftLevel;   /* nRadarCraftLevel @ 0x1596E0 */
+    i32         *pnBoundL;       /* nRadarBoundL @ 0x1596E8, the left mount's weapon range */
+    i32         *pnBoundR;       /* nRadarBoundR @ 0x1596EC */
+    u8          *pbEngageL;      /* bRadarEngageL @ 0x159728, 1 while the target is in gunshot */
+    u8          *pbEngageR;      /* bRadarEngageR @ 0x15972C */
+    i32         *pnCooldownL;    /* nRadarCooldownL @ 0xAC21C, forced to 255 when out of range */
+    i32         *pnCooldownR;    /* nRadarCooldownR @ 0xAC218 */
+    i32         *pnShotYL;       /* nRadarShotYL @ 0x1596F8, zeroed when out of range */
+    i32         *pnShotYR;       /* nRadarShotYR @ 0x1596F4 */
+    const i32   *pnAmmoL;        /* nRadarAmmoL @ 0x159654 */
+    const i32   *pnAmmoR;        /* nRadarAmmoR @ 0x159664 */
+} RadarArmamentEnv;
+
+void RadarScreen_DrawCraftArmament(const RadarArmamentEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

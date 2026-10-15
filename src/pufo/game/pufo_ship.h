@@ -385,6 +385,31 @@ typedef enum CraftCargoCap {
     CRAFT_CARGO_CAP_UNKNOWN = -1
 } CraftCargoCap;
 
+/* Ship.bWeaponL @ 0x22 and Ship.bWeaponR @ 0x23 hold one of these seven ids. The resupply switch at
+ * 0x68FDC (Base_DistributeRecoveredItems) and the radar mount switch at 0x5EE38 / 0x5F160
+ * (RadarScreen_DrawCraftArmament) both branch on it, and the ammo bytes are named after it:
+ * Ship.bAmmo25..bAmmo30 @ 0x3d..0x41.
+ *
+ * The names are lang.dat TEXTS records 1446 + id, read straight out of the shipped blob (1650
+ * records, 200 bytes each): 1470 "Пси-усилитель", 1471 "Корабельная пушка", 1472 "Уст-ка Стингер",
+ * 1473 "Уст-ка Эваланш", 1474 "Лазерная пушка", 1475 "Плазменная пушка", 1476 "Термояд. рак. уст."
+ * -- the same seven the resupply note in Base_DistributeRecoveredItems names in English.
+ *
+ * WM_PSI_AMP is the one id no mount switch handles: it falls through both 0x68FDC and 0x5EE38, so a
+ * psi-armed craft gets no ammo and no radar bar. WM_LASER is the weapon that never runs out -- the
+ * radar gives it the -1 "unlimited" ammo sentinel and the resupply switch leaves it alone. */
+#define PUFO_WEAPON_ID_MIN  24
+#define PUFO_WEAPON_ID_MAX  30
+typedef enum WeaponMount {
+    WM_PSI_AMP   = 24, /* lang.dat TEXTS[1470] "Пси-усилитель" -- handled by no switch */
+    WM_CANNON    = 25, /* TEXTS[1471] "Корабельная пушка", ammo object 52, 10 per mount */
+    WM_STINGRAY  = 26, /* TEXTS[1472] "Уст-ка Стингер",        ammo object 53,  3 per mount */
+    WM_AVALANCHE = 27, /* TEXTS[1473] "Уст-ка Эваланш",        ammo object 54,  2 per mount */
+    WM_LASER     = 28, /* TEXTS[1474] "Лазерная пушка" -- unlimited, no ammo byte */
+    WM_PLASMA    = 29, /* TEXTS[1475] "Плазменная пушка",      ammo object 105, 10 per mount in tenths */
+    WM_FUSION    = 30  /* TEXTS[1476] "Термояд. рак. уст.",    ammo object 55,  2 per mount */
+} WeaponMount;
+
 /* The original's first argument is never read; the port takes the ship directly. */
 CraftCargoCap Craft_GetTypeCargoCap(const Ship *pShip);
 
@@ -464,9 +489,10 @@ void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount);
  *   29 Plasma cannon       -> apObjects[105] "Elerium-115",              10 per mount, in tenths
  *   30 Fusion ball launcher-> apObjects[55]  "Fusion ball",               2 per mount
  *
- * Weapon 28 (Laser cannon) and 24 (Psi-arm) fall through the switch and are left alone -- the laser
- * is the weapon that never runs out. Each mount's own quantity lives in the craft, in
- * `Ship.bAmmo25..bAmmo30 @ 0x3d..0x41`, one byte per weapon id.
+ * Weapon 28 (Laser cannon) and 24 (the psi amplifier) fall through the switch and are left alone --
+ * the laser is the weapon that never runs out. Both ids are in the WeaponMount enum above. Each
+ * mount's own quantity lives in the craft, in `Ship.bAmmo25..bAmmo30 @ 0x3d..0x41`, one byte per
+ * weapon id.
  *
  * The load factor is 2 when both mounts hold the same weapon and 1 otherwise (0x68FC4: it compares
  * bWeaponL with bWeaponR), so a twin-mount craft re-arms with double the standard load.

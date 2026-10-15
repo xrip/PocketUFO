@@ -11,6 +11,7 @@
 
 #include "dat/pufo_dat.h"    /* DatFile, the slot file LoadGame opens */
 #include "audio/pufo_audio.h" /* Sound_Play, the message-list sample the radar click plays */
+#include "render/pufo_render.h" /* g_nGlyphPalSlotBase, the shell's one Map_nGlyphPalBase */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -528,7 +529,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     env.paFacFlags = pW->aFac;
     env.apObjects = pAssets->apObjects;
     env.nObjectCount = pAssets->nObjectCount;
-    env.pnGlyphPalBase = &pW->nGlyphPalBase;
+    env.pnGlyphPalBase = &g_nGlyphPalSlotBase; /* the original's one global, Map_nGlyphPalBase */
     env.abFacilityGrid = pW->abFacilityGrid;
     env.pWorld = &pW->world;
     env.pbBaseCount = &pW->nBaseCount;

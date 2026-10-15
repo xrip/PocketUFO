@@ -11683,7 +11683,7 @@ byte at 0x3d..0x41:
     29 Plasma cannon        -> apObjects[105] "Elerium-115"               10 per mount (0x69074)
     30 Fusion ball launcher -> apObjects[55]  "Fusion ball"                2 per mount (0x6900C)
 
-Weapon 28 (Laser cannon) and 24 (Psi-arm) fall through the switch and are left alone; the laser is
+Weapon 28 (Laser cannon) and 24 (the psi amplifier, lang.dat TEXTS[1470] "Пси-усилитель") fall through the switch and are left alone; the laser is
 the weapon that never runs out. The names come from main.dat TEXTS.DAT at 0x2a9ff6, record 1446 + slot.
 
 Load factor (0x68FC4): 2 when both mounts hold the same weapon, 1 otherwise, so a twin-mount craft
@@ -12810,3 +12810,69 @@ checked against independently reloaded palettes, including the slot-2 overrun be
 close; the twin-mount split is checked for an odd and an even pool, for mount kind 28 and for an
 unknown kind; and the radar message is compared against the real lang.dat TEXTS[1599], with its
 neighbours 1598 and 1600 asserted to be different strings so the record index cannot be off by one.
+
+## RadarScreen_DrawCraftArmament (0x5edf4, 1692 B)
+
+Ported as `RadarScreen_DrawCraftArmament` in `src/pufo/game/pufo_geoscape.c` behind `RadarArmamentEnv`.
+`RadarScreen_Update` at 0x60870 is its only caller and it discards the returned bound, so the port
+returns void.
+
+**The mount table.** `Ship.bWeaponL @ 0x22` and `Ship.bWeaponR @ 0x23` are two `WeaponMount` ids
+(24..30, now an enum in `pufo_ship.h` and in the IDB). Ids 25..30 pick a row of `g_aRadarMountDraw`
+out of the two switches' literal pools (0x5EE7C..0x5EF3C left, 0x5F1A4..0x5F25C right):
+
+    id  name (lang.dat TEXTS 1446 + id)   glyph (basebits +)  mount range
+    25  1471 "Корабельная пушка"          +50                 140
+    26  1472 "Уст-ка Стингер"             +48                 260
+    27  1473 "Уст-ка Эваланш"             +49                 360
+    28  1474 "Лазерная пушка"             +52                 180
+    29  1475 "Плазменная пушка"           +53                 300
+    30  1476 "Термояд. рак. уст."         +51                 420
+
+Id 24, the psi amplifier, is in no switch: it draws no icon and stores a zero bound. The seven names
+were read straight out of the shipped lang.dat TEXTS blob (1650 records of 200 bytes), which is the
+same 1446 + id rule the resupply note above already uses.
+
+**The engage gate.** `nRadarRangeCur + _rt_sdiv(114, 560 * (nRadarCraftLevel - 26))` is the current
+reach, in the same 560/114 scale `RadarScreen_DrawRangeBar` and the NE/SW cursor setters use. When it
+is GREATER than the mount's range the target is out of gunshot and the ARM's predicated store group
+(0x5EF88..0x5EFB0 left, 0x5F2A8..0x5F2C4 right) writes three things: `bRadarEngageL/R = 0`, that
+mount's cooldown forced to 255 (already "ready", there is nothing to shoot), and the in-flight
+projectile `nRadarShotYL/R = 0`. Otherwise only `bRadarEngageL/R = 1` is written and the cooldown and
+projectile are left alone. Hex-Rays shows the left test twice because the two STR groups are
+separate; the ARM shows them as one CMP with MOVLE/STRBLE and MOVGT/STRBGT pairs.
+
+**The bar.** `h = _rt_sdiv(560, 114 * range)`, then the 1-wide rect (37, 170 - h, 1, h - 34) for the
+left and x 98 for the right, in the colour 0x78/0xC8/0x28, which `SoftSurf_BlitRectProxy` packs to
+0x7E45. A 3x3 cap is added at (36, 169 - h) / (97, 169 - h) only when the range is above 170. Measured
+against the shipped font: the 140 range scales to 28 pixels, so `28 - 34` is negative and the cannon
+draws NO bar at all -- but its tick row is gated on `bWeaponL != 0`, not on the bar, so the five 2x1
+ticks at x 54,57,60,63,66 and the 3x3 at (51, 141) are still drawn. The 180 range scales to 36 and
+draws just 2 rows while still getting its cap.
+
+**The labels.** -2 draws nothing, -1 draws the single '-' of asc_AB340, anything else j_itoa; the
+string is centred on the bar's own column, `x = 37 - Text_MeasureWidth/2` (98 on the right), y 153.
+Under the real font metrics "7" is 7 wide and lands at x 34, "3" at 95.
+
+**The halves are not mirror images in order.** The left draws bar, cap, label, ticks; the right draws
+label, bar, cap, ticks. The port keeps each half's own order.
+
+**The tail (0x5F45C..0x5F484).** A mount holding the -2 sentinel inherits the OTHER mount's bound.
+With both empty the second copy moves the first copy's value, so both end at the same number.
+
+**Deviation, port-side fix.** `Map_nGlyphPalBase @ 0x1183F4` is ONE global and the font reads it
+directly (`Font_DrawGlyph` picks palette slot `Map_nGlyphPalBase + nPal`, `Text_DrawString` forces it
+to 2 for its own duration and restores it). The port kept a second copy in `PufoWorldState`, so a
+write through one never reached the other. That copy is removed and every env is wired to
+`g_nGlyphPalSlotBase`. This is a port modelling defect, not an original bug, so it carries no
+bugs.tsv row.
+
+**Deviation.** The original's j_itoa writes into the 52-byte buffer at sp+0x18 with no bound; the port
+uses snprintf into the same size. The original also dereferences `apCraft[nShipIdx]` with no test at
+all (LDRSB [R3, #0x22] at 0x5EE2C); the port returns early for an out-of-range index, after setting
+`Map_nGlyphPalBase` the way the original sets it first.
+
+Tests: `tests/test_geoscape.c:TestRadarArmament`, 69 checks on a real 240x320 surface with the shipped
+font.dat and basebits.dat loaded, so every icon and label is the original's own sprite. The mount
+icons are 15x17 basebits frames at (30, 136) and (91, 136), and each id's icon is compared against a
+direct draw of its own basebits frame, which pins the glyph offsets 50, 48, 49, 52, 53, 51.

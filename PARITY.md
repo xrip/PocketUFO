@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 875 / 1103 (79.3%) |
-| Bytes of original code cited | 387488 / 598792 (64.7%) |
+| Functions cited as evidence | 876 / 1103 (79.4%) |
+| Bytes of original code cited | 389180 / 598792 (65.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 10983 |
+| Test checks run | 11052 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 175 | 204 | 71892 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 176 | 204 | 73584 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -571,7 +571,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_plane.c` (+2) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (175 functions)
+### `strat` (176 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -582,6 +582,7 @@ is the module that answers to it.
 | `0x68344` | `Base_TransferTacticalLoot` | 3048 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x98b50` | `Smap_GrantSiteRecovery` | 2572 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+1) |
 | `0x838dc` | `Smap_BeginCraftSelect` | 2424 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
+| `0x5edf4` | `RadarScreen_DrawCraftArmament` | 1692 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x693ec` | `Craft_LoadStoresFromBase` | 1612 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x66b70` | `Base_DemolishFacility` | 1600 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x81378` | `Strateg_CalcDetect` | 1488 | `src/pufo/game/pufo_strateg.h` |
@@ -1211,7 +1212,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 29 functions, 88604 bytes remaining
+### `strat` — 28 functions, 86912 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1228,7 +1229,6 @@ whose port work they belong to.
 | `0x5c5c8` | `Geoscape_DrawClockPads` | 2168 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x8b94c` | `Geoscape_CloseUI` | 2100 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x954dc` | `Geoscape_PulseUpdate` | 1812 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x5edf4` | `RadarScreen_DrawCraftArmament` | 1692 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5abe4` | `FundingScreen_Toggle` | 1560 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a4bc` | `BaseFac_BuildStatusMsg` | 1520 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1303,7 +1303,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_font` | PASS | 38 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
-| `test_geoscape` | PASS | 898 |
+| `test_geoscape` | PASS | 967 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 271 |
 | `test_invdrag` | PASS | 306 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 460 citations.
+parity report. Total: 469 citations.
 
 ### Offsets below the image base (40)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (420)
+### At or above the image base (429)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1517,9 +1517,15 @@ against the IDB when the final report is assembled.
 - `0x1596dc`
 - `0x1596e0`
 - `0x1596e4`
+- `0x1596e8`
+- `0x1596ec`
+- `0x1596f4`
+- `0x1596f8`
 - `0x159700`
 - `0x159714`
 - `0x159718`
+- `0x159728`
+- `0x15972c`
 - `0x159730`
 - `0x159758`
 - `0x15975c`
@@ -1665,6 +1671,7 @@ against the IDB when the final report is assembled.
 - `0x58e7c`
 - `0x5d30c`
 - `0x5d514`
+- `0x60870`
 - `0x60a3c`
 - `0x61868`
 - `0x62ad8`
@@ -1787,6 +1794,8 @@ against the IDB when the final report is assembled.
 - `0xabe7c`
 - `0xabeb8`
 - `0xabec4`
+- `0xac218`
+- `0xac21c`
 - `0xac220`
 - `0xac224`
 - `0xac3b8`

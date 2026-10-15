@@ -276,3 +276,12 @@ unk_159670	pRadarUfoMissilePad	renamed in the IDB, typed PadImage*: ufo_<class>m
 unk_1596D4	nRadarCursorX	renamed in the IDB, typed int: the radar cursor x, set to 117 (the NW corner) by RadarScreen_Init and moved by the four corner buttons
 unk_1596D8	nRadarCursorY	renamed in the IDB, typed int: the radar cursor y, set to 86 by RadarScreen_Init
 unk_103943	aTextRadarTraceLost	named in the IDB: TEXTS record 1599 (aTextRecs + 1599*205), lang.dat cp1251 'След МАК потерян', the message RadarScreen_RollDetection copies into szRadarMsg
+unk_1596F4	nRadarShotYR	renamed in the IDB, typed int: how far the RIGHT mount's projectile has travelled, advanced by RadarScreen_DrawOverlay and zeroed by RadarScreen_DrawCraftArmament when the target is out of gunshot
+unk_1596F8	nRadarShotYL	renamed in the IDB, typed int: the LEFT mount's twin
+unk_159720	bRadarLastShotHit	renamed in the IDB, typed unsigned __int8: RadarScreen_RollWeaponHit's result for the most recent completed shot, stored by RadarScreen_DrawOverlay, cleared at the top of every call
+unk_159728	bRadarEngageL	renamed in the IDB, typed unsigned __int8: 1 while the tracked target is inside the LEFT mount's range nRadarBoundL; written by RadarScreen_DrawCraftArmament's gate
+unk_15972C	bRadarEngageR	renamed in the IDB, typed unsigned __int8: the RIGHT mount's twin
+dword_1596E8	nRadarBoundL	renamed in the IDB, typed int: the LEFT mount's weapon range straight from the bWeaponL switch (25:140 26:260 27:360 28:180 29:300 30:420); RadarScreen_SetCursorNE takes the MAX of the two, SetCursorSW the MIN
+dword_1596EC	nRadarBoundR	renamed in the IDB, typed int: the RIGHT mount's weapon range, read through bWeaponR
+nBaseAtAnimTimer	nRadarCooldownR	renamed in the IDB, typed int: the old name came from BaseAtScreen, but the radar is where the semantics are known -- this is the RIGHT mount's firing cooldown, 255 = ready, set to 255/240/235/251/249/230 by a completed shot and counted back up by Geoscape_PulseUpdate. BaseAtScreen_Update, BaseAtScreen_Draw, Smap_OnPointerUp and Geoscape_OnPointer reuse the same slot as a generic screen animation timer
+dword_AC21C	nRadarCooldownL	renamed in the IDB, typed int: the LEFT mount's firing cooldown, same values and the same count-up in Geoscape_PulseUpdate
