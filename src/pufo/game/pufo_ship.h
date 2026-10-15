@@ -261,6 +261,26 @@ BaseRec *BaseRec_Create(BaseRec **apBases, i32 nBaseCount, ObjectRecFull *const 
  * coordinates. */
 i32 Ship_RetargetTravel(const ShipRemovalEnv *pEnv, i32 nShipIdx);
 
+/* Ship_LaunchIntercept @ 0x5a64c, the mirror of Ship_RetargetTravel: it sends a craft OUT to a
+ * strateg item instead of HOME to its base. IDA called it Ship_AbortCourse; it aborts nothing.
+ *
+ * The craft's own entry is found with StrategList_FindByShipId, its proximity timer is restarted at
+ * 0, and nStartX/nStartY take the entry's CURRENT position. Then the one branch the "send home"
+ * version does not have: when Ship.bAtBase is non-zero the leg starts at the home base instead --
+ * nStartX/nStartY become BaseRec.nUnk8/nUnk12 and nX/nY are snapped to the same pair, so a craft
+ * that is sitting in a hangar leaves from the hangar and not from wherever its entry last drew.
+ *
+ * Four ship fields then change, in the originals' order: bWeaponsHot (+0x34) = 1, nStrategIdx
+ * (+0x38) = nStrategIdx, bAtBase (+0x06) = 0, bIntercepting (+0x35) = 1. The travel leg runs from
+ * (nStartX, nStartY) to list[nStrategIdx]'s nX/nY with nFlag 0, bA/bB/bC 0 and bCopyStart 1 -- the
+ * one caller that ever sets bCopyStart. Returns StrategEntry_InitTravel's travel epoch.
+ *
+ * Two deviations, both about a bad index. The original reads list[nStrategIdx].nX at 0x5A7B8 after
+ * every store and faults if the index is stale; the port looks the target up first and refuses the
+ * whole call, so a craft cannot end up half-launched. And the original indexes apBases with an
+ * unchecked byte; the port bounds bHomeBase against PUFO_FAC_BASE_COUNT. */
+i32 Ship_LaunchIntercept(const ShipRemovalEnv *pEnv, i32 nShipIdx, i32 nStrategIdx);
+
 /* Ship_ClearInterceptByStrategIdx @ 0x5a5b8. Retarget every craft chasing one strateg item. */
 i32 Ship_ClearInterceptByStrategIdx(const ShipRemovalEnv *pEnv, i32 nStrategIdx);
 

@@ -4987,6 +4987,154 @@ static void TestOpenSfxAndAltVariants(void)
     Check(true, "the three variants survive a nulled env");
 #undef SRO2_RESET
 }
+
+static Ship g_shipCancel;
+static Ship *g_apShipCancel[1];
+static BaseRec g_baseCancel;
+static BaseRec *g_apBaseCancel[1];
+static StrategItem g_ownCancel;
+static StrategItem g_targetCancel;
+static void *g_apSlotCancel[2];
+static PtrArray g_listCancel;
+static GeoscapeWorld g_worldCancel;
+static StrategSpawnCtx g_ctxCancel;
+static ShipRemovalEnv g_shipEnvCancel;
+static Soldier *g_apSoldierCancel[1];
+static ObjectRecFull *g_apObjCancel[1];
+static u8 g_abHangarCancel[64];
+static i32 g_nAssignedCancel[1];
+static u8 g_nShipCountCancel;
+static u16 g_nSoldierCountCancel;
+static u8 g_onceCancel;
+static i32 g_nTotalSecCancel;
+static i32 g_nSeedCancel;
+
+static void CancelEnvReset(void)
+{
+    memset(&g_shipCancel, 0, sizeof(g_shipCancel));
+    g_shipCancel.bId = 21;
+    g_shipCancel.bHomeBase = 0;
+    g_apShipCancel[0] = &g_shipCancel;
+
+    memset(&g_ownCancel, 0, sizeof(g_ownCancel));
+    g_ownCancel.nType = 1;
+    g_ownCancel.bActive = 0;
+    g_ownCancel.nDisplayId = 21;
+    g_ownCancel.nTimer = 777;
+    g_ownCancel.nX = 40;
+    g_ownCancel.nY = 60;
+
+    memset(&g_targetCancel, 0, sizeof(g_targetCancel));
+    g_targetCancel.nType = 5;
+    g_targetCancel.nX = 300;
+    g_targetCancel.nY = 400;
+
+    g_apSlotCancel[0] = &g_ownCancel;
+    g_apSlotCancel[1] = &g_targetCancel;
+    memset(&g_listCancel, 0, sizeof(g_listCancel));
+    g_listCancel.nCount = 2;
+    g_listCancel.apItems = g_apSlotCancel;
+
+    memset(&g_baseCancel, 0, sizeof(g_baseCancel));
+    g_baseCancel.nUnk8 = 100;
+    g_baseCancel.nUnk12 = 200;
+    g_apBaseCancel[0] = &g_baseCancel;
+
+    g_nShipCountCancel = 1;
+    g_nSoldierCountCancel = 0;
+    g_onceCancel = 0;
+    g_nTotalSecCancel = 0;
+    g_nSeedCancel = 0;
+    memset(&g_ctxCancel, 0, sizeof(g_ctxCancel));
+    g_ctxCancel.pnSeed = &g_nSeedCancel;
+    memset(&g_worldCancel, 0, sizeof(g_worldCancel));
+    g_worldCancel.apCraft = g_apShipCancel;
+    g_worldCancel.nShipCount = 1;
+
+    memset(&g_shipEnvCancel, 0, sizeof(g_shipEnvCancel));
+    g_shipEnvCancel.apCraft = g_apShipCancel;
+    g_shipEnvCancel.pnShipCount = &g_nShipCountCancel;
+    g_shipEnvCancel.apSoldiers = g_apSoldierCancel;
+    g_shipEnvCancel.pnSoldierCount = &g_nSoldierCountCancel;
+    g_shipEnvCancel.apObjects = g_apObjCancel;
+    g_shipEnvCancel.nObjectCount = 0;
+    g_shipEnvCancel.pStrategList = &g_listCancel;
+    g_shipEnvCancel.pWorld = &g_worldCancel;
+    g_shipEnvCancel.pnSpawnOnceFlag = &g_onceCancel;
+    g_shipEnvCancel.pSpawnCtx = &g_ctxCancel;
+    g_shipEnvCancel.abHangarFlag = g_abHangarCancel;
+    g_shipEnvCancel.nHangarFlagCap = 64;
+    g_shipEnvCancel.anAssignedShip = g_nAssignedCancel;
+    g_shipEnvCancel.pnAssignedShipCount = &g_nAssignedCancel[0];
+    g_shipEnvCancel.apBases = g_apBaseCancel;
+    g_shipEnvCancel.pnGameTotalSec = &g_nTotalSecCancel;
+}
+
+static void TestCancelTarget(void)
+{
+    static UiLineList lines;
+    static GameTime clock;
+    i32 nShipIdx;
+    u8 bSel, b98, b8C, b90;
+    SmapCancelTargetEnv env;
+
+    printf("\nSmap_CancelTarget @ 0x84254\n");
+
+    /* The target index lives in colour SLOT 1; slot 0 carries the ship index for the other
+     * handlers, so a decoy there proves which slot this one reads. */
+    CancelEnvReset();
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 2;
+    UiLineList_SetLine(&lines, 0, 11, 999, 1, 0, 0);
+    nShipIdx = 0;
+    bSel = 1; b98 = 1; b8C = 1; b90 = 1;
+    clock.bPaused = 1;
+    memset(&env, 0, sizeof(env));
+    env.pLines = &lines;
+    env.pnSelectedShipIdx = &nShipIdx;
+    env.pbSelectionFlag = &bSel;
+    env.pbFlag187098 = &b98;
+    env.pbFlag18708C = &b8C;
+    env.pbFlag187090 = &b90;
+    env.pTime = &clock;
+    env.pShipEnv = &g_shipEnvCancel;
+
+    Smap_CancelTarget(&env);
+    CheckEqI32(g_ownCancel.nStartX, 40, "the intercept runs, so the target came from slot 1 (0x84268)");
+    CheckEqI32(g_ownCancel.nDestX, 300, "  and it is the entry slot 1 names");
+    CheckEqI32(g_shipCancel.bIntercepting, 1, "  which the ship is now chasing");
+    CheckEqI32(bSel, 0, "bMapSelectionFlag is cleared (0x84284)");
+    CheckEqI32(b98, 0, "0x187098 is cleared (0x84290)");
+    CheckEqI32(lines.nLineCount, 1, "message line 0 is dropped (0x8429C)");
+    CheckEqI32(clock.bPaused, 1, "a line is still standing, so the clock stays paused (0x842A4)");
+    CheckEqI32(b8C, 0, "0x18708C is cleared (0x842BC)");
+    CheckEqI32(b90, 0, "0x187090 is cleared (0x842C8)");
+
+    /* Slot 0 is NOT the one read: with the valid index there and 999 in slot 1 nothing launches. */
+    CancelEnvReset();
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 1;
+    UiLineList_SetLine(&lines, 0, 11, 1, 999, 0, 0);
+    Smap_CancelTarget(&env);
+    CheckEqI32(g_ownCancel.nTimer, 777, "a valid index in slot 0 does not launch anything");
+    CheckEqI32(g_shipCancel.bIntercepting, 0, "  and the ship keeps its intercept state");
+
+    /* The last line down un-pauses the clock. */
+    CancelEnvReset();
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 1;
+    UiLineList_SetLine(&lines, 0, 11, 999, 1, 0, 0);
+    clock.bPaused = 1;
+    Smap_CancelTarget(&env);
+    CheckEqI32(lines.nLineCount, 0, "the removal empties the list");
+    CheckEqI32(clock.bPaused, 0, "and the root line-list count byte is read after the removal (0x842A4)");
+
+    /* Nulls. */
+    env.pLines = NULL;
+    Smap_CancelTarget(&env);
+    Smap_CancelTarget(NULL);
+    Check(true, "a null env and a null line list both do nothing");
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -5042,6 +5190,7 @@ int main(void)
     TestFundingBonus();
     TestScreenResetOpen();
     TestOpenSfxAndAltVariants();
+    TestCancelTarget();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

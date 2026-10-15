@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 812 / 1103 (73.6%) |
-| Bytes of original code cited | 326308 / 598792 (54.5%) |
+| Functions cited as evidence | 814 / 1103 (73.8%) |
+| Bytes of original code cited | 326944 / 598792 (54.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9145 |
+| Test checks run | 9180 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 75 | 85 | 16988 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 151 | 205 | 57004 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 153 | 205 | 57640 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 183 | 243 | 34616 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -570,7 +570,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_plane.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (151 functions)
+### `strat` (153 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -600,6 +600,7 @@ is the module that answers to it.
 | `0x78ed0` | `BasePlane_RearmFromStores` | 536 | `src/pufo/game/pufo_plane.h` |
 | `0x67d68` | `Base_CountItemQtyAcrossBases` | 528 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
 | `0x5d1bc` | `Geoscape_TickHourly` | 512 | `src/pufo/game/pufo_geoscape.h` |
+| `0x5a64c` | `Ship_AbortCourse` | 484 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x6a230` | `Base_CalcMonthlyUpkeep` | 468 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x5d4e4` | `Geoscape_TickShips` | 456 | `src/pufo/game/pufo_geoscape.h` |
 | `0x666cc` | `Ship_FormatDisplayName` | 424 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
@@ -642,6 +643,7 @@ is the module that answers to it.
 | `0x5ea70` | `RadarScreen_SetCursorSE` | 160 | `src/pufo/game/pufo_geoscape.h` |
 | `0x6aee0` | `Base_CountEmptyFacilityCells` | 160 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6555c` | `Base_CalcStorageUsed` | 156 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x84254` | `Smap_CancelTarget` | 152 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x55650` | `BaseRec_ctor` | 148 | `src/pufo/game/pufo_ship.h` |
 | `0x5a5b8` | `Ship_ClearInterceptByStrategIdx` | 148 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x66090` | `Base_CountShipsAtBase` | 140 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
@@ -1150,7 +1152,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 54 functions, 105452 bytes remaining
+### `strat` — 52 functions, 104816 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1186,7 +1188,6 @@ whose port work they belong to.
 | `0x5d6e4` | `RadarScreen_DrawRangeBar` | 564 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d918` | `RadarScreen_DrawFuelGauge` | 524 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5eb10` | `RadarScreen_BlitMapBackdrop` | 508 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x5a64c` | `Ship_AbortCourse` | 484 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x62824` | `Base_TickFacilityConstruction` | 396 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84484` | `Smap_SelectMapTarget` | 340 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84964` | `Smap_ResolveInterceptUI` | 340 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1195,7 +1196,6 @@ whose port work they belong to.
 | `0x7fb98` | `Strateg_ConfirmInterceptTarget` | 280 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7df80` | `Smap_DistWrapped` | 244 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5ed0c` | `RadarScreen_CyclePalette` | 232 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x84254` | `Smap_CancelTarget` | 152 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x69ffc` | `Ship_FindIndexById` | 96 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1085 |
+| `test_baseui` | PASS | 1099 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
@@ -1324,7 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 62 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 724 |
-| `test_ship` | PASS | 206 |
+| `test_ship` | PASS | 227 |
 | `test_soldiername` | PASS | 22 |
 | `test_startnew` | PASS | 107 |
 | `test_statusmsg` | PASS | 106 |

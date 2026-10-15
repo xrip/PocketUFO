@@ -10483,3 +10483,47 @@ are filled from it, and the flag is cleared at 0x9E084. It is a "reselect the uf
 base-info screen next opens" flag, and the port passes the byte through the env rather than owning it.
 
 **IDB updates.** Function comments on 0x852b8, 0x84d18 and 0x84bf8; a line comment on 0x18706C.
+
+The intercept launcher and the target dismiss (done)
+----------------------------------------------------
+
+**Evidence:** `Ship_LaunchIntercept` @ 0x5a64c (484 B) and `Smap_CancelTarget` @ 0x84254 (152 B).
+Ported in `src/pufo/game/pufo_ship.c` and `src/pufo/game/pufo_baseui.c`; tests in
+`TestLaunchIntercept` and `TestCancelTarget`.
+
+**IDA had `0x5a64c` named `Ship_AbortCourse`, and the name is wrong.** It aborts nothing. Its own IDA
+comment already said "Launch intercept", and all three of its callers are target-selection handlers
+(`Smap_CancelTarget`, `Smap_ConfirmCraftTarget`, `Smap_OnPointerUp`). It is the mirror of
+`Ship_RetargetTravel` @ 0x5a484, which sits 484 bytes earlier in the same block and sends a craft HOME
+to its base; this one sends it OUT to a strateg item. Renamed to `Ship_LaunchIntercept` in the IDB and
+recorded in `renames.tsv`.
+
+**The one branch the "send home" version does not have.** The leg normally starts at the entry's own
+position (`nStartX = nX`, `nStartY = nY`). But when `Ship.bAtBase` is non-zero the craft leaves from
+its home base instead: `nStartX/nStartY` become `BaseRec.nUnk8/nUnk12` AND `nX/nY` are snapped to the
+same pair, so a craft sitting in a hangar departs from the hangar rather than from wherever its entry
+last drew. `StrategEntry_InitTravel` is then called with `bCopyStart = 1` -- the only caller in the
+binary that ever sets it -- which writes the leg start back over `nX/nY` a second time.
+
+**Four ship fields, in the originals' order:** `bWeaponsHot` (+0x34) = 1 at 0x5A790, `nStrategIdx`
+(+0x38) = the target at 0x5A79C, `bAtBase` (+0x06) = 0 at 0x5A7A4, `bIntercepting` (+0x35) = 1 at
+0x5A7AC. The proximity timer is restarted at 0 at 0x5A67C, the same store `Ship_RetargetTravel` makes;
+`Ship_ClearWaypointIntercept` is the one that parks it at 0xFFFF instead.
+
+**`Smap_CancelTarget` reads colour SLOT 1, not slot 0.** `Smap_SetWaypoint` puts the ship index in slot
+0 of message line 0, and this handler takes the target strateg index from slot 1 of the same line
+(0x84268) while the ship comes from the selected-ship dword at 0x187054. A test with a decoy 999 in
+the other slot pins which one it is.
+
+**`unk_1595D8` renamed `gUiRootPanel_nLineCount`.** The clock test at 0x842A4 is
+`LDRB R0,[R4,#0xD48]` with R4 = 0x158890, and 0xD48 = 3400 = 200 flags + 200 * 16 record bytes: it is
+the root panel's line-list count byte, read AFTER the removal. So the clock is un-paused only when no
+message line is left standing. Ten xrefs, all the geoscape selection handlers.
+
+**Two deviations, both about a bad index, recorded in bugs.tsv.** The original indexes `apBases` with
+an unchecked byte, and it dereferences `list[nStrategIdx]` at 0x5A7B8 only after the timer, the two
+start coordinates and all four ship fields are already written -- a stale target index faults halfway
+through a launch. The port bounds `bHomeBase` and looks the target up before any store.
+
+**IDB updates.** Function comments on 0x5a64c and 0x84254; `Ship_AbortCourse` renamed
+`Ship_LaunchIntercept`; `unk_1595D8` renamed `gUiRootPanel_nLineCount` with a line comment.

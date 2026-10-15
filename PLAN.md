@@ -744,6 +744,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   tick, then rebuilds the fifteen nav controls and parks `unk_186BB4` at (1000, 1000). `byte_18706C`
   renamed `Ufopaedia_bReselectPending` in the IDB.
 
+- [x] part 11, the intercept launcher and the target dismiss: `Ship_LaunchIntercept (0x5a64c)`,
+  `Smap_CancelTarget (0x84254)` — 35 more checks. IDA called 0x5a64c `Ship_AbortCourse`; it aborts
+  nothing and all three of its callers are target-selection handlers, so it is renamed
+  `Ship_LaunchIntercept` in the IDB and in `renames.tsv`. It is the mirror of `Ship_RetargetTravel`:
+  the craft goes OUT to a strateg item instead of HOME to its base, and the branch the "send home"
+  version lacks is `bAtBase` — a craft at its base departs from the base, with `nX/nY` snapped there
+  too. It is the only caller that sets `bCopyStart`. `Smap_CancelTarget` reads the target from colour
+  SLOT 1 of message line 0 while `Smap_SetWaypoint` writes the ship index into slot 0, and its clock
+  test is on the root panel's line-list count byte at 0x158890+0xD48 — renamed
+  `gUiRootPanel_nLineCount`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -886,6 +897,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the base-tab strip, the inbound craft count, the buy/sell confirm, the race funding bonus (`Base_HitTestFacilityStrip`, `Base_CountInboundTransfers`, `BuySellScreen_ConfirmSiteAndClose`, `Funding_AddRaceBonus`) | 56/56 (Release) | 9072 | 806/1103 (73.1%) | 324676/598792 (54.2%) | 38 checked, 0 mismatched |
 | three openers that also reset the clock (`ResearchScreen_Open`, `Ui_OpenBaseInfo`, `Geoscape_PrepScreenOpen`) | 56/56 (Release) | 9114 | 809/1103 (73.3%) | 325456/598792 (54.4%) | 38 checked, 0 mismatched |
 | the three siblings of the clock-resetting prologue (`Geoscape_PrepScreenOpenSfx`, `Ui_OpenBaseInfoAlt`, `Ui_OpenResearch`) | 56/56 (Release) | 9145 | 812/1103 (73.6%) | 326308/598792 (54.5%) | 38 checked, 0 mismatched |
+| the intercept launcher and the target dismiss (`Ship_LaunchIntercept`, `Smap_CancelTarget`) | 56/56 (Release) | 9180 | 814/1103 (73.8%) | 326944/598792 (54.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

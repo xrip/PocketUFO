@@ -1169,6 +1169,42 @@ void Smap_SetWaypoint(const SmapWaypointEnv *pEnv)
     }
 }
 
+/* Smap_CancelTarget @ 0x84254. The target index comes from colour SLOT 1 of message line 0, not
+ * slot 0 -- Smap_SetWaypoint above writes the ship index into slot 0 of the same line. */
+void Smap_CancelTarget(const SmapCancelTargetEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+
+    const i32 nStrategIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1); /* 0x84268 */
+    const i32 nShipIdx = (pEnv->pnSelectedShipIdx != NULL) ? *pEnv->pnSelectedShipIdx : 0;
+
+    (void)Ship_LaunchIntercept(pEnv->pShipEnv, nShipIdx, nStrategIdx); /* 0x8427C */
+
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 0; /* 0x84284, bMapSelectionFlag */
+    }
+    if (pEnv->pbFlag187098 != NULL) {
+        *pEnv->pbFlag187098 = 0; /* 0x84290 */
+    }
+
+    UiLineList_Remove(pEnv->pLines, 0); /* 0x8429C */
+
+    /* 0x842A4 reads LDRB [R4,#0xD48] with R4 = 0x158890: the root panel's line-list count byte,
+     * read AFTER the removal. The clock is un-paused only when no message line is left. */
+    if (pEnv->pLines->nLineCount == 0 && pEnv->pTime != NULL) {
+        GameTime_Unpause(pEnv->pTime); /* 0x842B4 */
+    }
+
+    if (pEnv->pbFlag18708C != NULL) {
+        *pEnv->pbFlag18708C = 0; /* 0x842BC */
+    }
+    if (pEnv->pbFlag187090 != NULL) {
+        *pEnv->pbFlag187090 = 0; /* 0x842C8 */
+    }
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

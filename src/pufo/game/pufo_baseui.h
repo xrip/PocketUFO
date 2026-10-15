@@ -970,6 +970,32 @@ typedef struct SmapWaypointEnv {
 
 void Smap_SetWaypoint(const SmapWaypointEnv *pEnv);
 
+/* ------------------------------------------------- dismissing a selected map target
+ *
+ * Evidence: Smap_CancelTarget @ 0x84254 (152 B). Installed as a click handler by Geoscape_Draw.
+ *
+ * It reads the target out of colour SLOT 1 of message line 0 (0x84268) -- Smap_SetWaypoint puts the
+ * ship index in slot 0, so the two handlers read different slots of the same line -- and the ship
+ * out of the selected-ship dword, and hands both to Ship_LaunchIntercept. Then it drops the
+ * selection: bMapSelectionFlag, 0x187098, message line 0, and finally 0x18708C and 0x187090.
+ *
+ * The clock test at 0x842A4 is on `LDRB R0,[R4,#0xD48]` with R4 = 0x158890, which is the root
+ * panel's line-list count byte (200 flags + 200 * 16 record bytes = 3400 = 0xD48), read AFTER the
+ * removal. So the clock is un-paused only when no message line is left standing. Renamed in the IDB
+ * to gUiRootPanel_nLineCount. */
+typedef struct SmapCancelTargetEnv {
+    UiLineList           *pLines;            /* the root message list @ 0x158890 */
+    i32                  *pnSelectedShipIdx; /* 0x187054 */
+    u8                   *pbSelectionFlag;   /* bMapSelectionFlag @ 0x159E84 */
+    u8                   *pbFlag187098;
+    u8                   *pbFlag18708C;
+    u8                   *pbFlag187090;
+    GameTime             *pTime;
+    const ShipRemovalEnv *pShipEnv;          /* Ship_LaunchIntercept's env */
+} SmapCancelTargetEnv;
+
+void Smap_CancelTarget(const SmapCancelTargetEnv *pEnv);
+
 /* ------------------------------------------------- the status-panel (radar list) click
  *
  * Evidence: Geoscape_OnRadarListClick @ 0x854c4, installed as the status panel's pfnClick by

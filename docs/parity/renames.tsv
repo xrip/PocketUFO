@@ -236,3 +236,4 @@ MenuBtn_SetGamma4	MenuBtn_SetGamma	merged
 Soldier_CreateAndClassify	Unit_CreateAndClassify	the port names soldiers Unit_* like the rest of the unit module; the classification half is split out as Unit_ClassFromStats
 BasePlaneScreen_DrawStatLabelA	BasePlaneScreen_DrawStatLabel	the two panels are one body that differs only in which gate it opens; the panel index is an argument
 BasePlaneScreen_DrawStatLabelB	BasePlaneScreen_DrawStatLabel	merged
+Ship_AbortCourse	Ship_LaunchIntercept	it aborts nothing: it sends the craft out to a strateg item, the mirror of Ship_RetargetTravel; renamed in the IDB too

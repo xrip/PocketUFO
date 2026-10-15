@@ -829,6 +829,67 @@ i32 Ship_RetargetTravel(const ShipRemovalEnv *pEnv, i32 nShipIdx)
     return nResult;
 }
 
+/* Ship_LaunchIntercept @ 0x5a64c. The mirror of Ship_RetargetTravel: the craft goes OUT to a strateg
+ * item instead of HOME to its base. IDA called this Ship_AbortCourse; it aborts nothing. */
+i32 Ship_LaunchIntercept(const ShipRemovalEnv *pEnv, i32 nShipIdx, i32 nStrategIdx)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->pStrategList == NULL ||
+        nShipIdx < 0 || nShipIdx >= (i32)*pEnv->pnShipCount) {
+        return -1;
+    }
+
+    Ship *pShip = pEnv->apCraft[nShipIdx];
+    if (pShip == NULL) {
+        return -1;
+    }
+
+    const StrategList view = StrategViewOf(pEnv->pStrategList);
+    const i32 nEntryIdx = StrategList_FindByShipId(&view, pEnv->pWorld, nShipIdx);
+    StrategItem *pEntry = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nEntryIdx);
+    if (pEntry == NULL) {
+        return -1; /* deviation: the original dereferences it */
+    }
+
+    /* Deviation: the original reads list[nStrategIdx].nX at 0x5A7B8, after every store below, and
+     * faults outright when the index is out of range. The port looks the target up here and refuses
+     * the whole call instead, so a stale target index cannot leave the craft half-launched. */
+    const StrategItem *pTarget = (const StrategItem *)PtrArray_Get(pEnv->pStrategList, nStrategIdx);
+    if (pTarget == NULL) {
+        return -1;
+    }
+
+    pEntry->nTimer = 0;                /* 0x5A67C: restart the proximity accumulation */
+    pEntry->nStartX = pEntry->nX;      /* 0x5A6A4 */
+    pEntry->nStartY = pEntry->nY;      /* 0x5A6C8 */
+
+    /* 0x5A6E8: a craft that is sitting at its base leaves from the base, not from wherever its entry
+     * last drew. The leg start AND the entry's own position are both snapped to the base. */
+    if (pShip->bAtBase != 0) {
+        /* Deviation: the original indexes apBases with an unchecked byte, so a bHomeBase outside
+         * 0..7 reads past the eight-slot array. The port bounds it, as the other base-index users do. */
+        const BaseRec *pHome = (pEnv->apBases != NULL && pShip->bHomeBase < PUFO_FAC_BASE_COUNT)
+                                   ? pEnv->apBases[pShip->bHomeBase]
+                                   : NULL;
+        if (pHome != NULL) {
+            pEntry->nStartX = pHome->nUnk8;   /* 0x5A718 */
+            pEntry->nStartY = pHome->nUnk12;  /* 0x5A73C */
+            pEntry->nX = pEntry->nStartX;     /* 0x5A760 */
+            pEntry->nY = pEntry->nStartY;     /* 0x5A780 */
+        }
+    }
+
+    pShip->bWeaponsHot = 1;             /* 0x5A790 */
+    pShip->nStrategIdx = nStrategIdx;   /* 0x5A79C */
+    pShip->bAtBase = 0;                 /* 0x5A7A4 */
+    pShip->bIntercepting = 1;           /* 0x5A7AC */
+
+    /* 0x5A818. The only caller of StrategEntry_InitTravel that ever sets bCopyStart. */
+    return StrategEntry_InitTravel(pEntry, pEntry->nStartX, pEntry->nStartY,
+                                   pTarget->nX, pTarget->nY, 0, 0, 0, 0, 1,
+                                   pEnv->pWorld,
+                                   pEnv->pnGameTotalSec != NULL ? *pEnv->pnGameTotalSec : 0);
+}
+
 /* Ship_ClearInterceptByStrategIdx @ 0x5a5b8. Retarget every craft that is chasing ONE strateg
  * item -- the cleanup a removed contact needs. A craft qualifies when its home base is a real one
  * (bHomeBase < 0xFE), it is intercepting, and its nStrategIdx is the item. Returns the ship count,

@@ -1045,6 +1045,131 @@ static void TestInterceptRetarget(void)
     free(list.apItems);
 }
 
+static void TestLaunchIntercept(void)
+{
+    static Ship *apCraftL[1];
+    static BaseRec *apBaseL[1];
+    static BaseRec baseL;
+    static PtrArray listL;
+    static GeoscapeWorld worldL;
+    static StrategSpawnCtx ctxL;
+    static ObjectRecFull *apObjL[1];
+    static Soldier *apSoldierL[1];
+    static u8 abHangarL[64];
+    static i32 nAssignedL[1];
+    static i32 nSeedL;
+    static i32 nTotalSecL;
+    static Ship ship;
+    static StrategItem own;
+    static StrategItem target;
+    static void *apSlots[2];
+    ShipRemovalEnv env;
+    u8 nShipCount;
+    u16 nSoldierCount;
+    u8 once;
+
+    printf("\nShip_LaunchIntercept @ 0x5a64c\n");
+
+    memset(&ship, 0, sizeof(ship));
+    ship.bId = 20;
+    ship.bHomeBase = 0;
+    ship.nSlotIdx = 0;
+    apCraftL[0] = &ship;
+
+    memset(&own, 0, sizeof(own));
+    own.nType = 1;
+    own.bActive = 0;
+    own.nDisplayId = 20; /* the ship's bId, which is how FindByShipId matches it */
+    own.nTimer = 777;
+    own.nX = 40;
+    own.nY = 60;
+
+    memset(&target, 0, sizeof(target));
+    target.nType = 5;
+    target.nX = 300;
+    target.nY = 400;
+
+    apSlots[0] = &own;
+    apSlots[1] = &target;
+    listL.nCount = 2;
+    listL.apItems = apSlots;
+
+    baseL.nUnk8 = 100;
+    baseL.nUnk12 = 200;
+    apBaseL[0] = &baseL;
+
+    nShipCount = 1;
+    nSoldierCount = 0;
+    once = 0;
+    nTotalSecL = 0;
+    nSeedL = 0;
+    memset(&ctxL, 0, sizeof(ctxL));
+    ctxL.pnSeed = &nSeedL;
+    worldL.apCraft = apCraftL;
+    worldL.nShipCount = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = apCraftL;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = apSoldierL;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = apObjL;
+    env.nObjectCount = 0;
+    env.pStrategList = &listL;
+    env.pWorld = &worldL;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctxL;
+    env.abHangarFlag = abHangarL;
+    env.nHangarFlagCap = 64;
+    env.anAssignedShip = nAssignedL;
+    env.pnAssignedShipCount = &nAssignedL[0];
+    env.apBases = apBaseL;
+    env.pnGameTotalSec = &nTotalSecL;
+
+    /* 1. A craft that is NOT at its base starts the leg from where its entry is. */
+    ship.bAtBase = 0;
+    own.nTimer = 777;
+    own.nX = 40;
+    own.nY = 60;
+    (void)Ship_LaunchIntercept(&env, 0, 1);
+    CheckEqI32(own.nStartX, 40, "the leg starts at the entry's own x (0x5A6A4)");
+    CheckEqI32(own.nStartY, 60, "  and its y (0x5A6C8)");
+    CheckEqI32(own.nDestX, 300, "the destination is the target entry's x");
+    CheckEqI32(own.nDestY, 400, "  and its y");
+    CheckEqI32(own.nX, 40, "bCopyStart snaps the entry to the leg start (0x7F66C)");
+    CheckEqI32(own.nY, 60, "  in both axes");
+    CheckEqI32(own.nTimer, 0, "the proximity timer is restarted at zero (0x5A67C)");
+    CheckEqI32(ship.bWeaponsHot, 1, "bWeaponsHot is set (0x5A790)");
+    CheckEqI32(ship.nStrategIdx, 1, "nStrategIdx becomes the target entry index (0x5A79C)");
+    CheckEqI32(ship.bAtBase, 0, "bAtBase is cleared (0x5A7A4)");
+    CheckEqI32(ship.bIntercepting, 1, "and the craft is intercepting (0x5A7AC)");
+
+    /* 2. A craft that IS at its base leaves from the base, and its entry is snapped there too. */
+    ship.bAtBase = 1;
+    own.nTimer = 777;
+    own.nX = 40;
+    own.nY = 60;
+    own.nStartX = 999;
+    own.nStartY = 999;
+    (void)Ship_LaunchIntercept(&env, 0, 1);
+    CheckEqI32(own.nStartX, 100, "at base: the leg starts at the home base's x (0x5A718)");
+    CheckEqI32(own.nStartY, 200, "  and its y (0x5A73C)");
+    CheckEqI32(own.nX, 100, "and the entry itself is snapped to the base (0x5A760)");
+    CheckEqI32(own.nY, 200, "  in both axes (0x5A780)");
+    CheckEqI32(own.nDestX, 300, "the destination is still the target");
+    CheckEqI32(own.nDestY, 400, "  in both axes");
+
+    /* 3. Out-of-range ship index does nothing. */
+    own.nTimer = 777;
+    own.nX = 40;
+    own.nY = 60;
+    CheckEqI32(Ship_LaunchIntercept(&env, 5, 1), -1, "an out-of-range ship index is refused");
+    CheckEqI32(own.nTimer, 777, "  and nothing is touched");
+    CheckEqI32(ship.bIntercepting, 1, "  including the intercept flag");
+
+    CheckEqI32(Ship_LaunchIntercept(NULL, 0, 1), -1, "a null env is refused");
+}
+
 #define LOOT_N_OBJECTS 150
 
 static ObjectRecFull g_aLootObj[LOOT_N_OBJECTS];
@@ -1410,6 +1535,7 @@ int main(void)
     TestCraftWeaponItemId();
     TestCrewAndStoresTotals();
     TestInterceptRetarget();
+    TestLaunchIntercept();
     TestTransferTacticalLoot();
     TestSpawnAtSlot();
     TestCraftDisplayName();
