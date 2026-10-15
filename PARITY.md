@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 835 / 1103 (75.7%) |
-| Bytes of original code cited | 330328 / 598792 (55.2%) |
+| Functions cited as evidence | 837 / 1103 (75.9%) |
+| Bytes of original code cited | 331520 / 598792 (55.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9364 |
+| Test checks run | 9407 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 75 | 85 | 16988 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 162 | 205 | 59644 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 164 | 205 | 60836 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 195 | 243 | 35996 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -465,10 +465,10 @@ is the module that answers to it.
 | `0x21bac` | `TactHud_DrawModalLeft` | 320 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x21cec` | `TactHud_DrawModalRight` | 320 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x16570` | `TactHud_ToggleKneel` | 276 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x119b0` | `Input_OnDown` | 272 | `src/pufo/game/pufo_input.h` |
+| `0x119b0` | `Input_OnDown` | 272 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x16ef4` | `Inv_OpenScreen` | 264 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x117b0` | `Input_OnRight` | 256 | `src/pufo/game/pufo_input.h` |
-| `0x118b0` | `Input_OnUp` | 256 | `src/pufo/game/pufo_input.h` |
+| `0x118b0` | `Input_OnUp` | 256 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_input.h` |
 | `0x1557c` | `Input_OnAction` | 244 | `src/pufo/game/pufo_input.h`, `src/pufo/ui/pufo_control.h` (+1) |
 | `0x116c0` | `Input_OnLeft` | 240 | `src/pufo/game/pufo_input.h` |
 | `0x162ec` | `Input_OnMenuEscape` | 228 | `src/pufo/game/pufo_input.h` |
@@ -570,7 +570,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_plane.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (162 functions)
+### `strat` (164 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -595,6 +595,8 @@ is the module that answers to it.
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
 | `0x81e44` | `Smap_ZoomIn` | 652 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x45c20` | `Ship_ctor` | 620 | `src/pufo/game/pufo_save.h`, `src/pufo/game/pufo_ship.h` |
+| `0x8afa0` | `Geoscape_UiFocusPrev` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x8b1f4` | `Geoscape_UiFocusNext` | 596 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x67b1c` | `Geoscape_BuildNavControls` | 588 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x66930` | `Base_CreateNamedEntry` | 576 | `src/pufo/game/pufo_geoscape.h` |
 | `0x81c08` | `Smap_ZoomOut` | 572 | `src/pufo/game/pufo_strateg.h` |
@@ -713,8 +715,8 @@ is the module that answers to it.
 | `0x5571c` | `BaseRec_SubItemQty` | 56 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+3) |
 | `0x415cc` | `StrategItem_AllocAdd` | 52 | `src/pufo/game/pufo_strateg.h` |
 | `0x6ac90` | `BaseGrid_SetByteAtFound` | 48 | `src/pufo/game/pufo_geoscape.h` |
-| `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | `src/pufo/game/pufo_geoscape.h` |
-| `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | `src/pufo/game/pufo_geoscape.h` |
+| `0x8b448` | `Geoscape_SetPanelFlagA` | 48 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
+| `0x8b478` | `Geoscape_SetPanelFlagB` | 48 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6acc0` | `BaseGrid_GetByte0x654` | 44 | `src/pufo/game/pufo_geoscape.h` |
 | `0x8217c` | `Tilemap_GetAt` | 36 | `src/pufo/game/pufo_strateg.h` |
 | `0x821a0` | `Tilemap_GetAtAlt` | 36 | `src/pufo/game/pufo_strateg.h` |
@@ -1173,7 +1175,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 43 functions, 102812 bytes remaining
+### `strat` — 41 functions, 101620 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1203,8 +1205,6 @@ whose port work they belong to.
 | `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84688` | `Smap_OnPointerUp` | 732 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x602a0` | `RadarScreen_RollDetection` | 720 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x8afa0` | `Geoscape_UiFocusPrev` | 596 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x8b1f4` | `Geoscape_UiFocusNext` | 596 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d6e4` | `RadarScreen_DrawRangeBar` | 564 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d918` | `RadarScreen_DrawFuelGauge` | 524 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5eb10` | `RadarScreen_BlitMapBackdrop` | 508 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1193 |
+| `test_baseui` | PASS | 1236 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
@@ -1364,7 +1364,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 382 citations.
+parity report. Total: 389 citations.
 
 ### Offsets below the image base (40)
 
@@ -1373,7 +1373,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (342)
+### At or above the image base (349)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1524,7 +1524,10 @@ against the IDB when the final report is assembled.
 - `0x15ee34`
 - `0x15ee3c`
 - `0x15ee44`
+- `0x15ee48`
 - `0x15ee50`
+- `0x15eefc`
+- `0x15ef00`
 - `0x15ef08`
 - `0x15ef0c`
 - `0x16022c`
@@ -1532,11 +1535,13 @@ against the IDB when the final report is assembled.
 - `0x160c68`
 - `0x160c74`
 - `0x161a38`
+- `0x161a3c`
 - `0x161a40`
 - `0x161ac4`
 - `0x161ac8`
 - `0x161ad0`
 - `0x161ed0`
+- `0x161edc`
 - `0x161ee0`
 - `0x161eec`
 - `0x161ef4`
@@ -1545,6 +1550,8 @@ against the IDB when the final report is assembled.
 - `0x161f04`
 - `0x161f08`
 - `0x161f20`
+- `0x161f24`
+- `0x161f28`
 - `0x161f38`
 - `0x162008`
 - `0x162030`

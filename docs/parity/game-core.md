@@ -10881,3 +10881,57 @@ the apObjects[counter+1] destination, and at Map_apObjects11/31/34/56/105/112/11
 naming the shipped item at each slot.
 
 Coverage after this unit: 835/1103 functions (75.7%), 330328/598792 bytes (55.2%).
+
+## Geoscape_UiFocusPrev / Geoscape_UiFocusNext -- the screen-id scroll dispatcher
+
+Original: Geoscape_UiFocusPrev @ 0x8afa0 (596 B), Geoscape_UiFocusNext @ 0x8b1f4 (596 B).
+Port: src/pufo/game/pufo_baseui.c, Geoscape_UiFocusPrev and Geoscape_UiFocusNext over one shared
+static Geoscape_FocusScroll(pEnv, bPrev); the panel set is passed in GeoscapeFocusEnv
+(src/pufo/game/pufo_baseui.h). Test: tests/test_baseui.c, TestFocusDispatcher (43 checks).
+
+The two originals are 596-byte mirrors: an 18-case jump table on nGeoscapeScreen @ 0x186BC4
+(SUB/CMP #0x11 / ADDLS PC,PC,R0,LSL#2), each case loading that screen's panel globals and
+calling the mover -- DecDwordIfPos_AtPlus0xBD4 @ 0x3f040 in Prev, IncDwordIfInRange_AtPlus0xBD4
+@ 0x3f00c in Next. The last mover call of every case is written as a tail call (B to the shared
+loc_8B18C / loc_8B3E0 block), which is code generation, not behaviour.
+
+Screen id -> panel set, in the order the disassembly loads them:
+
+| id | panels |
+|----|--------|
+| 0, 2 | none: Prev stores 1 to unk_1864F4, Next stores 1 to unk_1864F6 |
+| 4 | pSolPanelNames 0x15975C, pSolPanelCraft 0x159DEC |
+| 6 | pPlaneSlotPanel 0x161AC8, pPlaneSelRowPanel 0x161F00, pPlaneCommitRowPanel 0x161EEC, pPlaneTakenPanel 0x161EF4, pPlaneAvailPanel 0x161A40 -- only while bPlaneStoresCommitted @ 0x161F28; then pPlaneCrewPanel 0x161EDC, pPlaneCrewStatusPanel 0x161A3C -- only while bPlaneListPanelsBuilt @ 0x161F24 |
+| 7 | pBaseFacPanel 0x15886C |
+| 8 | pResearchTopicPanel 0x160C68, pResearchPanelB 0x15EEFC, pResearchPanelC 0x15EF00 |
+| 9 | pManufProductPanel 0x15EE44, pManufPanelB 0x15EE48, pManufPanelC 0x15EE40, pManufPanelD 0x15EE38 |
+| 10, 11, 12 | pBuySellPanelA 0x161A1C, pBuySellPanelB 0x161A00, pBuySellPanelC 0x161A20, pBuySellPanelD 0x160C88, pBuySellPanelE 0x1615F8 |
+| 16 | unk_187200 |
+| 17 | the four psi arrays (unk_15EED0, byte_15EE84+4, byte_15EE84+0x24, unk_15EE58), each indexed by the signed byte at byte_1870F4 |
+| 1, 3, 5, 13, 14, 15 | nothing |
+
+Screens 10, 11 and 12 -- transfer, buy and sell -- share one panel set, which is the same fact
+the merged Transfer_ScrollPrevAll / ScrollNextAll pair records. Screen 6 is the only case with
+two gates: the five store panels are skipped when bPlaneStoresCommitted is clear, and the crew
+pair is skipped when bPlaneListPanelsBuilt is clear, so a hangar that has not built its lists
+scrolls nothing past the five.
+
+Flag-byte quirk, kept as-is: for screens 0 and 2 the value the handler returns is the address of
+unk_1864F4 in BOTH functions, but Next writes unk_1864F6 (STRB R1,[R0,#2]). The two bytes are
+also written by Geoscape_SetPanelFlagA/B @ 0x8b448 / 0x8b478 and read by Geoscape_PulseUpdate
+(0x954dc, not ported); their meaning is not established by these two functions.
+
+Deviations:
+- The originals return a pointer (the mover's result, or &unk_1864F4 for the 0/2 case). Both
+  callers, Input_OnUp @ 0x118b0 and Input_OnDown @ 0x119b0, discard it, so the port returns void.
+- The originals load each panel global and call the mover without checking it. The port skips a
+  NULL slot, the same deviation already recorded for 0x6DD4C.
+- The port takes the four psi panels already resolved for the base that byte_1870F4 selects; the
+  original re-reads the byte before each of the four loads. Nothing writes it in between, so the
+  two are equivalent.
+- A NULL GeoscapeFocusEnv does nothing; the original has no such case.
+
+IDB: the ten panel globals named above were previously unk_ and are now typed UiPanel * with the
+names the table uses (0x15EE38, 0x15EE40, 0x15EE48, 0x15EEFC, 0x15EF00, 0x160C88, 0x1615F8,
+0x161A00, 0x161A1C, 0x161A20). Function comments added at 0x8afa0 and 0x8b1f4 recording the
+screen -> panel-set map and the flag-byte quirk.

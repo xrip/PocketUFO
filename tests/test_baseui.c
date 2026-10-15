@@ -418,6 +418,190 @@ static void TestPanelScrollFamily(void)
     apFive[2] = &g_aScrollPanels[2];
 }
 
+/* One panel per global the dispatcher touches, in the order the disassembly loads them:
+ * 0..1 soldier, 2..6 the hangar stores, 7..8 the hangar crew pair, 9 basefac, 10..12 research,
+ * 13..16 manufacturing, 17..21 buy/sell, 22..25 psi, 26 the screen-16 panel. */
+static UiPanel g_aFocusPanels[27];
+static u8 g_bFocusFlagA;
+static u8 g_bFocusFlagB;
+
+static void ResetFocusPanels(void)
+{
+    for (i32 i = 0; i < 27; ++i) {
+        memset(&g_aFocusPanels[i], 0, sizeof(g_aFocusPanels[i]));
+        g_aFocusPanels[i].nUnk3028 = 2;
+        g_aFocusPanels[i].nLineCount = 10;
+        g_aFocusPanels[i].nStyle = 4; /* so next stops at 10 - 4 == 6 */
+    }
+    g_bFocusFlagA = 0;
+    g_bFocusFlagB = 0;
+}
+
+static void FillFocusEnv(GeoscapeFocusEnv *pEnv, i32 nScreenId)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->nScreenId = nScreenId;
+    pEnv->pSolPanelNames = &g_aFocusPanels[0];
+    pEnv->pSolPanelCraft = &g_aFocusPanels[1];
+    pEnv->bPlaneStoresCommitted = 1;
+    pEnv->bPlaneListPanelsBuilt = 1;
+    for (i32 i = 0; i < 5; ++i) {
+        pEnv->apPlanePanels[i] = &g_aFocusPanels[2 + i];
+    }
+    pEnv->pPlaneCrewPanel = &g_aFocusPanels[7];
+    pEnv->pPlaneCrewStatusPanel = &g_aFocusPanels[8];
+    pEnv->pBaseFacPanel = &g_aFocusPanels[9];
+    for (i32 i = 0; i < 3; ++i) {
+        pEnv->apResearchPanels[i] = &g_aFocusPanels[10 + i];
+    }
+    for (i32 i = 0; i < 4; ++i) {
+        pEnv->apManufPanels[i] = &g_aFocusPanels[13 + i];
+    }
+    for (i32 i = 0; i < 5; ++i) {
+        pEnv->apBuySellPanels[i] = &g_aFocusPanels[17 + i];
+    }
+    for (i32 i = 0; i < 4; ++i) {
+        pEnv->apPsiPanels[i] = &g_aFocusPanels[22 + i];
+    }
+    pEnv->pScreen16Panel = &g_aFocusPanels[26];
+    pEnv->pbFocusFlagA = &g_bFocusFlagA;
+    pEnv->pbFocusFlagB = &g_bFocusFlagB;
+}
+
+static i32 CountMovedPanels(void)
+{
+    i32 nMoved = 0;
+    for (i32 i = 0; i < 27; ++i) {
+        if (g_aFocusPanels[i].nUnk3028 != 2) {
+            ++nMoved;
+        }
+    }
+    return nMoved;
+}
+
+static void TestFocusDispatcher(void)
+{
+    GeoscapeFocusEnv env;
+
+    printf("the screen-id scroll dispatcher\n");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 0);
+    Geoscape_UiFocusPrev(&env);
+    CheckEqI32(g_bFocusFlagA, 1, "screen 0 prev sets the unk_1864F4 flag byte");
+    CheckEqI32(g_bFocusFlagB, 0, "and leaves unk_1864F6 alone");
+    CheckEqI32(CountMovedPanels(), 0, "no panel moves on screen 0");
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_bFocusFlagB, 1, "screen 0 next sets unk_1864F6 instead");
+    CheckEqI32(CountMovedPanels(), 0, "and still scrolls nothing");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 2);
+    Geoscape_UiFocusPrev(&env);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_bFocusFlagA + g_bFocusFlagB, 2, "screen 2 shares the 0 case");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 4);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_aFocusPanels[0].nUnk3028, 3, "the soldier names panel pages");
+    CheckEqI32(g_aFocusPanels[1].nUnk3028, 3, "and the craft panel");
+    CheckEqI32(CountMovedPanels(), 2, "nothing else on the soldier screen moves");
+    Geoscape_UiFocusPrev(&env);
+    CheckEqI32(g_aFocusPanels[0].nUnk3028, 2, "prev returns them");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 6);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(CountMovedPanels(), 7, "the hangar pages five store panels plus the crew pair");
+    CheckEqI32(g_aFocusPanels[6].nUnk3028, 3, "pPlaneAvailPanel is the last store panel");
+    CheckEqI32(g_aFocusPanels[8].nUnk3028, 3, "pPlaneCrewStatusPanel is the tail call");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 6);
+    env.bPlaneStoresCommitted = 0;
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(CountMovedPanels(), 2,
+               "with bPlaneStoresCommitted clear only the crew pair moves");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 6);
+    env.bPlaneListPanelsBuilt = 0;
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(CountMovedPanels(), 5,
+               "with bPlaneListPanelsBuilt clear the handler stops after the five");
+    CheckEqI32(g_aFocusPanels[7].nUnk3028, 2, "the crew panels stay put");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 7);
+    Geoscape_UiFocusPrev(&env);
+    CheckEqI32(g_aFocusPanels[9].nUnk3028, 1, "the base facility panel pages on its own");
+    CheckEqI32(CountMovedPanels(), 1, "and it is the only one");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 8);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(CountMovedPanels(), 3, "research pages its three panels");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 9);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(CountMovedPanels(), 4, "manufacturing pages its four");
+
+    for (i32 nScreenId = 10; nScreenId <= 12; ++nScreenId) {
+        ResetFocusPanels();
+        FillFocusEnv(&env, nScreenId);
+        Geoscape_UiFocusNext(&env);
+        CheckEqI32(CountMovedPanels(), 5, "screens 10, 11 and 12 share the five buy/sell panels");
+    }
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 16);
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_aFocusPanels[26].nUnk3028, 3, "screen 16 pages its single panel");
+    CheckEqI32(CountMovedPanels(), 1, "and nothing else");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 17);
+    Geoscape_UiFocusPrev(&env);
+    CheckEqI32(CountMovedPanels(), 4, "psi pages the four arrays of the selected base");
+
+    static const i32 aDeadIds[6] = { 1, 3, 5, 13, 14, 15 };
+    for (i32 i = 0; i < 6; ++i) {
+        ResetFocusPanels();
+        FillFocusEnv(&env, aDeadIds[i]);
+        Geoscape_UiFocusPrev(&env);
+        Geoscape_UiFocusNext(&env);
+        CheckEqI32(CountMovedPanels(), 0, "an id outside the table scrolls nothing");
+        CheckEqI32(g_bFocusFlagA + g_bFocusFlagB, 0, "and sets no flag byte");
+    }
+
+    /* The movers keep their own limits: next stops at nLineCount - nStyle, prev at zero. */
+    ResetFocusPanels();
+    FillFocusEnv(&env, 9);
+    for (i32 i = 13; i < 17; ++i) {
+        g_aFocusPanels[i].nUnk3028 = 6;
+    }
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_aFocusPanels[16].nUnk3028, 6, "next stops at nLineCount - nStyle");
+    for (i32 i = 13; i < 17; ++i) {
+        g_aFocusPanels[i].nUnk3028 = 0;
+    }
+    Geoscape_UiFocusPrev(&env);
+    CheckEqI32(g_aFocusPanels[13].nUnk3028, 0, "prev stops at zero");
+
+    ResetFocusPanels();
+    FillFocusEnv(&env, 4);
+    env.pSolPanelCraft = NULL;
+    Geoscape_UiFocusNext(&env);
+    CheckEqI32(g_aFocusPanels[0].nUnk3028, 3, "a missing panel is stepped over");
+    CheckEqI32(g_bFocusFlagA, 0, "and the flag pointers are only used by the 0/2 case");
+
+    Geoscape_UiFocusPrev(NULL);
+    Geoscape_UiFocusNext(NULL);
+    Check(1, "a missing environment does nothing at all");
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -5515,6 +5699,7 @@ int main(void)
     TestPanelScrollFamily();
     TestRoleToItemId();
     TestAlienRaceId();
+    TestFocusDispatcher();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

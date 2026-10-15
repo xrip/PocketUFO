@@ -831,6 +831,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   comments added at 0x86A58 / 0x86A64 and at the eleven `Map_apObjectsN` globals the port uses by
   number, naming the shipped item at each slot.
 
+- [x] part 19, the screen-id scroll dispatcher: `Geoscape_UiFocusPrev (0x8afa0)` and
+  `Geoscape_UiFocusNext (0x8b1f4)`, two 596-byte mirrors that switch on `nGeoscapeScreen` and run
+  the mover over that screen's panel set — 43 more checks. The screen 6 case keeps its two gates
+  (`bPlaneStoresCommitted` for the five store panels, `bPlaneListPanelsBuilt` for the crew pair),
+  and the 0/2 case keeps its quirk: Prev writes `unk_1864F4`, Next writes `unk_1864F6`, and both
+  hand back the address of `unk_1864F4`. IDB: function comments at 0x8afa0 / 0x8b1f4, and the ten
+  panel globals the dispatcher loads (`unk_15EE38/40/48`, `unk_15EEFC/EF00`, `unk_160C88`,
+  `unk_1615F8`, `unk_161A00/1A1C/1A20`) typed `UiPanel *` and named `pManufPanel*`,
+  `pResearchPanel*`, `pBuySellPanel*`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1003,6 +1013,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the panel scroll family, the role map and the stores commit (10 scroll handlers, `BuySell_RoleToItemId`, `BuySellScreen_ApplyQtyChanges`) | 56/56 (Release) | 9330 | 834/1103 (75.6%) | 330036/598792 (55.1%) | 38 checked, 0 mismatched |
 | the alien race ids (`BuySell_ItemIdToAlienRaceId`, IDB name fixed) | 56/56 (Release) | 9361 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 | the object name field and the name loop (`ObjectRecFull.szName` at +0, `ObjectSlot` labels fixed) | 56/56 (Release) | 9364 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
+| the screen-id scroll dispatcher (`Geoscape_UiFocusPrev`, `Geoscape_UiFocusNext`) | 56/56 (Release) | 9407 | 837/1103 (75.9%) | 331520/598792 (55.4%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

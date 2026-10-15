@@ -159,9 +159,10 @@ void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5]);
  *   0 -> 117, 1 -> 120, 2 -> 121, 3 -> 118, 4 -> 119, anything else -> 255
  *
  * The argument is sign-extended from a byte first (0x76D88..0x76D8C), so a negative role takes
- * the 255 branch too. 117..121 are the five craft-type item slots the buy/sell screen sells; the
- * shipped records for those slots are the subject of a separate open question (see PLAN.md), so
- * only the numbers are claimed here. */
+ * the 255 branch too. 117..121 are the five craft-type item slots the buy/sell screen sells, and
+ * the shipped names are now known (part 18 fixed the name mapping): 117 "SKYRANGER", 118
+ * "INTERCEPTOR", 119 "FIRE STORM", 120 "LIGTHNING" (sic), 121 "AVENGER". So role 0 is the
+ * Skyranger, 1 the Lightning, 2 the Avenger, 3 the Interceptor and 4 the Fire Storm. */
 i32 BuySell_RoleToItemId(i32 nRole);
 
 /* ------------------------------------------------- the alien race ids
@@ -210,6 +211,68 @@ typedef enum PufoAlienRaceId {
 } PufoAlienRaceId;
 
 PufoAlienRaceId BuySell_ItemIdToAlienRaceId(i32 nSlotId);
+
+/* ------------------------------------------------- the screen-id scroll dispatcher
+ *
+ * Evidence: Geoscape_UiFocusPrev @ 0x8afa0 (596 B) and Geoscape_UiFocusNext @ 0x8b1f4
+ * (596 B). Their only callers are Input_OnUp @ 0x118b0 and Input_OnDown @ 0x119b0, and both
+ * discard the result, so the port returns void.
+ *
+ * Each one switches on the screen id at nGeoscapeScreen @ 0x186BC4 and runs the mover over
+ * that screen's panel set: UiPanel_ScrollPrev (DecDwordIfPos_AtPlus0xBD4 @ 0x3f040) for the
+ * previous button, UiPanel_ScrollNext (IncDwordIfInRange_AtPlus0xBD4 @ 0x3f00c) for the next.
+ * The sets are the same ones the per-screen handlers in this file already walk, which is why
+ * the dispatcher reads as a list of them:
+ *
+ *   0, 2   no panel at all: set one flag byte and return. Prev sets unk_1864F4, Next sets
+ *          unk_1864F6, and BOTH return the address of unk_1864F4 -- the byte Next writes is
+ *          not the byte it hands back. Geoscape_SetPanelFlagA/B @ 0x8b448 / 0x8b478 write the
+ *          same two bytes. Geoscape_PulseUpdate (0x954dc, not ported) reads them. What the two
+ *          bytes mean is not established here.
+ *   4      pSolPanelNames @ 0x15975C then pSolPanelCraft @ 0x159DEC  (the soldier screen)
+ *   6      the five hangar panels, but only while bPlaneStoresCommitted @ 0x161F28 is set;
+ *          then, if bPlaneListPanelsBuilt @ 0x161F24 is set, pPlaneCrewPanel @ 0x161EDC and
+ *          pPlaneCrewStatusPanel @ 0x161A3C. With the built flag clear the handler stops
+ *          there, so a hangar that has not built its lists scrolls nothing past the five.
+ *   7      pBaseFacPanel @ 0x15886C only
+ *   8      pResearchTopicPanel @ 0x160C68, pResearchPanelB @ 0x15EEFC, pResearchPanelC @ 0x15EF00
+ *   9      pManufProductPanel @ 0x15EE44, pManufPanelB/C/D @ 0x15EE48, 0x15EE40, 0x15EE38
+ *   10,11,12  the five buy/sell panels, same order as BuySellScreen_Panel* -- the transfer
+ *          screen and both buy/sell variants share one panel set, which is the same fact the
+ *          merged Transfer_Scroll* pair records
+ *   16     unk_187200 only
+ *   17     the four psi arrays at the selected base, same order as PsiScreen_Panel*
+ *   other  nothing
+ *
+ * Deviation: the original hands back a pointer (the mover's result, or &unk_1864F4 for the
+ * 0/2 case) and both callers ignore it. The port returns void. */
+typedef struct GeoscapeFocusEnv {
+    i32 nScreenId;                    /* nGeoscapeScreen @ 0x186BC4 */
+    UiPanel *pSolPanelNames;          /* 0x15975C */
+    UiPanel *pSolPanelCraft;          /* 0x159DEC */
+    u8 bPlaneStoresCommitted;         /* bPlaneStoresCommitted @ 0x161F28 */
+    u8 bPlaneListPanelsBuilt;         /* bPlaneListPanelsBuilt @ 0x161F24 */
+    UiPanel *apPlanePanels[5];        /* pPlaneSlotPanel 0x161AC8, pPlaneSelRowPanel 0x161F00,
+                                       * pPlaneCommitRowPanel 0x161EEC, pPlaneTakenPanel
+                                       * 0x161EF4, pPlaneAvailPanel 0x161A40 */
+    UiPanel *pPlaneCrewPanel;         /* 0x161EDC */
+    UiPanel *pPlaneCrewStatusPanel;   /* 0x161A3C */
+    UiPanel *pBaseFacPanel;           /* 0x15886C */
+    UiPanel *apResearchPanels[3];     /* pResearchTopicPanel 0x160C68, pResearchPanelB 0x15EEFC,
+                                       * pResearchPanelC 0x15EF00 */
+    UiPanel *apManufPanels[4];        /* pManufProductPanel 0x15EE44, pManufPanelB 0x15EE48,
+                                       * pManufPanelC 0x15EE40, pManufPanelD 0x15EE38 */
+    UiPanel *apBuySellPanels[5];      /* pBuySellPanelA..E at 0x161A1C, 0x161A00, 0x161A20,
+                                       * 0x160C88, 0x1615F8 */
+    UiPanel *apPsiPanels[4];          /* same set as PsiScreen_Panel*, already resolved for
+                                       * the base byte_1870F4 selects */
+    UiPanel *pScreen16Panel;          /* unk_187200 */
+    u8 *pbFocusFlagA;                 /* unk_1864F4, the byte the prev case sets */
+    u8 *pbFocusFlagB;                 /* unk_1864F6, the byte the next case sets */
+} GeoscapeFocusEnv;
+
+void Geoscape_UiFocusPrev(GeoscapeFocusEnv *pEnv);
+void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *

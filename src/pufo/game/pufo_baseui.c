@@ -194,22 +194,33 @@ void BuySellScreen_ListPanelNext(UiPanel *pFirst, UiPanel *pSecond)
 
 /* The mover loop every handler below is. The original writes the last call of each body as a
  * tail call (B rather than BL); that is a code-generation detail, not a behaviour. */
-static void ScrollPanelsPrev(UiPanel *const apPanels[], i32 nCount)
+static void ScrollOnePanel(UiPanel *pPanel, bool bPrev)
+{
+    if (pPanel == NULL) {
+        return; /* the original loads the global and calls straight through; see 0x6DD4C */
+    }
+    if (bPrev) {
+        UiPanel_ScrollPrev(pPanel);
+    } else {
+        UiPanel_ScrollNext(pPanel);
+    }
+}
+
+static void ScrollPanelSet(UiPanel *const apPanels[], i32 nCount, bool bPrev)
 {
     for (i32 i = 0; i < nCount; ++i) {
-        if (apPanels[i] != NULL) {
-            UiPanel_ScrollPrev(apPanels[i]);
-        }
+        ScrollOnePanel(apPanels[i], bPrev);
     }
+}
+
+static void ScrollPanelsPrev(UiPanel *const apPanels[], i32 nCount)
+{
+    ScrollPanelSet(apPanels, nCount, true);
 }
 
 static void ScrollPanelsNext(UiPanel *const apPanels[], i32 nCount)
 {
-    for (i32 i = 0; i < nCount; ++i) {
-        if (apPanels[i] != NULL) {
-            UiPanel_ScrollNext(apPanels[i]);
-        }
-    }
+    ScrollPanelSet(apPanels, nCount, false);
 }
 
 void ManufScreen_PanelPrev(UiPanel *const apPanels[4])
@@ -303,6 +314,77 @@ PufoAlienRaceId BuySell_ItemIdToAlienRaceId(i32 nSlotId)
         }
     }
     return PUFO_ALIEN_RACE_NONE; /* 0x6AE38, MOV R0,#-1 */
+}
+
+/* The shared body of Geoscape_UiFocusPrev @ 0x8afa0 and Geoscape_UiFocusNext @ 0x8b1f4. The two
+ * originals are 596-byte mirrors that differ only in the mover they call and in which flag byte
+ * the 0/2 case writes (Prev stores to unk_1864F4, Next to unk_1864F6 at +2), so one body with a
+ * direction flag carries both. The case order and the panel order inside each case follow the
+ * disassembly; the addresses below are the case entries in Prev. */
+static void Geoscape_FocusScroll(GeoscapeFocusEnv *pEnv, bool bPrev)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    switch (pEnv->nScreenId) {
+    case 0:
+    case 2:
+        /* 0x8B004: no panel at all, just MOV R1,#1 / STRB R1,[R0]. */
+        if (bPrev) {
+            if (pEnv->pbFocusFlagA != NULL) {
+                *pEnv->pbFocusFlagA = 1;
+            }
+        } else if (pEnv->pbFocusFlagB != NULL) {
+            *pEnv->pbFocusFlagB = 1;
+        }
+        return;
+    case 4:
+        ScrollOnePanel(pEnv->pSolPanelNames, bPrev); /* 0x8B018 */
+        ScrollOnePanel(pEnv->pSolPanelCraft, bPrev); /* 0x8B024 */
+        return;
+    case 6:
+        if (pEnv->bPlaneStoresCommitted != 0) { /* 0x8B034, ANDS/BEQ skips the five */
+            ScrollPanelSet(pEnv->apPlanePanels, 5, bPrev);
+        }
+        if (pEnv->bPlaneListPanelsBuilt == 0) { /* 0x8B080, the second gate returns */
+            return;
+        }
+        ScrollOnePanel(pEnv->pPlaneCrewPanel, bPrev);        /* 0x8B094 */
+        ScrollOnePanel(pEnv->pPlaneCrewStatusPanel, bPrev);  /* 0x8B0A0 */
+        return;
+    case 7:
+        ScrollOnePanel(pEnv->pBaseFacPanel, bPrev); /* 0x8B0C8 */
+        return;
+    case 8:
+        ScrollPanelSet(pEnv->apResearchPanels, 3, bPrev); /* 0x8B0D4, 0x8B0E4, 0x8B0F4 */
+        return;
+    case 9:
+        ScrollPanelSet(pEnv->apManufPanels, 4, bPrev); /* 0x8B100 .. 0x8B130 */
+        return;
+    case 10:
+    case 11:
+    case 12:
+        ScrollPanelSet(pEnv->apBuySellPanels, 5, bPrev); /* 0x8B13C .. 0x8B17C */
+        return;
+    case 16:
+        ScrollOnePanel(pEnv->pScreen16Panel, bPrev); /* 0x8B188 */
+        return;
+    case 17:
+        ScrollPanelSet(pEnv->apPsiPanels, 4, bPrev); /* 0x8B198 .. 0x8B1CC, one per base */
+        return;
+    default:
+        return; /* cases 1, 3, 5 and 13..15 fall through to the shared POP */
+    }
+}
+
+void Geoscape_UiFocusPrev(GeoscapeFocusEnv *pEnv)
+{
+    Geoscape_FocusScroll(pEnv, true);
+}
+
+void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv)
+{
+    Geoscape_FocusScroll(pEnv, false);
 }
 
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
