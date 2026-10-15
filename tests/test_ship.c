@@ -815,6 +815,162 @@ static void TestStripCraftCargo(void)
     TestEqI32Local("and its base stock is untouched", (i32)g_aObj[36].auPerBaseVal[1], 1);
 }
 
+static void TestDistributeRecoveredItems(void)
+{
+    static ObjectRecFull g_aObj[106];
+    static ObjectRecFull *g_apObj[106];
+    static BaseRec g_aBase[2];
+    static BaseRec *g_apBase[2];
+    static Ship g_aShip[2];
+    static Ship *g_apShip[2];
+    BaseRecoverDistributeEnv env;
+    u8 nCraftCount, nBaseCount;
+
+    printf("Base_DistributeRecoveredItems @ 0x68f2c\n");
+
+    memset(&env, 0, sizeof(env));
+    env.apCraft = g_apShip; env.pnCraftCount = &nCraftCount;
+    env.apBases = g_apBase; env.pbBaseCount = &nBaseCount;
+    env.apObjects = g_apObj; env.nObjectCount = 106;
+
+    /* Clears everything and parks one craft at base 0 with no weapons; the caller then sets the
+     * mounts and the stock it wants and runs the pass. */
+#define DIST_RESET()                                                          \
+    for (i32 i = 0; i < 106; ++i) {                                           \
+        memset(&g_aObj[i], 0, sizeof(g_aObj[i]));                             \
+        g_apObj[i] = &g_aObj[i];                                              \
+    }                                                                         \
+    memset(g_aBase, 0, sizeof(g_aBase));                                      \
+    g_aBase[0].bSlot = 0; g_aBase[1].bSlot = 1;                               \
+    g_apBase[0] = &g_aBase[0]; g_apBase[1] = &g_aBase[1];                     \
+    memset(g_aShip, 0, sizeof(g_aShip));                                      \
+    g_apShip[0] = &g_aShip[0]; g_apShip[1] = &g_aShip[1];                     \
+    g_aShip[0].bAtBase = 1; g_aShip[0].bHomeBase = 0;                          \
+    nCraftCount = 1; nBaseCount = 1;
+
+    /* Craft cannon: 7 rounds in, the standard 10 back out, the base pays the difference. */
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("the Craft cannon is re-supplied with 10 rounds", (i32)g_aShip[0].bAmmo25, 10);
+    TestEqI32Local("the base paid 10 and got 7", (i32)g_aObj[52].auPerBaseVal[0], 97);
+    TestEqI32Local("and its stores total follows", (i32)g_aBase[0].nStoresTotal, -3);
+
+    /* Twin mounts double the load -- and the second pass reads the byte the first one refilled. */
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 26;
+    g_aShip[0].bWeaponR = 26;
+    g_aShip[0].bAmmo26 = 4;
+    g_aObj[53].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("twin Stingray launchers carry 2 * 3", (i32)g_aShip[0].bAmmo26, 6);
+    TestEqI32Local("the second pass hands the refilled 6 back too",
+                   (i32)g_aObj[53].auPerBaseVal[0], 98);
+    TestEqI32Local("and the net across both passes is the 2 the craft gained",
+                   (i32)g_aBase[0].nStoresTotal, -2);
+
+    /* A base that cannot cover the standard load gives what it has and its count goes to zero. */
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 27;
+    g_aObj[54].auPerBaseVal[0] = 1;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("the Avalanche mount takes the single round the base had",
+                   (i32)g_aShip[0].bAmmo27, 1);
+    TestEqI32Local("and the base's count is cleared (0x69150)", (i32)g_aObj[54].auPerBaseVal[0], 0);
+    TestEqI32Local("with no subtraction on the short path", (i32)g_aBase[0].nStoresTotal, 0);
+
+    /* Elerium travels in tenths: 35 in the byte is 3 to the base, 10 carried is 100 in the byte. */
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 29;
+    g_aShip[0].bAmmo29 = 35;
+    g_aObj[105].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("the Plasma cannon's byte is 10 * 10", (i32)g_aShip[0].bAmmo29, 100);
+    TestEqI32Local("35 / 10 went in and 10 came out", (i32)g_aObj[105].auPerBaseVal[0], 93);
+    TestEqI32Local("so the net is 7", (i32)g_aBase[0].nStoresTotal, -7);
+
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 29;
+    g_aObj[105].auPerBaseVal[0] = 5;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("a short Elerium base still writes tenths", (i32)g_aShip[0].bAmmo29, 50);
+    TestEqI32Local("and clears its count", (i32)g_aObj[105].auPerBaseVal[0], 0);
+
+    /* The mounts with no rule are left alone: 28 is the Laser cannon, 24 the Psi-arm. */
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 28;
+    g_aShip[0].bWeaponR = 28;
+    g_aObj[52].auPerBaseVal[0] = 50;
+    g_aObj[105].auPerBaseVal[0] = 50;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("the Laser cannon is not resupplied", (i32)g_aShip[0].bAmmo25, 0);
+    TestEqI32Local("and no ammo record moves", (i32)g_aObj[52].auPerBaseVal[0], 50);
+    TestEqI32Local("not even Elerium", (i32)g_aObj[105].auPerBaseVal[0], 50);
+
+    /* The gate: away, or homed elsewhere. */
+    DIST_RESET();
+    g_aShip[0].bAtBase = 0;
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("a craft that is not at base keeps its ammo (0x68FC0)",
+                   (i32)g_aShip[0].bAmmo25, 7);
+    TestEqI32Local("and the base is untouched", (i32)g_aObj[52].auPerBaseVal[0], 100);
+
+    DIST_RESET();
+    g_aShip[0].bHomeBase = 1;
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("a craft homed at another base is skipped with one base in the roster",
+                   (i32)g_aShip[0].bAmmo25, 7);
+
+    /* Homed at base 1, and base 1 is in the roster: it is served from base 1's own column. */
+    DIST_RESET();
+    nBaseCount = 2;
+    g_aShip[0].bHomeBase = 1;
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[1] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("the second base serves its own craft", (i32)g_aShip[0].bAmmo25, 10);
+    TestEqI32Local("from its own column", (i32)g_aObj[52].auPerBaseVal[1], 97);
+    TestEqI32Local("and the first base's column is untouched", (i32)g_aObj[52].auPerBaseVal[0], 0);
+
+    /* Counts. */
+    DIST_RESET();
+    nBaseCount = 0;
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("no bases means no resupply (0x68F58)", (i32)g_aShip[0].bAmmo25, 7);
+
+    DIST_RESET();
+    nCraftCount = 0;
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    Base_DistributeRecoveredItems(&env);
+    TestEqI32Local("no craft means no resupply", (i32)g_aShip[0].bAmmo25, 7);
+
+    Base_DistributeRecoveredItems(NULL);
+    DIST_RESET();
+    g_aShip[0].bWeaponL = 25;
+    g_aShip[0].bAmmo25 = 7;
+    g_aObj[52].auPerBaseVal[0] = 100;
+    env.apObjects = NULL;
+    Base_DistributeRecoveredItems(&env);
+    env.apObjects = g_apObj;
+    TestEqI32Local("a null object table does nothing instead of faulting",
+                   (i32)g_aShip[0].bAmmo25, 7);
+#undef DIST_RESET
+}
+
 
 static void TestCraftWeaponItemId(void)
 {
@@ -1564,6 +1720,7 @@ int main(void)
     TestCargoHold();
     TestLoadStores();
     TestStripCraftCargo();
+    TestDistributeRecoveredItems();
     TestCraftWeaponItemId();
     TestCrewAndStoresTotals();
     TestInterceptRetarget();

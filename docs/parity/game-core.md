@@ -11665,3 +11665,47 @@ code, and the store at 0x98994 pins the transfer destination byte_1870F4 to the 
 overlay frame. Reproduced, not fixed.
 
 IDB: comments at 0x6250c and 0x989D0.
+
+Base_DistributeRecoveredItems (0x68f2c, 1216 B) re-arms every craft sitting at the base being
+processed. Callers are Smap_GrantSiteRecovery (0x98b50) and the landing chain. It opens with
+Base_StripAllCraftCargo (0x68F3C) and then walks bases outer (nBaseCount, read signed from
+abFacilityGrid + 0x618), craft inner (Map_nCraftCount, read unsigned).
+
+Gate (0x68FA0): Ship.bAtBase != 0 and Ship.bHomeBase == nBase.
+
+Mounts (0x68FDC jump table). Ship.bWeaponL @ 0x22 and Ship.bWeaponR @ 0x23 hold weapon object slots,
+and five of them have a resupply rule, each keyed to its ammo record and to the craft's own quantity
+byte at 0x3d..0x41:
+
+    25 Craft cannon         -> apObjects[52]  "Craft cannon rounds[x50]"  10 per mount (0x69174)
+    26 Stingray launcher    -> apObjects[53]  "Stingray rocket"            3 per mount (0x69120)
+    27 Avalanche launcher   -> apObjects[54]  "Avalanche rocket"           2 per mount (0x690D8)
+    29 Plasma cannon        -> apObjects[105] "Elerium-115"               10 per mount (0x69074)
+    30 Fusion ball launcher -> apObjects[55]  "Fusion ball"                2 per mount (0x6900C)
+
+Weapon 28 (Laser cannon) and 24 (Psi-arm) fall through the switch and are left alone; the laser is
+the weapon that never runs out. The names come from main.dat TEXTS.DAT at 0x2a9ff6, record 1446 + slot.
+
+Load factor (0x68FC4): 2 when both mounts hold the same weapon, 1 otherwise, so a twin-mount craft
+re-arms with double the standard load.
+
+Each mount, both passes (0x6900C..0x691B4 left, 0x691F4..0x69388 right): the craft's quantity is
+added to the base, its byte is cleared, and the craft is then re-supplied with perMount * load. If
+apObjects[slot]->auPerBaseVal[nBase] is below that, the craft takes what the base had and the base's
+count is zeroed (0x69150) with no BaseRec_SubItemQty; otherwise the craft takes the full load and the
+base loses it. The net across a mount is exactly what the craft gained.
+
+Elerium is the odd one out: its craft byte is in tenths. The base receives bAmmo29 / 10 and the byte
+written back is 10 * what the craft ends up carrying -- 100 * load when the base can supply it,
+10 * the base's count when it cannot (0x69094..0x690BC, the ANDLT/MULLT pair).
+
+Both mounts run even when the first matched no weapon, and when both hold the same weapon the second
+pass reads the byte the first pass has just refilled and hands that back to the base as well. That is
+what the code does and the port reproduces it.
+
+Deviation: the per-base count is indexed by the loop counter here (auPerBaseVal at record + 42 + 2 *
+nBase, R6 = 0x2A stepped by 2), while BaseRec_AddItemQty and BaseRec_SubItemQty index it by
+BaseRec.bSlot. The port keeps both, as the original has them. The port also bounds the base loop at
+the eight real base records; the original bounds nothing.
+
+IDB: comment at 0x68f2c.

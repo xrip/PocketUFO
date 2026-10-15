@@ -446,6 +446,61 @@ void Craft_LoadStoresFromBase(const CraftStoreLoadEnv *pEnv, u8 nItemKind, u8 nS
  * hangar UI. */
 void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount);
 
+/* --- Base_DistributeRecoveredItems @ 0x68f2c (1216 B) : re-arm every craft at its home base ---
+ *
+ * Callers are Smap_GrantSiteRecovery (0x98b50) and Base_TransferTacticalLoot's neighbours; it runs
+ * after a site's recovered cargo has been handed out. It opens with Base_StripAllCraftCargo (the
+ * infantry-ammo pass) and then walks bases outer, craft inner.
+ *
+ * The gate (0x68FA0): `Ship.bAtBase != 0 && Ship.bHomeBase == nBase` -- the craft has to be sitting
+ * at the base being processed.
+ *
+ * The two weapon mounts, `Ship.bWeaponL @ 0x22` and `Ship.bWeaponR @ 0x23`, hold weapon object
+ * slots, and only five of them have a resupply rule:
+ *
+ *   25 Craft cannon        -> apObjects[52]  "Craft cannon rounds[x50]", 10 rounds per mount
+ *   26 Stingray launcher   -> apObjects[53]  "Stingray rocket",           3 per mount
+ *   27 Avalanche launcher  -> apObjects[54]  "Avalanche rocket",          2 per mount
+ *   29 Plasma cannon       -> apObjects[105] "Elerium-115",              10 per mount, in tenths
+ *   30 Fusion ball launcher-> apObjects[55]  "Fusion ball",               2 per mount
+ *
+ * Weapon 28 (Laser cannon) and 24 (Psi-arm) fall through the switch and are left alone -- the laser
+ * is the weapon that never runs out. Each mount's own quantity lives in the craft, in
+ * `Ship.bAmmo25..bAmmo30 @ 0x3d..0x41`, one byte per weapon id.
+ *
+ * The load factor is 2 when both mounts hold the same weapon and 1 otherwise (0x68FC4: it compares
+ * bWeaponL with bWeaponR), so a twin-mount craft re-arms with double the standard load.
+ *
+ * Each mount is handled the same three steps (0x6900C..0x691B4 for the left, 0x691F4..0x69388 for
+ * the right): the quantity the craft holds is added to the base, the craft's byte is cleared, and
+ * then the craft is re-supplied with `units = perMount * load`. If the base's own count for that
+ * object, read as `apObjects[slot]->auPerBaseVal[nBase]`, is below `units`, the craft takes what the
+ * base had and the base's count is zeroed; otherwise the craft takes the full `units` and the base
+ * loses `units` through BaseRec_SubItemQty.
+ *
+ * Elerium is the odd one out: its craft byte is in tenths. The amount handed to the base is
+ * `bAmmo29 / 10`, and the byte written back is `10 * what the craft ends up carrying` -- so 100 *
+ * load when the base can supply it, 10 * the base's count when it cannot.
+ *
+ * Both mounts run even when the first one matched no weapon, and when both mounts hold the same
+ * weapon the second pass reads the byte the first pass has just refilled and hands that back to the
+ * base too. That is what the code does, and the port reproduces it.
+ *
+ * Deviation: the per-base count is indexed by the loop counter here (`auPerBaseVal` at record + 42 +
+ * 2 * nBase), while BaseRec_AddItemQty and BaseRec_SubItemQty index it by `BaseRec.bSlot`. The port
+ * keeps both, as the original has them; they agree as long as a base's slot byte equals its roster
+ * index, which is what BaseRec_Create establishes. */
+typedef struct BaseRecoverDistributeEnv {
+    Ship          **apCraft;       /* Map.apCraft @ Map + 0x10AC */
+    const u8      *pnCraftCount;   /* Map_nCraftCount @ 0x114B4C, read unsigned */
+    BaseRec       **apBases;       /* Map.apBases @ Map + 0x1174 */
+    const u8      *pbBaseCount;    /* nBaseCount @ 0x159D80, read signed */
+    ObjectRecFull **apObjects;     /* Map.apObjects @ 0x113AC0 */
+    i32            nObjectCount;   /* for Base_StripAllCraftCargo's env */
+} BaseRecoverDistributeEnv;
+
+void Base_DistributeRecoveredItems(const BaseRecoverDistributeEnv *pEnv);
+
 /* Evidence: Base_TransferTacticalLoot @ 0x68344 (3048 bytes, 87 blocks).
  *
  * The landing pass. It walks every base and every craft, and for each craft that is at its home

@@ -979,6 +979,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `Geoscape_Draw` loads straight out of `abFacilityGrid + 0x619` (0x93EA8), and it is the same byte
   the hit test reads back. IDB: comments at 0x6250c and 0x989D0.
 
+- [x] part 32, the craft re-arm pass: `Base_DistributeRecoveredItems (0x68f2c)`, 1216 bytes — 26 more
+  checks. Every craft sitting at the base being processed has its two weapon mounts
+  (`Ship.bWeaponL` / `bWeaponR` @ 0x22 / 0x23, which hold weapon object slots) re-supplied from that
+  base: the craft's own quantity byte at 0x3d..0x41 is deposited, cleared, and the craft takes back
+  `perMount * load`, where `load` is 2 when both mounts hold the same weapon and 1 otherwise. Five
+  mounts have a rule — Craft cannon → rounds ×10, Stingray launcher → rocket ×3, Avalanche launcher →
+  rocket ×2, Plasma cannon → Elerium-115 ×10, Fusion ball launcher → Fusion ball ×2 — and the two
+  names that were unnamed in the port are now pinned from main.dat TEXTS.DAT (`apObjects[52]` "Craft
+  cannon rounds[x50]", 53 "Stingray rocket", 54 "Avalanche rocket", 55 "Fusion ball"). Laser cannon
+  (28) and Psi-arm (24) fall through. Elerium's byte is in tenths: the base gets `bAmmo29 / 10` and
+  the byte written back is `10 *` what the craft carries. When both mounts hold the same weapon the
+  second pass hands the byte the first pass just refilled back to the base as well — reproduced.
+  IDB: comment at 0x68f2c.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1176,6 +1190,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the transfer screen's commit (`TransferScreen_CommitTransfer`, the completed-record flag 24) | 56/56 (Release) | 9824 | 852/1103 (77.2%) | 352388/598792 (58.8%) | 38 checked, 0 mismatched |
 | the transfer screen's frame (`TransferScreen_Draw`, the destination overlay) | 56/56 (Release) | 9871 | 853/1103 (77.3%) | 355376/598792 (59.3%) | 38 checked, 0 mismatched |
 | the base-tab strip drawer (`Base_DrawFacilityIconStrip`, the dead overlay-close branch found) | 56/56 (Release) | 9904 | 854/1103 (77.4%) | 356168/598792 (59.5%) | 38 checked, 0 mismatched |
+| the craft re-arm pass (`Base_DistributeRecoveredItems`, the five weapon mounts named) | 56/56 (Release) | 9930 | 855/1103 (77.5%) | 357384/598792 (59.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

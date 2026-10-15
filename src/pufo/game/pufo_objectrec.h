@@ -95,6 +95,10 @@ typedef enum ObjectSlot {
     OBJ_TANK_CANNON              = 31, /* rec 1477 "Tank - cannon" */
     OBJ_HOVERTANK_PLASMA         = 34, /* rec 1480 "Hovertank - plasma" */
     OBJ_HEAVY_CANNON_AP_CLIP     = 43, /* rec 1489 "Heavy cannon [AP] clip" */
+    OBJ_CRAFT_CANNON_ROUNDS      = 52, /* rec 1498 "Craft cannon rounds[x50]", the Craft cannon's ammo */
+    OBJ_STINGRAY_ROCKET          = 53, /* rec 1499 "Stingray rocket" */
+    OBJ_AVALANCHE_ROCKET         = 54, /* rec 1500 "Avalanche rocket" */
+    OBJ_FUSION_BALL              = 55, /* rec 1501 "Fusion ball" */
     OBJ_TANK_CANNON_SHELLS       = 56, /* rec 1502 "Tank - cannon shells" */
     OBJ_CELATID_CORPSE           = 67, /* rec 1513 "Celatid corpse" */
     OBJ_SILACOID_CORPSE          = 68, /* rec 1514 "Silacoid corpse" */

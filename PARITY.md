@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 854 / 1103 (77.4%) |
-| Bytes of original code cited | 356168 / 598792 (59.5%) |
+| Functions cited as evidence | 855 / 1103 (77.5%) |
+| Bytes of original code cited | 357384 / 598792 (59.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9904 |
+| Test checks run | 9930 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 165 | 205 | 61628 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 166 | 205 | 62844 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 210 | 244 | 59460 / 119204 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -571,7 +571,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_plane.c` (+2) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (165 functions)
+### `strat` (166 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -586,6 +586,7 @@ is the module that answers to it.
 | `0x69a38` | `Base_StripAllCraftCargo` | 1476 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x86d20` | `GeoscapeUi_FreeAll` | 1456 | `src/pufo/game/pufo_strateg.h`, `src/pufo/ui/pufo_geoiinit.h` (+2) |
 | `0x7f60c` | `StrategEntry_InitTravel` | 1420 | `src/pufo/game/pufo_strateg.h` |
+| `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x8b4a8` | `Geoscape_OnMapClick` | 1184 | `src/pufo/app/pufo_world.c`, `src/pufo/app/pufo_world.h` (+2) |
 | `0x629b0` | `Base_CanPlaceHangarAt` | 968 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
@@ -1190,7 +1191,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 40 functions, 100828 bytes remaining
+### `strat` — 39 functions, 99612 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1214,7 +1215,6 @@ whose port work they belong to.
 | `0x5abe4` | `FundingScreen_Toggle` | 1560 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x6a4bc` | `BaseFac_BuildStatusMsg` | 1520 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5c084` | `FundingScreen_Init` | 1256 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b1fc` | `FundingScreen_Draw` | 868 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84688` | `Smap_OnPointerUp` | 732 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1324,7 +1324,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_rmp` | PASS | 62 |
 | `test_roster` | PASS | 114 |
 | `test_save` | PASS | 724 |
-| `test_ship` | PASS | 237 |
+| `test_ship` | PASS | 263 |
 | `test_soldiername` | PASS | 22 |
 | `test_startnew` | PASS | 107 |
 | `test_statusmsg` | PASS | 106 |

@@ -647,6 +647,106 @@ void Base_StripAllCraftCargo(const CraftStoreLoadEnv *pEnv, i32 nShipCount)
     }
 }
 
+/* The five weapon mounts Base_DistributeRecoveredItems resupplies. nWeapon is the value
+ * Ship.bWeaponL / bWeaponR must hold, nObject the ammo record, nOff the Ship byte holding this
+ * weapon's quantity, and nTenths the scale that byte is stored in -- Elerium travels in tenths. */
+typedef struct CraftWeaponResupply {
+    i8  nWeapon;
+    u16 nObject;
+    u8  nOff;
+    u8  nPerMount;
+    u8  nTenths;
+} CraftWeaponResupply;
+
+static const CraftWeaponResupply g_aCraftWeaponResupply[5] = {
+    { 25, OBJ_CRAFT_CANNON_ROUNDS, 0x3D, 10, 1 },  /* 0x69174 */
+    { 26, OBJ_STINGRAY_ROCKET,     0x3E,  3, 1 },  /* 0x69120 */
+    { 27, OBJ_AVALANCHE_ROCKET,    0x3F,  2, 1 },  /* 0x690D8 */
+    { 29, OBJ_ELERIUM_115,         0x40, 10, 10 }, /* 0x69074 */
+    { 30, OBJ_FUSION_BALL,         0x41,  2, 1 },  /* 0x6900C */
+};
+
+/* One mount, both passes. The craft's quantity goes to the base, the byte is cleared, and the craft
+ * is re-supplied with perMount * load -- or with whatever the base had, if that is less. */
+static void Distribute_ResupplyMount(BaseRec *pBase, Ship *pShip,
+                                     ObjectRecFull **apObjects,
+                                     const CraftWeaponResupply *pRule, i32 nBase, i32 nLoad)
+{
+    ObjectRecFull *pItem = apObjects[pRule->nObject];
+    if (pItem == NULL) {
+        return;
+    }
+
+    u8 *const pbQty = (u8 *)pShip + pRule->nOff;
+    const i32 nTenths = pRule->nTenths;
+
+    BaseRec_AddItemQty(pBase, pItem, (nTenths == 1) ? (i32)*pbQty : ((i32)*pbQty) / 10);
+    *pbQty = 0;
+
+    const i32 nUnits = (i32)pRule->nPerMount * nLoad;
+    const i32 nStock = (i32)pItem->auPerBaseVal[nBase];
+
+    if (nStock < nUnits) {
+        *pbQty = (u8)(nTenths * nStock);
+        pItem->auPerBaseVal[nBase] = 0; /* 0x69150 */
+    } else {
+        *pbQty = (u8)(nTenths * nUnits);
+        BaseRec_SubItemQty(pBase, pItem, nUnits);
+    }
+}
+
+/* Base_DistributeRecoveredItems @ 0x68f2c. See the header for the mount table, the load factor and
+ * the Elerium tenths. */
+void Base_DistributeRecoveredItems(const BaseRecoverDistributeEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->apCraft == NULL || pEnv->apBases == NULL ||
+        pEnv->apObjects == NULL) {
+        return;
+    }
+
+    const i32 nCraftCount = (pEnv->pnCraftCount != NULL) ? (i32)*pEnv->pnCraftCount : 0;
+
+    CraftStoreLoadEnv load;
+    load.apCraft = pEnv->apCraft;
+    load.apBases = pEnv->apBases;
+    load.apObjects = pEnv->apObjects;
+    load.nObjectCount = pEnv->nObjectCount;
+    Base_StripAllCraftCargo(&load, nCraftCount); /* 0x68F3C */
+
+    const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i8)*pEnv->pbBaseCount : 0;
+    if (nBaseCount <= 0) {
+        return; /* 0x68F58 */
+    }
+
+    /* Deviation: the original bounds nothing here. auPerBaseVal has eight columns and apBases has
+     * eight records, so a base count above eight would read past both. */
+    const i32 nBases = (nBaseCount > PUFO_FAC_BASE_COUNT) ? PUFO_FAC_BASE_COUNT : nBaseCount;
+
+    for (i32 nBase = 0; nBase < nBases; ++nBase) {
+        BaseRec *pBase = pEnv->apBases[nBase];
+
+        for (i32 nCraft = 0; nCraft < nCraftCount; ++nCraft) {
+            Ship *pShip = pEnv->apCraft[nCraft];
+            if (pShip == NULL || pShip->bAtBase == 0 || (i32)pShip->bHomeBase != nBase) {
+                continue; /* 0x68FC0 */
+            }
+
+            const i32 nLoad = (pShip->bWeaponL == pShip->bWeaponR) ? 2 : 1; /* 0x68FC4 */
+
+            for (i32 k = 0; k < 2; ++k) {
+                const i8 nWeapon = (k == 0) ? pShip->bWeaponL : pShip->bWeaponR;
+                for (i32 r = 0; r < 5; ++r) {
+                    if (g_aCraftWeaponResupply[r].nWeapon == nWeapon) {
+                        Distribute_ResupplyMount(pBase, pShip, pEnv->apObjects,
+                                                 &g_aCraftWeaponResupply[r], nBase, nLoad);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /* Base_CraftWeaponItemId @ 0x6641c. The selected base's stock of the item a craft stores slot
  * refers to. Its second argument is the slot, and the call site at 0x7ADC4 passes the third as
  * the signed global byte 0x159D81 -- the byte sitting right next to the base count at 0x159D80,
