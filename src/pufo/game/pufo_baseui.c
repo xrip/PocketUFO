@@ -3600,7 +3600,11 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv)
             }
 
             *pEnv->pdwShortfall = 1; /* 0x71070 */
-            UiLineList_AppendWithSound(pEnv->pLines, 32, (u32)nBase, (u32)nProduct, 0u, (u32)nBase,
+            /* Six arguments: a3 in R2 and a4 in R3 both get the base (0x7107C and 0x71084), the
+             * product goes to [SP+0] (STRB R5 at 0x7108C) and 0 to [SP+4] (STRB R3 at 0x71078).
+             * So the payload is (32, base, base, product, 0) -- the same shape the manufacturing
+             * messages 33, 34 and 35 use. */
+            UiLineList_AppendWithSound(pEnv->pLines, 32, (u32)nBase, (u32)nBase, (u32)nProduct, 0u,
                                        pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x71090 */
             ManufScreen_ClearProductSlot(pEnv->pClearEnv, nBase, nProduct);    /* 0x710A0 */
             return; /* 0x710A4: B past the commit call -- one over-budget product ends the refresh */

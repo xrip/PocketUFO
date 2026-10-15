@@ -1329,6 +1329,13 @@ void Base_TransferTacticalLoot(const TacticalLootEnv *pEnv, bool bAnnounceAmmoSh
 
             if (bStoresShort) {
                 if (pEnv->pfnAppendLine != NULL) {
+                    /* Six arguments: a3 = R2, a4 = R3, a5 = [SP+0], a6 = [SP+4]. 0x68914 loads a3
+                     * from the radar-screen scratch byte at 0x15967C (the same block
+                     * RadarScreen_Init/Update and Strateg_ConfirmInterceptTarget read for their own
+                     * messages), 0x68918 loads a4 with the ship index, 0x68910 stores the reported
+                     * object at [SP+0] and R10 -- 0 -- at [SP+4]. The port has no model of the
+                     * radar block yet, so a3 is passed as 0, which is what that byte holds in the
+                     * shipped image; recorded as a deviation rather than invented. */
                     pEnv->pfnAppendLine(39, 0, nShip, nReportObj, pEnv->pUser); /* 0x68924 */
                 }
                 if (pEnv->pbUiRefreshFlag != NULL) {

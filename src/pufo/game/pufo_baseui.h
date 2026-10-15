@@ -1670,9 +1670,11 @@ void ManufScreen_ClearProductSlot(const ManufClearEnv *pEnv, i32 nBaseIndex, i32
  *     quantity is added (0x70FE8); at or over it, it is not. Both capacity terms are recomputed
  *     for EVERY product, which is what the original does.
  *   - At or over capacity (0x71060): the shortfall dword is raised, message 32 is posted, and the
- *     product slot is cleared through ManufScreen_ClearProductSlot. The message payload is the
- *     ARM's own stack slots at 0x7107C..0x71090 -- (32, base, product, 0, base) -- not the
- *     (32, base, base, product, 0) Hex-Rays shows. Then the function RETURNS: 0x710A4 branches
+ *     product slot is cleared through ManufScreen_ClearProductSlot. The message payload is
+ *     (32, base, base, product, 0): the callee takes six arguments, so a3 is R2 and a4 is R3 --
+ *     both hold the base (0x7107C and 0x71084) -- while a5 is [SP+0], where 0x7108C stores the
+ *     product, and a6 is [SP+4], where 0x71078 stores 0. That is the shape all four manufacturing
+ *     messages use. Then the function RETURNS: 0x710A4 branches
  *     past the commit call, so one over-budget product ends the whole refresh.
  *
  * When the loop finishes with no over-budget product the original calls ManufScreen_CommitProduction

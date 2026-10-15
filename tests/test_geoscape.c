@@ -3262,9 +3262,11 @@ static void TestTickFacilityConstruction(void)
     CheckEqI32((i32)g_tickLines.nLineCount, 0, "and nothing is reported until it reaches zero");
     CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 0, "and no needed pass runs");
 
-    /* Reaching zero reports message 38 and raises the shortfall dword. The payload is what the ARM
-     * puts on the stack at 0x62940: a4 is the COLUMN (row 1, column 2 here), a5 is 0 and a6 is
-     * 6*nBase -- not the row Hex-Rays shows. */
+    /* Reaching zero reports message 38 and raises the shortfall dword. The callee takes six
+     * arguments -- a3 in R2, a4 in R3, a5 at [SP+0] and a6 at [SP+4] -- and the ARM puts the base
+     * in R2 (0x62938), the ROW in R3 (AND R3,R7,#0xFF at 0x6292C), the COLUMN at [SP+0]
+     * (STRB R5 at 0x62944) and R9 -- the zero the completion stores with -- at [SP+4]
+     * (STRB R9 at 0x62930). So the payload is (38, base, row, col, 0). */
     TICK_RESET();
     TICKDAYS(1, 2) = 1;
     TICK_ENV(env);
@@ -3273,9 +3275,9 @@ static void TestTickFacilityConstruction(void)
     CheckEqI32((i32)g_tickLines.nLineCount, 1, "one report line");
     CheckEqI32(g_tickLines.abLineFlags[0], 38, "message 38");
     CheckEqI32((i32)g_tickLines.anColor[0][0], 0, "colour 0 is the base");
-    CheckEqI32((i32)g_tickLines.anColor[0][1], 2, "colour 1 is the column, not the row");
-    CheckEqI32((i32)g_tickLines.anColor[0][2], 0, "colour 2 is zero");
-    CheckEqI32((i32)g_tickLines.anColor[0][3], 0, "colour 3 is 6 * the base");
+    CheckEqI32((i32)g_tickLines.anColor[0][1], 1, "colour 1 is the row");
+    CheckEqI32((i32)g_tickLines.anColor[0][2], 2, "colour 2 is the column");
+    CheckEqI32((i32)g_tickLines.anColor[0][3], 0, "colour 3 is zero");
     CheckEqI32((i32)g_dwTickShortfall, 1, "and the shortfall dword is raised");
 
     /* A completed HANGAR also clears three more days bytes: below, below-right and right. */
@@ -3338,16 +3340,19 @@ static void TestTickFacilityConstruction(void)
     Base_TickFacilityConstruction(&env);
     CheckEqI32(TICKFAC(PUFO_GRID_LAYER2_OFF, 0, 0), 1, "the lab needed pass ran on completion");
 
-    /* Base 1 is walked through its own days block, and its base index reaches the report. */
+    /* Base 1 is walked through its own days block, and its base index reaches the report. Row 1
+     * column 3 makes the four payload slots four different values: 1, 1, 3 and 0. */
     TICK_RESET();
     g_nTickBaseCount = 2;
-    g_aTickGrid[36 + 0] = 1; /* base 1, row 0, column 0 */
+    g_aTickGrid[36 + 6 * 1 + 3] = 1; /* base 1, row 1, column 3 */
     TICK_ENV(env);
     Base_TickFacilityConstruction(&env);
-    CheckEqI32(g_aTickGrid[36], 0, "base 1's days block is walked too");
+    CheckEqI32(g_aTickGrid[36 + 9], 0, "base 1's days block is walked too");
     CheckEqI32((i32)g_tickLines.nLineCount, 1, "and it reports once");
     CheckEqI32((i32)g_tickLines.anColor[0][0], 1, "colour 0 names base 1");
-    CheckEqI32((i32)g_tickLines.anColor[0][3], 6, "colour 3 is 6 * 1");
+    CheckEqI32((i32)g_tickLines.anColor[0][1], 1, "colour 1 is the row");
+    CheckEqI32((i32)g_tickLines.anColor[0][2], 3, "colour 2 is the column");
+    CheckEqI32((i32)g_tickLines.anColor[0][3], 0, "colour 3 is zero, not 6 * the base");
 
     /* No bases, no work. */
     TICK_RESET();

@@ -1043,6 +1043,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
   copy. IDB: renamed at 0x65a6c with a comment; `docs/idb/functions.tsv` refreshed and the inventory
   regenerated, so `audit_names` is back to 0 unresolved.
 
+- [x] part 37, a message-payload audit — no coverage change, two real bugs fixed. Decoding
+  `ManufScreen_CommitProduction` needed the exact argument shape of `UiPanel_AppendLineWithSound`,
+  and that turned out to be `(a1 panel, a2 msg, a3 R2, a4 R3, a5 [SP+0], a6 [SP+4])` — SIX
+  arguments. Two earlier "Hex-Rays is wrong, the ARM says otherwise" corrections were themselves
+  wrong: they read the caller's own frame locals as extra arguments (`var_8` at `[SP+8]` in a
+  0x10-byte frame, `var_10` at `[SP+8]` in a 0x18-byte frame). Message 38 is
+  `(38, base, row, col, 0)`, not `(38, base, col, 0, 6*nBase)`; message 32 is
+  `(32, base, base, product, 0)`, not `(32, base, product, 0, base)`. Both ports now pass the
+  correct payload, the tests assert all four slots with fixtures where the four values are
+  different (the old ones passed a wrong payload because base 0 made two slots indistinguishable),
+  and the IDB comments at 0x62948 and 0x70ebc carry the corrected shape. The other five ported
+  message sites (39, 40, 41, 42, 36) were re-checked against the ARM and were already right; 39's
+  third argument is the radar scratch byte at 0x15967C, which the port has no model for yet and now
+  records instead of silently passing 0. **Rule going forward: a payload claim must be checked
+  against the callee's parameter count before it is called a Hex-Rays error.**
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1254,6 +1270,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the daily build-timer countdown (`Base_TickFacilityConstruction`, the hangar's three extra clears, the message payload corrected) | 56/56 (Release) | 10016 | 857/1103 (77.7%) | 360352/598792 (60.2%) | 38 checked, 0 mismatched |
 | the manufacturing refresh (`ManufScreen_RefreshBaseTabs`, the untested hangar products, the early return) | 56/56 (Release) | 10041 | 858/1103 (77.8%) | 360852/598792 (60.3%) | 38 checked, 0 mismatched |
 | the craft slot -> CraftType map (`Ship_ProductSlotToType`, renamed in the IDB, shared with the recovery pass) | 56/56 (Release) | 10059 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
+| the message-payload audit (38 and 32 corrected, five other sites re-checked, 39's radar byte recorded) | 56/56 (Release) | 10062 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

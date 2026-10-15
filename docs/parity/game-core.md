@@ -11807,10 +11807,17 @@ decrements every non-zero byte (0x62878..0x6288C). When a byte reaches zero the 
     active manufacturing).
   - 0x62934..0x62948: byte_1870C8 = 1 as a dword and message 38.
 
-The message payload is NOT what Hex-Rays shows. ARM at 0x6292C..0x62948 computes the row with
-`AND R3, R7, #0xFF` and never stores it; the stack arguments are a4 = the COLUMN counter (STRB R5),
-a5 = 0 (STRB R9) and a6 = 6*nBase (var_8, +6 per base). So the call is
-`AppendLineWithSound(0x158890, 38, nBase, col, 0, 6*nBase)`, and the port passes exactly that.
+The message payload is `(38, base, row, col, 0)`. `UiPanel_AppendLineWithSound` takes SIX
+arguments, so a3 is R2, a4 is R3, a5 is `[SP+0]` and a6 is `[SP+4]`: 0x62938 puts the base in R2,
+0x6292C's `AND R3, R7, #0xFF` puts the ROW in R3, 0x62944 (`STRB R5`) stores the COLUMN at `[SP+0]`
+and 0x62930 (`STRB R9`) stores R9 -- the zero the completion writes with -- at `[SP+4]`.
+
+An earlier pass here claimed the payload was `(38, base, col, 0, 6*nBase)`, reading the caller's
+`var_8` (the 6*nBase running offset) as a seventh argument. That was wrong: with a 0x10-byte frame
+`var_10` and `var_C` are `[SP+0]` and `[SP+4]` -- the two stack arguments -- and `var_8` sits at
+`[SP+8]`, past the callee's last parameter. Hex-Rays had it right. The port now passes
+`(38, base, row, col, 0)` and the test asserts all four payload slots, including a base-1 case so
+the values are four different numbers.
 
 Deviation: the original returns the last day byte it read (register residue); the port returns void.
 
@@ -11838,8 +11845,14 @@ anchor + 400*base + 2*product + 17156) and, when non-zero, adds it into
     0x710A4 branches past the commit call -- so one over-budget product ends the whole refresh,
     including the remaining bases.
 
-The message payload is the ARM's own stack slots at 0x7107C..0x71090: `(32, base, product, 0,
-base)`. Hex-Rays shows `(32, base, base, product, 0)`; the port passes what the ARM passes.
+The message payload is `(32, base, base, product, 0)`. Six arguments again: a3 = R2 and a4 = R3
+both hold the base (0x7107C and 0x71084), a5 = `[SP+0]` holds the product (`STRB R5` at 0x7108C)
+and a6 = `[SP+4]` holds 0 (`STRB R3` at 0x71078). An earlier pass here claimed the ARM said
+`(32, base, product, 0, base)`; that came from the same frame-offset misreading as message 38 and
+was wrong -- with a 0x18-byte frame the two stack arguments are `var_18` and `var_14`, and `var_10`
+(the base index) is a local at `[SP+8]`. This is also the shape messages 33, 34 and 35 use in
+`ManufScreen_CommitProduction`. The test now uses base 1 and product 7 so the four slots hold four
+different values.
 
 When the loop finishes with no over-budget product the original calls `ManufScreen_CommitProduction`
 (0x6f34c, not ported) on the way out, and makes the same call when the base count is zero. The port

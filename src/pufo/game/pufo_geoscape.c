@@ -1064,8 +1064,11 @@ void Base_TickFacilityConstruction(const BaseTickConstructionEnv *pEnv)
                                           pEnv->nManufEntries));                       /* 0x62920 */
 
                 *pEnv->pdwShortfall = 1;                                             /* 0x62934 */
-                UiLineList_AppendWithSound(pEnv->pLines, 38, (u32)nBase, (u32)nCol, 0u,
-                                           (u32)(6 * nBase),
+                /* The callee takes six arguments: a3 in R2, a4 in R3, a5 at [SP+0] and a6 at
+                 * [SP+4]. 0x62938 puts the base in R2, 0x6292C puts the ROW in R3, 0x62944 stores
+                 * the COLUMN at [SP+0] and 0x62930 stores R9 -- the zero the countdown completion
+                 * writes with -- at [SP+4]. So the payload is (38, base, row, col, 0). */
+                UiLineList_AppendWithSound(pEnv->pLines, 38, (u32)nBase, (u32)nRow, (u32)nCol, 0u,
                                            pEnv->pfnPlaySample, pEnv->pSoundUser);   /* 0x62948 */
             }
         }

@@ -687,9 +687,12 @@ i32 Base_UpdateAlienContainmentNeeded(u8 *abFacilityGrid, i32 nBaseIndex, i32 nA
  * layer, and at the last row they reach into the NEXT base's days block. The grid is big enough
  * for that, so the port reproduces it.
  *
- * The message payload is not what Hex-Rays shows. ARM at 0x6292C..0x62948 puts a4 = the COLUMN
- * index, a5 = 0 and a6 = 6*nBase on the stack; the `AND R3, R7, #0xFF` at 0x6292C computes the row
- * and then never stores it. The port passes what the ARM passes.
+ * The message payload is (38, base, row, col, 0). UiPanel_AppendLineWithSound takes six arguments,
+ * so a3 is R2, a4 is R3, a5 is [SP+0] and a6 is [SP+4]: 0x62938 puts the base in R2, 0x6292C's
+ * `AND R3, R7, #0xFF` puts the ROW in R3, 0x62944 stores the COLUMN (R5) at [SP+0] and 0x62930
+ * stores R9 -- the zero the completion writes with -- at [SP+4]. The `var_8 = 6*nBase` running
+ * offset is a LOCAL at [SP+8], past the callee's last argument; reading it as a7 is what makes the
+ * payload look different from Hex-Rays. It is not.
  *
  * The six needed passes take the budgets the original computes inside them: ammo items, active
  * research, occupied space plus outbound transfer space (the -1 gate), psi soldiers, storage used

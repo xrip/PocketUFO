@@ -8548,21 +8548,27 @@ static void TestManufRefreshBaseTabs(void)
     CheckEqI32((i32)g_aMfA[MFIDX(0, 1)], 0, "a zero quantity adds nothing");
 
     /* With no stores cells the capacity is 0, so an ordinary product is over budget: shortfall,
-     * message 32 with the ARM's payload (base, product, 0, base), and the slot cleared. */
+     * message 32 with the ARM's payload, and the slot cleared. The callee takes six arguments (a3
+     * in R2, a4 in R3, a5 at [SP+0], a6 at [SP+4]) and 0x7107C/0x71084 put the BASE in both
+     * registers while 0x7108C stores the product at [SP+0] and 0x71078 stores 0 at [SP+4] -- so the
+     * payload is (32, base, base, product, 0). Base 1 and product 7 are used so a wrong order
+     * cannot pass: the four slots hold 1, 1, 7 and 0. */
     MF_RESET();
-    g_aMfQty[MFIDX(0, 1)] = 5;
-    g_aMfB[MFIDX(0, 1)] = 9;
-    g_aMfC[MFIDX(0, 1)] = 9;
+    g_nMfBaseCount = 2;
+    g_mfClear.nBaseCount = 2;
+    g_aMfQty[MFIDX(1, 7)] = 5;
+    g_aMfB[MFIDX(1, 7)] = 9;
+    g_aMfC[MFIDX(1, 7)] = 9;
     ManufScreen_RefreshBaseTabs(&g_mfEnv);
     CheckEqI32((i32)g_dwMfShortfall, 1, "a product at zero capacity raises the shortfall");
     CheckEqI32(g_mfLines.abLineFlags[0], 32, "message 32");
-    CheckEqI32((i32)g_mfLines.anColor[0][0], 0, "colour 0 is the base");
-    CheckEqI32((i32)g_mfLines.anColor[0][1], 1, "colour 1 is the product, not the base again");
-    CheckEqI32((i32)g_mfLines.anColor[0][2], 0, "colour 2 is zero");
-    CheckEqI32((i32)g_mfLines.anColor[0][3], 0, "colour 3 is the base");
-    CheckEqI32((i32)g_aMfQty[MFIDX(0, 1)], 0, "the product slot is cleared");
-    CheckEqI32(g_aMfB[MFIDX(0, 1)], 0, "in every one of the four columns");
-    CheckEqI32(g_aMfC[MFIDX(0, 1)], 0, "including the u16 column");
+    CheckEqI32((i32)g_mfLines.anColor[0][0], 1, "colour 0 is the base");
+    CheckEqI32((i32)g_mfLines.anColor[0][1], 1, "colour 1 is the base again, exactly as the ARM stores it");
+    CheckEqI32((i32)g_mfLines.anColor[0][2], 7, "colour 2 is the product");
+    CheckEqI32((i32)g_mfLines.anColor[0][3], 0, "colour 3 is zero");
+    CheckEqI32((i32)g_aMfQty[MFIDX(1, 7)], 0, "the product slot is cleared");
+    CheckEqI32(g_aMfB[MFIDX(1, 7)], 0, "in every one of the four columns");
+    CheckEqI32(g_aMfC[MFIDX(1, 7)], 0, "including the u16 column");
 
     /* The over-budget product ENDS the refresh: a later product with quantity is never reached. */
     MF_RESET();
@@ -8586,7 +8592,8 @@ static void TestManufRefreshBaseTabs(void)
     ManufScreen_RefreshBaseTabs(&g_mfEnv);
     CheckEqI32((i32)g_aMfA[MFIDX(0, 130)], 0, "product 130 is tested like an ordinary one");
     CheckEqI32(g_mfLines.abLineFlags[0], 32, "and is over budget at zero capacity");
-    CheckEqI32((i32)g_mfLines.anColor[0][1], 130, "naming product 130");
+    CheckEqI32((i32)g_mfLines.anColor[0][1], 0, "the base again in colour 1");
+    CheckEqI32((i32)g_mfLines.anColor[0][2], 130, "and product 130 in colour 2");
 
     /* Base 1 reads and writes its own 200-entry slice. */
     MF_RESET();
