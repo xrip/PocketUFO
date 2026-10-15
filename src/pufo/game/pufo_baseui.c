@@ -1642,7 +1642,7 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
         if (!BuySellSlotIsBuyable(i) || pObj == NULL) {
             continue;
         }
-        if (pObj->uPrice != 0 && pObj->uUnk186 == 0) {
+        if (pObj->uPrice != 0 && pObj->uManufWorkPerUnit == 0) {
             abInclude[i] = 1;
             ++nRows;
         }
@@ -3611,7 +3611,158 @@ void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv)
         }
     }
 
-    /* 0x71048: ManufScreen_CommitProduction (0x6f34c, not ported). */
+    /* 0x71044 / 0x71048: the original tail-calls ManufScreen_CommitProduction here (and from the
+     * zero-base-count guard), while the over-budget path at 0x710A4 branches PAST it. The port keeps
+     * the two envs separate because the hourly tick is not wired into the shell yet; the commit pass
+     * itself is ported below as ManufScreen_CommitProduction. */
+}
+
+/* The four component slots, in the order the original tests them at 0x6F57C..0x6F5B4. Slot 108
+ * (Alien surgery) is never a component. */
+static const i32 g_anManufComponentSlots[4] = {
+    OBJ_ELERIUM_115, OBJ_ALIEN_ALLOYS, OBJ_UFO_POWER_SOURCE, OBJ_UFO_NAVIGATION
+};
+
+/* ManufScreen_CommitProduction @ 0x6f34c. The header block has the four tables, the gate order, the
+ * blocked early return and the message payloads. */
+void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->apManufCols == NULL || pEnv->apProductA == NULL ||
+        pEnv->apProductB == NULL || pEnv->apProductC == NULL || pEnv->pbBaseCount == NULL ||
+        pEnv->apObjects == NULL || pEnv->pnFunds == NULL) {
+        return;
+    }
+
+    const i32 nBaseCount = (i32)(i8)*pEnv->pbBaseCount; /* 0x6F368: LDRSB of abFacilityGrid + 0x618 */
+    if (nBaseCount <= 0) {
+        return;                                         /* 0x6F370 */
+    }
+
+    for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+        for (i32 nProduct = 0; nProduct < pEnv->nObjectCount; ++nProduct) {
+            const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBase + nProduct;
+            const u16 nQty = pEnv->apManufCols[nIdx];  /* 0x6F3D0 */
+            if (nQty == 0) {
+                continue;                               /* 0x6F3DC */
+            }
+
+            const ObjectRecFull *pRec = pEnv->apObjects[nProduct];
+            const i32 nWorkPerUnit = (pRec != NULL) ? (i32)pRec->uManufWorkPerUnit : 0;
+
+            /* 0x6F3EC..0x6F404: _rt_sdiv takes the divisor in R0 and the dividend in R1, so this is
+             * the number of units the accumulated work has paid for. Deviation: a zero work cost
+             * makes the original call the external COREDLL helper with a zero divisor and the IDB
+             * cannot show what that answers; the port answers zero units. */
+            const i32 nUnits = (nWorkPerUnit != 0)
+                                   ? (i32)pEnv->apProductA[nIdx] / nWorkPerUnit
+                                   : 0;
+
+            const u32 dwPrice = (pEnv->pdwPrices != NULL) ? pEnv->pdwPrices[nProduct] : 0u;
+            const double dCost = (double)dwPrice * 1.4; /* 0x6F440/0x6F448: 0x3FE66666_66666666 */
+            bool bBlocked = false;
+
+            /* 1. funds gate, 0x6F408..0x6F494: _ltd(funds - price * 1.4, 0.0) != 0. */
+            if ((double)*pEnv->pnFunds - dCost < 0.0) {
+                *pEnv->pdwShortfall = 1;               /* 0x6F4A8 */
+                UiLineList_AppendWithSound(pEnv->pLines, 35, (u32)nBase, (u32)nBase,
+                                           (u32)nProduct, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x6F4C0 */
+                bBlocked = true;                       /* 0x6F4C4 */
+            }
+
+            /* 2. stores gate, 0x6F4D0..0x6F564. Products 119..121 skip it entirely. */
+            if (!bBlocked && (nProduct < PUFO_MANUF_HANGAR_PRODUCT_FIRST ||
+                              nProduct > PUFO_MANUF_HANGAR_PRODUCT_LAST)) {
+                const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);
+                const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount,
+                                                                 pEnv->nSiteCount, /* NOT -1 here */
+                                                                 pEnv->apBases, nBase,
+                                                                 pEnv->apObjects, pEnv->nObjectCount,
+                                                                 true);
+                const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase);
+                const i32 nCargo = (pRec != NULL) ? (i32)pRec->bCargoSize : 0;
+
+                if (nUsed + nAcross + nCargo > nCap) { /* 0x6F530: BLE keeps going when equal */
+                    *pEnv->pdwShortfall = 1;           /* 0x6F548 */
+                    UiLineList_AppendWithSound(pEnv->pLines, 32, (u32)nBase, (u32)nBase,
+                                               (u32)nProduct, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x6F560 */
+                    bBlocked = true;                   /* 0x6F564 */
+                }
+            }
+
+            /* 3. component gate, 0x6F574..0x6F5C8. All four are always evaluated -- MOVCC R8,#1 on
+             * each CMP, so there is no early exit in the original either. */
+            if (!bBlocked && pRec != NULL) {
+                for (i32 j = 0; j < 4; ++j) {
+                    const ObjectRecFull *pComp = pEnv->apObjects[g_anManufComponentSlots[j]];
+                    const i32 nStock = (pComp != NULL) ? (i32)pComp->auPerBaseVal[nBase] : 0;
+                    if (nStock < (i32)pRec->abManufComponents[j]) {
+                        bBlocked = true;
+                    }
+                }
+            }
+
+            /* 4. blocked tail, 0x6F870..0x6F8C4: clear the slot, message 33 only while the shortfall
+             * dword is still zero, and RETURN -- one blocked product ends the whole pass. */
+            if (bBlocked) {
+                ManufScreen_ClearProductSlot(pEnv->pClearEnv, nBase, nProduct); /* 0x6F888 */
+                if (*pEnv->pdwShortfall == 0) {        /* 0x6F890: the dword is read back */
+                    *pEnv->pdwShortfall = 1;           /* 0x6F8A8 */
+                    UiLineList_AppendWithSound(pEnv->pLines, 33, (u32)nBase, (u32)nBase,
+                                               (u32)nProduct, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x6F8C0 */
+                }
+                return;                                /* 0x6F8C4 */
+            }
+
+            /* 5. 0x6F5E8: produce only while the paid-for units exceed the committed ones. */
+            const u16 nDone = pEnv->apProductC[nIdx];
+            if (nUnits > (i32)nDone) {
+                if (nProduct >= PUFO_MANUF_HANGAR_PRODUCT_FIRST &&
+                    nProduct <= PUFO_MANUF_HANGAR_PRODUCT_LAST) {
+                    /* Craft branch, 0x6F604..0x6F658. The base whose type byte is decremented is the
+                     * SELECTED one (abFacilityGrid + 0x619), not the one being processed; the craft
+                     * itself homes at the base being processed. */
+                    const ManufClearEnv *pClear = pEnv->pClearEnv;
+                    const i32 nSelBase = (pClear != NULL && pClear->pnSelectedBaseIdx != NULL)
+                                             ? (i32)(i8)*pClear->pnSelectedBaseIdx
+                                             : 0;
+                    if (pClear != NULL && pClear->apBases != NULL && nSelBase >= 0 &&
+                        nSelBase < pClear->nBaseCount && pClear->apBases[nSelBase] != NULL) {
+                        (void)BaseGrid_SubTypeByte(pClear->apBases, pClear->nBaseCount,
+                                                   pClear->abGridBytes,
+                                                   pClear->apBases[nSelBase]->bUnk4, 1); /* 0x6F62C */
+                    }
+                    (void)Ship_SpawnAtSlot(pEnv->pShipEnv,
+                                           (u8)Ship_ProductSlotToType(nProduct), nBase); /* 0x6F650 */
+                } else {
+                    BaseRec_AddItemQty(pEnv->apBases[nBase], pEnv->apObjects[nProduct], 1); /* 0x6F6A4 */
+                }
+
+                pEnv->apProductC[nIdx] = (u16)(nDone + 1); /* 0x6F6B8: LSL#16/LSR#16 truncation */
+
+                for (i32 j = 0; j < 4; ++j) {          /* 0x6F6C8..0x6F708 */
+                    BaseRec_SubItemQty(pEnv->apBases[nBase],
+                                       pEnv->apObjects[g_anManufComponentSlots[j]],
+                                       (i32)pRec->abManufComponents[j]);
+                }
+
+                /* 0x6F70C..0x6F788: nFunds = dtoi((double)nFunds - (double)price * 1.4). */
+                *pEnv->pnFunds = (i32)((double)*pEnv->pnFunds - dCost);
+            }
+
+            /* 6. completion, 0x6F798..0x6F7F0: reached whether or not this tick produced, and it
+             * does not return -- the loop continues. */
+            if (nUnits == pEnv->apProductB[nIdx]) {
+                ManufScreen_ClearProductSlot(pEnv->pClearEnv, nBase, nProduct); /* 0x6F7C4 */
+                *pEnv->pdwShortfall = 1;               /* 0x6F7D8 */
+                UiLineList_AppendWithSound(pEnv->pLines, 34, (u32)nBase, (u32)nBase,
+                                           (u32)nProduct, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x6F7F0 */
+            }
+        }
+    }
 }
 
 void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks)

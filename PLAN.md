@@ -1059,6 +1059,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   records instead of silently passing 0. **Rule going forward: a payload claim must be checked
   against the callee's parameter count before it is called a Hex-Rays error.**
 
+- [x] part 38, the manufacturing commit pass: `ManufScreen_CommitProduction (0x6f34c)`, 1408 bytes —
+  61 more checks. This is what `ManufScreen_RefreshBaseTabs` tail-calls, so the hourly manufacturing
+  chain is now complete apart from the UI that fills the tables. The four per-base columns are
+  allocated work (`auManufCol` @ 0x15E19C), accumulated work (0x159E9C), units requested (0x15B79C)
+  and units committed (0x15D09C), and `ObjectRec+0xBA` is the **work one unit costs**: `_rt_sdiv`
+  takes the divisor in R0 and the dividend in R1 (proved at 0x65BD0/0x65BDC, where
+  `Base_UpdateWorkshopNeeded` divides by 50), so the quotient is the units the accumulated work has
+  paid for. Three independent confirmations: the panel percent at 0x6E704/0x6F060 is
+  `accumulated*100/(work*target)`; the shipped OBJECTS.DAT has a non-zero work cost on exactly the 35
+  manufacturable records (Laser pistol 576 … AVENGER 55712), all with a zero price and all the only
+  records with component bytes; and the two craft you never build (117, 118) are zero there while
+  119..121 are the three the hangar branch covers. `ObjectRec+0xC0..+0xC3` is the component bill
+  against Elerium-115 / Alien alloys / UFO power source / UFO navigation (FIRE STORM 65+1+1, AVENGER
+  120+2+1). Gates in order funds → stores (skipped for 119..121, and here `Base_CountItemQtyAcrossBases`
+  takes the SITE COUNT, not the -1 gate) → components; any blocked product clears its slot, posts 33
+  only if no other shortfall was just posted, and **returns from the whole pass**. One unit per call
+  even when several are paid for. Completion (`units == requested`) posts 34 and does not return.
+  Also: the IDB's `ObjectRec` was redefined — it hid 0xb9..0xc7 behind one `char[15]`, which is why
+  the work cost, price, components, readiness selector and cargo size had no names there. Open item
+  recorded: `RefreshBaseTabs` tail-calls this function and the port keeps the two envs separate until
+  the hourly tick is wired into the shell.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1271,6 +1293,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing refresh (`ManufScreen_RefreshBaseTabs`, the untested hangar products, the early return) | 56/56 (Release) | 10041 | 858/1103 (77.8%) | 360852/598792 (60.3%) | 38 checked, 0 mismatched |
 | the craft slot -> CraftType map (`Ship_ProductSlotToType`, renamed in the IDB, shared with the recovery pass) | 56/56 (Release) | 10059 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
 | the message-payload audit (38 and 32 corrected, five other sites re-checked, 39's radar byte recorded) | 56/56 (Release) | 10062 | 859/1103 (77.9%) | 360940/598792 (60.3%) | 38 checked, 0 mismatched |
+| the manufacturing commit pass (`ManufScreen_CommitProduction`, the work-per-unit reading, the blocked early return) | 56/56 (Release) | 10123 | 860/1103 (78.0%) | 362348/598792 (60.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

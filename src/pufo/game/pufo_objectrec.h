@@ -47,33 +47,43 @@ typedef struct ObjectRecFull {
     u16  uFirePower;       /* 0xb6 */
     u8   nCategory;        /* 0xb8 */
     u8   gap_B9[1];        /* 0xb9 */
-    u16  uUnk186;          /* 0xba the units one manufacturing batch covers.
+    u16  uManufWorkPerUnit;/* 0xba the manufacturing work one unit of this item costs: the divisor
+                            * that turns an allocated quantity into finished units.
                             * ManufScreen_CommitProduction (0x6F3EC, not ported) does
-                            * `LDRH R0,[R3,#0xBA]` and
-                            * hands it to _rt_sdiv as the DIVISOR of the queued quantity, so the
-                            * quotient is the number of batches the queue implies and it is compared
-                            * against the batches already done (the u16 table at 0x15D09C). A zero
-                            * divisor gives 0 on ARM, which is not below the done count, so such a
-                            * product never produces anything. The other read is
-                            * BuySellScreen_BuildControls @ 0x76318, which requires it to be zero
-                            * before a slot gets a buy row. In the shipped OBJECTS.DAT it is non-zero
-                            * on 35 records -- 2, 3, 5, 6, 9, 11, 12, 13, 18, 20, 21, 23, 24, 28, 29,
-                            * 30, 33, 34, 35, 37, 39, 49, 50, 51, 55, 58, 106, 107, 109, 119, 120,
-                            * 121, 122, 123, 124 -- and every one of them also has a zero uPrice, so
-                            * the price test alone already excludes all of them. The name still says
-                            * Unk until CommitProduction is ported. The byte at 0xb9 is zero in every
-                            * shipped record and is never read. */
+                            * `LDRH R0,[R3,#0xBA]` and hands it to _rt_sdiv as the DIVISOR of the
+                            * accumulated allocation, so the quotient is how many units the work paid
+                            * for, compared against the units already committed (the u16 table at
+                            * 0x15D09C). ManufScreen_Draw (0x6E704) and ManufScreen_BuildPanels
+                            * (0x6F060), both not ported, use it the same way for the panel percent:
+                            * accumulated * 100 / (this * target). BuySellScreen_BuildControls @ 0x76318
+                            * requires it to be ZERO before a slot gets a buy row, and in the shipped
+                            * OBJECTS.DAT the two sets are exactly complementary -- the 35 records with
+                            * a non-zero value (2, 3, 5, 6, 9, 11, 12, 13, 18, 20, 21, 23, 24, 28, 29,
+                            * 30, 33, 34, 35, 37, 39, 49, 50, 51, 55, 58, 106, 107, 109, 119, 120, 121,
+                            * 122, 123, 124) are precisely the manufacturable items (Laser pistol 576,
+                            * Plasma cannon 960, Fusion ball 1056, Power suit 1968, Fly suit 2784,
+                            * FIRE STORM 27984, LIGTHNING 35712, AVENGER 55712), every one has a zero
+                            * uPrice, and they are the only records with any abManufComponents byte
+                            * set. The two craft that are never built (117 Skyranger, 118 Interceptor)
+                            * are zero here; 119..121 are the three the manufacturing hangar branch
+                            * covers. The byte at 0xb9 is zero in every shipped record and is never
+                            * read. */
     u32  uPrice;           /* 0xbc the item price: Geoscape_InitUI @ 0x86A14 seeds it from
                             * dword_AA2C0 (g_anObjectPrice), and the BuySell screens read it
                             * back. A dword store (`+188`), not a u16. */
-    u8   gap_C0[4];        /* 0xc0 the four manufacturing component quantities.
-                            * ManufScreen_CommitProduction gates a product on them at
-                            * 0x6F580..0x6F5C8 -- each byte against the base's stock of apObjects
-                            * [105] Elerium-115, [106] Alien alloys, [107] UFO power source and
-                            * [109] UFO navigation, blocked when stock < requirement -- and then
-                            * subtracts the same four bytes from those same four stocks through
-                            * BaseRec_SubItemQty at 0x6F6C8..0x6F708. Slot 108 (Alien surgery) is
-                            * skipped. */
+    u8   abManufComponents[4];
+                           /* 0xc0 the four components one manufactured unit consumes, in the order
+                            * the original tests them: [0] against apObjects[105] Elerium-115, [1]
+                            * against [106] Alien alloys, [2] against [107] UFO power source, [3]
+                            * against [109] UFO navigation -- slot 108 (Alien surgery) is never a
+                            * component. ManufScreen_CommitProduction gates a product on them at
+                            * 0x6F580..0x6F5C8 (blocked when the base's stock is below the
+                            * requirement) and then subtracts the same four bytes from those same four
+                            * stocks through BaseRec_SubItemQty at 0x6F6C8..0x6F708. Shipped values
+                            * that make the order obvious: Plasma cannon 15 Elerium, Mind probe 1
+                            * Elerium, Fly suit 6 Elerium + 16 alloys, FIRE STORM 65 alloys + 1 power
+                            * source + 1 navigation, LIGTHNING 85 + 1 + 1, AVENGER 120 + 2 + 1. Only
+                            * the 35 manufacturable records have any of them set. */
     u8   bReadySel;        /* 0xc4 readiness source selector, read by
                             * Unit_ApplyCellDamage @ 0x2e5d0 and
                             * Combat_ResolveShot @ 0x2f12c */

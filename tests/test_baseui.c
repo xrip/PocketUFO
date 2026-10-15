@@ -1498,9 +1498,9 @@ static void TestBuySellBuildControls(void)
     aObj[1].uPrice = 800;
     aObj[4].uPrice = 1200;
     aObj[20].uPrice = 0;
-    aObj[20].uUnk186 = 432;
+    aObj[20].uManufWorkPerUnit = 432;   /* the shipped Motion scaner value: work per unit, not a price */
     aObj[21].uPrice = 300;
-    aObj[21].uUnk186 = 816;
+    aObj[21].uManufWorkPerUnit = 816;   /* the shipped Medi-kit value */
     aObj[58].uPrice = 0;
     aObj[59].uPrice = 700;
     aObj[112].uPrice = 50000;
@@ -8629,6 +8629,334 @@ static void TestManufRefreshBaseTabs(void)
 
 }
 
+/* --- ManufScreen_CommitProduction ------------------------------------------------------------
+ *
+ * The same four columns as the refresh test, plus the price table, the funds, and a ShipSpawnEnv
+ * borrowed from the recovery fixture for the craft branch.
+ */
+static u32 g_aMfPrice[150];
+static i32 g_nMfFunds;
+static ManufCommitEnv g_mfCommit;
+
+/* MF_RESET only re-arms bCargoSize, so the work cost and the component bytes have to be cleared
+ * here or they leak from one case into the next and a component shortage appears out of nowhere. */
+#define MC_RESET()                                                                          \
+    do {                                                                                    \
+        MF_RESET();                                                                         \
+        memset(g_aMfObj, 0, sizeof(g_aMfObj));                                              \
+        for (i = 0; i < 150; ++i) {                                                         \
+            g_apMfObj[i] = &g_aMfObj[i];                                                   \
+            g_aMfObj[i].bCargoSize = 1;                                                     \
+        }                                                                                   \
+        memset(g_aMfPrice, 0, sizeof(g_aMfPrice));                                          \
+        for (i = 0; i < 150; ++i) {                                                         \
+            g_aMfPrice[i] = 100;                                                            \
+        }                                                                                   \
+        g_nMfFunds = 1000000;                                                               \
+        g_nMfSamples = 0;                                                                   \
+        g_nMfSelBase = 0;                                                                   \
+        g_nGrantCraftCount = 0;                                                             \
+        g_nGrantNextCraftId = 7;                                                            \
+        memset(g_apGrantCraft, 0, sizeof(g_apGrantCraft));                                  \
+        memset(&g_mfCommit, 0, sizeof(g_mfCommit));                                         \
+        g_mfCommit.apManufCols = g_aMfQty;                                                  \
+        g_mfCommit.apProductA = g_aMfA;                                                     \
+        g_mfCommit.apProductB = g_aMfB;                                                     \
+        g_mfCommit.apProductC = g_aMfC;                                                     \
+        g_mfCommit.pdwPrices = g_aMfPrice;                                                  \
+        g_mfCommit.pnFunds = &g_nMfFunds;                                                   \
+        g_mfCommit.apObjects = g_apMfObj;                                                   \
+        g_mfCommit.nObjectCount = 150;                                                      \
+        g_mfCommit.abFacilityGrid = g_aMfGrid;                                              \
+        g_mfCommit.pbBaseCount = &g_nMfBaseCount;                                           \
+        g_mfCommit.apBases = g_apMfBases;                                                   \
+        g_mfCommit.aSites = g_aMfSites;                                                     \
+        g_mfCommit.nSiteCount = 0;                                                          \
+        g_mfCommit.pdwShortfall = &g_dwMfShortfall;                                         \
+        g_mfCommit.pLines = &g_mfLines;                                                     \
+        g_mfCommit.pClearEnv = &g_mfClear;                                                  \
+        g_mfCommit.pShipEnv = &g_grantShipEnv;                                              \
+        g_mfCommit.pfnPlaySample = MfSample;                                                \
+    } while (0)
+
+/* Product 20 and its 432-unit work cost are the shipped Motion scaner; the shipped Medi-kit is 816. */
+#define MC_WORK(nProduct, nWork) (g_aMfObj[(nProduct)].uManufWorkPerUnit = (u16)(nWork))
+
+static void TestManufCommitProduction(void)
+{
+    i32 i;
+
+    printf("ManufScreen_CommitProduction @ 0x6f34c\n");
+
+    PtrArray_ctor(&g_grantStratList);
+    g_grantCtorEnv.apObjects = g_apGrantObj;
+    g_grantCtorEnv.nObjectCount = 150;
+    g_grantShipEnv.apCraft = g_apGrantCraft;
+    g_grantShipEnv.pnCraftCount = &g_nGrantCraftCount;
+    g_grantShipEnv.pnNextCraftId = &g_nGrantNextCraftId;
+    g_grantShipEnv.apBases = g_apGrantBases;
+    g_grantShipEnv.abFacilityGrid = g_aGrantGrid;
+    g_grantShipEnv.pCtorEnv = &g_grantCtorEnv;
+    g_grantShipEnv.pStrategList = &g_grantStratList;
+    g_grantShipEnv.pnStrategSeed = &g_nGrantSeed;
+    g_grantShipEnv.pnZoomMode = &g_nGrantZoom;
+
+    /* Work that has paid for one unit and none committed yet: one item, one committed unit, and the
+     * price charged at 1.4x (300 * 1.4 = 420). */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfPrice[20] = 300;
+    g_nMfFunds = 10000;
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 1, "one unit lands in the base's column");
+    CheckEqI32((i32)g_aMfC[MFIDX(0, 20)], 1, "one committed unit is recorded");
+    CheckEqI32(g_nMfFunds, 9580, "the price is charged at 1.4 times");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "nothing is reported");
+    CheckEqI32((i32)g_dwMfShortfall, 0, "with no shortfall");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 432, "the allocation stays until the target is met");
+
+    /* 0x6F5E8: production needs paid-for units STRICTLY above the committed ones. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfQty[MFIDX(0, 20)] = 431;
+    g_aMfA[MFIDX(0, 20)] = 431;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "431 of 432 units of work produces nothing");
+    CheckEqI32(g_nMfFunds, 1000000, "and nothing is spent");
+
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfQty[MFIDX(0, 20)] = 864;
+    g_aMfA[MFIDX(0, 20)] = 864;
+    g_aMfC[MFIDX(0, 20)] = 2;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0,
+               "two paid units with two already committed produce nothing more");
+    CheckEqI32((i32)g_aMfC[MFIDX(0, 20)], 2, "and the committed count stands");
+
+    /* A zero allocation is skipped before any gate runs. */
+    MC_RESET();
+    MC_WORK(20, 432);
+    g_aMfA[MFIDX(0, 20)] = 1000;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "a zero allocation produces nothing");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "and reports nothing, gates included");
+
+    /* Completion, 0x6F798: paid-for units EQUAL the target clears the slot and posts 34. Only ONE
+     * unit is produced even though two are paid for -- one unit per call. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfQty[MFIDX(0, 20)] = 864;
+    g_aMfA[MFIDX(0, 20)] = 864;
+    g_aMfB[MFIDX(0, 20)] = 2;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 1, "one unit per call, not two");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 0, "the completion clears the allocation");
+    CheckEqI32((i32)g_aMfA[MFIDX(0, 20)], 0, "the accumulated work");
+    CheckEqI32((i32)g_aMfB[MFIDX(0, 20)], 0, "the target");
+    CheckEqI32((i32)g_aMfC[MFIDX(0, 20)], 0, "and the committed count");
+    CheckEqI32(g_mfLines.abLineFlags[0], 34, "message 34");
+    CheckEqI32((i32)g_mfLines.anColor[0][0], 0, "colour 0 is the base");
+    CheckEqI32((i32)g_mfLines.anColor[0][1], 0, "colour 1 is the base again");
+    CheckEqI32((i32)g_mfLines.anColor[0][2], 20, "colour 2 is the product");
+    CheckEqI32((i32)g_mfLines.anColor[0][3], 0, "colour 3 is zero");
+    CheckEqI32((i32)g_dwMfShortfall, 1, "and the shortfall dword is raised");
+    CheckEqI32(g_nMfSamples, 1, "with one sample played");
+
+    /* Completion does NOT return: a later product in the same base still runs. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    MC_WORK(21, 816);
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 1;
+    g_aMfQty[MFIDX(0, 21)] = 816;
+    g_aMfA[MFIDX(0, 21)] = 816;
+    g_aMfB[MFIDX(0, 21)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[21].auPerBaseVal[0], 1,
+               "a completed product does not stop the next one");
+    CheckEqI32((i32)g_mfLines.nLineCount, 1, "and only the completed one is reported");
+
+    /* Funds gate, 0x6F408: blocked, message 35, slot cleared, and the whole pass RETURNS. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfPrice[20] = 300;
+    g_nMfFunds = 100;
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    g_aMfQty[MFIDX(0, 21)] = 816;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32(g_mfLines.abLineFlags[0], 35, "message 35 for the funds gate");
+    CheckEqI32((i32)g_mfLines.nLineCount, 1, "and message 33 is NOT added after it");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 0, "the blocked product's slot is cleared");
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "with nothing produced");
+    CheckEqI32(g_nMfFunds, 100, "and no money spent");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 21)], 816,
+               "the blocked product ends the pass, so the next slot is untouched");
+
+    /* Stores gate, 0x6F4D0: with no stores cells an ordinary product is strictly over capacity. */
+    MC_RESET();
+    MC_WORK(20, 432);
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32(g_mfLines.abLineFlags[0], 32, "message 32 for the stores gate");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 0, "and the slot is cleared");
+
+    /* Component gate, 0x6F574: money and stores are fine but the base has no Elerium, so this is the
+     * only gate that leaves the shortfall dword zero going in -- the one case that posts 33. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfObj[20].abManufComponents[0] = 2;   /* two Elerium-115, and the base has none */
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32(g_mfLines.abLineFlags[0], 33, "message 33, the blocked-with-no-other-shortfall case");
+    CheckEqI32((i32)g_mfLines.anColor[0][2], 20, "naming the product in colour 2");
+    CheckEqI32((i32)g_aMfQty[MFIDX(0, 20)], 0, "and the slot cleared");
+    CheckEqI32((i32)g_dwMfShortfall, 1, "with the shortfall raised by the 33 itself");
+
+    /* Components are consumed from the four stocks when a unit is produced. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfObj[20].abManufComponents[0] = 2;
+    g_aMfObj[20].abManufComponents[1] = 1;
+    g_aMfObj[105].auPerBaseVal[0] = 5;
+    g_aMfObj[106].auPerBaseVal[0] = 3;
+    g_aMfObj[107].auPerBaseVal[0] = 1;
+    g_aMfObj[109].auPerBaseVal[0] = 1;
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 1, "the product is produced");
+    CheckEqI32((i32)g_aMfObj[105].auPerBaseVal[0], 3, "two Elerium-115 consumed");
+    CheckEqI32((i32)g_aMfObj[106].auPerBaseVal[0], 2, "one Alien alloys consumed");
+    CheckEqI32((i32)g_aMfObj[107].auPerBaseVal[0], 1, "the untouched power source stands");
+    CheckEqI32((i32)g_aMfObj[109].auPerBaseVal[0], 1, "and so does the navigation");
+
+    /* A stock exactly equal to the requirement is enough: 0x6F588 blocks only when stock < req. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfObj[20].abManufComponents[0] = 4;
+    g_aMfObj[105].auPerBaseVal[0] = 4;
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_aMfB[MFIDX(0, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "a stock equal to the requirement is not a shortage");
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 1, "and the unit is produced");
+
+    /* Craft branch, 0x6F5F4..0x6F658: product 119 is FIRE STORM, it skips the stores gate even at
+     * zero capacity, and it spawns a CraftType-4 craft homed at the base being processed. */
+    MC_RESET();
+    MC_WORK(119, 27984);
+    g_aMfObj[119].abManufComponents[1] = 65;  /* 65 Alien alloys, the shipped value */
+    g_aMfObj[106].auPerBaseVal[0] = 70;
+    g_aMfQty[MFIDX(0, 119)] = 27984;
+    g_aMfA[MFIDX(0, 119)] = 27984;
+    g_aMfB[MFIDX(0, 119)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_nGrantCraftCount, 1, "a craft is spawned with no stores cells at all");
+    Check(g_apGrantCraft[0] != NULL && g_apGrantCraft[0]->bCraftType == CRAFT_TYPE_FIRESTORM,
+          "product 119 spawns a Firestorm");
+    Check(g_apGrantCraft[0] != NULL && g_apGrantCraft[0]->bHomeBase == 0,
+          "homed at the base being processed");
+    CheckEqI32((i32)g_aMfObj[106].auPerBaseVal[0], 5, "and its 65 alloys are consumed");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "with nothing reported");
+
+    /* The craft branch decrements the SELECTED base's grid byte, not the processed base's. */
+    MC_RESET();
+    MC_WORK(120, 35712);
+    g_aMfObj[120].abManufComponents[1] = 1;
+    g_aMfObj[106].auPerBaseVal[0] = 5;
+    g_aMfGridBytes[0] = 3;                    /* base 0's grid byte, base 0 has type byte 0 */
+    g_nMfSelBase = 0;
+    g_aMfQty[MFIDX(0, 120)] = 35712;
+    g_aMfA[MFIDX(0, 120)] = 35712;
+    g_aMfB[MFIDX(0, 120)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfGridBytes[0], 2, "the selected base's grid byte is decremented by one");
+    Check(g_apGrantCraft[0] != NULL && g_apGrantCraft[0]->bCraftType == CRAFT_TYPE_LIGHTNING,
+          "product 120 spawns a Lightning");
+
+    /* Products 117 and 118 are outside the craft range (0x6F5F4 / 0x6F5FC), so they take the item
+     * branch even though Ship_ProductSlotToType knows them. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(117, 100);
+    g_aMfQty[MFIDX(0, 117)] = 100;
+    g_aMfA[MFIDX(0, 117)] = 100;
+    g_aMfB[MFIDX(0, 117)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_nGrantCraftCount, 0, "product 117 spawns no craft");
+    CheckEqI32((i32)g_aMfObj[117].auPerBaseVal[0], 1, "it is added as an ordinary item instead");
+
+    /* Deviation: a zero work cost. The original divides through the external COREDLL helper with a
+     * zero divisor; the port answers zero units, so nothing is produced. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    g_aMfQty[MFIDX(0, 20)] = 100;
+    g_aMfA[MFIDX(0, 20)] = 100;
+    g_aMfB[MFIDX(0, 20)] = 5;   /* a zero target would equal the zero quotient and read as finished,
+                                 * so the target has to be a real one to test the divisor alone */
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "a product with no work cost produces nothing");
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "and is not reported as finished");
+
+    /* Base 1 reads and writes its own slice, and its own per-base component stocks. */
+    MC_RESET();
+    g_nMfBaseCount = 2;
+    g_mfClear.nBaseCount = 2;
+    MFCAP(1) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfObj[20].abManufComponents[0] = 1;
+    g_aMfObj[105].auPerBaseVal[1] = 2;
+    g_aMfQty[MFIDX(1, 20)] = 432;
+    g_aMfA[MFIDX(1, 20)] = 432;
+    g_aMfB[MFIDX(1, 20)] = 5;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[1], 1, "base 1 produces into its own column");
+    CheckEqI32((i32)g_aMfObj[105].auPerBaseVal[1], 1, "and consumes from its own stock");
+    CheckEqI32((i32)g_aMfObj[105].auPerBaseVal[0], 0, "base 0's stock is untouched");
+
+    /* A zero base count does nothing. */
+    MC_RESET();
+    g_nMfBaseCount = 0;
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_mfLines.nLineCount, 0, "a zero base count produces nothing");
+
+    /* A missing table is refused. */
+    MC_RESET();
+    MFCAP(0) = FAC_GENERAL_STORES;
+    MC_WORK(20, 432);
+    g_aMfQty[MFIDX(0, 20)] = 432;
+    g_aMfA[MFIDX(0, 20)] = 432;
+    g_mfCommit.apProductC = NULL;
+    ManufScreen_CommitProduction(&g_mfCommit);
+    CheckEqI32((i32)g_aMfObj[20].auPerBaseVal[0], 0, "a missing committed-count table changes nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -8660,6 +8988,7 @@ int main(void)
     TestBaseStripDrawer();
     TestGrantSiteRecovery();
     TestManufRefreshBaseTabs();
+    TestManufCommitProduction();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

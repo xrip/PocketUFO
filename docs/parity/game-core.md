@@ -11897,3 +11897,97 @@ Also fixed while here: the `Ship_SpawnAtSlot` header comment named its 0x6F650 c
 
 IDB: renamed at 0x65a6c, with a comment there recording the map, the caller's byte extension and the
 inline copy at 0x99360.
+
+## ManufScreen_CommitProduction (0x6f34c, 1408 B) -- turning allocated work into finished units
+
+Ported as `ManufScreen_CommitProduction` in `src/pufo/game/pufo_baseui.c` with the env
+`ManufCommitEnv`, tested by `TestManufCommitProduction` in `tests/test_baseui.c`.
+
+### What the four tables are
+
+200 entries per base, all off the anchor `unk_159E98`:
+
+| table | address | type | meaning |
+|---|---|---|---|
+| `auManufCol` | 0x15E19C | u16 | work units allocated to this product at this base |
+| `apProductA` | 0x159E9C | u32 | work units accumulated so far |
+| `apProductB` | 0x15B79C | u32 | the unit count the player asked for |
+| `apProductC` | 0x15D09C | u16 | the units already committed |
+
+and `ObjectRec.uManufWorkPerUnit` (+0xBA) is the work one unit costs. `_rt_sdiv` takes the DIVISOR
+in R0 and the DIVIDEND in R1 -- proved at 0x65BD0/0x65BDC, where `Base_UpdateWorkshopNeeded` loads
+the manufacturing total into R1 and 50 into R0 -- so 0x6F3EC's quotient is
+
+    nUnits = apProductA[200*base + product] / apObjects[product]->uManufWorkPerUnit
+
+the number of units the accumulated work has paid for. Two independent confirmations: the panel's own
+percent (`ManufScreen_Draw` 0x6E704 and `ManufScreen_BuildPanels` 0x6F060, both not ported) is
+`accumulated * 100 / (workPerUnit * target)`, and the shipped OBJECTS.DAT has a non-zero work cost on
+exactly 35 records -- Laser pistol 576, Plasma rifle 1632, Plasma cannon 960, Fusion ball 1056, Power
+suit 1968, Fly suit 2784, FIRE STORM 27984, LIGTHNING 35712, AVENGER 55712 -- which are precisely the
+manufacturable items, all with a zero `uPrice`, and they are the only records with any
+`abManufComponents` byte set. The 114 records with a zero work cost are the priced ones you buy. The
+two craft you never build (117 Skyranger, 118 Interceptor) are zero here; 119..121 are the three the
+hangar branch covers.
+
+`ObjectRec.abManufComponents` (+0xC0..+0xC3) is the component bill, in the order the original tests
+it: [0] against `apObjects[105]` Elerium-115, [1] against [106] Alien alloys, [2] against [107] UFO
+power source, [3] against [109] UFO navigation -- slot 108 (Alien surgery) is never a component.
+Shipped values make the order obvious: Plasma cannon 15 Elerium, Mind probe 1 Elerium, Fly suit 6
+Elerium + 16 alloys, FIRE STORM 65 alloys + 1 power source + 1 navigation, LIGTHNING 85 + 1 + 1,
+AVENGER 120 + 2 + 1.
+
+The IDB's `ObjectRec` was redefined to this layout: it used to hide 0xb9..0xc7 behind a single
+`gap_B9 char[15]`, which is why the work cost, the price, the components, the readiness selector and
+the cargo size had no names there.
+
+### Gate order, and the early return
+
+Per base, per product: a zero allocation is skipped (0x6F3D0). Then
+
+  1. funds (0x6F408..0x6F494): blocked when `(double)nFunds - (double)anObjectPriceInit[product] *
+     1.4 < 0.0`, the 1.4 being the double 0x3FE6666666666666 assembled at 0x6F440/0x6F448. Shortfall
+     dword, message 35.
+  2. stores (0x6F4D0..0x6F564), SKIPPED for products 119..121: `Base_CalcStorageUsed` plus
+     `Base_CountItemQtyAcrossBases` with the SITE COUNT as the second argument -- not the -1 gate
+     `ManufScreen_RefreshBaseTabs` uses -- plus this product's own `bCargoSize`, blocked when that sum
+     is strictly ABOVE `Base_CalcStoresCapacity` (0x6F530 BLE keeps going when equal). Shortfall,
+     message 32.
+  3. components (0x6F574..0x6F5C8): each bill byte against the base's stock, blocked when stock <
+     requirement. All four CMPs always run (MOVCC, no early exit).
+
+Blocked (0x6F870): clear the product slot, post message 33 ONLY while the shortfall dword is still
+zero -- so 33 never follows a 35 or a 32, and is the component gate's own report -- and RETURN from
+the whole pass. One blocked product ends every remaining base and product, exactly like the refresh.
+
+### Producing, and completion
+
+0x6F5E8 produces only while `nUnits` is strictly above `apProductC`, and only ONE unit per call even
+when several are paid for. Products 119..121 take the craft branch: `BaseGrid_SubByte0x654` with
+amount 1 on the type byte of the SELECTED base (`nSelectedBaseIdx` at abFacilityGrid + 0x619, and
+`apBases[that]->bUnk4` is the type) -- not the base being processed -- then `Ship_SpawnAtSlot` with
+`Ship_ProductSlotToType` (0x65a6c) as the type, homed at the base being processed. Everything else is
+`BaseRec_AddItemQty(apBases[base], apObjects[product], 1)`. Then `apProductC` is bumped by one with
+u16 truncation (0x6F6B8 LSL#16/LSR#16), the four components are subtracted from those four stocks,
+and `nFunds` is cut by `price * 1.4` through `_dtoi` (0x6F70C..0x6F788).
+
+Completion (0x6F798) is reached whether or not this tick produced: when `nUnits == apProductB` the
+slot is cleared, the shortfall dword is raised and message 34 is posted. Unlike the blocked tail this
+does NOT return -- the loop continues.
+
+All four messages take the same six-argument payload: `(msg, base, base, product, 0)`.
+
+### Deviations
+
+With a zero `uManufWorkPerUnit` the original calls the external COREDLL `_rt_sdiv` with a zero
+divisor, and the IDB cannot show what that answers; the port answers zero units. In the shipped data
+those 114 records are the priced, component-free ones, so a queued product never hits it. The port
+also bounds the selected-base index against the base count and NULL-checks the object pointers, which
+the original does not.
+
+`ManufScreen_RefreshBaseTabs` tail-calls this function at 0x71044 and 0x71048 (its over-budget path
+at 0x710A4 branches past the call). The port keeps the two envs separate because the hourly tick is
+not wired into the shell yet; that wiring is recorded as an open item, not silently dropped.
+
+IDB: full function comment at 0x6f34c, field comments at 0x6F3EC and 0x6F580, and `ObjectRec`
+redefined with the 0xba..0xc7 fields named.

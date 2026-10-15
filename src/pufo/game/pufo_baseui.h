@@ -1703,6 +1703,90 @@ typedef struct ManufRefreshEnv {
 
 void ManufScreen_RefreshBaseTabs(const ManufRefreshEnv *pEnv);
 
+/* ManufScreen_CommitProduction @ 0x6f34c (1408 B) -- turn allocated manufacturing work into
+ * finished units, at most one unit per product per call.
+ *
+ * Called from ManufScreen_RefreshBaseTabs on the way out (0x71044 and 0x71048). Guard: the signed
+ * base count at abFacilityGrid + 0x618 <= 0 returns (0x6F368).
+ *
+ * The four per-product tables, 200 entries per base off the anchor unk_159E98:
+ *
+ *   auManufCol  @ 0x15E19C  u16  the work units allocated to this product at this base
+ *   apProductA  @ 0x159E9C  u32  the work units accumulated so far
+ *   apProductB  @ 0x15B79C  u32  the unit count the player asked for
+ *   apProductC  @ 0x15D09C  u16  the units already committed
+ *
+ * and ObjectRecFull.uManufWorkPerUnit (+0xBA) is the work one unit costs. _rt_sdiv takes the
+ * DIVISOR in R0 and the DIVIDEND in R1 -- proved at 0x65BD0/0x65BDC, where
+ * Base_UpdateWorkshopNeeded divides the manufacturing total by 50 -- so
+ *
+ *   nUnits = apProductA[200*base + product] / apObjects[product]->uManufWorkPerUnit
+ *
+ * is how many units the accumulated work has paid for. The original's own panel percent
+ * (ManufScreen_Draw 0x6E704 and ManufScreen_BuildPanels 0x6F060, both not ported) is
+ * `accumulated * 100 / (workPerUnit * target)`, which is the same reading.
+ *
+ * Per base, per product, in this order:
+ *
+ *   1. 0x6F3D0: a zero allocation is skipped outright.
+ *   2. 0x6F408..0x6F494 funds gate: blocked when (double)nFunds - (double)anObjectPriceInit[product]
+ *      * 1.4 < 0.0, the 1.4 being the double 0x3FE6666666666666 assembled at 0x6F440/0x6F448.
+ *      Blocked: shortfall dword, message 35.
+ *   3. 0x6F4D0..0x6F564 stores gate, SKIPPED for products 119..121: Base_CalcStorageUsed plus
+ *      Base_CountItemQtyAcrossBases with the SITE COUNT as the second argument (not the -1 gate
+ *      RefreshBaseTabs uses) plus this product's own bCargoSize, blocked when that sum is strictly
+ *      ABOVE Base_CalcStoresCapacity (0x6F530 BLE keeps going when equal). Blocked: shortfall,
+ *      message 32.
+ *   4. 0x6F574..0x6F5C8 component gate: each abManufComponents byte against the base's stock of
+ *      apObjects[105] Elerium-115, [106] Alien alloys, [107] UFO power source and [109] UFO
+ *      navigation, blocked when stock < requirement. All four are always evaluated -- MOVCC, no
+ *      early exit.
+ *   5. 0x6F870 blocked tail: clear the product slot, post message 33 ONLY when the shortfall dword
+ *      is still zero (so 33 never follows a 35 or a 32), and RETURN from the whole pass. Like
+ *      RefreshBaseTabs, one blocked product ends every remaining base and product.
+ *   6. 0x6F5E8: produce only while nUnits is strictly above apProductC -- one unit per call.
+ *      Products 119..121 take the craft branch: BaseGrid_SubTypeByte with amount 1 on the type byte
+ *      of the SELECTED base (nSelectedBaseIdx at abFacilityGrid + 0x619, and apBases[that]->bUnk4
+ *      is the type), then Ship_SpawnAtSlot with Ship_ProductSlotToType(product) as the type, homed
+ *      at the base being processed. Every other product takes BaseRec_AddItemQty(apBases[base],
+ *      apObjects[product], 1). Then apProductC is bumped by one with u16 truncation (0x6F6B8), the
+ *      four components are subtracted from those four stocks, and nFunds is cut by price * 1.4
+ *      through _dtoi (0x6F70C..0x6F788).
+ *   7. 0x6F798 completion, reached whether or not this tick produced: when nUnits == apProductB the
+ *      slot is cleared, the shortfall dword is raised and message 34 is posted. This one does NOT
+ *      return -- the loop continues.
+ *
+ * All four messages take the same six-argument payload: (msg, base, base, product, 0).
+ *
+ * Deviation: with a zero uManufWorkPerUnit the original calls the external COREDLL _rt_sdiv with a
+ * zero divisor, and the IDB cannot show what that answers; the port answers zero units. In the
+ * shipped OBJECTS.DAT the 114 records with a zero work cost are exactly the priced ones with no
+ * components -- items you buy rather than build -- so a queued product never hits it. The port also
+ * bounds the selected-base index against the base count, which the original does not. */
+typedef struct ManufCommitEnv {
+    u16               *apManufCols;   /* auManufCol @ 0x15E19C: the allocated work per product */
+    u32               *apProductA;    /* unk_159E9C: the accumulated work */
+    i32               *apProductB;    /* aManufProductB @ 0x15B79C: the requested unit count */
+    u16               *apProductC;    /* unk_15D09C: the units already committed */
+    const u32         *pdwPrices;     /* anObjectPriceInit @ 0xAA2C0, indexed by product */
+    i32               *pnFunds;       /* nFunds @ 0x1598D8 */
+    ObjectRecFull    **apObjects;     /* Map.apObjects @ Map + 0x108 */
+    i32                nObjectCount;  /* Map_nObjectCount @ 0x114A60, u16 semantics */
+    u8               *abFacilityGrid; /* abFacilityGrid @ 0x159768 */
+    const u8          *pbBaseCount;   /* nBaseCount @ 0x159D80, read signed */
+    BaseRec          **apBases;       /* Map.apBases @ Map + 0x1174 */
+    SmapSite          *aSites;        /* aSmapSites @ 0x162030 */
+    i32                nSiteCount;    /* nSmapSiteCount @ 0x186410, passed as-is and NOT as -1 */
+    u32              *pdwShortfall;   /* byte_1870C8, written and read back as a dword */
+    UiLineList       *pLines;         /* the root message list @ 0x158890 */
+    const ManufClearEnv *pClearEnv;   /* ClearProductSlot's tables, plus the selected base index */
+    ShipSpawnEnv     *pShipEnv;       /* Ship_SpawnAtSlot's Map block */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pSoundUser;
+} ManufCommitEnv;
+
+void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv);
+
 /* ManufScreen_ConfirmAndClose @ 0x6e98c (92 B): clear the selected product's slot for the selected
  * base and tail-call the screen-close dispatcher. The product index comes from the panel's aux
  * column at the cached row, exactly as the quantity buttons read it. Its first argument to
