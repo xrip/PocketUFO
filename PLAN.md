@@ -1435,6 +1435,35 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `bRadarEngageR`, `nRadarBoundL`, `nRadarBoundR`, `nRadarCooldownL`, `nRadarCooldownR`, plus the
   `WeaponMount` enum.
 
+- [x] part 52, the intercept shot animation: `RadarScreen_DrawOverlay (0x5dc84)`, 2788 bytes — 89 more
+  checks and one more original bug found.
+  **A half runs per mount, gated twice.** The mount is idle when its ammo is exactly 0 AND its
+  projectile offset is 0, and an idle mount loses its engage byte (0x5DCA8..0x5DCEC);
+  `bRadarLastShotHit` is cleared unconditionally at 0x5DCC0 before either half. A half then runs only
+  when its engage byte is non-zero AND its cooldown is exactly 255. The halves are independent —
+  skipping the right one does not gate the left one — and the idle test is `== 0`, so the -2 sentinel is
+  *not* idle.
+  **A round is taken only when a shot *starts*.** The decrement is gated on the projectile offset being
+  0, not on the shot firing or landing.
+  **ORIGINAL BUG (0x5DD1C / 0x5E258), reproduced, bugs.tsv row added.** The -2 "no weapon on this
+  mount" sentinel is not exempt from that decrement. A mount id outside 25..30 — 24, the psi amplifier,
+  which the shipped data does use — stores a *zero* weapon range in `RadarScreen_DrawCraftArmament`, so
+  once the radar's reach falls to 0 the engage byte is set and the cooldown stays at 255 because nothing
+  ever lands. This function's switch has no arm for that id, so the projectile offset never advances and
+  the "a shot started" test stays true every frame: the counter walks off through -3, -4, -5 …, and
+  `RadarScreen_DrawCraftArmament`'s label test is `!= -2`, so the radar screen prints the runaway number
+  where an ammo count should be. Three consecutive calls pin it.
+  **The flight gate is the target's distance in pixels.** `offset < nRadarCraftLevel +
+  _rt_sdiv(560, 114 * nRadarRangeCur) - 33` for ids 25/26/27/30 and `offset < 2` for 28/29, with the
+  steps +6/+2/+1 and `bRadarFlip` adding 2 to the four gated weapons (0x5E1BC `ADDNE`). Landing sets the
+  cooldown to 255/240/235/251/249/230, zeroes the offset and stores `RadarScreen_RollWeaponHit`'s result.
+  **The laser and plasma have a third case:** an offset that is neither below 2 nor exactly 2 does
+  *nothing at all* — no cooldown, no roll, no draw (0x5DFEC `BNE`, 0x5E518 `return`). A beam past 2 never
+  resolves.
+  **The columns are not a constant offset.** The cannon is x 67/69 on *both* halves, the rockets are
+  64/65/63 left against 70/71/69 right, and the laser is x 64 left against x 72 right. The avalanche and
+  plasma draw the wide outer column first and the 1-wide inner column over it.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1702,6 +1731,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar gauge and range bar (the consumed percentage, the tens-digit branch shape, the level term that loosens the gate) | 56/56 (Release) | 10789 | 872/1103 (79.1%) | 383092/598792 (64.0%) | 39 checked, 0 mismatched |
 | the radar screen session (`RadarScreen_Init`, `RadarScreen_SetActive`, `RadarScreen_RollDetection`; the eight-row class table, the ammo draw and write-back, the slot-2 overrun found) | 56/56 (Release) | 10983 | 875/1103 (79.3%) | 387488/598792 (64.7%) | 39 checked, 0 mismatched |
 | the radar weapon mounts (`RadarScreen_DrawCraftArmament`, the mount-id enum, the cannon that draws no bar, the duplicated glyph-palette global fixed) | 56/56 (Release) | 11052 | 876/1103 (79.4%) | 389180/598792 (65.0%) | 39 checked, 0 mismatched |
+| the intercept shot animation (`RadarScreen_DrawOverlay`, the per-weapon flight gate and step, the laser that never resolves past 2, the runaway -2 ammo counter found) | 56/56 (Release) | 11141 | 877/1103 (79.5%) | 391968/598792 (65.5%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

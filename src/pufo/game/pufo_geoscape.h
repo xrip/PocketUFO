@@ -1703,4 +1703,103 @@ typedef struct RadarArmamentEnv {
 
 void RadarScreen_DrawCraftArmament(const RadarArmamentEnv *pEnv);
 
+/* ------------------------------------------------- the intercept shot animation
+ *
+ * Evidence: RadarScreen_DrawOverlay @ 0x5dc84 (2788 B). RadarScreen_Update @ 0x60898 is its only
+ * caller.
+ *
+ * One half per mount, right first, and each half is: an idle check, two gates, one round consumed,
+ * then either "the projectile is still in flight, advance and draw it" or "it landed, set the
+ * cooldown and roll the hit".
+ *
+ * 1. Idle (0x5DCA8..0x5DCEC). A mount is idle when its ammo is exactly 0 AND its projectile offset
+ *    is 0. An idle mount has its engage byte cleared. `bRadarLastShotHit` is cleared unconditionally
+ *    at 0x5DCC0, before either half. Note the test is `== 0`, not `<= 0`: a mount holding the -2
+ *    sentinel is not idle.
+ * 2. Gates (0x5DCFC / 0x5DD0C for the right, 0x5E238 / 0x5E248 for the left). The half runs only when
+ *    that mount's engage byte is non-zero AND its cooldown is exactly 255. The two halves are
+ *    independent: the right half being skipped does not stop the left one.
+ * 3. One round consumed (0x5DD10..0x5DD24 right, 0x5E24C..0x5E26C left), only when the projectile
+ *    offset is 0, i.e. only when a shot starts. The -1 "unlimited" sentinel is exempt. The -2
+ *    sentinel is NOT exempt and would go to -3 -- reproduced.
+ * 4. In flight or landed, per mount id:
+ *
+ *      id  flight gate                     step            landed cooldown
+ *      25  offset < level + barH - 33      +6, +8 flipped  255
+ *      26  offset < level + barH - 33      +2, +4 flipped  240
+ *      27  offset < level + barH - 33      +2, +4 flipped  235
+ *      28  offset < 2                      +1              251
+ *      29  offset < 2                      +1              249
+ *      30  offset < level + barH - 33      +2, +4 flipped  230
+ *
+ *    with `barH = _rt_sdiv(560, 114 * nRadarRangeCur)` -- the same scale RadarScreen_DrawRangeBar and
+ *    RadarScreen_DrawCraftArmament use, so the gate is "the projectile has not yet travelled past the
+ *    target's distance". Landing writes the cooldown and stores RadarScreen_RollWeaponHit's result in
+ *    bRadarLastShotHit.
+ * 5. The laser and plasma (28, 29) have a third case nothing else has: when the offset is neither
+ *    below 2 nor exactly 2 the half does **nothing at all** -- no cooldown, no roll. A beam that got
+ *    past 2 without landing never resolves. (0x5DFEC `BNE loc_5E22C`, 0x5E518 `return`.)
+ * 6. Landing zeroes the projectile offset and calls RadarScreen_RollWeaponHit with the mount id as the
+ *    event. The ARM stores the offset first on the right (0x5E218) and the roll first on the left for
+ *    ids 29/30 (0x5E498), which is not observable because RollWeaponHit reads neither offset.
+ *
+ * The two halves draw the same shapes at different columns, except the laser: the left beam is at x 64
+ * and the right at x 72. */
+#define PUFO_RADAR_SHOT_TOP_Y        165 /* 0x5E1C8: RSB R2, R0, #0xA5 -- the projectile's top edge */
+#define PUFO_RADAR_SHOT_TOP_Y_ALT    164 /* 0x5E0A0: RSB R2, R0, #0xA4 -- the avalanche inner column */
+#define PUFO_RADAR_SHOT_CROSS_Y      166 /* 0x5E388: RSB R2, R0, #0xA6 -- the fusion cross-bar */
+#define PUFO_RADAR_BEAM_TOP_Y        194 /* 0x5DFCC: RSB R2, R0, #0xC2 -- the beam starts here */
+#define PUFO_RADAR_SHOT_GATE_TRIM     33 /* SUB R3, R3, #0x21 -- how far past the target a shot may be */
+#define PUFO_RADAR_BEAM_HEIGHT_TRIM   30 /* SUB R3, R3, #0x1E -- the beam's drawn height */
+#define PUFO_RADAR_BEAM_FLIGHT         2 /* ids 28 and 29 count 0, 1, 2 and no further */
+#define PUFO_RADAR_STEP_CANNON         6 /* 0x5E198: ADD R0, R8, #6 */
+#define PUFO_RADAR_STEP_WIDE           2 /* 0x5E038 / 0x5DDA8 / 0x5E104 */
+#define PUFO_RADAR_STEP_BEAM           1 /* 0x5DF84 / 0x5DEAC */
+#define PUFO_RADAR_STEP_FLIP_EXTRA     2 /* 0x5E1BC: ADDNE R0, R0, #2, when bRadarFlip is set */
+#define PUFO_RADAR_COOLDOWN_CANNON   255 /* 0x5E20C: MOV R0, #0xFF */
+#define PUFO_RADAR_COOLDOWN_STINGRAY 240 /* 0x5E154: MOV R0, #0xF0 */
+#define PUFO_RADAR_COOLDOWN_AVALANCHE 235 /* 0x5E0C0: MOV R0, #0xEB */
+#define PUFO_RADAR_COOLDOWN_LASER    251 /* 0x5DFF0: MOV R0, #0xFB */
+#define PUFO_RADAR_COOLDOWN_PLASMA   249 /* 0x5DF70: MOV R0, #0xF9 */
+#define PUFO_RADAR_COOLDOWN_FUSION   230 /* 0x5DE90: MOV R0, #0xE6 */
+#define PUFO_RADAR_SHOT_COLOR_IDX   0x50 /* the projectile body colour, 0x50/0xC8/0 = 0x5640 */
+#define PUFO_RADAR_SHOT_COLOR_MID   0xC8
+#define PUFO_RADAR_WIDE_COLOR_MID   0xA0 /* 0x50/0xA0/0 = 0x5500, the wide rockets */
+#define PUFO_RADAR_PLASMA_COLOR_IDX 0x28 /* 0x28/0x64/0 = 0x2B20, the plasma outer column */
+#define PUFO_RADAR_PLASMA_COLOR_MID 0x64
+#define PUFO_RADAR_PLASMA_CORE_MID  0xDC /* 0x50/0xDC/0 = 0x56E0, the plasma inner column */
+
+/* The columns each half draws at. The two halves agree everywhere except the beam: the left laser is
+ * at x 64 (0x5DFDC uses 0x48 = 72 on the right, 0x5E4DC uses 0x40 = 64 on the left). */
+typedef struct RadarShotSide {
+    i32 xCannonA;  /* 67 both halves: the cannon's first 1x2 */
+    i32 xCannonB;  /* 69 both halves: the cannon's second 1x2 */
+    i32 xBody;     /* stingray / avalanche / plasma / fusion body: 64 left, 70 right */
+    i32 xBodyAlt;  /* avalanche and plasma inner column: 65 left, 71 right */
+    i32 xCross;    /* fusion cross-bar: 63 left, 69 right */
+    i32 xBeam;     /* laser beam: 64 left, 72 right */
+} RadarShotSide;
+
+typedef struct RadarOverlayEnv {
+    const i32   *pnShipIdx;      /* nInterceptShipIdx @ 0x15967C */
+    Ship *const *apCraft;        /* Map.apCraft @ 0x114A64 */
+    i32          nCraftCount;
+    const i32   *pnRangeCur;     /* nRadarRangeCur @ 0x15966C */
+    const i32   *pnCraftLevel;   /* nRadarCraftLevel @ 0x1596E0 */
+    const u8    *pbFlip;         /* bRadarFlip @ 0x159718, the +2 extra step */
+    u8          *pbEngageL;      /* bRadarEngageL @ 0x159728 */
+    u8          *pbEngageR;      /* bRadarEngageR @ 0x15972C */
+    i32         *pnCooldownL;    /* nRadarCooldownL @ 0xAC21C */
+    i32         *pnCooldownR;    /* nRadarCooldownR @ 0xAC218 */
+    i32         *pnShotYL;       /* nRadarShotYL @ 0x1596F8 */
+    i32         *pnShotYR;       /* nRadarShotYR @ 0x1596F4 */
+    i32         *pnAmmoL;        /* nRadarAmmoL @ 0x159654, decremented when a shot starts */
+    i32         *pnAmmoR;        /* nRadarAmmoR @ 0x159664 */
+    u8          *pbLastShotHit;  /* bRadarLastShotHit @ 0x159720 */
+    /* RadarScreen_RollWeaponHit's own environment, passed through untouched. */
+    const RadarHitRollEnv *pHitEnv;
+} RadarOverlayEnv;
+
+void RadarScreen_DrawOverlay(const RadarOverlayEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

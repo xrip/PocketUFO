@@ -12876,3 +12876,63 @@ Tests: `tests/test_geoscape.c:TestRadarArmament`, 69 checks on a real 240x320 su
 font.dat and basebits.dat loaded, so every icon and label is the original's own sprite. The mount
 icons are 15x17 basebits frames at (30, 136) and (91, 136), and each id's icon is compared against a
 direct draw of its own basebits frame, which pins the glyph offsets 50, 48, 49, 52, 53, 51.
+
+## RadarScreen_DrawOverlay (0x5dc84, 2788 B)
+
+Ported as `RadarScreen_DrawOverlay` in `src/pufo/game/pufo_geoscape.c` behind `RadarOverlayEnv`.
+`RadarScreen_Update` at 0x60898 is its only caller. It is the shot animation that consumes the state
+`RadarScreen_DrawCraftArmament` sets up, and it calls the already-ported `RadarScreen_RollWeaponHit`.
+
+**Idle, then two gates, per mount.** A mount is idle when its ammo is exactly 0 AND its projectile
+offset is 0; an idle mount has its engage byte cleared (0x5DCA8..0x5DCEC). `bRadarLastShotHit` is
+cleared unconditionally at 0x5DCC0, before either half. Then a half runs only when that mount's engage
+byte is non-zero AND its cooldown is exactly 255 (0x5DCFC / 0x5DD0C right, 0x5E238 / 0x5E248 left). The
+halves are independent: skipping the right one does not gate the left one. The idle test is `== 0`, so
+the -2 sentinel is NOT idle.
+
+**One round per shot start.** The decrement runs only when the projectile offset is 0, i.e. when a shot
+starts, not when it is in flight or landing. Only the -1 "unlimited" sentinel is exempt.
+
+**ORIGINAL BUG (0x5DD1C / 0x5E258), reproduced.** The -2 "no weapon on this mount" sentinel is not
+exempt. A mount id outside 25..30 -- 24, the psi amplifier, which the shipped data does use -- stores a
+zero weapon range in `RadarScreen_DrawCraftArmament`, so once the radar's reach falls to 0 the engage
+byte is set and the cooldown stays at 255 because nothing ever lands. This function's switch has no arm
+for that id, so the projectile offset is never advanced and the "a shot started" test stays true on
+every frame: the ammo counter walks off through -3, -4, -5 ... without bound, and
+`RadarScreen_DrawCraftArmament`'s label test is `!= -2`, so the radar screen prints the runaway number
+where an ammo count should be. Pinned by three consecutive calls in `TestRadarOverlay`.
+
+**The flight gate and the step, per mount id:**
+
+    id  gate: offset <                              step           cooldown on landing
+    25  nRadarCraftLevel + barH - 33                +6, +8 flipped 255
+    26  nRadarCraftLevel + barH - 33                +2, +4 flipped 240
+    27  nRadarCraftLevel + barH - 33                +2, +4 flipped 235
+    28  2                                           +1             251
+    29  2                                           +1             249
+    30  nRadarCraftLevel + barH - 33                +2, +4 flipped 230
+
+with `barH = _rt_sdiv(560, 114 * nRadarRangeCur)` -- the same 560/114 scale the range bar and the two
+mount bars use, so the gate literally means "the projectile has not travelled past the target's
+distance yet". `bRadarFlip` adds 2 to the step of the four gated weapons (0x5E1BC `ADDNE R0, R0, #2`);
+the laser and plasma have no flip term.
+
+**The laser and plasma have a third case.** When the offset is neither below 2 nor exactly 2 the half
+does nothing at all: no cooldown, no roll, no draw (0x5DFEC `BNE loc_5E22C`, 0x5E518 `return`). A beam
+that got past 2 without landing never resolves.
+
+**The columns.** The two halves agree on the cannon (x 67 and 69 on both sides) and differ by 6 on the
+rockets -- x 64/65/63 left, 70/71/69 right -- except the laser, which is x 64 left and x 72 right
+(0x5E4DC `MOV R1, #0x40` against 0x5DFDC `MOV R1, #0x48`). The avalanche and plasma draw their wide
+outer column first and their 1-wide inner column second, so the inner overwrites the outer's middle
+column; the port keeps that order.
+
+**Deviation.** The ARM stores the zeroed projectile before the roll on the right half (0x5E218 then
+0x5E224) and on the left half for ids 25..28 (0x5E750 then 0x5E754), but runs the roll first for the
+left half's ids 29/30 (0x5E498 then 0x5E49C). Not observable: `RadarScreen_RollWeaponHit` reads neither
+offset. The port uses one order.
+
+Tests: `tests/test_geoscape.c:TestRadarOverlay`, 89 checks on the same real 240x320 surface, covering
+the idle clear, both gates, the independence of the halves, the step and flip step of every weapon, the
+landing cooldowns 255/240/235/251/249/230, the laser's dead third case, the left/right column
+asymmetry, the inner-over-outer draw order, and the runaway -2 counter.

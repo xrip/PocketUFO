@@ -2786,3 +2786,199 @@ void RadarScreen_DrawCraftArmament(const RadarArmamentEnv *pEnv)
         *pEnv->pnBoundR = nInherited;
     }
 }
+
+/* ------------------------------------------------- the intercept shot animation
+ * See the evidence block in pufo_geoscape.h for RadarScreen_DrawOverlay @ 0x5dc84. */
+
+static const RadarShotSide g_aRadarShotSide[2] = {
+    { 67, 69, 64, 65, 63, 64 }, /* left  */
+    { 67, 69, 70, 71, 69, 72 }, /* right */
+};
+
+/* 0x5E160..0x5E17C and 0x5DF8C..0x5DFA8: _rt_sdiv(divisor 560, dividend 114 * nRadarRangeCur) -- the
+ * current distance in pixels, the same scale the range bar and the mount bars use. */
+static i32 Radar_ShotBarHeight(i32 nRangeCur)
+{
+    return (PUFO_RADAR_RANGE_PITCH * nRangeCur) / PUFO_RADAR_RANGE_SCALE;
+}
+
+/* 0x5E20C..0x5E224 and 0x5E488..0x5E49C: the shot landed. The ARM writes the cooldown, zeroes the
+ * projectile and stores the roll's result; the left half's ids 29/30 run the roll before zeroing the
+ * projectile, which is not observable because RollWeaponHit reads neither offset. */
+static void Radar_ShotLanded(const RadarOverlayEnv *pEnv, i32 *pnShot, i32 *pnCooldown,
+                             i32 nCooldown, i32 nMount)
+{
+    *pnCooldown = nCooldown;
+    *pnShot = 0;
+    *pEnv->pbLastShotHit = RadarScreen_RollWeaponHit(pEnv->pHitEnv, nMount) ? 1u : 0u;
+}
+
+static void Radar_DrawMountShot(const RadarOverlayEnv *pEnv, const Ship *pCraft, bool bRight)
+{
+    const RadarShotSide *pSide = &g_aRadarShotSide[bRight ? 1 : 0];
+    i32 *pnShot     = bRight ? pEnv->pnShotYR    : pEnv->pnShotYL;
+    i32 *pnCooldown = bRight ? pEnv->pnCooldownR : pEnv->pnCooldownL;
+    i32 *pnAmmo     = bRight ? pEnv->pnAmmoR     : pEnv->pnAmmoL;
+    const i8   nMount = bRight ? pCraft->bWeaponR : pCraft->bWeaponL;
+    const i32  nShot  = *pnShot;
+    const i32  nBar   = Radar_ShotBarHeight(*pEnv->pnRangeCur);
+    const i32  nLevel = *pEnv->pnCraftLevel;
+    const i32  nGate  = nLevel + nBar - PUFO_RADAR_SHOT_GATE_TRIM;
+    const bool bFlip  = (*pEnv->pbFlip != 0);
+
+    /* 0x5DD10..0x5DD24 and 0x5E24C..0x5E26C: a round is taken only when a shot STARTS, i.e. when the
+     * projectile offset is 0. Only the -1 "unlimited" sentinel is exempt.
+     *
+     * ORIGINAL BUG (0x5DD1C / 0x5E258), reproduced: the -2 "no weapon on this mount" sentinel is NOT
+     * exempt. A mount whose id is outside 25..30 -- WM_PSI_AMP is the one the game ships -- stores a
+     * zero bound in RadarScreen_DrawCraftArmament, so once the radar's reach drops to 0 the engage
+     * byte is set, and this decrement then runs every single frame: the mount's switch has no arm, so
+     * the projectile offset is never advanced and the "a shot started" test stays true forever. The
+     * counter walks off through -3, -4, -5 ... and RadarScreen_DrawCraftArmament's label test is
+     * `!= -2`, so the radar screen starts printing it. */
+    if (nShot == 0 && *pnAmmo != PUFO_RADAR_AMMO_UNLIMITED) {
+        *pnAmmo -= 1;
+    }
+
+    switch (nMount) {
+        case WM_CANNON:
+            if (nShot < nGate) {
+                const i32 nNew = nShot + PUFO_RADAR_STEP_CANNON
+                               + (bFlip ? PUFO_RADAR_STEP_FLIP_EXTRA : 0);
+                *pnShot = nNew;
+                SoftSurf_BlitRectProxy(0, pSide->xCannonA, PUFO_RADAR_SHOT_TOP_Y - nNew, 1, 2,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_SHOT_COLOR_MID, 0);
+                SoftSurf_BlitRectProxy(0, pSide->xCannonB, PUFO_RADAR_SHOT_TOP_Y - *pnShot, 1, 2,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_SHOT_COLOR_MID, 0);
+            } else {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_CANNON, WM_CANNON);
+            }
+            break;
+
+        case WM_STINGRAY:
+            if (nShot < nGate) {
+                const i32 nNew = nShot + PUFO_RADAR_STEP_WIDE
+                               + (bFlip ? PUFO_RADAR_STEP_FLIP_EXTRA : 0);
+                *pnShot = nNew;
+                SoftSurf_BlitRectProxy(0, pSide->xBody, PUFO_RADAR_SHOT_TOP_Y - nNew, 2, 4,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_WIDE_COLOR_MID, 0);
+            } else {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_STINGRAY, WM_STINGRAY);
+            }
+            break;
+
+        case WM_AVALANCHE:
+            if (nShot < nGate) {
+                const i32 nNew = nShot + PUFO_RADAR_STEP_WIDE
+                               + (bFlip ? PUFO_RADAR_STEP_FLIP_EXTRA : 0);
+                *pnShot = nNew;
+                SoftSurf_BlitRectProxy(0, pSide->xBody, PUFO_RADAR_SHOT_TOP_Y - nNew, 3, 4,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_WIDE_COLOR_MID, 0);
+                SoftSurf_BlitRectProxy(0, pSide->xBodyAlt, PUFO_RADAR_SHOT_TOP_Y_ALT - *pnShot, 1, 5,
+                                       PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                                       PUFO_RADAR_BAR_COLOR_LOW);
+            } else {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_AVALANCHE, WM_AVALANCHE);
+            }
+            break;
+
+        case WM_LASER:
+            if (nShot < PUFO_RADAR_BEAM_FLIGHT) {
+                *pnShot = nShot + PUFO_RADAR_STEP_BEAM;
+                SoftSurf_BlitRectProxy(0, pSide->xBeam,
+                                       PUFO_RADAR_BEAM_TOP_Y - nBar - nLevel, 1,
+                                       nBar + nLevel - PUFO_RADAR_BEAM_HEIGHT_TRIM,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_SHOT_COLOR_MID, 0);
+            } else if (nShot == PUFO_RADAR_BEAM_FLIGHT) {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_LASER, WM_LASER);
+            }
+            /* Neither branch: 0x5DFEC BNE and 0x5E518 return. A beam past 2 never resolves. */
+            break;
+
+        case WM_PLASMA:
+            if (nShot < PUFO_RADAR_BEAM_FLIGHT) {
+                *pnShot = nShot + PUFO_RADAR_STEP_BEAM;
+                SoftSurf_BlitRectProxy(0, pSide->xBody,
+                                       PUFO_RADAR_BEAM_TOP_Y - nBar - nLevel, 3,
+                                       nBar + nLevel - PUFO_RADAR_BEAM_HEIGHT_TRIM,
+                                       PUFO_RADAR_PLASMA_COLOR_IDX, PUFO_RADAR_PLASMA_COLOR_MID, 0);
+                SoftSurf_BlitRectProxy(0, pSide->xBodyAlt,
+                                       PUFO_RADAR_BEAM_TOP_Y - nBar - nLevel, 1,
+                                       nBar + nLevel - PUFO_RADAR_BEAM_HEIGHT_TRIM,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_PLASMA_CORE_MID, 0);
+            } else if (nShot == PUFO_RADAR_BEAM_FLIGHT) {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_PLASMA, WM_PLASMA);
+            }
+            break;
+
+        case WM_FUSION:
+            if (nShot < nGate) {
+                const i32 nNew = nShot + PUFO_RADAR_STEP_WIDE
+                               + (bFlip ? PUFO_RADAR_STEP_FLIP_EXTRA : 0);
+                *pnShot = nNew;
+                SoftSurf_BlitRectProxy(0, pSide->xBody, PUFO_RADAR_SHOT_TOP_Y - nNew, 2, 6,
+                                       PUFO_RADAR_SHOT_COLOR_IDX, PUFO_RADAR_WIDE_COLOR_MID, 0);
+                SoftSurf_BlitRectProxy(0, pSide->xBody, PUFO_RADAR_SHOT_TOP_Y - *pnShot, 2, 4,
+                                       PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                                       PUFO_RADAR_BAR_COLOR_LOW);
+                SoftSurf_BlitRectProxy(0, pSide->xCross, PUFO_RADAR_SHOT_CROSS_Y - *pnShot, 4, 2,
+                                       PUFO_RADAR_BAR_COLOR_IDX, PUFO_RADAR_BAR_COLOR_MID,
+                                       PUFO_RADAR_BAR_COLOR_LOW);
+            } else {
+                Radar_ShotLanded(pEnv, pnShot, pnCooldown,
+                                 PUFO_RADAR_COOLDOWN_FUSION, WM_FUSION);
+            }
+            break;
+
+        default:
+            /* WM_PSI_AMP and anything else: the switch has no arm, so the round taken above is lost. */
+            break;
+    }
+}
+
+void RadarScreen_DrawOverlay(const RadarOverlayEnv *pEnv)
+{
+    Ship *pCraft;
+
+    /* Port-side guard: the original dereferences apCraft[nShipIdx] with no test (LDRSB [R3, #0x23] at
+     * 0x5DD3C). */
+    if (pEnv == NULL || pEnv->pnShipIdx == NULL || pEnv->apCraft == NULL
+        || pEnv->pnRangeCur == NULL || pEnv->pnCraftLevel == NULL || pEnv->pbFlip == NULL
+        || pEnv->pbEngageL == NULL || pEnv->pbEngageR == NULL || pEnv->pnCooldownL == NULL
+        || pEnv->pnCooldownR == NULL || pEnv->pnShotYL == NULL || pEnv->pnShotYR == NULL
+        || pEnv->pnAmmoL == NULL || pEnv->pnAmmoR == NULL || pEnv->pbLastShotHit == NULL
+        || pEnv->pHitEnv == NULL) {
+        return;
+    }
+
+    const i32 nShip = *pEnv->pnShipIdx;
+    pCraft = (nShip >= 0 && nShip < pEnv->nCraftCount) ? pEnv->apCraft[nShip] : NULL;
+    if (pCraft == NULL) {
+        return;
+    }
+
+    /* 0x5DCA8..0x5DCEC: an idle mount -- ammo exactly 0 and the projectile at 0 -- loses its engage
+     * byte, and the last-shot result is cleared for the frame. The test is == 0, so the -2 sentinel is
+     * NOT idle. */
+    if (*pEnv->pnAmmoR == 0 && *pEnv->pnShotYR == 0) {
+        *pEnv->pbEngageR = 0;
+    }
+    *pEnv->pbLastShotHit = 0; /* 0x5DCC0 */
+    if (*pEnv->pnAmmoL == 0 && *pEnv->pnShotYL == 0) {
+        *pEnv->pbEngageL = 0;
+    }
+
+    /* Right half first (0x5DCFC / 0x5DD0C), then the left (0x5E238 / 0x5E248). The two are
+     * independent: skipping one does not gate the other. */
+    if (*pEnv->pbEngageR != 0 && *pEnv->pnCooldownR == PUFO_RADAR_COOLDOWN_READY) {
+        Radar_DrawMountShot(pEnv, pCraft, true);
+    }
+    if (*pEnv->pbEngageL != 0 && *pEnv->pnCooldownL == PUFO_RADAR_COOLDOWN_READY) {
+        Radar_DrawMountShot(pEnv, pCraft, false);
+    }
+}

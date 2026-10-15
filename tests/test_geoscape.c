@@ -4722,6 +4722,319 @@ static void TestRadarArmament(void)
     CheckEqI32(g_nArmBoundL, -999, "but it reaches no craft and stores no bound");
 }
 
+/* ---- RadarScreen_DrawOverlay @ 0x5dc84 ------------------------------------------------
+ *
+ * The shot animation, drawn on the same real surface. The fixture uses nRadarRangeCur 560 and
+ * nRadarCraftLevel 8, so the flight gate is 8 + (114*560/560) - 33 = 89 pixels. */
+
+static Ship              g_ovCraft;
+static Ship             *g_apOvCraft[1];
+static PtrArray          g_ovStrateg;
+static bool              g_bOvListReady;
+static i32               g_nOvStrategIdx, g_nOvTargetHp;
+static RadarHitRollEnv   g_ovHitEnv;
+static i32               g_nOvShipIdx, g_nOvRangeCur, g_nOvLevel;
+static i32               g_nOvCoolL, g_nOvCoolR, g_nOvShotL, g_nOvShotR;
+static i32               g_nOvAmmoL, g_nOvAmmoR;
+static u8                g_bOvEngL, g_bOvEngR, g_bOvFlip, g_bOvLastHit;
+static RadarOverlayEnv   g_ovEnv;
+
+#define OV_COLOR_SHOT   0x5640 /* 0x50 / 0xC8 / 0 */
+#define OV_COLOR_WIDE   0x5500 /* 0x50 / 0xA0 / 0 */
+#define OV_COLOR_BAR    0x7E45 /* 0x78 / 0xC8 / 0x28 */
+#define OV_COLOR_PLASMA 0x2B20 /* 0x28 / 0x64 / 0 */
+#define OV_COLOR_CORE   0x56E0 /* 0x50 / 0xDC / 0 */
+#define OV_GATE           89   /* 8 + 114 - 33, the fixture's flight gate */
+
+static StrategItem *OvStrategItem(void)
+{
+    return (StrategItem *)PtrArray_Get(&g_ovStrateg, g_nOvStrategIdx);
+}
+
+static void OvFixture(i8 nMountL, i8 nMountR, i32 nAmmoL, i32 nAmmoR,
+                      i32 nShotL, i32 nShotR, i32 nRangeCur, i32 nLevel)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+
+    memset(&g_ovCraft, 0, sizeof(g_ovCraft));
+    g_ovCraft.bWeaponL = nMountL;
+    g_ovCraft.bWeaponR = nMountR;
+    g_apOvCraft[0] = &g_ovCraft;
+
+    g_nOvShipIdx  = 0;
+    g_nOvRangeCur = nRangeCur;
+    g_nOvLevel    = nLevel;
+    g_nOvCoolL    = PUFO_RADAR_COOLDOWN_READY;
+    g_nOvCoolR    = PUFO_RADAR_COOLDOWN_READY;
+    g_nOvShotL    = nShotL;
+    g_nOvShotR    = nShotR;
+    g_nOvAmmoL    = nAmmoL;
+    g_nOvAmmoR    = nAmmoR;
+    g_bOvEngL     = 1;
+    g_bOvEngR     = 1;
+    g_bOvFlip     = 0;
+    g_bOvLastHit  = 9; /* a sentinel the call must clear */
+    g_nOvTargetHp = 1000;
+    {
+        StrategItem *pItem = OvStrategItem();
+        if (pItem != NULL) {
+            pItem->nHp = 1000;
+        }
+    }
+
+    memset(&g_ovEnv, 0, sizeof(g_ovEnv));
+    g_ovEnv.pnShipIdx     = &g_nOvShipIdx;
+    g_ovEnv.apCraft       = g_apOvCraft;
+    g_ovEnv.nCraftCount   = 1;
+    g_ovEnv.pnRangeCur    = &g_nOvRangeCur;
+    g_ovEnv.pnCraftLevel  = &g_nOvLevel;
+    g_ovEnv.pbFlip        = &g_bOvFlip;
+    g_ovEnv.pbEngageL     = &g_bOvEngL;
+    g_ovEnv.pbEngageR     = &g_bOvEngR;
+    g_ovEnv.pnCooldownL   = &g_nOvCoolL;
+    g_ovEnv.pnCooldownR   = &g_nOvCoolR;
+    g_ovEnv.pnShotYL      = &g_nOvShotL;
+    g_ovEnv.pnShotYR      = &g_nOvShotR;
+    g_ovEnv.pnAmmoL       = &g_nOvAmmoL;
+    g_ovEnv.pnAmmoR       = &g_nOvAmmoR;
+    g_ovEnv.pbLastShotHit = &g_bOvLastHit;
+    g_ovEnv.pHitEnv       = &g_ovHitEnv;
+}
+
+static void TestRadarOverlay(void)
+{
+    printf("\nRadarScreen_DrawOverlay @ 0x5dc84\n");
+
+    if (g_bdSurf.pPixels == NULL) {
+        SoftSurf_ctor(&g_bdSurf);
+        SoftSurf_AllocPixels(&g_bdSurf, BD_SURF_W, BD_SURF_H, PIXMODE_16BPP);
+        g_pMainSurface = &g_bdSurf;
+        Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_bdSurf.pPixels);
+    }
+    if (!g_bOvListReady) {
+        PtrArray_ctor(&g_ovStrateg);
+        g_bOvListReady = StrategItem_AllocAdd(&g_ovStrateg, 0) != 0;
+        g_nOvStrategIdx = 0;
+        memset(&g_ovHitEnv, 0, sizeof(g_ovHitEnv));
+        g_ovHitEnv.pStrategList = &g_ovStrateg;
+        g_ovHitEnv.pnStrategIdx = &g_nOvStrategIdx;
+        g_ovHitEnv.pnTargetHp   = &g_nOvTargetHp;
+    }
+    if (!g_bOvListReady || OvStrategItem() == NULL) {
+        Check(false, "the intercept strateg entry the shot roll writes to could not be created");
+        return;
+    }
+
+    /* --- the idle test, and the unconditional clear of bRadarLastShotHit --- */
+    OvFixture(WM_CANNON, WM_CANNON, 5, 0, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_bOvEngR, 0, "ammo 0 with the projectile at 0 is idle, which clears bRadarEngageR");
+    CheckEqI32(g_bOvLastHit, 0, "bRadarLastShotHit is cleared on every call (0x5DCC0)");
+    CheckEqI32(g_nOvAmmoR, 0, "and the idle mount takes no round");
+    CheckEqI32(g_nOvAmmoL, 4, "while the other mount, still engaged, does take one");
+    CheckEqI32(ArmCount(67, 159, 70, 161, OV_COLOR_SHOT), 4,
+               "only the left cannon's two 1x2 rects are on the surface, at x 67 and 69 -- the same "
+               "columns the right half uses");
+
+    /* --- the -2 sentinel is NOT idle, and it is not exempt from the round either --- */
+    OvFixture(WM_CANNON, WM_CANNON, 5, PUFO_RADAR_AMMO_NONE, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_bOvEngR, 1, "ammo -2 is not 0, so the mount is not idle");
+    CheckEqI32(g_nOvAmmoR, PUFO_RADAR_AMMO_NONE - 1,
+               "and the round is taken anyway: -2 becomes -3 (ORIGINAL BUG 0x5DD1C)");
+    OvFixture(WM_PSI_AMP, WM_CANNON, PUFO_RADAR_AMMO_NONE, 5, 0, 5, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvAmmoL, PUFO_RADAR_AMMO_NONE - 3,
+               "a mount the switch has no arm for never advances its projectile, so the round is "
+               "taken on every frame and the counter runs off: -2, -3, -4, -5");
+    CheckEqI32(g_nOvShotL, 0, "the projectile offset really never moves");
+    CheckEqI32(g_nOvAmmoR, 5, "while a mount with a real id and a projectile already in flight is "
+                              "left alone");
+
+    /* --- the two gates, and that the halves are independent --- */
+    OvFixture(WM_CANNON, WM_CANNON, 5, 5, 0, 0, 560, 8);
+    g_nOvCoolR = 254;
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvAmmoR, 5, "a cooldown of 254 is not 255, so the right half does not run");
+    CheckEqI32(g_nOvAmmoL, 4, "and the left half runs anyway");
+    CheckEqI32(g_nOvCoolL, PUFO_RADAR_COOLDOWN_READY, "leaving the left cooldown armed");
+
+    OvFixture(WM_CANNON, WM_CANNON, 5, 5, 0, 0, 560, 8);
+    g_bOvEngR = 0;
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvAmmoR, 5, "a cleared engage byte stops that half");
+    CheckEqI32(g_nOvAmmoL, 4, "and not the other one");
+
+    /* --- the cannon: +6, or +8 when bRadarFlip is set --- */
+    OvFixture(WM_CANNON, WM_CANNON, 7, 7, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 6, "the projectile advances 6 pixels (0x5E198)");
+    CheckEqI32(g_nOvAmmoR, 6, "and one round was consumed");
+    CheckEqI32(BdPix(67, 159), OV_COLOR_SHOT, "the first 1x2 is at (67, 165-6)");
+    CheckEqI32(BdPix(67, 160), OV_COLOR_SHOT, "two rows tall");
+    CheckEqI32(BdPix(67, 161), 0, "and no further");
+    CheckEqI32(BdPix(68, 159), 0, "one column wide");
+    CheckEqI32(BdPix(69, 159), OV_COLOR_SHOT, "the second 1x2 is at x 69");
+
+    OvFixture(WM_CANNON, WM_CANNON, 7, 7, 0, 0, 560, 8);
+    g_bOvFlip = 1;
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 8, "bRadarFlip adds 2 more, for 8 (0x5E1BC ADDNE)");
+    CheckEqI32(BdPix(67, 157), OV_COLOR_SHOT, "so the projectile is two rows higher");
+
+    OvFixture(WM_CANNON, WM_CANNON, 7, 7, 10, 10, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 16, "a projectile already in flight advances but is not reloaded");
+    CheckEqI32(g_nOvAmmoR, 7, "and no second round is taken -- only offset 0 starts a shot");
+
+    /* --- landing: the gate is `offset < gate`, so 89 lands --- */
+    OvFixture(WM_CANNON, WM_CANNON, 7, 7, OV_GATE, OV_GATE, 560, 8);
+    g_nOvCoolL = 254; /* only the right half lands, so one roll runs and its result survives */
+    srand(12345); /* Game_RandU16(100) == 23, below event 25's 50 */
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 0, "a projectile at the gate lands and its offset is zeroed");
+    CheckEqI32(g_nOvCoolR, PUFO_RADAR_COOLDOWN_CANNON, "the cannon rearms its cooldown to 255");
+    CheckEqI32(g_nOvAmmoR, 7, "a landing takes no round -- only a start does");
+    CheckEqI32(g_bOvLastHit, 1, "and the roll's result is stored in bRadarLastShotHit");
+    CheckEqI32(g_nOvTargetHp, 950, "event 25 is the fixed -50");
+    CheckEqI32(ArmCount(60, 150, 80, 170, OV_COLOR_SHOT), 0, "landing draws no projectile");
+
+    OvFixture(WM_CANNON, WM_CANNON, 7, 7, OV_GATE, OV_GATE, 560, 8);
+    srand(7013); /* Game_RandU16(100) == 70, above event 25's 50 */
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_bOvLastHit, 0, "a roll that fails its gate stores 0");
+    CheckEqI32(g_nOvTargetHp, 1000, "and changes no HP");
+
+    /* --- the stingray: 2x4 at x 70 right, x 64 left --- */
+    OvFixture(WM_STINGRAY, WM_STINGRAY, 3, 3, 10, 10, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 12, "the wide rockets step 2");
+    CheckEqI32(BdPix(70, 153), OV_COLOR_WIDE, "the right rocket is 2 wide at x 70, y 165-12");
+    CheckEqI32(BdPix(71, 156), OV_COLOR_WIDE, "and 4 tall");
+    CheckEqI32(BdPix(72, 153), 0, "no further across");
+    CheckEqI32(BdPix(70, 157), 0, "no further down");
+    CheckEqI32(BdPix(64, 153), OV_COLOR_WIDE, "the left rocket is at x 64");
+    CheckEqI32(BdPix(65, 153), OV_COLOR_WIDE, "two columns wide there too");
+    OvFixture(WM_STINGRAY, WM_STINGRAY, 3, 3, 10, 10, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(BdPix(66, 153), 0, "and the left rocket stops at 65");
+
+    /* --- the avalanche: a 3-wide body plus a 1x5 inner column drawn over it --- */
+    OvFixture(WM_AVALANCHE, WM_AVALANCHE, 2, 2, 10, 10, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(BdPix(70, 153), OV_COLOR_WIDE, "the right body is 3 wide at x 70..72");
+    CheckEqI32(BdPix(72, 153), OV_COLOR_WIDE, "its far column");
+    CheckEqI32(BdPix(71, 152), OV_COLOR_BAR, "the 1x5 inner column starts one row higher at y 164-12");
+    CheckEqI32(BdPix(71, 153), OV_COLOR_BAR, "and is drawn AFTER the body, overwriting its middle");
+    CheckEqI32(BdPix(71, 156), OV_COLOR_BAR, "five rows");
+    CheckEqI32(BdPix(71, 157), 0, "no further");
+    CheckEqI32(BdPix(64, 153), OV_COLOR_WIDE, "the left body is at x 64..66");
+    CheckEqI32(BdPix(65, 152), OV_COLOR_BAR, "with its inner column at 65");
+
+    /* --- the laser: a beam, and the two halves use different columns --- */
+    OvFixture(WM_LASER, WM_LASER, PUFO_RADAR_AMMO_UNLIMITED, PUFO_RADAR_AMMO_UNLIMITED, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 1, "the beam counts 1 (0x5DF84)");
+    CheckEqI32(g_nOvAmmoR, PUFO_RADAR_AMMO_UNLIMITED, "-1 is exempt from the round");
+    CheckEqI32(BdPix(72, 72), OV_COLOR_SHOT, "the right beam is at x 72, y 194-114-8");
+    CheckEqI32(BdPix(72, 163), OV_COLOR_SHOT, "114+8-30 = 92 rows tall");
+    CheckEqI32(BdPix(72, 164), 0, "and no further");
+    CheckEqI32(BdPix(72, 71), 0, "starting at 72");
+    CheckEqI32(BdPix(73, 72), 0, "one column wide");
+    CheckEqI32(BdPix(64, 72), OV_COLOR_SHOT, "the LEFT beam is at x 64, not 72");
+    CheckEqI32(BdPix(64, 163), OV_COLOR_SHOT, "same height");
+
+    OvFixture(WM_LASER, WM_LASER, 4, 4, 1, 1, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 2, "the beam counts to 2");
+    CheckEqI32(g_nOvAmmoR, 4, "offset 1 is not a start, so no round");
+    OvFixture(WM_LASER, WM_LASER, 4, 4, 2, 2, 560, 8);
+    srand(12345);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvCoolR, PUFO_RADAR_COOLDOWN_LASER, "at exactly 2 the laser lands, cooldown 251");
+    CheckEqI32(g_nOvShotR, 0, "and its offset is zeroed");
+    OvFixture(WM_LASER, WM_LASER, 4, 4, 3, 3, 560, 8);
+    g_nOvCoolR = 100;
+    g_nOvCoolL = 100;
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 3, "a beam past 2 is neither in flight nor landing");
+    CheckEqI32(g_nOvCoolR, 100, "so it never sets a cooldown (0x5DFEC BNE)");
+    CheckEqI32(g_nOvCoolL, 100, "on either side");
+    CheckEqI32(ArmCount(60, 60, 80, 170, OV_COLOR_SHOT), 0, "and draws nothing");
+
+    /* --- the plasma: a 3-wide outer column and a 1-wide core --- */
+    OvFixture(WM_PLASMA, WM_PLASMA, 9, 9, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(BdPix(70, 72), OV_COLOR_PLASMA, "the right plasma's outer column is 3 wide at x 70");
+    CheckEqI32(BdPix(72, 72), OV_COLOR_PLASMA, "its far column");
+    CheckEqI32(BdPix(71, 72), OV_COLOR_CORE, "drawn over by the 1-wide core at x 71");
+    CheckEqI32(BdPix(73, 72), 0, "no further across");
+    CheckEqI32(BdPix(64, 72), OV_COLOR_PLASMA, "the left plasma's outer column is at x 64");
+    CheckEqI32(BdPix(65, 72), OV_COLOR_CORE, "with its core at 65");
+    OvFixture(WM_PLASMA, WM_PLASMA, 9, 9, 2, 2, 560, 8);
+    srand(12345);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvCoolR, PUFO_RADAR_COOLDOWN_PLASMA, "the plasma lands at 2 with cooldown 249");
+
+    /* --- the fusion ball: body, inner body and a cross-bar --- */
+    OvFixture(WM_FUSION, WM_FUSION, 2, 2, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvShotR, 2, "the fusion ball steps 2");
+    CheckEqI32(BdPix(70, 167), OV_COLOR_WIDE, "the 2x6 body at x 70..71, y 165-2");
+    CheckEqI32(BdPix(70, 163), OV_COLOR_BAR, "overlaid by the 2x4 inner body at the same y");
+    CheckEqI32(BdPix(69, 164), OV_COLOR_BAR, "and the 4x2 cross-bar at x 69..72, y 166-2");
+    CheckEqI32(BdPix(72, 165), OV_COLOR_BAR, "the cross-bar reaches x 72");
+    CheckEqI32(BdPix(69, 166), 0, "two rows tall only");
+    CheckEqI32(BdPix(64, 167), OV_COLOR_WIDE, "the left body is at x 64..65");
+    CheckEqI32(BdPix(63, 164), OV_COLOR_BAR, "with its cross-bar at x 63..66");
+    OvFixture(WM_FUSION, WM_FUSION, 2, 2, OV_GATE, OV_GATE, 560, 8);
+    srand(12345);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvCoolR, PUFO_RADAR_COOLDOWN_FUSION, "the fusion ball lands with cooldown 230");
+
+    /* --- the six cooldowns, one per mount id --- */
+    {
+        static const i8 anMount[6] = { WM_CANNON, WM_STINGRAY, WM_AVALANCHE,
+                                       WM_LASER, WM_PLASMA, WM_FUSION };
+        static const i32 anCool[6] = { PUFO_RADAR_COOLDOWN_CANNON, PUFO_RADAR_COOLDOWN_STINGRAY,
+                                       PUFO_RADAR_COOLDOWN_AVALANCHE, PUFO_RADAR_COOLDOWN_LASER,
+                                       PUFO_RADAR_COOLDOWN_PLASMA, PUFO_RADAR_COOLDOWN_FUSION };
+        static const i32 anShot[6] = { OV_GATE, OV_GATE, OV_GATE, 2, 2, OV_GATE };
+        i32 nBad = 0;
+        for (i32 i = 0; i < 6; ++i) {
+            OvFixture(anMount[i], anMount[i], 5, 5, anShot[i], anShot[i], 560, 8);
+            g_nOvCoolL = 254; /* only the right half runs */
+            srand(12345);
+            RadarScreen_DrawOverlay(&g_ovEnv);
+            if (g_nOvCoolR != anCool[i] || g_nOvShotR != 0) {
+                ++nBad;
+            }
+        }
+        CheckEqI32(nBad, 0,
+                    "ids 25..30 land with cooldowns 255, 240, 235, 251, 249, 230 and zero the offset");
+    }
+
+    /* --- the roll writes the strateg item too --- */
+    OvFixture(WM_CANNON, WM_CANNON, 5, 5, OV_GATE, OV_GATE, 560, 8);
+    g_nOvCoolL = 254;
+    srand(12345);
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(OvStrategItem()->nHp, 950, "RadarScreen_RollWeaponHit mirrors the HP into the item");
+
+    /* --- the guards --- */
+    OvFixture(WM_CANNON, WM_CANNON, 5, 5, 0, 0, 560, 8);
+    RadarScreen_DrawOverlay(NULL);
+    CheckEqI32(g_nOvAmmoR, 5, "a null environment is refused");
+    CheckEqI32(ArmCount(20, 60, 120, 200, OV_COLOR_SHOT), 0, "and draws nothing");
+    g_nOvShipIdx = 7;
+    RadarScreen_DrawOverlay(&g_ovEnv);
+    CheckEqI32(g_nOvAmmoR, 5, "an out-of-range ship index reaches no craft");
+    CheckEqI32(g_bOvLastHit, 9, "and does not even reach the clear of bRadarLastShotHit");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -4770,6 +5083,7 @@ int main(void)
     TestRadarSession();
     TestRadarDetect();
     TestRadarArmament();
+    TestRadarOverlay();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
