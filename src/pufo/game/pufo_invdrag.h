@@ -270,4 +270,69 @@ typedef struct TactEquipCtx {
  * port refuses a null unit, treats a zero strength as too heavy, and bounds the pool. */
 void Tact_EquipTeamFromCraft(TactEquipCtx *pCtx);
 
+/* ------------------------------------------------- closing the inventory screen
+ *
+ * Evidence: Inv_CloseAndCommit @ 0x15a48 (1268 B). Three parts, the first gated on the commit
+ * flag at Map+1 (unk_1139B9):
+ *
+ * 1. 0x15A60..0x15C4C: for every XCom unit that is NOT large, snapshot its loadout into the two
+ *    per-slot arrays the equip pass reads back -- auUnk962[nSlot] (Soldier+0x3C2) gets the slot
+ *    item's object sort key (`LDRH [pObj,#0xC8]`), and abUnk1012[nSlot] (Soldier+0x3F4) gets the
+ *    low byte of TactItem.nIndex, which is the ammo type the weapon has loaded. An empty slot, a
+ *    two-handed object, or an item whose nAmmo is 0 or 255 (the "never runs out" marker) stores 0
+ *    for the ammo half. 24 slots, in the order the jumptable at 0x15AB0 walks them; see
+ *    InvCommitSlot for which Soldier field each one is.
+ * 2. 0x15C68..0x15CB0: clear the flag, then Tact_DeployTeamAndHwps, MapView_FocusSelected,
+ *    Map_RefreshCellMeta, and Unit_UpdateVisibility once per unit.
+ * 3. 0x15CBC..0x15F24: merge a loose clip into the hand that can take it. Whichever hand holds an
+ *    object with bTwoHanded == 0 and bListPri == 1 is the weapon; the other hand's item is the clip.
+ *    The weapon's three anAmmoTypeId entries are looked up in Map.apObjects and compared with the
+ *    clip's object; on a match the weapon takes the type id into nIndex and the clip's nAmmo into
+ *    its own nAmmo, the clip leaves the hand, and the clip's TactItem is dropped from the pool
+ *    (hole closed with the LAST entry, then operator delete, then the count decremented -- the
+ *    decrement runs even when the item was not in the pool). The left-hand case stops at the first
+ *    match (0x15D20); the right-hand case re-tests all three ids and a later match overwrites the
+ *    earlier one (0x15E80..0x15E88).
+ *
+ * Then Unit_RecalcInventoryStat on the selected unit and Map_nUiScreen = 0.
+ *
+ * Deviations: the original dereferences the selected unit, both hands' items, their objects, the
+ * unit array entries and the object table without a test, and writes the pool with no bound; the
+ * port refuses a null context, treats a null item or object as an empty slot, and bounds the pool
+ * walk to the count. */
+#define PUFO_INV_COMMIT_SLOTS 24
+
+typedef struct InvCommitHooks {
+    /* Unit_bIsLarge @ 0x49ecc. Large units are skipped by the snapshot. */
+    bool (*pfnUnitIsLarge)(const Soldier *pUnit, void *pUser);
+    /* Tact_DeployTeamAndHwps @ 0x39980, MapView_FocusSelected @ 0x16710 and
+     * Map_RefreshCellMeta @ 0x2c7f4: all three need the Map block, so they are injected. */
+    void (*pfnDeploy)(void *pUser);
+    void (*pfnFocusSelected)(void *pUser);
+    void (*pfnRefreshCells)(void *pUser);
+    /* Unit_UpdateVisibility @ 0x48580, once per unit after the commit. */
+    void (*pfnUpdateVisibility)(Soldier *pUnit, void *pUser);
+    /* operator delete (0xa115c) on the merged clip. NULL falls back to free(). */
+    void (*pfnFreeItem)(TactItem *pItem, void *pUser);
+    /* Unit_RecalcInventoryStat @ 0x49ef0. NULL skips it. */
+    const InvStatHooks *pInvStat;
+    void *pUser;
+} InvCommitHooks;
+
+typedef struct InvCommitCtx {
+    Soldier     **apXcomUnits;   /* Map.apXcomUnits @ Map+0x15154 */
+    u8           *pnXcomUnitCount; /* Map.nXcomUnitCount @ Map+0x1511F */
+    ObjectRec   **apObjects;     /* Map.apObjects @ Map+0x108 */
+    Soldier      *pSelUnit;      /* Map_pSelUnit @ 0x128CEC */
+    TactItem    **apItemPool;    /* Map_apTactItems @ 0x136DF0 */
+    i32          *pnItemCount;   /* Map_nTactItemCount @ 0x128AF4 */
+    InvHitState  *pHit;          /* pHitItem @ Map+0x40, the scratch the merge uses */
+    u8           *pbCommitFlag;  /* unk_1139B9 @ Map+1 */
+    i32          *pnUiScreen;    /* Map_nUiScreen @ Map+0x3A */
+    const InvCommitHooks *pHooks;
+} InvCommitCtx;
+
+/* Inv_CloseAndCommit @ 0x15a48. Returns what Unit_RecalcInventoryStat returns. */
+i32 Inv_CloseAndCommit(InvCommitCtx *pCtx);
+
 #endif /* PUFO_INVDRAG_H */

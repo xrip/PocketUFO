@@ -13165,3 +13165,52 @@ branch is unreachable through it and the port keeps it as a comment rather than 
 IDB: unk_1595EC -> bFundScreenOpen, unk_159604 -> nFundDisplayTotal, dword_1595E4 / dword_1595E0 /
 dword_1595E8 -> pFundPanelNames / pFundPanelBars / pFundPanelArrows; function comments added at
 0x5abe4, 0x5b560, 0x5b1fc and 0x5b59c.
+## Closing the inventory screen (Inv_CloseAndCommit, 0x15a48)
+
+This function completes the `tact-ui` subsystem: 52 of 52 functions, 43,764 of 43,764 bytes.
+
+### The loadout snapshot (0x15A60..0x15C4C)
+
+While the commit byte at Map+1 is set, every XCom unit that is NOT large gets its inventory written
+into two per-slot arrays:
+
+- Soldier+0x3C2, u16[25]: the slot item's object sort key (`LDRH R3,[R3,#0xC8]` at 0x15BFC).
+- Soldier+0x3F4, u8[25]: the LOW BYTE of TactItem.nIndex (`LDRB R3,[R6,#4]` at 0x15C28). nIndex is
+  the ammo type the weapon has loaded, not a round count -- the round count is nAmmo at +6, which the
+  snapshot only uses as a gate.
+
+An empty slot, an object with bTwoHanded, or an item whose nAmmo is 0 or 255 (the "never runs out"
+marker) stores 0 in the ammo half (0x15C08..0x15C24). These are the same two arrays
+Tact_EquipTeamFromCraft reads back when it re-equips a unit from the craft, which is what they are
+for: a unit's declared loadout, as (weapon object index, loaded ammo object index) per slot.
+
+The walk covers 24 slots in the order the jumptable at 0x15AB0 walks them: 268/272 pocket 0,
+280/284 pocket 1, 292/296 pocket 2, 304/308 pocket 3, 260/264 the two hands, 316..332 backpack[0..4],
+344 backpack[7], 364..392 belt[0..7]. Backpack slots 5 and 6 and belt slot 8 have NO case in the
+switch, so the original never looks at them even though the backpack has 8 cells and the belt 9. The
+arrays have 25 entries and only 0..23 are ever written.
+
+### The clip merge (0x15CBC..0x15F24)
+
+Whichever hand holds an object with bTwoHanded == 0 and bListPri == 1 is the weapon; the other hand's
+item is the clip. The weapon's three anAmmoTypeId entries (ObjectRec+0xA8) are resolved through
+Map.apObjects (Map+0x108) and compared with the clip's object. On a match the weapon takes the type id
+into nIndex and the clip's nAmmo into its own nAmmo, the clip leaves the hand, and the clip's
+TactItem is dropped from the pool: the hole is closed with the LAST entry (0x15EE0 reads index
+count-1 through the alias constant 0x23434), then operator delete, then the count is decremented
+unconditionally -- an item that was not in the pool at all still costs one entry.
+
+The two halves are not symmetric in one detail worth recording: the left-hand weapon case stops at the
+first match (`BEQ loc_15D38` at 0x15D20), while the right-hand weapon case runs all three ids and a
+later match overwrites the earlier one (0x15E80..0x15E88). Both are pinned by tests.
+
+Then Unit_RecalcInventoryStat on the selected unit and Map_nUiScreen = 0.
+
+### Deviations
+
+The original dereferences the selected unit, both hands' items, their objects, the unit array entries
+and the object table with no test, and walks the pool with no bound. The port refuses a null context,
+treats a null item or object as an empty slot, and bounds the pool walk to the count.
+
+IDB: function comment at 0x15a48. The two Soldier arrays stay auUnk962 / abUnk1012 in the IDB -- the
+MCP rename tool only accepts globals and struct members are not globals.

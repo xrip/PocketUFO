@@ -1575,6 +1575,29 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `dword_1595E0` / `dword_1595E8` → `pFundPanelNames` / `pFundPanelBars` / `pFundPanelArrows`, and
   function comments on all four. 103 more checks (11400 total), 5 renames on record (303).
 
+- [x] part 57, `Inv_CloseAndCommit (0x15a48, 1268 B)` — **the `tact-ui` subsystem is now complete
+  (52 of 52 functions, 43,764 of 43,764 bytes)**.
+  **The loadout snapshot.** While the commit byte at Map+1 is set, every XCom unit that is *not*
+  large gets its inventory written into two per-slot arrays: `Soldier+0x3C2` (u16[25]) takes the slot
+  item's object sort key (`LDRH [pObj,#0xC8]`) and `Soldier+0x3F4` (u8[25]) takes the **low byte of
+  `TactItem.nIndex`** — the ammo type the weapon has loaded, not a round count. An empty slot, a
+  two-handed object, or an item whose `nAmmo` is 0 or 255 stores 0 in the ammo half. The walk covers
+  24 slots in the jumptable's order (0x15AB0): the eight pocket items, the two hands, backpack[0..4]
+  and **backpack[7]**, then belt[0..7] — backpack slots 5 and 6 and belt slot 8 have no case at all,
+  so the original never looks at them. These are the same two arrays `Tact_EquipTeamFromCraft` reads
+  back when it re-equips a unit from the craft.
+  **The clip merge.** Whichever hand holds an object with `bTwoHanded == 0 && bListPri == 1` is the
+  weapon; the other hand's item is the clip. The weapon's three `anAmmoTypeId` entries are resolved
+  through `Map.apObjects` (Map+0x108) and compared with the clip's object. On a match the weapon takes
+  the type id into `nIndex` and the clip's `nAmmo`, the clip leaves the hand, and its `TactItem` is
+  dropped from the pool — hole closed with the **last** entry, `operator delete`, then the count
+  decremented **unconditionally**, so an item that was never in the pool still costs one entry. The
+  left-hand case stops at the first match (0x15D20); the right-hand case re-tests all three ids and a
+  later match overwrites the earlier one (0x15E80..0x15E88) — the test pins both.
+  64 new checks (11464 total). IDB: function comment at 0x15a48. The two Soldier arrays stay
+  `auUnk962` / `abUnk1012` in the IDB — the MCP `rename` tool only takes globals, and struct members
+  are not globals.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1847,6 +1870,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the monthly funding report (`FundingScreen_Init`, `FundingScreen_OpenMonthly`, the month-0 upkeep trap, 23 funding globals named) | 56/56 (Release) | 11293 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 | the region naming fix (`PufoRegionId`, `g_anRegionBuildCount @ 0x18655D` found, the false 15-byte-overflow bug row removed, the port's out-of-bounds counter index fixed) | 56/56 (Release) | 11297 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 | the funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`, the TEXTS[1307..1333] commentary table, the slot order confirmed by the names panel) | 56/56 (Release) | 11400 | 884/1103 (80.1%) | 402388/598792 (67.2%) | 39 checked, 0 mismatched |
+| the inventory close (`Inv_CloseAndCommit`, the 24-slot loadout snapshot, the clip merge) — **`tact-ui` complete at 52/52** | 56/56 (Release) | 11464 | 885/1103 (80.2%) | 403656/598792 (67.4%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

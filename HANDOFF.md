@@ -1,17 +1,17 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `328171f`. This document is committed together with the
-funding screen's own UI: `FundingScreen_Toggle (0x5abe4, 1560 B)`, `FundingScreen_Open (0x5b560,
-60 B)`, `FundingScreen_Draw (0x5b1fc, 868 B)` and `FundingScreen_DrawExtended (0x5b59c, 2780 B)`.
-The names panel copies the five country names in **slot order** — TEXTS[1302] США, TEXTS[1305]
-Австралия, TEXTS[1303] Евро Альянс, TEXTS[1304] Азиатский Альянс, TEXTS[1306] Африка
-(0x5AF5C..0x5B038) — which confirms from the drawing side the slot model unit 54 had inferred from
-the base-region chain. The report's commentary table TEXTS[1307..1333] is transcribed with its group
-split (rows 1 and 2, Euro and Asia, are worded separately) and with its red variant driven by the
-**bar** and not the share (0x5B810..0x5B820). Five globals are named in the IDB (`bFundScreenOpen`,
-`nFundDisplayTotal`, `pFundPanelNames`, `pFundPanelBars`, `pFundPanelArrows`) and the four functions
-carry comments. The reading is written up in `docs/parity/game-core.md` under
-`## The funding screen's own UI`.
+Date: 2026-10-15. HEAD before this edit: `f1a4daa`. This document is committed together with
+`Inv_CloseAndCommit (0x15a48, 1268 B)`, which **completes the `tact-ui` subsystem: 52 of 52
+functions, 43,764 of 43,764 bytes**. Three parts. A 24-slot loadout snapshot, while the commit byte
+at Map+1 is set, into `Soldier+0x3C2` (the slot item's object sort key) and `Soldier+0x3F4` (the low
+byte of `TactItem.nIndex` — the ammo *type* the weapon has loaded, not a round count); the map
+refresh that follows it; and the clip merge, where whichever hand holds a one-handed object with
+`bListPri == 1` is the weapon, its three `anAmmoTypeId` entries are resolved through `Map.apObjects`,
+and a match swallows the other hand's item — whose `TactItem` leaves the pool with the hole closed by
+the LAST entry and the count decremented unconditionally. The left-hand case stops at the first match
+(0x15D20); the right-hand case re-tests all three ids and a later match wins (0x15E80..0x15E88). The
+reading is written up in `docs/parity/game-core.md` under
+`## Closing the inventory screen (Inv_CloseAndCommit, 0x15a48)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -64,9 +64,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 884 / 1103 (80.1%)
-                                             bytes cited:     402388 / 598792 (67.2%)
-python docs/parity/audit_credits.py       -> credited functions: 884, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 885 / 1103 (80.2%)
+                                             bytes cited:     403656 / 598792 (67.4%)
+python docs/parity/audit_credits.py       -> credited functions: 885, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 303 (explain 212 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 122, ORIGINAL BUG markers in src/pufo: 47
@@ -86,13 +86,13 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11400**. Coverage as of the latest commit: **884 / 1103
-functions (80.1%)**, **402388 / 598792 bytes (67.2%)**. The last unit was the funding screen's own
-UI: `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc)
-and `FundingScreen_DrawExtended` (0x5b59c) ported, 103 new checks, five funding globals named in the
-IDB, and the report's commentary table TEXTS[1307..1333] transcribed. The unit before it was the
-region naming fix: 4 new checks, 5 renames recorded, one false bug row removed, and the port's
-out-of-bounds region-counter index replaced by `RegionBuildCountAt()`.
+Test checks run across the 56 suites: **11464**. Coverage as of the latest commit: **885 / 1103
+functions (80.2%)**, **403656 / 598792 bytes (67.4%)**. The last unit was `Inv_CloseAndCommit`
+(0x15a48, 1268 B), which closes the `tact-ui` subsystem at 52 of 52 functions and 43,764 of 43,764
+bytes: 64 new checks and a function comment in the IDB. The unit before it was the funding screen's
+own UI — `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw`
+(0x5b1fc) and `FundingScreen_DrawExtended` (0x5b59c), 103 new checks, five funding globals named in
+the IDB, and the report's commentary table TEXTS[1307..1333] transcribed.
 
 The five rows of that report are five countries — lang.dat TEXTS[1302..1306] are США, Евро Альянс,
 Азиатский Альянс, Австралия, Африка — and they are **not** in race-score order: the row → slot
@@ -275,9 +275,9 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 180 | 204 | 81524 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -289,10 +289,11 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Nineteen commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+Twenty commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
 transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, the
-radar (intercept) screen taken from its leaves inward until all sixteen functions were in, and the
-funding screen taken from its arithmetic to its drawing.
+radar (intercept) screen taken from its leaves inward until all sixteen functions were in, the funding
+screen taken from its arithmetic to its drawing, and the inventory screen's close path — which closes
+the `tact-ui` subsystem.
 
 | Commit | Change | Why |
 |---|---|---|
@@ -316,7 +317,8 @@ funding screen taken from its arithmetic to its drawing.
 `88a8241` (port `FundingScreen_Init` 0x5c084 with `FundingScreen_OpenMonthly` 0x5d160) follows
 `94620a9`, `328171f` is the region naming fix, and the unit this document is committed with — the
 funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`,
-`FundingScreen_DrawExtended`) — follows `328171f`; all three are described in §2.
+`FundingScreen_DrawExtended`) — follows `328171f`, and the unit this document is committed with,
+`Inv_CloseAndCommit` (0x15a48), follows `f1a4daa`; all four are described in §2.
 
 ### A real crash found in already-ported code
 
@@ -437,7 +439,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 11400 checks, all passing in 4.23 s.
+- 56 test suites, 11464 checks, all passing in 4.30 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,

@@ -1256,6 +1256,434 @@ static void TestEquipSlotSwap(void)
     CheckEqI32(s_aEquipItem[6].nIndex, 6, "so its index is not rewritten");
 }
 
+/* ------------------------------- Inv_CloseAndCommit @ 0x15a48 ------------------------------- */
+
+static Soldier      g_cUnit[2];
+static Soldier     *g_cUnits[2];
+static u8           g_cUnitCount;
+static TactItem     g_cItem[8];
+static ObjectRec    g_cObj[8];
+static ObjectRec   *g_cObjects[8];
+static TactItem    *g_cPool[8];
+static i32          g_cItemCount;
+static InvHitState  g_cHit;
+static u8           g_cCommitFlag;
+static i32          g_cUiScreen;
+static i32          g_cDeployCalls, g_cFocusCalls, g_cRefreshCalls, g_cVisCalls;
+static Soldier     *g_cVisUnit[4];
+static TactItem    *g_cFreed;
+static InvStatHooks g_cStat;
+
+static bool c_IsLarge(const Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    return pUnit == &g_cUnit[1];
+}
+static void c_Deploy(void *pUser) { (void)pUser; ++g_cDeployCalls; }
+static void c_Focus(void *pUser) { (void)pUser; ++g_cFocusCalls; }
+static void c_Refresh(void *pUser) { (void)pUser; ++g_cRefreshCalls; }
+static void c_Vis(Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    if (g_cVisCalls < 4) { g_cVisUnit[g_cVisCalls] = pUnit; }
+    ++g_cVisCalls;
+}
+static void c_Free(TactItem *pItem, void *pUser) { (void)pUser; g_cFreed = pItem; }
+static u8 c_Weight(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bWeight : 0;
+}
+static u8 c_TwoHanded(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bTwoHanded : 0;
+}
+static u8 c_AmmoCap(TactItem *pItem, void *pUser)
+{
+    (void)pUser;
+    return (pItem != NULL && pItem->pObj != NULL) ? pItem->pObj->bAmmoCap : 255;
+}
+static u8 c_AmmoWeight(i32 nIndex, void *pUser) { (void)nIndex; (void)pUser; return 1; }
+
+static void c_Reset(void)
+{
+    i32 i;
+
+    memset(g_cUnit, 0, sizeof(g_cUnit));
+    memset(g_cItem, 0, sizeof(g_cItem));
+    memset(g_cObj, 0, sizeof(g_cObj));
+    memset(g_cObjects, 0, sizeof(g_cObjects));
+    memset(g_cPool, 0, sizeof(g_cPool));
+    memset(&g_cHit, 0, sizeof(g_cHit));
+    memset(g_cVisUnit, 0, sizeof(g_cVisUnit));
+    memset(&g_cStat, 0, sizeof(g_cStat));
+    g_cUnitCount = 0;
+    g_cItemCount = 0;
+    g_cCommitFlag = 0;
+    g_cUiScreen = 2;   /* the inventory screen id, so clearing it is observable */
+    g_cDeployCalls = 0;
+    g_cFocusCalls = 0;
+    g_cRefreshCalls = 0;
+    g_cVisCalls = 0;
+    g_cFreed = NULL;
+    g_cUnits[0] = &g_cUnit[0];
+    g_cUnits[1] = &g_cUnit[1];
+
+    for (i = 0; i < 8; ++i) {
+        g_cObj[i].uSortKey = (u16)(10 + i);
+        g_cObj[i].bWeight = 1;
+        g_cObj[i].bAmmoCap = 255;
+        g_cObjects[i] = &g_cObj[i];
+        g_cItem[i].pObj = &g_cObj[i];
+        g_cItem[i].nAmmo = 10;
+        g_cItem[i].nIndex = (u16)i;
+    }
+    g_cUnit[0].auStat[8] = 100;
+    g_cUnit[0].uInvBurden = 1;
+
+    g_cStat.pfnObjWeight = c_Weight;
+    g_cStat.pfnObjTwoHanded = c_TwoHanded;
+    g_cStat.pfnObjAmmoCap = c_AmmoCap;
+    g_cStat.pfnAmmoWeight = c_AmmoWeight;
+}
+
+static InvCommitCtx c_Ctx(void)
+{
+    static InvCommitHooks h;
+    InvCommitCtx c;
+
+    memset(&h, 0, sizeof(h));
+    memset(&c, 0, sizeof(c));
+    h.pfnUnitIsLarge = c_IsLarge;
+    h.pfnDeploy = c_Deploy;
+    h.pfnFocusSelected = c_Focus;
+    h.pfnRefreshCells = c_Refresh;
+    h.pfnUpdateVisibility = c_Vis;
+    h.pfnFreeItem = c_Free;
+    h.pInvStat = &g_cStat;
+
+    c.apXcomUnits = g_cUnits;
+    c.pnXcomUnitCount = &g_cUnitCount;
+    c.apObjects = g_cObjects;
+    c.pSelUnit = &g_cUnit[0];
+    c.apItemPool = g_cPool;
+    c.pnItemCount = &g_cItemCount;
+    c.pHit = &g_cHit;
+    c.pbCommitFlag = &g_cCommitFlag;
+    c.pnUiScreen = &g_cUiScreen;
+    c.pHooks = &h;
+    return c;
+}
+
+static void TestCommitSnapshot(void)
+{
+    InvCommitCtx ctx;
+    i32 i;
+
+    printf("the inventory close snapshot\n");
+    c_Reset();
+
+    g_cUnitCount = 2;
+    g_cCommitFlag = 1;
+
+    /* Unit 0 carries a loadout. Unit 1 is large and must be skipped whole. */
+    g_cUnit[0].aPockets[0].apItem[0] = &g_cItem[0];   /* slot 0: normal weapon */
+    g_cItem[0].nAmmo = 12;
+    g_cItem[0].nIndex = 9;
+    g_cUnit[0].aPockets[0].apItem[1] = &g_cItem[1];   /* slot 1: a two-handed object */
+    g_cObj[1].bTwoHanded = 1;
+    g_cItem[1].nAmmo = 7;
+    g_cItem[1].nIndex = 21;
+    g_cUnit[0].pHandL = &g_cItem[2];                  /* slot 8: nAmmo 255, "never runs out" */
+    g_cItem[2].nAmmo = 255;
+    g_cItem[2].nIndex = 30;
+    g_cUnit[0].pHandR = &g_cItem[3];                  /* slot 9: nAmmo 0 */
+    g_cItem[3].nAmmo = 0;
+    g_cItem[3].nIndex = 31;
+    g_cUnit[0].apBackpack[7] = &g_cItem[4];           /* slot 15: the far backpack cell */
+    g_cItem[4].nAmmo = 5;
+    g_cItem[4].nIndex = 11;
+    g_cUnit[0].apBelt[7] = &g_cItem[5];               /* slot 23: nIndex 200, low byte 0xC8 */
+    g_cItem[5].nAmmo = 3;
+    g_cItem[5].nIndex = 200;
+    /* Cells the original's jumptable has no case for. */
+    g_cUnit[0].apBackpack[5] = &g_cItem[6];
+    g_cUnit[0].apBackpack[6] = &g_cItem[6];
+    g_cUnit[0].apBelt[8] = &g_cItem[6];
+    g_cUnit[1].pHandL = &g_cItem[0];
+
+    for (i = 0; i < 25; ++i) {
+        g_cUnit[0].auUnk962[i] = 7777;
+        g_cUnit[0].abUnk1012[i] = 77;
+        g_cUnit[1].auUnk962[i] = 7777;
+        g_cUnit[1].abUnk1012[i] = 77;
+    }
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cUnit[0].auUnk962[0], 10, "slot 0 (pocket 0 item 0) stores the object sort key (0x15BFC)");
+    CheckEqI32(g_cUnit[0].abUnk1012[0], 9, "and the low byte of nIndex, the ammo type the weapon has loaded (0x15C28)");
+    CheckEqI32(g_cUnit[0].auUnk962[1], 11, "slot 1 (pocket 0 item 1) stores its object too");
+    CheckEqI32(g_cUnit[0].abUnk1012[1], 0, "but a two-handed object stores no ammo type (0x15C08..0x15C10)");
+    CheckEqI32(g_cUnit[0].auUnk962[8], 12, "slot 8 is the LEFT hand, Soldier+0x104 (jumptable case 8)");
+    CheckEqI32(g_cUnit[0].abUnk1012[8], 0, "and nAmmo 255 stores 0 (0x15C14..0x15C1C)");
+    CheckEqI32(g_cUnit[0].auUnk962[9], 13, "slot 9 is the RIGHT hand, Soldier+0x108");
+    CheckEqI32(g_cUnit[0].abUnk1012[9], 0, "and nAmmo 0 stores 0 as well (0x15C20..0x15C24)");
+    CheckEqI32(g_cUnit[0].auUnk962[15], 14, "slot 15 is backpack[7] at Soldier+0x158 -- the walk jumps past 5 and 6");
+    CheckEqI32(g_cUnit[0].abUnk1012[15], 11, "with its ammo type");
+    CheckEqI32(g_cUnit[0].auUnk962[23], 15, "slot 23 is belt[7] at Soldier+0x188");
+    CheckEqI32(g_cUnit[0].abUnk1012[23], 200 & 0xFF, "and only nIndex's low byte is stored: 200 becomes 0xC8");
+    CheckEqI32(g_cUnit[0].auUnk962[10], 0, "an empty backpack slot is written as 0, not left alone (0x15C3C)");
+    CheckEqI32(g_cUnit[0].auUnk962[24], 7777, "the 25th entry is outside the 24-slot walk");
+    CheckEqI32(g_cUnit[0].abUnk1012[24], 77, "on both arrays");
+    Check(g_cUnit[1].auUnk962[0] == 7777 && g_cUnit[1].abUnk1012[0] == 77,
+          "the large unit is skipped whole, even though it carries an item (0x15AA0)");
+
+    CheckEqI32(g_cCommitFlag, 0, "the commit flag is cleared (0x15C68)");
+    CheckEqI32(g_cDeployCalls, 1, "then Tact_DeployTeamAndHwps runs once (0x15C6C)");
+    CheckEqI32(g_cFocusCalls, 1, "MapView_FocusSelected once (0x15C70)");
+    CheckEqI32(g_cRefreshCalls, 1, "and Map_RefreshCellMeta once (0x15C78)");
+    CheckEqI32(g_cVisCalls, 2, "and Unit_UpdateVisibility runs for every unit, large ones included (0x15C98)");
+    Check(g_cVisUnit[0] == &g_cUnit[0] && g_cVisUnit[1] == &g_cUnit[1], "in unit order");
+}
+
+static void TestCommitFlagClear(void)
+{
+    InvCommitCtx ctx;
+    i32 i;
+
+    printf("the snapshot only runs while the commit flag is set\n");
+    c_Reset();
+
+    g_cUnitCount = 2;
+    g_cCommitFlag = 0;
+    g_cUnit[0].pHandL = &g_cItem[0];
+    for (i = 0; i < 25; ++i) {
+        g_cUnit[0].auUnk962[i] = 7777;
+    }
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cUnit[0].auUnk962[0], 7777, "nothing is snapshotted");
+    CheckEqI32(g_cDeployCalls + g_cFocusCalls + g_cRefreshCalls + g_cVisCalls, 0,
+               "and none of the four map refreshes runs");
+    CheckEqI32(g_cUiScreen, 0, "while the screen id is cleared whatever the flag said (0x15F30)");
+}
+
+static void TestCommitMergeLeftHand(void)
+{
+    InvCommitCtx ctx;
+    i32 nRet;
+
+    printf("merging a clip into the left-hand priority weapon\n");
+    c_Reset();
+
+    /* The left hand holds a one-handed object with list priority 1: that is the weapon. */
+    g_cUnit[0].pHandL = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 1;
+    g_cObj[0].anAmmoTypeId[0] = 0;  /* resolves to the weapon itself: no match */
+    g_cObj[0].anAmmoTypeId[1] = 3;  /* resolves to the clip's object: the match */
+    g_cObj[0].anAmmoTypeId[2] = 0;
+    /* The right hand holds the clip. */
+    g_cUnit[0].pHandR = &g_cItem[3];
+    g_cItem[3].nAmmo = 17;
+
+    g_cPool[0] = &g_cItem[3];
+    g_cPool[1] = &g_cItem[4];
+    g_cPool[2] = &g_cItem[5];
+    g_cItemCount = 3;
+
+    ctx = c_Ctx();
+    nRet = Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cItem[0].nIndex, 3, "the weapon takes the matching ammo type id into nIndex (0x15D38..0x15D44)");
+    CheckEqI32(g_cItem[0].nAmmo, 17, "and the clip's ammo count (0x15D58..0x15D60)");
+    Check(g_cUnit[0].pHandR == NULL, "the clip leaves the right hand (0x15D70)");
+    Check(g_cUnit[0].pHandL == &g_cItem[0], "the weapon stays in the left hand");
+    Check(g_cFreed == &g_cItem[3], "the clip's TactItem is deleted (0x15EFC)");
+    CheckEqI32(g_cItemCount, 2, "and the pool count drops (0x15F18)");
+    Check(g_cPool[0] == &g_cItem[5], "the hole is closed with the LAST pool entry (0x15EE0)");
+    Check(g_cPool[1] == &g_cItem[4], "and the rest of the pool is untouched");
+    Check(g_cHit.pHitItem == &g_cItem[3], "the merge scratch holds the clip (0x15CF4)");
+    CheckEqI32(g_cUiScreen, 0, "the screen id is cleared (0x15F30)");
+    CheckEqI32(nRet, (i32)Unit_RecalcInventoryStat(&g_cUnit[0], &g_cStat),
+               "the return value is Unit_RecalcInventoryStat's (0x15F28)");
+}
+
+static void TestCommitMergeNoMatch(void)
+{
+    InvCommitCtx ctx;
+
+    printf("no ammo type match leaves both hands alone\n");
+    c_Reset();
+
+    g_cUnit[0].pHandL = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 1;
+    g_cObj[0].anAmmoTypeId[0] = 0;
+    g_cObj[0].anAmmoTypeId[1] = 1;
+    g_cObj[0].anAmmoTypeId[2] = 2;   /* none of these is the clip's object */
+    g_cUnit[0].pHandR = &g_cItem[3];
+    g_cItem[3].nAmmo = 17;
+    g_cPool[0] = &g_cItem[3];
+    g_cPool[1] = &g_cItem[4];
+    g_cItemCount = 2;
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cItem[0].nIndex, 0, "nIndex is untouched (it was 0 and no id matched)");
+    CheckEqI32(g_cItem[0].nAmmo, 10, "the weapon's ammo count is untouched");
+    Check(g_cUnit[0].pHandR == &g_cItem[3] && g_cUnit[0].pHandL == &g_cItem[0],
+          "both hands keep their item (0x15D34 -> 0x15D84)");
+    Check(g_cFreed == NULL, "nothing is deleted");
+    CheckEqI32(g_cItemCount, 2, "and the pool count is untouched");
+}
+
+static void TestCommitMergeNotPriority(void)
+{
+    InvCommitCtx ctx;
+
+    printf("the left-hand branch needs list priority 1\n");
+    c_Reset();
+
+    g_cUnit[0].pHandL = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 0;   /* not a priority weapon */
+    g_cObj[0].anAmmoTypeId[1] = 3;
+    g_cUnit[0].pHandR = &g_cItem[3];
+    /* The right-hand branch would need the RIGHT object to be one-handed with priority 1; the
+     * clip's object has neither, so nothing merges at all. */
+    g_cObj[3].bListPri = 0;
+    g_cPool[0] = &g_cItem[3];
+    g_cItemCount = 1;
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    Check(g_cUnit[0].pHandR == &g_cItem[3] && g_cUnit[0].pHandL == &g_cItem[0],
+          "a left-hand object with bListPri 0 takes no clip (0x15CE8..0x15CF0)");
+    Check(g_cFreed == NULL, "and nothing is freed");
+    CheckEqI32(g_cItemCount, 1, "the pool is untouched");
+}
+
+static void TestCommitMergeRightHand(void)
+{
+    InvCommitCtx ctx;
+
+    printf("merging a clip into the right-hand priority weapon\n");
+    c_Reset();
+
+    /* The LEFT hand holds the clip, and its object is not a priority weapon, so the left-hand
+     * branch is skipped and the mirror at 0x15DE8 runs. */
+    g_cUnit[0].pHandL = &g_cItem[3];
+    g_cObj[3].bListPri = 0;
+    g_cItem[3].nAmmo = 23;
+    /* The RIGHT hand is the priority weapon, and TWO of its ammo ids resolve to the clip object. */
+    g_cUnit[0].pHandR = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 1;
+    g_cObj[0].anAmmoTypeId[0] = 3;
+    g_cObj[0].anAmmoTypeId[1] = 4;
+    g_cObj[0].anAmmoTypeId[2] = 0;
+    g_cObjects[4] = &g_cObj[3];   /* the second id resolves to the same clip object */
+
+    g_cPool[0] = &g_cItem[3];
+    g_cPool[1] = &g_cItem[4];
+    g_cPool[2] = &g_cItem[5];
+    g_cItemCount = 3;
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cItem[0].nIndex, 4, "the loop does not stop at the first match, so the LAST one wins (0x15E80..0x15E88)");
+    CheckEqI32(g_cItem[0].nAmmo, 23, "and the weapon takes the clip's ammo count (0x15E58..0x15E5C)");
+    Check(g_cUnit[0].pHandL == NULL, "the clip leaves the left hand (0x15E6C)");
+    Check(g_cUnit[0].pHandR == &g_cItem[0], "the weapon stays in the right hand");
+    Check(g_cFreed == &g_cItem[3], "the clip's TactItem is deleted");
+    CheckEqI32(g_cItemCount, 2, "the count drops");
+    Check(g_cPool[0] == &g_cItem[5], "the hole is closed with the last entry");
+    Check(g_cHit.pHitItem == &g_cItem[3], "and the scratch holds the clip (0x15E0C)");
+}
+
+static void TestCommitMergePoolMiss(void)
+{
+    InvCommitCtx ctx;
+
+    printf("the pool decrement is unconditional\n");
+    c_Reset();
+
+    g_cUnit[0].pHandL = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 1;
+    g_cObj[0].anAmmoTypeId[2] = 3;
+    g_cUnit[0].pHandR = &g_cItem[3];
+    g_cItem[3].nAmmo = 9;
+
+    /* The clip is NOT in the pool. */
+    g_cPool[0] = &g_cItem[4];
+    g_cPool[1] = &g_cItem[5];
+    g_cItemCount = 2;
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    CheckEqI32(g_cItem[0].nIndex, 3, "the merge still happened");
+    Check(g_cFreed == &g_cItem[3], "the clip is still deleted");
+    CheckEqI32(g_cItemCount, 1, "and the count still drops even though the item was not in the pool (0x15DD0)");
+    Check(g_cPool[0] == &g_cItem[4] && g_cPool[1] == &g_cItem[5], "no pool entry is moved");
+}
+
+static void TestCommitMergeSingleEntry(void)
+{
+    InvCommitCtx ctx;
+
+    printf("a one-entry pool is not filled\n");
+    c_Reset();
+
+    g_cUnit[0].pHandL = &g_cItem[0];
+    g_cObj[0].bTwoHanded = 0;
+    g_cObj[0].bListPri = 1;
+    g_cObj[0].anAmmoTypeId[0] = 3;
+    g_cUnit[0].pHandR = &g_cItem[3];
+    g_cItem[3].nAmmo = 9;
+    g_cPool[0] = &g_cItem[3];
+    g_cItemCount = 1;
+
+    ctx = c_Ctx();
+    (void)Inv_CloseAndCommit(&ctx);
+
+    Check(g_cFreed == &g_cItem[3], "the clip is deleted");
+    CheckEqI32(g_cItemCount, 0, "the count drops to 0");
+    Check(g_cPool[0] == &g_cItem[3], "and nothing is copied over it: with a count of 1 the fill is skipped (0x15D9C)");
+}
+
+static void TestCommitGuards(void)
+{
+    InvCommitCtx ctx;
+
+    printf("the close-and-commit guards\n");
+    c_Reset();
+
+    CheckEqI32(Inv_CloseAndCommit(NULL), 0, "a null context returns 0");
+
+    g_cUnitCount = 1;
+    g_cCommitFlag = 1;
+    ctx = c_Ctx();
+    ctx.apItemPool = NULL;
+    CheckEqI32(Inv_CloseAndCommit(&ctx), 0, "a missing item pool refuses the whole close");
+    CheckEqI32(g_cDeployCalls, 0, "so not even the map refresh runs");
+    CheckEqI32(g_cUiScreen, 2, "and the screen id is left alone");
+
+    ctx = c_Ctx();
+    ctx.pSelUnit = NULL;
+    CheckEqI32(Inv_CloseAndCommit(&ctx), 0, "so does a missing selected unit");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1276,6 +1704,15 @@ int main(void)
     TestEquipLeftHand();
     TestEquipThirdPickup();
     TestEquipSlotSwap();
+    TestCommitSnapshot();
+    TestCommitFlagClear();
+    TestCommitMergeLeftHand();
+    TestCommitMergeNoMatch();
+    TestCommitMergeNotPriority();
+    TestCommitMergeRightHand();
+    TestCommitMergePoolMiss();
+    TestCommitMergeSingleEntry();
+    TestCommitGuards();
     Reset(); TestPockets();
     Reset(); TestHands();
     Reset(); TestBackpack();

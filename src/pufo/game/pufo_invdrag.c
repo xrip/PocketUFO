@@ -1,6 +1,8 @@
 /* pufo_invdrag.c - the inventory screen hit test. See pufo_invdrag.h. */
 #include "game/pufo_invdrag.h"
 
+#include <stdlib.h> /* free, the fallback for the merged clip's operator delete */
+
 /* aInvHitRects @ 0xA8DD8, read out of the executable (25 records of 14 bytes).
  * Columns: x0, y0, x1, y1, region, slot, col.
  *
@@ -1087,4 +1089,187 @@ void Tact_EquipTeamFromCraft(TactEquipCtx *pCtx)
             pUnit->bUnk961 = 1;   /* 0x3C510 */
         }
     }
+}
+
+/* ------------------------------------------------- closing the inventory screen */
+
+/* The 24 slots the snapshot walks, in the order the jumptable at 0x15AB0 walks them. The case
+ * numbers are the ARM's; the offsets are the original's Soldier offsets: 268/272 pocket 0,
+ * 280/284 pocket 1, 292/296 pocket 2, 304/308 pocket 3, 260/264 the two hands, 316..332
+ * backpack[0..4], 344 backpack[7], 364..392 belt[0..7]. Backpack slots 5 and 6 and belt slot 8
+ * have no case at all, so the original never looks at them. */
+static TactItem **InvCommitSlot(Soldier *pUnit, i32 nSlot)
+{
+    switch (nSlot) {
+        case 0:  return &pUnit->aPockets[0].apItem[0]; /* 0x10C */
+        case 1:  return &pUnit->aPockets[0].apItem[1]; /* 0x110 */
+        case 2:  return &pUnit->aPockets[1].apItem[0]; /* 0x118 */
+        case 3:  return &pUnit->aPockets[1].apItem[1]; /* 0x11C */
+        case 4:  return &pUnit->aPockets[2].apItem[0]; /* 0x124 */
+        case 5:  return &pUnit->aPockets[2].apItem[1]; /* 0x128 */
+        case 6:  return &pUnit->aPockets[3].apItem[0]; /* 0x130 */
+        case 7:  return &pUnit->aPockets[3].apItem[1]; /* 0x134 */
+        case 8:  return &pUnit->pHandL;                /* 0x104 */
+        case 9:  return &pUnit->pHandR;                /* 0x108 */
+        case 10: return &pUnit->apBackpack[0];         /* 0x13C */
+        case 11: return &pUnit->apBackpack[1];         /* 0x140 */
+        case 12: return &pUnit->apBackpack[2];         /* 0x144 */
+        case 13: return &pUnit->apBackpack[3];         /* 0x148 */
+        case 14: return &pUnit->apBackpack[4];         /* 0x14C */
+        case 15: return &pUnit->apBackpack[7];         /* 0x158 */
+        case 16: return &pUnit->apBelt[0];             /* 0x16C */
+        case 17: return &pUnit->apBelt[1];             /* 0x170 */
+        case 18: return &pUnit->apBelt[2];             /* 0x174 */
+        case 19: return &pUnit->apBelt[3];             /* 0x178 */
+        case 20: return &pUnit->apBelt[4];             /* 0x17C */
+        case 21: return &pUnit->apBelt[5];             /* 0x180 */
+        case 22: return &pUnit->apBelt[6];             /* 0x184 */
+        case 23: return &pUnit->apBelt[7];             /* 0x188 */
+        default: return NULL;
+    }
+}
+
+/* 0x15D8C..0x15F18 and 0x15E9C..0x15F18: close the hole the removed item leaves with the LAST pool
+ * entry, delete the item, and decrement the count. The decrement is unconditional -- an item that
+ * was not in the pool at all still costs one entry, which is the original's behaviour and is the
+ * same rule Inv_HandlePointer reproduces. */
+static void InvCommitDropPoolItem(InvCommitCtx *pCtx, TactItem *pItem)
+{
+    const i32 nCount = *pCtx->pnItemCount;
+
+    if ((u32)nCount > 1u) {
+        for (i32 i = 0; i < nCount; ++i) {
+            if (pCtx->apItemPool[i] == pItem) {
+                pCtx->apItemPool[i] = pCtx->apItemPool[nCount - 1]; /* 0x15EE0: index count - 1 */
+                break;
+            }
+        }
+    }
+    if (pCtx->pHooks->pfnFreeItem != NULL) {
+        pCtx->pHooks->pfnFreeItem(pItem, pCtx->pHooks->pUser);
+    } else {
+        free(pItem); /* 0x15EFC: operator delete */
+    }
+    --*pCtx->pnItemCount; /* 0x15F18 */
+}
+
+i32 Inv_CloseAndCommit(InvCommitCtx *pCtx)
+{
+    if (pCtx == NULL || pCtx->pHooks == NULL || pCtx->apXcomUnits == NULL ||
+        pCtx->pnXcomUnitCount == NULL || pCtx->apObjects == NULL || pCtx->pSelUnit == NULL ||
+        pCtx->apItemPool == NULL || pCtx->pnItemCount == NULL || pCtx->pHit == NULL ||
+        pCtx->pbCommitFlag == NULL || pCtx->pnUiScreen == NULL) {
+        return 0; /* deviation: the original dereferences every one of these */
+    }
+
+    const InvCommitHooks *const pHooks = pCtx->pHooks;
+    const i32 nUnitCount = (i32)*pCtx->pnXcomUnitCount;
+
+    /* ---- 1. the loadout snapshot, 0x15A60..0x15C4C ---- */
+    if (*pCtx->pbCommitFlag != 0) {
+        for (i32 nUnit = 0; nUnit < nUnitCount; ++nUnit) {
+            Soldier *const pUnit = pCtx->apXcomUnits[nUnit];
+
+            if (pUnit == NULL) {
+                continue; /* deviation: the original would fault on a null entry */
+            }
+            if (pHooks->pfnUnitIsLarge != NULL && pHooks->pfnUnitIsLarge(pUnit, pHooks->pUser)) {
+                continue; /* 0x15AA0: large units carry no per-slot loadout */
+            }
+            for (i32 nSlot = 0; nSlot < PUFO_INV_COMMIT_SLOTS; ++nSlot) {
+                TactItem **const ppSlot = InvCommitSlot(pUnit, nSlot);
+                TactItem *const pItem = (ppSlot != NULL) ? *ppSlot : NULL;
+
+                if (pItem == NULL || pItem->pObj == NULL) {
+                    pUnit->auUnk962[nSlot] = 0;  /* 0x15C3C */
+                    pUnit->abUnk1012[nSlot] = 0; /* 0x15C40 */
+                    continue;
+                }
+                pUnit->auUnk962[nSlot] = pItem->pObj->uSortKey; /* 0x15BFC..0x15C00 */
+                if (pItem->pObj->bTwoHanded != 0 || pItem->nAmmo == 0xFF || pItem->nAmmo == 0) {
+                    pUnit->abUnk1012[nSlot] = 0; /* 0x15C0C..0x15C24 */
+                } else {
+                    pUnit->abUnk1012[nSlot] = (u8)(pItem->nIndex & 0xFFu); /* 0x15C28 */
+                }
+            }
+        }
+
+        /* ---- 2. the map refresh, 0x15C68..0x15CB0 ---- */
+        *pCtx->pbCommitFlag = 0;
+        if (pHooks->pfnDeploy != NULL) {
+            pHooks->pfnDeploy(pHooks->pUser);            /* Tact_DeployTeamAndHwps @ 0x39980 */
+        }
+        if (pHooks->pfnFocusSelected != NULL) {
+            pHooks->pfnFocusSelected(pHooks->pUser);     /* MapView_FocusSelected @ 0x16710 */
+        }
+        if (pHooks->pfnRefreshCells != NULL) {
+            pHooks->pfnRefreshCells(pHooks->pUser);      /* Map_RefreshCellMeta @ 0x2c7f4 */
+        }
+        for (i32 nUnit = 0; nUnit < nUnitCount; ++nUnit) {
+            if (pCtx->apXcomUnits[nUnit] != NULL && pHooks->pfnUpdateVisibility != NULL) {
+                pHooks->pfnUpdateVisibility(pCtx->apXcomUnits[nUnit], pHooks->pUser);
+            }
+        }
+    }
+
+    /* ---- 3. merge a loose clip into the hand that can take it, 0x15CBC..0x15F24 ---- */
+    Soldier *const pSel = pCtx->pSelUnit;
+    TactItem *const pHandR = pSel->pHandR;
+
+    if (pHandR != NULL) {
+        TactItem *const pHandL = pSel->pHandL;
+
+        if (pHandL != NULL && pHandL->pObj != NULL && pHandL->pObj->bTwoHanded == 0 &&
+            pHandL->pObj->bListPri == 1) {
+            /* The LEFT hand is the priority weapon and the RIGHT hand holds the clip. */
+            pCtx->pHit->pHitItem = pHandR; /* 0x15CF4 */
+            bool bMerged = false;
+
+            if (pHandR->pObj != NULL) {
+                for (i32 nType = 0; nType < 3; ++nType) {
+                    const i32 nTypeId = pHandL->pObj->anAmmoTypeId[nType];
+
+                    if (pCtx->apObjects[nTypeId] == pHandR->pObj) { /* 0x15D10..0x15D20 */
+                        pHandL->nIndex = (u16)nTypeId;  /* 0x15D38..0x15D44 */
+                        pHandL->nAmmo = pHandR->nAmmo;  /* 0x15D58..0x15D60 */
+                        pSel->pHandR = NULL;            /* 0x15D70 */
+                        bMerged = true;
+                        break; /* 0x15D20: the left-hand case stops at the first match */
+                    }
+                }
+            }
+            if (bMerged) {
+                InvCommitDropPoolItem(pCtx, pCtx->pHit->pHitItem);
+            }
+        } else if (pHandL != NULL && pHandL->pObj != NULL && pHandR->pObj != NULL &&
+                   pHandR->pObj->bTwoHanded == 0 && pHandR->pObj->bListPri == 1) {
+            /* 0x15DE8..0x15E04: the RIGHT hand is the priority weapon, the LEFT holds the clip. */
+            pCtx->pHit->pHitItem = pHandL; /* 0x15E0C */
+            bool bMerged = false;
+
+            for (i32 nType = 0; nType < 3; ++nType) {
+                const i32 nTypeId = pHandR->pObj->anAmmoTypeId[nType];
+
+                if (pCtx->apObjects[nTypeId] == pHandL->pObj) { /* 0x15E2C..0x15E34 */
+                    pHandR->nIndex = (u16)nTypeId; /* 0x15E3C */
+                    pHandR->nAmmo = pHandL->nAmmo; /* 0x15E58..0x15E5C */
+                    pSel->pHandL = NULL;            /* 0x15E6C */
+                    bMerged = true;
+                    /* No break: the original re-tests the remaining ids and a later match
+                     * overwrites the earlier one (0x15E80..0x15E88). */
+                }
+            }
+            if (bMerged) {
+                InvCommitDropPoolItem(pCtx, pCtx->pHit->pHitItem);
+            }
+        }
+    }
+
+    /* ---- 4. 0x15F28..0x15F30 ---- */
+    i32 nResult = 0;
+    if (pHooks->pInvStat != NULL) {
+        nResult = (i32)Unit_RecalcInventoryStat(pSel, pHooks->pInvStat);
+    }
+    *pCtx->pnUiScreen = 0;
+    return nResult;
 }
