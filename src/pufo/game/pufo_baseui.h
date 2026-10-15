@@ -602,6 +602,62 @@ typedef struct BuySellCapacityEnv {
 i32 BuySellScreen_ValidateCapacity(const BuySellCapacityEnv *pEnv); /* the ">" control, buys one */
 i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv);     /* the "<" control, sells one */
 
+/* ------------------------------------------------- the buy/sell screen's bring-up
+ *
+ * Evidence: BuySellScreen_Init @ 0x78c30 (352 B), the tail call of BuySellScreen_OpenBuy @ 0x61794
+ * (the BL at 0x617B8) and of BuySellScreen_OpenSell @ 0x617c4 (0x617E8). Both openers write the
+ * screen id first -- 11 for buy, 12 for sell -- and then call this with the screen slot at
+ * unk_161A08.
+ *
+ * In the original's order:
+ *
+ *   1. 0x78C44: `BuySell_nFundsSnapshot = nFunds` -- the value BuySellScreen_BuildPanels' teardown
+ *      restores when the player leaves without confirming, taken here at the open as well.
+ *   2. 0x78C4C..0x78C70: operator new(0x14) then PadImage_ctor, and the result -- not the raw
+ *      allocation -- is what lands in the screen slot.
+ *   3. 0x78C7C, 0x78C8C: Palette_Load("buy_sell.pal", 5), then PadImage_Load(pad, "buy_sell", 5);
+ *      the pad's nOriginX and nOriginY are cleared at 0x78C98 and 0x78CA4.
+ *   4. 0x78CAC..0x78CB4: BuySell_nTransTotal and nSoldierHireCount (0x159D90) are cleared.
+ *   5. 0x78CBC..0x78CD4: the close control unk_186B00 goes to x 224, y 1 (two STRH) with
+ *      BuySellScreen_CloseThunk @ 0x75154 as its click.
+ *   6. 0x78CE8..0x78CF8: the confirm control unk_186BA4 goes to `x = 120 - (uWidth >> 1)`, y 297 --
+ *      the same centring BaseAtScreen_Open @ 0x588cc does.
+ *   7. 0x78D08..0x78D44: g_anBuySellSlotDelta is cleared over Map_nObjectCount entries.
+ *   8. 0x78D4C..0x78D7C: by the screen id. 11 installs BuySellScreen_ConfirmSiteAndClose @ 0x75090 on
+ *      the confirm control and calls BuySellScreen_BuildControls (0x76160, not ported); 12 installs
+ *      BuySellScreen_CommitTransaction @ 0x74bf8 and calls BuySellScreen_BuildPanels @ 0x76de0. The
+ *      12 branch is written with LDREQ / STREQ / BLEQ, so the handler store and the call are both
+ *      conditional on the id being read a second time.
+ *
+ * Deviations: the original dereferences the allocation and both control globals with no test; the
+ * port skips what failed to allocate or was not supplied. BuySellScreen_BuildControls is not ported
+ * and enters as a hook. */
+#define PUFO_BUYSSELL_PAD_NAME      "buy_sell"     /* aBuySell @ 0xABC2C */
+#define PUFO_BUYSSELL_PALETTE_NAME  "buy_sell.pal" /* aBuySellPal @ 0xABC38 */
+#define PUFO_BUYSSELL_PALETTE_SLOT  5              /* 0x78C7C: MOV R1,#5 */
+#define PUFO_BUYSSELL_SCREEN_BUY    11             /* nGeoscapeScreen for the buy mode */
+#define PUFO_BUYSSELL_SCREEN_SELL   12             /* and for the sell mode */
+
+typedef struct BuySellInitEnv {
+    PadImage **ppScreen;             /* unk_161A08, the slot both openers pass */
+    UiControl *pCloseCtl;            /* unk_186B00 */
+    UiControl *pConfirmCtl;          /* unk_186BA4, the same confirm slot the hangar screen uses */
+    void (*pfnCloseClick)(void);     /* BuySellScreen_CloseThunk @ 0x75154 */
+    void (*pfnConfirmBuy)(void);     /* BuySellScreen_ConfirmSiteAndClose @ 0x75090 */
+    void (*pfnConfirmSell)(void);    /* BuySellScreen_CommitTransaction @ 0x74bf8 */
+    void (*pfnBuildControls)(void);  /* BuySellScreen_BuildControls (0x76160), not ported */
+    void (*pfnBuildPanels)(void);    /* BuySellScreen_BuildPanels @ 0x76de0 */
+    i32 nScreenId;                   /* nGeoscapeScreen @ 0x186BC4 */
+    const i32 *pnFunds;              /* nFunds @ 0x1598D8 */
+    i32 *pnFundsSnapshot;            /* BuySell_nFundsSnapshot @ 0x161460 */
+    i32 *pnTransTotal;               /* BuySell_nTransTotal @ 0x161A2C */
+    i32 *pnSoldierHireCount;         /* nSoldierHireCount @ 0x159D90 */
+    i32 *anSlotDelta;                /* g_anBuySellSlotDelta @ 0x161600 */
+    i32 nSlotDeltaCount;             /* Map_nObjectCount @ 0x114A60, the clear length */
+} BuySellInitEnv;
+
+void BuySellScreen_Init(const BuySellInitEnv *pEnv);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

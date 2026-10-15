@@ -888,6 +888,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   is now `nSoldierHireCount`. The row-marker magic numbers across the buy/sell family are now the
   `PufoBuySellRowMarker` enum, in the port and in the IDB.
 
+- [x] part 24, the buy/sell screen bring-up: `BuySellScreen_Init (0x78c30)`, 352 bytes — 25 more
+  checks. The tail call of both openers: the funds snapshot, the `buy_sell` pad and `buy_sell.pal`
+  palette at slot 5, the transaction total and `nSoldierHireCount` cleared, the close control at
+  224,1 with the close thunk, the confirm control centred at `120 - (uWidth >> 1)`, 297, the whole
+  slot-delta array cleared over `Map_nObjectCount`, and then by screen id 11 →
+  `ConfirmSiteAndClose` + `BuildControls`, 12 → `CommitTransaction` + `BuildPanels`. Only
+  `BuySellScreen_BuildControls (0x76160)` is left before the buy/sell screen is complete.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1065,6 +1073,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy/sell commit (`BuySellScreen_CommitTransaction`, the delta array, the corpse pairing) | 56/56 (Release) | 9457 | 839/1103 (76.1%) | 336932/598792 (56.3%) | 38 checked, 0 mismatched |
 | the buy/sell row editors (`BuySellScreen_FillSellPanel`, `BuySellScreen_FillBuyPanel`, the timer-bound repeat loop) | 56/56 (Release) | 9511 | 841/1103 (76.2%) | 338748/598792 (56.6%) | 38 checked, 0 mismatched |
 | the buy screen's quantity controls (`BuySellScreen_ValidateCapacity`, `BuySellScreen_UpdatePrices`, the shortfall codes) | 56/56 (Release) | 9572 | 843/1103 (76.4%) | 340812/598792 (56.9%) | 38 checked, 0 mismatched |
+| the buy/sell screen bring-up (`BuySellScreen_Init`, the pad and palette load, the two confirm wirings) | 56/56 (Release) | 9597 | 844/1103 (76.5%) | 341164/598792 (57.0%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

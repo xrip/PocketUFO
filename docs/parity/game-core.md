@@ -11197,3 +11197,45 @@ function comments at 0x75b88 and 0x75878. The `PufoBuySellRowMarker` enum gained
 PUFO_ROW_SCIENTIST, PUFO_ROW_CRAFT_FIRST and PUFO_ROW_CRAFT_SECOND; its two older members stay named
 BUYSELL_ROW_SOLDIER and BUYSELL_ROW_ALIEN_BIAS because enum members are not globals and the rename
 tool cannot retitle them.
+## BuySellScreen_Init -- the buy/sell screen's bring-up
+
+Port: `BuySellScreen_Init` with `BuySellInitEnv` and the pad / palette / screen-id macros in
+src/pufo/game/pufo_baseui.{c,h}. Evidence: 0x78c30 (352 bytes), the tail call of
+BuySellScreen_OpenBuy @ 0x61794 (the BL at 0x617B8) and of BuySellScreen_OpenSell @ 0x617c4
+(0x617E8); both openers write the screen id first -- 11 for buy, 12 for sell -- and then call this
+with the screen slot at unk_161A08. Test: `TestBuySellInit` in tests/test_baseui.c, 25 checks.
+
+In the original's order:
+
+1. 0x78C44: `BuySell_nFundsSnapshot = nFunds`. The snapshot BuildPanels' teardown restores is taken
+   here at the open as well, not only at the commit (0x75070).
+2. 0x78C4C..0x78C70: `operator new(0x14)` then `PadImage_ctor`, and the slot receives the ctor's
+   result -- the `if (v2) v3 = ctor(v2); else v3 = 0;` shape, not the raw allocation.
+3. 0x78C7C, 0x78C8C: `Palette_Load("buy_sell.pal", 5)` then `PadImage_Load(pad, "buy_sell", 5)`, and
+   the pad's `nOriginX` / `nOriginY` are cleared at 0x78C98 and 0x78CA4. The palette slot is the same
+   5 the pad's mode byte takes, so the pad draws with its own palette.
+4. 0x78CAC..0x78CB4: `BuySell_nTransTotal` and `nSoldierHireCount` (0x159D90) are cleared. This is
+   the third function that proves 0x159D90 belongs to the buy/sell screen: Init clears it,
+   ValidateCapacity increments it per soldier bought, UpdatePrices decrements it per soldier sold, and
+   Save_WriteBases writes it as a 4-byte field of the bases chunk at 0x3F28C.
+5. 0x78CBC..0x78CD4: the close control unk_186B00 goes to x 224, y 1 -- two `STRH`, so 16-bit stores
+   into a 32-byte UiControl -- with BuySellScreen_CloseThunk @ 0x75154 as its click.
+6. 0x78CE8..0x78CF8: the confirm control unk_186BA4 goes to `x = 120 - (uWidth >> 1)` (`LDRH`,
+   `LSR #1`, `RSB #0x78`) and y 297 (`0x128` built as `ORR #1`). The same centring
+   BaseAtScreen_Open @ 0x588cc does, and the same control slot the hangar screen borrows.
+7. 0x78D08..0x78D44: `g_anBuySellSlotDelta` is cleared over `Map_nObjectCount` entries -- the
+   `LDRH [0x1139B8, #0x12A0]` at 0x78D08, then the post-increment store loop at 0x78D3C.
+8. 0x78D4C..0x78D7C: by the screen id. 11 installs BuySellScreen_ConfirmSiteAndClose @ 0x75090 on the
+   confirm control and calls BuySellScreen_BuildControls (0x76160, not ported); 12 installs
+   BuySellScreen_CommitTransaction @ 0x74bf8 and calls BuySellScreen_BuildPanels @ 0x76de0. The 12
+   branch is written with `LDREQ` / `STREQ` / `BLEQ`, so the handler store and the call are both
+   conditional on the id being read a second time -- the id cannot change in between, so the port
+   reads it once.
+
+Deviation: the original dereferences the allocation and both control globals with no test, and
+`PadImage_Load` is called on the slot's value even when the allocation failed; the port skips what
+failed to allocate or was not supplied, and zero-fills the pad the original leaves partly
+uninitialised.
+
+IDB: the function comment at 0x78c30 rewritten against the current names (`BuySell_nTransTotal`,
+`nSoldierHireCount`), which the older comment still spelled `unk_161A2C` and `unk_159D90`.

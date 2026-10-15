@@ -1092,6 +1092,86 @@ i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv)
     return PUFO_BUYSELL_SHORTFALL_NONE;
 }
 
+static PadImage *BuySellPadNew(void)
+{
+    /* deviation: the original's operator new(0x14) leaves nOriginX / nOriginY / uWidth / uHeight
+     * uninitialised -- PadImage_ctor @ 0x11000 only clears pData -- and the port zeroes the block. */
+    PadImage *pPad = (PadImage *)calloc(1, sizeof(PadImage)); /* 0x78C4C */
+
+    if (pPad == NULL) {
+        return NULL;
+    }
+    PadImage_ctor(pPad); /* 0x78C5C */
+    return pPad;
+}
+
+/* BuySellScreen_Init @ 0x78c30: the bring-up both BuySellScreen_OpenBuy and BuySellScreen_OpenSell
+ * tail call. The header carries the branch map. */
+void BuySellScreen_Init(const BuySellInitEnv *pEnv)
+{
+    PadImage *pPad;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppScreen == NULL) {
+        return;
+    }
+
+    if (pEnv->pnFundsSnapshot != NULL && pEnv->pnFunds != NULL) {
+        *pEnv->pnFundsSnapshot = *pEnv->pnFunds; /* 0x78C44 */
+    }
+
+    pPad = BuySellPadNew();
+    *pEnv->ppScreen = pPad; /* 0x78C70: the ctor's result, not the raw allocation */
+
+    (void)Palette_Load(PUFO_BUYSSELL_PALETTE_NAME, PUFO_BUYSSELL_PALETTE_SLOT); /* 0x78C7C */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_BUYSSELL_PAD_NAME, PUFO_BUYSSELL_PALETTE_SLOT); /* 0x78C8C */
+        pPad->nOriginX = 0; /* 0x78C98 */
+        pPad->nOriginY = 0; /* 0x78CA4 */
+    }
+
+    if (pEnv->pnTransTotal != NULL) {
+        *pEnv->pnTransTotal = 0; /* 0x78CAC */
+    }
+    if (pEnv->pnSoldierHireCount != NULL) {
+        *pEnv->pnSoldierHireCount = 0; /* 0x78CB4 */
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = 224; /* 0x78CBC, a STRH of 0xE0 */
+        pEnv->pCloseCtl->y = 1;   /* 0x78CC8 */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x78CD4 */
+    }
+    if (pEnv->pConfirmCtl != NULL) {
+        pEnv->pConfirmCtl->x = (i16)(120 - (pEnv->pConfirmCtl->uWidth >> 1)); /* 0x78CE8 */
+        pEnv->pConfirmCtl->y = 297; /* 0x78CF8: 0x128 built as ORR #1 */
+    }
+
+    if (pEnv->anSlotDelta != NULL) {
+        for (i = 0; i < pEnv->nSlotDeltaCount; ++i) {
+            pEnv->anSlotDelta[i] = 0; /* 0x78D3C, over Map_nObjectCount entries */
+        }
+    }
+
+    if (pEnv->nScreenId == PUFO_BUYSSELL_SCREEN_BUY) {
+        if (pEnv->pConfirmCtl != NULL) {
+            pEnv->pConfirmCtl->pfnClick = pEnv->pfnConfirmBuy; /* 0x78D60 */
+        }
+        if (pEnv->pfnBuildControls != NULL) {
+            pEnv->pfnBuildControls(); /* 0x78D64 */
+        }
+    } else if (pEnv->nScreenId == PUFO_BUYSSELL_SCREEN_SELL) {
+        /* 0x78D70..0x78D7C is LDREQ / STREQ / BLEQ: both the handler store and the call are
+         * conditional on the id being read a second time. */
+        if (pEnv->pConfirmCtl != NULL) {
+            pEnv->pConfirmCtl->pfnClick = pEnv->pfnConfirmSell;
+        }
+        if (pEnv->pfnBuildPanels != NULL) {
+            pEnv->pfnBuildPanels();
+        }
+    }
+}
+
 /* BuySellScreen_BuildPanels @ 0x76de0. See the header for the branch map and the row model. */
 void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
 {

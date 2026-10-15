@@ -1335,6 +1335,120 @@ static void TestBuySellCapacityGate(void)
     UiPanel_FreeLines(&pD);
 }
 
+static i32 g_nInitBuy, g_nInitSell, g_nInitControls, g_nInitPanels;
+static void InitStubClose(void) {}
+static void InitStubBuy(void) { ++g_nInitBuy; }
+static void InitStubSell(void) { ++g_nInitSell; }
+static void InitStubControls(void) { ++g_nInitControls; }
+static void InitStubPanels(void) { ++g_nInitPanels; }
+
+static void TestBuySellInit(void)
+{
+    static PadImage *pScreen;
+    static UiControl closeCtl, confirmCtl;
+    static i32 aDelta[149];
+    BuySellInitEnv env;
+    i32 nFunds = 4147000;
+    i32 nSnapshot = -1;
+    i32 nTotal = 999;
+    i32 nHire = 7;
+    i32 nOk = 0;
+    i32 i;
+
+    printf("the buy/sell screen bring-up\n");
+
+    for (i = 0; i < 149; ++i) {
+        aDelta[i] = 1;
+    }
+    pScreen = NULL;
+    memset(&closeCtl, 0, sizeof(closeCtl));
+    memset(&confirmCtl, 0, sizeof(confirmCtl));
+    confirmCtl.uWidth = 40;
+
+    memset(&env, 0, sizeof(env));
+    env.ppScreen = &pScreen;
+    env.pCloseCtl = &closeCtl;
+    env.pConfirmCtl = &confirmCtl;
+    env.pfnCloseClick = InitStubClose;
+    env.pfnConfirmBuy = InitStubBuy;
+    env.pfnConfirmSell = InitStubSell;
+    env.pfnBuildControls = InitStubControls;
+    env.pfnBuildPanels = InitStubPanels;
+    env.nScreenId = PUFO_BUYSSELL_SCREEN_BUY;
+    env.pnFunds = &nFunds;
+    env.pnFundsSnapshot = &nSnapshot;
+    env.pnTransTotal = &nTotal;
+    env.pnSoldierHireCount = &nHire;
+    env.anSlotDelta = aDelta;
+    env.nSlotDeltaCount = 149;
+    g_nInitBuy = 0;
+    g_nInitSell = 0;
+    g_nInitControls = 0;
+    g_nInitPanels = 0;
+
+    BuySellScreen_Init(&env);
+    CheckEqI32(nSnapshot, 4147000, "the funds snapshot is taken at the open, not only at the close");
+    Check(pScreen != NULL, "the screen's pad object is allocated");
+    CheckEqI32(pScreen != NULL ? pScreen->nOriginX : -1, 0, "with origin 0 on x");
+    CheckEqI32(pScreen != NULL ? pScreen->nOriginY : -1, 0, "and on y");
+    CheckEqI32(nTotal, 0, "the transaction total is cleared");
+    CheckEqI32(nHire, 0, "and so is the soldier hire count");
+    CheckEqI32(closeCtl.x, 224, "the close control lands at 224, 1");
+    CheckEqI32(closeCtl.y, 1, "both as 16-bit stores");
+    Check(closeCtl.pfnClick == InitStubClose, "and gets the close thunk");
+    CheckEqI32(confirmCtl.x, 100, "the confirm control centres on its 40-pixel width");
+    CheckEqI32(confirmCtl.y, 297, "at y 297");
+    Check(confirmCtl.pfnClick == InitStubBuy, "screen 11 installs the site confirm");
+    CheckEqI32(g_nInitControls, 1, "and builds the buy screen's controls");
+    CheckEqI32(g_nInitPanels, 0, "not the sell panels");
+    for (i = 0; i < 149; ++i) {
+        if (aDelta[i] == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 149, "the whole slot-delta array is cleared");
+
+    free(pScreen);
+    pScreen = NULL;
+    nTotal = 999;
+    nHire = 7;
+    env.nScreenId = PUFO_BUYSSELL_SCREEN_SELL;
+    confirmCtl.pfnClick = NULL;
+    BuySellScreen_Init(&env);
+    Check(confirmCtl.pfnClick == InitStubSell, "screen 12 installs the commit instead");
+    CheckEqI32(g_nInitPanels, 1, "and builds the panels");
+    CheckEqI32(g_nInitControls, 1, "leaving the buy controls alone");
+    CheckEqI32(nTotal, 0, "the scratch is cleared on both modes");
+    CheckEqI32(nHire, 0, "including the hire count");
+
+    free(pScreen);
+    pScreen = NULL;
+    env.nScreenId = 3;
+    confirmCtl.pfnClick = NULL;
+    BuySellScreen_Init(&env);
+    Check(confirmCtl.pfnClick == NULL, "an id that is neither leaves the confirm control alone");
+    CheckEqI32(g_nInitPanels, 1, "and calls neither builder");
+    CheckEqI32(g_nInitControls, 1, "on either side");
+
+    free(pScreen);
+    pScreen = NULL;
+    BuySellScreen_Init(NULL);
+    env.ppScreen = NULL;
+    BuySellScreen_Init(&env);
+    env.ppScreen = &pScreen;
+    CheckEqI32(g_nInitPanels, 1, "a missing screen slot changes nothing");
+
+    env.pCloseCtl = NULL;
+    env.pConfirmCtl = NULL;
+    BuySellScreen_Init(&env);
+    CheckEqI32(g_nInitControls, 1, "missing controls are skipped, not dereferenced");
+    env.pCloseCtl = &closeCtl;
+    env.pConfirmCtl = &confirmCtl;
+
+    free(pScreen);
+    pScreen = NULL;
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -6437,6 +6551,7 @@ int main(void)
     TestBuySellCommitTransaction();
     TestBuySellRowEditors();
     TestBuySellCapacityGate();
+    TestBuySellInit();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();
