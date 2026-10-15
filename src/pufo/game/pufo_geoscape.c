@@ -2098,3 +2098,130 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
 
     return true;
 }
+
+/* The original indexes aRadarDigitPads with the digit straight out of the division, so a digit
+ * outside the table is undefined there. The port refuses that digit; see the note in the header. */
+static PadImage *RadarDigitPad(const RadarFuelEnv *pEnv, i32 nDigit)
+{
+    if (nDigit < 0 || nDigit >= PUFO_RADAR_DIGIT_PADS) {
+        return NULL;
+    }
+    return pEnv->apDigitPads[nDigit];
+}
+
+/* RadarScreen_DrawFuelGauge @ 0x5d918. */
+i32 RadarScreen_DrawFuelGauge(const RadarFuelEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pCraft == NULL || pEnv->pbOutOfFuel == NULL) {
+        return 0;
+    }
+
+    /* 0x5D950..0x5D9D8: two _itod, _divd, _muld by 100.0, then _subd FROM 100.0, then _dtoi. Both
+     * halves are read signed (LDRSH), uFuelMax included. A zero uFuelMax divides by zero in the
+     * original; the port takes the ratio as zero, which lands on 100 and the out-of-fuel flag. */
+    double dRatio = 0.0;
+    if (pEnv->pCraft->uFuelMax != 0) {
+        dRatio = (double)pEnv->pCraft->nFuel / (double)(i16)pEnv->pCraft->uFuelMax;
+    }
+    i32 n = (i32)(100.0 - 100.0 * dRatio);
+
+    if (n >= 100) { /* 0x5D9E4..0x5D9F4 */
+        n = 100;
+        *pEnv->pbOutOfFuel = 1;
+    }
+
+    const i32 nHundreds = n / 100;                       /* 0x5DA08 */
+    const i32 nTens = (n - 100 * nHundreds) / 10;        /* 0x5DA24..0x5DA34 */
+    const i32 nUnits = n % 10;                           /* 0x5DA38..0x5DA48 */
+
+    PadImage *pHundreds = RadarDigitPad(pEnv, nHundreds);
+    if (pHundreds != NULL) {
+        pHundreds->nOriginX = PUFO_RADAR_FUEL_X_HUNDREDS; /* 0x5DA5C..0x5DA60 */
+        pHundreds->nOriginY = PUFO_RADAR_FUEL_Y;          /* 0x5DA74 */
+        if (nHundreds != 0) {                             /* 0x5DA6C */
+            PadImage_BlitEx(pHundreds, PUFO_RADAR_PAD_KEY);
+        }
+    }
+
+    PadImage *pTens = RadarDigitPad(pEnv, nTens);
+    if (pTens != NULL) {
+        pTens->nOriginX = PUFO_RADAR_FUEL_X_TENS; /* 0x5DA88..0x5DA90 */
+        pTens->nOriginY = PUFO_RADAR_FUEL_Y;      /* 0x5DA98 */
+        /* 0x5DA9C skips the blit when the tens digit is non-zero and 0x5DAA4 skips it when the
+         * hundreds digit is not 1, so a zero tens digit is drawn only at 100%. */
+        if (nTens != 0 || nHundreds == 1) {
+            PadImage_BlitEx(pTens, PUFO_RADAR_PAD_KEY);
+        }
+    }
+
+    PadImage *pUnits = RadarDigitPad(pEnv, nUnits);
+    if (pUnits != NULL) {
+        pUnits->nOriginX = PUFO_RADAR_FUEL_X_UNITS; /* 0x5DABC..0x5DAC4 */
+        pUnits->nOriginY = PUFO_RADAR_FUEL_Y;       /* 0x5DACC */
+        PadImage_BlitEx(pUnits, PUFO_RADAR_PAD_KEY); /* 0x5DAD4, unconditional */
+    }
+
+    PadImage *pPercent = RadarDigitPad(pEnv, PUFO_RADAR_DIGIT_PADS - 1);
+    if (pPercent != NULL) {
+        pPercent->nOriginX = PUFO_RADAR_FUEL_X_PERCENT; /* 0x5DADC..0x5DAE4 */
+        pPercent->nOriginY = PUFO_RADAR_FUEL_Y;         /* 0x5DAEC */
+        PadImage_BlitEx(pPercent, PUFO_RADAR_PAD_KEY);  /* tail call */
+    }
+
+    return n;
+}
+
+/* RadarScreen_DrawRangeBar @ 0x5d6e4. */
+bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pInterceptItem == NULL || pEnv->pCraft == NULL
+        || pEnv->pnRangeCur == NULL || pEnv->pnPulseTimer == NULL) {
+        return false;
+    }
+
+    const i32 nClass = (i8)pEnv->pInterceptItem->bCraftClass; /* 0x5D704 LDRSB */
+    if (nClass == 0) {
+        return false; /* 0x5D708 */
+    }
+
+    const i32 nRangeCur = *pEnv->pnRangeCur;
+    /* 0x5D70C..0x5D74C: the level term is always negative for the levels Init stores, so a higher
+     * class loosens the gate. C division matches _rt_sdiv's truncation toward zero. */
+    const i32 nLevelAdj =
+        (PUFO_RADAR_RANGE_SCALE * (pEnv->nCraftLevel - PUFO_RADAR_LEVEL_BIAS))
+        / PUFO_RADAR_RANGE_PITCH;
+    if (nRangeCur + nLevelAdj > pEnv->nRangeLimit) {
+        return false; /* 0x5D74C BGT */
+    }
+    if (*pEnv->pnPulseTimer != PUFO_RADAR_PULSE_ARMED) {
+        return false; /* 0x5D75C */
+    }
+
+    /* 0x5D764..0x5D78C: the bar's height is the range scaled to the 114-pixel pitch. */
+    const i32 nBar = (PUFO_RADAR_RANGE_PITCH * nRangeCur) / PUFO_RADAR_RANGE_SCALE;
+    SoftSurf_BlitRectProxy(0, PUFO_RADAR_RANGE_BAR_X, PUFO_RADAR_RANGE_BAR_Y - nBar,
+                           3, nBar - PUFO_RADAR_RANGE_TRIM, 0x28u, 0x64u, 0u);
+    SoftSurf_BlitRectProxy(0, PUFO_RADAR_RANGE_BAR_X + 1, PUFO_RADAR_RANGE_BAR_Y - nBar,
+                           1, nBar - PUFO_RADAR_RANGE_TRIM, 0x50u, 0xDCu, 0u);
+
+    /* 0x5D808..0x5D814: the roll is taken when it lands below 70, so 70% of pulses hit the craft. */
+    if (Game_RandU16(100u) < PUFO_RADAR_FIRE_CHANCE) {
+        i32 nDelta = 0;
+        bool bFired = true;
+        switch (nClass) {
+            case 1: case 2: nDelta = (i32)Game_RandU16(8u)   - 20;  break; /* 0x5D8D0 */
+            case 3: case 4: nDelta = (i32)Game_RandU16(10u)  - 40;  break; /* 0x5D8BC */
+            case 5:         nDelta = (i32)Game_RandU16(30u)  - 120; break; /* 0x5D8A8 */
+            case 6:         nDelta = (i32)Game_RandU16(20u)  - 80;  break; /* 0x5D894 */
+            case 7:         nDelta = (i32)Game_RandU16(30u)  - 140; break; /* 0x5D86C */
+            default:        bFired = false;                                  break; /* 0x5D85C */
+        }
+        if (bFired) {
+            pEnv->pCraft->nFuel = (i16)(pEnv->pCraft->nFuel + nDelta); /* 0x5D8E0..0x5D8FC */
+        }
+    }
+
+    /* 0x5D900..0x5D90C: reached on every path that got past the pulse gate. */
+    *pEnv->pnPulseTimer = PUFO_RADAR_PULSE_NEXT;
+    return true;
+}

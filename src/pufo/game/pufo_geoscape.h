@@ -1303,4 +1303,85 @@ typedef struct RadarBackdropEnv {
  * the +0x0C control slot. */
 bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv);
 
+/* ------------------------------------------------- the radar fuel gauge and range bar
+ *
+ * Evidence: RadarScreen_DrawFuelGauge @ 0x5d918 (524 B), RadarScreen_DrawRangeBar @ 0x5d6e4 (564 B).
+ *
+ * The gauge reads the CONSUMED fuel percentage, not the remaining one:
+ *
+ *     n = (int)(100.0 - 100.0 * (double)Ship.nFuel / (double)Ship.uFuelMax)
+ *
+ * (0x5D950..0x5D9D8: two _itod, _divd, _muld by 100.0, _subd from 100.0, _dtoi). When n reaches 100
+ * it clamps there and sets bRadarCraftOutOfFuel @ 0x1596DC — the only thing the original keeps of the
+ * number, and RadarScreen_Update reads that flag nine times.
+ *
+ * Three _rt_sdiv calls split it into digits (the divisor travels in R0, the dividend in R1, the
+ * quotient comes back in R0 and the remainder in R1): hundreds = n / 100, tens = (n - 100*hundreds)
+ * / 10, units = n % 10. Each digit picks a pad out of aRadarDigitPads @ 0x1596A0 — eleven PadImage
+ * pointers RadarScreen_Init allocates and loads as i0..i9 through palette slot 0x19, the eleventh at
+ * 0x1596C8 — and moves it to a fixed origin, then blits it keyed with 1:
+ *
+ *     hundreds -> (162, 60), blitted only when hundreds != 0
+ *     tens     -> (172, 60), blitted when tens != 0 OR hundreds == 1
+ *     units    -> (182, 60), always blitted
+ *     slot 10  -> (192, 60), always blitted
+ *
+ * The tens rule is the ARM's branch shape, not a rounding trick: 0x5DA9C skips the blit when the tens
+ * digit is non-zero and 0x5DAA4 skips it when the hundreds digit is not 1, so the only case that
+ * blits a zero tens digit is 100%. A leading zero is dropped, except when there is a hundreds digit
+ * to justify it. Every origin is written whether or not the pad is blitted.
+ *
+ * The range bar has three gates and then a random fuel penalty. Gate 1: the intercept item
+ * (strategList[nInterceptStrategIdx]) must have a non-zero bCraftClass. Gate 2:
+ * nRadarRangeCur + 560*(nRadarCraftLevel - 13)/114 must be <= nRadarRangeLimit — nRadarCraftLevel is
+ * the per-class level RadarScreen_Init stores (8, 6, 4, 2, 0 at 0x5F6D8, 0x5F7A8, 0x5F878, 0x5F944,
+ * 0x5F9E8), so the term is always negative and the gate loosens with class. Gate 3:
+ * nRadarPulseTimer must be 255. Two rects then share a y and a height derived from the range:
+ * y = 183 - 114*nRadarRangeCur/560 and height = that quotient - 15, one 3 wide at x 67 (index 0x28,
+ * mid 0x64) and one 1 wide at x 68 (index 0x50, mid 0xDC). Then Game_RandU16(100) < 70 — a 70% roll —
+ * picks a fuel penalty by bCraftClass and adds it to apCraft[nInterceptShipIdx]->nFuel as i16:
+ *
+ *     class 1 or 2: rand(8)  - 20      class 3 or 4: rand(10) - 40     class 5: rand(30) - 120
+ *     class 6:      rand(20) - 80      class 7:      rand(30) - 140    anything else: no penalty
+ *
+ * and the pulse timer is set to 230 on every path that got past gate 3. */
+#define PUFO_RADAR_DIGIT_PADS        11 /* aRadarDigitPads @ 0x1596A0, i0..i9 plus 0x1596C8 */
+#define PUFO_RADAR_PAD_KEY            1 /* the key every PadImage_BlitEx here passes */
+#define PUFO_RADAR_FUEL_Y            60 /* 0x5DA64: MOV R6, #0x3C, shared by all four pads */
+#define PUFO_RADAR_FUEL_X_HUNDREDS  162 /* 0x5DA5C: MOV R2, #0xA2 */
+#define PUFO_RADAR_FUEL_X_TENS      172 /* 0x5DA88: MOV R2, #0xAC */
+#define PUFO_RADAR_FUEL_X_UNITS     182 /* 0x5DABC: MOV R2, #0xB6 */
+#define PUFO_RADAR_FUEL_X_PERCENT   192 /* 0x5DADC: MOV R3, #0xC0 */
+#define PUFO_RADAR_RANGE_BAR_X     67   /* 0x5D794: MOV R1, #0x43; the 1-wide bar is at 68 */
+#define PUFO_RADAR_RANGE_BAR_Y    183   /* 0x5D7A8: RSB R2, R0, #0xB7 */
+#define PUFO_RADAR_RANGE_SCALE   560    /* the _rt_sdiv divisor of both range divisions */
+#define PUFO_RADAR_RANGE_PITCH   114    /* the multiplier, and the gate's divisor */
+#define PUFO_RADAR_RANGE_TRIM     15    /* 0x5D7A0: SUB R3, R0, #0xF */
+#define PUFO_RADAR_LEVEL_BIAS     13    /* 0x5F710-ish: SUB R3, R0, #0xD */
+#define PUFO_RADAR_PULSE_ARMED    255   /* 0x5D75C: CMP R0, #0xFF */
+#define PUFO_RADAR_PULSE_NEXT     230   /* 0x5D90C: MOV R0, #0xE6 */
+#define PUFO_RADAR_FIRE_CHANCE     70   /* 0x5D814: CMP R3, #0x46, taken when the roll is below */
+
+typedef struct RadarFuelEnv {
+    const Ship *pCraft;                        /* apCraft[nInterceptShipIdx], read only */
+    PadImage *apDigitPads[PUFO_RADAR_DIGIT_PADS]; /* aRadarDigitPads, origins rewritten */
+    u8 *pbOutOfFuel;                           /* bRadarCraftOutOfFuel @ 0x1596DC */
+} RadarFuelEnv;
+
+/* Returns the consumed percentage it drew (0..100). The original returns the last
+ * PadImage_BlitEx result, which no caller uses. */
+i32 RadarScreen_DrawFuelGauge(const RadarFuelEnv *pEnv);
+
+typedef struct RadarRangeBarEnv {
+    const StrategItem *pInterceptItem;  /* strategList[nInterceptStrategIdx] */
+    Ship              *pCraft;          /* apCraft[nInterceptShipIdx], its nFuel is written */
+    const i32         *pnRangeCur;      /* nRadarRangeCur @ 0x15966C, animated by CyclePalette */
+    i32                nRangeLimit;     /* nRadarRangeLimit @ 0x159668 */
+    i32                nCraftLevel;     /* nRadarCraftLevel @ 0x1596E0 */
+    i32               *pnPulseTimer;    /* nRadarPulseTimer @ 0xAC224 */
+} RadarRangeBarEnv;
+
+/* Returns true when the bar was drawn, i.e. when all three gates passed. */
+bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

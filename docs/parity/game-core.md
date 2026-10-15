@@ -12665,3 +12665,51 @@ Deviation: the original returns 1 on the phase-setting call and otherwise whatev
 the screen id left in R0, and no caller uses it -- the function is reached through the +0x0C control
 slot. The port returns whether it drew. The port also refuses a null environment or a null member,
 which the original cannot reach because all five live in globals.
+
+## RadarScreen_DrawFuelGauge (0x5d918, 524 B) and RadarScreen_DrawRangeBar (0x5d6e4, 564 B)
+
+Ported in src/pufo/game/pufo_geoscape.{c,h} behind RadarFuelEnv and RadarRangeBarEnv; tested by
+TestRadarFuelGauge and TestRadarRangeBar in tests/test_geoscape.c on a real 240x320 16 bpp surface, with
+eleven real 2x1 digit pads whose second column carries the colour key so the keyed blit is verified to
+skip it.
+
+The gauge reads the CONSUMED fuel percentage, not the remaining one: n = (int)(100.0 - 100.0 *
+(double)Ship.nFuel(+0x18) / (double)Ship.uFuelMax(+0x16)), built as two _itod, _divd, _muld by 100.0,
+_subd FROM 100.0 and _dtoi (0x5D950..0x5D9D8). Both halves are read with LDRSH, so uFuelMax is read
+signed -- pinned by a check that a 0x8000 uFuelMax with 100 fuel clamps to 100 where an unsigned read
+would give 99. When n reaches 100 it clamps there and sets bRadarCraftOutOfFuel @ 0x1596DC, which is the
+only thing the original keeps of the number and what RadarScreen_Update reads nine times.
+
+Three _rt_sdiv calls split it into digits -- the divisor travels in R0 and the dividend in R1, the
+quotient comes back in R0 and the remainder in R1, the same convention the port already uses elsewhere
+and re-confirmed here against Inv_HandlePointer's (nX - 23) / 38 at 0x11B0C. hundreds = n / 100,
+tens = (n - 100*hundreds) / 10, units = n % 10. Each digit picks a pad out of aRadarDigitPads
+@ 0x1596A0 -- eleven PadImage pointers RadarScreen_Init allocates and loads as i0..i9 through palette
+slot 0x19, the eleventh at 0x1596C8 -- moves it to a fixed origin and blits it keyed with 1: hundreds
+to (162, 60) drawn only when the digit is non-zero, tens to (172, 60), units to (182, 60) always, slot
+10 to (192, 60) always. Every origin is written whether or not the pad is drawn.
+
+The tens rule is the ARM's branch shape rather than a rounding trick: 0x5DA9C jumps past the blit when
+the tens digit is non-zero and 0x5DAA4 jumps past it when the hundreds digit is not 1, so a zero tens
+digit is drawn only at 100 percent. A leading zero is dropped, except when a hundreds digit justifies
+it.
+
+The range bar has three gates. StrategItem.bCraftClass (+2, read with LDRSB) of
+strategList[nInterceptStrategIdx] must be non-zero -- 255 becomes -1 and passes. Then
+nRadarRangeCur + 560*(nRadarCraftLevel - 13)/114 must be <= nRadarRangeLimit; nRadarCraftLevel is the
+per-class level RadarScreen_Init stores (8, 6, 4, 2, 0 at 0x5F6D8, 0x5F7A8, 0x5F878, 0x5F944, 0x5F9E8,
+with three of the eight class arms leaving it alone), so the term is always negative and a higher class
+loosens the gate. Then nRadarPulseTimer must be exactly 255. Two rects share a y and a height derived
+from the range -- y = 183 - 114*nRadarRangeCur/560 and height = that quotient - 15 -- one 3 wide at x 67
+(index 0x28, mid 0x64) and one 1 wide at x 68 (index 0x50, mid 0xDC), so the narrow bar is painted over
+the wide one. A zero range gives a negative height, which clips to nothing.
+
+Then Game_RandU16(100) < 70 -- a 70 percent roll -- picks a fuel penalty by bCraftClass and adds it to
+apCraft[nInterceptShipIdx]->nFuel as i16 (0x5D8E0..0x5D8FC): classes 1 and 2 pay rand(8) - 20, classes 3
+and 4 rand(10) - 40, class 5 rand(30) - 120, class 6 rand(20) - 80, class 7 rand(30) - 140, and any
+other class pays nothing. nRadarPulseTimer is set to 230 on every path that got past the pulse gate.
+
+Deviation: the gauge returns the percentage it drew where the original returns the last
+PadImage_BlitEx result, which no caller uses. The port takes a zero uFuelMax as a ratio of zero (the
+original divides by zero) and refuses a digit outside the pad table (the original indexes it out of
+bounds); both are port-side guards over cases the original leaves undefined, and both are checked.

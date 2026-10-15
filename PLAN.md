@@ -1332,6 +1332,31 @@ Order is by what unblocks what. Each item ends with gates + commit.
   all three are skipped when `nGeoscapeScreen` is 2. `pSmapPadCur` and `pSmapLayerPad` are now typed
   `PadImage *` in the IDB.
 
+- [x] part 49, two more radar leaves: `RadarScreen_DrawFuelGauge (0x5d918)` and
+  `RadarScreen_DrawRangeBar (0x5d6e4)`, 1088 bytes — 66 more checks and five more IDB names.
+  **The gauge reads the consumed percentage, not the remaining one**: `n = (int)(100.0 - 100.0 *
+  (double)Ship.nFuel / (double)Ship.uFuelMax)`, built as two `_itod`, `_divd`, `_muld` by 100.0,
+  `_subd` FROM 100.0 and `_dtoi`. Both halves are read with `LDRSH`, so `uFuelMax` is read **signed** —
+  pinned by a check where a `0x8000` `uFuelMax` clamps to 100 where an unsigned read would give 99.
+  Reaching 100 clamps it there and sets `bRadarCraftOutOfFuel`, the only thing the original keeps of the
+  number and what `RadarScreen_Update` reads nine times.
+  **The tens-digit rule is a branch shape, not a rounding trick.** 0x5DA9C jumps past the blit when the
+  tens digit is non-zero and 0x5DAA4 jumps past it when the hundreds digit is not 1, so a zero tens
+  digit is drawn only at 100%. A leading zero is dropped, except when a hundreds digit justifies it.
+  Every one of the four pad origins is written whether or not the pad is drawn.
+  **`_rt_sdiv`'s argument order re-confirmed**: divisor in R0, dividend in R1, quotient out in R0,
+  remainder in R1 — cross-checked against `Inv_HandlePointer`'s `(nX - 23) / 38` at 0x11B0C before
+  trusting it for the digit split here.
+  **The range bar's level term is always negative**, so a higher craft class *loosens* the gate:
+  `nRadarRangeCur + 560*(nRadarCraftLevel - 13)/114 <= nRadarRangeLimit`, with `nRadarCraftLevel` 8/6/4/2/0
+  for the five arms that write it (0x5F6D8, 0x5F7A8, 0x5F878, 0x5F944, 0x5F9E8) and three arms that
+  leave it at whatever the previous intercept left. `bCraftClass` is read with `LDRSB`, so the 255
+  sentinel becomes -1 and passes the non-zero gate only to fall into the switch default and pay nothing.
+  The 70% roll is pinned by fixed seeds (1..4 fire, 7013..7016 draw exactly 70 and do not) rather than
+  by a probability.
+  Named: `aRadarDigitPads` (11 `PadImage *`, loaded as `i0..i9` through palette slot 0x19),
+  `pRadarPercentPad`, `bRadarCraftOutOfFuel` (u8), `nRadarRangeLimit`, `nRadarCraftLevel`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1596,6 +1621,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the research frame (`ResearchScreen_Draw`, the pad inside the topic table, the close-control-only-when-no-row quirk, the rails deduped) | 56/56 (Release) | 10589 | 868/1103 (78.7%) | 377972/598792 (63.1%) | 39 checked, 0 mismatched |
 | the buy/sell frame (`BuySellScreen_Draw`, the two halves that draw differently, the freed-panel deref found) | 56/56 (Release) | 10674 | 869/1103 (78.8%) | 381496/598792 (63.7%) | 39 checked, 0 mismatched |
 | the radar backdrop (`RadarScreen_BlitMapBackdrop`, the phase toggle, the world-bits pointer misreading fixed) | 56/56 (Release) | 10723 | 870/1103 (78.9%) | 382004/598792 (63.8%) | 39 checked, 0 mismatched |
+| the radar gauge and range bar (the consumed percentage, the tens-digit branch shape, the level term that loosens the gate) | 56/56 (Release) | 10789 | 872/1103 (79.1%) | 383092/598792 (64.0%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

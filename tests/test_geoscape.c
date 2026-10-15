@@ -3586,6 +3586,244 @@ static void TestRadarBackdrop(void)
     CheckEqI32(g_bdMapPad.nOriginX, -1, "and no pad origin is touched");
 }
 
+/* ---- RadarScreen_DrawFuelGauge @ 0x5d918 and RadarScreen_DrawRangeBar @ 0x5d6e4 ---------
+ *
+ * The gauge is run on the same real 240x320 surface. Each of the eleven digit pads is a real 2x1
+ * glyph whose first column carries the pad's own palette index and whose second column carries
+ * index 1 -- the colour key PadImage_BlitEx is called with -- so a pad is identified by the colour
+ * it leaves and the key column proves the keyed blit really skips it. */
+#define FUEL_PAD_SLOT 25 /* 0x19, the slot RadarScreen_Init loads i0..i9 through (0x5FE9C) */
+
+static PadImage g_aFuelPad[PUFO_RADAR_DIGIT_PADS];
+static u8       g_aFuelGlyph[PUFO_RADAR_DIGIT_PADS][6];
+static Ship     g_fuelCraft;
+static u8       g_bOutOfFuel;
+static RadarFuelEnv g_fuelEnv;
+
+static void FuelFixture(void)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    for (i32 i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        g_aFuelGlyph[i][0] = 2; g_aFuelGlyph[i][1] = 0;
+        g_aFuelGlyph[i][2] = 1; g_aFuelGlyph[i][3] = 0;
+        g_aFuelGlyph[i][4] = (u8)(3 + i);
+        g_aFuelGlyph[i][5] = 1; /* the colour key */
+        g_aPalette[FUEL_PAD_SLOT][3 + i] = (u32)(0x100 + i);
+        memset(&g_aFuelPad[i], 0, sizeof(g_aFuelPad[i]));
+        g_aFuelPad[i].pData   = g_aFuelGlyph[i];
+        g_aFuelPad[i].nMode   = (u8)FUEL_PAD_SLOT;
+        g_aFuelPad[i].uWidth  = 2;
+        g_aFuelPad[i].uHeight = 1;
+        g_aFuelPad[i].nOriginX = -1;
+        g_aFuelPad[i].nOriginY = -1;
+        g_fuelEnv.apDigitPads[i] = &g_aFuelPad[i];
+    }
+    memset(&g_fuelCraft, 0, sizeof(g_fuelCraft));
+    g_fuelCraft.uFuelMax = 200;
+    g_fuelCraft.nFuel    = 200;
+    g_bOutOfFuel = 0;
+    g_fuelEnv.pCraft      = &g_fuelCraft;
+    g_fuelEnv.pbOutOfFuel = &g_bOutOfFuel;
+}
+
+static void TestRadarFuelGauge(void)
+{
+    printf("\nRadarScreen_DrawFuelGauge @ 0x5d918\n");
+
+    /* --- a full tank: 100 - 100*1 = 0 consumed, so only the units digit and the percent --- */
+    FuelFixture();
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 0, "a full tank reads 0 consumed");
+    CheckEqI32(g_bOutOfFuel, 0, "and the out-of-fuel flag stays clear");
+    CheckEqI32(BdPix(162, 60), 0, "the hundreds digit is a leading zero and is not drawn");
+    CheckEqI32(BdPix(172, 60), 0, "nor is the tens zero");
+    CheckEqI32(BdPix(182, 60), 0x100, "the units digit is drawn at 182");
+    CheckEqI32(BdPix(183, 60), 0, "its second column carries the key index and stays empty");
+    CheckEqI32(BdPix(192, 60), 0x10A, "and the eleventh pad is the percent at 192");
+    CheckEqI32(g_aFuelPad[0].nOriginX, 182, "pad 0 is moved three times and ends at 182");
+    CheckEqI32(g_aFuelPad[10].nOriginX, 192, "the percent pad is moved to 192");
+    CheckEqI32(g_aFuelPad[0].nOriginY, 60, "every pad lands on y 60");
+    CheckEqI32(g_aFuelPad[10].nOriginY, 60, "including it");
+
+    /* --- an empty tank: 100, clamped, flag set, all three digits drawn --- */
+    FuelFixture();
+    g_fuelCraft.nFuel = 0;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 100, "an empty tank reads 100 consumed");
+    CheckEqI32(g_bOutOfFuel, 1, "and sets the out-of-fuel flag");
+    CheckEqI32(BdPix(162, 60), 0x101, "the hundreds digit 1 is drawn at 162");
+    CheckEqI32(BdPix(172, 60), 0x100, "the tens zero is drawn because a hundreds digit justifies it");
+    CheckEqI32(BdPix(182, 60), 0x100, "and the units zero at 182");
+    CheckEqI32(BdPix(192, 60), 0x10A, "with the percent pad");
+
+    /* --- half a tank: 50, so the tens digit is real and the hundreds is dropped --- */
+    FuelFixture();
+    g_fuelCraft.nFuel = 100; /* uFuelMax 200 -> half gone */
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 50, "half a tank reads 50 consumed");
+    CheckEqI32(BdPix(162, 60), 0, "no hundreds digit");
+    CheckEqI32(BdPix(172, 60), 0x105, "the tens digit 5 at 172");
+    CheckEqI32(BdPix(182, 60), 0x100, "the units zero at 182");
+    CheckEqI32(g_bOutOfFuel, 0, "and the flag stays clear");
+
+    /* --- a single digit: 1 consumed --- */
+    FuelFixture();
+    g_fuelCraft.uFuelMax = 100;
+    g_fuelCraft.nFuel    = 99;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 1, "one percent consumed");
+    CheckEqI32(BdPix(172, 60), 0, "the tens zero is dropped when there is no hundreds digit");
+    CheckEqI32(BdPix(182, 60), 0x101, "only the units digit is drawn");
+
+    /* --- the clamp at 100, reached from a negative fuel --- */
+    FuelFixture();
+    g_fuelCraft.uFuelMax = 100;
+    g_fuelCraft.nFuel    = -10;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 100, "110 clamps to 100");
+    CheckEqI32(g_bOutOfFuel, 1, "and the clamp is what sets the flag");
+
+    /* --- uFuelMax is read signed, like the original's LDRSH at 0x5D960 --- */
+    FuelFixture();
+    g_fuelCraft.uFuelMax = 0x8000; /* -32768 read signed, 32768 read unsigned */
+    g_fuelCraft.nFuel    = 100;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 100,
+               "the signed read gives 100.3 and clamps; an unsigned one would give 99");
+    CheckEqI32(g_bOutOfFuel, 1, "so the clamp runs and the flag is set");
+
+    /* --- a zero uFuelMax: the original divides by zero, the port lands on 100 --- */
+    FuelFixture();
+    g_fuelCraft.uFuelMax = 0;
+    g_fuelCraft.nFuel    = 0;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 100, "a zero uFuelMax lands on 100");
+    CheckEqI32(g_bOutOfFuel, 1, "and sets the flag");
+
+    /* --- the guards --- */
+    FuelFixture();
+    CheckEqI32(RadarScreen_DrawFuelGauge(NULL), 0, "a null environment is refused");
+    CheckEqI32(g_bOutOfFuel, 0, "and changes nothing");
+    g_fuelEnv.pCraft = NULL;
+    CheckEqI32(RadarScreen_DrawFuelGauge(&g_fuelEnv), 0, "a null craft is refused");
+    CheckEqI32(BdPix(182, 60), 0, "with no pad drawn");
+}
+
+static StrategItem g_barItem;
+static Ship        g_barCraft;
+static i32         g_nRangeCur;
+static i32         g_nPulseTimer;
+static RadarRangeBarEnv g_barEnv;
+
+static void BarFixture(void)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    memset(&g_barItem, 0, sizeof(g_barItem));
+    g_barItem.bCraftClass = 1;
+    memset(&g_barCraft, 0, sizeof(g_barCraft));
+    g_barCraft.nFuel = 500;
+    g_nRangeCur   = 280; /* 114*280/560 = 57, so y 126 and height 42 */
+    g_nPulseTimer = PUFO_RADAR_PULSE_ARMED;
+    g_barEnv.pInterceptItem = &g_barItem;
+    g_barEnv.pCraft         = &g_barCraft;
+    g_barEnv.pnRangeCur     = &g_nRangeCur;
+    g_barEnv.nRangeLimit    = 300;
+    g_barEnv.nCraftLevel    = 13; /* the level term is zero at this level */
+    g_barEnv.pnPulseTimer   = &g_nPulseTimer;
+}
+
+static void TestRadarRangeBar(void)
+{
+    printf("\nRadarScreen_DrawRangeBar @ 0x5d6e4\n");
+
+    /* --- all three gates pass: two rects sharing a y and a height --- */
+    BarFixture();
+    Check(RadarScreen_DrawRangeBar(&g_barEnv), "all three gates pass");
+    CheckEqI32(g_nPulseTimer, PUFO_RADAR_PULSE_NEXT, "and the pulse timer is rearmed to 230");
+    CheckEqI32(BdPix(67, 126), 0x2B20, "the 3-wide bar starts at y = 183 - 57");
+    CheckEqI32(BdPix(67, 167), 0x2B20, "and runs 57 - 15 = 42 rows");
+    CheckEqI32(BdPix(67, 125), 0, "one row above it is empty");
+    CheckEqI32(BdPix(67, 168), 0, "one row below it is empty");
+    CheckEqI32(BdPix(69, 126), 0x2B20, "the bar is three columns wide");
+    CheckEqI32(BdPix(70, 126), 0, "and no further");
+    CheckEqI32(BdPix(68, 126), 0x56E0, "the 1-wide bar at x 68 is painted over it");
+    CheckEqI32(BdPix(68, 167), 0x56E0, "for the same height");
+
+    /* --- gate 1: a zero bCraftClass returns before anything --- */
+    BarFixture();
+    g_barItem.bCraftClass = 0;
+    Check(!RadarScreen_DrawRangeBar(&g_barEnv), "a zero bCraftClass fails the first gate");
+    CheckEqI32(g_nPulseTimer, PUFO_RADAR_PULSE_ARMED, "and leaves the pulse timer armed");
+    CheckEqI32(BdPix(67, 126), 0, "drawing nothing");
+
+    /* --- gate 3: the pulse timer must be exactly 255 --- */
+    BarFixture();
+    g_nPulseTimer = 254;
+    Check(!RadarScreen_DrawRangeBar(&g_barEnv), "a pulse timer of 254 fails the third gate");
+    CheckEqI32(g_nPulseTimer, 254, "and is left at 254");
+    CheckEqI32(BdPix(67, 126), 0, "drawing nothing");
+
+    /* --- gate 2: the level term loosens the limit, and it is always negative --- */
+    BarFixture();
+    g_nRangeCur = 320; /* 320 > 300 at level 13 */
+    Check(!RadarScreen_DrawRangeBar(&g_barEnv), "a range above the limit fails the second gate");
+    BarFixture();
+    g_nRangeCur        = 320;
+    g_barEnv.nCraftLevel = 8; /* 560*(8-13)/114 = -24, so 320 - 24 = 296 <= 300 */
+    Check(RadarScreen_DrawRangeBar(&g_barEnv),
+          "level 8 shifts the gate by -24 and the same range passes");
+    CheckEqI32(BdPix(67, 126), 0x2B20, "drawing the bar");
+
+    /* --- a zero range gives a negative height, which clips to nothing --- */
+    BarFixture();
+    g_nRangeCur = 0;
+    Check(RadarScreen_DrawRangeBar(&g_barEnv), "a zero range still passes all three gates");
+    CheckEqI32(BdPix(67, 183), 0, "but the height is -15 and nothing is drawn");
+    CheckEqI32(BdPix(67, 182), 0, "not one row above the requested y either");
+
+    /* --- the 70% roll and the per-class penalty, pinned seed by seed ---
+     *
+     * Seeds 1..4 draw a Game_RandU16(100) below 70 and so fire; 7013..7016 draw exactly 70 and so
+     * do not. Both branches are therefore covered by fixed seeds rather than by a probability. */
+    {
+        static const i32 aSeeds[] = { 1, 2, 3, 4, 7013, 7014, 7015, 7016 };
+        i32 nMismatch = 0;
+        i32 nFired = 0;
+        for (i32 i = 0; i < (i32)(sizeof(aSeeds) / sizeof(aSeeds[0])); ++i) {
+            const i32 nSeed = aSeeds[i];
+            srand((unsigned)nSeed);
+            const u16 uRoll = Game_RandU16(100u);
+            const u16 uPen  = Game_RandU16(8u);
+            BarFixture();
+            const i32 nBefore = g_barCraft.nFuel;
+            srand((unsigned)nSeed); /* the port draws the same two rolls from the same seed */
+            (void)RadarScreen_DrawRangeBar(&g_barEnv);
+            const bool bFire = (uRoll < PUFO_RADAR_FIRE_CHANCE);
+            const i32 nWant = bFire ? (i32)uPen - 20 : 0;
+            if (bFire) {
+                nFired += 1;
+            }
+            if ((i32)g_barCraft.nFuel != (i32)(i16)(nBefore + nWant)) {
+                nMismatch += 1;
+            }
+        }
+        CheckEqI32(nFired, 4, "four seeds draw a roll below 70 and four draw 70 or more");
+        CheckEqI32(nMismatch, 0, "class 1's penalty is exactly rand(8) - 20 under the roll");
+    }
+
+    /* --- a class the switch does not know passes gate 1 but pays nothing --- */
+    BarFixture();
+    g_barItem.bCraftClass = 255; /* LDRSB makes this -1, which is non-zero */
+    {
+        const i32 nBefore = g_barCraft.nFuel;
+        Check(RadarScreen_DrawRangeBar(&g_barEnv), "a 255 bCraftClass passes the first gate");
+        CheckEqI32(g_barCraft.nFuel, nBefore, "but the switch default fires no penalty");
+        CheckEqI32(g_nPulseTimer, PUFO_RADAR_PULSE_NEXT, "and the timer is still rearmed");
+        CheckEqI32(BdPix(67, 126), 0x2B20, "with the bar drawn");
+    }
+
+    /* --- the guards --- */
+    BarFixture();
+    Check(!RadarScreen_DrawRangeBar(NULL), "a null environment is refused");
+    CheckEqI32(g_nPulseTimer, PUFO_RADAR_PULSE_ARMED, "leaving the pulse timer armed");
+    g_barEnv.pCraft = NULL;
+    Check(!RadarScreen_DrawRangeBar(&g_barEnv), "a null craft is refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -3629,6 +3867,8 @@ int main(void)
     TestBaseStripHit();
     TestTickFacilityConstruction();
     TestRadarBackdrop();
+    TestRadarFuelGauge();
+    TestRadarRangeBar();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
