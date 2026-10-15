@@ -11203,7 +11203,7 @@ Port: `BuySellScreen_Init` with `BuySellInitEnv` and the pad / palette / screen-
 src/pufo/game/pufo_baseui.{c,h}. Evidence: 0x78c30 (352 bytes), the tail call of
 BuySellScreen_OpenBuy @ 0x61794 (the BL at 0x617B8) and of BuySellScreen_OpenSell @ 0x617c4
 (0x617E8); both openers write the screen id first -- 11 for buy, 12 for sell -- and then call this
-with the screen slot at unk_161A08. Test: `TestBuySellInit` in tests/test_baseui.c, 25 checks.
+with the screen slot at pBuySellScreenPad @ 0x161A08. Test: `TestBuySellInit` in tests/test_baseui.c, 25 checks.
 
 In the original's order:
 
@@ -11226,7 +11226,7 @@ In the original's order:
 7. 0x78D08..0x78D44: `g_anBuySellSlotDelta` is cleared over `Map_nObjectCount` entries -- the
    `LDRH [0x1139B8, #0x12A0]` at 0x78D08, then the post-increment store loop at 0x78D3C.
 8. 0x78D4C..0x78D7C: by the screen id. 11 installs BuySellScreen_ConfirmSiteAndClose @ 0x75090 on the
-   confirm control and calls BuySellScreen_BuildControls (0x76160, not ported); 12 installs
+   confirm control and calls BuySellScreen_BuildControls @ 0x76160; 12 installs
    BuySellScreen_CommitTransaction @ 0x74bf8 and calls BuySellScreen_BuildPanels @ 0x76de0. The 12
    branch is written with `LDREQ` / `STREQ` / `BLEQ`, so the handler store and the call are both
    conditional on the id being read a second time -- the id cannot change in between, so the port
@@ -11239,3 +11239,80 @@ uninitialised.
 
 IDB: the function comment at 0x78c30 rewritten against the current names (`BuySell_nTransTotal`,
 `nSoldierHireCount`), which the older comment still spelled `unk_161A2C` and `unk_159D90`.
+
+
+## BuySellScreen_BuildControls @ 0x76160 -- the buy screen's object block
+
+Evidence: `BuySellScreen_BuildControls @ 0x76160` (3112 B), the call the screen-11 branch of
+`BuySellScreen_Init @ 0x78c30` makes. It is the buy mode's counterpart of
+`BuySellScreen_BuildPanels @ 0x76de0`: the same five panel globals, the same four `g_aBuySellCtl`
+controls and `stru_ABBA0` descriptors, the same `g_aBuySellRowOrder` sort, the same funds rollback --
+but a different row set (the shop's catalogue, not what the base owns), a different geometry,
+`nStyle` 14 instead of 13, and the record it writes is the transfer flow's working site. Test:
+`TestBuySellBuildControls` in tests/test_baseui.c, 51 checks.
+
+The built flag is `bBuySellControlsBuilt @ 0x161A24` (IDB, was `unk_161A24`), a sibling of
+`bBuySellPanelsBuilt @ 0x161A28`: each mode sets its own and each mode's teardown keys off its own.
+
+Teardown branch, `bBuySellControlsBuilt != 0` (0x76C08..0x76D70):
+
+1. 0x76C08..0x76C7C: the working site `aSmapSites[nSiteCount]` is reset whole -- `auItemQty[0..255]`,
+   `bFlag0`, `bFlag1`, `uRecoveredSoldiers`, `bRecoveredSoldierAssign`, `bRecoveredCraftCount`,
+   `anSoldierIds[0..99]` and `anCraftIds[0..9]`. `bUnk518` is NOT cleared here; only the build branch
+   writes it, at 0x761DC. This is the same record `Transfer_ResetSite` (0x9690c, not ported) clears.
+2. 0x76C80: the flag is cleared. 0x76C84..0x76CB8: the loop starts at `&pBuySellScreenPad` and reads
+   `v69[1]`, so it walks the four `g_aBuySellCtl` slots at 0x161A0C..0x161A18 and skips the pad the
+   slot itself holds; each control is `UiControl_FreePads`'d and `operator delete`'d.
+3. 0x76CC4..0x76D58: panels A, B, E, C, D are freed in that order (`UiPanel_FreeLines` then delete),
+   the same order BuildPanels' teardown uses at 0x77CC4..0x77E30.
+4. 0x76D70: `if (BuySell_nFundsSnapshot != nFunds) nFunds = BuySell_nFundsSnapshot`, the same
+   uncommitted-transaction rollback BuildPanels' teardown does.
+
+Build branch (0x7619C..0x76BE8):
+
+1. 0x761A8..0x7620C: the working site is opened -- `bFlag0 = 8`, `bFlag1 =
+   apBases[nSelectedBaseIdx]->bUnk4` (the base's site type, which is what
+   `Base_CountInboundTransfers` and `Base_CountOutboundTransferSpace` match sites against),
+   `bUnk518 = 0`, `uRecoveredSoldiers = 0`, `auItemQty[0..255] = 0`. The two id lists and
+   `bRecoveredCraftCount` are left alone here -- the build branch does not clear what the teardown
+   branch clears.
+2. 0x76218..0x76298: four controls (`operator new(0x20)` + `UiControl_ctor`) into `g_aBuySellCtl`; [0]
+   gets `BuySellScreen_PanelPrev @ 0x76088` and [1] `BuySellScreen_PanelNext @ 0x760e0`; all four get
+   `UiControl_Setup(ctl, 0, 0, stru_ABBA0[i])` -- the same four descriptors BuildPanels uses.
+3. 0x762A4: the flag is set, before the include pass.
+4. 0x762A8..0x76334: the include table, a stack dword array indexed by slot (`v79[4*i+104]`). A slot
+   gets a row when it is 1..58, 112, 113, 117 or 118 AND `ObjectRecFull.uPrice` (0xBC) is non-zero AND
+   the u16 at +0xBA is zero. 0x76318 (`LDRH R2,[R1,#0xBA]`) is the only read of that halfword in the
+   whole binary. In the shipped OBJECTS.DAT the second test excludes nothing the first has not already
+   excluded -- all 35 records with a non-zero +0xBA have no price -- and 36 slots pass: 1, 4, 7, 8, 10,
+   14..17, 19, 22, 25..27, 31, 32, 36, 38, 40..48, 52..54, 56, 57, 112, 113, 117, 118.
+5. 0x76344: `nLineCount = included + 1`, the extra row being the soldier the shop sells.
+6. 0x76348..0x768B4: the five panels, all `nStyle` 14 and `nFont` 16, at x 10 / 174 / 180 / 196 / 232
+   with `nViewW` 125 / 50 / 15 / 15 / 45 and `nUnk7052` 5 / 130 / 176 / 192 / 190. Panel A's click is
+   `BuySellScreen_SyncSelection @ 0x76138`, panel B's `BuySellScreen_UpdatePrices @ 0x75878` and panel
+   C's `BuySellScreen_ValidateCapacity @ 0x75b88` -- the two handlers of the previous unit, now
+   installed by the code that reads their row data. Panels B and C get `SetBytes3to5(0x32, 0x32, 0xFA)`
+   and `nUnk7084 = 5`; A, E and D do not.
+7. 0x768DC..0x76AC4: the fill pass, in slot order, only where the include flag is 1. Panel A gets the
+   record name through the same 17-character cut BuildPanels uses and aux the slot id, panels B and C
+   the `aRowQtyDec` ("<" at 0xABC24) and `aRowQtyInc` (">" at 0xABC20) literals, panel E aux the price
+   and panel D aux zero. Inside the slot-113 branch an extra row is written: panel A's text is
+   `aTextRecs @ 0xB38D0 + 205*159` = 0xBB823 = TEXTS[159] ("Soldier" in main.dat, Russian in lang.dat),
+   panel A aux 1000 -- the one row marker that is not an object slot -- panel E aux 40000 and panel D
+   aux 0. 40000 is exactly what `BuySellScreen_ValidateCapacity` charges for a soldier, so the price
+   column and the capacity gate agree.
+8. 0x76AF0..0x76BE8: the selection sort, `nObjectCount - 1` passes over `g_aBuySellRowOrder`, swapping
+   panels A, E, B, C and D together -- byte-for-byte the pass BuildPanels ends with.
+
+Deviation: the original allocates the four controls with `operator new` and `operator delete`s them in
+its teardown, and dereferences every allocation and both panel and control globals with no test; the
+port takes caller-owned controls and frees only the panels it allocated. The row count is
+`included + 1` unconditionally while the soldier row is written only inside the slot-113 branch, so a
+data set where slot 113 has no price leaves one counted row as `UiPanel_ctor` left it (empty text, aux
+0); the shipped OBJECTS.DAT prices slot 113 at 60000, so this does not arise there.
+
+IDB: the function comment at 0x76160 rewritten against the current names; a comment at 0x76318 naming
+the +0xBA read; `unk_161A24` -> `bBuySellControlsBuilt` (typed `unsigned __int8`), `unk_161A08` ->
+`pBuySellScreenPad`, `unk_ABC20` -> `aRowQtyInc` (">"), `unk_ABC24` -> `aRowQtyDec` ("<") -- the two
+literals are shared by four list builders (0x76160, 0x76de0, 0x7b014, 0x96b30); a comment at 0xBB823
+recording it as TEXTS[159].

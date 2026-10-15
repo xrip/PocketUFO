@@ -896,6 +896,18 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `ConfirmSiteAndClose` + `BuildControls`, 12 → `CommitTransaction` + `BuildPanels`. Only
   `BuySellScreen_BuildControls (0x76160)` is left before the buy/sell screen is complete.
 
+- [x] part 25, the buy screen's object block: `BuySellScreen_BuildControls (0x76160)`, 3112 bytes — 51
+  more checks, and the buy/sell screen is complete. The buy mode's counterpart of `BuildPanels`: the
+  same five panel globals, controls, `stru_ABBA0` descriptors, `g_aBuySellRowOrder` sort and funds
+  rollback, but the shop's catalogue rows (slots 1..58, 112, 113, 117, 118 with a price and a zero
+  `ObjectRecFull+0xBA`), `nStyle` 14, x 10/174/180/196/232, panel E carrying the price, and the
+  soldier row (aux 1000, price 40000, label TEXTS[159]) written inside the slot-113 branch. Its
+  teardown resets the transfer flow's working site `aSmapSites[nSiteCount]` — everything except
+  `bUnk518`, which only the build branch clears. IDB: `unk_161A24` → `bBuySellControlsBuilt`,
+  `unk_161A08` → `pBuySellScreenPad`, `unk_ABC20`/`unk_ABC24` → `aRowQtyInc`/`aRowQtyDec`, a comment
+  at 0x76318 naming the only read of `ObjectRecFull+0xBA` in the binary, and the shipped-data counts
+  corrected (35 records with a non-zero +0xBA, all unpriced; 36 buyable slots).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1074,6 +1086,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy/sell row editors (`BuySellScreen_FillSellPanel`, `BuySellScreen_FillBuyPanel`, the timer-bound repeat loop) | 56/56 (Release) | 9511 | 841/1103 (76.2%) | 338748/598792 (56.6%) | 38 checked, 0 mismatched |
 | the buy screen's quantity controls (`BuySellScreen_ValidateCapacity`, `BuySellScreen_UpdatePrices`, the shortfall codes) | 56/56 (Release) | 9572 | 843/1103 (76.4%) | 340812/598792 (56.9%) | 38 checked, 0 mismatched |
 | the buy/sell screen bring-up (`BuySellScreen_Init`, the pad and palette load, the two confirm wirings) | 56/56 (Release) | 9597 | 844/1103 (76.5%) | 341164/598792 (57.0%) | 38 checked, 0 mismatched |
+| the buy screen's object block (`BuySellScreen_BuildControls`, the catalogue include tests, the soldier row) | 56/56 (Release) | 9648 | 845/1103 (76.6%) | 344276/598792 (57.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

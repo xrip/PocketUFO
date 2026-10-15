@@ -1449,6 +1449,232 @@ static void TestBuySellInit(void)
     pScreen = NULL;
 }
 
+static void CtlStubSync(void) {}
+static void CtlStubPrices(void) {}
+static void CtlStubCapacity(void) {}
+
+static void TestBuySellBuildControls(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static BaseRec aBase[1];
+    static BaseRec *apBase[1];
+    static SmapSite aSites[2];
+    static u8 aText[160 * PUFO_TEXT_REC_STRIDE];
+    static const i32 aWantAux[7] = { 117, 118, 1000, 112, 113, 1, 4 };
+    static const char *const apWantName[7] = {
+        "SKYRANGER", "INTERCEPTOR", "Soldier", "Engineer", "Scientist", "Pistol", "Auto cannon"
+    };
+    static const i32 aWantPrice[7] = { 500000, 600000, 40000, 50000, 60000, 800, 1200 };
+    UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL, *pE = NULL;
+    UiControl aCtl[4];
+    BuySellControlsEnv env;
+    u8 bBuilt = 0;
+    i32 nFunds = 1000;
+    i32 nOk = 0;
+    i32 i;
+
+    printf("the buy screen's object block\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    /* Six slots pass the include tests; the rest fail one of them, each on a different test. */
+    PutStr(aObj[1].szName, "Pistol");
+    PutStr(aObj[4].szName, "Auto cannon");
+    PutStr(aObj[20].szName, "Motion scaner");   /* in range, no price */
+    PutStr(aObj[21].szName, "Medi-kit");        /* in range, priced, but +0xBA is non-zero */
+    PutStr(aObj[58].szName, "HWP blaster bomb");/* last in-range slot, no price */
+    PutStr(aObj[59].szName, "Sectoid corpse");  /* priced, but 59 is outside the range */
+    PutStr(aObj[112].szName, "Engineer");
+    PutStr(aObj[113].szName, "Scientist");
+    PutStr(aObj[114].szName, "Ethereal navigator"); /* priced, outside the range */
+    PutStr(aObj[117].szName, "SKYRANGER");
+    PutStr(aObj[118].szName, "INTERCEPTOR");
+    PutStr(aObj[119].szName, "FIRE STORM");     /* priced, 119 is outside the range */
+    PutStr(aObj[122].szName, "Personal armour");/* priced, outside the range */
+    aObj[1].uPrice = 800;
+    aObj[4].uPrice = 1200;
+    aObj[20].uPrice = 0;
+    aObj[20].uUnk186 = 432;
+    aObj[21].uPrice = 300;
+    aObj[21].uUnk186 = 816;
+    aObj[58].uPrice = 0;
+    aObj[59].uPrice = 700;
+    aObj[112].uPrice = 50000;
+    aObj[113].uPrice = 60000;
+    aObj[114].uPrice = 900;
+    aObj[117].uPrice = 500000;
+    aObj[118].uPrice = 600000;
+    aObj[119].uPrice = 700000;
+    aObj[122].uPrice = 1584;
+
+    PutTextRec(aText, 159, "Soldier");
+
+    aBase[0].bUnk4 = 3;
+    apBase[0] = &aBase[0];
+
+    /* A dirty working site, so the build branch's clearing is visible. */
+    aSites[1].bFlag0 = 99;
+    aSites[1].bFlag1 = 99;
+    aSites[1].auItemQty[10] = 5;
+    aSites[1].uRecoveredSoldiers = 3;
+    aSites[1].bRecoveredSoldierAssign = 2;
+    aSites[1].bRecoveredCraftCount = 1;
+    aSites[1].bUnk518 = 77;
+    aSites[1].anSoldierIds[0] = 4;
+    aSites[1].anCraftIds[0] = 5;
+
+    memset(&env, 0, sizeof(env));
+    memset(aCtl, 0, sizeof(aCtl));
+    env.pbControlsBuilt = &bBuilt;
+    for (i = 0; i < 4; ++i) {
+        env.apCtl[i] = &aCtl[i];
+    }
+    env.ppPanelA = &pA;
+    env.ppPanelB = &pB;
+    env.ppPanelC = &pC;
+    env.ppPanelD = &pD;
+    env.ppPanelE = &pE;
+    env.aSites = aSites;
+    env.nSiteCount = 1;
+    env.apBases = apBase;
+    env.nSelectedBaseIdx = 0;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.pnFunds = &nFunds;
+    env.nFundsSnapshot = 4147000;
+    env.pTextRecs = (const char *)aText;
+    env.pfnPanelPrev = BuySellTestPanelPrev;
+    env.pfnPanelNext = BuySellTestPanelNext;
+    env.pfnSyncSelection = CtlStubSync;
+    env.pfnUpdatePrices = CtlStubPrices;
+    env.pfnValidateCapacity = CtlStubCapacity;
+
+    BuySellScreen_BuildControls(&env);
+
+    CheckEqI32(bBuilt, 1, "the build branch sets the controls-built flag");
+    CheckEqI32(aSites[1].bFlag0, PUFO_BUYSSELL_SITE_FLAG_NEW,
+               "the working site aSmapSites[nSiteCount] is opened with flag 8");
+    CheckEqI32(aSites[1].bFlag1, 3, "and its type byte copied from the selected base");
+    CheckEqI32(aSites[1].bUnk518, 0, "the pending-craft byte is cleared here");
+    CheckEqI32(aSites[1].uRecoveredSoldiers, 0, "the recovery count too");
+    CheckEqI32(aSites[1].auItemQty[10], 0, "the whole item-quantity array is cleared");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 1,
+               "the build branch leaves the recovery craft count alone, 0x7619C..0x7620C");
+    CheckEqI32(aSites[1].anSoldierIds[0], 4, "and the two id lists");
+    CheckEqI32(aSites[1].anCraftIds[0], 5, "which only the teardown branch clears");
+    Check(aCtl[0].pfnClick == BuySellTestPanelPrev, "the first control gets the prev handler");
+    Check(aCtl[1].pfnClick == BuySellTestPanelNext, "the second gets the next handler");
+    Check(aCtl[2].pfnClick == NULL, "the third and fourth get none");
+    CheckEqI32(aCtl[0].x, 0xCD, "the four controls land on their descriptor offsets");
+    CheckEqI32(aCtl[3].y, 0x129, "the same descriptors the sell mode uses");
+
+    Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL && pE != NULL,
+          "all five panels are built");
+    if (pA == NULL || pB == NULL || pC == NULL || pD == NULL || pE == NULL) {
+        return;
+    }
+
+    /* Slots 1, 4, 112, 113, 117, 118 plus the soldier row. */
+    CheckEqI32(pA->nLineCount, 7, "six catalogue rows plus the soldier row");
+    CheckEqI32(pE->nLineCount, 7, "every panel gets the same total");
+    CheckEqI32(pA->nStyle, 14, "the buy screen draws fourteen rows, not the sell screen's thirteen");
+    CheckEqI32(pA->nViewW, 125, "the name column is 125 wide here too");
+    CheckEqI32(pE->nPosX, 174, "the price column moves to 174");
+    CheckEqI32(pE->nViewW, 50, "and is 50 wide");
+    CheckEqI32(pB->nPosX, 180, "the decrement column to 180");
+    CheckEqI32(pC->nPosX, 196, "the increment column to 196");
+    CheckEqI32(pD->nPosX, 232, "the quantity column to 232");
+    Check(pA->pfnClick == CtlStubSync, "the name column re-reads the selection");
+    Check(pB->pfnClick == CtlStubPrices, "the decrement column is the sell handler");
+    Check(pC->pfnClick == CtlStubCapacity, "the increment column is the buy handler");
+    Check(pD->pfnClick == NULL, "the quantity column has no handler");
+
+    nOk = 0;
+    for (i = 0; i < 7; ++i) {
+        if (pA->anLineAux[i] == aWantAux[i]) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 7, "the sort pass puts the rows in the g_aBuySellRowOrder order");
+    nOk = 0;
+    for (i = 0; i < 7; ++i) {
+        const char *psz = UiPanel_GetLineText(pA, i);
+        if (psz != NULL && strcmp(psz, apWantName[i]) == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 7, "and the names match, the soldier row labelled from TEXTS[159]");
+    nOk = 0;
+    for (i = 0; i < 7; ++i) {
+        const char *pszB = UiPanel_GetLineText(pB, i);
+        const char *pszC = UiPanel_GetLineText(pC, i);
+        if (pszB != NULL && strcmp(pszB, "<") == 0 && pszC != NULL && strcmp(pszC, ">") == 0
+            && pE->anLineAux[i] == aWantPrice[i] && pD->anLineAux[i] == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 7, "every row gets its < and > columns and the price it costs, 40000 for a soldier");
+
+    nOk = 0;
+    for (i = 0; i < 7; ++i) {
+        if (pA->anLineAux[i] == 21 || pA->anLineAux[i] == 59 || pA->anLineAux[i] == 114
+            || pA->anLineAux[i] == 119 || pA->anLineAux[i] == 122) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 0,
+               "no row for a slot outside the range, an unpriced slot, or a slot with a non-zero +0xBA");
+
+    CheckEqI32(nFunds, 1000, "the build branch does not touch the funds");
+
+    /* Teardown. */
+    nFunds = 100;
+    aSites[1].auItemQty[10] = 5;
+    aSites[1].uRecoveredSoldiers = 3;
+    aSites[1].bUnk518 = 77;
+    BuySellScreen_BuildControls(&env);
+    CheckEqI32(bBuilt, 0, "the second call takes the teardown branch");
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL && pE == NULL,
+          "the five panel slots are cleared");
+    CheckEqI32(aSites[1].bFlag0, 0, "the working site is reset whole");
+    CheckEqI32(aSites[1].bFlag1, 0, "including the type byte the build branch wrote");
+    CheckEqI32(aSites[1].auItemQty[10], 0, "the item quantities");
+    CheckEqI32(aSites[1].uRecoveredSoldiers, 0, "and the recovery count");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 0, "the recovery craft count");
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 0, "the recovery assignment byte");
+    CheckEqI32(aSites[1].anSoldierIds[0], 0, "the soldier id list");
+    CheckEqI32(aSites[1].anCraftIds[0], 0, "and the craft id list");
+    CheckEqI32(aSites[1].bUnk518, 77, "but not bUnk518, which only the build branch clears");
+    CheckEqI32(nFunds, 4147000, "and the funds roll back to the snapshot");
+
+    /* Slot 113 with no price: the +1 row is still counted, but the soldier row is written inside the
+     * slot-113 branch, so it never appears. */
+    aObj[113].uPrice = 0;
+    BuySellScreen_BuildControls(&env);
+    Check(pA != NULL, "the third call builds again");
+    if (pA != NULL) {
+        CheckEqI32(pA->nLineCount, 6, "the row total still counts the soldier row");
+        nOk = 0;
+        for (i = 0; i < 6; ++i) {
+            const char *psz = UiPanel_GetLineText(pA, i);
+            if (psz != NULL && strcmp(psz, "Soldier") == 0) {
+                ++nOk;
+            }
+        }
+        CheckEqI32(nOk, 0, "but no soldier row is written when slot 113 gets no row of its own");
+        CheckEqI32(pA->anLineAux[5], 0, "and the counted row stays as the constructor left it");
+    }
+    BuySellScreen_BuildControls(&env);
+    CheckEqI32(bBuilt, 0, "and the teardown closes it again");
+
+    BuySellScreen_BuildControls(NULL);
+    env.pbControlsBuilt = NULL;
+    BuySellScreen_BuildControls(&env);
+    CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -6552,6 +6778,7 @@ int main(void)
     TestBuySellRowEditors();
     TestBuySellCapacityGate();
     TestBuySellInit();
+    TestBuySellBuildControls();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

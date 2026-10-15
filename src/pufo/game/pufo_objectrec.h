@@ -46,7 +46,15 @@ typedef struct ObjectRecFull {
     u8   abArmorTu[3];     /* 0xb3 per-mode TU cost basis, auStat[0] * abArmorTu[m] / 100 */
     u16  uFirePower;       /* 0xb6 */
     u8   nCategory;        /* 0xb8 */
-    u8   gap_B9[3];        /* 0xb9 */
+    u8   gap_B9[1];        /* 0xb9 */
+    u16  uUnk186;          /* 0xba the only read of it in the binary is BuySellScreen_BuildControls
+                            * @ 0x76318, which requires it to be zero before a slot gets a buy row.
+                            * In the shipped OBJECTS.DAT it is non-zero on 35 records -- 2, 3, 5, 6, 9,
+                            * 11, 12, 13, 18, 20, 21, 23, 24, 28, 29, 30, 33, 34, 35, 37, 39, 49, 50,
+                            * 51, 55, 58, 106, 107, 109, 119, 120, 121, 122, 123, 124 -- and every one
+                            * of them also has a zero uPrice, so the price test alone already excludes
+                            * all of them. What the number means is not established. The byte at 0xb9
+                            * is zero in every shipped record and is never read. */
     u32  uPrice;           /* 0xbc the item price: Geoscape_InitUI @ 0x86A14 seeds it from
                             * dword_AA2C0 (g_anObjectPrice), and the BuySell screens read it
                             * back. A dword store (`+188`), not a u16. */

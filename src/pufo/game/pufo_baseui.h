@@ -370,8 +370,8 @@ typedef struct BuySellBuildEnv {
     const u16 *apResearchCol;       /* the scientist column @ 0x16022C */
     i32 nCrewEntries;               /* the crew column entry count byte @ 0x160C4C */
     void (*pfnSyncSelection)(void); /* BuySellScreen_SyncSelection @ 0x76138 */
-    void (*pfnFillBuyPanel)(void);  /* BuySellScreen_FillBuyPanel (0x75160, not ported) */
-    void (*pfnFillSellPanel)(void); /* BuySellScreen_FillSellPanel (0x75464, not ported) */
+    void (*pfnFillBuyPanel)(void);  /* BuySellScreen_FillBuyPanel @ 0x75160 */
+    void (*pfnFillSellPanel)(void); /* BuySellScreen_FillSellPanel @ 0x75464 */
     void (*pfnPanelPrev)(void);     /* BuySellScreen_PanelPrev @ 0x76088 */
     void (*pfnPanelNext)(void);     /* BuySellScreen_PanelNext @ 0x760e0 */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
@@ -384,7 +384,7 @@ void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv);
 /* ------------------------------------------------- the buy/sell commit
  *
  * Evidence: BuySellScreen_CommitTransaction @ 0x74bf8 (1176 B), wired as the click handler of
- * screen 12 by BuySellScreen_Init (0x78c30, not ported).
+ * screen 12 by BuySellScreen_Init @ 0x78c30.
  *
  * Six phases, in order:
  *
@@ -624,14 +624,13 @@ i32 BuySellScreen_UpdatePrices(const BuySellCapacityEnv *pEnv);     /* the "<" c
  *      the same centring BaseAtScreen_Open @ 0x588cc does.
  *   7. 0x78D08..0x78D44: g_anBuySellSlotDelta is cleared over Map_nObjectCount entries.
  *   8. 0x78D4C..0x78D7C: by the screen id. 11 installs BuySellScreen_ConfirmSiteAndClose @ 0x75090 on
- *      the confirm control and calls BuySellScreen_BuildControls (0x76160, not ported); 12 installs
+ *      the confirm control and calls BuySellScreen_BuildControls @ 0x76160; 12 installs
  *      BuySellScreen_CommitTransaction @ 0x74bf8 and calls BuySellScreen_BuildPanels @ 0x76de0. The
  *      12 branch is written with LDREQ / STREQ / BLEQ, so the handler store and the call are both
  *      conditional on the id being read a second time.
  *
  * Deviations: the original dereferences the allocation and both control globals with no test; the
- * port skips what failed to allocate or was not supplied. BuySellScreen_BuildControls is not ported
- * and enters as a hook. */
+ * port skips what failed to allocate or was not supplied. */
 #define PUFO_BUYSSELL_PAD_NAME      "buy_sell"     /* aBuySell @ 0xABC2C */
 #define PUFO_BUYSSELL_PALETTE_NAME  "buy_sell.pal" /* aBuySellPal @ 0xABC38 */
 #define PUFO_BUYSSELL_PALETTE_SLOT  5              /* 0x78C7C: MOV R1,#5 */
@@ -645,7 +644,7 @@ typedef struct BuySellInitEnv {
     void (*pfnCloseClick)(void);     /* BuySellScreen_CloseThunk @ 0x75154 */
     void (*pfnConfirmBuy)(void);     /* BuySellScreen_ConfirmSiteAndClose @ 0x75090 */
     void (*pfnConfirmSell)(void);    /* BuySellScreen_CommitTransaction @ 0x74bf8 */
-    void (*pfnBuildControls)(void);  /* BuySellScreen_BuildControls (0x76160), not ported */
+    void (*pfnBuildControls)(void);  /* BuySellScreen_BuildControls @ 0x76160 */
     void (*pfnBuildPanels)(void);    /* BuySellScreen_BuildPanels @ 0x76de0 */
     i32 nScreenId;                   /* nGeoscapeScreen @ 0x186BC4 */
     const i32 *pnFunds;              /* nFunds @ 0x1598D8 */
@@ -657,6 +656,91 @@ typedef struct BuySellInitEnv {
 } BuySellInitEnv;
 
 void BuySellScreen_Init(const BuySellInitEnv *pEnv);
+
+/* ------------------------------------------------- the buy screen's object block
+ *
+ * Evidence: BuySellScreen_BuildControls @ 0x76160 (3112 B), the second half of the screen 11 branch
+ * of BuySellScreen_Init @ 0x78c30. It is the buy mode's counterpart of BuySellScreen_BuildPanels:
+ * the same five panel globals, the same g_aBuySellCtl controls and stru_ABBA0 descriptors, the same
+ * g_aBuySellRowOrder sort -- but a different row set (the shop's catalogue, not what the base owns),
+ * a different geometry, and the record it writes is the transfer flow's working site.
+ *
+ * The built flag is unk_161A24, a sibling of bBuySellPanelsBuilt @ 0x161A28: each mode sets its own
+ * and each mode's teardown keys off its own.
+ *
+ * Teardown branch, *pbControlsBuilt != 0 (0x76C08..0x76D70):
+ *   1. the working site aSmapSites[nSiteCount] is reset whole -- auItemQty[0..255], bFlag0, bFlag1,
+ *      uRecoveredSoldiers, bRecoveredSoldierAssign, bRecoveredCraftCount, anSoldierIds[0..99] and
+ *      anCraftIds[0..9]. Note bUnk518 is NOT cleared here, only by the build branch.
+ *   2. the flag is cleared, the four controls are UiControl_FreePads'd and deleted, and panels A, B,
+ *      E, C, D are freed in that order (UiPanel_FreeLines then delete, 0x76CC4 / 0x76CE4 / 0x76D04 /
+ *      0x76D24 / 0x76D44). The control loop starts at &unk_161A08 and reads v69[1], so it covers the
+ *      four g_aBuySellCtl slots and not the pad block the slot itself holds.
+ *   3. `if (BuySell_nFundsSnapshot != nFunds) nFunds = BuySell_nFundsSnapshot` -- the same rollback
+ *      BuildPanels' teardown does.
+ *
+ * Build branch (0x7619C..0x76BE8):
+ *   1. 0x761A8..0x7620C: the working site is opened -- bFlag0 = 8, bFlag1 = apBases[nSelectedBaseIdx]
+ *      ->bUnk4 (the base's site type, which is what the two transfer counters match sites against),
+ *      bUnk518 = 0, uRecoveredSoldiers = 0, auItemQty[0..255] = 0.
+ *   2. 0x76218..0x76298: four controls (operator new 0x20 + UiControl_ctor) into g_aBuySellCtl; [0]
+ *      gets BuySellScreen_PanelPrev @ 0x76088 and [1] BuySellScreen_PanelNext @ 0x760e0; all four get
+ *      UiControl_Setup(ctl, 0, 0, stru_ABBA0[i]) -- the same four descriptors BuildPanels uses.
+ *   3. 0x762A8..0x76334: the include table. A slot gets a row when it is 1..58, 112, 113, 117 or 118
+ *      AND ObjectRecFull.uPrice (0xBC) != 0 AND the u16 at +0xBA is 0 (0x76318). In the shipped
+ *      OBJECTS.DAT the second test excludes nothing the first has not already excluded -- all 35
+ *      records with a non-zero +0xBA have no price -- and 36 slots pass: 1, 4, 7, 8, 10, 14..17, 19,
+ *      22, 25..27, 31, 32, 36, 38, 40..48, 52..54, 56, 57, 112, 113, 117, 118. The row count is the
+ *      included count + 1, for the soldier row written after slot 113.
+ *   4. 0x76348..0x768B4: the five panels, all nStyle 14 and nFont 16 (BuildPanels uses nStyle 13), at
+ *      x 10 / 174 / 180 / 196 / 232 with nViewW 125 / 50 / 15 / 15 / 45. Panel A's click is
+ *      BuySellScreen_SyncSelection @ 0x76138, panel B's BuySellScreen_UpdatePrices @ 0x75878 and
+ *      panel C's BuySellScreen_ValidateCapacity @ 0x75b88 -- the two handlers of the previous unit.
+ *   5. 0x768DC..0x76AC4: the fill pass, in slot order, only where the include flag is 1. Panel A gets
+ *      the record name cut to 17 and aux the slot id, panels B and C the "<" and ">" literals at
+ *      0xABC24 and 0xABC20, panel E aux the price and panel D aux zero. Inside the slot-113 branch an
+ *      extra row is written: panel A's text is aTextRecs @ 0xB38D0 + 205*159 = 0xBB823 ("Soldier" in
+ *      main.dat, "Солдат" in lang.dat), panel A aux 1000, panel E aux 40000 and panel D aux 0 -- the
+ *      soldier the shop sells at exactly the 40000 BuySellScreen_ValidateCapacity charges for one.
+ *      The +1 in the row count is unconditional, so when slot 113 itself is excluded (no price) the
+ *      soldier row is never written and the last row stays as UiPanel_ctor left it.
+ *   6. 0x76AF0..0x76BE8: the same selection sort over g_aBuySellRowOrder, swapping panels A, E, B, C
+ *      and D together.
+ *
+ * Deviations: the original allocates the four controls and the five panels with operator new and
+ * deletes the controls in its teardown; the port takes caller-owned controls and frees only the
+ * panels it allocated. The original dereferences every allocation without a test. */
+#define PUFO_BUYSSELL_SITE_FLAG_NEW     8    /* 0x761A8: the working site's bFlag0 while the shop is open */
+#define PUFO_BUYSSELL_SOLDIER_TEXT_REC  159  /* aTextRecs + 205*159 = 0xBB823, "Soldier" */
+
+typedef struct BuySellControlsEnv {
+    u8  *pbControlsBuilt;             /* unk_161A24 */
+    UiControl *apCtl[4];              /* g_aBuySellCtl @ 0x161A0C */
+    UiPanel **ppPanelA;               /* pBuySellPanelA @ 0x161A1C */
+    UiPanel **ppPanelB;               /* pBuySellPanelB @ 0x161A00 */
+    UiPanel **ppPanelC;               /* pBuySellPanelC @ 0x161A20 */
+    UiPanel **ppPanelD;               /* pBuySellPanelD @ 0x160C88 */
+    UiPanel **ppPanelE;               /* pBuySellPanelE @ 0x1615F8 */
+    SmapSite *aSites;                 /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                   /* nSiteCount @ 0x186410, also the working site's index */
+    BaseRec *const *apBases;          /* apBases @ 0x114B2C, for the site's bFlag1 */
+    i8 nSelectedBaseIdx;              /* nSelectedBaseIdx @ 0x159D81 */
+    ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                 /* Map_nObjectCount @ 0x114A60 */
+    i32 *pnFunds;                     /* nFunds @ 0x1598D8 */
+    i32 nFundsSnapshot;               /* BuySell_nFundsSnapshot @ 0x161460 */
+    const char *pTextRecs;            /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    void (*pfnPanelPrev)(void);       /* BuySellScreen_PanelPrev @ 0x76088 */
+    void (*pfnPanelNext)(void);       /* BuySellScreen_PanelNext @ 0x760e0 */
+    void (*pfnSyncSelection)(void);   /* BuySellScreen_SyncSelection @ 0x76138 */
+    void (*pfnUpdatePrices)(void);    /* BuySellScreen_UpdatePrices @ 0x75878 */
+    void (*pfnValidateCapacity)(void);/* BuySellScreen_ValidateCapacity @ 0x75b88 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} BuySellControlsEnv;
+
+void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *
