@@ -4820,6 +4820,328 @@ void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnim
     }
 }
 
+/* The funding screen's five country names in slot order -- the order its own names panel copies
+ * them in (0x5AF5C..0x5B038), which is what pins the slots: 0 USA, 1 Australia, 2 Euro, 3 Asia,
+ * 4 Africa. */
+const i32 g_anFundingSlotText[PUFO_FUND_ROW_COUNT] = { 1302, 1305, 1303, 1304, 1306 };
+
+static void FundingFreePanel(UiPanel **ppPanel)
+{
+    UiPanel *pPanel;
+
+    if (ppPanel == NULL) {
+        return;
+    }
+    pPanel = *ppPanel;
+    if (pPanel != NULL) {
+        UiPanel_FreeLines(pPanel);                  /* 0x5B188 */
+        free(pPanel);                               /* 0x5B190: operator delete */
+        *ppPanel = NULL;
+    }
+}
+
+/* One of the funding screen's three panels: operator new(0x1BB4) + UiPanel_ctor(5) plus the field
+ * setup all three share. The names panel keeps the ctor's bFlag7072 = 1 and bFlag7074 = 0; the
+ * bars and arrows panels clear bFlag7072 and set bFlag7074. */
+static UiPanel *FundingNewPanel(i32 nPosX, u8 b0, u8 b1, u8 b2,
+                                u8 bFlag7072, u8 bFlag7074, u8 bUnk7089)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel)); /* 0x5AC60 */
+
+    if (pPanel == NULL || !UiPanel_ctor(pPanel, PUFO_FUND_PANEL_LINES)) { /* 0x5AC70 */
+        free(pPanel);
+        return NULL;
+    }
+    pPanel->nStyle = 5;                             /* 0x5AC98 */
+    pPanel->nFont = 16;                             /* 0x5ACAC */
+    pPanel->nPosX = nPosX;                          /* 0x5ACC0 */
+    pPanel->nPosY = 70;                             /* 0x5ACD4 */
+    UiPanel_SetBytes0to2(pPanel, b0, b1, b2);       /* 0x5AD14 */
+    pPanel->bUnk7088 = 0x96;                        /* 0x5AD28, written as -106 */
+    UiPanel_SetBytes6to11(pPanel, 0xC8, 0xB4, 0xF0, 0x14, 0x14, 0x14); /* 0x5AD4C */
+    UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA); /* 0x5AD60 */
+    pPanel->bFlag7073 = 0;                          /* 0x5AD70 */
+    pPanel->bFlag7072 = bFlag7072;
+    pPanel->bFlag7074 = bFlag7074;
+    pPanel->bUnk7089 = bUnk7089;
+    return pPanel;
+}
+
+/* FundingScreen_Toggle @ 0x5abe4. Open it and it builds the pad and the three panels; close it and
+ * it frees exactly those. See the header for the field-by-field evidence. */
+void FundingScreen_Toggle(FundingToggleEnv *pEnv)
+{
+    UiPanel *pNames = NULL;
+    UiPanel *pBars = NULL;
+    UiPanel *pArrows = NULL;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbOpen == NULL || pEnv->pnTotal == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbOpen != 0) {
+        *pEnv->pbOpen = 0;                          /* 0x5B170 */
+        FundingFreePanel(pEnv->ppPanelNames);       /* 0x5B17C..0x5B190 */
+        FundingFreePanel(pEnv->ppPanelBars);        /* 0x5B19C..0x5B1B0 */
+        FundingFreePanel(pEnv->ppPanelArrows);      /* 0x5B1BC..0x5B1D0 */
+        if (pEnv->ppPad != NULL && *pEnv->ppPad != NULL) {
+            PadImage_FreeData(*pEnv->ppPad);        /* 0x5B1E8 */
+            free(*pEnv->ppPad);                     /* 0x5B1F0 */
+            *pEnv->ppPad = NULL;
+        }
+        return;
+    }
+
+    *pEnv->pbOpen = 1;                              /* 0x5AC00 */
+    *pEnv->pnTotal = 0;                             /* 0x5AC0C */
+
+    if (pEnv->ppPad != NULL) {
+        PadImage *const pPad = BuySellPadNew();     /* 0x5AC14..0x5AC20 */
+
+        *pEnv->ppPad = pPad;                        /* 0x5AC40 */
+        if (pPad != NULL) {
+            (void)PadImage_Load(pPad, PUFO_FUNDING_PAD_NAME, PUFO_FUNDING_PAD_MODE); /* 0x5AC44 */
+            pPad->nOriginX = 0;                     /* 0x5AC4C */
+            pPad->nOriginY = 0;                     /* 0x5AC54 */
+        }
+    }
+
+    if (pEnv->ppPanelNames != NULL) {
+        pNames = FundingNewPanel(10, 0x64, 0x96, 0x64, 1, 0, 0);
+        *pEnv->ppPanelNames = pNames;               /* 0x5AC90 */
+        if (pNames != NULL) {
+            pNames->nUnk7052 = 5;                   /* 0x5ACDC */
+            pNames->nUnk7056 = 70;                  /* 0x5ACF0 */
+            pNames->nViewW = 230;                   /* 0x5AD04 */
+            for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+                if (pEnv->pTextRecs == NULL) {
+                    break; /* deviation: the original reads aTextRecs unconditionally */
+                }
+                (void)UiPanel_SetLineText(pNames, i, (const char *)(pEnv->pTextRecs
+                                  + (size_t)PUFO_TEXT_REC_STRIDE * g_anFundingSlotText[i]));
+            }
+        }
+    }
+
+    if (pEnv->ppPanelBars != NULL) {
+        pBars = FundingNewPanel(100, 0xB4, 0xB4, 0xB4, 0, 1, 0);
+        *pEnv->ppPanelBars = pBars;                 /* 0x5ADA8 */
+        if (pBars != NULL && pEnv->anBar != NULL) {
+            for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+                pBars->anLineAux[i] = pEnv->anBar[i]; /* 0x5B058..0x5B0A0 */
+            }
+        }
+    }
+
+    if (pEnv->ppPanelArrows != NULL) {
+        pArrows = FundingNewPanel(170, 0xB4, 0xB4, 0xB4, 0, 1, 1);
+        *pEnv->ppPanelArrows = pArrows;             /* 0x5AE88 */
+        if (pArrows != NULL && pEnv->anLevel != NULL) {
+            for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+                pArrows->anLineAux[i] = pEnv->anLevel[i]; /* 0x5B0AC..0x5B0E8 */
+            }
+        }
+    }
+
+    if (pBars == NULL) {
+        return; /* deviation: the original walks the bars panel whatever the allocation did */
+    }
+
+    /* 0x5B0EC..0x5B11C: a bar that is not positive shows no bar and no arrow. */
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        if (pBars->anLineAux[i] <= 0) {
+            pBars->anLineAux[i] = 0;
+            if (pArrows != NULL) {
+                pArrows->anLineAux[i] = 0;
+            }
+        }
+    }
+
+    /* 0x5B124..0x5B144: the "$" line the draw prints is the sum of the five bars. */
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        *pEnv->pnTotal += pBars->anLineAux[i];
+    }
+}
+
+/* One of the funding screen's three TEXTS strings, copied into the draw's scratch buffer. The
+ * original copies byte by byte with no bound into a 104-byte buffer; the records here are short
+ * and the port bounds the copy anyway. */
+static void FundingCopyTextRec(char *pszDst, size_t cchDst, const u8 *pTextRecs, i32 nRec)
+{
+    if (pTextRecs == NULL || cchDst == 0) {
+        if (cchDst != 0) {
+            pszDst[0] = '\0';
+        }
+        return; /* deviation: the original reads aTextRecs unconditionally */
+    }
+    pufo_strncpy(pszDst, (const char *)(pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * nRec), cchDst);
+}
+
+/* FundingScreen_Open @ 0x5b560. */
+UiControl *FundingScreen_Open(FundingToggleEnv *pToggle, const FundingOpenEnv *pEnv)
+{
+    FundingScreen_Toggle(pToggle);                        /* 0x5B564 */
+    if (pEnv == NULL || pEnv->pCloseCtl == NULL) {
+        return NULL;
+    }
+    pEnv->pCloseCtl->x = 224;                             /* 0x5B574 */
+    pEnv->pCloseCtl->y = 1;                               /* 0x5B580 */
+    pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick;      /* 0x5B58C */
+    return pEnv->pCloseCtl;                               /* 0x5B590 */
+}
+
+/* FundingScreen_Draw @ 0x5b1fc. Nothing is drawn while the screen is closed. */
+void FundingScreen_Draw(const FundingDrawEnv *pEnv)
+{
+    char szLabel[PUFO_FUND_LABEL_MAX];                    /* 0x5B1FC: char psz[104] */
+    char szNum[100];                                      /* 0x5B4DC: var_64, the itoa scratch */
+    i32 nWidth;
+
+    if (pEnv == NULL || pEnv->pbOpen == NULL || *pEnv->pbOpen == 0) {
+        return;                                           /* 0x5B210 */
+    }
+
+    if (pEnv->pPad != NULL) {
+        PadImage_Blit(pEnv->pPad);                        /* 0x5B218 */
+    }
+    BaseUi_DrawFrameRails();                              /* 0x5B220..0x5B3AC */
+    (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser); /* 0x5B3C0 */
+
+    /* 0x5B3D8..0x5B440: "Инвестирование стран", centred at y 20. */
+    FundingCopyTextRec(szLabel, sizeof(szLabel), pEnv->pTextRecs, PUFO_FUND_TEXT_TITLE);
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 210, 190, 250, 20, 20, 20); /* 0x5B414 */
+    nWidth = Text_MeasureWidth(szLabel);                  /* 0x5B428 */
+    Text_DrawString(120 - nWidth / 2, 20, szLabel);       /* 0x5B440 */
+
+    /* 0x5B454..0x5B480: "Страна Инвест. изм. $", the caption over the three columns. */
+    FundingCopyTextRec(szLabel, sizeof(szLabel), pEnv->pTextRecs, PUFO_FUND_TEXT_COLUMNS);
+    Text_DrawString(10, 50, szLabel);                     /* 0x5B480 */
+
+    /* 0x5B48C..0x5B4A4: names, bars, arrows. */
+    if (pEnv->pPanelNames != NULL) {
+        UiPanel_DrawText(pEnv->pPanelNames);
+    }
+    if (pEnv->pPanelBars != NULL) {
+        UiPanel_DrawText(pEnv->pPanelBars);
+    }
+    if (pEnv->pPanelArrows != NULL) {
+        UiPanel_DrawText(pEnv->pPanelArrows);
+    }
+
+    /* 0x5B4B4..0x5B52C: "Итого: " + the total + "$". The total is whatever the toggle built; this
+     * draw never recomputes it. */
+    FundingCopyTextRec(szLabel, sizeof(szLabel), pEnv->pTextRecs, PUFO_FUND_TEXT_TOTAL);
+    if (pEnv->pnTotal != NULL) {
+        (void)snprintf(szNum, sizeof(szNum), "%d", (int)*pEnv->pnTotal); /* 0x5B4E0: j_itoa */
+        (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));              /* 0x5B4EC */
+    }
+    (void)pufo_strcat(szLabel, "$", sizeof(szLabel));     /* 0x5B4F8: asc_AB1D8 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 180, 240, 20, 20, 20);   /* 0x5B518 */
+    Text_DrawString(10, 160, szLabel);                    /* 0x5B52C */
+}
+
+/* The monthly report's commentary, TEXTS[1307..1333], as [arrow + 2][group][line]. Group 1 is
+ * rows 1 and 2 -- Euro and Asia, which the original words separately (0x5BA34, 0x5BB80, 0x5BD70,
+ * 0x5BEA4); group 0 is rows 0, 3 and 4. */
+static const i32 g_anFundingCommentary[5][2][2] = {
+    { { 1309, 1310 }, { 1307, 1308 } }, /* arrow -2 */
+    { { 1315, 1316 }, { 1313, 1314 } }, /* arrow -1 */
+    { { 1321, 1322 }, { 1319, 1320 } }, /* arrow  0 */
+    { { 1326, 1327 }, { 1324, 1325 } }, /* arrow +1 */
+    { { 1331, 1332 }, { 1329, 1330 } }  /* arrow +2 */
+};
+
+/* The third line of each row. Only the two negative arrows have a "this country is in the red"
+ * variant (0x5BF60, 0x5BE34); 0, +1 and +2 use one line whichever way the flag falls. */
+static const i32 g_anFundingCommentaryTail[5][2] = {
+    { 1312, 1311 }, /* arrow -2: not red / red */
+    { 1318, 1317 }, /* arrow -1: not red / red */
+    { 1323, 1323 }, /* arrow  0 */
+    { 1328, 1328 }, /* arrow +1 */
+    { 1333, 1333 }  /* arrow +2 */
+};
+
+/* FundingScreen_DrawExtended @ 0x5b59c. The monthly report: five rows of title plus three
+ * commentary lines, re-derived from the funding arrays. See the header for the branch map. */
+void FundingScreen_DrawExtended(const FundingDrawEnv *pEnv)
+{
+    char aTitle[PUFO_FUND_ROW_COUNT][100]; /* 0x5B908..: v100..v104, 100 bytes each */
+    char szHead[200];                      /* 0x5B59C: unsigned char psz[200] */
+    char szLine1[200], szLine2[200], szLine3[200]; /* v98, v99 and the reused psz */
+    i8 anArrow[PUFO_FUND_ROW_COUNT];
+    u8 abRed[PUFO_FUND_ROW_COUNT];
+    i32 nRow;
+    i32 nWidth;
+
+    if (pEnv == NULL || pEnv->anShare == NULL || pEnv->anBaseline == NULL || pEnv->anBar == NULL) {
+        return; /* deviation: the original reads the six globals unconditionally */
+    }
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 240, 240, 240, 20, 20, 20); /* 0x5B5C8, before the pad */
+    if (pEnv->pPad != NULL) {
+        PadImage_Blit(pEnv->pPad);                     /* 0x5B5D4 */
+    }
+    BaseUi_DrawFrameRails();                           /* 0x5B5DC..0x5B768 */
+    (void)UiControl_BlitActivePad(pEnv->pCloseCtl, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser); /* 0x5B77C */
+
+    FundingCopyTextRec(szHead, sizeof(szHead), pEnv->pTextRecs, PUFO_FUND_TEXT_MONTHLY);
+    nWidth = Text_MeasureWidth(szHead);                /* 0x5B7BC */
+    Text_DrawString(120 - nWidth / 2, 5, szHead);      /* 0x5B7D4 */
+
+    /* 0x5B7E8..0x5B8C0: each row's arrow, and whether its bar says the country is in the red. */
+    for (nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        const i32 nSlot = g_anFundingRowSlot[nRow];
+        const i32 nRaw = Funding_DeltaToArrow(pEnv->anShare[nSlot], pEnv->anBaseline[nRow]);
+
+        anArrow[nRow] = (i8)nRaw;                      /* v96[m] = (char)v7, taken before the bar */
+        abRed[nRow] = (((nRaw & 0x80) != 0) && pEnv->anBar[nSlot] < 0) ? 1 : 0;
+    }
+
+    /* 0x5B8CC..0x5B8F0: the first two months never show a falling country. */
+    if (pEnv->nMonthCounter < 3) {
+        for (nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+            if (anArrow[nRow] < 0) {
+                anArrow[nRow] = 0;
+            }
+        }
+    }
+
+    /* 0x5B908..0x5B9D4: the five row titles, in report order. */
+    for (nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        FundingCopyTextRec(aTitle[nRow], sizeof(aTitle[nRow]), pEnv->pTextRecs,
+                           PUFO_FUND_TEXT_ROW0 + nRow);
+    }
+
+    /* 0x5B9E0..0x5C058: the five rows. */
+    for (nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        const i8 nArrow = anArrow[nRow];
+        const i32 nGroup = (nRow == 1 || nRow == 2) ? 1 : 0;
+
+        if (nArrow >= -2 && nArrow <= 2) {
+            const i32 nIdx = nArrow + 2;
+
+            FundingCopyTextRec(szLine1, sizeof(szLine1), pEnv->pTextRecs,
+                               g_anFundingCommentary[nIdx][nGroup][0]);
+            FundingCopyTextRec(szLine2, sizeof(szLine2), pEnv->pTextRecs,
+                               g_anFundingCommentary[nIdx][nGroup][1]);
+            FundingCopyTextRec(szLine3, sizeof(szLine3), pEnv->pTextRecs,
+                               g_anFundingCommentaryTail[nIdx][abRed[nRow] != 0 ? 1 : 0]);
+        }
+        /* An arrow outside -2..2 copies nothing: the original leaves the three buffers holding the
+         * previous row's text and draws those again. */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 40, 240, 40, 20, 20, 20);   /* 0x5BFC8 */
+        Text_DrawString(5, 60 * nRow + 20, aTitle[nRow]);                  /* 0x5BFF8 */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 180, 180, 240, 20, 20, 20); /* 0x5C018 */
+        Text_DrawString(5, 60 * nRow + 35, szLine1);                       /* 0x5C02C */
+        Text_DrawString(5, 60 * nRow + 45, szLine2);                       /* 0x5C040 */
+        Text_DrawString(5, 60 * nRow + 55, szLine3);                       /* 0x5C058 */
+    }
+}
+
 /* ResearchScreen_StartSelected @ 0x73240. Allocation turns into running work only when the topic
  * is idle and this base has actually allocated something to it. */
 i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)

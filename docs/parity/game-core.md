@@ -13108,3 +13108,60 @@ PUFO_RACE_ID_* -> PUFO_REGION_ID_*, plus the PufoRegionId enum in the IDB and in
 Deviation recorded. Region 0x89 has no counter of its own: the original's store for it lands on
 0x186566 (bUiFrameStyle). The port's tenth byte is the same slot of the same sweep StartNew
 writes, so the two agree; the shipped placement flow never reaches 0x89 through this call.
+## The funding screen's own UI
+
+Four functions carry the screen itself, on top of the recompute ported earlier:
+
+- FundingScreen_Toggle @ 0x5abe4 (1560 B): open/close. Open sets bFundScreenOpen, zeroes
+  nFundDisplayTotal, loads its own "funding" pad at origin (0,0), and builds three 5-line panels
+  (nStyle 5, nFont 16, y 70, x 10 / 100 / 170). Close frees exactly those four objects.
+- FundingScreen_Open @ 0x5b560 (60 B): the toggle, then the shared close control unk_186B00 to
+  (224, 1) with FundingScreen_CloseThunk @ 0x5abd8.
+- FundingScreen_Draw @ 0x5b1fc (868 B): gated on the flag. Pad, the 96 shared frame rails, the close
+  control's pad, TEXTS[1149] centred at y 20, TEXTS[1150] at (10, 50), the three panels, then
+  TEXTS[1151] + itoa(nFundDisplayTotal) + '$' at (10, 160).
+- FundingScreen_DrawExtended @ 0x5b59c (2780 B): the monthly report. No open gate, and it never
+  reads the three panels -- it re-derives everything from the funding arrays.
+
+### What the toggle pins that the recompute could not
+
+The names panel copies the five country names in SLOT order: TEXTS[1302] USA, TEXTS[1305]
+Australia, TEXTS[1303] Euro, TEXTS[1304] Asia, TEXTS[1306] Africa (0x5AF5C..0x5B038). That is an
+independent confirmation of the slot model the recompute inferred from the base-region chain: slot 0
+USA, 1 Australia, 2 Euro, 3 Asia, 4 Africa. The report rows use the permutation {0, 2, 3, 1, 4} with
+titles TEXTS[1302 + row], so the panel order and the report order differ, and the test shows both.
+
+A bar that is not positive zeroes its bar AND its arrow (0x5B0EC..0x5B11C) -- the same rule the
+recompute applies at 0x5C4D4..0x5C510, applied again at draw time. The '$' line is not a leftover of
+the recompute: nFundDisplayTotal @ 0x159604 is zeroed on open (0x5AC0C) and rebuilt from the five
+bars (0x5B124..0x5B144).
+
+### The report's commentary table
+
+TEXTS[1307..1333], selected by [arrow + 2][group][line]. Group 1 is rows 1 and 2 (Euro and Asia,
+0x5BA34, 0x5BB80, 0x5BD70, 0x5BEA4); group 0 is rows 0, 3 and 4. The third line has a "this country
+is in the red" variant only for the two negative arrows (0x5BF60, 0x5BE34); 0, +1 and +2 use one
+line whichever way the flag falls. The red flag is (arrow < 0) && bar[slot] < 0 (0x5B810..0x5B820):
+the BAR decides, not the share. The test proves it by flipping only the bar and watching the tail
+record move from 1318 to 1317.
+
+While nMonthCounter < 3 every negative arrow is drawn as 0 (0x5B8CC..0x5B8F0), the same clamp
+FundingScreen_Init applies to the stored level.
+
+An arrow outside -2..2 copies nothing and redraws the previous row's three buffers -- the original's
+scratch buffers are not cleared between rows. Funding_DeltaToArrow only ever returns -2..2, so that
+branch is unreachable through it and the port keeps it as a comment rather than a test.
+
+### Deviations
+
+- The original dereferences the panel allocations with no null test (0x5AC98 and after) and copies
+  each name byte by byte into a 50-byte line buffer; the port guards the allocation and bounds the
+  copy.
+- The original reads aTextRecs and the six funding globals unconditionally; the port returns when an
+  env field is missing.
+- FundingScreen_DrawExtended has no open gate and ignores the three panels; the port keeps both
+  facts, and the test draws the report after closing the screen to show it.
+
+IDB: unk_1595EC -> bFundScreenOpen, unk_159604 -> nFundDisplayTotal, dword_1595E4 / dword_1595E0 /
+dword_1595E8 -> pFundPanelNames / pFundPanelBars / pFundPanelArrows; function comments added at
+0x5abe4, 0x5b560, 0x5b1fc and 0x5b59c.

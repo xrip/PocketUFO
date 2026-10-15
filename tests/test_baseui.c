@@ -12039,6 +12039,444 @@ static void TestFundingRecompute(void)
     Asset_CloseArchives();
 }
 
+/* ---------------------------------------------------------------------------
+ * The funding screen's own UI: FundingScreen_Toggle (0x5abe4), FundingScreen_Open (0x5b560),
+ * FundingScreen_Draw (0x5b1fc) and FundingScreen_DrawExtended (0x5b59c).
+ * ------------------------------------------------------------------------- */
+
+static u8        g_bFundOpen;
+static i32       g_nFundTotal;
+static PadImage *g_pFundUiPad;
+static UiPanel  *g_pFundPanelNames;
+static UiPanel  *g_pFundPanelBars;
+static UiPanel  *g_pFundPanelArrows;
+static i32       g_anFundBarUi[PUFO_FUND_ROW_COUNT];   /* slot-indexed, g_nFundBar0..4 @ 0x186594 */
+static i32       g_anFundLevelUi[PUFO_FUND_ROW_COUNT]; /* slot-indexed, g_nFundArrow0..4 @ 0x1865A8 */
+static i32       g_anFundShareUi[PUFO_FUND_ROW_COUNT]; /* slot-indexed, g_nFundShare0..4 @ 0x186580 */
+static i32       g_anFundBaseUi[PUFO_FUND_ROW_COUNT];  /* row-indexed, g_nFundBase0..4 @ 0x1595F0 */
+static UiControl g_fundUiClose;
+static PadImage  g_fundUiClosePad;
+
+static void FundUiFixture(FundingToggleEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    memset(g_anFundBarUi, 0, sizeof(g_anFundBarUi));
+    memset(g_anFundLevelUi, 0, sizeof(g_anFundLevelUi));
+    memset(g_anFundShareUi, 0, sizeof(g_anFundShareUi));
+    memset(g_anFundBaseUi, 0, sizeof(g_anFundBaseUi));
+    memset(&g_fundUiClose, 0, sizeof(g_fundUiClose));
+    memset(&g_fundUiClosePad, 0, sizeof(g_fundUiClosePad));
+    g_fundUiClose.bEnabled = 1;   /* a disabled control blits nothing (0x1A360) */
+    g_fundUiClose.apPads[0] = &g_fundUiClosePad;
+    g_bFundOpen = 0;
+    g_nFundTotal = 0;
+    g_pFundUiPad = NULL;
+    g_pFundPanelNames = NULL;
+    g_pFundPanelBars = NULL;
+    g_pFundPanelArrows = NULL;
+
+    pEnv->pbOpen = &g_bFundOpen;
+    pEnv->pnTotal = &g_nFundTotal;
+    pEnv->ppPad = &g_pFundUiPad;
+    pEnv->ppPanelNames = &g_pFundPanelNames;
+    pEnv->ppPanelBars = &g_pFundPanelBars;
+    pEnv->ppPanelArrows = &g_pFundPanelArrows;
+    pEnv->pTextRecs = (const u8 *)g_aFrameText;
+    pEnv->anBar = g_anFundBarUi;
+    pEnv->anLevel = g_anFundLevelUi;
+}
+
+/* Every TEXTS record the funding UI reads, as a distinct ASCII stand-in. The record NUMBER is the
+ * claim: a wrong record lands different pixels on the frame. */
+static void FundUiText(void)
+{
+    i32 nRec;
+
+    memset(g_aFrameText, 0, sizeof(g_aFrameText));
+    for (nRec = PUFO_FUND_TEXT_TITLE; nRec <= PUFO_FUND_TEXT_TOTAL; ++nRec) {
+        char szName[8];
+        (void)snprintf(szName, sizeof(szName), "T%d", (int)nRec);
+        PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * nRec, szName);
+    }
+    for (nRec = PUFO_FUND_TEXT_MONTHLY; nRec <= 1333; ++nRec) {
+        char szName[8];
+        (void)snprintf(szName, sizeof(szName), "T%d", (int)nRec);
+        PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * nRec, szName);
+    }
+}
+
+static void TestFundingPanels(void)
+{
+    FundingToggleEnv env;
+    FundingOpenEnv oenv;
+    UiPanel *pNames;
+    UiPanel *pBars;
+    UiPanel *pArrows;
+    i32 i;
+
+    printf("the funding screen's pad and three panels\n");
+
+    FrameLoadFont(); /* opens lang.dat / main.dat, which PadImage_Load needs */
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    FundUiFixture(&env);
+    FundUiText();
+    g_anFundBarUi[0] = 500;
+    g_anFundBarUi[1] = -300;
+    g_anFundBarUi[2] = 0;
+    g_anFundBarUi[3] = 700;
+    g_anFundBarUi[4] = -1;
+    g_anFundLevelUi[0] = 2;
+    g_anFundLevelUi[1] = -2;
+    g_anFundLevelUi[2] = 1;
+    g_anFundLevelUi[3] = 1;
+    g_anFundLevelUi[4] = -1;
+
+    /* ---- 1. open ---- */
+    FundingScreen_Toggle(&env);
+
+    CheckEqI32(g_bFundOpen, 1, "the open flag at 0x1595EC is set (0x5AC00)");
+    Check(g_pFundUiPad != NULL, "the screen gets its own pad (0x5AC14..0x5AC40)");
+    Check(g_pFundUiPad != NULL && g_pFundUiPad->uWidth != 0 && g_pFundUiPad->uHeight != 0,
+          "and PadImage_Load(\"funding\", 28) filled it from the shipped archives (0x5AC44)");
+    CheckEqI32(g_pFundUiPad != NULL ? g_pFundUiPad->nOriginX : -1, 0, "with the origin at x 0 (0x5AC4C)");
+    CheckEqI32(g_pFundUiPad != NULL ? g_pFundUiPad->nOriginY : -1, 0, "and y 0 (0x5AC54)");
+
+    pNames = g_pFundPanelNames;
+    pBars = g_pFundPanelBars;
+    pArrows = g_pFundPanelArrows;
+    Check(pNames != NULL && pBars != NULL && pArrows != NULL, "and the three 5-line panels (0x5AC90, 0x5ADA8, 0x5AE88)");
+    if (pNames == NULL || pBars == NULL || pArrows == NULL) {
+        printf("  FAIL the panels are gone, so the rest of the test cannot run\n");
+        ++g_nFailures;
+        return;
+    }
+
+    CheckEqI32(pNames->nLineCount, 5, "UiPanel_ctor(5) for every panel (0x5AC70)");
+    CheckEqI32(pNames->nStyle, 5, "nStyle 5, so all five rows are visible (0x5AC98)");
+    CheckEqI32(pNames->nFont, 16, "nFont 16 (0x5ACAC)");
+    CheckEqI32(pNames->nPosX, 10, "the names column at x 10 (0x5ACC0)");
+    CheckEqI32(pNames->nPosY, 70, "the panel row base at y 70 (0x5ACD4)");
+    CheckEqI32(pNames->nUnk7052, 5, "the names panel alone sets the click rect left to 5 (0x5ACDC)");
+    CheckEqI32(pNames->nUnk7056, 70, "and its top to 70 (0x5ACF0)");
+    CheckEqI32(pNames->nViewW, 230, "and narrows the view to 230 (0x5AD04)");
+    CheckEqI32(pNames->nViewH, 320, "keeping the ctor's height 320");
+    CheckEqI32(pNames->gap_0[0], 0x64, "its key triple is (0x64, 0x96, 0x64) (0x5AD14)");
+    CheckEqI32(pNames->gap_0[1], 0x96, "...");
+    CheckEqI32(pNames->gap_0[2], 0x64, "...");
+    CheckEqI32(pNames->gap_0[3], 0x32, "the source triple is (0x32, 0x32, 0xFA) for all three (0x5AD60)");
+    CheckEqI32(pNames->gap_0[4], 0x32, "...");
+    CheckEqI32(pNames->gap_0[5], 0xFA, "...");
+    CheckEqI32(pNames->gap_0[6], 0xC8, "the colour triples are (0xC8, 0xB4, 0xF0) and (0x14, 0x14, 0x14) (0x5AD4C)");
+    CheckEqI32(pNames->gap_0[7], 0xB4, "...");
+    CheckEqI32(pNames->gap_0[8], 0xF0, "...");
+    CheckEqI32(pNames->gap_0[9], 0x14, "...");
+    CheckEqI32(pNames->gap_0[10], 0x14, "...");
+    CheckEqI32(pNames->gap_0[11], 0x14, "...");
+    CheckEqI32((i32)pNames->bUnk7088, 0x96, "bUnk7088 is written as -106 (0x5AD28)");
+    CheckEqI32((i32)pNames->bFlag7072, 1, "the names panel keeps the ctor's bFlag7072 = 1");
+    CheckEqI32((i32)pNames->bFlag7073, 0, "and clears bFlag7073 (0x5AD70)");
+    CheckEqI32((i32)pNames->bFlag7074, 0, "and leaves bFlag7074 at 0");
+    CheckEqI32((i32)pNames->bUnk7089, 0, "and bUnk7089 at 0");
+
+    /* The five names, in SLOT order -- this is what pins slot 0 USA, 1 Australia, 2 Euro, 3 Asia,
+     * 4 Africa (0x5AF5C..0x5B038). */
+    static const char *const apzSlotName[PUFO_FUND_ROW_COUNT] = { "T1302", "T1305", "T1303", "T1304", "T1306" };
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        const char *psz = UiPanel_GetLineText(pNames, i);
+        Check(psz != NULL && strcmp(psz, apzSlotName[i]) == 0,
+              "names line is the country of that slot, in slot order");
+    }
+
+    CheckEqI32(pBars->nPosX, 100, "the bars column at x 100 (0x5ADA8 path)");
+    CheckEqI32(pBars->nStyle, 5, "with the same 5 rows");
+    CheckEqI32(pBars->nFont, 16, "and the same font");
+    CheckEqI32(pBars->nPosY, 70, "and the same row base");
+    CheckEqI32(pBars->gap_0[0], 0xB4, "the bars and arrows panels use the flat key (0xB4, 0xB4, 0xB4)");
+    CheckEqI32(pBars->gap_0[1], 0xB4, "...");
+    CheckEqI32(pBars->gap_0[2], 0xB4, "...");
+    CheckEqI32((i32)pBars->bFlag7072, 0, "they clear bFlag7072");
+    CheckEqI32((i32)pBars->bFlag7074, 1, "and set bFlag7074");
+    CheckEqI32((i32)pBars->bUnk7089, 0, "while only the arrows panel sets bUnk7089");
+    CheckEqI32(pBars->nUnk7052, 0, "the bars panel keeps the click rect at 0");
+    CheckEqI32(pBars->nUnk7056, 0, "...");
+    CheckEqI32(pBars->nViewW, 240, "and the ctor's 240 x 320 view");
+    CheckEqI32(pBars->nViewH, 320, "...");
+    CheckEqI32(pBars->gap_0[6], 0xC8, "with the same colour triples");
+    CheckEqI32(pBars->gap_0[8], 0xF0, "...");
+    CheckEqI32((i32)pBars->bUnk7088, 0x96, "and the same bUnk7088");
+
+    CheckEqI32(pArrows->nPosX, 170, "the arrows column at x 170 (0x5AE88 path)");
+    CheckEqI32((i32)pArrows->bUnk7089, 1, "and it is the panel that sets bUnk7089 = 1");
+    CheckEqI32((i32)pArrows->bFlag7074, 1, "with bFlag7074 like the bars panel");
+
+    /* aux: the bars panel takes g_nFundBar0..4, the arrows panel g_nFundArrow0..4, and a bar that
+     * is not positive wipes its own bar AND its arrow (0x5B0EC..0x5B11C). */
+    static const i32 anWantBar[PUFO_FUND_ROW_COUNT]   = { 500, 0, 0, 700, 0 };
+    static const i32 anWantArrow[PUFO_FUND_ROW_COUNT] = { 2, 0, 0, 1, 0 };
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        CheckEqI32(pBars->anLineAux[i], anWantBar[i], "the bars panel shows the bar, zeroed when it was not positive");
+        CheckEqI32(pArrows->anLineAux[i], anWantArrow[i], "and the arrow survives only where the bar did");
+    }
+    CheckEqI32(g_nFundTotal, 1200, "the $ total is the sum of the surviving bars, 500 + 700 (0x5B124..0x5B144)");
+
+    /* ---- 2. close ---- */
+    FundingScreen_Toggle(&env);
+    CheckEqI32(g_bFundOpen, 0, "the second call closes the screen (0x5B170)");
+    Check(g_pFundUiPad == NULL, "the pad is freed and its slot cleared (0x5B1E8..0x5B1F0)");
+    Check(g_pFundPanelNames == NULL, "and so is the names panel (0x5B17C..0x5B190)");
+    Check(g_pFundPanelBars == NULL, "the bars panel (0x5B19C..0x5B1B0)");
+    Check(g_pFundPanelArrows == NULL, "and the arrows panel (0x5B1BC..0x5B1D0)");
+
+    /* ---- 3. the opener wires the close control ---- */
+    FundUiFixture(&env);
+    oenv.pCloseCtl = &g_fundUiClose;
+    oenv.pfnCloseClick = FundCloseClick;
+    Check(FundingScreen_Open(&env, &oenv) == &g_fundUiClose, "FundingScreen_Open returns the close control (0x5B590)");
+    CheckEqI32(g_bFundOpen, 1, "after opening the screen through FundingScreen_Toggle (0x5B564)");
+    CheckEqI32(g_fundUiClose.x, 224, "the control goes to x 224 (0x5B574)");
+    CheckEqI32(g_fundUiClose.y, 1, "and y 1 (0x5B580)");
+    Check(g_fundUiClose.pfnClick == FundCloseClick, "with the close thunk as its handler (0x5B58C)");
+    FundingScreen_Toggle(&env);
+    CheckEqI32(g_bFundOpen, 0, "and the toggle closes it again");
+
+    /* ---- 4. the guards ---- */
+    FundingScreen_Toggle(NULL);
+    FundingScreen_Toggle(&env); /* a fixture with no bars panel slot */
+    FundUiFixture(&env);
+    env.ppPanelBars = NULL;
+    FundingScreen_Toggle(&env);
+    Check(g_pFundPanelBars == NULL, "a missing bars-panel slot builds no bars panel");
+    Check(g_pFundPanelNames != NULL, "while the names panel is still built");
+    CheckEqI32(g_nFundTotal, 0, "and the total stays 0 because the bar walk never runs");
+    FundingScreen_Toggle(&env); /* free what the guarded open allocated */
+    Check(g_pFundPanelNames == NULL, "the close branch frees it too");
+
+    FrameRestoreFont();
+    Asset_CloseArchives();
+}
+
+/* The reference frame for FundingScreen_Draw: the three TEXTS strings at the positions and colours
+ * the original uses, plus the names panel's five strings at the geometry its own fields carry
+ * (x 10, y 70 + 16 * row -- UiPanel_DrawText @ 0x3f1ac). The bars and arrows panels hold empty
+ * line texts, so they draw nothing. Rails are not reproduced: the compared band excludes the two
+ * rail columns (x 5, 234) and the two rail rows (y 5, 315). */
+static void FundRefSimple(i32 nTotal)
+{
+    const char *pszTitle = g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_TITLE;
+    char szTotal[64];
+    i32 i;
+
+    memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_frameRef;
+
+    (void)Gfx_PackRgb565Pair(&g_frameColor, 210, 190, 250, 20, 20, 20); /* 0x5B414 */
+    Text_DrawString(120 - Text_MeasureWidth(pszTitle) / 2, 20, pszTitle); /* 0x5B440 */
+    Text_DrawString(10, 50, g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_COLUMNS); /* 0x5B480 */
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        Text_DrawString(10, 70 + 16 * i,
+                        g_aFrameText + PUFO_TEXT_REC_STRIDE * g_anFundingSlotText[i]);
+    }
+    (void)snprintf(szTotal, sizeof(szTotal), "T1151%d$", (int)nTotal); /* 0x5B4E0..0x5B4F8 */
+    (void)Gfx_PackRgb565Pair(&g_frameColor, 200, 180, 240, 20, 20, 20); /* 0x5B518 */
+    Text_DrawString(10, 160, szTotal); /* 0x5B52C */
+    g_pMainSurface = &g_frameSurf;
+}
+
+/* The reference frame for FundingScreen_DrawExtended: the centred header, then the five rows --
+ * title at (5, 60*row + 20) in (40,240,40) and three commentary lines at +35, +45, +55 in
+ * (180,180,240). aWant[row][k] is the TEXTS record the row is expected to show. */
+static void FundRefReport(const i32 aWant[PUFO_FUND_ROW_COUNT][3])
+{
+    const char *pszHead = g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_FUND_TEXT_MONTHLY;
+    i32 nRow;
+
+    memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_frameRef;
+
+    (void)Gfx_PackRgb565Pair(&g_frameColor, 240, 240, 240, 20, 20, 20); /* 0x5B5C8, before the pad */
+    Text_DrawString(120 - Text_MeasureWidth(pszHead) / 2, 5, pszHead); /* 0x5B7D4 */
+
+    for (nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        (void)Gfx_PackRgb565Pair(&g_frameColor, 40, 240, 40, 20, 20, 20);   /* 0x5BFC8 */
+        Text_DrawString(5, 60 * nRow + 20,
+                        g_aFrameText + PUFO_TEXT_REC_STRIDE * (PUFO_FUND_TEXT_ROW0 + nRow));
+        (void)Gfx_PackRgb565Pair(&g_frameColor, 180, 180, 240, 20, 20, 20); /* 0x5C018 */
+        Text_DrawString(5, 60 * nRow + 35, g_aFrameText + PUFO_TEXT_REC_STRIDE * aWant[nRow][0]);
+        Text_DrawString(5, 60 * nRow + 45, g_aFrameText + PUFO_TEXT_REC_STRIDE * aWant[nRow][1]);
+        Text_DrawString(5, 60 * nRow + 55, g_aFrameText + PUFO_TEXT_REC_STRIDE * aWant[nRow][2]);
+    }
+    g_pMainSurface = &g_frameSurf;
+}
+
+static void TestFundingReport(void)
+{
+    /* Shares against a -80000 baseline give one of each arrow: -60000 -> -2, -20000 -> -1,
+     * 0 -> 0, 20000 -> +1, 60000 -> +2 (Funding_DeltaToArrow @ 0x5ab34, thresholds total/8 and
+     * total/2). The report reads them in ROW order through the permutation {0, 2, 3, 1, 4}. */
+    static const i32 anShare[PUFO_FUND_ROW_COUNT] = { -60000, 20000, -20000, 0, 60000 };
+    /* row 0 USA: arrow -2, group 0, bar negative -> the red tail 1311
+     * row 1 Euro: arrow -1, group 1, bar positive -> the plain tail 1318
+     * row 2 Asia: arrow 0, group 1
+     * row 3 Australia: arrow +1, group 0
+     * row 4 Africa: arrow +2, group 0 */
+    static const i32 aPlain[PUFO_FUND_ROW_COUNT][3] = {
+        { 1309, 1310, 1311 }, { 1313, 1314, 1318 }, { 1319, 1320, 1323 },
+        { 1326, 1327, 1328 }, { 1331, 1332, 1333 }
+    };
+    /* The same month with Euro's bar negative: only the tail record changes (0x5BE34), which is what
+     * proves the BAR and not the share decides the red variant. */
+    static const i32 aRedEuro[PUFO_FUND_ROW_COUNT][3] = {
+        { 1309, 1310, 1311 }, { 1313, 1314, 1317 }, { 1319, 1320, 1323 },
+        { 1326, 1327, 1328 }, { 1331, 1332, 1333 }
+    };
+    /* Month 1: every negative arrow is drawn as 0 (0x5B8CC..0x5B8F0), so rows 0 and 1 fall to the
+     * arrow-0 wording -- row 0 the group-0 pair 1321/1322, row 1 the group-1 pair 1319/1320. */
+    static const i32 aClamped[PUFO_FUND_ROW_COUNT][3] = {
+        { 1321, 1322, 1323 }, { 1319, 1320, 1323 }, { 1319, 1320, 1323 },
+        { 1326, 1327, 1328 }, { 1331, 1332, 1333 }
+    };
+    FundingToggleEnv tenv;
+    FundingDrawEnv denv;
+    i32 i;
+
+    printf("the funding screen and the monthly report, on the real frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL the real font did not load, so the frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_frameSurf);
+    (void)SoftSurf_AllocPixels(&g_frameSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_frameRef);
+    (void)SoftSurf_AllocPixels(&g_frameRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_frameSurf;
+    g_blitState.nPixelMode = 2;
+    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.nFadeCount = 0;
+
+    FundUiFixture(&tenv);
+    FundUiText();
+
+    memset(&denv, 0, sizeof(denv));
+    denv.pbOpen = &g_bFundOpen;
+    denv.pTextRecs = (const u8 *)g_aFrameText;
+    denv.pnTotal = &g_nFundTotal;
+    denv.pPad = NULL; /* the port guards a null pad; the pad itself is pinned in TestFundingPanels */
+    denv.pCloseCtl = &g_fundUiClose;
+    denv.pfnCtlBlit = FrameBlitRec;
+    denv.pfnCtlBlitEx = FrameBlitRec;
+    denv.pColor = &g_frameColor;
+    denv.anShare = g_anFundShareUi;
+    denv.anBaseline = g_anFundBaseUi;
+    denv.anBar = g_anFundBarUi;
+
+    /* ---- 1. FundingScreen_Draw while the screen is closed ---- */
+    FrameZero();
+    FundingScreen_Draw(&denv);
+    Check(FrameBandEmpty(7, 233, 20, 314), "a closed funding screen draws no text (0x5B210)");
+    CheckEqI32(FramePix(5, 1), 0, "not even the frame rails");
+    CheckEqI32(g_nFrameBlitCount, 0, "and no control pad");
+
+    /* ---- 2. open it through the real opener and draw ---- */
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        g_anFundBarUi[i] = 100 + 100 * i;
+        g_anFundLevelUi[i] = 1;
+    }
+    {
+        FundingOpenEnv oenv;
+        oenv.pCloseCtl = &g_fundUiClose;
+        oenv.pfnCloseClick = FundCloseClick;
+        (void)FundingScreen_Open(&tenv, &oenv);
+    }
+    /* the draw reads the three panels the toggle built, exactly as the original reads the three
+     * globals at 0x1595E4 / 0x1595E0 / 0x1595E8 */
+    denv.pPanelNames = g_pFundPanelNames;
+    denv.pPanelBars = g_pFundPanelBars;
+    denv.pPanelArrows = g_pFundPanelArrows;
+    Check(denv.pPanelNames != NULL && denv.pPanelBars != NULL && denv.pPanelArrows != NULL,
+          "the opener built the three panels the draw then reads");
+    FrameZero();
+    FundingScreen_Draw(&denv);
+
+    CheckEqI32(FramePix(5, 1), 0x632C, "the shared frame rails are the same 96 blits the other screens use, index 100 at (5, 1)");
+    CheckEqI32(FramePix(234, 312), 0x738E, "with the same falling side index at (234, 312)");
+    CheckEqI32(FramePix(1, 5), 0x632C, "and the same climbing top index at (1, 5)");
+    CheckEqI32(FramePix(1, 315), 0x632C, "repeated at the bottom rail");
+    CheckEqI32(g_nFrameBlitCount, 1, "the close control is the only control blitted (0x5B3C0)");
+    CheckEqI32(g_fundUiClosePad.nOriginX, 224, "its pad follows the x the opener set (0x5B574)");
+    CheckEqI32(g_fundUiClosePad.nOriginY, 1, "and the y (0x5B580)");
+
+    FundRefSimple(g_nFundTotal);
+    Check(FrameBandSame(7, 233, 20, 314),
+          "TEXTS[1149] centred at y 20, TEXTS[1150] at (10, 50), the five slot-order names at (10, 70 + 16 * row) and TEXTS[1151] with the total and a $ at (10, 160), in the original's colours");
+
+    /* ---- 3. the monthly report, month 4 ---- */
+    for (i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        g_anFundShareUi[i] = anShare[i];
+        g_anFundBaseUi[i] = -80000;
+    }
+    g_anFundBarUi[0] = -500;
+    g_anFundBarUi[1] = 300;
+    g_anFundBarUi[2] = 50;
+    g_anFundBarUi[3] = 100;
+    g_anFundBarUi[4] = 700;
+    denv.nMonthCounter = 4;
+
+    FrameZero();
+    FundingScreen_DrawExtended(&denv);
+    FundRefReport(aPlain);
+    Check(FrameBandSame(7, 233, 6, 314),
+          "month 4: the centred TEXTS[1301] header and the five rows with arrows -2, -1, 0, +1, +2 draw TEXTS[1309/1310/1311], [1313/1314/1318], [1319/1320/1323], [1326/1327/1328], [1331/1332/1333] under the TEXTS[1302..1306] titles");
+    Check(!FrameBandEmpty(7, 233, 20, 34), "the first row's title band really has pixels");
+
+    /* ---- 4. the same month with Euro's bar negative ---- */
+    g_anFundBarUi[2] = -50;
+    FrameZero();
+    FundingScreen_DrawExtended(&denv);
+    FundRefReport(aRedEuro);
+    Check(FrameBandSame(7, 233, 6, 314),
+          "a negative BAR, not a negative share, is what swaps row 1's third line to the red variant TEXTS[1317] (0x5B810..0x5B820)");
+
+    /* ---- 5. month 1 clamps every negative arrow to 0 ---- */
+    g_anFundBarUi[2] = 50;
+    denv.nMonthCounter = 1;
+    FrameZero();
+    FundingScreen_DrawExtended(&denv);
+    FundRefReport(aClamped);
+    Check(FrameBandSame(7, 233, 6, 314),
+          "below month 3 the two falling rows are drawn with the arrow-0 commentary instead (0x5B8CC..0x5B8F0)");
+
+    /* ---- 6. the report has no open gate: it draws even after the screen is closed ---- */
+    denv.nMonthCounter = 4;
+    FundingScreen_Toggle(&tenv);
+    CheckEqI32(g_bFundOpen, 0, "the screen is closed");
+    FrameZero();
+    FundingScreen_DrawExtended(&denv);
+    FundRefReport(aPlain);
+    Check(!FrameBandEmpty(7, 233, 20, 314),
+          "yet FundingScreen_DrawExtended still draws -- it has no open-flag gate (0x5B59C)");
+    Check(FrameBandSame(7, 233, 6, 314), "and draws the same report as before");
+
+    /* ---- 7. the guards ---- */
+    FrameZero();
+    FundingScreen_Draw(NULL);
+    FundingScreen_DrawExtended(NULL);
+    denv.anShare = NULL;
+    FundingScreen_DrawExtended(&denv);
+    Check(FrameBandEmpty(7, 233, 6, 314), "a missing share array refuses the whole report");
+
+    FrameRestoreFont();
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -12125,6 +12563,8 @@ int main(void)
     TestSelectedAnswers();
     TestConfirmCraftTarget();
     TestFundingRecompute();
+    TestFundingPanels();
+    TestFundingReport();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

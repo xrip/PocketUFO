@@ -1,15 +1,17 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `88a8241`. This document is committed together with the
-naming fix that unit 54 left open: the 0x80..0x89 id space is a **world region**, not a race. The
-proof is `Geoscape_DrawGlobeHover` printing `TEXTS[905 + tile]` as the tile's own name (0x67914) —
-TEXTS[1033..1042] are Северная Америка, Южная Америка, Европа, Азия, Австралия, Африка, Антарктика,
-Арктика, Канада and "Здесь нельзя строить". The port and the IDB are renamed together (`PufoRegionId`,
-`Funding_AddRegionBonus`, `aNewBaseCostByRegion`, `bPendingRegionId`, `BaseRec.bRegionId`,
-`PUFO_REGION_ID_*`), the region counter table is found as `g_anRegionBuildCount @ 0x18655D`, one false
-bug-ledger row is removed, and one out-of-bounds index the misreading had put into the port is fixed.
-The reading is written up in `docs/parity/game-core.md` under
-`## The 0x80..0x89 id space is a world region, not a race (naming fix)`.
+Date: 2026-10-15. HEAD before this edit: `328171f`. This document is committed together with the
+funding screen's own UI: `FundingScreen_Toggle (0x5abe4, 1560 B)`, `FundingScreen_Open (0x5b560,
+60 B)`, `FundingScreen_Draw (0x5b1fc, 868 B)` and `FundingScreen_DrawExtended (0x5b59c, 2780 B)`.
+The names panel copies the five country names in **slot order** — TEXTS[1302] США, TEXTS[1305]
+Австралия, TEXTS[1303] Евро Альянс, TEXTS[1304] Азиатский Альянс, TEXTS[1306] Африка
+(0x5AF5C..0x5B038) — which confirms from the drawing side the slot model unit 54 had inferred from
+the base-region chain. The report's commentary table TEXTS[1307..1333] is transcribed with its group
+split (rows 1 and 2, Euro and Asia, are worded separately) and with its red variant driven by the
+**bar** and not the share (0x5B810..0x5B820). Five globals are named in the IDB (`bFundScreenOpen`,
+`nFundDisplayTotal`, `pFundPanelNames`, `pFundPanelBars`, `pFundPanelArrows`) and the four functions
+carry comments. The reading is written up in `docs/parity/game-core.md` under
+`## The funding screen's own UI`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -62,10 +64,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 880 / 1103 (79.8%)
-                                             bytes cited:     397120 / 598792 (66.3%)
-python docs/parity/audit_credits.py       -> credited functions: 880, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 298 (explain 212 citations)
+python docs/parity/coverage.py            -> functions cited: 884 / 1103 (80.1%)
+                                             bytes cited:     402388 / 598792 (67.2%)
+python docs/parity/audit_credits.py       -> credited functions: 884, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 303 (explain 212 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 122, ORIGINAL BUG markers in src/pufo: 47
                                              ledger and port agree: every marker is listed and every row resolves
@@ -84,11 +86,13 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11297**. Coverage as of the latest commit: **880 / 1103
-functions (79.8%)**, **397120 / 598792 bytes (66.3%)** — unchanged, because this unit renames and
-corrects rather than ports new functions. The last unit was the region naming fix: 4 new checks,
-5 renames recorded, one false bug row removed, and the port's out-of-bounds region-counter index
-replaced by `RegionBuildCountAt()`.
+Test checks run across the 56 suites: **11400**. Coverage as of the latest commit: **884 / 1103
+functions (80.1%)**, **402388 / 598792 bytes (67.2%)**. The last unit was the funding screen's own
+UI: `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc)
+and `FundingScreen_DrawExtended` (0x5b59c) ported, 103 new checks, five funding globals named in the
+IDB, and the report's commentary table TEXTS[1307..1333] transcribed. The unit before it was the
+region naming fix: 4 new checks, 5 renames recorded, one false bug row removed, and the port's
+out-of-bounds region-counter index replaced by `RegionBuildCountAt()`.
 
 The five rows of that report are five countries — lang.dat TEXTS[1302..1306] are США, Евро Альянс,
 Азиатский Альянс, Австралия, Африка — and they are **not** in race-score order: the row → slot
@@ -96,7 +100,10 @@ permutation is 0, 2, 3, 1, 4, which both `FundingScreen_DrawExtended`'s five `Fu
 calls (0x5B804..0x5B8A4) and `FundingScreen_Init`'s five share stores (0x5C34C..0x5C38C) agree on. The
 share, bar and level arrays are slot-indexed while the baseline array at 0x1595F0 is row-indexed. The
 money is `bonus = (pending / (sum(scores) + 1)) * multiplier`, `pending += bonus`, then
-`share = pending / (sum + 1)`; every base adds `3 * share` to the slot its `BaseRec.bKind` maps to.
+`share = pending / (sum + 1)`; every base adds `3 * share` to the slot its `BaseRec.bRegionId` maps
+to. The funding screen's own names panel now confirms the same slots from the drawing side: it copies
+TEXTS[1302], TEXTS[1305], TEXTS[1303], TEXTS[1304], TEXTS[1306] — USA, Australia, Euro, Asia, Africa —
+i.e. in slot order, while the report rows use the permutation with titles TEXTS[1302 + row].
 
 Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
 and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
@@ -107,9 +114,18 @@ it holds `Funding_ScoreToBarLevel`'s result, a money amount of ±25000 or ±5000
 uses the stored dword only for its sign. A bar that ends negative has its arrow zeroed with it
 (0x5C4D4..0x5C53C), so a country in the red shows no arrow at all. `Funding_ScoreToBarLevel`'s first
 argument is the row, not a score, so the port's parameter is renamed `nRow`; `BaseRec.bUnk17` is now
-`bKind`. One naming problem is recorded rather than fixed: the 0x80..0x89 id space is a region /
-country id in this evidence, so the port's `PUFO_RACE_ID_*` constants are misleading — renaming them
-touches the radar and the base-creation chain and is left as its own unit.
+`bRegionId`. The naming problem this evidence exposed is fixed: the 0x80..0x89 id space is a world
+region, so `PUFO_RACE_ID_*` became `PUFO_REGION_ID_*` with a `PufoRegionId` enum on both sides.
+
+What the screen itself adds. `nFundDisplayTotal @ 0x159604` is not a leftover of the recompute —
+`FundingScreen_Toggle` zeroes it on open (0x5AC0C) and rebuilds it from the five possibly-zeroed bars
+(0x5B124..0x5B144), and `FundingScreen_Draw` prints it without recomputing. The toggle re-applies the
+recompute's rule at draw time: a bar that is not positive zeroes its bar AND its arrow
+(0x5B0EC..0x5B11C). The report's commentary is TEXTS[1307..1333] indexed by
+`[arrow + 2][group][line]`, group 1 being rows 1 and 2 (Euro and Asia, 0x5BA34, 0x5BB80, 0x5BD70,
+0x5BEA4); only the two negative arrows have a red variant of the third line (0x5BF60, 0x5BE34), and
+the red flag is `(arrow < 0) && bar[slot] < 0` (0x5B810..0x5B820) — the bar decides, not the share.
+`FundingScreen_DrawExtended` has no open gate and never reads the three panels.
 
 The unit before it was the radar frame driver:
 `RadarScreen_Update` (0x60570, 3804 B), 84 new checks, one more original bug, and the completion of the
@@ -273,9 +289,10 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Seventeen commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
-transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, and
-the radar (intercept) screen taken from its leaves inward until all sixteen functions were in.
+Nineteen commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, the
+radar (intercept) screen taken from its leaves inward until all sixteen functions were in, and the
+funding screen taken from its arithmetic to its drawing.
 
 | Commit | Change | Why |
 |---|---|---|
@@ -297,8 +314,9 @@ the radar (intercept) screen taken from its leaves inward until all sixteen func
 | `94620a9` | port `RadarScreen_Update` (0x60570), completing the radar screen | the unreachable `Ship_ClearInterceptByStrategIdx` at 0x61434 |
 
 `88a8241` (port `FundingScreen_Init` 0x5c084 with `FundingScreen_OpenMonthly` 0x5d160) follows
-`94620a9`, and the unit this document is committed with — the region naming fix — follows `88a8241`;
-both are described in §2.
+`94620a9`, `328171f` is the region naming fix, and the unit this document is committed with — the
+funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`,
+`FundingScreen_DrawExtended`) — follows `328171f`; all three are described in §2.
 
 ### A real crash found in already-ported code
 
@@ -386,7 +404,7 @@ Three audits exist because claims drifted:
 
 - `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
 - `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
-  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 298 rows) or as a
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 303 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
   against the shipped image. 28 tables, 0 mismatches.
@@ -419,7 +437,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 11297 checks, all passing in 4.26 s.
+- 56 test suites, 11400 checks, all passing in 4.23 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -945,12 +963,12 @@ screen families in Priority 4 that it draws.
 ### Priority 4 — screens
 
 `strat-ui` is 221 of 245 functions and 80,516 of 121,164 bytes (66.4%). The buy/sell, transfer,
-manufacturing, research, soldier and base-facility families are complete, and the funding screen's
-recompute half is in (`FundingScreen_Init` 0x5c084, `FundingScreen_OpenMonthly` 0x5d160) — what is left
-of that family is its UI: `FundingScreen_Toggle` (0x5abe4, 1560 B), `FundingScreen_Draw` (0x5b1fc,
-868 B) and `FundingScreen_DrawExtended` (0x5b59c, 2780 B). The funding screen's region/country model
-is now named straight (`PufoRegionId`, `g_anRegionBuildCount @ 0x18655D`), so those three can be
-written against the real ids. What is left overall is
+manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
+`FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
+`FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
+`FundingScreen_DrawExtended` (0x5b59c) in this one — the report groups those four under `strat`, which
+moves to 184 of 204 functions and 86,792 of 160,496 bytes with 20 functions / 73,704 bytes left. What
+is left in `strat-ui` is
 24 functions / 40,648 bytes in six screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
 (`Ufopaedia_*`), the options screen's open/confirm pair, and the base-attack screen's update/draw pair.

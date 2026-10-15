@@ -2503,6 +2503,130 @@ void FundingScreen_Init(FundingInitEnv *pEnv);
  * an empty compiler stub and is not ported. */
 void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnimFlag);
 
+/* ------------------------------------------------- the funding screen's own three panels
+ *
+ * Evidence: FundingScreen_Toggle @ 0x5abe4 (1560 B). It is gated on bFundScreenOpen @ 0x1595EC:
+ * set, it closes the screen -- clear the flag, then for each of the three panels
+ * (pFundPanelNames @ 0x1595E4, pFundPanelBars @ 0x1595E0, pFundPanelArrows @ 0x1595E8)
+ * UiPanel_FreeLines plus operator delete, and for pFundPad (0x1595DC) PadImage_FreeData plus
+ * operator delete. Clear, it builds the screen:
+ *
+ * 1. The flag is set and nFundDisplayTotal @ 0x159604 is zeroed (0x5AC00, 0x5AC0C). That dword is
+ *    not a total the recompute left behind -- it is rebuilt here from the five bar values, and
+ *    FundingScreen_Draw prints it as the "$" line.
+ * 2. The pad: operator new(0x14) + PadImage_ctor, PadImage_Load("funding", 28), origin (0, 0)
+ *    (0x5AC14..0x5AC54). Same pad FundingScreen_Init loads; the two do not share an instance.
+ * 3. Three 5-line panels, each operator new(0x1BB4) + UiPanel_ctor(5), all nStyle 5 and nFont 16,
+ *    all at y 70, at x 10 / 100 / 170. The names panel is the only one that sets nUnk7052 = 5,
+ *    nUnk7056 = 70 and nViewW = 230; the bars and arrows panels keep the ctor's 240 / 320. All
+ *    three get SetBytes0to2, bUnk7088 = 0x96, SetBytes6to11(0xC8, 0xB4, 0xF0, 0x14, 0x14, 0x14),
+ *    SetBytes3to5(0x32, 0x32, 0xFA) and bFlag7073 = 0; the names panel uses SetBytes0to2
+ *    (0x64, 0x96, 0x64) and leaves bFlag7072 at the ctor's 1, while bars and arrows use
+ *    (0xB4, 0xB4, 0xB4), clear bFlag7072 and set bFlag7074 = 1, and the arrows panel also sets
+ *    bUnk7089 = 1.
+ * 4. The five country names go into the NAMES panel's lines in SLOT order -- TEXTS[1302] США,
+ *    TEXTS[1305] Австралия, TEXTS[1303] Евро Альянс, TEXTS[1304] Азиатский Альянс, TEXTS[1306]
+ *    Африка (0x5AF5C..0x5B038) -- which is what pins the slots: slot 0 USA, slot 1 Australia,
+ *    slot 2 Euro, slot 3 Asia, slot 4 Africa. The bars panel takes g_nFundBar0..4 and the arrows
+ *    panel g_nFundArrow0..4 into anLineAux[0..4] (0x5B058..0x5B0E8).
+ * 5. A bar that is <= 0 zeroes itself AND its arrow (0x5B0EC..0x5B11C): a country with no bar
+ *    shows no arrow either. Then the five (possibly zeroed) bars are summed into nFundDisplayTotal
+ *    (0x5B124..0x5B144).
+ *
+ * Deviations: the original dereferences the ctor result with no null test (0x5AC98 and after) and
+ * copies each name byte by byte into a 50-byte line buffer; the port guards the allocation and
+ * bounds the copy. */
+#define PUFO_FUND_PANEL_LINES 5
+
+/* The country name of each funding slot, in the order the funding screen's own panel draws them. */
+extern const i32 g_anFundingSlotText[PUFO_FUND_ROW_COUNT]; /* {1302, 1305, 1303, 1304, 1306} */
+
+typedef struct FundingToggleEnv {
+    u8       *pbOpen;        /* bFundScreenOpen @ 0x1595EC: the screen's open flag */
+    i32      *pnTotal;       /* nFundDisplayTotal @ 0x159604: the "$" total the draw prints */
+    PadImage **ppPad;        /* pFundPad @ 0x1595DC */
+    UiPanel **ppPanelNames;  /* pFundPanelNames @ 0x1595E4, the five country names at x 10 */
+    UiPanel **ppPanelBars;   /* pFundPanelBars @ 0x1595E0, the bar totals at x 100 */
+    UiPanel **ppPanelArrows; /* pFundPanelArrows @ 0x1595E8, the arrow levels at x 170 */
+    const u8 *pTextRecs;     /* aTextRecs @ 0xB38D0, for the five names */
+    const i32 *anBar;        /* g_nFundBar0..4 @ 0x186594 */
+    const i32 *anLevel;      /* g_nFundArrow0..4 @ 0x1865A8 */
+} FundingToggleEnv;
+
+void FundingScreen_Toggle(FundingToggleEnv *pEnv);
+
+/* FundingScreen_Open @ 0x5b560 (60 B): the funding screen's opener. FundingScreen_Toggle first,
+ * then the shared close control unk_186B00 to (224, 1) with FundingScreen_CloseThunk @ 0x5abd8 --
+ * one of twelve identical Geoscape_CloseUI thunks, so the port takes it as a hook. The control is
+ * what the function returns. Note FundingScreen_Init wires the SAME control to
+ * FundingScreen_ExitThunk @ 0x5c078; whichever of the two runs last owns the button. */
+typedef struct FundingOpenEnv {
+    UiControl *pCloseCtl;        /* unk_186B00 */
+    void (*pfnCloseClick)(void); /* FundingScreen_CloseThunk @ 0x5abd8 */
+} FundingOpenEnv;
+
+UiControl *FundingScreen_Open(FundingToggleEnv *pToggle, const FundingOpenEnv *pEnv);
+
+/* FundingScreen_Draw @ 0x5b1fc (868 B): gated on the open flag. The pad, the shared frame rails
+ * (the same 96 blits TransferScreen_Draw, ManufScreen_DrawFrame and ResearchScreen_Draw carry),
+ * the close control's pad, then TEXTS[1149] "Инвестирование стран" centred at y 20 in
+ * (210,190,250)/(20,20,20), TEXTS[1150] "Страна Инвест. изм. $" at (10, 50), the three panels in
+ * names/bars/arrows order, and finally TEXTS[1151] "Итого: " with the total and a "$" at
+ * (10, 160) in (200,180,240)/(20,20,20). The total is the one FundingScreen_Toggle rebuilt --
+ * this draw never recomputes it. */
+#define PUFO_FUND_TEXT_MONTHLY 1301 /* unk_F4AA1 "Ежемесячный отчет проекта НЛО", the report header */
+#define PUFO_FUND_TEXT_ROW0    1302 /* unk_F4B6E; the five row titles are 1302 + row */
+#define PUFO_FUND_TEXT_TITLE   1149 /* unk_ED0E9 = aTextRecs + 205*1149 */
+#define PUFO_FUND_TEXT_COLUMNS 1150 /* unk_ED1B6 */
+#define PUFO_FUND_TEXT_TOTAL   1151 /* unk_ED283 */
+#define PUFO_FUND_LABEL_MAX    104  /* the original's char psz[104] */
+
+typedef struct FundingDrawEnv {
+    const u8          *pbOpen;      /* bFundScreenOpen @ 0x1595EC: nothing is drawn while closed */
+    const u8          *pTextRecs;   /* aTextRecs @ 0xB38D0 */
+    const i32         *pnTotal;     /* nFundDisplayTotal @ 0x159604 */
+    PadImage          *pPad;        /* pFundPad, blitted first */
+    UiPanel           *pPanelNames; /* pFundPanelNames @ 0x1595E4 */
+    UiPanel           *pPanelBars;  /* pFundPanelBars @ 0x1595E0 */
+    UiPanel           *pPanelArrows;/* pFundPanelArrows @ 0x1595E8 */
+    UiControl         *pCloseCtl;   /* unk_186B00 */
+    UiControlBlitFn    pfnCtlBlit;  /* the control's pad blit, injected as everywhere else */
+    UiControlBlitFn    pfnCtlBlitEx;
+    void              *pCtlUser;
+    const GfxColorEnv *pColor;      /* pGX @ 0x1139B8, the colour-pair owner */
+
+    /* Only FundingScreen_DrawExtended reads these. */
+    const i32         *anShare;     /* g_nFundShare0..4 @ 0x186580, slot-indexed */
+    const i32         *anBaseline;  /* g_nFundBase0..4 @ 0x1595F0, row-indexed */
+    const i32         *anBar;       /* g_nFundBar0..4 @ 0x186594, slot-indexed */
+    i32                nMonthCounter; /* nMonthCounter @ 0x159648 */
+} FundingDrawEnv;
+
+void FundingScreen_Draw(const FundingDrawEnv *pEnv);
+
+/* FundingScreen_DrawExtended @ 0x5b59c (2780 B): the monthly report itself. It has NO open-flag
+ * gate -- unlike FundingScreen_Draw it draws whatever it is called -- and it does not read the
+ * three panels at all: it re-derives everything from the funding arrays.
+ *
+ * The colour pair is set BEFORE the pad (240,240,240 / 20,20,20), then the pad, the same frame
+ * rails, the close control's pad, and TEXTS[1301] "Ежемесячный отчет проекта НЛО" centred at y 5.
+ *
+ * Then five rows, in REPORT order (row -> slot 0, 2, 3, 1, 4). For each row:
+ *   - the arrow is `Funding_DeltaToArrow(share[slot], baseline[row])`, kept as a signed byte;
+ *   - a separate "is this country in the red" flag is `(arrow < 0) ? (bar[slot] < 0) : false`
+ *     (0x5B810..0x5B820) -- the bar, not the share, decides it;
+ *   - while the month counter is below 3 every negative arrow is drawn as 0 (0x5B8CC..0x5B8F0),
+ *     the same clamp FundingScreen_Init applies to the stored level;
+ *   - the row title is TEXTS[1302 + row] at (5, 60*row + 20) in (40,240,40), then three commentary
+ *     lines at y + 35, + 45 and + 55 in (180,180,240).
+ *
+ * The commentary is TEXTS[1307..1333], selected by the arrow and by whether the row is Euro or
+ * Asia (rows 1 and 2 get their own wording, 0x5BA34..0x5BF24). The third line has a negative and a
+ * non-negative variant only for the two negative arrows; 0, +1 and +2 have one line each. A row
+ * whose arrow is outside -2..2 copies nothing and redraws the previous row's three lines -- the
+ * original's buffers are not cleared between rows, and the port keeps that. */
+void FundingScreen_DrawExtended(const FundingDrawEnv *pEnv);
+
 /* Funding_DeltaToArrow @ 0x5ab34. Which funding arrow to draw, -2..2, against thresholds derived
  * from the total (total/8 and total/2, integer division). A negative total moves the bands, so the
  * same delta gets a different arrow for a base in the red. */

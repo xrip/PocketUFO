@@ -1547,6 +1547,34 @@ Order is by what unblocks what. Each item ends with gates + commit.
   original's store lands on 0x186566 (`bUiFrameStyle`), which is also the tenth byte StartNew sweeps.
   4 more checks (11297 total), 5 renames on record (298).
 
+- [x] part 56, the funding screen's own UI: `FundingScreen_Toggle (0x5abe4, 1560 B)`,
+  `FundingScreen_Open (0x5b560, 60 B)`, `FundingScreen_Draw (0x5b1fc, 868 B)` and
+  `FundingScreen_DrawExtended (0x5b59c, 2780 B)`.
+  **The slot model confirmed from the other side.** The names panel copies the five country names in
+  SLOT order — TEXTS[1302] США, TEXTS[1305] Австралия, TEXTS[1303] Евро Альянс, TEXTS[1304]
+  Азиатский Альянс, TEXTS[1306] Африка (0x5AF5C..0x5B038) — which pins slot 0 USA, 1 Australia,
+  2 Euro, 3 Asia, 4 Africa independently of the recompute's region chain. The report rows use the
+  permutation {0, 2, 3, 1, 4} with titles TEXTS[1302 + row], so the panel order and the report order
+  differ, and the test shows both.
+  **The "$" line is rebuilt, not left over.** `nFundDisplayTotal @ 0x159604` is zeroed on open
+  (0x5AC0C) and summed from the five possibly-zeroed bars (0x5B124..0x5B144); `FundingScreen_Draw`
+  prints it and never recomputes it. A bar that is not positive zeroes its bar AND its arrow
+  (0x5B0EC..0x5B11C) — the recompute's rule applied again at draw time.
+  **The commentary table.** TEXTS[1307..1333], selected by [arrow + 2][group][line]; group 1 is rows
+  1 and 2 (Euro and Asia, 0x5BA34, 0x5BB80, 0x5BD70, 0x5BEA4). Only the two negative arrows have a
+  red variant of the third line (0x5BF60, 0x5BE34), and the red flag is `(arrow < 0) && bar[slot] < 0`
+  (0x5B810..0x5B820) — the BAR decides, not the share, which the test proves by flipping only the bar
+  and watching the tail record move 1318 → 1317. Below month 3 every negative arrow draws as 0
+  (0x5B8CC..0x5B8F0).
+  **Real-surface tests.** Four full-frame comparisons — the funding screen itself, and the report in
+  three states (plain, Euro in the red, month 1) — each against a reference render of the expected
+  TEXTS records at the original's positions and colours, plus the shared rails, the close-control pad
+  following (224, 1), and the fact that `FundingScreen_DrawExtended` has no open gate and still draws
+  after the screen is closed.
+  IDB: `unk_1595EC` → `bFundScreenOpen`, `unk_159604` → `nFundDisplayTotal`, `dword_1595E4` /
+  `dword_1595E0` / `dword_1595E8` → `pFundPanelNames` / `pFundPanelBars` / `pFundPanelArrows`, and
+  function comments on all four. 103 more checks (11400 total), 5 renames on record (303).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1818,6 +1846,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar frame driver (`RadarScreen_Update`, the same-frame-only damage ladder, the unreachable `Ship_ClearInterceptByStrategIdx` found) | 56/56 (Release) | 11223 | 878/1103 (79.6%) | 395772/598792 (66.1%) | 39 checked, 0 mismatched |
 | the monthly funding report (`FundingScreen_Init`, `FundingScreen_OpenMonthly`, the month-0 upkeep trap, 23 funding globals named) | 56/56 (Release) | 11293 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 | the region naming fix (`PufoRegionId`, `g_anRegionBuildCount @ 0x18655D` found, the false 15-byte-overflow bug row removed, the port's out-of-bounds counter index fixed) | 56/56 (Release) | 11297 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
+| the funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`, the TEXTS[1307..1333] commentary table, the slot order confirmed by the names panel) | 56/56 (Release) | 11400 | 884/1103 (80.1%) | 402388/598792 (67.2%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
