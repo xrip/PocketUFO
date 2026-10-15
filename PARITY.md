@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 853 / 1103 (77.3%) |
-| Bytes of original code cited | 355376 / 598792 (59.3%) |
+| Functions cited as evidence | 854 / 1103 (77.4%) |
+| Bytes of original code cited | 356168 / 598792 (59.5%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9871 |
+| Test checks run | 9904 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 164 | 205 | 60836 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 165 | 205 | 61628 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 210 | 244 | 59460 / 119204 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -571,7 +571,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_plane.c` (+2) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (164 functions)
+### `strat` (165 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -591,6 +591,7 @@ is the module that answers to it.
 | `0x826e8` | `StrategList_AddItem` | 968 | `src/pufo/game/pufo_strateg.c`, `src/pufo/game/pufo_strateg.h` |
 | `0x793e0` | `BasePlane_LoadWeaponStores` | 872 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x854c4` | `Geoscape_OnRadarListClick` | 804 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+2) |
+| `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x7e074` | `Smap_CanInterceptReach` | 768 | `src/pufo/game/pufo_strateg.h` |
 | `0x790e8` | `BasePlane_UnloadWeaponStores` | 760 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x80fd8` | `StrategList_UpdateMotion` | 692 | `src/pufo/game/pufo_strateg.h` |
@@ -1189,7 +1190,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 41 functions, 101620 bytes remaining
+### `strat` — 40 functions, 100828 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1216,7 +1217,6 @@ whose port work they belong to.
 | `0x68f2c` | `Base_DistributeRecoveredItems` | 1216 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x822c4` | `Smap_DrawStrategIcons` | 1060 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5b1fc` | `FundingScreen_Draw` | 868 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x6250c` | `Base_DrawFacilityIconStrip` | 792 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84688` | `Smap_OnPointerUp` | 732 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x602a0` | `RadarScreen_RollDetection` | 720 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x5d6e4` | `RadarScreen_DrawRangeBar` | 564 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1700 |
+| `test_baseui` | PASS | 1733 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

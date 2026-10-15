@@ -1143,4 +1143,54 @@ typedef struct BaseStripHitEnv {
 
 i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY);
 
+/* --- the base-tab strip drawer @ 0x6250c ---
+ *
+ * Evidence: Base_DrawFacilityIconStrip (792 B), called from BaseInfoScreen_Draw (0x57488),
+ * Geoscape_DrawBaseStatsPanel (0x727d8, with the highlight argument -1), Geoscape_Draw twice
+ * (0x922c0, 0x92d40) and TransferScreen_Draw (0x98744).
+ *
+ * Both arguments come from the same block: every caller passes &abFacilityGrid in R0, and the
+ * function reads its two count bytes back out of that pointer at +0x618 and +0x619 -- the same
+ * nBaseCount and nSelectedBaseIdx the hit test reads. R1 is the row to mark.
+ *
+ * First (0x62520..0x6257C): when nSelectedBaseIdx != nBaseCount, a 26x26 block at
+ * (211, 28 * nSelectedBaseIdx + 3) with 0xFF / 0xFF / 0x64 -- a red-topped erase rect over the
+ * selected cell. With no base selected the byte is -1 and the rect lands at y -25, off screen.
+ *
+ * Then one 6x6 block per base (0x625C4..0x62818), 28 pixels apart, six rows of six cells at
+ * x = 212 + 4 * column and y = 28 * base + 4 + 4 * row. Each cell reads two bytes:
+ *
+ *   abFacilityGrid[36 * base + 6 * row + column]              -- buildDays, the construction timer
+ *   abFacilityGrid[372 + 144 * base + 6 * row + column]      -- fac[base].tileA, the tile itself
+ *
+ * A cell with no tile is grey: 4x4 at 0x14 and 2x2 at 0x28, all three channels equal (0x626B8).
+ * A cell with a tile gets a status marker instead -- under construction (buildDays non-zero) puts
+ * 0x96 in the red field and 0xFF in the 2x2, finished puts 0x96 in the green field and 0xFF there
+ * (0x6260C / 0x62660). Because the grey pair is drawn after the status pair it wins, so an empty
+ * cell never shows a status colour.
+ *
+ * The highlight argument marks one base row with a chevron: 23 two-pixel blocks down-right from
+ * (212, 28 * base + 4) and 23 up-right from (212, 28 * base + 26), meeting at x 234 (0x62720..
+ * 0x62798). It sits inside the per-cell loop, so the original repaints the same 46 blocks 36 times
+ * for the marked base -- idempotent, and reproduced. -1 matches no row.
+ *
+ * The chevron loop runs on the register holding the base row's y and decrements it 23 times; the
+ * loop end reloads it from the stack slot, so the corruption is discarded. The port computes both
+ * diagonals from the row's y directly. */
+#define PUFO_STRIP_CELL_X_FIRST   212 /* 0x62600: x = 212 + 4 * column */
+#define PUFO_STRIP_CELL_PITCH       4 /* the step between the 4x4 cell blocks */
+#define PUFO_STRIP_CELL_LAST_X    234 /* 212 + 4 * 22, where the chevron meets */
+#define PUFO_STRIP_ROW_Y_FIRST      4 /* 0x625D8: y = 28 * base + 4 + 4 * row */
+#define PUFO_STRIP_CELL_COUNT       6 /* six columns and six rows per base */
+#define PUFO_STRIP_HILITE_STEPS    23 /* 0x62798: the chevron's 23 two-pixel steps */
+
+typedef struct BaseStripDrawEnv {
+    const u8 *abFacilityGrid;  /* the grid both byte arrays are read from */
+    const u8 *pbBaseCount;     /* 0x159D80 = abFacilityGrid + 0x618, read signed */
+    const u8 *pbSelectedBase;  /* 0x159D81 = abFacilityGrid + 0x619, read signed */
+    i32       nHighlightRow;   /* the second argument, sign-extended; -1 matches no row */
+} BaseStripDrawEnv;
+
+void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

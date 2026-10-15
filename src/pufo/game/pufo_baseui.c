@@ -2775,7 +2775,7 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
     /* 0x98498..0x98510: "From: " with the source base's name. */
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 20, 20, 20);
     pufo_strncpy(szLabel, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_FROM), sizeof(szLabel));
-    (void)pufo_strcat(szLabel, TransferUi_BaseName(pEnv, pEnv->nSourceBaseIdx), sizeof(szLabel));
+    (void)pufo_strcat(szLabel, TransferUi_BaseName(pEnv, pEnv->nSelectedBaseIdx), sizeof(szLabel));
     TransferUi_DrawCentered(120, 20, szLabel);
 
     /* 0x98538..0x986B4: the shortfall panel. */
@@ -2812,7 +2812,7 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
     const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i32)(i8)*pEnv->pbBaseCount : 0;
     SoftSurf_BlitRectProxy(0, 208, 0, 32, 28 * nBaseCount + 4, 0, 0, 0); /* 0x98738 */
     if (pEnv->pfnDrawIconStrip != NULL) {
-        pEnv->pfnDrawIconStrip(pEnv->nSourceBaseIdx, pEnv->pStripUser); /* 0x98744 */
+        pEnv->pfnDrawIconStrip(pEnv->nSelectedBaseIdx, pEnv->pStripUser); /* 0x98744 */
     }
     SoftSurf_BlitRectProxy(0, 0, 0, 210, 28 * nBaseCount + 4, 0, 0, 0); /* 0x9877C */
 
@@ -2840,7 +2840,15 @@ i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
         *pEnv->pbTransferBase = (i8)nTap; /* 0x98994 */
     }
     TransferUi_SiteFlagFromBase(pEnv, nTap); /* 0x989C4 */
-    if (nTap != (i32)pEnv->nSourceBaseIdx && pEnv->pbOverlayOpen != NULL) {
+    /* ORIGINAL BUG (0x989D4): the compare at 0x989D0 and the store it guards at 0x989E0 are
+     * unreachable. The draw returns at 0x98224 unless bTransferPanelsBuilt @ 0x1870EC is set, and
+     * Base_HitTestFacilityStrip disables the strip on that same byte -- so the overlay path can only
+     * ever run with the gate open, the gate forces a miss, and a miss returns nSelectedBaseIdx, the
+     * very value compared here. The overlay is therefore never closed by this code, and the store at
+     * 0x98994 pins the destination base byte_1870F4 to the source base on every overlay frame. The
+     * overlay is closed by the geoscape pointer handlers (Geoscape_OnPointer 0x88928,
+     * Geoscape_OnPointerUp 0x8A674) instead. Reproduced, not fixed. */
+    if (nTap != (i32)pEnv->nSelectedBaseIdx && pEnv->pbOverlayOpen != NULL) {
         *pEnv->pbOverlayOpen = 0; /* 0x989E0 */
     }
     if (pEnv->pnCursorX != NULL) {

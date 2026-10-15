@@ -1132,12 +1132,14 @@ SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
  * base's name centred at (120 - w/2, 32), and the draw returns.
  *
  * Destination overlay (0x986F8..0x98A98). A full-screen 240x320 blit, a 32-wide strip at x 208 and a
- * 210-wide panel, both 28 * nBaseCount + 4 tall, the source base's facility icons through
- * Base_DrawFacilityIconStrip (0x6250c, not ported), then one bevelled row per base with the base's
- * name centred at (110 - w/2, 28*i + 7). The confirm control blits under the list, TEXTS[1267] "Stop
- * Transfer" centred at (120 - w/2, 28 * nBaseCount + 10), and the tap is resolved through
- * Base_HitTestFacilityStrip: the result lands in byte_1870F4, the working site's bFlag1 takes that
- * base's type byte, and a tap on any base other than the source closes the overlay. Both cursor
+ * 210-wide panel, both 28 * nBaseCount + 4 tall, the base-tab strip through
+ * Base_DrawFacilityIconStrip (0x6250c) marked at the selected base, then one bevelled row per base
+ * with the base's name centred at (110 - w/2, 28*i + 7). The confirm control blits under the list,
+ * TEXTS[1267] "Stop Transfer" centred at (120 - w/2, 28 * nBaseCount + 10), and the selection is
+ * resolved through Base_HitTestFacilityStrip on the geoscape cursor pair (0x9897C / 0x98974, not a
+ * tap position): the result lands in byte_1870F4, the working site's bFlag1 takes that base's type
+ * byte, and a result other than the selected base closes the overlay -- which, per the ORIGINAL
+ * BUG note below, cannot happen while this screen's own panels are built. Both cursor
  * coordinates are then zeroed, TEXTS[1268] "Select destination base" draws at (120 - w/2, 282) in a
  * pair whose red channel is 250 - 40 * nMapPhase, and the working site's bFlag1 is written once more
  * from byte_1870F4.
@@ -1200,8 +1202,11 @@ typedef struct TransferDrawEnv {
     const BaseStripHitEnv *pStripHit;  /* Base_HitTestFacilityStrip's env */
     void (*pfnDrawIconStrip)(i32 nBaseIdx, void *pUser);
     void *pStripUser;
-    i8 nSourceBaseIdx;                 /* a2, the base the transfer leaves */
-    i8 nDestBaseIdx;                   /* a3, the base the transfer arrives at */
+    i8 nSelectedBaseIdx;               /* a2: Geoscape_Draw passes abFacilityGrid + 0x619 (0x93EA8),
+                                        * the geoscape's selected base -- the base the transfer
+                                        * leaves. It names the "From: " label (0x984C4), marks the
+                                        * strip row (0x98744) and gates the overlay close (0x989D4). */
+    i8 nDestBaseIdx;                   /* byte_1870F4, the base the transfer arrives at */
 } TransferDrawEnv;
 
 i32 TransferScreen_Draw(const TransferDrawEnv *pEnv);

@@ -11625,3 +11625,43 @@ the live screens. Recorded as a separate follow-up, not a port defect.
 
 IDB: function comment at 0x97fa4; aTextRec1264..aTextRec1269 and aTextRec159 named for the labels
 this draw reads.
+
+Base_DrawFacilityIconStrip (0x6250c, 792 B) draws the base-tab strip down the right edge of the
+geoscape, the thing Base_HitTestFacilityStrip (0x671B0) hit-tests.
+
+Arguments (0x62520..0x62544). Every caller passes &abFacilityGrid in R0 -- BaseInfoScreen_Draw
+(0x57488), Geoscape_DrawBaseStatsPanel (0x727d8, with the mark argument -1), Geoscape_Draw twice
+(0x922c0, 0x92d40) and TransferScreen_Draw (0x98744, with nSelectedBaseIdx) -- and the function reads
+its two count bytes back out of that pointer at +0x618 and +0x619, which are nBaseCount @ 0x159D80
+and nSelectedBaseIdx @ 0x159D81. When they differ it first blits a 26x26 erase rect at
+(211, 28 * nSelectedBaseIdx + 3) with 0xFF / 0xFF / 0x64 (0x6257C); with no base selected the byte
+reads as -1 and the rect lands at y -25, off screen.
+
+Cells (0x625C4..0x62818). One 6x6 block per base, 28 pixels apart, at x = 212 + 4 * column and
+y = 28 * base + 4 + 4 * row. Each cell reads two bytes of the grid:
+abFacilityGrid[36 * base + 6 * row + column], the buildDays timer, and
+abFacilityGrid[372 + 144 * base + 6 * row + column], fac[base].tileA. A cell with no tile is grey --
+4x4 at 0x14 and 2x2 at 0x28, all three channels equal (0x626B8) -- and because the grey pair is drawn
+after the status pair it wins, so an empty cell never shows a status colour. A cell with a tile gets
+a status marker: with a buildDays timer it puts 0x96 in the red field and 0xFF in the 2x2 (0x6260C),
+without one it puts 0x96 in the green field (0x62660).
+
+The mark (0x62720..0x62798). The second argument selects a base row and draws a chevron: 23 two-pixel
+blocks down-right from (212, 28 * base + 4) and 23 up-right from (212, 28 * base + 26), meeting at
+x 234. It sits inside the per-cell loop, so the original repaints the same 46 blocks 36 times for the
+marked base -- idempotent, and reproduced. -1 matches no row. The loop runs on the register holding
+the row's y and decrements it 23 times; the loop end reloads it from the stack slot, so the
+corruption is discarded and the port computes both diagonals from the row's y.
+
+Deviation: the original takes the grid pointer as an argument and indexes 1524 bytes of it plus two
+bytes past its end for the counts; the port takes the counts as their own pointers, as the hit test
+already does.
+
+Found while porting it: TransferScreen_Draw's destination-overlay close branch is unreachable
+(0x989D0, bugs.tsv). The draw returns at 0x98224 unless bTransferPanelsBuilt is set, and
+Base_HitTestFacilityStrip disables the strip on that same byte, forcing a miss that returns
+nSelectedBaseIdx -- the very value 0x989D0 compares against. The overlay is never closed by this
+code, and the store at 0x98994 pins the transfer destination byte_1870F4 to the source base on every
+overlay frame. Reproduced, not fixed.
+
+IDB: comments at 0x6250c and 0x989D0.

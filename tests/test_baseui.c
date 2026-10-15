@@ -2705,7 +2705,10 @@ static void XfReset(void)
     g_xfEnv.pnMapPhase = &g_nXfMapPhase;
     g_xfEnv.pStripHit = &g_xfStrip;
     g_xfEnv.pfnDrawIconStrip = XfIconStripThunk;
-    g_xfEnv.nSourceBaseIdx = 0;
+    /* In the original these are one byte: Geoscape_Draw passes nSelectedBaseIdx as the draw's
+     * second argument (0x93EA8) and Base_HitTestFacilityStrip reads the same byte back out of
+     * abFacilityGrid + 0x619. The harness keeps them equal for the same reason. */
+    g_xfEnv.nSelectedBaseIdx = 2;
     g_xfEnv.nDestBaseIdx = 1;
 }
 
@@ -2798,25 +2801,36 @@ static void TestTransferDraw(void)
     g_nXfCursorY = 100;
     memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
     CheckEqI32(TransferScreen_Draw(&g_xfEnv), 1, "the overlay path returns the site count (0x98A80)");
-    CheckEqI32(g_nXfStripCalls, 1, "the source base's facility strip is drawn (0x98744)");
-    CheckEqI32(g_nXfStripArg, 0, "  for the source base");
+    CheckEqI32(g_nXfStripCalls, 1, "the facility strip is drawn (0x98744)");
+    CheckEqI32(g_nXfStripArg, 2, "  marked at the selected base, the draw's second argument");
     CheckEqI32((i32)pPix[3 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the first base row's outer bevel (0x987D8)");
     CheckEqI32((i32)pPix[4 * 240 + 3], XfPix(0x00, 0x6E, 0x77), "  its middle bevel (0x9880C)");
     CheckEqI32((i32)pPix[5 * 240 + 5], XfPix(0x04, 0x46, 0x4B), "  and its inner bevel (0x9883C)");
     CheckEqI32((i32)pPix[31 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the second base row starts at 28 + 3");
     CheckEqI32(g_bXfTransferBase, 2, "the strip hit-test's answer lands in byte_1870F4 (0x98994)");
     CheckEqI32(g_aXfSites[1].bFlag1, 12, "the working site's bFlag1 takes that base's type byte (0x989C4)");
-    CheckEqI32(g_bXfOverlay, 0, "a tap on another base closes the overlay (0x989E0)");
+    /* ORIGINAL BUG: the gate that makes the hit test miss is bTransferPanelsBuilt @ 0x1870EC, the
+     * same byte this screen sets to draw its panels, so the call at 0x98980 always returns
+     * nSelectedBaseIdx -- the very value 0x989D0 compares against. The close branch never fires
+     * while the transfer screen is up, and byte_1870F4 is pinned to the source base. */
+    CheckEqI32(g_bXfOverlay, 1, "the close branch cannot fire while the panels are built (0x989E0)");
+    CheckEqI32(g_bXfTransferBase, 2, "  and the destination byte is the source base (0x98994)");
     CheckEqI32(g_nXfCursorX, 0, "both cursor coordinates are zeroed (0x989E8)");
     CheckEqI32(g_nXfCursorY, 0, "  including the y");
     CheckEqI32(g_nXfStripCalls, 1, "the strip is drawn once per call");
 
-    /* A tap on the source base keeps the overlay open. */
-    g_bXfSelected = 0;
+    /* The coupling that makes the branch dead: the draw returns at 0x98224 unless the same byte is
+     * set, so the overlay path only ever runs with the strip gate open. */
+    g_bXfBuilt = 0;
     g_bXfOverlay = 1;
-    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 1, "the draw never raises the site count itself");
-    CheckEqI32(g_bXfOverlay, 1, "a tap on the source base leaves the overlay open (0x989D4)");
-    CheckEqI32(g_aXfSites[1].bFlag1, 10, "and the working site takes the tapped base's type byte (0x98A98)");
+    g_bXfTransferBase = 7;
+    g_nXfCursorX = 220;
+    g_nXfCursorY = 30;
+    g_nXfStripCalls = 0;
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "with the panels unbuilt the draw stops at 0x98224");
+    CheckEqI32(g_bXfTransferBase, 7, "  so the overlay never runs and byte_1870F4 is untouched");
+    CheckEqI32(g_nXfStripCalls, 0, "  and the strip is not drawn either");
 
     /* Guards. */
     CheckEqI32(TransferScreen_Draw(NULL), 0, "a null env does nothing");
@@ -2829,6 +2843,117 @@ static void TestTransferDraw(void)
                "  and the separators shrink to the 0 + 2 stub the original gets too");
     Check(pPix[71 * 240 + 130] == 0, "  and no further");
     g_xfEnv.pPanelB = &g_xfB;
+}
+
+static SoftSurf g_stripSurf;
+static u8 g_aStripGrid[PUFO_GRID_SIZE];
+
+static void TestBaseStripDrawer(void)
+{
+    const u16 *pPix;
+    BaseStripDrawEnv env;
+    u8 bCount, bSelected;
+
+    printf("Base_DrawFacilityIconStrip @ 0x6250c\n");
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_stripSurf);
+    SoftSurf_AllocPixels(&g_stripSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_stripSurf;
+    pPix = (const u16 *)g_stripSurf.pPixels;
+
+    /* Sets the three scalars, clears the grid and the surface, and leaves the caller to write the
+     * grid bytes it wants before calling the drawer. */
+#define STRIP_PREPARE(nCount, nSel, nHilite)                                    \
+    bCount = (u8)(nCount); bSelected = (u8)(nSel);                              \
+    memset(g_aStripGrid, 0, sizeof(g_aStripGrid));                              \
+    memset(g_stripSurf.pPixels, 0, (size_t)240 * 320u * 2u);                    \
+    memset(&env, 0, sizeof(env));                                               \
+    env.abFacilityGrid = g_aStripGrid;                                          \
+    env.pbBaseCount = &bCount; env.pbSelectedBase = &bSelected;                 \
+    env.nHighlightRow = (nHilite)
+
+    /* A cell with no tile is grey: the grey pair is drawn after the status pair and wins. */
+    STRIP_PREPARE(1, 1, -1);
+    Base_DrawFacilityIconStrip(&env);
+    Check(pPix[4 * 240 + 211] == 0, "nSelectedBaseIdx == nBaseCount draws no erase rect (0x62544)");
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0x14, 0x14, 0x14), "an empty cell is the 4x4 grey (0x626B8)");
+    CheckEqI32((i32)pPix[7 * 240 + 215], XfPix(0x14, 0x14, 0x14), "  filling 4x4 out to (215, 7)");
+    CheckEqI32((i32)pPix[5 * 240 + 213], XfPix(0x28, 0x28, 0x28), "with the 2x2 grey inside it (0x62710)");
+    CheckEqI32((i32)pPix[6 * 240 + 214], XfPix(0x28, 0x28, 0x28), "  the inner block reaches (214, 6)");
+    CheckEqI32((i32)pPix[7 * 240 + 213], XfPix(0x14, 0x14, 0x14), "  and no further: (213, 7) is the 4x4 again");
+    Check(pPix[4 * 240 + 236] == 0, "the last column block ends at x 235 (212 + 4 * 5 + 3)");
+    Check(pPix[28 * 240 + 4] == 0, "one base draws nothing below y 28");
+    Check(pPix[4 * 240 + 210] == 0, "and nothing left of x 212");
+
+    /* A tile with a construction timer is the red marker; a tile without one is the green marker. */
+    STRIP_PREPARE(1, 1, -1);
+    g_aStripGrid[0] = 5;                                   /* buildDays[0][0] */
+    g_aStripGrid[PUFO_GRID_FAC_OFF + 0] = 1;               /* fac[0].tileA[0] */
+    g_aStripGrid[PUFO_GRID_DAYS_STRIDE + 1] = 0;           /* buildDays[0][1] */
+    g_aStripGrid[PUFO_GRID_FAC_OFF + 1] = 1;               /* fac[0].tileA[1] */
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0x96, 0, 0), "a cell under construction puts 0x96 in red (0x6260C)");
+    CheckEqI32((i32)pPix[5 * 240 + 213], XfPix(0xFF, 0, 0), "  and 0xFF in its 2x2");
+    CheckEqI32((i32)pPix[4 * 240 + 216], XfPix(0, 0x96, 0), "a finished cell puts 0x96 in green (0x62660)");
+    CheckEqI32((i32)pPix[5 * 240 + 217], XfPix(0, 0xFF, 0), "  and 0xFF in its 2x2");
+
+    /* No tile beats a non-zero timer, because the grey pair is drawn last. */
+    STRIP_PREPARE(1, 1, -1);
+    g_aStripGrid[2] = 7;                                   /* buildDays[0][2] non-zero */
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[4 * 240 + 220], XfPix(0x14, 0x14, 0x14),
+               "a cell with a timer but no tile is still grey (0x626B8 after 0x6260C)");
+
+    /* The rows step 4 pixels and the bases step 28. */
+    STRIP_PREPARE(2, 2, -1);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[24 * 240 + 212], XfPix(0x14, 0x14, 0x14), "the sixth row of a base is at 28 * base + 24");
+    CheckEqI32((i32)pPix[32 * 240 + 212], XfPix(0x14, 0x14, 0x14), "the second base's first row is at 28 + 4");
+    CheckEqI32((i32)pPix[55 * 240 + 235], XfPix(0x14, 0x14, 0x14), "  and its last cell ends at (235, 55)");
+
+    /* The erase rect over the selected cell, drawn before the cells. */
+    STRIP_PREPARE(1, 0, -1);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[3 * 240 + 211], XfPix(0xFF, 0xFF, 0x64), "the erase rect starts at (211, 28 * sel + 3) (0x6257C)");
+    CheckEqI32((i32)pPix[28 * 240 + 236], XfPix(0xFF, 0xFF, 0x64), "  and is 26x26, so (236, 28) is its corner");
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0x14, 0x14, 0x14), "  the cells are drawn over it");
+
+    /* The selected byte is read signed: -1 puts the rect at y -25, off screen. */
+    STRIP_PREPARE(1, 0xFF, -1);
+    Base_DrawFacilityIconStrip(&env);
+    Check(pPix[0] == 0, "a selected index of -1 puts the erase rect at y -25 (0x62520 LDRSB)");
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0x14, 0x14, 0x14), "  while the cells still draw");
+
+    /* The chevron: 23 steps down-right from (212, 28 * base + 4) and 23 up-right from
+     * (212, 28 * base + 26), meeting at x 234. */
+    STRIP_PREPARE(1, 1, 0);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0xFF, 0, 0), "the marked base gets the chevron over its cells (0x62720)");
+    CheckEqI32((i32)pPix[26 * 240 + 234], XfPix(0xFF, 0, 0), "  the two diagonals meet at (234, 26)");
+    CheckEqI32((i32)pPix[4 * 240 + 234], XfPix(0xFF, 0, 0), "  and at (234, 4)");
+    CheckEqI32((i32)pPix[15 * 240 + 223], XfPix(0xFF, 0, 0), "  the down-right arm passes (223, 15)");
+    STRIP_PREPARE(1, 1, -1);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[26 * 240 + 234], XfPix(0x28, 0x28, 0x28),
+               "an unmarked base leaves (234, 26) as the cell's own 2x2 grey");
+    STRIP_PREPARE(2, 2, 1);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[32 * 240 + 212], XfPix(0xFF, 0, 0), "the mark follows the row index, here base 1 (0x62720)");
+    CheckEqI32((i32)pPix[4 * 240 + 212], XfPix(0x14, 0x14, 0x14), "  and only that base");
+
+    /* No bases: the erase rect still runs, the cell loop does not. */
+    STRIP_PREPARE(0, 3, 3);
+    Base_DrawFacilityIconStrip(&env);
+    CheckEqI32((i32)pPix[87 * 240 + 211], XfPix(0xFF, 0xFF, 0x64), "the erase rect is drawn before the count test (0x6257C)");
+    Check(pPix[4 * 240 + 212] == 0, "  and with no bases no cell draws (0x62590 BLE)");
+
+    Base_DrawFacilityIconStrip(NULL);
+    STRIP_PREPARE(1, 1, -1);
+    env.abFacilityGrid = NULL;
+    Base_DrawFacilityIconStrip(&env);
+    Check(pPix[4 * 240 + 212] == 0, "a null grid does nothing instead of faulting");
+#undef STRIP_PREPARE
 }
 
 static void TestRoleToItemId(void)
@@ -7939,6 +8064,7 @@ int main(void)
     TestTransferCapacityGate();
     TestTransferCommit();
     TestTransferDraw();
+    TestBaseStripDrawer();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

@@ -949,7 +949,7 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `nSmapParam4` → `nSmapSiteCount`.
 
 - [x] part 30, the transfer screen's frame: `TransferScreen_Draw (0x97fa4)`, 2988 bytes — 47 more
-  checks, plus the first visual check of a UI screen. The ramped border (24 steps of 5 on the top and
+  checks. The ramped border (24 steps of 5 on the top and
   bottom rails, 24 steps of 7 on the sides, the ARM's `RSB #0xE6` / `RSB #0xFA` falling halves), the
   four separators at x 130 / 168 / 183 / 198 from y 69, the five panels through `UiPanelMsg_Draw`,
   the labels from TEXTS 1264..1269 and 159, the shortfall panel for reasons 0..5 (TEXTS 405..408,
@@ -963,6 +963,21 @@ Order is by what unblocks what. Each item ends with gates + commit.
   own `--dump-frame` path, which renders the real screen from real data — and that path is blocked
   until `Geoscape_Draw (0x8c180)` is ported, because the port has no geoscape screen at all. See
   "Separate issues".
+
+- [x] part 31, the base-tab strip drawer: `Base_DrawFacilityIconStrip (0x6250c)`, 792 bytes — 33 more
+  checks. The strip `Base_HitTestFacilityStrip` hit-tests, now drawn: the 26x26 erase rect over the
+  selected cell, one 6x6 block per base 28 pixels apart at x 212 + 4*column and y 28*base + 4 + 4*row,
+  reading `buildDays` for the status colour (0x96 in the red field while a cell is under construction,
+  in the green field once it is finished) and `fac[base].tileA` for the grey "no tile" pair, which is
+  drawn last and wins; plus the 23-step chevron that marks one base row. Porting it exposed a dead
+  branch: `TransferScreen_Draw`'s destination-overlay close at 0x989D0 can never fire, because the
+  draw returns at 0x98224 unless `bTransferPanelsBuilt` is set and `Base_HitTestFacilityStrip`
+  disables the strip on that same byte, forcing a miss that returns `nSelectedBaseIdx` — the very
+  value being compared. The overlay is never closed by this code and `byte_1870F4` is pinned to the
+  source base on every overlay frame (bugs.tsv, 39 markers now). The transfer draw's base index is
+  renamed `nSourceBaseIdx` → `nSelectedBaseIdx`: the original receives it as a second argument that
+  `Geoscape_Draw` loads straight out of `abFacilityGrid + 0x619` (0x93EA8), and it is the same byte
+  the hit test reads back. IDB: comments at 0x6250c and 0x989D0.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -1160,6 +1175,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the transfer screen's capacity gate (`TransferScreen_ValidateCapacity`, the containment reason code) | 56/56 (Release) | 9793 | 851/1103 (77.2%) | 351108/598792 (58.6%) | 38 checked, 0 mismatched |
 | the transfer screen's commit (`TransferScreen_CommitTransfer`, the completed-record flag 24) | 56/56 (Release) | 9824 | 852/1103 (77.2%) | 352388/598792 (58.8%) | 38 checked, 0 mismatched |
 | the transfer screen's frame (`TransferScreen_Draw`, the destination overlay) | 56/56 (Release) | 9871 | 853/1103 (77.3%) | 355376/598792 (59.3%) | 38 checked, 0 mismatched |
+| the base-tab strip drawer (`Base_DrawFacilityIconStrip`, the dead overlay-close branch found) | 56/56 (Release) | 9904 | 854/1103 (77.4%) | 356168/598792 (59.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

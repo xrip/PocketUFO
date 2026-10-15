@@ -1892,3 +1892,67 @@ i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY)
     /* The LSL#24 / ASR#24 pair at 0x67268 sign-extends the quotient to a char. */
     return (i8)(nY / PUFO_BASE_STRIP_DIVISOR); /* 0x67264 */
 }
+
+/* Base_DrawFacilityIconStrip @ 0x6250c. The drawer of the same strip; see the header for the
+ * geometry, the two byte arrays it reads and the chevron. */
+void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->abFacilityGrid == NULL) {
+        return;
+    }
+
+    const u8 *const abGrid = pEnv->abFacilityGrid;
+    const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i8)*pEnv->pbBaseCount : 0;
+    const i8 bSelected   = (pEnv->pbSelectedBase != NULL) ? (i8)*pEnv->pbSelectedBase : 0;
+
+    /* 0x62520..0x6257C: the erase rect over the selected cell, only when the selection is not the
+     * count itself. */
+    if ((i32)bSelected != nBaseCount) {
+        SoftSurf_BlitRectProxy(0, PUFO_BASE_STRIP_X_FIRST,
+                               PUFO_BASE_STRIP_PITCH * (i32)bSelected + PUFO_BASE_STRIP_Y_FIRST,
+                               26, 26, 0xFFu, 0xFFu, 0x64u);
+    }
+
+    if (nBaseCount <= 0) {
+        return; /* 0x62590 BLE */
+    }
+
+    for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+        const i32 nYBase = PUFO_BASE_STRIP_PITCH * nBase;
+        const i32 nDays  = PUFO_GRID_DAYS_STRIDE * nBase;
+        const i32 nFac   = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase;
+
+        for (i32 nRow = 0; nRow < PUFO_STRIP_CELL_COUNT; ++nRow) {
+            const i32 nY = nYBase + PUFO_STRIP_ROW_Y_FIRST + 4 * nRow;
+
+            for (i32 nCol = 0; nCol < PUFO_STRIP_CELL_COUNT; ++nCol) {
+                const i32 nCell = 6 * nRow + nCol;
+                const i32 nX = PUFO_STRIP_CELL_X_FIRST + PUFO_STRIP_CELL_PITCH * nCol;
+
+                if (abGrid[nDays + nCell] != 0) { /* 0x6260C: under construction */
+                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0x96u, 0u, 0u);
+                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0xFFu, 0u, 0u);
+                } else {                          /* 0x62660: finished */
+                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0u, 0x96u, 0u);
+                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0u, 0xFFu, 0u);
+                }
+
+                if (abGrid[nFac + PUFO_GRID_TILEA_OFF + nCell] == 0) { /* 0x626B8: no tile */
+                    SoftSurf_BlitRectProxy(0, nX, nY, 4, 4, 0x14u, 0x14u, 0x14u);
+                    SoftSurf_BlitRectProxy(0, nX + 1, nY + 1, 2, 2, 0x28u, 0x28u, 0x28u);
+                }
+
+                /* 0x62720: the chevron, inside the per-cell loop, so the original paints it once
+                 * per cell of the marked base. */
+                if (nBase == pEnv->nHighlightRow) {
+                    for (i32 k = 0; k < PUFO_STRIP_HILITE_STEPS; ++k) {
+                        SoftSurf_BlitRectProxy(0, PUFO_STRIP_CELL_X_FIRST + k, nYBase + 4 + k,
+                                               2, 2, 0xFFu, 0u, 0u);
+                        SoftSurf_BlitRectProxy(0, PUFO_STRIP_CELL_X_FIRST + k, nYBase + 26 - k,
+                                               2, 2, 0xFFu, 0u, 0u);
+                    }
+                }
+            }
+        }
+    }
+}
