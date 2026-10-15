@@ -1675,6 +1675,203 @@ static void TestBuySellBuildControls(void)
     CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
 }
 
+static i32 g_nTransferBuild, g_nTransferReset, g_nTransferCommit;
+static void TransferStubBuild(void) { ++g_nTransferBuild; }
+static void TransferStubReset(void) { ++g_nTransferReset; }
+static void TransferStubCommit(void) { ++g_nTransferCommit; }
+static void TransferStubClose(void) {}
+
+static void TestTransferInitAndReset(void)
+{
+    static void *aRoot[5];
+    static UiControl aCtl[4], closeCtl, confirmCtl;
+    static SmapSite aSites[2];
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static BaseRec aBase[1];
+    static BaseRec *apBase[1];
+    static UiPanel pA, pD, pE;
+    TransferInitEnv ienv;
+    TransferResetEnv renv;
+    i8 nBaseCount = 3;
+    u8 bTransferOk = 0;
+    i8 nScratchD0 = 0;
+    i8 nScratchF0 = 0;
+    u32 nShortfall = 0;
+    i32 nResidue = -999;
+    const SmapSite *pSite;
+    i32 i;
+
+    printf("the transfer screen's bring-up and reset\n");
+
+    memset(aCtl, 0, sizeof(aCtl));
+    confirmCtl.uWidth = 40;
+
+    memset(&ienv, 0, sizeof(ienv));
+    ienv.ppRoot = aRoot;
+    for (i = 0; i < 4; ++i) {
+        ienv.apCtl[i] = &aCtl[i];
+    }
+    ienv.pCloseCtl = &closeCtl;
+    ienv.pConfirmCtl = &confirmCtl;
+    ienv.pfnCloseClick = TransferStubClose;
+    ienv.pfnPanelPrev = BuySellTestPanelPrev;
+    ienv.pfnPanelNext = BuySellTestPanelNext;
+    ienv.pfnResetSite = TransferStubReset;
+    ienv.pfnCommit = TransferStubCommit;
+    ienv.pfnBuildPanels = TransferStubBuild;
+    ienv.pbBaseCount = &nBaseCount;
+    ienv.pbTransferOk = &bTransferOk;
+    g_nTransferBuild = 0;
+    g_nTransferReset = 0;
+    g_nTransferCommit = 0;
+
+    Ui_InitTransfer(&ienv);
+    Check(aRoot[0] != NULL, "the screen's pad object is allocated");
+    Check(((PadImage *)aRoot[0])->nOriginX == 0, "with origin 0 on x");
+    Check(((PadImage *)aRoot[0])->nOriginY == 0, "and on y");
+    CheckEqI32(g_nTransferBuild, 1, "the panels are built before the controls exist");
+    CheckEqI32(bTransferOk, 1, "and the transfer is marked possible");
+    for (i = 0; i < 4; ++i) {
+        Check(aRoot[i + 1] == (void *)&aCtl[i], "the four controls land in the root array's slots");
+    }
+    Check(aCtl[0].pfnClick == BuySellTestPanelPrev, "the first control scrolls the panels back");
+    Check(aCtl[1].pfnClick == BuySellTestPanelNext, "the second forward");
+    Check(aCtl[2].pfnClick == TransferStubReset, "the third is the site reset");
+    Check(aCtl[3].pfnClick == TransferStubCommit, "the fourth is the commit");
+    CheckEqI32(aCtl[0].x, 0xCD, "the scroll pair sits at the buy/sell pair's x");
+    CheckEqI32(aCtl[1].y, 0x26, "the down descriptor at y 0x26");
+    CheckEqI32(aCtl[2].x, 1, "the reset button at 1, 0x12C");
+    CheckEqI32(aCtl[2].y, 0x12C, "both drawn from the emptyb pad pair");
+    CheckEqI32(aCtl[3].x, 0x78, "the confirm button at 0x78, 0x12C");
+    CheckEqI32(closeCtl.x, 224, "the close control lands at 224, 1");
+    CheckEqI32(closeCtl.y, 1, "as 16-bit stores");
+    Check(closeCtl.pfnClick == TransferStubClose, "with the close thunk");
+    Check(confirmCtl.pfnClick == TransferStubClose,
+          "and the confirm control gets the same close thunk, not a commit handler");
+    CheckEqI32(confirmCtl.x, 100, "the confirm control centres on its 40-pixel width");
+    CheckEqI32(confirmCtl.y, 94, "and sits at 28 * 3 bases + 10");
+
+    free(aRoot[0]);
+    aRoot[0] = NULL;
+    Ui_InitTransfer(NULL);
+    ienv.ppRoot = NULL;
+    Ui_InitTransfer(&ienv);
+    ienv.ppRoot = aRoot;
+    CheckEqI32(g_nTransferBuild, 1, "a missing root array makes it do nothing");
+
+    /* The reset. */
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[1].bCargoSize = 5;
+    aBase[0].bUnk4 = 7;
+    apBase[0] = &aBase[0];
+
+    (void)UiPanel_ctor(&pA, 3);
+    (void)UiPanel_ctor(&pD, 3);
+    (void)UiPanel_ctor(&pE, 3);
+    pE.anLineAux[0] = 2;
+    pE.anLineAux[1] = 0;
+    pE.anLineAux[2] = 5;
+    pD.anLineAux[0] = 10;
+    pD.anLineAux[1] = 7;
+    pD.anLineAux[2] = 0;
+
+    aSites[1].bFlag0 = 8;
+    aSites[1].bFlag1 = 3;
+    aSites[1].bUnk518 = 7;
+    aSites[1].uRecoveredSoldiers = 3;
+    aSites[1].bRecoveredCraftCount = 2;
+    aSites[1].bRecoveredSoldierAssign = 1;
+    aSites[1].bHasLoot = 1;
+    aSites[1].auItemQty[0] = 9;
+    aSites[1].auItemQty[149] = 8;
+    aSites[1].auItemQty[255] = 8;
+
+    memset(&renv, 0, sizeof(renv));
+    renv.aSites = aSites;
+    renv.nSiteCount = 1;
+    renv.apBases = apBase;
+    renv.apObjects = apObj;
+    renv.nObjectCount = 149;
+    renv.nPendingBase = 0;
+    renv.pbTransferOk = &bTransferOk;
+    renv.pbScratch1870D0 = &nScratchD0;
+    renv.pbScratch1870F0 = &nScratchF0;
+    renv.pdwShortfall = &nShortfall;
+    renv.pnResidue = &nResidue;
+    renv.pPanelA = &pA;
+    renv.pPanelD = &pD;
+    renv.pPanelE = &pE;
+
+    bTransferOk = 0;
+    pSite = Transfer_ResetSite(&renv);
+    Check(pSite == &aSites[1], "the reset works on the working site aSmapSites[nSiteCount]");
+    CheckEqI32(bTransferOk, 1, "the possible-transfer flag is set first and stays set when the gate passes");
+    CheckEqI32(nShortfall, 0, "a passing gate leaves the shortfall flag alone");
+    CheckEqI32(nResidue, -999, "and the reason code alone");
+    CheckEqI32(pD.anLineAux[0], 12, "the pending quantity folds into the count column");
+    CheckEqI32(pD.anLineAux[1], 7, "a zero pending leaves the count as it was");
+    CheckEqI32(pD.anLineAux[2], 5, "and a zero count still takes the pending");
+    CheckEqI32(pE.anLineAux[0], 0, "the pending column is cleared");
+    CheckEqI32(pE.anLineAux[2], 0, "every row of it");
+    CheckEqI32(aSites[1].bUnk518, 0, "the site's pending-craft byte");
+    CheckEqI32(aSites[1].uRecoveredSoldiers, 0, "the recovery count");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 0, "the recovery craft count");
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 0, "the recovery assignment byte");
+    CheckEqI32(aSites[1].bHasLoot, 0,
+               "and the loot flag, which BuySellScreen_BuildControls' teardown never touches");
+    CheckEqI32(aSites[1].auItemQty[0], 0, "the item quantities are cleared from index 0");
+    CheckEqI32(aSites[1].auItemQty[148], 0, "up to Map_nObjectCount entries");
+    CheckEqI32(aSites[1].auItemQty[149], 8, "and no further: index 149 keeps its value");
+    CheckEqI32(aSites[1].bFlag0, 8, "the two site flags are left alone here");
+    CheckEqI32(aSites[1].bFlag1, 3, "unlike the buy screen's teardown, which clears both");
+
+    /* The gate: cargo already on the working site. */
+    aSites[1].auItemQty[1] = 1; /* bCargoSize 5, so the cargo measure is 5 */
+    bTransferOk = 1;
+    nShortfall = 0;
+    nResidue = -999;
+    pD.anLineAux[0] = 10;
+    pE.anLineAux[0] = 2;
+    Transfer_ResetSite(&renv);
+    CheckEqI32(bTransferOk, 0, "cargo already on the working site blocks the transfer");
+    CheckEqI32(nShortfall, 1, "the shortfall flag is written as a dword");
+    CheckEqI32(nResidue, PUFO_BUYSELL_SHORTFALL_TRANSFER, "with the fifth reason code");
+    CheckEqI32(pD.anLineAux[0], 12, "the fold runs whether or not the gate blocked");
+    CheckEqI32(aSites[1].auItemQty[1], 0, "and the site clear runs too");
+
+    nScratchD0 = -1;
+    bTransferOk = 1;
+    Transfer_ResetSite(&renv);
+    CheckEqI32(bTransferOk, 0, "a negative scratch byte blocks it too: the test is LDRSB");
+    nScratchD0 = 0;
+    nScratchF0 = 1;
+    bTransferOk = 1;
+    Transfer_ResetSite(&renv);
+    CheckEqI32(bTransferOk, 0, "and so does the second scratch byte");
+    nScratchF0 = 0;
+
+    aSites[1].auItemQty[114] = 1; /* the single score column Smap_SumSiteScores reads */
+    bTransferOk = 1;
+    Transfer_ResetSite(&renv);
+    CheckEqI32(bTransferOk, 0, "a site that still owes recovery blocks it as well");
+    CheckEqI32(aSites[1].auItemQty[114], 0, "and the clear still runs afterwards");
+
+    Transfer_ResetSite(NULL);
+    renv.aSites = NULL;
+    Check(Transfer_ResetSite(&renv) == NULL, "a missing site array stops the reset");
+    renv.aSites = aSites;
+    renv.nSiteCount = PUFO_SMAP_SITE_COUNT;
+    Check(Transfer_ResetSite(&renv) == NULL, "and so does a count at the array end");
+    renv.nSiteCount = 1;
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pD);
+    UiPanel_FreeLines(&pE);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -6779,6 +6976,7 @@ int main(void)
     TestBuySellCapacityGate();
     TestBuySellInit();
     TestBuySellBuildControls();
+    TestTransferInitAndReset();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

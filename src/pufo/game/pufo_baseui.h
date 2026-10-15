@@ -162,7 +162,10 @@ void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5]);
  * the 255 branch too. 117..121 are the five craft-type item slots the buy/sell screen sells, and
  * the shipped names are now known (part 18 fixed the name mapping): 117 "SKYRANGER", 118
  * "INTERCEPTOR", 119 "FIRE STORM", 120 "LIGTHNING" (sic), 121 "AVENGER". So role 0 is the
- * Skyranger, 1 the Lightning, 2 the Avenger, 3 the Interceptor and 4 the Fire Storm. */
+ * Skyranger, 1 the Lightning, 2 the Avenger, 3 the Interceptor and 4 the Fire Storm.
+ *
+ * Transfer_RoleToIconId @ 0x96ad8 is the same function byte for byte -- same 88 bytes, same jump
+ * table, same 255 fall-through -- so the transfer screen shares this one port. */
 i32 BuySell_RoleToItemId(i32 nRole);
 
 /* ------------------------------------------------- the alien race ids
@@ -571,7 +574,8 @@ typedef enum PufoBuySellShortfall {
     PUFO_BUYSELL_SHORTFALL_LIVING  = 0,  /* 0x75F90, living quarters full */
     PUFO_BUYSELL_SHORTFALL_FUNDS   = 1,  /* 0x75F64 / 0x75F74, not enough funds */
     PUFO_BUYSELL_SHORTFALL_HANGAR  = 2,  /* 0x75F28, hangar full */
-    PUFO_BUYSELL_SHORTFALL_STORES  = 3   /* 0x75F48, stores full */
+    PUFO_BUYSELL_SHORTFALL_STORES  = 3,  /* 0x75F48, stores full */
+    PUFO_BUYSELL_SHORTFALL_TRANSFER = 5  /* 0x96990, the transfer gate blocked; 4 is never written */
 } PufoBuySellShortfall;
 
 typedef struct BuySellCapacityEnv {
@@ -741,6 +745,108 @@ typedef struct BuySellControlsEnv {
 } BuySellControlsEnv;
 
 void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv);
+
+/* ------------------------------------------------- the transfer screen's bring-up and reset
+ *
+ * Evidence: Ui_InitTransfer @ 0x9955c (392 B), the tail call of TransferScreen_Open @ 0x614fc (the
+ * BL at 0x61510, with the screen's root array at 0x1870D8), and Transfer_ResetSite @ 0x9690c
+ * (420 B), the third of the four controls it wires.
+ *
+ * Ui_InitTransfer, in the original's order:
+ *
+ *   1. 0x99568..0x9958C: operator new(0x14) then PadImage_ctor, and the ctor's result -- not the raw
+ *      allocation -- goes into ppRoot[0].
+ *   2. 0x99590: PadImage_Load(pad, "transfer", 13) -- aTransfer @ 0xAC438, palette slot 13. The pad's
+ *      nOriginX and nOriginY are cleared at 0x99598 and 0x995A0.
+ *   3. 0x995A4: TransferScreen_BuildPanels runs before the controls exist.
+ *   4. 0x995B8: byte_1870F8 = 1, the "this transfer is still possible" flag Transfer_ResetSite
+ *      clears when it finds the load blocked.
+ *   5. 0x995C0..0x995F0: four controls (operator new 0x20 + UiControl_ctor) into ppRoot[1..4].
+ *   6. 0x99604..0x99630: their clicks, in slot order: Transfer_ScrollPrevAll @ 0x967e4 and
+ *      Transfer_ScrollNextAll @ 0x9683c -- both byte-identical to BuySellScreen_PanelPrev and
+ *      BuySellScreen_PanelNext over the same five panel globals, see docs/parity/renames.tsv --
+ *      then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, not ported).
+ *   7. 0x9963C..0x99654: the close control unk_186B00 goes to x 224, y 1 with
+ *      Geoscape_CloseUI_ThunkB @ 0x96020. Same slot and same thunk as the buy/sell screen, but the
+ *      buy/sell Init installs BuySellScreen_CloseThunk @ 0x75154 there instead.
+ *   8. 0x9965C: the confirm control unk_186BA4 gets that same close thunk -- before UiControl_Setup,
+ *      where BuySellScreen_Init installs its confirm handler after the pad and delta clearing.
+ *   9. 0x99660..0x99680: UiControl_Setup(ctl, 0, 0, stru_AC3B8[i]) for the four controls. The reset
+ *      and confirm descriptors are (1, 0x12C) and (0x78, 0x12C), both drawing "emptyb" / "cemptyb".
+ *  10. 0x99698, 0x996B8: the confirm control goes to `x = 120 - (uWidth >> 1)` and
+ *      `y = 28 * nBaseCount + 10`, the base count at 0x159D80 read as a signed byte. The confirm
+ *      button sits lower as the player owns more bases; this is the only transfer-screen layout that
+ *      depends on the count.
+ *
+ * Transfer_ResetSite, in the original's order:
+ *
+ *   1. 0x9691C: byte_1870F8 = 1.
+ *   2. 0x96920..0x96974: the gate. The transfer is blocked when
+ *      Base_CountItemQtyAcrossBases(abFacilityGrid, nSiteCount, byte_1870F4, 0) is non-zero -- the
+ *      cargo the working site aSmapSites[nSiteCount] already carries for the base the psi screen
+ *      selected -- or unk_1870D0 or unk_1870F0 is non-zero (both read with LDRSB, so a negative byte
+ *      counts), or Smap_SumSiteScores() is positive.
+ *   3. 0x96980..0x96990: when blocked, byte_1870F8 = 0, byte_1870C8 = 1 and dword_1870B4[0] = 5 --
+ *      the fifth reason code, after the buy screen's 0 (living quarters), 1 (funds), 2 (hangar) and
+ *      3 (stores).
+ *   4. 0x96994..0x96A04: the pending quantities fold back into the count column. For every row of
+ *      panel A: panel D aux += panel E aux, then panel E aux = 0. The loop is guarded by
+ *      `nLineCount > 0` at 0x969B0.
+ *   5. 0x96A04..0x96AA0: the working site is cleared -- bUnk518, uRecoveredSoldiers,
+ *      bRecoveredCraftCount, bRecoveredSoldierAssign and bHasLoot, then auItemQty over
+ *      Map_nObjectCount entries and not the full 256. bFlag0 and bFlag1 are left alone, which is what
+ *      tells this apart from BuySellScreen_BuildControls' teardown: that one clears the two flags and
+ *      all 256 quantities but never bHasLoot.
+ *
+ * Deviation: the original allocates the pad and the four controls with operator new and dereferences
+ * every one of them with no test; the port allocates only the pad and takes caller-owned controls,
+ * storing them into ppRoot[1..4] so the rest of the screen finds them where the original put them.
+ * Transfer_ResetSite indexes aSmapSites[nSiteCount] blindly; the port bounds it.
+ *
+ * unk_1870D0 and unk_1870F0 sit either side of the transfer root array at 0x1870D8, and the only
+ * references to them anywhere in the binary are the two LDRSB reads in step 2 -- no direct write
+ * exists. What they hold is not established, so the port takes them from the env. */
+#define PUFO_TRANSFER_PAD_NAME "transfer" /* aTransfer @ 0xAC438 */
+#define PUFO_TRANSFER_PAD_MODE 13         /* 0x99590: MOV R2,#0xD */
+
+typedef struct TransferInitEnv {
+    void **ppRoot;                  /* 0x1870D8; [0] receives the PadImage, [1..4] the four UiControl* */
+    UiControl *apCtl[4];            /* caller-owned, stored into ppRoot[1..4] */
+    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pConfirmCtl;         /* unk_186BA4 */
+    void (*pfnCloseClick)(void);    /* Geoscape_CloseUI_ThunkB @ 0x96020 */
+    void (*pfnPanelPrev)(void);     /* Transfer_ScrollPrevAll @ 0x967e4 */
+    void (*pfnPanelNext)(void);     /* Transfer_ScrollNextAll @ 0x9683c */
+    void (*pfnResetSite)(void);     /* Transfer_ResetSite @ 0x9690c */
+    void (*pfnCommit)(void);        /* TransferScreen_CommitTransfer (0x97aa4), not ported */
+    void (*pfnBuildPanels)(void);   /* TransferScreen_BuildPanels (0x96b30), not ported */
+    i8 *pbBaseCount;                /* 0x159D80, signed */
+    u8 *pbTransferOk;               /* byte_1870F8 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} TransferInitEnv;
+
+void Ui_InitTransfer(TransferInitEnv *pEnv);
+
+typedef struct TransferResetEnv {
+    SmapSite *aSites;               /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                 /* nSiteCount @ 0x186410, also the working site's index */
+    BaseRec *const *apBases;        /* apBases @ 0x114B2C */
+    ObjectRecFull *const *apObjects;/* apObjects @ 0x113AC0 */
+    i32 nObjectCount;               /* Map_nObjectCount @ 0x114A60, the auItemQty clear length */
+    i8 nPendingBase;                /* byte_1870F4, signed: the base the psi screen selected */
+    u8 *pbTransferOk;               /* byte_1870F8 */
+    i8 *pbScratch1870D0;            /* unk_1870D0, signed */
+    i8 *pbScratch1870F0;            /* unk_1870F0, signed */
+    u32 *pdwShortfall;              /* byte_1870C8, written as a dword */
+    i32 *pnResidue;                 /* dword_1870B4[0], the reason code */
+    UiPanel *pPanelA;               /* pBuySellPanelA @ 0x161A1C, the row-count source */
+    UiPanel *pPanelD;               /* pBuySellPanelD @ 0x160C88, the count column */
+    UiPanel *pPanelE;               /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+} TransferResetEnv;
+
+SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *

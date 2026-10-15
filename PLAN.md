@@ -908,6 +908,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   at 0x76318 naming the only read of `ObjectRecFull+0xBA` in the binary, and the shipped-data counts
   corrected (35 records with a non-zero +0xBA, all unpriced; 36 buyable slots).
 
+- [x] part 26, the transfer screen's bring-up: `Ui_InitTransfer (0x9955c)`, 392 bytes, and
+  `Transfer_ResetSite (0x9690c)`, 420 bytes — 55 more checks. The pad `"transfer"` at palette slot
+  13, the four controls in the root array at `0x1870D8` (scroll pair, reset, commit), the confirm
+  button closing the screen instead of committing and sitting at `28 * nBaseCount + 10`, and the
+  reset's blocked-transfer gate — cargo on the working site, the two unread scratch bytes, or a site
+  that still owes recovery — writing the fifth shortfall reason, 5. Its site clear takes `bHasLoot`
+  and leaves `bFlag0`/`bFlag1`, the exact inverse of the buy screen's teardown. `Transfer_RoleToIconId
+  (0x96ad8)` is `BuySell_RoleToItemId` byte for byte and is merged. IDB: `stru_AC3B8` →
+  `g_aTransferCtlDesc`, comments at 0x9955c / 0x9690c / 0x96ad8 / 0x1870B4 / 0x1870D8 / 0x1870F8 /
+  0x1870D0 / 0x1870F0.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1087,6 +1098,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy screen's quantity controls (`BuySellScreen_ValidateCapacity`, `BuySellScreen_UpdatePrices`, the shortfall codes) | 56/56 (Release) | 9572 | 843/1103 (76.4%) | 340812/598792 (56.9%) | 38 checked, 0 mismatched |
 | the buy/sell screen bring-up (`BuySellScreen_Init`, the pad and palette load, the two confirm wirings) | 56/56 (Release) | 9597 | 844/1103 (76.5%) | 341164/598792 (57.0%) | 38 checked, 0 mismatched |
 | the buy screen's object block (`BuySellScreen_BuildControls`, the catalogue include tests, the soldier row) | 56/56 (Release) | 9648 | 845/1103 (76.6%) | 344276/598792 (57.5%) | 38 checked, 0 mismatched |
+| the transfer screen's bring-up (`Ui_InitTransfer`, `Transfer_ResetSite`, the blocked-transfer gate) | 56/56 (Release) | 9703 | 848/1103 (76.9%) | 345176/598792 (57.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

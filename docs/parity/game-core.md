@@ -11316,3 +11316,80 @@ the +0xBA read; `unk_161A24` -> `bBuySellControlsBuilt` (typed `unsigned __int8`
 `pBuySellScreenPad`, `unk_ABC20` -> `aRowQtyInc` (">"), `unk_ABC24` -> `aRowQtyDec` ("<") -- the two
 literals are shared by four list builders (0x76160, 0x76de0, 0x7b014, 0x96b30); a comment at 0xBB823
 recording it as TEXTS[159].
+
+
+## Ui_InitTransfer @ 0x9955c and Transfer_ResetSite @ 0x9690c -- the transfer screen's bring-up
+
+Evidence: `Ui_InitTransfer @ 0x9955c` (392 B), the tail call of `TransferScreen_Open @ 0x614fc` (the
+BL at 0x61510, with the screen's root array at 0x1870D8), and `Transfer_ResetSite @ 0x9690c` (420 B),
+the third of the four controls it wires. `Transfer_RoleToIconId @ 0x96ad8` is the third function in
+this unit and it is `BuySell_RoleToItemId @ 0x76d88` byte for byte -- same 88 bytes, same jump table,
+same 255 fall-through -- so the transfer screen shares that one port (docs/parity/renames.tsv). Test:
+`TestTransferInitAndReset` in tests/test_baseui.c, 55 checks.
+
+Ui_InitTransfer, in the original's order:
+
+1. 0x99568..0x9958C: `operator new(0x14)` then `PadImage_ctor`, and the slot receives the ctor's
+   result.
+2. 0x99590: `PadImage_Load(pad, "transfer", 13)` -- `aTransfer @ 0xAC438`, palette slot 13, the same
+   "load the pad named after the screen in the screen's own palette slot" shape BuySellScreen_Init
+   uses with "buy_sell" at slot 5. The origin is cleared at 0x99598 and 0x995A0.
+3. 0x995A4: `TransferScreen_BuildPanels` (0x96b30, not ported) runs before the controls exist.
+4. 0x995B8: `byte_1870F8 = 1`. This is the same byte BaseInfoScreen_OnOk (0x557C8) and
+   PsiScreen_OnOk (0x716A8) set when a base change is accepted; here it means "this transfer is still
+   possible", and Transfer_ResetSite is the function that clears it.
+5. 0x995C0..0x995F0: four controls (`operator new(0x20)` + `UiControl_ctor`) into ppRoot[1..4].
+6. 0x99604..0x99630: their clicks in slot order -- `Transfer_ScrollPrevAll @ 0x967e4` and
+   `Transfer_ScrollNextAll @ 0x9683c`, both already merged into BuySellScreen_PanelPrev /
+   BuySellScreen_PanelNext, then Transfer_ResetSite and TransferScreen_CommitTransfer (0x97aa4, not
+   ported).
+7. 0x9963C..0x99654: the close control unk_186B00 goes to x 224, y 1 with
+   `Geoscape_CloseUI_ThunkB @ 0x96020`. Same slot as the buy/sell screen, but a different handler:
+   BuySellScreen_Init installs BuySellScreen_CloseThunk @ 0x75154 there.
+8. 0x9965C: the confirm control unk_186BA4 gets that same close thunk, and it gets it *before*
+   `UiControl_Setup`, where BuySellScreen_Init installs its confirm handler last. The transfer
+   screen's confirm button therefore closes the screen; its commit lives on the fourth control.
+9. 0x99660..0x99680: `UiControl_Setup(ctl, 0, 0, g_aTransferCtlDesc[i])` (was `stru_ABBA0`'s
+   counterpart `stru_AC3B8 @ 0xAC3B8`, now named in the IDB). The descriptors are (0xCD, 0x12) "up" /
+   "sup", (0xCD, 0x26) "down" / "sdown", (1, 0x12C) "emptyb" / "cemptyb" and (0x78, 0x12C)
+   "emptyb" / "cemptyb" -- the scroll pair at the buy/sell pair's x, the reset and confirm buttons
+   drawn from the same blank pad pair the buy/sell screen's fourth control uses.
+10. 0x99698, 0x996B8: the confirm control goes to `x = 120 - (uWidth >> 1)` and `y = 28 * nBaseCount
+    + 10`, the base count at 0x159D80 read with LDRSB. The buy/sell screen hard-codes 297 here; the
+    transfer screen moves the button down as the player owns more bases, which is the only
+    transfer-screen layout that depends on the count.
+
+Transfer_ResetSite, in the original's order:
+
+1. 0x9691C: `byte_1870F8 = 1` -- the flag is raised before the gate, so a blocked pass leaves it
+   cleared rather than untouched.
+2. 0x96920..0x96974: the gate. Blocked when `Base_CountItemQtyAcrossBases(abFacilityGrid,
+   nSiteCount, byte_1870F4, 0)` is non-zero -- 0x9692C is the fourth of the five call sites that pass
+   the site COUNT as the site index, because that is where the transfer flow keeps the record it is
+   working on, and the base index is the signed byte the psi screen left in byte_1870F4 -- or
+   `unk_1870D0` or `unk_1870F0` is non-zero (both LDRSB, so a negative byte counts), or
+   `Smap_SumSiteScores()` is positive.
+3. 0x96980..0x96990: when blocked, `byte_1870F8 = 0`, `byte_1870C8 = 1` (a dword store into a byte
+   global, the same shape the buy screen's shortfall paths use) and `dword_1870B4[0] = 5` -- the
+   fifth reason code, after the buy screen's 0 (living quarters), 1 (funds), 2 (hangar) and 3
+   (stores). 4 is never written anywhere.
+4. 0x96994..0x96A04: the pending quantities fold back into the count column. For every row of panel
+   A: panel D aux += panel E aux, then panel E aux = 0. The loop is guarded by `nLineCount > 0` at
+   0x969B0, and it runs whether or not the gate blocked.
+5. 0x96A04..0x96AA0: the working site is cleared -- `bUnk518`, `uRecoveredSoldiers`,
+   `bRecoveredCraftCount`, `bRecoveredSoldierAssign` and `bHasLoot`, then `auItemQty` over
+   `Map_nObjectCount` entries and not the full 256. `bFlag0` and `bFlag1` are left alone. That is
+   what tells this apart from BuySellScreen_BuildControls' teardown at 0x76C08: that one clears the
+   two flags and all 256 quantities but never `bHasLoot`, and this one clears `bHasLoot` and never
+   the two flags.
+
+Deviation: the original allocates the pad and the four controls with `operator new` and dereferences
+every one of them with no test; the port allocates only the pad and takes caller-owned controls,
+storing them into ppRoot[1..4] so the rest of the screen finds them where the original put them.
+`Transfer_ResetSite` indexes `aSmapSites[nSiteCount]` blindly; the port bounds it against
+PUFO_SMAP_SITE_COUNT and returns NULL there.
+
+IDB: function comments at 0x9955c, 0x9690c and 0x96ad8 (the merge note); `stru_AC3B8` ->
+`g_aTransferCtlDesc`; comments at 0x1870D8 (the root array), 0x1870B4 (the reason codes, now
+including 5), 0x1870F8 (the shared pending flag) and 0x1870D0 / 0x1870F0 -- the two gate bytes whose
+only references anywhere in the binary are the two LDRSB reads here, with no direct write at all.

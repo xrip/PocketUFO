@@ -266,6 +266,7 @@ void BuySellScreen_DetailPanelNext(UiPanel *const apPanels[5])
     ScrollPanelsNext(apPanels, 5); /* 0x79AD0, 0x79AE0, 0x79AF0, 0x79B00, 0x79B10 */
 }
 
+/* BuySell_RoleToItemId @ 0x76d88, and its byte-identical twin Transfer_RoleToIconId @ 0x96ad8. */
 i32 BuySell_RoleToItemId(i32 nRole)
 {
     switch ((i8)nRole) { /* 0x76D88..0x76D8C sign-extends the low byte first */
@@ -1775,6 +1776,153 @@ void BuySellScreen_BuildControls(BuySellControlsEnv *pEnv)
 
     /* The sort pass, 0x76AF0..0x76BE8. */
     BuySellSortRows(pA, pE, pB, pC, pD, pEnv->nObjectCount - 1);
+}
+
+/* stru_AC3B8 @ 0xAC3B8: the transfer screen's four control descriptors. The first two are the
+ * scroll pair at the same x as the buy/sell pair; the third and fourth are the reset and confirm
+ * buttons, both drawn from the "emptyb" / "cemptyb" pad pair. */
+static const UiControlDesc g_aTransferCtlDesc[4] = {
+    { 0x00CD, 0x0012, "up",     "sup",     "", 0 }, /* 0xAC3B8 */
+    { 0x00CD, 0x0026, "down",   "sdown",   "", 0 }, /* 0xAC3D8 */
+    { 0x0001, 0x012C, "emptyb", "cemptyb", "", 0 }, /* 0xAC3F8 */
+    { 0x0078, 0x012C, "emptyb", "cemptyb", "", 0 }, /* 0xAC418 */
+};
+
+/* Ui_InitTransfer @ 0x9955c: the tail call of TransferScreen_Open @ 0x614fc. The header carries the
+ * branch map. */
+void Ui_InitTransfer(TransferInitEnv *pEnv)
+{
+    PadImage *pPad;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppRoot == NULL) {
+        return;
+    }
+
+    pPad = BuySellPadNew(); /* 0x99568, operator new(0x14) + PadImage_ctor */
+    pEnv->ppRoot[0] = pPad; /* 0x9958C: the ctor's result, not the raw allocation */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_TRANSFER_PAD_NAME, PUFO_TRANSFER_PAD_MODE); /* 0x99590 */
+        pPad->nOriginX = 0; /* 0x99598 */
+        pPad->nOriginY = 0; /* 0x995A0 */
+    }
+
+    if (pEnv->pfnBuildPanels != NULL) {
+        pEnv->pfnBuildPanels(); /* 0x995A4, before the controls exist */
+    }
+    if (pEnv->pbTransferOk != NULL) {
+        *pEnv->pbTransferOk = 1; /* 0x995B8 */
+    }
+
+    for (i = 0; i < 4; ++i) {
+        pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x995E4, the original's operator new(0x20) slots */
+    }
+    if (pEnv->apCtl[0] != NULL) {
+        pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x99604 */
+    }
+    if (pEnv->apCtl[1] != NULL) {
+        pEnv->apCtl[1]->pfnClick = pEnv->pfnPanelNext; /* 0x99614 */
+    }
+    if (pEnv->apCtl[2] != NULL) {
+        pEnv->apCtl[2]->pfnClick = pEnv->pfnResetSite; /* 0x99624 */
+    }
+    if (pEnv->apCtl[3] != NULL) {
+        pEnv->apCtl[3]->pfnClick = pEnv->pfnCommit; /* 0x99630 */
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = 224; /* 0x9963C */
+        pEnv->pCloseCtl->y = 1;   /* 0x99648 */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x99654 */
+    }
+    if (pEnv->pConfirmCtl != NULL) {
+        pEnv->pConfirmCtl->pfnClick = pEnv->pfnCloseClick; /* 0x9965C, before the Setup pass */
+    }
+
+    for (i = 0; i < 4; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_Setup(pEnv->apCtl[i], 0, 0, &g_aTransferCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x99670 */
+        }
+    }
+
+    if (pEnv->pConfirmCtl != NULL) {
+        pEnv->pConfirmCtl->x = (i16)(120 - (pEnv->pConfirmCtl->uWidth >> 1)); /* 0x99698 */
+        if (pEnv->pbBaseCount != NULL) {
+            pEnv->pConfirmCtl->y = (i16)(28 * (i32)*pEnv->pbBaseCount + 10); /* 0x996B8, LDRSB */
+        }
+    }
+}
+
+/* Transfer_ResetSite @ 0x9690c: the transfer screen's reset button. The header carries the branch
+ * map and the gate. */
+SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv)
+{
+    SmapSite *pSite;
+    bool bBlocked = false;
+    i32 i;
+
+    if (pEnv == NULL) {
+        return NULL;
+    }
+
+    if (pEnv->pbTransferOk != NULL) {
+        *pEnv->pbTransferOk = 1; /* 0x9691C */
+    }
+
+    /* 0x96920..0x96974: the site index is the site count -- the transfer flow's working record --
+     * the base index is the one the psi screen left in byte_1870F4, and the scan flag is OFF. */
+    if (Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount, pEnv->nSiteCount,
+                                     pEnv->apBases, pEnv->nPendingBase,
+                                     pEnv->apObjects, pEnv->nObjectCount, false) != 0) {
+        bBlocked = true;
+    }
+    if (!bBlocked && pEnv->pbScratch1870D0 != NULL && (i8)*pEnv->pbScratch1870D0 != 0) {
+        bBlocked = true; /* 0x96944, LDRSB then LSL #24 / ASR #24 */
+    }
+    if (!bBlocked && pEnv->pbScratch1870F0 != NULL && (i8)*pEnv->pbScratch1870F0 != 0) {
+        bBlocked = true; /* 0x96958 */
+    }
+    if (!bBlocked && Smap_SumSiteScores(pEnv->aSites, pEnv->nSiteCount) > 0) {
+        bBlocked = true; /* 0x9696C */
+    }
+
+    if (bBlocked) {
+        if (pEnv->pbTransferOk != NULL) {
+            *pEnv->pbTransferOk = 0; /* 0x96980 */
+        }
+        if (pEnv->pdwShortfall != NULL) {
+            *pEnv->pdwShortfall = 1; /* 0x96984, a dword store into a byte global */
+        }
+        if (pEnv->pnResidue != NULL) {
+            *pEnv->pnResidue = PUFO_BUYSELL_SHORTFALL_TRANSFER; /* 0x96990 */
+        }
+    }
+
+    /* 0x96994..0x96A04: fold the pending quantities back into the count column. */
+    if (pEnv->pPanelA != NULL && pEnv->pPanelD != NULL && pEnv->pPanelE != NULL) {
+        for (i = 0; i < pEnv->pPanelA->nLineCount; ++i) {
+            if (i >= PUFO_PANEL_LINES) {
+                break;
+            }
+            pEnv->pPanelD->anLineAux[i] += pEnv->pPanelE->anLineAux[i];
+            pEnv->pPanelE->anLineAux[i] = 0;
+        }
+    }
+
+    pSite = BuySellSiteAt(pEnv->aSites, pEnv->nSiteCount);
+    if (pSite == NULL) {
+        return NULL;
+    }
+    pSite->bUnk518 = 0;                /* 0x96A3C */
+    pSite->uRecoveredSoldiers = 0;     /* 0x96A48 */
+    pSite->bRecoveredCraftCount = 0;   /* 0x96A54 */
+    pSite->bRecoveredSoldierAssign = 0; /* 0x96A58 */
+    pSite->bHasLoot = 0;               /* 0x96A5C */
+    for (i = 0; i < pEnv->nObjectCount && i < 256; ++i) {
+        pSite->auItemQty[i] = 0; /* 0x96AA0, over Map_nObjectCount entries, not the full 256 */
+    }
+    return pSite;
 }
 
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
