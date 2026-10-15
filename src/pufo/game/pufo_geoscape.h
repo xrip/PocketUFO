@@ -1146,7 +1146,7 @@ i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY);
 /* --- the base-tab strip drawer @ 0x6250c ---
  *
  * Evidence: Base_DrawFacilityIconStrip (792 B), called from BaseInfoScreen_Draw (0x57488),
- * Geoscape_DrawBaseStatsPanel (0x727d8, with the highlight argument -1), Geoscape_Draw twice
+ * PsiScreen_Draw (0x727d8, with the highlight argument -1), Geoscape_Draw twice
  * (0x922c0, 0x92d40) and TransferScreen_Draw (0x98744).
  *
  * Both arguments come from the same block: every caller passes &abFacilityGrid in R0, and the

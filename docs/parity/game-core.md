@@ -9378,7 +9378,7 @@ selection, the kind index and the pending kind (0x58E20, bugs.tsv); and it score
 
 `src/pufo/ui/pufo_panel.{h,c}`, 19 new checks in `tests/test_panel.c`. Sixteen call sites across the
 geoscape screens (`BaseFacScreen_DrawBuildDialog`, `RadarScreen_Update`, `Geoscape_Draw`,
-`Geoscape_DrawScreen`, `Geoscape_DrawGlobeHover`, `Geoscape_DrawBaseStatsPanel`,
+`Geoscape_DrawScreen`, `Geoscape_DrawGlobeHover`, `PsiScreen_Draw`,
 `ManufScreen_DrawFrame`, `BuySellScreen_Draw`, `BasePlaneScreen_DrawCraftDetail`,
 `ResearchScreen_Draw`, `Ui_TextInputDialog`), and it is the helper the build dialog draws its panel
 through.
@@ -11630,7 +11630,7 @@ Base_DrawFacilityIconStrip (0x6250c, 792 B) draws the base-tab strip down the ri
 geoscape, the thing Base_HitTestFacilityStrip (0x671B0) hit-tests.
 
 Arguments (0x62520..0x62544). Every caller passes &abFacilityGrid in R0 -- BaseInfoScreen_Draw
-(0x57488), Geoscape_DrawBaseStatsPanel (0x727d8, with the mark argument -1), Geoscape_Draw twice
+(0x57488), PsiScreen_Draw (0x727d8, with the mark argument -1), Geoscape_Draw twice
 (0x922c0, 0x92d40) and TransferScreen_Draw (0x98744, with nSelectedBaseIdx) -- and the function reads
 its two count bytes back out of that pointer at +0x618 and +0x619, which are nBaseCount @ 0x159D80
 and nSelectedBaseIdx @ 0x159D81. When they differ it first blits a 26x26 erase rect at

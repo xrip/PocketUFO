@@ -1039,6 +1039,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   archive; one new shared symbol pulled it in and 19 targets failed to link while ctest still
   reported 48/48. Until this is fixed, share a value across modules as a header define, not an
   `extern` symbol.
+- [ ] **Four caption buffers have no writer anywhere in the binary.** `PsiScreen_Draw` copies three
+  strings and draws them — `unk_EF024` at (7, 54), `unk_EF0F1` centred at (60, 300) and
+  `szBaseAtDone @ 0xEBF4B` centred at (180, 300) — and `unk_EF1BE` for its shortfall panel. All four
+  are `.data` / BSS scratch whose only cross-references in the whole binary are these reads; the same
+  four screens repeat the pattern (`BaseAtScreen_Draw 0x58728`, `ManufScreen_DrawFrame 0x6f9a4`,
+  `ResearchScreen_Draw 0x73a34`, `BuySellScreen_Draw 0x77e6c`). As shipped they are empty strings, so
+  those caption lines draw nothing. Until the writer is found — a table-driven copy from lang.dat is
+  the likeliest candidate — the port cannot say what those captions are supposed to say, and the
+  screen draws that read them stay unported. Recorded rather than guessed.
 - [ ] **Screen-level visual verification is blocked on `Geoscape_Draw (0x8c180)`.** The app renders
   the titles and the main menu for real (`--dump-frame` proves it), but the geoscape screen — the
   screen every other screen sits on — is a hook the port does not implement

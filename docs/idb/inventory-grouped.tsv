@@ -734,7 +734,7 @@ addr	name	size	subsystem
 716a8	PsiScreen_OnOk	44	strat-ui
 716d4	PsiScreen_BuildPanels	2940	strat-ui
 72250	PsiScreen_ApplyAssignments	328	strat-ui
-72398	Geoscape_DrawBaseStatsPanel	1960	strat
+72398	PsiScreen_Draw	1960	strat-ui
 72b40	PsiScreen_Init	332	strat-ui
 72c8c	Research_TopicNeedsItem	136	strat-ui
 72d14	ResearchScreen_UpdateProgress	284	strat-ui

@@ -734,7 +734,7 @@ addr	name	size
 716a8	PsiScreen_OnOk	44
 716d4	PsiScreen_BuildPanels	2940
 72250	PsiScreen_ApplyAssignments	328
-72398	Geoscape_DrawBaseStatsPanel	1960
+72398	PsiScreen_Draw	1960
 72b40	PsiScreen_Init	332
 72c8c	Research_TopicNeedsItem	136
 72d14	ResearchScreen_UpdateProgress	284

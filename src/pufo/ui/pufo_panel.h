@@ -225,7 +225,7 @@ void Cydonia_BlitThenDrawPanel(PadImage *pPad, UiPanel *pPanel);
  *
  * Evidence: Ui_AnimExpandBlit @ 0x95bf0 (948 B) and Ui_AnimExpandBlit_IfEnabled @ 0x663c4 (88 B).
  * Sixteen call sites: BaseFacScreen_DrawBuildDialog, RadarScreen_Update, Geoscape_Draw,
- * Geoscape_DrawScreen, Geoscape_DrawGlobeHover, Geoscape_DrawBaseStatsPanel, ManufScreen_DrawFrame,
+ * Geoscape_DrawScreen, Geoscape_DrawGlobeHover, PsiScreen_Draw, ManufScreen_DrawFrame,
  * BuySellScreen_Draw, BasePlaneScreen_DrawCraftDetail, ResearchScreen_Draw, Ui_TextInputDialog and
  * the wrapper.
  *
