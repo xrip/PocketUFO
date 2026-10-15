@@ -4224,6 +4224,328 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv)
     }
 }
 
+/* ManufScreen_DrawFrame @ 0x6f9a4. Every label is a TEXTS.DAT record: the ARM builds each address as
+ * `LDR R0, =(<addr> - 0xB38D0)` against R8 = 0xB38D0, so each is aTextRecs + 205*n. */
+static const char *ManufUi_Text(const ManufFrameEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+static void ManufUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz); /* 0x6FC54, 0x70088, 0x70BC8... */
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+static const char *ManufUi_BaseName(const ManufFrameEnv *pEnv, i32 nBaseIdx)
+{
+    if (pEnv->apSiteRecs == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return "";
+    }
+    return pEnv->apSiteRecs[nBaseIdx].abName; /* 0x6FC30: 0x186C40 + 64*i + 26 */
+}
+
+/* The four component rows' labels, in the same order as g_anManufComponentSlots above: the label at
+ * index k is answered by the stock of the object slot at index k. */
+static const i32 g_anManufCompText[4] = { PUFO_MANUF_TEXT_COMP_ELERIUM, PUFO_MANUF_TEXT_COMP_ALLOY,
+                                          PUFO_MANUF_TEXT_COMP_POWER, PUFO_MANUF_TEXT_COMP_NAV };
+
+/* 0x70DB8..0x70EB4: the shortfall panel, reached from all three exits of the frame. */
+static void ManufUi_DrawShortfall(const ManufFrameEnv *pEnv, char *szLabel, size_t cchLabel)
+{
+    const u32 nShortfall = (pEnv->pdwShortfall != NULL) ? *pEnv->pdwShortfall : 0u;
+    if (nShortfall != 1u) {
+        return; /* 0x70DC4 BNE: the value is the original's return value, which Geoscape_Draw drops */
+    }
+    const i32 nReason = (pEnv->pnShortfallReason != NULL) ? *pEnv->pnShortfallReason : 0;
+    if (nReason == 0) {
+        (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1); /* 0x70E44 */
+        pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_NO_STORES), cchLabel);
+    } else if (nReason == 1) {
+        (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1); /* 0x70DE0 */
+        pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_NO_HANGAR), cchLabel);
+    } else {
+        return; /* 0x70DDC BNE */
+    }
+    ManufUi_DrawCentered(120, 158, szLabel); /* 0x70E9C */
+}
+
+/* ManufScreen_DrawFrame @ 0x6f9a4: the manufacturing screen's frame, panels, labels, component
+ * requirements, crew and capacity read-out, buttons and shortfall message. The header carries the
+ * branch map. */
+void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv)
+{
+    char szLabel[PUFO_MANUF_LABEL_MAX];
+    char szNum[52]; /* var_34 @ sp+0x88, the j_itoa buffer */
+    i32 nBand = 0;
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+
+    /* 0x6F9C4..0x6FA84: the two side rails, 24 steps of 7. */
+    for (i32 k = 0; k < 24; ++k) {
+        const i32 nY = 7 * k;
+        const u8 nRise = (u8)(PUFO_MANUF_RAMP_STEP * (k + PUFO_MANUF_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_MANUF_RAMP_SIDE - PUFO_MANUF_RAMP_STEP * k);   /* 230..115 */
+
+        SoftSurf_BlitRectProxy(0, 5, nY + 1, 1, 7, nRise, nRise, nRise);     /* 0x6F9F4 */
+        SoftSurf_BlitRectProxy(0, 5, nY + 151, 1, 7, nFall, nFall, nFall);   /* 0x6FA24 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 1, 1, 7, nRise, nRise, nRise);   /* 0x6FA48 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x6FA6C */
+    }
+
+    /* 0x6FA94..0x6FB54: the top and bottom rails, 24 steps of 5. */
+    for (i32 k = 0; k < 24; ++k) {
+        const i32 nXLo = 5 * k + 1;
+        const i32 nXHi = 5 * k + 119;
+        const u8 nRise = (u8)(PUFO_MANUF_RAMP_STEP * (k + PUFO_MANUF_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_MANUF_RAMP_EDGE - PUFO_MANUF_RAMP_STEP * k);   /* 250..135 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);     /* 0x6FAC4 */
+        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise);   /* 0x6FAEC */
+        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);     /* 0x6FB1C */
+        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall);   /* 0x6FB44 */
+    }
+
+    /* 0x6FC78..0x6FC98: the row band is 16 pixels per row, capped by the panel's style. */
+    if (pEnv->pPanelA != NULL) {
+        nBand = 16 * pEnv->pPanelA->nLineCount;
+        if (pEnv->pPanelA->nLineCount >= pEnv->pPanelA->nStyle) {
+            nBand = 16 * pEnv->pPanelA->nStyle;
+        }
+    }
+
+    if (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0) {
+        if (pEnv->pPanelA != NULL) {
+            UiPanel_DrawText(pEnv->pPanelA); /* 0x6FB84 */
+        }
+        if (pEnv->pPanelB != NULL) {
+            UiPanel_DrawText(pEnv->pPanelB); /* 0x6FB90 */
+        }
+        if (pEnv->pPanelC != NULL) {
+            UiPanel_DrawText(pEnv->pPanelC); /* 0x6FB9C */
+        }
+        if (pEnv->pPanelD != NULL) {
+            UiPanel_DrawText(pEnv->pPanelD); /* 0x6FBA8 */
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x6FBCC */
+        pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_HEADER), sizeof(szLabel));
+        Text_DrawString(10, 52, szLabel); /* 0x6FC08: "Производство          Инж. Вып. Зак./Гот." */
+
+        pufo_strncpy(szLabel, ManufUi_BaseName(pEnv, nBase), sizeof(szLabel));
+        ManufUi_DrawCentered(120, 13, szLabel); /* 0x6FC74 */
+
+        /* 0x6FC94..0x6FD3C: the object under the map cursor, named from PANEL D's row cursor. */
+        if ((pEnv->pbProductSelected == NULL || *pEnv->pbProductSelected == 0)
+            && pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0
+            && pEnv->pnCursorY != NULL && *pEnv->pnCursorY > 70 && *pEnv->pnCursorY < nBand + 70
+            && pEnv->pPanelA != NULL && pEnv->pPanelD != NULL) {
+            const i32 nRow = pEnv->pPanelD->nUnk3032; /* 0x6FCD8 */
+            const ObjectRecFull *pObj = NULL;
+            if (nRow >= 0 && nRow < PUFO_PANEL_LINES) {
+                const i32 nSlot = pEnv->pPanelA->anLineAux[nRow]; /* 0x6FCE4 */
+                if (nSlot >= 0 && nSlot < pEnv->nObjectCount && pEnv->apObjects != NULL) {
+                    pObj = pEnv->apObjects[nSlot];
+                }
+            }
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 250, 0, 0, 0); /* 0x6FD28 */
+            Text_DrawString(10, 300, (pObj != NULL) ? (const char *)pObj->szName : ""); /* 0x6FD3C */
+        }
+
+        /* 0x6FD40..0x6FD54: the three column separators. */
+        SoftSurf_BlitRectProxy(0, 130, 69, 1, nBand + 2, PUFO_MANUF_SEP_INDEX,
+                               PUFO_MANUF_SEP_INDEX, PUFO_MANUF_SEP_INDEX);
+        SoftSurf_BlitRectProxy(0, 152, 69, 1, nBand + 2, PUFO_MANUF_SEP_INDEX,
+                               PUFO_MANUF_SEP_INDEX, PUFO_MANUF_SEP_INDEX); /* 0x6FD94 */
+        SoftSurf_BlitRectProxy(0, 187, 69, 1, nBand + 2, PUFO_MANUF_SEP_INDEX,
+                               PUFO_MANUF_SEP_INDEX, PUFO_MANUF_SEP_INDEX); /* 0x6FDD8 -- see below */
+    }
+
+    if (pEnv->pbProductSelected == NULL || *pEnv->pbProductSelected == 0) {
+        /* 0x70D84..0x70D94: no product selected -- the reset control, then the teal pair. */
+        (void)UiControl_BlitActivePad(pEnv->pCtlReset, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser);
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);
+        ManufUi_DrawShortfall(pEnv, szLabel, sizeof(szLabel));
+        return;
+    }
+
+    /* 0x6FE00: the detail panel. When the animation is not ready nothing else is drawn. */
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, 0, 30, 236, 284, 4, 0x28, 0x2D, 0xC8, 3)) {
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30); /* 0x70D58 */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x70D94 */
+        ManufUi_DrawShortfall(pEnv, szLabel, sizeof(szLabel));
+        return;
+    }
+
+    const i32 nSlot = ManufSelectedProduct(pEnv->pPanelA, pEnv->pnProductRow); /* 0x6FE40 */
+    const bool bSlot = (nSlot >= 0 && nSlot < pEnv->nObjectCount && pEnv->apObjects != NULL);
+    const ObjectRecFull *pObj = bSlot ? pEnv->apObjects[nSlot] : NULL;
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x6FE2C */
+    pufo_strncpy(szLabel, (pObj != NULL) ? (const char *)pObj->szName : "", sizeof(szLabel));
+    ManufUi_DrawCentered(120, 45, szLabel); /* 0x6FE90 */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x6FEB0 */
+    (void)snprintf(szNum, sizeof(szNum), "%u",
+                   (unsigned)((pObj != NULL) ? pObj->uManufWorkPerUnit : 0u)); /* j_itoa, 0x6FED8 */
+    pufo_strncpy(szLabel, szNum, sizeof(szLabel));
+    (void)pufo_strcat(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_WORK_HOURS), sizeof(szLabel)); /* 0x6FF04 */
+    Text_DrawString(10, 69, szLabel);
+
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ONE_UNIT), sizeof(szLabel));
+    Text_DrawString(10, 83, szLabel); /* 0x6FF58: "одной единицы" */
+
+    /* 0x6FF88..0x70014: the price of one unit, at 70 percent of the record's own price. The 0.7 is
+     * the double the ARM builds from 0x66666666 / 0x3FE66666; CommitProduction uses 1.4 for the same
+     * table, so the screen quotes half of what committing costs. */
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_PRICE), sizeof(szLabel));
+    {
+        const u32 nPrice = (bSlot && pEnv->pdwPrices != NULL) ? pEnv->pdwPrices[nSlot] : 0u;
+        (void)snprintf(szNum, sizeof(szNum), "%d", (int)((double)nPrice * PUFO_MANUF_PRICE_FACTOR));
+    }
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    (void)pufo_strcat(szLabel, "$", sizeof(szLabel)); /* asc_AB1D8, 0x70000 */
+    Text_DrawString(10, 97, szLabel);
+
+    /* 0x7002C..0x7073C: the four component rows. A zero component draws nothing and does not advance
+     * the row counter, so the rows stack only where something is required. */
+    {
+        i32 nRows = 0;
+        for (i32 k = 0; k < 4; ++k) {
+            const u8 nNeed = (pObj != NULL) ? pObj->abManufComponents[k] : 0u; /* 0x70048 LDRB #0xC0 */
+            if (nNeed == 0u) {
+                continue; /* 0x70050 BLS */
+            }
+            ManufUi_DrawCentered(140, 114, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_REQUIRED));  /* 0x700A8 */
+            ManufUi_DrawCentered(200, 114, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_AVAILABLE)); /* 0x700FC */
+
+            const i32 nStockSlot = g_anManufComponentSlots[k];
+            u32 nStock = 0u;
+            if (nStockSlot < pEnv->nObjectCount && pEnv->apObjects != NULL
+                && pEnv->apObjects[nStockSlot] != NULL && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT) {
+                nStock = pEnv->apObjects[nStockSlot]->auPerBaseVal[nBase]; /* 0x7015C LDRH #0x2A */
+            }
+            if ((u32)nNeed > nStock) {
+                const i32 nPhase = (pEnv->pbMapPhase != NULL) ? (i32)*pEnv->pbMapPhase : 0;
+                (void)Gfx_PackRgb565Pair(pEnv->pColor, 20 * (nPhase + 5), 10, 10, 50, 0, 0); /* 0x70194 */
+                if (pEnv->pbQtyGate != NULL) {
+                    *pEnv->pbQtyGate = 1; /* 0x7019C, and its three twins */
+                }
+            }
+            const i32 nY = nRows * 14 + 130; /* 0x701C8 ADD R5,R9,#0x82, with R9 stepping by 0xE */
+            Text_DrawString(10, nY, ManufUi_Text(pEnv, g_anManufCompText[k]));
+            (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)nNeed);
+            Text_DrawString(140, nY, szNum);
+            (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)nStock);
+            Text_DrawString(200, nY, szNum); /* 0x70700 */
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0); /* 0x70724 */
+            ++nRows;
+        }
+    }
+
+    /* 0x70740..0x707F4: engineers available, and free places in workshops. */
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ENG_FREE), sizeof(szLabel));
+    {
+        const u16 *pCol = (pEnv->apManufCols != NULL)
+                              ? pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase : NULL;
+        const i32 nEngineers = (pEnv->pEngineerRec != NULL && pCol != NULL)
+                                   ? Base_GetEngineerCount(pEnv->pEngineerRec, pCol, nBase, nEntries)
+                                   : 0;
+        (void)snprintf(szNum, sizeof(szNum), "%d", nEngineers);
+    }
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    Text_DrawString(10, 185, szLabel);
+
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_WS_FREE), sizeof(szLabel));
+    {
+        const u16 *pCol = (pEnv->apManufCols != NULL)
+                              ? pEnv->apManufCols + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase : NULL;
+        const i32 nActive = (pCol != NULL) ? Base_CountActiveManuf(pCol, nEntries) : 0;
+        const i32 nCap = (pEnv->abFacilityGrid != NULL)
+                             ? Base_CalcWorkshopCap(pEnv->abFacilityGrid, nBase) : 0;
+        (void)snprintf(szNum, sizeof(szNum), "%d", nCap - nActive); /* 0x70808 SUB R0,R0,R1 */
+    }
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    Text_DrawString(10, 199, szLabel);
+
+    /* 0x7080C..0x709F4: the two column captions and the values under them. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 120);
+    Text_DrawString(10, 216, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ENG_CAP));  /* 0x70868 "Инженеров" */
+    Text_DrawString(140, 216, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_UNIT_CAP)); /* 0x70968 "Единиц" */
+
+    const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBase + nSlot;
+    const bool bIndexed = (nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL);
+    const u16 nAllocated = (bIndexed && pEnv->apManufCols != NULL) ? pEnv->apManufCols[nIdx] : 0u;
+    const i32 nAsked = (bIndexed && pEnv->apProductB != NULL) ? pEnv->apProductB[nIdx] : 0;
+
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ENG_USED), sizeof(szLabel));
+    (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)nAllocated); /* 0x7090C */
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    Text_DrawString(10, 230, szLabel); /* 0x7092C "занято: " */
+
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_UNIT_ASK), sizeof(szLabel));
+    (void)snprintf(szNum, sizeof(szNum), "%d", nAsked); /* 0x709D4 */
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    Text_DrawString(140, 230, szLabel); /* 0x709F4 "произвести: " */
+
+    /* 0x709F8..0x70A70: the two arrow-button captions, one pair per button column. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ADD), sizeof(szLabel));
+    Text_DrawString(38, 251, szLabel);  /* 0x70A5C */
+    Text_DrawString(170, 251, szLabel); /* 0x70A70 */
+    pufo_strncpy(szLabel, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_REMOVE), sizeof(szLabel));
+    Text_DrawString(38, 271, szLabel);  /* 0x70B04 region */
+    Text_DrawString(170, 271, szLabel);
+
+    /* 0x70AF8..0x70B14: the last four of the six arrow controls. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 0, 0, 0);
+    for (i32 k = 2; k < 6; ++k) {
+        (void)UiControl_BlitActivePad(pEnv->apCtl[k], pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser);
+    }
+
+    /* 0x70B38..0x70B94: the two quantity buttons are MOVED and re-pointed every frame. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);
+    if (pEnv->pCtlAllocAll != NULL) {
+        pEnv->pCtlAllocAll->x = 94;  /* 0x70B48 STRH #0x5E */
+        pEnv->pCtlAllocAll->y = 251; /* 0x70B50 STRH #0xFB */
+        (void)UiControl_BlitActivePad(pEnv->pCtlAllocAll, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser);
+        pEnv->pCtlAllocAll->pfnClick = pEnv->pfnAllocAllClick; /* 0x70B68 */
+    }
+    if (pEnv->pCtlClampOne != NULL) {
+        pEnv->pCtlClampOne->x = 94;  /* 0x70B78 */
+        pEnv->pCtlClampOne->y = 271; /* 0x70B80: 0x10F built as ORR #3 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlClampOne, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlUser);
+        pEnv->pCtlClampOne->pfnClick = pEnv->pfnClampOneClick; /* 0x70B94 */
+    }
+
+    ManufUi_DrawCentered(114, 252, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_ALL));       /* 0x70BE8 "ВСЕ" */
+    ManufUi_DrawCentered(113, 272, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_CLAMP_ONE)); /* 0x70C3C: empty */
+
+    /* 0x70C40..0x70D08: the two bottom controls and their captions. */
+    (void)UiControl_BlitActivePad(pEnv->pCtlDraw, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser);
+    ManufUi_DrawCentered(73, 295, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_OK));    /* 0x70CA0 "ОК" */
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser);
+    ManufUi_DrawCentered(164, 295, ManufUi_Text(pEnv, PUFO_MANUF_TEXT_CANCEL)); /* 0x70D08 "Отмена" */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30); /* 0x70D58 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x70D94 */
+    ManufUi_DrawShortfall(pEnv, szLabel, sizeof(szLabel));
+}
+
 void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
 {
     if (pEnv == NULL) {

@@ -1137,6 +1137,41 @@ Order is by what unblocks what. Each item ends with gates + commit.
   takes ONE argument — its body reads only R0 — so the `MOV R1,#4` at 0x6E428 is residue, not a second
   argument. IDB: the whole reading is now a comment at `0x6e3e0`, the dead branch included.
 
+- [x] part 42, the manufacturing frame: `ManufScreen_DrawFrame (0x6f9a4)`, 5400 bytes — 68 more checks,
+  and the manufacturing family is now complete. This is the first port tested by **drawing it for real**:
+  a 240 x 320 16 bpp surface, the real `FONT.SPR` out of lang.dat loaded the way `MainMenu_Init` loads it
+  (glyph base = the running frame count, before the load), and the real 205-byte TEXTS layout. Every check
+  is a pixel at a coordinate the original names, a control found at a position, or a gate byte.
+  **The rails are a ramp, not a constant.** Twenty-four steps of 7 at x 5 / x 234 and twenty-four steps of
+  5 at y 5 / y 315, with the colour index climbing `5*(k+20)` and falling `0xE6-5k` on the sides and
+  `0xFA-5k` on top and bottom. The two halves of a side rail overlap at y 151..168 and the climbing half is
+  issued later, so it wins there — the first version of the test assumed otherwise and failed at (5,151),
+  which is what proved the draw order.
+  **The band is capped by `nStyle`, not by `nLineCount`** (`16 * min(nLineCount, nStyle)`, 0x6FC78), and the
+  separators are `band + 2` tall: (130,118) is the last drawn row and (130,119) is empty, which is only
+  true for the capped value.
+  **The map-cursor row's name comes from panel D's row cursor** (+0xBD8) indexing panel A's aux column
+  (+0x13B4) — not from panel A's own cursor. Checked by drawing it and then removing one gate condition at
+  a time (cursor y 70, cursor y 70+band, preview not ok).
+  **The price factor is 0.7, pinned by pixels.** 0x6FFBC/0x6FFC4 build the double
+  `0x3FE66666_66666666`; `CommitProduction` uses 1.4 for the same `anObjectPriceInit`, so the screen quotes
+  half of what committing costs. The test rebuilds the price band from a reference (the same detail-panel
+  frame, then the label) and compares it pixel-for-pixel against "700$", then shows it is not "701$", not
+  "699$", and that the "$" is part of it; then 1428 -> "999$" and 1429 -> "1000$", which pins the factor to
+  0.7 within 1/1428.
+  **A zero component advances nothing.** The four component rows stack only where something is asked for:
+  a three-component product and a four-component product are identical in the first two rows and differ only
+  in the fourth. The short-component colour is `20*(nMapPhase+5)`, checked by comparing the same row at
+  phase 0 and phase 5.
+  **The two quantity controls are moved and re-pointed every frame** — `unk_186B94` to (94,251) with
+  `ManufScreen_UpdateProgress`, `unk_186B90` to (94,271) with `ManufScreen_ReduceSelectedQtyToOne` — checked
+  through the injected blit seam: eight blits in slot order, and the two controls found at those positions
+  afterwards. `TEXTS[1711]`, the second button's caption, is past the 1650 records lang.dat loads, so it
+  draws empty in the shipped build; the test leaves that record empty for the same reason.
+  All 22 label addresses are TEXTS records (`addr - 0xB38D0 = 205 * n`); their lang.dat text confirmed the
+  four component captions against the four component slots `CommitProduction` gates on. IDB: the whole
+  reading is now a comment at `0x6f9a4`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1211,6 +1246,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   branches call the screens still queued below, so the screens come first and the dispatcher after
   them; the shared frame block (`0x8C214..0x8C760`) is the part that would make the main screen
   visible and is the natural first slice.
+  - **Part 42 found the middle path, and it is worth reusing.** `TestManufDrawFrame` draws
+    `ManufScreen_DrawFrame` onto a real 240 x 320 16 bpp surface with the real `FONT.SPR` and the real
+    TEXTS layout, and asserts exact 565 values at the coordinates the original names — including a
+    pixel-for-pixel comparison of a label band against a reference built from the same frame plus the
+    expected string. That is not the game UI and it does not lift the blocker above, but it is a real
+    check of a drawing function rather than a dump of synthetic primitives, and it caught two wrong
+    expectations of mine (the rail overlap at y 151, and the `nStyle` cap on the separator height) that
+    no amount of reading would have caught. Any ported draw function whose callees are already ported
+    can be tested this way.
   - It fired again when `test_tactend` was added: `Tact_Shutdown` calls `StrategList_RemoveAt`,
     which pulls `pufo_strateg.obj`, which reaches `UiLineList_Remove` in `pufo_ui`. The test target
     now links `pufo_ui` like the other fifteen that already had to.
@@ -1360,6 +1404,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing bring-up (`ManufScreen_Init`, the six control descriptors, the shared geoscape controls) | 56/56 (Release) | 10173 | 861/1103 (78.1%) | 362836/598792 (60.6%) | 38 checked, 0 mismatched |
 | the manufacturing panel build (`ManufScreen_BuildPanels`, the research-driven row filter, `aFacTypeTable` found to be the research table) | 56/56 (Release) | 10222 | 862/1103 (78.2%) | 365240/598792 (61.0%) | 39 checked, 0 mismatched |
 | the manufacturing draw click (`ManufScreen_Draw`, the seed rule, the dead hangar branch found) | 56/56 (Release) | 10264 | 863/1103 (78.2%) | 366572/598792 (61.2%) | 39 checked, 0 mismatched |
+| the manufacturing frame (`ManufScreen_DrawFrame`, the 0.7 price factor, the first real-surface pixel test) | 56/56 (Release) | 10332 | 864/1103 (78.3%) | 371972/598792 (62.1%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

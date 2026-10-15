@@ -9590,6 +9590,526 @@ static void TestManufDraw(void)
     CheckEqI32(bBuilt, 0, "the panels tear down");
 }
 
+/* ---- ManufScreen_DrawFrame @ 0x6f9a4 -------------------------------------------------------
+ *
+ * The frame is a drawing function, so the test draws it for real: a 240 x 320 16 bpp surface, the
+ * real FONT.SPR out of lang.dat, and the real TEXTS.DAT layout. Every claim below is a pixel that
+ * is there or is not there, a control that moved, or a gate byte that changed. Nothing asks whether
+ * a function "ran" -- each check names the coordinate the original names. */
+
+#define FRAME_W 240
+#define FRAME_H 320
+#define FRAME_PIX (FRAME_W * FRAME_H)
+
+static SoftSurf g_frameSurf;
+static SoftSurf g_frameRef;
+static PadImage g_aFramePads[12];
+static i32 g_aFrameBlitLog[16];
+static i32 g_nFrameBlitCount;
+static u8 g_bFrameAnimStarted;
+static i8 g_nFrameAnimProgress;
+static UiAnimBlitEnv g_frameAnim;
+static GfxColorEnv g_frameColor;
+static bool g_bFrameFontReady;
+
+static ObjectRecFull g_aFrameObj[149];
+static ObjectRecFull *g_apFrameObj[149];
+static u16 g_aFrameCol[1600];
+static i32 g_aFrameProdB[1600];
+static u32 g_aFramePrice[149];
+static BaseSiteRec g_aFrameSite[8];
+static u8 g_aFrameGrid[1524];
+static char g_aFrameText[1712 * PUFO_TEXT_REC_STRIDE];
+static UiPanel g_aFramePanel[4];
+static UiControl g_aFrameCtl[11];
+
+static void FrameBlitRec(const PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nFrameBlitCount < 16) {
+        g_aFrameBlitLog[g_nFrameBlitCount] = (i32)(pPad - g_aFramePads);
+    }
+    ++g_nFrameBlitCount;
+}
+
+/* The real font, loaded the way MainMenu_Init @ 0x38B78 loads it: the glyph base is the running
+ * frame count BEFORE the load, which is zero for a fresh font object. */
+static void FrameLoadFont(void)
+{
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+
+    g_bFrameFontReady = false;
+    if (!Asset_OpenArchives(apszArch)) {
+        return;
+    }
+    PufoFont_Init(&g_fontSys);
+    g_fontSys.nGlyphBase = g_fontSys.nTotalSprFrames;
+    (void)Font_LoadSpr(&g_fontSys, "font");
+    Font_BuildIndex(&g_fontSys);
+    FontMetrics_Load();
+    g_bFrameFontReady = (g_fontSys.apSprIndex != NULL && g_fontMetrics.bLoaded);
+}
+
+static void FrameRestoreFont(void)
+{
+    PufoFont_Free(&g_fontSys);
+    memset(&g_fontMetrics, 0, sizeof(g_fontMetrics));
+}
+
+static void FrameZero(void)
+{
+    memset(g_frameSurf.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_nFrameBlitCount = 0;
+}
+
+static void FrameSnapshot(void)
+{
+    memcpy(g_frameRef.pPixels, g_frameSurf.pPixels, (size_t)FRAME_PIX * 2u);
+}
+
+static u16 FramePix(i32 x, i32 y)
+{
+    return ((u16 *)g_frameSurf.pPixels)[y * FRAME_W + x];
+}
+
+static bool FrameBandEmpty(i32 x0, i32 x1, i32 y0, i32 y1)
+{
+    const u16 *p = (const u16 *)g_frameSurf.pPixels;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (p[y * FRAME_W + x] != 0) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static i32 FrameBandFirstX(i32 x0, i32 x1, i32 y0, i32 y1)
+{
+    const u16 *p = (const u16 *)g_frameSurf.pPixels;
+
+    for (i32 x = x0; x < x1; ++x) {
+        for (i32 y = y0; y < y1; ++y) {
+            if (p[y * FRAME_W + x] != 0) {
+                return x;
+            }
+        }
+    }
+    return -1;
+}
+
+static bool FrameBandSame(i32 x0, i32 x1, i32 y0, i32 y1)
+{
+    const u16 *pa = (const u16 *)g_frameSurf.pPixels;
+    const u16 *pb = (const u16 *)g_frameRef.pPixels;
+
+    for (i32 y = y0; y < y1; ++y) {
+        for (i32 x = x0; x < x1; ++x) {
+            if (pa[y * FRAME_W + x] != pb[y * FRAME_W + x]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/* Rebuild just the price band: the detail-panel frame, then the label at (10, 97). Nothing else the
+ * frame draws reaches x 10..129 at y 99..112 -- the rails are at x 5 and 234, the separators at
+ * x 130, 152 and 187, the component headers start at y 114 -- so this reproduces that band exactly
+ * and the comparison pins the label string, not just its presence. */
+static void FramePriceRef(const char *pszLabel)
+{
+    memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_frameRef;
+    (void)Ui_AnimExpandBlit(&g_frameAnim, 0, 30, 236, 284, 4, 0x28, 0x2D, 0xC8, 3);
+    (void)Gfx_PackRgb565Pair(&g_frameColor, 250, 250, 250, 0, 0, 0);
+    Text_DrawString(10, 97, pszLabel);
+    g_pMainSurface = &g_frameSurf;
+}
+
+static void TestManufDrawFrame(void)
+{
+    static u8 bBuilt, bSelected, bPreviewOk, bEntryCount, bMapPhase, bQtyGate;
+    static u32 nShortfall;
+    static i32 nCursorY, nShortfallReason, nRow;
+    static i8 nSelBase;
+    ManufFrameEnv env;
+    i32 i;
+
+    printf("the manufacturing screen's frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL the real font did not load, so the frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_frameSurf);
+    (void)SoftSurf_AllocPixels(&g_frameSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_frameRef);
+    (void)SoftSurf_AllocPixels(&g_frameRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_frameSurf;
+    g_blitState.nPixelMode = 2;
+
+    /* Labels. They are ASCII stand-ins for the lang.dat records -- the record NUMBERS are the
+     * claim, and those come from the address arithmetic in the header. */
+    memset(g_aFrameText, 0, sizeof(g_aFrameText));
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_HEADER, "MANUF");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ONE_UNIT, "unit");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_REQUIRED, "REQ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_AVAILABLE, "AVL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ENG_FREE, "ENG: ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_WS_FREE, "WS: ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ENG_CAP, "Eng");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ENG_USED, "used: ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_UNIT_CAP, "Units");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_UNIT_ASK, "ask: ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_NO_STORES, "NO STORES");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_NO_HANGAR, "NO HANGARS");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_OK, "OK");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_CANCEL, "CANCEL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ADD, "ADD");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_REMOVE, "DEL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_ALL, "ALL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_WORK_HOURS, " hrs");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_COMP_ELERIUM, "ELERIUM");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_COMP_ALLOY, "ALLOY");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_COMP_POWER, "POWER");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_MANUF_TEXT_COMP_NAV, "NAV");
+    /* 1175 (the price caption) and 1711 (the second quantity button) stay empty: 1175 so the price
+     * band holds only the number and the dollar sign, 1711 because that record is past the 1650
+     * lang.dat loads. */
+
+    for (i = 0; i < 149; ++i) {
+        g_apFrameObj[i] = &g_aFrameObj[i];
+    }
+    PutStr(g_aFrameObj[2].szName, "PANEL-X");
+    PutStr(g_aFrameObj[107].szName, "POWER CORE");
+    g_aFrameObj[2].uManufWorkPerUnit = 576;
+    g_aFrameObj[2].abManufComponents[0] = 4;   /* stock 10: enough */
+    g_aFrameObj[2].abManufComponents[1] = 2;   /* stock 1: short, this is the gate */
+    g_aFrameObj[2].abManufComponents[2] = 0;   /* absent: no row, no row advance */
+    g_aFrameObj[2].abManufComponents[3] = 1;   /* stock 5: enough */
+    g_aFrameObj[OBJ_ELERIUM_115].auPerBaseVal[1] = 10;
+    g_aFrameObj[OBJ_ALIEN_ALLOYS].auPerBaseVal[1] = 1;
+    g_aFrameObj[OBJ_UFO_NAVIGATION].auPerBaseVal[1] = 5;
+    g_aFrameObj[112].auPerBaseVal[1] = 130;    /* 130 - 110 allocated = 20 engineers free */
+    g_aFramePrice[2] = 1000u;                  /* * 0.7 -> 700 */
+
+    /* Base 1 again: every product index is 200 + slot, and the allocated column sums to 110. */
+    g_aFrameCol[200 + 2] = 100;
+    g_aFrameCol[200 + 107] = 7;
+    g_aFrameCol[200 + 120] = 3;
+    g_aFrameProdB[200 + 2] = 4;
+
+    for (i = 0; i < 8; ++i) {
+        PutStr(g_aFrameSite[i].abName, "NORTH");
+    }
+    PutStr(g_aFrameSite[1].abName, "ALPHA");
+
+    /* Three free workshop cells at base 1: capacity 3 * 50 = 150, minus 110 allocated = 40. */
+    memset(g_aFrameGrid, 0, sizeof(g_aFrameGrid));
+    g_aFrameGrid[480 + 144 + 6 * 0 + 0] = 3;
+    g_aFrameGrid[480 + 144 + 6 * 0 + 1] = 3;
+    g_aFrameGrid[480 + 144 + 6 * 1 + 0] = 3;
+
+    /* Four hand-built panels. nLineCount 4 with nStyle 3 makes the band 16 * 3 = 48, which is the
+     * min() the original applies. Their rows sit at (200, 210) so nothing they draw lands on a
+     * separator column or a label row. */
+    for (i = 0; i < 4; ++i) {
+        if (!UiPanel_ctor(&g_aFramePanel[i], 4)) {
+            printf("  FAIL a frame panel could not be constructed\n");
+            ++g_nFailures;
+            return;
+        }
+        g_aFramePanel[i].nLineCount = 4;
+        g_aFramePanel[i].nStyle = 3;
+        g_aFramePanel[i].nUnk3028 = 0;
+        g_aFramePanel[i].nPosX = 200;
+        g_aFramePanel[i].nPosY = 210;
+        g_aFramePanel[i].nUnk7076 = 0;
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 0, "ROW0");
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 1, "ROW1");
+        (void)UiPanel_SetLineText(&g_aFramePanel[i], 2, "ROW2");
+        UiPanel_SetLineAux(&g_aFramePanel[i], 0, 2);
+        UiPanel_SetLineAux(&g_aFramePanel[i], 1, 3);
+        UiPanel_SetLineAux(&g_aFramePanel[i], 2, 107);
+        UiPanel_SetLineAux(&g_aFramePanel[i], 3, 120);
+    }
+    g_aFramePanel[3].nUnk3032 = 2; /* panel D's row cursor -> aux 107 */
+
+    memset(g_aFramePads, 0, sizeof(g_aFramePads));
+    memset(g_aFrameCtl, 0, sizeof(g_aFrameCtl));
+    for (i = 0; i < 11; ++i) {
+        g_aFrameCtl[i].bEnabled = 1;
+        g_aFrameCtl[i].nMode = 0;
+        g_aFrameCtl[i].nState = 0;
+        g_aFrameCtl[i].apPads[0] = &g_aFramePads[i];
+    }
+
+    g_bFrameAnimStarted = 1;
+    g_nFrameAnimProgress = 100;
+    memset(&g_frameAnim, 0, sizeof(g_frameAnim));
+    g_frameAnim.pbStarted = &g_bFrameAnimStarted;
+    g_frameAnim.pnProgress = &g_nFrameAnimProgress;
+    g_frameAnim.nFrameStyle = 0;
+
+    g_frameColor.nScaleSource = 3; /* factor 1.0, so the colour pairs pass through */
+    g_frameColor.nFadeCount = 0;
+
+    bEntryCount = 144;
+    nSelBase = 1;
+    nRow = 0;
+    nCursorY = 90;
+    bMapPhase = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pColor = &g_frameColor;
+    env.pAnim = &g_frameAnim;
+    env.pPanelA = &g_aFramePanel[0];
+    env.pPanelB = &g_aFramePanel[1];
+    env.pPanelC = &g_aFramePanel[2];
+    env.pPanelD = &g_aFramePanel[3];
+    env.pbPanelsBuilt = &bBuilt;
+    env.pbProductSelected = &bSelected;
+    env.pbQtyGate = &bQtyGate;
+    env.pnProductRow = &nRow;
+    env.pbPreviewOk = &bPreviewOk;
+    env.pnCursorY = &nCursorY;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.pbMapPhase = &bMapPhase;
+    env.apObjects = g_apFrameObj;
+    env.nObjectCount = 149;
+    env.pTextRecs = g_aFrameText;
+    env.apSiteRecs = g_aFrameSite;
+    env.apProductB = g_aFrameProdB;
+    env.apManufCols = g_aFrameCol;
+    env.pbEntryCount = &bEntryCount;
+    env.pdwPrices = g_aFramePrice;
+    env.pEngineerRec = &g_aFrameObj[112];
+    env.abFacilityGrid = g_aFrameGrid;
+    for (i = 0; i < 6; ++i) {
+        env.apCtl[i] = &g_aFrameCtl[i];
+    }
+    env.pCtlReset = &g_aFrameCtl[6];
+    env.pCtlAllocAll = &g_aFrameCtl[7];
+    env.pCtlClampOne = &g_aFrameCtl[8];
+    env.pCtlDraw = &g_aFrameCtl[9];
+    env.pCtlConfirm = &g_aFrameCtl[10];
+    env.pfnCtlBlit = FrameBlitRec;
+    env.pfnCtlBlitEx = FrameBlitRec;
+    env.pdwShortfall = &nShortfall;
+    env.pnShortfallReason = &nShortfallReason;
+
+    /* ---- 1. the rails, with nothing else on the screen ---- */
+    bBuilt = 0;
+    bSelected = 0;
+    nShortfall = 0;
+    g_aFrameCtl[6].x = 7;
+    g_aFrameCtl[6].y = 9;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+
+    CheckEqI32(FramePix(5, 1), 0x632C, "the first left-rail step is index 5 * (0 + 20) = 100 at (5, 1)");
+    CheckEqI32(FramePix(5, 7), 0x632C, "and that step is seven rows tall, so (5, 7) is the same");
+    CheckEqI32(FramePix(5, 0), 0, "nothing is drawn above the first step");
+    CheckEqI32(FramePix(5, 8), 0x6B4D, "the next step climbs to index 105 at (5, 8)");
+    CheckEqI32(FramePix(5, 172), 0xD6BA, "the descending half at step 3 is 0xE6 - 15 = 215 at (5, 172)");
+    CheckEqI32(FramePix(5, 151), 0xCE79, "y 151 is where the two halves overlap, and the later climbing step wins");
+    CheckEqI32(FramePix(5, 312), 0x738E, "the last descending step is 0xE6 - 115 = 115 at (5, 312)");
+    CheckEqI32(FramePix(234, 1), 0x632C, "the right rail mirrors the left one at x 234");
+    CheckEqI32(FramePix(234, 312), 0x738E, "and its descending half too");
+    CheckEqI32(FramePix(1, 5), 0x632C, "the top rail starts at (1, 5) with the same climbing index");
+    CheckEqI32(FramePix(234, 5), 0x8430, "the top rail's last step is 0xFA - 115 = 135 at (234, 5)");
+    CheckEqI32(FramePix(1, 315), 0x632C, "the bottom rail repeats the top one at y 315");
+    CheckEqI32(FramePix(234, 315), 0x8430, "with the same falling index at the far end");
+    CheckEqI32(FramePix(5, 315), 0x632C, "the bottom rail is drawn after the side rails, so it wins at (5, 315)");
+    CheckEqI32(FramePix(5, 316), 0x738E, "one row lower the side rail's own colour is still there");
+    Check(FrameBandEmpty(10, 129, 99, 112), "the interior stays empty when no panel and no product is drawn");
+    CheckEqI32(g_nFrameBlitCount, 1, "the reset control is the only control blitted");
+    Check(g_nFrameBlitCount == 1 && g_aFrameBlitLog[0] == 6, "and it is the reset control's pad");
+    CheckEqI32(g_aFramePads[6].nOriginX, 7, "the pad follows the control's x");
+    CheckEqI32(g_aFramePads[6].nOriginY, 9, "and its y");
+
+    /* ---- 2. panels built, no product selected ---- */
+    bBuilt = 1;
+    bSelected = 0;
+    bPreviewOk = 1;
+    nCursorY = 90;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+
+    Check(!FrameBandEmpty(200, 232, 210, 226), "the four panels are drawn through UiPanel_DrawText");
+    CheckEqI32(FramePix(130, 69), 0xB5B6, "the first column separator is index 0xB4 at (130, 69)");
+    CheckEqI32(FramePix(130, 118), 0xB5B6, "it is 16 * min(4, 3) + 2 = 50 tall, so (130, 118) is the last row");
+    CheckEqI32(FramePix(130, 119), 0, "and (130, 119) is outside -- the band is capped by nStyle, not nLineCount");
+    CheckEqI32(FramePix(152, 69), 0xB5B6, "the second separator sits at x 152");
+    CheckEqI32(FramePix(187, 69), 0xB5B6, "the third at x 187");
+    Check(!FrameBandEmpty(10, 129, 300, 315), "the map-cursor row names its object at (10, 300)");
+    CheckEqI32(FrameBandFirstX(10, 129, 300, 315), 11, "that name starts at x 11, the left margin");
+    Check(FrameBandEmpty(20, 220, 130, 200), "no shortfall panel with the shortfall value clear");
+
+    /* The cursor-row gate, one variable at a time. */
+    nCursorY = 70;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(FrameBandEmpty(10, 129, 300, 315), "cursor y 70 is not above 70, so no name");
+    nCursorY = 118; /* 70 + 48, the band's own height: the compare is strict */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(FrameBandEmpty(10, 129, 300, 315), "cursor y 70 + band is outside the band");
+    nCursorY = 90;
+    bPreviewOk = 0;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(FrameBandEmpty(10, 129, 300, 315), "and a base preview that is not ok stops it too");
+    bPreviewOk = 1;
+
+    /* ---- 3. product selected, the animation not ready ---- */
+    bSelected = 1;
+    g_nFrameAnimProgress = 0;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    CheckEqI32(g_nFrameAnimProgress, 0, "mode 3 at progress 0 is 0 wide, so the panel is not finished");
+    Check(FrameBandEmpty(60, 129, 99, 112), "and the detail panel's interior is not drawn");
+    CheckEqI32(g_nFrameBlitCount, 0, "no button control is blitted on that early return");
+
+    /* ---- 4. product selected, animation ready ---- */
+    g_nFrameAnimProgress = 100;
+    bQtyGate = 0;
+    g_aFrameCtl[7].x = 1;
+    g_aFrameCtl[7].y = 2;
+    g_aFrameCtl[8].x = 3;
+    g_aFrameCtl[8].y = 4;
+    g_aFrameCtl[7].pfnClick = NULL;
+    g_aFrameCtl[8].pfnClick = NULL;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+
+    CheckEqI32(g_nFrameAnimProgress, 100, "progress 100 clamps to the full 236 x 284 rect");
+    Check(FramePix(120, 170) != 0, "the detail panel now covers the interior");
+    CheckEqI32(bQtyGate, 1, "component 1 asks for 2 out of a stock of 1, so the quantity gate is set");
+    CheckEqI32(g_nFrameBlitCount, 8, "four arrow controls, the two quantity buttons and the two bottom ones");
+    Check(g_nFrameBlitCount == 8 && g_aFrameBlitLog[0] == 2 && g_aFrameBlitLog[1] == 3
+              && g_aFrameBlitLog[2] == 4 && g_aFrameBlitLog[3] == 5,
+          "the arrow controls blit in slot order, starting at the third");
+    Check(g_nFrameBlitCount == 8 && g_aFrameBlitLog[4] == 7 && g_aFrameBlitLog[5] == 8
+              && g_aFrameBlitLog[6] == 9 && g_aFrameBlitLog[7] == 10,
+          "then the allocate-all, clamp-to-one, draw and confirm controls");
+    CheckEqI32(g_aFrameCtl[7].x, 94, "the allocate-all control is moved to x 94");
+    CheckEqI32(g_aFrameCtl[7].y, 251, "and y 251");
+    CheckEqI32(g_aFrameCtl[8].x, 94, "the clamp-to-one control is moved to the same x");
+    CheckEqI32(g_aFrameCtl[8].y, 271, "and y 271");
+    Check(g_aFrameCtl[7].pfnClick == NULL && g_aFrameCtl[8].pfnClick == NULL,
+          "the frame does not invent handlers, it installs the ones the environment gives");
+
+    /* The component rows: a zero component draws nothing and does not advance the row counter. */
+    FrameSnapshot();
+    g_aFrameObj[2].abManufComponents[2] = 3; /* now every component is asked for */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(!FrameBandSame(10, 129, 172, 186), "the fourth component row only appears when component 2 is asked for");
+    Check(FrameBandSame(10, 129, 130, 144), "the first component row is the same in both");
+    Check(FrameBandSame(10, 129, 144, 158), "and so is the short one -- the rows do not shift");
+    g_aFrameObj[2].abManufComponents[2] = 0;
+
+    /* The short-component colour follows nMapPhase: 20 * (nMapPhase + 5). */
+    FrameSnapshot();
+    bMapPhase = 5;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(!FrameBandSame(10, 129, 144, 158), "phase 5 draws the short row in 20 * (5 + 5), not 20 * 5");
+    bMapPhase = 0;
+
+    /* Every component in stock: the gate stays down. */
+    g_aFrameObj[OBJ_ALIEN_ALLOYS].auPerBaseVal[1] = 9;
+    bQtyGate = 0;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    CheckEqI32(bQtyGate, 0, "with 2 asked out of a stock of 9 the gate is not set");
+    g_aFrameObj[OBJ_ALIEN_ALLOYS].auPerBaseVal[1] = 1;
+
+    /* The price: TEXTS[1175] is empty here, so the band holds only itoa(price * 0.7) and "$". */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    FramePriceRef("700$");
+    Check(FrameBandSame(10, 130, 99, 112), "1000 * 0.7 is 700, and the band is exactly that string plus $");
+    FramePriceRef("701$");
+    Check(!FrameBandSame(10, 130, 99, 112), "it is not 701, so the product truncates");
+    FramePriceRef("699$");
+    Check(!FrameBandSame(10, 130, 99, 112), "nor 699");
+    FramePriceRef("700");
+    Check(!FrameBandSame(10, 130, 99, 112), "and the dollar sign is part of the label");
+    g_aFramePrice[2] = 1428u; /* 1428 * 0.7 = 999.6 -> 999 */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    FramePriceRef("999$");
+    Check(FrameBandSame(10, 130, 99, 112), "1428 * 0.7 is 999");
+    g_aFramePrice[2] = 1429u; /* 1429 * 0.7 = 1000.3 -> 1000 */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    FramePriceRef("1000$");
+    Check(FrameBandSame(10, 130, 99, 112), "1429 * 0.7 is 1000, so the factor is 0.7 to within 1/1428");
+    g_aFramePrice[2] = 1000u;
+
+    /* The crew and capacity read-out follows its own inputs. */
+    FrameSnapshot();
+    g_aFrameGrid[480 + 144 + 6 * 1 + 1] = 3; /* a fourth free workshop: 200 - 110 = 90 */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(!FrameBandSame(10, 129, 199, 213), "the free-workshop line follows the grid");
+    g_aFrameGrid[480 + 144 + 6 * 1 + 1] = 0;
+    FrameSnapshot();
+    g_aFrameObj[112].auPerBaseVal[1] = 131; /* 131 - 110 = 21 engineers */
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(!FrameBandSame(10, 129, 185, 199), "and the engineer line follows the crew stock");
+    g_aFrameObj[112].auPerBaseVal[1] = 130;
+
+    /* ---- 5. the shortfall panel ---- */
+    bSelected = 0;
+    nShortfall = 1;
+    nShortfallReason = 0;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(FramePix(20, 130) != 0, "shortfall 1 with reason 0 draws the 200 x 70 panel at (20, 130)");
+    Check(!FrameBandEmpty(20, 220, 158, 174), "with its message centred at y 158");
+    FrameSnapshot();
+    nShortfallReason = 1;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    Check(FramePix(20, 130) != 0, "reason 1 draws the same panel");
+    Check(!FrameBandSame(20, 220, 158, 174), "with the hangar message instead of the stores one");
+    nShortfall = 2;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    CheckEqI32(FramePix(20, 130), 0, "any other shortfall value draws nothing");
+    nShortfall = 0;
+    nShortfallReason = 0;
+
+    /* A missing environment or a missing panel does nothing at all. */
+    bSelected = 1;
+    FrameZero();
+    ManufScreen_DrawFrame(NULL);
+    CheckEqI32(g_nFrameBlitCount, 0, "a null environment blits no control");
+    Check(FrameBandEmpty(0, FRAME_W, 0, FRAME_H), "and draws no pixel");
+    bSelected = 0;
+    env.pPanelA = NULL;
+    FrameZero();
+    ManufScreen_DrawFrame(&env);
+    CheckEqI32(FramePix(5, 1), 0x632C, "the rails do not depend on the product panel");
+    Check(FrameBandEmpty(10, 129, 300, 315), "but the cursor-row name needs panel A's aux column");
+    env.pPanelA = &g_aFramePanel[0];
+
+    for (i = 0; i < 4; ++i) {
+        UiPanel_FreeLines(&g_aFramePanel[i]);
+    }
+    FrameRestoreFont();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -9625,6 +10145,7 @@ int main(void)
     TestManufInit();
     TestManufBuildPanels();
     TestManufDraw();
+    TestManufDrawFrame();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

@@ -12212,3 +12212,82 @@ Where BuildPanels refreshes the whole product list, this refreshes the ONE row t
 Deviations. The original bounds nothing: an out-of-panel row, an out-of-range base index or a product past 199 indexes the 1600-entry columns and `apBases` blindly. The port reads the aux cell only for a row inside the panel, skips the table work when the composed index is outside 0..1599, and dereferences `apBases` only for a base inside the array; the two tail passes still run either way, which the test asserts. Both divisions can be by zero in the original and the port answers zero, the same policy BuildPanels and CommitProduction record. The port returns void where the original returns 6.
 
 Test: `tests/test_baseui.c:TestManufDraw`, 42 checks, on panels built by the real `ManufScreen_BuildPanels` so the aux column and panel A's style bytes are the ones the screen itself leaves. It asserts the sample, the two flag stores, the clear path (accumulated work, committed units and allocated work all go to zero while the neighbouring row is untouched), the seed, the percent and unit lines for a normal row and for the zero-work row, that the offset-0 dword is 0x32B4B4B4 and leaves the 0x159DBC byte alone, that forcing it to 118/122 still leaves it alone while 120 and 121 take the branch and store the byte-wrapped sum, the two tail passes with the real budget (110 allocated work buys exactly three of five workshops, and the lab pass with no active research clears the lab cell), that an out-of-panel row does no table work but still runs the tail passes, and that a null environment or null panel does nothing at all.
+
+## ManufScreen_DrawFrame (0x6f9a4, 5400 B)
+
+Ported as `ManufFrameEnv` + `ManufScreen_DrawFrame` in `src/pufo/game/pufo_baseui.c`. It returns
+void in the port; the original returns the shortfall value, which `Geoscape_Draw` at 0x941A0 drops.
+
+Rails, 0x6F9C4..0x6FB54. Twenty-four steps of 7 at x 5 and x 234, at y 7k+1 and 7k+151, with the
+climbing colour `5*(k+20)` (100..215) and the falling one `0xE6-5k` (230..115); then twenty-four
+steps of 5 at y 5 and y 315, at x 5k+1 and 5k+119, climbing `5*(k+20)` and falling `0xFA-5k`
+(250..135). The two halves of a side rail overlap at y 151..168 and the climbing half is issued
+later, so at (5,151) the climbing colour (index 205) is what survives -- reproduced, and checked.
+
+Band and panels. The band is `16 * min(nLineCount, nStyle)` (0x6FC78). With the panels built the
+four `UiPanel_DrawText` calls come first, then colour (250,250,250/0,0,0), TEXTS[1173] at (10,52),
+the base name from `BaseSiteRec[base] + 26` centred at (120 - w/2, 13), then the map-cursor row's
+object name at (10,300) in (150,150,250/0,0,0). That name is gated on `!bManufProductSelected`,
+`bBaseFacPreviewOk` and `70 < nSmapCursorY < 70 + band`, and its row comes from PANEL D's row
+cursor at +0xBD8 indexing panel A's aux column at +0x13B4 -- not from panel A's own cursor. Three
+separators 1 x (band+2) at x 130, 152 and 187, index 0xB4.
+
+No product selected (0x70D84): blit the reset control, colour (68,244,252/4,70,75), shortfall block.
+
+Selected: `Ui_AnimExpandBlit(0, 30, 236, 284, 4, 0x28, 0x2D, 0xC8, 3)`. On false the frame sets
+(220,80,80/50,30,30), then (68,244,252/4,70,75), runs the shortfall block and stops. On true: the
+name centred at (120 - w/2, 45); `itoa(uManufWorkPerUnit)` + TEXTS[1349] at (10,69); TEXTS[1174] at
+(10,83); TEXTS[1175] + `itoa(dtoi(price * 0.7))` + "$" at (10,97). The 0.7 is the double the ARM
+builds at 0x6FFBC/0x6FFC4 from 0x66666666 / 0x3FE66666; `ManufScreen_CommitProduction` uses 1.4 for
+the same `anObjectPriceInit`, so the screen quotes half of what committing costs.
+
+Components, 0x7002C..0x7073C: `for (nCase = 0; nCase < 4; ++nCase)`, and a zero
+`abManufComponents[nCase]` skips WITHOUT advancing the row counter -- the rows stack only where
+something is asked for. The headers TEXTS[1176]/TEXTS[1177] are drawn inside the loop, centred at
+(140 - w/2, 114) and (200 - w/2, 114). Row y = 130 + 14 * rows_drawn. The component name is
+TEXTS[439]/[505]/[497]/[498] and the stock is `apObjects[105]/[106]/[107]/[109]->auPerBaseVal[base]`
+-- the four component slots `ManufScreen_CommitProduction` already gates on, so the pairing is
+confirmed from two independent places. When required > available the colour becomes
+(20*(nMapPhase+5), 10, 10 / 50, 0, 0) and `bManufQtyGate` is raised.
+
+Crew and capacity, 0x70740..0x709F4: TEXTS[1178] + `Base_GetEngineerCount(apObjects[112],
+auManufCol + 200*base, base, nEntryCount)` at (10,185); TEXTS[1179] + `(Base_CalcWorkshopCap -
+Base_CountActiveManuf)` at (10,199); colour (150,150,255/20,20,120); TEXTS[1180] at (10,216);
+TEXTS[1182] at (140,216); TEXTS[1181] + `auManufCol[idx]` at (10,230); TEXTS[1183] +
+`aManufProductB[idx]` at (140,230).
+
+Buttons, 0x709F8..0x70D08: TEXTS[1142] at (38,251) and (170,251), TEXTS[1143] at (38,271) and
+(170,271); the last four of the six arrow controls blit; then `unk_186B94` is MOVED to (94,251) and
+its `pfnClick` re-pointed to `ManufScreen_UpdateProgress`, and `unk_186B90` to (94,271) with
+`ManufScreen_ReduceSelectedQtyToOne`, every frame. TEXTS[1604] centred at (114 - w/2, 252);
+TEXTS[1711] centred at (113 - w/2, 272) -- record 1711 is past the 1650 records lang.dat loads, so
+that button's label draws empty in the shipped build. Then the draw control with TEXTS[1127] ("OK")
+centred at (73 - w/2, 295) and the confirm control with TEXTS[1144] ("Cancel") at (164 - w/2, 295).
+
+Shortfall, 0x70DB8..0x70EB4, reached from all three exits: only when `byte_1870C8 == 1`. Reason 0
+draws `Ui_AnimExpandBlit_IfEnabled(20, 130, 200, 70, 1)` plus TEXTS[1184] centred at
+(120 - w/2, 158); reason 1 the same panel with TEXTS[1185]; any other value nothing.
+
+Every one of the 22 label addresses is a TEXTS.DAT record: the ARM builds each as
+`LDR R0, =(<addr> - 0xB38D0)` against R8 = 0xB38D0, so `addr - 0xB38D0 = 205 * n`. The texts of all
+22 were read out of lang.dat and are what the `PUFO_MANUF_TEXT_*` names record; the four component
+captions decode to "Elerium-115", "Alien alloys", "UFO power source", "UFO navigation", which is
+independent confirmation of the component-to-slot pairing.
+
+Deviations: none of behaviour. The port guards the panel, object, grid and site arrays the original
+indexes blindly, and it keeps the two quantity controls' handlers as environment inputs rather than
+naming the callees at the call site.
+
+Test: `TestManufDrawFrame` in `tests/test_baseui.c`, 69 checks, all on a real 240 x 320 16 bpp
+surface with the real FONT.SPR and the real TEXTS.DAT layout. The rails are checked as exact 565
+values at exact coordinates, including the rise/fall overlap at (5,151) and the bottom rail winning
+over the side rail at (5,315). The separators are checked at (130,118) and (130,119), which is what
+pins the band to `16 * min(nLineCount, nStyle)` rather than `16 * nLineCount`. The cursor-row gate
+is checked by drawing the name and then removing one condition at a time. The price is checked by
+rebuilding the band from a reference (the same detail-panel frame, then the label) and comparing it
+pixel-for-pixel against "700$", and against "701$", "699$" and "700" to show it is not those; then
+1428 -> "999$" and 1429 -> "1000$", which pins the factor to 0.7 within 1/1428. The component rows
+are compared between a three-component and a four-component product: the fourth row appears only in
+the second, and the first two rows are identical in both. The short-component colour is compared
+between nMapPhase 0 and 5. The controls are checked through the injected blit seam: eight blits in
+slot order, and the two quantity controls found at (94,251) and (94,271) afterwards.

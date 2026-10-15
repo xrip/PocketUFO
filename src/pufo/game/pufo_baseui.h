@@ -2038,6 +2038,157 @@ typedef struct ManufDrawEnv {
 
 void ManufScreen_Draw(ManufDrawEnv *pEnv);
 
+/* ------------------------------------------------- the manufacturing screen's frame
+ *
+ * Evidence: ManufScreen_DrawFrame @ 0x6f9a4 (5400 B), called from Geoscape_Draw @ 0x941A0 with the
+ * result discarded, so the port returns void.
+ *
+ * Every label is a TEXTS.DAT record: the ARM builds each address as `LDR R0, =(<addr> - 0xB38D0)`
+ * plus `R8 = 0xB38D0`, so each one is aTextRecs + 205*n and the record number is exact. The shipped
+ * Russian text behind each index was read out of lang.dat, and it says what the label is for.
+ *
+ * Frame (0x6F9C4..0x6FB54). 24 steps of 7 down each side rail at x 5 and x 234 (y = 7k + 1 and
+ * 7k + 151, index 5*(k+20) climbing, 0xE6 - 5k falling), then 24 steps of 5 along the top and bottom
+ * rails at y 5 and y 315 (x = 5k + 1 and 5k + 119, same climbing index, 0xFA - 5k falling). The four
+ * constants are the ones the transfer frame uses.
+ *
+ * Panels built (unk_15EE4C != 0, 0x6FB7C..0x6FD54): the four panels draw through UiPanelMsg_Draw in
+ * the order A, B, C, D (0x6FB84, 0x6FB90, 0x6FB9C, 0x6FBA8); the column header TEXTS[1173]
+ * "Производство          Инж. Вып. Зак./Гот." at (10, 52) -- the three numeric columns this screen
+ * fills are the ones that header names; the selected base's name from the eight 64-byte site records
+ * at 0x186C40 (name at +26, 0x6FC14) centred at (120 - w/2, 13); then, only with no product selected
+ * and bBaseFacPreviewOk set and the map cursor y strictly inside 70..70+band, the object under the
+ * cursor named at (10, 300) -- the row comes from PANEL D's nUnk3032 (0x6FCD8), not from
+ * nManufProductRowCache, and the object is apObjects[pManufProductPanel->anLineAux[that row]].
+ * The band is 16 * min(nLineCount, nStyle) of panel A (0x6FC78..0x6FC98), and the three column
+ * separators at x 130, 152 and 187 are 1 wide and band + 2 tall in index 0xB4 (0x6FD40..).
+ *
+ * No product selected (0x6FDB4..0x6FDC0): the reset control unk_186B00 blits and the frame ends in the
+ * teal pair.
+ *
+ * Product selected (0x6FDC4..): the detail panel opens through Ui_AnimExpandBlit(0, 30, 236, 284,
+ * index 4, src 0x28/0x2D, key 0xC8, mode 3) at 0x6FE00; when it returns 0 the frame stops at the red
+ * pair and then the teal one, with none of the detail drawn. Otherwise: the product's own name centred
+ * at (120 - w/2, 45); `uManufWorkPerUnit` + TEXTS[1349] " инженер-часов для производства" at (10, 69);
+ * TEXTS[1174] "одной единицы" at (10, 83); and the price line at (10, 97) --
+ * `dtoi((double)anObjectPriceInit[product] * 0.7)` then "$". The 0.7 is the double the ARM loads at
+ * 0x6FFBC/0x6FFC4 (0x3FE66666_66666666), and it is HALF the 1.4 ManufScreen_CommitProduction charges.
+ *
+ * Components (0x7002C..0x7073C). Four cases, one row each, and a case with a zero component draws
+ * nothing and does not advance the row counter. The headers TEXTS[1176] "Необх." and TEXTS[1177]
+ * "Дост." are centred at (140 - w/2, 114) and (200 - w/2, 114) inside the loop, so they are redrawn
+ * per row. Each row is at y = 130 + 14*(rows drawn so far): the item name at x 10, the required amount
+ * (ObjectRecFull.abManufComponents[k]) at x 140, and the base's stock of that component at x 200. When
+ * the requirement is strictly above the stock the colour pair becomes (20*(nMapPhase+5), 10, 10 /
+ * 50, 0, 0) and bManufQtyGate is set to 1 (0x70198 and its three twins) -- the only live writer this
+ * gate has outside SelectListed's clear. The four pairings are component[0] against apObjects[105]
+ * Elerium-115 with TEXTS[439], component[1] against [106] Alien alloys with TEXTS[505], component[2]
+ * against [107] UFO power source with TEXTS[497], component[3] against [109] UFO navigation with
+ * TEXTS[498]; slot 108 (Alien surgery) is never a component.
+ *
+ * Crew and capacity (0x70740..0x709F4): TEXTS[1178] "Инженеров доступно: " + Base_GetEngineerCount at
+ * (10, 185); TEXTS[1179] "Свободных мест в мастерских: " + (Base_CalcWorkshopCap -
+ * Base_CountActiveManuf) at (10, 199); then the two column captions TEXTS[1180] "Инженеров" at (10,
+ * 216) and TEXTS[1182] "Единиц" at (140, 216), and under them TEXTS[1181] "занято: " +
+ * auManufCol[200*base + product] at (10, 230) and TEXTS[1183] "произвести: " +
+ * aManufProductB[200*base + product] at (140, 230).
+ *
+ * Buttons (0x709F8..0x70C48): TEXTS[1142] "Добав." drawn twice, at (38, 251) and (170, 251), and
+ * TEXTS[1143] "Убрать" twice at (38, 271) and (170, 271) -- one pair per arrow-button column. The last
+ * four of the six arrow controls blit (0x70AF8..0x70B14 walks four dword slots starting at
+ * unk_159E98[5091]). unk_186B94 is MOVED to (94, 251) and its pfnClick is set to
+ * ManufScreen_UpdateProgress; unk_186B90 is moved to (94, 271) and its pfnClick set to
+ * ManufScreen_ReduceSelectedQtyToOne -- this function re-points both every frame. TEXTS[1604] "ВСЕ" is
+ * centred at (114 - w/2, 252) and TEXTS[1711] at (113 - w/2, 272); 1711 is past the 1650 records
+ * TEXTS.DAT loads, so that second label draws an empty string in the shipped build. The draw control
+ * unk_186BB4 blits, then TEXTS[1127] "ОК" is centred at (73 - w/2, 295) and TEXTS[1144] "Отмена" at
+ * (164 - w/2, 295) under the confirm control unk_186BB0.
+ *
+ * Shortfall (0x70DB8..0x70EB4). Only when byte_1870C8 read as a dword is exactly 1: with
+ * dword_1870B4[0] == 0 the 200x70 panel opens through Ui_AnimExpandBlit_IfEnabled and TEXTS[1184]
+ * "Нет места в хранилищах" is centred at (120 - w/2, 158); with 1 the same panel and TEXTS[1185]
+ * "Нет свободных ангаров"; with anything else nothing is drawn. The original returns the value it
+ * tested here or at 0x70DB8; the port returns void because Geoscape_Draw discards it.
+ *
+ * Deviations: the original builds every label into a 104-byte stack buffer with unbounded copy loops
+ * and strcats, dereferences all four panels and the object record with no test, and reads the cursor
+ * row out of panel D's cursor without bounds. The port bounds each label build at the same 104 bytes,
+ * null-guards the panels and the controls, and resolves the selected product through the same bounded
+ * aux read the other manufacturing functions use. */
+#define PUFO_MANUF_RAMP_BASE      20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
+#define PUFO_MANUF_RAMP_STEP      5
+#define PUFO_MANUF_RAMP_SIDE      0xE6 /* 0x6FA04 RSB #0xE6: the descending side rail */
+#define PUFO_MANUF_RAMP_EDGE      0xFA /* 0x6FAFC RSB #0xFA: the descending top/bottom rails */
+#define PUFO_MANUF_SEP_INDEX      0xB4 /* the three column separators */
+#define PUFO_MANUF_LABEL_MAX      104 /* psz @ sp+0x20 in the original */
+#define PUFO_MANUF_TEXT_HEADER    1173 /* "Производство          Инж. Вып. Зак./Гот." at (10, 52) */
+#define PUFO_MANUF_TEXT_ONE_UNIT  1174 /* "одной единицы" at (10, 83) */
+#define PUFO_MANUF_TEXT_PRICE     1175 /* "Цена 1 единицы: " at (10, 97) */
+#define PUFO_MANUF_TEXT_REQUIRED  1176 /* "Необх." at (140 - w/2, 114) */
+#define PUFO_MANUF_TEXT_AVAILABLE 1177 /* "Дост." at (200 - w/2, 114) */
+#define PUFO_MANUF_TEXT_ENG_FREE  1178 /* "Инженеров доступно: " at (10, 185) */
+#define PUFO_MANUF_TEXT_WS_FREE   1179 /* "Свободных мест в мастерских: " at (10, 199) */
+#define PUFO_MANUF_TEXT_ENG_CAP   1180 /* "Инженеров" at (10, 216) */
+#define PUFO_MANUF_TEXT_ENG_USED  1181 /* "занято: " plus auManufCol at (10, 230) */
+#define PUFO_MANUF_TEXT_UNIT_CAP  1182 /* "Единиц" at (140, 216) */
+#define PUFO_MANUF_TEXT_UNIT_ASK  1183 /* "произвести: " plus aManufProductB at (140, 230) */
+#define PUFO_MANUF_TEXT_NO_STORES 1184 /* "Нет места в хранилищах" */
+#define PUFO_MANUF_TEXT_NO_HANGAR 1185 /* "Нет свободных ангаров" */
+#define PUFO_MANUF_TEXT_OK        1127 /* "ОК" under the draw control, at (73 - w/2, 295) */
+#define PUFO_MANUF_TEXT_CANCEL    1144 /* "Отмена" under the confirm control, at (164 - w/2, 295) */
+#define PUFO_MANUF_TEXT_ADD       1142 /* "Добав." at (38, 251) and (170, 251) */
+#define PUFO_MANUF_TEXT_REMOVE    1143 /* "Убрать" at (38, 271) and (170, 271) */
+#define PUFO_MANUF_TEXT_ALL       1604 /* "ВСЕ" at (114 - w/2, 252) */
+#define PUFO_MANUF_TEXT_CLAMP_ONE 1711 /* past the 1650 loaded records: the label draws empty */
+#define PUFO_MANUF_TEXT_WORK_HOURS 1349 /* " инженер-часов для производства" */
+#define PUFO_MANUF_TEXT_COMP_ELERIUM 439 /* "Элерий-115" */
+#define PUFO_MANUF_TEXT_COMP_ALLOY   505 /* "Сплав пришельцев" */
+#define PUFO_MANUF_TEXT_COMP_POWER   497 /* "Энергоблоки НЛО" */
+#define PUFO_MANUF_TEXT_COMP_NAV     498 /* "Навигация НЛО" */
+#define PUFO_MANUF_PRICE_FACTOR 0.7    /* 0x6FFBC/0x6FFC4: 0x3FE66666_66666666 */
+
+typedef struct ManufFrameEnv {
+    const GfxColorEnv *pColor;          /* pGX @ 0x1139B8, the colour-pair owner */
+    UiAnimBlitEnv *pAnim;               /* the geoscape anim root @ 0x1864F8 */
+    UiPanel *pPanelA;                   /* pManufProductPanel @ 0x15EE44 */
+    UiPanel *pPanelB;                   /* pManufPanelB @ 0x15EE48 */
+    UiPanel *pPanelC;                   /* pManufPanelC @ 0x15EE40 */
+    UiPanel *pPanelD;                   /* pManufPanelD @ 0x15EE38 */
+    u8   *pbPanelsBuilt;                /* unk_15EE4C */
+    u8   *pbProductSelected;            /* bManufProductSelected @ 0x15EE34 */
+    u8   *pbQtyGate;                    /* bManufQtyGate @ 0x15EE50, set when a component is short */
+    const i32 *pnProductRow;            /* nManufProductRowCache @ 0x15EE3C */
+    const u8  *pbPreviewOk;             /* bBaseFacPreviewOk @ 0x18652D */
+    const i32 *pnCursorY;               /* nSmapCursorY @ 0x186BD4, read signed */
+    const i8  *pnSelectedBaseIdx;       /* nSelectedBaseIdx @ 0x159D81 */
+    const u8  *pbMapPhase;              /* nMapPhase @ 0x1139EF, the short-component red ramp */
+    ObjectRecFull *const *apObjects;    /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                   /* Map_nObjectCount @ 0x114A60, u16 semantics */
+    const char *pTextRecs;              /* aTextRecs @ 0xB38D0, stride 205 */
+    BaseSiteRec *apSiteRecs;            /* 0x186C40, eight 64-byte records, name at +26 */
+    i32   *apProductB;                  /* aManufProductB @ 0x15B79C */
+    u16   *apManufCols;                 /* auManufCol @ 0x15E19C */
+    const u8 *pbEntryCount;             /* nResearchEntryCount @ 0x160C4C, both crew/capacity counts */
+    const u32 *pdwPrices;               /* anObjectPriceInit @ 0xAA2C0 */
+    const ObjectRecFull *pEngineerRec;  /* apObjects[112] @ 0x113C80 */
+    const u8 *abFacilityGrid;           /* abFacilityGrid @ 0x159768, for Base_CalcWorkshopCap */
+    UiControl *apCtl[6];                /* the six arrow controls; the last four blit at 0x70AF8 */
+    UiControl *pCtlReset;               /* unk_186B00, blitted when no product is selected */
+    UiControl *pCtlAllocAll;            /* unk_186B94, moved to (94, 251) and re-pointed every frame */
+    UiControl *pCtlClampOne;            /* unk_186B90, moved to (94, 271) and re-pointed every frame */
+    UiControl *pCtlDraw;                /* unk_186BB4, the "ОК" control */
+    UiControl *pCtlConfirm;             /* unk_186BB0, the "Отмена" control */
+    UiControlBlitFn pfnCtlBlit;
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    const u32 *pdwShortfall;            /* byte_1870C8, read as a dword */
+    const i32 *pnShortfallReason;       /* dword_1870B4[0] */
+    void (*pfnAllocAllClick)(void);     /* ManufScreen_UpdateProgress @ 0x6df6c */
+    void (*pfnClampOneClick)(void);     /* ManufScreen_ReduceSelectedQtyToOne @ 0x6dec0 */
+} ManufFrameEnv;
+
+void ManufScreen_DrawFrame(const ManufFrameEnv *pEnv);
+
 /* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
  * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like
  * them the gate is dead in the shipped build. It then splits on the selected product:
