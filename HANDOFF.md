@@ -78,8 +78,8 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **9407**. Coverage as of the latest commit: **837 / 1103
-functions (75.9%)**, **331520 / 598792 bytes (55.4%)**. The §2 numbers below are the snapshot taken
+Test checks run across the 56 suites: **9440**. Coverage as of the latest commit: **838 / 1103
+functions (76.0%)**, **335756 / 598792 bytes (56.1%)**. The §2 numbers below are the snapshot taken
 when this file was regenerated and are older than that line.
 
 ### Per-subsystem status
@@ -331,8 +331,6 @@ not research:
 
 - `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
   unmodelled globals: `0x158848`, `0x162030`, `0x186410`.
-- `BasePlaneScreen_CommitStores` (0x7ac38) — blocked on the hangar screen state block
-  (`0x161A40`, `0x161AC8`, `0x161AD0`, `0x161EE0`, `0x161EEC`, `0x161EF4`).
 - `App_ResizeMainWindow` (0x9ecb8) with `MenuBtn_ResizeWindow` (0x19930) — fully decoded, blocked on
   the port having no owner for the stored window size (`0x188D40` / `0x188D50`).
 - `Smap_BeginCraftSelectBtn` (0x84634) — blocked on `Smap_BeginCraftSelect` (0x838dc) being unported.

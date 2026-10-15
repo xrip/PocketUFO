@@ -2,6 +2,7 @@
 #include "game/pufo_baseui.h"
 #include <stdlib.h>  /* atexit, for StrategList_RegisterAtexit @ 0x838a0 */
 #include <stdio.h>   /* snprintf, the bounded stand-in for the original's j_itoa */
+#include <string.h>  /* memset, the include table BuySellScreen_BuildPanels clears */
 #include "util/pufo_str.h" /* pufo_strcpy/pufo_strcat, the line writes of ResearchScreen_RefreshPanels */
 #include "audio/pufo_audio.h" /* Sound_Play, the screen-open sample of SoldierScreen_Toggle */
 #include "game/pufo_strateg.h" /* StrategList_Clear */
@@ -385,6 +386,450 @@ void Geoscape_UiFocusPrev(GeoscapeFocusEnv *pEnv)
 void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv)
 {
     Geoscape_FocusScroll(pEnv, false);
+}
+
+/* stru_ABBA0 @ 0xABBA0: the four controls the buy/sell screen installs, in the order the
+ * UiControl_Setup loop at 0x76E74 consumes them. "up" and "down" are the two scroll arrows the
+ * pfnClick stores at 0x76E64 / 0x76E70 name; "bclose" and "emptyb" get their handlers elsewhere. */
+static const UiControlDesc g_aBuySellCtlDesc[4] = {
+    { 0x00CD, 0x0012, "up",     "sup",     "", 0 }, /* 0xABBA0 */
+    { 0x00DC, 0x0026, "down",   "sdown",   "", 0 }, /* 0xABBC0 */
+    { 0x0000, 0x0001, "bclose", "bcloseu", "", 0 }, /* 0xABBE0 */
+    { 0x003E, 0x0129, "emptyb", "cemptyb", "", 0 }, /* 0xABC00 */
+};
+
+/* unk_AAA04 @ 0xAAA04, named g_aBuySellRowOrder in the IDB: the sequence of panel A aux values
+ * the sort pass places, read up to nObjectCount - 1 of them. The first eight are the five craft
+ * item slots, the soldier marker 1000, and the two crew slots; then the plain object slots with
+ * each weapon followed by its two ammunition lines; then the research items, the three armour
+ * slots, and the alien rank slots interleaved with their medic slots. 124 entries are non-zero;
+ * the shipped map reads all 148 and the rest match nothing. */
+#define PUFO_BUYSELL_ORDER_COUNT 148 /* the sort pass reads nObjectCount - 1 of them */
+#define PUFO_BUYSELL_SLOT_FLAGS  255 /* the original's v108[255] at 0x76FC8 */
+
+static const i32 g_aBuySellRowOrder[PUFO_BUYSELL_ORDER_COUNT] = {
+    117, 118, 119, 120, 121, 1000, 112, 113,
+    1, 36, 4, 38, 7, 40, 41, 42,
+    8, 43, 44, 45, 10, 46, 47, 48,
+    2, 5, 9, 3, 37, 6, 39, 11,
+    49, 12, 50, 13, 51, 14, 15, 16,
+    17, 18, 19, 20, 21, 22, 23, 24,
+    25, 52, 26, 53, 27, 54, 28, 29,
+    30, 55, 31, 56, 32, 57, 33, 34,
+    35, 58, 59, 60, 61, 62, 63, 64,
+    65, 66, 67, 68, 69, 122, 123, 124,
+    105, 106, 107, 108, 109, 110, 111, 140,
+    142, 143, 77, 78, 79, 80, 81, 148,
+    82, 83, 84, 85, 86, 144, 87, 88,
+    89, 90, 91, 146, 92, 93, 94, 145,
+    95, 96, 114, 97, 98, 147, 99, 100,
+    101, 102, 103, 104,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+/* The two slot-range tests, from the conditions at 0x77030 and 0x77114. */
+static bool BuySellSlotIsStockedItem(i32 nSlot)
+{
+    return (nSlot > 0 && nSlot < 70) || (nSlot > 104 && nSlot < 112) ||
+           (nSlot > 121 && nSlot < 125) || nSlot == 142 || nSlot == 143;
+}
+
+static bool BuySellSlotIsAlien(i32 nSlot)
+{
+    return (nSlot >= 77 && nSlot <= 104) || (nSlot >= 144 && nSlot <= 148) || nSlot == 114;
+}
+
+/* 0x77730..0x7776C: the name goes through an 18-byte buffer and is cut to 17 characters when it
+ * is longer. The original's buffer is `char v106[17]` followed by `char v107`, and its copy loop
+ * also copies the terminator, so a name of 18 characters or more writes one byte past the buffer
+ * before the strlen test truncates it. The port bounds the copy instead. */
+static void BuySellCopyName(char *pszDst, const char *pszSrc)
+{
+    i32 i = 0;
+    while (i < 18 && pszSrc[i] != 0) {
+        pszDst[i] = pszSrc[i];
+        ++i;
+    }
+    pszDst[i < 18 ? i : 17] = 0;
+}
+
+static UiPanel *BuySellNewPanel(UiPanel **ppSlot, i32 nLineCount)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel)); /* operator new(0x1BB4) */
+    if (pPanel == NULL) {
+        return NULL; /* deviation: the original stores through the null panel at 0x77184 */
+    }
+    if (!UiPanel_ctor(pPanel, nLineCount)) {
+        free(pPanel);
+        return NULL;
+    }
+    if (ppSlot != NULL) {
+        *ppSlot = pPanel;
+    }
+    return pPanel;
+}
+
+/* A row's "<" and ">" columns and the zero pending quantity, which every row gets the same way. */
+static void BuySellFillQtyColumns(UiPanel *pB, UiPanel *pC, UiPanel *pE, i32 nRow)
+{
+    if (pB != NULL) {
+        UiPanel_SetLineText(pB, nRow, "<"); /* unk_ABC24 @ 0xABC24 */
+    }
+    if (pC != NULL) {
+        UiPanel_SetLineText(pC, nRow, ">"); /* unk_ABC20 @ 0xABC20 */
+    }
+    if (pE != NULL) {
+        UiPanel_SetLineAux(pE, nRow, 0);
+    }
+}
+
+/* BuySellScreen_BuildPanels @ 0x76de0. See the header for the branch map and the row model. */
+void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv)
+{
+    i32 abInclude[PUFO_BUYSELL_SLOT_FLAGS]; /* slot -> "this slot gets a row" */
+    UiPanel *pA, *pB, *pC, *pD, *pE;
+    UiPanel *apFree[5];
+    char szName[18];
+    char szLine[PUFO_PANEL_LINE_BYTES];
+    i32 nRows = 0;
+    i32 nRow = 0;
+    i32 nEngineers = 0;
+    i32 nScientists = 0;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbPanelsBuilt == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbPanelsBuilt != 0) {
+        /* The teardown branch, 0x77D60..0x77E50. */
+        *pEnv->pbPanelsBuilt = 0;
+        for (i = 0; i < 4; ++i) {
+            if (pEnv->apCtl[i] != NULL) {
+                UiControl_FreePads(pEnv->apCtl[i]); /* 0x77D80 */
+            }
+            /* 0x77D88 also operator delete's the control; the port's controls are caller-owned. */
+        }
+        apFree[0] = pEnv->ppPanelA != NULL ? *pEnv->ppPanelA : NULL;
+        apFree[1] = pEnv->ppPanelB != NULL ? *pEnv->ppPanelB : NULL;
+        apFree[2] = pEnv->ppPanelE != NULL ? *pEnv->ppPanelE : NULL;
+        apFree[3] = pEnv->ppPanelC != NULL ? *pEnv->ppPanelC : NULL;
+        apFree[4] = pEnv->ppPanelD != NULL ? *pEnv->ppPanelD : NULL;
+        for (i = 0; i < 5; ++i) {
+            if (apFree[i] != NULL) {
+                UiPanel_FreeLines(apFree[i]); /* 0x77DB0, 0x77DD0, 0x77DF0, 0x77E10, 0x77E30 */
+                free(apFree[i]);
+            }
+        }
+        if (pEnv->ppPanelA != NULL) *pEnv->ppPanelA = NULL;
+        if (pEnv->ppPanelB != NULL) *pEnv->ppPanelB = NULL;
+        if (pEnv->ppPanelE != NULL) *pEnv->ppPanelE = NULL;
+        if (pEnv->ppPanelC != NULL) *pEnv->ppPanelC = NULL;
+        if (pEnv->ppPanelD != NULL) *pEnv->ppPanelD = NULL;
+        if (pEnv->pnFunds != NULL && *pEnv->pnFunds != pEnv->nFundsSnapshot) {
+            *pEnv->pnFunds = pEnv->nFundsSnapshot; /* 0x77E50 */
+        }
+        return;
+    }
+
+    *pEnv->pbPanelsBuilt = 1; /* 0x76E0C */
+
+    for (i = 0; i < 4; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_ctor(pEnv->apCtl[i]); /* 0x76E28, on the freshly allocated block */
+        }
+    }
+    if (pEnv->apCtl[0] != NULL) {
+        pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x76E64 */
+    }
+    if (pEnv->apCtl[1] != NULL) {
+        pEnv->apCtl[1]->pfnClick = pEnv->pfnPanelNext; /* 0x76E70 */
+    }
+    for (i = 0; i < 4; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_Setup(pEnv->apCtl[i], 0, 0, &g_aBuySellCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x76E74..0x76E94 */
+        }
+    }
+
+    if (pEnv->pnAssignedShipCount != NULL) {
+        *pEnv->pnAssignedShipCount = 0; /* 0x76EA0 */
+    }
+    if (pEnv->pnSoldierIdCount != NULL) {
+        *pEnv->pnSoldierIdCount = 0; /* 0x76EAC */
+    }
+
+    /* Count pass 1, 0x76EC0..0x76F10: soldiers at this base that no craft carries. */
+    for (i = 0; i < pEnv->nSoldierCount; ++i) {
+        const Soldier *pSol = pEnv->apSoldiers != NULL ? pEnv->apSoldiers[i] : NULL;
+        if (pSol == NULL) {
+            continue; /* deviation: the original dereferences the array slot blindly */
+        }
+        if ((i32)pSol->nKind == (i32)pEnv->nSelectedBaseIdx && pSol->bUnk183 == 0xFF) {
+            ++nRows;
+        }
+    }
+
+    /* Count pass 2, 0x76F18..0x76FA4: craft based here, empty, and present. */
+    for (i = 0; i < pEnv->nCraftCount; ++i) {
+        const Ship *pShip = pEnv->apCrafts != NULL ? pEnv->apCrafts[i] : NULL;
+        if (pShip == NULL) {
+            continue;
+        }
+        if ((i32)pShip->bHomeBase == (i32)pEnv->nSelectedBaseIdx &&
+            Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount, i) == 0 &&
+            pShip->bAtBase != 0) {
+            ++nRows;
+        }
+    }
+
+    /* Count pass 3, 0x76FB4..0x770AC: the stocked item slots, plus the two crew slots. */
+    memset(abInclude, 0, sizeof(abInclude));
+    for (i = 1; i < pEnv->nObjectCount && i < PUFO_BUYSELL_SLOT_FLAGS; ++i) {
+        if (BuySellSlotIsStockedItem(i) &&
+            Base_GetItemQty(pEnv->apObjects != NULL ? pEnv->apObjects[i] : NULL,
+                            pEnv->nSelectedBaseIdx) != 0) {
+            abInclude[i] = 1;
+            ++nRows;
+        }
+        if (i == 112) {
+            nEngineers = Base_GetEngineerCount(pEnv->apObjects != NULL ? pEnv->apObjects[112] : NULL,
+                                               pEnv->apManufCol, pEnv->nSelectedBaseIdx,
+                                               pEnv->nCrewEntries);
+            if (nEngineers <= 0) {
+                continue; /* 0x77050, the goto LABEL_42: this slot gets no row */
+            }
+            abInclude[112] = 1;
+            ++nRows;
+        }
+        if (i == 113) {
+            nScientists = Base_GetScientistCount(pEnv->apObjects != NULL ? pEnv->apObjects[113] : NULL,
+                                                 pEnv->apResearchCol, pEnv->nSelectedBaseIdx,
+                                                 pEnv->nCrewEntries);
+            if (nScientists > 0) {
+                abInclude[113] = 1;
+                ++nRows;
+            }
+        }
+    }
+
+    /* Count pass 4, 0x770B0..0x7712C: the alien slots the base holds. */
+    for (i = 1; i < pEnv->nObjectCount && i < PUFO_BUYSELL_SLOT_FLAGS; ++i) {
+        if (BuySellSlotIsAlien(i) &&
+            Base_GetItemQty(pEnv->apObjects != NULL ? pEnv->apObjects[i] : NULL,
+                            pEnv->nSelectedBaseIdx) != 0) {
+            abInclude[i] = 1;
+            ++nRows;
+        }
+    }
+
+    /* The five panels, 0x77138..0x776B0. All five take the same row total. */
+    pA = BuySellNewPanel(pEnv->ppPanelA, nRows);
+    if (pA != NULL) {
+        pA->nStyle = 13;                            /* 0x77184 */
+        pA->nFont = 16;                             /* 0x77198 */
+        pA->pfnClick = pEnv->pfnSyncSelection;     /* 0x771B4, BuySellScreen_SyncSelection */
+        pA->nPosX = 10;                             /* 0x771C8 */
+        pA->nPosY = 70;                             /* 0x771DC */
+        pA->nUnk7052 = 5;                           /* 0x771F0 */
+        pA->nUnk7056 = 70;                          /* 0x77204 */
+        pA->nViewW = 125;                           /* 0x7720C */
+        UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                /* 0x77218 */
+        UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x7723C */
+        pA->bFlag7073 = 1;                          /* 0x77250 */
+        pA->bUnk7088 = (u8)0x96;                    /* 0x77264, MOV R0,#0xFFFFFF96 */
+    }
+    pE = BuySellNewPanel(pEnv->ppPanelE, nRows);
+    if (pE != NULL) {
+        pE->nStyle = 13;
+        pE->nFont = 16;
+        pE->pfnClick = NULL;                        /* 0x772CC */
+        pE->nPosX = 232;
+        pE->nPosY = 70;
+        pE->nUnk7052 = 190;
+        pE->nUnk7056 = 70;
+        pE->nViewW = 45;
+        UiPanel_SetBytes0to2(pE, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pE, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pE->bFlag7073 = 0;
+        pE->bFlag7074 = 1;
+        pE->nUnk7076 = 2;
+    }
+    pB = BuySellNewPanel(pEnv->ppPanelB, nRows);
+    if (pB != NULL) {
+        pB->nStyle = 13;
+        pB->nFont = 16;
+        pB->pfnClick = pEnv->pfnFillBuyPanel;       /* 0x773D0, BuySellScreen_FillBuyPanel */
+        pB->nPosX = 164;
+        pB->nPosY = 70;
+        pB->nUnk7052 = 160;
+        pB->nUnk7056 = 70;
+        pB->nViewW = 15;
+        UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pB->bFlag7073 = 1;
+        UiPanel_SetBytes3to5(pB, 0x32, 0x32, 0xFA); /* 0x7745C */
+        pB->nUnk7084 = 5;
+        pB->bUnk7088 = (u8)0x96;
+    }
+    pC = BuySellNewPanel(pEnv->ppPanelC, nRows);
+    if (pC != NULL) {
+        pC->nStyle = 13;
+        pC->nFont = 16;
+        pC->pfnClick = pEnv->pfnFillSellPanel;      /* 0x774EC, BuySellScreen_FillSellPanel */
+        pC->nPosX = 180;
+        pC->nPosY = 70;
+        pC->nUnk7052 = 176;
+        pC->nUnk7056 = 70;
+        pC->nViewW = 15;
+        UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pC->bFlag7073 = 1;
+        UiPanel_SetBytes3to5(pC, 0x32, 0x32, 0xFA);
+        pC->nUnk7084 = 5;
+        pC->bUnk7088 = (u8)0x96;
+    }
+    pD = BuySellNewPanel(pEnv->ppPanelD, nRows);
+    if (pD != NULL) {
+        pD->nStyle = 13;
+        pD->nFont = 16;
+        pD->pfnClick = NULL;                        /* 0x77608 */
+        pD->nPosX = 158;
+        pD->nPosY = 70;
+        pD->nUnk7052 = 130;
+        pD->nUnk7056 = 70;
+        pD->nViewW = 50;
+        UiPanel_SetBytes0to2(pD, 0xB4, 0xB4, 0xB4);
+        UiPanel_SetBytes6to11(pD, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+        pD->bFlag7073 = 0;
+        pD->bFlag7074 = 1;
+        pD->nUnk7076 = 2;
+    }
+
+    /* Fill pass 1, 0x776D8..0x77860: the soldier rows. */
+    for (i = 0; i < pEnv->nSoldierCount; ++i) {
+        const Soldier *pSol = pEnv->apSoldiers != NULL ? pEnv->apSoldiers[i] : NULL;
+        if (pSol == NULL) {
+            continue;
+        }
+        if ((i32)pSol->nKind != (i32)pEnv->nSelectedBaseIdx || pSol->bUnk183 != 0xFF) {
+            continue;
+        }
+        BuySellCopyName(szName, pSol->szName);
+        if (pA != NULL) {
+            UiPanel_SetLineText(pA, nRow, szName);
+            UiPanel_SetLineAux(pA, nRow, 1000); /* the soldier row marker */
+        }
+        if (pD != NULL) {
+            UiPanel_SetLineAux(pD, nRow, 1);
+        }
+        BuySellFillQtyColumns(pB, pC, pE, nRow);
+        if (pC != NULL) {
+            UiPanel_SetLineAux(pC, nRow, pSol->nUnk440); /* the roster id the sell path removes by */
+        }
+        if (pB != NULL) {
+            UiPanel_SetLineAux(pB, nRow, i); /* the index into apSoldiers */
+        }
+        ++nRow;
+    }
+
+    /* Fill pass 2, 0x77880..0x77A38: the craft rows. TEXTS[415 + bCraftType] + "-" + bType. */
+    for (i = 0; i < pEnv->nCraftCount; ++i) {
+        const Ship *pShip = pEnv->apCrafts != NULL ? pEnv->apCrafts[i] : NULL;
+        if (pShip == NULL) {
+            continue;
+        }
+        if ((i32)pShip->bHomeBase != (i32)pEnv->nSelectedBaseIdx ||
+            Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount, i) != 0 ||
+            pShip->bAtBase == 0) {
+            continue;
+        }
+        snprintf(szLine, sizeof(szLine), "%s-%d",
+                 pEnv->pTextRecs != NULL
+                     ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * (PUFO_CRAFT_NAME_TEXT_REC + pShip->bCraftType)
+                     : "",
+                 (int)pShip->bType); /* 0x77904..0x7795C, j_itoa over Ship.bType */
+        if (pA != NULL) {
+            UiPanel_SetLineText(pA, nRow, szLine);
+            UiPanel_SetLineAux(pA, nRow, BuySell_RoleToItemId(pShip->bCraftType)); /* 117..121 */
+        }
+        if (pD != NULL) {
+            UiPanel_SetLineAux(pD, nRow, 1);
+        }
+        BuySellFillQtyColumns(pB, pC, pE, nRow);
+        if (pC != NULL) {
+            UiPanel_SetLineAux(pC, nRow, pShip->bId);
+        }
+        ++nRow;
+    }
+
+    /* Fill pass 3, 0x77A48..0x77C44: the object rows, in slot order, only where the include flag
+     * is set. The engineer and scientist counts are the ones count pass 3 already computed; the
+     * original calls the two getters again here and gets the same numbers. */
+    for (i = 1; i < pEnv->nObjectCount && i < PUFO_BUYSELL_SLOT_FLAGS; ++i) {
+        const ObjectRecFull *pObj = pEnv->apObjects != NULL ? pEnv->apObjects[i] : NULL;
+        i32 nAux;
+        if (abInclude[i] != 1) {
+            continue;
+        }
+        BuySellCopyName(szName, pObj != NULL ? pObj->szName : "");
+        nAux = i;
+        if (pA != NULL) {
+            UiPanel_SetLineText(pA, nRow, szName);
+        }
+        BuySellFillQtyColumns(pB, pC, pE, nRow);
+        if (i == 112) {
+            if (pD != NULL) {
+                UiPanel_SetLineAux(pD, nRow, nEngineers); /* 0x77C20 */
+            }
+        } else if (i == 113) {
+            if (pD != NULL) {
+                UiPanel_SetLineAux(pD, nRow, nScientists);
+            }
+        } else {
+            if (BuySellSlotIsAlien(i)) {
+                nAux = i + 2000; /* 0x77BAC */
+            }
+            if (pD != NULL) {
+                UiPanel_SetLineAux(pD, nRow,
+                                   Base_GetItemQty(pObj, pEnv->nSelectedBaseIdx)); /* 0x77BD0 */
+            }
+        }
+        if (pA != NULL) {
+            UiPanel_SetLineAux(pA, nRow, nAux);
+        }
+        ++nRow;
+    }
+
+    /* The sort pass, 0x77C48..0x77D50. Each table entry places one row; the scan does not stop at
+     * the match, so a repeated aux value swaps again from the next slot -- with unique aux values
+     * that second scan finds nothing. */
+    {
+        i32 nPlaced = 0;
+        i32 nLimit = pEnv->nObjectCount - 1;
+        if (nLimit > PUFO_BUYSELL_ORDER_COUNT) {
+            nLimit = PUFO_BUYSELL_ORDER_COUNT;
+        }
+        for (i = 0; i < nLimit; ++i) {
+            i32 nWant = g_aBuySellRowOrder[i];
+            i32 r;
+            if (pA == NULL) {
+                break;
+            }
+            for (r = 0; r < pA->nLineCount; ++r) {
+                if (pA->anLineAux[r] == nWant) {
+                    UiPanel_SwapLines(pA, nPlaced, r); /* 0x77CB4 */
+                    UiPanel_SwapLines(pE, nPlaced, r); /* 0x77CCC */
+                    UiPanel_SwapLines(pB, nPlaced, r); /* 0x77CE4 */
+                    UiPanel_SwapLines(pC, nPlaced, r); /* 0x77CFC */
+                    UiPanel_SwapLines(pD, nPlaced, r); /* 0x77D10 */
+                    ++nPlaced;
+                }
+            }
+        }
+    }
 }
 
 /* The six openers share one body. bIdAfterInit carries the ordering difference the

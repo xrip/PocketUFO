@@ -841,6 +841,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `unk_1615F8`, `unk_161A00/1A1C/1A20`) typed `UiPanel *` and named `pManufPanel*`,
   `pResearchPanel*`, `pBuySellPanel*`.
 
+- [x] part 20, the buy/sell list panels: `BuySellScreen_BuildPanels (0x76de0)`, 4236 bytes — 33
+  more checks. This is the function that fills the five panel globals part 19 mapped, and it is
+  what the deferred `BuySellScreen_CommitTransaction (0x74bf8)` was waiting on: panel A's
+  `anLineAux` is the row-kind marker (1000 soldier, 117..121 craft, slot id object, slot + 2000
+  alien), panel D's is the available count and panel E's is the pending quantity. It also settles
+  the craft naming — `TEXTS[415 + Ship.bCraftType] + "-" + Ship.bType`, records 415..419 being the
+  five craft names in both shipped archives — and the sort table `g_aBuySellRowOrder @ 0xAAA04`,
+  whose 34 alien entries never match because alien rows carry slot + 2000. IDB: `unk_161A28` →
+  `bBuySellPanelsBuilt`, `unk_161A0C` → `g_aBuySellCtl`, `unk_AAA04` → `g_aBuySellRowOrder`, the
+  enum `PufoBuySellRowMarker`, and a function comment at 0x76de0.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1014,6 +1025,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the alien race ids (`BuySell_ItemIdToAlienRaceId`, IDB name fixed) | 56/56 (Release) | 9361 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 | the object name field and the name loop (`ObjectRecFull.szName` at +0, `ObjectSlot` labels fixed) | 56/56 (Release) | 9364 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 | the screen-id scroll dispatcher (`Geoscape_UiFocusPrev`, `Geoscape_UiFocusNext`) | 56/56 (Release) | 9407 | 837/1103 (75.9%) | 331520/598792 (55.4%) | 38 checked, 0 mismatched |
+| the buy/sell list panels (`BuySellScreen_BuildPanels`, the row-marker encoding, the sort table) | 56/56 (Release) | 9440 | 838/1103 (76.0%) | 335756/598792 (56.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

@@ -274,6 +274,97 @@ typedef struct GeoscapeFocusEnv {
 void Geoscape_UiFocusPrev(GeoscapeFocusEnv *pEnv);
 void Geoscape_UiFocusNext(GeoscapeFocusEnv *pEnv);
 
+/* ------------------------------------------------- the buy/sell list panels
+ *
+ * Evidence: BuySellScreen_BuildPanels @ 0x76de0 (4236 B). The branch selector is the byte the
+ * IDB now names bBuySellPanelsBuilt @ 0x161A28; BuySellScreen_Draw (0x77e6c, not ported) reads it
+ * too.
+ *
+ * Set -- the teardown branch (0x77D60..0x77E50): clear the flag, release the four screen
+ * controls at 0x161A0C..0x161A18 with UiControl_FreePads + delete, release the five panels with
+ * UiPanel_FreeLines + delete in the order A, B, E, C, D, and finally roll the funds back: if
+ * BuySell_nFundsSnapshot @ 0x161460 differs from nFunds @ 0x1598D8, nFunds takes the snapshot.
+ * The screen edits nFunds as the player moves quantities and this is where an uncommitted
+ * transaction is undone.
+ *
+ * Clear -- the build branch, in order:
+ *
+ *  1. Four UiControl objects (new 0x20 + UiControl_ctor) into 0x161A0C..0x161A18. The first two
+ *     get pfnClick = BuySellScreen_PanelPrev / PanelNext before any Setup runs, and all four are
+ *     then UiControl_Setup(ctl, 0, 0, stru_ABBA0[i]) -- "up", "down", "bclose", "emptyb".
+ *  2. dword_161468[0] = 0 and g_aSoldierIdList[0] = 0: the assigned-ship count and the scratch
+ *     soldier-id list Base_RemoveAllSoldiers @ 0x668e8 consumes.
+ *  3. Three counting passes over the selected base, all adding into one row total:
+ *       soldiers  Soldier.nKind == base AND Soldier.bUnk183 == 255 (not assigned to a craft)
+ *       craft     Ship.bHomeBase == base AND Craft_CountSoldiersAboard == 0 AND Ship.bAtBase != 0
+ *       objects   slots 1..nObjectCount-1 kept by a per-slot include flag:
+ *                   1..69, 105..111, 122..124, 142, 143 when ObjectRecFull.auPerBaseVal[base] != 0
+ *                   112 when Base_GetEngineerCount > 0, 113 when Base_GetScientistCount > 0
+ *       aliens    77..104, 144..148, 114 when auPerBaseVal[base] != 0
+ *  4. Five UiPanel objects (new 0x1BB4 + UiPanel_ctor(row total)), each nStyle 13 and nFont 16,
+ *     laid out as the table in the .c comment.
+ *  5. Three filling passes in the same order, writing row `nRow` of every panel:
+ *       panel A  the name, and anLineAux as the row-kind marker -- 1000 for a soldier,
+ *                BuySell_RoleToItemId(Ship.bCraftType) (117..121) for a craft, the slot id for a
+ *                plain object, and slot + 2000 for an alien
+ *       panel B  "<" (the decrement column), pfnClick BuySellScreen_FillBuyPanel
+ *       panel C  ">" (the increment column), pfnClick BuySellScreen_FillSellPanel
+ *       panel D  the available count: 1 for a soldier or a craft, auPerBaseVal[base] for an
+ *                object, the engineer or scientist count for slots 112 / 113
+ *       panel E  the pending quantity, always 0 here
+ *     Names are copied through an 18-byte buffer and cut to 17 characters when longer; the
+ *     craft row is the exception -- its text goes straight into the line as
+ *     TEXTS[415 + bCraftType] + "-" + itoa(Ship.bType), with no truncation.
+ *  6. A sort pass: for each value of g_aBuySellRowOrder @ 0xAAA04 (the IDB name, 148 dwords read
+ *     up to nObjectCount-1 of them) find the panel A row whose anLineAux equals it and swap that
+ *     row into the next free position in all five panels. The table lists 1000, 112, 113,
+ *     117..121, the plain object slots and the alien slot numbers 77..104 / 144..148 / 114 -- but
+ *     alien rows carry slot + 2000, so those 34 entries never match and the aliens keep their
+ *     fill order at the end. That is the original's own inconsistency, reproduced.
+ *
+ * Deviation: the original's name buffer is 17 bytes plus one more at 0x77730, and the copy loop
+ * also copies the terminator, so a name of 18 characters or more writes one byte past it before
+ * the strlen test cuts the string to 17. The port bounds the copy instead. */
+#define PUFO_CRAFT_NAME_TEXT_REC 415 /* TEXTS[415..419] = Skyranger, Lightning, Avenger,
+                                      * Interceptor, Fire Storm -- one per CraftType, which is
+                                      * 0x77904's 205 * (byte)[2] index and the same role
+                                      * BuySell_RoleToItemId maps to object slots 117..121 */
+
+typedef struct BuySellBuildEnv {
+    u8  *pbPanelsBuilt;             /* bBuySellPanelsBuilt @ 0x161A28 */
+    UiControl *apCtl[4];            /* g_aBuySellCtl @ 0x161A0C, 0x161A10, 0x161A14, 0x161A18 */
+    UiPanel **ppPanelA;             /* pBuySellPanelA @ 0x161A1C, the name column */
+    UiPanel **ppPanelB;             /* pBuySellPanelB @ 0x161A00, the "<" column */
+    UiPanel **ppPanelC;             /* pBuySellPanelC @ 0x161A20, the ">" column */
+    UiPanel **ppPanelD;             /* pBuySellPanelD @ 0x160C88, the available count */
+    UiPanel **ppPanelE;             /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+    Soldier *const *apSoldiers;     /* Map + 0x1198 */
+    i32 nSoldierCount;              /* nSoldierCount @ 0x115350 */
+    Ship *const *apCrafts;          /* Map + 0x10AC */
+    i32 nCraftCount;                /* Map_nCraftCount @ 0x114B4C */
+    ObjectRecFull *const *apObjects;/* Map + 0x108 */
+    i32 nObjectCount;               /* Map_nObjectCount @ 0x114A60 */
+    i8 nSelectedBaseIdx;            /* nSelectedBaseIdx @ 0x159D81 */
+    i32 *pnAssignedShipCount;       /* dword_161468 */
+    i32 *pnSoldierIdCount;          /* g_aSoldierIdList @ 0x160C90, its count dword */
+    i32 *pnFunds;                   /* nFunds @ 0x1598D8 */
+    i32 nFundsSnapshot;             /* BuySell_nFundsSnapshot @ 0x161460 */
+    const char *pTextRecs;          /* the loaded TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */
+    const u16 *apManufCol;          /* the engineer column @ 0x15E19C */
+    const u16 *apResearchCol;       /* the scientist column @ 0x16022C */
+    i32 nCrewEntries;               /* the crew column entry count byte @ 0x160C4C */
+    void (*pfnSyncSelection)(void); /* BuySellScreen_SyncSelection @ 0x76138 */
+    void (*pfnFillBuyPanel)(void);  /* BuySellScreen_FillBuyPanel (0x75160, not ported) */
+    void (*pfnFillSellPanel)(void); /* BuySellScreen_FillSellPanel (0x75464, not ported) */
+    void (*pfnPanelPrev)(void);     /* BuySellScreen_PanelPrev @ 0x76088 */
+    void (*pfnPanelNext)(void);     /* BuySellScreen_PanelNext @ 0x760e0 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} BuySellBuildEnv;
+
+void BuySellScreen_BuildPanels(BuySellBuildEnv *pEnv);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

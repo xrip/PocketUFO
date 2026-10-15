@@ -602,6 +602,184 @@ static void TestFocusDispatcher(void)
     Check(1, "a missing environment does nothing at all");
 }
 
+static i32 g_nBuySellPrev;
+static i32 g_nBuySellNext;
+static void BuySellTestPanelPrev(void) { ++g_nBuySellPrev; }
+static void BuySellTestPanelNext(void) { ++g_nBuySellNext; }
+
+static void TestBuySellBuildPanels(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Soldier aSol[3];
+    static Soldier *apSol[3];
+    static Ship aShip[3];
+    static Ship *apShip[3];
+    static u8 aText[(415 + 5) * PUFO_TEXT_REC_STRIDE];
+    static const i32 aWantAux[8] = { 117, 1000, 1000, 112, 1, 122, 105, 2077 };
+    static const char *const apWantName[8] = {
+        "Skyranger-1", "AVeryLongSoldierN", "Chloe", "Engineer",
+        "Pistol", "Personal armour", "Elerium-115", "Sectoid soldier"
+    };
+    static const i32 aWantQty[8] = { 1, 1, 1, 5, 3, 1, 2, 4 };
+    UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL, *pE = NULL;
+    UiControl aCtl[4];
+    BuySellBuildEnv env;
+    u8 bBuilt = 0;
+    i32 nAssigned = 7;
+    i32 nIdCount = 9;
+    i32 nFunds = 5000;
+    i32 nOk = 0;
+    i32 i;
+
+    printf("the buy/sell list panels\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    PutStr(aObj[1].szName, "Pistol");
+    PutStr(aObj[70].szName, "Operative corpse");
+    PutStr(aObj[77].szName, "Sectoid soldier");
+    PutStr(aObj[105].szName, "Elerium-115");
+    PutStr(aObj[112].szName, "Engineer");
+    PutStr(aObj[113].szName, "Scientist");
+    PutStr(aObj[122].szName, "Personal armour");
+    aObj[1].auPerBaseVal[0] = 3;
+    aObj[70].auPerBaseVal[0] = 0; /* a stocked slot the base holds none of */
+    aObj[77].auPerBaseVal[0] = 4;
+    aObj[105].auPerBaseVal[0] = 2;
+    aObj[112].auPerBaseVal[0] = 5;
+    aObj[113].auPerBaseVal[0] = 0; /* no scientists, so slot 113 gets no row */
+    aObj[122].auPerBaseVal[0] = 1;
+
+    aSol[0].nKind = 0; aSol[0].bUnk183 = 0xFF; aSol[0].nUnk440 = 101;
+    PutStr(aSol[0].szName, "Chloe");
+    aSol[1].nKind = 0; aSol[1].bUnk183 = 0xFF; aSol[1].nUnk440 = 102;
+    PutStr(aSol[1].szName, "AVeryLongSoldierNameHere"); /* 24 chars, cut to 17 */
+    aSol[2].nKind = 1; aSol[2].bUnk183 = 0xFF; aSol[2].nUnk440 = 103;
+    PutStr(aSol[2].szName, "OtherBase");
+    for (i = 0; i < 3; ++i) {
+        apSol[i] = &aSol[i];
+    }
+
+    aShip[0].bType = 1; aShip[0].bId = 7; aShip[0].bCraftType = 0;
+    aShip[0].bHomeBase = 0; aShip[0].bAtBase = 1;
+    aShip[1].bType = 2; aShip[1].bId = 8; aShip[1].bCraftType = 1;
+    aShip[1].bHomeBase = 0; aShip[1].bAtBase = 0; /* not present, so no row */
+    aShip[2].bType = 1; aShip[2].bId = 9; aShip[2].bCraftType = 2;
+    aShip[2].bHomeBase = 1; aShip[2].bAtBase = 1; /* based elsewhere, so no row */
+    for (i = 0; i < 3; ++i) {
+        apShip[i] = &aShip[i];
+    }
+
+    PutTextRec(aText, 415, "Skyranger");
+    PutTextRec(aText, 416, "Lightning");
+    PutTextRec(aText, 417, "Avenger");
+    PutTextRec(aText, 418, "Interceptor");
+    PutTextRec(aText, 419, "Fire Storm");
+
+    memset(&env, 0, sizeof(env));
+    memset(aCtl, 0, sizeof(aCtl));
+    env.pbPanelsBuilt = &bBuilt;
+    for (i = 0; i < 4; ++i) {
+        env.apCtl[i] = &aCtl[i];
+    }
+    env.ppPanelA = &pA;
+    env.ppPanelB = &pB;
+    env.ppPanelC = &pC;
+    env.ppPanelD = &pD;
+    env.ppPanelE = &pE;
+    env.apSoldiers = apSol;
+    env.nSoldierCount = 3;
+    env.apCrafts = apShip;
+    env.nCraftCount = 3;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.nSelectedBaseIdx = 0;
+    env.pnAssignedShipCount = &nAssigned;
+    env.pnSoldierIdCount = &nIdCount;
+    env.pnFunds = &nFunds;
+    env.nFundsSnapshot = 4147000;
+    env.pTextRecs = (const char *)aText;
+    env.pfnPanelPrev = BuySellTestPanelPrev;
+    env.pfnPanelNext = BuySellTestPanelNext;
+
+    BuySellScreen_BuildPanels(&env);
+
+    CheckEqI32(bBuilt, 1, "the build branch sets the built flag");
+    CheckEqI32(nAssigned, 0, "the assigned-ship count is cleared");
+    CheckEqI32(nIdCount, 0, "and so is the scratch soldier-id list count");
+    Check(aCtl[0].pfnClick == BuySellTestPanelPrev, "the first control gets the prev handler");
+    Check(aCtl[1].pfnClick == BuySellTestPanelNext, "the second gets the next handler");
+    CheckEqI32(aCtl[0].x, 0xCD, "the four controls land on their descriptor offsets");
+    CheckEqI32(aCtl[1].x, 0xDC, "the second one too");
+    CheckEqI32(aCtl[3].y, 0x129, "and the fourth");
+    Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL && pE != NULL,
+          "all five panels are built");
+    if (pA == NULL || pB == NULL || pC == NULL || pD == NULL || pE == NULL) {
+        return;
+    }
+
+    /* 2 soldiers + 1 craft + slots 1, 77, 105, 112, 122. Slot 70 holds nothing here and slot 113
+     * has no scientists, so neither gets a row. */
+    CheckEqI32(pA->nLineCount, 8, "the row total is eight");
+    CheckEqI32(pE->nLineCount, 8, "every panel gets the same total");
+    CheckEqI32(pA->nStyle, 13, "all five show thirteen rows");
+    CheckEqI32(pA->nViewW, 125, "the name column is 125 wide");
+    CheckEqI32(pE->nViewW, 45, "the quantity column 45");
+    CheckEqI32(pB->nPosX, 164, "the decrement column sits at 164");
+    CheckEqI32(pC->nPosX, 180, "the increment column at 180");
+    Check(pA->pfnClick == NULL, "the name column's click handler comes from the env, unset here");
+
+    for (i = 0; i < 8; ++i) {
+        if (pA->anLineAux[i] == aWantAux[i]) { ++nOk; }
+    }
+    CheckEqI32(nOk, 8, "the sort pass puts the rows in the g_aBuySellRowOrder order");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        const char *psz = UiPanel_GetLineText(pA, i);
+        if (psz != NULL && strcmp(psz, apWantName[i]) == 0) { ++nOk; }
+    }
+    CheckEqI32(nOk, 8, "and the names match, the 24-character one cut to 17");
+    CheckEqI32(pA->anLineAux[7], 2077,
+               "the alien row keeps the fill order at the end: 77 + 2000 matches no table entry");
+    CheckEqI32(pA->anLineAux[0], 117, "the craft row is first, marked by its item slot");
+
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pD->anLineAux[i] == aWantQty[i]) { ++nOk; }
+    }
+    CheckEqI32(nOk, 8, "the count column carries the per-base quantity, or the crew count");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        const char *pszB = UiPanel_GetLineText(pB, i);
+        const char *pszC = UiPanel_GetLineText(pC, i);
+        if (pszB != NULL && strcmp(pszB, "<") == 0 && pszC != NULL && strcmp(pszC, ">") == 0
+            && pE->anLineAux[i] == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 8, "every row gets its < and > columns and a zero pending quantity");
+
+    CheckEqI32(pB->anLineAux[1], 1, "a soldier row's decrement column holds the apSoldiers index");
+    CheckEqI32(pB->anLineAux[2], 0, "the other soldier was index zero");
+    CheckEqI32(pC->anLineAux[1], 102, "and its increment column holds the roster id");
+    CheckEqI32(pC->anLineAux[0], 7, "a craft row holds the craft id instead");
+    CheckEqI32(pC->anLineAux[3], 0, "an object row leaves it zero");
+
+    CheckEqI32(nFunds, 5000, "the build branch does not touch the funds");
+
+    nFunds = 100; /* what an uncommitted transaction would have left behind */
+    BuySellScreen_BuildPanels(&env);
+    CheckEqI32(bBuilt, 0, "the second call takes the teardown branch");
+    CheckEqI32(nFunds, 4147000, "and rolls the funds back to the snapshot");
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL && pE == NULL,
+          "the five panel slots are cleared");
+
+    BuySellScreen_BuildPanels(NULL);
+    Check(1, "a missing environment does nothing at all");
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -5700,6 +5878,7 @@ int main(void)
     TestRoleToItemId();
     TestAlienRaceId();
     TestFocusDispatcher();
+    TestBuySellBuildPanels();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

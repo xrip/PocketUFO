@@ -10935,3 +10935,85 @@ IDB: the ten panel globals named above were previously unk_ and are now typed Ui
 names the table uses (0x15EE38, 0x15EE40, 0x15EE48, 0x15EEFC, 0x15EF00, 0x160C88, 0x1615F8,
 0x161A00, 0x161A1C, 0x161A20). Function comments added at 0x8afa0 and 0x8b1f4 recording the
 screen -> panel-set map and the flag-byte quirk.
+
+## BuySellScreen_BuildPanels -- the buy/sell list panels
+
+Original: BuySellScreen_BuildPanels @ 0x76de0 (4236 B).
+Port: src/pufo/game/pufo_baseui.c, `BuySellScreen_BuildPanels(BuySellBuildEnv *)`, with
+`g_aBuySellCtlDesc[4]` and `g_aBuySellRowOrder[148]` beside it. Test: tests/test_baseui.c,
+`TestBuySellBuildPanels` (33 checks).
+
+The branch selector is the byte at 0x161A28, now named `bBuySellPanelsBuilt` in the IDB;
+BuySellScreen_Draw (0x77e6c, not ported) reads the same byte.
+
+Teardown (0x77D60..0x77E50) releases the four controls at 0x161A0C..0x161A18 and the five panels
+in the order A, B, E, C, D, and then restores `nFunds` from `BuySell_nFundsSnapshot` @ 0x161460
+when they differ. That is the rollback of a transaction the player did not confirm -- the screen
+edits nFunds directly while the quantities move.
+
+Build. Four `UiControl` objects (new 0x20 + UiControl_ctor) into 0x161A0C..0x161A18; the first two
+get `pfnClick = BuySellScreen_PanelPrev / BuySellScreen_PanelNext` before any Setup runs; all four
+are then `UiControl_Setup(ctl, 0, 0, stru_ABBA0[i])` -- "up" at (205,18), "down" at (220,38),
+"bclose" at (0,1), "emptyb" at (62,297). `dword_161468[0]` (the assigned-ship count) and
+`g_aSoldierIdList[0]` (the scratch id list Base_RemoveAllSoldiers @ 0x668e8 consumes) are cleared.
+
+Four counting passes share one row total:
+
+| rows | gate |
+|---|---|
+| soldiers | `Soldier.nKind == base` and `Soldier.bUnk183 == 255` (no craft) |
+| craft | `Ship.bHomeBase == base`, `Craft_CountSoldiersAboard == 0`, `Ship.bAtBase != 0` |
+| objects | slots 1..69, 105..111, 122..124, 142, 143 with `ObjectRecFull.auPerBaseVal[base] != 0`; slot 112 when `Base_GetEngineerCount > 0`; slot 113 when `Base_GetScientistCount > 0` |
+| aliens | slots 77..104, 144..148, 114 with `auPerBaseVal[base] != 0` |
+
+Five panels, each `new 0x1BB4` + `UiPanel_ctor(row total)`, nStyle 13, nFont 16:
+
+| panel | global | pos | click | width |
+|---|---|---|---|---|
+| A, the name | pBuySellPanelA 0x161A1C | 10,70 | BuySellScreen_SyncSelection | 125 |
+| B, the "<" column | pBuySellPanelB 0x161A00 | 164,70 | BuySellScreen_FillBuyPanel (0x75160, not ported) | 15 |
+| C, the ">" column | pBuySellPanelC 0x161A20 | 180,70 | BuySellScreen_FillSellPanel (0x75464, not ported) | 15 |
+| D, the available count | pBuySellPanelD 0x160C88 | 158,70 | none | 50 |
+| E, the pending quantity | pBuySellPanelE 0x1615F8 | 232,70 | none | 45 |
+
+Panel A's `anLineAux` is the row-kind marker, and this is what the deferred
+BuySellScreen_CommitTransaction (0x74bf8) reads: 1000 for a soldier, `BuySell_RoleToItemId`
+(117..121) for a craft, the slot id for a plain object, and slot + 2000 for an alien. Panel B's
+aux is the soldier's index into `apSoldiers` (soldier rows only), panel C's is the soldier's roster
+id at `Soldier + 0x1B8` or `Ship.bId` on a craft row, panel D's is the available count (1 for a
+soldier or a craft, `auPerBaseVal[base]` for an object, the crew count for slots 112 / 113), and
+panel E's is always 0 here -- the pending quantity the transaction then edits.
+
+Craft rows are named `TEXTS[415 + Ship.bCraftType] + "-" + itoa(Ship.bType)`. Records 415..419 are
+Skyranger, Lightning, Avenger, Interceptor, Fire Storm -- one per CraftType, the same role
+`BuySell_RoleToItemId` maps to object slots 117..121. Verified against both shipped archives:
+main.dat gives the English names, lang.dat the Russian ones.
+
+The sort pass walks `g_aBuySellRowOrder` @ 0xAAA04 (148 dwords, read up to `nObjectCount - 1` of
+them) and for each value swaps the matching panel A row into the next free position in all five
+panels. Two things fall out of it. First, the table lists 1000, 112, 113, 117..121, the plain
+object slots and the alien slot numbers 77..104 / 144..148 / 114 -- but alien rows carry slot +
+2000, so those 34 entries never match and the aliens keep their fill order at the end. That is the
+original's own inconsistency, reproduced rather than corrected. Second, the inner scan does not
+stop at the match, so two rows sharing an aux value (two soldiers, both 1000) each advance the
+placement cursor; the second swap is a self-swap.
+
+Deviations:
+- The name buffer at 0x77730 is `char v106[17]` followed by `char v107`, and the copy loop also
+  copies the terminator, so a name of 18 characters or more writes one byte past the buffer before
+  the `strlen > 0x17` test cuts it to 17. The port bounds the copy; the 17-character cut is kept.
+- The original dereferences `apSoldiers[i]`, `apCrafts[i]` and `apObjects[i]` without a null test;
+  the port skips a null slot.
+- The original calls `Base_GetEngineerCount` / `Base_GetScientistCount` again in the fill pass; the
+  port reuses the values the count pass computed. Nothing writes the crew columns in between, so
+  the two are the same number.
+- The four controls and the five panels are `operator new`'d by the original and deleted by its
+  teardown. The port takes the controls as caller-owned (only their pads are released) and owns the
+  panels itself, matching the pattern the other screen builders in this file use.
+- The port bounds the slot include table at 255 entries and the order table at 148; the original
+  indexes both blindly.
+
+IDB: `unk_161A28` named `bBuySellPanelsBuilt` (byte), `unk_161A0C` named `g_aBuySellCtl`
+(`UiControl *[4]`), `unk_AAA04` named `g_aBuySellRowOrder` (`int[148]`), and the enum
+`PufoBuySellRowMarker` (`BUYSELL_ROW_SOLDIER = 1000`, `BUYSELL_ROW_ALIEN_BIAS = 2000`) added. A
+function comment at 0x76de0 records the gate table and the aux encoding.
