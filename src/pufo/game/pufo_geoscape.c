@@ -2028,3 +2028,73 @@ void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv)
         }
     }
 }
+
+/* RadarScreen_BlitMapBackdrop @ 0x5eb10. See the header for the evidence map. */
+bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pbBlinkPhase == NULL) {
+        return false;
+    }
+    if (*pEnv->pbBlinkPhase == 0) {
+        *pEnv->pbBlinkPhase = 1; /* 0x5EB28 */
+        return false;
+    }
+    *pEnv->pbBlinkPhase = 0; /* 0x5EB38 */
+
+    /* The original reaches all five through globals that are always live. The port takes them
+     * as arguments, so a missing one is a port-side guard, not original behaviour: nothing is
+     * drawn and the call reports that. */
+    if (pEnv->pView == NULL || pEnv->pMapPad == NULL || pEnv->pLayerPad == NULL
+        || pEnv->pWorldBits == NULL) {
+        return false;
+    }
+
+    /* 0x5EB44..0x5EB68: map half-extent minus screen half-extent. The ADDMI/ASR pair the ARM
+     * uses is C division by two, so a negative extent rounds toward zero. */
+    const i32 nHalfW = pEnv->pView->nMapW / 2 - PUFO_RADAR_HALF_SCREEN_X; /* R7 */
+    const i32 nHalfH = pEnv->pView->nMapH / 2 - PUFO_RADAR_HALF_SCREEN_Y; /* R6 */
+
+    /* 0x5EB6C..0x5EB94: the map pad centred on the scroll position, negated. */
+    pEnv->pMapPad->nOriginX = -(pEnv->pView->nScrollX + nHalfW);
+    pEnv->pMapPad->nOriginY = -(pEnv->pView->nScrollY + nHalfH);
+    PadImage_Blit(pEnv->pMapPad);
+
+    /* 0x5EB98..0x5EBCC: the same pad one map width further on, which is the wrap copy. The
+     * original rewrites nOriginY with the identical value here; reproduced as written. */
+    pEnv->pMapPad->nOriginX = -(pEnv->pView->nScrollX + pEnv->pView->nMapW + nHalfW);
+    pEnv->pMapPad->nOriginY = -(pEnv->pView->nScrollY + nHalfH);
+    PadImage_Blit(pEnv->pMapPad);
+
+    /* 0x5EBD0..0x5EC08: the layer pad takes the overlay origin, not the pad origin, on x; on y
+     * it copies whatever the map pad ended with. */
+    pEnv->pLayerPad->nOriginX = pEnv->nOverlayOriginX - pEnv->pView->nScrollX - nHalfW;
+    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
+    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5EC14 */
+        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
+                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
+                          pEnv->pLayerPad->pData);
+    }
+
+    /* 0x5EC50..0x5EC88: one map width to the left. */
+    pEnv->pLayerPad->nOriginX =
+        pEnv->nOverlayOriginX - pEnv->pView->nScrollX - pEnv->pView->nMapW - nHalfW;
+    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
+    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5EC6C */
+        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
+                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
+                          pEnv->pLayerPad->pData);
+    }
+
+    /* 0x5ECA8..0x5ECE0: one map width to the right. The ARM's order is bias - scroll - halfW,
+     * then + nMapW (0x5ECA0 ADD R3, R3, R0). */
+    pEnv->pLayerPad->nOriginX =
+        pEnv->nOverlayOriginX - pEnv->pView->nScrollX - nHalfW + pEnv->pView->nMapW;
+    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
+    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5ECC4 */
+        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
+                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
+                          pEnv->pLayerPad->pData);
+    }
+
+    return true;
+}

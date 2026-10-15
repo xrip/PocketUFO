@@ -3373,6 +3373,219 @@ static void TestTickFacilityConstruction(void)
     CheckEqI32(TICKDAYS(0, 0), 4, "a null grid changes nothing");
 }
 
+/* ---- RadarScreen_BlitMapBackdrop @ 0x5eb10 ---------------------------------------
+ *
+ * Run on a real 240x320 16 bpp surface, with a real glyph record for the world bitmap
+ * (8x3, three different indices in three rows), a real alpha plane for the layer pad and a
+ * real glyph for the map pad. Fixture numbers are chosen so the map pad and all three world
+ * offsets land on screen: nMapW = nMapH = 100 gives half-extents -70 and -110, scroll (20, 10)
+ * puts the map pad at (50, 100), and an overlay origin of 60 puts the world blits at x 110, 10
+ * and 210. */
+#define BD_SURF_W   240
+#define BD_SURF_H   320
+#define BD_W          8 /* the world bitmap's width  */
+#define BD_H          3 /* and its height            */
+#define BD_PAD_W      6 /* the map pad's glyph       */
+#define BD_PAD_H      5
+#define BD_MAP_SLOT   7 /* the map pad's palette slot */
+#define BD_SCROLL_X  20
+#define BD_SCROLL_Y  10
+#define BD_ORIGIN_X  60 /* nSmapOverlayOriginX */
+
+static SoftSurf g_bdSurf;
+static SmapView g_bdView;
+static PadImage g_bdMapPad;
+static PadImage g_bdLayerPad;
+static u8       g_abWorld[4 + BD_W * BD_H];
+static u8       g_abMask[4 + BD_W * BD_H];
+static u8       g_abMapGlyph[4 + BD_PAD_W * BD_PAD_H];
+static u8       g_bdBlink;
+static RadarBackdropEnv g_bdEnv;
+
+static i32 BdPix(i32 x, i32 y)
+{
+    return (i32)((const u16 *)g_bdSurf.pPixels)[y * g_bdSurf.nWidth + x];
+}
+
+static void BdSet(i32 x, i32 y, u16 uInk)
+{
+    ((u16 *)g_bdSurf.pPixels)[y * g_bdSurf.nWidth + x] = uInk;
+}
+
+static void BdFixture(void)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+
+    /* The world bitmap is a glyph record: u16 w, u16 h, then w*h indices. Row 0 is index 1,
+     * row 1 index 2, row 2 index 3, so the three rows read back as three different colours. */
+    g_abWorld[0] = (u8)BD_W; g_abWorld[1] = 0;
+    g_abWorld[2] = (u8)BD_H; g_abWorld[3] = 0;
+    for (i32 y = 0; y < BD_H; ++y) {
+        for (i32 x = 0; x < BD_W; ++x) {
+            g_abWorld[4 + y * BD_W + x] = (u8)(y + 1);
+        }
+    }
+    /* Slot 29 is the one the original passes (aPalette + 0x7400). Slots 28 and 30 carry
+     * different colours so a wrong slot cannot pass unnoticed. */
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][1] = 0xFFFFu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][2] = 0x001Fu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][3] = 0xF800u;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT - 1][1] = 0xAAAAu;
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT + 1][1] = 0xBBBBu;
+
+    /* The layer pad's data plane is the alpha mask, and it carries the same 4-byte header the
+     * glyph does, because the original offsets it by (pIdx - pGlyph). */
+    g_bdLayerPad.pData    = g_abMask;
+    g_bdLayerPad.nMode    = (u8)PUFO_RADAR_MAP_PAL_SLOT;
+    g_bdLayerPad.uWidth   = (u16)BD_W;
+    g_bdLayerPad.uHeight  = (u16)BD_H;
+    g_abMask[0] = (u8)BD_W; g_abMask[1] = 0;
+    g_abMask[2] = (u8)BD_H; g_abMask[3] = 0;
+    memset(g_abMask + 4, 0xFF, (size_t)BD_W * (size_t)BD_H);
+
+    /* The map pad's glyph: 6x5 of index 1, through palette slot 7. */
+    g_abMapGlyph[0] = (u8)BD_PAD_W; g_abMapGlyph[1] = 0;
+    g_abMapGlyph[2] = (u8)BD_PAD_H; g_abMapGlyph[3] = 0;
+    memset(g_abMapGlyph + 4, 1, (size_t)BD_PAD_W * (size_t)BD_PAD_H);
+    g_aPalette[BD_MAP_SLOT][1] = 0x0123u;
+    g_bdMapPad.pData   = g_abMapGlyph;
+    g_bdMapPad.nMode   = (u8)BD_MAP_SLOT;
+    g_bdMapPad.uWidth  = (u16)BD_PAD_W;
+    g_bdMapPad.uHeight = (u16)BD_PAD_H;
+
+    memset(&g_bdView, 0, sizeof(g_bdView));
+    g_bdView.nScrollX = BD_SCROLL_X;
+    g_bdView.nScrollY = BD_SCROLL_Y;
+    g_bdView.nMapW    = 100;
+    g_bdView.nMapH    = 100;
+
+    g_bdEnv.pView           = &g_bdView;
+    g_bdEnv.pMapPad         = &g_bdMapPad;
+    g_bdEnv.pLayerPad       = &g_bdLayerPad;
+    g_bdEnv.pWorldBits      = g_abWorld;
+    g_bdEnv.nOverlayOriginX = BD_ORIGIN_X;
+    g_bdEnv.nScreenId       = 1;
+    g_bdEnv.pbBlinkPhase    = &g_bdBlink;
+
+    /* A sentinel origin proves that the phase-setting call touches nothing. */
+    g_bdMapPad.nOriginX   = -1;
+    g_bdMapPad.nOriginY   = -1;
+    g_bdLayerPad.nOriginX = -1;
+    g_bdLayerPad.nOriginY = -1;
+}
+
+static void TestRadarBackdrop(void)
+{
+    printf("\nRadarScreen_BlitMapBackdrop @ 0x5eb10\n");
+
+    SoftSurf_ctor(&g_bdSurf);
+    SoftSurf_AllocPixels(&g_bdSurf, BD_SURF_W, BD_SURF_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_bdSurf;
+    Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_bdSurf.pPixels);
+
+    /* --- the phase toggle: the first call draws nothing at all --- */
+    BdFixture();
+    g_bdBlink = 0;
+    Check(!RadarScreen_BlitMapBackdrop(&g_bdEnv), "the first call reports it drew nothing");
+    CheckEqI32(g_bdBlink, 1, "and leaves bRadarBlinkPhase set");
+    CheckEqI32(g_bdMapPad.nOriginX, -1, "no pad origin is touched on that call");
+    CheckEqI32(g_bdLayerPad.nOriginX, -1, "neither the map pad's nor the layer pad's");
+    CheckEqI32(BdPix(50, 100), 0, "and nothing is painted");
+
+    /* --- the second call draws, and clears the phase --- */
+    Check(RadarScreen_BlitMapBackdrop(&g_bdEnv), "the next call draws");
+    CheckEqI32(g_bdBlink, 0, "and clears the phase");
+    CheckEqI32(g_bdMapPad.nOriginX, -50,
+               "the map pad ends one map width on from -(scroll + nMapW/2 - 120)");
+    CheckEqI32(g_bdMapPad.nOriginY, 100, "its y is -(scroll + nMapH/2 - 160)");
+    CheckEqI32(g_bdLayerPad.nOriginX, 210,
+               "the layer pad ends at overlay origin - scroll - halfW + nMapW");
+    CheckEqI32(g_bdLayerPad.nOriginY, 100, "and its y is copied from the map pad");
+
+    CheckEqI32(BdPix(50, 100), 0x0123, "the map pad paints its glyph at (50, 100)");
+    CheckEqI32(BdPix(55, 104), 0x0123, "filling the whole 6x5");
+    CheckEqI32(BdPix(56, 100), 0, "one column past the glyph stays empty");
+    CheckEqI32(BdPix(50, 105), 0, "one row past it too");
+
+    /* The world bitmap at the first offset: full mask, so each channel is (src * 255) >> 8. */
+    CheckEqI32(BdPix(110, 100), 0xF7DE, "world row 0, index 1, at full mask");
+    CheckEqI32(BdPix(110, 101), 0x001E, "row 1, index 2");
+    CheckEqI32(BdPix(110, 102), 0xF000, "row 2, index 3");
+    CheckEqI32(BdPix(117, 102), 0xF000, "eight columns wide");
+    CheckEqI32(BdPix(118, 100), 0, "and no further");
+    CheckEqI32(BdPix(110, 103), 0, "three rows tall");
+
+    /* The other two offsets are one map width either side of the first. */
+    CheckEqI32(BdPix(10, 100), 0xF7DE, "the -nMapW copy paints at x 10");
+    CheckEqI32(BdPix(210, 100), 0xF7DE, "the +nMapW copy at x 210");
+    CheckEqI32(BdPix(217, 102), 0xF000, "both eight columns wide");
+    CheckEqI32(BdPix(100, 100), 0, "the gap between them stays empty");
+
+    /* --- a zero mask leaves the destination exactly as it was --- */
+    BdFixture();
+    g_bdBlink = 1;
+    memset(g_abMask + 4, 0, (size_t)BD_W * (size_t)BD_H);
+    BdSet(110, 100, 0x1234u);
+    BdSet(10, 101, 0x1234u);
+    (void)RadarScreen_BlitMapBackdrop(&g_bdEnv);
+    CheckEqI32(BdPix(110, 100), 0x1234, "a zero alpha plane leaves the destination alone");
+    CheckEqI32(BdPix(10, 101), 0x1234, "at every offset");
+    CheckEqI32(BdPix(50, 100), 0x0123, "while the map pad still paints");
+
+    /* --- screen id 2 skips the three world blits but not the pad --- */
+    BdFixture();
+    g_bdBlink = 1;
+    g_bdEnv.nScreenId = PUFO_RADAR_SCREEN_NO_WRAP;
+    (void)RadarScreen_BlitMapBackdrop(&g_bdEnv);
+    CheckEqI32(BdPix(110, 100), 0, "screen 2 paints no world bitmap at the first offset");
+    CheckEqI32(BdPix(10, 100), 0, "nor at the -nMapW offset");
+    CheckEqI32(BdPix(210, 100), 0, "nor at the +nMapW offset");
+    CheckEqI32(BdPix(50, 100), 0x0123, "but the map pad still blits twice");
+    CheckEqI32(g_bdLayerPad.nOriginX, 210, "and the layer origins are still rewritten");
+
+    /* --- a scroll that puts only the middle world offset on screen --- */
+    BdFixture();
+    g_bdBlink = 1;
+    g_bdView.nScrollX = -120; /* world offsets become 250, 150 and 350 */
+    (void)RadarScreen_BlitMapBackdrop(&g_bdEnv);
+    CheckEqI32(g_bdMapPad.nOriginX, 90, "the map pad ends on its wrap offset");
+    CheckEqI32(BdPix(190, 100), 0x0123, "the first blit painted at 190");
+    CheckEqI32(BdPix(90, 100), 0x0123, "and its wrap copy at 90");
+    CheckEqI32(BdPix(150, 100), 0xF7DE, "only the middle world offset is on screen");
+    CheckEqI32(BdPix(157, 102), 0xF000, "for the full 8x3");
+    CheckEqI32(BdPix(149, 100), 0, "the two off-screen offsets paint nothing");
+
+    /* --- the half-extents use C division, not an arithmetic shift --- */
+    BdFixture();
+    g_bdBlink = 1;
+    g_bdView.nMapW = -5;
+    g_bdView.nMapH = -5;
+    (void)RadarScreen_BlitMapBackdrop(&g_bdEnv);
+    CheckEqI32(g_bdMapPad.nOriginX, 107, "-5 / 2 is -2, so halfW is -122 and x = -(20 - 5 - 122)");
+    CheckEqI32(g_bdMapPad.nOriginY, 152, "halfH is -162, and y carries no nMapH term");
+
+    /* --- the palette is slot 29, not its neighbours --- */
+    BdFixture();
+    g_bdBlink = 1;
+    (void)RadarScreen_BlitMapBackdrop(&g_bdEnv);
+    CheckEqI32(BdPix(110, 100), 0xF7DE, "slot 29's entry 1 is the one used");
+    Check(g_aPalette[PUFO_RADAR_MAP_PAL_SLOT - 1][1] == 0xAAAAu
+              && g_aPalette[PUFO_RADAR_MAP_PAL_SLOT + 1][1] == 0xBBBBu,
+          "while slots 28 and 30 hold different colours and stay untouched");
+
+    /* --- the guards --- */
+    BdFixture();
+    g_bdBlink = 1;
+    Check(!RadarScreen_BlitMapBackdrop(NULL), "a null environment is refused");
+    CheckEqI32(g_bdBlink, 1, "and the phase is left alone by it");
+    g_bdEnv.pWorldBits = NULL;
+    Check(!RadarScreen_BlitMapBackdrop(&g_bdEnv), "a null world bitmap draws nothing");
+    CheckEqI32(g_bdBlink, 0, "though the phase is still consumed");
+    CheckEqI32(BdPix(50, 100), 0, "the map pad half does not run either");
+    CheckEqI32(g_bdMapPad.nOriginX, -1, "and no pad origin is touched");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -3415,6 +3628,7 @@ int main(void)
     TestCountInbound();
     TestBaseStripHit();
     TestTickFacilityConstruction();
+    TestRadarBackdrop();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

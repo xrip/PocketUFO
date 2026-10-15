@@ -1306,6 +1306,32 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `BasePlaneScreen_DrawCraftDetail` and `TransferScreen_Draw`), IDB comments at 0x77e6c, 0x784E8,
   0x78864 and 0x78B80. Every one of the ten label records cross-checks against lang.dat.
 
+- [x] part 48, the first radar-screen leaf: `RadarScreen_BlitMapBackdrop (0x5eb10)`, 508 bytes — 49
+  more checks and four IDB corrections.
+  **It is a phase toggle before it is a draw.** `bRadarBlinkPhase` (was `unk_159730`) zero means set
+  it and touch nothing; set means clear it and draw — so the radar backdrop appears on alternate
+  frames. `RadarScreen_Init` clears it (0x5F4CC) and `RadarScreen_Update` reads it twice: for the
+  50-against-0 pick (0x60584) and for the flashing message colour block (0x61144).
+  **`pSmapViewSize` @ 0x186BC0 was misread as the u16 world-size pair; it is a pointer to a glyph
+  record.** `Geoscape_InitUI` allocates `0x4E204 = 800*400+4` bytes there and writes 800/400 into it
+  (0x85A18..0x85A50); `Smap_ZoomIn` (0x81E9C) and `Smap_ZoomOut` only rewrite the u16 pair *through*
+  the same pointer (600x300, then 472x236). `RadarScreen_BlitMapBackdrop` passes it as
+  `SoftSurf_BlitFlip`'s third argument, which `SoftSurf_BlitFlipEx` forwards as
+  `SoftSurf_BlitFlip_Inner`'s `pSrc` — the IDB's own parameter names `nW`/`nH` are the trap: the
+  third argument is the glyph record and the fourth is the palette table. Renamed to
+  `pSmapWorldBits`.
+  **The palette is slot 29**, built as `aPalette + 0x7400` (0x5EC28) — the reason `0x14E6D0` has no
+  xrefs of its own. Named `aPaletteSlot29`. The mask is `pSmapLayerPad->pData`, the layer pad's own
+  byte plane used as per-pixel alpha.
+  **`nSmapModeXBias` → `nSmapOverlayOriginX`**: subtracted from the tile x in `Smap_GetTileAtMode`
+  (0x821D0) and from the scroll in all three geoscape map blits, and `Geoscape_Draw` (0x8C3D4) is its
+  only writer.
+  The half-extents are `nMapW / 2 - 120` and `nMapH / 2 - 160`, and the ARM's `MOVS` / `ADDMI #1` /
+  `ASR #1` triple is C division by two, not an arithmetic shift — `-5` becomes `-2`, pinned by a
+  check. The three world blits sit one map width apart (left of, on, and right of the viewport) and
+  all three are skipped when `nGeoscapeScreen` is 2. `pSmapPadCur` and `pSmapLayerPad` are now typed
+  `PadImage *` in the IDB.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1439,10 +1465,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
   one of the three is wrong. Not folded into this step — the arrow port takes the pointer through
   `IsoArrowGate.pThrownItem` and leaves the Map model alone.
 - [ ] The coverage metric counts **every** `@ 0xADDR` citation in `src/pufo`, so a comment that cites
-  an unported callee inflates the headline number. `audit_names.py` reports the live list: 5 credited
-  addresses whose original name is not defined (24480 bytes, 4.1% of the binary) — `Geoscape_OnPointer
-  @ 0x872d0`, `Geoscape_OnPointerUp @ 0x89450`, `Ui_TextInputDialog @ 0x632cc`,
-  `Geoscape_CloseUI @ 0x8b94c` and `SoldierScreen_Draw @ 0x65290`. New code writes unported callees
+  an unported callee inflates the headline number. `audit_names.py` reports the live list, and it is
+  currently empty: 0 credited addresses whose original name is not defined. The five that used to be on
+  it — `Geoscape_OnPointer @ 0x872d0`, `Geoscape_OnPointerUp @ 0x89450`, `Ui_TextInputDialog @ 0x632cc`,
+  `Geoscape_CloseUI @ 0x8b94c` and `SoldierScreen_Draw @ 0x65290` — are either ported now or cited only
+  through a named seam. New code writes unported callees
   as `Name (0xADDR)` so they stay out of the count, and `audit_credits.py` now reports zero negated
   citations. The
   `pufo_uibank.c` handler-name table is the same class of credit: it quotes the original bank entry's
@@ -1568,6 +1595,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the research rebuild (`ResearchScreen_RebuildTopicList`, the topic→facility-kind permutation, the wrong-column clear found) | 56/56 (Release) | 10520 | 867/1103 (78.6%) | 375864/598792 (62.8%) | 39 checked, 0 mismatched |
 | the research frame (`ResearchScreen_Draw`, the pad inside the topic table, the close-control-only-when-no-row quirk, the rails deduped) | 56/56 (Release) | 10589 | 868/1103 (78.7%) | 377972/598792 (63.1%) | 39 checked, 0 mismatched |
 | the buy/sell frame (`BuySellScreen_Draw`, the two halves that draw differently, the freed-panel deref found) | 56/56 (Release) | 10674 | 869/1103 (78.8%) | 381496/598792 (63.7%) | 39 checked, 0 mismatched |
+| the radar backdrop (`RadarScreen_BlitMapBackdrop`, the phase toggle, the world-bits pointer misreading fixed) | 56/56 (Release) | 10723 | 870/1103 (78.9%) | 382004/598792 (63.8%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

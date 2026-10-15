@@ -1244,4 +1244,63 @@ typedef struct BaseStripDrawEnv {
 
 void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv);
 
+/* ------------------------------------------------- the radar screen's map backdrop
+ *
+ * Evidence: RadarScreen_BlitMapBackdrop @ 0x5eb10 (508 B), installed as a callback at
+ * +0x0C of the radar screen's four corner controls (0x5FCEC, 0x5FCF4) by RadarScreen_Init.
+ *
+ * It is a phase toggle first and a draw second: when bRadarBlinkPhase @ 0x159730 is zero it
+ * sets it and returns without drawing anything; when it is set it clears it and draws. Radar
+ * screen frames therefore show the backdrop on alternate calls. RadarScreen_Init clears the
+ * flag (0x5F4CC), and RadarScreen_Update reads it to pick 50 against 0 (0x60584) and to gate
+ * the flashing message colour block (0x61144).
+ *
+ * The two half-extents are the map's half size minus the screen's half size:
+ *
+ *     nHalfW = gSmapCam.nMapW / 2 - 120      (0x5EB44..0x5EB54, held in R7)
+ *     nHalfH = gSmapCam.nMapH / 2 - 160      (0x5EB58..0x5EB68, held in R6)
+ *
+ * The ARM's `MOVS` / `ADDMI R3,R3,#1` / `ASR #1` triple is C's division by two, not an
+ * arithmetic shift: for a negative nMapW it adds one first, so -5 becomes -2.
+ *
+ * Two PadImage_Blit calls of the current map pad, at x = -(nScrollX + nHalfW) and at
+ * x = -(nScrollX + nMapW + nHalfH's pair unchanged), both with y = -(nScrollY + nHalfH). The
+ * second call rewrites nOriginY with the identical value (0x5EBBC..0x5EBC4) — reproduced, not
+ * corrected.
+ *
+ * Then three masked blits of the whole world bitmap through the layer pad, at x offsets
+ * -nHalfW, -nMapW-nHalfW and +nMapW-nHalfW of (nSmapOverlayOriginX - nScrollX), all at the
+ * layer pad's y, which is copied from the map pad's nOriginY rather than recomputed. Each is
+ * skipped when nGeoscapeScreen @ 0x186BC4 is 2 (Cydonia). The blit is SoftSurf_BlitFlip, whose
+ * third argument is the glyph record itself and whose fourth is the palette base:
+ *
+ *     pSrc  = pSmapWorldBits @ 0x186BC0, a {u16 w, u16 h, u8 indexed[w*h]} record that
+ *             Geoscape_InitUI (0x85A18) allocates as 800*400+4 bytes and the zoom steps only
+ *             resize (600x300, 472x236) through the same pointer
+ *     pPal  = aPalette slot 29 (0x14E6D0, reached only as aPalette + 0x7400 at 0x5EC28)
+ *     pMask = pSmapLayerPad->pData, the layer pad's own byte plane used as per-pixel alpha
+ *
+ * The three x offsets are one map width apart, which is how the original wraps the world
+ * horizontally: the same bitmap is painted left of, on, and right of the viewport. */
+#define PUFO_RADAR_MAP_PAL_SLOT   29 /* aPalette + 29 * 1024 = 0x14E6D0 */
+#define PUFO_RADAR_HALF_SCREEN_X 120 /* 0x5EB54: SUB R7, R3, #0x78 */
+#define PUFO_RADAR_HALF_SCREEN_Y 160 /* 0x5EB68: SUB R6, R3, #0xA0 */
+#define PUFO_RADAR_SCREEN_NO_WRAP  2 /* 0x5EC14: CMP R0, #2 skips all three layer blits */
+
+typedef struct RadarBackdropEnv {
+    SmapView *pView;          /* gSmapCam @ 0x1863E8 */
+    PadImage *pMapPad;        /* pSmapPadCur @ 0x186E40 */
+    PadImage *pLayerPad;      /* pSmapLayerPad @ 0x186BE0 */
+    const u8 *pWorldBits;     /* pSmapWorldBits @ 0x186BC0, the glyph record */
+    i32       nOverlayOriginX;/* nSmapOverlayOriginX @ 0x186C20, written by Geoscape_Draw */
+    i32       nScreenId;      /* nGeoscapeScreen @ 0x186BC4 */
+    u8       *pbBlinkPhase;   /* bRadarBlinkPhase @ 0x159730 */
+} RadarBackdropEnv;
+
+/* Returns true when the backdrop was drawn, false on the phase-setting call that draws
+ * nothing. The original's own return value is 1 on that first call and otherwise whatever the
+ * last blit or the screen id left in R0; no caller uses it — the function is reached through
+ * the +0x0C control slot. */
+bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

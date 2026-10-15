@@ -12614,3 +12614,54 @@ and 1127, and lang.dat says exactly what the code implies -- "Деньги: ", "Итого"
 "Выручка ", "Солдат", "Уволить", "Цена 1 ед. ", "уволить", "Усыплен" and "ОК". The four shortfall
 captions 405..408 are "Нет места для жилья", "Нет денег", "Нет свободного ангара" and "Нет свободных
 хранилищ" -- the same four records the transfer screen uses for the same reasons.
+
+## RadarScreen_BlitMapBackdrop (0x5eb10, 508 B)
+
+Ported in src/pufo/game/pufo_geoscape.{c,h} as RadarScreen_BlitMapBackdrop behind RadarBackdropEnv;
+tested by TestRadarBackdrop in tests/test_geoscape.c on a real 240x320 16 bpp surface, with a real
+8x3 glyph record for the world bitmap, a real alpha plane for the layer pad and a real 6x5 glyph for
+the map pad.
+
+It is installed as a callback, not called directly: RadarScreen_Init stores it at +0x0C of the radar
+screen's corner controls (0x5FCEC, 0x5FCF4).
+
+Phase first, draw second. bRadarBlinkPhase @ 0x159730 zero means set it and return without touching
+anything; set means clear it and draw. Radar frames therefore show the backdrop on alternate calls.
+RadarScreen_Init clears the byte (0x5F4CC); RadarScreen_Update reads it to pick 50 against 0
+(0x60584) and to gate the flashing message colour block (0x61144).
+
+The half-extents are the map's half size minus the screen's half size: nHalfW = gSmapCam.nMapW / 2 -
+120 (0x5EB44..0x5EB54, held in R7) and nHalfH = nMapH / 2 - 160 (0x5EB58..0x5EB68, R6). The ARM's
+MOVS / ADDMI R3,R3,#1 / ASR #1 triple is C division by two, not an arithmetic shift: -5 becomes -2.
+
+Two PadImage_Blit calls of pSmapPadCur @ 0x186E40: nOriginX = -(nScrollX + nHalfW) and
+nOriginY = -(nScrollY + nHalfH) (0x5EB6C..0x5EB94), then nOriginX = -(nScrollX + nMapW + nHalfW) with
+nOriginY rewritten to the identical value (0x5EBBC..0x5EBC4). The redundant y store is reproduced as
+written rather than corrected.
+
+Then three masked blits of the whole world bitmap through pSmapLayerPad @ 0x186BE0, at
+nSmapOverlayOriginX - nScrollX - nHalfW, then minus nMapW, then plus nMapW (0x5EBD0, 0x5EC50,
+0x5ECA8), all at the layer pad's y, which is copied from the map pad's nOriginY instead of being
+recomputed. Each is skipped when nGeoscapeScreen @ 0x186BC4 is 2 (Cydonia). The three x offsets are
+one map width apart: the same bitmap is painted left of, on, and right of the viewport, which is how
+the original wraps the world horizontally.
+
+SoftSurf_BlitFlip's third argument is the glyph record itself and its fourth the palette base, so the
+IDB's own parameter names (nW, nH) mislead: SoftSurf_BlitFlipEx @ 0x9FB80 forwards nW as
+SoftSurf_BlitFlip_Inner's pSrc and nH as its palette table, and SoftSurf_BlitFlip_Inner @ 0xA49A0
+reads u16 w and u16 h out of the first and indexes through the fourth. pSrc is pSmapWorldBits
+@ 0x186BC0 -- a {u16 w, u16 h, u8 indexed[w*h]} record Geoscape_InitUI allocates as 0x4E204 =
+800*400+4 bytes (0x85A18..0x85A50) and the zoom steps only resize through the same pointer (600x300
+at 0x81E9C, then 472x236). The palette is aPalette slot 29 (0x14E6D0, built as aPalette + 0x7400 at
+0x5EC28). The mask is pSmapLayerPad->pData, the layer pad's own byte plane used as per-pixel alpha,
+offset by (pIdx - pGlyph) exactly as the blend offsets it.
+
+IDB corrections made here: pSmapViewSize -> pSmapWorldBits (it is a pointer to the record, not the
+u16 pair the earlier reading assumed), unk_159730 -> bRadarBlinkPhase typed u8, nSmapModeXBias ->
+nSmapOverlayOriginX (its only writer is Geoscape_Draw at 0x8C3D4), unk_14E6D0 -> aPaletteSlot29, and
+pSmapPadCur / pSmapLayerPad typed as PadImage *.
+
+Deviation: the original returns 1 on the phase-setting call and otherwise whatever the last blit or
+the screen id left in R0, and no caller uses it -- the function is reached through the +0x0C control
+slot. The port returns whether it drew. The port also refuses a null environment or a null member,
+which the original cannot reach because all five live in globals.
