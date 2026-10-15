@@ -1699,6 +1699,43 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `nPromoteBestScore`, `nPromoteBestPick`, and the function comment at 0x346e0 rewritten with the
   (j, k, b, rate) quadruples.
 
+- [x] part 61, the battle-end and debrief emitter: `Tact_CheckBattleEnd (0x34fbc, 5748 B)`.
+  **`bAbort` is `Map_bAltOutcomePath`.** The very first store, at 0x34FE4, writes the caller's abort
+  request into Map+0x1A21 — the same flag `Tact_TallyUnitResults` gates its zone test on. So an abort
+  does not just add a line, it changes *who counts as lost*: the marking loop at 0x3531C takes
+  `bInZone == 0` soldiers instead of the tally's own lost set.
+  **Four exits before the debrief.** Already-ended returns (0x34FEC). The victory-tile scan
+  (`Tact_ScanVictoryTiles`) shuts down and opens the end screen (0x35004..0x35030). An abort sets
+  `Map_nMissionOutcome = 2` and jumps **past both sides of the win/lose decision** (0x35104) — an abort
+  leaves `Map_bMissionVictory` exactly as it was, which is why the port's abort test asserts "untouched"
+  rather than "cleared". The two count tests: no Xcom unit → lost (0x35070); no live non-civilian enemy
+  and no reserve → won (0x350F0), and only when it is not an unfinished alien base, because the gate is
+  `nMissionType != 4 || Map_bSpawnAlt == 0`. Civilians are skipped by `nUnitType` 0x10/0x11 (0x350A0).
+  **The fourth exit (0x35124..0x35198)** is the failed base defence: `(type == 4 || type == 9) &&
+  bSpawnAlt`, or `abFacilityGrid[0x618] == 1 && type == 3`, with `Map_bMissionVictory == 0`, gives
+  `Tact_Shutdown(1) + EndScreen_Init(0)`. The facility byte is read with **`LDRSB`** at 0x35160, so -1
+  is not "set" — a new trap in HANDOFF §8.
+  **19 debrief lines, three meta shapes.** Loss (255,0,0,90,0,0), gain (0,255,0,0,90,0) and the loot
+  shape (0,255,255,0,90,90). TEXTS[198] Examination is the one line whose value column and score term
+  differ: the column shows the room count (0x36218), the score pays 10 per room (0x36230). Only one of
+  TEXTS[168] Craft Lost / [169] Base Destroyed / [170] Base Lost can appear — the abort of a
+  `MissionType_XcomBase` clears the victory flag *and* the local abort copy (0x351CC, 0x351D0) so the
+  base gets -700 instead of -400.
+  **The loot commit (0x364A0..0x36510)** writes each count into `aSmapSites[nSmapSiteCount].auItemQty`
+  and adds it to `apObjects[obj]->uRecovCount` (ObjectRec+0xCC) for obj 106/105/109/107/111/110/143/142/108,
+  then commits the site (`bHasLoot = 1`, `bFlag0 = 8`, `bFlag1` from the home base's `bUnk4`,
+  `nSmapSiteCount++`). Both debrief panels' `nStyle` take the line count (0x36514, 0x36524) — that is
+  what makes the debrief draw exactly the rows that were emitted. The score lands in `g_nFundPending`
+  (0x365B0) and as text in `Map_szMissionScore`. **The Mars tail (0x36594..0x365F8)** restarts a finished
+  Mars mission in place as an alien base: type 4, mode 2, variant/layers/unk15115 cleared,
+  `Tact_InitMission(0)`, `Map_bFrameScratch = 1` last.
+  130 new checks (11791 total), 3 renames on record (352), coverage 892/1103 (80.9%), 417316/598792
+  (69.7%). IDB: `Map_bEnemyTurnActive @ 0x113A13`, `Map_nBannerFadeTicks @ 0x113A1C`,
+  `pTactCtx272 @ 0x157180`, comments at 0x113A13, 0x113A1C, 0x157180, 0x3618C and 0x364A0.
+  **Naming fixed on the way:** `Tact_ScanVictoryTiles`' parameters were `bCraftTileA0NonZero` /
+  `nCraftTileX` / `nCraftTileY`, which read as though the 2x2 probe started at the deployed craft; the
+  three addresses it really reads are `Map_bSpawnAlt`, `Map_nSpawnTileX`, `Map_nSpawnTileY`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1975,6 +2012,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the four post-battle tallies (`Tact_TallyBattleStats`, `Tact_TallyUnitResults`, `Tact_TallyItemRecovery`, `Tact_TallyCraftRecovery`; the debrief label table, `Mc1Rec+0x1E` named, the alien type/rank slot table) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 | the victory-flag naming fix (`unk_128A8C` → `Map_bMissionVictory`, `Map_szMissionCaption`, `Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome` named; the register-built-offset trap recorded) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 | the post-mission soldier cleanup (`Tact_ClearSoldierBattleFlags`, `Soldier_PromoteByTypeScores`; the five-rung rank ladder, `g_aClassStatGrowth` byte-checked, the auStatBase index bug found) | 56/56 (Release) | 11661 | 891/1103 (80.8%) | 411568/598792 (68.7%) | 40 checked, 0 mismatched |
+| the battle-end and debrief emitter (`Tact_CheckBattleEnd`; the four exits, the 19 debrief lines and their three meta shapes, the loot commit into `aSmapSites`, the Mars restart tail, the signed `abFacilityGrid` byte trap found) | 56/56 (Release) | 11791 | 892/1103 (80.9%) | 417316/598792 (69.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

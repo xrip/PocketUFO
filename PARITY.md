@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 891 / 1103 (80.8%) |
-| Bytes of original code cited | 411568 / 598792 (68.7%) |
+| Functions cited as evidence | 892 / 1103 (80.9%) |
+| Bytes of original code cited | 417316 / 598792 (69.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 11661 |
+| Test checks run | 11791 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 196 | 214 | 126564 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 197 | 214 | 132312 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -239,13 +239,14 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (196 functions)
+### `tact` (197 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
-| `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_strateg.h`, `src/pufo/game/pufo_tactinit.c` (+1) |
+| `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` |
+| `0x3c550` | `Tact_InitMission` | 4120 | `src/pufo/game/pufo_strateg.h`, `src/pufo/game/pufo_tactend.h` (+2) |
 | `0x3d568` | `Tact_Shutdown` | 3788 | `src/pufo/game/pufo_isodraw.h`, `src/pufo/game/pufo_tactend.c` (+2) |
 | `0x4e430` | `Tact_KillUnit` | 3748 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapctx.c` (+4) |
@@ -338,7 +339,7 @@ is the module that answers to it.
 | `0x36b8c` | `Soldier_RemoveById` | 204 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x549c8` | `MapCell_TestFlag` | 200 | `src/pufo/game/pufo_mapcell.c`, `src/pufo/game/pufo_mapcell.h` |
 | `0x163d4` | `MapView_EnterLookMode` | 192 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
-| `0x33264` | `Tact_ScanVictoryTiles` | 184 | `src/pufo/game/pufo_tactctl.h` |
+| `0x33264` | `Tact_ScanVictoryTiles` | 184 | `src/pufo/game/pufo_tactctl.h`, `src/pufo/game/pufo_tactend.h` |
 | `0x3bd6c` | `Tact_LoadLoftData` | 184 | `src/pufo/game/pufo_boot.h`, `src/pufo/game/pufo_los.c` (+1) |
 | `0x19708` | `Tact_SelectPrevUnitFiltered` | 176 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x17260` | `Tact_SelectPrevUnit` | 164 | `src/pufo/game/pufo_roster.h` |
@@ -1053,7 +1054,7 @@ whose port work they belong to.
 | `0xa1658` | `Crt_CallFnTable` | 48 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
 | `0xa1610` | `atexit` | 24 | import stub in the original's import/CRT-startup block (`0xA115C..0xA1760`): the Win32 API, C runtime, MFC operator or fmodce.dll entry the game calls through. The port reaches the same behaviour through Win64 Win32 calls, the C standard library and the audio backend seam, so the stub is not recreated as a function |
 | `0x11148` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
-| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | jump thunk to `Tact_CheckBattleEnd`; the thunk itself is a call-site wrapper and follows that function's port work |
+| `0x18a44` | `j_Tact_CheckBattleEnd` | 16 | jump thunk to `Tact_CheckBattleEnd`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0x22604` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_0` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x3f0b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_1` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x460b4` | `?SelectGdiObject@CDC@@KAPAVCGdiObject@@PAUHDC__@@PAX@Z_2` | 16 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
@@ -1179,13 +1180,12 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `tact` — 18 functions, 51780 bytes remaining
+### `tact` — 17 functions, 46032 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | cell addressing resolved but the ~15-global working set and Map_ProbeStepOccupants are not ported; the path flood takes an injected probe, so it is a drop-in once that contract exists |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | the largest fire action; depends on Combat_ResolveShot |
-| `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | 3440 B enemy AI driver; injected as a hook in pufo_turn |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
@@ -1325,7 +1325,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_statusmsg` | PASS | 106 |
 | `test_strateg` | PASS | 309 |
 | `test_tactctl` | PASS | 378 |
-| `test_tactend` | PASS | 265 |
+| `test_tactend` | PASS | 395 |
 | `test_tacthud` | PASS | 266 |
 | `test_tactinit` | PASS | 85 |
 | `test_tactstate` | PASS | 152 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 496 citations.
+parity report. Total: 503 citations.
 
 ### Offsets below the image base (40)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (456)
+### At or above the image base (463)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1408,6 +1408,9 @@ against the IDB when the final report is assembled.
 - `0x128a98`
 - `0x128aa0`
 - `0x128af4`
+- `0x128b00`
+- `0x128b04`
+- `0x128b08`
 - `0x128cec`
 - `0x1330c`
 - `0x133a4`
@@ -1472,12 +1475,15 @@ against the IDB when the final report is assembled.
 - `0x1568d8`
 - `0x1568dc`
 - `0x1568e0`
+- `0x1568e4`
+- `0x1568e8`
 - `0x1568f0`
 - `0x156938`
 - `0x156a54`
 - `0x156a7c`
 - `0x156ab0`
 - `0x156ab8`
+- `0x157180`
 - `0x157188`
 - `0x157190`
 - `0x157194`
@@ -1631,6 +1637,7 @@ against the IDB when the final report is assembled.
 - `0x186580`
 - `0x186594`
 - `0x1865a8`
+- `0x1865bc`
 - `0x186b00`
 - `0x186b10`
 - `0x186b7c`

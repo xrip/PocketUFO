@@ -8,6 +8,7 @@
  */
 #include "game/pufo_tactend.h"
 
+#include "game/pufo_boot.h"  /* PUFO_TEXT_REC_STRIDE, the debrief label stride */
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
 #include "pufo_test.h"
@@ -1474,6 +1475,691 @@ static void TestClearFlagsReportOrder(void)
     UiPanel_FreeLines(&s_PanelRank);
 }
 
+/* --- Tact_CheckBattleEnd @ 0x34fbc ----------------------------------------- */
+
+static u8       s_bBattleEnded;
+static u8       s_bTickHold;
+static u8       s_bSpawnAlt;
+static i8       s_nFacilityEndFlag;
+static i32      s_nMissionOutcome;
+static i32      s_nEnemyReserve;
+static u16      s_nUiScreen;
+static i32      s_nBannerFade;
+static u8       s_bCtxBusy;
+static u8       s_bEnemyTurnActive;
+static i32      s_nDebriefLine;
+static char     s_szCaption[32];
+static char     s_szScore[32];
+static i32      s_nFundPending;
+static u8       s_bSpawnOnce;
+static u8       s_bMissionMode;
+static u8       s_bFrameScratch;
+static u8       s_bUnk15115;
+static u8       s_nSpawnTileX;
+static u8       s_nSpawnTileY;
+static u8       s_nMapLayers;
+
+/* The three aLineMeta shapes the debrief writes, as the six bytes per line they occupy. */
+static const u8 s_abMetaLoss[6] = { 0xFF, 0x00, 0x00, 90, 0x00, 0x00 };
+static const u8 s_abMetaGain[6] = { 0x00, 0xFF, 0x00, 0x00, 90, 0x00 };
+static const u8 s_abMetaLoot[6] = { 0x00, 0xFF, 0xFF, 0x00, 90, 90 };
+static UiPanel  s_PanelLabel;
+static UiPanel  s_PanelValue;
+static BaseRec  s_aBases[4];
+static BaseRec *s_apBases[4];
+
+/* A stand-in for the loaded TEXTS block: the debrief reads its labels as
+ * aTextRecs + PUFO_TEXT_REC_STRIDE * n, so the fixture lays the records out at the same stride. */
+static u8 s_aTextBlock[199 * PUFO_TEXT_REC_STRIDE];
+
+static i32 s_nShutdownCalls;
+static i32 s_nShutdownKeep;
+static i32 s_nEndScreenCalls;
+static i32 s_nEndScreenGood;
+static i32 s_nInitMissionCalls;
+static bool s_bProbeEmpty;
+
+static void Hook_Shutdown(u8 bKeepSome, void *pUser)
+{
+    (void)pUser;
+    s_nShutdownCalls++;
+    s_nShutdownKeep = bKeepSome;
+}
+
+static void Hook_EndScreen(u8 bGoodEnd, void *pUser)
+{
+    (void)pUser;
+    s_nEndScreenCalls++;
+    s_nEndScreenGood = bGoodEnd;
+}
+
+static void Hook_InitMission(i32 nMode, void *pUser)
+{
+    (void)pUser;
+    (void)nMode;
+    s_nInitMissionCalls++;
+}
+
+static bool Probe_CellHasNoItems(i32 nX, i32 nY, void *pUser)
+{
+    (void)nX;
+    (void)nY;
+    (void)pUser;
+    return s_bProbeEmpty;
+}
+
+static void TextSet(i32 nRec, const char *psz)
+{
+    memcpy(s_aTextBlock + PUFO_TEXT_REC_STRIDE * nRec, psz, strlen(psz) + 1);
+}
+
+static void DebriefFixture(void)
+{
+    Tally_Reset();
+
+    memset(s_aTextBlock, 0, sizeof(s_aTextBlock));
+    TextSet(PUFO_DEBRIEF_TEXT_VICTORY, "Victory");
+    TextSet(PUFO_DEBRIEF_TEXT_DEFEAT, "Defeat");
+    TextSet(PUFO_DEBRIEF_TEXT_OPERATIVES, "Operatives killed");
+    TextSet(PUFO_DEBRIEF_TEXT_TANKS, "Tanks Destroyed");
+    TextSet(PUFO_DEBRIEF_TEXT_CIV_KILLED, "Civilians Killed");
+    TextSet(PUFO_DEBRIEF_TEXT_CIV_RESCUED, "Civilians Rescued");
+    TextSet(PUFO_DEBRIEF_TEXT_ALIENS_KILLED, "Aliens Killed");
+    TextSet(PUFO_DEBRIEF_TEXT_ALIENS_LIVE, "Live Aliens Recovered");
+    TextSet(PUFO_DEBRIEF_TEXT_CRAFT_LOST, "Craft Lost");
+    TextSet(PUFO_DEBRIEF_TEXT_BASE_DESTROYED, "Base Destroyed");
+    TextSet(PUFO_DEBRIEF_TEXT_BASE_LOST, "Base Lost");
+    TextSet(PUFO_DEBRIEF_TEXT_ALLOYS, "Alien Alloys");
+    TextSet(PUFO_DEBRIEF_TEXT_ELERIUM, "Elerium 115");
+    TextSet(PUFO_DEBRIEF_TEXT_NAVIGATION, "UFO Navigation");
+    TextSet(PUFO_DEBRIEF_TEXT_POWER_SOURCE, "UFO Power Source");
+    TextSet(PUFO_DEBRIEF_TEXT_REPRODUCTION, "Alien Reproduction");
+    TextSet(PUFO_DEBRIEF_TEXT_FOOD, "Alien Food");
+    TextSet(PUFO_DEBRIEF_TEXT_ENTERTAINMENT, "Alien Entertainment");
+    TextSet(PUFO_DEBRIEF_TEXT_SURGERY, "Alien Surgery");
+    TextSet(PUFO_DEBRIEF_TEXT_EXAMINATION, "Examination Room");
+
+    (void)UiPanel_ctor(&s_PanelLabel, 24);
+    (void)UiPanel_ctor(&s_PanelValue, 24);
+    s_PanelLabel.nLineCount = 0;
+    s_PanelLabel.nStyle = 0;
+    s_PanelValue.nLineCount = 0;
+    s_PanelValue.nStyle = 0;
+
+    /* The promotion-report panels and rank names the cleanup step needs. */
+    ClearFixture();
+
+    for (i32 i = 0; i < 4; ++i) {
+        memset(&s_aBases[i], 0, sizeof(s_aBases[i]));
+        s_apBases[i] = &s_aBases[i];
+    }
+    s_aBases[0].bUnk4 = 0x5A;
+
+    s_bBattleEnded = 0;
+    s_bTickHold = 0;
+    s_bSpawnAlt = 0;
+    s_nFacilityEndFlag = 0;
+    s_nMissionOutcome = -1;
+    s_nEnemyReserve = 0;
+    s_nUiScreen = 0;
+    s_nBannerFade = -1;
+    s_bCtxBusy = 1;
+    s_bEnemyTurnActive = 1;
+    s_nDebriefLine = -1;
+    s_szCaption[0] = 0;
+    s_szScore[0] = 0;
+    s_nFundPending = 1000;
+    s_bSpawnOnce = 0;
+    s_bMissionMode = 0;
+    s_bFrameScratch = 0;
+    s_bUnk15115 = 1;
+    s_nMapLayers = 0;
+    s_nSpawnTileX = 3;
+    s_nSpawnTileY = 4;
+    s_nShutdownCalls = 0;
+    s_nShutdownKeep = -1;
+    s_nEndScreenCalls = 0;
+    s_nEndScreenGood = -1;
+    s_nInitMissionCalls = 0;
+    s_bProbeEmpty = false;
+
+    /* The camera box the unit and item tallies use: no craft anchor, so the whole
+    10 x 10 layer of a 1 x 1 tile map. */
+    t_nDimX = 1;
+    t_nDimY = 1;
+}
+
+static void DebriefFree(void)
+{
+    UiPanel_FreeLines(&s_PanelLabel);
+    UiPanel_FreeLines(&s_PanelValue);
+    UiPanel_FreeLines(&s_PanelName);
+    UiPanel_FreeLines(&s_PanelRank);
+}
+
+static TactBattleEndEnv DebriefEnv(const TactTileTallyEnv *pTiles, const TactUnitTallyEnv *pUnits,
+                                   const TactItemTallyEnv *pItems, const TactCraftTallyEnv *pCraft,
+                                   i32 nMissionType)
+{
+    TactBattleEndEnv env;
+
+    memset(&env, 0, sizeof(env));
+
+    /* The head, the gate and the debrief all read the mission type off the Map block, so the
+     * builder pins it rather than leaving each test to remember. */
+    t_nMissionType = (u8)nMissionType;
+    env.pTiles = pTiles;
+    env.pUnits = pUnits;
+    env.pItems = pItems;
+    env.pCraft = pCraft;
+
+    env.flags.apSoldiers = t_apSoldier;
+    env.flags.pnSoldierCount = &t_nSoldier;
+    env.flags.pPanelName = &s_PanelName;
+    env.flags.pPanelRank = &s_PanelRank;
+    env.flags.panRankName = &s_asRankName[0][0];
+    env.flags.pbPromotionReport = &s_bPromotionReport;
+
+    env.camera.bUseCraft = false;
+    env.camera.nMissionType = (u8)nMissionType;
+    env.camera.nMapDimX = t_nDimX;
+    env.camera.nMapDimY = t_nDimY;
+
+    env.pbBattleEnded = &s_bBattleEnded;
+    env.pbTickHold = &s_bTickHold;
+    env.pbAltOutcomePath = &t_bAltPath;
+    env.pbMissionVictory = &t_bVictory;
+    env.pnMissionOutcome = &s_nMissionOutcome;
+    env.pnMissionType = &t_nMissionType;
+    env.pbSpawnAlt = &s_bSpawnAlt;
+    env.pnFacilityEndFlag = &s_nFacilityEndFlag;
+    env.pnSpawnTileX = &s_nSpawnTileX;
+    env.pnSpawnTileY = &s_nSpawnTileY;
+
+    env.apEnemyUnits = t_apTactEnemy;
+    env.pnEnemyCount = &t_nEnemy;
+    env.pnEnemyReserve = &s_nEnemyReserve;
+    env.pnXcomCount = &t_nXcom;
+
+    env.puUiScreen = &s_nUiScreen;
+    env.pnBannerFadeTicks = &s_nBannerFade;
+    env.pbCtxBusy = &s_bCtxBusy;
+    env.pbEnemyTurnActive = &s_bEnemyTurnActive;
+    env.pPanelLabel = &s_PanelLabel;
+    env.pPanelValue = &s_PanelValue;
+    env.pnDebriefLine = &s_nDebriefLine;
+    env.pszCaption = s_szCaption;
+    env.pszScore = s_szScore;
+    env.pTextRecs = (const char *)s_aTextBlock;
+
+    env.apBases = s_apBases;
+    env.pnSiteCount = &t_nSiteCount;
+
+    env.pbSpawnOnceFlag = &s_bSpawnOnce;
+    env.pnFundPending = &s_nFundPending;
+    env.pbMissionMode = &s_bMissionMode;
+    env.pnTerrainVariant = &t_nTerrainVariant;
+    env.pnMapLayers = &s_nMapLayers;
+    env.pbUnk15115 = &s_bUnk15115;
+    env.pbFrameScratch = &s_bFrameScratch;
+
+    env.hooks.pfnShutdown = Hook_Shutdown;
+    env.hooks.pfnEndScreenInit = Hook_EndScreen;
+    env.hooks.pfnInitMission = Hook_InitMission;
+    env.hooks.pfnCellHasNoItems = Probe_CellHasNoItems;
+    env.hooks.pUser = NULL;
+    return env;
+}
+
+static void TestBattleEndHead(void)
+{
+    TactTileTallyEnv  tiles = TileEnv();
+    TactUnitTallyEnv  units = UnitEnv();
+    TactItemTallyEnv  items = ItemEnv();
+    TactCraftTallyEnv craft = CraftEnv();
+    TactBattleEndEnv  env;
+
+    printf("Tact_CheckBattleEnd @ 0x34fbc - the head gates\n");
+
+    /* The battle already ended: nothing at all runs. */
+    DebriefFixture();
+    s_bBattleEnded = 1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("no teardown call", s_nShutdownCalls, 0);
+    TestEqI32("no debrief screen", s_nUiScreen, 0);
+    TestEqI32("the abort argument is still stored first", t_bAltPath, 0);
+    DebriefFree();
+
+    /* An aborted mission stores bAbort into Map_bAltOutcomePath before anything else. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 1);
+    TestEqI32("Map_bAltOutcomePath takes the abort argument", t_bAltPath, 1);
+    TestEqI32("an abort gives outcome 2", s_nMissionOutcome, 2);
+    TestEqI32("and holds the tick", s_bTickHold, 1);
+    TestEqI32("the debrief screen opens", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    DebriefFree();
+
+    /* Enemies are still standing and the Xcom side is alive: the battle is not over. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    t_bVictory = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("no outcome is written", s_nMissionOutcome, -1);
+    TestEqI32("no debrief screen", s_nUiScreen, 0);
+    TestEqI32("Map_bBattleEnded stays clear", s_bBattleEnded, 0);
+    DebriefFree();
+
+    /* No Xcom left: defeat, outcome 1. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("Map_bMissionVictory is cleared", t_bVictory, 0);
+    TestEqI32("outcome 1", s_nMissionOutcome, 1);
+    TestEqI32("the debrief opens", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    DebriefFree();
+
+    /* No enemies left and none in reserve: victory, outcome 0. The two enemy roster entries are
+     * civilians (0x10, 0x11) and the scan skips them, so an all-civilian roster counts as empty. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_apTactEnemy[0] = NewTactUnit(2, 0x10, 2, 5, 5, 0, 9);
+    t_apTactEnemy[1] = NewTactUnit(3, 0x11, 2, 5, 5, 0, 9);
+    t_nEnemy = 2;
+    s_nEnemyReserve = 0;
+    t_bVictory = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("civilians are not enemies for this count", t_bVictory, 1);
+    TestEqI32("outcome 0", s_nMissionOutcome, 0);
+    DebriefFree();
+
+    /* A reserve unit keeps the mission running even with an empty roster. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_nEnemy = 0;
+    s_nEnemyReserve = 1;
+    t_bVictory = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("the reserve counts", s_nUiScreen, 0);
+    TestEqI32("so no victory is declared", t_bVictory, 0);
+    DebriefFree();
+
+    /* An alien base with the alternate spawn is NOT finished by running out of enemies -- that is
+     * what the `|| Map_bSpawnAlt == 0` half of the gate is for. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_nEnemy = 0;
+    s_nEnemyReserve = 0;
+    s_bSpawnAlt = 1;
+    t_bVictory = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_ALIEN_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("no victory from an unfinished alien base", t_bVictory, 0);
+    TestEqI32("and no debrief", s_nUiScreen, 0);
+    DebriefFree();
+
+    /* The victory-tiles scan ends the mission with the good ending instead. */
+    DebriefFixture();
+    s_bSpawnAlt = 1;
+    s_bProbeEmpty = true;
+    t_bVictory = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_ALIEN_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("one teardown", s_nShutdownCalls, 1);
+    TestEqI32("keeping the world", s_nShutdownKeep, 1);
+    TestEqI32("one end screen", s_nEndScreenCalls, 1);
+    TestEqI32("the good ending", s_nEndScreenGood, 1);
+    TestEqI32("tick held", s_bTickHold, 1);
+    TestEqI32("battle ended", s_bBattleEnded, 1);
+    TestEqI32("and no debrief", s_nUiScreen, 0);
+    DebriefFree();
+}
+
+static void TestBattleEndExitScreen(void)
+{
+    TactTileTallyEnv  tiles = TileEnv();
+    TactUnitTallyEnv  units = UnitEnv();
+    TactItemTallyEnv  items = ItemEnv();
+    TactCraftTallyEnv craft = CraftEnv();
+    TactBattleEndEnv  env;
+
+    printf("Tact_CheckBattleEnd @ 0x35124 - the cannot-complete exit\n");
+
+    /* An alien base with the alternate spawn that was lost: the bad end screen. */
+    DebriefFixture();
+    t_nXcom = 0;                       /* clears Map_bMissionVictory and holds the tick */
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;                      /* keeps the no-enemies branch from re-declaring victory */
+    s_bSpawnAlt = 1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_ALIEN_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("one teardown", s_nShutdownCalls, 1);
+    TestEqI32("one end screen", s_nEndScreenCalls, 1);
+    TestEqI32("the bad ending", s_nEndScreenGood, 0);
+    TestEqI32("battle ended", s_bBattleEnded, 1);
+    TestEqI32("no debrief", s_nUiScreen, 0);
+    DebriefFree();
+
+    /* The Mars/special mission with the alternate spawn takes the same exit. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    s_bSpawnAlt = 1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_MARS_SPECIAL);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("the bad end screen too", s_nEndScreenGood, 0);
+    TestEqI32("no debrief", s_nUiScreen, 0);
+    DebriefFree();
+
+    /* A base defence whose facility flag is set takes it as well. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    s_nFacilityEndFlag = PUFO_FACILITY_END_FLAG_SET;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_XCOM_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("the failed base defence ends with the bad screen", s_nEndScreenCalls, 1);
+    TestEqI32("no debrief", s_nUiScreen, 0);
+    DebriefFree();
+
+    /* The same base defence with the flag clear runs the debrief instead. The flag is read as a
+     * SIGNED byte, so -1 is not "set" either. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    s_nFacilityEndFlag = -1;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_XCOM_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("a signed -1 is not the set value", s_nEndScreenCalls, 0);
+    TestEqI32("so the debrief runs", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    DebriefFree();
+
+    /* An alien base without the alternate spawn falls through to the facility arm, whose `== 3`
+     * test cannot match, so it debriefs whatever the outcome is. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    s_nFacilityEndFlag = PUFO_FACILITY_END_FLAG_SET;
+    s_bSpawnAlt = 0;
+    t_bVictory = 1;
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_ALIEN_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("the facility arm needs MissionType_XcomBase", s_nEndScreenCalls, 0);
+    TestEqI32("so the debrief runs", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    DebriefFree();
+}
+
+static void TestBattleEndDebriefWon(void)
+{
+    TactTileTallyEnv  tiles = TileEnv();
+    TactUnitTallyEnv  units = UnitEnv();
+    TactItemTallyEnv  items = ItemEnv();
+    TactCraftTallyEnv craft = CraftEnv();
+    TactBattleEndEnv  env;
+    SmapSite *pSite = &t_aSites[0];
+
+    printf("Tact_CheckBattleEnd @ 0x35428 - the debrief of a won alien base\n");
+    DebriefFixture();
+
+    /* Won and not aborted: the enemy roster is empty and nothing is in reserve. */
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);   /* live operative, inside the box */
+    t_nEnemy = 0;
+    s_nEnemyReserve = 0;
+    t_bVictory = 0;                                        /* the head must SET it */
+    t_bAltPath = 0;
+    t_nMissionType = PUFO_MISSION_TYPE_ALIEN_BASE;
+    t_nEleriumRoll = 25;
+    t_nFoodRoll = 7;
+    t_nTerrainVariant = 0;
+
+    TCell(0, 0, 0)->pFloorSpr = NewSpr(TILE_FAC_ELERIUM);
+    TCell(0, 0, 1)->pFloorSpr = NewSpr(TILE_FAC_NAVIGATION);
+    TCell(0, 1, 0)->pFloorSpr = NewSpr(TILE_FAC_REPRODUCTION);
+    TCell(0, 1, 1)->pFloorSpr = NewSpr(TILE_FAC_ENTERTAINMENT);
+    TCell(0, 2, 0)->pFloorSpr = NewSpr(TILE_FAC_SURGERY);
+    TCell(0, 2, 1)->pFloorSpr = NewSpr(TILE_FAC_EXAMINATION);
+    for (i32 i = 0; i < 9; ++i) {
+        TCell(1, 0, i)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+    }
+
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_ALIEN_BASE);
+    Tact_CheckBattleEnd(&env, 0);
+
+    TestEqI32("the head declares victory", t_bVictory, 1);
+    TestEqI32("outcome 0", s_nMissionOutcome, 0);
+    TestEqI32("the debrief screen", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    TestEqI32("the banner fade counter", s_nBannerFade, PUFO_BANNER_FADE_TICKS);
+    TestEqI32("the tactical context is no longer busy", s_bCtxBusy, 0);
+    TestEqI32("the enemy turn flag is cleared", s_bEnemyTurnActive, 0);
+    TestEqI32("Map_bBattleEnded", s_bBattleEnded, 1);
+    TestCheck("the caption is TEXTS[160]", strcmp(s_szCaption, "Victory") == 0);
+
+    /* Ten lines: the base line then the nine loot lines, in the original's order. */
+    TestEqI32("ten debrief lines", s_nDebriefLine, 10);
+    TestEqI32("the label panel's visible row count", s_PanelLabel.nStyle, 10);
+    TestEqI32("the value panel's visible row count", s_PanelValue.nStyle, 10);
+
+    TestCheck("line 0 is TEXTS[169] Base Destroyed",
+              strcmp((char *)s_PanelLabel.apLines[0], "Base Destroyed") == 0);
+    TestEqI32("  worth 500", s_PanelValue.anLineAux[0], 500);
+    TestCheck("line 1 is the alloys count, alloys / 8",
+              strcmp((char *)s_PanelLabel.apLines[1], "Alien Alloys") == 0);
+    TestEqI32("  nine alloys make one line of 1", s_PanelValue.anLineAux[1], 1);
+    TestCheck("line 2 is Elerium", strcmp((char *)s_PanelLabel.apLines[2], "Elerium 115") == 0);
+    TestEqI32("  the seeded amount, not the room count", s_PanelValue.anLineAux[2], 25);
+    TestCheck("line 3 is navigation", strcmp((char *)s_PanelLabel.apLines[3], "UFO Navigation") == 0);
+    TestEqI32("  15 each", s_PanelValue.anLineAux[3], 15);
+    TestCheck("line 4 is power source", strcmp((char *)s_PanelLabel.apLines[4], "UFO Power Source") == 0);
+    TestEqI32("  20 each", s_PanelValue.anLineAux[4], 20);
+    TestCheck("line 5 is reproduction", strcmp((char *)s_PanelLabel.apLines[5], "Alien Reproduction") == 0);
+    TestEqI32("  2 each", s_PanelValue.anLineAux[5], 2);
+    TestCheck("line 6 is food", strcmp((char *)s_PanelLabel.apLines[6], "Alien Food") == 0);
+    TestEqI32("  the seeded roll", s_PanelValue.anLineAux[6], 7);
+    TestCheck("line 7 is the examination room",
+              strcmp((char *)s_PanelLabel.apLines[7], "Examination Room") == 0);
+    TestEqI32("  the column shows the raw count", s_PanelValue.anLineAux[7], 1);
+    TestCheck("line 8 is entertainment",
+              strcmp((char *)s_PanelLabel.apLines[8], "Alien Entertainment") == 0);
+    TestEqI32("  2 each", s_PanelValue.anLineAux[8], 2);
+    TestCheck("line 9 is surgery", strcmp((char *)s_PanelLabel.apLines[9], "Alien Surgery") == 0);
+    TestEqI32("  2 each", s_PanelValue.anLineAux[9], 2);
+
+    /* Colours: the base line is a gain line, the nine loot lines use the third meta shape, and
+     * both panels get the same one. */
+    TestCheck("the base line is green on the label panel",
+              memcmp(s_PanelLabel.aLineMeta, s_abMetaGain, 6) == 0);
+    TestCheck("and on the value panel",
+              memcmp(s_PanelValue.aLineMeta, s_abMetaGain, 6) == 0);
+    TestCheck("a loot line carries the third meta shape",
+              memcmp(s_PanelValue.aLineMeta + PUFO_PANEL_META_BYTES, s_abMetaLoot, 6) == 0);
+
+    /* 500 + 1 + 25 + 15 + 20 + 2 + 7 + 10 + 2 + 2. The examination line pays 10 per room while its
+     * column shows 1, which is the only place the two differ. */
+    TestCheck("the score text is 584", strcmp(s_szScore, "584") == 0);
+    TestEqI32("and it is added to the pending funding", s_nFundPending, 1000 + 584);
+
+    /* The loot commit. */
+    TestEqI32("the working site gets loot", pSite->bHasLoot, 1);
+    TestEqI32("bFlag0 is 8", pSite->bFlag0, PUFO_DEBRIEF_SITE_FLAG0);
+    TestEqI32("bFlag1 is the home base's byte", pSite->bFlag1, s_aBases[0].bUnk4);
+    TestEqI32("the site slot is consumed", t_nSiteCount, 1);
+    TestEqU16("alloys into auItemQty[106]", pSite->auItemQty[PUFO_LOOT_OBJ_ALLOYS], 1);
+    TestEqU16("elerium into 105", pSite->auItemQty[PUFO_LOOT_OBJ_ELERIUM], 25);
+    TestEqU16("navigation into 109", pSite->auItemQty[PUFO_LOOT_OBJ_NAVIGATION], 1);
+    TestEqU16("power source into 107", pSite->auItemQty[PUFO_LOOT_OBJ_POWER_SOURCE], 1);
+    TestEqU16("reproduction into 111", pSite->auItemQty[PUFO_LOOT_OBJ_REPRODUCTION], 1);
+    TestEqU16("food into 110", pSite->auItemQty[PUFO_LOOT_OBJ_FOOD], 7);
+    TestEqU16("examination into 143", pSite->auItemQty[PUFO_LOOT_OBJ_EXAMINATION], 1);
+    TestEqU16("entertainment into 142", pSite->auItemQty[PUFO_LOOT_OBJ_ENTERTAINMENT], 1);
+    TestEqU16("surgery into 108", pSite->auItemQty[PUFO_LOOT_OBJ_SURGERY], 1);
+    TestEqU16("and each object's recovery tally grows",
+              t_apObj[PUFO_LOOT_OBJ_ALLOYS]->uRecovCount, 1);
+    TestEqU16("including the examination room's",
+              t_apObj[PUFO_LOOT_OBJ_EXAMINATION]->uRecovCount, 1);
+
+    TestEqI32("the replacement-spawn gate is set", s_bSpawnOnce, 1);
+    TestEqI32("a won alien base is not restarted", s_nInitMissionCalls, 0);
+    TestCheck("a won mission marks nobody lost", (t_apTactXcom[0]->bFlags & PUFO_SOLDIER_FLAG_LOST) == 0);
+    DebriefFree();
+}
+
+static void TestBattleEndDebriefLost(void)
+{
+    TactTileTallyEnv  tiles = TileEnv();
+    TactUnitTallyEnv  units = UnitEnv();
+    TactItemTallyEnv  items = ItemEnv();
+    TactCraftTallyEnv craft = CraftEnv();
+    TactBattleEndEnv  env;
+
+    printf("Tact_CheckBattleEnd @ 0x35928 - the debrief of a lost mission\n");
+
+    /* Aborted base defence: the abort clears Map_bMissionVictory AND the local copy of bAbort, so
+     * the base-lost line replaces the craft-lost one. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);   /* live operative */
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    t_apSoldier[0] = NewTactUnit(3, 0, 2, 5, 5, 0, 9);    /* the geoscape roster */
+    t_nSoldier = 1;
+    t_bVictory = 1;                                        /* the abort has to clear this */
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_XCOM_BASE);
+    Tact_CheckBattleEnd(&env, 1);
+
+    TestCheck("the caption is TEXTS[161]", strcmp(s_szCaption, "Defeat") == 0);
+    TestEqI32("the abort cleared the victory flag", t_bVictory, 0);
+    TestEqI32("outcome 2", s_nMissionOutcome, 2);
+    /* The abort also sets Map_bAltOutcomePath, and with that flag set the zone mark is what
+     * decides, so the operative the marking pass reached is not counted lost. */
+    TestEqI32("one line", s_nDebriefLine, 1);
+    TestEqI32("the in-box operative is not lost", t_apTactXcom[0]->bInZone, 1);
+    TestCheck("TEXTS[170] Base Lost, not Craft Lost",
+              strcmp((char *)s_PanelLabel.apLines[0], "Base Lost") == 0);
+    TestEqI32("  700", s_PanelValue.anLineAux[0], -700);
+    TestCheck("a loss line is red", memcmp(s_PanelValue.aLineMeta, s_abMetaLoss, 6) == 0);
+    TestCheck("the score text is -700", strcmp(s_szScore, "-700") == 0);
+    TestEqI32("subtracted from the pending funding", s_nFundPending, 1000 - 700);
+    TestEqI32("no loot line, so the site is not committed", t_nSiteCount, 0);
+    TestEqI32("the site keeps its loot flag clear", t_aSites[0].bHasLoot, 0);
+    TestCheck("an aborted mission abandons everyone the extraction box did not reach",
+              (t_apSoldier[0]->bFlags & PUFO_SOLDIER_FLAG_LOST) != 0);
+    DebriefFree();
+
+    /* Lost, not aborted, not a base defence: the craft-lost line. */
+    DebriefFixture();
+    t_nXcom = 0;
+    t_apTactEnemy[0] = NewTactUnit(2, 9, 2, 5, 5, 0, 9);
+    t_nEnemy = 1;
+    t_bVictory = 1;
+    t_nMissionType = 0;
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 0);
+    TestEqI32("one line", s_nDebriefLine, 1);
+    TestCheck("TEXTS[168] Craft Lost", strcmp((char *)s_PanelLabel.apLines[0], "Craft Lost") == 0);
+    TestEqI32("  400", s_PanelValue.anLineAux[0], -400);
+    TestCheck("the score text is -400", strcmp(s_szScore, "-400") == 0);
+    DebriefFree();
+
+    /* Aborted, won, and not a base defence: bAbort stays set locally, so no craft-lost line at
+     * all, and the loot walk is gated out by Map_bAltOutcomePath. */
+    DebriefFixture();
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);   /* live, inside the box */
+    t_nEnemy = 0;
+    s_nEnemyReserve = 0;
+    t_bVictory = 1;
+    t_apSoldier[0] = NewTactUnit(3, 0, 2, 5, 5, 0, 9);
+    t_nSoldier = 1;
+    TCell(0, 0, 0)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+    env = DebriefEnv(&tiles, &units, &items, &craft, 0);
+    Tact_CheckBattleEnd(&env, 1);
+    /* The abort branch jumps straight to the tick hold, so neither side of the win/lose decision
+     * is evaluated and Map_bMissionVictory keeps whatever it had. */
+    TestEqI32("the abort leaves the victory flag untouched", t_bVictory, 1);
+    TestCheck("so the caption is still TEXTS[160]", strcmp(s_szCaption, "Victory") == 0);
+    TestEqI32("an empty debrief", s_nDebriefLine, 0);
+    TestEqI32("both panels show no rows", s_PanelLabel.nStyle, 0);
+    TestEqI32("the value panel too", s_PanelValue.nStyle, 0);
+    TestEqI32("score 0", s_nFundPending, 1000);
+    TestEqI32("the tile walk was gated out, so no alloys were tallied",
+              t_apObj[PUFO_LOOT_OBJ_ALLOYS]->uRecovCount, 0);
+    TestEqI32("and the site is not committed", t_nSiteCount, 0);
+    TestCheck("but the abort still abandons the soldiers outside the extraction box, won or not",
+              (t_apSoldier[0]->bFlags & PUFO_SOLDIER_FLAG_LOST) != 0);
+    DebriefFree();
+}
+
+static void TestBattleEndMarsRestart(void)
+{
+    TactTileTallyEnv  tiles = TileEnv();
+    TactUnitTallyEnv  units = UnitEnv();
+    TactItemTallyEnv  items = ItemEnv();
+    TactCraftTallyEnv craft = CraftEnv();
+    TactBattleEndEnv  env;
+
+    printf("Tact_CheckBattleEnd @ 0x36594 - the Mars mission restarts as an alien base\n");
+    DebriefFixture();
+
+    t_nXcom = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_nEnemy = 0;
+    s_nEnemyReserve = 0;
+    s_bSpawnAlt = 1;
+    t_bVictory = 0;
+    t_nMissionType = PUFO_MISSION_TYPE_MARS_SPECIAL;
+    t_nTerrainVariant = 5;
+    s_nMapLayers = 3;
+    s_bUnk15115 = 1;
+    s_bMissionMode = 0;
+    s_bFrameScratch = 0;
+
+    env = DebriefEnv(&tiles, &units, &items, &craft, PUFO_MISSION_TYPE_MARS_SPECIAL);
+    Tact_CheckBattleEnd(&env, 0);
+
+    TestEqI32("the Mars mission with the alternate spawn is not the bad-end path",
+              s_nEndScreenCalls, 0);
+    TestEqI32("it debriefs first", s_nUiScreen, PUFO_DEBRIEF_UI_SCREEN);
+    TestEqI32("then tears the mission down", s_nShutdownCalls, 1);
+    TestEqI32("dropping the world state as well", s_nShutdownKeep, 0);
+    TestEqI32("Map_nMissionType becomes the alien base", t_nMissionType, PUFO_MISSION_TYPE_ALIEN_BASE);
+    TestEqI32("Map_bMissionMode becomes 2", s_bMissionMode, 2);
+    TestEqI32("Map_nTerrainVariant is cleared", t_nTerrainVariant, 0);
+    TestEqI32("Map_nMapLayers is cleared", s_nMapLayers, 0);
+    TestEqI32("Map_bUnk15115 is cleared", s_bUnk15115, 0);
+    TestEqI32("Tact_InitMission runs with mode 0", s_nInitMissionCalls, 1);
+    TestEqI32("and Map_bFrameScratch is set last", s_bFrameScratch, 1);
+    DebriefFree();
+}
+
 int main(void)
 {
     TestBankGroups();
@@ -1495,6 +2181,11 @@ int main(void)
     TestClearFlagsPromotionReport();
     TestClearFlagsReportEmpty();
     TestClearFlagsReportOrder();
+    TestBattleEndHead();
+    TestBattleEndExitScreen();
+    TestBattleEndDebriefWon();
+    TestBattleEndDebriefLost();
+    TestBattleEndMarsRestart();
 
     printf("test_tactend: %d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails == 0 ? 0 : 1;

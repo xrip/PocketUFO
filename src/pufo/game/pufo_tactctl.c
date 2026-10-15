@@ -151,13 +151,13 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
     return true;
 }
 
-bool Tact_ScanVictoryTiles(bool bCraftTileA0NonZero, u8 nMissionType, i32 nCraftTileX,
-                           i32 nCraftTileY,
+bool Tact_ScanVictoryTiles(bool bSpawnAlt, u8 nMissionType, i32 nSpawnTileX,
+                           i32 nSpawnTileY,
                            bool (*pfnCellHasNoItems)(i32 nX, i32 nY, void *pUser),
                            void *pUser)
 {
-    /* Both gates must hold: a craft origin and the alien-base mission type. */
-    if (!bCraftTileA0NonZero || nMissionType != PUFO_MISSION_TYPE_ALIEN_BASE) {
+    /* Both gates must hold: the alternate spawn and the alien-base mission type (0x3328C). */
+    if (!bSpawnAlt || nMissionType != PUFO_MISSION_TYPE_ALIEN_BASE) {
         return false;
     }
     if (pfnCellHasNoItems == NULL) {
@@ -167,7 +167,7 @@ bool Tact_ScanVictoryTiles(bool bCraftTileA0NonZero, u8 nMissionType, i32 nCraft
     /* The original's loop order: two columns within a row, then the next row. */
     for (i32 dy = 0; dy < 2; ++dy) {
         for (i32 dx = 0; dx < 2; ++dx) {
-            if (pfnCellHasNoItems(nCraftTileX + dx, nCraftTileY + dy, pUser)) {
+            if (pfnCellHasNoItems(nSpawnTileX + dx, nSpawnTileY + dy, pUser)) {
                 return true;
             }
         }

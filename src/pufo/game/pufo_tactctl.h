@@ -245,16 +245,24 @@ bool Map_InitFacingScratch(MapFacingScratch *pScratch, MapTileSize *pSize, u8 nF
 
 /* Tact_ScanVictoryTiles @ 0x33264.
  *
- * A victory condition for the alien-base mission type: it probes a 2x2 block of
- * cells starting at the craft tile (X, Y) and reports victory when any of those
- * cells' occupied-object list is empty. The scan is addressing-heavy; the port
- * takes an injected 2x2 probe so the predicate can be tested without the grid.
+ * A victory condition for the alien-base mission type. The gate at 0x3328C is
+ * `Map_bSpawnAlt != 0 && Map_nMissionType == MissionType_AlienBase`; the scan then walks a 2x2
+ * block of cell slots starting at the mission spawn tile, `Map_nSpawnTileY * 300 +
+ * Map_nSpawnTileX * 5` dwords into the cell array (0x332C0), two slots per tile-row (0x332E4) and
+ * 30 slots per row step (0x332F8), and reports victory as soon as one of those cells has an empty
+ * occupied-object list (`+12 == 0` at 0x332E0).
  *
- * `pfnCellHasNoItems(craftX + dx, craftY + dy)` must return true when that cell has
- * no object at its list head. The four probes run in the original's order: (0,0),
- * (1,0), then (0,1), (1,1) -- i.e. columns within a row, then the next row. */
-bool Tact_ScanVictoryTiles(bool bCraftTileA0NonZero, u8 nMissionType, i32 nCraftTileX,
-                           i32 nCraftTileY,
+ * The scan is addressing-heavy; the port takes an injected 2x2 probe so the predicate can be
+ * tested without the grid. `pfnCellHasNoItems(nSpawnTileX + dx, nSpawnTileY + dy)` must return
+ * true when that cell has no object at its list head. The four probes run in the original's
+ * order: (0,0), (1,0), then (0,1), (1,1) -- columns within a row, then the next row.
+ *
+ * The parameters were first named bCraftTileA0NonZero / nCraftTileX / nCraftTileY, which read as
+ * though the scan started at the deployed craft. The IDB names on the three addresses it actually
+ * reads -- Map_bSpawnAlt @ 0x128B00, Map_nSpawnTileX @ 0x128B04, Map_nSpawnTileY @ 0x128B08 -- say
+ * otherwise, so the names follow the addresses. */
+bool Tact_ScanVictoryTiles(bool bSpawnAlt, u8 nMissionType, i32 nSpawnTileX,
+                           i32 nSpawnTileY,
                            bool (*pfnCellHasNoItems)(i32 nX, i32 nY, void *pUser),
                            void *pUser);
 

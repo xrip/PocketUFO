@@ -1,13 +1,16 @@
 /* pufo_tactend.c - Tact_Shutdown @ 0x3d568. See pufo_tactend.h for the decode. */
 #include "game/pufo_tactend.h"
 
+#include <stdio.h>  /* snprintf, the bounded stand-in for the original's j_itoa */
 #include <string.h>
 
+#include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the debrief labels */
 #include "game/pufo_geoscape.h"
 #include "game/pufo_objectrec.h"
-#include "game/pufo_roster.h" /* Soldier_PromoteByTypeScores */
+#include "game/pufo_roster.h" /* Soldier_PromoteByTypeScores, SideLists_MarkAllSoldiersSeen */
 #include "game/pufo_ship.h"
 #include "game/pufo_strateg.h"
+#include "game/pufo_tactctl.h" /* Tact_ScanVictoryTiles, Tact_GetCameraBounds, mission types */
 #include "game/pufo_unit.h"
 #include "render/pufo_render.h"
 #include "util/pufo_ptrarray.h"
@@ -904,5 +907,341 @@ void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv)
 
     for (i = 0; i < nCount; ++i) {
         apSoldiers[i]->bRankDirty = 0;                        /* 0x34F9C */
+    }
+}
+
+/* --- Tact_CheckBattleEnd @ 0x34fbc ----------------------------------------- */
+
+/* Map_szMissionCaption @ Map+0x15094 and Map_szMissionScore @ Map+0x150B2 sit 30 bytes apart in
+ * the Map block (0x150B2 - 0x15094, and 0x150D0 - 0x150B2 -- Map_nDebriefLine is the next field),
+ * so each debrief string has 30 bytes. The original's copies are terminator-inclusive walks with
+ * no bound; the score is snprintf'd because itoa of an int cannot exceed that. */
+#define PUFO_DEBRIEF_TEXT_BYTES 30
+
+/* The original's terminator-inclusive byte copy: the caption (0x353D8, 0x35414) and every debrief
+ * label (0x35450, 0x3550C, ...). */
+static void Debrief_CopyText(char *pszDst, const char *pszSrc)
+{
+    i32 i = 0;
+
+    for (;;) {
+        pszDst[i] = pszSrc[i];
+        if (pszSrc[i] == 0) {
+            break;
+        }
+        ++i;
+    }
+}
+
+/* The three UiPanel_SetLineMeta colour shapes the debrief applies -- to the label column and the
+ * value column alike. Red for a loss line (0x35488), green for a gain line (0x35608), and the loot
+ * lines' third shape, which is the only one whose third meta byte is non-zero (0x35B98). */
+typedef enum DebriefMeta {
+    DEBRIEF_META_LOSS = 0, /* 255, 0, 0, 90, 0, 0 */
+    DEBRIEF_META_GAIN = 1, /* 0, 255, 0, 0, 90, 0 */
+    DEBRIEF_META_LOOT = 2  /* 0, 255, 255, 0, 90, 90 */
+} DebriefMeta;
+
+static void Debrief_SetMeta(UiPanel *pPanel, i32 nLine, DebriefMeta meta)
+{
+    switch (meta) {
+    case DEBRIEF_META_GAIN:
+        UiPanel_SetLineMeta(pPanel, nLine, 0, 255, 0, 0, 90, 0);
+        break;
+    case DEBRIEF_META_LOOT:
+        UiPanel_SetLineMeta(pPanel, nLine, 0, 255, 0xFF, 0, 90, 90);
+        break;
+    default:
+        UiPanel_SetLineMeta(pPanel, nLine, 255, 0, 0, 90, 0, 0);
+        break;
+    }
+}
+
+/* One debrief line: the TEXTS label into the label column, the value into the value column's
+ * anLineAux, and the same colour shape on both panels. */
+static void Debrief_EmitLine(const TactBattleEndEnv *pEnv, i32 nLine, i32 nTextRec,
+                             i32 nValue, DebriefMeta meta)
+{
+    Debrief_CopyText((char *)pEnv->pPanelLabel->apLines[nLine],
+                     pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nTextRec);
+    Debrief_SetMeta(pEnv->pPanelLabel, nLine, meta);
+    UiPanel_SetLineAux(pEnv->pPanelValue, nLine, nValue);
+    Debrief_SetMeta(pEnv->pPanelValue, nLine, meta);
+}
+
+/* Emit a line, add its score term, advance the cursor. The original advances Map_nDebriefLine
+ * through a pointer, so the cursor is written on every line rather than once at the end. */
+#define DEBRIEF_LINE(nTextRec, nValue, nTerm, meta)                                       \
+    do {                                                                                  \
+        Debrief_EmitLine(pEnv, *pnLine, (nTextRec), (nValue), (meta));                    \
+        nScore += (nTerm);                                                                \
+        *pnLine += 1;                                                                     \
+    } while (0)
+
+void Tact_CheckBattleEnd(const TactBattleEndEnv *pEnv, u8 bAbort)
+{
+    TactBattleStats stats;
+    TactUnitResults units;
+    i32 nX0 = 0, nY0 = 0, nX1 = 0, nY1 = 0;
+    i32 nItemScore = 0;
+    i32 nLootRecorded = 0;
+    i32 nScore = 0;
+    i32 nLiveEnemy = 0;
+    i32 nLive = 0;
+    i32 i;
+    u8 bLocalAbort = bAbort;
+    u8 bEndScreen = 0;
+    i32 *pnLine;
+    SmapSite *pSite;
+
+    *pEnv->pbAltOutcomePath = bAbort;                            /* 0x34FE4 */
+
+    if (*pEnv->pbBattleEnded != 0) {                             /* 0x34FEC */
+        return;
+    }
+
+    if (Tact_ScanVictoryTiles(*pEnv->pbSpawnAlt != 0, *pEnv->pnMissionType,
+                              (i32)*pEnv->pnSpawnTileX, (i32)*pEnv->pnSpawnTileY,
+                              pEnv->hooks.pfnCellHasNoItems, pEnv->hooks.pUser)) { /* 0x35004 */
+        pEnv->hooks.pfnShutdown(1, pEnv->hooks.pUser);           /* 0x35014 */
+        pEnv->hooks.pfnEndScreenInit(1, pEnv->hooks.pUser);      /* 0x3501C */
+        *pEnv->pbTickHold = 1;                                   /* 0x35028 */
+        *pEnv->pbBattleEnded = 1;                                /* 0x3502C */
+        return;
+    }
+
+    *pEnv->pbTickHold = 0;                                       /* 0x3503C */
+
+    if (bAbort != 0) {
+        *pEnv->pnMissionOutcome = 2;                             /* 0x3510C */
+        *pEnv->pbTickHold = 1;                                   /* 0x35114 */
+    } else {
+        if (*pEnv->pnXcomCount == 0) {
+            *pEnv->pbMissionVictory = 0;                         /* 0x35070 */
+            *pEnv->pbTickHold = 1;                               /* 0x35078 */
+            *pEnv->pnMissionOutcome = 1;                         /* 0x3507C */
+        }
+        while (nLiveEnemy < (i32)*pEnv->pnEnemyCount) {         /* 0x35088 */
+            i32 nType = pEnv->apEnemyUnits[nLiveEnemy]->nUnitType;
+
+            if (nType != UNIT_TYPE_CIVILIAN && nType != UNIT_TYPE_CIVILIAN_B) {
+                ++nLive;
+            }
+            ++nLiveEnemy;
+        }
+        if (*pEnv->pnEnemyReserve + nLive == 0 &&
+            (*pEnv->pnMissionType != PUFO_MISSION_TYPE_ALIEN_BASE || *pEnv->pbSpawnAlt == 0)) {
+            *pEnv->pbMissionVictory = 1;                         /* 0x350F0 */
+            *pEnv->pnMissionOutcome = 0;                         /* 0x350F4 */
+            *pEnv->pbTickHold = 1;                               /* 0x35114 */
+        }
+    }
+
+    if (*pEnv->pbTickHold == 0) {                                /* 0x35118 */
+        return;
+    }
+
+    /* The mission cannot be completed: an alien base or the Mars mission with the alternate spawn,
+     * or a base defence whose facility grid says the base is already gone. Both arms then need the
+     * mission to be lost. The second arm is only reachable when the type is neither 4 nor 9, which
+     * is why its `== 3` test is the base-defence one. */
+    if (*pEnv->pnMissionType == PUFO_MISSION_TYPE_ALIEN_BASE ||
+        *pEnv->pnMissionType == PUFO_MISSION_TYPE_MARS_SPECIAL) {
+        bEndScreen = (*pEnv->pbSpawnAlt != 0) ? (*pEnv->pbMissionVictory == 0) : 0; /* 0x3513C */
+    } else if (*pEnv->pnFacilityEndFlag == PUFO_FACILITY_END_FLAG_SET &&
+               *pEnv->pnMissionType == PUFO_MISSION_TYPE_XCOM_BASE) {
+        bEndScreen = (*pEnv->pbMissionVictory == 0);             /* 0x35150 */
+    }
+    if (bEndScreen) {
+        pEnv->hooks.pfnShutdown(1, pEnv->hooks.pUser);           /* 0x3517C */
+        pEnv->hooks.pfnEndScreenInit(0, pEnv->hooks.pUser);      /* 0x35184 */
+        *pEnv->pbTickHold = 1;                                   /* 0x3518C */
+        *pEnv->pbBattleEnded = 1;                                /* 0x35194 */
+        return;
+    }
+
+    Tact_GetCameraBounds(&pEnv->camera, &nX0, &nY0, &nX1, &nY1);  /* 0x3519C */
+
+    if (bAbort != 0 && *pEnv->pnMissionType == PUFO_MISSION_TYPE_XCOM_BASE) {
+        *pEnv->pbMissionVictory = 0;                             /* 0x351CC */
+        bLocalAbort = 0;                                         /* 0x351D0: no "Craft Lost" line */
+    }
+
+    *pEnv->puUiScreen = PUFO_DEBRIEF_UI_SCREEN;                  /* 0x351EC, a STRH */
+    *pEnv->pbBattleEnded = 1;                                    /* 0x351F4 */
+    *pEnv->pnBannerFadeTicks = PUFO_BANNER_FADE_TICKS;           /* 0x351FC */
+    *pEnv->pbCtxBusy = 0;                                        /* 0x35228 */
+    *pEnv->pbEnemyTurnActive = 0;                                /* 0x3523C */
+
+    Tact_TallyBattleStats(pEnv->pTiles, &stats);                 /* 0x35240 */
+    Tact_TallyUnitResults(pEnv->pUnits, nX0, nY0, nX1, nY1, &units);  /* 0x35284 */
+    SideLists_MarkAllSoldiersSeen(pEnv->flags.apSoldiers,
+                                  (i32)*pEnv->flags.pnSoldierCount);   /* 0x352B0 */
+    Tact_TallyItemRecovery(pEnv->pItems, nX0, nY0, nX1, nY1, &nItemScore);  /* 0x352BC */
+    Tact_TallyCraftRecovery(pEnv->pCraft, &nLootRecorded);       /* 0x352E4 */
+
+    *pEnv->flags.pbPromotionReport = 0;                          /* 0x352CC */
+    pEnv->flags.pPanelName->nLineCount = 0;                      /* 0x352C4, pUiPanel2 */
+    pEnv->flags.pPanelRank->nLineCount = 0;                      /* 0x352D8, pUiPanel3 */
+
+    for (i = 0; i < (i32)*pEnv->flags.pnSoldierCount; ++i) {     /* 0x3531C */
+        Soldier *pUnit = pEnv->flags.apSoldiers[i];
+
+        if ((*pEnv->pbAltOutcomePath != 0 && pUnit->bInZone == 0) ||
+            (*pEnv->pbAltOutcomePath == 0 && *pEnv->pbMissionVictory == 0)) {
+            pUnit->bFlags |= PUFO_SOLDIER_FLAG_LOST;             /* 0x3535C */
+        }
+    }
+
+    Tact_ClearSoldierBattleFlags(&pEnv->flags);                  /* 0x35380 */
+
+    pnLine = pEnv->pnDebriefLine;
+    *pnLine = 0;                                                 /* 0x3538C */
+    Debrief_CopyText(pEnv->pszCaption,
+                     pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE *
+                         (*pEnv->pbMissionVictory != 0 ? PUFO_DEBRIEF_TEXT_VICTORY
+                                                       : PUFO_DEBRIEF_TEXT_DEFEAT)); /* 0x353C4 */
+
+    if (units.nOperativesLost > 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_OPERATIVES, -30 * units.nOperativesLost,
+                     -30 * units.nOperativesLost, DEBRIEF_META_LOSS);            /* 0x35428 */
+    }
+    if (units.nTanksLost > 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_TANKS, -80 * units.nTanksLost,
+                     -80 * units.nTanksLost, DEBRIEF_META_LOSS);                 /* 0x35500 */
+    }
+    if (units.nCiviliansKilled > 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_CIV_KILLED, -30 * units.nCiviliansKilled,
+                     -30 * units.nCiviliansKilled, DEBRIEF_META_LOSS);           /* 0x355C4 */
+    }
+    if (units.nCiviliansRescued > 0 && *pEnv->pbMissionVictory != 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_CIV_RESCUED, 30 * units.nCiviliansRescued,
+                     30 * units.nCiviliansRescued, DEBRIEF_META_GAIN);           /* 0x35688 */
+    }
+    if (units.nAliensKilled > 0 && *pEnv->pbMissionVictory != 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_ALIENS_KILLED, 20 * units.nAliensKilled,
+                     20 * units.nAliensKilled, DEBRIEF_META_GAIN);               /* 0x3575C */
+    }
+    if (nItemScore > 0 && *pEnv->pbMissionVictory != 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_ALIENS_LIVE, 30 * nItemScore,
+                     30 * nItemScore, DEBRIEF_META_GAIN);                        /* 0x35830 */
+    }
+
+    /* Exactly one of the three base/craft lines can appear. */
+    if (*pEnv->pbMissionVictory != 0) {
+        if (*pEnv->pnMissionType == PUFO_MISSION_TYPE_ALIEN_BASE) {
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_BASE_DESTROYED, 500, 500, DEBRIEF_META_GAIN); /* 0x35A7C */
+        }
+    } else if (*pEnv->pnMissionType == PUFO_MISSION_TYPE_XCOM_BASE) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_BASE_LOST, -700, -700, DEBRIEF_META_LOSS);        /* 0x35928 */
+    } else if (bLocalAbort == 0) {
+        DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_CRAFT_LOST, -400, -400, DEBRIEF_META_LOSS);       /* 0x359DC */
+    }
+
+    /* The nine loot lines. Each writes its count into the working site record and into the
+     * object's recovery tally as well as onto the debrief. */
+    if (*pEnv->pbMissionVictory != 0) {
+        pSite = &pEnv->pCraft->aSites[*pEnv->pnSiteCount];
+
+        if (stats.nAlloys / 8 > 0) {                                                /* 0x35B40 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_ALLOYS, stats.nAlloys / 8,
+                         stats.nAlloys / 8, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_ALLOYS] = (u16)(stats.nAlloys / 8);
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_ALLOYS]->uRecovCount
+                += (u16)(stats.nAlloys / 8);
+        }
+        if (stats.nElerium > 0) {                                                   /* 0x35C6C */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_ELERIUM, stats.nElerium,
+                         stats.nElerium, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_ELERIUM] = (u16)stats.nElerium;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_ELERIUM]->uRecovCount
+                += (u16)stats.nElerium;
+        }
+        if (stats.nNavigation > 0) {                                                /* 0x35D70 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_NAVIGATION, 15 * stats.nNavigation,
+                         15 * stats.nNavigation, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_NAVIGATION] = (u16)stats.nNavigation;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_NAVIGATION]->uRecovCount
+                += (u16)stats.nNavigation;
+        }
+        if (stats.nPowerSource > 0) {                                               /* 0x35E80 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_POWER_SOURCE, 20 * stats.nPowerSource,
+                         20 * stats.nPowerSource, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_POWER_SOURCE] = (u16)stats.nPowerSource;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_POWER_SOURCE]->uRecovCount
+                += (u16)stats.nPowerSource;
+        }
+        if (stats.nReproduction > 0) {                                              /* 0x35F90 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_REPRODUCTION, 2 * stats.nReproduction,
+                         2 * stats.nReproduction, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_REPRODUCTION] = (u16)stats.nReproduction;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_REPRODUCTION]->uRecovCount
+                += (u16)stats.nReproduction;
+        }
+        if (stats.nFood > 0) {                                                      /* 0x36090 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_FOOD, stats.nFood, stats.nFood, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_FOOD] = (u16)stats.nFood;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_FOOD]->uRecovCount += (u16)stats.nFood;
+        }
+        if (stats.nExamination > 0) {                                               /* 0x3618C */
+            /* The only line whose value column and score term differ: the column shows the room
+             * count (0x36218) and the score pays 10 per room (0x36230). */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_EXAMINATION, stats.nExamination,
+                         10 * stats.nExamination, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_EXAMINATION] = (u16)stats.nExamination;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_EXAMINATION]->uRecovCount
+                += (u16)stats.nExamination;
+        }
+        if (stats.nEntertainment > 0) {                                             /* 0x36298 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_ENTERTAINMENT, 2 * stats.nEntertainment,
+                         2 * stats.nEntertainment, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_ENTERTAINMENT] = (u16)stats.nEntertainment;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_ENTERTAINMENT]->uRecovCount
+                += (u16)stats.nEntertainment;
+        }
+        if (stats.nSurgery > 0) {                                                   /* 0x363A0 */
+            DEBRIEF_LINE(PUFO_DEBRIEF_TEXT_SURGERY, 2 * stats.nSurgery,
+                         2 * stats.nSurgery, DEBRIEF_META_LOOT);
+            pSite->auItemQty[PUFO_LOOT_OBJ_SURGERY] = (u16)stats.nSurgery;
+            nLootRecorded = 1;
+            pEnv->pItems->apObjects[PUFO_LOOT_OBJ_SURGERY]->uRecovCount
+                += (u16)stats.nSurgery;
+        }
+    }
+
+    if (nLootRecorded > 0) {                                                        /* 0x364A0 */
+        pSite = &pEnv->pCraft->aSites[*pEnv->pnSiteCount];
+
+        pSite->bHasLoot = 1;                                                        /* 0x364C8 */
+        pSite->bFlag1 = pEnv->apBases[pEnv->pCraft->apCraft[*pEnv->pCraft->pnCraftIndex]
+                                          ->bHomeBase]->bUnk4;                       /* 0x36504 */
+        pSite->bFlag0 = PUFO_DEBRIEF_SITE_FLAG0;                                    /* 0x36508 */
+        *pEnv->pnSiteCount += 1;                                                    /* 0x36510 */
+    }
+
+    pEnv->pPanelLabel->nStyle = *pnLine;                                            /* 0x3651C */
+    pEnv->pPanelValue->nStyle = *pnLine;                                            /* 0x36528 */
+
+    snprintf(pEnv->pszScore, PUFO_DEBRIEF_TEXT_BYTES, "%d", nScore);                /* 0x36534 */
+    *pEnv->pnFundPending += nScore;                                                 /* 0x365B0 */
+    *pEnv->pbSpawnOnceFlag = 1;                                                     /* 0x36584 */
+
+    if (*pEnv->pnMissionType == PUFO_MISSION_TYPE_MARS_SPECIAL && *pEnv->pbSpawnAlt != 0) {
+        pEnv->hooks.pfnShutdown(0, pEnv->hooks.pUser);                              /* 0x36598 */
+        *pEnv->pnMissionType = PUFO_MISSION_TYPE_ALIEN_BASE;                        /* 0x365AC */
+        *pEnv->pbMissionMode = 2;                                                   /* 0x365BC */
+        *pEnv->pnTerrainVariant = 0;                                                /* 0x365C8 */
+        *pEnv->pnMapLayers = 0;                                                     /* 0x365D4 */
+        *pEnv->pbUnk15115 = 0;                                                      /* 0x365E0 */
+        pEnv->hooks.pfnInitMission(0, pEnv->hooks.pUser);                           /* 0x365E8 */
+        *pEnv->pbFrameScratch = 1;                                                  /* 0x365F0 */
     }
 }

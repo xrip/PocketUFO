@@ -13504,3 +13504,140 @@ that sits outside the zone changes rank and gets no row.
   the 1->2 rung, one-step-per-rung ordering) and 74 in tests/test_tactend.c (the exact auStat
   values for class 0 and class 5, auStat[6]/[7] left alone, both gates, the report rows and their
   order, a stale bRankDirty producing no row, Map_bPromotionReport clear when nobody is promoted).
+
+## Tact_CheckBattleEnd (0x34fbc): the debrief emitter
+
+5,748 bytes, 122 blocks, ported as `Tact_CheckBattleEnd` in src/pufo/game/pufo_tactend.c. This is the
+function the four tallies from the tally unit run inside, and the one that writes the victory flag the
+naming unit settled.
+
+### The head
+
+`bAbort` is stored into Map_bAltOutcomePath at 0x34FE4 before anything else -- the caller's abort
+request IS the alternate-outcome path the tallies gate on. Then:
+
+  Map_bBattleEnded != 0                    -> return (0x34FEC)
+  Tact_ScanVictoryTiles() != 0             -> Tact_Shutdown(1) + EndScreen_Init(1), tick hold,
+                                             battle ended, return (0x35004..0x35030)
+  bAbort != 0                              -> Map_nMissionOutcome = 2, tick hold, and NEITHER side
+                                             of the win/lose decision is evaluated (0x35104). The
+                                             abort leaves Map_bMissionVictory exactly as it was.
+  Map_nXcomUnitCount == 0                  -> Map_bMissionVictory = 0, tick hold, outcome 1
+  live non-civilian enemies + reserve == 0 -> Map_bMissionVictory = 1, outcome 0, tick hold (0x350F0),
+                                             and only when it is not an unfinished alien base: the
+                                             gate is `nMissionType != 4 || Map_bSpawnAlt == 0`. The
+                                             enemy count walks apEnemyUnits @ Map+0x151CC and skips
+                                             nUnitType 0x10/0x11, the civilians (0x350A0, 0x350A4).
+  Map_bTickHold == 0 after all that        -> return, the battle is still running (0x35118)
+
+Map_nMissionOutcome @ Map+0x1A1C gets 1 / 0 / 2 for lost / won / aborted and still has no reader
+anywhere in the binary.
+
+### The fourth exit (0x35124..0x35198)
+
+  (nMissionType == 4 || nMissionType == 9) && Map_bSpawnAlt != 0
+  abFacilityGrid[0x618] == 1 && nMissionType == 3
+
+either, together with Map_bMissionVictory == 0, gives Tact_Shutdown(1) + EndScreen_Init(0) and
+returns. The second arm is only reachable when the type is neither 4 nor 9 -- the first arm falls
+through to it and then fails its `== 3` test -- which is what makes it the failed base-defence path.
+abFacilityGrid+0x618 is read with LDRSB at 0x35160, so it is a SIGNED byte compared to 1: -1 is not
+"set".
+
+### The debrief setup
+
+An aborted MissionType_XcomBase mission clears Map_bMissionVictory AND the local copy of bAbort
+(0x351CC, 0x351D0), which is why a base defence gets TEXTS[170] "Base Lost" instead of TEXTS[168]
+"Craft Lost". Then Map_nUiScreen = 13 (0x351EC, a STRH), Map_bBattleEnded = 1, Map_nBannerFadeTicks
+= 10 (0x351FC), pTactCtx272->bBusy = 0 (0x35228), Map_bEnemyTurnActive = 0 (0x3523C).
+
+After the four tallies: Map_bPromotionReport = 0, both promotion panels' nLineCount = 0, and every
+soldier in apSoldiers gets `bFlags |= 0x20` when
+
+  (Map_bAltOutcomePath != 0 && Soldier.bInZone == 0) || (Map_bAltOutcomePath == 0 && lost)
+
+(0x3531C..0x35364). Bit 5 of bFlags is the dead bit Unit_AnimatePose reads, so a wipe or an abandoned
+squad is killed off rather than removed. Note that the geoscape roster is never re-marked in-zone by
+Tact_TallyUnitResults -- only the tactical rosters are -- so an aborted mission marks every
+apSoldiers entry it walks.
+
+### The debrief lines
+
+Map_nDebriefLine @ Map+0x150D0 is the cursor. Each line copies its TEXTS record into
+pUiPanel0 @ 0x1568E8 apLines[n], colours both columns with UiPanel_SetLineMeta, and writes the value
+into pUiPanel1 @ 0x1568E4 anLineAux[n]. Three meta shapes appear: loss (255, 0, 0, 90, 0, 0), gain
+(0, 255, 0, 0, 90, 0) and the loot lines' third shape (0, 255, 255, 0, 90, 90) -- the only one whose
+third meta byte is non-zero.
+
+  gate                                      TEXTS  value column / score term
+  operatives lost > 0                       162    -30 each
+  tanks lost > 0                            163    -80 each
+  civilians killed > 0                      164    -30 each
+  civilians rescued, and won                165    +30 each
+  aliens killed, won                        166    +20 each
+  live aliens recovered > 0, won            167    +30 each
+  won and nMissionType == 4                 169    +500
+  lost and nMissionType == 3                170    -700
+  lost, not a base defence, not aborted     168    -400
+  won, alloys / 8 > 0                       171    alloys / 8
+  won, elerium > 0                          172    elerium
+  won, navigation > 0                       173    15 each
+  won, power source > 0                     174    20 each
+  won, reproduction > 0                     175    2 each
+  won, food > 0                             176    1 each
+  won, examination > 0                      198    the raw count, 10 each in the score
+  won, entertainment > 0                    177    2 each
+  won, surgery > 0                          178    2 each
+
+TEXTS[198] is the one line where the value column and the score term differ: the column shows the
+room count (0x36218) and the score pays 10 per room (0x36230). Only one of the three base/craft
+lines can appear. The nine loot lines run only when the mission was won.
+
+The score is the sum of the emitted terms; it lands in g_nFundPending (0x365B0) and, as text, in
+Map_szMissionScore @ Map+0x150B2 (0x36534). Both debrief strings sit in 30-byte slots -- 0x150B2 -
+0x15094 and 0x150D0 - 0x150B2 -- and the original's copies are terminator-inclusive walks with no
+bound.
+
+### Committing the loot to the working site (0x364A0..0x36510)
+
+Each loot line writes its count into aSmapSites[nSmapSiteCount].auItemQty[obj] and adds it to
+apObjects[obj]->uRecovCount (ObjectRec+0xCC), with obj = 106 alloys, 105 elerium, 109 navigation,
+107 power source, 111 reproduction, 110 food, 143 examination, 142 entertainment, 108 surgery. If
+any loot was recorded -- from these lines or from Tact_TallyCraftRecovery -- the site is committed:
+bHasLoot(+0x2E4) = 1, bFlag1(+1) = apBases[apCraft[Map_nCraftIndex]->bHomeBase]->bUnk4, bFlag0(+0)
+= 8, nSmapSiteCount++. Both panels' nStyle then take the line count (0x36514, 0x36524), which is
+what makes the debrief draw exactly the rows that were emitted.
+
+### The Mars restart tail (0x36594..0x365F8)
+
+0x162028 (the replacement-spawn gate) is set to 1 unconditionally at 0x36584. Then, when the mission
+was MissionType_MarsOrSpecial with the alternate spawn, it restarts in place as an alien base:
+Tact_Shutdown(0), Map_nMissionType = 4, Map_bMissionMode = 2, Map_nTerrainVariant = 0,
+Map_nMapLayers = 0, Map_bUnk15115 = 0, Tact_InitMission(0), and Map_bFrameScratch = 1 last.
+
+### Naming fixed on the way
+
+- `Tact_ScanVictoryTiles` (0x33264) had its parameters named bCraftTileA0NonZero / nCraftTileX /
+  nCraftTileY, which read as though the 2x2 probe started at the deployed craft. The three addresses
+  it actually reads are Map_bSpawnAlt @ 0x128B00, Map_nSpawnTileX @ 0x128B04 and Map_nSpawnTileY @
+  0x128B08, so the parameters are now bSpawnAlt / nSpawnTileX / nSpawnTileY.
+- Three globals named in the IDB: `unk_113A13` -> `Map_bEnemyTurnActive` (Map+0x5B), `dword_113A1C`
+  -> `Map_nBannerFadeTicks` (Map+0x64), `unk_157180` -> `pTactCtx272` (the pointer to the TactCtx272
+  singleton whose bBusy at +0xF8 this function clears).
+
+### Deviations
+
+- Tact_Shutdown, EndScreen_Init and Tact_InitMission arrive as hooks in `TactBattleEndHooks`. The
+  first two need the app layer's teardown env and the third needs the whole mission-init env; the
+  same shape already carries Input_OnLeft's shutdown hooks. Each hook call site cites the original
+  address.
+- j_itoa is `snprintf("%d")` bounded to the 30-byte slot. itoa of an int cannot exceed that, so the
+  two agree.
+- The caption copy is reproduced as the original's unbounded terminator-inclusive walk. A TEXTS
+  record longer than 30 bytes would run into Map_nDebriefLine; the shipped Victory/Defeat records do
+  not, and the port does not add a bound the original does not have.
+- Tests: 130 new checks in tests/test_tactend.c -- every head gate including the civilian skip and
+  the unfinished-alien-base clause, the four arms of the cannot-complete exit including the signed
+  facility byte, the full ten-line won debrief with its aux values, meta shapes, score, site commit
+  and per-object recovery tallies, the lost debrief's base-lost and craft-lost lines, the empty
+  debrief of an aborted win, and the Mars restart tail.

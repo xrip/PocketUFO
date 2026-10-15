@@ -1,24 +1,37 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `cd1d2f0`. This document is committed together with the
-post-mission soldier cleanup: **`Tact_ClearSoldierBattleFlags` (0x346e0, 2268 B) and its callee
-`Soldier_PromoteByTypeScores` (0x47280, 1096 B)** are ported, which brings the five-rung rank ladder,
-the per-class stat refresh and the promotion report into the port. **Testing the refresh found a real
-port bug.** The growth rule's auStatBase index is not its auStat index — the ARM reads
-`auStatBase+0x10` (index 8) to grow `auStat+0x12` (index 9), and reads `0xF2` (index 7) to grow `0xB2`
-(index 8) — and the port used the stat index for both, so the class-8 rule read `auStatBase[9]`, past
-the end of a nine-entry array into the bytes before `uKills`. `g_aClassStatGrowth @ 0xAA930` (was
-`byte_AA930`), six classes x nine weights of 1..3, is now byte-checked against the image by
-audit_tables.py. Four globals named: `Map_bPromotionReport @ 0x1153D8`, `g_aClassStatGrowth`,
-`nPromoteBestScore @ 0x15880C`, `nPromoteBestPick @ 0x158810`. Written up in `docs/parity/game-core.md`
-under `## Tact_ClearSoldierBattleFlags (0x346e0) and the rank ladder (0x47280)`. The unit before it
-(`cd1d2f0`) settled that **`unk_128A8C` @ Map+0x150D4 is the victory flag**, not an abort flag, and the
-port had it backwards: `Tact_CheckBattleEnd` (0x34fbc) writes it — set at 0x350F0 when no enemy is left,
-cleared at 0x35070 when no Xcom unit is left and at 0x351CC when a `MissionType_XcomBase` mission is
-called off — and the debrief reads it as the win/lose switch (TEXTS[160] "Victory" at 0x353C4, TEXTS[161]
-"Defeat" at 0x35400, green/red caption in `TactHud_DrawStatusBanner` at 0x1E968). The reason no writer
-looked to exist is recorded as a general trap: ARM cannot encode a 6684-byte displacement, so every far
-Map access is register-built and IDA records no data xref for it.
+Date: 2026-10-15. HEAD before this edit: `519f9d3`. This document is committed together with the
+battle-end and debrief emitter: **`Tact_CheckBattleEnd` (0x34fbc, 5,748 B)** is ported — the function
+the four post-battle tallies run inside, and the one that writes the victory flag. Its head stores the
+caller's abort request into `Map_bAltOutcomePath` at 0x34FE4, the same flag the tallies gate on, and
+then tries four exits: already-ended, the victory-tile scan (`Tact_Shutdown(1)` + `EndScreen_Init(1)`),
+the abort (outcome 2, and **neither side of the win/lose decision runs**, so an abort leaves
+`Map_bMissionVictory` exactly as it was), and the two count tests — no Xcom unit left → lost, no live
+non-civilian enemy and no reserve left → won unless it is an unfinished alien base. The debrief then
+emits up to 19 TEXTS lines into the two debrief panels under three meta colour shapes, pays the score
+into `g_nFundPending`, commits the loot into `aSmapSites[nSmapSiteCount].auItemQty` and
+`ObjectRec.uRecovCount`, and ends with the Mars-to-alien-base restart tail. Three globals named:
+`Map_bEnemyTurnActive @ 0x113A13`, `Map_nBannerFadeTicks @ 0x113A1C`, `pTactCtx272 @ 0x157180`;
+`Tact_ScanVictoryTiles`' parameters renamed to the Map fields it really reads (`bSpawnAlt`,
+`nSpawnTileX`, `nSpawnTileY`). Written up in `docs/parity/game-core.md` under
+`## Tact_CheckBattleEnd (0x34fbc): the debrief emitter`.
+
+The unit before it (`519f9d3`) ported `Tact_ClearSoldierBattleFlags` (0x346e0, 2268 B) with its callee
+`Soldier_PromoteByTypeScores` (0x47280, 1096 B): the five-rung rank ladder, the per-class stat refresh
+and the promotion report. **Testing the refresh found a real port bug.** The growth rule's auStatBase
+index is not its auStat index — the ARM reads `auStatBase+0x10` (index 8) to grow `auStat+0x12`
+(index 9), and reads `0xF2` (index 7) to grow `0xB2` (index 8) — and the port used the stat index for
+both, so the class-8 rule read `auStatBase[9]`, past the end of a nine-entry array into the bytes
+before `uKills`. `g_aClassStatGrowth @ 0xAA930` (was `byte_AA930`), six classes x nine weights of
+1..3, is now byte-checked against the image by audit_tables.py.
+
+The unit before that (`cd1d2f0`) settled that **`unk_128A8C` @ Map+0x150D4 is the victory flag**, not
+an abort flag, and the port had it backwards: `Tact_CheckBattleEnd` writes it — set at 0x350F0 when no
+enemy is left, cleared at 0x35070 when no Xcom unit is left and at 0x351CC when a `MissionType_XcomBase`
+mission is called off — and the debrief reads it as the win/lose switch (TEXTS[160] "Victory" at
+0x353C4, TEXTS[161] "Defeat" at 0x35400, green/red caption in `TactHud_DrawStatusBanner` at 0x1E968).
+The reason no writer looked to exist is recorded as a general trap: ARM cannot encode a 6684-byte
+displacement, so every far Map access is register-built and IDA records no data xref for it.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -71,10 +84,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 891 / 1103 (80.8%)
-                                             bytes cited:     411568 / 598792 (68.7%)
-python docs/parity/audit_credits.py       -> credited functions: 891, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 349 (explain 212 citations)
+python docs/parity/coverage.py            -> functions cited: 892 / 1103 (80.9%)
+                                             bytes cited:     417316 / 598792 (69.7%)
+python docs/parity/audit_credits.py       -> credited functions: 892, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 352 (explain 212 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 122, ORIGINAL BUG markers in src/pufo: 47
                                              ledger and port agree: every marker is listed and every row resolves
@@ -93,12 +106,18 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11661**. Coverage as of the latest commit: **891 / 1103
-functions (80.8%)**, **411568 / 598792 bytes (68.7%)**. This unit ported `Tact_ClearSoldierBattleFlags`
-(0x346e0, 2268 B) and its callee `Soldier_PromoteByTypeScores` (0x47280, 1096 B) — 3364 bytes, 106 new
-checks — named `Map_bPromotionReport @ 0x1153D8`, `g_aClassStatGrowth @ 0xAA930`,
-`nPromoteBestScore @ 0x15880C` and `nPromoteBestPick @ 0x158810`, and fixed the port's auStatBase index
-(see §8). The unit before it renamed `unk_128A8C` → `Map_bMissionVictory` in the IDB and
+Test checks run across the 56 suites: **11791**. Coverage as of the latest commit: **892 / 1103
+functions (80.9%)**, **417316 / 598792 bytes (69.7%)**. This unit ported `Tact_CheckBattleEnd`
+(0x34fbc, 5,748 B) — the debrief emitter the four post-battle tallies run inside: the four early exits,
+the cannot-complete exit, the 19 debrief lines with their three meta shapes, the loot commit into
+`aSmapSites` and `ObjectRec.uRecovCount`, `g_nFundPending`, and the Mars-to-alien-base restart tail.
+130 new checks, three globals named (`Map_bEnemyTurnActive @ 0x113A13`, `Map_nBannerFadeTicks @
+0x113A1C`, `pTactCtx272 @ 0x157180`), and `Tact_ScanVictoryTiles`' parameters renamed to the Map
+fields they actually read (`bSpawnAlt`, `nSpawnTileX`, `nSpawnTileY`). The unit before it ported
+`Tact_ClearSoldierBattleFlags` (0x346e0, 2268 B) and its callee `Soldier_PromoteByTypeScores` (0x47280,
+1096 B) — 3364 bytes, 106 new checks — named `Map_bPromotionReport @ 0x1153D8`, `g_aClassStatGrowth @
+0xAA930`, `nPromoteBestScore @ 0x15880C` and `nPromoteBestPick @ 0x158810`, and fixed the port's
+auStatBase index (see §8). The unit before it renamed `unk_128A8C` → `Map_bMissionVictory` in the IDB and
 `pbMissionAborted` → `pbMissionVictory` in the port, and named four more Map fields
 (`Map_szMissionCaption`, `Map_szMissionScore`, `Map_nDebriefLine`, `Map_nMissionOutcome`). The unit
 before that ported the four
@@ -289,7 +308,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 196 | 214 | 126564 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 197 | 214 | 132312 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -304,13 +323,13 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Twenty-four commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+Twenty-five commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
 transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, the
 radar (intercept) screen taken from its leaves inward until all sixteen functions were in, the funding
 screen taken from its arithmetic to its drawing, the inventory screen's close path — which closes the
 `tact-ui` subsystem — the four post-battle tallies that produce the mission debrief, the victory-flag
-naming fix they left open, and the post-mission soldier cleanup that runs the rank ladder and the
-per-class stat refresh.
+naming fix they left open, the post-mission soldier cleanup that runs the rank ladder and the per-class
+stat refresh, and the battle-end / debrief emitter that runs all of them.
 
 | Commit | Change | Why |
 |---|---|---|
@@ -335,9 +354,10 @@ per-class stat refresh.
 `94620a9`, `328171f` is the region naming fix, `f1a4daa` is the funding screen's own UI
 (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`),
 `ba0ab78` is `Inv_CloseAndCommit` (0x15a48) completing `tact-ui`, `8a2f64e` is the four post-battle
-tallies (0x3348c, 0x33780, 0x33c80, 0x344b4), `cd1d2f0` is the victory-flag naming fix, and the unit
-this document is committed with — `Tact_ClearSoldierBattleFlags` (0x346e0) with its callee
-`Soldier_PromoteByTypeScores` (0x47280) — follows `cd1d2f0`; all are described in §2.
+tallies (0x3348c, 0x33780, 0x33c80, 0x344b4), `cd1d2f0` is the victory-flag naming fix, `519f9d3` is
+`Tact_ClearSoldierBattleFlags` (0x346e0) with its callee `Soldier_PromoteByTypeScores` (0x47280), and
+the unit this document is committed with — `Tact_CheckBattleEnd` (0x34fbc) — follows `519f9d3`; all are
+described in §2.
 
 ### A real crash found in already-ported code
 
@@ -435,7 +455,7 @@ Three audits exist because claims drifted:
 
 - `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
 - `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
-  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 349 rows) or as a
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 352 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
   against the shipped image. 28 tables, 0 mismatches.
@@ -468,7 +488,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 11661 checks, all passing.
+- 56 test suites, 11791 checks, all passing.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -538,14 +558,13 @@ This is the shortest chain that produces a real game session, in dependency orde
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
-| 0x34fbc | `Tact_CheckBattleEnd` | 5,748 | |
 | 0x52adc | `Tact_ProcessFallAction` | 5,716 | |
 | 0x7fcb0 | `StrategList_ProcessEvents` | 4,904 | |
 | 0x57808 | `BaseAtScreen_Update` | 3,872 | |
 
 (Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
-`Tact_InitMission` and `Tact_DrawCommandPads` are no longer listed here.)
+`Tact_InitMission`, `Tact_DrawCommandPads` and `Tact_CheckBattleEnd` are no longer listed here.)
 
 `strat` is the weakest subsystem by bytes: 76,372 of 160,496 (47.6%), because `Geoscape_Draw` and the
 pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
@@ -844,6 +863,10 @@ These are all real, all paid for already.
   auStat[8], auStatBase[8] holds auStat[9] — so the port's single-index version read `auStatBase[9]`,
   past the end of the array. Whenever a read and a write in one block carry different offsets, the
   array is compacted and the pairing is part of the behaviour, not noise.
+- **A byte flag compared to 1 may be read signed.** `abFacilityGrid[0x618]` is loaded with `LDRSB` at
+  0x35160 and tested against 1, so -1 is *not* "set"; Hex-Rays renders the same test as an unsigned
+  `char` comparison and a `!= 0` reading would take the failed-base-defence exit on a -1 cell. When a
+  byte global gates a branch, read the load mnemonic: `LDRB` and `LDRSB` are different predicates.
 - `cmake --build build -C Release` is **invalid**. CMake wants `--config Release`; only `ctest`
   takes `-C`. The invalid form prints a usage block and exits 1, and piped through
   `grep -iE "error|warning"` the usage text matches nothing, so a filtered build looks clean while

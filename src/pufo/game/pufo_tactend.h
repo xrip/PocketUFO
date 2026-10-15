@@ -415,4 +415,225 @@ typedef struct TactBattleFlagsEnv {
 /* Tact_ClearSoldierBattleFlags @ 0x346e0. */
 void Tact_ClearSoldierBattleFlags(const TactBattleFlagsEnv *pEnv);
 
+/* ================================================================== the battle-end gate and the debrief
+ *
+ * Evidence: Tact_CheckBattleEnd @ 0x34fbc (5,748 B, 122 blocks).
+ *
+ * ## The head: three early exits, then the win/lose decision
+ *
+ * `bAbort` is stored straight into Map_bAltOutcomePath (0x34FE4) -- the caller's abort request IS
+ * the alternate-outcome path the tallies gate on. Then, in order:
+ *
+ *   Map_bBattleEnded != 0                    -> return, nothing to do (0x34FEC)
+ *   Tact_ScanVictoryTiles() != 0             -> Tact_Shutdown(1) + EndScreen_Init(1), tick hold,
+ *                                              battle ended, return (0x35004..0x35030)
+ *   bAbort != 0                              -> Map_nMissionOutcome = 2, tick hold (0x35104)
+ *   Map_nXcomUnitCount == 0                  -> Map_bMissionVictory = 0, tick hold, outcome 1
+ *   live non-civilian enemies + reserve == 0 -> Map_bMissionVictory = 1, outcome 0, tick hold
+ *     and not an unfinished alien base          (0x350F0). The enemy count walks apEnemyUnits @
+ *                                              Map+0x151CC and skips nUnitType 0x10/0x11, the
+ *                                              civilians (0x350A0, 0x350A4).
+ *   Map_bTickHold == 0 after all that        -> return: the battle is still running (0x35118)
+ *
+ * Map_nMissionOutcome @ Map+0x1A1C gets 1 / 0 / 2 for lost / won / aborted and has no reader
+ * anywhere in the binary -- a dead store the port reproduces.
+ *
+ * ## The fourth exit: a mission that cannot be completed
+ *
+ *   0x35124  (AlienBase || MarsOrSpecial) && Map_bSpawnAlt != 0
+ *   0x35150  abFacilityGrid[0x618] == 1 && nMissionType == XcomBase
+ *
+ * either one, together with Map_bMissionVictory == 0, gives Tact_Shutdown(1) + EndScreen_Init(0)
+ * and returns (0x3517C..0x35198). The second arm is reached only when the type is neither 4 nor 9,
+ * which is what makes its `== 3` test the failed base-defence path. abFacilityGrid+0x618 is read as
+ * a SIGNED byte (LDRSB at 0x35160) and compared to 1.
+ *
+ * ## The debrief setup
+ *
+ * Tact_GetCameraBounds (0x3519C) gives the box the unit and item tallies use. An aborted
+ * Xcom-base mission clears Map_bMissionVictory AND the local copy of bAbort (0x351CC, 0x351D0),
+ * which is why the TEXTS[168] "Craft Lost" line is not emitted for a base defence. Then
+ * Map_nUiScreen = 13 (0x351EC, a STRH), Map_bBattleEnded = 1, dword_113A1C = 10 (the banner fade
+ * counter TactHud_DrawStatusBanner gates on), pTactCtx272->bBusy = 0 (0x35228) and
+ * Map_bEnemyTurnActive = 0 (0x3523C).
+ *
+ * The four tallies run back to back, then Map_bPromotionReport = 0 and both promotion panels'
+ * nLineCount = 0, then every soldier is marked lost -- Soldier.bFlags |= 0x20 -- when
+ *
+ *   (aborted and the soldier is outside the extraction box) or (not aborted and the mission was lost)
+ *
+ * (0x3531C..0x35364). Bit 5 of bFlags is the dead bit Unit_AnimatePose reads, so a wipe or an
+ * abandoned squad is killed off here rather than removed. Tact_ClearSoldierBattleFlags (0x35380)
+ * then runs the rank ladder and the stat refresh.
+ *
+ * ## The debrief lines
+ *
+ * Map_nDebriefLine @ Map+0x150D0 is the line cursor. Each line copies its TEXTS record into
+ * pUiPanel0 @ 0x1568E8 apLines[n] (the label column), colours both columns with
+ * UiPanel_SetLineMeta, and writes the value into pUiPanel1 @ 0x1568E4 anLineAux[n]. Three meta
+ * shapes appear: red (255, 0, 0, 90, 0, 0), green (0, 255, 0, 0, 90, 0) and -- only on the nine
+ * loot lines -- (0, 255, 255, 0, 90, 90). The running score is the sum of the emitted terms; it
+ * lands in g_nFundPending (0x365B0) and, as text, in Map_szMissionScore @ Map+0x150B2 (0x3654C).
+ *
+ *   gate                                      TEXTS  value column / score term
+ *   operatives lost > 0                       162    -30 each
+ *   tanks lost > 0                            163    -80 each
+ *   civilians killed > 0                      164    -30 each
+ *   civilians rescued, and the mission was won 165   +30 each
+ *   aliens killed, won                        166    +20 each
+ *   live aliens recovered > 0, won            167    +30 each (Tact_TallyItemRecovery's out-value)
+ *   won and nMissionType == AlienBase         169    +500 "Base Destroyed"
+ *   lost and nMissionType == XcomBase         170    -700 "Base Lost"
+ *   lost, not a base defence, not aborted     168    -400 "Craft Lost"
+ *   won, alloys / 8 > 0                       171    alloys / 8
+ *   won, elerium > 0                          172    elerium
+ *   won, navigation > 0                       173    15 each
+ *   won, power source > 0                     174    20 each
+ *   won, reproduction > 0                     175    2 each
+ *   won, food > 0                             176    1 each
+ *   won, examination > 0                      198    the raw count, but 10 each in the score
+ *   won, entertainment > 0                    177    2 each
+ *   won, surgery > 0                          178    2 each
+ *
+ * The examination line is the one place where the value column and the score term differ: the
+ * column shows the room count (0x36218) and the score adds 10 per room (0x36230). Only one of the
+ * three base/craft lines can appear -- won gives 169 for an alien base and nothing otherwise, lost
+ * gives 170 for a base defence and otherwise 168 unless the mission was aborted.
+ *
+ * ## Committing the loot to the working site
+ *
+ * Each loot line also writes its count into aSmapSites[nSmapSiteCount].auItemQty[obj] and adds it
+ * to that object's ObjectRec.uRecovCount (apObjects[obj] @ Map+0x108 + 4*obj, field +0xCC), and
+ * sets the local "loot recorded" flag. After the lines, if any loot was recorded -- from these
+ * lines or from Tact_TallyCraftRecovery -- the site record is committed (0x364A0..0x36510):
+ *
+ *   bHasLoot (SmapSite + 0x2E4) = 1
+ *   bFlag1   (SmapSite + 0x001) = apBases[apCraft[Map_nCraftIndex]->bHomeBase]->bUnk4
+ *   bFlag0   (SmapSite + 0x000) = 8
+ *   nSmapSiteCount += 1
+ *
+ * Both panels' nStyle then take the line count (0x36514, 0x36524), which is what makes the debrief
+ * draw exactly the rows that were emitted.
+ *
+ * ## The Mars restart tail
+ *
+ * 0x162028 (the replacement-spawn gate) is set to 1 unconditionally (0x36584). Then, when the
+ * mission was the Mars/special type with the alternate spawn, it restarts in place as an alien
+ * base: Tact_Shutdown(0), Map_nMissionType = 4, Map_bMissionMode = 2, Map_nTerrainVariant = 0,
+ * Map_nMapLayers = 0, Map_bUnk15115 = 0, Map_bFrameScratch = 1, Tact_InitMission(0)
+ * (0x36594..0x365F8).
+ */
+
+/* The debrief's TEXTS records. Every label address in the ARM is aTextRecs + 205*n. */
+#define PUFO_DEBRIEF_TEXT_VICTORY        160
+#define PUFO_DEBRIEF_TEXT_DEFEAT         161
+#define PUFO_DEBRIEF_TEXT_OPERATIVES     162
+#define PUFO_DEBRIEF_TEXT_TANKS          163
+#define PUFO_DEBRIEF_TEXT_CIV_KILLED     164
+#define PUFO_DEBRIEF_TEXT_CIV_RESCUED    165
+#define PUFO_DEBRIEF_TEXT_ALIENS_KILLED  166
+#define PUFO_DEBRIEF_TEXT_ALIENS_LIVE    167
+#define PUFO_DEBRIEF_TEXT_CRAFT_LOST     168
+#define PUFO_DEBRIEF_TEXT_BASE_DESTROYED 169
+#define PUFO_DEBRIEF_TEXT_BASE_LOST      170
+#define PUFO_DEBRIEF_TEXT_ALLOYS         171
+#define PUFO_DEBRIEF_TEXT_ELERIUM        172
+#define PUFO_DEBRIEF_TEXT_NAVIGATION     173
+#define PUFO_DEBRIEF_TEXT_POWER_SOURCE   174
+#define PUFO_DEBRIEF_TEXT_REPRODUCTION   175
+#define PUFO_DEBRIEF_TEXT_FOOD           176
+#define PUFO_DEBRIEF_TEXT_ENTERTAINMENT  177
+#define PUFO_DEBRIEF_TEXT_SURGERY        178
+#define PUFO_DEBRIEF_TEXT_EXAMINATION    198
+
+#define PUFO_DEBRIEF_UI_SCREEN       13   /* Map_nUiScreen for the debrief screen (0x351EC) */
+#define PUFO_BANNER_FADE_TICKS       10   /* dword_113A1C @ Map+0x64 (0x351FC) */
+#define PUFO_SOLDIER_FLAG_LOST       0x20 /* Soldier.bFlags bit 5, the dead/lost mark (0x3535C) */
+#define PUFO_FACILITY_END_FLAG_SET   1    /* abFacilityGrid[0x618] @ 0x159D80, read signed */
+#define PUFO_DEBRIEF_SITE_FLAG0      8    /* SmapSite.bFlag0 as the debrief commits the site */
+
+/* The object each loot line credits, as its apObjects index. */
+#define PUFO_LOOT_OBJ_ALLOYS        106
+#define PUFO_LOOT_OBJ_ELERIUM       105
+#define PUFO_LOOT_OBJ_NAVIGATION    109
+#define PUFO_LOOT_OBJ_POWER_SOURCE  107
+#define PUFO_LOOT_OBJ_REPRODUCTION  111
+#define PUFO_LOOT_OBJ_FOOD          110
+#define PUFO_LOOT_OBJ_EXAMINATION   143
+#define PUFO_LOOT_OBJ_ENTERTAINMENT 142
+#define PUFO_LOOT_OBJ_SURGERY       108
+
+typedef struct TactBattleEndHooks {
+    /* Tact_Shutdown @ 0x3d568 needs the app layer's teardown env and Tact_InitMission @ 0x3c550
+     * needs the whole mission-init env, so the teardown trio arrives as hooks the way
+     * Input_OnLeft's shutdown hooks do. Each hook call site below cites the original address. */
+    void (*pfnShutdown)(u8 bKeepSome, void *pUser);
+    void (*pfnEndScreenInit)(u8 bGoodEnd, void *pUser);
+    void (*pfnInitMission)(i32 nMode, void *pUser);
+    /* Tact_ScanVictoryTiles @ 0x33264 probes a 2x2 block of the cell grid at the mission spawn
+     * tile; the port injects the probe. */
+    bool (*pfnCellHasNoItems)(i32 nX, i32 nY, void *pUser);
+    void *pUser;
+} TactBattleEndHooks;
+
+typedef struct TactBattleEndEnv {
+    /* the tallies and the cleanup, in the order the original runs them */
+    const TactTileTallyEnv  *pTiles;   /* 0x35240 */
+    const TactUnitTallyEnv  *pUnits;   /* 0x35284 */
+    const TactItemTallyEnv  *pItems;   /* 0x352BC */
+    const TactCraftTallyEnv *pCraft;   /* 0x352E4 */
+    TactBattleFlagsEnv       flags;    /* 0x35380 */
+    CameraBoundsCtx          camera;   /* 0x3519C */
+
+    /* the head gates */
+    u8        *pbBattleEnded;     /* Map_bBattleEnded @ Map+0x5C */
+    u8        *pbTickHold;        /* Map_bTickHold @ Map+0x5A */
+    u8        *pbAltOutcomePath;  /* Map_bAltOutcomePath @ Map+0x1A21 */
+    u8        *pbMissionVictory;  /* Map_bMissionVictory @ Map+0x150D4 */
+    i32       *pnMissionOutcome;  /* Map_nMissionOutcome @ Map+0x1A1C, written and never read */
+    u8        *pnMissionType;     /* Map_nMissionType @ Map+0x1511A */
+    u8        *pbSpawnAlt;        /* Map_bSpawnAlt @ Map+0x15148 */
+    const i8  *pnFacilityEndFlag; /* abFacilityGrid[0x618] @ 0x159D80, read as a signed byte */
+    const u8  *pnSpawnTileX;      /* Map_nSpawnTileX @ Map+0x1514C */
+    const u8  *pnSpawnTileY;      /* Map_nSpawnTileY @ Map+0x15150 */
+
+    /* the enemy scan */
+    Soldier   **apEnemyUnits;     /* apEnemyUnits @ Map+0x151CC */
+    const u8  *pnEnemyCount;      /* nEnemyUnitCount @ Map+0x15124 */
+    const i32 *pnEnemyReserve;    /* Map_nEnemyReserveCount @ Map+0x15144 */
+    const u8  *pnXcomCount;       /* nXcomUnitCount @ Map+0x1511F */
+
+    /* the debrief screen and its two columns */
+    u16       *puUiScreen;        /* Map_nUiScreen @ Map+0x3A */
+    i32       *pnBannerFadeTicks; /* dword_113A1C @ Map+0x64 */
+    u8        *pbCtxBusy;         /* pTactCtx272 @ 0x157180 -> bBusy @ +0xF8 */
+    u8        *pbEnemyTurnActive; /* Map_bEnemyTurnActive @ Map+0x5B (was unk_113A13) */
+    UiPanel   *pPanelLabel;       /* pUiPanel0 @ 0x1568E8, the label column */
+    UiPanel   *pPanelValue;       /* pUiPanel1 @ 0x1568E4, the value column */
+    i32       *pnDebriefLine;     /* Map_nDebriefLine @ Map+0x150D0 */
+    char      *pszCaption;        /* Map_szMissionCaption @ Map+0x15094 */
+    char      *pszScore;          /* Map_szMissionScore @ Map+0x150B2 */
+    const char *pTextRecs;        /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+
+    /* the loot commit */
+    BaseRec   **apBases;          /* apBases @ Map+0x1174 */
+    i32       *pnSiteCount;       /* nSmapSiteCount @ 0x186410, the slot the commit fills. The
+                                   * craft tally env carries the same global read-only; the debrief
+                                   * is what advances it, so it needs its own writable handle. */
+
+    /* the tail */
+    u8        *pbSpawnOnceFlag;   /* 0x162028, the replacement-spawn gate */
+    i32       *pnFundPending;     /* g_nFundPending @ 0x1865BC */
+    u8        *pbMissionMode;     /* Map_bMissionMode @ Map+0x1511D */
+    u8        *pnTerrainVariant;  /* Map_nTerrainVariant @ Map+0x15111 */
+    u8        *pnMapLayers;       /* Map_nMapLayers @ Map+0x15114 */
+    u8        *pbUnk15115;        /* Map_bUnk15115 @ Map+0x15115 */
+    u8        *pbFrameScratch;    /* Map_bFrameScratch @ Map+0x254BC */
+
+    TactBattleEndHooks hooks;
+} TactBattleEndEnv;
+
+/* Tact_CheckBattleEnd @ 0x34fbc. */
+void Tact_CheckBattleEnd(const TactBattleEndEnv *pEnv, u8 bAbort);
+
 #endif /* PUFO_TACTEND_H */
