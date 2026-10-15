@@ -69,6 +69,12 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pnCivilianCount = &pMap->nCivilianCount;
 
     pOut->pAim            = &pMap->aim;
+    /* The aim block and the ten arc samples are one region of the Map context, and
+     * the trace writes the running sample into the Map's arrays (0x2FE6C). Pointing
+     * the AimState at them is what lets it do that. */
+    pMap->aim.padMtX      = pMap->adMtX;
+    pMap->aim.padMtY      = pMap->adMtY;
+    pMap->aim.padMtZ      = pMap->adMtZ;
     pOut->pTables         = pTables;
     pOut->pScatter        = &pMap->scatter;
     pOut->pAdMtX          = pMap->adMtX;
@@ -78,8 +84,10 @@ void Map_BuildMoveActionCtx(GameMap *pMap, const LosTables *pTables,
     pOut->pThrowLanding   = &pMap->throwLanding;
     pOut->pThrowBudget    = &pMap->throwBudget;
     pOut->bThrowHitStop   = pMap->bTrajHitStop;
-    pOut->pTraceExcludeSel   = pMap->apTraceExclude[0];
-    pOut->pTraceExcludeExtra = pMap->apTraceExclude[1];
+    /* 0x3242C skips Map.pSelUnit and the unit at Map.pThrowTargetUnit; the arc trace
+     * takes them as arguments because the port has no Map block. */
+    pOut->pTraceExcludeSel   = pMap->pSelUnit;    /* 0x15334 */
+    pOut->pTraceExcludeExtra = pMap->pThrowTarget; /* 0x150F0 */
 }
 
 /* --- text records ------------------------------------------------------------

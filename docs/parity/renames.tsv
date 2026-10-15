@@ -374,10 +374,27 @@ unk_118800	Map_bEnemySpotted	renamed in the IDB (Map+0x4E48). Set by Unit_SpotCe
 unk_128B0C	Map_apXcomUnits	renamed in the IDB (Map+0x15154). The Xcom roster array the fall processor appends a panicked unit to at 0x52D80, and that the visibility sweeps at 0x53908, 0x53BB0 and 0x52EC8 walk. Counted by nXcomUnitCount (Map+0x1511F).
 unk_128B84	Map_apEnemyUnits	renamed in the IDB (Map+0x151CC). The enemy roster array the fall processor appends to at 0x52DFC (psi panic) and 0x53288 (chryssalid transform). Counted by nEnemyUnitCount (Map+0x15124).
 byte_113A0A	Map_bFallDamagePending	renamed in the IDB (Map+0x52). Arms the nCmd 0xF Unit_ApplyFallDamage roster sweep (tested at 0x53BF0, cleared at 0x53C7C).
-byte_127A25	Map_bThrowPending	renamed in the IDB (Map+0x1406D). Arms the nCmd 0x11 thrown-item landing (tested at 0x53CEC, cleared at 0x53D0C).
+byte_127A25	Map_bTrajHitStop	renamed in the IDB (Map+0x1406D), matching the Map struct member the decompiler already showed. Arms the nCmd 0x11 thrown-item landing (tested at 0x53CEC, cleared at 0x53D0C); also written by Tact_SimulateThrowArc at 0x31A0C. The port's action contexts call it pbThrowPending. An earlier row named it Map_bThrowPending, which disagreed with the struct member in the same IDB.
 unk_1279F8	Map_nMeleeCellX	renamed in the IDB (Map+0x14040). The melee target cell X; Tact_ProcessFallAction looks the cell up at 0x52BE0 and clears its bFlags29 bit 5.
 unk_1279FC	Map_nMeleeCellY	renamed in the IDB (Map+0x14044). The melee target cell Y.
 unk_127A00	Map_nMeleeCellLayer	renamed in the IDB (Map+0x14048). The melee target cell layer.
-unk_1278A8	Map_dThrowX	renamed in the IDB (Map+0x140F0). The thrown item's flight end X, in sub-cell units: 16 to a cell. Read through _dtoi at 0x53DB4.
-unk_1278F8	Map_dThrowY	renamed in the IDB (Map+0x14140). The thrown item's flight end Y, 16 sub-cells to a cell.
-unk_127948	Map_dThrowLayer	renamed in the IDB (Map+0x14190). The thrown item's flight end layer, 12 sub-units to a layer.
+unk_1278A8	Map_dThrowX	renamed in the IDB (Map+0x13EF0). The thrown item's previous flight position - arc sample slot 1 (Map_adMtX is slot 0). Read through _dtoi at 0x53DB4, written at 0x52260.
+unk_1278F8	Map_dThrowY	renamed in the IDB (Map+0x13F40). The thrown item's previous Y - arc sample slot 1. Written at 0x52288.
+unk_127948	Map_dThrowLayer	renamed in the IDB (Map+0x13F90). The thrown item's previous layer, 12 sub-units to a layer - arc sample slot 1. Written at 0x522B0.
+unk_1279BC	Map_nAimOriginX	renamed in the IDB (Map+0x14004). The muzzle origin X in voxels; Tact_ComputeAimVector writes it, Tact_ProcessFireAction cmd 0xE and 0x11 rebuild the samples from it at 0x514D4 and 0x52348.
+unk_1279C0	Map_nAimOriginY	renamed in the IDB (Map+0x14008). The muzzle origin Y. Written at 0x51584 and 0x523A0.
+unk_1279C4	Map_nAimOriginZ	renamed in the IDB (Map+0x1400C). The muzzle origin Z; also the vertical-rise term of the throw step at 0x51FB0.
+unk_1279D0	Map_nAimTargetZ	renamed in the IDB (Map+0x14018). The aim target Z; |targetZ - originZ| scales the throw step at 0x51FCC..0x52018.
+unk_1279D8	Map_dTravel	renamed in the IDB (Map+0x14020). The fire FSM's own flight counter: +10.0 per shot frame (0x511F0), +5.0 per throw frame (0x520D0). Tact_ComputeAimVector resets it to 0.0; the arc walk uses a local counter.
+qword_1279E0	Map_dAngleYaw	renamed in the IDB (Map+0x14028). atan2(dy, dx); read at 0x51480, 0x5152C, 0x522E4 and 0x52364.
+qword_1279E8	Map_dAnglePitch	renamed in the IDB (Map+0x14030). atan2(dz, hypot(dx, dy)); read at 0x5145C, 0x5151C, 0x515C0 and 0x523F8..0x52420.
+unk_1279F0	Map_dTravelSave	renamed in the IDB (Map+0x14038). The distance the last arc walk took: written at 0x302D0 and 0x323BC, compared against Map_dTravel at 0x516D8 and 0x52628.
+unk_127A04	Map_nFireArg5	renamed in the IDB (Map+0x1404C). The LOS outcome code passed to Combat_ResolveShot as its slot argument at 0x51CF0 and 0x51F18.
+unk_127A08	Map_pFireWeapon	renamed in the IDB (Map+0x14050). The ObjectRec of the weapon the shot resolved with; Combat_ResolveShot reads it back at 0x2F254 and Map_ComputeFov at 0x2E04C. Hex-Rays rendered it as nFireArg6.
+unk_127A24	Map_bFireHitResult	renamed in the IDB (Map+0x1406C), matching the Map struct member the decompiler already showed. Cleared at 0x2FC54 by every Tact_TraceProjectileArc call and set to 1 at 0x3010C when the walked sample leaves the map; read at five places in Tact_ProcessFireAction. An earlier row named it Map_bFireInFlight and claimed it was never written - both writes are register-built offsets (MOV R11,#0x14000 / ORR R11,#0x6C, then a pre-indexed STRB), so xrefs_to finds neither.
+unk_127A30	Map_dArcDenom	renamed in the IDB (Map+0x14078). The throw's launch speed v0; the gravity term at 0x524FC divides by 2 * v0^2 * cos^2(pitch).
+unk_127A38	Map_dTrajBound	renamed in the IDB (Map+0x14080). Hypot of the horizontal run; read at 0x51734, 0x51C9C, 0x52000 and 0x5203C.
+qword_1278A0	Map_adMtX	renamed in the IDB (Map+0x13EE8). The ten arc sample X doubles, 16 voxels to a cell; slot 1 is Map_dThrowX.
+qword_1278F0	Map_adMtY	renamed in the IDB (Map+0x13F38). The ten arc sample Y doubles; slot 1 is Map_dThrowY.
+qword_127940	Map_adMtZ	renamed in the IDB (Map+0x13F88). The ten arc sample Z doubles, 12 to a layer; slot 1 is Map_dThrowLayer.
+dword_1139E0	Map_nBurstShots	renamed in the IDB (Map+0x28). The shot count a mode-7 burst runs (TactState_EnqueueFireBurst at 0x4B144) and the limit nShotCount is compared against at 0x516DC. Tact_SetFireModeAuto writes 3.

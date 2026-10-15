@@ -171,7 +171,8 @@ int main(void)
 {
     MapGeom geom = {1, 1};   /* 10 x 10 cells, 160 x 160 voxels */
     LosTables empty = {NULL, 0, NULL, 0};
-    AimState aim;
+    AimState aim = {0};   /* zero-initialised: AimState now carries the arc-sample
+                           * pointers, and the trace only writes them when set */
     ShotTrace tr;
     ThrowArc arc;
 
@@ -232,6 +233,25 @@ int main(void)
     Check("end voxel 160,160,0", tr.nEndX == 160 && tr.nEndY == 160 && tr.nEndZ == 0);
     Check("no target recorded (no voxel ever blocked)",
           tr.nTgtX == 0 && tr.nTgtY == 0 && tr.nTgtZ == 0);
+
+    printf("the trace's own Map writes (0x302D0, 0x2FE6C)\n");
+    CheckNear("walked distance reaches dTravelSave @ 0x14038", aim.dTravelSave, 85.0);
+    {
+        static double adMt[3][PUFO_AIM_SAMPLE_COUNT];
+        aim.padMtX = adMt[0];
+        aim.padMtY = adMt[1];
+        aim.padMtZ = adMt[2];
+        (void)Tact_TraceProjectileArc(&aim, &empty, &geom, CellLookup, NULL, NULL, NULL,
+                                      100, 100, 0, 116, 116, 0, 0, &tr);
+        /* 100 + 85 * cos(45 deg) = 160.104..., which is what nEndX truncates to 160. */
+        CheckNear("sample slot 0 holds the last position", adMt[0][0], 160.10407640085654);
+        CheckNear("sample slot 0 Y", adMt[1][0], 160.10407640085654);
+        CheckNear("sample slot 0 Z", adMt[2][0], 0.0);
+        Check("the other nine slots are left alone", adMt[0][1] == 0.0);
+        aim.padMtX = NULL;
+        aim.padMtY = NULL;
+        aim.padMtZ = NULL;
+    }
 
     printf("throw solver\n");
     Tact_SimulateThrowArc(&arc, &geom, NULL, NULL, 0, 0, 0, 32, 0, 0);

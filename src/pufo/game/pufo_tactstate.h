@@ -102,7 +102,12 @@ typedef struct TactState {
     u8             gap_70032[12];    /* 0x11190 */
     i32            nStepDrawOffX;    /* 0x1119C */
     i32            nStepDrawOffY;    /* 0x111A0 */
-    i32            nStepCellScratch; /* 0x111A4 */
+    MapCell       *pStepCellScratch; /* 0x111A4, the grid slot Tact_ProcessFireAction
+                                      * cmd 1 reads on the step's destination cell; the
+                                      * original stores the raw pointer and tests its
+                                      * first dword (MapCell.pFloorSpr) for the kneel
+                                      * toggle. Widened from the original's i32 because
+                                      * Win64 pointers are 64-bit. */
     u8             gap_70056[8];     /* 0x111A8 */
     i32            nStepHeightSrc;   /* 0x111B0 */
     i32            nStepHeightDst;   /* 0x111B4 */
@@ -350,9 +355,11 @@ typedef struct MoveActionCtx {
     const InvStatHooks *pInvHooks;    /* for Unit_RecalcInventoryStat */
     bool         bThrowHitStop;   /* Map.bTrajHitStop @ 0x1406D as the throw
                                    * landing call sees it */
-    Soldier           *pTraceExcludeSel;   /* 0x1406C/0x14070 exclusions the arc
-                                            * trace reads; the move FSM forwards
-                                            * whatever the context already holds */
+    Soldier           *pTraceExcludeSel;   /* the two units Map_TraceVoxelOccupancy
+                                            * @ 0x3242C skips: Map.pSelUnit @ 0x15334
+                                            * and Map.pThrowTargetUnit @ 0x150F0. The
+                                            * original reads both from the Map block;
+                                            * the port passes them through. */
     Soldier           *pTraceExcludeExtra;
 
     /* Seams the port has not yet wired to a context object. */
@@ -552,5 +559,126 @@ typedef struct FallActionCtx {
 } FallActionCtx;
 
 void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx);
+
+/* --- Tact_ProcessFireAction @ 0x50adc ---------------------------------------
+ *
+ * The animation driver for a shot, a throw and the phase ticks that follow them.
+ * The switch is on nCmd and handles 0, 1, 3, 4, 5, 8, 0xE, 0xF, 0x10, 0x11 and
+ * 0x12; nCmd 2, 6, 7, 9, 10, 11, 13, 14, 15, 16 and 17 fall to the default, which
+ * only raises bFlag1. Tact_TickActiveUnit @ 0x54130 decides which of the three
+ * processors a queue entry goes to.
+ *
+ *   0    turn: spend one TU (unless the phase object says the unit is mid-turn),
+ *        wrap bFacing by nTurnDir, refresh visibility, and report a sighting when
+ *        the map has spotted an enemy.
+ *   1    the fire-frame step: eight animation frames, TU on every even tick, a
+ *        re-place on tick 4, a per-facing draw-offset ladder, and a kneel/stand
+ *        toggle on tick 4 for the types whose type-record flag 0 is set.
+ *   3    the door animation: on tick 3 the wall sprite the door is standing on is
+ *        replaced by its neighbour (nGlobalIdx - 1 or + 1 through the font index)
+ *        and the other wall slot is cleared. Which way depends on the entry's
+ *        facing byte being 2.
+ *   4    plain animation advance.
+ *   5    the vertical step's draw offset, -2 * nPhaseTick * nFacing.
+ *   8    the death flash, refused for large units and for a non-zero entry arg.
+ *   0xE  the shot flight: dTravel += 10, the ten arc samples re-stamped from the
+ *        muzzle, and the resolve once the flight passes the distance the trace
+ *        walked (or, for the two multi-target weapons, once it reaches the bound).
+ *   0xF  the fall-damage progress tick, ten of them.
+ *   0x10 the whole-map animated-tile decay, then the phase tick.
+ *   0x11 the thrown item's flight: dTravel += 5 (scaled down when the horizontal
+ *        bound is smaller than the vertical rise), then the projectile equation
+ *        from the origin.
+ *   0x12 stamp the shot-trace flag on the melee target cell while the fire
+ *        animation is active.
+ *
+ * Three shared exits. LABEL_157 (0x52AC8) raises bFlag1 and returns. LABEL_155 /
+ * LABEL_156 (0x52AC0) compare a supplied tick count against PUFO_PHASE_TICK_MAX
+ * and fall through to LABEL_157 when it is exceeded. LABEL_70 (0x51170) is the
+ * same test for the door and fall-damage cases. */
+
+/* The flight steps, in voxel units: 16 to a cell in X and Y, 12 to a layer. */
+#define PUFO_FIRE_TRAVEL_STEP   10.0  /* 0x511F0, per shot frame */
+#define PUFO_THROW_TRAVEL_STEP   5.0  /* 0x520D0, per throw frame */
+#define PUFO_SAMPLE_STEP        1.41  /* 0x51400, sample i sits this far behind the head */
+#define PUFO_SAMPLE_OFFMAP  -1000.0   /* 0x5166C, when a sample falls behind the muzzle */
+#define PUFO_THROW_Z_LIMIT      47.0  /* 0x52774, above this the throw has left the map */
+#define PUFO_THROW_XY_SCALE    160.0  /* 0x52718, times nMapDimX, on x AND on y */
+
+/* The tick limits the phase cases compare against. */
+#define PUFO_STEP_FRAME_MAX        6  /* 0x50E94, cmd 1 */
+#define PUFO_DOOR_SWAP_TICK        3  /* 0x5101C, cmd 3 swaps the wall on this tick */
+#define PUFO_ANIM_ADVANCE_MAX      3  /* 0x511A4, cmd 4 */
+#define PUFO_DEATH_FLASH_TICK_MAX  7  /* 0x52A24, cmd 8 */
+#define PUFO_FALL_PROGRESS_MAX    10  /* 0x528A4, cmd 0xF */
+
+/* Bit 5 of MapCell.bFlags29 is the shot-trace flag every stamp here writes; bit 4
+ * of Soldier.bFlags is the kneel flag cmd 1 toggles and bit 2 is the "weapon
+ * raised" flag cmd 0xE refuses without. */
+#define PUFO_CELLFLAG_SHOT_TRACE 0x20u
+#define PUFO_UNITFLAG_KNEEL      0x10u
+#define PUFO_UNITFLAG_AIMING     0x04u
+
+/* The fire FSM's own progress counter, Map.dTravel @ 0x14020, starts from the
+ * value the last aim setup left (Tact_ComputeAimVector writes 0.0) and the shot
+ * lands when it passes Map.dTravelSave @ 0x14038, the distance the trace walked. */
+
+typedef struct FireActionCtx {
+    MapGeom       geom;        /* nMapDimX @ 0x1511B, nMapDimY @ 0x1511C */
+    MapCellLookup pfnLookup;
+    void         *pUser;
+
+    /* Scratch globals. */
+    i8            *pnLayerScratch;      /* 0x15138 */
+    i32           *pnMaxLayerClamp;     /* 0x15074 */
+    i32           *pnAnimPhase;         /* 0x10F8 */
+    i32           *pnShotCount;         /* 0x2C  nShotCount */
+    i32           *pnBurstShots;        /* 0x28  dword_1139E0, the mode-7 shot limit */
+    u8            *pbFireStatus1;       /* 0x51 */
+    u8            *pbFireStatus9;       /* 0x59 */
+    u8            *pbFallDamagePending; /* 0x52 byte_113A0A */
+    u8            *pbThrowPending;      /* 0x1406D byte_127A25 */
+    u8            *pbFireHitResult;     /* 0x1406C Map_bFireHitResult. Written by the
+                                         * aim's arc walk: cleared at 0x2FC54 on every
+                                         * Tact_TraceProjectileArc call and set to 1 at
+                                         * 0x3010C when the walked sample leaves the map
+                                         * (the port's ShotTrace.bLeftMap). Read at five
+                                         * places here: 0x519BC, 0x51C3C, 0x51EE4, 0x51F50
+                                         * and 0x5287C. Both writes are register-built
+                                         * offsets, so xrefs_to finds neither. */
+    u8            *pbEnemySpotted;      /* 0x4E48 unk_118800 */
+    i32           *pnFireTickProgress;  /* 0x1405C nFireTickProgress */
+    i32           *pnFireSlot;          /* 0x1404C nFireArg5, the LOS outcome code */
+    const ObjectRecFull **ppFireObject; /* 0x14050 nFireArg6 */
+
+    /* Flight state. dTravel @ 0x14020, dYaw @ 0x14028, dPitch @ 0x14030,
+     * dBound @ 0x14080, dTravelSave @ 0x14038, the muzzle origin @ 0x14004/08/0C,
+     * the target @ 0x14010/14/18 and the ten samples through padMtX/Y/Z. */
+    AimState  *pAim;
+    ThrowArc  *pThrowArc;      /* dArcDenom @ 0x14078, the throw's launch speed */
+
+    /* Context objects for the callees. */
+    struct TactCtx272   *pTactCtx;      /* pTactCtx272 @ 0x157180, for nPhase */
+    VisCtx              *pVisCtx;       /* Unit_UpdateVisibility @ 0x48580 */
+    Soldier            **apXcomUnits;   /* 0x15154 */
+    u8                  *pnXcomCount;   /* 0x1511F */
+    struct CombatCtx    *pCombat;       /* Combat_ResolveShot @ 0x2f12c */
+    const struct ShotHooks *pShotHooks;
+    struct UnitRosters  *pRosters;
+    u32                 *apHits;        /* the 41 x 41 hit window */
+    u32                 *apHitsSave;    /* the second window the original keeps */
+    struct ShotOutcome  *pShotOut;
+    const struct PufoFont *pFont;       /* fontSys @ 0x158268, for the door sprites */
+
+    /* Seams. pfnUpdateVisibility stands for Unit_UpdateVisibility @ 0x48580 and
+     * pVisCtx is used when it is NULL; pfnArmorTuWarn stands for
+     * Unit_bArmorTuWarn @ 0x4e254; pfnPushStatus takes a TEXTS record index. */
+    bool (*pfnArmorTuWarn)(const Soldier *pUnit, i32 nTuCost, void *pUser);
+    void (*pfnPushStatus)(i32 nTextRecIndex, void *pUser);
+    void (*pfnUpdateVisibility)(Soldier *pUnit, void *pUser);
+    void  *pCallbackUser;
+} FireActionCtx;
+
+void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx);
 
 #endif /* PUFO_TACTSTATE_H */

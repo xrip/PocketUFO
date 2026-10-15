@@ -1,19 +1,37 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `386b8c2`. This document is committed together with the fall
-processor: **`Unit_ApplyFallDamage` (0x4a7b0, 1,000 B) + `Tact_ProcessFallAction` (0x52adc, 5,716 B)** —
-the largest tact pair ported so far, and the tail half of every tactical action. Fall damage is
-soft-float, not fixed point: `damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f)`, where
-1053609165 is `0x3ECCCCCD` = the single 0.4f and `_itos`/`_muls`/`_stoi` are coredll's soft-float helpers;
-`nZ - nLayer - 1` counts floors, so a one-layer step costs nothing. The command switch covers 1, 3, 4, 5,
-8, 0xA, 0xC, 0xE, 0xF, 0x10, 0x11 and 0x12, and its label graph is not a straight line — the
-message-only exit LABEL_101 and the two "morale survived" exits jump past LABEL_111's
-`Unit_UpdateVisibility(pActor)` straight to the tail. The psi gate is `max(1600, victimProduct) /
-actorProduct`, so a weaker attacker cannot fail. Eleven Map globals named (`Map_bEnemySpotted`,
-`Map_apXcomUnits`, `Map_apEnemyUnits`, `Map_bFallDamagePending`, `Map_bThrowPending`,
-`Map_nMeleeCellX/Y/Layer`, `Map_dThrowX/Y/Layer`) and seven original bugs recorded. Written up in
-`docs/parity/game-core.md` under
-`## Unit_ApplyFallDamage (0x4a7b0) and Tact_ProcessFallAction (0x52adc): the fall processor`.
+Date: 2026-10-16. HEAD before this edit: `4ba666b`. This document is committed together with the fire
+phase: **`Tact_ProcessFireAction` (0x50adc, 8,192 B)** — the largest single function ported so far, and the
+half of every tactical action that runs while a unit is shooting. Three things about it are worth knowing
+before you touch it:
+
+- **The phase keeps no state; the Map block is its register file.** `Map_dTravel @ 0x14020` is the FSM's own
+  counter (the aim setup zeroes it), `Map_dTravelSave @ 0x14038` is the distance the aim's arc walk took
+  (0x302D0, 0x323BC), and a shot lands when travel passes travelSave. Neither Map field had a producer in the
+  port, so `AimState` and `Tact_TraceProjectileArc` had to be extended first.
+- **The ten flight samples are measured from the muzzle**, at `dTravel - i * 1.41` from `Map_nAimOriginX/Y/Z`;
+  a sample behind the muzzle is parked at -1000.0. At travel 10 the first eight samples are still in the
+  muzzle cell.
+- **`Map_bFireHitResult @ 0x1406C` is the arc walk's verdict**: `Tact_TraceProjectileArc` clears it at 0x2FC54
+  and sets it at 0x3010C when the walked sample leaves the map, and the fire phase reads it at five places.
+  Both writes are register-built, so `xrefs_to` finds neither — and this unit's first draft fell for exactly
+  that and recorded the field as never written (see §8).
+
+The command switch covers 0, 1, 3, 4, 5, 8, 0xE, 0xF, 0x10, 0x11 and 0x12; the shared exits are LABEL_157
+(0x52AC8), LABEL_155/156 (0x52AC0, `CMP R3,#0xB`) and LABEL_70 (0x51170). 150 new checks, 17 Map globals
+named, 7 original bugs recorded, and three stale offsets plus two wrong names in the rename ledger corrected
+(`Map_dThrowX/Y/Layer` are at 0x13EF0/0x13F40/0x13F90, not 0x140F0/0x14140/0x14190 — they are sample slot 1
+of `Map_adMtX/Y/Z @ 0x13EE8/0x13F38/0x13F88`). Written up in `docs/parity/game-core.md` under
+`## Tact_ProcessFireAction (0x50adc): the fire-phase processor`.
+
+The unit before it (`4ba666b`) ported the fall processor: `Unit_ApplyFallDamage` (0x4a7b0, 1,000 B) +
+`Tact_ProcessFallAction` (0x52adc, 5,716 B). Fall damage is soft-float, not fixed point:
+`damage = (int)((float)(nZ - nLayer - 1) * (float)auStat[1] * 0.4f)`, where 1053609165 is `0x3ECCCCCD` = the
+single 0.4f and `_itos`/`_muls`/`_stoi` are coredll's soft-float helpers; `nZ - nLayer - 1` counts floors, so
+a one-layer step costs nothing. Its label graph is not a straight line — the message-only exit LABEL_101 and
+the two "morale survived" exits jump past LABEL_111's `Unit_UpdateVisibility(pActor)` straight to the tail.
+The psi gate is `max(1600, victimProduct) / actorProduct`, so a weaker attacker cannot fail. Eleven Map
+globals named and seven original bugs recorded.
 
 The unit before it (`386b8c2`) ported `Tact_CheckBattleEnd` (0x34fbc, 5,748 B): the debrief emitter. Its
 head stores the caller's abort request into `Map_bAltOutcomePath` — the same flag the four post-battle
@@ -91,14 +109,15 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 896 / 1103 (81.2%)
-                                             bytes cited:     426312 / 598792 (71.2%)
-python docs/parity/audit_credits.py       -> credited functions: 896, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 363 (explain 212 citations)
-                                             credited addresses whose original name is not defined: 2
-                                             (0x54130 Tact_TickActiveUnit, 0x17bb8 TactAction_ConfirmMeleeMode6
-                                              - both cited by port names the IDB does not carry yet)
-python docs/parity/audit_bugs.py          -> ledger rows: 129, ORIGINAL BUG markers in src/pufo: 48
+python docs/parity/coverage.py            -> functions cited: 898 / 1103 (81.4%)
+                                             bytes cited:     435608 / 598792 (72.7%)
+python docs/parity/audit_credits.py       -> credited functions: 898, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 380 (explain 212 citations)
+                                             credited addresses whose original name is not defined: 3
+                                             (0x54130 Tact_TickActiveUnit, 0x1512c Tact_HandleMapClick,
+                                              0x17bb8 TactAction_ConfirmMeleeMode6 - all three cited by port
+                                              names the IDB does not carry yet)
+python docs/parity/audit_bugs.py          -> ledger rows: 136, ORIGINAL BUG markers in src/pufo: 51
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -115,8 +134,14 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11980**. Coverage as of the latest commit: **896 / 1103
-functions (81.2%)**, **426312 / 598792 bytes (71.2%)**. This unit ported `Unit_ApplyFallDamage`
+Test checks run across the 56 suites: **12130**. Coverage as of the latest commit: **898 / 1103
+functions (81.4%)**, **435608 / 598792 bytes (72.7%)**. This unit ported `Tact_ProcessFireAction`
+(0x50adc, 8,192 B) — the fire-phase interpreter, twelve command cases, the ten muzzle-relative flight
+samples, the two disagreeing 1/12 conversions, the throw's ballistic-drop landing, the cell-flag decay
+sweep — and closed the two producer-side gaps it reads but nothing produced yet: `Map_dTravelSave` and the
+`Map_adMtX/Y/Z` sample arrays, both now written by `Tact_TraceProjectileArc` and by `MoveThrow`. 150 new
+checks, 17 Map globals named, 7 original bugs recorded in the ledger, and three stale offsets plus two wrong names in the rename
+ledger corrected. The unit before it ported `Unit_ApplyFallDamage`
 (0x4a7b0, 1,000 B) and `Tact_ProcessFallAction` (0x52adc, 5,716 B) — the fall processor and the tail half
 of every tactical action: the three fall refusals, the footprint-aware descent, the 0.4f soft-float damage
 formula, the landing sweep, the twelve-case command switch, the psi gate and its morale formula, the psi
@@ -320,7 +345,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 201 | 214 | 141308 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 203 | 214 | 150604 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -455,7 +480,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 44 rows, 13 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 136 rows, 51 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -568,7 +593,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 | 0x27bb8 | `Unit_CanStepTo` | 14,716 | |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
 | 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
-| 0x50adc | `Tact_ProcessFireAction` | 8,192 | |
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
@@ -577,9 +601,13 @@ This is the shortest chain that produces a real game session, in dependency orde
 
 (Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
-`Tact_InitMission`, `Tact_DrawCommandPads` and `Tact_CheckBattleEnd` are no longer listed here.)
+`Tact_InitMission`, `Tact_DrawCommandPads`, `Tact_CheckBattleEnd`, `Unit_ApplyFallDamage`,
+`Tact_ProcessFallAction` and `Tact_ProcessFireAction` are no longer listed here.)
 
-`strat` is the weakest subsystem by bytes: 76,372 of 160,496 (47.6%), because `Geoscape_Draw` and the
+`tact` is now down to 11 functions and 27,740 bytes, and 14,716 of those are `Unit_CanStepTo` plus its
+1,068-byte `Map_ProbeStepOccupants` — the step-occupancy probe the path flood needs.
+
+`strat` is the weakest subsystem by bytes: 86,792 of 160,496 (54.1%), because `Geoscape_Draw` and the
 pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
 (66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
 
@@ -777,7 +805,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-16 markers in the source, 52 ledger rows. Examples:
+51 markers in the source, 136 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -796,6 +824,17 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
   succeeded and then calls `MapCell_Init` on it. `MapCell_Init` has no null guard, so a failed
   allocation is a write to address zero. `0x25740` is the same shape at the tail: the cell pointer is
   written through with no null test.
+- `0x51264` vs `0x51E5C` — the same sample-height-to-layer conversion is written two ways inside one
+  function: `(int)(z * (1/12))` in the shot loop, `(int)z / 12` in the three resolve loops. 1/12 is not
+  exact in binary, so at a height that is an exact multiple of 12 the two land a layer apart, and the
+  muzzle heights the aim setup builds are `12*nZ + 6`.
+- `0x52718` — the thrown item's in-bounds test uses `160 * Map_nMapDimX` as the limit for Y as well as
+  for X; `Map_nMapDimY` is never read there.
+- `0x127A24` — `Map_bFireInFlight` is read at five sites and written nowhere in the image, so five
+  branches of the fire phase are permanently one-sided. **This one is retracted**: it was this unit's own
+  misreading. The field is `Map.bFireHitResult`, written by `Tact_TraceProjectileArc` at 0x2FC54 and 0x3010C,
+  both through register-built offsets an xref search cannot see. The ledger row is deleted and the name is
+  corrected. It stays listed because the mistake and its correction are the lesson.
 
 ---
 
@@ -856,8 +895,9 @@ python docs/parity/audit_bugs.py      # bug ledger vs source markers
 python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
-All five must be clean. Expected right now: 0 negated citations, 0 unexplained name flags, ledger
-and markers agree, 28 tables exact.
+All six must be clean. Expected right now: 0 negated citations, 3 name flags (all three are port names the
+IDB does not carry yet — `Tact_TickActiveUnit`, `Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`),
+ledger and markers agree, 40 tables exact.
 
 ### Traps that will cost you a unit if you ignore them
 
@@ -868,7 +908,15 @@ These are all real, all paid for already.
   (`MOV R8,#0x15000; ORR R8,R8,#0xD4; STRB R7,[R5,R8]`) and IDA records no data xref for it. Reading
   "all eight xrefs are reads" for `unk_128A8C` led the port to name a victory flag `pbMissionAborted`.
   For any Map field past +0xFFF, search the listing for the constant halves (`#0x15000`, `#0x1A00`)
-  instead of trusting xrefs.
+  instead of trusting xrefs. This fired again on `Map_dTravelSave @ 0x14038`: the only two writers are
+  `MOV R12,#0x14000; ORR R12,R12,#0x38; STR R3,[R4,R12]` at 0x302D0 and the same shape at 0x323BC, and a
+  pre-indexed `STR R3,[R4,R3]!` writes are invisible the same way. "No xrefs" is not "never written". The
+  cost of not believing this is measurable: `Map.bFireHitResult @ 0x1406C` was named `Map_bFireInFlight`,
+  recorded in the bug ledger as "read at five sites, written nowhere in the image", and a whole paragraph of
+  parity text was written about its five permanently one-sided branches. All of it was wrong — the field is
+  cleared at 0x2FC54 (`MOV R11,#0x14000; ORR R11,R11,#0x6C; STRB R3,[R0,R11]!`) and set at 0x3010C through a
+  stack-held pointer. Before you write a ledger row that says "never written", search the listing for the
+  offset halves and read the function that the decompiler shows writing the struct member.
 - **A read offset and a write offset in the same block are not the same index.** The stat refresh
   looked like `auStat[k] = ... + auStatBase[k]`, but the ARM pairs `LDRH R0,[R8,#Soldier.auStatBase+0x10]`
   (auStatBase[8]) with `STRH R0,[R8,#Soldier.auStat+0x12]` (auStat[9]), and `[R8,#0xF2]` (auStatBase[7])
@@ -892,6 +940,19 @@ These are all real, all paid for already.
   1053609165 = `0x3ECCCCCD` = the single **0.4f** (fall damage), 939524096 = `0x38000000` = 1/32768
   (`Game_RandU16`'s scale). `_dtoi` truncates a double to int, which is how the thrown item's sub-cell
   flight end becomes a cell coordinate.
+- **A reciprocal multiply and an integer divide are not the same expression.** `1/16` is exact in binary,
+  `1/12` is not. `(int)(z * (1.0/12.0))` and `(int)z / 12` agree everywhere except at an exact multiple of
+  12, where the first is one smaller. `Tact_ProcessFireAction` uses the reciprocal form in its shot loop
+  (0x51264) and the integer form in its three resolve loops (0x51E5C, 0x52124, 0x527B8), and the muzzle
+  heights the aim setup builds are `12*nZ + 6`, so the disagreement is reachable in normal play. Do not
+  "normalise" one form into the other; keep both and let the test show the gap.
+- **A flight sample array is measured from the muzzle, not from the unit.** The ten `Map_adMtX/Y/Z`
+  samples sit at `dTravel - i * 1.41` from `Map_nAimOriginX/Y/Z`, so at travel 10 the first eight are still
+  inside the muzzle cell and only the last two reach the next one. A "one sample per step" reading produced
+  three wrong test expectations before the ARM was re-read.
+- **`audit_bugs.py` resolves a ledger row's `port_location` as `file:Function`.** `file:Foo and FooAlt`
+  parses as a function named `FooAlt` and the row fails to resolve, which turns the gate red. One function
+  per row; put the second site in the evidence column.
 - **Check what a callee does to the pointer you are about to read.** The chryssalid transform reads
   `pVictim->pCell` after calling `Unit_ResetBattleState`, which nulls `pCell` at 0x498E0 — the port's
   first version dereferenced NULL and crashed the test suite. The original saves the cell into
@@ -999,6 +1060,12 @@ does.
    the group-base index is unclamped, so `PUFO_ISO_GROUP_BASE_COUNT` is 28 rather than 18. Note also
    that the compact `disasm` listing dropped the instruction at `0x1CE34` — the address-anchored
    listing is the one to trust for exact code.
+8. The tactical action chain is ported at the processor level: `Tact_ProcessMoveAction`,
+   `Tact_ProcessFallAction` and now `Tact_ProcessFireAction` (0x50adc, 8,192 B) all run in the port and
+   are driven from `tests/test_tactstate.c`. What is still missing is the walker that dispatches them —
+   `Tact_TickActiveUnit (0x54130, 1,868 B)` — so no `FireActionCtx` / `FallActionCtx` is built by the app
+   layer yet. That function is the next link and it is also the last unresolved name flag in
+   `audit_names.py`.
 
 ### Priority 2 — finish the tactical renderer
 
@@ -1103,8 +1170,8 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 363 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 44-row bug ledger, with a `qol` column |
+| `docs/parity/renames.tsv` | 380 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 136-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

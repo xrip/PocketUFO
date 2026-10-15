@@ -190,6 +190,11 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
             tr.nTgtX = (i32)(dX / (double)PUFO_VOX_PER_CELL_X);
             tr.nTgtY = (i32)(dY / (double)PUFO_VOX_PER_CELL_Y);
             tr.nTgtZ = (i32)(dZ / (double)PUFO_VOX_PER_CELL_Z);
+            /* The same three slots the UI confirmations write (Map+0x14040/44/48).
+             * Only the stopping sample reaches them. */
+            pAim->nTgtX = tr.nTgtX;
+            pAim->nTgtY = tr.nTgtY;
+            pAim->nTgtZ = tr.nTgtZ;
             bRunning = false;
         }
 
@@ -203,6 +208,15 @@ bool Tact_TraceProjectileArc(AimState *pAim, const LosTables *pTables,
     tr.nEndY = (i32)dY;
     tr.nEndZ = (i32)dZ;
     tr.bOutOfRange = bOutOfRange;
+
+    /* 0x302D0 stores the walked distance at Map+0x14038 and 0x2FE6C leaves the
+     * running sample in the Map's ten-slot arrays. The original writes both on
+     * every iteration; nothing reads them until the walk ends, so the single
+     * write here is the same observable behaviour. */
+    pAim->dTravelSave = pAim->dTravel;
+    if (pAim->padMtX != NULL) { pAim->padMtX[0] = dX; }
+    if (pAim->padMtY != NULL) { pAim->padMtY[0] = dY; }
+    if (pAim->padMtZ != NULL) { pAim->padMtZ[0] = dZ; }
 
     if (pOut != NULL) {
         *pOut = tr;

@@ -1773,6 +1773,63 @@ Order is by what unblocks what. Each item ends with gates + commit.
   **Naming fixed on the way:** the three `PUFO_SPECIAL_SORT_*` values moved from the tactical HUD header to
   `game/pufo_objectrec.h`, next to the `uSortKey` field they name, because two subsystems now branch on them.
 
+- [x] part 63, the fire-phase processor: `Tact_ProcessFireAction (0x50adc, 8192 B)` plus the two Map writes
+  the phase reads but nothing in the port produced yet (`Map_dTravelSave` and the aim sample arrays).
+  **The phase has no state of its own — the Map block is its register file.** `Map_dTravel @ 0x14020` is this
+  FSM's own counter and the aim setup zeroes it (`Tact_ComputeAimVector` 0x2f9c0); `Map_dTravelSave @ 0x14038`
+  is the distance the arc *walk* took (written at 0x302D0 and 0x323BC, never by the FSM). A shot lands when
+  travel passes travelSave — that is the whole flight model, and it is why the port had to extend
+  `AimState`/`Tact_TraceProjectileArc` before the fire phase could be tested at all.
+  **The samples are measured from the muzzle, not from the head.** Each of the ten `Map_adMtX/Y/Z` samples sits
+  at `dBack = dTravel - i * 1.41` from `Map_nAimOriginX/Y/Z`; a sample whose `dBack` is not positive is parked
+  at -1000.0 on all three axes. At travel 10 the first eight samples are still inside the muzzle cell, which is
+  the opposite of what a "one sample per step" reading suggests.
+  **Two conversion forms for the same height, and they disagree.** The shot loop uses `(int)(z * (1/12))`
+  (0x51264); the three resolve loops use `(int)z / 12` (0x51E5C, 0x52124, 0x527B8). 1/12 is not exact in
+  binary, so at a height that is an exact multiple of 12 the two land a layer apart — and the muzzle heights
+  the aim setup builds are `12*nZ + 6`, so the case is reachable. The port keeps both forms in separate helpers
+  rather than "fixing" one into the other.
+  **`Map_bFireHitResult @ 0x1406C` is the arc walk's verdict handed to the fire phase.** `Tact_TraceProjectileArc`
+  clears it at 0x2FC54 on every call and sets it to 1 at 0x3010C in the branch that also clears
+  `Map.bFireStatus1` and ends the walk — the branch taken when the walked sample leaves the map. The fire phase
+  reads it at five places and never writes it, so a shot whose arc ran off the map resolves on its first pass
+  instead of stamping the muzzle layer. **This unit's own first draft had it wrong:** the field was named
+  `Map_bFireInFlight`, recorded as "written nowhere in the whole image", and a ledger row was written for that
+  claim. Both writes are register-built (`MOV R11,#0x14000; ORR R11,#0x6C; STRB R3,[R0,R11]!` at 0x2FC54, and a
+  stack-held pointer at 0x3010C), so `xrefs_to` finds neither — the exact blind spot HANDOFF §8 already warns
+  about. The IDB name, the ledger row and the port's field are corrected here.
+  **cmd 0xE's two paths.** The shot keeps flying unless `dTravel > dTravelSave`, or the weapon's sort key is one
+  of the two multi-target keys (13, 35) and the burst still owes shots while `dTravel >= dTrajBound`. Inside the
+  resolve path, mode 7 resolves only when the arc is exhausted or the burst is spent, and it is the only path
+  that touches `nStepZDelta` (0x51F5C: `(x & ~0xFF) | 1`). The 0x20 trace mark is cleared off the OLD sample
+  cell before the new one is computed — the order matters, and the port had it backwards in the first draft.
+  **cmd 1's eight draw-offset ladders** are built from `nHalf = (t<=3 ? t+1 : t-7)` and `nNeg = (t<=3 ? -1-t :
+  7-t)`, truncated to `i8`, with the final term adding or subtracting `nStepFrameDiv * t` on Y; TU is spent on
+  even ticks only, the unit is re-placed at tick 4, and the kneel/stand toggle runs only at tick 4 and only for
+  unit types whose `g_aUnitTypeFlag0` entry is 1, keyed on whether the destination cell has a floor sprite.
+  **Original bugs found (7 ledger rows).** The throw's in-bounds test uses `160 * Map_nMapDimX` for Y as well
+  as X (0x52718) — `Map_nMapDimY` is never read there. cmd 0x12 ends its phase on the phase *counter* while cmd
+  0x10 ends on the phase *tick*, although both jump to the same LABEL_155 (0x52ABC vs 0x529C4). Three sites
+  dereference without a test: the grid slot behind the kneel toggle (0x50E60), the door case's cell and its
+  wall-sprite pointer (0x51058), and `pWeapon->pObj->uSortKey` in the landing test (0x5171C). Plus the two
+  conversion forms above.
+  **`Map_adMtX/Y/Z @ 0x13EE8/0x13F38/0x13F88` are the same arrays the throw calls `Map_dThrowX/Y/Layer` at slot
+  1** (0x13EF0/0x13F40/0x13F90) — the earlier ledger rows had those three at 0x140F0/0x14140/0x14190, which is
+  wrong by 0x200 and is corrected here.
+  150 new checks (12130 total), 20 renames on record (380 per `audit_names.py`), 7 ledger rows (136), coverage
+  898/1103 (81.4%), 435608/598792 (72.7%). IDB: `Map_nAimOriginX/Y/Z`, `Map_nAimTargetZ`, `Map_dTravel`,
+  `Map_dAngleYaw`, `Map_dAnglePitch`, `Map_dTravelSave`, `Map_nFireArg5`, `Map_pFireWeapon`,
+  `Map_bFireHitResult`, `Map_dArcDenom`, `Map_dTrajBound`, `Map_adMtX/Y/Z`, `Map_nBurstShots` renamed and typed;
+  `Map_bThrowPending` renamed to `Map_bTrajHitStop` to match the Map struct member the decompiler already
+  showed; comments at 0x127A24, 0x127A30, 0x127A38, 0x14038, 0x1406C, 0x1406D, 0x1139E0, 0x1139B8, 0x2FC54,
+  0x3010C, 0x31A18 and a function comment at 0x50adc. **`GameMap`'s `Soldier *apTraceExclude[2]` at
+  0x1406C/0x14070 was a wrong model and is removed:** `Map_TraceVoxelOccupancy @ 0x3242C` skips
+  `Map.pSelUnit @ 0x15334` and `Map.pThrowTargetUnit @ 0x150F0`, while 0x1406C is a byte and 0x14070 is
+  `Map.pArrowThrownItem`, a `TactItem *` written by `Tact_SimulateThrowArc` at 0x319FC.
+  **Naming fixed on the way:** the two multi-target weapon kinds got `PUFO_SORT_KEY_MULTI_TARGET_A/B` in
+  `game/pufo_objectrec.h` — four sites compare the raw 13 and 35, and none of them says which weapons they are,
+  so the names say what the code does instead of guessing.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2051,6 +2108,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the post-mission soldier cleanup (`Tact_ClearSoldierBattleFlags`, `Soldier_PromoteByTypeScores`; the five-rung rank ladder, `g_aClassStatGrowth` byte-checked, the auStatBase index bug found) | 56/56 (Release) | 11661 | 891/1103 (80.8%) | 411568/598792 (68.7%) | 40 checked, 0 mismatched |
 | the battle-end and debrief emitter (`Tact_CheckBattleEnd`; the four exits, the 19 debrief lines and their three meta shapes, the loot commit into `aSmapSites`, the Mars restart tail, the signed `abFacilityGrid` byte trap found) | 56/56 (Release) | 11791 | 892/1103 (80.9%) | 417316/598792 (69.7%) | 40 checked, 0 mismatched |
 | the fall processor (`Unit_ApplyFallDamage` + `Tact_ProcessFallAction`; the 0.4f soft-float damage formula, the `_rt_sdiv` operand order behind the psi gate, the LABEL_101/LABEL_111 split, the medikit-before-modes order, 7 original bugs found) | 56/56 (Release) | 11980 | 896/1103 (81.2%) | 426312/598792 (71.2%) | 40 checked, 0 mismatched |
+| the fire-phase processor (`Tact_ProcessFireAction` + the aim's `dTravelSave`/sample-array writes; the muzzle-relative samples, the two disagreeing 1/12 forms, the arc-off-map flag whose register-built writes an xref search misses, 7 original bugs found) | 56/56 (Release) | 12130 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

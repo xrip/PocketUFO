@@ -43,7 +43,7 @@
 #define PUFO_MAP_SHOT_MAX 9
 
 /* The ten multi-target world positions, Map.adMtX/Y/Z. */
-#define PUFO_MAP_MULTI_TARGET_MAX 10
+#define PUFO_MAP_MULTI_TARGET_MAX PUFO_AIM_SAMPLE_COUNT
 
 typedef struct GameMap {
     /* --- geometry: nMapLayers @ 0x15114, nMapDimX @ 0x1511B, nMapDimY @ 0x1511C --- */
@@ -83,8 +83,13 @@ typedef struct GameMap {
     double          adMtX[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13EE8 */
     double          adMtY[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13F38 */
     double          adMtZ[PUFO_MAP_MULTI_TARGET_MAX]; /* 0x13F88 */
-    Soldier        *apTraceExclude[2]; /* 0x1406C, 0x14070 */
-    bool            bTrajHitStop;      /* 0x1406D */
+    /* The two units Map_TraceVoxelOccupancy @ 0x3242c skips are pSelUnit @ 0x15334
+     * and pThrowTarget @ 0x150F0 (the IDB's pThrowTargetUnit) — both already modelled
+     * above, so there is no separate exclusion pair here. An earlier version of this
+     * struct claimed a Soldier* pair at 0x1406C/0x14070; those two slots are
+     * Map.bFireHitResult (a byte) and Map.pArrowThrownItem (a TactItem*), not units. */
+    bool            bTrajHitStop;      /* 0x1406D Map.bTrajHitStop, the byte the port
+                                        * calls ThrowPending in the action contexts */
     ThrowArc        throwArc;
     ThrowLanding    throwLanding;
     ThrowBudget     throwBudget;

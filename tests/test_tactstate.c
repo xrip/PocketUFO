@@ -2077,6 +2077,891 @@ static void TestFallActionMelee(void)
     CheckEqI32(pActor->uTu, 0, "  10 TU is below the 20 charge, so it goes to 0");
 }
 
+/* --- Tact_ProcessFireAction @ 0x50adc --------------------------------------- */
+
+/* The fire FSM reaches cells through Map_IsValidCell, which bounds at
+ * PUFO_CELL_SIZE cells per map tile. The fall fixture's 4 x 4 grid is only 4
+ * cells wide, so the fire tests get their own 40 x 40 grid for the same 4-tile
+ * map: the shot samples and the decay sweep both address cells the fall fixture
+ * does not have. */
+#define FIRE_GRID (PUFO_CELL_SIZE * FALL_DIM)
+
+static MapCell   g_aFireCells[PUFO_MAP_LAYERS][FIRE_GRID][FIRE_GRID];
+static MapGeom   g_FireGeom = { FALL_DIM, FALL_DIM };
+static AimState  g_FireAim;
+static double    g_adMtX[PUFO_AIM_SAMPLE_COUNT];
+static double    g_adMtY[PUFO_AIM_SAMPLE_COUNT];
+static double    g_adMtZ[PUFO_AIM_SAMPLE_COUNT];
+static ThrowArc  g_FireArc;
+static TactCtx272 g_FirePhase;
+static i32       g_nShotCount;
+static i32       g_nBurstShots;
+static i32       g_nFireSlot;
+static u8        g_bFireStatus1;
+static u8        g_bFireStatus9;
+static u8        g_bFireHitResult;
+static const ObjectRecFull *g_pFireObject;
+static u32       g_aFireHits[PUFO_SPLASH_DWORDS];
+static ShotOutcome g_FireOut;
+static Mc1Rec    g_aFireSpr[4];
+static Mc1Rec   *g_apFireSpr[4];
+static PufoFont  g_FireFont;
+static FireActionCtx g_FireCtx;
+static ShotHooks g_FireHooks;
+static i32       g_bArmorRefuse;
+static i32       g_nFovCalls;
+static i32       g_nAreaCalls;
+
+static MapCell *FireLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nX < 0 || nX >= FIRE_GRID || nY < 0 || nY >= FIRE_GRID) {
+        return NULL;
+    }
+    if (nLayer < 0 || nLayer >= PUFO_MAP_LAYERS) {
+        return NULL;
+    }
+    return &g_aFireCells[nLayer][nY][nX];
+}
+
+static bool FireHookArmor(const Soldier *pUnit, i32 nTuCost, void *pUser)
+{
+    (void)pUnit;
+    (void)nTuCost;
+    (void)pUser;
+    return g_bArmorRefuse != 0;
+}
+
+static void FireHookFov(void *pUser)
+{
+    (void)pUser;
+    ++g_nFovCalls;
+}
+
+static void FireHookArea(void *pUser)
+{
+    (void)pUser;
+    ++g_nAreaCalls;
+}
+
+static void FireSeedSamples(double dX, double dY, double dZ)
+{
+    for (i32 i = 0; i < PUFO_AIM_SAMPLE_COUNT; ++i) {
+        g_adMtX[i] = dX;
+        g_adMtY[i] = dY;
+        g_adMtZ[i] = dZ;
+    }
+}
+
+static void FireSetup(void)
+{
+    i32 z, y, x, i;
+
+    FallSetup();
+    memset(g_aFireCells, 0, sizeof(g_aFireCells));
+    for (z = 0; z < PUFO_MAP_LAYERS; ++z) {
+        for (y = 0; y < FIRE_GRID; ++y) {
+            for (x = 0; x < FIRE_GRID; ++x) {
+                MapCell_Init(&g_aFireCells[z][y][x], (u8)x, (u8)y, (u8)z);
+            }
+        }
+    }
+    memset(g_adMtX, 0, sizeof(g_adMtX));
+    memset(g_adMtY, 0, sizeof(g_adMtY));
+    memset(g_adMtZ, 0, sizeof(g_adMtZ));
+    memset(&g_FireAim, 0, sizeof(g_FireAim));
+    g_FireAim.padMtX = g_adMtX;
+    g_FireAim.padMtY = g_adMtY;
+    g_FireAim.padMtZ = g_adMtZ;
+    memset(&g_FireArc, 0, sizeof(g_FireArc));
+    g_FireArc.dArcDenom = 10.0;
+    memset(&g_FirePhase, 0, sizeof(g_FirePhase));
+
+    g_nShotCount = 0;
+    g_nBurstShots = 3;
+    g_nFireSlot = 0;
+    g_bFireStatus1 = 1;
+    g_bFireStatus9 = 0;
+    g_bFireHitResult = 0;
+    g_bArmorRefuse = 0;
+    g_nFovCalls = 0;
+    g_nAreaCalls = 0;
+    memset(&g_FireOut, 0, sizeof(g_FireOut));
+    g_FireOut.nDamage = -999;   /* a sentinel: the resolve overwrites it */
+    memset(g_aFireHits, 0, sizeof(g_aFireHits));
+
+    /* A four-entry font index, so the door swap can be checked end to end. */
+    memset(g_aFireSpr, 0, sizeof(g_aFireSpr));
+    for (i = 0; i < 4; ++i) {
+        g_aFireSpr[i].nGlobalIdx = (u16)i;
+        g_apFireSpr[i] = &g_aFireSpr[i];
+    }
+    memset(&g_FireFont, 0, sizeof(g_FireFont));
+    g_FireFont.apMc1Index = g_apFireSpr;
+    g_FireFont.nMc1IndexCount = 4;
+
+    g_FallWeaponObj.uFirePower = 40;
+    g_pFireObject = &g_FallWeaponObj;
+
+    g_FallCombat.pfnLookup = FireLookup;
+    g_FallCombat.pGeom = &g_FireGeom;
+    g_FallCombat.pState = &g_state;
+    g_FallCombat.pSelUnit = &g_aFallUnits[0];
+
+    memset(&g_FireHooks, 0, sizeof(g_FireHooks));
+    g_FireHooks.pfnComputeFov = FireHookFov;
+    g_FireHooks.pfnAreaFire = FireHookArea;
+
+    memset(&g_FireCtx, 0, sizeof(g_FireCtx));
+    g_FireCtx.geom = g_FireGeom;
+    g_FireCtx.pfnLookup = FireLookup;
+    g_FireCtx.pUser = NULL;
+    g_FireCtx.pnLayerScratch = &g_nLayerScratch;
+    g_FireCtx.pnMaxLayerClamp = &g_nMaxLayerClamp;
+    g_FireCtx.pnAnimPhase = &g_nAnimPhase;
+    g_FireCtx.pnShotCount = &g_nShotCount;
+    g_FireCtx.pnBurstShots = &g_nBurstShots;
+    g_FireCtx.pbFireStatus1 = &g_bFireStatus1;
+    g_FireCtx.pbFireStatus9 = &g_bFireStatus9;
+    g_FireCtx.pbFallDamagePending = &g_bFallPending;
+    g_FireCtx.pbThrowPending = &g_bThrowPending;
+    g_FireCtx.pbFireHitResult = &g_bFireHitResult;
+    g_FireCtx.pbEnemySpotted = &g_bEnemySpotted;
+    g_FireCtx.pnFireTickProgress = &g_nFireTickProgress;
+    g_FireCtx.pnFireSlot = &g_nFireSlot;
+    g_FireCtx.ppFireObject = &g_pFireObject;
+    g_FireCtx.pAim = &g_FireAim;
+    g_FireCtx.pThrowArc = &g_FireArc;
+    g_FireCtx.pTactCtx = &g_FirePhase;
+    g_FireCtx.apXcomUnits = g_apFallXcom;
+    g_FireCtx.pnXcomCount = &g_nFallXcom;
+    g_FireCtx.pCombat = &g_FallCombat;
+    g_FireCtx.pShotHooks = &g_FireHooks;
+    g_FireCtx.pRosters = &g_FallRosters;
+    g_FireCtx.apHits = g_aFireHits;
+    g_FireCtx.apHitsSave = NULL;
+    g_FireCtx.pShotOut = &g_FireOut;
+    g_FireCtx.pFont = &g_FireFont;
+    g_FireCtx.pfnArmorTuWarn = FireHookArmor;
+    g_FireCtx.pfnPushStatus = FallHookStatus;
+    g_FireCtx.pfnUpdateVisibility = FallHookVisibility;
+}
+
+static TactQueueEntry *FireEntry(u8 nCmd)
+{
+    memset(&g_state, 0, sizeof(g_state));
+    g_state.nQueueCursor = 0;
+    g_state.nQueueLen = 2;
+    g_state.aQueue[0].nCmd = nCmd;
+    g_state.aQueue[0].pUnit = &g_aFallUnits[0];
+    g_state.aQueue[0].pWeapon = &g_FallWeapon;
+    g_state.aQueue[0].nFacing = 2;
+    g_state.aQueue[0].nX = 11;
+    g_state.aQueue[0].nY = 11;
+    g_state.aQueue[0].nZ = 0;
+    g_state.aQueue[0].nDelta = 1;
+    g_state.aQueue[0].nMode = 0;
+    g_state.nPhaseMax = 5;
+    return &g_state.aQueue[0];
+}
+
+static void TestFireTurn(void)
+{
+    TactQueueEntry *pE;
+    Soldier *pU;
+
+    printf("Tact_ProcessFireAction cmd 0, the turn\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pU = pE->pUnit;
+    pU->uTu = 40;
+    pU->bFacing = 7;
+    pE->nTurnDir = 1;
+    g_state.nPhaseTick = 4;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 0, "tick 5 of 5 keeps the phase running");
+    CheckEqI32(pU->uTu, 39, "one TU spent");
+    CheckEqI32(pU->bFacing, 0, "facing 7 + 1 wraps to 0");
+    CheckEqI32(g_nVisCalls, 1, "visibility refreshed once");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->nTurnDir = -1;
+    pE->pUnit->bFacing = 0;
+    pE->pUnit->uTu = 10;
+    g_state.nPhaseTick = 5;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "tick 6 of 5 ends the phase");
+    CheckEqI32(pE->pUnit->uTu, 10, "no TU spent on the ending tick");
+    CheckEqI32(g_nVisCalls, 0, "no visibility call");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->nTurnDir = -1;
+    pE->pUnit->bFacing = 0;
+    pE->pUnit->uTu = 20;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->bFacing, 7, "facing 0 - 1 wraps to 7");
+
+    /* Out of TU: the shared message, then the team pass. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->pUnit->uTu = 0;
+    g_nFallXcom = 1;
+    g_apFallXcom[0] = &g_aFallUnits[1];
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nLastStatusRec, MOVE_MSG_NO_TIME, "the out-of-TU record is pushed");
+    CheckEqI32(g_nVisCalls, 1, "the team pass refreshes the one XCom unit");
+    CheckEqI32(g_state.aQueue[0].nCmd, (i32)TACTCMD_END_MARK,
+               "the team pass rewrites the entry to END_MARK");
+    CheckEqI32(g_state.nQueueLen, 2, "the team pass sets the queue length");
+    Check(g_state.bFlag1 == 1, "the team pass raises bFlag1");
+
+    /* The armour guard refuses the turn the same way. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->pUnit->uTu = 30;
+    g_bArmorRefuse = 1;
+    g_nFallXcom = 1;
+    g_apFallXcom[0] = &g_aFallUnits[1];
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->uTu, 30, "the armour guard spends no TU");
+    CheckEqI32(g_nVisCalls, 1, "the armour guard runs the team pass");
+    CheckEqI32(g_nStatusCalls, 0, "and pushes no message");
+
+    /* The phase object says the unit is mid-turn: no TU work at all. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->pUnit->uTu = 20;
+    pE->pUnit->bFacing = 7;
+    pE->nTurnDir = 1;
+    g_FirePhase.nPhase = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->uTu, 20, "mid-turn spends no TU");
+    CheckEqI32(pE->pUnit->bFacing, 0, "mid-turn still turns");
+
+    /* The sighting tail. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->pUnit->uTu = 20;
+    pE->pUnit->bAiDone = 1;
+    g_bEnemySpotted = 1;
+    g_nFallXcom = 1;
+    g_apFallXcom[0] = &g_aFallUnits[1];
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nLastStatusRec, PUFO_TXTREC_SPOTTED, "the sighting is announced");
+    CheckEqI32(pE->pUnit->bAiDone, 0, "the unit's AI-done flag is cleared");
+    CheckEqI32(g_nVisCalls, 2, "own refresh plus the team pass");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_TURN);
+    pE->pUnit->uTu = 20;
+    pE->pUnit->bAiDone = 1;
+    g_bEnemySpotted = 1;
+    g_state.bUnk70114 = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nStatusCalls, 0, "bUnk70114 suppresses the sighting");
+    CheckEqI32(pE->pUnit->bAiDone, 1, "and leaves AI-done set");
+    CheckEqI32(g_nVisCalls, 1, "but the own refresh still runs");
+}
+
+static void TestFireStepFrame(void)
+{
+    TactQueueEntry *pE;
+
+    printf("Tact_ProcessFireAction cmd 1, the fire-frame step\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->bFlags = 0x20;
+    pE->pUnit->uTu = 50;
+    g_nAnimPhase = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 0 && g_nAnimPhase == 3 && pE->pUnit->uTu == 50,
+          "a dead unit stops the frame without ending the phase");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    g_nAnimPhase = 7;
+    pE->pUnit->uTu = 30;
+    g_state.nPhaseTick = 1;   /* becomes 2, even */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nAnimPhase, 0, "anim phase wraps 7 to 0");
+    CheckEqI32(pE->pUnit->uTu, 29, "TU spent on an even tick");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->uTu = 30;
+    g_state.nPhaseTick = 2;   /* becomes 3, odd */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->uTu, 30, "no TU on an odd tick");
+
+    /* Tick 4 re-places the unit one step ahead, on the entry's layer delta. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    pE->pUnit->bFacing = 2;   /* g_aStepDir[2] is east */
+    pE->nDelta = 1;
+    g_state.nPhaseTick = 3;   /* becomes 4 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->pCell->nX, 12, "tick 4 moves the unit east");
+    CheckEqI32(pE->pUnit->pCell->nY, 11, "the y is unchanged");
+    CheckEqI32(pE->pUnit->pCell->nZ, 1, "the layer is nDelta + the old layer");
+
+    /* The draw-offset ladder, three representative facings. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->bFacing = 0;
+    g_state.nPhaseTick = 0;      /* becomes 1, first half */
+    g_state.nStepFrameDiv = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nStepDrawOffX, 4, "facing 0 tick 1: X = 2 * (1 + 1)");
+    CheckEqI32(g_state.nStepDrawOffY, -5, "facing 0 tick 1: Y = (-1 - 1) - 3 * 1");
+    CheckEqI32(pE->pUnit->nDrawOffX, 4, "the unit gets the X");
+    CheckEqI32(pE->pUnit->nDrawOffY, -5, "the unit gets the low byte of Y");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->bFacing = 5;
+    g_state.nPhaseTick = 4;      /* becomes 5, second half */
+    g_state.nStepFrameDiv = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nStepDrawOffX, 8, "facing 5 tick 5: X = 4 * (7 - 5)");
+    CheckEqI32(g_state.nStepDrawOffY, 6, "facing 5 tick 5: Y = 0 + (7 - 5) * 3");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->bFacing = 3;
+    g_state.nPhaseTick = 1;      /* becomes 2 */
+    g_state.nStepFrameDiv = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nStepDrawOffX, 0, "facing 3 tick 2: X forced to 0");
+    CheckEqI32(g_state.nStepDrawOffY, 0, "facing 3 tick 2: Y = 2 * 3 - 3 * 2");
+
+    /* The scratch cell is the step destination off pStepFromCell. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->bFacing = 2;
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    g_state.pStepFromCell = &g_aFireCells[0][11][11];
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.pStepCellScratch == &g_aFireCells[0][11][12],
+          "the scratch cell is the destination");
+
+    /* The kneel toggle: tick 4 only, flag-0 types only, keyed on the
+     * destination cell's floor sprite. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->nUnitType = 3;      /* g_aUnitTypeFlag0[3] == 1 */
+    pE->pUnit->bFlags = 0;
+    pE->pUnit->bFacing = 2;
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    g_state.pStepFromCell = &g_aFireCells[0][11][11];
+    g_state.nPhaseTick = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((pE->pUnit->bFlags & PUFO_UNITFLAG_KNEEL) != 0,
+          "tick 4 on a floorless cell kneels a flag-0 type");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->nUnitType = 3;
+    pE->pUnit->bFlags = PUFO_UNITFLAG_KNEEL;
+    pE->pUnit->bFacing = 2;
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    g_state.pStepFromCell = &g_aFireCells[0][11][11];
+    g_state.nPhaseTick = 3;
+    g_aFireCells[0][11][12].pFloorSpr = &g_FallFloor;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((pE->pUnit->bFlags & PUFO_UNITFLAG_KNEEL) == 0,
+          "tick 4 on a floored cell stands the unit up");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->nUnitType = 1;      /* flag 0 clear */
+    pE->pUnit->bFlags = 0;
+    pE->pUnit->bFacing = 2;
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    g_state.pStepFromCell = &g_aFireCells[0][11][11];
+    g_state.nPhaseTick = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((pE->pUnit->bFlags & PUFO_UNITFLAG_KNEEL) == 0,
+          "a type without flag 0 never kneels here");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    pE->pUnit->nUnitType = 3;
+    pE->pUnit->bFlags = 0;
+    pE->pUnit->bFacing = 2;
+    pE->pUnit->pCell = &g_aFireCells[0][11][11];
+    g_state.pStepFromCell = &g_aFireCells[0][11][11];
+    g_state.nPhaseTick = 4;        /* becomes 5, not the kneel tick */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((pE->pUnit->bFlags & PUFO_UNITFLAG_KNEEL) == 0,
+          "the toggle only runs on tick 4");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_STEP);
+    g_state.nPhaseTick = 6;        /* becomes 7, past PUFO_STEP_FRAME_MAX */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "tick 7 ends the phase");
+}
+
+static void TestFireDoor(void)
+{
+    TactQueueEntry *pE;
+    MapCell *pCell;
+
+    printf("Tact_ProcessFireAction cmd 3, the door animation\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_DOOR);
+    pE->nFacing = 2;
+    pCell = &g_aFireCells[0][11][11];
+    pCell->pWallSprB = &g_aFireSpr[2];
+    g_state.nPhaseTick = 0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(pCell->pWallSprB == &g_aFireSpr[2] && pCell->pWallSprA == NULL,
+          "tick 1 leaves the walls alone");
+    Check(g_state.bFlag1 == 0, "and does not end the phase");
+    g_state.nPhaseTick = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(pCell->pWallSprB == &g_aFireSpr[2], "tick 2 leaves the walls alone");
+    g_state.nPhaseTick = 2;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(pCell->pWallSprA == &g_aFireSpr[1],
+          "tick 3 puts wall B's neighbour into wall A");
+    Check(pCell->pWallSprB == NULL, "and clears the source slot");
+    Check(g_state.bFlag1 == 0, "tick 3 does not end the phase");
+    g_state.nPhaseTick = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "tick 4 ends the phase");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_DOOR);
+    pE->nFacing = 6;
+    pCell = &g_aFireCells[0][11][11];
+    pCell->pWallSprA = &g_aFireSpr[0];
+    g_state.nPhaseTick = 2;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(pCell->pWallSprB == &g_aFireSpr[1] && pCell->pWallSprA == NULL,
+          "any other facing swaps the other way");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_DOOR);
+    pE->nFacing = 2;
+    g_state.nPhaseTick = 2;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_aFireCells[0][11][11].pWallSprA == NULL
+          && g_aFireCells[0][11][11].pWallSprB == NULL,
+          "a cell with no wall sprite writes nothing");
+}
+
+static void TestFireSmallCases(void)
+{
+    TactQueueEntry *pE;
+
+    printf("Tact_ProcessFireAction cmd 4, plain animation advance\n");
+    FireSetup();
+    pE = FireEntry(4);
+    (void)pE;
+    g_nAnimPhase = 0;
+    g_state.nPhaseTick = 2;   /* becomes 3 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nAnimPhase, 1, "anim phase advances");
+    Check(g_state.bFlag1 == 0, "tick 3 keeps the phase running");
+    g_state.nPhaseTick = 3;   /* becomes 4 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nAnimPhase, 2, "anim phase advances again");
+    Check(g_state.bFlag1 == 1, "tick 4 ends the phase");
+
+    printf("Tact_ProcessFireAction cmd 5, the vertical draw offset\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_VERT_STEP);
+    pE->nFacing = 1;
+    g_state.nPhaseMax = 4;
+    g_state.nPhaseTick = 1;   /* becomes 2 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->nDrawOffY, -4, "draw Y = -2 * 2 * 1");
+    Check(g_state.bFlag1 == 0, "tick 2 of 4 keeps the phase");
+    g_state.nPhaseTick = 4;   /* becomes 5, past nPhaseMax */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "tick 5 of 4 ends the phase");
+    CheckEqI32(pE->pUnit->nDrawOffY, -4, "and writes no offset");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_VERT_STEP);
+    pE->nFacing = 0xFF;       /* the original reads the byte signed: -1 */
+    g_state.nPhaseTick = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(pE->pUnit->nDrawOffY, 4, "a signed facing of -1 lifts the sprite");
+
+    printf("Tact_ProcessFireAction cmd 8, the death flash\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_DEATH_FLASH);
+    pE->pUnit->nUnitType = 4;   /* g_aUnitTypeIsLarge[4] == 1 */
+    g_nAnimPhase = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "a large unit ends the phase at once");
+    CheckEqI32(g_nAnimPhase, 3, "and the anim phase is untouched");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_DEATH_FLASH);
+    pE->pUnit->nUnitType = 1;
+    pE->nArg = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "a non-zero entry argument is refused the same way");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_DEATH_FLASH);
+    pE->pUnit->nUnitType = 1;
+    g_nAnimPhase = 0;
+    g_state.nPhaseTick = 6;   /* becomes 7 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nAnimPhase, 1, "anim phase advances");
+    Check(g_state.bFlag1 == 0, "tick 7 keeps the phase running");
+    g_state.nPhaseTick = 7;   /* becomes 8 */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nAnimPhase, 0, "tick 8 resets the anim phase");
+    Check(g_state.bFlag1 == 1, "and ends the phase");
+
+    printf("Tact_ProcessFireAction, an unknown command\n");
+    FireSetup();
+    (void)FireEntry(9);
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "an unhandled command only ends the phase");
+}
+
+static void TestFireShotFlight(void)
+{
+    TactQueueEntry *pE;
+
+    printf("Tact_ProcessFireAction cmd 0xE, the shot flight\n");
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = 0;
+    g_FireAim.dTravel = 33.0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "no aim flag, no flight");
+    CheckEqI32((i32)g_FireAim.dTravel, 33, "and the travel counter is untouched");
+
+    /* Still flying: the old samples are cleared, the new ones stamped. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FireAim.nOriginX = 16;
+    g_FireAim.nOriginY = 16;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.dYaw = 0.0;
+    g_FireAim.dPitch = 0.0;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 100.0;
+    g_FireAim.dBound = 50.0;
+    FireSeedSamples(100.0, 100.0, 0.0);
+    g_aFireCells[0][6][6].bFlags29 = PUFO_CELLFLAG_SHOT_TRACE;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32((i32)g_FireAim.dTravel, 10, "travel advances by 10 voxels");
+    Check(g_state.bFlag1 == 0, "the phase keeps running");
+    Check((g_aFireCells[0][6][6].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "the stale sample cell is cleared");
+    Check((g_aFireCells[0][1][1].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) != 0,
+          "the new sample head is stamped");
+    Check(g_adMtX[8] == PUFO_SAMPLE_OFFMAP,
+          "the eighth sample is already behind the muzzle");
+    Check(g_adMtX[9] == PUFO_SAMPLE_OFFMAP, "and so is the ninth");
+    Check((g_aFireCells[0][1][0].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "a parked sample stamps nothing");
+    CheckEqI32(g_nFovCalls + g_nAreaCalls, 0, "no shot resolution ran");
+    CheckEqI32(g_nLayerScratch, 2, "the layer scratch is clamped up");
+
+    /* The samples are measured from the muzzle, not from the head: at travel 10
+     * the eight first ones land on cells 16..31 and the last two are parked. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FireAim.nOriginX = 0;
+    g_FireAim.nOriginY = 0;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.dTravel = 0.0;      /* becomes 10 */
+    g_FireAim.dTravelSave = 1000.0;
+    FireSeedSamples(1000.0, 1000.0, 1000.0);
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_adMtX[0] == 10.0 && g_adMtZ[0] == 0.0, "the head sample is on the ray");
+    Check(g_adMtX[7] > 0.12 && g_adMtX[7] < 0.14, "the last live sample is 10 - 7 * 1.41");
+    Check((g_aFireCells[0][0][0].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) != 0,
+          "a muzzle at the origin stamps cell 0");
+
+    /* Past the walked distance: the shot resolves. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 5.0;
+    g_FireAim.nTgtX = 11;
+    g_FireAim.nTgtY = 11;
+    g_FireAim.nTgtZ = 0;
+    g_nFireTickProgress = 7;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_FireOut.nDamage != -999, "the shot resolution ran");
+    Check(g_FallCombat.pCtxWeapon == g_pFireObject,
+          "the weapon reached the map fire context");
+    CheckEqI32(g_bFallPending, 1, "fall damage is armed");
+    CheckEqI32(g_bFireStatus1, 0, "fire status 1 is cleared");
+    CheckEqI32(g_bFireStatus9, 1, "fire status 9 is set while nothing is in flight");
+    CheckEqI32(g_nFireTickProgress, 0, "the fall-damage progress restarts");
+    Check(g_state.bFlag1 == 1, "the phase ends");
+    CheckEqI32(g_state.nStepZDelta, 0, "a non-mode-7 shot leaves the z delta alone");
+
+    /* Mode 7 with the bound reached: resolve, arm the z delta, clear the samples. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->nMode = 7;
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FireAim.nOriginX = 16;
+    g_FireAim.nOriginY = 16;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 5.0;
+    g_FireAim.dBound = 10.0;
+    g_FireAim.nTgtX = 11;
+    g_FireAim.nTgtY = 11;
+    g_FireAim.nTgtZ = 0;
+    FireSeedSamples(100.0, 100.0, 0.0);
+    g_aFireCells[0][1][1].bFlags29 = PUFO_CELLFLAG_SHOT_TRACE;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nStepZDelta & 0xFF, 1,
+               "mode 7 sets the low byte of the step z delta");
+    CheckEqI32(g_bFallPending, 1, "fall damage is armed");
+    Check((g_aFireCells[0][1][1].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "the resolve cleared the trace flag the case had just stamped");
+
+    /* Mode 7 in the resolve path but with neither landing condition met: the
+     * shot is not resolved, yet the path still closes the phase. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->nMode = 7;
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 5.0;    /* past range, so the resolve path is taken */
+    g_FireAim.dBound = 1.0;         /* but travelSave 5 > bound 1 ... */
+    g_nShotCount = 0;
+    g_nBurstShots = 3;              /* ... and the burst still has shots left */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nFovCalls + g_nAreaCalls, 0, "no resolution");
+    CheckEqI32(g_bFallPending, 0, "fall damage stays disarmed");
+    CheckEqI32(g_bFireStatus9, 1, "fire status 9 is still written");
+    CheckEqI32(g_bFireStatus1, 1, "mode 7 with nothing in flight keeps fire status 1");
+    Check(g_state.bFlag1 == 1, "the resolve path closes the phase anyway");
+
+    /* The two multi-target weapons resolve at the bound, not past the trace. */
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FallWeaponObj.uSortKey = PUFO_SORT_KEY_MULTI_TARGET_A;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 1000.0;
+    g_FireAim.dBound = 5.0;
+    g_nShotCount = 0;
+    g_nBurstShots = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_bFallPending, 1, "the multi-target weapon resolves at its bound");
+
+    FireSetup();
+    pE = FireEntry(TACTCMD_FIRE_SHOT);
+    pE->pUnit->bFlags = PUFO_UNITFLAG_AIMING;
+    g_FallWeaponObj.uSortKey = PUFO_SORT_KEY_MULTI_TARGET_B;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 1000.0;
+    g_FireAim.dBound = 5.0;
+    g_nShotCount = 3;
+    g_nBurstShots = 3;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_bFallPending, 0, "a spent burst keeps flying");
+    Check(g_state.bFlag1 == 0, "and the phase stays open");
+    g_FallWeaponObj.uSortKey = 4;
+}
+
+static void TestFireFallProgress(void)
+{
+    printf("Tact_ProcessFireAction cmd 0xF, the fall-damage progress\n");
+    FireSetup();
+    (void)FireEntry(TACTCMD_FIRE_MARK);
+    g_bFallPending = 0;
+    g_nFireTickProgress = 4;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "an unarmed sweep ends the phase");
+    CheckEqI32(g_nFireTickProgress, 4, "and the progress counter is untouched");
+
+    FireSetup();
+    (void)FireEntry(TACTCMD_FIRE_MARK);
+    g_bFallPending = 1;
+    g_nFireTickProgress = 0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nFireTickProgress, 1, "progress 1");
+    Check(g_state.bFlag1 == 0, "the sweep keeps running");
+    g_nFireTickProgress = 8;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nFireTickProgress, 9, "progress 9");
+    Check(g_state.bFlag1 == 0, "nine ticks still run");
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_nFireTickProgress, 10, "progress 10");
+    Check(g_state.bFlag1 == 1, "the tenth tick ends the phase");
+
+    FireSetup();
+    (void)FireEntry(TACTCMD_FIRE_MARK);
+    g_bFallPending = 1;
+    g_bFireHitResult = 1;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_bFallPending == 0, "an arc that left the map disarms the sweep");
+    Check(g_state.bFlag1 == 1, "and ends the phase");
+}
+
+static void TestFireDecaySweep(void)
+{
+    printf("Tact_ProcessFireAction cmd 0x10, the animated-tile decay\n");
+    FireSetup();
+    (void)FireEntry(0x10);
+    g_aFireCells[0][0][0].nFlags32 = 0x08;          /* the field at 1 */
+    g_aFireCells[0][0][1].nFlags32 = 0x48;          /* the field at 9 */
+    g_aFireCells[0][0][2].nFlags32 = 0x07;          /* the field is zero */
+    g_aFireCells[3][39][39].nFlags32 = 0x10;        /* the far corner too */
+    g_state.nPhaseCounter = 0;
+    g_state.nPhaseTick = 10;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_aFireCells[0][0][0].nFlags32, 0x00, "field 1 decays to 0");
+    CheckEqI32(g_aFireCells[0][0][1].nFlags32, 0x40, "field 9 decays to 8");
+    CheckEqI32(g_aFireCells[0][0][2].nFlags32, 0x07, "a zero field is left alone");
+    CheckEqI32(g_aFireCells[3][39][39].nFlags32, 0x08,
+               "the sweep reaches the far corner of the map");
+    CheckEqI32(g_state.nPhaseCounter, 1, "the phase counter advances");
+    CheckEqI32(g_state.nPhaseTick, 11, "the phase tick advances");
+    Check(g_state.bFlag1 == 0, "tick 11 of 11 keeps the phase");
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nPhaseTick, 12, "tick 12 ends the phase");
+    Check(g_state.bFlag1 == 1, "and raises bFlag1");
+}
+
+static void TestFireThrowFlight(void)
+{
+    printf("Tact_ProcessFireAction cmd 0x11, the thrown item's flight\n");
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 0;
+    g_FireAim.dTravel = 12.0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_state.bFlag1 == 1, "no pending throw, no flight");
+    CheckEqI32((i32)g_FireAim.dTravel, 12, "and the travel counter is untouched");
+
+    /* Flat throw: the gravity term pulls the item below layer 0, so the
+     * in-bounds test fails and nothing is stamped. */
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 1;
+    g_FireAim.nOriginX = 16;
+    g_FireAim.nOriginY = 16;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.dYaw = 0.0;
+    g_FireAim.dPitch = 0.0;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 100.0;
+    g_FireArc.dArcDenom = 10.0;
+    FireSeedSamples(32.0, 16.0, 0.0);
+    g_aFireCells[0][1][2].bFlags29 = PUFO_CELLFLAG_SHOT_TRACE;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32((i32)g_FireAim.dTravel, 5, "the step is 5 voxels");
+    Check((g_aFireCells[0][1][2].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "the flag comes off the cell the item was over");
+    Check(g_adMtX[1] == 32.0, "slot 1 keeps the previous position");
+    CheckEqI32((i32)g_adMtX[0], 21, "x = origin + travel * cos(yaw)");
+    Check(g_adMtZ[0] < -1.14 && g_adMtZ[0] > -1.16,
+          "z drops by g * travel^2 / (2 * v0^2 * cos^2(pitch))");
+    Check((g_aFireCells[0][1][1].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "an out-of-bounds position stamps nothing");
+    Check(g_state.bFlag1 == 0, "the phase keeps running");
+
+    /* A lofted throw stays in bounds and stamps its new cell. */
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 1;
+    g_FireAim.nOriginX = 16;
+    g_FireAim.nOriginY = 16;
+    g_FireAim.nOriginZ = 12;
+    g_FireAim.dYaw = 0.0;
+    g_FireAim.dPitch = 0.5;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dTravelSave = 100.0;
+    g_FireArc.dArcDenom = 20.0;
+    FireSeedSamples(16.0, 16.0, 12.0);
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((g_aFireCells[1][1][1].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) != 0,
+          "the lofted item stamps its cell");
+    CheckEqI32(g_nLayerScratch, 2, "the layer scratch follows the new height");
+
+    /* Past the landing distance the flight is over. */
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 1;
+    g_FireAim.dTravel = 99.0;
+    g_FireAim.dTravelSave = 100.0;
+    g_FireAim.dBound = 100.0;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.nTargetZ = 0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32((i32)g_FireAim.dTravel, 104, "travel 104, past the landing distance");
+    Check(g_state.bFlag1 == 1, "the phase ends");
+
+    /* The rise-scaled step: bound 2 against a rise of 10 gives 5 * 2 / 10. */
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 1;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dBound = 2.0;
+    g_FireAim.nOriginZ = 0;
+    g_FireAim.nTargetZ = 10;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_FireAim.dTravel > 0.99 && g_FireAim.dTravel < 1.01,
+          "a short bound against a tall rise shortens the step");
+
+    FireSetup();
+    (void)FireEntry(0x11);
+    g_bThrowPending = 1;
+    g_FireAim.dTravel = 0.0;
+    g_FireAim.dBound = 2.0;
+    g_FireAim.nOriginZ = 10;
+    g_FireAim.nTargetZ = 0;   /* the rise is an absolute difference */
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check(g_FireAim.dTravel > 0.99 && g_FireAim.dTravel < 1.01,
+          "a downward rise is scaled the same way");
+}
+
+static void TestFireMeleeStamp(void)
+{
+    printf("Tact_ProcessFireAction cmd 0x12, the melee-target stamp\n");
+    FireSetup();
+    (void)FireEntry(0x12);
+    g_state.gap_70112[1] = 0;
+    g_FireAim.nTgtX = 11;
+    g_FireAim.nTgtY = 11;
+    g_FireAim.nTgtZ = 0;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((g_aFireCells[0][11][11].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) == 0,
+          "no fire animation, no stamp");
+    Check(g_state.bFlag1 == 1, "and the phase ends");
+
+    FireSetup();
+    (void)FireEntry(0x12);
+    g_state.gap_70112[1] = 1;
+    g_FireAim.nTgtX = 11;
+    g_FireAim.nTgtY = 11;
+    g_FireAim.nTgtZ = 0;
+    g_state.nPhaseCounter = 10;
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    Check((g_aFireCells[0][11][11].bFlags29 & PUFO_CELLFLAG_SHOT_TRACE) != 0,
+          "the melee cell is stamped");
+    CheckEqI32(g_state.nPhaseCounter, 11, "the phase counter advances");
+    Check(g_state.bFlag1 == 0, "counter 11 of 11 keeps the phase");
+    Tact_ProcessFireAction(&g_state, &g_FireCtx);
+    CheckEqI32(g_state.nPhaseCounter, 12, "counter 12 ends it");
+    Check(g_state.bFlag1 == 1, "and raises bFlag1");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -2107,6 +2992,16 @@ int main(void)
     TestFallActionPanic();
     TestFallActionMedikit();
     TestFallActionMelee();
+
+    TestFireTurn();
+    TestFireStepFrame();
+    TestFireDoor();
+    TestFireSmallCases();
+    TestFireShotFlight();
+    TestFireFallProgress();
+    TestFireDecaySweep();
+    TestFireThrowFlight();
+    TestFireMeleeStamp();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

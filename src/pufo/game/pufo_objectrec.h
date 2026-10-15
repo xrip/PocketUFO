@@ -109,6 +109,16 @@ _Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
 #define PUFO_SPECIAL_SORT_MEDIKIT 21 /* the medikit branch      */
 #define PUFO_SPECIAL_SORT_LATCH   23 /* the latch-4 branch      */
 
+/* The two multi-target weapon kinds. The original compares the raw values at
+ * four sites: Tact_ChargeShotAmmo @ 0x502FC (a second shot of the same burst
+ * charges no ammo and no TU), Tact_ProcessFireAction @ 0x5171C (they resolve the
+ * shot as soon as the flight passes the bound), Input_OnConfirm @ 0x16070 (they
+ * clear the multi-target mark off their cells) and the fire-mode cost table in
+ * pufo_tactui.c (they show abFlagByMode[2] as the percentage). Which two weapons
+ * they are is not established by the code, so the names say what the code does. */
+#define PUFO_SORT_KEY_MULTI_TARGET_A 13
+#define PUFO_SORT_KEY_MULTI_TARGET_B 35
+
 /* Three fire modes; abCostPct and abArmorTu are parallel arrays indexed by them. */
 #define PUFO_FIRE_MODE_COUNT 3
 

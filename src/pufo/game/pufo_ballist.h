@@ -20,8 +20,15 @@
  *   0x14060  trajectory end X (int)
  *   0x14064  trajectory end Y (int)
  *   0x14068  trajectory end Z (int)
- *   0x1406C  bFireHitResult (char), only written by Tact_ProcessFireAction
- *   0x1406D  bTrajHitStop   (char), the loop flag read by Tact_ResolveThrowLanding
+ *   0x1406C  bFireHitResult (char), cleared at 0x2FC54 by every arc walk and set to 1
+ *                           at 0x3010C when the walked sample leaves the map; read at
+ *                           five sites in Tact_ProcessFireAction
+ *   0x1406D  bTrajHitStop   (char), the throw gate: written by the input handlers
+ *                           (Input_OnPointer, Input_OnConfirm, UiScreen_OnCancel, ...) and
+ *                           by Tact_SimulateThrowArc at 0x31A0C; read by Tact_ProcessFireAction
+ *                           cmd 0xE/0x11, Tact_ProcessFallAction and MapView_DrawUnitFacingArrow.
+ *                           The action contexts call this byte ThrowPending.
+ *   0x14070  pArrowThrownItem (TactItem*), written by Tact_SimulateThrowArc at 0x319FC
  *   0x14078  arc denominator  (double, Tact_SimulateThrowArc)
  *   0x14080  nTrajBound       \ the bound double, stored as two dwords
  *   0x14084  nTrajBoundHi     /
@@ -65,6 +72,10 @@
 #define PUFO_AIM_ROW_TABLE_SIZE 66   /* 6 rows x 11 bytes */
 #define PUFO_AIM_ROW_MAX_ID   5
 
+/* The Map keeps ten arc samples at 0x13EE8 / 0x13F38 / 0x13F88; the shot and
+ * throw animation loops all run over exactly these ten. */
+#define PUFO_AIM_SAMPLE_COUNT 10
+
 /* The original's half-turn constant is 1.57075, not the exact pi/2. */
 #define PUFO_AIM_HALF_PI     1.57075
 /* Throw ballistics constant, 0x3FB28F5C... as encoded at 0x3102c. */
@@ -98,6 +109,24 @@ typedef struct AimState {
     i32    anAimRow[PUFO_AIM_ROW_COUNT]; /* 0x13FD8, bytes widened to dwords */
     i32    nRowId;        /* 0x14088 */
     bool   bYawFromRandom;
+    /* The cell the arc stopped on, 0x14040 / 0x14044 / 0x14048. The shot trace
+     * writes it and so do the four UI confirmations (Tact_HandleMapClick @ 0x1512c,
+     * TactAction_ConfirmMeleeMode6 @ 0x17bb8, TactHud_UseSpecialItem20 @ 0x17d54,
+     * TactAction_ConfirmSpecial9 @ 0x18260), which is why the original's name for
+     * the slot is "melee cell". Tact_ProcessFireAction reads it back for
+     * Combat_ResolveShot. */
+    i32    nTgtX;
+    i32    nTgtY;
+    i32    nTgtZ;
+    /* 0x14038: the distance the last arc walk actually took. Tact_ProcessFireAction
+     * compares its own flight counter against it to decide when the shot lands. */
+    double dTravelSave;
+    /* The ten arc samples, 0x13EE8 / 0x13F38 / 0x13F88, in voxel units. NULL when
+     * the caller has no Map block behind this AimState; the trace then keeps the
+     * samples in its own locals. */
+    double *padMtX;
+    double *padMtY;
+    double *padMtZ;
 } AimState;
 
 /* Angle setup shared by Tact_ComputeAimVector and Map_TraceLos.

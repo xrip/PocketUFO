@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 896 / 1103 (81.2%) |
-| Bytes of original code cited | 426312 / 598792 (71.2%) |
+| Functions cited as evidence | 898 / 1103 (81.4%) |
+| Bytes of original code cited | 435608 / 598792 (72.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 11980 |
+| Test checks run | 12130 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 201 | 214 | 141308 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 203 | 214 | 150604 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -239,11 +239,12 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (201 functions)
+### `tact` (203 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
+| `0x50adc` | `Tact_ProcessFireAction` | 8192 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
 | `0x34fbc` | `Tact_CheckBattleEnd` | 5748 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` |
 | `0x52adc` | `Tact_ProcessFallAction` | 5716 | `src/pufo/game/pufo_objectrec.h`, `src/pufo/game/pufo_tactstate.c` (+1) |
@@ -253,19 +254,19 @@ is the module that answers to it.
 | `0x48580` | `Unit_UpdateVisibility` | 3728 | `src/pufo/game/pufo_invdrag.h`, `src/pufo/game/pufo_mapctx.c` (+6) |
 | `0x3a2ac` | `Tact_SpawnAliens` | 3516 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
 | `0x1c958` | `MapView_DrawUnit` | 3220 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+3) |
+| `0x2f12c` | `Combat_ResolveShot` | 2828 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+4) |
 | `0x1b7bc` | `MapView_DrawUnitFacingArrow` | 2692 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+1) |
 | `0x31a18` | `Tact_ResolveThrowLanding` | 2580 | `src/pufo/game/pufo_ballist.h` |
 | `0x3102c` | `Tact_SimulateThrowArc` | 2540 | `src/pufo/game/pufo_ballist.h` |
 | `0x2e7d8` | `Combat_SplashDamageCells` | 2388 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
 | `0x39980` | `Tact_DeployTeamAndHwps` | 2348 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` (+2) |
 | `0x346e0` | `Tact_ClearSoldierBattleFlags` | 2268 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` |
-| `0x3242c` | `Map_TraceVoxelOccupancy` | 2140 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` |
+| `0x3242c` | `Map_TraceVoxelOccupancy` | 2140 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` (+2) |
 | `0x38f00` | `Tact_SetupCraftCargo` | 2116 | `src/pufo/game/pufo_tactctl.h` |
 | `0x1ed4c` | `MapView_DrawMinimap` | 2112 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x33c80` | `Tact_TallyItemRecovery` | 2100 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` (+1) |
 | `0x30890` | `Map_TraceLos` | 1948 | `src/pufo/game/pufo_los.c`, `src/pufo/game/pufo_los.h` |
-| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/game/pufo_tactstate.h` |
+| `0x54130` | `Tact_TickActiveUnit` | 1868 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x2fc38` | `Tact_TraceProjectileArc` | 1840 | `src/pufo/game/pufo_ballist.h` |
 | `0x3be24` | `Tact_EquipTeamFromCraft` | 1836 | `src/pufo/game/pufo_invdrag.c`, `src/pufo/game/pufo_invdrag.h` |
 | `0x2deac` | `Map_ComputeFov` | 1776 | `src/pufo/game/pufo_combat.h`, `src/pufo/game/pufo_mapcell.h` (+1) |
@@ -279,6 +280,7 @@ is the module that answers to it.
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x33780` | `Tact_TallyUnitResults` | 1136 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` (+1) |
 | `0x1c240` | `MapView_DrawUnitHeightGlyph` | 1132 | `src/pufo/game/pufo_isodraw.h` |
+| `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/game/pufo_ballist.h` |
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
@@ -312,12 +314,12 @@ is the module that answers to it.
 | `0x2e5d0` | `Unit_ApplyCellDamage` | 520 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
 | `0x4b724` | `MapCell_TickProximityItems` | 516 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` |
 | `0x1b280` | `MapView_DrawCellSelectMarker` | 476 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
-| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+2) |
+| `0x4e254` | `Unit_bArmorTuWarn` | 476 | `src/pufo/game/pufo_mapctx.c`, `src/pufo/game/pufo_mapctx.h` (+3) |
 | `0x27324` | `GameTick_Step` | 460 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x1b0d4` | `MapView_bResolveIsoCell` | 428 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x32fa8` | `Combat_DetonateNearbyItems` | 416 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/game/pufo_objectrec.h`, `src/pufo/game/pufo_tactstate.h` |
+| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_objectrec.h` (+1) |
 | `0x46fe0` | `Soldier_PickBestScoreAmong` | 388 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x49a0c` | `Unit_PlaceOnMap` | 376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -327,7 +329,7 @@ is the module that answers to it.
 | `0x4ca18` | `Tact_BeginEnemyTurn` | 348 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x4b2f4` | `TactState_EnqueueThrow` | 300 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4978c` | `Unit_UpdateAnimPose` | 292 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_unit.c` (+1) |
-| `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
+| `0x18260` | `TactAction_ConfirmSpecial9` | 288 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_tactui.c` (+1) |
 | `0x33148` | `Tact_RemoveUnitFromSideLists` | 284 | `src/pufo/game/pufo_roster.h` |
 | `0x17030` | `Tact_OpenLeftHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
 | `0x17148` | `Tact_OpenRightHandMenu` | 280 | `src/pufo/game/pufo_tactui.h` |
@@ -459,7 +461,7 @@ is the module that answers to it.
 | `0x1f58c` | `TactHud_DrawInventoryScreen` | 1792 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
 | `0x1d5ec` | `TactHud_DrawSelectedUnitPanel` | 1484 | `src/pufo/game/pufo_tacthud.h` |
 | `0x20ef8` | `TactHud_DrawTopBar` | 1336 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
-| `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
+| `0x17d54` | `TactHud_UseSpecialItem20` | 1292 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_tacthud.c` (+1) |
 | `0x15a48` | `Inv_CloseAndCommit` | 1268 | `src/pufo/game/pufo_invdrag.h` |
 | `0x3b068` | `Tact_LoadUiPads` | 1072 | `src/pufo/game/pufo_isodraw.h`, `src/pufo/ui/pufo_uibank.h` |
 | `0x1674c` | `TactHud_ClimbUp` | 932 | `src/pufo/game/pufo_tacthud.c`, `src/pufo/game/pufo_tacthud.h` |
@@ -1184,18 +1186,16 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `tact` — 13 functions, 37036 bytes remaining
+### `tact` — 11 functions, 27740 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | cell addressing resolved but the ~15-global working set and Map_ProbeStepOccupants are not ported; the path flood takes an injected probe, so it is a drop-in once that contract exists |
-| `0x50adc` | `Tact_ProcessFireAction` | 8192 | the largest fire action; depends on Combat_ResolveShot |
 | `0x4cbe0` | `Tact_EnemyAiTick` | 3440 | 3440 B enemy AI driver; injected as a hook in pufo_turn |
 | `0x4b9b8` | `BeforeEnemyStep` | 2792 | 2792 B of pre-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x4c4a0` | `AfterEnemyStep` | 1368 | 1368 B of post-AI-turn bookkeeping; injected as a hook in pufo_turn |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4abc8` | `EnemyAi_TryFireOrWander` | 1208 | not yet ported; scheduled with the `tact` subsystem work |
-| `0x1512c` | `Tact_HandleMapClick` | 1104 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | same working set as Unit_CanStepTo; needs the step-context contract |
 | `0x2c2a8` | `Unit_PathToCell` | 1052 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x4a444` | `Tact_UpdateUnitControl` | 788 | not yet ported; scheduled with the `tact` subsystem work |
@@ -1284,7 +1284,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | Suite | Result | Checks |
 |---|---|---|
 | `test_audio` | PASS | 53 |
-| `test_ballist` | PASS | 100 |
+| `test_ballist` | PASS | 105 |
 | `test_baseui` | PASS | 2601 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
@@ -1328,7 +1328,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tactend` | PASS | 395 |
 | `test_tacthud` | PASS | 266 |
 | `test_tactinit` | PASS | 85 |
-| `test_tactstate` | PASS | 341 |
+| `test_tactstate` | PASS | 486 |
 | `test_tactui` | PASS | 423 |
 | `test_template` | PASS | 48 |
 | `test_terrain` | PASS | 59 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 518 citations.
+parity report. Total: 529 citations.
 
 ### Offsets below the image base (40)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (478)
+### At or above the image base (489)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1425,17 +1425,22 @@ against the IDB when the final report is assembled.
 - `0x1330c`
 - `0x133a4`
 - `0x136df0`
+- `0x13ee8`
 - `0x14004`
 - `0x14008`
 - `0x1400c`
 - `0x14010`
 - `0x14014`
 - `0x14018`
+- `0x14020`
 - `0x14028`
+- `0x14030`
+- `0x14038`
 - `0x14040`
 - `0x14044`
 - `0x14048`
 - `0x1406d`
+- `0x14078`
 - `0x14080`
 - `0x1408c`
 - `0x140b4`
@@ -1456,6 +1461,7 @@ against the IDB when the final report is assembled.
 - `0x150d9`
 - `0x150dc`
 - `0x150e0`
+- `0x150f0`
 - `0x150fc`
 - `0x15100`
 - `0x15110`
@@ -1590,6 +1596,7 @@ against the IDB when the final report is assembled.
 - `0x15ef08`
 - `0x15ef0c`
 - `0x16022c`
+- `0x16070`
 - `0x160b2c`
 - `0x160c4c`
 - `0x160c58`
@@ -1709,6 +1716,10 @@ against the IDB when the final report is assembled.
 - `0x4836c`
 - `0x49994`
 - `0x4ab10`
+- `0x502fc`
+- `0x5116c`
+- `0x5171c`
+- `0x52ac8`
 - `0x5365c`
 - `0x58e7c`
 - `0x5d30c`

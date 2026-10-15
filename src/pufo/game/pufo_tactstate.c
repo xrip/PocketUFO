@@ -6,9 +6,11 @@
 #include "game/pufo_path.h"   /* g_aStepDir, Map_FacingDelta, Map_bFacingTurnPositive */
 #include "audio/pufo_audio.h" /* Sound_Play */
 #include "game/pufo_turn.h"    /* Tact_RefreshTeamVisibility */
-#include "game/pufo_combat.h"  /* g_aFireSoundBySortKey, ProximityCtx */
+#include "game/pufo_combat.h"  /* g_aFireSoundBySortKey, ProximityCtx, Combat_ResolveShot */
+#include "game/pufo_font.h"    /* Font_GetSprByIndex, Mc1Rec.nGlobalIdx */
 #include "util/pufo_rand.h"    /* Game_RandU16 */
 
+#include <math.h>
 #include <string.h>
 
 /* unk_157198 @ 0x157198. */
@@ -1030,6 +1032,11 @@ static void MoveThrow(TactState *pState, const MoveActionCtx *pCtx,
                              nX1 + pCtx->pScatter->nDx,
                              nY1 + pCtx->pScatter->nDy, nZ1);
 
+    /* 0x323BC: the landing's walked distance goes to Map+0x14038, where
+     * Tact_ProcessFireAction cmd 0x11 compares its own flight counter against it.
+     * The first landing call writes the same slot; this is the write that survives. */
+    pCtx->pAim->dTravelSave = pCtx->pThrowLanding->dTravel;
+
     Tact_SimulateThrowArc(pCtx->pThrowArc, &pCtx->geom, pCtx->pfnLookup,
                           pCtx->pUser, nX0, nY0, nZ0,
                           nX1 + pCtx->pScatter->nDx,
@@ -2004,4 +2011,557 @@ void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx)
     }
 
     Fall_Tail(pState, pCtx);
+}
+
+/* --- Tact_ProcessFireAction @ 0x50adc --------------------------------------- */
+
+/* LABEL_157 @ 0x52AC8. Every exit that ends the phase raises bFlag1, which is
+ * what tells Tact_TickActiveUnit @ 0x54130 to run the fall processor next. */
+static void Fire_EndPhase(TactState *pState)
+{
+    pState->bFlag1 = 1;
+}
+
+/* The original indexes the cell grid with no bounds test at all; the port's
+ * lookup returns NULL outside the map, which is the deviation recorded in
+ * docs/parity/game-core.md for this unit. */
+static MapCell *FireCell(const FireActionCtx *pCtx, i32 nX, i32 nY, i32 nLayer)
+{
+    if (!Map_IsValidCell(&pCtx->geom, nX, nY, nLayer)) {
+        return NULL;
+    }
+    return pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+}
+
+static void Fire_UpdateVisibility(const FireActionCtx *pCtx, Soldier *pUnit)
+{
+    if (pCtx->pfnUpdateVisibility != NULL) {
+        pCtx->pfnUpdateVisibility(pUnit, pCtx->pCallbackUser);
+    } else if (pCtx->pVisCtx != NULL) {
+        Unit_UpdateVisibility(pUnit, pCtx->pVisCtx);
+    }
+}
+
+static void Fire_TeamVisibility(const FireActionCtx *pCtx, TactState *pState)
+{
+    Tact_RefreshTeamVisibility(pState, pCtx->apXcomUnits, (i32)*pCtx->pnXcomCount,
+                               pCtx->pfnUpdateVisibility, pCtx->pCallbackUser);
+}
+
+static void Fire_Push(const FireActionCtx *pCtx, i32 nTextRec)
+{
+    if (pCtx->pfnPushStatus != NULL) {
+        pCtx->pfnPushStatus(nTextRec, pCtx->pCallbackUser);
+    }
+}
+
+/* The ten arc samples sit in voxel units: 16 to a cell in X and Y, 12 to a layer.
+ * ORIGINAL BUG (0x51264, 0x51E5C): the original converts them two ways in one
+ * function and they are NOT interchangeable. 1/12 is not exact in binary, so
+ * (int)(z * (1.0 / 12.0)) lands one below (int)z / 12 at exact multiples of 12 -
+ * and the muzzle heights the aim setup builds are 12 * nZ + 6, so the difference
+ * is reachable. The shot loop (0x51264) uses the reciprocal multiply; the three
+ * resolve loops (0x51E5C, 0x52124, 0x527B8) truncate first and integer-divide.
+ * Both truncate toward zero, which is C's rule, so the port keeps both forms. */
+static i32 Fire_SampleLayerMul(double dZ)
+{
+    return (i32)(dZ * (1.0 / (double)PUFO_VOX_PER_CELL_Z));
+}
+
+static i32 Fire_SampleCoordMul(double dV)
+{
+    return (i32)(dV * (1.0 / (double)PUFO_VOX_PER_CELL_X));
+}
+
+static i32 Fire_SampleLayerDiv(double dZ)
+{
+    return (i32)dZ / PUFO_VOX_PER_CELL_Z;
+}
+
+static i32 Fire_SampleCoordDiv(double dV)
+{
+    return (i32)dV / PUFO_VOX_PER_CELL_X;
+}
+
+/* 0x517DC, 0x51A74 and 0x51D44: walk the ten samples and set or clear the
+ * shot-trace flag on each one's cell. bIntDiv picks the resolve loops' integer
+ * division over the shot loop's reciprocal multiply. */
+static void Fire_SweepSamples(const FireActionCtx *pCtx, bool bSet, bool bIntDiv)
+{
+    AimState *pAim = pCtx->pAim;
+
+    if (pAim->padMtX == NULL || pAim->padMtY == NULL || pAim->padMtZ == NULL) {
+        return;
+    }
+    for (i32 i = 0; i < PUFO_AIM_SAMPLE_COUNT; ++i) {
+        const i32 nLayer = bIntDiv ? Fire_SampleLayerDiv(pAim->padMtZ[i])
+                                   : Fire_SampleLayerMul(pAim->padMtZ[i]);
+        const i32 nY = bIntDiv ? Fire_SampleCoordDiv(pAim->padMtY[i])
+                               : Fire_SampleCoordMul(pAim->padMtY[i]);
+        const i32 nX = bIntDiv ? Fire_SampleCoordDiv(pAim->padMtX[i])
+                               : Fire_SampleCoordMul(pAim->padMtX[i]);
+        MapCell *pCell = FireCell(pCtx, nX, nY, nLayer);
+
+        if (pCell == NULL) {
+            continue;
+        }
+        if (bSet) {
+            pCell->bFlags29 |= PUFO_CELLFLAG_SHOT_TRACE;
+        } else {
+            pCell->bFlags29 &= (u8)~PUFO_CELLFLAG_SHOT_TRACE;
+        }
+    }
+}
+
+/* 0x51A40, 0x517A8 and 0x525D8: the renderer's layer scratch, raised to
+ * nMaxLayerClamp when it falls below. The original reaches the same value two
+ * ways, (int)(z * 1/12) + 1 and 1 - (int)(z * -1/12); they agree for z >= 0,
+ * which is every value the flight code can produce. */
+static void Fire_SetLayerScratch(const FireActionCtx *pCtx, i32 nLayer)
+{
+    *pCtx->pnLayerScratch = (i8)nLayer;
+    if (*pCtx->pnLayerScratch < *pCtx->pnMaxLayerClamp) {
+        *pCtx->pnLayerScratch = (i8)*pCtx->pnMaxLayerClamp;
+    }
+}
+
+/* 0x51CD4 and 0x51EF4. The target cell is the one the arc stopped on, which the
+ * UI confirmations also write; the slot is AimState.nTgtX/Y/Z @ 0x14040/44/48. */
+static void Fire_ResolveShot(const FireActionCtx *pCtx)
+{
+    if (pCtx->pCombat == NULL) {
+        return;
+    }
+    Combat_ResolveShot(pCtx->pCombat, pCtx->pShotHooks, pCtx->pRosters,
+                       pCtx->pAim->nTgtX, pCtx->pAim->nTgtY, pCtx->pAim->nTgtZ,
+                       *pCtx->pnFireSlot, *pCtx->ppFireObject,
+                       pCtx->apHits, pCtx->apHitsSave, pCtx->pShotOut);
+}
+
+/* cmd 1's draw-offset ladder, 0x50C38..0x50D98. Two pairs drive all eight
+ * facings: nHalf is (t <= 3 ? t + 1 : t - 7) and nNeg is its sign-flipped twin
+ * (-1 - t, 7 - t). Each facing writes one or both of the two scratch offsets and
+ * leaves the other at whatever the previous frame left. */
+static void Fire_StepDrawOffsets(TactState *pState, u8 nFacing, i32 nTick)
+{
+    const bool bFirst = (nTick <= 3);
+    const i32 nHalf = bFirst ? nTick + 1 : nTick - 7;
+    const i32 nNeg  = bFirst ? -1 - nTick : 7 - nTick;
+
+    switch (nFacing) {
+    case 0: pState->nStepDrawOffX = 2 * nHalf; pState->nStepDrawOffY = nNeg;  break;
+    case 1: pState->nStepDrawOffY = 0;         pState->nStepDrawOffX = 4 * nHalf; break;
+    case 2: pState->nStepDrawOffY = nHalf;     pState->nStepDrawOffX = 2 * nHalf; break;
+    case 3: pState->nStepDrawOffX = 0;         pState->nStepDrawOffY = 2 * nHalf; break;
+    case 4: pState->nStepDrawOffX = 2 * nNeg;  pState->nStepDrawOffY = nHalf;  break;
+    case 5: pState->nStepDrawOffY = 0;         pState->nStepDrawOffX = 4 * nNeg; break;
+    case 6: pState->nStepDrawOffY = nNeg;      pState->nStepDrawOffX = 2 * nNeg; break;
+    case 7: pState->nStepDrawOffX = 0;         pState->nStepDrawOffY = 2 * nNeg; break;
+    default: break;
+    }
+}
+
+void Tact_ProcessFireAction(TactState *pState, const FireActionCtx *pCtx)
+{
+    TactQueueEntry *pEntry = &pState->aQueue[pState->nQueueCursor];
+    Soldier        *pUnit  = pEntry->pUnit;
+    AimState       *pAim   = pCtx->pAim;
+
+    switch (pEntry->nCmd) {
+
+    /* Turn. 0x50EAC..0x50F94. */
+    case TACTCMD_TURN: {
+        pState->nPhaseTick += 1;
+        if (pState->nPhaseMax < pState->nPhaseTick) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        /* The phase object says the unit is mid-turn: no TU is spent at all.
+         * A NULL phase object is a port-local case the original cannot have. */
+        if (pCtx->pTactCtx == NULL || pCtx->pTactCtx->nPhase != 1) {
+            if (pUnit->uTu == 0) {
+                Fire_Push(pCtx, MOVE_MSG_NO_TIME);
+                Fire_TeamVisibility(pCtx, pState);
+                return;
+            }
+            if (pCtx->pfnArmorTuWarn != NULL
+                && pCtx->pfnArmorTuWarn(pUnit, 1, pCtx->pCallbackUser)) {
+                Fire_TeamVisibility(pCtx, pState);
+                return;
+            }
+            pUnit->uTu = (u16)(pUnit->uTu - 1);
+        }
+        i32 nFacing = (i32)pUnit->bFacing + (i32)pEntry->nTurnDir;
+        if (nFacing > 7) {
+            nFacing -= 8;
+        }
+        if (nFacing < 0) {
+            nFacing += 8;
+        }
+        pUnit->bFacing = (u8)nFacing;
+        Fire_UpdateVisibility(pCtx, pUnit);
+        if (*pCtx->pbEnemySpotted != 0 && pState->bUnk70114 == 0) {
+            pUnit->bAiDone = 0;
+            Fire_Push(pCtx, PUFO_TXTREC_SPOTTED);
+            Fire_TeamVisibility(pCtx, pState);
+        }
+        return;
+    }
+
+    /* The fire-frame step. 0x50B74..0x50E9C. */
+    case TACTCMD_STEP: {
+        if ((pUnit->bFlags & 0x20u) != 0) {
+            return;   /* the unit is flagged dead: the phase is left running */
+        }
+        pState->nPhaseTick += 1;
+        *pCtx->pnAnimPhase += 1;
+        if (*pCtx->pnAnimPhase > 7) {
+            *pCtx->pnAnimPhase = 0;
+        }
+        if (pState->nPhaseTick % 2 == 0) {
+            pUnit->uTu = (u16)(pUnit->uTu - 1);
+        }
+        const StepDir *pDir = &g_aStepDir[pUnit->bFacing];
+        const i32 nTick = pState->nPhaseTick;
+
+        if (nTick == 4) {
+            Unit_PlaceOnMap(pUnit,
+                            (i32)pDir->dx + (i32)pUnit->pCell->nX,
+                            (i32)pUnit->pCell->nY + (i32)pDir->dy,
+                            pEntry->nDelta + (i32)pUnit->pCell->nZ,
+                            pCtx->pfnLookup, pCtx->pUser);
+        }
+        Fire_StepDrawOffsets(pState, pUnit->bFacing, nTick);
+        if (nTick <= 3) {
+            pState->nStepDrawOffY -= pState->nStepFrameDiv * nTick;
+        } else {
+            pState->nStepDrawOffY += (7 - nTick) * pState->nStepFrameDiv;
+        }
+        pUnit->nDrawOffX = (i8)pState->nStepDrawOffX;
+        pUnit->nDrawOffY = (i8)pState->nStepDrawOffY;
+
+        /* The original reads pStepFromCell unconditionally; the phase owner sets it
+         * before the fire phase runs. A NULL is a port-local case and leaves the
+         * scratch cell alone. */
+        const MapCell *pFrom = pState->pStepFromCell;
+        MapCell *pScratch = (pFrom != NULL)
+                          ? FireCell(pCtx, (i32)pFrom->nX + pDir->dx,
+                                     (i32)pFrom->nY + pDir->dy, (i32)pFrom->nZ)
+                          : NULL;
+        pState->pStepCellScratch = pScratch;
+
+        /* 0x50E54: on tick 4, and only for the types whose type-record flag 0 is
+         * set, the unit stands up when the destination cell has a floor sprite and
+         * kneels when it has none. The original tests the cell's first dword, which
+         * is MapCell.pFloorSpr. */
+        if (nTick == 4 && g_aUnitTypeFlag0[pUnit->nUnitType] == 1) {
+            const bool bKneeling = (pUnit->bFlags & PUFO_UNITFLAG_KNEEL) != 0;
+            const bool bHasFloor = (pScratch != NULL && pScratch->pFloorSpr != NULL);
+            if (bKneeling && bHasFloor) {
+                pUnit->bFlags &= (u8)~PUFO_UNITFLAG_KNEEL;
+                Unit_UpdateAnimPose(pUnit, NULL, NULL);
+            } else if (!bKneeling && !bHasFloor) {
+                pUnit->bFlags |= PUFO_UNITFLAG_KNEEL;
+                Unit_UpdateAnimPose(pUnit, NULL, NULL);
+            }
+        }
+        if (nTick > PUFO_STEP_FRAME_MAX) {
+            Fire_EndPhase(pState);
+        }
+        return;
+    }
+
+    /* The door animation. 0x51010..0x51168. */
+    case TACTCMD_DOOR: {
+        pState->nPhaseTick += 1;
+        if (pState->nPhaseTick != PUFO_DOOR_SWAP_TICK) {
+            if (pState->nPhaseTick >= 4) {
+                Fire_EndPhase(pState);   /* LABEL_70 @ 0x5116C */
+            }
+            return;
+        }
+        MapCell *pCell = pCtx->pfnLookup(pEntry->nX, pEntry->nY, pEntry->nZ, pCtx->pUser);
+        if (pCell == NULL || pCtx->pFont == NULL) {
+            return;
+        }
+        /* The door swings the other way when the entry's facing byte is 2. The
+         * sprite neighbour is looked up through the font index, so a missing wall
+         * sprite is a case the original would crash on. */
+        if ((i8)pEntry->nFacing == 2) {
+            if (pCell->pWallSprB != NULL) {
+                pCell->pWallSprA = Font_GetSprByIndex(pCtx->pFont,
+                                                      (u16)(pCell->pWallSprB->nGlobalIdx - 1));
+            }
+            pCell->pWallSprB = NULL;
+        } else {
+            if (pCell->pWallSprA != NULL) {
+                pCell->pWallSprB = Font_GetSprByIndex(pCtx->pFont,
+                                                      (u16)(pCell->pWallSprA->nGlobalIdx + 1));
+            }
+            pCell->pWallSprA = NULL;
+        }
+        return;
+    }
+
+    /* Plain animation advance. 0x51188..0x511A8. */
+    case TACTCMD_STEP_DOOR:
+        pState->nPhaseTick += 1;
+        *pCtx->pnAnimPhase += 1;
+        if (pState->nPhaseTick > PUFO_ANIM_ADVANCE_MAX) {
+            Fire_EndPhase(pState);
+        }
+        return;
+
+    /* The vertical step's draw offset. 0x50FBC..0x50FFC. */
+    case TACTCMD_VERT_STEP:
+        pState->nPhaseTick += 1;
+        if (pState->nPhaseMax < pState->nPhaseTick) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        pUnit->nDrawOffY = (i8)(-2 * pState->nPhaseTick * (i8)pEntry->nFacing);
+        return;
+
+    /* The death flash. 0x529D4..0x52A30. */
+    case TACTCMD_DEATH_FLASH:
+        if (Unit_bIsLarge(pUnit) || pEntry->nArg != 0) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        *pCtx->pnAnimPhase += 1;
+        pState->nPhaseTick += 1;
+        if (pState->nPhaseTick <= PUFO_DEATH_FLASH_TICK_MAX) {
+            return;
+        }
+        *pCtx->pnAnimPhase = 0;
+        Fire_EndPhase(pState);
+        return;
+
+    /* The shot flight. 0x511B4..0x51F88. */
+    case TACTCMD_FIRE_SHOT: {
+        if ((pUnit->bFlags & PUFO_UNITFLAG_AIMING) == 0) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        if (pAim->padMtX == NULL || pAim->padMtY == NULL || pAim->padMtZ == NULL) {
+            Fire_EndPhase(pState);   /* port-local: the ctx must wire the sample arrays */
+            return;
+        }
+        pAim->dTravel += PUFO_FIRE_TRAVEL_STEP;
+
+        /* 0x51218..0x516A8: each sample is cleared off the cell it sat on last
+         * frame, then rebuilt from the muzzle at (dTravel - 1.41 * i). A sample
+         * that falls behind the muzzle becomes -1000.0, which no cell test accepts. */
+        const double dCosPitch = cos(pAim->dPitch);
+        const double dCosYaw   = cos(pAim->dYaw);
+        const double dSinYaw   = sin(pAim->dYaw);
+        const double dSinPitch = sin(pAim->dPitch);
+        for (i32 i = 0; i < PUFO_AIM_SAMPLE_COUNT; ++i) {
+            MapCell *pCell = FireCell(pCtx,
+                                      Fire_SampleCoordMul(pAim->padMtX[i]),
+                                      Fire_SampleCoordMul(pAim->padMtY[i]),
+                                      Fire_SampleLayerMul(pAim->padMtZ[i]));
+            if (pCell != NULL) {
+                pCell->bFlags29 &= (u8)~PUFO_CELLFLAG_SHOT_TRACE;
+            }
+            const double dBack = pAim->dTravel - (double)i * PUFO_SAMPLE_STEP;
+            if (dBack > 0.0) {
+                pAim->padMtX[i] = (double)pAim->nOriginX + (dCosYaw * dCosPitch) * dBack;
+                pAim->padMtY[i] = (double)pAim->nOriginY + (dSinYaw * dCosPitch) * dBack;
+                pAim->padMtZ[i] = (double)pAim->nOriginZ + dSinPitch * dBack;
+            } else {
+                pAim->padMtX[i] = PUFO_SAMPLE_OFFMAP;
+                pAim->padMtY[i] = PUFO_SAMPLE_OFFMAP;
+                pAim->padMtZ[i] = PUFO_SAMPLE_OFFMAP;
+            }
+        }
+
+        /* 0x516D8..0x51758: the shot lands once the flight passes the distance the
+         * trace walked. The two multi-target weapons land as soon as they reach the
+         * bound, provided the burst still has shots left. */
+        const bool bPastRange = !(pAim->dTravel <= pAim->dTravelSave);
+        const TactItem *pWeapon = (const TactItem *)pEntry->pWeapon;
+        const u16 uKey = (pWeapon != NULL && pWeapon->pObj != NULL)
+                       ? pWeapon->pObj->uSortKey : 0;
+        const bool bMultiTarget = (uKey == PUFO_SORT_KEY_MULTI_TARGET_A
+                                   || uKey == PUFO_SORT_KEY_MULTI_TARGET_B);
+        if (!(bPastRange
+              || (bMultiTarget
+                  && *pCtx->pnShotCount < *pCtx->pnBurstShots
+                  && pAim->dTravel >= pAim->dBound))) {
+            Fire_SetLayerScratch(pCtx, 1 - (i32)(pAim->padMtZ[0] * (-1.0 / (double)PUFO_VOX_PER_CELL_Z)));
+            Fire_SweepSamples(pCtx, true, false);
+            return;
+        }
+
+        /* 0x519BC: the aim's arc walk left the map. 1 means the traced shot already
+         * ran off the edge, so the resolve happens on this first pass. */
+        const u8 bArcOffMap = *pCtx->pbFireHitResult;
+        if (pEntry->nMode != 7 || bArcOffMap != 0) {
+            *pCtx->pbFireStatus1 = 0;
+        } else {
+            Fire_SetLayerScratch(pCtx, Fire_SampleLayerMul(pAim->padMtZ[0]) + 1);
+            Fire_SweepSamples(pCtx, true, false);
+        }
+
+        if (pEntry->nMode == 7) {
+            if (bArcOffMap == 0
+                && (pAim->dTravelSave <= pAim->dBound
+                    || *pCtx->pnShotCount >= *pCtx->pnBurstShots)) {
+                Fire_ResolveShot(pCtx);
+                /* 0x51D28 writes only the low byte of the dword. */
+                pState->nStepZDelta = (pState->nStepZDelta & ~0xFF) | 1;
+                *pCtx->pbFallDamagePending = 1;
+                Fire_SweepSamples(pCtx, false, true);
+            }
+        } else {
+            if (bArcOffMap == 0) {
+                Fire_ResolveShot(pCtx);
+            }
+            *pCtx->pbFallDamagePending = 1;
+            *pCtx->pbFireStatus1 = 0;
+        }
+        /* 0x51EE4 and 0x51F50 re-read Map.bFireHitResult after the resolve. The fire
+         * phase never writes it and no arc walk runs in between, so both re-reads
+         * return the value the aim setup left there. */
+        *pCtx->pbFireStatus9 = (u8)(*pCtx->pbFireHitResult == 0);
+        *pCtx->pnFireTickProgress = 0;
+        pState->bFlag1 = 1;
+        return;
+    }
+
+    /* The fall-damage progress tick. 0x52864..0x528A4. */
+    case TACTCMD_FIRE_MARK:
+        if (*pCtx->pbFallDamagePending == 0 || *pCtx->pbFireHitResult != 0) {
+            *pCtx->pbFallDamagePending = 0;
+            Fire_EndPhase(pState);
+            return;
+        }
+        *pCtx->pnFireTickProgress += 1;
+        if (*pCtx->pnFireTickProgress >= PUFO_FALL_PROGRESS_MAX) {
+            Fire_EndPhase(pState);
+        }
+        return;
+
+    /* The whole-map animated-tile decay, then the phase tick. 0x528BC..0x529C8. */
+    case 0x10: {
+        const i32 nRows = 10 * (i32)pCtx->geom.nDimY;
+        const i32 nCols = 10 * (i32)pCtx->geom.nDimX;
+
+        for (i32 nLayer = 0; nLayer < PUFO_MAP_LAYERS; ++nLayer) {
+            for (i32 nY = 0; nY < nRows; ++nY) {
+                for (i32 nX = 0; nX < nCols; ++nX) {
+                    MapCell *pCell = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+                    if (pCell == NULL || (pCell->nFlags32 & 0x78u) == 0) {
+                        continue;
+                    }
+                    pCell->nFlags32 = GameTick_DecayCellFlags(pCell->nFlags32);
+                }
+            }
+        }
+        pState->nPhaseCounter += 1;
+        pState->nPhaseTick += 1;
+        if (pState->nPhaseTick > PUFO_PHASE_TICK_MAX) {
+            Fire_EndPhase(pState);
+        }
+        return;
+    }
+
+    /* The thrown item's flight. 0x51F9C..0x5285C. */
+    case 0x11: {
+        if (*pCtx->pbThrowPending == 0) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        if (pAim->padMtX == NULL || pAim->padMtY == NULL || pAim->padMtZ == NULL) {
+            Fire_EndPhase(pState);   /* port-local, as in cmd 0xE */
+            return;
+        }
+        /* 0x51FCC..0x520D8: the step is 5 voxels, scaled down by bound / rise when
+         * the horizontal bound is shorter than the vertical rise. The scaled branch
+         * cannot divide by zero: it needs bound < rise, and the bound is never
+         * negative. */
+        const i32 nRise = pAim->nTargetZ - pAim->nOriginZ;
+        const i32 nAbsRise = nRise < 0 ? -nRise : nRise;
+        if (pAim->dBound < (double)nAbsRise) {
+            pAim->dTravel += (pAim->dBound / (double)nAbsRise) * PUFO_THROW_TRAVEL_STEP;
+        } else {
+            pAim->dTravel += PUFO_THROW_TRAVEL_STEP;
+        }
+
+        /* 0x52124: the flag comes off the cell the item is over now. */
+        MapCell *pCell = FireCell(pCtx,
+                                  Fire_SampleCoordDiv(pAim->padMtX[0]),
+                                  Fire_SampleCoordDiv(pAim->padMtY[0]),
+                                  Fire_SampleLayerDiv(pAim->padMtZ[0]));
+        if (pCell != NULL) {
+            pCell->bFlags29 &= (u8)~PUFO_CELLFLAG_SHOT_TRACE;
+        }
+
+        /* 0x52260: Map_dThrowX/Y/Layer @ 0x13EE8 + 8 are sample slot 1, the
+         * previous position the renderer draws the trail from. */
+        pAim->padMtX[1] = pAim->padMtX[0];
+        pAim->padMtY[1] = pAim->padMtY[0];
+        pAim->padMtZ[1] = pAim->padMtZ[0];
+
+        /* 0x522E4..0x525A4: the projectile equation, from the origin rather than
+         * from the previous position. z = origin + travel * tan(pitch)
+         * - g * travel^2 / (2 * v0^2 * cos^2(pitch)), with v0 = dArcDenom. */
+        const double dTravel = pAim->dTravel;
+        const double dCosPitch = cos(pAim->dPitch);
+        const double dDenom = pCtx->pThrowArc != NULL ? pCtx->pThrowArc->dArcDenom : 0.0;
+        const double dDrop = ((dTravel * dTravel) * PUFO_THROW_GRAVITY)
+                           / (((dDenom * dDenom) * dCosPitch) * dCosPitch * 2.0);
+        pAim->padMtX[0] = (double)pAim->nOriginX + cos(pAim->dYaw) * dTravel;
+        pAim->padMtY[0] = (double)pAim->nOriginY + sin(pAim->dYaw) * dTravel;
+        pAim->padMtZ[0] = (double)pAim->nOriginZ
+                        + (tan(pAim->dPitch) * dTravel - dDrop);
+
+        Fire_SetLayerScratch(pCtx, 1 - (i32)(pAim->padMtZ[0] * (-1.0 / (double)PUFO_VOX_PER_CELL_Z)));
+
+        if (pAim->dTravel <= pAim->dTravelSave && *pCtx->pbThrowPending != 0) {
+            /* ORIGINAL BUG (0x52718): the upper bound on y is 160 * nMapDimX, the
+             * same expression the x test uses - nMapDimY is never read here, so a
+             * non-square map bounds the flight by the wrong dimension. */
+            const double dLimit = PUFO_THROW_XY_SCALE * (double)pCtx->geom.nDimX;
+            if (pAim->padMtX[0] >= 0.0 && pAim->padMtY[0] >= 0.0 && pAim->padMtZ[0] >= 0.0
+                && pAim->padMtX[0] < dLimit && pAim->padMtY[0] < dLimit
+                && pAim->padMtZ[0] < PUFO_THROW_Z_LIMIT) {
+                MapCell *pNew = FireCell(pCtx,
+                                         Fire_SampleCoordDiv(pAim->padMtX[0]),
+                                         Fire_SampleCoordDiv(pAim->padMtY[0]),
+                                         Fire_SampleLayerDiv(pAim->padMtZ[0]));
+                if (pNew != NULL) {
+                    pNew->bFlags29 |= PUFO_CELLFLAG_SHOT_TRACE;
+                }
+            }
+        } else {
+            pState->bFlag1 = 1;
+        }
+        return;
+    }
+
+    /* The melee-target stamp. 0x52A40..0x52AC0. */
+    case 0x12: {
+        if (pState->gap_70112[1] == 0) {
+            Fire_EndPhase(pState);
+            return;
+        }
+        MapCell *pCell = FireCell(pCtx, pAim->nTgtX, pAim->nTgtY, pAim->nTgtZ);
+        if (pCell != NULL) {
+            pCell->bFlags29 |= PUFO_CELLFLAG_SHOT_TRACE;
+        }
+        pState->nPhaseCounter += 1;
+        /* ORIGINAL BUG (0x52ABC): this case hands the phase COUNTER to the shared
+         * LABEL_155 while cmd 0x10 hands it the phase tick (0x529C4). */
+        if (pState->nPhaseCounter > PUFO_PHASE_TICK_MAX) {
+            Fire_EndPhase(pState);
+        }
+        return;
+    }
+
+    default:
+        Fire_EndPhase(pState);
+        return;
+    }
 }
