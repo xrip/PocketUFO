@@ -2324,6 +2324,182 @@ i32 Transfer_MoveOneItem(TransferMoveEnv *pEnv)
     return nLimit;
 }
 
+/* 0x96614 / 0x9662C: the transfer gate writes byte_1870C8 as a dword. The containment and living
+ * quarters sites write it unconditionally; the hangar and stores sites write it only when it is
+ * currently zero, so an earlier gate's flag survives a later gate that would not have fired. */
+static void TransferSetShortfallFlag(const TransferCapacityEnv *pEnv, bool bOnlyIfClear)
+{
+    if (pEnv->pdwShortfall != NULL && (!bOnlyIfClear || *pEnv->pdwShortfall == 0)) {
+        *pEnv->pdwShortfall = 1;
+    }
+}
+
+static i32 TransferShortfall(const TransferCapacityEnv *pEnv, i32 nReason, bool bOnlyIfClear)
+{
+    TransferSetShortfallFlag(pEnv, bOnlyIfClear);
+    if (pEnv->pnResidue != NULL) {
+        *pEnv->pnResidue = nReason;
+    }
+    return nReason;
+}
+
+/* TransferScreen_ValidateCapacity @ 0x96288: the transfer screen's increment column. The header
+ * carries the branch map and the two-base-index asymmetry. */
+i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv)
+{
+    SmapSite *pSite;
+    i32 nLimit;
+    i32 nSlot;
+    i32 nRow;
+    i32 nAux;
+    i32 nIter;
+
+    if (pEnv == NULL || pEnv->pnRowCursor == NULL || pEnv->pnRadarPulseTimer == NULL) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+    if (pEnv->pPanelA == NULL || pEnv->pPanelC == NULL || pEnv->pPanelD == NULL
+        || pEnv->pPanelE == NULL) {
+        return PUFO_BUYSELL_SHORTFALL_NONE;
+    }
+
+    /* 0x962D0: the selected row's slot id, read at the row index panel C cached. */
+    if (pEnv->pPanelC->nUnk3032 < 0 || pEnv->pPanelC->nUnk3032 >= PUFO_PANEL_LINES) {
+        return PUFO_BUYSELL_SHORTFALL_NONE; /* deviation: the original indexes panel A blindly */
+    }
+    nSlot = pEnv->pPanelA->anLineAux[pEnv->pPanelC->nUnk3032];
+
+    nLimit = *pEnv->pnRadarPulseTimer / 10; /* 0x962F0, signed division */
+    if (nLimit < 0) {
+        return nLimit; /* 0x962F0, BMI */
+    }
+
+    pSite = BuySellSiteAt(pEnv->aSites, pEnv->nSiteCount);
+
+    if (nSlot == PUFO_ROW_SOLDIER || nSlot == PUFO_ROW_ENGINEER || nSlot == PUFO_ROW_SCIENTIST) {
+        /* 0x96358: the while condition fails on the first test for these three slot ids, so the
+         * repeat loop is never entered and the whole pass runs exactly once. */
+        const i32 nOccupied = Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                     pEnv->apObjects, pEnv->nObjectCount,
+                                                     pEnv->nTransferBaseIdx); /* 0x96668 */
+        const i32 nOutbound = Base_CountOutboundTransferSpace(pEnv->aSites, pEnv->nSiteCount,
+                                                              pEnv->nSiteCount, pEnv->apBases,
+                                                              pEnv->nTransferBaseIdx,
+                                                              true); /* 0x96688 */
+        const i32 nCap = Base_CalcLivingQuartersCap(pEnv->abFacilityGrid,
+                                                    pEnv->nTransferBaseIdx); /* 0x96658 */
+
+        if (nCap < nOccupied + nOutbound + 1) { /* 0x96690 */
+            return TransferShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_LIVING, false); /* 0x96694 */
+        }
+
+        nRow = *pEnv->pnRowCursor;
+        if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+            return nLimit;
+        }
+
+        if (pEnv->pPanelD->anLineAux[nRow] > 0 && nSlot == PUFO_ROW_SOLDIER) {
+            pEnv->pPanelE->anLineAux[nRow] = 1;  /* 0x966E8, assigned 1, not incremented */
+            pEnv->pPanelD->anLineAux[nRow] -= 1; /* 0x96704 */
+            if (pSite != NULL) {
+                pSite->bRecoveredSoldierAssign =
+                    (u8)((i8)pSite->bRecoveredSoldierAssign + 1); /* 0x9672C, LDRSB / STRB at +0x204 */
+            }
+        }
+
+        if (nSlot == PUFO_ROW_ENGINEER || nSlot == PUFO_ROW_SCIENTIST) {
+            const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nSlot);
+            const i32 nAvail = Base_GetItemQty(pRec, pEnv->nSelectedBaseIdx);
+            const i32 nPending = (pSite != NULL) ? (i32)pSite->auItemQty[nSlot] : 0;
+            if (nAvail > nPending) { /* 0x9678C */
+                if (pSite != NULL) {
+                    pSite->auItemQty[nSlot] = (u16)(pSite->auItemQty[nSlot] + 1); /* 0x967A4 */
+                }
+                pEnv->pPanelD->anLineAux[nRow] -= 1;  /* 0x967BC */
+                pEnv->pPanelE->anLineAux[nRow] += 1;  /* 0x967D8 */
+            }
+        }
+        return nLimit;
+    }
+
+    for (nIter = 0;; ++nIter) {
+        nRow = *pEnv->pnRowCursor; /* 0x96368, the cached row is re-read every iteration */
+        if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+            return nLimit;
+        }
+        nAux = pEnv->pPanelA->anLineAux[nRow];
+
+        if (nAux > PUFO_TRANSFER_ROW_CRAFT_FIRST - 1 && nAux < PUFO_TRANSFER_ROW_CRAFT_LAST + 1) {
+            /* 0x96374: a craft row gates on the hangar and moves at most one craft per click. */
+            const i32 nShips = Base_CountShipsAtBase(pEnv->apCraft, pEnv->nCraftCount, pEnv->apBases,
+                                                     pEnv->nBaseCount, pEnv->abFacilityGrid,
+                                                     pEnv->nTransferBaseIdx); /* 0x9653C */
+            const i32 nInbound = Base_CountInboundTransfers(pEnv->aSites, pEnv->nSiteCount,
+                                                            pEnv->nSiteCount, pEnv->apBases,
+                                                            pEnv->nTransferBaseIdx,
+                                                            true); /* 0x96558 */
+            const i32 nCap = Base_CalcHangarCap(pEnv->abFacilityGrid,
+                                                pEnv->nTransferBaseIdx); /* 0x96570 */
+            if (nInbound + nShips + 1 > nCap) { /* 0x96580 */
+                return TransferShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_HANGAR, true); /* 0x96584 */
+            }
+            if (pEnv->pPanelD->anLineAux[nRow] > 0) {
+                pEnv->pPanelE->anLineAux[nRow] = 1;  /* 0x965C0, assigned 1 */
+                pEnv->pPanelD->anLineAux[nRow] -= 1; /* 0x965DC */
+                if (pSite != NULL) {
+                    pSite->bRecoveredCraftCount =
+                        (u8)((i8)pSite->bRecoveredCraftCount + 1); /* 0x96604, LDRSB / STRB at +0x205 */
+                }
+            }
+            return nLimit; /* the craft branch leaves the function after one unit */
+        }
+
+        {
+            const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount, nSlot);
+            const i32 nAvail = Base_GetItemQty(pRec, pEnv->nSelectedBaseIdx);
+            const i32 nPending = (pSite != NULL && nSlot >= 0 && nSlot < 256)
+                                     ? (i32)pSite->auItemQty[nSlot]
+                                     : 0;
+
+            if (nAvail - nPending > 0) { /* 0x963C0: the base must actually have the item */
+                if ((nSlot > 76 && nSlot < 105) || nSlot == 114) {
+                    /* 0x963D8: an alien containment slot. */
+                    const i32 nContain = Base_CalcAlienContainmentCap(pEnv->abFacilityGrid,
+                                                                      pEnv->nTransferBaseIdx);
+                    const i32 nAmmo = Base_CountAmmoItems(pEnv->apObjects, pEnv->nObjectCount,
+                                                          pEnv->nTransferBaseIdx);
+                    if (nContain < nAmmo + 1) { /* 0x96400 */
+                        return TransferShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_CONTAINMENT,
+                                                 false); /* 0x96614, written unconditionally */
+                    }
+                }
+                const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount,
+                                                       pEnv->nTransferBaseIdx); /* 0x96418 */
+                const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, pEnv->nSiteCount,
+                                                                 pEnv->nSiteCount, pEnv->apBases,
+                                                                 pEnv->nTransferBaseIdx,
+                                                                 pEnv->apObjects, pEnv->nObjectCount,
+                                                                 true); /* 0x96434 */
+                const i32 nCap = Base_CalcStoresCapacity(pEnv->abFacilityGrid,
+                                                         pEnv->nTransferBaseIdx); /* 0x96458 */
+                const i32 nCargo = (pRec != NULL) ? (i32)pRec->bCargoSize : 0;
+                if (nAcross + nCargo + nUsed > nCap) { /* 0x96464 */
+                    return TransferShortfall(pEnv, PUFO_BUYSELL_SHORTFALL_STORES,
+                                             true); /* 0x9662C, only when the flag is clear */
+                }
+                if (pSite != NULL && nSlot >= 0 && nSlot < 256) {
+                    pSite->auItemQty[nSlot] = (u16)(pSite->auItemQty[nSlot] + 1); /* 0x96494 */
+                }
+                pEnv->pPanelD->anLineAux[nRow] -= 1; /* 0x964A8 */
+                pEnv->pPanelE->anLineAux[nRow] += 1; /* 0x964C8 */
+            }
+        }
+        if (nIter >= nLimit) {
+            break; /* 0x9650C: `CMP count, timer/10; BLE` back to the top */
+        }
+    }
+    return nLimit;
+}
+
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
  * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
  * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */

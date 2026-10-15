@@ -11372,7 +11372,7 @@ Transfer_ResetSite, in the original's order:
 3. 0x96980..0x96990: when blocked, `byte_1870F8 = 0`, `byte_1870C8 = 1` (a dword store into a byte
    global, the same shape the buy screen's shortfall paths use) and `dword_1870B4[0] = 5` -- the
    fifth reason code, after the buy screen's 0 (living quarters), 1 (funds), 2 (hangar) and 3
-   (stores). 4 is never written anywhere.
+   (stores). 4 -- alien containment -- is written by TransferScreen_ValidateCapacity at 0x96618, and 5 by Transfer_ResetSite here.
 4. 0x96994..0x96A04: the pending quantities fold back into the count column. For every row of panel
    A: panel D aux += panel E aux, then panel E aux = 0. The loop is guarded by `nLineCount > 0` at
    0x969B0, and it runs whether or not the gate blocked.
@@ -11485,3 +11485,48 @@ port bounds the row index.
 IDB: function comments at 0x96b30 and 0x9602c; `unk_1870EC` -> `bTransferPanelsBuilt` (typed
 `unsigned __int8`); comments at 0x96C94 and 0x97550 naming the count / fill mismatch on both sides of
 it, and at 0x1870EC.
+
+TransferScreen_ValidateCapacity (0x96288, 1372 B) is the transfer screen's increment column, the mirror
+of BuySellScreen_ValidateCapacity: where that one moves units into the base and spends money, this one
+moves units out of the base onto the working site and spends none. The selected row's slot id comes
+from panel A at the row index panel C cached (`pBuySellPanelC->nUnk3032`, 0x962D0) -- panel C, where
+the buy screen used panel B.
+
+Two shapes, decided by that slot id alone:
+
+1. Slot 1000, 112 or 113 (0x96358): the while condition fails on the first test, so the repeat loop is
+   never entered and the pass runs exactly once. The gate is Base_CalcLivingQuartersCap (0x96658)
+   against Base_CalcOccupiedSpace (0x96668) + Base_CountOutboundTransferSpace with the scan on (0x96688)
+   + 1; on shortfall byte_1870C8 is written unconditionally (0x96694) with reason 0. A soldier row then
+   sets panel E aux to 1 -- assigned, not incremented (0x966E8) -- lowers panel D aux and raises the
+   site's bRecoveredSoldierAssign (0x9672C). A crew row (112 / 113) instead raises the site's
+   auItemQty[slot] by one, but only while auPerBaseVal[nSelectedBaseIdx] is strictly above what the
+   site already holds (0x9678C), and lowers panel D aux and raises panel E aux.
+2. Any other slot: the repeat loop, nRadarPulseTimer / 10 + 1 passes -- the same timer-bound bound
+   recorded for the four buy-screen handlers and Transfer_MoveOneItem. A craft row (panel A aux
+   117..121, tested at 0x96374) gates Base_CountInboundTransfers (0x96558) + Base_CountShipsAtBase
+   (0x9653C) + 1 against Base_CalcHangarCap (0x96570) -- reason 2, written only when the flag is
+   currently clear (0x96584) -- then moves at most one craft per click: panel E aux assigned 1
+   (0x965C0), panel D aux lowered, site bRecoveredCraftCount raised (0x96604). Any other row first
+   checks that the base actually has the item, auPerBaseVal[nSelectedBaseIdx] - site.auItemQty[slot]
+   > 0 (0x963C0). For an alien slot (77..104 or 114, 0x963D8) it then gates
+   Base_CalcAlienContainmentCap (0x963EC) against Base_CountAmmoItems + 1 (0x96400) -- reason 4,
+   written unconditionally (0x96614) -- and finally gates Base_CountItemQtyAcrossBases (0x96434) +
+   bCargoSize + Base_CalcStorageUsed (0x96418) against Base_CalcStoresCapacity (0x96458) (reason 3,
+   written only when the flag is clear, 0x9662C). On the way through it raises the site's
+   auItemQty[slot] (0x96494), lowers panel D aux (0x964A8) and raises panel E aux (0x964C8).
+
+The two base indices are not the same one, and the direction explains it: every capacity gate measures
+the base the transfer was opened for (byte_1870F4, read signed), while the "does the base actually
+have this" test reads auPerBaseVal at nSelectedBaseIdx (0x159D81). Items leave the geoscape-selected
+base and are checked against the destination's facilities; the buy screen uses nSelectedBaseIdx on
+both sides because there the destination is the selected base.
+
+Deviation: the original returns &dword_1870B4 on a shortfall and 517 (the 0x205 offset the craft
+branch just used) after a craft move; the port returns the reason code, matching
+BuySellScreen_ValidateCapacity. The port bounds the cached row index and the site slot; the original
+trusts both.
+
+IDB: function comment at 0x96288; the local enum PufoShortfallReason declared for the reason codes
+dword_1870B4[0] holds (-1 none, 0 living quarters, 1 funds, 2 hangar, 3 stores, 4 alien containment,
+5 transfer blocked); comment at 0x1870B4 listing which pass writes which code.

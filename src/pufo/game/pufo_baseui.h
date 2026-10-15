@@ -575,7 +575,9 @@ typedef enum PufoBuySellShortfall {
     PUFO_BUYSELL_SHORTFALL_FUNDS   = 1,  /* 0x75F64 / 0x75F74, not enough funds */
     PUFO_BUYSELL_SHORTFALL_HANGAR  = 2,  /* 0x75F28, hangar full */
     PUFO_BUYSELL_SHORTFALL_STORES  = 3,  /* 0x75F48, stores full */
-    PUFO_BUYSELL_SHORTFALL_TRANSFER = 5  /* 0x96990, the transfer gate blocked; 4 is never written */
+    PUFO_BUYSELL_SHORTFALL_CONTAINMENT = 4, /* 0x96618, alien containment full, the transfer screen's
+                                             * gate for slots 77..104 and 114 */
+    PUFO_BUYSELL_SHORTFALL_TRANSFER = 5  /* 0x96990, the transfer gate blocked */
 } PufoBuySellShortfall;
 
 typedef struct BuySellCapacityEnv {
@@ -960,6 +962,70 @@ typedef struct TransferMoveEnv {
 } TransferMoveEnv;
 
 i32 Transfer_MoveOneItem(TransferMoveEnv *pEnv);
+
+/* ------------------------------------------------- the transfer screen's capacity gate
+ *
+ * Evidence: TransferScreen_ValidateCapacity @ 0x96288 (1372 B), the click handler
+ * TransferScreen_BuildPanels installs into the increment column at 0x97168. It is the mirror of
+ * BuySellScreen_ValidateCapacity @ 0x75b88: where that one moves units INTO the base and spends
+ * money, this one moves units OUT of the base onto the working site and spends none.
+ *
+ * The selected row's slot id comes from panel A at the index panel C cached
+ * (pBuySellPanelC->nUnk3032, 0x962D0) -- panel C, where the buy screen used panel B.
+ *
+ * Two shapes, decided by that slot id alone:
+ *
+ *   1. Slot 1000, 112 or 113 (0x96358): the while condition fails on the first test, so the repeat
+ *      loop is never entered and the pass runs once. The gate is Base_CalcLivingQuartersCap against
+ *      Base_CalcOccupiedSpace + Base_CountOutboundTransferSpace(..., scan ON) + 1, and on shortfall
+ *      byte_1870C8 is written UNCONDITIONALLY with reason 0. A soldier row then sets panel E aux to
+ *      1 (assigned, not incremented), lowers panel D aux and raises the site's
+ *      bRecoveredSoldierAssign. A crew row (112 / 113) instead raises the site's auItemQty[slot] by
+ *      one, but only while auPerBaseVal[nSelectedBaseIdx] is strictly above what the site already
+ *      holds, and lowers panel D aux and raises panel E aux.
+ *   2. Any other slot: the repeat loop, nRadarPulseTimer / 10 + 1 passes -- the fifth handler on
+ *      that bound. A craft row (panel A aux 117..121) gates on Base_CountInboundTransfers +
+ *      Base_CountShipsAtBase + 1 against Base_CalcHangarCap (reason 2, written only when the flag is
+ *      currently clear), then moves at most one craft per click. Any other row first checks that the
+ *      base actually has the item: auPerBaseVal[nSelectedBaseIdx] - site.auItemQty[slot] > 0. For an
+ *      alien slot (77..104 or 114) it then gates Base_CalcAlienContainmentCap against
+ *      Base_CountAmmoItems + 1 -- reason 4, written unconditionally -- and finally gates
+ *      Base_CountItemQtyAcrossBases + bCargoSize + Base_CalcStorageUsed against
+ *      Base_CalcStoresCapacity (reason 3, written only when clear). On the way through it raises the
+ *      site's auItemQty[slot], lowers panel D aux and raises panel E aux.
+ *
+ * The two base indices are not the same one. Every capacity gate here measures the base the psi
+ * screen selected (byte_1870F4, signed), while the "does the base actually have this" test reads
+ * auPerBaseVal at nSelectedBaseIdx (0x159D81). The buy screen uses nSelectedBaseIdx for both.
+ *
+ * Deviation: the original returns &dword_1870B4 on a shortfall and 517 (the 0x205 offset the craft
+ * branch just used) after a craft move; the port returns the reason code, matching
+ * BuySellScreen_ValidateCapacity. The port bounds the cached row index and the site slot. */
+typedef struct TransferCapacityEnv {
+    UiPanel *pPanelA;                /* pBuySellPanelA @ 0x161A1C, the row-kind column */
+    UiPanel *pPanelC;                /* pBuySellPanelC @ 0x161A20, nUnk3032 holds the selected row */
+    UiPanel *pPanelD;                /* pBuySellPanelD @ 0x160C88, the available count */
+    UiPanel *pPanelE;                /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+    i32 *pnRowCursor;                /* unk_186BE8, the cached selected row */
+    const i32 *pnRadarPulseTimer;    /* nRadarPulseTimer @ 0xAC224, the repeat bound */
+    const u8 *abFacilityGrid;        /* abFacilityGrid @ 0x159768 */
+    Ship *const *apCraft;            /* apCrafts @ 0x114AE4 */
+    i32 nCraftCount;                 /* Map_nCraftCount @ 0x114B4C */
+    Soldier *const *apSoldiers;      /* apSoldiers @ 0x114B50 */
+    i32 nSoldierCount;               /* nSoldierCount @ 0x115350 */
+    ObjectRecFull *const *apObjects; /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                /* Map_nObjectCount @ 0x114A60 */
+    SmapSite *aSites;                /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                  /* nSiteCount @ 0x186410, also the working site's index */
+    BaseRec *const *apBases;         /* apBases @ 0x114B2C */
+    i32 nBaseCount;                  /* 0x159D80, the base count Base_CountShipsAtBase walks */
+    i8 nSelectedBaseIdx;             /* nSelectedBaseIdx @ 0x159D81, the availability column */
+    i8 nTransferBaseIdx;             /* byte_1870F4, the base every capacity gate measures */
+    u32 *pdwShortfall;               /* byte_1870C8, written as a dword */
+    i32 *pnResidue;                  /* dword_1870B4[0], the reason code */
+} TransferCapacityEnv;
+
+i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv);
 
 /* ------------------------------------------------- screen selection caches
  *

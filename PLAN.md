@@ -929,6 +929,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `bAtBase` test the fill pass at 0x97550 applies, so an away craft adds a row that is never written.
   IDB: `unk_1870EC` → `bTransferPanelsBuilt`, comments at 0x96b30, 0x9602c, 0x96C94 and 0x97550.
 
+- [x] part 28, the transfer screen's capacity gate: `TransferScreen_ValidateCapacity (0x96288)`, 1372
+  bytes — 43 more checks. The mirror of `BuySellScreen_ValidateCapacity`: it moves units out of the
+  base onto the working site and spends no money. Slots 1000 / 112 / 113 never enter the timer-bound
+  repeat loop (0x96358) — the living-quarters gate runs once, and a soldier row queues exactly one per
+  click. Alien slots 77..104 / 114 add the containment gate (reason 4, `byte_1870C8` written
+  unconditionally). The capacity gates measure `byte_1870F4` (the transfer destination) while the
+  availability test reads `auPerBaseVal` at `nSelectedBaseIdx` — items leave the selected base and are
+  checked against the destination. IDB: comment at 0x96288, local enum `PufoShortfallReason` declared
+  for the reason codes `dword_1870B4[0]` holds.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1110,6 +1120,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy screen's object block (`BuySellScreen_BuildControls`, the catalogue include tests, the soldier row) | 56/56 (Release) | 9648 | 845/1103 (76.6%) | 344276/598792 (57.5%) | 38 checked, 0 mismatched |
 | the transfer screen's bring-up (`Ui_InitTransfer`, `Transfer_ResetSite`, the blocked-transfer gate) | 56/56 (Release) | 9703 | 848/1103 (76.9%) | 345176/598792 (57.6%) | 38 checked, 0 mismatched |
 | the transfer screen's row list (`TransferScreen_BuildPanels`, `Transfer_MoveOneItem`, the count/fill mismatch) | 56/56 (Release) | 9750 | 850/1103 (77.1%) | 349736/598792 (58.4%) | 38 checked, 0 mismatched |
+| the transfer screen's capacity gate (`TransferScreen_ValidateCapacity`, the containment reason code) | 56/56 (Release) | 9793 | 851/1103 (77.2%) | 351108/598792 (58.6%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

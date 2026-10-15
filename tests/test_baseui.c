@@ -2153,6 +2153,248 @@ static void TestTransferBuildAndMove(void)
     CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
 }
 
+static void TestTransferCapacityGate(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Soldier aSol[2];
+    static Soldier *apSol[2];
+    static Ship aShip[1];
+    static Ship *apShip[1];
+    static SmapSite aSites[2];
+    static BaseRec aBase;
+    static BaseRec *apBases[8];
+    static u8 aGrid[PUFO_GRID_SIZE];
+    static UiPanel pA, pC, pD, pE;
+    TransferCapacityEnv env;
+    i32 nRowCursor = 0;
+    i32 nTimer = 25;
+    u32 nShortfall = 0;
+    i32 nResidue = -999;
+    i32 i;
+
+    printf("the transfer screen's capacity gate\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[10].auPerBaseVal[0] = 5; /* a plain item row */
+    aObj[10].bCargoSize = 1;
+    aObj[77].auPerBaseVal[0] = 4; /* an alien containment row */
+    aObj[104].auPerBaseVal[0] = 10; /* Base_CountAmmoItems sums 77..104, so 14 aliens here */
+    aObj[112].auPerBaseVal[0] = 10; /* the engineer row */
+
+    aSol[0].nKind = 0; /* assigned to the base the gate measures */
+    aSol[1].nKind = 1;
+    apSol[0] = &aSol[0];
+    apSol[1] = &aSol[1];
+
+    aShip[0].bHomeBase = 0; /* homed at the base the gate measures */
+    apShip[0] = &aShip[0];
+
+    aBase.bUnk4 = 7;
+    for (i = 0; i < 8; ++i) {
+        apBases[i] = &aBase;
+    }
+    aSites[0].bFlag1 = 99; /* matches no base, so the site scan contributes nothing */
+
+    /* Base 0 gets one living-quarters cell (50), one stores cell (300), one hangar slot (1) and one
+     * containment cell (10). Base 1 gets nothing at all. */
+    aGrid[480 + 144 * 0 + 6 * 0 + 0] = 1;
+    aGrid[480 + 144 * 0 + 6 * 0 + 1] = 6;
+    aGrid[480 + 144 * 0 + 6 * 0 + 2] = 11;
+    aGrid[480 + 144 * 0 + 6 * 0 + 3] = 7;
+
+    (void)UiPanel_ctor(&pA, 6);
+    (void)UiPanel_ctor(&pC, 6);
+    (void)UiPanel_ctor(&pD, 6);
+    (void)UiPanel_ctor(&pE, 6);
+    pA.anLineAux[0] = PUFO_ROW_SOLDIER;
+    pA.anLineAux[1] = PUFO_ROW_ENGINEER;
+    pA.anLineAux[2] = 10;
+    pA.anLineAux[3] = PUFO_ROW_CRAFT_FIRST;
+    pA.anLineAux[4] = 77;
+    pA.anLineAux[5] = PUFO_ROW_SCIENTIST;
+
+    memset(&env, 0, sizeof(env));
+    env.pPanelA = &pA;
+    env.pPanelC = &pC;
+    env.pPanelD = &pD;
+    env.pPanelE = &pE;
+    env.pnRowCursor = &nRowCursor;
+    env.pnRadarPulseTimer = &nTimer;
+    env.abFacilityGrid = aGrid;
+    env.apSoldiers = apSol;
+    env.nSoldierCount = 2;
+    env.apCraft = apShip;
+    env.nCraftCount = 1;
+    env.apObjects = apObj;
+    env.nObjectCount = 149;
+    env.aSites = aSites;
+    env.nSiteCount = 1; /* the working site is the record AT the count, aSites[1] */
+    env.apBases = apBases;
+    env.nBaseCount = 1;
+    env.nSelectedBaseIdx = 0;
+    env.nTransferBaseIdx = 0;
+    env.pdwShortfall = &nShortfall;
+    env.pnResidue = &nResidue;
+
+    /* The soldier row: the living-quarters gate, then the move. */
+    pC.nUnk3032 = 0;
+    nRowCursor = 0;
+    pD.anLineAux[0] = 3;
+    pE.anLineAux[0] = 0;
+    aObj[112].auPerBaseVal[0] = 50; /* 51 occupied against a cap of 50 */
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_LIVING,
+               "a full living-quarters gate reports reason 0");
+    CheckEqI32(nShortfall, 1, "and writes the shortfall flag unconditionally");
+    CheckEqI32(nResidue, 0, "with the living-quarters reason code");
+    CheckEqI32(pD.anLineAux[0], 3, "nothing moves when the gate fails");
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 0, "including the site's pending soldier byte");
+
+    aObj[112].auPerBaseVal[0] = 10; /* 11 occupied, the cap has room */
+    nTimer = 250; /* 25 passes, but 0x96358 never lets these three rows into the loop */
+    pD.anLineAux[0] = 3;
+    pE.anLineAux[0] = 0;
+    nShortfall = 0;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 25,
+               "a soldier row runs once and returns the timer quotient");
+    CheckEqI32(pE.anLineAux[0], 1, "panel E is assigned 1, not incremented");
+    CheckEqI32(pD.anLineAux[0], 2, "one soldier moved to the count column");
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 1, "and the site's pending soldier byte up by one");
+
+    /* The engineer row (slot 112). */
+    pC.nUnk3032 = 1;
+    nRowCursor = 1;
+    pD.anLineAux[1] = 3;
+    pE.anLineAux[1] = 0;
+    aSites[1].auItemQty[112] = 2; /* 10 available at the selected base */
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 25, "a crew row also runs once, not 26 times");
+    CheckEqI32(aSites[1].auItemQty[112], 3, "one engineer queued onto the site");
+    CheckEqI32(pD.anLineAux[1], 2, "the count column down by one");
+    CheckEqI32(pE.anLineAux[1], 1, "the pending column up by one");
+
+    aSites[1].auItemQty[112] = 10; /* the base has no spare engineer left */
+    pD.anLineAux[1] = 3;
+    pE.anLineAux[1] = 0;
+    TransferScreen_ValidateCapacity(&env);
+    CheckEqI32(aSites[1].auItemQty[112], 10, "a crew row with nothing left at the base moves nothing");
+    CheckEqI32(pD.anLineAux[1], 3, "and neither column changes");
+
+    /* A craft row against a full hangar: one ship homed here, cap 1. */
+    pC.nUnk3032 = 3;
+    nRowCursor = 3;
+    pD.anLineAux[3] = 3;
+    pE.anLineAux[3] = 0;
+    aSites[1].bRecoveredCraftCount = 0;
+    aSites[1].bUnk518 = 0;
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_HANGAR,
+               "a full hangar reports reason 2");
+    CheckEqI32(nShortfall, 1, "the flag written because it was clear");
+    CheckEqI32(nResidue, 2, "with the hangar reason code");
+    CheckEqI32(pE.anLineAux[3], 0, "and the craft stays put");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 0, "including the site's pending craft byte");
+
+    aShip[0].bHomeBase = 1; /* homed elsewhere, so the hangar has room */
+    nShortfall = 0;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 25,
+               "a craft row moves one unit however long the timer is");
+    CheckEqI32(pE.anLineAux[3], 1, "panel E assigned 1");
+    CheckEqI32(pD.anLineAux[3], 2, "the count column up by one");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 1, "and the site's pending craft byte up by one");
+    CheckEqI32(nShortfall, 0, "with no shortfall recorded");
+
+    /* An alien row (slot 77) against a containment cap of 10 holding 14 aliens. */
+    pC.nUnk3032 = 4;
+    nRowCursor = 4;
+    pD.anLineAux[4] = 3;
+    pE.anLineAux[4] = 0;
+    aSites[1].auItemQty[77] = 0;
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_CONTAINMENT,
+               "an alien row with no containment left reports reason 4");
+    CheckEqI32(nShortfall, 1, "the flag written unconditionally");
+    CheckEqI32(nResidue, 4, "the containment reason code");
+    CheckEqI32(aSites[1].auItemQty[77], 0, "and nothing is queued");
+
+    /* A plain item row (slot 10) against a stores cap of 300 holding 500. */
+    pC.nUnk3032 = 2;
+    nRowCursor = 2;
+    pD.anLineAux[2] = 3;
+    pE.anLineAux[2] = 0;
+    aSites[1].auItemQty[10] = 0;
+    aObj[10].bCargoSize = 100; /* Base_CalcStorageUsed: 100 * 5 = 500 */
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_STORES,
+               "an overfull stores gate reports reason 3");
+    CheckEqI32(nShortfall, 1, "the flag written because it was clear");
+    CheckEqI32(nResidue, 3, "the stores reason code");
+    aObj[10].bCargoSize = 1;
+
+    /* The same row with room: the repeat loop runs timer/10 + 1 times. */
+    nTimer = 25; /* 3 passes */
+    pD.anLineAux[2] = 5;
+    pE.anLineAux[2] = 0;
+    aSites[1].auItemQty[10] = 0;
+    nShortfall = 0;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), 2, "an item row runs timer/10 + 1 passes");
+    CheckEqI32(aSites[1].auItemQty[10], 3, "three units queued onto the site");
+    CheckEqI32(pD.anLineAux[2], 2, "the count column down by three");
+    CheckEqI32(pE.anLineAux[2], 3, "the pending column up by three");
+    CheckEqI32(nShortfall, 0, "and no shortfall recorded");
+
+    aObj[10].auPerBaseVal[0] = 0; /* the base does not actually have the item */
+    pD.anLineAux[2] = 5;
+    pE.anLineAux[2] = 0;
+    aSites[1].auItemQty[10] = 3;
+    TransferScreen_ValidateCapacity(&env);
+    CheckEqI32(aSites[1].auItemQty[10], 3, "an item the base does not have moves nothing");
+    CheckEqI32(pD.anLineAux[2], 5, "the loop turns and changes nothing");
+    aObj[10].auPerBaseVal[0] = 5;
+
+    /* The two base indices are different: capacity measured at base 1, availability read at base 0. */
+    env.nTransferBaseIdx = 1; /* base 1 has no facilities at all */
+    pC.nUnk3032 = 0;
+    nRowCursor = 0;
+    pD.anLineAux[0] = 3;
+    pE.anLineAux[0] = 0;
+    nShortfall = 0;
+    nResidue = -999;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), PUFO_BUYSELL_SHORTFALL_LIVING,
+               "the capacity gates measure the psi screen's base, not the selected one");
+    env.nTransferBaseIdx = 0;
+
+    nTimer = -15; /* -15 / 10 = -1, and 0x962F0 branches out on a negative quotient */
+    pC.nUnk3032 = 2;
+    nRowCursor = 2;
+    pD.anLineAux[2] = 5;
+    pE.anLineAux[2] = 0;
+    aSites[1].auItemQty[10] = 3;
+    CheckEqI32(TransferScreen_ValidateCapacity(&env), -1,
+               "a negative timer quotient makes the gate do nothing");
+    CheckEqI32(aSites[1].auItemQty[10], 3, "including the site quantity");
+    nTimer = 25;
+
+    pC.nUnk3032 = 99999;
+    TransferScreen_ValidateCapacity(&env);
+    TransferScreen_ValidateCapacity(NULL);
+    env.pPanelC = NULL;
+    TransferScreen_ValidateCapacity(&env);
+    env.pPanelC = &pC;
+    CheckEqI32(aSites[1].auItemQty[10], 3, "a cached row index out of range is skipped, not dereferenced");
+
+    UiPanel_FreeLines(&pA);
+    UiPanel_FreeLines(&pC);
+    UiPanel_FreeLines(&pD);
+    UiPanel_FreeLines(&pE);
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
@@ -7258,6 +7500,7 @@ int main(void)
     TestBuySellBuildControls();
     TestTransferInitAndReset();
     TestTransferBuildAndMove();
+    TestTransferCapacityGate();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

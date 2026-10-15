@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 850 / 1103 (77.1%) |
-| Bytes of original code cited | 349736 / 598792 (58.4%) |
+| Functions cited as evidence | 851 / 1103 (77.2%) |
+| Bytes of original code cited | 351108 / 598792 (58.6%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9750 |
+| Test checks run | 9793 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 85 | 17380 / 38368 | shared UI panel, text engine, menus |
 | `strat` | 164 | 205 | 60836 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 207 | 243 | 53820 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 208 | 243 | 55192 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -740,7 +740,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (207 functions)
+### `strat-ui` (208 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -752,6 +752,7 @@ is the module that answers to it.
 | `0x7cc8c` | `BasePlaneScreen_BuildPanels` | 1768 | `src/pufo/game/pufo_plane.h` |
 | `0x59b60` | `BaseFacScreen_DrawBuildDialog` | 1592 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
+| `0x96288` | `TransferScreen_ValidateCapacity` | 1372 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x75b88` | `BuySellScreen_ValidateCapacity` | 1280 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x74bf8` | `BuySellScreen_CommitTransaction` | 1176 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7d9e4` | `BasePlaneScreen_Init` | 1072 | `src/pufo/game/pufo_plane.h` |
@@ -1233,7 +1234,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 36 functions, 63188 bytes remaining
+### `strat-ui` — 35 functions, 61816 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1256,7 +1257,6 @@ whose port work they belong to.
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6f34c` | `ManufScreen_CommitProduction` | 1408 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x96288` | `TransferScreen_ValidateCapacity` | 1372 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x6e3e0` | `ManufScreen_Draw` | 1332 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x97aa4` | `TransferScreen_CommitTransfer` | 1280 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x71298` | `PsiScreen_SelectListed` | 848 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1579 |
+| `test_baseui` | PASS | 1622 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
