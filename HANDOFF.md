@@ -78,7 +78,9 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **9072**.
+Test checks run across the 56 suites: **9114**. Coverage as of the latest commit: **809 / 1103
+functions (73.3%)**, **325456 / 598792 bytes (54.4%)**. The §2 numbers below are the snapshot taken
+when this file was regenerated and are older than that line.
 
 ### Per-subsystem status
 

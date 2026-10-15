@@ -10395,3 +10395,53 @@ buy/sell confirm test is what caught it: the cargo check failed with "got 0, wan
 strip gates unk_1870EC, unk_15883C and byte_15EEF0; `unk_161460` renamed `BuySell_nFundsSnapshot` (all
 fifteen of its xrefs are inside BuySellScreen_*); `unk_186568`..`unk_18657C` renamed
 `g_nFundScore0`..`g_nFundScore4` and `g_nFundMult`.
+
+The three openers that also reset the clock (done)
+--------------------------------------------------
+
+**Evidence:** `ResearchScreen_Open` @ 0x616ac (232 B), `Ui_OpenBaseInfo` @ 0x84AF8 (256 B),
+`Geoscape_PrepScreenOpen` @ 0x85194 (292 B). Ported in `src/pufo/game/pufo_baseui.c` behind one
+`ScreenResetOpenEnv`; tests in `TestScreenResetOpen`.
+
+**All three share a four-step prologue** no other opener runs: clear `szRadarMsg` (0x186B10), clear
+`unk_186420`, walk the research "active" bytes, clear the shortfall dword at `byte_1870C8` with a
+4-byte store, then `GameTime_Set5Sec`. The two clears are strcpy loops out of 0x10DA38, and 0x10DA38
+is a block of zeros in the image with well over a hundred xrefs, every one of them the same shape --
+so each copy writes a single NUL. It is the empty string, not a message. A line comment now says so
+at 0x10DA38.
+
+**The research walk has two details the ARM spells out and a source reading would miss.** The bound is
+the byte at 0x160C4C, which is `byte_160BBC + 144`, and it is re-read only after a store happened --
+0x6173C, 0x84B9C and 0x85234 are `MOVEQ` / `LDRBEQ` -- so a walk that changes nothing runs on the
+count it loaded at the start. And the loop is a do/while: with a non-zero count entry 0 is always
+examined, while a count of 0 skips the walk entirely even when `byte_160BBC[0]` is 1.
+`ResearchScreen_Open`'s copy looks different because it uses `LDRB R3,[R0,R1]!` with writeback, which
+reads like a running pointer; it is not, because the back edge at 0x61750 targets 0x6171C, which
+recomputes R0 from the base every iteration. Deviation: the original bounds the walk only by a byte,
+which could ask for 255 of the 144 entries; the port stops at `PUFO_RESEARCH_TOPIC_COUNT`.
+
+**dword_186B08 is a spilled local, not a global with meaning.** `Ui_OpenBaseInfo` and
+`Geoscape_PrepScreenOpen` store 0 into it before the walk and the index reached after it. It is the
+dword immediately below `szRadarMsg` (0x186B10 = dword_186B08 + 8). The port keeps the counter in a
+real local.
+
+**The tails are where they differ.** `ResearchScreen_Open` plays sample 17 with the second argument 4
+first, writes the screen id 8 BEFORE the Init, and tail-calls `ResearchScreen_Init` with the topic
+array at 0x15EF08. `Ui_OpenBaseInfo` is the same shape with id 16 and `Ui_InitBaseInfo(unk_1872E0)`.
+Both then get a second sample 17 from inside `GameTime_Set5Sec` -- the original really does play it
+twice. `Geoscape_PrepScreenOpen` plays no sample of its own and writes no screen id: it clears the
+clock pause byte at 0x15961C first (0x8519C), runs the prologue, removes line 0 of the root message
+list (0x8525C), and re-pauses the clock when that line's flag is above 30 AND below 50 -- 0x85270 and
+0x85284 are two separate `UiPanel_GetLineFlag` calls, not one value tested twice.
+
+**Three more openers share the prologue and are the next unit.** The IDB already names them:
+`Ui_OpenResearch` (0x84bf8, 288 B) and `Ui_OpenBaseInfoAlt` (0x84d18, 264 B) run the prologue and then
+call `Geoscape_PrepScreenOpen` itself, so the clock dance and the 5-second tick happen twice in a row;
+`Ui_OpenResearch` also calls `Geoscape_BuildNavControls(abFacilityGrid)`, writes 1000 into the two
+halfwords at `*unk_186BB4` and `*unk_186BB4 + 2`, and sets id 8. `Geoscape_PrepScreenOpenSfx`
+(0x852b8, 300 B) is `Geoscape_PrepScreenOpen` with a `Sound_Play(17,4)` inserted after the pause clear
+and with `GameTime_Set5Sec` dropped entirely -- the only one of the six that leaves the tick interval
+alone.
+
+**IDB updates.** Function comments on 0x616ac, 0x84AF8 and 0x85194 recording the prologue, the two
+thresholds and the tail-call targets; a line comment at 0x10DA38 saying what that zero block is.

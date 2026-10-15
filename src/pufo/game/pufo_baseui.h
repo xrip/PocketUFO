@@ -1768,4 +1768,70 @@ i32 LoadGame_Slot4_InitOptions(SaveSlotEnv *pEnv); /* 0x6b334 */
 i32 LoadGame_Slot5_InitOptions(SaveSlotEnv *pEnv); /* 0x6b39c */
 i32 LoadGame_Slot6_InitOptions(SaveSlotEnv *pEnv); /* 0x6b404 */
 
+/* ------------------------------------------------- three openers that also reset the clock
+ *
+ * Evidence: ResearchScreen_Open @ 0x616ac (232 B), Ui_OpenBaseInfo @ 0x84AF8 (256 B),
+ * Geoscape_PrepScreenOpen @ 0x85194 (292 B).
+ *
+ * These are not the six plain openers above. All three run the same four-step prologue and then
+ * tail-call their screen's Init:
+ *
+ *   1. Clear the shared message scratch. The ARM is a strcpy loop -- LDRSB / STRB / CMP #0 / BNE --
+ *      reading from 0x10DA38, and 0x10DA38 is all zero in the image, so exactly one NUL lands at
+ *      szRadarMsg @ 0x186B10 (dword_186B08 + 8). Nothing in the binary ever fills that source, so
+ *      this is a clear and not a message write.
+ *   2. Clear the second scratch the same way, from 0x10DA39 into unk_186420. Same all-zero source,
+ *      same single NUL.
+ *   3. Walk the research "active" bytes and promote every entry marked 1 to 2.
+ *   4. Clear the shortfall dword (byte_1870C8, written with a 4-byte store) and run
+ *      GameTime_Set5Sec, which puts the geoscape back on a five-second tick.
+ *
+ * The research walk is the same loop in all three, and the ARM spells out two details a source
+ * reading would miss. The bound is the byte at 0x160C4C -- byte_160BBC + 144 -- and it is RE-READ
+ * only after a store happened (0x6173C / 0x84B9C / 0x85234 are MOVEQ / LDRBEQ), so a walk that
+ * changes nothing runs on the count it loaded at the start. And the loop is a do/while: with a
+ * non-zero count the first entry is always examined. ResearchScreen_Open's copy reaches the same
+ * result through `LDRB R3,[R0,R1]!` with writeback, which looks like a running pointer but is not:
+ * the back edge at 0x61750 targets 0x6171C, which recomputes R0 from the base every iteration.
+ *
+ * Ui_OpenBaseInfo and Geoscape_PrepScreenOpen also store the walk's index into dword_186B08 -- 0
+ * before the walk and the index reached after it. That global is the compiler's spilled local (see
+ * ui/pufo_geouimanage.h) and it is the dword immediately below szRadarMsg, so the port keeps the
+ * counter in a real local.
+ *
+ * The tails are where they differ:
+ *   ResearchScreen_Open     -- sample 17 first, screen id 8 written BEFORE the Init, tail call
+ *                              ResearchScreen_Init (0x615d0, not ported) with the topic array at
+ *                              0x15EF08.
+ *   Ui_OpenBaseInfo         -- sample 17 first, screen id 16 written BEFORE the Init, tail call
+ *                              Ui_InitBaseInfo (not ported) with the root at unk_1872E0.
+ *   Geoscape_PrepScreenOpen -- no sample, no screen id. It clears the clock pause byte first
+ *                              (0x8519C, a STRB at 0x15961C), and after the prologue it removes
+ *                              line 0 of the root message list (0x8525C) and then pauses the clock
+ *                              when that line's flag is above 30 AND below 50 -- two separate
+ *                              UiPanel_GetLineFlag calls, 0x85270 and 0x85284, not one value tested
+ *                              twice.
+ *
+ * Deviation: the original bounds the walk only by the count byte, which is a byte and so could ask
+ * for up to 255 of the 144 active entries. The port stops at PUFO_RESEARCH_TOPIC_COUNT. */
+typedef struct ScreenResetOpenEnv {
+    GeoscapeScreenState *pState;      /* nGeoscapeScreen @ 0x186BC4 */
+    char     *pszMsg;                 /* szRadarMsg @ 0x186B10 */
+    size_t    cchMsg;
+    char     *pszScratch;             /* unk_186420 */
+    size_t    cchScratch;
+    u8       *abResearchActive;       /* byte_160BBC, 144 bytes */
+    const u8 *pbResearchCount;        /* 0x160C4C = byte_160BBC + 144 */
+    u32      *pdwShortfall;           /* byte_1870C8, written as a dword */
+    GameTime *pTime;                  /* 0x159618; bPaused is the byte at 0x15961C */
+    GeoscapeWorld *pWorld;            /* GameTime_Set5Sec's tick dword */
+    UiControl *const *apSpeedCtl;     /* the six nav speed controls */
+    UiLineList *pLines;               /* the root message list @ 0x158890 */
+    ScreenInitHooks init;             /* the tail call into the screen's Init */
+} ScreenResetOpenEnv;
+
+void ResearchScreen_Open(const ScreenResetOpenEnv *pEnv);
+void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv);
+void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

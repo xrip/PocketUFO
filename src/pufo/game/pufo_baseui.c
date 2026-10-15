@@ -3239,3 +3239,114 @@ i32 LoadGame_Slot6_InitOptions(SaveSlotEnv *pEnv)
 {
     return LoadGame_Slot_InitOptions(pEnv, 6); /* 0x6b404 */
 }
+
+/* The two scratch clears the three openers share. Both are strcpy loops reading from 0x10DA38,
+ * which is all zero in the image, so the only byte that lands is the terminator. */
+static void ScreenOpen_ClearScratch(char *psz, size_t cch)
+{
+    if (psz != NULL && cch > 0) {
+        psz[0] = 0;
+    }
+}
+
+/* The research "active" walk. The bound is the byte at byte_160BBC + 144 and it is re-read only
+ * after a store (0x6173C / 0x84B9C / 0x85234 are MOVEQ / LDRBEQ), and the loop is a do/while, so a
+ * non-zero count always examines entry 0. Returns the index reached, which Ui_OpenBaseInfo and
+ * Geoscape_PrepScreenOpen spill into dword_186B08. */
+static i32 Research_PromotePending(u8 *abActive, const u8 *pbCount)
+{
+    if (abActive == NULL || pbCount == NULL) {
+        return 0;
+    }
+
+    i32 nCount = (i32)(*pbCount & 0xFFu);
+    if (nCount == 0) {
+        return 0; /* 0x61718 / 0x84B78 / 0x85214: CMP #0 / BLS out */
+    }
+
+    i32 i = 0;
+    for (;;) {
+        if ((abActive[i] & 0xFFu) == 1) {         /* 0x61724 CMP R3,#1 */
+            abActive[i] = 2;                      /* 0x6172C STRBEQ */
+            nCount = (i32)(*pbCount & 0xFFu);     /* 0x6173C LDRBEQ, only after a store */
+        }
+        ++i;                                      /* 0x61720 ADD R1,R1,#1 */
+        /* 0x61748 CMP R1,R3 / BLT back edge; the second test is the port's bound. */
+        if (i >= nCount || i >= PUFO_RESEARCH_TOPIC_COUNT) {
+            break;
+        }
+    }
+    return i;
+}
+
+/* The prologue all three run, in the originals' order. */
+static void ScreenOpen_Prologue(const ScreenResetOpenEnv *pEnv)
+{
+    ScreenOpen_ClearScratch(pEnv->pszMsg, pEnv->cchMsg);
+    ScreenOpen_ClearScratch(pEnv->pszScratch, pEnv->cchScratch);
+    (void)Research_PromotePending(pEnv->abResearchActive, pEnv->pbResearchCount);
+    if (pEnv->pdwShortfall != NULL) {
+        *pEnv->pdwShortfall = 0; /* 0x61754 / 0x84BB0 / 0x8524C, a dword store into byte_1870C8 */
+    }
+    GameTime_Set5Sec(pEnv->pWorld, pEnv->apSpeedCtl); /* 0x61760 / 0x84BC4 / 0x85260 */
+}
+
+/* ResearchScreen_Open @ 0x616ac. Sample first, id 8 written before the Init tail call. */
+void ResearchScreen_Open(const ScreenResetOpenEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->init.pfnPlaySample != NULL) {
+        pEnv->init.pfnPlaySample(17, 4, pEnv->init.pUser); /* 0x616B4 */
+    }
+    ScreenOpen_Prologue(pEnv);
+    if (pEnv->pState != NULL) {
+        pEnv->pState->nGeoscapeScreen = 8; /* 0x6176C */
+    }
+    if (pEnv->init.pfnInit != NULL) {
+        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x61774 -> ResearchScreen_Init */
+    }
+}
+
+/* Ui_OpenBaseInfo @ 0x84AF8. Same shape, id 16, and the Init receives the root at unk_1872E0. */
+void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->init.pfnPlaySample != NULL) {
+        pEnv->init.pfnPlaySample(17, 4, pEnv->init.pUser); /* 0x84AFC */
+    }
+    ScreenOpen_Prologue(pEnv);
+    if (pEnv->pState != NULL) {
+        pEnv->pState->nGeoscapeScreen = 16; /* 0x84BD8 */
+    }
+    if (pEnv->init.pfnInit != NULL) {
+        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x84BE8 -> Ui_InitBaseInfo */
+    }
+}
+
+/* Geoscape_PrepScreenOpen @ 0x85194. No sample and no screen id: it un-pauses the clock, runs the
+ * prologue, drops line 0 of the root message list, and re-pauses when that line's flag lands in
+ * (30, 50). */
+void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = 0; /* 0x8519C STRB at 0x15961C */
+    }
+    ScreenOpen_Prologue(pEnv);
+    if (pEnv->pLines != NULL) {
+        UiLineList_Remove(pEnv->pLines, 0); /* 0x8525C */
+        if (UiLineList_GetFlag(pEnv->pLines, 0) > 30) {   /* 0x85270 / 0x85278 CMP #0x1E / BLE out */
+            if (UiLineList_GetFlag(pEnv->pLines, 0) < 50) { /* 0x85284, the flag read a second time */
+                if (pEnv->pTime != NULL) {
+                    pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac */
+                }
+            }
+        }
+    }
+}

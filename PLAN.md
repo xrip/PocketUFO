@@ -724,6 +724,17 @@ Order is by what unblocks what. Each item ends with gates + commit.
   sites pass the site COUNT — the transfer flow's working record — so the bound silently dropped the
   whole term at the buy/sell and transfer screens. Both now bound against `PUFO_SMAP_SITE_COUNT`.
 
+- [x] part 9, three openers that also reset the clock: `ResearchScreen_Open (0x616ac)`,
+  `Ui_OpenBaseInfo (0x84AF8)`, `Geoscape_PrepScreenOpen (0x85194)` — 42 more checks. All three run the
+  same four-step prologue (clear `szRadarMsg`, clear `unk_186420`, promote the research "active" bytes,
+  clear `byte_1870C8` and run `GameTime_Set5Sec`) and then tail-call their screen's Init. Two ARM
+  details a source reading misses: the walk's count byte at 0x160C4C is re-read only after a store, and
+  the loop is a do/while, so a non-zero count always examines entry 0. `ResearchScreen_Open`'s
+  `LDRB R3,[R0,R1]!` writeback looks like a running pointer but is not — the back edge recomputes the
+  base. `Geoscape_PrepScreenOpen` pauses the clock when the message line's flag is >30 and <50, read
+  twice. `0x10DA38`, the strcpy source all six of these openers use, is a block of zeros: it is the
+  empty string, so every one of those copies is a clear.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -864,6 +875,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the product-slot clear and the engineer "+" button (`ManufScreen_ClearProductSlot`, `ConfirmAndClose`, `IncEngineers`) | 56/56 (Release) | 8926 | 796/1103 (72.2%) | 322720/598792 (53.9%) | 38 checked, 0 mismatched |
 | the base-info toggle, the assigned-ship sweep, the four radar corners (`BaseInfoScreen_TogglePanelMode`, `Base_RemoveAllShips`, `RadarScreen_SetCursorNW/NE/SW/SE`) | 56/56 (Release) | 8985 | 802/1103 (72.7%) | 323876/598792 (54.1%) | 38 checked, 0 mismatched |
 | the base-tab strip, the inbound craft count, the buy/sell confirm, the race funding bonus (`Base_HitTestFacilityStrip`, `Base_CountInboundTransfers`, `BuySellScreen_ConfirmSiteAndClose`, `Funding_AddRaceBonus`) | 56/56 (Release) | 9072 | 806/1103 (73.1%) | 324676/598792 (54.2%) | 38 checked, 0 mismatched |
+| three openers that also reset the clock (`ResearchScreen_Open`, `Ui_OpenBaseInfo`, `Geoscape_PrepScreenOpen`) | 56/56 (Release) | 9114 | 809/1103 (73.3%) | 325456/598792 (54.4%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

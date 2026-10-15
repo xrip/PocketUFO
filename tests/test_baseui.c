@@ -4614,6 +4614,198 @@ static void TestFundingBonus(void)
     Check(true, "a null slot array does nothing");
 #undef FUND_RESET
 }
+
+static i32 g_nSroSampleCalls;
+static u32 g_nSroSampleId;
+static u32 g_nSroSampleArg;
+static i32 g_nSroInitCalls;
+static void *g_pSroInitSlot;
+
+static void SroSample(u32 nSample, u32 nArg, void *pUser)
+{
+    (void)pUser;
+    ++g_nSroSampleCalls;
+    g_nSroSampleId = nSample;
+    g_nSroSampleArg = nArg;
+}
+
+static void SroInit(void *pSlot, void *pUser)
+{
+    (void)pUser;
+    ++g_nSroInitCalls;
+    g_pSroInitSlot = pSlot;
+}
+
+static void TestScreenResetOpen(void)
+{
+    static GeoscapeScreenState state;
+    static GameTime clock;
+    static GeoscapeWorld world;
+    static UiControl ctl[PUFO_GEOSCAPE_SPEED_COUNT];
+    static UiControl *apCtl[PUFO_GEOSCAPE_SPEED_COUNT];
+    static UiLineList lines;
+    static u8 abActive[PUFO_RESEARCH_TOPIC_COUNT];
+    static u8 bCount;
+    static u32 dwShortfall;
+    static char szMsg[32];
+    static char szScratch[32];
+    static char szSlot[4];
+    ScreenResetOpenEnv env;
+    i32 i;
+
+    printf("\nResearchScreen_Open @ 0x616ac, Ui_OpenBaseInfo @ 0x84AF8, "
+           "Geoscape_PrepScreenOpen @ 0x85194\n");
+
+    for (i = 0; i < PUFO_GEOSCAPE_SPEED_COUNT; ++i) {
+        apCtl[i] = &ctl[i];
+    }
+
+#define SRO_RESET()                                                                        \
+    do {                                                                                   \
+        memset(&state, 0, sizeof(state));                                                  \
+        memset(&clock, 0, sizeof(clock));                                                  \
+        memset(&world, 0, sizeof(world));                                                  \
+        memset(ctl, 0, sizeof(ctl));                                                       \
+        memset(&lines, 0, sizeof(lines));                                                  \
+        memset(abActive, 0, sizeof(abActive));                                             \
+        memset(szMsg, 'x', sizeof(szMsg)); szMsg[sizeof(szMsg) - 1] = 0;                   \
+        memset(szScratch, 'y', sizeof(szScratch)); szScratch[sizeof(szScratch) - 1] = 0;   \
+        bCount = 0;                                                                        \
+        dwShortfall = 0x7777u;                                                             \
+        g_nSroSampleCalls = 0; g_nSroSampleId = 0; g_nSroSampleArg = 0;                    \
+        g_nSroInitCalls = 0; g_pSroInitSlot = NULL;                                        \
+        state.nGeoscapeScreen = 3;                                                         \
+        world.nTickSeconds = 600;                                                          \
+        env.pState = &state;                                                               \
+        env.pszMsg = szMsg; env.cchMsg = sizeof(szMsg);                                    \
+        env.pszScratch = szScratch; env.cchScratch = sizeof(szScratch);                    \
+        env.abResearchActive = abActive; env.pbResearchCount = &bCount;                    \
+        env.pdwShortfall = &dwShortfall;                                                   \
+        env.pTime = &clock;                                                                \
+        env.pWorld = &world;                                                               \
+        env.apSpeedCtl = apCtl;                                                            \
+        env.pLines = &lines;                                                               \
+        env.init.pfnPlaySample = SroSample;                                                \
+        env.init.pfnInit = SroInit;                                                        \
+        env.init.pSlot = szSlot;                                                           \
+        env.init.pUser = NULL;                                                             \
+    } while (0)
+
+    /* ---- the shared prologue, checked through ResearchScreen_Open ---- */
+    SRO_RESET();
+    bCount = 3;
+    abActive[0] = 1; abActive[1] = 0; abActive[2] = 1;
+    ResearchScreen_Open(&env);
+    CheckEqI32(g_nSroSampleCalls, 1, "ResearchScreen_Open plays a sample first (0x616B4)");
+    CheckEqI32((i32)g_nSroSampleId, 17, "  sample 17");
+    CheckEqI32((i32)g_nSroSampleArg, 4, "  with the second argument 4");
+    CheckEqI32(szMsg[0], 0, "szRadarMsg is cleared (strcpy from the all-zero 0x10DA38)");
+    CheckEqI32(szScratch[0], 0, "unk_186420 is cleared the same way");
+    CheckEqI32((i32)abActive[0], 2, "an active entry marked 1 becomes 2");
+    CheckEqI32((i32)abActive[1], 0, "an entry marked 0 is left alone");
+    CheckEqI32((i32)abActive[2], 2, "and the third entry too");
+    Check(dwShortfall == 0, "the shortfall dword is cleared with a 4-byte store (0x61754)");
+    CheckEqI32(world.nTickSeconds, 5, "GameTime_Set5Sec puts the geoscape on a 5 s tick");
+    CheckEqI32(ctl[0].nState, 1, "  and lights speed control 0");
+    CheckEqI32(ctl[1].nState, 0, "  and darkens the other five");
+    CheckEqI32(ctl[5].nState, 0, "  including control 5");
+    CheckEqI32(state.nGeoscapeScreen, 8, "the screen id 8 is written BEFORE the Init (0x6176C)");
+    CheckEqI32(g_nSroInitCalls, 1, "the Init is a tail call");
+    Check(g_pSroInitSlot == (void *)szSlot, "  and gets the screen slot the hooks carry");
+
+    /* ---- Ui_OpenBaseInfo differs only in the id ---- */
+    SRO_RESET();
+    Ui_OpenBaseInfo(&env);
+    CheckEqI32(g_nSroSampleCalls, 1, "Ui_OpenBaseInfo also plays sample 17 (0x84AFC)");
+    CheckEqI32(state.nGeoscapeScreen, 16, "with the screen id 16 (0x84BD8)");
+    CheckEqI32(world.nTickSeconds, 5, "and the same 5 s tick");
+    CheckEqI32(g_nSroInitCalls, 1, "then tail-calls Ui_InitBaseInfo");
+
+    /* ---- Geoscape_PrepScreenOpen: no sample, no id, and the clock dance ---- */
+    SRO_RESET();
+    clock.bPaused = 1;
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 99;
+    lines.abLineFlags[1] = 40;
+    Geoscape_PrepScreenOpen(&env);
+    CheckEqI32(g_nSroSampleCalls, 0, "Geoscape_PrepScreenOpen plays no sample of its own");
+    CheckEqI32(state.nGeoscapeScreen, 3, "and writes no screen id");
+    CheckEqI32(lines.nLineCount, 1, "line 0 of the root message list is removed (0x8525C)");
+    CheckEqI32(lines.abLineFlags[0], 40, "  so the old line 1 is now line 0");
+    CheckEqI32(clock.bPaused, 1, "a flag of 40 re-pauses the clock (0x8528C GameTime_Pause)");
+    CheckEqI32(world.nTickSeconds, 5, "the prologue still runs, tick 5");
+
+    /* The two thresholds, each on its own GetLineFlag call. The list needs two lines: Remove(0)
+     * shifts line 1 down into line 0, so the tested flag has to start at index 1. */
+    static const u8 abFlags[6] = {0, 30, 31, 49, 50, 255};
+    static const u8 abPaused[6] = {0, 0, 1, 1, 0, 0};
+    for (i32 n = 0; n < 6; ++n) {
+        SRO_RESET();
+        clock.bPaused = 1;
+        lines.nLineCount = 2;
+        lines.abLineFlags[0] = 99;
+        lines.abLineFlags[1] = abFlags[n];
+        Geoscape_PrepScreenOpen(&env);
+        CheckEqI32(clock.bPaused, abPaused[n],
+                   "the pause window is flag > 30 and flag < 50, two separate reads");
+    }
+
+    /* An empty list: Remove leaves the count at zero and the flag reads 0, so no pause. */
+    SRO_RESET();
+    clock.bPaused = 1;
+    Geoscape_PrepScreenOpen(&env);
+    CheckEqI32(lines.nLineCount, 0, "removing from an empty list keeps the count at 0");
+    CheckEqI32(clock.bPaused, 0, "  and the clock stays un-paused");
+
+    /* ---- the research walk on its own ---- */
+    SRO_RESET();
+    bCount = 0;
+    abActive[0] = 1;
+    ResearchScreen_Open(&env);
+    CheckEqI32((i32)abActive[0], 1, "a zero count skips the walk entirely, entry 0 included");
+
+    SRO_RESET();
+    bCount = 1;
+    abActive[0] = 1;
+    ResearchScreen_Open(&env);
+    CheckEqI32((i32)abActive[0], 2, "a non-zero count is a do/while: entry 0 is always examined");
+
+    SRO_RESET();
+    bCount = 4;
+    abActive[0] = 2; abActive[1] = 3; abActive[2] = 255; abActive[3] = 1;
+    ResearchScreen_Open(&env);
+    CheckEqI32((i32)abActive[0], 2, "only the entries marked exactly 1 are promoted");
+    CheckEqI32((i32)abActive[1], 3, "  2 stays 2");
+    CheckEqI32((i32)abActive[2], 255, "  255 stays 255");
+    CheckEqI32((i32)abActive[3], 2, "  1 becomes 2");
+
+    /* Deviation: the count is a byte and could ask for 255 of the 144 entries. */
+    SRO_RESET();
+    bCount = 255;
+    for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        abActive[i] = 1;
+    }
+    abActive[PUFO_RESEARCH_TOPIC_COUNT - 1] = 1;
+    ResearchScreen_Open(&env);
+    CheckEqI32((i32)abActive[PUFO_RESEARCH_TOPIC_COUNT - 1], 2,
+               "the walk stops at PUFO_RESEARCH_TOPIC_COUNT, not at the byte count");
+
+    /* Nulls. The clock pair stays valid: the originals call GameTime_Set5Sec unconditionally and
+     * the port's version writes through both, exactly as the original writes its two globals. */
+    SRO_RESET();
+    env.pState = NULL; env.pszMsg = NULL; env.pszScratch = NULL;
+    env.abResearchActive = NULL; env.pbResearchCount = NULL;
+    env.pdwShortfall = NULL; env.pLines = NULL;
+    env.init.pfnPlaySample = NULL; env.init.pfnInit = NULL;
+    ResearchScreen_Open(&env);
+    Ui_OpenBaseInfo(&env);
+    Geoscape_PrepScreenOpen(&env);
+    ResearchScreen_Open(NULL);
+    Ui_OpenBaseInfo(NULL);
+    Geoscape_PrepScreenOpen(NULL);
+    Check(true, "a fully nulled env runs without touching anything");
+#undef SRO_RESET
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -4667,6 +4859,7 @@ int main(void)
     TestTogglePanelMode();
     TestBuySellConfirm();
     TestFundingBonus();
+    TestScreenResetOpen();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
