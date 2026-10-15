@@ -597,6 +597,78 @@ typedef struct ManufEngineerEnv {
 
 void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv);
 
+/* ------------------------------------------------- the buy/sell confirm, and the race funding bonus
+ *
+ * Evidence: BuySellScreen_ConfirmSiteAndClose @ 0x75090 (196 B), Funding_AddRaceBonus @ 0x7debc
+ * (196 B).
+ *
+ * BuySellScreen_ConfirmSiteAndClose is installed twice as a click handler by BuySellScreen_Init
+ * (0x78D58, 0x78D88). It asks whether the transfer flow's working site -- the record AT the site
+ * count, the same slot Smap_SumSiteScores and Transfer_ResetSite use -- holds anything at all, and
+ * if it does it commits that record as a real site: bFlag0 = 24 and the site count goes up by one.
+ * The three tests, in the original's order:
+ *
+ *   1. Base_CountItemQtyAcrossBases over that site, with scan-sites OFF (0x750B0: a2 = the site
+ *      count, a3 = nSelectedBaseIdx, a4 = 0). Cargo volume, not item count.
+ *   2. SmapSite.uRecoveredSoldiers (0x202) -- 0x750DC.
+ *   3. auItemQty[112] + auItemQty[113] + auItemQty[117] + auItemQty[118] -- 0x750E8..0x75104, four
+ *      unsigned halfword loads. 112 and 113 are the two the monthly upkeep prices (20,000 and
+ *      30,000 a unit) and Base_CountOutboundTransferSpace's recovery load also use; 117 and 118 are
+ *      read nowhere else in the binary.
+ *
+ * Either way it then copies nFunds into the buy/sell scratch dword at 0x161460 (the only fifteen
+ * xrefs that global has are all inside BuySellScreen_*) and tail-calls Geoscape_CloseUI, so the
+ * close runs whatever the commit did.
+ *
+ * Deviation: the original bounds nothing -- it reads aSmapSites[nSiteCount] even when the count is
+ * 200, one record past the array. The port refuses the commit there. */
+#define PUFO_SITE_FLAG_CONFIRM 24 /* the value bFlag0 takes when a working site becomes a real one.
+                                   * The only other value this byte is ever written with is
+                                   * Base_DemolishFacility's 0xFF not-assigned marker (0x66D58); no
+                                   * reader of 24 was found in the binary. */
+
+typedef struct BuySellConfirmEnv {
+    SmapSite             *aSites;      /* aSmapSites @ 0x162030. Not const: the commit writes bFlag0
+                                        * into the working record. */
+    i32                  *pnSiteCount; /* 0x186410, reached through the 0x1863E8 view block */
+    const i8             *pnSelectedBaseIdx;
+    BaseRec *const       *apBases;
+    ObjectRecFull *const *apObjects;
+    i32                   nObjectCount;
+    i32                   nFunds;      /* nFunds @ 0x1598D8 */
+    i32                  *pnFundsSnapshot; /* unk_161460, the buy/sell scratch */
+} BuySellConfirmEnv;
+
+void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
+                                       const GeoscapeCloseHooks *pHooks);
+
+/* Funding_AddRaceBonus @ 0x7debc (196 B): one radar contact raises one funding dword by 2. It is
+ * called from RadarScreen_Update three times (0x60B1C, 0x60C50, 0x60CAC), each time with the value
+ * Tilemap_GetAt returned for the contact's tile as the race id and unk_161F34 as a first argument it
+ * never reads. The return value -- &0x1864F8 on the paths that changed something -- is overwritten
+ * by the next instruction every time, so the port returns void.
+ *
+ * The six dwords are 0x186568, 0x18656C, 0x186570, 0x186574, 0x186578, 0x18657C. FundingScreen_Init
+ * (0x5C0FC..0x5C144) is what gives them their meaning: it sums the first five, divides the funding
+ * total at 0x1865BC by that sum plus one, multiplies the result by the sixth, adds that back into
+ * the total, divides the total by the sum plus one again, and scales each of the first five by that
+ * last quotient into 0x186580..0x186590. So [0..4] are five race scores and [5] is a multiplier on
+ * the monthly total -- and [5] is the one dword of the block the save never writes.
+ *
+ * The race ids are 0x80..0x89: aNewBaseCostByRace @ 0xAB488 is ten dwords indexed by (race - 0x80),
+ * and 0xFF is the "no race" tile value. The mapping is NOT monotonic -- 0x84 feeds the second slot
+ * while 0x82 and 0x83 feed the third and fourth -- and 0x86, 0x87 and 0x89 give no bonus at all.
+ * That is what the compare chain at 0x7DEBC..0x7DF7C says, and it is reproduced as written. */
+#define PUFO_FUNDING_SLOT_COUNT 6
+#define PUFO_FUNDING_RACE_FIRST 5  /* [0..4] are the five race scores */
+#define PUFO_FUNDING_MULT_SLOT  5  /* [5] @ 0x18657C scales the monthly total */
+#define PUFO_FUNDING_BONUS      2  /* every hit adds exactly two */
+#define PUFO_RACE_ID_FIRST      0x80
+#define PUFO_RACE_ID_COUNT      10 /* aNewBaseCostByRace @ 0xAB488 has one entry per id */
+#define PUFO_RACE_ID_NONE       0xFF /* the tile value with no race behind it */
+
+void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId);
+
 /* ResearchScreen_StartSelected @ 0x73240 (232 B): the research screen's start button. It clears
  * the detail flag, plays sample 17, and then -- only if the selected topic's wProgress is zero AND
  * that topic's allocation for this base is non-zero -- sets wProgress to 1, which is what moves a

@@ -4446,6 +4446,174 @@ static void TestTogglePanelMode(void)
     Check(true, "a null env does nothing");
 #undef TOG_RESET
 }
+
+static void TestBuySellConfirm(void)
+{
+    static SmapSite aSites[4];
+    static ObjectRecFull aObjs[2];
+    static ObjectRecFull *apObjects[2];
+    static BaseRec aBases[2];
+    static BaseRec *apBases[2];
+    BuySellConfirmEnv env;
+    GeoscapeCloseHooks hooks;
+    i32 nSiteCount, nObjectCount;
+    i8 nBase;
+    i32 nSnapshot;
+    i32 i;
+
+    printf("BuySellScreen_ConfirmSiteAndClose @ 0x75090\n");
+
+#define BS_RESET()                                                                  \
+    memset(aSites, 0, sizeof(aSites));                                              \
+    memset(aObjs, 0, sizeof(aObjs));                                                \
+    memset(aBases, 0, sizeof(aBases));                                              \
+    for (i = 0; i < 2; ++i) { apObjects[i] = &aObjs[i]; apBases[i] = &aBases[i]; }  \
+    aObjs[1].bCargoSize = 3;      /* object 0 has no cargo size on purpose */       \
+    nSiteCount = 2; nObjectCount = 2; nBase = 0;                                    \
+    nSnapshot = -1;                                                                 \
+    g_nCloseCalls2 = 0;                                                             \
+    memset(&env, 0, sizeof(env));                                                   \
+    env.aSites = aSites; env.pnSiteCount = &nSiteCount;                             \
+    env.pnSelectedBaseIdx = &nBase; env.apBases = apBases;                          \
+    env.apObjects = apObjects; env.nObjectCount = nObjectCount;                     \
+    env.nFunds = 123456; env.pnFundsSnapshot = &nSnapshot;                          \
+    memset(&hooks, 0, sizeof(hooks));                                               \
+    hooks.pfnCloseUi = Close2Thunk;
+
+    /* 1. An empty working record is not committed, but the tail still runs. */
+    BS_RESET();
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, 0, "an empty working record keeps its flag");
+    CheckEqI32(nSiteCount, 2, "  and the site count does not grow");
+    CheckEqI32(nSnapshot, 123456, "the funds snapshot is written either way (0x75130)");
+    CheckEqI32(g_nCloseCalls2, 1, "  and Geoscape_CloseUI runs either way (0x7513C)");
+
+    /* 2. Cargo volume in a filtered column commits it. */
+    BS_RESET();
+    aSites[2].auItemQty[1] = 2; /* object 1, cargo size 3 -> 6 */
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, PUFO_SITE_FLAG_CONFIRM, "cargo in the working record commits it (0x75120)");
+    CheckEqI32(nSiteCount, 3, "  and the count grows by one (0x75124)");
+    CheckEqI32(aSites[0].bFlag0, 0, "  only the working record is touched");
+    CheckEqI32(aSites[1].bFlag0, 0, "  not the record before it");
+
+    /* 3. Object 0 is never counted, so its column is not a reason to commit. */
+    BS_RESET();
+    aObjs[0].bCargoSize = 9;
+    aSites[2].auItemQty[0] = 5;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, 0, "object 0 is outside the cargo filter (0x67E00)");
+
+    /* 4. The soldier count is the second test. */
+    BS_RESET();
+    aSites[2].uRecoveredSoldiers = 1;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, PUFO_SITE_FLAG_CONFIRM, "uRecoveredSoldiers commits it (0x750DC)");
+
+    /* 5. Each of the four item columns commits it on its own, even though none of them is in the
+     * cargo filter. */
+    /* BS_RESET uses i, so the loop counters here are n / k, never i. */
+    static const i32 anItems[4] = {112, 113, 117, 118};
+    for (i32 n = 0; n < 4; ++n) {
+        BS_RESET();
+        aSites[2].auItemQty[anItems[n]] = 1;
+        BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+        CheckEqI32(aSites[2].bFlag0, PUFO_SITE_FLAG_CONFIRM, "auItemQty[112/113/117/118 commits it (0x750E8)");
+    }
+    BS_RESET();
+    aSites[2].auItemQty[114] = 1; /* between 113 and 117, and outside the cargo filter */
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, 0, "the column between the two pairs is not one of the four");
+
+    /* 6. The scan-sites flag is OFF, so another site of the same base type is not a reason. */
+    BS_RESET();
+    aBases[0].bUnk4 = 5;
+    aSites[0].bFlag1 = 5;
+    aSites[0].auItemQty[1] = 40;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(aSites[2].bFlag0, 0, "a matching site elsewhere is not counted (0x750B0 a4 = 0)");
+
+    /* 7. Deviation: the original reads aSmapSites[200], one record past the array. */
+    BS_RESET();
+    nSiteCount = PUFO_SMAP_SITE_COUNT;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(nSiteCount, PUFO_SMAP_SITE_COUNT, "a full site array is not committed past its end");
+    CheckEqI32(nSnapshot, 123456, "  the tail still runs");
+    CheckEqI32(g_nCloseCalls2, 1, "  including the close");
+
+    /* 8. Nulls. */
+    BS_RESET();
+    env.pnFundsSnapshot = NULL;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    CheckEqI32(g_nCloseCalls2, 1, "a null snapshot still closes");
+    BS_RESET();
+    env.pnSiteCount = NULL;
+    BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
+    Check(true, "a null site count is treated as zero");
+    BuySellScreen_ConfirmSiteAndClose(NULL, &hooks);
+    BuySellScreen_ConfirmSiteAndClose(&env, NULL);
+    Check(true, "a null env or a null hook does nothing");
+#undef BS_RESET
+}
+
+static void TestFundingBonus(void)
+{
+    i32 aSlots[PUFO_FUNDING_SLOT_COUNT];
+    i32 i;
+
+    printf("Funding_AddRaceBonus @ 0x7debc\n");
+
+#define FUND_RESET()                                                     \
+    for (i = 0; i < PUFO_FUNDING_SLOT_COUNT; ++i) { aSlots[i] = 0; }
+
+    /* The compare chain's own mapping: 0x84 feeds slot 1 while 0x82 and 0x83 feed slots 2 and 3. */
+    /* FUND_RESET uses i, so the loop counters here are n / k, never i. */
+    static const i32 anRaces[8] = {0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x88, 0xFF};
+    static const i32 anRaceSlot[8] = {0, 0, 2, 3, 1, 4, 0, 5};
+    for (i32 n = 0; n < 8; ++n) {
+        FUND_RESET();
+        Funding_AddRaceBonus(aSlots, anRaces[n]);
+        CheckEqI32(aSlots[anRaceSlot[n]], PUFO_FUNDING_BONUS, "the race id raises its own slot by 2 (0x7DEBC)");
+        i32 nOthers = 0;
+        for (i32 k = 0; k < PUFO_FUNDING_SLOT_COUNT; ++k) {
+            if (k != anRaceSlot[n]) {
+                nOthers += aSlots[k];
+            }
+        }
+        CheckEqI32(nOthers, 0, "  and no other slot");
+    }
+
+    /* Three of the ten race ids give no bonus at all. */
+    static const i32 anNoBonus[6] = {0x86, 0x87, 0x89, 0x00, 0x7F, 0x8A};
+    for (i32 n = 0; n < 6; ++n) {
+        FUND_RESET();
+        Funding_AddRaceBonus(aSlots, anNoBonus[n]);
+        i32 nTotal = 0;
+        for (i32 k = 0; k < PUFO_FUNDING_SLOT_COUNT; ++k) {
+            nTotal += aSlots[k];
+        }
+        CheckEqI32(nTotal, 0, "an unmapped race id changes nothing (locret_7DF7C)");
+    }
+
+    /* The argument is masked to a byte before the compares (0x7DEBC AND R0,R1,#0xFF). */
+    FUND_RESET();
+    Funding_AddRaceBonus(aSlots, 0x180);
+    CheckEqI32(aSlots[0], 2, "0x180 masks down to 0x80");
+    FUND_RESET();
+    Funding_AddRaceBonus(aSlots, 0x1FF);
+    CheckEqI32(aSlots[5], 2, "0x1FF masks down to 0xFF, the no-race tile");
+
+    /* It accumulates: every radar contact of that race adds two more. */
+    FUND_RESET();
+    Funding_AddRaceBonus(aSlots, 0x85);
+    Funding_AddRaceBonus(aSlots, 0x85);
+    Funding_AddRaceBonus(aSlots, 0x85);
+    CheckEqI32(aSlots[4], 6, "three contacts of race 0x85 give six");
+
+    Funding_AddRaceBonus(NULL, 0x80);
+    Check(true, "a null slot array does nothing");
+#undef FUND_RESET
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -4497,6 +4665,8 @@ int main(void)
     TestClearProductSlot();
     TestIncEngineers();
     TestTogglePanelMode();
+    TestBuySellConfirm();
+    TestFundingBonus();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

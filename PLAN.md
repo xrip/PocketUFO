@@ -711,6 +711,19 @@ Order is by what unblocks what. Each item ends with gates + commit.
   else — they clear `szRadarMsg`, they do not write it. Port bug this unit caught and fixed:
   `RadarScaleRange` dereferenced its env before `RadarSetCursor`'s null check.
 
+- [x] part 8, four more small handlers: `Base_HitTestFacilityStrip (0x671B0)`,
+  `Base_CountInboundTransfers (0x67F78)`, `BuySellScreen_ConfirmSiteAndClose (0x75090)`,
+  `Funding_AddRaceBonus (0x7debc)` — 87 more checks. The base-tab strip is a COLUMN, not a bar: the
+  drawer (`Base_DrawFacilityIconStrip`, 0x6250c) steps 28 pixels down the right edge while the hit test
+  divides the y by 30, so from the third cell down the top of a cell reports the previous base
+  (bugs.tsv). Three gate bytes disable it by overwriting the x argument with 10 and re-entering the
+  compare chain mid-way. `Funding_AddRaceBonus` maps race ids to funding slots non-monotonically
+  (0x84 → slot 1 while 0x82/0x83 → slots 2/3, and 0x86/0x87/0x89 give nothing). Port bug this unit
+  caught and fixed: `Base_CountItemQtyAcrossBases` and `Base_CountOutboundTransferSpace` bounded
+  `nSiteIdx` against `nSiteCount`, but five of the ten cargo call sites and both extra outbound call
+  sites pass the site COUNT — the transfer flow's working record — so the bound silently dropped the
+  whole term at the buy/sell and transfer screens. Both now bound against `PUFO_SMAP_SITE_COUNT`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -850,6 +863,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | three strategic/geoscape leaves (`Smap_SumSiteScores`, `Base_EnterBuildMode`, `Smap_SetWaypoint`) | 56/56 (Release) | 8868 | 793/1103 (71.9%) | 321912/598792 (53.8%) | 38 checked, 0 mismatched |
 | the product-slot clear and the engineer "+" button (`ManufScreen_ClearProductSlot`, `ConfirmAndClose`, `IncEngineers`) | 56/56 (Release) | 8926 | 796/1103 (72.2%) | 322720/598792 (53.9%) | 38 checked, 0 mismatched |
 | the base-info toggle, the assigned-ship sweep, the four radar corners (`BaseInfoScreen_TogglePanelMode`, `Base_RemoveAllShips`, `RadarScreen_SetCursorNW/NE/SW/SE`) | 56/56 (Release) | 8985 | 802/1103 (72.7%) | 323876/598792 (54.1%) | 38 checked, 0 mismatched |
+| the base-tab strip, the inbound craft count, the buy/sell confirm, the race funding bonus (`Base_HitTestFacilityStrip`, `Base_CountInboundTransfers`, `BuySellScreen_ConfirmSiteAndClose`, `Funding_AddRaceBonus`) | 56/56 (Release) | 9072 | 806/1103 (73.1%) | 324676/598792 (54.2%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

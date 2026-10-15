@@ -364,9 +364,32 @@ i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBa
 /* Base_CountOutboundTransferSpace @ 0x68044. The recovery load (uRecoveredSoldiers +
  * bRecoveredSoldierAssign + auItemQty[112] + auItemQty[113]) of site nSiteIdx, plus, when
  * bScanSites, of every other site whose bFlag1 equals apBases[nBaseIndex]->bUnk4. Budget term
- * of Base_UpdateLivingQuartersNeeded. The original's first argument is never read. */
+ * of Base_UpdateLivingQuartersNeeded. The original's first argument is never read.
+ *
+ * Two call shapes, both real. Base_UpdateLivingQuartersNeeded (0x65E50) passes nSiteIdx = -1 and
+ * gets only the type-matched sites; BuySellScreen_ValidateCapacity (0x75E34) and
+ * TransferScreen_ValidateCapacity (0x9666C) pass the site COUNT -- the transfer flow's working
+ * record -- so the pending site's own load counts too. nSiteIdx is therefore bounded against
+ * PUFO_SMAP_SITE_COUNT and not against nSiteCount, which is what the original leaves unbounded. */
 i32 Base_CountOutboundTransferSpace(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
                                     BaseRec *const *apBases, i32 nBaseIndex, bool bScanSites);
+
+/* Base_CountInboundTransfers @ 0x67F78 (204 B). The mirror of Base_CountOutboundTransferSpace on
+ * the craft side: the per-site term is the signed pair SmapSite.bRecoveredCraftCount (0x205) +
+ * SmapSite.bUnk518 (0x206), both read with LDRSB and summed as signed bytes.
+ *
+ * The two call shapes differ, and both are real. BaseInfoScreen_BuildPanels (0x56634) passes
+ * nSiteIdx = -1 and gets only the type-matched sites; BuySellScreen_ValidateCapacity (0x75C58) and
+ * TransferScreen_ValidateCapacity (0x96548) pass nSiteIdx = nSiteCount -- the transfer flow's
+ * working slot, the same record Transfer_ResetSite (0x9690c) clears -- so the pending site counts
+ * too. BaseInfoScreen_BuildPanels then prints `hangarCap - inbound - shipsAtBase` (0x5663C/0x56644)
+ * as the base's free hangar slots.
+ *
+ * Deviation: the original bounds nothing. It reads aSmapSites[nSiteIdx] on any nSiteIdx != -1 and
+ * indexes apBases with the sign-extended low byte of nBaseIndex; the port bounds the site against
+ * PUFO_SMAP_SITE_COUNT and the base against the eight apBases slots and skips what falls outside. */
+i32 Base_CountInboundTransfers(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                               BaseRec *const *apBases, i32 nBaseIndex, bool bScanSites);
 
 /* Base_CountItemQtyAcrossBases @ 0x67d68. Cargo volume (bCargoSize * auItemQty column) over the
  * filtered object indices 1..69, 105..111, 122..124, 140: site nSiteIdx itself, then — gated on
@@ -1021,5 +1044,64 @@ void RadarScreen_SetCursorNW(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorNE(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv);
 void RadarScreen_SetCursorSE(const RadarCursorEnv *pEnv);
+
+/* --- the geoscape base-tab strip @ 0x671B0 ---
+ *
+ * Evidence: Base_HitTestFacilityStrip (204 B), drawn by Base_DrawFacilityIconStrip (0x6250c, not
+ * ported).
+ *
+ * The IDB name says "facility", and the drawer confirms what the strip actually is: one cell per
+ * base, stacked down the right edge of the 240x320 screen. Base_DrawFacilityIconStrip blits the
+ * selected cell's erase rect at x = 211, y = 28 * nSelectedBase + 3, 26x26 (0x62520), and walks the
+ * bases with a 28-pixel vertical pitch (0x6250C's `v5 += 28`). So the hit test's box is a vertical
+ * band, not a horizontal one:
+ *
+ *     x in [211, 237]   y in [3, 28 * nBaseCount]   hit -> base index = y / 30
+ *
+ * Both callers pass the geoscape cursor pair, x first: Geoscape_OnPointer (0x87F30, R5 =
+ * nSmapCursorX, R8 = nSmapCursorY) stores the result straight into nSelectedBaseIdx (0x87F34), and
+ * TransferScreen_Draw (0x98980) stores it into unk_1870F4 and then indexes apBases with it (0x9899C
+ * / 0x989B0, Map + 0x1174). A miss returns the byte it was going to overwrite -- the same
+ * nSelectedBaseIdx read back out of abFacilityGrid + 0x619 -- so the caller's unconditional store
+ * leaves the selection unchanged.
+ *
+ * Three gate bytes disable the strip entirely. When any of unk_1870EC (the transfer screen),
+ * unk_15883C (the base-info screen) or byte_15EEF0 (the psi screen / base-stats panel) is non-zero,
+ * the ARM jumps to 0x6723C, overwrites the x argument with 10, and branches back INTO the middle of
+ * the compare chain at 0x671E8. 10 < 211, so the range test always misses. The port keeps the
+ * forced value rather than short-circuiting, because that is literally what the code does.
+ *
+ * A hit also clears the low byte of dword_1870B4[2] @ 0x1870BC (0x67250). That byte is the geoscape
+ * tap flag: Geoscape_OnPointer sets it to 1 at 0x87ED4 after computing the tap cell coordinates,
+ * Geoscape_OnMapClick tests it at 0x8B660 before the hangar-placement branch, and clicking a base
+ * tab cancels the pending tap.
+ *
+ * The two base bytes are reached in the original as abFacilityGrid + 0x618 and + 0x619 -- 1560 and
+ * 1561, which is 36 bytes PAST the 1524-byte facility grid the symbol names. They are the base
+ * count and the selected base sitting in the same block, not part of the grid, so the port takes
+ * them as their own pointers instead of indexing a 1524-byte array past its end.
+ *
+ * ORIGINAL BUG (bugs.tsv): in Base_HitTestFacilityStrip @ 0x671B0 the drawer's pitch and the hit
+ * test's divisor disagree. Base_DrawFacilityIconStrip (0x6250c, not ported) steps 28 pixels per
+ * base, but 0x67264 divides the y by 30, so from the third cell down
+ * the top of each cell selects the PREVIOUS base -- y = 59 (the first row of the third cell, drawn
+ * at 28*2 + 3) reports base 1, and y = 199 (the first row of the eighth) reports 6. Reproduced,
+ * not fixed. */
+#define PUFO_BASE_STRIP_X_FIRST 211 /* the drawer's own x, and the erase rect's */
+#define PUFO_BASE_STRIP_X_LAST  237 /* 211 + 26 - 1, the erase rect's right edge */
+#define PUFO_BASE_STRIP_Y_FIRST   3 /* the drawer's y = 28 * base + 3 */
+#define PUFO_BASE_STRIP_PITCH    28 /* the drawer's per-base step, and the hit bound */
+#define PUFO_BASE_STRIP_DIVISOR  30 /* the hit test's own divisor -- see the bug note above */
+
+typedef struct BaseStripHitEnv {
+    const u8 *pbBaseCount;    /* 0x159D80 = abFacilityGrid + 0x618, read signed */
+    const u8 *pbSelectedBase; /* 0x159D81 = abFacilityGrid + 0x619, read signed: a miss returns it */
+    const u8 *pbGateTransfer; /* unk_1870EC, the transfer screen */
+    const u8 *pbGateBaseInfo; /* unk_15883C, the base-info screen */
+    const u8 *pbGatePsi;      /* byte_15EEF0, the psi screen / base-stats panel */
+    u8       *pbTapFlag;      /* low byte of dword_1870B4[2] @ 0x1870BC */
+} BaseStripHitEnv;
+
+i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY);
 
 #endif /* PUFO_GEOSCAPE_H */

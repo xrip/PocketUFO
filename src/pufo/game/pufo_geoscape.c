@@ -1161,7 +1161,9 @@ i32 Base_CountOutboundTransferSpace(const SmapSite *aSites, i32 nSiteCount, i32 
     if (aSites == NULL || apBases == NULL) {
         return 0;
     }
-    if (nSiteIdx >= 0 && nSiteIdx < nSiteCount) {
+    /* Bounded against the array, not the count: the buy/sell and transfer screens pass the site
+     * COUNT (0x75E34, 0x9666C), i.e. the working record, and the original bounds nothing. */
+    if (nSiteIdx >= 0 && nSiteIdx < PUFO_SMAP_SITE_COUNT) {
         nTotal += SmapSite_RecoveryLoad(&aSites[nSiteIdx]); /* 0x68068 */
     }
     if (bScanSites) {
@@ -1209,7 +1211,10 @@ i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSi
         return 0;
     }
 
-    if (nSiteIdx >= 0 && nSiteIdx < nSiteCount && nObjectCount > 1) {
+    /* Bounded against the array, not the count: five of the ten call sites pass the site COUNT as
+     * the site index -- 0x750B0, 0x75CC0, 0x9641C, 0x9692C, 0x97D30 -- because that is where the
+     * transfer flow keeps the record it is working on, and the original bounds nothing. */
+    if (nSiteIdx >= 0 && nSiteIdx < PUFO_SMAP_SITE_COUNT && nObjectCount > 1) {
         for (i32 v = 1; v < nObjectCount; ++v) {
             if (!ItemQtyObjIndexInFilter(v)) {
                 continue;
@@ -1220,7 +1225,7 @@ i32 Base_CountItemQtyAcrossBases(const SmapSite *aSites, i32 nSiteCount, i32 nSi
         }
     }
 
-    if (bScanSites && nSiteIdx >= 0 && nObjectCount > 1) {
+    if (bScanSites && nSiteIdx >= 0 && nSiteIdx < PUFO_SMAP_SITE_COUNT && nObjectCount > 1) {
         for (i32 i = 0; i < nSiteCount; ++i) {
             if (i == nSiteIdx) {
                 continue;
@@ -1776,4 +1781,71 @@ void RadarScreen_SetCursorSW(const RadarCursorEnv *pEnv)
     }
     RadarSetCursor(pEnv, PUFO_RADAR_CURSOR_WEST, PUFO_RADAR_CURSOR_SOUTH,
                    RadarScaleRange(pEnv, false), 0);
+}
+
+/* One site's inbound craft pair, the term Base_CountInboundTransfers sums. Both bytes are read with
+ * LDRSB and added as signed bytes (0x67FB8 / 0x67FC0, and 0x68014 / 0x6801C in the scan). */
+static i32 SmapSite_CraftLoad(const SmapSite *pSite)
+{
+    return (i32)(i8)pSite->bRecoveredCraftCount + (i32)(i8)pSite->bUnk518;
+}
+
+/* Base_CountInboundTransfers @ 0x67F78. The craft-side mirror of Base_CountOutboundTransferSpace:
+ * same shape, same type-match rule against apBases[nBaseIndex]->bUnk4, different per-site term. The
+ * original's first argument (&0x159768 again) is never read. */
+i32 Base_CountInboundTransfers(const SmapSite *aSites, i32 nSiteCount, i32 nSiteIdx,
+                               BaseRec *const *apBases, i32 nBaseIndex, bool bScanSites)
+{
+    i32 nTotal = 0;
+
+    if (aSites == NULL || apBases == NULL) {
+        return 0;
+    }
+    if (nSiteIdx >= 0 && nSiteIdx < PUFO_SMAP_SITE_COUNT) {
+        nTotal += SmapSite_CraftLoad(&aSites[nSiteIdx]); /* 0x67FB0 */
+    }
+    if (bScanSites && nSiteCount > 0) { /* 0x67FDC: CMP R8,#0 / BLE */
+        if (nBaseIndex >= 0 && nBaseIndex < PUFO_FAC_BASE_COUNT) {
+            const i8 bBaseType = (i8)apBases[nBaseIndex]->bUnk4;
+            for (i32 i = 0; i < nSiteCount; ++i) {
+                if (i == nSiteIdx) {
+                    continue; /* 0x67FEC: CMP R4,R1 / BEQ */
+                }
+                if (bBaseType == (i8)aSites[i].bFlag1) {
+                    nTotal += SmapSite_CraftLoad(&aSites[i]); /* 0x68020 */
+                }
+            }
+        }
+    }
+    return nTotal;
+}
+
+/* Base_HitTestFacilityStrip @ 0x671B0. The vertical base-tab strip down the right edge of the
+ * geoscape; see the header for the geometry and for the pitch/divisor mismatch the original has. */
+i32 Base_HitTestFacilityStrip(const BaseStripHitEnv *pEnv, i32 nX, i32 nY)
+{
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    /* 0x6723C: any of the three screens being open overwrites the x argument with 10 and re-enters
+     * the compare chain at 0x671E8, so the x range test always misses. */
+    const bool bGateOpen = (pEnv->pbGateTransfer != NULL && (*pEnv->pbGateTransfer & 0xFFu) != 0) ||
+                           (pEnv->pbGateBaseInfo != NULL && (*pEnv->pbGateBaseInfo & 0xFFu) != 0) ||
+                           (pEnv->pbGatePsi != NULL && (*pEnv->pbGatePsi & 0xFFu) != 0);
+    const i32 nTestX = bGateOpen ? 10 : nX;
+
+    const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i8)*pEnv->pbBaseCount : 0;   /* 0x67204 */
+    const i8 bSelected = (pEnv->pbSelectedBase != NULL) ? (i8)*pEnv->pbSelectedBase : 0; /* 0x67224 */
+
+    if (nTestX < PUFO_BASE_STRIP_X_FIRST || nTestX > PUFO_BASE_STRIP_X_LAST ||
+        nY < PUFO_BASE_STRIP_Y_FIRST || nY > PUFO_BASE_STRIP_PITCH * nBaseCount) {
+        return bSelected;
+    }
+
+    if (pEnv->pbTapFlag != NULL) {
+        *pEnv->pbTapFlag = 0; /* 0x67250 STRB */
+    }
+    /* The LSL#24 / ASR#24 pair at 0x67268 sign-extends the quotient to a char. */
+    return (i8)(nY / PUFO_BASE_STRIP_DIVISOR); /* 0x67264 */
 }

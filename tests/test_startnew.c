@@ -439,7 +439,7 @@ static void TestStartNew(void)
     {
         bool bAll = true;
         for (i = 0; i < 11; ++i) {
-            if (economy.aZero28_38[i] != 0) {
+            if (economy.anFundingBlock[i] != 0) {
                 bAll = false;
             }
         }

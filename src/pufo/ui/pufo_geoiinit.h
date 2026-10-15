@@ -234,8 +234,17 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  * 0x162008 -- the same choice LoadGame's port already makes); the nullsub_7 call is
  * dropped; the original's unused first arguments (0x1864F8 for GrantStarterItems, the
  * MaybeSpawnCraft a1..a3) are replaced by the port's real state pointers. */
+/* 0x186568..0x186590, in address order: the five race funding scores, the monthly multiplier, then
+ * the five per-race money shares FundingScreen_Init (0x5C0FC..0x5C144) recomputes from the scores.
+ * Funding_AddRaceBonus raises one of the first five (or the multiplier, for a no-race tile). */
+#define PUFO_ECON_RACE_SCORE_FIRST 0
+#define PUFO_ECON_RACE_SCORE_LAST  4
+#define PUFO_ECON_RACE_MULT        5 /* 0x18657C, the one dword of the block the save never writes */
+#define PUFO_ECON_RACE_SHARE_FIRST 6
+#define PUFO_ECON_RACE_SHARE_LAST  10
+
 typedef struct GeoscapeEconomy {
-    i32  aZero28_38[11];  /* 0x186568..0x186590 */
+    i32  anFundingBlock[11]; /* 0x186568..0x186590, see the index constants above */
     i32  nFundA;          /* 0x186594, StartNew 1625000 */
     i32  nFundB;          /* 0x186598, StartNew 383000 */
     void *pvFundTable;    /* 0x18659C, StartNew installs the zero buffer at 0x14B4C8 */

@@ -2333,7 +2333,7 @@ static void TestCreateNamedEntry(void)
 
 static void TestBudgetHelpers(void)
 {
-    static SmapSite sites[3];
+    static SmapSite sites[4]; /* the fourth is the working slot at the site count */
     static BaseRec base0;
     static BaseRec *apBases[1];
     static ObjectRecFull objs[3];
@@ -2391,6 +2391,24 @@ static void TestBudgetHelpers(void)
                "without the scan only the own site");
     CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, -1, apBases, 0, apObjs, 3, true), 0,
                "the needed-pass call (nSiteIdx -1) gates on zero and adds nothing");
+
+    /* The other call shape: five of the ten Base_CountItemQtyAcrossBases sites and both extra
+     * Base_CountOutboundTransferSpace sites pass the site COUNT as the site index, because that is
+     * the record the transfer flow is working on (0x750B0, 0x75CC0, 0x9641C, 0x9692C, 0x97D30, and
+     * 0x75E34 / 0x9666C). Indexing it against the count instead of the array drops the whole term. */
+    sites[3].uRecoveredSoldiers = 6;
+    sites[3].auItemQty[112] = 1;
+    sites[3].auItemQty[113] = 2;
+    sites[3].auItemQty[1] = 8;
+    CheckEqI32(Base_CountOutboundTransferSpace(sites, 3, 3, apBases, 0, false), 9,
+               "nSiteIdx == nSiteCount is the working record, and it counts (0x75E34)");
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, 3, apBases, 0, apObjs, 3, false), 16,
+               "the same shape on the cargo side: 2 * 8 (0x75CC0)");
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, 3, apBases, 0, apObjs, 3, true), 34,
+               "with the scan the working record gates sites 0 and 1: 16 + 10 + 8");
+    CheckEqI32(Base_CountItemQtyAcrossBases(sites, 3, PUFO_SMAP_SITE_COUNT, apBases, 0, apObjs, 3,
+                                            true),
+               0, "Deviation: an index at the array end is refused, gate and scan both skipped");
 
     sols[0].nKind = 0; sols[0].bUnk149 = 1;
     sols[1].nKind = 0; sols[1].bUnk149 = 0; /* assigned but not psi */
@@ -2937,6 +2955,140 @@ static void TestRadarWeaponHit(void)
     Check(true, "RadarScreen_BlitOverlay @ 0x5d6d4 tolerates the null pad");
 }
 
+static void TestCountInbound(void)
+{
+    static SmapSite aSites[4];
+    static BaseRec aBases[2];
+    static BaseRec *apBases[2];
+    i32 i;
+
+    printf("Base_CountInboundTransfers @ 0x67F78\n");
+
+#define INB_RESET()                                          \
+    memset(aSites, 0, sizeof(aSites));                       \
+    memset(aBases, 0, sizeof(aBases));                       \
+    for (i = 0; i < 2; ++i) { apBases[i] = &aBases[i]; }
+
+    INB_RESET();
+    CheckEqI32(Base_CountInboundTransfers(aSites, 2, -1, apBases, 0, false), 0,
+               "no site and no scan gives nothing (0x67FA4)");
+
+    /* The buy/sell and transfer flows pass the site COUNT, i.e. the working record. */
+    INB_RESET();
+    aSites[2].bRecoveredCraftCount = 3;
+    aSites[2].bUnk518 = 4;
+    CheckEqI32(Base_CountInboundTransfers(aSites, 2, 2, apBases, 0, false), 7,
+               "the 0x205 + 0x206 pair of the working record (0x67FB8)");
+
+    /* Both bytes are loaded with LDRSB, so 0xFF is minus one and not 255. */
+    INB_RESET();
+    aSites[2].bRecoveredCraftCount = 0xFF;
+    aSites[2].bUnk518 = 2;
+    CheckEqI32(Base_CountInboundTransfers(aSites, 2, 2, apBases, 0, false), 1,
+               "the pair is signed: 255 counts as -1 (0x67FB8 LDRSB)");
+
+    /* The scan adds every OTHER site whose bFlag1 equals this base's type byte. */
+    INB_RESET();
+    aBases[0].bUnk4 = 5;
+    aSites[0].bFlag1 = 5; aSites[0].bRecoveredCraftCount = 1; aSites[0].bUnk518 = 1; /* 2  */
+    aSites[1].bFlag1 = 6; aSites[1].bRecoveredCraftCount = 9; aSites[1].bUnk518 = 9; /* 18 */
+    aSites[2].bFlag1 = 5; aSites[2].bRecoveredCraftCount = 4; aSites[2].bUnk518 = 4; /* 8  */
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, 2, apBases, 0, true), 10,
+               "site 0 matches the type, site 1 does not, site 2 is the one already counted "
+               "(0x67FEC / 0x68014)");
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, 2, apBases, 1, true), 8,
+               "a base of another type matches nothing in the scan (0x68014 CMP)");
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, 2, apBases, 0, false), 8,
+               "with the scan off the type match is never consulted (0x67FD0 ANDS / BEQ)");
+
+    /* The loop bound is the signed site count; the direct term is not gated by it. */
+    INB_RESET();
+    aBases[0].bUnk4 = 5;
+    aSites[0].bFlag1 = 5; aSites[0].bRecoveredCraftCount = 7;
+    aSites[2].bRecoveredCraftCount = 5; aSites[2].bUnk518 = 5;
+    CheckEqI32(Base_CountInboundTransfers(aSites, 0, 2, apBases, 0, true), 10,
+               "a count of zero skips the scan (0x67FDC BLE) but keeps the direct term");
+    CheckEqI32(Base_CountInboundTransfers(aSites, -1, 2, apBases, 0, true), 10,
+               "  and so does a negative one");
+
+    /* Deviations: the original bounds nothing at all. */
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, 2, apBases, 99, true), 10,
+               "an out-of-range base index skips the scan instead of reading past apBases");
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, PUFO_SMAP_SITE_COUNT, apBases, 0, true), 7,
+               "a site index at the array end is refused, not read past it");
+    CheckEqI32(Base_CountInboundTransfers(NULL, 3, 2, apBases, 0, true), 0, "a null site array gives 0");
+    CheckEqI32(Base_CountInboundTransfers(aSites, 3, 2, NULL, 0, true), 0, "a null base array too");
+#undef INB_RESET
+}
+
+static void TestBaseStripHit(void)
+{
+    BaseStripHitEnv env;
+    u8 bCount, bSelected, bTransfer, bBaseInfo, bPsi, bTap;
+
+    printf("Base_HitTestFacilityStrip @ 0x671B0\n");
+
+#define STRIP_RESET()                                                     \
+    bCount = 8;      /* 0x159D80, the base count */                       \
+    bSelected = 3;   /* 0x159D81, the selected base */                    \
+    bTransfer = 0; bBaseInfo = 0; bPsi = 0; bTap = 1;                    \
+    memset(&env, 0, sizeof(env));                                         \
+    env.pbBaseCount = &bCount; env.pbSelectedBase = &bSelected;           \
+    env.pbGateTransfer = &bTransfer; env.pbGateBaseInfo = &bBaseInfo;    \
+    env.pbGatePsi = &bPsi; env.pbTapFlag = &bTap;
+
+    STRIP_RESET();
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0,
+               "a hit in the first cell gives base 0 (0x67264)");
+    CheckEqI32(bTap, 0, "a hit clears the geoscape tap flag (0x67250 STRB)");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 211, 3), 0, "the band's corner (211, 3) is inside");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 237, 224), 7,
+               "and so is (237, 28 * 8) (0x67214 BLE)");
+
+    STRIP_RESET();
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 210, 15), 3,
+               "x below 211 misses and returns nSelectedBaseIdx (0x67224)");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 238, 15), 3, "x above 237 misses");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 2), 3, "y below 3 misses");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 225), 3, "y above 28 * base count misses");
+    CheckEqI32(bTap, 1, "a miss leaves the tap flag alone");
+
+    /* Each of the three screens forces the x argument to 10, which is below 211. */
+    STRIP_RESET(); bPsi = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3,
+               "the psi screen open disables the strip (0x6723C / 0x671E8)");
+    CheckEqI32(bTap, 1, "  and a disabled strip does not clear the tap flag");
+    STRIP_RESET(); bTransfer = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "so does the transfer screen (unk_1870EC)");
+    STRIP_RESET(); bBaseInfo = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "so does the base-info screen (unk_15883C)");
+    STRIP_RESET(); bPsi = 0x80;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 3, "the gate is non-zero, not equal-to-one");
+
+    /* The drawer steps 28 pixels per base; the hit test divides by 30. From the third cell down the
+     * first row of a cell reports the previous base. */
+    STRIP_RESET();
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 59), 1,
+               "the third drawn cell starts at 28*2 + 3 = 59 and reports base 1 (ORIGINAL BUG)");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 60), 2, "one row lower it reports 2");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 199), 6,
+               "the eighth drawn cell starts at 28*7 + 3 = 199 and reports 6");
+
+    /* The base count is the signed byte at 0x159D80. */
+    STRIP_RESET(); bCount = 0;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 3), 3, "with no bases the bound is 0, so every row misses");
+    STRIP_RESET(); bCount = 0xFF; /* -1 */
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 3), 3, "a negative count misses too (0x67204 LDRSB)");
+    STRIP_RESET(); bCount = 1;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 28), 0, "one base reaches y = 28 and still gives 0");
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 29), 3, "  and 29 is outside its own bound");
+
+    CheckEqI32(Base_HitTestFacilityStrip(NULL, 220, 15), 0, "a null env returns 0");
+    STRIP_RESET(); env.pbTapFlag = NULL;
+    CheckEqI32(Base_HitTestFacilityStrip(&env, 220, 15), 0, "a null tap flag still hits");
+#undef STRIP_RESET
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -2975,6 +3127,8 @@ int main(void)
     TestFacCostLabel();
     TestSiteScore();
     TestRadarCursors();
+    TestCountInbound();
+    TestBaseStripHit();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

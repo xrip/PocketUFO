@@ -536,7 +536,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     /* 0x94680..0x9472C: the economy dwords of the 0x1864F8 block. The original's stores
      * are scattered; the net effect is this block. */
     for (i = 0; i < 11; ++i) {
-        pEnv->pEconomy->aZero28_38[i] = 0;
+        pEnv->pEconomy->anFundingBlock[i] = 0;
     }
     pEnv->pEconomy->nFundA = 1625000;
     pEnv->pEconomy->nFundB = 383000;

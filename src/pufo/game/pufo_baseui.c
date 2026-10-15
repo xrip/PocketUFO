@@ -971,6 +971,87 @@ void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
     }
 }
 
+/* The four item columns the buy/sell confirm test adds to the cargo sum and the soldier count
+ * (0x750E8, 0x750F4, 0x750EC, 0x750F8 -- the ARM loads them out of order and sums them). */
+static const i32 g_anBuySellConfirmItems[4] = {112, 113, 117, 118};
+
+/* BuySellScreen_ConfirmSiteAndClose @ 0x75090. Promote the transfer flow's working site -- the
+ * record AT the site count -- into a real site when it holds anything, then close the screen. */
+void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
+                                       const GeoscapeCloseHooks *pHooks)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    const i32 nSiteCount = (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : 0;
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)(i8)*pEnv->pnSelectedBaseIdx : 0;
+
+    if (pEnv->aSites != NULL && nSiteCount >= 0 && nSiteCount < PUFO_SMAP_SITE_COUNT) {
+        SmapSite *pSite = &pEnv->aSites[nSiteCount];
+        bool bConfirm = false;
+
+        /* 0x750B0: the site index is the site count, the base index is nSelectedBaseIdx, and the
+         * scan-sites flag is OFF -- so only this one record's cargo is measured. */
+        bConfirm = Base_CountItemQtyAcrossBases(pEnv->aSites, nSiteCount, nSiteCount, pEnv->apBases,
+                                                nBase, pEnv->apObjects, pEnv->nObjectCount,
+                                                false) != 0;
+
+        if (!bConfirm && pSite->uRecoveredSoldiers != 0) {
+            bConfirm = true; /* 0x750DC */
+        }
+        if (!bConfirm) {
+            i32 nSum = 0;
+            for (i32 i = 0; i < (i32)(sizeof(g_anBuySellConfirmItems) /
+                                     sizeof(g_anBuySellConfirmItems[0])); ++i) {
+                nSum += pSite->auItemQty[g_anBuySellConfirmItems[i]];
+            }
+            bConfirm = nSum != 0; /* 0x75104 ADDS / BEQ */
+        }
+
+        if (bConfirm) {
+            pSite->bFlag0 = PUFO_SITE_FLAG_CONFIRM; /* 0x75120 STRB */
+            if (pEnv->pnSiteCount != NULL) {
+                *pEnv->pnSiteCount = nSiteCount + 1; /* 0x75124 */
+            }
+        }
+    }
+
+    if (pEnv->pnFundsSnapshot != NULL) {
+        *pEnv->pnFundsSnapshot = pEnv->nFunds; /* 0x75130, the buy/sell scratch copy */
+    }
+    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
+        pHooks->pfnCloseUi(pHooks->pUser); /* 0x7513C, the tail call */
+    }
+}
+
+/* race id minus 0x80 -> the funding slot it feeds, -1 when the race gives no bonus. The order is
+ * the compare chain's, not the slot order: 0x84 feeds slot 1 while 0x82 and 0x83 feed slots 2
+ * and 3. */
+static const i8 g_anFundingSlotByRace[PUFO_RACE_ID_COUNT] = {0, 0, 2, 3, 1, 4, -1, -1, 0, -1};
+
+/* Funding_AddRaceBonus @ 0x7debc. One radar contact of one race adds two to that race's funding
+ * score, or -- for the no-race tile -- to the monthly multiplier. */
+void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId)
+{
+    if (anFundingSlots == NULL) {
+        return;
+    }
+
+    const u32 bRace = (u32)(u8)nRaceId; /* 0x7DEBC AND R0,R1,#0xFF */
+    i32 nSlot = -1;
+
+    if (bRace >= PUFO_RACE_ID_FIRST && bRace < PUFO_RACE_ID_FIRST + PUFO_RACE_ID_COUNT) {
+        nSlot = g_anFundingSlotByRace[bRace - PUFO_RACE_ID_FIRST];
+    } else if (bRace == PUFO_RACE_ID_NONE) {
+        nSlot = PUFO_FUNDING_MULT_SLOT; /* 0x7DF48 */
+    }
+
+    if (nSlot >= 0) {
+        anFundingSlots[nSlot] += PUFO_FUNDING_BONUS;
+    }
+}
+
 /* ResearchScreen_StartSelected @ 0x73240. Allocation turns into running work only when the topic
  * is idle and this base has actually allocated something to it. */
 i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)

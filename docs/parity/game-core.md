@@ -10312,3 +10312,86 @@ Remaining in this cluster: `RadarScreen_Init` (0x5f490, 3600 B), `RadarScreen_Up
 and `RadarScreen_RollDetection` (0x602b0, ~1100 B) -- the three that own the gate byte, the level and
 the two bounds these setters poke. `BaseInfoScreen_BuildPanels` (0x557f4, 6084 B) and
 `BaseInfoScreen_Draw` (0x5726c) own the three panels the toggle writes.
+
+The geoscape base-tab strip, the inbound craft count, the buy/sell confirm and the race funding bonus (done)
+---------------------------------------------------------------------------------------------------------------
+
+Four handlers, none over 210 bytes: `Base_HitTestFacilityStrip` @ 0x671B0, `Base_CountInboundTransfers`
+@ 0x67F78, `BuySellScreen_ConfirmSiteAndClose` @ 0x75090, `Funding_AddRaceBonus` @ 0x7debc.
+
+**The base-tab strip is a column down the right edge, not a horizontal bar.** Hex-Rays renders the hit
+test as `a2 < 211 || a2 > 237 || a3 < 3 || a3 > 28 * nBaseCount`, which reads like a y band and then an
+x band, and the name says "facility strip". The ARM is the other way round and the drawer settles it:
+`Base_DrawFacilityIconStrip` @ 0x6250C blits the selected cell's erase rect at x = 211, y = 28 * base + 3,
+26x26 (0x62520) and walks the bases with `v5 += 28`. Both callers pass the cursor pair with x first --
+Geoscape_OnPointer at 0x87F30 (R5 = nSmapCursorX, R8 = nSmapCursorY, set at 0x87E68 / 0x87E70) and
+TransferScreen_Draw at 0x98980 -- so the box is x in [211, 237], y in [3, 28 * nBaseCount], and the hit
+result `y / 30` is a BASE index. Geoscape_OnPointer stores it into nSelectedBaseIdx at 0x87F34;
+TransferScreen_Draw stores it into unk_1870F4 at 0x98994 and indexes apBases with it at 0x989B0
+(Map + 0x1174). A miss returns `(i8)(a1 + 0x619)`, the selected base read straight back out of the same
+block, so the caller's unconditional store leaves the selection unchanged.
+
+**Three gate bytes disable the strip by rewriting an argument.** When unk_1870EC (the transfer screen,
+tested by Geoscape_CloseUI case 9 at 0x8BE30), unk_15883C (the base-info screen, case 2 at 0x8BDEC) or
+byte_15EEF0 (the psi screen / base-stats panel, written at 0x716DC and 0x723AC) is non-zero, 0x6723C
+loads 10 into the x register and branches back INTO the middle of the compare chain at 0x671E8. 10 < 211,
+so the range test always misses. The port keeps the forced value rather than short-circuiting because
+that is literally what the code does.
+
+**A hit cancels a pending map tap.** 0x67250 clears the low byte of dword_1870B4[2] @ 0x1870BC. That
+byte is the geoscape tap flag: Geoscape_OnPointer sets it to 1 at 0x87ED4 after computing the tap cell
+coordinates, Geoscape_OnMapClick tests it at 0x8B660 before the hangar-placement branch, and clicking a
+base tab drops the pending tap.
+
+**The drawer's pitch and the hit test's divisor disagree -- a real bug.** Cells are 28 pixels apart but
+0x67264 divides by 30. From the third cell down the top of a cell reports the PREVIOUS base: y = 59 is
+the first row of the third drawn cell (28*2 + 3) and reports base 1, y = 199 is the first row of the
+eighth (28*7 + 3) and reports 6. Only the last 3 to 11 rows of each cell reach their own base.
+Reproduced, asserted, listed in bugs.tsv.
+
+**The two base bytes are not part of the grid.** The hit test reaches the base count and the selected
+base as abFacilityGrid + 0x618 and + 0x619, which is 1560 and 1561 -- 36 bytes PAST the 1524-byte
+facility grid the symbol names. They are the base count and the selected base sitting in the same block.
+The port takes them as their own pointers instead of indexing a 1524-byte array past its end.
+
+**Base_CountInboundTransfers is the craft-side twin of Base_CountOutboundTransferSpace.** Same shape,
+same type-match rule against apBases[nBaseIndex]->bUnk4, different per-site term: the signed pair
+bRecoveredCraftCount (0x205) + bUnk518 (0x206), both read with LDRSB so 255 is minus one. Two call
+shapes, both real: BaseInfoScreen_BuildPanels at 0x56634 passes nSiteIdx = -1 and then prints
+`hangarCap - inbound - shipsAtBase` (0x5663C / 0x56644) as the base's free hangar slots, while
+BuySellScreen_ValidateCapacity (0x75C58) and TransferScreen_ValidateCapacity (0x96548) pass the site
+COUNT -- the transfer flow's working record -- so the pending site counts too.
+
+**The buy/sell confirm promotes the working site into a real one.** Three tests in order: the cargo
+volume of aSmapSites[nSiteCount] with the scan-sites flag OFF (0x750B0, a4 = 0), then
+uRecoveredSoldiers at 0x202 (0x750DC), then auItemQty[112] + [113] + [117] + [118] (0x750E8..0x75104,
+four LDRH loaded out of order). On any hit bFlag0 becomes 24 (0x75120) and the site count grows by one
+(0x75124). Either way nFunds is copied into the buy/sell scratch dword at 0x161460 (0x75130) and
+Geoscape_CloseUI runs as a tail call (0x7513C). 24 is the only value this byte is written with here; the
+only other one seen anywhere in the binary is Base_DemolishFacility's 0xFF not-assigned marker (0x66D58),
+and no reader of 24 was found -- recorded rather than guessed.
+
+**Funding_AddRaceBonus maps race ids to funding slots non-monotonically.** One radar contact adds 2 to
+one dword of the 0x186568..0x18657C block, and the mapping is a compare chain (0x7DEBC..0x7DF7C), not a
+table: 0x80 and 0x81 and 0x88 feed 0x186568, 0x84 feeds 0x18656C, 0x82 feeds 0x186570, 0x83 feeds
+0x186574, 0x85 feeds 0x186578, 0xFF feeds 0x18657C, and 0x86, 0x87 and 0x89 give nothing at all. Race
+ids are 0x80..0x89 -- aNewBaseCostByRace @ 0xAB488 is ten dwords indexed by (race - 0x80) -- and 0xFF is
+the no-race tile. FundingScreen_Init @ 0x5C0FC..0x5C144 is what gives the block its meaning: sum the
+first five, ratio1 = 0x1865BC / (sum + 1), 0x1865BC += ratio1 * [5], ratio2 = 0x1865BC / (sum + 1), then
+0x186580..0x186590 = [0..4] * ratio2. So [0..4] are five race scores and [5] is a multiplier on the
+monthly total -- and [5] is the one dword of the block the save never writes. Both divides are
+`_rt_sdiv` with the dividend in R1 and the divisor in R0, the same convention the radar corner buttons
+use.
+
+**Port bug found and fixed by this unit.** `Base_CountItemQtyAcrossBases` and
+`Base_CountOutboundTransferSpace` bounded nSiteIdx against nSiteCount. They should not: five of the ten
+cargo call sites (0x750B0, 0x75CC0, 0x9641C, 0x9692C, 0x97D30) and both extra outbound call sites
+(0x75E34, 0x9666C) pass the site COUNT as the site index, because that is where the transfer flow keeps
+the record it is working on. The bound silently dropped the whole term at the buy/sell and transfer
+screens. Both now bound against PUFO_SMAP_SITE_COUNT, which is what the original leaves unbounded. The
+buy/sell confirm test is what caught it: the cargo check failed with "got 0, want 24" before the fix.
+
+**IDB updates.** Function comments on 0x671B0, 0x67F78, 0x75090 and 0x7DEBC; line comments on the three
+strip gates unk_1870EC, unk_15883C and byte_15EEF0; `unk_161460` renamed `BuySell_nFundsSnapshot` (all
+fifteen of its xrefs are inside BuySellScreen_*); `unk_186568`..`unk_18657C` renamed
+`g_nFundScore0`..`g_nFundScore4` and `g_nFundMult`.
