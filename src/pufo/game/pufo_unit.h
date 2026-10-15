@@ -81,6 +81,55 @@ typedef enum UnitStatus {
 #define PUFO_UNITTYPE_ARMOR_150    3
 #define PUFO_UNITTYPE_HUMANOID_MAX 8
 
+/* Soldier.nUnitType, the whole 24-row space. Two independent decodes agree on every name.
+ *
+ * 1. Tact_TallyItemRecovery @ 0x33c80 picks an apObjects slot per (nUnitType, bRankType) out of the
+ *    Map slot block at Map+0x23C..Map+0x2AC, Map+0x2D0 and Map+0x348..Map+0x358, and every slot it
+ *    picks is that race's soldier record in the shipped OBJECTS.DAT: 77..81 Sectoid, 82..86 Snakeman,
+ *    87..91 Floater, 92..94 Muton, 95..98 plus 114 Ethereal, 99..104 the singletons, 144..148 the five
+ *    medics. Type 9 therefore is Sectoid (rank 2 -> 77 "Sectoid soldier", rank 3 -> 79 navigator,
+ *    rank 4 -> 80 "lider", rank 5 -> 78 engineer, rank 7 -> 148 medic, rank 8 -> 81 commander), and
+ *    the Muton row has no rank 4 or 8 because the Muton block has no leader or commander at all.
+ * 2. Tact_TallyUnitResults @ 0x33780 splits 0x10 and 0x11 out as the only types the debrief treats as
+ *    civilians (TEXTS[164] "Civilians Killed", TEXTS[165] "Civilians Rescued"), while 9..0xF and
+ *    0x12..0x15 all fall into TEXTS[166] "Aliens Killed".
+ *
+ * The 4..8 half comes from Tact_DeployTeamAndHwps (the unit type is the weapon object index minus 27,
+ * so 31..35 give 4..8) and is confirmed by Tact_TallyItemRecovery's HWP switch, which credits
+ * apObjects[31], [32], [33], [34], [35] for types 4, 5, 6, 7, 8 in that order. */
+typedef enum UnitType {
+    UNIT_TYPE_OPERATIVE       = 0,  /* 0..3 Xcom operatives, debrief "Operatives killed" */
+    UNIT_TYPE_TANK_CANNON     = 4,  /* apObjects[31] "Tank - cannon" */
+    UNIT_TYPE_TANK_ROCKET     = 5,  /* apObjects[32] "Tank - rocket launcher" */
+    UNIT_TYPE_TANK_LASER      = 6,  /* apObjects[33] "Tank - laser cannon" */
+    UNIT_TYPE_HOVERTANK_PLASMA = 7, /* apObjects[34] "Hovertank - plasma" */
+    UNIT_TYPE_HOVERTANK_BLASTER = 8,/* apObjects[35] "Hovertank - blaster launcher" */
+    UNIT_TYPE_SECTOID         = 9,
+    UNIT_TYPE_MUTON           = 0xA,
+    UNIT_TYPE_FLOATER         = 0xB,
+    UNIT_TYPE_SNAKEMAN        = 0xC,
+    UNIT_TYPE_ETHEREAL        = 0xD,
+    UNIT_TYPE_CHRYSSALID      = 0xE,
+    UNIT_TYPE_CELACID         = 0xF,
+    UNIT_TYPE_CIVILIAN        = 0x10, /* 0x10 and 0x11 are the debrief's civilians */
+    UNIT_TYPE_CIVILIAN_B      = 0x11,
+    UNIT_TYPE_CYBERDISK       = 0x12,
+    UNIT_TYPE_SILACOID        = 0x13,
+    UNIT_TYPE_RIPER           = 0x14,
+    UNIT_TYPE_SECTOPOD        = 0x15
+} UnitType;
+
+/* Soldier.bRankType (0x0E2), the rank half of the same table. Rank 7 is the medic: it is the only
+ * rank whose slot lies outside the race block, in the 144..148 medic block. */
+typedef enum UnitRank {
+    UNIT_RANK_SOLDIER    = 2,
+    UNIT_RANK_NAVIGATOR  = 3,
+    UNIT_RANK_LEADER     = 4,  /* the shipped records spell it "lider" */
+    UNIT_RANK_ENGINEER   = 5,
+    UNIT_RANK_MEDIC      = 7,
+    UNIT_RANK_COMMANDER  = 8
+} UnitRank;
+
 /* SoldierAnim @ 0x1c: the animation view of SoldierMultiOrAnim, from the IDB
  * SoldierAnimTmp type (120 bytes). Only the two fields Unit_GetExtraSpr needs
  * are named; everything else stays opaque until its user is ported. The

@@ -440,6 +440,11 @@ i32 Tact_SelectTeamUnits(TactTeamSelectEnv *pEnv);
 /* MissionType_XcomBase. ARM at 0x3A058 is CMP R2, #3 on Map_nMissionType. */
 #define PUFO_MISSION_TYPE_XCOM_BASE 3u
 
+/* MissionType_AlienBase. ARM at 0x33750 (the tail of Tact_TallyBattleStats) is CMP R3, #4 on
+ * Map_nMissionType, and at 0x344B4 Tact_TallyCraftRecovery tests the same field against 3 for the
+ * Xcom base defence. */
+#define PUFO_MISSION_TYPE_ALIEN_BASE 4u
+
 /* The craft store slots: one object record per hardware type the launching craft carries.
  * Tact_DeployTeamAndHwps spawns soldiers from them (the unit type is the object index minus 27, so
  * 31..35 give types 4..8), and Tact_SetupCraftCargo skips them in both scratch walks because they

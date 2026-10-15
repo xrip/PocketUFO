@@ -117,8 +117,14 @@ _Static_assert(sizeof(ObjectRecFull) == 208, "ObjectRecFull must be 208 bytes");
  * 1447+counter, so slot j is named by record 1446+j. Slots 70..72 share one shipped name; the
  * Russian names are glossed here. */
 typedef enum ObjectSlot {
+    /* 31..35 is the HWP weapon block. Tact_TallyItemRecovery @ 0x3436C credits these five slots for
+     * the unit types 4..8 in this exact order, and Tact_DeployTeamAndHwps spawns those types as
+     * (slot - 27), so the two ends of the block are pinned from both sides. */
     OBJ_TANK_CANNON              = 31, /* rec 1477 "Tank - cannon" */
+    OBJ_TANK_ROCKET_LAUNCHER     = 32, /* rec 1478 "Tank - rocket launcher" */
+    OBJ_TANK_LASER_CANNON        = 33, /* rec 1479 "Tank - laser cannon", bAmmoCap 255 */
     OBJ_HOVERTANK_PLASMA         = 34, /* rec 1480 "Hovertank - plasma" */
+    OBJ_HOVERTANK_BLASTER        = 35, /* rec 1481 "Hovertank - blaster launcher" */
     OBJ_HEAVY_CANNON_AP_CLIP     = 43, /* rec 1489 "Heavy cannon [AP] clip" */
     OBJ_CRAFT_CANNON_ROUNDS      = 52, /* rec 1498 "Craft cannon rounds[x50]", the Craft cannon's ammo */
     OBJ_STINGRAY_ROCKET          = 53, /* rec 1499 "Stingray rocket" */

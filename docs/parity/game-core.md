@@ -13214,3 +13214,137 @@ treats a null item or object as an empty slot, and bounds the pool walk to the c
 
 IDB: function comment at 0x15a48. The two Soldier arrays stay auUnk962 / abUnk1012 in the IDB -- the
 MCP rename tool only accepts globals and struct members are not globals.
+
+## The four post-battle tallies (0x3348c, 0x33780, 0x33c80, 0x344b4)
+
+Ported into `src/pufo/game/pufo_tactend.c` as `Tact_TallyBattleStats`, `Tact_TallyUnitResults`,
+`Tact_TallyItemRecovery` and `Tact_TallyCraftRecovery`. All four run back to back inside
+`Tact_CheckBattleEnd` (0x34fbc, not ported yet) at 0x35240, 0x35284, 0x352b0 and 0x352bc, and their
+outputs are the mission debrief.
+
+### What each counter is for
+
+`Tact_CheckBattleEnd` labels every counter it prints with a TEXTS record, built as
+`LDR R0, =0xB38D0` plus `MOV R3, #hi; ORR R3, #lo` -- `aTextRecs + 205*n`, the in-memory stride
+(`PUFO_TEXT_REC_STRIDE`; the on-disk record is 200 bytes and the loader leaves five bytes of slack).
+That gives the debrief line for each out-param, which is what the port names them after:
+
+| out-param | debrief line | ARM |
+|---|---|---|
+| `Tact_TallyUnitResults` param 6 | TEXTS[162] "Operatives killed" | 0x35428 |
+| `Tact_TallyUnitResults` param 7 | TEXTS[163] "Tanks Destroyed" (score term * 0x50) | 0x35500 |
+| `Tact_TallyUnitResults` param 8 | TEXTS[164] "Civilians Killed" | 0x355c4 |
+| `Tact_TallyUnitResults` param 9 | TEXTS[165] "Civilians Rescued" (score term * 30) | 0x35688 |
+| `Tact_TallyUnitResults` param 10 | TEXTS[166] "Aliens Killed" | 0x3575c |
+| `pnAlloys` | TEXTS[171] "Alien Alloys" (score term (n+7)>>3) | 0x35b40 |
+| `pnElerium` | TEXTS[172] "Elerium 115" | 0x35c6c |
+| `pnNavigation` | TEXTS[173] "UFO Navigation" | 0x35d70 |
+| `pnPowerSource` | TEXTS[174] "UFO Power Source" (score term * 20) | 0x35e80 |
+| `pnReproduction` | TEXTS[175] "Alien Reproduction" | 0x35f90 |
+| `pnFood` | TEXTS[176] "Alien Food" | 0x36090 |
+| `pnEntertainment` | TEXTS[177] "Alien Entertainment" | 0x36298 |
+| `pnSurgery` | TEXTS[178] "Alien Surgery" | 0x363a0 |
+| `pnExamination` | TEXTS[198] "Examination Room" | 0x3618c |
+
+The first three `Tact_TallyUnitResults` out-params are loss lines, not survival lines. The IDB's
+original `pnSurvived` / `pnKilled` / `pnMIA` names described the type ranges; the IDB now carries the
+debrief names instead.
+
+### The tile facility byte, Mc1Rec+0x1E
+
+`Tact_TallyBattleStats` walks four layers x (10 * nMapDimY) rows x (10 * nMapDimX) columns and, per
+cell, the four sprite slots in the order floor, wall A, wall B, ceiling (ARM 0x335C8). The byte at
+`Mc1Rec+0x1E` names the alien-base facility the sprite contributes to. It is the only read of that
+byte in the whole binary (0x33618), which is why it had stayed a gap.
+
+The names come from two sides that agree. The debrief line each counter feeds is above; the value
+distribution across the 1,163 records of the 27 shipped `.MC1` sets in main.dat is:
+
+| value | records | where | counter |
+|---|---|---|---|
+| 0 | 911 | every natural, craft and furniture set | none |
+| 1 | 109 | AVENGER, LIGHTNIN, PLANE, XBASE1 | none |
+| 2 | 1 | U_WALL02 | power source +1, Elerium += `unk_138E6C` |
+| 3 | 6 | U_WALL02 | navigation |
+| 5 | 4 | U_DISEC2 | reproduction |
+| 7 | 4 | U_PODS | entertainment |
+| 8 | 6 | U_DISEC2 | surgery |
+| 9 | 4 | U_OPER2 | examination |
+| 10 | 133 | U_BASE 66, U_EXT02 26, U_WALL02 19, UFO1 14, U_OPER2 6, MARS 2 | alloys |
+| 12 | 49 | the alien base wall/ext/pod sets | none |
+| 13, 14 | 1, 4 | MARS, BRAIN | none |
+
+Two counters are not tile counts at all. Elerium grows by `unk_138E6C` (Map+0x254B4, the
+`rand(0x28) + 10` roll the mission setup seeds) once per kind-2 sprite, so it is an amount and not a
+room count. Food is written only by the tail, from `word_138E70` (Map+0x254B8, `rand(0x14)`), and
+only when `Map_nTerrainVariant > 3` or the mission type is `MissionType_AlienBase` (ARM 0x3373C:
+`CMP #3 BHI` / `CMP #4`). The sixth counter has no writer and no reader anywhere in the binary.
+
+The gate at 0x334B4 is `Map_bAltOutcomePath != 0 || unk_128A8C == 0`: the walk runs only with
+`unk_128A8C` set and the alternate outcome path clear.
+
+### The unit type and rank table
+
+`Tact_TallyItemRecovery` credits one `apObjects` slot per `(nUnitType, bRankType)`, reading them out
+of the Map slot block at Map+0x23C..Map+0x2AC, Map+0x2D0 and Map+0x348..Map+0x358. Those 37 slots are
+now named `Map_apObjects77` .. `Map_apObjects148` in the IDB, and every one of them is that race's
+soldier record in the shipped OBJECTS.DAT. That pins the unit types: 9 Sectoid, 0xA Muton, 0xB
+Floater, 0xC Snakeman, 0xD Ethereal, 0xE Chryssalid, 0xF Celacid, 0x12 Cyberdisk, 0x13 Silacoid,
+0x14 Riper, 0x15 Sectopod. The ranks are 2 soldier, 3 navigator, 4 leader (the records spell it
+"lider"), 5 engineer, 7 medic, 8 commander -- rank 7 is the only one whose slot lies outside the
+race block, in the 144..148 medic block. The Muton row has no rank 4 and no rank 8 because the
+shipped Muton block (92..94) has no leader or commander at all, and the switch credits nothing for
+those ranks while still raising the debrief score.
+
+`Tact_TallyUnitResults` independently confirms the civilian half: 0x10 and 0x11 are the only types
+that can reach "Civilians Rescued" / "Civilians Killed", while 9..0xF and 0x12..0x15 all fall into
+"Aliens Killed".
+
+### Behaviours worth pinning
+
+- The box is **inclusive** in `Tact_TallyUnitResults`, `Tact_TallyItemRecovery`'s alien pass and its
+  HWP pass, but **exclusive at the top** in the cell walk (0x33EB8 and 0x33EC4 are CMP/BLT against
+  nY1 / nX1). The same four numbers are used both ways in one function.
+- A unit counts as lost when `uHp == 0`, or when both outcome flags are clear, or when the alternate
+  path is set and `bInZone` is 0. With both flags clear every operative and every hardware unit lands
+  on the "killed"/"destroyed" line whatever its hit points, and no civilian can be rescued.
+- The zone-marking pass has the same type-8 ceiling as the Xcom one, so a real civilian of type 0x10
+  or 0x11 is never marked and never gains a mission count.
+- `apEnemyUnits` is never marked: an enemy's `bInZone` is whatever an earlier pass left on it.
+- Item chain rules: a single-handed weapon (`bTwoHanded == 0`) is always counted, and its clip object
+  is counted too when `nAmmo` is neither 0 nor 0xFF and equals `apObjects[nIndex]->bAmmoCap`; a clip
+  (`bTwoHanded == 1`) is counted only when full; an alien corpse (`bTwoHanded == 2`) only when
+  `uSortKey` is in 59..69 and `pLinkedSoldier` is null. Other `bTwoHanded` values are counted by
+  nobody.
+- A live alien counts only when one item on its cell has `pLinkedSoldier` pointing back at it; a dead
+  one with such an item is skipped outright.
+- The HWP pass zeroes the deployed craft's `anCargoQty[0..3]` first, then credits apObjects[31..35]
+  for unit types 4..8 and adds `pHandL->nAmmo` into cargo column 0, 1, none, 2, 3. Type 6 is the Tank
+  laser, whose `bAmmoCap` is 255, so it has no cargo column. With both outcome flags clear the pass
+  returns at the first hardware unit -- after the hold has already been emptied.
+- `Tact_TallyCraftRecovery` caps recovery against `ObjectRec.aItemQty[craftIdx]` per craft, and the
+  leftover splits by mission type: the Xcom base defence adds it into `auPerBaseVal[nCraftHomeBase]`
+  and deliberately leaves `uRecovCount` in place; any other mission parks a non-zero remainder in
+  `aSmapSites[nSmapSiteCount].auItemQty[object index]`, sets that record's `bHasLoot` and sets the
+  dword out-param. The out-param is not zeroed by the callee -- the caller zeroes it at 0x34FF4.
+
+### Deviations
+
+1. The original passes the debrief counters as ten (and five) separate pointers; the port passes one
+   struct per tally. Same writes, fewer arguments.
+2. `Tact_TallyItemRecovery`'s return value is a leftover register the caller overwrites at 0x352b8;
+   the port returns nothing.
+3. The original bounds nothing on `apObjects[nIndex]`, the craft index list, `auPerBaseVal[]` or
+   `aSmapSites[nSmapSiteCount]`. The port bounds each and records it. The list in particular is a
+   20-dword stack array appended to without a check, so more than 20 crafts home at the defended base
+   would walk off the frame.
+4. The HWP pass dereferences `pHandL` with no test; the port skips the cargo add when it is null.
+
+### Open question: the polarity of unk_128A8C
+
+The port calls this byte `pbMissionAborted`, "the mission ended in a retreat rather than a completed
+landing". The counting rule reads more naturally the other way: with the byte clear every operative
+and every tank is counted as lost and no civilian is rescued, while with it set only dead units are
+lost and live civilians are rescued. That is consistent with the byte meaning "the team was
+extracted". All eight of its xrefs are reads (TactHud_DrawStatusBanner, Tact_Shutdown), so no writer
+is visible in the IDB and the name is left as it is. To be settled with `Tact_CheckBattleEnd`.

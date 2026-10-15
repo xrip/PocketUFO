@@ -527,6 +527,746 @@ static void TestUnitRemoval(void)
     Fixture_Free();
 }
 
+/* ========================================================================= the four tallies
+ *
+ * A 1 x 1 map (10 x 10 cells per layer, four layers) is enough to reach every branch, and every
+ * cell of the flat 14400-slot block is allocated so the original's own index arithmetic
+ * (3600 * nZ + 60 * nY + nX) is what the test exercises. */
+
+#define T_CELL_SLOTS 14400
+#define T_OBJ_COUNT  160
+
+static MapCell  *t_apCells[T_CELL_SLOTS];
+static Mc1Rec   *t_apSpr[64];
+static i32       t_nSpr;
+static TactItem *t_apItem[32];
+static i32       t_nItem;
+static ObjectRec *t_apObj[T_OBJ_COUNT];
+static Ship      t_aCraft[4];
+static Ship     *t_apCraft[4];
+static SmapSite  t_aSites[PUFO_SMAP_SITE_COUNT];
+static Soldier  *t_apSoldier[8];
+static Soldier  *t_apTactXcom[8];
+static Soldier  *t_apTactEnemy[8];
+static Soldier  *t_apTactCiv[8];
+static u16       t_nSoldier;
+static u8        t_nXcom;
+static u8        t_nEnemy;
+static i32       t_nCiv;
+static i32       t_nObjCount = T_OBJ_COUNT;
+static i32       t_nCraftCount;
+static u8        t_nCraftIndex;
+static u8        t_nMissionType;
+static u8        t_nTerrainVariant;
+static i8        t_nHomeBase;
+static i32       t_nSiteCount;
+static u8        t_bAborted;
+static u8        t_bAltPath;
+static u8        t_nDimX;
+static u8        t_nDimY;
+static i32       t_nEleriumRoll;
+static i32       t_nFoodRoll;
+
+static MapCell *TCell(i32 nLayer, i32 nY, i32 nX)
+{
+    return t_apCells[3600 * nLayer + 60 * nY + nX];
+}
+
+static Mc1Rec *NewSpr(u8 nKind)
+{
+    Mc1Rec *pSpr = (Mc1Rec *)calloc(1, sizeof(Mc1Rec));
+
+    pSpr->bFacilityKind = nKind;
+    if (t_nSpr < (i32)(sizeof(t_apSpr) / sizeof(t_apSpr[0]))) {
+        t_apSpr[t_nSpr++] = pSpr;
+    }
+    return pSpr;
+}
+
+static TactItem *NewItem(ObjectRec *pObj, u16 nIndex, u8 nAmmo, Soldier *pLinked)
+{
+    TactItem *pItem = (TactItem *)calloc(1, sizeof(TactItem));
+
+    pItem->pObj = pObj;
+    pItem->nIndex = nIndex;
+    pItem->nAmmo = nAmmo;
+    pItem->pLinkedSoldier = pLinked;
+    if (t_nItem < (i32)(sizeof(t_apItem) / sizeof(t_apItem[0]))) {
+        t_apItem[t_nItem++] = pItem;
+    }
+    return pItem;
+}
+
+/* Chain an item onto a cell's list, keeping the original's head order. */
+static void CellAddItem(MapCell *pCell, TactItem *pItem)
+{
+    pItem->pNext = pCell->pItemList;
+    pCell->pItemList = pItem;
+}
+
+/* The item an alien corpse leaves on its cell. Slot 150 is a placeholder whose bTwoHanded is a
+ * value the chain walk has no case for, so the placeholder itself is never credited and only the
+ * alien credit below it is observable. */
+static void CellAddCorpseItem(MapCell *pCell, Soldier *pUnit)
+{
+    TactItem *pItem;
+
+    t_apObj[150]->bTwoHanded = 3;
+    pItem = NewItem(t_apObj[150], 150, 0, pUnit);
+    CellAddItem(pCell, pItem);
+}
+
+static Soldier *NewTactUnit(i32 nId, u8 nType, u8 nRank, i32 nX, i32 nY, i32 nZ, u16 uHp)
+{
+    Soldier *pUnit = (Soldier *)calloc(1, sizeof(Soldier));
+
+    pUnit->nUnk440 = nId;
+    pUnit->nUnitType = nType;
+    pUnit->bRankType = nRank;
+    pUnit->uHp = uHp;
+    pUnit->pCell = TCell(nZ, nY, nX);
+    return pUnit;
+}
+
+static void Tally_Reset(void)
+{
+    i32 i;
+
+    for (i = 0; i < T_CELL_SLOTS; ++i) {
+        free(t_apCells[i]);
+        t_apCells[i] = (MapCell *)calloc(1, sizeof(MapCell));
+        t_apCells[i]->nX = (u8)(i % 60);
+        t_apCells[i]->nY = (u8)((i / 60) % 60);
+        t_apCells[i]->nZ = (u8)(i / 3600);
+    }
+    for (i = 0; i < t_nSpr; ++i) {
+        free(t_apSpr[i]);
+    }
+    for (i = 0; i < t_nItem; ++i) {
+        free(t_apItem[i]);
+    }
+    t_nSpr = 0;
+    t_nItem = 0;
+
+    for (i = 0; i < T_OBJ_COUNT; ++i) {
+        free(t_apObj[i]);
+        t_apObj[i] = (ObjectRec *)calloc(1, sizeof(ObjectRec));
+    }
+    for (i = 0; i < 4; ++i) {
+        free(t_apTactXcom[i]);
+        free(t_apTactEnemy[i]);
+        free(t_apTactCiv[i]);
+        free(t_apSoldier[i]);
+        t_apTactXcom[i] = NULL;
+        t_apTactEnemy[i] = NULL;
+        t_apTactCiv[i] = NULL;
+        t_apSoldier[i] = NULL;
+        t_apCraft[i] = &t_aCraft[i];
+        memset(&t_aCraft[i], 0, sizeof(Ship));
+    }
+    t_nSoldier = 0;
+    t_nXcom = 0;
+    t_nEnemy = 0;
+    t_nCiv = 0;
+    t_nCraftCount = 1;
+    t_nCraftIndex = 0;
+    t_nMissionType = 0;
+    t_nTerrainVariant = 0;
+    t_nHomeBase = 0;
+    t_nSiteCount = 0;
+    t_bAborted = 1;
+    t_bAltPath = 0;
+    t_nDimX = 1;   /* 10 x 10 cells per layer */
+    t_nDimY = 1;
+    t_nEleriumRoll = 25;
+    t_nFoodRoll = 7;
+    memset(t_aSites, 0, sizeof(t_aSites));
+}
+
+static TactTileTallyEnv TileEnv(void)
+{
+    TactTileTallyEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.apCells = t_apCells;
+    env.pnMapDimX = &t_nDimX;
+    env.pnMapDimY = &t_nDimY;
+    env.pbAltOutcomePath = &t_bAltPath;
+    env.pbMissionAborted = &t_bAborted;
+    env.pnTerrainVariant = &t_nTerrainVariant;
+    env.pnMissionType = &t_nMissionType;
+    env.pnEleriumRoll = &t_nEleriumRoll;
+    env.pnFoodRoll = &t_nFoodRoll;
+    return env;
+}
+
+static TactUnitTallyEnv UnitEnv(void)
+{
+    TactUnitTallyEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.apSoldiers = t_apSoldier;
+    env.pnSoldierCount = &t_nSoldier;
+    env.apXcomUnits = t_apTactXcom;
+    env.pnXcomCount = &t_nXcom;
+    env.apEnemyUnits = t_apTactEnemy;
+    env.pnEnemyCount = &t_nEnemy;
+    env.apCivilianUnits = t_apTactCiv;
+    env.pnCivilianCount = &t_nCiv;
+    env.pbMissionAborted = &t_bAborted;
+    env.pbAltOutcomePath = &t_bAltPath;
+    return env;
+}
+
+static TactItemTallyEnv ItemEnv(void)
+{
+    TactItemTallyEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.apCells = t_apCells;
+    env.apObjects = t_apObj;
+    env.pnObjectCount = &t_nObjCount;
+    env.apCraft = t_apCraft;
+    env.pnCraftIndex = &t_nCraftIndex;
+    env.apEnemyUnits = t_apTactEnemy;
+    env.pnEnemyCount = &t_nEnemy;
+    env.apXcomUnits = t_apTactXcom;
+    env.pnXcomCount = &t_nXcom;
+    env.apCivilianUnits = t_apTactCiv;
+    env.pnCivilianCount = &t_nCiv;
+    env.pbMissionAborted = &t_bAborted;
+    env.pbAltOutcomePath = &t_bAltPath;
+    return env;
+}
+
+static TactCraftTallyEnv CraftEnv(void)
+{
+    TactCraftTallyEnv env;
+
+    memset(&env, 0, sizeof(env));
+    env.apObjects = t_apObj;
+    env.pnObjectCount = &t_nObjCount;
+    env.apCraft = t_apCraft;
+    env.pnCraftCount = &t_nCraftCount;
+    env.pnCraftIndex = &t_nCraftIndex;
+    env.pnMissionType = &t_nMissionType;
+    env.pnHomeBase = &t_nHomeBase;
+    env.aSites = t_aSites;
+    env.pnSiteCount = &t_nSiteCount;
+    env.pbMissionAborted = &t_bAborted;
+    env.pbAltOutcomePath = &t_bAltPath;
+    return env;
+}
+
+static void TestTileTallyGate(void)
+{
+    TactBattleStats stats;
+    TactTileTallyEnv env;
+
+    printf("Tact_TallyBattleStats @ 0x3348c - the gate\n");
+    Tally_Reset();
+    TCell(0, 0, 0)->pFloorSpr = NewSpr(TILE_FAC_ELERIUM);
+    TCell(0, 0, 1)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+
+    t_bAltPath = 1;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("alternate outcome path gates the whole walk out", stats.nAlloys, 0);
+    TestEqI32("and the counters are still zeroed, not left stale", stats.nPowerSource, 0);
+
+    t_bAltPath = 0;
+    t_bAborted = 0;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("an unk_128A8C clear gates the walk out too", stats.nAlloys, 0);
+
+    t_bAborted = 1;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("aborted and not alternate: the walk runs", stats.nAlloys, 1);
+}
+
+static void TestTileTallyCounts(void)
+{
+    TactBattleStats stats;
+    TactTileTallyEnv env;
+
+    printf("Tact_TallyBattleStats @ 0x3348c - the facility byte\n");
+    Tally_Reset();
+
+    TCell(0, 0, 0)->pFloorSpr = NewSpr(TILE_FAC_ELERIUM);       /* kind 2 */
+    TCell(0, 0, 1)->pWallSprA = NewSpr(TILE_FAC_NAVIGATION);    /* kind 3 */
+    TCell(0, 1, 0)->pWallSprB = NewSpr(TILE_FAC_REPRODUCTION);  /* kind 5 */
+    TCell(0, 1, 1)->pCeilSpr = NewSpr(TILE_FAC_ENTERTAINMENT);  /* kind 7 */
+    TCell(0, 2, 0)->pFloorSpr = NewSpr(TILE_FAC_SURGERY);       /* kind 8 */
+    TCell(0, 2, 1)->pFloorSpr = NewSpr(TILE_FAC_EXAMINATION);   /* kind 9 */
+    TCell(0, 3, 0)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);        /* kind 10 */
+    TCell(0, 3, 1)->pFloorSpr = NewSpr(0);                      /* never tallied */
+    TCell(0, 4, 0)->pFloorSpr = NewSpr(1);                      /* never tallied */
+    TCell(0, 4, 1)->pFloorSpr = NewSpr(12);                     /* never tallied */
+    TCell(0, 5, 0)->pFloorSpr = NewSpr(14);                     /* never tallied */
+    /* All four sprite slots of one cell are read, in the floor / wallA / wallB / ceiling order. */
+    TCell(1, 0, 0)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+    TCell(1, 0, 0)->pWallSprA = NewSpr(TILE_FAC_ALLOYS);
+    TCell(1, 0, 0)->pWallSprB = NewSpr(TILE_FAC_ALLOYS);
+    TCell(1, 0, 0)->pCeilSpr = NewSpr(TILE_FAC_ALLOYS);
+    /* A cell with no sprites at all must not be touched. */
+    TCell(2, 0, 0)->pFloorSpr = NULL;
+    TCell(2, 0, 0)->pCeilSpr = NULL;
+
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+
+    TestEqI32("kind 2 gives one power source", stats.nPowerSource, 1);
+    TestEqI32("kind 2 adds the seeded Elerium amount", stats.nElerium, 25);
+    TestEqI32("kind 3 is navigation", stats.nNavigation, 1);
+    TestEqI32("kind 5 is reproduction", stats.nReproduction, 1);
+    TestEqI32("kind 7 is entertainment", stats.nEntertainment, 1);
+    TestEqI32("kind 8 is surgery", stats.nSurgery, 1);
+    TestEqI32("kind 9 is examination", stats.nExamination, 1);
+    TestEqI32("kind 10 is alloys, four slots of one cell count four times", stats.nAlloys, 5);
+    /* Fifteen sprites were placed, eleven of them on a tallied kind: the four carrying kinds 0, 1,
+     * 12 and 14 contribute nothing to any counter. */
+    TestEqI32("kinds 0, 1, 12 and 14 feed no counter at all",
+              stats.nPowerSource + stats.nNavigation + stats.nReproduction
+                  + stats.nEntertainment + stats.nSurgery + stats.nExamination + stats.nAlloys,
+              11);
+    TestEqI32("the food counter is not a tile count", stats.nFood, 0);
+
+    /* The walk covers 10 * nMapDimY rows and 10 * nMapDimX columns in every one of four layers. */
+    t_nDimX = 1;
+    t_nDimY = 1;
+    TCell(3, 9, 9)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+    TCell(3, 10, 0)->pFloorSpr = NewSpr(TILE_FAC_ALLOYS);
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("row 9 of layer 3 is inside the walk", stats.nAlloys, 6);
+    TestEqI32("row 10 is outside it", stats.nNavigation, 1);
+}
+
+static void TestTileTallyFood(void)
+{
+    TactBattleStats stats;
+    TactTileTallyEnv env;
+
+    printf("Tact_TallyBattleStats @ 0x3373C - the food tail\n");
+
+    Tally_Reset();
+    t_nTerrainVariant = 4;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("terrain variant above 3 seeds the food line", stats.nFood, 7);
+
+    Tally_Reset();
+    t_nTerrainVariant = 0;
+    t_nMissionType = PUFO_MISSION_TYPE_ALIEN_BASE;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("an alien base mission seeds it whatever the variant", stats.nFood, 7);
+
+    Tally_Reset();
+    t_nTerrainVariant = 3;
+    t_nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("variant 3 and a non-alien base leaves it zero", stats.nFood, 0);
+
+    Tally_Reset();
+    t_nTerrainVariant = 9;
+    t_bAborted = 0;
+    env = TileEnv();
+    Tact_TallyBattleStats(&env, &stats);
+    TestEqI32("the gate returns before the tail, so the food line stays zero", stats.nFood, 0);
+}
+
+static void TestUnitTallyMarks(void)
+{
+    TactUnitResults res;
+    TactUnitTallyEnv env;
+
+    printf("Tact_TallyUnitResults @ 0x33780 - the zone marks\n");
+    Tally_Reset();
+
+    t_apSoldier[0] = NewTactUnit(1, 0, 2, 0, 0, 0, 10);
+    t_apSoldier[1] = NewTactUnit(2, 0, 2, 0, 0, 0, 10);
+    t_nSoldier = 2;
+    t_apSoldier[0]->bInZone = 1;
+    t_apSoldier[1]->bInZone = 1;
+
+    t_apTactXcom[0] = NewTactUnit(10, 2, 2, 5, 5, 0, 10);   /* in box, type <= 8 */
+    t_apTactXcom[1] = NewTactUnit(11, 9, 2, 5, 5, 0, 10);   /* in box, type > 8 */
+    t_apTactXcom[2] = NewTactUnit(12, 2, 2, 3, 5, 0, 10);   /* one below the box */
+    t_apTactXcom[3] = NewTactUnit(13, 2, 2, 6, 6, 0, 10);   /* exactly the far corner */
+    t_nXcom = 4;
+    t_apTactXcom[0]->uMissions = 1;
+    t_apTactXcom[1]->uMissions = 1;
+    t_apTactXcom[2]->uMissions = 1;
+    t_apTactXcom[3]->uMissions = 1;
+
+    t_apTactEnemy[0] = NewTactUnit(20, 9, 2, 5, 5, 0, 10);
+    t_nEnemy = 1;
+    t_apTactEnemy[0]->bInZone = 1;   /* the enemy roster is never marked */
+
+    t_apTactCiv[0] = NewTactUnit(30, 2, 2, 5, 5, 0, 10);   /* live, in box, type <= 8 */
+    t_apTactCiv[1] = NewTactUnit(31, 2, 2, 5, 5, 0, 0);    /* dead, in box */
+    t_apTactCiv[2] = NewTactUnit(32, 0x10, 2, 5, 5, 0, 10);/* live, in box, type above 8 */
+    t_nCiv = 3;
+    t_apTactCiv[0]->uMissions = 1;
+    t_apTactCiv[1]->uMissions = 1;
+    t_apTactCiv[2]->uMissions = 1;
+
+    env = UnitEnv();
+    Tact_TallyUnitResults(&env, 4, 4, 6, 6, &res);
+
+    TestEqI32("the geoscape roster loses its zone mark", t_apSoldier[0]->bInZone, 0);
+    TestEqI32("every entry of it", t_apSoldier[1]->bInZone, 0);
+    TestEqI32("a live Xcom unit inside the box is marked", t_apTactXcom[0]->bInZone, 1);
+    TestEqI32("and its mission count rises", t_apTactXcom[0]->uMissions, 2);
+    TestEqI32("a unit above type 8 is not marked even inside the box",
+              t_apTactXcom[1]->bInZone, 0);
+    TestEqI32("its mission count does not rise", t_apTactXcom[1]->uMissions, 1);
+    TestEqI32("one column below the box is not marked", t_apTactXcom[2]->bInZone, 0);
+    TestEqI32("the enemy roster keeps whatever mark it had", t_apTactEnemy[0]->bInZone, 1);
+    TestEqI32("a live civilian inside the box is marked", t_apTactCiv[0]->bInZone, 1);
+    TestEqI32("a dead one is not", t_apTactCiv[1]->bInZone, 0);
+    TestEqI32("the box bounds are inclusive: the far corner counts",
+              t_apTactXcom[3]->bInZone, 1);
+    TestEqI32("the marking pass has the same type 8 ceiling as the Xcom one, so a real civilian "
+              "of type 0x10 is never marked",
+              t_apTactCiv[2]->bInZone, 0);
+    TestEqI32("and gains no mission", t_apTactCiv[2]->uMissions, 1);
+
+    Tally_Reset();
+    t_bAborted = 0;
+    t_bAltPath = 0;
+    t_apTactXcom[0] = NewTactUnit(10, 2, 2, 5, 5, 0, 10);
+    t_nXcom = 1;
+    t_apTactXcom[0]->bInZone = 1;
+    t_apTactXcom[0]->uMissions = 1;
+    env = UnitEnv();
+    Tact_TallyUnitResults(&env, 4, 4, 6, 6, &res);
+    TestEqI32("with both outcome flags clear the mark is cleared and not re-set",
+              t_apTactXcom[0]->bInZone, 0);
+    TestEqI32("and no mission is counted", t_apTactXcom[0]->uMissions, 1);
+}
+
+static void TestUnitTallyClassify(void)
+{
+    TactUnitResults res;
+    TactUnitTallyEnv env;
+
+    printf("Tact_TallyUnitResults @ 0x33A68 - the debrief lines\n");
+
+    /* A completed mission: unk_128A8C set, alternate path clear. Only dead units are lost, and a
+     * live civilian is rescued. */
+    Tally_Reset();
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 0);   /* dead operative */
+    t_apTactXcom[1] = NewTactUnit(2, 1, 2, 5, 5, 0, 9);   /* live operative, in zone */
+    t_apTactXcom[2] = NewTactUnit(3, 4, 2, 5, 5, 0, 0);   /* dead tank */
+    t_apTactXcom[3] = NewTactUnit(4, 7, 2, 5, 5, 0, 5);   /* live hovertank, in zone */
+    t_nXcom = 4;
+    t_apTactXcom[1]->bInZone = 1;
+    t_apTactXcom[3]->bInZone = 1;
+    t_apTactCiv[0] = NewTactUnit(5, 9, 2, 5, 5, 0, 0);    /* dead alien */
+    t_apTactCiv[1] = NewTactUnit(6, 0x15, 2, 5, 5, 0, 4); /* live alien */
+    t_apTactCiv[2] = NewTactUnit(7, 0x10, 2, 5, 5, 0, 6); /* live civilian */
+    t_apTactCiv[3] = NewTactUnit(8, 0x11, 2, 5, 5, 0, 0); /* dead civilian */
+    t_nCiv = 4;
+
+    env = UnitEnv();
+    Tact_TallyUnitResults(&env, 4, 4, 6, 6, &res);
+    TestEqI32("one operative lost", res.nOperativesLost, 1);
+    TestEqI32("one tank lost", res.nTanksLost, 1);
+    TestEqI32("one alien killed", res.nAliensKilled, 1);
+    TestEqI32("one civilian rescued", res.nCiviliansRescued, 1);
+    TestEqI32("one civilian killed", res.nCiviliansKilled, 1);
+
+    /* Both flags clear: every operative and every hardware unit is counted as lost whatever its
+     * hit points, and no civilian can be rescued. */
+    Tally_Reset();
+    t_bAborted = 0;
+    t_bAltPath = 0;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);
+    t_apTactXcom[1] = NewTactUnit(2, 8, 2, 5, 5, 0, 9);
+    t_nXcom = 2;
+    t_apTactCiv[0] = NewTactUnit(3, 0x10, 2, 5, 5, 0, 9);
+    t_nCiv = 1;
+    env = UnitEnv();
+    Tact_TallyUnitResults(&env, 4, 4, 6, 6, &res);
+    TestEqI32("a live operative still counts as lost", res.nOperativesLost, 1);
+    TestEqI32("a live hovertank too", res.nTanksLost, 1);
+    TestEqI32("a live civilian is not rescued", res.nCiviliansRescued, 0);
+    TestEqI32("it lands on the killed line", res.nCiviliansKilled, 1);
+
+    /* Alternate path: the zone mark is what decides, so a unit the marking pass could not reach is
+     * lost and one it marked is not. */
+    Tally_Reset();
+    t_bAborted = 1;
+    t_bAltPath = 1;
+    t_apTactXcom[0] = NewTactUnit(1, 0, 2, 5, 5, 0, 9);   /* inside the box -> marked */
+    t_apTactXcom[1] = NewTactUnit(2, 0, 2, 30, 30, 0, 9); /* outside it -> stays unmarked */
+    t_nXcom = 2;
+    env = UnitEnv();
+    Tact_TallyUnitResults(&env, 4, 4, 6, 6, &res);
+    TestEqI32("in zone and alive is not lost", t_apTactXcom[0]->bInZone, 1);
+    TestEqI32("out of zone is lost", res.nOperativesLost, 1);
+}
+
+static void TestItemTallyChain(void)
+{
+    i32 nScore;
+    TactItemTallyEnv env;
+    MapCell *pCell;
+
+    printf("Tact_TallyItemRecovery @ 0x33DF8 - the cell item chain\n");
+    Tally_Reset();
+
+    t_apObj[10]->bTwoHanded = 0;   /* a single-handed weapon */
+    t_apObj[10]->bAmmoCap = 12;
+    t_apObj[36]->bTwoHanded = 1;   /* a clip */
+    t_apObj[36]->bAmmoCap = 12;
+    t_apObj[59]->bTwoHanded = 2;   /* a Sectoid corpse */
+    t_apObj[59]->uSortKey = 59;
+    t_apObj[70]->bTwoHanded = 2;   /* a human corpse, outside the 59..69 block */
+    t_apObj[70]->uSortKey = 70;
+
+    pCell = TCell(0, 5, 5);
+    CellAddItem(pCell, NewItem(t_apObj[70], 70, 0, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[59], 59, 0, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[36], 36, 11, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[36], 36, 12, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[10], 36, 0xFF, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[10], 36, 5, NULL));
+    CellAddItem(pCell, NewItem(t_apObj[10], 36, 12, NULL));
+
+    /* Outside the box: the upper bound is exclusive, so x == nX1 is not walked. This item would
+     * credit apObjects[11] if the walk reached it. */
+    t_apObj[11]->bTwoHanded = 0;
+    CellAddItem(TCell(0, 5, 8), NewItem(t_apObj[11], 11, 0, NULL));
+
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+
+    TestEqI32("a single-handed weapon with a full clip is recovered", t_apObj[10]->uRecovCount, 3);
+    TestEqI32("and the clip object is credited once, for the full clip",
+              t_apObj[36]->uRecovCount, 2);
+    TestEqI32("an alien corpse with nothing holding it is recovered",
+              t_apObj[59]->uRecovCount, 1);
+    TestEqI32("a human corpse is not, whatever its flags", t_apObj[70]->uRecovCount, 0);
+    TestEqI32("the box upper bound is exclusive", t_apObj[11]->uRecovCount, 0);
+    TestEqI32("the cell walk adds no debrief score", nScore, 0);
+
+    /* A corpse held by a linked soldier is not recovered. */
+    Tally_Reset();
+    t_apObj[59]->bTwoHanded = 2;
+    t_apObj[59]->uSortKey = 59;
+    t_apTactEnemy[0] = NewTactUnit(1, 9, 2, 5, 5, 0, 0);
+    t_nEnemy = 1;
+    CellAddItem(TCell(0, 5, 5), NewItem(t_apObj[59], 59, 0, t_apTactEnemy[0]));
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+    TestEqI32("a corpse still linked to a soldier is not recovered",
+              t_apObj[59]->uRecovCount, 0);
+}
+
+static void TestItemTallyAliens(void)
+{
+    i32 nScore;
+    TactItemTallyEnv env;
+
+    printf("Tact_TallyItemRecovery @ 0x33F08 - the live alien credits\n");
+    Tally_Reset();
+
+    t_apTactCiv[0] = NewTactUnit(1, 9, 2, 5, 5, 0, 10);    /* Sectoid soldier, live */
+    t_apTactCiv[1] = NewTactUnit(2, 0xA, 7, 5, 5, 0, 10);  /* Muton medic, live */
+    t_apTactCiv[2] = NewTactUnit(3, 9, 6, 5, 5, 0, 10);    /* Sectoid, rank the race has no record for */
+    t_apTactCiv[3] = NewTactUnit(4, 0x10, 2, 5, 5, 0, 10); /* a civilian, not an alien */
+    t_nCiv = 4;
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[0]);
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[1]);
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[2]);
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[3]);
+
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+
+    TestEqI32("a live Sectoid soldier credits apObjects[77]", t_apObj[77]->uRecovCount, 1);
+    TestEqI32("a live Muton medic credits the medic block, apObjects[145]",
+              t_apObj[145]->uRecovCount, 1);
+    TestEqI32("a rank the race has no record for still scores", nScore, 3);
+    TestEqI32("but credits no object", t_apObj[78]->uRecovCount, 0);
+    TestEqI32("a civilian is neither credited nor scored", t_apObj[150]->uRecovCount, 0);
+
+    /* Dead, unlinked, or outside the box: no credit. */
+    Tally_Reset();
+    t_apTactCiv[0] = NewTactUnit(1, 9, 2, 5, 5, 0, 0);     /* dead */
+    t_apTactCiv[1] = NewTactUnit(2, 9, 2, 5, 5, 0, 10);    /* live, nothing linked */
+    t_apTactCiv[2] = NewTactUnit(3, 9, 2, 30, 30, 0, 10);  /* live, linked, outside the box */
+    t_nCiv = 3;
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[0]);
+    CellAddCorpseItem(TCell(0, 30, 30), t_apTactCiv[2]);
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+    TestEqI32("a dead alien is not credited", nScore, 0);
+    TestEqI32("so nothing reaches its race record", t_apObj[77]->uRecovCount, 0);
+
+    /* The Xcom half of the walk needs no cell test at all. */
+    Tally_Reset();
+    t_apTactXcom[0] = NewTactUnit(1, 0x15, 2, 40, 40, 0, 10); /* Sectopod parked outside the box */
+    t_nXcom = 1;
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+    TestEqI32("an Xcom-side alien is credited whatever its cell",
+              t_apObj[104]->uRecovCount, 1);
+    TestEqI32("and scores", nScore, 1);
+
+    Tally_Reset();
+    t_bAborted = 0;
+    t_bAltPath = 0;
+    t_apTactCiv[0] = NewTactUnit(1, 9, 2, 5, 5, 0, 10);
+    t_nCiv = 1;
+    CellAddCorpseItem(TCell(0, 5, 5), t_apTactCiv[0]);
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+    TestEqI32("both outcome flags clear skips the civilian test", nScore, 0);
+}
+
+static void TestItemTallyHwp(void)
+{
+    i32 nScore;
+    TactItemTallyEnv env;
+    TactItem Clip;
+
+    printf("Tact_TallyItemRecovery @ 0x342A8 - hardware soldiers\n");
+    Tally_Reset();
+
+    Clip.nAmmo = 20;
+    t_aCraft[0].anCargoQty[0] = 999;
+    t_aCraft[0].anCargoQty[3] = 999;
+
+    t_apTactXcom[0] = NewTactUnit(1, 4, 2, 5, 5, 0, 10);  /* Tank cannon, in box */
+    t_apTactXcom[1] = NewTactUnit(2, 6, 2, 5, 5, 0, 10);  /* Tank laser, unlimited ammo */
+    t_apTactXcom[2] = NewTactUnit(3, 8, 2, 5, 5, 0, 10);  /* Hovertank blaster, in box */
+    t_apTactXcom[3] = NewTactUnit(4, 5, 2, 30, 30, 0, 10);/* Tank rocket, outside the box */
+    t_nXcom = 4;
+    t_apTactXcom[0]->pHandL = &Clip;
+    t_apTactXcom[1]->pHandL = &Clip;
+    t_apTactXcom[2]->pHandL = &Clip;
+    t_apTactXcom[3]->pHandL = &Clip;
+
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+
+    TestEqI32("the deployed craft starts with an empty hold", t_aCraft[0].anCargoQty[0], 20);
+    TestEqI32("the tank cannon weapon is recovered", t_apObj[31]->uRecovCount, 1);
+    TestEqI32("the tank laser is recovered", t_apObj[33]->uRecovCount, 1);
+    TestEqI32("the hovertank blaster is recovered", t_apObj[35]->uRecovCount, 1);
+    TestEqI32("the tank laser has no cargo column", t_aCraft[0].anCargoQty[1], 0);
+    TestEqI32("the blaster clip goes into column 3", t_aCraft[0].anCargoQty[3], 20);
+    TestEqI32("outside the box is not recovered", t_apObj[32]->uRecovCount, 0);
+    TestEqI32("hardware adds no debrief score", nScore, 0);
+
+    /* Both outcome flags clear: the hold is still emptied, then the pass aborts at the first
+     * hardware unit, so nothing is credited. */
+    Tally_Reset();
+    t_bAborted = 0;
+    t_bAltPath = 0;
+    t_aCraft[0].anCargoQty[0] = 999;
+    t_apTactXcom[0] = NewTactUnit(1, 4, 2, 5, 5, 0, 10);
+    t_apTactXcom[1] = NewTactUnit(2, 4, 2, 5, 5, 0, 10);
+    t_nXcom = 2;
+    t_apTactXcom[0]->pHandL = &Clip;
+    t_apTactXcom[1]->pHandL = &Clip;
+    env = ItemEnv();
+    Tact_TallyItemRecovery(&env, 4, 4, 8, 8, &nScore);
+    TestEqI32("the hold is emptied before the abort", t_aCraft[0].anCargoQty[0], 0);
+    TestEqI32("and no weapon is credited", t_apObj[31]->uRecovCount, 0);
+}
+
+static void TestCraftTallyCap(void)
+{
+    i32 bLoot;
+    TactCraftTallyEnv env;
+
+    printf("Tact_TallyCraftRecovery @ 0x344b4 - capping against the cargo\n");
+    Tally_Reset();
+
+    t_nCraftIndex = 1;
+    t_apObj[0]->aItemQty[1] = 10;
+    t_apObj[0]->uRecovCount = 6;   /* fits, so it is absorbed and leaves nothing */
+    t_apObj[1]->aItemQty[1] = 3;
+    t_apObj[1]->uRecovCount = 8;   /* does not fit, five carry on */
+    t_apObj[2]->aItemQty[1] = 0;
+    t_apObj[2]->uRecovCount = 4;   /* no capacity at all */
+
+    bLoot = 0;
+    env = CraftEnv();
+    Tact_TallyCraftRecovery(&env, &bLoot);
+
+    TestEqI32("a recovery that fits is written into the craft quantity",
+              t_apObj[0]->aItemQty[1], 6);
+    TestEqI32("and clears the recovered count", t_apObj[0]->uRecovCount, 0);
+    TestEqI32("a recovery that does not fit leaves the quantity alone",
+              t_apObj[1]->aItemQty[1], 3);
+    TestEqI32("and subtracts the capacity", t_apObj[1]->uRecovCount, 0);
+    TestEqI32("the remainder lands in the working site record",
+              t_aSites[0].auItemQty[1], 5);
+    TestEqI32("indexed by the object index", t_aSites[0].auItemQty[2], 4);
+    TestEqI32("an object that fits leaves nothing for the site",
+              t_aSites[0].auItemQty[0], 0);
+    TestEqI32("the site is marked as carrying loot", t_aSites[0].bHasLoot, 1);
+    TestEqI32("and the out-param is set", bLoot, 1);
+
+    Tally_Reset();
+    t_bAborted = 0;
+    t_bAltPath = 0;
+    t_apObj[1]->aItemQty[1] = 3;
+    t_apObj[1]->uRecovCount = 8;
+    bLoot = 0;
+    env = CraftEnv();
+    Tact_TallyCraftRecovery(&env, &bLoot);
+    TestEqI32("both outcome flags clear skips the whole tally", t_apObj[1]->uRecovCount, 8);
+    TestEqI32("and records no loot", bLoot, 0);
+}
+
+static void TestCraftTallyDefendBase(void)
+{
+    i32 bLoot;
+    TactCraftTallyEnv env;
+
+    printf("Tact_TallyCraftRecovery @ 0x344D4 - the Xcom base defence\n");
+    Tally_Reset();
+
+    t_nMissionType = PUFO_MISSION_TYPE_XCOM_BASE;
+    t_nHomeBase = 2;
+    t_nCraftCount = 3;
+    t_aCraft[0].bHomeBase = 2;   /* listed */
+    t_aCraft[1].bHomeBase = 1;   /* not */
+    t_aCraft[2].bHomeBase = 2;   /* listed */
+
+    t_apObj[0]->aItemQty[0] = 5;
+    t_apObj[0]->aItemQty[2] = 4;
+    t_apObj[0]->uRecovCount = 7;   /* 7 - 5 = 2, then 2 fits into slot 2 */
+    t_apObj[1]->aItemQty[0] = 0;
+    t_apObj[1]->aItemQty[2] = 0;
+    t_apObj[1]->uRecovCount = 9;   /* nothing caps it */
+
+    bLoot = 0;
+    env = CraftEnv();
+    Tact_TallyCraftRecovery(&env, &bLoot);
+
+    TestEqI32("the first craft caps at its own quantity", t_apObj[0]->aItemQty[0], 5);
+    TestEqI32("the second takes what is left", t_apObj[0]->aItemQty[2], 2);
+    TestEqI32("the base quantity gains nothing when the remainder is zero",
+              t_apObj[0]->auPerBaseVal[2], 0);
+    TestEqI32("an uncapped remainder goes into the defended base's quantity",
+              t_apObj[1]->auPerBaseVal[2], 9);
+    TestEqI32("and the recovered count is deliberately left in place",
+              t_apObj[1]->uRecovCount, 9);
+    TestEqI32("the site record is not touched", t_aSites[0].bHasLoot, 0);
+    TestEqI32("and no loot is reported", bLoot, 0);
+}
+
 int main(void)
 {
     TestBankGroups();
@@ -534,6 +1274,16 @@ int main(void)
     TestCellFree();
     TestKeepSomePath();
     TestUnitRemoval();
+    TestTileTallyGate();
+    TestTileTallyCounts();
+    TestTileTallyFood();
+    TestUnitTallyMarks();
+    TestUnitTallyClassify();
+    TestItemTallyChain();
+    TestItemTallyAliens();
+    TestItemTallyHwp();
+    TestCraftTallyCap();
+    TestCraftTallyDefendBase();
 
     printf("test_tactend: %d checks, %d failures\n", g_nChecks, g_nFails);
     return g_nFails == 0 ? 0 : 1;

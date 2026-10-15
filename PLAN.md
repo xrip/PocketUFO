@@ -1598,6 +1598,48 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `auUnk962` / `abUnk1012` in the IDB — the MCP `rename` tool only takes globals, and struct members
   are not globals.
 
+- [x] part 58, the four post-battle tallies: `Tact_TallyBattleStats (0x3348c, 756 B)`,
+  `Tact_TallyUnitResults (0x33780, 1136 B)`, `Tact_TallyItemRecovery (0x33c80, 2100 B)` and
+  `Tact_TallyCraftRecovery (0x344b4, 556 B)` — the mission debrief's whole data side.
+  **Every counter got its meaning from the debrief labels.** `Tact_CheckBattleEnd` (0x34fbc, not
+  ported) prints each one under a TEXTS record built as `LDR R0, =0xB38D0` + `MOV R3,#hi; ORR R3,#lo`
+  = `aTextRecs + 205*n`. That is the in-memory stride (`PUFO_TEXT_REC_STRIDE`, five bytes of slack per
+  record; the on-disk record is 200 bytes) and it names all fourteen counters: 162 operatives killed,
+  163 tanks destroyed, 164/165 civilians killed/rescued, 166 aliens killed, 171 alloys, 172 Elerium,
+  173 navigation, 174 power source, 175 reproduction, 176 food, 177 entertainment, 178 surgery, 198
+  examination room. The IDB's `pnSurvived` / `pnKilled` / `pnMIA` were wrong — they described type
+  ranges, and all three feed *loss* lines.
+  **`Mc1Rec+0x1E` is the tile facility byte.** It is read exactly once in the binary (0x33618), which
+  is why it had stayed a gap. Named `bFacilityKind` with a `TileFacilityKind` enum, cross-checked
+  against the byte's distribution over the 1,163 records of the 27 shipped `.MC1` sets: 2 power
+  source (1 record, U_WALL02), 3 navigation (6), 5 reproduction (4, U_DISEC2), 7 entertainment (4,
+  U_PODS), 8 surgery (6), 9 examination (4, U_OPER2), 10 alloys (133). Elerium is not a room count —
+  it adds the seeded `rand(0x28)+10` roll once per kind-2 sprite — and food is written only by the
+  tail, gated on `nTerrainVariant > 3 || nMissionType == MissionType_AlienBase` (0x3373C). The sixth
+  counter has no writer and no reader anywhere; it is kept as `nUnused`, and the test asserts the
+  seven real counters total 11 out of 15 placed sprites instead of testing the dead one.
+  **The alien type/rank slot table came out of the IDB's own names.** `Tact_TallyItemRecovery` credits
+  one `apObjects` slot per `(nUnitType, bRankType)` out of the Map slot block; 37 of those slots were
+  already named `Map_apObjectsNN`, so slot = (addr − 0x1139B8 − 0x108)/4 and each one is that race's
+  soldier record in OBJECTS.DAT. That pins `UnitType` (9 Sectoid … 0x15 Sectopod) and `UnitRank`
+  (2 soldier, 3 navigator, 4 leader, 5 engineer, 7 medic, 8 commander) from both sides — the debrief
+  civilian/alien split confirms 0x10/0x11 independently. The Muton row has no rank 4 or 8 because the
+  shipped Muton block (92..94) has no leader or commander at all. 37 `unk_113Bxx` → `Map_apObjectsNN`
+  renames.
+  **Two box conventions in one function.** The cell walk is exclusive at the top (0x33EB8, 0x33EC4 are
+  CMP/BLT) while the unit, alien and HWP passes use the same four numbers inclusively.
+  `Tact_TallyCraftRecovery`'s two blockers from an earlier session are resolved: the gate is
+  `unk_128A8C || Map_bAltOutcomePath` at 0x34554, and the port now owns `SmapSite` / `nSmapSiteCount`,
+  so the leftover-recovery branch (`aSmapSites[nSmapSiteCount].auItemQty[obj]`, `bHasLoot = 1`) is
+  expressible.
+  **Open question recorded, not guessed:** the polarity of `unk_128A8C`. With it clear every operative
+  and tank counts as lost and no civilian can be rescued, which reads like "the team was extracted"
+  rather than the port's `pbMissionAborted`. All eight xrefs are reads — no writer in the IDB — so the
+  name stands and the question is in the parity doc for `Tact_CheckBattleEnd` to settle.
+  91 new checks (11555 total), 37 renames on record (340). IDB: new signatures on all four tallies,
+  function comments at 0x3348c, 0x33618, 0x33780, 0x33c80, 0x344b4, and 14 debrief-label comments
+  inside `Tact_CheckBattleEnd`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1871,6 +1913,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the region naming fix (`PufoRegionId`, `g_anRegionBuildCount @ 0x18655D` found, the false 15-byte-overflow bug row removed, the port's out-of-bounds counter index fixed) | 56/56 (Release) | 11297 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 | the funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`, the TEXTS[1307..1333] commentary table, the slot order confirmed by the names panel) | 56/56 (Release) | 11400 | 884/1103 (80.1%) | 402388/598792 (67.2%) | 39 checked, 0 mismatched |
 | the inventory close (`Inv_CloseAndCommit`, the 24-slot loadout snapshot, the clip merge) — **`tact-ui` complete at 52/52** | 56/56 (Release) | 11464 | 885/1103 (80.2%) | 403656/598792 (67.4%) | 39 checked, 0 mismatched |
+| the four post-battle tallies (`Tact_TallyBattleStats`, `Tact_TallyUnitResults`, `Tact_TallyItemRecovery`, `Tact_TallyCraftRecovery`; the debrief label table, `Mc1Rec+0x1E` named, the alien type/rank slot table) | 56/56 (Release) | 11555 | 889/1103 (80.6%) | 408204/598792 (68.2%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

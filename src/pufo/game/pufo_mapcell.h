@@ -42,6 +42,24 @@
  * real struct field lands at this offset on every target. */
 #define PUFO_SOLDIER_BSTATUS_OFF (0x17u + (sizeof(void *) - 4u))
 
+/* Mc1Rec.bFacilityKind: the alien-base facility a tile sprite contributes to the mission debrief.
+ * The names are the debrief line each value feeds. The caller (Tact_CheckBattleEnd, 0x34fbc, not
+ * ported) labels each counter with a TEXTS record: 171 "Alien Alloys", 172 "Elerium 115",
+ * 173 "UFO Navigation", 174 "UFO Power Source", 175 "Alien Reproduction", 177 "Alien
+ * Entertainment", 178 "Alien Surgery", 198 "Examination Room". Cross-checked against which shipped
+ * .MC1 sprite sets carry the value at all. The full decode is in game/pufo_tactend.h. Values not
+ * listed here are never tallied. */
+typedef enum TileFacilityKind {
+    TILE_FAC_ELERIUM      = 2,  /* 1 record, U_WALL02.MC1; also adds the seeded Elerium amount */
+    TILE_FAC_NAVIGATION   = 3,  /* 6 records, U_WALL02.MC1 */
+    TILE_FAC_REPRODUCTION = 5,  /* 4 records, U_DISEC2.MC1 */
+    TILE_FAC_ENTERTAINMENT = 7, /* 4 records, U_PODS.MC1 */
+    TILE_FAC_SURGERY      = 8,  /* 6 records, U_DISEC2.MC1 */
+    TILE_FAC_EXAMINATION  = 9,  /* 4 records, U_OPER2.MC1 */
+    TILE_FAC_ALLOYS       = 10  /* 133 records: U_BASE 66, U_EXT02 26, U_WALL02 19, UFO1 14,
+                                 * U_OPER2 6, MARS 2 */
+} TileFacilityKind;
+
 /* Mc1Rec: a tile sprite record, 52 bytes in the original. It contains no
  * pointers, so the Win64 size must match exactly -- asserted below.
  *
@@ -55,7 +73,8 @@
  *
  * Layout walk, so the padding is not mistaken for slack:
  *   0x00 gap_0[8]   0x08 abPal[12]   0x14 uUnk20(u16)   0x16 gap_22[6]
- *   0x1C bHeight    0x1D gap[3]      0x20 bTransparent  0x21 gap[3]
+ *   0x1C bHeight    0x1D bCeilSoundSel  0x1E bFacilityKind  0x1F gap[1]
+ *   0x20 bTransparent  0x21 gap[3]
  *   0x24 iCeilParam 0x25 gap[1]      0x26 nSlot(u16)    0x28 nGlobalIdx(u16)
  *   0x2a bBlocksMove <- gap_2A[0]    0x2b gap[3]        0x2e bBlocksSight
  *   0x2f gap[5]     0x34 end */
@@ -81,7 +100,11 @@ typedef struct Mc1Rec {
                            * Tact_ProcessMoveAction @ 0x4f3f0: 1 gives sample 32,
                            * anything else 19. Read from the ceiling sprite when
                            * the cell has one, otherwise from the floor sprite. */
-    u8   gap_1E[2];       /* 0x1E */
+    u8   bFacilityKind;   /* 0x1E, the alien-base facility this sprite contributes to the debrief.
+                           * Tact_TallyBattleStats @ 0x33618 (LDRB R5,[R3,#0x1E]) is the only reader
+                           * of it in the whole binary, which is why it stayed a gap. The value names
+                           * and their evidence are in the TileFacilityKind enum above. */
+    u8   gap_1F[1];       /* 0x1F */
     u8   bTransparent;    /* 0x20, 255 means transparent */
     u8   gap_21[3];       /* 0x21 */
     i8   iCeilParam;      /* 0x24, ceiling height/threshold; read as signed */

@@ -1,17 +1,20 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `f1a4daa`. This document is committed together with
-`Inv_CloseAndCommit (0x15a48, 1268 B)`, which **completes the `tact-ui` subsystem: 52 of 52
-functions, 43,764 of 43,764 bytes**. Three parts. A 24-slot loadout snapshot, while the commit byte
-at Map+1 is set, into `Soldier+0x3C2` (the slot item's object sort key) and `Soldier+0x3F4` (the low
-byte of `TactItem.nIndex` — the ammo *type* the weapon has loaded, not a round count); the map
-refresh that follows it; and the clip merge, where whichever hand holds a one-handed object with
-`bListPri == 1` is the weapon, its three `anAmmoTypeId` entries are resolved through `Map.apObjects`,
-and a match swallows the other hand's item — whose `TactItem` leaves the pool with the hole closed by
-the LAST entry and the count decremented unconditionally. The left-hand case stops at the first match
-(0x15D20); the right-hand case re-tests all three ids and a later match wins (0x15E80..0x15E88). The
-reading is written up in `docs/parity/game-core.md` under
-`## Closing the inventory screen (Inv_CloseAndCommit, 0x15a48)`.
+Date: 2026-10-15. HEAD before this edit: `ba0ab78`. This document is committed together with the four
+post-battle tallies — `Tact_TallyBattleStats (0x3348c, 756 B)`, `Tact_TallyUnitResults (0x33780,
+1136 B)`, `Tact_TallyItemRecovery (0x33c80, 2100 B)`, `Tact_TallyCraftRecovery (0x344b4, 556 B)` —
+the data side of the mission debrief, run back to back inside `Tact_CheckBattleEnd` (0x34fbc, not
+ported). Three things fell out of them. (1) Every counter's meaning came from the debrief label that
+prints it, built as `aTextRecs + 205*n`: TEXTS 162..166, 171..178, 198. The IDB's
+`pnSurvived` / `pnKilled` / `pnMIA` were wrong — all three feed *loss* lines. (2) `Mc1Rec+0x1E`, read
+exactly once in the whole binary (0x33618), is the tile facility byte: 2 power source, 3 navigation,
+5 reproduction, 7 entertainment, 8 surgery, 9 examination, 10 alloys — confirmed against the byte's
+distribution over the 1,163 records of the 27 shipped `.MC1` sets. (3) The alien
+`(nUnitType, bRankType)` → `apObjects` slot table decoded from the IDB's own `Map_apObjectsNN` names,
+which pins `UnitType` (9 Sectoid … 0x15 Sectopod) and `UnitRank` (2 soldier, 3 navigator, 4 leader,
+5 engineer, 7 medic, 8 commander); 37 `unk_113Bxx` globals renamed. The reading is written up in
+`docs/parity/game-core.md` under `## The four post-battle tallies (0x3348c, 0x33780, 0x33c80,
+0x344b4)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -64,10 +67,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 885 / 1103 (80.2%)
-                                             bytes cited:     403656 / 598792 (67.4%)
-python docs/parity/audit_credits.py       -> credited functions: 885, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 303 (explain 212 citations)
+python docs/parity/coverage.py            -> functions cited: 889 / 1103 (80.6%)
+                                             bytes cited:     408204 / 598792 (68.2%)
+python docs/parity/audit_credits.py       -> credited functions: 889, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 340 (explain 212 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 122, ORIGINAL BUG markers in src/pufo: 47
                                              ledger and port agree: every marker is listed and every row resolves
@@ -86,13 +89,14 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11464**. Coverage as of the latest commit: **885 / 1103
-functions (80.2%)**, **403656 / 598792 bytes (67.4%)**. The last unit was `Inv_CloseAndCommit`
-(0x15a48, 1268 B), which closes the `tact-ui` subsystem at 52 of 52 functions and 43,764 of 43,764
-bytes: 64 new checks and a function comment in the IDB. The unit before it was the funding screen's
-own UI — `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw`
-(0x5b1fc) and `FundingScreen_DrawExtended` (0x5b59c), 103 new checks, five funding globals named in
-the IDB, and the report's commentary table TEXTS[1307..1333] transcribed.
+Test checks run across the 56 suites: **11555**. Coverage as of the latest commit: **889 / 1103
+functions (80.6%)**, **408204 / 598792 bytes (68.2%)**. The last unit was the four post-battle tallies
+— `Tact_TallyBattleStats` (0x3348c), `Tact_TallyUnitResults` (0x33780), `Tact_TallyItemRecovery`
+(0x33c80), `Tact_TallyCraftRecovery` (0x344b4), 4,548 bytes and 91 new checks: the debrief label table
+transcribed into the IDB, `Mc1Rec+0x1E` named `bFacilityKind` with a `TileFacilityKind` enum, the
+`UnitType` / `UnitRank` enums derived from the alien slot table, and 37 `Map_apObjectsNN` renames. The
+unit before it was `Inv_CloseAndCommit` (0x15a48, 1268 B), which closed the `tact-ui` subsystem at 52
+of 52 functions and 43,764 of 43,764 bytes.
 
 The five rows of that report are five countries — lang.dat TEXTS[1302..1306] are США, Евро Альянс,
 Азиатский Альянс, Австралия, Африка — and they are **not** in race-score order: the row → slot
@@ -274,7 +278,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 194 | 214 | 123200 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -289,11 +293,11 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Twenty commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+Twenty-two commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
 transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, the
 radar (intercept) screen taken from its leaves inward until all sixteen functions were in, the funding
-screen taken from its arithmetic to its drawing, and the inventory screen's close path — which closes
-the `tact-ui` subsystem.
+screen taken from its arithmetic to its drawing, the inventory screen's close path — which closes the
+`tact-ui` subsystem — and the four post-battle tallies that produce the mission debrief.
 
 | Commit | Change | Why |
 |---|---|---|
@@ -315,10 +319,11 @@ the `tact-ui` subsystem.
 | `94620a9` | port `RadarScreen_Update` (0x60570), completing the radar screen | the unreachable `Ship_ClearInterceptByStrategIdx` at 0x61434 |
 
 `88a8241` (port `FundingScreen_Init` 0x5c084 with `FundingScreen_OpenMonthly` 0x5d160) follows
-`94620a9`, `328171f` is the region naming fix, and the unit this document is committed with — the
-funding screen's own UI (`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`,
-`FundingScreen_DrawExtended`) — follows `328171f`, and the unit this document is committed with,
-`Inv_CloseAndCommit` (0x15a48), follows `f1a4daa`; all four are described in §2.
+`94620a9`, `328171f` is the region naming fix, `f1a4daa` is the funding screen's own UI
+(`FundingScreen_Toggle`, `FundingScreen_Open`, `FundingScreen_Draw`, `FundingScreen_DrawExtended`),
+`ba0ab78` is `Inv_CloseAndCommit` (0x15a48) completing `tact-ui`, and the unit this document is
+committed with — the four post-battle tallies (0x3348c, 0x33780, 0x33c80, 0x344b4) — follows
+`ba0ab78`; all are described in §2.
 
 ### A real crash found in already-ported code
 
@@ -348,6 +353,16 @@ in both the docs and the IDB comment.
 - **`IsoDrawCtx` is fully mapped** — 57 members, size 316. The index that looked like a bug,
   `(char *)pIso + pIso->bAnimStep` then `[101]`, is not one: `bAnimStep` is at 0x44 and 101 is 0x65,
   which is `bUnitFlag0`, so it reads `bUnitFlag[bAnimStep]`.
+- **`Mc1Rec+0x1E` is the tile facility kind**, not padding. It is read exactly once in the binary
+  (0x33618), and the 27 shipped `.MC1` sets put it on exactly the sprites the debrief counts: 2 power
+  source, 3 navigation, 5 reproduction, 7 entertainment, 8 surgery, 9 examination, 10 alloys.
+- **The TEXTS in-memory stride is 205, not 200.** The on-disk record is 200 bytes; the loader leaves
+  five bytes of slack, and every ARM label address is `aTextRecs + 205*n`. That is what made the
+  debrief label table readable at all.
+- **The alien unit types and ranks are a data fact, not a guess.** `Tact_TallyItemRecovery` credits
+  one `apObjects` slot per `(nUnitType, bRankType)`, and 37 of those slots were already named
+  `Map_apObjectsNN` in the IDB; each one is that race's soldier record in OBJECTS.DAT. The Muton row
+  has no rank 4 and no rank 8 because the shipped Muton block (92..94) has no leader or commander.
 
 ---
 
@@ -406,7 +421,7 @@ Three audits exist because claims drifted:
 
 - `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
 - `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
-  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 303 rows) or as a
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 340 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
   against the shipped image. 28 tables, 0 mismatches.
@@ -439,7 +454,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 11464 checks, all passing in 4.30 s.
+- 56 test suites, 11555 checks, all passing.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -527,8 +542,6 @@ pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 8
 These are analysed and recorded in `docs/parity/` and in IDB comments. Porting them is transcription,
 not research:
 
-- `Tact_TallyCraftRecovery` (0x344b4, 556 B) — blocked on an ambiguous entry gate and on three
-  unmodelled globals: `0x158848`, `0x162030`, `0x186410`.
 - `App_ResizeMainWindow` (0x9ecb8) with `MenuBtn_ResizeWindow` (0x19930) — fully decoded, blocked on
   the port having no owner for the stored window size (`0x188D40` / `0x188D50`).
 - `Smap_BeginCraftSelectBtn` (0x84634) — blocked on `Smap_BeginCraftSelect` (0x838dc) being unported.
@@ -676,12 +689,18 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
   other fields. Weapon icons come from the bigobs sprite group.
 - `Map + 0x37` does double duty: it is the animation phase clock for unit types other than 20 and 21,
   and it is the byte `UiModal_DrawDialog` uses to pick its horizontal band.
+- **`unk_128A8C` (Map + 0x150D4) is still named by guess, and the guess is recorded as a question.**
+  The port calls it `pbMissionAborted`. The debrief's counting rule reads the other way: with the byte
+  clear every operative and every tank lands on the "killed"/"destroyed" line and no civilian can be
+  rescued, which is what "the team was extracted" would look like. All eight xrefs are reads — no
+  writer anywhere in the IDB — so the name stands and the polarity is open until `Tact_CheckBattleEnd`
+  (0x34fbc) is ported and shows who sets it.
 - Win64 launch prints an asset-load line. The original `InitInstance` (0x9fd48) prints nothing. This
   is a recorded deviation, added deliberately so a good launch is distinguishable without a screen.
 
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (122 rows, 46 of them matching
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (122 rows, 47 of them matching
 an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
