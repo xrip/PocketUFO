@@ -2626,6 +2626,239 @@ SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv)
     return pSite;
 }
 
+static const char *TransferUi_BaseName(const TransferDrawEnv *pEnv, i32 nBaseIdx)
+{
+    if (pEnv->apSiteRecs == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return ""; /* deviation: the original indexes the eight records blindly */
+    }
+    return pEnv->apSiteRecs[nBaseIdx].abName; /* 0x186C40 + 64*i + 26 */
+}
+
+static const char *TransferUi_Text(const TransferDrawEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+/* 0x989C4 / 0x98A98: the working site's bFlag1 mirrors the destination base's type byte. */
+static void TransferUi_SiteFlagFromBase(const TransferDrawEnv *pEnv, i32 nBaseIdx)
+{
+    const i32 nSiteCount = (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : -1;
+    SmapSite *pSite = BuySellSiteAt(pEnv->aSites, nSiteCount);
+
+    if (pSite == NULL || pEnv->apBases == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT
+        || pEnv->apBases[nBaseIdx] == NULL) {
+        return;
+    }
+    pSite->bFlag1 = pEnv->apBases[nBaseIdx]->bUnk4;
+}
+
+static void TransferUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz); /* 0x98400 */
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+/* TransferScreen_Draw @ 0x97fa4: the transfer screen's frame, panels, labels and destination
+ * overlay. The header carries the branch map. */
+i32 TransferScreen_Draw(const TransferDrawEnv *pEnv)
+{
+    char szLabel[PUFO_TRANSFER_LABEL_MAX];
+    i32 nBand;
+
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    /* 0x97FB8..0x98088: the two side rails, 24 steps of 7. */
+    for (i32 k = 0; k < 24; ++k) {
+        const i32 nY = 7 * k;
+        const u8 nRise = (u8)(PUFO_TRANSFER_RAMP_STEP * (k + PUFO_TRANSFER_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_TRANSFER_RAMP_SIDE - PUFO_TRANSFER_RAMP_STEP * k);   /* 230..115 */
+
+        SoftSurf_BlitRectProxy(0, 5, nY + 1, 1, 7, nRise, nRise, nRise);   /* 0x98004 */
+        SoftSurf_BlitRectProxy(0, 5, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x98030 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 1, 1, 7, nRise, nRise, nRise); /* 0x98054 */
+        SoftSurf_BlitRectProxy(0, 234, nY + 151, 1, 7, nFall, nFall, nFall); /* 0x98078 */
+    }
+
+    /* 0x9808C..0x98150: the top and bottom rails, 24 steps of 5. */
+    for (i32 k = 0; k < 24; ++k) {
+        const i32 nXLo = 5 * k + 1;
+        const i32 nXHi = 5 * k + 119;
+        const u8 nRise = (u8)(PUFO_TRANSFER_RAMP_STEP * (k + PUFO_TRANSFER_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_TRANSFER_RAMP_EDGE - PUFO_TRANSFER_RAMP_STEP * k);   /* 250..135 */
+
+        SoftSurf_BlitRectProxy(0, nXLo, 5, 5, 1, nRise, nRise, nRise);   /* 0x980C8 */
+        SoftSurf_BlitRectProxy(0, nXLo, 315, 5, 1, nRise, nRise, nRise); /* 0x980F0 */
+        SoftSurf_BlitRectProxy(0, nXHi, 5, 5, 1, nFall, nFall, nFall);   /* 0x98120 */
+        SoftSurf_BlitRectProxy(0, nXHi, 315, 5, 1, nFall, nFall, nFall); /* 0x98148 */
+    }
+
+    /* 0x98178: the row band is 16 pixels per row, capped by the panel's style. */
+    nBand = (pEnv->pPanelB != NULL) ? 16 * pEnv->pPanelB->nLineCount : 0;
+    if (pEnv->pPanelB != NULL && pEnv->pPanelB->nLineCount >= pEnv->pPanelB->nStyle) {
+        nBand = 16 * pEnv->pPanelB->nStyle; /* 0x98194 */
+    }
+
+    SoftSurf_BlitRectProxy(0, 130, 69, 1, nBand + 2, PUFO_TRANSFER_SEP_INDEX,
+                           PUFO_TRANSFER_SEP_INDEX, PUFO_TRANSFER_SEP_INDEX); /* 0x981A8 */
+    SoftSurf_BlitRectProxy(0, 168, 69, 1, nBand + 2, PUFO_TRANSFER_SEP_INDEX,
+                           PUFO_TRANSFER_SEP_INDEX, PUFO_TRANSFER_SEP_INDEX); /* 0x981CC */
+    SoftSurf_BlitRectProxy(0, 183, 69, 1, nBand + 2, PUFO_TRANSFER_SEP_INDEX,
+                           PUFO_TRANSFER_SEP_INDEX, PUFO_TRANSFER_SEP_INDEX); /* 0x981F0 */
+    SoftSurf_BlitRectProxy(0, 198, 69, 1, nBand + 2, PUFO_TRANSFER_SEP_INDEX,
+                           PUFO_TRANSFER_SEP_INDEX, PUFO_TRANSFER_SEP_INDEX); /* 0x98214 */
+
+    if (pEnv->pbPanelsBuilt == NULL || *pEnv->pbPanelsBuilt == 0) {
+        return 0; /* 0x98224 */
+    }
+
+    /* 0x98240..0x9825C: the original routes panel C's value through unk_161F0C, setting it to 1 and
+     * back to 0 on the way; the observable effect is both panels flagged. */
+    if (pEnv->pPanelB != NULL) {
+        pEnv->pPanelB->bUnk7080 = 1; /* 0x98248 */
+    }
+    if (pEnv->pPanelC != NULL) {
+        pEnv->pPanelC->bUnk7080 = 1; /* 0x98258 */
+    }
+
+    if (pEnv->pPanelA != NULL) {
+        UiPanel_DrawText(pEnv->pPanelA); /* 0x98264 */
+    }
+    if (pEnv->pPanelE != NULL) {
+        UiPanel_DrawText(pEnv->pPanelE); /* 0x98270 */
+    }
+    if (pEnv->pPanelC != NULL) {
+        UiPanel_DrawText(pEnv->pPanelC); /* 0x98278 */
+    }
+    if (pEnv->pPanelB != NULL) {
+        UiPanel_DrawText(pEnv->pPanelB); /* 0x98280 */
+    }
+    if (pEnv->pPanelD != NULL) {
+        UiPanel_DrawText(pEnv->pPanelD); /* 0x9828C */
+    }
+
+    /* 0x98290..0x98340: the row under the map cursor, named at (10, 282). */
+    if ((pEnv->pbOverlayOpen == NULL || *pEnv->pbOverlayOpen == 0)
+        && pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0
+        && pEnv->pnCursorY != NULL && *pEnv->pnCursorY > 75 && *pEnv->pnCursorY < nBand + 75) {
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 55); /* 0x982F4 */
+        if (pEnv->pPanelA != NULL && pEnv->pnRowCursor != NULL
+            && *pEnv->pnRowCursor >= 0 && *pEnv->pnRowCursor < PUFO_PANEL_LINES) {
+            const i32 nSlot = pEnv->pPanelA->anLineAux[*pEnv->pnRowCursor]; /* 0x98310 */
+            const char *pszName;
+            if (nSlot == PUFO_ROW_SOLDIER) {
+                pszName = TransferUi_Text(pEnv, PUFO_BUYSSELL_SOLDIER_TEXT_REC); /* 0x98328, "Soldier" */
+            } else {
+                const ObjectRecFull *pRec = BuySellObjectAt(pEnv->apObjects, pEnv->nObjectCount,
+                                                            nSlot);
+                pszName = (pRec != NULL) ? (const char *)pRec : ""; /* 0x98330, szName at +0 */
+            }
+            Text_DrawString(10, 282, pszName); /* 0x98340 */
+        }
+    }
+
+    (void)UiControl_BlitActivePad(pEnv->pCtlPrev, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);   /* 0x98388 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlNext, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);   /* 0x98390 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlReset, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);   /* 0x9839C */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x983C8 */
+    TransferUi_DrawCentered(60, 300, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_DEST_CAP));  /* 0x98420 */
+    TransferUi_DrawCentered(180, 300, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_XFER_CAP)); /* 0x98478 */
+
+    /* 0x98498..0x98510: "From: " with the source base's name. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 20, 20, 20);
+    pufo_strncpy(szLabel, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_FROM), sizeof(szLabel));
+    (void)pufo_strcat(szLabel, TransferUi_BaseName(pEnv, pEnv->nSourceBaseIdx), sizeof(szLabel));
+    TransferUi_DrawCentered(120, 20, szLabel);
+
+    /* 0x98538..0x986B4: the shortfall panel. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30);
+    if (pEnv->pdwShortfall != NULL && *pEnv->pdwShortfall == 1 && pEnv->pnResidue != NULL) {
+        i32 nRec = -1;
+        switch (*pEnv->pnResidue) { /* 0x98558 */
+        case PUFO_BUYSELL_SHORTFALL_LIVING:      nRec = PUFO_TRANSFER_SHORTFALL_REC;      break;
+        case PUFO_BUYSELL_SHORTFALL_FUNDS:       nRec = PUFO_TRANSFER_SHORTFALL_REC + 1;  break;
+        case PUFO_BUYSELL_SHORTFALL_HANGAR:      nRec = PUFO_TRANSFER_SHORTFALL_REC + 2;  break;
+        case PUFO_BUYSELL_SHORTFALL_STORES:      nRec = PUFO_TRANSFER_SHORTFALL_REC + 3;  break;
+        case PUFO_BUYSELL_SHORTFALL_CONTAINMENT: nRec = PUFO_TRANSFER_SHORTFALL_ALIEN;    break;
+        case PUFO_BUYSELL_SHORTFALL_TRANSFER:    nRec = PUFO_TRANSFER_SHORTFALL_BLOCK;    break;
+        default: break;
+        }
+        if (nRec >= 0) {
+            (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1);
+            TransferUi_DrawCentered(120, 158, TransferUi_Text(pEnv, nRec));
+            return 0; /* 0x98B44: the original returns Text_DrawString's value */
+        }
+    }
+
+    /* 0x986BC..0x986D8: with the overlay closed, "TO: " with the destination base's name. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 20, 20, 20);
+    if (pEnv->pbOverlayOpen == NULL || *pEnv->pbOverlayOpen == 0) {
+        pufo_strncpy(szLabel, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_TO), sizeof(szLabel));
+        (void)pufo_strcat(szLabel, TransferUi_BaseName(pEnv, pEnv->nDestBaseIdx), sizeof(szLabel));
+        TransferUi_DrawCentered(120, 32, szLabel);
+        return 0; /* 0x98B2C */
+    }
+
+    /* 0x986F8..0x988CC: the destination overlay. */
+    SoftSurf_BlitSrcRect(0, 0, 240, 320, 0, 50, 119, 200); /* 0x986F8 */
+    const i32 nBaseCount = (pEnv->pbBaseCount != NULL) ? (i32)(i8)*pEnv->pbBaseCount : 0;
+    SoftSurf_BlitRectProxy(0, 208, 0, 32, 28 * nBaseCount + 4, 0, 0, 0); /* 0x98738 */
+    if (pEnv->pfnDrawIconStrip != NULL) {
+        pEnv->pfnDrawIconStrip(pEnv->nSourceBaseIdx, pEnv->pStripUser); /* 0x98744 */
+    }
+    SoftSurf_BlitRectProxy(0, 0, 0, 210, 28 * nBaseCount + 4, 0, 0, 0); /* 0x9877C */
+
+    for (i32 i = 0; i < nBaseCount; ++i) {
+        const i32 nY = 28 * i;
+        SoftSurf_BlitRectProxy(0, 3, nY + 3, 205, 26, 0x46, 0xA0, 0xB3);  /* 0x987D8 */
+        SoftSurf_BlitRectProxy(0, 3, nY + 4, 204, 24, 0x00, 0x6E, 0x77);  /* 0x9880C */
+        SoftSurf_BlitRectProxy(0, 5, nY + 5, 201, 22, 0x04, 0x46, 0x4B);  /* 0x9883C */
+        pufo_strncpy(szLabel, TransferUi_BaseName(pEnv, i), sizeof(szLabel));
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);  /* 0x9887C */
+        TransferUi_DrawCentered(110, nY + 7, szLabel);                    /* 0x988A8 */
+    }
+
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);    /* 0x988DC */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);
+    TransferUi_DrawCentered(120, 28 * nBaseCount + 10,
+                            TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_STOP)); /* 0x98968 */
+
+    /* 0x98980..0x989F4: resolve the tap and close the overlay when it lands on another base. */
+    const i32 nTap = Base_HitTestFacilityStrip(pEnv->pStripHit,
+                                               (pEnv->pnCursorX != NULL) ? *pEnv->pnCursorX : 0,
+                                               (pEnv->pnCursorY != NULL) ? *pEnv->pnCursorY : 0);
+    if (pEnv->pbTransferBase != NULL) {
+        *pEnv->pbTransferBase = (i8)nTap; /* 0x98994 */
+    }
+    TransferUi_SiteFlagFromBase(pEnv, nTap); /* 0x989C4 */
+    if (nTap != (i32)pEnv->nSourceBaseIdx && pEnv->pbOverlayOpen != NULL) {
+        *pEnv->pbOverlayOpen = 0; /* 0x989E0 */
+    }
+    if (pEnv->pnCursorX != NULL) {
+        *pEnv->pnCursorX = 0; /* 0x989E8 */
+    }
+    if (pEnv->pnCursorY != NULL) {
+        *pEnv->pnCursorY = 0; /* 0x989F4 */
+    }
+
+    const i32 nPhase = (pEnv->pnMapPhase != NULL) ? *pEnv->pnMapPhase : 0;
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250 - 40 * nPhase, 200, 200, 20, 20, 20); /* 0x98A1C */
+    TransferUi_DrawCentered(120, 282, TransferUi_Text(pEnv, PUFO_TRANSFER_LABEL_SELECT)); /* 0x98A78 */
+
+    TransferUi_SiteFlagFromBase(pEnv, (pEnv->pbTransferBase != NULL) ? (i32)*pEnv->pbTransferBase
+                                                                     : nTap); /* 0x98A98 */
+    return (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : 0; /* 0x98A80 */
+}
+
 /* The six openers share one body. bIdAfterInit carries the ordering difference the
  * disassembly shows: Manuf (0x614EC), Transfer (0x6151C) and BaseInfo (0x6169C) write the
  * screen id after the Init, BuySell (0x617AC, 0x617DC) and BaseFac (0x6185C) before it. */

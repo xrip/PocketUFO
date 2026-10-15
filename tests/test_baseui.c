@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include "game/pufo_baseui.h"
+#include "game/pufo_font.h"  /* PufoFont_Init, g_fontSys: the dump renders real labels */
+#include "asset/pufo_asset.h" /* Asset_OpenArchives */
 #include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, for the cost label */
 #include "audio/pufo_audio.h"  /* PufoAudioBackend / Sound_SetBackend, the volume seam */
@@ -2561,6 +2563,335 @@ static void TestTransferCommit(void)
     UiPanel_FreeLines(&pA);
     UiPanel_FreeLines(&pC);
     UiPanel_FreeLines(&pE);
+}
+
+/* TransferScreen_Draw @ 0x97fa4. The draw writes into the loaded surface, so the checks read pixels
+ * back out of a 240x320 16bpp surface, exactly as the original's Blit_PackedColor builds them. */
+
+static SoftSurf g_xfSurf;
+static UiPanel g_xfA, g_xfB, g_xfC, g_xfD, g_xfE;
+static TransferDrawEnv g_xfEnv;
+static GfxColorEnv g_xfColor;
+static UiAnimBlitEnv g_xfAnim;
+static ObjectRecFull g_xfObj[149];
+static ObjectRecFull *g_apXfObj[149];
+static SmapSite g_aXfSites[2];
+static BaseRec g_aXfBase[8];
+static BaseRec *g_apXfBases[8];
+static BaseSiteRec g_aXfSiteRecs[8];
+static BaseStripHitEnv g_xfStrip;
+static UiControl g_aXfCtl[4];
+static u8 g_aXfGrid[PUFO_GRID_SIZE];
+static u8 g_aXfText[1721 * PUFO_TEXT_REC_STRIDE];
+static u8 g_bXfBuilt, g_bXfOverlay, g_bXfPreview, g_bXfStarted, g_bXfBaseCount, g_bXfSelected, g_bXfTap;
+static i8 g_bXfTransferBase, g_nXfProgress;
+static i32 g_nXfSiteCount, g_nXfCursorX, g_nXfCursorY, g_nXfMapPhase, g_nXfResidue, g_nXfRowCursor;
+static u32 g_dwXfShortfall;
+static i32 g_nXfStripCalls, g_nXfStripArg;
+
+static void XfIconStripThunk(i32 nBaseIdx, void *pUser)
+{
+    (void)pUser;
+    ++g_nXfStripCalls;
+    g_nXfStripArg = nBaseIdx;
+}
+
+static u16 XfPix(u32 nIdx, u32 nMid, u32 nLow)
+{
+    return (u16)(((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3));
+}
+
+/* Writes the 240x320 16bpp logical surface out as a 24-bit BMP so the rendered screen can be
+ * looked at, not only sampled. */
+static void XfDumpBmp(const wchar_t *pszPath)
+{
+    FILE *pFile = NULL;
+    if (_wfopen_s(&pFile, pszPath, L"wb") != 0) {
+        pFile = NULL;
+    }
+    const u32 nImg = 240u * 3u * 320u;
+    const u32 nSize = 54u + nImg;
+    u8 aHdr[54];
+    u8 aRow[240 * 3];
+    const u16 *pPix = (const u16 *)g_xfSurf.pPixels;
+
+    if (pFile == NULL) {
+        printf("  dump skipped: %ls\n", pszPath);
+        return;
+    }
+    memset(aHdr, 0, sizeof(aHdr));
+    aHdr[0] = 'B';
+    aHdr[1] = 'M';
+    aHdr[2] = (u8)nSize;
+    aHdr[3] = (u8)(nSize >> 8);
+    aHdr[4] = (u8)(nSize >> 16);
+    aHdr[5] = (u8)(nSize >> 24);
+    aHdr[10] = 54;   /* bits offset */
+    aHdr[14] = 40;   /* DIB header size */
+    aHdr[18] = (u8)240;  /* width, 32-bit LE */
+    aHdr[22] = (u8)320;  /* height, 32-bit LE: 320 needs the second byte too */
+    aHdr[23] = 1;
+    aHdr[26] = 1;    /* planes */
+    aHdr[28] = 24;   /* bpp */
+    aHdr[34] = (u8)nImg;
+    aHdr[35] = (u8)(nImg >> 8);
+    aHdr[36] = (u8)(nImg >> 16);
+    aHdr[37] = (u8)(nImg >> 24);
+    fwrite(aHdr, 1, sizeof(aHdr), pFile);
+
+    for (i32 y = 319; y >= 0; --y) { /* bottom-up rows */
+        for (i32 x = 0; x < 240; ++x) {
+            const u32 c = pPix[y * 240 + x];
+            const u32 nR = (c >> 11) & 0x1Fu, nG = (c >> 5) & 0x3Fu, nB = c & 0x1Fu;
+            aRow[x * 3 + 0] = (u8)((nB << 3) | (nB >> 2));
+            aRow[x * 3 + 1] = (u8)((nG << 2) | (nG >> 4));
+            aRow[x * 3 + 2] = (u8)((nR << 3) | (nR >> 2));
+        }
+        fwrite(aRow, 1, sizeof(aRow), pFile);
+    }
+    fclose(pFile);
+    printf("  dumped %ls\n", pszPath);
+}
+
+static void XfReset(void)
+{
+    g_bXfBuilt = 1;
+    g_bXfOverlay = 0;
+    g_bXfPreview = 0;
+    g_bXfStarted = 0;
+    g_nXfProgress = 0;
+    g_bXfBaseCount = 2;
+    g_bXfSelected = 2; /* the strip hit-test misses with the transfer gate open and returns this */
+    g_bXfTap = 0;
+    g_bXfTransferBase = 7;
+    g_nXfSiteCount = 1;
+    g_nXfCursorX = 220;
+    g_nXfCursorY = 100;
+    g_nXfMapPhase = 1;
+    g_nXfResidue = -999;
+    g_dwXfShortfall = 0;
+    g_nXfRowCursor = 0;
+    g_nXfStripCalls = 0;
+    g_nXfStripArg = -1;
+
+    static const char *const apszNames[5] = { "Soldier", "Pistol", "Sectoid soldier",
+                                              "Elerium-115", "Skyranger" };
+    static const char *const apszCounts[5] = { "1", "3", "4", "2", "1" };
+    static const i32 anAux[5] = { 1000, 1, 77, 105, 117 };
+
+    for (i32 r = 0; r < 5; ++r) {
+        (void)UiPanel_SetLineText(&g_xfA, r, apszNames[r]);
+        (void)UiPanel_SetLineText(&g_xfB, r, "0");
+        (void)UiPanel_SetLineText(&g_xfC, r, "0");
+        (void)UiPanel_SetLineText(&g_xfD, r, apszCounts[r]);
+        (void)UiPanel_SetLineText(&g_xfE, r, "0");
+        UiPanel_SetLineAux(&g_xfA, r, anAux[r]);
+        UiPanel_SetLineAux(&g_xfB, r, 0);
+        UiPanel_SetLineAux(&g_xfC, r, 0);
+        UiPanel_SetLineAux(&g_xfD, r, anAux[r]);
+        UiPanel_SetLineAux(&g_xfE, r, 0);
+    }
+    g_xfA.nPosX = 10;  g_xfA.nViewW = 125;
+    g_xfB.nPosX = 172; g_xfB.nViewW = 15;
+    g_xfC.nPosX = 188; g_xfC.nViewW = 15;
+    g_xfD.nPosX = 166; g_xfD.nViewW = 50;
+    g_xfE.nPosX = 232; g_xfE.nViewW = 45;
+    UiPanel *const apPanels[5] = { &g_xfA, &g_xfB, &g_xfC, &g_xfD, &g_xfE };
+    for (i32 r = 0; r < 5; ++r) {
+        apPanels[r]->nPosY = 71;
+        apPanels[r]->nFont = 0;
+    }
+    g_xfB.nStyle = 13; /* the band is 16 * 5 = 80, capped by nStyle 13 */
+
+    memset(g_aXfSites, 0, sizeof(g_aXfSites));
+    for (i32 i = 0; i < 8; ++i) {
+        g_aXfBase[i].bUnk4 = (u8)(10 + i);
+        g_apXfBases[i] = &g_aXfBase[i];
+        g_aXfSiteRecs[i].abName[0] = (char)('A' + i);
+        g_aXfSiteRecs[i].abName[1] = 0;
+    }
+    memset(g_aXfCtl, 0, sizeof(g_aXfCtl));
+    memset(g_aXfGrid, 0, sizeof(g_aXfGrid));
+
+    memset(&g_xfStrip, 0, sizeof(g_xfStrip));
+    g_xfStrip.pbBaseCount = &g_bXfBaseCount;
+    g_xfStrip.pbSelectedBase = &g_bXfSelected;
+    g_xfStrip.pbGateTransfer = &g_bXfBuilt;
+    g_xfStrip.pbTapFlag = &g_bXfTap;
+
+    memset(&g_xfEnv, 0, sizeof(g_xfEnv));
+    g_xfColor.nScaleSource = 0;
+    g_xfColor.nFadeCount = 0;
+    g_xfAnim.pbStarted = &g_bXfStarted;
+    g_xfAnim.pnProgress = &g_nXfProgress;
+    g_xfAnim.nFrameStyle = 0;
+    g_xfEnv.pColor = &g_xfColor;
+    g_xfEnv.pAnim = &g_xfAnim;
+    g_xfEnv.pPanelA = &g_xfA;
+    g_xfEnv.pPanelB = &g_xfB;
+    g_xfEnv.pPanelC = &g_xfC;
+    g_xfEnv.pPanelD = &g_xfD;
+    g_xfEnv.pPanelE = &g_xfE;
+    g_xfEnv.pbPanelsBuilt = &g_bXfBuilt;
+    g_xfEnv.pnRowCursor = &g_nXfRowCursor;
+    g_xfEnv.apObjects = g_apXfObj;
+    g_xfEnv.nObjectCount = 149;
+    g_xfEnv.pTextRecs = (const char *)g_aXfText;
+    g_xfEnv.apSiteRecs = g_aXfSiteRecs;
+    g_xfEnv.pCtlPrev = &g_aXfCtl[0];
+    g_xfEnv.pCtlNext = &g_aXfCtl[1];
+    g_xfEnv.pCtlReset = &g_aXfCtl[2];
+    g_xfEnv.pCtlConfirm = &g_aXfCtl[3];
+    g_xfEnv.pbOverlayOpen = &g_bXfOverlay;
+    g_xfEnv.pbPreviewOk = &g_bXfPreview;
+    g_xfEnv.pnCursorX = &g_nXfCursorX;
+    g_xfEnv.pnCursorY = &g_nXfCursorY;
+    g_xfEnv.pdwShortfall = &g_dwXfShortfall;
+    g_xfEnv.pnResidue = &g_nXfResidue;
+    g_xfEnv.pbTransferBase = &g_bXfTransferBase;
+    g_xfEnv.aSites = g_aXfSites;
+    g_xfEnv.pnSiteCount = &g_nXfSiteCount;
+    g_xfEnv.apBases = g_apXfBases;
+    g_xfEnv.pbBaseCount = &g_bXfBaseCount;
+    g_xfEnv.abFacilityGrid = g_aXfGrid;
+    g_xfEnv.pnMapPhase = &g_nXfMapPhase;
+    g_xfEnv.pStripHit = &g_xfStrip;
+    g_xfEnv.pfnDrawIconStrip = XfIconStripThunk;
+    g_xfEnv.nSourceBaseIdx = 0;
+    g_xfEnv.nDestBaseIdx = 1;
+}
+
+static void TestTransferDraw(void)
+{
+    const u16 *pPix;
+
+    printf("the transfer screen's frame\n");
+
+    for (i32 i = 0; i < 149; ++i) {
+        g_apXfObj[i] = &g_xfObj[i];
+    }
+    PutTextRec(g_aXfText, PUFO_BUYSSELL_SOLDIER_TEXT_REC, "Soldier");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_DEST_CAP, "Destination Base");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_XFER_CAP, "Transfer");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_FROM, "From: ");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_STOP, "Stop Transfer");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_SELECT, "Select destination base");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_LABEL_TO, "TO: ");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_REC, "Not enouth living quarters");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_REC + 1, "Not enouth money");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_REC + 2, "Not enough free hangar space");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_REC + 3, "Not enough storage space");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_ALIEN, "Not enough containment space");
+    PutTextRec(g_aXfText, PUFO_TRANSFER_SHORTFALL_BLOCK, "Transfer is not complete");
+
+    const char *const apszArch[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+
+    /* The dump at the end renders real labels, so the archives and the font have to be loaded. */
+    if (Asset_OpenArchives(apszArch)) {
+        PufoFont_Init(&g_fontSys);
+        (void)Font_LoadSpr(&g_fontSys, "font"); /* the glyph sprites, as Geoscape_InitUI loads them */
+    }
+
+    (void)UiPanel_ctor(&g_xfA, 5);
+    (void)UiPanel_ctor(&g_xfB, 5);
+    (void)UiPanel_ctor(&g_xfC, 5);
+    (void)UiPanel_ctor(&g_xfD, 5);
+    (void)UiPanel_ctor(&g_xfE, 5);
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_xfSurf);
+    SoftSurf_AllocPixels(&g_xfSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_xfSurf;
+    pPix = (const u16 *)g_xfSurf.pPixels;
+
+    XfReset();
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+
+    /* The rails and the separators run before the built flag, so an unbuilt screen still frames. */
+    g_bXfBuilt = 0;
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "the unbuilt screen returns nothing useful");
+    CheckEqI32((i32)pPix[2 * 240 + 5], XfPix(100, 100, 100), "the left rail starts at y 2 with 100");
+    CheckEqI32((i32)pPix[163 * 240 + 5], XfPix(215, 215, 215), "  and the 24th climbing block owns 163");
+    /* The climbing blocks run 1..168 with no gaps (7 tall on a 7 step) and are drawn after the
+     * falling ones, so the falling half only becomes visible where the climbing half has stopped. */
+    CheckEqI32((i32)pPix[169 * 240 + 5], XfPix(220, 220, 220), "the falling half shows from 169 with 0xE6 - 10");
+    CheckEqI32((i32)pPix[314 * 240 + 5], XfPix(115, 115, 115), "  and the last block owns 314 as 115");
+    CheckEqI32((i32)pPix[2 * 240 + 234], XfPix(100, 100, 100), "the right rail mirrors the left");
+    CheckEqI32((i32)pPix[5 * 240 + 1], XfPix(100, 100, 100), "the top rail starts at x 1 with 100");
+    CheckEqI32((i32)pPix[5 * 240 + 116], XfPix(215, 215, 215), "  and climbs to 1 + 5*23 = 116");
+    CheckEqI32((i32)pPix[5 * 240 + 119], XfPix(215, 215, 215), "the climbing half overdraws the falling "
+                                                               "one at 119..120, as in the original's order");
+    CheckEqI32((i32)pPix[5 * 240 + 234], XfPix(135, 135, 135), "the falling half ends at 234 with 135");
+    CheckEqI32((i32)pPix[315 * 240 + 1], XfPix(100, 100, 100), "the bottom rail mirrors the top");
+    CheckEqI32((i32)pPix[69 * 240 + 130], XfPix(0xB4, 0xB4, 0xB4), "the first separator at 130,69");
+    CheckEqI32((i32)pPix[150 * 240 + 198], XfPix(0xB4, 0xB4, 0xB4), "  and the last runs to 69 + 82 - 1");
+    Check(pPix[151 * 240 + 130] == 0, "the band is 16 * 5 + 2 tall and no taller");
+    Check(pPix[69 * 240 + 131] == 0, "and one pixel wide");
+    Check(pPix[0] == 0, "no panel row is drawn while the built byte is clear");
+    CheckEqI32(g_xfB.bUnk7080, 0, "and the panels are not flagged either");
+
+    /* Built: the panel flags and the closed-state label path. */
+    g_bXfBuilt = 1;
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "the built screen with the overlay closed returns 0");
+    CheckEqI32(g_xfB.bUnk7080, 1, "panel B gets bUnk7080 (0x98248)");
+    CheckEqI32(g_xfC.bUnk7080, 1, "and so does panel C (0x98258)");
+    Check(pPix[0 * 240 + 208] == 0, "the destination overlay is not drawn (0x986CC)");
+    CheckEqI32(g_nXfStripCalls, 0, "the icon-strip hook does not run");
+    CheckEqI32(g_bXfTransferBase, 7, "and the destination byte is left alone");
+    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_closed.bmp");
+
+    /* The shortfall panel short-circuits the rest of the draw. */
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_dwXfShortfall = 1;
+    g_nXfResidue = PUFO_BUYSELL_SHORTFALL_CONTAINMENT;
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "a shortfall returns after its own panel (0x98B44)");
+    CheckEqI32(g_bXfStarted, 1, "the panel animation started (0x985DC)");
+    Check(pPix[0 * 240 + 208] == 0, "and the overlay path never ran");
+    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_shortfall.bmp");
+
+    /* The destination overlay. */
+    g_dwXfShortfall = 0;
+    g_nXfResidue = -999;
+    g_bXfStarted = 0;
+    g_bXfOverlay = 1;
+    g_bXfTransferBase = 7;
+    g_nXfCursorX = 220;
+    g_nXfCursorY = 100;
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 1, "the overlay path returns the site count (0x98A80)");
+    CheckEqI32(g_nXfStripCalls, 1, "the source base's facility strip is drawn (0x98744)");
+    CheckEqI32(g_nXfStripArg, 0, "  for the source base");
+    CheckEqI32((i32)pPix[3 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the first base row's outer bevel (0x987D8)");
+    CheckEqI32((i32)pPix[4 * 240 + 3], XfPix(0x00, 0x6E, 0x77), "  its middle bevel (0x9880C)");
+    CheckEqI32((i32)pPix[5 * 240 + 5], XfPix(0x04, 0x46, 0x4B), "  and its inner bevel (0x9883C)");
+    CheckEqI32((i32)pPix[31 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the second base row starts at 28 + 3");
+    CheckEqI32(g_bXfTransferBase, 2, "the strip hit-test's answer lands in byte_1870F4 (0x98994)");
+    CheckEqI32(g_aXfSites[1].bFlag1, 12, "the working site's bFlag1 takes that base's type byte (0x989C4)");
+    CheckEqI32(g_bXfOverlay, 0, "a tap on another base closes the overlay (0x989E0)");
+    CheckEqI32(g_nXfCursorX, 0, "both cursor coordinates are zeroed (0x989E8)");
+    CheckEqI32(g_nXfCursorY, 0, "  including the y");
+    CheckEqI32(g_nXfStripCalls, 1, "the strip is drawn once per call");
+    XfDumpBmp(L"C:/Windows/Temp/pufo_ui_dumps/transfer_overlay.bmp");
+
+    /* A tap on the source base keeps the overlay open. */
+    g_bXfSelected = 0;
+    g_bXfOverlay = 1;
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 1, "the draw never raises the site count itself");
+    CheckEqI32(g_bXfOverlay, 1, "a tap on the source base leaves the overlay open (0x989D4)");
+    CheckEqI32(g_aXfSites[1].bFlag1, 10, "and the working site takes the tapped base's type byte (0x98A98)");
+
+    /* Guards. */
+    CheckEqI32(TransferScreen_Draw(NULL), 0, "a null env does nothing");
+    g_bXfOverlay = 0;
+    g_xfEnv.pPanelB = NULL;
+    memset(g_xfSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    CheckEqI32(TransferScreen_Draw(&g_xfEnv), 0, "a missing panel B is skipped, not dereferenced");
+    CheckEqI32((i32)pPix[2 * 240 + 5], XfPix(100, 100, 100), "  while the rails still draw");
+    CheckEqI32((i32)pPix[69 * 240 + 130], XfPix(0xB4, 0xB4, 0xB4),
+               "  and the separators shrink to the 0 + 2 stub the original gets too");
+    Check(pPix[71 * 240 + 130] == 0, "  and no further");
+    g_xfEnv.pPanelB = &g_xfB;
 }
 
 static void TestRoleToItemId(void)
@@ -7670,6 +8001,7 @@ int main(void)
     TestTransferBuildAndMove();
     TestTransferCapacityGate();
     TestTransferCommit();
+    TestTransferDraw();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

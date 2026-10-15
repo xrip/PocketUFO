@@ -1093,6 +1093,118 @@ typedef struct TransferCommitEnv {
 
 SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
 
+/* ------------------------------------------------- the transfer screen's frame
+ *
+ * Evidence: TransferScreen_Draw @ 0x97fa4 (2988 B), reached from Geoscape_Draw (0x8c180, not ported).
+ *
+ * Frame (0x97FB8..0x98150). The two side rails run 24 steps: at x 5 and x 234 a 1x7 block at y 2 + 7*k
+ * with index 5*(k + 20) (100..215) and a 1x7 at y 152 + 7*k with the ARM's `RSB #0xE6` index 230 - 5*k
+ * (230..115). The top and bottom rails run 24 steps of 5: a 5x1 at x 1 + 5*k and at x 119 + 5*k, on
+ * y 5 and y 315, climbing 5*(k + 20) on the left half and falling 250 - 5*k (the ARM's `RSB #0xFA`) on
+ * the right. Hex-Rays renders the two descending indices as -26 - 5*k and -6 - 5*k; they are byte
+ * indices, not negative values, and the port writes the ARM's own expressions.
+ *
+ * Column separators (0x98178..0x98214). Four 1-pixel vertical lines at x 130, 168, 183 and 198, from
+ * y 69, height 16 * min(pPanelB->nLineCount, pPanelB->nStyle) + 2, index 0xB4.
+ *
+ * Panels (0x98224..0x9828C). Only while bTransferPanelsBuilt: panel B and panel C get bUnk7080 = 1
+ * (the original routes panel C's value through unk_161F0C, setting it to 1 and back to 0 in the
+ * process), then the five panels draw through UiPanelMsg_Draw in the order A, E, C, B, D.
+ *
+ * Hovered row name (0x98290..0x98340). With the destination overlay closed (byte_1870F8 == 0), a base
+ * preview armed (bBaseFacPreviewOk) and the map cursor inside the row band (nSmapCursorY in (75,
+ * v9 + 75)), the row under the cursor is named at (10, 282): TEXTS[159] "Soldier" for slot 1000,
+ * otherwise apObjects[slot] read as its own szName.
+ *
+ * Labels (0x98388..0x98510). The prev / next controls and the reset control blit, then TEXTS[1264]
+ * "Destination Base" centred at (60 - w/2, 300) and TEXTS[1265] "Transfer" at (180 - w/2, 300) in the
+ * cyan pair, then TEXTS[1266] "From: " with the source base's name centred at (120 - w/2, 20).
+ *
+ * Shortfall panel (0x98538..0x986B4). When the shortfall dword byte_1870C8 is 1, reasons 0..5 each
+ * animate a 200x70 panel at (20, 130) through Ui_AnimExpandBlit_IfEnabled and draw TEXTS[405],
+ * TEXTS[406], TEXTS[407], TEXTS[408], TEXTS[1443] and TEXTS[1444] -- "Not enouth living quarters",
+ * "Not enouth money", "Not enough free hangar space", "Not enough storage space", "Not enough
+ * containment space" and "Transfer is not complete" (the first two carry the original's typo) --
+ * centred at (120 - w/2, 158), and the draw returns there.
+ *
+ * Closed state (0x986BC..0x986D8). With the overlay closed, TEXTS[1269] "TO: " with the destination
+ * base's name centred at (120 - w/2, 32), and the draw returns.
+ *
+ * Destination overlay (0x986F8..0x98A98). A full-screen 240x320 blit, a 32-wide strip at x 208 and a
+ * 210-wide panel, both 28 * nBaseCount + 4 tall, the source base's facility icons through
+ * Base_DrawFacilityIconStrip (0x6250c, not ported), then one bevelled row per base with the base's
+ * name centred at (110 - w/2, 28*i + 7). The confirm control blits under the list, TEXTS[1267] "Stop
+ * Transfer" centred at (120 - w/2, 28 * nBaseCount + 10), and the tap is resolved through
+ * Base_HitTestFacilityStrip: the result lands in byte_1870F4, the working site's bFlag1 takes that
+ * base's type byte, and a tap on any base other than the source closes the overlay. Both cursor
+ * coordinates are then zeroed, TEXTS[1268] "Select destination base" draws at (120 - w/2, 282) in a
+ * pair whose red channel is 250 - 40 * nMapPhase, and the working site's bFlag1 is written once more
+ * from byte_1870F4.
+ *
+ * Deviations: the original builds every label in a 140-byte stack buffer with unbounded copy loops and
+ * two strcats; the port bounds each build to the same 140 bytes. It returns register residue (the
+ * last callee's value, or nSmapSiteCount on the overlay path); the port returns the site count on the
+ * overlay path and 0 on the two early returns. The port null-guards the panels, the controls, the
+ * object array and the site array, where the original dereferences whatever the bring-up left there. */
+#define PUFO_TRANSFER_RAMP_BASE   20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
+#define PUFO_TRANSFER_RAMP_STEP   5
+#define PUFO_TRANSFER_RAMP_SIDE   0xE6 /* the ARM's RSB #0xE6: the descending side-ramp index */
+#define PUFO_TRANSFER_RAMP_EDGE   0xFA /* the ARM's RSB #0xFA: the descending top/bottom ramp index */
+#define PUFO_TRANSFER_SEP_INDEX   0xB4 /* the four column separators */
+#define PUFO_TRANSFER_LABEL_DEST_CAP  1264 /* "Destination Base", at (60, 300) */
+#define PUFO_TRANSFER_LABEL_XFER_CAP  1265 /* "Transfer", at (180, 300) */
+#define PUFO_TRANSFER_LABEL_FROM      1266 /* "From: " plus the source base name, at y 20 */
+#define PUFO_TRANSFER_LABEL_STOP      1267 /* "Stop Transfer", under the base list */
+#define PUFO_TRANSFER_LABEL_SELECT    1268 /* "Select destination base", at y 282 */
+#define PUFO_TRANSFER_LABEL_TO        1269 /* "TO: " plus the destination base name, at y 32 */
+#define PUFO_TRANSFER_SHORTFALL_REC   405  /* TEXTS[405..408] are shortfall reasons 0..3 */
+#define PUFO_TRANSFER_SHORTFALL_ALIEN 1443 /* reason 4, alien containment */
+#define PUFO_TRANSFER_SHORTFALL_BLOCK 1444 /* reason 5, the blocked transfer */
+#define PUFO_TRANSFER_LABEL_MAX       140  /* psz @ sp+0x18 in the original */
+
+typedef struct TransferDrawEnv {
+    const GfxColorEnv *pColor;         /* pGX @ 0x1139B8, the colour-pair owner */
+    UiAnimBlitEnv *pAnim;              /* the geoscape anim root @ 0x1864F8 */
+    UiPanel *pPanelA;                  /* pBuySellPanelA @ 0x161A1C */
+    UiPanel *pPanelB;                  /* pBuySellPanelB @ 0x161A00 */
+    UiPanel *pPanelC;                  /* pBuySellPanelC @ 0x161A20 */
+    UiPanel *pPanelD;                  /* pBuySellPanelD @ 0x160C88 */
+    UiPanel *pPanelE;                  /* pBuySellPanelE @ 0x1615F8 */
+    u8 *pbPanelsBuilt;                 /* bTransferPanelsBuilt @ 0x1870EC */
+    i32 *pnRowCursor;                  /* unk_186BE8, the cached selected row */
+    ObjectRecFull *const *apObjects;   /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                  /* Map_nObjectCount @ 0x114A60 */
+    const char *pTextRecs;             /* aTextRecs @ 0xB38D0, stride 205 */
+    BaseSiteRec *apSiteRecs;           /* 0x186C40, eight 64-byte records, name at +26 */
+    UiControl *pCtlPrev;               /* *(slot + 12), the prev-base control */
+    UiControl *pCtlNext;               /* *(slot + 16), the next-base control */
+    UiControl *pCtlReset;              /* unk_186B00 @ 0x186B00 */
+    UiControl *pCtlConfirm;            /* unk_186BA4 @ 0x186BA4 */
+    UiControlBlitFn pfnCtlBlit;
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    u8 *pbOverlayOpen;                 /* byte_1870F8 @ 0x1870F8, the destination overlay */
+    const u8 *pbPreviewOk;             /* bBaseFacPreviewOk @ 0x18652D */
+    i32 *pnCursorX;                    /* nSmapCursorX @ 0x186BD0, zeroed by the overlay */
+    i32 *pnCursorY;                    /* nSmapCursorY @ 0x186BD4, zeroed by the overlay */
+    const u32 *pdwShortfall;           /* byte_1870C8, read as a dword */
+    const i32 *pnResidue;              /* dword_1870B4[0], the shortfall reason */
+    i8 *pbTransferBase;                /* byte_1870F4, written by the strip hit-test */
+    SmapSite *aSites;                  /* aSmapSites @ 0x162030 */
+    const i32 *pnSiteCount;            /* nSmapSiteCount @ 0x186410 */
+    BaseRec *const *apBases;           /* apBases @ 0x114B2C */
+    const u8 *pbBaseCount;             /* nBaseCount @ 0x159D80, read signed */
+    const u8 *abFacilityGrid;          /* abFacilityGrid @ 0x159768 */
+    const i32 *pnMapPhase;             /* nMapPhase @ 0x1139EF, drives the label's red channel */
+    const BaseStripHitEnv *pStripHit;  /* Base_HitTestFacilityStrip's env */
+    void (*pfnDrawIconStrip)(i32 nBaseIdx, void *pUser);
+    void *pStripUser;
+    i8 nSourceBaseIdx;                 /* a2, the base the transfer leaves */
+    i8 nDestBaseIdx;                   /* a3, the base the transfer arrives at */
+} TransferDrawEnv;
+
+i32 TransferScreen_Draw(const TransferDrawEnv *pEnv);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

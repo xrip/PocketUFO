@@ -11567,3 +11567,61 @@ bHomeBase 255 would write 24*255 + ... bytes past the facility grid.
 
 IDB: function comments at 0x97aa4 and 0x186410; `nSmapParam4` -> `nSmapSiteCount`, the number of
 SmapSite records, with aSmapSites[nSmapSiteCount] the record the screens work on.
+
+TransferScreen_Draw (0x97fa4, 2988 B) is the transfer screen's frame, reached from Geoscape_Draw
+(0x8c180, not ported).
+
+Frame (0x97FB8..0x98150). The side rails run 24 steps: at x 5 and x 234 a 1x7 block at y 2 + 7k with
+index 5*(k + 20) (100..215) and a 1x7 at y 152 + 7k with the ARM's RSB #0xE6 index 230 - 5k
+(230..115). The climbing blocks are 7 tall on a 7 step, so they run 1..168 with no gaps and, being
+drawn before the falling blocks of the same step but in a later iteration, they own 152..168: the
+falling half only becomes visible from 169. The top and bottom rails run 24 steps of 5, a 5x1 at
+x 1 + 5k and at x 119 + 5k on y 5 and y 315, climbing 5*(k + 20) on the left half and falling
+250 - 5k (RSB #0xFA) on the right; the two halves overlap at 119..120 and the later climbing block
+wins. Four 1-pixel separators stand at x 130, 168, 183 and 198 from y 69, height
+16 * min(pPanelB->nLineCount, nStyle) + 2, index 0xB4.
+
+Panels (0x98224..0x9828C), only while bTransferPanelsBuilt: panel B and panel C get bUnk7080 = 1 (the
+original routes panel C's value through unk_161F0C, setting it to 1 and back to 0 on the way), then
+the five panels draw through UiPanelMsg_Draw in the order A, E, C, B, D. With the overlay closed, a
+base preview armed and the map cursor inside the row band, the row under the cursor is named at
+(10, 282): TEXTS[159] "Soldier" for slot 1000, otherwise apObjects[slot] read as its own szName.
+
+Labels (0x98388..0x98510): TEXTS[1264] "Destination Base" centred at (60, 300), TEXTS[1265]
+"Transfer" at (180, 300), TEXTS[1266] "From: " with the source base's name at (120, 20). The base
+names come from the eight 64-byte records at 0x186C40, name field at +26 (0x186C24[64*i + 54]).
+
+Shortfall (0x98538..0x986B4): when the shortfall dword byte_1870C8 is 1, reasons 0..5 each animate a
+200x70 panel at (20, 130) through Ui_AnimExpandBlit_IfEnabled and draw TEXTS[405], [406], [407],
+[408], [1443] and [1444] -- "Not enouth living quarters", "Not enouth money", "Not enough free hangar
+space", "Not enough storage space", "Not enough containment space" and "Transfer is not complete"
+(the first two carry the shipped typo) -- centred at (120, 158), and the draw returns there. With the
+overlay closed, TEXTS[1269] "TO: " with the destination base's name at (120, 32), and the draw
+returns.
+
+Destination overlay (0x986F8..0x98A98): a full-screen 240x320 blend, a 32-wide strip at x 208 and a
+210-wide panel both 28 * nBaseCount + 4 tall, the source base's facility icons through
+Base_DrawFacilityIconStrip (0x6250c, not ported), then one bevelled row per base -- three nested
+rects at 0x46/0xA0/0xB3, 0x00/0x6E/0x77 and 0x04/0x46/0x4B -- with the base's name centred at
+(110, 28i + 7). The confirm control blits under the list, TEXTS[1267] "Stop Transfer" centred at
+(120, 28 * nBaseCount + 10), and the tap resolves through Base_HitTestFacilityStrip: the result lands
+in byte_1870F4, the working site's bFlag1 takes that base's type byte (0x989C4), and a tap on any
+base other than the source closes the overlay (0x989E0). Both cursor coordinates are zeroed,
+TEXTS[1268] "Select destination base" draws at (120, 282) with its red channel at 250 - 40 *
+nMapPhase, and the working site's bFlag1 is written once more from byte_1870F4 (0x98A98).
+
+Deviation: the original builds every label in a 140-byte stack buffer with unbounded copy loops and
+two strcats; the port bounds each build to the same 140 bytes. It returns register residue; the port
+returns the site count on the overlay path and 0 on the two early returns. The port null-guards the
+panels, controls, object array and site array.
+
+Visual check: TestTransferDraw now writes the rendered 240x320 logical surface out as a BMP for each
+of the three states (closed, shortfall, overlay) and the frames were inspected. The rails, the four
+separators at 130/168/183/198 from y 69, the navy full-screen blend and the two bevelled base rows
+all land where the decode says they should. Text does not appear in the harness dumps: Text_DrawString
+draws through palette slot 2 (g_nGlyphPalSlotBase = 2) and the glyph sprites, and the unit-test
+harness does not run the geoscape bring-up that loads them; the app's own `--dump-frame` path covers
+the live screens. Recorded as a separate follow-up, not a port defect.
+
+IDB: function comment at 0x97fa4; aTextRec1264..aTextRec1269 and aTextRec159 named for the labels
+this draw reads.
