@@ -166,6 +166,11 @@ typedef struct ShipCtorEnv {
 Ship *Ship_Ctor(Ship *pShip, u8 nCraftType, i32 nId, i32 nHomeBase, u8 bSkip,
                 ShipCtorEnv *pEnv);
 
+/* Ship_FindIndexById @ 0x69ffc. First craft whose Ship.bId equals nId, -1 when the craft count is
+ * not positive or none matches. Called from BaseInfoScreen_BuildPanels (0x557f4) and
+ * BuySellScreen_CommitTransaction (0x74bf8), both unported. */
+i32 Ship_FindIndexById(Ship *const *apCraft, i32 nCraftCount, i32 nId);
+
 /* ------------------------------------------------- the craft cargo counterpart
  *
  * Evidence: InvSel_AddItemQty @ 0x45e8c, InvSel_SubItemQty @ 0x45ec8.

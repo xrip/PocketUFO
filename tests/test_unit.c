@@ -1285,6 +1285,43 @@ static void TestRemoveById(void)
     CheckEqI32(nCount, 3, "  no array at all is a no-op");
 }
 
+static void TestRemoveAllSoldiers(void)
+{
+    Soldier *apUnits[3];
+    i32 aList[4];
+
+    printf("Base_RemoveAllSoldiers @ 0x668e8\n");
+
+    for (int i = 0; i < 3; ++i) {
+        apUnits[i] = (Soldier *)malloc(sizeof(Soldier));
+        Unit_ctor(apUnits[i]);
+        apUnits[i]->nUnk440 = 7 + i;
+    }
+
+    /* The list is a dword count at +0 then that many dword ids at +4. Two of the three roster
+     * ids are listed, so two removals run and the survivor shifts into slot 0. */
+    aList[0] = 2; aList[1] = 7; aList[2] = 9; aList[3] = 0;
+    CheckEqI32(Base_RemoveAllSoldiers(aList, apUnits, 3), 2,
+               "  the return value is the list count, not the soldier count");
+    CheckEqI32(apUnits[0]->nUnk440, 8, "  both listed ids are gone and the survivor moved up");
+
+    /* An id nobody has still costs an iteration; Soldier_RemoveById just refuses. Both ids here
+     * are absent, so the walk runs twice and the roster is left exactly as it was. */
+    aList[0] = 2; aList[1] = 42; aList[2] = 99;
+    CheckEqI32(Base_RemoveAllSoldiers(aList, apUnits, 1), 2, "  two missing ids change nothing");
+    CheckEqI32(apUnits[0]->nUnk440, 8, "  the survivor is still there");
+
+    /* 0x668F8 answers the count itself when it is not positive, without touching the roster. */
+    aList[0] = 0; aList[1] = 42;
+    CheckEqI32(Base_RemoveAllSoldiers(aList, apUnits, 1), 0, "  an empty list answers 0");
+    aList[0] = -1;
+    CheckEqI32(Base_RemoveAllSoldiers(aList, apUnits, 1), -1, "  a negative count answers it");
+    CheckEqI32(apUnits[0]->nUnk440, 8, "  and the roster is untouched either way");
+    CheckEqI32(Base_RemoveAllSoldiers(NULL, apUnits, 1), 0, "  no list answers 0");
+
+    free(apUnits[0]);
+}
+
 /* The two rank tables are 20-byte fixed slots filled at load time. Stand in for them with known
  * names so the composition is observable. */
 static char g_aRankLow[9][PUFO_RANK_NAME_STRIDE];
@@ -1610,6 +1647,7 @@ int main(void)
     TestPlacement();
     TestRemove();
     TestRemoveById();
+    TestRemoveAllSoldiers();
     TestGenerateNames();
     TestGenerate();
     TestControlRecovery();

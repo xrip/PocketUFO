@@ -777,6 +777,20 @@ Order is by what unblocks what. Each item ends with gates + commit.
   each — recorded as inputs rather than invented as `SmapView` fields. `StrategList_RemoveAt` ignores
   its first register argument, so the `MOV R0, R6` before that call is dead.
 
+- [x] part 15, the wrapped distance and the craft range gate: `Smap_DistWrapped (0x7df80)`,
+  `Smap_CraftRangeExhausted (0x7e074)`, `Ship_FindIndexById (0x69ffc)`, `Base_RemoveAllSoldiers
+  (0x668e8)` and the merged copy `Base_FindIndexBySiteId (0x5a8d0)` — 56 more checks. The gate was
+  `Smap_CanInterceptReach` in the IDB and is renamed: it drains the craft's range budget and
+  answers whether its distance from home exceeds what is left, which is what makes
+  `Geoscape_TickShips` post message 15. Its five craft-class multipliers are exact reciprocals
+  (1/30000, 1/40000, 1/64000, 1/12000, 1/32000), so the port carries them as a divisor table.
+  `Geoscape_TickShips`' 0xFF/0xFE home-base filter is dead code and the hook
+  `pfnCanInterceptReach` is gone — the gate is a direct call now, as in the original.
+  **Open question, recorded not guessed:** `g_aSoldierIdList` (was `dword_160C90`) is a dword count
+  followed by dword ids, and its only writers are `BuySellScreen_BuildPanels` (0x76de0) and
+  `BuySellScreen_CommitTransaction` (0x74bf8), both unported. `Base_RemoveAllSoldiers` is ported
+  against the list as an explicit input; what fills it is settled when those two screens are done.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -923,6 +937,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the two "keep the course" selection answers (`Smap_ConfirmSelected`, `Smap_ConfirmSelectedAlt`) | 56/56 (Release) | 9197 | 816/1103 (74.0%) | 327128/598792 (54.6%) | 38 checked, 0 mismatched |
 | the radar palette cycle and the range animation (`RadarScreen_CyclePalette`) | 56/56 (Release) | 9211 | 817/1103 (74.1%) | 327360/598792 (54.7%) | 38 checked, 0 mismatched |
 | the map-target confirm (`Smap_ConfirmCraftTarget`) | 56/56 (Release) | 9237 | 818/1103 (74.2%) | 327676/598792 (54.7%) | 38 checked, 0 mismatched |
+| the wrapped distance and the craft range gate (`Smap_DistWrapped`, `Smap_CraftRangeExhausted`, `Ship_FindIndexById`, `Base_RemoveAllSoldiers`) | 56/56 (Release) | 9293 | 823/1103 (74.6%) | 328948/598792 (54.9%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

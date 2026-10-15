@@ -10614,3 +10614,79 @@ into level-0 world units by the current zoom mode: 300 at zoom 1 becomes 399, be
 double 1.3333 and `dtoi` truncates toward zero.
 
 **IDB updates.** Function comment on 0x842ec, line comment on 0x186414.
+The wrapped map distance and the craft range gate (done)
+--------------------------------------------------------
+
+Four functions, all of them reached from the geoscape minute tick, and one of them renamed.
+
+`Smap_DistWrapped @ 0x7df80` is the distance the range gates use. The x leg is the map cylinder
+-- `min(|x2-x1+800|, |x1-x2+800|, |x1-x2|)`, the same three the detect pass builds at 0x813D0 and
+the travel setup builds again, so the port reuses its own `WrappedDx` -- and the y leg is the
+plain `|y1-y2|`: the map wraps sideways only. A delta of exactly 800 wraps to zero, which is what
+pins the wrap width at 800 rather than the 1600 an older comment claimed. The result is
+`(int)(sqrt((double)(dx*dx) + (double)(dy*dy)) * 50.0)`: each square is an integer product
+converted on its own through `_itod` and added through `_addd`, the CRT sqrt scales nothing, the
+50.0 is the `_muld` second operand (its high word 0x40490000 sits at 0x7E018) and `_dtoi`
+truncates. The scale is applied before the truncation, not after.
+
+`Smap_CanInterceptReach @ 0x7e074` is renamed **Smap_CraftRangeExhausted**. Nothing in it tests an
+intercept. It finds the strateg item that carries the craft (`StrategList_FindByShipId` at
+0x7E084, `PtrArray_Get` at 0x7E094), reads the craft's home base out of `apBases`
+(0x7E0AC..0x7E0C0) and measures `Smap_DistWrapped(home base, that item)` -- the item found is the
+craft's own position entry, so this is the distance from home to where the craft now is, not to
+any target. The per-minute burn is `(int)(uFuelCap / 60)` (`_rt_sdiv` at 0x7E0EC, 60 in the
+divisor register) scaled by `uRangeMax / N`, and the five `_muld` operands in the class dispatch
+turn out to be exact reciprocals: 1/30000, 1/40000, 1/64000, 1/12000 and 1/32000 for craft class
+0..4. When `uRangeRemain` is above the burn it is decremented by it, so a craft parked away from
+base decays to the burn and stops there -- `Ship_TickRangeRecover` pulls it back only while
+`bAtBase`. The answer is `_ged(dist * factor, uRangeRemain)` with the budget read back AFTER the
+decrement (0x7E2F4 reloads the ship slot, 0x7E300 reloads the u16). Non-zero means the craft is
+further from home than its remaining range covers, which is exactly the condition
+`Geoscape_TickShips` posts message 15 and pauses on, once per craft because of the `bContactMsg`
+latch.
+
+The operand order is worth stating because it reads backwards easily: `_ged` takes the scaled
+distance in R0:R1 and the budget in R2:R3. That is the same order the `_gtd` at 0x37E04 in
+`Tact_BuildVisRayTable` uses against its 15.0 constant, which the port already models as
+`sqrt(...) > 15.0`.
+
+`Geoscape_TickShips`' own filter in front of the call is dead code. `CMP R0,#0xFF / BNE` sends
+every value except 0xFF to the call; 0xFF falls through to `CMP R0,#0xFE / BEQ`, and 0xFF is not
+0xFE, so it falls through to the same call. Whatever `bHomeBase` holds, a craft away from base
+reaches the gate -- which is why the gate has to bound `apBases[bHomeBase]` itself.
+
+`Ship_FindIndexById @ 0x69ffc` is the plain half of `Ship_FindIndexByStrategType @ 0x5a92c`: the
+same walk over `apCraft` comparing `Ship.bId`, but the id is an argument and there is no type or
+active gate. A non-positive `Map_nCraftCount` branches straight to the `MOV R0,#0xFFFFFFFF` at
+0x6A044, which is also where the exhausted loop falls through, so both answers are -1; the match
+path at 0x6A050 sign-extends the index from a byte.
+
+`Base_RemoveAllSoldiers @ 0x668e8` walks the dword list the IDB now names `g_aSoldierIdList`
+(was `dword_160C90`): a count at +0 then that many ids at +4, calling `Soldier_RemoveById` per
+id. The count is re-read at 0x66910 on every iteration and the loop index is compared against
+that fresh value, and the return value is that re-read count rather than the soldier count --
+0x66910 overwrites the quotient `Soldier_RemoveById` just returned. `BuySellScreen_BuildPanels`
+zeroes the count at 0x76EAC and then walks `nSoldierCount` against the facility grid of the
+selected base, and `BuySellScreen_CommitTransaction` is the only other reader; both are
+unported, so the port takes the list as an input instead of guessing who fills it. That open
+question is recorded in PLAN.md.
+
+`Base_FindIndexBySiteId @ 0x5a8d0` is a second copy of the already ported
+`Base_FindIndexByTypeByte @ 0x6ac30`: the same search over `BaseRec.bUnk4`, the same -1, and the
+only difference is that 0x5A8D0 reads its count through `LDRSB` from `abFacilityGrid+0x618` and
+bounds the loop by it, while 0x6AC30 answers -1 on an empty list and then loops with no bound at
+all. One implementation covers both, and the pair is on record in renames.tsv.
+
+`Geoscape_TickShips` no longer needs the `pfnCanInterceptReach` hook: the gate is a direct call
+now, which is what the original has.
+
+Deviations, all on the bugs.tsv ledger: the gate refuses an out-of-range `bHomeBase`, a missing
+strateg item and a craft class above 4 (where the original would index past `apBases`, call
+`PtrArray_Get(-1)` and multiply by stack residue read back at 0x7E160); `Ship_FindIndexById`
+steps over a NULL `apCraft` slot where 0x6A024 would fault; `Base_RemoveAllSoldiers` passes the
+soldier array and the running count to `Soldier_RemoveById` instead of the Map context it
+ignores.
+
+Measured: 56/56 Release, 9293 checks, 823/1103 functions (74.6%), 328948/598792 bytes (54.9%).
+IDB: `Smap_CanInterceptReach` renamed to `Smap_CraftRangeExhausted`, `dword_160C90` renamed to
+`g_aSoldierIdList`, comments added at 0x7df80, 0x69ffc, 0x668e8, 0x5d4e4 and 0x160C90.

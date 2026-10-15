@@ -62,7 +62,7 @@ static Soldier *g_apSoldiers[2] = { &g_aSoldiers[0], &g_aSoldiers[1] };
 static i32 g_aEmptyCells[2];
 static StrategList g_List;
 
-static int g_nProcess, g_nProcessSpawn, g_nReach, g_nMsg;
+static int g_nProcess, g_nProcessSpawn, g_nMsg;
 static int g_nMsgId, g_nMsgArg3;
 static int g_nSpawnSite, g_nGrant, g_nManuf, g_nResearch, g_nConstruct;
 static int g_nClearRow, g_nEmptyCells;
@@ -84,13 +84,6 @@ static void Hook_ProcessEvents(u8 bSpawn, void *pUser)
     ++g_nProcess;
     if (bSpawn) ++g_nProcessSpawn;
     Order('P');
-}
-
-static bool Hook_Reach(i32 nShipIdx, void *pUser)
-{
-    (void)nShipIdx; (void)pUser;
-    ++g_nReach;
-    return true;
 }
 
 static void Hook_Msg(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser)
@@ -178,7 +171,6 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     pState->nSoldierCount = 2;
 
     pHooks->pfnProcessEvents = Hook_ProcessEvents;
-    pHooks->pfnCanInterceptReach = Hook_Reach;
     pHooks->pfnContactMsg = Hook_Msg;
     pHooks->pfnSpawnMissionSite = Hook_SpawnSite;
     pHooks->pfnGrantSiteRecovery = Hook_Grant;
@@ -191,7 +183,7 @@ static void Setup(GeoscapeState *pState, GeoscapeHooks *pHooks)
     pHooks->pfnFindBaseBySiteId = Hook_FindBase;
     pHooks->pUser = 0;
 
-    g_nProcess = g_nProcessSpawn = g_nReach = g_nMsg = 0;
+    g_nProcess = g_nProcessSpawn = g_nMsg = 0;
     g_nSpawnSite = g_nGrant = g_nManuf = g_nResearch = g_nConstruct = 0;
     g_nClearRow = g_nEmptyCells = g_nMonthly = 0;
     g_szOrder[0] = 0;
@@ -204,11 +196,20 @@ static void TestTickShips(void)
     GeoscapeHooks hooks;
     Setup(&st, &hooks);
 
-    /* Ship 0: away from base, reachable, no contact yet -> the contact path.
-     * Ship 1: at base -> the range-recovery path. Ship_TickRangeRecover only
-     * recovers while bAtBase, so one ship cannot show both. */
+    /* Ship 0: away from base and out of range -> the contact path. Ship 1: at base -> the
+     * range-recovery path. Ship_TickRangeRecover only recovers while bAtBase, so one ship cannot
+     * show both.
+     *
+     * The range gate needs the craft's own strateg item (nType 1, bActive 0, nDisplayId == bId)
+     * and its home base. Craft class 3 divides uRangeMax by 12000, so the factor is 1/12: the
+     * burn is (3000 / 60) / 12 = 4.1667, the 10 remaining drops to 6, and 300 map units from base
+     * 0 scales to 300 * 50 / 12 = 1250, which is far above 6. */
     st.world.nShipCount = 2;
     g_aShips[0].bAtBase = 0;
+    g_aShips[0].bId = 7;
+    g_aShips[0].bCraftType = 3;
+    g_aShips[0].bHomeBase = 0;
+    g_aShips[0].uFuelCap = 3000;
     g_aShips[0].uRangeRemain = 10;
     g_aShips[0].uRangeMax = 1000;
     g_aShips[0].uRangeRate = 5;
@@ -216,10 +217,18 @@ static void TestTickShips(void)
     g_aShips[1].uRangeRemain = 10;
     g_aShips[1].uRangeMax = 1000;
     g_aShips[1].uRangeRate = 5;
+    g_aBases[0].nUnk8 = 0;
+    g_aBases[0].nUnk12 = 0;
+    g_List.nCount = 1;
+    g_aItems[0].nType = 1;
+    g_aItems[0].bActive = 0;
+    g_aItems[0].nDisplayId = 7;
+    g_aItems[0].nX = 300;
+    g_aItems[0].nY = 0;
 
     Geoscape_TickShips(&st, &hooks);
     CheckEqI32(g_aShips[1].uRangeRemain, 15, "range recovery ran first");
-    CheckEqI32(g_aShips[0].uRangeRemain, 10, "no recovery away from base");
+    CheckEqI32(g_aShips[0].uRangeRemain, 6, "the gate burned 4 of the 10 remaining");
     CheckEqI32(g_nProcess, 1, "process events ran");
     CheckEqI32(st.world.nMinuteTicks, 1, "minute counter advanced");
     CheckEqI32(g_nMsgId, 15, "contact message 15 posted");

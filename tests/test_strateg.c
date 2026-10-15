@@ -8,6 +8,7 @@
  * proximity timer to be idle; states 11/12 set bHyperDetect.
  */
 #include "game/pufo_strateg.h"
+#include "game/pufo_geoscape.h" /* PUFO_FAC_BASE_COUNT, the base array the range gate bounds by */
 
 #include <stdio.h>
 #include <string.h>
@@ -43,6 +44,8 @@ static Ship *g_apShips[4];
 static u8 g_aSiteState[4];
 static u8 g_aRadarPct[4];
 static GameTime g_Time; /* stands for the apLines[101..115] block */
+static BaseRec g_aBases[PUFO_FAC_BASE_COUNT];
+static BaseRec *g_apBases[PUFO_FAC_BASE_COUNT];
 
 static i32 g_nMsgCount, g_nMsgId, g_nMsgArg3;
 
@@ -1375,6 +1378,109 @@ static void TestOverlayAtMode(void)
     CheckEqI32(Smap_GetOverlayAtMode(&view, aOverlay, 0, 0, 0), 0, "and the same for a negative mode");
 }
 
+static void TestDistWrapped(void)
+{
+    printf("Smap_DistWrapped @ 0x7df80\n");
+
+    CheckEqI32(Smap_DistWrapped(0, 0, 0, 0), 0, "the same point is zero");
+    CheckEqI32(Smap_DistWrapped(0, 0, 300, 0), 15000, "300 columns, scaled by 50");
+    CheckEqI32(Smap_DistWrapped(0, 0, 700, 0), 5000,
+               "700 east is the 100 west the wrap finds");
+    CheckEqI32(Smap_DistWrapped(750, 0, 50, 0), 5000, "and the wrap runs the other way too");
+    CheckEqI32(Smap_DistWrapped(0, 0, 800, 0), 0, "a delta of exactly 800 wraps to zero");
+    CheckEqI32(Smap_DistWrapped(0, 0, 400, 0), 20000,
+               "400 is the plain leg, so the min keeps it");
+    CheckEqI32(Smap_DistWrapped(0, 0, 0, 400), 20000,
+               "y is plain: the map wraps sideways only");
+    CheckEqI32(Smap_DistWrapped(0, 0, 300, 400), 25000, "a 3-4-5 triangle scales by 50");
+    CheckEqI32(Smap_DistWrapped(-100, -40, 100, 20), 10440,
+               "wrapped x is 200, plain y is 60, sqrt(43600) * 50 truncates to 10440");
+    CheckEqI32(Smap_DistWrapped(0, 0, 1, 1), 70, "sqrt(2) * 50 truncates toward zero");
+}
+
+/* The same five divisors the IDB's _muld operands encode; see g_anCraftRangeDivisor. */
+static const i32 g_anRangeDivisor[5] = { 30000, 40000, 64000, 12000, 32000 };
+
+static void TestCraftRangeGate(void)
+{
+    printf("Smap_CraftRangeExhausted @ 0x7e074\n");
+
+    for (i32 i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+        g_apBases[i] = &g_aBases[i];
+    }
+
+    GeoscapeWorld world;
+    StrategList list;
+    SmapCraftRangeEnv env = { &world, g_apBases, &list };
+
+    /* Craft class 3 divides uRangeMax by 12000, so 1000 makes the factor 1/12. uFuelCap 3000
+     * gives a burn of 50, and 50 / 12 truncates to 4. The item at 300 columns is 15000 range
+     * units, a factor of 1/12 makes that 1250. */
+    SetupWorld(&world, &list, 2, 1);
+    memset(g_aBases, 0, sizeof(g_aBases));
+    g_aBases[0].nUnk8 = 0;
+    g_aBases[0].nUnk12 = 0;
+    g_aItems[0].nType = 1; g_aItems[0].bActive = 0; g_aItems[0].nDisplayId = 7;
+    g_aItems[0].nX = 300; g_aItems[0].nY = 0;
+    g_aItems[1].nType = 1; g_aItems[1].bActive = 1; /* a UFO: FindByShipId ignores it */
+    g_aShips[0].bId = 7; g_aShips[0].bCraftType = 3; g_aShips[0].bHomeBase = 0;
+    g_aShips[0].uFuelCap = 3000; g_aShips[0].uRangeMax = 1000; g_aShips[0].uRangeRemain = 10;
+
+    Check(Smap_CraftRangeExhausted(&env, 0), "1250 range units is past the 6 left");
+    CheckEqI32(g_aShips[0].uRangeRemain, 6, "the burn of 4 is taken before the test runs");
+    Check(Smap_CraftRangeExhausted(&env, 0), "the gate runs again on the next minute");
+    CheckEqI32(g_aShips[0].uRangeRemain, 2, "and burns again");
+    Check(Smap_CraftRangeExhausted(&env, 0), "still out of range");
+    CheckEqI32(g_aShips[0].uRangeRemain, 2,
+               "a budget already below the burn is left alone, so the decay bottoms out");
+
+    /* The drain is not tied to the answer. 100 columns is 5000 range units, a factor of 1/12
+     * makes that 416, and 1000 remaining covers it -- but the burn still runs. */
+    g_aItems[0].nX = 100;
+    g_aShips[0].uRangeRemain = 1000;
+    Check(!Smap_CraftRangeExhausted(&env, 0), "416 range units is inside the 1000 remaining");
+    CheckEqI32(g_aShips[0].uRangeRemain, 996, "and the burn was taken anyway");
+
+    /* With uRangeMax equal to the class divisor the factor is exactly 1, so the gate is just
+     * dist * 50 >= uRangeRemain. 20 columns is 1000 range units, 19 is 950. uFuelCap 0 keeps the
+     * burn at zero so the budget stays readable between the two checks. */
+    for (i32 nClass = 0; nClass < 5; ++nClass) {
+        SetupWorld(&world, &list, 1, 1);
+        memset(g_aBases, 0, sizeof(g_aBases));
+        g_aItems[0].nType = 1; g_aItems[0].bActive = 0; g_aItems[0].nDisplayId = 7;
+        g_aItems[0].nX = 20; g_aItems[0].nY = 0;
+        g_aShips[0].bId = 7; g_aShips[0].bCraftType = (u8)nClass; g_aShips[0].bHomeBase = 0;
+        g_aShips[0].uFuelCap = 0;
+        g_aShips[0].uRangeMax = (u16)g_anRangeDivisor[nClass];
+        g_aShips[0].uRangeRemain = 1000;
+
+        Check(Smap_CraftRangeExhausted(&env, 0),
+              "class N with uRangeMax == N: 1000 range units meets 1000 remaining");
+        g_aItems[0].nX = 19;
+        Check(!Smap_CraftRangeExhausted(&env, 0), "and 950 does not");
+        CheckEqI32(g_aShips[0].uRangeRemain, 1000, "a zero burn leaves the budget intact");
+    }
+
+    /* The three refusals the original does not make. */
+    g_aItems[0].nDisplayId = 11;
+    Check(!Smap_CraftRangeExhausted(&env, 0),
+          "a craft with no strateg item is refused, where PtrArray_Get gets -1");
+    g_aItems[0].nDisplayId = 7;
+    g_aShips[0].bCraftType = 5;
+    Check(!Smap_CraftRangeExhausted(&env, 0),
+          "craft class 5 is refused, where the multiplier pair is stack residue");
+    g_aShips[0].bCraftType = 3;
+    g_aShips[0].bHomeBase = 0xFF;
+    Check(!Smap_CraftRangeExhausted(&env, 0),
+          "a home base outside the base array is refused, where the raw u8 would index it");
+    g_aShips[0].bHomeBase = 0;
+    Check(!Smap_CraftRangeExhausted(&env, 9), "an out-of-range ship index is refused");
+
+    g_apBases[0] = NULL;
+    Check(!Smap_CraftRangeExhausted(&env, 0), "a NULL base slot is refused");
+    g_apBases[0] = &g_aBases[0];
+}
+
 int main(void)
 {
     TestCountAndFind();
@@ -1395,6 +1501,8 @@ int main(void)
     TestMaybeSpawnCraft();
     TestRemoveAtAndPurge();
     TestSpawnMissionSite();
+    TestDistWrapped();
+    TestCraftRangeGate();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

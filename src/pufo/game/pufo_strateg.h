@@ -108,7 +108,8 @@ typedef struct StrategHooks {
      * a contact in the original is written directly through pWorld->pTime, not
      * through this hook: 10, 13 and 15 pause, 43 (low supply) does not. */
     void (*pfnContactMsg)(i32 nMsg, i32 nArg3, i32 nArg4, void *pUser);
-    /* Base_FindIndexBySiteId (0x5a8d0), NOT ported. */
+    /* Base_FindIndexBySiteId @ 0x5a8d0 is a second copy of Base_FindIndexByTypeByte @ 0x6ac30;
+     * the port keeps one implementation. The hook stays for the unported callers. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } StrategHooks;
@@ -756,6 +757,64 @@ bool Smap_OnZoomOut(SmapView *pView, const SmapZoomSet aSets[3], SmapWorldSize *
  * for both. */
 i32 StrategList_FindIdxForShip(const StrategList *pList,
                                const GeoscapeWorld *pWorld, i32 nShipIdx);
+
+/* ------------------------------------------------- the wrapped map distance and the range gate
+ *
+ * Evidence: Smap_DistWrapped @ 0x7df80, Smap_CraftRangeExhausted @ 0x7e074.
+ *
+ * Smap_DistWrapped @ 0x7df80 is the geoscape distance between two map points, in the scaled
+ * units the range gates use. The x leg is the map cylinder -- the same
+ * min(|x2-x1+800|, |x1-x2+800|, |x1-x2|) that Strateg_CalcDetect (0x813D0) and
+ * StrategEntry_InitTravel already compute, here at 0x7DF84..0x7DFC4 -- and the y leg is the
+ * plain |y1-y2| (0x7DFC8..0x7DFD8), because the map wraps sideways only.
+ *
+ * The value is (int)(sqrt((double)(dx*dx) + (double)(dy*dy)) * 50.0). Each square is an integer
+ * product converted on its own through _itod and the two doubles are added through _addd; the
+ * CRT sqrt scales nothing; the _muld second operand is 50.0, whose high word 0x40490000 sits at
+ * 0x7E018; _dtoi truncates. So the 50 is a distance-to-range-unit scale applied before the
+ * truncation, not after. */
+i32 Smap_DistWrapped(i32 nX1, i32 nY1, i32 nX2, i32 nY2);
+
+/* Smap_CraftRangeExhausted @ 0x7e074. The IDB called this Smap_CanInterceptReach; it is renamed
+ * because it tests nothing about intercepting -- it is the per-minute range drain of a craft
+ * away from base, plus the gate that makes Geoscape_TickShips @ 0x5d4e4 post the ship-contact
+ * message (15) once and pause the clock. See docs/parity/renames.tsv.
+ *
+ * 1. StrategList_FindByShipId picks the strateg item that carries this craft (0x7E084) and
+ *    PtrArray_Get reads it out of the strateg list at 0x1864F8+0x3C (0x7E094).
+ * 2. apCraft[nShipIdx]->bHomeBase indexes apBases (0x7E0AC..0x7E0C0), and the distance is
+ *    Smap_DistWrapped(base x, base y, item x, item y) at 0x7E0D4. Both points come from the
+ *    craft itself: the item found in step 1 is the craft's own position entry, so this is the
+ *    distance from the craft's HOME BASE to where the craft now is -- not to any target.
+ * 3. The per-minute burn is (int)(uFuelCap / 60): _rt_sdiv at 0x7E0EC with 60 in R0 (the
+ *    divisor) and uFuelCap in R1. It is scaled by the craft-class factor uRangeMax / N, where N
+ *    is 30000, 40000, 64000, 12000 and 32000 for craft class 0..4 -- the _muld second operands
+ *    at 0x7E120, 0x7E23C, 0x7E1C4, 0x7E188 and 0x7E200, each of which is exactly 1/N. The class
+ *    dispatch is the test chain at 0x7E168..0x7E254 (class 0 is the fall-through at 0x7E104).
+ * 4. When uRangeRemain is ABOVE that burn it is decremented by it (0x7E2A0..0x7E2C4). A budget
+ *    already at or below the burn is left alone, so a craft parked away from base decays to the
+ *    burn and stops there; Ship_TickRangeRecover @ 0x5d514 pulls it back up only while bAtBase.
+ * 5. The answer is (double)dist * factor >= (double)uRangeRemain, with uRangeRemain read back
+ *    AFTER the decrement (0x7E2F4 reloads the ship slot, 0x7E300 reloads the u16). Non-zero
+ *    means the craft is further from home than its remaining range covers.
+ *
+ * The comparison direction is the binary's own and it is worth stating plainly: _ged takes the
+ * scaled distance as its first operand (R0:R1) and uRangeRemain as its second (R2:R3), the same
+ * operand order the _gtd at 0x37E04 in Tact_BuildVisRayTable uses against its 15.0 constant.
+ *
+ * Deviations, all listed in docs/parity/bugs.tsv: the original indexes apBases with the raw u8
+ * bHomeBase -- Geoscape_TickShips' own 0xFF/0xFE filter in front of the call is dead code, since
+ * 0xFF falls through the 0xFE test and 0xFE takes the BNE, so both reach it -- it hands the -1
+ * that StrategList_FindByShipId answers to PtrArray_Get when the craft has no item, and a craft
+ * class above 4 leaves the multiplier pair in whatever the stack held (0x7E160 reloads R8:R9
+ * from var_8/var_4, which no path ever writes). The port answers false for all three. */
+typedef struct SmapCraftRangeEnv {
+    const GeoscapeWorld *pWorld;  /* apCraft @ Map+0x10AC, nShipCount @ Map+0x1194 */
+    BaseRec *const *apBases;      /* apBases @ Map+0x1174 */
+    const StrategList *pList;     /* the strateg list @ 0x1864F8+0x3C */
+} SmapCraftRangeEnv;
+
+bool Smap_CraftRangeExhausted(const SmapCraftRangeEnv *pEnv, i32 nShipIdx);
 
 /* ------------------------------------------------- the UFO mission machine
  *

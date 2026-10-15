@@ -41,10 +41,13 @@ void Geoscape_TickShips(GeoscapeState *pState, const GeoscapeHooks *pHooks)
         if ((i8)pWorld->nMinuteTicks % 5 == 0)
             Ship_ClearExpiredIntercepts(pWorld, pState->pList, &detectHooks);
 
+        /* 0x5D5E4..0x5D680. The original's home-base filter is dead code: 0xFF falls through the
+         * 0xFE test and 0xFE takes the BNE, so every craft away from base reaches the range gate. */
+        SmapCraftRangeEnv rangeEnv = { pWorld, pState->apBases, pState->pList };
         for (i32 i = 0; i < pWorld->nShipCount; ++i) {
             Ship *pShip = pWorld->apCraft[i];
             if (pShip->bAtBase == 0
-                && pHooks->pfnCanInterceptReach(i, pHooks->pUser)
+                && Smap_CraftRangeExhausted(&rangeEnv, i)
                 && pShip->bContactMsg == 0) {
                 pShip->bContactMsg = 1;
                 pState->nSelectedShipIdx = i;

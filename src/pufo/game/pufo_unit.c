@@ -276,6 +276,44 @@ i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId)
     return Unit_RemoveAt(apSoldiers, nCount, nIndex); /* 0x36BE0..0x36C4C */
 }
 
+/* Base_RemoveAllSoldiers @ 0x668e8. Drop every soldier whose roster id appears in the scratch id
+ * list the original keeps at dword_160C90: a dword count at +0 followed by that many dword ids
+ * at +4. BuySellScreen_BuildPanels zeroes the count at 0x76EAC and then walks nSoldierCount
+ * against the facility grid of the selected base, so the list is that screen's working set; the
+ * only other reader is BuySellScreen_CommitTransaction (0x74bf8). Both are unported, so the port
+ * takes the list as an input rather than guessing who fills it.
+ *
+ * The loop re-reads the count out of the list on every iteration (0x66910) and compares the
+ * iteration index against that fresh value, so a list whose count shrinks mid-walk stops early.
+ * The return value is the re-read count, NOT the soldier count: 0x66910 overwrites the new count
+ * Soldier_RemoveById just returned, and the early exit at 0x668F8 returns the original count
+ * unchanged when it is not positive.
+ *
+ * Deviation: Soldier_RemoveById is called with the Map context in R0 (0x6690C), which it ignores
+ * -- it loads the context itself. The port passes the array and the running count instead. */
+i32 Base_RemoveAllSoldiers(const i32 *anIdList, Soldier **apSoldiers, i32 nSoldierCount)
+{
+    if (anIdList == NULL) {
+        return 0;
+    }
+
+    i32 nListCount = anIdList[0]; /* 0x668F4 */
+    if (nListCount <= 0) {
+        return nListCount; /* 0x668F8 -> 0x66924 */
+    }
+
+    for (i32 i = 0; ; ++i) {
+        nSoldierCount = Soldier_RemoveById(apSoldiers, nSoldierCount, anIdList[i + 1]);
+        nListCount = anIdList[0]; /* 0x66910 */
+        if (i + 1 >= nListCount) {
+            break; /* 0x66914..0x66918: the index is bumped before the compare, so a list of N
+                    * ids runs exactly N iterations */
+        }
+    }
+
+    return nListCount;
+}
+
 /* Armour granted purely by unit type, from Unit_ResetBattleState @ 0x498b0. */
 i32 Unit_ArmorForType(u16 nUnitType)
 {

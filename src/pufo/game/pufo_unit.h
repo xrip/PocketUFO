@@ -398,6 +398,12 @@ i32 Unit_RemoveAt(Soldier **apSoldiers, i32 nCount, i32 nIndex);
  * slot past the array and still shortens the list. The port returns the list untouched. */
 i32 Soldier_RemoveById(Soldier **apSoldiers, i32 nCount, i32 nId);
 
+/* Base_RemoveAllSoldiers @ 0x668e8. Run Soldier_RemoveById over the scratch id list the buy/sell
+ * screens keep at dword_160C90 -- a dword count at +0, then that many dword ids at +4 -- re-reading
+ * the count every iteration, and return that re-read count rather than the soldier count. The port
+ * takes the list as an input: its only writers are unported. */
+i32 Base_RemoveAllSoldiers(const i32 *anIdList, Soldier **apSoldiers, i32 nSoldierCount);
+
 /* Unit_ResetBattleState @ 0x498b0. Derives TU/HP/armour from auStat:
  *   auStat[0] -> uTu, auStat[1] -> uHp, auStat[9] -> uStunOrArmor */
 void Unit_ResetBattleState(Soldier *pUnit, u8 bFacing, u16 nUnitType,

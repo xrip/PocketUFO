@@ -98,8 +98,6 @@ typedef struct GeoscapeState {
 typedef struct GeoscapeHooks {
     /* StrategList_MaybeSpawnCraft_Process (0x7e420) (ProcessEvents side). */
     void (*pfnProcessEvents)(u8 bSpawn, void *pUser);
-    /* Smap_CanInterceptReach (0x7e074), NOT ported. */
-    bool (*pfnCanInterceptReach)(i32 nShipIdx, void *pUser);
     /* UiPanel_AppendLineWithSound @ 0x5a394. nMsg: 15 contact, 13 intercept
      * lost, 43 low supply, 10 radar contact. GameTime_Pause @ 0x5d6ac is NOT
      * part of the hook: 15, 13 and 10 pause the clock, 43 does not, so the
@@ -123,7 +121,9 @@ typedef struct GeoscapeHooks {
     i32 (*pfnCountEmptyFacilityCells)(i32 nBaseIdx, void *pUser);
     /* FundingScreen_OpenMonthly (0x5d160), NOT ported. */
     void (*pfnOpenMonthly)(void *pUser);
-    /* Base_FindIndexBySiteId (0x5a8d0), NOT ported; passed through to the detect pass. */
+    /* Base_FindIndexBySiteId (0x5a8d0) is a second copy of Base_FindIndexByTypeByte @ 0x6ac30 and
+     * the port keeps one implementation; this hook stays because the detect pass is called from
+     * unported screens that resolve the base list their own way. */
     i32 (*pfnFindBaseBySiteId)(i32 nSiteId, void *pUser);
     void *pUser;
 } GeoscapeHooks;
@@ -167,8 +167,14 @@ typedef struct GeoscapePanelFlags {
 bool Geoscape_SetPanelFlagA(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags);
 
-/* Base_FindIndexByTypeByte @ 0x6ac30. Linear search over the base array for the first
- * base whose type byte (BaseRec.bUnk4 @ +0x04) equals nType.
+/* Base_FindIndexByTypeByte @ 0x6ac30, and its second copy Base_FindIndexBySiteId @ 0x5a8d0.
+ * Linear search over the base array for the first base whose type byte (BaseRec.bUnk4 @ +0x04)
+ * equals nType.
+ *
+ * The two originals are the same search on the same field with the same -1, and they differ only
+ * in how carefully they bound the walk: 0x6AC30 returns -1 on an empty list and then loops with
+ * NO bound at all, while 0x5A8D0 reads the count through LDRSB from abFacilityGrid+0x618 and
+ * bounds its loop by it. One implementation covers both; see docs/parity/renames.tsv.
  *
  * With a base count of zero it returns -1 immediately (0x6ac50). Otherwise the loop has
  * NO bound at all: it walks forward until some entry happens to match, off the end of

@@ -1521,6 +1521,38 @@ static void TestCraftDisplayName(void)
           "and so does a missing TEXTS blob");
 }
 
+static void TestFindIndexById(void)
+{
+    Ship aShips[3];
+    Ship *apShips[3];
+
+    printf("Ship_FindIndexById @ 0x69ffc\n");
+
+    for (int i = 0; i < 3; ++i) {
+        memset(&aShips[i], 0, sizeof(aShips[i]));
+        aShips[i].bId = (u8)(4 + i);
+        apShips[i] = &aShips[i];
+    }
+
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 4), 0, "the first craft's id");
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 5), 1, "the middle one");
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 6), 2, "the last one");
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 7), -1, "an id nobody has answers -1");
+    CheckEqI32(Ship_FindIndexById(apShips, 1, 5), -1,
+               "the count bounds the walk, so a match past it is not found");
+
+    /* 0x6A018 branches straight to the -1 at 0x6A044 when the count is not positive. */
+    CheckEqI32(Ship_FindIndexById(apShips, 0, 4), -1, "a zero craft count answers -1");
+    CheckEqI32(Ship_FindIndexById(apShips, -1, 4), -1, "and so does a negative one");
+    CheckEqI32(Ship_FindIndexById(NULL, 3, 4), -1, "no array answers -1");
+
+    /* Deviation: 0x6A024 dereferences apCraft[i] with no NULL test. */
+    apShips[1] = NULL;
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 6), 2,
+               "a NULL slot is stepped over, where the original would fault");
+    CheckEqI32(Ship_FindIndexById(apShips, 3, 5), -1, "and the craft behind it is simply absent");
+}
+
 int main(void)
 {
     TestRangeRecover();
@@ -1539,6 +1571,7 @@ int main(void)
     TestTransferTacticalLoot();
     TestSpawnAtSlot();
     TestCraftDisplayName();
+    TestFindIndexById();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

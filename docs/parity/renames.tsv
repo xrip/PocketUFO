@@ -237,3 +237,5 @@ Soldier_CreateAndClassify	Unit_CreateAndClassify	the port names soldiers Unit_* 
 BasePlaneScreen_DrawStatLabelA	BasePlaneScreen_DrawStatLabel	the two panels are one body that differs only in which gate it opens; the panel index is an argument
 BasePlaneScreen_DrawStatLabelB	BasePlaneScreen_DrawStatLabel	merged
 Ship_AbortCourse	Ship_LaunchIntercept	it aborts nothing: it sends the craft out to a strateg item, the mirror of Ship_RetargetTravel; renamed in the IDB too
+Smap_CanInterceptReach	Smap_CraftRangeExhausted	it tests nothing about intercepting: it drains the craft's range budget and answers whether its distance from home exceeds what is left; renamed in the IDB too
+Base_FindIndexBySiteId	Base_FindIndexByTypeByte	merged: a second copy of the same search on BaseRec.bUnk4, differing only in how the loop is bounded

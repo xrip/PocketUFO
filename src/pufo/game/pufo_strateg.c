@@ -109,9 +109,10 @@ void StrategList_UpdateMotion(StrategList *pList, GeoscapeWorld *pWorld)
     }
 }
 
-/* Distance to a base with the x axis wrapped over the 1600-wide map:
+/* Distance to a base with the x axis wrapped over the 800-wide map (a delta of exactly 800
+ * wraps to zero, and the spawn range 20..780 is the playable width):
  * min(|bx - ux + 800|, |ux - bx + 800|, |ux - bx|), exactly as the original
- * computes v11 / v12 / v13 at 0x813d0. */
+ * computes v11 / v12 / v13 at 0x813d0. Smap_DistWrapped @ 0x7DF84 computes the same three. */
 static i32 WrappedDx(i32 nBaseX, i32 nUfoX)
 {
     i32 nDx = Abs32(nBaseX - nUfoX + 800);
@@ -440,6 +441,7 @@ static const i32 g_aCraftJitter[8] = { 0, 3, 3, 5, 5, 5, 4, 5 };
 #define STRATEG_TRACKA_SCALE 0.02
 #define STRATEG_FUEL_SPEED_SCALE (1.0 / 60.0)
 #define STRATEG_MAP_WRAP_X 800
+#define SMAP_DIST_SCALE 50.0   /* the _muld second operand at 0x7E014..0x7E018 in Smap_DistWrapped */
 
 i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 nY1,
                             i32 nFlag, i32 bA, i32 bB, i32 bC, i32 bCopyStart,
@@ -1584,4 +1586,67 @@ u8 Smap_GetOverlayAtMode(const SmapView *pView, const PadImage *const aOverlay[3
     }
 
     return Tilemap_GetAt(aOverlay[pView->nMode], nX - nOriginX, nY); /* 0x821D0, 0x82214 */
+}
+
+/* Smap_DistWrapped @ 0x7df80. The x leg reuses WrappedDx, which is the same min of three the
+ * original builds at 0x7DF84..0x7DFC4; only the y leg and the scaling are this function's own. */
+i32 Smap_DistWrapped(i32 nX1, i32 nY1, i32 nX2, i32 nY2)
+{
+    const i32 nDx = WrappedDx(nX2, nX1);            /* 0x7DF84..0x7DFC4 */
+    const i32 nDy = Abs32(nY1 - nY2);               /* 0x7DFC8..0x7DFD8 */
+
+    /* 0x7DFDC..0x7E038: two integer squares, each converted on its own through _itod and added
+     * through _addd, then sqrt, then the 50.0 in the _muld second operand, then _dtoi. */
+    return (i32)(sqrt((double)(nDx * nDx) + (double)(nDy * nDy)) * SMAP_DIST_SCALE);
+}
+
+/* The craft-class divisors behind the range factor. Each _muld second operand in the dispatch at
+ * 0x7E168..0x7E254 is exactly 1/N: 0x9CBD821E/0x3F0179EC is 1/30000 (class 0, 0x7E120),
+ * 0xEB1C432D/0x3EFA36E2 is 1/40000 (class 1, 0x7E23C), 0xD2F1A9FC/0x3EF0624D is 1/64000
+ * (class 2, 0x7E1C4), 0xC3ECE2A5/0x3F15D867 is 1/12000 (class 3, 0x7E188) and
+ * 0xD2F1A9FC/0x3F00624D is 1/32000 (class 4, 0x7E200). The factor the gate uses is uRangeMax/N. */
+static const i32 g_anCraftRangeDivisor[5] = { 30000, 40000, 64000, 12000, 32000 };
+
+bool Smap_CraftRangeExhausted(const SmapCraftRangeEnv *pEnv, i32 nShipIdx)
+{
+    if (pEnv == NULL || pEnv->pWorld == NULL || pEnv->pList == NULL ||
+        pEnv->pWorld->apCraft == NULL) {
+        return false;
+    }
+    if (nShipIdx < 0 || nShipIdx >= (i32)pEnv->pWorld->nShipCount ||
+        pEnv->pWorld->apCraft[nShipIdx] == NULL) {
+        return false; /* deviation: 0x7E0AC indexes apCraft with the caller's index, unchecked */
+    }
+    Ship *pShip = pEnv->pWorld->apCraft[nShipIdx];
+
+    const i32 nItemIdx = StrategList_FindByShipId(pEnv->pList, pEnv->pWorld, nShipIdx);
+    if (nItemIdx < 0 || nItemIdx >= pEnv->pList->nCount ||
+        pEnv->pList->apItems == NULL || pEnv->pList->apItems[nItemIdx] == NULL) {
+        return false; /* deviation: 0x7E094 runs PtrArray_Get with the -1 FindByShipId answered */
+    }
+    const StrategItem *pItem = pEnv->pList->apItems[nItemIdx];
+
+    if (pEnv->apBases == NULL || (i32)pShip->bHomeBase >= PUFO_FAC_BASE_COUNT ||
+        pEnv->apBases[pShip->bHomeBase] == NULL) {
+        return false; /* deviation: 0x7E0C0 indexes apBases with the raw u8 bHomeBase */
+    }
+    const BaseRec *pHome = pEnv->apBases[pShip->bHomeBase];
+
+    const i32 nDist = Smap_DistWrapped(pHome->nUnk8, pHome->nUnk12, pItem->nX, pItem->nY);
+
+    const i32 nClass = (i32)pShip->bCraftType;
+    if (nClass >= 5) {
+        return false; /* deviation: the multiplier pair is the stack residue at 0x7E160 */
+    }
+    const double dFactor = (double)pShip->uRangeMax / (double)g_anCraftRangeDivisor[nClass];
+
+    const i32 nBurn = (i32)pShip->uFuelCap / 60;    /* 0x7E0E4..0x7E0F4, _rt_sdiv */
+    const double dCost = (double)nBurn * dFactor;   /* 0x7E258..0x7E284, _itod then _muld */
+    if ((i32)pShip->uRangeRemain > (i32)dCost) {    /* 0x7E288..0x7E2A4, _dtoi then CMP/BLE */
+        pShip->uRangeRemain =
+            (u16)((i32)pShip->uRangeRemain - (i32)(u32)dCost); /* 0x7E2A8..0x7E2C4, _dtou, STRH */
+    }
+
+    /* 0x7E2C8..0x7E320: the distance is scaled and compared against the budget as it now stands. */
+    return (double)nDist * dFactor >= (double)pShip->uRangeRemain;
 }

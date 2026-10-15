@@ -167,6 +167,31 @@ void Ship_TickRangeRecover(Ship *pShip)
         pShip->uRangeRemain = pShip->uRangeMax;
 }
 
+/* Ship_FindIndexById @ 0x69ffc. The first craft whose Ship.bId (+0x01) equals nId.
+ *
+ * The count is read first and a non-positive one answers -1 straight away: 0x6A018 branches to
+ * the `MOV R0, #0xFFFFFFFF` at 0x6A044, which is also where the exhausted loop falls through.
+ * The match path at 0x6A050 returns the index through `MOV R3, R2, LSL #24` / `MOV R0, R3, ASR
+ * #24`, i.e. sign-extended from a byte -- all a byte count can produce.
+ *
+ * This is the plain half of Ship_FindIndexByStrategType @ 0x5a92c: that one reads the id out of
+ * a strateg item first, this one takes it as an argument and has no type or active gate.
+ *
+ * Deviation: 0x6A024 loads apCraft[i] and dereferences it with no NULL test. The port skips a
+ * NULL slot. */
+i32 Ship_FindIndexById(Ship *const *apCraft, i32 nCraftCount, i32 nId)
+{
+    if (apCraft == NULL || nCraftCount <= 0) {
+        return -1; /* 0x6A018 -> 0x6A044 */
+    }
+    for (i32 i = 0; i < nCraftCount; ++i) {
+        if (apCraft[i] != NULL && (i32)apCraft[i]->bId == nId) {
+            return i; /* 0x6A028 -> 0x6A050 */
+        }
+    }
+    return -1; /* 0x6A044 */
+}
+
 void Ship_TickRefuelAtBase(Ship *pShip)
 {
     if (pShip->bAtBase != 0) {
