@@ -272,9 +272,28 @@ static void TestNewGame(void)
     CheckEqI32((i32)pObj1->uPrice, 800, "object 1 price 800");
     CheckEqI32((i32)g_assets.apObjects[119]->uPrice, 5000000, "object 119 price 5000000");
     CheckEqI32((i32)pObj0->uPrice, (i32)0xAAAAAAAAu, "object 0 price untouched (loop starts at 1)");
-    Check(pObj0->szName[0] != '\0' && pObj0->szName[0] != 'X', "object 0 name from text record 1447");
-    Check(pObj147->szName[0] != '\0', "object 147 name from text record 1594");
-    CheckEqI32(pObj148->szName[0], 'X', "object 148 name untouched (148 copies only)");
+    CheckEqI32(pObj0->szName[0], 'X',
+               "object 0 name untouched: 0x86A64 loads apObjects[counter+1], so slot 0 is never written");
+    Check(pObj1->szName[0] != '\0' && pObj1->szName[0] != 'X', "object 1 name from text record 1447");
+    Check(pObj147->szName[0] != '\0', "object 147 name from text record 1593");
+    Check(pObj148->szName[0] != '\0' && pObj148->szName[0] != 'X',
+          "object 148 name from text record 1594, the last of the 148 copies");
+    /* The name is the record's first 36 bytes, and the copy lands on the name OBJECTS.DAT
+     * already carries there, so reading a slot back gives the shipped name for that slot. */
+    Check((i32)((char *)g_assets.apObjects[59]->szName - (char *)g_assets.apObjects[59]) == 0,
+          "szName is at record offset 0");
+    /* The whole mapping, checked against the loaded text table: slot j carries record
+     * 1446+j. The longest of the 148 names is 27 bytes, so none is cut by the 36-byte field.
+     * The names are the shipped Russian set (lang.dat TEXTS.DAT); record 1505 is "Sectoid
+     * corpse" and 1523 is "Sectoid soldier". */
+    i32 nNameOk = 0;
+    for (i = 1; i <= 148; ++i) {
+        const char *pWant = (const char *)g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * (1446 + i);
+        if (strcmp(g_assets.apObjects[i]->szName, pWant) == 0) {
+            ++nNameOk;
+        }
+    }
+    CheckEqI32(nNameOk, 148, "every slot 1..148 carries text record 1446+slot");
     CheckEqI32(pObj1->uFirePower, 110, "apObjects[1].uFirePower = 110");
     CheckEqI32(g_nUnk159DC4, 10, "0x159DC4 = 10");
 

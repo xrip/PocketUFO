@@ -50,8 +50,10 @@
  *      drag deltas, and runs Game_StartNew through the pfnStartNew hook.
  *  10. GameTime_Decode; per base Base_ClearFacilityGridRow into the site-state array;
  *      the initial object prices from dword_AA2C0 into ObjectRecFull.uPrice (slots
- *      1..nObjectCount-1); object names from text records 1447..1594 into slots 0..147
- *      (148 copies, not nObjectCount); apObjects[1].uFirePower = 110 (`STRH R3,[R0,#0xB6]`);
+ *      1..nObjectCount-1); object names, text records 1447..1594 into slots 1..148 (148
+ *      copies, not nObjectCount -- 0x86A64 loads apObjects[counter+1], so slot 0 keeps the
+ *      name OBJECTS.DAT carries at record+0x00 and slot j gets record 1446+j);
+ *      apObjects[1].uFirePower = 110 (`STRH R3,[R0,#0xB6]`);
  *      unk_159DC4 = 10; GameTime_Set5Sec; StartTimers_D.
  *  11. Builds the status line panel (unk_18641C): UiPanel_ctor(20), nStyle 13, nFont 16,
  *      the three SetBytes groups, nUnk7076 1, bFlag7073 1, pfnClick Geoscape_OnRadarListClick

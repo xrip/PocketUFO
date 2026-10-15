@@ -10829,3 +10829,55 @@ comments added at 0x6ad30 and at the twelve record globals. `docs/idb/functions.
 `inventory-grouped.tsv` carry the new function name.
 
 Coverage after this unit: 835/1103 functions (75.7%), 330328/598792 bytes (55.2%).
+
+The object name field, and the name loop that was one slot short (done)
+-----------------------------------------------------------------------
+
+`ObjectRecFull.szName` is at record offset 0x00 and is 36 bytes. The port had `gap_0[4]` plus
+`szName[32]`, which put the name four bytes late and four bytes short. Three independent proofs.
+
+1. The shipped OBJECTS.DAT record already carries the name at +0x00: main.dat has 149 records of
+   208 bytes and record 59 begins "Sectoid corpse", record 77 "Sectoid soldier", record 117
+   "SKYRANGER". The IDB's `ObjectRec` types the same span as `char gap_0[36]` -- it is the name
+   field, not padding.
+2. `Geoscape_InitUI` writes it at offset 0. 0x86A64 is `LDR R0,[R3,#0x10C]` with R3 =
+   0x1139B8 + counter*4, i.e. `apObjects[counter+1]` -- the price loop four instructions earlier
+   (0x86A08) uses `[R1,#0x108]` for `apObjects[i]`, so the +4 is deliberate -- and the copy that
+   follows is `STRB R2,[R0]` with no offset.
+3. The counter runs 0..147 (`dword_186B08`, `CMP R0,#0x94 / BLT loc_86A44` at 0x86A90) and the
+   text record is `1447 + counter` (0x86A50, `MOV R3,#0x5A0 / ORR R3,R3,#7`). With the
+   destination one slot ahead, slot j is named by text record 1446+j, slot 0 is never named and
+   keeps the name OBJECTS.DAT carries, and slot 148 is the last one written.
+
+Matching the shipped data settles the off-by-one both ways. In main.dat TEXTS.DAT (1721 records,
+200 bytes each behind a 2-byte marker) the name at record 1446+j equals the name the OBJECTS.DAT
+record j already carries, for every slot checked. The port reads lang.dat TEXTS.DAT (1650
+records) because that is the language table, and the same relation holds there: slot 59 gets
+record 1505 "Труп Сектоида", slot 77 record 1523 "Сектоид солдат", slot 117 record 1563
+"Рэйнджер", slot 1 record 1447 "Пистолет".
+
+What changed in the port:
+
+  - `ObjectRecFull`: `char szName[36]` at 0x00, replacing `gap_0[4] + szName[32]`.
+  - `Geoscape_InitUI @ 0x86A38`: the loop writes record 1447+counter into apObjects[counter+1].
+  - Every `ObjectSlot` label was one slot high, because the labels were read off the 1447+slot
+    mapping. The NUMBERS were always right -- they come from the original's own indexing, which
+    the IDB names Map_apObjectsN -- only the names were wrong. Slot 105 is Elerium-115 (not
+    "alien alloys"), 106 is alien alloys, 43 is the Heavy cannon [AP] clip (not [HE]), 68 is the
+    Silacoid corpse and 69 the Sectopod remains (not the other way round), 70/71/72 are the three
+    "operative corpse" slots with 73 male and 75 tank wreckage, 112 "Engineer" and 113
+    "Scientist" (which the IDB's Map_apObjects112/113 already confirm), 117..121 are the five
+    craft items SKYRANGER / INTERCEPTOR / FIRE STORM / LIGHTNING / AVENGER, and 122..124 the
+    three soldier-equip items Personal armour / Power suit / Fly suit.
+  - `Deploy_NameFromObject` (pufo_tactctl.c) and the tactical HUD item label (pufo_tacthud.c)
+    read the record's first bytes; both now read `szName` instead of a raw gap.
+
+Tests: `test_geoiinit` checks the whole mapping -- all 148 slots 1..148 carry text record
+1446+slot, read back out of the loaded table -- plus that slot 0 is untouched and that szName sits
+at record offset 0. `test_startnew` labels now name the items the slots really hold.
+
+IDB: comments added at 0x86A58 and 0x86A64 spelling out the counter range, the record formula and
+the apObjects[counter+1] destination, and at Map_apObjects11/31/34/56/105/112/113/121/122/123/124
+naming the shipped item at each slot.
+
+Coverage after this unit: 835/1103 functions (75.7%), 330328/598792 bytes (55.2%).

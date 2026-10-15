@@ -593,12 +593,13 @@ static void Deploy_ApplyHwpsPreset(Soldier *pUnit, i32 nObjectIdx)
     pUnit->bUnk248 = bUnk248;
 }
 
-/* A hardware soldier is named after the object it carries: the name is the ObjectRec's own bytes
- * at offset 0. The original copies until the NUL with no bound, and Soldier.szName is 40 bytes, so
- * an object name of 40 bytes or more runs off the end. Reproduced as-is. */
+/* A hardware soldier is named after the object it carries: the name is the ObjectRec's szName,
+ * which starts at record offset 0. The original copies until the NUL with no bound, and
+ * Soldier.szName is 40 bytes, so an object name of 40 bytes or more runs off the end.
+ * Reproduced as-is. */
 static void Deploy_NameFromObject(Soldier *pUnit, const ObjectRecFull *pObj)
 {
-    const u8 *pSrc = pObj->gap_0;
+    const char *pSrc = pObj->szName;
     char *pDst = pUnit->szName;
     u8 bByte;
 

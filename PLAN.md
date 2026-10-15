@@ -821,6 +821,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   1-byte global to `ObjectRec *`, and `docs/idb/functions.tsv` / `inventory-grouped.tsv` carry
   the renamed function.
 
+- [x] part 18, the object name field and the name loop: `ObjectRecFull.szName` moved to record
+  offset 0 as `char szName[36]`, and `Geoscape_InitUI`'s name loop now writes text record
+  `1447 + counter` into `apObjects[counter + 1]` (0x86A64 loads `[R3,#0x10C]` where the price
+  loop uses `[R1,#0x108]`), so slot j is named by record 1446+j and slot 0 keeps the name
+  OBJECTS.DAT carries at record+0x00 — 3 more checks, and every `ObjectSlot` enum label fixed
+  (the values were always right, the names were one slot high). `Deploy_NameFromObject` and the
+  tactical HUD item label, which both read the record's first bytes, now read `szName`. IDB
+  comments added at 0x86A58 / 0x86A64 and at the eleven `Map_apObjectsN` globals the port uses by
+  number, naming the shipped item at each slot.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -839,8 +849,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
 
 ## Separate issues, not folded into the porting steps
 
-- [ ] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
-  one slot short.** Found while verifying the alien race ids (part 17); it also explains the older
+- [x] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
+  one slot short — fixed in part 18.** Found while verifying the alien race ids (part 17); it also explains the older
   "names read short" observation. Three pieces of evidence. (1) The shipped OBJECTS.DAT records
   carry a readable name at record+0x00 — slot 59 is "Sectoid corpse", slot 77 "Sectoid soldier" —
   and the IDB's `ObjectRec` has `char gap_0[36]` exactly there. (2) `Geoscape_InitUI @ 0x86A64`
@@ -852,6 +862,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   "oid soldier" for "Sectoid soldier". The fix touches the `ObjectRecFull` layout, the
   `Geoscape_InitUI` loop, the `ObjectSlot` enum names (shifted by one from slot 67 up) and the
   tests that assert them, so it is its own step.
+  **Fixed in part 18.** `szName` is now `char szName[36]` at offset 0, the name loop writes
+  record `1447 + counter` into `apObjects[counter + 1]`, and every `ObjectSlot` name carries the
+  item that slot really holds (slot 105 is Elerium-115, not alien alloys; slot 43 is the [AP]
+  clip, not [HE]; slot 68 is the Silacoid corpse, not Sectopod remains; and so on). The values
+  are untouched — they came from the IDB's own `Map_apObjectsN` — only the labels were one slot
+  high. `test_geoiinit` now checks the whole mapping: all 148 slots 1..148 carry text record
+  1446+slot, read back out of the loaded table, and slot 0 is never written. The names are the
+  shipped Russian set from lang.dat TEXTS.DAT (slot 59 "Труп Сектоида", slot 77 "Сектоид солдат",
+  slot 117 "Рэйнджер"), which is the table the original actually reads.
 - [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
   `pufo_game` without `pufo_ui` only link because nothing pulls `pufo_strateg.obj` out of the
@@ -983,6 +1002,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the wrapped distance and the craft range gate (`Smap_DistWrapped`, `Smap_CraftRangeExhausted`, `Ship_FindIndexById`, `Base_RemoveAllSoldiers`) | 56/56 (Release) | 9293 | 823/1103 (74.6%) | 328948/598792 (54.9%) | 38 checked, 0 mismatched |
 | the panel scroll family, the role map and the stores commit (10 scroll handlers, `BuySell_RoleToItemId`, `BuySellScreen_ApplyQtyChanges`) | 56/56 (Release) | 9330 | 834/1103 (75.6%) | 330036/598792 (55.1%) | 38 checked, 0 mismatched |
 | the alien race ids (`BuySell_ItemIdToAlienRaceId`, IDB name fixed) | 56/56 (Release) | 9361 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
+| the object name field and the name loop (`ObjectRecFull.szName` at +0, `ObjectSlot` labels fixed) | 56/56 (Release) | 9364 | 835/1103 (75.7%) | 330328/598792 (55.2%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

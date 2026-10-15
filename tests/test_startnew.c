@@ -464,11 +464,15 @@ static void TestStartNew(void)
     Check(strcmp(aSiteRecs[0].abName, "new") == 0, "the base site record is named \"new\"");
 
     /* The four starter items land in the base's per-object column. */
-    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_CLIP]->auPerBaseVal[0], 1, "base stock: Heavy cannon [HE] clip");
-    CheckEqI32(g_assets.apObjects[OBJ_SECTOPOD_REMAINS]->auPerBaseVal[0], 20, "base stock: Sectopod remains");
-    CheckEqI32(g_assets.apObjects[OBJ_OPERATIVE_CORPSE]->auPerBaseVal[0], 15, "base stock: operative corpse");
-    CheckEqI32(g_assets.apObjects[OBJ_OPERATIVE_CORPSE_ALT]->auPerBaseVal[0], 10, "base stock: operative corpse (alt)");
-    CheckEqI32(g_assets.apObjects[OBJ_ALIEN_ALLOYS]->auPerBaseVal[0], 0,
+    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_AP_CLIP]->auPerBaseVal[0], 1,
+               "base stock: Heavy cannon [AP] clip (slot 43)");
+    CheckEqI32(g_assets.apObjects[OBJ_SILACOID_CORPSE]->auPerBaseVal[0], 20,
+               "base stock: Silacoid corpse (slot 68)");
+    CheckEqI32(g_assets.apObjects[OBJ_SECTOPOD_REMAINS]->auPerBaseVal[0], 15,
+               "base stock: Sectopod remains (slot 69)");
+    CheckEqI32(g_assets.apObjects[OBJ_OPERATIVE_CORPSE]->auPerBaseVal[0], 10,
+               "base stock: operative corpse (slot 70)");
+    CheckEqI32(g_assets.apObjects[OBJ_ELERIUM_115]->auPerBaseVal[0], 0,
                "Base_GrantStarterItems(bGrant 0) added nothing");
 
     /* The 17 facility records, named from the shipped text records. */
@@ -586,13 +590,13 @@ static void TestStartNew(void)
     }
 
     /* The cargo columns: slot 0 is the Skyranger, 1 and 2 the interceptors. */
-    CheckEqI32(g_assets.apObjects[OBJ_CHRYSSALID]->aItemQty[0], 10, "Skyranger cargo: Chryssalid x10");
-    CheckEqI32(g_assets.apObjects[OBJ_UFO_NAVIGATION]->aItemQty[0], 1, "Skyranger cargo: UFO navigation x1");
-    CheckEqI32(g_assets.apObjects[OBJ_SILACOID_CORPSE]->aItemQty[0], 3, "Skyranger cargo: Silacoid corpse x3");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_NAVIGATOR]->aItemQty[1], 1, "interceptor 1 cargo: Floater navigator");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_LEADER]->aItemQty[2], 1, "interceptor 2 cargo: Floater leader");
-    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_NAVIGATOR]->aItemQty[2], 1, "interceptor 2 cargo: Floater navigator");
-    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_CLIP]->aItemQty[0], 0, "the base stock item is not craft cargo");
+    CheckEqI32(g_assets.apObjects[OBJ_CYBERDISK]->aItemQty[0], 10, "Skyranger cargo: Cyberdisk x10 (slot 99)");
+    CheckEqI32(g_assets.apObjects[OBJ_ALIEN_SURGERY]->aItemQty[0], 1, "Skyranger cargo: Alien surgery x1 (slot 108)");
+    CheckEqI32(g_assets.apObjects[OBJ_CELATID_CORPSE]->aItemQty[0], 3, "Skyranger cargo: Celatid corpse x3 (slot 67)");
+    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_ENGINEER]->aItemQty[1], 1, "interceptor 1 cargo: Floater engineer (88)");
+    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_NAVIGATOR]->aItemQty[2], 1, "interceptor 2 cargo: Floater navigator (89)");
+    CheckEqI32(g_assets.apObjects[OBJ_FLOATER_ENGINEER]->aItemQty[2], 1, "interceptor 2 cargo: Floater engineer (88)");
+    CheckEqI32(g_assets.apObjects[OBJ_HEAVY_CANNON_AP_CLIP]->aItemQty[0], 0, "the base stock item is not craft cargo");
     {
         bool bAll = true;
         for (i = 0; i < (i32)g_assets.nObjectCount; ++i) {

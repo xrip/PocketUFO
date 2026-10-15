@@ -395,11 +395,15 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
         }
     }
 
-    /* 0x86A38: object names, text records 1447..1594 into slots 0..147 - a fixed 148
-     * copies, not nObjectCount (the last slot keeps whatever objects.dat carried). The
-     * port also stops at the object count (deviation; the shipped count is 149). */
-    for (i = 0; i < 148 && i < pEnv->nObjectCount; ++i) {
-        InitUI_CopyName(pEnv->apObjects[i]->szName, sizeof(pEnv->apObjects[i]->szName),
+    /* 0x86A38: object names. The counter runs 0..147 (dword_186B08, CMP #0x94 / BLT at
+     * 0x86A90), the text record is 1447 + counter (0x86A50), and the destination is
+     * apObjects[counter + 1]: 0x86A64 loads [R3,#0x10C] where the price loop four instructions
+     * earlier used [R1,#0x108]. So slot j is named by text record 1446+j, slot 0 is never named
+     * and keeps the name OBJECTS.DAT already carries at record+0x00, and slot 148 is the last
+     * one written. The port also stops at the object count (deviation; the shipped count is
+     * 149, so the shipped build writes all 148). */
+    for (i = 0; i < 148 && i + 1 < pEnv->nObjectCount; ++i) {
+        InitUI_CopyName(pEnv->apObjects[i + 1]->szName, sizeof(pEnv->apObjects[i + 1]->szName),
                         InitUI_TextRec(pEnv, 1447 + i));
     }
 
@@ -475,16 +479,16 @@ static const i32 g_aStartFacCells[][3] = {
 
 /* The Skyranger's cargo: object slot, quantity (0x94E60..0x94A5C). */
 static const i16 g_aType0Cargo[][2] = {
-    { OBJ_SILACOID_CORPSE,      3 }, { OBJ_OPERATIVE_CORPSE_ALT, 6 },
-    { OBJ_MALE_CORPSE,          2 }, { OBJ_FEMALE_CORPSE,        2 },
-    { OBJ_HOVERTANK_WRECKAGE,   1 }, { OBJ_SECTOID_LEADER,       4 },
-    { OBJ_SECTOID_COMMANDER,    4 }, { OBJ_SNAKEMAN_SOLDIER,     4 },
-    { OBJ_SNAKEMAN_ENGINEER,    4 }, { OBJ_ETHEREAL_LEADER,      4 },
-    { OBJ_CHRYSSALID,          10 }, { OBJ_RIPER,                2 },
-    { OBJ_SILACOID,             2 }, { OBJ_CELACID,              2 },
-    { OBJ_SECTOPOD,             2 }, { OBJ_ELERIUM_115,          2 },
-    { OBJ_ALIEN_ALLOYS,         2 }, { OBJ_UFO_POWER_SOURCE,     2 },
-    { OBJ_ALIEN_SURGERY,        1 }, { OBJ_UFO_NAVIGATION,       1 },
+    { OBJ_CELATID_CORPSE,       3 }, { OBJ_OPERATIVE_CORPSE,     6 },   /* 67, 70 */
+    { OBJ_OPERATIVE_CORPSE_B,   2 }, { OBJ_MALE_CORPSE,          2 },   /* 72, 73 */
+    { OBJ_TANK_WRECKAGE,        1 }, { OBJ_SECTOID_NAVIGATOR,    4 },   /* 75, 79 */
+    { OBJ_SECTOID_LEADER,       4 }, { OBJ_SECTOID_COMMANDER,    4 },   /* 80, 81 */
+    { OBJ_SNAKEMAN_SOLDIER,     4 }, { OBJ_ETHEREAL_ENGINEER,    4 },   /* 82, 96 */
+    { OBJ_CYBERDISK,           10 }, { OBJ_CHRYSSALID,           2 },   /* 99, 100 */
+    { OBJ_RIPER,                2 }, { OBJ_SILACOID,             2 },   /* 101, 102 */
+    { OBJ_CELACID,              2 }, { OBJ_SECTOPOD,             2 },   /* 103, 104 */
+    { OBJ_ELERIUM_115,          2 }, { OBJ_ALIEN_ALLOYS,         2 },   /* 105, 106 */
+    { OBJ_UFO_POWER_SOURCE,     2 }, { OBJ_ALIEN_SURGERY,        1 },   /* 107, 108 */
 };
 
 /* The byte table at 0xABED0, read as byte_ABED0[2 * nUnitType]: four u16 entries
@@ -622,10 +626,10 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     }
 
     /* 0x94E34..0x94E58: four starter items at base 0. */
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_HEAVY_CANNON_CLIP], 1);
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SECTOPOD_REMAINS], 20);
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE], 15);
-    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE_ALT], 10);
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_HEAVY_CANNON_AP_CLIP], 1);  /* 43 */
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SILACOID_CORPSE], 20);      /* 68 */
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_SECTOPOD_REMAINS], 15);     /* 69 */
+    BaseRec_AddItemQty(pEnv->apBases[0], pEnv->apObjects[OBJ_OPERATIVE_CORPSE], 10);     /* 70 */
 
     /* 0x94E5C..0x94E60: the counters the rosters start from. */
     *pEnv->pnSelectedBaseIdx = 0;
@@ -647,8 +651,8 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     pCraft = pEnv->apCraft[1];
     pCraft->uRangeRemain = pCraft->uRangeMax; /* +8 = +10 */
     pCraft->nFuel = (i16)pCraft->uFuelMax;    /* +24 = +22 */
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_LEADER], 1);
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_ENGINEER], 1);   /* 88 */
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);  /* 89 */
     pCraft->bWeaponL = 25;
     pCraft->bWeaponR = 26;
     pCraft->bAmmo25 = 10; /* +61 */
@@ -659,8 +663,8 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     pCraft = pEnv->apCraft[2];
     pCraft->uRangeRemain = pCraft->uRangeMax;
     pCraft->nFuel = (i16)pCraft->uFuelMax;
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);
-    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_LEADER], 1);
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_ENGINEER], 1);   /* 88 */
+    (void)InvSel_AddItemQty(pCraft, pEnv->apObjects[OBJ_FLOATER_NAVIGATOR], 1);  /* 89 */
     pCraft->bWeaponL = 25;
     pCraft->bWeaponR = 26;
     pCraft->bAmmo26 = 3;

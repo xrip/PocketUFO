@@ -1115,7 +1115,7 @@ static void D_Fixture(void)
 
     /* Hardware objects 31..35. A hardware soldier is named from the object's own first bytes. */
     for (i32 i = 31; i <= 35; ++i) {
-        s_aDObjRec[i].gap_0[0] = (u8)('A' + (i - 31));
+        s_aDObjRec[i].szName[0] = (char)('A' + (i - 31));
         s_aDObjRec[i].uSortKey = (u16)(100 + i);
     }
 

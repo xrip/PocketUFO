@@ -1650,7 +1650,7 @@ static void TestInventoryScreen(void)
     pufo_strcpy(unit.szName, "Hallow");
 
     memset(&obj, 0, sizeof(obj));
-    pufo_strcpy((char *)obj.gap_0, "RIF");
+    pufo_strcpy(obj.szName, "RIF");
     obj.nFootW = 2;
     obj.nFootH = 3;
     obj.bTwoHanded = 0;

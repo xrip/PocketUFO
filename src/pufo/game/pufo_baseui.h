@@ -1504,7 +1504,10 @@ i32 SoldierScreen_SelectListed(const SoldierSelectEnv *pEnv);
  * through UiPanel_GetLineAux, which yields 0 for a selection outside the panel where the original
  * reads anLineAux at whatever nUnk3032 holds. */
 #define PUFO_SOLDIER_EQUIP_ROWS   4
-#define PUFO_SOLDIER_EQUIP_OBJ_BASE 121 /* apObjects[121 + nUnitType]; 122..124 are the three items */
+#define PUFO_SOLDIER_EQUIP_OBJ_BASE 121 /* apObjects[121 + nUnitType]; 122 "Personal armour",
+                                         * 123 "Power suit", 124 "Fly suit" (IDB
+                                         * Map_apObjects122..124). 121 itself is "AVENGER", the
+                                         * fifth craft item, which nUnitType 0 never reaches. */
 
 typedef struct SoldierEquipEnv {
     Soldier *const *apSoldiers;      /* apSoldiers @ Map + 0x1198 */

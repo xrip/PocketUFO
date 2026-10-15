@@ -1388,7 +1388,7 @@ void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *p
         const TactItem  *pHit = pEnv->pHit->pHitItem;
         const ObjectRec *pObj = pHit->pObj;
 
-        pufo_strcpy(szText, (const char *)pObj->gap_0);
+        pufo_strcpy(szText, pObj->szName);
 
         if (pObj->bTwoHanded == 0 || pObj->bTwoHanded == 1) {
             if (pObj->nCategory != 3 && pObj->nCategory != 5 && pObj->bAmmoCap != 255) {
