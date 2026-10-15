@@ -1235,6 +1235,56 @@ void Smap_ConfirmSelectedAlt(const SmapSelectedEnv *pEnv)
     }
 }
 
+/* Smap_ConfirmCraftTarget @ 0x842ec. Replace the waypoint a craft is chasing with a new one at the
+ * pending click and send the craft to it. */
+void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL || pEnv->pStrategList == NULL) {
+        return;
+    }
+
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x842FC */
+    if (pEnv->pnSelectedShipIdx != NULL) {
+        *pEnv->pnSelectedShipIdx = nShipIdx; /* 0x84310 */
+    }
+
+    /* 0x84318..0x84374. The bIntercepting clear is INSIDE the type-5 branch: a craft chasing a real
+     * contact keeps its intercept flag here. */
+    const ShipRemovalEnv *pRem = pEnv->pShipEnv;
+    if (pRem != NULL && pRem->apCraft != NULL && pRem->pnShipCount != NULL &&
+        nShipIdx >= 0 && nShipIdx < (i32)*pRem->pnShipCount) {
+        Ship *pShip = pRem->apCraft[nShipIdx];
+        if (pShip != NULL && pShip->bIntercepting != 0) {
+            const StrategItem *pWaypoint =
+                (const StrategItem *)PtrArray_Get(pEnv->pStrategList, pShip->nStrategIdx);
+            if (pWaypoint != NULL && (i8)pWaypoint->nType == 5) { /* 0x84348 */
+                (void)StrategList_RemoveAt(pEnv->pStrategList, pRem->pWorld, pShip->nStrategIdx,
+                                           pRem->pnSpawnOnceFlag, pRem->pSpawnCtx);
+                pShip->bIntercepting = 0; /* 0x84374 */
+            }
+        }
+    }
+
+    /* 0x8437C..0x843C8: the new waypoint. nId -1 and bCraftClass 0 are what a type-5 item gets;
+     * StrategList_AddItem scales x and y out of the viewport's current zoom mode. */
+    if (pEnv->pnPickX != NULL && pEnv->pnPickY != NULL && pEnv->pView != NULL) {
+        (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnSeed, pEnv->pView->nMode,
+                                  5, 1, 0, *pEnv->pnPickX, *pEnv->pnPickY, -1, 1);
+    }
+
+    const i32 nStrategIdx = PtrArray_GetCount(pEnv->pStrategList) - 1; /* 0x843D0 */
+    const i32 nShipIdx2 = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x843E0, read a second time */
+    (void)Ship_LaunchIntercept(pEnv->pShipEnv, nShipIdx2, nStrategIdx); /* 0x843D8 */
+
+    UiLineList_Remove(pEnv->pLines, 0); /* 0x843E4 */
+    if (pEnv->pLines->nLineCount == 0 && pEnv->pTime != NULL) {
+        GameTime_Unpause(pEnv->pTime); /* 0x843EC */
+    }
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 0; /* 0x843F8 */
+    }
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])

@@ -5213,6 +5213,165 @@ static void TestSelectedAnswers(void)
     Smap_ConfirmSelectedAlt(NULL);
     Check(true, "both survive a null env and a null line list");
 }
+
+static void TestConfirmCraftTarget(void)
+{
+    static UiLineList lines;
+    static GameTime clock;
+    static SmapView view;
+    static PtrArray list;
+    static Ship ship;
+    static Ship *apShip[1];
+    static BaseRec base;
+    static BaseRec *apBase[1];
+    static Soldier *apSoldier[1];
+    static ObjectRecFull *apObj[1];
+    static u8 abHangar[64];
+    static i32 anAssigned[1];
+    static StrategSpawnCtx ctx;
+    static ShipRemovalEnv rem;
+    static GeoscapeWorld world;
+    static i32 nSeed, nPickX, nPickY, nShipIdx, nTotalSec;
+    static u8 bSel, bOnce, nShipCount;
+    static u16 nSoldierCount;
+    SmapConfirmTargetEnv env;
+    StrategItem *pOwn, *pWaypoint, *pNew;
+
+    printf("\nSmap_ConfirmCraftTarget @ 0x842ec\n");
+
+    /* Heap items: StrategList_RemoveAt frees what it removes, so static storage would be freed. */
+    PtrArray_ctor(&list);
+    pOwn = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pWaypoint = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pOwn->nType = 1;
+    pOwn->bActive = 0;
+    pOwn->nDisplayId = 22;
+    pOwn->nTimer = 777;
+    pOwn->nX = 40;
+    pOwn->nY = 60;
+    pWaypoint->nType = 5;
+    pWaypoint->nX = 300;
+    pWaypoint->nY = 400;
+    PtrArray_Add(&list, pOwn);
+    PtrArray_Add(&list, pWaypoint);
+
+    memset(&ship, 0, sizeof(ship));
+    ship.bId = 22;
+    ship.bHomeBase = 0;
+    apShip[0] = &ship;
+
+    memset(&base, 0, sizeof(base));
+    base.nUnk8 = 100;
+    base.nUnk12 = 200;
+    apBase[0] = &base;
+
+    nShipCount = 1;
+    nSoldierCount = 0;
+    bOnce = 0;
+    nTotalSec = 0;
+    nSeed = 0;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+    memset(&rem, 0, sizeof(rem));
+    rem.apCraft = apShip;
+    rem.pnShipCount = &nShipCount;
+    rem.apSoldiers = apSoldier;
+    rem.pnSoldierCount = &nSoldierCount;
+    rem.apObjects = apObj;
+    rem.nObjectCount = 0;
+    rem.pStrategList = &list;
+    memset(&world, 0, sizeof(world));
+    world.apCraft = apShip;
+    world.nShipCount = 1;
+    rem.pWorld = &world;
+    rem.pnSpawnOnceFlag = &bOnce;
+    rem.pSpawnCtx = &ctx;
+    rem.abHangarFlag = abHangar;
+    rem.nHangarFlagCap = 64;
+    rem.anAssignedShip = anAssigned;
+    rem.pnAssignedShipCount = &anAssigned[0];
+    rem.apBases = apBase;
+    rem.pnGameTotalSec = &nTotalSec;
+
+    memset(&view, 0, sizeof(view));
+    view.nMode = 0; /* zoom 0 does not scale a type-5 position */
+    nPickX = 700;
+    nPickY = 350;
+    nShipIdx = 99;
+    bSel = 1;
+    clock.bPaused = 1;
+
+    memset(&lines, 0, sizeof(lines));
+    lines.nLineCount = 1;
+    UiLineList_SetLine(&lines, 0, 11, 0, 0, 0, 0);
+
+    memset(&env, 0, sizeof(env));
+    env.pLines = &lines;
+    env.pnSelectedShipIdx = &nShipIdx;
+    env.pStrategList = &list;
+    env.pnSeed = &nSeed;
+    env.pView = &view;
+    env.pnPickX = &nPickX;
+    env.pnPickY = &nPickY;
+    env.pShipEnv = &rem;
+    env.pTime = &clock;
+    env.pbSelectionFlag = &bSel;
+
+    /* 1. Chasing a waypoint: it is removed, a new one is added, and the craft is sent to the new one. */
+    ship.bIntercepting = 1;
+    ship.nStrategIdx = 1; /* pWaypoint, nType 5 */
+    Smap_ConfirmCraftTarget(&env);
+    CheckEqI32(nShipIdx, 0, "the ship index from colour slot 0 is stored into 0x187054 (0x84310)");
+    CheckEqI32(list.nCount, 2, "the old waypoint is removed and a new one is appended");
+    Check(PtrArray_Get(&list, 0) == pOwn, "the craft's own entry is the one that survives");
+    pNew = (StrategItem *)PtrArray_Get(&list, 1);
+    /* The allocator hands back the block the removed waypoint just freed, so identity proves
+     * nothing; the coordinates do. */
+    Check(pNew != NULL, "index 1 holds a live item");
+    CheckEqI32(pNew->nType, 5, "  nType 5 (0x843A8)");
+    CheckEqI32(pNew->bActive, 1, "  bActive 1");
+    CheckEqI32(pNew->bCraftClass, 0, "  bCraftClass 0");
+    CheckEqI32(pNew->bVisible, 1, "  bVisible 1");
+    CheckEqI32(pNew->nX, 700, "  at the pending click x, unscaled at zoom 0");
+    CheckEqI32(pNew->nY, 350, "  and click y");
+    CheckEqI32(ship.nStrategIdx, 1, "the craft is launched at GetCount()-1 (0x843D0)");
+    CheckEqI32(ship.bIntercepting, 1, "and Ship_LaunchIntercept re-arms the intercept flag");
+    CheckEqI32(pOwn->nStartX, 40, "the leg starts at the craft's own entry position");
+    CheckEqI32(pOwn->nDestX, 700, "and heads for the new waypoint's click x, not the old one's 300");
+    CheckEqI32(lines.nLineCount, 0, "message line 0 is dropped (0x843E4)");
+    CheckEqI32(clock.bPaused, 0, "and with the list empty the clock is un-paused (0x843EC)");
+    CheckEqI32(bSel, 0, "and the selection flag is cleared (0x843F8)");
+
+    /* 2. Chasing a real contact (nType 1): nothing is removed, so the list only grows. */
+    ship.bIntercepting = 1;
+    ship.nStrategIdx = 0; /* pOwn, nType 1 */
+    lines.nLineCount = 2;
+    clock.bPaused = 1;
+    bSel = 1;
+    Smap_ConfirmCraftTarget(&env);
+    CheckEqI32(list.nCount, 3, "a non-waypoint target is left in place, so only the add happens");
+    Check(PtrArray_Get(&list, 0) == pOwn && PtrArray_Get(&list, 1) == pNew,
+          "  both earlier items are still there");
+    CheckEqI32(ship.nStrategIdx, 2, "  and the craft is launched at the new last index");
+    CheckEqI32(lines.nLineCount, 1, "one line dropped out of two");
+    CheckEqI32(clock.bPaused, 1, "  so the clock stays paused");
+
+    /* 3. Zoom 1 scales a type-5 position by 4/3, truncating toward zero. */
+    view.nMode = 1;
+    nPickX = 300;
+    nPickY = 150;
+    ship.bIntercepting = 0;
+    lines.nLineCount = 1;
+    Smap_ConfirmCraftTarget(&env);
+    pNew = (StrategItem *)PtrArray_Get(&list, list.nCount - 1);
+    CheckEqI32(pNew->nX, 399, "zoom 1 scales the click by 1.333 (300 becomes 399)");
+    CheckEqI32(pNew->nY, 199, "  in both axes");
+    CheckEqI32(ship.bIntercepting, 1, "a craft that was not intercepting is launched anyway");
+
+    PtrArray_DeleteAll(&list);
+    Smap_ConfirmCraftTarget(NULL);
+    Check(true, "a null env does nothing");
+}
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -5270,6 +5429,7 @@ int main(void)
     TestOpenSfxAndAltVariants();
     TestCancelTarget();
     TestSelectedAnswers();
+    TestConfirmCraftTarget();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -770,6 +770,13 @@ Order is by what unblocks what. Each item ends with gates + commit.
   renamed `nRadarRangeTarget` and `unk_15966C` renamed `nRadarRangeCur`. Open question recorded rather
   than asserted: which radar-draw function actually reads slot 22.
 
+- [x] part 14, `Smap_ConfirmCraftTarget (0x842ec)` — 26 more checks. Replace the waypoint a craft is
+  chasing with a fresh one at the pending click and launch the craft at it. The `bIntercepting` clear
+  sits inside the type-5 branch, so a craft chasing a real contact keeps the flag. The click pair
+  0x186414 / 0x186418 is 0x2C / 0x30 past the 36-byte viewport block and outside it, with one xref
+  each — recorded as inputs rather than invented as `SmapView` fields. `StrategList_RemoveAt` ignores
+  its first register argument, so the `MOV R0, R6` before that call is dead.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -915,6 +922,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the intercept launcher and the target dismiss (`Ship_LaunchIntercept`, `Smap_CancelTarget`) | 56/56 (Release) | 9180 | 814/1103 (73.8%) | 326944/598792 (54.6%) | 38 checked, 0 mismatched |
 | the two "keep the course" selection answers (`Smap_ConfirmSelected`, `Smap_ConfirmSelectedAlt`) | 56/56 (Release) | 9197 | 816/1103 (74.0%) | 327128/598792 (54.6%) | 38 checked, 0 mismatched |
 | the radar palette cycle and the range animation (`RadarScreen_CyclePalette`) | 56/56 (Release) | 9211 | 817/1103 (74.1%) | 327360/598792 (54.7%) | 38 checked, 0 mismatched |
+| the map-target confirm (`Smap_ConfirmCraftTarget`) | 56/56 (Release) | 9237 | 818/1103 (74.2%) | 327676/598792 (54.7%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

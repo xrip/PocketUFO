@@ -1019,6 +1019,47 @@ typedef struct SmapSelectedEnv {
 void Smap_ConfirmSelected(const SmapSelectedEnv *pEnv);      /* 0x845d8 */
 void Smap_ConfirmSelectedAlt(const SmapSelectedEnv *pEnv);   /* 0x853e4 */
 
+/* ------------------------------------------------- confirming a map target for a craft
+ *
+ * Evidence: Smap_ConfirmCraftTarget @ 0x842ec (316 B). Installed as a click handler by Geoscape_Draw.
+ *
+ * Four steps.
+ *
+ *   1. The ship index is colour SLOT 0 of message line 0, and it is stored into the selected-ship
+ *      dword 0x187054 (0x84310) before anything else uses it.
+ *   2. If the craft is intercepting AND the item it chases is nType 5 (a waypoint), that waypoint is
+ *      removed from the strateg list and bIntercepting is cleared (0x84374). A waypoint is one-shot,
+ *      so it is deleted rather than left pointing at a craft that no longer wants it. If the old
+ *      target was a real contact, or the craft was not intercepting, bIntercepting is NOT cleared --
+ *      the clear sits inside the type-5 branch, not after it.
+ *   3. A fresh waypoint is added: nType 5, bActive 1, bCraftClass 0, nId -1, bVisible 1, at the
+ *      pending click in 0x186414 / 0x186418. Those two dwords are 0x2C and 0x30 past the viewport
+ *      block at 0x1863E8 but they are outside its 36 bytes, and each has exactly one xref in the IDB
+ *      -- this function. Their writer is in the unported geoscape pointer path, so the port takes them
+ *      as inputs rather than guessing. StrategList_AddItem scales a type-5 position out of the current
+ *      zoom mode, so the viewport's nMode is passed too.
+ *   4. The new item's index is GetCount() - 1 (0x843D0), the ship index is read out of the message
+ *      line a SECOND time (0x843E0, after the removal has not yet happened but after the list
+ *      changed), and Ship_LaunchIntercept sends the craft to it. Then the usual tail: drop line 0,
+ *      unpause if the root line-list count is now zero, clear bMapSelectionFlag.
+ *
+ * StrategList_RemoveAt ignores its first register argument entirely (0x82AB0 loads the Map context
+ * itself), which is why the ARM's `MOV R0, R6` before that call is dead. */
+typedef struct SmapConfirmTargetEnv {
+    UiLineList           *pLines;             /* the root message list @ 0x158890 */
+    i32                  *pnSelectedShipIdx;  /* 0x187054 */
+    PtrArray             *pStrategList;       /* 0x1864F8 + 0x3C */
+    i32                  *pnSeed;             /* 0x18640C, StrategItem_ctor's seed counter */
+    const SmapView       *pView;              /* 0x1863E8; its nMode scales a type-5 position */
+    const i32            *pnPickX;            /* 0x186414, the pending click */
+    const i32            *pnPickY;            /* 0x186418 */
+    const ShipRemovalEnv *pShipEnv;           /* the removal and the launch */
+    GameTime             *pTime;
+    u8                   *pbSelectionFlag;    /* bMapSelectionFlag @ 0x159E84 */
+} SmapConfirmTargetEnv;
+
+void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv);
+
 /* ------------------------------------------------- the status-panel (radar list) click
  *
  * Evidence: Geoscape_OnRadarListClick @ 0x854c4, installed as the status panel's pfnClick by

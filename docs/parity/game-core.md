@@ -10584,3 +10584,33 @@ setting the range.
 
 **IDB updates.** Function comment on 0x5ed0c, line comments on 0x14CAD0, 0x15965C and 0x15966C, and
 the two renames.
+
+Confirming a map target for a craft (done)
+------------------------------------------
+
+**Evidence:** `Smap_ConfirmCraftTarget` @ 0x842ec (316 B). Ported in `src/pufo/game/pufo_baseui.c` on a
+`SmapConfirmTargetEnv`; tests in `TestConfirmCraftTarget`.
+
+**The waypoint clear sits inside the type-5 branch, not after it.** If the craft is intercepting and
+the item it chases is `nType 5`, that waypoint is removed and `bIntercepting` is cleared (0x84374). If
+the old target was a real contact, or the craft was not intercepting at all, the flag is left alone --
+the ARM's two early exits (`BEQ loc_8437C` on the flag, `BNE loc_8437C` on the type test) both land
+past the store.
+
+**0x186414 / 0x186418 are not viewport fields.** They are 0x2C and 0x30 past the 36-byte viewport block
+at 0x1863E8, so they fall outside it, and each has exactly one xref in the IDB: this function. Their
+writer is in the unported geoscape pointer path, so the port takes them as inputs and a line comment
+at 0x186414 says so rather than inventing a `SmapView` field.
+
+**The ship index is read out of the message line twice** (0x842FC and 0x843E0), with the strateg list
+add and `GetCount() - 1` in between. Nothing in between touches the message line, so the two reads
+agree -- but the second one is what the launch actually uses.
+
+**`StrategList_RemoveAt` ignores its first register argument.** 0x82AB0 loads the Map context
+`0x1139B8` itself and reads only R1, which is why the `MOV R0, R6` before the call is dead code.
+
+**Zoom scaling is visible in the added item.** `StrategList_AddItem`'s type-5 branch scales the click
+into level-0 world units by the current zoom mode: 300 at zoom 1 becomes 399, because the scale is the
+double 1.3333 and `dtoi` truncates toward zero.
+
+**IDB updates.** Function comment on 0x842ec, line comment on 0x186414.

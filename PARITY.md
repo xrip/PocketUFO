@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 817 / 1103 (74.1%) |
-| Bytes of original code cited | 327360 / 598792 (54.7%) |
+| Functions cited as evidence | 818 / 1103 (74.2%) |
+| Bytes of original code cited | 327676 / 598792 (54.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 9211 |
+| Test checks run | 9237 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -43,7 +43,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 75 | 85 | 16988 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 156 | 205 | 58056 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 157 | 205 | 58372 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 183 | 243 | 34616 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -570,7 +570,7 @@ is the module that answers to it.
 | `0x11000` | `PadImage_ctor` | 12 | `src/pufo/game/pufo_plane.c`, `src/pufo/render/pufo_render.c` (+1) |
 | `0x5a334` | `UiPanel_GetLineFlag` | 8 | `src/pufo/ui/pufo_linelist.h`, `src/pufo/ui/pufo_panel.h` |
 
-### `strat` (156 functions)
+### `strat` (157 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -610,6 +610,7 @@ is the module that answers to it.
 | `0x5db24` | `RadarScreen_RollWeaponHit` | 352 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x623bc` | `BaseFac_SetCellBuildState` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
 | `0x6a0e0` | `Base_ClearFacilityGridRow` | 336 | `src/pufo/game/pufo_geoscape.c`, `src/pufo/game/pufo_geoscape.h` |
+| `0x842ec` | `Smap_ConfirmCraftTarget` | 316 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x5a484` | `Ship_RetargetTravel` | 308 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x5e808` | `RadarScreen_SetCursorNE` | 308 | `src/pufo/game/pufo_geoscape.h` |
 | `0x5e93c` | `RadarScreen_SetCursorSW` | 308 | `src/pufo/game/pufo_geoscape.h` |
@@ -1155,7 +1156,7 @@ whose port work they belong to.
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x460d0` | `Font_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat` — 49 functions, 104400 bytes remaining
+### `strat` — 48 functions, 104084 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1195,7 +1196,6 @@ whose port work they belong to.
 | `0x84484` | `Smap_SelectMapTarget` | 340 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x84964` | `Smap_ResolveInterceptUI` | 340 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x79cb8` | `BasePlane_ResetDetailState` | 328 | not yet ported; scheduled with the `strat` subsystem work |
-| `0x842ec` | `Smap_ConfirmCraftTarget` | 316 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7fb98` | `Strateg_ConfirmInterceptTarget` | 280 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x7df80` | `Smap_DistWrapped` | 244 | not yet ported; scheduled with the `strat` subsystem work |
 | `0x69ffc` | `Ship_FindIndexById` | 96 | not yet ported; scheduled with the `strat` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1116 |
+| `test_baseui` | PASS | 1142 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |
