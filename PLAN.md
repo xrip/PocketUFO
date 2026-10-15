@@ -1194,6 +1194,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   IDB: the whole reading is a comment at `0x749a8`, and the count byte at `0x160C4C` is now a named
   `u8 nResearchEntryCount`.
 
+- [x] part 44, the research panels: `ResearchScreen_BuildPanels (0x733f4)`, 1600 bytes — 48 more checks,
+  and one finding worth the unit on its own.
+  **The progress percentage is computed two different ways in the same screen.** BuildPanels divides
+  first (`_rt_sdiv(wTotal, wProgress)` then `MUL R0,R3,#0x64` on the quotient at 0x73870), RefreshPanels
+  multiplies first (`MUL R1,R2,#0x64` at 0x73168, then the sdiv at 0x73184). A topic one quarter done
+  reads **0%** when the panels are built and **25%** after any refresh — which is exactly what the player
+  sees when the research screen updates under a running topic. Reproduced, in `bugs.tsv`, and the test
+  demonstrates it directly: the same panels, the same topic, "0%" from the build and "25%" from the
+  refresh.
+  **The topic's name lives at record +0x4 as a TEXTS index** (0x7373C `LDRH [R10,#4]`, `MUL` by 0xCD
+  against 0xB38D0) — the same u16 the weapon fire gate reads as a value. `ResearchTopicLive.wGate4` now
+  carries both meanings in its comment.
+  **The research screen's block IS the topic table.** `ppScreen` = 0x15EF08, so the pad sits in topic 0's
+  first four bytes, the four controls at 0x15EF08 + 0x1D48 = 0x160C50..0x160C5C, and
+  `pResearchTopicPanel` @ 0x160C68 is exactly one 34-byte record past the end of the 144-record table.
+  That is what the teardown's `aResearchTopics[220].abUnkF[1] + 4*i` addressing means (220*34 + 0x10 =
+  0x1D48).
+  The filter is `bActive`, not `bUnlocked` plus `abManufRowFlag` — research lists topics, manufacturing
+  lists items — and there is no object array in this function at all. Panels are constructed with the
+  full 144 rows and only their `nLineCount` is set to the row count; `nStyle` is 15, not the
+  manufacturing 13, and `bUnk7088` is 0x94, not 0x96. IDB: comments at 0x733f4, 0x7373C and 0x73870.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1438,6 +1460,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing draw click (`ManufScreen_Draw`, the seed rule, the dead hangar branch found) | 56/56 (Release) | 10264 | 863/1103 (78.2%) | 366572/598792 (61.2%) | 39 checked, 0 mismatched |
 | the manufacturing frame (`ManufScreen_DrawFrame`, the 0.7 price factor, the first real-surface pixel test) | 56/56 (Release) | 10332 | 864/1103 (78.3%) | 371972/598792 (62.1%) | 39 checked, 0 mismatched |
 | the research bring-up (`ResearchScreen_Init`, the four descriptors, the handlers-before-positions order) | 56/56 (Release) | 10386 | 865/1103 (78.4%) | 372564/598792 (62.2%) | 39 checked, 0 mismatched |
+| the research panels (`ResearchScreen_BuildPanels`, the divide-first percentage found, the topic table as the screen block) | 56/56 (Release) | 10434 | 866/1103 (78.5%) | 374164/598792 (62.5%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

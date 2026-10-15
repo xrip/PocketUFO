@@ -10329,10 +10329,172 @@ static void TestResearchInit(void)
     }
 }
 
+/* ---- ResearchScreen_BuildPanels @ 0x733f4 --------------------------------------------------
+ *
+ * The build/teardown pair, and the percentage that this function computes the other way round from
+ * ResearchScreen_RefreshPanels. The fixture makes that visible: one topic at one quarter done. */
+
+static u8 g_bResBuilt;
+static void *g_aResBuildRoot[5];
+static UiControl g_aResBuildCtl[4];
+static PadImage g_aResBuildPad[4];
+static UiPanel *g_pResPanelA, *g_pResPanelB, *g_pResPanelC;
+static u16 g_aResColB[144 * 8];
+static char g_aResText[8 * PUFO_TEXT_REC_STRIDE];
+static ResearchTopicLive g_aResTopicB[144];
+static u8 g_bResCount;
+static i8 g_nResBase;
+
+static void ResStubPanelClick(void) { }
+
+static bool ResLineIs(const UiPanel *pPanel, i32 nRow, const char *pszWant)
+{
+    const char *psz = (pPanel != NULL) ? UiPanel_GetLineText(pPanel, nRow) : NULL;
+    return psz != NULL && strcmp(psz, pszWant) == 0;
+}
+
+static void TestResearchBuildPanels(void)
+{
+    ResearchBuildEnv env;
+    i32 i;
+
+    printf("the research screen's panels\n");
+
+    g_bResBuilt = 0;
+    g_bResCount = 8;
+    g_nResBase = 1;
+    memset(g_aResBuildRoot, 0, sizeof(g_aResBuildRoot));
+    memset(g_aResBuildCtl, 0, sizeof(g_aResBuildCtl));
+    memset(g_aResBuildPad, 0, sizeof(g_aResBuildPad));
+    memset(g_aResColB, 0, sizeof(g_aResColB));
+    memset(g_aResText, 0, sizeof(g_aResText));
+    memset(g_aResTopicB, 0, sizeof(g_aResTopicB));
+    g_pResPanelA = g_pResPanelB = g_pResPanelC = NULL;
+
+    for (i = 0; i < 4; ++i) {
+        PutStr(g_aResText + PUFO_TEXT_REC_STRIDE * (i + 1), (i == 0) ? "TOPIC1"
+                       : (i == 1) ? "TOPIC2" : (i == 2) ? "TOPIC3" : "TOPIC4");
+        g_aResBuildCtl[i].apPads[0] = &g_aResBuildPad[i];
+    }
+
+    /* Topics 1, 3, 4 and 6 are on the list. Topic 1 is one quarter done, topic 4 is double done,
+     * topic 6 is exactly done, topic 3 has no progress. */
+    g_aResTopicB[1].bActive = 1; g_aResTopicB[1].wGate4 = 1;
+    g_aResTopicB[1].wTotal = 4;  g_aResTopicB[1].wProgress = 1;
+    g_aResTopicB[3].bActive = 1; g_aResTopicB[3].wGate4 = 2;
+    g_aResTopicB[4].bActive = 1; g_aResTopicB[4].wGate4 = 3;
+    g_aResTopicB[4].wTotal = 1;  g_aResTopicB[4].wProgress = 2;
+    g_aResTopicB[6].bActive = 1; g_aResTopicB[6].wGate4 = 4;
+    g_aResTopicB[6].wTotal = 3;  g_aResTopicB[6].wProgress = 3;
+
+    g_aResColB[144 + 1] = 12;
+    g_aResColB[144 + 4] = 7;
+    g_aResColB[144 + 6] = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.pbPanelsBuilt = &g_bResBuilt;
+    env.ppRoot = g_aResBuildRoot;
+    for (i = 0; i < 4; ++i) {
+        env.apCtl[i] = &g_aResBuildCtl[i];
+    }
+    env.ppPanelTopic = &g_pResPanelA;
+    env.ppPanelB = &g_pResPanelB;
+    env.ppPanelC = &g_pResPanelC;
+    env.aTopics = g_aResTopicB;
+    env.pbEntryCount = &g_bResCount;
+    env.apResearchCols = g_aResColB;
+    env.pnSelectedBaseIdx = &g_nResBase;
+    env.pTextRecs = g_aResText;
+    env.pfnPanelClick = ResStubPanelClick;
+
+    ResearchScreen_BuildPanels(&env);
+
+    CheckEqI32(g_bResBuilt, 1, "the build raises the panels-built byte (0x73410)");
+    CheckEqI32(g_aResTopicB[0].bActive, 1, "and forces topic 0 onto the list (0x7341C)");
+    Check(g_pResPanelA != NULL && g_pResPanelB != NULL && g_pResPanelC != NULL,
+          "the three panels are allocated");
+    if (g_pResPanelA == NULL || g_pResPanelB == NULL || g_pResPanelC == NULL) {
+        return;
+    }
+
+    CheckEqI32(g_pResPanelA->nStyle, 15, "panel A's style is 15 rows, not the manufacturing 13");
+    CheckEqI32(g_pResPanelA->nFont, 16, "and its font is 16");
+    CheckEqI32(g_pResPanelA->nPosX, 10, "panel A starts at x 10");
+    CheckEqI32(g_pResPanelA->nViewW, 230, "230 wide, the whole topic column");
+    CheckEqI32(g_pResPanelA->nUnk7052, 5, "with its inner origin at 5");
+    CheckEqI32(g_pResPanelA->nPosY, 70, "both at y 70");
+    CheckEqI32(g_pResPanelA->bFlag7073, 1, "panel A carries flag 7073");
+    CheckEqI32(g_pResPanelA->bUnk7088, 0x94, "and byte 7088 is 0x94, not the manufacturing 0x96");
+    Check(g_pResPanelA->pfnClick == ResStubPanelClick,
+          "panel A's click handler is the one that caches the row cursor");
+    Check(g_pResPanelA->gap_0[0] == 0xB4 && g_pResPanelA->gap_0[1] == 0xB4
+              && g_pResPanelA->gap_0[2] == 0xB4,
+          "style bytes 0..2 are B4 B4 B4");
+    Check(g_pResPanelA->gap_0[3] == 0x32 && g_pResPanelA->gap_0[4] == 0x32
+              && g_pResPanelA->gap_0[5] == 0xFA,
+          "bytes 3..5 are 32 32 FA, only on panel A");
+    Check(g_pResPanelA->gap_0[6] == 0xF0 && g_pResPanelA->gap_0[9] == 0x14,
+          "bytes 6..11 are F0 F0 F0 14 14 14 on all three");
+    Check(g_pResPanelB->gap_0[3] == 0 && g_pResPanelC->gap_0[5] == 0,
+          "panels B and C get no bytes 3..5");
+
+    CheckEqI32(g_pResPanelB->nPosX, 197, "panel B, the quantity column, sits at x 197");
+    CheckEqI32(g_pResPanelB->nViewW, 30, "30 wide");
+    CheckEqI32(g_pResPanelB->nUnk7052, 175, "inner origin 175");
+    CheckEqI32(g_pResPanelB->nUnk7076, 2, "right-aligned");
+    CheckEqI32(g_pResPanelC->nPosX, 233, "panel C, the progress column, at x 233");
+    CheckEqI32(g_pResPanelC->nUnk7052, 205, "inner origin 205");
+    CheckEqI32(g_pResPanelC->nUnk7076, 2, "also right-aligned");
+
+    CheckEqI32(g_pResPanelA->nLineCount, 4, "four active topics make four rows");
+    CheckEqI32(g_pResPanelB->nLineCount, 4, "and all three panels end with that count");
+    CheckEqI32(g_pResPanelC->nLineCount, 4, "including panel C");
+    Check(ResLineIs(g_pResPanelA, 0, "TOPIC1"), "the name comes from TEXTS[topic + 4] (0x7373C)");
+    Check(ResLineIs(g_pResPanelA, 3, "TOPIC4"), "the fourth row is the fourth active topic");
+    CheckEqI32(g_pResPanelA->anLineAux[0], 1, "the aux column carries the topic number, not the row");
+    CheckEqI32(g_pResPanelA->anLineAux[3], 6, "so row 3 is topic 6");
+    Check(ResLineIs(g_pResPanelB, 0, "12"), "panel B shows the allocation of topic 1");
+    Check(ResLineIs(g_pResPanelB, 1, ""), "a zero allocation gets the empty string (0x7380C)");
+    Check(ResLineIs(g_pResPanelB, 2, "7"), "topic 4 shows its 7");
+    Check(ResLineIs(g_pResPanelB, 3, "1"), "and topic 6 its 1");
+
+    /* The percentage, and the way it differs from the refresh pass. */
+    Check(ResLineIs(g_pResPanelC, 0, "0%"),
+          "one quarter done reads 0% here: 100 * (1 / 4), the divide comes first (0x73870)");
+    Check(ResLineIs(g_pResPanelC, 1, ""), "no progress gets the empty string");
+    Check(ResLineIs(g_pResPanelC, 2, "200%"), "double done reads 200%, not clamped");
+    Check(ResLineIs(g_pResPanelC, 3, "100%"), "exactly done reads 100%");
+
+    (void)ResearchScreen_RefreshPanels(g_aResTopicB, g_bResCount, g_aResColB + 144,
+                                       g_pResPanelA, g_pResPanelB, g_pResPanelC);
+    Check(ResLineIs(g_pResPanelC, 0, "25%"),
+          "the same topic on the same data reads 25% from RefreshPanels: (100 * 1) / 4 (0x73168)");
+    Check(ResLineIs(g_pResPanelC, 2, "200%"), "the two agree only where the division is exact");
+
+    /* The teardown. */
+    g_aResBuildRoot[0] = calloc(1, sizeof(PadImage));
+    ResearchScreen_BuildPanels(&env);
+    CheckEqI32(g_bResBuilt, 0, "the second call tears the panels down (0x7394C)");
+    Check(g_pResPanelA == NULL && g_pResPanelB == NULL && g_pResPanelC == NULL,
+          "the three panel slots are cleared");
+    Check(g_aResBuildRoot[0] == NULL, "the screen pad is released through the root slot");
+    Check(g_aResBuildCtl[0].apPads[0] == NULL && g_aResBuildCtl[3].apPads[0] == NULL,
+          "and the four controls' pads are released (0x73A10)");
+
+    /* And the flag really drives both directions. */
+    ResearchScreen_BuildPanels(&env);
+    CheckEqI32(g_bResBuilt, 1, "a third call builds again");
+    Check(g_pResPanelA != NULL && g_pResPanelA->nLineCount == 4, "with the same four rows");
+    ResearchScreen_BuildPanels(&env);
+    CheckEqI32(g_bResBuilt, 0, "and tears down once more");
+
+    ResearchScreen_BuildPanels(NULL);
+    CheckEqI32(g_bResBuilt, 0, "a null environment changes nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
-
     TestScratch();
     TestGeoscapeScreens();
     TestUfopaediaCache();
@@ -10366,6 +10528,7 @@ int main(void)
     TestManufDraw();
     TestManufDrawFrame();
     TestResearchInit();
+    TestResearchBuildPanels();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

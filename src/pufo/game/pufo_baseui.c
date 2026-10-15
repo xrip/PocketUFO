@@ -7557,3 +7557,162 @@ void ResearchScreen_Init(ResearchInitEnv *pEnv)
                                            pEnv->pPanelProgress);
     }
 }
+
+/* ResearchScreen_BuildPanels @ 0x733f4. The header block has the build/teardown split, the topic+0x4
+ * name index, and the percentage this function computes the other way round from RefreshPanels. */
+void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
+{
+    UiPanel **apSlot[3];
+    UiPanel *apFree[3];
+    PadImage *pPad;
+    i32 nRows = 0;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbPanelsBuilt == NULL) {
+        return;
+    }
+
+    apSlot[0] = pEnv->ppPanelTopic;
+    apSlot[1] = pEnv->ppPanelB;
+    apSlot[2] = pEnv->ppPanelC;
+
+    if (*pEnv->pbPanelsBuilt != 0) {
+        /* The teardown, 0x73944..0x73A28. The three nLineCount stores come FIRST, before anything is
+         * released -- the original is preparing them for a reader that no longer exists. */
+        *pEnv->pbPanelsBuilt = 0; /* 0x7394C */
+        for (i = 0; i < 3; ++i) {
+            if (apSlot[i] != NULL && *apSlot[i] != NULL) {
+                (*apSlot[i])->nLineCount = PUFO_RESEARCH_TOPIC_COUNT; /* 0x73964, 0x73974, 0x73980 */
+            }
+        }
+        pPad = (pEnv->ppRoot != NULL) ? (PadImage *)pEnv->ppRoot[0] : NULL;
+        if (pPad != NULL) {
+            PadImage_FreeData(pPad); /* 0x73994 */
+            free(pPad);              /* 0x7399C */
+            pEnv->ppRoot[0] = NULL;
+        }
+        for (i = 0; i < 3; ++i) {
+            apFree[i] = (apSlot[i] != NULL) ? *apSlot[i] : NULL;
+        }
+        for (i = 0; i < 3; ++i) { /* A, B, C, the order 0x739A4 / 0x739C0 / 0x739DC walks */
+            if (apFree[i] != NULL) {
+                UiPanel_FreeLines(apFree[i]);
+                free(apFree[i]);
+            }
+            if (apSlot[i] != NULL) {
+                *apSlot[i] = NULL;
+            }
+        }
+        for (i = 0; i < 4; ++i) {
+            if (pEnv->apCtl[i] != NULL) {
+                UiControl_FreePads(pEnv->apCtl[i]); /* 0x73A10 */
+            }
+            /* 0x73A18 also operator delete's the control itself; the port's four are caller-owned. */
+        }
+        return;
+    }
+
+    *pEnv->pbPanelsBuilt = 1; /* 0x73410 */
+    if (pEnv->aTopics != NULL) {
+        pEnv->aTopics[0].bActive = 1; /* 0x7341C: topic 0 is always on the list */
+    }
+
+    const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    const bool bBaseOk = (nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT);
+
+    /* The three panels, 0x73428..0x73700. Constructed with the full 144 rows (UiPanel_ctor(144) at
+     * 0x73438), not with the row count -- the count is only written into nLineCount at the end. */
+    UiPanel *pA = BuySellNewPanel(pEnv->ppPanelTopic, PUFO_RESEARCH_TOPIC_COUNT);
+    if (pA != NULL) {
+        pA->nStyle = PUFO_RESEARCH_PANEL_STYLE;  /* 0x73464 */
+        pA->nFont = PUFO_RESEARCH_PANEL_FONT;    /* 0x73478 */
+        pA->pfnClick = pEnv->pfnPanelClick;      /* 0x7348C, PlaySample7_SetFlags_Cache0xBD8 */
+        pA->nPosX = 10;                          /* 0x734A0 */
+        pA->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x734B4 */
+        pA->nUnk7052 = 5;                        /* 0x734C8 */
+        pA->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x734DC */
+        pA->nViewW = 230;                        /* 0x734E8 */
+        UiPanel_SetBytes0to2(pA, 0xB4, 0xB4, 0xB4);                        /* 0x734F4 */
+        UiPanel_SetBytes6to11(pA, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x73518 */
+        pA->bFlag7073 = 1;                                                 /* 0x7352C */
+        UiPanel_SetBytes3to5(pA, 0x32, 0x32, 0xFA);                        /* 0x73540 */
+        pA->bUnk7088 = (u8)0x94;                                           /* 0x73554 */
+    }
+    UiPanel *pB = BuySellNewPanel(pEnv->ppPanelB, PUFO_RESEARCH_TOPIC_COUNT);
+    if (pB != NULL) {
+        pB->nStyle = PUFO_RESEARCH_PANEL_STYLE;  /* 0x73594 */
+        pB->nFont = PUFO_RESEARCH_PANEL_FONT;    /* 0x735A8 */
+        pB->nPosX = 197;                         /* 0x735BC */
+        pB->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x735CC */
+        pB->nUnk7052 = 175;                      /* 0x735D4 */
+        pB->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x735E0 */
+        pB->nViewW = 30;                         /* 0x735E8 */
+        UiPanel_SetBytes0to2(pB, 0xB4, 0xB4, 0xB4);                        /* 0x735F4 */
+        UiPanel_SetBytes6to11(pB, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x73614 */
+        pB->nUnk7076 = 2;                                                  /* 0x73628, right-aligned */
+    }
+    UiPanel *pC = BuySellNewPanel(pEnv->ppPanelC, PUFO_RESEARCH_TOPIC_COUNT);
+    if (pC != NULL) {
+        pC->nStyle = PUFO_RESEARCH_PANEL_STYLE;  /* 0x73668 */
+        pC->nFont = PUFO_RESEARCH_PANEL_FONT;    /* 0x73678 */
+        pC->nPosX = 233;                         /* 0x7368C */
+        pC->nPosY = PUFO_RESEARCH_PANEL_POSY;    /* 0x7369C */
+        pC->nUnk7052 = 205;                      /* 0x736A4 */
+        pC->nUnk7056 = PUFO_RESEARCH_PANEL_POSY; /* 0x736B0 */
+        pC->nViewW = 30;                         /* 0x736B8 */
+        UiPanel_SetBytes0to2(pC, 0xB4, 0xB4, 0xB4);                        /* 0x736C4 */
+        UiPanel_SetBytes6to11(pC, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);     /* 0x736E4 */
+        pC->nUnk7076 = 2;                                                  /* 0x736FC */
+    }
+
+    /* Fill pass, 0x73700..0x73914: topics 1..count-1, bActive == 1 only, and the row counter advances
+     * only for an active topic. Deviation: the original bounds only by the count byte (a byte, so up
+     * to 255 of the 144 topics) and writes apLines[row] with no test; the port stops at the table. */
+    if (pA != NULL && pEnv->aTopics != NULL) {
+        const i32 nWalk = (nEntries < PUFO_RESEARCH_TOPIC_COUNT) ? nEntries : PUFO_RESEARCH_TOPIC_COUNT;
+        for (i32 nTopic = 1; nTopic < nWalk; ++nTopic) {
+            if (pEnv->aTopics[nTopic].bActive != 1) { /* 0x73734 LDRB [R10,#0xC], CMP #1 */
+                continue;
+            }
+            /* 0x7373C: the topic's name is TEXTS[topic + 4], the same u16 the weapon fire gate reads. */
+            const char *pszName = (pEnv->pTextRecs != NULL)
+                                      ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * pEnv->aTopics[nTopic].wGate4
+                                      : "";
+            (void)UiPanel_SetLineText(pA, nRows, pszName);       /* 0x7375C..0x73774 */
+            UiPanel_SetLineAux(pA, nRows, nTopic);               /* 0x7378C */
+
+            const u16 wQty = (pEnv->apResearchCols != NULL && bBaseOk)
+                                 ? pEnv->apResearchCols[PUFO_RESEARCH_TOPIC_COUNT * nBase + nTopic]
+                                 : 0u;
+            if (wQty != 0u) {
+                char szNum[16];
+                (void)snprintf(szNum, sizeof(szNum), "%u", (unsigned)wQty); /* j_itoa, 0x737CC */
+                (void)UiPanel_SetLineText(pB, nRows, szNum);
+            } else {
+                (void)UiPanel_SetLineText(pB, nRows, ""); /* 0x7380C, the empty string at 0x10DA38 */
+            }
+
+            const u16 wProgress = pEnv->aTopics[nTopic].wProgress;
+            const u16 wTotal = pEnv->aTopics[nTopic].wTotal;
+            if (wProgress != 0u && wTotal != 0u) {
+                /* ORIGINAL BUG (0x73870), reproduced: this divides before it multiplies -- _rt_sdiv on
+                 * wProgress and wTotal, then MUL R0,R3,#0x64 on the quotient -- while
+                 * ResearchScreen_RefreshPanels at 0x73168 multiplies first and divides after. A topic
+                 * one quarter done reads 0% from here and 25% from there, on the same data. */
+                char szNum[16];
+                (void)snprintf(szNum, sizeof(szNum), "%d%%",
+                               100 * ((i32)wProgress / (i32)wTotal));
+                (void)UiPanel_SetLineText(pC, nRows, szNum);
+            } else {
+                (void)UiPanel_SetLineText(pC, nRows, ""); /* 0x738C4 */
+            }
+            ++nRows; /* 0x738F0 */
+        }
+    }
+
+    /* 0x73924, 0x73934, 0x7393C: all three panels end with the row count. */
+    if (pA != NULL) { pA->nLineCount = nRows; }
+    if (pB != NULL) { pB->nLineCount = nRows; }
+    if (pC != NULL) { pC->nLineCount = nRows; }
+}

@@ -1394,7 +1394,10 @@ void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird
  * unguarded dereference. */
 typedef struct ResearchTopicLive {
     u8  abUnk0[4];
-    u16 wGate4;   /* +0x4: the weapon fire gate reads it (pufo_combat.h, FireGate evidence) */
+    u16 wGate4;   /* +0x4: two meanings on one u16. The weapon fire gate reads it as a value
+                  * (pufo_combat.h, FireGate evidence), and ResearchScreen_BuildPanels reads it as the
+                  * topic's TEXTS.DAT name record index -- 0x7373C LDRH [R10,#4], 0x73744 MUL by 0xCD
+                  * against 0xB38D0. Neither use is a mistake; the name records only the first. */
     u16 wUnk6;
     u16 wTotal;   /* +0x8: the progress divisor, 0x73174 LDRH [R9,#8] */
     u16 wProgress;/* +0xA: the progress numerator, 0x73160 LDRH [R9,#0xA] */
@@ -1820,7 +1823,7 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseH
  *      ManufScreen_ConfirmAndClose. Neither is allocated here.
  *   6. 0x7123C..0x71260: UiControl_Setup(slot[5089+i], 0, 0, &g_aManufCtlDesc[i]). Both bases are zero,
  *      so every control lands exactly on its descriptor offset.
- *   7. 0x71268: tail call ManufScreen_BuildPanels (0x6e9e8, not ported).
+ *   7. 0x71268: tail call ManufScreen_BuildPanels @ 0x6e9e8.
  *
  * The six handlers are installed before the Setup pass. Ui_InitTransfer does it the other way
  * round; nothing reads a control in between, so the difference is not observable, and the port
@@ -1852,7 +1855,7 @@ typedef struct ManufInitEnv {
     void (*pfnDecQty)(void);        /* ManufScreen_DecSelectedQty @ 0x6e09c */
     void (*pfnIncEngineers)(void);  /* ManufScreen_IncEngineers @ 0x6e13c */
     void (*pfnDecEngineers)(void);  /* ManufScreen_DecEngineers @ 0x6e330 */
-    void (*pfnBuildPanels)(void);   /* ManufScreen_BuildPanels (0x6e9e8), not ported */
+    void (*pfnBuildPanels)(void);   /* ManufScreen_BuildPanels @ 0x6e9e8 */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
     void *pPadUser;
@@ -3754,7 +3757,7 @@ typedef struct ResearchInitEnv {
     void (*pfnIncQty)(void);        /* ResearchScreen_IncSelectedQty @ 0x72ea0 */
     void (*pfnDecQty)(void);        /* ResearchScreen_DecSelectedQty @ 0x72f70 */
     void (*pfnRebuildTopicList)(void); /* ResearchScreen_RebuildTopicList (0x74270), not ported */
-    void (*pfnBuildPanels)(void);   /* ResearchScreen_BuildPanels (0x733f4), not ported */
+    void (*pfnBuildPanels)(void);   /* ResearchScreen_BuildPanels @ 0x733f4 */
     ResearchTopicLive *aTopics;     /* aResearchTopics @ 0x15EF08 */
     const u8 *pbEntryCount;         /* nResearchEntryCount @ 0x160C4C, read with LDRB */
     u16 *apResearchCols;            /* auResearchCol @ 0x16022C, 144 u16 per base */
@@ -3768,5 +3771,74 @@ typedef struct ResearchInitEnv {
 } ResearchInitEnv;
 
 void ResearchScreen_Init(ResearchInitEnv *pEnv);
+
+/* ResearchScreen_BuildPanels @ 0x733f4 (1600 B): build the research screen's three panels, or tear
+ * them down, depending on byte_160C7C. The twin of ManufScreen_BuildPanels, with three differences.
+ *
+ * The filter is bActive, not bUnlocked plus abManufRowFlag. Manufacturing lists the items an unlocked
+ * topic can produce; research lists the topics themselves, and `bActive` is already the "this topic is
+ * on the screen list" flag that ResearchScreen_RebuildTopicList maintains. There is no object array
+ * here at all: the row label is TEXTS[aTopics[nTopic].wGate4] read straight out of the text table.
+ *
+ * **The u16 at topic +0x4 is the topic's name record index.** 0x7373C `LDRH R3,[R10,#4]`, 0x73744
+ * `MOV R2,#0xCD` / `MUL R2,R3,R2`, 0x73748 `ADD R1,R2,R0` with R0 = 0xB38D0 -- aTextRecs + 205 *
+ * topic[+4]. That is the same field the weapon fire gate reads (pufo_combat.h), so +0x4 carries two
+ * meanings and neither is a mistake: the record is read as a u16 by the fire gate and as a TEXTS index
+ * here.
+ *
+ * **The percentage is computed the other way round from ResearchScreen_RefreshPanels.** Here it is
+ * 100 * (wProgress / wTotal) -- 0x73834 LDRH R1,[R10,#0xA] as the dividend, 0x73850 LDRH R0,[R10,#8]
+ * as the divisor, _rt_sdiv, then 0x73870 MUL R0,R3,#0x64 on the QUOTIENT. RefreshPanels at 0x73168
+ * multiplies FIRST (MUL R1,R2,#0x64) and divides after. A topic at one quarter done therefore reads
+ * "0%" from this function and "25%" from that one. Reproduced, recorded in docs/parity/bugs.tsv.
+ *
+ * **The screen block is the topic table.** ResearchScreen_Init's ppScreen is 0x15EF08, so the screen's
+ * pad object lives in aResearchTopics[0]'s first four bytes, the four controls at 0x15EF08 + 0x1D48 =
+ * 0x160C50..0x160C5C, and pResearchTopicPanel @ 0x160C68 is exactly one 34-byte record past the end of
+ * the 144-record table. That is why the teardown reaches them as `*(void **)aResearchTopics[0].abUnk0`
+ * and as `&aResearchTopics[220].abUnkF[1] + 4*i` -- 220 * 34 + 0x10 = 0x1D48 -- and not through named
+ * globals.
+ *
+ * Build path, 0x73410..0x73940: byte_160C7C = 1; aResearchTopics[0].bActive = 1 (topic 0 is always on
+ * the list); three UiPanel_ctor(144) allocations. All three share nStyle 15, nFont 16, nPosY 70,
+ * nUnk7056 70, nViewW and the two style byte groups (bytes 0..2 = B4 B4 B4, bytes 6..11 = F0 F0 F0
+ * 14 14 14); only panel A gets bytes 3..5 = 32 32 FA, bFlag7073, bUnk7088 = 0x94 and the click handler
+ * PlaySample7_SetFlags_Cache0xBD8 (0x73328), which is what caches the row cursor into 0x160C74 that
+ * ResearchScreen_IncSelectedQty / DecSelectedQty read. Panel A is x 10 width 230 with nUnk7052 5;
+ * panel B x 197 width 30 with nUnk7052 175; panel C x 233 width 30 with nUnk7052 205 -- B and C are the
+ * two narrow numeric columns, both right-aligned (nUnk7076 = 2).
+ *
+ * Fill pass, 0x73700..0x73914: topics 1..nResearchEntryCount-1, bActive == 1 only. Panel A gets the
+ * name and anLineAux[row] = the topic number; panel B gets itoa(auResearchCol[144*base + topic]) or the
+ * empty string at 0x10DA38; panel C gets the percentage plus "%" or the empty string. The row counter
+ * advances only for an active topic, and all three panels end with nLineCount = that counter.
+ *
+ * Teardown, 0x73944..0x73A28: byte_160C7C = 0; all three nLineCount = 144; the pad's data freed and the
+ * pad deleted; the three panels freed in A, B, C order (UiPanel_FreeLines then delete each); then the
+ * four controls' pads freed and the controls deleted.
+ *
+ * Deviations: the original divides by wTotal with no test, so a topic with wProgress != 0 and wTotal == 0
+ * divides by zero -- the port skips the store, the same policy as RefreshPanels. The original also
+ * derefs every allocation and the panel line buffers with no test. */
+#define PUFO_RESEARCH_PANEL_STYLE 15  /* 0x73464 / 0x73594 / 0x73668: all three panels */
+#define PUFO_RESEARCH_PANEL_FONT  16  /* 0x73478 / 0x735A8 / 0x73678 */
+#define PUFO_RESEARCH_PANEL_POSY  70  /* 0x734B4 / 0x735CC / 0x7369C, and nUnk7056 at the same value */
+
+typedef struct ResearchBuildEnv {
+    u8   *pbPanelsBuilt;              /* byte_160C7C */
+    void **ppRoot;                    /* 0x15EF08, the topic table itself: [0] the pad, [1..4] the controls */
+    UiControl *apCtl[4];              /* the four controls, pads freed by the teardown */
+    UiPanel **ppPanelTopic;           /* pResearchTopicPanel @ 0x160C68 */
+    UiPanel **ppPanelB;               /* pResearchPanelB @ 0x15EEFC */
+    UiPanel **ppPanelC;               /* pResearchPanelC @ 0x15EF00 */
+    ResearchTopicLive *aTopics;       /* aResearchTopics @ 0x15EF08 */
+    const u8 *pbEntryCount;           /* nResearchEntryCount @ 0x160C4C */
+    const u16 *apResearchCols;        /* auResearchCol @ 0x16022C, 144 u16 per base */
+    const i8 *pnSelectedBaseIdx;      /* nSelectedBaseIdx @ 0x159D81 */
+    const char *pTextRecs;            /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    void (*pfnPanelClick)(void);      /* PlaySample7_SetFlags_Cache0xBD8 @ 0x73328 */
+} ResearchBuildEnv;
+
+void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

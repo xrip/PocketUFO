@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `4d9d3bb`. This document is committed together with
-`ResearchScreen_Init` (0x749a8), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+Date: 2026-10-15. HEAD before this edit: `3daaeaf`. This document is committed together with
+`ResearchScreen_BuildPanels` (0x733f4), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
 the reading it came from is written up in `docs/parity/game-core.md` under
-`## ResearchScreen_Init (0x749a8, 592 B)`.
+`## ResearchScreen_BuildPanels (0x733f4, 1600 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -78,13 +78,16 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10386**. Coverage as of the latest commit: **865 / 1103
-functions (78.4%)**, **372564 / 598792 bytes (62.2%)**. The last unit was `ResearchScreen_Init`
-(0x749a8): the manufacturing family is complete, and the research family's bring-up is ported too. The
-previous unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port tested by drawing it for real: exact
-565 values at the coordinates the original names. An earlier unit, `ManufScreen_Draw` (0x6e3e0), turned up a
-dead branch -- 0x6E52C tests panel A's style dword at offset 0
-against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there. The §2 numbers
+Test checks run across the 56 suites: **10434**. Coverage as of the latest commit: **866 / 1103
+functions (78.5%)**, **374164 / 598792 bytes (62.5%)**. The last unit was `ResearchScreen_BuildPanels`
+(0x733f4): the research family's bring-up and panel build are ported; its topic rebuild (0x74270) and its
+drawer (0x73a34) are what is left of it. An earlier unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port tested by drawing it for real: exact
+565 values at the coordinates the original names. Two original inconsistencies are now on the record:
+`ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
+against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there; and
+`ResearchScreen_BuildPanels` computes the progress percentage as `100 * (wProgress / wTotal)` while
+`ResearchScreen_RefreshPanels` computes `(100 * wProgress) / wTotal`, so a quarter-done topic reads 0% and
+then 25% on the same data. The §2 numbers
 below are the snapshot taken
 when this file was regenerated and are older than that line.
 

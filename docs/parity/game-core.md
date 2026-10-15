@@ -12341,3 +12341,61 @@ their descriptor positions (205/18, 205/38, 10/163, 10/183); the walk is checked
 with four active -- the inactive allocations are cleared, the active ones survive, entry 8 past the
 count byte survives, and base 0's column is untouched; the two bottom controls are checked for handler
 and position; and three hooks record the state when they ran, which is what pins the order.
+
+## ResearchScreen_BuildPanels (0x733f4, 1600 B)
+
+Ported as `ResearchBuildEnv` + `ResearchScreen_BuildPanels` in `src/pufo/game/pufo_baseui.c`. Build or
+teardown of the research screen's three panels, chosen by `byte_160C7C`. The twin of
+`ManufScreen_BuildPanels`, with three differences.
+
+**The filter is `bActive`, not `bUnlocked` plus `abManufRowFlag`.** Manufacturing lists the items an
+unlocked topic can produce; research lists the topics themselves, and `bActive` is already the
+"this topic is on the screen list" flag that `ResearchScreen_RebuildTopicList` maintains. There is no
+object array here at all.
+
+**The topic's name is `TEXTS[topic + 4]`.** 0x7373C `LDRH R3,[R10,#4]`, 0x73744 `MOV R2,#0xCD` /
+`MUL R2,R3,R2`, 0x73748 `ADD R1,R2,R0` with R0 = 0xB38D0. The u16 at record +0x4 therefore carries two
+meanings: the weapon fire gate reads it as a value, this reads it as a TEXTS.DAT record index. Neither
+use is a mistake, and the port's `wGate4` name now documents both.
+
+**The percentage is computed the other way round from `ResearchScreen_RefreshPanels`.** Here it is
+`100 * (wProgress / wTotal)`: 0x73834 `LDRH R1,[R10,#0xA]` as the dividend, 0x73850 `LDRH R0,[R10,#8]`
+as the divisor, `_rt_sdiv`, then 0x73870 `MUL R0,R3,#0x64` on the **quotient**. RefreshPanels at 0x73168
+multiplies **first** (`MUL R1,R2,#0x64`) and divides after. A topic one quarter done reads "0%" from
+this function and "25%" from that one. Recorded in `docs/parity/bugs.tsv` and reproduced; the test shows
+both numbers from the same topic and the same data.
+
+**The screen block is the topic table.** `ResearchScreen_Init`'s `ppScreen` is 0x15EF08, so the screen's
+pad lives in `aResearchTopics[0]`'s first four bytes, the four controls at 0x15EF08 + 0x1D48 =
+0x160C50..0x160C5C, and `pResearchTopicPanel` @ 0x160C68 is exactly one 34-byte record past the end of
+the 144-record table. That is why the teardown reaches them as `*(void **)aResearchTopics[0].abUnk0` and
+as `&aResearchTopics[220].abUnkF[1] + 4*i` (220 * 34 + 0x10 = 0x1D48).
+
+Build path: flag set; `aResearchTopics[0].bActive = 1` (topic 0 is always on the list); three
+`UiPanel_ctor(144)` -- constructed with the full 144 rows, not the row count, which is only written into
+`nLineCount` at the end. All three share nStyle 15 (not the manufacturing 13), nFont 16, nPosY 70,
+nUnk7056 70, bytes 0..2 = B4 B4 B4 and bytes 6..11 = F0 F0 F0 14 14 14. Panel A is x 10 width 230 with
+nUnk7052 5, bytes 3..5 = 32 32 FA, bFlag7073, bUnk7088 = 0x94 (the manufacturing panels use 0x96) and the
+click handler `PlaySample7_SetFlags_Cache0xBD8`, which is what caches the row cursor into 0x160C74 that
+the two quantity buttons read. Panel B is x 197 width 30 with nUnk7052 175 and nUnk7076 = 2; panel C is
+x 233 width 30 with nUnk7052 205 and nUnk7076 = 2 -- the two narrow right-aligned numeric columns.
+
+Fill pass: topics 1..count-1 with `bActive == 1`. Panel A gets the name and `anLineAux[row]` = the topic
+number; panel B gets `itoa(auResearchCol[144*base + topic])` or the empty string at 0x10DA38; panel C
+gets the percentage plus "%" or the empty string. The row counter advances only for an active topic, and
+all three panels end with `nLineCount` = that counter.
+
+Teardown: flag cleared; the three `nLineCount = 144` stores come **first**, before anything is released;
+the pad's data freed and the pad deleted; the three panels freed in A, B, C order; then the four
+controls' pads freed and the controls deleted.
+
+Deviations: the original bounds the walk only by the count byte (a byte, so up to 255 of the 144 topics)
+and writes `apLines[row]` with no test; the port stops at the table. It also skips the progress store when
+`wTotal` is zero, where the original would divide by zero -- the same policy as `RefreshPanels`.
+
+Test: `TestResearchBuildPanels` in `tests/test_baseui.c`, 48 checks. Every panel coordinate, width, style
+byte group and the 0x94/0x96 difference is asserted; the four rows, their names, their aux topic numbers
+and their quantity strings are asserted; the percentage is asserted as "0%" for a quarter-done topic and
+then the same panels are refreshed and the same row asserted as "25%", which is the divergence itself;
+and the teardown is asserted through the panel slots, the root pad slot and the four controls' pad
+pointers going to null, followed by a rebuild that proves the flag drives both directions.
