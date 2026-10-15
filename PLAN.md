@@ -993,6 +993,25 @@ Order is by what unblocks what. Each item ends with gates + commit.
   second pass hands the byte the first pass just refilled back to the base as well — reproduced.
   IDB: comment at 0x68f2c.
 
+- [x] part 33, the mission-recovery pass: `Smap_GrantSiteRecovery (0x98b50)`, 2572 bytes — 57 more
+  checks. The hourly tick's delivery (`Geoscape_TickHourly @ 0x5d1bc`): age every site countdown,
+  deliver the sites that reach zero, drop them. The delivery is the whole mission payoff — cargo into
+  the base's stores behind the `Base_CalcStoresCapacity` gate (message 42, or 41 when the site has no
+  loot at all), alien cargo behind a containment gate whose counter is **function-wide and counts
+  non-zero slots rather than quantity** (0x98B70, so a later site sees what earlier sites already put
+  into containment), and an over-cap alien is *moved* to its corpse slot with the source zeroed — the
+  17-arm remap at 0x98DBC..0x98F98, now named end to end (Sectoid soldier 77 → Sectoid corpse 59, the
+  medics 144..148 onto their own race's corpse, 114 Ethereal navigator → 63). Then recovered soldiers
+  through `Unit_CreateAndClassify`, recovered craft re-homed with a hangar scan, new craft built from
+  slots 117..121 (the five slots carry the shipped craft names and the type map {0,3,4,1,2} lands each
+  name on its own `CraftType`), roster soldiers re-assigned by roster id, and the three needed-flag
+  passes. Two scan quirks found against `Ship_SpawnAtSlot`'s own: here the layer2 test follows the row
+  (`fac + 79 + row + col`, not `79 + col`) and a craft type outside 0..4 *continues* the scan instead
+  of returning unstamped. And the compaction's shift copies one record more than the live tail — that
+  extra record (the unused slot after the last live site) is what ends the loop. 26 object slots named
+  from main.dat TEXTS.DAT (the eight corpses 59..66, the race-block bounds 77/81/86/87/91/94/98, the
+  craft-count slots 117..121, the medics 144..148). IDB: comment at 0x98b50.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1200,6 +1219,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the transfer screen's frame (`TransferScreen_Draw`, the destination overlay) | 56/56 (Release) | 9871 | 853/1103 (77.3%) | 355376/598792 (59.3%) | 38 checked, 0 mismatched |
 | the base-tab strip drawer (`Base_DrawFacilityIconStrip`, the dead overlay-close branch found) | 56/56 (Release) | 9904 | 854/1103 (77.4%) | 356168/598792 (59.5%) | 38 checked, 0 mismatched |
 | the craft re-arm pass (`Base_DistributeRecoveredItems`, the five weapon mounts named) | 56/56 (Release) | 9930 | 855/1103 (77.5%) | 357384/598792 (59.7%) | 38 checked, 0 mismatched |
+| the mission-recovery pass (`Smap_GrantSiteRecovery`, the function-wide containment counter, the corpse remap) | 56/56 (Release) | 9987 | 856/1103 (77.6%) | 359956/598792 (60.1%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

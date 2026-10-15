@@ -11709,3 +11709,80 @@ BaseRec.bSlot. The port keeps both, as the original has them. The port also boun
 the eight real base records; the original bounds nothing.
 
 IDB: comment at 0x68f2c.
+
+## Smap_GrantSiteRecovery (0x98b50, 2572 B) -- mission recovery at the hourly tick
+
+Ported as `Smap_GrantSiteRecovery` in `src/pufo/game/pufo_baseui.c` with the env
+`SmapGrantRecoveryEnv` in `pufo_baseui.h`, tested by `TestGrantSiteRecovery` in `tests/test_baseui.c`.
+
+One caller: `Geoscape_TickHourly @ 0x5d1bc`. Three phases over the site array at 0x162030.
+
+Phase 1 (0x98B68..0x98BAC): every site with a positive bFlag0 is decremented -- the countdown phase 2
+tests for zero.
+
+Phase 2 (0x98BB0..0x994C4), per site with bFlag0 == 0:
+
+  Base lookup (0x98BE0..0x98C24): the first apBases[i] whose BaseRec.bUnk4 @ +4 equals site->bFlag1,
+  scanned while i < nBaseCount (read signed from abFacilityGrid + 0x618). A miss leaves i AT nBaseCount.
+
+  Stores gate (0x98C30..0x98CF0): with bHasLoot set, Base_CalcStorageUsed + Base_CountItemQtyAcrossBases
+  (scan ON, this site as the gate site) is tested against Base_CalcStoresCapacity; over budget writes 1
+  into byte_1870C8 as a dword and posts message 42. With bHasLoot clear the shortfall is written
+  unconditionally and message 41 is posted. The item loop runs either way.
+
+  Item loop (0x98D00..0x99058) over every object slot. The compare chain at 0x98D0C..0x98D34 picks out
+  the alien slots -- 77..104, 114 and 144..148 -- and gives them one extra test: each alien slot with a
+  non-zero quantity raises a running counter (var_4, set up at 0x98B70) held against
+  Base_CalcAlienContainmentCap for the base. The counter counts SLOTS, not quantity, and it is not reset
+  per site: it accumulates over the whole call, so a later site sees what earlier sites already put into
+  containment. Over cap: shortfall dword set, message 36, and the quantity MOVES to that alien's corpse
+  slot with the source slot zeroed -- the two-switch remap at 0x98DBC..0x98F98:
+
+      77..81 -> 59 Sectoid corpse     82..86 -> 60 Snakeman corpse
+      87..91 -> 61 Floater corpse     92..94 -> 62 Muton corpse
+      95..98 -> 63 Ethereal corpse    99 -> 64 Cyberdisk remains
+      100 -> 65 Chryssalid corpse     101 -> 66 Reaper corpse
+      102 -> 68 Silacoid corpse       103 -> 67 Celatid corpse
+      104 -> 69 Sectopod remains      114 -> 63 Ethereal corpse
+      144 -> 60 (the default)   145 -> 62   146 -> 61   147 -> 63   148 -> 59 (the > 145 fall-through)
+
+  Everything else, and every alien that still fits, takes the normal path (0x98FC8..0x99040): the
+  quantity is added to the base except for slots 117..121 (the new-craft counts, delivered as craft
+  below), Transfer_WriteErrorDump (0x996e4, not ported) fires when the base's column for the slot
+  passes 60000 (0xEA60 at 0x9902C), and Base_DistributeRecoveredItems runs after EVERY slot -- empty
+  slot or not.
+
+  Recovery (0x9905C..0x99468): uRecoveredSoldiers calls of Soldier_CreateAndClassify with the base
+  index as nKind; per recovered craft the Ship whose bId matches anCraftIds[i]; for i in 0..4,
+  auItemQty[117 + i] new craft of type {0, 3, 4, 1, 2} through Ship_SpawnAtSlot, homed at the same
+  base (the five slots carry the shipped craft names and the map lands each name on its own
+  CraftType); and per anSoldierIds[i] with i < bRecoveredSoldierAssign the roster soldier whose
+  nUnk440 matches gets nKind = the base index.
+
+  Hangar scan (0x99130..0x99314): facType cell == 11, layer2 tested at fac + 79 + row + col,
+  buildDays cell == 0, rows and columns 0..4 of a 6 by 6 grid. On a match bHangarX = col + 1 (+0x12),
+  bHangarY = row + 1 (+0x13), and the glyph 33 + bCraftType is stamped at fac + 79 + 6*row + col. Two
+  differences from Ship_SpawnAtSlot's own scan (0x2cb14): the layer2 test here follows the row
+  (79 + row + col, not 79 + col), and a craft type outside 0..4 CONTINUES the scan (0x991F8) instead
+  of returning unstamped.
+
+  Mark and refresh (0x99484..0x994A0): bFlag0 = -1, then Base_UpdateAlienContainmentNeeded,
+  Base_UpdateLivingQuartersNeeded and Base_UpdateStoresNeeded with the budgets the original computes
+  inside them: Base_CountAmmoItems; Base_CalcOccupiedSpace + Base_CountOutboundTransferSpace with
+  a2 = -1; Base_CalcStorageUsed + Base_CountItemQtyAcrossBases with a2 = -1.
+
+Phase 3 (0x994C8..0x99558): sites marked -1 are dropped by shifting the tail down one slot and
+nSmapSiteCount is stored back. The shift copies 371*(count - index) WORDS -- one record MORE than the
+records still inside the count -- and that extra record (the unused slot after the last live site,
+which carries bFlag0 == 0) is what ends the inner loop; the index is re-tested after every shift, so a
+run of delivered sites collapses in one pass. With a full 200-site array the extra read lands on
+nSmapSiteCount itself at 0x186410, whose low byte 200 is not -1, so the loop still terminates.
+
+Deviations: the original bounds nothing in this function. A base-lookup miss continues through
+apBases[nBaseCount] -- the port marks the site delivered and skips the delivery. A craft- or
+soldier-lookup miss writes through apCraft[Map_nCraftCount] / apSoldiers[nSoldierCount] -- the port
+skips that craft or soldier. The compaction's inner loop is guarded only by the copy, not by the
+count -- the port bounds it too. The original returns the viewport-mode global at 0x1863E8 (register
+residue, no caller reads it); the port returns void.
+
+IDB: comment at 0x98b50.

@@ -2166,6 +2166,93 @@ typedef struct SmapConfirmTargetEnv {
 
 void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv);
 
+/* ------------------------------------------------- delivering what a mission brought back
+ *
+ * Evidence: Smap_GrantSiteRecovery @ 0x98b50 (2572 B), one caller, Geoscape_TickHourly @ 0x5d1bc.
+ * It runs on the hourly geoscape tick over the smap site array: it ages every site's countdown
+ * byte, delivers the sites whose countdown reached zero, and then removes the delivered records.
+ *
+ * Phase 1 (0x98B68..0x98BAC): every site with bFlag0 > 0 gets bFlag0 - 1. That is the countdown
+ * phase 2 tests for zero, so a site is delivered a fixed number of ticks after it is queued.
+ *
+ * Phase 2 (0x98BB0..0x994C4), per site with bFlag0 == 0:
+ *
+ *   1. 0x98BE0..0x98C24: find the base whose BaseRec.bUnk4 (@ +4) equals site->bFlag1, scanning
+ *      apBases while the index stays below nBaseCount. A miss leaves the index AT nBaseCount and
+ *      the rest of the body then runs through apBases[nBaseCount] (deviation).
+ *   2. 0x98C30..0x98CF0: the stores gate. With bHasLoot set, the site's own cargo volume
+ *      (Base_CountItemQtyAcrossBases with the scan ON and this site as the gate site) plus what
+ *      the base already holds (Base_CalcStorageUsed) is tested against Base_CalcStoresCapacity;
+ *      over budget raises the shortfall dword and posts message 42. With bHasLoot clear the
+ *      shortfall is raised unconditionally and message 41 is posted -- the item loop runs either
+ *      way, it just has nothing to add.
+ *   3. 0x98D00..0x99058: the item loop over every object slot. Slots 77..104, 114 and 144..148
+ *      are the alien slots and carry one extra gate: each non-zero quantity raises a running
+ *      counter held against Base_CalcAlienContainmentCap for the base, and the counter is NOT
+ *      reset per site -- it accumulates over the whole call, so a later site sees what earlier
+ *      sites already put into containment. Over cap: shortfall dword set, message 36, and the
+ *      quantity MOVES to that alien's corpse slot (Smap_CorpseSlotForAlien, the two-switch
+ *      structure at 0x98DBC..0x98F98) with the source slot zeroed. Everything else, and every
+ *      alien that still fits, takes the normal path: the quantity is added to the base except
+ *      for slots 117..121 (the new-craft counts, delivered by step 5 instead), a debug dump
+ *      (Transfer_WriteErrorDump (0x996e4, not ported)) fires when the base's column for the slot
+ *      passes 60000, and Base_DistributeRecoveredItems runs after EVERY slot -- empty slot or
+ *      not, alien slot or not.
+ *   4. 0x9905C..0x99330: uRecoveredSoldiers calls of Soldier_CreateAndClassify (port:
+ *      Unit_CreateAndClassify) with the base index as nKind. Then per recovered craft: the craft
+ *      whose Ship.bId matches site->anCraftIds[i] gets Ship.bHomeBase = the base index
+ *      unconditionally, and a 5x5 scan of the base's facility grid looks for a hangar cell --
+ *      facType cell == FAC_HANGAR, buildDays cell == 0, and layer2 tested at fac + 79 + row + col.
+ *      On a match bHangarX = col + 1, bHangarY = row + 1, and the craft glyph (33 + bCraftType)
+ *      is stamped into layer2 at fac + 79 + 6*row + col. Two differences from Ship_SpawnAtSlot's
+ *      own scan: the layer2 test here follows the row (79 + row + col, not 79 + col), and a craft
+ *      type outside 0..4 CONTINUES the scan instead of returning unstamped.
+ *   5. 0x99340..0x993CC: for i in 0..4, site->auItemQty[117 + i] new craft of type
+ *      {0, 3, 4, 1, 2} -- the five slots carry the shipped craft names and the map lands each
+ *      name on its own CraftType. Every spawn homes the craft at the same base.
+ *   6. 0x993DC..0x99468: for i < bRecoveredSoldierAssign, the roster soldier whose nUnk440 equals
+ *      site->anSoldierIds[i] gets Soldier.nKind = the base index.
+ *   7. 0x99484..0x994A0: bFlag0 = -1 marks the site delivered, then the three needed passes run
+ *      with the budgets the original computes inside them: ammo items; occupied space plus
+ *      outbound transfer space (the -1 gate); storage used plus item quantity across bases (the
+ *      -1 gate).
+ *
+ * Phase 3 (0x994C8..0x99558): every site marked -1 is dropped by shifting the records after it
+ * down one slot, and nSmapSiteCount is stored back with them removed. The copy length is
+ * 371*(count - index) WORDS, one record more than the records still inside the count -- that
+ * extra record is what ends the loop, because the unused slot after the last live site carries
+ * bFlag0 == 0 and shifts in. A run of delivered sites collapses in one pass for the same reason:
+ * the index is re-tested after every shift.
+ *
+ * Deviations: the original bounds nothing here. A base-lookup miss continues through
+ * apBases[nBaseCount] -- the port marks the site delivered and skips the delivery. A craft- or
+ * soldier-lookup miss writes through apCraft[Map_nCraftCount] / apSoldiers[nSoldierCount] -- the
+ * port skips that craft or soldier. The compaction's inner loop is guarded only by the copy, so
+ * a site array that is entirely delivered would spin the count into negative territory -- the
+ * port also bounds the loop by the count. The original returns the viewport-mode global at
+ * 0x1863E8 (register residue, no caller reads it); the port returns void. */
+typedef struct SmapGrantRecoveryEnv {
+    SmapSite        *aSites;             /* aSmapSites @ 0x162030 */
+    i32             *pnSiteCount;        /* nSmapSiteCount @ 0x186410, read and stored back */
+    u8              *abFacilityGrid;     /* abFacilityGrid @ 0x159768 */
+    const u8        *pbBaseCount;        /* nBaseCount @ 0x159D80, read signed */
+    BaseRec         **apBases;           /* Map.apBases @ Map + 0x1174 */
+    Ship            **apCraft;           /* Map.apCraft @ Map + 0x10AC */
+    const u8        *pnCraftCount;       /* Map_nCraftCount @ 0x114B4C, read unsigned */
+    Soldier         **apSoldiers;        /* Map.apSoldiers @ Map + 0x1198 */
+    const i32       *pnSoldierCount;     /* nSoldierCount @ 0x115350 (u16 semantics, as everywhere) */
+    ObjectRecFull   **apObjects;         /* Map.apObjects @ Map + 0x108 */
+    i32              nObjectCount;       /* Map_nObjectCount @ 0x114A60 */
+    UiLineList      *pLines;             /* the root message list @ 0x158890 */
+    u32             *pdwShortfall;       /* byte_1870C8, written as a dword */
+    UnitCreateEnv   *pUnitEnv;           /* Unit_CreateAndClassify's Map block */
+    ShipSpawnEnv    *pShipEnv;           /* Ship_SpawnAtSlot's Map block */
+    void (*pfnPlaySample)(i32 nSample, void *pUser); /* the message seam */
+    void *pSoundUser;
+} SmapGrantRecoveryEnv;
+
+void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv);
+
 /* ------------------------------------------------- the status-panel (radar list) click
  *
  * Evidence: Geoscape_OnRadarListClick @ 0x854c4, installed as the status panel's pfnClick by

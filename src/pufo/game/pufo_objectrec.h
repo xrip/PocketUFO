@@ -100,6 +100,14 @@ typedef enum ObjectSlot {
     OBJ_AVALANCHE_ROCKET         = 54, /* rec 1500 "Avalanche rocket" */
     OBJ_FUSION_BALL              = 55, /* rec 1501 "Fusion ball" */
     OBJ_TANK_CANNON_SHELLS       = 56, /* rec 1502 "Tank - cannon shells" */
+    OBJ_SECTOID_CORPSE           = 59, /* rec 1505 "Sectoid corpse" */
+    OBJ_SNAKEMAN_CORPSE          = 60, /* rec 1506 "Snakeman corpse" */
+    OBJ_FLOATER_CORPSE           = 61, /* rec 1507 "Floater corpse" */
+    OBJ_MUTON_CORPSE             = 62, /* rec 1508 "Muton corpse" */
+    OBJ_ETHEREAL_CORPSE          = 63, /* rec 1509 "Ethereal corpse" */
+    OBJ_CYBERDISK_REMAINS        = 64, /* rec 1510 "Cyberdisk remains" */
+    OBJ_CHRYSSALID_CORPSE        = 65, /* rec 1511 "Chryssalid corpse" */
+    OBJ_REAPER_CORPSE            = 66, /* rec 1512 "Reaper corpse", the corpse of the Riper at 101 */
     OBJ_CELATID_CORPSE           = 67, /* rec 1513 "Celatid corpse" */
     OBJ_SILACOID_CORPSE          = 68, /* rec 1514 "Silacoid corpse" */
     OBJ_SECTOPOD_REMAINS         = 69, /* rec 1515 "Sectopod remains" */
@@ -107,13 +115,22 @@ typedef enum ObjectSlot {
     OBJ_OPERATIVE_CORPSE_B       = 72, /* rec 1518, the same shipped name a third time */
     OBJ_MALE_CORPSE              = 73, /* rec 1519, Russian for "male corpse" */
     OBJ_TANK_WRECKAGE            = 75, /* rec 1521, Russian for "tank wreckage" */
+    /* 77..104 is the alien-soldier block, five race groups of five ranks plus the four
+     * singletons at 99..104. Smap_GrantSiteRecovery treats the whole block (with 114 and
+     * 144..148) as the containment-gated slots; the group ends below are its switch bounds. */
+    OBJ_SECTOID_SOLDIER          = 77, /* rec 1523 "Sectoid soldier", first alien slot */
     OBJ_SECTOID_NAVIGATOR        = 79, /* rec 1525 "Sectoid navigator" */
     OBJ_SECTOID_LEADER           = 80, /* rec 1526 "Sectoid lider" (sic) */
-    OBJ_SECTOID_COMMANDER        = 81, /* rec 1527 "Sectoid commander" */
+    OBJ_SECTOID_COMMANDER        = 81, /* rec 1527 "Sectoid commander", last Sectoid */
     OBJ_SNAKEMAN_SOLDIER         = 82, /* rec 1528 "Snakeman soldier" */
+    OBJ_SNAKEMAN_COMMANDER       = 86, /* rec 1532 "Snakeman commander", last Snakeman */
+    OBJ_FLOATER_SOLDIER          = 87, /* rec 1533 "Floater soldier", first Floater */
     OBJ_FLOATER_ENGINEER         = 88, /* rec 1534 "Floater engineer" */
     OBJ_FLOATER_NAVIGATOR        = 89, /* rec 1535 "Floater navigator" */
+    OBJ_FLOATER_COMMANDER        = 91, /* rec 1537 "Floater commander", last Floater */
+    OBJ_MUTON_NAVIGATOR          = 94, /* rec 1540 "Muton navigator", last Muton */
     OBJ_ETHEREAL_ENGINEER        = 96, /* rec 1542 "Ethereal engineer" */
+    OBJ_ETHEREAL_COMMANDER       = 98, /* rec 1544 "Ethereal commander", last Ethereal */
     OBJ_CYBERDISK                = 99, /* rec 1545 "Cyberdisk" */
     OBJ_CHRYSSALID               = 100, /* rec 1546 "Chryssalid" */
     OBJ_RIPER                    = 101, /* rec 1547 "Riper"; its corpse at 66 is "Reaper corpse" */
@@ -124,7 +141,21 @@ typedef enum ObjectSlot {
     OBJ_ALIEN_ALLOYS             = 106, /* rec 1552 "Alien alloys" */
     OBJ_UFO_POWER_SOURCE         = 107, /* rec 1553 "UFO power source" */
     OBJ_ALIEN_SURGERY            = 108, /* rec 1554 "Alien surgery" */
-    OBJ_UFO_NAVIGATION           = 109  /* rec 1555 "UFO navigation" */
+    OBJ_UFO_NAVIGATION           = 109, /* rec 1555 "UFO navigation" */
+    OBJ_ETHEREAL_NAVIGATOR       = 114, /* rec 1560 "Ethereal navigator", the alien slot outside 77..104 */
+    /* 117..121 are the per-site new-craft counts Smap_GrantSiteRecovery spawns from; the shipped
+     * name of each slot is the craft type it holds, and the spawn maps every slot onto its own
+     * CraftType (117->0, 118->3, 119->4, 120->1, 121->2). */
+    OBJ_CRAFT_COUNT_SKYRANGER    = 117, /* rec 1563 "SKYRANGER" */
+    OBJ_CRAFT_COUNT_INTERCEPTOR  = 118, /* rec 1564 "INTERCEPTOR" */
+    OBJ_CRAFT_COUNT_FIRESTORM    = 119, /* rec 1565 "FIRE STORM" */
+    OBJ_CRAFT_COUNT_LIGHTNING    = 120, /* rec 1566 "LIGTHNING" (sic) */
+    OBJ_CRAFT_COUNT_AVENGER      = 121, /* rec 1567 "AVENGER" */
+    OBJ_SNAKEMAN_MEDIC           = 144, /* rec 1590 "Snakeman medic", first of the medic block */
+    OBJ_MUTON_MEDIC              = 145, /* rec 1591 "Muton medic" */
+    OBJ_FLOATER_MEDIC            = 146, /* rec 1592 "Floater medic" */
+    OBJ_ETHEREAL_MEDIC           = 147, /* rec 1593 "Ethereal medic" */
+    OBJ_SECTOID_MEDIC            = 148  /* rec 1594 "Sectoid medic", last of the medic block */
 } ObjectSlot;
 
 /* bAmmoCap 255 means the weapon never runs out of ammo. Readers test this exact value rather than

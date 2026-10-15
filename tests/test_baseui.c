@@ -8036,6 +8036,414 @@ static void TestConfirmCraftTarget(void)
     Smap_ConfirmCraftTarget(NULL);
     Check(true, "a null env does nothing");
 }
+/* Smap_GrantSiteRecovery @ 0x98b50. The fixture is the whole delivery world: the site array at its
+ * shipped capacity (the compaction reads one record past the live tail), two bases whose bUnk4 is
+ * their id, a craft table, one roster soldier, 150 object records with bCargoSize 1 so the cargo
+ * volume equals the quantity, and the facility grid. */
+static SmapSite g_aGrantSites[PUFO_SMAP_SITE_COUNT];
+static BaseRec g_aGrantBases[2];
+static BaseRec *g_apGrantBases[2];
+static Ship g_aGrantCraft[4];
+static Ship *g_apGrantCraft[4];
+static Soldier g_aGrantSoldier;
+static Soldier *g_apGrantSoldiers[4];
+static ObjectRecFull g_aGrantObj[150];
+static ObjectRecFull *g_apGrantObj[150];
+static u8 g_aGrantGrid[PUFO_GRID_SIZE];
+static UiLineList g_grantLines;
+static u32 g_dwGrantShortfall;
+static u8 g_nGrantBaseCount;
+static u8 g_nGrantCraftCount;
+static i32 g_nGrantSiteCount;
+static i32 g_nGrantSoldierCount;
+static i32 g_nGrantNextSoldierId;
+static i32 g_nGrantNextCraftId;
+static i32 g_nGrantSeed;
+static i32 g_nGrantZoom;
+static i32 g_nGrantSamples;
+static ShipCtorEnv g_grantCtorEnv;
+static PtrArray g_grantStratList;
+static UnitCreateEnv g_grantUnitEnv;
+static ShipSpawnEnv g_grantShipEnv;
+
+static void GrantSample(i32 nSample, void *pUser)
+{
+    (void)nSample;
+    (void)pUser;
+    ++g_nGrantSamples;
+}
+
+/* fac[nBase] is grid + 0x174 + 144*nBase with tileA at +0, tileB at +36, layer2 at +72 and the
+ * cell kind at +108; buildDays is grid + 36*nBase. */
+#define GFAC(nBase, nLayer, nRow, nCol) \
+    g_aGrantGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * (nBase) + (nLayer) + 6 * (nRow) + (nCol)]
+#define GDAYS(nBase, nRow, nCol) \
+    g_aGrantGrid[PUFO_GRID_DAYS_STRIDE * (nBase) + 6 * (nRow) + (nCol)]
+
+#define GRANT_RESET()                                                                     \
+    do {                                                                                  \
+        memset(g_aGrantSites, 0, sizeof(g_aGrantSites));                                  \
+        memset(g_aGrantGrid, 0, sizeof(g_aGrantGrid));                                    \
+        memset(g_aGrantObj, 0, sizeof(g_aGrantObj));                                      \
+        memset(g_aGrantCraft, 0, sizeof(g_aGrantCraft));                                  \
+        memset(&g_aGrantSoldier, 0, sizeof(g_aGrantSoldier));                             \
+        memset(&g_grantLines, 0, sizeof(g_grantLines));                                   \
+        for (i = 0; i < 2; ++i) {                                                         \
+            memset(&g_aGrantBases[i], 0, sizeof(g_aGrantBases[i]));                       \
+            g_apGrantBases[i] = &g_aGrantBases[i];                                        \
+            g_aGrantBases[i].bUnk4 = (u8)i;  /* the base id site->bFlag1 is matched on */ \
+            g_aGrantBases[i].bSlot = (u8)i;  /* its column in auPerBaseVal */             \
+        }                                                                                 \
+        for (i = 0; i < 4; ++i) {                                                         \
+            g_apGrantCraft[i] = &g_aGrantCraft[i];                                        \
+        }                                                                                 \
+        for (i = 0; i < 150; ++i) {                                                       \
+            g_apGrantObj[i] = &g_aGrantObj[i];                                            \
+            g_aGrantObj[i].bCargoSize = 1;  /* cargo volume == quantity */                \
+        }                                                                                 \
+        memset(g_apGrantSoldiers, 0, sizeof(g_apGrantSoldiers));                          \
+        g_apGrantSoldiers[0] = &g_aGrantSoldier;                                          \
+        g_aGrantSoldier.nUnk440 = 11;                                                     \
+        g_aGrantSoldier.nKind = 9;                                                        \
+        g_dwGrantShortfall = 0;                                                           \
+        g_nGrantBaseCount = 2;                                                            \
+        g_nGrantCraftCount = 0;                                                           \
+        g_nGrantSiteCount = 0;                                                            \
+        g_nGrantSoldierCount = 1;                                                         \
+        g_nGrantNextSoldierId = 100;                                                      \
+        g_nGrantNextCraftId = 7;                                                          \
+        g_nGrantSamples = 0;                                                              \
+    } while (0)
+
+#define GRANT_ENV(env)                                        \
+    memset(&(env), 0, sizeof(env));                           \
+    (env).aSites = g_aGrantSites;                             \
+    (env).pnSiteCount = &g_nGrantSiteCount;                   \
+    (env).abFacilityGrid = g_aGrantGrid;                      \
+    (env).pbBaseCount = &g_nGrantBaseCount;                   \
+    (env).apBases = g_apGrantBases;                           \
+    (env).apCraft = g_apGrantCraft;                           \
+    (env).pnCraftCount = &g_nGrantCraftCount;                 \
+    (env).apSoldiers = g_apGrantSoldiers;                     \
+    (env).pnSoldierCount = &g_nGrantSoldierCount;             \
+    (env).apObjects = g_apGrantObj;                           \
+    (env).nObjectCount = 150;                                 \
+    (env).pLines = &g_grantLines;                             \
+    (env).pdwShortfall = &g_dwGrantShortfall;                 \
+    (env).pUnitEnv = &g_grantUnitEnv;                         \
+    (env).pShipEnv = &g_grantShipEnv;                         \
+    (env).pfnPlaySample = GrantSample;                        \
+    (env).pSoundUser = NULL
+
+static void TestGrantSiteRecovery(void)
+{
+    SmapGrantRecoveryEnv env;
+    i32 i;
+
+    printf("Smap_GrantSiteRecovery @ 0x98b50\n");
+
+    PtrArray_ctor(&g_grantStratList);
+    g_grantCtorEnv.apObjects = g_apGrantObj;
+    g_grantCtorEnv.nObjectCount = 150;
+    g_grantUnitEnv.apSoldiers = g_apGrantSoldiers;
+    g_grantUnitEnv.pnSoldierCount = &g_nGrantSoldierCount;
+    g_grantUnitEnv.pnNextSoldierId = &g_nGrantNextSoldierId;
+    g_grantShipEnv.apCraft = g_apGrantCraft;
+    g_grantShipEnv.pnCraftCount = &g_nGrantCraftCount;
+    g_grantShipEnv.pnNextCraftId = &g_nGrantNextCraftId;
+    g_grantShipEnv.apBases = g_apGrantBases;
+    g_grantShipEnv.abFacilityGrid = g_aGrantGrid;
+    g_grantShipEnv.pCtorEnv = &g_grantCtorEnv;
+    g_grantShipEnv.pStrategList = &g_grantStratList;
+    g_grantShipEnv.pnStrategSeed = &g_nGrantSeed;
+    g_grantShipEnv.pnZoomMode = &g_nGrantZoom;
+
+    /* A null environment or a null site array stops the whole thing, aging included. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag0 = 3;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(NULL);
+    env.aSites = NULL;
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantSites[0].bFlag0, 3, "a null environment or a null site array ages nothing");
+    CheckEqI32(g_nGrantSiteCount, 1, "and drops nothing");
+
+    /* Phase 1 ages every countdown, phase 2 delivers the sites that reach zero, and phase 3 drops
+     * them. The site that is still counting survives, shifted down to index 0. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 3;
+    g_aGrantSites[0].bFlag0 = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[1].bFlag0 = 2;
+    g_aGrantSites[1].bFlag1 = 1;
+    g_aGrantSites[2].bFlag0 = 0;
+    g_aGrantSites[2].bFlag1 = 0;
+    g_aGrantSites[2].bHasLoot = 1;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_nGrantSiteCount, 1, "the two delivered sites are dropped from the count");
+    CheckEqI32(g_aGrantSites[0].bFlag1, 1, "the survivor is the site still counting down");
+    CheckEqI32(g_aGrantSites[0].bFlag0, 1, "and it was aged by one");
+    CheckEqI32((i32)g_grantLines.nLineCount, 0,
+               "a site with no cargo and no stores cells posts nothing (0 > 0 is not over budget)");
+    CheckEqI32((i32)g_dwGrantShortfall, 0, "and the shortfall dword stays clear");
+
+    /* The stores gate: cargo over a base with no stores cells raises the shortfall and message 42,
+     * and the item loop still adds the cargo afterwards. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;   /* base 1, by bUnk4 */
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[1] = 5;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32((i32)g_dwGrantShortfall, 1, "cargo over a base with no stores cells raises the shortfall");
+    CheckEqI32((i32)g_grantLines.nLineCount, 1, "one message line");
+    CheckEqI32(g_grantLines.abLineFlags[0], 42, "message 42");
+    CheckEqI32((i32)g_grantLines.anColor[0][0], 1, "named with the base the lookup found");
+    CheckEqI32(g_aGrantObj[1].auPerBaseVal[1], 5, "and the cargo is delivered into that base's column");
+
+    /* No stores cells but a 300-cell budget: the same cargo now fits and nothing is posted. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[1] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_GENERAL_STORES;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32((i32)g_grantLines.nLineCount, 0, "5 cargo inside a 300-cell budget posts nothing");
+    CheckEqI32((i32)g_dwGrantShortfall, 0, "and leaves the shortfall clear");
+
+    /* bHasLoot clear is the unconditional report 41, shortfall included. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 0;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32((i32)g_grantLines.nLineCount, 1, "a site without loot posts one line");
+    CheckEqI32(g_grantLines.abLineFlags[0], 41, "message 41");
+    CheckEqI32((i32)g_dwGrantShortfall, 1, "and raises the shortfall unconditionally");
+
+    /* A base lookup miss (bFlag1 matches no bUnk4) is the port's bounds deviation: the site is
+     * still marked delivered and dropped, but nothing is delivered through it. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 77;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[1] = 9;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_nGrantSiteCount, 0, "a site that matches no base is still dropped");
+    CheckEqI32(g_aGrantObj[1].auPerBaseVal[0], 0, "and nothing is delivered through it");
+
+    /* Containment: with no containment cells the cap is 0, so an alien item is remapped to its
+     * corpse slot with the source slot zeroed, and message 36 is posted. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[OBJ_SECTOID_SOLDIER] = 3;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_grantLines.abLineFlags[0], 36, "an alien over the containment cap posts message 36");
+    CheckEqI32(g_aGrantSites[0].auItemQty[OBJ_SECTOID_SOLDIER], 0, "and the source slot is zeroed");
+    CheckEqI32(g_aGrantObj[OBJ_SECTOID_CORPSE].auPerBaseVal[0], 3,
+               "the quantity lands on the Sectoid corpse slot");
+    CheckEqI32(g_aGrantObj[OBJ_SECTOID_SOLDIER].auPerBaseVal[0], 0, "not on the soldier slot");
+
+    /* The containment counter is function-wide and counts non-zero alien SLOTS, not quantity: one
+     * containment cell is worth 10, the first site uses all ten of them, and the second site's
+     * single alien slot is the eleventh and goes over. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 2;
+    GFAC(0, PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_ALIEN_CONTAINMENT;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    for (i = OBJ_SECTOID_SOLDIER; i <= OBJ_SNAKEMAN_COMMANDER; ++i) {
+        g_aGrantSites[0].auItemQty[i] = 1;
+    }
+    g_aGrantSites[1].bFlag1 = 0;
+    g_aGrantSites[1].bHasLoot = 1;
+    g_aGrantSites[1].auItemQty[OBJ_FLOATER_SOLDIER] = 5;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantObj[OBJ_SECTOID_SOLDIER].auPerBaseVal[0], 1, "the first site's first alien fits");
+    CheckEqI32(g_aGrantObj[OBJ_SNAKEMAN_COMMANDER].auPerBaseVal[0], 1,
+               "and so does its tenth, filling the cell's ten slots");
+    CheckEqI32(g_aGrantObj[OBJ_FLOATER_SOLDIER].auPerBaseVal[0], 0,
+               "the second site's alien is the eleventh and is not delivered as itself");
+    CheckEqI32(g_aGrantObj[OBJ_FLOATER_CORPSE].auPerBaseVal[0], 5,
+               "it arrives whole as a Floater corpse instead");
+    CheckEqI32((i32)g_grantLines.nLineCount, 1, "one message for the one overflow");
+    CheckEqI32(g_grantLines.abLineFlags[0], 36, "message 36");
+
+    /* The corpse map, through the remap: the medics land on their own race's corpse, 114 is the
+     * Ethereal navigator, and 102 is the Silacoid. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[OBJ_SECTOID_MEDIC] = 2;
+    g_aGrantSites[0].auItemQty[OBJ_SNAKEMAN_MEDIC] = 1;
+    g_aGrantSites[0].auItemQty[OBJ_FLOATER_MEDIC] = 4;
+    g_aGrantSites[0].auItemQty[OBJ_ETHEREAL_NAVIGATOR] = 6;
+    g_aGrantSites[0].auItemQty[OBJ_SILACOID] = 7;
+    g_aGrantSites[0].auItemQty[OBJ_SECTOPOD] = 8;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantObj[OBJ_SECTOID_CORPSE].auPerBaseVal[0], 2, "Sectoid medic (148) -> Sectoid corpse");
+    CheckEqI32(g_aGrantObj[OBJ_SNAKEMAN_CORPSE].auPerBaseVal[0], 1, "Snakeman medic (144) -> Snakeman corpse");
+    CheckEqI32(g_aGrantObj[OBJ_FLOATER_CORPSE].auPerBaseVal[0], 4, "Floater medic (146) -> Floater corpse");
+    CheckEqI32(g_aGrantObj[OBJ_ETHEREAL_CORPSE].auPerBaseVal[0], 6, "Ethereal navigator (114) -> Ethereal corpse");
+    CheckEqI32(g_aGrantObj[OBJ_SILACOID_CORPSE].auPerBaseVal[0], 7, "Silacoid (102) -> Silacoid corpse");
+    CheckEqI32(g_aGrantObj[OBJ_SECTOPOD_REMAINS].auPerBaseVal[0], 8, "Sectopod (104) -> Sectopod remains");
+
+    /* Slots 117..121 are never added to the stores; they spawn craft instead. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[OBJ_CRAFT_COUNT_SKYRANGER] = 2;
+    g_aGrantSites[0].auItemQty[OBJ_CRAFT_COUNT_INTERCEPTOR] = 1;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantObj[OBJ_CRAFT_COUNT_SKYRANGER].auPerBaseVal[0], 0,
+               "the craft-count slots are not added to the stores");
+    CheckEqI32(g_nGrantCraftCount, 3, "and they spawn craft instead (2 + 1)");
+    CheckEqI32(g_apGrantCraft[0] != NULL ? g_apGrantCraft[0]->bCraftType : -1, CRAFT_TYPE_SKYRANGER,
+               "slot 117 spawns Skyrangers");
+    CheckEqI32(g_apGrantCraft[0] != NULL ? g_apGrantCraft[0]->bHomeBase : -1, 0,
+               "homed at the site's base");
+    CheckEqI32(g_apGrantCraft[2] != NULL ? g_apGrantCraft[2]->bCraftType : -1, CRAFT_TYPE_INTERCEPTOR,
+               "slot 118 spawns Interceptors");
+    for (i = 0; i < 3; ++i) {
+        free(g_apGrantCraft[i]);
+        g_apGrantCraft[i] = NULL;
+    }
+
+    /* Craft recovery: the craft whose bId matches anCraftIds is homed unconditionally, and the
+     * hangar cell stamps its type glyph into layer2 at row+1, col+1. */
+    GRANT_RESET();
+    g_nGrantCraftCount = 1;
+    g_aGrantCraft[0].bId = 5;
+    g_aGrantCraft[0].bCraftType = CRAFT_TYPE_INTERCEPTOR;
+    g_aGrantCraft[0].bHomeBase = 9;
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;   /* base 1 */
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].bRecoveredCraftCount = 1;
+    g_aGrantSites[0].anCraftIds[0] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 2, 3) = FAC_HANGAR;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantCraft[0].bHomeBase, 1, "the matched craft is homed at the site's base");
+    CheckEqI32(g_aGrantCraft[0].bHangarX, 4, "bHangarX is the matched column + 1");
+    CheckEqI32(g_aGrantCraft[0].bHangarY, 3, "bHangarY is the matched row + 1");
+    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 4), 36, "the Interceptor glyph 36 is stamped into layer2");
+
+    /* The layer2 test here follows the row: the cell tested for (row 2, col 3) is layer2 offset
+     * 79 + 2 + 3, which is row 2 column 0 of the layer. Blocking THAT cell rejects the hangar. */
+    GRANT_RESET();
+    g_nGrantCraftCount = 1;
+    g_aGrantCraft[0].bId = 5;
+    g_aGrantCraft[0].bCraftType = CRAFT_TYPE_INTERCEPTOR;
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].bRecoveredCraftCount = 1;
+    g_aGrantSites[0].anCraftIds[0] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 2, 3) = FAC_HANGAR;
+    GFAC(1, PUFO_GRID_LAYER2_OFF, 2, 0) = 1; /* layer2 offset 79 + 2 + 3 */
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantCraft[0].bHangarX, 0, "the row-shifted layer2 test rejects the hangar cell");
+    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 3, 4), 0, "and nothing is stamped");
+    CheckEqI32(g_aGrantCraft[0].bHomeBase, 1, "while the homing still happened");
+
+    /* A craft type outside 0..4 CONTINUES the scan here (Ship_SpawnAtSlot returns unstamped):
+     * both hangar cells match, neither stamps, and the coordinates are the last match's. */
+    GRANT_RESET();
+    g_nGrantCraftCount = 1;
+    g_aGrantCraft[0].bId = 5;
+    g_aGrantCraft[0].bCraftType = 5;
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].bRecoveredCraftCount = 1;
+    g_aGrantSites[0].anCraftIds[0] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_HANGAR;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 0, 1) = FAC_HANGAR;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantCraft[0].bHangarX, 2, "an unknown type keeps scanning to the next hangar cell");
+    CheckEqI32(GFAC(1, PUFO_GRID_LAYER2_OFF, 1, 1), 0, "and stamps nothing");
+
+    /* A buildDays cell that is still under construction blocks the hangar cell. */
+    GRANT_RESET();
+    g_nGrantCraftCount = 1;
+    g_aGrantCraft[0].bId = 5;
+    g_aGrantCraft[0].bCraftType = CRAFT_TYPE_SKYRANGER;
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 1;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].bRecoveredCraftCount = 1;
+    g_aGrantSites[0].anCraftIds[0] = 5;
+    GFAC(1, PUFO_GRID_FAC_TYPE_OFF, 0, 0) = FAC_HANGAR;
+    GDAYS(1, 0, 0) = 3;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantCraft[0].bHangarX, 0, "a hangar cell still being built is skipped");
+
+    /* Soldier recovery: uRecoveredSoldiers new soldiers, and bRecoveredSoldierAssign re-homes the
+     * roster soldiers the site names by their roster id. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].uRecoveredSoldiers = 1;
+    g_aGrantSites[0].bRecoveredSoldierAssign = 1;
+    g_aGrantSites[0].anSoldierIds[0] = 11;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_nGrantSoldierCount, 2, "uRecoveredSoldiers adds a roster soldier");
+    CheckEqI32(g_apGrantSoldiers[1] != NULL ? g_apGrantSoldiers[1]->nKind : -1, 0,
+               "the new soldier is classified for the site's base");
+    CheckEqI32(g_aGrantSoldier.nKind, 0, "and the named roster soldier is re-homed to that base");
+    free(g_apGrantSoldiers[1]);
+    g_apGrantSoldiers[1] = NULL;
+
+    /* A roster id the array does not hold is the port's bounds deviation: nothing is written. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag1 = 0;
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].bRecoveredSoldierAssign = 1;
+    g_aGrantSites[0].anSoldierIds[0] = 4242;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_aGrantSoldier.nKind, 9, "an unknown roster id leaves the roster alone");
+
+    /* A run of delivered sites collapses in one pass: the extra record the shift copies is the
+     * unused slot after the live tail, and it carries bFlag0 == 0. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 4;
+    for (i = 0; i < 3; ++i) {
+        g_aGrantSites[i].bFlag1 = 0;
+        g_aGrantSites[i].bHasLoot = 1;
+    }
+    g_aGrantSites[3].bFlag0 = 5;
+    g_aGrantSites[3].bFlag1 = 1;
+    GRANT_ENV(env);
+    Smap_GrantSiteRecovery(&env);
+    CheckEqI32(g_nGrantSiteCount, 1, "three delivered sites collapse in one call");
+    CheckEqI32(g_aGrantSites[0].bFlag1, 1, "the survivor shifted down to index 0");
+    CheckEqI32(g_aGrantSites[0].bFlag0, 4, "aged from 5 to 4");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -8065,6 +8473,7 @@ int main(void)
     TestTransferCommit();
     TestTransferDraw();
     TestBaseStripDrawer();
+    TestGrantSiteRecovery();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

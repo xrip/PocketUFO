@@ -3960,6 +3960,252 @@ void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv)
     }
 }
 
+/* Smap_CorpseSlotForAlien -- the quantity-remap switch at 0x98DBC..0x98F98. An alien item that no
+ * containment cell can hold is delivered as its corpse instead: the shipped names pair every
+ * soldier slot with a corpse slot, and each medic lands on its own race's corpse. The original
+ * splits the map over two switches (the <= 102 half, then a > 145 half and an else-switch), and it
+ * is the > 145 fall-through plus the else-switch default that give Sectoid medic (148) -> 59 and
+ * Snakeman medic (144) -> 60. */
+static i32 Smap_CorpseSlotForAlien(i32 nSlot)
+{
+    if (nSlot <= OBJ_SILACOID) { /* 0x98DB0: the <= 102 half */
+        if (nSlot == OBJ_SILACOID)              return OBJ_SILACOID_CORPSE;   /* 102 -> 68 */
+        if (nSlot <= OBJ_SECTOID_COMMANDER)     return OBJ_SECTOID_CORPSE;    /* 77..81 -> 59 */
+        if (nSlot <= OBJ_SNAKEMAN_COMMANDER)    return OBJ_SNAKEMAN_CORPSE;   /* 82..86 -> 60 */
+        if (nSlot <= OBJ_FLOATER_COMMANDER)     return OBJ_FLOATER_CORPSE;    /* 87..91 -> 61 */
+        if (nSlot <= OBJ_MUTON_NAVIGATOR)       return OBJ_MUTON_CORPSE;      /* 92..94 -> 62 */
+        if (nSlot <= OBJ_ETHEREAL_COMMANDER)    return OBJ_ETHEREAL_CORPSE;   /* 95..98 -> 63 */
+        if (nSlot == OBJ_CYBERDISK)             return OBJ_CYBERDISK_REMAINS; /* 99 -> 64 */
+        if (nSlot == OBJ_CHRYSSALID)            return OBJ_CHRYSSALID_CORPSE; /* 100 -> 65 */
+        return OBJ_REAPER_CORPSE;                                             /* 101 -> 66 */
+    }
+    if (nSlot > OBJ_MUTON_MEDIC) { /* 0x98E9C: the > 145 half */
+        if (nSlot == OBJ_FLOATER_MEDIC)         return OBJ_FLOATER_CORPSE;    /* 146 -> 61 */
+        if (nSlot == OBJ_ETHEREAL_MEDIC)        return OBJ_ETHEREAL_CORPSE;   /* 147 -> 63 */
+        return OBJ_SECTOID_CORPSE;                                            /* 148 -> 59 */
+    }
+    if (nSlot == OBJ_MUTON_MEDIC)         return OBJ_MUTON_CORPSE;     /* 145 -> 62 */
+    if (nSlot == OBJ_CELACID)             return OBJ_CELATID_CORPSE;   /* 103 -> 67 */
+    if (nSlot == OBJ_SECTOPOD)            return OBJ_SECTOPOD_REMAINS; /* 104 -> 69 */
+    if (nSlot == OBJ_ETHEREAL_NAVIGATOR)  return OBJ_ETHEREAL_CORPSE;  /* 114 -> 63 */
+    return OBJ_SNAKEMAN_CORPSE;                                        /* 144, and the default */
+}
+
+/* Smap_GrantSiteRecovery @ 0x98b50. The header block has the three phases, the containment gate,
+ * the corpse remap and the deviations. */
+void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->aSites == NULL || pEnv->pnSiteCount == NULL) {
+        return;
+    }
+
+    /* 0x98B68..0x98BAC: age every countdown byte once. */
+    for (i32 i = 0; i < *pEnv->pnSiteCount; ++i) {
+        if ((i8)pEnv->aSites[i].bFlag0 > 0) {
+            pEnv->aSites[i].bFlag0 = (u8)((i8)pEnv->aSites[i].bFlag0 - 1);
+        }
+    }
+
+    i32 nAlienCarried = 0; /* 0x98B70: function-wide, NOT reset per site */
+
+    for (i32 nSite = 0; nSite < *pEnv->pnSiteCount; ++nSite) {
+        SmapSite *pSite = &pEnv->aSites[nSite];
+        if (pSite->bFlag0 != 0) {
+            continue; /* 0x98BD8 */
+        }
+
+        const i32 nBaseCount = (i32)(i8)*pEnv->pbBaseCount;
+        i32 nBase = 0;
+        if (nBaseCount > 0) {
+            while (nBase < nBaseCount &&
+                   (pEnv->apBases[nBase] == NULL ||
+                    pEnv->apBases[nBase]->bUnk4 != pSite->bFlag1)) {
+                ++nBase; /* 0x98C18 */
+            }
+        }
+        if (nBase >= nBaseCount) {
+            /* DEVIATION: the original keeps going through apBases[nBaseCount], one past the array.
+             * The port marks the site delivered and skips the delivery. */
+            pSite->bFlag0 = 0xFF;
+            continue;
+        }
+
+        BaseRec *pBase = pEnv->apBases[nBase];
+        const u8 nKind = (u8)nBase;
+
+        if (pSite->bHasLoot != 0) {
+            const i32 nUsed = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);
+            const i32 nAcross = Base_CountItemQtyAcrossBases(pEnv->aSites, *pEnv->pnSiteCount,
+                                                             nSite, pEnv->apBases, nBase,
+                                                             pEnv->apObjects, pEnv->nObjectCount,
+                                                             true);
+            if (nUsed + nAcross > Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase)) {
+                *pEnv->pdwShortfall = 1; /* 0x98CDC */
+                UiLineList_AppendWithSound(pEnv->pLines, 42, (u32)nBase, 0u, 0u, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x98CF0 */
+            }
+        } else {
+            *pEnv->pdwShortfall = 1; /* 0x98C44 */
+            UiLineList_AppendWithSound(pEnv->pLines, 41, (u32)nBase, 0u, 0u, 0u,
+                                       pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x98C5C */
+        }
+
+        BaseRecoverDistributeEnv dist = {
+            pEnv->apCraft, pEnv->pnCraftCount, pEnv->apBases, pEnv->pbBaseCount,
+            pEnv->apObjects, pEnv->nObjectCount
+        };
+
+        for (i32 nSlot = 0; nSlot < pEnv->nObjectCount; ++nSlot) {
+            const bool bAlienSlot =
+                (nSlot >= OBJ_SECTOID_SOLDIER && nSlot <= OBJ_SECTOPOD) ||
+                nSlot == OBJ_ETHEREAL_NAVIGATOR ||
+                (nSlot >= OBJ_SNAKEMAN_MEDIC && nSlot <= OBJ_SECTOID_MEDIC);
+            bool bFits = true;
+
+            if (bAlienSlot && pSite->auItemQty[nSlot] != 0) {
+                ++nAlienCarried; /* 0x98D58 */
+                bFits = Base_CalcAlienContainmentCap(pEnv->abFacilityGrid, nKind) >= nAlienCarried;
+            }
+
+            if (bFits) {
+                if (nSlot < OBJ_CRAFT_COUNT_SKYRANGER || nSlot > OBJ_CRAFT_COUNT_AVENGER) {
+                    BaseRec_AddItemQty(pBase, pEnv->apObjects[nSlot],
+                                       (i32)pSite->auItemQty[nSlot]); /* 0x9900C */
+                }
+                if (pEnv->apObjects[nSlot] != NULL &&
+                    pEnv->apObjects[nSlot]->auPerBaseVal[nBase] > 60000) {
+                    /* 0x99038: Transfer_WriteErrorDump (0x996e4, not ported) writes a debug text
+                     * dump when a base's column for the slot passes 60000. It changes no game
+                     * state, so the port keeps the test and drops the dump. */
+                }
+                Base_DistributeRecoveredItems(&dist); /* 0x99040: after EVERY slot */
+                continue;
+            }
+
+            *pEnv->pdwShortfall = 1; /* 0x98D90 */
+            UiLineList_AppendWithSound(pEnv->pLines, 36, (u32)nKind, 0u, 0u, 0u,
+                                       pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x98DA4 */
+            const i32 nCorpse = Smap_CorpseSlotForAlien(nSlot);
+            const i32 nQty = (i32)pSite->auItemQty[nSlot];
+            pSite->auItemQty[nSlot] = 0; /* 0x98F94 */
+            BaseRec_AddItemQty(pBase, pEnv->apObjects[nCorpse], nQty); /* 0x98FA0 */
+        }
+
+        for (i32 i = 0; i < (i32)pSite->uRecoveredSoldiers; ++i) {
+            (void)Unit_CreateAndClassify(pEnv->pUnitEnv, nKind); /* 0x99080 */
+        }
+
+        for (i32 i = 0; i < (i32)(i8)pSite->bRecoveredCraftCount; ++i) {
+            const i32 nCraftCount = (i32)*pEnv->pnCraftCount;
+            i32 nCraft = 0;
+            while (nCraft < nCraftCount &&
+                   (pEnv->apCraft[nCraft] == NULL ||
+                    pEnv->apCraft[nCraft]->bId != pSite->anCraftIds[i])) {
+                ++nCraft; /* 0x99100 */
+            }
+            if (nCraft >= nCraftCount || pEnv->apCraft[nCraft] == NULL) {
+                continue; /* DEVIATION: the original reads apCraft[Map_nCraftCount] on a miss */
+            }
+
+            Ship *pShip = pEnv->apCraft[nCraft];
+            pShip->bHomeBase = nKind; /* 0x9912C: unconditional, before any cell is found */
+
+            u8 *pFac = pEnv->abFacilityGrid + PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase;
+            const u8 *pDays = pEnv->abFacilityGrid + PUFO_GRID_DAYS_STRIDE * nBase;
+            bool bPlaced = false;
+
+            for (i32 nRow = 0; nRow < 5 && !bPlaced; ++nRow) { /* 0x9921C: five rows of a six-row grid */
+                for (i32 nCol = 0; nCol < 5 && !bPlaced; ++nCol) { /* 0x99208: five columns of six */
+                    if (pFac[PUFO_GRID_FAC_TYPE_OFF + 6 * nRow + nCol] != (u8)FAC_HANGAR) {
+                        continue; /* 0x99158 */
+                    }
+                    if (pFac[PUFO_GRID_LAYER2_OFF + 7 + nRow + nCol] != 0) {
+                        continue; /* 0x99174: tested one column further along for every row */
+                    }
+                    if (pDays[6 * nRow + nCol] != 0) {
+                        continue; /* 0x991A0 */
+                    }
+
+                    pShip->bHangarX = (u8)(nCol + 1); /* 0x991B8, Ship + 0x12 */
+                    pShip->bHangarY = (u8)(nRow + 1); /* 0x991C8, Ship + 0x13 */
+
+                    u8 nGlyph;
+                    switch (pShip->bCraftType) {
+                        case CRAFT_TYPE_SKYRANGER:   nGlyph = 33; break; /* 0x99310 */
+                        case CRAFT_TYPE_LIGHTNING:   nGlyph = 34; break; /* 0x992E0 */
+                        case CRAFT_TYPE_AVENGER:     nGlyph = 35; break; /* 0x992B0 */
+                        case CRAFT_TYPE_INTERCEPTOR: nGlyph = 36; break; /* 0x99280 */
+                        case CRAFT_TYPE_FIRESTORM:   nGlyph = 37; break; /* 0x99250 */
+                        default: continue; /* 0x991F8: an unknown type CONTINUES the scan */
+                    }
+                    pFac[PUFO_GRID_LAYER2_OFF + 6 * (nRow + 1) + (nCol + 1)] = nGlyph; /* 0x99314 */
+                    bPlaced = true;
+                }
+            }
+        }
+
+        static const u8 g_anSiteSpawnType[5] = {
+            CRAFT_TYPE_SKYRANGER, CRAFT_TYPE_INTERCEPTOR, CRAFT_TYPE_FIRESTORM,
+            CRAFT_TYPE_LIGHTNING, CRAFT_TYPE_AVENGER
+        };
+        for (i32 i = 0; i < 5; ++i) {
+            const i32 nQty = (i32)pSite->auItemQty[OBJ_CRAFT_COUNT_SKYRANGER + i];
+            for (i32 n = 0; n < nQty; ++n) {
+                (void)Ship_SpawnAtSlot(pEnv->pShipEnv, g_anSiteSpawnType[i], nBase); /* 0x993AC */
+            }
+        }
+
+        for (i32 i = 0; i < (i32)(i8)pSite->bRecoveredSoldierAssign; ++i) {
+            const i32 nSolCount = (i32)*pEnv->pnSoldierCount;
+            i32 nSol = 0;
+            while (nSol < nSolCount &&
+                   (pEnv->apSoldiers[nSol] == NULL ||
+                    (i32)pSite->anSoldierIds[i] != pEnv->apSoldiers[nSol]->nUnk440)) {
+                ++nSol; /* 0x99430 */
+            }
+            if (nSol < nSolCount && pEnv->apSoldiers[nSol] != NULL) {
+                pEnv->apSoldiers[nSol]->nKind = nKind; /* 0x99454, Soldier + 0xB6 */
+            }
+        }
+
+        pSite->bFlag0 = 0xFF; /* 0x99484: STRB of -1 marks the site delivered */
+        (void)Base_UpdateAlienContainmentNeeded(pEnv->abFacilityGrid, nKind,
+            Base_CountAmmoItems(pEnv->apObjects, pEnv->nObjectCount, nKind)); /* 0x99488 */
+        (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, nKind,
+            Base_CalcOccupiedSpace(pEnv->apSoldiers, (i32)*pEnv->pnSoldierCount,
+                                   pEnv->apObjects, pEnv->nObjectCount, nKind) +
+            Base_CountOutboundTransferSpace(pEnv->aSites, *pEnv->pnSiteCount, -1,
+                                            pEnv->apBases, nKind, true)); /* 0x99494 */
+        (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, nKind,
+            Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nKind) +
+            Base_CountItemQtyAcrossBases(pEnv->aSites, *pEnv->pnSiteCount, -1,
+                                         pEnv->apBases, nKind, pEnv->apObjects,
+                                         pEnv->nObjectCount, true)); /* 0x994A0 */
+    }
+
+    /* 0x994C8..0x99558: drop the delivered records. The copy length is 371*(count - index) WORDS,
+     * one record more than the records still inside the count, and that extra record -- the unused
+     * slot after the last live site, which carries bFlag0 == 0 -- is what ends the inner loop. The
+     * index is re-tested after every shift, so a run of delivered sites collapses in one pass. */
+    if (*pEnv->pnSiteCount > 0) {
+        i32 nCount = *pEnv->pnSiteCount;
+        for (i32 k = 0; k < nCount; ++k) {
+            while (k < nCount && (i8)pEnv->aSites[k].bFlag0 == -1) {
+                size_t cMove = (size_t)(nCount - k);
+                if (k + (i32)cMove >= PUFO_SMAP_SITE_COUNT) {
+                    /* DEVIATION: the original would read aSmapSites[200], the count dword itself. */
+                    cMove = (size_t)(PUFO_SMAP_SITE_COUNT - k - 1);
+                }
+                if (cMove > 0) {
+                    memmove(&pEnv->aSites[k], &pEnv->aSites[k + 1], cMove * sizeof(SmapSite));
+                }
+                --nCount;
+            }
+        }
+        *pEnv->pnSiteCount = nCount;
+    }
+}
+
 /* Byte +10 of a UiControl is nState, the selected/radio byte. The original returns the
  * sixth pointer, loaded at 0x6B9C4 / 0x6BA04 before its final store. */
 static UiControl *OptionsScreen_ClearRadioGroup(UiControl *apCtl[6])
