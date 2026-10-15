@@ -9334,6 +9334,262 @@ static void TestManufBuildPanels(void)
     CheckEqI32(bBuilt, 1, "a missing flag pointer makes it do nothing at all");
 }
 
+/* ManufScreen_Draw @ 0x6e3e0. The four panels come from the real builder, so the row count, the aux
+ * column and panel A's style bytes are exactly what the manufacturing screen itself leaves behind. */
+static i32 g_nDrawSample;
+
+static void DrawSampleStub(u32 nSample, void *pUser)
+{
+    (void)pUser;
+    g_nDrawSample = (i32)nSample;
+}
+
+static bool ManufLineIs(const UiPanel *pPanel, i32 nRow, const char *pszWant)
+{
+    const char *psz = (pPanel != NULL) ? UiPanel_GetLineText(pPanel, nRow) : NULL;
+    return psz != NULL && strcmp(psz, pszWant) == 0;
+}
+
+static void TestManufDraw(void)
+{
+    static ResearchTopicLive aTopic[4];
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static u16 aManufCol[1600];
+    static u32 aProdA[1600];
+    static u32 aProdB[1600];   /* the column at 0x15B79C is u32 in the IDB; the clear and draw envs
+                                * spell it i32, so the two spellings meet in an explicit cast here. */
+    static u16 aProdC[1600];
+    static BaseRec aBases[8];
+    static BaseRec *apBases[8];
+    static u8 aGridBytes[8];
+    static u8 aFacGrid[1524];
+    static u16 aResearchCol[144 * 8];
+    static UiControl aCtl[6];
+    static void *aRoot[7];
+    UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL;
+    ManufBuildEnv benv;
+    ManufClearEnv cenv;
+    ManufDrawEnv denv;
+    u8 bBuilt = 0, bTopicCount = 4, bEntryCount = 144, bSelected = 1;
+    i8 nSelBase = 1;
+    i32 nRow = 0;
+    i32 i;
+
+    printf("the manufacturing draw click\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    aObj[2].uManufWorkPerUnit   = 576;
+    aObj[3].uManufWorkPerUnit   = 1152;
+    aObj[107].uManufWorkPerUnit = 2544;
+    aObj[120].uManufWorkPerUnit = 0;   /* shipped 35712; zeroed to reach the zero-divisor path */
+    aTopic[1].bUnlocked = 1;
+    aTopic[1].abItemIds[0] = 2;
+    aTopic[1].abItemIds[1] = 3;
+    aTopic[2].bUnlocked = 0;           /* 5, 6 and 9 are flagged, so this proves the gate */
+    aTopic[2].abItemIds[0] = 5;
+    aTopic[2].abItemIds[1] = 6;
+    aTopic[3].bUnlocked = 1;
+    aTopic[3].abItemIds[0] = 107;
+    aTopic[3].abItemIds[1] = 120;
+
+    /* Base 1, so every product index is 200 + slot. The quantity total is 110, which makes the
+     * workshop budget 110 / 50 + 1 = 3 in the two tail passes. */
+    aManufCol[200 + 2]   = 100;
+    aManufCol[200 + 107] = 7;
+    aManufCol[200 + 120] = 3;
+    aProdA[200 + 2]      = 576u * 3u;  /* 1728 -> 3 units, 100*1728/(576*4) = 75 */
+    aProdB[200 + 2]      = 4;
+    aProdA[200 + 3]      = 1152;
+    aProdC[200 + 3]      = 2;
+    aProdB[200 + 3]      = 0;          /* nothing asked for: this row takes the clear path */
+    aProdA[200 + 107]    = 0;          /* the seed row: quantity and engineers, no work yet */
+    aProdB[200 + 107]    = 1;
+    aProdA[200 + 120]    = 10;
+    aProdB[200 + 120]    = 5;
+
+    for (i = 0; i < 8; ++i) {
+        apBases[i] = &aBases[i];
+        aBases[i].bUnk4 = (u8)(7 + i); /* base 1 has type 9, and 9 is found at index 1 */
+    }
+    aGridBytes[1] = 5;
+
+    memset(aCtl, 0, sizeof(aCtl));
+    memset(aRoot, 0, sizeof(aRoot));
+
+    memset(&benv, 0, sizeof(benv));
+    benv.pbPanelsBuilt = &bBuilt;
+    benv.ppRoot = aRoot;
+    for (i = 0; i < 6; ++i) {
+        benv.apCtl[i] = &aCtl[i];
+    }
+    benv.ppPanelA = &pA;
+    benv.ppPanelB = &pB;
+    benv.ppPanelC = &pC;
+    benv.ppPanelD = &pD;
+    benv.aTopics = aTopic;
+    benv.pbTopicCount = &bTopicCount;
+    benv.apObjects = apObj;
+    benv.nObjectCount = 149;
+    benv.apProductA = aProdA;
+    benv.apProductB = aProdB;
+    benv.apManufCols = aManufCol;
+    benv.nSelectedBaseIdx = 1;
+
+    memset(&cenv, 0, sizeof(cenv));
+    cenv.apProductA = aProdA;
+    cenv.apProductB = (i32 *)aProdB;
+    cenv.apProductC = aProdC;
+    cenv.apManufCols = aManufCol;
+    cenv.abGridBytes = aGridBytes;
+    cenv.apBases = apBases;
+    cenv.nBaseCount = 8;
+    cenv.pnSelectedBaseIdx = &nSelBase;
+
+    memset(&denv, 0, sizeof(denv));
+    denv.pProductPanel = pA;
+    denv.pPanelB = pB;
+    denv.pPanelC = pC;
+    denv.pPanelD = pD;
+    denv.pnProductRow = &nRow;
+    denv.pbProductSelected = &bSelected;
+    denv.apProductA = aProdA;
+    denv.apProductB = (i32 *)aProdB;
+    denv.apManufCols = aManufCol;
+    denv.apResearchCols = aResearchCol;
+    denv.pbEntryCount = &bEntryCount;
+    denv.apObjects = apObj;
+    denv.nObjectCount = 149;
+    denv.apBases = apBases;
+    denv.nBaseCount = 8;
+    denv.abGridBytes = aGridBytes;
+    denv.abFacilityGrid = aFacGrid;
+    denv.pnSelectedBaseIdx = &nSelBase;
+    denv.pClearEnv = &cenv;
+    denv.pfnPlaySample = DrawSampleStub;
+
+    ManufScreen_BuildPanels(&benv);
+    CheckEqI32(pA != NULL ? pA->nLineCount : -1, 4,
+               "the builder gives four rows: 2, 3, 107, 120");
+    if (pA == NULL || pB == NULL || pC == NULL || pD == NULL) {
+        return;
+    }
+    denv.pProductPanel = pA;
+    denv.pPanelB = pB;
+    denv.pPanelC = pC;
+    denv.pPanelD = pD;
+
+    CheckEqI32((i32)*(const u32 *)(const void *)pA->gap_0, (i32)0x32B4B4B4u,
+               "panel A's offset-0 dword is its style bytes B4 B4 B4 32, not a product id");
+
+    /* Row 0, product 2: the full percent and unit arithmetic. */
+    nRow = 0;
+    bSelected = 1;
+    g_nDrawSample = -1;
+    pA->bFlag7073 = 0;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(g_nDrawSample, 17, "sample 17 is played (0x6E430)");
+    CheckEqI32(bSelected, 0, "bManufProductSelected is cleared (0x6E410)");
+    CheckEqI32(pA->bFlag7073, 1, "panel A's flag 7073 is set (0x6E424)");
+    Check(ManufLineIs(pB, 0, "100"), "panel B shows the allocated work");
+    Check(ManufLineIs(pC, 0, "75%"), "panel C shows 100 * 1728 / (576 * 4)");
+    Check(ManufLineIs(pD, 0, "4/3"), "panel D shows 4 asked for and 3 units paid for");
+    CheckEqI32((i32)aProdA[202], 1728, "a row that already has work is not seeded");
+
+    /* Row 1, product 3: the quantity is zero, so the whole slot is cleared first. */
+    nRow = 1;
+    ManufScreen_Draw(&denv);
+    CheckEqI32((i32)aProdB[203], 0, "the quantity column stays zero");
+    CheckEqI32((i32)aProdA[203], 0, "the accumulated work 1152 is cleared with it (0x6F918)");
+    CheckEqI32((i32)aProdC[203], 0, "the committed-unit column is cleared too (0x6F92C)");
+    CheckEqI32((i32)aManufCol[203], 0, "and the allocated work (0x6F910)");
+    CheckEqI32((i32)aProdA[202], 1728, "the neighbouring row is untouched by the clear");
+    Check(ManufLineIs(pB, 1, ""), "panel B gets the empty string");
+    Check(ManufLineIs(pC, 1, ""), "panel C gets it");
+    Check(ManufLineIs(pD, 1, ""), "and panel D");
+
+    /* Row 2, product 107: quantity 1, engineers 7, no accumulated work -- the seed. */
+    nRow = 2;
+    ManufScreen_Draw(&denv);
+    CheckEqI32((i32)aProdA[307], 1, "the seed stores 1 (0x6E51C)");
+    Check(ManufLineIs(pB, 2, "7"), "panel B shows the allocated 7");
+    Check(ManufLineIs(pC, 2, "0%"), "100 * 1 / (2544 * 1) is 0");
+    Check(ManufLineIs(pD, 2, "1/0"), "1 asked for, 1 / 2544 units paid for");
+
+    /* Row 3, product 120: work-per-unit zero, so both divisions would be by zero. */
+    nRow = 3;
+    ManufScreen_Draw(&denv);
+    Check(ManufLineIs(pB, 3, "3"), "panel B shows the allocated 3");
+    Check(ManufLineIs(pC, 3, "0%"), "the zero divisor answers 0 instead of dividing");
+    Check(ManufLineIs(pD, 3, "5/0"), "and the unit count answers 0");
+    CheckEqI32((i32)aProdA[320], 10, "a row with work is not seeded");
+
+    /* The hangar branch, and that it is dead. With the style dword the builder really leaves, the
+     * base byte at 0x159DBC does not move; force the dword into 119..121 and it does. */
+    CheckEqI32(aGridBytes[1], 5, "the base byte starts at 5");
+    nRow = 3;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(aGridBytes[1], 5, "the real style dword 0x32B4B4B4 is outside 119..121, so nothing is written");
+    *(i32 *)(void *)pA->gap_0 = 118;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(aGridBytes[1], 5, "118 is below the range");
+    *(i32 *)(void *)pA->gap_0 = 122;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(aGridBytes[1], 5, "122 is above it");
+    *(i32 *)(void *)pA->gap_0 = 120;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(aGridBytes[1], 10, "120 takes the branch: 5 plus the low byte of the quantity 5");
+    *(i32 *)(void *)pA->gap_0 = 121;
+    aGridBytes[1] = 250;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(aGridBytes[1], 255, "the sum is stored as a byte, so 250 + 5 wraps to 255");
+    *(i32 *)(void *)pA->gap_0 = (i32)0x32B4B4B4u;
+
+    /* The two tail passes, with the real budget: 110 allocated work buys 3 needed workshops. */
+#define D_T(c, r) aFacGrid[480 + 144 + 6 * (c) + (r)]
+#define D_N(c, r) aFacGrid[444 + 144 + 6 * (c) + (r)]
+    memset(aFacGrid, 0, sizeof(aFacGrid));
+    D_T(0, 0) = 3; D_T(0, 1) = 3; D_T(0, 2) = 3; D_T(0, 3) = 3; D_T(0, 4) = 3;
+    D_T(1, 1) = 2;   /* a lab */
+    D_T(2, 2) = 4;   /* neither */
+    D_N(0, 0) = 1; D_N(0, 1) = 1; D_N(0, 2) = 1; D_N(0, 3) = 1; D_N(0, 4) = 1;
+    D_N(1, 1) = 1;
+    D_N(2, 2) = 9;
+    nRow = 0;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(D_N(0, 0) + D_N(0, 1) + D_N(0, 2), 3, "three workshops claim the budget");
+    CheckEqI32(D_N(0, 3), 0, "the fourth is marked unneeded");
+    CheckEqI32(D_N(0, 4), 0, "and the fifth");
+    CheckEqI32(D_N(1, 1), 0, "the lab pass runs too, with no active research so no budget");
+    CheckEqI32(D_N(2, 2), 9, "a cell that is neither workshop nor lab keeps its byte");
+#undef D_T
+#undef D_N
+
+    /* A row outside the panel: no table work, but the tail passes still run. */
+    memset(aFacGrid, 0, sizeof(aFacGrid));
+    aFacGrid[480 + 144 + 0] = 3;   /* one workshop, base 1 */
+    aFacGrid[444 + 144 + 0] = 1;
+    nRow = PUFO_PANEL_LINES;
+    ManufScreen_Draw(&denv);
+    CheckEqI32((i32)aProdA[202], 1728, "an out-of-panel row touches no product column");
+    Check(ManufLineIs(pB, 0, "100"), "and rewrites no line");
+    CheckEqI32(aFacGrid[444 + 144 + 0], 1, "the two tail passes still run for that row");
+
+    /* A missing environment or panel does nothing at all. */
+    bSelected = 1;
+    ManufScreen_Draw(NULL);
+    CheckEqI32(bSelected, 1, "a null environment cannot even clear the selected flag");
+    denv.pProductPanel = NULL;
+    ManufScreen_Draw(&denv);
+    CheckEqI32(bSelected, 1, "and a null panel stops it the same way");
+    denv.pProductPanel = pA;
+
+    ManufScreen_BuildPanels(&benv);
+    CheckEqI32(bBuilt, 0, "the panels tear down");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -9368,6 +9624,7 @@ int main(void)
     TestManufCommitProduction();
     TestManufInit();
     TestManufBuildPanels();
+    TestManufDraw();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

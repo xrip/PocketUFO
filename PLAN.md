@@ -1118,6 +1118,25 @@ Order is by what unblocks what. Each item ends with gates + commit.
   because it compares the port's table against the image byte for byte.** Long byte runs are transcribed
   by a tool, not by eye.
 
+- [x] part 41, the manufacturing draw click: `ManufScreen_Draw (0x6e3e0)`, 1332 bytes — 42 more checks,
+  and the manufacturing family is complete except `ManufScreen_DrawFrame (0x6f9a4)`. It is the single-row
+  twin of `BuildPanels`: same percent, same asked/units column, same allocated-work column, one row
+  instead of the list. Two things it has that BuildPanels does not.
+  **The seed rule** (0x6E4E4..0x6E51C): a product with a quantity and allocated engineers but no
+  accumulated work gets `apProductA[idx] = 1`. And **the reload after it** — 0x6E6D4 reloads `apProductA`
+  from memory, so a seeded row takes the percent path with that one unit in it. My first version read the
+  accumulated work once and sent the seeded row down the empty-string path; the test caught it as two
+  failures, and that is the reload's evidence.
+  **A dead branch found.** 0x6E52C reads the dword at `pManufProductPanel + 0` and 0x6E530/0x6E538 test it
+  for `> 118 && < 122` — plainly "the selected product is one of the three hangar products 119..121" — but
+  nothing in the binary writes a product id there. `BuildPanels` leaves panel A's style bytes at
+  B4 B4 B4 32 32 FA (0x32B4B4B4), and `UiPanel_ClickRow` / `UiScrollList_TrackHold` store the clicked row
+  at panel offset **12**. So the hangar byte at 0x159DBC is never raised from this screen. Recorded in
+  `bugs.tsv`, and the test forces the dword into range to show what the branch would do: 118 and 122 stay
+  out, 120 and 121 take it, and 250 + 5 wraps to 255 because the store is a byte. `Sound_Play @ 0x9e0c0`
+  takes ONE argument — its body reads only R0 — so the `MOV R1,#4` at 0x6E428 is residue, not a second
+  argument. IDB: the whole reading is now a comment at `0x6e3e0`, the dead branch included.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1158,6 +1177,13 @@ Order is by what unblocks what. Each item ends with gates + commit.
   1446+slot, read back out of the loaded table, and slot 0 is never written. The names are the
   shipped Russian set from lang.dat TEXTS.DAT (slot 59 "Труп Сектоида", slot 77 "Сектоид солдат",
   slot 117 "Рэйнджер"), which is the table the original actually reads.
+- [ ] **The same product column is spelled two ways across the manufacturing envs.** `aManufProductB
+  @ 0x15B79C` is `u32 *apProductB` in `ManufBuildEnv` and `i32 *apProductB` in `ManufClearEnv`,
+  `ManufCommitEnv`, `ManufQtyEnv` and now `ManufDrawEnv`. The IDB says the column is u32. Nothing is
+  wrong today — the values are small unit counts and the tests keep one buffer per spelling — but the
+  day the shell builds one buffer and hands it to both families it needs a cast, and `TestManufDraw`
+  already carries that cast. Worth settling once, in one direction, rather than at every call site.
+
 - [ ] `pufo_game` and `pufo_ui` depend on each other. `pufo_strateg.c` (in `pufo_game`) calls
   `UiLineList_Remove` (in `pufo_ui`), and `pufo_ui` links `pufo_game`. Test targets that link
   `pufo_game` without `pufo_ui` only link because nothing pulls `pufo_strateg.obj` out of the
@@ -1333,6 +1359,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing commit pass (`ManufScreen_CommitProduction`, the work-per-unit reading, the blocked early return) | 56/56 (Release) | 10123 | 860/1103 (78.0%) | 362348/598792 (60.5%) | 38 checked, 0 mismatched |
 | the manufacturing bring-up (`ManufScreen_Init`, the six control descriptors, the shared geoscape controls) | 56/56 (Release) | 10173 | 861/1103 (78.1%) | 362836/598792 (60.6%) | 38 checked, 0 mismatched |
 | the manufacturing panel build (`ManufScreen_BuildPanels`, the research-driven row filter, `aFacTypeTable` found to be the research table) | 56/56 (Release) | 10222 | 862/1103 (78.2%) | 365240/598792 (61.0%) | 39 checked, 0 mismatched |
+| the manufacturing draw click (`ManufScreen_Draw`, the seed rule, the dead hangar branch found) | 56/56 (Release) | 10264 | 863/1103 (78.2%) | 366572/598792 (61.2%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

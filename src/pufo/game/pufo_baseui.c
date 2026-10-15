@@ -4110,6 +4110,120 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv)
     }
 }
 
+/* ManufScreen_Draw @ 0x6e3e0. The manufacturing screen's "draw" click: refresh the three numeric
+ * columns for the selected row, seed a product that has work allocated but none accumulated yet, and
+ * re-run the two needed-facility passes on the selected base. */
+void ManufScreen_Draw(ManufDrawEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pProductPanel == NULL) {
+        return;
+    }
+
+    const i32 nSlot = ManufSelectedProduct(pEnv->pProductPanel, pEnv->pnProductRow); /* 0x6E40C */
+    const i32 nRow = (pEnv->pnProductRow != NULL) ? *pEnv->pnProductRow : 0;
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+
+    if (pEnv->pbProductSelected != NULL) {
+        *pEnv->pbProductSelected = 0; /* 0x6E410 */
+    }
+    pEnv->pProductPanel->bFlag7073 = 1; /* 0x6E424 */
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pSampleUser); /* 0x6E430 */
+    }
+
+    const i32 nIdx = PUFO_PRODUCT_ENTRIES_PER_BASE * nBase + nSlot; /* 0x6E4D0 */
+    const bool bIndexed = (nSlot >= 0 && nIdx >= 0 && nIdx < PUFO_PRODUCT_COLUMN_TOTAL);
+
+    if (bIndexed) {
+        if (pEnv->apProductB != NULL && pEnv->apProductB[nIdx] == 0 && pEnv->pClearEnv != NULL) {
+            ManufScreen_ClearProductSlot(pEnv->pClearEnv, nBase, nSlot & 0xFF); /* 0x6E48C */
+        }
+
+        /* Re-read after the clear: the original reloads all three from memory at 0x6E4E4. */
+        u32 nAccum = (pEnv->apProductA != NULL) ? pEnv->apProductA[nIdx] : 0u;
+        const i32 nTarget = (pEnv->apProductB != NULL) ? pEnv->apProductB[nIdx] : 0;
+        const u16 nAllocated = (pEnv->apManufCols != NULL) ? pEnv->apManufCols[nIdx] : 0u;
+
+        if (nAccum == 0u && nTarget != 0 && nAllocated != 0u && pEnv->apProductA != NULL) {
+            pEnv->apProductA[nIdx] = 1u; /* 0x6E51C STRNE R11,#1 */
+            /* 0x6E6D4 reloads apProductA from memory after the seed, so the seeded row takes the
+             * percent branch with one unit of work in it, not the empty-string branch. */
+            nAccum = pEnv->apProductA[nIdx];
+        }
+
+        /* ORIGINAL BUG (0x6E52C, dead code): the hangar branch tests the dword at panel offset 0
+         * against 119..121 instead of the selected product id, and BuildPanels leaves that dword at its
+         * style bytes 0x32B4B4B4, so it never runs in the shipped build. Reproduced as written; the
+         * test forces the dword into range to show what the branch would do. */
+        const i32 nStyleDword = *(const i32 *)(const void *)pEnv->pProductPanel->gap_0;
+        if (nStyleDword > 118 && nStyleDword < 122) { /* 0x6E530 / 0x6E538: products 119..121 */
+            if (pEnv->apBases != NULL && nBase >= 0 && nBase < pEnv->nBaseCount
+                && pEnv->apBases[nBase] != NULL && pEnv->abGridBytes != NULL) {
+                const u8 nType = pEnv->apBases[nBase]->bUnk4; /* 0x6E5A4 LDRB [R3,#4] */
+                const i32 nCurrent = BaseGrid_GetTypeByte(pEnv->apBases, pEnv->nBaseCount,
+                                                          pEnv->abGridBytes, nType); /* 0x6E558 */
+                /* 0x6E58C LDRB [R3,#0x1904] is the LOW BYTE of apProductB[idx]; 0x6E590 adds it to the
+                 * byte just read and 0x6E5A8 writes the sum back as a byte. */
+                (void)BaseGrid_SetTypeByte(pEnv->apBases, pEnv->nBaseCount, pEnv->abGridBytes, nType,
+                                           (i8)(u8)(nCurrent + (i32)((u32)nTarget & 0xFFu)));
+            }
+        }
+
+        char szLine[PUFO_PANEL_LINE_BYTES];
+
+        /* Panel B: the allocated work, or the empty string at 0x10DA38 when nothing is allocated. */
+        if (nAllocated != 0u) {
+            (void)snprintf(szLine, sizeof(szLine), "%u", (unsigned)nAllocated); /* j_itoa, 0x6E614 */
+        } else {
+            szLine[0] = '\0'; /* 0x6E680 */
+        }
+        if (pEnv->pPanelB != NULL) {
+            (void)UiPanel_SetLineText(pEnv->pPanelB, nRow, szLine); /* 0x6E630..0x6E6A0 */
+        }
+
+        const ObjectRecFull *pObj = (pEnv->apObjects != NULL && nSlot < pEnv->nObjectCount)
+                                        ? pEnv->apObjects[nSlot] : NULL; /* deviation: 0x6E6F8 derefs blindly */
+        const u16 nWork = (pObj != NULL) ? pObj->uManufWorkPerUnit : 0u; /* 0x6E704 LDRH [R3,#0xBA] */
+
+        if (nAccum != 0u) {
+            /* Panel C: 100 * accumulated / (work-per-unit * asked-for), then "%". Divisor in R0 at
+             * 0x6E708, dividend in R1 at 0x6E714 -- _rt_sdiv's argument order. */
+            const i32 nNum = (i32)(nAccum * 100u);
+            const i32 nDen = (i32)((u32)nWork * (u32)nTarget);
+            (void)snprintf(szLine, sizeof(szLine), "%d%%", (nDen != 0) ? (nNum / nDen) : 0);
+            if (pEnv->pPanelC != NULL) {
+                (void)UiPanel_SetLineText(pEnv->pPanelC, nRow, szLine); /* 0x6E744, then strcat("%") 0x6E774 */
+            }
+
+            /* Panel D: what was asked for, then the units the accumulated work has paid for. */
+            const i32 nUnits = (nWork != 0u) ? ((i32)nAccum / (i32)nWork) : 0; /* 0x6E83C..0x6E848 */
+            (void)snprintf(szLine, sizeof(szLine), "%u/%d", (unsigned)(u32)nTarget, nUnits);
+            if (pEnv->pPanelD != NULL) {
+                (void)UiPanel_SetLineText(pEnv->pPanelD, nRow, szLine); /* 0x6E7B8, "/" at 0x6E7E8, 0x6E86C */
+            }
+        } else {
+            if (pEnv->pPanelC != NULL) { (void)UiPanel_SetLineText(pEnv->pPanelC, nRow, ""); } /* 0x6E898 */
+            if (pEnv->pPanelD != NULL) { (void)UiPanel_SetLineText(pEnv->pPanelD, nRow, ""); } /* 0x6E8C8 */
+        }
+    }
+
+    if (pEnv->abFacilityGrid != NULL) {
+        const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+        const i32 nActiveManuf = (pEnv->apManufCols != NULL)
+                                     ? Base_CountActiveManuf(pEnv->apManufCols +
+                                                             PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
+                                                             nEntries)
+                                     : 0;
+        const i32 nActiveResearch = (pEnv->apResearchCols != NULL)
+                                        ? Base_CountActiveResearch(pEnv->apResearchCols +
+                                                                   PUFO_RESEARCH_TOPIC_COUNT * nBase,
+                                                                   nEntries)
+                                        : 0;
+        (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, nBase, nActiveManuf); /* 0x6E8F4 */
+        (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, nBase, nActiveResearch);    /* 0x6E908: tail call */
+    }
+}
+
 void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv)
 {
     if (pEnv == NULL) {

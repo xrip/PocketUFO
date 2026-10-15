@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 862 / 1103 (78.2%) |
-| Bytes of original code cited | 365240 / 598792 (61.0%) |
+| Functions cited as evidence | 863 / 1103 (78.2%) |
+| Bytes of original code cited | 366572 / 598792 (61.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 10222 |
+| Test checks run | 10264 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 169 | 204 | 65900 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 214 | 245 | 64260 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 215 | 245 | 65592 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -148,7 +148,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+4) |
 
 ### `util` (18 functions)
 
@@ -745,7 +745,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (214 functions)
+### `strat-ui` (215 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -761,6 +761,7 @@ is the module that answers to it.
 | `0x7a3f4` | `BasePlaneScreen_BuildListPanels` | 1472 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x6f34c` | `ManufScreen_CommitProduction` | 1408 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x96288` | `TransferScreen_ValidateCapacity` | 1372 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x6e3e0` | `ManufScreen_Draw` | 1332 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x75b88` | `BuySellScreen_ValidateCapacity` | 1280 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x97aa4` | `TransferScreen_CommitTransfer` | 1280 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x74bf8` | `BuySellScreen_CommitTransaction` | 1176 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
@@ -1238,7 +1239,7 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 31 functions, 56904 bytes remaining
+### `strat-ui` — 30 functions, 55572 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
@@ -1260,7 +1261,6 @@ whose port work they belong to.
 | `0x7d374` | `BasePlaneScreen_Draw` | 1648 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x733f4` | `ResearchScreen_BuildPanels` | 1600 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x9a014` | `Ufopaedia_RefreshEntry` | 1528 | not yet ported; scheduled with the `strat-ui` subsystem work |
-| `0x6e3e0` | `ManufScreen_Draw` | 1332 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x71298` | `PsiScreen_SelectListed` | 848 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x749a8` | `ResearchScreen_Init` | 592 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x58728` | `BaseAtScreen_Draw` | 420 | not yet ported; scheduled with the `strat-ui` subsystem work |
@@ -1290,7 +1290,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 100 |
-| `test_baseui` | PASS | 1976 |
+| `test_baseui` | PASS | 2018 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

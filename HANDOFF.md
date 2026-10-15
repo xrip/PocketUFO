@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-13. HEAD before this edit: `02b0b3d`. This document is committed together with
-`Tact_LoadLoftData` (0x3bd6c), ported in `src/pufo/game/pufo_los.c`. The previous commit brought
-`Map_BuildMissionTerrain` (0x22e10) in `src/pufo/game/pufo_terrain.{h,c}` with `tests/test_terrain.c`;
-the decode that made it possible is written up in `docs/parity/game-core.md`.
+Date: 2026-10-15. HEAD before this edit: `e85887a`. This document is committed together with
+`ManufScreen_Draw` (0x6e3e0), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+the reading it came from is written up in `docs/parity/game-core.md` under
+`## ManufScreen_Draw (0x6e3e0, 1332 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -78,10 +78,11 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10222**. Coverage as of the latest commit: **862 / 1103
-functions (78.2%)**, **365240 / 598792 bytes (61.0%)**. The last two units were `ManufScreen_Init`
-(0x710b0) and `ManufScreen_BuildPanels` (0x6e9e8): the manufacturing screen now comes up end to end, and
-`aFacTypeTable @ 0x15EF08` was found to be the research topic table under a wrong name. The §2 numbers
+Test checks run across the 56 suites: **10264**. Coverage as of the latest commit: **863 / 1103
+functions (78.2%)**, **366572 / 598792 bytes (61.2%)**. The last unit was `ManufScreen_Draw`
+(0x6e3e0): the manufacturing family is now complete except its frame drawer `ManufScreen_DrawFrame`
+(0x6f9a4), and the draw click turned up a dead branch -- 0x6E52C tests panel A's style dword at offset 0
+against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised here. The §2 numbers
 below are the snapshot taken
 when this file was regenerated and are older than that line.
 

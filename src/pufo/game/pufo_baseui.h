@@ -1959,6 +1959,85 @@ typedef struct ManufBuildEnv {
 
 void ManufScreen_BuildPanels(ManufBuildEnv *pEnv);
 
+/* ------------------------------------------------- the manufacturing screen's "draw" click
+ *
+ * Evidence: ManufScreen_Draw @ 0x6e3e0 (1332 B). Installed as the click handler of the shared draw
+ * control unk_186BB4 by ManufScreen_Init (LDR R3,=ManufScreen_Draw / STR R3,[R0,#0xC] at 0x71228), and
+ * called again from Geoscape_CloseUI case 8 at 0x8BD78 whenever bManufProductSelected is set. Both call
+ * sites discard the return value -- the original returns Base_UpdateLabNeeded's loop-counter residue of
+ * 6 -- so the port returns void.
+ *
+ * Where BuildPanels refreshes the whole list, this refreshes ONE row: the row the product panel's
+ * cached cursor points at.
+ *
+ * 1. 0x6E40C..0x6E430: the selected product is pManufProductPanel->anLineAux[nManufProductRowCache],
+ *    cached in a local; bManufProductSelected is cleared; panel A's bFlag7073 is set; sample 17 is
+ *    played. 0x6E428 also loads 4 into R1, but Sound_Play @ 0x9e0c0 takes ONE argument (its body reads
+ *    only R0) and never touches R1, so that 4 is register residue, not a second argument.
+ * 2. 0x6E478..0x6E48C: when apProductB[200*base + product] is zero the slot is cleared through
+ *    ManufScreen_ClearProductSlot. The product is masked to a byte for the call (AND R2,R3,#0xFF at
+ *    0x6E484) while the index itself uses the unmasked value.
+ * 3. 0x6E4E4..0x6E51C: the seed. apProductA[idx] == 0 AND apProductB[idx] != 0 AND auManufCol[idx] != 0
+ *    together store 1 into apProductA[idx] -- a product that has a quantity and allocated engineers but
+ *    no accumulated work yet starts with one unit of it. Step 6 reloads apProductA from memory at
+ *    0x6E6D4, so a seeded row goes down the percent path with that one unit in it rather than the
+ *    empty-string one.
+ * 4. 0x6E52C..0x6E5A8: ORIGINAL BUG, reproduced -- the hangar branch, DEAD in the shipped build. The test is on the dword
+ *    at panel A offset 0 -- `> 118 && < 122`, plainly meant as "the selected product is one of the three
+ *    hangar products 119..121" -- but nothing in the binary writes a product id there. BuildPanels leaves
+ *    panel A's style bytes at B4 B4 B4 32 32 FA, so the dword reads as 0x32B4B4B4; UiPanel_ClickRow and
+ *    UiScrollList_TrackHold write the row into the dword at offset 12, not offset 0. Recorded in
+ *    docs/parity/bugs.tsv. What it would do if it ran: take the selected base's type byte
+ *    (apBases[base]->bUnk4, 0x6E5A4), read that base's byte in the eight-byte table at
+ *    abFacilityGrid + 1620 = 0x159DBC through BaseGrid_GetByte0x654 (0x6E558), and write back that value
+ *    plus the LOW BYTE of apProductB[idx] (LDRB [R3,#0x1904] at 0x6E58C, ADD at 0x6E590) through
+ *    BaseGrid_SetByteAtFound (0x6E5A8).
+ * 5. 0x6E5EC..0x6E6A0: panel B's line for this row = auManufCol[idx] as decimal, or the empty string at
+ *    0x10DA38 when it is zero -- the same column BuildPanels fills, one row instead of the list.
+ * 6. 0x6E6D4..0x6E8E0: when apProductA[idx] != 0, panel C gets 100 * apProductA / (uManufWorkPerUnit *
+ *    apProductB) with "%" appended -- divisor in R0 at 0x6E708, dividend in R1 at 0x6E714, _rt_sdiv's
+ *    order again -- and panel D gets itoa(apProductB) then "/" then itoa(apProductA / uManufWorkPerUnit)
+ *    (0x6E7A0, 0x6E7E8, 0x6E83C..0x6E848). Otherwise both get the empty string. The guard here is
+ *    apProductA != 0 where BuildPanels guards on apProductB != 0; step 2 has just cleared the slot when
+ *    the quantity is zero, so the empty-string path is reached through apProductA being zero.
+ * 7. 0x6E8F4 and 0x6E908: Base_UpdateWorkshopNeeded then Base_UpdateLabNeeded on the selected base, the
+ *    same pair ResearchScreen_ConfirmAndCache ends with. The originals call Base_CountActiveManuf and
+ *    Base_CountActiveResearch inside themselves; the port passes the counts in, taken from
+ *    auManufCol[200*base..] and auResearchCol[144*base..] with the shared entry count byte at 0x160C4C.
+ *
+ * Deviations: the original bounds nothing -- an out-of-range row, base index or product indexes the
+ * 1600-entry columns and apBases blindly. The port reads the aux cell only for a row inside the panel,
+ * skips steps 2..6 when the composed index is outside 0..1599, and dereferences apBases only for a base
+ * inside the array; the two tail passes still run either way. Both divisions can be by zero in the
+ * original (the percent by uManufWorkPerUnit * asked-for, the unit count by uManufWorkPerUnit) and the
+ * port answers zero, the same policy BuildPanels and CommitProduction record. */
+typedef struct ManufDrawEnv {
+    UiPanel             *pProductPanel;   /* pManufProductPanel @ 0x15EE44: names, aux = product id */
+    UiPanel             *pPanelB;         /* pManufPanelB @ 0x15EE48: the allocated-work column */
+    UiPanel             *pPanelC;         /* pManufPanelC @ 0x15EE40: the percent column */
+    UiPanel             *pPanelD;         /* pManufPanelD @ 0x15EE38: the asked/produced column */
+    const i32           *pnProductRow;    /* nManufProductRowCache @ 0x15EE3C */
+    u8                  *pbProductSelected; /* bManufProductSelected @ 0x15EE34 */
+    u32                 *apProductA;      /* unk_159E9C: accumulated work */
+    i32                 *apProductB;      /* aManufProductB @ 0x15B79C: units asked for */
+    u16                 *apManufCols;     /* auManufCol @ 0x15E19C: allocated work */
+    const u16           *apResearchCols;  /* auResearchCol @ 0x16022C, for the lab pass's active count */
+    const u8            *pbEntryCount;    /* nResearchEntryCount @ 0x160C4C, shared by both counts */
+    ObjectRecFull *const *apObjects;      /* apObjects @ 0x113AC0, for uManufWorkPerUnit */
+    i32                  nObjectCount;    /* Map_nObjectCount @ 0x114A60, u16 semantics */
+    BaseRec *const      *apBases;         /* apBases @ 0x114B2C = Map + 0x1174, for bUnk4 */
+    i32                  nBaseCount;
+    u8                  *abGridBytes;     /* 0x159DBC = abFacilityGrid + 1620, the eight base bytes the
+                                           * hangar products live in */
+    u8                  *abFacilityGrid;  /* abFacilityGrid @ 0x159768, for the two tail passes */
+    const i8            *pnSelectedBaseIdx; /* nSelectedBaseIdx @ 0x159D81 */
+    const ManufClearEnv *pClearEnv;       /* ManufScreen_ClearProductSlot's tables */
+    void (*pfnPlaySample)(u32 nSample, void *pUser);
+    void *pSampleUser;
+} ManufDrawEnv;
+
+void ManufScreen_Draw(ManufDrawEnv *pEnv);
+
 /* ManufScreen_IncEngineers @ 0x6e13c (500 B): the manufacturing screen's engineer "+" button. Like
  * the other four buttons it opens by reading bManufQtyGate and bails returning that byte, and like
  * them the gate is dead in the shipped build. It then splits on the selected product:
