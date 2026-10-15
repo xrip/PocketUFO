@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `f9e2c6c`. This document is committed together with
-`ResearchScreen_Draw` (0x73a34), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+Date: 2026-10-15. HEAD before this edit: `ab37f07`. This document is committed together with
+`BuySellScreen_Draw` (0x77e6c), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
 the reading it came from is written up in `docs/parity/game-core.md` under
-`## ResearchScreen_Draw (0x73a34, 2108 B)`.
+`## BuySellScreen_Draw (0x77e6c, 3524 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -42,7 +42,7 @@ Build and test, run for this document:
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
 ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 56
-                                             Total Test time (real) = 3.98 sec
+                                             Total Test time (real) = 3.95 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -56,12 +56,12 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 868 / 1103 (78.7%)
-                                             bytes cited:     377972 / 598792 (63.1%)
-python docs/parity/audit_credits.py       -> credited functions: 868, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 229 (explain 211 citations)
+python docs/parity/coverage.py            -> functions cited: 869 / 1103 (78.8%)
+                                             bytes cited:     381496 / 598792 (63.7%)
+python docs/parity/audit_credits.py       -> credited functions: 869, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 231 (explain 211 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 119, ORIGINAL BUG markers in src/pufo: 43
+python docs/parity/audit_bugs.py          -> ledger rows: 120, ORIGINAL BUG markers in src/pufo: 44
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 39 tables checked, 0 mismatched
 ```
@@ -78,14 +78,21 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10589**. Coverage as of the latest commit: **868 / 1103
-functions (78.7%)**, **377972 / 598792 bytes (63.1%)**. The last unit was `ResearchScreen_Draw` (0x73a34),
-which finishes the research screen family — bring-up, panel build, topic rebuild and now the frame. It is
-the second port tested pixel-by-pixel on the real surface, and the first one that also loads a real pad
-out of `main.dat` (research.pad, 240x320, mode 6) and blits it. Its rails turned out to be a fourth copy
-of the same 96 blits the transfer and manufacturing frames carry, so all three now share one
-`BaseUi_DrawFrameRails`. Three original
-inconsistencies are now on the record: `ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
+Test checks run across the 56 suites: **10674**. Coverage as of the latest commit: **869 / 1103
+functions (78.8%)**, **381496 / 598792 bytes (63.7%)**. The last unit was `BuySellScreen_Draw` (0x77e6c),
+3524 bytes, which finishes the buy/sell family and is the third frame verified pixel-by-pixel against the
+real surface. It found the clearest original defect so far: the half of the frame that runs while
+`bBuySellPanelsBuilt` is 0 dereferences all five panels that `BuySellScreen_BuildPanels`' teardown
+(0x77D60..0x77E38) has already `operator delete`'d without nulling them, and at 0x78B80 it uses the row
+marker without the `- 2000` the built half applies. The port guards both and the row is in `bugs.tsv`. The
+same unit shows the two halves of one function drawing differently (different total line, swapped column
+captions, shifted separators, a shortfall panel on one side only) and pins the three row-marker decodings
+(soldier via panel B's aux cell, alien as `apObjects[marker - 2000]`, everything else a priced object).
+Before it, `ResearchScreen_Draw` (0x73a34) finished the research screen family — bring-up, panel build,
+topic rebuild and the frame — and was the first port to load a real pad out of `main.dat` (research.pad,
+240x320, mode 6) and blit it; its rails turned out to be a copy of the same 96 blits the transfer and
+manufacturing frames carry, so all three now share one `BaseUi_DrawFrameRails`. Three other original
+inconsistencies are on the record: `ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
 against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there;
 `ResearchScreen_BuildPanels` computes the progress percentage as `100 * (wProgress / wTotal)` while
 `ResearchScreen_RefreshPanels` computes `(100 * wProgress) / wTotal`, so a quarter-done topic reads 0% and
@@ -100,20 +107,20 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 
 | Subsystem | Recreated | Total | Bytes covered | What it is |
 |---|---|---|---|---|
-| `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile), AssetReader |
-| `boot-assets` | 3 | 4 | 1892 / 2744 | startup asset load, text-table extraction, shutdown |
-| `render` | 48 | 51 | 10324 / 11108 | software surface, blitters, palette loading |
-| `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound behind a backend seam |
-| `util` | 19 | 21 | 1156 / 1180 | growable pointer array, RNG, string helpers |
+| `dat` | 17 | 18 | 2732 / 2744 | tagged archive container (DatFile) and AssetReader |
+| `boot-assets` | 4 | 4 | 2744 / 2744 | startup asset load, text-table extraction, shutdown |
+| `render` | 51 | 52 | 11104 / 11128 | software surface, blitters, palette loading |
+| `audio` | 6 | 6 | 1176 / 1176 | FMOD-backed sound, behind a backend seam |
+| `util` | 18 | 20 | 1136 / 1160 | growable pointer array, RNG, string helpers |
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
-| `platform` | 0 | 132 | 0 / 1908 | WinCE to Win32 seams (GDI display, registry) |
-| `save` | 34 | 35 | 23772 / 27172 | save/load chunk read/write |
-| `tact` | 178 | 214 | 83928 / 178344 | tactical map cells, entities, pathing, LOS, turns, action queue |
-| `tact-ui` | 49 | 52 | 35772 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 68 | 85 | 14764 / 38368 | shared UI panel, text engine, menus |
-| `strat` | 120 | 205 | 38736 / 162456 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 110 | 243 | 8704 / 117008 | base/crew/manuf/research/buysell/transfer/options screens |
-| `titles` | 8 | 13 | 3548 / 4444 | intro/outro animated scenes |
+| `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
+| `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
+| `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
+| `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
+| `strat` | 169 | 204 | 65900 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
+| `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
 (`gx.dll` GAPI, registry helpers) that the port deliberately replaces with Win32 equivalents rather
@@ -123,20 +130,25 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Nine commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
-transcription.
+Ten commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+transcription. This stretch is the manufacturing and research screen families, and the buy/sell frame
+that this document is committed with.
 
 | Commit | Change | Why |
 |---|---|---|
-| `62604e0` | decode the proximity-device pair | record behaviour before porting |
-| `c84309e` | port `Combat_DetonateNearbyItems` (0x32fa8) | arming chain reaction |
-| `8e03c37` | port `MapCell_TickProximityItems` (0x4b724) | arming countdown |
-| `29dbe26` | port `Tact_DeployTeamAndHwps` (0x39980) | last big `Tact_InitMission` blocker except terrain and aliens |
-| `3aef8e6` | decode `Tact_SpawnAliens` (0x3a2ac) | found it is blocked on data tables, not functions |
-| `ce45dcb` | port `Base_UpdateAlienContainmentNeeded`, `Base_CountAmmoItems`, `Base_CalcOccupiedSpace` | closed the last three small gaps in the base-capacity family |
-| `8717217` | decode `MapView_DrawUnit` (0x1c958) | last big iso leaf |
-| `885363b` | settle `MapView_DrawUnit` table extents from the image | a stride contradiction, resolved |
-| `6121f6d` | correct a fact committed wrongly in `8717217` | see below |
+| `7ad6f2e` | fix two message payloads I had "corrected" the wrong way; audit every ported `AppendLineWithSound` site | the port must not silently improve the original |
+| `de08b2b` | port `ManufScreen_CommitProduction` (0x6f34c) | the manufacturing tables are work units, not item counts |
+| `f44bf55` | port `ManufScreen_Init` (0x710b0) | the two bottom controls are shared geoscape UI, not manufacturing ones |
+| `e85887a` | port `ManufScreen_BuildPanels` (0x6e9e8) | `aFacTypeTable` @ 0x15EF08 was the research topic table under a wrong name |
+| `ebc5d2b` | port `ManufScreen_Draw` (0x6e3e0) | its hangar branch tests panel A's style dword, not the product |
+| `4d9d3bb` | port `ManufScreen_DrawFrame` (0x6f9a4) | the manufacturing family is complete |
+| `3daaeaf` | port `ResearchScreen_Init` (0x749a8) | research points the shared bottom controls the other way round |
+| `054b2c5` | port `ResearchScreen_BuildPanels` (0x733f4) | the progress percentage is computed two ways |
+| `f9e2c6c` | port `ResearchScreen_RebuildTopicList` (0x74270) | research completion is what unlocks a facility kind |
+| `ab37f07` | port `ResearchScreen_Draw` (0x73a34) | the research screen's pad lives inside the topic table |
+
+The unit this document is committed with (`BuySellScreen_Draw`, 0x77e6c) follows `ab37f07` and is
+described in §2.
 
 ### A real crash found in already-ported code
 
@@ -257,7 +269,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 10589 checks, all passing in 4.0 s.
+- 56 test suites, 10674 checks, all passing in 3.95 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -320,21 +332,25 @@ This is the shortest chain that produces a real game session, in dependency orde
 | Address | Function | Bytes | Note |
 |---|---|---|---|
 | 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
+| 0x27bb8 | `Unit_CanStepTo` | 14,716 | |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
 | 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
+| 0x50adc | `Tact_ProcessFireAction` | 8,192 | |
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
 | 0x34fbc | `Tact_CheckBattleEnd` | 5,748 | |
 | 0x52adc | `Tact_ProcessFallAction` | 5,716 | |
-| 0x6f9a4 | `ManufScreen_DrawFrame` | 5,400 | |
 | 0x7fcb0 | `StrategList_ProcessEvents` | 4,904 | |
-| 0x3c550 | `Tact_InitMission` | 4,120 | on the critical path |
-| 0x1fc8c | `Tact_DrawCommandPads` | 4,044 | |
+| 0x57808 | `BaseAtScreen_Update` | 3,872 | |
 
-`strat-ui` is the weakest subsystem by bytes: 8,704 of 117,008 (7.4%). It is 110 of 243 functions
-because most of its functions are small screen handlers, but almost none of the screens actually
-draw.
+(Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
+`BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
+`Tact_InitMission` and `Tact_DrawCommandPads` are no longer listed here.)
+
+`strat` is the weakest subsystem by bytes: 65,900 of 160,496 (41.1%), because `Geoscape_Draw` and the
+pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
+(66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
 
@@ -761,9 +777,11 @@ large enough to need a fresh context window on their own.
 
 ### Priority 4 — screens
 
-`strat-ui` is 6.8% by bytes. The screen-build family (`BaseInfoScreen_BuildPanels`,
-`BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `ManufScreen_DrawFrame`) is where the
-remaining bulk is.
+`strat-ui` is 221 of 245 functions and 80,516 of 121,164 bytes (66.4%). The buy/sell, transfer,
+manufacturing, research, soldier, base-facility and radar-leaf families are complete. What is left is
+24 functions / 40,648 bytes in six screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
+the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
+(`Ufopaedia_*`), the options screen's open/confirm pair, and the base-attack screen's update/draw pair.
 
 ### Priority 5 — housekeeping
 

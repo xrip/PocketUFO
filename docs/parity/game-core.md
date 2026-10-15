@@ -12552,3 +12552,65 @@ anLineAux with the cached row cursor without bounds. The port bounds the label b
 panels and controls, and clamps the row read the way ResearchScreen_IncSelectedQty does. The test also
 shows the pen Text_DrawString paints with is the SECOND triple of the packed pair: the white pair
 250,250,250 / 0,0,0 draws black text, and the teal captions come out as 4,70,75.
+
+## BuySellScreen_Draw (0x77e6c, 3524 B)
+
+Ported as src/pufo/game/pufo_baseui.c:BuySellScreen_Draw over a BuySellDrawEnv in pufo_baseui.h, and
+tested by tests/test_baseui.c section "the buy/sell screen's frame" (100 checks) on the real 240x320
+surface with the real font. Called from Geoscape_Draw's buy/sell screen-id case (0x93E10); the result is
+register residue and the caller discards it, so the port returns void.
+
+**The frame splits on bBuySellPanelsBuilt @ 0x161A28 and the two halves are not the same drawing.** They
+share the rails, the close control, the funds line, the site name, the five panel draws, the four column
+separators and the "no row under the cursor" tail, but they differ in four places: the total line is
+TEXTS[157] "Итого" in the 255,120,120 pair on the not-built half and TEXTS[411] "Выручка " in
+120,120,255 on the built half; the two column captions swap sides (TEXTS[92] "НОК-во" centred on 210 and
+TEXTS[158] "Цена" on 155, against 145 and 212); the separators move from x 130/176/191/206 to
+130/160/175/190; and the shortfall panel exists only on the not-built half.
+
+Common head, 0x77E80..0x78150: the shared rails, then UiControl_BlitActivePad(unk_186B00)
+unconditionally -- the opposite of ResearchScreen_Draw, which blits the close control only when no row
+is selected. Then TEXTS[156] "Деньги: " + itoa(nFunds) + " $" at (10, 28), where Text_MeasureWidth runs
+at 0x780B4 and its result is thrown away, and the selected site's name centred at (120 - w/2, 10).
+
+Not-built half, 0x786BC..0x78B94: bBuySellControlsBuilt @ 0x161A24 == 0 ends it. Otherwise the total
+line, the two captions, then the only bFlag7073 writes in the function -- panels B and C get
+(dword at byte_1870C8 != 1) -- and both get bUnk7080 = bPanelFlagScratch (was unk_161F0C), which is
+zeroed after the copy. Five UiPanelMsg_Draw in the order A, E, C, B, D. Band = 16 *
+min(panelB->nLineCount, panelB->nStyle); separators 1 pixel wide at y 69, height band + 2, index 0xB4.
+Then 220,80,80 / 50,30,30 and, if the shortfall dword is 1, a switch on dword_1870B4[0]: reasons 0..3
+run Ui_AnimExpandBlit_IfEnabled(20, 130, 200, 70, 1) and draw TEXTS[405 + reason] centred at
+(120 - w/2, 158) and return; the default breaks into the cursor block, so reason 4 gets no panel at all.
+
+Built half, 0x78180..0x78420: the scratch byte only, no bFlag7073 write; the blue total line; the
+captions on the other sides; the same five panels; separators at 130/160/175/190; no shortfall panel
+even with the shortfall dword at 1.
+
+Cursor block, both halves. Gate: bBaseFacPreviewOk != 0 and 75 < nSmapCursorY < band + 75, strict on
+both ends. The row marker is panelA->anLineAux[unk_186BE8] and decodes three ways. == 1000
+(PUFO_ROW_SOLDIER): the built half draws apSoldiers[panelB->anLineAux[cursor]]->szName at (10, 281) --
+the soldier index is panel B's aux cell because panel A only carries the marker, and Soldier.szName is
++0xBA -- with TEXTS[412] "Уволить" at (10, 297); the not-built half draws only TEXTS[159] "Солдат".
+> 2000: an alien row carries its slot plus PUFO_ROW_ALIEN_OFFSET, so 0x784E8 reads
+apObjects[marker - 2000] (the ARM's `LDR R2,=0xFFFFE1C8` is -7736 dwords off the 0x1139B8 root, i.e.
+2000 slots), named at (10, 281) with TEXTS[1605] "Усыплен" under it. Anything else:
+apObjects[marker]->szName at (10, 281) and TEXTS[413] "Цена 1 ед. " + itoa(ObjectRecFull.uPrice, +0xBC)
+at (10, 297), except markers 117..121, which get TEXTS[414] "уволить" instead of the price. Outside the
+gate unk_186BA4 is blitted and TEXTS[1127] "ОК" draws centred at (120 - w/2, 297) in the teal pair.
+bBuySellCursorOnRow (was unk_161A30) is written only by the not-built half -- all five of its
+cross-references sit in that tail.
+
+**Deviation found (0x78864), in `bugs.tsv`.** The not-built half dereferences all five panels after
+BuySellScreen_BuildPanels' teardown (0x77D60..0x77E38) has operator delete'd them without nulling
+pBuySellPanelA..E -- the teardown's last write is the funds rollback STRNE at 0x77E50. It writes
+bFlag7073 and bUnk7080 into freed panels, reads panel B's nLineCount at 0x788E4 and panel A's aux column
+at 0x78B54, and at 0x78B80 uses the marker raw as an object index with no 2000 subtraction, so an alien
+row there would deref apObjects[2077]. The built half does subtract 2000, which is what makes the
+omission look unintended. The port null-guards the panels and bounds the marker.
+
+The ten labels are direct aTextRecs pointers (stride 205): 0xBB5BC, 0xBB689, 0xBB756, 0xB827C, 0xC81EF,
+0xC82BC, 0xC8389, 0xC8456, 0x103E11 and 0xEBF4B are records 156, 157, 158, 92, 411, 412, 413, 414, 1605
+and 1127, and lang.dat says exactly what the code implies -- "Деньги: ", "Итого", "Цена", "НОК-во",
+"Выручка ", "Солдат", "Уволить", "Цена 1 ед. ", "уволить", "Усыплен" and "ОК". The four shortfall
+captions 405..408 are "Нет места для жилья", "Нет денег", "Нет свободного ангара" and "Нет свободных
+хранилищ" -- the same four records the transfer screen uses for the same reasons.

@@ -1277,6 +1277,35 @@ Order is by what unblocks what. Each item ends with gates + commit.
   packed pair, so the "white" pair 250,250,250 / 0,0,0 draws black text and the teal captions come out
   as 4,70,75.
 
+- [x] part 47, the buy/sell frame: `BuySellScreen_Draw (0x77e6c)`, 3524 bytes — 85 more checks and four
+  findings.
+  **The frame splits on `bBuySellPanelsBuilt` and the two halves are different drawings.** Same rails,
+  same close control, same funds line, same site name, same five panels, same four separators, same
+  "no row under the cursor" tail — but the total line is TEXTS[157] "Итого" in 255,120,120 on one half
+  and TEXTS[411] "Выручка " in 120,120,255 on the other; the column captions swap sides (TEXTS[92]
+  centred on 210 / TEXTS[158] on 155, against 145 / 212); the separators move from x 130/176/191/206 to
+  130/160/175/190; and the shortfall panel exists only on the not-built half.
+  **The close control is blitted unconditionally here**, the opposite of the research frame.
+  **The row marker decodes three ways** (`panelA->anLineAux[cursor]`): 1000 is a soldier and its index
+  comes from **panel B's** aux cell because panel A only carries the marker — the name is
+  `apSoldiers[panelB->anLineAux[cursor]]->szName`, `Soldier.szName` being +0xBA — with TEXTS[412] under
+  it; `> 2000` is an alien and 0x784E8's `LDR R2,=0xFFFFE1C8` (-7736 dwords off the 0x1139B8 root) is
+  exactly `apObjects[marker - 2000]`, with TEXTS[1605] under it; anything else is a plain object, priced
+  through TEXTS[413] + `ObjectRecFull.uPrice` (+0xBC) except markers 117..121, which get TEXTS[414]
+  instead. Hex-Rays renders both array reads as offsets from `Map_nObjectCount`; the ARM
+  (`LDR R2,=0x1198`, `LDR R2,=0xFFFFE1C8`) is what fixes them onto `Map+0x1198` = `apSoldiers` and
+  `apObjects`.
+  **Deviation found (0x78864), in `bugs.tsv`.** The not-built half dereferences all five panels after
+  `BuySellScreen_BuildPanels`' teardown (0x77D60..0x77E38) has `operator delete`'d them without nulling
+  `pBuySellPanelA..E` — the teardown's last write is the funds rollback at 0x77E50. It writes
+  `bFlag7073`/`bUnk7080` into freed panels, reads panel B's `nLineCount` at 0x788E4 and panel A's aux at
+  0x78B54, and at 0x78B80 uses the marker raw, so an alien row there would deref `apObjects[2077]`; the
+  built half does subtract 2000, which is what makes the omission look unintended.
+  **`bBuySellCursorOnRow` (was unk_161A30) is written only by the not-built half** — all five of its
+  cross-references sit in that tail. Housekeeping: `unk_161F0C` → `bPanelFlagScratch` (shared with
+  `BasePlaneScreen_DrawCraftDetail` and `TransferScreen_Draw`), IDB comments at 0x77e6c, 0x784E8,
+  0x78864 and 0x78B80. Every one of the ten label records cross-checks against lang.dat.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1538,6 +1567,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the research panels (`ResearchScreen_BuildPanels`, the divide-first percentage found, the topic table as the screen block) | 56/56 (Release) | 10434 | 866/1103 (78.5%) | 374164/598792 (62.5%) | 39 checked, 0 mismatched |
 | the research rebuild (`ResearchScreen_RebuildTopicList`, the topic→facility-kind permutation, the wrong-column clear found) | 56/56 (Release) | 10520 | 867/1103 (78.6%) | 375864/598792 (62.8%) | 39 checked, 0 mismatched |
 | the research frame (`ResearchScreen_Draw`, the pad inside the topic table, the close-control-only-when-no-row quirk, the rails deduped) | 56/56 (Release) | 10589 | 868/1103 (78.7%) | 377972/598792 (63.1%) | 39 checked, 0 mismatched |
+| the buy/sell frame (`BuySellScreen_Draw`, the two halves that draw differently, the freed-panel deref found) | 56/56 (Release) | 10674 | 869/1103 (78.8%) | 381496/598792 (63.7%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

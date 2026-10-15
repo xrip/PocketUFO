@@ -4065,4 +4065,118 @@ typedef struct ResearchDrawEnv {
 
 void ResearchScreen_Draw(const ResearchDrawEnv *pEnv);
 
+/* BuySellScreen_Draw @ 0x77e6c (3524 B): the buy/sell screen's frame, and the biggest of the four
+ * screen frames. Called from Geoscape_Draw's screen-id-10/11/12 case (0x93E10); the result is register
+ * residue and the caller discards it, so the port returns void.
+ *
+ * The frame splits on bBuySellPanelsBuilt @ 0x161A28 -- the same flag BuySellScreen_BuildPanels sets
+ * and clears -- and the two halves are NOT the same drawing. They share the rails, the close control,
+ * the funds line, the site name, the five panel draws, the four column separators and the cursor block,
+ * but they differ in the two column captions' x, in the separators' x, in which total line is used and
+ * in its colour, in whether the shortfall panel exists, and in how much of the cursor block runs.
+ *
+ * Common head, 0x77E80..0x78150. The shared rails. Then UiControl_BlitActivePad(unk_186B00) -- the
+ * close control, unconditionally, which is the opposite of the research frame. Then the pair
+ * 120,255,120 / 10,10,10 and TEXTS[156] + itoa(nFunds) + " $" at (10, 28); Text_MeasureWidth runs at
+ * 0x780B4 and its result is thrown away. Then the pair 180,180,180 / 10,10,10 and the selected site's
+ * 64-byte name centred at (120 - w/2, 10).
+ *
+ * Panels not built, 0x786BC..0x78B94. bBuySellControlsBuilt @ 0x161A24 == 0 ends the function here.
+ * Otherwise the pair 255,120,120 / 10,10,10 and TEXTS[157] + ":" + itoa(BuySell_nTransTotal) + " $" at
+ * (10, 40); then the pair 180,180,250 / 10,10,10 with TEXTS[92] centred at (210 - w/2, 54) and
+ * TEXTS[158] centred at (155 - w/2, 54). Then panels B and C get bFlag7073 = (dword at byte_1870C8 != 1)
+ * -- the only place in this function that writes that flag -- and both get bUnk7080 = unk_161F0C, which
+ * is then zeroed. Five UiPanelMsg_Draw in the order A, E, C, B, D. Band = 16 * min(panelB->nLineCount,
+ * panelB->nStyle); four 1-pixel separators at x 130, 176, 191, 206, y 69, height band + 2, index 0xB4.
+ * The pair 220,80,80 / 50,30,30, and if the shortfall dword is 1 a switch on dword_1870B4[0] runs
+ * Ui_AnimExpandBlit_IfEnabled(grid, 20, 130, 200, 70, 1) and draws TEXTS[405 + reason] centred at
+ * (120 - w/2, 158) and returns. Reasons 4 and up fall through to the cursor block.
+ *
+ * Panels built, 0x78180..0x78420. Panels B and C get bUnk7080 = unk_161F0C (no bFlag7073 write here),
+ * then the scratch byte is zeroed. The pair 120,120,255 / 10,10,10 and TEXTS[411] + ":" +
+ * itoa(BuySell_nTransTotal) + " $" at (10, 40); then 180,180,250 / 10,10,10 with TEXTS[92] centred at
+ * (145 - w/2, 54) and TEXTS[158] centred at (212 - w/2, 54) -- the two captions swap sides against the
+ * other half. The same five panel draws, the same band, separators at x 130, 160, 175, 190. No shortfall
+ * panel at all on this path.
+ *
+ * The cursor block, both halves. Gate: bBaseFacPreviewOk != 0 and 75 < nSmapCursorY < band + 75. Inside
+ * it the pair 150,150,255 / 20,20,55. The row marker is
+ * panelA->anLineAux[unk_186BE8], and it decodes three ways:
+ *   == 1000 (PUFO_ROW_SOLDIER) -- the built half draws apSoldiers[panelB->anLineAux[cursor]]->szName
+ *     (Soldier.szName is +0xBA) at (10, 281) and TEXTS[412] at (10, 297); the not-built half draws only
+ *     TEXTS[159] at (10, 297).
+ *   > 2000 (an alien row, PUFO_ROW_ALIEN_OFFSET) -- apObjects[marker - 2000]->szName at (10, 281) and
+ *     TEXTS[1605] at (10, 297).
+ *   anything else -- apObjects[marker]->szName at (10, 281), then TEXTS[413] + itoa(apObjects[marker]
+ *     ->uPrice) built into the label buffer, drawn at (10, 297) unless the marker is 117..121, where
+ *     TEXTS[414] is drawn instead.
+ * Outside the gate unk_186BA4 is blitted, the label buffer takes TEXTS[1127], the pair 68,244,252 /
+ * 4,70,75 is set, and the label draws centred at (120 - w/2, 297). unk_161A30 is written only by the
+ * panels-not-built half -- 1 inside its gate at 0x78B14, 0 outside it at 0x78B94; all five of its
+ * cross-references sit in that tail, so the built half leaves the flag alone.
+ *
+ * The ten labels are direct aTextRecs pointers (stride 205): 0xBB5BC, 0xBB689, 0xBB756, 0xB827C,
+ * 0xC81EF, 0xC82BC, 0xC8389, 0xC8456, 0x103E11 and 0xEBF4B are records 156, 157, 158, 92, 411, 412,
+ * 413, 414, 1605 and 1127; the four shortfall captions are 405..408, the same records the transfer
+ * screen uses for the same four reasons.
+ *
+ * Deviations: the original builds every label into a 56-byte stack buffer with unbounded copy loops and
+ * up to three strcats, derefs all five panels, both controls, the object and soldier pointers and the
+ * colour root with no test, and indexes anLineAux with the cached cursor without bounds. The port
+ * bounds the label buffer, null-guards the panels and controls, and clamps the marker and the soldier
+ * index. It also drops the three Text_MeasureWidth calls whose results the original discards, and it
+ * does not follow the original into the freed panels: the panels-not-built half writes bFlag7073 and
+ * bUnk7080 into pBuySellPanelB/C and reads panel A's aux column after BuySellScreen_BuildPanels'
+ * teardown has deleted all five (0x78864, recorded in docs/parity/bugs.tsv). */
+#define PUFO_BUYSELL_TEXT_FUNDS      156 /* TEXTS[156] + itoa(nFunds) + " $" at (10, 28) */
+#define PUFO_BUYSELL_TEXT_TOTAL_DOWN 157 /* the panels-not-built total line, 255,120,120 */
+#define PUFO_BUYSELL_TEXT_TOTAL_UP   411 /* the panels-built total line, 120,120,255 */
+#define PUFO_BUYSELL_TEXT_COL_LEFT    92 /* centred at (210, 54) / (145, 54) */
+#define PUFO_BUYSELL_TEXT_COL_RIGHT  158 /* centred at (155, 54) / (212, 54) */
+#define PUFO_BUYSELL_TEXT_SOLDIER    159 /* the not-built cursor line for a soldier row, at (10, 297) */
+#define PUFO_BUYSELL_TEXT_SOL_NAME   412 /* under a soldier name, at (10, 297) */
+#define PUFO_BUYSELL_TEXT_PRICE      413 /* plus itoa(ObjectRecFull.uPrice), at (10, 297) */
+#define PUFO_BUYSELL_TEXT_CRAFT      414 /* rows 117..121, at (10, 297) */
+#define PUFO_BUYSELL_TEXT_ALIEN     1605 /* under an alien name, at (10, 297) */
+#define PUFO_BUYSELL_TEXT_OK        1127 /* centred at (120 - w/2, 297) */
+#define PUFO_BUYSELL_TEXT_SHORTFALL  405 /* reasons 0..3, centred at (120 - w/2, 158) */
+#define PUFO_BUYSELL_SEP_INDEX       0xB4
+#define PUFO_BUYSELL_LABEL_MAX        56 /* psz @ sp+0x18 in the original */
+#define PUFO_BUYSELL_CURSOR_Y_OFF     75 /* the cursor gate is 75 < nSmapCursorY < band + 75 */
+
+typedef struct BuySellDrawEnv {
+    const GfxColorEnv *pColor;          /* pGX @ 0x1139B8 */
+    UiPanel  *pPanelA;                  /* pBuySellPanelA @ 0x161A1C, the name column */
+    UiPanel  *pPanelB;                  /* pBuySellPanelB @ 0x161A00, the "<" column */
+    UiPanel  *pPanelC;                  /* pBuySellPanelC @ 0x161A20, the ">" column */
+    UiPanel  *pPanelD;                  /* pBuySellPanelD @ 0x160C88, the count column */
+    UiPanel  *pPanelE;                  /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+    const u8 *pbPanelsBuilt;            /* bBuySellPanelsBuilt @ 0x161A28 */
+    const u8 *pbControlsBuilt;          /* bBuySellControlsBuilt @ 0x161A24 */
+    u8       *pbCursorOnRow;            /* unk_161A30, 1 inside the cursor gate, 0 outside */
+    u8       *pbPanelFlagScratch;       /* unk_161F0C, copied into panels B/C then zeroed */
+    const i32 *pnRowCursor;             /* unk_186BE8, the cached row cursor */
+    const i8  *pnSelectedBaseIdx;       /* nSelectedBaseIdx @ 0x159D81 */
+    const char *pTextRecs;              /* aTextRecs @ 0xB38D0, stride 205 */
+    BaseSiteRec *apSiteRecs;            /* 0x186C40, name at +26 */
+    ObjectRecFull *const *apObjects;    /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                   /* Map_nObjectCount @ 0x114A60 */
+    Soldier *const *apSoldiers;         /* Map + 0x1198 @ 0x114B50 */
+    i32 nSoldierCount;                  /* nSoldierCount @ 0x115350 */
+    const i32 *pnFunds;                 /* nFunds @ 0x1598D8 */
+    const i32 *pnTransTotal;            /* BuySell_nTransTotal @ 0x161A2C */
+    const u8  *pbPreviewOk;             /* bBaseFacPreviewOk @ 0x18652D */
+    const i32 *pnCursorY;               /* nSmapCursorY @ 0x186BD4 */
+    const u32 *pdwShortfall;            /* byte_1870C8, read as a dword */
+    const i32 *pnShortfallReason;       /* dword_1870B4[0] */
+    UiAnimBlitEnv *pAnim;               /* Ui_AnimExpandBlit_IfEnabled's progress pair */
+    UiControl *pCtlClose;               /* unk_186B00, blitted unconditionally */
+    UiControl *pCtlOk;                  /* unk_186BA4, blitted when the cursor is not on a row */
+    UiControlBlitFn pfnCtlBlit;
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+} BuySellDrawEnv;
+
+void BuySellScreen_Draw(const BuySellDrawEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

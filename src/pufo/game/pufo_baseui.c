@@ -8086,3 +8086,278 @@ void ResearchScreen_Draw(const ResearchDrawEnv *pEnv)
 
     ResearchUi_DrawCentered(119, 165, ResearchUi_Text(pEnv, PUFO_RESEARCH_TEXT_ALL)); /* 0x741F8 */
 }
+
+static const char *BuySellUi_Text(const BuySellDrawEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec; /* the original's own label pointers */
+}
+
+static void BuySellUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz); /* 0x78130, 0x78290, 0x782E8, 0x787C0, 0x78818, 0x78C10 */
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+/* apObjects[slot]'s name, or empty when the slot is outside the array. The original derefs whatever
+ * the marker names, with no test on the slot. */
+static const char *BuySellUi_ObjectName(const BuySellDrawEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->apObjects == NULL || nSlot < 0 || nSlot >= pEnv->nObjectCount
+        || pEnv->apObjects[nSlot] == NULL) {
+        return "";
+    }
+    return (const char *)pEnv->apObjects[nSlot]->szName; /* szName is the record's first byte */
+}
+
+/* The "no row under the cursor" tail, shared by both halves through the original's LABEL_65/66/67. */
+static void BuySellUi_DrawOk(const BuySellDrawEnv *pEnv, char *szLabel, size_t cchLabel)
+{
+    (void)UiControl_BlitActivePad(pEnv->pCtlOk, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx, pEnv->pCtlUser);
+    pufo_strncpy(szLabel, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_OK), cchLabel); /* 0x78BB0 / 0x78664 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);            /* LABEL_65, 0x78BC8 */
+    BuySellUi_DrawCentered(120, 297, szLabel);                                  /* LABEL_67, 0x78C18 */
+}
+
+/* BuySellScreen_Draw @ 0x77e6c: the buy/sell screen's frame. The header carries the branch map. */
+void BuySellScreen_Draw(const BuySellDrawEnv *pEnv)
+{
+    char szLabel[PUFO_BUYSELL_LABEL_MAX];
+    char szNum[52]; /* var_34 @ sp+0x50, the j_itoa buffer */
+    i32 nBand = 0;
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    BaseUi_DrawFrameRails(); /* 0x77E80..0x78014 */
+
+    (void)UiControl_BlitActivePad(pEnv->pCtlClose, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlUser); /* 0x78028: unconditional, unlike the research frame */
+
+    /* 0x7804C..0x780C8: the funds line. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 120, 255, 120, 10, 10, 10);
+    pufo_strncpy(szLabel, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_FUNDS), sizeof(szLabel));
+    (void)snprintf(szNum, sizeof(szNum), "%d", (pEnv->pnFunds != NULL) ? *pEnv->pnFunds : 0); /* 0x78090 */
+    (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+    (void)pufo_strcat(szLabel, " $", sizeof(szLabel)); /* asc_ABC28, 0x780A8 */
+    (void)Text_MeasureWidth(szLabel);                  /* 0x780B4: measured, then thrown away */
+    Text_DrawString(10, 28, szLabel);
+
+    /* 0x780E8..0x78150: the selected site's name. */
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 180, 180, 180, 10, 10, 10);
+    pufo_strncpy(szLabel, (pEnv->apSiteRecs != NULL && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT)
+                              ? (const char *)pEnv->apSiteRecs[nBase].abName
+                              : "",
+                  sizeof(szLabel));
+    BuySellUi_DrawCentered(120, 10, szLabel);
+
+    const bool bBuilt = (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0);
+    const i32 nMarker = ManufSelectedProduct(pEnv->pPanelA, pEnv->pnRowCursor); /* 0x78474 / 0x78B54 */
+
+    if (!bBuilt) {
+        /* 0x786BC: with the controls gone too there is nothing left to draw. */
+        if (pEnv->pbControlsBuilt == NULL || *pEnv->pbControlsBuilt == 0) {
+            return;
+        }
+
+        /* 0x786E4..0x78768: the total line, in the red pair. */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 255, 120, 120, 10, 10, 10);
+        pufo_strncpy(szLabel, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_TOTAL_DOWN), sizeof(szLabel));
+        (void)pufo_strcat(szLabel, ":", sizeof(szLabel)); /* asc_AB078, 0x7871C */
+        (void)snprintf(szNum, sizeof(szNum), "%d",
+                       (pEnv->pnTransTotal != NULL) ? *pEnv->pnTransTotal : 0); /* 0x78730 */
+        (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+        (void)pufo_strcat(szLabel, " $", sizeof(szLabel));
+        (void)Text_MeasureWidth(szLabel); /* 0x78754: measured, then thrown away */
+        Text_DrawString(10, 40, szLabel);
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 180, 180, 250, 10, 10, 10);
+        BuySellUi_DrawCentered(210, 54, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_COL_LEFT));  /* 0x787E0 */
+        BuySellUi_DrawCentered(155, 54, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_COL_RIGHT)); /* 0x78838 */
+
+        /* ORIGINAL BUG (0x78864..0x78B80), not reproduced. This half runs while bBuySellPanelsBuilt
+         * is 0, and BuySellScreen_BuildPanels' teardown (0x77D60..0x77E38) operator delete's all five
+         * panels without ever nulling pBuySellPanelA..E -- the last thing it does is the funds
+         * rollback at 0x77E50. So the original writes bFlag7073 and bUnk7080 into freed panels here,
+         * reads panel B's nLineCount at 0x788E4 and panel A's aux column at 0x78B54, and uses the row
+         * marker raw at 0x78B80 with no 2000 subtraction, so an alien row would deref
+         * apObjects[2077]. The port null-guards the panels and bounds the marker, which is why an
+         * alien row in this half draws nothing where the original would read past the object array. */
+        /* 0x78864..0x788A4: the only bFlag7073 writes in this function, and the shared scratch byte. */
+        const u8 bNotShort = (u8)((pEnv->pdwShortfall != NULL && *pEnv->pdwShortfall != 1u) ? 1u : 0u);
+        if (pEnv->pPanelB != NULL) {
+            pEnv->pPanelB->bFlag7073 = bNotShort;
+        }
+        if (pEnv->pPanelC != NULL) {
+            pEnv->pPanelC->bFlag7073 = bNotShort;
+        }
+        const u8 bScratch = (pEnv->pbPanelFlagScratch != NULL) ? *pEnv->pbPanelFlagScratch : 0u;
+        if (pEnv->pPanelB != NULL) {
+            pEnv->pPanelB->bUnk7080 = bScratch;
+        }
+        if (pEnv->pPanelC != NULL) {
+            pEnv->pPanelC->bUnk7080 = bScratch;
+        }
+        if (pEnv->pbPanelFlagScratch != NULL) {
+            *pEnv->pbPanelFlagScratch = 0; /* 0x788A4 */
+        }
+    } else {
+        /* 0x78180..0x7819C: the scratch byte only -- no bFlag7073 write on this path. */
+        const u8 bScratch = (pEnv->pbPanelFlagScratch != NULL) ? *pEnv->pbPanelFlagScratch : 0u;
+        if (pEnv->pPanelB != NULL) {
+            pEnv->pPanelB->bUnk7080 = bScratch;
+        }
+        if (pEnv->pPanelC != NULL) {
+            pEnv->pPanelC->bUnk7080 = bScratch;
+        }
+        if (pEnv->pbPanelFlagScratch != NULL) {
+            *pEnv->pbPanelFlagScratch = 0; /* 0x7819C */
+        }
+
+        /* 0x781B8..0x78238: the total line, in the blue pair. */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 120, 120, 255, 10, 10, 10);
+        pufo_strncpy(szLabel, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_TOTAL_UP), sizeof(szLabel));
+        (void)pufo_strcat(szLabel, ":", sizeof(szLabel)); /* asc_AB078, 0x781EC */
+        (void)snprintf(szNum, sizeof(szNum), "%d",
+                       (pEnv->pnTransTotal != NULL) ? *pEnv->pnTransTotal : 0); /* 0x78200 */
+        (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+        (void)pufo_strcat(szLabel, " $", sizeof(szLabel));
+        (void)Text_MeasureWidth(szLabel); /* 0x78224: measured, then thrown away */
+        Text_DrawString(10, 40, szLabel);
+
+        /* 0x78258..0x78308: the two column captions, on the other sides from the other half. */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 180, 180, 250, 10, 10, 10);
+        BuySellUi_DrawCentered(145, 54, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_COL_LEFT));  /* 0x782B0 */
+        BuySellUi_DrawCentered(212, 54, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_COL_RIGHT)); /* 0x78308 */
+    }
+
+    /* 0x78314..0x7833C / 0x788AC..0x788D4: the five panels, in the order A, E, C, B, D. */
+    if (pEnv->pPanelA != NULL) {
+        UiPanel_DrawText(pEnv->pPanelA);
+    }
+    if (pEnv->pPanelE != NULL) {
+        UiPanel_DrawText(pEnv->pPanelE);
+    }
+    if (pEnv->pPanelC != NULL) {
+        UiPanel_DrawText(pEnv->pPanelC);
+    }
+    if (pEnv->pPanelB != NULL) {
+        UiPanel_DrawText(pEnv->pPanelB);
+    }
+    if (pEnv->pPanelD != NULL) {
+        UiPanel_DrawText(pEnv->pPanelD);
+    }
+
+    /* The band is 16 * min(nLineCount, nStyle) of panel B, the decrement column. */
+    if (pEnv->pPanelB != NULL) {
+        nBand = 16 * pEnv->pPanelB->nLineCount;
+        if (pEnv->pPanelB->nLineCount >= pEnv->pPanelB->nStyle) {
+            nBand = 16 * pEnv->pPanelB->nStyle; /* 0x7836C / 0x78904 */
+        }
+    }
+
+    if (!bBuilt) {
+        SoftSurf_BlitRectProxy(0, 130, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                               PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x78920 */
+        SoftSurf_BlitRectProxy(0, 176, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                               PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x78944 */
+        SoftSurf_BlitRectProxy(0, 191, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                               PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x78968 */
+        SoftSurf_BlitRectProxy(0, 206, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                               PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x7898C */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30); /* 0x789B4 */
+
+        /* 0x789C0..0x78C24: the shortfall panel, on this half only. */
+        if (pEnv->pdwShortfall != NULL && *pEnv->pdwShortfall == 1u) {
+            const i32 nReason = (pEnv->pnShortfallReason != NULL) ? *pEnv->pnShortfallReason : -1;
+            if (nReason >= 0 && nReason <= 3) {
+                (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1);
+                BuySellUi_DrawCentered(120, 158,
+                                       BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_SHORTFALL + nReason));
+                return;
+            }
+            /* 0x789D0 default: break -- reasons 4 and up fall into the cursor block. */
+        }
+
+        const bool bRow = (pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0
+                           && pEnv->pnCursorY != NULL
+                           && *pEnv->pnCursorY > PUFO_BUYSELL_CURSOR_Y_OFF
+                           && *pEnv->pnCursorY < nBand + PUFO_BUYSELL_CURSOR_Y_OFF);
+        if (bRow) {
+            if (pEnv->pbCursorOnRow != NULL) {
+                *pEnv->pbCursorOnRow = 1; /* 0x78B14 */
+            }
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 55); /* 0x78B38 */
+            if (nMarker == PUFO_ROW_SOLDIER) {
+                Text_DrawString(10, 297, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_SOLDIER)); /* 0x78B74 */
+            } else {
+                Text_DrawString(10, 297, BuySellUi_ObjectName(pEnv, nMarker)); /* 0x78B80 */
+            }
+            return;
+        }
+        if (pEnv->pbCursorOnRow != NULL) {
+            *pEnv->pbCursorOnRow = 0; /* 0x78B94 */
+        }
+        BuySellUi_DrawOk(pEnv, szLabel, sizeof(szLabel));
+        return;
+    }
+
+    SoftSurf_BlitRectProxy(0, 130, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                           PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x78388 */
+    SoftSurf_BlitRectProxy(0, 160, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                           PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x783AC */
+    SoftSurf_BlitRectProxy(0, 175, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                           PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x783D0 */
+    SoftSurf_BlitRectProxy(0, 190, 69, 1, nBand + 2, PUFO_BUYSELL_SEP_INDEX,
+                           PUFO_BUYSELL_SEP_INDEX, PUFO_BUYSELL_SEP_INDEX); /* 0x783F4 */
+
+    const bool bRow = (pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0
+                       && pEnv->pnCursorY != NULL
+                       && *pEnv->pnCursorY > PUFO_BUYSELL_CURSOR_Y_OFF
+                       && *pEnv->pnCursorY < nBand + PUFO_BUYSELL_CURSOR_Y_OFF);
+    if (!bRow) {
+        BuySellUi_DrawOk(pEnv, szLabel, sizeof(szLabel)); /* 0x78654..0x7867C, then LABEL_65 */
+        return;
+    }
+
+    /* Note unk_161A30 is written only by the other half: every one of its five cross-references
+     * (0x78B08, 0x78B14, 0x78B88, 0x78B8C, 0x78B94) sits in the panels-not-built tail. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 55); /* 0x78448 */
+
+    if (nMarker == PUFO_ROW_SOLDIER) {
+        /* 0x78478..0x784C8: the soldier index is panel B's aux cell, not panel A's -- panel A only
+         * carries the marker. Soldier.szName is at +0xBA. */
+        const i32 nRow = (pEnv->pnRowCursor != NULL) ? *pEnv->pnRowCursor : -1;
+        const i32 nSol = (pEnv->pPanelB != NULL && nRow >= 0 && nRow < PUFO_PANEL_LINES)
+                             ? pEnv->pPanelB->anLineAux[nRow] : -1;
+        const Soldier *pSol = (pEnv->apSoldiers != NULL && nSol >= 0 && nSol < pEnv->nSoldierCount)
+                                  ? pEnv->apSoldiers[nSol] : NULL;
+        Text_DrawString(10, 281, (pSol != NULL) ? pSol->szName : ""); /* 0x784A8 */
+        Text_DrawString(10, 297, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_SOL_NAME)); /* 0x784C8 */
+    } else if (nMarker > PUFO_ROW_ALIEN_OFFSET) {
+        /* 0x784E8..0x78520: an alien row carries its slot plus 2000. */
+        Text_DrawString(10, 281, BuySellUi_ObjectName(pEnv, nMarker - PUFO_ROW_ALIEN_OFFSET));
+        Text_DrawString(10, 297, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_ALIEN));
+    } else if (nMarker >= 0) {
+        /* 0x78540..0x785B8: a plain object or craft row, named and priced from its own record. */
+        Text_DrawString(10, 281, BuySellUi_ObjectName(pEnv, nMarker));
+        pufo_strncpy(szLabel, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_PRICE), sizeof(szLabel));
+        const u32 nPrice = (pEnv->apObjects != NULL && nMarker < pEnv->nObjectCount
+                            && pEnv->apObjects[nMarker] != NULL)
+                               ? pEnv->apObjects[nMarker]->uPrice /* ObjectRecFull.uPrice, +0xBC */
+                               : 0u;
+        (void)snprintf(szNum, sizeof(szNum), "%u", nPrice); /* 0x785AC */
+        (void)pufo_strcat(szLabel, szNum, sizeof(szLabel));
+        if (nMarker > PUFO_ROW_CRAFT_FIRST - 1 && nMarker < PUFO_ROW_CRAFT_LAST + 1) {
+            /* 0x785D8: the five craft rows get their own caption instead of the price. */
+            Text_DrawString(10, 297, BuySellUi_Text(pEnv, PUFO_BUYSELL_TEXT_CRAFT));
+        } else {
+            Text_DrawString(10, 297, szLabel);
+        }
+    }
+}

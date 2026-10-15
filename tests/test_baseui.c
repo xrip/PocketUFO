@@ -10602,6 +10602,508 @@ static void TestResearchDraw(void)
     FrameRestoreFont();
 }
 
+/* ---- BuySellScreen_Draw @ 0x77e6c ----------------------------------------------------------
+ *
+ * The biggest of the four screen frames, and the only one whose two halves are different drawings.
+ * Checked on the real surface with the real font, pixel by pixel. The label strings are ASCII
+ * stand-ins for the lang.dat records; the record NUMBERS are the claim, and they are pinned by the
+ * address arithmetic in the header and cross-checked against lang.dat: 156 "Деньги: ", 157 "Итого",
+ * 158 "Цена", 92 "НОК-во", 159 "Солдат", 405..408 the four "Нет ..." shortfall reasons, 411
+ * "Выручка ", 412 "Уволить", 413 "Цена 1 ед. ", 414 "уволить", 1605 "Усыплен", 1127 "ОК". */
+
+static UiPanel g_aBsPanel[5];
+static Soldier g_aBsSoldier[2];
+static Soldier *g_apBsSoldier[2];
+
+/* A reference frame with just the named labels on an empty surface: every band compared against it
+ * sits clear of the rails (x 5, x 234, y 5, y 315) and of the separator columns (x >= 130). */
+static void BsRef(const RRefLabel *aLabels, i32 nLabels, bool bPanel)
+{
+    memset(g_frameRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_frameRef;
+    if (bPanel) {
+        (void)Ui_AnimExpandBlit_IfEnabled(&g_frameAnim, 20, 130, 200, 70, 1);
+    }
+    for (i32 i = 0; i < nLabels; ++i) {
+        (void)Gfx_PackRgb565Pair(&g_frameColor, aLabels[i].nR1, aLabels[i].nG1, aLabels[i].nB1,
+                                 aLabels[i].nR2, aLabels[i].nG2, aLabels[i].nB2);
+        Text_DrawString(aLabels[i].x, aLabels[i].y, aLabels[i].psz);
+    }
+    g_pMainSurface = &g_frameSurf;
+}
+
+static void TestBuySellDraw(void)
+{
+    static u8 bBuilt, bCtlBuilt, bScratch, bOnRow, bPreviewOk;
+    static u32 nShortfall;
+    static i32 nReason, nRow, nCursorY, nFunds, nTotal;
+    static i8 nSelBase;
+    BuySellDrawEnv env;
+    const i32 nBand = 48; /* 16 * min(4, 3), the panel B band every gate below uses */
+    i32 i;
+
+    printf("the buy/sell screen's frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL the real font did not load, so the frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_frameSurf);
+    (void)SoftSurf_AllocPixels(&g_frameSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_frameRef);
+    (void)SoftSurf_AllocPixels(&g_frameRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_frameSurf;
+    g_blitState.nPixelMode = 2;
+
+    memset(g_aFrameText, 0, sizeof(g_aFrameText));
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_FUNDS, "FUNDS: ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_TOTAL_DOWN, "TOTAL");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_TOTAL_UP, "REVENUE ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_COL_LEFT, "QTY");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_COL_RIGHT, "PRICE");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_SOLDIER, "SOLDIER");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_SOL_NAME, "DISMISS");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_PRICE, "PRICE 1 ");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_CRAFT, "dismiss");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_ALIEN, "SEDATED");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * PUFO_BUYSELL_TEXT_OK, "OK");
+    for (i = 0; i < 4; ++i) {
+        PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * (PUFO_BUYSELL_TEXT_SHORTFALL + i),
+               (i == 0) ? "NO SPACE" : (i == 1) ? "NO MONEY" : (i == 2) ? "NO HANGAR" : "NO STORES");
+    }
+
+    memset(g_aFrameObj, 0, sizeof(g_aFrameObj));
+    memset(g_apFrameObj, 0, sizeof(g_apFrameObj));
+    for (i = 0; i < 149; ++i) {
+        g_apFrameObj[i] = &g_aFrameObj[i];
+    }
+    PutStr(g_aFrameObj[5].szName, "ELERIUM");
+    g_aFrameObj[5].uPrice = 1234u;
+    PutStr(g_aFrameObj[77].szName, "ALIEN-X");
+    g_aFrameObj[77].uPrice = 7u;
+    PutStr(g_aFrameObj[117].szName, "SKYRANGER");
+    g_aFrameObj[117].uPrice = 99u;
+
+    memset(g_aBsSoldier, 0, sizeof(g_aBsSoldier));
+    PutStr(g_aBsSoldier[0].szName, "SMITH");
+    PutStr(g_aBsSoldier[1].szName, "JONES");
+    g_apBsSoldier[0] = &g_aBsSoldier[0];
+    g_apBsSoldier[1] = &g_aBsSoldier[1];
+
+    memset(g_aFrameSite, 0, sizeof(g_aFrameSite));
+    for (i = 0; i < 8; ++i) {
+        PutStr(g_aFrameSite[i].abName, "NORTH");
+    }
+    PutStr(g_aFrameSite[1].abName, "ALPHA");
+
+    /* Five panels, parked at (10, 200): no row of theirs lands on a label band or a separator column. */
+    for (i = 0; i < 5; ++i) {
+        if (!UiPanel_ctor(&g_aBsPanel[i], 4)) {
+            printf("  FAIL a buy/sell panel could not be constructed\n");
+            ++g_nFailures;
+            return;
+        }
+        g_aBsPanel[i].nLineCount = 4;
+        g_aBsPanel[i].nStyle = 3;
+        g_aBsPanel[i].nPosX = 10;
+        g_aBsPanel[i].nPosY = 200;
+        g_aBsPanel[i].bFlag7073 = 5;  /* a value the frame could not produce, to see who writes it */
+        g_aBsPanel[i].bUnk7080 = 6;   /* same, for the scratch byte */
+    }
+    /* Panel A's row markers, and panel B's soldier index for the two soldier rows. Row 4 is outside
+     * the drawn rows but the cursor reads anLineAux by index, not by nLineCount. */
+    UiPanel_SetLineAux(&g_aBsPanel[0], 0, PUFO_ROW_SOLDIER);
+    UiPanel_SetLineAux(&g_aBsPanel[0], 1, PUFO_ROW_SOLDIER);
+    UiPanel_SetLineAux(&g_aBsPanel[0], 2, 77 + PUFO_ROW_ALIEN_OFFSET);
+    UiPanel_SetLineAux(&g_aBsPanel[0], 3, 5);
+    UiPanel_SetLineAux(&g_aBsPanel[0], 4, PUFO_ROW_CRAFT_FIRST);
+    UiPanel_SetLineAux(&g_aBsPanel[1], 0, 0); /* apSoldiers[0] */
+    UiPanel_SetLineAux(&g_aBsPanel[1], 1, 1); /* apSoldiers[1] */
+
+    memset(g_aFramePads, 0, sizeof(g_aFramePads));
+    memset(g_aFrameCtl, 0, sizeof(g_aFrameCtl));
+    for (i = 0; i < 2; ++i) {
+        g_aFrameCtl[i].bEnabled = 1;
+        g_aFrameCtl[i].nMode = 0;
+        g_aFrameCtl[i].nState = 0;
+        g_aFrameCtl[i].x = 6;
+        g_aFrameCtl[i].y = 260;
+        g_aFrameCtl[i].apPads[0] = &g_aFramePads[i];
+    }
+
+    g_bFrameAnimStarted = 1;
+    g_nFrameAnimProgress = 100;
+    memset(&g_frameAnim, 0, sizeof(g_frameAnim));
+    g_frameAnim.pbStarted = &g_bFrameAnimStarted;
+    g_frameAnim.pnProgress = &g_nFrameAnimProgress;
+    g_frameAnim.nFrameStyle = 0;
+    g_frameColor.nScaleSource = 3;
+    g_frameColor.nFadeCount = 0;
+
+    bBuilt = 0;
+    bCtlBuilt = 0;
+    bScratch = 3;
+    bOnRow = 9; /* not 0 and not 1, so a write is visible */
+    bPreviewOk = 1;
+    nShortfall = 0;
+    nReason = 0;
+    nRow = 0;
+    nCursorY = 90; /* inside 75 < y < 75 + 48 */
+    nFunds = 1234;
+    nTotal = 500;
+    nSelBase = 1;
+
+    memset(&env, 0, sizeof(env));
+    env.pColor = &g_frameColor;
+    env.pPanelA = &g_aBsPanel[0];
+    env.pPanelB = &g_aBsPanel[1];
+    env.pPanelC = &g_aBsPanel[2];
+    env.pPanelD = &g_aBsPanel[3];
+    env.pPanelE = &g_aBsPanel[4];
+    env.pbPanelsBuilt = &bBuilt;
+    env.pbControlsBuilt = &bCtlBuilt;
+    env.pbCursorOnRow = &bOnRow;
+    env.pbPanelFlagScratch = &bScratch;
+    env.pnRowCursor = &nRow;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.pTextRecs = g_aFrameText;
+    env.apSiteRecs = g_aFrameSite;
+    env.apObjects = g_apFrameObj;
+    env.nObjectCount = 149;
+    env.apSoldiers = g_apBsSoldier;
+    env.nSoldierCount = 2;
+    env.pnFunds = &nFunds;
+    env.pnTransTotal = &nTotal;
+    env.pbPreviewOk = &bPreviewOk;
+    env.pnCursorY = &nCursorY;
+    env.pdwShortfall = &nShortfall;
+    env.pnShortfallReason = &nReason;
+    env.pAnim = &g_frameAnim;
+    env.pCtlClose = &g_aFrameCtl[0];
+    env.pCtlOk = &g_aFrameCtl[1];
+    env.pfnCtlBlit = FrameBlitRec;
+    env.pfnCtlBlitEx = FrameBlitRec;
+
+    /* ---- 1. nothing built: rails, the close control, the funds line, the site name ---- */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+
+    CheckEqI32(FramePix(5, 1), 0x632C, "the shared rails draw first, index 100 at (5, 1)");
+    CheckEqI32(FramePix(234, 312), 0x738E, "and the side rail's last falling step at (234, 312)");
+    CheckEqI32(g_nFrameBlitCount, 1, "the close control is blitted unconditionally, unlike the research frame");
+    Check(g_nFrameBlitCount == 1 && g_aFrameBlitLog[0] == 0, "and it is the close control's pad");
+
+    {
+        const RRefLabel aLabels[] = { { 10, 28, "FUNDS: 1234 $", 120, 255, 120, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 26, 40), "TEXTS[156] + itoa(nFunds) + \" $\" at (10, 28)");
+    }
+    {
+        const RRefLabel aLabels[] = { { 10, 28, "FUNDS: 1235 $", 120, 255, 120, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(!RRefBandSame(10, 129, 26, 40), "one dollar more is a different band, so the funds value is pinned");
+    }
+    {
+        const RRefLabel aLabels[] = { { RCenterX(120, "ALPHA"), 10, "ALPHA", 180, 180, 180, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(60, 180, 10, 24), "the site name is centred on x 120 at y 10");
+    }
+    Check(FrameBandEmpty(10, 129, 42, 56), "no total line while the controls are not built");
+    Check(FrameBandEmpty(130, 233, 52, 68), "no column captions either");
+    CheckEqI32(FramePix(130, 69), 0, "and no column separators");
+
+    /* ---- 2. controls built, panels not built. The cursor is parked outside the gate here so the
+     * OK tail is visible; section 3 moves it inside. ---- */
+    bCtlBuilt = 1;
+    bScratch = 3;
+    bOnRow = 9;
+    nCursorY = 60; /* not above 75 */
+    g_aBsPanel[1].bFlag7073 = 5;
+    g_aBsPanel[2].bFlag7073 = 5;
+    g_aBsPanel[1].bUnk7080 = 6;
+    g_aBsPanel[2].bUnk7080 = 6;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+
+    {
+        const RRefLabel aLabels[] = { { 10, 40, "TOTAL:500 $", 255, 120, 120, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 42, 56), "TEXTS[157] + \":\" + itoa(total) + \" $\" at (10, 40), in the red pair");
+    }
+    {
+        const RRefLabel aLabels[] = { { 10, 40, "REVENUE :500 $", 255, 120, 120, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(!RRefBandSame(10, 129, 42, 56), "the other half's total record is not used here");
+    }
+    {
+        const RRefLabel aLabels[] = {
+            { RCenterX(210, "QTY"), 54, "QTY", 180, 180, 250, 10, 10, 10 },
+            { RCenterX(155, "PRICE"), 54, "PRICE", 180, 180, 250, 10, 10, 10 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(130, 233, 52, 68), "TEXTS[92] centred on 210 and TEXTS[158] on 155 in this half");
+    }
+    {
+        const RRefLabel aLabels[] = {
+            { RCenterX(145, "QTY"), 54, "QTY", 180, 180, 250, 10, 10, 10 },
+            { RCenterX(212, "PRICE"), 54, "PRICE", 180, 180, 250, 10, 10, 10 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(!RRefBandSame(130, 233, 52, 68), "the built half's caption positions are the other pair");
+    }
+
+    CheckEqI32(g_aBsPanel[1].bFlag7073, 1, "panels B and C get bFlag7073 = (shortfall dword != 1) here");
+    CheckEqI32(g_aBsPanel[2].bFlag7073, 1, "both of them");
+    CheckEqI32(g_aBsPanel[1].bUnk7080, 3, "and bUnk7080 takes the scratch byte's value");
+    CheckEqI32(g_aBsPanel[2].bUnk7080, 3, "on both panels");
+    CheckEqI32(bScratch, 0, "the scratch byte is zeroed after the copy");
+    CheckEqI32(bOnRow, 0, "and the cursor flag is cleared outside the cursor gate");
+
+    CheckEqI32(FramePix(130, 69), 0xB5B6, "the first separator is index 0xB4 at (130, 69)");
+    CheckEqI32(FramePix(176, 69), 0xB5B6, "the second at x 176 in this half");
+    CheckEqI32(FramePix(191, 69), 0xB5B6, "the third at x 191");
+    CheckEqI32(FramePix(206, 69), 0xB5B6, "the fourth at x 206");
+    CheckEqI32(FramePix(160, 69), 0, "x 160 has no separator on this path");
+    CheckEqI32(FramePix(175, 69), 0, "nor x 175");
+    CheckEqI32(FramePix(190, 69), 0, "nor x 190");
+    CheckEqI32(FramePix(130, 69 + nBand + 1), 0xB5B6, "the separators are 16 * min(4, 3) + 2 = 50 tall, so (130, 118) is the last row");
+    CheckEqI32(FramePix(130, 69 + nBand + 2), 0, "and (130, 119) is outside them");
+    CheckEqI32(FramePix(130, 68), 0, "they start at y 69");
+
+    CheckEqI32(g_nFrameBlitCount, 2, "the close control and the OK control");
+    Check(g_nFrameBlitCount == 2 && g_aFrameBlitLog[1] == 1, "the OK control is the second blit");
+    {
+        const RRefLabel aLabels[] = { { RCenterX(120, "OK"), 297, "OK", 68, 244, 252, 4, 70, 75 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 297, 313), "TEXTS[1127] centred on x 120 at y 297");
+    }
+
+    /* ---- 3. the cursor gate, panels not built ---- */
+    bOnRow = 9;
+    nCursorY = 90;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    CheckEqI32(bOnRow, 1, "cursor y 90 is inside 75 < y < 75 + 48, so the flag is set");
+    {
+        const RRefLabel aLabels[] = { { 10, 297, "SOLDIER", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 297, 313), "a soldier row gets TEXTS[159] at (10, 297) in this half");
+    }
+    Check(FrameBandEmpty(10, 129, 279, 295), "and no name line at (10, 281) here");
+    CheckEqI32(g_nFrameBlitCount, 1, "the OK control is not blitted when the cursor is on a row");
+
+    nRow = 3; /* panel A aux 5, a plain object row */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 10, 297, "ELERIUM", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 297, 313), "any other marker names its object record instead");
+    }
+    /* 0x78B80 is the marker used raw: this half never subtracts the 2000 alien offset, so an alien
+     * row would deref apObjects[2077]. The port bounds it and draws nothing, which is the recorded
+     * deviation -- the built half does subtract it and reads slot 77. */
+    nRow = 2;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    Check(FrameBandEmpty(10, 129, 297, 313), "and an alien row in this half names nothing (deviation)");
+    nRow = 0;
+
+    nCursorY = 75;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    CheckEqI32(bOnRow, 0, "y 75 is not above 75, so the gate fails and the flag clears");
+    CheckEqI32(g_nFrameBlitCount, 2, "and the OK control comes back");
+    nCursorY = 75 + nBand;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    CheckEqI32(bOnRow, 0, "y 75 + band is outside too -- the compare is strict");
+    nCursorY = 90;
+    bPreviewOk = 0;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    CheckEqI32(bOnRow, 0, "and a base preview that is not ok stops the gate as well");
+    bPreviewOk = 1;
+
+    /* ---- 4. the shortfall panel, this half only ---- */
+    for (i = 0; i < 4; ++i) {
+        nShortfall = 1;
+        nReason = i;
+        bOnRow = 9;
+        FrameZero();
+        BuySellScreen_Draw(&env);
+        {
+            char szRef[16];
+            const char *const apsz[] = { "NO SPACE", "NO MONEY", "NO HANGAR", "NO STORES" };
+            (void)snprintf(szRef, sizeof(szRef), "%s", apsz[i]);
+            const RRefLabel aLabels[] = { { RCenterX(120, szRef), 158, szRef, 220, 80, 80, 50, 30, 30 } };
+            BsRef(aLabels, 1, true);
+            Check(RRefBandSame(60, 180, 156, 172), "reason 0..3 opens the 200x70 panel and names it");
+        }
+        CheckEqI32(bOnRow, 9, "and the shortfall return never reaches the cursor block");
+        CheckEqI32(g_nFrameBlitCount, 1, "nor blits the OK control");
+    }
+    nShortfall = 1;
+    nReason = 4;
+    bOnRow = 9;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    CheckEqI32(bOnRow, 1, "reason 4 falls through the switch into the cursor block");
+    Check(FrameBandEmpty(60, 180, 156, 172), "and the 0x789D0 default breaks, so no panel opens for it");
+    nShortfall = 0;
+    nReason = 0;
+
+    /* ---- 5. panels built: the other half ---- */
+    bBuilt = 1;
+    bScratch = 4;
+    bOnRow = 9;
+    g_aBsPanel[1].bFlag7073 = 5;
+    g_aBsPanel[2].bFlag7073 = 5;
+    g_aBsPanel[1].bUnk7080 = 6;
+    g_aBsPanel[2].bUnk7080 = 6;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+
+    {
+        const RRefLabel aLabels[] = { { 10, 40, "REVENUE :500 $", 120, 120, 255, 10, 10, 10 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 42, 56), "TEXTS[411] + \":\" + itoa(total) + \" $\", in the blue pair");
+    }
+    {
+        const RRefLabel aLabels[] = {
+            { RCenterX(145, "QTY"), 54, "QTY", 180, 180, 250, 10, 10, 10 },
+            { RCenterX(212, "PRICE"), 54, "PRICE", 180, 180, 250, 10, 10, 10 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(130, 233, 52, 68), "TEXTS[92] centred on 145 and TEXTS[158] on 212 here");
+    }
+    CheckEqI32(g_aBsPanel[1].bFlag7073, 5, "this half never writes bFlag7073");
+    CheckEqI32(g_aBsPanel[2].bFlag7073, 5, "on either panel");
+    CheckEqI32(g_aBsPanel[1].bUnk7080, 4, "but the scratch byte still lands on both panels");
+    CheckEqI32(bScratch, 0, "and is still zeroed");
+    CheckEqI32(bOnRow, 9, "and the cursor flag is untouched by this half, gate or no gate");
+
+    CheckEqI32(FramePix(160, 69), 0xB5B6, "the second separator moves to x 160");
+    CheckEqI32(FramePix(175, 69), 0xB5B6, "the third to x 175");
+    CheckEqI32(FramePix(190, 69), 0xB5B6, "the fourth to x 190");
+    CheckEqI32(FramePix(176, 69), 0, "x 176 is empty on this path");
+    CheckEqI32(FramePix(206, 69), 0, "and so is x 206");
+
+    nShortfall = 1;
+    nReason = 0;
+    FrameSnapshot();
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    Check(FrameBandSame(60, 180, 156, 172), "the shortfall panel does not exist on this half");
+    nShortfall = 0;
+
+    /* ---- 6. the cursor block, panels built ---- */
+    nRow = 0; /* soldier row: panel A marker 1000, panel B aux 0 */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = {
+            { 10, 281, "SMITH", 150, 150, 255, 20, 20, 55 },
+            { 10, 297, "DISMISS", 150, 150, 255, 20, 20, 55 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(10, 129, 279, 295), "the soldier name comes from apSoldiers[panel B's aux]");
+        Check(RRefBandSame(10, 129, 297, 313), "with TEXTS[412] under it");
+    }
+    nRow = 1; /* panel B aux 1 -> the second soldier */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 10, 281, "JONES", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 279, 295), "the soldier index really is panel B's, not panel A's");
+    }
+    nRow = 2; /* panel A marker 2077 = slot 77 + 2000 */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = {
+            { 10, 281, "ALIEN-X", 150, 150, 255, 20, 20, 55 },
+            { 10, 297, "SEDATED", 150, 150, 255, 20, 20, 55 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(10, 129, 279, 295), "an alien row names apObjects[marker - 2000]");
+        Check(RRefBandSame(10, 129, 297, 313), "with TEXTS[1605] under it");
+    }
+    nRow = 3; /* plain object row, slot 5 */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = {
+            { 10, 281, "ELERIUM", 150, 150, 255, 20, 20, 55 },
+            { 10, 297, "PRICE 1 1234", 150, 150, 255, 20, 20, 55 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(10, 129, 279, 295), "a plain row names its object");
+        Check(RRefBandSame(10, 129, 297, 313), "and quotes TEXTS[413] plus ObjectRecFull.uPrice");
+    }
+    g_aFrameObj[5].uPrice = 1235u;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 10, 297, "PRICE 1 1234", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        Check(!RRefBandSame(10, 129, 297, 313), "the price really comes from the record");
+    }
+    g_aFrameObj[5].uPrice = 1234u;
+
+    nRow = 4; /* craft row 117 */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = {
+            { 10, 281, "SKYRANGER", 150, 150, 255, 20, 20, 55 },
+            { 10, 297, "dismiss", 150, 150, 255, 20, 20, 55 },
+        };
+        BsRef(aLabels, 2, false);
+        Check(RRefBandSame(10, 129, 279, 295), "the craft row names its object too");
+        Check(RRefBandSame(10, 129, 297, 313), "but 117..121 get TEXTS[414] instead of the price");
+    }
+    nRow = 3;
+    {
+        const RRefLabel aLabels[] = { { 10, 297, "dismiss", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        FrameZero();
+        BuySellScreen_Draw(&env);
+        Check(!RRefBandSame(10, 129, 297, 313), "which a plain row does not get");
+    }
+
+    nRow = 999; /* the cursor outside the panel */
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { 10, 281, "", 150, 150, 255, 20, 20, 55 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 279, 295), "a cursor outside the panel draws no name");
+    }
+    nRow = 0;
+
+    nCursorY = 75 + nBand;
+    FrameZero();
+    BuySellScreen_Draw(&env);
+    {
+        const RRefLabel aLabels[] = { { RCenterX(120, "OK"), 297, "OK", 68, 244, 252, 4, 70, 75 } };
+        BsRef(aLabels, 1, false);
+        Check(RRefBandSame(10, 129, 297, 313), "outside the gate this half draws the OK caption too");
+    }
+    CheckEqI32(g_nFrameBlitCount, 2, "close and OK, the same tail as the other half");
+    CheckEqI32(bOnRow, 9, "and still no write to the cursor flag");
+    nCursorY = 90;
+
+    for (i = 0; i < 5; ++i) {
+        UiPanel_FreeLines(&g_aBsPanel[i]);
+    }
+    FrameRestoreFont();
+}
+
 /* ---- ResearchScreen_Init @ 0x749a8 ---------------------------------------------------------
  *
  * The bring-up is mostly wiring, so the test checks the wiring and the ORDER of the wiring: two of
@@ -11385,6 +11887,7 @@ int main(void)
     TestResearchBuildPanels();
     TestResearchRebuild();
     TestResearchDraw();
+    TestBuySellDraw();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();
