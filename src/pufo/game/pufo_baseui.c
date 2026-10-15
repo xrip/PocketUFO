@@ -3330,6 +3330,24 @@ void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv)
 /* Geoscape_PrepScreenOpen @ 0x85194. No sample and no screen id: it un-pauses the clock, runs the
  * prologue, drops line 0 of the root message list, and re-pauses when that line's flag lands in
  * (30, 50). */
+/* The tail Geoscape_PrepScreenOpen and Geoscape_PrepScreenOpenSfx share: drop message line 0, then
+ * pause the clock when the line that moved into slot 0 has a flag above 30 AND below 50. The two
+ * reads are separate calls in the original (0x85270 / 0x85284 and 0x85398 / 0x853AC). */
+static void ScreenOpen_DropLine0AndPause(const ScreenResetOpenEnv *pEnv)
+{
+    if (pEnv->pLines == NULL) {
+        return;
+    }
+    UiLineList_Remove(pEnv->pLines, 0); /* 0x8525C / 0x85384 */
+    if (UiLineList_GetFlag(pEnv->pLines, 0) > 30) { /* 0x85270 / 0x85398, CMP #0x1E / BLE out */
+        if (UiLineList_GetFlag(pEnv->pLines, 0) < 50) { /* the flag read a second time */
+            if (pEnv->pTime != NULL) {
+                pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac */
+            }
+        }
+    }
+}
+
 void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv)
 {
     if (pEnv == NULL) {
@@ -3339,14 +3357,78 @@ void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv)
         pEnv->pTime->bPaused = 0; /* 0x8519C STRB at 0x15961C */
     }
     ScreenOpen_Prologue(pEnv);
-    if (pEnv->pLines != NULL) {
-        UiLineList_Remove(pEnv->pLines, 0); /* 0x8525C */
-        if (UiLineList_GetFlag(pEnv->pLines, 0) > 30) {   /* 0x85270 / 0x85278 CMP #0x1E / BLE out */
-            if (UiLineList_GetFlag(pEnv->pLines, 0) < 50) { /* 0x85284, the flag read a second time */
-                if (pEnv->pTime != NULL) {
-                    pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac */
-                }
-            }
-        }
+    ScreenOpen_DropLine0AndPause(pEnv);
+}
+
+/* Geoscape_PrepScreenOpenSfx @ 0x852b8. The same body with a sample inserted after the pause clear
+ * and with GameTime_Set5Sec dropped: the only one of the six that leaves the tick interval alone. */
+void Geoscape_PrepScreenOpenSfx(const ScreenResetOpenEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = 0; /* 0x852C8 */
+    }
+    if (pEnv->init.pfnPlaySample != NULL) {
+        pEnv->init.pfnPlaySample(17, 4, pEnv->init.pUser); /* 0x852D0 */
+    }
+    ScreenOpen_ClearScratch(pEnv->pszMsg, pEnv->cchMsg);
+    ScreenOpen_ClearScratch(pEnv->pszScratch, pEnv->cchScratch);
+    (void)Research_PromotePending(pEnv->abResearchActive, pEnv->pbResearchCount);
+    if (pEnv->pdwShortfall != NULL) {
+        *pEnv->pdwShortfall = 0; /* 0x85374 */
+    }
+    /* No GameTime_Set5Sec here: 0x8537C falls straight through to the line removal. */
+    ScreenOpen_DropLine0AndPause(pEnv);
+}
+
+/* Ui_OpenBaseInfoAlt @ 0x84d18. Sets the ufopaedia reselect flag, runs the whole
+ * Geoscape_PrepScreenOpen, and only then runs the prologue a second time. */
+void Ui_OpenBaseInfoAlt(const ScreenResetOpen2Env *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pbUfopaediaReselect != NULL) {
+        *pEnv->pbUfopaediaReselect = 1; /* 0x84D1C */
+    }
+    Geoscape_PrepScreenOpen(&pEnv->base); /* 0x84D24 */
+    ScreenOpen_Prologue(&pEnv->base);
+    if (pEnv->base.pState != NULL) {
+        pEnv->base.pState->nGeoscapeScreen = 16; /* 0x84DE4 */
+    }
+    if (pEnv->base.init.pfnInit != NULL) {
+        pEnv->base.init.pfnInit(pEnv->base.init.pSlot, pEnv->base.init.pUser); /* 0x84DF4 */
+    }
+}
+
+/* Ui_OpenResearch @ 0x84bf8. The prologue without the tick, then the full prep, then the tick, then
+ * the nav rebuild and the parked control. */
+void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    const ScreenResetOpenEnv *pBase = &pEnv->base;
+
+    ScreenOpen_ClearScratch(pBase->pszMsg, pBase->cchMsg);
+    ScreenOpen_ClearScratch(pBase->pszScratch, pBase->cchScratch);
+    (void)Research_PromotePending(pBase->abResearchActive, pBase->pbResearchCount);
+    if (pBase->pdwShortfall != NULL) {
+        *pBase->pdwShortfall = 0; /* 0x84C9C */
+    }
+    Geoscape_PrepScreenOpen(pBase);          /* 0x84CBC */
+    GameTime_Set5Sec(pBase->pWorld, pBase->apSpeedCtl); /* 0x84CC0 */
+    (void)Geoscape_BuildNavControls(pEnv->pNavOut, pEnv->pNavEnv); /* 0x84CC8, R0 = abFacilityGrid */
+    if (pEnv->pParkCtl != NULL) {
+        pEnv->pParkCtl->x = 1000; /* 0x84CD8 STRH of 0x3E8 */
+        pEnv->pParkCtl->y = 1000; /* 0x84CE4 STRH of 0x3E8 */
+    }
+    if (pBase->pState != NULL) {
+        pBase->pState->nGeoscapeScreen = 8; /* 0x84CEC */
+    }
+    if (pBase->init.pfnInit != NULL) {
+        pBase->init.pfnInit(pBase->init.pSlot, pBase->init.pUser); /* 0x84CF4 -> ResearchScreen_Init */
     }
 }

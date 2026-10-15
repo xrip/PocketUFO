@@ -10445,3 +10445,41 @@ alone.
 
 **IDB updates.** Function comments on 0x616ac, 0x84AF8 and 0x85194 recording the prologue, the two
 thresholds and the tail-call targets; a line comment at 0x10DA38 saying what that zero block is.
+
+The three siblings of the clock-resetting prologue (done)
+---------------------------------------------------------
+
+**Evidence:** `Geoscape_PrepScreenOpenSfx` @ 0x852b8 (300 B), `Ui_OpenBaseInfoAlt` @ 0x84d18 (264 B),
+`Ui_OpenResearch` @ 0x84bf8 (288 B). Ported in `src/pufo/game/pufo_baseui.c` on top of the same
+`ScreenResetOpenEnv` (the two that need more carry a `ScreenResetOpen2Env` wrapper); tests in
+`TestOpenSfxAndAltVariants`.
+
+**`Geoscape_PrepScreenOpenSfx` is the only one of the six that never touches the tick.** Its body is
+`Geoscape_PrepScreenOpen` with `Sound_Play(17,4)` inserted right after the pause clear (0x852D0) and
+with `GameTime_Set5Sec` removed outright: 0x8537C, the shortfall store, falls straight through to
+`UiPanel_RemoveLine` at 0x85384. So opening a screen through this variant leaves the geoscape on
+whatever tick it was already running.
+
+**`Ui_OpenBaseInfoAlt` runs the prep and then the prologue again -- but not the whole tail twice.**
+It sets `Ufopaedia_bReselectPending` (0x84D1C), calls `Geoscape_PrepScreenOpen` (0x84D24), and then
+inlines the four prologue steps a second time. What repeats is the two string clears, the research
+walk, the shortfall store and the 5-second tick. What does NOT repeat is the message-line removal and
+the flag-in-(30,50) pause test -- those live only in `Geoscape_PrepScreenOpen`'s tail. That also means
+the pause byte is cleared exactly once: if the prep pauses the clock, the second pass leaves it
+paused. Screen id 16, tail `Ui_InitBaseInfo(unk_1872E0)`.
+
+**`Ui_OpenResearch` runs the prologue without the tick, then the full prep, then the tick.** 0x84CA4
+goes from the shortfall store straight to `BL Geoscape_PrepScreenOpen` at 0x84CBC, and only then
+`GameTime_Set5Sec` at 0x84CC0. After that it rebuilds the fifteen nav controls
+(`Geoscape_BuildNavControls(abFacilityGrid)`, 0x84CC8), parks the control at `unk_186BB4` at
+(1000, 1000) with two `STRH` of 0x3E8 -- off every 240x320 surface, the same trick `Game_StartNew`
+and `Base_EnterBuildMode` use -- writes screen id 8 and tail-calls `ResearchScreen_Init(0x15EF08)`.
+
+**`byte_18706C` renamed `Ufopaedia_bReselectPending`.** Ten xrefs, four functions. `Ui_OpenBaseInfoAlt`
+sets it on the way in; `Ufopaedia_RefreshEntry` reads it at 0x9A02C; `Ui_InitBaseInfo` consumes it at
+0x9DEF4 -- when it is non-zero the ufopaedia category at `unk_160C60` is remapped through a 9x22
+letter table onto a page and an index, `unk_1871F8` / `dword_1871D0[9]` / `unk_187300` / `dword_1872D8`
+are filled from it, and the flag is cleared at 0x9E084. It is a "reselect the ufopaedia entry when the
+base-info screen next opens" flag, and the port passes the byte through the env rather than owning it.
+
+**IDB updates.** Function comments on 0x852b8, 0x84d18 and 0x84bf8; a line comment on 0x18706C.

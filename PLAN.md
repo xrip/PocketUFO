@@ -735,6 +735,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   twice. `0x10DA38`, the strcpy source all six of these openers use, is a block of zeros: it is the
   empty string, so every one of those copies is a clear.
 
+- [x] part 10, the three siblings of that prologue: `Geoscape_PrepScreenOpenSfx (0x852b8)`,
+  `Ui_OpenBaseInfoAlt (0x84d18)`, `Ui_OpenResearch (0x84bf8)` — 31 more checks. The Sfx variant is the
+  only one of the six that never calls `GameTime_Set5Sec` — 0x8537C falls straight through to the line
+  removal, so it leaves the tick as it found it. `Ui_OpenBaseInfoAlt` runs the whole prep and then the
+  four prologue steps again, but the line removal and the pause test live only in the prep's tail, so
+  they happen once. `Ui_OpenResearch` runs the prologue *without* the tick, then the prep, then the
+  tick, then rebuilds the fifteen nav controls and parks `unk_186BB4` at (1000, 1000). `byte_18706C`
+  renamed `Ufopaedia_bReselectPending` in the IDB.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -876,6 +885,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the base-info toggle, the assigned-ship sweep, the four radar corners (`BaseInfoScreen_TogglePanelMode`, `Base_RemoveAllShips`, `RadarScreen_SetCursorNW/NE/SW/SE`) | 56/56 (Release) | 8985 | 802/1103 (72.7%) | 323876/598792 (54.1%) | 38 checked, 0 mismatched |
 | the base-tab strip, the inbound craft count, the buy/sell confirm, the race funding bonus (`Base_HitTestFacilityStrip`, `Base_CountInboundTransfers`, `BuySellScreen_ConfirmSiteAndClose`, `Funding_AddRaceBonus`) | 56/56 (Release) | 9072 | 806/1103 (73.1%) | 324676/598792 (54.2%) | 38 checked, 0 mismatched |
 | three openers that also reset the clock (`ResearchScreen_Open`, `Ui_OpenBaseInfo`, `Geoscape_PrepScreenOpen`) | 56/56 (Release) | 9114 | 809/1103 (73.3%) | 325456/598792 (54.4%) | 38 checked, 0 mismatched |
+| the three siblings of the clock-resetting prologue (`Geoscape_PrepScreenOpenSfx`, `Ui_OpenBaseInfoAlt`, `Ui_OpenResearch`) | 56/56 (Release) | 9145 | 812/1103 (73.6%) | 326308/598792 (54.5%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

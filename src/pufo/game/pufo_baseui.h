@@ -1834,4 +1834,46 @@ void ResearchScreen_Open(const ScreenResetOpenEnv *pEnv);
 void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv);
 void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv);
 
+/* ------------------------------------------------- the three siblings of that prologue
+ *
+ * Evidence: Geoscape_PrepScreenOpenSfx @ 0x852b8 (300 B), Ui_OpenBaseInfoAlt @ 0x84d18 (264 B),
+ * Ui_OpenResearch @ 0x84bf8 (288 B).
+ *
+ * They run the same prologue as the three above, and the differences are all in what surrounds it.
+ *
+ *   Geoscape_PrepScreenOpenSfx -- the clock pause byte is cleared first (0x852C8), then
+ *                                Sound_Play(17, 4) at 0x852D0, then the prologue, then the same
+ *                                remove-line-0 / flag-in-(30,50) tail. It is the ONLY one of the six
+ *                                that never calls GameTime_Set5Sec: 0x8537C goes straight from the
+ *                                shortfall store to UiPanel_RemoveLine, so this opener leaves the
+ *                                tick interval exactly as it found it.
+ *   Ui_OpenBaseInfoAlt        -- sets byte_18706C to 1 (0x84D1C), calls the whole
+ *                                Geoscape_PrepScreenOpen (0x84D24), and only then runs the prologue a
+ *                                second time, so the message clears, the research walk, the shortfall
+ *                                store, the line-0 removal and the clock dance all happen twice and
+ *                                the 5-second tick is written twice. Screen id 16, tail call
+ *                                Ui_InitBaseInfo(unk_1872E0).
+ *   Ui_OpenResearch           -- runs the prologue WITHOUT GameTime_Set5Sec (0x84CA4 goes from the
+ *                                shortfall store straight to the call), then calls
+ *                                Geoscape_PrepScreenOpen (0x84CBC), then GameTime_Set5Sec (0x84CC0),
+ *                                then Geoscape_BuildNavControls(abFacilityGrid) (0x84CC8), then parks
+ *                                the control at unk_186BB4 at (1000, 1000) with two STRH of 0x3E8,
+ *                                then screen id 8, then the tail call ResearchScreen_Init(0x15EF08).
+ *
+ * byte_18706C is the ufopaedia "reselect pending" flag: Ui_OpenBaseInfoAlt sets it on the way in,
+ * Ufopaedia_RefreshEntry reads it at 0x9A02C, and Ui_InitBaseInfo consumes it at 0x9DEF4 -- when it
+ * is non-zero the ufopaedia category at unk_160C60 is remapped onto a page and index and the flag is
+ * cleared at 0x9E084. The port passes the byte through the env. */
+typedef struct ScreenResetOpen2Env {
+    ScreenResetOpenEnv base;
+    NavControls        *pNavOut;          /* the fifteen nav-control pointers Ui_OpenResearch rebuilds */
+    const NavCtlEnv    *pNavEnv;          /* their wiring */
+    UiControl          *pParkCtl;         /* unk_186BB4, parked at (1000, 1000) */
+    u8                 *pbUfopaediaReselect; /* byte_18706C */
+} ScreenResetOpen2Env;
+
+void Geoscape_PrepScreenOpenSfx(const ScreenResetOpenEnv *pEnv);
+void Ui_OpenBaseInfoAlt(const ScreenResetOpen2Env *pEnv);
+void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
+
 #endif /* PUFO_BASEUI_H */
