@@ -12936,3 +12936,67 @@ Tests: `tests/test_geoscape.c:TestRadarOverlay`, 89 checks on the same real 240x
 the idle clear, both gates, the independence of the halves, the step and flip step of every weapon, the
 landing cooldowns 255/240/235/251/249/230, the laser's dead third case, the left/right column
 asymmetry, the inner-over-outer draw order, and the runaway -2 counter.
+
+## RadarScreen_Update (0x60570, 3804 B)
+
+The radar frame driver: it draws the whole panel, resolves the damage a landing shot caused, and owns
+the three ways an intercept ends.
+
+**Panel geometry.** Five blits (0x605EC..0x60690) build the frame: the 188-wide top strip at (20, 50)
+plus four 93..97-wide side pieces, and five rails (0x60694..0x6076C) at x 22/113/208 and y 52/172. The
+panel is 140 tall normally and 190 tall while `bRadarBlinkPhase` is set, which is what makes the
+0x1F/0x4A/0x75 wash at (26, 176, 180 x 64) visible only in the blink phase.
+
+**The signal bars.** Five bars whose mid colours are 0x55/0x5A/0x5C/0x5A/0x55, at x 117 + 10*i and the
+three rows y 57 (h 22), y 156 (h 14 -- 0x60D98 `MOV R8, #0xE`, not the 22 the top row uses) and y 176
+(h 14). `nRadarScanOffset @ 0x159724` advances by 10 and wraps to 0 above 39 (0x61078 `ADD R0,R0,#0xA`,
+0x61088 `CMP R0,#0x27`, 0x61094/0x6109C `MOVGT/STRGT #0`). `RadarScreen_Init` does NOT clear it, so the
+scroll carries across screens.
+
+**The controls.** Five nav speed controls are refreshed (0x6084C..0x60864), but only the first four
+`aRadarButtonPads` are ever blitted -- 0x611A8 `MOV R8, #4` bounds that loop, so the fifth pad is
+loaded by `RadarScreen_Init` and never drawn.
+
+**The damage ladder is only reachable through a same-frame hit.** `RadarScreen_DrawOverlay` clears
+`bRadarLastShotHit` at 0x5DCC0 before either mount runs, and the ladder's gate at 0x608C8 tests that
+byte. So a target already at 0 HP is not noticed until a shot actually lands in the same frame. With the
+shot landed (0x60898 loads `bRadarInterceptDone`, re-loaded needlessly at 0x6089C):
+
+- `nInterceptTargetHp <= 0` and not done: TEXTS[1600] (0x103A10), `*0x162028 = 1`,
+  `StrategList_RemoveAt(nInterceptStrategIdx)`, `Ship_ClearInterceptByStrategIdx`, done = 1
+  (0x6094C..0x609A8).
+- 40 <= hp_pct < 70, `bRadarTraceLost == 0`, the contact's tile is not 255 and `Game_RandU16(4) == 0`:
+  TEXTS[1601] (0x103ADD), the tile's race gets `Funding_AddRaceBonus`, `nType = 4`, `nTimer = 7200`,
+  done = 1 (0x60A4C..0x60B4C). The item stays in the list -- it came down on land.
+- hp_pct < 40: done = 1 FIRST (0x60C10), then the same tile branch; on a 255 tile the contact is removed
+  instead of converted (0x60CB8), and 0xFF feeds the monthly multiplier rather than a race score.
+- hp_pct >= 70: nothing.
+
+The percentage is recomputed as `100 * nInterceptTargetHp / nInterceptTargetHpMax` at both 0x60A24 and
+0x60B90; the second computation re-reads the HP the first branch may already have changed.
+
+**The three tails.** `done && nRadarMsgTimer > 30` closes the screen and retargets every uncrewed craft
+chasing this contact (0x6125C..0x612D8, with the craft count re-read per iteration because a replacement
+spawn raised by `StrategList_RemoveAt` can grow the roster mid-loop). `bRadarCraftOutOfFuel &&
+nRadarMsgTimer > 30` closes the screen, sets `byte_1870C8` as a DWORD, posts message 44 with the ship
+index in colour slot 0, writes the craft's display name into `szScratch186488 @ 0x186488` and calls
+`Ship_RemoveWithCargo` (0x6132C..0x613A0). Otherwise the full-zoom exit runs when
+`bRadarFlip != 0 && nRadarRangeCur == 560` (0x613BC, 0x613D0).
+
+**ORIGINAL BUG, 0x61434.** The `Ship_ClearInterceptByStrategIdx` there is unreachable: `BLEQ` needs the
+zero flag set, and the only way to arrive with it set is `bRadarTraceLost == 0 AND bRadarFlip == 0`
+(0x61428..0x61430), while the entry gate at 0x613BC already requires `bRadarFlip != 0`. So when an
+intercept reaches full zoom with the trace still held, the OTHER craft chasing the same contact are
+never sent home. The port reproduces the behaviour by not calling it either; see bugs.tsv.
+
+**`Craft_CountSoldiersAboard` at 0x612BC** is passed the loop index -- a craft index, not a base index.
+
+**Deviations.** The original dereferences `PtrArray_Get(strategList, StrategList_FindByShipId(...))` at
+0x61418 with no test; the port returns early when the lookup misses. The original's three TEXTS copies
+have no length bound; the port bounds them by the caller's buffer.
+
+Tests: `tests/test_geoscape.c:TestRadarUpdate`, 84 checks on the real 240x320 surface with the
+shipped pads and lang.dat, covering the closed screen, the animation gate, the scan scroll and its wrap,
+the blink wash pixel, the five controls, every ladder branch (destroyed, escaped, no escape, ocean tile,
+lost trace, crash on land, crash at sea, 70 percent and above, no shot, already done), all three tails
+including the unreachable 0x61434, and the two gates that keep the full-zoom exit from running.

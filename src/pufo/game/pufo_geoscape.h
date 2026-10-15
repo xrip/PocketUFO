@@ -18,8 +18,10 @@
 #include "game/pufo_ship.h"
 #include "game/pufo_strateg.h"
 #include "game/pufo_unit.h"
+#include "render/pufo_render.h" /* GfxColorEnv, the colour pair RadarScreen_Update packs */
 #include "ui/pufo_control.h"   /* UiControl, for the nav speed controls */
 #include "ui/pufo_linelist.h"  /* UiLineList, the message list the build-complete report posts */
+#include "ui/pufo_panel.h"     /* UiAnimBlitEnv, the radar panel's animation progress */
 
 /* ------------------------------------------------- the facility grid layout
  *
@@ -1400,7 +1402,7 @@ bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv);
  * The open path, in order:
  *   1. Sound_Play(7) (0x5F49C; the MOV R1, #4 before it is dead -- Sound_Play @ 0x9E0C0 reads only
  *      R0), set bRadarScreenActive, and clear bRadarCraftOutOfFuel, bRadarBlinkPhase, bRadarFlip,
- *      bRadarTraceLost and unk_159650. All five are STRB, so all five are bytes.
+ *      bRadarTraceLost and bRadarInterceptDone. All five are STRB, so all five are bytes.
  *   2. Five single pads, each operator new(0x14) + PadImage_ctor, storing NULL when the allocation
  *      fails: pRadarFramePad (0x1596FC), pRadarUfoPad (0x1596D0), pRadarUfoMissilePad (0x159670),
  *      pRadarUfoFlashPad (0x1596F0), pRadarOverlayPad (0x1596E4). Only the frame pad is loaded here
@@ -1519,7 +1521,11 @@ typedef struct RadarSessionEnv {
     u8   *pbBlinkPhase;    /* bRadarBlinkPhase @ 0x159730 */
     u8   *pbFlip;          /* bRadarFlip @ 0x159718 */
     u8   *pbTraceLost;     /* bRadarTraceLost @ 0x159714 */
-    u8   *pbFlag159650;    /* unk_159650, cleared on open and read by RadarScreen_Update */
+    u8   *pbInterceptDone; /* bRadarInterceptDone @ 0x159650: cleared on open, set by
+                            * RadarScreen_Update when the intercept ends (target dead, contact
+                            * landed or contact crashed). Nothing else writes it. */
+    i32  *pnScanOffset;    /* nRadarScanOffset @ 0x159724, the signal-bar scroll RadarScreen_Update
+                            * advances by 10 and wraps above 39. RadarScreen_Init does NOT clear it. */
     u8   *pbAnimStarted;   /* bUiAnimStarted @ 0x187080 */
     i32  *pnMsgTimer;      /* nRadarMsgTimer @ 0xAC220 */
     i32  *pnTargetHp;      /* nInterceptTargetHp @ 0x159698 */
@@ -1801,5 +1807,230 @@ typedef struct RadarOverlayEnv {
 } RadarOverlayEnv;
 
 void RadarScreen_DrawOverlay(const RadarOverlayEnv *pEnv);
+
+/* ------------------------------------------------- the radar screen's frame update
+ *
+ * Evidence: RadarScreen_Update @ 0x60570 (3804 B). It is the only caller of every other
+ * RadarScreen_* function, the only writer of nRadarScanOffset @ 0x159724 and of
+ * bRadarInterceptDone @ 0x159650, and one of only two writers of the replacement-spawn gate
+ * at 0x162028 (the other is Tact_Shutdown).
+ *
+ * ## The panel, 0x60584..0x60788
+ *
+ * bRadarBlinkPhase picks 50 against 0 and the first Ui_AnimExpandBlit takes height
+ * 140 + that, mode 4 (the centred growing square). Its return value gates the DRAW only:
+ * when the animation is not finished the whole draw block is skipped and the three tail
+ * gates still run -- 0x605F0 branches straight to 0x61234. The other four anim calls are
+ * mode 0 at fixed rects, and five 2-pixel rails in index 0x3C / mid 0x96 / low 0xDC square
+ * the panel off. Then RadarScreen_CyclePalette runs TWICE (the range therefore moves two
+ * steps per frame) and the frame pad is blitted keyed 0xFF.
+ *
+ * ## The world half, 0x6078C..0x60864
+ *
+ * RadarScreen_DrawRangeBar runs only when the intercept is still live:
+ * !bRadarInterceptDone && !bRadarCraftOutOfFuel && nInterceptTargetHp > 0.
+ *
+ * The ufo sprite's y is the same range quotient the range bar uses, from a different base:
+ *     pRadarUfoPad->nOriginY = 170 - 114 * nRadarRangeCur / 560   (0x607C0..0x607F0)
+ * against the range bar's 183 - the same quotient. The sprite blit is masked and is skipped
+ * once the intercept is done:
+ *     SoftSurf_BlitFlip(55, y, pRadarUfoPad->pData, aPalette slot 23,
+ *                       pRadarUfoMissilePad->pData)
+ * -- the missile pad's own byte plane is the per-pixel alpha, and slot 23 is the ufos.pal
+ * slot RadarScreen_Init loads. Five UiControl_BlitActivePad calls walk aRadarControls[0..4].
+ *
+ * ## The weapons and the flash, 0x60868..0x60918
+ *
+ * RadarScreen_DrawCraftArmament runs unconditionally. RadarScreen_DrawOverlay runs only when
+ * !bRadarInterceptDone && !bRadarCraftOutOfFuel, and the original RE-READS bRadarInterceptDone
+ * afterwards (0x6089C) even though nothing DrawOverlay reaches can write it.
+ *
+ * The flash block then opens on !bRadarCraftOutOfFuel && !bRadarInterceptDone &&
+ * bRadarLastShotHit. It copies the ufo pad's origin into pRadarUfoFlashPad and blits the
+ * flash sprite through the same slot-23 palette and the same missile-pad mask. Crucially
+ * nInterceptTargetHp is read AFTER DrawOverlay (0x60920): a shot that lands in this frame can
+ * take the target to zero and drive the "destroyed" branch in the same frame it fired.
+ *
+ * ## The damage ladder, 0x60920..0x60C78
+ *
+ * nPct = 100 * nInterceptTargetHp / nInterceptTargetHpMax, both _rt_sdiv calls.
+ *
+ *   nInterceptTargetHp <= 0 && !bRadarInterceptDone -- the target is gone:
+ *     nRadarMsgTimer = 0, TEXTS[1600] "МАК уничтожен" into szRadarMsg, 0x162028 = 1,
+ *     StrategList_RemoveAt(nInterceptStrategIdx), Ship_ClearInterceptByStrategIdx of the same
+ *     index, bRadarInterceptDone = 1.
+ *   otherwise:
+ *     40 <= nPct < 70 -- the contact may slip away. RadarScreen_RollDetection(2) first, then
+ *     the escape needs all three of: !bRadarTraceLost, the contact's tile is NOT the 255
+ *     ocean tile, and Game_RandU16(4) == 0. On escape: nRadarMsgTimer = 0, TEXTS[1601]
+ *     "МАК приземлился", Funding_AddRaceBonus with that tile, item->nType = 4,
+ *     item->nTimer = 7200, bRadarInterceptDone = 1.
+ *     nPct < 40 (recomputed at 0x60B70 from a re-read nInterceptTargetHp) -- the contact is
+ *     finished: nRadarMsgTimer = 0, TEXTS[1602] "МАК разбился", bRadarInterceptDone = 1 set
+ *     BEFORE the tile test, then Funding_AddRaceBonus with the tile and either
+ *     StrategList_RemoveAt (tile == 255, it went into the sea) or nType = 4 plus
+ *     nTimer = 7200 (it came down on land).
+ *
+ * The two percentages are the same expression over the same value; the ladder is not
+ * exclusive, so a contact that lands in the 40..69 band and is not escaped can still fall
+ * into the < 40 branch in the same frame.
+ *
+ * ## The readout, 0x60CBC..0x6122C
+ *
+ * Twenty signal-bar rects and five cursor bars, all in index 0x28 / low 0x14, all offset by
+ * nRadarScanOffset: five 10x22 at (n + 117/127/137/147/157, 57), five 10x14 at the same x
+ * and y 156, five 20x14 at (2*(n + 13/23/33/43/53), 176), and five 5x20 at
+ * (nRadarCursorX + n/2 + 1/6/11/16/21, nRadarCursorY + 1). The mids are the symmetric ramps
+ * 0x55/0x5A/0x5C/0x5A/0x55 for the bars and 0x55/0x5F/0x69/0x5F/0x55 for the cursor. The
+ * ARM's MOVS/ADDMI/ASR #1 pair at 0x60F64 is C division by two, rounding toward zero.
+ *
+ * Then the scroll advances and wraps: nRadarScanOffset += 10, and if the new value is ABOVE
+ * 39 it becomes 0 (0x61084..0x610A0), so the cycle is 10, 20, 30, 0.
+ *
+ * TEXTS[1152] "Дист.: " is drawn at (120, 155) and itoa(nRadarRangeCur) at (180, 155); the
+ * message string is drawn at (28, 175) only while nRadarMsgTimer < 30. When bRadarBlinkPhase
+ * is set a 180x64 wash at (26, 176) in index 0x1F / mid 0x4A / low 0x75 goes down first and
+ * then RadarScreen_BlitOverlay -- so the overlay sprite appears on alternate frames. Four of
+ * the five button pads are blitted keyed 1 (0x611A8: MOV R8, #4): the fifth, the one
+ * RadarScreen_Init loads last, is never drawn here. TEXTS[1153] "Урон: " is drawn at
+ * (117, 59) and RadarScreen_DrawFuelGauge closes the frame.
+ *
+ * ## The three tail gates, 0x61234..0x6143C
+ *
+ * They run whether or not the panel was drawn, and only the first matching one runs.
+ *
+ * 1. bRadarInterceptDone && nRadarMsgTimer > 30 -- close, then send every empty craft home.
+ *    For each craft (Map_nCraftCount is re-read every iteration, 0x612D8, because a
+ *    replacement spawn can raise it): bHomeBase < 0xFE, bIntercepting set, and nStrategIdx
+ *    equal to nInterceptStrategIdx. Craft_CountSoldiersAboard is called with the LOOP INDEX
+ *    masked to a byte -- the IDB's own note on 0x612BC says the second argument is a craft
+ *    index, not a base index. When the crew count is zero, Ship_RetargetTravel.
+ * 2. bRadarCraftOutOfFuel && nRadarMsgTimer > 30 -- close, store 1 into the shortfall dword
+ *    at 0x1870C8 (a DWORD store, as everywhere else), post message 44 with the ship index,
+ *    copy Ship_FormatDisplayName's result into szScratch186488 @ 0x186488 (the geoscape
+ *    caption scratch Geoscape_Draw and BaseFac_BuildStatusMsg also use), and tail-call
+ *    Ship_RemoveWithCargo with that craft's Ship.bId. The craft is deleted, not sent home:
+ *    an intercept craft that runs out of fuel is gone.
+ * 3. bRadarFlip && nRadarRangeCur == 560 -- the range animation reached full zoom: close,
+ *    Ship_RetargetTravel for the intercept craft, and when bRadarTraceLost is set the
+ *    craft's own entry gets nTimer = 10.
+ *
+ * ORIGINAL BUG (0x61434), reproduced as dead code: the Ship_ClearInterceptByStrategIdx at
+ * 0x6143C is conditional on ANDSEQ having left the zero flag set, and the only way to reach
+ * it is bRadarTraceLost == 0 AND bRadarFlip == 0 -- but the gate at 0x613BC already requires
+ * bRadarFlip to be non-zero. So the branch can never run, and when an intercept reaches full
+ * zoom with the trace still held, the OTHER craft chasing the same contact are never sent
+ * home. Recorded in bugs.tsv.
+ *
+ * Deviations: the original reads every one of its thirty-odd globals unguarded and indexes
+ * apCraft[nInterceptStrategIdx] and the strateg array with no bound; the port checks the
+ * pointers it was handed and refuses the frame when one is missing. The original's TEXTS
+ * copies into the 100-byte stack buffer are unbounded strcpy-until-NUL loops; the port bounds
+ * them (the longest of the five records used here is 21 bytes, so no real text is clipped). */
+#define PUFO_RADAR_TEXT_DIST_LABEL     1152 /* lang.dat TEXTS[1152] "Дист.: " at (120, 155) */
+#define PUFO_RADAR_TEXT_DAMAGE_LABEL   1153 /* lang.dat TEXTS[1153] "Урон: " at (117, 59) */
+#define PUFO_RADAR_TEXT_TARGET_DEAD    1600 /* "МАК уничтожен" -- nInterceptTargetHp <= 0 */
+#define PUFO_RADAR_TEXT_TARGET_LANDED  1601 /* "МАК приземлился" -- the contact slipped away */
+#define PUFO_RADAR_TEXT_TARGET_CRASHED 1602 /* "МАК разбился" -- nInterceptTargetHp below 40% */
+#define PUFO_RADAR_MSG_SHIP_LOST         44 /* 0x61344: the out-of-fuel message id */
+#define PUFO_RADAR_UFO_PAL_SLOT          23 /* aPalette + 23 * 1024 = 0x14CED0, the ufos palette */
+#define PUFO_RADAR_PANEL_X               20 /* 0x605DC: MOV R1, #0x14 */
+#define PUFO_RADAR_PANEL_Y               50 /* 0x605D8: MOV R2, #0x32 */
+#define PUFO_RADAR_PANEL_W              188 /* 0x605D0: MOV R3, #0xBC */
+#define PUFO_RADAR_PANEL_H_BASE         140 /* 0x605AC: ADD R3, R0, #0x8C */
+#define PUFO_RADAR_PANEL_H_BLINK         50 /* 0x60590: MOV R0, #0x32 when the phase is set */
+#define PUFO_RADAR_UFO_Y_BASE           170 /* 0x607E4: RSB R3, R0, #0xAA */
+#define PUFO_RADAR_UFO_X                 55 /* 0x60820: MOV R0, #0x37, the Init origin */
+#define PUFO_RADAR_SCAN_STEP             10 /* 0x61084: ADD R0, R0, #0xA */
+#define PUFO_RADAR_SCAN_WRAP             39 /* 0x61088: CMP R0, #0x27, MOVGT R0, #0 */
+#define PUFO_RADAR_HP_ESCAPED_PCT        70 /* 0x60A28: CMP R0, #0x46, taken when at or above */
+#define PUFO_RADAR_HP_CRASH_PCT          40 /* 0x60A30 and 0x60B90: CMP R0, #0x28 */
+#define PUFO_RADAR_TIMER_LIMIT           30 /* 0x6112C draws the message below it, 0x6124C closes above */
+#define PUFO_RADAR_ESCAPE_ROLL            4 /* 0x60A98: Game_RandU16(4), the escape needs 0 */
+#define PUFO_RADAR_DETECT_CHANCE          2 /* 0x60A38: RadarScreen_RollDetection's argument */
+#define PUFO_RADAR_TIMER_LANDED        7200 /* 0x60A20: MOV R9, #0x1C20, the landed contact's timer */
+#define PUFO_RADAR_TIMER_TRACE_LOST      10 /* 0x6141C: MOV R3, #0xA */
+#define PUFO_RADAR_FULL_RANGE           560 /* 0x613C4: CMP against PUFO_RADAR_RANGE_SCALE */
+#define PUFO_RADAR_BAR_COUNT              5 /* 0x61088's five columns in each of the three rows */
+#define PUFO_RADAR_BAR_X_FIRST          117 /* 0x60CDC: ADD R1, R0, #0x75 */
+#define PUFO_RADAR_BAR_PITCH             10 /* 0x60D00: ADD R1, R0, #0x7F */
+#define PUFO_RADAR_BAR_Y_TOP             57 /* 0x60CD4: MOV R2, #0x39 */
+#define PUFO_RADAR_BAR_H_TOP             22 /* 0x60CC4: MOV R8, #0x16 */
+#define PUFO_RADAR_BAR_Y_MID            156 /* 0x60DD0-ish: MOV R2, #0x9C */
+#define PUFO_RADAR_BAR_H_MID             14 /* 0x60DCC-ish: MOV R8, #0xE */
+#define PUFO_RADAR_BAR_Y_BOTTOM         176 /* 0x60E7C: MOV R2, #0xB0 */
+#define PUFO_RADAR_BAR_H_BOTTOM          14
+#define PUFO_RADAR_BAR_X_DOUBLED         13 /* 0x60E8C: 2 * (nRadarScanOffset + 13) */
+#define PUFO_RADAR_BAR_IDX             0x28
+#define PUFO_RADAR_BAR_LOW             0x14
+#define PUFO_RADAR_CURSOR_X_FIRST         1 /* 0x60F78: ADD R1, R1, #1, then +5 per column */
+#define PUFO_RADAR_CURSOR_PITCH           5
+#define PUFO_RADAR_CURSOR_W               5 /* 0x60F48: MOV R3, #5 */
+#define PUFO_RADAR_CURSOR_H              20 /* 0x60F70: STR R4, ... with R4 = 0x14 */
+#define PUFO_RADAR_CURSOR_IDX            0x14
+#define PUFO_RADAR_PANEL_RAIL_IDX      0x3C
+#define PUFO_RADAR_PANEL_RAIL_MID      0x96
+#define PUFO_RADAR_PANEL_RAIL_LOW      0xDC
+#define PUFO_RADAR_WASH_IDX            0x1F /* 0x61164: the blink wash */
+#define PUFO_RADAR_WASH_MID            0x4A
+#define PUFO_RADAR_WASH_LOW            0x75
+#define PUFO_RADAR_WASH_X              26
+#define PUFO_RADAR_WASH_Y             176
+#define PUFO_RADAR_WASH_W             180
+#define PUFO_RADAR_WASH_H              64
+#define PUFO_RADAR_BUTTON_BLIT_COUNT      4 /* 0x611A8: MOV R8, #4 -- the fifth pad is never drawn */
+#define PUFO_RADAR_BUTTON_KEY             1
+#define PUFO_RADAR_FRAME_KEY            0xFF
+
+/* The five Ui_AnimExpandBlit calls, in the order the ARM makes them. The first one's height
+ * is 140 + (bRadarBlinkPhase ? 50 : 0) and is filled in at run time; the table holds 0 for
+ * it. All five share index 0x28, source origin 0x50/0x14 and key 0xFF. */
+typedef struct RadarPanelBlit {
+    i32 x;
+    i32 y;
+    i32 nW;
+    i32 nH;
+    i8  nMode;
+} RadarPanelBlit;
+extern const RadarPanelBlit g_aRadarPanelBlit[5];
+
+/* The five 2-pixel rails that square the panel off, in ARM order. */
+typedef struct RadarPanelRail {
+    i32 x;
+    i32 y;
+    i32 nW;
+    i32 nH;
+} RadarPanelRail;
+extern const RadarPanelRail g_aRadarPanelRail[5];
+
+typedef struct RadarUpdateEnv {
+    /* Everything Init/SetActive/the sub-drawers already need, reached through one pointer so
+     * the caller builds the radar session once and hands the same object to both. */
+    const RadarSessionEnv  *pSession;
+    UiAnimBlitEnv          *pAnim;      /* byte_187080, the 0x187058 progress, root + 0x6E */
+    const GfxColorEnv      *pColor;     /* Gfx_PackRgb565Pair's gamma and fade pair */
+    const RadarPaletteEnv  *pPalette;   /* RadarScreen_CyclePalette, called twice */
+    const RadarRangeBarEnv *pRangeBar;
+    const RadarFuelEnv     *pFuel;
+    const RadarArmamentEnv *pArmament;
+    const RadarOverlayEnv  *pOverlay;
+    const RadarDetectEnv   *pDetect;    /* also carries pTextRecs, szRadarMsg and its size */
+    const ShipRemovalEnv   *pShipEnv;   /* the three Ship_* exits, the crew count, the spawn gate */
+    const PadImage         *pTilemap;   /* 0x186B74, the current map grid pad Tilemap_GetAt reads */
+    i32                    *anFundingBlock; /* unk_161F34, the five race scores and the multiplier */
+    u32                    *pdwShortfall;   /* byte_1870C8, written as a dword */
+    char                   *pszNameBuf;     /* szScratch186488 @ 0x186488, the caption scratch */
+    size_t                  cchNameBuf;
+    UiLineList             *pMsgList;   /* the root message list @ 0x158890 */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void                   *pSoundUser;
+    /* UiControl_BlitActivePad's injected blits: the original calls PadImage_Blit and
+     * PadImage_BlitEx(pPad, 0) itself, the port keeps the seam the control module defines. */
+    UiControlBlitFn         pfnCtlBlit;
+    UiControlBlitFn         pfnCtlBlitEx;
+    void                   *pCtlBlitUser;
+} RadarUpdateEnv;
+
+void RadarScreen_Update(const RadarUpdateEnv *pEnv);
 
 #endif /* PUFO_GEOSCAPE_H */

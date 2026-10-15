@@ -4,6 +4,7 @@
 #include <stdlib.h>            /* malloc/free, RadarScreen_Init's pads and controls */
 #include <stddef.h>            /* size_t, the bounded text copy */
 #include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
+#include "game/pufo_baseui.h"  /* Funding_AddRaceBonus and PUFO_RACE_ID_NONE, the radar contact bonus */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
 #include "game/pufo_font.h"    /* Font_DrawGlyph, g_fontSys.nBaseBitsBase, Text_DrawString */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
@@ -2352,7 +2353,7 @@ void RadarScreen_Init(const RadarSessionEnv *pEnv)
     /* Port-side guard: the original reaches every member through a live global address. */
     if (pEnv == NULL || pEnv->pUi == NULL || pEnv->pbActive == NULL || pEnv->pbOutOfFuel == NULL
         || pEnv->pbBlinkPhase == NULL || pEnv->pbFlip == NULL || pEnv->pbTraceLost == NULL
-        || pEnv->pbFlag159650 == NULL || pEnv->pbAnimStarted == NULL || pEnv->pnMsgTimer == NULL
+        || pEnv->pbInterceptDone == NULL || pEnv->pbAnimStarted == NULL || pEnv->pnMsgTimer == NULL
         || pEnv->pnTargetHp == NULL || pEnv->pnTargetHpMax == NULL || pEnv->pnCraftLevel == NULL
         || pEnv->pnRangeLimit == NULL || pEnv->pnRangeTarget == NULL || pEnv->pnRangeCur == NULL
         || pEnv->pnAmmoL == NULL || pEnv->pnAmmoR == NULL || pEnv->pnCursorX == NULL
@@ -2409,7 +2410,7 @@ void RadarScreen_Init(const RadarSessionEnv *pEnv)
     *pEnv->pbBlinkPhase = 0;  /* 0x5F4BC */
     *pEnv->pbFlip = 0;        /* 0x5F4C8 */
     *pEnv->pbTraceLost = 0;   /* 0x5F4D4 */
-    *pEnv->pbFlag159650 = 0;  /* 0x5F4E0 */
+    *pEnv->pbInterceptDone = 0;  /* 0x5F4E0 */
 
     pUi->pFramePad = Radar_NewPad(); /* 0x5F508 */
     (void)PadImage_Load(pUi->pFramePad, "radar", PUFO_RADAR_FRAME_MODE);
@@ -2980,5 +2981,393 @@ void RadarScreen_DrawOverlay(const RadarOverlayEnv *pEnv)
     }
     if (*pEnv->pbEngageL != 0 && *pEnv->pnCooldownL == PUFO_RADAR_COOLDOWN_READY) {
         Radar_DrawMountShot(pEnv, pCraft, false);
+    }
+}
+
+/* ------------------------------------------------- RadarScreen_Update @ 0x60570
+ * See the evidence block in pufo_geoscape.h for the whole map. */
+
+const RadarPanelBlit g_aRadarPanelBlit[5] = {
+    { PUFO_RADAR_PANEL_X, PUFO_RADAR_PANEL_Y, PUFO_RADAR_PANEL_W, 0, 4 }, /* nH filled at run time */
+    { 111, 50,  93, 120, 0 }, /* 0x60620 */
+    { 111, 50,  97, 120, 0 }, /* 0x6064C */
+    { 111, 50,  97, 100, 0 }, /* 0x6067C */
+    { 111, 50,  97,  30, 0 }  /* 0x606AC */
+};
+
+const RadarPanelRail g_aRadarPanelRail[5] = {
+    {  22,  60,   2, 120 }, /* 0x606DC */
+    { 113,  52,   2, 120 }, /* 0x60700 */
+    { 208,  60,   2, 120 }, /* 0x60724 */
+    {  22,  52, 120,   2 }, /* 0x6074C */
+    {  22, 172, 120,   2 }  /* 0x60770 */
+};
+
+/* The symmetric colour ramps of the signal bars and the cursor bars (0x60CC0..0x60D94 and
+ * 0x60F54..0x6106C). Both peak in the middle column. */
+static const u8 g_anRadarBarMid[PUFO_RADAR_BAR_COUNT]    = { 0x55, 0x5A, 0x5C, 0x5A, 0x55 };
+static const u8 g_anRadarCursorMid[PUFO_RADAR_BAR_COUNT] = { 0x55, 0x5F, 0x69, 0x5F, 0x55 };
+
+/* 0x6095C / 0x60ADC / 0x60BBC / 0x610B4 / 0x611E0: the original's strcpy-until-NUL loop out of a
+ * TEXTS record, with no bound on the 100-byte stack buffer. Bounded here (deviation); the longest
+ * of the five records this function uses is 21 bytes, so no real text is clipped. */
+static void Radar_CopyTextRec(const u8 *pTextRecs, i32 nRec, char *pszOut, size_t cchOut)
+{
+    const char *const pszSrc = (const char *)pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+    for (size_t i = 0; i + 1 < cchOut; ++i) {
+        pszOut[i] = pszSrc[i];
+        if (pszSrc[i] == '\0') {
+            return;
+        }
+    }
+    pszOut[cchOut - 1] = '\0';
+}
+
+/* The contact the intercept is chasing. The original calls PtrArray_Get twice per branch on the
+ * same index (once for the x, once for the y of the tile lookup, and again for the nType/nTimer
+ * stores); every call returns the same object, so the port looks it up once. */
+static StrategItem *Radar_ContactItem(const RadarUpdateEnv *pEnv)
+{
+    return (StrategItem *)PtrArray_Get(pEnv->pSession->pStrategList,
+                                       *pEnv->pSession->pnStrategIdx);
+}
+
+/* 0x60A88 / 0x60B10 / 0x60C00 / 0x60C44 / 0x60CA0: the contact's map tile, which is also the race
+ * id Funding_AddRaceBonus maps. */
+static i32 Radar_ContactTile(const RadarUpdateEnv *pEnv, const StrategItem *pItem)
+{
+    return (pItem != NULL) ? Tilemap_GetAt(pEnv->pTilemap, pItem->nX, pItem->nY) : 0;
+}
+
+/* 0x605A0..0x60770: the five animated panel rects and the five rails that square them off. Only
+ * the FIRST anim blit's result matters (0x605EC); the other four are not tested. Returns false
+ * when the animation has not reached the full rect, which skips the rest of the draw block. */
+static bool Radar_DrawPanelFrame(const RadarUpdateEnv *pEnv, i32 nPanelH)
+{
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, PUFO_RADAR_PANEL_X, PUFO_RADAR_PANEL_Y,
+                           PUFO_RADAR_PANEL_W, nPanelH, 0x28, 0x50, 0x14, 0xFF, 4)) {
+        return false; /* 0x605F0: the whole draw block is skipped, the tail gates still run */
+    }
+    for (i32 i = 1; i < 5; ++i) {
+        const RadarPanelBlit *const pBlit = &g_aRadarPanelBlit[i];
+        (void)Ui_AnimExpandBlit(pEnv->pAnim, pBlit->x, pBlit->y, pBlit->nW, pBlit->nH,
+                                0x28, 0x50, 0x14, 0xFF, pBlit->nMode);
+    }
+    for (i32 i = 0; i < 5; ++i) {
+        SoftSurf_BlitRectProxy(0, g_aRadarPanelRail[i].x, g_aRadarPanelRail[i].y,
+                               g_aRadarPanelRail[i].nW, g_aRadarPanelRail[i].nH,
+                               PUFO_RADAR_PANEL_RAIL_IDX, PUFO_RADAR_PANEL_RAIL_MID,
+                               PUFO_RADAR_PANEL_RAIL_LOW);
+    }
+    return true;
+}
+
+/* 0x60CBC..0x6107C: the twenty signal bars and the five cursor bars, every x offset by the scroll. */
+static void Radar_DrawSignalBars(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+    const i32 n = *pS->pnScanOffset;
+
+    for (i32 i = 0; i < PUFO_RADAR_BAR_COUNT; ++i) {
+        const i32 x = n + PUFO_RADAR_BAR_X_FIRST + i * PUFO_RADAR_BAR_PITCH;
+        SoftSurf_BlitRectProxy(0, x, PUFO_RADAR_BAR_Y_TOP, PUFO_RADAR_BAR_PITCH,
+                               PUFO_RADAR_BAR_H_TOP, PUFO_RADAR_BAR_IDX,
+                               g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60CEC..0x60D94 */
+        SoftSurf_BlitRectProxy(0, x, PUFO_RADAR_BAR_Y_MID, PUFO_RADAR_BAR_PITCH,
+                               PUFO_RADAR_BAR_H_MID, PUFO_RADAR_BAR_IDX,
+                               g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60DC0..0x60E60 */
+        SoftSurf_BlitRectProxy(0, 2 * (n + PUFO_RADAR_BAR_X_DOUBLED + i * PUFO_RADAR_BAR_PITCH),
+                               PUFO_RADAR_BAR_Y_BOTTOM, 2 * PUFO_RADAR_BAR_PITCH,
+                               PUFO_RADAR_BAR_H_BOTTOM, PUFO_RADAR_BAR_IDX,
+                               g_anRadarBarMid[i], PUFO_RADAR_BAR_LOW);      /* 0x60E8C..0x60F3C */
+        /* 0x60F64: MOVS / ADDMI / ASR #1 is C division by two, rounding toward zero. */
+        SoftSurf_BlitRectProxy(0, *pS->pnCursorX + n / 2 + PUFO_RADAR_CURSOR_X_FIRST
+                               + i * PUFO_RADAR_CURSOR_PITCH, *pS->pnCursorY + 1,
+                               PUFO_RADAR_CURSOR_W, PUFO_RADAR_CURSOR_H, PUFO_RADAR_CURSOR_IDX,
+                               g_anRadarCursorMid[i], PUFO_RADAR_BAR_LOW);   /* 0x60F80..0x6107C */
+    }
+
+    /* 0x61080..0x610A0: advance by ten, and wrap to zero when the NEW value is above 39. The
+     * cycle is therefore 10, 20, 30, 0. */
+    i32 nNext = n + PUFO_RADAR_SCAN_STEP;
+    if (nNext > PUFO_RADAR_SCAN_WRAP) {
+        nNext = 0;
+    }
+    *pS->pnScanOffset = nNext;
+}
+
+/* 0x610A4..0x6122C: the two labels, the range number, the message line, the blink wash and the
+ * overlay sprite, the four button pads, and the fuel gauge. */
+static void Radar_DrawReadout(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+    RadarUiState *const pUi = pS->pUi;
+    char szText[100]; /* psz @ sp+0x20 */
+
+    Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_DIST_LABEL,
+                      szText, sizeof(szText));
+    Gfx_PackRgb565Pair(pEnv->pColor, 80, 200, 20, 40, 90, 20); /* 0x610E4 */
+    Text_DrawString(120, 155, szText);                         /* 0x610F8 */
+
+    char szNum[52];
+    (void)snprintf(szNum, sizeof(szNum), "%d", (int)*pS->pnRangeCur); /* 0x6110C: j_itoa, base 10 */
+    Text_DrawString(180, 155, szNum); /* 0x61120 */
+
+    if (*pS->pnMsgTimer < PUFO_RADAR_TIMER_LIMIT) { /* 0x6112C */
+        Text_DrawString(28, 175, pEnv->pDetect->pszMsg);
+    }
+
+    if (*pS->pbBlinkPhase != 0) { /* 0x61150 */
+        SoftSurf_BlitRectProxy(0, PUFO_RADAR_WASH_X, PUFO_RADAR_WASH_Y, PUFO_RADAR_WASH_W,
+                               PUFO_RADAR_WASH_H, PUFO_RADAR_WASH_IDX,
+                               PUFO_RADAR_WASH_MID, PUFO_RADAR_WASH_LOW);
+        RadarScreen_BlitOverlay(pUi->pOverlayPad); /* 0x611A0 */
+    }
+
+    for (i32 i = 0; i < PUFO_RADAR_BUTTON_BLIT_COUNT; ++i) { /* 0x611A8: MOV R8, #4 */
+        PadImage_BlitEx(pUi->apButtonPad[i], PUFO_RADAR_BUTTON_KEY);
+    }
+
+    Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_DAMAGE_LABEL,
+                      szText, sizeof(szText));
+    Gfx_PackRgb565Pair(pEnv->pColor, 120, 200, 40, 40, 80, 20); /* 0x61214 */
+    Text_DrawString(117, 59, szText);                           /* 0x61228 */
+    (void)RadarScreen_DrawFuelGauge(pEnv->pFuel);              /* 0x6122C */
+}
+
+/* 0x6091C..0x60C78: the damage ladder, reached only when the last shot hit. */
+static void Radar_ResolveDamage(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+    const i32 nHpMax = *pS->pnTargetHpMax;
+
+    /* Port-side guard, not original behaviour: the original divides by nInterceptTargetHpMax with
+     * no test, and RadarScreen_Init only ever fills it from the class table. */
+    const i32 nPct = (nHpMax != 0) ? (100 * *pS->pnTargetHp) / nHpMax : 0;
+
+    if (*pS->pnTargetHp > 0 || *pS->pbInterceptDone != 0) { /* 0x60924 / 0x60934 */
+        if (nPct < PUFO_RADAR_HP_ESCAPED_PCT && nPct >= PUFO_RADAR_HP_CRASH_PCT) { /* 0x60A28, 0x60A30 */
+            (void)RadarScreen_RollDetection(pEnv->pDetect, PUFO_RADAR_DETECT_CHANCE);
+
+            StrategItem *const pItem = Radar_ContactItem(pEnv);
+            const i32 nTile = Radar_ContactTile(pEnv, pItem);
+
+            /* 0x60A48..0x60AA8, in the ARM's short-circuit order: Game_RandU16(4) is only rolled
+             * when the trace is still held AND the contact is not sitting on the 255 ocean tile. */
+            if (*pS->pbTraceLost == 0 && nTile != PUFO_RACE_ID_NONE
+                && (u16)Game_RandU16((u16)PUFO_RADAR_ESCAPE_ROLL) == 0) {
+                *pS->pnMsgTimer = 0;                                /* 0x60AB4 */
+                Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_TARGET_LANDED,
+                                  pEnv->pDetect->pszMsg, pEnv->pDetect->cchMsg);
+                Funding_AddRaceBonus(pEnv->anFundingBlock, nTile);  /* 0x60B1C */
+                if (pItem != NULL) {
+                    pItem->nType = 4;                               /* 0x60B30 */
+                    pItem->nTimer = PUFO_RADAR_TIMER_LANDED;        /* 0x60B44 */
+                }
+                *pS->pbInterceptDone = 1;                           /* 0x60B4C */
+            }
+        }
+
+        /* 0x60B6C..0x60B94: the percentage is recomputed from a re-read nInterceptTargetHp, so a
+         * contact that sat in the 40..69 band and did NOT escape can still fall in here. */
+        const i32 nPct2 = (nHpMax != 0) ? (100 * *pS->pnTargetHp) / nHpMax : 0;
+        if (nPct2 < PUFO_RADAR_HP_CRASH_PCT) {
+            StrategItem *const pItem = Radar_ContactItem(pEnv);
+            const i32 nTile = Radar_ContactTile(pEnv, pItem);
+
+            *pS->pnMsgTimer = 0;                                    /* 0x60BA0 */
+            Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_TARGET_CRASHED,
+                              pEnv->pDetect->pszMsg, pEnv->pDetect->cchMsg);
+            *pS->pbInterceptDone = 1;                               /* 0x60C10, set before the tile test */
+            Funding_AddRaceBonus(pEnv->anFundingBlock, nTile);      /* 0x60C50 / 0x60CAC */
+            if (nTile == PUFO_RACE_ID_NONE) {
+                (void)StrategList_RemoveAt(pS->pStrategList, pEnv->pShipEnv->pWorld,
+                                           *pS->pnStrategIdx, pEnv->pShipEnv->pnSpawnOnceFlag,
+                                           pEnv->pShipEnv->pSpawnCtx); /* 0x60CB8: it went into the sea */
+            } else if (pItem != NULL) {
+                pItem->nType = 4;                                   /* 0x60C64 */
+                pItem->nTimer = PUFO_RADAR_TIMER_LANDED;            /* 0x60C74 */
+            }
+        }
+    } else {
+        *pS->pnMsgTimer = 0;                                        /* 0x60940 */
+        Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_TARGET_DEAD,
+                          pEnv->pDetect->pszMsg, pEnv->pDetect->cchMsg);
+        *pEnv->pShipEnv->pnSpawnOnceFlag = 1;                       /* 0x6097C */
+        (void)StrategList_RemoveAt(pS->pStrategList, pEnv->pShipEnv->pWorld, *pS->pnStrategIdx,
+                                   pEnv->pShipEnv->pnSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
+        (void)Ship_ClearInterceptByStrategIdx(pEnv->pShipEnv, *pS->pnStrategIdx); /* 0x60994 */
+        *pS->pbInterceptDone = 1;                                   /* 0x609A0 */
+    }
+}
+
+/* 0x61254..0x612E8: close the screen, then send every empty craft that was chasing the finished
+ * contact home. */
+static void Radar_CloseAndRetarget(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+    const ShipRemovalEnv *const pRem = pEnv->pShipEnv;
+
+    RadarScreen_SetActive(pS, 0); /* 0x6125C */
+
+    /* 0x612D8: Map_nCraftCount is re-read on every iteration, because a replacement spawn raised
+     * by StrategList_RemoveAt can grow the roster mid-loop. */
+    for (i32 i = 0; i < (i32)*pRem->pnShipCount; ++i) {
+        const Ship *const pShip = pS->apCraft[i];
+        if (pShip == NULL) {
+            continue;
+        }
+        if (pShip->bHomeBase >= 0xFE || pShip->bIntercepting == 0
+            || pShip->nStrategIdx != *pS->pnStrategIdx) { /* 0x6128C..0x612B0 */
+            continue;
+        }
+        /* 0x612BC: the second argument is the LOOP INDEX masked to a byte -- a craft index, not a
+         * base index. The IDB's own note on this call site says so. */
+        if (Craft_CountSoldiersAboard((Soldier *const *)pRem->apSoldiers,
+                                      (i32)*pRem->pnSoldierCount, i) == 0) {
+            (void)Ship_RetargetTravel(pRem, i); /* 0x612CC */
+        }
+    }
+}
+
+/* 0x61320..0x613A0: the intercept craft ran out of fuel on the way in. It is deleted, not sent
+ * home -- the only place in the game that removes a craft outside a battle. */
+static void Radar_RemoveStrandedCraft(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+
+    RadarScreen_SetActive(pS, 0);                                   /* 0x6132C */
+    *pEnv->pdwShortfall = 1;                                        /* 0x61340, a DWORD store */
+    UiLineList_AppendWithSound(pEnv->pMsgList, PUFO_RADAR_MSG_SHIP_LOST,
+                               (u32)*pS->pnShipIdx, 0, 0, 0,
+                               pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x61354 */
+    (void)Ship_FormatDisplayName(pS->apCraft, *pS->pnShipIdx, pEnv->pDetect->pTextRecs,
+                                 pEnv->pszNameBuf, pEnv->cchNameBuf);
+
+    const i32 nShipIdx = *pS->pnShipIdx;
+    if (nShipIdx >= 0 && nShipIdx < (i32)*pEnv->pShipEnv->pnShipCount) {
+        const Ship *const pCraft = pS->apCraft[nShipIdx];
+        if (pCraft != NULL) {
+            (void)Ship_RemoveWithCargo(pEnv->pShipEnv, (i32)pCraft->bId); /* 0x613A0, tail call */
+        }
+    }
+}
+
+/* 0x613B0..0x6143C: the range animation reached full zoom. */
+static void Radar_FullZoomExit(const RadarUpdateEnv *pEnv)
+{
+    const RadarSessionEnv *const pS = pEnv->pSession;
+
+    if (*pS->pbFlip == 0 || *pS->pnRangeCur != PUFO_RADAR_FULL_RANGE) { /* 0x613BC, 0x613CC */
+        return;
+    }
+    RadarScreen_SetActive(pS, 0);                                     /* 0x613E0 */
+    (void)Ship_RetargetTravel(pEnv->pShipEnv, *pS->pnShipIdx);        /* 0x613EC */
+    if (*pS->pbTraceLost != 0) {
+        const StrategList view = StrategViewOf(pS->pStrategList);
+        StrategItem *const pEntry = (StrategItem *)PtrArray_Get(
+            pS->pStrategList,
+            StrategList_FindByShipId(&view, pEnv->pShipEnv->pWorld, *pS->pnShipIdx));
+        if (pEntry != NULL) {
+            pEntry->nTimer = PUFO_RADAR_TIMER_TRACE_LOST;             /* 0x61420 */
+        }
+    }
+    /* ORIGINAL BUG (0x61434), reproduced as dead code: the Ship_ClearInterceptByStrategIdx the ARM
+     * reaches with BLEQ needs ANDSEQ to have left the zero flag set, and the only way there is
+     * bRadarTraceLost == 0 AND bRadarFlip == 0 -- while the gate at 0x613BC already requires
+     * bRadarFlip to be non-zero. So it can never run, and the OTHER craft still chasing this
+     * contact are never sent home. The port does not call it either. See bugs.tsv. */
+}
+
+/* RadarScreen_Update @ 0x60570. */
+void RadarScreen_Update(const RadarUpdateEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pSession == NULL || pEnv->pAnim == NULL || pEnv->pColor == NULL
+        || pEnv->pPalette == NULL || pEnv->pRangeBar == NULL || pEnv->pFuel == NULL
+        || pEnv->pArmament == NULL || pEnv->pOverlay == NULL || pEnv->pDetect == NULL
+        || pEnv->pShipEnv == NULL || pEnv->pTilemap == NULL || pEnv->pMsgList == NULL
+        || pEnv->pszNameBuf == NULL || pEnv->cchNameBuf == 0
+        || pEnv->pDetect->pTextRecs == NULL || pEnv->pDetect->pszMsg == NULL
+        || pEnv->pDetect->cchMsg == 0
+        || pEnv->pShipEnv->pnSpawnOnceFlag == NULL || pEnv->pShipEnv->pnShipCount == NULL
+        || pEnv->pShipEnv->pnSoldierCount == NULL) {
+        return;
+    }
+    const RadarSessionEnv *const pS = pEnv->pSession;
+    if (pS->pUi == NULL || pS->apCraft == NULL || pS->pStrategList == NULL) {
+        return;
+    }
+    RadarUiState *const pUi = pS->pUi;
+
+    /* 0x60584..0x60594: the blink phase moves only the first panel rect, by 50. */
+    const i32 nPanelH = PUFO_RADAR_PANEL_H_BASE
+        + ((*pS->pbBlinkPhase != 0) ? PUFO_RADAR_PANEL_H_BLINK : 0);
+
+    if (*pS->pbActive == 0) { /* 0x6059C */
+        return;
+    }
+
+    if (Radar_DrawPanelFrame(pEnv, nPanelH)) {
+        RadarScreen_CyclePalette(pEnv->pPalette); /* 0x60774 */
+        RadarScreen_CyclePalette(pEnv->pPalette); /* 0x60778: twice, so the range moves two a frame */
+        if (pUi->pFramePad != NULL) {
+            PadImage_BlitEx(pUi->pFramePad, PUFO_RADAR_FRAME_KEY);
+        }
+
+        if (*pS->pbInterceptDone == 0 && *pS->pbOutOfFuel == 0 && *pS->pnTargetHp > 0) {
+            (void)RadarScreen_DrawRangeBar(pEnv->pRangeBar); /* 0x607B8 */
+        }
+
+        if (pUi->pUfoPad != NULL) {
+            /* 0x607C0..0x607F0: the same range quotient the range bar uses, from 170 not 183. */
+            pUi->pUfoPad->nOriginY = PUFO_RADAR_UFO_Y_BASE
+                - (PUFO_RADAR_RANGE_PITCH * *pS->pnRangeCur) / PUFO_RADAR_RANGE_SCALE;
+            if (*pS->pbInterceptDone == 0) { /* 0x607F4 */
+                SoftSurf_BlitFlip(PUFO_RADAR_UFO_X, pUi->pUfoPad->nOriginY, pUi->pUfoPad->pData,
+                                  g_aPalette[PUFO_RADAR_UFO_PAL_SLOT],
+                                  (pUi->pUfoMissilePad != NULL) ? pUi->pUfoMissilePad->pData : NULL);
+            }
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 120, 200, 40, 40, 80, 20); /* 0x60844 */
+        for (i32 i = 0; i < PUFO_RADAR_CONTROLS; ++i) { /* 0x6084C..0x60864 */
+            if (pUi->apCtl[i] != NULL) {
+                (void)UiControl_BlitActivePad(pUi->apCtl[i], pEnv->pfnCtlBlit,
+                                              pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser);
+            }
+        }
+
+        RadarScreen_DrawCraftArmament(pEnv->pArmament); /* 0x60870, unconditional */
+        if (*pS->pbInterceptDone == 0 && *pS->pbOutOfFuel == 0) {
+            RadarScreen_DrawOverlay(pEnv->pOverlay); /* 0x60898 */
+        }
+
+        /* 0x608B0..0x608C8. The original re-reads bRadarInterceptDone at 0x6089C after DrawOverlay
+         * even though nothing DrawOverlay reaches can write it; reproduced as a re-read. */
+        if (*pS->pbOutOfFuel == 0 && *pS->pbInterceptDone == 0
+            && pEnv->pOverlay->pbLastShotHit != NULL && *pEnv->pOverlay->pbLastShotHit != 0) {
+            if (pUi->pUfoPad != NULL && pUi->pUfoFlashPad != NULL) {
+                pUi->pUfoFlashPad->nOriginX = pUi->pUfoPad->nOriginX; /* 0x608DC */
+                pUi->pUfoFlashPad->nOriginY = pUi->pUfoPad->nOriginY; /* 0x608EC */
+                SoftSurf_BlitFlip(PUFO_RADAR_UFO_X, pUi->pUfoPad->nOriginY,
+                                  pUi->pUfoFlashPad->pData,
+                                  g_aPalette[PUFO_RADAR_UFO_PAL_SLOT],
+                                  (pUi->pUfoMissilePad != NULL) ? pUi->pUfoMissilePad->pData : NULL);
+            }
+            Radar_ResolveDamage(pEnv);
+        }
+
+        Radar_DrawSignalBars(pEnv); /* 0x60CBC..0x610A0 */
+        Radar_DrawReadout(pEnv);    /* 0x610A4..0x6122C */
+    }
+
+    /* 0x61234..0x6143C: the three tail gates run whether or not the panel was drawn, and only the
+     * first matching one runs. */
+    if (*pS->pbInterceptDone != 0 && *pS->pnMsgTimer > PUFO_RADAR_TIMER_LIMIT) {
+        Radar_CloseAndRetarget(pEnv);
+    } else if (*pS->pbOutOfFuel != 0 && *pS->pnMsgTimer > PUFO_RADAR_TIMER_LIMIT) {
+        Radar_RemoveStrandedCraft(pEnv);
+    } else {
+        Radar_FullZoomExit(pEnv);
     }
 }

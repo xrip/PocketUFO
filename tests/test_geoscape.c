@@ -3843,10 +3843,10 @@ static void TestRadarRangeBar(void)
 
 static RadarUiState g_radarUi;
 static u8  g_bRadarActive, g_bRadarOutFuel, g_bRadarBlink, g_bRadarFlip, g_bRadarTrace;
-static u8  g_bRadarFlag50, g_bRadarAnim;
+static u8  g_bRadarDone, g_bRadarAnim;
 static i32 g_nRadarMsgTimer, g_nRadarTargetHp, g_nRadarTargetHpMax, g_nRadarLevel;
 static i32 g_nRadarRangeLimit, g_nRadarRangeTarget, g_nRadarRangeCur;
-static i32 g_nRadarAmmoL, g_nRadarAmmoR, g_nRadarCurX, g_nRadarCurY;
+static i32 g_nRadarAmmoL, g_nRadarAmmoR, g_nRadarCurX, g_nRadarCurY, g_nRadarScan;
 static i32 g_nRadarShipIdx, g_nRadarStrategIdx;
 static GameTime g_radarTime;
 static i8 g_nRadarFrameStyle;
@@ -3897,11 +3897,11 @@ static void RadarSession_Reset(i32 nStrategIdx)
 
     /* Every scalar starts at a value the ported code is not supposed to leave behind. */
     g_bRadarActive = 0; g_bRadarOutFuel = 1; g_bRadarBlink = 1; g_bRadarFlip = 1;
-    g_bRadarTrace = 0; g_bRadarFlag50 = 1; g_bRadarAnim = 1;
+    g_bRadarTrace = 0; g_bRadarDone = 1; g_bRadarAnim = 1;
     g_nRadarMsgTimer = -1; g_nRadarTargetHp = -1; g_nRadarTargetHpMax = -1;
     g_nRadarLevel = -1; g_nRadarRangeLimit = -1; g_nRadarRangeTarget = -1;
     g_nRadarRangeCur = -1; g_nRadarAmmoL = -999; g_nRadarAmmoR = -999;
-    g_nRadarCurX = -1; g_nRadarCurY = -1;
+    g_nRadarCurX = -1; g_nRadarCurY = -1; g_nRadarScan = -1;
     g_nRadarShipIdx = 0; g_nRadarStrategIdx = nStrategIdx;
     memset(&g_radarTime, 0, sizeof(g_radarTime));
     g_nRadarFrameStyle = -1;
@@ -3918,7 +3918,8 @@ static void RadarSession_Reset(i32 nStrategIdx)
     g_radarEnv.pbBlinkPhase = &g_bRadarBlink;
     g_radarEnv.pbFlip = &g_bRadarFlip;
     g_radarEnv.pbTraceLost = &g_bRadarTrace;
-    g_radarEnv.pbFlag159650 = &g_bRadarFlag50;
+    g_radarEnv.pbInterceptDone = &g_bRadarDone;
+    g_radarEnv.pnScanOffset = &g_nRadarScan;
     g_radarEnv.pbAnimStarted = &g_bRadarAnim;
     g_radarEnv.pnMsgTimer = &g_nRadarMsgTimer;
     g_radarEnv.pnTargetHp = &g_nRadarTargetHp;
@@ -4021,7 +4022,7 @@ static void TestRadarSession(void)
     CheckEqI32(g_bRadarBlink, 0, "bRadarBlinkPhase cleared (0x5F4BC)");
     CheckEqI32(g_bRadarFlip, 0, "bRadarFlip cleared (0x5F4C8)");
     CheckEqI32(g_bRadarTrace, 0, "bRadarTraceLost cleared (0x5F4D4)");
-    CheckEqI32(g_bRadarFlag50, 0, "unk_159650 cleared (0x5F4E0)");
+    CheckEqI32(g_bRadarDone, 0, "bRadarInterceptDone cleared (0x5F4E0)");
     CheckEqI32(g_bRadarAnim, 0, "bUiAnimStarted cleared (0x5FEFC)");
     CheckEqI32(g_nRadarMsgTimer, 255, "nRadarMsgTimer starts at 255 (0x5F60C)");
     CheckEqI32(g_nRadarRangeTarget, 560, "nRadarRangeTarget starts full (0x5FC10)");
@@ -5035,6 +5036,695 @@ static void TestRadarOverlay(void)
     CheckEqI32(g_bOvLastHit, 9, "and does not even reach the clear of bRadarLastShotHit");
 }
 
+/* --- RadarScreen_Update @ 0x60570 ---
+ *
+ * The frame function, so the checks are about the STATE it drives: the damage ladder, the three
+ * tail gates, the intercept-done flag, the signal-bar scroll. Two pixel checks pin the blink
+ * phase's +50 panel height and the wash it draws over the readout.
+ *
+ * The RNG is pinned by srand(). With the range bar's pulse gate closed and both mounts disarmed
+ * the frame makes exactly ONE Game_RandU16 call (RadarScreen_RollDetection's) before the escape
+ * roll, so seed 3 lands Game_RandU16(4) on 0 (the contact escapes) and seed 1 lands it on 2
+ * (it does not). Both seeds give Game_RandU16(2) == 0, which makes RollDetection do the speed
+ * comparison; the craft runs at 6000/60 = 100, above every class speed, so it never loses the
+ * trace on its own. */
+
+#define UPD_SEED_ESCAPE       1
+#define UPD_SEED_STAY         2
+#define UPD_WASH_COLOR     0x1A4E /* pack(idx 0x1F, mid 0x4A, low 0x75) */
+#define UPD_TILE_W             16
+#define UPD_TILE_H             16
+#define UPD_RACE_LAND        0x85 /* Funding_AddRaceBonus maps 0x85 to funding slot 4 */
+#define UPD_RACE_SEA         0xFF /* and 0xFF to the monthly multiplier, slot 5 */
+#define UPD_FUND_SLOT_LAND      4
+#define UPD_FUND_SLOT_SEA       5
+#define UPD_CONTACT_X           3
+#define UPD_CONTACT_Y           4
+
+static RadarUpdateEnv   g_updEnv;
+static UiAnimBlitEnv    g_updAnim;
+static GfxColorEnv      g_updColor;
+static RadarPaletteEnv  g_updPal;
+static RadarRangeBarEnv g_updBar;
+static RadarFuelEnv     g_updFuel;
+static RadarArmamentEnv g_updArm;
+static RadarOverlayEnv  g_updOv;
+static RadarHitRollEnv  g_updHit;
+static RadarDetectEnv   g_updDetect;
+static ShipRemovalEnv   g_updShip;
+static StrategSpawnCtx  g_updSpawn;
+static GeoscapeWorld    g_updWorld;
+static PadImage         g_updTiles;
+static u8               g_abUpdTiles[UPD_TILE_W * UPD_TILE_H];
+static i32              g_anUpdFunding[11];
+static u32              g_nUpdShortfall;
+static char             g_szUpdName[108];
+static UiLineList       g_updMsgList;
+static u8               g_bUpdSpawnOnce;
+static u8               g_bUpdShipCount;
+static u16              g_nUpdSoldierCount;
+static Soldier         *g_apUpdSoldiers[8];
+static Ship            *g_apUpdCraft[2];
+static StrategItem     *g_apUpdItems[8];
+static BaseRec          g_aUpdBases[2];
+static BaseRec         *g_apUpdBases[2] = { &g_aUpdBases[0], &g_aUpdBases[1] };
+static u8               g_abUpdHangar[6 * 24 * 8];
+static i32              g_nUpdGameSec;
+static i32              g_anUpdAssigned[8];
+static i32              g_nUpdAssignedCount;
+static i32              g_nUpdSeed;
+static u8               g_bUpdEngL, g_bUpdEngR, g_bUpdLastHit;
+static i32              g_nUpdCoolL, g_nUpdCoolR, g_nUpdShotL, g_nUpdShotR;
+static i32              g_nUpdBoundL, g_nUpdBoundR;
+static i32              g_nUpdPulseTimer;
+static i32              g_nUpdSamples;
+static i32              g_nUpdSampleId;
+static i32              g_nUpdCtlBlits;
+static i8               g_nUpdProgress;
+
+static void UpdSample(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    ++g_nUpdSamples;
+    g_nUpdSampleId = nSample;
+}
+
+static void UpdCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    ++g_nUpdCtlBlits;
+}
+
+/* One full open session, with the craft on the heap because Ship_RemoveWithCargo frees the one it
+ * drops. Item 0 is the intercept target; items 1..3 are the three active alien craft the
+ * replacement-spawn gate counts; items 4 and 5 are the two craft's own entries. */
+/* A scenario that removed a contact (RadarScreen_Update's destroyed branch, or Ship_RemoveWithCargo
+ * dropping a craft's own entry) freed that item through PtrArray_DeleteAt without telling us. Before
+ * the fixture reclaims the slots it has to learn which pointers the list still owns, otherwise the
+ * second free hands the allocator the same block twice and two slots end up aliasing. */
+static void UpdReapItems(void)
+{
+    for (i32 i = 0; i < 8; ++i) {
+        if (g_apUpdItems[i] == NULL) {
+            continue;
+        }
+        bool bLive = false;
+        for (i32 k = 0; k < g_radarStrateg.nCount; ++k) {
+            if (PtrArray_Get(&g_radarStrateg, k) == (void *)g_apUpdItems[i]) {
+                bLive = true;
+                break;
+            }
+        }
+        if (!bLive) {
+            g_apUpdItems[i] = NULL;
+        }
+    }
+}
+
+static void UpdFixture(i32 nStrategIdx)
+{
+    i32 i;
+
+    if (g_bRadarActive != 0) {
+        RadarScreen_Init(&g_radarEnv); /* the flag is 1, so this is the close path */
+    }
+    UpdReapItems(); /* must run before Reset drops the list */
+    RadarSession_Reset(nStrategIdx);
+
+    for (i = 0; i < 2; ++i) {
+        free(g_apUpdCraft[i]); /* a previous scenario may have left one NULL: Ship_RemoveWithCargo
+                                * frees the craft it drops, and the scenario NULLs the slot */
+        g_apUpdCraft[i] = (Ship *)malloc(sizeof(Ship));
+        memset(g_apUpdCraft[i], 0, sizeof(Ship));
+    }
+    g_apUpdCraft[0]->bId = 7;
+    g_apUpdCraft[0]->bType = 7;
+    g_apUpdCraft[0]->bCraftType = 0;
+    g_apUpdCraft[0]->bHomeBase = 0;
+    g_apUpdCraft[0]->bIntercepting = 1;
+    g_apUpdCraft[0]->nStrategIdx = nStrategIdx;
+    g_apUpdCraft[0]->uFuelCap = 6000; /* 100 on the speed scale, above every class speed */
+    g_apUpdCraft[0]->uFuelMax = 1000;
+    g_apUpdCraft[0]->nFuel = 900;
+    g_apUpdCraft[0]->bWeaponL = WM_LASER;  /* bound 180, unlimited ammo */
+    g_apUpdCraft[0]->bWeaponR = WM_CANNON; /* bound 140, the mount that fires */
+    g_apUpdCraft[0]->bAmmo25 = 7;
+    g_apUpdCraft[1]->bId = 8;
+    g_apUpdCraft[1]->bType = 8;
+    g_apUpdCraft[1]->bCraftType = 0;
+    g_apUpdCraft[1]->bHomeBase = 0;
+    g_apUpdCraft[1]->bIntercepting = 1;
+    g_apUpdCraft[1]->nStrategIdx = nStrategIdx;
+    g_apUpdCraft[1]->uFuelCap = 6000;
+    g_apUpdCraft[1]->uFuelMax = 1000;
+    g_apUpdCraft[1]->nFuel = 1000;
+    g_apUpdCraft[1]->bWeaponL = WM_LASER;
+    g_apUpdCraft[1]->bWeaponR = WM_LASER;
+    g_apUpdCraft[1]->nSlotIdx = 1;
+    g_radarEnv.apCraft = g_apUpdCraft;
+
+    /* StrategList_RemoveAt reaches PtrArray_DeleteAt, which frees the item, so the contacts have
+     * to be heap objects here even though the other radar tests keep them static. */
+    PtrArray_Clear(&g_radarStrateg);
+    for (i = 0; i < 8; ++i) {
+        free(g_apUpdItems[i]); /* a scenario that removed this item NULLed the slot */
+        g_apUpdItems[i] = (StrategItem *)malloc(sizeof(StrategItem));
+        memset(g_apUpdItems[i], 0, sizeof(StrategItem));
+        g_apUpdItems[i]->bCraftClass = (u8)i;
+        g_apUpdItems[i]->nType = (u8)((i >= 1 && i <= 5) ? 1 : 0);
+        g_apUpdItems[i]->bActive = (u8)((i >= 1 && i <= 3) ? 1 : 0);
+        g_apUpdItems[i]->nX = UPD_CONTACT_X;
+        g_apUpdItems[i]->nY = UPD_CONTACT_Y;
+        g_apUpdItems[i]->nHp = 500;
+        g_apUpdItems[i]->nTimer = 12345;
+        g_apUpdItems[i]->dSpeed = 1.5;
+        PtrArray_Add(&g_radarStrateg, g_apUpdItems[i]);
+    }
+    /* Items 1..3 are the three active alien craft the replacement-spawn gate counts; items 4 and 5
+     * are the two craft's own entries, and StrategList_FindByShipId wants nType 1 AND bActive 0. */
+    g_apUpdItems[4]->nDisplayId = 7;
+    g_apUpdItems[5]->nDisplayId = 8;
+
+    memset(g_abUpdTiles, UPD_RACE_LAND, sizeof(g_abUpdTiles));
+    PadImage_ctor(&g_updTiles);
+    g_updTiles.uWidth = UPD_TILE_W;
+    g_updTiles.uHeight = UPD_TILE_H;
+    g_updTiles.pData = g_abUpdTiles;
+
+    memset(g_aUpdBases, 0, sizeof(g_aUpdBases));
+    g_aUpdBases[0].nUnk8 = 40;
+    g_aUpdBases[0].nUnk12 = 60;
+    g_aUpdBases[1].nUnk8 = 70;
+    g_aUpdBases[1].nUnk12 = 90;
+
+    memset(&g_updWorld, 0, sizeof(g_updWorld));
+    g_updWorld.apCraft = g_apUpdCraft;
+    g_updWorld.nShipCount = 2;
+    g_updWorld.pTime = &g_radarTime;
+
+    for (i = 0; i < 8; ++i) {
+        free(g_apUpdSoldiers[i]);
+        g_apUpdSoldiers[i] = NULL;
+    }
+    g_apUpdSoldiers[0] = (Soldier *)malloc(sizeof(Soldier));
+    memset(g_apUpdSoldiers[0], 0, sizeof(Soldier));
+    g_apUpdSoldiers[0]->bUnk183 = 1; /* the crew sits on craft index 1, not on craft 0 */
+    g_nUpdSoldierCount = 1;
+
+    memset(&g_updShip, 0, sizeof(g_updShip));
+    g_updShip.apCraft = g_apUpdCraft;
+    g_updShip.pnShipCount = &g_bUpdShipCount;
+    g_updShip.apSoldiers = (Soldier **)g_apUpdSoldiers;
+    g_updShip.pnSoldierCount = &g_nUpdSoldierCount;
+    g_updShip.pStrategList = &g_radarStrateg;
+    g_updShip.pWorld = &g_updWorld;
+    g_updShip.pnSpawnOnceFlag = &g_bUpdSpawnOnce;
+    g_updShip.pSpawnCtx = &g_updSpawn;
+    g_updShip.abHangarFlag = g_abUpdHangar;
+    g_updShip.nHangarFlagCap = (i32)sizeof(g_abUpdHangar);
+    g_updShip.apBases = g_apUpdBases;
+    g_updShip.pnGameTotalSec = &g_nUpdGameSec;
+    g_updShip.anAssignedShip = g_anUpdAssigned;
+    g_updShip.pnAssignedShipCount = &g_nUpdAssignedCount;
+    g_bUpdShipCount = 2;
+    g_nUpdAssignedCount = 0;
+    g_bUpdSpawnOnce = 0;
+    g_nUpdGameSec = 0;
+    g_nUpdSeed = 99;
+
+    memset(&g_updSpawn, 0, sizeof(g_updSpawn));
+    g_updSpawn.pnSeed = &g_nUpdSeed;
+
+    /* Open the screen for real: every pad RadarScreen_Init loads comes from the shipped archives. */
+    RadarScreen_Init(&g_radarEnv);
+
+    memset(&g_updEnv, 0, sizeof(g_updEnv));
+    g_updEnv.pSession = &g_radarEnv;
+    g_updEnv.pAnim = &g_updAnim;
+    g_updEnv.pColor = &g_updColor;
+    g_updEnv.pPalette = &g_updPal;
+    g_updEnv.pRangeBar = &g_updBar;
+    g_updEnv.pFuel = &g_updFuel;
+    g_updEnv.pArmament = &g_updArm;
+    g_updEnv.pOverlay = &g_updOv;
+    g_updEnv.pDetect = &g_updDetect;
+    g_updEnv.pShipEnv = &g_updShip;
+    g_updEnv.pTilemap = &g_updTiles;
+    g_updEnv.anFundingBlock = g_anUpdFunding;
+    g_updEnv.pdwShortfall = &g_nUpdShortfall;
+    g_updEnv.pszNameBuf = g_szUpdName;
+    g_updEnv.cchNameBuf = sizeof(g_szUpdName);
+    g_updEnv.pMsgList = &g_updMsgList;
+    g_updEnv.pfnPlaySample = UpdSample;
+    g_updEnv.pfnCtlBlit = UpdCtlBlit;
+    g_updEnv.pfnCtlBlitEx = UpdCtlBlit;
+
+    memset(g_anUpdFunding, 0, sizeof(g_anUpdFunding));
+    memset(&g_updMsgList, 0, sizeof(g_updMsgList));
+    g_nUpdShortfall = 777;
+    memset(g_szUpdName, 0, sizeof(g_szUpdName));
+    g_nUpdSamples = 0;
+    g_nUpdSampleId = -1;
+    g_nUpdCtlBlits = 0;
+
+    g_updAnim.pbStarted = &g_bRadarAnim;
+    g_updAnim.pnProgress = &g_nUpdProgress;
+    g_updAnim.nFrameStyle = 1;
+
+    g_updColor.nScaleSource = 3; /* neutral gamma: the LUT divisor is 1.0 */
+    g_updColor.nFadeCount = 0;
+
+    g_updPal.pnRangeCur = &g_nRadarRangeCur;
+    g_updPal.pnRangeTarget = &g_nRadarRangeTarget;
+    g_updPal.pbFlip = &g_bRadarFlip;
+
+    g_updBar.pInterceptItem = g_apUpdItems[nStrategIdx];
+    g_updBar.pCraft = g_apUpdCraft[0];
+    g_updBar.pnRangeCur = &g_nRadarRangeCur;
+    g_updBar.nRangeLimit = g_nRadarRangeLimit;
+    g_updBar.nCraftLevel = g_nRadarLevel;
+    g_updBar.pnPulseTimer = &g_nUpdPulseTimer;
+
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        g_updFuel.apDigitPads[i] = g_radarUi.apDigitPad[i];
+    }
+    g_updFuel.pCraft = g_apUpdCraft[0];
+    g_updFuel.pbOutOfFuel = &g_bRadarOutFuel;
+
+    g_updArm.pnGlyphPalBase = &g_nGlyphPalSlotBase;
+    g_updArm.pnShipIdx = &g_nRadarShipIdx;
+    g_updArm.apCraft = g_apUpdCraft;
+    g_updArm.nCraftCount = 2;
+    g_updArm.pnRangeCur = &g_nRadarRangeCur;
+    g_updArm.pnCraftLevel = &g_nRadarLevel;
+    g_updArm.pnBoundL = &g_nUpdBoundL;
+    g_updArm.pnBoundR = &g_nUpdBoundR;
+    g_updArm.pbEngageL = &g_bUpdEngL;
+    g_updArm.pbEngageR = &g_bUpdEngR;
+    g_updArm.pnCooldownL = &g_nUpdCoolL;
+    g_updArm.pnCooldownR = &g_nUpdCoolR;
+    g_updArm.pnShotYL = &g_nUpdShotL;
+    g_updArm.pnShotYR = &g_nUpdShotR;
+    g_updArm.pnAmmoL = &g_nRadarAmmoL;
+    g_updArm.pnAmmoR = &g_nRadarAmmoR;
+
+    g_updHit.pStrategList = &g_radarStrateg;
+    g_updHit.pnStrategIdx = &g_nRadarStrategIdx;
+    g_updHit.pnTargetHp = &g_nRadarTargetHp;
+
+    g_updOv.pnShipIdx = &g_nRadarShipIdx;
+    g_updOv.apCraft = g_apUpdCraft;
+    g_updOv.nCraftCount = 2;
+    g_updOv.pnRangeCur = &g_nRadarRangeCur;
+    g_updOv.pnCraftLevel = &g_nRadarLevel;
+    g_updOv.pbFlip = &g_bRadarFlip;
+    g_updOv.pbEngageL = &g_bUpdEngL;
+    g_updOv.pbEngageR = &g_bUpdEngR;
+    g_updOv.pnCooldownL = &g_nUpdCoolL;
+    g_updOv.pnCooldownR = &g_nUpdCoolR;
+    g_updOv.pnShotYL = &g_nUpdShotL;
+    g_updOv.pnShotYR = &g_nUpdShotR;
+    g_updOv.pnAmmoL = &g_nRadarAmmoL;
+    g_updOv.pnAmmoR = &g_nRadarAmmoR;
+    g_updOv.pbLastShotHit = &g_bUpdLastHit;
+    g_updOv.pHitEnv = &g_updHit;
+
+    g_updDetect.pStrategList = &g_radarStrateg;
+    g_updDetect.pnStrategIdx = &g_nRadarStrategIdx;
+    g_updDetect.apCraft = g_apUpdCraft;
+    g_updDetect.nCraftCount = 2;
+    g_updDetect.pnShipIdx = &g_nRadarShipIdx;
+    g_updDetect.pbTraceLost = &g_bRadarTrace;
+    g_updDetect.pbFlip = &g_bRadarFlip;
+    g_updDetect.pnRangeTarget = &g_nRadarRangeTarget;
+    g_updDetect.pnMsgTimer = &g_nRadarMsgTimer;
+    g_updDetect.pTextRecs = g_pRadarTexts;
+    g_updDetect.pszMsg = g_szRadarMsg;
+    g_updDetect.cchMsg = sizeof(g_szRadarMsg);
+
+    /* A playable baseline. The range sits at 150, which puts the radar's reach at
+    * 150 + 560*(8-13)/114 = 126 -- inside both mounts' bounds, so RadarScreen_DrawCraftArmament
+    * leaves the engage bytes set and the cooldowns and projectile offsets alone. The shot gate is
+    * then 8 + 114*150/560 - 33 = 5, and the right mount's offset starts at 5, so its cannon shot
+    * LANDS on the first frame: that is the only way bRadarLastShotHit can be set, because
+    * RadarScreen_DrawOverlay clears it at 0x5DCC0 before either mount runs. The left mount's
+    * cooldown is parked at 254 so exactly one shot runs and the frame burns exactly one roll.
+    * The range bar's third gate is closed so it burns none of its own. */
+    g_bRadarAnim = 1;
+    g_nUpdProgress = 100;
+    g_bRadarOutFuel = 0;
+    g_bRadarBlink = 0;
+    g_bRadarFlip = 0;
+    g_bRadarTrace = 0;
+    g_bRadarDone = 0;
+    g_nRadarMsgTimer = 255;
+    g_nRadarTargetHp = 130;
+    g_nRadarTargetHpMax = 200;
+    g_nRadarRangeCur = 150;
+    g_nRadarRangeTarget = 150;
+    g_nRadarCurX = 117;
+    g_nRadarCurY = 86;
+    g_nRadarScan = 0;
+    g_nUpdPulseTimer = 0;
+    g_bUpdEngL = 1;
+    g_bUpdEngR = 1;
+    g_bUpdLastHit = 0;
+    g_nUpdCoolL = 254;
+    g_nUpdCoolR = 255;
+    g_nUpdShotL = 0;
+    g_nUpdShotR = 5;
+    g_nUpdBoundL = 180;
+    g_nUpdBoundR = 140;
+    g_nRadarAmmoL = PUFO_RADAR_AMMO_UNLIMITED; /* the laser mount needs no ammo */
+    g_nRadarAmmoR = 5;
+    g_nRadarShipIdx = 0;
+}
+
+/* The original reaches the craft through nInterceptShipIdx everywhere, so the envs that hold a
+ * craft pointer have to follow it. */
+static void UpdSetShip(i32 nShipIdx)
+{
+    g_nRadarShipIdx = nShipIdx;
+    g_updFuel.pCraft = g_apUpdCraft[nShipIdx];
+    g_updBar.pCraft = g_apUpdCraft[nShipIdx];
+}
+
+static const char *UpdText(i32 nRec)
+{
+    return (const char *)(g_pRadarTexts + (size_t)nRec * PUFO_TEXT_REC_STRIDE);
+}
+
+/* Park both cooldowns below 255 so no mount fires: the frame then burns no RNG at all, which is
+ * what the tests that are not about the damage ladder need. */
+static void UpdNoFire(void)
+{
+    g_nUpdCoolL = 254;
+    g_nUpdCoolR = 254;
+    g_nUpdShotL = 0;
+    g_nUpdShotR = 0;
+    g_bUpdLastHit = 0;
+}
+
+static void TestRadarUpdate(void)
+{
+    char szRef[108];
+
+    printf("\nRadarScreen_Update @ 0x60570\n");
+
+    if (!g_bArmReady || g_bdSurf.pPixels == NULL) {
+        Check(false, "the archives and the render surface are live from the armament test");
+        return;
+    }
+    if (!RadarLoadTextBlob()) {
+        Check(false, "the lang.dat TEXTS blob loaded");
+        return;
+    }
+
+    /* --- the closed screen reaches nothing at all --- */
+    UpdFixture(0);
+    g_bRadarActive = 0;
+    g_nRadarScan = 20;
+    g_nRadarMsgTimer = 255;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 20, "a closed radar screen does not even advance the scroll");
+    CheckEqI32(g_nRadarMsgTimer, 255, "and none of the three tail gates runs");
+    CheckEqI32(g_bRadarActive, 0, "the screen stays closed");
+
+    /* --- the animation gate skips the draw but not the tail --- */
+    UpdFixture(0);
+    g_nUpdProgress = 1; /* mode 4 at 50*1 is nowhere near 188x140 */
+    g_nRadarScan = 20;
+    g_bRadarDone = 1;
+    g_nRadarMsgTimer = 31;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 20, "an unfinished panel animation skips the whole draw block");
+    CheckEqI32(g_bRadarActive, 0, "but 0x605F0 still lands on the tail gates, which close the screen");
+    CheckEqI32(g_radarTime.bPaused, 0, "and closing unpauses the clock");
+    CheckEqI32(g_nRadarFrameStyle, 0, "and picks the ordinary panel frame");
+
+    /* --- the scroll: +10, and zero when the NEW value is above 39 --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_nRadarScan = 0;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 10, "the scroll advances by 10 (0x61084)");
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 20, "again");
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 30, "again");
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarScan, 0, "and 40 is above 39, so it wraps to 0 (0x61088..0x610A0)");
+    CheckEqI32(g_bRadarActive, 1, "and four frames of it still leave the screen open");
+
+    /* --- the blink phase: +50 panel height, and the wash over the readout --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarBlink = 0;
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(BdPix(26, 230), 0,
+               "with the phase clear the panel is 140 tall, so (26, 230) stays bare");
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarBlink = 1;
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(BdPix(26, 230), UPD_WASH_COLOR,
+               "with the phase set the panel is 190 tall and the 0x1F/0x4A/0x75 wash covers it");
+    CheckEqI32(g_nUpdCtlBlits, 5, "the five corner controls are blitted (0x6084C..0x60864)");
+
+    /* Every ladder case starts from a shot that LANDS: the baseline parks the right mount's
+     * projectile exactly at the gate, so RadarScreen_RollWeaponHit runs, writes the HP and sets
+     * bRadarLastShotHit -- which RadarScreen_DrawOverlay had just cleared. Seed 1 gives the cannon
+     * a roll of 0 (hit, -50 hp) and the escape chain a roll of 0; seed 2 gives the same hit but an
+     * escape roll of 2. */
+
+    /* --- the target is gone: message, spawn gate, removal, done flag --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 50; /* the cannon's -50 takes it to 0 */
+    g_apUpdCraft[1]->nStrategIdx = 2; /* above the hole being made */
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_nRadarTargetHp, 0, "the landing cannon shot takes the target to 0");
+    Check(strcmp(g_szRadarMsg, UpdText(PUFO_RADAR_TEXT_TARGET_DEAD)) == 0,
+          "and hp <= 0 posts TEXTS[1600] (0x6094C)");
+    CheckEqI32(g_nRadarMsgTimer, 0, "and restarts the message timer (0x60940)");
+    CheckEqI32(g_bRadarDone, 1, "and marks the intercept done (0x609A0)");
+    CheckEqI32(g_radarStrateg.nCount, 7, "the contact is removed from the strateg list (0x60988)");
+    g_apUpdItems[0] = NULL; /* PtrArray_DeleteAt freed it */
+    CheckEqI32(g_bUpdSpawnOnce, 0,
+               "0x162028 is set at 0x6097C and then consumed by the removal it just triggered");
+    CheckEqI32(g_apUpdCraft[1]->nStrategIdx, 1,
+               "and the craft chasing a LATER item is re-pointed down by one (0x82AFC)");
+    CheckEqI32(g_bRadarActive, 1, "the screen stays open: the timer is 0, not above 30");
+
+    /* --- 40..69 percent, land tile, escape roll 0: the contact slips away --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 130; /* the shot leaves 80 of 200, i.e. exactly 40 percent */
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    Check(strcmp(g_szRadarMsg, UpdText(PUFO_RADAR_TEXT_TARGET_LANDED)) == 0,
+          "the escape posts TEXTS[1601] (0x60ABC)");
+    CheckEqI32(g_bRadarDone, 1, "and ends the intercept (0x60B4C)");
+    CheckEqI32(g_apUpdItems[0]->nType, 4, "the contact becomes a landed object (0x60B30)");
+    CheckEqI32(g_apUpdItems[0]->nTimer, PUFO_RADAR_TIMER_LANDED,
+               "with a 7200 proximity timer (0x60B44)");
+    CheckEqI32(g_anUpdFunding[UPD_FUND_SLOT_LAND], 2,
+               "and its tile's race gets the +2 funding bonus (0x60B1C)");
+    CheckEqI32(g_radarStrateg.nCount, 8, "but the item is NOT removed -- it came down on land");
+    CheckEqI32(g_bRadarActive, 1, "and 40 percent is not below 40, so the crash branch is skipped");
+
+    /* --- the same band, but the escape roll is not 0 --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 130;
+    srand(UPD_SEED_STAY);
+    RadarScreen_Update(&g_updEnv);
+    Check(g_szRadarMsg[0] == '\0', "a non-zero Game_RandU16(4) leaves the contact where it is");
+    CheckEqI32(g_bRadarDone, 0, "so the intercept is still live");
+    CheckEqI32(g_apUpdItems[0]->nType, 0, "the item keeps its type");
+    CheckEqI32(g_anUpdFunding[UPD_FUND_SLOT_LAND], 0, "and no funding bonus is paid");
+
+    /* --- the ocean tile blocks the escape before the roll is even made --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 130;
+    g_abUpdTiles[UPD_TILE_W * UPD_CONTACT_Y + UPD_CONTACT_X] = UPD_RACE_SEA;
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarDone, 0, "a 255 tile short-circuits the escape chain at 0x60A94");
+    CheckEqI32(g_anUpdFunding[UPD_FUND_SLOT_SEA], 0,
+               "so the no-race multiplier is not touched either");
+
+    /* --- a lost trace blocks it too --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 130;
+    g_bRadarTrace = 1;
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarDone, 0, "bRadarTraceLost is the first test in the chain (0x60A4C)");
+
+    /* --- below 40 percent on land --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 100; /* the shot leaves 50 of 200, i.e. 25 percent */
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    Check(strcmp(g_szRadarMsg, UpdText(PUFO_RADAR_TEXT_TARGET_CRASHED)) == 0,
+          "under 40 percent posts TEXTS[1602] (0x60BAC)");
+    CheckEqI32(g_bRadarDone, 1, "and ends the intercept BEFORE the tile test (0x60C10)");
+    CheckEqI32(g_apUpdItems[0]->nType, 4, "with the object conversion (0x60C64)");
+    CheckEqI32(g_apUpdItems[0]->nTimer, PUFO_RADAR_TIMER_LANDED, "and the same 7200 timer (0x60C74)");
+    CheckEqI32(g_anUpdFunding[UPD_FUND_SLOT_LAND], 2, "and the race bonus (0x60C50)");
+    CheckEqI32(g_radarStrateg.nCount, 8, "the item stays in the list");
+
+    /* --- below 40 percent in the sea --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 100;
+    g_abUpdTiles[UPD_TILE_W * UPD_CONTACT_Y + UPD_CONTACT_X] = UPD_RACE_SEA;
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_radarStrateg.nCount, 7, "a 255 tile removes the contact instead (0x60CB8)");
+    CheckEqI32(g_anUpdFunding[UPD_FUND_SLOT_SEA], 2,
+               "and 0xFF feeds the monthly multiplier, not a race score");
+    /* PtrArray_DeleteAt frees the item, so the removed contact cannot be read any more; the shift
+     * is checked through the list instead. */
+    Check(PtrArray_Get(&g_radarStrateg, 0) == (void *)g_apUpdItems[1],
+          "the removal shifts the later contacts down (0x60CB8)");
+    g_apUpdItems[0] = NULL; /* PtrArray_DeleteAt already freed it */
+
+    /* --- 70 percent or more leaves everything alone --- */
+    UpdFixture(0);
+    g_nRadarTargetHp = 200; /* the shot leaves 150 of 200, i.e. 75 percent */
+    srand(UPD_SEED_ESCAPE);
+    RadarScreen_Update(&g_updEnv);
+    Check(g_szRadarMsg[0] == '\0', "75 percent is above the ladder's top gate (0x60A2C)");
+    CheckEqI32(g_bRadarDone, 0, "the intercept stays live");
+    CheckEqI32(g_radarStrateg.nCount, 8, "and nothing is removed");
+
+    /* --- no shot means no ladder at all --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_nRadarTargetHp = 0;
+    RadarScreen_Update(&g_updEnv);
+    Check(g_szRadarMsg[0] == '\0', "no landing shot leaves bRadarLastShotHit 0 and skips the block (0x608C8)");
+    CheckEqI32(g_bRadarDone, 0, "so a dead target is not even noticed this frame");
+    CheckEqI32(g_radarStrateg.nCount, 8, "and the contact stays in the list");
+
+    /* --- once it is done, DrawOverlay is skipped and the flash gate is closed --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarDone = 1;
+    g_bUpdLastHit = 1;
+    g_nRadarTargetHp = 0;
+    RadarScreen_Update(&g_updEnv);
+    Check(g_szRadarMsg[0] == '\0',
+          "a done intercept posts nothing: the flash gate also requires !bRadarInterceptDone (0x608B8)");
+    CheckEqI32(g_bRadarDone, 1, "and stays done");
+    CheckEqI32(g_radarStrateg.nCount, 8, "with the contact still in the list");
+
+    /* --- tail 1: done, and the message has been up long enough --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarDone = 1;
+    g_nRadarMsgTimer = 31;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarActive, 0, "the screen closes (0x6125C)");
+    CheckEqI32(g_apUpdCraft[0]->bIntercepting, 0,
+               "craft 0 has no crew, so it is sent home (0x612CC)");
+    CheckEqI32(g_apUpdItems[4]->nTimer, 0, "and its own entry's proximity timer restarts at 0");
+    CheckEqI32(g_apUpdItems[4]->nDestX, 40, "with the travel leg aimed at its home base");
+    CheckEqI32(g_apUpdItems[4]->nDestY, 60, "on both axes");
+    CheckEqI32(g_apUpdCraft[1]->bIntercepting, 1,
+               "while craft 1 has a soldier aboard and is left intercepting");
+    Check(g_radarUi.pFramePad == NULL, "the close really ran: the frame pad is freed");
+
+    /* --- tail 2: out of fuel deletes the craft --- */
+    UpdFixture(0);
+    UpdNoFire();
+    UpdSetShip(1);
+    g_apUpdCraft[1]->nFuel = 0; /* 100 percent consumed, so DrawFuelGauge sets the flag itself */
+    g_nRadarMsgTimer = 31;
+    g_bRadarDone = 0;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarOutFuel, 1, "the fuel gauge set bRadarCraftOutOfFuel (0x5D9D8)");
+    CheckEqI32(g_bRadarActive, 0, "and the tail closed the screen (0x6132C)");
+    CheckEqI32((i32)g_nUpdShortfall, 1, "the low-supply dword is set as a dword (0x61340)");
+    CheckEqI32(g_updMsgList.nLineCount, 1, "message 44 is posted (0x61354)");
+    CheckEqI32(g_updMsgList.abLineFlags[0], PUFO_RADAR_MSG_SHIP_LOST, "with the right message id");
+    CheckEqI32((i32)g_updMsgList.anColor[0][0], 1, "and the ship index in colour slot 0");
+    CheckEqI32(g_nUpdSampleId, 7, "UiLineList_AppendWithSound plays sample 7");
+    (void)Ship_FormatDisplayName(g_apUpdCraft, 1, g_pRadarTexts, szRef, sizeof(szRef));
+    Check(strcmp(g_szUpdName, szRef) == 0,
+          "the craft's display name lands in the 0x186488 caption scratch");
+    CheckEqI32((i32)g_bUpdShipCount, 1, "Ship_RemoveWithCargo drops the craft (0x613A0)");
+    CheckEqI32(g_apUpdCraft[0]->bId, 7, "the survivor keeps its id");
+    CheckEqI32(g_apUpdCraft[0]->nSlotIdx, 0, "and its hangar slot is renumbered (0x36B80)");
+    CheckEqI32((i32)g_nUpdSoldierCount, 0, "the soldier assigned to the removed craft is deleted");
+    g_apUpdCraft[1] = NULL; /* Ship_RemoveWithCargo already freed the craft (0x36B40) and the
+                             * soldier assigned to it (0x369BC). */
+    g_apUpdSoldiers[0] = NULL;
+    g_apUpdItems[5] = NULL; /* Ship_RemoveWithCargo also dropped this craft's strateg entry (0x36934) */
+
+    /* --- tail 3: full zoom sends the intercept craft home --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarFlip = 1;
+    g_nRadarRangeCur = PUFO_RADAR_FULL_RANGE;
+    g_nRadarRangeTarget = PUFO_RADAR_FULL_RANGE;
+    g_nRadarMsgTimer = 0;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarActive, 0, "full zoom with the flip set closes the screen (0x613E0)");
+    CheckEqI32(g_apUpdCraft[0]->bIntercepting, 0, "and retargets the intercept craft (0x613EC)");
+    CheckEqI32(g_apUpdCraft[1]->bIntercepting, 1,
+               "ORIGINAL BUG 0x61434: the Ship_ClearInterceptByStrategIdx there is unreachable, so "
+               "the second craft still chases a contact the screen has given up on");
+
+    /* --- the same, with the trace lost: the craft's own entry gets a 10-second timer --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarFlip = 1;
+    g_bRadarTrace = 1;
+    g_nRadarRangeCur = PUFO_RADAR_FULL_RANGE;
+    g_nRadarRangeTarget = PUFO_RADAR_FULL_RANGE;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_apUpdItems[4]->nTimer, PUFO_RADAR_TIMER_TRACE_LOST,
+               "bRadarTraceLost parks the craft's entry timer at 10 (0x61420)");
+
+    /* --- and the two gates that keep it from running --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarFlip = 0;
+    g_nRadarRangeCur = PUFO_RADAR_FULL_RANGE;
+    g_nRadarRangeTarget = PUFO_RADAR_FULL_RANGE;
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarActive, 1, "without the flip byte the full-zoom exit does not run (0x613BC)");
+    UpdFixture(0);
+    UpdNoFire();
+    g_bRadarFlip = 1;
+    g_nRadarRangeCur = 559;
+    g_nRadarRangeTarget = 559; /* parked here, so CyclePalette never pushes it to 560 */
+    RadarScreen_Update(&g_updEnv);
+    CheckEqI32(g_bRadarActive, 1, "and neither does it below full range (0x613D0)");
+
+    /* --- the guards --- */
+    UpdFixture(0);
+    UpdNoFire();
+    g_nRadarScan = 20;
+    RadarScreen_Update(NULL);
+    CheckEqI32(g_nRadarScan, 20, "a null environment is refused");
+    CheckEqI32(g_bRadarActive, 1, "and the screen is left alone");
+    if (g_bRadarActive != 0) {
+        RadarScreen_Init(&g_radarEnv);
+    }
+    for (i32 i = 0; i < 2; ++i) {
+        free(g_apUpdCraft[i]);
+        g_apUpdCraft[i] = NULL;
+    }
+    for (i32 i = 0; i < 8; ++i) {
+        free(g_apUpdSoldiers[i]);
+        g_apUpdSoldiers[i] = NULL;
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -5084,6 +5774,7 @@ int main(void)
     TestRadarDetect();
     TestRadarArmament();
     TestRadarOverlay();
+    TestRadarUpdate();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

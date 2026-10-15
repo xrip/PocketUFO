@@ -1464,6 +1464,37 @@ Order is by what unblocks what. Each item ends with gates + commit.
   64/65/63 left against 70/71/69 right, and the laser is x 64 left against x 72 right. The avalanche and
   plasma draw the wide outer column first and the 1-wide inner column over it.
 
+- [x] part 53, the radar frame driver: `RadarScreen_Update (0x60570)`, 3804 bytes — 84 more checks,
+  one more original bug found, and the whole 16-function `RadarScreen_*` set is now ported.
+  **The panel is drawn here, not in a Draw function.** Five frame blits (0x605EC..0x60690), five rails
+  (0x60694..0x6076C), five signal bars whose mid colours are 0x55/0x5A/0x5C/0x5A/0x55, and the five nav
+  speed controls. The panel is 140 tall normally and 190 tall in the blink phase, which is what makes the
+  0x1F/0x4A/0x75 wash at (26, 176) reachable only while `bRadarBlinkPhase` is set. The middle bar row is
+  14 tall, not 22 — 0x60D98 `MOV R8, #0xE`, which Hex-Rays merges into one loop.
+  **`nRadarScanOffset @ 0x159724` (was `unk_159724`) is a scroll, not a counter.** It advances by 10 and
+  wraps to 0 above 39 (0x61078 `ADD`, 0x61088 `CMP #0x27`, 0x61094/0x6109C `MOVGT/STRGT`), and
+  `RadarScreen_Init` does not clear it, so the scroll carries from one radar screen to the next.
+  **Only four of the five button pads are ever drawn** — 0x611A8 `MOV R8, #4`.
+  **The damage ladder is only reachable through a same-frame hit.** `RadarScreen_DrawOverlay` clears
+  `bRadarLastShotHit` at 0x5DCC0 before either mount runs, and the ladder's gate at 0x608C8 tests that
+  byte, so a target already at 0 HP is not noticed until a shot lands in the same frame. Three branches:
+  hp <= 0 → TEXTS[1600] + `StrategList_RemoveAt` + `Ship_ClearInterceptByStrategIdx`; 40..69 percent with
+  a land tile and `Game_RandU16(4) == 0` → TEXTS[1601] + `nType = 4` + `nTimer = 7200` + the race funding
+  bonus, item kept; below 40 percent → TEXTS[1602], with `bRadarInterceptDone` set *before* the tile test
+  and the item removed instead of converted on a 255 tile.
+  **Three tails, mutually exclusive.** done + timer > 30 closes and retargets the uncrewed chasers;
+  out-of-fuel + timer > 30 closes, sets `byte_1870C8` as a DWORD, posts message 44 and calls
+  `Ship_RemoveWithCargo`; otherwise the full-zoom exit runs on `bRadarFlip != 0 && nRadarRangeCur == 560`.
+  **ORIGINAL BUG (0x61434), reproduced, bugs.tsv row added.** The `Ship_ClearInterceptByStrategIdx` in the
+  full-zoom exit is unreachable: `BLEQ` needs the zero flag, and the only arrival that leaves it set is
+  `bRadarTraceLost == 0 AND bRadarFlip == 0` (0x61428..0x61430) while the entry gate at 0x613BC already
+  requires `bRadarFlip != 0`. An intercept that reaches full zoom with the trace held sends only
+  `nInterceptShipIdx` home; the other craft chasing the same contact keep chasing it.
+  **IDB fixed on the way:** `unk_159650` → `bRadarInterceptDone` (byte), `unk_159724` → `nRadarScanOffset`
+  (int), `unk_186488` → `szScratch186488` (`char[85]`, the geoscape caption scratch shared with
+  `BaseFac_BuildStatusMsg` and `Geoscape_Draw`); comments added at 0x60570, 0x611A8, 0x612BC, 0x61434 and
+  the redundant re-read at 0x6089C.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1732,6 +1763,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar screen session (`RadarScreen_Init`, `RadarScreen_SetActive`, `RadarScreen_RollDetection`; the eight-row class table, the ammo draw and write-back, the slot-2 overrun found) | 56/56 (Release) | 10983 | 875/1103 (79.3%) | 387488/598792 (64.7%) | 39 checked, 0 mismatched |
 | the radar weapon mounts (`RadarScreen_DrawCraftArmament`, the mount-id enum, the cannon that draws no bar, the duplicated glyph-palette global fixed) | 56/56 (Release) | 11052 | 876/1103 (79.4%) | 389180/598792 (65.0%) | 39 checked, 0 mismatched |
 | the intercept shot animation (`RadarScreen_DrawOverlay`, the per-weapon flight gate and step, the laser that never resolves past 2, the runaway -2 ammo counter found) | 56/56 (Release) | 11141 | 877/1103 (79.5%) | 391968/598792 (65.5%) | 39 checked, 0 mismatched |
+| the radar frame driver (`RadarScreen_Update`, the same-frame-only damage ladder, the unreachable `Ship_ClearInterceptByStrategIdx` found) | 56/56 (Release) | 11223 | 878/1103 (79.6%) | 395772/598792 (66.1%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
