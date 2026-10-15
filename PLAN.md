@@ -1216,6 +1216,42 @@ Order is by what unblocks what. Each item ends with gates + commit.
   full 144 rows and only their `nLineCount` is set to the row count; `nStyle` is 15, not the
   manufacturing 13, and `bUnk7088` is 0x94, not 0x96. IDB: comments at 0x733f4, 0x7373C and 0x73870.
 
+- [x] part 45, the research rebuild: `ResearchScreen_RebuildTopicList (0x74270)`, 1700 bytes — 160 more
+  checks and three findings.
+  **Completing a research topic is what unlocks a facility kind, and the map is a jumptable
+  permutation, not an identity.** Both switches (0x74460, 0x74668) switch on the topic number with cases
+  37..53 and write 1 into `aBaseFacFlags[kind].bFlag20` (0x186E48 + 28*kind + 0x14): 37→0 Access Lift,
+  38→1, 39→2, 40→3, 41→4, 42→5, **43→13 Missile Defences**, 44→6, 45→7, **46→14 Laser Defence**,
+  **47→no slot**, 48→15, 49→16, **50→12 Gravity Shield**, **51→10 Mind Shield**, **52→8 Psi Laboratory**,
+  **53→9 Hyper Wave Decoder**. Case 10's jumptable entry *is* the default label, which is also where the
+  other sixteen land — so the message append and the line rewrite run for every walked topic, not only
+  for the mapped ones. **FAC_HANGAR (11, record 0x186F90) is the kind no topic ever writes.** The
+  permutation is not inferred: `LoadGame @ 0x4539C` carries the same seventeen-entry table over the same
+  0x186E48 base with the same `-37` offset (`MOV R3,#0xFFFFFFDB`) and the same unmapped case 10.
+  **The two `(lo,hi)` topic ranges live in the record AFTER the one being tested** —
+  `aTopics[n+1].abUnk0[0..1]` for the unlock roll (0x745AC `LDRB [R9,#0x22]`) and `[2..3]` for the
+  availability scan (0x74868), while every flag read is `aTopics[n]`. For n == 143 that is 0x160228, the
+  four-byte gap between the 144-record table and `auResearchCol` @ 0x16022C, which has no cross-reference
+  anywhere in the IDB. No other function reads those four bytes of a record, so the pairing is visible
+  only here. main.dat really loads 144 entries, so the last walked topic is 143 and the gap is reached in
+  the real game.
+  **Deviation found (0x74648), in `bugs.tsv`.** The column clear after the unlock roll is `MOV R0,R7`,
+  and R7 still holds `&auResearchCol[nTopic]` from 0x74428; the rolled index was used only for the
+  `bUnlocked` store and `nResearchTopicShown`. So the finished topic's eight per-base entries are cleared
+  twice and the newly unlocked topic's never — and `ResearchScreen_AccumulateAllocated (0x74914)` books
+  `auResearchCol[i]` into `wProgress` for locked topics too, so a locked topic really can arrive at its
+  unlock carrying a non-zero allocation.
+  Also pinned: the roll's 50-try cap (0x7460C — after 50 tries the original accepts whatever it landed
+  on, tested by seeding the RNG so the first and fiftieth draws differ); the byte product gate on record
+  143 (a prerequisite holding 2 gives 2 and the `== 1` test fails); the finished branch's item spend and
+  `wProgress = 0` being a pair that is skipped together, so a topic needing no item keeps its progress;
+  and the in-progress accumulator adding the prerequisite topic *numbers* rather than any count.
+  Housekeeping the unit owed: the four 5-byte groups of the in-memory record are now named —
+  `abNeedItems[5]` (+0x0E..0x12), `abPreTopics[5]` (+0x13..0x17), `abItemIds[5]` (+0x18..0x1C),
+  `abActivateTopics[5]` (+0x1D..0x21) — in the header **and** in the IDB's `ResearchTopicLive`;
+  `unk_15EEF8` → `nResearchFinishedTopic`, `unk_160C60` → `nResearchTopicShown`. IDB comments at 0x74270,
+  0x74460 and 0x4539C.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1357,6 +1393,14 @@ Order is by what unblocks what. Each item ends with gates + commit.
   citations. The
   `pufo_uibank.c` handler-name table is the same class of credit: it quotes the original bank entry's
   name and address as data, which counts even when only the name string is recreated.
+- [ ] **The on-disk `ResearchTopic` field order still has no mapping onto `ResearchTopicLive`.** Part 45
+  narrowed it without closing it. The in-memory record now has four evidenced 5-byte groups —
+  `abNeedItems` (+0x0E), `abPreTopics` (+0x13), `abItemIds` (+0x18), `abActivateTopics` (+0x1D) — and the
+  save chunk has exactly four 5-byte arrays (`abUnk10`, `abUnlock`, `abUnk20`, `abUnk25`), so the counts
+  match; which on-disk array becomes which in-memory group is still unproven, and `wProgress` sits at
+  on-disk +0x1D but in-memory +0x0A. Closing it needs `LoadGame @ 0x44bbc` (0x45364/0x453EC are its two
+  `aResearchTopics` references), which is not ported. Until then the port keeps the two layouts as
+  separate types and does not pretend one converts into the other.
 
 ## Measured state
 
@@ -1461,6 +1505,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing frame (`ManufScreen_DrawFrame`, the 0.7 price factor, the first real-surface pixel test) | 56/56 (Release) | 10332 | 864/1103 (78.3%) | 371972/598792 (62.1%) | 39 checked, 0 mismatched |
 | the research bring-up (`ResearchScreen_Init`, the four descriptors, the handlers-before-positions order) | 56/56 (Release) | 10386 | 865/1103 (78.4%) | 372564/598792 (62.2%) | 39 checked, 0 mismatched |
 | the research panels (`ResearchScreen_BuildPanels`, the divide-first percentage found, the topic table as the screen block) | 56/56 (Release) | 10434 | 866/1103 (78.5%) | 374164/598792 (62.5%) | 39 checked, 0 mismatched |
+| the research rebuild (`ResearchScreen_RebuildTopicList`, the topic→facility-kind permutation, the wrong-column clear found) | 56/56 (Release) | 10520 | 867/1103 (78.6%) | 375864/598792 (62.8%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

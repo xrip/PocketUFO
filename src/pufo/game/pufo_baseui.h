@@ -1384,8 +1384,7 @@ void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird
  *
  * The record read is the IN-MEMORY one at 0x15EF08 + 34*topic (MUL R3, R0, #34 at 0x72CC8),
  * not the on-disk field order pufo_save.h writes. The required item id is the byte at +14
- * (LDRB R3, [R3,#0xE] at 0x72CE4); the rest of the in-memory layout stays a gap until the
- * screen chain reads more of it.
+ * (LDRB R3, [R3,#0xE] at 0x72CE4), the first of the five required-item bytes.
  *
  * The lookup is apObjects[item]->auPerBaseVal[nSelectedBaseIdx]: LDR [R3,#0x108] at 0x72CEC
  * picks the pointer out of the Map-block array at 0x1139B8+0x108, LDRH [R3,#0x2A] at 0x72D00
@@ -1393,7 +1392,14 @@ void ResearchScreen_PanelNext(UiPanel *pFirst, UiPanel *pSecond, UiPanel *pThird
  * index as the signed byte at 0x159D81; the port takes both as arguments and reproduces the
  * unguarded dereference. */
 typedef struct ResearchTopicLive {
-    u8  abUnk0[4];
+    u8  abUnk0[4];    /* +0x00..0x03: the on-disk wUnk0/wUnk2 pair, and the only place the two (lo,hi)
+                       * topic ranges exist. ResearchScreen_RebuildTopicList reads them as
+                       * aTopics[n + 1].abUnk0 -- [0]/[1] for the unlock roll (0x745AC LDRB [R9,#0x22],
+                       * 0x745C0 LDRB [R9,#0x23]) and [2]/[3] for the availability scan (0x74868). The
+                       * record being tested is aTopics[n], so the ranges sit one record later: for
+                       * n == 143 the four bytes are 0x160228, the gap between the 144-record table and
+                       * auResearchCol @ 0x16022C, which nothing in the IDB writes. No other function
+                       * reads these four bytes of a record, so the pairing is visible only there. */
     u16 wGate4;   /* +0x4: two meanings on one u16. The weapon fire gate reads it as a value
                   * (pufo_combat.h, FireGate evidence), and ResearchScreen_BuildPanels reads it as the
                   * topic's TEXTS.DAT name record index -- 0x7373C LDRH [R10,#4], 0x73744 MUL by 0xCD
@@ -1406,12 +1412,18 @@ typedef struct ResearchTopicLive {
                    * Unit_SelectBestFireMode (0x47A10, 0x47B3C), which reaches the same record through
                    * byte_AA968[ObjectRec.uSortKey] -- the topic that unlocks that weapon. The old name
                    * here was bGate13, after the offset the tactical weapon menu read it at. */
-    u8  nItemId;  /* +0xE: the item this topic needs (0x72CE4) */
-    u8  abUnkF[9];/* +0x0F..0x17 */
+    u8  abNeedItems[5];   /* +0x0E..0x12: the five items this topic needs. Research_TopicNeedsItem tests
+                           * only the first (0x72CE4 LDRB [R3,#0xE]); ResearchScreen_RebuildTopicList walks
+                           * all five (0x747E4 ADD R3,R9,#0xE), treats 254 and 255 as "no item", and for a
+                           * real id reads apObjects[id]->auPerBaseVal[base] (0x74848). */
+    u8  abPreTopics[5];   /* +0x13..0x17: prerequisite topic numbers. Their bUnlocked is ANDed into a gate
+                           * at 0x742AC (record 143's own gate) and 0x747AC (every walked topic). */
     u8  abItemIds[5]; /* +0x18..0x1C: five object slot ids. ManufScreen_BuildPanels (0x6EA44, 0x6EEC8)
                        * reads them with LDRB [R3,#0x18+j], tests abManufRowFlag[id] == 1, and then uses the
                        * same byte as an apObjects index to copy the item's name (0x6EEDC). */
-    u8  abUnk1D[5];   /* +0x1D..0x21 */
+    u8  abActivateTopics[5]; /* +0x1D..0x21: topic numbers switched to bActive = 1 when this topic finishes
+                              * (0x74584 ADD R2,R9,#0x1D). Geoscape_Draw reads the first of them at 0x8D4A8
+                              * to pick the caption for nResearchFinishedTopic. */
 } ResearchTopicLive;
 _Static_assert(sizeof(ResearchTopicLive) == 34, "the in-memory topic record is 34 bytes");
 
@@ -3840,5 +3852,109 @@ typedef struct ResearchBuildEnv {
 } ResearchBuildEnv;
 
 void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv);
+
+/* ------------------------------------------------- the research screen's rebuild pass
+ *
+ * ResearchScreen_RebuildTopicList @ 0x74270 (1700 B): the pass that decides which topics are on the
+ * research screen, which facility kinds finished research switches on, and which topic unlocks next.
+ * All three callers pass the topic table itself -- ResearchScreen_Init (0x74B00),
+ * ResearchScreen_StartSelected (0x73310) and ResearchScreen_AccumulateAllocated (0x749A0, the hourly
+ * tick) -- and the first block proves it: 0x742E4 writes `*(result + 4875) = 1`, and
+ * 4875 = 143 * 34 + 13 is aResearchTopics[143].bUnlocked.
+ *
+ * 1. 0x74294, the last record's own gate. When aResearchTopics[143].bUnlocked is zero, AND the
+ *    bUnlocked of the five prerequisite topics listed at record 143 +0x13..0x17; when the product is
+ *    exactly 1, unlock record 143. The product is a byte multiply (AND R2,R2,#0xFF after each MUL),
+ *    so a prerequisite holding 2 gives 2 and the == 1 test fails.
+ *
+ * 2. 0x74314, the walk: `for (n = 1; n < nResearchEntryCount; ++n)`. Topic 0 is skipped -- it is the
+ *    screen block, not a topic.
+ *
+ * 3. 0x74334: bUnlocked == 1 marks abResearchZero[n] = 1 and, when Research_TopicNeedsItem says the
+ *    topic still needs an item it no longer has, drops bActive to 0 (0x74360).
+ *
+ * 4. 0x74364, the item gate: it runs unless (bUnlocked == 0 && wTotal > 0), and when it fails the
+ *    whole iteration is skipped (0x74388 BEQ loc_748EC). So an in-progress topic is never dropped for
+ *    a missing item, while an unstarted one with no progress is.
+ *
+ * 5. 0x74394 splits on wTotal > wProgress.
+ *
+ *    IN PROGRESS (0x747A0). A gate is rebuilt from the record's own groups:
+ *      - 0x747AC: AND the bUnlocked of the five prerequisites at +0x13..0x17 into the gate, and ADD the
+ *        same five bytes into an accumulator. The original adds the topic NUMBERS, not any count; the
+ *        accumulator only ever feeds the `!= 0` test at 0x748E0, so this cannot change an outcome, but
+ *        the arithmetic is reproduced.
+ *      - 0x747E4: walk the five needed-item bytes at +0x0E..0x12. 254 and 255 clear the gate (the "no
+ *        item" sentinels) and are still added to the accumulator; any other non-zero value that is
+ *        <= Map_nObjectCount and whose apObjects[id]->auPerBaseVal[base] is zero clears the gate AND
+ *        sets bActive = 0 (0x74854, 0x74858). An id above Map_nObjectCount is skipped entirely.
+ *      - 0x74868: the second range pair, again from the NEXT record -- abUnk0[2] as lo2 and abUnk0[3]
+ *        as hi2. lo2 + hi2 + accumulator must be non-zero, and when lo2 != hi2 some topic in
+ *        [lo2, hi2] must already be unlocked or already marked in abResearchZero, or the gate is
+ *        cleared (0x74894..0x748C8).
+ *      - 0x748D0: bActive = 1 only when the gate survived and that sum is non-zero.
+ *
+ *    FINISHED (0x743A4): when the topic still needs its item, BaseRec_SubItemQty takes one back
+ *    (0x743E8) and wProgress goes to zero (0x743F8). Either way bUnlocked = 1 (0x7440C); n lands in
+ *    nResearchFinishedTopic as a byte (0x74414) and in nResearchTopicShown as a dword (0x74424);
+ *    auResearchCol[n + 144*base] is zeroed for all eight bases (0x7442C..0x74444); the shortfall dword
+ *    is set to 1 (0x74458, a dword store into byte_1870C8); the facility flag for this topic's kind is
+ *    set; a message line is appended with flag 37 and colours n / 0xFF / 0xFF / 0xFF (0x74554);
+ *    bActive is dropped when the item is missing (0x7456C); abResearchZero[n] = 1; and the five topics
+ *    at +0x1D..0x21 are switched to bActive = 1 (0x74584..0x745A8).
+ *
+ * 6. 0x745AC, the unlock roll, using the FIRST range pair of the next record (abUnk0[0], abUnk0[1]).
+ *    When hi != lo, roll Game_RandU16(hi - lo + 1) and retry while the landing topic is already active
+ *    or already unlocked, up to 50 tries -- after 50 tries the original accepts whatever it landed on
+ *    (0x7460C). That topic gets bUnlocked = 1 (0x74630) and becomes nResearchTopicShown (0x74644). The
+ *    column-clear that follows (0x74648) runs over the ORIGINAL topic's eight entries a second time,
+ *    not the newly unlocked one's: it repeats step 5's stores and changes nothing.
+ *
+ * 7. 0x7474C, after the roll: when abResearchZero[lo + roll] is zero the line appended in step 5 is
+ *    REWRITTEN in place -- UiPanel_SetLineColors @ 0x5a450 overwrites line (nLineCount - 1) with flag
+ *    37 and colours n / roll / 0xE8 / 0 (0x74780) -- and abResearchZero[lo + roll] is then set
+ *    unconditionally (0x74798).
+ *
+ * 8. 0x74460 and 0x74668, the two switches. Both switch on the topic number itself with cases 37..53
+ *    and write 1 into aBaseFacFlags[k].bFlag20 for the k in g_anResearchTopicFacKind -- a jumptable
+ *    permutation, not an identity: topic 43 is FAC_MISSILE_DEFENCES, topic 51 is FAC_MIND_SHIELD, and
+ *    so on. Case 10 (topic 47) has no slot, and FAC_HANGAR is the one kind no topic ever writes. Both
+ *    switches fall through to their common tail, so the Append and the SetLine run for every walked
+ *    topic, not only for the mapped ones. LoadGame @ 0x4539C carries the same 17-case table over the
+ *    same 0x186E48 base with the same -37 offset and the same unmapped case 10, which is what pins the
+ *    permutation down.
+ *
+ * Deviations: the original derefs the topic table, the object pointers, the count byte and the line
+ * list with no test, and reaches 0x160228 (the gap before auResearchCol) for the range pair of topic
+ * 143 -- nothing in the IDB writes those four bytes, so the port reads them as zero, which makes
+ * lo == hi and skips the roll for the last topic. The port also returns the entry count where the
+ * original returns its own argument (the 0x15EF08 anchor) when the count is 0 or 1: the callers expect
+ * an i32 and the port cannot carry a pointer in it. */
+#define PUFO_RESEARCH_FAC_TOPIC_BASE 37  /* 0x74460 / 0x74668: both switches are on (nTopic - 37) */
+#define PUFO_RESEARCH_LINE_FLAG       37 /* 0x74550 MOV R1,#0x25 and 0x74774 MOV R2,#0x25 */
+#define PUFO_RESEARCH_LINE_COLOR2   0xE8u /* 0x74770 MOV R3,#0xE8: the third colour slot of the
+                                          * rewritten line. The appended line's slots 1..3 are all 0xFF
+                                          * (0x74540, 0x74548). */
+#define PUFO_RESEARCH_UNLOCK_TRIES   50  /* 0x7460C CMP R4,#0x32: then the roll is accepted as-is */
+
+typedef struct ResearchRebuildEnv {
+    ResearchTopicLive *aTopics;        /* aResearchTopics @ 0x15EF08, the original's own argument */
+    const u8 *pbEntryCount;            /* nResearchEntryCount @ 0x160C4C, read with LDRB */
+    u16 *apResearchCols;               /* auResearchCol @ 0x16022C, 144 u16 per base */
+    u8 *abResearchZero;                /* abResearchZero @ 0x160B2C */
+    BaseFacFlag *paFac;                /* aBaseFacFlags @ 0x186E48 */
+    u32 *pdwShortfall;                 /* byte_1870C8, written as a dword at 0x74458 */
+    UiLineList *pLines;                /* the root message list @ 0x158890 */
+    ObjectRecFull *const *apObjects;   /* apObjects @ Map+0x108 */
+    const u16 *pnObjectCount;          /* Map_nObjectCount @ Map+0x10A8 */
+    BaseRec *const *apBases;           /* apBases @ Map+0x1174 */
+    const i8 *pnSelectedBaseIdx;       /* nSelectedBaseIdx @ 0x159D81 */
+    u8 *pbFinishedTopic;               /* nResearchFinishedTopic @ 0x15EEF8 */
+    i32 *pnShownTopic;                 /* nResearchTopicShown @ 0x160C60 */
+    void (*pfnPlaySample)(i32 nSample, void *pUser); /* UiLineList_AppendWithSound's seam */
+    void *pUser;
+} ResearchRebuildEnv;
+
+i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv);
 
 #endif /* PUFO_BASEUI_H */

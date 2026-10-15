@@ -9,6 +9,7 @@
 #include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, for the cost label */
 #include "audio/pufo_audio.h"  /* PufoAudioBackend / Sound_SetBackend, the volume seam */
+#include "util/pufo_rand.h"    /* Game_RandU16, seeded to pin the unlock roll exactly */
 
 static int g_nFailures;
 
@@ -4124,7 +4125,7 @@ static void TestTopicNeedsItem(void)
     /* Every topic in a gate band asks for object 7; the band test is about the topic index,
      * not the item. Object 7 holds 5 at base 7 and nothing at base 3. */
     for (i32 i = 0; i < 144; ++i) {
-        g_aTopics[i].nItemId = 7;
+        g_aTopics[i].abNeedItems[0] = 7;
     }
     g_apObj[7] = &g_aObj[0];
     g_aObj[0].auPerBaseVal[7] = 5;
@@ -10492,6 +10493,368 @@ static void TestResearchBuildPanels(void)
     CheckEqI32(g_bResBuilt, 0, "a null environment changes nothing");
 }
 
+/* ---- ResearchScreen_RebuildTopicList @ 0x74270 --------------------------------------- */
+
+static ResearchTopicLive g_aRbTopic[PUFO_RESEARCH_TOPIC_COUNT];
+static u8         g_bRbCount;
+static u16        g_aRbCol[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
+static u8         g_abRbZero[PUFO_RESEARCH_TOPIC_COUNT];
+static BaseFacFlag g_aRbFac[PUFO_BASEFAC_COUNT];
+static u32        g_nRbShortfall;
+static UiLineList g_rbLines;
+static ObjectRecFull g_aRbObj[9];
+static ObjectRecFull *g_apRbObj[256];
+static const u16 g_nRbObjCount = 7; /* Map_nObjectCount: ids 0..7 are in range for the 0x74814 test */
+static const i8 g_nRbBaseIdx = 0;   /* nSelectedBaseIdx */
+static BaseRec    g_rbBase;
+static BaseRec   *g_apRbBase[PUFO_FAC_BASE_COUNT];
+static u8         g_bRbFinished;
+static i32        g_nRbShown;
+static i32        g_nRbSampleId;
+static i32        g_nRbSampleCount;
+
+static void RbPlaySample(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    g_nRbSampleId = nSample;
+    ++g_nRbSampleCount;
+}
+
+static void RbReset(ResearchRebuildEnv *pEnv)
+{
+    memset(g_aRbTopic, 0, sizeof(g_aRbTopic));
+    memset(g_aRbCol, 0, sizeof(g_aRbCol));
+    memset(g_abRbZero, 0, sizeof(g_abRbZero));
+    memset(g_aRbFac, 0, sizeof(g_aRbFac));
+    memset(&g_rbLines, 0, sizeof(g_rbLines));
+    memset(g_aRbObj, 0, sizeof(g_aRbObj));
+    memset(g_apRbObj, 0, sizeof(g_apRbObj));
+    memset(&g_rbBase, 0, sizeof(g_rbBase));
+    g_bRbCount = 0;
+    g_nRbShortfall = 0;
+    g_bRbFinished = 0;
+    g_nRbShown = 0;
+    g_nRbSampleId = -1;
+    g_nRbSampleCount = 0;
+    g_rbBase.bSlot = 0; /* BaseRec_SubItemQty spends from auPerBaseVal[bSlot], not from the index */
+    for (i32 i = 0; i < 9; ++i) {
+        g_apRbObj[i] = &g_aRbObj[i];
+    }
+    for (i32 i = 0; i < PUFO_FAC_BASE_COUNT; ++i) {
+        g_apRbBase[i] = &g_rbBase;
+    }
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->aTopics = g_aRbTopic;
+    pEnv->pbEntryCount = &g_bRbCount;
+    pEnv->apResearchCols = g_aRbCol;
+    pEnv->abResearchZero = g_abRbZero;
+    pEnv->paFac = g_aRbFac;
+    pEnv->pdwShortfall = &g_nRbShortfall;
+    pEnv->pLines = &g_rbLines;
+    pEnv->apObjects = g_apRbObj;
+    pEnv->pnObjectCount = &g_nRbObjCount;
+    pEnv->apBases = g_apRbBase;
+    pEnv->pnSelectedBaseIdx = &g_nRbBaseIdx;
+    pEnv->pbFinishedTopic = &g_bRbFinished;
+    pEnv->pnShownTopic = &g_nRbShown;
+    pEnv->pfnPlaySample = RbPlaySample;
+}
+
+static i32 RbFacFlagsSet(void)
+{
+    i32 n = 0;
+    for (i32 i = 0; i < PUFO_BASEFAC_COUNT; ++i) {
+        if (g_aRbFac[i].bFlag20 != 0) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+static void TestResearchRebuild(void)
+{
+    ResearchRebuildEnv env;
+
+    printf("\nResearchScreen_RebuildTopicList @ 0x74270\n");
+
+    /* A. Which topics the pass can touch at all. Everything zero, count 144 (what main.dat really
+     * loads -- test_geoiinit asserts the same byte), base 0, object 7 stocked with 3 at base 0.
+     * A topic outside 55..65 / 118..142 answers "needs no item" (0x72C9C) and the gate at 0x74364
+     * skips the whole iteration; 135 and 140 are pulled out of the second band by name. Each topic
+     * that does finish spends one unit of object 7 (0x743E8), so only three get through. */
+    RbReset(&env);
+    g_bRbCount = 144;
+    for (i32 i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        g_aRbTopic[i].abNeedItems[0] = 7;
+    }
+    g_aRbObj[7].auPerBaseVal[0] = 3; /* apObjects[7] */
+    g_aRbTopic[55].wProgress = 7;
+    g_aRbTopic[56].wProgress = 4;
+    CheckEqI32(ResearchScreen_RebuildTopicList(&env), 144,
+               "the port returns the entry count where the original returns its own argument");
+    CheckEqI32(g_aRbTopic[54].bUnlocked, 0, "topic 54 is outside the bands, so the gate skips it (0x74388)");
+    CheckEqI32(g_aRbTopic[55].bUnlocked, 1, "topic 55 reaches the finished branch and unlocks (0x7440C)");
+    CheckEqI32(g_aRbTopic[57].bUnlocked, 1, "topic 57 too");
+    CheckEqI32(g_aRbTopic[58].bUnlocked, 0, "topic 58 is skipped: finishing spent the last unit (0x743E8)");
+    CheckEqI32(g_aRbObj[0].auPerBaseVal[0], 0, "three finished topics spent all three units");
+    CheckEqI32(g_rbBase.nStoresTotal, -3, "BaseRec_SubItemQty also moves nStoresTotal");
+    CheckEqI32(g_aRbTopic[55].wProgress, 0, "wProgress is zeroed when the item was spent (0x743F8)");
+    CheckEqI32(g_aRbTopic[56].wProgress, 0, "and for the next one too");
+    CheckEqI32(g_aRbTopic[66].bUnlocked, 0, "topic 66 is outside the first band");
+    CheckEqI32(g_aRbTopic[117].bUnlocked, 0, "topic 117 is outside the second band");
+    CheckEqI32(g_aRbTopic[118].bUnlocked, 0, "the second band never runs: the stock is already zero");
+    CheckEqI32(g_abRbZero[55], 1, "abResearchZero marks the topic that ran");
+    CheckEqI32(g_abRbZero[58], 0, "and not the one the gate skipped");
+    CheckEqI32(g_nRbShortfall, 1, "the finished branch writes 1 into the shortfall dword (0x74458)");
+    CheckEqI32((i32)g_bRbFinished, 57, "nResearchFinishedTopic holds the last topic that finished");
+    CheckEqI32(g_nRbShown, 57, "nResearchTopicShown too (0x74424)");
+    CheckEqI32((i32)g_rbLines.nLineCount, 3, "one message line per finished topic (0x74554)");
+    CheckEqI32(g_rbLines.abLineFlags[0], PUFO_RESEARCH_LINE_FLAG, "the line flag is 37");
+    CheckEqI32((i32)g_rbLines.anColor[0][0], 55, "colour slot 0 carries the topic number");
+    CheckEqI32((i32)g_rbLines.anColor[0][1], 0xFF, "slots 1..3 are 0xFF on the appended line (0x74540)");
+    CheckEqI32((i32)g_rbLines.anColor[2][0], 57, "the third line carries topic 57");
+    CheckEqI32(g_nRbSampleCount, 3, "each append plays a sample");
+    CheckEqI32(g_nRbSampleId, 7, "and the sample is 7 (UiPanel_AppendLineWithSound)");
+    CheckEqI32(g_aRbTopic[143].bUnlocked, 0,
+               "record 143 stays locked: its five prerequisites are all record 0, which is locked");
+
+    /* B. Record 143's own gate (0x74294): the product of the five prerequisites' bUnlocked has to be
+     * exactly 1, and the product is masked to a byte after every multiply. */
+    RbReset(&env);
+    g_bRbCount = 2; /* walk only topic 1, so record 143 is not walked and only block 1 touches it */
+    for (i32 i = 0; i < 5; ++i) {
+        g_aRbTopic[143].abPreTopics[i] = (u8)(1 + i);
+    }
+    for (i32 i = 1; i <= 5; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[143].bUnlocked, 1,
+               "five unlocked prerequisites give 1, so record 143 unlocks (0x742E4)");
+
+    RbReset(&env);
+    g_bRbCount = 2;
+    for (i32 i = 0; i < 5; ++i) {
+        g_aRbTopic[143].abPreTopics[i] = (u8)(1 + i);
+    }
+    for (i32 i = 1; i <= 5; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    g_aRbTopic[3].bUnlocked = 2;
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[143].bUnlocked, 0,
+               "a prerequisite holding 2 makes the product 2, and the test is == 1 (0x742DC)");
+
+    /* C. The in-progress branch (0x747A0): gate from the prerequisites and the five needed items,
+     * then the availability scan over the second range pair. */
+    RbReset(&env);
+    g_bRbCount = 62;
+    for (i32 i = 1; i <= 5; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    for (i32 i = 0; i < 5; ++i) {
+        g_aRbTopic[60].abPreTopics[i] = (u8)(1 + i);
+        g_aRbTopic[60].abNeedItems[i] = 7;
+    }
+    g_aRbObj[7].auPerBaseVal[0] = 5;
+    g_aRbTopic[60].bUnlocked = 1;
+    g_aRbTopic[60].wTotal = 100;
+    g_aRbTopic[60].wProgress = 20;
+    g_aRbTopic[61].abUnk0[2] = 1; /* lo2 */
+    g_aRbTopic[61].abUnk0[3] = 3; /* hi2 */
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[60].bActive, 1,
+               "gate intact and lo2 + hi2 + the sum is 54, so the running topic goes on the list (0x748E8)");
+    CheckEqI32(g_aRbTopic[60].wProgress, 20, "the in-progress branch never writes wProgress");
+    CheckEqI32((i32)g_rbLines.nLineCount, 0, "and appends no message line");
+    CheckEqI32((i32)g_nRbShortfall, 0, "nor touches the shortfall dword");
+    CheckEqI32(g_abRbZero[60], 1, "bUnlocked == 1 marks abResearchZero before the split (0x74348)");
+    CheckEqI32(g_abRbZero[7], 0, "a locked topic is not marked");
+
+    RbReset(&env);
+    g_bRbCount = 62;
+    for (i32 i = 1; i <= 5; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    g_aRbTopic[60].bUnlocked = 1;
+    g_aRbTopic[60].wTotal = 100;
+    g_aRbTopic[60].wProgress = 20;
+    for (i32 i = 0; i < 5; ++i) {
+        g_aRbTopic[60].abPreTopics[i] = (u8)(1 + i);
+    }
+    g_aRbTopic[60].abNeedItems[0] = 8; /* stocked, so the 0x74364 gate passes */
+    g_aRbTopic[60].abNeedItems[1] = 7; /* empty, so the 0x747E4 loop clears the gate */
+    g_aRbObj[8].auPerBaseVal[0] = 5; /* apObjects[8]: stocked, and above Map_nObjectCount so the
+                                      * 0x74814 range test skips it rather than derefing it */
+    g_aRbObj[7].auPerBaseVal[0] = 0; /* apObjects[7]: inside the range and empty */
+    g_aRbTopic[61].abUnk0[2] = 1;
+    g_aRbTopic[61].abUnk0[3] = 3;
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[60].bActive, 0,
+               "a needed item with no stock at this base clears the gate AND drops bActive (0x74854)");
+
+    RbReset(&env);
+    g_bRbCount = 62;
+    for (i32 i = 40; i <= 44; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    for (i32 i = 0; i < 5; ++i) {
+        g_aRbTopic[60].abPreTopics[i] = (u8)(40 + i);
+        g_aRbTopic[60].abNeedItems[i] = 7;
+    }
+    g_aRbObj[7].auPerBaseVal[0] = 5;
+    g_aRbTopic[60].bUnlocked = 1;
+    g_aRbTopic[60].wTotal = 100;
+    g_aRbTopic[60].wProgress = 20;
+    g_aRbTopic[61].abUnk0[2] = 1; /* [1..3] are all locked and unmarked */
+    g_aRbTopic[61].abUnk0[3] = 3;
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[60].bActive, 0,
+               "no topic in [lo2, hi2] is unlocked or marked, so the scan clears the gate (0x748C8)");
+
+    RbReset(&env);
+    g_bRbCount = 62;
+    g_aRbObj[0].auPerBaseVal[0] = 5; /* abNeedItems[0] == 0 still passes the gate: id 0 is stocked */
+    g_aRbTopic[60].bUnlocked = 1;
+    g_aRbTopic[60].wTotal = 100;
+    g_aRbTopic[60].wProgress = 20;
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[60].bActive, 0,
+               "gate 1 but lo2 + hi2 + the sum is 0, so bActive is not set (0x748E0)");
+
+    /* D. The finished branch's side effects: the facility-kind permutation, the activate group, the
+     * unlock roll, the line rewrite and the column clear. Topics 37, 43, 47 and 51 finish: locked
+     * with progress already booked, so 0x74364 skips the gate and 0x74394 sends them down the
+     * finished path. None of them is in a needs-item band, so no item is spent. */
+    RbReset(&env);
+    g_bRbCount = 54;
+    const i32 anFinish[4] = { 37, 43, 47, 51 };
+    for (i32 i = 0; i < 4; ++i) {
+        g_aRbTopic[anFinish[i]].bUnlocked = 0;
+        g_aRbTopic[anFinish[i]].wTotal = 10;
+        g_aRbTopic[anFinish[i]].wProgress = 10;
+    }
+    g_aRbTopic[37].abActivateTopics[0] = 20;
+    g_aRbTopic[37].abActivateTopics[2] = 21;
+    g_aRbTopic[38].abUnk0[0] = 10; /* topic 37's roll range: lo */
+    g_aRbTopic[38].abUnk0[1] = 13; /* hi */
+    for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        g_aRbCol[37 + b * PUFO_RESEARCH_TOPIC_COUNT] = 999;
+        g_aRbCol[12 + b * PUFO_RESEARCH_TOPIC_COUNT] = 888;
+    }
+    i32 nSeed = -1;
+    i32 nRollWant = -1;
+    for (i32 nTry = 1; nTry < 1000 && nSeed < 0; ++nTry) {
+        srand((unsigned)nTry);
+        const i32 nRoll = (i32)Game_RandU16(4u);
+        if (nRoll >= 0 && nRoll <= 3) {
+            nSeed = nTry;
+            nRollWant = nRoll;
+        }
+    }
+    srand((unsigned)nSeed);
+    (void)ResearchScreen_RebuildTopicList(&env);
+    const i32 nPick = 10 + nRollWant;
+    Check(nSeed > 0, "a seed was found to pin the unlock roll");
+    CheckEqI32(g_aRbTopic[37].wProgress, 10,
+               "no item was needed, so wProgress keeps its value (0x743B0 BEQ 0x743FC)");
+    CheckEqI32(g_aRbTopic[37].bUnlocked, 1, "the finished topic unlocks");
+    CheckEqI32(g_aRbFac[FAC_ACCESS_LIFT].bFlag20, 1, "topic 37 -> FAC_ACCESS_LIFT (0x186E5C)");
+    CheckEqI32(g_aRbFac[FAC_MISSILE_DEFENCES].bFlag20, 1, "topic 43 -> FAC_MISSILE_DEFENCES (0x186FC8)");
+    CheckEqI32(g_aRbFac[FAC_MIND_SHIELD].bFlag20, 1, "topic 51 -> FAC_MIND_SHIELD (0x186F74)");
+    CheckEqI32(g_aRbFac[FAC_HANGAR].bFlag20, 0, "FAC_HANGAR is the kind no topic writes");
+    CheckEqI32(RbFacFlagsSet(), 3, "exactly three flags: topic 47's case has no slot at all");
+    CheckEqI32(g_aRbTopic[20].bActive, 1, "the +0x1D group switches topic 20 on (0x745A0)");
+    CheckEqI32(g_aRbTopic[21].bActive, 1, "and topic 21");
+    CheckEqI32(g_aRbTopic[19].bActive, 0, "a zero entry switches nothing on");
+    CheckEqI32(g_aRbTopic[nPick].bUnlocked, 1, "the roll unlocks one topic inside [10, 13] (0x74630)");
+    CheckEqI32(g_abRbZero[nPick], 1, "and marks it in abResearchZero (0x74798)");
+    CheckEqI32((i32)g_rbLines.nLineCount, 4, "four finished topics, four lines");
+    CheckEqI32((i32)g_rbLines.anColor[0][1], nRollWant,
+               "the appended line is rewritten in place with the roll in slot 1 (0x74780)");
+    CheckEqI32((i32)g_rbLines.anColor[0][2], 0xE8, "slot 2 becomes 0xE8");
+    CheckEqI32((i32)g_rbLines.anColor[0][3], 0, "slot 3 becomes 0");
+    CheckEqI32((i32)g_rbLines.anColor[1][0], 43, "the later lines keep the appended colours");
+    CheckEqI32((i32)g_rbLines.anColor[1][1], 0xFF, "and are not rewritten");
+    for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        CheckEqI32(g_aRbCol[37 + b * PUFO_RESEARCH_TOPIC_COUNT], 0,
+                   "topic 37's allocation is cleared in every base");
+    }
+    for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+        CheckEqI32(g_aRbCol[12 + b * PUFO_RESEARCH_TOPIC_COUNT], 888,
+                   "the newly unlocked topic's allocation is NOT cleared (0x74648 MOV R0,R7)");
+    }
+    CheckEqI32((i32)g_bRbFinished, 51, "the last finished topic wins the finished global");
+    CheckEqI32(g_nRbShown, 51, "and the shown global");
+
+    /* E. The 50-try cap (0x7460C). Every candidate in [10, 13] is already unlocked, so the roll
+     * retries until the counter reaches 50 and then accepts whatever it landed on. */
+    RbReset(&env);
+    g_bRbCount = 38;
+    g_aRbTopic[37].wTotal = 10;
+    g_aRbTopic[37].wProgress = 10;
+    g_aRbTopic[38].abUnk0[0] = 10;
+    g_aRbTopic[38].abUnk0[1] = 13;
+    for (i32 i = 10; i <= 13; ++i) {
+        g_aRbTopic[i].bUnlocked = 1;
+    }
+    i32 nCapSeed = -1;
+    i32 nFirst = -1;
+    i32 nLast = -1;
+    for (i32 nTry = 1; nTry < 1000 && nCapSeed < 0; ++nTry) {
+        srand((unsigned)nTry);
+        const i32 nA = (i32)Game_RandU16(4u);
+        for (i32 k = 0; k < 48; ++k) {
+            (void)Game_RandU16(4u);
+        }
+        const i32 nB = (i32)Game_RandU16(4u);
+        if (nA != nB) {
+            nCapSeed = nTry;
+            nFirst = nA;
+            nLast = nB;
+        }
+    }
+    srand((unsigned)nCapSeed);
+    (void)ResearchScreen_RebuildTopicList(&env);
+    Check(nCapSeed > 0, "a seed was found whose first and fiftieth rolls differ");
+    CheckEqI32(g_nRbShown, 10 + nLast,
+               "after 50 tries the original accepts the 50th roll, not the first (0x7460C)");
+    Check(g_nRbShown != 10 + nFirst, "so the first roll really was thrown away");
+    CheckEqI32((i32)g_rbLines.anColor[0][1], 0xFF,
+               "the line is not rewritten: abResearchZero[pick] was already set (0x7474C)");
+
+    /* F. Topic 143's range pair lives at 0x160228, the gap between the 144-record table and
+     * auResearchCol. Nothing in the IDB writes it, so the port reads zeros and the roll is skipped. */
+    RbReset(&env);
+    g_bRbCount = 144;
+    g_aRbTopic[143].wTotal = 5;
+    g_aRbTopic[143].wProgress = 5;
+    (void)ResearchScreen_RebuildTopicList(&env);
+    CheckEqI32(g_aRbTopic[143].bUnlocked, 1, "topic 143 finishes");
+    CheckEqI32(g_aRbTopic[143].wProgress, 5, "and keeps wProgress: it needs no item");
+    CheckEqI32((i32)g_bRbFinished, 143, "the finished global holds 143");
+    CheckEqI32(g_nRbShown, 143, "and no roll moved the shown global");
+    CheckEqI32(RbFacFlagsSet(), 0, "topic 143 is past the switch's 37..53 range, so no kind is set");
+    {
+        i32 nUnlocked = 0;
+        for (i32 i = 0; i < 143; ++i) {
+            if (g_aRbTopic[i].bUnlocked != 0) {
+                ++nUnlocked;
+            }
+        }
+        CheckEqI32(nUnlocked, 0, "the zero gap reads lo == hi, so no topic is unlocked by a roll");
+    }
+
+    /* G. The count gate. */
+    RbReset(&env);
+    g_bRbCount = 1;
+    CheckEqI32(ResearchScreen_RebuildTopicList(&env), 1, "count 1 skips the walk entirely (0x74300)");
+    CheckEqI32((i32)g_rbLines.nLineCount, 0, "and appends nothing");
+    RbReset(&env);
+    g_bRbCount = 0;
+    CheckEqI32(ResearchScreen_RebuildTopicList(&env), 0, "count 0 likewise");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -10529,6 +10892,7 @@ int main(void)
     TestManufDrawFrame();
     TestResearchInit();
     TestResearchBuildPanels();
+    TestResearchRebuild();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

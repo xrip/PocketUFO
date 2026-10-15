@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `3daaeaf`. This document is committed together with
-`ResearchScreen_BuildPanels` (0x733f4), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+Date: 2026-10-15. HEAD before this edit: `054b2c5`. This document is committed together with
+`ResearchScreen_RebuildTopicList` (0x74270), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
 the reading it came from is written up in `docs/parity/game-core.md` under
-`## ResearchScreen_BuildPanels (0x733f4, 1600 B)`.
+`## ResearchScreen_RebuildTopicList (0x74270, 1700 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -56,14 +56,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 698 / 1103 (63.3%)
-                                             bytes cited:     275776 / 598792 (46.1%)
-python docs/parity/audit_credits.py       -> credited functions: 698, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 216 (explain 203 citations)
+python docs/parity/coverage.py            -> functions cited: 867 / 1103 (78.6%)
+                                             bytes cited:     375864 / 598792 (62.8%)
+python docs/parity/audit_credits.py       -> credited functions: 867, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 227 (explain 211 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 83, ORIGINAL BUG markers in src/pufo: 26
+python docs/parity/audit_bugs.py          -> ledger rows: 119, ORIGINAL BUG markers in src/pufo: 43
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 37 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 39 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -78,18 +78,19 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10434**. Coverage as of the latest commit: **866 / 1103
-functions (78.5%)**, **374164 / 598792 bytes (62.5%)**. The last unit was `ResearchScreen_BuildPanels`
-(0x733f4): the research family's bring-up and panel build are ported; its topic rebuild (0x74270) and its
-drawer (0x73a34) are what is left of it. An earlier unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port tested by drawing it for real: exact
-565 values at the coordinates the original names. Two original inconsistencies are now on the record:
-`ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
-against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there; and
+Test checks run across the 56 suites: **10520**. Coverage as of the latest commit: **867 / 1103
+functions (78.6%)**, **375864 / 598792 bytes (62.8%)**. The last unit was `ResearchScreen_RebuildTopicList`
+(0x74270): the research family's bring-up, panel build and topic rebuild are ported, and its drawer
+(0x73a34) is all that is left of it. An earlier unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port
+tested by drawing it for real: exact 565 values at the coordinates the original names. Three original
+inconsistencies are now on the record: `ManufScreen_Draw` (0x6e3e0) tests panel A's style dword at offset 0
+against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there;
 `ResearchScreen_BuildPanels` computes the progress percentage as `100 * (wProgress / wTotal)` while
 `ResearchScreen_RefreshPanels` computes `(100 * wProgress) / wTotal`, so a quarter-done topic reads 0% and
-then 25% on the same data. The §2 numbers
-below are the snapshot taken
-when this file was regenerated and are older than that line.
+then 25% on the same data; and `ResearchScreen_RebuildTopicList` clears the finished topic's eight per-base
+allocation entries a second time instead of the newly unlocked topic's (0x74648 `MOV R0,R7`), so a locked
+topic can reach its unlock still carrying a stale allocation. The §2 block above is this same session's
+audit output.
 
 ### Per-subsystem status
 

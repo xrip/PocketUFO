@@ -9,6 +9,7 @@
 #include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
 #include "game/pufo_mainmenu.h" /* PUFO_MAINMENU_MODE_*, the list mode the slot handlers set */
+#include "util/pufo_rand.h"     /* Game_RandU16, the unlock roll of ResearchScreen_RebuildTopicList */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -3084,7 +3085,7 @@ i32 Research_TopicNeedsItem(const ResearchTopicLive *aTopics,
     if (!(nTopic > 54 && nTopic < 66) && !(nTopic > 117 && nTopic < 143)) {
         return 0; /* 0x72C9C..0x72CB8 */
     }
-    const ObjectRecFull *pItem = apObjects[aTopics[nTopic].nItemId]; /* 0x72CD4, 0x72CEC */
+    const ObjectRecFull *pItem = apObjects[aTopics[nTopic].abNeedItems[0]]; /* 0x72CD4, 0x72CEC */
     return pItem->auPerBaseVal[nBaseIdx] != 0 ? 1 : 0; /* 0x72CF4..0x72D04 */
 }
 
@@ -7715,4 +7716,234 @@ void ResearchScreen_BuildPanels(ResearchBuildEnv *pEnv)
     if (pA != NULL) { pA->nLineCount = nRows; }
     if (pB != NULL) { pB->nLineCount = nRows; }
     if (pC != NULL) { pC->nLineCount = nRows; }
+}
+
+/* The topic -> facility-kind map both switches encode as a jumptable permutation: case k of the
+ * switch on (nTopic - 37) writes 1 into aBaseFacFlags[kind].bFlag20, and the kind is the offset from
+ * 0x186E48 over the 28-byte record size -- 0x186E5C is kind 0, 0x186FC8 is kind 13, 0x186F74 is
+ * kind 10. Case 10 (topic 47) has no target at all: its jumptable entry is the default label, which
+ * is also where the other sixteen cases land. FAC_HANGAR is the kind no case writes. LoadGame
+ * @ 0x4539C carries the same seventeen-entry table over the same base with the same -37 offset and
+ * the same unmapped case 10, which is what pins the permutation down. */
+static const i8 g_anResearchTopicFacKind[PUFO_BASEFAC_COUNT] = {
+    FAC_ACCESS_LIFT,         /* 37 -> 0x186E5C */
+    FAC_LIVING_QUARTERS,     /* 38 -> 0x186E78 */
+    FAC_LABORATORY,          /* 39 -> 0x186E94 */
+    FAC_WORKSHOP,            /* 40 -> 0x186EB0 */
+    FAC_SHORT_RANGE_RADAR,   /* 41 -> 0x186ECC */
+    FAC_LONG_RANGE_RADAR,    /* 42 -> 0x186EE8 */
+    FAC_MISSILE_DEFENCES,    /* 43 -> 0x186FC8 */
+    FAC_GENERAL_STORES,      /* 44 -> 0x186F04 */
+    FAC_ALIEN_CONTAINMENT,   /* 45 -> 0x186F20 */
+    FAC_LASER_DEFENCE,       /* 46 -> 0x186FE4 */
+    -1,                      /* 47: the default entry, no flag written */
+    FAC_PLASMA_DEFENCE,      /* 48 -> 0x187000 */
+    FAC_FUSION_BALL_DEFENCE, /* 49 -> 0x18701C */
+    FAC_GRAVITY_SHIELD,      /* 50 -> 0x186FAC */
+    FAC_MIND_SHIELD,         /* 51 -> 0x186F74 */
+    FAC_PSI_LABORATORY,      /* 52 -> 0x186F3C */
+    FAC_HYPER_WAVE_DECODER   /* 53 -> 0x186F58 */
+};
+
+static void ResearchRebuild_MarkFacFlag(const ResearchRebuildEnv *pEnv, i32 nTopic)
+{
+    const i32 nCase = nTopic - PUFO_RESEARCH_FAC_TOPIC_BASE; /* 0x74454 SUB R10,R5,#0x25 */
+    if (nCase < 0 || nCase >= PUFO_BASEFAC_COUNT) {
+        return;
+    }
+    const i32 nKind = g_anResearchTopicFacKind[nCase];
+    if (nKind < 0) {
+        return; /* 47 */
+    }
+    pEnv->paFac[nKind].bFlag20 = 1;
+}
+
+/* 0x745AC / 0x74868: the two (lo,hi) pairs live at 0x15EF08 + 34*(nTopic + 1) -- the four head bytes
+ * of the record AFTER the one being processed, not of the record itself. For nTopic == 143 that
+ * address is 0x160228, the four-byte gap between the 144-record table and auResearchCol @ 0x16022C;
+ * nothing in the IDB writes it, so the port reads zeros there, which makes lo == hi and skips the
+ * roll for the last topic. */
+static const u8 g_abTopicRangeZero[4] = { 0, 0, 0, 0 };
+
+static const u8 *ResearchTopic_RangeBytes(const ResearchTopicLive *aTopics, i32 nTopic)
+{
+    if (nTopic + 1 >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return g_abTopicRangeZero;
+    }
+    return aTopics[nTopic + 1].abUnk0;
+}
+
+/* 0x74780: the line the finished branch appended is overwritten in place, at the index the Append
+ * just filled (nLineCount - 1, and 0 - 1 wraps to 255 the way the ARM's SUB R0,#1 does). */
+static void ResearchRebuild_RewriteLine(const ResearchRebuildEnv *pEnv, i32 nTopic, u16 nRoll)
+{
+    if (pEnv->pLines == NULL) {
+        return;
+    }
+    UiLineList_SetLine(pEnv->pLines, (u8)(pEnv->pLines->nLineCount - 1), PUFO_RESEARCH_LINE_FLAG,
+                       (u32)(u8)nTopic, (u32)nRoll, PUFO_RESEARCH_LINE_COLOR2, 0u);
+}
+
+/* ResearchScreen_RebuildTopicList @ 0x74270 -- the evidence block is in pufo_baseui.h. */
+i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv)
+{
+    ResearchTopicLive *const aTopics = pEnv->aTopics;
+    const i32 nEntryCount = (i32)*pEnv->pbEntryCount;
+    const i8 nBase = *pEnv->pnSelectedBaseIdx;
+    const i32 nLast = PUFO_RESEARCH_TOPIC_COUNT - 1;
+
+    /* 1. 0x74294..0x742E4: record 143 unlocks when all five of its prerequisites are unlocked. The
+     * product is masked to a byte after every multiply (AND R2,R2,#0xFF), so it is 1 only when every
+     * prerequisite is exactly 1. */
+    if (aTopics[nLast].bUnlocked == 0) {
+        u8 bAll = 1;
+        for (i32 i = 0; i < 5; ++i) { /* 0x742AC LDRB [R3,R1] over record 143 +4..+8 */
+            bAll = (u8)(bAll * aTopics[aTopics[nLast].abPreTopics[i]].bUnlocked);
+        }
+        if (bAll == 1) {
+            aTopics[nLast].bUnlocked = 1;
+        }
+    }
+
+    if (nEntryCount <= 1) {
+        return nEntryCount; /* 0x74300 BLS loc_7490C */
+    }
+
+    for (i32 nTopic = 1; nTopic < nEntryCount; ++nTopic) { /* 0x74314, topic 0 is the screen block */
+        ResearchTopicLive *pT = &aTopics[nTopic];
+
+        if (pT->bUnlocked == 1) { /* 0x74334 */
+            pEnv->abResearchZero[nTopic] = 1;
+            if (Research_TopicNeedsItem(aTopics, pEnv->apObjects, nTopic, nBase) == 0) {
+                pT->bActive = 0; /* 0x74360 */
+            }
+        }
+
+        /* 0x74364: the gate runs unless the topic is locked with progress already booked, and a
+         * failure skips the whole iteration (0x74388). */
+        if (pT->bUnlocked != 0 || pT->wTotal == 0) {
+            if (Research_TopicNeedsItem(aTopics, pEnv->apObjects, nTopic, nBase) == 0) {
+                continue;
+            }
+        }
+
+        if ((i32)pT->wTotal > (i32)pT->wProgress) {
+            /* 5a. 0x747A0..0x748E8: still running. Rebuild the availability gate. */
+            u8 bGate = 1;
+            i32 nSum = 0;
+            for (i32 i = 0; i < 5; ++i) { /* 0x747AC */
+                const u8 nPre = pT->abPreTopics[i];
+                if (nPre != 0) {
+                    nSum += nPre; /* 0x747BC: the original adds the topic numbers themselves */
+                    bGate = (u8)(bGate * aTopics[nPre].bUnlocked);
+                }
+            }
+            for (i32 i = 0; i < 5; ++i) { /* 0x747E4, the five needed-item bytes */
+                const u8 nItem = pT->abNeedItems[i];
+                if (nItem == 0) {
+                    continue;
+                }
+                if (nItem == 0xFE || nItem == 0xFF) { /* 0x747F4..0x74800 */
+                    bGate = 0;
+                }
+                nSum += nItem; /* 0x74808 */
+                if ((i32)nItem <= (i32)*pEnv->pnObjectCount) { /* 0x74814..0x74824 */
+                    if (pEnv->apObjects[nItem]->auPerBaseVal[nBase] == 0) { /* 0x74848 */
+                        bGate = 0;
+                        pT->bActive = 0; /* 0x74858 */
+                    }
+                }
+            }
+            const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, nTopic);
+            const i32 nLo2 = pbRange[2]; /* 0x7486C */
+            const i32 nHi2 = pbRange[3]; /* 0x74868 */
+            const i32 nTotal = nLo2 + nHi2 + nSum; /* 0x74874 */
+            if (nHi2 != nLo2) { /* 0x7487C */
+                const i32 nLimit = nHi2 + 1;
+                if (nLo2 >= nLimit) { /* 0x74888 */
+                    bGate = 0;
+                } else {
+                    i32 nScan = nLo2; /* 0x74894..0x748C8 */
+                    while (aTopics[nScan].bUnlocked != 1 && pEnv->abResearchZero[nScan] != 1) {
+                        ++nScan;
+                        if (nScan >= nLimit) {
+                            bGate = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (bGate == 1 && nTotal != 0) { /* 0x748D0..0x748E8 */
+                pT->bActive = 1;
+            }
+            continue;
+        }
+
+        /* 5b. 0x743A4..0x74798: finished. */
+        if (Research_TopicNeedsItem(aTopics, pEnv->apObjects, nTopic, nBase) != 0) {
+            BaseRec_SubItemQty(pEnv->apBases[nBase], pEnv->apObjects[pT->abNeedItems[0]], 1); /* 0x743E8 */
+            pT->wProgress = 0; /* 0x743F8 */
+        }
+        pT->bUnlocked = 1; /* 0x7440C */
+        *pEnv->pbFinishedTopic = (u8)nTopic; /* 0x74414 STRB */
+        *pEnv->pnShownTopic = nTopic;        /* 0x74424 STR */
+        u16 *const pCol = &pEnv->apResearchCols[nTopic];
+        for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) { /* 0x7442C..0x74444, eight bases */
+            pCol[b * PUFO_RESEARCH_TOPIC_COUNT] = 0;
+        }
+        *pEnv->pdwShortfall = 1; /* 0x74458, a dword store into byte_1870C8 */
+        ResearchRebuild_MarkFacFlag(pEnv, nTopic);
+        UiLineList_AppendWithSound(pEnv->pLines, PUFO_RESEARCH_LINE_FLAG, (u32)(u8)nTopic,
+                                   PUFO_LINE_COLOR_MAX, PUFO_LINE_COLOR_MAX, PUFO_LINE_COLOR_MAX,
+                                   pEnv->pfnPlaySample, pEnv->pUser); /* 0x74554 */
+        if (Research_TopicNeedsItem(aTopics, pEnv->apObjects, nTopic, nBase) == 0) {
+            pT->bActive = 0; /* 0x7456C */
+        }
+        pEnv->abResearchZero[nTopic] = 1; /* 0x7457C */
+        for (i32 i = 0; i < 5; ++i) { /* 0x74584..0x745A8 */
+            const u8 nOn = pT->abActivateTopics[i];
+            if (nOn != 0) {
+                aTopics[nOn].bActive = 1;
+            }
+        }
+
+        /* 6. 0x745AC..0x74660: unlock one topic out of the range in the next record's head bytes. */
+        const u8 *const pbRange = ResearchTopic_RangeBytes(aTopics, nTopic);
+        const i32 nLo = pbRange[0];
+        const i32 nHi = pbRange[1];
+        if (nHi == nLo) {
+            continue; /* 0x745B4 RSBS / BEQ */
+        }
+        u16 nRoll = 0;
+        for (i32 nTry = 1; ; ++nTry) { /* 0x745C0..0x74610 */
+            nRoll = Game_RandU16((u16)(nHi - nLo + 1));
+            const i32 nPick = nLo + (i32)nRoll;
+            if (aTopics[nPick].bActive != 1 && aTopics[nPick].bUnlocked != 1) {
+                break;
+            }
+            if (nTry >= PUFO_RESEARCH_UNLOCK_TRIES) {
+                break; /* 0x7460C: after 50 tries the original takes what it landed on */
+            }
+        }
+        const i32 nPick = nLo + (i32)nRoll;
+        aTopics[nPick].bUnlocked = 1; /* 0x74630 */
+        *pEnv->pnShownTopic = nPick;  /* 0x74644 */
+        for (i32 b = 0; b < PUFO_FAC_BASE_COUNT; ++b) {
+            /* ORIGINAL BUG (0x74648), reproduced: `MOV R0,R7` and R7 still holds
+             * &auResearchCol[nTopic] from 0x74428, while the newly unlocked index (R4 = idx + roll)
+             * was only ever used for the bUnlocked store and nResearchTopicShown. So this zeroes the
+             * same eight slots the finished branch already zeroed, and the topic that just got
+             * unlocked keeps whatever allocation it carried -- ResearchScreen_AccumulateAllocated
+             * (0x74914) books progress for locked topics too, so a locked topic really can arrive
+             * with a non-zero entry. Reproduced, not corrected. */
+            pCol[b * PUFO_RESEARCH_TOPIC_COUNT] = 0;
+        }
+        ResearchRebuild_MarkFacFlag(pEnv, nTopic); /* 0x74668, the second switch */
+        if (pEnv->abResearchZero[nPick] == 0) { /* 0x7474C */
+            ResearchRebuild_RewriteLine(pEnv, nTopic, nRoll);
+        }
+        pEnv->abResearchZero[nPick] = 1; /* 0x74798 */
+    }
+
+    return nEntryCount; /* 0x74904: the loop leaves the count in R0 */
 }

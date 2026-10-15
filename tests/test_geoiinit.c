@@ -263,7 +263,7 @@ static void TestNewGame(void)
         }
         Check(bZero, "the u16 at +6 zeroed in every topic");
     }
-    CheckEqI32(g_aTopics[143].abUnkF[0], 0x1D,
+    CheckEqI32(g_aTopics[143].abNeedItems[1], 0x1D,
                "research.dat really loaded (record 143 byte +0x0F is 0x1D in main.dat)");
 
     printf("clock, bases, objects\n");

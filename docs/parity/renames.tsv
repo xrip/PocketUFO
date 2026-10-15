@@ -243,3 +243,5 @@ Transfer_ScrollPrevAll	BuySellScreen_PanelPrev	merged: byte-identical to BuySell
 Transfer_ScrollNextAll	BuySellScreen_PanelNext	merged: byte-identical to BuySellScreen_PanelNext over the same five panel globals, only the BL displacements differ
 Transfer_RoleToIconId	BuySell_RoleToItemId	merged: byte-identical 88-byte switch over the same five craft role values and the same 255 fall-through
 stru_ABB10	g_aResearchCtlDesc	renamed in the IDB: the research screen's four 32-byte UiControl descriptors at 0xABB10, walked by ResearchScreen_Init's UiControl_Setup loop
+unk_15EEF8	nResearchFinishedTopic	renamed in the IDB: the byte ResearchScreen_RebuildTopicList writes with the topic number that just finished (0x74414 STRB R7,[R1]); Geoscape_Draw reads it at 0x8D498 as a topic index and follows its +0x1D group
+unk_160C60	nResearchTopicShown	renamed in the IDB: the dword ResearchScreen_RebuildTopicList writes with the finished topic (0x74424) and with the topic the unlock roll picked (0x74644); Ufopaedia_Open switches on it minus 118 (0x9DF10) and Geoscape_Draw indexes dword_AA5F0 with it (0x8D3F8)

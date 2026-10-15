@@ -12399,3 +12399,97 @@ and their quantity strings are asserted; the percentage is asserted as "0%" for 
 then the same panels are refreshed and the same row asserted as "25%", which is the divergence itself;
 and the teardown is asserted through the panel slots, the root pad slot and the four controls' pad
 pointers going to null, followed by a rebuild that proves the flag drives both directions.
+
+## ResearchScreen_RebuildTopicList (0x74270, 1700 B)
+
+Ported as `ResearchScreen_RebuildTopicList` in `src/pufo/game/pufo_baseui.c`; the argument block is
+`ResearchRebuildEnv` in `pufo_baseui.h`; `TestResearchRebuild` in `tests/test_baseui.c` adds 160
+checks.
+
+**The argument is the topic table.** 0x742E4 writes `*(_BYTE *)(result + 4875) = 1`, and
+4875 = 143 * 34 + 13 is `aResearchTopics[143].bUnlocked`. All three callers (ResearchScreen_Init
+0x74B00, ResearchScreen_StartSelected 0x73310, ResearchScreen_AccumulateAllocated 0x749A0) pass
+0x15EF08.
+
+**Block 1 (0x74294).** When record 143 is locked, the bUnlocked of the five prerequisite topics
+listed at record 143 +0x13..0x17 is ANDed into a byte product (AND R2,R2,#0xFF after each MUL) and
+the record unlocks only when the product is exactly 1. A prerequisite holding 2 gives 2 and the test
+fails; both cases are asserted.
+
+**The walk (0x74314)** is `for (n = 1; n < nResearchEntryCount; ++n)`: topic 0 is the screen block,
+not a topic. main.dat really loads 144 (test_geoiinit asserts the same byte), so the last iteration
+is topic 143.
+
+**The gate at 0x74364** runs unless `bUnlocked == 0 && wTotal > 0`, and a failure skips the whole
+iteration (0x74388 BEQ loc_748EC). Because `Research_TopicNeedsItem` answers 0 for every topic
+outside 55..65 and 118..142 (and for 135, 140 and >= 143), most topics are skipped outright. With
+object 7 stocked with 3 units, exactly topics 55, 56 and 57 get through: each spends a unit at
+0x743E8 and topic 58 finds the stock at zero. One dataset pins the bands, the gate, the spend and the
+skip in a single run.
+
+**Split at 0x74394** on `wTotal > wProgress`.
+
+*In progress* (0x747A0): the gate is the AND of the five prerequisites' bUnlocked, and the same five
+bytes are also ADDED into an accumulator -- the original adds the topic NUMBERS, not any count. The
+accumulator only feeds the `!= 0` test at 0x748E0, so the oddity cannot change an outcome, but it is
+reproduced. The five needed-item bytes at +0x0E..0x12 (0x747E4) clear the gate when they are 254 or
+255, and a real id `<= Map_nObjectCount` whose `apObjects[id]->auPerBaseVal[base]` is zero clears the
+gate AND writes bActive = 0 (0x74854); an id above the object count is skipped without derefing. Then
+the second range pair, `aTopics[n+1]` +0x24/+0x25: lo2 + hi2 + accumulator must be non-zero, and when
+lo2 != hi2 some topic in [lo2, hi2] must already be unlocked or already marked in abResearchZero
+(0x74894..0x748C8). bActive = 1 only when the gate survived and that sum is non-zero -- the four
+variants (all good, one item empty, nothing unlocked in the range, sum zero) are each asserted.
+
+*Finished* (0x743A4): the item spend and `wProgress = 0` are a pair, both skipped when the topic needs
+no item, so a topic that needs nothing keeps its wProgress (asserted: 10 stays 10). Then bUnlocked = 1,
+nResearchFinishedTopic = n (byte, 0x74414), nResearchTopicShown = n (dword, 0x74424), the eight
+per-base allocation entries cleared, the shortfall dword set to 1, the facility flag, one message line
+appended with flag 37 and colours n / 0xFF / 0xFF / 0xFF, bActive dropped when the item is missing,
+abResearchZero[n] = 1, and the five topics at +0x1D..0x21 switched to bActive = 1.
+
+**The topic -> facility-kind permutation.** Both switches (0x74460, 0x74668) switch on the topic
+number with cases 37..53 and write 1 into `aBaseFacFlags[kind].bFlag20` (0x186E48 + 28*kind + 0x14):
+37->0, 38->1, 39->2, 40->3, 41->4, 42->5, 43->13, 44->6, 45->7, 46->14, 47->none, 48->15, 49->16,
+50->12, 51->10, 52->8, 53->9. Case 10's jumptable entry is the default label, which is also where the
+other sixteen land -- so the Append and the SetLine run for every walked topic, not only the mapped
+ones. FAC_HANGAR (11, record 0x186F90) is the kind no topic ever writes. LoadGame @ 0x4539C carries
+the same seventeen-entry table over the same base with the same -37 offset and the same unmapped case
+10, which is what pins the mapping down. The test asserts three specific kinds, the hangar's absence,
+and that exactly three of the seventeen flags are set.
+
+**The range pairs live in the NEXT record.** The roll's (lo,hi) is `aTopics[n+1].abUnk0[0..1]`
+(0x745AC LDRB [R9,#0x22], 0x745C0 LDRB [R9,#0x23]) and the availability pair is
+`aTopics[n+1].abUnk0[2..3]` (0x74868). The record being tested is `aTopics[n]`, so the ranges sit one
+record later; for n == 143 they are 0x160228, the four-byte gap between the 144-record table and
+auResearchCol @ 0x16022C, which has no cross-reference anywhere in the IDB. No other function reads
+these four bytes of a record, so the pairing is visible only here. The port reads zeros there, which
+makes lo == hi and skips the roll for the last topic -- asserted by showing that a full 144-entry walk
+in which topic 143 finishes unlocks nothing.
+
+**The roll (0x745AC).** Game_RandU16(hi - lo + 1), retried while the landing topic is already active
+or already unlocked, up to 50 tries; at 50 the original accepts whatever it landed on (0x7460C). With
+every candidate in [10,13] pre-unlocked, the test seeds the RNG so the first and the fiftieth draws
+differ and asserts that the accepted topic is the fiftieth -- which fails if the cap is 49 or 51.
+
+**Deviation found (0x74648).** The column clear after the roll is `MOV R0,R7`, and R7 still holds
+`&auResearchCol[nTopic]` from 0x74428; the rolled index was used only for the bUnlocked store and for
+nResearchTopicShown. So the finished topic's eight entries are cleared twice and the newly unlocked
+topic's never. ResearchScreen_AccumulateAllocated (0x74914) books auResearchCol[i] into wProgress for
+every i below the entry count, locked topics included, so a locked topic really can arrive at its
+unlock carrying a non-zero allocation. Recorded in bugs.tsv and reproduced.
+
+**The line rewrite (0x7474C).** When abResearchZero[lo + roll] is zero, the line the finished branch
+just appended is overwritten in place at index (nLineCount - 1) with flag 37 and colours
+n / roll / 0xE8 / 0; abResearchZero[lo + roll] = 1 follows unconditionally. The test pins the roll to
+a seeded value and asserts slots 1..3 become roll / 0xE8 / 0 while the later lines keep 0xFF, and a
+second run where the picked topic was already marked shows the rewrite skipped.
+
+**Deviations.** The original derefs the topic table, the object pointers, the count byte and the line
+list with no test. The port returns the entry count where the original returns its own argument (the
+0x15EF08 anchor) when the count is 0 or 1 -- the callers expect an i32 and the port cannot carry a
+pointer in it. The port reads the 0x160228 gap as zero.
+
+**IDB.** `unk_15EEF8` renamed `nResearchFinishedTopic`, `unk_160C60` renamed `nResearchTopicShown`.
+`ResearchTopicLive` fields renamed: `nItemId` plus `abUnkF[9]` became `abNeedItems[5]` (+0x0E..0x12)
+and `abPreTopics[5]` (+0x13..0x17), and `abUnk1D[5]` became `abActivateTopics[5]`. Comments at 0x74270,
+0x74460 and 0x4539C.
