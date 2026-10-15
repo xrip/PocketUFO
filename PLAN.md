@@ -919,6 +919,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `g_aTransferCtlDesc`, comments at 0x9955c / 0x9690c / 0x96ad8 / 0x1870B4 / 0x1870D8 / 0x1870F8 /
   0x1870D0 / 0x1870F0.
 
+- [x] part 27, the transfer screen's row list: `TransferScreen_BuildPanels (0x96b30)`, 3956 bytes, and
+  `Transfer_MoveOneItem (0x9602c)`, 604 bytes — 47 more checks. The transfer mode's counterpart of
+  `BuySellScreen_BuildPanels`: same five panels and the same sort, but the slot filter is the sell
+  mode's stocked and alien sets merged minus 142, the B/C/D columns sit eight pixels further right,
+  panel E holds no price, and panel A aux has no `+2000` alien offset so an alien row sorts by its own
+  slot. `Transfer_MoveOneItem` is the fifth handler on the timer-bound repeat loop, and a craft row
+  moves at most one unit per click. New ledger entry: the craft count pass at 0x96C94 omits the
+  `bAtBase` test the fill pass at 0x97550 applies, so an away craft adds a row that is never written.
+  IDB: `unk_1870EC` → `bTransferPanelsBuilt`, comments at 0x96b30, 0x9602c, 0x96C94 and 0x97550.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1099,6 +1109,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy/sell screen bring-up (`BuySellScreen_Init`, the pad and palette load, the two confirm wirings) | 56/56 (Release) | 9597 | 844/1103 (76.5%) | 341164/598792 (57.0%) | 38 checked, 0 mismatched |
 | the buy screen's object block (`BuySellScreen_BuildControls`, the catalogue include tests, the soldier row) | 56/56 (Release) | 9648 | 845/1103 (76.6%) | 344276/598792 (57.5%) | 38 checked, 0 mismatched |
 | the transfer screen's bring-up (`Ui_InitTransfer`, `Transfer_ResetSite`, the blocked-transfer gate) | 56/56 (Release) | 9703 | 848/1103 (76.9%) | 345176/598792 (57.6%) | 38 checked, 0 mismatched |
+| the transfer screen's row list (`TransferScreen_BuildPanels`, `Transfer_MoveOneItem`, the count/fill mismatch) | 56/56 (Release) | 9750 | 850/1103 (77.1%) | 349736/598792 (58.4%) | 38 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

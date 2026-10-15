@@ -848,6 +848,119 @@ typedef struct TransferResetEnv {
 
 SmapSite *Transfer_ResetSite(TransferResetEnv *pEnv);
 
+/* ------------------------------------------------- the transfer screen's row list
+ *
+ * Evidence: TransferScreen_BuildPanels @ 0x96b30 (3956 B), called from Ui_InitTransfer @ 0x9955c
+ * (0x995A4) and again from Geoscape_CloseUI (0x8b94c, not ported) at 0x8BE40, and Transfer_MoveOneItem
+ * @ 0x9602c
+ * (604 B), the click handler it installs into the decrement column. This is the transfer mode's
+ * counterpart of BuySellScreen_BuildPanels @ 0x76de0 -- same five panel globals, same
+ * g_aBuySellRowOrder sort, same row model -- with a wider slot filter, a shifted geometry, no price
+ * column and no alien row-marker offset.
+ *
+ * The built flag is unk_1870EC, a third sibling of bBuySellControlsBuilt @ 0x161A24 and
+ * bBuySellPanelsBuilt @ 0x161A28.
+ *
+ * Teardown branch, unk_1870EC != 0 (0x97994..0x97A88): the flag is cleared, byte_1870F8 is cleared,
+ * the pad at 0x1870D8 is PadImage_FreeData'd and deleted, the four controls at 0x1870DC..0x1870E8
+ * are UiControl_FreePads'd and deleted, and panels A, B, E, C, D are freed in that order. There is
+ * no funds rollback here -- the transfer screen spends no money, which is what tells this teardown
+ * apart from the two buy/sell ones.
+ *
+ * Build branch (0x96B5C..0x97988):
+ *
+ *   1. 0x96B60..0x96BDC: the flag is set and the working site aSmapSites[nSiteCount] is cleared the
+ *      same way Transfer_ResetSite does it -- bUnk518, uRecoveredSoldiers, bRecoveredCraftCount,
+ *      bRecoveredSoldierAssign, bHasLoot, then auItemQty over Map_nObjectCount entries.
+ *   2. 0x96BF0..0x96C3C: count the soldiers at this base that no craft carries (nKind == base and
+ *      bUnk183 == 0xFF).
+ *   3. 0x96C44..0x96CB4: count the craft homed here with nobody aboard. The fill pass adds a third
+ *      test this one does not have -- see the ORIGINAL BUG note in the implementation.
+ *   4. 0x96CC4..0x96DC0: the slot filter is 1..69, 77..111, 114, 122..124 and 143..148 with a
+ *      non-zero auPerBaseVal[nSelectedBaseIdx], plus 112 and 113 when the base has engineers or
+ *      scientists. Against the sell mode that is its stocked and alien filters merged -- the same
+ *      slots except 142, which the sell mode counts and this one does not.
+ *   5. 0x96DC4..0x9732C: the five panels, all nStyle 13 and nFont 16. Panel A x 10 / viewW 125 with
+ *      Transfer_CacheSelIndex @ 0x96ab0 as its click; E x 232 / 190 / 45, no click; B x 172 / 168 /
+ *      15 with Transfer_MoveOneItem; C x 188 / 184 / 15 with TransferScreen_ValidateCapacity
+ *      (0x96288, not ported); D x 166 / 130 / 50, no click. Against the sell mode the B, C and D
+ *      columns are eight pixels further right and A and E are identical.
+ *   6. 0x97330..0x974DC: the soldier rows. Panel A gets the name through the same 17-character cut
+ *      and aux 1000, panel D aux 1, panel E aux 0, panels B and C the "<" and ">" literals, panel C
+ *      aux the roster id (Soldier.nUnk440) and panel B aux the apSoldiers index.
+ *   7. 0x974E4..0x976B4: the craft rows, TEXTS[415 + bCraftType] + "-" + itoa(bType), panel A aux
+ *      Transfer_RoleToIconId(bCraftType), panel D aux 1, panel E aux 0, panel C aux the craft id.
+ *      Panel B aux is left at zero here, where the soldier rows set it.
+ *   8. 0x976C0..0x97858: the object rows. Panel A aux is the slot id for every row -- there is no
+ *      +2000 alien offset in this screen, so an alien row sorts by its plain slot. Panel E aux is 0
+ *      (no price column), and panel D aux is auPerBaseVal[nSelectedBaseIdx], or the engineer or
+ *      scientist count for slots 112 and 113.
+ *   9. 0x97880..0x97988: the same selection sort over g_aBuySellRowOrder, nObjectCount - 1 passes,
+ *      swapping panels A, E, B, C and D together.
+ *
+ * Transfer_MoveOneItem is the decrement column's handler. It reads the selected row's slot id out of
+ * panel A at the row index panel B cached (pBuySellPanelB->nUnk3032), and repeats
+ * nRadarPulseTimer / 10 times -- the same timer-bound loop recorded for BuySellScreen_FillBuyPanel
+ * and friends. Per iteration: a craft row (aux 117..121) with a pending unit clears panel E aux,
+ * raises panel D aux and decrements the site's bRecoveredCraftCount, then stops; any other row with
+ * a pending unit raises panel D aux, lowers panel E aux and decrements the site's auItemQty[slot];
+ * the soldier row (slot id 1000) is handled once outside the loop, clearing panel E aux, raising
+ * panel D aux and decrementing bRecoveredSoldierAssign. All three decrement a site byte with LDRSB
+ * and store it back with STRB, so a count already at zero wraps to 255.
+ *
+ * Deviation: the original allocates the five panels with operator new and deletes the pad and the
+ * four controls in its teardown; the port frees only the pad and takes caller-owned controls. The
+ * original dereferences every allocation with no test. Transfer_MoveOneItem's return value is
+ * whatever R0 happens to hold at the exit -- 517 (the 0x205 offset it just used) after a craft
+ * decrement, the row aux when nothing was pending, the site address after a soldier decrement, and
+ * the timer quotient at the loop bound; it is a click handler and no caller reads it, so the port
+ * returns the timer quotient. */
+#define PUFO_TRANSFER_ROW_CRAFT_FIRST 117 /* 0x960E4: the craft-row test is aux > 116 && aux < 122 */
+#define PUFO_TRANSFER_ROW_CRAFT_LAST  121
+
+typedef struct TransferBuildEnv {
+    u8  *pbPanelsBuilt;               /* unk_1870EC */
+    PadImage **ppPad;                 /* 0x1870D8, the pad Ui_InitTransfer allocated */
+    u8 *pbTransferOk;                 /* byte_1870F8, cleared by the teardown */
+    UiControl *apCtl[4];              /* 0x1870DC..0x1870E8 */
+    SmapSite *aSites;                 /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                   /* nSiteCount @ 0x186410, also the working site's index */
+    Soldier *const *apSoldiers;       /* apSoldiers @ 0x114B50 */
+    i32 nSoldierCount;                /* nSoldierCount @ 0x115350 */
+    Ship *const *apCrafts;            /* apCrafts @ 0x114AE4 */
+    i32 nCraftCount;                  /* Map_nCraftCount @ 0x114B4C */
+    ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                 /* Map_nObjectCount @ 0x114A60 */
+    i8 nSelectedBaseIdx;              /* nSelectedBaseIdx @ 0x159D81 */
+    const char *pTextRecs;            /* aTextRecs @ 0xB38D0 */
+    const u16 *apManufCol;            /* the engineer column @ 0x15E19C */
+    const u16 *apResearchCol;         /* the scientist column @ 0x16022C */
+    i32 nCrewEntries;                 /* the crew column entry count byte @ 0x160C4C */
+    UiPanel **ppPanelA;
+    UiPanel **ppPanelB;
+    UiPanel **ppPanelC;
+    UiPanel **ppPanelD;
+    UiPanel **ppPanelE;
+    void (*pfnCacheSelIndex)(void);   /* Transfer_CacheSelIndex @ 0x96ab0 */
+    void (*pfnMoveOneItem)(void);     /* Transfer_MoveOneItem @ 0x9602c */
+    void (*pfnValidateCapacity)(void);/* TransferScreen_ValidateCapacity (0x96288), not ported */
+} TransferBuildEnv;
+
+void TransferScreen_BuildPanels(TransferBuildEnv *pEnv);
+
+typedef struct TransferMoveEnv {
+    UiPanel *pPanelA;                /* pBuySellPanelA @ 0x161A1C */
+    UiPanel *pPanelB;                /* pBuySellPanelB @ 0x161A00, the row cache lives in nUnk3032 */
+    UiPanel *pPanelD;                /* pBuySellPanelD @ 0x160C88, the count column */
+    UiPanel *pPanelE;                /* pBuySellPanelE @ 0x1615F8, the pending quantity */
+    i32 *pnRowCursor;                /* unk_186BE8, the cached selected row */
+    const i32 *pnRadarPulseTimer;    /* nRadarPulseTimer @ 0xAC224, the repeat bound */
+    SmapSite *aSites;                /* aSmapSites @ 0x162030 */
+    i32 nSiteCount;                  /* nSiteCount @ 0x186410, also the working site's index */
+} TransferMoveEnv;
+
+i32 Transfer_MoveOneItem(TransferMoveEnv *pEnv);
+
 /* ------------------------------------------------- screen selection caches
  *
  * Evidence: BuySellScreen_SyncSelection @ 0x76138, Transfer_CacheSelIndex @ 0x96ab0,

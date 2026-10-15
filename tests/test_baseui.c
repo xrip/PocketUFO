@@ -1872,10 +1872,290 @@ static void TestTransferInitAndReset(void)
     UiPanel_FreeLines(&pE);
 }
 
+static i32 g_nTransferCache, g_nTransferMove, g_nTransferValidate;
+static void TransferStubCache(void) { ++g_nTransferCache; }
+static void TransferStubMove(void) { ++g_nTransferMove; }
+static void TransferStubValidate(void) { ++g_nTransferValidate; }
+
+static void TestTransferBuildAndMove(void)
+{
+    static ObjectRecFull aObj[149];
+    static ObjectRecFull *apObj[149];
+    static Soldier aSol[3];
+    static Soldier *apSol[3];
+    static Ship aShip[3];
+    static Ship *apShip[3];
+    static SmapSite aSites[2];
+    static BaseRec aBase[1];
+    static BaseRec *apBase[1];
+    static PadImage *pPad;
+    static UiControl aCtl[4];
+    static u8 aText[(415 + 5) * PUFO_TEXT_REC_STRIDE];
+    static const i32 aWantAux[8] = { 117, 1000, 1000, 112, 1, 105, 77, 0 };
+    static const char *const apWantName[8] = {
+    /* The swap that moves the craft row to the front carries the first soldier along with it, so
+     * the two soldier rows come out in the opposite order to the fill pass. */
+        "Skyranger-1", "Alan", "Chloe", "Engineer", "Pistol", "Elerium-115", "Sectoid soldier", ""
+    };
+    static const i32 aWantQty[8] = { 1, 1, 1, 5, 3, 2, 4, 0 };
+    UiPanel *pA = NULL, *pB = NULL, *pC = NULL, *pD = NULL, *pE = NULL;
+    TransferBuildEnv benv;
+    TransferMoveEnv menv;
+    u8 bBuilt = 0;
+    u8 bTransferOk = 9;
+    i32 nRowCursor = 0;
+    i32 nTimer = 25;
+    i32 nOk = 0;
+    i32 i;
+
+    printf("the transfer screen's row list\n");
+
+    for (i = 0; i < 149; ++i) {
+        apObj[i] = &aObj[i];
+    }
+    PutStr(aObj[1].szName, "Pistol");
+    PutStr(aObj[77].szName, "Sectoid soldier");
+    PutStr(aObj[105].szName, "Elerium-115");
+    PutStr(aObj[112].szName, "Engineer");
+    PutStr(aObj[113].szName, "Scientist");
+    PutStr(aObj[142].szName, "Alien grenades");
+    aObj[1].auPerBaseVal[0] = 3;
+    aObj[77].auPerBaseVal[0] = 4;
+    aObj[105].auPerBaseVal[0] = 2;
+    aObj[112].auPerBaseVal[0] = 5; /* the engineer row, via Base_GetEngineerCount */
+    aObj[113].auPerBaseVal[0] = 0; /* no scientists, so slot 113 gets no row */
+    aObj[142].auPerBaseVal[0] = 6; /* the sell mode counts 142; this screen does not */
+
+    aSol[0].nKind = 0; aSol[0].bUnk183 = 0xFF; aSol[0].nUnk440 = 101;
+    PutStr(aSol[0].szName, "Chloe");
+    aSol[1].nKind = 0; aSol[1].bUnk183 = 0xFF; aSol[1].nUnk440 = 102;
+    PutStr(aSol[1].szName, "Alan");
+    aSol[2].nKind = 1; aSol[2].bUnk183 = 0xFF; aSol[2].nUnk440 = 103;
+    PutStr(aSol[2].szName, "OtherBase");
+    for (i = 0; i < 3; ++i) {
+        apSol[i] = &aSol[i];
+    }
+
+    aShip[0].bType = 1; aShip[0].bId = 7; aShip[0].bCraftType = 0;
+    aShip[0].bHomeBase = 0; aShip[0].bAtBase = 1; /* counted and written */
+    aShip[1].bType = 2; aShip[1].bId = 8; aShip[1].bCraftType = 1;
+    aShip[1].bHomeBase = 0; aShip[1].bAtBase = 0; /* counted, never written */
+    aShip[2].bType = 1; aShip[2].bId = 9; aShip[2].bCraftType = 2;
+    aShip[2].bHomeBase = 1; aShip[2].bAtBase = 1; /* homed elsewhere */
+    for (i = 0; i < 3; ++i) {
+        apShip[i] = &aShip[i];
+    }
+
+    PutTextRec(aText, 415, "Skyranger");
+    PutTextRec(aText, 416, "Lightning");
+    PutTextRec(aText, 417, "Avenger");
+    PutTextRec(aText, 418, "Interceptor");
+    PutTextRec(aText, 419, "Fire Storm");
+
+    aBase[0].bUnk4 = 7;
+    apBase[0] = &aBase[0];
+    aSites[1].bFlag0 = 8;
+    aSites[1].bFlag1 = 3;
+    aSites[1].bUnk518 = 7;
+    aSites[1].uRecoveredSoldiers = 3;
+    aSites[1].bRecoveredCraftCount = 2;
+    aSites[1].bRecoveredSoldierAssign = 1;
+    aSites[1].bHasLoot = 1;
+    aSites[1].auItemQty[1] = 10;
+    aSites[1].auItemQty[149] = 8;
+
+    memset(&benv, 0, sizeof(benv));
+    memset(aCtl, 0, sizeof(aCtl));
+    pPad = NULL;
+    benv.pbPanelsBuilt = &bBuilt;
+    benv.ppPad = &pPad;
+    benv.pbTransferOk = &bTransferOk;
+    for (i = 0; i < 4; ++i) {
+        benv.apCtl[i] = &aCtl[i];
+    }
+    benv.aSites = aSites;
+    benv.nSiteCount = 1;
+    benv.apSoldiers = apSol;
+    benv.nSoldierCount = 3;
+    benv.apCrafts = apShip;
+    benv.nCraftCount = 3;
+    benv.apObjects = apObj;
+    benv.nObjectCount = 149;
+    benv.nSelectedBaseIdx = 0;
+    benv.pTextRecs = (const char *)aText;
+    benv.ppPanelA = &pA;
+    benv.ppPanelB = &pB;
+    benv.ppPanelC = &pC;
+    benv.ppPanelD = &pD;
+    benv.ppPanelE = &pE;
+    benv.pfnCacheSelIndex = TransferStubCache;
+    benv.pfnMoveOneItem = TransferStubMove;
+    benv.pfnValidateCapacity = TransferStubValidate;
+
+    TransferScreen_BuildPanels(&benv);
+
+    CheckEqI32(bBuilt, 1, "the build branch sets the transfer built flag");
+    CheckEqI32(aSites[1].bUnk518, 0, "the working site is cleared on the build branch too");
+    CheckEqI32(aSites[1].bHasLoot, 0, "including the loot flag");
+    CheckEqI32(aSites[1].bFlag0, 8, "but not the two site flags");
+    Check(pA != NULL && pB != NULL && pC != NULL && pD != NULL && pE != NULL,
+          "all five panels are built");
+    if (pA == NULL || pB == NULL || pC == NULL || pD == NULL || pE == NULL) {
+        return;
+    }
+
+    /* 2 soldiers + 2 craft counted + slots 1, 77, 105, 112. Slot 113 has no scientists and slot 142
+     * is outside this screen's filter. */
+    CheckEqI32(pA->nLineCount, 8, "the row total counts the away craft the fill pass never writes");
+    CheckEqI32(pE->nLineCount, 8, "every panel gets the same total");
+    CheckEqI32(pA->nStyle, 13, "the transfer screen draws thirteen rows, like the sell mode");
+    CheckEqI32(pB->nPosX, 172, "the decrement column sits at 172, eight right of the sell mode");
+    CheckEqI32(pC->nPosX, 188, "the increment column at 188");
+    CheckEqI32(pD->nPosX, 166, "the count column at 166");
+    CheckEqI32(pA->nViewW, 125, "the name column is the same 125 wide");
+    CheckEqI32(pE->nViewW, 45, "and the quantity column the same 45");
+    Check(pA->pfnClick == TransferStubCache, "the name column caches the selected row");
+    Check(pB->pfnClick == TransferStubMove, "the decrement column is Transfer_MoveOneItem");
+    Check(pC->pfnClick == TransferStubValidate, "the increment column is the capacity gate");
+    Check(pD->pfnClick == NULL, "the count column has no handler");
+
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pA->anLineAux[i] == aWantAux[i]) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 8, "the sort pass puts the rows in the g_aBuySellRowOrder order");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        const char *psz = UiPanel_GetLineText(pA, i);
+        if (psz != NULL && strcmp(psz, apWantName[i]) == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 8, "and the names match, the last row the empty one the count left behind");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pA->anLineAux[i] == 2077) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 0, "no row carries the sell mode's +2000 alien offset: 77 sorts as 77 here");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pA->anLineAux[i] == 142 || pA->anLineAux[i] == 113) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 0, "slot 142 is outside this filter and slot 113 has no scientists");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pD->anLineAux[i] == aWantQty[i] && pE->anLineAux[i] == 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 8, "the count column holds the per-base quantity or the crew count");
+    nOk = 0;
+    for (i = 0; i < 8; ++i) {
+        if (pE->anLineAux[i] != 0) {
+            ++nOk;
+        }
+    }
+    CheckEqI32(nOk, 0, "and the pending column is zero everywhere: no price column here");
+    CheckEqI32(pC->anLineAux[0], 7, "a craft row's increment column holds the craft id");
+    CheckEqI32(pC->anLineAux[1], 102, "a soldier row's holds the roster id");
+    CheckEqI32(pB->anLineAux[1], 1, "and the decrement column holds the apSoldiers index");
+
+    /* Transfer_MoveOneItem, the decrement column. */
+    memset(&menv, 0, sizeof(menv));
+    menv.pPanelA = pA;
+    menv.pPanelB = pB;
+    menv.pPanelD = pD;
+    menv.pPanelE = pE;
+    menv.aSites = aSites;
+    menv.nSiteCount = 1;
+    menv.pnRowCursor = &nRowCursor;
+    menv.pnRadarPulseTimer = &nTimer;
+
+    pB->nUnk3032 = 4; nRowCursor = 4; /* the Pistol row, aux 1 */
+    pE->anLineAux[4] = 3;
+    pD->anLineAux[4] = 3;
+    aSites[1].auItemQty[1] = 10;
+    nTimer = 25; /* 25 / 10 = 2, so three passes */
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[4], 0, "one click moves timer/10 + 1 pending units");
+    CheckEqI32(pD->anLineAux[4], 6, "raising the count column by the same three");
+    CheckEqI32(aSites[1].auItemQty[1], 7, "and dropping the site's quantity by three");
+
+    pE->anLineAux[4] = 3;
+    pD->anLineAux[4] = 3;
+    aSites[1].auItemQty[1] = 10;
+    nTimer = 0;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[4], 2, "a timer of 0 still moves one unit");
+    CheckEqI32(aSites[1].auItemQty[1], 9, "and one unit only");
+
+    pE->anLineAux[4] = 0;
+    pD->anLineAux[4] = 3;
+    aSites[1].auItemQty[1] = 9;
+    nTimer = 250;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pD->anLineAux[4], 3, "with nothing pending the loop turns and changes nothing");
+    CheckEqI32(aSites[1].auItemQty[1], 9, "including the site quantity");
+
+    pB->nUnk3032 = 0; nRowCursor = 0; /* the Skyranger row, aux 117 */
+    pE->anLineAux[0] = 4;
+    pD->anLineAux[0] = 1;
+    aSites[1].bRecoveredCraftCount = 3;
+    nTimer = 250;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[0], 0, "a craft row moves at most one unit and clears the pending");
+    CheckEqI32(pD->anLineAux[0], 2, "raising the count by one");
+    CheckEqI32(aSites[1].bRecoveredCraftCount, 2, "and dropping the site's pending craft by one");
+
+    pB->nUnk3032 = 1; nRowCursor = 1; /* the soldier row, aux 1000 */
+    pE->anLineAux[1] = 5;
+    pD->anLineAux[1] = 1;
+    aSites[1].bRecoveredSoldierAssign = 2;
+    nTimer = 250;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[1], 0, "the soldier row is handled once, outside the repeat loop");
+    CheckEqI32(pD->anLineAux[1], 2, "one soldier added to the count");
+    CheckEqI32(aSites[1].bRecoveredSoldierAssign, 1, "and the site's pending soldier byte down by one");
+
+    nTimer = -15; /* -15 / 10 = -1, and 0x9608C branches out on a negative quotient */
+    pB->nUnk3032 = 4; nRowCursor = 4;
+    pE->anLineAux[4] = 3;
+    pD->anLineAux[4] = 3;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[4], 3, "a negative timer quotient makes the handler do nothing");
+    CheckEqI32(pD->anLineAux[4], 3, "on either column");
+
+    pB->nUnk3032 = 99; nRowCursor = 99999;
+    Transfer_MoveOneItem(&menv);
+    Transfer_MoveOneItem(NULL);
+    menv.pnRowCursor = NULL;
+    Transfer_MoveOneItem(&menv);
+    CheckEqI32(pE->anLineAux[4], 3, "a row index out of range is skipped, not dereferenced");
+
+    /* Teardown. */
+    bTransferOk = 9;
+    TransferScreen_BuildPanels(&benv);
+    CheckEqI32(bBuilt, 0, "the second call takes the teardown branch");
+    CheckEqI32(bTransferOk, 0, "and clears the transfer-possible flag");
+    Check(pA == NULL && pB == NULL && pC == NULL && pD == NULL && pE == NULL,
+          "the five panel slots are cleared");
+    Check(pPad == NULL, "the pad the bring-up allocated is freed here");
+
+    TransferScreen_BuildPanels(NULL);
+    benv.pbPanelsBuilt = NULL;
+    TransferScreen_BuildPanels(&benv);
+    CheckEqI32(bBuilt, 0, "a missing flag pointer makes it do nothing");
+}
+
 static void TestRoleToItemId(void)
 {
     printf("BuySell_RoleToItemId @ 0x76d88\n");
-
     CheckEqI32(BuySell_RoleToItemId(0), 117, "role 0");
     CheckEqI32(BuySell_RoleToItemId(1), 120, "role 1");
     CheckEqI32(BuySell_RoleToItemId(2), 121, "role 2");
@@ -6977,6 +7257,7 @@ int main(void)
     TestBuySellInit();
     TestBuySellBuildControls();
     TestTransferInitAndReset();
+    TestTransferBuildAndMove();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

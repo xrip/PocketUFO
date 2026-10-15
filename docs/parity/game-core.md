@@ -11393,3 +11393,95 @@ IDB: function comments at 0x9955c, 0x9690c and 0x96ad8 (the merge note); `stru_A
 `g_aTransferCtlDesc`; comments at 0x1870D8 (the root array), 0x1870B4 (the reason codes, now
 including 5), 0x1870F8 (the shared pending flag) and 0x1870D0 / 0x1870F0 -- the two gate bytes whose
 only references anywhere in the binary are the two LDRSB reads here, with no direct write at all.
+
+
+## TransferScreen_BuildPanels @ 0x96b30 and Transfer_MoveOneItem @ 0x9602c -- the transfer row list
+
+Evidence: `TransferScreen_BuildPanels @ 0x96b30` (3956 B), called from Ui_InitTransfer @ 0x9955c
+(0x995A4) and again from Geoscape_CloseUI (0x8b94c, not ported) at 0x8BE40, and `Transfer_MoveOneItem
+@ 0x9602c` (604 B), the handler it installs into the decrement column. This is the transfer mode's
+counterpart of BuySellScreen_BuildPanels @ 0x76de0: the same five panel globals, the same
+g_aBuySellRowOrder sort, the same row model -- with a wider slot filter, a shifted geometry, no price
+column and no alien row-marker offset. Test: `TestTransferBuildAndMove` in tests/test_baseui.c, 47
+checks.
+
+The built flag is `bTransferPanelsBuilt @ 0x1870EC` (IDB, was `unk_1870EC`), the third sibling after
+bBuySellControlsBuilt @ 0x161A24 and bBuySellPanelsBuilt @ 0x161A28.
+
+Teardown branch (0x97994..0x97A88): the flag is cleared, `byte_1870F8` is cleared, the pad at 0x1870D8
+is `PadImage_FreeData`'d and deleted, the four controls at 0x1870DC..0x1870E8 are
+`UiControl_FreePads`'d and deleted, and panels A, B, E, C, D are freed in that order. There is no
+funds rollback here -- the transfer screen spends no money, which is the third thing that separates
+the three teardowns from each other.
+
+Build branch (0x96B5C..0x97988):
+
+1. 0x96B60..0x96BDC: the flag is set and the working site `aSmapSites[nSiteCount]` is cleared exactly
+   the way Transfer_ResetSite clears it -- `bUnk518`, `uRecoveredSoldiers`, `bRecoveredCraftCount`,
+   `bRecoveredSoldierAssign`, `bHasLoot`, then `auItemQty` over `Map_nObjectCount` entries.
+2. 0x96BF0..0x96C3C: count the soldiers at this base that no craft carries (`nKind` == base and
+   `bUnk183` == 0xFF).
+3. 0x96C44..0x96CB4: count the craft homed here with nobody aboard -- `bHomeBase` == base and
+   `Craft_CountSoldiersAboard(craft index)` == 0.
+4. 0x96CC4..0x96DC0: the slot filter is 1..69, 77..111, 114, 122..124 and 143..148 with a non-zero
+   `auPerBaseVal[nSelectedBaseIdx]`, plus 112 and 113 when the base has engineers or scientists.
+   Against the sell mode this is its stocked and alien filters merged -- the same slots except 142,
+   which the sell mode counts and this screen does not. There is no separate alien pass.
+5. 0x96DC4..0x9732C: the five panels, all `nStyle` 13 and `nFont` 16. A x 10 / viewW 125 with
+   Transfer_CacheSelIndex @ 0x96ab0 as its click; E x 232 / 190 / 45, no click; B x 172 / 168 / 15
+   with Transfer_MoveOneItem; C x 188 / 184 / 15 with TransferScreen_ValidateCapacity (0x96288, not
+   ported); D x 166 / 130 / 50, no click. Against the sell mode the B, C and D columns are eight
+   pixels further right and A and E are identical.
+6. 0x97330..0x974DC: the soldier rows -- name through the same 17-character cut, panel A aux 1000,
+   panel D aux 1, panel E aux 0, the "<" and ">" literals, panel C aux the roster id
+   (Soldier.nUnk440) and panel B aux the apSoldiers index.
+7. 0x974E4..0x976B4: the craft rows -- TEXTS[415 + bCraftType] + "-" + itoa(bType), panel A aux
+   Transfer_RoleToIconId(bCraftType), panel D aux 1, panel E aux 0, panel C aux the craft id. Panel B
+   aux is left at zero here, where the soldier rows set it.
+8. 0x976C0..0x97858: the object rows. Panel A aux is the plain slot id for every row -- this screen
+   has no +2000 alien offset, so an alien row sorts by its own slot number -- panel E aux is 0 because
+   the transfer screen has no price column, and panel D aux is `auPerBaseVal[nSelectedBaseIdx]`, or
+   the engineer / scientist count for slots 112 and 113.
+9. 0x97880..0x97988: the same selection sort over g_aBuySellRowOrder, `nObjectCount - 1` passes,
+   swapping panels A, E, B, C and D together.
+
+Transfer_MoveOneItem (0x9602c) is the decrement column's handler. It reads the selected row's slot id
+out of panel A at the row index panel B cached (`pBuySellPanelB->nUnk3032`, 0x9606C), then repeats
+`nRadarPulseTimer / 10 + 1` times, re-reading the cached row index `unk_186BE8` on every iteration
+(0x960B0):
+
+- a craft row (panel A aux 117..121, tested at 0x960E4 as `> 116 && < 122`) with a pending unit
+  clears panel E aux, raises panel D aux and decrements the site's `bRecoveredCraftCount` (+0x205),
+  then stops -- one craft per click whatever the pending count was.
+- any other row with a pending unit raises panel D aux, lowers panel E aux and decrements the site's
+  `auItemQty[slot]`.
+- the soldier row (slot id 1000) is handled once outside the loop at 0x961C0: panel E aux goes
+  straight to zero, panel D aux rises by one and `bRecoveredSoldierAssign` (+0x204) is decremented.
+
+All three site decrements read with `LDRSB` and store with `STRB` / `STRH`, so a count already at zero
+wraps to 255 rather than staying put. The return value is whatever R0 happens to hold at the exit --
+517 (the 0x205 offset the craft branch just used) after a craft decrement, the row aux when nothing
+was pending, the site address after a soldier decrement, and the timer quotient at the loop bound --
+and it is a click handler, so no caller reads it.
+
+ORIGINAL BUG, recorded in docs/parity/bugs.tsv: the craft count pass at 0x96C94 tests only
+`bHomeBase` and `Craft_CountSoldiersAboard`, while the craft fill pass at 0x97550 adds a third test,
+`Ship.bAtBase` (0x06) non-zero. A craft homed at this base, carrying nobody and currently away is
+counted into the row total but never written, so the list shows one empty row.
+BuySellScreen_BuildPanels' own count pass at 0x76FB4 does test `bAtBase`, so the two screens treat the
+same craft differently. The test asserts the mismatch rather than hiding it: eight rows counted, seven
+names written.
+
+Transfer_MoveOneItem is the fifth handler on the timer-bound repeat loop already recorded for
+BuySellScreen_FillSellPanel, BuySellScreen_FillBuyPanel, BuySellScreen_ValidateCapacity and
+BuySellScreen_UpdatePrices: one click of the transfer screen's "<" moves between 1 and 26 pending
+units depending on a countdown the transfer screen neither owns nor initialises.
+
+Deviation: the original allocates the five panels with `operator new` and deletes the pad and the four
+controls in its teardown; the port frees only the pad and takes caller-owned controls. The original
+dereferences every allocation with no test, and indexes panel A with whatever `nUnk3032` holds; the
+port bounds the row index.
+
+IDB: function comments at 0x96b30 and 0x9602c; `unk_1870EC` -> `bTransferPanelsBuilt` (typed
+`unsigned __int8`); comments at 0x96C94 and 0x97550 naming the count / fill mismatch on both sides of
+it, and at 0x1870EC.
