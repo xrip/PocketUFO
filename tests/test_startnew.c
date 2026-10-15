@@ -103,7 +103,7 @@ static u8 bFlag187080;
 static NavControls nav;
 static NavCtlEnv navEnv;
 static BaseSiteRec aSiteRecs[8];    /* 0x186C40 */
-static u8 abKindTable[8];           /* 0x1864DD */
+static u8 paRegionBuildCount[8];           /* g_anRegionBuildCount @ 0x18655D */
 
 static i32 g_nSpawnCalls;
 static i32 g_nEventCalls;
@@ -271,7 +271,7 @@ static void TestStartNew(void)
     g_time.nTotalSec = 123456;
     g_time.bPaused = 1;
     memset(aSiteRecs, 0xFF, sizeof(aSiteRecs));
-    memset(abKindTable, 0, sizeof(abKindTable));
+    memset(paRegionBuildCount, 0, sizeof(paRegionBuildCount));
     memset(&nav, 0xFF, sizeof(nav));
     PtrArray_ctor(&strategList);
     for (i = 0; i < 16; ++i) {
@@ -312,7 +312,7 @@ static void TestStartNew(void)
     createEnv.nZoomMode = nZoomMode;
     createEnv.pnNextSiteId = &nCreateNextSiteId;
     createEnv.apSiteRecs = aSiteRecs;
-    createEnv.abKindTable = abKindTable;
+    createEnv.paRegionBuildCount = paRegionBuildCount;
     createEnv.pProductU32Col = prodU32;
     createEnv.pProductU16Col = prodU16;
     createEnv.pResearchCol = researchCol;

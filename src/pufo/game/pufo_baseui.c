@@ -4663,25 +4663,25 @@ void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
     }
 }
 
-/* race id minus 0x80 -> the funding slot it feeds, -1 when the race gives no bonus. The order is
+/* region id minus 0x80 -> the funding slot it feeds, -1 when the region gives no bonus. The order is
  * the compare chain's, not the slot order: 0x84 feeds slot 1 while 0x82 and 0x83 feed slots 2
  * and 3. */
-static const i8 g_anFundingSlotByRace[PUFO_RACE_ID_COUNT] = {0, 0, 2, 3, 1, 4, -1, -1, 0, -1};
+static const i8 g_anFundingSlotByRegion[PUFO_REGION_ID_COUNT] = {0, 0, 2, 3, 1, 4, -1, -1, 0, -1};
 
-/* Funding_AddRaceBonus @ 0x7debc. One radar contact of one race adds two to that race's funding
- * score, or -- for the no-race tile -- to the monthly multiplier. */
-void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId)
+/* Funding_AddRegionBonus @ 0x7debc. One radar contact in one region adds two to that region's
+ * country score, or -- for the ocean tile -- to the monthly multiplier. */
+void Funding_AddRegionBonus(i32 *anFundingSlots, i32 nRegionId)
 {
     if (anFundingSlots == NULL) {
         return;
     }
 
-    const u32 bRace = (u32)(u8)nRaceId; /* 0x7DEBC AND R0,R1,#0xFF */
+    const u32 bRegion = (u32)(u8)nRegionId; /* 0x7DEBC AND R0,R1,#0xFF */
     i32 nSlot = -1;
 
-    if (bRace >= PUFO_RACE_ID_FIRST && bRace < PUFO_RACE_ID_FIRST + PUFO_RACE_ID_COUNT) {
-        nSlot = g_anFundingSlotByRace[bRace - PUFO_RACE_ID_FIRST];
-    } else if (bRace == PUFO_RACE_ID_NONE) {
+    if (bRegion >= PUFO_REGION_ID_FIRST && bRegion < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+        nSlot = g_anFundingSlotByRegion[bRegion - PUFO_REGION_ID_FIRST];
+    } else if (bRegion == PUFO_REGION_ID_NONE) {
         nSlot = PUFO_FUNDING_MULT_SLOT; /* 0x7DF48 */
     }
 
@@ -4690,7 +4690,7 @@ void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId)
     }
 }
 
-/* The report's row order against the race-score slots. FundingScreen_DrawExtended reads the five
+/* The report's row order against the country score slots. FundingScreen_DrawExtended reads the five
  * shares 0x186580, 0x186588, 0x18658C, 0x186584, 0x186590 for rows 0..4 (0x5B804..0x5B8A4) and
  * FundingScreen_Init writes the same five in the same order (0x5C34C..0x5C38C). */
 const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT] = {0, 2, 3, 1, 4};
@@ -4742,19 +4742,19 @@ void FundingScreen_Init(FundingInitEnv *pEnv)
     const i32 nPending = *pEnv->pnPendingTotal;   /* 0x5C11C */
     i32 nSum = 0;
     for (i32 i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
-        nSum += pEnv->anRaceScore[i];             /* 0x5C100..0x5C120 */
+        nSum += pEnv->anCountryScore[i];             /* 0x5C100..0x5C120 */
     }
     const i32 nDiv = nSum + 1;                    /* 0x5C128 */
-    const i32 nBonus = (nPending / nDiv) * pEnv->anRaceScore[PUFO_FUNDING_MULT_SLOT]; /* 0x5C148 */
+    const i32 nBonus = (nPending / nDiv) * pEnv->anCountryScore[PUFO_FUNDING_MULT_SLOT]; /* 0x5C148 */
     const i32 nTotal = nPending + nBonus;         /* 0x5C154 */
     *pEnv->pnPendingTotal = nTotal;               /* 0x5C15C */
     const i32 nShare = nTotal / nDiv;             /* 0x5C164 */
 
     for (i32 i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
-        pEnv->anShare[i] = pEnv->anRaceScore[i] * nShare; /* 0x5C168..0x5C1AC */
+        pEnv->anShare[i] = pEnv->anCountryScore[i] * nShare; /* 0x5C168..0x5C1AC */
     }
 
-    /* 0x5C1BC..0x5C220: every base whose race feeds a slot adds three shares to that slot. The
+    /* 0x5C1BC..0x5C220: every base whose region feeds a slot adds three shares to that slot. The
      * count is read once as a SIGNED byte (LDRSB at 0x5C188, BLE at 0x5C1B0), so a negative count
      * runs nothing at all. */
     for (i32 b = 0; b < (i32)pEnv->nBaseCount; ++b) {
@@ -4762,11 +4762,11 @@ void FundingScreen_Init(FundingInitEnv *pEnv)
         if (pBase == NULL) {
             continue; /* deviation: the original dereferences every slot */
         }
-        const u32 bRace = pBase->bKind;           /* BaseRec.bKind @ +0x11, 0x5C1C8 LDRB #0x11 */
-        if (bRace < PUFO_RACE_ID_FIRST || bRace >= PUFO_RACE_ID_FIRST + PUFO_RACE_ID_COUNT) {
+        const u32 bRegion = pBase->bRegionId;           /* BaseRec.bRegionId @ +0x11, 0x5C1C8 LDRB #0x11 */
+        if (bRegion < PUFO_REGION_ID_FIRST || bRegion >= PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
             continue; /* 0x5C1CC..0x5C200: only 0x80..0x88 have an arm, and 0x86/0x87/0x89 none */
         }
-        const i32 nSlot = g_anFundingSlotByRace[bRace - PUFO_RACE_ID_FIRST];
+        const i32 nSlot = g_anFundingSlotByRegion[bRegion - PUFO_REGION_ID_FIRST];
         if (nSlot >= 0) {
             pEnv->anShare[nSlot] += 3 * nShare;   /* 0x5C20C, 0x5C29C, 0x5C2B8, 0x5C2D4, 0x5C2E8 */
         }
@@ -5517,8 +5517,8 @@ void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u
     }
 }
 
-/* aNewBaseCostByRace @ 0xAB488, ten dwords, indexed by (byte_159DF4 - 128). */
-const i32 g_anNewBaseCostByKind[PUFO_NEW_BASE_COST_COUNT] = {
+/* aNewBaseCostByRegion @ 0xAB488, ten dwords, indexed by (pending region id - 0x80). */
+const i32 g_anNewBaseCostByRegion[PUFO_NEW_BASE_COST_COUNT] = {
     800000, 600000, 1000000, 800000, 750000, 650000, 900000, 950000, 800000, 0
 };
 
@@ -5555,12 +5555,12 @@ i32 NewBaseScreen_TryConfirm(u8 bPlacementPending, const NewBaseConfirmEnv *pEnv
     }
 
     if (bPlacementPending == 0) {                /* 0x6153C LDRB 0x1870AC, ANDS/BNE */
-        i32 nKind = (i32)pEnv->bPendingKind - 128;
+        i32 nKind = (i32)pEnv->bPendingRegionId - 128;
         i32 nCost = 0; /* deviation: the original reads the table unguarded (0x61554..0x61568);
                         * an out-of-range kind reads adjacent image bytes, which are zero for
                         * the 0xFF sentinel the pointer handlers use. */
         if (nKind >= 0 && nKind < PUFO_NEW_BASE_COST_COUNT) {
-            nCost = g_anNewBaseCostByKind[nKind];
+            nCost = g_anNewBaseCostByRegion[nKind];
         }
         if (*pEnv->pnFunds - nCost < 0) {        /* 0x61570 SUBS, MI */
             *pEnv->pbFlag1870C8 = 1;             /* 0x61574 STRMI (dword in the original, byte
@@ -5924,7 +5924,7 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
         BaseRec *pBase;
         i32 i, nCount;
 
-        if (pEnv->bPendingKind == 0xFF) {
+        if (pEnv->bPendingRegionId == 0xFF) {
             return 0;                                   /* 0x8B4D0 */
         }
 
@@ -5934,19 +5934,19 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
             if (pBase != NULL) {
                 pBase->nUnk8  = pEnv->nPlaceX;          /* 0x8B504 */
                 pBase->nUnk12 = pEnv->nPlaceY;          /* 0x8B518 */
-                pBase->bKind = pEnv->bPendingKind;     /* 0x8B52C */
+                pBase->bRegionId = pEnv->bPendingRegionId;     /* 0x8B52C */
                 pBase->bUnk16 = 1;                      /* 0x8B53C */
             }
             if (pEnv->apSiteRecs != NULL) {
-                pEnv->apSiteRecs[0].bType = (u8)(pEnv->bPendingKind + 0x80); /* 0x8B548 */
+                pEnv->apSiteRecs[0].bType = (u8)(pEnv->bPendingRegionId + 0x80); /* 0x8B548 */
             }
 
             /* 0x8B550..0x8B56C: the label is built in the shared scratch string and then copied
              * into the facility record's name field (0x186C5A, record + 26). */
             if (pEnv->pszLabelScratch != NULL && pEnv->apSiteRecs != NULL) {
                 (void)BaseFac_FormatCostLabel(pEnv->pszLabelScratch, (size_t)pEnv->cchLabelScratch,
-                                              pEnv->pTextRecs, pEnv->bPendingKind,
-                                              pEnv->abKindTable);
+                                              pEnv->pTextRecs, pEnv->bPendingRegionId,
+                                              pEnv->paRegionBuildCount);
                 pufo_strncpy(pEnv->apSiteRecs[0].abName, pEnv->pszLabelScratch,
                              sizeof(pEnv->apSiteRecs[0].abName));
             }
@@ -6723,17 +6723,17 @@ i32 BaseFacScreen_DrawPlacementOverlay(const FacOverlayEnv *pEnv)
             return 1;
         }
 
-        if (pEnv->pTextRecs != NULL && pEnv->pszLabel != NULL && pEnv->abKindTable != NULL) {
+        if (pEnv->pTextRecs != NULL && pEnv->pszLabel != NULL && pEnv->paRegionBuildCount != NULL) {
             (void)BaseFac_FormatCostLabel(pEnv->pszLabel, pEnv->cchLabel, pEnv->pTextRecs,
-                                          pEnv->nPendingKind, pEnv->abKindTable);
+                                          pEnv->nPendingRegionId, pEnv->paRegionBuildCount);
         }
         if (pEnv->pCreateEnv != NULL) {
             (void)Base_CreateNamedEntry(pEnv->pCreateEnv, pEnv->nPlaceX, pEnv->nPlaceY,
-                                        (i32)pEnv->nPendingKind, pEnv->pszLabel);
+                                        (i32)pEnv->nPendingRegionId, pEnv->pszLabel);
         }
-        if (pEnv->paNewBaseCost != NULL && pEnv->nPendingKind >= 0x80 &&
-            (i32)(pEnv->nPendingKind - 0x80) < PUFO_NEW_BASE_COST_COUNT) {
-            *pEnv->pnFunds -= pEnv->paNewBaseCost[pEnv->nPendingKind - 0x80];
+        if (pEnv->paNewBaseCost != NULL && pEnv->nPendingRegionId >= 0x80 &&
+            (i32)(pEnv->nPendingRegionId - 0x80) < PUFO_NEW_BASE_COST_COUNT) {
+            *pEnv->pnFunds -= pEnv->paNewBaseCost[pEnv->nPendingRegionId - 0x80];
         }
         if (pEnv->pToggleEnv != NULL) {
             BaseFacScreen_Toggle(pEnv->pToggleEnv);

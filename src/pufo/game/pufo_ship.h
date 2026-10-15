@@ -24,8 +24,9 @@ typedef struct BaseRec {
     i32 nUnk8;         /* +0x08 */
     i32 nUnk12;        /* +0x0c */
     u8  bUnk16;        /* +0x10 */
-    u8  bKind;         /* +0x11 the base kind, 0x80..0x89; also the region id the funding screen
-                        * maps to one of its five countries (FundingScreen_Init 0x5C1C8) */
+    u8  bRegionId;     /* +0x11 the region the base sits in, 0x80..0x89 (PufoRegionId); the
+                        * funding screen groups it into one of its five countries
+                        * (FundingScreen_Init 0x5C1C8). Game_StartNew's starting base has 0. */
     u8  gap_18[2];
 } BaseRec;
 

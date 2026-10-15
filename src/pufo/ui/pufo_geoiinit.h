@@ -11,7 +11,7 @@
  *
  * What it does, in the original's own order:
  *
- *   1. Sets the nine save-state bytes at 0x18655D to 1 (abUnk18655D in pufo_save.h),
+ *   1. Sets the nine region counters at 0x18655D to 1 (aRegionBuildCount in pufo_save.h),
  *      runs Font_Init, clears the screen id (nGeoscapeScreen @ 0x186BC4), sets the
  *      geoscape flag byte (unk_1139FC @ Map+0x44, a STRB), and clears the two root
  *      flags at 0x18652C / 0x18652D (byte gates read by BaseFacScreen_DrawPlacementOverlay
@@ -146,7 +146,7 @@ typedef struct GeoscapeInitEnv {
 
     MissionSiteRec *paMissionSites;  /* unk_1865C0, 56 records */
 
-    u8 *abUnk18655D;   /* nine bytes @ 0x18655D, set to 1 */
+    u8 *aRegionBuildCount;   /* the nine region counters @ 0x18655D, set to 1 */
     i8 *pbSaveVersion; /* nSaveFmtVer @ 0x18655C, set to 3 */
 
     const PufoOptions *pOptions; /* the two volume applies read these */
@@ -186,7 +186,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  *      0x186548 / 0x18654C = 1; the five craft-type counters 0x18653C..40 = 0.
  *   3. 0x94620: while the SIGNED base count is above zero, each base's radar byte
  *      (0x162008) gets Base_CountEmptyFacilityCells.
- *   4. 0x94650: ten bytes at 0x18655D = 1 (the save block is nine; the tenth is not
+ *   4. 0x94650: ten bytes at 0x18655D = 1 -- the nine counters plus 0x186566 (bUiFrameStyle);
  *      serialised); the strateg count byte 0x186530 = 0.
  *   5. 0x94680: the economy dwords of the 0x1864F8 block: 0x186568..0x186590 = 0,
  *      0x186594 = 1625000, 0x186598 = 383000, 0x18659C = the zero buffer at 0x14B4C8,
@@ -238,7 +238,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  * MaybeSpawnCraft a1..a3) are replaced by the port's real state pointers. */
 /* 0x186568..0x186590, in address order: the five race funding scores, the monthly multiplier, then
  * the five per-race money shares FundingScreen_Init (0x5C0FC..0x5C144) recomputes from the scores.
- * Funding_AddRaceBonus raises one of the first five (or the multiplier, for a no-race tile). */
+ * Funding_AddRegionBonus raises one of the first five (or the multiplier, for a no-race tile). */
 #define PUFO_ECON_RACE_SCORE_FIRST 0
 #define PUFO_ECON_RACE_SCORE_LAST  4
 #define PUFO_ECON_RACE_MULT        5 /* 0x18657C, the one dword of the block the save never writes */
@@ -302,7 +302,7 @@ typedef struct StartNewEnv {
     i32   *pnNextDisplayId;           /* 0x186544 */
     i32   *pnNextSiteId;              /* 0x186548 */
     i32   *pnMissionId;               /* 0x18654C */
-    u8    *abSaveFlags;               /* 0x18655D, ten bytes set to 1 */
+    u8    *abSaveFlags;               /* 0x18655D, ten bytes set to 1 (see 4.) */
     GeoscapeEconomy *pEconomy;
     void  *pvFundTable;               /* the 0x14B4C8 zero buffer */
 

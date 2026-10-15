@@ -8,6 +8,7 @@
  * site-state table, soldier timers.
  */
 #include "game/pufo_geoscape.h"
+#include "game/pufo_baseui.h"  /* PufoRegionId, the strategy-map regions */
 #include "game/pufo_boot.h"  /* PUFO_TEXT_REC_STRIDE, for the cost label fixture */
 #include "game/pufo_save.h"  /* SmapSite, for the monthly upkeep fixture */
 #include "game/pufo_ship.h"
@@ -2300,24 +2301,24 @@ static void TestCreateNamedEntry(void)
     env.nZoomMode = 0;
     env.pnNextSiteId = &siteId;
     env.apSiteRecs = sites;
-    env.abKindTable = kindTable;
+    env.paRegionBuildCount = kindTable;
     env.pProductU32Col = prodU32;
     env.pProductU16Col = prodU16;
     env.pResearchCol = research;
 
     printf("\nBase_CreateNamedEntry @ 0x66930\n");
 
-    nRet = Base_CreateNamedEntry(&env, -6000, -6000, 1, "alpha");
+    nRet = Base_CreateNamedEntry(&env, -6000, -6000, PUFO_REGION_EUROPE, "alpha");
 
     CheckEqI32(nRet, 1560, "the return is the 0x618 residue");
     CheckEqI32(bBaseCount, 1, "the base count is raised");
     CheckEqI32(siteId, 501, "and the next site id");
 
     Check(apBases[0] != NULL, "BaseRec_Create stored a record at slot 0");
-    CheckEqI32(apBases[0]->bKind, 1, "bKind = the kind");
+    CheckEqI32(apBases[0]->bRegionId, 0x82, "bRegionId = the region");
     CheckEqI32(apBases[0]->nUnk8, -6000, "nUnk8 = x");
     CheckEqI32(apBases[0]->nUnk12, -6000, "nUnk12 = y");
-    CheckEqI32(apBases[0]->bUnk16, 8, "bUnk16 = kindTable[1] - 1");
+    CheckEqI32(apBases[0]->bUnk16, 3, "bUnk16 = the Europe counter (kindTable[2] = 4) minus 1");
     CheckEqI32(objs[0].auPerBaseVal[0], 0, "the ctor zeroed slot 0 in every object");
     CheckEqI32(objs[0].auPerBaseVal[1], 7, "and left the other slots alone");
 
@@ -2327,12 +2328,12 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(pItem->nX, -6000, "at x");
     CheckEqI32(pItem->nSiteId, 500, "with the site id (type 0 writes nSiteId)");
     CheckEqI32(pItem->nDisplayId, -1, "and nDisplayId -1");
-    CheckEqI32(pItem->bRandA, 0x81, "bRandA = 1 - 0x80 as a byte");
+    CheckEqI32(pItem->bRandA, 2, "bRandA = the region index (0x82 - 0x80)");
     CheckEqI32(pItem->bVisible, 1, "visible");
     CheckEqI32(pItem->nSeed, 5, "seeded from the counter");
     CheckEqI32(seed, 6, "and the counter advanced");
 
-    CheckEqI32(sites[0].bType, 0x81, "site bType = kind - 0x80");
+    CheckEqI32(sites[0].bType, 2, "site bType = region - 0x80");
     Check(strcmp(sites[0].abName, "alpha") == 0, "the name landed in abName");
     CheckEqI32(sites[0].nFacType, 500, "nFacType = the site id");
     CheckEqI32(sites[0].nUnk48, 0, "the three scratch dwords are cleared");
@@ -2349,8 +2350,8 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(bBaseCount, 2, "second base created");
     Check(strcmp(sites[1].abName, "0123456789012345678") == 0, "the long name is truncated to 19");
     CheckEqI32(sites[1].nUnk48, 0, "and nothing spilled into the fields below");
-    CheckEqI32(sites[1].bType, 0x80, "kind 0 gives bType 0x80");
-    CheckEqI32(apBases[1]->bUnk16, 2, "kindTable[0] - 1 for the second base");
+    CheckEqI32(sites[1].bType, 0x80, "region 0 (Game_StartNew) gives bType 0 - 0x80 as a byte");
+    CheckEqI32(apBases[1]->bUnk16, 0xFF, "and region 0 has no counter, so bUnk16 is 0 - 1");
 }
 
 static void TestBudgetHelpers(void)
@@ -2625,54 +2626,72 @@ static void TestHangarPlacement(void)
 #undef RESET
 }
 
-/* BaseFac_FormatCostLabel @ 0x6a404: the TEXTS name, the dash, the counter, and the increment. */
+/* BaseFac_FormatCostLabel @ 0x6a404: the region's own name, the dash, the region counter, and
+ * the increment. The names the shipped game prints are TEXTS[1033..1042] -- "Северная Америка"
+ * for 0x80 through "Здесь нельзя строить" for 0x89 -- so the synthetic records here sit at the
+ * same indices and are named Reg1033..Reg1042. */
 static void TestFacCostLabel(void)
 {
-    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + 17)];
-    static i8 abKind[PUFO_BASE_KIND_TABLE_LEN];
+    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + 0x8A)];
+    static i8 abRegion[PUFO_REGION_BUILD_COUNT];
     static char szLabel[64];
     const char *psz;
 
     printf("BaseFac_FormatCostLabel\n");
 
     memset(aTexts, 0, sizeof(aTexts));
-    for (i32 k = 0; k < 17; ++k) {
+    for (i32 k = 0; k < 10; ++k) {
         char szName[16];
-        (void)snprintf(szName, sizeof(szName), "Fac%d", PUFO_FAC_NAME_REC_BASE + k);
-        memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + k),
+        (void)snprintf(szName, sizeof(szName), "Reg%d", PUFO_REGION_NAME_REC_BASE + 0x80 + k);
+        memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + 0x80 + k),
                szName, strlen(szName));
     }
+    memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * PUFO_REGION_NAME_REC_BASE, "Reg905", 6);
 
-    memset(abKind, 0, sizeof(abKind));
-    psz = BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 0, abKind);
+    memset(abRegion, 0, sizeof(abRegion));
+    psz = BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_NORTH_AMERICA, abRegion);
     Check(psz == (const char *)szLabel, "the return is the label buffer it was given");
-    Check(strcmp(szLabel, "Fac905-0") == 0, "TEXTS[905 + kind], a dash, then the counter");
-    CheckEqI32(abKind[0], 1, "and the counter is incremented for next time");
+    Check(strcmp(szLabel, "Reg1033-0") == 0, "TEXTS[905 + region], a dash, then the region counter");
+    CheckEqI32(abRegion[0], 1, "and the counter is incremented for next time");
 
-    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 0, abKind);
-    Check(strcmp(szLabel, "Fac905-1") == 0, "the second call shows the incremented counter");
-    CheckEqI32(abKind[0], 2, "which is one more again");
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_NORTH_AMERICA, abRegion);
+    Check(strcmp(szLabel, "Reg1033-1") == 0, "the second call shows the incremented counter");
+    CheckEqI32(abRegion[0], 2, "which is one more again");
 
-    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 16, abKind);
-    Check(strcmp(szLabel, "Fac921-0") == 0, "kind 16 reads TEXTS[921] and its own counter slot");
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_CANADA, abRegion);
+    Check(strcmp(szLabel, "Reg1041-0") == 0,
+          "region 0x88 reads TEXTS[1041] and its own counter slot (index 8)");
+
+    /* Region 0x89 ("Здесь нельзя строить") has no counter of its own: the original's store at
+     * 0x18655D + 9 lands on 0x186566, the global IDA names bUiFrameStyle. The port's tenth byte
+     * is the same slot of the same sweep StartNew writes. */
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_NO_BUILD, abRegion);
+    Check(strcmp(szLabel, "Reg1042-0") == 0, "region 0x89 reads TEXTS[1042]");
+    CheckEqI32(abRegion[9], 1, "and its slot is the tenth byte (0x186566 in the original)");
 
     /* The counter is loaded SIGNED and printed as a signed decimal, so a negative entry gives a
      * label with two dashes. */
-    abKind[3] = -3;
-    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 3, abKind);
-    Check(strcmp(szLabel, "Fac908--3") == 0, "a negative counter prints as a negative number");
-    CheckEqI32(abKind[3], -2, "and +1 moves it towards zero");
+    abRegion[3] = -3; /* region 0x83, Asia */
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_ASIA, abRegion);
+    Check(strcmp(szLabel, "Reg1036--3") == 0, "a negative counter prints as a negative number");
+    CheckEqI32(abRegion[3], -2, "and +1 moves it towards zero");
 
     /* The increment is sign-extended before the byte store, so 127 wraps to -128. */
-    abKind[4] = 127;
-    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 4, abKind);
-    Check(strcmp(szLabel, "Fac909-127") == 0, "127 prints as 127");
-    CheckEqI32(abKind[4], -128, "and the stored +1 wraps to -128");
+    abRegion[4] = 127; /* region 0x84, Australia */
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, PUFO_REGION_AUSTRALIA, abRegion);
+    Check(strcmp(szLabel, "Reg1037-127") == 0, "127 prints as 127");
+    CheckEqI32(abRegion[4], -128, "and the stored +1 wraps to -128");
+
+    /* A value below the region range (Game_StartNew passes 0 for the starting base) has no
+     * counter: the port reads 0 and stores nothing. */
+    (void)BaseFac_FormatCostLabel(szLabel, sizeof(szLabel), aTexts, 0, abRegion);
+    Check(strcmp(szLabel, "Reg905-0") == 0, "a value below 0x80 reads TEXTS[905] and no counter");
+    CheckEqI32(abRegion[0], 2, "and the North America counter is left alone");
 
     /* Deviation: the original copies the name with no bound at all. */
     szLabel[0] = 'X';
     szLabel[1] = 'X';
-    (void)BaseFac_FormatCostLabel(szLabel, 1, aTexts, 0, abKind);
+    (void)BaseFac_FormatCostLabel(szLabel, 1, aTexts, PUFO_REGION_NORTH_AMERICA, abRegion);
     CheckEqI32(szLabel[0], 0, "a one byte buffer holds only the NUL");
     CheckEqI32(szLabel[1], 'X', "and the byte past the capacity is untouched");
 }
@@ -5054,7 +5073,7 @@ static void TestRadarOverlay(void)
 #define UPD_WASH_COLOR     0x1A4E /* pack(idx 0x1F, mid 0x4A, low 0x75) */
 #define UPD_TILE_W             16
 #define UPD_TILE_H             16
-#define UPD_RACE_LAND        0x85 /* Funding_AddRaceBonus maps 0x85 to funding slot 4 */
+#define UPD_REGION_LAND        0x85 /* Funding_AddRegionBonus maps 0x85 to funding slot 4 */
 #define UPD_RACE_SEA         0xFF /* and 0xFF to the monthly multiplier, slot 5 */
 #define UPD_FUND_SLOT_LAND      4
 #define UPD_FUND_SLOT_SEA       5
@@ -5206,7 +5225,7 @@ static void UpdFixture(i32 nStrategIdx)
     g_apUpdItems[4]->nDisplayId = 7;
     g_apUpdItems[5]->nDisplayId = 8;
 
-    memset(g_abUpdTiles, UPD_RACE_LAND, sizeof(g_abUpdTiles));
+    memset(g_abUpdTiles, UPD_REGION_LAND, sizeof(g_abUpdTiles));
     PadImage_ctor(&g_updTiles);
     g_updTiles.uWidth = UPD_TILE_W;
     g_updTiles.uHeight = UPD_TILE_H;

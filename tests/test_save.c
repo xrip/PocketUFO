@@ -704,7 +704,7 @@ static void TestBasesChunk(void)
     for (i32 i = 0; i < 4; ++i) { st.abUnk1598D8[i] = (u8)(0x50 + i); }
     st.bUnk158848 = 0x66;
     for (i32 i = 0; i < 17; ++i) { st.abFlag20[i]     = (u8)(i + 1); }
-    for (i32 i = 0; i < 9; ++i)  { st.abUnk18655D[i]  = (u8)(0x70 + i); }
+    for (i32 i = 0; i < 9; ++i)  { st.aRegionBuildCount[i]  = (u8)(0x70 + i); }
     for (i32 f = 0; f < 8; ++f) {
         snprintf(st.aFac[f].szName, 20, "Fac%02d", (int)f);
         snprintf(st.aFac[f].szUnk6, 20, "U6_%02d", (int)f);
@@ -731,7 +731,7 @@ static void TestBasesChunk(void)
         aBase[b].nUnk8 = 80 + b;
         aBase[b].nUnk12 = 90 + b;
         aBase[b].bUnk16 = (u8)(0xA0 + b);
-        aBase[b].bKind = (u8)(0xB0 + b);
+        aBase[b].bRegionId = (u8)(0xB0 + b);
         apBase[b] = &aBase[b];
     }
 
@@ -758,7 +758,7 @@ static void TestBasesChunk(void)
     Check(memcmp(got.abUnk159DBC, st.abUnk159DBC, 8) == 0, "version 3 reads all 8 bytes");
     CheckEqI32(got.bUnk158848, 0x66, "version 3 reads the 0x158848 byte");
     Check(memcmp(got.abFlag20, st.abFlag20, 17) == 0, "all 17 place-flag bytes round-trip");
-    Check(memcmp(got.abUnk18655D, st.abUnk18655D, 9) == 0, "the 9-byte block round-trips");
+    Check(memcmp(got.aRegionBuildCount, st.aRegionBuildCount, 9) == 0, "the 9-byte block round-trips");
 
     CheckEqStr(got.aFac[0].szName, "Fac00", "facility 0 name round-trips");
     CheckEqI32(got.aFac[0].nBuildState, 1000, "facility 0 build state round-trips");
@@ -774,7 +774,7 @@ static void TestBasesChunk(void)
         CheckEqI32(apRead[0]->nStoresTotal, 7, "the store total round-trips");
         CheckEqI32(apRead[0]->nUnk12, 90, "nUnk12 round-trips");
         CheckEqI32(apRead[0]->bUnk16, 0xA0, "bUnk16 round-trips");
-        CheckEqI32(apRead[0]->bKind, 0xB0, "bKind round-trips");
+        CheckEqI32(apRead[0]->bRegionId, 0xB0, "bKind round-trips");
     }
 
     /* The writer's column is the loop index, so bases 0..2 wrote columns 0..2. */

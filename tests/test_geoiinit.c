@@ -53,7 +53,7 @@ static u8              g_aFacilityGrid[480 + 144]; /* one base: type lane + occu
 static u8              g_aSiteState[8];
 static i8              g_nBaseCount;
 static MissionSiteRec  g_aSites[PUFO_MISSION_SITE_COUNT];
-static u8              g_abUnk18655D[9];
+static u8              g_aRegionBuildCount[9];
 static i8              g_nSaveVersion;
 static PufoOptions     g_options;
 static GeoscapeWorld   g_world;
@@ -142,7 +142,7 @@ static void TestNewGame(void)
     env.pbBaseCount     = &g_nBaseCount;
     env.pnUnk159DC4     = &g_nUnk159DC4;
     env.paMissionSites  = g_aSites;
-    env.abUnk18655D     = g_abUnk18655D;
+    env.aRegionBuildCount     = g_aRegionBuildCount;
     env.pbSaveVersion   = &g_nSaveVersion;
     env.pOptions        = &g_options;
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
@@ -167,7 +167,7 @@ static void TestNewGame(void)
     {
         bool bAll1 = true;
         for (i = 0; i < 9; ++i) {
-            if (g_abUnk18655D[i] != 1) { bAll1 = false; }
+            if (g_aRegionBuildCount[i] != 1) { bAll1 = false; }
         }
         Check(bAll1, "the nine 0x18655D bytes are 1");
     }
@@ -346,7 +346,7 @@ static void TestModeOne(void)
     env.pbBaseCount     = &g_nBaseCount;
     env.pnUnk159DC4     = &g_nUnk159DC4;
     env.paMissionSites  = g_aSites;
-    env.abUnk18655D     = g_abUnk18655D;
+    env.aRegionBuildCount     = g_aRegionBuildCount;
     env.pbSaveVersion   = &g_nSaveVersion;
     env.pOptions        = &g_options;
     env.pfnStartNew     = StartNewProbe;

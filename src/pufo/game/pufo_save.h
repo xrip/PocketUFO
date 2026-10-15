@@ -369,7 +369,7 @@ bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock);
  *     9  0x18655D
  *   488  8 facility records, 61 bytes each (see SaveBaseFacility)
  *  then for each base, while the count byte is > 0 as a SIGNED char:
- *    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bKind, bUnk16
+ *    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bRegionId, bUnk16
  *   2n   one u16 per object: auPerBaseVal[baseIndex] of every object record
  *
  * Two things the shape of the loop hides.
@@ -413,7 +413,7 @@ typedef struct SaveBasesState {
     u8   abUnk1598D8[4];
     u8   bUnk158848;       /* stays untouched when version < 3 */
     u8   abFlag20[PUFO_BASE_FLAG_COUNT];
-    u8   abUnk18655D[9];
+    u8   aRegionBuildCount[9]; /* 0x18655D: the nine region counters (0x80..0x88) */
     SaveBaseFacility aFac[PUFO_BASE_FAC_COUNT];
 } SaveBasesState;
 

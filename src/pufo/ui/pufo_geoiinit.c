@@ -223,10 +223,10 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
     UiPanel         *pPanel;
     i32              i;
 
-    /* 0x85814: the nine save-state bytes, then Font_Init, the screen id, the geoscape
-     * flag byte (STRB), and the two root flags. */
+    /* 0x85814: the nine region counters (0x18655D..0x186565), then Font_Init, the screen id,
+     * the geoscape flag byte (STRB), and the two root flags. */
     for (i = 0; i < 9; ++i) {
-        pEnv->abUnk18655D[i] = 1;
+        pEnv->aRegionBuildCount[i] = 1;
     }
     PufoFont_Init(pFont);
     *pEnv->pnScreenMode = 0;
@@ -531,7 +531,8 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
         pEnv->apRadarPct[b] = (u8)Base_CountEmptyFacilityCells(pEnv->abFacilityGrid, b);
     }
 
-    /* 0x94650..0x94680: ten save-state bytes, then the strateg count byte. */
+    /* 0x94650..0x94680: the nine region counters plus the byte at 0x186566 (IDA names it
+     * bUiFrameStyle), then the strateg count byte. */
     for (i = 0; i < 10; ++i) {
         pEnv->abSaveFlags[i] = 1;
     }

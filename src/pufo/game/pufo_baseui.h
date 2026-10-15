@@ -2251,9 +2251,9 @@ typedef struct ManufEngineerEnv {
 
 void ManufScreen_IncEngineers(const ManufEngineerEnv *pEnv);
 
-/* ------------------------------------------------- the buy/sell confirm, and the race funding bonus
+/* ------------------------------------------------- the buy/sell confirm, and the region funding bonus
  *
- * Evidence: BuySellScreen_ConfirmSiteAndClose @ 0x75090 (196 B), Funding_AddRaceBonus @ 0x7debc
+ * Evidence: BuySellScreen_ConfirmSiteAndClose @ 0x75090 (196 B), Funding_AddRegionBonus @ 0x7debc
  * (196 B).
  *
  * BuySellScreen_ConfirmSiteAndClose is installed twice as a click handler by BuySellScreen_Init
@@ -2296,32 +2296,54 @@ typedef struct BuySellConfirmEnv {
 void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
                                        const GeoscapeCloseHooks *pHooks);
 
-/* Funding_AddRaceBonus @ 0x7debc (196 B): one radar contact raises one funding dword by 2. It is
+/* Funding_AddRegionBonus @ 0x7debc (196 B): one radar contact raises one funding dword by 2. It is
  * called from RadarScreen_Update three times (0x60B1C, 0x60C50, 0x60CAC), each time with the value
- * Tilemap_GetAt returned for the contact's tile as the race id and unk_161F34 as a first argument it
- * never reads. The return value -- &0x1864F8 on the paths that changed something -- is overwritten
- * by the next instruction every time, so the port returns void.
+ * Tilemap_GetAt returned for the contact's tile as the region id and unk_161F34 as a first argument
+ * it never reads. The return value -- &0x1864F8 on the paths that changed something -- is
+ * overwritten by the next instruction every time, so the port returns void.
  *
  * The six dwords are 0x186568, 0x18656C, 0x186570, 0x186574, 0x186578, 0x18657C. FundingScreen_Init
  * (0x5C0FC..0x5C144) is what gives them their meaning: it sums the first five, divides the funding
  * total at 0x1865BC by that sum plus one, multiplies the result by the sixth, adds that back into
  * the total, divides the total by the sum plus one again, and scales each of the first five by that
- * last quotient into 0x186580..0x186590. So [0..4] are five race scores and [5] is a multiplier on
- * the monthly total -- and [5] is the one dword of the block the save never writes.
+ * last quotient into 0x186580..0x186590. So [0..4] are the five country scores and [5] is a
+ * multiplier on the monthly total -- and [5] is the one dword of the block the save never writes.
  *
- * The race ids are 0x80..0x89: aNewBaseCostByRace @ 0xAB488 is ten dwords indexed by (race - 0x80),
- * and 0xFF is the "no race" tile value. The mapping is NOT monotonic -- 0x84 feeds the second slot
- * while 0x82 and 0x83 feed the third and fourth -- and 0x86, 0x87 and 0x89 give no bonus at all.
- * That is what the compare chain at 0x7DEBC..0x7DF7C says, and it is reproduced as written. */
+ * The 0x80..0x89 id space is the WORLD REGION of a strategy-map tile, not a race. The proof is the
+ * globe hover (Geoscape_DrawGlobeHover 0x67914): it prints TEXTS[905 + tile] as the tile's own
+ * name, and the ten records 1033..1042 are "Северная Америка", "Южная Америка", "Европа", "Азия",
+ * "Австралия", "Африка", "Антарктика", "Арктика", "Канада", "Здесь нельзя строить". 0xFF is the
+ * ocean tile with no region behind it. The same byte is the new-base placement cost index
+ * (aNewBaseCostByRegion @ 0xAB488, ten dwords indexed by region - 0x80), the base's own region
+ * (BaseRec.bRegionId +0x11), and the funding bonus source -- the funding screen groups the ten
+ * regions into its five investing countries (TEXTS[1149] "Инвестирование стран").
+ *
+ * The region -> country mapping is NOT monotonic -- 0x84 feeds the second slot while 0x82 and 0x83
+ * feed the third and fourth -- and 0x86, 0x87 and 0x89 give no bonus at all. That is what the
+ * compare chain at 0x7DEBC..0x7DF7C says, and it is reproduced as written. */
 #define PUFO_FUNDING_SLOT_COUNT 6
-#define PUFO_FUNDING_RACE_FIRST 5  /* [0..4] are the five race scores */
+#define PUFO_FUNDING_COUNTRY_FIRST 5  /* [0..4] are the five country scores */
 #define PUFO_FUNDING_MULT_SLOT  5  /* [5] @ 0x18657C scales the monthly total */
 #define PUFO_FUNDING_BONUS      2  /* every hit adds exactly two */
-#define PUFO_RACE_ID_FIRST      0x80
-#define PUFO_RACE_ID_COUNT      10 /* aNewBaseCostByRace @ 0xAB488 has one entry per id */
-#define PUFO_RACE_ID_NONE       0xFF /* the tile value with no race behind it */
+#define PUFO_REGION_ID_FIRST      0x80
+#define PUFO_REGION_ID_COUNT      10 /* aNewBaseCostByRegion @ 0xAB488 has one entry per region */
+#define PUFO_REGION_ID_NONE       0xFF /* the ocean tile, with no region behind it */
 
-void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId);
+/* The ten strategy-map regions, TEXTS[1033 + (region - 0x80)]. */
+typedef enum PufoRegionId {
+    PUFO_REGION_NORTH_AMERICA = 0x80, /* TEXTS[1033] "Северная Америка" */
+    PUFO_REGION_SOUTH_AMERICA = 0x81, /* TEXTS[1034] "Южная Америка" */
+    PUFO_REGION_EUROPE        = 0x82, /* TEXTS[1035] "Европа" */
+    PUFO_REGION_ASIA          = 0x83, /* TEXTS[1036] "Азия" */
+    PUFO_REGION_AUSTRALIA     = 0x84, /* TEXTS[1037] "Австралия" */
+    PUFO_REGION_AFRICA        = 0x85, /* TEXTS[1038] "Африка" */
+    PUFO_REGION_ANTARCTICA    = 0x86, /* TEXTS[1039] "Антарктика", no funding arm */
+    PUFO_REGION_ARCTIC        = 0x87, /* TEXTS[1040] "Арктика", no funding arm */
+    PUFO_REGION_CANADA        = 0x88, /* TEXTS[1041] "Канада", funds with North America */
+    PUFO_REGION_NO_BUILD      = 0x89  /* TEXTS[1042] "Здесь нельзя строить" */
+} PufoRegionId;
+
+void Funding_AddRegionBonus(i32 *anFundingSlots, i32 nRegionId);
 
 /* ResearchScreen_StartSelected @ 0x73240 (232 B): the research screen's start button. It clears
  * the detail flag, plays sample 17, and then -- only if the selected topic's wProgress is zero AND
@@ -2398,7 +2420,7 @@ i32 Funding_ScoreToBarLevel(i32 nRow, i32 nDirection);
  *
  * The funding block is five countries, and the monthly report draws them in this order -- lang.dat
  * TEXTS[1302..1306] are the five row titles: "США", "Евро Альянс", "Азиатский Альянс",
- * "Австралия", "Африка". Each row feeds on one of the five race SCORE slots, and the row order is
+ * "Австралия", "Африка". Each row feeds on one of the five country SCORE slots, and the row order is
  * NOT the slot order: the row -> slot permutation is 0, 2, 3, 1, 4. Both halves agree on it -- the
  * five Funding_DeltaToArrow calls in FundingScreen_DrawExtended (0x5B804, 0x5B82C, 0x5B854, 0x5B87C,
  * 0x5B8A4) read shares 0x186580, 0x186588, 0x18658C, 0x186584, 0x186590 in row order, and the five
@@ -2429,13 +2451,13 @@ extern const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT]; /* {0, 2, 3, 1, 4} */
  *    result, not the raw allocation), PadImage_Load("funding", 28), origin (0, 0); then the shared
  *    close control unk_186B00 to x 224, y 1 with FundingScreen_ExitThunk.
  *
- * 2. The money. With P the pending total at unk_1865BC and S the sum of the five race scores:
+ * 2. The money. With P the pending total at unk_1865BC and S the sum of the five country scores:
  *    bonus = (P / (S + 1)) * g_nFundMult, P becomes P + bonus, and the per-score share is
  *    (P + bonus) / (S + 1). Two _rt_sdiv calls (0x5C13C, 0x5C164), both with the divisor in R0.
  *    Each score times that share goes to 0x186580..0x186590.
  *
- * 3. The bases. For each of the nBaseCount bases, the race byte BaseRec.bRaceId (+0x11) selects a
- *    slot through the same table Funding_AddRaceBonus uses, and a hit adds 3 * share to that slot
+ * 3. The bases. For each of the nBaseCount bases, the region byte BaseRec.bRegionId (+0x11) selects
+ *    slot through the same table Funding_AddRegionBonus uses, and a hit adds 3 * share to that slot
  *    (0x5C1BC..0x5C220). The count is a SIGNED byte (LDRSB at 0x5C188, BLE at 0x5C1B0), so a
  *    negative count runs nothing.
  *
@@ -2461,7 +2483,7 @@ typedef struct FundingInitEnv {
     PadImage         **ppPadSlot;      /* unk_1595DC, the "funding" pad */
     UiControl         *pCloseCtl;      /* unk_186B00 */
     void (*pfnCloseClick)(void);       /* FundingScreen_ExitThunk @ 0x5c078 */
-    i32               anRaceScore[6];  /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult */
+    i32               anCountryScore[6];  /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult */
     i32              *pnPendingTotal;  /* unk_1865BC */
     i32               anShare[PUFO_FUND_ROW_COUNT];    /* 0x186580..0x186590, slot-indexed */
     i32               anBaseline[PUFO_FUND_ROW_COUNT]; /* 0x1595F0..0x159600, row-indexed */
@@ -2546,21 +2568,21 @@ void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u
  *
  * TryConfirm (ARM 0x6152C..0x61590): Sound_Play(17, 4). If the placement-pending byte at
  * 0x1870AC is non-zero the funds test is skipped entirely and Geoscape_OnMapClick runs.
- * Otherwise cost = aNewBaseCostByRace[byte_159DF4 - 128] (the ARM composes it as
- * `ADD R3, R0, R3, LSL#2` + `LDR R3,[R3,#-0x200]` at 0x61554..0x61568, so the byte is
- * 128+kind and the table index is kind), and funds (unk_1598D8) - cost >= 0 also runs
+ * Otherwise cost = aNewBaseCostByRegion[byte_159DF4 - 128] (the ARM composes it as
+ * `ADD R3, R0, R3, LSL#2` + `LDR R3,[R3,#-0x200]` at 0x61554..0x61568, so the byte is the region
+ * id 0x80..0x89 and the table index is region - 0x80), and funds (unk_1598D8) - cost >= 0 also runs
  * OnMapClick. On shortfall it stores 1 into 0x1870C8 and 0 into dword_1870B4 and returns
  * dword_1870B4 (0); OnMapClick's result is returned otherwise.
  *
  * Width notes the source only shows in ARM: 0x1870AC is read as a BYTE (LDRB at 0x6153C);
  * the failure store into 0x1870C8 is a DWORD store (STRMI at 0x61574) while every reader in
  * the image loads it as a byte, so the port stores a byte (deviation, unobservable).
- * byte_159DF4 is 128+kind (0xFF marks "no pending placement" in the pointer handlers); the
- * original indexes the 10-entry cost table unguarded, so a kind outside 0..9 reads adjacent
- * image bytes. The shipped paths reach kinds 0..9 only; the port treats out-of-range as cost 0
- * (deviation, documented in pufo_baseui.c). */
+ * byte_159DF4 is the pending region id 0x80..0x89 (0xFF marks "no pending placement" in the pointer
+ * handlers); the original indexes the 10-entry cost table unguarded, so a region outside 0x80..0x89
+ * reads adjacent image bytes. The shipped paths reach the ten regions only; the port treats
+ * out-of-range as cost 0 (deviation, documented in pufo_baseui.c). */
 #define PUFO_NEW_BASE_COST_COUNT 10
-extern const i32 g_anNewBaseCostByKind[PUFO_NEW_BASE_COST_COUNT]; /* aNewBaseCostByRace @ 0xAB488 */
+extern const i32 g_anNewBaseCostByRegion[PUFO_NEW_BASE_COST_COUNT]; /* aNewBaseCostByRegion @ 0xAB488 */
 
 typedef struct NewBaseOpenEnv {
     void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
@@ -2580,7 +2602,7 @@ void NewBaseScreen_Open(GeoscapeScreenState *pState, const NewBaseOpenEnv *pEnv)
 
 typedef struct NewBaseConfirmEnv {
     void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
-    u8 bPendingKind;      /* byte_159DF4: 0xFF = none, else 128+kind */
+    u8 bPendingRegionId;      /* byte_159DF4: 0xFF = none, else the region id 0x80..0x89 */
     i32 *pnFunds;         /* unk_1598D8 */
     u8 *pbFlag1870C8;     /* 0x1870C8, the GeoscapeState low-supply flag */
     i32 *pnFlag1870B4;    /* dword_1870B4 */
@@ -3007,11 +3029,12 @@ i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv);
  *     {0,1,6,7} is the 2x2 footprint within each. buildDays is cleared separately at +0, +6, +1
  *     and +7 - the same four cells of the days lane.
  *
- * Screen 2 - the pending facility, gated on the pending kind (0x159DF4) not being 0xFF:
+ * Screen 2 - the pending facility, gated on the pending region (0x159DF4) not being 0xFF:
  *
  *   - With bBaseFacConfirm (0x1870AC) set, the pending placement is committed: apBases[0] gets
- *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bKind = the kind and
- *     bUnk16 = 1; the aBaseFacilities record gets bType = kind + 0x80 and its abName field (the
+ *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bRegionId = the region and
+ *     bUnk16 = 1; the aBaseFacilities record gets bType = region + 0x80 -- the byte wraps, so the
+ *     stored value is the region index 0..9 -- and its abName field (the
  *     label at 0x186C5A) gets the string BaseFac_FormatCostLabel builds. Then the strateg list is
  *     searched for the entry whose nSiteId equals apBases[0]->bUnk4 and that entry's nX / nY are
  *     set to the pending coordinates. The screen id becomes 1, bBaseFacConfirm and bBaseFacDone
@@ -3032,7 +3055,7 @@ typedef struct MapClickEnv {
     i32   nTapY;                   /* nSmapTapY @ 0x186B80 */
     const HangarPlaceEnv *pHangar; /* the placement test's own env (grid, base, rosters) */
 
-    u8   bPendingKind;             /* 0x159DF4, the facility kind awaiting placement */
+    u8   bPendingRegionId;             /* 0x159DF4, the region awaiting placement */
     u8   *pbConfirm;               /* bBaseFacConfirm @ 0x1870AC */
     u8   *pbFacDone;               /* bBaseFacDone @ 0x187078 */
     i32   nPlaceX;                 /* 0x159D94 */
@@ -3041,7 +3064,7 @@ typedef struct MapClickEnv {
     BaseSiteRec *apSiteRecs;       /* 0x186C40, eight 64-byte records */
     PtrArray *pStrategList;        /* strategList @ 0x186534 */
     const u8 *pTextRecs;           /* TEXTS, for the cost label */
-    i8   *abKindTable;             /* abBaseKindTable @ 0x1864DD */
+    i8   *paRegionBuildCount;             /* g_anRegionBuildCount @ 0x18655D, indexed by region - 0x80 */
     char *pszLabelScratch;         /* szRadarMsg @ 0x186B10, where the label is built */
     i32   cchLabelScratch;
     i8   *pbBaseCount;             /* 0x159D80, signed */
@@ -3346,13 +3369,13 @@ i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv);
  *    `aBaseFacFlags[kind].uCost`; `nFunds - cost < 0` sets the shortfall dword and stops. Otherwise
  *    `BaseFac_SetCellBuildState(grid, nSelectedBaseIdx, bFlag21, tapX, tapY, 0)` writes the facility
  *    and nFunds drops by the cost. In new-base mode the label is BaseFac_FormatCostLabel for
- *    bPendingBaseKind, Base_CreateNamedEntry runs at the pending coordinates,
- *    aNewBaseCostByRace[kind - 0x80] comes off nFunds, BaseFacScreen_Toggle closes the dialog, and
- *    bFacPreviewActive / nGeoscapeScreen = 1 / new-base mode / bFacPreviewOk are cleared.
+ *    the pending region, Base_CreateNamedEntry runs at the pending coordinates,
+ *    aNewBaseCostByRegion[region - 0x80] comes off nFunds, BaseFacScreen_Toggle closes the dialog,
+ *    and bFacPreviewActive / nGeoscapeScreen = 1 / new-base mode / bFacPreviewOk are cleared.
  *
  * Deviations: the port returns 1 when it committed and 0 otherwise where the original returns
- * register residue; it bounds the panel selection, the kind index and the pending kind where the
- * original indexes anLineAux, aBaseFacFlags and aNewBaseCostByRace unchecked; and it scores only a
+ * register residue; it bounds the panel selection, the panel index and the pending region where the
+ * original indexes anLineAux, aBaseFacFlags and aNewBaseCostByRegion unchecked; and it scores only a
  * tap inside 0..5, which is every tap the in-bounds cursor test can produce. */
 #define PUFO_FAC_OVERLAY_SPAN 32 /* the byte the original uses for "this facility is 2x2" */
 
@@ -3375,8 +3398,8 @@ typedef struct FacOverlayEnv {
     u8 *pbPreviewOk;                /* unk_18652D */
     u8 *pbOverlayShown;             /* unk_15888C */
     u8 *pbNewBaseMode;              /* byte_187074[4] */
-    u8 nPendingKind;                /* bPendingBaseKind @ 0x159DF4 */
-    const i32 *paNewBaseCost;       /* g_anNewBaseCostByKind, indexed by nPendingKind - 0x80 */
+    u8 nPendingRegionId;                /* byte_159DF4, the pending region id */
+    const i32 *paNewBaseCost;       /* g_anNewBaseCostByRegion, indexed by nPendingRegionId - 0x80 */
     u8 nPhaseByte;                  /* Map + 0x37, the cycling outline colour */
     u32 *pdwShortfall;              /* byte_1870C8, written as a dword */
     i32 *pnResidue;                 /* dword_1870B4[0] */
@@ -3384,7 +3407,7 @@ typedef struct FacOverlayEnv {
     const u8 *pTextRecs;            /* the TEXTS blob, for the new-base label */
     char *pszLabel;                 /* szRadarMsg @ 0x186B10 */
     size_t cchLabel;
-    i8 *abKindTable;                /* abBaseKindTable @ 0x1864DD */
+    i8 *paRegionBuildCount;                /* g_anRegionBuildCount @ 0x18655D, indexed by region - 0x80 */
     const BaseCreateEnv *pCreateEnv;/* Base_CreateNamedEntry's env */
     const BaseFacToggleEnv *pToggleEnv; /* the closing BaseFacScreen_Toggle */
     i32 nPlaceX;                    /* unk_159D94 */

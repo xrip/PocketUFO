@@ -863,8 +863,10 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
 /* ------------------------------------------------- creating a new base entry
  *
  * Evidence: Base_CreateNamedEntry @ 0x66930. Two callers: Game_StartNew @ 0x94964 with
- * (-6000, -6000, 0, "new") for the starting base, and BaseFacScreen_DrawPlacementOverlay @
- * 0x59AFC with the pending placement coordinates (Map+0x62C / +0x630) and nFacType (0x159DF4).
+ * (-6000, -6000, 0, "new") for the starting base -- region 0, which is not one of the ten
+ * regions and is the original's own quirk, see step 5 -- and BaseFacScreen_DrawPlacementOverlay @
+ * 0x59AFC with the pending placement coordinates (Map+0x62C / +0x630) and the pending region
+ * (byte_159DF4).
  *
  * What it does, in the original's order:
  *   1. BaseRec_Create: a new 20-byte BaseRec at apBases[nBaseCount] (the count is NOT raised
@@ -872,14 +874,18 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
  *      the port guards (deviation).
  *   2. StrategList_AddItem: a type-0, inactive, invisible-flag-1 site entry at (x, y) with
  *      nId = the next site id (dword_186558).
- *   3. The strateg entry at index nBaseCount gets bRandA = nKind - 0x80 (0x669B4; Hex-Rays
+ *   3. The strateg entry at index nBaseCount gets bRandA = nRegionId - 0x80 (0x669B4; Hex-Rays
  *      renders the SUB as + 0x80, the ARM is `SUB R11, R10, #0x80`).
  *   4. The BaseSiteRec for this base (0x186C40 + 64*nBaseCount): abName = the name copied to its
  *      NUL with no bound (0x669D0 - ORIGINAL BUG, the field is 20 bytes and the overflow tail
- *      lands in the four dwords and past the record), bType = nKind - 0x80, nUnk48 /
+ *      lands in the four dwords and past the record), bType = nRegionId - 0x80, nUnk48 /
  *      nDemolishState / nBuildState = 0, nFacType = the site id.
- *   5. The BaseRec: bKind = nKind, nUnk8 = x, nUnk12 = y, bUnk16 = abKindTable[nKind] - 1,
- *      where abKindTable is the runtime block at 0x1864DD (all zero in the image).
+ *   5. The BaseRec: bRegionId = nRegionId, nUnk8 = x, nUnk12 = y, and bUnk16 is the region
+ *      counter minus one. The load is `0x1864DD + region` (0x66A64 LDRSB [R3,#-0x1B] off a
+ *      0x1864F8 + region base), which for the ten regions 0x80..0x89 is the region counter table
+ *      g_anRegionBuildCount @ 0x18655D. Game_StartNew passes region 0, so the starting base reads
+ *      the byte at 0x1864DD itself -- the tail of szScratch186488, zero in the shipped image --
+ *      and gets bUnk16 = -1. The port reads 0 for any region below 0x80 (deviation, same value).
  *   6. When Map_nObjectCount is non-zero, clear this base's economy columns: the first
  *      nObjectCount u16 of the research column (144 entries per base, so 149 objects spill five
  *      into the next base - reproduced), and entries [i] and [i + 2176] of the u16 product
@@ -900,13 +906,13 @@ typedef struct BaseCreateEnv {
     i32 nZoomMode;              /* 0x1863E8; type 0 does not scale coordinates */
     i32 *pnNextSiteId;          /* dword_186558 */
     BaseSiteRec *apSiteRecs;    /* 0x186C40, eight 64-byte records */
-    const u8 *abKindTable;      /* 0x1864DD, indexed by nKind */
+    const u8 *paRegionBuildCount; /* g_anRegionBuildCount @ 0x18655D, indexed by region - 0x80 */
     u32 *pProductU32Col;        /* 0x159E9C + 800 * nBaseCount */
     u16 *pProductU16Col;        /* 0x15D09C + 400 * nBaseCount */
     u16 *pResearchCol;          /* 0x16022C + 288 * nBaseCount */
 } BaseCreateEnv;
 
-i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, const char *pszName);
+i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nRegionId, const char *pszName);
 
 /* ------------------------------------------------- can this cell host a hangar
  *
@@ -973,37 +979,42 @@ typedef struct HangarPlaceEnv {
 
 i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY);
 
-/* ------------------------------------------------- the facility label of the build dialog
+/* ------------------------------------------------- the new-base label of the build dialog
  *
  * Evidence: BaseFac_FormatCostLabel @ 0x6a404. Two callers: BaseFacScreen_DrawPlacementOverlay @
  * 0x59AE4, and Geoscape_OnMapClick @ 0x8B550, which copies the result into the aBaseFacilities
- * record's label field (0x186C5A, that is record + 26) after storing kind + 0x80 at record + 0.
+ * record's label field (0x186C5A, that is record + 26) after storing region + 0x80 at record + 0
+ * (the byte wraps, so the stored bType is the region index 0..9).
  *
- * It builds `TEXTS[905 + nFacType] name` + "-" + decimal(abBaseKindTable[nFacType]) into the
- * shared scratch string at 0x186B10 (szRadarMsg, dword_186B08 + 8 -- the same buffer the radar
- * screen, Soldier_FormatDisplayName and Ship_FormatDisplayName write), and then INCREMENTS
- * abBaseKindTable[nFacType]. So the number the label shows is the table's value before the call,
- * and calling it twice for the same kind shows one more the second time.
+ * Its second argument is the PENDING REGION id 0x80..0x89 (byte_159DF4), not a facility kind --
+ * both callers pass byte_159DF4 straight through. It builds `TEXTS[905 + region]` + "-" +
+ * decimal(g_anRegionBuildCount[region - 0x80]) into the shared scratch string at 0x186B10
+ * (szRadarMsg, dword_186B08 + 8 -- the same buffer the radar screen, Soldier_FormatDisplayName and
+ * Ship_FormatDisplayName write), and then INCREMENTS that counter. So the number the label shows
+ * is the counter's value before the call, and calling it twice for the same region shows one more
+ * the second time. TEXTS[905 + 0x80] = TEXTS[1033] is "Северная Америка", so a base placed in
+ * North America is named "Северная Америка-0".
  *
- * abBaseKindTable @ 0x1864DD is a 15-byte runtime table, all zero in the image, and it has no
- * xref in the IDB at all: every access is computed as 0x1864F8 + nFacType - 0x1B for the load
- * (0x6A46C) and 0x1864F8 + 0x65 + nFacType - 0x80 for the store (0x6A49C), which is why Hex-Rays
- * renders it as an expression on the unrelated pObj global instead. It is the same table
- * Base_CreateNamedEntry reads for BaseRec.bUnk16.
+ * g_anRegionBuildCount @ 0x18655D is a 10-byte runtime table, one signed counter per region, all
+ * zero in the image, and it has no xref in the IDB at all: every access is computed as
+ * 0x1864F8 + region - 0x1B for the load (0x6A46C, i.e. 0x1864DD + region) and 0x1864F8 + 0x65 +
+ * region - 0x80 for the store (0x6A49C, i.e. 0x18655D + region - 0x80) -- the same byte either
+ * way, which is why Hex-Rays renders it as an expression on the unrelated pObj global instead. It
+ * is the same table Base_CreateNamedEntry reads for BaseRec.bUnk16, the same one InitUI seeds with
+ * nine 1s and StartNew seeds with ten, and the same nine bytes the save writes at 0x3F304 (region
+ * 0x89's tenth counter is not saved).
  *
- * The value is loaded SIGNED (LDRSB) and the increment is sign-extended before the byte store
- * (0x6A490..0x6A49C), so 127 wraps to -128. Facility kinds run 0..16 while the table has 15
- * slots, so kinds 15 and 16 read and write past it into the pSmapPadZoom2 / pSmapPadZoom1
- * globals -- recorded in bugs.tsv.
+ * The counter is loaded SIGNED (LDRSB) and the increment is sign-extended before the byte store
+ * (0x6A490..0x6A49C), so 127 wraps to -128.
  *
  * The original's first argument (the grid pointer) is never read: R0 is replaced by the label
  * buffer before the first strcat (0x6A458). The port drops it. The name copy is bounded here
  * (pufo_strncpy) where the original copies with no bound at all. */
-#define PUFO_FAC_NAME_REC_BASE   905 /* TEXTS record of facility kind 0 */
-#define PUFO_BASE_KIND_TABLE_LEN 15  /* abBaseKindTable @ 0x1864DD */
+#define PUFO_REGION_NAME_REC_BASE   905 /* TEXTS[905 + region] is the region's own name */
+#define PUFO_REGION_BUILD_COUNT     10  /* g_anRegionBuildCount @ 0x18655D, one per region */
 
 char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRecs,
-                              u8 nFacType, i8 *abKindTable);
+                              u8 nRegionId, i8 *paRegionBuildCount);
 
 /* --- RadarScreen_BlitOverlay @ 0x5d6d4 (16 B) ---
  *
@@ -1863,11 +1874,11 @@ void RadarScreen_DrawOverlay(const RadarOverlayEnv *pEnv);
  *     40 <= nPct < 70 -- the contact may slip away. RadarScreen_RollDetection(2) first, then
  *     the escape needs all three of: !bRadarTraceLost, the contact's tile is NOT the 255
  *     ocean tile, and Game_RandU16(4) == 0. On escape: nRadarMsgTimer = 0, TEXTS[1601]
- *     "МАК приземлился", Funding_AddRaceBonus with that tile, item->nType = 4,
+ *     "МАК приземлился", Funding_AddRegionBonus with that tile, item->nType = 4,
  *     item->nTimer = 7200, bRadarInterceptDone = 1.
  *     nPct < 40 (recomputed at 0x60B70 from a re-read nInterceptTargetHp) -- the contact is
  *     finished: nRadarMsgTimer = 0, TEXTS[1602] "МАК разбился", bRadarInterceptDone = 1 set
- *     BEFORE the tile test, then Funding_AddRaceBonus with the tile and either
+ *     BEFORE the tile test, then Funding_AddRegionBonus with the tile and either
  *     StrategList_RemoveAt (tile == 255, it went into the sea) or nType = 4 plus
  *     nTimer = 7200 (it came down on land).
  *

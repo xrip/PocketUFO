@@ -51,7 +51,10 @@ typedef struct PufoWorldState {
     i32     nNextSiteId;                        /* 0x186548 */
     i32     nMissionId;                         /* 0x18654C */
     i32     nCreateNextSiteId;                  /* dword_186558 */
-    u8      abFlags18655D[10];                  /* InitUI sets nine, StartNew sets ten */
+    /* g_anRegionBuildCount @ 0x18655D: one signed counter per region 0x80..0x88, and the tenth
+     * byte is 0x186566 (IDA's bUiFrameStyle), which StartNew's ten-byte sweep also sets. InitUI
+     * writes the nine counters only; the save writes the nine only (0x3F304). */
+    u8      aRegionBuildCount[10];
     i8      nSaveVersion;                       /* nSaveFmtVer @ 0x18655C */
 
     /* The menu/load-path flags LoadGame writes through its env. */
@@ -81,10 +84,6 @@ typedef struct PufoWorldState {
     PtrArray  strategList;                      /* 0x186534 */
     i32       nStrategSeed;                     /* 0x18640C */
     BaseSiteRec aSiteRecs[PUFO_FAC_BASE_COUNT]; /* 0x186C40 */
-    /* abBaseKindTable @ 0x1864DD. The original's table is 15 bytes, so facility kinds 15 and 16
-     * read and write past it into the pSmapPadZoom2 / pSmapPadZoom1 globals (bugs.tsv). The port
-     * sizes it for all 17 kinds so the index is always in range. */
-    u8        abKindTable[17];                  /* 0x1864DD */
 
     /* Geoscape UI and viewport. */
     GeoscapeUiState   ui;
@@ -124,7 +123,7 @@ typedef struct PufoWorldState {
     u8           bPlaceActive;          /* bBasePlaceActive @ 0x1870BC */
     u8           bPlaceFail;            /* bBasePlaceFail @ 0x1870B8 */
     u8           bFacDone;              /* bBaseFacDone @ 0x187078 */
-    u8           bPendingFacilityKind;  /* bPendingBaseKind @ 0x159DF4: 0xFF is the "nothing pending"
+    u8           bPendingRegionId;  /* bPendingBaseKind @ 0x159DF4: 0xFF is the "nothing pending"
                                          * sentinel, but the image's .data value is 0 and the port
                                          * keeps it (see World_Init) */
     i32          nPlaceX;               /* 0x159D94 */

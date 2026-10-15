@@ -1521,7 +1521,31 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `g_nFundShare0..4`, `g_nFundBar0..4`, `g_nFundArrow0..4`, `g_nFundBase0..4`.
   **Recorded, not changed:** the 0x80..0x89 space is a region/country id in this evidence (the screen's
   own labels say countries), so the port's `PUFO_RACE_ID_*` naming is misleading. Renaming it touches
-  the radar and the base-creation chain and is left as its own unit.
+  the radar and the base-creation chain and is left as its own unit. → done in part 55.
+
+- [x] part 55, the naming fix that unit 54 left open: the 0x80..0x89 id space is a **world region**.
+  `Geoscape_DrawGlobeHover` prints `TEXTS[905 + tile]` as the tile's own name (0x67914) and the ten
+  records TEXTS[1033..1042] name them: Северная Америка, Южная Америка, Европа, Азия, Австралия,
+  Африка, Антарктика, Арктика, Канада, "Здесь нельзя строить". 0xFF is the ocean tile. Renamed in the
+  port and in the IDB: `Funding_AddRaceBonus` → `Funding_AddRegionBonus`, `aNewBaseCostByRace` →
+  `aNewBaseCostByRegion`, `bPendingBaseKind` → `bPendingRegionId`, `BaseRec.bKind` → `bRegionId`,
+  `PUFO_RACE_ID_*` → `PUFO_REGION_ID_*`, plus a `PufoRegionId` enum on both sides.
+  **The counter table was misread.** `BaseFac_FormatCostLabel` and `Base_CreateNamedEntry` load
+  `0x1864DD + region` (0x6A46C, 0x66A64) and store at `0x18655D + region - 0x80` (0x6A488/0x6A4A0) —
+  the same byte. The table is `g_anRegionBuildCount @ 0x18655D`, nine signed counters for regions
+  0x80..0x88 (created in the IDB); 0x1864DD is only the −0x80 bias anchor. The label is the region's
+  name plus its counter, e.g. "Северная Америка-0".
+  **Two wrong records corrected.** The bugs.tsv row claiming kinds 15/16 overflow a 15-byte
+  `abBaseKindTable` was a consequence of reading the index as a facility kind — removed. The port's
+  17-byte `abKindTable` buffer, indexed by the raw region id, was an out-of-bounds read for every
+  real region (index 128..137); it is replaced by the nine-counter model with `RegionBuildCountAt()`
+  guarding the range, and the world's duplicate `abKindTable[17]` / `abFlags18655D[10]` pair is now
+  one buffer.
+  **The starting base's quirk kept.** `Game_StartNew` passes region 0 (`MOV R3,#0` at 0x94950), so the
+  original reads the byte at 0x1864DD — the tail of `szScratch186488` — for `BaseRec.bUnk16`; the port
+  reads 0 there, the same value in the shipped image. Region 0x89 has no counter of its own: the
+  original's store lands on 0x186566 (`bUiFrameStyle`), which is also the tenth byte StartNew sweeps.
+  4 more checks (11297 total), 5 renames on record (298).
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -1793,6 +1817,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the intercept shot animation (`RadarScreen_DrawOverlay`, the per-weapon flight gate and step, the laser that never resolves past 2, the runaway -2 ammo counter found) | 56/56 (Release) | 11141 | 877/1103 (79.5%) | 391968/598792 (65.5%) | 39 checked, 0 mismatched |
 | the radar frame driver (`RadarScreen_Update`, the same-frame-only damage ladder, the unreachable `Ship_ClearInterceptByStrategIdx` found) | 56/56 (Release) | 11223 | 878/1103 (79.6%) | 395772/598792 (66.1%) | 39 checked, 0 mismatched |
 | the monthly funding report (`FundingScreen_Init`, `FundingScreen_OpenMonthly`, the month-0 upkeep trap, 23 funding globals named) | 56/56 (Release) | 11293 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
+| the region naming fix (`PufoRegionId`, `g_anRegionBuildCount @ 0x18655D` found, the false 15-byte-overflow bug row removed, the port's out-of-bounds counter index fixed) | 56/56 (Release) | 11297 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

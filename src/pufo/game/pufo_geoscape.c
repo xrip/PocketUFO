@@ -4,7 +4,7 @@
 #include <stdlib.h>            /* malloc/free, RadarScreen_Init's pads and controls */
 #include <stddef.h>            /* size_t, the bounded text copy */
 #include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
-#include "game/pufo_baseui.h"  /* Funding_AddRaceBonus and PUFO_RACE_ID_NONE, the radar contact bonus */
+#include "game/pufo_baseui.h"  /* Funding_AddRegionBonus and PUFO_REGION_ID_NONE, the radar contact bonus */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
 #include "game/pufo_font.h"    /* Font_DrawGlyph, g_fontSys.nBaseBitsBase, Text_DrawString */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
@@ -1462,7 +1462,21 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
 
 /* ------------------------------------------------------------ creating a new base entry */
 
-i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, const char *pszName)
+/* The region counter load (0x66A64 and 0x6A46C): the original computes 0x1864DD + region, which
+ * for the ten regions 0x80..0x89 is g_anRegionBuildCount @ 0x18655D -- nine counters for
+ * 0x80..0x88, and region 0x89's slot is the byte at 0x186566 that IDA names bUiFrameStyle (the
+ * same byte StartNew's ten-byte sweep at 0x94650 writes). A region below 0x80 -- Game_StartNew
+ * passes 0 for the starting base -- reads the byte at 0x1864DD, the tail of szScratch186488; the
+ * port reads 0 there (deviation: the shipped image holds 0 at that address, so the value matches). */
+static i8 RegionBuildCountAt(const u8 *paRegionBuildCount, i32 nRegionId)
+{
+    if (paRegionBuildCount == NULL || nRegionId < PUFO_REGION_ID_FIRST) {
+        return 0;
+    }
+    return (i8)paRegionBuildCount[nRegionId - PUFO_REGION_ID_FIRST];
+}
+
+i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nRegionId, const char *pszName)
 {
     i32 nBaseCount = (i32)*pEnv->pbBaseCount;
     BaseRec *pBase;
@@ -1475,11 +1489,11 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, co
     (void)StrategList_AddItem(pEnv->pStrategList, pEnv->pnSeed, pEnv->nZoomMode, 0, 0, 0,
                               x, y, *pEnv->pnNextSiteId, 1);
 
-    /* 0x669B4: the strateg entry this base owns gets bRandA. The ARM is SUB R11, R10, #0x80;
-     * Hex-Rays renders it as + 0x80. */
+    /* 0x669B4: the strateg entry this base owns gets the region index. The ARM is
+     * SUB R11, R10, #0x80; Hex-Rays renders it as + 0x80. */
     pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, nBaseCount);
     if (pItem != NULL) {
-        pItem->bRandA = (u8)(nKind - 0x80);
+        pItem->bRandA = (u8)(nRegionId - 0x80);
     }
 
     pSite = &pEnv->apSiteRecs[nBaseCount];
@@ -1501,10 +1515,10 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, co
     pBase = (pEnv->apBases != NULL && nBaseCount >= 0) ? pEnv->apBases[nBaseCount] : NULL;
 
     if (pBase != NULL) {
-        pBase->bKind = (u8)nKind;
+        pBase->bRegionId = (u8)nRegionId;
     }
 
-    pSite->bType = (u8)(nKind - 0x80);
+    pSite->bType = (u8)(nRegionId - 0x80);
     pSite->nUnk48 = 0;        /* 0x66A28 */
     pSite->nDemolishState = 0;
     pSite->nBuildState = 0;
@@ -1513,7 +1527,7 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, co
     if (pBase != NULL) {
         pBase->nUnk8 = x;     /* 0x66A38 */
         pBase->nUnk12 = y;    /* 0x66A50 */
-        pBase->bUnk16 = (u8)((i8)pEnv->abKindTable[nKind] - 1); /* 0x66A74: LDRSB then SUB #1 */
+        pBase->bUnk16 = (u8)(RegionBuildCountAt(pEnv->paRegionBuildCount, nRegionId) - 1);
     }
 
     if (pEnv->nObjectCount != 0) {
@@ -1674,37 +1688,39 @@ i32 Base_CanPlaceHangarAt(const HangarPlaceEnv *pEnv, i32 nX, i32 nY)
     return (nFacType != 0) ? 1 : 0; /* 0x62D60..0x62D6C */
 }
 
-/* BaseFac_FormatCostLabel @ 0x6a404. "TEXTS[905 + kind]-<abBaseKindTable[kind]>" into the shared
- * scratch label, then the table entry is incremented. See the header for the evidence. */
+/* BaseFac_FormatCostLabel @ 0x6a404. "TEXTS[905 + region]-<region counter>" into the shared
+ * scratch label -- the region's own name, e.g. "Северная Америка-0" -- then the region's counter
+ * is incremented. See the header for the evidence. */
 char *BaseFac_FormatCostLabel(char *pszLabel, size_t cchLabel, const u8 *pTextRecs,
-                              u8 nFacType, i8 *abKindTable)
+                              u8 nRegionId, i8 *paRegionBuildCount)
 {
     char szNum[100]; /* 0x6A40C: var_64, the itoa scratch */
     const char *pszName;
     i8 nCount;
 
-    if (pszLabel == NULL || cchLabel == 0 || pTextRecs == NULL || abKindTable == NULL) {
+    if (pszLabel == NULL || cchLabel == 0 || pTextRecs == NULL || paRegionBuildCount == NULL) {
         return pszLabel;
     }
 
     /* 0x6A42C..0x6A450: the copy loop walks the TEXTS record from its first byte, NUL included.
      * The original has no bound; pufo_strncpy is the port's bounded form. */
     pszName = (const char *)(pTextRecs
-                             + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + nFacType));
+                             + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + nRegionId));
     pufo_strncpy(pszLabel, pszName, cchLabel);
 
     (void)pufo_strcat(pszLabel, "-", cchLabel); /* 0x6A45C, asc_AB340 */
 
-    nCount = abKindTable[nFacType]; /* 0x6A46C: LDRSB [R7,#-0x1B] */
+    nCount = RegionBuildCountAt((const u8 *)paRegionBuildCount, nRegionId); /* 0x6A46C */
     (void)snprintf(szNum, sizeof(szNum), "%d", (int)nCount); /* 0x6A474: j_itoa, base 10 */
     (void)pufo_strcat(pszLabel, szNum, cchLabel); /* 0x6A480 */
 
-    /* ORIGINAL BUG @ 0x6A49C: the index is the facility kind, which runs 0..16, while
-     * abBaseKindTable @ 0x1864DD is 15 bytes - kinds 15 and 16 read and write past it into the
-     * pSmapPadZoom2 / pSmapPadZoom1 globals. The port sizes its copy for all 17 kinds.
-     *
-     * 0x6A490..0x6A49C: +1, sign-extended through LSL/ASR #24, stored as a byte. */
-    abKindTable[nFacType] = (i8)(nCount + 1);
+    /* 0x6A490..0x6A49C: +1, sign-extended through LSL/ASR #24, stored as a byte at
+     * 0x18655D + region - 0x80. Region 0x89 ("Здесь нельзя строить") lands on 0x186566, the byte
+     * IDA names bUiFrameStyle; the shipped placement flow never reaches it with this call, and a
+     * region below 0x80 would store below the table, which the port skips (deviation). */
+    if (nRegionId >= PUFO_REGION_ID_FIRST) {
+        paRegionBuildCount[nRegionId - PUFO_REGION_ID_FIRST] = (i8)(nCount + 1);
+    }
 
     return pszLabel; /* 0x6A4A8 */
 }
@@ -3033,7 +3049,7 @@ static StrategItem *Radar_ContactItem(const RadarUpdateEnv *pEnv)
 }
 
 /* 0x60A88 / 0x60B10 / 0x60C00 / 0x60C44 / 0x60CA0: the contact's map tile, which is also the race
- * id Funding_AddRaceBonus maps. */
+ * id Funding_AddRegionBonus maps. */
 static i32 Radar_ContactTile(const RadarUpdateEnv *pEnv, const StrategItem *pItem)
 {
     return (pItem != NULL) ? Tilemap_GetAt(pEnv->pTilemap, pItem->nX, pItem->nY) : 0;
@@ -3154,12 +3170,12 @@ static void Radar_ResolveDamage(const RadarUpdateEnv *pEnv)
 
             /* 0x60A48..0x60AA8, in the ARM's short-circuit order: Game_RandU16(4) is only rolled
              * when the trace is still held AND the contact is not sitting on the 255 ocean tile. */
-            if (*pS->pbTraceLost == 0 && nTile != PUFO_RACE_ID_NONE
+            if (*pS->pbTraceLost == 0 && nTile != PUFO_REGION_ID_NONE
                 && (u16)Game_RandU16((u16)PUFO_RADAR_ESCAPE_ROLL) == 0) {
                 *pS->pnMsgTimer = 0;                                /* 0x60AB4 */
                 Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_TARGET_LANDED,
                                   pEnv->pDetect->pszMsg, pEnv->pDetect->cchMsg);
-                Funding_AddRaceBonus(pEnv->anFundingBlock, nTile);  /* 0x60B1C */
+                Funding_AddRegionBonus(pEnv->anFundingBlock, nTile);  /* 0x60B1C */
                 if (pItem != NULL) {
                     pItem->nType = 4;                               /* 0x60B30 */
                     pItem->nTimer = PUFO_RADAR_TIMER_LANDED;        /* 0x60B44 */
@@ -3179,8 +3195,8 @@ static void Radar_ResolveDamage(const RadarUpdateEnv *pEnv)
             Radar_CopyTextRec(pEnv->pDetect->pTextRecs, PUFO_RADAR_TEXT_TARGET_CRASHED,
                               pEnv->pDetect->pszMsg, pEnv->pDetect->cchMsg);
             *pS->pbInterceptDone = 1;                               /* 0x60C10, set before the tile test */
-            Funding_AddRaceBonus(pEnv->anFundingBlock, nTile);      /* 0x60C50 / 0x60CAC */
-            if (nTile == PUFO_RACE_ID_NONE) {
+            Funding_AddRegionBonus(pEnv->anFundingBlock, nTile);      /* 0x60C50 / 0x60CAC */
+            if (nTile == PUFO_REGION_ID_NONE) {
                 (void)StrategList_RemoveAt(pS->pStrategList, pEnv->pShipEnv->pWorld,
                                            *pS->pnStrategIdx, pEnv->pShipEnv->pnSpawnOnceFlag,
                                            pEnv->pShipEnv->pSpawnCtx); /* 0x60CB8: it went into the sea */

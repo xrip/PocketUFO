@@ -4293,7 +4293,7 @@ static void TestNewBaseScreen(void)
 
     /* Pending placement (0x1870AC != 0) skips the funds test entirely. */
     nFunds = 0;
-    confEnv.bPendingKind = 128 + 2; /* cost 1,000,000 */
+    confEnv.bPendingRegionId = 128 + 2; /* cost 1,000,000 */
     bFlag1870C8 = 0;
     nFlag1870B4 = 5;
     g_nMapClickCalls = 0;
@@ -4304,14 +4304,14 @@ static void TestNewBaseScreen(void)
 
     /* funds - cost == 0 passes (SUBS is not MI). */
     nFunds = 1000000;
-    confEnv.bPendingKind = 128 + 2;
+    confEnv.bPendingRegionId = 128 + 2;
     g_nMapClickCalls = 0;
     CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "exact funds pass");
     CheckEqI32(g_nMapClickCalls, 1, "  OnMapClick reached");
 
     /* One short fails: 0x1870C8 = 1, dword_1870B4 = 0, return 0. */
     nFunds = 999999;
-    confEnv.bPendingKind = 128 + 2;
+    confEnv.bPendingRegionId = 128 + 2;
     bFlag1870C8 = 0;
     nFlag1870B4 = 5;
     g_nMapClickCalls = 0;
@@ -4322,14 +4322,14 @@ static void TestNewBaseScreen(void)
 
     /* The table boundary: kind 0 costs 800000, kind 9 costs 0, 0xFF costs nothing (deviation). */
     nFunds = 799999;
-    confEnv.bPendingKind = 128;
+    confEnv.bPendingRegionId = 128;
     g_nMapClickCalls = 0;
     CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 0, "kind 0 costs 800000");
     nFunds = 0;
-    confEnv.bPendingKind = 128 + 9;
+    confEnv.bPendingRegionId = 128 + 9;
     g_nMapClickCalls = 0;
     CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "kind 9 costs 0");
-    confEnv.bPendingKind = 0xFF;
+    confEnv.bPendingRegionId = 0xFF;
     g_nMapClickCalls = 0;
     CheckEqI32(NewBaseScreen_TryConfirm(0, &confEnv), 77, "the 0xFF sentinel costs nothing");
 }
@@ -4742,8 +4742,8 @@ static void TestMapClick(void)
     static BaseSiteRec aSiteRecs[1];
     static PtrArray list;
     static StrategItem *pItem;
-    static u8 abKind[17];
-    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_FAC_NAME_REC_BASE + 17)];
+    static u8 abKind[PUFO_REGION_BUILD_COUNT];
+    static u8 aTexts[PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + 0x8A)];
     static char szLabel[64];
     static UiControl closeCtl, upCtl, downCtl;
     static i8 nBaseCount, nSelBase;
@@ -4756,8 +4756,8 @@ static void TestMapClick(void)
     printf("Geoscape_OnMapClick @ 0x8b4a8\n");
 
     memset(aTexts, 0, sizeof(aTexts));
-    memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * PUFO_FAC_NAME_REC_BASE,
-           "Fac905", 6);
+    memcpy(aTexts + (size_t)PUFO_TEXT_REC_STRIDE * (PUFO_REGION_NAME_REC_BASE + 0x80),
+           "Reg1033", 7);
 
     memset(&facEnv, 0, sizeof(facEnv));
     facEnv.pCloseCtl = &closeCtl;
@@ -4804,7 +4804,7 @@ static void TestMapClick(void)
     env.nTapX = 2;                                                             \
     env.nTapY = 2;                                                             \
     env.pHangar = &hEnv;                                                       \
-    env.bPendingKind = 0;                                                      \
+    env.bPendingRegionId = PUFO_REGION_NORTH_AMERICA;                                                      \
     env.pbConfirm = &bConfirm;                                                 \
     env.pbFacDone = &bDone;                                                    \
     env.nPlaceX = 1234;                                                        \
@@ -4813,7 +4813,7 @@ static void TestMapClick(void)
     env.apSiteRecs = aSiteRecs;                                                \
     env.pStrategList = &list;                                                  \
     env.pTextRecs = aTexts;                                                    \
-    env.abKindTable = (i8 *)abKind;                                            \
+    env.paRegionBuildCount = (i8 *)abKind;                                            \
     env.pszLabelScratch = szLabel;                                             \
     env.cchLabelScratch = (i32)sizeof(szLabel);                                \
     env.pbBaseCount = &nBaseCount;                                             \
@@ -4878,7 +4878,7 @@ static void TestMapClick(void)
 
     /* 6. screen 2 with no pending kind does nothing. */
     MAP_BEGIN(2);
-    env.bPendingKind = 0xFF;
+    env.bPendingRegionId = 0xFF;
     CheckEqI32(Geoscape_OnMapClick(&env), 0, "screen 2 with the pending kind 0xFF: nothing runs");
     CheckEqI32(nScreen, 2, "and the screen id stays 2");
 
@@ -4887,10 +4887,10 @@ static void TestMapClick(void)
     CheckEqI32(Geoscape_OnMapClick(&env), 2, "the confirm branch commits the pending facility");
     CheckEqI32(aBase.nUnk8, 1234, "the base takes the pending x");
     CheckEqI32(aBase.nUnk12, 5678, "and the pending y");
-    CheckEqI32(aBase.bKind, 0, "bKind becomes the pending kind");
+    CheckEqI32(aBase.bRegionId, 0x80, "bRegionId becomes the pending region");
     CheckEqI32(aBase.bUnk16, 1, "and bUnk16 is set to 1");
-    CheckEqI32(aSiteRecs[0].bType, 0x80, "the facility record's type is kind + 0x80");
-    Check(strcmp(aSiteRecs[0].abName, "Fac905-0") == 0,
+    CheckEqI32(aSiteRecs[0].bType, 0, "the record type is region + 0x80, which wraps to the index");
+    Check(strcmp(aSiteRecs[0].abName, "Reg1033-0") == 0,
           "its name field gets the cost label the counter builds");
     CheckEqI32(abKind[0], 1, "and the counter behind the label is incremented");
     CheckEqI32(pItem->nX, 1234, "the strateg entry found by site id gets the pending x");
@@ -5472,8 +5472,8 @@ static void TestFacOverlay(void)
     env.pbPreviewOk = &bPreviewOk;
     env.pbOverlayShown = &bOverlayShown;
     env.pbNewBaseMode = &bNewBaseMode;
-    env.nPendingKind = 0x80 + 2;
-    env.paNewBaseCost = g_anNewBaseCostByKind;
+    env.nPendingRegionId = 0x80 + 2;
+    env.paNewBaseCost = g_anNewBaseCostByRegion;
     env.nPhaseByte = 0;
     env.pdwShortfall = &nShortfall;
     env.pnResidue = &nResidue;
@@ -5554,7 +5554,7 @@ static void TestFacOverlay(void)
     bDialogOpen = 1;
     nScreen = 2;
     CheckEqI32(BaseFacScreen_DrawPlacementOverlay(&env), 1, "new-base mode commits with an empty grid");
-    CheckEqI32(nFunds, 5000 - 4000 - g_anNewBaseCostByKind[2],
+    CheckEqI32(nFunds, 5000 - 4000 - g_anNewBaseCostByRegion[2],
                "the facility cost and aNewBaseCostByRace[kind - 0x80] both come off");
     CheckEqI32(bPreviewActive, 0, "bFacPreviewActive is cleared (0x59B20)");
     CheckEqI32(nScreen, 1, "nGeoscapeScreen goes back to 1 (0x59B28)");
@@ -7226,7 +7226,7 @@ static void TestFundingBonus(void)
     i32 aSlots[PUFO_FUNDING_SLOT_COUNT];
     i32 i;
 
-    printf("Funding_AddRaceBonus @ 0x7debc\n");
+    printf("Funding_AddRegionBonus @ 0x7debc\n");
 
 #define FUND_RESET()                                                     \
     for (i = 0; i < PUFO_FUNDING_SLOT_COUNT; ++i) { aSlots[i] = 0; }
@@ -7237,7 +7237,7 @@ static void TestFundingBonus(void)
     static const i32 anRaceSlot[8] = {0, 0, 2, 3, 1, 4, 0, 5};
     for (i32 n = 0; n < 8; ++n) {
         FUND_RESET();
-        Funding_AddRaceBonus(aSlots, anRaces[n]);
+        Funding_AddRegionBonus(aSlots, anRaces[n]);
         CheckEqI32(aSlots[anRaceSlot[n]], PUFO_FUNDING_BONUS, "the race id raises its own slot by 2 (0x7DEBC)");
         i32 nOthers = 0;
         for (i32 k = 0; k < PUFO_FUNDING_SLOT_COUNT; ++k) {
@@ -7252,7 +7252,7 @@ static void TestFundingBonus(void)
     static const i32 anNoBonus[6] = {0x86, 0x87, 0x89, 0x00, 0x7F, 0x8A};
     for (i32 n = 0; n < 6; ++n) {
         FUND_RESET();
-        Funding_AddRaceBonus(aSlots, anNoBonus[n]);
+        Funding_AddRegionBonus(aSlots, anNoBonus[n]);
         i32 nTotal = 0;
         for (i32 k = 0; k < PUFO_FUNDING_SLOT_COUNT; ++k) {
             nTotal += aSlots[k];
@@ -7262,20 +7262,20 @@ static void TestFundingBonus(void)
 
     /* The argument is masked to a byte before the compares (0x7DEBC AND R0,R1,#0xFF). */
     FUND_RESET();
-    Funding_AddRaceBonus(aSlots, 0x180);
+    Funding_AddRegionBonus(aSlots, 0x180);
     CheckEqI32(aSlots[0], 2, "0x180 masks down to 0x80");
     FUND_RESET();
-    Funding_AddRaceBonus(aSlots, 0x1FF);
+    Funding_AddRegionBonus(aSlots, 0x1FF);
     CheckEqI32(aSlots[5], 2, "0x1FF masks down to 0xFF, the no-race tile");
 
     /* It accumulates: every radar contact of that race adds two more. */
     FUND_RESET();
-    Funding_AddRaceBonus(aSlots, 0x85);
-    Funding_AddRaceBonus(aSlots, 0x85);
-    Funding_AddRaceBonus(aSlots, 0x85);
+    Funding_AddRegionBonus(aSlots, 0x85);
+    Funding_AddRegionBonus(aSlots, 0x85);
+    Funding_AddRegionBonus(aSlots, 0x85);
     CheckEqI32(aSlots[4], 6, "three contacts of race 0x85 give six");
 
-    Funding_AddRaceBonus(NULL, 0x80);
+    Funding_AddRegionBonus(NULL, 0x80);
     Check(true, "a null slot array does nothing");
 #undef FUND_RESET
 }
@@ -11869,7 +11869,7 @@ static void FundFixture(FundingInitEnv *pEnv, i32 nMonth, i8 nBaseCount)
 
     memset(g_aFundBases, 0, sizeof(g_aFundBases));
     for (i = 0; i < 8; ++i) {
-        g_aFundBases[i].bKind = aKind[i];
+        g_aFundBases[i].bRegionId = aKind[i];
         g_apFundBases[i] = &g_aFundBases[i];
     }
     memset(&g_fundClose, 0, sizeof(g_fundClose));
@@ -11883,12 +11883,12 @@ static void FundFixture(FundingInitEnv *pEnv, i32 nMonth, i8 nBaseCount)
     pEnv->ppPadSlot = &g_pFundPad;
     pEnv->pCloseCtl = &g_fundClose;
     pEnv->pfnCloseClick = FundCloseClick;
-    pEnv->anRaceScore[0] = 10;
-    pEnv->anRaceScore[1] = 20;
-    pEnv->anRaceScore[2] = 30;
-    pEnv->anRaceScore[3] = 40;
-    pEnv->anRaceScore[4] = 50;
-    pEnv->anRaceScore[PUFO_FUNDING_MULT_SLOT] = 3;
+    pEnv->anCountryScore[0] = 10;
+    pEnv->anCountryScore[1] = 20;
+    pEnv->anCountryScore[2] = 30;
+    pEnv->anCountryScore[3] = 40;
+    pEnv->anCountryScore[4] = 50;
+    pEnv->anCountryScore[PUFO_FUNDING_MULT_SLOT] = 3;
     pEnv->pnPendingTotal = &g_nFundPending;
     pEnv->nMonthCounter = nMonth;
     pEnv->apBases = g_apFundBases;
@@ -12010,7 +12010,7 @@ static void TestFundingRecompute(void)
     CheckEqI32(env.anShare[0], -400, "a negative count runs nothing either (LDRSB at 0x5C188)");
     CheckEqI32(env.anShare[2], -200, "on every slot");
     FundFixture(&env, 4, 1);
-    g_aFundBases[0].bKind = 0x86; /* a kind with no arm in the compare chain (0x5C200) */
+    g_aFundBases[0].bRegionId = 0x86; /* a kind with no arm in the compare chain (0x5C200) */
     FundingScreen_Init(&env);
     CheckEqI32(env.anShare[0], -400, "kind 0x86 has no arm, so it feeds nothing (0x5C200)");
 

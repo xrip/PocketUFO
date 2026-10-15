@@ -13072,3 +13072,39 @@ against the shipped archives, the full month-4 chain (shares, base bonus, upkeep
 the three negative-bar wipes), the month-1 chain (the below-month-3 clamp, the zero-direction case,
 arrows -1/0/+1/+2), months 0 and 6 reaching the same upkeep block, the signed base count, kind 0x86
 feeding nothing, and the opener's increment-then-recompute order.
+
+## The 0x80..0x89 id space is a world region, not a race (naming fix)
+
+Evidence chain. Geoscape_DrawGlobeHover @ 0x67914 prints `TEXTS[905 + tile]` as the hovered
+tile's own name, and the ten records TEXTS[1033..1042] are "Северная Америка", "Южная Америка",
+"Европа", "Азия", "Австралия", "Африка", "Антарктика", "Арктика", "Канада", "Здесь нельзя
+строить". So the tile byte, the new-base placement cost index (aNewBaseCostByRegion @ 0xAB488,
+ten dwords indexed by region - 0x80), the base's own region byte (BaseRec +0x11), the pending
+placement byte (bPendingRegionId @ 0x159DF4) and the funding bonus source are all the same ten
+world regions. 0xFF is the ocean tile. The funding screen groups them into its five investing
+countries (TEXTS[1149] "Инвестирование стран"): 0x80/0x81/0x88 -> USA, 0x82 -> Euro Alliance,
+0x83 -> Asian Alliance, 0x84 -> Australia, 0x85 -> Africa; 0x86 (Antarctica), 0x87 (Arctic) and
+0x89 ("cannot build here") feed nothing.
+
+The region counter table. BaseFac_FormatCostLabel @ 0x6a404 and Base_CreateNamedEntry @ 0x66930
+both load `0x1864DD + region` (0x6A46C / 0x66A64, LDRSB [R7,#-0x1B] off 0x1864F8 + region) and
+the label path stores back at `0x18655D + region - 0x80` (0x6A488 ADD R2,R6,#0x65 / 0x6A4A0
+STRB [R2,#-0x80]) -- the same byte. The table is therefore g_anRegionBuildCount @ 0x18655D,
+nine signed counters for regions 0x80..0x88: InitUI seeds the nine with 1 (0x85814), StartNew
+sweeps ten (0x94650, the tenth byte being 0x186566, IDA's bUiFrameStyle), and the save writes
+and reads exactly the nine (0x3F304 / 0x40428). 0x1864DD is only the -0x80 bias anchor, not a
+table; the only code that reads it directly is Game_StartNew's starting base, which passes
+region 0 (MOV R3,#0 at 0x94950) and so gets BaseRec.bUnk16 = (byte at 0x1864DD) - 1.
+
+Corrections made. The earlier reading of the same index as a facility kind 0..16 produced a
+false bugs.tsv row ("kinds 15 and 16 read and write past a 15-byte abBaseKindTable") - removed.
+The port's 17-byte abKindTable buffer, indexed by the raw region id, was an out-of-bounds read
+for every real region (index 128..137 in a 17-byte array); it is replaced by the nine-counter
+model with RegionBuildCountAt() guarding the region range. Renames: Funding_AddRaceBonus ->
+Funding_AddRegionBonus, aNewBaseCostByRace -> aNewBaseCostByRegion, bPendingBaseKind ->
+bPendingRegionId, abBaseKindTable -> abRegionCounterBiasAnchor, BaseRec.bKind -> BaseRec.bRegionId,
+PUFO_RACE_ID_* -> PUFO_REGION_ID_*, plus the PufoRegionId enum in the IDB and in the port.
+
+Deviation recorded. Region 0x89 has no counter of its own: the original's store for it lands on
+0x186566 (bUiFrameStyle). The port's tenth byte is the same slot of the same sweep StartNew
+writes, so the two agree; the shipped placement flow never reaches 0x89 through this call.

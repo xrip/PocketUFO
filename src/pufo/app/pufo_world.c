@@ -215,7 +215,7 @@ static void World_TryConfirmClick(void)
     env.nTapX = pW->nSmapTapX;
     env.nTapY = pW->nSmapTapY;
     env.pHangar = &pW->hangarEnv;
-    env.bPendingKind = pW->bPendingFacilityKind;
+    env.bPendingRegionId = pW->bPendingRegionId;
     env.pbConfirm = &pW->bPlacementPending;
     env.pbFacDone = &pW->bFacDone;
     env.nPlaceX = pW->nPlaceX;
@@ -224,7 +224,7 @@ static void World_TryConfirmClick(void)
     env.apSiteRecs = pW->aSiteRecs;
     env.pStrategList = &pW->strategList;
     env.pTextRecs = (pW->pAssets != NULL) ? pW->pAssets->pTextRecs : NULL;
-    env.abKindTable = (i8 *)pW->abKindTable;
+    env.paRegionBuildCount = (i8 *)pW->aRegionBuildCount;
     env.pszLabelScratch = pW->szLabelScratch;
     env.cchLabelScratch = (i32)sizeof(pW->szLabelScratch);
     env.pbBaseCount = &pW->nBaseCount;
@@ -320,7 +320,7 @@ bool World_Init(PufoWorldState *pW)
      * BaseFacScreen_DrawPlacementOverlay 0x59AF4). 0xFF is the "nothing pending" sentinel the
      * readers use (Geoscape_OnMapClick 0x8B4CC, Geoscape_OnPointerUp 0x89694); the build flow
      * installs it, the startup path does not. */
-    pW->bPendingFacilityKind = 0;
+    pW->bPendingRegionId = 0;
     pW->view.nMode = 2;  /* the geoscape starts at the closest zoom; StartNew zooms out twice */
     return true;
 }
@@ -363,7 +363,7 @@ static void World_StartNewHook(void *pUser)
     createEnv.nZoomMode = pW->view.nMode;
     createEnv.pnNextSiteId = &pW->nCreateNextSiteId;
     createEnv.apSiteRecs = pW->aSiteRecs;
-    createEnv.abKindTable = pW->abKindTable;
+    createEnv.paRegionBuildCount = pW->aRegionBuildCount;
     createEnv.pProductU32Col = pW->auProductU32;
     createEnv.pProductU16Col = pW->auProductU16;
     createEnv.pResearchCol = pW->auResearchCol;
@@ -427,7 +427,7 @@ static void World_StartNewHook(void *pUser)
     env.pnNextDisplayId = &pW->nNextDisplayId;
     env.pnNextSiteId = &pW->nNextSiteId;
     env.pnMissionId = &pW->nMissionId;
-    env.abSaveFlags = pW->abFlags18655D;
+    env.abSaveFlags = pW->aRegionBuildCount;
     env.pEconomy = &pW->economy;
     env.pvFundTable = pW->anFundTable;
     env.paFacFlags = pW->aFac;
@@ -535,7 +535,7 @@ i32 World_NewGame(PufoWorldState *pW, BootAssets *pAssets, PufoFont *pFont,
     env.pbBaseCount = &pW->nBaseCount;
     env.pnUnk159DC4 = &pW->nUnk159DC4;
     env.paMissionSites = pW->aMissionSites;
-    env.abUnk18655D = pW->abFlags18655D;
+    env.aRegionBuildCount = pW->aRegionBuildCount;
     env.pbSaveVersion = &pW->nSaveVersion;
     env.pOptions = pOptions;
     for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
