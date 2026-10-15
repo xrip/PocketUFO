@@ -258,3 +258,21 @@ unk_1596C8	pRadarPercentPad	renamed in the IDB: the eleventh slot of aRadarDigit
 unk_1596DC	bRadarCraftOutOfFuel	renamed in the IDB, typed u8: the only thing RadarScreen_DrawFuelGauge keeps of the percentage -- set when the consumed figure reaches 100 (0x5D9F4), cleared by RadarScreen_Init (0x5F4BC), read nine times by RadarScreen_Update
 dword_159668	nRadarRangeLimit	renamed in the IDB: the per-craft-class radar range limit RadarScreen_Init stores in its bCraftClass switch (240 in the first arm, 0x5F6F4) and RadarScreen_DrawRangeBar gates against (0x5D744)
 unk_1596E0	nRadarCraftLevel	renamed in the IDB: the per-craft-class level RadarScreen_Init stores -- 8, 6, 4, 2 and 0 at 0x5F6D8, 0x5F7A8, 0x5F878, 0x5F944 and 0x5F9E8, while three of the eight class arms leave it at whatever the previous intercept left. RadarScreen_DrawRangeBar shifts its gate by 560*(level-13)/114, and RadarScreen_DrawOverlay and RadarScreen_DrawCraftArmament read it too
+unk_159678	bRadarScreenActive	renamed in the IDB, typed u8 (LDRB at 0x5F494): the open/closed flag RadarScreen_Init toggles on -- flag 0 runs the open path, flag 1 the teardown
+unk_15967C	nInterceptShipIdx	named in the IDB, typed int: the Map.apCraft index (Map+0x10AC) of the current intercept; RadarScreen_Init reads its weapon mounts and RadarScreen_RollDetection its uFuelCap
+unk_159680	nInterceptStrategIdx	named in the IDB, typed int: the strategList index of the tracked contact, read through PtrArray_Get by RadarScreen_Init, RadarScreen_RollDetection and RadarScreen_RollWeaponHit
+unk_159684	aRadarControls	named in the IDB as UiControl*[5]: the radar screen's five control singletons, click handlers installed at +0xC in the order NW, NE, SW, SE, BlitMapBackdrop (0x5FCB8..0x5FCF4)
+unk_159700	aRadarButtonPads	named in the IDB as PadImage*[5]: i_but3, i_but4, i_but2, i_but5, i_but6 in mode 26 at (117,86), (161,86), (117,107), (161,107), (117,128)
+stru_AB2A0	aRadarCtlDesc	named in the IDB as UiControlDesc[5] (the IDB's own 32-byte descriptor layout): the five descriptors RadarScreen_Init hands to UiControl_Setup; entries 0..3 name pads i_but0/i_but1, entry 4 names i_but7/i_but8
+byte_159714	bRadarTraceLost	renamed in the IDB, typed u8: set by RadarScreen_RollDetection when the tracked contact outruns the intercept craft (0x604E0); it is the gate the four radar corner buttons open on, so a lost trace also freezes the cursor. Only the open path of RadarScreen_Init clears it
+unk_159718	bRadarFlip	renamed in the IDB, typed u8: set by RadarScreen_SetCursorSE and by RadarScreen_RollDetection (0x604D4); RadarScreen_DrawOverlay reads it sixteen times and RadarScreen_CyclePalette uses it for its extra four range steps
+dword_159654	nRadarAmmoL	renamed in the IDB, typed int: the left mount's ammo held while the radar screen is open. -2 = no weapon on that mount, -1 = mount kind 28 (unlimited). Written back into Ship.bAmmo<kind> on radar close
+dword_159664	nRadarAmmoR	renamed in the IDB, typed int: the right mount's ammo, same sentinels. A twin mount splits one pool as ammo/2 and ammo/2+(ammo%2) (0x5FBE4..0x5FC04)
+unk_159658	nInterceptTargetHpMax	renamed in the IDB, typed int: the target HP the class table starts the fight with, kept alongside nInterceptTargetHp and re-synced from StrategItem.nHp at 0x5FA9C
+unk_1596FC	pRadarFramePad	renamed in the IDB, typed PadImage*: the 'radar' pad in palette slot 22, 85x114, at (26, 56)
+unk_1596D0	pRadarUfoPad	renamed in the IDB, typed PadImage*: the tracked UFO sprite ufo_<7-class> in mode 23, nOriginX 55
+unk_1596F0	pRadarUfoFlashPad	renamed in the IDB, typed PadImage*: ufo_<class>f in mode 27, the muzzle-flash overlay
+unk_159670	pRadarUfoMissilePad	renamed in the IDB, typed PadImage*: ufo_<class>m in mode 27
+unk_1596D4	nRadarCursorX	renamed in the IDB, typed int: the radar cursor x, set to 117 (the NW corner) by RadarScreen_Init and moved by the four corner buttons
+unk_1596D8	nRadarCursorY	renamed in the IDB, typed int: the radar cursor y, set to 86 by RadarScreen_Init
+unk_103943	aTextRadarTraceLost	named in the IDB: TEXTS record 1599 (aTextRecs + 1599*205), lang.dat cp1251 'След МАК потерян', the message RadarScreen_RollDetection copies into szRadarMsg

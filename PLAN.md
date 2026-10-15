@@ -1357,6 +1357,49 @@ Order is by what unblocks what. Each item ends with gates + commit.
   Named: `aRadarDigitPads` (11 `PadImage *`, loaded as `i0..i9` through palette slot 0x19),
   `pRadarPercentPad`, `bRadarCraftOutOfFuel` (u8), `nRadarRangeLimit`, `nRadarCraftLevel`.
 
+- [x] part 50, the radar screen's session: `RadarScreen_Init (0x5f490)`, `RadarScreen_SetActive
+  (0x6144c)` and `RadarScreen_RollDetection (0x602a0)`, 4396 bytes — 194 more checks, 18 more IDB
+  names, and the first test suite in the project that loads the shipped archives and compares real pad
+  bytes.
+  **`RadarScreen_Init` is one function doing both directions**, toggled on `bRadarScreenActive`
+  (LDRB at 0x5F494): flag 0 opens, flag 1 closes. That is why `RadarScreen_SetActive` calls it on both
+  of its own branches — Init decides which half runs from the flag the caller just decided. SetActive
+  then writes `bActive` into `GameTime.bPaused` (STRB at 0x159618+4) and `bUiFrameStyle` (0x186566):
+  **opening the radar screen pauses the game clock** and picks the bright panel frame.
+  **The eight-case class switch is one flat table.** Cases 1, 3 and 5 set the HP/palette/overlay/limit
+  half and fall through into 2, 4 and 6 for the art and level half only, and the `if
+  (nInterceptTargetHp == 0)` guard inside 2, 4 and 6 is *always* true because 0x5F614 zeroed that field
+  moments earlier — so the fall-through never changes anything a preceding case set. The table is now
+  `g_aRadarUfoClass`, and it carries RollDetection's per-class speed too, because both are indexed by
+  the same `bCraftClass`. The doubles are the original's own literals (0x60324 stores
+  0x40425553_2617C1BE, which is exactly `36.6666`).
+  **The palette copy at 0x5FC34 overruns two slots** (bugs.tsv row 0x5FC34): 766 dwords written from a
+  256-entry slot, so slot 1 (menu.pal, the target) is overwritten as intended and then all of slot 2
+  and 254 of 256 of slot 3 too, reading from slot 26 through 27 and into 28. `base.pal` repairs slot 3
+  at 0x5FC58 and the close path restores slot 1 at 0x60290, but **nothing anywhere in the binary
+  reloads slot 2** — from the first radar screen onward it stays holding ufoflash.pal. Reproduced, and
+  pinned by checks that compare slots 1, 2 and 3 against independently reloaded palettes both after the
+  open and after the close.
+  **`uFuelCap / 60` is the craft's speed.** RollDetection's comparison
+  `uFuelCap * (1/60) < dSpeed` is literally "the tracked contact outruns our intercept craft", and it
+  uses the same basis `StrategList_ProcessEvents` already uses for an inactive craft
+  (pufo_strateg.c:504) and `Ship_BurnFuel` burns by — so the per-class constants 36.6666 … 83.3333 are
+  contact speeds in the same units. The boundary is pinned: class 0 is 36.6666, and 2200 fuel gives
+  36.666666…, which is *not* below it, while 2199 is.
+  **TEXTS[1599] is Cyrillic МАК, not ASCII MAX.** lang.dat decodes it as cp1251 `D1 EB E5 E4 20 CD CB
+  CE 20 EF EE F2 E5 F0 FF ED` = "След МАК потерян"; the middle word is Cyrillic М-А-К that reads like
+  "MAX". The test compares against those exact bytes and asserts records 1598 and 1600 are different
+  strings so the record index cannot be off by one.
+  **`Game_RandU16(1)` is always 0** — `(u16)(x/32768 * 1)` with `x < 32768` truncates to 0 — which gives
+  a deterministic way to force a roll's success branch without pinning seeds. For the failure branch,
+  seed 12345 gives `Game_RandU16(100) == 23`. (An earlier probe that printed "seed 1 → 58" was reading
+  unspecified `printf` argument evaluation order, not the first draw.)
+  Named in the IDB: `bRadarScreenActive`, `nInterceptShipIdx`, `nInterceptStrategIdx`, `aRadarControls`
+  (`UiControl *[5]`), `aRadarButtonPads` (`PadImage *[5]`), `aRadarCtlDesc` (`UiControlDesc[5]` at
+  0xAB2A0), `bRadarTraceLost`, `bRadarFlip`, `nRadarAmmoL`, `nRadarAmmoR`, `nInterceptTargetHpMax`,
+  `pRadarFramePad`, `pRadarUfoPad`, `pRadarUfoFlashPad`, `pRadarUfoMissilePad`, `nRadarCursorX`,
+  `nRadarCursorY`, `aTextRadarTraceLost`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1622,6 +1665,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the buy/sell frame (`BuySellScreen_Draw`, the two halves that draw differently, the freed-panel deref found) | 56/56 (Release) | 10674 | 869/1103 (78.8%) | 381496/598792 (63.7%) | 39 checked, 0 mismatched |
 | the radar backdrop (`RadarScreen_BlitMapBackdrop`, the phase toggle, the world-bits pointer misreading fixed) | 56/56 (Release) | 10723 | 870/1103 (78.9%) | 382004/598792 (63.8%) | 39 checked, 0 mismatched |
 | the radar gauge and range bar (the consumed percentage, the tens-digit branch shape, the level term that loosens the gate) | 56/56 (Release) | 10789 | 872/1103 (79.1%) | 383092/598792 (64.0%) | 39 checked, 0 mismatched |
+| the radar screen session (`RadarScreen_Init`, `RadarScreen_SetActive`, `RadarScreen_RollDetection`; the eight-row class table, the ammo draw and write-back, the slot-2 overrun found) | 56/56 (Release) | 10983 | 875/1103 (79.3%) | 387488/598792 (64.7%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

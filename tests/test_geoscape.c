@@ -17,6 +17,7 @@
 #include "game/pufo_strateg.h"
 #include "game/pufo_clock.h"
 #include "render/pufo_render.h" /* g_aPalette, for the radar palette cycle */
+#include "asset/pufo_asset.h"   /* Asset_OpenArchives, the radar session runs on real pads */
 #include "ui/pufo_linelist.h"
 #include "util/pufo_rand.h"
 
@@ -3824,6 +3825,548 @@ static void TestRadarRangeBar(void)
     Check(!RadarScreen_DrawRangeBar(&g_barEnv), "a null craft is refused");
 }
 
+/* --- RadarScreen_Init @ 0x5f490 / RadarScreen_SetActive @ 0x6144c / RollDetection @ 0x602a0 ---
+ *
+ * These run against the shipped archives: every pad the original loads is really loaded, and the
+ * radar message comes from the real lang.dat TEXTS blob. */
+
+static RadarUiState g_radarUi;
+static u8  g_bRadarActive, g_bRadarOutFuel, g_bRadarBlink, g_bRadarFlip, g_bRadarTrace;
+static u8  g_bRadarFlag50, g_bRadarAnim;
+static i32 g_nRadarMsgTimer, g_nRadarTargetHp, g_nRadarTargetHpMax, g_nRadarLevel;
+static i32 g_nRadarRangeLimit, g_nRadarRangeTarget, g_nRadarRangeCur;
+static i32 g_nRadarAmmoL, g_nRadarAmmoR, g_nRadarCurX, g_nRadarCurY;
+static i32 g_nRadarShipIdx, g_nRadarStrategIdx;
+static GameTime g_radarTime;
+static i8 g_nRadarFrameStyle;
+static StrategItem g_aRadarItems[8];
+static PtrArray g_radarStrateg;
+static bool g_bRadarListBuilt;
+static Ship g_aRadarCraft[2];
+static Ship *g_apRadarCraft[2] = { &g_aRadarCraft[0], &g_aRadarCraft[1] };
+static RadarSessionEnv g_radarEnv;
+static char g_szRadarMsg[108];
+static u8 *g_pRadarTexts;
+
+static void RadarClickNW(void) { }
+static void RadarClickNE(void) { }
+static void RadarClickSW(void) { }
+static void RadarClickSE(void) { }
+static void RadarClickBackdrop(void) { }
+
+static bool RadarLoadCtlPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                             const char *psz2, void *pUser)
+{
+    (void)pUser;
+    UiControl_LoadPads(pCtl, psz0, psz1, psz2);
+    return true;
+}
+
+static void RadarSession_Reset(i32 nStrategIdx)
+{
+    i32 i;
+
+    if (g_bRadarListBuilt) {
+        PtrArray_Clear(&g_radarStrateg);
+    }
+    PtrArray_ctor(&g_radarStrateg);
+    for (i = 0; i < 8; ++i) {
+        PtrArray_Add(&g_radarStrateg, &g_aRadarItems[i]);
+    }
+    g_bRadarListBuilt = true;
+
+    memset(&g_radarUi, 0, sizeof(g_radarUi));
+    for (i = 0; i < 8; ++i) {
+        memset(&g_aRadarItems[i], 0, sizeof(g_aRadarItems[i]));
+        g_aRadarItems[i].bCraftClass = (u8)i;
+        g_aRadarItems[i].nHp = PUFO_STRATEG_HP_FRESH;
+        g_aRadarItems[i].dSpeed = 1.5;
+        g_aRadarItems[i].dTrackA = 1.5;
+    }
+
+    /* Every scalar starts at a value the ported code is not supposed to leave behind. */
+    g_bRadarActive = 0; g_bRadarOutFuel = 1; g_bRadarBlink = 1; g_bRadarFlip = 1;
+    g_bRadarTrace = 0; g_bRadarFlag50 = 1; g_bRadarAnim = 1;
+    g_nRadarMsgTimer = -1; g_nRadarTargetHp = -1; g_nRadarTargetHpMax = -1;
+    g_nRadarLevel = -1; g_nRadarRangeLimit = -1; g_nRadarRangeTarget = -1;
+    g_nRadarRangeCur = -1; g_nRadarAmmoL = -999; g_nRadarAmmoR = -999;
+    g_nRadarCurX = -1; g_nRadarCurY = -1;
+    g_nRadarShipIdx = 0; g_nRadarStrategIdx = nStrategIdx;
+    memset(&g_radarTime, 0, sizeof(g_radarTime));
+    g_nRadarFrameStyle = -1;
+
+    memset(g_aRadarCraft, 0, sizeof(g_aRadarCraft));
+    g_aRadarCraft[0].bWeaponL = 25; g_aRadarCraft[0].bWeaponR = 26;
+    g_aRadarCraft[0].bAmmo25 = 7;  g_aRadarCraft[0].bAmmo26 = 3;
+    g_aRadarCraft[0].uFuelCap = 600;
+
+    memset(&g_radarEnv, 0, sizeof(g_radarEnv));
+    g_radarEnv.pUi = &g_radarUi;
+    g_radarEnv.pbActive = &g_bRadarActive;
+    g_radarEnv.pbOutOfFuel = &g_bRadarOutFuel;
+    g_radarEnv.pbBlinkPhase = &g_bRadarBlink;
+    g_radarEnv.pbFlip = &g_bRadarFlip;
+    g_radarEnv.pbTraceLost = &g_bRadarTrace;
+    g_radarEnv.pbFlag159650 = &g_bRadarFlag50;
+    g_radarEnv.pbAnimStarted = &g_bRadarAnim;
+    g_radarEnv.pnMsgTimer = &g_nRadarMsgTimer;
+    g_radarEnv.pnTargetHp = &g_nRadarTargetHp;
+    g_radarEnv.pnTargetHpMax = &g_nRadarTargetHpMax;
+    g_radarEnv.pnCraftLevel = &g_nRadarLevel;
+    g_radarEnv.pnRangeLimit = &g_nRadarRangeLimit;
+    g_radarEnv.pnRangeTarget = &g_nRadarRangeTarget;
+    g_radarEnv.pnRangeCur = &g_nRadarRangeCur;
+    g_radarEnv.pnAmmoL = &g_nRadarAmmoL;
+    g_radarEnv.pnAmmoR = &g_nRadarAmmoR;
+    g_radarEnv.pnCursorX = &g_nRadarCurX;
+    g_radarEnv.pnCursorY = &g_nRadarCurY;
+    g_radarEnv.pnShipIdx = &g_nRadarShipIdx;
+    g_radarEnv.pnStrategIdx = &g_nRadarStrategIdx;
+    g_radarEnv.apCraft = g_apRadarCraft;
+    g_radarEnv.nCraftCount = 2;
+    g_radarEnv.pStrategList = &g_radarStrateg;
+    g_radarEnv.pTime = &g_radarTime;
+    g_radarEnv.pnFrameStyle = &g_nRadarFrameStyle;
+    g_radarEnv.apfnClick[0] = RadarClickNW;
+    g_radarEnv.apfnClick[1] = RadarClickNE;
+    g_radarEnv.apfnClick[2] = RadarClickSW;
+    g_radarEnv.apfnClick[3] = RadarClickSE;
+    g_radarEnv.apfnClick[4] = RadarClickBackdrop;
+    g_radarEnv.pfnLoadPads = RadarLoadCtlPads;
+
+    memset(g_szRadarMsg, 0, sizeof(g_szRadarMsg));
+}
+
+/* True when pPad holds exactly the bytes of "<pszName>.pad". PadImage_Load keeps the whole member,
+ * which is the 4-byte dimension header plus uWidth * uHeight index bytes. */
+static bool RadarPadIs(const PadImage *pPad, const char *pszName)
+{
+    PadImage ref;
+    bool bSame;
+    size_t cb;
+
+    PadImage_ctor(&ref);
+    if (!PadImage_Load(&ref, pszName, pPad->nMode)) {
+        PadImage_FreeData(&ref);
+        return false;
+    }
+    cb = 4u + (size_t)ref.uWidth * (size_t)ref.uHeight;
+    bSame = pPad->pData != NULL
+         && pPad->uWidth == ref.uWidth && pPad->uHeight == ref.uHeight
+         && memcmp(pPad->pData, ref.pData, cb) == 0;
+    PadImage_FreeData(&ref);
+    return bSame;
+}
+
+static bool RadarSlotIs(i32 nSlot, const char *pszPal)
+{
+    i32 i;
+    Palette_Load(pszPal, (u8)(nSlot + 30)); /* scratch slot, 34..39 for the 1..9 range used here */
+    for (i = 0; i < PUFO_PAL_SIZE; ++i) {
+        if (g_aPalette[nSlot][i] != g_aPalette[nSlot + 30][i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void TestRadarSession(void)
+{
+    static const i32 anLevel[8] = { 8, 6, 6, 4, 4, 2, 2, 0 };
+    static const i32 anHp[8] = { 50, 200, 250, 500, 500, 1200, 2200, 3000 };
+    static const i32 anLimit[8] = { 240, 360, 360, 400, 400, 480, 480, 480 };
+    static const char *const apszArt[8] = {
+        "ufo_4", "ufo_3", "ufo_3", "ufo_2", "ufo_2", "ufo_1", "ufo_1", "ufo_0"
+    };
+    static const char *const apszPal[8] = {
+        "85.pal", "86.pal", "87.pal", "88.pal", "89.pal", "90.pal", "92.pal", "91.pal"
+    };
+    static const char *const apszOverlay[8] = { "85", "86", "87", "88", "89", "90", "92", "91" };
+    /* The five origins RadarScreen_Init writes at 0x5FDB8..0x5FE3C, restated from the IDB. */
+    static const i32 anButtonX[PUFO_RADAR_BUTTON_PADS] = { 117, 161, 117, 161, 117 };
+    static const i32 anButtonY[PUFO_RADAR_BUTTON_PADS] = {  86,  86, 107, 107, 128 };
+    static const char *const apszArchive[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    i32 nClass;
+    i32 i;
+
+    printf("RadarScreen_Init @ 0x5f490 (open path)\n");
+    if (!Asset_OpenArchives(apszArchive)) {
+        Check(false, "the shipped archives opened");
+        return;
+    }
+
+    /* The palette state the copy at 0x5FC34 works on, set up the way Geoscape_InitUI leaves it. */
+    Palette_Load("all_btn.pal", PUFO_RADAR_PAL_SRC_SLOT);
+    Palette_Load("ufoflash.pal", 27);
+    Palette_Load("funding.pal", 28);
+    Palette_Load("menu.pal", PUFO_RADAR_PAL_DST_SLOT);
+    Palette_Load("cic.pal", 2);
+
+    RadarSession_Reset(3); /* bCraftClass 3 -> ufo_2, level 4, hp 500, 88.pal, limit 400 */
+    RadarScreen_Init(&g_radarEnv);
+
+    CheckEqI32(g_bRadarActive, 1, "the open path sets bRadarScreenActive");
+    CheckEqI32(g_bRadarOutFuel, 0, "bRadarCraftOutOfFuel cleared (0x5F4B0)");
+    CheckEqI32(g_bRadarBlink, 0, "bRadarBlinkPhase cleared (0x5F4BC)");
+    CheckEqI32(g_bRadarFlip, 0, "bRadarFlip cleared (0x5F4C8)");
+    CheckEqI32(g_bRadarTrace, 0, "bRadarTraceLost cleared (0x5F4D4)");
+    CheckEqI32(g_bRadarFlag50, 0, "unk_159650 cleared (0x5F4E0)");
+    CheckEqI32(g_bRadarAnim, 0, "bUiAnimStarted cleared (0x5FEFC)");
+    CheckEqI32(g_nRadarMsgTimer, 255, "nRadarMsgTimer starts at 255 (0x5F60C)");
+    CheckEqI32(g_nRadarRangeTarget, 560, "nRadarRangeTarget starts full (0x5FC10)");
+    CheckEqI32(g_nRadarRangeCur, 560, "nRadarRangeCur starts full (0x5FC18)");
+    CheckEqI32(g_nRadarCurX, 117, "the radar cursor starts at the NW corner x");
+    CheckEqI32(g_nRadarCurY, 86, "and the NW corner y");
+
+    CheckEqI32(g_nRadarLevel, 4, "class 3 gives nRadarCraftLevel 4");
+    CheckEqI32(g_nRadarTargetHp, 500, "class 3 gives 500 target HP");
+    CheckEqI32(g_nRadarTargetHpMax, 500, "and the same in nInterceptTargetHpMax");
+    CheckEqI32(g_nRadarRangeLimit, 400, "class 3 gives a 400 range limit");
+    CheckEqI32(g_aRadarItems[3].nHp, 500, "a fresh contact (-1) adopts the table HP (0x5FAB4)");
+
+    Check(g_radarUi.pFramePad != NULL && RadarPadIs(g_radarUi.pFramePad, "radar"),
+          "the frame pad really is radar.pad");
+    Check(g_radarUi.pFramePad != NULL && g_radarUi.pFramePad->nMode == PUFO_RADAR_FRAME_MODE
+          && g_radarUi.pFramePad->uWidth == 85 && g_radarUi.pFramePad->uHeight == 114,
+          "radar.pad is 85x114 in palette slot 22");
+    Check(g_radarUi.pFramePad != NULL && g_radarUi.pFramePad->nOriginX == 26
+          && g_radarUi.pFramePad->nOriginY == 56, "the frame pad sits at (26, 56)");
+    Check(g_radarUi.pUfoPad != NULL && RadarPadIs(g_radarUi.pUfoPad, "ufo_2"),
+          "class 3 loads ufo_2 into pRadarUfoPad");
+    Check(g_radarUi.pUfoPad != NULL && g_radarUi.pUfoPad->nMode == PUFO_RADAR_UFO_MODE
+          && g_radarUi.pUfoPad->nOriginX == 55, "the ufo pad is mode 23 at x 55");
+    Check(g_radarUi.pUfoFlashPad != NULL && RadarPadIs(g_radarUi.pUfoFlashPad, "ufo_2f")
+          && g_radarUi.pUfoFlashPad->nMode == PUFO_RADAR_FLASH_MODE,
+          "ufo_2f into pRadarUfoFlashPad, mode 27");
+    Check(g_radarUi.pUfoMissilePad != NULL && RadarPadIs(g_radarUi.pUfoMissilePad, "ufo_2m")
+          && g_radarUi.pUfoMissilePad->nMode == PUFO_RADAR_FLASH_MODE,
+          "ufo_2m into pRadarUfoMissilePad, mode 27");
+    Check(g_radarUi.pOverlayPad != NULL && RadarPadIs(g_radarUi.pOverlayPad, "88"),
+          "class 3 loads the 88 overlay pad");
+    Check(g_radarUi.pOverlayPad != NULL && g_radarUi.pOverlayPad->uWidth == 154
+          && g_radarUi.pOverlayPad->nOriginX == 115 - (154 >> 1)
+          && g_radarUi.pOverlayPad->nOriginY == 180,
+          "the overlay is centred as 115 - (uWidth >> 1), y 180 (0x5FA48)");
+    Check(RadarSlotIs(17, "88.pal"), "class 3 loads 88.pal into palette slot 17");
+
+    CheckEqI32(g_nRadarAmmoL, 7, "mount 25 draws 7 from Ship.bAmmo25");
+    CheckEqI32(g_nRadarAmmoR, 3, "mount 26 draws 3 from Ship.bAmmo26");
+
+    for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+        Check(g_radarUi.apCtl[i] != NULL && g_radarUi.apCtl[i]->pfnClick == g_radarEnv.apfnClick[i],
+              "each radar control gets its click handler at +0xC");
+    }
+    Check(g_radarUi.apCtl[0] != NULL && g_radarUi.apCtl[0]->apPads[0] != NULL
+          && RadarPadIs(g_radarUi.apCtl[0]->apPads[0], "i_but0")
+          && g_radarUi.apCtl[0]->apPads[1] != NULL
+          && RadarPadIs(g_radarUi.apCtl[0]->apPads[1], "i_but1"),
+          "UiControl_Setup loads the descriptor's pad0 and pad1 into slots 0 and 1");
+    Check(g_radarUi.apCtl[4] != NULL && g_radarUi.apCtl[4]->apPads[0] != NULL
+          && RadarPadIs(g_radarUi.apCtl[4]->apPads[0], "i_but7"),
+          "the fifth control's descriptor names i_but7");
+
+    for (i = 0; i < PUFO_RADAR_BUTTON_PADS; ++i) {
+        Check(g_radarUi.apButtonPad[i] != NULL
+              && g_radarUi.apButtonPad[i]->nMode == PUFO_RADAR_BUTTON_MODE
+              && g_radarUi.apButtonPad[i]->nOriginX == anButtonX[i]
+              && g_radarUi.apButtonPad[i]->nOriginY == anButtonY[i],
+              "button pad sits on its descriptor origin, in mode 26");
+    }
+    Check(g_radarUi.apButtonPad[0] != NULL && RadarPadIs(g_radarUi.apButtonPad[0], "i_but3"),
+          "button pad 0 is i_but3");
+    Check(g_radarUi.apButtonPad[1] != NULL && RadarPadIs(g_radarUi.apButtonPad[1], "i_but4"),
+          "button pad 1 is i_but4");
+    Check(g_radarUi.apButtonPad[2] != NULL && RadarPadIs(g_radarUi.apButtonPad[2], "i_but2"),
+          "button pad 2 is i_but2");
+    Check(g_radarUi.apButtonPad[3] != NULL && RadarPadIs(g_radarUi.apButtonPad[3], "i_but5"),
+          "button pad 3 is i_but5");
+    Check(g_radarUi.apButtonPad[4] != NULL && RadarPadIs(g_radarUi.apButtonPad[4], "i_but6"),
+          "button pad 4 is i_but6");
+
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        Check(g_radarUi.apDigitPad[i] != NULL
+              && g_radarUi.apDigitPad[i]->nMode == PUFO_RADAR_DIGIT_MODE,
+              "digit pad exists in mode 25");
+    }
+    Check(g_radarUi.apDigitPad[0] != NULL && RadarPadIs(g_radarUi.apDigitPad[0], "i0")
+          && g_radarUi.apDigitPad[0]->uWidth == 8 && g_radarUi.apDigitPad[0]->uHeight == 13,
+          "digit pad 0 is i0, 8x13");
+    Check(g_radarUi.apDigitPad[10] != NULL && RadarPadIs(g_radarUi.apDigitPad[10], "perc")
+          && g_radarUi.apDigitPad[10]->uWidth == 13 && g_radarUi.apDigitPad[10]->uHeight == 14,
+          "the eleventh digit pad is perc, 13x14");
+
+    /* The 766-dword copy at 0x5FC34, and the slots it runs over. */
+    Check(RadarSlotIs(1, "all_btn.pal"), "slot 1 (menu.pal) is overwritten with all_btn.pal");
+    Check(RadarSlotIs(2, "ufoflash.pal"),
+          "ORIGINAL BUG: the overrun writes ufoflash.pal over all of slot 2");
+    Check(RadarSlotIs(3, "base.pal"), "slot 3 is repaired by Palette_Load(\"base.pal\", 3)");
+
+    /* ------------------------------------------------- the close path */
+    RadarScreen_Init(&g_radarEnv); /* the flag is 1, so this is the teardown */
+
+    CheckEqI32(g_bRadarActive, 0, "the close path clears bRadarScreenActive (0x60148)");
+    Check(g_radarUi.pFramePad == NULL && g_radarUi.pUfoPad == NULL
+          && g_radarUi.pUfoFlashPad == NULL && g_radarUi.pUfoMissilePad == NULL
+          && g_radarUi.pOverlayPad == NULL, "all five single pads are freed and NULLed");
+    for (i = 0; i < PUFO_RADAR_BUTTON_PADS; ++i) {
+        Check(g_radarUi.apButtonPad[i] == NULL, "button pad freed");
+    }
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        Check(g_radarUi.apDigitPad[i] == NULL, "digit pad freed");
+    }
+    for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+        Check(g_radarUi.apCtl[i] == NULL, "control freed");
+    }
+    CheckEqI32(g_aRadarCraft[0].bAmmo25, 7, "mount 25 gets its own 7 back (0x60098..0x600D0)");
+    CheckEqI32(g_aRadarCraft[0].bAmmo26, 3, "mount 26 gets its own 3 back");
+    Check(RadarSlotIs(1, "menu.pal"), "slot 1 is restored to menu.pal (0x60290)");
+    Check(RadarSlotIs(2, "ufoflash.pal"),
+          "ORIGINAL BUG: nothing ever restores slot 2, it stays ufoflash.pal after the close");
+
+    /* ------------------------------------------------- the class table, all eight rows */
+    for (nClass = 0; nClass < 8; ++nClass) {
+        RadarSession_Reset(nClass);
+        RadarScreen_Init(&g_radarEnv);
+        CheckEqI32(g_nRadarLevel, anLevel[nClass], "class level");
+        CheckEqI32(g_nRadarTargetHp, anHp[nClass], "class target HP");
+        CheckEqI32(g_nRadarRangeLimit, anLimit[nClass], "class range limit");
+        Check(g_radarUi.pUfoPad != NULL && RadarPadIs(g_radarUi.pUfoPad, apszArt[nClass]),
+              "class ufo art");
+        Check(g_radarUi.pOverlayPad != NULL && RadarPadIs(g_radarUi.pOverlayPad, apszOverlay[nClass]),
+              "class overlay pad");
+        Check(RadarSlotIs(17, apszPal[nClass]), "class palette in slot 17");
+        RadarScreen_Init(&g_radarEnv);
+    }
+
+    /* ------------------------------------------------- the HP re-sync with a contact that already fought */
+    RadarSession_Reset(1);
+    g_aRadarItems[1].nHp = 123;
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarTargetHp, 123, "a contact with HP 123 replaces the table's 200 (0x5FA9C)");
+    CheckEqI32(g_nRadarTargetHpMax, 123, "nInterceptTargetHpMax follows it (0x5FAA8)");
+    CheckEqI32(g_aRadarItems[1].nHp, 123, "the item keeps its own HP");
+    RadarScreen_Init(&g_radarEnv);
+
+    /* ------------------------------------------------- the twin-mount split and its write-back */
+    RadarSession_Reset(0);
+    g_aRadarCraft[0].bWeaponR = 25;
+    g_aRadarCraft[0].bAmmo25 = 7;
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarAmmoR, 3, "a twin mount splits 7 as 7/2 on the right (0x5FBE8)");
+    CheckEqI32(g_nRadarAmmoL, 4, "and 7/2 + 7%2 on the left (0x5FBFC..0x5FC04)");
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_aRadarCraft[0].bAmmo25, 7, "the split sums back to 7 on close (0x60144)");
+    CheckEqI32(g_aRadarCraft[0].bAmmo26, 3, "and the unused mount 26 byte is untouched");
+
+    RadarSession_Reset(0);
+    g_aRadarCraft[0].bWeaponL = 25; g_aRadarCraft[0].bWeaponR = 25;
+    g_aRadarCraft[0].bAmmo25 = 6;
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarAmmoL, 3, "an even pool splits evenly");
+    CheckEqI32(g_nRadarAmmoR, 3, "on both sides");
+    RadarScreen_Init(&g_radarEnv);
+
+    RadarSession_Reset(0);
+    g_aRadarCraft[0].bWeaponL = 28; g_aRadarCraft[0].bWeaponR = 28;
+    g_aRadarCraft[0].bAmmo25 = 9;
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarAmmoL, PUFO_RADAR_AMMO_UNLIMITED, "mount kind 28 is the -1 unlimited mount");
+    CheckEqI32(g_nRadarAmmoR, PUFO_RADAR_AMMO_UNLIMITED, "on both mounts");
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_aRadarCraft[0].bAmmo25, 9, "kind 28 writes nothing back (0x60148 path)");
+
+    RadarSession_Reset(0);
+    g_aRadarCraft[0].bWeaponL = 99; g_aRadarCraft[0].bWeaponR = 25;
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarAmmoL, PUFO_RADAR_AMMO_NONE, "an unknown mount kind keeps the -2 sentinel");
+    CheckEqI32(g_nRadarAmmoR, 7, "while the other mount still draws its own ammo byte");
+    RadarScreen_Init(&g_radarEnv);
+
+    /* An out-of-range class leaves the whole table half alone. */
+    RadarSession_Reset(0);
+    g_aRadarItems[0].bCraftClass = 200; /* (i8)200 == -56 */
+    RadarScreen_Init(&g_radarEnv);
+    CheckEqI32(g_nRadarLevel, -1, "an out-of-range class writes no level");
+    CheckEqI32(g_nRadarTargetHp, 0, "and no target HP, it stays the 0 the open path stored");
+    Check(g_radarUi.pUfoPad != NULL && g_radarUi.pUfoPad->pData == NULL,
+          "and no ufo art is loaded");
+    RadarScreen_Init(&g_radarEnv);
+
+    /* ------------------------------------------------- RadarScreen_SetActive @ 0x6144c */
+    RadarSession_Reset(5);
+    RadarScreen_SetActive(&g_radarEnv, 1);
+    CheckEqI32(g_bRadarActive, 1, "SetActive(1) opens through Init");
+    CheckEqI32(g_radarTime.bPaused, 1, "and pauses the game clock (0x61464)");
+    CheckEqI32(g_nRadarFrameStyle, 1, "and picks the bright panel frame (0x6148C)");
+    CheckEqI32(g_nRadarTargetHp, 1200, "class 5 is the one SetActive was pointed at");
+    RadarScreen_SetActive(&g_radarEnv, 0);
+    CheckEqI32(g_bRadarActive, 0, "SetActive(0) closes through the same Init call");
+    CheckEqI32(g_radarTime.bPaused, 0, "and resumes the clock (0x61480)");
+    CheckEqI32(g_nRadarFrameStyle, 0, "and clears the frame style");
+    Check(g_radarUi.pOverlayPad == NULL, "the teardown really ran");
+
+    RadarSession_Reset(0);
+    RadarScreen_Init(NULL);
+    CheckEqI32(g_bRadarActive, 0, "a null environment is refused");
+
+    Asset_CloseArchives();
+}
+
+/* lang.dat TEXTS[1599], the string RadarScreen_RollDetection copies into szRadarMsg. */
+static const char g_szTraceLost[] = "\xD1\xEB\xE5\xE4 \xCD\xCB\xCE \xEF\xEE\xF2\xE5\xF0\xFF\xED";
+
+static bool RadarLoadTextBlob(void)
+{
+    static const char *const apszArchive[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    AssetReader rdr;
+    u8 aHdr[PUFO_TEXT_HDR_SIZE];
+    u32 cb, n, i;
+
+    if (!Asset_OpenArchives(apszArchive)) {
+        return false;
+    }
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, "texts.dat")) {
+        Asset_CloseArchives();
+        return false;
+    }
+    cb = AssetReader_Size(&rdr);
+    n = (cb >= PUFO_TEXT_HDR_SIZE)
+      ? (cb - PUFO_TEXT_HDR_SIZE) / PUFO_TEXT_REC_SIZE_DISK : 0u;
+    if (n <= (u32)PUFO_RADAR_TEXT_TRACE_LOST) {
+        Asset_CloseArchives();
+        return false;
+    }
+    if (!AssetReader_Read(&rdr, aHdr, PUFO_TEXT_HDR_SIZE)) {
+        Asset_CloseArchives();
+        return false;
+    }
+    g_pRadarTexts = malloc((size_t)n * PUFO_TEXT_REC_STRIDE);
+    if (g_pRadarTexts == NULL) {
+        Asset_CloseArchives();
+        return false;
+    }
+    memset(g_pRadarTexts, 0, (size_t)n * PUFO_TEXT_REC_STRIDE);
+    for (i = 0; i < n; ++i) {
+        if (!AssetReader_Read(&rdr, g_pRadarTexts + (size_t)i * PUFO_TEXT_REC_STRIDE,
+                              PUFO_TEXT_REC_SIZE_DISK)) {
+            break;
+        }
+    }
+    return true;
+}
+
+static RadarDetectEnv g_detectEnv;
+
+static void RadarDetect_Reset(i32 nClass, i32 nFuelCap)
+{
+    RadarSession_Reset(nClass);
+    g_aRadarCraft[0].uFuelCap = (u16)nFuelCap;
+    g_bRadarTrace = 0;
+    g_bRadarFlip = 0;
+    g_nRadarRangeTarget = 100;
+    g_nRadarMsgTimer = 7;
+
+    memset(&g_detectEnv, 0, sizeof(g_detectEnv));
+    g_detectEnv.pStrategList = &g_radarStrateg;
+    g_detectEnv.pnStrategIdx = &g_nRadarStrategIdx;
+    g_detectEnv.apCraft = g_apRadarCraft;
+    g_detectEnv.nCraftCount = 2;
+    g_detectEnv.pnShipIdx = &g_nRadarShipIdx;
+    g_detectEnv.pbTraceLost = &g_bRadarTrace;
+    g_detectEnv.pbFlip = &g_bRadarFlip;
+    g_detectEnv.pnRangeTarget = &g_nRadarRangeTarget;
+    g_detectEnv.pnMsgTimer = &g_nRadarMsgTimer;
+    g_detectEnv.pTextRecs = g_pRadarTexts;
+    g_detectEnv.pszMsg = g_szRadarMsg;
+    g_detectEnv.cchMsg = sizeof(g_szRadarMsg);
+}
+
+static void TestRadarDetect(void)
+{
+    const char *pszRec;
+    u8 bGot;
+
+    printf("RadarScreen_RollDetection @ 0x602a0\n");
+    if (!RadarLoadTextBlob()) {
+        Check(false, "the lang.dat TEXTS blob loaded");
+        return;
+    }
+
+    pszRec = (const char *)(g_pRadarTexts + (size_t)PUFO_RADAR_TEXT_TRACE_LOST * PUFO_TEXT_REC_STRIDE);
+    Check(strcmp(pszRec, g_szTraceLost) == 0, "lang.dat TEXTS[1599] is the trace-lost message");
+    Check(strcmp((const char *)(g_pRadarTexts + 1598 * PUFO_TEXT_REC_STRIDE), g_szTraceLost) != 0,
+          "TEXTS[1598] is a different string, so the index is not off by one");
+    Check(strcmp((const char *)(g_pRadarTexts + 1600 * PUFO_TEXT_REC_STRIDE), g_szTraceLost) != 0,
+          "and so is TEXTS[1600]");
+
+    /* Game_RandU16(1) is always 0, so nChance 1 always takes the roll's success branch. */
+    RadarDetect_Reset(2, 600); /* class 2 -> 45.0; the craft runs at 600/60 = 10 */
+    bGot = RadarScreen_RollDetection(&g_detectEnv, 1);
+    CheckEqI32(bGot, 1, "an outrunning contact sets the result byte");
+    Check(g_aRadarItems[2].dSpeed == 45.0, "class 2 writes 45.0 into StrategItem.dSpeed");
+    Check(g_aRadarItems[2].dTrackA == 45.0 * PUFO_RADAR_SPEED_TRACK_A,
+          "and dTrackA = dSpeed * 0.02 (0x60448)");
+    CheckEqI32(g_bRadarFlip, 1, "bRadarFlip is set (0x604D4)");
+    CheckEqI32(g_bRadarTrace, 1, "bRadarTraceLost is set (0x604E0)");
+    CheckEqI32(g_nRadarRangeTarget, 560, "nRadarRangeTarget jumps to full scale (0x604E4)");
+    CheckEqI32(g_nRadarMsgTimer, 0, "the message timer restarts (0x60530)");
+    Check(strcmp(g_szRadarMsg, g_szTraceLost) == 0, "szRadarMsg holds the trace-lost message");
+
+    /* The craft is faster this time: 6000/60 = 100, which is not below 45.0. */
+    RadarDetect_Reset(2, 6000);
+    bGot = RadarScreen_RollDetection(&g_detectEnv, 1);
+    CheckEqI32(bGot, 0, "a craft that keeps up leaves the flag clear");
+    Check(g_aRadarItems[2].dSpeed == 45.0, "but the speed rewrite already happened (0x602E0)");
+    CheckEqI32(g_bRadarFlip, 0, "bRadarFlip stays clear");
+    CheckEqI32(g_nRadarRangeTarget, 100, "nRadarRangeTarget is untouched");
+    CheckEqI32(g_nRadarMsgTimer, 7, "and so is the message timer");
+    Check(g_szRadarMsg[0] == 0, "and no message is copied");
+
+    /* The boundary: class 0 is 36.6666, and 2200/60 is 36.666666..., which is NOT below it. */
+    RadarDetect_Reset(0, 2200);
+    CheckEqI32(RadarScreen_RollDetection(&g_detectEnv, 1), 0,
+               "2200 fuel is just over the class 0 speed, so no trace loss");
+    RadarDetect_Reset(0, 2199);
+    CheckEqI32(RadarScreen_RollDetection(&g_detectEnv, 1), 1,
+               "2199 fuel is just under it, and the trace is lost");
+
+    /* A trace that was already lost still re-posts the message, without touching the flags. */
+    RadarDetect_Reset(2, 6000);
+    g_bRadarTrace = 1;
+    g_nRadarRangeTarget = 100;
+    bGot = RadarScreen_RollDetection(&g_detectEnv, 1);
+    CheckEqI32(bGot, 1, "an already-lost trace reports itself lost (0x6051C)");
+    CheckEqI32(g_nRadarRangeTarget, 100, "but the outrun branch did not run");
+    CheckEqI32(g_nRadarMsgTimer, 0, "the message is posted anyway (0x60530)");
+    Check(strcmp(g_szRadarMsg, g_szTraceLost) == 0, "with the same text");
+
+    /* A failing roll skips the whole speed half. Game_RandU16(100) is 23 for seed 12345. */
+    RadarDetect_Reset(2, 600);
+    srand(12345);
+    bGot = RadarScreen_RollDetection(&g_detectEnv, 100);
+    CheckEqI32(bGot, 0, "a non-zero roll skips to the flag check (0x602C0)");
+    Check(g_aRadarItems[2].dSpeed == 1.5, "dSpeed is not rewritten on a failed roll");
+    Check(g_aRadarItems[2].dTrackA == 1.5, "nor is dTrackA");
+    CheckEqI32(g_nRadarMsgTimer, 7, "and no message is posted");
+
+    /* An out-of-range class keeps the item's own speed and still scales dTrackA. */
+    RadarDetect_Reset(0, 600);
+    g_aRadarItems[0].bCraftClass = 200;
+    g_aRadarItems[0].dSpeed = 10.0;
+    bGot = RadarScreen_RollDetection(&g_detectEnv, 1);
+    Check(g_aRadarItems[0].dSpeed == 10.0, "an out-of-range class writes no speed (0x602E0 default)");
+    Check(g_aRadarItems[0].dTrackA == 10.0 * PUFO_RADAR_SPEED_TRACK_A,
+          "but dTrackA is still derived from it");
+    CheckEqI32(bGot, 0, "and 600/60 == 10.0 is not below 10.0, so the trace is not lost");
+
+    Check(RadarScreen_RollDetection(NULL, 1) == 0, "a null environment rolls nothing");
+
+    free(g_pRadarTexts);
+    g_pRadarTexts = NULL;
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -3869,6 +4412,8 @@ int main(void)
     TestRadarBackdrop();
     TestRadarFuelGauge();
     TestRadarRangeBar();
+    TestRadarSession();
+    TestRadarDetect();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

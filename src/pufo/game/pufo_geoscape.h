@@ -1384,4 +1384,221 @@ typedef struct RadarRangeBarEnv {
 /* Returns true when the bar was drawn, i.e. when all three gates passed. */
 bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv);
 
+/* ------------------------------------------------- opening and closing the radar screen
+ *
+ * Evidence: RadarScreen_Init @ 0x5f490 (3600 B), RadarScreen_SetActive @ 0x6144c (76 B).
+ *
+ * RadarScreen_Init is ONE function doing both directions, toggled on bRadarScreenActive @ 0x159678
+ * (LDRB at 0x5F494): the flag zero path opens the screen, the flag-one path closes it. That is why
+ * RadarScreen_SetActive calls it on both of its own branches -- Init decides which half runs by
+ * reading the flag the caller just decided. SetActive then writes bActive into GameTime.bPaused
+ * (STRB at 0x159618+4, 0x61464 / 0x61480) and into bUiFrameStyle (0x186566, the panel root's
+ * frame-style byte at root+0x6E, 0x6148C): opening the radar screen pauses the game clock and picks
+ * the bright panel frame. Its first argument is never read and its result (&pObj, 0x1864F8) is
+ * never used, so the port returns void.
+ *
+ * The open path, in order:
+ *   1. Sound_Play(7) (0x5F49C; the MOV R1, #4 before it is dead -- Sound_Play @ 0x9E0C0 reads only
+ *      R0), set bRadarScreenActive, and clear bRadarCraftOutOfFuel, bRadarBlinkPhase, bRadarFlip,
+ *      bRadarTraceLost and unk_159650. All five are STRB, so all five are bytes.
+ *   2. Five single pads, each operator new(0x14) + PadImage_ctor, storing NULL when the allocation
+ *      fails: pRadarFramePad (0x1596FC), pRadarUfoPad (0x1596D0), pRadarUfoMissilePad (0x159670),
+ *      pRadarUfoFlashPad (0x1596F0), pRadarOverlayPad (0x1596E4). Only the frame pad is loaded here
+ *      ("radar", mode 22, origin (26, 56)); the other four wait for the class switch.
+ *   3. nRadarMsgTimer = 255, nInterceptTargetHp = 0.
+ *   4. The class switch on (i8)strategList[nInterceptStrategIdx]->bCraftClass (LDRSB at +2, 0x5F668).
+ *      Eight cases, and they are one flat table: cases 1, 3 and 5 set the HP/palette/overlay/limit
+ *      half and then fall through into cases 2, 4 and 6 for the art and the level half. The
+ *      "if (nInterceptTargetHp == 0)" guard inside cases 2, 4 and 6 is always true, because step 3
+ *      just zeroed that field -- so the fall-through never changes anything a preceding case set.
+ *      The port reads it as the table g_aRadarUfoClass below.
+ *   5. pRadarOverlayPad->nOriginX = 115 - (uWidth >> 1) (LDRH + LSR #1 at 0x5FA48), nOriginY = 180.
+ *   6. The HP re-sync (0x5FA74): if StrategItem.nHp (+0x6C) is -1 the item has not fought yet, so it
+ *      takes the table HP; otherwise the table HP is replaced by the item's, in both
+ *      nInterceptTargetHp and nInterceptTargetHpMax.
+ *   7. The ammo draw (0x5FAAC..0x5FBFC). nRadarAmmoL and nRadarAmmoR start at -2 ("no weapon on that
+ *      mount"), then Ship.bWeaponL / bWeaponR (both LDRSB at +0x22 / +0x23) pick the source byte:
+ *      25, 26, 27, 29, 30 read Ship.bAmmo25..bAmmo30 (+0x3D..0x41), 28 gives -1 ("unlimited"),
+ *      anything else leaves -2. Then, when both mounts hold the SAME weapon kind and the pool is
+ *      neither -1 nor -2, the single pool is split: nRadarAmmoR = ammo / 2 and nRadarAmmoL =
+ *      ammo / 2 + (ammo % 2). The divide is _rt_sdiv(2, ammo) and the test is on the remainder in
+ *      R1 (0x5FBFC..0x5FC04), and the ARM's MOVS/ADDMI/ASR pair at 0x5FBE4 is the same truncating
+ *      divide, so both halves agree.
+ *   8. nRadarRangeTarget = nRadarRangeCur = 560, pRadarUfoPad->nOriginX = 55.
+ *   9. The palette copy at 0x5FC34, then Palette_Load("base.pal", 3). See the overrun note on
+ *      PUFO_RADAR_PAL_COPY_COUNT and the bugs.tsv row for 0x5FC34.
+ *  10. Five UiControl new(0x20) + UiControl_ctor into aRadarControls (0x159684), then their click
+ *      handlers written at +0xC in the order NW, NE, SW, SE, BlitMapBackdrop (0x5FCB8..0x5FCF4), then
+ *      five button pads new(0x14) + PadImage_ctor into aRadarButtonPads (0x159700), then
+ *      UiControl_Setup(aRadarControls[i], 0, 0, aRadarCtlDesc[i]) for i = 0..4 with the descriptor
+ *      table at 0xAB2A0 (stride 0x20, the IDB's UiControlDesc), then the five button pads loaded as
+ *      "i_but3", "i_but4", "i_but2", "i_but5", "i_but6" in mode 26 at origins (117,86), (161,86),
+ *      (117,107), (161,107), (117,128) -- the same five origins the descriptors carry.
+ *  11. nRadarCursorX = 117, nRadarCursorY = 86 (the NW corner), then eleven digit pads new+ctor+load
+ *      as "i0".."i9" and "perc" in mode 25, then bUiAnimStarted = 0.
+ *
+ * The close path, in order:
+ *   1. The ammo write-back (0x5FF88..0x60144). If bWeaponL == bWeaponR, then for kind 25, 26, 27, 29
+ *      or 30 the craft's bAmmo<kind> byte becomes (u8)(nRadarAmmoL + nRadarAmmoR) -- the two mounts
+ *      re-arm from one pool, which is why the split in step 7 sums back to the original count. Kind
+ *      28 and any other kind write nothing. If the mounts differ, each side is written separately
+ *      from its own counter, with the same kind filter. The store is STRB, so the sum truncates.
+ *   2. bRadarScreenActive = 0.
+ *   3. Free, in this order: the eleven digit pads, the five controls (UiControl_FreePads + delete),
+ *      the five button pads, then pRadarFramePad, pRadarUfoPad, pRadarUfoFlashPad,
+ *      pRadarUfoMissilePad, pRadarOverlayPad. Every one is null-checked.
+ *   4. Palette_Load("menu.pal", 1). Note this restores only slot 1 -- slot 2 is still holding what
+ *      step 9 wrote over it.
+ *
+ * Deviation: the original frees through operator new/delete; the port uses malloc/free. The original
+ * leaves the freed pointers stored in the globals (they are only read again after the next open,
+ * which reassigns all of them), and the port NULLs them. */
+#define PUFO_RADAR_BUTTON_PADS      5 /* aRadarButtonPads @ 0x159700 */
+#define PUFO_RADAR_CONTROLS         5 /* aRadarControls @ 0x159684 */
+#define PUFO_RADAR_FRAME_MODE      22 /* the "radar" pad's palette slot */
+#define PUFO_RADAR_UFO_MODE        23 /* ufo_<n> */
+#define PUFO_RADAR_FLASH_MODE      27 /* ufo_<n>f and ufo_<n>m, and the ufoflash.pal slot */
+#define PUFO_RADAR_OVERLAY_MODE    17 /* the 85..92 overlay pads, and the slot their .pal loads into */
+#define PUFO_RADAR_BUTTON_MODE     26 /* i_but2..i_but6, and the all_btn.pal slot */
+#define PUFO_RADAR_DIGIT_MODE      25 /* i0..i9 and perc, and the cic.pal slot */
+#define PUFO_RADAR_FRAME_X         26 /* 0x5F54C: MOV R3, #0x1A */
+#define PUFO_RADAR_FRAME_Y         56 /* 0x5F554: MOV R3, #0x38 */
+#define PUFO_RADAR_UFO_X           55 /* 0x5FC28: MOV R3, #0x37 */
+#define PUFO_RADAR_OVERLAY_X_CENTRE 115 /* 0x5FA50: RSB R3, R3, #0x73 -- 115 - (uWidth >> 1) */
+#define PUFO_RADAR_OVERLAY_Y       180 /* 0x5FA5C: MOV R3, #0xB4 */
+#define PUFO_RADAR_MSG_TIMER_INIT  255 /* 0x5F60C: MOV R1, #0xFF */
+#define PUFO_RADAR_AMMO_NONE        (-2) /* no weapon on that mount */
+#define PUFO_RADAR_AMMO_UNLIMITED   (-1) /* mount kind 28 */
+#define PUFO_STRATEG_HP_FRESH       (-1) /* StrategItem.nHp meaning "this contact has not fought yet" */
+#define PUFO_RADAR_PAL_COPY_COUNT  766 /* 0x5FC2C: MOV R1, #0x2FC ; ORR R1, R1, #3 -> 767, decremented first */
+#define PUFO_RADAR_PAL_SRC_SLOT     26 /* 0x5FC38: ADD R3, R0, #0x6800 = aPalette + 26 * 1024 */
+#define PUFO_RADAR_PAL_DST_SLOT      1 /* 0x5FC44: STR R3, [R0, #0x400] = aPalette + 1 * 1024 */
+
+/* ORIGINAL BUG (0x5FC34), reproduced: the copy runs 766 dwords, but a palette slot holds 256. The
+ * stores cover slot 1 (all 256), slot 2 (all 256) and slot 3 (254 of 256), and the reads run from
+ * slot 26 through slot 27 and 254 entries of slot 28. Palette_Load("base.pal", 3) at 0x5FC58 repairs
+ * slot 3, and the close path reloads slot 1 with menu.pal, but nothing ever reloads slot 2: after
+ * the first radar screen it stays holding ufoflash.pal. The port copies the original's count. */
+
+/* One row per StrategItem.bCraftClass, read out of the switch's literal pool (0x5F698..0x5F9F8) and
+ * out of RadarScreen_RollDetection's speed table (0x602E0..0x60404). The doubles are the original's
+ * own literals: 36.6666, 40.0, 45.0, 66.6666, 71.0, 80.0, 53.6666, 83.3333. */
+typedef struct RadarUfoClass {
+    const char *pszArt;     /* ufo_<n> into pRadarUfoPad, mode 23 */
+    const char *pszFlash;   /* ufo_<n>f into pRadarUfoFlashPad, mode 27 */
+    const char *pszMissile; /* ufo_<n>m into pRadarUfoMissilePad, mode 27 */
+    i8          nLevel;     /* nRadarCraftLevel @ 0x1596E0 */
+    i32         nHp;        /* nInterceptTargetHp @ 0x159698 and nInterceptTargetHpMax @ 0x159658 */
+    const char *pszPalette; /* loaded into palette slot 17 */
+    const char *pszOverlay; /* pRadarOverlayPad, mode 17 */
+    i32         nRangeLimit;/* nRadarRangeLimit @ 0x159668 */
+    double      dSpeed;     /* the speed RadarScreen_RollDetection writes into StrategItem.dSpeed */
+} RadarUfoClass;
+
+#define PUFO_RADAR_CLASS_COUNT 8
+
+extern const RadarUfoClass g_aRadarUfoClass[PUFO_RADAR_CLASS_COUNT];
+
+/* The objects RadarScreen_Init owns between an open and a close. The original keeps them in eleven
+ * separate globals; the port groups them, and Init fills and empties the whole struct. */
+typedef struct RadarUiState {
+    PadImage  *pFramePad;
+    PadImage  *pUfoPad;
+    PadImage  *pUfoFlashPad;
+    PadImage  *pUfoMissilePad;
+    PadImage  *pOverlayPad;
+    PadImage  *apButtonPad[PUFO_RADAR_BUTTON_PADS];
+    PadImage  *apDigitPad[PUFO_RADAR_DIGIT_PADS];
+    UiControl *apCtl[PUFO_RADAR_CONTROLS];
+} RadarUiState;
+
+typedef struct RadarSessionEnv {
+    RadarUiState *pUi;
+    u8   *pbActive;        /* bRadarScreenActive @ 0x159678, the open/closed flag Init toggles on */
+    u8   *pbOutOfFuel;     /* bRadarCraftOutOfFuel @ 0x1596DC */
+    u8   *pbBlinkPhase;    /* bRadarBlinkPhase @ 0x159730 */
+    u8   *pbFlip;          /* bRadarFlip @ 0x159718 */
+    u8   *pbTraceLost;     /* bRadarTraceLost @ 0x159714 */
+    u8   *pbFlag159650;    /* unk_159650, cleared on open and read by RadarScreen_Update */
+    u8   *pbAnimStarted;   /* bUiAnimStarted @ 0x187080 */
+    i32  *pnMsgTimer;      /* nRadarMsgTimer @ 0xAC220 */
+    i32  *pnTargetHp;      /* nInterceptTargetHp @ 0x159698 */
+    i32  *pnTargetHpMax;   /* nInterceptTargetHpMax @ 0x159658 */
+    i32  *pnCraftLevel;    /* nRadarCraftLevel @ 0x1596E0 */
+    i32  *pnRangeLimit;    /* nRadarRangeLimit @ 0x159668 */
+    i32  *pnRangeTarget;   /* nRadarRangeTarget @ 0x15965C */
+    i32  *pnRangeCur;      /* nRadarRangeCur @ 0x15966C */
+    i32  *pnAmmoL;         /* nRadarAmmoL @ 0x159654 */
+    i32  *pnAmmoR;         /* nRadarAmmoR @ 0x159664 */
+    i32  *pnCursorX;       /* nRadarCursorX @ 0x1596D4 */
+    i32  *pnCursorY;       /* nRadarCursorY @ 0x1596D8 */
+    const i32 *pnShipIdx;    /* nInterceptShipIdx @ 0x15967C */
+    const i32 *pnStrategIdx; /* nInterceptStrategIdx @ 0x159680 */
+    Ship *const *apCraft;    /* Map.apCraft @ 0x114A64 */
+    i32 nCraftCount;
+    PtrArray *pStrategList;  /* strategList @ 0x186534 */
+    GameTime *pTime;         /* GameTime @ 0x159618; SetActive writes bPaused */
+    i8   *pnFrameStyle;      /* bUiFrameStyle @ 0x186566, the panel root's frame-style byte */
+    /* The five click handlers Init installs at UiControl +0xC, in the order the ARM writes them.
+     * They are injected because the ported handlers take envs, not the original's globals. */
+    void (*apfnClick[PUFO_RADAR_CONTROLS])(void);
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pLoadPadsUser;
+} RadarSessionEnv;
+
+/* Opens the radar screen when pUi's flag is 0 and closes it when it is 1. */
+void RadarScreen_Init(const RadarSessionEnv *pEnv);
+
+/* Init, then bPaused and the panel frame style both take bActive. */
+void RadarScreen_SetActive(const RadarSessionEnv *pEnv, u8 bActive);
+
+/* --- RadarScreen_RollDetection @ 0x602a0 (720 B) : the "trace lost" roll ---
+ *
+ * Game_RandU16(nChance) gates it: any non-zero roll skips the whole speed comparison and goes
+ * straight to the flag check, so the event happens once in nChance.
+ *
+ * On a zero roll it first rewrites the tracked item: strategList[nInterceptStrategIdx]->dSpeed
+ * becomes g_aRadarUfoClass[bCraftClass].dSpeed (class 0..7; any other class writes nothing), and
+ * dTrackA becomes dSpeed * 0.02.
+ *
+ * Then it compares the craft's own speed against that: (double)apCraft[nInterceptShipIdx]->uFuelCap
+ * * (1/60) < dSpeed. uFuelCap / 60 is the same speed basis StrategList_ProcessEvents uses for an
+ * inactive craft (pufo_strateg.c:504) and Ship_BurnFuel uses for its per-tick burn, so the test is
+ * literally "the tracked object outruns our intercept craft". When it does NOT outrun us, nothing is
+ * set and the result is whatever bRadarTraceLost already held. When it does: bRadarFlip = 1,
+ * bRadarTraceLost = 1, nRadarRangeTarget = 560 (the full-scale target, the same constant
+ * PUFO_RADAR_RANGE_SCALE), and the result is 1.
+ *
+ * Finally, if the result byte is non-zero -- either set just now or already set by an earlier roll --
+ * nRadarMsgTimer = 0 and TEXTS[1599] is copied into szRadarMsg. lang.dat decodes that record as
+ * "След МАК потерян" in cp1251 (D1 EB E5 E4 20 CD CB CE 20 EF EE F2 E5 F0 FF ED -- the middle word is Cyrillic МАК, which reads like "MAX"). The copy is the original's unbounded strcpy-until-NUL
+ * loop at 0x6054C; the port bounds it to the destination (deviation).
+ *
+ * bRadarTraceLost is also the gate the four corner buttons open on: once it is set they do nothing,
+ * which is why losing the trace stops the cursor from moving. Nothing in the binary clears it except
+ * the open path of RadarScreen_Init. */
+#define PUFO_RADAR_TEXT_TRACE_LOST 1599 /* TEXTS record copied into szRadarMsg */
+#define PUFO_RADAR_SPEED_TRACK_A   0.02 /* dTrackA = dSpeed * this, 0x60444 */
+#define PUFO_RADAR_SPEED_SCALE     (1.0 / 60.0) /* uFuelCap / 60 is the craft's speed, 0x604A0 */
+
+typedef struct RadarDetectEnv {
+    PtrArray    *pStrategList;  /* strategList @ 0x186534 */
+    const i32   *pnStrategIdx;  /* nInterceptStrategIdx @ 0x159680 */
+    Ship *const *apCraft;       /* Map.apCraft @ 0x114A64 */
+    i32          nCraftCount;
+    const i32   *pnShipIdx;     /* nInterceptShipIdx @ 0x15967C */
+    u8          *pbTraceLost;   /* bRadarTraceLost @ 0x159714 */
+    u8          *pbFlip;        /* bRadarFlip @ 0x159718 */
+    i32         *pnRangeTarget; /* nRadarRangeTarget @ 0x15965C */
+    i32         *pnMsgTimer;    /* nRadarMsgTimer @ 0xAC220 */
+    const u8    *pTextRecs;     /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+    char        *pszMsg;        /* szRadarMsg @ 0x186B10 */
+    size_t       cchMsg;
+} RadarDetectEnv;
+
+/* Returns the bRadarTraceLost value the roll ended with. RadarScreen_Update @ 0x60A3C is the only
+ * caller and it discards the value. */
+u8 RadarScreen_RollDetection(const RadarDetectEnv *pEnv, i32 nChance);
+
 #endif /* PUFO_GEOSCAPE_H */

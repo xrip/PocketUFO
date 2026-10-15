@@ -12713,3 +12713,100 @@ Deviation: the gauge returns the percentage it drew where the original returns t
 PadImage_BlitEx result, which no caller uses. The port takes a zero uFuelMax as a ratio of zero (the
 original divides by zero) and refuses a digit outside the pad table (the original indexes it out of
 bounds); both are port-side guards over cases the original leaves undefined, and both are checked.
+
+## RadarScreen_Init (0x5f490, 3600 B), RadarScreen_SetActive (0x6144c, 76 B), RadarScreen_RollDetection (0x602a0, 720 B)
+
+Ported as `RadarScreen_Init`, `RadarScreen_SetActive` and `RadarScreen_RollDetection` in
+`src/pufo/game/pufo_geoscape.c`; the map, the `RadarUiState` / `RadarSessionEnv` / `RadarDetectEnv`
+structs and the `g_aRadarUfoClass` table are in `src/pufo/game/pufo_geoscape.h`.
+
+### RadarScreen_Init
+
+One function doing both directions, toggled on `bRadarScreenActive` @ 0x159678 (LDRB at 0x5F494): the
+flag-zero path opens the radar screen, the flag-one path closes it. That is why `RadarScreen_SetActive`
+calls it on both of its own branches.
+
+Open path (0x5F498..0x5FE80): `Sound_Play(7)` (the `MOV R1, #4` before it is dead -- Sound_Play @
+0x9E0C0 reads only R0); set the flag; clear `bRadarCraftOutOfFuel`, `bRadarBlinkPhase`, `bRadarFlip`,
+`bRadarTraceLost` and `unk_159650` (all five are STRB, so all five are bytes); allocate five single
+pads; `nRadarMsgTimer = 255` and `nInterceptTargetHp = 0`; the class switch; centre the overlay pad as
+`115 - (uWidth >> 1)` at y 180; re-sync `StrategItem.nHp` (+0x6C) with `nInterceptTargetHp` (-1 means
+"this contact has not fought yet"); draw the two mounts' ammo and split a twin mount's pool;
+`nRadarRangeTarget = nRadarRangeCur = 560`; `pRadarUfoPad->nOriginX = 55`; the 766-dword palette copy
+and `Palette_Load("base.pal", 3)`; five `UiControl`s with their click handlers and descriptors; five
+button pads; `nRadarCursorX/Y = 117/86`; eleven digit pads; `bUiAnimStarted = 0`.
+
+Close path (0x5FF88..0x60298): write the radar ammo back into the craft -- identical mounts get
+`(u8)(nRadarAmmoL + nRadarAmmoR)` into `bAmmo<kind>`, different mounts each get their own counter, and
+mount kind 28 or any unknown kind writes nothing; clear the flag; free 11 digit pads, 5 controls, 5
+button pads and the five single pads; `Palette_Load("menu.pal", 1)`.
+
+The switch at 0x5F658 is one flat table. Cases 1, 3 and 5 set the HP/palette/overlay/limit half and
+fall through into cases 2, 4 and 6 for the art and level half only, and the `if (nInterceptTargetHp ==
+0)` guard inside 2, 4 and 6 is always true because 0x5F614 zeroed that field moments earlier -- so the
+fall-through never changes anything a preceding case already set. The eight rows, read out of the
+switch's literal pool and out of RollDetection's speed table:
+
+| bCraftClass | art (mode 23) | flash / missile (mode 27) | level | target HP | palette -> slot 17 | overlay pad (mode 17) | range limit | dSpeed |
+|---|---|---|---|---|---|---|---|---|
+| 0 | ufo_4 | ufo_4f / ufo_4m | 8 | 50 | 85.pal | 85 | 240 | 36.6666 |
+| 1 | ufo_3 | ufo_3f / ufo_3m | 6 | 200 | 86.pal | 86 | 360 | 40.0 |
+| 2 | ufo_3 | ufo_3f / ufo_3m | 6 | 250 | 87.pal | 87 | 360 | 45.0 |
+| 3 | ufo_2 | ufo_2f / ufo_2m | 4 | 500 | 88.pal | 88 | 400 | 66.6666 |
+| 4 | ufo_2 | ufo_2f / ufo_2m | 4 | 500 | 89.pal | 89 | 400 | 71.0 |
+| 5 | ufo_1 | ufo_1f / ufo_1m | 2 | 1200 | 90.pal | 90 | 480 | 80.0 |
+| 6 | ufo_1 | ufo_1f / ufo_1m | 2 | 2200 | 92.pal | 92 | 480 | 53.6666 |
+| 7 | ufo_0 | ufo_0f / ufo_0m | 0 | 3000 | 91.pal | 91 | 480 | 83.3333 |
+
+Any other class writes none of it: the level, target HP, target HP max and range limit keep whatever
+the previous intercept left, and no ufo art or overlay pad is loaded. The doubles are the original's
+own literals -- 0x60324 stores 0x40425553_2617C1BE, which is exactly the double `36.6666`.
+
+Deviation (shape, not behaviour): the per-case store order is normalised into one table application.
+Each case writes the same eight things into eight distinct globals, so the order is not observable.
+
+ORIGINAL BUG, reproduced (bugs.tsv 0x5FC34): the palette copy at 0x5FC34 runs 766 dwords while a slot
+holds 256, so it overwrites slot 1 (menu.pal, the target) and then all of slot 2 and 254 of 256
+entries of slot 3, reading from slot 26 through slot 27 and 254 entries of slot 28. `base.pal` repairs
+slot 3 at 0x5FC58 and the close path restores slot 1 at 0x60290, but nothing anywhere reloads slot 2.
+
+Other deviations: `operator new`/`delete` become `malloc`/`free`; the port NULLs the freed pointers the
+original leaves dangling; the `strategList` and `apCraft` lookups are bounds-checked where the original
+dereferences them directly; the pad and control allocations are guarded for NULL as the original does.
+
+### RadarScreen_SetActive
+
+`RadarScreen_Init()` on both branches (0x61458 and 0x61474 -- Init decides which half runs from the
+flag), then `GameTime.bPaused` (STRB at 0x159618+4) and `bUiFrameStyle` (0x186566, the panel root's
+frame-style byte at root+0x6E) both take `bActive`. Opening the radar screen pauses the game clock and
+picks the bright panel frame. The first argument is never read and the `&pObj` result is never used, so
+the port returns void.
+
+### RadarScreen_RollDetection
+
+`Game_RandU16(nChance) != 0` skips the whole speed half and goes straight to the flag check, so the
+event happens once in nChance. On a zero roll it rewrites the tracked item first:
+`dSpeed = g_aRadarUfoClass[bCraftClass].dSpeed` (an out-of-range class writes nothing) and
+`dTrackA = dSpeed * 0.02`. Then it compares `(double)apCraft[nInterceptShipIdx]->uFuelCap * (1/60)`
+against that speed. `uFuelCap / 60` is the craft's own speed -- the same basis
+`StrategList_ProcessEvents` uses for an inactive craft (pufo_strateg.c:504) and `Ship_BurnFuel` burns
+by -- so the test is literally "the tracked contact outruns our intercept craft". When it does not,
+nothing is set and the result is whatever `bRadarTraceLost` already held. When it does: `bRadarFlip =
+1`, `bRadarTraceLost = 1`, `nRadarRangeTarget = 560`, result 1. If the result byte is non-zero either
+way, `nRadarMsgTimer = 0` and TEXTS[1599] is copied into `szRadarMsg` @ 0x186B10; lang.dat decodes
+that record as cp1251 "След МАК потерян" (the middle word is Cyrillic МАК, which reads like "MAX").
+
+`bRadarTraceLost` is also the gate the four corner buttons open on, so losing the trace freezes the
+radar cursor; only the open path of RadarScreen_Init clears it.
+
+Deviation: the original's strcpy-until-NUL at 0x6054C has no bound; the port bounds it to the
+destination.
+
+Tests: `TestRadarSession` and `TestRadarDetect` in `tests/test_geoscape.c`, 194 checks, run against the
+shipped archives. Every pad the original loads is loaded for real and compared byte-for-byte against a
+directly loaded reference member (radar.pad 85x114, ufo_2 27x27, 88 154x58, i_but3 45x22, i_but6
+89x22, i0 8x13, perc 13x14); the class table is checked for all eight classes; the palette copy is
+checked against independently reloaded palettes, including the slot-2 overrun before and after the
+close; the twin-mount split is checked for an odd and an even pool, for mount kind 28 and for an
+unknown kind; and the radar message is compared against the real lang.dat TEXTS[1599], with its
+neighbours 1598 and 1600 asserted to be different strings so the record index cannot be off by one.

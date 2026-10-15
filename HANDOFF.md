@@ -1,10 +1,11 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `29084ae`. This document is committed together with
-`RadarScreen_DrawFuelGauge` (0x5d918) and `RadarScreen_DrawRangeBar` (0x5d6e4), ported in
-`src/pufo/game/pufo_geoscape.{c,h}` with `tests/test_geoscape.c`; the reading it came from is written up
-in `docs/parity/game-core.md` under
-`## RadarScreen_DrawFuelGauge (0x5d918, 524 B) and RadarScreen_DrawRangeBar (0x5d6e4, 564 B)`.
+Date: 2026-10-15. HEAD before this edit: `a605ee4`. This document is committed together with
+`RadarScreen_Init` (0x5f490), `RadarScreen_SetActive` (0x6144c) and `RadarScreen_RollDetection`
+(0x602a0), ported in `src/pufo/game/pufo_geoscape.{c,h}` with `tests/test_geoscape.c`; the reading it
+came from is written up in `docs/parity/game-core.md` under
+`## RadarScreen_Init (0x5f490, 3600 B), RadarScreen_SetActive (0x6144c, 76 B), RadarScreen_RollDetection
+(0x602a0, 720 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -43,7 +44,7 @@ Build and test, run for this document:
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
 ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 56
-                                             Total Test time (real) = 3.95 sec
+                                             Total Test time (real) = 3.99 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -57,12 +58,12 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 872 / 1103 (79.1%)
-                                             bytes cited:     383092 / 598792 (64.0%)
-python docs/parity/audit_credits.py       -> credited functions: 872, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 240 (explain 211 citations)
+python docs/parity/coverage.py            -> functions cited: 875 / 1103 (79.3%)
+                                             bytes cited:     387488 / 598792 (64.7%)
+python docs/parity/audit_credits.py       -> credited functions: 875, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 258 (explain 211 citations)
                                              credited addresses whose original name is not defined: 0
-python docs/parity/audit_bugs.py          -> ledger rows: 120, ORIGINAL BUG markers in src/pufo: 44
+python docs/parity/audit_bugs.py          -> ledger rows: 121, ORIGINAL BUG markers in src/pufo: 45
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 39 tables checked, 0 mismatched
 ```
@@ -79,9 +80,31 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10789**. Coverage as of the latest commit: **872 / 1103
-functions (79.1%)**, **383092 / 598792 bytes (64.0%)**. The last unit was the radar screen's fuel gauge
-and range bar (`0x5d918` and `0x5d6e4`, 1088 bytes). The gauge draws the **consumed** percentage —
+Test checks run across the 56 suites: **10983**. Coverage as of the latest commit: **875 / 1103
+functions (79.3%)**, **387488 / 598792 bytes (64.7%)**. The last unit was the radar screen's session:
+`RadarScreen_Init` (0x5f490, 3600 B), `RadarScreen_SetActive` (0x6144c, 76 B) and
+`RadarScreen_RollDetection` (0x602a0, 720 B), 194 new checks. `RadarScreen_Init` is **one function doing
+both directions**, toggled on `bRadarScreenActive` (LDRB at 0x5F494) — which is why `SetActive` calls it
+on both of its own branches — and `SetActive` then writes the same byte into `GameTime.bPaused` and
+`bUiFrameStyle`, so **opening the radar screen pauses the game clock**. Its eight-case class switch is
+**one flat table**: cases 1, 3 and 5 fall through into 2, 4 and 6 for the art and level half only, and
+the `if (nInterceptTargetHp == 0)` guard inside them is always true because 0x5F614 just zeroed the
+field, so the port reads it as `g_aRadarUfoClass`, which also carries RollDetection's per-class speed.
+Two findings. The palette copy at 0x5FC34 runs **766 dwords into a 256-entry slot**, so it overwrites
+slot 1 as intended and then all of slot 2 and 254 of 256 of slot 3; `base.pal` repairs slot 3 and the
+close restores slot 1, but **nothing anywhere reloads slot 2**, which stays ufoflash.pal for the rest of
+the session (bugs.tsv row 0x5FC34). And RollDetection's comparison is
+`apCraft[nInterceptShipIdx]->uFuelCap * (1/60) < dSpeed` — `uFuelCap / 60` is the craft's own speed, the
+same basis `StrategList_ProcessEvents` uses for an inactive craft, so the per-class constants 36.6666 …
+83.3333 are contact speeds in the same units and the event means "the tracked contact outruns us". The
+message it posts is TEXTS[1599], which lang.dat decodes as cp1251 "След **МАК** потерян" — the middle
+word is Cyrillic М-А-К, not ASCII MAX. This is also the first suite that opens the shipped archives:
+every pad the original loads is loaded for real and compared byte-for-byte against a directly loaded
+reference member, and the palette copy is checked against independently reloaded palettes. Eighteen more
+globals are named in the IDB, including `bRadarScreenActive`, `nInterceptShipIdx`, `nInterceptStrategIdx`,
+`aRadarControls`, `aRadarButtonPads`, `aRadarCtlDesc`, `bRadarTraceLost`, `nRadarAmmoL/R` and
+`nInterceptTargetHpMax`.
+Before it, the radar screen's fuel gauge and range bar (`0x5d918` and `0x5d6e4`, 1088 bytes). The gauge draws the **consumed** percentage —
 `100.0 - 100.0 * Ship.nFuel / Ship.uFuelMax`, with `uFuelMax` read signed like the original's `LDRSH` —
 and keeps nothing of the number except `bRadarCraftOutOfFuel` when it reaches 100. Its tens digit is
 drawn only when it is non-zero *or* there is a hundreds digit, which is the ARM's two branch shapes at
@@ -140,7 +163,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 172 | 204 | 67496 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 175 | 204 | 71892 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -169,9 +192,10 @@ the first three radar-screen leaves.
 | `ab37f07` | port `ResearchScreen_Draw` (0x73a34) | the research screen's pad lives inside the topic table |
 | `825c983` | port `BuySellScreen_Draw` (0x77e6c) | the not-built half dereferences the panels it deleted |
 | `29084ae` | port `RadarScreen_BlitMapBackdrop` (0x5eb10) | the world-bits global was a pointer, not a size pair |
+| `a605ee4` | port `RadarScreen_DrawFuelGauge` (0x5d918) with `RadarScreen_DrawRangeBar` (0x5d6e4) | the gauge reads the consumed percentage, and its tens digit is a branch shape |
 
-and the unit this document is committed with (`RadarScreen_DrawFuelGauge` 0x5d918 with
-`RadarScreen_DrawRangeBar` 0x5d6e4) follows `29084ae`; both are described in §2.
+and the unit this document is committed with (`RadarScreen_Init` 0x5f490 with `RadarScreen_SetActive`
+0x6144c and `RadarScreen_RollDetection` 0x602a0) follows `a605ee4`; it is described in §2.
 
 ### A real crash found in already-ported code
 
@@ -292,7 +316,7 @@ It is a game convention, not a port bug. Do not "fix" it.
 - It creates its window, stays alive, and reports that `lang.dat` and `main.dat` loaded.
 - Output PE verified: `machine=0x8664`, `magic=0x20b` (PE32+), `subsystem=2` (GUI).
 - C23 confirmed: `CMAKE_C_STANDARD 23`, `CMAKE_C_EXTENSIONS OFF`, `__STDC_VERSION__ == 202311`.
-- 56 test suites, 10789 checks, all passing in 3.95 s.
+- 56 test suites, 10983 checks, all passing in 3.99 s.
 - Save and load round-trips are exercised against real chunk layouts for product, bases, ships,
   flobjs, map, teamunits, tgamedata, smap, rmp and strateg.
 - Tactical combat maths is exercised: ballistic resolution, blast footprint, splash, LOS/FOV,
@@ -371,7 +395,7 @@ This is the shortest chain that produces a real game session, in dependency orde
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
 `Tact_InitMission` and `Tact_DrawCommandPads` are no longer listed here.)
 
-`strat` is the weakest subsystem by bytes: 67,496 of 160,496 (42.1%), because `Geoscape_Draw` and the
+`strat` is the weakest subsystem by bytes: 71,892 of 160,496 (44.8%), because `Geoscape_Draw` and the
 pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
 (66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
 
@@ -534,8 +558,8 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
 
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (51 rows) and the subsystem
-notes. Notable ones:
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (121 rows, 45 of them matching
+an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
   buffer. Past 91 characters the original's behaviour is stack corruption, not defined behaviour.
@@ -797,13 +821,20 @@ does.
 `Geoscape_InitUI` (0x857f4), `Game_StartNew` (0x94554) and the shell wiring (`app/pufo_world.c`) are done; `Geoscape_Draw` is the remaining link. `Geoscape_Draw` (0x8c180, 33,744 B) is the largest
 function in the binary. `Geoscape_OnPointer` (0x872d0) and `Geoscape_OnPointerUp` (0x89450) are each
 large enough to need a fresh context window on their own. The radar (intercept) screen is being taken
-from its leaves inward: `RadarScreen_BlitMapBackdrop` (0x5eb10), `RadarScreen_DrawFuelGauge` (0x5d918)
-and `RadarScreen_DrawRangeBar` (0x5d6e4) are in, and typing them is what pinned `pSmapWorldBits`,
-`bRadarBlinkPhase`, `nSmapOverlayOriginX`, `aPaletteSlot29`, `aRadarDigitPads`, `pRadarPercentPad`,
-`bRadarCraftOutOfFuel`, `nRadarRangeLimit` and `nRadarCraftLevel`. What is left of it is
-`RadarScreen_Init` (0x5f490, 3600 B), `RadarScreen_Update` (0x60570, 3804 B), `RadarScreen_DrawOverlay`
-(0x5dc84), `RadarScreen_DrawCraftArmament` (0x5edf4), `RadarScreen_RollDetection` (0x602a0) and
-`RadarScreen_SetActive` (0x6144c) — all of them now reachable through state the port has named.
+from its leaves inward: `RadarScreen_BlitMapBackdrop` (0x5eb10), `RadarScreen_DrawFuelGauge` (0x5d918),
+`RadarScreen_DrawRangeBar` (0x5d6e4), `RadarScreen_Init` (0x5f490), `RadarScreen_SetActive` (0x6144c) and
+`RadarScreen_RollDetection` (0x602a0) are in — 7,528 of the radar screen's 15,812 bytes across its 16
+`RadarScreen_*` functions — and typing them is
+what pinned `pSmapWorldBits`, `bRadarBlinkPhase`, `nSmapOverlayOriginX`, `aPaletteSlot29`,
+`aRadarDigitPads`, `pRadarPercentPad`, `bRadarCraftOutOfFuel`, `nRadarRangeLimit`, `nRadarCraftLevel`,
+`bRadarScreenActive`, `nInterceptShipIdx`, `nInterceptStrategIdx`, `aRadarControls`, `aRadarButtonPads`,
+`aRadarCtlDesc`, `bRadarTraceLost`, `bRadarFlip`, `nRadarAmmoL`, `nRadarAmmoR`, `nInterceptTargetHpMax`,
+`pRadarFramePad`, `pRadarUfoPad`, `pRadarUfoFlashPad`, `pRadarUfoMissilePad`, `nRadarCursorX`,
+`nRadarCursorY` and `aTextRadarTraceLost`. What is left of it is `RadarScreen_Update` (0x60570, 3804 B),
+`RadarScreen_DrawOverlay` (0x5dc84, 2788 B) and `RadarScreen_DrawCraftArmament` (0x5edf4, 1692 B) — the
+last three of the sixteen, all now reachable through state the port has named. `RadarScreen_Update` is
+the one that reads the open flag, the out-of-fuel byte nine times, the cursor pair and both ammo
+counters the unit above just named, so it is next.
 
 ### Priority 4 — screens
 

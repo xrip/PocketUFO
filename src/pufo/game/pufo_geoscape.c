@@ -1,6 +1,8 @@
 /* pufo_geoscape.c - see pufo_geoscape.h for the evidence map. */
 #include "game/pufo_geoscape.h"
 #include <stdio.h>             /* snprintf, the bounded stand-in for the original's j_itoa */
+#include <stdlib.h>            /* malloc/free, RadarScreen_Init's pads and controls */
+#include <stddef.h>            /* size_t, the bounded text copy */
 #include "audio/pufo_audio.h"  /* Sound_Play, the click the speed buttons play */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the TEXTS record stride */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
@@ -2224,4 +2226,383 @@ bool RadarScreen_DrawRangeBar(const RadarRangeBarEnv *pEnv)
     /* 0x5D900..0x5D90C: reached on every path that got past the pulse gate. */
     *pEnv->pnPulseTimer = PUFO_RADAR_PULSE_NEXT;
     return true;
+}
+
+/* ------------------------------------------------- RadarScreen_Init @ 0x5f490 and friends
+ * See the header for the open/close map and for the class table's provenance. */
+
+const RadarUfoClass g_aRadarUfoClass[PUFO_RADAR_CLASS_COUNT] = {
+    /* art     flash   missile  lvl  hp   palette  overlay  limit  speed */
+    { "ufo_4", "ufo_4f", "ufo_4m", 8,    50, "85.pal", "85", 240, 36.6666 },
+    { "ufo_3", "ufo_3f", "ufo_3m", 6,   200, "86.pal", "86", 360, 40.0    },
+    { "ufo_3", "ufo_3f", "ufo_3m", 6,   250, "87.pal", "87", 360, 45.0    },
+    { "ufo_2", "ufo_2f", "ufo_2m", 4,   500, "88.pal", "88", 400, 66.6666 },
+    { "ufo_2", "ufo_2f", "ufo_2m", 4,   500, "89.pal", "89", 400, 71.0    },
+    { "ufo_1", "ufo_1f", "ufo_1m", 2,  1200, "90.pal", "90", 480, 80.0    },
+    { "ufo_1", "ufo_1f", "ufo_1m", 2,  2200, "92.pal", "92", 480, 53.6666 },
+    { "ufo_0", "ufo_0f", "ufo_0m", 0,  3000, "91.pal", "91", 480, 83.3333 },
+};
+
+/* aRadarCtlDesc @ 0xAB2A0, stride 0x20. The offsets are the same five origins the button pads
+ * get at 0x5FDB8..0x5FE3C; entries 0..3 name pads "i_but0"/"i_but1" and entry 4 names
+ * "i_but7"/"i_but8". UiControl_Setup loads those into the control's own pad slots in mode 1. */
+static const UiControlDesc g_aRadarCtlDesc[PUFO_RADAR_CONTROLS] = {
+    { 117,  86, "i_but0", "i_but1", "", 0 },
+    { 161,  86, "i_but0", "i_but1", "", 0 },
+    { 117, 107, "i_but0", "i_but1", "", 0 },
+    { 161, 107, "i_but0", "i_but1", "", 0 },
+    { 117, 128, "i_but7", "i_but8", "", 0 },
+};
+
+/* The five button pads in the order RadarScreen_Init loads them (0x5FD4C..0x5FDB4) and the origins
+ * it writes straight after (0x5FDB8..0x5FE3C). Note the name order is 3, 4, 2, 5, 6. */
+static const struct {
+    const char *pszName;
+    i32         nOriginX;
+    i32         nOriginY;
+} g_aRadarButtonLoad[PUFO_RADAR_BUTTON_PADS] = {
+    { "i_but3", 117,  86 }, { "i_but4", 161,  86 }, { "i_but2", 117, 107 },
+    { "i_but5", 161, 107 }, { "i_but6", 117, 128 },
+};
+
+/* The eleven digit pads: "i0".."i9" then the percent pad (0x5FE88..0x5FEFC). */
+static const char *const g_aRadarDigitName[PUFO_RADAR_DIGIT_PADS] = {
+    "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "perc"
+};
+
+/* operator new(0x14) + PadImage_ctor, storing NULL when the allocation fails (0x5F508). */
+static PadImage *Radar_NewPad(void)
+{
+    PadImage *pPad = (PadImage *)malloc(sizeof(PadImage));
+    if (pPad == NULL) {
+        return NULL;
+    }
+    PadImage_ctor(pPad);
+    return pPad;
+}
+
+/* operator new(0x20) + UiControl_ctor (0x5FC6C). */
+static UiControl *Radar_NewCtl(void)
+{
+    UiControl *pCtl = (UiControl *)malloc(sizeof(UiControl));
+    if (pCtl == NULL) {
+        return NULL;
+    }
+    UiControl_ctor(pCtl);
+    return pCtl;
+}
+
+/* PadImage_FreeData then operator delete, only when the pointer is non-NULL (0x60158..0x6028C).
+ * Deviation: the original leaves the freed pointer in its global; the port NULLs it. */
+static void Radar_FreePad(PadImage **ppPad)
+{
+    if (*ppPad != NULL) {
+        PadImage_FreeData(*ppPad);
+        free(*ppPad);
+        *ppPad = NULL;
+    }
+}
+
+static Ship *Radar_InterceptCraft(const RadarSessionEnv *pEnv)
+{
+    const i32 nIdx = *pEnv->pnShipIdx;
+    if (nIdx < 0 || nIdx >= pEnv->nCraftCount) {
+        return NULL;
+    }
+    return pEnv->apCraft[nIdx];
+}
+
+/* 0x5FB18..0x5FB40 and 0x5FB88..0x5FBB0: the mount kind picks the ammo byte. Kind 28 is the
+ * unlimited mount and gives -1; any other kind leaves the -2 that was stored before the switch. */
+static i32 Radar_MountAmmo(const Ship *pShip, i8 nMount)
+{
+    switch (nMount) {
+        case 25: return (i32)pShip->bAmmo25;
+        case 26: return (i32)pShip->bAmmo26;
+        case 27: return (i32)pShip->bAmmo27;
+        case 28: return PUFO_RADAR_AMMO_UNLIMITED;
+        case 29: return (i32)pShip->bAmmo29;
+        case 30: return (i32)pShip->bAmmo30;
+        default: return PUFO_RADAR_AMMO_NONE;
+    }
+}
+
+/* 0x5FFF4..0x6005C and 0x60098..0x60144: the write-back on close. The store is STRB, so the value
+ * truncates to a byte. Kind 28 and any other kind write nothing. */
+static void Radar_WriteBackAmmo(Ship *pShip, i8 nMount, i32 nValue)
+{
+    switch (nMount) {
+        case 25: pShip->bAmmo25 = (u8)nValue; break;
+        case 26: pShip->bAmmo26 = (u8)nValue; break;
+        case 27: pShip->bAmmo27 = (u8)nValue; break;
+        case 29: pShip->bAmmo29 = (u8)nValue; break;
+        case 30: pShip->bAmmo30 = (u8)nValue; break;
+        default: break;
+    }
+}
+
+void RadarScreen_Init(const RadarSessionEnv *pEnv)
+{
+    RadarUiState *pUi;
+    Ship *pCraft;
+    StrategItem *pItem;
+    i32 i;
+
+    /* Port-side guard: the original reaches every member through a live global address. */
+    if (pEnv == NULL || pEnv->pUi == NULL || pEnv->pbActive == NULL || pEnv->pbOutOfFuel == NULL
+        || pEnv->pbBlinkPhase == NULL || pEnv->pbFlip == NULL || pEnv->pbTraceLost == NULL
+        || pEnv->pbFlag159650 == NULL || pEnv->pbAnimStarted == NULL || pEnv->pnMsgTimer == NULL
+        || pEnv->pnTargetHp == NULL || pEnv->pnTargetHpMax == NULL || pEnv->pnCraftLevel == NULL
+        || pEnv->pnRangeLimit == NULL || pEnv->pnRangeTarget == NULL || pEnv->pnRangeCur == NULL
+        || pEnv->pnAmmoL == NULL || pEnv->pnAmmoR == NULL || pEnv->pnCursorX == NULL
+        || pEnv->pnCursorY == NULL || pEnv->pnShipIdx == NULL || pEnv->pnStrategIdx == NULL
+        || pEnv->apCraft == NULL || pEnv->pStrategList == NULL) {
+        return;
+    }
+    pUi = pEnv->pUi;
+
+    if (*pEnv->pbActive != 0) {
+        /* ------------------------------------------------ the close path, 0x5FF88..0x60298 */
+        pCraft = Radar_InterceptCraft(pEnv);
+        if (pCraft != NULL) {
+            const i8 nMountL = pCraft->bWeaponL;
+            const i8 nMountR = pCraft->bWeaponR;
+            if (nMountL == nMountR) {
+                /* 0x5FFA8: one pool shared by two identical mounts, so the split sums back. */
+                Radar_WriteBackAmmo(pCraft, nMountL, *pEnv->pnAmmoL + *pEnv->pnAmmoR);
+            } else {
+                Radar_WriteBackAmmo(pCraft, nMountL, *pEnv->pnAmmoL); /* 0x60060..0x600D0 */
+                Radar_WriteBackAmmo(pCraft, nMountR, *pEnv->pnAmmoR); /* 0x600D4..0x60144 */
+            }
+        }
+        *pEnv->pbActive = 0; /* 0x60148 */
+
+        for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+            Radar_FreePad(&pUi->apDigitPad[i]); /* 0x60158 */
+        }
+        for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+            if (pUi->apCtl[i] != NULL) {
+                UiControl_FreePads(pUi->apCtl[i]); /* 0x6018C */
+                free(pUi->apCtl[i]);
+                pUi->apCtl[i] = NULL;
+            }
+        }
+        for (i = 0; i < PUFO_RADAR_BUTTON_PADS; ++i) {
+            Radar_FreePad(&pUi->apButtonPad[i]); /* 0x601C0 */
+        }
+        Radar_FreePad(&pUi->pFramePad);      /* 0x6020C */
+        Radar_FreePad(&pUi->pUfoPad);        /* 0x6022C */
+        Radar_FreePad(&pUi->pUfoFlashPad);   /* 0x6024C */
+        Radar_FreePad(&pUi->pUfoMissilePad); /* 0x6026C */
+        Radar_FreePad(&pUi->pOverlayPad);    /* 0x6028C */
+
+        /* 0x60290: only slot 1 is restored. Slot 2 keeps whatever the copy wrote over it. */
+        Palette_Load("menu.pal", 1);
+        return;
+    }
+
+    /* ------------------------------------------------ the open path, 0x5F498..0x5FE80 */
+    Sound_Play(7); /* 0x5F49C; the MOV R1, #4 before it is dead */
+    *pEnv->pbActive = 1;
+    *pEnv->pbOutOfFuel = 0;   /* 0x5F4B0 */
+    *pEnv->pbBlinkPhase = 0;  /* 0x5F4BC */
+    *pEnv->pbFlip = 0;        /* 0x5F4C8 */
+    *pEnv->pbTraceLost = 0;   /* 0x5F4D4 */
+    *pEnv->pbFlag159650 = 0;  /* 0x5F4E0 */
+
+    pUi->pFramePad = Radar_NewPad(); /* 0x5F508 */
+    (void)PadImage_Load(pUi->pFramePad, "radar", PUFO_RADAR_FRAME_MODE);
+    if (pUi->pFramePad != NULL) {
+        pUi->pFramePad->nOriginX = PUFO_RADAR_FRAME_X; /* 0x5F54C */
+        pUi->pFramePad->nOriginY = PUFO_RADAR_FRAME_Y; /* 0x5F554 */
+    }
+    pUi->pUfoPad = Radar_NewPad();         /* 0x5F560 */
+    pUi->pUfoMissilePad = Radar_NewPad();  /* 0x5F5A8 */
+    pUi->pUfoFlashPad = Radar_NewPad();    /* 0x5F5D8 */
+    pUi->pOverlayPad = Radar_NewPad();     /* 0x5F5F8 */
+
+    *pEnv->pnMsgTimer = PUFO_RADAR_MSG_TIMER_INIT; /* 0x5F60C */
+    *pEnv->pnTargetHp = 0;                         /* 0x5F614 */
+
+    /* 0x5F658: the eight-case switch, which is one flat table (see the header). */
+    pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, *pEnv->pnStrategIdx);
+    if (pItem != NULL) {
+        const i32 nClass = (i8)pItem->bCraftClass;
+        if (nClass >= 0 && nClass < PUFO_RADAR_CLASS_COUNT) {
+            const RadarUfoClass *pRow = &g_aRadarUfoClass[nClass];
+            (void)PadImage_Load(pUi->pUfoPad, pRow->pszArt, PUFO_RADAR_UFO_MODE);
+            (void)PadImage_Load(pUi->pUfoFlashPad, pRow->pszFlash, PUFO_RADAR_FLASH_MODE);
+            (void)PadImage_Load(pUi->pUfoMissilePad, pRow->pszMissile, PUFO_RADAR_FLASH_MODE);
+            *pEnv->pnCraftLevel = pRow->nLevel;
+            *pEnv->pnTargetHp = pRow->nHp;
+            *pEnv->pnTargetHpMax = pRow->nHp;
+            Palette_Load(pRow->pszPalette, PUFO_RADAR_OVERLAY_MODE);
+            (void)PadImage_Load(pUi->pOverlayPad, pRow->pszOverlay, PUFO_RADAR_OVERLAY_MODE);
+            *pEnv->pnRangeLimit = pRow->nRangeLimit;
+        }
+    }
+
+    /* 0x5FA44..0x5FA68: the overlay pad is centred on x 115, whatever the class did. */
+    if (pUi->pOverlayPad != NULL) {
+        pUi->pOverlayPad->nOriginX =
+            PUFO_RADAR_OVERLAY_X_CENTRE - (i32)(pUi->pOverlayPad->uWidth >> 1);
+        pUi->pOverlayPad->nOriginY = PUFO_RADAR_OVERLAY_Y;
+    }
+
+    /* 0x5FA74..0x5FAB8: -1 in StrategItem.nHp means this contact has not fought yet. */
+    if (pItem != NULL) {
+        if (pItem->nHp == PUFO_STRATEG_HP_FRESH) {
+            pItem->nHp = *pEnv->pnTargetHp; /* 0x5FAB4 */
+        } else {
+            *pEnv->pnTargetHp = pItem->nHp;    /* 0x5FA9C */
+            *pEnv->pnTargetHpMax = pItem->nHp; /* 0x5FAA8 */
+        }
+    }
+
+    /* 0x5FAC8..0x5FC04: the two mounts' ammo, then the twin-mount split. */
+    *pEnv->pnAmmoL = PUFO_RADAR_AMMO_NONE; /* 0x5FAD8 */
+    *pEnv->pnAmmoR = PUFO_RADAR_AMMO_NONE; /* 0x5FB48 */
+    pCraft = Radar_InterceptCraft(pEnv);
+    if (pCraft != NULL) {
+        *pEnv->pnAmmoL = Radar_MountAmmo(pCraft, pCraft->bWeaponL);
+        *pEnv->pnAmmoR = Radar_MountAmmo(pCraft, pCraft->bWeaponR);
+        if (pCraft->bWeaponR == pCraft->bWeaponL
+            && *pEnv->pnAmmoL != PUFO_RADAR_AMMO_UNLIMITED
+            && *pEnv->pnAmmoL != PUFO_RADAR_AMMO_NONE) {
+            const i32 nPool = *pEnv->pnAmmoL;
+            *pEnv->pnAmmoR = nPool / 2;                    /* 0x5FBE8 */
+            *pEnv->pnAmmoL = nPool / 2 + (nPool % 2);      /* 0x5FBFC..0x5FC04 */
+        }
+    }
+
+    *pEnv->pnRangeTarget = PUFO_RADAR_RANGE_SCALE; /* 0x5FC10 */
+    *pEnv->pnRangeCur = PUFO_RADAR_RANGE_SCALE;    /* 0x5FC18 */
+    if (pUi->pUfoPad != NULL) {
+        pUi->pUfoPad->nOriginX = PUFO_RADAR_UFO_X; /* 0x5FC2C */
+    }
+
+    /* 0x5FC34..0x5FC4C: the overrun copy, reproduced at the original's count. The flat indexing is
+     * how the ARM reaches it: one base pointer, +0x400 for the destination, +0x6800 for the source,
+     * both advanced by 4. */
+    {
+        u32 *pFlat = &g_aPalette[0][0];
+        for (i = 0; i < PUFO_RADAR_PAL_COPY_COUNT; ++i) {
+            pFlat[PUFO_RADAR_PAL_DST_SLOT * PUFO_PAL_SIZE + i] =
+                pFlat[PUFO_RADAR_PAL_SRC_SLOT * PUFO_PAL_SIZE + i];
+        }
+    }
+    Palette_Load("base.pal", 3); /* 0x5FC58 */
+
+    for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+        pUi->apCtl[i] = Radar_NewCtl(); /* 0x5FC68 */
+    }
+    for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+        if (pUi->apCtl[i] != NULL) {
+            pUi->apCtl[i]->pfnClick = pEnv->apfnClick[i]; /* 0x5FCB8..0x5FCF4 */
+        }
+    }
+    for (i = 0; i < PUFO_RADAR_BUTTON_PADS; ++i) {
+        pUi->apButtonPad[i] = Radar_NewPad(); /* 0x5FCF8 */
+    }
+    for (i = 0; i < PUFO_RADAR_CONTROLS; ++i) {
+        if (pUi->apCtl[i] != NULL) {
+            UiControl_Setup(pUi->apCtl[i], 0, 0, &g_aRadarCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pLoadPadsUser); /* 0x5FD4C */
+        }
+    }
+    for (i = 0; i < PUFO_RADAR_BUTTON_PADS; ++i) {
+        if (pUi->apButtonPad[i] != NULL) {
+            (void)PadImage_Load(pUi->apButtonPad[i], g_aRadarButtonLoad[i].pszName,
+                                PUFO_RADAR_BUTTON_MODE);
+            pUi->apButtonPad[i]->nOriginX = g_aRadarButtonLoad[i].nOriginX;
+            pUi->apButtonPad[i]->nOriginY = g_aRadarButtonLoad[i].nOriginY;
+        }
+    }
+
+    *pEnv->pnCursorX = PUFO_RADAR_CURSOR_WEST;  /* 0x5FE28: MOV R0, #0x75 */
+    *pEnv->pnCursorY = PUFO_RADAR_CURSOR_NORTH; /* 0x5FE30: MOV LR, #0x56 */
+
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        pUi->apDigitPad[i] = Radar_NewPad(); /* 0x5FE44 */
+    }
+    for (i = 0; i < PUFO_RADAR_DIGIT_PADS; ++i) {
+        if (pUi->apDigitPad[i] != NULL) {
+            (void)PadImage_Load(pUi->apDigitPad[i], g_aRadarDigitName[i], PUFO_RADAR_DIGIT_MODE);
+        }
+    }
+    *pEnv->pbAnimStarted = 0; /* 0x5FEFC */
+}
+
+void RadarScreen_SetActive(const RadarSessionEnv *pEnv, u8 bActive)
+{
+    const u8 b = (bActive != 0) ? 1 : 0; /* 0x61454: ANDS R3, R1, #0xFF */
+
+    RadarScreen_Init(pEnv); /* 0x61458 and 0x61474: Init decides which half runs */
+    if (pEnv != NULL && pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = b; /* 0x61464 / 0x61480: STRB at 0x159618+4 */
+    }
+    if (pEnv != NULL && pEnv->pnFrameStyle != NULL) {
+        *pEnv->pnFrameStyle = (i8)b; /* 0x6148C: STRB at pObj + 0x6E */
+    }
+}
+
+u8 RadarScreen_RollDetection(const RadarDetectEnv *pEnv, i32 nChance)
+{
+    StrategItem *pItem;
+    const Ship *pCraft;
+    u8 bResult;
+
+    /* Port-side guard: the original dereferences both lookups without a test. */
+    if (pEnv == NULL || pEnv->pStrategList == NULL || pEnv->pnStrategIdx == NULL
+        || pEnv->pnShipIdx == NULL || pEnv->apCraft == NULL || pEnv->pbTraceLost == NULL
+        || pEnv->pbFlip == NULL || pEnv->pnRangeTarget == NULL || pEnv->pnMsgTimer == NULL
+        || pEnv->pTextRecs == NULL || pEnv->pszMsg == NULL || pEnv->cchMsg == 0) {
+        return 0;
+    }
+
+    if ((u16)Game_RandU16((u16)nChance) != 0) {
+        bResult = *pEnv->pbTraceLost; /* 0x602C0 -> LABEL_14 */
+    } else {
+        pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, *pEnv->pnStrategIdx);
+        if (pItem == NULL) {
+            bResult = *pEnv->pbTraceLost;
+        } else {
+            const i32 nClass = (i8)pItem->bCraftClass; /* 0x602E0: LDRSB at +2 */
+            if (nClass >= 0 && nClass < PUFO_RADAR_CLASS_COUNT) {
+                pItem->dSpeed = g_aRadarUfoClass[nClass].dSpeed; /* 0x602E0..0x60404 */
+            }
+            pItem->dTrackA = pItem->dSpeed * PUFO_RADAR_SPEED_TRACK_A; /* 0x60448 */
+
+            /* 0x60488..0x604C4: uFuelCap / 60 is the craft's own speed -- the same basis
+             * StrategList_ProcessEvents uses for an inactive craft and Ship_BurnFuel burns by. */
+            const i32 nShip = *pEnv->pnShipIdx;
+            pCraft = (nShip >= 0 && nShip < pEnv->nCraftCount) ? pEnv->apCraft[nShip] : NULL;
+            const double dCraftSpeed =
+                (pCraft != NULL ? (double)pCraft->uFuelCap : 0.0) * PUFO_RADAR_SPEED_SCALE;
+
+            if (!(dCraftSpeed < pItem->dSpeed)) {
+                bResult = *pEnv->pbTraceLost; /* 0x604C4: ltd() == 0 */
+            } else {
+                *pEnv->pbFlip = 1;                              /* 0x604D4 */
+                *pEnv->pbTraceLost = 1;                         /* 0x604E0 */
+                *pEnv->pnRangeTarget = PUFO_RADAR_RANGE_SCALE;  /* 0x604E4 */
+                bResult = 1;
+            }
+        }
+    }
+
+    if (bResult != 0) {
+        *pEnv->pnMsgTimer = 0; /* 0x60530 */
+        const char *pszSrc = (const char *)pEnv->pTextRecs
+                           + PUFO_TEXT_REC_STRIDE * PUFO_RADAR_TEXT_TRACE_LOST;
+        size_t i;
+        for (i = 0; i + 1 < pEnv->cchMsg; ++i) { /* 0x6054C: bounded here, the original has no bound */
+            pEnv->pszMsg[i] = pszSrc[i];
+            if (pszSrc[i] == '\0') {
+                return bResult;
+            }
+        }
+        pEnv->pszMsg[pEnv->cchMsg - 1] = '\0';
+    }
+    return bResult;
 }
