@@ -369,7 +369,7 @@ bool Save_ReadProduct(DatFile *pDat, i32 nSaveFmtVer, u8 *pBlock);
  *     9  0x18655D
  *   488  8 facility records, 61 bytes each (see SaveBaseFacility)
  *  then for each base, while the count byte is > 0 as a SIGNED char:
- *    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bUnk17, bUnk16
+ *    16  BaseRec: bSlot, bUnk4, nStoresTotal, nUnk8, nUnk12, bKind, bUnk16
  *   2n   one u16 per object: auPerBaseVal[baseIndex] of every object record
  *
  * Two things the shape of the loop hides.

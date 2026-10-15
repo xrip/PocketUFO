@@ -1,11 +1,11 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `925e192`. This document is committed together with
-`RadarScreen_Update` (0x60570), ported in `src/pufo/game/pufo_geoscape.{c,h}` with
-`tests/test_geoscape.c`, and the new bugs.tsv row for the `Ship_ClearInterceptByStrategIdx` at 0x61434
-that the original can never reach; the reading it came from is written up in `docs/parity/game-core.md`
-under `## RadarScreen_Update (0x60570, 3804 B)`. This unit completes the radar (intercept) screen: all
-16 `RadarScreen_*` functions are ported.
+Date: 2026-10-15. HEAD before this edit: `94620a9`. This document is committed together with the
+monthly funding report's arithmetic: `FundingScreen_Init` (0x5c084, 1256 B) and
+`FundingScreen_OpenMonthly` (0x5d160, 92 B), ported in `src/pufo/game/pufo_baseui.{c,h}` with
+`tests/test_baseui.c`; the reading it came from is written up in `docs/parity/game-core.md` under
+`## FundingScreen_Init (0x5c084, 1256 B) and FundingScreen_OpenMonthly (0x5d160, 92 B)`. It renames 23
+funding globals in the IDB, which is what the rest of the funding screen will be written against.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -44,7 +44,7 @@ Build and test, run for this document:
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
 ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 56
-                                             Total Test time (real) = 3.85 sec
+                                             Total Test time (real) = 3.99 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -58,10 +58,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 878 / 1103 (79.6%)
-                                             bytes cited:     395772 / 598792 (66.1%)
-python docs/parity/audit_credits.py       -> credited functions: 878, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 270 (explain 211 citations)
+python docs/parity/coverage.py            -> functions cited: 880 / 1103 (79.8%)
+                                             bytes cited:     397120 / 598792 (66.3%)
+python docs/parity/audit_credits.py       -> credited functions: 880, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 294 (explain 211 citations)
                                              credited addresses whose original name is not defined: 0
 python docs/parity/audit_bugs.py          -> ledger rows: 123, ORIGINAL BUG markers in src/pufo: 48
                                              ledger and port agree: every marker is listed and every row resolves
@@ -80,8 +80,33 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **11223**. Coverage as of the latest commit: **878 / 1103
-functions (79.6%)**, **395772 / 598792 bytes (66.1%)**. The last unit was the radar frame driver:
+Test checks run across the 56 suites: **11293**. Coverage as of the latest commit: **880 / 1103
+functions (79.8%)**, **397120 / 598792 bytes (66.3%)**. The last unit was the monthly funding report's
+arithmetic: `FundingScreen_Init` (0x5c084, 1256 B) and `FundingScreen_OpenMonthly` (0x5d160, 92 B),
+70 new checks and 23 funding globals named in the IDB.
+
+The five rows of that report are five countries — lang.dat TEXTS[1302..1306] are США, Евро Альянс,
+Азиатский Альянс, Австралия, Африка — and they are **not** in race-score order: the row → slot
+permutation is 0, 2, 3, 1, 4, which both `FundingScreen_DrawExtended`'s five `Funding_DeltaToArrow`
+calls (0x5B804..0x5B8A4) and `FundingScreen_Init`'s five share stores (0x5C34C..0x5C38C) agree on. The
+share, bar and level arrays are slot-indexed while the baseline array at 0x1595F0 is row-indexed. The
+money is `bonus = (pending / (sum(scores) + 1)) * multiplier`, `pending += bonus`, then
+`share = pending / (sum + 1)`; every base adds `3 * share` to the slot its `BaseRec.bKind` maps to.
+
+Two traps worth knowing. `nMonthCounter @ 0x159648` is incremented at 0x5D170 *before* the recompute,
+and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the **same** block — so month 0 is not "no upkeep"
+but the heaviest upkeep (-1100 / -300 / -800), identical to month 6 and above; months 1..3 give
+-300/-100/-200, month 4 -500/-200/-350, month 5 -700/-500/-300. And `g_nFundArrow*` is not an arrow:
+it holds `Funding_ScoreToBarLevel`'s result, a money amount of ±25000 or ±50000 times the row's
+3/5/4/1/3 factor, while the draw re-derives the real -2..2 arrow from the share and the baseline and
+uses the stored dword only for its sign. A bar that ends negative has its arrow zeroed with it
+(0x5C4D4..0x5C53C), so a country in the red shows no arrow at all. `Funding_ScoreToBarLevel`'s first
+argument is the row, not a score, so the port's parameter is renamed `nRow`; `BaseRec.bUnk17` is now
+`bKind`. One naming problem is recorded rather than fixed: the 0x80..0x89 id space is a region /
+country id in this evidence, so the port's `PUFO_RACE_ID_*` constants are misleading — renaming them
+touches the radar and the base-creation chain and is left as its own unit.
+
+The unit before it was the radar frame driver:
 `RadarScreen_Update` (0x60570, 3804 B), 84 new checks, one more original bug, and the completion of the
 radar screen. It draws the panel itself — five frame blits, five rails, five signal bars with mid colours
 0x55/0x5A/0x5C/0x5A/0x55, five nav speed controls — and the panel is 140 tall normally but 190 tall while
@@ -231,7 +256,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact` | 190 | 214 | 118652 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 51 | 52 | 42496 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 178 | 204 | 80176 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat` | 180 | 204 | 81524 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 221 | 245 | 80516 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
@@ -243,7 +268,7 @@ than recreates. The seams are `src/pufo/platform/pufo_gx.{h,c}` and `pufo_reg.{h
 
 ## 3. What was done in this last stretch, and why
 
-Twelve commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
+Sixteen commits. Each one is a single unit: a port, or a decode recorded so a later port becomes
 transcription. This stretch is the manufacturing and research screen families, the buy/sell frame, and
 the radar (intercept) screen taken from its leaves inward until all sixteen functions were in.
 
@@ -264,9 +289,10 @@ the radar (intercept) screen taken from its leaves inward until all sixteen func
 | `8d632fa` | port `RadarScreen_Init` (0x5f490) with `RadarScreen_SetActive` (0x6144c) and `RadarScreen_RollDetection` (0x602a0) | opening the radar screen pauses the clock, and the palette copy overruns slot 2 |
 | `fd73d69` | port `RadarScreen_DrawCraftArmament` (0x5edf4), the `WeaponMount` enum, the duplicated `Map_nGlyphPalBase` removed | the cannon's 140 range scales to a bar that draws nothing at all |
 | `925e192` | port `RadarScreen_DrawOverlay` (0x5dc84) | the psi amplifier's -2 sentinel is not exempt from the round decrement |
+| `94620a9` | port `RadarScreen_Update` (0x60570), completing the radar screen | the unreachable `Ship_ClearInterceptByStrategIdx` at 0x61434 |
 
-and the unit this document is committed with (`RadarScreen_Update` 0x60570) follows `925e192`; it is
-described in §2.
+and the unit this document is committed with (`FundingScreen_Init` 0x5c084 with
+`FundingScreen_OpenMonthly` 0x5d160) follows `94620a9`; it is described in §2.
 
 ### A real crash found in already-ported code
 
@@ -913,7 +939,10 @@ screen families in Priority 4 that it draws.
 ### Priority 4 — screens
 
 `strat-ui` is 221 of 245 functions and 80,516 of 121,164 bytes (66.4%). The buy/sell, transfer,
-manufacturing, research, soldier and base-facility families are complete. What is left is
+manufacturing, research, soldier and base-facility families are complete, and the funding screen's
+recompute half is in (`FundingScreen_Init` 0x5c084, `FundingScreen_OpenMonthly` 0x5d160) — what is left
+of that family is its UI: `FundingScreen_Toggle` (0x5abe4, 1560 B), `FundingScreen_Draw` (0x5b1fc,
+868 B) and `FundingScreen_DrawExtended` (0x5b59c, 2780 B). What is left overall is
 24 functions / 40,648 bytes in six screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
 (`Ufopaedia_*`), the options screen's open/confirm pair, and the base-attack screen's update/draw pair.

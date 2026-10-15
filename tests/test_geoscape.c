@@ -2314,7 +2314,7 @@ static void TestCreateNamedEntry(void)
     CheckEqI32(siteId, 501, "and the next site id");
 
     Check(apBases[0] != NULL, "BaseRec_Create stored a record at slot 0");
-    CheckEqI32(apBases[0]->bUnk17, 1, "bUnk17 = the kind");
+    CheckEqI32(apBases[0]->bKind, 1, "bKind = the kind");
     CheckEqI32(apBases[0]->nUnk8, -6000, "nUnk8 = x");
     CheckEqI32(apBases[0]->nUnk12, -6000, "nUnk12 = y");
     CheckEqI32(apBases[0]->bUnk16, 8, "bUnk16 = kindTable[1] - 1");

@@ -1501,7 +1501,7 @@ i32 Base_CreateNamedEntry(const BaseCreateEnv *pEnv, i32 x, i32 y, i32 nKind, co
     pBase = (pEnv->apBases != NULL && nBaseCount >= 0) ? pEnv->apBases[nBaseCount] : NULL;
 
     if (pBase != NULL) {
-        pBase->bUnk17 = (u8)nKind;
+        pBase->bKind = (u8)nKind;
     }
 
     pSite->bType = (u8)(nKind - 0x80);

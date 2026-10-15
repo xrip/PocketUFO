@@ -4690,6 +4690,136 @@ void Funding_AddRaceBonus(i32 *anFundingSlots, i32 nRaceId)
     }
 }
 
+/* The report's row order against the race-score slots. FundingScreen_DrawExtended reads the five
+ * shares 0x186580, 0x186588, 0x18658C, 0x186584, 0x186590 for rows 0..4 (0x5B804..0x5B8A4) and
+ * FundingScreen_Init writes the same five in the same order (0x5C34C..0x5C38C). */
+const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT] = {0, 2, 3, 1, 4};
+
+/* 0x5C22C..0x5C324: the monthly upkeep subtracted from each row. The ARM loads three figures per
+ * month class -- one shared by USA, Euro and Asia, one for Australia, one for Africa -- and the four
+ * classes are the branches of the compare chain at 0x5C22C..0x5C250. Note that month <= 0 and month
+ * >= 6 land in the SAME block (0x5C230 BLE and 0x5C250 BNE both go to 0x5C31C), so a month counter
+ * of zero is not "no upkeep" but the heaviest upkeep. */
+static const i32 g_anFundingUpkeep[4][PUFO_FUND_ROW_COUNT] = {
+    {-1100, -1100, -1100, -300, -800}, /* month <= 0 or month >= 6 */
+    { -300,  -300,  -300, -100, -200}, /* month 1, 2, 3 */
+    { -500,  -500,  -500, -200, -350}, /* month 4 */
+    { -700,  -700,  -700, -300, -500}, /* month 5 */
+};
+
+static i32 FundingUpkeepClass(i32 nMonth)
+{
+    if (nMonth <= 0 || nMonth >= 6) {
+        return 0;
+    }
+    if (nMonth <= 3) {
+        return 1;
+    }
+    return (nMonth == 4) ? 2 : 3;
+}
+
+/* FundingScreen_Init @ 0x5c084. See the evidence block in pufo_baseui.h. */
+void FundingScreen_Init(FundingInitEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->ppPadSlot == NULL || pEnv->pnPendingTotal == NULL
+        || pEnv->apBases == NULL) {
+        return;
+    }
+
+    PadImage *const pPad = BuySellPadNew(); /* 0x5C090: operator new(0x14) then PadImage_ctor */
+    *pEnv->ppPadSlot = pPad;                /* 0x5C0B4: the ctor's result, not the raw allocation */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_FUNDING_PAD_NAME, PUFO_FUNDING_PAD_MODE); /* 0x5C0B8 */
+        pPad->nOriginX = 0; /* 0x5C0C8 */
+        pPad->nOriginY = 0; /* 0x5C0D4 */
+    }
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = 224;                 /* 0x5C0E0 */
+        pEnv->pCloseCtl->y = 1;                   /* 0x5C0EC */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x5C0F8 */
+    }
+
+    const i32 nPending = *pEnv->pnPendingTotal;   /* 0x5C11C */
+    i32 nSum = 0;
+    for (i32 i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        nSum += pEnv->anRaceScore[i];             /* 0x5C100..0x5C120 */
+    }
+    const i32 nDiv = nSum + 1;                    /* 0x5C128 */
+    const i32 nBonus = (nPending / nDiv) * pEnv->anRaceScore[PUFO_FUNDING_MULT_SLOT]; /* 0x5C148 */
+    const i32 nTotal = nPending + nBonus;         /* 0x5C154 */
+    *pEnv->pnPendingTotal = nTotal;               /* 0x5C15C */
+    const i32 nShare = nTotal / nDiv;             /* 0x5C164 */
+
+    for (i32 i = 0; i < PUFO_FUND_ROW_COUNT; ++i) {
+        pEnv->anShare[i] = pEnv->anRaceScore[i] * nShare; /* 0x5C168..0x5C1AC */
+    }
+
+    /* 0x5C1BC..0x5C220: every base whose race feeds a slot adds three shares to that slot. The
+     * count is read once as a SIGNED byte (LDRSB at 0x5C188, BLE at 0x5C1B0), so a negative count
+     * runs nothing at all. */
+    for (i32 b = 0; b < (i32)pEnv->nBaseCount; ++b) {
+        const BaseRec *const pBase = pEnv->apBases[b];
+        if (pBase == NULL) {
+            continue; /* deviation: the original dereferences every slot */
+        }
+        const u32 bRace = pBase->bKind;           /* BaseRec.bKind @ +0x11, 0x5C1C8 LDRB #0x11 */
+        if (bRace < PUFO_RACE_ID_FIRST || bRace >= PUFO_RACE_ID_FIRST + PUFO_RACE_ID_COUNT) {
+            continue; /* 0x5C1CC..0x5C200: only 0x80..0x88 have an arm, and 0x86/0x87/0x89 none */
+        }
+        const i32 nSlot = g_anFundingSlotByRace[bRace - PUFO_RACE_ID_FIRST];
+        if (nSlot >= 0) {
+            pEnv->anShare[nSlot] += 3 * nShare;   /* 0x5C20C, 0x5C29C, 0x5C2B8, 0x5C2D4, 0x5C2E8 */
+        }
+    }
+
+    const i32 nUpkeepClass = FundingUpkeepClass(pEnv->nMonthCounter);
+    for (i32 nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        const i32 nUpkeep = g_anFundingUpkeep[nUpkeepClass][nRow];
+        pEnv->anBaseline[nRow] = nUpkeep;                          /* 0x5C33C..0x5C388 */
+        pEnv->anShare[g_anFundingRowSlot[nRow]] += nUpkeep;        /* 0x5C34C..0x5C38C */
+    }
+
+    for (i32 nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        const i32 nSlot = g_anFundingRowSlot[nRow];
+        i32 nLevel = Funding_ScoreToBarLevel(nRow,
+                         Funding_DeltaToArrow(pEnv->anShare[nSlot], pEnv->anBaseline[nRow]));
+        pEnv->anArrow[nSlot] = nLevel;              /* 0x5C3A4, 0x5C3E8, 0x5C428, 0x5C468, 0x5C4A8 */
+        if (pEnv->nMonthCounter < 3 && nLevel < 0) {
+            nLevel = 0;                             /* 0x5C3AC..0x5C3BC and its four copies */
+            pEnv->anArrow[nSlot] = 0;
+        }
+        pEnv->anBarTotal[nSlot] += nLevel;          /* 0x5C3CC, 0x5C40C, 0x5C44C, 0x5C48C, 0x5C4C8 */
+    }
+
+    for (i32 nRow = 0; nRow < PUFO_FUND_ROW_COUNT; ++nRow) {
+        const i32 nSlot = g_anFundingRowSlot[nRow];
+        if (pEnv->anBarTotal[nSlot] < 0) {
+            pEnv->anBarTotal[nSlot] = 0;            /* 0x5C4D4..0x5C53C: a negative bar wipes its */
+            pEnv->anArrow[nSlot] = 0;               /* arrow too, so the row shows no arrow */
+        }
+    }
+
+    *pEnv->pnPendingTotal = 0;                      /* 0x5C544 */
+}
+
+/* FundingScreen_OpenMonthly @ 0x5d160. The month counter goes up BEFORE the recompute, so the first
+ * report of a new game runs at month 1 and not at month 0 -- which matters, because month 0 is the
+ * heaviest upkeep class rather than a no-upkeep case. nullsub_7 at 0x5D180 is an empty stub. */
+void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnimFlag)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    pEnv->nMonthCounter += 1;                       /* 0x5D170 */
+    if (pnScreenId != NULL) {
+        *pnScreenId = 19;                           /* 0x5D18C: Geoscape_CloseUI's case 19 */
+    }
+    FundingScreen_Init(pEnv);                       /* 0x5D194 */
+    if (pbAnimFlag != NULL) {
+        *pbAnimFlag = 0;                            /* 0x5D1A0: bUiAnimStarted[0] */
+    }
+}
+
 /* ResearchScreen_StartSelected @ 0x73240. Allocation turns into running work only when the topic
  * is idle and this base has actually allocated something to it. */
 i32 ResearchScreen_StartSelected(const ResearchStartEnv *pEnv)
@@ -5233,20 +5363,22 @@ void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHoo
 
 /* Funding_ScoreToBarLevel @ 0x5aa60. How much money one funding bar step is worth.
  *
- * The first argument is not an amount and not an index into a table of five: the mapping is
- * 0 -> 3, 1 -> 5, 2 -> 4, 3 -> 1, 4 -> 3, and anything else gives 0. Two scores share 3.
+ * The first argument is the report ROW (see g_anFundingRowSlot), not an amount and not a score slot:
+ * FundingScreen_Init passes 0, 1, 2, 3, 4 in the order the five rows are drawn (0x5C39C, 0x5C3E0,
+ * 0x5C420, 0x5C460, 0x5C4A0) while the shares those rows belong to are slots 0, 2, 3, 1, 4. The
+ * mapping is 0 -> 3, 1 -> 5, 2 -> 4, 3 -> 1, 4 -> 3, and anything else gives 0. Two rows share 3.
  *
  * The second is a direction, not a magnitude: -2 and -1 mean down, 1 and 2 mean up, and 0 or
  * anything outside -2..2 returns 0 outright -- the level lookup is discarded on that path.
  *
  * Hex-Rays renders the level as `v2 << 24 >> 24`, which is the compiler widening a signed char.
  * Every level is 1..5, so the port keeps a plain int multiply. */
-i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection)
+i32 Funding_ScoreToBarLevel(i32 nRow, i32 nDirection)
 {
-    static const i32 anLevelByScore[5] = { 3, 5, 4, 1, 3 }; /* 0x5AA6C..0x5AAE4 */
+    static const i32 anLevelByRow[PUFO_FUND_ROW_COUNT] = { 3, 5, 4, 1, 3 }; /* 0x5AA6C..0x5AAE4 */
     i32 nAmount;
 
-    const i32 nLevel = (nScore >= 0 && nScore <= 4) ? anLevelByScore[nScore] : 0;
+    const i32 nLevel = (nRow >= 0 && nRow < PUFO_FUND_ROW_COUNT) ? anLevelByRow[nRow] : 0;
 
     switch (nDirection) {
     case -2: nAmount = -50000; break;
@@ -5802,7 +5934,7 @@ i32 Geoscape_OnMapClick(const MapClickEnv *pEnv)
             if (pBase != NULL) {
                 pBase->nUnk8  = pEnv->nPlaceX;          /* 0x8B504 */
                 pBase->nUnk12 = pEnv->nPlaceY;          /* 0x8B518 */
-                pBase->bUnk17 = pEnv->bPendingKind;     /* 0x8B52C */
+                pBase->bKind = pEnv->bPendingKind;     /* 0x8B52C */
                 pBase->bUnk16 = 1;                      /* 0x8B53C */
             }
             if (pEnv->apSiteRecs != NULL) {

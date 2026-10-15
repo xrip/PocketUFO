@@ -288,3 +288,27 @@ dword_AC21C	nRadarCooldownL	renamed in the IDB, typed int: the LEFT mount's firi
 unk_159650	bRadarInterceptDone	renamed in the IDB, typed unsigned __int8: set by RadarScreen_Update when the intercept ends (target destroyed 0x609A0, contact landed 0x60B4C, contact crashed 0x60C10) and cleared by RadarScreen_Init's open path at 0x5F4E0. Nothing else writes it; it gates the flash ladder at 0x608B8 and the close tail at 0x61234
 unk_159724	nRadarScanOffset	renamed in the IDB, typed int: the signal-bar scroll RadarScreen_Update advances by 10 at 0x61078 and wraps to 0 above 39 at 0x61088..0x6109C. RadarScreen_Init does not clear it, so the scroll carries from one radar screen to the next
 unk_186488	szScratch186488	renamed in the IDB, typed char[85] (0x186488..0x1864DC, the next named global abBaseKindTable starts at 0x1864DD): the shared geoscape caption scratch. RadarScreen_Update writes the out-of-fuel craft's display name into it at 0x61364/0x613A8, BaseFac_BuildStatusMsg at 0x6A8D4..0x6AAA0, Geoscape_Draw at 0x8DAC4..0x8DCD8
+unk_186580	g_nFundShare0	renamed in the IDB, typed int: the USA row's monthly funding share. FundingScreen_Init writes score0 * share at 0x5C178 and adds the month upkeep at 0x5C34C; FundingScreen_DrawExtended reads it at 0x5B804 as row 0
+dword_186584	g_nFundShare1	renamed in the IDB, typed int: Australia's share (score1 * share, 0x5C18C; upkeep at 0x5C374; read as row 3 at 0x5B87C). The share array is SLOT-indexed while the report's rows run 0, 2, 3, 1, 4
+dword_186588	g_nFundShare2	renamed in the IDB, typed int: the Euro row's share (score2 * share at 0x5C194, upkeep at 0x5C350, read as row 1 at 0x5B82C)
+dword_18658C	g_nFundShare3	renamed in the IDB, typed int: the Asian row's share (score3 * share at 0x5C198, upkeep at 0x5C368, read as row 2 at 0x5B854)
+unk_186590	g_nFundShare4	renamed in the IDB, typed int: the Africa row's share (score4 * share at 0x5C1AC, upkeep at 0x5C38C, read as row 4 at 0x5B8A4)
+unk_186594	g_nFundBar0	renamed in the IDB, typed int: the USA row's funding bar total. FundingScreen_Init ADDS the bar level at 0x5C3CC and zeroes the bar together with its arrow when it ends negative (0x5C4D4); FundingScreen_DrawExtended reads it at 0x5B810 to decide the third commentary line
+dword_186598	g_nFundBar1	renamed in the IDB, typed int: Australia's bar (added at 0x5C48C, clamped at 0x5C51C)
+dword_18659C	g_nFundBar2	renamed in the IDB, typed int: the Euro row's bar (added at 0x5C40C, clamped at 0x5C4EC)
+dword_1865A0	g_nFundBar3	renamed in the IDB, typed int: the Asian row's bar (added at 0x5C44C, clamped at 0x5C504)
+unk_1865A4	g_nFundBar4	renamed in the IDB, typed int: the Africa row's bar (added at 0x5C4C8, clamped at 0x5C530)
+unk_1865A8	g_nFundArrow0	renamed in the IDB, typed int: the USA row's bar level, Funding_ScoreToBarLevel's result for row 0 (stored at 0x5C3A4, zeroed with the bar at 0x5C4E0). It is a money amount (+-25000 or +-50000 times the row's 3/5/4/1/3 factor), not a -2..2 arrow: FundingScreen_DrawExtended re-derives the arrow from the share and the baseline at 0x5B804 and only uses this dword for the negative test
+unk_1865AC	g_nFundArrow1	renamed in the IDB, typed int: Australia's bar level (row 3, stored at 0x5C468)
+unk_1865B0	g_nFundArrow2	renamed in the IDB, typed int: the Euro row's bar level (row 1, stored at 0x5C3E8)
+unk_1865B4	g_nFundArrow3	renamed in the IDB, typed int: the Asian row's bar level (row 2, stored at 0x5C428)
+unk_1865B8	g_nFundArrow4	renamed in the IDB, typed int: the Africa row's bar level (row 4, stored at 0x5C4A8)
+unk_1865BC	g_nFundPending	renamed in the IDB, typed int: the money waiting for the next report. Tact_CheckBattleEnd (0x3656C), StrategList_ProcessEvents (0x7FDC0) and Smap_BeginCraftSelect (0x84168) add to it; FundingScreen_Init scales it into the shares and then zeroes it at 0x5C544
+unk_1595F0	g_nFundBase0	renamed in the IDB, typed int: the USA row's baseline -- the month upkeep Funding_DeltaToArrow compares the share against (0x5C344). The baseline array is ROW-indexed, unlike the share/bar/arrow arrays
+dword_1595F4	g_nFundBase1	renamed in the IDB, typed int: the Euro row's baseline (0x5C33C)
+dword_1595F8	g_nFundBase2	renamed in the IDB, typed int: the Asian row's baseline (0x5C35C)
+dword_1595FC	g_nFundBase3	renamed in the IDB, typed int: Australia's baseline (0x5C384)
+dword_159600	g_nFundBase4	renamed in the IDB, typed int: the Africa row's baseline (0x5C388)
+unk_1595DC	pFundPad	renamed in the IDB: the funding screen's PadImage, allocated by FundingScreen_Init at 0x5C0B4 and loaded with PadImage_Load("funding", 28) at 0x5C0B8; FundingScreen_DrawExtended blits it at 0x5B5D4
+unk_159648	nMonthCounter	renamed in the IDB, typed int: the monthly funding counter. FundingScreen_OpenMonthly increments it at 0x5D170 before the recompute, FundingScreen_Init picks the upkeep class from it at 0x5C22C..0x5C250 and gates the negative-bar-level clamp on `nMonthCounter < 3` at 0x5C3AC. Strateg_CalcDetect and StrategList_RollCraftStats also read it
+BaseRec.bUnk17	BaseRec.bKind	renamed in the IDB struct and in the port: the base kind, 0x80..0x89. Geoscape_CreateBase stores nKind into it (0x66A08), the save writes it at 0x3F44C, and FundingScreen_Init reads it at 0x5C1C8 as the region id that selects which of the five funding countries the base feeds

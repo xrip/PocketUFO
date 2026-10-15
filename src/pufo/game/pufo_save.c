@@ -953,7 +953,7 @@ bool Save_WriteBases(DatFile *pDat, const SaveBasesState *pState,
             if (!W(pDat, &pBase->nStoresTotal, 4)) { return false; } /* 0x3F410 */
             if (!W(pDat, &pBase->nUnk8, 4))        { return false; } /* 0x3F424 */
             if (!W(pDat, &pBase->nUnk12, 4))       { return false; } /* 0x3F438 */
-            if (!W(pDat, &pBase->bUnk17, 1))       { return false; } /* 0x3F44C */
+            if (!W(pDat, &pBase->bKind, 1))       { return false; } /* 0x3F44C */
             if (!W(pDat, &pBase->bUnk16, 1))       { return false; } /* 0x3F460 */
 
             /* 0x3F470..0x3F4AC: one u16 per object. 0x3F3CC seeds the column offset at
@@ -1054,7 +1054,7 @@ bool Save_ReadBases(DatFile *pDat, i32 nSaveFmtVer, SaveBasesState *pState,
             if (!DatFile_Read(pDat, &pNew->nStoresTotal, 4)) { return false; } /* 0x40568 */
             if (!DatFile_Read(pDat, &pNew->nUnk8, 4))        { return false; } /* 0x4057C */
             if (!DatFile_Read(pDat, &pNew->nUnk12, 4))       { return false; } /* 0x40590 */
-            if (!DatFile_Read(pDat, &pNew->bUnk17, 1))       { return false; } /* 0x405A4 */
+            if (!DatFile_Read(pDat, &pNew->bKind, 1))       { return false; } /* 0x405A4 */
             if (!DatFile_Read(pDat, &pNew->bUnk16, 1))       { return false; } /* 0x405B8 */
 
             for (i32 o = 0; o < nObjectCount; ++o) {

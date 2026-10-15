@@ -2388,10 +2388,98 @@ typedef struct OptionsScreenHooks {
 void OptionsScreen_RebuildWithSound(const OptionsScreenHooks *pHooks);
 void OptionsScreen_OpenWithSound(i32 nIgnored, i32 nMode, const OptionsScreenHooks *pHooks);
 
-/* Funding_ScoreToBarLevel @ 0x5aa60. Score 0..4 maps to 3, 5, 4, 1, 3 (two scores share 3);
+/* Funding_ScoreToBarLevel @ 0x5aa60. Row 0..4 maps to 3, 5, 4, 1, 3 (two rows share 3);
  * direction -2/-1/1/2 means -50000/-25000/+25000/+50000; direction 0 or outside -2..2 returns 0
- * and discards the level. */
-i32 Funding_ScoreToBarLevel(i32 nScore, i32 nDirection);
+ * and discards the level. The first argument is the report ROW, not a score: FundingScreen_Init
+ * passes 0..4 in the order the five rows are drawn (0x5C39C, 0x5C3E0, 0x5C420, 0x5C460, 0x5C4A0). */
+i32 Funding_ScoreToBarLevel(i32 nRow, i32 nDirection);
+
+/* ------------------------------------------------- the five funding countries
+ *
+ * The funding block is five countries, and the monthly report draws them in this order -- lang.dat
+ * TEXTS[1302..1306] are the five row titles: "США", "Евро Альянс", "Азиатский Альянс",
+ * "Австралия", "Африка". Each row feeds on one of the five race SCORE slots, and the row order is
+ * NOT the slot order: the row -> slot permutation is 0, 2, 3, 1, 4. Both halves agree on it -- the
+ * five Funding_DeltaToArrow calls in FundingScreen_DrawExtended (0x5B804, 0x5B82C, 0x5B854, 0x5B87C,
+ * 0x5B8A4) read shares 0x186580, 0x186588, 0x18658C, 0x186584, 0x186590 in row order, and the five
+ * share stores in FundingScreen_Init (0x5C34C, 0x5C350, 0x5C368, 0x5C374, 0x5C38C) write the same
+ * five in the same order. So the SHARE, BAR-TOTAL and ARROW arrays are slot-indexed
+ * (0x186580/0x186594/0x1865A8 plus 4*slot) while the BASELINE array is row-indexed
+ * (0x1595F0 plus 4*row). */
+#define PUFO_FUND_ROW_COUNT 5
+#define PUFO_FUNDING_PAD_NAME "funding" /* aFunding @ 0xAB268 */
+#define PUFO_FUNDING_PAD_MODE 28        /* 0x5C0B8: MOV R2,#0x1C -- palette slot 28 is funding.pal */
+
+typedef enum FundingRow {
+    PUFO_FUND_ROW_USA  = 0, /* TEXTS[1302] "США" */
+    PUFO_FUND_ROW_EURO = 1, /* TEXTS[1303] "Евро Альянс" */
+    PUFO_FUND_ROW_ASIA = 2, /* TEXTS[1304] "Азиатский Альянс" */
+    PUFO_FUND_ROW_AUS  = 3, /* TEXTS[1305] "Австралия" */
+    PUFO_FUND_ROW_AFR  = 4  /* TEXTS[1306] "Африка" */
+} FundingRow;
+
+extern const i32 g_anFundingRowSlot[PUFO_FUND_ROW_COUNT]; /* {0, 2, 3, 1, 4} */
+
+/* ------------------------------------------------- the monthly funding recompute
+ *
+ * Evidence: FundingScreen_Init @ 0x5c084 (1256 B), FundingScreen_OpenMonthly @ 0x5d160 (92 B),
+ * FundingScreen_ExitThunk @ 0x5c078 (12 B).
+ *
+ * 1. The pad and the close control. operator new(0x14) + PadImage_ctor into unk_1595DC (the ctor's
+ *    result, not the raw allocation), PadImage_Load("funding", 28), origin (0, 0); then the shared
+ *    close control unk_186B00 to x 224, y 1 with FundingScreen_ExitThunk.
+ *
+ * 2. The money. With P the pending total at unk_1865BC and S the sum of the five race scores:
+ *    bonus = (P / (S + 1)) * g_nFundMult, P becomes P + bonus, and the per-score share is
+ *    (P + bonus) / (S + 1). Two _rt_sdiv calls (0x5C13C, 0x5C164), both with the divisor in R0.
+ *    Each score times that share goes to 0x186580..0x186590.
+ *
+ * 3. The bases. For each of the nBaseCount bases, the race byte BaseRec.bRaceId (+0x11) selects a
+ *    slot through the same table Funding_AddRaceBonus uses, and a hit adds 3 * share to that slot
+ *    (0x5C1BC..0x5C220). The count is a SIGNED byte (LDRSB at 0x5C188, BLE at 0x5C1B0), so a
+ *    negative count runs nothing.
+ *
+ * 4. The upkeep, by month. unk_159648 is a month counter -- FundingScreen_OpenMonthly increments it
+ *    at 0x5D170 before calling this. The table at 0x5C22C..0x5C324 gives one value per row: rows
+ *    USA, Euro and Asia share one figure, Australia and Africa each have their own. Month 1..3 gives
+ *    -300/-100/-200, month 4 -500/-200/-350, month 5 -700/-500/-300, and BOTH month <= 0 and month
+ *    >= 6 give -1100/-800/-300 (the <= 0 case falls into the same block as >= 6, at 0x5C31C). The
+ *    value is added to that row's share AND stored into that row's baseline.
+ *
+ * 5. The bars. Per row: arrow = Funding_DeltaToArrow(share[slot], baseline[row]), then
+ *    level = Funding_ScoreToBarLevel(row, arrow), stored into arrow[slot]; if the month is below 3
+ *    and the level is negative the level becomes 0 (0x5C3AC..0x5C3BC and its four copies), and the
+ *    level is then ADDED to barTotal[slot]. Finally each slot whose bar total went negative has
+ *    BOTH its bar total and its arrow zeroed (0x5C4D4..0x5C53C).
+ *
+ * 6. The pending total is zeroed at 0x5C544. Tact_CheckBattleEnd, StrategList_ProcessEvents and
+ *    Smap_BeginCraftSelect are the three writers that put money into it between reports.
+ *
+ * Deviation: the original indexes apBases with an unchecked byte and dereferences every entry; the
+ * port stops at the count it is given and skips a NULL entry. */
+typedef struct FundingInitEnv {
+    PadImage         **ppPadSlot;      /* unk_1595DC, the "funding" pad */
+    UiControl         *pCloseCtl;      /* unk_186B00 */
+    void (*pfnCloseClick)(void);       /* FundingScreen_ExitThunk @ 0x5c078 */
+    i32               anRaceScore[6];  /* g_nFundScore0..4 @ 0x186568..0x186578, [5] g_nFundMult */
+    i32              *pnPendingTotal;  /* unk_1865BC */
+    i32               anShare[PUFO_FUND_ROW_COUNT];    /* 0x186580..0x186590, slot-indexed */
+    i32               anBaseline[PUFO_FUND_ROW_COUNT]; /* 0x1595F0..0x159600, row-indexed */
+    i32               anBarTotal[PUFO_FUND_ROW_COUNT]; /* 0x186594..0x1865A4, slot-indexed */
+    i32               anArrow[PUFO_FUND_ROW_COUNT];    /* 0x1865A8..0x1865B8, slot-indexed */
+    i32               nMonthCounter;   /* unk_159648 */
+    const BaseRec    *const *apBases;  /* apBases @ 0x114B2C */
+    i8                nBaseCount;      /* nBaseCount @ 0x159D80, signed */
+} FundingInitEnv;
+
+void FundingScreen_Init(FundingInitEnv *pEnv);
+
+/* FundingScreen_OpenMonthly @ 0x5d160 (92 B): the monthly report opener. It increments the month
+ * counter FIRST (0x5D170), so the first report of a new game already runs at month 1, sets the
+ * geoscape screen id to 19 (0x5D18C) so Geoscape_CloseUI runs the funding screen's close case, calls
+ * FundingScreen_Init, and clears byte_187080 (the shared UI animation flag). nullsub_7 at 0x5D180 is
+ * an empty compiler stub and is not ported. */
+void FundingScreen_OpenMonthly(FundingInitEnv *pEnv, i32 *pnScreenId, u8 *pbAnimFlag);
 
 /* Funding_DeltaToArrow @ 0x5ab34. Which funding arrow to draw, -2..2, against thresholds derived
  * from the total (total/8 and total/2, integer division). A negative total moves the bands, so the
@@ -2922,7 +3010,7 @@ i32 BaseFacScreen_Init(const BaseFacInitEnv *pEnv);
  * Screen 2 - the pending facility, gated on the pending kind (0x159DF4) not being 0xFF:
  *
  *   - With bBaseFacConfirm (0x1870AC) set, the pending placement is committed: apBases[0] gets
- *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bUnk17 = the kind and
+ *     nUnk8 / nUnk12 = the pending coordinates (0x159D94 / 0x159D98), bKind = the kind and
  *     bUnk16 = 1; the aBaseFacilities record gets bType = kind + 0x80 and its abName field (the
  *     label at 0x186C5A) gets the string BaseFac_FormatCostLabel builds. Then the strateg list is
  *     searched for the entry whose nSiteId equals apBases[0]->bUnk4 and that entry's nX / nY are

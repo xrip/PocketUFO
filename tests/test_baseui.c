@@ -4887,7 +4887,7 @@ static void TestMapClick(void)
     CheckEqI32(Geoscape_OnMapClick(&env), 2, "the confirm branch commits the pending facility");
     CheckEqI32(aBase.nUnk8, 1234, "the base takes the pending x");
     CheckEqI32(aBase.nUnk12, 5678, "and the pending y");
-    CheckEqI32(aBase.bUnk17, 0, "bUnk17 becomes the pending kind");
+    CheckEqI32(aBase.bKind, 0, "bKind becomes the pending kind");
     CheckEqI32(aBase.bUnk16, 1, "and bUnk16 is set to 1");
     CheckEqI32(aSiteRecs[0].bType, 0x80, "the facility record's type is kind + 0x80");
     Check(strcmp(aSiteRecs[0].abName, "Fac905-0") == 0,
@@ -11848,6 +11848,197 @@ static void TestResearchRebuild(void)
     CheckEqI32(ResearchScreen_RebuildTopicList(&env), 0, "count 0 likewise");
 }
 
+/* ------------------------------------------------- the monthly funding recompute */
+static BaseRec      g_aFundBases[8];
+static const BaseRec *g_apFundBases[8];
+static PadImage    *g_pFundPad;
+static UiControl    g_fundClose;
+static i32          g_nFundCloseClicks;
+static i32          g_nFundPending;
+static i32          g_nFundScreenId;
+static u8           g_bFundAnim;
+
+static void FundCloseClick(void) { ++g_nFundCloseClicks; }
+
+/* Five bases with kinds 0x80, 0x82, 0x84, 0x86 and 0x88: slots 0, 2, 1, none and 0. Slot 3 is the
+ * only one no base feeds, so its share stays at the plain score product. */
+static void FundFixture(FundingInitEnv *pEnv, i32 nMonth, i8 nBaseCount)
+{
+    static const u8 aKind[8] = {0x80, 0x82, 0x84, 0x86, 0x88, 0xFF, 0x83, 0x85};
+    i32 i;
+
+    memset(g_aFundBases, 0, sizeof(g_aFundBases));
+    for (i = 0; i < 8; ++i) {
+        g_aFundBases[i].bKind = aKind[i];
+        g_apFundBases[i] = &g_aFundBases[i];
+    }
+    memset(&g_fundClose, 0, sizeof(g_fundClose));
+    g_pFundPad = NULL;
+    g_nFundCloseClicks = 0;
+    g_nFundPending = 1510;
+    g_nFundScreenId = -1;
+    g_bFundAnim = 1;
+
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->ppPadSlot = &g_pFundPad;
+    pEnv->pCloseCtl = &g_fundClose;
+    pEnv->pfnCloseClick = FundCloseClick;
+    pEnv->anRaceScore[0] = 10;
+    pEnv->anRaceScore[1] = 20;
+    pEnv->anRaceScore[2] = 30;
+    pEnv->anRaceScore[3] = 40;
+    pEnv->anRaceScore[4] = 50;
+    pEnv->anRaceScore[PUFO_FUNDING_MULT_SLOT] = 3;
+    pEnv->pnPendingTotal = &g_nFundPending;
+    pEnv->nMonthCounter = nMonth;
+    pEnv->apBases = g_apFundBases;
+    pEnv->nBaseCount = nBaseCount;
+}
+
+static void TestFundingRecompute(void)
+{
+    FundingInitEnv env;
+
+    printf("the monthly funding recompute\n");
+
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL main.dat / lang.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    /* A. The pad and the close control. */
+    FundFixture(&env, 4, 5);
+    FundingScreen_Init(&env);
+    Check(g_pFundPad != NULL, "the funding pad is allocated (0x5C090)");
+    Check(g_pFundPad != NULL && g_pFundPad->uWidth != 0 && g_pFundPad->uHeight != 0,
+          "and PadImage_Load(\"funding\", 28) filled it from the shipped archives (0x5C0B8)");
+    CheckEqI32(g_pFundPad != NULL ? g_pFundPad->nOriginX : -1, 0, "the pad origin is x 0 (0x5C0C8)");
+    CheckEqI32(g_pFundPad != NULL ? g_pFundPad->nOriginY : -1, 0, "and y 0 (0x5C0D4)");
+    CheckEqI32(g_fundClose.x, 224, "the close control goes to x 224 (0x5C0E0)");
+    CheckEqI32(g_fundClose.y, 1, "and y 1 (0x5C0EC)");
+    Check(g_fundClose.pfnClick == FundCloseClick, "with FundingScreen_ExitThunk as its handler (0x5C0F8)");
+
+    /* B. Month 4: the money, the base bonus, the upkeep and the bars.
+     * scores 10/20/30/40/50 sum to 150, so the divisor is 151. Pending 1510 gives 1510/151 = 10,
+     * the multiplier 3 turns that into a 30 bonus, the total 1540 divided by 151 is still 10, and
+     * the five shares are 100/200/300/400/500. The five bases add 3 * 10 = 30 to slots 0, 2, 1,
+     * nothing and 0, so the shares become 160/230/330/400/500. Month 4's upkeep is -500 for the
+     * USA / Euro / Asia rows, -200 for Australia and -350 for Africa. */
+    FundFixture(&env, 4, 5);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -500, "month 4 puts -500 in the USA baseline (0x5C2F4)");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_EURO], -500, "the same -500 in Euro's");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_ASIA], -500, "and in Asia's");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AUS], -200, "Australia gets -200");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AFR], -350, "Africa gets -350");
+    CheckEqI32(env.anShare[0], -340, "slot 0: 100 + 30 + 30 - 500 (0x5C20C, 0x5C34C)");
+    CheckEqI32(env.anShare[1], 30, "slot 1: 200 + 30 - 200 (0x5C2B8, 0x5C374)");
+    CheckEqI32(env.anShare[2], -170, "slot 2: 300 + 30 - 500 (0x5C2E8, 0x5C350)");
+    CheckEqI32(env.anShare[3], -100, "slot 3: 400 with no base behind it, minus 500 (0x5C368)");
+    CheckEqI32(env.anShare[4], 150, "slot 4: 500 - 350 (0x5C38C)");
+    CheckEqI32(g_nFundPending, 0, "the pending total is zeroed at the end (0x5C544)");
+
+    /* The bars. Row 0: DeltaToArrow(-340, -500) is -2 (-340 <= -500/8 + -500/2 = -312), so the
+     * level is 3 * -50000. Row 1: -170 is above -312 but at or below -62, so -1 and 5 * -25000.
+     * Row 2: -100 likewise -1, 4 * -25000. Row 3: 30 against -200 is +1, 1 * +25000. Row 4: 150
+     * against -350 is +1, 3 * +25000. Month 4 is not below 3, so nothing is clamped early. */
+    CheckEqI32(env.anBarTotal[0], 0, "row USA: the -150000 bar went negative, so it is wiped (0x5C4D4)");
+    CheckEqI32(env.anArrow[0], 0, "and its arrow is wiped with it (0x5C4E0)");
+    CheckEqI32(env.anBarTotal[2], 0, "row Euro: -125000 wiped (0x5C4EC)");
+    CheckEqI32(env.anArrow[2], 0, "arrow too (0x5C4F8)");
+    CheckEqI32(env.anBarTotal[3], 0, "row Asia: -100000 wiped (0x5C504)");
+    CheckEqI32(env.anArrow[3], 0, "arrow too (0x5C510)");
+    CheckEqI32(env.anBarTotal[1], 25000, "row Australia: 1 * +25000 survives (0x5C48C)");
+    CheckEqI32(env.anArrow[1], 25000, "with its arrow (0x5C468)");
+    CheckEqI32(env.anBarTotal[4], 75000, "row Africa: 3 * +25000 (0x5C4C8)");
+    CheckEqI32(env.anArrow[4], 75000, "with its arrow (0x5C4A8)");
+
+    /* C. Month 1: the same money, the lighter upkeep, and the below-month-3 clamp.
+     * Upkeep -300/-300/-300/-100/-200 gives shares -140 / 130 / 30 / 100 / 300. Row 0's arrow is
+     * -1 (3 * -25000 = -75000) and month 1 is below 3, so the level is zeroed before it is added.
+     * Row 1's arrow is 0, and Funding_ScoreToBarLevel returns 0 for direction 0. Rows 2, 3 and 4
+     * are positive, so the clamp does not touch them. */
+    FundFixture(&env, 1, 5);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -300, "month 1 puts -300 in the USA baseline (0x5C308)");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AUS], -100, "Australia -100");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AFR], -200, "Africa -200");
+    CheckEqI32(env.anShare[0], -140, "slot 0: 160 - 300");
+    CheckEqI32(env.anShare[1], 130, "slot 1: 230 - 100");
+    CheckEqI32(env.anShare[2], 30, "slot 2: 330 - 300");
+    CheckEqI32(env.anShare[3], 100, "slot 3: 400 - 300");
+    CheckEqI32(env.anShare[4], 300, "slot 4: 500 - 200");
+    CheckEqI32(env.anArrow[0], 0, "the negative level is zeroed before the add when month < 3 (0x5C3B8)");
+    CheckEqI32(env.anBarTotal[0], 0, "so the bar never goes negative this month");
+    CheckEqI32(env.anArrow[2], 0, "a 0 arrow gives a 0 level outright (0x5AAD0)");
+    CheckEqI32(env.anBarTotal[2], 0, "and the bar stays 0");
+    CheckEqI32(env.anArrow[3], 100000, "row Asia: 4 * +25000 (0x5C428)");
+    CheckEqI32(env.anBarTotal[3], 100000, "added to the bar (0x5C44C)");
+    CheckEqI32(env.anArrow[1], 50000, "row Australia: 1 * +50000, the +2 arrow (0x5C468)");
+    CheckEqI32(env.anBarTotal[1], 50000, "added to the bar (0x5C48C)");
+    CheckEqI32(env.anArrow[4], 150000, "row Africa: 3 * +50000 (0x5C4A8)");
+    CheckEqI32(env.anBarTotal[4], 150000, "added to the bar (0x5C4C8)");
+
+    /* D. Month 3 is still in the light band, and months 0 and 6 share the heaviest one. */
+    FundFixture(&env, 3, 5);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -300, "month 3 is still the light band (0x5C23C)");
+    CheckEqI32(env.anArrow[0], 0, "and month 3 is still below 3 for the clamp (0x5C3AC)");
+    FundFixture(&env, 0, 5);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -1100, "month 0 falls into the heaviest block (0x5C230)");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AUS], -300, "Australia -300 there");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AFR], -800, "Africa -800 there");
+    FundFixture(&env, 6, 5);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -1100, "month 6 reaches the same block (0x5C250)");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AUS], -300, "identically for Australia");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_AFR], -800, "and for Africa");
+    CheckEqI32(env.anArrow[0], 0, "month 6 is not below 3, so a negative bar is only wiped at the end");
+    CheckEqI32(env.anBarTotal[0], 0, "which still leaves the bar at 0");
+
+    /* E. The base walk is bounded by the signed count. */
+    FundFixture(&env, 4, 0);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anShare[0], -400, "count 0: slot 0 is 100 - 500 with no base bonus (0x5C1B0)");
+    CheckEqI32(env.anShare[1], 0, "slot 1: 200 - 200");
+    CheckEqI32(env.anShare[2], -200, "slot 2: 300 - 500");
+    FundFixture(&env, 4, -1);
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anShare[0], -400, "a negative count runs nothing either (LDRSB at 0x5C188)");
+    CheckEqI32(env.anShare[2], -200, "on every slot");
+    FundFixture(&env, 4, 1);
+    g_aFundBases[0].bKind = 0x86; /* a kind with no arm in the compare chain (0x5C200) */
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anShare[0], -400, "kind 0x86 has no arm, so it feeds nothing (0x5C200)");
+
+    /* F. The opener: the month goes up first, then the recompute runs. */
+    FundFixture(&env, 3, 5);
+    FundingScreen_OpenMonthly(&env, &g_nFundScreenId, &g_bFundAnim);
+    CheckEqI32(env.nMonthCounter, 4, "the month counter is incremented before the recompute (0x5D170)");
+    CheckEqI32(env.anBaseline[PUFO_FUND_ROW_USA], -500, "so this report runs at month 4's upkeep");
+    CheckEqI32(g_nFundScreenId, 19, "the geoscape screen id becomes 19 (0x5D18C)");
+    CheckEqI32((i32)g_bFundAnim, 0, "and the shared animation flag is cleared (0x5D1A0)");
+    CheckEqI32(g_nFundPending, 0, "the recompute ran and zeroed the pending total");
+
+    /* G. The guards. */
+    FundingScreen_Init(NULL);
+    FundFixture(&env, 4, 5);
+    env.ppPadSlot = NULL;
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anShare[0], 0, "a missing pad slot refuses the whole recompute");
+    FundFixture(&env, 4, 5);
+    env.apBases = NULL;
+    FundingScreen_Init(&env);
+    CheckEqI32(env.anShare[0], 0, "so does a missing base array");
+    FundingScreen_OpenMonthly(NULL, &g_nFundScreenId, &g_bFundAnim);
+    CheckEqI32(g_nFundScreenId, -1, "and OpenMonthly refuses to touch the screen id");
+
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -11933,6 +12124,7 @@ int main(void)
     TestCancelTarget();
     TestSelectedAnswers();
     TestConfirmCraftTarget();
+    TestFundingRecompute();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

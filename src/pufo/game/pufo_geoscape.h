@@ -878,7 +878,7 @@ void GameTime_SetSpeedIdx5(GeoscapeWorld *pWorld, UiControl *const apSpeedCtl[PU
  *      NUL with no bound (0x669D0 - ORIGINAL BUG, the field is 20 bytes and the overflow tail
  *      lands in the four dwords and past the record), bType = nKind - 0x80, nUnk48 /
  *      nDemolishState / nBuildState = 0, nFacType = the site id.
- *   5. The BaseRec: bUnk17 = nKind, nUnk8 = x, nUnk12 = y, bUnk16 = abKindTable[nKind] - 1,
+ *   5. The BaseRec: bKind = nKind, nUnk8 = x, nUnk12 = y, bUnk16 = abKindTable[nKind] - 1,
  *      where abKindTable is the runtime block at 0x1864DD (all zero in the image).
  *   6. When Map_nObjectCount is non-zero, clear this base's economy columns: the first
  *      nObjectCount u16 of the research column (144 entries per base, so 149 objects spill five

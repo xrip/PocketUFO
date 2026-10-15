@@ -13000,3 +13000,75 @@ shipped pads and lang.dat, covering the closed screen, the animation gate, the s
 the blink wash pixel, the five controls, every ladder branch (destroyed, escaped, no escape, ocean tile,
 lost trace, crash on land, crash at sea, 70 percent and above, no shot, already done), all three tails
 including the unreachable 0x61434, and the two gates that keep the full-zoom exit from running.
+
+## FundingScreen_Init (0x5c084, 1256 B) and FundingScreen_OpenMonthly (0x5d160, 92 B)
+
+The monthly funding report's arithmetic, ported as `FundingScreen_Init` / `FundingScreen_OpenMonthly`
+in `game/pufo_baseui.c`. This is what gives the whole funding block its meaning, and it renames 23
+globals on the way (see the rename ledger).
+
+**The five rows are five countries.** lang.dat TEXTS[1302..1306] are the row titles of the monthly
+report: "США", "Евро Альянс", "Азиатский Альянс", "Австралия", "Африка". The rows are NOT in the
+order of the five race-score slots: the row -> slot permutation is **0, 2, 3, 1, 4**, and both halves
+of the original agree on it -- `FundingScreen_DrawExtended` reads shares 0x186580, 0x186588, 0x18658C,
+0x186584, 0x186590 for rows 0..4 (0x5B804..0x5B8A4) and `FundingScreen_Init` writes the same five in
+the same order (0x5C34C..0x5C38C). So the SHARE, BAR and ARROW arrays are slot-indexed while the
+BASELINE array at 0x1595F0 is row-indexed.
+
+**The money.** With P = `g_nFundPending @ 0x1865BC` and S = the sum of `g_nFundScore0..4`:
+bonus = (P / (S+1)) * `g_nFundMult`, P becomes P + bonus, and the per-score share is
+(P + bonus) / (S+1). Two `_rt_sdiv` calls (0x5C13C, 0x5C164), divisor in R0 both times. Each score
+times that share goes to `g_nFundShare0..4`.
+
+**The bases.** For each of the `nBaseCount` bases, `BaseRec.bKind` (+0x11, renamed from `bUnk17`)
+selects a slot through the same table `Funding_AddRaceBonus` uses, and a hit adds **3 * share**
+(0x5C1BC..0x5C220). The count is read once as a SIGNED byte (LDRSB at 0x5C188, BLE at 0x5C1B0).
+
+**The upkeep, by month.** `nMonthCounter @ 0x159648` (was `unk_159648`) is incremented by
+`FundingScreen_OpenMonthly` at 0x5D170 *before* the recompute, so the first report of a new game runs
+at month 1. The table at 0x5C22C..0x5C324 gives one figure per row group -- USA, Euro and Asia share
+one, Australia and Africa each have their own:
+
+| month | USA / Euro / Asia | Australia | Africa |
+|---|---|---|---|
+| <= 0 | -1100 | -300 | -800 |
+| 1, 2, 3 | -300 | -100 | -200 |
+| 4 | -500 | -200 | -350 |
+| 5 | -700 | -300 | -500 |
+| >= 6 | -1100 | -300 | -800 |
+
+Month 0 is not "no upkeep": `BLE loc_5C31C` at 0x5C230 and `BNE loc_5C31C` at 0x5C250 land in the
+SAME block, so a zero counter gets the heaviest upkeep of all. The figure is stored into that row's
+baseline AND added to that row's share.
+
+**The bars.** Per row: `arrow = Funding_DeltaToArrow(share[slot], baseline[row])`, then
+`level = Funding_ScoreToBarLevel(row, arrow)` stored into `g_nFundArrow[slot]`; when
+`nMonthCounter < 3` and the level is negative the level is zeroed first (0x5C3AC..0x5C3BC and its four
+copies), and the level is then ADDED to `g_nFundBar[slot]`. Finally every slot whose bar ended
+negative has BOTH its bar and its arrow zeroed (0x5C4D4..0x5C53C), so a country in the red shows no
+arrow at all. `Funding_ScoreToBarLevel`'s first argument is the ROW, not a score -- Init passes
+0,1,2,3,4 in draw order (0x5C39C..0x5C4A0) while the shares belong to slots 0,2,3,1,4 -- so the
+3/5/4/1/3 factor table is per row and the port's parameter is renamed `nRow`.
+
+**`g_nFundArrow*` is not an arrow.** It holds the bar LEVEL, a money amount (+-25000 or +-50000 times
+the row factor), not the -2..2 arrow. `FundingScreen_DrawExtended` re-derives the arrow from the share
+and the baseline at 0x5B804..0x5B8A4 and uses the stored dword only for its negative test.
+
+**Pending money.** `g_nFundPending` is written by `Tact_CheckBattleEnd` (0x3656C),
+`StrategList_ProcessEvents` (0x7FDC0) and `Smap_BeginCraftSelect` (0x84168) between reports, folded
+into the shares here, and zeroed at 0x5C544.
+
+**Deviation.** The original indexes `apBases` with an unchecked byte and dereferences every entry; the
+port stops at the count it is given and skips a NULL entry.
+
+Open naming question, recorded rather than changed: the 0x80..0x89 id space is used both as the base
+kind (`BaseRec.bKind`, `aNewBaseCostByRace @ 0xAB488`) and as the tilemap tile value the radar passes
+to `Funding_AddRaceBonus`, and the funding screen's own labels call the five targets countries. The
+port's `PUFO_RACE_ID_*` constants therefore read as "race" where the evidence says region/country.
+Renaming them touches the radar and the base-creation chain, so it is left as its own unit.
+
+Tests: `tests/test_baseui.c:TestFundingRecompute`, 70 checks -- the pad and close-control wiring
+against the shipped archives, the full month-4 chain (shares, base bonus, upkeep, all five bars and
+the three negative-bar wipes), the month-1 chain (the below-month-3 clamp, the zero-direction case,
+arrows -1/0/+1/+2), months 0 and 6 reaching the same upkeep block, the signed base count, kind 0x86
+feeding nothing, and the opener's increment-then-recompute order.

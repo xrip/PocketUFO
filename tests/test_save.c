@@ -731,7 +731,7 @@ static void TestBasesChunk(void)
         aBase[b].nUnk8 = 80 + b;
         aBase[b].nUnk12 = 90 + b;
         aBase[b].bUnk16 = (u8)(0xA0 + b);
-        aBase[b].bUnk17 = (u8)(0xB0 + b);
+        aBase[b].bKind = (u8)(0xB0 + b);
         apBase[b] = &aBase[b];
     }
 
@@ -774,7 +774,7 @@ static void TestBasesChunk(void)
         CheckEqI32(apRead[0]->nStoresTotal, 7, "the store total round-trips");
         CheckEqI32(apRead[0]->nUnk12, 90, "nUnk12 round-trips");
         CheckEqI32(apRead[0]->bUnk16, 0xA0, "bUnk16 round-trips");
-        CheckEqI32(apRead[0]->bUnk17, 0xB0, "bUnk17 round-trips");
+        CheckEqI32(apRead[0]->bKind, 0xB0, "bKind round-trips");
     }
 
     /* The writer's column is the loop index, so bases 0..2 wrote columns 0..2. */

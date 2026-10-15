@@ -1495,6 +1495,34 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `BaseFac_BuildStatusMsg` and `Geoscape_Draw`); comments added at 0x60570, 0x611A8, 0x612BC, 0x61434 and
   the redundant re-read at 0x6089C.
 
+- [x] part 54, the monthly funding report's arithmetic: `FundingScreen_Init (0x5c084)`, 1256 bytes, and
+  `FundingScreen_OpenMonthly (0x5d160)`, 92 bytes — 70 more checks and 23 funding globals named in the IDB.
+  **The five rows are five countries.** lang.dat TEXTS[1302..1306] are the row titles: США, Евро Альянс,
+  Азиатский Альянс, Австралия, Африка. They are NOT in race-score order — the row → slot permutation is
+  **0, 2, 3, 1, 4**, and both `FundingScreen_DrawExtended`'s five `Funding_DeltaToArrow` calls
+  (0x5B804..0x5B8A4) and `FundingScreen_Init`'s five share stores (0x5C34C..0x5C38C) agree on it. The
+  share, bar and arrow arrays are slot-indexed; the baseline array at 0x1595F0 is row-indexed.
+  **The upkeep table has a trap.** `nMonthCounter @ 0x159648` (was `unk_159648`) is incremented at
+  0x5D170 *before* the recompute, and `BLE` at 0x5C230 and `BNE` at 0x5C250 land in the *same* block —
+  so month 0 is not "no upkeep" but the heaviest one (-1100/-300/-800), the same as month 6 and above.
+  Months 1..3 give -300/-100/-200, month 4 -500/-200/-350, month 5 -700/-500/-300, one figure per row
+  group (USA/Euro/Asia share one, Australia and Africa their own).
+  **`g_nFundArrow*` is not an arrow.** It holds `Funding_ScoreToBarLevel`'s result — a money amount,
+  ±25000 or ±50000 times the row's 3/5/4/1/3 factor. The draw re-derives the real -2..2 arrow from the
+  share and the baseline and uses the stored dword only for its sign. `Funding_ScoreToBarLevel`'s first
+  argument is the ROW, not a score (Init passes 0..4 in draw order at 0x5C39C..0x5C4A0), so the port's
+  parameter is renamed `nRow`.
+  **A negative bar wipes its arrow too** (0x5C4D4..0x5C53C), so a country in the red shows no arrow at
+  all; separately, a negative bar *level* is zeroed before it is added when the month is below 3
+  (0x5C3AC..0x5C3BC).
+  **IDB fixed on the way:** `BaseRec.bUnk17` → `bKind` (the base kind 0x80..0x89, read at 0x5C1C8 as the
+  region that selects the funding country), `unk_159648` → `nMonthCounter`, `unk_1595DC` → `pFundPad`,
+  `unk_1865BC` → `g_nFundPending`, and the five shares / bars / levels / baselines named
+  `g_nFundShare0..4`, `g_nFundBar0..4`, `g_nFundArrow0..4`, `g_nFundBase0..4`.
+  **Recorded, not changed:** the 0x80..0x89 space is a region/country id in this evidence (the screen's
+  own labels say countries), so the port's `PUFO_RACE_ID_*` naming is misleading. Renaming it touches
+  the radar and the base-creation chain and is left as its own unit.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1764,6 +1792,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the radar weapon mounts (`RadarScreen_DrawCraftArmament`, the mount-id enum, the cannon that draws no bar, the duplicated glyph-palette global fixed) | 56/56 (Release) | 11052 | 876/1103 (79.4%) | 389180/598792 (65.0%) | 39 checked, 0 mismatched |
 | the intercept shot animation (`RadarScreen_DrawOverlay`, the per-weapon flight gate and step, the laser that never resolves past 2, the runaway -2 ammo counter found) | 56/56 (Release) | 11141 | 877/1103 (79.5%) | 391968/598792 (65.5%) | 39 checked, 0 mismatched |
 | the radar frame driver (`RadarScreen_Update`, the same-frame-only damage ladder, the unreachable `Ship_ClearInterceptByStrategIdx` found) | 56/56 (Release) | 11223 | 878/1103 (79.6%) | 395772/598792 (66.1%) | 39 checked, 0 mismatched |
+| the monthly funding report (`FundingScreen_Init`, `FundingScreen_OpenMonthly`, the month-0 upkeep trap, 23 funding globals named) | 56/56 (Release) | 11293 | 880/1103 (79.8%) | 397120/598792 (66.3%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

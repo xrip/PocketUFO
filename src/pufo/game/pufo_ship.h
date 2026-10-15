@@ -24,7 +24,8 @@ typedef struct BaseRec {
     i32 nUnk8;         /* +0x08 */
     i32 nUnk12;        /* +0x0c */
     u8  bUnk16;        /* +0x10 */
-    u8  bUnk17;        /* +0x11 */
+    u8  bKind;         /* +0x11 the base kind, 0x80..0x89; also the region id the funding screen
+                        * maps to one of its five countries (FundingScreen_Init 0x5C1C8) */
     u8  gap_18[2];
 } BaseRec;
 
