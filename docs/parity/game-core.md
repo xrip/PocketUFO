@@ -12291,3 +12291,53 @@ are compared between a three-component and a four-component product: the fourth 
 the second, and the first two rows are identical in both. The short-component colour is compared
 between nMapPhase 0 and 5. The controls are checked through the injected blit seam: eight blits in
 slot order, and the two quantity controls found at (94,251) and (94,271) afterwards.
+
+## ResearchScreen_Init (0x749a8, 592 B)
+
+Ported as `ResearchInitEnv` + `ResearchScreen_Init` in `src/pufo/game/pufo_baseui.c`. It is the
+research screen's bring-up and the twin of `ManufScreen_Init`, with three differences that matter.
+
+Four controls, not six. Research has no engineers pair: the four slots at `ppScreen + 0x1D48 + 4*i`
+(array indices 1874..1877) take PanelPrev, PanelNext, IncSelectedQty, DecSelectedQty, and the four
+descriptors at `g_aResearchCtlDesc` (0xABB10, renamed from `stru_ABB10`) are the topic-list scroll
+pair at (205, 18) / (205, 38) -- the same offsets the manufacturing tab pair uses -- and the quantity
+pair at (10, 163) / (10, 183).
+
+The two shared bottom controls are re-pointed, not re-allocated, and the research screen points them
+the other way round from the manufacturing one: `unk_186BB4` gets `ResearchScreen_CancelSelectedAndClose`
+and `unk_186BB0` gets `ResearchScreen_StartSelected`, where `ManufScreen_Init` gives BB4 its OK button
+and BB0 its cancel. They are generic geoscape controls and each screen re-points them.
+
+Handlers first, positions last. `unk_186BB4` and `unk_186BB0` get their `pfnClick` at 0x74AC4 / 0x74AD0
+but their coordinates only at 0x74B98..0x74BB4, after the rebuild call and the topic walk: BB4 to
+(165, 188) and BB0 to (165, 166), one above the other in the same column. The test proves the order by
+having the rebuild hook record the cancel control's position -- it is still the value the test preset.
+
+The topic walk, 0x74B08..0x74B8C: for `i` in `0..nResearchEntryCount-1`, if
+`aResearchTopics[i].bActive` is zero then `auResearchCol[144*nSelectedBaseIdx + i] = 0`. The base index
+is `LDRSB` of `abFacilityGrid + 0x619` sign-extended through the usual `LSL #24 / ASR #24` pair, and
+the count byte is re-read from memory on every iteration. Deviation: the original bounds only by the
+count byte (a byte, so up to 255 of the 144 entries) and passes the base index through untested; the
+port stops at the table size and refuses a base index outside the eight columns.
+
+The tail call. `ResearchScreen_Init` is the only one of the four research entry points that refreshes
+the three panels itself (0x74BC4 -> `ResearchScreen_RefreshPanels` over unk_160C68 / unk_15EEFC /
+unk_15EF00) rather than leaving it to a handler; `ResearchScreen_StartSelected` does the same thing
+mid-screen. The test proves the refresh runs after the panel build by having the build hook record
+panel 1's `nLineCount` -- it is still the preset 99.
+
+`Research.pad` loads in mode 6 (0x749DC), is the 240 x 320 member of main.dat, and its two origins are
+zeroed at 0x749EC / 0x74A00 -- PadImage +0 and +4, which Hex-Rays renders as `->x` and `->uWidth`
+because it types the slot as `UiControl *`.
+
+Deviations: the original allocates the pad and the four controls with `operator new` and derefs every
+allocation with no test; the port takes caller-owned controls into `ppRoot[1..4]` as the manufacturing,
+buy/sell and transfer inits do. `ResearchScreen_RebuildTopicList` (0x74270) and
+`ResearchScreen_BuildPanels` (0x733f4) are not ported yet and arrive as hooks.
+
+Test: `TestResearchInit` in `tests/test_baseui.c`, 54 checks. The pad is loaded from the real main.dat
+and checked for its size and mode; the four controls are checked in their slots, their handlers and
+their descriptor positions (205/18, 205/38, 10/163, 10/183); the walk is checked against eight topics
+with four active -- the inactive allocations are cleared, the active ones survive, entry 8 past the
+count byte survives, and base 0's column is untouched; the two bottom controls are checked for handler
+and position; and three hooks record the state when they ran, which is what pins the order.

@@ -1,9 +1,9 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-15. HEAD before this edit: `ebc5d2b`. This document is committed together with
-`ManufScreen_DrawFrame` (0x6f9a4), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
+Date: 2026-10-15. HEAD before this edit: `4d9d3bb`. This document is committed together with
+`ResearchScreen_Init` (0x749a8), ported in `src/pufo/game/pufo_baseui.{c,h}` with `tests/test_baseui.c`;
 the reading it came from is written up in `docs/parity/game-core.md` under
-`## ManufScreen_DrawFrame (0x6f9a4, 5400 B)`.
+`## ResearchScreen_Init (0x749a8, 592 B)`.
 
 This document was regenerated from the actual repository state: `git log`, `git status`, a fresh
 build, a full test run, and five audit scripts run in the same session. Every number below comes
@@ -78,11 +78,12 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **10332**. Coverage as of the latest commit: **864 / 1103
-functions (78.3%)**, **371972 / 598792 bytes (62.1%)**. The last unit was `ManufScreen_DrawFrame`
-(0x6f9a4): the manufacturing family is now complete -- that frame drawer was its last member, and it is
-the first port tested by drawing it for real: exact 565 values at the coordinates the original names. The
-previous unit, `ManufScreen_Draw` (0x6e3e0), turned up a dead branch -- 0x6E52C tests panel A's style dword at offset 0
+Test checks run across the 56 suites: **10386**. Coverage as of the latest commit: **865 / 1103
+functions (78.4%)**, **372564 / 598792 bytes (62.2%)**. The last unit was `ResearchScreen_Init`
+(0x749a8): the manufacturing family is complete, and the research family's bring-up is ported too. The
+previous unit, `ManufScreen_DrawFrame` (0x6f9a4), was the first port tested by drawing it for real: exact
+565 values at the coordinates the original names. An earlier unit, `ManufScreen_Draw` (0x6e3e0), turned up a
+dead branch -- 0x6E52C tests panel A's style dword at offset 0
 against 119..121 instead of the selected product, so the hangar byte at 0x159DBC is never raised there. The §2 numbers
 below are the snapshot taken
 when this file was regenerated and are older than that line.

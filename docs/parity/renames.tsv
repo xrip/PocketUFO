@@ -242,3 +242,4 @@ Base_FindIndexBySiteId	Base_FindIndexByTypeByte	merged: a second copy of the sam
 Transfer_ScrollPrevAll	BuySellScreen_PanelPrev	merged: byte-identical to BuySellScreen_PanelPrev over the same five panel globals, only the BL displacements differ
 Transfer_ScrollNextAll	BuySellScreen_PanelNext	merged: byte-identical to BuySellScreen_PanelNext over the same five panel globals, only the BL displacements differ
 Transfer_RoleToIconId	BuySell_RoleToItemId	merged: byte-identical 88-byte switch over the same five craft role values and the same 255 fall-through
+stru_ABB10	g_aResearchCtlDesc	renamed in the IDB: the research screen's four 32-byte UiControl descriptors at 0xABB10, walked by ResearchScreen_Init's UiControl_Setup loop

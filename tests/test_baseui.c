@@ -10110,6 +10110,225 @@ static void TestManufDrawFrame(void)
     FrameRestoreFont();
 }
 
+/* ---- ResearchScreen_Init @ 0x749a8 ---------------------------------------------------------
+ *
+ * The bring-up is mostly wiring, so the test checks the wiring and the ORDER of the wiring: two of
+ * the hooks record what the screen looked like when they ran, which is what proves the rebuild runs
+ * before the topic walk and the panel refresh runs after the panel build. */
+
+static UiControl g_aResInitCtl[4];
+static UiControl g_resClose, g_resCancel, g_resStart;
+static u16 g_aResCol[144 * 8];
+static UiPanel g_aResPanel[3];
+static i32 g_nResHookRebuild, g_nResHookBuild;
+static i32 g_nResCancelXAtRebuild, g_nResCancelYAtRebuild, nResPanelLinesAtBuild;
+
+static void ResStubClose(void)   { }
+static void ResStubCancel(void)  { }
+static void ResStubStart(void)   { }
+static void ResStubPanelPrev(void) { }
+static void ResStubPanelNext(void) { }
+static void ResStubIncQty(void)  { }
+static void ResStubDecQty(void)  { }
+
+static void ResHookRebuild(void)
+{
+    ++g_nResHookRebuild;
+    g_nResCancelXAtRebuild = g_resCancel.x;
+    g_nResCancelYAtRebuild = g_resCancel.y;
+    g_aResCol[144 + 0] = 9; /* topic 0 is inactive: the walk that follows must clear this */
+}
+
+static void ResHookBuildPanels(void)
+{
+    ++g_nResHookBuild;
+    /* The refresh has not run yet, so the panels still carry the value the test preset. */
+    nResPanelLinesAtBuild = g_aResPanel[0].nLineCount;
+}
+
+static bool ResLoadPadsReal(UiControl *pCtl, const char *psz0, const char *psz1,
+                            const char *psz2, void *pUser)
+{
+    (void)pUser;
+    UiControl_LoadPads(pCtl, psz0, psz1, psz2);
+    return true;
+}
+
+static void TestResearchInit(void)
+{
+    static void *aRoot[5];
+    static ResearchTopicLive aTopic[144];
+    static u8 bEntryCount;
+    static i8 nSelBase;
+    ResearchInitEnv env;
+    PadImage *pPad;
+    i32 i;
+
+    printf("the research screen's bring-up\n");
+
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL main.dat / lang.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    bEntryCount = 8;
+    nSelBase = 1;
+    g_nResHookRebuild = 0;
+    g_nResHookBuild = 0;
+    g_nResCancelXAtRebuild = -1;
+    g_nResCancelYAtRebuild = -1;
+    nResPanelLinesAtBuild = -1;
+
+    memset(aRoot, 0, sizeof(aRoot));
+    memset(g_aResInitCtl, 0, sizeof(g_aResInitCtl));
+    memset(&g_resClose, 0, sizeof(g_resClose));
+    memset(&g_resCancel, 0, sizeof(g_resCancel));
+    memset(&g_resStart, 0, sizeof(g_resStart));
+    memset(aTopic, 0, sizeof(aTopic));
+    memset(g_aResCol, 0, sizeof(g_aResCol));
+
+    /* Eight topics in the walk: 1, 3, 4 and 6 are on the screen list, 0, 2, 5 and 7 are not. */
+    aTopic[1].bActive = 1;
+    aTopic[3].bActive = 1;
+    aTopic[4].bActive = 1;
+    aTopic[6].bActive = 1;
+    aTopic[1].wTotal = 100; aTopic[1].wProgress = 50; /* 50% */
+    aTopic[4].wTotal = 4;   aTopic[4].wProgress = 1;  /* 25% */
+
+    /* Every entry of base 1's column, plus one past the walk's bound, plus base 0's first entry. */
+    for (i = 0; i < 9; ++i) {
+        g_aResCol[144 + i] = 7;
+    }
+    g_aResCol[0] = 7;
+
+    for (i = 0; i < 3; ++i) {
+        if (!UiPanel_ctor(&g_aResPanel[i], 8)) {
+            printf("  FAIL a research panel could not be constructed\n");
+            ++g_nFailures;
+            return;
+        }
+        g_aResPanel[i].nLineCount = 99; /* so the refresh's own value is distinguishable */
+    }
+
+    /* The cancel control starts parked somewhere obvious, so the late move is visible. */
+    g_resCancel.x = 11;
+    g_resCancel.y = 12;
+
+    memset(&env, 0, sizeof(env));
+    env.ppRoot = aRoot;
+    for (i = 0; i < 4; ++i) {
+        env.apCtl[i] = &g_aResInitCtl[i];
+    }
+    env.pCloseCtl = &g_resClose;
+    env.pCancelCtl = &g_resCancel;
+    env.pStartCtl = &g_resStart;
+    env.pfnCloseClick = ResStubClose;
+    env.pfnCancelClick = ResStubCancel;
+    env.pfnStartClick = ResStubStart;
+    env.pfnPanelPrev = ResStubPanelPrev;
+    env.pfnPanelNext = ResStubPanelNext;
+    env.pfnIncQty = ResStubIncQty;
+    env.pfnDecQty = ResStubDecQty;
+    env.pfnRebuildTopicList = ResHookRebuild;
+    env.pfnBuildPanels = ResHookBuildPanels;
+    env.aTopics = aTopic;
+    env.pbEntryCount = &bEntryCount;
+    env.apResearchCols = g_aResCol;
+    env.pnSelectedBaseIdx = &nSelBase;
+    env.pPanelTopic = &g_aResPanel[0];
+    env.pPanelQty = &g_aResPanel[1];
+    env.pPanelProgress = &g_aResPanel[2];
+    env.pfnLoadPads = ResLoadPadsReal;
+
+    ResearchScreen_Init(&env);
+
+    /* Step 1: the screen pad. */
+    Check(aRoot[0] != NULL, "the research screen's pad object is allocated");
+    pPad = (PadImage *)aRoot[0];
+    Check(pPad != NULL && pPad->pData != NULL, "Research.pad really loads out of main.dat");
+    Check(pPad != NULL && pPad->uWidth == 240 && pPad->uHeight == 320,
+          "Research.pad is the 240 x 320 member");
+    Check(pPad != NULL && pPad->nMode == 6, "loaded in mode 6, the MOV R2,#6 at 0x749DC");
+    Check(pPad != NULL && pPad->nOriginX == 0 && pPad->nOriginY == 0, "and both origins are zeroed");
+
+    /* Steps 2 and 3: the four controls and their handlers. */
+    for (i = 0; i < 4; ++i) {
+        Check(aRoot[i + 1] == (void *)&g_aResInitCtl[i], "the four controls land in slots 1..4");
+    }
+    Check(g_aResInitCtl[0].pfnClick == ResStubPanelPrev, "slot 1 scrolls the topic list back");
+    Check(g_aResInitCtl[1].pfnClick == ResStubPanelNext, "slot 2 scrolls it forward");
+    Check(g_aResInitCtl[2].pfnClick == ResStubIncQty, "slot 3 is the quantity +");
+    Check(g_aResInitCtl[3].pfnClick == ResStubDecQty, "slot 4 is the quantity -");
+
+    /* Step 4: the close control, same place the manufacturing bring-up puts it. */
+    CheckEqI32(g_resClose.x, 224, "the close control sits at x 224");
+    CheckEqI32(g_resClose.y, 1, "and y 1");
+    Check(g_resClose.pfnClick == ResStubClose, "with the research close thunk");
+
+    /* Step 6: the four descriptors, both bases zero. */
+    CheckEqI32(g_aResInitCtl[0].x, 0xCD, "the topic scroll pair sits at x 0xCD");
+    CheckEqI32(g_aResInitCtl[0].y, 0x12, "the up arrow at y 0x12");
+    CheckEqI32(g_aResInitCtl[1].x, 0xCD, "the down arrow shares the column");
+    CheckEqI32(g_aResInitCtl[1].y, 0x26, "at y 0x26");
+    CheckEqI32(g_aResInitCtl[2].x, 0x0A, "the quantity pair sits at x 10");
+    CheckEqI32(g_aResInitCtl[2].y, 0xA3, "the up arrow at y 163");
+    CheckEqI32(g_aResInitCtl[3].x, 0x0A, "the down arrow shares the column");
+    CheckEqI32(g_aResInitCtl[3].y, 0xB7, "at y 183");
+
+    /* Step 7 before step 8: the rebuild ran, and the bottom controls were not positioned yet. */
+    CheckEqI32(g_nResHookRebuild, 1, "the topic rebuild runs once, before the panel build");
+    CheckEqI32(g_nResCancelXAtRebuild, 11, "and the cancel control is still parked when it runs");
+    CheckEqI32(g_nResCancelYAtRebuild, 12, "on both coordinates");
+
+    /* Step 8: the walk clears the inactive topics' allocations, for this base only. */
+    CheckEqI32(g_aResCol[144 + 0], 0, "topic 0 is inactive, so its allocation is cleared (0x74B68)");
+    CheckEqI32(g_aResCol[144 + 1], 7, "topic 1 is active and keeps its 7");
+    CheckEqI32(g_aResCol[144 + 2], 0, "topic 2 is inactive");
+    CheckEqI32(g_aResCol[144 + 3], 7, "topic 3 keeps its 7");
+    CheckEqI32(g_aResCol[144 + 4], 7, "topic 4 keeps its 7");
+    CheckEqI32(g_aResCol[144 + 5], 0, "topic 5 is inactive");
+    CheckEqI32(g_aResCol[144 + 6], 7, "topic 6 keeps its 7");
+    CheckEqI32(g_aResCol[144 + 7], 0, "topic 7 is inactive");
+    CheckEqI32(g_aResCol[144 + 8], 7, "the walk stops at the count byte, so entry 8 survives");
+    CheckEqI32(g_aResCol[0], 7, "and only the selected base's column is touched");
+
+    /* Step 9: the two bottom controls, handlers first and positions last. */
+    Check(g_resCancel.pfnClick == ResStubCancel, "the cancel control keeps its handler");
+    Check(g_resStart.pfnClick == ResStubStart, "and the start control its own");
+    CheckEqI32(g_resCancel.x, 165, "the cancel control is moved to x 165 at 0x74B98");
+    CheckEqI32(g_resCancel.y, 188, "and y 188");
+    CheckEqI32(g_resStart.x, 165, "the start control shares the column");
+    CheckEqI32(g_resStart.y, 166, "one row above, at y 166");
+
+    /* Step 10: the panel build, then the refresh. */
+    CheckEqI32(g_nResHookBuild, 1, "the panel build runs once");
+    CheckEqI32(nResPanelLinesAtBuild, 99, "the panel refresh runs after the build, not before it");
+    CheckEqI32(g_aResPanel[0].nLineCount, 4, "the refresh counts four active topics into panel 1");
+    CheckEqI32(g_aResPanel[1].nLineCount, 4, "and writes the same count into panel 2");
+    CheckEqI32(g_aResPanel[2].nLineCount, 4, "and into panel 3");
+    Check( strcmp(UiPanel_GetLineText(&g_aResPanel[1], 0), "7") == 0,
+           "the quantity column shows the allocation of the first active topic");
+    Check( strcmp(UiPanel_GetLineText(&g_aResPanel[2], 0), "50%") == 0,
+           "its progress is 100 * 50 / 100");
+    Check( strcmp(UiPanel_GetLineText(&g_aResPanel[2], 1), "") == 0,
+           "a topic with no progress gets the empty string");
+    Check( strcmp(UiPanel_GetLineText(&g_aResPanel[2], 2), "25%") == 0,
+           "and 100 * 1 / 4 is 25");
+
+    /* A missing environment does nothing. */
+    ResearchScreen_Init(NULL);
+    CheckEqI32(g_nResHookRebuild, 1, "a null environment calls no hook");
+    env.ppRoot = NULL;
+    ResearchScreen_Init(&env);
+    CheckEqI32(g_nResHookBuild, 1, "and a null root stops it before the pad is allocated");
+
+    for (i = 0; i < 3; ++i) {
+        UiPanel_FreeLines(&g_aResPanel[i]);
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -10146,6 +10365,7 @@ int main(void)
     TestManufBuildPanels();
     TestManufDraw();
     TestManufDrawFrame();
+    TestResearchInit();
     TestScreenOpeners();
     TestCloseThunks();
     TestTitleReturn();

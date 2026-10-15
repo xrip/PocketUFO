@@ -1172,6 +1172,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   four component captions against the four component slots `CommitProduction` gates on. IDB: the whole
   reading is now a comment at `0x6f9a4`.
 
+- [x] part 43, the research bring-up: `ResearchScreen_Init (0x749a8)`, 592 bytes — 54 more checks. It is
+  the twin of `ManufScreen_Init` with three differences worth naming.
+  **Four controls, not six** — research has no engineers pair — and the four descriptors are now
+  `g_aResearchCtlDesc @ 0xABB10` (renamed from `stru_ABB10` in the IDB): scroll pair (205,18)/(205,38),
+  quantity pair (10,163)/(10,183).
+  **The two shared bottom controls point the other way round.** `unk_186BB4` gets
+  `ResearchScreen_CancelSelectedAndClose` and `unk_186BB0` gets `ResearchScreen_StartSelected`, where
+  `ManufScreen_Init` gives BB4 its OK button and BB0 its cancel. They are generic geoscape controls and
+  each screen re-points them — which is also why `Ui_OpenResearch` parks BB4 at (1000,1000) and this
+  Init moves it back to (165,188).
+  **Handlers first, positions last.** BB4/BB0 get their `pfnClick` at 0x74AC4/0x74AD0 but their
+  coordinates only at 0x74B98..0x74BB4, after the rebuild call and the topic walk. The test pins the
+  order with three hooks that record the screen state when they ran: the rebuild hook sees the cancel
+  control still parked where the test put it, and the build hook sees panel 1's `nLineCount` still at
+  the preset 99, so the refresh provably runs after the build.
+  **The topic walk** (0x74B08..0x74B8C) clears `auResearchCol[144*base + i]` for every topic whose
+  `bActive` is zero, bounds only by the count byte, and sign-extends `nSelectedBaseIdx` through
+  `LDRSB` + `LSL #24 / ASR #24`. `ResearchScreen_Init` is also the only research entry point that
+  refreshes the three panels itself rather than leaving it to a handler.
+  IDB: the whole reading is a comment at `0x749a8`, and the count byte at `0x160C4C` is now a named
+  `u8 nResearchEntryCount`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -1234,6 +1256,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   those caption lines draw nothing. Until the writer is found — a table-driven copy from lang.dat is
   the likeliest candidate — the port cannot say what those captions are supposed to say, and the
   screen draws that read them stay unported. Recorded rather than guessed.
+- [ ] **The research entry count is modelled as `u16` where the original has a byte.** Found in part 43:
+  the ARM reads the count at `0x160C4C` with `LDRB` (`LDRB R3, [R2, #0x1D44]` over the 0x15EF08 anchor,
+  and `LDRB` again at 0x74B14), and `Geoscape_InitUI` writes it with `STRB R1, #0x90` — the port's own
+  comment at `pufo_geoiinit.c:243` already says STRB. But `ResearchQtyEnv`, `ResearchAccumulateEnv`,
+  `SaveGameEnv` and `GeoiinitEnv` all type it `u16 *`, and `pufo_world.h`'s `nResearchEntries` is a u16,
+  so the port reads two bytes where the original reads one and writes two where it writes one. It is a
+  modelling inaccuracy rather than a behavioural bug today — the value is 144 and the port's variable is
+  its own — but it is wrong, and `ScreenResetOpenEnv.pbResearchCount` already models it correctly as
+  `const u8 *`, so the two spellings disagree inside the same header. Fixing it is a type change across
+  four envs, `pufo_world.h` and the tests that fill them; it is its own step, not part of a port.
 - [ ] **Screen-level visual verification is blocked on `Geoscape_Draw (0x8c180)`.** The app renders
   the titles and the main menu for real (`--dump-frame` proves it), but the geoscape screen — the
   screen every other screen sits on — is a hook the port does not implement
@@ -1405,6 +1437,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the manufacturing panel build (`ManufScreen_BuildPanels`, the research-driven row filter, `aFacTypeTable` found to be the research table) | 56/56 (Release) | 10222 | 862/1103 (78.2%) | 365240/598792 (61.0%) | 39 checked, 0 mismatched |
 | the manufacturing draw click (`ManufScreen_Draw`, the seed rule, the dead hangar branch found) | 56/56 (Release) | 10264 | 863/1103 (78.2%) | 366572/598792 (61.2%) | 39 checked, 0 mismatched |
 | the manufacturing frame (`ManufScreen_DrawFrame`, the 0.7 price factor, the first real-surface pixel test) | 56/56 (Release) | 10332 | 864/1103 (78.3%) | 371972/598792 (62.1%) | 39 checked, 0 mismatched |
+| the research bring-up (`ResearchScreen_Init`, the four descriptors, the handlers-before-positions order) | 56/56 (Release) | 10386 | 865/1103 (78.4%) | 372564/598792 (62.2%) | 39 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

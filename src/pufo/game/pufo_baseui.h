@@ -3693,4 +3693,80 @@ void Geoscape_PrepScreenOpenSfx(const ScreenResetOpenEnv *pEnv);
 void Ui_OpenBaseInfoAlt(const ScreenResetOpen2Env *pEnv);
 void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
 
+/* ResearchScreen_Init @ 0x749a8 (592 B): the research screen's bring-up, called from
+ * ResearchScreen_Open's tail (0x615D0 -> 0x74B00 region) and from Ui_OpenResearch's chain.
+ *
+ * Order, straight from the ARM.
+ *   1. 0x749B4..0x74A00: operator new(0x14) + PadImage_ctor into slot 0 of the screen block,
+ *      PadImage_Load("Research", 6) at 0x749DC, then the two origins zeroed (STR R11,[R3] and
+ *      STR R11,[R3,#4] at 0x749EC / 0x74A00 -- PadImage +0 and +4, not a UiControl field).
+ *   2. 0x74A04..0x74A34: four operator new(0x20) + UiControl_ctor into ppScreen + 0x1D48 + 4*i,
+ *      i.e. array indices 1874..1877. Four controls, not the manufacturing screen's six: research
+ *      has no engineers pair.
+ *   3. 0x74A4C..0x74A94: their handlers in slot order -- ResearchScreen_PanelPrev (0x72e30),
+ *      PanelNext (0x72e68), IncSelectedQty (0x72ea0), DecSelectedQty (0x72f70).
+ *   4. 0x74AA0..0x74AB8: the shared close control unk_186B00 moved to (224, 1) and pointed at
+ *      ResearchScreen_CloseThunk (0x72ffc). Same position the manufacturing bring-up gives it.
+ *   5. 0x74AC4 / 0x74AD0: the two shared bottom controls get their research handlers --
+ *      unk_186BB4 -> ResearchScreen_CancelSelectedAndClose (0x73380), unk_186BB0 ->
+ *      ResearchScreen_StartSelected (0x73240). Note the swap against the manufacturing screen,
+ *      which points BB4 at its OK button and BB0 at its cancel: these two are generic geoscape
+ *      controls and each screen re-points them. Their POSITIONS are not set here.
+ *   6. 0x74AD4..0x74AF8: UiControl_Setup(slot[1874+i], 0, 0, &g_aResearchCtlDesc[i]).
+ *   7. 0x74B00: ResearchScreen_RebuildTopicList (0x74270) with the screen block as its argument.
+ *   8. 0x74B08..0x74B8C: for topic i in 0..nResearchEntryCount-1, if aResearchTopics[i].bActive is
+ *      zero then auResearchCol[nSelectedBaseIdx * 144 + i] = 0. The base index is LDRSB of
+ *      abFacilityGrid + 0x619 and is sign-extended by the usual LSL #24 / ASR #24 pair, so a
+ *      negative index reaches the column from below; the count byte is re-read from memory on
+ *      every iteration.
+ *   9. 0x74B98..0x74BB4: NOW the two bottom controls are positioned -- unk_186BB4 to (165, 188)
+ *      and unk_186BB0 to (165, 166). They sit one above the other in the same column.
+ *  10. 0x74BB8: ResearchScreen_BuildPanels (0x733f4), then the tail call
+ *      ResearchScreen_RefreshPanels (0x73008) -- the only one of the four research screen entry
+ *      points that refreshes the panels itself rather than leaving it to a handler.
+ *
+ * g_aResearchCtlDesc @ 0xABB10 is four 32-byte descriptors: the topic-list scroll pair at x 205
+ * y 18/38 (the same offsets the manufacturing tab pair uses) and the quantity pair at x 10
+ * y 163/183. All four use the "up"/"sup" or "down"/"sdown" pad pair and mode 0.
+ *
+ * Deviation: the original allocates the pad and the four controls with operator new and derefs
+ * every allocation with no test; the port takes caller-owned controls and installs them into
+ * ppRoot[1..4], as the manufacturing, buy/sell and transfer inits do. */
+#define PUFO_RESEARCH_PAD_NAME  "Research" /* aResearch_0 @ 0xABB90 */
+#define PUFO_RESEARCH_PAD_MODE  6          /* 0x749DC: MOV R2,#6 */
+#define PUFO_RESEARCH_CLOSE_X   224        /* 0x74AA0: STRH #0xE0 */
+#define PUFO_RESEARCH_CLOSE_Y   1          /* 0x74AAC */
+#define PUFO_RESEARCH_BOTTOM_X  165        /* 0x74B98 and 0x74BAC: STRH #0xA5 into both */
+#define PUFO_RESEARCH_CANCEL_Y  188        /* 0x74BA0: STRH #0xBC, into unk_186BB4 */
+#define PUFO_RESEARCH_START_Y   166        /* 0x74BB4: STRH #0xA6, into unk_186BB0 */
+
+typedef struct ResearchInitEnv {
+    void **ppRoot;                  /* the screen block; [0] the PadImage, [1..4] the four controls */
+    UiControl *apCtl[4];            /* caller-owned, stored into ppRoot[1..4] */
+    UiControl *pCloseCtl;           /* unk_186B00 */
+    UiControl *pCancelCtl;          /* unk_186BB4, handler CancelSelectedAndClose, moved to (165,188) */
+    UiControl *pStartCtl;           /* unk_186BB0, handler StartSelected, moved to (165,166) */
+    void (*pfnCloseClick)(void);    /* ResearchScreen_CloseThunk @ 0x72ffc */
+    void (*pfnCancelClick)(void);   /* ResearchScreen_CancelSelectedAndClose @ 0x73380 */
+    void (*pfnStartClick)(void);    /* ResearchScreen_StartSelected @ 0x73240 */
+    void (*pfnPanelPrev)(void);     /* ResearchScreen_PanelPrev @ 0x72e30 */
+    void (*pfnPanelNext)(void);     /* ResearchScreen_PanelNext @ 0x72e68 */
+    void (*pfnIncQty)(void);        /* ResearchScreen_IncSelectedQty @ 0x72ea0 */
+    void (*pfnDecQty)(void);        /* ResearchScreen_DecSelectedQty @ 0x72f70 */
+    void (*pfnRebuildTopicList)(void); /* ResearchScreen_RebuildTopicList (0x74270), not ported */
+    void (*pfnBuildPanels)(void);   /* ResearchScreen_BuildPanels (0x733f4), not ported */
+    ResearchTopicLive *aTopics;     /* aResearchTopics @ 0x15EF08 */
+    const u8 *pbEntryCount;         /* nResearchEntryCount @ 0x160C4C, read with LDRB */
+    u16 *apResearchCols;            /* auResearchCol @ 0x16022C, 144 u16 per base */
+    const i8 *pnSelectedBaseIdx;    /* nSelectedBaseIdx @ 0x159D81, read with LDRSB */
+    UiPanel *pPanelTopic;           /* unk_160C68, the first of the three research panels */
+    UiPanel *pPanelQty;             /* unk_15EEFC */
+    UiPanel *pPanelProgress;        /* unk_15EF00 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} ResearchInitEnv;
+
+void ResearchScreen_Init(ResearchInitEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

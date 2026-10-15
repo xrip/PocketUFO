@@ -7445,3 +7445,115 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv)
         pBase->init.pfnInit(pBase->init.pSlot, pBase->init.pUser); /* 0x84CF4 -> ResearchScreen_Init */
     }
 }
+
+/* g_aResearchCtlDesc @ 0xABB10: the research screen's four control descriptors -- the topic-list
+ * scroll pair, then the quantity pair. Same order as the four handlers ResearchScreen_Init installs,
+ * and the scroll pair carries the same offsets the manufacturing tab pair has. */
+static const UiControlDesc g_aResearchCtlDesc[4] = {
+    { 0x00CD, 0x0012, "up",   "sup",   "", 0 }, /* 0xABB10 */
+    { 0x00CD, 0x0026, "down", "sdown", "", 0 }, /* 0xABB30 */
+    { 0x000A, 0x00A3, "up",   "sup",   "", 0 }, /* 0xABB50 */
+    { 0x000A, 0x00B7, "down", "sdown", "", 0 }, /* 0xABB70 */
+};
+
+/* ResearchScreen_Init @ 0x749a8. The header block has the ten steps, the descriptor source and the
+ * two control positions that arrive only at the end. */
+void ResearchScreen_Init(ResearchInitEnv *pEnv)
+{
+    PadImage *pPad;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppRoot == NULL) {
+        return;
+    }
+
+    pPad = BuySellPadNew(); /* 0x749B4 / 0x749C4: operator new(0x14) then PadImage_ctor */
+    pEnv->ppRoot[0] = pPad; /* 0x749D8: the ctor's result, not the raw allocation */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_RESEARCH_PAD_NAME, PUFO_RESEARCH_PAD_MODE); /* 0x749DC */
+        pPad->nOriginX = 0; /* 0x749EC */
+        pPad->nOriginY = 0; /* 0x74A00 */
+    }
+
+    for (i = 0; i < 4; ++i) {
+        pEnv->ppRoot[i + 1] = pEnv->apCtl[i]; /* 0x74A28, the original's operator new(0x20) slots */
+    }
+    if (pEnv->apCtl[0] != NULL) {
+        pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x74A4C */
+    }
+    if (pEnv->apCtl[1] != NULL) {
+        pEnv->apCtl[1]->pfnClick = pEnv->pfnPanelNext; /* 0x74A64 */
+    }
+    if (pEnv->apCtl[2] != NULL) {
+        pEnv->apCtl[2]->pfnClick = pEnv->pfnIncQty; /* 0x74A7C */
+    }
+    if (pEnv->apCtl[3] != NULL) {
+        pEnv->apCtl[3]->pfnClick = pEnv->pfnDecQty; /* 0x74A94 */
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = PUFO_RESEARCH_CLOSE_X; /* 0x74AA0 */
+        pEnv->pCloseCtl->y = PUFO_RESEARCH_CLOSE_Y; /* 0x74AAC */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x74AB8 */
+    }
+
+    /* The two shared bottom controls are pointed at their research handlers here and POSITIONED
+     * only at 0x74B98, after the topic walk. */
+    if (pEnv->pCancelCtl != NULL) {
+        pEnv->pCancelCtl->pfnClick = pEnv->pfnCancelClick; /* 0x74AC4 */
+    }
+    if (pEnv->pStartCtl != NULL) {
+        pEnv->pStartCtl->pfnClick = pEnv->pfnStartClick; /* 0x74AD0 */
+    }
+
+    for (i = 0; i < 4; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_Setup(pEnv->apCtl[i], 0, 0, &g_aResearchCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x74AE4 */
+        }
+    }
+
+    if (pEnv->pfnRebuildTopicList != NULL) {
+        pEnv->pfnRebuildTopicList(); /* 0x74B00 */
+    }
+
+    const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+    const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+
+    /* 0x74B08..0x74B8C: a topic that is not on the screen list has its allocation for this base
+     * dropped. Deviation: the original bounds only by the count byte (a byte, so up to 255 of the
+     * 144 entries) and passes nSelectedBaseIdx through untested; the port stops at the table size
+     * and refuses a base index outside the eight columns. */
+    if (pEnv->aTopics != NULL && pEnv->apResearchCols != NULL
+        && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT) {
+        const i32 nWalk = (nEntries < PUFO_RESEARCH_TOPIC_COUNT) ? nEntries : PUFO_RESEARCH_TOPIC_COUNT;
+        for (i = 0; i < nWalk; ++i) {
+            if (pEnv->aTopics[i].bActive == 0) {
+                pEnv->apResearchCols[PUFO_RESEARCH_TOPIC_COUNT * nBase + i] = 0; /* 0x74B68 STRH */
+            }
+        }
+    }
+
+    if (pEnv->pCancelCtl != NULL) {
+        pEnv->pCancelCtl->x = PUFO_RESEARCH_BOTTOM_X; /* 0x74B98 */
+        pEnv->pCancelCtl->y = PUFO_RESEARCH_CANCEL_Y; /* 0x74BA0 */
+    }
+    if (pEnv->pStartCtl != NULL) {
+        pEnv->pStartCtl->x = PUFO_RESEARCH_BOTTOM_X; /* 0x74BAC */
+        pEnv->pStartCtl->y = PUFO_RESEARCH_START_Y;  /* 0x74BB4 */
+    }
+
+    if (pEnv->pfnBuildPanels != NULL) {
+        pEnv->pfnBuildPanels(); /* 0x74BB8 */
+    }
+
+    /* 0x74BC4: the tail call. The original hands in the count byte and the selected base's column
+     * straight out of the globals; the port passes the same two values it just walked over. */
+    if (pEnv->aTopics != NULL && pEnv->apResearchCols != NULL
+        && nBase >= 0 && nBase < PUFO_FAC_BASE_COUNT) {
+        (void)ResearchScreen_RefreshPanels(pEnv->aTopics, nEntries,
+                                           pEnv->apResearchCols + PUFO_RESEARCH_TOPIC_COUNT * nBase,
+                                           pEnv->pPanelTopic, pEnv->pPanelQty,
+                                           pEnv->pPanelProgress);
+    }
+}
