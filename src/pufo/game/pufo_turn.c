@@ -8,11 +8,8 @@
 
 #include <string.h>
 
-/* --- phase constants, from Tact_ProcessActionPhase --- */
-#define PUFO_PHASE_NONE          0
-#define PUFO_PHASE_OPP_FIRE      1
-#define PUFO_PHASE_RESTORE       2
-#define PUFO_PHASE_ENEMY_AI      3
+/* The phase constants moved to pufo_turn.h: Tact_EnemyAiTick @ 0x4cbe0 writes phase 3
+ * from its own tail, so the machine's states are no longer private to this file. */
 
 /* The flag that makes a unit ineligible to act, from the opportunity-fire walk
  * (`(bFlags & 0x20) == 0` continues; set means skip). */

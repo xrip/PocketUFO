@@ -129,7 +129,7 @@ static u16  s_uUiScreen;
 static i32  s_nUiSlot1, s_nUiSlot9, s_nUiSlot10, s_nUiSlot11;
 static i32  s_nUnk254B4, s_nUnk254B8, s_nGamma;
 static GameClock s_Clock;
-static ObjectRec *s_pObj156A88, *s_pObj156910, *s_pObj156A58;
+static TactItem s_Item156A88, s_Item156910, s_Item156A58;
 
 static u8 s_aTileTypes[36];
 static u8 s_aDeployOffsets[PUFO_DEPLOY_RECORDS_GROUP * 3 * PUFO_DEPLOY_RECORD_BYTES];
@@ -336,7 +336,9 @@ static void Fixture_Reset(void)
     s_nUnk254B4 = 0x99; s_nUnk254B8 = 0x99; s_nGamma = 3;
     s_Clock.nSpeed = 1;
     s_Clock.bPaused = false;
-    s_pObj156A88 = NULL; s_pObj156910 = NULL; s_pObj156A58 = NULL;
+    memset(&s_Item156A88, 0x5A, sizeof(s_Item156A88));
+    memset(&s_Item156910, 0x5A, sizeof(s_Item156910));
+    memset(&s_Item156A58, 0x5A, sizeof(s_Item156A58));
     memset(&s_WeaponSel, 0, sizeof(s_WeaponSel));
 
     /* --- the mission tables --- */
@@ -364,9 +366,9 @@ static void Fixture_Reset(void)
     s_Env.ppDeployCell     = &s_pDeployCell;
     s_Env.pWeaponSel       = &s_WeaponSel;
     s_Env.pUnk138EA0       = s_aSentinel;
-    s_Env.ppObj156A88      = &s_pObj156A88;
-    s_Env.ppObj156910      = &s_pObj156910;
-    s_Env.ppObj156A58      = &s_pObj156A58;
+    s_Env.pItem156A88      = &s_Item156A88;
+    s_Env.pItem156910      = &s_Item156910;
+    s_Env.pItem156A58      = &s_Item156A58;
     s_Env.apVisRays        = s_aRays;
     s_Env.paVisSteps       = s_aSteps;
     s_Env.pClock           = &s_Clock;
@@ -560,11 +562,15 @@ static void TestWeaponSelAndObjectCopies(void)
     Check(memcmp(s_aSentinel, &s_apObjects[0], sizeof(void *)) == 0,
           "unk_138EA0 dword 0 is apObjects[0]");
     CheckEqI32(*(i32 *)(s_aSentinel + 0x14), 0x7D00, "unk_138EB4 is 0x7D00");
-    Check(s_pObj156A88 == &s_aObjects[PUFO_SHOT_OBJ_VARIANT3],
-          "unk_156A88 is apObjects[51]");
-    Check(s_pObj156910 == &s_aObjects[PUFO_SHOT_OBJ_VARIANT2],
-          "unk_156910 is apObjects[24]");
-    Check(s_pObj156A58 == &s_aObjects[141], "unk_156A58 is apObjects[141]");
+    /* Each record is a TactItem and only its pObj field is written -- the 0x5A fill
+     * proves the store is 4 bytes at +0 and not a clear of the record. */
+    Check(s_Item156A88.pObj == &s_aObjects[PUFO_SHOT_OBJ_VARIANT3],
+          "TactItem_156A88.pObj is apObjects[51]");
+    Check(s_Item156910.pObj == &s_aObjects[PUFO_SHOT_OBJ_VARIANT2],
+          "TactItem_156910.pObj is apObjects[24]");
+    Check(s_Item156A58.pObj == &s_aObjects[141], "TactItem_156A58.pObj is apObjects[141]");
+    Check(s_Item156A88.nIndex == 0x5A5A && s_Item156A88.nAmmo == 0x5A,
+          "the 156A88 seed writes only pObj");
 }
 
 static void TestPanelLayout(void)

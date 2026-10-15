@@ -11,8 +11,15 @@
  * `pCtx->apOppFire[i]` via `*(&pCtx->pScanUnit + i)`:
  *
  *     0x000 pScanUnit      0x004 apOppFire[60]      0x0F4 nOppFireCount
- *     0x0F8 bBusy          0x0FC nPhase             0x100 pSavedFocus
+ *     0x0F8 bBusy          0x0FC nPhase             0x100 bAiFocusSaved
  *     0x104 pSavedSelUnit  0x108 pCameraUnit        0x10C pTrackUnit
+ *
+ * +0x100 is a BYTE flag, not a pointer. It used to be typed `Soldier *pSavedFocus`
+ * because Hex-Rays reads it as `LOBYTE(pCtx->pSavedFocus)`, but every access in the
+ * binary is a 0/1 byte store or test (STRB at 0x4CC00, 0x4D688, 0x4D84C, 0x4D86C,
+ * 0x4D878, 0x4D888 and the test at 0x4D920) and nothing ever loads it as an address.
+ * The unit the enemy turn restores lives at +0x104, which is what Tact_EndEnemyTurn
+ * @ 0x4cb74 actually reads.
  *
  * Because it holds pointers the Win64 size differs; only field access matters,
  * and this context is never serialised (it is rebuilt per mission by
@@ -50,13 +57,25 @@
 
 #define PUFO_OPPFIRE_MAX 60
 
+/* The action-phase states, from Tact_ProcessActionPhase @ 0x4d950. Phase 3 is the enemy
+ * AI: Tact_EnemyAiTick @ 0x4cbe0 writes it back at its own tail (0x4D920) after every
+ * pass, so an AI pass that queued work leaves the machine ready for the next pass. */
+#define PUFO_PHASE_NONE          0
+#define PUFO_PHASE_OPP_FIRE      1
+#define PUFO_PHASE_RESTORE       2
+#define PUFO_PHASE_ENEMY_AI      3
+
 typedef struct TactCtx272 {
     Soldier *pScanUnit;                       /* 0x000 */
     Soldier *apOppFire[PUFO_OPPFIRE_MAX];     /* 0x004 */
     i32      nOppFireCount;                   /* 0x0F4 */
     u8       bBusy;                           /* 0x0F8 */
     i32      nPhase;                          /* 0x0FC */
-    Soldier *pSavedFocus;                     /* 0x100 */
+    u8       bAiFocusSaved;                   /* 0x100, set by Tact_EnemyAiTick when this
+                                               * tick left the player's focus on a unit; the
+                                               * tail at 0x4D920 ends the enemy turn only
+                                               * when it is still 0. */
+    u8       gap_101[3];                      /* 0x101 */
     Soldier *pSavedSelUnit;                   /* 0x104 */
     Soldier *pCameraUnit;                     /* 0x108 */
     Soldier *pTrackUnit;                      /* 0x10C */

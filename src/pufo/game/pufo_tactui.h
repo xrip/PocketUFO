@@ -74,6 +74,12 @@
 #define PUFO_ACTION_MODE_AIMED 2
 #define PUFO_ACTION_MODE_MENU 11
 #define PUFO_ACTION_MODE_HAND 12
+/* Mode 7 is the multi-target burst. Tact_EnemyAiTick @ 0x4d770 arms it by writing 1 to
+ * Map.nMultiTargetCount (0x1139BC) and Map.nBurstShots (0x1139E0) and putting the target
+ * cell into Map.apMultiTargets[0] (0x1139C0) before the enqueue, and
+ * TactState_EnqueueFireBurst @ 0x4b080 then takes each shot's coordinates from
+ * apMultiTargets instead of the single target. */
+#define PUFO_ACTION_MODE_MULTI 7
 
 /* The cursor layer bounds. LayerUp refuses at 4; LayerDown refuses at 1, so the
  * reachable set is 1..4 even though a layer 0 exists. */

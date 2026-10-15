@@ -44,6 +44,13 @@ const u8 g_aUnitTypeFlag2[PUFO_UNIT_TYPE_COUNT] = {
     0, 1, 1, 1, 1, 1, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0
 };
+/* Column +3. Set for the four melee-only aliens and the two civilian types; the only reader
+ * is Tact_EnemyAiTick at 0x4CDBC. Dumped from the binary. */
+const u8 g_aUnitTypeFlag3[PUFO_UNIT_TYPE_COUNT] = {
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 1, 1,
+    1, 1, 0, 1, 1, 0, 0, 0
+};
 
 /* unk_A9768 @ 0xa9768, 23 x 2 x 8 MuzzleOffset. Dumped from the binary. */
 const MuzzleOffset g_aUnitMuzzleOffset[PUFO_UNIT_MUZZLE_TYPE_COUNT][2][8] = {

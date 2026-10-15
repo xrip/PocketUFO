@@ -5,6 +5,7 @@
  * require the unit to be SMALL, while roles 3 and 4 test only the flag column.
  */
 #include "game/pufo_enemyai.h"
+#include "game/pufo_tactui.h" /* the PUFO_ACTION_MODE_* codes the tick writes */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -790,6 +791,665 @@ static void TestTuRefusalStillRunsTheTail(void)
     CheckEqI32(g_nFaceCalls, 0, "  the enqueue refused before facing the target");
 }
 
+/* --- Tact_EnemyAiTick @ 0x4cbe0 ---------------------------------------------------- */
+
+/* The tick reaches further than the panic AI does: it selects units, ends the enemy turn,
+ * walks the RMP node list and drives the queue. So the fixture wires a real TactSelectCtx,
+ * a real TactCtx272 and a real RmpData, and counts every seam. */
+static TactCtx272     g_Tact;
+static Soldier        g_aEnemy[4];
+static Soldier       *g_apEnemy[4];
+static u8             g_nEnemy;
+static Soldier        g_Target;
+static Soldier        g_Occupant;
+static Soldier        g_Xcom;
+static TactItem       g_ItemBelt;
+static TactItem       g_ItemMelee;
+static TactItem       g_ItemAction13;
+static ObjectRecFull  g_ObjBelt;
+static ObjectRecFull  g_ObjMelee;
+static ObjectRecFull  g_ObjAction13;
+static Mc1Rec         g_CeilSpr;
+static Soldier       *g_pSelUnit;
+static TactCursor     g_Cursor;
+static MapCursorPos   g_CursorPos;
+static StatusStack    g_Stack;
+static StatusHooks    g_Hooks;
+static TactSelectCtx  g_Select;
+static RmpData        g_Rmp;
+static RmpNode        g_aRmpNodes[16];
+static MapCell       *g_apMapTargets[8];
+static i32            g_nMultiTargetCount;
+static i32            g_nBurstShots;
+static i32            g_nMeleeX, g_nMeleeY, g_nMeleeLayer;
+static TurnHooks      g_TurnHooks;
+static EnemyAiTickCtx g_Tick;
+static char           g_aRankNames[9][PUFO_RANK_NAME_STRIDE];
+
+static i32     g_nVisCalls;
+static Soldier *g_pVisUnit;
+static i32     g_nTurnCalls;
+static Soldier *g_pTurnUnit;
+static u8      g_nTurnFacing;
+static i32     g_nAfterStepCalls;
+static i32     g_nInputCalls;
+static i32     g_nFocusCalls;
+static i32     g_nPathSeq;
+static i32     g_aPathX[64];
+static i32     g_aPathY[64];
+
+static bool Tick_NotBusy(void *pUser) { (void)pUser; return false; }
+static bool Tick_NoRepaint(void *pUser) { (void)pUser; return false; }
+static void Tick_NoFrame(void *pUser) { (void)pUser; }
+
+static void Tick_Vis(Soldier *pUnit, void *pUser)
+{
+    (void)pUser;
+    g_nVisCalls += 1;
+    g_pVisUnit = pUnit;
+}
+
+static void Tick_Turn(Soldier *pUnit, u8 nFacing, void *pUser)
+{
+    (void)pUser;
+    g_nTurnCalls += 1;
+    g_pTurnUnit = pUnit;
+    g_nTurnFacing = nFacing;
+}
+
+static void Tick_AfterStep(TactCtx272 *pCtx, void *pUser)
+{
+    (void)pCtx;
+    (void)pUser;
+    g_nAfterStepCalls += 1;
+}
+
+static void Tick_SetInput(bool bEnabled, void *pUser)
+{
+    (void)bEnabled;
+    (void)pUser;
+    g_nInputCalls += 1;
+}
+
+static void Tick_Focus(void *pUser) { (void)pUser; g_nFocusCalls += 1; }
+
+static u8 Tick_ClipCap(u16 nAmmoTypeId, void *pUser)
+{
+    (void)nAmmoTypeId;
+    (void)pUser;
+    return 30;
+}
+
+/* Records the coordinates of every path request, in order, so a test can prove the
+ * RMP walk's visit order rather than just its count. */
+static bool Ai_PathSeq(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser)
+{
+    (void)nLayer;
+    (void)pUser;
+    if (g_nPathSeq < 64) {
+        g_aPathX[g_nPathSeq] = nX;
+        g_aPathY[g_nPathSeq] = nY;
+        g_nPathSeq += 1;
+    }
+    g_nPathCalls += 1;
+    g_nPathFlag = bFlag;
+    return g_bPathOk;
+}
+
+static void TickReset(const u32 *pScript, i32 nLen)
+{
+    i32 i;
+
+    AiReset(pScript, nLen);
+
+    memset(&g_Tact, 0, sizeof(g_Tact));
+    memset(g_aEnemy, 0, sizeof(g_aEnemy));
+    memset(&g_Target, 0, sizeof(g_Target));
+    memset(&g_Occupant, 0, sizeof(g_Occupant));
+    memset(&g_Xcom, 0, sizeof(g_Xcom));
+    memset(&g_Rmp, 0, sizeof(g_Rmp));
+    memset(g_aRmpNodes, 0, sizeof(g_aRmpNodes));
+    memset(g_apMapTargets, 0, sizeof(g_apMapTargets));
+    memset(&g_Cursor, 0, sizeof(g_Cursor));
+    memset(&g_Stack, 0, sizeof(g_Stack));
+    memset(&g_CeilSpr, 0, sizeof(g_CeilSpr));
+    memset(&g_ItemBelt, 0, sizeof(g_ItemBelt));
+    memset(&g_ItemMelee, 0, sizeof(g_ItemMelee));
+    memset(&g_ItemAction13, 0, sizeof(g_ItemAction13));
+    memset(&g_ObjBelt, 0, sizeof(g_ObjBelt));
+    memset(&g_ObjMelee, 0, sizeof(g_ObjMelee));
+    memset(&g_ObjAction13, 0, sizeof(g_ObjAction13));
+    for (i = 0; i < 9; ++i) {
+        snprintf(g_aRankNames[i], PUFO_RANK_NAME_STRIDE, "Rank%d", i);
+    }
+
+    /* Sectoid-shaped enemies: small, flag0 clear, flag3 clear, morale high enough not
+     * to panic, and enough TU to act. */
+    for (i = 0; i < 4; ++i) {
+        g_apEnemy[i] = &g_aEnemy[i];
+        g_aEnemy[i].pCell = Cell(7, 7, 2);
+        g_aEnemy[i].uTu = 20;
+        g_aEnemy[i].nUnitType = 9;
+        g_aEnemy[i].bMorale = 100;
+        snprintf(g_aEnemy[i].szName, sizeof(g_aEnemy[i].szName), "Alien%d", i);
+    }
+    g_aEnemy[0].pHandL = &g_ItemL;
+    g_aEnemy[0].pHandR = &g_ItemR;
+    g_nEnemy = 1;
+
+    /* The multi-target the AI aims at, standing two cells east of the actor. */
+    g_Target.pCell = Cell(9, 7, 2);
+    g_Target.nUnitType = 9;
+    g_Target.nMultiTarget = 5;   /* role 5: the predicate accepts every type */
+    Cell(9, 7, 2)->pUnit = &g_Target;
+    g_aEnemy[0].nMultiTarget = 1;
+    g_aEnemy[0].multiOrAnim.apMultiTargets[0] = &g_Target;
+
+    /* A throwable belt item: object category 3 is what the throw requires. */
+    g_ObjBelt.nCategory = PUFO_ENEMYAI_THROW_CATEGORY;
+    g_ItemBelt.pObj = &g_ObjBelt;
+    g_ItemBelt.nAmmo = 4;
+    g_aEnemy[0].apBelt[0] = &g_ItemBelt;
+
+    g_ObjMelee.bTwoHanded = 0;
+    g_ObjMelee.bAmmoCap = 255;
+    g_ItemMelee.pObj = &g_ObjMelee;
+    g_ObjAction13.bTwoHanded = 0;
+    g_ObjAction13.bAmmoCap = 255;
+    g_ItemAction13.pObj = &g_ObjAction13;
+
+    g_Xcom.bStatus = 0;
+    g_Xcom.nUnitType = 0;
+
+    g_pSelUnit = NULL;
+    g_CursorPos.pCursor = &g_Cursor;
+    g_CursorPos.geom = g_Geom;
+    memset(&g_Select, 0, sizeof(g_Select));
+    g_Select.ppSelUnit = &g_pSelUnit;
+    g_Select.pCursorPos = &g_CursorPos;
+    g_Select.pfnLookup = Ai_Lookup;
+    g_Select.pStatus = &g_Stack;
+    g_Hooks.pfnIsBusy = Tick_NotBusy;
+    g_Hooks.pfnShouldRender = Tick_NoRepaint;
+    g_Hooks.pfnRender = Tick_NoFrame;
+    g_Hooks.pUser = NULL;
+    g_Select.pStatusHooks = &g_Hooks;
+    g_Select.panRankLow = &g_aRankNames[0][0];
+    g_Select.panRankOther = &g_aRankNames[0][0];
+
+    memset(&g_TurnHooks, 0, sizeof(g_TurnHooks));
+    g_TurnHooks.pfnSetPlayerInput = Tick_SetInput;
+    g_TurnHooks.pfnFocusSelected = Tick_Focus;
+    g_TurnHooks.pUser = NULL;
+
+    g_nMultiTargetCount = 0;
+    g_nBurstShots = 0;
+    g_nMeleeX = -1;
+    g_nMeleeY = -1;
+    g_nMeleeLayer = -1;
+    g_nVisCalls = 0;
+    g_pVisUnit = NULL;
+    g_nTurnCalls = 0;
+    g_pTurnUnit = NULL;
+    g_nTurnFacing = 0xFF;
+    g_nAfterStepCalls = 0;
+    g_nInputCalls = 0;
+    g_nFocusCalls = 0;
+    g_nPathSeq = 0;
+
+    memset(&g_Tick, 0, sizeof(g_Tick));
+    g_Tick.pfnRandU16             = Ai_Rand;
+    g_Tick.pfnPathToCell          = Ai_PathSeq;
+    g_Tick.pfnFillActionCosts     = Ai_FillCosts;
+    g_Tick.pfnUpdateVisibility    = Tick_Vis;
+    g_Tick.pfnEnqueueTurnAndKick  = Tick_Turn;
+    g_Tick.pfnAfterEnemyStep      = Tick_AfterStep;
+    g_Tick.pfnClipAmmoCap         = Tick_ClipCap;
+    g_Tick.pfnLookup              = Ai_Lookup;
+    g_Tick.geom                   = g_Geom;
+    g_Tick.pQueue                 = &g_State;
+    g_Tick.pSelect                = &g_Select;
+    g_Tick.pTurnHooks             = &g_TurnHooks;
+    g_Tick.apEnemyUnits           = g_apEnemy;
+    g_Tick.pnEnemyCount           = &g_nEnemy;
+    g_Tick.ppSelUnit              = &g_pSelUnit;
+    g_Tick.pFirstXcom             = &g_Xcom;
+    g_Tick.ppSelWeapon            = &g_pSelWeapon;
+    g_Tick.pnActionMode           = &g_nActionMode;
+    g_Tick.pnMultiTargetCount     = &g_nMultiTargetCount;
+    g_Tick.apMultiTargets         = g_apMapTargets;
+    g_Tick.pnBurstShots           = &g_nBurstShots;
+    g_Tick.pnMeleeCellX           = &g_nMeleeX;
+    g_Tick.pnMeleeCellY           = &g_nMeleeY;
+    g_Tick.pnMeleeCellLayer       = &g_nMeleeLayer;
+    g_Tick.anActionCost           = g_anCost;
+    g_Tick.anActionEnabled        = g_anEnabled;
+    g_Tick.pItemMelee             = &g_ItemMelee;
+    g_Tick.pItemAction13          = &g_ItemAction13;
+    g_Tick.pRmp                   = &g_Rmp;
+    g_Tick.pActCtx                = &g_Ctx;
+    g_Tick.pUser                  = NULL;
+}
+
+/* The first command-18 entry in the queue, or NULL. */
+static const TactQueueEntry *AiFirstAction18(void)
+{
+    for (i32 i = 0; i < g_State.nQueueLen; ++i) {
+        if (g_State.aQueue[i].nCmd == TACTCMD_ACTION18) {
+            return &g_State.aQueue[i];
+        }
+    }
+    return NULL;
+}
+
+static const TactQueueEntry *AiFirstShotEntry(void)
+{
+    for (i32 i = 0; i < g_State.nQueueLen; ++i) {
+        if (g_State.aQueue[i].nCmd == TACTCMD_FIRE_SHOT) {
+            return &g_State.aQueue[i];
+        }
+    }
+    return NULL;
+}
+
+static const TactQueueEntry *AiFirstThrow(void)
+{
+    for (i32 i = 0; i < g_State.nQueueLen; ++i) {
+        if (g_State.aQueue[i].nCmd == TACTCMD_THROW) {
+            return &g_State.aQueue[i];
+        }
+    }
+    return NULL;
+}
+
+static void TestNoEnemiesRunsTail(void)
+{
+    printf("Tact_EnemyAiTick with an empty roster still runs the tail\n");
+
+    TickReset(NULL, 0);   /* any RNG draw at all would fail the test */
+    g_nEnemy = 0;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    CheckEqI32(g_nAfterStepCalls, 1, "  Tact_EndEnemyTurn ran");
+    CheckEqI32(g_nInputCalls, 1, "  and it re-enabled player input");
+    /* The tail writes phase 3, then Tact_EndEnemyTurn @ 0x4cb74 writes 0 back. */
+    CheckEqI32(g_Tact.nPhase, 0, "  the phase ends at 0 because the turn ended");
+    CheckEqI32(g_Tact.bAiFocusSaved, 0, "  no focus was saved");
+}
+
+static void TestTickUnitGates(void)
+{
+    printf("The per-unit gates: tick limit, bAiDone and the TU floor\n");
+
+    TickReset(NULL, 0);
+    g_nEnemy = 3;
+    g_aEnemy[0].nAiTick = PUFO_ENEMYAI_TICK_MAX + 1;   /* past the limit */
+    g_aEnemy[0].uTu = 20;
+    g_aEnemy[1].nAiTick = 5;
+    g_aEnemy[1].bAiDone = 1;
+    g_aEnemy[1].uTu = 20;
+    g_aEnemy[2].nAiTick = 0;
+    g_aEnemy[2].uTu = PUFO_ENEMYAI_TU_MIN - 1;         /* not enough TU */
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    /* 0x4CC34: a unit past the limit is skipped WITHOUT ++nAiTick, so it never comes
+     * back. The other two are advanced. */
+    CheckEqI32(g_aEnemy[0].nAiTick, PUFO_ENEMYAI_TICK_MAX + 1,
+               "  the over-limit unit is not advanced");
+    CheckEqI32(g_aEnemy[1].nAiTick, 6, "  the done unit is still advanced");
+    CheckEqI32(g_aEnemy[2].nAiTick, 1, "  the short-TU unit is advanced");
+    CheckEqI32(g_aEnemy[2].bAiDone, 1, "  and marked done for having too little TU");
+    CheckEqI32(g_aEnemy[0].bAiDone, 0, "  the over-limit unit is not marked done");
+    CheckEqI32(g_nVisCalls, 0, "  nobody acted, so nobody refreshed visibility");
+    CheckEqI32(g_nAfterStepCalls, 1, "  so the enemy turn ended");
+}
+
+static void TestActingUnitVisibilityAndTrack(void)
+{
+    static const u32 aScript[] = { 0, 0, 0, 0 };
+
+    printf("The acting unit refreshes visibility and the camera link\n");
+
+    TickReset(aScript, 4);
+    g_aEnemy[0].nMultiTarget = 0;   /* straight to the fallback: rand(3) then rand(8) */
+    g_Tact.pTrackUnit = &g_aEnemy[0];
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nVisCalls, 1, "  Unit_UpdateVisibility ran for the acting unit");
+    Check(g_pVisUnit == &g_aEnemy[0], "  for the right unit");
+    Check(g_Tact.pTrackUnit == &g_aEnemy[0],
+          "  pTrackUnit is kept when it already points at the actor");
+
+    TickReset(aScript + 2, 2);
+    g_aEnemy[0].nMultiTarget = 0;
+    g_Tact.pTrackUnit = &g_Target;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    Check(g_Tact.pTrackUnit == NULL,
+          "  pTrackUnit is cleared when it points at another unit");
+}
+
+static void TestLowMoraleRunsThePanicAi(void)
+{
+    static const u32 aPanic[]  = { 1, 13, 13 };
+    static const u32 aSteady[] = { 0, 0 };
+
+    printf("bMorale < 20 with nUnitType > 3 hands the unit to the panic AI\n");
+
+    TickReset(aPanic, 3);
+    g_aEnemy[0].bMorale = PUFO_ENEMYAI_MORALE_MAX - 1;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nPushCalls, 1, "  the panic AI pushed its status message");
+    Check(strcmp(g_szPushed, "Alien0") == 0, "  the message is the unit name");
+    CheckEqI32(g_nPathCalls, 1, "  and the unit wandered");
+    CheckEqI32(g_nPathFlag, 1, "  the wander path asks for the flag-1 path");
+    CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the unit is marked done");
+    CheckEqI32(g_Tact.bAiFocusSaved, 1, "  and the focus is saved");
+    CheckEqI32(g_nAfterStepCalls, 0, "  so the enemy turn did not end");
+    CheckEqI32(g_nTurnCalls, 0, "  the fallback move never ran");
+
+    /* The boundary: morale exactly 20 is not panic. */
+    TickReset(aSteady, 2);
+    g_aEnemy[0].bMorale = PUFO_ENEMYAI_MORALE_MAX;
+    g_aEnemy[0].nMultiTarget = 0;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nPushCalls, 0, "  morale 20 does not panic");
+    CheckEqI32(g_nTurnCalls, 1, "  and the unit takes the fallback turn instead");
+}
+
+static void TestFireAffordabilityGate(void)
+{
+    /* Draw order: the multi-target index, the 1-in-5 accept roll, then the throw branch's
+     * own multi-target index and rand(3), and only then the fallback roll. */
+    static const u32 aRefused[] = { 0, 1, 0, 1, 0, 0 };
+    static const u32 aPaid[]    = { 0, 1, 0, 1 };
+    const TactQueueEntry *pShot;
+
+    printf("The fire gate is uTu >= cost * 2/3 + 8.0, charged at (int)(cost * 2/3)\n");
+
+    /* anActionCost[1] is 26, so the gate is 26 * 2/3 + 8 = 25.333... */
+    TickReset(aRefused, 6);
+    g_aEnemy[0].uTu = 25;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(AiBurstCount(), 0, "  25 TU does not clear a 26-cost mode");
+    CheckEqI32(g_nTurnCalls, 1, "  and the unit falls back to the fallback move");
+
+    TickReset(aPaid, 4);
+    g_aEnemy[0].uTu = 26;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    pShot = AiFirstShotEntry();
+    CheckEqI32(AiBurstCount(), 1, "  26 TU clears it");
+    Check(pShot != NULL, "  a shot entry exists");
+    if (pShot != NULL) {
+        CheckEqI32(pShot->nTuCost, 17, "  the charge is (int)(26 * 2/3), not the table cost");
+        CheckEqI32(pShot->nArgDword, g_anEnabled[PUFO_ACTION_MODE_SNAP],
+                   "  the argument is anActionEnabled[mode]");
+        CheckEqI32(pShot->nX, 9, "  the shot aims at the multi-target's cell");
+        CheckEqI32(pShot->nY, 7, "  at its row");
+        CheckEqI32(pShot->nZ, 2, "  at its layer");
+    }
+    CheckEqI32(g_nActionMode, PUFO_ACTION_MODE_SNAP, "  a non-burst weapon uses mode 1");
+    CheckEqI32(g_nTurnCalls, 0, "  no fallback once the shot was queued");
+}
+
+static void TestThrowPath(void)
+{
+    static const u32 aScript[] = { 0, 1, 0, 0 };
+    const TactQueueEntry *pThrow;
+
+    printf("The throw needs roll 0, range, a category-3 belt item and type > 3\n");
+
+    TickReset(aScript, 4);
+    g_aEnemy[0].uTu = 40;   /* the throw is charged anActionCost[11], which is 36 */
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    Check(g_aEnemy[0].apBelt[0] == NULL, "  the belt slot is emptied");
+    Check(g_aEnemy[0].pHandR == &g_ItemBelt, "  the item moves into the right hand");
+    Check(g_pSelWeapon == &g_ItemBelt, "  and into Map.pSelWeapon");
+    CheckEqI32(g_ItemBelt.bUnk7, 0, "  item +7 is cleared");
+    CheckEqI32(g_ItemBelt.bUnk8, 1, "  item +8 is raised");
+    CheckEqI32(g_nActionMode, PUFO_ACTION_MODE_MENU, "  action mode 11 is the throw slot");
+    pThrow = AiFirstThrow();
+    Check(pThrow != NULL, "  a command-17 entry was queued");
+    if (pThrow != NULL) {
+        CheckEqI32(pThrow->nTuCost, g_anCost[PUFO_ACTION_MODE_MENU],
+                   "  its cost is anActionCost[11], the global the original loads by literal");
+        CheckEqI32(pThrow->nArg, (u8)g_anEnabled[PUFO_ACTION_MODE_MENU],
+                   "  its argument is anActionEnabled[11]");
+        CheckEqI32(pThrow->nX, 9, "  at the multi-target's column");
+    }
+    CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the thrower is marked done");
+
+    /* The same roll, but the belt object is not category 3: no throw, and the unit fires. */
+    TickReset(aScript, 4);
+    g_ObjBelt.nCategory = 2;
+    g_aEnemy[0].uTu = 26;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    Check(AiFirstThrow() == NULL, "  a category-2 belt item is not throwable");
+    CheckEqI32(AiBurstCount(), 1, "  so the unit shoots instead");
+}
+
+static void TestMultiTargetMode7(void)
+{
+    static const u32 aFar[]  = { 0, 1, 0, 1 };
+    static const u32 aNear[] = { 0, 1, 0, 1, 0, 0 };
+
+    printf("A burst weapon at range >= 10 arms mode 7 and the Map multi-target block\n");
+
+    /* anActionCost[7] is 32, so the gate is 32 * 2/3 + 8 = 29.333... */
+    TickReset(aFar, 4);
+    g_ObjL.uSortKey = PUFO_ENEMYAI_SORTKEY_MULTI;   /* AiReset rewrites it */
+    g_Target.pCell = Cell(17, 7, 2);
+    Cell(17, 7, 2)->pUnit = &g_Target;
+    g_aEnemy[0].uTu = 30;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    CheckEqI32(g_nActionMode, PUFO_ACTION_MODE_MULTI, "  action mode 7");
+    CheckEqI32(g_nMultiTargetCount, 1, "  Map.nMultiTargetCount is armed to 1");
+    CheckEqI32(g_nBurstShots, 1, "  Map.nBurstShots is armed to 1");
+    Check(g_apMapTargets[0] == Cell(17, 7, 2), "  Map.apMultiTargets[0] is the target cell");
+    CheckEqI32(AiBurstCount(), 1, "  one shot, because the target list holds one cell");
+    CheckEqI32(AiFirstShotEntry()->nTuCost, 21, "  charged at (int)(32 * 2/3)");
+
+    /* The same weapon with the target only 8 cells away: no burst, fallback instead. */
+    TickReset(aNear, 6);
+    g_ObjL.uSortKey = PUFO_ENEMYAI_SORTKEY_MULTI;
+    g_Target.pCell = Cell(15, 7, 2);
+    Cell(15, 7, 2)->pUnit = &g_Target;
+    g_aEnemy[0].uTu = 30;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(AiBurstCount(), 0, "  a target closer than 10 cells is not a burst target");
+    CheckEqI32(g_nTurnCalls, 1, "  and the unit falls back");
+    g_ObjL.uSortKey = 20;
+}
+
+static void TestMeleeNeighbourHandoff(void)
+{
+    static const u32 aScript[] = { 0, 0, 0 };
+    const TactQueueEntry *pAct;
+
+    printf("A usable multi-target hands the melee action to ANOTHER enemy (0x4d660)\n");
+
+    TickReset(aScript, 3);   /* pick, accept roll, rand(2) for the mode */
+    g_nEnemy = 2;
+    g_aEnemy[1].bUnk422 = 1;
+    g_aEnemy[1].uTu = 20;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    pAct = AiFirstAction18();
+    Check(pAct != NULL, "  a command-18 entry was queued");
+    if (pAct != NULL) {
+        Check(pAct->pUnit == &g_aEnemy[1],
+              "  the action belongs to the neighbour, not to the unit this tick picked");
+        Check(pAct->pTarget == &g_Target, "  against the multi-target");
+        Check(pAct->pWeapon == &g_ItemMelee, "  carrying TactItem_156910");
+    }
+    CheckEqI32(g_nActionMode, PUFO_ENEMYAI_MODE_NEIGHBOUR_A, "  rand(2) == 0 gives mode 4");
+    CheckEqI32(g_nBurstShots, 0, "  Map.nBurstShots is cleared");
+    CheckEqI32(g_nMeleeX, 9, "  the melee cell is the multi-target's cell");
+    CheckEqI32(g_nMeleeY, 7, "  its row");
+    CheckEqI32(g_nMeleeLayer, 2, "  its layer");
+    CheckEqI32(g_aEnemy[1].uTu, 10, "  the neighbour pays half its TU");
+    CheckEqI32(g_aEnemy[0].uTu, 20, "  the picked unit pays nothing");
+    CheckEqI32(g_aEnemy[0].bAiDone, 0, "  and is not marked done, so it is picked again");
+}
+
+static void TestMeleeWalkCommit(void)
+{
+    static const u32 aScript[] = { 0, 1, 0 };
+    const TactQueueEntry *pAct;
+
+    printf("The flag-3 melee branch commits when the facing delta lands on the target\n");
+
+    CheckEqI32(g_aUnitTypeFlag3[UNIT_TYPE_CHRYSSALID], 1,
+               "  the Chryssalid row has flag3 set");
+
+    TickReset(aScript, 3);   /* pick, a rejected accept roll, the melee attempt's index */
+    g_aEnemy[0].nUnitType = UNIT_TYPE_CHRYSSALID;
+    g_aEnemy[0].bFacing = 2;                 /* aDirDeltaXY[2] is (+1, 0) */
+    g_Target.pCell = Cell(8, 7, 2);
+    Cell(8, 7, 2)->pUnit = &g_Target;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    pAct = AiFirstAction18();
+    Check(pAct != NULL, "  a command-18 entry was queued");
+    if (pAct != NULL) {
+        CheckEqI32(pAct->nMode, PUFO_ENEMYAI_CMD13, "  with mode 13");
+        Check(pAct->pUnit == &g_aEnemy[0], "  executed by the picked unit");
+        Check(pAct->pTarget == &g_Target, "  against the multi-target");
+        Check(pAct->pWeapon == &g_ItemAction13, "  carrying TactItem_156A58");
+    }
+    CheckEqI32(g_aEnemy[0].uTu, 0, "  the melee attack zeroes the unit's TU");
+    CheckEqI32(g_nMeleeX, 8, "  the melee cell is the cell the attack landed on");
+    CheckEqI32(g_nMeleeY, 7, "  at the unit's own row");
+    CheckEqI32(g_nMeleeLayer, 2, "  at the target's layer");
+    CheckEqI32(g_nPathCalls, 0, "  no path attempt was needed");
+}
+
+static void TestCeilRaisesTheScanLayer(void)
+{
+    static const u32 aHit[]   = { 0, 1, 0 };
+    static const u32 aMiss[]  = { 0, 1, 0, 0, 0, 0, 0 };
+    const TactQueueEntry *pAct;
+
+    printf("A ceiling byte below -15 raises the eight-direction scan one layer\n");
+
+    /* The target is far away, so the reach test fails and the scan decides the outcome.
+     * Facing 0 is (0, -1), so the scanned neighbour is (7, 6). */
+    g_Occupant.bStatus = 0;
+    g_Occupant.nUnitType = 9;
+
+    TickReset(aHit, 3);
+    Cell(7, 6, 3)->pUnit = &g_Occupant;
+    g_Target.pCell = Cell(12, 12, 2);
+    Cell(12, 12, 2)->pUnit = &g_Target;
+    g_aEnemy[0].nUnitType = UNIT_TYPE_CHRYSSALID;
+    g_aEnemy[0].bFacing = 0;
+    g_CeilSpr.iCeilParam = -16;
+    Cell(7, 7, 2)->pCeilSpr = &g_CeilSpr;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    pAct = AiFirstAction18();
+    Check(pAct != NULL, "  the scan found the occupant one layer up");
+    if (pAct != NULL) {
+        Check(pAct->pTarget == &g_Occupant, "  the occupant of the raised-layer cell");
+        CheckEqI32(pAct->nMode, PUFO_ENEMYAI_CMD13, "  as a command-13 action");
+    }
+    CheckEqI32(g_nPathCalls, 0, "  so no path was attempted");
+
+    /* -10 is above the threshold, so the scan stays on layer 2 where nothing stands. */
+    TickReset(aMiss, 7);
+    g_aEnemy[0].nUnitType = UNIT_TYPE_CHRYSSALID;
+    g_aEnemy[0].bFacing = 0;
+    g_CeilSpr.iCeilParam = -10;
+    Cell(7, 7, 2)->pCeilSpr = &g_CeilSpr;
+    g_bPathOk = false;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nPathCalls, PUFO_ENEMYAI_MELEE_TRIES,
+               "  a ceiling byte of -10 leaves the scan on the unit's own layer");
+    Check(AiFirstAction18() == NULL, "  and no melee action was queued");
+    Cell(7, 6, 3)->pUnit = NULL;
+    Cell(7, 7, 2)->pCeilSpr = NULL;
+}
+
+static void TestRmpWalkOrder(void)
+{
+    static const u32 aScript[] = { 1, 1 };
+
+    printf("The RMP walk advances the index before using it, so the drawn index is skipped\n");
+
+    TickReset(aScript, 2);
+    g_aEnemy[0].nMultiTarget = 0;   /* straight to the fallback move */
+    g_Rmp.nNodeCount = 3;
+    for (i32 i = 0; i < 3; ++i) {
+        g_aRmpNodes[i].nX = (u8)(i + 1);
+        g_aRmpNodes[i].nY = (u8)(i + 1);
+        g_aRmpNodes[i].bFlag19 = 5;   /* a role the predicate accepts for every type */
+        g_Rmp.apNodes[i] = &g_aRmpNodes[i];
+    }
+    g_bPathOk = false;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    CheckEqI32(g_nPathCalls, 3, "  every node was tried, in scan order");
+    /* Drawn index 1, then ++ before use: 2, 0, 1. */
+    Check(g_nPathSeq == 3 && g_aPathX[0] == 3 && g_aPathY[0] == 3
+              && g_aPathX[1] == 1 && g_aPathY[1] == 1
+              && g_aPathX[2] == 2 && g_aPathY[2] == 2,
+          "  the visit order is node 2, node 0, node 1 -- never the drawn node first");
+    CheckEqI32(g_nPathFlag, 1, "  the RMP path is requested with bFlag 1");
+    CheckEqI32(g_nAfterStepCalls, 1, "  scanning every node moves on, and the turn ends");
+}
+
+static void TestRmpFailLimitMarksUnitDone(void)
+{
+    static const u32 aScript[] = { 1, 0 };
+
+    printf("Eleven failed RMP paths mark the unit done\n");
+
+    TickReset(aScript, 2);
+    g_aEnemy[0].nMultiTarget = 0;
+    g_Rmp.nNodeCount = 12;
+    for (i32 i = 0; i < 12; ++i) {
+        g_aRmpNodes[i].nX = 1;
+        g_aRmpNodes[i].nY = 1;
+        g_aRmpNodes[i].bFlag19 = 5;
+        g_Rmp.apNodes[i] = &g_aRmpNodes[i];
+    }
+    g_bPathOk = false;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+
+    CheckEqI32(g_nPathCalls, PUFO_ENEMYAI_RMP_FAIL_MAX + 1,
+               "  the limit is reached on the eleventh failure");
+    CheckEqI32(g_aEnemy[0].bAiDone, 1, "  the unit is marked done");
+    CheckEqI32(g_Tact.bAiFocusSaved, 1, "  and the focus is saved");
+    CheckEqI32(g_nAfterStepCalls, 0, "  so the enemy turn continues");
+}
+
+static void TestRankChangesTheFallbackRoll(void)
+{
+    static const u32 aScript[] = { 2, 2 };
+
+    printf("Rank 4/8 draws rand(6) and keeps only a 1; every other rank draws rand(3)\n");
+
+    /* A draw of 2: rank 0 keeps it (non-zero -> walk), rank 4 throws it away (-> turn). */
+    TickReset(aScript, 1);
+    g_aEnemy[0].nMultiTarget = 0;
+    g_aEnemy[0].bRankType = 0;
+    g_Rmp.nNodeCount = 0;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nTurnCalls, 0, "  rank 0 keeps a draw of 2 and walks instead");
+
+    TickReset(aScript + 1, 2);
+    g_aEnemy[0].nMultiTarget = 0;
+    g_aEnemy[0].bRankType = PUFO_ENEMYAI_RANK_LEADER;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nTurnCalls, 1, "  rank 4 discards a rand(6) draw that is not 1 and turns");
+
+    TickReset(aScript + 1, 2);
+    g_aEnemy[0].nMultiTarget = 0;
+    g_aEnemy[0].bRankType = PUFO_ENEMYAI_RANK_COMMANDER;
+    Tact_EnemyAiTick(&g_Tact, &g_Tick);
+    CheckEqI32(g_nTurnCalls, 1, "  rank 8 behaves the same way");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -813,6 +1473,19 @@ int main(void)
     TestPathResultWritesTuAndFlag();
     TestStatusMessageOnBothPaths();
     TestTuRefusalStillRunsTheTail();
+    TestNoEnemiesRunsTail();
+    TestTickUnitGates();
+    TestActingUnitVisibilityAndTrack();
+    TestLowMoraleRunsThePanicAi();
+    TestFireAffordabilityGate();
+    TestThrowPath();
+    TestMultiTargetMode7();
+    TestMeleeNeighbourHandoff();
+    TestMeleeWalkCommit();
+    TestCeilRaisesTheScanLayer();
+    TestRmpWalkOrder();
+    TestRmpFailLimitMarksUnitDone();
+    TestRankChangesTheFallbackRoll();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

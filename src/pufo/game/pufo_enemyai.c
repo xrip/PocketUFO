@@ -2,16 +2,23 @@
  *
  * Evidence: see pufo_enemyai.h for the address list and the table decode.
  */
+#include <math.h>
 #include <string.h>
 
 #include "game/pufo_enemyai.h"
+#include "game/pufo_path.h"   /* g_aStepDir, the aDirDeltaXY triples @ 0xa7ae0 */
+#include "game/pufo_tactui.h" /* TactItem_TryReloadClip, the PUFO_ACTION_MODE_* codes */
 
-bool EnemyAi_MultiTargetTypeMatch(const Soldier *pUnit, const Soldier *pOther)
+/* The shared core of EnemyAi_bMultiTargetTypeMatch @ 0x4b928. It is split out because
+ * Tact_EnemyAiTick feeds it the role byte of an RMP node (RmpNode.nMultiTargetRole @ 0x1A),
+ * which the original reaches by casting the node to a Soldier* so the read lands on
+ * Soldier.nMultiTarget (0x01A on ILP32). Soldier shifts on Win64, so the cast would read
+ * the wrong byte here; the port passes the role explicitly instead. */
+static bool EnemyAi_MultiTargetRoleMatch(const Soldier *pUnit, u8 nRole)
 {
-    u8 nRole;
     u8 bFlag0;
 
-    if (pUnit == NULL || pOther == NULL) {
+    if (pUnit == NULL) {
         return false;
     }
     /* The original indexes the 4-byte-stride table with no bounds check. An
@@ -21,8 +28,6 @@ bool EnemyAi_MultiTargetTypeMatch(const Soldier *pUnit, const Soldier *pOther)
         return false;
     }
 
-    /* The role code is read from the OTHER unit, not the candidate. */
-    nRole = (u8)pOther->nMultiTarget;
     bFlag0 = g_aUnitTypeFlag0[pUnit->nUnitType];
 
     switch (nRole) {
@@ -42,6 +47,15 @@ bool EnemyAi_MultiTargetTypeMatch(const Soldier *pUnit, const Soldier *pOther)
             /* Every other role accepts any type. */
             return true;
     }
+}
+
+bool EnemyAi_MultiTargetTypeMatch(const Soldier *pUnit, const Soldier *pOther)
+{
+    if (pUnit == NULL || pOther == NULL) {
+        return false;
+    }
+    /* The role code is read from the OTHER unit, not the candidate. */
+    return EnemyAi_MultiTargetRoleMatch(pUnit, (u8)pOther->nMultiTarget);
 }
 
 void EnemyAi_EnqueueRandomTurn(Soldier *pUnit, const EnemyAiHooks *pHooks)
@@ -326,4 +340,508 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx)
     if (pCtx->pfnPushStatus != NULL) {
         pCtx->pfnPushStatus(szMsg, pCtx->pUser);
     }
+}
+
+/* --- Tact_EnemyAiTick @ 0x4cbe0 ----------------------------------------------------- */
+
+/* What one acting unit did, so the roster loop can tell "run the tail" from
+ * "keep walking". LABEL_110, LABEL_82 and LABEL_96 in the original. */
+typedef enum AiActPath {
+    AI_PATH_TAIL,     /* go to the function tail; the roster loop ends */
+    AI_PATH_FALLBACK, /* fall into the LABEL_82 random turn / RMP move */
+    AI_PATH_NEXT_UNIT /* LABEL_96: nothing for this unit, next enemy */
+} AiActPath;
+
+/* A cell distance the original cannot produce: it reads the footprint cells and the eight
+ * neighbour cells with no bounds test at all (0x4CE50, 0x4D09C), so a unit on the last row
+ * or the top layer walks past apCells. The port refuses instead, and a refused cell gets a
+ * distance no reach test can accept. */
+#define PUFO_ENEMYAI_NO_DIST 1000000.0
+
+static double EnemyAi_Distance(i32 nAx, i32 nAy, i32 nBx, i32 nBy)
+{
+    i32 nDx = nAx - nBx;
+    i32 nDy = nAy - nBy;
+
+    return sqrt((double)(nDx * nDx) + (double)(nDy * nDy));
+}
+
+static double EnemyAi_CellDistanceD(const MapCell *pA, const MapCell *pB)
+{
+    if (pA == NULL || pB == NULL) {
+        return PUFO_ENEMYAI_NO_DIST;
+    }
+    return EnemyAi_Distance((i32)pA->nX, (i32)pA->nY, (i32)pB->nX, (i32)pB->nY);
+}
+
+/* The truncated form the original uses for every reach test: coredll's _dtoi on the sqrt. */
+static i32 EnemyAi_CellDistance(const MapCell *pA, const MapCell *pB)
+{
+    return (i32)EnemyAi_CellDistanceD(pA, pB);
+}
+
+/* Game_RandU16 over the unit's own multi-target count, read as a SIGNED byte at 0x4D194. */
+static i32 EnemyAi_RandMultiIndex(const Soldier *pUnit, const EnemyAiTickCtx *pCtx)
+{
+    return (i32)pCtx->pfnRandU16((u32)(i32)pUnit->nMultiTarget, pCtx->pUser);
+}
+
+/* Unit_FaceToward needs the queue it belongs to, and the two enqueues that face a unit
+ * take a plain (unit, x, y) seam, so the queue travels as the seam's user pointer. */
+static void EnemyAi_FaceTowardQueue(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
+{
+    Unit_FaceToward((TactState *)pUser, pUnit, nX, nY);
+}
+
+/* 0x4d660..0x4d734: hand a melee action to ANOTHER enemy that is ready to act.
+ *
+ * ORIGINAL BUG (0x4d660): the acting unit found the usable multi-target, but the action is
+ * built entirely around the neighbour found here -- Tact_SelectUnit(neighbour), the enqueue
+ * against the target cell's occupant, and `Map_pSelUnit->uTu >>= 1` all address the
+ * neighbour -- the halving is `LDRH R3,[R0,#6]; MOV R3,R3,LSR#1; STRH R3,[R0,#6]` on the
+ * slot at 0x4d728..0x4d730. The unit this tick was picked for spends nothing, is not marked
+ * done, and is a candidate again on the next tick. The port reproduces it. */
+static void EnemyAi_MeleeNeighbour(Soldier *pOther, const MapCell *pTargetCell,
+                                   const EnemyAiTickCtx *pCtx)
+{
+    i32 nMode;
+
+    Tact_SelectUnit(pCtx->pSelect, pOther);
+    nMode = (pCtx->pfnRandU16(PUFO_ENEMYAI_NEIGHBOUR_ROLL, pCtx->pUser) == 0)
+              ? PUFO_ENEMYAI_MODE_NEIGHBOUR_A
+              : PUFO_ENEMYAI_MODE_NEIGHBOUR_B;
+    *pCtx->ppSelWeapon = pCtx->pItemMelee;
+    *pCtx->pnActionMode = nMode;
+    *pCtx->pnBurstShots = 0;
+    *pCtx->pnMeleeCellX = pTargetCell->nX;
+    *pCtx->pnMeleeCellY = pTargetCell->nY;
+    *pCtx->pnMeleeCellLayer = pTargetCell->nZ;
+
+    /* Map_pSelUnit is read back rather than using pOther because that is the slot the
+     * original reaches through, and Tact_SelectUnit @ 0x2c6c4 has just written it. */
+    (void)TactState_EnqueueAction18(pCtx->pQueue, *pCtx->ppSelUnit, pTargetCell->pUnit,
+                                    pCtx->pItemMelee, 0, nMode);
+    (*pCtx->ppSelUnit)->uTu >>= 1;
+}
+
+/* 0x4cde0..0x4d188: the melee branch, for the six unit types whose flag-3 column is set. */
+static AiActPath EnemyAi_MeleeWalk(Soldier *pUnit, TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
+{
+    MapCell *pOwn = pUnit->pCell;
+    i32 nTries = PUFO_ENEMYAI_MELEE_TRIES;
+
+    for (;;) {
+        Soldier *pTarget = pUnit->multiOrAnim.apMultiTargets[EnemyAi_RandMultiIndex(pUnit, pCtx)];
+        MapCell *pTargetCell = pTarget->pCell;
+        MapCell *pNorth, *pEast, *pNorthEast;
+        const StepDir *pDir;
+        MapCell *pCell;
+        i32 nOwn;
+        bool bReach;
+        i32 nLayer;
+
+        --nTries;
+
+        /* The other three cells of a large unit's 2x2 footprint: one row north, one column
+         * east, and the diagonal corner. Loaded every pass, used only for a large unit. */
+        pNorth     = pCtx->pfnLookup((i32)pOwn->nX, (i32)pOwn->nY + 1, (i32)pOwn->nZ, pCtx->pUser);
+        pEast      = pCtx->pfnLookup((i32)pOwn->nX + 1, (i32)pOwn->nY, (i32)pOwn->nZ, pCtx->pUser);
+        pNorthEast = pCtx->pfnLookup((i32)pOwn->nX + 1, (i32)pOwn->nY + 1, (i32)pOwn->nZ, pCtx->pUser);
+
+        pDir = &g_aStepDir[pUnit->bFacing];
+        nLayer = (i32)pTargetCell->nZ;
+        if (Map_IsValidCell(&pCtx->geom, (i32)pOwn->nX + pDir->dx, (i32)pOwn->nY + pDir->dy, nLayer)) {
+            pCell = pCtx->pfnLookup((i32)pOwn->nX + pDir->dx, (i32)pOwn->nY + pDir->dy, nLayer,
+                                    pCtx->pUser);
+            /* 0x4CEC4: the drawn cell counts only when the target really stands on it. */
+            if (pCell == NULL || pCell->pUnit != pTarget) {
+                pCell = pTargetCell;
+            }
+        } else {
+            pCell = pTargetCell;
+        }
+
+        nOwn   = EnemyAi_CellDistance(pOwn, pCell);
+        bReach = nOwn < PUFO_ENEMYAI_MELEE_REACH;
+        if (Unit_bIsLarge(pUnit)) {
+            bReach = bReach
+                  || EnemyAi_CellDistance(pNorth, pCell) < PUFO_ENEMYAI_MELEE_REACH
+                  || EnemyAi_CellDistance(pEast, pCell) < PUFO_ENEMYAI_MELEE_REACH
+                  || EnemyAi_CellDistance(pNorthEast, pCell) < PUFO_ENEMYAI_MELEE_REACH;
+        }
+
+        if (bReach) {
+            /* 0x4D73C: the melee commit. The action itself is charged 0 TU and the unit's
+             * TU is simply zeroed, so the unit ends its turn with the attack. */
+            pUnit->uTu = 0;
+            *pCtx->pnMeleeCellX = pCell->nX;
+            *pCtx->pnMeleeCellY = pCell->nY;
+            *pCtx->pnMeleeCellLayer = pTargetCell->nZ;
+            (void)TactState_EnqueueAction18(pCtx->pQueue, pUnit, pTarget,
+                                            pCtx->pItemAction13, 0, PUFO_ENEMYAI_CMD13);
+            pTact->bAiFocusSaved = 1;
+            return AI_PATH_TAIL;
+        }
+
+        /* 0x4D09C..0x4D150: eight directions, on the layer the unit's own ceiling raises it
+         * to. ORIGINAL BUG (0x4D09C): the cell is fetched straight out of apCells with no
+         * Map_IsValidCell test, so a unit on the last column or row, or on layer 3 with a
+         * low ceiling byte, reads a cell pointer outside the grid. The port bounds-checks
+         * and skips instead. */
+        nLayer = (pOwn->pCeilSpr != NULL && pOwn->pCeilSpr->iCeilParam < PUFO_ENEMYAI_CEIL_RAISE)
+               ? (i32)pOwn->nZ + 1
+               : (i32)pOwn->nZ;
+        for (i32 i = 0; i < PUFO_ENEMYAI_DIR_SCAN; ++i) {
+            i32 nX = (i32)pOwn->nX + g_aStepDir[i].dx;
+            i32 nY = (i32)pOwn->nY + g_aStepDir[i].dy;
+            MapCell *pCand;
+            Soldier *pOcc;
+
+            if (!Map_IsValidCell(&pCtx->geom, nX, nY, nLayer)) {
+                continue;
+            }
+            pCand = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pUser);
+            pOcc = (pCand != NULL) ? pCand->pUnit : NULL;
+            if (pOcc == NULL) {
+                continue;
+            }
+            if (pOcc->bStatus != 0 && pOcc->nUnitType != PUFO_UNIT_TYPE_SPOTTED_A
+                && pOcc->nUnitType != PUFO_UNIT_TYPE_SPOTTED_B) {
+                continue;
+            }
+
+            Unit_FaceToward(pCtx->pQueue, pUnit, nX, nY);
+            (void)TactState_EnqueueAction18(pCtx->pQueue, pUnit, pOcc,
+                                            pCtx->pItemAction13, 0, PUFO_ENEMYAI_CMD13);
+            pTact->bAiFocusSaved = 1;
+            return AI_PATH_TAIL;
+        }
+
+        if (pCtx->pfnPathToCell(pTargetCell->nX, pTargetCell->nY, pTargetCell->nZ, 0,
+                                pCtx->pUser)) {
+            pTact->bAiFocusSaved = 1;
+            return AI_PATH_TAIL;
+        }
+        if (nTries <= 0) {
+            return AI_PATH_FALLBACK;
+        }
+    }
+}
+
+/* 0x4d858..0x4d890: for a unit of type 0..3 the weapon is the LAST hand holding a
+ * one-handed object of category 0..2, so the right hand wins when both qualify. */
+static TactItem *EnemyAi_PickSmallWeapon(const Soldier *pUnit)
+{
+    TactItem *apHands[2] = { pUnit->pHandL, pUnit->pHandR };
+    TactItem *pWeapon = NULL;
+
+    for (i32 i = 0; i < 2; ++i) {
+        TactItem *pHand = apHands[i];
+
+        if (pHand != NULL && pHand->pObj->bTwoHanded == 0
+            && pHand->pObj->nCategory <= PUFO_ENEMYAI_WEAPON_CATEGORY_MAX) {
+            pWeapon = pHand;
+        }
+    }
+    return pWeapon;
+}
+
+/* 0x4d194..0x4d8b0: the throw, or the shot. */
+static AiActPath EnemyAi_ThrowOrFire(Soldier *pUnit, TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
+{
+    Soldier *pTarget = pUnit->multiOrAnim.apMultiTargets[EnemyAi_RandMultiIndex(pUnit, pCtx)];
+    MapCell *pTargetCell = pTarget->pCell;
+    i32 nDist = EnemyAi_CellDistance(pUnit->pCell, pTargetCell);
+    TactItem *pWeapon;
+    FireBurstSpec spec;
+    double dCost;
+    i32 nMode;
+
+    /* 0x4d7c4..0x4d800: the throw needs the roll, the range, a belt item in object
+     * category 3, and a unit type above 3. */
+    if (pCtx->pfnRandU16(PUFO_ENEMYAI_THROW_ROLL, pCtx->pUser) == 0
+        && nDist <= PUFO_ENEMYAI_THROW_DIST_MAX
+        && pUnit->apBelt[0] != NULL
+        && pUnit->apBelt[0]->pObj->nCategory == PUFO_ENEMYAI_THROW_CATEGORY
+        && (i32)pUnit->nUnitType > (i32)PUFO_ENEMYAI_DROP_TYPE_MAX) {
+        TactItem *pItem = pUnit->apBelt[0];
+
+        pUnit->apBelt[0] = NULL;
+        pUnit->pHandR = pItem;
+        *pCtx->ppSelWeapon = pItem;
+        if (pCtx->pfnFillActionCosts != NULL) {
+            pCtx->pfnFillActionCosts(pCtx->pUser);
+        }
+        /* 0x4D818 stores pHandR into Map.pSelWeapon a second time after the refill. */
+        *pCtx->ppSelWeapon = pUnit->pHandR;
+        pItem->bUnk7 = 0;
+        pItem->bUnk8 = 1;
+        *pCtx->pnActionMode = PUFO_ACTION_MODE_MENU;
+
+        /* Map_nThrowTuCost @ 0x118830 and Map_nThrowArg @ 0x118860 are loaded by literal at
+         * 0x4D82C and 0x4D80C; both are just slot 11 of the two action tables. */
+        (void)TactState_EnqueueThrow(pCtx->pQueue, pUnit, pUnit->pHandR,
+                                     pTargetCell->nX, pTargetCell->nY, pTargetCell->nZ,
+                                     pCtx->anActionCost[PUFO_ACTION_MODE_MENU],
+                                     pCtx->anActionEnabled[PUFO_ACTION_MODE_MENU],
+                                     EnemyAi_FaceTowardQueue, pCtx->pQueue);
+        pTact->bAiFocusSaved = 1;
+        pUnit->bAiDone = 1;
+        return AI_PATH_TAIL;
+    }
+
+    if ((i32)pUnit->nUnitType <= (i32)PUFO_ENEMYAI_DROP_TYPE_MAX) {
+        pWeapon = EnemyAi_PickSmallWeapon(pUnit);
+        *pCtx->ppSelWeapon = pWeapon;   /* 0x4D858 clears the slot first, then each hand wins */
+    } else {
+        if (pUnit->pHandL == NULL) {
+            return AI_PATH_FALLBACK;    /* 0x4D8A0: Map.pSelWeapon is left as it was */
+        }
+        pWeapon = pUnit->pHandL;
+        *pCtx->ppSelWeapon = pWeapon;
+    }
+    if (pWeapon == NULL) {
+        return AI_PATH_FALLBACK;
+    }
+
+    if (pCtx->pfnFillActionCosts != NULL) {
+        pCtx->pfnFillActionCosts(pCtx->pUser);
+    }
+    if (!TactItem_TryReloadClip(pWeapon, pWeapon->pObj->bAmmoCap, pWeapon->pObj->anAmmoTypeId[0],
+                                pUnit, pCtx->pfnClipAmmoCap, pCtx->pUser)) {
+        return AI_PATH_FALLBACK;
+    }
+
+    if (pWeapon->pObj->uSortKey != PUFO_ENEMYAI_SORTKEY_MULTI) {
+        nMode = PUFO_ACTION_MODE_SNAP;
+        *pCtx->pnActionMode = nMode;
+    } else {
+        if (pTarget->nUnitType == PUFO_UNIT_TYPE_SPOTTED_A
+            || pTarget->nUnitType == PUFO_UNIT_TYPE_SPOTTED_B
+            || nDist < PUFO_ENEMYAI_MULTI_DIST_MIN) {
+            return AI_PATH_FALLBACK;
+        }
+        nMode = PUFO_ACTION_MODE_MULTI;
+        *pCtx->pnActionMode = nMode;
+        *pCtx->pnMultiTargetCount = 1;
+        *pCtx->pnBurstShots = 1;
+        pCtx->apMultiTargets[0] = pTargetCell;
+    }
+
+    /* 0x4d448 / 0x4d458: the soft-float gate, 0x3FE5555555555555 = 2/3 and
+     * 0x4020000000000000 = 8.0. The unit must be able to pay the FULL table cost plus the
+     * bias, but what it is charged is the two-thirds value truncated to an integer. */
+    dCost = (double)pCtx->anActionCost[nMode];
+    if ((double)pUnit->uTu < dCost * PUFO_ENEMYAI_FIRE_COST_SCALE + PUFO_ENEMYAI_FIRE_COST_BIAS) {
+        return AI_PATH_FALLBACK;
+    }
+
+    memset(&spec, 0, sizeof(spec));
+    spec.pUnit             = pUnit;
+    spec.pWeapon           = pWeapon;
+    spec.nMode             = nMode;
+    spec.nX                = pTargetCell->nX;
+    spec.nY                = pTargetCell->nY;
+    spec.nZ                = pTargetCell->nZ;
+    spec.nTuCost           = (i32)(dCost * PUFO_ENEMYAI_FIRE_COST_SCALE);
+    spec.nArg              = pCtx->anActionEnabled[nMode];
+    spec.uAmmoInWeapon     = pWeapon->nAmmo;
+    spec.bAmmoCap          = pWeapon->pObj->bAmmoCap;
+    spec.apMultiTargets    = pCtx->apMultiTargets;
+    spec.nMultiTargetCount = *pCtx->pnMultiTargetCount;
+
+    (void)TactState_EnqueueFireBurst(pCtx->pQueue, &spec, EnemyAi_FaceTowardQueue, pCtx->pQueue);
+    pTact->bAiFocusSaved = 1;
+    return AI_PATH_TAIL;
+}
+
+/* LABEL_82, 0x4d8b8..0x4d918: turn, or walk to an RMP node. */
+static AiActPath EnemyAi_FallbackMove(Soldier *pUnit, TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
+{
+    EnemyAiHooks hooks;
+    const RmpData *pRmp = pCtx->pRmp;
+    i32 nCount;
+    i32 nIndex;
+    i32 nFails = 0;
+    i32 nScanned = 0;
+    i32 nRoll;
+
+    if (pUnit->bRankType == PUFO_ENEMYAI_RANK_LEADER || pUnit->bRankType == PUFO_ENEMYAI_RANK_COMMANDER) {
+        nRoll = ((i32)pCtx->pfnRandU16(PUFO_ENEMYAI_RANK_ROLL, pCtx->pUser) == PUFO_ENEMYAI_RANK_KEEP)
+              ? 1 : 0;
+    } else {
+        nRoll = (i32)pCtx->pfnRandU16(PUFO_ENEMYAI_MOVE_ROLL, pCtx->pUser);
+    }
+
+    if (nRoll == 0) {
+        memset(&hooks, 0, sizeof(hooks));
+        hooks.pfnRandU16             = pCtx->pfnRandU16;
+        hooks.pfnEnqueueTurnAndKick  = pCtx->pfnEnqueueTurnAndKick;
+        hooks.pUser                  = pCtx->pUser;
+        EnemyAi_EnqueueRandomTurn(pUnit, &hooks);
+        pUnit->bAiDone = 1;
+        pTact->bAiFocusSaved = 1;
+        return AI_PATH_TAIL;
+    }
+
+    nCount = (i32)pRmp->nNodeCount;
+    if (nCount == 0) {
+        return AI_PATH_NEXT_UNIT;
+    }
+
+    nIndex = (i32)pCtx->pfnRandU16((u32)nCount, pCtx->pUser);
+
+    for (;;) {
+        const RmpNode *pNode;
+
+        /* 0x4D8F8: the index is advanced BEFORE it is used, so the starting draw is never
+         * itself a candidate; it only decides where the walk begins. */
+        if (++nIndex > nCount - 1) {
+            nIndex = 0;
+        }
+        pNode = pRmp->apNodes[nIndex];
+
+        /* The distance test uses the untruncated sqrt, unlike every reach test above:
+         * 0x4D8E8 compares it with `_led` against 0x403E000000000000 = 19.875. */
+        if (pNode != NULL
+            && EnemyAi_Distance((i32)pUnit->pCell->nX, (i32)pUnit->pCell->nY,
+                                (i32)pNode->nX, (i32)pNode->nY) <= PUFO_ENEMYAI_RMP_DIST_MAX
+            && EnemyAi_MultiTargetRoleMatch(pUnit, pNode->bFlag19)) {
+            Tact_SelectUnit(pCtx->pSelect, pUnit);
+            if (pCtx->pfnPathToCell(pNode->nX, pNode->nY, pNode->nZ, 1, pCtx->pUser)) {
+                pTact->bAiFocusSaved = 1;
+                return AI_PATH_TAIL;
+            }
+            if (++nFails > PUFO_ENEMYAI_RMP_FAIL_MAX) {
+                pTact->bAiFocusSaved = 1;
+                pUnit->bAiDone = 1;
+                return AI_PATH_TAIL;
+            }
+        }
+
+        ++nScanned;
+        nCount = (i32)pRmp->nNodeCount;   /* the original re-reads the count every pass */
+        if (nScanned >= nCount) {
+            return AI_PATH_NEXT_UNIT;
+        }
+    }
+}
+
+/* Everything one acting unit can do, in the original's order. */
+static AiActPath EnemyAi_ActUnit(Soldier *pUnit, TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
+{
+    Soldier *pTarget = NULL;
+    const MapCell *pTargetCell = NULL;
+    i32 nEnemyCount;
+    i32 i;
+    AiActPath ePath;
+
+    /* 0x4CC6C: the acting unit refreshes its own sight, and the camera link is dropped
+     * unless it already tracked this unit. */
+    if (pCtx->pfnUpdateVisibility != NULL) {
+        pCtx->pfnUpdateVisibility(pUnit, pCtx->pUser);
+    }
+    if (pUnit != pTact->pTrackUnit) {
+        pTact->pTrackUnit = NULL;
+    }
+
+    if (pUnit->bMorale < PUFO_ENEMYAI_MORALE_MAX
+        && (i32)pUnit->nUnitType > (i32)PUFO_ENEMYAI_DROP_TYPE_MAX) {
+        Tact_SelectUnit(pCtx->pSelect, pUnit);
+        EnemyAi_TryFireOrWander(pUnit, pCtx->pActCtx);
+        pTact->bAiFocusSaved = 1;
+        pUnit->bAiDone = 1;
+        return AI_PATH_TAIL;
+    }
+
+    if (pUnit->nMultiTarget > 0) {
+        for (i = 0; i < PUFO_ENEMYAI_MULTI_PICK_TRIES; ++i) {
+            pTarget = pUnit->multiOrAnim.apMultiTargets[EnemyAi_RandMultiIndex(pUnit, pCtx)];
+            if (!Unit_bIsLarge(pTarget)) {
+                break;
+            }
+        }
+    }
+
+    /* 0x4cd60..0x4cda0: the pick is usable when it is small, not one of the two
+     * spotted-only types, and a 1-in-5 draw comes up zero. The original also re-tests
+     * nEnemyUnitCount here; it cannot be 0, because the entry test at 0x4CC18 already
+     * refused it and nothing between the two changes it. */
+    if (pTarget != NULL && !Unit_bIsLarge(pTarget)
+        && pTarget->nUnitType != PUFO_UNIT_TYPE_SPOTTED_A
+        && pTarget->nUnitType != PUFO_UNIT_TYPE_SPOTTED_B
+        && pCtx->pfnRandU16(PUFO_ENEMYAI_MULTI_REJECT_ROLL, pCtx->pUser) == 0) {
+        pTargetCell = pTarget->pCell;
+
+        nEnemyCount = (i32)*pCtx->pnEnemyCount;
+        for (i = 0; i < nEnemyCount; ++i) {
+            Soldier *pOther = pCtx->apEnemyUnits[i];
+
+            if (pOther->bUnk422 != 0 && pOther != pUnit && pOther->uTu > PUFO_ENEMYAI_TU_MIN) {
+                break;
+            }
+        }
+        if (i < nEnemyCount) {
+            EnemyAi_MeleeNeighbour(pCtx->apEnemyUnits[i], pTargetCell, pCtx);
+            pTact->bAiFocusSaved = 1;
+            return AI_PATH_TAIL;
+        }
+    }
+
+    /* LABEL_24, 0x4cda4. */
+    if (pUnit->nMultiTarget == 0) {
+        return EnemyAi_FallbackMove(pUnit, pTact, pCtx);
+    }
+
+    Tact_SelectUnit(pCtx->pSelect, pUnit);
+    if (pUnit->nUnitType < PUFO_UNIT_TYPE_COUNT && g_aUnitTypeFlag3[pUnit->nUnitType] != 0) {
+        ePath = EnemyAi_MeleeWalk(pUnit, pTact, pCtx);
+    } else {
+        ePath = EnemyAi_ThrowOrFire(pUnit, pTact, pCtx);
+    }
+    if (ePath == AI_PATH_TAIL) {
+        return AI_PATH_TAIL;
+    }
+    return EnemyAi_FallbackMove(pUnit, pTact, pCtx);
+}
+
+void Tact_EnemyAiTick(TactCtx272 *pTact, const EnemyAiTickCtx *pCtx)
+{
+    i32 nCount = (i32)*pCtx->pnEnemyCount;
+
+    /* 0x4CC00: the focus byte at +0x100 is cleared on entry and is what the tail reads. */
+    pTact->bAiFocusSaved = 0;
+
+    if (nCount == 0) {
+        goto TAIL;
+    }
+
+    for (i32 i = 0; i < nCount; ++i) {
+        Soldier *pUnit = pCtx->apEnemyUnits[i];
+
+        /* 0x4CC34: past the tick limit a unit is skipped WITHOUT being advanced, so it
+         * stays skipped for the rest of the mission. */
+        if (pUnit->nAiTick > PUFO_ENEMYAI_TICK_MAX) {
+            continue;
+        }
+        ++pUnit->nAiTick;
+        if (pUnit->bAiDone != 0) {
+            continue;
+        }
+        if (pUnit->uTu >= PUFO_ENEMYAI_TU_MIN) {
+            if (EnemyAi_ActUnit(pUnit, pTact, pCtx) == AI_PATH_TAIL) {
+                goto TAIL;
+            }
+        } else {
+            pUnit->bAiDone = 1;
+        }
+    }
+
+TAIL:
+    /* 0x4D920. */
+    pTact->nPhase = PUFO_PHASE_ENEMY_AI;
+    if (pTact->bAiFocusSaved == 0) {
+        Tact_EndEnemyTurn(pTact, pCtx->pTurnHooks, pCtx->pFirstXcom, pCtx->pfnAfterEnemyStep);
+    }
+    TactState_KickQueue(pCtx->pQueue);
 }

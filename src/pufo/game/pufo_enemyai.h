@@ -2,27 +2,40 @@
  *
  * Evidence: EnemyAi_bMultiTargetTypeMatch @ 0x4b928,
  *           EnemyAi_EnqueueRandomTurn @ 0x4ab98,
- *           EnemyAi_TryFireOrWander @ 0x4abc8.
+ *           EnemyAi_TryFireOrWander @ 0x4abc8,
+ *           Tact_EnemyAiTick @ 0x4cbe0.
  *
  * ## The unit-type table
  *
- * `byte_A7B80` @ 0xa7b80 is a 4-byte-stride table indexed by unit type. Two of its
- * columns are used by the AI:
+ * `byte_A7B80` @ 0xa7b80 is a 4-byte-stride table indexed by unit type, 24 rows. Three of
+ * its columns are used by the AI:
  *
  *     byte[4*type + 0]   "flag 0"    (g_aUnitTypeFlag0)
  *     byte[4*type + 1]   "is large"  (g_aUnitTypeIsLarge)
+ *     byte[4*type + 3]   "melee actor" (g_aUnitTypeFlag3)
  *
- * Decoded from the 64 bytes in the image:
+ * Decoded from the 96 bytes in the image:
  *
  *     type :  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
  *     flag0:  0  0  0  1  0  0  0  1  1  0  0  1  0  1  0  0
- *     large:  0  0  0  0  1  1  1  1  1  0  0  1  0  1  0  0
+ *     large:  0  0  0  0  1  1  1  1  1  0  0  0  0  0  0  0
+ *     flag3:  0  0  0  0  0  0  0  0  0  0  0  0  0  0  1  1
+ *
+ *     type : 16 17 18 19 20 21 22 23
+ *     flag0:  0  0  1  0  0  0  0  0
+ *     large:  0  0  1  0  1  1  0  0
+ *     flag3:  1  1  0  1  1  0  0  0
+ *
+ * (An earlier copy of this table carried flag0's 1s at types 11 and 13 into the `large`
+ * row; the re-dump says both rows are 0 there, and it is the `flag0` row that is 1.)
  */
 #ifndef PUFO_ENEMYAI_H
 #define PUFO_ENEMYAI_H
 
 #include "game/pufo_mapcell.h"
+#include "game/pufo_rmp.h"   /* RmpData, RmpNode */
 #include "game/pufo_tactstate.h"
+#include "game/pufo_turn.h"  /* TactCtx272, TurnHooks, PUFO_PHASE_ENEMY_AI */
 #include "game/pufo_unit.h"
 #include "pufo_common.h"
 
@@ -165,5 +178,193 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx);
 #define PUFO_ENEMYAI_WANDER_DROP 10
 /* The original's pszMsg scratch, 0xD8 - 0x10 on the stack. */
 #define PUFO_ENEMYAI_MSG_SIZE 200
+
+/* Tact_EnemyAiTick @ 0x4cbe0: the enemy turn's per-unit driver.
+ *
+ * It is the phase-3 arm of the action-phase machine (Tact_ProcessActionPhase @ 0x4d950
+ * calls it through TurnHooks.pfnEnemyAiTick) and it handles ONE unit per call.
+ *
+ * ## Unit selection (0x4cc1c..0x4cc5c)
+ *
+ * `nEnemyUnitCount == 0` goes straight to the tail (0x4CC18 `BLS`). Otherwise the enemy
+ * roster is walked in order and the first unit that passes every gate acts:
+ *
+ *     nAiTick > 15   -> skipped WITHOUT incrementing, so it stays skipped forever
+ *     ++nAiTick
+ *     bAiDone        -> skipped
+ *     uTu >= 15      -> this unit acts
+ *     otherwise      -> bAiDone = 1, skipped
+ *
+ * If no unit acts the function still runs its tail.
+ *
+ * ## What happens for the acting unit
+ *
+ * 1. `Unit_UpdateVisibility(pUnit)`, then `pTactCtx272->pTrackUnit = NULL` unless it
+ *    already points at this unit (0x4CC78).
+ * 2. `bMorale < 20 && nUnitType > 3` -> the panic AI: Tact_SelectUnit,
+ *    EnemyAi_TryFireOrWander, focus saved, bAiDone = 1, tail (0x4CC94).
+ * 3. Multi-target pick (0x4ccd0..0x4cd4c): up to three draws of
+ *    `apMultiTargets[rand(nMultiTarget)]`, stopping at the first one that is not large.
+ * 4. The pick is accepted when it is small, not type 16/17, `rand(5) == 0`, and the enemy
+ *    roster is non-empty (0x4cd60..0x4cda0). On acceptance the function looks for ANOTHER
+ *    enemy with `bUnk422 != 0`, `uTu > 15` and hands the action to THAT unit:
+ *    Tact_SelectUnit(it), Map.pSelWeapon = &TactItem_156910, mode 4 or 5 by `rand(2)`,
+ *    Map.nBurstShots = 0, the melee cell = the multi-target's cell, a command-18 enqueue
+ *    against that cell's occupant, and then `Map_pSelUnit->uTu >>= 1`
+ *    (0x4d660..0x4d75c). So the AI spends half the acting unit's TU on a different unit's
+ *    melee attack.
+ * 5. Otherwise (LABEL_24, 0x4cda4): `nMultiTarget == 0` jumps to the fallback move; else
+ *    Tact_SelectUnit(this unit) and the branch splits on `g_aUnitTypeFlag3[type]`
+ *    (0x4CDBC, set only for Chryssalid, Celacid, both civilians, Silacoid and Riper).
+ *
+ * ## The melee branch (0x4cde0..0x4d65c)
+ *
+ * Three attempts. Each draws a fresh multi-target `pTarget`, loads the cell one row north
+ * of the unit's own cell and the two other cells of a large unit's 2x2 footprint, and
+ * builds a candidate cell: the cell at the unit's facing delta on the TARGET's layer,
+ * falling back to the target's own cell when that cell is out of bounds or is not occupied
+ * by the target. Reach is `(int)sqrt(dx^2 + dy^2) < 2` from the unit's own cell, or -- for
+ * a large unit -- from any of its four footprint cells. On reach: `uTu = 0`, the three
+ * melee-cell globals, and a command-18 enqueue against the target.
+ *
+ * On no reach, eight directions are scanned (0x4d1d0..0x4d330): the layer is `nZ + 1` when
+ * the unit's own ceiling sprite has `iCeilParam < -15`, otherwise `nZ`; an occupant counts
+ * when `bStatus == 0` or its type is 16 or 17. A hit faces the unit and enqueues command
+ * 13. Otherwise `Unit_PathToCell(target cell, bFlag = 0)`; success ends the tick.
+ *
+ * ## The throw / fire branch (0x4d360..0x4d8b0)
+ *
+ * A fresh multi-target and `rand(3)`. The throw needs roll 0, distance <= 10, a non-NULL
+ * `apBelt[0]` whose object has `nCategory == 3`, and `nUnitType > 3`. It moves the belt
+ * item into `pHandR` and into Map.pSelWeapon, refills the action costs, sets the item's +7
+ * to 0 and +8 to 1, sets action mode 11, and enqueues the throw with `Map_nThrowTuCost` /
+ * `Map_nThrowArg` -- which are just anActionCost[11] and anActionEnabled[11], loaded by
+ * literal at 0x4D82C and 0x4D80C.
+ *
+ * Otherwise the weapon is the left hand for types > 3 (refusing when it is empty), or for
+ * types <= 3 the last hand holding a one-handed object with `nCategory <= 2` (the right
+ * hand wins ties). After `Ui_FillActionCosts` and `TactItem_bTryReloadClip`, the mode is 7
+ * when the weapon object's `uSortKey == 13`, the target is not type 16/17 and the distance
+ * is >= 10 -- and mode 7 also arms Map.nMultiTargetCount = 1, Map.nBurstShots = 1 and
+ * Map.apMultiTargets[0]. Otherwise mode 1.
+ *
+ * The affordability gate is a soft-float comparison at 0x4d448/0x4d458:
+ *
+ *     (double)uTu >= anActionCost[mode] * (2.0 / 3.0) + 8.0
+ *
+ * and the charged cost is the truncated `(int)(cost * 2/3)`, not the table value.
+ *
+ * ## The fallback move (LABEL_82, 0x4d8b8..0x4d918)
+ *
+ * Rank 4 or 8 draws `rand(6)` and keeps it only when it is 1; every other rank draws
+ * `rand(3)`. A draw of 0 turns the unit through EnemyAi_EnqueueRandomTurn and marks it
+ * done. Otherwise the RMP node walk starts at `rand(nRmpCount)` and, because the index is
+ * incremented BEFORE it is used, that first draw is never itself a candidate; the index
+ * wraps at `nRmpCount - 1`. A node is a candidate when `sqrt(dx^2 + dy^2) <= 19.875` and
+ * the node's role byte (RmpNode+0x1A, which the original reaches by casting the node to a
+ * Soldier* so it lands on Soldier.nMultiTarget) matches the unit type. On a candidate the
+ * unit is selected and `Unit_PathToCell(node, bFlag = 1)` runs; success saves the focus,
+ * failure counts toward a limit of 10, past which the unit is marked done. After
+ * `nRmpCount` nodes have been scanned the tick moves on to the NEXT enemy unit -- the only
+ * path that does not end the loop.
+ *
+ * ## The tail (0x4d920)
+ *
+ * `pTactCtx272->nPhase = 3`, then `Tact_EndEnemyTurn` only when the focus byte at +0x100
+ * is still 0, then `TactState_KickQueue(pMapTactical)`. Every path that queued something
+ * sets that byte, so the enemy turn continues; a tick where nothing acted ends the turn. */
+typedef struct EnemyAiTickCtx {
+    /* Seams. Unit_PathToCell (0x2c2a8, unported -- it needs Unit_CanStepTo, 0x27bb8),
+     * Ui_FillActionCosts @ 0x26104, Unit_UpdateVisibility @ 0x48580 (ported, but it needs a
+     * whole VisCtx), AfterEnemyStep (0x4c4a0, unported) and the clip lookup inside
+     * TactItem_bTryReloadClip are injected. pfnEnqueueTurnAndKick is the same pair
+     * EnemyAi_EnqueueRandomTurn already uses. */
+    u32   (*pfnRandU16)(u32 nMax, void *pUser);        /* Game_RandU16 @ 0x3e59c */
+    bool  (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
+    void  (*pfnFillActionCosts)(void *pUser);
+    void  (*pfnUpdateVisibility)(Soldier *pUnit, void *pUser);
+    void  (*pfnEnqueueTurnAndKick)(Soldier *pUnit, u8 nFacing, void *pUser);
+    void  (*pfnAfterEnemyStep)(TactCtx272 *pCtx, void *pUser);
+    u8    (*pfnClipAmmoCap)(u16 nAmmoTypeId, void *pUser);
+    MapCellLookup pfnLookup;
+
+    MapGeom          geom;             /* nMapDimX @ 0x1511B, nMapDimY @ 0x1511C */
+    TactState       *pQueue;           /* pMapTactical @ 0x157198 */
+    TactSelectCtx   *pSelect;          /* Tact_SelectUnit @ 0x2c6c4 */
+    const TurnHooks *pTurnHooks;       /* handed to Tact_EndEnemyTurn @ 0x4cb74 */
+    Soldier        **apEnemyUnits;     /* Map_apEnemyUnits @ 0x128B84 */
+    const u8        *pnEnemyCount;     /* nEnemyUnitCount @ 0x128ADC */
+    Soldier        **ppSelUnit;        /* Map_pSelUnit @ 0x128CEC (Map + 0x15334) */
+    Soldier         *pFirstXcom;       /* Map_apXcomUnits[0] @ 0x128B0C */
+    TactItem      **ppSelWeapon;       /* Map.pSelWeapon @ Map+0x48 (0x113A00) */
+    i32            *pnActionMode;      /* Map.nActionMode @ Map+0x4C (0x113A04) */
+    i32            *pnMultiTargetCount;/* Map.nMultiTargetCount @ Map+0x04 (0x1139BC) */
+    MapCell       **apMultiTargets;    /* Map.apMultiTargets[8] @ Map+0x08 (0x1139C0) */
+    i32            *pnBurstShots;      /* Map.nBurstShots @ Map+0x28 (0x1139E0) */
+    i32            *pnMeleeCellX;      /* Map_nMeleeCellX @ 0x1279F8 */
+    i32            *pnMeleeCellY;      /* Map_nMeleeCellY @ 0x1279FC */
+    i32            *pnMeleeCellLayer;  /* Map_nMeleeCellLayer @ 0x127A00 */
+    const i32       *anActionCost;     /* Map_anActionCost @ 0x118804, 12 slots */
+    const i32       *anActionEnabled;  /* Map_anActionEnabled @ 0x118834, 12 slots */
+    TactItem        *pItemMelee;       /* TactItem_156910 @ 0x156910, the mode 4/5 weapon */
+    TactItem        *pItemAction13;    /* TactItem_156A58 @ 0x156A58, the command-13 item */
+    const RmpData   *pRmp;             /* pRmpMissionData @ 0x15881C */
+    const EnemyAiActCtx *pActCtx;      /* the panic AI's own context, for the low-morale path */
+    void             *pUser;
+} EnemyAiTickCtx;
+
+void Tact_EnemyAiTick(TactCtx272 *pTact, const EnemyAiTickCtx *pCtx);
+
+/* Unit gates. nAiTick above this is skipped without being incremented; uTu at or above
+ * this is what lets a unit act, and strictly above it is what makes another enemy a valid
+ * melee neighbour (0x4CC34, 0x4CC54, 0x4D680). */
+#define PUFO_ENEMYAI_TICK_MAX 15
+#define PUFO_ENEMYAI_TU_MIN   15
+/* bMorale strictly below this, with nUnitType > 3, sends the unit to the panic AI. */
+#define PUFO_ENEMYAI_MORALE_MAX 20
+/* Three draws of a non-large multi-target, then a 1-in-5 roll must come up 0. */
+#define PUFO_ENEMYAI_MULTI_PICK_TRIES   3
+#define PUFO_ENEMYAI_MULTI_REJECT_ROLL  5
+/* Three melee attempts; reach is a truncated cell distance strictly below 2. */
+#define PUFO_ENEMYAI_MELEE_TRIES 3
+#define PUFO_ENEMYAI_MELEE_REACH 2
+/* The eight compass directions the melee scan walks (the original loops j = 0..21 step 3
+ * over aDirDeltaXY; the table's entries 8 and 9 are the vertical steps and are not used). */
+#define PUFO_ENEMYAI_DIR_SCAN 8
+/* A ceiling sprite below this raises the eight-direction scan one layer (0x4D230). */
+#define PUFO_ENEMYAI_CEIL_RAISE (-15)
+/* Throw: rand(3) == 0, distance at most 10, belt item in object category 3. */
+#define PUFO_ENEMYAI_THROW_ROLL     3
+#define PUFO_ENEMYAI_THROW_DIST_MAX 10
+#define PUFO_ENEMYAI_THROW_CATEGORY 3
+/* The multi-target burst needs the target at this distance or further (the `v65 >= 10`
+ * test in the mode-7 arm, 0x4d770 region). */
+#define PUFO_ENEMYAI_MULTI_DIST_MIN 10
+/* The two action modes the neighbour-melee path picks between with rand(2) (0x4D6AC), and
+ * the roll itself. They are the same two slots Tact_TryFireMode4/5 @ 0x179e4/0x17b1c arm
+ * from the action pad. */
+#define PUFO_ENEMYAI_NEIGHBOUR_ROLL 2u
+#define PUFO_ENEMYAI_MODE_NEIGHBOUR_A 4
+#define PUFO_ENEMYAI_MODE_NEIGHBOUR_B 5
+/* A hand weapon is usable for a small unit when it is one-handed and its object's
+ * category is at most this. */
+#define PUFO_ENEMYAI_WEAPON_CATEGORY_MAX 2
+/* The weapon object sort key that means "this weapon can burst". */
+#define PUFO_ENEMYAI_SORTKEY_MULTI 13
+/* The soft-float fire gate: uTu >= cost * 2/3 + 8.0, charged at (int)(cost * 2/3).
+ * 0x3FE5555555555555 and 0x4020000000000000 in the constant pool at 0x4d448/0x4d458. */
+#define PUFO_ENEMYAI_FIRE_COST_SCALE (2.0 / 3.0)
+#define PUFO_ENEMYAI_FIRE_COST_BIAS  8.0
+/* Ranks 4 and 8 draw rand(6) and keep only a 1; every other rank draws rand(3). */
+#define PUFO_ENEMYAI_RANK_LEADER    4
+#define PUFO_ENEMYAI_RANK_COMMANDER 8
+#define PUFO_ENEMYAI_RANK_ROLL      6
+#define PUFO_ENEMYAI_RANK_KEEP      1
+#define PUFO_ENEMYAI_MOVE_ROLL      3
+/* RMP walk: candidate radius 19.875 cells, and 10 failed paths before the unit is done. */
+#define PUFO_ENEMYAI_RMP_DIST_MAX 19.875
+#define PUFO_ENEMYAI_RMP_FAIL_MAX 10
+/* The mode the melee branch enqueues through TactState_EnqueueAction18. */
+#define PUFO_ENEMYAI_CMD13 13
 
 #endif /* PUFO_ENEMYAI_H */

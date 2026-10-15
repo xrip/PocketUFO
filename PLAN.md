@@ -1909,6 +1909,49 @@ Order is by what unblocks what. Each item ends with gates + commit.
   **Deviation:** `Unit_PathToCell` (0x2c2a8) is unported — it needs `Unit_CanStepTo` (0x27bb8) — so it is a hook
   on `EnemyAiActCtx`, as are `Ui_FillActionCosts` and `StatusMsg_Push`.
 
+- [x] **part 66, the enemy AI driver: `Tact_EnemyAiTick (0x4cbe0, 3440 B)`** — the phase-3 arm of
+  `Tact_ProcessActionPhase`, and the caller part 65's function was waiting for.
+  **`pTactCtx272+0x100` is a byte, not a pointer.** Hex-Rays types it `Soldier *pSavedFocus` because every read
+  is `LOBYTE(pCtx->pSavedFocus)`, but all seven accesses are 0/1 byte stores and tests (0x4CC00, 0x4D688,
+  0x4D84C, 0x4D86C, 0x4D878, 0x4D888, 0x4D920) and nothing loads it as an address; the unit the enemy turn
+  restores is at +0x104. Renamed `bAiFocusSaved` in the IDB and in `TactCtx272`, with a layout check that the
+  field is one byte and `pSavedSelUnit` sits four bytes after it.
+  **The tick gate skips without advancing.** `nAiTick > 15` (0x4CC34 `BGT`) leaves the counter alone, so a unit
+  past the limit stays past it forever; `bAiDone` is skipped *after* `++nAiTick`. `TestTickUnitGates` pins both.
+  **`g_aUnitTypeRecord` column +3 was an unnamed column with exactly one reader** (`LDRB R3,[R3,#3]` at 0x4CDBC,
+  the only `+3` read among all 26 xrefs to the table). Its six set rows are Chryssalid, Celacid, both civilians,
+  Silacoid and Riper — the units with no weapon to fire — and they are what selects the command-13 melee branch.
+  Added as `g_aUnitTypeFlag3`. Re-dumping the table also found a **wrong row in this port's own documentation**:
+  `pufo_enemyai.h` had copied flag0's 1s at types 11 and 13 into the `large` row; the binary says 0 there.
+  **The neighbour-melee hand-off is an original bug** (0x4d660). A usable multi-target sends the tick to a path
+  that builds the whole action around a *different* enemy — `Tact_SelectUnit(neighbour)`, the command-18 enqueue
+  and `Map_pSelUnit->uTu >>= 1` (0x4d728..0x4d730) all address the neighbour — while the unit this tick was
+  picked for spends no TU, is not marked done, and is picked again next tick. Reproduced, with a test that
+  asserts the queue entry's `pUnit` is the neighbour and the actor's TU is untouched.
+  **The fire gate is soft-float and charges less than it tests.** `uTu >= anActionCost[mode] * 2/3 + 8.0`
+  (0x4d448 `0x3FE5555555555555`, 0x4d458 `0x4020000000000000`) but the entry carries `(int)(cost * 2/3)`: a
+  26-cost mode needs 26 TU and charges 17. Pinned at both sides of the boundary.
+  **The RMP walk's starting draw is never a candidate** — the index is incremented before use (0x4D8F8) — and
+  its distance test uses the *untruncated* sqrt (`_led` against 19.875) where every reach test in the same
+  function truncates with `_dtoi`. `TestRmpWalkOrder` asserts the visit order (node 2, 0, 1 for a drawn index
+  of 1) rather than just the count.
+  **Two unguarded cell reads** (0x4d09c, 0x4ce50): the eight-direction melee scan and the large unit's footprint
+  loads index `apCells` with no `Map_IsValidCell` call at all, unlike the facing-delta lookup at 0x4ce8c which
+  does call it. The port bounds-checks.
+  **`unk_156910` / `unk_156A58` / `unk_156A88` are `TactItem` records, not pointer variables** — each has a
+  `TactItem_ctor` thunk (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an `apObjects` entry into the
+  record's `pObj` at +0. Retyped and named `TactItem_156910` etc. in the IDB; the port's `ObjectRec **ppObj…`
+  fields became `TactItem *pItem…`, which is what let the AI hand them to the queue as weapons.
+  99 new checks (12404 total), 3 ledger rows (152), coverage 900/1103 (81.6%), 440256/598792 (73.5%) — the
+  delta is exactly the function's 3440 bytes. **The gates caught a second inflation of mine:** citing the three
+  constructor thunks with `@ 0xADDR` credited 36 bytes of code the port does not own; the citations are now
+  prose, and `audit_names` went back to its two known flags.
+  **Deviation:** `Unit_PathToCell` (0x2c2a8, unported — it needs `Unit_CanStepTo`, 0x27bb8), `AfterEnemyStep`
+  (0x4c4a0, unported), `Ui_FillActionCosts`, `Unit_UpdateVisibility` (ported, but it needs a whole `VisCtx`) and
+  the clip lookup inside `TactItem_bTryReloadClip` are hooks on `EnemyAiTickCtx`. The RMP node's role byte is
+  passed to a shared role-based predicate instead of through the original's `Soldier *` cast, which would read
+  the wrong byte once `Soldier` shifts on Win64.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2190,6 +2233,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the fire-phase processor (`Tact_ProcessFireAction` + the aim's `dTravelSave`/sample-array writes; the muzzle-relative samples, the two disagreeing 1/12 forms, the arc-off-map flag whose register-built writes an xref search misses, 7 original bugs found) | 56/56 (Release) | 12130 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 | the queue walker (`Tact_TickActiveUnit`; the `bFlag0` fire-or-move choice, the per-command camera rules and their adopt-before/after ordering, the 60-voxel recentre stride, the AI-action pair named, the kill-credit bound, 6 original bugs found; coverage unchanged — the walker was already credited by comment citations) | 56/56 (Release) | 12226 | 898/1103 (81.4%) | 435608/598792 (72.7%) | 40 checked, 0 mismatched |
 | the low-morale AI (`EnemyAi_TryFireOrWander`; the large-unit early exit, the AI-action pair raised before the path choice, the same-column redraw Hex-Rays gets wrong, the two floor walks of different depth, 7 original bugs found) | 56/56 (Release) | 12305 | 899/1103 (81.5%) | 436816/598792 (72.9%) | 40 checked, 0 mismatched |
+| the enemy AI driver (`Tact_EnemyAiTick`; the byte-not-pointer at `TactCtx272+0x100`, the skip-without-advancing tick gate, `g_aUnitTypeFlag3` found, the neighbour-melee hand-off, the `cost * 2/3 + 8.0` fire gate, the RMP walk that never uses its drawn index, 3 original bugs found) | 56/56 (Release) | 12404 | 900/1103 (81.6%) | 440256/598792 (73.5%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

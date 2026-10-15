@@ -138,7 +138,12 @@ static void TestLayout(void)
     Check(offsetof(TactCtx272, nOppFireCount) == 0x0F4, "  nOppFireCount at 0x0F4 (ILP32)");
     Check(offsetof(TactCtx272, bBusy) == 0x0F8, "  bBusy at 0x0F8 (ILP32)");
     Check(offsetof(TactCtx272, nPhase) == 0x0FC, "  nPhase at 0x0FC (ILP32)");
-    Check(offsetof(TactCtx272, pSavedFocus) == 0x100, "  pSavedFocus at 0x100 (ILP32)");
+    Check(offsetof(TactCtx272, bAiFocusSaved) == 0x100, "  bAiFocusSaved at 0x100 (ILP32)");
+    /* +0x100 is one byte wide: the original writes it with STRB and the next named
+     * field starts at 0x104, so three pad bytes sit between them. */
+    Check(sizeof(((TactCtx272 *)0)->bAiFocusSaved) == 1, "  bAiFocusSaved is one byte");
+    Check(offsetof(TactCtx272, pSavedSelUnit) - offsetof(TactCtx272, bAiFocusSaved) == 4,
+          "  pSavedSelUnit is 4 bytes past bAiFocusSaved (ILP32)");
     Check(offsetof(TactCtx272, pSavedSelUnit) == 0x104, "  pSavedSelUnit at 0x104 (ILP32)");
     Check(offsetof(TactCtx272, pCameraUnit) == 0x108, "  pCameraUnit at 0x108 (ILP32)");
     Check(offsetof(TactCtx272, pTrackUnit) == 0x10C, "  pTrackUnit at 0x10C (ILP32)");
@@ -149,10 +154,11 @@ static void TestLayout(void)
     Check(offsetof(TactCtx272, nOppFireCount) > offsetof(TactCtx272, apOppFire),
           "  nOppFireCount after the array");
     Check(offsetof(TactCtx272, bBusy) < offsetof(TactCtx272, nPhase), "  bBusy before nPhase");
-    Check(offsetof(TactCtx272, nPhase) < offsetof(TactCtx272, pSavedFocus),
-          "  nPhase before pSavedFocus");
-    Check(offsetof(TactCtx272, pSavedFocus) < offsetof(TactCtx272, pSavedSelUnit),
-          "  pSavedFocus before pSavedSelUnit");
+    Check(offsetof(TactCtx272, nPhase) < offsetof(TactCtx272, bAiFocusSaved),
+          "  nPhase before bAiFocusSaved");
+    Check(sizeof(((TactCtx272 *)0)->bAiFocusSaved) == 1, "  bAiFocusSaved is one byte");
+    Check(offsetof(TactCtx272, bAiFocusSaved) < offsetof(TactCtx272, pSavedSelUnit),
+          "  bAiFocusSaved before pSavedSelUnit");
     Check(offsetof(TactCtx272, pSavedSelUnit) < offsetof(TactCtx272, pCameraUnit),
           "  pSavedSelUnit before pCameraUnit");
     Check(offsetof(TactCtx272, pCameraUnit) < offsetof(TactCtx272, pTrackUnit),

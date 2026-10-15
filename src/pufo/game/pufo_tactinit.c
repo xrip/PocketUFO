@@ -686,12 +686,13 @@ bool Tact_InitMission(TactInitEnv *pEnv, i32 nMode)
     (void)Map_InitFacingScratch(&pEnv->facing, &pEnv->tileSize, 1,
                                 *pEnv->pbTactFlag != 0, (u8)pEnv->pMap->nLayerScratch);
 
-    /* 0x3CB40..0x3CB5C: the object pointers copied out of Map.apObjects. */
+    /* 0x3CB40..0x3CB5C: the three static TactItem records seeded from Map.apObjects. */
     *(ObjectRec **)pEnv->pUnk138EA0 = pEnv->apObjects[0];
     *(i32 *)((char *)pEnv->pUnk138EA0 + 0x14) = 0x7D00;   /* unk_138EB4 @ Map+0x254FC */
-    *pEnv->ppObj156A88 = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT3];
-    *pEnv->ppObj156910 = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT2];
-    *pEnv->ppObj156A58 = pEnv->apObjects[141];
+    /* 0x3CB40..0x3CB5C stores each object into the record's pObj field. */
+    pEnv->pItem156A88->pObj = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT3];
+    pEnv->pItem156910->pObj = pEnv->apObjects[PUFO_SHOT_OBJ_VARIANT2];
+    pEnv->pItem156A58->pObj = pEnv->apObjects[141];
 
     Init_LoadLightmap(pEnv, &rdr);
 

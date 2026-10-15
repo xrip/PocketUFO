@@ -247,9 +247,17 @@ typedef struct TactInitEnv {
     TactWeaponSel *pWeaponSel;
     void   *pUnk138EA0;      /* unk_138EA0 @ Map+0x254E8: dword 0 becomes apObjects[0] and the dword at
                               * +0x14 (unk_138EB4 @ Map+0x254FC) becomes 0x7D00. Meaning not established. */
-    ObjectRec **ppObj156A88; /* unk_156A88 = apObjects[PUFO_SHOT_OBJ_VARIANT3] */
-    ObjectRec **ppObj156910; /* unk_156910 = apObjects[PUFO_SHOT_OBJ_VARIANT2] */
-    ObjectRec **ppObj156A58; /* unk_156A58 = apObjects[141] (Map+0x33C), meaning not established */
+    /* The three static item records the mission init seeds. Each one is a real
+     * TactItem, not a pointer variable: the constructor thunks j_TactItem_ctor_156A88,
+     * j_TactItem_ctor_156910 and j_TactItem_ctor_156A58 (0x37088, 0x37124, 0x37134) load
+     * its address into R0 and tail-call TactItem_ctor, and 0x3CB40..0x3CB5C stores an
+     * apObjects entry at +0 -- which is TactItem.pObj. That is why Tact_EnemyAiTick
+     * can pass &TactItem_156910 / &TactItem_156A58 straight to the queue as a weapon.
+     * The thunks are evidence only: the port owns the records, not the thunks. */
+    TactItem *pItem156A88; /* TactItem_156A88 @ 0x156A88, pObj = apObjects[PUFO_SHOT_OBJ_VARIANT3] */
+    TactItem *pItem156910; /* TactItem_156910 @ 0x156910, pObj = apObjects[PUFO_SHOT_OBJ_VARIANT2] */
+    TactItem *pItem156A58; /* TactItem_156A58 @ 0x156A58, pObj = apObjects[141] (Map+0x33C),
+                            * the item the AI's command-13 melee action carries */
 
     /* --- the view scratch Map_InitFacingScratch and MapView_FocusSelected share --- */
     MapFacingScratch facing;

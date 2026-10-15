@@ -14124,3 +14124,141 @@ left pointing at an item the wander path just dropped (0x4ac90).
   reader outside this function.
 - The name copy is bounded to `Soldier.szName` (40) and to the 200-byte message buffer;
   the original's `LDRSB` loop has neither bound.
+
+## Tact_EnemyAiTick (0x4cbe0): the enemy AI driver
+
+`Tact_ProcessActionPhase` reaches this through `TurnHooks.pfnEnemyAiTick` when the context
+is busy and the phase is 3. It handles **one** enemy per call and ends the enemy turn when
+nothing was queued. Ported as `Tact_EnemyAiTick` in `src/pufo/game/pufo_enemyai.c`.
+
+### Entry and unit selection (0x4cbf4..0x4cc5c)
+
+`STRB R0,[R1,#0x100]` clears a **byte** at `pTactCtx272+0x100`. Hex-Rays renders the field as
+`Soldier *pSavedFocus` because every read is `LOBYTE(pCtx->pSavedFocus)`, but all seven
+accesses in the binary are 0/1 byte stores or tests (0x4CC00, 0x4D688, 0x4D84C, 0x4D86C,
+0x4D878, 0x4D888, and the test at 0x4D920) and nothing ever loads it as an address. The unit
+the enemy turn restores is at +0x104, which is what `Tact_EndEnemyTurn` reads. The port names
+the field `bAiFocusSaved`.
+
+`CMP R3,#0; BLS loc_4D920` sends an empty enemy roster straight to the tail. Otherwise the
+roster is walked in order and the first unit passing every gate acts:
+
+| gate | ARM | effect |
+|---|---|---|
+| `nAiTick > 15` | 0x4CC34 `CMP R0,#0xF; BGT` | skipped **without** `++nAiTick`, so it stays skipped forever |
+| `bAiDone` | 0x4CC48 `CMP R3,#0; BNE` | skipped, after `++nAiTick` |
+| `uTu >= 15` | 0x4CC54 `CMP R3,#0xF; MOVCC/STRBCC` | this unit acts |
+| otherwise | same | `bAiDone = 1`, skipped |
+
+### What the acting unit does
+
+1. `Unit_UpdateVisibility(pUnit)`, then `pTrackUnit = NULL` unless it already points at this
+   unit (0x4CC78).
+2. `bMorale < 20 && nUnitType > 3` hands the unit to the panic AI: `Tact_SelectUnit`,
+   `EnemyAi_TryFireOrWander`, focus saved, `bAiDone = 1`, tail.
+3. Up to three draws of `apMultiTargets[rand(nMultiTarget)]`, stopping at the first one that
+   is not large. `nMultiTarget` is read as a **signed** byte (0x4D194 `LDRSB`).
+4. The pick is accepted when it is small, not type 16/17, `rand(5) == 0` and the roster is
+   non-empty (0x4cd60..0x4cda0). Accepted -> the neighbour-melee hand-off below. Otherwise
+   LABEL_24: `nMultiTarget == 0` goes to the fallback move; else `Tact_SelectUnit(self)` and
+   a split on `g_aUnitTypeRecord[4*type + 3]` (`LDRB R3,[R3,#3]` at 0x4CDBC). That column is
+   set for exactly six rows - Chryssalid 0xE, Celacid 0xF, both civilians 0x10/0x11, Silacoid
+   0x13 and Riper 0x14 - and this is its only reader in the whole binary, so the port names it
+   `g_aUnitTypeFlag3`. Those are the units with no weapon to fire and only a melee action.
+
+### The neighbour-melee hand-off (0x4d660..0x4d734)
+
+Another enemy is searched for with `bUnk422 != 0`, `!= self` and `uTu > 15`. Found:
+`Tact_SelectUnit(that unit)`, `Map.pSelWeapon = &TactItem_156910`, mode 4 or 5 by `rand(2)`,
+`Map.nBurstShots = 0`, the three melee-cell globals set to the multi-target's cell, a
+command-18 enqueue against that cell's occupant, then `Map_pSelUnit->uTu >>= 1`
+(`LDRH/LSR#1/STRH` at 0x4d728..0x4d730). Every one of those addresses the neighbour: the unit
+this tick was picked for spends no TU, is not marked done, and is picked again next tick.
+Ledger row 0x4d660.
+
+### The melee branch (0x4cde0..0x4d188)
+
+Three attempts. Each draws a fresh multi-target, loads the cell one row north and the two
+other cells of a large unit's 2x2 footprint (0x4ce50, unguarded), and builds a candidate: the
+cell at the unit's facing delta **on the target's layer**, falling back to the target's own
+cell when that cell is out of bounds or is not occupied by the target (0x4CEC4). Reach is
+`(int)sqrt(dx^2 + dy^2) < 2` from the unit's own cell, or - for a large unit - from any of its
+four footprint cells (0x4D048..0x4D098). On reach: `uTu = 0`, the three melee globals, and a
+command-18 enqueue with mode 13 carrying `&TactItem_156A58`.
+
+On no reach, eight directions are scanned (0x4D09C..0x4D150). The layer is `nZ + 1` when the
+unit's own ceiling sprite has `iCeilParam < -15` (`MOV R6,#0xFFFFFFF1; CMP` at 0x4D0D8),
+otherwise `nZ` - note `Unit_UpdateVisibility` uses the same byte with a **-10** threshold, so
+the two thresholds really differ. An occupant counts when `bStatus == 0` or its type is 16 or
+17. A hit faces the unit and enqueues command 13. Otherwise `Unit_PathToCell(target, bFlag 0)`;
+success ends the tick, failure retries until the three attempts are spent.
+
+### The throw / fire branch (0x4d194..0x4d8b0)
+
+A fresh multi-target and `rand(3)`. The throw needs roll 0, distance <= 10, a non-NULL
+`apBelt[0]` whose object has `nCategory == 3`, and `nUnitType > 3`. It moves the belt item to
+`pHandR` and into `Map.pSelWeapon`, refills the action costs, stores `pHandR` into
+`Map.pSelWeapon` a second time (0x4D818), sets the item's +7 to 0 and +8 to 1, sets action
+mode 11, and enqueues with `Map_nThrowTuCost` / `Map_nThrowArg` - loaded by literal at 0x4D82C
+and 0x4D80C, and just `anActionCost[11]` / `anActionEnabled[11]`.
+
+Otherwise the weapon is the left hand for types > 3 (refusing when it is empty, and leaving
+`Map.pSelWeapon` untouched), or for types <= 3 the last hand holding a one-handed object with
+`nCategory <= 2`, so the right hand wins ties. After `Ui_FillActionCosts` and
+`TactItem_bTryReloadClip`, mode 7 is chosen when the weapon object's `uSortKey == 13`, the
+target is not type 16/17 and the distance is >= 10 - and mode 7 also arms
+`Map.nMultiTargetCount = 1`, `Map.nBurstShots = 1` and `Map.apMultiTargets[0]`. Otherwise mode 1.
+
+The affordability gate is soft-float at 0x4d448 / 0x4d458:
+
+    (double)uTu >= anActionCost[mode] * (2.0 / 3.0) + 8.0
+
+with `0x3FE5555555555555` = 2/3 and `0x4020000000000000` = 8.0, and the charged cost is the
+truncated `(int)(cost * 2/3)`, not the table value. A 26-cost mode therefore needs 26 TU and
+charges 17.
+
+### The fallback move (LABEL_82, 0x4d8b8..0x4d918)
+
+Rank 4 or 8 draws `rand(6)` and keeps it only when it is 1; every other rank draws `rand(3)`.
+A draw of 0 turns the unit through `EnemyAi_EnqueueRandomTurn` and marks it done. Otherwise the
+RMP walk starts at `rand(nRmpCount)` and, because the index is incremented **before** it is
+used (0x4D8F8), that first draw is never itself a candidate - it only picks where the walk
+begins; the index wraps at `nRmpCount - 1`. A node is a candidate when
+`sqrt(dx^2 + dy^2) <= 19.875` (`_led` against `0x403E000000000000`, on the **untruncated**
+sqrt, unlike every reach test above) and the node's byte at +0x1A matches the unit type - the
+original reaches it by casting the node to a `Soldier *` so the read lands on
+`Soldier.nMultiTarget`. On a candidate the unit is selected and `Unit_PathToCell(node, bFlag 1)`
+runs; success saves the focus, failure counts toward a limit of 10, past which the unit is
+marked done. After `nRmpCount` nodes have been scanned the tick moves to the **next** enemy
+unit - the only path that does not end the roster loop.
+
+### The tail (0x4d920)
+
+`pTactCtx272->nPhase = 3`, then `Tact_EndEnemyTurn` only when the +0x100 byte is still 0, then
+`TactState_KickQueue(pMapTactical)`. Because `Tact_EndEnemyTurn` writes phase 0 back, a tick
+where nothing acted leaves the machine at phase 0, and a tick that queued something leaves it
+at 3.
+
+### Original bugs found (3 ledger rows)
+
+- 0x4d660 - the neighbour-melee hand-off described above.
+- 0x4d09c - the eight-direction scan indexes `apCells` with no bounds test at all, unlike the
+  facing-delta lookup at 0x4ce8c, which does call `Map_IsValidCell`.
+- 0x4ce50 - the three footprint cells are loaded the same unguarded way.
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8, unported - it needs `Unit_CanStepTo`, 0x27bb8),
+  `Ui_FillActionCosts`, `Unit_UpdateVisibility` (ported, but it needs a whole `VisCtx`),
+  `AfterEnemyStep` (0x4c4a0, unported) and the clip lookup inside `TactItem_bTryReloadClip`
+  are hooks on `EnemyAiTickCtx`.
+- The port bounds-checks the footprint and eight-direction cell reads and the `nUnitType`
+  index into `g_aUnitTypeFlag3`.
+- The RMP node's role byte is passed to the shared predicate directly instead of through the
+  original's `Soldier *` cast, because `Soldier` shifts on Win64 and the cast would read the
+  wrong byte. `EnemyAi_MultiTargetTypeMatch` and the RMP walk now share one role-based core.
+- `TactCtx272+0x100` is typed `u8 bAiFocusSaved` with 3 pad bytes, not `Soldier *`.
+- `unk_156910`, `unk_156A58` and `unk_156A88` are typed `TactItem` in the IDB and named
+  `TactItem_156910` / `TactItem_156A58` / `TactItem_156A88`: each has a `TactItem_ctor` thunk
+  (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an `apObjects` entry into its
+  `pObj` at +0. The port previously modelled them as `ObjectRec **` pointer variables.

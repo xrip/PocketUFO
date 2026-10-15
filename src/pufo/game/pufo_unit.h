@@ -47,6 +47,12 @@ extern const u8 g_aUnitTypeFlag0[PUFO_UNIT_TYPE_COUNT];
 /* Column +2 of the same table. Read by Tact_SpawnAliens @ 0x3ad48 as the gate on the whole
  * equipment walk for a spawned unit. */
 extern const u8 g_aUnitTypeFlag2[PUFO_UNIT_TYPE_COUNT];
+/* Column +3 of the same table, read as `LDRB R3, [R3,#3]` at 0x4CDBC. Its only reader in the
+ * whole binary is Tact_EnemyAiTick @ 0x4cbe0, where a set row sends the unit down the
+ * command-13 melee branch instead of the throw/fire branch. The six set rows are the four
+ * melee aliens (Chryssalid 0xE, Celacid 0xF, Silacoid 0x13, Riper 0x14) and the two civilian
+ * types (0x10, 0x11) -- exactly the units that have no weapon to fire and only a melee action. */
+extern const u8 g_aUnitTypeFlag3[PUFO_UNIT_TYPE_COUNT];
 
 /* Unit muzzle-offset table, unk_A9768 @ 0xa9768: 23 blocks of 96 bytes, one per
  * unit type, each 2 groups of 8 facings, each entry 3 i16 (dx, dy, dz).
