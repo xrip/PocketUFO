@@ -4922,11 +4922,12 @@ i32 LoadGame_Slot6_InitOptions(SaveSlotEnv *pEnv); /* 0x6b404 */
  * counter in a real local.
  *
  * The tails are where they differ:
- *   ResearchScreen_Open     -- sample 17 first, screen id 8 written BEFORE the Init, tail call
- *                              ResearchScreen_Init (0x615d0, not ported) with the topic array at
- *                              0x15EF08.
- *   Ui_OpenBaseInfo         -- sample 17 first, screen id 16 written BEFORE the Init, tail call
- *                              Ui_InitBaseInfo (not ported) with the root at unk_1872E0.
+ *   ResearchScreen_Open     -- sample 17 first, screen id 8 written BEFORE the Init, then POP and
+ *                              the tail call B ResearchScreen_Init at 0x61778, with the topic array
+ *                              at 0x15EF08 in R0.
+ *   Ui_OpenBaseInfo         -- sample 17 first, screen id 16 written BEFORE the Init, then POP and
+ *                              the tail call B Ui_InitBaseInfo at 0x84BD4, with the ufopaedia's
+ *                              screen block g_pUfopaediaScreenPad @ 0x1872E0 in R0.
  *   Geoscape_PrepScreenOpen -- no sample, no screen id. It clears the clock pause byte first
  *                              (0x8519C, a STRB at 0x15961C), and after the prologue it removes
  *                              line 0 of the root message list (0x8525C) and then pauses the clock
@@ -4974,7 +4975,7 @@ void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv);
  *                                second time, so the message clears, the research walk, the shortfall
  *                                store, the line-0 removal and the clock dance all happen twice and
  *                                the 5-second tick is written twice. Screen id 16, tail call
- *                                Ui_InitBaseInfo(unk_1872E0).
+ *                                Ui_InitBaseInfo(g_pUfopaediaScreenPad).
  *   Ui_OpenResearch           -- runs the prologue WITHOUT GameTime_Set5Sec (0x84CA4 goes from the
  *                                shortfall store straight to the call), then calls
  *                                Geoscape_PrepScreenOpen (0x84CBC), then GameTime_Set5Sec (0x84CC0),
@@ -5695,7 +5696,7 @@ typedef struct UfopaediaEnv {
 
     /* The three fields only Ufopaedia_Open @ 0x9a8cc uses. */
     UiPanel   *pSelPanel;       /* g_pUfopaediaSelPanel @ 0x187204, the 9-line category selector */
-    PadImage  **ppScreenPad;    /* unk_1872E0, the screen's own pad */
+    PadImage  **ppScreenPad;    /* g_pUfopaediaScreenPad @ 0x1872E0, the screen's own pad */
     UiControl **apCtl;          /* 0x1872E8..0x1872FC, the six controls the teardown releases */
     u8        *pbOpen;          /* unk_187308, the build/teardown toggle */
     void (*pfnSelClick)(void);  /* 0x9A958 installs Ufopaedia_CacheSelRow @ 0x99fd0 */
@@ -5761,6 +5762,94 @@ void Ufopaedia_Open(UfopaediaEnv *pEnv);
 
 extern const u8  g_aUfopaediaCatTopics[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH];
 extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];
+
+/* ---- Ui_InitBaseInfo @ 0x9ddc8 (744 B): the base-info screen's bring-up ------------------
+ *
+ * Evidence: the ARM at 0x9DDC8..0x9E088. Two callers reach it, both with the screen block
+ * g_pUfopaediaScreenPad @ 0x1872E0 as the argument: Ui_OpenBaseInfo tails into it at 0x84BD4 and
+ * Ui_OpenBaseInfoAlt at 0x84DF8.
+ *
+ * The block is a UiControl* array shared with the ufopaedia, and this function writes only part
+ * of it: [0] the screen's own pad, [2..7] the six controls at 0x1872E8..0x1872FC that
+ * Ufopaedia_Open's teardown releases. Slot 1 -- g_pUfopaediaPad @ 0x1872E4, the current entry's
+ * pad -- is never touched here; Ufopaedia_RefreshEntry owns it.
+ *
+ * 1. 0x9DDD4..0x9DE14: operator new(0x14) + PadImage_ctor into [0], PadImage_Load("baseinfo", 14),
+ *    then the pad's two origins zeroed. The two stores are STR R7,[R3] and STR R7,[R3,#4] through
+ *    the pad pointer -- PadImage +0/+4, the same pair the research bring-up clears at 0x749EC.
+ * 2. 0x9DE18..0x9DE48: six operator new(0x20) + UiControl_ctor, stored at ppRoot + 8 stepping by 4,
+ *    i.e. slots 2..7.
+ * 3. 0x9DE5C..0x9DE98: their handlers in slot order -- UiPanel_ScrollPrev (0x99f88) and
+ *    UiPanel_ScrollNext (0x99f78) on the text panel, Ufopaedia_PrevEntry (0x9a60c) and
+ *    Ufopaedia_NextEntry (0x9a754), then UiPanel_ScrollPrevSel (0x99fb4) and
+ *    UiPanel_ScrollNextSel (0x99f98) on the category panel of the current category.
+ * 4. 0x9DE9C..0x9DEC0: UiControl_Setup(slot 2+i, 0, 0, &g_aUiBaseInfoCtlDesc[i]). The loop walks the
+ *    slots with ADD R4,R4,#4 and the descriptors with ADD R5,R5,#0x20, so each control gets its own
+ *    record; both bases are zero (MOV R1,#0 / MOV R2,#0).
+ * 5. 0x9DED0..0x9DEE8: the shared close control unk_186B00 to (224, 1) with Geoscape_CloseUI_ThunkC
+ *    -- the same corner the research and manufacturing bring-ups give it.
+ * 6. 0x9DEEC: Ufopaedia_Open, which builds the nine category panels, the selector and the text panel.
+ * 7. 0x9DEF4..0x9E084: the reselect. When Ufopaedia_bReselectPending (0x18706C) is set --
+ *    Ui_OpenBaseInfoAlt sets it on the way in -- the ufopaedia is re-pointed at the topic the
+ *    research screen last showed:
+ *      0x9DF18: a 25-case switch on nResearchTopicShown - 0x76. Five arms fold the 25 alien-encounter
+ *        topics onto the five race topics, but the jump table sends cases 17 and 22 (135 and 140, the
+ *        two Muton encounters the race chain also omits) to the default arm, which leaves the topic
+ *        alone. Topics outside 118..142 take the default arm too (ADDLS is an unsigned test).
+ *      0x9DFE0..0x9E01C: a linear walk of aUfopaediaCatTopics, 22 cells per category, 198 cells in
+ *        all, comparing with LDRB. Zeros are ordinary cells for this walk: topic 0 lands on the
+ *        first zero of row 0.
+ *      0x9E020..0x9E084: category (STRB, a byte), pad dirty = 1, entry dirty = 0, entry index,
+ *        entry number = anUfopaediaEntryNum[topic], topic, bUfopaediaOpen (0x18730C) = 1, then
+ *        Ufopaedia_RefreshEntry and the pending flag cleared. Setting pad dirty is what keeps
+ *        RefreshEntry's own re-pick at 0x9A054 from overwriting the values just written.
+ *
+ * g_aUiBaseInfoCtlDesc @ 0xAC548: six 32-byte records. The panel scroll pair sits at x 142/172 y 210,
+ * the ufopaedia page pair at x 10/40 y 210, and the category selector pair at x 200 y 18/38. All six
+ * use mode 0 and the third pad name is empty.
+ *
+ * The pad name and mode are the same "baseinfo" / 14 the base roster overlay loads (see
+ * BaseInfoScreen_Init @ 0x57688), and the six controls are the same six Ufopaedia_Open releases.
+ *
+ * Deviation: the original allocates the pad and the six controls with operator new and derefs every
+ * allocation with no test; the port takes caller-owned controls and installs them into ppRoot[2..7],
+ * as the research, manufacturing, buy/sell and transfer inits do. The pad stays port-allocated
+ * because Ufopaedia_Open's teardown releases exactly that slot. */
+#define PUFO_UIBASEINFO_CLOSE_X 224        /* 0x9DED0: STRH #0xE0 */
+#define PUFO_UIBASEINFO_CLOSE_Y 1          /* 0x9DEDC: STRH #1 */
+#define PUFO_ALIEN_TOPIC_FIRST  118        /* 0x9DF18: SUB R0,R2,#0x76, switch 25 cases */
+#define PUFO_ALIEN_TOPIC_LAST   142        /* 0x76 + 0x18 */
+#define PUFO_ALIEN_TOPIC_NOFOLD 135        /* jump-table case 17: the default arm */
+#define PUFO_ALIEN_TOPIC_NOFOLD2 140       /* jump-table case 22: the default arm */
+/* The walk's failure state. Five research topics -- 47, 94, 95, 96 and 143 -- are in no category
+ * row, and the original walks off the end of the table: it leaves the category counter at 9 and the
+ * index at 22 and then reads aUfopaediaCatTopics[9][22], the byte at 0xAA90C, which belongs to the
+ * table that follows. The port keeps the same counters and names that byte instead of reading out of
+ * bounds. Recorded in docs/parity/bugs.tsv. */
+#define PUFO_UFOPAEDIA_MISS_CATEGORY  9
+#define PUFO_UFOPAEDIA_MISS_ENTRY_IDX 22
+#define PUFO_UFOPAEDIA_MISS_TOPIC     10   /* the byte at 0xAA90C = aUfopaediaCatTopics[9][22] */
+
+typedef struct UiBaseInfoInitEnv {
+    void      **ppRoot;             /* g_pUfopaediaScreenPad @ 0x1872E0: [0] the pad, [2..7] the controls */
+    UiControl *apCtl[PUFO_UFOPAEDIA_CTL_COUNT]; /* caller-owned, stored into ppRoot[2..7] */
+    UiControl *pCloseCtl;           /* unk_186B00 */
+    UfopaediaEnv *pUfopaedia;       /* the state step 6 builds and step 7 re-points */
+    i32 *pnShownTopic;              /* nResearchTopicShown @ 0x160C60 */
+    u8  *pbUfopaediaOpen;           /* bUfopaediaOpen @ 0x18730C, the "a page is up" flag */
+    void (*pfnPanelPrev)(void);     /* UiPanel_ScrollPrev @ 0x99f88 */
+    void (*pfnPanelNext)(void);     /* UiPanel_ScrollNext @ 0x99f78 */
+    void (*pfnEntryPrev)(void);     /* Ufopaedia_PrevEntry @ 0x9a60c */
+    void (*pfnEntryNext)(void);     /* Ufopaedia_NextEntry @ 0x9a754 */
+    void (*pfnSelPrev)(void);       /* UiPanel_ScrollPrevSel @ 0x99fb4 */
+    void (*pfnSelNext)(void);       /* UiPanel_ScrollNextSel @ 0x99f98 */
+    void (*pfnCloseClick)(void);    /* Geoscape_CloseUI_ThunkC @ 0x9a8c0 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+} UiBaseInfoInitEnv;
+
+void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv);
 
 /* ------------------------------------------------- the psi screen (geoscape screen 17)
  *

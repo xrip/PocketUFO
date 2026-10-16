@@ -589,3 +589,4 @@ Map_UiScreen7_PlaySamples16_14	Ui_Screen7_Samples16_14	0x194f8. Same pair.
 Map_PlaySamples16_14_ClearUiScreen	Ui_Samples16_14_ClearScreen	0x18e9c. Same pair.
 Map_PlaySample17_SetMode11	Ui_SetMode11	0x179c0. The IDB name after the samples-17 correction (0x179CC plays 17).
 Options_SetTab4	BaseUi_SetScratch4	0x6b6b0. The IDB name after the rename; the port names the scratch slot it writes.
+stru_AC548	aUiBaseInfoCtlDesc	IDB rename: the six UiControlDesc records Ui_InitBaseInfo installs at 0xAC548; the port's copy is g_aUiBaseInfoCtlDesc

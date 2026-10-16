@@ -17167,3 +17167,78 @@ IDB: 4 renames (Map_bInvPanelOpen -> Map_bForceNoDrag, TactHud_ToggleFlag128A9C 
 Menu_ToggleForceNoDrag, unk_AD1DA -> bCtl88ForceNoDrag, unk_128AB4 -> Map_nGameSpeed), a
 function comment on 0x22648, data comments on 0x128A9C, 0xAD1DA and 0x128AB4, a function comment
 on 0x19d94 and a correction appended to the TactHud_DrawInventoryScreen comment at 0x1f58c.
+## Unit 104 - the ufopaedia bring-up and its reselect (Ui_InitBaseInfo @ 0x9ddc8, 744 B)
+
+Ui_InitBaseInfo is the tail of both base-info openers. Ui_OpenBaseInfo POPs and branches to it at
+0x84BD4, Ui_OpenBaseInfoAlt at 0x84DF8, and both hand in g_pUfopaediaScreenPad @ 0x1872E0: a
+UiControl* array shared with the ufopaedia. Slot 0 is the screen's own pad, slot 1 is the current
+entry's pad (g_pUfopaediaPad @ 0x1872E4, owned by Ufopaedia_RefreshEntry), and slots 2..7 are the
+six controls at 0x1872E8..0x1872FC that Ufopaedia_Open's teardown releases. The port wires its
+UfopaediaEnv to those same eight slots, so the pad this function allocates is the pad the teardown
+frees, and the test asserts that pair rather than trusting the comment.
+
+The bring-up half is wiring. new(0x14) + PadImage_ctor into slot 0, PadImage_Load("baseinfo", 14),
+then the two origins cleared at 0x9DE0C / 0x9DE14 -- the same PadImage +0/+4 pair the research
+bring-up writes at 0x749EC. Six new(0x20) + UiControl_ctor stored at ppRoot + 8 stepping by 4, so
+they land in slots 2..7 and slot 1 is skipped; the fixture starts slot 1 at NULL and asserts it
+stays NULL. Their handlers in slot order: UiPanel_ScrollPrev (0x99f88) and UiPanel_ScrollNext
+(0x99f78) on the text panel, Ufopaedia_PrevEntry (0x9a60c) and Ufopaedia_NextEntry (0x9a754), then
+UiPanel_ScrollPrevSel (0x99fb4) and UiPanel_ScrollNextSel (0x99f98) on the category panel of
+g_nUfopaediaCategory. Then UiControl_Setup(slot 2+i, 0, 0, aUiBaseInfoCtlDesc[i]): the ARM walks
+the slots with ADD R4,R4,#4 and the descriptors with ADD R5,R5,#0x20, so each control gets its own
+record, and the six records at 0xAC548 put them at (142,210), (172,210), (10,210), (40,210),
+(200,18) and (200,38), all mode 0 with the third pad name empty. Then the shared close control
+unk_186B00 to (224,1) with Geoscape_CloseUI_ThunkC, and Ufopaedia_Open builds the nine category
+panels, the selector and the text panel.
+
+The reselect half is what byte_18706C is for, and it runs only when that flag is set -- which is
+exactly what Ui_OpenBaseInfoAlt does on the way in. First a 25-case switch on
+nResearchTopicShown - 0x76 (0x9DF18): the jump table repeats five targets every five cases, so the
+25 alien-encounter topics fold onto the five race topics by residue, with two exceptions the table
+makes explicit -- cases 17 and 22, topics 135 and 140, go to the default arm and keep their topic.
+They are the same two Muton encounters g_anRaceKnownTopics omits, so the ufopaedia and the research
+screen agree about Muton's incomplete family. Topics below 118 fall out too: SUB / CMP / ADDLS is an
+unsigned test. Then a linear walk of aUfopaediaCatTopics, 22 cells per category and 198 cells in
+all, comparing with LDRB against the full dword, so a topic above 255 matches nothing rather than
+wrapping onto a zero cell -- and zeros are ordinary cells, so topic 0 lands on row 0's first
+terminator. Finally the writes: category (a STRB of the sign-extended counter), pad dirty = 1, entry
+dirty = 0, entry index, entry number = anUfopaediaEntryNum[topic], topic, bUfopaediaOpen @ 0x18730C
+= 1, Ufopaedia_RefreshEntry, and the pending flag cleared. 0x18730C is a different byte from the
+0x187308 toggle Ufopaedia_Open runs on; the port keeps them apart.
+
+An original bug fell out of the walk. Five research topics -- 47, 94, 95, 96 and 143 -- are in no
+category row, and 135 and 140 reach the same state through the default arm. The walk breaks out with
+the category counter at 9 and the index at 22, and 0x9E054 then reads aUfopaediaCatTopics[9][22],
+the byte at 0xAA90C, which belongs to the table that follows. It is 0x0A, so the ufopaedia opens on
+topic 10 / entry 1006 with category 9 and entry index 22. The port keeps the same counters and names
+that byte as PUFO_UFOPAEDIA_MISS_TOPIC instead of reading out of bounds; the observable outcome is
+identical. Listed in docs/parity/bugs.tsv.
+
+Deviation: the original allocates the pad and the six controls with operator new and derefs every
+allocation with no test. The port takes caller-owned controls, as the research, manufacturing,
+buy/sell and transfer inits do, and keeps the pad port-allocated because Ufopaedia_Open's teardown
+releases exactly that slot. The reselect half also needs the topic the research screen last showed;
+a caller that passes no pointer for it gets the build half only.
+
+Two stale comments went with the reading. The header called the research tail "ResearchScreen_Init
+(0x615d0, not ported)" -- 0x615d0 is NewBaseScreen_Open, the tail call is B ResearchScreen_Init at
+0x61778, and ResearchScreen_Init @ 0x749a8 has been ported since part 43. The four tail-call
+addresses in the port's comments (0x61778, 0x84BD4, 0x84DF8, 0x84CF0) now match the ARM, and
+g_pUfopaediaScreenPad is the IDB's own name for 0x1872E0.
+
+Tests: 222 new checks in test_baseui (4030 there), 15,832 across all 60 suites. The fixture wires
+the ufopaedia env to the eight-slot block and runs the real Ufopaedia_Open and Ufopaedia_RefreshEntry
+against the shipped archives, so baseinfo.pad, the eight control pad names and the entry pads are all
+read out of main.dat. Twenty reselect cases are pinned with literals measured off the two tables:
+category, row, topic and entry number, including the four miss cases and the Sectoid family 118 /
+123 / 128 / 133 / 138 all reaching entry 54. A 25-mutation sweep turned all 25 red.
+
+One test-quality defect surfaced while doing that sweep. The first version compared each control's
+pfnClick against the stub it should hold, and swapping two handlers stayed green: the linker folds
+identical empty functions into one address, so a pointer comparison between two empty stubs can never
+fail. The checks now CALL the installed handler and read back an id each stub records. The same
+pattern already sits in the research, manufacturing and psi fixtures, where the seam stubs are empty
+too; recorded as a separate issue.
+
+IDB: stru_AC548 renamed to aUiBaseInfoCtlDesc with a data comment, a function comment on 0x9ddc8
+covering the seven steps, and a comment on 0x9E054 naming the out-of-bounds read.

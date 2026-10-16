@@ -2809,6 +2809,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
   inputs pinned to the values that would put a mark on the probed pixel**; worth a sweep of the drawing suites
   for negative checks whose coordinates were inherited from the case before them.
 
+- [ ] **A pointer comparison between two empty stubs can never fail.** Unit 104's first version compared each
+  control's `pfnClick` against the seam stub it was supposed to hold, and its mutation sweep swapped two of
+  them with nothing failing: the stubs were identical empty functions and the linker folds identical functions
+  to a single address, so `stubA == stubB` is always true. The checks now CALL the installed handler and read
+  back an id each stub records, and the two handler swaps went red. The same shape sits in the older fixtures
+  -- `ResStub*` in the research init test, `PsiSeam*`, `UfoSeam*`, the manufacturing and transfer stubs --
+  where identity is asserted against empty stubs. **Worth a sweep: every seam-handler identity check should
+  either give the stubs distinct bodies or call what was installed.**
+
 - [ ] **`Geoscape_SpawnMissionSite` has not reproduced the assault branch, so nothing in the port opens the
   base-attack screen.** The original's type-2 branch (0x7EF38..0x7EF80) pauses the game, fills the block at
   0x158840..0x158849 from the strateg item — `nBaseAtClass` = `bCraftClass` (+2, read SIGNED),
@@ -3144,6 +3153,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the soldier readout and its armour panels (`SoldierScreen_DrawDetail`, `SoldierScreen_DrawEquipPanels`; the `Ui_TextInputDialog` misnomer corrected in the IDB, the row count from `nEquipRowCount @ 0xab710` over the three armour objects `apObjects[122..124]`, the six-entry class-insignia pair table, the `bUnk183 == 254` Wound Recovery gate, the nine stat bars that name all ten `auStat` slots, the 16x16 name-edit keyboard, 5 ledger rows and 2 documented deviations) | 60/60 (Release) | 15547 | 951/1103 (86.2%) | 549876/598792 (91.8%) | 40 checked, 0 mismatched |
 | the tactical sprite loader (`Font_LoadTactSprites`; the font block's five template-indexed group bases named as `anFlagSprBase[5]`, the port's own `Font_GetFlagSprBase` model-layout defect fixed, three shipped name tables dumped and audited, 12 IDB renames) | 60/60 (Release) | 15581 | 952/1103 (86.3%) | 550628/598792 (92.0%) | 43 checked, 0 mismatched |
 | the startup entry and the `forcenodrag` option (`Map_InitAndLoadRegistry`; the CRT init-term thunk at 0x22604, the fourteen scratch writes with slot 26 as the startup roll and slot 4 as 200 and no write to slot 1, the twelve registry reads with their constant out-of-range fallbacks and the `strcmp(value, "0")` flag test the port had been doing with `atoi`, the `Map_bInvPanelOpen` → `Map_bForceNoDrag` misnomer corrected in the IDB and in the port, the two swapped `TactHudInventoryEnv` field names, 4 IDB renames and 14 mutations all caught) | 60/60 (Release) | 15610 | 953/1103 (86.4%) | 551912/598792 (92.2%) | 43 checked, 0 mismatched |
+| the ufopaedia bring-up and its reselect (`Ui_InitBaseInfo`; the eight-slot `g_pUfopaediaScreenPad` block shared with `Ufopaedia_Open`'s teardown so the pad this function allocates is the pad it frees, the six controls in slots 2..7 with slot 1 skipped, the six descriptors at 0xAC548, the 25-case fold of the alien topics onto the five race topics with 135 and 140 taking the default arm, the 198-cell walk whose failure state reads one byte past the table, 1 original finding and 2 deviations recorded, 25 mutations all caught) | 60/60 (Release) | 15832 | 954/1103 (86.5%) | 552656/598792 (92.3%) | 43 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

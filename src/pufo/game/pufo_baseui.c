@@ -9722,11 +9722,12 @@ void ResearchScreen_Open(const ScreenResetOpenEnv *pEnv)
         pEnv->pState->nGeoscapeScreen = 8; /* 0x6176C */
     }
     if (pEnv->init.pfnInit != NULL) {
-        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x61774 -> ResearchScreen_Init */
+        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x61778 -> ResearchScreen_Init */
     }
 }
 
-/* Ui_OpenBaseInfo @ 0x84AF8. Same shape, id 16, and the Init receives the root at unk_1872E0. */
+/* Ui_OpenBaseInfo @ 0x84AF8. Same shape, id 16, and the Init receives the ufopaedia's screen block
+ * g_pUfopaediaScreenPad @ 0x1872E0. */
 void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv)
 {
     if (pEnv == NULL) {
@@ -9740,7 +9741,7 @@ void Ui_OpenBaseInfo(const ScreenResetOpenEnv *pEnv)
         pEnv->pState->nGeoscapeScreen = 16; /* 0x84BD8 */
     }
     if (pEnv->init.pfnInit != NULL) {
-        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x84BE8 -> Ui_InitBaseInfo */
+        pEnv->init.pfnInit(pEnv->init.pSlot, pEnv->init.pUser); /* 0x84BD4 -> Ui_InitBaseInfo @ 0x9ddc8 */
     }
 }
 
@@ -9846,7 +9847,7 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv)
         pBase->pState->nGeoscapeScreen = 8; /* 0x84CEC */
     }
     if (pBase->init.pfnInit != NULL) {
-        pBase->init.pfnInit(pBase->init.pSlot, pBase->init.pUser); /* 0x84CF4 -> ResearchScreen_Init */
+        pBase->init.pfnInit(pBase->init.pSlot, pBase->init.pUser); /* 0x84CF0 -> ResearchScreen_Init */
     }
 }
 
@@ -11606,6 +11607,140 @@ void Ufopaedia_Open(UfopaediaEnv *pEnv)
      * live entry's PadImage, which every Ufopaedia_RefreshEntry allocates. Closing the ufopaedia after
      * any entry has been shown leaks that pad. The port releases it. */
     CloseFreePad(pEnv->ppPad);
+}
+
+/* g_aUiBaseInfoCtlDesc @ 0xAC548: the six controls Ui_InitBaseInfo hands to UiControl_Setup, in slot
+ * order 2..7 -- the text-panel scroll pair, the ufopaedia page pair, the category selector pair.
+ * All six are mode 0 with an empty third pad name. */
+static const UiControlDesc g_aUiBaseInfoCtlDesc[PUFO_UFOPAEDIA_CTL_COUNT] = {
+    { 0x008E, 0x00D2, "up",     "sup",     "", 0 }, /* 0xAC548 */
+    { 0x00AC, 0x00D2, "down",   "sdown",   "", 0 }, /* 0xAC568 */
+    { 0x000A, 0x00D2, "leftp",  "cleftp",  "", 0 }, /* 0xAC588 */
+    { 0x0028, 0x00D2, "rightp", "crightp", "", 0 }, /* 0xAC5A8 */
+    { 0x00C8, 0x0012, "up",     "sup",     "", 0 }, /* 0xAC5C8 */
+    { 0x00C8, 0x0026, "down",   "sdown",   "", 0 }  /* 0xAC5E8 */
+};
+
+/* The five arms of the switch at 0x9DF18, indexed by (topic - 118) % 5: the jump table repeats the
+ * same five targets every five cases. Cases 17 and 22 -- topics 135 and 140 -- are sent to
+ * def_9DF18 and keep their topic, the same two Muton encounters g_anRaceKnownTopics omits. */
+static const i32 g_anReselectRaceTopic[5] = { 55, 59, 58, 56, 57 };
+
+static i32 Ufopaedia_FoldAlienTopic(i32 nTopic)
+{
+    if (nTopic < PUFO_ALIEN_TOPIC_FIRST || nTopic > PUFO_ALIEN_TOPIC_LAST) {
+        return nTopic;   /* SUB R0,R2,#0x76 / CMP R0,#0x18 / ADDLS: unsigned, so 117 falls out too */
+    }
+    if (nTopic == PUFO_ALIEN_TOPIC_NOFOLD || nTopic == PUFO_ALIEN_TOPIC_NOFOLD2) {
+        return nTopic;   /* the jump table's two default entries */
+    }
+    return g_anReselectRaceTopic[(nTopic - PUFO_ALIEN_TOPIC_FIRST) % 5];
+}
+
+void Ui_InitBaseInfo(UiBaseInfoInitEnv *pEnv)
+{
+    PadImage *pPad;
+    UfopaediaEnv *pUfo;
+    i32 nCat, nIdx, nTopic;
+    bool bFound;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppRoot == NULL) {
+        return;
+    }
+
+    pPad = BuySellPadNew(); /* 0x9DDD4 operator new(0x14), 0x9DDE4 PadImage_ctor */
+    pEnv->ppRoot[0] = pPad; /* 0x9DDF8: the ctor's result, not the raw allocation */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_BASEINFO_PAD_NAME, PUFO_BASEINFO_PAD_MODE); /* 0x9DDFC */
+        pPad->nOriginX = 0; /* 0x9DE0C: STR R7,[R3] */
+        pPad->nOriginY = 0; /* 0x9DE14: STR R7,[R3,#4] */
+    }
+
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        pEnv->ppRoot[i + 2] = pEnv->apCtl[i]; /* 0x9DE3C: ppRoot + 8, stepping by 4 */
+    }
+    if (pEnv->apCtl[0] != NULL) {
+        pEnv->apCtl[0]->pfnClick = pEnv->pfnPanelPrev; /* 0x9DE5C */
+    }
+    if (pEnv->apCtl[1] != NULL) {
+        pEnv->apCtl[1]->pfnClick = pEnv->pfnPanelNext; /* 0x9DE68 */
+    }
+    if (pEnv->apCtl[2] != NULL) {
+        pEnv->apCtl[2]->pfnClick = pEnv->pfnEntryPrev; /* 0x9DE74 */
+    }
+    if (pEnv->apCtl[3] != NULL) {
+        pEnv->apCtl[3]->pfnClick = pEnv->pfnEntryNext; /* 0x9DE80 */
+    }
+    if (pEnv->apCtl[4] != NULL) {
+        pEnv->apCtl[4]->pfnClick = pEnv->pfnSelPrev;   /* 0x9DE8C */
+    }
+    if (pEnv->apCtl[5] != NULL) {
+        pEnv->apCtl[5]->pfnClick = pEnv->pfnSelNext;   /* 0x9DE98 */
+    }
+
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        if (pEnv->apCtl[i] != NULL) {
+            UiControl_Setup(pEnv->apCtl[i], 0, 0, &g_aUiBaseInfoCtlDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x9DEAC */
+        }
+    }
+
+    if (pEnv->pCloseCtl != NULL) {
+        pEnv->pCloseCtl->x = PUFO_UIBASEINFO_CLOSE_X;   /* 0x9DED0: STRH #0xE0 */
+        pEnv->pCloseCtl->y = PUFO_UIBASEINFO_CLOSE_Y;   /* 0x9DEDC */
+        pEnv->pCloseCtl->pfnClick = pEnv->pfnCloseClick; /* 0x9DEE8 */
+    }
+
+    pUfo = pEnv->pUfopaedia;
+    if (pUfo != NULL) {
+        Ufopaedia_Open(pUfo);                          /* 0x9DEEC */
+    }
+
+    /* 0x9DEF4: LDRB / ANDS / BEQ locret_9E088. The reselect half needs the topic the research
+     * screen last showed; a caller that does not own it gets the build half only. */
+    if (pUfo == NULL || pUfo->pbReselect == NULL || *pUfo->pbReselect == 0
+        || pEnv->pnShownTopic == NULL) {
+        return;
+    }
+
+    nTopic = Ufopaedia_FoldAlienTopic(*pEnv->pnShownTopic); /* 0x9DF18..0x9DFD0 */
+    *pEnv->pnShownTopic = nTopic; /* 0x9DFD4. The default arm skips the store, and the store would
+                                   * write back the value the global already holds -- so storing it
+                                   * for every arm is the same observable behaviour. */
+
+    /* 0x9DFE0..0x9E01C: the walk. Zeros are ordinary cells here, so topic 0 lands on row 0's first
+     * terminator. A miss leaves the two counters at 9 and 22, which is exactly the state the
+     * original breaks out with -- and the original then reads aUfopaediaCatTopics[9][22], the byte
+     * at 0xAA90C that belongs to the table after it. ORIGINAL BUG (0x9E054): the port keeps the
+     * counters and names that byte instead of reading out of bounds. */
+    bFound = false;
+    for (nCat = 0; nCat < PUFO_UFOPAEDIA_CATEGORIES; ++nCat) {
+        for (nIdx = 0; nIdx < PUFO_UFOPAEDIA_CAT_WIDTH; ++nIdx) {
+            /* LDRB / CMP against the full dword: a table byte is compared as-is, so a topic above
+             * 255 matches nothing rather than wrapping onto a zero cell. */
+            if (g_aUfopaediaCatTopics[nCat][nIdx] == nTopic) {
+                bFound = true;
+                break;
+            }
+        }
+        if (bFound) {
+            break;
+        }
+    }
+
+    *pUfo->pnCategory = nCat;      /* 0x9E020: STRB of the sign-extended counter */
+    *pUfo->pbPadDirty = 1;         /* 0x9E038: keeps RefreshEntry's own re-pick at 0x9A054 out */
+    *pUfo->pbEntryDirty = 0;       /* 0x9E048 */
+    *pUfo->pnEntryIdx = nIdx;      /* 0x9E058 */
+    nTopic = bFound ? g_aUfopaediaCatTopics[nCat][nIdx] : PUFO_UFOPAEDIA_MISS_TOPIC;
+    *pUfo->pnEntryNum = Ufopaedia_EntryNum(nTopic); /* 0x9E068: LDR [R1,R0,LSL #2] */
+    *pUfo->pnTopic = nTopic;       /* 0x9E070 */
+    if (pEnv->pbUfopaediaOpen != NULL) {
+        *pEnv->pbUfopaediaOpen = 1; /* 0x9E07C */
+    }
+    Ufopaedia_RefreshEntry(pUfo);  /* 0x9E080 */
+    *pUfo->pbReselect = 0;         /* 0x9E084 */
 }
 
 /* ------------------------------------------------- the psi screen (geoscape screen 17) */

@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `a528d07`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 103, the startup entry and the `forcenodrag` option),
+Date: 2026-10-17. HEAD before this edit: `1ebc4fb`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 104, the ufopaedia bring-up and its reselect),
 and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
@@ -232,8 +232,36 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15610**. Coverage as of the latest commit: **953 / 1103
-functions (86.4%)**, **551912 / 598792 bytes (92.2%)**. This unit ported `Map_InitAndLoadRegistry`
+Test checks run across the 60 suites: **15832**. Coverage as of the latest commit: **954 / 1103
+functions (86.5%)**, **552656 / 598792 bytes (92.3%)**. This unit ported `Ui_InitBaseInfo` (0x9ddc8,
+744 B) -- the tail of both base-info openers (`Ui_OpenBaseInfo` branches to it at 0x84BD4,
+`Ui_OpenBaseInfoAlt` at 0x84DF8), with `g_pUfopaediaScreenPad @ 0x1872E0` as its argument. **The block is
+shared with the ufopaedia**: slot 0 the screen pad this function allocates and `Ufopaedia_Open`'s teardown
+releases, slot 1 the entry pad `Ufopaedia_RefreshEntry` owns and this function never touches, slots 2..7
+the six controls at 0x1872E8..0x1872FC. **The reselect half is what `byte_18706C` is for**: a 25-case
+switch on `nResearchTopicShown - 0x76` folds the alien-encounter topics onto the five race topics by
+residue, EXCEPT cases 17 and 22 (135 and 140), which take the default arm -- the same two Muton encounters
+`g_anRaceKnownTopics` omits -- and topics below 118 fall out because SUB / CMP / ADDLS is an unsigned test.
+Then a 198-cell walk of `aUfopaediaCatTopics` (zeros are ordinary cells, so topic 0 lands on row 0's first
+terminator), then category (a STRB), pad dirty, entry dirty 0, entry index, entry number, topic,
+`bUfopaediaOpen @ 0x18730C` -- a different byte from the 0x187308 build toggle `Ufopaedia_Open` runs on --
+then `Ufopaedia_RefreshEntry` and the flag clear. **An original bug**: five topics (47, 94, 95, 96, 143)
+are in no category row and 135/140 reach the same state, so the walk breaks out at category 9 / index 22
+and 0x9E054 reads `aUfopaediaCatTopics[9][22]`, the byte at 0xAA90C that belongs to the table after it
+(0x0A, i.e. topic 10 / entry 1006). The port keeps the same counters and names that byte instead of reading
+out of bounds (bugs.tsv). **A test-quality defect the sweep surfaced**: comparing a control's `pfnClick`
+against an empty stub can never fail -- the linker folds identical empty functions to one address -- so the
+handler checks now CALL the installed handler and read back an id each stub records; recorded under
+"Separate issues", and the older fixtures with empty stubs are listed there too. 222 new checks in
+test_baseui (4030 there), 25 mutations all caught. IDB: `stru_AC548` renamed `aUiBaseInfoCtlDesc` with a
+data comment, a function comment on 0x9ddc8 covering the seven steps, and a comment on 0x9E054 naming the
+out-of-bounds read. Two stale port comments went with the reading: the header called the research tail
+"ResearchScreen_Init (0x615d0, not ported)" when 0x615d0 is `NewBaseScreen_Open` and the tail is
+`B ResearchScreen_Init` at 0x61778, and the four tail-call addresses in the openers' comments now match the
+ARM (0x61778, 0x84BD4, 0x84DF8, 0x84CF0).
+
+Test checks before this unit: **15610**, coverage **953 / 1103 functions (86.4%)**, **551912 / 598792
+bytes (92.2%)**. That unit ported `Map_InitAndLoadRegistry`
 (0x22648, 1,284 B) -- the Map subsystem's startup entry, a CRT init-term record whose thunk at 0x22604
 runs it and then tail-calls `Map_RegisterAtexit`. **Its scratch half writes fourteen slots and two
 constants**: Map+0x15110, +0xC4, +0x7C, +0x150E8, +0x68 (byte), +0x150F0, +0x37 (byte), +0x5C (byte),

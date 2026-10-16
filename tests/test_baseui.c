@@ -14766,6 +14766,344 @@ static void TestUfopaediaOpen(void)
     }
 }
 
+/* ---- Ui_InitBaseInfo @ 0x9ddc8 ------------------------------------------------------------
+ *
+ * The bring-up is wiring plus the ufopaedia reselect, so the fixture wires the ufopaedia env to the
+ * same eight-slot block the original shares: slot 0 is the screen pad this function allocates and
+ * Ufopaedia_Open's teardown releases, slot 1 is the entry pad Ufopaedia_RefreshEntry allocates, and
+ * slots 2..7 are the six controls. Slot 1 starts NULL rather than as a sentinel because the
+ * teardown frees whatever it finds there.
+ *
+ * The reselect cases are pinned with literals measured off aUfopaediaCatTopics @ 0xAA830 and
+ * anUfopaediaEntryNum @ 0xAA5F0, not recomputed from the port's tables. */
+
+static UiControl g_aUbiCtl[PUFO_UFOPAEDIA_CTL_COUNT];
+static UiControl g_ubiClose;
+static void *g_aUbiRoot[8];
+static ResearchTopicLive g_ubiTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_ubiZero[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_ubiOpen, g_ubiReselect, g_ubiPadDirty, g_ubiEntryDirty, g_ubiWide, g_ubiPageOpen;
+static i32 g_ubiEntryIdx, g_ubiCategory, g_ubiTopic, g_ubiEntryNum, g_ubiShown;
+static UfopaediaEnv g_ubiUfo;
+static UiBaseInfoInitEnv g_ubiEnv;
+static const char *g_pszUbiPad0[PUFO_UFOPAEDIA_CTL_COUNT];
+static const char *g_pszUbiPad1[PUFO_UFOPAEDIA_CTL_COUNT];
+static const char *g_pszUbiPad2[PUFO_UFOPAEDIA_CTL_COUNT];
+static i32 g_nUbiPadCalls;
+
+/* Each seam records its own id. Empty stubs would not do: the linker folds identical functions
+ * into one address, so a pointer comparison between two of them can never fail. The test calls the
+ * installed handler and reads the id back, which is the wiring check that actually bites. */
+static i32 g_nUbiSeamLast;
+
+static void UbiSeamClose(void)      { g_nUbiSeamLast = 1; }
+static void UbiSeamPanelPrev(void)  { g_nUbiSeamLast = 2; }
+static void UbiSeamPanelNext(void)  { g_nUbiSeamLast = 3; }
+static void UbiSeamEntryPrev(void)  { g_nUbiSeamLast = 4; }
+static void UbiSeamEntryNext(void)  { g_nUbiSeamLast = 5; }
+static void UbiSeamSelPrev(void)    { g_nUbiSeamLast = 6; }
+static void UbiSeamSelNext(void)    { g_nUbiSeamLast = 7; }
+static void UbiSeamSelClick(void)   { g_nUbiSeamLast = 8; }
+static void UbiSeamCatClick(void)   { g_nUbiSeamLast = 9; }
+
+/* The names UiControl_Setup hands down are captured, and the load itself is real: the eight pad
+ * names in the descriptor table are then checked against the archive, not against the table. */
+static bool UbiLoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser)
+{
+    (void)pUser;
+    if (g_nUbiPadCalls < PUFO_UFOPAEDIA_CTL_COUNT) {
+        g_pszUbiPad0[g_nUbiPadCalls] = psz0;
+        g_pszUbiPad1[g_nUbiPadCalls] = psz1;
+        g_pszUbiPad2[g_nUbiPadCalls] = psz2;
+    }
+    ++g_nUbiPadCalls;
+    UiControl_LoadPads(pCtl, psz0, psz1, psz2);
+    return true;
+}
+
+static void UbiRelease(void)
+{
+    if (g_ubiOpen != 0) {
+        Ufopaedia_Open(&g_ubiUfo);
+    }
+}
+
+static void UbiFixture(i32 nShown, u8 bReselect)
+{
+    i32 i;
+
+    UbiRelease();
+    memset(g_aUbiCtl, 0, sizeof(g_aUbiCtl));
+    memset(&g_ubiClose, 0, sizeof(g_ubiClose));
+    memset(g_ubiTopics, 0, sizeof(g_ubiTopics));
+    memset(g_ubiZero, 0, sizeof(g_ubiZero));
+    memset(&g_ubiUfo, 0, sizeof(g_ubiUfo));
+    memset(&g_ubiEnv, 0, sizeof(g_ubiEnv));
+    memset(g_pszUbiPad0, 0, sizeof(g_pszUbiPad0));
+    memset(g_pszUbiPad1, 0, sizeof(g_pszUbiPad1));
+    memset(g_pszUbiPad2, 0, sizeof(g_pszUbiPad2));
+    g_nUbiPadCalls = 0;
+
+    for (i = 0; i < 8; ++i) {
+        g_aUbiRoot[i] = (void *)(size_t)0x5A5A5A5Au;
+    }
+    g_aUbiRoot[1] = NULL;   /* the entry pad slot: the teardown frees what it finds here */
+
+    g_ubiOpen       = 0;
+    g_ubiReselect   = bReselect;
+    g_ubiPadDirty   = 0x5A;
+    g_ubiEntryDirty = 0x5A;
+    g_ubiWide       = 0x5A;
+    g_ubiPageOpen   = 0x5A;
+    g_ubiEntryIdx   = 0x5A5A5A5A;
+    g_ubiCategory   = 0x5A5A5A5A;
+    g_ubiTopic      = 0x5A5A5A5A;
+    g_ubiEntryNum   = 0x5A5A5A5A;
+    g_ubiShown      = nShown;
+
+    for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        g_ubiTopics[i].bUnlocked = 1;   /* every entry is shown, so every panel is sized */
+    }
+
+    g_ubiUfo.aTopics        = g_ubiTopics;
+    g_ubiUfo.abResearchZero = g_ubiZero;
+    g_ubiUfo.pTextRecs      = g_fsTexts;
+    g_ubiUfo.pbOpen         = &g_ubiOpen;
+    g_ubiUfo.ppScreenPad    = (PadImage **)g_aUbiRoot;      /* slot 0 */
+    g_ubiUfo.ppPad          = (PadImage **)&g_aUbiRoot[1];  /* slot 1 */
+    g_ubiUfo.apCtl          = NULL;   /* the six controls are the test's statics, not heap */
+    g_ubiUfo.pnEntryIdx     = &g_ubiEntryIdx;
+    g_ubiUfo.pnCategory     = &g_ubiCategory;
+    g_ubiUfo.pnTopic        = &g_ubiTopic;
+    g_ubiUfo.pnEntryNum     = &g_ubiEntryNum;
+    g_ubiUfo.pbWidePanel    = &g_ubiWide;
+    g_ubiUfo.pbPadDirty     = &g_ubiPadDirty;
+    g_ubiUfo.pbEntryDirty   = &g_ubiEntryDirty;
+    g_ubiUfo.pbReselect     = &g_ubiReselect;
+    g_ubiUfo.pfnSelClick    = UbiSeamSelClick;
+    g_ubiUfo.pfnCatClick    = UbiSeamCatClick;
+
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        g_ubiEnv.apCtl[i] = &g_aUbiCtl[i];
+    }
+    g_ubiEnv.ppRoot         = g_aUbiRoot;
+    g_ubiEnv.pCloseCtl      = &g_ubiClose;
+    g_ubiEnv.pUfopaedia     = &g_ubiUfo;
+    g_ubiEnv.pnShownTopic   = &g_ubiShown;
+    g_ubiEnv.pbUfopaediaOpen = &g_ubiPageOpen;
+    g_ubiEnv.pfnPanelPrev   = UbiSeamPanelPrev;
+    g_ubiEnv.pfnPanelNext   = UbiSeamPanelNext;
+    g_ubiEnv.pfnEntryPrev   = UbiSeamEntryPrev;
+    g_ubiEnv.pfnEntryNext   = UbiSeamEntryNext;
+    g_ubiEnv.pfnSelPrev     = UbiSeamSelPrev;
+    g_ubiEnv.pfnSelNext     = UbiSeamSelNext;
+    g_ubiEnv.pfnCloseClick  = UbiSeamClose;
+    g_ubiEnv.pfnLoadPads    = UbiLoadPads;
+}
+
+static void TestUiInitBaseInfo(void)
+{
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    PadImage *pPad;
+    i32 i, nBad;
+
+    printf("\nUi_InitBaseInfo @ 0x9ddc8: the base-info bring-up\n");
+
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+    if (g_fsTexts == NULL && !FsLoadTexts()) {
+        printf("  FAIL lang.dat texts.dat did not load\n");
+        ++g_nFailures;
+        return;
+    }
+
+    /* ---- 1. the wiring, with the reselect flag clear ---- */
+    UbiFixture(55, 0);
+    Ui_InitBaseInfo(&g_ubiEnv);
+
+    pPad = (PadImage *)g_aUbiRoot[0];
+    Check(pPad != NULL, "the screen pad is allocated into slot 0 (0x9DDF8)");
+    Check(pPad != NULL && pPad->pData != NULL, "baseinfo.pad really loads out of main.dat");
+    Check(pPad != NULL && pPad->nMode == 14, "loaded in mode 14, the MOV R2,#0xE at 0x9DDFC");
+    /* The two origin stores are not observable in the port: BuySellPadNew zeroes the whole block,
+     * which is a recorded deviation from the original's uninitialised operator new. */
+    Check(pPad != NULL && pPad->nOriginX == 0 && pPad->nOriginY == 0,
+          "and both origins end up zero (0x9DE0C / 0x9DE14)");
+    Check(g_aUbiRoot[1] == NULL, "slot 1, the entry pad, is not touched here");
+
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        Check(g_aUbiRoot[i + 2] == (void *)&g_aUbiCtl[i],
+              "the six controls land in slots 2..7, not 1..6");
+    }
+    /* Each handler is CALLED and its id read back. Pointer equality alone would not catch a handler
+     * installed in the wrong slot. */
+    static const i32 aSeamId[6] = { 2, 3, 4, 5, 6, 7 };
+    static const char *const apszSeam[6] = {
+        "slot 2 runs the text-panel scroller back (0x99f88)",
+        "slot 3 runs it forward (0x99f78)",
+        "slot 4 runs the ufopaedia pager back (0x9a60c)",
+        "slot 5 runs it forward (0x9a754)",
+        "slot 6 runs the selector scroller back (0x99fb4)",
+        "slot 7 runs it forward (0x99f98)"
+    };
+    for (i = 0; i < 6; ++i) {
+        g_nUbiSeamLast = 0;
+        if (g_aUbiCtl[i].pfnClick != NULL) {
+            g_aUbiCtl[i].pfnClick();
+        }
+        CheckEqI32(g_nUbiSeamLast, aSeamId[i], apszSeam[i]);
+    }
+
+    /* The six descriptors at 0xAC548, read back as positions and as the names handed to the loader. */
+    static const i32 aWantX[6] = { 142, 172, 10, 40, 200, 200 };
+    static const i32 aWantY[6] = { 210, 210, 210, 210, 18, 38 };
+    static const char *const apszPad0[6] = { "up", "down", "leftp", "rightp", "up", "down" };
+    static const char *const apszPad1[6] = { "sup", "sdown", "cleftp", "crightp", "sup", "sdown" };
+    nBad = 0;
+    for (i = 0; i < 6; ++i) {
+        if (g_aUbiCtl[i].x != aWantX[i] || g_aUbiCtl[i].y != aWantY[i] || g_aUbiCtl[i].nMode != 0) {
+            ++nBad;
+        }
+        if (strcmp(g_pszUbiPad0[i], apszPad0[i]) != 0 || strcmp(g_pszUbiPad1[i], apszPad1[i]) != 0
+            || g_pszUbiPad2[i][0] != 0) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "each control gets its own descriptor: position, mode and pad names");
+    CheckEqI32(g_nUbiPadCalls, 6, "UiControl_Setup runs once per control (0x9DE9C..0x9DEC0)");
+    Check(g_aUbiCtl[2].apPads[0] != NULL && g_aUbiCtl[2].apPads[1] != NULL,
+          "leftp / cleftp are real pad names in main.dat, not guesses");
+
+    CheckEqI32(g_ubiClose.x, 224, "the close control goes to x 224 (0x9DED0)");
+    CheckEqI32(g_ubiClose.y, 1, "and y 1 (0x9DEDC)");
+    g_nUbiSeamLast = 0;
+    if (g_ubiClose.pfnClick != NULL) {
+        g_ubiClose.pfnClick();
+    }
+    CheckEqI32(g_nUbiSeamLast, 1, "and its handler is the base-info close thunk (0x9DEE8)");
+
+    CheckEqI32(g_ubiOpen, 1, "Ufopaedia_Open ran and left its toggle set (0x9DEEC)");
+    Check(g_ubiUfo.pSelPanel != NULL && g_ubiUfo.pTextPanel != NULL,
+          "  building the selector and the text panel");
+    static const i32 aWantLines[PUFO_UFOPAEDIA_CATEGORIES] = { 11, 5, 17, 13, 17, 22, 11, 9, 8 };
+    nBad = 0;
+    for (i = 0; i < PUFO_UFOPAEDIA_CATEGORIES; ++i) {
+        if (g_ubiUfo.apCatPanels[i] == NULL
+            || g_ubiUfo.apCatPanels[i]->nLineCount != aWantLines[i]) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "and the nine category panels with every entry unlocked");
+
+    /* The reselect half did not run: every value it owns still holds the fixture's sentinel. */
+    CheckEqI32(g_ubiCategory, 0x5A5A5A5A, "with the flag clear the category is left alone");
+    CheckEqI32(g_ubiEntryIdx, 0x5A5A5A5A, "and the entry index");
+    CheckEqI32(g_ubiTopic, 0x5A5A5A5A, "and the topic");
+    CheckEqI32(g_ubiEntryNum, 0x5A5A5A5A, "and the entry number");
+    CheckEqI32(g_ubiPageOpen, 0x5A, "and the page-open byte at 0x18730C");
+    CheckEqI32(g_ubiShown, 55, "and the shown topic is not rewritten");
+
+    /* The teardown releases the pad this function allocated -- the ownership pair. */
+    UbiRelease();
+    Check(g_aUbiRoot[0] == NULL, "Ufopaedia_Open's teardown releases the pad from slot 0");
+
+    /* ---- 2. the reselect ---- */
+    static const i32 aShown[]  = { 121, 118, 142, 120, 119, 130, 138, 141, 122, 55, 117, 102, 0,
+                                   135, 140, 47, 94, 95, 96, 143 };
+    static const i32 aFold[]   = {  56,  55,  57,  58,  59,  58,  55,  56,  57,  55, 117, 102, 0,
+                                    135, 140, 47,  94,  95,  96, 143 };
+    static const i32 aCat[]    = {   5,   5,   5,   5,   5,   5,   5,   5,   5,   5,   3,   0,  0,
+                                     9,   9,   9,   9,   9,   9,   9,   9 };
+    static const i32 aIdx[]    = {   2,   0,   4,   6,   8,   6,   0,   2,   4,   0,   9,   0, 11,
+                                    22,  22,  22,  22,  22,  22,  22,  22 };
+    static const i32 aTopic[]  = {  56,  55,  57,  58,  59,  58,  55,  56,  57,  55, 117, 102,  0,
+                                    10,  10,  10,  10,  10,  10,  10,  10 };
+    static const i32 aEntry[]  = {  55,  54,  56,  57,  58,  57,  54,  55,  56,  54, 1050,  93,  0,
+                                  1006, 1006, 1006, 1006, 1006, 1006, 1006, 1006 };
+
+    for (i = 0; i < (i32)(sizeof(aShown) / sizeof(aShown[0])); ++i) {
+        UbiFixture(aShown[i], 1);
+        Ui_InitBaseInfo(&g_ubiEnv);
+        CheckEqI32(g_ubiShown, aFold[i],
+                   "the shown topic is folded onto its race topic before the walk");
+        CheckEqI32(g_ubiCategory, aCat[i], "the walk lands on this category");
+        CheckEqI32(g_ubiEntryIdx, aIdx[i], "and this row of it");
+        CheckEqI32(g_ubiTopic, aTopic[i], "the row's topic");
+        CheckEqI32(g_ubiEntryNum, aEntry[i], "and that topic's ufopaedia entry number");
+        CheckEqI32(g_ubiPageOpen, 1, "0x18730C is set (0x9E07C)");
+        /* 0x9E038 sets pad dirty and RefreshEntry clears it again at 0x9A5C4, so the byte's end
+         * state is zero either way: what the set is for is RefreshEntry's own re-pick at 0x9A054,
+         * and that is already held off by the pending flag still being set. Dropping the store is
+         * therefore an equivalent change, and the values above are what prove the re-pick did not
+         * run. */
+        CheckEqI32(g_ubiPadDirty, 0, "pad dirty is cleared again by RefreshEntry (0x9A5C4)");
+        CheckEqI32(g_ubiReselect, 0, "and the pending flag is cleared (0x9E084)");
+        Check(g_aUbiRoot[1] != NULL, "RefreshEntry built the entry pad into slot 1");
+        UbiRelease();
+    }
+
+    /* The two arms the jump table sends to the default: 135 and 140 keep their topic, and neither is
+     * in any category row, so the walk runs off the table. */
+    UbiFixture(135, 1);
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiShown, 135, "topic 135 is NOT folded, the switch's default arm");
+    UbiRelease();
+    UbiFixture(140, 1);
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiShown, 140, "nor is 140");
+    UbiRelease();
+    UbiFixture(117, 1);
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiShown, 117, "and 117 falls out of the switch on the low side (ADDLS is unsigned)");
+    UbiRelease();
+    UbiFixture(143, 1);
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiShown, 143, "and 143 on the high side");
+    UbiRelease();
+
+    /* A fold that lands on a race topic is the same row whichever family member came in: 118, 123,
+     * 128, 133 and 138 all reach category 5 row 0. */
+    {
+        static const i32 aSectoid[5] = { 118, 123, 128, 133, 138 };
+        nBad = 0;
+        for (i = 0; i < 5; ++i) {
+            UbiFixture(aSectoid[i], 1);
+            Ui_InitBaseInfo(&g_ubiEnv);
+            if (g_ubiCategory != 5 || g_ubiEntryIdx != 0 || g_ubiEntryNum != 54) {
+                ++nBad;
+            }
+            UbiRelease();
+        }
+        CheckEqI32(nBad, 0, "the Sectoid family 118/123/128/133/138 all reach entry 54");
+    }
+
+    /* Nulls. */
+    UbiFixture(55, 1);
+    g_ubiEnv.pUfopaedia = NULL;
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiShown, 55, "a null ufopaedia env skips the reselect half");
+    if (g_aUbiRoot[0] != NULL) {   /* no teardown runs without the env, so release slot 0 by hand */
+        PadImage_FreeData((PadImage *)g_aUbiRoot[0]);
+        free(g_aUbiRoot[0]);
+        g_aUbiRoot[0] = NULL;
+    }
+    UbiFixture(55, 1);
+    g_ubiEnv.pnShownTopic = NULL;
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiOpen, 1, "the build half still runs");
+    CheckEqI32(g_ubiCategory, 0x5A5A5A5A, "but the reselect half has no topic to re-point");
+    UbiRelease();
+    Ui_InitBaseInfo(NULL);
+    UbiFixture(55, 1);
+    g_ubiEnv.ppRoot = NULL;
+    Ui_InitBaseInfo(&g_ubiEnv);
+    CheckEqI32(g_ubiOpen, 0, "a null root stops it before anything is built");
+}
+
 /* ------------------------------------------------- the psi screen (geoscape screen 17) */
 
 #define PSI_NAME  0
@@ -19037,6 +19375,7 @@ int main(void)
     TestFacStatusLine();
     TestUfopaedia();
     TestUfopaediaOpen();
+    TestUiInitBaseInfo();
     TestPsiScreen();
     TestPsiScreenDraw();
     TestBaseInfoBuildPanels();
