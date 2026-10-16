@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 496036 / 598792 (82.8%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 13941 |
+| Test checks run | 13942 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -1300,7 +1300,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
-| `test_geoscape` | PASS | 1268 |
+| `test_geoscape` | PASS | 1269 |
 | `test_geouimanage` | PASS | 73 |
 | `test_input` | PASS | 337 |
 | `test_invdrag` | PASS | 370 |

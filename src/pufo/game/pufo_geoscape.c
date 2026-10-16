@@ -2123,11 +2123,14 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
     return true;
 }
 
-/* 0x822EC..0x82304 and 0x8230C..0x8231C: MOVS / ADMI #1 / ASR #1. The +1 is skipped only when the
- * size is 0, so this is ceil(n / 2) for a positive size and C's n / 2 for a negative one. */
+/* 0x822EC..0x82304 and 0x8230C..0x8231C: MOVS R3,Rn / ADDMI R3,R3,#1 / MOV R3,R3,ASR#1, bytes
+ * 01 30 83 42 for the middle instruction. ADDMI fires only when the tested value is NEGATIVE, so a
+ * non-negative extent is halved by plain `n >> 1` and the +1 exists only to give a negative extent
+ * C's round-toward-zero ((-5 + 1) >> 1 == -2 == -5 / 2). This is C's `n / 2`, NOT a ceiling -- the
+ * identical encoding sits at 0x5EB44 (the radar backdrop) and 0x846B4 (the map click). */
 static i32 SmapIcon_HalfExtent(i32 nSize, i32 nSub)
 {
-    return (nSize != 0 ? nSize + 1 : 0) / 2 - nSub;
+    return nSize / 2 - nSub;
 }
 
 /* Smap_DrawStrategIcons @ 0x822c4. */

@@ -1322,8 +1322,9 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv);
 /* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
  * coordinates converted into screen coordinates.
  *
- * The half-extents are the same ceilings the map click and the radar backdrop use: 0x822EC..0x822FC
- * is MOVS / ADMI / ASR #1, so nHalfW = ceil(nMapW / 2) - 120 and nHalfH = ceil(nMapH / 2) - 160.
+ * The half-extents are the same halves the map click and the radar backdrop use: 0x822EC..0x82304 is
+ * MOVS / ADDMI #1 / ASR #1, which is C's `n / 2` (ADDMI only fixes a NEGATIVE value's rounding), so
+ * nHalfW = nMapW / 2 - 120 and nHalfH = nMapH / 2 - 160.
  * Map_nGlyphPalBase is forced to 32 for the whole pass (0x82318 MOV R0, #0x20 / 0x82328 STR), so
  * every glyph here takes palette slot 32 whatever the rest of the frame used. nPal is always 0
  * (R9 = 0 at 0x822D8).

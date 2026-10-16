@@ -13949,634 +13949,634 @@ visible.
 - No app-layer wiring exists yet for `FireActionCtx`: the queue walker
   `Tact_TickActiveUnit` @ 0x54130 is unported, so the phase is driven from tests only.
 
-
-## Tact_TickActiveUnit (0x54130): the queue walker
-
-`Tact_TickActiveUnit` is the only thing `GameTick_OnTimer @ 0x274f0` does with the action
-queue, and it is the link that was missing between the three phase processors and the game
-tick. It is a loop, not a single dispatch.
-
-### The gates
-
-1. If `nQueueLen == 0`, `Tact_ProcessActionPhase` runs first - the phase machine can
-   enqueue the opportunity-fire action, and 0x54198 re-reads the length, so a queue that
-   looked empty is dispatched on the same call.
-2. Return when `nQueueLen == 0` or `bQueueActive == 0`. These are two independent gates.
-3. **`bFlag0` selects the processor**: set runs `Tact_ProcessFireAction`, clear runs
-   `Tact_ProcessMoveAction`. They are alternatives, not both - which is why the move
-   processor's prologue raising `bFlag0` matters: it flips the next tick to the fire phase.
-
-### The camera follow
-
-Only while `pTactCtx272->bBusy`. The current entry is `aQueue[nQueueCursor]` (aQueue is at
-`TactState+0x18`, an entry is 56 bytes), and its command decides what the camera follows:
-
-| nCmd | follows | tracked unit adopted |
-|---|---|---|
-| 0, 1, 8 | `pUnit->pCell`, gated on `pCell->bFlags44 & 1` | the unit, **before** the focus |
-| 0xE | the cell the last aim sample fell into | `Map_apXcomUnits[0]`, **after** the focus |
-| 0x12 | the same sample cell, gated on `pTarget->pCell->bFlags44 & 1` | `pTarget`, **after** the focus |
-
-With nothing tracked the camera always follows. With a unit already tracked, a shot
-re-centres only when `(int)Map_dTravel % 60 == 0` (0x54750).
-
-The move path has a step the fire path does not: when the context is busy and
-`nQueueLen > 1` it clears `Map_pSelUnit`'s `bUnk148` and, if the selected unit is not the
-camera unit, drops `pCameraUnit` and calls `Render_Frame`. And when `nQueueCursor == 0` it
-zeroes the kill accumulator before the move processor runs.
-
-### The completion tail (bFlag1 raised)
-
-`Tact_ProcessFallAction` runs, then `Map_bTickHold` or `Map_bFrameScratch` returns. Then:
-
-- **The AI-action pair.** `TactState+0x111C8` and `+0x111E2` are one pair and neither was
-  named before this unit (`gap_70088` head, `bUnk70114`). `EnemyAi_TryFireOrWander (0x4ABC8,
-  unported)` stores the acting unit at +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C)
-  together, and it does so **unconditionally, before** the branch at 0x4ACA0 that chooses
-  between the random fire burst and the weapon-drop-and-wander. So the flag means "an AI
-  action is in progress", not "a wander is running" - which is what its two other readers
-  need it to mean: the move processor suppresses the player-facing "not enough time" record
-  while it is set, and the fire processor skips the enemy-spotted reaction while it is set.
-  It is cleared on the wander path's failure (0x4B024) - the fire path never clears it - by
-  `Tact_InitMission`, and by the walker: when the queue has finished it clears the flag and
-  zeroes the acting unit's `uTu` through the pointer (0x544E0, `STRHEQ R1,[R3,#6]`). Named
-  `pAiActionUnit` / `bAiActionActive` in the IDB struct and in the port.
-- **The kill credit.** `TactState+0x111D0` is a u16 accumulator. The walker walks
-  `aQueue[0 .. nQueueCursor-1]` - and because `Fall_Tail` has already advanced the cursor
-  past the entry it just ran, that range is every executed entry - and stops at the first
-  one whose command is 14, whose unit has `nUnitType <= 8` and is operative. That unit's
-  `uKills` (Soldier+0xFA) gets the accumulator, which is then zeroed as a dword.
-- **The opportunity-fire epilogue.** On `bUnk70103`: park the cursor at (-2,-2), select
-  `pTactCtx272->pScanUnit` - falling back to `Map_apXcomUnits[0]` when that unit carries
-  `bFlags` bit 0x20 - and clear the flag. Then `Tact_ProcessActionPhase` runs once more.
-
-### The re-run
-
-After the tail (and also when `bFlag1` was never raised): re-run while the context is busy,
-`pTrackUnit` is NULL, `pMapTactical->bUnk70115` is clear and `apUiSlotsA[10]`
-(`dword_113A40`, the cursor-direction countdown) is 0, calling `GameTick_Step` on each pass.
-The countdown is read **after** the game tick, so a running countdown still allows one tick.
-
-### Deviations
-
-- The walker reaches everything the original reads through the Map block as context fields:
-  `Map_pSelUnit`, `Map_apXcomUnits[0]`, `Map_bTickHold`, `Map_bFrameScratch`,
-  `apUiSlotsA[10]`, the aim samples and `Map_dTravel`. The three phase processors get their
-  own contexts, so `TactTickCtx` is where the port wires them to the queue.
-- The five world calls (`Tact_ProcessActionPhase`, `Render_Frame`, `MapView_FocusOnCell`,
-  `MapCursor_SetPos`, `GameTick_Step`) are injected through `TickHooks`, so the walker is
-  testable without a renderer or a camera.
-- The port guards `pUnit`, `pCell`, `pTarget` and `pAiActionUnit` before dereferencing, and
-  routes the sample-cell index through the bounds-checked lookup. Six ledger rows record
-  where the original does not.
-- No app-layer wiring yet: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is still unfilled,
-  because the app layer does not yet own a `TactTickCtx`.
+
+## Tact_TickActiveUnit (0x54130): the queue walker
+
+`Tact_TickActiveUnit` is the only thing `GameTick_OnTimer @ 0x274f0` does with the action
+queue, and it is the link that was missing between the three phase processors and the game
+tick. It is a loop, not a single dispatch.
+
+### The gates
+
+1. If `nQueueLen == 0`, `Tact_ProcessActionPhase` runs first - the phase machine can
+   enqueue the opportunity-fire action, and 0x54198 re-reads the length, so a queue that
+   looked empty is dispatched on the same call.
+2. Return when `nQueueLen == 0` or `bQueueActive == 0`. These are two independent gates.
+3. **`bFlag0` selects the processor**: set runs `Tact_ProcessFireAction`, clear runs
+   `Tact_ProcessMoveAction`. They are alternatives, not both - which is why the move
+   processor's prologue raising `bFlag0` matters: it flips the next tick to the fire phase.
+
+### The camera follow
+
+Only while `pTactCtx272->bBusy`. The current entry is `aQueue[nQueueCursor]` (aQueue is at
+`TactState+0x18`, an entry is 56 bytes), and its command decides what the camera follows:
+
+| nCmd | follows | tracked unit adopted |
+|---|---|---|
+| 0, 1, 8 | `pUnit->pCell`, gated on `pCell->bFlags44 & 1` | the unit, **before** the focus |
+| 0xE | the cell the last aim sample fell into | `Map_apXcomUnits[0]`, **after** the focus |
+| 0x12 | the same sample cell, gated on `pTarget->pCell->bFlags44 & 1` | `pTarget`, **after** the focus |
+
+With nothing tracked the camera always follows. With a unit already tracked, a shot
+re-centres only when `(int)Map_dTravel % 60 == 0` (0x54750).
+
+The move path has a step the fire path does not: when the context is busy and
+`nQueueLen > 1` it clears `Map_pSelUnit`'s `bUnk148` and, if the selected unit is not the
+camera unit, drops `pCameraUnit` and calls `Render_Frame`. And when `nQueueCursor == 0` it
+zeroes the kill accumulator before the move processor runs.
+
+### The completion tail (bFlag1 raised)
+
+`Tact_ProcessFallAction` runs, then `Map_bTickHold` or `Map_bFrameScratch` returns. Then:
+
+- **The AI-action pair.** `TactState+0x111C8` and `+0x111E2` are one pair and neither was
+  named before this unit (`gap_70088` head, `bUnk70114`). `EnemyAi_TryFireOrWander (0x4ABC8,
+  unported)` stores the acting unit at +0x111C8 (0x4AC04) and raises +0x111E2 (0x4AC1C)
+  together, and it does so **unconditionally, before** the branch at 0x4ACA0 that chooses
+  between the random fire burst and the weapon-drop-and-wander. So the flag means "an AI
+  action is in progress", not "a wander is running" - which is what its two other readers
+  need it to mean: the move processor suppresses the player-facing "not enough time" record
+  while it is set, and the fire processor skips the enemy-spotted reaction while it is set.
+  It is cleared on the wander path's failure (0x4B024) - the fire path never clears it - by
+  `Tact_InitMission`, and by the walker: when the queue has finished it clears the flag and
+  zeroes the acting unit's `uTu` through the pointer (0x544E0, `STRHEQ R1,[R3,#6]`). Named
+  `pAiActionUnit` / `bAiActionActive` in the IDB struct and in the port.
+- **The kill credit.** `TactState+0x111D0` is a u16 accumulator. The walker walks
+  `aQueue[0 .. nQueueCursor-1]` - and because `Fall_Tail` has already advanced the cursor
+  past the entry it just ran, that range is every executed entry - and stops at the first
+  one whose command is 14, whose unit has `nUnitType <= 8` and is operative. That unit's
+  `uKills` (Soldier+0xFA) gets the accumulator, which is then zeroed as a dword.
+- **The opportunity-fire epilogue.** On `bUnk70103`: park the cursor at (-2,-2), select
+  `pTactCtx272->pScanUnit` - falling back to `Map_apXcomUnits[0]` when that unit carries
+  `bFlags` bit 0x20 - and clear the flag. Then `Tact_ProcessActionPhase` runs once more.
+
+### The re-run
+
+After the tail (and also when `bFlag1` was never raised): re-run while the context is busy,
+`pTrackUnit` is NULL, `pMapTactical->bUnk70115` is clear and `apUiSlotsA[10]`
+(`dword_113A40`, the cursor-direction countdown) is 0, calling `GameTick_Step` on each pass.
+The countdown is read **after** the game tick, so a running countdown still allows one tick.
+
+### Deviations
+
+- The walker reaches everything the original reads through the Map block as context fields:
+  `Map_pSelUnit`, `Map_apXcomUnits[0]`, `Map_bTickHold`, `Map_bFrameScratch`,
+  `apUiSlotsA[10]`, the aim samples and `Map_dTravel`. The three phase processors get their
+  own contexts, so `TactTickCtx` is where the port wires them to the queue.
+- The five world calls (`Tact_ProcessActionPhase`, `Render_Frame`, `MapView_FocusOnCell`,
+  `MapCursor_SetPos`, `GameTick_Step`) are injected through `TickHooks`, so the walker is
+  testable without a renderer or a camera.
+- The port guards `pUnit`, `pCell`, `pTarget` and `pAiActionUnit` before dereferencing, and
+  routes the sample-cell index through the bounds-checked lookup. Six ledger rows record
+  where the original does not.
+- No app-layer wiring yet: `GameTick_OnTimer`'s `pfnTickActiveUnit` seam is still unfilled,
+  because the app layer does not yet own a `TactTickCtx`.
 
-
-## EnemyAi_TryFireOrWander (0x4abc8): the low-morale AI
-
-The AI that runs when an alien's morale breaks. A LARGE unit does nothing at all -
-0x4abdc branches straight to the function epilogue, so it does not even push the status
-message, and `Map.pSelWeapon` is not even cleared.
-
-### The choice
-
-`Game_RandU16(2)` is drawn first, then the AI-action pair is raised -
-`pMapTactical->pAiActionUnit = pUnit` (0x4AC04) and `bAiActionActive = 1` (0x4AC1C) -
-and only then does 0x4ac94 choose: `roll == 0` AND a usable one-handed weapon gives the
-random fire burst, anything else gives the weapon-drop-and-wander. The pair is raised on
-BOTH paths, which is why it cannot mean "a wander is running".
-
-A usable weapon (0x4ac24..0x4ac90) is a hand that exists, whose `ObjectRec.bTwoHanded`
-is 0, and which either has ammo or whose `ObjectRec.bAmmoCap` is 255. Left hand first,
-right second; the winner is stored into `Map.pSelWeapon` (0x113A00), which was zeroed at
-0x4AC20. The store happens before the path choice, so a unit that ends up wandering still
-leaves its weapon in `Map.pSelWeapon` - and then, for `nUnitType <= 3`, drops that very
-item into a cell list, leaving the global pointing at an item the unit no longer holds.
-
-Both paths end at 0x4B028 pushing the unit's name through `StatusMsg_Push` with
-`bForce = 0`. The original strcat's `unk_104078` onto the name; that buffer is all zeros
-and its only three references in the whole binary are this call site, so it appends
-nothing.
-
-### The fire burst (0x4aca4..0x4ae28)
-
-`Map.nActionMode = 1`, then `Ui_FillActionCosts`. Shot count is
-`bAmmoCap == 255 ? 3 : min(nAmmo, 3)`; a count of 0 skips the loop but still clears the
-action latch and kicks the queue. Each pass draws `x = nX + rand(5) - 2`,
-`y = nY + rand(5) - 2`, `layer = rand(4)` into three Map scratch globals
-(`Map_nAiFireX/Y/Layer` @ 0x128A20/0x128A24/0x128A28, which have no other reference
-anywhere in the binary) and retries until `Map_IsValidCell` accepts it. Then:
-
-- drawn x is not the shooter's column -> burst at the drawn target;
-- drawn x IS the shooter's column -> the drawn row is replaced by the shooter's own row,
-  and **a shooter not on row 0 jumps back to the draw without spending a shot**
-  (0x4ada4 `BNE loc_4ACE0`, not to the 0x4ae0c decrement), while a shooter on row 0 fires
-  at its own cell.
-
-This is the one place Hex-Rays actively misleads: its pseudocode falls through to the
-decrement, which would fire zero shots where the ARM fires one. The test
-`TestSameColumnRedraw` pins it - one scripted shot, a rejected same-column draw, and the
-shot still lands, with 7 draws consumed (1 roll + 3 + 3).
-
-Each burst takes `nTuCost = Map.anActionCost[mode]` (Map+0x4E4C) and
-`nArg = Map.anActionEnabled[mode]` (Map+0x4E7C) - the same two tables
-`Tact_TryFireMode4` and `Input_OnPointerUp` read, and the same pair
-`Tact_TryFireMode4`'s UI path passes. The AI ignores the enqueue's result: a unit that
-cannot afford the burst gets nothing queued, and the latch clear, the queue kick and the
-name push still happen.
-
-### The wander (0x4ae2c..0x4b024)
-
-`nUnitType <= 3` first drops both hands. From the unit's own layer it walks DOWN while
-`MapCell.pFloorSpr == NULL`; `SUB R7,#1 / CMP R7,#0 / BGT` at 0x4ae84-0x4ae90 means
-layers nZ..1 are tested and **layer 0 is reached untested**. Both items go into that cell
-through `MapCell_ListInsertByPri`, the hands are cleared, `Unit_UpdateAnimPose` runs.
-Types 4..23 skip the whole block, including the pose refresh.
-
-Then it draws `x = nX + rand(20) - 10`, `y = nY + rand(20) - 10` and retries until
-`Map_IsValidCell(map, x, y, 0)` accepts it - the bounds test is always against layer 0.
-The candidate cell is taken at the UNIT'S OWN layer. If `g_aUnitTypeFlag0[type] == 0` the
-candidate is walked DOWN while `pFloorSpr == NULL`, and this walk's `SUBS / BPL` at
-0x4afcc-0x4afd0 tests layers nZ..0 inclusive - one layer deeper than the drop walk in the
-same function. The draw is retried while the candidate is the unit's own cell or
-`MapCell_HasOccupant` says it is occupied.
-
-Finally `Unit_PathToCell(map, cell->nX, cell->nY, cell->nZ, 1)`. On failure the unit is
-left with `uTu = 0` and `bAiActionActive` is cleared (0x4b00c..0x4b024); on success the
-flag stays up and the queue walker's completion tail (0x544D8) is what clears it.
-
-### Original bugs found (7 ledger rows)
-
-Four unguarded dereferences: the drop descent loads `apCells[layer][y][x]` and reads its
-`pFloorSpr` with no NULL test (0x4ae74), the wander walk does the same (0x4afbc), both
-hand drops pass that cell to `MapCell_ListInsertByPri`, which dereferences
-`pCell->pItemList` (0x4aec4), and `byte_A7B80` is indexed by `nUnitType` with no bounds
-test (0x4af8c). Three behavioural ones: the drop descent tests layers nZ..1 while the
-floor walk in the same function tests nZ..0 (0x4ae8c); the same-column redraw that spends
-no shot and lets a row-0 shooter fire at its own cell (0x4ada4); and `Map.pSelWeapon`
-left pointing at an item the wander path just dropped (0x4ac90).
-
-### Deviations
-
-- `Unit_PathToCell` (0x2c2a8) is unported - it needs `Unit_CanStepTo` (0x27bb8) - so it is
-  a hook on `EnemyAiActCtx`, as is `Ui_FillActionCosts` (the port's version takes an
-  explicit env the AI does not own) and `StatusMsg_Push` (which needs a `StatusStack`).
-- The port guards the four dereferences the original does not, and bounds the
-  `nUnitType` index against `PUFO_UNIT_TYPE_COUNT`.
-- The three draw scratch globals are kept as locals, which is faithful: they have no
-  reader outside this function.
-- The name copy is bounded to `Soldier.szName` (40) and to the 200-byte message buffer;
-  the original's `LDRSB` loop has neither bound.
-
-## Tact_EnemyAiTick (0x4cbe0): the enemy AI driver
-
-`Tact_ProcessActionPhase` reaches this through `TurnHooks.pfnEnemyAiTick` when the context
-is busy and the phase is 3. It handles **one** enemy per call and ends the enemy turn when
-nothing was queued. Ported as `Tact_EnemyAiTick` in `src/pufo/game/pufo_enemyai.c`.
-
-### Entry and unit selection (0x4cbf4..0x4cc5c)
-
-`STRB R0,[R1,#0x100]` clears a **byte** at `pTactCtx272+0x100`. Hex-Rays renders the field as
-`Soldier *pSavedFocus` because every read is `LOBYTE(pCtx->pSavedFocus)`, but all seven
-accesses in the binary are 0/1 byte stores or tests (0x4CC00, 0x4D688, 0x4D84C, 0x4D86C,
-0x4D878, 0x4D888, and the test at 0x4D920) and nothing ever loads it as an address. The unit
-the enemy turn restores is at +0x104, which is what `Tact_EndEnemyTurn` reads. The port names
-the field `bAiFocusSaved`.
-
-`CMP R3,#0; BLS loc_4D920` sends an empty enemy roster straight to the tail. Otherwise the
-roster is walked in order and the first unit passing every gate acts:
-
-| gate | ARM | effect |
-|---|---|---|
-| `nAiTick > 15` | 0x4CC34 `CMP R0,#0xF; BGT` | skipped **without** `++nAiTick`, so it stays skipped forever |
-| `bAiDone` | 0x4CC48 `CMP R3,#0; BNE` | skipped, after `++nAiTick` |
-| `uTu >= 15` | 0x4CC54 `CMP R3,#0xF; MOVCC/STRBCC` | this unit acts |
-| otherwise | same | `bAiDone = 1`, skipped |
-
-### What the acting unit does
-
-1. `Unit_UpdateVisibility(pUnit)`, then `pTrackUnit = NULL` unless it already points at this
-   unit (0x4CC78).
-2. `bMorale < 20 && nUnitType > 3` hands the unit to the panic AI: `Tact_SelectUnit`,
-   `EnemyAi_TryFireOrWander`, focus saved, `bAiDone = 1`, tail.
-3. Up to three draws of `apMultiTargets[rand(nMultiTarget)]`, stopping at the first one that
-   is not large. `nMultiTarget` is read as a **signed** byte (0x4D194 `LDRSB`).
-4. The pick is accepted when it is small, not type 16/17, `rand(5) == 0` and the roster is
-   non-empty (0x4cd60..0x4cda0). Accepted -> the neighbour-melee hand-off below. Otherwise
-   LABEL_24: `nMultiTarget == 0` goes to the fallback move; else `Tact_SelectUnit(self)` and
-   a split on `g_aUnitTypeRecord[4*type + 3]` (`LDRB R3,[R3,#3]` at 0x4CDBC). That column is
-   set for exactly six rows - Chryssalid 0xE, Celacid 0xF, both civilians 0x10/0x11, Silacoid
-   0x13 and Riper 0x14 - and this is its only reader in the whole binary, so the port names it
-   `g_aUnitTypeFlag3`. Those are the units with no weapon to fire and only a melee action.
-
-### The neighbour-melee hand-off (0x4d660..0x4d734)
-
-Another enemy is searched for with `bUnk422 != 0`, `!= self` and `uTu > 15`. Found:
-`Tact_SelectUnit(that unit)`, `Map.pSelWeapon = &TactItem_156910`, mode 4 or 5 by `rand(2)`,
-`Map.nBurstShots = 0`, the three melee-cell globals set to the multi-target's cell, a
-command-18 enqueue against that cell's occupant, then `Map_pSelUnit->uTu >>= 1`
-(`LDRH/LSR#1/STRH` at 0x4d728..0x4d730). Every one of those addresses the neighbour: the unit
-this tick was picked for spends no TU, is not marked done, and is picked again next tick.
-Ledger row 0x4d660.
-
-### The melee branch (0x4cde0..0x4d188)
-
-Three attempts. Each draws a fresh multi-target, loads the cell one row north and the two
-other cells of a large unit's 2x2 footprint (0x4ce50, unguarded), and builds a candidate: the
-cell at the unit's facing delta **on the target's layer**, falling back to the target's own
-cell when that cell is out of bounds or is not occupied by the target (0x4CEC4). Reach is
-`(int)sqrt(dx^2 + dy^2) < 2` from the unit's own cell, or - for a large unit - from any of its
-four footprint cells (0x4D048..0x4D098). On reach: `uTu = 0`, the three melee globals, and a
-command-18 enqueue with mode 13 carrying `&TactItem_156A58`.
-
-On no reach, eight directions are scanned (0x4D09C..0x4D150). The layer is `nZ + 1` when the
-unit's own ceiling sprite has `iCeilParam < -15` (`MOV R6,#0xFFFFFFF1; CMP` at 0x4D0D8),
-otherwise `nZ` - note `Unit_UpdateVisibility` uses the same byte with a **-10** threshold, so
-the two thresholds really differ. An occupant counts when `bStatus == 0` or its type is 16 or
-17. A hit faces the unit and enqueues command 13. Otherwise `Unit_PathToCell(target, bFlag 0)`;
-success ends the tick, failure retries until the three attempts are spent.
-
-### The throw / fire branch (0x4d194..0x4d8b0)
-
-A fresh multi-target and `rand(3)`. The throw needs roll 0, distance <= 10, a non-NULL
-`apBelt[0]` whose object has `nCategory == 3`, and `nUnitType > 3`. It moves the belt item to
-`pHandR` and into `Map.pSelWeapon`, refills the action costs, stores `pHandR` into
-`Map.pSelWeapon` a second time (0x4D818), sets the item's +7 to 0 and +8 to 1, sets action
-mode 11, and enqueues with `Map_nThrowTuCost` / `Map_nThrowArg` - loaded by literal at 0x4D82C
-and 0x4D80C, and just `anActionCost[11]` / `anActionEnabled[11]`.
-
-Otherwise the weapon is the left hand for types > 3 (refusing when it is empty, and leaving
-`Map.pSelWeapon` untouched), or for types <= 3 the last hand holding a one-handed object with
-`nCategory <= 2`, so the right hand wins ties. After `Ui_FillActionCosts` and
-`TactItem_bTryReloadClip`, mode 7 is chosen when the weapon object's `uSortKey == 13`, the
-target is not type 16/17 and the distance is >= 10 - and mode 7 also arms
-`Map.nMultiTargetCount = 1`, `Map.nBurstShots = 1` and `Map.apMultiTargets[0]`. Otherwise mode 1.
-
-The affordability gate is soft-float at 0x4d448 / 0x4d458:
-
-    (double)uTu >= anActionCost[mode] * (2.0 / 3.0) + 8.0
-
-with `0x3FE5555555555555` = 2/3 and `0x4020000000000000` = 8.0, and the charged cost is the
-truncated `(int)(cost * 2/3)`, not the table value. A 26-cost mode therefore needs 26 TU and
-charges 17.
-
-### The fallback move (LABEL_82, 0x4d8b8..0x4d918)
-
-Rank 4 or 8 draws `rand(6)` and keeps it only when it is 1; every other rank draws `rand(3)`.
-A draw of 0 turns the unit through `EnemyAi_EnqueueRandomTurn` and marks it done. Otherwise the
-RMP walk starts at `rand(nRmpCount)` and, because the index is incremented **before** it is
-used (0x4D8F8), that first draw is never itself a candidate - it only picks where the walk
-begins; the index wraps at `nRmpCount - 1`. A node is a candidate when
-`sqrt(dx^2 + dy^2) <= 19.875` (`_led` against `0x403E000000000000`, on the **untruncated**
-sqrt, unlike every reach test above) and the node's byte at +0x1A matches the unit type - the
-original reaches it by casting the node to a `Soldier *` so the read lands on
-`Soldier.nMultiTarget`. On a candidate the unit is selected and `Unit_PathToCell(node, bFlag 1)`
-runs; success saves the focus, failure counts toward a limit of 10, past which the unit is
-marked done. After `nRmpCount` nodes have been scanned the tick moves to the **next** enemy
-unit - the only path that does not end the roster loop.
-
-### The tail (0x4d920)
-
-`pTactCtx272->nPhase = 3`, then `Tact_EndEnemyTurn` only when the +0x100 byte is still 0, then
-`TactState_KickQueue(pMapTactical)`. Because `Tact_EndEnemyTurn` writes phase 0 back, a tick
-where nothing acted leaves the machine at phase 0, and a tick that queued something leaves it
-at 3.
-
-### Original bugs found (3 ledger rows)
-
-- 0x4d660 - the neighbour-melee hand-off described above.
-- 0x4d09c - the eight-direction scan indexes `apCells` with no bounds test at all, unlike the
-  facing-delta lookup at 0x4ce8c, which does call `Map_IsValidCell`.
-- 0x4ce50 - the three footprint cells are loaded the same unguarded way.
-
-### Deviations
-
-- `Unit_PathToCell` (0x2c2a8, unported - it needs `Unit_CanStepTo`, 0x27bb8),
-  `Ui_FillActionCosts`, `Unit_UpdateVisibility` (ported, but it needs a whole `VisCtx`),
-  `AfterEnemyStep` (0x4c4a0, unported) and the clip lookup inside `TactItem_bTryReloadClip`
-  are hooks on `EnemyAiTickCtx`.
-- The port bounds-checks the footprint and eight-direction cell reads and the `nUnitType`
-  index into `g_aUnitTypeFlag3`.
-- The RMP node's role byte is passed to the shared predicate directly instead of through the
-  original's `Soldier *` cast, because `Soldier` shifts on Win64 and the cast would read the
-  wrong byte. `EnemyAi_MultiTargetTypeMatch` and the RMP walk now share one role-based core.
-- `TactCtx272+0x100` is typed `u8 bAiFocusSaved` with 3 pad bytes, not `Soldier *`.
-- `unk_156910`, `unk_156A58` and `unk_156A88` are typed `TactItem` in the IDB and named
-  `TactItem_156910` / `TactItem_156A58` / `TactItem_156A88`: each has a `TactItem_ctor` thunk
-  (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an `apObjects` entry into its
-  `pObj` at +0. The port previously modelled them as `ObjectRec **` pointer variables.
-
-## The enemy-turn bracket: BeforeEnemyStep (0x4b9b8), Tact_UpdateUnitControl (0x4a444), AfterEnemyStep (0x4c4a0)
-
-`BeforeEnemyStep` and `AfterEnemyStep` bracket the enemy turn, and both call
-`Tact_UpdateUnitControl` once per unit - which is why the enemy pass runs before the XCom one:
-BeforeEnemyStep clears the idempotence guard byte `Soldier.bControlRecovered` (+0x1B2) for the
-enemy roster at 0x4BB80, AfterEnemyStep for the civilians (0x4C8B0) and the XCom roster
-(0x4C720). Ported as `BeforeEnemyStep`, `Tact_UpdateUnitControl` and `AfterEnemyStep` in
-`src/pufo/game/pufo_turn.c`, driven from `tests/test_turn.c`.
-
-### Tact_UpdateUnitControl (0x4a444..0x4a714)
-
-Guard first (0x4a450): `bControlRecovered` non-zero returns at once, and the function sets it,
-so each unit is processed once per turn. The unit arithmetic - `uHp -= bKneelOrPrimed` (floored
-at 0), `bUnk1037 = 0`, the TU rule (+3 when the cell's `nFlags32` low 3 bits are non-zero, else
--10 when `uTuSpent >= 10`, else 0, and left alone entirely for a large unit), morale +5 or 100
-from 95 up - is the already-ported `Unit_ApplyControlRecovery`. The original applies morale
-last, at 0x4A714; the port applies it with the rest because nothing in between reads it.
-
-The recovery arm (0x4A4E0..0x4A5A4) needs all of: `uTuSpent < uHp`, `bFlags` bit 0x20 SET, the
-cell unoccupied, `uHp != 0`, not large. It enqueues RECOVER, and for `nUnitType <= 3` pushes
-`szName` + aTextRecs record 39 (male) or 40 (female) as a FORCED status message, then
-`TactState_KickQueue` and `pLinked1040 = 0`.
-
-Both side transfers (0x4A5A8, 0x4A64C) need bit 0x20 CLEAR - the opposite polarity. An
-XCom-side unit of an enemy type becomes an enemy (`bStatus = 1`, `uTu = 0`, appended to
-`apEnemyUnits`, and `Tact_SelectUnit(apXcomUnits[0])` if it was `Map.pSelUnit`); a controlled
-unit of an XCom type returns to `apXcomUnits` and pushes name + record 52 / 53 unprompted.
-`Tact_RemoveUnitFromSideLists` runs first and updates the canonical counts, which the port has
-to do explicitly because `SideLists` carries its counts by value - the same `Fall_SyncCounts`
-pattern.
-
-### BeforeEnemyStep (0x4b9b8..0x4c49c)
-
-Eight steps: clear `pTrackUnit` and the XCom `bUnk1037`; the XCom-base reserve spawn; the enemy
-pass (`bControlRecovered = 0`, `Tact_UpdateUnitControl`, `nAiTick = 0`, with the count re-read
-each iteration); the fire tick over all four layers; clear the flag for civilians then XCom; the
-enemy refill (`uTu = auStat[0]`, `uStunOrArmor = auStat[9]`); clear `bFlags44` bit 0 everywhere;
-`UnitList_ForEachRefresh`.
-
-**The burn run probes against its own axis.** 0x4BC78 multiplies the axis delta by a counter
-running 0, -1, -2, so with the west axis the probe steps EAST over three cells and the forward
-pass then starts at `cell + axisDelta * (nBack + 1)` - two cells east of the burning cell - and
-walks back west across at most 7 cells. `tests/test_turn.c::TestBeforeEnemyStepBurnRun` pins
-this with three layouts that differ only in where the wall gap is.
-
-**The face loop makes six passes over four counters.** Passes 4 and 5 are the west and north
-neighbour cells, gated on that neighbour burning, and both rewrite the slot index (0x4C09C
-`MOV R1, #1`, 0x4C0EC `MOV R1, #2`). They therefore charge the cell's own wall A / wall B
-counter through the same wall sprite - a wall between two burning cells takes double damage -
-and nothing in the loop ever reaches `nPathCost` at +0x14.
-
-**The heat term is `counter + step`, and it is added twice.** 0x4C10C / 0x4C110 build
-`R2 = counter + 20` (or +5), 0x4C15C compares that against `Mc1Rec.bStrength`, 0x4C160 zeroes
-it when the sprite covers it, and 0x4C1F0 stores `counter + R2`. So a sprite absorbs the hit
-whenever `bStrength >= counter + step` - a `bStrength` of 255 always does - and the only
-counters that ever grow belong to faces with no sprite, growing to `2 * counter + step`.
-
-**The countdowns are gated by the burning state.** The `nFlags40` bits 3..6 decrement unless
-zero or already 0xF (0x4C014). If `nFlags32`'s low 3 bits are 0 the cell takes no further
-countdown at all (0x4C038); if they are non-zero but not 4 the face loop is skipped while the
-low 3-bit countdown still runs (0x4C040); at 0 the burning state steps down and the countdown
-re-arms to `rand(2) + 2`.
-
-### AfterEnemyStep (0x4c4a0..0x4c9f8)
-
-`nEnemyUnitCount / 3` random enemies are topped up to `auStat[0] * 0.4` - the constant pair at
-0x4C520 / 0x4C528 is `0x3FD99999` / `0x9999999A`, i.e. 0.4, which Hex-Rays prints as two raw
-halves and reads easily as 0.2. The comparison is `uTu < cap` and the store is `(u16)cap`, so
-the top-up never lowers uTu. Then the proximity tick plus `bFlags44` bit 0 over every cell; the
-right-hand action item of every enemy with `nUnitType > 3` back to `apBelt[0]` with its `bUnk8`
-cleared; `bUnk148 = 0` for every enemy; the XCom refill
-`q = (4 * uInvBurden - 4) / auStat[8]`, `d = (2 * q * auStat[0]) / 10`, `uTu = auStat[0] - d`,
-then `uStunOrArmor += auStat[9] * auStat[8] / (10 * uInvBurden)` capped at `auStat[9]`;
-`Tact_UpdateUnitControl` for XCom then the civilians; the panic AI for every XCom unit under 20
-morale; `Unit_UpdateVisibility` for every enemy; `TactState_KickQueue` and the two refreshes;
-and finally `bUnk1037 = 0` for the XCom roster.
-
-`auStat[8]` is the mean-stun stat. Hex-Rays prints it as `auStat[offsetof(Soldier,
-uStunOrArmor)]`, which reads like `auStat[9]` and is not - the penalty divisor and the stun
-numerator's second factor are different fields.
-
-### Original bugs found (12 ledger rows)
-
-- 0x4C1F0 - the heat term is added to the counter twice, so a face with no sprite grows to
-  `2 * counter + step`.
-- 0x4C09C / 0x4C0EC - the neighbour passes reuse the wall A / wall B counter and sprite.
-- 0x4C158 - a sprite absorbs the hit when `bStrength >= counter + step`, so 255 always absorbs
-  and only sprite-less faces accumulate.
-- 0x4BC78 - the burn-run probe steps against the run direction.
-- 0x4BCD4 / 0x4BE40 - the burn walk dereferences neighbour cell pointers with no null test.
-- 0x4BC88 - `Map_IsValidCell` is called with layer 0 while the index uses the cell's own `nZ`.
-- 0x4BF84 - a negative fire-damage base gets +3 before the shift, so the roll range can exceed
-  the base.
-- 0x4A4FC vs 0x4A5C8 / 0x4A66C - the recovery arm needs `bFlags` bit 0x20 SET, both transfers
-  need it CLEAR.
-- 0x4A604 / 0x4A6A4 - both transfers append at the current roster count with no bound.
-- 0x4A544 - the status message is built in a 52-byte buffer from a 40-byte name plus a
-  200-byte TEXTS record.
-- 0x4C77C - the XCom refill divides by `auStat[8]` and `uInvBurden` with no zero guard, and
-  `4 * uInvBurden - 4` is negative at burden 0.
-- 0x4C014 - BeforeEnemyStep guards the 0x78 countdown against its maximum; GameTick_Step
-  (0x27324) shares the arithmetic with no such guard.
-
-### Deviations
-
-- `MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`,
-  `Unit_UpdateVisibility`, `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`,
-  `EnemyAi_TryFireOrWander` and `Rmp_PickSpawnForUnit` are seams on `EnemyStepCtx`; the app
-  layer owns no `TactTickCtx` yet, so nothing in the app builds the context.
-- The port bounds-checks the burn walk's neighbour cell reads and the countdown's grid slot
-  reads, where the original dereferences them.
-- `Turn_PushUnitNameMsg` truncates instead of overflowing the 52-byte buffer.
-- `AfterEnemyStep` skips both burden terms when the divisor is zero.
-- `MapCell.abFaceDamage` is indexed through the field, not through the original's
-  `pCell + 0x10 + slot`: on Win64 `MapCell`'s widened pointers move that field and a raw offset
-  lands on `pWallSprB`. `Cell_FaceDamage` was removed for the same reason.
-
-## The tactical map click: Tact_HandleMapClick (0x1512c) and TactAction_ConfirmMeleeMode6 (0x17bb8)
-
-Ported in `src/pufo/game/pufo_input.c` (`Tact_HandleMapClick`, `MapClickCtx`) and
-`src/pufo/game/pufo_tactui.c` (`Ui_ConfirmMeleeMode6`). These were the last two addresses
-`audit_names` flagged, so every credited address in the port now has a function behind it.
-
-### Tact_HandleMapClick (0x1512c, 1104 B)
-
-Reached only from `Input_OnAction @ 0x15668`, and only when no UI screen is open.
-
-1. `MapCursor_IsValid @ 0x1513C` on the stored cursor. It checks x and y only - the layer is
-   not checked, so an out-of-range `nLayerScratch` still reaches the grid read.
-2. The cursor cell is `apCells[nLayerScratch-1][nCursorY][nCursorX]`. 0x1519C indexes with base
-   `0x11AF8`, which is `apCells @ 0x15338` minus one 14400-byte layer. Clicking the cell the
-   selected unit already stands on returns immediately (0x151A0).
-3. A switch on `Map_bActionLatch` (Map+0x02), modelled as `TactActionLatch` in the IDB:
-
-   - **1 (0x153B0)** `TactState_EnqueueThrow` at the cursor cell. Cost `anActionCost[nActionMode]`
-     (Map+0x4E4C), argument `anActionEnabled[nActionMode]` (Map+0x4E7C, the adjacent array), then
-     `TactState_KickQueue`.
-   - **2 (0x1535C)** `TactState_EnqueueFireBurst` aimed at the cursor cell, same cost/argument
-     pair, carrying the multi-target list for mode 7, then the same shared kick at 0x153A0.
-   - **3 (0x152E4)** multi-target pick. The look control (`pActiveLookCtl @ 0x1571E4`) is armed
-     first: `x = -(i16)uWidth`, `bEnabled = 1`, sample 14. Then, under the eight-target cap
-     (`CMP #8 / BGE` at 0x15328), `bFlags29 |= 0x40` and the cell is appended. **No queue kick on
-     this arm** - 0x15354 branches straight to the epilogue.
-   - **4 (0x151D4)** the melee confirm. Success needs occupied AND **not operative** AND not
-     large. `Map_nMeleeCellX/Y/Layer` take the **cursor** cell coordinates, command 18 is enqueued
-     at `anActionCost[nActionMode]` with `nActionMode` as the mode, the queue is kicked and the
-     latch is cleared. Failure re-runs the same three tests (0x15284..0x152B0) purely to choose the
-     message: occupied, not operative and large gives record 47; everything else record 7.
-   - **0 / default (0x153F4)** select-or-move, with three exits before the move tail:
-     an operative occupant under the cursor is selected outright (latch cleared first);
-     otherwise, if the cursor cell is above layer 0 and the cell **below** it has a ceiling sprite
-     whose signed `Mc1Rec.iCeilParam` (+0x24) is **strictly below -23**, the unit under that
-     ceiling is selected - unless it exists and is *not* operative, which stops the click entirely
-     (0x1549C); otherwise an inoperative occupant whose `Soldier.bUnk148` (+0x94) is SET stops the
-     click (0x154DC); otherwise a selected unit whose type has `g_aUnitTypeFlag0` clear walks DOWN
-     while `pFloorSpr == NULL` (0x15500..0x1554C, inclusive `SUBS / BPL`, layers nZ..0), and
-     `Unit_PathToCell(cell, bFlag = 1)` runs only when the walk landed on a different cell from
-     `pSelUnit->pCell` (0x15550).
-
-### TactAction_ConfirmMeleeMode6 (0x17bb8, 412 B)
-
-Action button 39, installed by `Tact_InitUiControls @ 0x3B608`. Action mode 6, the melee /
-paralyzer attack - its refusal pair is TEXTS[35]+TEXTS[36], "to use the paralyzer / aim it at an
-enemy".
-
-Sample 17, `Map_nActionMode = 6` committed before any gate. The candidate cell is
-`pSelUnit->pCell` shifted by `aDirDeltaXY[3*bFacing]` on the unit's own layer (bFacing is 0..7, so
-the table's two vertical entries are unreachable here). Gate 1 is `Unit_CanStepExitDir(pCell,
-bFacing)` - R2 still holds the facing at the BL. Gate 2 is occupied AND not large, with **no
-operative test at all**. `Map_pMeleeTarget` (renamed from `unk_128A48`; all six references in the
-binary are inside this function) is stored at 0x17C64 **before** gate 2, so it keeps the
-candidate's possibly NULL occupant on a failed gate.
-
-Success: `Map_nMeleeCellX/Y/Layer` = the **candidate** coordinates, `Tact_EnqueueActionOrStatus205
-(pSelUnit, Map_pMeleeTarget, pSelWeapon, anActionCost[6], 6)`, then the kick. Any failure joins at
-0x17D0C and pushes record 35 then record 36, unforced.
-
-### Original findings recorded (5 ledger rows)
-
-- 0x15424 - residue: with `nZ == 0` the branch skips the cell-below computation and loads an
-  uninitialised stack slot into R7. Every later use is gated on `nZ > 0`, so it is dead, not dangerous.
-- 0x151F0 - the map-click melee gate refuses **operative** occupants while
-  `TactAction_ConfirmMeleeMode6` does not test operativeness at all. Two entry points to the same
-  mode-4/6 attack family, different acceptance rules. Reproduced as-is.
-- 0x15324 - the look control is armed before the eight-target cap is tested, so an over-cap click
-  still re-arms it.
-- 0x18260 - `TactAction_ConfirmSpecial9` pushes records 11 and 12 (`unk_B419F`, `unk_B426C`), not
-  the out-of-ammo record. The port pushed its out-of-ammo constant twice; corrected.
-- 0x17790 - the out-of-ammo pointer is `aTextRecs + 1230` = record 6 ("weapon not charged"), not
-  record 0 ("not used"). `PUFO_TXT_OUT_OF_AMMO` was 0; corrected to 6 and now asserted.
-
-### Deviations
-
-- `Unit_PathToCell` (0x2c2a8) is unported, so the latch-0 move tail runs through a `pfnPathToCell`
-  seam on `MapClickCtx`. `Ui_ConfirmMeleeMode6` takes `MapGeom` and the cell lookup directly.
-- The port NULL-guards `Map.pSelUnit`, its cell, the cursor grid slot and the walked cell; the
-  original dereferences all four.
-- The cost/enabled index is bounded to 0..11 (`Click_ModeInRange`); the original indexes
-  `Map + 4*mode + 0x4E4C` with no test, which would read past `anActionCost` at mode 12.
-- The three enqueue helpers return false where the original pushes record 1 itself, so the push is
-  done at the call site here. `Ui_ConfirmFireBurst` (0x18774) still does not push it - recorded as a
-  separate issue in PLAN.md.
-- `MapCell_FloorCellBelow` in `pufo_mapcell.c` now serves both the 0x4AFD0 and the 0x15500 descent;
-  the exclusive variant at 0x4AE8C stays separate because it is a different bound and an original bug.
-
-## The path replay: Unit_PathToCell (0x2c2a8)
-
-`Unit_PathToCell(pMap, nX, nY, nLayer, bFlag)` is the function that actually moves a
-unit. Three call sites reach it: `Tact_HandleMapClick` at 0x1556C,
-`EnemyAi_TryFireOrWander` at 0x4b004, and `Tact_EnemyAiTick` at 0x4d170 and 0x4d5f8.
-It is a flood fill, then a walk back through the directions the fill recorded, then a
-replay that turns the walk into queue entries. Ported in `src/pufo/game/pufo_path.c`.
-
-### The flood fill (0x2c2b0..0x2c35c)
-
-`Map_ComputeReachable` is called with the target coordinates, the seed facing taken
-from `pSelUnit->bFacing` (0x2c34c) and a flag taken from column 0 of the unit type
-table, `g_aUnitTypeRecord[4 * nUnitType]` (0x2c33c). The seed cell is not an
-argument: `Map_ComputeReachable` reads `Map.pSelUnit->pCell` itself (0x2b868,
-0x2b874).
-
-That flag is the interesting one. `Map_ComputeReachable` never uses it - it stores it
-into the global `g_bPathSearchFlag` at 0x10db84 (0x2b850 LDRB, 0x2b860 STRB) and
-`Path_ExpandCell` reads it back at 0x2b6ac. Set, it lifts the gate that refuses to expand a cell with no floor
-sprite. It does **not** touch the +4 surcharge: that is gated on the probe's own
-g_bStepReanchored report (0x2b75c), not on this flag - see the correction in the
-"Unit_CanStepTo (0x27bb8) - ported" section at the end of this file. It is set for unit types 3, 7, 8, 11, 13 and 18 - the same six rows
-`g_aUnitTypeFlag0` marks, and the same six the enemy AI tests before it looks for a
-floor. The port used to hardcode the flag clear, which is why the floor gate was
-invisible in the tests; it is asserted now.
-
-Before the fill, `bFlag` also picks a piece of bookkeeping at `Map_pPathDestUnit`
-(Map+0x150f4, 0x128ab0): with the flag clear the destination cell's occupant is
-stored there (0x2c304..0x2c314), with it set the slot is cleared (0x2c2bc..0x2c2d4).
-That slot is not dead state. `Unit_CanStepTo` reads it back as the one occupant a mover is
-allowed to share a cell with, nine times over, and each read builds the offset as
-`MOV R10,#0x15000 / ORR R10,#0xF4` (0x27cbc, 0x28b3c, 0x28d98, 0x29218, 0x294d0, 0x299cc,
-0x29c44, 0x2a0b0, 0x2a314) instead of the single `0x150F4` immediate 0x2c308 uses - which is why a
-first pass that only followed the immediate called it unread. Hex-Rays renders the reader as
-`pMap->pad86260`, which is how the slot was named before it was understood.
-
-### The walk back (0x2c360..0x2c57c)
-
-`g_nCurLayer` (0x113980, the shared current-layer scratch) is set to the target layer,
-and a destination still at `nPathCost == 0` means there is no path (0x2c388). Slot 0
-of the path array at `Map_apPathCells` (Map+0x4a44, 0x118400) gets the destination and
-`Map_nPathCount` (Map+0x4e44) starts at zero.
-
-Each turn undoes one recorded step. `MapCell.bPathDir` records the direction that
-reached the cell, so the previous cell sits at `(dir + 4) % 8` (0x2c408..0x2c414); a
-recorded vertical step is undone on the layer instead of in the column (0x2c3fc).
-
-Then the layer is re-checked whenever `bFlags29` bit 3 is set (0x2c420) - the bit
-`Path_ExpandCell` writes on every relaxed cell whenever the search flag was clear. A
-horizontal step may really have been taken one layer up or one layer down:
-
-- layer above, tried first and only below layer 3: the cell at the OLD column must
-  have no floor sprite there (0x2c458) and the cell at the NEW column must have a
-  cost (0x2c478);
-- layer below, tried whenever the first probe did not fire: the cell there needs a
-  ceiling sprite whose `iCeilParam` is below -15 (0x2c4d8, 0x2c4e4) and a cost.
-
-The second probe uses the new coordinates only; the first uses the old ones for its
-floor test and the new ones for its cost test.
-
-The cell the undo landed on is appended, and the walk stops at the seed - the cell
-with `nPathCost == 1` (0x2c57c). The bail-out at 0x2c54c gives up past 200 steps, and
-because the store happens before the test, slot 201 is the last one the original ever
-writes.
-
-### The replay (0x2c580..0x2c6b4)
-
-A unit with `bFlags` bit 0 set queues `STAND_FROM_KNEEL` before anything moves
-(0x2c588). The array runs destination-first, so the replay walks it from the last slot
-down and each pair is (cell being left, cell being entered).
-
-The facing for a pair comes from `g_aFacingFromDelta` (0xa7b00, 27 bytes) indexed
-`3 * (3 * dz + dy) + dx + 13` (0x2c61c). The table is the compass facing for every
-delta that has a horizontal component, and differs from it only at the pure vertical
-delta, where it reports 8 for a climb and 9 for a descent. It is the table's only
-reader in the whole binary. A `TURN` is queued only when the facing actually changes,
-and the facing is carried across iterations, so a straight walk pays at most one turn.
-
-`Map_QueueDoorAction` runs for every step with the new facing (0x2c648). Then the
-ENTERED cell's `bPathDir` decides the command: above 7 is a vertical step, otherwise a
-step (0x2c660). For the vertical step the original passes the layer delta as
-`TactState_EnqueueVertStep`'s second argument (0x2c664), and that function stores it
-into the queue entry's `nFacing` slot - the slot the vertical step's draw offset reads
-back as `-2 * nPhaseTick * nFacing` at 0x50FBC. The port's parameter is now named
-`nLayerDelta` for that reason.
-
-The tail is unconditional: `EnqueueEndMark`, `KickQueue`, return 1 (0x2c6a0..0x2c6b4).
-
-### Original findings recorded (6 ledger rows)
-
-- 0x2c54c - the bail-out stores before it tests, so a rejected walk still writes slot 201.
-- 0x2c4e4 - the ceiling-break threshold is -15 here and -23 in `Tact_HandleMapClick`, for the same sprite byte.
-- 0x49ddc - `TactState_EnqueueVertStep`'s second argument is a layer delta stored in the `nFacing` slot.
-- 0x2c308 - `Map_pPathDestUnit` is the swap partner: `Unit_PathToCell` writes it, `Unit_CanStepTo` reads it as the occupant a mover may share a cell with.
-- 0x2b860 - the search flag travels to `Path_ExpandCell` through a global.
-- 0x2c388 - `Map_ComputeReachable`'s return value is discarded in favour of a cost re-read.
-
-### Deviations
-
-- The port returns false where the original would dereference a NULL grid slot or a
-  NULL `pSelUnit` (0x2c304, 0x2c3d8, 0x2c53c, 0x2b874).
-- The port bounds `bPathDir` against the direction table before indexing it (0x2c3e8).
-- `g_nCurLayer` is a local in the port's walk-back. The original's global matters only
-  to `Unit_CanStepTo` and `Map_ProbeStepOccupants`, which the port still injects as the
-  flood fill's step probe and which already receive the layer as an argument.
+
+## EnemyAi_TryFireOrWander (0x4abc8): the low-morale AI
+
+The AI that runs when an alien's morale breaks. A LARGE unit does nothing at all -
+0x4abdc branches straight to the function epilogue, so it does not even push the status
+message, and `Map.pSelWeapon` is not even cleared.
+
+### The choice
+
+`Game_RandU16(2)` is drawn first, then the AI-action pair is raised -
+`pMapTactical->pAiActionUnit = pUnit` (0x4AC04) and `bAiActionActive = 1` (0x4AC1C) -
+and only then does 0x4ac94 choose: `roll == 0` AND a usable one-handed weapon gives the
+random fire burst, anything else gives the weapon-drop-and-wander. The pair is raised on
+BOTH paths, which is why it cannot mean "a wander is running".
+
+A usable weapon (0x4ac24..0x4ac90) is a hand that exists, whose `ObjectRec.bTwoHanded`
+is 0, and which either has ammo or whose `ObjectRec.bAmmoCap` is 255. Left hand first,
+right second; the winner is stored into `Map.pSelWeapon` (0x113A00), which was zeroed at
+0x4AC20. The store happens before the path choice, so a unit that ends up wandering still
+leaves its weapon in `Map.pSelWeapon` - and then, for `nUnitType <= 3`, drops that very
+item into a cell list, leaving the global pointing at an item the unit no longer holds.
+
+Both paths end at 0x4B028 pushing the unit's name through `StatusMsg_Push` with
+`bForce = 0`. The original strcat's `unk_104078` onto the name; that buffer is all zeros
+and its only three references in the whole binary are this call site, so it appends
+nothing.
+
+### The fire burst (0x4aca4..0x4ae28)
+
+`Map.nActionMode = 1`, then `Ui_FillActionCosts`. Shot count is
+`bAmmoCap == 255 ? 3 : min(nAmmo, 3)`; a count of 0 skips the loop but still clears the
+action latch and kicks the queue. Each pass draws `x = nX + rand(5) - 2`,
+`y = nY + rand(5) - 2`, `layer = rand(4)` into three Map scratch globals
+(`Map_nAiFireX/Y/Layer` @ 0x128A20/0x128A24/0x128A28, which have no other reference
+anywhere in the binary) and retries until `Map_IsValidCell` accepts it. Then:
+
+- drawn x is not the shooter's column -> burst at the drawn target;
+- drawn x IS the shooter's column -> the drawn row is replaced by the shooter's own row,
+  and **a shooter not on row 0 jumps back to the draw without spending a shot**
+  (0x4ada4 `BNE loc_4ACE0`, not to the 0x4ae0c decrement), while a shooter on row 0 fires
+  at its own cell.
+
+This is the one place Hex-Rays actively misleads: its pseudocode falls through to the
+decrement, which would fire zero shots where the ARM fires one. The test
+`TestSameColumnRedraw` pins it - one scripted shot, a rejected same-column draw, and the
+shot still lands, with 7 draws consumed (1 roll + 3 + 3).
+
+Each burst takes `nTuCost = Map.anActionCost[mode]` (Map+0x4E4C) and
+`nArg = Map.anActionEnabled[mode]` (Map+0x4E7C) - the same two tables
+`Tact_TryFireMode4` and `Input_OnPointerUp` read, and the same pair
+`Tact_TryFireMode4`'s UI path passes. The AI ignores the enqueue's result: a unit that
+cannot afford the burst gets nothing queued, and the latch clear, the queue kick and the
+name push still happen.
+
+### The wander (0x4ae2c..0x4b024)
+
+`nUnitType <= 3` first drops both hands. From the unit's own layer it walks DOWN while
+`MapCell.pFloorSpr == NULL`; `SUB R7,#1 / CMP R7,#0 / BGT` at 0x4ae84-0x4ae90 means
+layers nZ..1 are tested and **layer 0 is reached untested**. Both items go into that cell
+through `MapCell_ListInsertByPri`, the hands are cleared, `Unit_UpdateAnimPose` runs.
+Types 4..23 skip the whole block, including the pose refresh.
+
+Then it draws `x = nX + rand(20) - 10`, `y = nY + rand(20) - 10` and retries until
+`Map_IsValidCell(map, x, y, 0)` accepts it - the bounds test is always against layer 0.
+The candidate cell is taken at the UNIT'S OWN layer. If `g_aUnitTypeFlag0[type] == 0` the
+candidate is walked DOWN while `pFloorSpr == NULL`, and this walk's `SUBS / BPL` at
+0x4afcc-0x4afd0 tests layers nZ..0 inclusive - one layer deeper than the drop walk in the
+same function. The draw is retried while the candidate is the unit's own cell or
+`MapCell_HasOccupant` says it is occupied.
+
+Finally `Unit_PathToCell(map, cell->nX, cell->nY, cell->nZ, 1)`. On failure the unit is
+left with `uTu = 0` and `bAiActionActive` is cleared (0x4b00c..0x4b024); on success the
+flag stays up and the queue walker's completion tail (0x544D8) is what clears it.
+
+### Original bugs found (7 ledger rows)
+
+Four unguarded dereferences: the drop descent loads `apCells[layer][y][x]` and reads its
+`pFloorSpr` with no NULL test (0x4ae74), the wander walk does the same (0x4afbc), both
+hand drops pass that cell to `MapCell_ListInsertByPri`, which dereferences
+`pCell->pItemList` (0x4aec4), and `byte_A7B80` is indexed by `nUnitType` with no bounds
+test (0x4af8c). Three behavioural ones: the drop descent tests layers nZ..1 while the
+floor walk in the same function tests nZ..0 (0x4ae8c); the same-column redraw that spends
+no shot and lets a row-0 shooter fire at its own cell (0x4ada4); and `Map.pSelWeapon`
+left pointing at an item the wander path just dropped (0x4ac90).
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8) is unported - it needs `Unit_CanStepTo` (0x27bb8) - so it is
+  a hook on `EnemyAiActCtx`, as is `Ui_FillActionCosts` (the port's version takes an
+  explicit env the AI does not own) and `StatusMsg_Push` (which needs a `StatusStack`).
+- The port guards the four dereferences the original does not, and bounds the
+  `nUnitType` index against `PUFO_UNIT_TYPE_COUNT`.
+- The three draw scratch globals are kept as locals, which is faithful: they have no
+  reader outside this function.
+- The name copy is bounded to `Soldier.szName` (40) and to the 200-byte message buffer;
+  the original's `LDRSB` loop has neither bound.
+
+## Tact_EnemyAiTick (0x4cbe0): the enemy AI driver
+
+`Tact_ProcessActionPhase` reaches this through `TurnHooks.pfnEnemyAiTick` when the context
+is busy and the phase is 3. It handles **one** enemy per call and ends the enemy turn when
+nothing was queued. Ported as `Tact_EnemyAiTick` in `src/pufo/game/pufo_enemyai.c`.
+
+### Entry and unit selection (0x4cbf4..0x4cc5c)
+
+`STRB R0,[R1,#0x100]` clears a **byte** at `pTactCtx272+0x100`. Hex-Rays renders the field as
+`Soldier *pSavedFocus` because every read is `LOBYTE(pCtx->pSavedFocus)`, but all seven
+accesses in the binary are 0/1 byte stores or tests (0x4CC00, 0x4D688, 0x4D84C, 0x4D86C,
+0x4D878, 0x4D888, and the test at 0x4D920) and nothing ever loads it as an address. The unit
+the enemy turn restores is at +0x104, which is what `Tact_EndEnemyTurn` reads. The port names
+the field `bAiFocusSaved`.
+
+`CMP R3,#0; BLS loc_4D920` sends an empty enemy roster straight to the tail. Otherwise the
+roster is walked in order and the first unit passing every gate acts:
+
+| gate | ARM | effect |
+|---|---|---|
+| `nAiTick > 15` | 0x4CC34 `CMP R0,#0xF; BGT` | skipped **without** `++nAiTick`, so it stays skipped forever |
+| `bAiDone` | 0x4CC48 `CMP R3,#0; BNE` | skipped, after `++nAiTick` |
+| `uTu >= 15` | 0x4CC54 `CMP R3,#0xF; MOVCC/STRBCC` | this unit acts |
+| otherwise | same | `bAiDone = 1`, skipped |
+
+### What the acting unit does
+
+1. `Unit_UpdateVisibility(pUnit)`, then `pTrackUnit = NULL` unless it already points at this
+   unit (0x4CC78).
+2. `bMorale < 20 && nUnitType > 3` hands the unit to the panic AI: `Tact_SelectUnit`,
+   `EnemyAi_TryFireOrWander`, focus saved, `bAiDone = 1`, tail.
+3. Up to three draws of `apMultiTargets[rand(nMultiTarget)]`, stopping at the first one that
+   is not large. `nMultiTarget` is read as a **signed** byte (0x4D194 `LDRSB`).
+4. The pick is accepted when it is small, not type 16/17, `rand(5) == 0` and the roster is
+   non-empty (0x4cd60..0x4cda0). Accepted -> the neighbour-melee hand-off below. Otherwise
+   LABEL_24: `nMultiTarget == 0` goes to the fallback move; else `Tact_SelectUnit(self)` and
+   a split on `g_aUnitTypeRecord[4*type + 3]` (`LDRB R3,[R3,#3]` at 0x4CDBC). That column is
+   set for exactly six rows - Chryssalid 0xE, Celacid 0xF, both civilians 0x10/0x11, Silacoid
+   0x13 and Riper 0x14 - and this is its only reader in the whole binary, so the port names it
+   `g_aUnitTypeFlag3`. Those are the units with no weapon to fire and only a melee action.
+
+### The neighbour-melee hand-off (0x4d660..0x4d734)
+
+Another enemy is searched for with `bUnk422 != 0`, `!= self` and `uTu > 15`. Found:
+`Tact_SelectUnit(that unit)`, `Map.pSelWeapon = &TactItem_156910`, mode 4 or 5 by `rand(2)`,
+`Map.nBurstShots = 0`, the three melee-cell globals set to the multi-target's cell, a
+command-18 enqueue against that cell's occupant, then `Map_pSelUnit->uTu >>= 1`
+(`LDRH/LSR#1/STRH` at 0x4d728..0x4d730). Every one of those addresses the neighbour: the unit
+this tick was picked for spends no TU, is not marked done, and is picked again next tick.
+Ledger row 0x4d660.
+
+### The melee branch (0x4cde0..0x4d188)
+
+Three attempts. Each draws a fresh multi-target, loads the cell one row north and the two
+other cells of a large unit's 2x2 footprint (0x4ce50, unguarded), and builds a candidate: the
+cell at the unit's facing delta **on the target's layer**, falling back to the target's own
+cell when that cell is out of bounds or is not occupied by the target (0x4CEC4). Reach is
+`(int)sqrt(dx^2 + dy^2) < 2` from the unit's own cell, or - for a large unit - from any of its
+four footprint cells (0x4D048..0x4D098). On reach: `uTu = 0`, the three melee globals, and a
+command-18 enqueue with mode 13 carrying `&TactItem_156A58`.
+
+On no reach, eight directions are scanned (0x4D09C..0x4D150). The layer is `nZ + 1` when the
+unit's own ceiling sprite has `iCeilParam < -15` (`MOV R6,#0xFFFFFFF1; CMP` at 0x4D0D8),
+otherwise `nZ` - note `Unit_UpdateVisibility` uses the same byte with a **-10** threshold, so
+the two thresholds really differ. An occupant counts when `bStatus == 0` or its type is 16 or
+17. A hit faces the unit and enqueues command 13. Otherwise `Unit_PathToCell(target, bFlag 0)`;
+success ends the tick, failure retries until the three attempts are spent.
+
+### The throw / fire branch (0x4d194..0x4d8b0)
+
+A fresh multi-target and `rand(3)`. The throw needs roll 0, distance <= 10, a non-NULL
+`apBelt[0]` whose object has `nCategory == 3`, and `nUnitType > 3`. It moves the belt item to
+`pHandR` and into `Map.pSelWeapon`, refills the action costs, stores `pHandR` into
+`Map.pSelWeapon` a second time (0x4D818), sets the item's +7 to 0 and +8 to 1, sets action
+mode 11, and enqueues with `Map_nThrowTuCost` / `Map_nThrowArg` - loaded by literal at 0x4D82C
+and 0x4D80C, and just `anActionCost[11]` / `anActionEnabled[11]`.
+
+Otherwise the weapon is the left hand for types > 3 (refusing when it is empty, and leaving
+`Map.pSelWeapon` untouched), or for types <= 3 the last hand holding a one-handed object with
+`nCategory <= 2`, so the right hand wins ties. After `Ui_FillActionCosts` and
+`TactItem_bTryReloadClip`, mode 7 is chosen when the weapon object's `uSortKey == 13`, the
+target is not type 16/17 and the distance is >= 10 - and mode 7 also arms
+`Map.nMultiTargetCount = 1`, `Map.nBurstShots = 1` and `Map.apMultiTargets[0]`. Otherwise mode 1.
+
+The affordability gate is soft-float at 0x4d448 / 0x4d458:
+
+    (double)uTu >= anActionCost[mode] * (2.0 / 3.0) + 8.0
+
+with `0x3FE5555555555555` = 2/3 and `0x4020000000000000` = 8.0, and the charged cost is the
+truncated `(int)(cost * 2/3)`, not the table value. A 26-cost mode therefore needs 26 TU and
+charges 17.
+
+### The fallback move (LABEL_82, 0x4d8b8..0x4d918)
+
+Rank 4 or 8 draws `rand(6)` and keeps it only when it is 1; every other rank draws `rand(3)`.
+A draw of 0 turns the unit through `EnemyAi_EnqueueRandomTurn` and marks it done. Otherwise the
+RMP walk starts at `rand(nRmpCount)` and, because the index is incremented **before** it is
+used (0x4D8F8), that first draw is never itself a candidate - it only picks where the walk
+begins; the index wraps at `nRmpCount - 1`. A node is a candidate when
+`sqrt(dx^2 + dy^2) <= 19.875` (`_led` against `0x403E000000000000`, on the **untruncated**
+sqrt, unlike every reach test above) and the node's byte at +0x1A matches the unit type - the
+original reaches it by casting the node to a `Soldier *` so the read lands on
+`Soldier.nMultiTarget`. On a candidate the unit is selected and `Unit_PathToCell(node, bFlag 1)`
+runs; success saves the focus, failure counts toward a limit of 10, past which the unit is
+marked done. After `nRmpCount` nodes have been scanned the tick moves to the **next** enemy
+unit - the only path that does not end the roster loop.
+
+### The tail (0x4d920)
+
+`pTactCtx272->nPhase = 3`, then `Tact_EndEnemyTurn` only when the +0x100 byte is still 0, then
+`TactState_KickQueue(pMapTactical)`. Because `Tact_EndEnemyTurn` writes phase 0 back, a tick
+where nothing acted leaves the machine at phase 0, and a tick that queued something leaves it
+at 3.
+
+### Original bugs found (3 ledger rows)
+
+- 0x4d660 - the neighbour-melee hand-off described above.
+- 0x4d09c - the eight-direction scan indexes `apCells` with no bounds test at all, unlike the
+  facing-delta lookup at 0x4ce8c, which does call `Map_IsValidCell`.
+- 0x4ce50 - the three footprint cells are loaded the same unguarded way.
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8, unported - it needs `Unit_CanStepTo`, 0x27bb8),
+  `Ui_FillActionCosts`, `Unit_UpdateVisibility` (ported, but it needs a whole `VisCtx`),
+  `AfterEnemyStep` (0x4c4a0, unported) and the clip lookup inside `TactItem_bTryReloadClip`
+  are hooks on `EnemyAiTickCtx`.
+- The port bounds-checks the footprint and eight-direction cell reads and the `nUnitType`
+  index into `g_aUnitTypeFlag3`.
+- The RMP node's role byte is passed to the shared predicate directly instead of through the
+  original's `Soldier *` cast, because `Soldier` shifts on Win64 and the cast would read the
+  wrong byte. `EnemyAi_MultiTargetTypeMatch` and the RMP walk now share one role-based core.
+- `TactCtx272+0x100` is typed `u8 bAiFocusSaved` with 3 pad bytes, not `Soldier *`.
+- `unk_156910`, `unk_156A58` and `unk_156A88` are typed `TactItem` in the IDB and named
+  `TactItem_156910` / `TactItem_156A58` / `TactItem_156A88`: each has a `TactItem_ctor` thunk
+  (0x37124, 0x37134, 0x37088) and `Tact_InitMission` stores an `apObjects` entry into its
+  `pObj` at +0. The port previously modelled them as `ObjectRec **` pointer variables.
+
+## The enemy-turn bracket: BeforeEnemyStep (0x4b9b8), Tact_UpdateUnitControl (0x4a444), AfterEnemyStep (0x4c4a0)
+
+`BeforeEnemyStep` and `AfterEnemyStep` bracket the enemy turn, and both call
+`Tact_UpdateUnitControl` once per unit - which is why the enemy pass runs before the XCom one:
+BeforeEnemyStep clears the idempotence guard byte `Soldier.bControlRecovered` (+0x1B2) for the
+enemy roster at 0x4BB80, AfterEnemyStep for the civilians (0x4C8B0) and the XCom roster
+(0x4C720). Ported as `BeforeEnemyStep`, `Tact_UpdateUnitControl` and `AfterEnemyStep` in
+`src/pufo/game/pufo_turn.c`, driven from `tests/test_turn.c`.
+
+### Tact_UpdateUnitControl (0x4a444..0x4a714)
+
+Guard first (0x4a450): `bControlRecovered` non-zero returns at once, and the function sets it,
+so each unit is processed once per turn. The unit arithmetic - `uHp -= bKneelOrPrimed` (floored
+at 0), `bUnk1037 = 0`, the TU rule (+3 when the cell's `nFlags32` low 3 bits are non-zero, else
+-10 when `uTuSpent >= 10`, else 0, and left alone entirely for a large unit), morale +5 or 100
+from 95 up - is the already-ported `Unit_ApplyControlRecovery`. The original applies morale
+last, at 0x4A714; the port applies it with the rest because nothing in between reads it.
+
+The recovery arm (0x4A4E0..0x4A5A4) needs all of: `uTuSpent < uHp`, `bFlags` bit 0x20 SET, the
+cell unoccupied, `uHp != 0`, not large. It enqueues RECOVER, and for `nUnitType <= 3` pushes
+`szName` + aTextRecs record 39 (male) or 40 (female) as a FORCED status message, then
+`TactState_KickQueue` and `pLinked1040 = 0`.
+
+Both side transfers (0x4A5A8, 0x4A64C) need bit 0x20 CLEAR - the opposite polarity. An
+XCom-side unit of an enemy type becomes an enemy (`bStatus = 1`, `uTu = 0`, appended to
+`apEnemyUnits`, and `Tact_SelectUnit(apXcomUnits[0])` if it was `Map.pSelUnit`); a controlled
+unit of an XCom type returns to `apXcomUnits` and pushes name + record 52 / 53 unprompted.
+`Tact_RemoveUnitFromSideLists` runs first and updates the canonical counts, which the port has
+to do explicitly because `SideLists` carries its counts by value - the same `Fall_SyncCounts`
+pattern.
+
+### BeforeEnemyStep (0x4b9b8..0x4c49c)
+
+Eight steps: clear `pTrackUnit` and the XCom `bUnk1037`; the XCom-base reserve spawn; the enemy
+pass (`bControlRecovered = 0`, `Tact_UpdateUnitControl`, `nAiTick = 0`, with the count re-read
+each iteration); the fire tick over all four layers; clear the flag for civilians then XCom; the
+enemy refill (`uTu = auStat[0]`, `uStunOrArmor = auStat[9]`); clear `bFlags44` bit 0 everywhere;
+`UnitList_ForEachRefresh`.
+
+**The burn run probes against its own axis.** 0x4BC78 multiplies the axis delta by a counter
+running 0, -1, -2, so with the west axis the probe steps EAST over three cells and the forward
+pass then starts at `cell + axisDelta * (nBack + 1)` - two cells east of the burning cell - and
+walks back west across at most 7 cells. `tests/test_turn.c::TestBeforeEnemyStepBurnRun` pins
+this with three layouts that differ only in where the wall gap is.
+
+**The face loop makes six passes over four counters.** Passes 4 and 5 are the west and north
+neighbour cells, gated on that neighbour burning, and both rewrite the slot index (0x4C09C
+`MOV R1, #1`, 0x4C0EC `MOV R1, #2`). They therefore charge the cell's own wall A / wall B
+counter through the same wall sprite - a wall between two burning cells takes double damage -
+and nothing in the loop ever reaches `nPathCost` at +0x14.
+
+**The heat term is `counter + step`, and it is added twice.** 0x4C10C / 0x4C110 build
+`R2 = counter + 20` (or +5), 0x4C15C compares that against `Mc1Rec.bStrength`, 0x4C160 zeroes
+it when the sprite covers it, and 0x4C1F0 stores `counter + R2`. So a sprite absorbs the hit
+whenever `bStrength >= counter + step` - a `bStrength` of 255 always does - and the only
+counters that ever grow belong to faces with no sprite, growing to `2 * counter + step`.
+
+**The countdowns are gated by the burning state.** The `nFlags40` bits 3..6 decrement unless
+zero or already 0xF (0x4C014). If `nFlags32`'s low 3 bits are 0 the cell takes no further
+countdown at all (0x4C038); if they are non-zero but not 4 the face loop is skipped while the
+low 3-bit countdown still runs (0x4C040); at 0 the burning state steps down and the countdown
+re-arms to `rand(2) + 2`.
+
+### AfterEnemyStep (0x4c4a0..0x4c9f8)
+
+`nEnemyUnitCount / 3` random enemies are topped up to `auStat[0] * 0.4` - the constant pair at
+0x4C520 / 0x4C528 is `0x3FD99999` / `0x9999999A`, i.e. 0.4, which Hex-Rays prints as two raw
+halves and reads easily as 0.2. The comparison is `uTu < cap` and the store is `(u16)cap`, so
+the top-up never lowers uTu. Then the proximity tick plus `bFlags44` bit 0 over every cell; the
+right-hand action item of every enemy with `nUnitType > 3` back to `apBelt[0]` with its `bUnk8`
+cleared; `bUnk148 = 0` for every enemy; the XCom refill
+`q = (4 * uInvBurden - 4) / auStat[8]`, `d = (2 * q * auStat[0]) / 10`, `uTu = auStat[0] - d`,
+then `uStunOrArmor += auStat[9] * auStat[8] / (10 * uInvBurden)` capped at `auStat[9]`;
+`Tact_UpdateUnitControl` for XCom then the civilians; the panic AI for every XCom unit under 20
+morale; `Unit_UpdateVisibility` for every enemy; `TactState_KickQueue` and the two refreshes;
+and finally `bUnk1037 = 0` for the XCom roster.
+
+`auStat[8]` is the mean-stun stat. Hex-Rays prints it as `auStat[offsetof(Soldier,
+uStunOrArmor)]`, which reads like `auStat[9]` and is not - the penalty divisor and the stun
+numerator's second factor are different fields.
+
+### Original bugs found (12 ledger rows)
+
+- 0x4C1F0 - the heat term is added to the counter twice, so a face with no sprite grows to
+  `2 * counter + step`.
+- 0x4C09C / 0x4C0EC - the neighbour passes reuse the wall A / wall B counter and sprite.
+- 0x4C158 - a sprite absorbs the hit when `bStrength >= counter + step`, so 255 always absorbs
+  and only sprite-less faces accumulate.
+- 0x4BC78 - the burn-run probe steps against the run direction.
+- 0x4BCD4 / 0x4BE40 - the burn walk dereferences neighbour cell pointers with no null test.
+- 0x4BC88 - `Map_IsValidCell` is called with layer 0 while the index uses the cell's own `nZ`.
+- 0x4BF84 - a negative fire-damage base gets +3 before the shift, so the roll range can exceed
+  the base.
+- 0x4A4FC vs 0x4A5C8 / 0x4A66C - the recovery arm needs `bFlags` bit 0x20 SET, both transfers
+  need it CLEAR.
+- 0x4A604 / 0x4A6A4 - both transfers append at the current roster count with no bound.
+- 0x4A544 - the status message is built in a 52-byte buffer from a 40-byte name plus a
+  200-byte TEXTS record.
+- 0x4C77C - the XCom refill divides by `auStat[8]` and `uInvBurden` with no zero guard, and
+  `4 * uInvBurden - 4` is negative at burden 0.
+- 0x4C014 - BeforeEnemyStep guards the 0x78 countdown against its maximum; GameTick_Step
+  (0x27324) shares the arithmetic with no such guard.
+
+### Deviations
+
+- `MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`,
+  `Unit_UpdateVisibility`, `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`,
+  `EnemyAi_TryFireOrWander` and `Rmp_PickSpawnForUnit` are seams on `EnemyStepCtx`; the app
+  layer owns no `TactTickCtx` yet, so nothing in the app builds the context.
+- The port bounds-checks the burn walk's neighbour cell reads and the countdown's grid slot
+  reads, where the original dereferences them.
+- `Turn_PushUnitNameMsg` truncates instead of overflowing the 52-byte buffer.
+- `AfterEnemyStep` skips both burden terms when the divisor is zero.
+- `MapCell.abFaceDamage` is indexed through the field, not through the original's
+  `pCell + 0x10 + slot`: on Win64 `MapCell`'s widened pointers move that field and a raw offset
+  lands on `pWallSprB`. `Cell_FaceDamage` was removed for the same reason.
+
+## The tactical map click: Tact_HandleMapClick (0x1512c) and TactAction_ConfirmMeleeMode6 (0x17bb8)
+
+Ported in `src/pufo/game/pufo_input.c` (`Tact_HandleMapClick`, `MapClickCtx`) and
+`src/pufo/game/pufo_tactui.c` (`Ui_ConfirmMeleeMode6`). These were the last two addresses
+`audit_names` flagged, so every credited address in the port now has a function behind it.
+
+### Tact_HandleMapClick (0x1512c, 1104 B)
+
+Reached only from `Input_OnAction @ 0x15668`, and only when no UI screen is open.
+
+1. `MapCursor_IsValid @ 0x1513C` on the stored cursor. It checks x and y only - the layer is
+   not checked, so an out-of-range `nLayerScratch` still reaches the grid read.
+2. The cursor cell is `apCells[nLayerScratch-1][nCursorY][nCursorX]`. 0x1519C indexes with base
+   `0x11AF8`, which is `apCells @ 0x15338` minus one 14400-byte layer. Clicking the cell the
+   selected unit already stands on returns immediately (0x151A0).
+3. A switch on `Map_bActionLatch` (Map+0x02), modelled as `TactActionLatch` in the IDB:
+
+   - **1 (0x153B0)** `TactState_EnqueueThrow` at the cursor cell. Cost `anActionCost[nActionMode]`
+     (Map+0x4E4C), argument `anActionEnabled[nActionMode]` (Map+0x4E7C, the adjacent array), then
+     `TactState_KickQueue`.
+   - **2 (0x1535C)** `TactState_EnqueueFireBurst` aimed at the cursor cell, same cost/argument
+     pair, carrying the multi-target list for mode 7, then the same shared kick at 0x153A0.
+   - **3 (0x152E4)** multi-target pick. The look control (`pActiveLookCtl @ 0x1571E4`) is armed
+     first: `x = -(i16)uWidth`, `bEnabled = 1`, sample 14. Then, under the eight-target cap
+     (`CMP #8 / BGE` at 0x15328), `bFlags29 |= 0x40` and the cell is appended. **No queue kick on
+     this arm** - 0x15354 branches straight to the epilogue.
+   - **4 (0x151D4)** the melee confirm. Success needs occupied AND **not operative** AND not
+     large. `Map_nMeleeCellX/Y/Layer` take the **cursor** cell coordinates, command 18 is enqueued
+     at `anActionCost[nActionMode]` with `nActionMode` as the mode, the queue is kicked and the
+     latch is cleared. Failure re-runs the same three tests (0x15284..0x152B0) purely to choose the
+     message: occupied, not operative and large gives record 47; everything else record 7.
+   - **0 / default (0x153F4)** select-or-move, with three exits before the move tail:
+     an operative occupant under the cursor is selected outright (latch cleared first);
+     otherwise, if the cursor cell is above layer 0 and the cell **below** it has a ceiling sprite
+     whose signed `Mc1Rec.iCeilParam` (+0x24) is **strictly below -23**, the unit under that
+     ceiling is selected - unless it exists and is *not* operative, which stops the click entirely
+     (0x1549C); otherwise an inoperative occupant whose `Soldier.bUnk148` (+0x94) is SET stops the
+     click (0x154DC); otherwise a selected unit whose type has `g_aUnitTypeFlag0` clear walks DOWN
+     while `pFloorSpr == NULL` (0x15500..0x1554C, inclusive `SUBS / BPL`, layers nZ..0), and
+     `Unit_PathToCell(cell, bFlag = 1)` runs only when the walk landed on a different cell from
+     `pSelUnit->pCell` (0x15550).
+
+### TactAction_ConfirmMeleeMode6 (0x17bb8, 412 B)
+
+Action button 39, installed by `Tact_InitUiControls @ 0x3B608`. Action mode 6, the melee /
+paralyzer attack - its refusal pair is TEXTS[35]+TEXTS[36], "to use the paralyzer / aim it at an
+enemy".
+
+Sample 17, `Map_nActionMode = 6` committed before any gate. The candidate cell is
+`pSelUnit->pCell` shifted by `aDirDeltaXY[3*bFacing]` on the unit's own layer (bFacing is 0..7, so
+the table's two vertical entries are unreachable here). Gate 1 is `Unit_CanStepExitDir(pCell,
+bFacing)` - R2 still holds the facing at the BL. Gate 2 is occupied AND not large, with **no
+operative test at all**. `Map_pMeleeTarget` (renamed from `unk_128A48`; all six references in the
+binary are inside this function) is stored at 0x17C64 **before** gate 2, so it keeps the
+candidate's possibly NULL occupant on a failed gate.
+
+Success: `Map_nMeleeCellX/Y/Layer` = the **candidate** coordinates, `Tact_EnqueueActionOrStatus205
+(pSelUnit, Map_pMeleeTarget, pSelWeapon, anActionCost[6], 6)`, then the kick. Any failure joins at
+0x17D0C and pushes record 35 then record 36, unforced.
+
+### Original findings recorded (5 ledger rows)
+
+- 0x15424 - residue: with `nZ == 0` the branch skips the cell-below computation and loads an
+  uninitialised stack slot into R7. Every later use is gated on `nZ > 0`, so it is dead, not dangerous.
+- 0x151F0 - the map-click melee gate refuses **operative** occupants while
+  `TactAction_ConfirmMeleeMode6` does not test operativeness at all. Two entry points to the same
+  mode-4/6 attack family, different acceptance rules. Reproduced as-is.
+- 0x15324 - the look control is armed before the eight-target cap is tested, so an over-cap click
+  still re-arms it.
+- 0x18260 - `TactAction_ConfirmSpecial9` pushes records 11 and 12 (`unk_B419F`, `unk_B426C`), not
+  the out-of-ammo record. The port pushed its out-of-ammo constant twice; corrected.
+- 0x17790 - the out-of-ammo pointer is `aTextRecs + 1230` = record 6 ("weapon not charged"), not
+  record 0 ("not used"). `PUFO_TXT_OUT_OF_AMMO` was 0; corrected to 6 and now asserted.
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8) is unported, so the latch-0 move tail runs through a `pfnPathToCell`
+  seam on `MapClickCtx`. `Ui_ConfirmMeleeMode6` takes `MapGeom` and the cell lookup directly.
+- The port NULL-guards `Map.pSelUnit`, its cell, the cursor grid slot and the walked cell; the
+  original dereferences all four.
+- The cost/enabled index is bounded to 0..11 (`Click_ModeInRange`); the original indexes
+  `Map + 4*mode + 0x4E4C` with no test, which would read past `anActionCost` at mode 12.
+- The three enqueue helpers return false where the original pushes record 1 itself, so the push is
+  done at the call site here. `Ui_ConfirmFireBurst` (0x18774) still does not push it - recorded as a
+  separate issue in PLAN.md.
+- `MapCell_FloorCellBelow` in `pufo_mapcell.c` now serves both the 0x4AFD0 and the 0x15500 descent;
+  the exclusive variant at 0x4AE8C stays separate because it is a different bound and an original bug.
+
+## The path replay: Unit_PathToCell (0x2c2a8)
+
+`Unit_PathToCell(pMap, nX, nY, nLayer, bFlag)` is the function that actually moves a
+unit. Three call sites reach it: `Tact_HandleMapClick` at 0x1556C,
+`EnemyAi_TryFireOrWander` at 0x4b004, and `Tact_EnemyAiTick` at 0x4d170 and 0x4d5f8.
+It is a flood fill, then a walk back through the directions the fill recorded, then a
+replay that turns the walk into queue entries. Ported in `src/pufo/game/pufo_path.c`.
+
+### The flood fill (0x2c2b0..0x2c35c)
+
+`Map_ComputeReachable` is called with the target coordinates, the seed facing taken
+from `pSelUnit->bFacing` (0x2c34c) and a flag taken from column 0 of the unit type
+table, `g_aUnitTypeRecord[4 * nUnitType]` (0x2c33c). The seed cell is not an
+argument: `Map_ComputeReachable` reads `Map.pSelUnit->pCell` itself (0x2b868,
+0x2b874).
+
+That flag is the interesting one. `Map_ComputeReachable` never uses it - it stores it
+into the global `g_bPathSearchFlag` at 0x10db84 (0x2b850 LDRB, 0x2b860 STRB) and
+`Path_ExpandCell` reads it back at 0x2b6ac. Set, it lifts the gate that refuses to expand a cell with no floor
+sprite. It does **not** touch the +4 surcharge: that is gated on the probe's own
+g_bStepReanchored report (0x2b75c), not on this flag - see the correction in the
+"Unit_CanStepTo (0x27bb8) - ported" section at the end of this file. It is set for unit types 3, 7, 8, 11, 13 and 18 - the same six rows
+`g_aUnitTypeFlag0` marks, and the same six the enemy AI tests before it looks for a
+floor. The port used to hardcode the flag clear, which is why the floor gate was
+invisible in the tests; it is asserted now.
+
+Before the fill, `bFlag` also picks a piece of bookkeeping at `Map_pPathDestUnit`
+(Map+0x150f4, 0x128ab0): with the flag clear the destination cell's occupant is
+stored there (0x2c304..0x2c314), with it set the slot is cleared (0x2c2bc..0x2c2d4).
+That slot is not dead state. `Unit_CanStepTo` reads it back as the one occupant a mover is
+allowed to share a cell with, nine times over, and each read builds the offset as
+`MOV R10,#0x15000 / ORR R10,#0xF4` (0x27cbc, 0x28b3c, 0x28d98, 0x29218, 0x294d0, 0x299cc,
+0x29c44, 0x2a0b0, 0x2a314) instead of the single `0x150F4` immediate 0x2c308 uses - which is why a
+first pass that only followed the immediate called it unread. Hex-Rays renders the reader as
+`pMap->pad86260`, which is how the slot was named before it was understood.
+
+### The walk back (0x2c360..0x2c57c)
+
+`g_nCurLayer` (0x113980, the shared current-layer scratch) is set to the target layer,
+and a destination still at `nPathCost == 0` means there is no path (0x2c388). Slot 0
+of the path array at `Map_apPathCells` (Map+0x4a44, 0x118400) gets the destination and
+`Map_nPathCount` (Map+0x4e44) starts at zero.
+
+Each turn undoes one recorded step. `MapCell.bPathDir` records the direction that
+reached the cell, so the previous cell sits at `(dir + 4) % 8` (0x2c408..0x2c414); a
+recorded vertical step is undone on the layer instead of in the column (0x2c3fc).
+
+Then the layer is re-checked whenever `bFlags29` bit 3 is set (0x2c420) - the bit
+`Path_ExpandCell` writes on every relaxed cell whenever the search flag was clear. A
+horizontal step may really have been taken one layer up or one layer down:
+
+- layer above, tried first and only below layer 3: the cell at the OLD column must
+  have no floor sprite there (0x2c458) and the cell at the NEW column must have a
+  cost (0x2c478);
+- layer below, tried whenever the first probe did not fire: the cell there needs a
+  ceiling sprite whose `iCeilParam` is below -15 (0x2c4d8, 0x2c4e4) and a cost.
+
+The second probe uses the new coordinates only; the first uses the old ones for its
+floor test and the new ones for its cost test.
+
+The cell the undo landed on is appended, and the walk stops at the seed - the cell
+with `nPathCost == 1` (0x2c57c). The bail-out at 0x2c54c gives up past 200 steps, and
+because the store happens before the test, slot 201 is the last one the original ever
+writes.
+
+### The replay (0x2c580..0x2c6b4)
+
+A unit with `bFlags` bit 0 set queues `STAND_FROM_KNEEL` before anything moves
+(0x2c588). The array runs destination-first, so the replay walks it from the last slot
+down and each pair is (cell being left, cell being entered).
+
+The facing for a pair comes from `g_aFacingFromDelta` (0xa7b00, 27 bytes) indexed
+`3 * (3 * dz + dy) + dx + 13` (0x2c61c). The table is the compass facing for every
+delta that has a horizontal component, and differs from it only at the pure vertical
+delta, where it reports 8 for a climb and 9 for a descent. It is the table's only
+reader in the whole binary. A `TURN` is queued only when the facing actually changes,
+and the facing is carried across iterations, so a straight walk pays at most one turn.
+
+`Map_QueueDoorAction` runs for every step with the new facing (0x2c648). Then the
+ENTERED cell's `bPathDir` decides the command: above 7 is a vertical step, otherwise a
+step (0x2c660). For the vertical step the original passes the layer delta as
+`TactState_EnqueueVertStep`'s second argument (0x2c664), and that function stores it
+into the queue entry's `nFacing` slot - the slot the vertical step's draw offset reads
+back as `-2 * nPhaseTick * nFacing` at 0x50FBC. The port's parameter is now named
+`nLayerDelta` for that reason.
+
+The tail is unconditional: `EnqueueEndMark`, `KickQueue`, return 1 (0x2c6a0..0x2c6b4).
+
+### Original findings recorded (6 ledger rows)
+
+- 0x2c54c - the bail-out stores before it tests, so a rejected walk still writes slot 201.
+- 0x2c4e4 - the ceiling-break threshold is -15 here and -23 in `Tact_HandleMapClick`, for the same sprite byte.
+- 0x49ddc - `TactState_EnqueueVertStep`'s second argument is a layer delta stored in the `nFacing` slot.
+- 0x2c308 - `Map_pPathDestUnit` is the swap partner: `Unit_PathToCell` writes it, `Unit_CanStepTo` reads it as the occupant a mover may share a cell with.
+- 0x2b860 - the search flag travels to `Path_ExpandCell` through a global.
+- 0x2c388 - `Map_ComputeReachable`'s return value is discarded in favour of a cost re-read.
+
+### Deviations
+
+- The port returns false where the original would dereference a NULL grid slot or a
+  NULL `pSelUnit` (0x2c304, 0x2c3d8, 0x2c53c, 0x2b874).
+- The port bounds `bPathDir` against the direction table before indexing it (0x2c3e8).
+- `g_nCurLayer` is a local in the port's walk-back. The original's global matters only
+  to `Unit_CanStepTo` and `Map_ProbeStepOccupants`, which the port still injects as the
+  flood fill's step probe and which already receive the layer as an argument.
 
 ## The step probe: Map_ProbeStepOccupants (0x2778c)
 
@@ -15225,10 +15225,11 @@ bMapSelectionFlag picks the arm, and both arms fall into the same tail.
 - 0x8490C, the selection arm: line 0 colour SLOT 0 is the strateg index, [0x187054] the ship index,
   Ship_LaunchIntercept at 0x84930 (bIntercepting = 1, bAtBase = 0, bWeaponsHot = 1, a fresh travel leg
   to the target), then bMapSelectionFlag = 0 at 0x84938. The clock is untouched on this arm.
-- 0x8469C, the recentre arm: GameTime_Set5Sec first. The half-extents are CEILINGS -- 0x846B4..0x846D8
-  is MOVS / ADMI / ASR #1, which adds 1 only when the extent is non-zero, so a 401-wide map centres at
-  201 and not 200. The shipped 400x400 map is even and cannot show the difference; the port keeps the
-  ceiling and a 401x401 case proves it.
+- 0x8469C, the recentre arm: GameTime_Set5Sec first. The half-extents are plain C halves: 0x846B4..0x846D8
+  is MOVS / ADDMI #1 / ASR #1, and ADDMI (word 0x42833001) fires only when the tested value is NEGATIVE, so
+  a non-negative extent is halved by `n >> 1` and the +1 only gives a negative extent C's round-toward-zero.
+  A 401-wide map centres at 200, the same half a 400-wide map gives. CORRECTION: this unit first read the
+  triple as a ceiling and the port implemented ceil; unit 82 fixed that -- see the correction note there.
 - 0x846DC and 0x84700 read colour SLOT 0 of line 0 TWICE, so nX (item + 4) and nY (item + 8) come from
   the SAME strateg entry. Two identical UiPanel_GetLineColor / PtrArray_Get pairs, not two different
   items.
@@ -15263,7 +15264,7 @@ plus a function comment at 0x84688, one at the Geoscape_Draw crosshair blit (0x8
 of the three globals.
 
 35 new checks in tests/test_geoscape.c: the selection arm on a two-craft fixture, the recentre at zoom
-mode 0/1/2, both nScrollY replace arms, the strip-height replace, the ceil halves on a 401x401 view, and
+mode 0/1/2, both nScrollY replace arms, the strip-height replace, the plain halves on a 401x401 view (401 / 2 is 200), and
 the single wrap on a 100x100 view.
 
 ## Unit 81 -- StrategList_ProcessEvents @ 0x7FCB0 (4,904 B) + Strateg_ConfirmInterceptTarget @ 0x7FB98 (280 B)
@@ -15333,10 +15334,12 @@ Both are the two remaining unported leaves of Geoscape_DrawScreen, so they were 
 
 ### Smap_DrawStrategIcons @ 0x822c4 -> Smap_DrawStrategIcons
 
-- The two map half-extents are CEILING halves, not plain halves. The ARM triple at 0x822EC..0x8231C is
-  MOVS / ADDMI R3,R3,#1 / ASR #1: the +1 is skipped only when the size is 0, so it is
-  (n != 0 ? n + 1 : 0) / 2 - PUFO_RADAR_HALF_SCREEN_{X,Y}. Hex-Rays renders the same triple as a plain
-  `/ 2`, which is wrong for odd sizes; the same trap sits at 0x846B4, 0x6C1A4 and 0x5EB44.
+- The two map half-extents are plain C halves. The ARM triple at 0x822EC..0x8231C is
+  MOVS / ADDMI R3,R3,#1 / ASR #1 (the middle word is 0x42833001), and ADDMI is add-if-MINUS: the +1 is
+  skipped for every non-negative value, so a positive extent is halved by plain `n >> 1` and the +1 exists
+  only to make a negative extent round toward zero the way C division does ((-5 + 1) >> 1 == -2 == -5 / 2).
+  nHalfW = nMapW / 2 - 120, which is exactly what Hex-Rays renders. The identical encoding sits at
+  0x846B4, 0x6C1A4 and 0x5EB44.
 - 0x82318 MOV R0, #0x20 forces palette slot 32 into Map_nGlyphPalBase (0x82328 repeats it after the
   empty-list test), and the Font_DrawGlyph nPal argument is R9 = 0. PUFO_GLYPH_PAL_STRATEG_ICONS records
   both. mapbits.pal is palette slot 32 in main.dat, which cross-confirms the value.
@@ -15405,8 +15408,21 @@ Both are the two remaining unported leaves of Geoscape_DrawScreen, so they were 
   0x159608, with nTotalSec at 0x159618 and the pause byte at 0x15961C.
 - Function comments added at 0x822c4, 0x5c5c8 and 0x159608.
 
-51 new checks in tests/test_geoscape.c (30 for the icons, 21 for the clock), all on the real 240x320 surface
-with the real mapbits sprites and the real font: the ceiling halves, the wrap boundary at exactly the map
+### Correction this unit forced: the halving triple is C division, not a ceiling
+
+Three earlier units recorded `MOVS / ADDMI #1 / ASR #1` as a CEILING half -- the radar backdrop write-up,
+the map click at 0x84688 (unit 80) and this one. It is not a ceiling. ADDMI is add-if-minus, so the +1 is
+skipped for every NON-NEGATIVE value: a positive extent is halved by plain `n >> 1`, and the +1 is the
+compiler restoring C's round-toward-zero for a negative one. Hex-Rays' `/ 2` is faithful here, and the
+radar backdrop port already had it right. The map click and the icon pass carried the ceiling, so on an odd
+map size the view and every strateg icon sat one pixel off. Both are fixed to `n / 2`, the 401x401 recentre
+test now asserts 200 rather than 201, and a new 401x401 icon check pins the same reading in the draw. The
+IDB comments at 0x822c4, 0x6c348 and 0x8c698 are corrected and a line comment now sits at each of the four
+halving sites (0x5EB44, 0x6C1A4, 0x822EC, 0x846B4).
+
+52 new checks in tests/test_geoscape.c (31 for the icons, 21 for the clock), all on the real 240x320 surface
+with the real mapbits sprites and the real font: the plain halves (401 halves to 200, not 201), the wrap
+boundary at exactly the map
 size, each type's glyph index against a reference drawn by Font_DrawGlyph directly, the zoom scaling on both
 axes, the blank +6 frame, the palette-slot-32 dependency, the digit-pad origins, the skipped day-tens blit,
 the weekday centring and the month/day separator.

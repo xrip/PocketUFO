@@ -3244,10 +3244,10 @@ void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv);
  *   Clear (0x8469C): GameTime_Set5Sec, then the view is recentred on the strateg item that colour slot 0
  *   names. Both GetLineColor calls read SLOT 0 (0x846DC and 0x84700), so it is ONE item whose nX and nY are
  *   used -- not the pair the two reads look like.
- *     - v3 = ceil(nMapW / 2) - 120 and v4 = ceil(nMapH / 2) - 160. 0x846B4..0x846D8 is MOVS / ADMI /
- *       ASR #1: the +1 is skipped only when the extent is 0, so the half is a CEILING. The shipped
- *       400x400 map is even and cannot tell this from n / 2; a 401x401 view centres one pixel further
- *       out and the port keeps the ceiling.
+ *     - v3 = nMapW / 2 - 120 and v4 = nMapH / 2 - 160. 0x846B4..0x846D8 is MOVS / ADDMI #1 / ASR #1,
+ *       and ADDMI fires only on a NEGATIVE value: for a non-negative extent nothing is added and the
+ *       half is plain `n >> 1`, while the +1 only makes a negative extent round toward zero the way C
+ *       division does. It is NOT a ceiling -- an earlier reading of this triple got that wrong.
  *     - Zoom unscale: mode 1 multiplies both coordinates by 1/1.333 and mode 2 by 1/1.694 -- the exact
  *       reciprocals of the STRATEG_SCALE_MODE1/2 pair StrategList_AddItem scales OUT with (pool words
  *       0x3FE80189_5077D685 and 0x3FE2E3E4_31916105). Mode 0 leaves them alone.

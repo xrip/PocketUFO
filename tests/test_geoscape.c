@@ -1726,7 +1726,10 @@ static void TestSmapPointerUp(void)
     CheckEqI32(nCrossY, 230, "and the crosshair y is measured against the REPLACED scroll");
     pEnt[1]->nY = 250;
 
-    /* Odd extents: the original halves with ceil, so a 401-wide map centres one pixel further out. */
+    /* Odd extents. 0x846B4..0x846D8 is MOVS / ADDMI #1 / ASR #1, and ADDMI (bytes 01 30 83 42) fires
+     * only when the tested value is NEGATIVE: a non-negative extent is halved by plain `n >> 1`, and
+     * the +1 exists only to make a negative extent round toward zero like C division. So 401 halves to
+     * 200, NOT 201, and an odd map centres exactly where an even one of the same integer half does. */
     memset(&view, 0, sizeof(view));
     view.nMapW = 401;
     view.nMapH = 401;
@@ -1735,9 +1738,9 @@ static void TestSmapPointerUp(void)
     lines.abLineFlags[0] = 18;
     lines.anColor[0][0] = 1;
     Smap_OnPointerUp(&upEnv);
-    CheckEqI32(view.nScrollX, 99, "ceil(401/2) - 120 is 81, so nScrollX is 99 and not 100 (0x846C4)");
-    CheckEqI32(view.nScrollY, 49, "  and ceil(401/2) - 160 is 41, so nScrollY is 49 and not 50 (0x846D8)");
-    CheckEqI32(nCrossY, 160, "the crosshair y stays the fixed 160 because both halves grew together");
+    CheckEqI32(view.nScrollX, 100, "401/2 - 120 is 80, not ceil's 81, so nScrollX is 100 (0x846C4)");
+    CheckEqI32(view.nScrollY, 50, "  and 401/2 - 160 is 40, not ceil's 41, so nScrollY is 50 (0x846D8)");
+    CheckEqI32(nCrossY, 160, "the crosshair y is still the fixed 160 (nY - nScrollY - nHalfH)");
 
     /* A small map: the crosshair y wraps once by nMapH and the x is 120 - nMapW. */
     memset(&view, 0, sizeof(view));
@@ -6363,7 +6366,7 @@ static void TestDrawStrategIcons(void)
         Check(GdCount(20, 20, GD_BOX, GD_BOX) > 0, szMsg);
     }
 
-    /* 400x400 map, no scroll: half extents ceil(400/2) - 120 = 80 and - 160 = 40, so the map
+    /* 400x400 map, no scroll: half extents 400/2 - 120 = 80 and - 160 = 40, so the map
      * coordinate (180, 140) lands at screen (100, 100). */
     g_siEnv.nAnimPhase = 0;
 
@@ -6375,6 +6378,17 @@ static void TestDrawStrategIcons(void)
                "the pass forces palette slot 32, which is mapbits.pal");
     CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "a type-3 entry draws mapbits + anim + 8");
     Check(GdCount(100, 100, GD_BOX, GD_BOX) > 0, "and the glyph really paints pixels");
+
+    /* Odd extents pin the halving itself. 0x822EC..0x8231C is MOVS / ADDMI #1 / ASR #1 (the middle
+     * word is 0x42833001), and ADDMI fires only when the tested value is NEGATIVE, so 401 halves to
+     * 200 -- exactly the half a 400 map gives. A ceiling reading would land the glyph at (101, 101)
+     * and this hash would not match. */
+    SiFixture(401, 401);
+    g_siItem.nType = 3; g_siItem.nX = 180; g_siItem.nY = 140;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 8));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "401 halves to 200, not ceil's 201, so an odd map centres where 400 does");
 
     SiFixture(400, 400);
     g_siItem.nType = 3; g_siItem.nX = 180; g_siItem.nY = 140;

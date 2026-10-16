@@ -231,14 +231,20 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13941**. Coverage as of the latest commit: **919 / 1103
+Test checks run across the 60 suites: **13942**. Coverage as of the latest commit: **919 / 1103
 functions (83.3%)**, **496036 / 598792 bytes (82.8%)**. This unit ported the two leaves that were still
 missing from `Geoscape_DrawScreen` — `Smap_DrawStrategIcons` (0x822c4, 1,060 B), the pass that draws every
 strateg entry as a mapbits sprite, and `Geoscape_DrawClockPads` (0x5c5c8, 2,168 B), the date/time strip —
-so the geoscape draw itself now has no unported callee left in it. **The ceiling half appears a fourth
-time, and Hex-Rays still flattens it.** 0x822EC..0x8231C is `MOVS` / `ADDMI R3,R3,#1` / `ASR #1`, i.e.
-`(n != 0 ? n + 1 : 0) / 2 - half_screen`; the pseudocode writes a plain `/ 2`, which is wrong for every odd
-map size, and the same trap sits at 0x846B4, 0x6C1A4 and 0x5EB44. **What only the ARM fixes.** 0x82318
+so the geoscape draw itself now has no unported callee left in it.
+**It also corrected a reading this project had wrong.** `MOVS / ADDMI R3,R3,#1 / ASR #1` (the middle word
+is `0x42833001`) had been recorded three times as a **ceiling** half, and the map click (unit 80) and this
+icon pass both implemented `ceil(n/2)`. ADDMI is add-if-**minus**: the +1 is skipped for every
+non-negative value, so a positive extent is halved by plain `n >> 1` and the +1 only gives a negative
+extent C's round-toward-zero (`(-5 + 1) >> 1 == -2 == -5 / 2`). Hex-Rays' `/ 2` was faithful; the port's
+ceil was not, and on an odd map size the view and every strateg icon sat one pixel off. Both sites now use
+`n / 2`, the 401x401 recentre test asserts 200 instead of 201, a new 401x401 icon check pins the reading in
+the draw, and the IDB carries the correction at 0x822c4 / 0x6c348 / 0x8c698 plus a line comment at each of
+the four halving sites (0x5EB44, 0x6C1A4, 0x822EC, 0x846B4). **What only the ARM fixes.** 0x82318
 `MOV R0, #0x20` forces palette slot **32** into `Map_nGlyphPalBase` while the `Font_DrawGlyph` nPal argument
 stays R9 = 0 — and `mapbits.pal` is palette slot 32 in main.dat, so the two confirm each other. Zoom scales
 **both** axes (1/1.333, 1/1.694). The world→screen wrap is one conditional subtract per axis with a `>` test
@@ -258,8 +264,9 @@ time. Weekday names are TEXTS[1244..1250], the day/month separator TEXTS[1251], 
 the weekday is centred (`124 - width / 2` at 0x5C9B0) while the month sits at a fixed 130,287. **One
 deviation recorded, not hidden:** the original copies a TEXTS record into a 52-byte stack buffer
 (`psz[52]` at 0x5C5AC) with an unbounded byte loop; the port caps it at 51 + NUL, and that is not a ledger
-row because the overflow is unreachable with the shipped data. 51 new checks, 8 IDB renames, 6 size fixes
-(0x186BBC, 0x186BF0, 0x186C1C, 0x186C20, 0x186E40, 0x159618), 3 comments, 0 new ledger rows. The port's own
+row because the overflow is unreachable with the shipped data. 52 new checks, 8 IDB renames, 6 size fixes
+(0x186BBC, 0x186BF0, 0x186C1C, 0x186C20, 0x186E40, 0x159618), 3 function comments, 4 halving-site comments
+and 3 corrected comments, 0 new ledger rows. The port's own
 clock-block claim was wrong too: the block is `gUiRootPanel(0x158890) + 0xBE4 + 4 * 101 = 0x159608`, not the
 0x158A14 `pufo_clock.h` said, so `nTotalSec` is 0x159618 and the pause byte 0x15961C.
 Unit 81 ported the geoscape event pass —
@@ -288,8 +295,9 @@ installs next to unit 79's. `bMapSelectionFlag`
 picks the arm and both arms share the tail (`UiPanel_RemoveLine(0)`, then unpause if the list is empty). The
 selection arm launches `Ship_LaunchIntercept` on the strateg entry line 0's colour slot 0 names, with the ship
 index from `[0x187054]`, and clears the flag; the recentre arm centres the view on that same entry. Four things
-only the ARM showed: the half-extents are **ceilings** (MOVS / ADMI / ASR #1, the +1 skipped only when the extent
-is 0), so a 401-wide map centres at 201 and not 200; 0x846DC and 0x84700 read colour slot 0 **twice** so nX and
+only the ARM showed: the half-extents are plain C halves (MOVS / ADDMI #1 / ASR #1, and ADDMI fires only on a
+NEGATIVE value), so a 401-wide map centres at 200 — this unit recorded them as ceilings and unit 82 corrected
+that; 0x846DC and 0x84700 read colour slot 0 **twice** so nX and
 nY come from the SAME entry; nMode 1 unscales both coordinates by 1/1.333 and nMode 2 by 1/1.694, the exact
 reciprocals of the `Geoscape_Draw` zoom factors; and `nScrollY` has **two** replace arms — the RSBMI at 0x8484C
 (testing `nY - 160`, whose N flag comes from the `ADDS` at 0x84838 and not from the value just stored) and the

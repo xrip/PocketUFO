@@ -2376,10 +2376,10 @@ Order is by what unblocks what. Each item ends with gates + commit.
   Selection arm (0x8490C): line 0 colour slot 0 is the strateg index, `[0x187054]` the ship index,
   `Ship_LaunchIntercept`, then the flag is cleared — no clock work. Recentre arm: `GameTime_Set5Sec`,
   then the view is centred on the strateg entry the line names.
-  **Four things only the ARM showed.** The half-extents are **ceilings** (0x846B4..0x846D8 is
-  MOVS / ADMI / ASR #1, the +1 skipped only when the extent is 0), so a 401-wide map centres at 201;
-  the shipped 400x400 map is even and cannot show it, and the port keeps the ceiling with a 401x401
-  case that proves it. 0x846DC and 0x84700 read colour slot 0 **twice**, so nX and nY come from the
+  **Four things only the ARM showed.** The half-extents are plain C halves: 0x846B4..0x846D8 is
+  MOVS / ADDMI #1 / ASR #1, and ADDMI fires only on a NEGATIVE value, so a 401-wide map centres at 200 —
+  the same half a 400-wide map gives. (This unit first read that triple as a ceiling and the port carried
+  the ceil; unit 82 corrected it.) 0x846DC and 0x84700 read colour slot 0 **twice**, so nX and nY come from the
   SAME entry. nMode 1 unscales both coordinates by 1/1.333 and nMode 2 by 1/1.694 — the exact
   reciprocals of the `Geoscape_Draw` zoom factors, so stored item coordinates are map coordinates.
   `nScrollY` has **two** replace arms: the RSBMI at 0x8484C (whose N flag comes from the `ADDS` at
@@ -2429,10 +2429,15 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [x] **part 82, the strateg icons and the clock strip: `Smap_DrawStrategIcons (0x822c4, 1,060 B)` +
   `Geoscape_DrawClockPads (0x5c5c8, 2,168 B)`** — the two remaining unported leaves of
   `Geoscape_DrawScreen`, ported before their caller so the caller has nothing left to stub.
-  **The ceiling half appears a fourth time.** 0x822EC..0x8231C is `MOVS` / `ADDMI R3,R3,#1` / `ASR #1`:
-  the +1 is skipped only when the size is 0, so the half-extent is `(n != 0 ? n + 1 : 0) / 2 - half_screen`.
-  Hex-Rays renders the same triple as a plain `/ 2`, which is wrong for every odd map size; the identical
-  trap sits at 0x846B4, 0x6C1A4 and 0x5EB44, and the port names the shape `SmapIcon_HalfExtent`.
+  **A wrong reading corrected, in this port and in the IDB.** 0x822EC..0x8231C is `MOVS` /
+  `ADDMI R3,R3,#1` / `ASR #1` (the middle word is `0x42833001`), and ADDMI is **add-if-minus**: the +1 is
+  skipped for every non-negative value, so a positive extent is halved by plain `n >> 1` and the +1 only
+  gives a negative extent C's round-toward-zero (`(-5 + 1) >> 1 == -2 == -5 / 2`). Hex-Rays' `/ 2` is
+  faithful here. Three earlier units recorded this triple as a CEILING half and the map click (unit 80)
+  and this icon pass both implemented the ceil, so on an odd map size the view and every icon sat one
+  pixel off. Both now use `n / 2`; the 401x401 recentre test asserts 200 instead of 201, a new 401x401
+  icon check pins the reading in the draw, and the IDB comments at 0x822c4 / 0x6c348 / 0x8c698 are
+  corrected with a line comment at each of the four halving sites (0x5EB44, 0x6C1A4, 0x822EC, 0x846B4).
   **What the ARM pins down that the pseudocode flattens.** 0x82318 `MOV R0, #0x20` forces palette slot 32
   into `Map_nGlyphPalBase` (repeated at 0x82328 after the empty-list test) while the `Font_DrawGlyph` nPal
   argument stays R9 = 0 — and `mapbits.pal` is palette slot 32 in main.dat, which cross-confirms it. Zoom
@@ -2456,10 +2461,10 @@ Order is by what unblocks what. Each item ends with gates + commit.
   **1 deviation recorded, not hidden:** the original copies a TEXTS record into a 52-byte stack buffer
   (`psz[52]` at 0x5C5AC) with an unbounded byte loop; the port caps it at 51 + NUL. Not a ledger row — the
   overflow is unreachable with the shipped data.
-  **0 new ledger rows (226 on record), 89 markers.** 51 new checks (13941 total, 60 suites), coverage
+  **0 new ledger rows (226 on record), 89 markers.** 52 new checks (13942 total, 60 suites), coverage
   919/1103 (83.3%) and 496036/598792 (82.8%); `strat` moves to 194/204 functions and 117,032 of
-  160,496 bytes (72.9%). IDB: 8 renames (426 on record) and 6 size fixes (0x186BBC, 0x186BF0, 0x186C1C,
-  0x186C20, 0x186E40, 0x159618) and 3 comments. The clock block base is corrected in the port too: it is
+  160,496 bytes (72.9%). IDB: 8 renames (426 on record), 6 size fixes (0x186BBC, 0x186BF0, 0x186C1C,
+  0x186C20, 0x186E40, 0x159618), 3 function comments and 4 halving-site comments. The clock block base is corrected in the port too: it is
   `gUiRootPanel(0x158890) + 0xBE4 + 4 * 101 = 0x159608`, not the 0x158A14 `pufo_clock.h` claimed.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
@@ -2795,9 +2800,9 @@ Refresh after each commit. A coverage delta must match the function size in
 | the options overlay (`OptionsScreen_Open`; the toggle, the four-panel release, the signed base match against `BaseRec.bUnk4`, the four-column craft rows, the TEXTS 149–152 / 1165–1172 labels, the uninitialised region label found) | 60/60 (Release) | 13683 | 912/1103 (82.7%) | 486292/598792 (81.2%) | 40 checked, 0 mismatched |
 | the overlay row confirm (`OptionsScreen_OnConfirm`; the shared aux index behind the readiness gate, the flag-27 travel-order line, the final-mission arm pinned to the Cydonia topic and the Avenger through the shipped data files, 1 latent out-of-bounds row) | 60/60 (Release) | 13712 | 913/1103 (82.8%) | 486552/598792 (81.3%) | 40 checked, 0 mismatched |
 | the map-order answer (`Smap_ResolveInterceptUI`; the flag-13 path that skips the armed-byte clear, the three dismiss tests that each re-read a shifting line 0, the unconditional tail removal found, the `0x187068` naming follow-through) | 60/60 (Release) | 13750 | 914/1103 (82.9%) | 486892/598792 (81.3%) | 40 checked, 0 mismatched |
-| the map recentre click (`Smap_OnPointerUp`; the ceil half-extents, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
+| the map recentre click (`Smap_OnPointerUp`; the half-extents — read as ceilings here and corrected in unit 82, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
 | the geoscape event pass (`StrategList_ProcessEvents`, `Strateg_ConfirmInterceptTarget`; the `_rt_udiv` divisor-first convention, the exact 1/60 interpolation constant, the six re-reads behind the arrival dispatch, the wrapped-leg winner, the fractional diagonal, 1 original bug found, the 0x159E74 naming fix and the `Tact_Shutdown` wrong-index removal it exposed) | 60/60 (Release) | 13890 | 917/1103 (83.1%) | 492808/598792 (82.3%) | 40 checked, 0 mismatched |
-| the strateg icons and the clock strip (`Smap_DrawStrategIcons`, `Geoscape_DrawClockPads`; the fourth ceiling-half triple Hex-Rays flattens to `/ 2`, the palette-slot-32 forcing cross-confirmed by `mapbits.pal`, zoom scaling both axes, the `>` wrap that leaves the map-size coordinate alone, the low-halfword animation phase, the blank `mapbits +6` frame measured in main.dat, the day-tens blit gate, the divisor-first `_rt_udiv`, the `apLayerPad` → `apClockDigitPads` misnomer and the corrected 0x159608 clock base) | 60/60 (Release) | 13941 | 919/1103 (83.3%) | 496036/598792 (82.8%) | 40 checked, 0 mismatched |
+| the strateg icons and the clock strip (`Smap_DrawStrategIcons`, `Geoscape_DrawClockPads`; the halving triple corrected — ADDMI is add-if-minus, so Hex-Rays' `/ 2` was faithful and the port's ceil was not, the palette-slot-32 forcing cross-confirmed by `mapbits.pal`, zoom scaling both axes, the `>` wrap that leaves the map-size coordinate alone, the low-halfword animation phase, the blank `mapbits +6` frame measured in main.dat, the day-tens blit gate, the divisor-first `_rt_udiv`, the `apLayerPad` → `apClockDigitPads` misnomer and the corrected 0x159608 clock base) | 60/60 (Release) | 13942 | 919/1103 (83.3%) | 496036/598792 (82.8%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

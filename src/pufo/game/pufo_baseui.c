@@ -5815,11 +5815,12 @@ void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv)
     } else if (pEnv->pView != NULL && pEnv->pStrategList != NULL) {
         GameTime_Set5Sec(pEnv->pWorld, pEnv->apSpeedCtl);                          /* 0x8469C */
 
-        /* 0x846B4..0x846C4: MOVS/ADDMI/ASR is ceil(n/2), not n/2 -- the +1 is skipped only when the
-         * extent is 0. The shipped 400x400 map is even, so the two agree there; the ceil is kept so a
-         * smaller odd map cannot shift the view by one pixel. */
-        const i32 nHalfW = (pEnv->pView->nMapW != 0 ? pEnv->pView->nMapW + 1 : 0) / 2 - 120;   /* 0x846C4 */
-        const i32 nHalfH = (pEnv->pView->nMapH != 0 ? pEnv->pView->nMapH + 1 : 0) / 2 - 160;   /* 0x846D8 */
+        /* 0x846B4..0x846D8: MOVS R3,Rn / ADDMI R3,R3,#1 / MOV R3,R3,ASR#1 (bytes 01 30 83 42).
+         * ADDMI fires only when the tested value is NEGATIVE, so a non-negative extent is halved by
+         * plain `n >> 1` and the +1 only restores C's round-toward-zero for a negative one. This is
+         * C's `n / 2`, not a ceiling -- the same shape as 0x5EB44 and 0x822EC. */
+        const i32 nHalfW = pEnv->pView->nMapW / 2 - 120;                                        /* 0x846C4 */
+        const i32 nHalfH = pEnv->pView->nMapH / 2 - 160;                                        /* 0x846D8 */
         const StrategItem *pItem = (const StrategItem *)PtrArray_Get(pEnv->pStrategList,
                                      (i32)UiLineList_GetColor(pEnv->pLines, 0, 0)); /* 0x846DC */
         /* 0x84700 reads colour SLOT 0 a second time, so nX and nY come from the SAME item. */
