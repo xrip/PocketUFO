@@ -551,3 +551,20 @@ dword_161A68	pPlaneWeaponPad2	0x161A68, + 0x20: baseb051, the pad weapon 25 sele
 dword_161A6C	pPlaneWeaponPad3	0x161A6C, + 0x24: baseb053, the pad weapon 28 selects.
 dword_161A70	pPlaneWeaponPad4	0x161A70, + 0x28: baseb054, the pad weapon 29 selects.
 unk_161A74	pPlaneWeaponPad5	0x161A74, + 0x2C: baseb052, the pad weapon 30 selects.
+Ui_TextInputDialog	SoldierScreen_DrawDetail	0x632cc. The IDB name described only the keyboard block in the function's last ~1,100 bytes; the body is the whole selected-soldier readout (header ramp, rank icon, cs0/cs1/cs2 class insignia, armour, record block, nine stat bars, the two armour panels, the transfer panels, then the 16x16 name-edit keyboard).
+unk_159760	nSoldierDetailCursor	0x159760. SoldierScreen_DrawDetail stores its cursor argument here at 0x632F4, before any bounds check on the soldier count.
+unk_159DE8	nNameEditChar	0x159DE8. The keyboard cursor character: SoldierScreen_DrawDetail reads it for every grid cell (0x64A40) and the selected cell's box.
+byte_186B88	bNameEditActive	0x186B88. Gate for the whole keyboard block (0x646E0); SoldierScreen_SelectListed sets it when the name-edit dialog is armed.
+unk_159DD0	pszItoaScratch	0x159DD0. A 140-byte scratch buffer SoldierScreen_DrawDetail runs j_itoa into for the stat values (0x63A30) and the craft name.
+unk_186BA8	pCtlNameEditBackspace	0x186BA8. UiControl * whose active pad is blitted first in the keyboard block (0x647F0).
+unk_186B9C	pCtlNameEditAccept	0x186B9C. UiControl * whose active pad is blitted second (0x64800).
+nEquipStock122	nSolStockArmour1	0x159D84. Cached stock of apObjects[122] (Map_apObjects122) in nSelectedBaseIdx, written by SoldierScreen_DrawEquipPanels at 0x62DDC and read back for the row text and the itoa value.
+nEquipStock123	nSolStockArmour2	0x159D88. The same for apObjects[123] (0x62DF8).
+nEquipStock124	nSolStockArmour3	0x159D8C. The same for apObjects[124] (0x62E1C).
+apPadCs	pPadCs0	0x186C30. PadImage * built at 0x38804 and loaded from the cs0 archive entry at palette slot 18 (class.pal loads into the same slot at 0x387F0). cs0/cs1/cs2 are the soldier class insignia in SoldierScreen_DrawDetail (0x634C4..) and the command-pad art in Tact_DrawCommandPads (0x1FD30..).
+apPadCs1	pPadCs1	0x186C34. The cs1 insignia pad (0x38868).
+apPadCs2	pPadCs2	0x186C38. The cs2 insignia pad (0x38888).
+szBaseAtResultOk	szEmptyString	0x10DA38. The shared "" literal, not a BaseAt result: UiPanel_ctor copies it into every line buffer it allocates (0x3E774), and 72 reads across 25 functions (UiPanel_ctor, UiControl_LoadPads, DatFile_Open, BaseInfoScreen_BuildPanels, PsiScreen_BuildPanels, ...) have no writer at all. SoldierScreen_DrawEquipPanels uses it as the stores panel's empty row-0 label (0x62E50).
+unk_B8416	aTextRec94	0xB8416 = TEXTS record 94 (base 0xB38D0 + 94*205): "Personal Armour", the first armour row label in SoldierScreen_DrawEquipPanels (0x62EB0).
+unk_B84E3	aTextRec95	0xB84E3 = TEXTS record 95: "Power Armour", the second armour row label (0x62F30).
+unk_B85B0	aTextRec96	0xB85B0 = TEXTS record 96: "Fly armour", the third armour row label (0x62FC0).

@@ -2752,6 +2752,22 @@ Order is by what unblocks what. Each item ends with gates + commit.
 
 ## Separate issues, not folded into the porting steps
 
+- [ ] **`pufo_ballist.h` names two `auStat` slots against the UI captions.** The soldier readout (unit 101)
+  draws its nine stat bars from `auStat[]` under the TEXTS 127..136 captions, and the pair that settles the
+  order is TEXTS 133 "Throwing Accuracy" over `auStat[5]`, TEXTS 134 "Strength" over `auStat[8]` and TEXTS 129
+  "Stamina" over `auStat[9]` — the same order unit 74's training screen gives. `pufo_unit.h` now has a
+  `SoldierStat` enum in that order. `pufo_ballist.h` instead calls `auStat[8]` `nStatThrow` and `auStat[9]`
+  `nStatStrength`, so its ballistics gate reads the slot the UI labels Strength for throwing and the slot it
+  labels Stamina for strength. One of the two is wrong; the UI captions are the direct evidence, but the
+  ballistics gate's own numbers have not been re-read against the ARM. Settle it before the tactical hit
+  chances are trusted, then rename in both the port and the IDB.
+
+- [ ] **Ten rows of `docs/parity/bugs.tsv` use bare LF while the file is CRLF.** Rows 163..172 (the
+  `EnemyAi_TryFireOrWander` / `Tact_EnemyAiTick` block) end in `\n`, the other 256 in `\r\n`. `audit_bugs.py`
+  reads them correctly either way, so nothing is broken today; it is a hygiene issue that will bite the first
+  person who edits the file with a tool that normalises line endings. Fix it in a separate commit that changes
+  nothing else.
+
 - [ ] **Empty fixture handlers make every click-identity check in the tests vacuous.** MSVC folds identical
   functions to one address in Release (`/OPT:ICF`, on by default), so a suite whose click fixtures are
   `static void Foo(void) {}` cannot tell one installed handler from another: the comparison is between two
@@ -3103,6 +3119,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the geoscape pulse tick and the map-target arm (`Geoscape_PulseUpdate`, `Smap_SelectMapTarget`; the LDRB `Map_nCraftCount` and the empty-list jump into the clock block, the phase gate that skips the switch when the phase is already above 1, the absolute 120/160-anchored direction scroll with its 25/5 pair and the screen-2 clamp skip, the lit-control-only forced click, the four saturating counters, the selection flag that unit 83's frame reads, the unconditional pause and the fourth line-colour read) | 60/60 (Release) | 14084 | 922/1103 (83.6%) | 501664/598792 (83.8%) | 40 checked, 0 mismatched |
 | the base facility grid's names, build icons and craft (`BaseFacScreen_DrawNameGrid`; the 36-tile basebits backdrop at a 32 px pitch spanning x 0..191 / y 36..227, the two name passes over `tileB` and `layer2` with the blank-vs-name tile choice, the seven-way `tileA` stamp switch and its two days-label placements, the `tileA == 12` hangar-quadrant craft gate with the `layer2` nudge table, `fontSys_nBaseBitsSprBase` proven to be the `"basebits"` group base, 3 original findings and 3 deviations recorded, `strat-ui` complete at 245/245) | 60/60 (Release) | 15410 | 946/1103 (85.8%) | 542612/598792 (90.6%) | 40 checked, 0 mismatched |
 | the credits and ending shutdowns (`Titles_Shutdown`, `Titles_dtor`, `EndScreen_Shutdown`; the screen id 22 written unconditionally before the surface release, the five glyph-blob deletes with no null store, the unguarded ending-backdrop delete, the tail call back into `GameUI_InitStartup` that re-loads the font the shutdown just freed, the shipped `main.dat` carrying no `Z*.WAV` for the ending's own sample set, 3 original findings and 3 deviations recorded, `titles` complete at 13/13) | 60/60 (Release) | 15436 | 949/1103 (86.0%) | 542820/598792 (90.7%) | 40 checked, 0 mismatched |
+| the soldier readout and its armour panels (`SoldierScreen_DrawDetail`, `SoldierScreen_DrawEquipPanels`; the `Ui_TextInputDialog` misnomer corrected in the IDB, the row count from `nEquipRowCount @ 0xab710` over the three armour objects `apObjects[122..124]`, the six-entry class-insignia pair table, the `bUnk183 == 254` Wound Recovery gate, the nine stat bars that name all ten `auStat` slots, the 16x16 name-edit keyboard, 5 ledger rows and 2 documented deviations) | 60/60 (Release) | 15547 | 951/1103 (86.2%) | 549876/598792 (91.8%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

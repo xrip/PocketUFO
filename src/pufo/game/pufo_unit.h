@@ -33,6 +33,26 @@
 
 #define PUFO_UNIT_STAT_COUNT    10
 
+/* Soldier.auStat, named from the two places the original says what the slots are.
+ * SoldierScreen_DrawDetail @ 0x632cc draws a caption above every bar: "Time" over auStat[0],
+ * "Stamina" over [9], "Bravery" over [2], "Reaction" over [3], "Firing Accuracy" over [4],
+ * "Throwing Accuracy" over [5], "Strength" over [8], "Psi Strength" over [7] and "Psi Skill" over [6].
+ * auStat[1] is the one that screen never shows; Unit_ResetBattleState @ 0x498b0 derives uTu from [0],
+ * uHp from [1] and uStunOrArmor from [9]. Separately reported, not fixed here: pufo_ballist.h calls
+ * auStat[8] nStatThrow and auStat[9] nStatStrength, which does not match those captions. */
+typedef enum SoldierStat {
+    PUFO_STAT_TIME      = 0, /* "Time"; Unit_ResetBattleState -> uTu */
+    PUFO_STAT_HP        = 1, /* never drawn; Unit_ResetBattleState -> uHp */
+    PUFO_STAT_BRAVERY   = 2,
+    PUFO_STAT_REACTION  = 3,
+    PUFO_STAT_FIRING    = 4,
+    PUFO_STAT_THROWING  = 5,
+    PUFO_STAT_PSI_SKILL = 6,
+    PUFO_STAT_PSI_STR   = 7,
+    PUFO_STAT_STRENGTH  = 8,
+    PUFO_STAT_STAMINA   = 9  /* "Stamina"; Unit_ResetBattleState -> uStunOrArmor */
+} SoldierStat;
+
 /* Unit type table, byte_A7B80 @ 0xa7b80. Stride 4, 24 rows (96 bytes; the byte
  * at +0x60 is not part of it). byte[+0] is the "flag 0" column and byte[+1] the
  * "is large" flag that Unit_bIsLarge @ 0x49ecc tests against 1.

@@ -6500,6 +6500,551 @@ static void TestSoldierScreenDraw(void)
     CheckEqI32(SoldierScreen_Draw(NULL), 0, "a null env does nothing");
 }
 
+/* ------------------------------------------------- the soldier detail read-out and the transfer panels
+ *
+ * Evidence: SoldierScreen_DrawDetail @ 0x632cc, SoldierScreen_DrawEquipPanels @ 0x62d78. */
+
+static SoftSurf g_sdSurf;
+static Soldier g_aSdSol[2];
+static Soldier *g_apSdSol[2];
+static u16 g_nSdSolCount;
+static Ship g_aSdShip[3];
+static Ship *g_apSdShip[3];
+static ObjectRecFull g_aSdObj[125];
+static ObjectRecFull *g_apSdObj[125];
+static char g_aSdText[200 * PUFO_TEXT_REC_STRIDE];
+static u8 g_aSdRank[PUFO_TXT_E_COUNT * PUFO_TXT_E_STRIDE];
+static PadImage g_aSdPad[3];
+static PadImage *g_apSdPad[3];
+static u8 g_aSdPadData[3][8];
+static PadImage g_aSdCtlPad[2];
+static UiControl g_sdCtl[2];
+static UiPanel g_sdPanelEquip, g_sdPanelStores;
+static u8 g_bSdAnimStarted;
+static i8 g_nSdAnimProgress;
+static UiAnimBlitEnv g_sdAnim;
+static GfxColorEnv g_sdColor;
+static i32 g_nSdCursorCopy;
+static u8 g_bSdTransfer, g_bSdNameEdit, g_bSdSelChar, g_bSdPreviewOk;
+static i8 g_nSdBaseIdx;
+static SoldierDetailEnv g_sdEnv;
+static i32 g_aSdCtlLog[8];
+static i32 g_nSdCtlBlits;
+
+/* The fill colour, written out here instead of shared with the render module, so a changed blit
+ * argument in the port shows up as a different expected value. */
+static u16 SdPix(u32 nIdx, u32 nMid, u32 nLow)
+{
+    return (u16)(((nIdx >> 3) << 11) + 32u * (nMid >> 2) + (nLow >> 3));
+}
+
+static u16 SdGet(i32 x, i32 y)
+{
+    return ((const u16 *)g_sdSurf.pPixels)[(size_t)y * 240u + (size_t)x];
+}
+
+static void SdClear(void)
+{
+    memset(g_sdSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_nSdCtlBlits = 0;
+}
+
+static i32 SdInk(i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (SdGet(x, y) != 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Gfx_PackRgb565Pair's colour, written out independently (0x544fc): the pair's first colour lands in
+ * palette entry 33 and the second in entry 27, both after the same 0.7 scale (nScaleSource is 0 here). */
+static u16 SdPair565(i32 nR, i32 nG, i32 nB)
+{
+    i32 nR1 = (i32)(((double)(nR >> 3)) / 0.7);
+    i32 nG1 = (i32)(((double)(nG >> 2)) / 0.7);
+    i32 nB1 = (i32)(((double)(nB >> 3)) / 0.7);
+    if (nR1 > 31) { nR1 = 31; }
+    if (nG1 > 63) { nG1 = 63; }
+    if (nB1 > 31) { nB1 = 31; }
+    return (u16)(nB1 + 32 * (nG1 + (nR1 << 6)));
+}
+
+static i32 SdHasColour(i32 x0, i32 y0, i32 x1, i32 y1, u16 nWant)
+{
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (SdGet(x, y) == nWant) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static void SdCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nSdCtlBlits < 8) {
+        g_aSdCtlLog[g_nSdCtlBlits] = (i32)(pPad - g_aSdCtlPad);
+    }
+    ++g_nSdCtlBlits;
+}
+
+static void SdPutText(i32 nRec, const char *psz)
+{
+    snprintf(g_aSdText + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec, 32, "%s", psz);
+}
+
+static void SdFixture(void)
+{
+    memset(g_aSdSol, 0, sizeof(g_aSdSol));
+    memset(g_aSdShip, 0, sizeof(g_aSdShip));
+    memset(g_aSdObj, 0, sizeof(g_aSdObj));
+    memset(g_aSdText, 0, sizeof(g_aSdText));
+    memset(g_aSdRank, 0, sizeof(g_aSdRank));
+    memset(g_aSdPad, 0, sizeof(g_aSdPad));
+    memset(g_aSdPadData, 0, sizeof(g_aSdPadData));
+    memset(g_aSdCtlPad, 0, sizeof(g_aSdCtlPad));
+    memset(g_sdCtl, 0, sizeof(g_sdCtl));
+
+    /* Soldier 0 is the full case: a veteran (5 missions, so the class insignia draws), armour type 1,
+     * aboard craft 1, psi-trained, class 3 (cs0 then cs1). */
+    snprintf(g_aSdSol[0].szName, sizeof(g_aSdSol[0].szName), "%s", "HEMAN");
+    g_aSdSol[0].bRankType = 2;
+    g_aSdSol[0].nUnitType = 1;
+    g_aSdSol[0].uMissions = 5;
+    g_aSdSol[0].uKills = 7;
+    g_aSdSol[0].bUnk183 = 1;
+    g_aSdSol[0].bPsiActive = 1;
+    g_aSdSol[0].nClass = 3;
+    g_aSdSol[0].auStat[0] = 60;  /* Time     -> bar 32 wide at y 126 */
+    g_aSdSol[0].auStat[1] = 40;  /* never drawn */
+    g_aSdSol[0].auStat[2] = 30;
+    g_aSdSol[0].auStat[3] = 50;
+    g_aSdSol[0].auStat[4] = 70;
+    g_aSdSol[0].auStat[5] = 20;
+    g_aSdSol[0].auStat[6] = 15;  /* Psi Skill     -> bar at y 302 */
+    g_aSdSol[0].auStat[7] = 80;  /* Psi Strength  -> bar at y 280 */
+    g_aSdSol[0].auStat[8] = 90;  /* Strength      -> bar 47 wide at y 258 */
+    g_aSdSol[0].auStat[9] = 45;  /* Stamina       -> bar 24 wide at y 148 */
+
+    /* Soldier 1 is the gate case: a rookie (3 missions, no insignia), an alien unit type (no armour
+     * value), credited off a returned craft (254, 12 recovery days), no psi, class 0. */
+    snprintf(g_aSdSol[1].szName, sizeof(g_aSdSol[1].szName), "%s", "ZLOKAR");
+    g_aSdSol[1].bRankType = 0;
+    g_aSdSol[1].nUnitType = 5;
+    g_aSdSol[1].uMissions = 3;
+    g_aSdSol[1].uKills = 1;
+    g_aSdSol[1].bUnk183 = 254;
+    g_aSdSol[1].bUnk247 = 12;
+    g_aSdSol[1].nClass = 0;
+    for (i32 i = 0; i < PUFO_UNIT_STAT_COUNT; ++i) {
+        g_aSdSol[1].auStat[i] = 20;
+    }
+
+    g_apSdSol[0] = &g_aSdSol[0];
+    g_apSdSol[1] = &g_aSdSol[1];
+    g_nSdSolCount = 2;
+
+    for (i32 i = 0; i < 3; ++i) {
+        g_aSdShip[i].bType = (u8)(i + 1);
+        g_apSdShip[i] = &g_aSdShip[i];
+    }
+    g_aSdShip[0].bCraftType = 0; /* Skyranger-1  */
+    g_aSdShip[1].bCraftType = 1; /* Lightning-2  */
+    g_aSdShip[2].bCraftType = 3; /* Interceptor-3: the arm the original leaves unset */
+
+    for (i32 i = 0; i < 125; ++i) {
+        g_apSdObj[i] = &g_aSdObj[i];
+    }
+    g_aSdObj[122].auPerBaseVal[0] = 5;
+    g_aSdObj[123].auPerBaseVal[1] = 7;
+    g_aSdObj[124].auPerBaseVal[0] = 3;
+
+    /* Labels, in ASCII so the ink checks do not depend on the code page. */
+    SdPutText(90, "ARM");   SdPutText(93, "NONE");  SdPutText(94, "PERS");
+    SdPutText(95, "POWER"); SdPutText(96, "FLY");   SdPutText(123, "RK:");
+    SdPutText(124, "CR:");  SdPutText(125, "MS:");  SdPutText(126, "KL:");
+    SdPutText(127, "WR");   SdPutText(128, "T");    SdPutText(129, "ST");
+    SdPutText(130, "BR");   SdPutText(131, "RE");   SdPutText(132, "FA");
+    SdPutText(133, "TA");   SdPutText(134, "SN");   SdPutText(135, "PS");
+    SdPutText(136, "PK");   SdPutText(137, "SKY-"); SdPutText(138, "LGT-");
+    SdPutText(139, "AVG-");
+
+    for (i32 i = 0; i < PUFO_TXT_E_COUNT; ++i) {
+        g_aSdRank[(size_t)i * PUFO_TXT_E_STRIDE] = (u8)('A' + i);
+    }
+
+    /* Each class pad is one indexed pixel in its own palette slot, so the two insignia slots show which
+     * pad was blitted where. */
+    for (i32 i = 0; i < 3; ++i) {
+        PadImage_ctor(&g_aSdPad[i]);
+        g_aSdPad[i].pData = g_aSdPadData[i];
+        g_aSdPad[i].uWidth = 1;
+        g_aSdPad[i].uHeight = 1;
+        g_aSdPad[i].nMode = (u8)(40 + i);
+        g_aSdPadData[i][0] = 1;   /* the glyph header Blit_Indexed reads: u16 width, u16 height, indices */
+        g_aSdPadData[i][2] = 1;
+        g_aSdPadData[i][4] = 1;
+        g_apSdPad[i] = &g_aSdPad[i];
+        memset(g_aPalette[40 + i], 0, sizeof(g_aPalette[40 + i]));
+        g_aPalette[40 + i][1] = (u32)(0x1111 * (i + 1));
+    }
+
+    for (i32 i = 0; i < 2; ++i) {
+        memset(&g_aSdCtlPad[i], 0, sizeof(g_aSdCtlPad[i]));
+        g_sdCtl[i].apPads[0] = &g_aSdCtlPad[i];
+        g_sdCtl[i].bEnabled = 1;
+    }
+
+    UiPanel_FreeLines(&g_sdPanelEquip);
+    UiPanel_FreeLines(&g_sdPanelStores);
+    (void)UiPanel_ctor(&g_sdPanelEquip, 8);
+    (void)UiPanel_ctor(&g_sdPanelStores, 8);
+
+    g_bSdAnimStarted = 1;   /* already started... */
+    g_nSdAnimProgress = 5;  /* ...and 50*5 >= 236, so the wipe reports "finished" */
+    memset(&g_sdAnim, 0, sizeof(g_sdAnim));
+    g_sdAnim.pbStarted = &g_bSdAnimStarted;
+    g_sdAnim.pnProgress = &g_nSdAnimProgress;
+    g_sdAnim.nFrameStyle = 0;
+
+    memset(&g_sdColor, 0, sizeof(g_sdColor));
+
+    g_nSdBaseIdx = 0;
+    g_bSdTransfer = 0;
+    g_bSdNameEdit = 0;
+    g_bSdSelChar = 32;
+    g_bSdPreviewOk = 1;
+    g_nSdCursorCopy = -1;
+
+    memset(&g_sdEnv, 0, sizeof(g_sdEnv));
+    g_sdEnv.apSoldiers = g_apSdSol;
+    g_sdEnv.pnSoldierCount = &g_nSdSolCount;
+    g_sdEnv.apCraft = g_apSdShip;
+    g_sdEnv.nCraftCount = 3;
+    g_sdEnv.pTextRecs = g_aSdText;
+    g_sdEnv.aszRankNames = g_aSdRank;
+    g_sdEnv.apClassPads = g_apSdPad;
+    g_sdEnv.pColor = &g_sdColor;
+    g_sdEnv.pAnim = &g_sdAnim;
+    g_sdEnv.pCtlBackspace = &g_sdCtl[0];
+    g_sdEnv.pCtlAccept = &g_sdCtl[1];
+    g_sdEnv.pfnCtlBlit = SdCtlBlit;
+    g_sdEnv.pfnCtlBlitEx = SdCtlBlit;
+    g_sdEnv.pbPreviewOk = &g_bSdPreviewOk;
+    g_sdEnv.pbNameEditActive = &g_bSdNameEdit;
+    g_sdEnv.pnNameEditChar = &g_bSdSelChar;
+    g_sdEnv.pnCursorCopy = &g_nSdCursorCopy;
+    g_sdEnv.pbTransferFlag = &g_bSdTransfer;
+    g_sdEnv.EquipPanels.apObjects = g_apSdObj;
+    g_sdEnv.EquipPanels.pnSelectedBaseIdx = &g_nSdBaseIdx;
+    g_sdEnv.EquipPanels.pPanelEquip = &g_sdPanelEquip;
+    g_sdEnv.EquipPanels.pPanelStores = &g_sdPanelStores;
+    g_sdEnv.EquipPanels.pTextRecs = g_aSdText;
+}
+
+static void SdCheckLine(UiPanel *pPanel, i32 nRow, const char *pszWant, const char *pszWhat)
+{
+    const char *pszGot = UiPanel_GetLineText(pPanel, nRow);
+    Check(pszGot != NULL && strcmp(pszGot, pszWant) == 0, pszWhat);
+    if (pszGot != NULL && strcmp(pszGot, pszWant) != 0) {
+        printf("      got \"%s\", wanted \"%s\"\n", pszGot, pszWant);
+    }
+}
+
+static void TestSoldierTransferPanels(void)
+{
+    printf("SoldierScreen_DrawEquipPanels @ 0x62d78\n");
+
+    PufoFont_Free(&g_fontSys); /* the panels' own text would otherwise land on the surface too */
+    memset(&g_fontMetrics, 0, sizeof(g_fontMetrics));
+
+    SdFixture();
+    SoftSurf_ctor(&g_sdSurf);
+    SoftSurf_AllocPixels(&g_sdSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_sdSurf;
+    SdClear();
+
+    /* Base 0 stocks objects 122 and 124: three rows, and the frame 18*3+29 tall. */
+    CheckEqI32(SoldierScreen_DrawEquipPanels(&g_sdEnv.EquipPanels), 3,
+               "base 0 stocks two of the three armour objects, so three rows (0x62DC0..0x62E28)");
+    SdCheckLine(&g_sdPanelEquip, 0, "NONE", "row 0 is the equip panel's \"None\" (0x62E2C)");
+    SdCheckLine(&g_sdPanelStores, 0, "", "  and the stores panel's row 0 label is empty");
+    CheckEqI32(UiPanel_GetLineAux(&g_sdPanelEquip, 0), 0, "row 0 carries the 0 marker (0x62E84)");
+    SdCheckLine(&g_sdPanelEquip, 1, "PERS", "row 1 is apObjects[122]'s name (0x62EAC)");
+    SdCheckLine(&g_sdPanelStores, 1, "5", "  with its stock on the stores side (0x62ED8)");
+    CheckEqI32(UiPanel_GetLineAux(&g_sdPanelEquip, 1), 1, "  and the 1 marker EquipSelected switches on");
+    SdCheckLine(&g_sdPanelEquip, 2, "FLY", "row 2 is apObjects[124], not [123] (0x62FC0)");
+    SdCheckLine(&g_sdPanelStores, 2, "3", "  with 123's zero row skipped (0x62F1C)");
+    CheckEqI32(UiPanel_GetLineAux(&g_sdPanelEquip, 2), 3, "  and the marker is 3, not 2");
+    CheckEqI32(UiPanel_GetLineAux(&g_sdPanelEquip, 3), 0, "no fourth row is written");
+    CheckEqI32(g_sdPanelEquip.nLineCount, 3, "the equip panel gets nLineCount 3 (0x63040)");
+    CheckEqI32(g_sdPanelStores.nLineCount, 3, "and so does the stores panel (0x63058)");
+
+    CheckEqI32((i32)SdGet(45, 75), (i32)SdPix(0, 0x6E, 0x77), "the frame's outer rect starts at 45,75 (0x6308C)");
+    CheckEqI32((i32)SdGet(214, 75), (i32)SdPix(0, 0x6E, 0x77), "  and runs 170 wide to 214");
+    Check(SdGet(215, 75) == 0, "  no further");
+    CheckEqI32((i32)SdGet(45, 157), (i32)SdPix(0, 0x6E, 0x77), "the outer rect is 18*3+29 = 83 tall, to y 157");
+    Check(SdGet(45, 158) == 0, "  and one row shorter than that");
+    CheckEqI32((i32)SdGet(46, 76), (i32)SdPix(0x30, 0xE0, 0xE8), "the middle rect is inset by 1 in its own colours (0x630CC)");
+    CheckEqI32((i32)SdGet(46, 156), (i32)SdPix(0x30, 0xE0, 0xE8), "  and is 18*3+27 = 81 tall");
+    Check(SdGet(46, 157) == (u16)SdPix(0, 0x6E, 0x77), "  so its last row leaves the outer one showing");
+
+    /* Base 1 stocks only object 123. */
+    SdClear();
+    g_nSdBaseIdx = 1;
+    CheckEqI32(SoldierScreen_DrawEquipPanels(&g_sdEnv.EquipPanels), 2,
+               "the selected base picks the column, not the object (0x62DC0)");
+    SdCheckLine(&g_sdPanelEquip, 1, "POWER", "so row 1 here is apObjects[123] (0x62F30)");
+    SdCheckLine(&g_sdPanelStores, 1, "7", "  with base 1's quantity");
+    CheckEqI32(UiPanel_GetLineAux(&g_sdPanelEquip, 1), 2, "  with the 2 marker");
+    CheckEqI32(g_sdPanelEquip.nLineCount, 2, "and only two rows");
+    g_nSdBaseIdx = 0;
+
+    /* Nothing stocked at base 2: one row, and the frame 18*1+29 tall. */
+    SdClear();
+    g_nSdBaseIdx = 2;
+    CheckEqI32(SoldierScreen_DrawEquipPanels(&g_sdEnv.EquipPanels), 1,
+               "a base that stocks none of the three still draws row 0 (0x62DB8)");
+    SdCheckLine(&g_sdPanelEquip, 0, "NONE", "the \"None\" row is unconditional");
+    CheckEqI32((i32)SdGet(45, 121), (i32)SdPix(0, 0x6E, 0x77), "the frame is 18*1+29 = 47 tall, to y 121");
+    Check(SdGet(45, 122) == 0, "  and stops there");
+    g_nSdBaseIdx = 0;
+
+    /* A longer call after a shorter one: the row count is stored before the rows are written, so the
+     * rows a previous one-row call would have gated are reachable again. */
+    SdClear();
+    CheckEqI32(SoldierScreen_DrawEquipPanels(&g_sdEnv.EquipPanels), 3,
+               "the panel still holds the shorter call's count of 1, and three rows are written anyway");
+    SdCheckLine(&g_sdPanelEquip, 1, "PERS", "row 1 is written after a one-row call (0x62EAC)");
+    SdCheckLine(&g_sdPanelStores, 2, "3", "  and so is row 2 on the stores side (0x62FF0)");
+
+    /* The guards the original does not have. */
+    SdClear();
+    g_sdEnv.EquipPanels.pPanelEquip = NULL;
+    CheckEqI32(SoldierScreen_DrawEquipPanels(&g_sdEnv.EquipPanels), 0, "a missing panel returns instead of dereferencing");
+    Check(SdInk(45, 75, 214, 157) == 0, "  and draws no frame");
+    CheckEqI32(SoldierScreen_DrawEquipPanels(NULL), 0, "a null env does nothing");
+    g_sdEnv.EquipPanels.pPanelEquip = &g_sdPanelEquip;
+}
+
+static void TestSoldierDetail(void)
+{
+    i32 nRet;
+
+    printf("SoldierScreen_DrawDetail @ 0x632cc\n");
+
+    /* Phase A asserts only what the rect blits can produce, so the font is put away first: an earlier
+     * suite may have left it loaded, and a glyph landing in the same band would hide a changed rect. */
+    PufoFont_Free(&g_fontSys);
+    memset(&g_fontMetrics, 0, sizeof(g_fontMetrics));
+
+    SdFixture();
+    SoftSurf_ctor(&g_sdSurf);
+    SoftSurf_AllocPixels(&g_sdSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_sdSurf;
+
+    /* --- the gates, with no font loaded: only the rect blits can land --- */
+    SdClear();
+    nRet = SoldierScreen_DrawDetail(NULL, 0);
+    CheckEqI32(nRet, 0, "a null env does nothing");
+
+    SdClear();
+    nRet = SoldierScreen_DrawDetail(&g_sdEnv, 5);
+    CheckEqI32(nRet, 0, "a cursor past the soldier count draws nothing (the original would not stop)");
+    CheckEqI32(g_nSdCursorCopy, 5, "  but the cursor copy at 0x632F4 already ran");
+    Check(SdInk(0, 0, 239, 319) == 0, "  and nothing was drawn");
+
+    SdClear();
+    nRet = SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32(nRet, 0, "with the name editor not armed the read-out returns 0 (0x6469C)");
+    CheckEqI32(g_nSdCursorCopy, 0, "and unk_159760 gets the cursor (0x632F4)");
+
+    /* The header frame: 24 steps of 5 on y 5 and y 31, then the two 1x27 edges. */
+    CheckEqI32((i32)SdGet(5, 5), (i32)SdPix(100, 100, 100), "the header ramp starts at x 3 in 100 (0x6332C)");
+    CheckEqI32((i32)SdGet(120, 5), (i32)SdPix(215, 215, 215), "the last left step (x 118..122) overpaints the right half's first steps");
+    CheckEqI32((i32)SdGet(123, 5), (i32)SdPix(245, 245, 245), "the right half survives only from x 123, in 0xFA-5*1 (0x63380)");
+    CheckEqI32((i32)SdGet(232, 5), (i32)SdPix(135, 135, 135), "  and its last step is 0xFA-5*23 = 135");
+    CheckEqI32((i32)SdGet(5, 31), (i32)SdPix(100, 100, 100), "the same ramp repeats at y 31 (0x63350)");
+    Check(SdGet(2, 5) == 0, "nothing is drawn left of x 3");
+    CheckEqI32((i32)SdGet(3, 20), (i32)SdPix(0x96, 0x96, 0x96), "the left edge is 0x96 at x 3 (0x633E0)");
+    CheckEqI32((i32)SdGet(235, 20), (i32)SdPix(0x96, 0x96, 0x96), "and the right edge at x 235 (0x63404)");
+    Check(SdGet(3, 32) == 0, "  both are 27 tall, so y 32 is clear");
+
+    /* The class insignia: nClass 3 is cs0 in the left slot and cs1 in the right one. */
+    CheckEqI32((i32)SdGet(33, 2), (i32)0x1111, "nClass 3 puts cs0 at 33,2 (0x63540)");
+    CheckEqI32((i32)SdGet(67, 2), (i32)0x2222, "  and cs1 at 67,2 (0x63560)");
+    Check(SdGet(34, 2) == 0, "  each pad is one pixel wide");
+    CheckEqI32(g_aSdPad[0].nOriginX, 33, "cs0 is left with nOriginX 33");
+    CheckEqI32(g_aSdPad[1].nOriginX, 67, "cs1 with 67 (the ARM's += 34)");
+    CheckEqI32(g_aSdPad[2].nOriginX, 0, "and cs2 is untouched");
+
+    SdClear();
+    g_aSdSol[0].nClass = 5;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32((i32)SdGet(33, 2), (i32)0x1111, "nClass 5 is cs0 then cs2 (0x634D4)");
+    CheckEqI32((i32)SdGet(67, 2), (i32)0x3333, "  so the right slot shows cs2");
+
+    SdClear();
+    g_aSdSol[0].nClass = 6;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    Check(SdGet(33, 2) == 0 && SdGet(67, 2) == 0, "a class above 5 draws no insignia (0x634C0)");
+
+    SdClear();
+    g_aSdSol[0].nClass = 3;
+    g_aSdSol[0].uMissions = 3;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    Check(SdGet(33, 2) == 0 && SdGet(67, 2) == 0, "and 3 missions is not above the gate, so no insignia (0x6348C)");
+    g_aSdSol[0].uMissions = 5;
+
+    /* The stat bars: (value >> 1) + 2 wide for the frame, one less for the fill. */
+    CheckEqI32((i32)SdGet(9, 126), (i32)SdPix(0, 0x96, 0), "the Time bar frame starts at 9,126 (0x63C4C)");
+    CheckEqI32((i32)SdGet(40, 126), (i32)SdPix(0, 0x96, 0), "  and is (60>>1)+2 = 32 wide");
+    Check(SdGet(41, 126) == 0, "  and stops there");
+    CheckEqI32((i32)SdGet(10, 127), (i32)SdPix(0x14, 0xFA, 0x14), "the fill is inset by 1 and 30 wide (0x63C80)");
+    CheckEqI32((i32)SdGet(40, 127), (i32)SdPix(0, 0x96, 0), "  so the frame's last column still shows at 40,127");
+    Check(SdGet(41, 127) == 0, "  and nothing is drawn past the frame");
+    CheckEqI32((i32)SdGet(9, 148), (i32)SdPix(0x96, 0x96, 0), "Stamina reads auStat[9], not [1] (0x63D34)");
+    CheckEqI32((i32)SdGet(32, 148), (i32)SdPix(0x96, 0x96, 0), "  45 gives a 24-wide bar");
+    Check(SdGet(33, 148) == 0, "  and no further");
+    CheckEqI32((i32)SdGet(9, 258), (i32)SdPix(0x96, 0, 0), "Strength reads auStat[8] in its own colours (0x641CC)");
+    CheckEqI32((i32)SdGet(55, 258), (i32)SdPix(0x96, 0, 0), "  90 gives a 47-wide bar");
+    Check(SdGet(56, 258) == 0, "  and no further");
+    CheckEqI32((i32)SdGet(9, 280), (i32)SdPix(0x6E, 0x6E, 0x96), "Psi Strength reads auStat[7] under bPsiActive (0x642D4)");
+    CheckEqI32((i32)SdGet(9, 302), (i32)SdPix(0x6E, 0x6E, 0x96), "and Psi Skill reads auStat[6] (0x643C8)");
+
+    SdClear();
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 1);
+    Check(SdGet(9, 280) == 0 && SdGet(9, 302) == 0, "without bPsiActive neither psi bar is drawn (0x64218)");
+    CheckEqI32((i32)SdGet(9, 258), (i32)SdPix(0x96, 0, 0), "  while the seven ordinary rows still draw");
+    Check(SdGet(33, 2) == 0, "  and this rookie's 3 missions draws no insignia");
+
+    /* The panel frame: nine rows at y 134 + 22k with a top edge only, and the two 1x6 side rails. */
+    CheckEqI32((i32)SdGet(3, 134), (i32)SdPix(100, 100, 100), "the first panel row is at y 134 (0x64548)");
+    CheckEqI32((i32)SdGet(3, 156), (i32)SdPix(100, 100, 100), "the next one 22 lower (0x64508)");
+    Check(SdGet(3, 135) == 0, "  each row is one line, not a band");
+    CheckEqI32((i32)SdGet(123, 134), (i32)SdPix(245, 245, 245), "  with the falling ramp on the right half");
+    CheckEqI32((i32)SdGet(5, 58), (i32)SdPix(100, 100, 100), "the left side rail starts at 5,58 (0x645DC)");
+    CheckEqI32((i32)SdGet(5, 63), (i32)SdPix(100, 100, 100), "  each step is 6 tall");
+    CheckEqI32((i32)SdGet(5, 64), (i32)SdPix(105, 105, 105), "  and the next one starts immediately, in 105");
+    CheckEqI32((i32)SdGet(5, 204), (i32)SdPix(205, 205, 205), "the falling half runs from 174 in 0xE6-5*k (0x64608)");
+    CheckEqI32((i32)SdGet(5, 174), (i32)SdPix(195, 195, 195), "  and the climbing half reaches 201, overpainting its top");
+    CheckEqI32((i32)SdGet(232, 58), (i32)SdPix(100, 100, 100), "and the right rail mirrors it at x 232 (0x6462C)");
+
+    /* The transfer panels, behind bTransferFlag. */
+    Check(SdGet(45, 75) == 0, "with bTransferFlag clear the transfer panels are not drawn (0x64678)");
+    SdClear();
+    g_bSdTransfer = 1;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32((i32)SdGet(45, 75), (i32)SdPix(0, 0x6E, 0x77), "armed, the equip frame appears at 45,75 (0x6468C)");
+    SdCheckLine(&g_sdPanelEquip, 1, "PERS", "  with base 0's armour rows");
+    g_bSdTransfer = 0;
+    UiPanel_FreeLines(&g_sdPanelEquip);
+    UiPanel_FreeLines(&g_sdPanelStores);
+    (void)UiPanel_ctor(&g_sdPanelEquip, 8);
+    (void)UiPanel_ctor(&g_sdPanelStores, 8);
+
+    /* The keyboard: armed and finished, armed and still wiping, and not armed at all. */
+    SdClear();
+    g_bSdNameEdit = 1;
+    g_nSdAnimProgress = 0;
+    nRet = SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32(nRet, 0, "while the wipe is still expanding the keyboard is skipped (0x646E0)");
+    CheckEqI32(g_nSdCtlBlits, 0, "  and neither key pad is blitted");
+    Check(SdGet(12, 80) == 0, "  and no key box is drawn");
+
+    SdClear();
+    g_nSdAnimProgress = 5;
+    nRet = SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32(nRet, 1, "once the wipe finishes the keyboard draws (0x646E8)");
+    CheckEqI32(g_nSdCtlBlits, 2, "the two key pads blit (0x646F4, 0x64700)");
+    CheckEqI32(g_aSdCtlLog[0], 0, "  the BackSpace pad first");
+    CheckEqI32(g_aSdCtlLog[1], 1, "  then the Accept pad");
+    CheckEqI32((i32)SdGet(12, 80), (i32)SdPix(0xFA, 0, 0), "the selected space key gets the dark box (0x64824)");
+    CheckEqI32((i32)SdGet(12, 93), (i32)SdPix(0xFA, 0, 0), "  whose right edge is 14 tall, to y 93");
+    /* The wipe itself blends the surface it covers, so "clear" is not what a pixel outside the box
+     * looks like here; what says "the box stopped" is that the box colour is absent. */
+    Check(SdGet(12, 94) != (u16)SdPix(0xFA, 0, 0), "  and stops there");
+
+    SdClear();
+    g_bSdPreviewOk = 0;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32((i32)SdGet(12, 80), (i32)SdPix(0xFA, 0x14, 0x14), "without the preview flag the box is the ordinary one (0x64914)");
+    g_bSdPreviewOk = 1;
+
+    SdClear();
+    g_bSdSelChar = 65;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    Check(SdGet(12, 80) != (u16)SdPix(0xFA, 0, 0),
+          "a selected character that is not a space leaves the space key unframed (0x647F0)");
+    g_bSdSelChar = 32;
+
+    SdClear();
+    g_bSdNameEdit = 0;
+    (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+    CheckEqI32(g_nSdCtlBlits, 0, "with the name editor off no key pad blits (0x6469C)");
+
+    /* --- with the real font: the parts only text can produce --- */
+    {
+        const char *const apszArch[2] = { "lang.dat", "main.dat" };
+        bool bReady = false;
+
+        if (Asset_OpenArchives(apszArch)) {
+            PufoFont_Init(&g_fontSys);
+            g_fontSys.nGlyphBase = g_fontSys.nTotalSprFrames;
+            (void)Font_LoadSpr(&g_fontSys, "font");
+            g_fontSys.nBaseBitsBase = g_fontSys.nTotalSprFrames; /* Geoscape_InitUI @ 0x85F78 */
+            (void)Font_LoadSpr(&g_fontSys, "basebits");
+            Font_BuildIndex(&g_fontSys);
+            FontMetrics_Load();
+            bReady = (g_fontSys.apSprIndex != NULL && g_fontMetrics.bLoaded);
+        }
+        if (!bReady) {
+            printf("  SKIP font assets unavailable, the text-only checks are not run\n");
+            return;
+        }
+
+        SdClear();
+        (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+        Check(SdInk(0, 7, 60, 20) != 0, "the rank icon and the name draw at 5,7 and around x 160 (0x63468)");
+        Check(SdInk(170, 40, 235, 52) != 0, "unit type 1 draws an armour value at 188,38 (0x636F8)");
+
+        SdClear();
+        (void)SoldierScreen_DrawDetail(&g_sdEnv, 1);
+        Check(SdInk(170, 40, 235, 52) == 0, "unit type 5 has no switch arm, so no armour value is drawn (0x636C0)");
+        Check(SdInk(100, 91, 140, 100) != 0, "craft byte 254 draws the Wound Recovery line at 120,89 (0x63930)");
+
+        SdClear();
+        g_aSdSol[1].bUnk183 = 255;
+        (void)SoldierScreen_DrawDetail(&g_sdEnv, 1);
+        Check(SdInk(100, 91, 140, 100) == 0, "craft byte 255 does not (0x6391C)");
+        g_aSdSol[1].bUnk183 = 254;
+
+        SdClear();
+        g_bSdNameEdit = 1;
+        g_nSdAnimProgress = 5;
+        (void)SoldierScreen_DrawDetail(&g_sdEnv, 0);
+        /* x 100..226 keeps the bars out of the band and y 275..279 keeps the Psi Strength bar (which
+         * starts at 280) out of it, so only the grid's last row can put ink there. */
+        /* The wipe blends everything inside (0,70)-(235,319), so "some ink" proves nothing here. What
+         * does prove the grid drew is its own colour: the glyph palette entry the pair writes. */
+        Check(SdHasColour(100, 275, 200, 279, SdPair565(20, 20, 20)),
+              "the keyboard's last row draws its cells in the (150,150,120)/(20,20,20) pair (0x64A24)");
+        Check(SdHasColour(60, 80, 200, 92, SdPair565(250, 250, 20)),
+              "  and its first row draws its cells in the (250,250,20)/(20,20,20) pair");
+        g_bSdNameEdit = 0;
+
+        PufoFont_Free(&g_fontSys);
+        memset(&g_fontMetrics, 0, sizeof(g_fontMetrics));
+    }
+}
+
 static void TestOptionsAudioTab(void)
 {
     i32 nBad;
@@ -18469,6 +19014,8 @@ int main(void)
     TestBuildDialog();
     TestSoldierDisplayName();
     TestSoldierScreenDraw();
+    TestSoldierTransferPanels();
+    TestSoldierDetail();
     TestOptionsAudioTab();
     TestSaveLoadSlots();
     TestEnterBuildMode();

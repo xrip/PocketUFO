@@ -589,11 +589,11 @@ addr	name	size	subsystem
 6250c	Base_DrawFacilityIconStrip	792	strat
 62824	Base_TickFacilityConstruction	396	strat
 629b0	Base_CanPlaceHangarAt	968	strat
-62d78	Ui_DrawTextInputDialog	960	ui-core
+62d78	SoldierScreen_DrawEquipPanels	960	ui-core
 63138	Map_BackspaceSelectedName	84	tact
 6318c	SoldierScreen_CopyNameToEdit	124	strat-ui
 63208	SoldierScreen_AppendNameGlyph	196	strat-ui
-632cc	Ui_TextInputDialog	6096	ui-core
+632cc	SoldierScreen_DrawDetail	6096	ui-core
 64a9c	SoldierScreen_SelectListed	72	strat-ui
 64ae4	SoldierScreen_CloseThunk	12	strat-ui
 64af0	SoldierScreen_Toggle	1952	strat-ui

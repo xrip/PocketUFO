@@ -16936,3 +16936,93 @@ IDB: 3 function comments (0x3826c, 0x46fa4, 0x389f8) and 7 line comments (0x3828
 0x46FC0, 0x38A14, 0x38A20, 0x38920), no renames. Three new ledger rows (261): the dangling glyph blobs
 and state block, the unguarded backdrop delete, and the ending's empty sample set.
 
+## Unit 101 - the soldier readout and its two armour panels (SoldierScreen_DrawDetail
+@ 0x632cc, 6,096 B; SoldierScreen_DrawEquipPanels @ 0x62d78, 960 B)
+
+The two functions behind SCREEN 5, 7,056 bytes, the biggest pair left in the strat-ui
+cluster. Coverage moves to 549,876 / 598,792 code bytes (91.8 %).
+
+The IDB called 0x632cc Ui_TextInputDialog. That name describes only the keyboard block
+in the function's last ~1,100 bytes; the body is the whole selected-soldier readout -
+header, rank icon, class insignia, armour, the record block, nine stat bars, the two
+armour panels and the transfer panels. The port names it SoldierScreen_DrawDetail and
+the IDB follows.
+
+SoldierScreen_DrawEquipPanels (0x62d78) draws the pair of panels on the right of the
+readout. The row count comes from nEquipRowCount @ 0xab710, which the function resets
+to 1 at 0x62DB8 and then raises once per armour object that has stock in the selected
+base: apObjects[122..124] (the IDB globals Map_apObjects122/123/124 at 0x113CA8 /
+0x113CAC / 0x113CB0), whose auPerBaseVal[nSelectedBaseIdx] it caches into
+nSolStockArmour1/2/3 at 0x159D84 / 0x159D88 / 0x159D8C. Row 0 is TEXTS[93] "None" on
+the equip panel and the shared empty string at 0x10DA38 on the stores panel; rows 1..3
+carry the armour caption (TEXTS 94/95/96) and the quantity, and each row records its
+armour index + 1 in the panel's aux slot, which is what EquipSelected (0x62f98)
+switches on. The frame is three nested rects - (45,75) 170 x (18*rows+29) in
+0x6E/0x77, (46,76) 168 x (18*rows+27) in 0x30/0xE0/0xE8, (47,77) 166 x (18*rows+25) -
+and the height multiplies the SIGNED BYTE of the row count, so the original would wrap
+past 14 rows; the shipped data never gets there.
+
+SoldierScreen_DrawDetail (0x632cc) opens by storing the cursor into
+nSoldierDetailCursor @ 0x159760 (0x632F4) before any bounds check, then draws: a
+24-step header ramp in two halves with 1x27 edges at x 3 and 235; the rank name and
+rank icon at bRankType + g_fontSys.nBaseBitsBase + 42; the class insignia as a pair of
+basebits pads at x 33 and 67, y 2, chosen by a six-entry table keyed on nClass (0/0,
+1/1, 2/2, 0/1, 1/2, 0/2) and only for a soldier with more than 3 missions; the armour
+row, gated on nUnitType <= 3 so aliens have no armour; the record block - a 10-step
+ramp falling 0xB4-8*k, then Craft / Missions / Kills / Time and Wound Recovery only
+when bUnk183 == 254; nine stat bars whose labels are TEXTS 127..136; the panel frame
+ramps at y 134..310 step 22 with side rails at x 5 and 232, y 58..204 step 6; the two
+transfer panels behind the bTransferFlag byte; and the name-edit keyboard - a 16x16
+grid of characters from 32, 13 tall and 14 wide from (12,80), opened through
+Ui_AnimExpandBlit(0, 70, 236, 250, 4, 0x46, 0x4B, 0xC8, 3), with the BackSpace and
+Accept pads and the three plain .data captions.
+
+The stat-bar labels are the second independent statement of what auStat[] holds (the
+first is Unit 74's training screen), so the port now has a SoldierStat enum in
+pufo_unit.h naming all ten slots. Separately reported, not fixed: pufo_ballist.h calls
+auStat[8] nStatThrow and auStat[9] nStatStrength, which contradicts those captions.
+
+Deviation: the original writes the panel rows and only then stores the row count into
+the panel, while the port goes through UiPanel_SetLineText, which also bounds by
+nLineCount - so the port stores nLineCount before the rows instead of after them. The
+two orders differ only for a row index beyond the panel's line count, and the port
+allocates 8 lines for a maximum of 4 rows. The stock capture's != 0 and the row
+emission's > 0 can only differ for a negative quantity, and auPerBaseVal is a u16, so
+in the shipped data they always agree. Two further deviations are the original's own:
+bCraftType 3 and 4 read a 140-byte buffer that this function never fills (the port
+names the default TEXTS[93] "None" and the buffer is in the ledger), and the function
+returns 1 from its keyboard tail; the port's Text_DrawString is void, so the port
+returns 1 directly.
+
+Tests: 111 new checks in test_baseui (3,808 in that suite, 15,547 across all suites,
+no failures). Phase A runs with the font freed so every assertion is a rect blit with
+an exact 565 value - the three frame rects and their row-count-dependent heights, the
+header ramp's left/right overpaint boundary at x 122, the insignia pads' own origins,
+the bar widths from the auStat values, the side rails' contiguous tiling, the transfer
+gate, the keyboard gate on animation progress, the pad blit order, and the space-key
+box colour switch. Phase B loads the real font from lang.dat/main.dat and checks ink
+bands: the rank icon and name band, the armour row present for type 1 and absent for
+type 5, Wound Recovery present for 254 and absent for 255, and the keyboard's first
+and last grid rows. The last two assert the exact glyph colour the pair writes, not
+mere ink presence, because Ui_AnimExpandBlit blends every pixel inside the keyboard
+region and "some ink there" proves nothing.
+
+Mutations: 22 caught, 2 recorded equivalences (the u16 != 0 versus > 0 capture, and
+the armour gate widened to <= 255, which only changes behaviour for a unit type the
+array cannot hold and indexes the label table out of bounds).
+
+IDB: 1 function rename (Ui_TextInputDialog -> SoldierScreen_DrawDetail), 13 global
+renames (nSoldierDetailCursor, nNameEditChar, bNameEditActive, pszItoaScratch,
+pCtlNameEditBackspace, pCtlNameEditAccept, nSolStockArmour1/2/3, pPadCs0/1/2,
+szEmptyString, aTextRec94/95/96), pSolPanelEquip typed UiPanel *, 18 comments
+(function comments at 0x632cc and 0x62d78, line comments at 0x632F4, 0x6348C, 0x63490,
+0x636C0, 0x6391C, 0x63A30, 0x64218, 0x64420, 0x64678, 0x646E0, 0x647F0, 0x649A4,
+0x64A40, 0x62E50, 0x62E8C, 0x63040, plus the pPadCs0 block comment). Two of those
+renames fix earlier mistakes rather than name new findings: 0x10DA38 was called
+szBaseAtResultOk although UiPanel_ctor copies it into every line buffer (0x3E774) and
+none of its 72 reads has a writer, and 0x186C30/34/38 were apPadCs/apPadCs1/apPadCs2
+with no type. The audit_names gate went from 2 unresolved citations to 0. Five new
+ledger rows (266): the uninitialised craft-name buffer, the unchecked soldier/craft
+index, the reused transfer flag, the dead colour pair at 0x64420, and the empty stores
+label at 0x10DA38.
+

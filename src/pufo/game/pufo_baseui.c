@@ -7809,7 +7809,7 @@ i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv)
             return 0;
         }
         return pEnv->pfnTextInput(pEnv->pnCursor != NULL ? pEnv->pnCursor[0] : 0,
-                                  pEnv->pTextInputUser);     /* 0x652B0 Ui_TextInputDialog */
+                                  pEnv->pTextInputUser);     /* 0x652B0 -> SoldierScreen_DrawDetail */
     }
 
     if (*pEnv->pbOpen == 0) {                                /* 0x652CC */
@@ -7860,6 +7860,386 @@ i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv)
     }
 
     return 0;
+}
+
+/* --- SoldierScreen_DrawEquipPanels @ 0x62d78 --- */
+
+static const char *SolPan_Text(const SolEquipPanelEnv *pEnv, i32 nRec)
+{
+    if (pEnv == NULL || pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+}
+
+i32 SoldierScreen_DrawEquipPanels(const SolEquipPanelEnv *pEnv)
+{
+    /* The ARM keeps the three stocks in globals at 0x159D84, 0x159D88 and 0x159D8C and the row count in
+     * nEquipRowCount @ 0xab710. No other function in the IDB reads any of the four, so they are locals
+     * here. nRows is that row count (reset to 1 at 0x62DB8), nRow the ARM's R4 line cursor (0x62E88);
+     * both start at 1 and both move once per stocked object, which is why they always end up equal. */
+    i32 anStock[3] = { 0, 0, 0 };
+    i32 nRows = 1;
+    i32 nRow = 1;
+    i32 nBase;
+    char szQty[16];
+    static const i32 anArmourText[3] = { PUFO_SOLDET_TEXT_ARMOUR_1, PUFO_SOLDET_TEXT_ARMOUR_2,
+                                         PUFO_SOLDET_TEXT_ARMOUR_3 };
+
+    if (pEnv == NULL || pEnv->pPanelEquip == NULL || pEnv->pPanelStores == NULL) {
+        return 0;
+    }
+    nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+
+    /* 0x62DC0..0x62E28: the stock pass over apObjects[122], [123], [124], in that order. The capture
+     * test here is != 0; the row test below is > 0, so a negative stock is recorded but never drawn. */
+    for (i32 i = 0; i < 3; ++i) {
+        const ObjectRecFull *pObj = (pEnv->apObjects != NULL)
+                                        ? pEnv->apObjects[PUFO_SOLPAN_OBJ_FIRST + i] : NULL;
+        const i32 nQty = Base_GetItemQty(pObj, nBase);
+        if (nQty != 0) {
+            anStock[i] = nQty;
+            ++nRows;
+        }
+    }
+
+    /* The ARM writes every line first and stores nLineCount afterwards (0x63040, 0x63058); nothing reads
+     * either panel in between, so the two orders are indistinguishable. The port stores it first because
+     * UiPanel_SetLineText bounds itself to nLineCount and would otherwise refuse the rows a previous,
+     * shorter call left behind. */
+    pEnv->pPanelEquip->nLineCount  = nRows;
+    pEnv->pPanelStores->nLineCount = nRows;
+
+    /* Row 0 (0x62E2C..0x62E84): "None" on the equip side. The stores side gets the address 0x10DA38,
+     * which is aTextRecs + 205*1800 -- past the 1650 records TEXTS.DAT fills -- so in the shipped build
+     * the copy loop stops on the first zero byte and the label is an empty string. */
+    UiPanel_SetLineText(pEnv->pPanelEquip, 0, SolPan_Text(pEnv, PUFO_SOLDET_TEXT_NONE));
+    UiPanel_SetLineText(pEnv->pPanelStores, 0, "");
+    UiPanel_SetLineAux(pEnv->pPanelEquip, 0, 0);
+
+    /* Rows 1..3 (0x62E8C..0x6302C): the armour name on the equip side, the quantity on the stores side,
+     * and the 1 / 2 / 3 marker SoldierScreen_EquipSelected (0x619cc) switches on. */
+    for (i32 i = 0; i < 3; ++i) {
+        if (anStock[i] <= 0) {
+            continue;
+        }
+        UiPanel_SetLineText(pEnv->pPanelEquip, nRow, SolPan_Text(pEnv, anArmourText[i]));
+        snprintf(szQty, sizeof(szQty), "%d", anStock[i]);
+        UiPanel_SetLineText(pEnv->pPanelStores, nRow, szQty);
+        UiPanel_SetLineAux(pEnv->pPanelEquip, nRow, i + 1);
+        ++nRow;
+    }
+
+    /* The frame (0x6308C..0x63100): three nested rects, each 18 taller per row over a 29 / 27 / 25 base,
+     * where the ARM multiplies the SIGNED BYTE of the row count. */
+    const i8 nHeightRows = (i8)nRows;
+    SoftSurf_BlitRectProxy(0, PUFO_SOLPAN_FRAME_X,     PUFO_SOLPAN_FRAME_Y,     PUFO_SOLPAN_FRAME_W,
+                           PUFO_SOLPAN_ROW_H * nHeightRows + 29, 0, 0x6E, 0x77);      /* 0x6308C */
+    SoftSurf_BlitRectProxy(0, PUFO_SOLPAN_FRAME_X + 1, PUFO_SOLPAN_FRAME_Y + 1, PUFO_SOLPAN_FRAME_W - 2,
+                           PUFO_SOLPAN_ROW_H * nHeightRows + 27, 0x30, 0xE0, 0xE8);   /* 0x630CC */
+    SoftSurf_BlitRectProxy(0, PUFO_SOLPAN_FRAME_X + 2, PUFO_SOLPAN_FRAME_Y + 2, PUFO_SOLPAN_FRAME_W - 4,
+                           PUFO_SOLPAN_ROW_H * nHeightRows + 25, 0, 0x6E, 0x77);      /* 0x63100 */
+
+    UiPanel_DrawText(pEnv->pPanelEquip);  /* 0x63108 */
+    UiPanel_DrawText(pEnv->pPanelStores); /* 0x63118 */
+    return nRows; /* the original hands back UiPanelMsg_Draw's return value, which its caller drops */
+}
+
+/* --- SoldierScreen_DrawDetail @ 0x632cc --- */
+
+static const char *SolDetail_Text(const SoldierDetailEnv *pEnv, i32 nRec)
+{
+    if (pEnv == NULL || pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+}
+
+/* The centred label draws the original repeats for every caption: measure, then halve the width. */
+static void SolDetail_DrawCentered(i32 nCentreX, i32 nY, const char *psz)
+{
+    Text_DrawString(nCentreX - Text_MeasureWidth(psz) / 2, nY, psz);
+}
+
+static const char *SolDetail_RankName(const SoldierDetailEnv *pEnv, u8 nRank)
+{
+    if (pEnv->aszRankNames == NULL || nRank >= PUFO_TXT_E_COUNT) {
+        return "";
+    }
+    return (const char *)&pEnv->aszRankNames[(size_t)nRank * PUFO_TXT_E_STRIDE];
+}
+
+/* cs0/cs1/cs2 at the two insignia slots. The ARM writes nOriginX = 33, nOriginY = 2, blits, adds 34 to
+ * nOriginX and blits again; the pair it picks is Soldier.nClass (0x63490..0x63614). */
+static void SolDetail_DrawClassPads(const SoldierDetailEnv *pEnv, i32 nClass)
+{
+    static const i8 aPair[PUFO_SOLDET_CLASS_MAX + 1][2] = {
+        { 0, 0 }, { 1, 1 }, { 2, 2 }, { 0, 1 }, { 1, 2 }, { 0, 2 }
+    };
+
+    if (pEnv->apClassPads == NULL || nClass < 0 || nClass > PUFO_SOLDET_CLASS_MAX) {
+        return;
+    }
+    for (i32 i = 0; i < 2; ++i) {
+        PadImage *pPad = pEnv->apClassPads[aPair[nClass][i]];
+        if (pPad == NULL) {
+            continue;
+        }
+        pPad->nOriginX = (i == 0) ? PUFO_SOLDET_CLASS_X0 : PUFO_SOLDET_CLASS_X1;
+        pPad->nOriginY = PUFO_SOLDET_CLASS_Y;
+        PadImage_Blit(pPad);
+    }
+}
+
+/* The nine stat rows in the order the ARM draws them: the caption, the auStat slot, the three y values
+ * (the first row's value sits 4 below its label, every other one 6), the colour pair -- always with
+ * (20,20,20) as its second colour -- and the two bar rects. */
+typedef struct SolStatRow {
+    i32 nTextRec;
+    i32 nStat;
+    i32 nLabelY;
+    i32 nValueY;
+    i32 nBarY;
+    i32 nR, nG, nB;
+    u8 nBarIdx, nBarMid, nBarLow;
+    u8 nFillIdx, nFillMid, nFillLow;
+    bool bNeedsPsi;
+} SolStatRow;
+
+static const SolStatRow g_aSolStatRows[PUFO_SOLDET_STAT_ROWS] = {
+    { PUFO_SOLDET_TEXT_TIME,     PUFO_STAT_TIME,      110, 114, 126,  20, 250,  20,
+      0x00, 0x96, 0x00, 0x14, 0xFA, 0x14, false },
+    { PUFO_SOLDET_TEXT_STAMINA,  PUFO_STAT_STAMINA,   132, 138, 148, 250, 250,  20,
+      0x96, 0x96, 0x00, 0xFA, 0xFA, 0x14, false },
+    { PUFO_SOLDET_TEXT_BRAVERY,  PUFO_STAT_BRAVERY,   154, 160, 170, 255, 156, 190,
+      0xCD, 0x6A, 0x8C, 0xFF, 0x9C, 0xBE, false },
+    { PUFO_SOLDET_TEXT_REACTION, PUFO_STAT_REACTION,  176, 182, 192, 250,  20, 150,
+      0x96, 0x00, 0x32, 0xFA, 0x14, 0x96, false },
+    { PUFO_SOLDET_TEXT_FIRING,   PUFO_STAT_FIRING,    198, 204, 214, 200, 120, 250,
+      0x96, 0x32, 0x96, 0xC8, 0x78, 0xFA, false },
+    { PUFO_SOLDET_TEXT_THROWING, PUFO_STAT_THROWING,  220, 226, 236, 200, 120, 250,
+      0x96, 0x32, 0x96, 0xC8, 0x78, 0xFA, false },
+    { PUFO_SOLDET_TEXT_STRENGTH, PUFO_STAT_STRENGTH,  242, 248, 258, 255,  20,  50,
+      0x96, 0x00, 0x00, 0xFF, 0x14, 0x32, false },
+    { PUFO_SOLDET_TEXT_PSI_STR,  PUFO_STAT_PSI_STR,   264, 270, 280, 200, 210, 250,
+      0x6E, 0x6E, 0x96, 0xC8, 0xD2, 0xFA, true },
+    { PUFO_SOLDET_TEXT_PSI_SKL,  PUFO_STAT_PSI_SKILL, 286, 292, 302, 200, 210, 250,
+      0x6E, 0x6E, 0x96, 0xC8, 0xD2, 0xFA, true }
+};
+
+i32 SoldierScreen_DrawDetail(const SoldierDetailEnv *pEnv, i32 nCursor)
+{
+    char szLine[140];
+    char szCell[4];
+    Soldier *pSol;
+    i32 nCraftText;
+
+    if (pEnv == NULL) {
+        return 0;
+    }
+    if (pEnv->pnCursorCopy != NULL) {
+        *pEnv->pnCursorCopy = nCursor; /* 0x632F4: unk_159760 = nMode, the copy the name editor reads */
+    }
+    if (pEnv->apSoldiers == NULL || pEnv->pnSoldierCount == NULL ||
+        nCursor < 0 || nCursor >= (i32)*pEnv->pnSoldierCount) {
+        return 0; /* the original indexes apSoldiers[nCursor] unchecked */
+    }
+    pSol = pEnv->apSoldiers[nCursor];
+    if (pSol == NULL) {
+        return 0;
+    }
+
+    /* 1. The header frame (0x632E0..0x63404): 24 steps of 5, a 5x1 at x 3+5k and at x 115+5k on y 5 and
+     * on y 31, then the two 1x27 side edges. */
+    for (i32 k = 0; k < 24; ++k) {
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE)); /* 100..215 */
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);   /* 250..135 */
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 3,   5,  5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 3,   31, 5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 115, 5,  5, 1, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 115, 31, 5, 1, nFall, nFall, nFall);
+    }
+    SoftSurf_BlitRectProxy(0, 3,   5, 1, 27, 0x96, 0x96, 0x96); /* 0x633E0 */
+    SoftSurf_BlitRectProxy(0, 235, 5, 1, 27, 0x96, 0x96, 0x96); /* 0x63404 */
+
+    /* 2. The name (0x63428..0x63628): the rank icon from the basebits group, the class insignia for a
+     * veteran, then the name centred on x 160. */
+    Gfx_PackRgb565Pair(pEnv->pColor, 240, 240, 100, 30, 30, 30); /* 0x63428 */
+    Font_DrawGlyph(5, 7, (u16)(pSol->bRankType + g_fontSys.nBaseBitsBase + PUFO_SOLDET_ICON_BASE), 0);
+    {
+        const i32 nNameW = Text_MeasureWidth(pSol->szName); /* 0x6347C, measured before the insignia */
+        if ((i32)pSol->uMissions > PUFO_SOLDET_MISSION_GATE) {
+            SolDetail_DrawClassPads(pEnv, pSol->nClass);
+        }
+        Text_DrawString(160 - nNameW / 2, 10, pSol->szName);
+    }
+
+    /* 3. Armour (0x63668..0x63720). The ARM's switch has no default arm, so a unit type of 4 or more --
+     * every alien type -- draws no value at all. */
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x63668 */
+    SolDetail_DrawCentered(104, 38, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_ARMOUR));
+    if (pSol->nUnitType <= 3) {
+        static const i32 anArmourText[4] = { PUFO_SOLDET_TEXT_NONE, PUFO_SOLDET_TEXT_ARMOUR_1,
+                                             PUFO_SOLDET_TEXT_ARMOUR_2, PUFO_SOLDET_TEXT_ARMOUR_3 };
+        SolDetail_DrawCentered(188, 38, SolDetail_Text(pEnv, anArmourText[pSol->nUnitType]));
+    }
+
+    /* 4. The record block (0x63724..0x63b90): a 10-step ramp first, then the four cyan captions, the
+     * wound-recovery line for a soldier credited off a returned craft, then the white values. */
+    for (i32 k = 0; k < 10; ++k) {
+        const u8 nRise = (u8)(8 * k + 100);                    /* 100..172 */
+        const u8 nFall = (u8)(0xB4 - 8 * k);                   /* 180..108; Hex-Rays' -76 - 8*k */
+        SoftSurf_BlitRectProxy(0, 5 * k + 143, 37, 4, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, 5 * k + 143, 55, 4, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, 5 * k + 188, 37, 4, 1, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, 5 * k + 188, 55, 4, 1, nFall, nFall, nFall);
+    }
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x6383C */
+    SolDetail_DrawCentered(35,  61, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_RANK));
+    SolDetail_DrawCentered(35,  75, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_CRAFT));
+    SolDetail_DrawCentered(170, 61, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_MISSIONS));
+    SolDetail_DrawCentered(170, 75, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_KILLS));
+    if (pSol->bUnk183 == PUFO_SOLDIER_CRAFT_ABOARD_OUT) {      /* 0x6391C */
+        SolDetail_DrawCentered(120, 89, SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_WOUND));
+        Gfx_PackRgb565Pair(pEnv->pColor, 240, 240, 240, 30, 30, 30);
+        snprintf(szLine, sizeof(szLine), "%d", (i32)pSol->bUnk247);
+        Text_DrawString(207, 89, szLine);
+    }
+    Gfx_PackRgb565Pair(pEnv->pColor, 255, 255, 255, 10, 10, 10); /* 0x639DC */
+    Text_DrawString(63, 61, SolDetail_RankName(pEnv, pSol->bRankType));
+
+    if (pSol->bUnk183 >= PUFO_SOLDIER_CRAFT_ABOARD_OUT) {       /* 0x63A14: 254 or 255 both mean "None" */
+        nCraftText = PUFO_SOLDET_TEXT_NONE;
+        snprintf(szLine, sizeof(szLine), "%s", SolDetail_Text(pEnv, nCraftText));
+    } else {
+        const Ship *pShip = (pEnv->apCraft != NULL && pSol->bUnk183 < pEnv->nCraftCount)
+                                ? pEnv->apCraft[pSol->bUnk183] : NULL;
+        if (pShip == NULL) {
+            snprintf(szLine, sizeof(szLine), "%s", SolDetail_Text(pEnv, PUFO_SOLDET_TEXT_NONE));
+        } else {
+            switch (pShip->bCraftType) {
+            case 0:  nCraftText = PUFO_SOLDET_TEXT_CRAFT_0; break;
+            case 1:  nCraftText = PUFO_SOLDET_TEXT_CRAFT_1; break;
+            case 2:  nCraftText = PUFO_SOLDET_TEXT_CRAFT_2; break;
+            /* The original has no arm here and prints its 140-byte stack buffer untouched; the record
+             * name is written instead. See the ledger row for 0x632cc. */
+            default: nCraftText = PUFO_SOLDET_TEXT_NONE; break;
+            }
+            snprintf(szLine, sizeof(szLine), "%s%d", SolDetail_Text(pEnv, nCraftText),
+                     (i32)pShip->bType);
+        }
+    }
+    Text_DrawString(63, 75, szLine);
+    snprintf(szLine, sizeof(szLine), "%d", (i32)pSol->uMissions);
+    Text_DrawString(207, 61, szLine);
+    snprintf(szLine, sizeof(szLine), "%d", (i32)pSol->uKills);
+    Text_DrawString(207, 75, szLine);
+
+    /* 5. The stat bars (0x63BB0..0x64214). */
+    for (i32 i = 0; i < PUFO_SOLDET_STAT_ROWS; ++i) {
+        const SolStatRow *pRow = &g_aSolStatRows[i];
+        const u16 uVal = pSol->auStat[pRow->nStat];
+
+        if (pRow->bNeedsPsi && pSol->bPsiActive == 0) {
+            continue; /* 0x64218: the two psi rows are behind Soldier + 0x1A6 */
+        }
+        Gfx_PackRgb565Pair(pEnv->pColor, pRow->nR, pRow->nG, pRow->nB, 20, 20, 20);
+        Text_DrawString(PUFO_SOLDET_BAR_LABEL_X, pRow->nLabelY, SolDetail_Text(pEnv, pRow->nTextRec));
+        snprintf(szLine, sizeof(szLine), "%d", (i32)uVal);
+        Text_DrawString(PUFO_SOLDET_BAR_VALUE_X, pRow->nValueY, szLine);
+        SoftSurf_BlitRectProxy(0, PUFO_SOLDET_BAR_X0,     pRow->nBarY,
+                               (i32)(uVal >> PUFO_SOLDET_BAR_SHIFT) + 2, 8,
+                               pRow->nBarIdx, pRow->nBarMid, pRow->nBarLow);
+        SoftSurf_BlitRectProxy(0, PUFO_SOLDET_BAR_X0 + 1, pRow->nBarY + 1,
+                               (i32)(uVal >> PUFO_SOLDET_BAR_SHIFT), 6,
+                               pRow->nFillIdx, pRow->nFillMid, pRow->nFillLow);
+    }
+
+    /* 6. The panel frame (0x64420..0x64664). The colour pair at 0x64420 is set and never used -- no text
+     * is drawn before the next pair -- but it rewrites the palette, so the port makes the call. */
+    Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 20, 20, 20, 20);
+    for (i32 k = 0; k < 24; ++k) { /* 0x6442C: the two rails around the record block */
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 3,   61,  5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 3,   108, 5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 115, 61,  5, 1, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 115, 108, 5, 1, nFall, nFall, nFall);
+    }
+    for (i32 nRowY = 0; nRowY < 198; nRowY += 22) { /* 0x64508: nine rows, top edge only */
+        for (i32 k = 0; k < 24; ++k) {
+            const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));
+            const u8 nFall = (u8)(PUFO_SOL_RAMP_EDGE - PUFO_SOL_RAMP_STEP * k);
+            SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 3,   nRowY + 134, 5, 1,
+                                   nRise, nRise, nRise);
+            SoftSurf_BlitRectProxy(0, PUFO_SOL_RAMP_STEP * k + 115, nRowY + 134, 5, 1,
+                                   nFall, nFall, nFall);
+        }
+    }
+    for (i32 k = 0, nY = 0; nY < 144; nY += 6, ++k) { /* 0x645AC: the two side rails */
+        const u8 nRise = (u8)(PUFO_SOL_RAMP_STEP * (k + PUFO_SOL_RAMP_BASE));
+        const u8 nFall = (u8)(PUFO_SOL_RAMP_SIDE - PUFO_SOL_RAMP_STEP * k); /* 230..115 */
+        SoftSurf_BlitRectProxy(0, 5,   nY + 58,  1, 6, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, 5,   nY + 174, 1, 6, nFall, nFall, nFall);
+        SoftSurf_BlitRectProxy(0, 232, nY + 58,  1, 6, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, 232, nY + 174, 1, 6, nFall, nFall, nFall);
+    }
+
+    /* 7. The transfer panels (0x64678). */
+    if (pEnv->pbTransferFlag != NULL && *pEnv->pbTransferFlag != 0) {
+        (void)SoldierScreen_DrawEquipPanels(&pEnv->EquipPanels);
+    }
+
+    /* 8. The name-entry keyboard (0x64694..0x64a78). */
+    if (pEnv->pbNameEditActive == NULL || *pEnv->pbNameEditActive == 0) {
+        return 0;
+    }
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, 0, 70, 236, 250, 4, 0x46, 0x4B, 0xC8, 3)) { /* 0x646E0 */
+        return 0; /* still expanding: nothing of the keyboard is drawn */
+    }
+    (void)UiControl_BlitActivePad(pEnv->pCtlBackspace, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);              /* 0x646F4 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlAccept, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);              /* 0x64700 */
+    Gfx_PackRgb565Pair(pEnv->pColor, 255, 55, 55, 0, 0, 0);                        /* 0x64724 */
+    SolDetail_DrawCentered(120, 65, PUFO_SOLDET_KB_ENCODE);
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                     /* 0x64770 */
+    SolDetail_DrawCentered(60, 301, PUFO_SOLDET_KB_BACKSPACE);
+    SolDetail_DrawCentered(180, 301, PUFO_SOLDET_KB_ACCEPT);
+
+    const bool bPreviewOk = (pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0);
+    const i32 nSelChar = (pEnv->pnNameEditChar != NULL) ? (i32)*pEnv->pnNameEditChar : -1;
+    const i32 nCellW = Text_MeasureWidth(PUFO_SOLDET_KB_SPACE);
+    const bool bSpaceBox = (nSelChar == PUFO_SOLDET_KB_FIRST && bPreviewOk);
+    const u8 nEdge = bSpaceBox ? 0 : 0x14; /* 0x647F0: the box goes dark on the selected space key */
+
+    SoftSurf_BlitRectProxy(0, 12, 80, nCellW, 1,  0xFA, nEdge, nEdge);
+    SoftSurf_BlitRectProxy(0, 12, 93, nCellW, 1,  0xFA, nEdge, nEdge);
+    SoftSurf_BlitRectProxy(0, 12, 80, 1,      13, 0xFA, nEdge, nEdge);
+    SoftSurf_BlitRectProxy(0, nCellW + 12, 80, 1, 14, 0xFA, nEdge, nEdge);
+
+    /* 16 rows of 13 and 16 columns of 14, the character code counting up from 32. The 256 cells cover
+     * 32..255 and then wrap through (char) to 0..31, so the last two rows are all dashes. */
+    for (i32 nRowIdx = 0, nChar = PUFO_SOLDET_KB_FIRST;
+         nRowIdx < PUFO_SOLDET_KB_ROWS; ++nRowIdx) {
+        for (i32 nCol = 0; nCol < PUFO_SOLDET_KB_COLS; ++nCol, ++nChar) {
+            const i32 nX = nCol * PUFO_SOLDET_KB_COL_W + PUFO_SOLDET_KB_X0;
+            const i32 nY = nRowIdx * PUFO_SOLDET_KB_ROW_H + PUFO_SOLDET_KB_Y0;
+
+            szCell[0] = (char)nChar;
+            szCell[1] = 0;
+            if (Text_MeasureWidth(szCell) == 0) {
+                Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 120, 20, 20, 20);
+                Text_DrawString(nX, nY, PUFO_SOLDET_KB_DASH);
+            }
+            Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 20, 20, 20, 20);
+            if (nChar == nSelChar && bPreviewOk) {
+                Gfx_PackRgb565Pair(pEnv->pColor, 250, 0, 0, 20, 20, 20);
+            }
+            Text_DrawString(nX, nY, szCell);
+        }
+    }
+    return 1; /* the original returns the last Text_DrawString's register; the port reports "it drew" */
 }
 
 /* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 --- */

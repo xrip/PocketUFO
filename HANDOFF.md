@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `59885b2`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 100, the credits and ending shutdowns -- the three functions
-that complete `titles`), and the per-unit chain
+Date: 2026-10-17. HEAD before this edit: `a7bbc3e`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 101, the soldier readout and its two armour panels -- the two
+functions behind SCREEN 5), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -193,8 +193,8 @@ Build and test, run for this document:
 
 ```
 cmake --build build --config Release      -> build_exit=0, no errors, no warnings
-ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 56
-                                             Total Test time (real) = 3.99 sec
+ctest --test-dir build -C Release         -> 100% tests passed, 0 tests failed out of 60
+                                             Total Test time (real) = 4.14 sec
 ```
 
 In **Debug** three suites fail: `test_titles`, `test_save`, and `test_template` intermittently. All
@@ -208,14 +208,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 949 / 1103 (86.0%)
-                                             bytes cited:     542820 / 598792 (90.7%)
-python docs/parity/audit_credits.py       -> credited functions: 949, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 531 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 951 / 1103 (86.2%)
+                                             bytes cited:     549876 / 598792 (91.8%)
+python docs/parity/audit_credits.py       -> credited functions: 951, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 548 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 261, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/audit_bugs.py          -> ledger rows: 266, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -232,8 +232,37 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15436**. Coverage as of the latest commit: **949 / 1103
-functions (86.0%)**, **542820 / 598792 bytes (90.7%)**. This unit ported the three release functions that
+Test checks run across the 60 suites: **15547**. Coverage as of the latest commit: **951 / 1103
+functions (86.2%)**, **549876 / 598792 bytes (91.8%)**. This unit ported the two functions behind SCREEN 5,
+`SoldierScreen_DrawDetail` (0x632cc, 6,096 B) and `SoldierScreen_DrawEquipPanels` (0x62d78, 960 B) -- 7,056
+bytes, the biggest pair left in `strat-ui`. **The IDB called 0x632cc `Ui_TextInputDialog`**, which describes only
+the keyboard block in its last ~1,100 bytes; the body is the whole selected-soldier readout (header ramp, rank
+icon, cs0/cs1/cs2 insignia, armour, record block, nine stat bars, the two armour panels, the transfer panels,
+then the keyboard), so the port and the IDB now call it `SoldierScreen_DrawDetail`. **The equip panels' row count
+is 1 plus the number of armour objects with stock in the selected base**: `nEquipRowCount @ 0xab710` is reset to
+1 at 0x62DB8 and raised once per `apObjects[122..124]` whose `auPerBaseVal[nSelectedBaseIdx]` is non-zero, cached
+into `nSolStockArmour1/2/3` (0x159D84/88/8C); the frame is three nested rects at (45,75), (46,76), (47,77) with
+height `18 * (signed char)rows + 29/27/25`. **The nine stat-bar captions (TEXTS 127..136) are the second
+independent statement of the `auStat` slot order** (the first is Unit 74's training screen), so `pufo_unit.h` now
+carries a `SoldierStat` enum naming all ten slots -- and `pufo_ballist.h` disagrees with it (`auStat[8]` =
+`nStatThrow`, `auStat[9]` = `nStatStrength`), reported as a separate issue and not fixed here. **`bCraftType` 3
+and 4 read a 140-byte buffer this function never fills** (0x64218): the craft name for an Interceptor or a Fire
+Storm is whatever an earlier screen left in `pszItoaScratch @ 0x159DD0`; the port names the default TEXTS[93]
+"None" and the buffer is in the ledger. Two earlier IDB names turned out to be wrong and are fixed here: **0x10DA38
+was `szBaseAtResultOk`** although `UiPanel_ctor` copies it into every line buffer it allocates (0x3E774) and none
+of its 72 reads has a writer -- it is the shared empty string, and it is also exactly `aTextRecs + 205*1800`, a
+zero-filled record slot past the 1650 lang.dat records -- and **0x186C30/34/38 were `apPadCs`/`apPadCs1`/`apPadCs2`**
+with no type; they are the `cs0`/`cs1`/`cs2` pads `Assets_LoadStartup` loads at palette slot 18 right after
+`class.pal` goes into that slot (0x387F0), used as the soldier class insignia here and as command-pad art in
+`Tact_DrawCommandPads`. 111 new checks in `test_baseui` (3,808 there): Phase A runs with the font freed so every
+assertion is a rect blit with an exact 565 value, Phase B loads the real font from lang.dat/main.dat and checks
+ink bands. The keyboard's first and last grid rows assert the exact glyph colour the pair writes rather than ink
+presence, because `Ui_AnimExpandBlit` blends every pixel inside the keyboard region and "some ink there" proves
+nothing. A 22-mutation sweep turned all 22 red; 2 further patterns are true equivalences (the u16 `!= 0` versus
+`> 0` stock capture, and the armour gate widened to `<= 255`, which differs only for a unit type the byte cannot
+hold and indexes the label table out of bounds). IDB: 1 function rename, 13 global renames, `pSolPanelEquip`
+typed `UiPanel *`, 18 comments; 5 new ledger rows (266).
+The previous unit ported the three release functions that
 complete `titles` (13/13): `Titles_Shutdown` (0x3826c, 100 B), `Titles_dtor` (0x46fa4, 60 B) and
 `EndScreen_Shutdown` (0x389f8, 48 B) -- the screen-16 and screen-18 arms of `Input_OnPointerUp`
 (0x14924), which until now were two seams the shell never filled. **`Titles_dtor` writes screen id 22

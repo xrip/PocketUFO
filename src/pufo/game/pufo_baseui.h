@@ -3958,8 +3958,10 @@ i32 SoldierScreen_EquipSelected(const SoldierEquipEnv *pEnv);
  * data reference from the handler table entry at 0x18A2B0.
  *
  * SCREEN 5 (0x652A4): while nGeoscapeScreen is 5 this is not a draw at all - it returns
- * Ui_TextInputDialog(nSoldierCursor[0]), the name-edit dialog that SoldierScreen_SelectListed (0x64a9c)
- * arms by putting 5 into the screen id. Ui_TextInputDialog (0x632cc) is not ported and enters as a hook.
+ * SoldierScreen_DrawDetail(nSoldierCursor[0]), the soldier readout that SoldierScreen_SelectListed
+ * (0x64a9c) arms by putting 5 into the screen id. The port keeps it behind pfnTextInput because the
+ * readout needs the full SoldierDetailEnv (font, pads, colour env, keyboard controls) that this
+ * screen's own env does not carry; the caller that has those assembles the env and calls it directly.
  *
  * CLOSED (0x652CC): while the screen-open byte at 0x159DE0 is zero nothing is drawn.
  *
@@ -4003,11 +4005,233 @@ typedef struct SoldierDrawEnv {
     PadImage *pPad;         /* *(ctx + 364) = 0x1598D4, the "soldier" pad */
     UiPanel  *pPanelNames;  /* pSolPanelNames @ 0x15975C */
     UiPanel  *pPanelCraft;  /* pSolPanelCraft @ 0x159DEC */
-    i32 (*pfnTextInput)(i32 nCursor, void *pUser); /* Ui_TextInputDialog (0x632cc), not ported */
+    i32 (*pfnTextInput)(i32 nCursor, void *pUser); /* the SoldierScreen_DrawDetail (0x632cc) seam */
     void *pTextInputUser;
 } SoldierDrawEnv;
 
 i32 SoldierScreen_Draw(const SoldierDrawEnv *pEnv);
+
+/* --- SoldierScreen_DrawEquipPanels @ 0x62d78 (960 B) : the soldier screen's transfer panels
+ *
+ * Reached once, from SoldierScreen_DrawDetail (0x6468C) behind bTransferFlag @ 0x159E10. It fills the
+ * equip panel (pSolPanelEquip @ 0x159DF0) and the stores panel (pSolPanelStores @ 0x159758) and draws
+ * both under a three-rect frame. The IDB called it Ui_DrawTextInputDialog until the body was read: it
+ * has nothing to do with text input.
+ *
+ * Row count (0x62D8C..0x62E28). The ARM keeps a row cursor in R4 starting at 1 and a global row count
+ * nEquipRowCount @ 0xab710 (initialised to 1 in .data, right before the keyboard's own "Accept" /
+ * "BackSpace" literals) that it resets to 1 at 0x62DB8. For each of apObjects[122], [123], [124] --
+ * the three armour objects the original holds as globals at 0x113CA8, 0x113CAC and 0x113CB0 -- it
+ * reads auPerBaseVal[nSelectedBaseIdx] (ObjectRecFull + 0x2A, 2*base) and, when that is non-zero,
+ * records the stock in a global (0x159D84, 0x159D88, 0x159D8C) and raises the cursor. The count is
+ * only ever assigned from the cursor and the cursor only ever moves on a non-zero stock, so the two
+ * end up equal: rows = 1 + (how many of the three the base actually stocks). All four globals are
+ * private to this function -- no other function in the IDB reads them -- so the port keeps locals.
+ *
+ * Rows (0x62E2C..0x6302C). Row 0 is always present: the equip panel gets TEXTS[93] "None" and the
+ * stores panel gets the address 0x10DA38, which is aTextRecs + 205*1800 -- past the 1650 records
+ * TEXTS.DAT fills, so in the shipped build it is the zero-filled .data and the label is an empty
+ * string. anLineAux[0] = 0. Rows 1..3 follow in the same order as the stock pass, each with the armour
+ * name (TEXTS[94] "Personal Armour", [95] "Power Armour", [96] "Fly armour") on the equip side,
+ * j_itoa(stock) on the stores side, and anLineAux = 1, 2, 3 -- the values SoldierScreen_EquipSelected
+ * (0x619cc) switches on. The stock capture tests the quantity with != 0 and the row emission with > 0,
+ * so a negative quantity is recorded but never drawn; the port keeps both tests.
+ *
+ * Frame and draw (0x63040..0x63118). Both panels get nLineCount = the row count, then three nested
+ * rects -- (45,75) 170 x (18*rows+29) in 0x6E/0x77, (46,76) 168 x (18*rows+27) in 0x30/0xE0/0xE8,
+ * (47,77) 166 x (18*rows+25) in 0x6E/0x77 -- where the height multiplies the SIGNED BYTE of the row
+ * count (the ARM's LDRSB), and then UiPanelMsg_Draw on the equip panel and on the stores panel.
+ *
+ * Deviations: the original reaches the panels, the base index and the three objects through fixed
+ * addresses; the port takes them from the env. The original copies every label with an unbounded
+ * LDRSB/STRB loop into the 50-byte line buffers; the port goes through UiPanel_SetLineText, which bounds
+ * the copy -- and because that helper also bounds by nLineCount, the port stores nLineCount before the
+ * rows instead of after them. Nothing reads either panel in between, so the frame and the row set come
+ * out the same. The stock capture's != 0 and the row emission's > 0 can only differ for a negative
+ * quantity, and auPerBaseVal is a u16, so in the shipped data they always agree. */
+#define PUFO_SOLPAN_OBJ_FIRST 122 /* the three armour objects, IDB Map_apObjects122..124 */
+#define PUFO_SOLPAN_OBJ_LAST  124
+#define PUFO_SOLPAN_FRAME_X   45  /* the outer of the three nested frame rects */
+#define PUFO_SOLPAN_FRAME_Y   75
+#define PUFO_SOLPAN_FRAME_W   170
+#define PUFO_SOLPAN_ROW_H     18  /* each row adds 18 to the frame height, over 29 / 27 / 25 */
+
+typedef struct SolEquipPanelEnv {
+    ObjectRecFull *const *apObjects; /* Map + 0x108 */
+    const i8 *pnSelectedBaseIdx;     /* nSelectedBaseIdx @ 0x159D81 */
+    UiPanel *pPanelEquip;            /* pSolPanelEquip @ 0x159DF0 */
+    UiPanel *pPanelStores;           /* pSolPanelStores @ 0x159758 */
+    const char *pTextRecs;           /* TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */
+} SolEquipPanelEnv;
+
+i32 SoldierScreen_DrawEquipPanels(const SolEquipPanelEnv *pEnv);
+
+/* --- SoldierScreen_DrawDetail @ 0x632cc (6096 B) : the selected soldier's read-out, the transfer
+ * panels and the name-entry keyboard
+ *
+ * The IDB called this Ui_TextInputDialog. That name fits only the last 1,100 bytes: the body is the
+ * whole soldier detail view. SoldierScreen_Draw (0x652B0) calls it while nGeoscapeScreen is 5, the id
+ * SoldierScreen_SelectListed (0x64a9c) puts there, with nSoldierCursor @ 0x159E08 as its argument. It
+ * stores that argument into unk_159760 (0x632F4), which is the copy SoldierScreen_CopyNameToEdit
+ * (0x6318c), SoldierScreen_AppendNameGlyph (0x63208) and Map_BackspaceSelectedName (0x63138) read.
+ *
+ * Soldier = apSoldiers[nCursor] (0x63448: Map + 0x1198 + 4*arg). Every field below is that soldier's.
+ *
+ * 1. Header frame (0x632E0..0x63404). 24 steps of 5 draw a 5x1 at x = 3+5k and another at x = 115+5k,
+ *    on y 5 and on y 31, with 5*(k+20) (100..215) on the left half and the byte 0xFA-5*k (250..135) on
+ *    the right; then a 1x27 at (3,5) and at (235,5) in 0x96. Hex-Rays shows the descending half as
+ *    -6-5*k: the ARM computes 0xFA-5*k and stores it through STRB, so the byte is what matters.
+ *
+ * 2. Name (0x63428..0x63628). Colour pair (240,240,100)/(30,30,30); the rank icon is the basebits
+ *    glyph bRankType + fontSys_nBaseBitsSprBase + 42 at (5,7); the name (szName @ +0xBA) is centred at
+ *    (160 - w/2, 10). Before the name, and only when uMissions @ +0xB8 is above 3, the two class
+ *    insignia blit: cs0/cs1/cs2 are the three PadImages Assets_LoadStartup allocates at 0x186C30,
+ *    0x186C34 and 0x186C38 and loads from the archive members "cs0", "cs1", "cs2" (0x387F4..0x38898,
+ *    right after "class.pal" into palette slot 0x12). The ARM sets pad->nOriginX = 33, pad->nOriginY = 2,
+ *    blits, adds 34 to nOriginX and blits again, so the two slots are x 33 and x 67 at y 2. Which pad
+ *    goes in which slot is Soldier.nClass @ +0x1AC (0x63490..0x63614): 0 -> cs0/cs0, 1 -> cs1/cs1,
+ *    2 -> cs2/cs2, 3 -> cs0/cs1, 4 -> cs1/cs2, 5 -> cs0/cs2, anything else draws nothing. The pads are
+ *    left with nOriginX = 67 behind.
+ *
+ * 3. Armour (0x63668..0x63720). Cyan pair; TEXTS[90] "Armour" centred at (104 - w/2, 38). The value is
+ *    TEXTS[93 + nUnitType] -- "None", "Personal Armour", "Power Armour", "Fly armour" -- centred at
+ *    (188 - w/2, 38), and only for nUnitType 0..3: the ARM's switch has no default arm, so a unit type
+ *    of 4 or more (every alien type) draws no armour value at all.
+ *
+ * 4. Rank / craft / record (0x63724..0x63b90). A 10-step ramp first (0x6374C..0x63808): 4x1 at x =
+ *    143+5k and at x = 188+5k, on y 37 and on y 55, in 8*k+100 (100..172) and the byte 0xAC-8*k
+ *    (172..108; Hex-Rays' -76-8*k). Then cyan labels: TEXTS[123] "Rank:" and TEXTS[124] "Craft:"
+ *    centred at x 35 on y 61 and 75, TEXTS[125] "Missions:" and TEXTS[126] "Kills:" centred at x 170 on
+ *    the same two lines. When bUnk183 == 254 -- the value Base_TransferTacticalLoot @ 0x68344 leaves on
+ *    a craft's crew when it credits them, together with the days in bUnk247 @ +0xF7 (40*nUnk436/100,
+ *    0x68610, and Geoscape's daily tick counts it down) -- TEXTS[127]
+ *    "Wound Recovery" is centred at (120 - w/2, 89) and the day count drawn at (207, 89) in the
+ *    (240,240,240) pair. Then the white pair: the rank name aszTextE[20*bRankType] at (63, 61); the
+ *    craft at (63, 75) as TEXTS[137]/[138]/[139] ("Skyranger-", "Lightning-", "Avenger-") with
+ *    itoa(apCraft[bUnk183]->bType) appended, or TEXTS[93] "None" when bUnk183 >= 0xFE; then
+ *    itoa(uMissions) at (207, 61) and itoa(uKills @ +0xFA) at (207, 75).
+ *
+ * 5. Stat bars (0x63bb0..0x64214). Nine rows, each: its own colour pair, the label at (10, y), the
+ *    value itoa(auStat[k]) at (210, y+4), and a bar of two rects -- (9, y+16) (val>>1)+2 x 8 and
+ *    (10, y+17) (val>>1) x 6. The rows and their auStat slots are Time [0] at y 110, Stamina [9] at 132,
+ *    Bravery [2] at 154, Reaction [3] at 176, Firing Accuracy [4] at 198, Throwing Accuracy [5] at 220,
+ *    Strength [8] at 242, and -- only when bPsiActive @ +0x1A6 is set -- Psi Strength [7] at 264 and Psi
+ *    Skill [6] at 286. auStat[1] is never shown here.
+ *
+ * 6. Panel frame (0x64420..0x64664). A colour pair is set at 0x64420 and no text follows it before the
+ *    next one, so it changes nothing visible; the port still makes the call because it rewrites the
+ *    palette. Then three ramp groups: 24 steps of 5 at y 61 and y 108 (5x1, x 3+5k and 115+5k), 9 rows
+ *    at y 134+22k each with 24 steps of 5 (5x1, no bottom edge), and 24 steps of 6 at x 5 and x 232
+ *    (1x6, y 58+6k and 174+6k). The rising colour is 5*(k+20), the falling one the byte 0xFA-5*k or
+ *    0xE6-5*k.
+ *
+ * 7. Transfer panels (0x64678): SoldierScreen_DrawEquipPanels, behind bTransferFlag.
+ *
+ * 8. Name keyboard (0x64694..0x64a78), behind byte_186B88 -- the flag SoldierScreen_CopyNameToEdit
+ *    (0x6318c) arms. Ui_AnimExpandBlit over the geoscape anim root 0x1864F8 at (0,70) 236x250, index 4,
+ *    source 0x46/0x4B, key 0xC8, mode 3; while it is still expanding it returns 0 and the whole
+ *    keyboard, including the return value, stays at 0. Once it finishes: the two pads blit (unk_186BA8
+ *    is the left one -- Geoscape_OnPointer gives it Map_BackspaceSelectedName as its click handler at
+ *    0x88244 -- and unk_186B9C the right one, which gets SoldierScreen_CopyNameToEdit at 0x8824C), then
+ *    the red pair (255,55,55) and "Windows-1251 encode" centred at (120, 65), then the cyan pair and
+ *    "BackSpace" at (60 - w/2, 301) and "Accept" at (180 - w/2, 301). Those three literals are plain
+ *    .data strings at 0xab728, 0xab71c and 0xab714, not TEXTS records. A one-cell box then frames the
+ *    space key at (12, 80): two horizontals of measure(" ") on y 80 and 93, a 1x13 left edge and a
+ *    1x14 right edge, all in index 0xFA -- in 0/0 when the selected character (unk_159DE8) is a space
+ *    AND 0x1864F8+0x35 is set, otherwise in 0x14/0x14. Finally the grid: 16 rows of 13 on y 80..279 and
+ *    16 columns of 14 on x 12..226, the character code counting up from 32, so the 256 cells cover
+ *    32..255 and then wrap through (char) to 0..31. A cell whose character measures zero gets a grey
+ *    (150,150,120) '-' first, then its own character in (250,250,20) -- which draws nothing -- and the
+ *    selected character, when 0x1864F8+0x35 is set, in (250,0,0) instead.
+ *
+ * Return: 0 when the keyboard is not armed or is still expanding, otherwise whatever the last
+ * Text_DrawString returned. SoldierScreen_Draw hands that straight back to Geoscape_Draw.
+ *
+ * Deviations: the original reaches the soldier array, the craft array, the pads, the font and every
+ * flag through fixed addresses and never bounds apSoldiers[nCursor] or apCraft[bUnk183]; the port takes
+ * them from the env and returns 0 for a null env or a soldier it cannot resolve. The original builds
+ * the craft string in a 140-byte stack buffer that it only ever initialises through the switch, so a
+ * soldier aboard a craft whose bCraftType is 3 or 4 -- the two the game names Interceptor and Fire
+ * Storm (TEXTS[418], TEXTS[419]) -- prints that uninitialised buffer; the port writes "None" instead
+ * and the difference is in the ledger. The original's itoa scratch buffer is the global unk_159DD0; the
+ * port uses locals. */
+#define PUFO_SOLDET_ICON_BASE   42  /* the rank icon is basebits glyph bRankType + nBaseBitsBase + 42 */
+#define PUFO_SOLDET_CLASS_X0    33  /* the two class-insignia slots, 33 then 33+34 */
+#define PUFO_SOLDET_CLASS_X1    67
+#define PUFO_SOLDET_CLASS_Y      2
+#define PUFO_SOLDET_CLASS_MAX     5  /* nClass above this draws no insignia at all */
+#define PUFO_SOLDET_MISSION_GATE  3  /* the insignia pair needs uMissions strictly above this */
+#define PUFO_SOLDET_BAR_SHIFT     1  /* every bar is (value >> 1) wide, the frame one wider */
+#define PUFO_SOLDET_KB_ROWS      16  /* 16 rows of 13 and 16 columns of 14, 256 cells from char 32 */
+#define PUFO_SOLDET_KB_COLS      16
+#define PUFO_SOLDET_KB_ROW_H     13
+#define PUFO_SOLDET_KB_COL_W     14
+#define PUFO_SOLDET_KB_X0        12
+#define PUFO_SOLDET_KB_Y0        80
+#define PUFO_SOLDET_KB_FIRST    32  /* the first character code the grid draws */
+#define PUFO_SOLDET_STAT_ROWS     9 /* 7 stat rows always, plus Psi Strength and Psi Skill under bPsiActive */
+#define PUFO_SOLDET_BAR_LABEL_X  10 /* every stat label is left-aligned here, every value at x 210 */
+#define PUFO_SOLDET_BAR_VALUE_X 210
+#define PUFO_SOLDET_BAR_X0        9 /* the bar frame rect, and the fill one pixel in from it */
+/* The keyboard's three captions and its two markers are plain .data literals in the original, not
+ * TEXTS records, so the Russian build shows them in English exactly as the English one does. */
+#define PUFO_SOLDET_KB_ENCODE    "Windows-1251 encode" /* aWindows1251Enc @ 0xab728 */
+#define PUFO_SOLDET_KB_BACKSPACE "BackSpace"           /* aBackspace @ 0xab71c */
+#define PUFO_SOLDET_KB_ACCEPT    "Accept"              /* aAccept @ 0xab714 */
+#define PUFO_SOLDET_KB_DASH      "-"                   /* asc_AB340 @ 0xab340, the unprintable-cell marker */
+#define PUFO_SOLDET_KB_SPACE     " "                   /* asc_AADB8 @ 0xaadb8, the width the key box measures */
+
+/* The TEXTS.DAT records this draw labels itself with, by record number. The English values are the
+ * shipped main.dat copy; lang.dat carries the Russian one and wins the lookup at run time. */
+typedef enum SoldierDetailText {
+    PUFO_SOLDET_TEXT_ARMOUR    = 90,  /* "Armour" */
+    PUFO_SOLDET_TEXT_NONE      = 93,  /* "None" -- also the equip panel's row 0 */
+    PUFO_SOLDET_TEXT_ARMOUR_1  = 94,  /* "Personal Armour" */
+    PUFO_SOLDET_TEXT_ARMOUR_2  = 95,  /* "Power Armour" */
+    PUFO_SOLDET_TEXT_ARMOUR_3  = 96,  /* "Fly armour" */
+    PUFO_SOLDET_TEXT_RANK      = 123, /* "Rank:" */
+    PUFO_SOLDET_TEXT_CRAFT     = 124, /* "Craft:" */
+    PUFO_SOLDET_TEXT_MISSIONS  = 125, /* "Missions:" */
+    PUFO_SOLDET_TEXT_KILLS     = 126, /* "Kills:" */
+    PUFO_SOLDET_TEXT_WOUND     = 127, /* "Wound Recovery" */
+    PUFO_SOLDET_TEXT_TIME      = 128, /* "Time"        -> auStat[0] */
+    PUFO_SOLDET_TEXT_STAMINA   = 129, /* "Stamina"     -> auStat[9] */
+    PUFO_SOLDET_TEXT_BRAVERY   = 130, /* "Bravery"     -> auStat[2] */
+    PUFO_SOLDET_TEXT_REACTION  = 131, /* "Reaction"    -> auStat[3] */
+    PUFO_SOLDET_TEXT_FIRING    = 132, /* "Firing Accuracy"   -> auStat[4] */
+    PUFO_SOLDET_TEXT_THROWING  = 133, /* "Throwing Accuracy" -> auStat[5] */
+    PUFO_SOLDET_TEXT_STRENGTH  = 134, /* "Strength"    -> auStat[8] */
+    PUFO_SOLDET_TEXT_PSI_STR   = 135, /* "Psi Strength" -> auStat[7] */
+    PUFO_SOLDET_TEXT_PSI_SKL   = 136, /* "Psi Skill"    -> auStat[6] */
+    PUFO_SOLDET_TEXT_CRAFT_0   = 137, /* "Skyranger-"  for Ship.bCraftType 0 */
+    PUFO_SOLDET_TEXT_CRAFT_1   = 138, /* "Lightning-"  for 1 */
+    PUFO_SOLDET_TEXT_CRAFT_2   = 139  /* "Avenger-"    for 2 */
+} SoldierDetailText;
+
+typedef struct SoldierDetailEnv {
+    Soldier *const *apSoldiers;   /* apSoldiers @ Map + 0x1198 */
+    const u16 *pnSoldierCount;    /* nSoldierCount @ 0x115350 */
+    Ship *const *apCraft;         /* Map + 0x10AC */
+    i32 nCraftCount;              /* Map_nCraftCount @ 0x114B4C, the bound the original never applies */
+    const char *pTextRecs;        /* TEXTS.DAT records, PUFO_TEXT_REC_STRIDE apart */
+    const u8 *aszRankNames;       /* aszTextE @ 0xb2200, PUFO_TXT_E_COUNT x PUFO_TXT_E_STRIDE */
+    PadImage *const *apClassPads; /* cs0/cs1/cs2 @ 0x186C30, 0x186C34, 0x186C38 */
+    const GfxColorEnv *pColor;    /* the pair Gfx_PackRgb565Pair writes */
+    UiAnimBlitEnv *pAnim;         /* the geoscape anim root @ 0x1864F8 */
+    UiControl *pCtlBackspace;     /* unk_186BA8, the keyboard's left pad */
+    UiControl *pCtlAccept;        /* unk_186B9C, its right pad */
+    UiControlBlitFn pfnCtlBlit;
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    const u8 *pbPreviewOk;        /* 0x1864F8 + 0x35, the byte the keyboard highlights on */
+    const u8 *pbNameEditActive;   /* byte_186B88, armed by SoldierScreen_CopyNameToEdit */
+    const u8 *pnNameEditChar;     /* unk_159DE8, the character the grid highlights */
+    i32 *pnCursorCopy;            /* unk_159760, where this function stores its argument */
+    const u8 *pbTransferFlag;     /* bTransferFlag @ 0x159E10 */
+    SolEquipPanelEnv EquipPanels; /* the transfer panels behind that flag */
+} SoldierDetailEnv;
+
+i32 SoldierScreen_DrawDetail(const SoldierDetailEnv *pEnv, i32 nCursor);
 
 /* --- BaseFacScreen_DrawPlacementOverlay @ 0x58e10 (3396 B) : the placement preview and its commit
  *
