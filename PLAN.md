@@ -2697,6 +2697,29 @@ Order is by what unblocks what. Each item ends with gates + commit.
   three `Soldier` psi members renamed (466 → 476 on record), 4 function comments, 11 line comments, 1 new
   ledger row (228). 14648 checks (60 suites), coverage 934/1103 (84.7%) and 515852/598792 bytes (86.1%).
 
+- [x] **part 91, the psi screen's frame: `PsiScreen_Draw (0x72398, 1,960 B)`** — the whole body sits behind
+  `g_bPsiPanelOpen` (0x723B8), so a closed screen draws nothing at all. **The rails are the shared
+  `BaseUi_DrawFrameRails`** (0x723C8..0x72558), the same block Transfer, Manuf and Research each carry.
+  **Four captions, and an earlier IDB note about them was wrong**: it called them scratch buffers nothing
+  writes, but all four are TEXTS records and the shipped lang.dat has text in every one — TEXTS[1188] the
+  column captions at (7, 54), TEXTS[1189] centred at (60, 300), TEXTS[1127] "ОК" centred at (180, 300),
+  TEXTS[1190] centred at (120, 158). Centring is `centre - (width >> 1)`: the `ADDMI` at 0x7290C never
+  fires on a positive width, so the `ASR #1` at 0x72910 is a plain floor. **Overlay** (byte_1870F8): the
+  full-screen blend, a 32-wide erase strip at x 208 of height `28*nBaseCount + 4`, `Base_DrawFacilityIconStrip`
+  with the mark argument **-1** so the drawer paints no chevron of its own, the 210-wide panel, then one
+  bevelled row per base with its name centred at (110, 28*i + 7); the row count is the signed byte at
+  `abFacilityGrid + 0x618`. **A base whose `Base_CalcPsiLabCap` is 0 gets the 23-step white bracket** at
+  x 212..234 — the same bracket the strip drawer paints for a marked base, here marking the ABSENCE of a
+  psi lab. **Tail**: `byte_158834` against `byte_1870F4` signed; equal or overlay closed packs the tail
+  colour pair and, with `dwActionFail == 1` and `dword_1870B4[0] == 0`, runs the shortfall panel and its
+  caption; different, `Base_CalcPsiLabCap` either adopts the base (0x72A28 / 0x72A2C) or does nothing at
+  all. **5 deviations:** caption and name sources passed in rather than reached as globals, a bounded base
+  index for the title, two seams where the original calls directly, and four guards the original lacks.
+  82 new checks; 32 mutations turn at least one red, and one (the 210-wide panel rect narrowed to 200) is
+  provably invisible because the 32-wide erase strip covers exactly the difference. 3 new IDB symbols
+  (476 → 501 renames on record), 10 line comments, and the corrected function comment at 0x72398. 14730
+  checks (60 suites), coverage 935/1103 (84.8%) and 517812/598792 bytes (86.5%); `strat-ui` to 234/245.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable

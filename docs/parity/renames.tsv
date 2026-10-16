@@ -496,3 +496,6 @@ unk_186BAC	pGeoscapeCtlApply	0x186BAC. The shared geoscape Apply control pointer
 Soldier::bUnk149	Soldier::bPsiAssigned	+0x95. Stationed at a psi lab: PsiScreen_SelectListed toggles it, PsiScreen_ApplyAssignments writes it from the row checkbox (0x722E8 / 0x7234C), Base_CountPsiSoldiers counts it, BuildPanels highlights the rows that carry it.
 Soldier::bUnk422	Soldier::bPsiActive	0x1A6. The unit carries psi powers. BuildPanels sets it for every assigned soldier at 0x71D00, it gates the two auStat[6]/[7] columns (0x71E2C) and the unit info screen's extra rows (0x44E64), and EnemyAI looks for an enemy that carries it at 0x4CE28.
 Soldier::bUnk423	Soldier::nPsiTrainDays	0x1A7. Days of psi training left. Armed to 30 * auStat[7] / 100 at 0x72090 (or 1 when auStat[6] is already at or above auStat[7]), copied from the delta column's aux at 0x7230C, and spent one per day by Geoscape_TickBases while raising auStat[6].
+unk_EF024	aTextPsiColumnCaptions	0xEF024. TEXTS[1188], the four psi-screen column captions PsiScreen_Draw draws at (7, 54) (0x726A0). char[205].
+unk_EF0F1	aTextSelectBase	0xEF0F1. TEXTS[1189], the choose-a-base caption centred at (60, 300) by PsiScreen_Draw (0x726F8). char[205].
+unk_EF1BE	aTextNoPsiRoom	0xEF1BE. TEXTS[1190], the no-free-psi-lab caption centred at (120, 158) by PsiScreen_Draw (0x72B2C). char[205].

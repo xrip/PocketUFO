@@ -11333,3 +11333,101 @@ void PsiScreen_Init(PsiScreenEnv *pEnv)
     *pEnv->pbRowSel = 1;                                  /* 0x72C70: byte_15EE84[0] */
     PsiScreen_BuildPanels(pEnv);                          /* 0x72C78 */
 }
+
+static const char *PsiUi_Text(const PsiScreenDrawEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+static const char *PsiUi_BaseName(const PsiScreenDrawEnv *pEnv, i32 nBaseIdx)
+{
+    if (pEnv->apSiteRecs == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return ""; /* deviation: 0x725AC and 0x728D8 index the eight records blindly */
+    }
+    return pEnv->apSiteRecs[nBaseIdx].abName; /* 0x186C24 + 64*i + 54 == 0x186C40 + 64*i + 26 */
+}
+
+static void PsiUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+/* PsiScreen_Draw @ 0x72398. See the header for the frame, the four captions and the tail. */
+void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pbPanelOpen == NULL || *pEnv->pbPanelOpen == 0) {
+        return;                                         /* 0x723B8: nothing draws while the flag is clear */
+    }
+
+    if (pEnv->pScreenPad != NULL) {
+        PadImage_Blit(pEnv->pScreenPad);                /* 0x723C0 */
+    }
+    BaseUi_DrawFrameRails();                            /* 0x723C8..0x72558, the shared rails */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x7258C */
+    PsiUi_DrawCentered(120, 13, PsiUi_BaseName(pEnv, (i32)pEnv->nWorkBaseIdx)); /* 0x725F0 */
+
+    for (i32 i = 0; i < 4; ++i) {                       /* 0x72600..0x72624 */
+        if (pEnv->apPanels[i] != NULL) {
+            UiPanel_DrawText(pEnv->apPanels[i]);
+        }
+    }
+    (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser); /* 0x72630 */
+    (void)UiControl_BlitActivePad(pEnv->pCtlApply, pEnv->pfnCtlBlit,
+                                  pEnv->pfnCtlBlitEx, pEnv->pCtlUser);  /* 0x7263C */
+
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);   /* 0x7265C */
+    Text_DrawString(7, 54, PsiUi_Text(pEnv, PUFO_PSI_TEXT_COLUMNS));    /* 0x726A0, TEXTS[1188] */
+    PsiUi_DrawCentered(60, 300, PsiUi_Text(pEnv, PUFO_PSI_TEXT_SEL_BASE)); /* 0x726F8, TEXTS[1189] */
+    PsiUi_DrawCentered(180, 300, PsiUi_Text(pEnv, PUFO_PSI_TEXT_OK));      /* 0x7274C, TEXTS[1127] */
+
+    const bool bOverlay = (pEnv->pbOverlayOpen != NULL) && *pEnv->pbOverlayOpen != 0;
+
+    if (bOverlay) {
+        SoftSurf_BlitSrcRect(0, 0, 240, 320, 0, 50, 119, 200);          /* 0x72790 */
+        const i32 nBaseCount = (pEnv->pnBaseCount != NULL) ? (i32)*pEnv->pnBaseCount : 0;
+        SoftSurf_BlitRectProxy(0, 208, 0, 32,
+                               PUFO_PSI_BASE_ROW_PITCH * nBaseCount + 4, 0, 0, 0); /* 0x727CC */
+        if (pEnv->pfnDrawIconStrip != NULL) {
+            pEnv->pfnDrawIconStrip(-1, pEnv->pStripUser);              /* 0x727D8: -1 draws no chevron */
+        }
+        SoftSurf_BlitRectProxy(0, 0, 0, 210,
+                               PUFO_PSI_BASE_ROW_PITCH * nBaseCount + 4, 0, 0, 0); /* 0x72810 */
+
+        for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {             /* 0x72828..0x729EC */
+            const i32 nY = PUFO_PSI_BASE_ROW_PITCH * nBase;
+            SoftSurf_BlitRectProxy(0, 3, nY + 3, 205, 26, 0x46, 0xA0, 0xB3); /* 0x72870 */
+            SoftSurf_BlitRectProxy(0, 3, nY + 4, 204, 24, 0x00, 0x6E, 0x77); /* 0x728A4 */
+            SoftSurf_BlitRectProxy(0, 5, nY + 5, 201, 22, 0x04, 0x46, 0x4B); /* 0x728D0 */
+            PsiUi_DrawCentered(110, nY + 7, PsiUi_BaseName(pEnv, nBase));    /* 0x7291C */
+
+            /* 0x72930: a base with no psi lab gets the white bracket, the same 23-step shape
+             * Base_DrawFacilityIconStrip paints for a marked base -- here marking the absence. */
+            if (Base_CalcPsiLabCap(pEnv->abFacilityGrid, nBase) == 0) {
+                for (i32 k = 0; k < PUFO_PSI_CHEVRON_STEPS; ++k) {
+                    SoftSurf_BlitRectProxy(0, 212 + k, nY + 4 + k, 2, 2, 0xFF, 0, 0); /* 0x72968 */
+                    SoftSurf_BlitRectProxy(0, 212 + k, nY + 26 - k, 2, 2, 0xFF, 0, 0); /* 0x72994 */
+                }
+            }
+        }
+    }
+
+    /* 0x72A0C..0x72B2C. With the overlay closed the compare is skipped and the shortfall panel is
+     * reached straight from 0x72760. */
+    if (!bOverlay || (i32)pEnv->nWorkBaseIdx == (i32)*pEnv->pnPsiBaseIdx) {
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30); /* 0x72A94 */
+        if (pEnv->pnActionFail != NULL && *pEnv->pnActionFail == 1 &&
+            pEnv->pnResidue != NULL && *pEnv->pnResidue == 0) {
+            (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1); /* 0x72AD4 */
+            PsiUi_DrawCentered(120, 158, PsiUi_Text(pEnv, PUFO_PSI_TEXT_NO_ROOM)); /* 0x72B2C */
+        }
+    } else if (Base_CalcPsiLabCap(pEnv->abFacilityGrid, (i32)pEnv->nWorkBaseIdx) != 0) {
+        *pEnv->pnPsiBaseIdx = pEnv->nWorkBaseIdx;                      /* 0x72A28 */
+        *pEnv->pbOverlayOpen = 0;                                      /* 0x72A2C */
+    }
+}

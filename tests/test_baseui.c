@@ -14260,6 +14260,534 @@ static void TestPsiScreen(void)
     CheckEqI32(g_nPsiScreen, 0, "and the geoscape screen id is cleared with them");
 }
 
+/* -------------------------------------------------------------------------- *
+ * PsiScreen_Draw @ 0x72398.                                                   *
+ * -------------------------------------------------------------------------- */
+
+static SoftSurf g_pdSurf;
+static PsiScreenDrawEnv g_pdEnv;
+static GfxColorEnv g_pdColor;
+static UiAnimBlitEnv g_pdAnim;
+static UiPanel g_aPdPanel[4];
+static UiControl g_aPdCtl[2];
+static PadImage g_aPdCtlPad[2];
+static PadImage g_pdScreenPad;
+static BaseSiteRec g_aPdSite[8];
+static u8 g_bPdOpen, g_bPdOverlay, g_bPdAnimStarted;
+static i8 g_nPdPsiBase, g_nPdWorkBase, g_nPdDrawBase, g_nPdProgress, g_nPdBaseCount;
+static i32 g_nPdFail, g_nPdResidue;
+static i32 g_nPdStripCalls, g_nPdStripArg, g_nPdCtlCalls;
+static const PadImage *g_apPdCtlPad[2];
+
+static void PdIconStripThunk(i32 nBaseIdx, void *pUser)
+{
+    (void)pUser;
+    ++g_nPdStripCalls;
+    g_nPdStripArg = nBaseIdx;
+}
+
+static void PdCtlBlitThunk(const PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    if (g_nPdCtlCalls < 2) {
+        g_apPdCtlPad[g_nPdCtlCalls] = pPad;
+    }
+    ++g_nPdCtlCalls;
+}
+
+static void PdClear(void)
+{
+    memset(g_pdSurf.pPixels, 0, (size_t)240 * 320u * 2u);
+    g_nPdStripCalls = 0;
+    g_nPdStripArg = 999;
+    g_nPdCtlCalls = 0;
+    g_bPdAnimStarted = 0;
+}
+
+static i32 PdInkAll(const u16 *pPix)
+{
+    i32 nInk = 0;
+
+    for (i32 i = 0; i < 240 * 320; ++i) {
+        if (pPix[i] != 0) {
+            ++nInk;
+        }
+    }
+    return nInk;
+}
+
+/* Ink of one exact colour. Gfx_PackRgb565Pair @ 0x2d82c stores the (r2,g2,b2) half of its pair at
+ * unk_147B3C -- palette slot 2 entry 27 -- and the font glyphs use entry 27 for their main colour,
+ * so counting that colour counts the text the draw put there. */
+static i32 PdInkColour(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1, u16 uWant)
+{
+    i32 nInk = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * 240 + x] == uWant) {
+                ++nInk;
+            }
+        }
+    }
+    return nInk;
+}
+
+/* The leftmost / topmost pixel of one colour in a band: the centring probes use these, because a
+ * band that only asks "is there ink here" cannot see a label slide sideways. */
+static i32 PdInkLeft(const u16 *pPix, i32 x0, i32 x1, i32 y0, i32 y1, u16 uWant)
+{
+    for (i32 x = x0; x <= x1; ++x) {
+        for (i32 y = y0; y <= y1; ++y) {
+            if (pPix[y * 240 + x] == uWant) {
+                return x;
+            }
+        }
+    }
+    return -1;
+}
+
+static i32 PdInkTop(const u16 *pPix, i32 x0, i32 x1, i32 y0, i32 y1, u16 uWant)
+{
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * 240 + x] == uWant) {
+                return y;
+            }
+        }
+    }
+    return -1;
+}
+
+/* The four caption bands and the panel band. Every one is clear of the rails (x 5 / 234, y 5 / 315),
+ * of the shortfall panel at (20, 130) and of each other, so ink inside one can only come from the
+ * text that band's own source feeds. */
+#define PD_BAND_COLUMNS_X0 7
+#define PD_BAND_COLUMNS_Y0 54
+#define PD_BAND_SEL_X0     20
+#define PD_BAND_SEL_Y0     300
+#define PD_BAND_OK_X0      160
+#define PD_BAND_OK_Y0      300
+#define PD_BAND_NAME_X0    60
+#define PD_BAND_NAME_Y0    13
+#define PD_BAND_ROOM_X0    60
+#define PD_BAND_ROOM_Y0    158
+#define PD_BAND_ROWS_X0    10
+#define PD_BAND_ROWS_Y0    70
+#define PD_BAND_X1         205
+#define PD_BAND_YSPAN      15
+
+/* Clears the grid, the site records and the TEXTS block, and re-arms every scalar. The panels and
+ * the controls are built once by the caller and only re-pointed here. */
+static void PdFixture(i32 nBaseCount)
+{
+    memset(&g_pdEnv, 0, sizeof(g_pdEnv));
+    memset(g_aPdCtl, 0, sizeof(g_aPdCtl));
+    memset(g_aPdSite, 0, sizeof(g_aPdSite));
+    memset(g_abPsiGrid, 0, sizeof(g_abPsiGrid));
+    memset(g_aXfText, 0, sizeof(g_aXfText));
+
+    for (i32 i = 0; i < 2; ++i) {
+        g_aPdCtl[i].bEnabled = 1;
+        g_aPdCtl[i].nMode = 0;
+        g_aPdCtl[i].nState = 0;
+        g_aPdCtl[i].apPads[0] = &g_aPdCtlPad[i];
+    }
+
+    g_bPdOpen = 1;
+    g_bPdOverlay = 0;
+    g_bPdAnimStarted = 0;
+    g_nPdProgress = 0;
+    g_nPdBaseCount = (i8)nBaseCount;
+    g_nPdPsiBase = 0;
+    g_nPdWorkBase = 0;
+    g_nPdDrawBase = 0;
+    g_nPdFail = 0;
+    g_nPdResidue = 0;
+
+    g_pdEnv.pColor = &g_pdColor;
+    g_pdEnv.pAnim = &g_pdAnim;
+    g_pdEnv.pbPanelOpen = &g_bPdOpen;
+    g_pdEnv.pScreenPad = NULL;
+    for (i32 i = 0; i < 4; ++i) {
+        g_pdEnv.apPanels[i] = &g_aPdPanel[i];
+    }
+    g_pdEnv.nBaseIdx = g_nPdDrawBase;
+    g_pdEnv.nWorkBaseIdx = g_nPdWorkBase;
+    g_pdEnv.pnPsiBaseIdx = &g_nPdPsiBase;
+    g_pdEnv.pbOverlayOpen = &g_bPdOverlay;
+    g_pdEnv.pCtlConfirm = &g_aPdCtl[0];
+    g_pdEnv.pCtlApply = &g_aPdCtl[1];
+    g_pdEnv.pfnCtlBlit = PdCtlBlitThunk;
+    g_pdEnv.pfnCtlBlitEx = PdCtlBlitThunk;
+    g_pdEnv.pTextRecs = (const char *)g_aXfText;
+    g_pdEnv.apSiteRecs = g_aPdSite;
+    g_pdEnv.pnBaseCount = &g_nPdBaseCount;
+    g_pdEnv.abFacilityGrid = g_abPsiGrid;
+    g_pdEnv.pnActionFail = &g_nPdFail;
+    g_pdEnv.pnResidue = &g_nPdResidue;
+    g_pdEnv.pfnDrawIconStrip = PdIconStripThunk;
+}
+
+/* The original keeps nWorkBaseIdx in a global and passes the drawn base as an argument; the harness
+ * keeps both in step with the env the same way the geoscape caller does. */
+static void PdDraw(void)
+{
+    g_pdEnv.nBaseIdx = g_nPdDrawBase;
+    g_pdEnv.nWorkBaseIdx = g_nPdWorkBase;
+    PsiScreen_Draw(&g_pdEnv);
+}
+
+static void TestPsiScreenDraw(void)
+{
+    const u16 *pPix;
+    u16 uCapGlyph, uTailGlyph;
+    u32 dwCapFirst, dwTailFirst;
+
+    printf("PsiScreen_Draw @ 0x72398\n");
+
+    FrameLoadFont(); /* the real font, so the captions really reach the surface */
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_pdSurf);
+    SoftSurf_AllocPixels(&g_pdSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_pdSurf;
+    pPix = (const u16 *)g_pdSurf.pPixels;
+
+    g_pdColor.nScaleSource = 0;
+    g_pdColor.nFadeCount = 0;
+    g_pdAnim.pbStarted = &g_bPdAnimStarted;
+    g_pdAnim.pnProgress = &g_nPdProgress;
+    g_pdAnim.nFrameStyle = 0;
+
+    /* The two colour pairs the draw packs, in the order it packs them: 0x7265C before the captions
+     * and 0x72A94 in the tail. The (r2,g2,b2) half is what the glyphs are drawn with; the
+     * (r1,g1,b1) half lands at unk_147B54 and says which of the two calls ran last. */
+    uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_pdColor, 68, 244, 252, 4, 70, 75);
+    dwCapFirst = g_aPalette[2][33];
+    uTailGlyph = (u16)Gfx_PackRgb565Pair(&g_pdColor, 220, 80, 80, 50, 30, 30);
+    dwTailFirst = g_aPalette[2][33];
+    Check(uCapGlyph != 0 && uTailGlyph != 0 && uCapGlyph != uTailGlyph,
+          "both colour pairs pack to distinct non-zero glyph colours (0x2d82c)");
+
+    for (i32 i = 0; i < 4; ++i) {
+        (void)UiPanel_ctor(&g_aPdPanel[i], 3);
+        g_aPdPanel[i].nPosX = 10 + 55 * i;
+        g_aPdPanel[i].nPosY = 70;
+        g_aPdPanel[i].nStyle = 3;
+        g_aPdPanel[i].nFont = 16;
+        for (i32 r = 0; r < 3; ++r) {
+            (void)UiPanel_SetLineText(&g_aPdPanel[i], r, "Row");
+        }
+    }
+
+    /* 1. The gate. */
+    PdFixture(2);
+    g_bPdOpen = 0;
+    g_bPdOverlay = 1;
+    g_nPdFail = 1;
+    g_nPdResidue = 0;
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkAll(pPix), 0, "nothing draws while g_bPsiPanelOpen @ 0x15EEF0 is clear (0x723B8)");
+    CheckEqI32(g_nPdStripCalls, 0, "  not even the overlay's icon strip");
+    CheckEqI32(g_nPdCtlCalls, 0, "  nor the two geoscape controls");
+    CheckEqI32(g_bPdAnimStarted, 0, "  nor the shortfall panel");
+    CheckEqI32(g_nPdPsiBase, 0, "  and the tail never adopts a base");
+
+    /* 2. Open, overlay closed, no shortfall: the frame, the controls, the panels, the tail colour. */
+    PdFixture(2);
+    PdClear();
+    PdDraw();
+    CheckEqI32((i32)pPix[2 * 240 + 5], XfPix(100, 100, 100), "the shared rails frame the screen (0x723C8)");
+    CheckEqI32((i32)pPix[314 * 240 + 5], XfPix(115, 115, 115), "  down to the last left-rail block");
+    CheckEqI32((i32)pPix[5 * 240 + 234], XfPix(135, 135, 135), "  and the top rail across to x 234");
+    CheckEqI32(g_nPdCtlCalls, 2, "the confirm and apply controls both blit (0x72630 / 0x7263C)");
+    Check(g_apPdCtlPad[0] == &g_aPdCtlPad[0], "the confirm control's pad first");
+    Check(g_apPdCtlPad[1] == &g_aPdCtlPad[1], "then the apply control's");
+    Check(PdInkAll(pPix) > 0, "the four columns draw their rows (0x72600..0x72624)");
+    CheckEqI32((i32)pPix[3 * 240 + 3], 0, "the overlay bevels stay off with byte_1870F8 clear (0x72760)");
+    CheckEqI32((i32)pPix[300 * 240 + 239], 0, "and the full-screen blend never runs either (0x72790)");
+    CheckEqI32(g_nPdStripCalls, 0, "and the icon strip is inside the overlay (0x727D8)");
+    CheckEqI32((i32)g_aPalette[2][33], (i32)dwTailFirst,
+               "the tail pair (DC,50,50)/(1E,32,50) is packed at 0x72A94 with the overlay closed");
+    CheckEqI32(g_bPdAnimStarted, 0, "no shortfall panel while dwActionFail is clear (0x72AA4)");
+
+    /* 3. The four captions, one record at a time, so each band pins its own record index. */
+    PdFixture(2);
+    for (i32 i = 0; i < 4; ++i) {
+        for (i32 r = 0; r < 3; ++r) {
+            (void)UiPanel_SetLineText(&g_aPdPanel[i], r, "");
+        }
+    }
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, PD_BAND_COLUMNS_X0, PD_BAND_COLUMNS_Y0, PD_BAND_X1,
+                           PD_BAND_COLUMNS_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "an empty TEXTS[1188] leaves the column captions off (0x726A0)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_SEL_X0, PD_BAND_SEL_Y0, PD_BAND_OK_X0 - 1,
+                           PD_BAND_SEL_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "  the same for TEXTS[1189] (0x726F8)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_OK_X0, PD_BAND_OK_Y0, PD_BAND_X1,
+                           PD_BAND_OK_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "  for TEXTS[1127] (0x7274C)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_NAME_X0, PD_BAND_NAME_Y0, PD_BAND_X1 - 25,
+                           PD_BAND_NAME_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "  and for an empty base name (0x725F0)");
+
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_COLUMNS, "Name");
+    PdClear();
+    PdDraw();
+    Check(PdInkColour(pPix, PD_BAND_COLUMNS_X0, PD_BAND_COLUMNS_Y0, PD_BAND_X1,
+                      PD_BAND_COLUMNS_Y0 + PD_BAND_YSPAN, uCapGlyph) > 0,
+          "TEXTS[1188] draws at (7, 54) (0x726A0)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_SEL_X0, PD_BAND_SEL_Y0, PD_BAND_X1,
+                           PD_BAND_SEL_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "  and nothing lands in the (60, 300) band");
+
+    memset(g_aXfText, 0, sizeof(g_aXfText));
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_SEL_BASE, "Choose base");
+    PdClear();
+    PdDraw();
+    Check(PdInkColour(pPix, PD_BAND_SEL_X0, PD_BAND_SEL_Y0, PD_BAND_OK_X0 - 1,
+                      PD_BAND_SEL_Y0 + PD_BAND_YSPAN, uCapGlyph) > 0,
+          "TEXTS[1189] draws centred at (60, 300) (0x726F8)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_COLUMNS_X0, PD_BAND_COLUMNS_Y0, PD_BAND_X1,
+                           PD_BAND_COLUMNS_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+          "  and the caption band above the rows stays empty");
+
+    memset(g_aXfText, 0, sizeof(g_aXfText));
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_OK, "OK");
+    PdClear();
+    PdDraw();
+    Check(PdInkColour(pPix, PD_BAND_OK_X0, PD_BAND_OK_Y0, PD_BAND_X1,
+                      PD_BAND_OK_Y0 + PD_BAND_YSPAN, uCapGlyph) > 0,
+          "TEXTS[1127], the shared OK record, draws centred at (180, 300) (0x7274C)");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_SEL_X0, PD_BAND_SEL_Y0, PD_BAND_OK_X0 - 1,
+                           PD_BAND_SEL_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+          "  and its own band is the only one with ink");
+
+    memset(g_aXfText, 0, sizeof(g_aXfText));
+    PutStr(g_aPdSite[0].abName, "Alpha");
+    PdClear();
+    PdDraw();
+    Check(PdInkColour(pPix, PD_BAND_NAME_X0, PD_BAND_NAME_Y0, PD_BAND_X1 - 25,
+                      PD_BAND_NAME_Y0 + PD_BAND_YSPAN, uCapGlyph) > 0,
+          "the working base's name is centred at (120, 13) (0x725F0)");
+    {
+        const i32 nWant = 120 - Text_MeasureWidth("Alpha") / 2; /* 0x72910: ASR #1, no rounding add */
+        const i32 nLeft = PdInkLeft(pPix, PD_BAND_NAME_X0, PD_BAND_X1 - 25, PD_BAND_NAME_Y0,
+                                    PD_BAND_NAME_Y0 + PD_BAND_YSPAN, uCapGlyph);
+        Check(nLeft >= nWant && nLeft <= nWant + 3,
+              "  centred means the first glyph lands on 120 - width/2 (0x72910)");
+        /* The glyph raster's own leading byte (Font_BlitGlyph @ 0xa41d4, pGlyph[0]) puts the first
+         * inked row a few pixels below the draw row, so the probe is a band, not a line. */
+        const i32 nTop = PdInkTop(pPix, PD_BAND_NAME_X0, PD_BAND_X1 - 25, PD_BAND_NAME_Y0,
+                                  PD_BAND_NAME_Y0 + PD_BAND_YSPAN, uCapGlyph);
+        Check(nTop >= 13 && nTop <= 19, "  and the title's ink starts at the draw row 13 (0x725F0)");
+    }
+    g_nPdWorkBase = 1; /* base 1 has no name in this fixture */
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, PD_BAND_NAME_X0, PD_BAND_NAME_Y0, PD_BAND_X1 - 25,
+                           PD_BAND_NAME_Y0 + PD_BAND_YSPAN, uCapGlyph), 0,
+               "byte_158834 picks which site record the title comes from (0x725F0)");
+    g_nPdWorkBase = 0;
+
+    /* 4. The overlay. */
+    PdFixture(2);
+    for (i32 i = 0; i < 4; ++i) {
+        for (i32 r = 0; r < 3; ++r) {
+            (void)UiPanel_SetLineText(&g_aPdPanel[i], r, "Row");
+        }
+    }
+    PutStr(g_aPdSite[0].abName, "Alpha");
+    PsiAddLab(0, 0, 0);          /* base 0 has a psi lab, base 1 has none */
+    g_bPdOverlay = 1;
+    g_nPdWorkBase = 1;
+    g_nPdPsiBase = 1;            /* equal, so the tail takes the panel branch */
+    PdClear();
+    PdDraw();
+    CheckEqI32(g_nPdStripCalls, 1, "the facility strip runs once inside the overlay (0x727D8)");
+    CheckEqI32(g_nPdStripArg, -1, "with the mark argument -1, so the drawer paints no chevron itself");
+    CheckEqI32((i32)pPix[3 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the first row's outer bevel (0x72870)");
+    CheckEqI32((i32)pPix[4 * 240 + 3], XfPix(0x00, 0x6E, 0x77), "  its middle bevel (0x728A4)");
+    CheckEqI32((i32)pPix[5 * 240 + 5], XfPix(0x04, 0x46, 0x4B), "  and its inner bevel (0x728D0)");
+    CheckEqI32((i32)pPix[31 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the second row starts one 28-step lower (0x729B8)");
+    CheckEqI32((i32)pPix[59 * 240 + 3], 0, "and the row loop stops at nBaseCount (0x72824)");
+    Check(pPix[300 * 240 + 239] != 0, "the blend covers the whole 240x320 screen (0x72790)");
+    CheckEqI32((i32)pPix[59 * 240 + 210], 0, "the 32-wide erase strip reaches 28*nBaseCount + 3 (0x727CC)");
+    Check(pPix[60 * 240 + 210] != 0, "  and the blend it erases is still there one row lower");
+    Check(PdInkColour(pPix, PD_BAND_NAME_X0, 7, PD_BAND_X1 - 25, 21, uCapGlyph) > 0,
+          "each row carries its base name at (110, 28*i + 7) (0x7291C)");
+    {
+        /* Differential probe. The overlay's full-screen blend leaves its own colours in these bands,
+         * so the absolute ink count says nothing; the difference between the named and the unnamed
+         * draw is what pins the row's y. */
+        const i32 nName = PdInkColour(pPix, 90, 7, 130, 21, uCapGlyph);
+        const i32 nBelow = PdInkColour(pPix, 90, 22, 130, 34, uCapGlyph);
+        const i32 nWant = 110 - Text_MeasureWidth("Alpha") / 2; /* 0x72918: RSB from 0x6E */
+        const i32 nLeft = PdInkLeft(pPix, 60, 160, 7, 21, uCapGlyph);
+        Check(nLeft >= nWant && nLeft <= nWant + 3,
+              "  and it is centred on x 110, not on the row's left edge (0x72918)");
+
+        PutStr(g_aPdSite[0].abName, "");
+        PdClear();
+        PdDraw();
+        Check(PdInkColour(pPix, 90, 7, 130, 21, uCapGlyph) < nName,
+              "  the name ink at (110, 7) is the base name, not the blend (0x7291C)");
+        CheckEqI32(PdInkColour(pPix, 90, 22, 130, 34, uCapGlyph), nBelow,
+          "  and none of it spills into the gap before the next row (0x72914)");
+        PutStr(g_aPdSite[0].abName, "Alpha");
+    }
+    CheckEqI32((i32)pPix[4 * 240 + 234], 0, "a base WITH a psi lab gets no bracket (0x72930)");
+    CheckEqI32((i32)pPix[26 * 240 + 234], 0, "  neither arm of it");
+    CheckEqI32((i32)pPix[32 * 240 + 212], XfPix(0xFF, 0, 0),
+               "a base WITHOUT one gets the 23-step bracket, from (212, 28*base + 4) (0x72968)");
+    Check(pPix[31 * 240 + 212] == 0, "  and its down arm starts there, not one pixel lower");
+    CheckEqI32((i32)pPix[32 * 240 + 234], XfPix(0xFF, 0, 0), "the up arm reaches the same x 234 (0x72994)");
+    CheckEqI32((i32)pPix[54 * 240 + 234], XfPix(0xFF, 0, 0), "  both arms meet at x 234");
+    CheckEqI32((i32)pPix[43 * 240 + 223], XfPix(0xFF, 0, 0), "  and the down arm runs one step per iteration");
+    CheckEqI32((i32)g_aPalette[2][33], (i32)dwTailFirst,
+               "the equal-base compare still takes the tail panel branch (0x72A0C)");
+
+    /* 5. The tail: adopt, refuse, or show the shortfall panel. */
+    PdFixture(2);
+    g_bPdOverlay = 1;
+    g_nPdWorkBase = 1;
+    g_nPdPsiBase = 0;
+    PsiAddLab(1, 0, 0);         /* the working base has room, so it is adopted */
+    PdClear();
+    PdDraw();
+    CheckEqI32(g_nPdPsiBase, 1, "a different base with capacity is adopted into byte_1870F4 (0x72A28)");
+    CheckEqI32(g_bPdOverlay, 0, "  and byte_1870F8 clears with it (0x72A2C)");
+    CheckEqI32((i32)g_aPalette[2][33], (i32)dwCapFirst,
+               "  the tail colour pair is never packed on this path (0x72A1C)");
+    CheckEqI32(g_bPdAnimStarted, 0, "  and no shortfall panel runs");
+
+    PdFixture(2);
+    g_bPdOverlay = 1;
+    g_nPdWorkBase = 1;
+    g_nPdPsiBase = 0;           /* base 1 has no psi lab in a fresh grid */
+    PdClear();
+    PdDraw();
+    CheckEqI32(g_nPdPsiBase, 0, "a different base with no capacity is not adopted (0x72A1C)");
+    CheckEqI32(g_bPdOverlay, 1, "  and the overlay stays open");
+    CheckEqI32((i32)g_aPalette[2][33], (i32)dwCapFirst, "  with neither tail branch taken");
+
+    PdFixture(2);
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_NO_ROOM, "No room");
+    g_nPdFail = 1;
+    g_nPdResidue = 0;
+    PdClear();
+    PdDraw();
+    CheckEqI32((i32)pPix[130 * 240 + 20], XfPix(10, 80, 90),
+               "dwActionFail 1 with a zero residue opens the shortfall panel (0x72AD4)");
+    CheckEqI32(g_bPdAnimStarted, 1, "  the panel animation is flagged started");
+    Check(PdInkColour(pPix, PD_BAND_ROOM_X0, PD_BAND_ROOM_Y0, PD_BAND_ROOM_X0 + 120,
+                      PD_BAND_ROOM_Y0 + PD_BAND_YSPAN, uTailGlyph) > 0,
+          "  and TEXTS[1190] is centred at (120, 158) in the tail colour (0x72B2C)");
+
+    PdFixture(2);
+    PutTextRec(g_aXfText, PUFO_PSI_TEXT_NO_ROOM, "No room");
+    g_nPdFail = 1;
+    g_nPdResidue = 3;
+    PdClear();
+    PdDraw();
+    Check(pPix[130 * 240 + 20] == 0, "a non-zero residue keeps the panel off (0x72AB4)");
+    CheckEqI32(g_bPdAnimStarted, 0, "  and the animation is not started");
+    CheckEqI32(PdInkColour(pPix, PD_BAND_ROOM_X0, PD_BAND_ROOM_Y0, PD_BAND_ROOM_X0 + 120,
+                           PD_BAND_ROOM_Y0 + PD_BAND_YSPAN, uTailGlyph), 0,
+          "  nor is its caption drawn");
+
+    PdFixture(2);
+    g_nPdFail = 2;
+    g_nPdResidue = 0;
+    PdClear();
+    PdDraw();
+    CheckEqI32(g_bPdAnimStarted, 0, "dwActionFail is compared against 1 exactly (0x72AA4)");
+
+    /* 6. The base-count byte is read signed, and it bounds the row loop. */
+    PdFixture(0);
+    g_bPdOverlay = 1;
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, 3, 3, 207, 56, XfPix(0x46, 0xA0, 0xB3)), 0,
+               "nBaseCount 0 draws no base row (0x72824)");
+    CheckEqI32(g_nPdStripCalls, 1, "  while the strip drawer still runs");
+
+    PdFixture(-1);
+    g_bPdOverlay = 1;
+    PsiAddLab(0, 0, 0);
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, 3, 3, 207, 56, XfPix(0x46, 0xA0, 0xB3)), 0,
+               "a negative nBaseCount is read signed and draws no row either");
+    CheckEqI32(PdInkColour(pPix, 212, 4, 235, 55, XfPix(0xFF, 0, 0)), 0,
+               "  and its bracket is skipped with it");
+
+    /* 7. The screen pad. Slot 19 is painted with one colour so any byte the pad carries shows up. */
+    PdFixture(2);
+    for (i32 i = 0; i < 4; ++i) {
+        for (i32 r = 0; r < 3; ++r) {
+            (void)UiPanel_SetLineText(&g_aPdPanel[i], r, "");
+        }
+    }
+    for (i32 i = 0; i < 256; ++i) {
+        g_aPalette[19][i] = 0x1234u;
+    }
+    PadImage_ctor(&g_pdScreenPad);
+    Check(PadImage_Load(&g_pdScreenPad, PUFO_PSI_PAD_NAME, PUFO_PSI_PAD_MODE),
+          "the shipped Psi pad loads (0x72C44)");
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, 100, 200, 140, 220, 0x1234u), 0,
+               "with no pad pointer the middle of the screen stays blank (0x723C0)");
+    g_pdEnv.pScreenPad = &g_pdScreenPad;
+    PdClear();
+    PdDraw();
+    Check(PdInkColour(pPix, 100, 200, 140, 220, 0x1234u) > 0,
+          "the screen pad is blitted before anything else (0x723C0)");
+    g_pdEnv.pScreenPad = NULL;
+    PadImage_FreeData(&g_pdScreenPad);
+
+    /* 8. Guards. The overlay's full-screen blend at 0x72790 overdraws the rails, so the rail probe
+     * runs with the overlay closed and the overlay probes use the bracket colour instead. */
+    PdFixture(2);
+    g_bPdOverlay = 1;
+    for (i32 i = 0; i < 4; ++i) {
+        g_pdEnv.apPanels[i] = NULL;
+    }
+    g_pdEnv.pfnDrawIconStrip = NULL;
+    PdClear();
+    PdDraw();
+    CheckEqI32(g_nPdStripCalls, 0, "a null strip hook is skipped, not called (0x727D8)");
+    CheckEqI32(g_nPdCtlCalls, 2, "while the two controls still blit");
+    Check(PdInkColour(pPix, 212, 4, 235, 55, XfPix(0xFF, 0, 0)) > 0,
+          "  and the overlay rows are still drawn without the panel list");
+
+    g_pdEnv.pnBaseCount = NULL;
+    PdClear();
+    PdDraw();
+    CheckEqI32(PdInkColour(pPix, 212, 4, 235, 55, XfPix(0xFF, 0, 0)), 0,
+               "a null base-count pointer is read as zero, not dereferenced");
+
+    g_bPdOverlay = 0;
+    PdClear();
+    PdDraw();
+    CheckEqI32((i32)pPix[2 * 240 + 5], XfPix(100, 100, 100), "a missing panel list still frames (0x72600)");
+    Check(PdInkAll(pPix) > 0, "  the rails are then the only drawing left");
+
+    PdClear();
+    PsiScreen_Draw(NULL);
+    CheckEqI32(PdInkAll(pPix), 0, "a null env draws nothing");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -14353,6 +14881,7 @@ int main(void)
     TestUfopaedia();
     TestUfopaediaOpen();
     TestPsiScreen();
+    TestPsiScreenDraw();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

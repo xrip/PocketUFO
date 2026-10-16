@@ -5550,4 +5550,63 @@ void PsiScreen_ApplyAssignments(PsiScreenEnv *pEnv);
  * then the build arm of PsiScreen_BuildPanels. */
 void PsiScreen_Init(PsiScreenEnv *pEnv);
 
+/* PsiScreen_Draw @ 0x72398 (1,960 B). Runs only while g_bPsiPanelOpen is set.
+ *
+ * The frame is the shared ramped rails (BaseUi_DrawFrameRails): the same 24 steps of 7 on the sides and
+ * 24 steps of 5 on the top and bottom that TransferScreen_Draw, ManufScreen_DrawFrame and
+ * ResearchScreen_Draw each carry. Then the base name of byte_158834 centred at (120, 13), the four
+ * columns of the base a2 selects, and the two geoscape controls.
+ *
+ * Four captions, all TEXTS records at aTextRecs @ 0xB38D0 -- an earlier IDB note called them scratch
+ * buffers nothing writes, which is wrong: the shipped lang.dat has text in every one.
+ *   TEXTS[1188] "Имя: Пси навык/сила: Доб.навык: Обуч" at (7, 54)      -- the four column captions
+ *   TEXTS[1189] "Выберете базу" centred at (60, 300)
+ *   TEXTS[1127] "ОК" centred at (180, 300)                              -- the same record the
+ *                                                                        manuf/research/buy-sell frames use
+ *   TEXTS[1190] "Нет места в Пси-лабораториях" centred at (120, 158)   -- the shortfall panel
+ *
+ * Overlay (byte_1870F8): the full-screen blend, the 32-wide strip at x 208, Base_DrawFacilityIconStrip
+ * with the mark argument -1 (no chevron), the 210-wide panel, then one bevelled row per base with its
+ * name centred at (110, 28*i + 7). A base whose Base_CalcPsiLabCap is 0 gets the 23-step white chevron
+ * at x 212..234 -- the same bracket the strip drawer paints for a marked base, here marking the ABSENCE
+ * of a psi lab.
+ *
+ * Tail. With the overlay closed the shortfall panel runs unconditionally (0x72760 branches straight to
+ * 0x72A94, skipping the base compare). With it open: byte_158834 == byte_1870F4 runs the same panel,
+ * otherwise a non-zero Base_CalcPsiLabCap(byte_158834) adopts that base -- byte_1870F4 takes it and
+ * byte_1870F8 clears. */
+#define PUFO_PSI_TEXT_COLUMNS    1188  /* the four column captions, at (7, 54) */
+#define PUFO_PSI_TEXT_SEL_BASE   1189  /* "Выберете базу", centred at (60, 300) */
+#define PUFO_PSI_TEXT_OK         1127  /* "ОК", centred at (180, 300) */
+#define PUFO_PSI_TEXT_NO_ROOM    1190  /* the shortfall caption, centred at (120, 158) */
+#define PUFO_PSI_BASE_ROW_PITCH   28   /* one base row per 28 pixels in the overlay list */
+#define PUFO_PSI_CHEVRON_STEPS    23   /* the white bracket at x 212..234 */
+
+typedef struct PsiScreenDrawEnv {
+    const GfxColorEnv *pColor;             /* pGX @ 0x1139B8, the colour-pair owner */
+    UiAnimBlitEnv *pAnim;                  /* the geoscape anim root, for the shortfall panel */
+    const u8 *pbPanelOpen;                 /* g_bPsiPanelOpen @ 0x15EEF0, the gate */
+    PadImage *pScreenPad;                  /* g_pPsiScreenPad @ 0x15EE78 */
+    UiPanel *apPanels[4];                  /* the four columns of nBaseIdx, in PsiScreenEnv order */
+    i8 nBaseIdx;                           /* a2: abFacilityGrid + 0x619, the base whose rows show */
+    i8 nWorkBaseIdx;                       /* byte_158834, the base the geoscape screens work on */
+    i8 *pnPsiBaseIdx;                      /* byte_1870F4, written when a base is adopted */
+    u8 *pbOverlayOpen;                     /* byte_1870F8, cleared when a base is adopted */
+    UiControl *pCtlConfirm;                /* pGeoscapeCtlConfirm @ 0x186BA4 */
+    UiControl *pCtlApply;                  /* pGeoscapeCtlApply @ 0x186BAC */
+    UiControlBlitFn pfnCtlBlit;
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    const char *pTextRecs;                 /* aTextRecs @ 0xB38D0, stride 205 */
+    const BaseSiteRec *apSiteRecs;         /* 0x186C40, eight 64-byte records; the name is abName at +26 */
+    const i8 *pnBaseCount;                 /* nBaseCount @ 0x159D80, read SIGNED */
+    const u8 *abFacilityGrid;              /* abFacilityGrid @ 0x159768 */
+    const i32 *pnActionFail;               /* dwActionFail @ 0x1870C8 */
+    const i32 *pnResidue;                  /* dword_1870B4[0], the shortfall reason */
+    void (*pfnDrawIconStrip)(i32 nBaseIdx, void *pUser);
+    void *pStripUser;
+} PsiScreenDrawEnv;
+
+void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

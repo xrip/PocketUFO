@@ -16191,4 +16191,73 @@ not setting bPsiActive turns 5 red, using the free colour for an assigned row tu
 budget of 1 turns 1 red, swapping the apply branches turns 6 red, applying the two scroll descriptors in
 reverse turns 4 red, and skipping the scroll-control release turns 1 red. Two mutations were tried that
 the tests cannot see and are not counted: an equivalent rewrite of the capacity comparison
-(`cap < n+1` to `cap <= n`), and dropping the free() while still nulling the pad pointer.
+(`cap < n+1` to `cap <= n`), and dropping the free() while still nulling the pad pointer.
+
+## Unit 91 -- PsiScreen_Draw @ 0x72398 (1,960 B)
+
+The psi screen's frame. The whole body sits behind g_bPsiPanelOpen @ 0x15EEF0 (0x723B8), the same byte the
+build/release toggle uses, so a closed screen draws nothing at all: not the rails, not the controls, not
+the tail.
+
+The rails are the shared BaseUi_DrawFrameRails (0x723C8..0x72558): 24 side blocks 7 tall climbing
+100..215 and falling 230..115, 24 top and bottom blocks 5 wide climbing to 215 and falling 250..135.
+TransferScreen_Draw, ManufScreen_DrawFrame and ResearchScreen_Draw each carry the identical block, so the
+port calls one helper for all four.
+
+Four captions, and an earlier note on this function was wrong about them. It called them scratch buffers
+nothing writes; the shipped lang.dat has text in every one, and all four are TEXTS records at
+aTextRecs @ 0xB38D0:
+  TEXTS[1188] "Имя: Пси навык/сила: Доб.навык: Обуч" at (7, 54) -- the column captions (0x726A0)
+  TEXTS[1189] "Выберете базу" centred at (60, 300) (0x726F8)
+  TEXTS[1127] "ОК" centred at (180, 300) (0x7274C) -- the same record the manuf, research and buy-sell
+  frames use, which is why IDA already had aTextOk at 0xEBF4B
+  TEXTS[1190] "Нет места в Пси-лабораториях" centred at (120, 158) -- the shortfall caption (0x72B2C)
+unk_EF024, unk_EF0F1 and unk_EF1BE are now aTextPsiColumnCaptions, aTextSelectBase and aTextNoPsiRoom,
+each char[205].
+
+Centring is x = centre - (width >> 1). 0x7290C is ADDMI R1,R1,#1 with the flags from MOVS on a positive
+width, so the add never fires and the ASR #1 at 0x72910 is a plain floor; 0x72B1C is the same shape. The
+title is centred on 120 (0x725F0), the overlay row names on 110 (0x72918, RSB from 0x6E).
+
+Three colour pairs are packed: (44,F4,FC)/(4,46,4B) at 0x7258C and again at 0x7265C, and the tail's
+(DC,50,50)/(1E,32,50) at 0x72A94. Only the second half matters for text -- Gfx_PackRgb565Pair writes it to
+unk_147B3C, palette slot 2 entry 27, and the font glyphs take their main colour from entry 27. The tail
+pair is packed whenever the panel branch is reached, before dwActionFail is even read, which is what makes
+that branch observable.
+
+Overlay (byte_1870F8). With it clear the draw jumps from 0x72760 straight to the tail at 0x72A70. With it
+set: the full-screen blend (0x72790), a 32-wide erase strip at x 208 of height 28*nBaseCount + 4
+(0x727CC), Base_DrawFacilityIconStrip with the mark argument -1 (0x727D8) so the drawer paints no chevron
+of its own, the 210-wide panel (0x72810), then one bevelled row per base -- 205x26 at 0x46/A0/B3, 204x24
+at 00/6E/77, 201x22 at 04/46/4B -- with the base name centred at (110, 28*i + 7). The row count is the
+signed byte at abFacilityGrid + 0x618 (nBaseCount @ 0x159D80), read by LDRSB at 0x7281C and compared
+against 0, so a negative value draws no rows.
+
+A base whose Base_CalcPsiLabCap is 0 gets a 23-step white bracket: 23 2x2 blocks down-right from
+(212, 28*base + 4) and 23 up-right from (212, 28*base + 26), meeting at x 234 (0x72968 / 0x72994). It is
+the same bracket Base_DrawFacilityIconStrip paints for a marked base -- here it marks the ABSENCE of a psi
+lab, which is exactly what the screen is telling the player about.
+
+Tail. byte_158834 against byte_1870F4, both read signed (0x72A08). Equal, or the overlay closed: pack the
+tail pair and, when dwActionFail == 1 and dword_1870B4[0] == 0, run Ui_AnimExpandBlit_IfEnabled(grid, 20,
+130, 200, 70, 1) and the TEXTS[1190] caption. Different: Base_CalcPsiLabCap(byte_158834) decides -- non-zero
+adopts that base into byte_1870F4 and clears byte_1870F8 (0x72A28 / 0x72A2C), zero does nothing at all, not
+even the colour pair. The 70 in the panel call is R7, the same register the outer bevel used as its colour
+index at 0x72868 (0x46 = 70).
+
+Tests: 82 new checks. Thirty-two mutations turn at least one red: dropping the pad blit, the rails, the base
+title, the panel loop, either control, or the open gate; swapping any two of the four caption records;
+forcing the overlay open; giving the strip drawer a real mark instead of -1; inverting the bracket
+condition; 22 steps instead of 23; shifting either bracket arm by one; letting the row loop run one base
+too far; reading nBaseCount unsigned; flipping the tail compare; adopting a base with no capacity;
+comparing dwActionFail against non-zero; moving the shortfall panel by one pixel; swapping the outer and
+the middle bevel colours; moving the title by 20 in x or 10 in y; moving the row name by 20 in x or 10 in
+y; shrinking the erase strip by one row; and shrinking the blend in x or in y. One mutation was tried that
+no test can see and is not counted: the 210-wide panel rect narrowed from 210 to 200 -- the 32-wide erase
+strip at x 208..239 covers exactly the difference, so both versions leave the same pixels.
+
+Deviations, recorded: the port reads the four captions through a pTextRecs pointer and the base names
+through a BaseSiteRec array instead of the original's fixed globals; it bounds the base index the title
+uses; it takes the strip drawer and the two control blits as seams; it keeps the working base index and the
+drawn base index as two env fields where the original has one global and one argument; and it guards the
+pad pointer, the panel list, the base-count pointer and the strip hook that the original reaches unguarded.
