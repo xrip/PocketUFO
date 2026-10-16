@@ -783,8 +783,21 @@ static void TestBuySellBuildPanels(void)
     Check(1, "a missing environment does nothing at all");
 }
 
-static i32 g_nCommitClose;
-static void CommitTestClose(void) { ++g_nCommitClose; }
+/* Geoscape_CloseUI is ported, so "the close ran" is now an observable fact instead of a hook
+ * counter: screen 13 has no case in its switch (def_8BA94), so the dispatcher reaches only its
+ * head, and the head clears the action-fail dword at 0x8B96C. A still-set dword means the
+ * dispatcher never ran. */
+static i32 g_nCloseScreen;
+static i32 g_nCloseFail;
+
+static void CloseProbe(GeoscapeCloseEnv *pEnv)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    g_nCloseScreen = 13;
+    g_nCloseFail = 1;
+    pEnv->pnScreenId = &g_nCloseScreen;
+    pEnv->pnActionFail = &g_nCloseFail;
+}
 
 static void TestBuySellCommitTransaction(void)
 {
@@ -864,9 +877,10 @@ static void TestBuySellCommitTransaction(void)
     env.nSoldierIdCapacity = 8;
     env.pnFundsSnapshot = &nSnapshot;
     env.nFunds = 4147000;
-    env.pfnCloseUi = CommitTestClose;
+    GeoscapeCloseEnv closeEnv;
+    CloseProbe(&closeEnv);
+    env.pClose = &closeEnv;
 
-    g_nCommitClose = 0;
     BuySellScreen_CommitTransaction(&env);
 
     CheckEqI32(aObj[10].auPerBaseVal[0], 11,
@@ -886,10 +900,12 @@ static void TestBuySellCommitTransaction(void)
                "the unselected soldier keeps the armour he was wearing");
     CheckEqI32(base.nStoresTotal, 11, "the store total is delta 3, cargo 7 and the armour 1");
     CheckEqI32(nSnapshot, 4147000, "the funds snapshot is taken last");
-    CheckEqI32(g_nCommitClose, 1, "and the screen closes");
+    CheckEqI32(g_nCloseFail, 0, "and the screen closes (0x75078 -> 0x8B96C)");
+    CheckEqI32(g_nCloseScreen, 13, "  on a screen id the switch has no case for");
 
+    CloseProbe(&closeEnv);
     BuySellScreen_CommitTransaction(NULL);
-    CheckEqI32(g_nCommitClose, 1, "a missing environment does nothing at all");
+    CheckEqI32(g_nCloseFail, 1, "a missing environment does nothing at all");
 
     UiPanel_FreeLines(&pA);
     UiPanel_FreeLines(&pC);
@@ -3047,10 +3063,11 @@ static void OpenInit(void *pSlot, void *pUser)
     g_nIdAtInit = (pState != NULL) ? pState->nGeoscapeScreen : -1;
 }
 
-static void CloseSample(u32 nSample, void *pUser)
+/* The dispatcher's own sample hook: GeoscapeCloseEnv types it with an i32. */
+static void CloseSampleI(i32 nSample, void *pUser)
 {
     (void)pUser;
-    g_nCloseSamples += (i32)nSample;
+    g_nCloseSamples += nSample;
 }
 
 static void CloseUi(void *pUser)
@@ -3128,15 +3145,23 @@ static void TestScreenOpeners(void)
 
 static void TestCloseThunks(void)
 {
-    GeoscapeCloseHooks hk;
+    GeoscapeCloseEnv hk;
+    u8 bPopupA, bPopupB;
+    GeoscapeWorld world;
 
     printf("screen close thunks\n");
 
-    hk.pfnCloseUi = CloseUi;
-    hk.pfnPlaySample = CloseSample;
-    hk.pUser = NULL;
+    /* Screen 13 has no case, so each thunk shows the dispatcher head and nothing else. */
+    CloseProbe(&hk);
+    memset(&world, 0, sizeof(world));
+    world.nTickSeconds = 7; /* matches no arm of the 0x8B980..0x8B9D0 chain */
+    bPopupA = 1;
+    bPopupB = 1;
+    hk.pWorld = &world;
+    hk.pbPopupA = &bPopupA;
+    hk.pbPopupB = &bPopupB;
+    hk.pfnPlaySample = CloseSampleI;
 
-    g_nCloseCalls = 0;
     g_nCloseSamples = 0;
     BaseInfoScreen_CloseThunk(&hk);
     BaseFacScreen_CloseThunkA(&hk);
@@ -3145,18 +3170,30 @@ static void TestCloseThunks(void)
     ManufScreen_CloseThunk(&hk);
     ResearchScreen_CloseThunk(&hk);
     BuySellScreen_CloseThunk(&hk);
-    CheckEqI32(g_nCloseCalls, 7, "seven thunks, one tail call each");
-    CheckEqI32(g_nCloseSamples, 0, "none of the seven plays a sample");
+    CheckEqI32(g_nCloseSamples, 7 * 17, "seven thunks, and each plays sample 17 at 0x8B95C");
+    CheckEqI32(g_nCloseFail, 0, "each clears the action-fail dword (0x8B96C)");
+    Check(bPopupA == 0 && bPopupB == 0, "and both popup bytes (0x8B978 / 0x8B97C)");
+    CheckEqI32(g_nCloseScreen, 13, "the default case leaves the screen id alone");
+    CheckEqI32(world.nTickSeconds, 7, "and a tick no arm matches is not rewritten");
 
-    g_nCloseCalls = 0;
+    CloseProbe(&hk);
+    hk.pWorld = &world;
+    hk.pbPopupA = &bPopupA;
+    hk.pbPopupB = &bPopupB;
+    hk.pfnPlaySample = CloseSampleI;
+    bPopupA = 1;
+    bPopupB = 1;
     g_nCloseSamples = 0;
     NewBaseScreen_CloseThunk(&hk);
-    CheckEqI32(g_nCloseCalls, 1, "the new-base thunk closes too");
-    CheckEqI32(g_nCloseSamples, 17, "and it is the one that plays sample 17 first");
+    CheckEqI32(g_nCloseSamples, 2 * 17,
+               "the new-base thunk plays 17 at 0x615BC and the dispatcher plays it again");
 
+    CloseProbe(&hk);
+    g_nCloseSamples = 0;
     BaseInfoScreen_CloseThunk(NULL);
     NewBaseScreen_CloseThunk(NULL);
-    CheckEqI32(g_nCloseCalls, 1, "a missing hook set is tolerated");
+    CheckEqI32(g_nCloseSamples, 0, "a null environment plays nothing");
+    CheckEqI32(g_nCloseFail, 1, "and clears nothing");
 }
 
 static void TestTitleReturn(void)
@@ -3188,22 +3225,18 @@ static void TestTitleReturn(void)
 
 static void TestMoreCloseThunks(void)
 {
-    GeoscapeCloseHooks hk;
+    GeoscapeCloseEnv hk;
     MapClickHooks mk;
 
     printf("five more close thunks, the map click shim\n");
 
-    hk.pfnCloseUi = CloseUi;
-    hk.pfnPlaySample = CloseSample;
-    hk.pUser = NULL;
-
-    g_nCloseCalls = 0;
+    CloseProbe(&hk);
     FundingScreen_CloseThunk(&hk);
     FundingScreen_ExitThunk(&hk);
     Geoscape_CloseUI_ThunkA(&hk);
     Geoscape_CloseUI_ThunkB(&hk);
     Geoscape_CloseUI_ThunkC(&hk);
-    CheckEqI32(g_nCloseCalls, 5, "all five reach the same dispatcher");
+    CheckEqI32(g_nCloseFail, 0, "all five reach the same dispatcher (0x8B96C)");
 
     mk.pfnMapClick = StartupUi; /* any i32(void*) will do */
     mk.pUser = NULL;
@@ -3471,7 +3504,7 @@ static void TestRefreshPanels(void)
 }
 
 static int g_nCloseCalls;
-static void CloseUiThunk(void *pUser) { (void)pUser; ++g_nCloseCalls; }
+static GeoscapeCloseEnv g_cancelClose;
 
 static int g_nRebuildCalls;
 static i32 RebuildThunk(void *pUser) { (void)pUser; ++g_nRebuildCalls; return 4242; }
@@ -3567,30 +3600,30 @@ static void TestResearchAllocate(void)
     /* Cancel: no gate, and the close runs whatever the store did. */
     memset(&cancel, 0, sizeof(cancel));
     cancel.qty = env;
-    cancel.close.pfnCloseUi = CloseUiThunk;
+    CloseProbe(&g_cancelClose);
+    cancel.pClose = &g_cancelClose;
     g_aCols[3] = 7;
-    g_nCloseCalls = 0;
     ResearchScreen_CancelSelectedAndClose(&cancel);
     CheckEqI32(g_aCols[3], 0, "cancel zeroes the same entry the buttons use");
-    CheckEqI32(g_nCloseCalls, 1, "and tail-calls Geoscape_CloseUI");
+    CheckEqI32(g_nCloseFail, 0, "and tail-calls Geoscape_CloseUI (0x733DC -> 0x8B96C)");
 
+    CloseProbe(&g_cancelClose);
     g_aCols[3] = 0;
-    g_nCloseCalls = 0;
     ResearchScreen_CancelSelectedAndClose(&cancel);
     CheckEqI32(g_aCols[3], 0, "a zero entry stays zero");
-    CheckEqI32(g_nCloseCalls, 1, "and the close still runs");
+    CheckEqI32(g_nCloseFail, 0, "and the close still runs");
 
     /* The port's guard skips the store but must not skip the tail call. */
     g_aCols[3] = 9;
-    g_nCloseCalls = 0;
+    CloseProbe(&g_cancelClose);
     cancel.qty.pTopicPanel = NULL;
     ResearchScreen_CancelSelectedAndClose(&cancel);
     CheckEqI32(g_aCols[3], 9, "a missing panel skips the store");
-    CheckEqI32(g_nCloseCalls, 1, "but not the close");
+    CheckEqI32(g_nCloseFail, 0, "but not the close");
     cancel.qty.pTopicPanel = &g_Panel;
-    g_nCloseCalls = 0;
+    CloseProbe(&g_cancelClose);
     ResearchScreen_CancelSelectedAndClose(NULL);
-    CheckEqI32(g_nCloseCalls, 0, "a missing environment does nothing at all");
+    CheckEqI32(g_nCloseFail, 1, "a missing environment does nothing at all");
 
     /* Accumulate: eight bases, the topic index is the column index, so every base feeds the
      * same 144 records. */
@@ -6295,6 +6328,26 @@ static void Slot_CloseUi(void *pUser)
     g_nSlotListModeAtClose = g_nSlotListMode;
 }
 
+/* The save handler's tail call is now the ported dispatcher, so the probe runs INSIDE it:
+ * screen 16 with both ufopaedia bytes clear takes the branch that opens the ufopaedia (0x8BD58),
+ * and that call is the point the original's `B Geoscape_CloseUI` reached. Case 16 then sets the
+ * screen id to 0 (0x8BD5C), which is the second thing the probe proves. */
+static GeoscapeCloseEnv g_slotClose;
+static u8 g_bSlotUfDirty;
+static u8 g_bSlotUfOpen;
+
+static void SlotCloseProbe(SaveSlotEnv *pEnv, i32 *pnScreen)
+{
+    CloseProbe(&g_slotClose);
+    g_bSlotUfDirty = 0;
+    g_bSlotUfOpen = 0;
+    g_slotClose.pnScreenId = pnScreen;
+    g_slotClose.pbUfopaediaDirty = &g_bSlotUfDirty;
+    g_slotClose.pbUfopaediaOpen = &g_bSlotUfOpen;
+    g_slotClose.pfnUfopaediaOpen = Slot_CloseUi;
+    pEnv->pClose = &g_slotClose;
+}
+
 static void TestSaveLoadSlots(void)
 {
     static DatFile dat;
@@ -6326,12 +6379,12 @@ static void TestSaveLoadSlots(void)
     env.pbControlsExist = &bControlsExist;
     env.pnGeoscapeScreen = &nGeoscapeScreen;
     env.pOptionsInit = &g_optInit; /* the options fixture the previous test built */
-    env.pfnCloseUi = Slot_CloseUi;
+    SlotCloseProbe(&env, &nGeoscapeScreen);
 
     /* The save handler. The render hook is the only place the transient mode 4 is visible. */
     g_nSlotListMode = 0;
     bControlsExist = 0;
-    nGeoscapeScreen = 7;
+    nGeoscapeScreen = 16;
     scratch.nLineAux145 = 9;
     g_nSlotRenderCalls = 0;
     g_nSlotCloseCalls = 0;
@@ -6346,6 +6399,8 @@ static void TestSaveLoadSlots(void)
     CheckEqI32(scratch.nLineAux145, 0, "the tab byte goes back to 0 (0x6AFA4)");
     CheckEqI32(g_nSlotCloseCalls, 1, "Geoscape_CloseUI runs last (0x6AFB8)");
     CheckEqI32(g_nSlotListModeAtClose, 1, "  with the list mode already back to 1 (0x6AFAC)");
+    CheckEqI32(nGeoscapeScreen, 0, "  and case 16 of the dispatcher sets the screen id to 0 (0x8BD5C)");
+    CheckEqI32(g_nCloseFail, 0, "  and its head cleared the action-fail dword (0x8B96C)");
 
     /* The load handler: the flag it sets makes OptionsScreen_Init take its teardown branch. */
     g_nSlotListMode = 0;
@@ -6677,18 +6732,10 @@ static BaseRec *g_apBases[3];
 static UiPanel g_ClearPanel;
 static i32 g_nClearRow;
 static i8 g_nClearBase;
-static i32 g_nCloseCalls2;
-
-static void Close2Thunk(void *pUser)
-{
-    (void)pUser;
-    ++g_nCloseCalls2;
-}
-
 static void TestClearProductSlot(void)
 {
     ManufClearEnv env;
-    GeoscapeCloseHooks hooks;
+    GeoscapeCloseEnv hooks;
     i32 i;
 
     printf("ManufScreen_ClearProductSlot @ 0x6f8cc\n");
@@ -6704,7 +6751,6 @@ static void TestClearProductSlot(void)
     for (i = 0; i < 3; ++i) { g_apBases[i] = &g_aBases[i]; }                \
     g_nClearRow = 7;                                                         \
     g_nClearBase = 1;                                                        \
-    g_nCloseCalls2 = 0;                                                      \
     memset(&env, 0, sizeof(env));                                            \
     env.pProductPanel = &g_ClearPanel; env.pnProductRow = &g_nClearRow;      \
     env.apProductA = g_aProdA; env.apProductB = g_aProdB;                    \
@@ -6712,8 +6758,7 @@ static void TestClearProductSlot(void)
     env.abGridBytes = g_aGridBytes;                                          \
     env.apBases = g_apBases; env.nBaseCount = 3;                             \
     env.pnSelectedBaseIdx = &g_nClearBase;                                   \
-    memset(&hooks, 0, sizeof(hooks));                                        \
-    hooks.pfnCloseUi = Close2Thunk;
+    CloseProbe(&hooks);
 
     /* 1. one index of all four columns goes to zero, its neighbours do not move. */
     CLEAR_RESET();
@@ -6814,7 +6859,7 @@ static void TestClearProductSlot(void)
     g_aProdB[240] = 5;
     ManufScreen_ConfirmAndClose(&env, &hooks);
     CheckEqI32(g_aProdB[240], 0, "the product comes from the panel row's aux cell (0x6E9A0)");
-    CheckEqI32(g_nCloseCalls2, 1, "and Geoscape_CloseUI runs afterwards (0x6E9C8)");
+    CheckEqI32(g_nCloseFail, 0, "and Geoscape_CloseUI runs afterwards (0x6E9C8 -> 0x8B96C)");
 
     CLEAR_RESET();
     g_ClearPanel.anLineAux[7] = 119;
@@ -6829,11 +6874,11 @@ static void TestClearProductSlot(void)
     g_ClearPanel.anLineAux[7] = 40;
     g_aProdB[240] = 5;
     ManufScreen_ConfirmAndClose(&env, NULL);
-    CheckEqI32(g_aProdB[240], 0, "no close hook: the clear still runs");
-    CheckEqI32(g_nCloseCalls2, 0, "  and nothing is called");
+    CheckEqI32(g_aProdB[240], 0, "no close env: the clear still runs");
+    CheckEqI32(g_nCloseFail, 1, "  and the dispatcher does not run");
 
     ManufScreen_ConfirmAndClose(NULL, &hooks);
-    CheckEqI32(g_nCloseCalls2, 0, "a null env closes nothing");
+    CheckEqI32(g_nCloseFail, 1, "a null env closes nothing");
 #undef CLEAR_RESET
 }
 
@@ -7120,7 +7165,7 @@ static void TestBuySellConfirm(void)
     static BaseRec aBases[2];
     static BaseRec *apBases[2];
     BuySellConfirmEnv env;
-    GeoscapeCloseHooks hooks;
+    GeoscapeCloseEnv hooks;
     i32 nSiteCount, nObjectCount;
     i8 nBase;
     i32 nSnapshot;
@@ -7136,14 +7181,12 @@ static void TestBuySellConfirm(void)
     aObjs[1].bCargoSize = 3;      /* object 0 has no cargo size on purpose */       \
     nSiteCount = 2; nObjectCount = 2; nBase = 0;                                    \
     nSnapshot = -1;                                                                 \
-    g_nCloseCalls2 = 0;                                                             \
     memset(&env, 0, sizeof(env));                                                   \
     env.aSites = aSites; env.pnSiteCount = &nSiteCount;                             \
     env.pnSelectedBaseIdx = &nBase; env.apBases = apBases;                          \
     env.apObjects = apObjects; env.nObjectCount = nObjectCount;                     \
     env.nFunds = 123456; env.pnFundsSnapshot = &nSnapshot;                          \
-    memset(&hooks, 0, sizeof(hooks));                                               \
-    hooks.pfnCloseUi = Close2Thunk;
+    CloseProbe(&hooks);
 
     /* 1. An empty working record is not committed, but the tail still runs. */
     BS_RESET();
@@ -7151,7 +7194,7 @@ static void TestBuySellConfirm(void)
     CheckEqI32(aSites[2].bFlag0, 0, "an empty working record keeps its flag");
     CheckEqI32(nSiteCount, 2, "  and the site count does not grow");
     CheckEqI32(nSnapshot, 123456, "the funds snapshot is written either way (0x75130)");
-    CheckEqI32(g_nCloseCalls2, 1, "  and Geoscape_CloseUI runs either way (0x7513C)");
+    CheckEqI32(g_nCloseFail, 0, "  and Geoscape_CloseUI runs either way (0x7513C -> 0x8B96C)");
 
     /* 2. Cargo volume in a filtered column commits it. */
     BS_RESET();
@@ -7204,13 +7247,13 @@ static void TestBuySellConfirm(void)
     BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
     CheckEqI32(nSiteCount, PUFO_SMAP_SITE_COUNT, "a full site array is not committed past its end");
     CheckEqI32(nSnapshot, 123456, "  the tail still runs");
-    CheckEqI32(g_nCloseCalls2, 1, "  including the close");
+    CheckEqI32(g_nCloseFail, 0, "  including the close");
 
     /* 8. Nulls. */
     BS_RESET();
     env.pnFundsSnapshot = NULL;
     BuySellScreen_ConfirmSiteAndClose(&env, &hooks);
-    CheckEqI32(g_nCloseCalls2, 1, "a null snapshot still closes");
+    CheckEqI32(g_nCloseFail, 0, "a null snapshot still closes");
     BS_RESET();
     env.pnSiteCount = NULL;
     BuySellScreen_ConfirmSiteAndClose(&env, &hooks);

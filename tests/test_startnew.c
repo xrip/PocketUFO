@@ -379,7 +379,6 @@ static void TestStartNew(void)
     env.pnMissionId = &nMissionId;
     env.abSaveFlags = abSaveFlags;
     env.pEconomy = &economy;
-    env.pvFundTable = anFundTable;
     env.paFacFlags = aFac;
     env.pTextRecs = g_assets.pTextRecs;
     env.pScreen = &screen;
@@ -433,9 +432,11 @@ static void TestStartNew(void)
     CheckEqI32(ctorEnv.abTypeCounters[CRAFT_TYPE_INTERCEPTOR], 2, "ctor counter for the two interceptors");
 
     /* The economy block. */
-    Check(economy.nFundA == 1625000 && economy.nFundB == 383000 &&
-          economy.nFundC == 1668000 && economy.nFundD == 968000, "the four fund dwords");
-    Check(economy.pvFundTable == anFundTable, "the fund table pointer");
+    Check(economy.anFundBar[0] == 1625000 && economy.anFundBar[1] == 383000 &&
+          economy.anFundBar[3] == 1668000 && economy.anFundBar[4] == 968000,
+          "the four round funding bars");
+    CheckEqI32(economy.anFundBar[2], PUFO_FUND_BAR2_INIT,
+               "the third bar holds 0x14B4C8 = 1357832, the value 0x946A4 stores (0x9469C)");
     {
         bool bAll = true;
         for (i = 0; i < 11; ++i) {

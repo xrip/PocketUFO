@@ -189,8 +189,15 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  *   4. 0x94650: ten bytes at 0x18655D = 1 -- the nine counters plus 0x186566 (bUiFrameStyle);
  *      serialised); the strateg count byte 0x186530 = 0.
  *   5. 0x94680: the economy dwords of the 0x1864F8 block: 0x186568..0x186590 = 0,
- *      0x186594 = 1625000, 0x186598 = 383000, 0x18659C = the zero buffer at 0x14B4C8,
- *      0x1865A0 = 1668000, 0x1865A4 = 968000, 0x1865A8..0x1865BC = 0.
+ *      0x186594 = 1625000, 0x186598 = 383000, 0x18659C = 0x14B4C8, 0x1865A0 = 1668000,
+ *      0x1865A4 = 968000, 0x1865A8..0x1865BC = 0. The third one is the interesting one:
+ *      0x9469C is `LDR R3, =unk_14B4C8` and 0x946A4 stores R3, so the pool entry IDA names
+ *      after the zero buffer that happens to live at 0x14B4C8 puts the value 1357832 into a
+ *      slot its neighbours fill with round money. Nothing in the image ever dereferences it,
+ *      and Geoscape_CloseUI case 19 (0x8BBAC..0x8BBE0) adds all five slots as plain ints into
+ *      nFunds. The port therefore keeps it as an i32, not a pointer -- the earlier
+ *      `void *pvFundTable` was both the wrong width for a 32-bit block and never read.
+ *      Whether the original meant it as an address is unresolved; the stored value is not.
  *   6. 0x94700: month counter 0x159648 = 0, base count 0x159D80 = 0, selected base 0,
  *      GameTime_Reset on the clock at 0x159618.
  *   7. 0x94730: the research mirror: the 144 bytes at 0x160B2C are zeroed and
@@ -245,14 +252,15 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
 #define PUFO_ECON_RACE_SHARE_FIRST 6
 #define PUFO_ECON_RACE_SHARE_LAST  10
 
+/* StartNew's initial value of the third bar, 0x9469C / 0x946A4. See note 5 above. */
+#define PUFO_FUND_BAR2_INIT 0x14B4C8
+
 typedef struct GeoscapeEconomy {
     i32  anFundingBlock[11]; /* 0x186568..0x186590, see the index constants above */
-    i32  nFundA;          /* 0x186594, StartNew 1625000 */
-    i32  nFundB;          /* 0x186598, StartNew 383000 */
-    void *pvFundTable;    /* 0x18659C, StartNew installs the zero buffer at 0x14B4C8 */
-    i32  nFundC;          /* 0x1865A0, StartNew 1668000 */
-    i32  nFundD;          /* 0x1865A4, StartNew 968000 */
-    i32  aZero44_49[6];   /* 0x1865A8..0x1865BC */
+    /* g_nFundBar0..4 @ 0x186594..0x1865A4: the five funding bars the funding screen draws and
+     * the monthly close (Geoscape_CloseUI case 19) adds into nFunds. */
+    i32  anFundBar[5];       /* 0x186594, 0x186598, 0x18659C, 0x1865A0, 0x1865A4 */
+    i32  aZero44_49[6];      /* 0x1865A8..0x1865BC */
 } GeoscapeEconomy;
 
 /* The eight soldiers Game_StartNew creates (0x95310..0x9538C). apSoldiers must have room
@@ -304,7 +312,6 @@ typedef struct StartNewEnv {
     i32   *pnMissionId;               /* 0x18654C */
     u8    *abSaveFlags;               /* 0x18655D, ten bytes set to 1 (see 4.) */
     GeoscapeEconomy *pEconomy;
-    void  *pvFundTable;               /* the 0x14B4C8 zero buffer */
 
     /* Facility table. */
     BaseFacFlag *paFacFlags;          /* aBaseFacFlags @ 0x186E48 */

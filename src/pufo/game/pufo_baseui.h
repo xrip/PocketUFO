@@ -449,7 +449,8 @@ typedef struct BuySellCommitEnv {
     i32 nSoldierIdCapacity;
     i32 *pnFundsSnapshot;           /* BuySell_nFundsSnapshot @ 0x161460 */
     i32 nFunds;                     /* nFunds @ 0x1598D8, read only */
-    void (*pfnCloseUi)(void);       /* Geoscape_CloseUI (0x8b94c, not ported) */
+    const struct GeoscapeCloseEnv *pClose; /* Geoscape_CloseUI @ 0x8b94c, tail call at 0x75078.
+                                            * The full type is declared with the dispatcher. */
 } BuySellCommitEnv;
 
 void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv);
@@ -1319,33 +1320,259 @@ typedef struct BaseAtScreenOpenHooks {
 
 void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *pHooks);
 
-/* ------------------------------------------------- the eight screen close thunks
+/* ------------------------------------------------- the screen-close dispatcher
  *
- * Evidence: BaseInfoScreen_CloseThunk @ 0x557bc, BaseFacScreen_CloseThunkA @ 0x589c0,
- * BaseFacScreen_CloseThunk @ 0x59b54, SoldierScreen_CloseThunk @ 0x64ae4,
- * ManufScreen_CloseThunk @ 0x6e3d4, ResearchScreen_CloseThunk @ 0x72ffc,
- * BuySellScreen_CloseThunk @ 0x75154, NewBaseScreen_CloseThunk @ 0x615b0.
+ * Evidence: Geoscape_CloseUI @ 0x8b94c (2100 B). Thirteen widget thunks are two instructions
+ * each -- `LDR R0, =0x1864F8` and `B Geoscape_CloseUI` -- so they are one tail call written
+ * thirteen times, once per widget: BaseInfoScreen_CloseThunk @ 0x557bc,
+ * BaseFacScreen_CloseThunkA @ 0x589c0, BaseFacScreen_CloseThunk @ 0x59b54,
+ * SoldierScreen_CloseThunk @ 0x64ae4, ManufScreen_CloseThunk @ 0x6e3d4,
+ * ResearchScreen_CloseThunk @ 0x72ffc, BuySellScreen_CloseThunk @ 0x75154,
+ * NewBaseScreen_CloseThunk @ 0x615b0 (the odd one: it plays sample 17 at 0x615BC first),
+ * FundingScreen_CloseThunk @ 0x5abd8, FundingScreen_ExitThunk @ 0x5c078,
+ * Geoscape_CloseUI_ThunkA @ 0x838d0, Geoscape_CloseUI_ThunkB @ 0x96020,
+ * Geoscape_CloseUI_ThunkC @ 0x9a8c0. Six more call sites reach it from inside a function:
+ * ResearchScreen_CancelSelectedAndClose (0x733DC), ManufScreen_ConfirmAndClose (0x6E9C8),
+ * BuySellScreen_CommitTransaction (0x75078), SaveGame_Slot_CloseUI (0x6AFB8), the thunk at
+ * 0x7513C, and Options_SaveAudioSettings (0x6B7C4 and 0x6B7F0).
  *
- * Seven of them are two instructions: `LDR R0, =0x1864F8` and `B Geoscape_CloseUI`. They
- * are not seven behaviours; they are one tail call with one argument, written seven
- * times so each widget has its own function pointer. NewBaseScreen_CloseThunk is the odd
- * one: it plays sample 17 first and then makes the same call.
+ * The last pair is mutual recursion. Case 18 clears byte_159E88[0] at 0x8BCFC and then calls
+ * Options_SaveAudioSettings, which re-tests byte_159E88[4], finds [0] now zero, and tail-calls
+ * Geoscape_CloseUI again (0x6B7F0). The second pass takes the OTHER branch --
+ * OptionsScreen_RebuildWithSound and screen 0 -- because the first pass zeroed the byte that
+ * selected the branch. Two levels deep, and it terminates only because of that store.
  *
- * Geoscape_CloseUI (0x8b94c) is not ported (~40 unported callees), so it stays a hook. */
-typedef struct GeoscapeCloseHooks {
-    void (*pfnCloseUi)(void *pUser);   /* Geoscape_CloseUI(&MEMORY[0x1864F8]) */
-    void (*pfnPlaySample)(u32 nSample, void *pUser);
-    void *pUser;
-} GeoscapeCloseHooks;
+ * In execution order:
+ *   1. 0x8B954: Sound_Play(17, 4). Sound_Play takes a second argument and every call site in
+ *      the image passes 4; the port's leaf models only the sample.
+ *   2. 0x8B96C: a DWORD store of 0 into 0x1870C8. IDA names it byte_1870C8 but the store is
+ *      STR, and both writers are dword stores as well: BaseFacScreen_TryBuySelected stores 1
+ *      at 0x58960 when nFunds is below the facility cost, Ship_TickRangeRecoverConsume stores
+ *      1 at 0x4606C when a craft's range is short. It is the "this action failed" flag and
+ *      every screen close clears it.
+ *   3. 0x8B978 / 0x8B97C: the 0x1864F8 block's two popup bytes (+0x34, +0x35) clear.
+ *   4. 0x8B980..0x8B9D0: the game speed is re-applied from nGeoscapeTickSeconds @ 0x187070.
+ *      5 -> GameTime_Set5Sec, 60 -> Set1Min, 300 -> Set5Min, 1800 -> SetSpeedIdx3,
+ *      3600 -> SetSpeedIdx4 AND THEN SetSpeedIdx5 (0x8B9E0 is `B loc_8B9CC`, the 43200 arm's
+ *      call), 43200 -> SetSpeedIdx5 alone, anything else -> nothing at all. The chain's own
+ *      constants disagree with the speed table g_aGeoscapeSpeedSec = {5, 60, 300, 1380, 2460,
+ *      3600}: 1800 and 43200 are values no speed control ever writes, and every arm that does
+ *      fire rewrites the tick (1800 -> 1380, 3600 -> 2460 -> 3600, 43200 -> 3600). Closing a
+ *      screen is therefore not a no-op for the speed.
+ *   5. 0x8BA00..0x8BA80: for every base, the five needed-flag passes. nBaseCount is loaded
+ *      with LDRSB at 0x8BA10 and re-loaded at 0x8BA70 on each iteration, so it is SIGNED and
+ *      a count that grows mid-loop extends the loop. The loop counter it leaves in R2 is the
+ *      third argument case 18 hands to Options_SaveAudioSettings.
+ *   6. 0x8BA94: a switch on nGeoscapeScreen @ 0x186BC4, `SUB R0,#1 / CMP R0,#0x13`. Cases
+ *      1..12, 15, 16, 18, 19 and 20 exist; 13, 14 and 17 fall to the default, which returns.
+ *
+ * The cases, in address order:
+ *   1  (0x8BE8C) screen 0; clear bBasePlaceActive (0x8BE9C, dword_1870B4[2]) and THEN
+ *      bBasePlaceFail (0x8BEA4, [1]); free the ten nav controls at 0x159888, the two panel
+ *      controls at 0x1598B0 and the three find controls at 0x1598B8 -- each one
+ *      UiControl_FreePads plus operator delete when non-null, and the slot is left dangling;
+ *      then Smap_ClampScrollY.
+ *   2  (0x8BE4C) returns untouched while bBaseFacConfirm @ 0x1870AC is set; otherwise
+ *      Smap_ClampScrollY, screen 1, clear bBaseFacDone @ 0x187078 (0x8BE70, the +4 of
+ *      bGeoscapeDragActive), clear bBaseFacPlaceArmed @ 0x158888 and return.
+ *   3  (0x8BDE8) screen 1; rebuild the base-info panels while 0x15883C is set; then free the
+ *      pad at 0x158828 with PadImage_FreeData plus delete. IDA types that global as a UiPanel
+ *      and the free proves it is a PadImage.
+ *   4  (0x8BFC4) screen 1; toggle the soldier screen while 0x159DE0 is set.
+ *   5  (0x8BFE4) while bTransferFlag @ 0x159E10 is set, clear it and return; otherwise clear
+ *      both popup bytes, clear the flag and set screen 4.
+ *   6  (0x8C018) a five-way ladder: bPlaneListPanelsBuilt -> BuildListPanels; else
+ *      bPlaneStoresCommitted -> BuildControls; else either stat panel open -> clear both;
+ *      else bPlanePanelsBuilt clear -> return; else bPlaneShowCraftDetail clear -> screen 1
+ *      and BuildPanels; else clear bPlaneShowCraftDetail. All three build calls are made with
+ *      a garbage first argument: 0x8C01C / 0x8C038 leave R0 as the flag byte that just passed
+ *      its test, and 0x8C090 is `MOV R0, #1`. None of the three callees reads a1.
+ *   7  (0x8BF4C) bBaseFacDone && bBaseFacDialogOpen -> decrement nSelectedBaseIdx (0x8BF74
+ *      LDRSB, so a zero index wraps to 255) and toggle the facility screen, screen 1, clear
+ *      both popups. Otherwise, if bBaseFacPlaceArmed is clear: dialog closed -> screen 1 and
+ *      clear the popups, dialog open -> the toggle path. Otherwise clear bBaseFacPlaceArmed
+ *      and clear the popups.
+ *   8  (0x8BDB0) bUiRowSelected -> ResearchScreen_StartSelected; else screen 1 and, while
+ *      bResearchPanelsBuilt is set, ResearchScreen_BuildPanels.
+ *   9  (0x8BD74) bManufProductSelected -> ManufScreen_Draw; else while 0x15EE4C is set,
+ *      ManufScreen_BuildPanels and screen 1.
+ *   10 (0x8BE28) screen 1; rebuild the transfer panels while bTransferPanelsBuilt is set.
+ *   11 (0x8C0BC) set bPopupVisibleB, rebuild the buy/sell controls while its flag is set,
+ *      screen 1, free pBuySellScreenPad @ 0x161A08, then clear BOTH popup bytes -- so the 1
+ *      stored at 0x8C0C4 exists only for the duration of the build call.
+ *   12 (0x8C108) the same shape with BuySellScreen_BuildPanels, then Base_RemoveAllShips and
+ *      Base_RemoveAllSoldiers on nSelectedBaseIdx.
+ *   15 (0x8BCAC) FundingScreen_Open, then screen 0.
+ *   16 (0x8BD2C) 0x187310 set -> Ufopaedia_RefreshEntry; else 0x18730C set -> clear it and
+ *      return; else Ufopaedia_Open, screen 0, Smap_ClampScrollY.
+ *   18 (0x8BCBC) while byte_159E88[4] is set: if byte_159E88[0] (read SIGNED, 0x8BCD0 LDRSB)
+ *      is non-zero, clear it and call Options_SaveAudioSettings(byte_159E88, that byte, the
+ *      base-loop counter residue); else OptionsScreen_RebuildWithSound and screen 0. Then,
+ *      while byte_159E80 is set, screen 0 and OptionsScreen_Open(-1). Then clear
+ *      bGeoscapeDragActive @ 0x187074 and return.
+ *   19 (0x8BB38) the monthly economy close, described on the case body below.
+ *   20 (0x8BAF8) BaseAtScreen_Open(&0x158840, -1), screen 0, and if 0x158850 is set,
+ *      Map_bMissionMode = 1 and Smap_BeginCraftSelect.
+ *
+ * Five cases share one tail -- 0x8BFF4 is `*v12 = 0` with v12 pointing at a different global
+ * in each one (bBaseFacPlaceArmed, bTransferFlag, bPlaneShowCraftDetail, 0x18730C,
+ * bGeoscapeDragActive) -- and it is followed by `B def_8BA94`, the jumptable default, so it
+ * clears and returns. Hex-Rays renders LABEL_86 inside case 16 as if the other four fell
+ * through into it; they do not.
+ *
+ * Case 19, 0x8BB38..0x8BC9C: free pFundPad @ 0x1595DC when non-null (and only then re-read
+ * the base count at 0x8BB60 -- on the null path the count is the base loop's residue); sum
+ * Base_CalcMonthlyUpkeep over the bases; then
+ * nFunds += bar2 - upkeep + bar1 + bar3 + bar0 + bar4 (0x8BBAC..0x8BBE0, the five dwords at
+ * 0x186594..0x1865A4). Below -3000000 (0xFFD23940 at 0x8BBDC, BGE at 0x8BBE8) it is the
+ * bankruptcy end: GeoscapeUi_FreeAll(1), EndScreen_Init(0), Map_bTickHold = 1,
+ * Map_bBattleEnded = 1, return. Otherwise find the FIRST base whose Base_CalcPsiLabCap is
+ * positive, store its index into byte_158834 and byte_1870F4 (both STRB), and open the psi
+ * screen at screen 17; with no such base, or no bases at all, screen 0.
+ *
+ * Deviations:
+ *   1. The original reaches every global directly. The port hands them through
+ *      GeoscapeCloseEnv, and the twelve callees that are not ported yet stay hooks on the
+ *      same env.
+ *   2. The original frees the nav controls and the two pads with operator delete and never
+ *      nulls the slot. The port frees through the same leaf and writes NULL into the slot,
+ *      because a dangling 0x159888 entry is read again by Geoscape_BuildNavControls and by
+ *      every nav handler.
+ *   3. The three BasePlaneScreen calls pass a garbage a1 (see case 6). The port passes NULL.
+ *   4. Case 19's upkeep loop is gated on the SIGNED base count at 0x8BB74 and 0x8BC30; a
+ *      negative count skips both loops, which is also what the psi search does. */
+/* The dispatcher reaches screens declared further down this header; the arrays themselves stay
+ * with their own definitions. */
+typedef struct NavControls NavControls;
+typedef struct ResearchStartEnv ResearchStartEnv;
+typedef struct ResearchBuildEnv ResearchBuildEnv;
+typedef struct ManufDrawEnv ManufDrawEnv;
+typedef struct ManufBuildEnv ManufBuildEnv;
+typedef struct BaseFacToggleEnv BaseFacToggleEnv;
+typedef struct SoldierScreenEnv SoldierScreenEnv;
+typedef struct FundingToggleEnv FundingToggleEnv;
+typedef struct FundingOpenEnv FundingOpenEnv;
+typedef struct OptionsScreenHooks OptionsScreenHooks;
+typedef struct EndScreenInitEnv EndScreenInitEnv;
 
-void BaseInfoScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void BaseFacScreen_CloseThunkA(const GeoscapeCloseHooks *pHooks);
-void BaseFacScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void SoldierScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void ManufScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void ResearchScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void BuySellScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void NewBaseScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
+/* The bankruptcy limit at 0x8BBDC: 0xFFD23940 read as a signed dword. */
+#define PUFO_FUNDS_BANKRUPT_LIMIT (-3000000)
+
+typedef struct GeoscapeCloseEnv {
+    /* 0x8B954..0x8B9D0, the head. */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pSoundUser;
+    i32   *pnActionFail;             /* 0x1870C8, IDA's byte_1870C8: stored as a dword */
+    u8    *pbPopupA;                 /* bPopupVisibleA @ 0x18652C */
+    u8    *pbPopupB;                 /* bPopupVisibleB @ 0x18652D */
+    GeoscapeWorld *pWorld;           /* nTickSeconds @ 0x187070 */
+    UiControl *const *apSpeedCtl;    /* the six nav speed controls */
+
+    /* 0x8BA00..0x8BA80, the per-base needed-flag pass and its budgets. */
+    u8    *abFacilityGrid;           /* abFacilityGrid @ 0x159768 */
+    i8    *pnBaseCount;              /* nBaseCount @ 0x159D80, read SIGNED */
+    i8    *pnSelectedBaseIdx;        /* nSelectedBaseIdx @ 0x159D81, read SIGNED */
+    Ship *const *apCraft;            /* Map + 0x10AC */
+    u8    *pnCraftCount;             /* Map_nCraftCount @ 0x114B4C */
+    Soldier **apSoldiers;            /* Map + 0x1198; Base_RemoveAllSoldiers writes through it */
+    i32    nSoldierCount;
+    ObjectRecFull *const *apObjects; /* Map + 0x108 */
+    i32    nObjectCount;
+    const SmapSite *apSites;         /* 0x162030 */
+    i32    nSiteCount;               /* 0x186410 */
+    BaseRec *const *apBases;         /* Map + 0x1174, the transfer budgets need it */
+    const u16 *apManufCol;           /* 0x15E19C, PUFO_PRODUCT_ENTRIES_PER_BASE per base */
+    const u16 *apResearchCol;        /* auResearchCol @ 0x16022C */
+    i32    nResearchEntries;
+
+    /* 0x8BA94, the switch. */
+    i32   *pnScreenId;               /* nGeoscapeScreen @ 0x186BC4 */
+    SmapView *pView;                 /* gSmapCam @ 0x1863E8 */
+    const PadImage *pStripPad;       /* 0x186BBC, the strip height Smap_ClampScrollY needs */
+    NavControls *pNav;               /* 0x159888 / 0x1598B0 / 0x1598B8, case 1 frees them */
+    u8    *pbPlaceActive;            /* bBasePlaceActive @ 0x1870BC, dword_1870B4[2] */
+    u8    *pbPlaceFail;              /* bBasePlaceFail @ 0x1870B8, dword_1870B4[1] */
+    u8    *pbBaseFacConfirm;         /* bBaseFacConfirm @ 0x1870AC */
+    u8    *pbBaseFacDone;            /* bBaseFacDone @ 0x187078 */
+    u8    *pbBaseFacArmed;           /* bBaseFacPlaceArmed @ 0x158888 */
+    u8    *pbBaseFacDialog;          /* bBaseFacDialogOpen @ 0x158884 */
+    u8    *pbDragActive;             /* bGeoscapeDragActive @ 0x187074 */
+    u8    *pbBaseInfoBuilt;          /* 0x15883C */
+    PadImage **ppBaseInfoPad;        /* 0x158828, freed as a PadImage */
+    u8    *pbSoldierOpen;            /* 0x159DE0 */
+    u8    *pbTransferFlag;           /* bTransferFlag @ 0x159E10 */
+    u8    *pbTransferBuilt;          /* bTransferPanelsBuilt @ 0x1870EC */
+    u8    *pbPlaneListBuilt;         /* bPlaneListPanelsBuilt @ 0x161F24 */
+    u8    *pbPlaneStores;            /* bPlaneStoresCommitted @ 0x161F28 */
+    u8    *pbStatPanelA;             /* bStatPanelAOpen @ 0x161F18 */
+    u8    *pbStatPanelB;             /* bStatPanelBOpen @ 0x161F1C */
+    u8    *pbPlaneBuilt;             /* bPlanePanelsBuilt @ 0x161F08 */
+    u8    *pbPlaneDetail;            /* bPlaneShowCraftDetail @ 0x161F20 */
+    u8    *pbResearchBuilt;          /* bResearchPanelsBuilt @ 0x160C7C */
+    u8    *pbRowSelected;            /* bUiRowSelected @ 0x160C80 */
+    u8    *pbManufSelected;          /* bManufProductSelected @ 0x15EE34 */
+    u8    *pbManufBuilt;             /* 0x15EE4C */
+    u8    *pbBuySellCtlBuilt;        /* bBuySellControlsBuilt @ 0x161A24 */
+    u8    *pbBuySellBuilt;           /* bBuySellPanelsBuilt @ 0x161A28 */
+    PadImage **ppBuySellPad;         /* pBuySellScreenPad @ 0x161A08 */
+    u8    *pbUfopaediaOpen;          /* 0x18730C */
+    u8    *pbUfopaediaDirty;         /* 0x187310 */
+    u8    *pbOptionsOpen;            /* 0x159E80 */
+    i8    *pnOptionsMode;            /* byte_159E88[0], read SIGNED at 0x8BCD0 */
+    const u8 *pbOptionsActive;       /* byte_159E88[4] */
+    i32   *pnFunds;                  /* nFunds @ 0x1598D8 */
+    const i32 *anFundBar;            /* g_nFundBar0..4 @ 0x186594..0x1865A4 */
+    PadImage **ppFundPad;            /* pFundPad @ 0x1595DC */
+    u8    *pnShownBaseIdx;           /* byte_158834, written with STRB at 0x8BC74 */
+    i8    *pnPsiBaseIdx;             /* byte_1870F4, read SIGNED by BaseInfoScreen_OnOk */
+    u8    *pbTickHold;               /* Map_bTickHold @ 0x113A12 */
+    u8    *pbBattleEnded;            /* Map_bBattleEnded @ 0x113A14 */
+    u8    *pbMissionMode;            /* Map_bMissionMode @ 0x128AD5 */
+    const u8 *pbBaseAtAssault;       /* 0x158850, the flag case 20 tests after BaseAtScreen_Open */
+    const i32 *anSoldierIdList;      /* g_aSoldierIdList, the list case 12 hands over */
+
+    /* The ported callees this dispatcher drives. */
+    const ResearchStartEnv *pResearchStart;
+    ResearchBuildEnv *pResearchBuild;
+    ManufDrawEnv *pManufDraw;
+    ManufBuildEnv *pManufBuild;
+    TransferBuildEnv *pTransferBuild;
+    BuySellControlsEnv *pBuySellCtl;
+    BuySellBuildEnv *pBuySell;
+    const BaseFacToggleEnv *pFacToggle;
+    const SoldierScreenEnv *pSoldierScreen;
+    FundingToggleEnv *pFundingToggle;
+    const FundingOpenEnv *pFundingOpen;
+    const OptionsScreenHooks *pOptionsHooks;
+    const BaseClearShipsEnv *pClearShips;
+    const SmapCraftSelectEnv *pCraftSelect;
+
+    /* Callees that are not ported yet. */
+    void (*pfnBuildBaseInfoPanels)(void *pUser);  /* BaseInfoScreen_BuildPanels (0x557f4) */
+    void (*pfnBuildPlaneListPanels)(void *pUser); /* BasePlaneScreen_BuildListPanels (0x7a3f4) */
+    void (*pfnBuildPlaneControls)(void *pUser);   /* BasePlaneScreen_BuildControls (0x7b014) */
+    void (*pfnBuildPlanePanels)(void *pUser);     /* BasePlaneScreen_BuildPanels (0x7cc8c) */
+    void (*pfnUfopaediaRefresh)(void *pUser);     /* Ufopaedia_RefreshEntry (0x9a014) */
+    void (*pfnUfopaediaOpen)(void *pUser);        /* Ufopaedia_Open (0x9a8cc) */
+    void (*pfnPsiInit)(void *pUser);              /* PsiScreen_Init (0x72b40) */
+    void (*pfnBaseAtOpen)(void *pUser);           /* BaseAtScreen_Open (0x588cc) */
+    void (*pfnOptionsOpen)(i32 nMode, void *pUser);   /* OptionsScreen_Open (0x6d0ac) */
+    void (*pfnSaveAudioSettings)(i32 nMode, i32 nBaseCount, void *pUser); /* (0x6b7ac) */
+    void (*pfnFreeGeoscapeUi)(i32 bFreeWorld, void *pUser); /* GeoscapeUi_FreeAll (0x86d20), ui/ */
+    const EndScreenInitEnv *pEndScreen;           /* EndScreen_Init @ 0x388b0 */
+    void *pUser;
+} GeoscapeCloseEnv;
+
+void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv);
+
+void BaseInfoScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void BaseFacScreen_CloseThunkA(const GeoscapeCloseEnv *pEnv);
+void BaseFacScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void SoldierScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void ManufScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void ResearchScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void BuySellScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
 
 /* OptionsScreen_ReturnToTitle @ 0x6b46c: clears the panel scratch byte, closes the
  * geoscape screen, frees every geoscape widget, and re-inits the startup UI. The scratch
@@ -1359,15 +1586,15 @@ typedef struct TitleReturnHooks {
 
 i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks);
 
-/* Five more copies of the same close tail call: FundingScreen_CloseThunk @ 0x5abd8,
+/* Five more copies of the same two instructions: FundingScreen_CloseThunk @ 0x5abd8,
  * FundingScreen_ExitThunk @ 0x5c078, Geoscape_CloseUI_ThunkA @ 0x838d0,
  * Geoscape_CloseUI_ThunkB @ 0x96020, Geoscape_CloseUI_ThunkC @ 0x9a8c0. Together with the
- * seven above, twelve widget handlers all reach the same dispatcher. */
-void FundingScreen_CloseThunk(const GeoscapeCloseHooks *pHooks);
-void FundingScreen_ExitThunk(const GeoscapeCloseHooks *pHooks);
-void Geoscape_CloseUI_ThunkA(const GeoscapeCloseHooks *pHooks);
-void Geoscape_CloseUI_ThunkB(const GeoscapeCloseHooks *pHooks);
-void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks);
+ * eight above, thirteen widget handlers all reach the same dispatcher. */
+void FundingScreen_CloseThunk(const GeoscapeCloseEnv *pEnv);
+void FundingScreen_ExitThunk(const GeoscapeCloseEnv *pEnv);
+void Geoscape_CloseUI_ThunkA(const GeoscapeCloseEnv *pEnv);
+void Geoscape_CloseUI_ThunkB(const GeoscapeCloseEnv *pEnv);
+void Geoscape_CloseUI_ThunkC(const GeoscapeCloseEnv *pEnv);
 
 /* Geoscape_OnMapClick_Thunk @ 0x857e8: a widget callback shim that drops its four
  * arguments and tail-calls Geoscape_OnMapClick (0x8b4a8), which is not ported. */
@@ -1536,7 +1763,7 @@ i32 ResearchScreen_UpdateProgress(const ResearchQtyEnv *pEnv);
  * even when its own guards skip the store. */
 typedef struct ResearchCancelEnv {
     ResearchQtyEnv     qty;   /* the panel, row cache, column and base the entry is found through */
-    GeoscapeCloseHooks close; /* Geoscape_CloseUI (&MEMORY[0x1864F8]), not ported */
+    const GeoscapeCloseEnv *pClose; /* Geoscape_CloseUI @ 0x8b94c, tail-called at 0x733DC */
 } ResearchCancelEnv;
 
 void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv);
@@ -1822,7 +2049,7 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv);
  * column at the cached row, exactly as the quantity buttons read it. Its first argument to
  * ClearProductSlot is the 0x159E98 anchor, which that function never reads. Geoscape_CloseUI is
  * not ported, so the close is the same hook ResearchScreen_CancelSelectedAndClose uses. */
-void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks);
+void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseEnv *pClose);
 
 /* ManufScreen_Init @ 0x710b0 (488 B): the tail call of ManufScreen_Open @ 0x614cc.
  *
@@ -2294,7 +2521,7 @@ typedef struct BuySellConfirmEnv {
 } BuySellConfirmEnv;
 
 void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
-                                       const GeoscapeCloseHooks *pHooks);
+                                       const GeoscapeCloseEnv *pClose);
 
 /* Funding_AddRegionBonus @ 0x7debc (196 B): one radar contact raises one funding dword by 2. It is
  * called from RadarScreen_Update three times (0x60B1C, 0x60C50, 0x60CAC), each time with the value
@@ -3929,8 +4156,7 @@ typedef struct SaveSlotEnv {
     u8             *pbControlsExist; /* byte_159E88[4] */
     i32            *pnGeoscapeScreen;/* nGeoscapeScreen @ 0x186BC4 */
     OptionsInitEnv *pOptionsInit;    /* re-initialised before the load */
-    void (*pfnCloseUi)(void *pUser); /* Geoscape_CloseUI (0x8b94c), not ported */
-    void *pCloseUser;
+    const struct GeoscapeCloseEnv *pClose; /* Geoscape_CloseUI @ 0x8b94c, tail call at 0x6AFB8 */
 } SaveSlotEnv;
 
 i32 SaveGame_Slot_CloseUI(SaveSlotEnv *pEnv, i32 nSlot);

@@ -429,7 +429,6 @@ static void World_StartNewHook(void *pUser)
     env.pnMissionId = &pW->nMissionId;
     env.abSaveFlags = pW->aRegionBuildCount;
     env.pEconomy = &pW->economy;
-    env.pvFundTable = pW->anFundTable;
     env.paFacFlags = pW->aFac;
     env.pTextRecs = pAssets->pTextRecs;
     env.pScreen = &pW->screen;

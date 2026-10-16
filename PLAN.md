@@ -2241,6 +2241,42 @@ Order is by what unblocks what. Each item ends with gates + commit.
   132 new checks (13405 total, 59 suites), coverage 909/1103 (82.4%) and 480696/598792 (80.3%); `strat` moves
   from 102,360 to 105,448 of 160,496 bytes (65.7%). IDB: 3 renames and 16 comments.
 
+- [x] **part 75, the screen close dispatcher: `Geoscape_CloseUI (0x8b94c, 2,100 B)`** — the target of the 13
+  screen-close thunks that were hook seams until now, ported in `pufo_baseui.c` on one `GeoscapeCloseEnv`: a
+  head (`Sound_Play(17, 4)` — the second argument is 4 at all 7 call sites, so `Sound_Play` takes it — then
+  `dwActionFail = 0`, with both popup bytes cleared through the shared tail), the speed re-apply chain, a
+  per-base pass that re-reads `nBaseCount` on every iteration (0x8BA70) and rebuilds the needed-flag grid at
+  `grid + 444 + 144 * base`, and a switch on `nScreenId` with **17 live cases** (1..12, 15, 16, 18, 19, 20) out
+  of the 20 screen values; 13, 14 and 17 take the default return, which is why a radar-list close leaves the
+  screen id alone.
+  **What the ARM showed and the pseudocode did not.** The chain tests 5, 60, 300, 1800, 3600 and 43200 while the
+  table its setters write is `g_aGeoscapeSpeedSec = {5, 60, 300, 1380, 2460, 3600}` — 1800 and 43200 are values
+  no speed control produces, and every arm that does fire rewrites the tick, so closing a screen is not a no-op
+  for game speed. **0x8B9E0** is the sharper half: the 3600 arm calls `GameTime_SetSpeedIdx4` and then branches
+  into the 43200 arm's `SetSpeedIdx5`, so a 3600 tick lands on index 5 and re-arms the sixth control. Case 6
+  calls `BasePlaneScreen_BuildControls` with R0 left as the `bPlaneStoresCommitted` byte that just passed its own
+  test, and `BasePlaneScreen_BuildPanels` with the literal 1 (neither callee reads a1). **0x8BF74** decrements
+  `nSelectedBaseIdx` with LDRSB / SUB #1 / STRB and no floor, so a zero index wraps to 255. Case 11 sets
+  `bPopupVisibleB` at 0x8C0C4 and the shared tail clears it at 0x8BFAC. Case 19 adds the five funding-bar slots
+  in bar order and tests `BGE` against 0xFFD23940, so bankruptcy is funds **strictly** below -3000000
+  (`PUFO_FUNDS_BANKRUPT_LIMIT`). Case 18 and `Options_SaveAudioSettings @ 0x8bd00` are **mutually recursive**
+  (0x6B7F0 calls back into the close), and the recursion ends only because case 18 cleared `bOptionsScreenOpen`
+  first.
+  **A wrong port field this unit removed:** 0x186594..0x1865A4 is a five-slot int bar, not four money values
+  plus a pointer. The third slot is filled at 0x9469C / 0x946A4 from a pool entry IDA names `unk_14B4C8`, so it
+  holds **1357832** among four round money values (1625000, 383000, 1668000, 968000), and case 19 adds all five
+  as plain ints. The port's `void *pvFundTable` was the wrong width for a 32-bit block and was never read;
+  `GeoscapeEconomy` now has `anFundBar[5]` and the slot is `PUFO_FUND_BAR2_INIT`. Whether the original meant an
+  address is unresolved and recorded as unresolved.
+  **11 ledger rows (221 on record):** the 3600 double call (0x8b9e0), the chain-vs-table mismatch (0x8b9a0), the
+  garbage first arguments (0x8c044), the 0→255 wrap (0x8bf74), the residue third argument (0x8bd00), the
+  set-then-cleared popup (0x8c0c4), the 0x14B4C8 bar slot (0x946a4), and four IDB naming corrections (0x8bc74,
+  0x1870b8, 0x158828, 0x1870c8).
+  174 new checks (13583 total, 60 suites), coverage 910/1103 (82.5%) and 482796/598792 (80.6%); `strat` moves
+  from 105,448 to 107,548 of 160,496 bytes (67.0%). IDB: 7 renames (393 on record), 4 size/type fixes — the
+  16-byte `bBasePlaceFail` item overlapping `bBasePlaceActive`, `byte_1870C8` typed as a byte though all three
+  writers store a dword — 14 comments, and one wrong comment corrected at `BaseInfoScreen_OnOk @ 0x557c8`.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2569,6 +2605,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the geoscape pointer dispatcher (`Geoscape_OnPointer`; the 16-bit cursor globals, the screen-0 menu band, the 19-arm screen switch, the drag gate and its tap cooldown, the `(v + 31) >> 5` tap division, 5 original findings and 3 deviations recorded) | 58/58 (Release) | 13022 | 907/1103 (82.2%) | 470616/598792 (78.6%) | 40 checked, 0 mismatched |
 | the pointer release (`Geoscape_OnPointerUp`; the shortfall gate on 0x1870C8 read as a dword, the list clicks where the press only tracked rows, the panel tail shared by two arms, the press/release disagreements on screens 0, 7, 10 and 18, 3 original findings and 6 ledger rows, one wrong slot address in the port corrected) | 58/58 (Release) | 13267 | 908/1103 (82.3%) | 477608/598792 (79.8%) | 40 checked, 0 mismatched |
 | the map select test (`Smap_HitTestStrategSelect`; the strict strip gate, the 16x16 cell window, the 1/1.333 and 1/1.694 item scalers that disagree with the scroll factors, the signed base-type byte, the two past-the-end search indexes, the flag-27 tail that writes the pending click, the colour-slot byte mask `Line_Write` was missing, 10 ledger rows) | 59/59 (Release) | 13405 | 909/1103 (82.4%) | 480696/598792 (80.3%) | 40 checked, 0 mismatched |
+| the screen close dispatcher (`Geoscape_CloseUI`; the head, the speed chain against `g_aGeoscapeSpeedSec` and its 3600 double call, the 17-case switch, the per-base needed-flag rebuild, the mutual recursion with `Options_SaveAudioSettings`, the five-slot funding bar and the strict -3000000 limit, 11 ledger rows) | 60/60 (Release) | 13583 | 910/1103 (82.5%) | 482796/598792 (80.6%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

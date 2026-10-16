@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 909 / 1103 (82.4%)
-                                             bytes cited:     480696 / 598792 (80.3%)
-python docs/parity/audit_credits.py       -> credited functions: 909, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 386 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 910 / 1103 (82.5%)
+                                             bytes cited:     482796 / 598792 (80.6%)
+python docs/parity/audit_credits.py       -> credited functions: 910, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 393 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 210, ORIGINAL BUG markers in src/pufo: 81
+python docs/parity/audit_bugs.py          -> ledger rows: 221, ORIGINAL BUG markers in src/pufo: 84
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,8 +229,25 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 59 suites: **13405**. Coverage as of the latest commit: **909 / 1103
-functions (82.4%)**, **480696 / 598792 bytes (80.3%)**. This unit ported the map select test —
+Test checks run across the 60 suites: **13583**. Coverage as of the latest commit: **910 / 1103
+functions (82.5%)**, **482796 / 598792 bytes (80.6%)**. This unit ported the screen close dispatcher —
+`Geoscape_CloseUI` (0x8b94c, 2,100 B), the target of the 13 screen-close thunks that had been hook seams ever
+since the screens were ported. It runs a head (`Sound_Play(17, 4)` — the second argument is 4 at all 7 call
+sites, so `Sound_Play` takes it and the port's one-argument reading was wrong — then `dwActionFail = 0`, with
+both popup bytes cleared through the shared tail), the speed re-apply chain, a per-base pass that re-reads
+`nBaseCount` on every iteration (0x8BA70) and rebuilds the needed-flag grid at `grid + 444 + 144 * base`, and
+a switch on `nScreenId` with **17 live cases** (1..12, 15, 16, 18, 19, 20); 13, 14 and 17 take the default
+return, which is why a radar-list close leaves the screen id alone. The chain is the interesting half: it
+tests 5, 60, 300, 1800, 3600 and 43200 while the table its setters write is
+`g_aGeoscapeSpeedSec = {5, 60, 300, 1380, 2460, 3600}`, so 1800 and 43200 are values no speed control can
+produce and every arm that does fire rewrites the tick — and **0x8B9E0** makes the 3600 arm call
+`GameTime_SetSpeedIdx4` and then branch into the 43200 arm's `SetSpeedIdx5`, so a 3600 tick lands on index 5
+and re-arms the sixth control. Case 19 adds the five funding-bar slots in bar order and tests `BGE` against
+0xFFD23940, so bankruptcy is funds **strictly** below -3000000, and case 18 and `Options_SaveAudioSettings
+@ 0x8bd00` turn out to be **mutually recursive** (0x6B7F0 calls back into the close) — the recursion ends only
+because case 18 cleared `bOptionsScreenOpen` first. 174 new checks in `tests/test_closeui.c`, 11 ledger rows,
+7 renames and 4 IDB size/type fixes.
+Unit 74 ported the map select test —
 `Smap_HitTestStrategSelect` (0x82be8, 3,088 B), the test the press dispatcher calls twice on one press
 (0x87C10, 0x87C94), now in `pufo_baseui.c` beside `Geoscape_OnRadarListClick @ 0x854c4` on its own
 `SmapHitEnv`. It is a strict strip gate (a click exactly at `320 - uHeight` still scans, and the gate runs
@@ -737,7 +754,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 175 rows, 62 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 221 rows, 84 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -751,7 +768,7 @@ Three audits exist because claims drifted:
 
 - `audit_credits.py` — flags a port claim sitting next to a port denial on the same line.
 - `audit_names.py` — flags a cited address whose original name does not appear in `src/pufo`.
-  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 363 rows) or as a
+  Resolved either as an explained rename (recorded in `docs/parity/renames.tsv`, 393 rows) or as a
   real gap. Unexplained flags went 116 to 0.
 - `audit_tables.py` — extracts the port's static table initialisers and diffs them byte for byte
   against the shipped image. 28 tables, 0 mismatches.
@@ -863,7 +880,7 @@ longer listed here.)
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 105,448 of 160,496 (65.7%), and `Geoscape_Draw` alone is
+`strat` is still the weakest subsystem by bytes: 107,548 of 160,496 (67.0%), and `Geoscape_Draw` alone is
 33,744 of the 55,048 left. Both geoscape pointer handlers and the map select test they call are in now.
 `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes (66.5%) — the small screen handlers are in, the
 big screens and their bring-up are not.
@@ -1046,15 +1063,36 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
   proves 0x187078 is a single byte written with `MOV R2, #1` at 0x874E4 while 0x187074 is a different
   byte (the drag flag, now `bGeoscapeDragActive`). One of the two fields is wrong; the fix touches every
   reader of `bFacDone`, so it is a separate change, not a drive-by edit.
-- **`bBasePlaceFail @ 0x1870B8` is declared 16 bytes wide in the IDB** and so overlaps
+- **`bBasePlaceFail @ 0x1870B8` was declared 16 bytes wide in the IDB** and so overlapped
   `bBasePlaceActive @ 0x1870BC`, which the same function writes separately (cleared at 0x87320 / 0x87EA0,
-  set at 0x87ED4). The pair should be two 1-byte globals; resizing needs a check of every other reader of
-  the 16-byte object before the type is changed.
+  set at 0x87ED4). **Fixed in unit 75:** the three writers are `dword_1870B4[0]` (nBaseFacPanelSel, 0x5896C),
+  `[1]` (bBasePlaceFail, 0x8BEA4) and `[2]` (bBasePlaceActive, 0x8BE9C), so the object is three dwords and
+  both flags are now 4-byte ints with no overlap.
+
+### Three things unit 75 found that are separate issues, not drive-by fixes
+
+- **`tests/test_save.c` asserted fields the version-2 read never writes.** `Save_ReadStrateg`'s gate at
+  0x41554 stops before `nTargetX` / `nTargetY` when `bSaveVersion <= 2`, and the test compared them anyway on
+  a version-2 read. It passed only because the heap happened to recycle the same block between two reads; a
+  diff in `pufo_baseui.c` perturbed the reuse and the two checks failed. Fixed by a `CheckStrategItemV2` that
+  drops exactly the two fields the gate skips, but the class of problem is wider: **a check on a field the
+  port never wrote is a check on uninitialised memory, and it can pass for many units before it fails on an
+  unrelated change.** Worth a sweep for the same shape in the other save tests.
+- **0x18659C is unresolved, and the port now says so instead of pretending.** The third funding bar is filled
+  at 0x9469C / 0x946A4 from a pool entry IDA names `unk_14B4C8`, so it holds 1357832 among four round money
+  values, and `Geoscape_CloseUI` case 19 adds all five slots as plain ints. Nothing in the image dereferences
+  it. Whether the original meant an address is not answerable from the binary; the port stores the value
+  (`PUFO_FUND_BAR2_INIT`) and the note in `pufo_geoiinit.h` records the open question rather than resolving it
+  by guess.
+- **The close is ported but nothing in the app builds a `GeoscapeCloseEnv` yet**, and `TitleReturnHooks.pfnCloseUi`
+  is still a hook. The same is true of `StepCtx`, `PathToCellCtx`, `EnemyStepCtx`, `TactTickCtx` and
+  `GeoscapePointerEnv`: the ported functions are wired to real state in tests and to each other, but the shell
+  does not own those structs. That is the seam Priority 1 has to close, not a defect in the ported functions.
 
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (200 rows, 79 of them matching
-an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (221 rows, 84 matching
+`ORIGINAL BUG` markers in `src/pufo`) and the subsystem notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
   buffer. Past 91 characters the original's behaviour is stack corruption, not defined behaviour.
@@ -1074,7 +1112,13 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-81 markers in the source, 210 ledger rows. Examples:
+84 markers in the source, 221 ledger rows. Examples:
+
+- `0x8b9e0` — the 3600 arm of the close's speed chain calls `GameTime_SetSpeedIdx4` and then branches into the
+  43200 arm's `SetSpeedIdx5`, so a 3600 tick lands on index 5. Reproduced, with the test asserting the landed
+  index rather than the intended one.
+- `0x8bf74` — `nSelectedBaseIdx` is decremented with LDRSB / SUB #1 / STRB and no floor, so a zero index wraps
+  to 255 and case 7 toggles the facility screen for a base that does not exist.
 
 - `0x2b75c` — the +4 layer surcharge and `bFlags29` bit 3 both come from the probe's `g_bStepReanchored`
   report, not from the search flag. The port used the flag for both until unit 71.
@@ -1494,8 +1538,8 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 386 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 164-row bug ledger, with a `qol` column |
+| `docs/parity/renames.tsv` | 393 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

@@ -543,11 +543,11 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
     for (i = 0; i < 11; ++i) {
         pEnv->pEconomy->anFundingBlock[i] = 0;
     }
-    pEnv->pEconomy->nFundA = 1625000;
-    pEnv->pEconomy->nFundB = 383000;
-    pEnv->pEconomy->pvFundTable = pEnv->pvFundTable;
-    pEnv->pEconomy->nFundC = 1668000;
-    pEnv->pEconomy->nFundD = 968000;
+    pEnv->pEconomy->anFundBar[0] = 1625000;
+    pEnv->pEconomy->anFundBar[1] = 383000;
+    pEnv->pEconomy->anFundBar[2] = PUFO_FUND_BAR2_INIT; /* 0x14B4C8 = 1357832, see note 5 */
+    pEnv->pEconomy->anFundBar[3] = 1668000;
+    pEnv->pEconomy->anFundBar[4] = 968000;
     for (i = 0; i < 6; ++i) {
         pEnv->pEconomy->aZero44_49[i] = 0;
     }

@@ -9,6 +9,7 @@
 #include "game/pufo_font.h"    /* Text_DrawString / Text_MeasureWidth, the dialog's labels */
 #include "game/pufo_boot.h"    /* PUFO_TEXT_REC_STRIDE, the craft-name records */
 #include "game/pufo_mainmenu.h" /* PUFO_MAINMENU_MODE_*, the list mode the slot handlers set */
+#include "game/pufo_titles.h"   /* EndScreen_Init, the bankruptcy close of Geoscape_CloseUI */
 #include "util/pufo_rand.h"     /* Game_RandU16, the unlock roll of ResearchScreen_RebuildTopicList */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
@@ -615,9 +616,7 @@ void BuySellScreen_CommitTransaction(BuySellCommitEnv *pEnv)
     if (pEnv->pnFundsSnapshot != NULL) {
         *pEnv->pnFundsSnapshot = pEnv->nFunds;
     }
-    if (pEnv->pfnCloseUi != NULL) {
-        pEnv->pfnCloseUi(); /* Geoscape_CloseUI (0x8b94c, not ported) on the screen block at 0x1864F8 */
-    }
+    Geoscape_CloseUI(pEnv->pClose); /* 0x75078, the tail call */
 }
 
 /* The repeat bound both row editors -- BuySellScreen_FillBuyPanel @ 0x75160 and
@@ -2950,55 +2949,419 @@ void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *
     }
 }
 
-/* Seven thunks, one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI. */
-static void Geoscape_CloseScreenThunk(const GeoscapeCloseHooks *pHooks)
+/* The two release leaves the dispatcher uses. The original frees through UiControl_FreePads /
+ * PadImage_FreeData plus operator delete and never nulls the slot it read; the port nulls it,
+ * because 0x159888 and 0x161A08 are read again by the next build of the same screen. */
+static void CloseFreeCtlArray(UiControl **apCtl, i32 nCount)
 {
-    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
-        pHooks->pfnCloseUi(pHooks->pUser);
+    for (i32 i = 0; i < nCount; ++i) {
+        if (apCtl[i] != NULL) {
+            UiControl_FreePads(apCtl[i]); /* 0x8BEB8 / 0x8BEEC / 0x8BF1C */
+            free(apCtl[i]);               /* 0x8BEC0 / 0x8BEF4 / 0x8BF24 */
+            apCtl[i] = NULL;
+        }
     }
 }
 
-void BaseInfoScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+static void CloseFreePad(PadImage **ppPad)
 {
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void BaseFacScreen_CloseThunkA(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void BaseFacScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void SoldierScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void ManufScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void ResearchScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void BuySellScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    Geoscape_CloseScreenThunk(pHooks);
-}
-
-void NewBaseScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
-{
-    if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {
-        pHooks->pfnPlaySample(17, pHooks->pUser); /* 0x615BC */
+    if (ppPad != NULL && *ppPad != NULL) {
+        PadImage_FreeData(*ppPad); /* 0x8BE10 / 0x8C0F0 / 0x8C13C / 0x8BB4C */
+        free(*ppPad);              /* 0x8BE18 / 0x8C0F8 / 0x8C144 / 0x8BB54 */
+        *ppPad = NULL;
     }
-    Geoscape_CloseScreenThunk(pHooks); /* 0x615C8 */
+}
+
+static void CloseClampScroll(const GeoscapeCloseEnv *pEnv)
+{
+    if (pEnv->pView != NULL) {
+        const i32 nStripH = (pEnv->pStripPad != NULL) ? (i32)pEnv->pStripPad->uHeight : 0;
+        Smap_ClampScrollY(pEnv->pView, nStripH); /* 0x8BE60 / 0x8BF38 */
+    }
+}
+
+static i32 CloseSelectedBase(const GeoscapeCloseEnv *pEnv)
+{
+    return (pEnv->pnSelectedBaseIdx != NULL) ? (i32)*pEnv->pnSelectedBaseIdx : 0;
+}
+
+static i32 CloseBaseCount(const GeoscapeCloseEnv *pEnv)
+{
+    return (pEnv->pnBaseCount != NULL) ? (i32)*pEnv->pnBaseCount : 0;
+}
+
+/* Geoscape_CloseUI @ 0x8b94c: the dispatcher every screen close reaches. The header carries the
+ * case-by-case evidence; the addresses below are the ARM sites, not Hex-Rays' rendering. */
+void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pnScreenId == NULL) {
+        return;
+    }
+
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pSoundUser); /* 0x8B95C: Sound_Play(17, 4) */
+    }
+    if (pEnv->pnActionFail != NULL) {
+        *pEnv->pnActionFail = 0;                   /* 0x8B96C: STR, a dword clear */
+    }
+    if (pEnv->pbPopupA != NULL) { *pEnv->pbPopupA = 0; } /* 0x8B978: STRB [R5,#0x34] */
+    if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; } /* 0x8B97C: STRB [R5,#0x35] */
+
+    /* 0x8B980..0x8B9D0. The 3600 arm calls SetSpeedIdx4 and then branches into the 43200 arm's
+     * SetSpeedIdx5 at 0x8B9E0, so a 3600 tick lands on index 5 and re-arms the sixth control. */
+    if (pEnv->pWorld != NULL && pEnv->apSpeedCtl != NULL) {
+        const i32 nTick = pEnv->pWorld->nTickSeconds;
+        if (nTick == 5) {
+            GameTime_Set5Sec(pEnv->pWorld, pEnv->apSpeedCtl);      /* 0x8B9FC */
+        } else if (nTick == 60) {
+            GameTime_Set1Min(pEnv->pWorld, pEnv->apSpeedCtl);      /* 0x8B9F4 */
+        } else if (nTick == 300) {
+            GameTime_Set5Min(pEnv->pWorld, pEnv->apSpeedCtl);      /* 0x8B9EC */
+        } else if (nTick == 1800) {
+            GameTime_SetSpeedIdx3(pEnv->pWorld, pEnv->apSpeedCtl); /* 0x8B9E4 */
+        } else if (nTick == 3600) {
+            /* ORIGINAL BUG (0x8B9E0): the 3600 arm calls SetSpeedIdx4 and then branches into the
+             * 43200 arm's SetSpeedIdx5, so a 3600 tick lands on index 5 and re-arms the sixth
+             * speed control. The chain's constants also disagree with the table it writes --
+             * 1800 and 43200 are values no speed control produces, and every arm that does fire
+             * rewrites the tick (1800 -> 1380, 3600 -> 2460 -> 3600, 43200 -> 3600). */
+            GameTime_SetSpeedIdx4(pEnv->pWorld, pEnv->apSpeedCtl); /* 0x8B9DC */
+            GameTime_SetSpeedIdx5(pEnv->pWorld, pEnv->apSpeedCtl); /* 0x8B9E0 -> 0x8B9CC */
+        } else if (nTick == 43200) {
+            GameTime_SetSpeedIdx5(pEnv->pWorld, pEnv->apSpeedCtl); /* 0x8B9CC */
+        }
+    }
+
+    /* 0x8BA00..0x8BA80: the five needed-flag passes. nBaseCount is loaded with LDRSB at 0x8BA10
+     * and re-loaded at 0x8BA70 on every iteration, so a negative count runs nothing and a count
+     * that grows mid-loop runs on. The counter it leaves in R2 is case 18's third argument. */
+    i32 nBaseCount = CloseBaseCount(pEnv);
+    if (pEnv->abFacilityGrid != NULL) {
+        for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {
+            const i32 nSpace = Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                      pEnv->apObjects, pEnv->nObjectCount, nBase);
+            const i32 nStores = Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase);
+            (void)Base_UpdateLivingQuartersNeeded(pEnv->abFacilityGrid, nBase,
+                nSpace + Base_CountOutboundTransferSpace(pEnv->apSites, pEnv->nSiteCount, -1,
+                                                         pEnv->apBases, nBase, true)); /* 0x8BA34 */
+            (void)Base_UpdateStoresNeeded(pEnv->abFacilityGrid, nBase,
+                nStores + Base_CountItemQtyAcrossBases(pEnv->apSites, pEnv->nSiteCount, -1,
+                                                       pEnv->apBases, nBase, pEnv->apObjects,
+                                                       pEnv->nObjectCount, true));      /* 0x8BA40 */
+            (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, nBase,
+                Base_CountPsiSoldiers(pEnv->apSoldiers, pEnv->nSoldierCount, nBase));  /* 0x8BA4C */
+            (void)Base_UpdateLabNeeded(pEnv->abFacilityGrid, nBase,
+                Base_CountActiveResearch(pEnv->apResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase,
+                                         pEnv->nResearchEntries));                      /* 0x8BA58 */
+            (void)Base_UpdateWorkshopNeeded(pEnv->abFacilityGrid, nBase,
+                Base_CountActiveManuf(pEnv->apManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase,
+                                      PUFO_PRODUCT_ENTRIES_PER_BASE));                  /* 0x8BA64 */
+            nBaseCount = CloseBaseCount(pEnv);                                         /* 0x8BA70 */
+        }
+    }
+
+    switch (*pEnv->pnScreenId) {
+    case 1: {
+        *pEnv->pnScreenId = 0;                                        /* 0x8BE94 */
+        if (pEnv->pbPlaceActive != NULL) { *pEnv->pbPlaceActive = 0; } /* 0x8BE9C, [2] first */
+        if (pEnv->pbPlaceFail != NULL) { *pEnv->pbPlaceFail = 0; }     /* 0x8BEA4, then [1] */
+        if (pEnv->pNav != NULL) {
+            CloseFreeCtlArray(pEnv->pNav->apNav, PUFO_NAV_CTLS);        /* 0x8BEA8, 10 slots */
+            CloseFreeCtlArray(pEnv->pNav->apPanel, PUFO_NAV_PANEL_CTLS); /* 0x8BEDC, 2 slots */
+            CloseFreeCtlArray(pEnv->pNav->apFind, PUFO_NAV_FIND_CTLS);   /* 0x8BF0C, 3 slots */
+        }
+        CloseClampScroll(pEnv);                                        /* 0x8BF38 */
+        return;
+    }
+    case 2:
+        if (pEnv->pbBaseFacConfirm != NULL && *pEnv->pbBaseFacConfirm != 0) {
+            return;                                                    /* 0x8BE58 */
+        }
+        CloseClampScroll(pEnv);                                        /* 0x8BE60 */
+        *pEnv->pnScreenId = 1;                                         /* 0x8BE68 */
+        if (pEnv->pbBaseFacDone != NULL) { *pEnv->pbBaseFacDone = 0; } /* 0x8BE70, +4 of 0x187074 */
+        if (pEnv->pbBaseFacArmed != NULL) { *pEnv->pbBaseFacArmed = 0; } /* 0x8BE74 -> 0x8BFF4 */
+        return;
+    case 3:
+        *pEnv->pnScreenId = 1;                                         /* 0x8BDE8 */
+        if (pEnv->pbBaseInfoBuilt != NULL && *pEnv->pbBaseInfoBuilt != 0 &&
+            pEnv->pfnBuildBaseInfoPanels != NULL) {
+            pEnv->pfnBuildBaseInfoPanels(pEnv->pUser);                 /* 0x8BDF8 */
+        }
+        CloseFreePad(pEnv->ppBaseInfoPad);                             /* 0x8BE10 / 0x8BE18 */
+        return;
+    case 4:
+        *pEnv->pnScreenId = 1;                                         /* 0x8BFC4 */
+        if (pEnv->pbSoldierOpen != NULL && *pEnv->pbSoldierOpen != 0) {
+            SoldierScreen_Toggle(pEnv->pSoldierScreen);                /* 0x8BFD8 */
+        }
+        return;
+    case 5:
+        if (pEnv->pbTransferFlag != NULL && *pEnv->pbTransferFlag != 0) {
+            *pEnv->pbTransferFlag = 0;                                 /* 0x8BFF0 -> 0x8BFF4 */
+            return;
+        }
+        if (pEnv->pbPopupA != NULL) { *pEnv->pbPopupA = 0; }           /* 0x8C000 */
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; }           /* 0x8C004 */
+        if (pEnv->pbTransferFlag != NULL) { *pEnv->pbTransferFlag = 0; } /* 0x8C008 */
+        *pEnv->pnScreenId = 4;                                         /* 0x8C00C -> 0x8C010 */
+        return;
+    case 6:
+        if (pEnv->pbPlaneListBuilt != NULL && *pEnv->pbPlaneListBuilt != 0) {
+            if (pEnv->pfnBuildPlaneListPanels != NULL) {
+                pEnv->pfnBuildPlaneListPanels(pEnv->pUser);            /* 0x8C028 */
+            }
+            return;
+        }
+        if (pEnv->pbPlaneStores != NULL && *pEnv->pbPlaneStores != 0) {
+            if (pEnv->pfnBuildPlaneControls != NULL) {
+                pEnv->pfnBuildPlaneControls(pEnv->pUser);              /* 0x8C044 */
+            }
+            return;
+        }
+        if ((pEnv->pbStatPanelA != NULL && *pEnv->pbStatPanelA != 0) ||
+            (pEnv->pbStatPanelB != NULL && *pEnv->pbStatPanelB != 0)) {
+            if (pEnv->pbStatPanelA != NULL) { *pEnv->pbStatPanelA = 0; } /* 0x8C0B0 */
+            if (pEnv->pbStatPanelB != NULL) { *pEnv->pbStatPanelB = 0; } /* 0x8C0B4 */
+            return;
+        }
+        if (pEnv->pbPlaneBuilt == NULL || *pEnv->pbPlaneBuilt == 0) {
+            return;                                                    /* 0x8C07C */
+        }
+        if (pEnv->pbPlaneDetail != NULL && *pEnv->pbPlaneDetail != 0) {
+            *pEnv->pbPlaneDetail = 0;                                  /* 0x8C08C -> 0x8BFF4 */
+            return;
+        }
+        *pEnv->pnScreenId = 1;                                         /* 0x8C094 */
+        if (pEnv->pfnBuildPlanePanels != NULL) {
+            pEnv->pfnBuildPlanePanels(pEnv->pUser);                    /* 0x8C098 */
+        }
+        return;
+    case 7: {
+        const bool bDone = (pEnv->pbBaseFacDone != NULL && *pEnv->pbBaseFacDone != 0);
+        const bool bDialog = (pEnv->pbBaseFacDialog != NULL && *pEnv->pbBaseFacDialog != 0);
+        if (bDone && bDialog) {
+            /* ORIGINAL BUG (0x8BF74): LDRSB / SUB #1 / STRB with no floor, so a zero
+             * nSelectedBaseIdx wraps to 255 and the facility screen is then toggled for a base
+             * that does not exist. */
+            if (pEnv->pnSelectedBaseIdx != NULL) {
+                *pEnv->pnSelectedBaseIdx = (i8)(u8)((i32)*pEnv->pnSelectedBaseIdx - 1);
+            }
+            BaseFacScreen_Toggle(pEnv->pFacToggle);                    /* 0x8BF80 */
+            *pEnv->pnScreenId = 1;                                     /* 0x8BF88 */
+        } else if (pEnv->pbBaseFacArmed == NULL || *pEnv->pbBaseFacArmed == 0) {
+            if (bDialog) {
+                BaseFacScreen_Toggle(pEnv->pFacToggle);                /* 0x8BFB8 -> 0x8BF80 */
+            }
+            *pEnv->pnScreenId = 1;                                     /* 0x8BF84 */
+        } else {
+            *pEnv->pbBaseFacArmed = 0;                                 /* 0x8BFA4 */
+        }
+        if (pEnv->pbPopupA != NULL) { *pEnv->pbPopupA = 0; }           /* 0x8BFA8 */
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; }           /* 0x8BFAC */
+        return;
+    }
+    case 8:
+        if (pEnv->pbRowSelected != NULL && *pEnv->pbRowSelected != 0) {
+            (void)ResearchScreen_StartSelected(pEnv->pResearchStart);  /* 0x8BDB4 */
+        } else {
+            *pEnv->pnScreenId = 1;                                     /* 0x8BDC4 */
+            if (pEnv->pbResearchBuilt != NULL && *pEnv->pbResearchBuilt != 0) {
+                ResearchScreen_BuildPanels(pEnv->pResearchBuild);      /* 0x8BDD8 */
+            }
+        }
+        return;
+    case 9:
+        if (pEnv->pbManufSelected != NULL && *pEnv->pbManufSelected != 0) {
+            ManufScreen_Draw(pEnv->pManufDraw);                        /* 0x8BD78 */
+        } else if (pEnv->pbManufBuilt != NULL && *pEnv->pbManufBuilt != 0) {
+            ManufScreen_BuildPanels(pEnv->pManufBuild);                /* 0x8BD94 */
+            *pEnv->pnScreenId = 1;                                     /* 0x8BD98 -> 0x8C010 */
+        }
+        return;
+    case 10:
+        *pEnv->pnScreenId = 1;                                         /* 0x8BE2C */
+        if (pEnv->pbTransferBuilt != NULL && *pEnv->pbTransferBuilt != 0) {
+            TransferScreen_BuildPanels(pEnv->pTransferBuild);          /* 0x8BE40 */
+        }
+        return;
+    case 11:
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 1; }           /* 0x8C0C4 */
+        if (pEnv->pbBuySellCtlBuilt != NULL && *pEnv->pbBuySellCtlBuilt != 0) {
+            BuySellScreen_BuildControls(pEnv->pBuySellCtl);            /* 0x8C0D0 */
+        }
+        *pEnv->pnScreenId = 1;                                         /* 0x8C0D8 */
+        CloseFreePad(pEnv->ppBuySellPad);                              /* 0x8C0F0 / 0x8C0F8 */
+        if (pEnv->pbPopupA != NULL) { *pEnv->pbPopupA = 0; }           /* 0x8BFA8 */
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; }           /* 0x8BFAC: the 1 above
+                                                                        * lived only for the build */
+        return;
+    case 12:
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 1; }           /* 0x8C110 */
+        if (pEnv->pbBuySellBuilt != NULL && *pEnv->pbBuySellBuilt != 0) {
+            BuySellScreen_BuildPanels(pEnv->pBuySell);                 /* 0x8C11C */
+        }
+        *pEnv->pnScreenId = 1;                                         /* 0x8C124 */
+        CloseFreePad(pEnv->ppBuySellPad);                              /* 0x8C13C / 0x8C144 */
+        if (pEnv->pbPopupA != NULL) { *pEnv->pbPopupA = 0; }           /* 0x8C148 */
+        if (pEnv->pbPopupB != NULL) { *pEnv->pbPopupB = 0; }           /* 0x8C150 */
+        (void)Base_RemoveAllShips(pEnv->pClearShips, CloseSelectedBase(pEnv)); /* 0x8C160 */
+        (void)Base_RemoveAllSoldiers(pEnv->anSoldierIdList, pEnv->apSoldiers,
+                                     pEnv->nSoldierCount);             /* 0x8C174 */
+        return;
+    case 15:
+        (void)FundingScreen_Open(pEnv->pFundingToggle, pEnv->pFundingOpen); /* 0x8BCB0 */
+        *pEnv->pnScreenId = 0;                                         /* 0x8BCB4 */
+        return;
+    case 16:
+        if (pEnv->pbUfopaediaDirty != NULL && *pEnv->pbUfopaediaDirty != 0) {
+            if (pEnv->pfnUfopaediaRefresh != NULL) {
+                pEnv->pfnUfopaediaRefresh(pEnv->pUser);                /* 0x8BD3C */
+            }
+        } else if (pEnv->pbUfopaediaOpen != NULL && *pEnv->pbUfopaediaOpen != 0) {
+            *pEnv->pbUfopaediaOpen = 0;                                /* 0x8BD48 -> 0x8BFF4 */
+        } else {
+            if (pEnv->pfnUfopaediaOpen != NULL) {
+                pEnv->pfnUfopaediaOpen(pEnv->pUser);                   /* 0x8BD58 */
+            }
+            *pEnv->pnScreenId = 0;                                     /* 0x8BD5C */
+            CloseClampScroll(pEnv);                                    /* 0x8BF38 */
+        }
+        return;
+    case 18:
+        if (pEnv->pbOptionsActive != NULL && *pEnv->pbOptionsActive != 0) {
+            const i32 nMode = (pEnv->pnOptionsMode != NULL) ? (i32)*pEnv->pnOptionsMode : 0;
+            if (nMode != 0) {
+                if (pEnv->pnOptionsMode != NULL) { *pEnv->pnOptionsMode = 0; } /* 0x8BCFC */
+                if (pEnv->pfnSaveAudioSettings != NULL) {
+                    /* ORIGINAL BUG (0x8BD00): a1 is the block itself and a2 the byte just read
+                     * (LDRSB at 0x8BCD0), but a3 is whatever the base loop left in R2 at 0x8BA70
+                     * -- the base count, not a value this function computes. */
+                    pEnv->pfnSaveAudioSettings(nMode, nBaseCount, pEnv->pUser);
+                }
+            } else {
+                OptionsScreen_RebuildWithSound(pEnv->pOptionsHooks);   /* 0x8BCE4 */
+                *pEnv->pnScreenId = 0;                                 /* 0x8BCE8 */
+            }
+        }
+        if (pEnv->pbOptionsOpen != NULL && *pEnv->pbOptionsOpen != 0) {
+            *pEnv->pnScreenId = 0;                                     /* 0x8BD14 */
+            if (pEnv->pfnOptionsOpen != NULL) {
+                pEnv->pfnOptionsOpen(-1, pEnv->pUser);                 /* 0x8BD18 */
+            }
+        }
+        if (pEnv->pbDragActive != NULL) { *pEnv->pbDragActive = 0; }   /* 0x8BD1C -> 0x8BFF4 */
+        return;
+    case 19: {
+        CloseFreePad(pEnv->ppFundPad);                                 /* 0x8BB4C / 0x8BB54 */
+        nBaseCount = CloseBaseCount(pEnv);                             /* 0x8BB60 */
+
+        i32 nUpkeep = 0;                                               /* R8, zeroed at 0x8B968 */
+        for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {             /* 0x8BB74 gates on > 0 */
+            nUpkeep += Base_CalcMonthlyUpkeep(pEnv->apCraft,
+                                              (pEnv->pnCraftCount != NULL)
+                                                  ? (i32)*pEnv->pnCraftCount : 0,
+                                              pEnv->apSoldiers, pEnv->nSoldierCount,
+                                              pEnv->apSites, pEnv->nSiteCount, pEnv->apObjects,
+                                              pEnv->abFacilityGrid, nBase); /* 0x8BB84 */
+            nBaseCount = CloseBaseCount(pEnv);                         /* 0x8BB90 */
+        }
+
+        if (pEnv->pnFunds != NULL && pEnv->anFundBar != NULL) {
+            *pEnv->pnFunds += pEnv->anFundBar[2] - nUpkeep + pEnv->anFundBar[1]
+                            + pEnv->anFundBar[3] + pEnv->anFundBar[0] + pEnv->anFundBar[4];
+            if (*pEnv->pnFunds < PUFO_FUNDS_BANKRUPT_LIMIT) {          /* 0x8BBE8: BGE skips this */
+                if (pEnv->pfnFreeGeoscapeUi != NULL) {
+                    pEnv->pfnFreeGeoscapeUi(1, pEnv->pUser);           /* 0x8BBF0 */
+                }
+                if (pEnv->pEndScreen != NULL) {
+                    EndScreen_Init(pEnv->pEndScreen, 0);               /* 0x8BBF8 */
+                }
+                if (pEnv->pbTickHold != NULL) { *pEnv->pbTickHold = 1; }    /* 0x8BC04 */
+                if (pEnv->pbBattleEnded != NULL) { *pEnv->pbBattleEnded = 1; } /* 0x8BC0C */
+                return;
+            }
+        }
+
+        i32 nPsiBase = -1;
+        if (pEnv->abFacilityGrid != NULL) {
+            for (i32 nBase = 0; nBase < nBaseCount; ++nBase) {          /* 0x8BC30 gates on > 0 */
+                if (Base_CalcPsiLabCap(pEnv->abFacilityGrid, nBase) > 0) { /* 0x8BC40, BGT found */
+                    nPsiBase = nBase;
+                    break;
+                }
+                nBaseCount = CloseBaseCount(pEnv);                      /* 0x8BC54 */
+            }
+        }
+        if (nPsiBase >= 0) {
+            if (pEnv->pnShownBaseIdx != NULL) { *pEnv->pnShownBaseIdx = (u8)nPsiBase; } /* 0x8BC74 */
+            if (pEnv->pnPsiBaseIdx != NULL) { *pEnv->pnPsiBaseIdx = (i8)nPsiBase; }     /* 0x8BC80 */
+            *pEnv->pnScreenId = 17;                                     /* 0x8BC90 */
+            if (pEnv->pfnPsiInit != NULL) {
+                pEnv->pfnPsiInit(pEnv->pUser);                          /* 0x8BC98 */
+            }
+        } else {
+            *pEnv->pnScreenId = 0;                                      /* 0x8BCB4 */
+        }
+        return;
+    }
+    case 20:
+        if (pEnv->pfnBaseAtOpen != NULL) {
+            pEnv->pfnBaseAtOpen(pEnv->pUser);                           /* 0x8BB00 */
+        }
+        *pEnv->pnScreenId = 0;                                          /* 0x8BB08 */
+        if (pEnv->pbBaseAtAssault != NULL && *pEnv->pbBaseAtAssault != 0) {
+            if (pEnv->pbMissionMode != NULL) { *pEnv->pbMissionMode = 1; } /* 0x8BB20 */
+            (void)Smap_BeginCraftSelect(pEnv->pCraftSelect);           /* 0x8BB24 */
+        }
+        return;
+    default:
+        return;                                                         /* def_8BA94, 13/14/17 */
+    }
+}
+
+/* Thirteen thunks, one tail call: LDR R0, =0x1864F8 / B Geoscape_CloseUI. */
+void BaseInfoScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void BaseFacScreen_CloseThunkA(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void BaseFacScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void SoldierScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void ManufScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void ResearchScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void BuySellScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    Geoscape_CloseUI(pEnv);
+}
+
+void NewBaseScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
+{
+    if (pEnv != NULL && pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pSoundUser); /* 0x615BC, and CloseUI plays 17 again */
+    }
+    Geoscape_CloseUI(pEnv); /* 0x615C8 */
 }
 
 i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks *pHooks)
@@ -3019,29 +3382,29 @@ i32 OptionsScreen_ReturnToTitle(ScreenScratch *pScratch, const TitleReturnHooks 
 }
 
 /* Five more copies of the same two instructions. */
-void FundingScreen_CloseThunk(const GeoscapeCloseHooks *pHooks)
+void FundingScreen_CloseThunk(const GeoscapeCloseEnv *pEnv)
 {
-    Geoscape_CloseScreenThunk(pHooks);
+    Geoscape_CloseUI(pEnv);
 }
 
-void FundingScreen_ExitThunk(const GeoscapeCloseHooks *pHooks)
+void FundingScreen_ExitThunk(const GeoscapeCloseEnv *pEnv)
 {
-    Geoscape_CloseScreenThunk(pHooks);
+    Geoscape_CloseUI(pEnv);
 }
 
-void Geoscape_CloseUI_ThunkA(const GeoscapeCloseHooks *pHooks)
+void Geoscape_CloseUI_ThunkA(const GeoscapeCloseEnv *pEnv)
 {
-    Geoscape_CloseScreenThunk(pHooks);
+    Geoscape_CloseUI(pEnv);
 }
 
-void Geoscape_CloseUI_ThunkB(const GeoscapeCloseHooks *pHooks)
+void Geoscape_CloseUI_ThunkB(const GeoscapeCloseEnv *pEnv)
 {
-    Geoscape_CloseScreenThunk(pHooks);
+    Geoscape_CloseUI(pEnv);
 }
 
-void Geoscape_CloseUI_ThunkC(const GeoscapeCloseHooks *pHooks)
+void Geoscape_CloseUI_ThunkC(const GeoscapeCloseEnv *pEnv)
 {
-    Geoscape_CloseScreenThunk(pHooks);
+    Geoscape_CloseUI(pEnv);
 }
 
 i32 Geoscape_OnMapClick_Thunk(const MapClickHooks *pHooks)
@@ -3270,9 +3633,7 @@ void ResearchScreen_CancelSelectedAndClose(const ResearchCancelEnv *pEnv)
     if (nIdx >= 0) {
         pEnv->qty.apResearchCols[nIdx] = 0; /* 0x733D8: MOV R2,#0 / STRH R2 */
     }
-    if (pEnv->close.pfnCloseUi != NULL) {
-        pEnv->close.pfnCloseUi(pEnv->close.pUser); /* 0x733DC */
-    }
+    Geoscape_CloseUI(pEnv->pClose); /* 0x733DC, the tail call */
 }
 
 /* ResearchScreen_AccumulateAllocated @ 0x74914. Eight base slots regardless of how many bases
@@ -3776,7 +4137,7 @@ void ManufScreen_CommitProduction(const ManufCommitEnv *pEnv)
     }
 }
 
-void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseHooks *pHooks)
+void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseEnv *pClose)
 {
     if (pEnv == NULL) {
         return;
@@ -3786,9 +4147,7 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseH
     const i32 nBase = (pEnv->pnSelectedBaseIdx != NULL) ? (i32)(i8)*pEnv->pnSelectedBaseIdx : 0;
     ManufScreen_ClearProductSlot(pEnv, nBase, nProduct); /* 0x6E9C4 */
 
-    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
-        pHooks->pfnCloseUi(pHooks->pUser); /* 0x6E9C8, tail-call into Geoscape_CloseUI */
-    }
+    Geoscape_CloseUI(pClose); /* 0x6E9C8, the tail call */
 }
 
 /* g_aManufCtlDesc @ 0xAB9F8: the manufacturing screen's six control descriptors -- the base-tab scroll
@@ -4616,7 +4975,7 @@ static const i32 g_anBuySellConfirmItems[4] = {112, 113, 117, 118};
 /* BuySellScreen_ConfirmSiteAndClose @ 0x75090. Promote the transfer flow's working site -- the
  * record AT the site count -- into a real site when it holds anything, then close the screen. */
 void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
-                                       const GeoscapeCloseHooks *pHooks)
+                                       const GeoscapeCloseEnv *pClose)
 {
     if (pEnv == NULL) {
         return;
@@ -4658,9 +5017,7 @@ void BuySellScreen_ConfirmSiteAndClose(const BuySellConfirmEnv *pEnv,
     if (pEnv->pnFundsSnapshot != NULL) {
         *pEnv->pnFundsSnapshot = pEnv->nFunds; /* 0x75130, the buy/sell scratch copy */
     }
-    if (pHooks != NULL && pHooks->pfnCloseUi != NULL) {
-        pHooks->pfnCloseUi(pHooks->pUser); /* 0x7513C, the tail call */
-    }
+    Geoscape_CloseUI(pClose); /* 0x7513C, the tail call */
 }
 
 /* region id minus 0x80 -> the funding slot it feeds, -1 when the region gives no bonus. The order is
@@ -7925,9 +8282,7 @@ i32 SaveGame_Slot_CloseUI(SaveSlotEnv *pEnv, i32 nSlot)
     pEnv->pScratch->nLineAux145 = 0;                            /* 0x6AFA4 */
     *pEnv->pnListMode = PUFO_MAINMENU_MODE_SLOTCLICK;           /* 0x6AFAC */
 
-    if (pEnv->pfnCloseUi != NULL) {
-        pEnv->pfnCloseUi(pEnv->pCloseUser);                     /* 0x6AFB8, the tail call */
-    }
+    Geoscape_CloseUI(pEnv->pClose);                             /* 0x6AFB8, the tail call */
     return 0;
 }
 

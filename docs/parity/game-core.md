@@ -14928,3 +14928,83 @@ round trips - 591 scales to 443, the +7 edge around cell 436, where 1/1.33 would
 and 2631 scales to 1553 where the product of the scroll factors would give 1554 - because a +/-8
 window swallows a 0.2% error anywhere else. The window itself is pinned by 8 in / 9 out.
 
+## Unit 75 - Geoscape_CloseUI @ 0x8b94c (2,100 B), ported as Geoscape_CloseUI
+
+The screen close dispatcher, reached through the 13 screen-close thunks that until now were hook
+seams in the port. It runs in three parts: a head that plays the close sample and clears the action
+state, a speed re-apply chain, a per-base pass that rebuilds the facility grid, and a switch on
+nScreenId @ 0x1865B0 with 17 live cases out of the 20 values the screens use.
+
+The head is 0x8B94C..0x8B978: Sound_Play(17, 4) - the second argument is 4 at every one of the 7
+call sites in this function, so Sound_Play takes it and the port's one-argument reading was wrong -
+then dword_1870C8 = 0. IDA had that global as a byte; all three writers store a dword (here, plus
+BaseFacScreen_TryBuySelected @ 0x58960 when funds are below the facility cost and
+Ship_TickRangeRecoverConsume @ 0x4606C when the range is short), so it is dwActionFail @ 0x1870C8,
+size 4. Both popup bytes are cleared through the shared LABEL_86 tail rather than per case.
+
+The speed chain (0x8B980..0x8B9E0) tests the current tick against 5, 60, 300, 1800, 3600 and 43200
+and calls GameTime_SetSpeedIdx0..5. The table those setters write is g_aGeoscapeSpeedSec =
+{5, 60, 300, 1380, 2460, 3600} @ 0x84F00..0x850FC, so 1800 and 43200 are values no speed control
+can produce, and every arm that does fire rewrites the tick: 1800 becomes 1380, 3600 becomes 2460
+and then 3600, 43200 becomes 3600. Closing a screen is therefore not a no-op for game speed.
+0x8B9E0 is the sharper half: the 3600 arm calls SetSpeedIdx4 and then falls through into the 43200
+arm's SetSpeedIdx5, so a 3600 tick lands on index 5 and re-arms the sixth control. Both are ledger
+rows and both are reproduced, with test_closeui.c asserting the landed index and the re-armed
+control rather than the intended one.
+
+The per-base pass (0x8BA04..0x8BA88) walks the bases, re-reads nBaseCount @ 0x1865B8+0x618 through
+LDRSB on every iteration (0x8BA70) so a count that changes mid-loop is honoured, and fills the
+needed-flag grid at grid + 444 + 144 * base with 1 where the facility at grid + 480 + 144 * base is
+not 255. Its tail is what leaves R2 holding the base count, and that residue is the third argument
+Options_SaveAudioSettings receives at 0x8BD00 - the callee is handed a value the close never
+computes on purpose.
+
+Mutual recursion: case 18 calls Options_SaveAudioSettings @ 0x8bd00, which tail-calls back into
+Geoscape_CloseUI at 0x6B7F0. It terminates only because case 18 cleared byte_159E80[0] first - the
+options open byte, renamed from byte_159E80 to bOptionsScreenOpen - so the second pass takes a
+different branch. The port keeps the same shape and the same exit condition.
+
+What the ARM showed that the pseudocode did not:
+
+- 0x8C01C / 0x8C038 / 0x8C090: case 6 calls BasePlaneScreen_BuildControls with R0 left as the
+  bPlaneStoresCommitted byte that just passed its own test, and BasePlaneScreen_BuildPanels with the
+  literal 1. Neither callee reads a1, so the garbage is harmless here, but the call shape is wrong
+  and the port passes NULL.
+- 0x8BF74: nSelectedBaseIdx @ 0x1865B8+0x619 is decremented with LDRSB / SUB #1 / STRB and no floor,
+  so a zero index wraps to 255 and case 7 then toggles the facility screen for a base that does not
+  exist. Reproduced, and test_closeui.c asserts 255.
+- 0x8C0C4 then 0x8BFAC: case 11 sets bPopupVisibleB to 1 and the shared tail clears it, so the 1 is
+  visible only to the BuySellScreen_BuildControls call at 0x8C0D0 and the net effect on the flag is
+  nothing.
+- 0x8BC74 / 0x8BC80 are STRB, byte stores. The IDB comment on BaseInfoScreen_OnOk @ 0x557c8 claimed
+  byte_158834 was 'written as a dword in Geoscape_CloseUI case 19'; it is not, and the comment is
+  corrected.
+- Case 19 is the funding close: *pnFunds += anFundBar[2] - nUpkeep + anFundBar[1] + anFundBar[3] +
+  anFundBar[0] + anFundBar[4] (0x8BBAC..0x8BBE0, the five slots added in bar order, not index order),
+  then 0x8BBDC MOV R2,#0xFFD23940 with 0x8BBE8 BGE - so bankruptcy is funds strictly below -3000000,
+  and exactly -3000000 is not bankruptcy. PUFO_FUNDS_BANKRUPT_LIMIT is now the named constant.
+- 0x186594..0x1865A4 is a five-slot int bar, not four money values plus a pointer. The third slot is
+  filled at 0x9469C/0x946A4 from a pool entry IDA names unk_14B4C8, so it holds 1357832 among four
+  round money values (1625000, 383000, 1668000, 968000), and case 19 adds all five as plain ints.
+  Whether the original meant it as an address is unresolved; the stored value is not. The port's
+  earlier void *pvFundTable was both the wrong width for a 32-bit block and never read, so it is
+  gone: GeoscapeEconomy now has anFundBar[5] and the slot is PUFO_FUND_BAR2_INIT.
+- Case 20 splits on bBaseAtAssault @ 0x158850: the non-assault half is the base list close, the
+  assault half needs the full SmapCraftSelectEnv and is still unported.
+- The 17 live cases are 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16, 18, 19, 20; 13, 14 and 17
+  fall to the default return, which is why a radar-list close leaves the screen id alone.
+
+IDB corrections this unit: bBasePlaceFail @ 0x1870B8 was sized 16 bytes and overlapped
+bBasePlaceActive @ 0x1870BC (12 bytes) - dword_1870B4 is three dwords (nBaseFacPanelSel,
+bBasePlaceFail, bBasePlaceActive) and both flags are now 4-byte ints with no overlap; byte_1870C8
+retyped and renamed dwActionFail; unk_158828 renamed pBaseInfoPad as a PadImage * because case 3
+releases it through PadImage_FreeData, which no UiPanel is released through; unk_15883C,
+unk_15EE4C, byte_18730C, unk_187310 and byte_159E80 named for the flags the close reads.
+
+174 new checks in tests/test_closeui.c. The speed chain is pinned by the landed index and the
+re-armed control for all eight tested ticks (5, 60, 300, 1800, 3600, 43200, 7, 1380), the case-19
+branch by three funds values around the limit (limit-1 bankrupt, exactly the limit not bankrupt,
+above the limit not bankrupt), and the two-base upkeep by 3,620,000 - 50,000 per facility cell that
+is not 255 plus 20,000 per soldier at the base, which is the term that made a 3,600,000 guess wrong.
+Two gaps are recorded in the file header rather than papered over: case 20's assault half needs the
+full SmapCraftSelectEnv, and case 19's EndScreen_Init needs main.dat.

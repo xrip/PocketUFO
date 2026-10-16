@@ -1777,6 +1777,39 @@ static void CheckStrategItem(const StrategItem *pGot, const StrategItem *pWant, 
     Check(pGot->dFracX == pWant->dFracX && pGot->dFracY == pWant->dFracY, pszWhat);
 }
 
+/* The version-2 read stops before nTargetX / nTargetY (the gate at 0x41554 is on the BUILD's
+ * version byte), so those two fields keep whatever StrategItem_AllocAdd left in the fresh
+ * record. Asserting them compares uninitialised memory -- it only ever passed because the
+ * allocator happened to hand back the block the earlier list had used. Everything the read does
+ * write is checked here instead. */
+static void CheckStrategItemV2(const StrategItem *pGot, const StrategItem *pWant,
+                               const char *pszWhat)
+{
+    CheckEqI32(pGot->bActive, pWant->bActive, pszWhat);
+    CheckEqI32(pGot->nSiteId, pWant->nSiteId, pszWhat);
+    CheckEqI32(pGot->nTimer, pWant->nTimer, pszWhat);
+    CheckEqI32(pGot->nSeed, pWant->nSeed, pszWhat);
+    CheckEqI32(pGot->nDisplayId, pWant->nDisplayId, pszWhat);
+    CheckEqI32(pGot->nX, pWant->nX, pszWhat);
+    CheckEqI32(pGot->nDestX, pWant->nDestX, pszWhat);
+    CheckEqI32(pGot->nY, pWant->nY, pszWhat);
+    CheckEqI32(pGot->nStartY, pWant->nStartY, pszWhat);
+    CheckEqI32(pGot->nMissionSub, pWant->nMissionSub, pszWhat);
+    CheckEqI32(pGot->nTravelStartSec, pWant->nTravelStartSec, pszWhat);
+    CheckEqI32(pGot->bHyperDetect, pWant->bHyperDetect, pszWhat);
+    CheckEqI32(pGot->nType, pWant->nType, pszWhat);
+    CheckEqI32(pGot->uTravelMin, pWant->uTravelMin, pszWhat);
+    CheckEqI32(pGot->nTravelEpochSec, pWant->nTravelEpochSec, pszWhat);
+    CheckEqI32(pGot->nHp, pWant->nHp, pszWhat);
+    CheckEqI32(pGot->nPhase, pWant->nPhase, pszWhat);
+    CheckEqI32(pGot->bRace, pWant->bRace, pszWhat);
+    CheckEqI32(pGot->nTargetIdx, pWant->nTargetIdx, pszWhat);
+    CheckEqI32(pGot->bDone, pWant->bDone, pszWhat);
+    Check(pGot->dSpeed == pWant->dSpeed, pszWhat);
+    Check(pGot->dTrackA == pWant->dTrackA, pszWhat);
+    Check(pGot->dFracX == pWant->dFracX && pGot->dFracY == pWant->dFracY, pszWhat);
+}
+
 static void TestStrategChunk(void)
 {
     DatFile dat;
@@ -1871,8 +1904,8 @@ static void TestStrategChunk(void)
     DatFile_Close(&dat);
 
     CheckEqI32(list2.nCount, 2, "the rebuilt list still has two items");
-    CheckStrategItem((const StrategItem *)PtrArray_Get(&list2, 0), &want[0],
-                     "the first item is unaffected");
+    CheckStrategItemV2((const StrategItem *)PtrArray_Get(&list2, 0), &want[0],
+                       "the first item is unaffected");
     CheckEqI32(((StrategItem *)PtrArray_Get(&list2, 1))->bActive, 0x44,
                "a version-2 build reads 105 bytes per item, so the second item starts"
                " inside the first one's nTargetX");

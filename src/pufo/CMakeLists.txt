@@ -308,6 +308,19 @@ add_test(NAME test_smaphit
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# Screen-close dispatcher: the speed re-apply chain, the seventeen cases of the screen switch, the
+# nav teardown, the monthly economy close and its bankruptcy limit.
+add_executable(test_closeui ${CMAKE_SOURCE_DIR}/tests/test_closeui.c)
+target_link_libraries(test_closeui PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat
+                                           pufo_util pufo_audio)
+set_target_properties(test_closeui PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_closeui
+    COMMAND test_closeui
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # Voxel occupancy and line-of-sight: row-mask bit addressing, wall/floor/ceiling
 # and occupant blocking, plus the trace. Uses the real mask tables when present.
 add_executable(test_los ${CMAKE_SOURCE_DIR}/tests/test_los.c)
