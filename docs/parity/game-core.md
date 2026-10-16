@@ -16641,3 +16641,120 @@ asc_AB9F0 to aQtyPairSep); a function comment at 0x7d374 and line comments at 0x
 0x7D840 and 0x7D8FC. BaseUi_DrawFrameRails is no longer file-local, since the hangar draws the same
 rails. The unit-95 note that called the refused band 25..30 "the five craft slots and the five crew
 slots" is corrected: 25..30 is the six weapon slots.
+## Unit 97 - the hangar's other face (BasePlaneScreen_DrawCraftDetail @ 0x7baf8, 3,824 B)
+
+Ported in src/pufo/game/pufo_plane.c as BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *env).
+BasePlaneScreen_Draw enters it straight away when bPlaneShowCraftDetail @ 0x161F20 is set (0x7D37C) and
+returns its value, so the hook unit 96 carried for it is gone: the draw env now carries the detail env.
+
+**Two gates, and the first one short-circuits everything.** Rails A and B are byte-for-byte the shared
+screen rails, so the port calls BaseUi_DrawFrameRails. Then Ship_FormatDisplayName is byte-copied into
+psz @ sp+0x88 (52 B) and measured, and the width stays in a register four separate exits reuse. The
+craft index is worth naming: this screen reads nSelectedCraftIdx @ 0x161AC4 where BasePlaneScreen_Draw
+reads nPlaneSelCraftIdx @ 0x161F04 (0x7BCAC). bPlaneListPanelsBuilt @ 0x161F24 set draws the crew pair
+(pPlaneCrewPanel @ 0x161EDC, pPlaneCrewStatusPanel @ 0x161A3C), packs (200,200,200 / 10,25,10), puts the
+name at (120 - w/2, 30) and returns -- both the stores panel set and the craft read-out are skipped.
+
+**STORES ARM (0x7BD70..0x7C228).** dwActionFail @ 0x1870C8 read as a dword decides the two row panels'
+bFlag7073: exactly 1 clears it on pPlaneSelRowPanel @ 0x161F00 and pPlaneCommitRowPanel @ 0x161EEC,
+anything else sets it to 1 -- and the 1 is the leftover R11 from the rail loop's nRectH (0x7BDA4..
+0x7BDC4), not a constant the reader can see. Then (150,150,255 / 20,20,20), TEXTS[89] "Корабль" centred
+on 210 and TEXTS[155] "База" centred on 147 at y 54. bPanelFlagScratch @ 0x161F0C is copied into both
+row panels' bUnk7080 and cleared: a one-shot flag a row click sets and this draw consumes. The band is
+16 * min(nLineCount, nStyle) of the SELECT-ROW panel (0x7BE7C..0x7BEAC, `MOVGE R3,R0,LSL#4`), every
+separator is 1 x (band + 2) at y 69 in palette index 0xB4, and the order is separator 130, avail,
+separator 166, sel-row, separator 181, commit-row, separator 196, taken -- so the avail panel paints
+over the separator at 166 rather than the other way round.
+
+**The bottom line splits on a flag that looks like the one unit 96 used but is not.** bBaseFacPreviewOk
+@ 0x18652D is one byte away from the bBaseFacPreviewActive @ 0x18652C the craft read-out gates on, in
+the same control block, and the band is 75 < nSmapCursorY < band + 75 with both ends exclusive. Armed,
+it packs (150,150,255 / 20,20,55) and draws the hovered row's object name at (10, 297) -- the pointer it
+hands Text_DrawString is apObjects[pPlaneSlotPanel->anLineAux[nPanelRowCursor @ 0x186BE8]] itself, whose
+first field is the 36-byte name. Not armed, it recentres the confirm control (pGeoscapeCtlConfirm @
+0x186BA4 gets x = 120 - (uWidth >> 1) and y 297, both STRH), blits it, and draws TEXTS[1127] "ОК"
+centred at (120 - w/2, 297) in (68,244,252 / 4,70,75). Both arms land on the same draw at 0x7C0B4. Then
+(200,200,200 / 10,25,10) and the name at (120 - w/2, 30), then (220,80,80 / 50,30,30) and -- only when
+dwActionFail is exactly 1 -- the refusal panel: Ui_AnimExpandBlit_IfEnabled over (20, 130, 200, 70) plus
+TEXTS[410] "Нет места на корабле" for dwActionFailReason @ 0x1870B4 == 0, TEXTS[408] "Нет свободных
+хранилищ" for 1 and TEXTS[409] "Нет боеприпасов для ТОП" for 2, centred at (120 - w/2, 158). Any other
+reason returns with the red pair packed and nothing drawn. The map is a switch, not the buy/sell
+screen's 405 + reason: the two screens read one dword and pick different records out of the same six.
+
+**DETAIL ARM (0x7C22C..0x7C9DC).** (200,200,200 / 10,25,10) and the name at (120 - w/2, 10); then
+(100,150,250 / 10,25,10) and the two percentage lines. "Топливо " (TEXTS[144]) gets
+100 * Ship.uRangeRemain @ +8 / Ship.uRangeMax @ +0xA at (150, 30); "Повреждения " (TEXTS[145]) gets
+100 - 100 * Ship.nFuel @ +0x18 / Ship.uFuelMax @ +0x16 at (10, 30). Both go through _rt_sdiv with the
+divisor in R0 (`MOV LR,PC / MOV PC,R3` at 0x7C2F0 and 0x7C388) and both append "%" (asc_ABAB8). The
+label and the field do not match on either line: the fuel line reads the range pair and the damage line
+reads the fuel pair.
+
+Then the art. Ship.bCraftType picks the craft pad out of the object block's five (now pPlaneCraftPad0..4
+@ 0x161A4C..0x161A5C) with key 0xFE, and a type outside 0..4 blits nothing. Ship.bWeaponL and
+Ship.bWeaponR, both LDRSB, pick one of the six weapon pads (pPlaneWeaponPad0..5 @ 0x161A60..0x161A74)
+and write the pad's nOriginX first -- 55 for the left mount, 156 for the right -- and the pad order is
+not the weapon order: 25 takes the third pad, 26 the first, 27 the second, 28..30 the fourth..sixth.
+
+**Then the counters.** All four are zeroed whatever Ship.bCanDogfight @ +0x21 says (0x7C5C0..0x7C5F8) and
+all four are recomputed when it is non-zero. The soldier walk (0x7C630..0x7C68C, skipped when
+nSoldierCount is not positive) fills nPlaneSoldiersAboard @ 0x161AB8 (Soldier.bUnk183 @ +0xB7 equals the
+craft), nPlaneSoldiersAtBase @ 0x161EE4 (Soldier.nKind @ +0xB6 equals the base) and
+nPlaneSoldiersUnassigned @ 0x161AB4 (at this base AND bUnk183 == 255). The last two are never drawn
+here: BasePlaneScreen_BuildListPanels sizes the crew panel with aboard + unassigned (0x7A4BC..0x7A4C4),
+so this draw is what refreshes the numbers the crew list is built from. nPlaneCrewCarried @ 0x161AC0 is
+the five crew slots' aItemQty[craft] sum, reached through the cached apObjects[31..35] pointers at the
+context's +0x184..+0x194 with no object-count bound and stored again after every one of the five steps.
+
+Then two glyph-and-count lines, each gated on bCanDogfight AND on its own counter being positive:
+fontSys_nBaseBitsSprBase + 38 at (130, 200) with "x" at 142 and itoa(aboard) at 150, and + 40 at
+(180, 200) with "x" at 192 and itoa(crew carried) at 200, all in palette 0. The (250,250,250 / 10,10,25)
+pair they draw under is packed once at 0x7C754 and BOTH the gated and the skipped path reach it. Under
+that pair, gated on bCanDogfight alone, come the two hold lines: TEXTS[403] "Своб. мест " with
+Craft_GetTypeCargoCap - Base_CalcWeaponStorageUsed at (95, 236) and TEXTS[404] "Мест всего " with the
+bare cap at (95, 248) -- a craft type with no hold gives a cap of 0 and a negative free line.
+
+Tail, 0x7C964..0x7C9DC: (100,150,250 / 10,10,25), then bStatPanelAOpen @ 0x161F18 picks
+BasePlaneScreen_DrawStatLabel's first panel, else bStatPanelBOpen @ 0x161F1C picks the second, else
+BasePlane_ResetDetailState rebuilds the stat rows. The pair packed at 0x7C984 is overwritten by
+DrawStatLabel's own (68,244,252 / 4,70,75) before either panel reaches a glyph and the reset branch
+draws nothing, so it is dead on all three paths.
+
+71 new checks in test_baseui, on a real 240x320 surface with the real font. Both arms are compared
+against a hand-painted reference frame built from the ARM with literals -- the two captions, the five
+panels and four separators in the original's interleaved order, the bottom line, the name, the refusal
+panel and its reason string; and for the detail arm the name, the two percentage strings, the three pad
+blits, the two glyph-and-count lines and the two hold strings. The pads are real 2x1 glyphs whose index
+bytes are 27 (the palette entry Gfx_PackRgb565Pair writes) and 0xFE (the key every PadImage_BlitEx here
+passes), so each pad blits exactly one visible pixel and the key is pinned by the second staying blank;
+the craft pads keep the nOriginX the fixture gives them and the weapon pads get theirs overwritten, so
+the blit position identifies which pad ran. Separate probes then move one input at a time: the two
+percentage sources, a zero divisor, bCraftType 4 and 5, the mount byte 24 and 31, the four counters,
+nSoldierCount 0, bCanDogfight clear, the hold cap, and the three refusal reasons.
+
+Deviations: the original dereferences the craft pointer at apCraft[nSelectedCraftIdx] four times, every
+apSoldiers and apObjects entry it walks, all seven panels, the slot panel's anLineAux at the unbounded
+row cursor and the object pointer it hands Text_DrawString, with no null test; the port skips what is
+missing and bounds the row cursor and the slot index. Both percentage divisions go through _rt_sdiv with
+no zero test -- uRangeMax or uFuelMax of 0 is a division by zero there -- and the port reads 0 percent
+/ 100 percent for that case. The name is byte-copied from the 108-byte shared scratch into the 52-byte
+psz with no bound and the four scratch strings are built with unbounded strcat; the port uses bounded
+copies over the same 52 / 56-byte buffers. The cargo sum here reaches slots 31..35 through the cached
+pointers with no object-count bound, while the port reuses Craft_CountWeaponSlotsCarried, which bounds
+the walk by Map_nObjectCount. The original returns whatever R0 holds at the exit (`POP {R4-R11,PC}`
+straight after `ADD SP`); nothing reads it, and the port returns 0.
+
+IDB: 17 renames -- the four counters (dword_161AB8 to nPlaneSoldiersAboard, unk_161EE4 to
+nPlaneSoldiersAtBase, unk_161AB4 to nPlaneSoldiersUnassigned, dword_161AC0 to nPlaneCrewCarried),
+unk_186BE8 to nPanelRowCursor, dword_1870B4 to dwActionFailReason, and the eleven pads in the object
+block at 0x161A48 (unk_161A4C..unk_161A5C to pPlaneCraftPad0..4, unk_161A60 / dword_161A64..dword_161A70
+/ unk_161A74 to pPlaneWeaponPad0..5). A function comment at 0x7baf8 and 16 line comments.
+Test fixture note. The first unit-97 mutation sweep left five values unpinned and the cause was the
+fixture, not the port. Font_DrawGlyph with nPal 0 reads palette slot 0, which the fixture left zeroed, so
+the soldier and crew icon ids 38 and 40 blitted as colour 0 and were invisible on a zeroed surface: 38 -> 1,
+38 -> 100 and 40 -> 39 all passed. The refusal-reason-0 check only counted ink inside the panel window, so
+the record number 410 was free to change to 408. The pad key 0xFE was free to change to 0xFD because the
+keyed index maps through palette slot 2 entry 254, which is zero unless the fixture colours it. Filling slot
+0 entries 1..255 with distinct colours (entry 0 stays 0 because Font_BlitGlyph treats index 0 as transparency,
+the ARM at 0xa4288 tests *v5 != 0), giving slot 2 entry 254 its own colour, and turning the reason-0 case
+into a full-frame compare made every one of them observable. The sweep now catches 52 of 52 applied
+mutations; a reason-3 full-frame compare also pins the switch's fall-through return.

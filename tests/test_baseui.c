@@ -16351,7 +16351,6 @@ static Ship g_aPlCraft[4];
 static Ship *g_apPlCraft[4];
 static u8 g_bPlDetail, g_bPlBuilt, g_bPlPreview;
 static i32 g_nPlCursorY, g_nPlSelIdx, g_nPlSoldiers, g_nPlCrafts;
-static i32 g_nPlDetailCalls, g_nPlDetailValue;
 
 /* The readout window: the three labels, the three values and the inner frame, and nothing else. The
  * panels sit at y 110 and 210, the outer rails at x 5 / 234 and y 5 / 315, the inner rails' rows at
@@ -16377,12 +16376,6 @@ static i32 g_nPlDetailCalls, g_nPlDetailValue;
 #define PL_PANEL_X1 60
 #define PL_PANEL_Y0 108
 #define PL_PANEL_Y1 260
-
-static i32 PlDetailThunk(void)
-{
-    ++g_nPlDetailCalls;
-    return g_nPlDetailValue;
-}
 
 static i32 PlInk(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1, u16 uWant)
 {
@@ -16531,8 +16524,6 @@ static void PlFixture(void)
     g_nPlSelIdx = 2;
     g_nPlSoldiers = 5;
     g_nPlCrafts = 4;
-    g_nPlDetailCalls = 0;
-    g_nPlDetailValue = 77;
 
     g_plEnv.pColor = &g_plColor;
     g_plEnv.pbShowCraftDetail = &g_bPlDetail;
@@ -16549,7 +16540,7 @@ static void PlFixture(void)
     g_plEnv.apSoldiers = g_apPlSol;
     g_plEnv.nSoldierCount = g_nPlSoldiers;
     g_plEnv.pTextRecs = (const char *)g_aFrameText;
-    g_plEnv.pfnDrawCraftDetail = PlDetailThunk;
+    g_plEnv.pDetail = NULL; /* the delegation itself is checked with a live detail env below */
 }
 
 static void PlBuildPanels(void)
@@ -16611,23 +16602,15 @@ static void TestPlaneScreenDraw(void)
     Check(uPanelGlyph != uArmGlyph && uArmGlyph != uCapGlyph && uPanelGlyph != uCapGlyph,
           "the three colour pairs pack to three distinct glyph colours");
 
-    /* 1. The detail arm: the hook runs, its value is returned, and nothing else of this function runs. */
+    /* 1. The detail arm: the whole call goes to the detail view and nothing of this function runs.
+     * 0x7D37C is a straight call, so with no detail env there is nothing to call and the return is 0.
+     * The delegation with a live detail env is checked in TestPlaneCraftDetail. */
     PlFixture();
     g_bPlDetail = 1;
-    g_nPlDetailValue = 77;
     PlClear();
     nRet = BasePlaneScreen_Draw(&g_plEnv);
-    CheckEqI32(g_nPlDetailCalls, 1, "bPlaneShowCraftDetail @ 0x161F20 set runs the detail view once (0x7D38C)");
-    CheckEqI32(nRet, 77, "  and this function returns its value");
-    CheckEqI32(PlInkAll(pPix), 0, "  while nothing else here draws -- no captions, no rails");
-
-    PlFixture();
-    g_bPlDetail = 1;
-    g_plEnv.pfnDrawCraftDetail = NULL;
-    PlClear();
-    CheckEqI32(BasePlaneScreen_Draw(&g_plEnv), 0, "a missing detail hook returns 0 rather than faulting");
-    CheckEqI32(PlInkAll(pPix), 0, "  and the rest of the function still stays out");
-    g_plEnv.pfnDrawCraftDetail = PlDetailThunk;
+    CheckEqI32(nRet, 0, "bPlaneShowCraftDetail @ 0x161F20 set hands the whole call to the detail view (0x7D37C)");
+    CheckEqI32(PlInkAll(pPix), 0, "  and nothing of this function's own drawing runs -- no captions, no rails");
 
     /* 2. The built flag: the panels go, the captions and the rails stay. */
     PlFixture();
@@ -16822,11 +16805,820 @@ static void TestPlaneScreenDraw(void)
     g_plEnv.pnCursorY = NULL;
     PlClear();
     (void)BasePlaneScreen_Draw(&g_plEnv);
-    CheckEqI32(g_nPlDetailCalls, 0, "a missing flag byte never takes the detail arm");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 15], XfPix(100, 100, 100),
+               "a missing flag byte never takes the detail arm -- the inner rails still run");
     CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
                "  and a missing built flag draws no panels");
     Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
           "  while the captions and the rails keep running");
+}
+
+/* ------------------------------------------------- unit 97: the hangar's craft-detail screen
+ *
+ * BasePlaneScreen_DrawCraftDetail @ 0x7baf8, both arms. The fixture drives the stores arm and the
+ * detail arm over one 240x320 surface, and each arm is compared against a reference frame painted
+ * from the ARM with literals. */
+
+static SoftSurf g_cdSurf;
+static SoftSurf g_cdRef;
+static PlaneDetailEnv g_cdEnv;
+static GfxColorEnv g_cdColor;
+static BasePlaneScreen g_cdScreen;
+static PadImage g_aCdCraftPad[5];
+static PadImage g_aCdWeaponPad[6];
+static PadImage g_cdCtlPad;
+static UiControl g_cdOkCtl;
+static UiPanel g_cdSlotPanel, g_cdAvailPanel, g_cdSelRowPanel, g_cdCommitPanel, g_cdTakenPanel;
+static UiPanel g_cdCrewPanel, g_cdCrewStatusPanel;
+static Ship g_aCdCraft[4];
+static Ship *g_apCdCraft[4];
+static ObjectRecFull g_aCdObj[64];
+static ObjectRecFull *g_apCdObj[64];
+static Soldier g_aCdSol[6];
+static Soldier *g_apCdSol[6];
+static UiAnimBlitEnv g_cdAnim;
+static u8 g_bCdAnimStarted;
+static i8 g_nCdAnimProgress;
+static PlaneWeaponPanels g_cdStatPanels;
+static BasePlaneDetailEnv g_cdStatEnv;
+static i32 g_nCdStatRows;
+static i32 g_nCdStatW[6];
+static u8 g_bCdListBuilt, g_bCdStores, g_bCdPreviewOk, g_bCdPanelFlag, g_bCdShowDetail;
+static u32 g_dwCdFail;
+static i32 g_nCdReason, g_nCdCursorY, g_nCdRowCursor, g_nCdCraftIdx;
+static i8 g_nCdBaseIdx;
+static i32 g_nCdSoldiers, g_nCdAboard, g_nCdAtBase, g_nCdUnassigned, g_nCdCarried;
+static i32 g_nCdCtlBlits;
+
+/* A 2x1 glyph: index 27 (the palette entry Gfx_PackRgb565Pair writes) and index 0xFE, the key every
+ * PadImage_BlitEx here passes. So each test pad blits exactly one visible pixel, in the colour of the
+ * pair packed before it, and the key itself is pinned by the second pixel staying blank. */
+static u8 g_aCdGlyph[6] = { 2, 0, 1, 0, 27, 0xFE };
+
+/* The craft pads keep the nOriginX the fixture gives them; the weapon pads get theirs overwritten with
+ * 55 or 156, so their nOriginY is what says which pad ran. */
+#define CD_CRAFT_PAD_X(k) (100 + 3 * (k))
+#define CD_CRAFT_PAD_Y 310
+#define CD_WEAPON_PAD_Y(k) (270 + 3 * (k))
+#define CD_SEP_COLOR XfPix(0xB4, 0xB4, 0xB4)
+
+/* A pad or glyph pixel is Gfx_PackRgb565Pair's packed value, which divides each channel by
+ * (0 * 0.1 + 0.7) before packing -- so the expected colour is the pack's return, not XfPix of the
+ * triple. The rect blits take their three byte arguments straight through, so those keep XfPix. */
+static u16 CdPadColor(void)
+{
+    return (u16)Gfx_PackRgb565Pair(&g_cdColor, 100, 150, 250, 10, 25, 10);
+}
+
+static u16 CdRefuseColor(void)
+{
+    return (u16)Gfx_PackRgb565Pair(&g_cdColor, 220, 80, 80, 50, 30, 30);
+}
+
+static void CdCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    ++g_nCdCtlBlits;
+}
+
+static void CdText(i32 nRec, const char *psz)
+{
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * nRec, psz);
+}
+
+static void CdDrawCentered(i32 nCentre, i32 y, const char *psz)
+{
+    Text_DrawString(nCentre - Text_MeasureWidth(psz) / 2, y, psz);
+}
+
+static u16 CdPix(const u16 *pPix, i32 x, i32 y)
+{
+    return pPix[y * FRAME_W + x];
+}
+
+static i32 CdInk(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1, u16 uWant)
+{
+    i32 nInk = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * FRAME_W + x] == uWant) {
+                ++nInk;
+            }
+        }
+    }
+    return nInk;
+}
+
+/* Ink in a window that nothing else of this screen reaches -- the rails sit at x 5 / 234 and y 5 / 315,
+ * so a window inside them counts only what the test is asking about. */
+static i32 CdInkAny(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    i32 nInk = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * FRAME_W + x] != 0) {
+                ++nInk;
+            }
+        }
+    }
+    return nInk;
+}
+
+static void CdClear(void)
+{
+    memset(g_cdSurf.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_cdSurf;
+    g_nCdCtlBlits = 0;
+    g_bCdAnimStarted = 0;
+    g_nCdAnimProgress = 0;
+}
+
+static bool CdSame(void)
+{
+    const u16 *pa = (const u16 *)g_cdSurf.pPixels;
+    const u16 *pb = (const u16 *)g_cdRef.pPixels;
+
+    for (i32 i = 0; i < FRAME_PIX; ++i) {
+        if (pa[i] != pb[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void CdResetStorePanels(void);
+
+static void CdFixture(void)
+{
+    memset(&g_cdEnv, 0, sizeof(g_cdEnv));
+    memset(&g_cdScreen, 0, sizeof(g_cdScreen));
+    memset(g_aCdCraftPad, 0, sizeof(g_aCdCraftPad));
+    memset(g_aCdWeaponPad, 0, sizeof(g_aCdWeaponPad));
+    memset(&g_cdCtlPad, 0, sizeof(g_cdCtlPad));
+    memset(&g_cdOkCtl, 0, sizeof(g_cdOkCtl));
+    memset(g_aCdCraft, 0, sizeof(g_aCdCraft));
+    memset(g_aCdObj, 0, sizeof(g_aCdObj));
+    memset(g_aCdSol, 0, sizeof(g_aCdSol));
+    memset(&g_cdStatPanels, 0, sizeof(g_cdStatPanels));
+    memset(&g_cdStatEnv, 0, sizeof(g_cdStatEnv));
+
+    for (i32 i = 0; i < 5; ++i) {
+        g_aCdCraftPad[i].pData = g_aCdGlyph;
+        g_aCdCraftPad[i].nMode = 2;
+        g_aCdCraftPad[i].nOriginX = CD_CRAFT_PAD_X(i);
+        g_aCdCraftPad[i].nOriginY = CD_CRAFT_PAD_Y;
+        g_cdScreen.apCraftPads[i] = &g_aCdCraftPad[i];
+    }
+    for (i32 i = 0; i < 6; ++i) {
+        g_aCdWeaponPad[i].pData = g_aCdGlyph;
+        g_aCdWeaponPad[i].nMode = 2;
+        g_aCdWeaponPad[i].nOriginX = 0;
+        g_aCdWeaponPad[i].nOriginY = CD_WEAPON_PAD_Y(i);
+        g_cdScreen.apWeaponPads[i] = &g_aCdWeaponPad[i];
+    }
+
+    g_cdCtlPad.pData = g_aCdGlyph;
+    g_cdCtlPad.nMode = 2;
+    g_cdOkCtl.bEnabled = 1;
+    g_cdOkCtl.nMode = 0;
+    g_cdOkCtl.nState = 0;
+    g_cdOkCtl.bUnk17 = 1;
+    g_cdOkCtl.uWidth = 40;
+    g_cdOkCtl.apPads[0] = &g_cdCtlPad;
+
+    /* Craft 2 is the selected one: a type-1 hull (cargo cap 120) that can dogfight, 3000 of 30000
+     * range left, 200 of 800 fuel, type ordinal 3, left mount 26 and right mount 25. */
+    for (i32 i = 0; i < 4; ++i) {
+        g_apCdCraft[i] = &g_aCdCraft[i];
+        g_aCdCraft[i].bType = (u8)i;
+        g_aCdCraft[i].bCraftType = 1;
+        g_aCdCraft[i].bCanDogfight = 1;
+        g_aCdCraft[i].uRangeRemain = 3000;
+        g_aCdCraft[i].uRangeMax = 30000;
+        g_aCdCraft[i].nFuel = 200;
+        g_aCdCraft[i].uFuelMax = 800;
+    }
+    g_aCdCraft[2].bType = 3;
+    g_aCdCraft[2].bWeaponL = 26;
+    g_aCdCraft[2].bWeaponR = 25;
+
+    for (i32 i = 0; i < 64; ++i) {
+        g_apCdObj[i] = &g_aCdObj[i];
+        (void)snprintf(g_aCdObj[i].szName, sizeof(g_aCdObj[i].szName), "Obj%02d", i);
+    }
+    g_aCdObj[31].aItemQty[2] = 7;  /* the crew slots this craft carries: 7 + 5 + 0 + 4 + 0 = 16 */
+    g_aCdObj[32].aItemQty[2] = 5;
+    g_aCdObj[34].aItemQty[2] = 4;
+    g_aCdObj[30].aItemQty[2] = 9;  /* just below the crew band */
+    g_aCdObj[36].aItemQty[2] = 11; /* just above it, and inside the hold's ammo band */
+    g_aCdObj[36].bCargoSize = 1;
+    g_aCdObj[52].aItemQty[2] = 13; /* just past the hold's ammo band */
+    g_aCdObj[52].bCargoSize = 1;
+    g_aCdObj[25].aItemQty[2] = 17; /* the weapon-slot band the hold leaves out */
+    g_aCdObj[25].bCargoSize = 1;
+    g_aCdObj[5].bCargoSize = 3;   /* 3 * 4 = 12 of the hold */
+    g_aCdObj[5].aItemQty[2] = 4;
+    g_aCdObj[40].bCargoSize = 2;  /* 2 * 5 = 10 more, so 22 used of 120 */
+    g_aCdObj[40].aItemQty[2] = 5;
+    g_aCdObj[60].bCargoSize = 7;  /* index 60 is outside both hold bands */
+    g_aCdObj[60].aItemQty[2] = 9;
+
+    /* Five soldiers inside the count: three in the shown base (index 0), one of them unassigned. */
+    for (i32 i = 0; i < 6; ++i) {
+        g_apCdSol[i] = &g_aCdSol[i];
+    }
+    g_aCdSol[0].nKind = 0; g_aCdSol[0].bUnk183 = 2;
+    g_aCdSol[1].nKind = 1; g_aCdSol[1].bUnk183 = 2;
+    g_aCdSol[2].nKind = 0; g_aCdSol[2].bUnk183 = 1;
+    g_aCdSol[3].nKind = 0; g_aCdSol[3].bUnk183 = PUFO_SOLDIER_CRAFT_NONE;
+    g_aCdSol[4].nKind = 0; g_aCdSol[4].bUnk183 = 2;
+    g_aCdSol[5].nKind = 0; g_aCdSol[5].bUnk183 = PUFO_SOLDIER_CRAFT_ABOARD_OUT;
+
+    /* The record numbers are literals here for the same reason unit 96's are: a fixture that places its
+     * text with the macro the port reads cannot see the macro move. */
+    CdText(89, "SHIP");
+    CdText(155, "BASE");
+    CdText(144, "FUEL ");
+    CdText(145, "DMG ");
+    CdText(403, "FREE ");
+    CdText(404, "TOTAL ");
+    CdText(408, "NOSTORE");
+    CdText(409, "NOAMMO");
+    CdText(410, "NOROOM");
+    CdText(1127, "OK");
+    CdText(137, "SKY");
+    CdText(138, "LGT");
+    CdText(139, "AVG");
+    CdText(418, "INT");  /* types 3 and 4 put a dash between the label and the ordinal (asc_AB340) */
+    CdText(419, "FIRE");
+    CdText(141, "AAA");
+    CdText(142, "BBBBBBBBBB");
+    CdText(143, "CCCCCCCC");
+
+    g_bCdListBuilt = 0;
+    g_bCdStores = 0;
+    g_bCdPreviewOk = 0;
+    g_bCdPanelFlag = 0;
+    g_dwCdFail = 0;
+    g_nCdReason = 0;
+    g_nCdCursorY = 100;   /* inside the stores band 75 .. 75 + 64 */
+    g_nCdRowCursor = 1;   /* the slot panel's row 1 holds slot 32 */
+    g_nCdCraftIdx = 2;
+    g_nCdBaseIdx = 0;
+    g_nCdSoldiers = 5;
+    g_nCdAboard = 0;
+    g_nCdAtBase = 0;
+    g_nCdUnassigned = 0;
+    g_nCdCarried = 0;
+    g_nCdStatRows = 3;
+
+    g_cdAnim.pbStarted = &g_bCdAnimStarted;
+    g_cdAnim.pnProgress = &g_nCdAnimProgress;
+    g_cdAnim.nFrameStyle = 0;
+
+    g_cdColor.nScaleSource = 0;
+    g_cdColor.nFadeCount = 0;
+
+    g_cdEnv.pColor = &g_cdColor;
+    g_cdEnv.pScreen = &g_cdScreen;
+    g_cdEnv.apCraft = g_apCdCraft;
+    g_cdEnv.nCraftCount = 4;
+    g_cdEnv.pnCraftIdx = &g_nCdCraftIdx;
+    g_cdEnv.pnBaseIdx = &g_nCdBaseIdx;
+    g_cdEnv.pbListPanelsBuilt = &g_bCdListBuilt;
+    g_cdEnv.pbStoresCommitted = &g_bCdStores;
+    g_cdEnv.pdwActionFail = &g_dwCdFail;
+    g_cdEnv.pnRefuseReason = &g_nCdReason;
+    g_cdEnv.pbPanelFlagScratch = &g_bCdPanelFlag;
+    g_cdEnv.pCrewPanel = &g_cdCrewPanel;
+    g_cdEnv.pCrewStatusPanel = &g_cdCrewStatusPanel;
+    g_cdEnv.pnRowCursor = &g_nCdRowCursor;
+    g_cdEnv.pbPreviewOk = &g_bCdPreviewOk;
+    g_cdEnv.pnCursorY = &g_nCdCursorY;
+    g_cdEnv.pCtlConfirm = &g_cdOkCtl;
+    g_cdEnv.pfnCtlBlit = CdCtlBlit;
+    g_cdEnv.pfnCtlBlitEx = CdCtlBlit;
+    g_cdEnv.pAnim = &g_cdAnim;
+    g_cdEnv.apObjects = g_apCdObj;
+    g_cdEnv.nObjectCount = 64;
+    g_cdEnv.apSoldiers = g_apCdSol;
+    g_cdEnv.nSoldierCount = g_nCdSoldiers;
+    g_cdEnv.pnSoldiersAboard = &g_nCdAboard;
+    g_cdEnv.pnSoldiersAtBase = &g_nCdAtBase;
+    g_cdEnv.pnSoldiersUnassigned = &g_nCdUnassigned;
+    g_cdEnv.pnCrewCarried = &g_nCdCarried;
+    g_cdEnv.pStatPanels = &g_cdStatPanels;
+    g_cdEnv.pnStatRowCount = &g_nCdStatRows;
+    g_cdEnv.pTextRecs = (char *)g_aFrameText;
+    g_cdEnv.pStatEnv = &g_cdStatEnv;
+
+    g_cdStatEnv.apObjects = g_apCdObj;
+    g_cdStatEnv.nObjectCount = 64;
+    g_cdStatEnv.nBaseIdx = 0;
+    g_cdStatEnv.pnCraftCannon = &g_nCdStatW[0];
+    g_cdStatEnv.pnStingray = &g_nCdStatW[1];
+    g_cdStatEnv.pnAvalanche = &g_nCdStatW[2];
+    g_cdStatEnv.pnLaserCannon = &g_nCdStatW[3];
+    g_cdStatEnv.pnPlasmaCannon = &g_nCdStatW[4];
+    g_cdStatEnv.pnFusionBall = &g_nCdStatW[5];
+    g_cdStatEnv.pnRowCount = &g_nCdStatRows;
+
+    g_fontSys.nBaseBitsBase = 0; /* the shell sets this in Ui_InitBaseInfo; 0 keeps the glyph ids literal */
+
+    /* The two count lines call Font_DrawGlyph with nPal 0 while the glyph base is 0, so they read
+     * palette slot 0. Left zeroed, every icon pixel would blit as 0 and the sprite id would be
+     * unobservable. Entry 0 stays 0 -- Font_BlitGlyph treats it as transparency (the ARM at 0xa4288
+     * tests *v5 != 0), the rest get distinct colours so a wrong sprite id shows up. */
+    for (i32 i = 1; i < PUFO_PAL_SIZE; ++i) {
+        g_aPalette[0][i] = (u32)(0x100 + i);
+    }
+
+    /* The pads' glyph is { 27, 0xFE }: 27 is the packed colour, 0xFE is the blit key. A wrong key
+     * would blit 0xFE through slot 2 entry 254, which stays zero unless the fixture colours it --
+     * and a zero pixel on a zeroed surface is invisible, so the key would be untestable. Literal
+     * 0xFE here, not PUFO_PLANE_PAD_KEY: the test must not read the macro the code under test reads. */
+    g_aPalette[2][0xFEu] = 0x2FEu;
+
+    CdResetStorePanels();
+}
+
+/* The five stores panels, laid out the way BasePlaneScreen_BuildControls @ 0x7b014 lays them out. */
+static void CdBuildStorePanels(void)
+{
+    UiPanel *const ap[5] = { &g_cdSlotPanel, &g_cdAvailPanel, &g_cdSelRowPanel,
+                             &g_cdCommitPanel, &g_cdTakenPanel };
+
+    for (i32 i = 0; i < 5; ++i) {
+        (void)UiPanel_ctor(ap[i], 4);
+    }
+    for (i32 r = 0; r < 4; ++r) {
+        (void)UiPanel_SetLineText(&g_cdSlotPanel, r, "Item");
+        (void)UiPanel_SetLineText(&g_cdAvailPanel, r, "Av");
+        (void)UiPanel_SetLineText(&g_cdSelRowPanel, r, "<");
+        (void)UiPanel_SetLineText(&g_cdCommitPanel, r, ">");
+        (void)UiPanel_SetLineText(&g_cdTakenPanel, r, "Tk");
+    }
+}
+
+/* The fixture re-runs this after every CdFixture, because CdFixture zeroes the env and the panels carry
+ * the flags the draw writes. */
+static void CdResetStorePanels(void)
+{
+    static const i32 anX[5] = { 10, 164, 170, 186, 232 };
+    UiPanel *const ap[5] = { &g_cdSlotPanel, &g_cdAvailPanel, &g_cdSelRowPanel,
+                             &g_cdCommitPanel, &g_cdTakenPanel };
+
+    for (i32 i = 0; i < 5; ++i) {
+        ap[i]->nPosX = anX[i];
+        ap[i]->nPosY = 70;
+        ap[i]->nStyle = 14;
+        ap[i]->nFont = 16;
+        ap[i]->nUnk7076 = 0;
+        ap[i]->bFlag7073 = 1;
+        ap[i]->bUnk7080 = 0;
+        for (i32 r = 0; r < 4; ++r) {
+            ap[i]->anLineAux[r] = 0;
+        }
+    }
+    for (i32 r = 0; r < 4; ++r) {
+        g_cdSlotPanel.anLineAux[r] = 31 + r;  /* the slot id, which is what the preview arm reads */
+        g_cdAvailPanel.anLineAux[r] = 10 - r;
+        g_cdTakenPanel.anLineAux[r] = 3;
+    }
+
+    g_cdEnv.pSlotPanel = &g_cdSlotPanel;
+    g_cdEnv.pAvailPanel = &g_cdAvailPanel;
+    g_cdEnv.pSelRowPanel = &g_cdSelRowPanel;
+    g_cdEnv.pCommitPanel = &g_cdCommitPanel;
+    g_cdEnv.pTakenPanel = &g_cdTakenPanel;
+}
+
+/* The stores arm's frame, painted in the original's order: rails, the two column captions, the slot
+ * panel, then separator / panel interleaved, then the bottom line, then the name, then the red pair
+ * and (when the transfer was refused) the reason line. */
+static void CdPaintStoresRef(i32 nBand, bool bPreview, const char *pszBottom, i32 nBottomX,
+                             const char *pszName, const char *pszReason)
+{
+    u16 *pRef = (u16 *)g_cdRef.pPixels;
+
+    memset(g_cdRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_cdRef;
+
+    BaseUi_DrawFrameRails();
+    (void)Gfx_PackRgb565Pair(&g_cdColor, 150, 150, 255, 20, 20, 20);
+    CdDrawCentered(210, 54, "SHIP");
+    CdDrawCentered(147, 54, "BASE");
+
+    UiPanel_DrawText(&g_cdSlotPanel);
+    for (i32 i = 0; i < 4; ++i) {
+        static const i32 anX[4] = { 130, 166, 181, 196 };
+        UiPanel *const ap[4] = { &g_cdAvailPanel, &g_cdSelRowPanel, &g_cdCommitPanel, &g_cdTakenPanel };
+        SoftSurf_BlitRectProxy(0, anX[i], 69, 1, nBand + 2, 0xB4, 0xB4, 0xB4);
+        UiPanel_DrawText(ap[i]);
+    }
+
+    if (bPreview) {
+        (void)Gfx_PackRgb565Pair(&g_cdColor, 150, 150, 255, 20, 20, 55);
+        Text_DrawString(10, 297, pszBottom);
+    } else {
+        (void)Gfx_PackRgb565Pair(&g_cdColor, 68, 244, 252, 4, 70, 75);
+        Text_DrawString(nBottomX, 297, pszBottom);
+    }
+
+    (void)Gfx_PackRgb565Pair(&g_cdColor, 200, 200, 200, 10, 25, 10);
+    CdDrawCentered(120, 30, pszName);
+    (void)Gfx_PackRgb565Pair(&g_cdColor, 220, 80, 80, 50, 30, 30);
+    if (pszReason != NULL) {
+        (void)Ui_AnimExpandBlit_IfEnabled(&g_cdAnim, 20, 130, 200, 70, 1);
+        CdDrawCentered(120, 158, pszReason);
+    }
+
+    (void)pRef;
+    g_pMainSurface = &g_cdSurf;
+}
+
+/* The detail arm's frame: rails, the name at y 10, the two percentage lines, the three pad blits, the
+ * (250,250,250 / 10,10,25) pair, the two glyph-and-count lines and the two hold lines. */
+static void CdPaintDetailRef(const char *pszName, const char *pszFuel, const char *pszDamage,
+                             i32 nCraftPadX, i32 nPadLX, i32 nPadRX,
+                             const char *pszAboard, const char *pszCarried,
+                             const char *pszFree, const char *pszTotal)
+{
+    u16 *pRef = (u16 *)g_cdRef.pPixels;
+
+    memset(g_cdRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_cdRef;
+
+    BaseUi_DrawFrameRails();
+    (void)Gfx_PackRgb565Pair(&g_cdColor, 200, 200, 200, 10, 25, 10);
+    CdDrawCentered(120, 10, pszName);
+    const u16 uPad = (u16)Gfx_PackRgb565Pair(&g_cdColor, 100, 150, 250, 10, 25, 10);
+    Text_DrawString(150, 30, pszFuel);
+    Text_DrawString(10, 30, pszDamage);
+
+    if (nCraftPadX >= 0) {
+        pRef[CD_CRAFT_PAD_Y * FRAME_W + nCraftPadX] = uPad;
+    }
+    if (nPadLX >= 0) {
+        pRef[CD_WEAPON_PAD_Y(0) * FRAME_W + nPadLX] = uPad;
+    }
+    if (nPadRX >= 0) {
+        pRef[CD_WEAPON_PAD_Y(2) * FRAME_W + nPadRX] = uPad;
+    }
+
+    (void)Gfx_PackRgb565Pair(&g_cdColor, 250, 250, 250, 10, 10, 25);
+    if (pszAboard != NULL) {
+        Font_DrawGlyph(130, 200, (u16)(g_fontSys.nBaseBitsBase + 38), 0);
+        Text_DrawString(142, 200, "x");
+        Text_DrawString(150, 200, pszAboard);
+    }
+    if (pszCarried != NULL) {
+        Font_DrawGlyph(180, 200, (u16)(g_fontSys.nBaseBitsBase + 40), 0);
+        Text_DrawString(192, 200, "x");
+        Text_DrawString(200, 200, pszCarried);
+    }
+    if (pszFree != NULL) {
+        Text_DrawString(95, 236, pszFree);
+        Text_DrawString(95, 248, pszTotal);
+    }
+
+    g_pMainSurface = &g_cdSurf;
+}
+
+static void TestPlaneCraftDetail(void)
+{
+    const u16 *pPix;
+    PlaneDrawEnv stDrawEnv;
+    i32 nRet;
+
+    printf("BasePlaneScreen_DrawCraftDetail @ 0x7baf8\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open, so the detail frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_cdSurf);
+    (void)SoftSurf_AllocPixels(&g_cdSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_cdRef);
+    (void)SoftSurf_AllocPixels(&g_cdRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    CdBuildStorePanels();
+    CdFixture();
+    pPix = (const u16 *)g_cdSurf.pPixels;
+
+    /* ---- 1. the stores arm ---- */
+    g_bCdStores = 1;
+    g_bCdPreviewOk = 1;
+    g_dwCdFail = 0;
+    g_bCdPanelFlag = 0xA5;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_cdSelRowPanel.bFlag7073, 1, "a transfer that did not fail leaves both row panels enabled (0x7BDB8)");
+    CheckEqI32(g_cdCommitPanel.bFlag7073, 1, "  on the sel-row and the commit-row panel");
+    CheckEqI32(g_cdSelRowPanel.bUnk7080, 0xA5, "bPanelFlagScratch @ 0x161F0C is copied into both row panels (0x7BE58)");
+    CheckEqI32(g_cdCommitPanel.bUnk7080, 0xA5, "  and into the commit-row panel too (0x7BE68)");
+    CheckEqI32(g_bCdPanelFlag, 0, "  and the scratch byte is cleared -- the draw consumes it (0x7BE70)");
+
+    g_dwCdFail = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_cdSelRowPanel.bFlag7073, 0, "a failed transfer clears both row panels' flag (0x7BDA4)");
+    CheckEqI32(g_cdCommitPanel.bFlag7073, 0, "  on both of them");
+    g_dwCdFail = 2;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_cdSelRowPanel.bFlag7073, 1, "  and only the value 1 does it -- 2 sets the flag back");
+
+    /* The whole stores frame, with the preview armed: the hovered row's object name is drawn straight
+     * out of the record at (10, 297). */
+    CdFixture();
+    g_bCdStores = 1;
+    g_bCdPreviewOk = 1;
+    g_nCdCursorY = 100;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintStoresRef(64, true, "Obj32", 0, "LGT3", NULL);
+    Check(CdSame(), "the stores frame matches: rails, the two captions, the five panels and four separators");
+    Check(CdInkAny(pPix, 8, 295, 120, 312) > 0,
+          "  the hovered row's object name is drawn at (10, 297) (0x7C0B4)");
+    CheckEqI32(g_nCdCtlBlits, 0, "  and the confirm control is not blitted while the preview is armed");
+
+    /* Not armed: the control is recentred onto the bottom row, blitted, and "ОК" is centred there. */
+    CdFixture();
+    g_bCdStores = 1;
+    g_nCdCursorY = 100;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32((i32)g_cdOkCtl.x, 120 - (40 >> 1), "the confirm control is recentred to 120 - (uWidth >> 1) (0x7C01C)");
+    CheckEqI32((i32)g_cdOkCtl.y, 297, "  and onto the bottom row, y 297 (0x7C038)");
+    CheckEqI32(g_nCdCtlBlits, 1, "  and blitted once through UiControl_BlitActivePad (0x7C040)");
+    CdPaintStoresRef(64, false, "OK", 120 - Text_MeasureWidth("OK") / 2, "LGT3", NULL);
+    Check(CdSame(), "  and the rest of the frame is the same, with the centred ОК in the control's place");
+
+    /* The band is 16 * min(nLineCount, nStyle) of the SELECT-ROW panel, and every separator is band+2
+     * tall at y 69. */
+    CdFixture();
+    g_bCdStores = 1;
+    g_cdSelRowPanel.nStyle = 2; /* min(4, 2) = 2 rows -> band 32 -> separators 34 tall */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32((i32)CdPix(pPix, 130, 69), XfPix(0xB4, 0xB4, 0xB4), "the separators start at y 69 in palette index 0xB4 (0x7BEC8)");
+    CheckEqI32((i32)CdPix(pPix, 130, 69 + 33), XfPix(0xB4, 0xB4, 0xB4), "  and run band + 2 = 34 tall, from nStyle 2 (0x7BEA4)");
+    Check(CdPix(pPix, 130, 69 + 34) != XfPix(0xB4, 0xB4, 0xB4), "  and stop there");
+    CheckEqI32((i32)CdPix(pPix, 196, 69), XfPix(0xB4, 0xB4, 0xB4), "  the fourth separator is at x 196 (0x7BF50)");
+    Check(CdPix(pPix, 145, 69) != XfPix(0xB4, 0xB4, 0xB4), "  and there is no separator at x 145");
+    CdFixture();
+    g_bCdStores = 1;
+    g_bCdPreviewOk = 1;
+    g_nCdCursorY = 139; /* band 64 -> the gate is 75 < y < 139, and 139 is outside it */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdCtlBlits, 1, "the preview gate is 75 < cursor < band + 75, so 139 falls outside (0x7BF90)");
+
+    CdFixture();
+    g_bCdStores = 1;
+    g_bCdPreviewOk = 1;
+    g_nCdCursorY = 75; /* the lower bound is exclusive too */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdCtlBlits, 1, "  and so does 75, the band's own lower bound (0x7BF80)");
+
+    /* The refusal panel: only dwActionFail == 1 reaches it, and the reason is a switch. */
+    CdFixture();
+    g_bCdStores = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_bCdAnimStarted, 0, "no refusal panel while dwActionFail @ 0x1870C8 is not 1 (0x7C14C)");
+    CheckEqI32(CdInk(pPix, 20, 150, 219, 172, CdRefuseColor()), 0, "  and no reason line either");
+
+    CdFixture();
+    g_bCdStores = 1;
+    g_dwCdFail = 1;
+    g_nCdReason = 0;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_bCdAnimStarted, 1, "dwActionFail 1 opens the 200x70 refusal panel (0x7C21C)");
+    CdPaintStoresRef(64, false, "OK", 120 - Text_MeasureWidth("OK") / 2, "LGT3", "NOROOM");
+    Check(CdSame(), "  with TEXTS[410] centred at (120 - w/2, 158) for reason 0");
+
+    CdFixture();
+    g_bCdStores = 1;
+    g_dwCdFail = 1;
+    g_nCdReason = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintStoresRef(64, false, "OK", 120 - Text_MeasureWidth("OK") / 2, "LGT3", "NOSTORE");
+    Check(CdSame(), "  reason 1 draws TEXTS[408] instead (0x7C1F4)");
+
+    CdFixture();
+    g_bCdStores = 1;
+    g_dwCdFail = 1;
+    g_nCdReason = 2;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintStoresRef(64, false, "OK", 120 - Text_MeasureWidth("OK") / 2, "LGT3", "NOAMMO");
+    Check(CdSame(), "  reason 2 draws TEXTS[409] (0x7C190)");
+
+    CdFixture();
+    g_bCdStores = 1;
+    g_dwCdFail = 1;
+    g_nCdReason = 3;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_bCdAnimStarted, 0, "  and any other reason returns with the red pair packed and nothing drawn");
+    CdPaintStoresRef(64, false, "OK", 120 - Text_MeasureWidth("OK") / 2, "LGT3", NULL);
+    Check(CdSame(), "  -- the frame is byte-identical to the no-refusal one, so the switch really leaves");
+    CheckEqI32(CdInkAny(pPix, 20, 140, 219, 196), 0,
+               "  -- the hangar's reason map is a switch, not the buy/sell screen's 405 + reason");
+
+    /* The list-panel gate short-circuits the whole stores arm. */
+    CdFixture();
+    g_bCdListBuilt = 1;
+    g_bCdStores = 1;
+    (void)UiPanel_ctor(&g_cdCrewPanel, 2);
+    (void)UiPanel_ctor(&g_cdCrewStatusPanel, 2);
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    Check(CdPix(pPix, 130, 69) != XfPix(0xB4, 0xB4, 0xB4),
+          "bPlaneListPanelsBuilt @ 0x161F24 set skips the stores arm entirely (0x7BCF4)");
+    Check(CdInkAny(pPix, 100, 28, 140, 42) > 0, "  while the centred name at y 30 still draws (0x7BD3C)");
+
+    /* ---- 2. the detail arm ---- */
+    CdFixture();
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("LGT3", "FUEL 10%", "DMG 75%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 87", "TOTAL 120");
+    Check(CdSame(), "the detail frame matches: name, the two percentages, three pads, two count lines, two hold lines");
+    Check(CdInkAny(pPix, 128, 198, 170, 214) > 0,
+          "  the aboard line draws its sprite glyph and count at (130, 200) (0x7C7A0)");
+    Check(CdInkAny(pPix, 178, 198, 224, 214) > 0,
+          "  and the crew line draws its own at (180, 200) (0x7C820)");
+    Check(CdInkAny(pPix, 90, 234, 229, 258) > 0, "  and the two hold lines draw at (95, 236) and (95, 248)");
+
+    /* The label and the field do not match: "Топливо" reads the RANGE pair, "Повреждения" the FUEL pair. */
+    CdFixture();
+    g_aCdCraft[2].uRangeMax = 60000; /* 3000 / 60000 -> 5%, and the damage line must not move */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("LGT3", "FUEL 5%", "DMG 75%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 87", "TOTAL 120");
+    Check(CdSame(), "the fuel line is 100 * uRangeRemain / uRangeMax, from the range pair (0x7C2E4)");
+
+    CdFixture();
+    g_aCdCraft[2].nFuel = 800; /* 100 - 100 * 800 / 800 -> 0%, and the fuel line must not move */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("LGT3", "FUEL 10%", "DMG 0%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 87", "TOTAL 120");
+    Check(CdSame(), "  and the damage line is 100 - 100 * nFuel / uFuelMax, from the fuel pair (0x7C37C)");
+
+    CdFixture();
+    g_aCdCraft[2].uRangeMax = 0;
+    g_aCdCraft[2].uFuelMax = 0;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("LGT3", "FUEL 0%", "DMG 100%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 87", "TOTAL 120");
+    Check(CdSame(), "a zero divisor draws 0 percent / 100 percent instead of faulting (the original has no test)");
+
+    /* The pads. */
+    CdFixture();
+    g_aCdCraft[2].bCraftType = 4;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32((i32)CdPix(pPix, CD_CRAFT_PAD_X(4), CD_CRAFT_PAD_Y), CdPadColor(),
+               "bCraftType picks the craft pad out of the object block's five (0x7C410)");
+    CdFixture();
+    g_aCdCraft[2].bCraftType = 5;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(CdInkAny(pPix, 100, CD_CRAFT_PAD_Y, 112, CD_CRAFT_PAD_Y), 0,
+               "  and a type outside 0..4 blits no craft pad (0x7C40C)");
+
+    CdFixture();
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_aCdWeaponPad[0].nOriginX, 55, "the left mount writes nOriginX 55 into its pad (0x7C4DC)");
+    CheckEqI32(g_aCdWeaponPad[2].nOriginX, 156, "  and the right mount writes 156 into its own (0x7C5AC)");
+    CheckEqI32((i32)CdPix(pPix, 55, CD_WEAPON_PAD_Y(0)), CdPadColor(),
+               "  weapon 26 takes the FIRST pad, not the second (0x7C4D8)");
+    CheckEqI32((i32)CdPix(pPix, 156, CD_WEAPON_PAD_Y(2)), CdPadColor(),
+               "  and weapon 25 takes the THIRD (0x7C5A8)");
+
+    CdFixture();
+    g_aCdCraft[2].bWeaponL = 24;
+    g_aCdCraft[2].bWeaponR = 31;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(CdInkAny(pPix, 55, CD_WEAPON_PAD_Y(0), 156, CD_WEAPON_PAD_Y(5)), 0,
+               "a weapon byte outside 25..30 blits no mount pad (0x7C484 / 0x7C540)");
+
+    /* The four counters. */
+    CdFixture();
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdAboard, 3, "the aboard counter is the soldiers whose bUnk183 is this craft (0x7C650)");
+    CheckEqI32(g_nCdAtBase, 4, "the at-base counter is the soldiers whose nKind is this base (0x7C664)");
+    CheckEqI32(g_nCdUnassigned, 1, "  and the unassigned one is at this base with bUnk183 == 255 (0x7C67C)");
+    CheckEqI32(g_nCdCarried, 16, "the carried counter is the five crew slots' aItemQty[craft] (0x7C6A0)");
+
+    CdFixture();
+    g_nCdSoldiers = 0;
+    g_cdEnv.nSoldierCount = 0;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdAboard, 0, "a non-positive soldier count skips the walk (0x7C618)");
+    CheckEqI32(g_nCdCarried, 16, "  but the crew sum still runs");
+
+    CdFixture();
+    g_aCdCraft[2].bCanDogfight = 0;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdAboard, 0, "Ship.bCanDogfight @ +0x21 clear leaves all four counters at zero (0x7C604)");
+    CheckEqI32(g_nCdCarried, 0, "  including the crew sum");
+    CheckEqI32(CdInkAny(pPix, 90, 234, 229, 258), 0, "  and neither hold line draws");
+    CheckEqI32(CdInkAny(pPix, 128, 198, 224, 214), 0, "  and neither count line draws");
+
+    CdFixture();
+    g_aCdSol[0].bUnk183 = 1;
+    g_aCdSol[1].bUnk183 = 1;
+    g_aCdSol[4].bUnk183 = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(g_nCdAboard, 0, "  and the aboard count follows the craft index, not the soldier count");
+    CheckEqI32(CdInkAny(pPix, 128, 198, 170, 214), 0,
+               "  with nothing aboard, the aboard line is skipped (0x7C780)");
+    Check(CdInkAny(pPix, 178, 198, 224, 214) > 0,
+               "  while the crew line still draws, because 16 are carried");
+
+    /* The hold lines read the cap and the used space. */
+    CdFixture();
+    g_aCdObj[5].aItemQty[2] = 0; /* 10 used instead of 22 */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("LGT3", "FUEL 10%", "DMG 75%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 99", "TOTAL 120");
+    Check(CdSame(), "the free-space line is Craft_GetTypeCargoCap - Base_CalcWeaponStorageUsed (0x7C8D0)");
+
+    CdFixture();
+    g_aCdCraft[2].bCraftType = 3; /* the cap is 0 for this type */
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CdPaintDetailRef("INT-3", "FUEL 10%", "DMG 75%", CD_CRAFT_PAD_X(3), 55, 156, "3", "16",
+                     "FREE -33", "TOTAL 0");
+    Check(CdSame(), "  and a type with no hold gives a cap of 0, so the free line goes negative");
+
+    /* ---- 3. the stat tail ---- */
+    CdFixture();
+    g_cdStatPanels.bPanelAOpen = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32((i32)CdPix(pPix, 100, 100), XfPix(0x14, 0x50, 0x63),
+               "bStatPanelAOpen @ 0x161F18 set draws the first stat panel's frame (0x7C998)");
+    CheckEqI32(g_cdStatPanels.bPanelBOpen, 0, "  and leaves the second panel closed");
+
+    CdFixture();
+    g_cdStatPanels.bPanelBOpen = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32((i32)CdPix(pPix, 100, 100), XfPix(0x14, 0x50, 0x63),
+               "with only bStatPanelBOpen @ 0x161F1C set, the second panel is drawn instead (0x7C9D0)");
+
+    CdFixture();
+    g_aCdObj[25].auPerBaseVal[0] = 4;
+    g_aCdObj[27].auPerBaseVal[0] = 2;
+    g_aCdObj[29].auPerBaseVal[0] = 1;
+    CdClear();
+    (void)BasePlaneScreen_DrawCraftDetail(&g_cdEnv);
+    CheckEqI32(CdInkAny(pPix, 8, 75, 231, 155), 0,
+               "with neither gate set the tail only rebuilds the stat rows, drawing nothing (0x7C9DC)");
+    CheckEqI32(g_nCdStatRows, 4, "  and the row count is 1 plus the three weapons this base holds");
+    CheckEqI32(g_nCdStatW[0], 4, "  into the six per-weapon globals");
+    CheckEqI32(g_nCdStatW[4], 1, "  including the plasma cannon");
+
+    /* ---- 4. the delegation from BasePlaneScreen_Draw ---- */
+    CdFixture();
+    memset(&stDrawEnv, 0, sizeof(stDrawEnv));
+    stDrawEnv.pColor = &g_cdColor;
+    stDrawEnv.pbShowCraftDetail = &g_bCdShowDetail;
+    stDrawEnv.pDetail = &g_cdEnv;
+    CdClear();
+    g_bCdShowDetail = 1;
+    nRet = BasePlaneScreen_Draw(&stDrawEnv);
+    CdPaintDetailRef("LGT3", "FUEL 10%", "DMG 75%", CD_CRAFT_PAD_X(1), 55, 156, "3", "16",
+                     "FREE 87", "TOTAL 120");
+    Check(CdSame(), "BasePlaneScreen_Draw hands the whole call to the detail view (0x7D37C)");
+    CheckEqI32(nRet, 0, "  and returns its value");
+    CheckEqI32(CdInkAny(pPix, 20, 88, 229, 102), 0,
+               "  while none of the hangar's own captions or inner rails run");
+
+    FrameRestoreFont();
 }
 
 int main(void)
@@ -16930,6 +17722,7 @@ int main(void)
     TestBaseAtDraw();
     TestBaseAtCloseThunk();
     TestPlaneScreenDraw();
+    TestPlaneCraftDetail();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

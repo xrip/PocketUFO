@@ -534,3 +534,20 @@ unk_BAF54	aTextRec148_CrewQtyCap	0xBAF54 = aTextRecs + 205*148. lang.dat record 
 unk_B9C1C	aTextRec124_CraftCaption	0xB9C1C = aTextRecs + 205*124. lang.dat record 124 "Корабль: " (Ship: ), drawn at (25, 90) whatever the two flags say (both skips land on 0x7D640).
 unk_BB355	aTextRec153_StatusCaption	0xBB355 = aTextRecs + 205*153. lang.dat record 153 "Статус" (Status), drawn at (165, 90) above the craft status panel.
 asc_AB9F0	aQtyPairSep	0xAB9F0, the single backslash BasePlaneScreen_Draw strcat-s between the armament sum and Ship.bCrewSlots (0x7D5A8 loads it, 0x7D5B0 is the strcat).
+dword_161AB8	nPlaneSoldiersAboard	0x161AB8. Soldiers whose bUnk183 @ +0xB7 equals nSelectedCraftIdx, counted at 0x7C650 by BasePlaneScreen_DrawCraftDetail and drawn as the "x" line at (150, 200). BasePlaneScreen_BuildListPanels adds it to nPlaneSoldiersUnassigned for the crew panel line count.
+unk_161EE4	nPlaneSoldiersAtBase	0x161EE4. Soldiers whose Soldier.nKind @ +0xB6 equals nSelectedBaseIdx (0x7C664). Recomputed by BasePlaneScreen_DrawCraftDetail and never drawn there.
+unk_161AB4	nPlaneSoldiersUnassigned	0x161AB4. Soldiers at the shown base with bUnk183 == 255 (0x7C67C). BasePlaneScreen_BuildListPanels sizes the crew panel with nPlaneSoldiersAboard + this (0x7A4BC..0x7A4C4).
+dword_161AC0	nPlaneCrewCarried	0x161AC0. Sum of apObjects[31..35]->aItemQty[nSelectedCraftIdx], reached through the cached pointers at the context +0x184..+0x194 with no object-count bound (0x7C6A0..0x7C730) and drawn as the second "x" line at (200, 200).
+unk_186BE8	nPanelRowCursor	0x186BE8. The cached selected row: Cache_ObjPlus0xBD8_To_dword_186BE8 copies a panel's nUnk3028 scroll cursor here, and BasePlaneScreen_DrawCraftDetail indexes pPlaneSlotPanel->anLineAux with it (0x7BFB8) to find the hovered stores row.
+dword_1870B4	dwActionFailReason	0x1870B4. Why a transfer or purchase was refused, read next to dwActionFail @ 0x1870C8. The hangar maps it with a switch (0 -> TEXTS[410], 1 -> TEXTS[408], 2 -> TEXTS[409], 0x7C150) while the buy/sell screen maps the same dword as TEXTS[405 + reason].
+unk_161A4C	pPlaneCraftPad0	0x161A4C, the object block at 0x161A48 + 4. BasePlaneScreen_Init loads baseb001..baseb005 into the five slots 0x161A4C..0x161A5C; BasePlaneScreen_DrawCraftDetail picks one by Ship.bCraftType (0x7C3E4).
+unk_161A50	pPlaneCraftPad1	0x161A50, the object block + 8: the baseb002 craft art.
+unk_161A54	pPlaneCraftPad2	0x161A54, the object block + 0xC: the baseb003 craft art.
+unk_161A58	pPlaneCraftPad3	0x161A58, the object block + 0x10: the baseb004 craft art.
+unk_161A5C	pPlaneCraftPad4	0x161A5C, the object block + 0x14: the baseb005 craft art.
+unk_161A60	pPlaneWeaponPad0	0x161A60, the object block + 0x18: baseb049, and the pad weapon 26 selects (0x7C4D8 / 0x7C594).
+dword_161A64	pPlaneWeaponPad1	0x161A64, + 0x1C: baseb050, the pad weapon 27 selects.
+dword_161A68	pPlaneWeaponPad2	0x161A68, + 0x20: baseb051, the pad weapon 25 selects (0x7C4EC).
+dword_161A6C	pPlaneWeaponPad3	0x161A6C, + 0x24: baseb053, the pad weapon 28 selects.
+dword_161A70	pPlaneWeaponPad4	0x161A70, + 0x28: baseb054, the pad weapon 29 selects.
+unk_161A74	pPlaneWeaponPad5	0x161A74, + 0x2C: baseb052, the pad weapon 30 selects.

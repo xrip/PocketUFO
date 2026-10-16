@@ -1570,9 +1570,10 @@ void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuild
 /* --- BasePlaneScreen_Draw @ 0x7d374: the hangar frame, the craft readout and the rails.
  * The header carries the gate map and the rail geometry. */
 
-static const char *PlaneDrawText(const PlaneDrawEnv *pEnv, i32 nRec)
+/* One record lookup for both hangar draws: the table is aTextRecs @ 0xB38D0 with the memory stride. */
+static const char *PlaneRecText(const char *pTextRecs, i32 nRec)
 {
-    return (pEnv->pTextRecs != NULL) ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec : "";
+    return (pTextRecs != NULL) ? pTextRecs + PUFO_TEXT_REC_STRIDE * nRec : "";
 }
 
 /* 0x7D3D0..0x7D414: the readout runs only with the preview flag set and the pointer row inside the
@@ -1685,7 +1686,8 @@ i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv)
 
     /* 0x7D37C: the detail view owns the screen, and its value is this function's value. */
     if (pEnv->pbShowCraftDetail != NULL && *pEnv->pbShowCraftDetail != 0) {
-        return (pEnv->pfnDrawCraftDetail != NULL) ? pEnv->pfnDrawCraftDetail() : 0;
+        /* 0x7D37C: the whole call goes to the detail screen and its value is returned. */
+        return BasePlaneScreen_DrawCraftDetail(pEnv->pDetail);
     }
 
     if (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0) {
@@ -1705,9 +1707,9 @@ i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv)
             nAboard = PlaneDrawCountAboard(pEnv, nCraftIdx);
 
             (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 20, 25, 20); /* 0x7D504 */
-            Text_DrawString(25, 23, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_ARMAMENT));   /* 0x7D540 */
-            Text_DrawString(25, 43, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CREW));       /* 0x7D55C */
-            Text_DrawString(25, 63, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CREW_QTY));   /* 0x7D578 */
+            Text_DrawString(25, 23, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_ARMAMENT));   /* 0x7D540 */
+            Text_DrawString(25, 43, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_CREW));       /* 0x7D55C */
+            Text_DrawString(25, 63, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_CREW_QTY));   /* 0x7D578 */
 
             /* 0x7D588..0x7D5E0: psz is itoa(v3), then strcat with the backslash at aQtyPairSep, then
              * strcat with itoa(apCraft[nPlaneSelCraftIdx]->bCrewSlots). The port builds the same string
@@ -1729,11 +1731,358 @@ i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv)
     /* 0x7D640: both skipped paths land here, so the two captions and all four rail loops run whatever
      * the two flags say. The rails come AFTER the text, so they paint over it where they overlap. */
     (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 10, 10, 25);
-    Text_DrawString(25, 90, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CRAFT_CAPTION));   /* 0x7D67C */
-    Text_DrawString(165, 90, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_STATUS_CAPTION)); /* 0x7D698 */
+    Text_DrawString(25, 90, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_CRAFT_CAPTION));   /* 0x7D67C */
+    Text_DrawString(165, 90, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_STATUS_CAPTION)); /* 0x7D698 */
 
     BaseUi_DrawFrameRails(); /* 0x7D6AC..0x7D840, the same rails the transfer frame draws */
     PlaneDrawInnerRailsH();  /* 0x7D840..0x7D8FC */
     PlaneDrawInnerRailsV();  /* 0x7D8FC..0x7D9B4 */
+    return 0;
+}
+
+/* ------------------------------------------------- the hangar's other face
+ *
+ * The header carries the gate map, the two arms and the deviation list. */
+
+static void PlaneDetailDrawCentered(i32 nCentre, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz); /* the ARM keeps the width in R5 for the draw */
+    Text_DrawString(nCentre - nWidth / 2, y, psz);
+}
+
+/* 0x7BEC8..0x7BF50: the four column separators, 1 wide and band + 2 tall, all in palette index 0xB4. */
+static void PlaneDetailSeparator(i32 x, i32 nHeight)
+{
+    SoftSurf_BlitRectProxy(0, x, PUFO_PLANE_SEP_Y, 1, nHeight,
+                           PUFO_PLANE_SEP_COLOR, PUFO_PLANE_SEP_COLOR, PUFO_PLANE_SEP_COLOR);
+}
+
+/* 0x7C4EC..0x7C488 and 0x7C5A8..0x7C544: the six mount arms pick a pad by weapon id, and the pad order
+ * is not the weapon order -- weapon 25 takes the third pad, 26 the first, 27 the second. */
+static const i8 s_anPlaneMountPad[6] = { 2, 0, 1, 3, 4, 5 };
+
+static void PlaneDetailBlitMount(const PlaneDetailEnv *pEnv, i32 nWeapon, i32 nOriginX)
+{
+    if (pEnv->pScreen == NULL || nWeapon < PUFO_PLANE_WEAPON_SLOT_FIRST
+        || nWeapon > PUFO_PLANE_WEAPON_SLOT_LAST) {
+        return; /* 0x7C484 / 0x7C540: a weapon byte outside 25..30 blits nothing */
+    }
+
+    PadImage *pPad = pEnv->pScreen->apWeaponPads[s_anPlaneMountPad[nWeapon - PUFO_PLANE_WEAPON_SLOT_FIRST]];
+    if (pPad == NULL) {
+        return;
+    }
+
+    pPad->nOriginX = nOriginX; /* 0x7C490 / 0x7C54C: the mount column is written into the pad first */
+    PadImage_BlitEx(pPad, PUFO_PLANE_PAD_KEY);
+}
+
+/* 0x7C5C0..0x7C68C: the soldier walk fills three counters in one pass. The last two are not drawn
+ * here -- BasePlaneScreen_BuildListPanels sizes the crew panel with aboard + unassigned. */
+static void PlaneDetailCountSoldiers(const PlaneDetailEnv *pEnv, i32 nCraftIdx, i32 nBaseIdx)
+{
+    i32 nAboard = 0;
+    i32 nAtBase = 0;
+    i32 nUnassigned = 0;
+
+    for (i32 i = 0; i < pEnv->nSoldierCount; ++i) { /* 0x7C614: a non-positive count skips the walk */
+        const Soldier *pSol = (pEnv->apSoldiers != NULL) ? pEnv->apSoldiers[i] : NULL;
+        if (pSol == NULL) {
+            continue;
+        }
+        if ((i32)pSol->bUnk183 == nCraftIdx) { /* 0x7C650, the byte widened against the dword index */
+            ++nAboard;
+        }
+        if ((i32)pSol->nKind == nBaseIdx) { /* 0x7C664 and 0x7C674: Soldier.nKind @ +0xB6, twice */
+            ++nAtBase;
+            if (pSol->bUnk183 == PUFO_SOLDIER_CRAFT_NONE) { /* 0x7C678..0x7C680 */
+                ++nUnassigned;
+            }
+        }
+    }
+
+    if (pEnv->pnSoldiersAboard != NULL) {
+        *pEnv->pnSoldiersAboard = nAboard;
+    }
+    if (pEnv->pnSoldiersAtBase != NULL) {
+        *pEnv->pnSoldiersAtBase = nAtBase;
+    }
+    if (pEnv->pnSoldiersUnassigned != NULL) {
+        *pEnv->pnSoldiersUnassigned = nUnassigned;
+    }
+}
+
+/* 0x7BFB8..0x7BFE0: the hovered row's object, reached through the slot panel's aux column. */
+static const ObjectRecFull *PlaneDetailHoveredObject(const PlaneDetailEnv *pEnv)
+{
+    const i32 nRow = (pEnv->pnRowCursor != NULL) ? *pEnv->pnRowCursor : 0;
+
+    if (pEnv->pSlotPanel == NULL || pEnv->apObjects == NULL
+        || nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return NULL;
+    }
+
+    const i32 nSlot = pEnv->pSlotPanel->anLineAux[nRow];
+    if (nSlot < 0 || nSlot >= pEnv->nObjectCount) {
+        return NULL;
+    }
+
+    return pEnv->apObjects[nSlot];
+}
+
+i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv)
+{
+    char szName[PUFO_PLANE_DETAIL_NAME_MAX];    /* psz @ sp+0x88 */
+    char szScratch[PUFO_PLANE_DETAIL_SCRATCH];  /* var_A4 @ sp+0x18 */
+    char szNum[PUFO_PLANE_DETAIL_ITOA];         /* var_6C @ sp+0x50 */
+
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    BaseUi_DrawFrameRails(); /* 0x7BAF8..0x7BCA8: byte-for-byte the shared screen rails */
+
+    const i32 nCraftIdx = (pEnv->pnCraftIdx != NULL) ? *pEnv->pnCraftIdx : -1;
+    const i32 nBaseIdx = (pEnv->pnBaseIdx != NULL) ? (i32)*pEnv->pnBaseIdx : -1;
+    Ship *pCraft = (pEnv->apCraft != NULL && nCraftIdx >= 0 && nCraftIdx < pEnv->nCraftCount)
+                       ? pEnv->apCraft[nCraftIdx] : NULL;
+
+    /* 0x7BCAC..0x7BCE4: the display name, and its width, which four separate exits reuse. */
+    (void)Ship_FormatDisplayName(pEnv->apCraft, nCraftIdx, (const u8 *)pEnv->pTextRecs,
+                                 szName, sizeof(szName));
+
+    if (pEnv->pbListPanelsBuilt != NULL && *pEnv->pbListPanelsBuilt != 0) {
+        /* 0x7BCF8..0x7BD44: the crew pair, the name at y 30, and a return. Both the stores panel set
+         * and the craft read-out are skipped. */
+        if (pEnv->pCrewPanel != NULL) {
+            UiPanel_DrawText(pEnv->pCrewPanel); /* 0x7BD00 */
+        }
+        if (pEnv->pCrewStatusPanel != NULL) {
+            UiPanel_DrawText(pEnv->pCrewStatusPanel); /* 0x7BD0C */
+        }
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 200, 200, 10, 25, 10); /* 0x7BD34 */
+        PlaneDetailDrawCentered(120, 30, szName);
+        return 0;
+    }
+
+    if (pEnv->pbStoresCommitted != NULL && *pEnv->pbStoresCommitted != 0) {
+        /* ---- the stores arm, 0x7BD70..0x7C228 ---- */
+        const u32 nFail = (pEnv->pdwActionFail != NULL) ? *pEnv->pdwActionFail : 0u;
+        const u8 bRowFlag = (nFail == 1u) ? 0u : 1u; /* 0x7BDA4 clears, 0x7BDB8 sets */
+
+        if (pEnv->pSelRowPanel != NULL) {
+            pEnv->pSelRowPanel->bFlag7073 = bRowFlag;
+        }
+        if (pEnv->pCommitPanel != NULL) {
+            pEnv->pCommitPanel->bFlag7073 = bRowFlag;
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 20); /* 0x7BDD0 */
+        PlaneDetailDrawCentered(210, 54, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_CRAFT)); /* 0x7BE08 */
+        PlaneDetailDrawCentered(147, 54, PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_BASE));   /* 0x7BE3C */
+
+        if (pEnv->pbPanelFlagScratch != NULL) {
+            const u8 bFlag = *pEnv->pbPanelFlagScratch;
+            if (pEnv->pSelRowPanel != NULL) {
+                pEnv->pSelRowPanel->bUnk7080 = bFlag; /* 0x7BE58 */
+            }
+            if (pEnv->pCommitPanel != NULL) {
+                pEnv->pCommitPanel->bUnk7080 = bFlag; /* 0x7BE68 */
+            }
+            *pEnv->pbPanelFlagScratch = 0; /* 0x7BE70: the flag is consumed here */
+        }
+
+        if (pEnv->pSlotPanel != NULL) {
+            UiPanel_DrawText(pEnv->pSlotPanel); /* 0x7BE78 */
+        }
+
+        /* 0x7BE7C..0x7BEAC: the band is 16 * min(nLineCount, nStyle) of the SELECT-ROW panel. */
+        i32 nRows = 0;
+        if (pEnv->pSelRowPanel != NULL) {
+            nRows = (pEnv->pSelRowPanel->nLineCount < pEnv->pSelRowPanel->nStyle)
+                        ? pEnv->pSelRowPanel->nLineCount : pEnv->pSelRowPanel->nStyle;
+        }
+        const i32 nBand = nRows * PUFO_PLANE_ROW_LINE_H;
+        const i32 nSepH = nBand + PUFO_PLANE_ROW_BAND_PAD;
+
+        PlaneDetailSeparator(PUFO_PLANE_SEP_X_FIRST, nSepH); /* 0x7BEC8 */
+        if (pEnv->pAvailPanel != NULL) {
+            UiPanel_DrawText(pEnv->pAvailPanel); /* 0x7BED4 */
+        }
+        PlaneDetailSeparator(PUFO_PLANE_SEP_X_SECOND, nSepH); /* 0x7BEF8 */
+        if (pEnv->pSelRowPanel != NULL) {
+            UiPanel_DrawText(pEnv->pSelRowPanel); /* 0x7BF00 */
+        }
+        PlaneDetailSeparator(PUFO_PLANE_SEP_X_THIRD, nSepH); /* 0x7BF24 */
+        if (pEnv->pCommitPanel != NULL) {
+            UiPanel_DrawText(pEnv->pCommitPanel); /* 0x7BF2C */
+        }
+        PlaneDetailSeparator(PUFO_PLANE_SEP_X_FOURTH, nSepH); /* 0x7BF50 */
+        if (pEnv->pTakenPanel != NULL) {
+            UiPanel_DrawText(pEnv->pTakenPanel); /* 0x7BF5C */
+        }
+
+        /* 0x7BF60..0x7BF90: bBaseFacPreviewOk, not the bBaseFacPreviewActive the read-out uses. */
+        const i32 nCursorY = (pEnv->pnCursorY != NULL) ? *pEnv->pnCursorY : 0;
+        const bool bArmed = (pEnv->pbPreviewOk != NULL && *pEnv->pbPreviewOk != 0)
+                            && nCursorY > PUFO_PLANE_BAND_Y
+                            && nCursorY < nBand + PUFO_PLANE_BAND_Y;
+
+        if (bArmed) {
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 20, 20, 55); /* 0x7BFB4 */
+            const ObjectRecFull *pObj = PlaneDetailHoveredObject(pEnv);
+            if (pObj != NULL) {
+                /* 0x7C0B4: the record pointer itself is the string -- szName is its first field. */
+                Text_DrawString(10, PUFO_PLANE_BOTTOM_Y, pObj->szName);
+            }
+        } else {
+            /* 0x7C014..0x7C040: the confirm control recentred onto the bottom row and blitted. */
+            if (pEnv->pCtlConfirm != NULL) {
+                pEnv->pCtlConfirm->x = (i16)(120 - (i32)(pEnv->pCtlConfirm->uWidth >> 1)); /* 0x7C01C */
+                pEnv->pCtlConfirm->y = (i16)PUFO_PLANE_BOTTOM_Y;                           /* 0x7C038 */
+                (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
+                                              pEnv->pfnCtlBlitEx, pEnv->pCtlUser);         /* 0x7C040 */
+            }
+            (void)snprintf(szScratch, sizeof(szScratch), "%s",
+                           PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_OK)); /* 0x7C044..0x7C068 */
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);   /* 0x7C090 */
+            PlaneDetailDrawCentered(120, PUFO_PLANE_BOTTOM_Y, szScratch);
+        }
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 200, 200, 10, 25, 10); /* 0x7C0E8 */
+        PlaneDetailDrawCentered(120, 30, szName);                           /* 0x7C114 */
+
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 220, 80, 80, 50, 30, 30); /* 0x7C13C */
+        if (nFail != 1u) {
+            return 0; /* 0x7C14C: the red pair is packed and nothing is drawn */
+        }
+
+        /* 0x7C150..0x7C228: the refusal reason picks the record, and it is a switch -- the buy/sell
+         * screen reads the same dword as 405 + reason and lands on different strings. */
+        i32 nRec;
+        const i32 nReason = (pEnv->pnRefuseReason != NULL) ? *pEnv->pnRefuseReason : -1;
+        if (nReason == 0) {
+            nRec = PUFO_PLANE_TEXT_NO_ROOM; /* 0x7C220 */
+        } else if (nReason == 1) {
+            nRec = PUFO_PLANE_TEXT_NO_STORES; /* 0x7C1F4 */
+        } else if (nReason == 2) {
+            nRec = PUFO_PLANE_TEXT_NO_AMMO; /* 0x7C190 */
+        } else {
+            return 0; /* 0x7C16C */
+        }
+
+        (void)Ui_AnimExpandBlit_IfEnabled(pEnv->pAnim, 20, 130, 200, 70, 1);
+        PlaneDetailDrawCentered(120, 158, PlaneRecText(pEnv->pTextRecs, nRec)); /* 0x7C1BC */
+        return 0;
+    }
+
+    /* ---- the detail arm, 0x7C22C..0x7C9DC ---- */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 200, 200, 10, 25, 10); /* 0x7C250 */
+    PlaneDetailDrawCentered(120, 10, szName);                           /* 0x7C270 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 100, 150, 250, 10, 25, 10); /* 0x7C290 */
+
+    /* 0x7C294..0x7C334: "Топливо " from the RANGE pair. The original divides through _rt_sdiv with no
+     * zero test; the port reads 0 percent when the divisor is 0. */
+    i32 nRangePct = 0;
+    if (pCraft != NULL && pCraft->uRangeMax != 0u) {
+        nRangePct = (100 * (i32)pCraft->uRangeRemain) / (i32)pCraft->uRangeMax;
+    }
+    (void)snprintf(szScratch, sizeof(szScratch), "%s%d%s",
+                   PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_FUEL), nRangePct, PUFO_PLANE_PERCENT);
+    Text_DrawString(150, 30, szScratch);
+
+    /* 0x7C338..0x7C3D0: "Повреждения " from the FUEL pair -- the label and the field do not match. */
+    i32 nDamagePct = 100;
+    if (pCraft != NULL && (i16)pCraft->uFuelMax != 0) {
+        nDamagePct = 100 - (100 * (i32)pCraft->nFuel) / (i32)(i16)pCraft->uFuelMax;
+    }
+    (void)snprintf(szScratch, sizeof(szScratch), "%s%d%s",
+                   PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_DAMAGE), nDamagePct, PUFO_PLANE_PERCENT);
+    Text_DrawString(10, 30, szScratch);
+
+    /* 0x7C3D4..0x7C444: the craft art, picked by bCraftType; a type outside 0..4 blits nothing. */
+    if (pCraft != NULL && pEnv->pScreen != NULL && pCraft->bCraftType < PUFO_CRAFT_TYPE_COUNT) {
+        const PadImage *pPad = pEnv->pScreen->apCraftPads[pCraft->bCraftType];
+        if (pPad != NULL) {
+            PadImage_BlitEx(pPad, PUFO_PLANE_PAD_KEY);
+        }
+    }
+
+    /* 0x7C448..0x7C5C0: the two mounts, each writing its column into the pad before the blit. */
+    if (pCraft != NULL) {
+        PlaneDetailBlitMount(pEnv, (i32)pCraft->bWeaponL, PUFO_PLANE_MOUNT_X_LEFT);  /* 0x7C454 LDRSB */
+        PlaneDetailBlitMount(pEnv, (i32)pCraft->bWeaponR, PUFO_PLANE_MOUNT_X_RIGHT);  /* 0x7C510 LDRSB */
+    }
+
+    /* 0x7C5C0..0x7C5F8: all four counters are zeroed whatever bCanDogfight says. */
+    if (pEnv->pnSoldiersAboard != NULL) {
+        *pEnv->pnSoldiersAboard = 0;
+    }
+    if (pEnv->pnSoldiersAtBase != NULL) {
+        *pEnv->pnSoldiersAtBase = 0;
+    }
+    if (pEnv->pnSoldiersUnassigned != NULL) {
+        *pEnv->pnSoldiersUnassigned = 0;
+    }
+    if (pEnv->pnCrewCarried != NULL) {
+        *pEnv->pnCrewCarried = 0;
+    }
+
+    const bool bDogfight = (pCraft != NULL && pCraft->bCanDogfight != 0u);
+    if (bDogfight) {
+        PlaneDetailCountSoldiers(pEnv, nCraftIdx, nBaseIdx); /* 0x7C630..0x7C68C */
+        const i32 nCarried = Craft_CountWeaponSlotsCarried(pEnv->apObjects, pEnv->nObjectCount,
+                                                           nCraftIdx); /* 0x7C6A0..0x7C730 */
+        if (pEnv->pnCrewCarried != NULL) {
+            *pEnv->pnCrewCarried = nCarried;
+        }
+    }
+
+    /* 0x7C754: both the gated and the skipped path reach this pair, so it is packed either way. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 10, 10, 25);
+
+    const i32 nAboard = (pEnv->pnSoldiersAboard != NULL) ? *pEnv->pnSoldiersAboard : 0;
+    const i32 nCarried = (pEnv->pnCrewCarried != NULL) ? *pEnv->pnCrewCarried : 0;
+
+    if (bDogfight && nAboard > 0) { /* 0x7C76C..0x7C7E0 */
+        Font_DrawGlyph(130, 200, (u16)(g_fontSys.nBaseBitsBase + PUFO_PLANE_GLYPH_SOLDIER), 0);
+        Text_DrawString(142, 200, PUFO_PLANE_X_GLYPH);
+        (void)snprintf(szNum, sizeof(szNum), "%d", nAboard);
+        Text_DrawString(150, 200, szNum);
+    }
+    if (bDogfight && nCarried > 0) { /* 0x7C7E8..0x7C858 */
+        Font_DrawGlyph(180, 200, (u16)(g_fontSys.nBaseBitsBase + PUFO_PLANE_GLYPH_CREW), 0);
+        Text_DrawString(192, 200, PUFO_PLANE_X_GLYPH);
+        (void)snprintf(szNum, sizeof(szNum), "%d", nCarried);
+        Text_DrawString(200, 200, szNum);
+    }
+
+    if (bDogfight) { /* 0x7C860..0x7C960: the two hold lines, gated on bCanDogfight alone */
+        const i32 nCap = (i32)Craft_GetTypeCargoCap(pCraft);
+        const i32 nUsed = Base_CalcWeaponStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nCraftIdx);
+
+        (void)snprintf(szScratch, sizeof(szScratch), "%s%d",
+                       PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_FREE_HOLD), nCap - nUsed);
+        Text_DrawString(95, 236, szScratch);
+
+        (void)snprintf(szScratch, sizeof(szScratch), "%s%d",
+                       PlaneRecText(pEnv->pTextRecs, PUFO_PLANE_TEXT_TOTAL_HOLD), nCap);
+        Text_DrawString(95, 248, szScratch);
+    }
+
+    /* 0x7C984: dead on all three branches -- DrawStatLabel packs its own pair before any glyph, and the
+     * reset branch draws nothing at all. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 100, 150, 250, 10, 10, 25);
+
+    if (pEnv->pStatPanels != NULL && pEnv->pStatPanels->bPanelAOpen != 0) {
+        BasePlaneScreen_DrawStatLabel(pEnv->pStatPanels, 0, (u8 *)pEnv->pTextRecs, pEnv->pColor,
+                                      (pEnv->pnStatRowCount != NULL) ? *pEnv->pnStatRowCount : 0);
+    } else if (pEnv->pStatPanels != NULL && pEnv->pStatPanels->bPanelBOpen != 0) {
+        BasePlaneScreen_DrawStatLabel(pEnv->pStatPanels, 1, (u8 *)pEnv->pTextRecs, pEnv->pColor,
+                                      (pEnv->pnStatRowCount != NULL) ? *pEnv->pnStatRowCount : 0);
+    } else if (pEnv->pStatEnv != NULL) {
+        (void)BasePlane_ResetDetailState(pEnv->pStatEnv); /* 0x7C9DC */
+    }
+
     return 0;
 }

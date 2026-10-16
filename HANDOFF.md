@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `647ac99`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 96, the hangar frame and craft readout at 0x7d374), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `cbbd0f3`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 97, the hangar's stores list and craft detail at 0x7baf8), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,14 +207,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 943 / 1103 (85.5%)
-                                             bytes cited:     534752 / 598792 (89.3%)
-python docs/parity/audit_credits.py       -> credited functions: 943, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 514 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 944 / 1103 (85.6%)
+                                             bytes cited:     538576 / 598792 (89.9%)
+python docs/parity/audit_credits.py       -> credited functions: 944, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 531 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 242, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/audit_bugs.py          -> ledger rows: 252, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -231,9 +231,41 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15299**. Coverage as of the latest commit: **943 / 1103
-functions (85.5%)**, **534752 / 598792 bytes (89.3%)**. This unit ported the hangar's own draw,
-`BasePlaneScreen_Draw` (0x7d374, 1,648 B): the two list panels, the three-row craft readout, two captions
+Test checks run across the 60 suites: **15368**. Coverage as of the latest commit: **944 / 1103
+functions (85.6%)**, **538576 / 598792 bytes (89.9%)**. This unit ported the hangar's other face,
+`BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3,824 B): the stores-transfer list and the craft read-out that
+take over the whole frame when `bPlaneShowCraftDetail @ 0x161F20` is set. `BasePlaneScreen_Draw` hands the
+call over at 0x7D37C and returns its value, so the hook unit 96 carried for it is gone -- the draw env now
+carries the detail env. **The list-built gate short-circuits everything after the rails and the name**:
+panels built draws the crew pair, packs (200,200,200 / 10,25,10), puts the name at (120-w/2, 30) and
+returns, so the stores set and the read-out are mutually exclusive. **`dwActionFail @ 0x1870C8` is read as
+a dword and decides the two row panels' `bFlag7073`**: exactly 1 clears it, anything else sets it to 1 --
+and that 1 is the leftover R11 from the rail loop's `nRectH` (0x7BDA4..0x7BDC4), not a constant a reader
+can see. **The band is `16 * min(nLineCount, nStyle)` of the select-row panel** (`MOVGE R3,R0,LSL#4` at
+0x7BE7C), every separator is 1 x (band+2) at y 69 in palette index 0xB4, and the interleaving is sep 130 /
+avail / sep 166 / sel-row / sep 181 / commit / sep 196 / taken -- the avail panel paints over the 166
+separator, not the reverse. **The bottom line splits on `bBaseFacPreviewOk @ 0x18652D`, one byte away from
+the `bBaseFacPreviewActive @ 0x18652C` unit 96 gates on**, in the same control block, with
+`75 < nSmapCursorY < band + 75` both ends exclusive; armed it draws the hovered row's object name at
+(10, 297) straight out of `apObjects[pPlaneSlotPanel->anLineAux[nPanelRowCursor @ 0x186BE8]]`, not armed it
+recentres `pGeoscapeCtlConfirm` (`x = 120 - (uWidth >> 1)`, y 297, both STRH) and draws TEXTS[1127].
+**The refusal map is a switch, not the buy/sell screen's `405 + reason`** -- the two screens read one dword
+and pick different records out of the same six (410 / 408 / 409 here, centred at (120-w/2, 158)); any other
+reason returns with the red pair packed and nothing drawn. **Both percentage lines read a field their label
+does not name**: "Топливо" gets `100 * uRangeRemain / uRangeMax`, "Повреждения" gets
+`100 - 100 * nFuel / uFuelMax`, both through `_rt_sdiv` with the divisor in R0 (0x7C2F0, 0x7C388) and
+neither with a zero test. **The pad order is not the weapon order**: 25 takes the third weapon pad, 26 the
+first, 27 the second, 28..30 the fourth..sixth, with `nOriginX` written first (55 left, 156 right), and a
+craft type outside 0..4 blits nothing. **All four counters are zeroed whatever `Ship.bCanDogfight` says**
+(0x7C5C0..0x7C5F8) and only recomputed when it is non-zero. 71 new checks on a real 240x320 surface with the
+real font. A 52-mutation sweep now turns all 52 red; five were initially unpinned and **all five were
+fixture defects, not port defects** -- palette slot 0 was zeroed, so the soldier and crew icon ids 38 and 40
+blitted as colour 0 and were invisible (38 -> 1 and 38 -> 100 passed too), the pad key 0xFE mapped through
+a zeroed slot-2 entry 254, and the reason-0 check counted ink in the panel window instead of comparing the
+frame. IDB: 17 renames (the four counters, `nPanelRowCursor`, `dwActionFailReason` and the eleven pads in
+the object block at 0x161A48), a function comment at 0x7baf8 and 16 line comments; 10 new ledger rows.
+`strat-ui` moves to 243/245 functions and 117,128 of 121,164 bytes (96.7%). The previous unit ported the
+hangar's own draw, `BasePlaneScreen_Draw` (0x7d374, 1,648 B): the two list panels, the three-row craft readout, two captions
 and four ramped rail loops. **Three gates, and they do not gate the same amount of the screen** -- the
 not-built skip (0x7D398) and the preview-gate skip (0x7D3D0) both land on `loc_7D640`, the second colour
 pair, so the two captions and all four rail loops run whatever the flags say: a hangar whose panels were
@@ -1145,7 +1177,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 242 | 245 | 113304 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
+| `strat-ui` | 243 | 245 | 117128 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -2042,22 +2074,22 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 241 of 245 functions and 111,656 of 121,164 bytes (92.1%). The buy/sell, transfer,
+`strat-ui` is 243 of 245 functions and 117,128 of 121,164 bytes (96.7%). The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
 200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
 is left in `strat-ui` is
-3 functions / 7,860 bytes. The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
+2 functions / 4,036 bytes. The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
 the largest single `strat-ui` function) and `BaseInfoScreen_Init` (0x57688) came in with unit 92,
 `BaseInfoScreen_Draw` (0x56fb8) with unit 93, the base-attack screen's update/draw/close trio
 (`BaseAtScreen_Update` 0x57808, 3,872 B, `BaseAtScreen_Draw` 0x58728, 420 B, `BaseAtScreen_CloseThunk`
 0x577c0, 72 B) with unit 94, and the hangar's stores panel set `BasePlaneScreen_BuildControls` (0x7b014,
 2,788 B) with unit 95 and the hangar's own frame and craft readout `BasePlaneScreen_Draw` (0x7d374,
-1,648 B) with unit 96. What is left is the hangar's detail view
-(`BasePlaneScreen_DrawCraftDetail` 0x7baf8, 3,824 B) and two single handlers: `Transfer_WriteErrorDump`
-(0x996e4, 2,196 B) and `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
+1,648 B) with unit 96 and the hangar's stores list and craft detail
+`BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3,824 B) with unit 97. What is left is two single handlers:
+`Transfer_WriteErrorDump` (0x996e4, 2,196 B) and `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
 The psi family is complete: `PsiScreen_BuildPanels`, `PsiScreen_SelectListed`, `PsiScreen_Init`,
 `PsiScreen_ApplyAssignments` and the two scroll handlers came in with unit 90, `PsiScreen_Draw` (0x72398,
 1,960 B) with unit 91. The ufopaedia family is complete: `Ufopaedia_Open` (0x9a8cc) came in with unit 89 after its
@@ -2085,8 +2117,8 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 514 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 242-row bug ledger, with a `qol` column |
+| `docs/parity/renames.tsv` | 531 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 252-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

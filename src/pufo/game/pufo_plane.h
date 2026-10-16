@@ -843,10 +843,189 @@ typedef struct PlaneDrawEnv {
     Soldier **apSoldiers;            /* the context's +0x1198 */
     i32 nSoldierCount;               /* nSoldierCount @ 0x115350, read LDRH */
     const char *pTextRecs;           /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
-    i32 (*pfnDrawCraftDetail)(void);  /* BasePlaneScreen_DrawCraftDetail, not ported: named without a
-                                       * citation so the parity report does not credit it */
+    const struct PlaneDetailEnv *pDetail; /* BasePlaneScreen_DrawCraftDetail @ 0x7d37C hands the whole
+                                           * call to it, so the detail env travels with the draw env */
 } PlaneDrawEnv;
 
 i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv);
+
+/* --- BasePlaneScreen_DrawCraftDetail @ 0x7baf8 (3,824 B) : the hangar's other face ---
+ *
+ * BasePlaneScreen_Draw enters it straight away when bPlaneShowCraftDetail @ 0x161F20 is set (0x7D37C)
+ * and returns its value. It is the whole other side of the hangar: the shared rails, the craft name
+ * centred at the top, and one byte -- bPlaneStoresCommitted @ 0x161F28 -- deciding between the
+ * stores-transfer panel set and the craft read-out.
+ *
+ * Head, 0x7BAF8..0x7BD44. Rails A and B are byte-for-byte the shared screen rails (the same
+ * `CMP #0xA8` over a step of 7 at x 5 / 234 and `CMP #0x78` over a step of 5 at y 5 / 315 with the
+ * same 5*(k+20) / 230-5k / 250-5k ramps), so the port calls BaseUi_DrawFrameRails. Then
+ * Ship_FormatDisplayName(abFacilityGrid, nSelectedCraftIdx) is byte-copied into psz @ sp+0x88 (52 B)
+ * and measured, and the width stays in a register that four separate exits reuse. The craft index is
+ * worth naming: this screen reads nSelectedCraftIdx @ 0x161AC4, where BasePlaneScreen_Draw reads
+ * nPlaneSelCraftIdx @ 0x161F04. SelectCraft / SelectListed keep the two in step, but they are two
+ * globals and a screen that only ran one of them has them disagreeing.
+ *
+ * bPlaneListPanelsBuilt @ 0x161F24 (0x7BCE8) is the first gate. Set, it draws the crew panel
+ * (pPlaneCrewPanel @ 0x161EDC) and the crew-status panel (pPlaneCrewStatusPanel @ 0x161A3C), packs
+ * (200,200,200 / 10,25,10) and jumps to the centring tail -- the name at (120 - w/2, 30) and a return.
+ * Both the stores panel set and the craft read-out are skipped.
+ *
+ * bPlaneStoresCommitted @ 0x161F28 (0x7BD60) is the second gate, and it picks between two arms.
+ *
+ * STORES ARM, 0x7BD70..0x7C228. dwActionFail @ 0x1870C8 read as a dword decides the two row panels'
+ * bFlag7073: exactly 1 clears it on pPlaneSelRowPanel @ 0x161F00 and pPlaneCommitRowPanel @ 0x161EEC,
+ * anything else sets it to 1 (0x7BDA4..0x7BDC4 -- and the 1 is the leftover R11 from the rail loop's
+ * nRectH, not a constant the reader can see). Then (150,150,255 / 20,20,20), TEXTS[89] "Корабль"
+ * centred on 210 and TEXTS[155] "База" centred on 147, both at y 54. bPanelFlagScratch @ 0x161F0C is
+ * copied into both row panels' bUnk7080 and cleared -- a one-shot flag a row click sets and this draw
+ * consumes. Then the five panels interleave with four separators: the band is 16 * min(nLineCount,
+ * nStyle) of the SELECT-ROW panel (0x7BE7C..0x7BEAC, `MOVGE R3,R0,LSL#4`), every separator is 1 x
+ * (band + 2) at y 69 in palette index 0xB4, and the order is separator 130, avail (0x161A40),
+ * separator 166, sel-row, separator 181, commit-row, separator 196, taken (0x161EF4).
+ *
+ * The bottom line splits on bBaseFacPreviewOk @ 0x18652D -- a DIFFERENT byte from the
+ * bBaseFacPreviewActive @ 0x18652C the craft read-out gates on, one byte into the same control block
+ * -- and on 75 < nSmapCursorY < band + 75. Armed, it packs (150,150,255 / 20,20,55) and draws the
+ * hovered row's object name at (10, 297): the pointer it hands Text_DrawString is
+ * apObjects[pPlaneSlotPanel->anLineAux[unk_186BE8]] itself, whose first field is the 36-byte name.
+ * Not armed, it recentres the confirm control (pGeoscapeCtlConfirm @ 0x186BA4 gets x = 120 - (uWidth
+ * >> 1) and y 297, both STRH), blits it, and draws TEXTS[1127] "ОК" centred at (120 - w/2, 297) in
+ * (68,244,252 / 4,70,75). Both arms land on the same draw at 0x7C0B4. Then (200,200,200 / 10,25,10)
+ * and the craft name centred at (120 - w/2, 30), then (220,80,80 / 50,30,30) and -- only when
+ * dwActionFail is exactly 1 -- the refused-transfer panel: Ui_AnimExpandBlit_IfEnabled over
+ * (20, 130, 200, 70) plus TEXTS[410] "Нет места на корабле" for dword_1870B4 == 0, TEXTS[408] "Нет
+ * свободных хранилищ" for 1 and TEXTS[409] "Нет боеприпасов для ТОП" for 2, centred at
+ * (120 - w/2, 158). Any other reason returns with the red pair packed and nothing drawn. The hangar's
+ * reason-to-record map is a switch, not the buy/sell screen's 405 + reason -- the two screens read the
+ * same dword and pick different records out of the same six.
+ *
+ * DETAIL ARM, 0x7C22C..0x7C9DC. (200,200,200 / 10,25,10) and the name centred at (120 - w/2, 10);
+ * then (100,150,250 / 10,25,10) and the two percentage lines. "Топливо " (TEXTS[144]) gets
+ * 100 * Ship.uRangeRemain @ +8 / Ship.uRangeMax @ +0xA and is drawn at (150, 30); "Повреждения "
+ * (TEXTS[145]) gets 100 - 100 * Ship.nFuel @ +0x18 / Ship.uFuelMax @ +0x16 and is drawn at (10, 30).
+ * Both go through _rt_sdiv with the divisor in R0 and the dividend in R1 (0x7C2F0..0x7C2FC,
+ * `MOV LR,PC / MOV PC,R3`), and both append "%" (asc_ABAB8 @ 0xABAB8). The label and the field do not
+ * match: the fuel line reads the range pair and the damage line reads the fuel pair.
+ *
+ * Then the art. Ship.bCraftType picks the craft pad out of the object block's five (0x161A4C..
+ * 0x161A5C) and blits it with key 0xFE; a type outside 0..4 blits nothing. Ship.bWeaponL and
+ * Ship.bWeaponR, both read LDRSB, pick one of the six weapon pads (0x161A60..0x161A74) and write the
+ * pad's nOriginX first -- 55 for the left mount, 156 for the right -- and the pad order is not the
+ * weapon order: 25 takes the third pad, 26 the first, 27 the second, 28..30 the fourth..sixth. A
+ * weapon byte outside 25..30 blits nothing.
+ *
+ * Then the counters. All four are zeroed whatever Ship.bCanDogfight @ +0x21 says (0x7C5C0..0x7C5F8)
+ * and all four are recomputed when it is non-zero. The soldier walk (0x7C630..0x7C68C, nSoldierCount
+ * read LDRH, the loop skipped when it is not positive) fills nPlaneSoldiersAboard @ 0x161AB8
+ * (Soldier.bUnk183 @ +0xB7 == nSelectedCraftIdx), nPlaneSoldiersAtBase @ 0x161EE4 (Soldier.nKind
+ * @ +0xB6 == nSelectedBaseIdx) and nPlaneSoldiersUnassigned @ 0x161AB4 (at this base AND
+ * bUnk183 == 255). The last two are not drawn
+ * here at all: BasePlaneScreen_BuildListPanels sizes the crew panel with aboard + unassigned
+ * (0x7A4BC..0x7A4C4), so this draw is what refreshes the numbers the crew list is built from. The
+ * fourth, nPlaneCrewCarried @ 0x161AC0, is the five crew slots' aItemQty[craft] sum, reached through
+ * the cached apObjects[31..35] pointers at the context's +0x184..+0x194 with no object-count bound,
+ * and stored again after every one of the five steps.
+ *
+ * Then two glyph-and-count lines, each gated on bCanDogfight AND on its own counter being positive:
+ * fontSys_nBaseBitsSprBase + 38 at (130, 200) with "x" at 142 and itoa(aboard) at 150, and + 40 at
+ * (180, 200) with "x" at 192 and itoa(crew carried) at 200, all in palette 0. The (250,250,250 /
+ * 10,10,25) pair they draw under is packed once at 0x7C754, and BOTH the gated and the skipped path
+ * reach it, so the pair is packed whatever the flags say. Under that same pair, gated on bCanDogfight
+ * alone, come the two hold lines: TEXTS[403] "Своб. мест " with Craft_GetTypeCargoCap -
+ * Base_CalcWeaponStorageUsed at (95, 236), and TEXTS[404] "Мест всего " with the bare cap at
+ * (95, 248).
+ *
+ * Tail, 0x7C964..0x7C9DC: (100,150,250 / 10,10,25), then bStatPanelAOpen @ 0x161F18 picks
+ * BasePlaneScreen_DrawStatLabel's first panel, else bStatPanelBOpen @ 0x161F1C picks the second, else
+ * BasePlane_ResetDetailState rebuilds the stat rows. The pair packed at 0x7C984 is overwritten by
+ * DrawStatLabel's own (68,244,252 / 4,70,75) before either panel reaches a glyph, and the reset branch
+ * draws nothing, so that pair is dead on all three paths.
+ *
+ * Deviations: the original dereferences the craft pointer at apCraft[nSelectedCraftIdx] four times,
+ * every apSoldiers and apObjects entry it walks, all seven panels, the slot panel's anLineAux at the
+ * unbounded row cursor and the object pointer it hands Text_DrawString, with no null test; the port
+ * skips what is missing and bounds the row cursor and the slot index. Both percentage divisions go
+ * through _rt_sdiv with no zero test -- uRangeMax or uFuelMax of 0 is a division by zero there -- and
+ * the port returns 0 for that case. The name is byte-copied from the 108-byte shared scratch into the
+ * 52-byte psz with no bound, and the four scratch strings are built with unbounded strcat; the port
+ * uses bounded copies over the same 52 / 56-byte buffers. The cargo sum here reaches slots 31..35
+ * through the cached pointers with no object-count bound, while the port reuses
+ * Craft_CountWeaponSlotsCarried, which bounds the walk by Map_nObjectCount. The original's return
+ * value is whatever R0 holds at the exit (`POP {R4-R11,PC}` straight after `ADD SP`); nothing reads
+ * it, and the port returns 0. */
+#define PUFO_PLANE_DETAIL_NAME_MAX   52  /* psz @ sp+0x88, the craft name */
+#define PUFO_PLANE_DETAIL_SCRATCH    56  /* var_A4 @ sp+0x18, the label-plus-value scratch */
+#define PUFO_PLANE_DETAIL_ITOA       56  /* var_6C @ sp+0x50, the j_itoa buffer */
+#define PUFO_PLANE_TEXT_CRAFT        89  /* "Корабль", centred on 210 at y 54 */
+#define PUFO_PLANE_TEXT_BASE        155  /* "База", centred on 147 at y 54 */
+#define PUFO_PLANE_TEXT_FUEL        144  /* "Топливо ", computed from the RANGE pair */
+#define PUFO_PLANE_TEXT_DAMAGE      145  /* "Повреждения ", computed from the FUEL pair */
+#define PUFO_PLANE_TEXT_FREE_HOLD   403  /* "Своб. мест " */
+#define PUFO_PLANE_TEXT_TOTAL_HOLD  404  /* "Мест всего " */
+#define PUFO_PLANE_TEXT_NO_ROOM     410  /* "Нет места на корабле", refusal reason 0 */
+#define PUFO_PLANE_TEXT_NO_STORES   408  /* "Нет свободных хранилищ", reason 1 */
+#define PUFO_PLANE_TEXT_NO_AMMO     409  /* "Нет боеприпасов для ТОП", reason 2 */
+#define PUFO_PLANE_TEXT_OK         1127  /* aTextOk @ 0xEBF4B, "ОК" */
+#define PUFO_PLANE_PERCENT            "%" /* asc_ABAB8 @ 0xABAB8, on both percentage lines */
+#define PUFO_PLANE_X_GLYPH            "x" /* aX, between the sprite and the count */
+#define PUFO_PLANE_GLYPH_SOLDIER     38   /* fontSys_nBaseBitsSprBase + 38, the aboard line */
+#define PUFO_PLANE_GLYPH_CREW        40   /* + 40, the crew-carried line */
+#define PUFO_PLANE_PAD_KEY           0xFE /* the key every PadImage_BlitEx here passes */
+#define PUFO_PLANE_MOUNT_X_LEFT      55   /* 0x37: nOriginX written into the left mount's pad */
+#define PUFO_PLANE_MOUNT_X_RIGHT    156   /* 0x9C: the right mount's */
+#define PUFO_PLANE_SEP_COLOR       0xB4   /* the palette index all four separators use */
+#define PUFO_PLANE_SEP_Y            69    /* their top row */
+#define PUFO_PLANE_SEP_X_FIRST     130
+#define PUFO_PLANE_SEP_X_SECOND    166
+#define PUFO_PLANE_SEP_X_THIRD     181
+#define PUFO_PLANE_SEP_X_FOURTH    196
+#define PUFO_PLANE_ROW_LINE_H       16    /* the band is 16 * min(nLineCount, nStyle) */
+#define PUFO_PLANE_ROW_BAND_PAD      2    /* and every separator is band + 2 tall */
+#define PUFO_PLANE_BAND_Y           75    /* the preview gate's lower bound */
+#define PUFO_PLANE_BOTTOM_Y        297    /* the bottom line, in both arms */
+
+typedef struct PlaneDetailEnv {
+    const GfxColorEnv *pColor;        /* pGX @ 0x1139B8, the colour-pair owner */
+    BasePlaneScreen *pScreen;         /* the object block at 0x161A48: five craft pads, six weapon pads */
+    Ship *const *apCraft;             /* apCraft @ 0x114A64 */
+    i32 nCraftCount;                  /* Map_nCraftCount @ 0x114B4C (the port's bound) */
+    const i32 *pnCraftIdx;            /* nSelectedCraftIdx @ 0x161AC4, a dword */
+    const i8 *pnBaseIdx;              /* nSelectedBaseIdx @ 0x159D81, the signed byte */
+    const u8 *pbListPanelsBuilt;      /* bPlaneListPanelsBuilt @ 0x161F24 */
+    const u8 *pbStoresCommitted;      /* bPlaneStoresCommitted @ 0x161F28 */
+    const u32 *pdwActionFail;         /* dwActionFail @ 0x1870C8, read as a dword */
+    const i32 *pnRefuseReason;        /* dword_1870B4, the refusal reason */
+    u8 *pbPanelFlagScratch;           /* bPanelFlagScratch @ 0x161F0C, consumed by this draw */
+    UiPanel *pCrewPanel;              /* pPlaneCrewPanel @ 0x161EDC */
+    UiPanel *pCrewStatusPanel;        /* pPlaneCrewStatusPanel @ 0x161A3C */
+    UiPanel *pSlotPanel;              /* pPlaneSlotPanel @ 0x161AC8 */
+    UiPanel *pAvailPanel;             /* pPlaneAvailPanel @ 0x161A40 */
+    UiPanel *pSelRowPanel;            /* pPlaneSelRowPanel @ 0x161F00 */
+    UiPanel *pCommitPanel;            /* pPlaneCommitRowPanel @ 0x161EEC */
+    UiPanel *pTakenPanel;             /* pPlaneTakenPanel @ 0x161EF4 */
+    const i32 *pnRowCursor;           /* unk_186BE8, the cached selected row */
+    const u8 *pbPreviewOk;            /* bBaseFacPreviewOk @ 0x18652D */
+    const i32 *pnCursorY;             /* nSmapCursorY @ 0x186BD4, read LDRSH */
+    UiControl *pCtlConfirm;           /* pGeoscapeCtlConfirm @ 0x186BA4 */
+    UiControlBlitFn pfnCtlBlit;       /* UiControl_BlitActivePad's injected blits */
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    UiAnimBlitEnv *pAnim;             /* the refused-transfer panel's progress pair */
+    ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0 */
+    i32 nObjectCount;                 /* Map_nObjectCount @ 0x114A60, read LDRH */
+    Soldier *const *apSoldiers;       /* the context's +0x1198 */
+    i32 nSoldierCount;                /* nSoldierCount @ 0x115350, read LDRH */
+    i32 *pnSoldiersAboard;            /* unk_161AB8, the crew panel's first term */
+    i32 *pnSoldiersAtBase;            /* unk_161EE4 */
+    i32 *pnSoldiersUnassigned;        /* unk_161AB4, the crew panel's second term */
+    i32 *pnCrewCarried;               /* unk_161AC0, the five crew slots' carried sum */
+    PlaneWeaponPanels *pStatPanels;   /* the two stat gates at 0x161F18 / 0x161F1C */
+    const i32 *pnStatRowCount;        /* nPlaneStatRowCount @ 0x161A38, the stat frame's height */
+    char *pTextRecs;                  /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE; the stat
+                                       * labels write NULs into it, so this one is not const */
+    const BasePlaneDetailEnv *pStatEnv; /* what BasePlane_ResetDetailState needs, on the reset branch */
+} PlaneDetailEnv;
+
+i32 BasePlaneScreen_DrawCraftDetail(const PlaneDetailEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */
