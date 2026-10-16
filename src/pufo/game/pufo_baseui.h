@@ -4235,7 +4235,10 @@ i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv); /* 0x6b7ac */
  *   region labels are TEXTS 1165, 1166, 1167, 1036, 1168, 1169, 1170, 1171 and 1172 -- the switch is on
  *   BaseRec.bRegionId, the same region byte FundingScreen_Init groups into its five countries. All
  *   thirteen are zero-filled in the image and filled from the text table at load, so with no data file
- *   the labels are empty. Renamed in the IDB to aTextRecNNN.
+ *   the labels are empty. Renamed in the IDB to aTextRecNNN. Read out of the shipped lang.dat they are
+ *   149 "Ремонт", 150 "Заправка", 151 "Готов", 152 "На миссии", 1036 "Азия", 1165 "С.Аме", 1166 "Ю.Аме",
+ *   1167 "Евро", 1168 "Авст", 1169 "Афр.", 1170 "Анта", 1171 "Аркт.", 1172 "Кан" -- four craft states
+ *   and nine region abbreviations, which is what the two columns show.
  * - 0x6D71C `LDR R1,[R8,R2,LSL#2]!` pre-increments R8 to &apCraft[n] and every later Ship field read
  *   goes through it, which is why the pseudocode has two names for one pointer.
  *
@@ -4266,7 +4269,9 @@ typedef struct OptionsOpenEnv {
     const u8 *pTextRecs;      /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
     void (*pfnPanelPrev)(void);   /* OptionsScreen_PanelPrev (0x6d01c) over the four panels */
     void (*pfnPanelNext)(void);   /* OptionsScreen_PanelNext (0x6d064) */
-    void (*pfnOnConfirm)(void);   /* OptionsScreen_OnConfirm (0x6cf18), as a thunk */
+    void (*pfnOnConfirm)(void);   /* OptionsScreen_OnConfirm (0x6cf18) over an OptionsConfirmEnv, as a
+                                   * thunk: the original installs the function itself at 0x6D2E8 and the
+                                   * click slot takes no arguments */
     void (*pfnSaveAudio)(void);   /* Options_SaveAudioSettings (0x6b7ac) over a SaveAudioEnv */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser);
@@ -4275,6 +4280,56 @@ typedef struct OptionsOpenEnv {
 } OptionsOpenEnv;
 
 void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode);
+
+/* The research topic the final-mission button waits on. 0x6CFA8 and 0x8453C both read it as
+ * LDRB [aResearchTopics,#0x3B8] -- 28 records of 34 bytes in. RESEARCH.DAT record 28 is named by
+ * TEXTS[448] "Цидония или разорение" (the Cydonia topic, research cost 6000). */
+#define PUFO_RESEARCH_TOPIC_CYDONIA 28
+
+/* OptionsScreen_OnConfirm @ 0x6cf18 (260 B): the name panel's click handler, installed at 0x6D2E8 by
+ * OptionsScreen_Open. Confirm the row the panel has selected.
+ *
+ * 1. 0x6CF3C..0x6CF50: the row is the NAME panel's nUnk3032 (what UiPanel_ClickRow set), and the craft
+ *    it stands for is pPanelName->anLineAux[nUnk3032] -- OptionsScreen_Open wrote the craft index into
+ *    that aux dword. Both selection globals come from it: nStrategIndex @ 0x159E74 and
+ *    nSelectedShipIdx @ 0x187054.
+ * 2. 0x6CF5C..0x6CF6C: the gate is the STORES panel's aux dword at the SAME index. OptionsScreen_Open
+ *    leaves it 0 only when uRangeRemain == uRangeMax AND nFuel == uFuelMax AND bAtBase != 0, so a
+ *    non-zero aux means "not ready" and the confirm does nothing at all: no flag, no sound, no line, no
+ *    pause. The original returns the stores-panel pointer here (0x6CFF0).
+ * 3. 0x6CF78: bMapSelectionFlag = 1. 0x6CF84: Sound_Play(7, 4) -- sample 7, the same second argument 4
+ *    every other caller passes.
+ * 4. 0x6CFA4: UiPanel_AppendLineWithSound over the root message list with flag 27 and the selected
+ *    craft index as its colour dword. The index is re-read LDRB at 0x6CF8C, so a -1 selection appends
+ *    255. Flag 27 is what Smap_ResolveInterceptUI (0x84964, unported) answers with Ship_RetargetTravel:
+ *    picking a row arms a travel order for that craft.
+ * 5. 0x6CFA8..0x6CFE0: aResearchTopics[28].bUnlocked AND apCraft[nSelectedShipIdx]->bCraftType == 2
+ *    (LDRB [R3,#2]) arms byte_187068. Both constants are verified against the shipped data: TEXTS[415 +
+ *    2] is "Мститель", the Avenger, and topic 28 is the Cydonia topic above. Geoscape_Draw @ 0x90908
+ *    blits the pad of pFinalMissionCtl @ 0x186B8C and draws TEXTS[1236] "Финальная миссия!" centred on
+ *    unk_186BA4 while the byte is set, and Geoscape_OnPointer @ 0x87590 / Geoscape_OnPointerUp @ 0x8971c
+ *    hit-test that control before anything else in the default arm. So confirming a row arms the
+ *    final-mission button for a ready Avenger once Cydonia is researched.
+ * 6. 0x6CFE4: GameTime_Pause, on both arms of the topic test.
+ *
+ * Deviation: the original indexes both aux arrays and the craft array with no bound test; the port
+ * checks the row against PUFO_PANEL_LINES and skips a null craft slot. */
+typedef struct OptionsConfirmEnv {
+    UiPanel **ppPanelName;            /* 0x159E18, the panel whose click installed this */
+    UiPanel **ppPanelStores;          /* 0x159E78, the readiness gate */
+    i32      *pnStrategIndex;         /* nStrategIndex @ 0x159E74 */
+    i32      *pnSelectedShipIdx;      /* nSelectedShipIdx @ 0x187054 */
+    u8       *pbSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
+    u8       *pbFinalMissionCtl;      /* byte_187068, arms the final-mission control */
+    Ship *const *apCraft;             /* 0x114A64 */
+    const ResearchTopicLive *aTopics; /* aResearchTopics @ 0x15EF08 */
+    UiLineList *pLines;               /* the root message list @ 0x158890 */
+    GameTime *pTime;                  /* 0x159618; bPaused is the byte at 0x15961C */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pUser;
+} OptionsConfirmEnv;
+
+void OptionsScreen_OnConfirm(OptionsConfirmEnv *pEnv);
 
 typedef struct OptionsInitEnv {
     OptionsScreenCtl *pCtl;

@@ -161,6 +161,14 @@ static UiPanel *g_pPanelName, *g_pPanelStores, *g_pPanelRegion, *g_pPanelCargo;
 static OptionsOpenEnv g_openEnv;
 static u8 g_aTexts[(1172 + 1) * PUFO_TEXT_REC_STRIDE];
 
+/* The confirm half's state: the live topic table, the two selection globals, the final-mission
+ * control's armed byte and a sample counter of its own (the CloseUI head asserts on g_nSample). */
+static ResearchTopicLive g_aTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static OptionsConfirmEnv g_confirmEnv;
+static i32 g_nStrategIdx, g_nSelShip, g_nConfirmSample;
+static u8 g_bFinalCtl;
+#define FIX_UNSET 0x7ABCu
+
 static void TextPut(i32 nRec, const char *psz)
 {
     snprintf((char *)(g_aTexts + PUFO_TEXT_REC_STRIDE * nRec), PUFO_TEXT_REC_STRIDE, "%s", psz);
@@ -168,7 +176,10 @@ static void TextPut(i32 nRec, const char *psz)
 
 static void OpenPanelPrev(void) {}
 static void OpenPanelNext(void) {}
-static void OpenOnConfirm(void) {}
+/* The thunk OptionsScreen_Open installs at the names panel's +0xC (0x6D2E8), standing in for the
+ * original's direct install of OptionsScreen_OnConfirm itself. */
+static void OpenOnConfirm(void) { OptionsScreen_OnConfirm(&g_confirmEnv); }
+static void HConfirmSample(i32 nSample, void *p) { (void)p; g_nConfirmSample += nSample; }
 static void OpenSaveAudio(void) {}
 
 static UiPanel *OpenMakePanel(i32 nLines)
@@ -381,6 +392,24 @@ static void Fix_Reset(i32 nScreen)
     g_openEnv.pfnPanelNext = OpenPanelNext;
     g_openEnv.pfnOnConfirm = OpenOnConfirm;
     g_openEnv.pfnSaveAudio = OpenSaveAudio;
+
+    memset(g_aTopics, 0, sizeof(g_aTopics));
+    memset(&g_confirmEnv, 0, sizeof(g_confirmEnv));
+    g_confirmEnv.ppPanelName = &g_pPanelName;
+    g_confirmEnv.ppPanelStores = &g_pPanelStores;
+    g_confirmEnv.pnStrategIndex = &g_nStrategIdx;
+    g_confirmEnv.pnSelectedShipIdx = &g_nSelShip;
+    g_confirmEnv.pbSelectionFlag = &g_bSelFlag;
+    g_confirmEnv.pbFinalMissionCtl = &g_bFinalCtl;
+    g_confirmEnv.apCraft = g_apShip;
+    g_confirmEnv.aTopics = g_aTopics;
+    g_confirmEnv.pLines = &g_lines;
+    g_confirmEnv.pTime = &g_time;
+    g_confirmEnv.pfnPlaySample = HConfirmSample;
+    g_nStrategIdx = (i32)FIX_UNSET;
+    g_nSelShip = (i32)FIX_UNSET;
+    g_nConfirmSample = 0;
+    g_bFinalCtl = 0;
 
     g_bAtAssault = 0;
     g_bTickHold = 0;
@@ -1337,6 +1366,116 @@ static void TestOptionsOpen(void)
     CheckI(g_bAnimStarted, 1, "  and the anim byte is not cleared");
 }
 
+/* ------------------------------------------------------------------ 12b. the overlay row confirm */
+
+static void TestOptionsConfirm(void)
+{
+    printf("OptionsScreen_OnConfirm @ 0x6cf18: confirming an overlay row\n");
+
+    /* The full chain, reached through the click slot OptionsScreen_Open installed. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_aShip[0].bCraftType = CRAFT_TYPE_AVENGER;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    g_aTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    g_time.bPaused = 0;
+    UiPanel_ClickRow(g_pPanelName, 10, 75);
+    CheckI(g_pPanelName->nUnk3032, 0, "the click sets the row the confirm reads (0x6CF3C)");
+    CheckI(g_nStrategIdx, 0, "nStrategIndex gets the craft index out of the names panel aux (0x6CF4C)");
+    CheckI(g_nSelShip, 0, "  and so does nSelectedShipIdx (0x6CF50)");
+    CheckI(g_bSelFlag, 1, "bMapSelectionFlag is set (0x6CF78)");
+    CheckI(g_nConfirmSample, 14, "sample 7 twice: the direct Sound_Play (0x6CF84) plus AppendWithSound's own");
+    CheckI(UiLineList_GetFlag(&g_lines, 0), 27, "the message line carries flag 27 (0x6CFA4)");
+    CheckI((i32)UiLineList_GetColor(&g_lines, 0, 0), 0, "  with the selected craft index in colour slot 0");
+    CheckI(g_bFinalCtl, 1, "Cydonia researched plus an Avenger arms the final-mission control (0x6CFD8)");
+    CheckI(g_time.bPaused, 1, "GameTime_Pause runs on both arms of the topic test (0x6CFE8)");
+
+    /* The gate is the STORES aux dword, and it runs after the two selection globals are written. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 40, 100, 50, 50, 1);   /* short range -> TEXTS[150], aux stays -1 */
+    g_aShip[0].bCraftType = CRAFT_TYPE_AVENGER;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    g_aTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    g_time.bPaused = 0;
+    UiPanel_ClickRow(g_pPanelName, 10, 75);
+    CheckI(g_nStrategIdx, 0, "a craft that is not ready still selects itself: both globals are written (0x6CF4C)");
+    CheckI(g_nSelShip, 0, "  before the gate at 0x6CF6C is tested");
+    CheckI(g_bSelFlag, 0, "but the non-zero stores aux at 0x6CF6C skips the flag");
+    CheckI(g_nConfirmSample, 0, "  the sound");
+    CheckI((i32)g_lines.nLineCount, 0, "  the message line");
+    CheckI(g_bFinalCtl, 0, "  the final-mission control");
+    CheckI(g_time.bPaused, 0, "  and the pause");
+
+    /* Both aux arrays are indexed by the NAME panel's nUnk3032 (0x6CF5C reloads it from the names
+     * panel), so a row the names panel never filled gates the confirm even when the stores panel has
+     * a ready row somewhere else. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    g_pPanelName->anLineAux[1] = 0;      /* a row the names panel does not display */
+    g_pPanelStores->anLineAux[0] = 0;    /* the ready row, at the wrong index */
+    g_pPanelStores->anLineAux[1] = -1;
+    g_pPanelName->nUnk3032 = 1;
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI(g_nSelShip, 0, "the shared index picks craft 0 out of the names aux (0x6CF4C)");
+    CheckI(g_bSelFlag, 0, "and gates on the stores aux at that same index, not on row 0 (0x6CF6C)");
+    g_pPanelStores->anLineAux[1] = 0;
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI(g_bSelFlag, 1, "clearing that aux lets the confirm through");
+
+    /* A -1 selection reaches the line as 255: 0x6CF8C re-reads the index with LDRB. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    g_pPanelName->anLineAux[0] = -1;
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI((i32)UiLineList_GetColor(&g_lines, 0, 0), 255,
+           "a -1 selection appends its low byte, 255 (0x6CF8C LDRB)");
+
+    /* Cydonia unresearched: the control stays cold but the clock still pauses. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_aShip[0].bCraftType = CRAFT_TYPE_AVENGER;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI(g_bFinalCtl, 0, "topic 28 locked leaves the final-mission control clear (0x6CFA8)");
+    CheckI(g_time.bPaused, 1, "  and the pause runs on that arm too (0x6CFE4)");
+
+    /* Cydonia researched but the craft is not an Avenger. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_aShip[0].bCraftType = CRAFT_TYPE_INTERCEPTOR;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    g_aTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI(g_bFinalCtl, 0, "Ship.bCraftType 3 is not the Avenger the byte waits for (0x6CFD8 LDRB [R3,#2])");
+    CheckI(g_time.bPaused, 1, "  while the rest of the arm still runs");
+
+    /* A null env, and an env whose panels are gone, touch nothing observable. */
+    Fix_Reset(18);
+    g_time.bPaused = 0;
+    OptionsScreen_OnConfirm(NULL);
+    CheckI(g_nStrategIdx, (i32)FIX_UNSET, "a null env writes no selection global");
+    CheckI(g_lines.nLineCount, 0, "  and appends no message line");
+    CheckI(g_time.bPaused, 0, "  and does not pause the clock");
+    g_pPanelName = NULL;   /* Fix_Reset released them; the env reads them through the slots */
+    OptionsScreen_OnConfirm(&g_confirmEnv);
+    CheckI(g_nStrategIdx, (i32)FIX_UNSET, "an env whose panels are gone writes no selection global");
+    CheckI(g_time.bPaused, 0, "  and still does not pause");
+}
+
 /* ------------------------------------------------------------------ 13. case 19, the monthly close */
 
 static void TestScreen19(void)
@@ -1511,6 +1650,7 @@ int main(void)
     TestScreen18();
     TestSaveAudioSettings();
     TestOptionsOpen();
+    TestOptionsConfirm();
     TestScreen19();
     TestScreen20();
     TestBasePass();

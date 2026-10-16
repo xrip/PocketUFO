@@ -8536,6 +8536,62 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode)
     }
 }
 
+void OptionsScreen_OnConfirm(OptionsConfirmEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    UiPanel *pName   = (pEnv->ppPanelName  != NULL) ? *pEnv->ppPanelName  : NULL;
+    UiPanel *pStores = (pEnv->ppPanelStores != NULL) ? *pEnv->ppPanelStores : NULL;
+    if (pName == NULL || pStores == NULL) {
+        return;
+    }
+
+    const i32 nRow = pName->nUnk3032;                                        /* 0x6CF3C */
+    if (nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return;
+    }
+
+    const i32 nShip = pName->anLineAux[nRow];                                /* 0x6CF4C */
+    if (pEnv->pnStrategIndex != NULL) {
+        *pEnv->pnStrategIndex = nShip;                                       /* 0x6CF4C */
+    }
+    if (pEnv->pnSelectedShipIdx != NULL) {
+        *pEnv->pnSelectedShipIdx = nShip;                                    /* 0x6CF50 */
+    }
+
+    if (pStores->anLineAux[nRow] != 0) {                                     /* 0x6CF6C */
+        return;                                                              /* 0x6CFF0 */
+    }
+
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 1;                                          /* 0x6CF78 */
+    }
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(7, pEnv->pUser);                                 /* 0x6CF84 */
+    }
+    if (pEnv->pLines != NULL) {
+        /* 0x6CFA4. The index is re-read LDRB at 0x6CF8C, so a -1 selection appends 255. */
+        UiLineList_AppendWithSound(pEnv->pLines, 27, (u32)(u8)nShip, 0u, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pUser);
+    }
+
+    const Ship *pCraft = (pEnv->apCraft != NULL && nShip >= 0 && pEnv->apCraft[nShip] != NULL)
+                             ? pEnv->apCraft[nShip] : NULL;
+    if (pEnv->aTopics != NULL && pCraft != NULL &&
+        pEnv->aTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked != 0 &&
+        (i32)pCraft->bCraftType == CRAFT_TYPE_AVENGER) {                    /* 0x6CFA8 / 0x6CFD8 */
+        if (pEnv->pbFinalMissionCtl != NULL) {
+            *pEnv->pbFinalMissionCtl = 1;                                    /* 0x6CFE0 */
+        }
+    }
+
+    if (pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac is a store of 1 to 0x15961C */
+    }
+}
+
 void OptionsScreen_Init(OptionsInitEnv *pEnv)
 {
     if (pEnv == NULL || pEnv->pCtl == NULL || pEnv->pbControlsExist == NULL) {

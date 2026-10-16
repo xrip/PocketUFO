@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 912 / 1103 (82.7%)
-                                             bytes cited:     486292 / 598792 (81.2%)
-python docs/parity/audit_credits.py       -> credited functions: 912, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 409 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 913 / 1103 (82.8%)
+                                             bytes cited:     486552 / 598792 (81.3%)
+python docs/parity/audit_credits.py       -> credited functions: 913, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 412 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 222, ORIGINAL BUG markers in src/pufo: 85
+python docs/parity/audit_bugs.py          -> ledger rows: 223, ORIGINAL BUG markers in src/pufo: 85
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,16 +229,33 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13683**. Coverage as of the latest commit: **912 / 1103
-functions (82.7%)**, **486292 / 598792 bytes (81.2%)**. This unit ported the options screen's overlay —
-`OptionsScreen_Open` (0x6d0ac, 3,160 B) — which was the last callee `Geoscape_CloseUI` case 18 reached
-through a hook, so the whole case-18 chain is now ported code calling ported code. It is a toggle on
-`bOptionsScreenOpen`: the close half clears `nGeoscapeScreen` and the flag and releases four panels plus the
-two scroll controls, and **that flag clear at 0x6DC40 is what ends the case-18 / SaveAudioSettings
-recursion** — case 18 re-reads the flag at 0x8BD10 only after the callee returns, so an inner
-`OptionsScreen_Open(-1)` makes the outer pass skip its own options-open arm. The open half builds four
-parallel lists (names, stores, region, cargo) and writes one row per craft across all four. Four things the
-ARM showed: the base-walk bound is the signed byte at **0x159D80** reached as `[abFacilityGrid,#0x618]`
+Test checks run across the 60 suites: **13712**. Coverage as of the latest commit: **913 / 1103
+functions (82.8%)**, **486552 / 598792 bytes (81.3%)**. This unit ported the options overlay's row confirm —
+`OptionsScreen_OnConfirm` (0x6cf18, 260 B), the click handler `OptionsScreen_Open` installs on the names
+panel at 0x6D2E8 — so the overlay is a ported screen with a ported handler. The row is the names panel's
+`nUnk3032` and the craft is `pPanelName->anLineAux[nUnk3032]`, written into both selection globals before
+anything is tested; the gate is the **stores** panel's aux dword at the **same** index (0x6CF5C reloads
+`nUnk3032` from the names panel), so a craft that is not ready still selects itself and then does nothing
+else at all. Ready: `bMapSelectionFlag`, `Sound_Play(7, 4)`, a flag-27 message line carrying the craft index
+(the line `Smap_ResolveInterceptUI` answers with `Ship_RetargetTravel`), the final-mission arm, and
+`GameTime_Pause` on both arms of the topic test. **The two constants behind that arm are pinned against the
+shipped data files, not guessed.** lang.dat `TEXTS.DAT` is a 2-byte header plus 200-byte records
+(330002 = 2 + 200 × 1650) against the 205-byte in-memory stride; read that way TEXTS[415..419] are the five
+CraftType names, so `Ship` +2 == 2 is the **Avenger**, not the Interceptor. main.dat `RESEARCH.DAT` is 144
+records of 34 whose first u16 is the topic's TEXTS name index, and record 28 is 448 = "Цидония или разорение"
+at cost 6000 — the Cydonia topic. `Geoscape_Draw` @ 0x90908 blits `pFinalMissionCtl` and draws TEXTS[1236]
+"Финальная миссия!" while the byte is set, and both pointer dispatchers hit-test that control first, which is
+what `byte_187068` → `bFinalMissionCtlArmed` says. The same lang.dat read confirms unit 77's thirteen labels
+and they are IDB comments now. 29 new checks, 3 IDB renames, 21 comments, 1 ledger row (a latent
+out-of-bounds `apCraft[-1]` at 0x6CFD8).
+Unit 77 ported the overlay itself — `OptionsScreen_Open` (0x6d0ac, 3,160 B), the last callee
+`Geoscape_CloseUI` case 18 reached through a hook, so the whole case-18 chain is ported code calling ported
+code. It is a toggle on `bOptionsScreenOpen`: the close half clears `nGeoscapeScreen` and the flag and
+releases four panels plus the two scroll controls, and **that flag clear at 0x6DC40 is what ends the
+case-18 / SaveAudioSettings recursion** — case 18 re-reads the flag at 0x8BD10 only after the callee returns,
+so an inner `OptionsScreen_Open(-1)` makes the outer pass skip its own options-open arm. The open half builds
+four parallel lists (names, stores, region, cargo) and writes one row per craft across all four. Four things
+the ARM showed: the base-walk bound is the signed byte at **0x159D80** reached as `[abFacilityGrid,#0x618]`
 (because the `LDREQ` of `0x1139B8` at 0x6D0F0 is conditional and did not run — Hex-Rays hides this);
 `stru_AB9B0` is **not** two identical records but "up"/"sup" at (20,180) and "down"/"sdown" at (50,180); the
 stores labels are TEXTS 149–152 and the region labels TEXTS 1165–1167, 1036 and 1168–1172, switched on
@@ -785,7 +802,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 222 rows, 85 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 223 rows, 85 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -912,8 +929,8 @@ atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in u
 unit 71 — was the last game-behaviour gap in the subsystem.
 
 `strat` is still the weakest subsystem by bytes: 107,548 of 160,496 (67.0%), and `Geoscape_Draw` alone is
-33,744 of the 55,048 left. Both geoscape pointer handlers and the map select test they call are in now.
-`strat-ui` is 223 of 245 functions but 84,012 of 121,164 bytes (69.3%) — the small screen handlers are in, the
+33,744 of the 52,948 left. Both geoscape pointer handlers and the map select test they call are in now.
+`strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
@@ -1546,18 +1563,19 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 223 of 245 functions and 84,012 of 121,164 bytes (69.3%). The buy/sell, transfer,
+`strat-ui` is 224 of 245 functions and 84,272 of 121,164 bytes (69.6%). The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
-`FundingScreen_DrawExtended` (0x5b59c) in this one — the report groups those four under `strat`, which
-moves to 184 of 204 functions and 86,792 of 160,496 bytes with 20 functions / 73,704 bytes left. What
+`FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
+188 of 204 functions and 107,548 of 160,496 bytes (67.0%), 16 functions / 52,948 bytes left. What
 is left in `strat-ui` is
-22 functions / 37,152 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
+21 functions / 36,892 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
 (`Ufopaedia_*`), and the base-attack screen's update/draw pair. The options screen is complete:
-`OptionsScreen_Init`, `OptionsScreen_Open` (0x6d0ac) and its handlers, with only
-`OptionsScreen_OnConfirm` (0x6cf18, 260 B) still a thunk because the click slot takes no arguments.
+`OptionsScreen_Init`, `OptionsScreen_Open` (0x6d0ac) and `OptionsScreen_OnConfirm` (0x6cf18) are all ported;
+the click slot still reaches the last one through a thunk because the slot takes no arguments, which is the
+`OptionsScreenHooks` shape §7 records as a separate issue.
 
 ### Priority 5 — housekeeping
 
@@ -1578,7 +1596,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 409 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 412 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

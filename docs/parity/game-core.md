@@ -15114,3 +15114,65 @@ TEXTS[149] for short fuel, and "EUROPE--2" for a region label built from TEXTS[1
 BaseRec.bUnk16. The signed base match is pinned by a mode of -3 finding a bUnk4 of 0xFD. Case 18's
 recursion is now asserted through the overlay's own state -- the flag clear at 0x6DC40 and the released
 panel slots -- rather than through a call counter, because the callee is real.
+## Unit 78 -- OptionsScreen_OnConfirm @ 0x6cf18 (260 B)
+
+Ported in src/pufo/game/pufo_baseui.c as OptionsScreen_OnConfirm over an OptionsConfirmEnv, with the
+evidence block in pufo_baseui.h. It is the names panel's click handler: OptionsScreen_Open installs it
+at +0xC of the panel at 0x159E18 (0x6D2E8), so confirming a row of the options overlay is what this
+unit is about.
+
+What it does, in the ARM's order:
+
+- 0x6CF3C..0x6CF50: the row is the NAME panel's nUnk3032 (UiPanel_ClickRow set it), and the craft the
+  row stands for is pPanelName->anLineAux[nUnk3032] -- OptionsScreen_Open wrote the craft index into
+  that aux dword. Both selection globals are set from it, nStrategIndex @ 0x159E74 and
+  nSelectedShipIdx @ 0x187054.
+- 0x6CF5C..0x6CF6C: the gate is the STORES panel's aux dword at the SAME index -- 0x6CF5C reloads
+  nUnk3032 from the names panel, not from the stores panel. OptionsScreen_Open leaves that aux at 0
+  only when uRangeRemain == uRangeMax AND nFuel == uFuelMax AND bAtBase != 0, so a non-zero aux means
+  "not ready" and the confirm does nothing at all: no flag, no sound, no message line, no pause. The
+  original returns the stores-panel pointer here (0x6CFF0).
+- 0x6CF78: bMapSelectionFlag = 1. 0x6CF84: Sound_Play(7, 4) -- sample 7 with the second argument 4
+  every other caller passes.
+- 0x6CFA4: UiPanel_AppendLineWithSound over the root message list, flag 27, the craft index in colour
+  slot 0. 0x6CF8C re-reads the index with LDRB, so a -1 selection appends 255. Flag 27 is the line
+  Smap_ResolveInterceptUI @ 0x84964 answers with Ship_RetargetTravel, so picking a row arms a travel
+  order for that craft.
+- 0x6CFA8..0x6CFE0: aResearchTopics[28].bUnlocked (LDRB [R0,#0x3B8]) AND
+  apCraft[nSelectedShipIdx]->bCraftType == 2 (LDRB [R3,#2]) arms byte_187068.
+- 0x6CFE4: GameTime_Pause, on both arms of the topic test.
+
+The two constants are pinned against the shipped data files, not guessed. lang.dat TEXTS.DAT is a
+2-byte header plus 200-byte records (330002 = 2 + 200 * 1650), while the in-memory table is 205 bytes
+per record; reading it that way gives TEXTS[415..419] = "Рэйнджер", "Молния", "Мститель",
+"Перех-чик", "Огн. шторм" -- CraftType 0..4, so the byte at Ship +2 == 2 is the Avenger, not the
+Interceptor. main.dat RESEARCH.DAT is 144 records of 34 bytes whose first u16 is the topic's TEXTS
+name index; record 28 is 0x1C0 = 448 = "Цидония или разорение" with a research cost of 6000, the
+Cydonia topic. Geoscape_Draw @ 0x90908 then blits the pad of unk_186B8C and draws TEXTS[1236]
+("Финальная миссия!", at 0xF1694) centred on unk_186BA4 while the byte is set, and
+Geoscape_OnPointer @ 0x87590 / Geoscape_OnPointerUp @ 0x8971c hit-test that control before anything
+else in their default arm. So byte_187068 is the final-mission button's armed flag, and confirming a
+ready Avenger once Cydonia is researched is what arms it.
+
+The same lang.dat read also confirms the thirteen records unit 77 renamed: 149 "Ремонт", 150
+"Заправка", 151 "Готов", 152 "На миссии" (the four craft states in the stores column) and 1036
+"Азия", 1165 "С.Аме", 1166 "Ю.Аме", 1167 "Евро", 1168 "Авст", 1169 "Афр.", 1170 "Анта", 1171 "Аркт.",
+1172 "Кан" (the nine region abbreviations in the region column). Those strings are now comments on
+the thirteen globals in the IDB.
+
+IDB: byte_187068 renamed bFinalMissionCtlArmed, unk_186B8C renamed pFinalMissionCtl, unk_F1694 renamed
+aTextRec1236, plus a function comment at 0x6CF18 and line comments at 0x6CF8C (the LDRB that turns -1
+into 255), 0x6CFA8 (topic 28 is Cydonia), 0x6CFD8 (CraftType 2 is the Avenger), 0x90908 (the button
+draw) and the fourteen TEXTS globals.
+
+Ledger: 0x6cfd8 recorded as a latent out-of-bounds read -- the craft test indexes apCraft with the raw
+dword from 0x187054 with no bound check, so a -1 selection would read the pointer four bytes before
+the array at 0x114A60. Nothing in the image writes -1 into the names panel's anLineAux, so no path
+reaches it; the port checks the index and skips a null slot.
+
+29 new checks in tests/test_closeui.c (303 in that suite). The main case is reached through
+UiPanel_ClickRow on the panel OptionsScreen_Open built, so the click slot the original installed is
+the slot under test. The gate case asserts the opposite of a naive reading: the two selection globals
+ARE written before the readiness gate, and only the flag, the sound, the line, the button and the
+pause are skipped. A separate case sets the names panel's nUnk3032 to a row the stores panel does not
+have ready at the same index, which is only observable because both aux arrays share one index.

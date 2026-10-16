@@ -2331,6 +2331,26 @@ Order is by what unblocks what. Each item ends with gates + commit.
   (82.7%) and 486292/598792 (81.2%); `strat-ui` moves from 80,852 to 84,012 of 121,164 bytes (69.3%). IDB:
   13 renames (409 on record) and 5 comments.
 
+- [x] **part 78, the overlay row confirm: `OptionsScreen_OnConfirm (0x6cf18, 260 B)`** — the names panel's
+  click handler, installed at 0x6D2E8 by `OptionsScreen_Open`. The row is the names panel's `nUnk3032` and
+  the craft is `pPanelName->anLineAux[nUnk3032]`, written into both `nStrategIndex` @ 0x159E74 and
+  `nSelectedShipIdx` @ 0x187054. The gate is the **stores** panel's aux dword at the **same** index
+  (0x6CF5C reloads `nUnk3032` from the names panel): non-zero means not ready and the confirm does nothing
+  at all — no flag, no sound, no line, no pause. Ready: `bMapSelectionFlag = 1`, `Sound_Play(7, 4)`, a
+  flag-27 message line carrying the craft index (what `Smap_ResolveInterceptUI` answers with
+  `Ship_RetargetTravel`), the final-mission arm, then `GameTime_Pause` on both arms of the topic test.
+  **The two constants are pinned against the shipped data, not guessed.** lang.dat `TEXTS.DAT` is a 2-byte
+  header plus 200-byte records (330002 = 2 + 200 × 1650) against the 205-byte in-memory stride; read that
+  way TEXTS[415..419] are the five CraftType names, so `Ship` +2 == 2 is the **Avenger**, not the
+  Interceptor. main.dat `RESEARCH.DAT` is 144 records of 34 whose first u16 is the topic's TEXTS name index;
+  record 28 is 448 = "Цидония или разорение" at cost 6000 — the Cydonia topic. `Geoscape_Draw` @ 0x90908
+  blits `pFinalMissionCtl` and draws TEXTS[1236] "Финальная миссия!" while the byte is set, and both pointer
+  dispatchers hit-test that control first. So `byte_187068` is the final-mission button's armed flag. The
+  same read confirms unit 77's thirteen labels and they are now IDB comments.
+  **1 ledger row (223 on record), 85 markers** — a latent out-of-bounds `apCraft[-1]` at 0x6CFD8. 29 new
+  checks (13712 total, 60 suites), coverage 913/1103 (82.8%) and 486552/598792 (81.3%); `strat-ui` moves to
+  224/245 functions and 84,272 of 121,164 bytes (69.5%). IDB: 3 renames (412 on record) and 21 comments.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2662,6 +2682,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the screen close dispatcher (`Geoscape_CloseUI`; the head, the speed chain against `g_aGeoscapeSpeedSec` and its 3600 double call, the 17-case switch, the per-base needed-flag rebuild, the mutual recursion with `Options_SaveAudioSettings`, the five-slot funding bar and the strict -3000000 limit, 11 ledger rows) | 60/60 (Release) | 13583 | 910/1103 (82.5%) | 482796/598792 (80.6%) | 40 checked, 0 mismatched |
 | the audio-save callee (`Options_SaveAudioSettings`; all three arguments dead, the recursion's real two-pass shape via `OptionsScreen_Init` clearing the controls byte, the tab-4-only registry write, the pause-resume tail, 5 IDB renames with one corrected in the same unit) | 60/60 (Release) | 13632 | 911/1103 (82.6%) | 483132/598792 (80.7%) | 40 checked, 0 mismatched |
 | the options overlay (`OptionsScreen_Open`; the toggle, the four-panel release, the signed base match against `BaseRec.bUnk4`, the four-column craft rows, the TEXTS 149–152 / 1165–1172 labels, the uninitialised region label found) | 60/60 (Release) | 13683 | 912/1103 (82.7%) | 486292/598792 (81.2%) | 40 checked, 0 mismatched |
+| the overlay row confirm (`OptionsScreen_OnConfirm`; the shared aux index behind the readiness gate, the flag-27 travel-order line, the final-mission arm pinned to the Cydonia topic and the Avenger through the shipped data files, 1 latent out-of-bounds row) | 60/60 (Release) | 13712 | 913/1103 (82.8%) | 486552/598792 (81.3%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
