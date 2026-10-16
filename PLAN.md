@@ -2396,6 +2396,36 @@ Order is by what unblocks what. Each item ends with gates + commit.
   915/1103 (83.0%) and 487624/598792 (81.4%); `strat` moves to 190/204 functions and 108,620 of
   160,496 bytes (67.7%). IDB: 3 renames (416 on record) and 5 comments.
 
+- [x] **part 81, the geoscape event pass: `StrategList_ProcessEvents (0x7fcb0, 4,904 B)` +
+  `Strateg_ConfirmInterceptTarget (0x7fb98, 280 B)`** — the per-tick update of every strateg entry,
+  wired into the shell as `World_ProcessEvents` so the spawn hooks reach it back. A removal does not
+  advance the loop index (0x805FC jumps back to 0x7FCF0 with the counter unchanged, because the tail
+  shifted into the hole), and a craft-to-craft arrival tail-calls the epilogue at 0x80FCC, ending the
+  whole pass there.
+  **Three things only the ARM showed.** `_rt_udiv` is called with the **DIVISOR in R0 and the DIVIDEND
+  in R1** — `Geoscape_AdvanceTime` loads 60 / 3600 / 86400 into R0 against an elapsed-seconds R1 — so
+  travel completion is `elapsed / 60 >= uTravelMin` and never `60 / elapsed`. The interpolation constant
+  at 0x80A80 / 0x80B98 / 0x80C70 / 0x80D70 is the double 0x3F911111_11111111, **exactly 1/60** (exponent
+  field 0x3F9 = 2^-6, mantissa 1 + 1/15 = 16/15). The arrival dispatch **re-reads** `Ship.nStrategIdx`
+  and calls `PtrArray_Get` for each of its six type tests (0x8036C..0x803F8); the pseudocode's single
+  `pTargetItem` hides that the original would follow a list that shifted in between.
+  The x leg keeps the winner of |dx+800| / |-dx+800| / |dx| (a target 500 columns east is reached by
+  going 300 WEST), `dFracX` / `dFracY` accumulate over the true diagonal, and an inactive visible
+  type-1 entry is the craft's OWN map marker, matched by `Ship.bId == StrategItem.nDisplayId`.
+  **ORIGINAL BUG (0x7FBE8):** the assault offer asks `Craft_CountSoldiersAboard` with `Ship.bId`, while
+  that callee matches its argument against `Soldier.bUnk183`, an apCraft INDEX; the two agree only while
+  no craft has ever been removed. Reproduced.
+  **Naming, and the defect it exposed.** 0x159E74 is an apCraft INDEX: 0x3DE84, 0x3DF5C and 0x3DF88 all
+  index `Map.apCraft` with it and only then read `Ship.nStrategIdx @ +0x38`. The port carried this field
+  as `nStrategIndex` in nine environments; it is `pnMsgShipIdx` / `nMsgShipIdx` now, and the rename
+  showed that all three `Tact_Shutdown` removals passed the 0x159E74 value as the **list** index instead
+  of the craft's `nStrategIdx` — a mission ended by a craft whose list position and craft index differ
+  removed the wrong contact. Fixed on both paths, with two tests that fail on the old code.
+  **1 ledger row (226 on record), 89 markers.** 105 new checks (13890 total, 60 suites), coverage
+  917/1103 (83.1%) and 492808/598792 (82.3%); `strat` moves to 192/204 functions and 113,804 of
+  160,496 bytes (70.9%). IDB: 2 renames (418 on record), 1 size fix (0x159E74, 1 byte → dword; both
+  save paths move 4 bytes) and 3 comments.
+
 - **Consequence for the ordering.**
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
@@ -2732,6 +2762,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the overlay row confirm (`OptionsScreen_OnConfirm`; the shared aux index behind the readiness gate, the flag-27 travel-order line, the final-mission arm pinned to the Cydonia topic and the Avenger through the shipped data files, 1 latent out-of-bounds row) | 60/60 (Release) | 13712 | 913/1103 (82.8%) | 486552/598792 (81.3%) | 40 checked, 0 mismatched |
 | the map-order answer (`Smap_ResolveInterceptUI`; the flag-13 path that skips the armed-byte clear, the three dismiss tests that each re-read a shifting line 0, the unconditional tail removal found, the `0x187068` naming follow-through) | 60/60 (Release) | 13750 | 914/1103 (82.9%) | 486892/598792 (81.3%) | 40 checked, 0 mismatched |
 | the map recentre click (`Smap_OnPointerUp`; the ceil half-extents, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
+| the geoscape event pass (`StrategList_ProcessEvents`, `Strateg_ConfirmInterceptTarget`; the `_rt_udiv` divisor-first convention, the exact 1/60 interpolation constant, the six re-reads behind the arrival dispatch, the wrapped-leg winner, the fractional diagonal, 1 original bug found, the 0x159E74 naming fix and the `Tact_Shutdown` wrong-index removal it exposed) | 60/60 (Release) | 13890 | 917/1103 (83.1%) | 492808/598792 (82.3%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

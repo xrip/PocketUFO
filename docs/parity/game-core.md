@@ -15265,3 +15265,64 @@ of the three globals.
 35 new checks in tests/test_geoscape.c: the selection arm on a two-craft fixture, the recentre at zoom
 mode 0/1/2, both nScrollY replace arms, the strip-height replace, the ceil halves on a 401x401 view, and
 the single wrap on a 100x100 view.
+
+## Unit 81 -- StrategList_ProcessEvents @ 0x7FCB0 (4,904 B) + Strateg_ConfirmInterceptTarget @ 0x7FB98 (280 B)
+
+Ported in src/pufo/game/pufo_strateg.c as StrategList_ProcessEvents over a StrategEventsEnv plus
+Strateg_ConfirmInterceptTarget; the evidence block is in pufo_strateg.h. The shell wires the pass as
+World_ProcessEvents in src/pufo/app/pufo_world.c, which the spawn hooks already reach, so the geoscape
+tick runs the real per-item update instead of the old stub.
+
+- One pass from index 0 with the count re-read per item. A removal does not advance the index: the ARM
+  jumps back to 0x7FCF0 with the counter unchanged because the tail shifted down into the hole (0x805FC).
+  var_DC, the ship index the previous item resolved, carries across items and starts at 0 (0x7FCE0).
+- Type 3 and 4 count nTimer down; at zero the contact EXPIRES (0x7FD2C): every craft bIntercepting it
+  gets message 13 with 0xFF in colour slot 0 and the ship index in slot 1 (the line
+  Smap_ResolveInterceptUI answers, whose slot 1 is the ship), an expired site takes 800 from
+  g_nFundPending (0x7FDC4), an expired UFO arms bSpawnReplacementOnce at 0x7FDE0, and the item is
+  removed. Type 1 only decrements its timer (0x80620) -- that is how a craft parked at 0xFFFF idles.
+- An inactive but visible type-1 item is the CRAFT'S OWN map marker: the craft is the one whose Ship.bId
+  equals StrategItem.nDisplayId (0x7FE58), and bAtBase gates the whole travel block (0x7FE88).
+- The x leg is the wrapped 800-wide minimum, but the winner is kept: |dx+800|, |-dx+800| and |dx| are all
+  computed and the plain one wins whenever it is smaller, so a target 500 columns east is reached by
+  going 300 WEST. nTravelStartSec is the leg length and bTravelDir its sign (0x7FEE8..0x7FF50).
+- dFracX / dFracY accumulate dTrackA * leg / sqrt(leg*leg + other*other); the integer part moves into
+  nX/nY each pass and the remainder stays (0x80418..0x80504), so the marker follows the true diagonal.
+- Travel completion is (u32)(nGameTotalSec - nTravelEpochSec) / 60 >= uTravelMin. _rt_udiv takes the
+  DIVISOR in R0 and the DIVIDEND in R1 here -- Geoscape_AdvanceTime @ 0x5CE80 / 0x5CEDC / 0x5CF30 load
+  60, 3600 and 86400 into R0 against an elapsed-seconds R1 -- so it is elapsed/60 and never 60/elapsed.
+- LABEL_84 re-derives nX/nY from the clock instead of stepping them. The constant at 0x80A80 / 0x80B98 /
+  0x80C70 / 0x80D70 is the double 0x3F911111_11111111, exactly 1/60 (exponent field 0x3F9 = 2^-6,
+  mantissa 1 + 1/15 = 16/15), so the fraction is elapsed * extent * (1/60) / uTravelMin.
+- Arrival (|dx| < 2 and |dy| < 2) dispatches on the TARGET's type, re-read from the list for every one of
+  the six tests (0x8036C..0x803F8): 5 aborts, 3 offers the terror assault with TEXTS[1146], 4 is a UFO
+  contact with TEXTS[1147] and pauses by storing 1 straight into 0x15961C, 0 with bActive is an alien base
+  with TEXTS[1145] and nRadarPulseTimer = 250, and 1 is another craft -- that one tail-calls
+  Strateg_ConfirmInterceptTarget at 0x80FCC and the WHOLE pass ends there.
+- Landing (0x80DD4): nX wrapped once, then an inactive marker with nMissionSub 1 and its leg over sets
+  bAtBase = 1, bContactMsg = 0, nMissionSub = 0, bVisible = 0 and runs the tactical loot transfer.
+
+- ORIGINAL BUG (0x7FBE8): the assault offer asks Craft_CountSoldiersAboard whether the chased craft
+  carries anyone, but that callee matches its third argument against Soldier.bUnk183, an apCraft INDEX,
+  while 0x7FBE8 passes Ship.bId, the running id handed out from 0x186550. The two agree only while no
+  craft has ever been removed. Reproduced.
+- Deviations, listed in the header rather than hidden: the port stops when no craft matches instead of
+  dereferencing apCraft[nCraftCount] (0x7FE7C); it skips NULL craft slots; it returns the count at every
+  exit where the original returns a pointer at 0x80FCC / 0x80FC4; and the sub-envs the shell does not own
+  yet (pRadarEnv, pLootEnv, pMissionCtx, pShipEnv) are guarded NULL.
+
+Naming fix this unit forced: 0x159E74 is an apCraft INDEX, not a strateg index -- 0x3DE84, 0x3DF5C and
+0x3DF88 all index Map.apCraft with it and only then read Ship.nStrategIdx @ +0x38. The port called this
+field nStrategIndex in nine environments; it is pnMsgShipIdx / nMsgShipIdx now. The rename exposed a real
+defect in Tact_Shutdown: all three StrategList_RemoveAt calls passed the 0x159E74 value as the LIST index
+instead of the craft's nStrategIdx, so a mission ended by a craft whose list position and craft index
+differ removed the wrong contact. Two new tests pin both branches.
+
+IDB: bBaseAtNeedsInit -> bSpawnReplacementOnce (five writers at 0x3658C / 0x3DF48 / 0x58718 / 0x6097C /
+0x7FDE0, one reader at 0x82B3C), unk_18641C -> pStatusPanel, 0x159E74 resized from 1 byte to a dword
+(Save_WriteStrateg @ 0x3FE0C and Save_ReadStrateg @ 0x411B0 both move 4 bytes), plus function comments at
+0x7FCB0, 0x7FB98 and 0x7FBE8.
+
+99 new checks in tests/test_strateg.c (the type-3/4 expiry, the wrapped-leg sign, the fractional advance,
+the arrival dispatch for each target type, the clock interpolation, the landing and the three TEXTS
+captions) and 6 in tests/test_tactend.c (the outcome removal on both paths).

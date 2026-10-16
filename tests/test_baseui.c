@@ -4598,7 +4598,7 @@ static void TestRadarListClick(void)
     env.pTime = &clock;                                                                       \
     env.pWorld = &world;                                                                      \
     env.pnSelectedShipIdx = &nShipSel;                                                        \
-    env.pnStrategIndex = &nStratIdx;                                                          \
+    env.pnMsgShipIdx = &nStratIdx;                                                          \
     env.pnScreenId = &nScreen;                                                                \
     env.pbFlag1870A0 = &f1870A0;                                                              \
     env.pbFlag18708C = &f18708C;                                                              \
@@ -6656,7 +6656,7 @@ static void TestSetWaypoint(void)
     shipEnv.pStrategList = &list; shipEnv.pWorld = &world;                   \
     nStratIdx = -1; nShipSel = -1;                                           \
     memset(&env, 0, sizeof(env));                                            \
-    env.pLines = &lines; env.pnStrategIndex = &nStratIdx;                    \
+    env.pLines = &lines; env.pnMsgShipIdx = &nStratIdx;                    \
     env.pnSelectedShipIdx = &nShipSel; env.pShipEnv = &shipEnv;              \
     env.pTime = &clock;
 
@@ -6706,7 +6706,7 @@ static void TestSetWaypoint(void)
     CheckEqI32(lines.abLineFlags[0], 11, "  the line work still runs");
 
     WP_BEGIN(1);
-    env.pnStrategIndex = NULL;
+    env.pnMsgShipIdx = NULL;
     env.pnSelectedShipIdx = NULL;
     Smap_SetWaypoint(&env);
     CheckEqI32(lines.abLineFlags[0], 11, "two null index outputs still leave the rest intact");

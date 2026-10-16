@@ -7,8 +7,10 @@
 #include "audio/pufo_audio.h"    /* Sound_Play, behind the AppendWithSound hook */
 #include "util/pufo_ptrarray.h"
 #include "ui/pufo_linelist.h"  /* UiLineList_Remove, for Smap_ClearSelection */
+#include "ui/pufo_panel.h"     /* UiPanel, the status panel the event pass captions */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 static i32 Abs32(i32 n)
@@ -945,6 +947,496 @@ u8 Smap_DismissSelected(const ShipRemovalEnv *pShipEnv, UiLineList *pLines,
     return 0;
 }
 
+/* ------------------------------------------------- the geoscape event pass
+ *
+ * StrategList_ProcessEvents @ 0x7fcb0 and its dogfight tail
+ * Strateg_ConfirmInterceptTarget @ 0x7fb98. The evidence map is on StrategEventsEnv in
+ * the header; the addresses below are the per-step receipts. */
+
+/* The three arrival captions, TEXTS records the original reaches through 0xB38D0. */
+#define PUFO_CAP_ALIEN_BASE_TEXT 1145   /* "База пришельцев" */
+#define PUFO_CAP_TERROR_TEXT     1146   /* "Район террора"  */
+#define PUFO_CAP_UFO_TEXT        1147   /* "НЛО"            */
+
+/* 0x80A80, 0x80B98, 0x80C70, 0x80D70: the double 0x3F911111_11111111 -- exponent field 0x3F9
+ * (2^-6) with mantissa 1 + 1/15 = 16/15, which is exactly 1/60. The travel interpolation
+ * multiplies the elapsed seconds by it before dividing by uTravelMin. */
+#define STRATEG_SEC_TO_MIN (1.0 / (double)GAME_SECONDS_MINUTE)
+
+/* _rt_udiv as this binary calls it: DIVISOR in R0, DIVIDEND in R1. Geoscape_AdvanceTime settles
+ * the order beyond doubt -- 0x5CE80, 0x5CEDC and 0x5CF30 load 60, 3600 and 86400 into R0 against
+ * an elapsed-seconds R1, and those are the minute/hour/day divisors the tick counts need.
+ * UNSIGNED, so a negative elapsed value arrives as a huge quotient, exactly as the original's
+ * does. */
+static i32 UdivMinutes(i32 nElapsedSec)
+{
+    return (i32)((u32)nElapsedSec / (u32)GAME_SECONDS_MINUTE);
+}
+
+static Ship *WorldCraft(const GeoscapeWorld *pWorld, i32 nIdx)
+{
+    if (pWorld == NULL || pWorld->apCraft == NULL) {
+        return NULL;
+    }
+    if (nIdx < 0 || nIdx >= (i32)pWorld->nShipCount) {
+        return NULL;
+    }
+    return pWorld->apCraft[nIdx];
+}
+
+static const char *StrategCaption(const StrategEventsEnv *pEnv, i32 nTextRec)
+{
+    return (pEnv->pTextRecs != NULL) ? (pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nTextRec) : "";
+}
+
+/* The status panel's row 0, written by all four arrival cases and by the assault offer:
+ * strcpy(TEXTS prefix) + strcat(j_itoa(number)) copied into apLines[0], then anLineAux[0] and
+ * nUnk3032 = 0 (0x8069C..0x80760, and the same shape at 0x807E8, 0x808B4, 0x80F18). With
+ * pszCaption NULL only the two aux fields are written, which is what the confirm does at
+ * 0x7FC48. Deviation: the original's copy loop runs to the NUL with no bound; the port clamps
+ * to the 50-byte line buffer UiPanel_ctor allocates. */
+static void StatusPanelRow0(struct UiPanel *pPanel, bool bWriteCaption,
+                            const char *pszPrefix, i32 nNumber, i32 nAux)
+{
+    char szCaption[104];   /* var_CC, the original's strcat target */
+
+    if (pPanel == NULL) {
+        return;
+    }
+    if (bWriteCaption && pPanel->apLines[0] != NULL) {
+        snprintf(szCaption, sizeof(szCaption), "%s%d",
+                 pszPrefix != NULL ? pszPrefix : "", (int)nNumber);
+        snprintf((char *)pPanel->apLines[0], PUFO_PANEL_LINE_BYTES, "%s", szCaption);
+    }
+    pPanel->anLineAux[0] = nAux;      /* 0x80748 */
+    pPanel->nUnk3032 = 0;             /* 0x80760 */
+}
+
+/* Strateg_ConfirmInterceptTarget @ 0x7fb98, the tail call a craft-to-craft arrival makes once the
+ * intercept pair (nInterceptShipIdx / nInterceptStrategIdx) has been written.
+ *
+ * 1. Target's nTimer already <= 0 (0x7FBBC): open the radar screen, which is the dogfight.
+ * 2. Otherwise the craft carries soldiers (0x7FBE8): offer the ground assault -- 0x159E74 takes the
+ *    ship index, the status panel's row 0 takes the target index in anLineAux and 0 in nUnk3032,
+ *    message 23 goes on with the intercept pair in colour slots 0 and 1, and nRadarPulseTimer is
+ *    parked at 250 (0x7FC84).
+ * 3. Otherwise (0x7FBF4): park the CRAFT's own item timer at 0xFFFF. That is the abort -- the next
+ *    passes take the `nTimer > 0` decrement path at 0x80620 and the marker does not move for
+ *    65535 passes.
+ *
+ * ORIGINAL BUG (0x7FBE8), reproduced: Craft_CountSoldiersAboard compares Soldier.bUnk183 against
+ * its second argument, and bUnk183 is an apCraft INDEX (Ship_RemoveWithCargo renumbers Ship.nSlotIdx
+ * the same way and baseui reads apCraft[bUnk183]). Here the argument is Ship.bId, the id from
+ * dword_186550 that StrategList_FindIdxForShip matches against nDisplayId. The two agree only while
+ * no craft has ever been removed; after a removal the compaction shifts the indices and this counts
+ * the crew of a different craft, or none. */
+void Strateg_ConfirmInterceptTarget(const StrategEventsEnv *pEnv)
+{
+    StrategList view;
+    StrategItem *pOwn;
+    Ship *pShip;
+    const StrategItem *pTarget;
+    i32 nOwnIdx;
+
+    if (pEnv == NULL || pEnv->pList == NULL || pEnv->pnInterceptShipIdx == NULL
+        || pEnv->pnInterceptStrategIdx == NULL) {
+        return;
+    }
+
+    pTarget = (const StrategItem *)PtrArray_Get(pEnv->pList, *pEnv->pnInterceptStrategIdx);
+    if (pTarget != NULL && pTarget->nTimer <= 0) {                    /* 0x7FBBC */
+        if (pEnv->pRadarEnv != NULL) {
+            (void)RadarScreen_SetActive(pEnv->pRadarEnv, 1);          /* 0x7FCA4 */
+        }
+        return;
+    }
+
+    pShip = WorldCraft(pEnv->pWorld, *pEnv->pnInterceptShipIdx);
+    if (pShip == NULL) {
+        return;                    /* deviation: the original faults on a bad slot */
+    }
+
+    if (Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                  (i32)pShip->bId) != 0) {            /* 0x7FBE8 */
+        if (pEnv->pnMsgShipIdx != NULL) {
+            *pEnv->pnMsgShipIdx = *pEnv->pnInterceptShipIdx;        /* 0x7FC38 */
+        }
+        StatusPanelRow0(pEnv->pStatusPanel, false, NULL, 0,
+                        *pEnv->pnInterceptStrategIdx);                /* 0x7FC48, 0x7FC60 */
+        UiLineList_AppendWithSound(pEnv->pLines, 23,
+                                   (u32)(u8)*pEnv->pnInterceptShipIdx,
+                                   (u32)(u8)*pEnv->pnInterceptStrategIdx, 0u, 0u,
+                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x7FC78 */
+        if (pEnv->pnRadarPulseTimer != NULL) {
+            *pEnv->pnRadarPulseTimer = 250;                           /* 0x7FC84 */
+        }
+        return;
+    }
+
+    /* The port carries two views of the one strateg list (see CountActiveCraft above); this is the
+     * same smallest honest bridge, because FindIdxForShip walks the list globals only. */
+    view.apItems = (StrategItem **)pEnv->pList->apItems;
+    view.nCount = pEnv->pList->nCount;
+    view.nNextDisplayId = 0;
+    view.nNextSiteId = 0;
+    nOwnIdx = StrategList_FindIdxForShip(&view, pEnv->pWorld, *pEnv->pnInterceptShipIdx); /* 0x7FBF4 */
+    pOwn = (StrategItem *)PtrArray_Get(pEnv->pList, nOwnIdx);         /* 0x7FC04 */
+    if (pOwn != NULL) {
+        pOwn->nTimer = 0xFFFF;                                        /* 0x7FC10 */
+    }
+}
+
+/* What one item does. The three answers are the original's three exits: keep going, remove this
+ * item and keep going at the SAME index, or leave the whole pass. */
+typedef enum { kItemNext, kItemRemove, kItemStop } StrategItemStep;
+
+static StrategItemStep StrategProcessItem(const StrategEventsEnv *pEnv, i32 nItem, i32 *pnShipIdx)
+{
+    StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pList, nItem);   /* 0x7FCFC */
+    StrategItem *pTarget;
+    const i32 nType = (i8)pItem->nType;                                     /* LDRSB at 0x7FD00 */
+    i32 nShipLoop = *pnShipIdx;                                             /* 0x7FCE8: R7 = var_DC */
+
+    if (pItem == NULL) {
+        return kItemNext;
+    }
+
+    /* 0x7FD04: a terror site or a UFO counts down, and reaching zero EXPIRES the contact. */
+    if (nType == 3 || nType == 4) {
+        const i32 nTimer = pItem->nTimer;
+        if (nTimer > 0) {
+            pItem->nTimer = nTimer - 1;                                   /* 0x7FD24 */
+            if (nTimer != 1) {
+                return kItemNext;                                         /* 0x7FD28 */
+            }
+            *pnShipIdx = 0;                                               /* 0x7FD34 */
+            for (nShipLoop = 0; nShipLoop < (i32)pEnv->pWorld->nShipCount; ++nShipLoop) {
+                const Ship *pShip = WorldCraft(pEnv->pWorld, nShipLoop);
+                if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx == nItem) {
+                    /* 0x7FD88: 0xFF in slot 0 and the ship index in slot 1. Smap_ResolveInterceptUI
+                     * answers this line's flag 13 by moving slot 1 into a flag-11 line. */
+                    UiLineList_AppendWithSound(pEnv->pLines, 13, PUFO_LINE_COLOR_MAX,
+                                               (u32)(u8)nShipLoop, 0u, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser);
+                }
+            }
+            *pnShipIdx = nShipLoop;                                       /* 0x7FDB0, the craft count */
+            if (nType == 3 && pEnv->pnFundPending != NULL) {
+                *pEnv->pnFundPending -= 800;                              /* 0x7FDC4 */
+            }
+            if (nType == 4 && pEnv->pbSpawnOnce != NULL) {
+                *pEnv->pbSpawnOnce = 1;                                   /* 0x7FDE0 */
+            }
+            return kItemRemove;
+        }
+    }
+
+    if (nType != 1) {
+        return kItemNext;                                                 /* 0x7FDF8 */
+    }
+    if (pItem->nTimer > 0) {                                              /* 0x7FE04 -> 0x80620 */
+        pItem->nTimer -= 1;
+        return kItemNext;
+    }
+    if (pItem->bActive == 0 && pItem->bVisible == 0) {
+        return kItemNext;                                                 /* 0x7FE1C */
+    }
+
+    /* 0x7FE20: an inactive marker is the CRAFT'S OWN map entry, found by Ship.bId. */
+    if (pItem->bActive == 0) {
+        Ship *pOwn;
+        i32 nTargetIdx;
+
+        nShipLoop = 0;                                                    /* 0x7FE38 */
+        *pnShipIdx = 0;
+        while (nShipLoop < (i32)pEnv->pWorld->nShipCount) {
+            const Ship *pShip = WorldCraft(pEnv->pWorld, nShipLoop);
+            if (pShip != NULL && (i32)pShip->bId == pItem->nDisplayId) {  /* 0x7FE58 */
+                break;
+            }
+            ++nShipLoop;
+            *pnShipIdx = nShipLoop;
+        }
+        pOwn = WorldCraft(pEnv->pWorld, nShipLoop);
+        if (pOwn == NULL) {
+            /* Deviation: with no match the original leaves the index at nCraftCount and
+             * dereferences apCraft[nCraftCount] right here (0x7FE7C) and again at 0x7FEA4. */
+            return kItemNext;
+        }
+        if (pOwn->bAtBase != 0) {
+            return kItemNext;                                             /* 0x7FE88 */
+        }
+
+        if (pOwn->bIntercepting == 0) {
+            goto travelled;                                               /* 0x7FEB4 -> 0x80528 */
+        }
+
+        nTargetIdx = pOwn->nStrategIdx;
+        pTarget = (StrategItem *)PtrArray_Get(pEnv->pList, nTargetIdx);   /* 0x7FEC4 */
+        if (pTarget == NULL) {
+            return kItemNext;                    /* deviation: the original faults */
+        }
+        {
+            /* 0x7FED8 reads the SAME item a second time for nY; one read is enough here. */
+            const i32 nTargetX = pTarget->nX;
+            const i32 nTargetY = pTarget->nY;
+            const i32 nDx = nTargetX - pItem->nX;
+            const i32 nDy = nTargetY - pItem->nY;
+            i32 nLeg = Abs32(nDx + STRATEG_MAP_WRAP_X);                   /* 0x7FEF0 */
+            i8 nDir = 1;                                                  /* 0x7FEEC */
+            const i32 nWrap = Abs32(-nDx + STRATEG_MAP_WRAP_X);           /* 0x7FF08 */
+            const i32 nPlain = Abs32(nDx);                                /* 0x7FF28 */
+
+            if (nLeg > nWrap) {                                           /* 0x7FF18 */
+                nLeg = nWrap;
+                nDir = -1;
+            }
+            if (nLeg > nPlain) {                                          /* 0x7FF38 */
+                nLeg = nPlain;
+                nDir = (pItem->nX < nTargetX) ? 1 : -1;                   /* 0x7FF40..0x7FF50 */
+            }
+            pItem->bTravelDir = nDir;
+            pItem->nTravelStartSec = nLeg;
+
+            /* nLeg and nDy are never both zero on either of these two paths, so the ratio's
+             * denominator is never zero: all three wrap candidates vanish only when nDx is 0. */
+            if (pItem->nX != nTargetX) {                                  /* 0x7FF58 */
+                const double dR = sqrt((double)(nDy * nDy) + (double)(nLeg * nLeg));
+                const double dStep = ((double)nLeg * pItem->dTrackA) / dR;
+                pItem->dFracX = (nDir == 1) ? (dStep + pItem->dFracX)
+                                            : (pItem->dFracX - dStep);
+            }
+            if (nTargetY != pItem->nY) {                                  /* 0x80134 */
+                const double dR = sqrt((double)(nDy * nDy) + (double)(nLeg * nLeg));
+                const double dStep = (pItem->dTrackA * (double)Abs32(nDy)) / dR;
+                pItem->dFracY = (nTargetY > pItem->nY) ? (dStep + pItem->dFracY)
+                                                       : (pItem->dFracY - dStep);
+            }
+
+            /* 0x80348 / 0x80364: both legs under 2 means the craft is AT the target. The target's
+             * type decides what happens, and the original re-reads it from the list for every test
+             * (0x8036C, 0x80388, 0x803A4, 0x803C0, 0x803DC, 0x803F8). */
+            if (Abs32(pItem->nX - nTargetX) < 2 && Abs32(pItem->nY - nTargetY) < 2) {
+                switch ((i8)pTarget->nType) {
+                case 5:
+                    pEnv->pTime->bPaused = 1;                             /* 0x80634 GameTime_Pause */
+                    UiLineList_AppendWithSound(pEnv->pLines, 14, (u32)(u8)nShipLoop, 0u, 0u, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x80650 */
+                    pOwn->bIntercepting = 0;                              /* 0x80668 */
+                    (void)StrategList_RemoveAt(pEnv->pList, pEnv->pWorld, nTargetIdx,
+                                               pEnv->pbSpawnOnce, pEnv->pSpawnCtx);      /* 0x80678 */
+                    return kItemNext;
+
+                case 3:
+                    pEnv->pTime->bPaused = 1;                             /* 0x80684 */
+                    if (pEnv->pnMsgShipIdx != NULL) {
+                        *pEnv->pnMsgShipIdx = nShipLoop;               /* 0x80694 */
+                    }
+                    StatusPanelRow0(pEnv->pStatusPanel, true,
+                                    StrategCaption(pEnv, PUFO_CAP_TERROR_TEXT),
+                                    pTarget->nSiteId, nTargetIdx);
+                    UiLineList_AppendWithSound(pEnv->pLines, 21, (u32)(u8)nShipLoop,
+                                               (u32)(u8)nTargetIdx, 0u, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser);   /* 0x80774 */
+                    return kItemNext;
+
+                case 4:
+                    pEnv->pTime->bPaused = 1;              /* 0x807A0: a store into 0x15961C, not the call */
+                    if (pEnv->pnInterceptShipIdx != NULL) {
+                        *pEnv->pnInterceptShipIdx = nShipLoop;           /* 0x807B8 */
+                    }
+                    if (pEnv->pnMsgShipIdx != NULL) {
+                        *pEnv->pnMsgShipIdx = nShipLoop;               /* 0x807BC */
+                    }
+                    if (pEnv->pnInterceptStrategIdx != NULL) {
+                        *pEnv->pnInterceptStrategIdx = nTargetIdx;       /* 0x807C8 */
+                    }
+                    UiLineList_AppendWithSound(pEnv->pLines, 23, (u32)(u8)nShipLoop,
+                                               (u32)(u8)nTargetIdx, 0u, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser);   /* 0x807D8 */
+                    StatusPanelRow0(pEnv->pStatusPanel, true,
+                                    StrategCaption(pEnv, PUFO_CAP_UFO_TEXT),
+                                    pTarget->nDisplayId, nTargetIdx);
+                    return kItemNext;
+
+                case 0:
+                    if (pTarget->bActive == 1) {                          /* 0x803D8..0x803F4 */
+                        pEnv->pTime->bPaused = 1;                        /* 0x808A4 */
+                        StatusPanelRow0(pEnv->pStatusPanel, true,
+                                        StrategCaption(pEnv, PUFO_CAP_ALIEN_BASE_TEXT),
+                                        pTarget->nSiteId, nTargetIdx);
+                        UiLineList_AppendWithSound(pEnv->pLines, 22, (u32)(u8)nShipLoop,
+                                                   (u32)(u8)nTargetIdx, 0u, 0u,
+                                                   pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x80990 */
+                        if (pEnv->pnRadarPulseTimer != NULL) {
+                            *pEnv->pnRadarPulseTimer = 250;              /* 0x80994 */
+                        }
+                        return kItemNext;
+                    }
+                    break;                    /* 0x803D8 -> 0x803F8: an inactive base falls to type 1 */
+
+                case 1:
+                    pEnv->pTime->bPaused = 1;                             /* 0x80EB0 */
+                    if (pEnv->pnInterceptShipIdx != NULL) {
+                        *pEnv->pnInterceptShipIdx = nShipLoop;           /* 0x80ECC */
+                    }
+                    if (pEnv->pnInterceptStrategIdx != NULL) {
+                        *pEnv->pnInterceptStrategIdx = nTargetIdx;       /* 0x80ED4 */
+                    }
+                    if (pTarget->nTimer <= 0) {                           /* 0x80EEC */
+                        Strateg_ConfirmInterceptTarget(pEnv);
+                        return kItemStop;                                /* 0x80FCC, a tail call */
+                    }
+                    UiLineList_AppendWithSound(pEnv->pLines, 23,
+                                               (u32)(u8)*pEnv->pnInterceptShipIdx,
+                                               (u32)(u8)*pEnv->pnInterceptStrategIdx, 0u, 0u,
+                                               pEnv->pfnPlaySample, pEnv->pSoundUser);    /* 0x80F08 */
+                    StatusPanelRow0(pEnv->pStatusPanel, true,
+                                    StrategCaption(pEnv, PUFO_CAP_UFO_TEXT),
+                                    pTarget->nDisplayId, nTargetIdx);
+                    return kItemStop;                                    /* 0x80FC4 returns at once */
+
+                default:
+                    break;
+                }
+            }
+
+            /* 0x80418..0x80504: move the whole part of each accumulator and keep the remainder. */
+            {
+                const i32 nStepX = (i32)pItem->dFracX;                   /* _dtoi at 0x8043C */
+                const i32 nStepY = (i32)pItem->dFracY;                   /* _dtoi at 0x80464 */
+                pItem->nX += nStepX;                                     /* 0x8046C */
+                pItem->dFracX -= (double)nStepX;                         /* 0x804AC */
+                pItem->nY += nStepY;                                     /* 0x804C0 */
+                pItem->dFracY -= (double)nStepY;                         /* 0x80504 */
+            }
+        }
+    }
+
+travelled:
+    if (pItem->bActive == 1) {                                           /* 0x80528 */
+        if (UdivMinutes(pEnv->pTime->nTotalSec - pItem->nTravelEpochSec) >= (i32)pItem->uTravelMin) {           /* 0x80560 */
+            if (pEnv->pMissionCtx != NULL) {
+                (void)Geoscape_SpawnMissionSite(pItem, -1, pEnv->pMissionCtx); /* 0x809B8 */
+            }
+            return kItemNext;
+        }
+        if (pItem->bDone != 0) {                                         /* 0x80564 */
+            i32 nCraft = 0;
+            if (pEnv->pbSpawnOnce != NULL) {
+                *pEnv->pbSpawnOnce = 1;                                  /* 0x8057C */
+            }
+            while (nCraft < (i32)pEnv->pWorld->nShipCount) {             /* the count is re-read at 0x805CC */
+                Ship *pShip = WorldCraft(pEnv->pWorld, nCraft);
+                if (pShip != NULL && pShip->bIntercepting != 0 && pShip->nStrategIdx == nItem) {
+                    if (pEnv->pnMsgShipIdx != NULL) {
+                        *pEnv->pnMsgShipIdx = nCraft;                  /* 0x805B0 */
+                    }
+                    if (pEnv->pnSelectedShipIdx != NULL) {
+                        *pEnv->pnSelectedShipIdx = nCraft;               /* 0x805B8 */
+                    }
+                    (void)Smap_DismissSelected(pEnv->pShipEnv, pEnv->pLines, pEnv->pTime,
+                                               pEnv->pbSelectionFlag);    /* 0x805BC */
+                }
+                ++nCraft;
+            }
+            return kItemRemove;
+        }
+    }
+
+    /* LABEL_84, 0x809C0. The interpolation runs for an active item, and for an inactive one only
+     * while its own craft is NOT mid-intercept -- a marker whose craft is chasing something keeps
+     * the chase position the block above wrote. */
+    {
+        const i8 bActive = (i8)pItem->bActive;
+        if (bActive == 1
+            || (bActive == 0
+                && (WorldCraft(pEnv->pWorld, *pnShipIdx) == NULL
+                    || WorldCraft(pEnv->pWorld, *pnShipIdx)->bIntercepting == 0))) {
+            const double dElapsed = (double)(u32)(pEnv->pTime->nTotalSec - pItem->nTravelEpochSec);
+            const double dMin = (double)(u32)pItem->uTravelMin;
+            const i32 nDy = pItem->nDestY - pItem->nStartY;
+            double dProgX, dProgY;
+
+            /* Deviation: uTravelMin 0 divides by zero here. The original gets +/-inf through _divd
+             * and hands it to _dtoi; the port takes a zero progress instead. An ACTIVE item cannot
+             * reach this with uTravelMin 0 -- the gate at 0x80560 sends it to the spawn first -- so
+             * only an inactive marker can. */
+            if (dMin != 0.0) {
+                dProgX = ((dElapsed * (double)pItem->nTravelStartSec) * STRATEG_SEC_TO_MIN) / dMin;
+                dProgY = ((dElapsed * (double)Abs32(nDy)) * STRATEG_SEC_TO_MIN) / dMin;
+            } else {
+                dProgX = 0.0;
+                dProgY = 0.0;
+            }
+
+            /* 0x809FC..0x80BF4: nStartX +/- elapsed * nTravelStartSec / (60 * uTravelMin). */
+            pItem->nX = (pItem->bTravelDir == 1)
+                            ? (i32)(dProgX + (double)pItem->nStartX)
+                            : (i32)((double)pItem->nStartX - dProgX);
+            /* 0x80BF8..0x80DD0: the same for y, with the sign from destY against startY. */
+            pItem->nY = (pItem->nDestY > pItem->nStartY)
+                            ? (i32)(dProgY + (double)pItem->nStartY)
+                            : (i32)((double)pItem->nStartY - dProgY);
+        }
+
+        if (pItem->nX > STRATEG_MAP_WRAP_X) {                            /* 0x80DE0 */
+            pItem->nX -= STRATEG_MAP_WRAP_X;
+        }
+        if (pItem->nX < 0) {                                             /* 0x80DF0 */
+            pItem->nX += STRATEG_MAP_WRAP_X;
+        }
+
+        /* 0x80DF8..0x80E78: an inactive marker on a mission leg whose leg is over has LANDED. */
+        if (bActive == 0 && (i8)pItem->nMissionSub == 1
+            && UdivMinutes(pEnv->pTime->nTotalSec - pItem->nTravelEpochSec)
+                   >= (i32)pItem->uTravelMin) {
+            Ship *pOwn = WorldCraft(pEnv->pWorld, *pnShipIdx);
+            if (pOwn != NULL) {
+                pOwn->bAtBase = 1;                                       /* 0x80E5C */
+                pOwn->bContactMsg = 0;                                   /* 0x80E68 */
+            }
+            pItem->nMissionSub = 0;                                      /* 0x80E6C */
+            pItem->bVisible = 0;                                         /* 0x80E70 */
+            if (pEnv->pLootEnv != NULL) {
+                Base_TransferTacticalLoot(pEnv->pLootEnv, false);        /* 0x80E78, a2 = 0 */
+            }
+        }
+    }
+
+    return kItemNext;
+}
+
+/* StrategList_ProcessEvents @ 0x7fcb0. The header block on StrategEventsEnv is the evidence map. */
+i32 StrategList_ProcessEvents(const StrategEventsEnv *pEnv)
+{
+    StrategItemStep step;
+    i32 nShipIdx = 0;          /* var_DC, carried from item to item; 0x7FCE0 seeds it at 0 */
+    i32 nItem = 0;
+
+    if (pEnv == NULL || pEnv->pList == NULL || pEnv->pWorld == NULL
+        || pEnv->pTime == NULL || pEnv->pLines == NULL) {
+        return 0;
+    }
+    if (pEnv->pList->nCount <= 0) {
+        return pEnv->pList->nCount;                                      /* 0x7FCD4 */
+    }
+
+    while (nItem < pEnv->pList->nCount) {
+        step = StrategProcessItem(pEnv, nItem, &nShipIdx);
+        if (step == kItemStop) {
+            return pEnv->pList->nCount;                                  /* 0x80FD0 */
+        }
+        if (step == kItemRemove) {
+            (void)StrategList_RemoveAt(pEnv->pList, pEnv->pWorld, nItem,
+                                       pEnv->pbSpawnOnce, pEnv->pSpawnCtx); /* 0x805E4 */
+            continue;                                /* 0x80600: the tail shifted down into the hole */
+        }
+        ++nItem;                                                         /* 0x80E84 */
+    }
+    return pEnv->pList->nCount;
+}
+
 /* The five race sprite sets. The bRace switch (0x83BB0..0x83C40) and the nAssaultBaseRace switch
  * (0x84054..0x840E4) store the same table; 23 means "no race in this slot". */
 static const u8 g_aRaceSpriteSet[5][4] = {
@@ -1008,7 +1500,7 @@ i32 Smap_BeginCraftSelect(const SmapCraftSelectEnv *pEnv)
 
         const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x839CC */
         *pEnv->pnSelectedShipIdx = nShipIdx;
-        *pEnv->pnStrategIndex = nShipIdx;
+        *pEnv->pnMsgShipIdx = nShipIdx;
         *pEnv->pnCraftIndex = (u8)nShipIdx;
 
         const i32 nStratIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 1); /* 0x839E4 */

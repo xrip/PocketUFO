@@ -203,7 +203,7 @@ static void Fix_Reset(void)
     gEnv.pnScreenId = &g.nScreenId;
     gEnv.pnSelectedStrategIdx = &g.nSelStrateg;
     gEnv.pnSelectedShipIdx = &g.nSelShip;
-    gEnv.pnStrategIndex = &g.nStrategIdx;
+    gEnv.pnMsgShipIdx = &g.nStrategIdx;
     gEnv.pOptPanelShips = &g.pOptShips;
     gEnv.pTime = &g.oTime;
     gEnv.pbFlag18708C = &g.bFlag8C;

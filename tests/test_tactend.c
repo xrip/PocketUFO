@@ -257,7 +257,7 @@ static TactShutdownEnv Env_Build(void)
     env.pbMissionVictory = &s_bVictory;
     env.pbAlternateOutcomePath = &s_bAltPath;
     env.pbFacilityType = &s_bFacType;
-    env.pnStrategIndex = &s_nStrategIdx;
+    env.pnMsgShipIdx = &s_nStrategIdx;
     env.pnCraftIndex = &s_nCraftIndex;
     env.pbSpawnOnceFlag = &s_bSpawnOnce;
     env.apCells = s_apCells;
@@ -525,6 +525,119 @@ static void TestUnitRemoval(void)
     TestEqI32("the strateg list is NOT emptied on the full path",
               PtrArray_GetCount(&s_StrategList), 2);
 
+    Fixture_Free();
+}
+
+/* 0x159E74 is an apCraft INDEX, not a list index: 0x3DF5C loads it, 0x3DF60/0x3DF68 index
+ * Map.apCraft with it (Map + 0x10AC), and only 0x3DF6C reads Ship.nStrategIdx @ +0x38 -- the
+ * value 0x3DF70 hands to StrategList_RemoveAt. Craft 1 here chases strateg item 0, so the
+ * victory branch must drop item 0 and keep item 1. Passing the 0x159E74 value straight through
+ * would drop item 1 instead, which is what the earlier port did. */
+static void TestMissionOutcomeRemoval(void)
+{
+    TactShutdownEnv env;
+    Ship *pCraft0;
+    Ship *pCraft1;
+    StrategItem *pItem;
+    GeoscapeWorld world;
+    ShipRemovalEnv shipEnv;
+
+    printf("Tact_Shutdown - the outcome removal uses the craft's strateg index\n");
+    Fixture_Reset();
+    s_bAltPath = 0;
+    s_bMissionMode = 0;   /* 0x3DF18/0x3DF20/0x3DF28: mode 0 takes the leaving-craft branch */
+    s_bVictory = 1;       /* 0x3DF40: the victory sub-branch removes with no type test */
+    s_bSpawnOnce = 0;
+    s_nStrategIdx = 1;    /* 0x159E74: a CRAFT index */
+
+    pCraft0 = (Ship *)calloc(1, sizeof(Ship));
+    pCraft1 = (Ship *)calloc(1, sizeof(Ship));
+    pCraft0->bId = 10;
+    pCraft0->nStrategIdx = 1; /* the decoy craft: it is not the one 0x159E74 names */
+    pCraft1->bId = 11;
+    pCraft1->nStrategIdx = 0; /* 0x3DF6C reads THIS */
+    s_apCraftCopy[0] = pCraft0;
+    s_apCraftCopy[1] = pCraft1;
+    s_nCraftCount = 2;
+
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pItem->nType = 1;
+    pItem->nDisplayId = 100;  /* strateg item 0, the one craft 1 chases */
+    PtrArray_Add(&s_StrategList, pItem);
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pItem->nType = 1;
+    pItem->nDisplayId = 200;  /* strateg item 1 */
+    PtrArray_Add(&s_StrategList, pItem);
+
+    memset(&world, 0, sizeof(world));      /* no craft to re-point (0x82AC4 does nothing) */
+    memset(&shipEnv, 0, sizeof(shipEnv));
+    shipEnv.pWorld = &world;
+
+    env = Env_Build();
+    env.pShipEnv = &shipEnv;
+    Tact_Shutdown(&env, 0);                /* 0 also commits the outcome */
+
+    TestEqI32("one strateg entry survives", PtrArray_GetCount(&s_StrategList), 1);
+    TestEqI32("the survivor is the entry the craft was NOT chasing, so the removed index is "
+              "Ship.nStrategIdx @ +0x38 and not the 0x159E74 craft index",
+              ((StrategItem *)PtrArray_Get(&s_StrategList, 0))->nDisplayId, 200);
+    TestEqI32("bSpawnReplacementOnce is armed by 0x3DF48", s_bSpawnOnce, 1);
+
+    free(pCraft0);
+    free(pCraft1);
+    s_apCraftCopy[0] = NULL;
+    s_apCraftCopy[1] = NULL;
+    Fixture_Free();
+}
+
+/* The alternate path repeats the same shape: 0x3DE80 indexes apCraft with 0x159E74, 0x3DE94 reads
+ * Ship.nStrategIdx, 0x3DE9C..0x3DEA4 keeps going only when that entry's nType is 4, and 0x3DEB8
+ * re-reads the SAME field for the removal. Mode != 0 skips the whole block (0x3DE70 BNE). */
+static void TestMissionOutcomeRemovalAltPath(void)
+{
+    TactShutdownEnv env;
+    Ship *pCraft;
+    StrategItem *pItem;
+    GeoscapeWorld world;
+    ShipRemovalEnv shipEnv;
+
+    printf("Tact_Shutdown - the alternate path removes the same index\n");
+    Fixture_Reset();
+    s_bAltPath = 1;
+    s_bMissionMode = 0;
+    s_bSpawnOnce = 0;
+    s_nStrategIdx = 1;
+
+    pCraft = (Ship *)calloc(1, sizeof(Ship));
+    pCraft->bId = 11;
+    pCraft->nStrategIdx = 0;
+    s_apCraftCopy[1] = pCraft;
+    s_nCraftCount = 2;
+
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pItem->nType = 4;         /* 0x3DEA8: only a type-4 entry is removed */
+    pItem->nDisplayId = 100;
+    PtrArray_Add(&s_StrategList, pItem);
+    pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+    pItem->nType = 1;
+    pItem->nDisplayId = 200;
+    PtrArray_Add(&s_StrategList, pItem);
+
+    memset(&world, 0, sizeof(world));
+    memset(&shipEnv, 0, sizeof(shipEnv));
+    shipEnv.pWorld = &world;
+
+    env = Env_Build();
+    env.pShipEnv = &shipEnv;
+    Tact_Shutdown(&env, 0);
+
+    TestEqI32("one strateg entry survives", PtrArray_GetCount(&s_StrategList), 1);
+    TestEqI32("the type-4 entry the craft points at is the one removed",
+              ((StrategItem *)PtrArray_Get(&s_StrategList, 0))->nDisplayId, 200);
+    TestEqI32("the alternate path never arms bSpawnReplacementOnce", s_bSpawnOnce, 0);
+
+    free(pCraft);
+    s_apCraftCopy[1] = NULL;
     Fixture_Free();
 }
 
@@ -2167,6 +2280,8 @@ int main(void)
     TestCellFree();
     TestKeepSomePath();
     TestUnitRemoval();
+    TestMissionOutcomeRemoval();
+    TestMissionOutcomeRemovalAltPath();
     TestTileTallyGate();
     TestTileTallyCounts();
     TestTileTallyFood();

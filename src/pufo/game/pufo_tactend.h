@@ -132,7 +132,7 @@ typedef struct TactShutdownEnv {
     u8 *pbMissionVictory;        /* Map_bMissionVictory @ Map+0x150D4 */
     u8 *pbAlternateOutcomePath;  /* Map_bAltOutcomePath @ 0x1153D9 */
     u8 *pbFacilityType;          /* unk_159D81, index into the base's facility grid */
-    i32 *pnStrategIndex;         /* MEMORY[0x159E74], the current strateg item */
+    i32 *pnMsgShipIdx;         /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     u8 *pnCraftIndex;            /* Map_nCraftIndex @ Map+0x15113 */
     u8 *pbSpawnOnceFlag;         /* 0x162028, the replacement-spawn gate */
     const BaseDemolishEnv   *pDemolishEnv;

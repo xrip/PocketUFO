@@ -9,8 +9,12 @@
  */
 #include "game/pufo_strateg.h"
 #include "game/pufo_geoscape.h" /* PUFO_FAC_BASE_COUNT, the base array the range gate bounds by */
+#include "game/pufo_unit.h"     /* Soldier, the crew Craft_CountSoldiersAboard counts */
+#include "ui/pufo_linelist.h"   /* UiLineList, the message list the event pass posts to */
+#include "ui/pufo_panel.h"      /* UiPanel, the status panel it captions */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int g_nFailures;
@@ -1481,6 +1485,681 @@ static void TestCraftRangeGate(void)
     g_apBases[0] = &g_aBases[0];
 }
 
+/* ------------------------------------------------- the geoscape event pass
+ *
+ * StrategList_ProcessEvents @ 0x7fcb0 and Strateg_ConfirmInterceptTarget @ 0x7fb98.
+ *
+ * The pinned oddities: _rt_udiv is called divisor-first, so every leg test is an UNSIGNED
+ * division of the elapsed seconds by 60; the x leg is the wrapped 800 minimum WITH its winner
+ * kept, so a target 500 columns east is reached 300 columns west; the arrival dispatch is chosen
+ * by the TARGET's type and re-reads it from the list for every test; a craft-to-craft arrival with
+ * the target timer already spent ends the whole pass; and the interpolation re-derives the
+ * position from the clock instead of stepping it. */
+
+static UiLineList g_Lines;
+static UiPanel g_Panel;
+static u8 g_aLine0[PUFO_PANEL_LINE_BYTES];
+static Soldier g_aSol[2];
+static Soldier *g_apSol[2];
+static i32 g_nFund, g_nStratIdx, g_nSelShip, g_nIntShip, g_nIntStrat, g_nPulse;
+static u8 g_bOnce, g_bSelFlag;
+static i32 g_nSample, g_nSampleCalls;
+static char *g_pTexts;
+
+static void Hook_Sample(i32 nSample, void *pUser)
+{
+    (void)pUser;
+    ++g_nSampleCalls;
+    g_nSample = nSample;
+}
+
+/* The TEXTS table on its 205-byte stride, with only the three arrival captions filled. */
+static const char *TextsRec(i32 nRec)
+{
+    if (g_pTexts == NULL) {
+        g_pTexts = (char *)calloc(1148 * PUFO_TEXT_REC_STRIDE, 1);
+        /* The three captions as lang.dat TEXTS.DAT holds them (cp1251 in the file). The fixture
+         * carries them in the source's own encoding; what the checks pin is which record each
+         * arrival prefixes its caption with, not the byte encoding. */
+        snprintf(g_pTexts + PUFO_TEXT_REC_STRIDE * 1145, PUFO_TEXT_REC_STRIDE, "%s", "База пришельцев");
+        snprintf(g_pTexts + PUFO_TEXT_REC_STRIDE * 1146, PUFO_TEXT_REC_STRIDE, "%s", "Район террора");
+        snprintf(g_pTexts + PUFO_TEXT_REC_STRIDE * 1147, PUFO_TEXT_REC_STRIDE, "%s", "НЛО");
+    }
+    return g_pTexts + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+static void CheckCaption(i32 nRec, i32 nNumber, const char *pszWhat)
+{
+    char szWant[128];
+    snprintf(szWant, sizeof(szWant), "%s%d", TextsRec(nRec), (int)nNumber);
+    Check(strcmp((const char *)g_Panel.apLines[0], szWant) == 0, pszWhat);
+    printf("       caption: %s\n", (const char *)g_Panel.apLines[0]);
+}
+
+static PtrArray g_EvList;
+static Ship g_aEvShip[2];
+static Ship *g_apEvShip[2];
+static GeoscapeWorld g_EvWorld;
+static GameTime g_EvTime;
+static StrategSpawnCtx g_EvCtx;
+static SpawnMissionCtx g_EvMission;
+static SmapView g_EvView;
+static PadImage g_EvMap;
+static u8 g_aEvTiles[400];
+static MissionSiteRecord g_aEvSites[2];
+static i32 g_EvSeed, g_EvRadarPulse;
+static GeoscapeWorld g_EvMissionWorld;
+static StrategEventsEnv g_EvEnv;
+
+static void EvReset(void)
+{
+    i32 i;
+
+    PtrArray_ctor(&g_EvList);
+    for (i = 0; i < 2; ++i) {
+        memset(&g_aEvShip[i], 0, sizeof(g_aEvShip[i]));
+        g_aEvShip[i].bId = (u8)(10 + i);
+        g_apEvShip[i] = &g_aEvShip[i];
+    }
+    memset(&g_EvWorld, 0, sizeof(g_EvWorld));
+    g_EvWorld.apCraft = g_apEvShip;
+    g_EvWorld.nShipCount = 2;
+    g_EvWorld.pTime = &g_EvTime;
+
+    memset(&g_EvTime, 0, sizeof(g_EvTime));
+    memset(&g_Lines, 0, sizeof(g_Lines));
+    memset(&g_Panel, 0, sizeof(g_Panel));
+    memset(g_aLine0, 0, sizeof(g_aLine0));
+    g_Panel.apLines[0] = g_aLine0;
+    g_Panel.anLineAux[0] = -1;
+    g_Panel.nUnk3032 = -1;
+
+    memset(g_aSol, 0, sizeof(g_aSol));
+    for (i = 0; i < 2; ++i) {
+        g_aSol[i].bUnk183 = 255;
+        g_apSol[i] = &g_aSol[i];
+    }
+
+    g_nFund = 0;
+    g_nStratIdx = -1;
+    g_nSelShip = -1;
+    g_nIntShip = -1;
+    g_nIntStrat = -1;
+    g_nPulse = -1;
+    g_bOnce = 0;
+    g_bSelFlag = 0;
+    g_nSample = -1;
+
+    memset(&g_EvCtx, 0, sizeof(g_EvCtx));
+    g_EvCtx.pTables = &g_Roll;
+    g_EvCtx.pnSeed = &g_EvSeed;
+    g_EvCtx.pfnSpawnMission = SpawnProbe;
+    g_EvCtx.pfnProcessEvents = EventProbe;
+
+    memset(&g_EvView, 0, sizeof(g_EvView));
+    g_EvView.nMapW = 800;
+    g_EvView.nMapH = 400;
+    memset(g_aEvTiles, 1, sizeof(g_aEvTiles));
+    memset(&g_EvMap, 0, sizeof(g_EvMap));
+    g_EvMap.uWidth = 20;
+    g_EvMap.pData = g_aEvTiles;
+    memset(g_aEvSites, 0, sizeof(g_aEvSites));
+    g_aEvSites[0].x = 100;
+    g_aEvSites[0].y = 100;
+    memset(&g_EvMissionWorld, 0, sizeof(g_EvMissionWorld));
+    g_EvMissionWorld.pTime = &g_EvTime;
+    memset(&g_EvMission, 0, sizeof(g_EvMission));
+    g_EvMission.pList = &g_EvList;
+    g_EvMission.pnSeed = &g_EvSeed;
+    g_EvMission.pView = &g_EvView;
+    g_EvMission.pTilemap = &g_EvMap;
+    g_EvMission.apSites = g_aEvSites;
+    g_EvMission.nSiteCount = 1;
+    g_EvMission.pnRadarPulseTimer = &g_EvRadarPulse;
+    g_EvMission.pWorld = &g_EvMissionWorld;
+
+    memset(&g_EvEnv, 0, sizeof(g_EvEnv));
+    g_EvEnv.pList = &g_EvList;
+    g_EvEnv.pWorld = &g_EvWorld;
+    g_EvEnv.pTime = &g_EvTime;
+    g_EvEnv.pLines = &g_Lines;
+    g_EvEnv.pStatusPanel = &g_Panel;
+    g_EvEnv.pnFundPending = &g_nFund;
+    g_EvEnv.pbSpawnOnce = &g_bOnce;
+    g_EvEnv.pbSelectionFlag = &g_bSelFlag;
+    g_EvEnv.pnMsgShipIdx = &g_nStratIdx;
+    g_EvEnv.pnSelectedShipIdx = &g_nSelShip;
+    g_EvEnv.pnInterceptShipIdx = &g_nIntShip;
+    g_EvEnv.pnInterceptStrategIdx = &g_nIntStrat;
+    g_EvEnv.pnRadarPulseTimer = &g_nPulse;
+    g_EvEnv.pTextRecs = TextsRec(0);
+    g_EvEnv.apSoldiers = g_apSol;
+    g_EvEnv.nSoldierCount = 2;
+    g_EvEnv.pSpawnCtx = &g_EvCtx;
+    g_EvEnv.pMissionCtx = &g_EvMission;
+    g_EvEnv.pfnPlaySample = Hook_Sample;
+}
+
+/* StrategItem_ctor writes nSeed and nothing else (0x82BDC), so the fixture zeroes each item
+ * before setting it up -- otherwise the fields the pass reads arrive indeterminate. */
+static StrategItem *EvAdd(i32 nType)
+{
+    StrategItem *pItem;
+
+    (void)StrategItem_AllocAdd(&g_EvList, g_EvSeed++);
+    pItem = (StrategItem *)g_EvList.apItems[g_EvList.nCount - 1];
+    if (pItem != NULL) {
+        memset(pItem, 0, sizeof(*pItem));
+        pItem->nType = (u8)nType;
+    }
+    return pItem;
+}
+
+static void EvFree(void)
+{
+    PtrArray_DeleteAll(&g_EvList);
+}
+
+static void TestProcessEvents(void)
+{
+    StrategItem *pOwn, *pTarget;
+
+    printf("StrategList_ProcessEvents\n");
+    EvReset();
+
+    /* ---- an expired terror site costs money and tells every craft that was chasing it ---- */
+    EvReset();
+    pOwn = EvAdd(3);
+    pOwn->nTimer = 1;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 0;
+    g_aEvShip[1].bIntercepting = 1;
+    g_aEvShip[1].nStrategIdx = 1;          /* chasing something else */
+    g_nFund = 5000;
+    CheckEqI32(StrategList_ProcessEvents(&g_EvEnv), 0, "the pass ends on the count it stopped at");
+    CheckEqI32(g_nFund, 4200, "an expired terror site takes 800 out of the pending total (0x7FDC4)");
+    CheckEqI32(g_EvList.nCount, 0, "and the item is removed");
+    CheckEqI32(g_Lines.nLineCount, 1, "only the craft that was chasing THIS item is told (0x7FD6C)");
+    CheckEqI32(g_Lines.abLineFlags[0], 13, "  with message 13");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 0), 0xFF, "  0xFF in colour slot 0");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 1), 0, "  and the ship index in slot 1");
+    CheckEqI32(g_nSample, 7, "  through the sample-7 seam");
+
+    /* ---- an expired UFO arms the one-shot replacement byte, and the removal consumes it ---- */
+    EvReset();
+    g_nSpawnCalls = 0;
+    g_nEventCalls = 0;
+    for (int i = 0; i < 40; ++i) {
+        EvFree();
+        PtrArray_ctor(&g_EvList);
+        g_bOnce = 0;
+        pOwn = EvAdd(4);
+        pOwn->nTimer = 1;
+        (void)StrategList_ProcessEvents(&g_EvEnv);
+    }
+    Check(g_nSpawnCalls > 0,
+          "an expired UFO arms 0x162028 (0x7FDE0) and the removal's tail spends it on a replacement roll");
+    CheckEqI32(g_bOnce, 0, "the byte is cleared, so it is one-shot");
+    Check(g_nEventCalls >= g_nSpawnCalls, "every replacement spawn also re-runs this pass");
+
+    /* ---- a timer that has not reached zero just counts down ---- */
+    EvReset();
+    pOwn = EvAdd(3);
+    pOwn->nTimer = 5;
+    g_nFund = 1000;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nTimer, 4, "a site timer decrements (0x7FD24)");
+    CheckEqI32(g_EvList.nCount, 1, "  and nothing is removed");
+    CheckEqI32(g_nFund, 1000, "  and no money is spent");
+    CheckEqI32(g_Lines.nLineCount, 0, "  and no message is posted");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->nTimer = 3;
+    pOwn->nX = 77;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nTimer, 2, "a type-1 item with a timer only decrements (0x80620)");
+    CheckEqI32(pOwn->nX, 77, "  and does not move -- this is how a parked craft idles");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 0;
+    pOwn->bVisible = 0;
+    pOwn->nX = 88;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 88, "an inactive invisible marker is skipped outright (0x7FE1C)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;                 /* g_aEvShip[0].bId */
+    pOwn->nX = 100;
+    pOwn->dTrackA = 10.0;
+    g_aEvShip[0].bAtBase = 1;              /* not intercepting */
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 100, "a marker whose craft is at base does not move (0x7FE88)");
+    EvFree();
+
+    /* ---- the chase: the wrapped x leg, keeping which candidate won ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pOwn->dTrackA = 10.0;
+    pTarget = EvAdd(5);
+    pTarget->nX = 200;
+    pTarget->nY = 100;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nTravelStartSec, 100, "the 100-column leg beats the wrapped 700 and 900 (0x7FF38)");
+    CheckEqI32((i32)pOwn->bTravelDir, 1, "  and runs east");
+    CheckEqI32(pOwn->nX, 110, "the whole part of dFracX moves into nX (0x8046C)");
+    Check(pOwn->dFracX == 0.0, "  and the remainder stays behind (0x804AC)");
+    CheckEqI32(pOwn->nY, 100, "  with no y leg the y accumulator is untouched (0x80134)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pOwn->dTrackA = 10.0;
+    pTarget = EvAdd(5);
+    pTarget->nX = 600;                     /* 500 east */
+    pTarget->nY = 100;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nTravelStartSec, 300, "a target 500 columns east is reached by the 300-column wrap (0x7FF18)");
+    CheckEqI32((i32)pOwn->bTravelDir, -1, "  going WEST");
+    CheckEqI32(pOwn->nX, 90, "  so the marker steps down to 90");
+    EvFree();
+
+    /* ---- arrival at a type-5 waypoint: abort the intercept and remove the waypoint ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pOwn->dTrackA = 10.0;
+    pTarget = EvAdd(5);
+    pTarget->nX = 101;
+    pTarget->nY = 101;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    g_EvTime.bPaused = 0;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_EvTime.bPaused, 1, "arriving at the waypoint pauses the game (0x80634)");
+    CheckEqI32(g_Lines.nLineCount, 1, "  and posts message 14");
+    CheckEqI32(g_Lines.abLineFlags[0], 14, "  flag 14");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 0), 0, "  with the ship index in slot 0");
+    CheckEqI32(g_aEvShip[0].bIntercepting, 0, "  and the craft stops intercepting (0x80668)");
+    CheckEqI32(g_EvList.nCount, 1, "  and the TARGET is removed, not the marker (0x80678)");
+    CheckEqI32(pOwn->nX, 100, "the fractional move is skipped once the craft has arrived");
+    Check(pOwn->dFracX > 7.0 && pOwn->dFracX < 7.1,
+          "  but the accumulators were already loaded: 10 * 1 / sqrt(2) (0x80004)");
+    EvFree();
+
+    /* ---- arrival at a terror site ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(3);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->nSiteId = 77;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    g_EvTime.bPaused = 0;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_EvTime.bPaused, 1, "a terror-site arrival pauses (0x80684)");
+    CheckEqI32(g_nStratIdx, 0, "  and writes the ship index into 0x159E74 (0x80694)");
+    CheckEqI32(g_Lines.abLineFlags[0], 21, "  with message 21 (0x80774)");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 1), 1, "  and the target index in slot 1");
+    CheckCaption(1146, 77, "  and the caption is TEXTS[1146] plus the site id (0x8069C)");
+    CheckEqI32(g_Panel.anLineAux[0], 1, "  with the target index in the panel's aux column (0x80748)");
+    CheckEqI32(g_Panel.nUnk3032, 0, "  and the panel cursor cleared (0x80760)");
+    CheckEqI32(g_EvList.nCount, 2, "the site is left in the list for the player to dismiss");
+    EvFree();
+
+    /* ---- arrival at a UFO ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(4);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->nDisplayId = 55;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    g_EvTime.bPaused = 0;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_EvTime.bPaused, 1, "a UFO contact pauses by storing 1 straight into the pause byte (0x807A0)");
+    CheckEqI32(g_nIntShip, 0, "  and writes the intercept pair (0x807B8)");
+    CheckEqI32(g_nIntStrat, 1, "  target index included (0x807C8)");
+    CheckEqI32(g_nStratIdx, 0, "  plus 0x159E74 (0x807BC)");
+    CheckEqI32(g_Lines.abLineFlags[0], 23, "  with message 23 (0x807D8)");
+    CheckCaption(1147, 55, "  and the caption is TEXTS[1147] plus the display id (0x807E8)");
+    EvFree();
+
+    /* ---- arrival at an alien base ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(0);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->nSiteId = 9;
+    pTarget->bActive = 1;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_Lines.abLineFlags[0], 22, "an alien base posts message 22 (0x80990)");
+    CheckCaption(1145, 9, "  with the TEXTS[1145] caption plus the site id (0x808B4)");
+    CheckEqI32(g_nPulse, 250, "  and parks the radar pulse timer at 250 (0x80994)");
+    EvFree();
+
+    /* ---- an INACTIVE base is not an arrival: the type-0 test fails and nothing posts ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(0);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->bActive = 0;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_Lines.nLineCount, 0, "an inactive base is not an arrival (0x803EC..0x803F4)");
+    CheckEqI32(g_nPulse, -1, "  and the radar pulse timer is left alone");
+    EvFree();
+
+    /* ---- arrival at another craft whose timer is still running: the dogfight offer ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(1);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->nDisplayId = 11;
+    pTarget->nTimer = 4;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_nIntShip, 0, "a craft-to-craft arrival writes the intercept pair (0x80ECC)");
+    CheckEqI32(g_nIntStrat, 1, "  with the target index (0x80ED4)");
+    CheckEqI32(g_Lines.abLineFlags[0], 23, "  and offers message 23 (0x80F08)");
+    CheckCaption(1147, 11, "  with the UFO caption plus the target's display id (0x80F18)");
+    CheckEqI32(pTarget->nTimer, 4, "  the target's timer is untouched while it still runs");
+    EvFree();
+
+    /* ---- arrival at a craft whose timer is spent: the confirm runs and the PASS ENDS ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 100;
+    pOwn->nY = 100;
+    pTarget = EvAdd(1);
+    pTarget->nX = 100;
+    pTarget->nY = 100;
+    pTarget->nDisplayId = 11;
+    pTarget->nTimer = 0;
+    pTarget = EvAdd(3);            /* index 2: a site that would expire if the pass continued */
+    pTarget->nTimer = 1;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    g_nFund = 900;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_EvList.nCount, 3, "ORIGINAL SHAPE: the dogfight confirm tail-calls the epilogue, so the rest of the list is never visited (0x80FCC)");
+    CheckEqI32(((StrategItem *)g_EvList.apItems[2])->nTimer, 1, "  the site after it keeps its timer");
+    CheckEqI32(g_nFund, 900, "  and spends nothing");
+    EvFree();
+
+    /* ---- an active item whose leg is over goes to the mission pass ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->nMissionSub = 0;
+    pOwn->nPhase = 5;
+    pOwn->uTravelMin = 1;
+    pOwn->nTravelEpochSec = 0;
+    pOwn->nX = 300;
+    g_EvTime.nTotalSec = 120;                 /* 120 / 60 = 2 >= 1 */
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nPhase, 4, "a finished leg hands the item to Geoscape_SpawnMissionSite(-1) (0x809B8)");
+    CheckEqI32(pOwn->nX, 300, "  and the position is not interpolated on that path");
+    EvFree();
+
+    /* ---- an active item with bDone set is dismissed and removed ---- */
+    /* The replacement ctx is NULL for this run: the removal's own tail would otherwise roll a
+     * replacement craft into the list and the count check would measure that instead. */
+    EvReset();
+    g_EvEnv.pSpawnCtx = NULL;
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->bDone = 1;
+    pOwn->uTravelMin = 100;                   /* the leg is NOT over, so the spawn gate is not taken */
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 0;
+    g_Lines.nLineCount = 1;
+    g_Lines.abLineFlags[0] = 23;
+    g_EvTime.bPaused = 1;
+    g_bSelFlag = 1;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_nStratIdx, 0, "a done item writes 0x159E74 (0x805B0)");
+    CheckEqI32(g_nSelShip, 0, "  and 0x187054 (0x805B8)");
+    CheckEqI32(g_Lines.nLineCount, 0, "  and Smap_DismissSelected drops the message line (0x805BC)");
+    CheckEqI32(g_EvTime.bPaused, 0, "  which unpauses because the list came empty");
+    CheckEqI32(g_bSelFlag, 0, "  and clears the selection flag");
+    CheckEqI32(g_EvList.nCount, 0, "  then the item itself is removed (0x805E4)");
+    CheckEqI32(g_bOnce, 1, "  the byte armed at 0x8057C stays armed here, because the removal tail only spends it when it has a replacement ctx");
+    EvFree();
+
+    /* The arming is real: with a replacement ctx the spent byte shows up as a replacement roll. */
+    EvReset();
+    g_nSpawnCalls = 0;
+    for (int i = 0; i < 40; ++i) {
+        EvFree();
+        PtrArray_ctor(&g_EvList);
+        g_bOnce = 0;
+        pOwn = EvAdd(1);
+        pOwn->bActive = 1;
+        pOwn->bDone = 1;
+        pOwn->uTravelMin = 100;
+        (void)StrategList_ProcessEvents(&g_EvEnv);
+    }
+    Check(g_nSpawnCalls > 0, "a done item really does arm 0x162028 at 0x8057C -- the removal spends it on a replacement");
+    CheckEqI32(g_bOnce, 0, "  and with that ctx present the byte ends clear (0x82B94)");
+
+    /* ---- the interpolation re-derives the position from the clock ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->bTravelDir = 1;
+    pOwn->nStartX = 100;
+    pOwn->nStartY = 200;
+    pOwn->nDestY = 300;
+    pOwn->nTravelStartSec = 400;
+    pOwn->uTravelMin = 10;                    /* 10 minutes; 5 elapsed, so half the leg */
+    g_EvTime.nTotalSec = 300;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 300, "nX = nStartX + elapsed * nTravelStartSec / (60 * uTravelMin) (0x80A18)");
+    CheckEqI32(pOwn->nY, 250, "nY = nStartY + elapsed * |destY - startY| / (60 * uTravelMin) (0x80C0C)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->bTravelDir = -1;
+    pOwn->nStartX = 100;
+    pOwn->nStartY = 200;
+    pOwn->nDestY = 100;
+    pOwn->nTravelStartSec = 400;
+    pOwn->uTravelMin = 10;
+    g_EvTime.nTotalSec = 300;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 700, "bTravelDir -1 subtracts the x progress (0x80B0C), and the negative result wraps to 700 (0x80DF0)");
+    CheckEqI32(pOwn->nY, 150, "  and destY below startY subtracts the y progress (0x80CF0)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->bTravelDir = 1;
+    pOwn->nStartX = 700;
+    pOwn->nTravelStartSec = 400;
+    pOwn->uTravelMin = 10;
+    g_EvTime.nTotalSec = 300;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 100, "nX is wrapped ONCE above 800 (0x80DE0)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bActive = 1;
+    pOwn->bTravelDir = -1;
+    pOwn->nStartX = 100;
+    pOwn->nTravelStartSec = 400;
+    pOwn->uTravelMin = 10;
+    g_EvTime.nTotalSec = 300;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(pOwn->nX, 700, "and once below 0 (0x80DF0)");
+    EvFree();
+
+    /* ---- an inactive marker on a mission leg that is over has LANDED ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nMissionSub = 1;
+    pOwn->uTravelMin = 1;
+    pOwn->nTravelEpochSec = 0;
+    g_aEvShip[0].bAtBase = 0;
+    g_aEvShip[0].bContactMsg = 1;
+    g_EvTime.nTotalSec = 60;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_aEvShip[0].bAtBase, 1, "a finished mission leg lands the craft (0x80E5C)");
+    CheckEqI32(g_aEvShip[0].bContactMsg, 0, "  clears its contact message (0x80E68)");
+    CheckEqI32(pOwn->nMissionSub, 0, "  and the marker's mission subtype (0x80E6C)");
+    CheckEqI32(pOwn->bVisible, 0, "  and hides the marker (0x80E70)");
+    EvFree();
+
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nMissionSub = 1;
+    pOwn->uTravelMin = 100;
+    g_aEvShip[0].bAtBase = 0;
+    g_EvTime.nTotalSec = 60;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    CheckEqI32(g_aEvShip[0].bAtBase, 0, "a mission leg that is not over does not land (0x80E38)");
+    EvFree();
+
+    /* ---- an inactive marker whose craft IS intercepting keeps the chase position ---- */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->bVisible = 1;
+    pOwn->nDisplayId = 10;
+    pOwn->nX = 140;
+    pOwn->nY = 140;
+    pOwn->nStartX = 500;
+    pOwn->nStartY = 500;
+    pOwn->uTravelMin = 1;
+    pTarget = EvAdd(5);
+    pTarget->nX = 200;
+    pTarget->nY = 200;
+    g_aEvShip[0].bIntercepting = 1;
+    g_aEvShip[0].nStrategIdx = 1;
+    g_EvTime.nTotalSec = 300;
+    (void)StrategList_ProcessEvents(&g_EvEnv);
+    Check(pOwn->nX != 500, "the interpolation is skipped for an inactive marker whose craft is mid-intercept (0x809F0)");
+    CheckEqI32(pOwn->nStartX, 500, "  nStartX is left where the travel put it");
+    EvFree();
+}
+
+/* Strateg_ConfirmInterceptTarget @ 0x7fb98, reached through the craft-to-craft arrival. */
+static void TestConfirmIntercept(void)
+{
+    StrategItem *pOwn, *pTarget;
+
+    printf("Strateg_ConfirmInterceptTarget\n");
+
+    /* The target's timer is already spent: the radar screen opens. pRadarEnv is NULL here (the app
+     * does not own a radar session yet), so the observable part is that nothing else happens. */
+    EvReset();
+    pTarget = EvAdd(1);
+    pTarget->nTimer = 0;
+    g_nIntShip = 0;
+    g_nIntStrat = 0;
+    Strateg_ConfirmInterceptTarget(&g_EvEnv);
+    CheckEqI32(g_Lines.nLineCount, 0, "a spent target timer goes to the radar screen, not to a message (0x7FCA4)");
+    CheckEqI32(g_nPulse, -1, "  and the assault branch is not taken");
+    EvFree();
+
+    /* The craft carries soldiers: the ground-assault line, and the radar pulse parked at 250.
+     * Craft_CountSoldiersAboard matches Soldier.bUnk183 against Ship.bId here -- see the
+     * ORIGINAL BUG note on the port. */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->nDisplayId = 10;
+    pTarget = EvAdd(1);
+    pTarget->nTimer = 5;
+    pTarget->nDisplayId = 11;
+    g_nIntShip = 0;
+    g_nIntStrat = 1;
+    g_aSol[0].bUnk183 = 10;                  /* == g_aEvShip[0].bId */
+    Strateg_ConfirmInterceptTarget(&g_EvEnv);
+    CheckEqI32(g_nStratIdx, 0, "the assault offer writes 0x159E74 (0x7FC38)");
+    CheckEqI32(g_Panel.anLineAux[0], 1, "  the target index into the panel aux column (0x7FC48)");
+    CheckEqI32(g_Panel.nUnk3032, 0, "  and clears the panel cursor (0x7FC60)");
+    CheckEqI32(g_Lines.abLineFlags[0], 23, "  with message 23 (0x7FC78)");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 0), 0, "  ship index in slot 0");
+    CheckEqI32((i32)UiLineList_GetColor(&g_Lines, 0, 1), 1, "  target index in slot 1");
+    CheckEqI32(g_nPulse, 250, "  and parks the radar pulse timer (0x7FC84)");
+    CheckEqI32(pOwn->nTimer, 0, "  the craft's own timer is left alone on this branch");
+    EvFree();
+
+    /* No soldiers aboard: the craft's OWN item timer is parked at 0xFFFF, which is the abort. */
+    EvReset();
+    pOwn = EvAdd(1);
+    pOwn->nDisplayId = 10;                   /* g_aEvShip[0].bId */
+    pTarget = EvAdd(1);
+    pTarget->nTimer = 5;
+    pTarget->nDisplayId = 11;
+    g_nIntShip = 0;
+    g_nIntStrat = 1;
+    Strateg_ConfirmInterceptTarget(&g_EvEnv);
+    CheckEqI32(pOwn->nTimer, 0xFFFF, "a craft with no crew parks its own marker timer at 0xFFFF (0x7FC10)");
+    CheckEqI32(pTarget->nTimer, 5, "  and the target's timer is untouched");
+    CheckEqI32(g_Lines.nLineCount, 0, "  with no message posted");
+    EvFree();
+}
+
 int main(void)
 {
     TestCountAndFind();
@@ -1503,6 +2182,8 @@ int main(void)
     TestSpawnMissionSite();
     TestDistWrapped();
     TestCraftRangeGate();
+    TestProcessEvents();
+    TestConfirmIntercept();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

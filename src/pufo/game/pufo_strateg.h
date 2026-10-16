@@ -371,8 +371,8 @@ i32 StrategEntry_InitTravel(StrategItem *pEntry, i32 nX0, i32 nY0, i32 nX1, i32 
  * tail-calling Geoscape_SpawnMissionSite, that hand-off has to be passed through
  * here as well.
  *
- * StrategList_ProcessEvents is a hook: it is the geoscape's per-tick event pass and
- * it is not ported yet. */
+ * StrategList_ProcessEvents is a hook because it lives in the geoscape layer and reaches
+ * the UI through envs; StrategList_ProcessEvents below is what the shell wires here. */
 typedef int (*StrategProcessEventsFn)(void *pUser);
 
 i32 StrategList_MaybeSpawnCraft_Process(PtrArray *pList, i32 *pnSeed, i32 nZoomMode,
@@ -395,6 +395,142 @@ typedef struct StrategSpawnCtx {
     StrategProcessEventsFn pfnProcessEvents;
     void *pUser;
 } StrategSpawnCtx;
+
+/* ------------------------------------------------- the geoscape event pass
+ *
+ * Evidence: StrategList_ProcessEvents @ 0x7fcb0 (4904 B) and the one tail-call it makes
+ * for a craft-to-craft arrival, Strateg_ConfirmInterceptTarget @ 0x7fb98 (280 B).
+ *
+ * One pass over the strateg list from index 0 up, with the count re-read after every
+ * item: `for (i = 0; i < GetCount(); ++i)`. A removal does NOT advance i, because the
+ * tail shifted down into the hole (0x805FC jumps back to 0x7FCF0 with R11 unchanged).
+ * Two stack slots carry across iterations: var_DC, the ship index the previous item
+ * resolved, and the loop counter. var_DC starts at 0 (0x7FCE0) and is what the
+ * interpolation tail dereferences for an inactive item, so an item that never ran the
+ * craft lookup reads the previous item's answer.
+ *
+ * Per item, in the order the ARM tests it:
+ *
+ *   - Type 3 (terror site) and type 4 (UFO) with nTimer > 0: decrement. When the timer
+ *     reaches zero the contact EXPIRES (0x7FD2C): every craft that is bIntercepting this
+ *     item gets message 13 with 0xFF in colour slot 0 and the ship index in slot 1 --
+ *     the line Smap_ResolveInterceptUI answers, whose slot 1 is the ship. An expired
+ *     site costs 800 from g_nFundPending (0x7FDC4); an expired UFO sets the one-shot
+ *     replacement byte at 0x162028 (0x7FDE0), which is the byte StrategList_RemoveAt's
+ *     tail consumes. Then the item is removed.
+ *   - Type 1 with nTimer > 0: decrement only (0x80620). This is how a parked craft
+ *     idles -- Strateg_ConfirmInterceptTarget parks the timer at 0xFFFF.
+ *   - Type 1, inactive AND invisible: skipped (0x7FE1C).
+ *   - Type 1, inactive but visible: the item is the CRAFT'S OWN map marker. The craft is
+ *     the one whose Ship.bId equals StrategItem.nDisplayId (0x7FE58), the same id
+ *     StrategList_FindIdxForShip matches on. If that craft is bAtBase the marker does
+ *     not move (0x7FE88). Otherwise, when the craft is bIntercepting, the marker chases
+ *     list[Ship.nStrategIdx]:
+ *       * The x leg is the wrapped 800-wide minimum WrappedDx computes, except the
+ *         winner is kept: nTravelStartSec is the leg length and bTravelDir its sign
+ *         (0x7FEE8..0x7FF50). The candidates are |dx+800|, |-dx+800| and |dx|, and the
+ *         plain |dx| replaces the wrapped one whenever it is smaller -- which for
+ *         |dx| <= 800 is exactly |dx| < 400. So a target 500 columns east is reached by
+ *         going 300 columns WEST, and one 100 columns east by going 100 east.
+ *       * dFracX and dFracY accumulate `dTrackA * (leg / sqrt(leg*leg + other*other))`
+ *         -- added for bTravelDir 1 and for targetY > itemY, subtracted otherwise. Each
+ *         pass moves the integer part into nX/nY and keeps the remainder (0x80418..
+ *         0x80504), so the marker advances dTrackA per pass along the true diagonal
+ *         rather than snapping to an axis.
+ *       * When |dx| < 2 AND |dy| < 2 the craft has ARRIVED, and what happens is chosen
+ *         by the TARGET's type, re-read from the list each time (0x8036c..0x80410):
+ *         5 aborts -- pause, message 14 with the ship index in slot 0, bIntercepting
+ *         cleared, the TARGET removed; 3 is a terror-site assault offer (pause, message
+ *         21, caption TEXTS[1146] "Район террора" + nSiteId); 4 is a UFO contact
+ *         (message 23, caption TEXTS[1147] "НЛО" + nDisplayId, the intercept pair
+ *         written; it pauses by storing 1 straight into 0x15961C rather than calling
+ *         GameTime_Pause); 0 with bActive == 1 is an alien base (pause, message 22,
+ *         caption TEXTS[1145] "База пришельцев" + nSiteId, then nRadarPulseTimer = 250);
+ *         and 1 is another craft -- the intercept pair is written and, when the target's
+ *         nTimer is already <= 0, Strateg_ConfirmInterceptTarget runs and the WHOLE pass
+ *         ends there (0x80FCC is a tail call into the epilogue).
+ *   - Type 1, active: the travel interpolation. When
+ *     (u32)(nGameTotalSec - nTravelEpochSec) / 60 >= uTravelMin the leg is over and the
+ *     item goes to Geoscape_SpawnMissionSite(pItem, -1) (0x809B8). Otherwise, unless
+ *     bDone is set, nX/nY are RE-DERIVED from the clock rather than stepped:
+ *     nX = nStartX +/- elapsed * nTravelStartSec / (60 * uTravelMin) with the sign from
+ *     bTravelDir, nY = nStartY +/- elapsed * |destY - startY| / (60 * uTravelMin) with
+ *     the sign from destY vs startY (0x809FC..0x80DD0). bDone != 0 instead dismisses
+ *     every craft intercepting this item through Smap_DismissSelected and removes it.
+ *   - The interpolation tail (0x80DD4): nX is wrapped ONCE (> 800 minus 800, < 0 plus
+ *     800), and an inactive marker whose nMissionSub is 1 and whose leg is over has
+ *     LANDED: bAtBase = 1, bContactMsg = 0, nMissionSub = 0, bVisible = 0, and
+ *     Base_TransferTacticalLoot runs to hand its cargo to the base.
+ *
+ * Three things only the ARM showed:
+ *   - `_rt_udiv` is called here with the DIVISOR in R0 and the DIVIDEND in R1. Geoscape_
+ *     AdvanceTime settles it: 0x5CE80, 0x5CEDC and 0x5CF30 load 60, 3600 and 86400 into R0
+ *     against an elapsed-seconds R1, and those are the minute/hour/day divisors. So every
+ *     "/ 60" in this function is an UNSIGNED division of the elapsed seconds, and a
+ *     negative elapsed value would arrive as a huge quotient.
+ *   - The interpolation constant at 0x80A80/0x80B98/0x80C70/0x80D70 is the double
+ *     0x3F911111_11111111, which is exactly 1/60: exponent 0x3F9 (2^-6) with mantissa
+ *     1 + 1/15 = 16/15. So the leg fraction is `elapsed * extent * (1/60) / uTravelMin`,
+ *     multiplied in that order.
+ *   - The arrival dispatch re-reads `(*ppShipChase)->nStrategIdx` from the Ship for every
+ *     type test (0x8036c, 0x80388, 0x803a4, 0x803c0, 0x803dc, 0x803f8) and calls
+ *     PtrArray_Get each time. Six lookups of the same item, and the pseudocode's single
+ *     "pTargetItem" hides that the original would follow a list that shifted in between.
+ *
+ * Deviations, listed rather than hidden:
+ *   - The craft lookup leaves the index at nCraftCount when no craft matches, and the
+ *     original then dereferences apCraft[nCraftCount] (0x7FE7C, 0x7FEA4). The port stops
+ *     and skips the item.
+ *   - The original never checks a craft slot for NULL in this function; the port skips
+ *     NULL slots, as every other ported loop over apCraft does.
+ *   - The original's return value is PtrArray_GetCount at the normal exits and a POINTER
+ *     at the two early exits (0x80FCC and 0x80FC4). The port returns the count everywhere;
+ *     no caller uses the value -- StrategList_MaybeSpawnCraft_Process tail-calls it and
+ *     StrategList_RemoveAt discards what comes back.
+ *   - The sub-envs the app does not own yet (pRadarEnv, pLootEnv, pMissionCtx, pShipEnv)
+ *     are guarded NULL, which skips those side effects. The original has no such gate. */
+/* The env reaches past this module: the message list and the status panel are the UI
+ * layer's types, the radar session belongs to pufo_geoscape.h, and SpawnMissionCtx is
+ * defined further down this very header. Pointers only, so incomplete types are enough. */
+struct UiLineList;
+struct UiPanel;
+struct RadarSessionEnv;
+struct SpawnMissionCtx;
+
+typedef struct StrategEventsEnv {
+    PtrArray                   *pList;        /* the strateg list @ 0x186534 */
+    GeoscapeWorld              *pWorld;       /* apCraft @ Map+0x10AC, nShipCount @ Map+0x1194 */
+    GameTime                   *pTime;        /* nTotalSec @ 0x159618, bPaused @ 0x15961C */
+    struct UiLineList          *pLines;       /* the root message list @ 0x158890 */
+    struct UiPanel             *pStatusPanel; /* *unk_18641C: apLines[0], anLineAux[0], nUnk3032 */
+    i32                        *pnFundPending;   /* g_nFundPending @ 0x1865BC */
+    u8                         *pbSpawnOnce;     /* 0x162028 */
+    u8                         *pbSelectionFlag; /* bMapSelectionFlag @ 0x159E84 */
+    i32                        *pnMsgShipIdx;    /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
+    i32                        *pnSelectedShipIdx; /* 0x187054 */
+    i32                        *pnInterceptShipIdx;    /* nInterceptShipIdx @ 0x15967C */
+    i32                        *pnInterceptStrategIdx; /* nInterceptStrategIdx @ 0x159680 */
+    i32                        *pnRadarPulseTimer;     /* nRadarPulseTimer @ 0xAC224 */
+    const char                 *pTextRecs;    /* aTextRecs @ 0xB38D0, the three captions */
+    Soldier *const             *apSoldiers;   /* Craft_CountSoldiersAboard */
+    i32                         nSoldierCount;
+    const ShipRemovalEnv       *pShipEnv;     /* Smap_DismissSelected */
+    StrategSpawnCtx            *pSpawnCtx;    /* StrategList_RemoveAt's replacement roll */
+    const struct SpawnMissionCtx *pMissionCtx; /* Geoscape_SpawnMissionSite */
+    const struct RadarSessionEnv *pRadarEnv;  /* Strateg_ConfirmInterceptTarget's dogfight open */
+    const TacticalLootEnv      *pLootEnv;     /* Base_TransferTacticalLoot */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void  *pSoundUser;
+} StrategEventsEnv;
+
+/* The pass. Returns the list count it stopped on. */
+i32 StrategList_ProcessEvents(const StrategEventsEnv *pEnv);
+
+/* The dogfight confirm, over the intercept pair the arrival just wrote.
+ * Target timer already zero -> open the radar screen. Otherwise, if the craft carries
+ * soldiers, offer the assault line (message 23) and park nRadarPulseTimer at 250; if it
+ * carries none, park the CRAFT's own item timer at 0xFFFF so the next passes idle it. */
+void Strateg_ConfirmInterceptTarget(const StrategEventsEnv *pEnv);
 
 /* ------------------------------------------------- removing a strateg item
  *
@@ -608,7 +744,7 @@ typedef struct SmapCraftSelectEnv {
     struct UiLineList *pLines;   /* the root line list @ 0x158890 */
     GameTime   *pTime;           /* 0x159618 */
     i32 *pnSelectedShipIdx;      /* 0x187054 */
-    i32 *pnStrategIndex;         /* 0x159E74 */
+    i32 *pnMsgShipIdx;         /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     i32 *pnSelectedStrategIdx;   /* 0x186BE4 */
     u8  *pbAssaultFlag;          /* bCraftSelectAssaultFlag @ 0x1870A8 */
     u8  *pbSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */

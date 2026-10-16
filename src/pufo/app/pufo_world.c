@@ -271,7 +271,7 @@ static void World_RadarClickThunk(void)
     env.pTime = &pW->time;
     env.pWorld = &pW->world;
     env.pnSelectedShipIdx = &pW->nSelectedShipIdx;
-    env.pnStrategIndex = &pW->nStrategIndex;
+    env.pnMsgShipIdx = &pW->nMsgShipIdx;
     env.pnScreenId = &pW->screen.nGeoscapeScreen;
     env.pbFlag1870A0 = &pW->bFlag1870A0;
     env.pbFlag18708C = &pW->bFlag18708C;
@@ -293,10 +293,41 @@ static int World_SpawnMissionStub(StrategItem *pUfo, i32 nMissionSub, void *pUse
     return 0; /* the mission-spawn leaf is not ported */
 }
 
-static int World_ProcessEventsStub(void *pUser)
+/* StrategList_ProcessEvents @ 0x7fcb0, the geoscape event pass StrategList_MaybeSpawnCraft_Process
+ * tail-calls. The four sub-envs the shell does not own yet (the radar session, the tactical-loot
+ * env, the mission-spawn ctx and the ship-removal env) are NULL, which skips those side effects;
+ * the guards are in the ported function. */
+static int World_ProcessEvents(void *pUser)
 {
-    (void)pUser;
-    return 0; /* StrategList_ProcessEvents (0x7fcb0) is not ported */
+    PufoWorldState *pW = (PufoWorldState *)pUser;
+    StrategEventsEnv env;
+
+    if (pW == NULL) {
+        return 0;
+    }
+
+    memset(&env, 0, sizeof(env));
+    env.pList = &pW->strategList;
+    env.pWorld = &pW->world;
+    env.pTime = &pW->time;
+    env.pLines = &pW->msgLines;
+    env.pStatusPanel = pW->ui.pStatusPanel;
+    env.pnFundPending = &pW->economy.aZero44_49[5];   /* g_nFundPending @ 0x1865BC */
+    env.pbSpawnOnce = &pW->bSpawnOnce;
+    env.pbSelectionFlag = &pW->bMapSelectionFlag;
+    env.pnMsgShipIdx = &pW->nMsgShipIdx;
+    env.pnSelectedShipIdx = &pW->nSelectedShipIdx;
+    env.pnInterceptShipIdx = &pW->nInterceptShipIdx;
+    env.pnInterceptStrategIdx = &pW->nInterceptStrategIdx;
+    env.pnRadarPulseTimer = &pW->nRadarPulseTimer;
+    env.pTextRecs = (pW->pAssets != NULL) ? (const char *)pW->pAssets->pTextRecs : NULL;
+    env.apSoldiers = pW->apSoldiers;
+    env.nSoldierCount = pW->nSoldierCount;
+    env.pSpawnCtx = &pW->spawnCtx;
+    env.pfnPlaySample = pW->pfnPlaySample;
+    env.pSoundUser = pW->pSoundUser;
+
+    return (int)StrategList_ProcessEvents(&env);
 }
 
 bool World_Init(PufoWorldState *pW)
@@ -333,7 +364,6 @@ static void World_StartNewHook(void *pUser)
     UnitCreateEnv unitEnv;
     ShipSpawnEnv shipEnv;
     BaseCreateEnv createEnv;
-    StrategSpawnCtx spawnCtx;
     StartNewEnv env;
     i32 i;
 
@@ -371,14 +401,15 @@ static void World_StartNewHook(void *pUser)
     /* The original reads the difficulty and the day gate from globals inside the callee; the
      * port lifted them into arguments. The shell has no difficulty setting yet, so it uses
      * difficulty 0 and an open gate (99), the same pair tests/test_strateg.c pins. */
-    memset(&spawnCtx, 0, sizeof(spawnCtx));
-    spawnCtx.pTables = &g_WorldRoll;
-    spawnCtx.nDifficulty = 0;
-    spawnCtx.nEarlyGate = 99;
-    spawnCtx.nZoomMode = pW->view.nMode;
-    spawnCtx.pnSeed = &pW->nStrategSeed;
-    spawnCtx.pfnSpawnMission = World_SpawnMissionStub;
-    spawnCtx.pfnProcessEvents = World_ProcessEventsStub;
+    memset(&pW->spawnCtx, 0, sizeof(pW->spawnCtx));
+    pW->spawnCtx.pTables = &g_WorldRoll;
+    pW->spawnCtx.nDifficulty = 0;
+    pW->spawnCtx.nEarlyGate = 99;
+    pW->spawnCtx.nZoomMode = pW->view.nMode;
+    pW->spawnCtx.pnSeed = &pW->nStrategSeed;
+    pW->spawnCtx.pfnSpawnMission = World_SpawnMissionStub;
+    pW->spawnCtx.pfnProcessEvents = World_ProcessEvents;
+    pW->spawnCtx.pUser = pW;
 
     for (i = 0; i < PUFO_NAV_CTLS; ++i) {
         pW->navEnv.apfnNavClick[i] = World_NoopClick;
@@ -420,7 +451,7 @@ static void World_StartNewHook(void *pUser)
     env.pnSiteCount = &pW->nSiteCount;
     env.apRadarPct = pW->abRadarPct;
     env.pStrategList = &pW->strategList;
-    env.pSpawnCtx = &spawnCtx;
+    env.pSpawnCtx = &pW->spawnCtx;
     env.pbPlacementPending = &pW->bPlacementPending;
     env.pbStrategCount = &pW->bStrategCount;
     env.abTypeCounters = pW->abTypeCounters;

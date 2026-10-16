@@ -2054,7 +2054,7 @@ static void TestBeginCraftSelect(void)
         env.pLines = &g_Lines;                                                                     \
         env.pTime = &g_Time;                                                                       \
         env.pnSelectedShipIdx = &nSelectedShip;                                                    \
-        env.pnStrategIndex = &nStratIdx2;                                                          \
+        env.pnMsgShipIdx = &nStratIdx2;                                                          \
         env.pnSelectedStrategIdx = &nSelStrat;                                                     \
         env.pbAssaultFlag = &bAssault;                                                             \
         env.pbSelectionFlag = &bSelFlag;                                                           \

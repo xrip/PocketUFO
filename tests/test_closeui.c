@@ -397,7 +397,7 @@ static void Fix_Reset(i32 nScreen)
     memset(&g_confirmEnv, 0, sizeof(g_confirmEnv));
     g_confirmEnv.ppPanelName = &g_pPanelName;
     g_confirmEnv.ppPanelStores = &g_pPanelStores;
-    g_confirmEnv.pnStrategIndex = &g_nStrategIdx;
+    g_confirmEnv.pnMsgShipIdx = &g_nStrategIdx;
     g_confirmEnv.pnSelectedShipIdx = &g_nSelShip;
     g_confirmEnv.pbSelectionFlag = &g_bSelFlag;
     g_confirmEnv.pbFinalMissionCtl = &g_bFinalCtl;
@@ -1383,7 +1383,7 @@ static void TestOptionsConfirm(void)
     g_time.bPaused = 0;
     UiPanel_ClickRow(g_pPanelName, 10, 75);
     CheckI(g_pPanelName->nUnk3032, 0, "the click sets the row the confirm reads (0x6CF3C)");
-    CheckI(g_nStrategIdx, 0, "nStrategIndex gets the craft index out of the names panel aux (0x6CF4C)");
+    CheckI(g_nStrategIdx, 0, "nMsgShipIdx gets the craft index out of the names panel aux (0x6CF4C)");
     CheckI(g_nSelShip, 0, "  and so does nSelectedShipIdx (0x6CF50)");
     CheckI(g_bSelFlag, 1, "bMapSelectionFlag is set (0x6CF78)");
     CheckI(g_nConfirmSample, 14, "sample 7 twice: the direct Sound_Play (0x6CF84) plus AppendWithSound's own");

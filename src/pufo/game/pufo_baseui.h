@@ -3090,7 +3090,7 @@ void Base_EnterBuildMode(const BaseBuildModeEnv *pEnv);
 
 typedef struct SmapWaypointEnv {
     UiLineList           *pLines;            /* the root message list @ 0x158890 */
-    i32                  *pnStrategIndex;    /* 0x159E74 */
+    i32                  *pnMsgShipIdx;    /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     i32                  *pnSelectedShipIdx; /* 0x187054 */
     const ShipRemovalEnv *pShipEnv;          /* Ship_ClearWaypointIntercept's env */
     GameTime             *pTime;             /* GameTime_Pause is one store to bPaused */
@@ -3410,7 +3410,7 @@ typedef struct RadarClickEnv {
     GameTime     *pTime;                 /* 0x159618; bPaused is the byte at 0x15961C */
     GeoscapeWorld *pWorld;               /* Ship_FindIndexByStrategType's craft array */
     i32          *pnSelectedShipIdx;     /* 0x187054 */
-    i32          *pnStrategIndex;        /* 0x159E74 */
+    i32          *pnMsgShipIdx;        /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     i32          *pnScreenId;            /* nGeoscapeScreen @ 0x186BC4 */
     u8           *pbFlag1870A0;          /* byte_18709C[4] */
     u8           *pbFlag18708C;
@@ -3517,7 +3517,7 @@ typedef struct SmapHitEnv {
     i32            *pnScreenId;            /* nGeoscapeScreen @ 0x186BC4 */
     i32            *pnSelectedStrategIdx;  /* 0x186BE4 */
     i32            *pnSelectedShipIdx;     /* 0x187054 */
-    i32            *pnStrategIndex;        /* 0x159E74 */
+    i32            *pnMsgShipIdx;        /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     UiPanel        *pOptPanelShips;        /* pOptPanelShips @ 0x159E18, bFlag7073 cleared at 0x83494 */
     GameTime       *pTime;                 /* 0x159618; bPaused is the byte GameTime_Pause writes */
     u8             *pbFlag18708C;
@@ -4389,7 +4389,7 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode);
  *
  * 1. 0x6CF3C..0x6CF50: the row is the NAME panel's nUnk3032 (what UiPanel_ClickRow set), and the craft
  *    it stands for is pPanelName->anLineAux[nUnk3032] -- OptionsScreen_Open wrote the craft index into
- *    that aux dword. Both selection globals come from it: nStrategIndex @ 0x159E74 and
+ *    that aux dword. Both selection globals come from it: nMsgShipIdx @ 0x159E74 and
  *    nSelectedShipIdx @ 0x187054.
  * 2. 0x6CF5C..0x6CF6C: the gate is the STORES panel's aux dword at the SAME index. OptionsScreen_Open
  *    leaves it 0 only when uRangeRemain == uRangeMax AND nFuel == uFuelMax AND bAtBase != 0, so a
@@ -4415,7 +4415,7 @@ void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode);
 typedef struct OptionsConfirmEnv {
     UiPanel **ppPanelName;            /* 0x159E18, the panel whose click installed this */
     UiPanel **ppPanelStores;          /* 0x159E78, the readiness gate */
-    i32      *pnStrategIndex;         /* nStrategIndex @ 0x159E74 */
+    i32      *pnMsgShipIdx;         /* nMsgShipIdx @ 0x159E74 */
     i32      *pnSelectedShipIdx;      /* nSelectedShipIdx @ 0x187054 */
     u8       *pbSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
     u8       *pbFinalMissionCtl;      /* byte_187068, arms the final-mission control */

@@ -5599,8 +5599,8 @@ void Smap_SetWaypoint(const SmapWaypointEnv *pEnv)
     }
 
     const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x85460 */
-    if (pEnv->pnStrategIndex != NULL) {
-        *pEnv->pnStrategIndex = nShipIdx; /* 0x85460 */
+    if (pEnv->pnMsgShipIdx != NULL) {
+        *pEnv->pnMsgShipIdx = nShipIdx; /* 0x85460 */
     }
     if (pEnv->pnSelectedShipIdx != NULL) {
         *pEnv->pnSelectedShipIdx = nShipIdx; /* 0x85468 */
@@ -6578,7 +6578,7 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
         view.nNextDisplayId = 0; /* not read by the lookup */
         nShipIdx = Ship_FindIndexByStrategType(pEnv->pWorld, &view, nItemIdx); /* 0x85624 */
         *pEnv->pnSelectedShipIdx = nShipIdx;            /* 0x187054, then 0x159E74 at 0x85630 */
-        *pEnv->pnStrategIndex = nShipIdx;
+        *pEnv->pnMsgShipIdx = nShipIdx;
         UiLineList_AppendWithSound(pEnv->pLines, 11, (u32)nShipIdx, 0u, 0u, 0u,
                                    pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x8563C */
         *pEnv->pnRadarPulseTimer = 250;                 /* 0x85644 */
@@ -6901,7 +6901,7 @@ u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
 
                 nShipIdx = Ship_FindIndexByStrategType(&world, &view, nItemIdx); /* 0x836A0 */
                 *pEnv->pnSelectedShipIdx = nShipIdx;        /* 0x187054, 0x836A0 */
-                *pEnv->pnStrategIndex = *pEnv->pnSelectedShipIdx; /* 0x159E74, 0x836A4 */
+                *pEnv->pnMsgShipIdx = *pEnv->pnSelectedShipIdx; /* 0x159E74, 0x836A4 */
                 pPanel->nUnk3032 = 0;                       /* 0x836AC */
                 pEnv->pTime->bPaused = 1;                   /* 0x836B4 */
                 /* No RemoveLine here -- the only one of the six that keeps line 0. */
@@ -8698,8 +8698,8 @@ void OptionsScreen_OnConfirm(OptionsConfirmEnv *pEnv)
     }
 
     const i32 nShip = pName->anLineAux[nRow];                                /* 0x6CF4C */
-    if (pEnv->pnStrategIndex != NULL) {
-        *pEnv->pnStrategIndex = nShip;                                       /* 0x6CF4C */
+    if (pEnv->pnMsgShipIdx != NULL) {
+        *pEnv->pnMsgShipIdx = nShip;                                       /* 0x6CF4C */
     }
     if (pEnv->pnSelectedShipIdx != NULL) {
         *pEnv->pnSelectedShipIdx = nShip;                                    /* 0x6CF50 */

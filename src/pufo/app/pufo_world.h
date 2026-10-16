@@ -106,8 +106,14 @@ typedef struct PufoWorldState {
     UiLineList        msgLines;                 /* the root message list @ 0x158890 */
     i32               nSelectedStrategIdx;      /* 0x186BE4 */
     i32               nSelectedShipIdx;         /* 0x187054 */
-    i32               nStrategIndex;            /* 0x159E74 */
+    i32               nMsgShipIdx;            /* nMsgSelectedShipIdx @ 0x159E74, an apCraft index */
     i32               nRadarPulseTimer;         /* nRadarPulseTimer @ 0xAC224 */
+    /* The geoscape event pass (StrategList_ProcessEvents @ 0x7fcb0) and the intercept pair its
+     * arrival dispatch writes. */
+    u8                bSpawnOnce;               /* 0x162028, the one-shot replacement-craft byte */
+    u8                bMapSelectionFlag;        /* bMapSelectionFlag @ 0x159E84 */
+    i32               nInterceptShipIdx;        /* nInterceptShipIdx @ 0x15967C */
+    i32               nInterceptStrategIdx;     /* nInterceptStrategIdx @ 0x159680 */
     u8                bFlag1870A0;              /* byte_18709C[4] */
     u8                bFlag18708C;
     u8                bFlag187090;
@@ -172,6 +178,7 @@ typedef struct PufoWorldState {
 
     /* The callees' own environments, kept here so their by-value state survives a spawn. */
     ShipCtorEnv ctorEnv;
+    StrategSpawnCtx spawnCtx;   /* the spawn hooks' wiring; the event pass reaches it back */
     BootAssets *pAssets; /* set by World_NewGame; the StartNew hook reaches it through here */
     bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
                         const char *psz2, void *pUser); /* the nav controls reuse it */

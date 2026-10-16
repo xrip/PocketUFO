@@ -147,7 +147,10 @@ static void Shutdown_RemoveUnits(const TactShutdownEnv *pEnv)
  * facility (0x3E00C / 0x3E058), on a leaving craft it loses the craft itself (0x3DFDC). */
 static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
 {
-    i32 nStrategIdx = *pEnv->pnStrategIndex;
+    /* 0x159E74 is an apCraft INDEX, not a strateg index: 0x3DE80/0x3DF5C/0x3DF88 all load it,
+     * index Map.apCraft with it (offset 0x10AC) and only then take Ship.nStrategIdx @ +0x38,
+     * which is what StrategList_RemoveAt actually receives. */
+    i32 nShipIdx = *pEnv->pnMsgShipIdx;
     u8 nMode = *pEnv->pbMissionMode;
     Ship *pCraft;
     Ship *pStrategCraft;
@@ -159,10 +162,11 @@ static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
             Base_DemolishFacility(pEnv->pDemolishEnv, pBase->bUnk4); /* 0x3DE60 */
             nMode = *pEnv->pbMissionMode;
         }
-        pStrategCraft = (Ship *)pEnv->apCraftCopy[nStrategIdx];
+        pStrategCraft = (Ship *)pEnv->apCraftCopy[nShipIdx];         /* 0x3DE80 .. 0x3DE8C */
         if (nMode == 0 && ((StrategItem *)PtrArray_Get(pEnv->pStrategList,
                                                        pStrategCraft->nStrategIdx))->nType == 4) {
-            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld, nStrategIdx,
+            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld,
+                                 pStrategCraft->nStrategIdx,         /* 0x3DEB8 LDR R1,[R3,#0x38] */
                                  pEnv->pbSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
         }
         return;
@@ -171,13 +175,16 @@ static void Shutdown_MissionOutcome(const TactShutdownEnv *pEnv)
     if (nMode == 0 || nMode == 3 || nMode == 2) {
         *pEnv->pbSpawnOnceFlag = 1;                        /* 0x3DF48 */
         if (*pEnv->pbMissionVictory != 0) {
-            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld, nStrategIdx,
+            pStrategCraft = (Ship *)pEnv->apCraftCopy[nShipIdx];    /* 0x3DF5C .. 0x3DF68 */
+            StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld,
+                                 pStrategCraft->nStrategIdx,        /* 0x3DF6C LDR R1,[R3,#0x38] */
                                  pEnv->pbSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
         } else {
-            pStrategCraft = (Ship *)pEnv->apCraftCopy[nStrategIdx];
+            pStrategCraft = (Ship *)pEnv->apCraftCopy[nShipIdx];    /* 0x3DF88 .. 0x3DF94 */
             if (((StrategItem *)PtrArray_Get(pEnv->pStrategList,
                                              pStrategCraft->nStrategIdx))->nType == 4) {
-                StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld, nStrategIdx,
+                StrategList_RemoveAt(pEnv->pStrategList, pEnv->pShipEnv->pWorld,
+                                     pStrategCraft->nStrategIdx,    /* 0x3DFBC LDR R1,[R3,#0x38] */
                                      pEnv->pbSpawnOnceFlag, pEnv->pShipEnv->pSpawnCtx);
             }
             pCraft = (Ship *)pEnv->apCraftCopy[*pEnv->pnCraftIndex];
