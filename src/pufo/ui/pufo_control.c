@@ -325,3 +325,21 @@ void UiBank_FreeAllPads(UiWidgetBank *pBank)
         }
     }
 }
+
+/* Bank_AtexitThunk @ 0x11170: the atexit entry Bank_RegisterAtexit installs. In the original it names
+ * the global bank at 0xAC6D0 outright; the port's bank is caller-owned, so it releases the bank
+ * Bank_RegisterAtexit was handed. */
+static UiWidgetBank *g_pBankToFree;
+
+void Bank_AtexitThunk(void)
+{
+    if (g_pBankToFree != NULL) {
+        UiBank_FreeAllPads(g_pBankToFree); /* 0x11174 */
+    }
+}
+
+int Bank_RegisterAtexit(UiWidgetBank *pBank)
+{
+    g_pBankToFree = pBank;
+    return atexit(Bank_AtexitThunk); /* 0x11168 */
+}

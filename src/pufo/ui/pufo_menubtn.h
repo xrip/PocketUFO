@@ -7,7 +7,7 @@
  *   Cancel0 @ 0x1a24c, Cancel1 @ 0x1a26c,
  *   Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
  *   Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04,
- *   App_QuitFromTact (0x18e18), not ported.
+ *   App_QuitFromTact @ 0x18e18.
  *
  * ## What they are
  *
@@ -128,8 +128,8 @@ void Menu_OpenSlotList(u16 *pnUiScreen, i32 *pnListMode, bool bSaveMode,
 
 /* Menu_ConfirmQuitDialog @ 0x18e2c: sample 16, then UiModal_Begin(pCtx, 140, 24, 4,
  * "YES", App_QuitFromTact (0x18e18), "NO", Menu_CancelQuitDialog @ 0x18e04), then
- * nUiScreen = 8. The two callbacks are injected: App_QuitFromTact is
- * Tact_Shutdown(1) + App_QuitDisplay, which is the app shell's job. Returns the new
+ * nUiScreen = 8. The two callbacks are injected: the YES callback is App_QuitFromTact
+ * below, the NO callback is Menu_CancelQuitDialog below. Returns the new
  * screen id, as the original does. */
 i32 Menu_OpenQuitDialog(UiModalState *pModal, u16 *pnUiScreen,
                         void (*pfnYes)(void), void (*pfnNo)(void),
@@ -137,6 +137,16 @@ i32 Menu_OpenQuitDialog(UiModalState *pModal, u16 *pnUiScreen,
 
 /* Menu_CancelQuitDialog @ 0x18e04, the NO callback: it only clears the screen. */
 void Menu_CancelQuitDialog(u16 *pnUiScreen);
+
+/* App_QuitFromTact @ 0x18e18: the YES callback of the quit dialog --
+ * `Tact_Shutdown(1); App_QuitDisplay();`. The original calls both on globals; the port injects both
+ * halves because the shutdown env and the display teardown are app state. The app wires this to the
+ * screen-8 escape seam (TactInputHooks.pfnShutdownQuit). Deviation: the shell never runs a tactical
+ * mission, so its shutdown half reaches Tact_Shutdown with no mission env (its NULL guard makes the
+ * call a no-op); the original's Tact_Shutdown(1) operates on the global mission context, which only
+ * exists during a mission. */
+void App_QuitFromTact(void (*pfnShutdownTact)(u8 bKeepSome, void *pUser),
+                      void (*pfnQuitDisplay)(void *pUser), void *pUser);
 
 /* ------------------------------------------------- the start menu buttons
  *

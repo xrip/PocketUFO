@@ -120,6 +120,25 @@ void PufoFont_Init(PufoFont *pFont)
      * covers them, so only the flags need setting. */
 }
 
+PufoFont *Font_Init_ReturnArg(PufoFont *pFont)
+{
+    PufoFont_Init(pFont); /* 0x46138 */
+    return pFont;         /* 0x46140 */
+}
+
+/* The thunk j_Font_Free @ 0x460dc registers: the font block is a global in the original, so the thunk
+ * names it. PufoFont_Free is idempotent (it NULLs what it releases), so a caller that already freed the
+ * block is safe. */
+void Font_AtexitThunk(void)
+{
+    PufoFont_Free(&g_fontSys); /* 0x460E0 */
+}
+
+int Font_RegisterAtexit(void)
+{
+    return atexit(Font_AtexitThunk); /* 0x460D8 */
+}
+
 void PufoFont_Free(PufoFont *pFont)
 {
     u8 i;

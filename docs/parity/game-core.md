@@ -17242,3 +17242,86 @@ too; recorded as a separate issue.
 
 IDB: stru_AC548 renamed to aUiBaseInfoCtlDesc with a data comment, a function comment on 0x9ddc8
 covering the seven steps, and a comment on 0x9E054 naming the out-of-bounds read.
+## Unit 105 - the small CRT and app wrappers (Font_Init_ReturnArg @ 0x46130, Font_RegisterAtexit @ 0x460d0, j_Font_Free @ 0x460dc, Bank_RegisterAtexit @ 0x11164, Bank_AtexitThunk @ 0x11170, DatFile_RegisterAtexit @ 0x3f0d0, Render_Frame_DecRef @ 0x36818, UiModal_EndThunk @ 0x12254, App_QuitFromTact @ 0x18e18, ??1CDialogTemplate@@QAA@XZ @ 0x54c48)
+
+Unit 105 ports the last small wrappers that sit between the CRT init-term table and the
+ported subsystems, plus the two app-side glue functions. Every one was re-read from the ARM
+before it was written.
+
+Font_Init_ReturnArg @ 0x46130 is `Font_Init(pFont); return pFont;` -- the font subsystem's
+init entry, reached through the init-term thunk at 0x460c4, which discards the result. The port
+takes the block as an argument because the port's font block is caller-owned. Test: a block
+filled with 0xA5 comes back the same and cleared.
+
+Font_RegisterAtexit @ 0x460d0 is `return atexit(j_Font_Free);`. j_Font_Free @ 0x460dc is two
+instructions: `LDR R0, =fontSys` then `B Font_Free` -- a tail jump that names the global. The
+port's font block is a global too (g_fontSys), so Font_AtexitThunk names it exactly as the
+original does. The test plants live allocations in g_fontSys, runs the thunk, and checks every
+one is released and bInited cleared; a second run is idempotent, which matters because the
+registered entry runs the same thunk once more at process exit.
+
+Bank_RegisterAtexit @ 0x11164 is `return atexit(Bank_AtexitThunk);`; Bank_AtexitThunk @ 0x11170
+is `UiBank_FreeAllPads(&pBank)` on the global bank at 0xAC6D0. The port's bank is caller-owned,
+so the registrar takes it and the thunk releases that one -- the same shape as
+StrategList_RegisterAtexit. The test plants pads on the first and the last widget of the bank
+(the thunk walks all fourteen groups in reverse) and checks both ends come loose.
+
+DatFile_RegisterAtexit @ 0x3f0d0 is `return atexit(j_DatFile_dtor);`, and that thunk is
+`DatFile_dtor(&unk_158220)` -- the dtor of the global container the save driver opens its slots
+on. The port's containers are caller-owned, so the registrar takes the container. The test opens
+a real CREATE-mode container, registers it, runs the thunk, and checks nMode becomes CLOSED,
+the write buffer is released, and bChunkOpen is cleared.
+
+Render_Frame_DecRef @ 0x36818 is five instructions: `LDR R3,[R0,#0x64]; SUB R3,#1;
+STR R3,[R0,#0x64]; LDR R0,=&gIsoDraw; B Render_Frame`. Map+0x64 is dword_113A1C =
+apUiSlotsA[1], the banner-fade tick count that Tact_EndMission @ 0x351FC seeds with 10. The only
+caller is the PocketUFO_WndProc timer 0xC352 arm at 0xA09AC, taken while Map_nBannerFadeTicks > 0
+and nUiScreen == 13. IDB correction: the prototype carried three int arguments; it takes one,
+the Map context in R0 -- set to `void __fastcall Render_Frame_DecRef(int pMapCtx)` and the
+decompiler now shows `--*(_DWORD *)(pMapCtx + 100)`. Deviation: the port hands the counter
+pointer directly and guards it; the original always has the Map context. The test pins the
+order at the boundary: with counter 1 the decrement must land before the frame, so the frame
+takes the fade-in branch (nothing drawn on a white surface) and not the dark-blit branch --
+counter 10 -> 9 alone could not tell the two orders apart.
+
+UiModal_EndThunk @ 0x12254 is a tail call to UiModal_End @ 0x2648c, stored as the modal-end
+callback in the eighteen modal tables Inv_HandlePointer dispatches. Deviation: the original
+thunk is zero-argument because UiModal_End reads the modal fields out of the global context;
+the port's modal state is caller-owned, so the thunk takes the state pointer. The test re-opens
+the modal before ending it through the thunk, so the flag actually has to change.
+
+App_QuitFromTact @ 0x18e18 is the YES callback of the quit dialog: `Tact_Shutdown(1)` at 0x18E20,
+then `App_QuitDisplay()` at 0x18E28. Ported in pufo_menubtn.c next to Menu_OpenQuitDialog and
+Menu_CancelQuitDialog, the other two members of the trio, with both halves injected because the
+shutdown env and the display teardown are app state. The app wires it to the screen-8 escape
+seam (TactInputHooks.pfnShutdownQuit). Deviation: the shell never runs a tactical mission, so
+its shutdown half reaches Tact_Shutdown with no mission env -- the NULL guard makes the call a
+no-op; the original's Tact_Shutdown(1) works on the global mission context, which only exists
+during a mission. The test pins the order (shutdown, then display), the bKeepSome value 1, and
+that a missing half is skipped.
+
+??1CDialogTemplate@@QAA@XZ @ 0x54c48 is the template dtor, `if (pTemplate)
+operator delete(pTemplate)`, called four times from Map_BuildMissionTerrain. MapTemplate_Free is
+its port counterpart: the port's template struct is caller-owned, so the heap part the dtor
+releases is the blob, not the struct. renames.tsv records the pair.
+
+Dispositions, not ported, with reasons. App_ResizeMainWindow @ 0x9ecb8 is pure Win32 glue:
+`SetWindowPos(hWndMain, HWND_BOTTOM, 0, 0, w, h, SWP_HIDEWINDOW)` with the size read from the
+two globals only InitInstance writes; its only caller is MenuBtn_ResizeWindow, ported as
+Menu_ResizeWindow with the resize injected, and the shell never installs that options-screen
+button. Map_RegisterAtexit (0x22620) and its thunk Map_Atexit_nullsub2 (0x2262c) register a
+wrapper over nullsub_2, an empty stub, so they carry no behaviour -- the same disposition as the
+BaseGrid atexit trio (0x614a8, 0x614b4, 0x614c0), already recorded in pufo_baseui.h.
+
+Test-harness defect found and fixed. test_renderframe's CheckEqI32 printed FAIL but never
+incremented g_nFailures, so the suite could never exit non-zero: the first unit-105 mutation
+sweep missed three counter/order mutants for that reason alone. The counter is now incremented.
+The same class of hole existed in five bail-out guards (four in test_baseui.c, one in
+test_geoscape.c) that printed FAIL and returned without counting; they now count. The
+test_enemyai.c Ai_Rand guard prints FAIL and exits(2), which is already caught. After the fix
+the sweep is 16 patterns, 16 caught.
+
+Coverage after unit 105: 964 / 1103 functions (87.4%), 552,812 / 598,792 bytes (92.3%). The
+remaining non-platform gaps are Geoscape_Draw @ 0x8c180 (33,744 B), Ui_DrawBaseInfo @ 0x9b5f4
+(10,196 B), App_ResizeMainWindow @ 0x9ecb8 (84 B) and the five no-op atexit registrars (60 B),
+all with dispositions recorded here or in the headers.

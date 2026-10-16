@@ -31,6 +31,13 @@ void UiModal_End(UiModalState *pModal)
     pModal->bOpen = false;
 }
 
+/* UiModal_EndThunk @ 0x12254: tail call to UiModal_End @ 0x2648c. See the header for the
+ * zero-argument deviation. */
+void UiModal_EndThunk(UiModalState *pModal)
+{
+    UiModal_End(pModal);
+}
+
 /* abs32 as the original's ARM uses it: the phase formulas all measure distance from 4. */
 static i32 Abs32(i32 n)
 {

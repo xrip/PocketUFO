@@ -212,6 +212,32 @@ int main(int argc, char **argv)
         remove("test_roundtrip2.tmp");
     }
 
+    /* DatFile_RegisterAtexit @ 0x3f0d0 and its thunk j_DatFile_dtor @ 0x3f0d8: the registrar hands the
+     * container to atexit, and the thunk runs DatFile_dtor on the container it was handed. The block is
+     * static because the registered entry runs the thunk once more at process exit. */
+    printf("DatFile_RegisterAtexit / DatFile_AtexitThunk (0x3f0d0, 0x3f0d8)\n");
+    {
+        static DatFile dat;
+
+        remove("test_atexit.tmp");
+        DatFile_ctor(&dat);
+        Check(DatFile_Open(&dat, "test_atexit.tmp", PUFO_DAT_CREATE, 2), "Open(create, 2 slots)");
+        Check(DatFile_RegisterAtexit(&dat) == 0, "registrar returns atexit's success value");
+        Check(dat.nMode == PUFO_DAT_CREATE, "container still open before the thunk runs");
+
+        DatFile_AtexitThunk();
+
+        Check(dat.nMode == PUFO_DAT_CLOSED, "thunk closed the container");
+        Check(dat.pWriteBuf == NULL, "thunk released the write buffer");
+        Check(dat.bChunkOpen == 0, "thunk cleared the chunk-open flag");
+
+        /* The registered entry runs this same thunk at process exit; a second run must be safe. */
+        DatFile_AtexitThunk();
+        Check(dat.nMode == PUFO_DAT_CLOSED, "a second thunk run is idempotent");
+
+        remove("test_atexit.tmp");
+    }
+
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
 }

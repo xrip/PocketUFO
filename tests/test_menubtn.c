@@ -3,7 +3,8 @@
  *  ConfirmClear @ 0x194c8, Secondary @ 0x19498, SecondaryDismiss @ 0x195e0,
  *  ActionBack0/1 @ 0x195a8/0x19618, Cancel0/1 @ 0x1a24c/0x1a26c,
  *  Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
- *  Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04.) */
+ *  Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04,
+ *  App_QuitFromTact @ 0x18e18.) */
 #include <stdlib.h>
 #include "game/pufo_input.h"
 #include "game/pufo_menu.h"
@@ -329,6 +330,40 @@ static void TestQuitDialog(void)
 
     Menu_CancelQuitDialog(&nScreen);
     TestEqI32("  the NO callback only clears the screen", (i32)nScreen, 0);
+}
+
+/* App_QuitFromTact @ 0x18e18: Tact_Shutdown(1) at 0x18E20, then App_QuitDisplay at 0x18E28. */
+static i32 g_nQtKeep;
+
+static void QtShutdown(u8 bKeepSome, void *pUser)
+{
+    (void)pUser;
+    g_nQtKeep = bKeepSome;
+    Order_Add('S');
+}
+
+static void QtDisplay(void *pUser)
+{
+    (void)pUser;
+    Order_Add('D');
+}
+
+static void TestQuitFromTact(void)
+{
+    printf("App_QuitFromTact (0x18e18)\n");
+
+    Reset();
+    App_QuitFromTact(QtShutdown, QtDisplay, NULL);
+    CheckOrder("SD", "  shutdown first, then the display teardown");
+    TestEqI32("  the shutdown half gets bKeepSome = 1 (0x18E20)", g_nQtKeep, 1);
+
+    Reset();
+    App_QuitFromTact(NULL, QtDisplay, NULL);
+    CheckOrder("D", "  a missing shutdown half is skipped");
+
+    Reset();
+    App_QuitFromTact(QtShutdown, NULL, NULL);
+    CheckOrder("S", "  a missing display half is skipped");
 }
 
 static i32 g_nSmSample;
@@ -661,6 +696,7 @@ int main(void)
     TestCancel();
     TestSlotList();
     TestQuitDialog();
+    TestQuitFromTact();
     TestStartMenu();
     TestStartUiShutdown();
     TestSaveLoadSlot();

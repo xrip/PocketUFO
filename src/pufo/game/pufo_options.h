@@ -61,7 +61,10 @@ void Options_LoadFromRegistry(PufoOptions *pOpt);
 
 /* Map_InitAndLoadRegistry @ 0x22648 -- the Map subsystem's startup entry, reached
  * from the CRT init-term table through the thunk at 0x22604 (this function, then
- * Map_RegisterAtexit). It initialises the Map block's scratch and then loads the
+ * Map_RegisterAtexit). Map_RegisterAtexit (0x22620) and its thunk Map_Atexit_nullsub2 (0x2262c) are
+ * deliberately NOT ported: they register a wrapper over nullsub_2, an empty stub, so they carry no
+ * behaviour -- the same disposition as the BaseGrid atexit trio.
+ * It initialises the Map block's scratch and then loads the
  * option block. The scratch lives in caller storage, the way TactInitEnv carries
  * the per-mission flags, because the port splits the original 152 KB block across
  * several models; every member cites the Map offset the original writes.

@@ -51,6 +51,10 @@ bool MapTemplate_Load(MapTemplate *pTpl, const char *pszBase, u8 nFlag)
     return true;
 }
 
+/* ??1CDialogTemplate@@QAA@XZ @ 0x54c48: the template dtor, `if (pTemplate) operator delete(pTemplate)`,
+ * called four times from Map_BuildMissionTerrain (mirrored at pufo_terrain.c). MapTemplate_Free is its
+ * port counterpart: the port's template struct is caller-owned, so the heap part the dtor releases is
+ * the blob, not the struct. */
 void MapTemplate_Free(MapTemplate *pTpl)
 {
     free(pTpl->pBlob);

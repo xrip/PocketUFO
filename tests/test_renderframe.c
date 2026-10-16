@@ -34,6 +34,9 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
         printf("  ok   %s (%d)\n", pszWhat, (int)nGot);
     } else {
         printf("  FAIL %s: got %d, want %d\n", pszWhat, (int)nGot, (int)nWant);
+        /* The counter was missing here: a FAIL printed but the suite still exited 0, so no
+         * mutation or regression in this suite could ever fail the build. Fixed in unit 105. */
+        g_nFailures += 1;
     }
 }
 
@@ -265,6 +268,46 @@ int main(void)
         (void)Render_Frame(&env);
     }
     CheckEqI32(g_nPresentCalls, 1, "unknown screen still presents");
+
+    /* 7. Render_Frame_DecRef @ 0x36818: decrement the banner-fade counter (Map+0x64), then render
+     * one frame -- the timer path PocketUFO_WndProc @ 0xA09AC takes while nUiScreen is 13. */
+    printf("Render_Frame_DecRef @ 0x36818\n");
+    ResetHooks();
+    memset(&env, 0, sizeof(env));
+    env.nUiScreen  = 0;
+    env.pfnPresent = Hook_Present;
+    env.nFadeCount = 10; /* the value Tact_EndMission @ 0x351FC seeds into Map+0x64 */
+    {
+        CursorDirState cur;
+        memset(&cur, 0, sizeof(cur));
+        env.pCursorDir = &cur;
+        Render_Frame_DecRef(&env.nFadeCount, &env);
+    }
+    CheckEqI32(env.nFadeCount, 9, "counter decremented (0x3681C..0x36820)");
+    CheckEqI32(g_nPresentCalls, 1, "the frame was rendered (0x36828)");
+
+    /* The port guards the counter pointer; the original always has the Map context. */
+    Render_Frame_DecRef(NULL, &env);
+    CheckEqI32(env.nFadeCount, 9, "NULL counter leaves the value alone");
+    CheckEqI32(g_nPresentCalls, 2, "NULL counter still renders the frame");
+
+    /* The order matters at the boundary: with counter 1 the decrement must land BEFORE the frame,
+     * so the frame takes the fade-in branch (no pad -> nothing drawn), not the dark-blit branch
+     * that a counter of 1 would take if the render came first. */
+    ResetHooks();
+    memset(&env, 0, sizeof(env));
+    env.nUiScreen  = 0;
+    env.pfnPresent = Hook_Present;
+    env.nFadeCount = 1;
+    {
+        CursorDirState cur;
+        memset(&cur, 0, sizeof(cur));
+        env.pCursorDir = &cur;
+        memset(g_surf.pPixels, 0xFF, (size_t)g_surf.nWidth * (size_t)g_surf.nHeight * 2u);
+        Render_Frame_DecRef(&env.nFadeCount, &env);
+    }
+    CheckEqI32(env.nFadeCount, 0, "counter 1 reaches 0 before the frame runs");
+    Check(InkAt(120, 160) == (i32)0xFFFF, "the frame took the fade-in branch, not the dark blit");
 
     printf("%s\n", g_nFailures == 0 ? "all ok" : "FAILURES");
     return g_nFailures == 0 ? 0 : 1;

@@ -5,6 +5,7 @@
 #include "pufo_test.h"
 #include "ui/pufo_uibank.h"
 
+#include <stdlib.h> /* malloc, the planted pads the atexit thunk must release */
 #include <string.h>
 
 static UiWidgetBank g_Bank;
@@ -439,10 +440,57 @@ static void TestLoadPads(void)
     TestCheck("  NULL hooks are safe", !Tact_LoadUiPads(NULL));
 }
 
+/* Bank_RegisterAtexit @ 0x11164 and Bank_AtexitThunk @ 0x11170: the registrar hands the bank to
+ * atexit, and the thunk runs UiBank_FreeAllPads on the bank it was handed. */
+static void TestBankAtexit(void)
+{
+    PadImage *apPlanted[4];
+    bool      bActionFlag = true;
+    i32       i;
+
+    printf("Bank_RegisterAtexit / Bank_AtexitThunk (0x11164, 0x11170)\n");
+
+    UiBank_CtorAll(&g_Bank, &bActionFlag);
+    TestCheck("  ctor clears the action flag", !bActionFlag);
+
+    /* Plant live pads on the first and the last widget: the thunk walks all fourteen groups in
+     * reverse, so both ends of the bank must come loose. */
+    for (i = 0; i < 4; ++i) {
+        apPlanted[i] = (PadImage *)malloc(sizeof(PadImage));
+        PadImage_ctor(apPlanted[i]);
+        apPlanted[i]->pData = (u8 *)malloc(16);
+    }
+    g_Bank.aCtl[0].apPads[0]   = apPlanted[0];
+    g_Bank.aCtl[0].apPads[2]   = apPlanted[1];
+    g_Bank.aCtl[129].apPads[1] = apPlanted[2];
+    g_Bank.aCtl[129].apPads[2] = apPlanted[3];
+
+    TestEqI32("  the registrar returns atexit's success value", Bank_RegisterAtexit(&g_Bank), 0);
+
+    Bank_AtexitThunk();
+
+    TestCheck("  thunk released the pads on the first widget",
+              g_Bank.aCtl[0].apPads[0] == NULL && g_Bank.aCtl[0].apPads[2] == NULL);
+    TestCheck("  thunk released the pads on the last widget",
+              g_Bank.aCtl[129].apPads[1] == NULL && g_Bank.aCtl[129].apPads[2] == NULL);
+    TestCheck("  thunk freed the planted pixel data",
+              apPlanted[0]->pData == NULL && apPlanted[3]->pData == NULL);
+
+    /* The registered atexit entry runs this same thunk once more at process exit, so a second run
+     * must be safe on an already-empty bank. */
+    Bank_AtexitThunk();
+    TestCheck("  a second thunk run is idempotent", g_Bank.aCtl[0].apPads[0] == NULL);
+
+    for (i = 0; i < 4; ++i) {
+        free(apPlanted[i]); /* UiControl_FreePads releases the pixel data, not the pad struct */
+    }
+}
+
 int main(void)
 {
     TestGroupCoverage();
     TestInitControls();
     TestLoadPads();
+    TestBankAtexit();
     return TestSummary("test_uibank");
 }

@@ -11,6 +11,7 @@
 #include "render/pufo_render.h"
 
 #include <stdio.h>
+#include <stdlib.h> /* malloc, the planted allocations the atexit thunk must release */
 #include <string.h>
 
 static int g_nFailures;
@@ -563,6 +564,54 @@ static void TestLoadTactSprites(void)
     }
 }
 
+/* Font_Init_ReturnArg @ 0x46130: Font_Init on the block, then the block comes back. */
+static void TestFontInitReturnArg(void)
+{
+    PufoFont font;
+    PufoFont *pRet;
+
+    printf("Font_Init_ReturnArg (0x46130)\n");
+
+    memset(&font, 0xA5, sizeof(font)); /* dirty block: the init must clear it */
+    pRet = Font_Init_ReturnArg(&font);
+    Check(pRet == &font, "the same block is handed back (0x46140)");
+    CheckEqI32(font.bInited, 1, "Font_Init ran: bInited is set");
+    CheckEqI32(font.nSlotCount, 0, "Font_Init ran: slot count cleared");
+    Check(font.apSprIndex == NULL, "Font_Init ran: apSprIndex cleared");
+    Check(font.anFlagSprBase[4] == 0, "Font_Init ran: the flag bases cleared from 0xA5");
+}
+
+/* Font_RegisterAtexit @ 0x460d0 and its thunk j_Font_Free @ 0x460dc (Font_AtexitThunk). */
+static void TestFontAtexit(void)
+{
+    printf("Font_RegisterAtexit / Font_AtexitThunk (0x460d0, 0x460dc)\n");
+
+    CheckEqI32(Font_RegisterAtexit(), 0, "the registrar returns atexit's success value");
+
+    /* The thunk names the global block, exactly as j_Font_Free does. Plant live allocations so the
+     * release is observable, then run the thunk and check every one of them is gone. */
+    g_fontSys.nSlotCount  = 1;
+    g_fontSys.apSprData[0] = malloc(8);
+    g_fontSys.apMc1Data[0] = malloc(8);
+    g_fontSys.apMc1Index  = malloc(8);
+    g_fontSys.apSprIndex  = malloc(8);
+    g_fontSys.bInited     = 1;
+
+    Font_AtexitThunk();
+
+    Check(g_fontSys.apSprData[0] == NULL, "thunk released apSprData[0]");
+    Check(g_fontSys.apMc1Data[0] == NULL, "thunk released apMc1Data[0]");
+    Check(g_fontSys.apMc1Index == NULL, "thunk released apMc1Index");
+    Check(g_fontSys.apSprIndex == NULL, "thunk released apSprIndex");
+    CheckEqI32(g_fontSys.nSlotCount, 0, "thunk cleared nSlotCount");
+    CheckEqI32(g_fontSys.bInited, 0, "thunk cleared bInited");
+
+    /* PufoFont_Free NULLs what it releases, so a second thunk run is safe -- the registered atexit
+     * entry will run this same thunk once more at process exit. */
+    Font_AtexitThunk();
+    CheckEqI32(g_fontSys.bInited, 0, "a second thunk run is idempotent");
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -583,6 +632,8 @@ int main(void)
     TestPatchCraftSprites();
     TestFlagSprBases();
     TestLoadTactSprites();
+    TestFontInitReturnArg();
+    TestFontAtexit();
 
     Asset_CloseArchives();
 

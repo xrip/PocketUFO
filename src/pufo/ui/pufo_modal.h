@@ -41,6 +41,13 @@ void UiModal_Begin(UiModalState *pModal, i32 n12, i32 n13, i32 n14, void *pLabel
 /* UiModal_End @ 0x2648c. Clears only the open flag; the stored fields survive. */
 void UiModal_End(UiModalState *pModal);
 
+/* UiModal_EndThunk @ 0x12254: the zero-argument wrapper that tail-calls UiModal_End, stored as the
+ * modal-end callback in the eighteen modal tables Inv_HandlePointer dispatches (see InvDropHooks.pfnModal
+ * in pufo_invdrag.h). Deviation: the original thunk is zero-arg because UiModal_End reads the modal fields
+ * out of the global context; the port's modal state is caller-owned, so the thunk takes the state pointer
+ * and forwards it -- same observable effect when the callback fires. */
+void UiModal_EndThunk(UiModalState *pModal);
+
 /* --- the modal dialogue renderer ------------------------------------------------
  *
  * UiModal_DrawDialog @ 0x264a0 draws the framed dialogue: a filled body, four border

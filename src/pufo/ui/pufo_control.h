@@ -117,10 +117,16 @@ extern const UiBankSpan g_aUiBankSpans[PUFO_PBANK_SPAN_COUNT];
  * is passed rather than reached through bank memory. Returns the bank. */
 UiWidgetBank *UiBank_CtorAll(UiWidgetBank *pBank, bool *pbActionFlag);
 
-/* UiBank_FreeAllPads @ 0x1117c, reached through Bank_AtexitThunk (0x11170, a 12-byte thunk the
- * port does not reproduce). Frees the
- * pads of all 130 widgets in the reverse group order. */
+/* UiBank_FreeAllPads @ 0x1117c. Frees the pads of all 130 widgets in the reverse group order. */
 void UiBank_FreeAllPads(UiWidgetBank *pBank);
+
+/* Bank_AtexitThunk @ 0x11170 and Bank_RegisterAtexit @ 0x11164. The registrar is
+ * `return atexit(Bank_AtexitThunk);` and the thunk is `UiBank_FreeAllPads(&pBank)` on the global bank
+ * at 0xAC6D0; the original reaches the registrar from the CRT init-term thunk at 0x11148. The port's
+ * bank is caller-owned, so the registrar takes it and the thunk releases that one -- the same shape as
+ * StrategList_RegisterAtexit. Bank_RegisterAtexit returns atexit's value (0 on success). */
+void Bank_AtexitThunk(void);
+int Bank_RegisterAtexit(UiWidgetBank *pBank);
 
 /* UiControl_BlitActivePad @ 0x1a340. Returns true when a pad was drawn.
  *

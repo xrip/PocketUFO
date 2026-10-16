@@ -55,6 +55,24 @@ void DatFile_dtor(DatFile *pDat)
     pDat->pWriteBuf = NULL;
 }
 
+/* The thunk the registrar installs. In the original it names the global container the save driver
+ * opens slots on; the port's DatFile objects are caller-owned, so it releases the one
+ * DatFile_RegisterAtexit was handed. */
+static DatFile *g_pDatFileToFree;
+
+void DatFile_AtexitThunk(void)
+{
+    if (g_pDatFileToFree != NULL) {
+        DatFile_dtor(g_pDatFileToFree);
+    }
+}
+
+int DatFile_RegisterAtexit(DatFile *pDat)
+{
+    g_pDatFileToFree = pDat;
+    return atexit(DatFile_AtexitThunk); /* 0x3F0D8 */
+}
+
 void DatFile_Close(DatFile *pDat)
 {
     if (pDat->nMode != PUFO_DAT_CLOSED) {

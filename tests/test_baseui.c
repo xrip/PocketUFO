@@ -5480,7 +5480,7 @@ static void TestBaseFacBuy(void)
     ToggleFacTable();
     memset(&panel, 0, sizeof(panel));
     if (!UiPanel_ctor(&panel, 3)) {
-        printf("  FAIL the panel could not be constructed\n");
+        Check(false, "the panel could not be constructed"); /* counted: a bare printf would exit 0 */
         return;
     }
     panel.nUnk3032 = 1;                    /* the selected row */
@@ -5650,7 +5650,7 @@ static void TestSoldierSelectListed(void)
 
     memset(&panel, 0, sizeof(panel));
     if (!UiPanel_ctor(&panel, 3)) {
-        printf("  FAIL the panel could not be constructed\n");
+        Check(false, "the panel could not be constructed"); /* counted: a bare printf would exit 0 */
         return;
     }
     panel.nUnk3032 = 1;                    /* the visible selection */
@@ -5852,7 +5852,7 @@ static void TestFacOverlay(void)
 
     memset(&panel, 0, sizeof(panel));
     if (!UiPanel_ctor(&panel, 2)) {
-        printf("  FAIL the facility panel could not be constructed\n");
+        Check(false, "the facility panel could not be constructed"); /* counted: a bare printf would exit 0 */
         return;
     }
     UiPanel_SetLineAux(&panel, 0, 3);         /* an ordinary facility */
@@ -6040,7 +6040,7 @@ static void TestBuildDialog(void)
 
     memset(&panel, 0, sizeof(panel));
     if (!UiPanel_ctor(&panel, 2)) {
-        printf("  FAIL the facility panel could not be constructed\n");
+        Check(false, "the facility panel could not be constructed"); /* counted: a bare printf would exit 0 */
         return;
     }
     UiPanel_SetLineAux(&panel, 0, 3);         /* an ordinary facility */

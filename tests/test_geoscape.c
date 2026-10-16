@@ -3395,7 +3395,7 @@ static void TestRadarWeaponHit(void)
     (void)StrategItem_AllocAdd(&list, 0);
     pItem = (StrategItem *)PtrArray_Get(&list, 0);
     if (pItem == NULL) {
-        printf("  FAIL the strateg entry could not be created\n");
+        Check(false, "the strateg entry could not be created"); /* counted: a bare printf would exit 0 */
         return;
     }
 

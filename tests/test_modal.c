@@ -57,6 +57,14 @@ static void TestBeginEnd(void)
     Check(!modal.bOpen, "  end clears only the open flag");
     CheckEqI32(modal.anRect12_14[0], 140, "  stored fields survive end");
     Check(modal.pfn16 == Yes, "  callbacks survive end");
+
+    /* UiModal_EndThunk @ 0x12254: the wrapper the modal tables store as the end callback. Re-open
+     * first so the flag actually has to change -- checking a flag that is already clear proves nothing. */
+    UiModal_Begin(&modal, 140, 24, 4, "YES", Yes, (void *)"NO", No);
+    Check(modal.bOpen, "  re-opened for the thunk check");
+    UiModal_EndThunk(&modal);
+    Check(!modal.bOpen, "  thunk clears the open flag (0x12254 tail-calls 0x2648c)");
+    Check(modal.pfn16 == Yes, "  fields survive the thunk end");
 }
 
 static void TestDrawDialog(void)

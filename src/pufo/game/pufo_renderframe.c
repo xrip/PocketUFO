@@ -159,3 +159,13 @@ i32 Render_Frame(const RenderFrameEnv *pEnv)
     }
     return 0;
 }
+
+/* Render_Frame_DecRef @ 0x36818: decrement the banner-fade counter, then render one frame.
+ * See the header for the Map+0x64 offset deviation. */
+void Render_Frame_DecRef(i32 *pnFadeCount, const RenderFrameEnv *pEnv)
+{
+    if (pnFadeCount != NULL) {
+        --*pnFadeCount; /* 0x3681C..0x36820: LDR/SUB/STR against Map+0x64 */
+    }
+    (void)Render_Frame(pEnv); /* 0x36828: tail jump with R0 = &gIsoDraw */
+}

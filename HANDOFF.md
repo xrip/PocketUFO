@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `1ebc4fb`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 104, the ufopaedia bring-up and its reselect),
+Date: 2026-10-17. HEAD before this edit: `552d533`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 105, the small CRT and app wrappers),
 and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
@@ -232,8 +232,31 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15832**. Coverage as of the latest commit: **954 / 1103
-functions (86.5%)**, **552656 / 598792 bytes (92.3%)**. This unit ported `Ui_InitBaseInfo` (0x9ddc8,
+Test checks run across the 60 suites: **15871**. Coverage as of the latest commit: **964 / 1103
+functions (87.4%)**, **552812 / 598792 bytes (92.3%)**. This unit ported the last small wrappers
+between the CRT init-term table and the ported subsystems: `Font_Init_ReturnArg` (0x46130),
+`Font_RegisterAtexit` (0x460d0) with its thunk `j_Font_Free` (0x460dc), `Bank_RegisterAtexit` (0x11164)
+with `Bank_AtexitThunk` (0x11170), `DatFile_RegisterAtexit` (0x3f0d0), `Render_Frame_DecRef` (0x36818),
+`UiModal_EndThunk` (0x12254), `App_QuitFromTact` (0x18e18) and the `CDialogTemplate` dtor (0x54c48,
+cited on `MapTemplate_Free`). **The atexit registrars all take the object their thunk releases**: the
+original names a global (pBank, unk_158220, fontSys), the port's objects are caller-owned -- except the
+font, which is a real global (`g_fontSys`), so its thunk names it exactly as `j_Font_Free` does.
+**`Render_Frame_DecRef` decrements Map+0x64** (dword_113A1C = apUiSlotsA[1], the banner-fade ticks
+`Tact_EndMission` seeds with 10) and tail-jumps `Render_Frame(&gIsoDraw)`; its only caller is the WndProc
+timer 0xC352 arm at 0xA09AC. The order is pinned at the counter-1 boundary, where decrement-first takes
+the fade-in branch and render-first takes the dark blit -- counter 10 to 9 alone cannot tell them apart.
+**`App_QuitFromTact` is the quit dialog's YES callback** (`Tact_Shutdown(1)` at 0x18E20, `App_QuitDisplay`
+at 0x18E28), ported in `pufo_menubtn.c` beside the other two trio members with both halves injected, and
+wired to the screen-8 escape seam; the shell has no mission env, so its shutdown half reaches
+`Tact_Shutdown(NULL, 1)` -- a documented deviation. IDB: `Render_Frame_DecRef`'s prototype corrected from
+three int arguments to one (the Map context in R0) plus an evidence comment. Dispositions recorded for
+`App_ResizeMainWindow` (0x9ecb8, pure Win32 glue whose button the shell never installs) and the five no-op
+atexit registrars. **A harness defect the sweep caught**: `test_renderframe`'s `CheckEqI32` printed FAIL
+without counting, so the suite could never exit non-zero -- fixed, along with five bail-out guards in
+test_baseui / test_geoscape; the sweep is 16/16 after the fix. 39 new checks.
+
+Test checks before this unit: **15832**, coverage **954 / 1103 functions (86.5%)**, **552656 / 598792
+bytes (92.3%)**. That unit ported `Ui_InitBaseInfo` (0x9ddc8,
 744 B) -- the tail of both base-info openers (`Ui_OpenBaseInfo` branches to it at 0x84BD4,
 `Ui_OpenBaseInfoAlt` at 0x84DF8), with `g_pUfopaediaScreenPad @ 0x1872E0` as its argument. **The block is
 shared with the ufopaedia**: slot 0 the screen pad this function allocates and `Ufopaedia_Open`'s teardown

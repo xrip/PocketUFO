@@ -92,6 +92,13 @@ typedef struct DatFile {
 void DatFile_ctor(DatFile *pDat);
 void DatFile_dtor(DatFile *pDat);
 
+/* DatFile_RegisterAtexit @ 0x3f0d0: `return atexit(j_DatFile_dtor);`, and that thunk is
+ * `DatFile_dtor(&unk_158220)` -- the dtor of the global container the save driver opens its slots on.
+ * The port has no global DatFile (the save driver's callers own theirs), so the file to release is the
+ * one handed in. DatFile_AtexitThunk is the registered thunk. Returns atexit's value (0 on success). */
+void DatFile_AtexitThunk(void);
+int DatFile_RegisterAtexit(DatFile *pDat);
+
 /* nEntryCount is only used when nMode is PUFO_DAT_CREATE. */
 bool DatFile_Open(DatFile *pDat, const char *pszPath, DatMode nMode, int nEntryCount);
 void DatFile_Close(DatFile *pDat);

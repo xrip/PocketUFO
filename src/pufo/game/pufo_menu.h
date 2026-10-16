@@ -8,8 +8,8 @@
  *           Options_SyncUiFromMap_GotoScreen12 @ 0x188e4,
  *           Menu_OpenLoadSlots @ 0x18864, Menu_OpenSaveSlots @ 0x188a4,
  *           Menu_ConfirmQuitDialog @ 0x18e2c, Menu_CancelQuitDialog @ 0x18e04,
- *           App_QuitFromTact (0x18e18) is NOT ported: it is Tact_Shutdown(1) + App_QuitDisplay,
- *           which is app-shell work and waits on Tact_Shutdown (0x3d568) to be ported.
+ *           App_QuitFromTact @ 0x18e18 (Tact_Shutdown(1) + App_QuitDisplay), ported in
+ *           pufo_menubtn.c with both halves injected.
  *
  * ## These write the SAME option bytes the options module owns
  *

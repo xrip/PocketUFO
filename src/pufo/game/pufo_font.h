@@ -115,6 +115,21 @@ extern PufoFont g_fontSys;
 
 void PufoFont_Init(PufoFont *pFont);
 
+/* Font_Init_ReturnArg @ 0x46130: run Font_Init on the block and hand the block back. It is the font
+ * subsystem's CRT init entry -- the init-term thunk at 0x460c4 calls it and discards the result. The
+ * port's caller owns the block, so the argument is explicit where the original reached for the global. */
+PufoFont *Font_Init_ReturnArg(PufoFont *pFont);
+
+/* Font_RegisterAtexit @ 0x460d0: `return atexit(j_Font_Free);`, and j_Font_Free is
+ * `Font_Free(&fontSys)`. The original reaches the registrar from the CRT init-term thunk at 0x460b4;
+ * the port's caller calls it when it installs the global font block. Returns atexit's value (0 on
+ * success). */
+int Font_RegisterAtexit(void);
+
+/* Font_AtexitThunk, the port's j_Font_Free @ 0x460dc: `Font_Free(&fontSys)` as a tail jump. The font
+ * block is a global in the port too (g_fontSys), so the thunk names it exactly as the original does. */
+void Font_AtexitThunk(void);
+
 /* Font_Free @ 0x46144. Releases each loaded slot's .spr and .mc1 block, then the two
  * index arrays, then clears the init flag.
  *

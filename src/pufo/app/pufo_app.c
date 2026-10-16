@@ -32,6 +32,7 @@
 #include "game/pufo_options.h"  /* Options_LoadFromRegistry */
 #include "game/pufo_renderframe.h" /* Render_Frame, the frame dispatcher */
 #include "game/pufo_save.h"     /* SaveSlot_FormatList, the load-slot list labels */
+#include "game/pufo_tactend.h"  /* Tact_Shutdown, the shutdown half of App_QuitFromTact */
 #include "game/pufo_timer.h"    /* Timer_SetWindow, the ids the WM_TIMER branch dispatches on */
 #include "game/pufo_titles.h"   /* Titles_Init / TitlesAnimation, the credits screen */
 #include "platform/pufo_gx.h"
@@ -246,6 +247,29 @@ static void App_HookQuit(void *pUser)
 
 static void App_DrawFrame(void);        /* defined below with the render path */
 static void App_ShutdownStartUi(void *pUser); /* defined below with the start-UI teardown */
+static void App_QuitDisplay(void);      /* defined below with the window teardown */
+
+/* App_QuitFromTact @ 0x18e18, wired to the screen-8 escape seam (TactInputHooks.pfnShutdownQuit).
+ * Deviation: the shell never runs a tactical mission, so its shutdown half reaches Tact_Shutdown with
+ * no mission env -- its NULL guard makes the call a no-op. The original's Tact_Shutdown(1) works on the
+ * global mission context, which only exists during a mission. */
+static void App_ShutdownTactNoMission(u8 bKeepSome, void *pUser)
+{
+    (void)pUser;
+    Tact_Shutdown(NULL, bKeepSome);
+}
+
+static void App_QuitDisplayThunk(void *pUser)
+{
+    (void)pUser;
+    App_QuitDisplay();
+}
+
+static void App_HookShutdownQuit(void *pUser)
+{
+    (void)pUser;
+    App_QuitFromTact(App_ShutdownTactNoMission, App_QuitDisplayThunk, NULL);
+}
 
 static void App_DrawFrameHook(void *pUser)
 {
@@ -410,6 +434,9 @@ static void App_InitStartupUi(void)
      * GameUI_InitStartup @ 0x38a28 -- the credits go back to the start menu. Screen 18 (an ending)
      * has no shell env yet, so its arm stays a seam. */
     g_tactHooks.pfnTitlesToStartup = App_TitlesToStartup;
+    /* Screen 8 (the quit confirmation) answers the back action with App_QuitFromTact @ 0x18e18. The shell
+     * never opens the quit dialog, but the seam is wired so the port reproduces the original wiring. */
+    g_tactHooks.pfnShutdownQuit = App_HookShutdownQuit;
 
     /* The menu-button hooks. */
     memset(&g_startHooks, 0, sizeof(g_startHooks));

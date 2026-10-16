@@ -142,6 +142,19 @@ void Menu_CancelQuitDialog(u16 *pnUiScreen)
     }
 }
 
+/* App_QuitFromTact @ 0x18e18: Tact_Shutdown(1) then App_QuitDisplay, in that order. See the header
+ * for the injected-halves shape and the shell deviation. */
+void App_QuitFromTact(void (*pfnShutdownTact)(u8 bKeepSome, void *pUser),
+                      void (*pfnQuitDisplay)(void *pUser), void *pUser)
+{
+    if (pfnShutdownTact != NULL) {
+        pfnShutdownTact(1, pUser); /* 0x18E20: Tact_Shutdown(1) */
+    }
+    if (pfnQuitDisplay != NULL) {
+        pfnQuitDisplay(pUser); /* 0x18E28: App_QuitDisplay */
+    }
+}
+
 static void StartMenu_Play(const StartMenuHooks *pHooks)
 {
     if (pHooks != NULL && pHooks->pfnPlaySample != NULL) {

@@ -153,4 +153,12 @@ typedef struct RenderFrameEnv {
  * value on the geoscape branch (which skips the present, as the original does). */
 i32 Render_Frame(const RenderFrameEnv *pEnv);
 
+/* Render_Frame_DecRef @ 0x36818. `--*(a1 + 0x64); Render_Frame(&gIsoDraw);` -- the timer
+ * path PocketUFO_WndProc @ 0xA09AC takes while `Map_nBannerFadeTicks > 0 && nUiScreen == 13`.
+ * Map+0x64 is dword_113A1C = apUiSlotsA[1], the port's RenderFrameEnv.nFadeCount (Tact_EndMission
+ * @ 0x351FC seeds it with 10). Deviation: the original takes the Map context base and reaches the
+ * counter through offset 0x64; the port hands the counter pointer directly, same observable effect.
+ * The original always has the Map context, so it never tests the pointer; the port guards it. */
+void Render_Frame_DecRef(i32 *pnFadeCount, const RenderFrameEnv *pEnv);
+
 #endif /* PUFO_RENDERFRAME_H */

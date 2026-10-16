@@ -2809,6 +2809,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
   inputs pinned to the values that would put a mark on the probed pixel**; worth a sweep of the drawing suites
   for negative checks whose coordinates were inherited from the case before them.
 
+- [x] **A checker that prints FAIL but does not count makes its whole suite unable to fail.** Unit 105's
+  mutation sweep missed three counter/order mutants for this reason alone: `test_renderframe.c`'s
+  `CheckEqI32` printed the FAIL line but never incremented `g_nFailures`, so the suite always exited 0 no
+  matter what it printed. The counter is now incremented. The same class of hole sat in five bail-out
+  guards -- four in `test_baseui.c` and one in `test_geoscape.c` -- that printed FAIL and returned without
+  counting; they now go through the suite's `Check`. The `test_enemyai.c` `Ai_Rand` guard prints FAIL and
+  `exit(2)`, which was already caught. **Every FAIL printer must move the suite's failure counter** -- the
+  report counts `^  FAIL` lines, but the build only fails on the exit code, and a green exit code is what
+  the gates and the mutation sweeps read.
+
 - [ ] **A pointer comparison between two empty stubs can never fail.** Unit 104's first version compared each
   control's `pfnClick` against the seam stub it was supposed to hold, and its mutation sweep swapped two of
   them with nothing failing: the stubs were identical empty functions and the linker folds identical functions
@@ -3154,6 +3164,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the tactical sprite loader (`Font_LoadTactSprites`; the font block's five template-indexed group bases named as `anFlagSprBase[5]`, the port's own `Font_GetFlagSprBase` model-layout defect fixed, three shipped name tables dumped and audited, 12 IDB renames) | 60/60 (Release) | 15581 | 952/1103 (86.3%) | 550628/598792 (92.0%) | 43 checked, 0 mismatched |
 | the startup entry and the `forcenodrag` option (`Map_InitAndLoadRegistry`; the CRT init-term thunk at 0x22604, the fourteen scratch writes with slot 26 as the startup roll and slot 4 as 200 and no write to slot 1, the twelve registry reads with their constant out-of-range fallbacks and the `strcmp(value, "0")` flag test the port had been doing with `atoi`, the `Map_bInvPanelOpen` → `Map_bForceNoDrag` misnomer corrected in the IDB and in the port, the two swapped `TactHudInventoryEnv` field names, 4 IDB renames and 14 mutations all caught) | 60/60 (Release) | 15610 | 953/1103 (86.4%) | 551912/598792 (92.2%) | 43 checked, 0 mismatched |
 | the ufopaedia bring-up and its reselect (`Ui_InitBaseInfo`; the eight-slot `g_pUfopaediaScreenPad` block shared with `Ufopaedia_Open`'s teardown so the pad this function allocates is the pad it frees, the six controls in slots 2..7 with slot 1 skipped, the six descriptors at 0xAC548, the 25-case fold of the alien topics onto the five race topics with 135 and 140 taking the default arm, the 198-cell walk whose failure state reads one byte past the table, 1 original finding and 2 deviations recorded, 25 mutations all caught) | 60/60 (Release) | 15832 | 954/1103 (86.5%) | 552656/598792 (92.3%) | 43 checked, 0 mismatched |
+| the small CRT and app wrappers (`Font_Init_ReturnArg`, `Font_RegisterAtexit` + `j_Font_Free`, `Bank_RegisterAtexit` + `Bank_AtexitThunk`, `DatFile_RegisterAtexit`, `Render_Frame_DecRef`, `UiModal_EndThunk`, `App_QuitFromTact`, the `CDialogTemplate` dtor; the atexit registrars take the caller-owned object their thunk releases, the fade-counter order pinned at the counter-1 boundary where the two orders pick different draw branches, the quit-dialog YES callback wired to the screen-8 escape seam, 1 IDB prototype corrected, 3 dispositions recorded, the `test_renderframe` FAIL-counter defect and five uncounted bail-out guards fixed, 16 mutations all caught) | 60/60 (Release) | 15871 | 964/1103 (87.4%) | 552812/598792 (92.3%) | 43 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
