@@ -16885,3 +16885,54 @@ where fontSys_nBaseBitsSprBase @ 0x158294 is written with the frame count BEFORE
 the fact that makes every facility tile a basebits sprite. Three new ledger rows: the unbounded base
 index, the blind craft-array deref, and the residue return.
 
+## Unit 100 - shutting the credits and the ending down (Titles_Shutdown @ 0x3826c, Titles_dtor @ 0x46fa4, EndScreen_Shutdown @ 0x389f8)
+
+Three small release functions that complete the `titles` subsystem (13/13). They are the screen-16 and
+screen-18 arms of Input_OnPointerUp @ 0x14924, and until now both were seams the shell never filled.
+
+Titles_Shutdown (100 B), in order: Sound_Shutdown (0x38270), KillTimers_C (0x38274), Font_Free on
+fontSys @ 0x158268 (0x3827C), then five operator delete over 0x1571A0..0x1571B0 (0x38280..0x3828C) --
+the five titlesN.pad glyph blobs Titles_Init allocated at 0x381B8..0x381F8 -- and finally, only when
+g_pTitlesState @ 0x158804 is non-null (0x382AC), Titles_dtor (0x382B4) followed by a delete of the
+0x154C0 state block itself (0x382BC). **Nothing is nulled afterwards**: 0x1571A0..0x1571B0 and
+g_pTitlesState keep pointing at freed memory, so a second shutdown frees them again.
+
+Titles_dtor (60 B) writes Map_nUiScreen (Map+0x3A) with **22** (0x46FB0) -- not the 16 the credits
+screen ran under -- unconditionally, and only then, when g_pTitlesSurface @ 0x158808 is non-null
+(0x46FC0), runs SoftSurf_dtor (0x46FC8) and the delete (0x46FD0). The 22 is never seen on screen:
+Titles_Shutdown's caller runs GameUI_InitStartup straight after, which writes 17.
+
+EndScreen_Shutdown (48 B): Sound_Shutdown (0x389FC), KillTimers_A (0x38A00), Font_Free (0x38A08), an
+UNGUARDED operator delete of the ending backdrop at 0x1571C0 (0x38A0C..0x38A14), and a **tail call**
+into GameUI_InitStartup @ 0x38a28 (0x38A20). The ending does not exit -- it goes back to the start
+menu, and that call re-loads the font the shutdown just freed, which is why Font_Free is not the last
+word on fontSys.
+
+A shipped-data finding fell out of the test fixture: EndScreen_Init @ 0x38920 asks the archive for the
+"z" sample set, but main.dat carries no Z*.WAV at all -- only TACT0..N.WAV and BACK0..4.IT -- so the
+scan stops at index 0 and every ending loads zero samples.
+
+Deviation: the port frees through the same owner Titles_Init / EndScreen_Init allocated with (malloc)
+and nulls every pointer it releases, which the original does not; it bounds the glyph array and the
+screen-id pointer instead of dereferencing them blindly; and the original's delete of the 0x154C0 state
+block has no counterpart because the port keeps that block in the shell's static storage. The shell now
+wires the screen-16 arm for real (App_TitlesToStartup: Titles_Shutdown then App_InitStartupUi); the
+screen-18 arm stays a seam because the shell has no ending flow yet.
+
+Tests: 26 new checks in test_titles (136 there). Sound_Shutdown's presence is pinned through the fake
+audio backend's sample-free and music-free counters after a real Sound_InitAndLoadSamples("tact") and
+Sound_LoadAndPlayMusic; the timers through the timer backend's kill log (two kills, 0xC351 then
+0xC352); Font_Free through the font's sprite index going null; the glyph blobs through all five
+pointers; the state gate by showing that a null state block leaves both the screen id and the surface
+untouched; Titles_dtor's unconditional screen-id write by running it with no surface at all; and the
+tail call by showing the start menu comes up at 17 with a startup env and stays at 18 without one.
+
+A 14-mutation sweep turned 12 red (the 22, four-not-five blobs, both KillTimers_* swapped to D, the
+state gate, both Sound_Shutdown calls, both Font_Free calls, both dangling-pointer fixes, the tail
+call). Two are true equivalences and are not counted: KillTimers_A/B/C are byte-identical in the
+binary (0x9e6a4 / 0x9e754 / 0x9e7c4), so swapping A or C for B kills the same two ids.
+
+IDB: 3 function comments (0x3826c, 0x46fa4, 0x389f8) and 7 line comments (0x38280, 0x382AC, 0x46FB0,
+0x46FC0, 0x38A14, 0x38A20, 0x38920), no renames. Three new ledger rows (261): the dangling glyph blobs
+and state block, the unguarded backdrop delete, and the ending's empty sample set.
+

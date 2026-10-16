@@ -2,6 +2,7 @@
 #include "game/pufo_titles.h"
 
 #include "game/pufo_font.h"
+#include "game/pufo_mainmenu.h" /* GameUI_InitStartup, the tail call EndScreen_Shutdown makes */
 #include "game/pufo_timer.h" /* Timer_StartA, the StartTimers_A the ending re-arms */
 #include "asset/pufo_asset.h" /* AssetReader, the titleN.dat lookup */
 #include "audio/pufo_audio.h" /* Sound_InitAndLoadSamples / LoadAndPlayMusic, the ending audio */
@@ -493,4 +494,71 @@ void EndScreen_Init(const EndScreenInitEnv *pEnv, u8 bGoodEnd)
     Timer_StartA(); /* 0x389C0: StartTimers_A */
     *pEnv->puUiScreen = 18; /* 0x389CC: Map_nUiScreen */
     *pEnv->pnScroll = 0; /* 0x389DC: unk_138E88 */
+}
+
+/* Titles_dtor @ 0x46fa4. The screen id goes in first and unconditionally -- 22, not the 16 the
+ * credits screen ran under -- and only then is the surface released. */
+void Titles_dtor(u16 *puUiScreen)
+{
+    if (puUiScreen != NULL) {
+        *puUiScreen = PUFO_TITLES_DTOR_SCREEN; /* 0x46FB0 */
+    }
+    if (g_pTitlesSurface != NULL) { /* 0x46FC0 */
+        SoftSurf_dtor(g_pTitlesSurface); /* 0x46FC8 */
+        free(g_pTitlesSurface);          /* 0x46FD0 */
+        g_pTitlesSurface = NULL;         /* deviation: the original leaves the global dangling */
+    }
+}
+
+/* Titles_Shutdown @ 0x3826c: audio, timers, the font, the five glyph blobs, then the credits state. */
+void Titles_Shutdown(const TitlesShutdownEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    Sound_Shutdown(); /* 0x38270 */
+    Timer_KillC();    /* 0x38274: KillTimers_C @ 0x9e7c4 */
+
+    if (pEnv->pFont != NULL) {
+        PufoFont_Free(pEnv->pFont); /* 0x3827C: fontSys @ 0x158268 */
+    }
+
+    if (pEnv->apGlyphs != NULL) {
+        for (i32 i = 0; i < 5; ++i) { /* 0x38280..0x3828C: five deletes, no null test in the original */
+            free(pEnv->apGlyphs[i]);
+            pEnv->apGlyphs[i] = NULL; /* deviation: the original leaves unk_1571A0..B0 dangling */
+        }
+    }
+
+    /* 0x382AC: the state block's own release is gated on the pointer, and the screen id written by
+     * Titles_dtor only changes when that gate passes. The original's delete of the 0x154C0 block has
+     * no counterpart here: the port keeps the state block in the shell's static storage. */
+    if (pEnv->pAnim != NULL) {
+        Titles_dtor(pEnv->puUiScreen); /* 0x382B4 */
+    }
+}
+
+/* EndScreen_Shutdown @ 0x389f8: the ending releases its own screen and goes back to the start menu. */
+void EndScreen_Shutdown(const EndScreenShutdownEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    Sound_Shutdown(); /* 0x389FC */
+    Timer_KillA();    /* 0x38A00: KillTimers_A @ 0x9e6a4 */
+
+    if (pEnv->pFont != NULL) {
+        PufoFont_Free(pEnv->pFont); /* 0x38A08: fontSys @ 0x158268 */
+    }
+
+    if (pEnv->ppBackdrop != NULL) {
+        free(*pEnv->ppBackdrop);      /* 0x38A0C..0x38A14: an untested operator delete */
+        *pEnv->ppBackdrop = NULL;     /* deviation: unk_1571C0 is left dangling in the original */
+    }
+
+    if (pEnv->pStartup != NULL) {
+        GameUI_InitStartup(pEnv->pStartup); /* 0x38A20: the tail call, not a call */
+    }
 }

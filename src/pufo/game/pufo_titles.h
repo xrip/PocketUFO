@@ -234,4 +234,53 @@ typedef struct EndScreenInitEnv {
  * calls read the option block in the original; the port passes its values explicitly. */
 void EndScreen_Init(const EndScreenInitEnv *pEnv, u8 bGoodEnd);
 
+/* --- shutting the two ending screens down ------------------------------------------------------
+ *
+ * Evidence: Titles_Shutdown @ 0x3826c (100 B) and EndScreen_Shutdown @ 0x389f8 (48 B), the screen-16
+ * and screen-18 arms of Input_OnPointerUp @ 0x14924, plus Titles_dtor @ 0x46fa4 (60 B), the surface
+ * half of the first.
+ *
+ * Titles_Shutdown, in order: Sound_Shutdown (0x38270), KillTimers_C (0x38274), Font_Free on
+ * fontSys @ 0x158268 (0x3827C), then five operator delete over unk_1571A0..0x1571B0 (0x38280..0x3828C)
+ * -- the five titlesN.pad glyph blobs Titles_Init allocated -- and finally, only when
+ * g_pTitlesState @ 0x158804 is non-null (0x382AC), Titles_dtor followed by a delete of the 0x154C0
+ * state block itself (0x382B4/0x382BC). Nothing is nulled afterwards: every one of those globals is
+ * left dangling and the next Titles_Init simply overwrites them.
+ *
+ * Titles_dtor writes Map_nUiScreen (Map+0x3A) with 22 (0x46FB0) -- NOT the 16 Titles_Init set --
+ * whether or not the surface exists, and only then, when g_pTitlesSurface @ 0x158808 is non-null
+ * (0x46FC0), runs SoftSurf_dtor (0x46FC8) and the delete (0x46FD0).
+ *
+ * EndScreen_Shutdown: Sound_Shutdown (0x389FC), KillTimers_A (0x38A00), Font_Free (0x38A08), an
+ * UNTESTED operator delete of the end-screen backdrop at unk_1571C0 (0x38A0C..0x38A14), and a tail
+ * call into GameUI_InitStartup @ 0x38a28 (0x38A20) -- the ending does not exit, it goes back to the
+ * start menu. The backdrop delete is unguarded: EndScreen_Init @ 0x388b0 is the only writer and its
+ * own operator new is unchecked, so a screen that was never initialised deletes whatever a previous
+ * run left there.
+ *
+ * Deviation: the port frees through the same owner Titles_Init / EndScreen_Init used (malloc) and
+ * nulls every pointer it releases, which the original does not; the port also bounds the glyph array
+ * and the screen-id pointer instead of dereferencing them blindly. */
+
+#define PUFO_TITLES_DTOR_SCREEN 22 /* 0x46FB0: the screen id Titles_dtor leaves behind */
+
+typedef struct TitlesShutdownEnv {
+    PufoFont        *pFont;      /* fontSys @ 0x158268 */
+    u8             **apGlyphs;   /* unk_1571A0..0x1571B0, the five blobs Titles_Init filled */
+    TitlesAnimation *pAnim;      /* g_pTitlesState @ 0x158804 */
+    u16             *puUiScreen; /* Map_nUiScreen @ Map+0x3A */
+} TitlesShutdownEnv;
+
+typedef struct EndScreenShutdownEnv {
+    PufoFont             *pFont;      /* fontSys @ 0x158268 */
+    u8                  **ppBackdrop; /* unk_1571C0, the backdrop EndScreen_Init allocated */
+    struct GameUiStartupEnv *pStartup; /* GameUI_InitStartup @ 0x38a28, the tail call */
+} EndScreenShutdownEnv;
+
+/* Titles_dtor @ 0x46fa4: the screen id, then the surface. */
+void Titles_dtor(u16 *puUiScreen);
+
+void Titles_Shutdown(const TitlesShutdownEnv *pEnv);
+void EndScreen_Shutdown(const EndScreenShutdownEnv *pEnv);
+
 #endif /* PUFO_TITLES_H */

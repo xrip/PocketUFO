@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 946 / 1103 (85.8%) |
-| Bytes of original code cited | 542612 / 598792 (90.6%) |
+| Functions cited as evidence | 949 / 1103 (86.0%) |
+| Bytes of original code cited | 542820 / 598792 (90.7%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 15410 |
+| Test checks run | 15436 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -45,7 +45,7 @@ the per-subsystem notes and the tests listed at the end.
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 245 | 245 | 121164 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
-| `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
+| `titles` | 13 | 13 | 4444 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
 
@@ -79,7 +79,7 @@ is the module that answers to it.
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
 | `0x382d0` | `Assets_LoadStartup` | 1504 | `src/pufo/app/pufo_app.c`, `src/pufo/asset/pufo_asset.h` (+5) |
-| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` |
+| `0x38a28` | `GameUI_InitStartup` | 852 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_mainmenu.h` (+1) |
 | `0x38d7c` | `StartUi_Shutdown` | 208 | `src/pufo/app/pufo_app.c`, `src/pufo/ui/pufo_menubtn.c` (+1) |
 | `0x38e4c` | `GameAssets_Shutdown` | 180 | `src/pufo/asset/pufo_asset.h`, `src/pufo/game/pufo_boot.c` (+1) |
 
@@ -191,9 +191,9 @@ is the module that answers to it.
 | `0x9e6d4` | `StartTimers_A` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e714` | `StartTimers_B` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
 | `0x9e784` | `StartTimers_C` | 64 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
-| `0x9e6a4` | `KillTimers_A` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
+| `0x9e6a4` | `KillTimers_A` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0x9e754` | `KillTimers_B` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
-| `0x9e7c4` | `KillTimers_C` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` |
+| `0x9e7c4` | `KillTimers_C` | 48 | `src/pufo/game/pufo_timer.c`, `src/pufo/game/pufo_timer.h` (+1) |
 | `0x54c3c` | `??0CDialogTemplate@@QAA@XZ` | 12 | `src/pufo/game/pufo_template.h` |
 | `0x54c5c` | `CDialogTemplate_GetTemplateByte1` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x54c68` | `CDialogTemplate_GetTemplateByte0` | 12 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
@@ -1048,7 +1048,7 @@ is the module that answers to it.
 | `0x72ffc` | `ResearchScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x75154` | `BuySellScreen_CloseThunk` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `titles` (10 functions)
+### `titles` (13 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -1061,7 +1061,10 @@ is the module that answers to it.
 | `0x388b0` | `EndScreen_Init` | 328 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_strateg.h` (+2) |
 | `0x46e88` | `Titles_ctor` | 284 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 | `0x46dbc` | `Titles_UpdateStars` | 204 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
+| `0x3826c` | `Titles_Shutdown` | 100 | `src/pufo/app/pufo_app.c`, `src/pufo/game/pufo_titles.c` (+1) |
 | `0x466dc` | `Titles_PresentToSoftSurf` | 76 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
+| `0x46fa4` | `Titles_dtor` | 60 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
+| `0x389f8` | `EndScreen_Shutdown` | 48 | `src/pufo/game/pufo_titles.c`, `src/pufo/game/pufo_titles.h` |
 
 ## Remaining gaps
 
@@ -1264,14 +1267,6 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `titles` — 3 functions, 208 bytes remaining
-
-| Address | Original | Size | Note |
-|---|---|---|---|
-| `0x3826c` | `Titles_Shutdown` | 100 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x46fa4` | `Titles_dtor` | 60 | not yet ported; scheduled with the `titles` subsystem work |
-| `0x389f8` | `EndScreen_Shutdown` | 48 | not yet ported; scheduled with the `titles` subsystem work |
-
 ## Test suites
 
 Run from the repository root (the data tests read `main.dat` / `lang.dat`).
@@ -1332,7 +1327,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_template` | PASS | 48 |
 | `test_terrain` | PASS | 59 |
 | `test_timer` | PASS | 78 |
-| `test_titles` | PASS | 110 |
+| `test_titles` | PASS | 136 |
 | `test_turn` | PASS | 173 |
 | `test_uibank` | PASS | 388 |
 | `test_unit` | PASS | 289 |
@@ -1358,7 +1353,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 719 citations.
+parity report. Total: 720 citations.
 
 ### Offsets below the image base (40)
 
@@ -1367,7 +1362,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (679)
+### At or above the image base (680)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1484,6 +1479,7 @@ against the IDB when the final report is assembled.
 - `0x1472d0`
 - `0x147b3c`
 - `0x147b54`
+- `0x14924`
 - `0x14f2c`
 - `0x14fc0`
 - `0x14fe4`

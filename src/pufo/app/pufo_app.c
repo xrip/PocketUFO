@@ -107,6 +107,7 @@ static i32              g_aTitlesRowRec[44];   /* aTitlesRowRecs @ 0xB35D8 */
 static u8              *g_apTitlesGlyphs[5];   /* unk_1571A0..0x1571B0 */
 
 static void App_PresentLoadedSurface(void);
+static void App_TitlesToStartup(void *pUser);
 
 static bool App_LoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
                          const char *psz2, void *pUser)
@@ -382,6 +383,10 @@ static void App_InitStartupUi(void)
 
     memset(&g_tactState, 0, sizeof(g_tactState));
     memset(&g_tactHooks, 0, sizeof(g_tactHooks));
+    /* Screen 16 (the credits) answers a pointer release with Titles_Shutdown @ 0x3826c and then
+     * GameUI_InitStartup @ 0x38a28 -- the credits go back to the start menu. Screen 18 (an ending)
+     * has no shell env yet, so its arm stays a seam. */
+    g_tactHooks.pfnTitlesToStartup = App_TitlesToStartup;
 
     /* The menu-button hooks. */
     memset(&g_startHooks, 0, sizeof(g_startHooks));
@@ -401,6 +406,27 @@ static void App_InitStartupUi(void)
     g_slotCtx.pszPrefix    = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1800);
     g_slotCtx.pszNotSaved  = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1074);
     g_slotCtx.pszMission   = (const char *)(g_assets.pTextRecs + PUFO_TEXT_REC_STRIDE * 1075);
+}
+
+/* The screen-16 arm of Input_OnPointerUp @ 0x14924: release the credits screen, then bring the
+ * start menu back up. Titles_dtor writes 22 into the screen id on the way out; GameUI_InitStartup
+ * immediately replaces it with 17, which is why the original's 22 is never seen on screen. */
+static void App_TitlesToStartup(void *pUser)
+{
+    TitlesShutdownEnv env;
+    u16 nScreen;
+
+    (void)pUser;
+    nScreen = (u16)g_nUiScreen;
+    memset(&env, 0, sizeof(env));
+    env.pFont = &g_fontSys;         /* fontSys @ 0x158268 */
+    env.apGlyphs = g_apTitlesGlyphs; /* unk_1571A0..0x1571B0 */
+    env.pAnim = &g_titlesAnim;      /* g_pTitlesState @ 0x158804 */
+    env.puUiScreen = &nScreen;      /* Map_nUiScreen @ Map+0x3A */
+    Titles_Shutdown(&env);          /* Titles_Shutdown @ 0x3826c */
+    g_nUiScreen = (i32)nScreen;
+
+    App_InitStartupUi();            /* GameUI_InitStartup @ 0x38a28, the tail of the original's arm */
 }
 
 /* The shell's stand-in for GX_Present @ 0x27788 (the thunk to GX_PresentFrame @ 0x9ea7c):

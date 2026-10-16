@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "game/pufo_titles.h"
+#include "game/pufo_mainmenu.h" /* GameUI_InitStartup / GameUiStartupEnv, the shutdown's tail call */
 #include "game/pufo_font.h"
 #include "game/pufo_options.h"
 #include "game/pufo_timer.h"
@@ -471,7 +472,9 @@ static void *Fake_SampleLoad(const void *pData, u32 cb, u32 nMode)
     return (void *)0x1;
 }
 static void Fake_SampleSetMode(void *pSample, u32 nMode) { (void)pSample; (void)nMode; }
-static void Fake_SampleFree(void *pSample) { (void)pSample; }
+static i32 g_nSampleFrees;
+static i32 g_nMusicFrees;
+static void Fake_SampleFree(void *pSample) { (void)pSample; ++g_nSampleFrees; }
 static i32 Fake_PlaySound(void *pSample) { (void)pSample; return 0; }
 static void Fake_SetSfxVolume(i32 nVolume) { (void)nVolume; }
 static void Fake_SetSfxPaused(i32 nPaused) { (void)nPaused; }
@@ -487,7 +490,7 @@ static void Fake_MusicOptimize(void *pMod, i32 nA, i32 nB) { (void)pMod; (void)n
 static void Fake_MusicPlay(void *pMod) { (void)pMod; }
 static void Fake_MusicVolume(void *pMod, i32 nVolume) { (void)pMod; (void)nVolume; }
 static void Fake_MusicPaused(void *pMod, i32 bPaused) { (void)pMod; (void)bPaused; }
-static void Fake_MusicFree(void *pMod) { (void)pMod; }
+static void Fake_MusicFree(void *pMod) { (void)pMod; ++g_nMusicFrees; }
 static void Fake_Close(void) { }
 
 static const PufoAudioBackend g_fakeAudio = {
@@ -748,6 +751,236 @@ static void TestTitlesInit(void)
     Asset_CloseArchives();
 }
 
+/* --- the two shutdowns ----------------------------------------------------------------------- */
+
+static u32 g_aKillIds[8];
+static i32 g_nKills;
+
+static void RecKill(HWND hWnd, u32 nId, void *pUser)
+{
+    (void)hWnd; (void)pUser;
+    if (g_nKills < 8) {
+        g_aKillIds[g_nKills] = nId;
+    }
+    ++g_nKills;
+}
+
+/* GameUI_InitStartup's pad loader, wired the way the shell wires it. */
+static bool StubLoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                         const char *psz2, void *pUser)
+{
+    (void)pUser;
+    UiControl_LoadPads(pCtl, psz0, psz1, psz2); /* UiControl_LoadPads @ 0x1a604 */
+    return true;
+}
+
+static void TestTitlesShutdown(void)
+{
+    static PufoFont font;
+    static u8 *apGlyphs[5];
+    static TitlesAnimation anim;
+    static TitlesParticle aParts[4];
+    static TitlesStar aStars[4];
+    static u16 nUiScreen;
+    static TimerBackend tb;
+    const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+    TitlesShutdownEnv env;
+    i32 i;
+
+    printf("Titles_Shutdown @ 0x3826c and Titles_dtor @ 0x46fa4\n");
+
+    if (!Asset_OpenArchives(apszPaths)) {
+        Check(false, "Asset_OpenArchives(lang.dat, main.dat)");
+        return;
+    }
+
+    Sound_SetBackend(&g_fakeAudio);
+    tb.pfnSet = TimerRecSet;
+    tb.pfnKill = RecKill;
+    tb.pUser = NULL;
+    Timer_SetBackend(&tb);
+
+    /* A real font with a real group loaded, so Font_Free has something to release and its effect is
+     * observable. */
+    memset(&font, 0, sizeof(font));
+    PufoFont_Init(&font);
+    font.nGlyphBase = font.nTotalSprFrames;
+    (void)Font_LoadSpr(&font, "font");
+    Font_BuildIndex(&font);
+    Check(font.apSprIndex != NULL, "the fixture font has a built index before the shutdown frees it");
+
+    for (i = 0; i < 5; ++i) {
+        apGlyphs[i] = (u8 *)malloc(16u);
+    }
+    g_pTitlesSurface = (SoftSurf *)malloc(sizeof(SoftSurf));
+    SoftSurf_ctor(g_pTitlesSurface);
+    (void)SoftSurf_AllocPixels(g_pTitlesSurface, 240, 320, 0);
+
+    memset(&anim, 0, sizeof(anim));
+    anim.aParticles = aParts;
+    anim.aStars = aStars;
+    anim.nParticleCount = 4;
+    anim.nStarCount = 4;
+    nUiScreen = 16;
+    g_nKills = 0;
+
+    /* Load the audio the credits screen itself loads, so Sound_Shutdown has something to release and
+     * its presence is observable rather than assumed. */
+    Sound_InitAndLoadSamples("tact");
+    Sound_LoadAndPlayMusic(3);
+    g_nSampleFrees = 0;
+    g_nMusicFrees = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pFont = &font;
+    env.apGlyphs = apGlyphs;
+    env.pAnim = &anim;
+    env.puUiScreen = &nUiScreen;
+    Titles_Shutdown(&env);
+
+    Check(g_nSampleFrees > 0, "Sound_Shutdown releases the loaded samples (0x38270)");
+    CheckEqI32("  and the loaded music module", g_nMusicFrees, 1);
+    CheckEqI32("KillTimers_C runs (0x38274)", g_nKills, 2);
+    Check(g_aKillIds[0] == PUFO_TIMER_RENDER && g_aKillIds[1] == PUFO_TIMER_ANIM,
+          "  the render timer 0xC351 first, then the anim timer 0xC352");
+    Check(font.apSprIndex == NULL, "Font_Free releases the font's sprite index (0x3827C)");
+    Check(apGlyphs[0] == NULL && apGlyphs[1] == NULL && apGlyphs[2] == NULL
+          && apGlyphs[3] == NULL && apGlyphs[4] == NULL,
+          "all five titlesN.pad glyph blobs are released (0x38280..0x3828C)");
+    CheckEqI32("Titles_dtor writes screen id 22, not the 16 the credits ran under (0x46FB0)", (i32)nUiScreen, 22);
+    Check(g_pTitlesSurface == NULL, "  and the titles surface is released (0x46FC8..0x46FD0)");
+
+    /* The state gate at 0x382AC: with no state block, Titles_dtor never runs, so neither the screen
+     * id nor the surface changes. */
+    g_pTitlesSurface = (SoftSurf *)malloc(sizeof(SoftSurf));
+    SoftSurf_ctor(g_pTitlesSurface);
+    (void)SoftSurf_AllocPixels(g_pTitlesSurface, 240, 320, 0);
+    nUiScreen = 16;
+    env.pAnim = NULL;
+    Titles_Shutdown(&env);
+    CheckEqI32("a null state block leaves the screen id alone -- the 0x382AC gate", (i32)nUiScreen, 16);
+    Check(g_pTitlesSurface != NULL, "  and the surface survives with it");
+
+    /* Titles_dtor on its own: the screen id is written whether or not a surface exists. */
+    free(g_pTitlesSurface);
+    g_pTitlesSurface = NULL;
+    nUiScreen = 16;
+    Titles_dtor(&nUiScreen);
+    CheckEqI32("Titles_dtor writes the screen id even with no surface", (i32)nUiScreen, 22);
+    Check(g_pTitlesSurface == NULL, "  and a missing surface is not dereferenced (0x46FC0)");
+
+    nUiScreen = 16;
+    Titles_dtor(NULL);
+    CheckEqI32("a null screen pointer is bounded, not written through", (i32)nUiScreen, 16);
+
+    g_nKills = 0;
+    nUiScreen = 16;
+    Titles_Shutdown(NULL);
+    CheckEqI32("a null env kills no timers", g_nKills, 0);
+    CheckEqI32("  and writes no screen id", (i32)nUiScreen, 16);
+}
+
+static void TestEndScreenShutdown(void)
+{
+    static PufoFont font;
+    static PufoOptions opts;
+    static u8 *pBackdrop;
+    static UiControl aMenuCtl[15];
+    static UiControl *pStartCtl;
+    static i32 anRowKeys[7];
+    static i32 anRowKeySrc[7];
+    static u8 abRowDisabled[7];
+    static i32 nListMode;
+    static i32 nUiScreen;
+    static u8 *pBgGlyph;
+    static u8 *pEmptyPad;
+    static GameUiStartupEnv stEnv;
+    static TimerBackend tb;
+    EndScreenShutdownEnv env;
+    const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+
+    printf("EndScreen_Shutdown @ 0x389f8\n");
+
+    if (!Asset_OpenArchives(apszPaths)) {
+        Check(false, "Asset_OpenArchives(lang.dat, main.dat)");
+        return;
+    }
+
+    Sound_SetBackend(&g_fakeAudio);
+    tb.pfnSet = TimerRecSet;
+    tb.pfnKill = RecKill;
+    tb.pUser = NULL;
+    Timer_SetBackend(&tb);
+    Options_InitDefaults(&opts);
+
+    memset(&font, 0, sizeof(font));
+    PufoFont_Init(&font);
+    font.nGlyphBase = font.nTotalSprFrames;
+    (void)Font_LoadSpr(&font, "font");
+    Font_BuildIndex(&font);
+
+    pBackdrop = (u8 *)malloc(64u); /* what EndScreen_Init allocates for the ending backdrop */
+    pStartCtl = (UiControl *)malloc(sizeof(UiControl));
+    nUiScreen = 18;
+    g_nKills = 0;
+
+    memset(&stEnv, 0, sizeof(stEnv));
+    stEnv.pFont = &font;
+    stEnv.paMenuControls = aMenuCtl;
+    stEnv.pStartCtl = pStartCtl;
+    stEnv.ppBgGlyph = &pBgGlyph;
+    stEnv.ppEmptyBtnPad = &pEmptyPad;
+    stEnv.anRowKeys = anRowKeys;
+    stEnv.abRowDisabled = abRowDisabled;
+    stEnv.anRowKeySrc = anRowKeySrc;
+    stEnv.pnListMode = &nListMode;
+    stEnv.pnUiScreen = &nUiScreen;
+    stEnv.pOptions = &opts;
+    stEnv.pfnLoadPads = StubLoadPads;
+
+    /* The ending's own prefix is "z", but the shipped main.dat carries no Z*.WAV at all -- only
+     * TACT*.WAV and BACK0..4.IT -- so that prefix loads zero samples. Load the tact set as the
+     * fixture's audio instead, so Sound_Shutdown has something to release and its presence is
+     * observable. */
+    Sound_InitAndLoadSamples("tact");
+    Sound_LoadAndPlayMusic(4);
+    g_nSampleFrees = 0;
+    g_nMusicFrees = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.pFont = &font;
+    env.ppBackdrop = &pBackdrop;
+    env.pStartup = NULL; /* no tail call, so what Font_Free leaves behind is still visible here */
+    EndScreen_Shutdown(&env);
+
+    Check(g_nSampleFrees > 0, "Sound_Shutdown releases the loaded samples (0x389FC)");
+    CheckEqI32("  and the loaded music module", g_nMusicFrees, 1);
+    CheckEqI32("KillTimers_A runs (0x38A00)", g_nKills, 2);
+    Check(font.apSprIndex == NULL, "Font_Free releases the font (0x38A08)");
+    Check(pBackdrop == NULL, "the ending backdrop is released and nulled (0x38A0C..0x38A14)");
+    CheckEqI32("with no startup env the screen id is left where the ending put it", nUiScreen, 18);
+
+    /* With the startup env wired, the tail call runs and the start menu re-creates the font the
+     * shutdown just released -- so a non-null index afterwards is the tail call's own fingerprint. */
+    PufoFont_Init(&font);
+    font.nGlyphBase = font.nTotalSprFrames;
+    (void)Font_LoadSpr(&font, "font");
+    Font_BuildIndex(&font);
+    nUiScreen = 18;
+    env.pStartup = &stEnv;
+    EndScreen_Shutdown(&env);
+    CheckEqI32("the tail call into GameUI_InitStartup @ 0x38a28 brings the start menu up", nUiScreen, 17);
+    Check(font.apSprIndex != NULL, "  and that call is what re-loads the font the shutdown freed");
+
+    g_nKills = 0;
+    nUiScreen = 18;
+    EndScreen_Shutdown(NULL);
+    CheckEqI32("a null env kills no timers", g_nKills, 0);
+    CheckEqI32("  and touches no screen id", nUiScreen, 18);
+
+    free(pStartCtl);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -757,6 +990,8 @@ int main(void)
     TestAnimation();
     TestEndScreen();
     TestTitlesInit();
+    TestTitlesShutdown();
+    TestEndScreenShutdown();
     if (TestLoadScene() != 0) {
         printf("\n%s: %d failure(s)\n", "FAIL", g_nFailures);
         return 1;

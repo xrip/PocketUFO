@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `fc2f29d`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 99, the base facility grid's names and craft at 0x61c8c -- the
-function that completes `strat-ui`), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `59885b2`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 100, the credits and ending shutdowns -- the three functions
+that complete `titles`), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -208,14 +208,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 946 / 1103 (85.8%)
-                                             bytes cited:     542612 / 598792 (90.6%)
-python docs/parity/audit_credits.py       -> credited functions: 946, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 949 / 1103 (86.0%)
+                                             bytes cited:     542820 / 598792 (90.7%)
+python docs/parity/audit_credits.py       -> credited functions: 949, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 531 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 258, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/audit_bugs.py          -> ledger rows: 261, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -232,10 +232,34 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15410**. Coverage as of the latest commit: **946 / 1103
-functions (85.8%)**, **542612 / 598792 bytes (90.6%)**. This unit ported the base facility grid's names,
-build icons and craft, `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B) -- the last unported `strat-ui`
-function, and the only place `abFacilityGrid @ 0x159768`'s four layers are read together: `buildDays`
+Test checks run across the 60 suites: **15436**. Coverage as of the latest commit: **949 / 1103
+functions (86.0%)**, **542820 / 598792 bytes (90.7%)**. This unit ported the three release functions that
+complete `titles` (13/13): `Titles_Shutdown` (0x3826c, 100 B), `Titles_dtor` (0x46fa4, 60 B) and
+`EndScreen_Shutdown` (0x389f8, 48 B) -- the screen-16 and screen-18 arms of `Input_OnPointerUp`
+(0x14924), which until now were two seams the shell never filled. **`Titles_dtor` writes screen id 22
+unconditionally** (0x46FB0), before the surface gate at 0x46FC0 and not the 16 the credits ran under;
+`GameUI_InitStartup` runs straight after `Titles_Shutdown` and replaces it with 17, which is why 22 is
+never seen on screen. **`Titles_Shutdown` nulls nothing it deletes**: the five `titlesN.pad` glyph blobs
+at 0x1571A0..0x1571B0 and `g_pTitlesState @ 0x158804` keep pointing at freed memory, so a second shutdown
+frees them again -- and its state-block release is gated on that pointer (0x382AC), so a null state block
+leaves even the screen id untouched. **`EndScreen_Shutdown` does not exit the game**: it deletes the ending
+backdrop at 0x1571C0 with no null test and no null store (0x38A0C..0x38A14) and then *tail-calls*
+`GameUI_InitStartup @ 0x38a28` (0x38A20), which re-loads the very font its own `Font_Free` just released
+-- the reason the font is not observably freed when the startup env is wired. A shipped-data finding came
+out of the fixture: `EndScreen_Init` asks the archive for the `"z"` sample set at 0x38920, but the shipped
+`main.dat` carries **no `Z*.WAV` at all** (only `TACT0..N.WAV` and `BACK0..4.IT`), so every ending loads
+zero samples. Deviations: the port nulls everything it releases, bounds the glyph array and the screen-id
+pointer, and has no counterpart for the original's delete of the 0x154C0 state block because the port keeps
+that block in the shell's static storage. The shell now wires the screen-16 arm for real
+(`App_TitlesToStartup`: `Titles_Shutdown` then `App_InitStartupUi`); the screen-18 arm stays a seam because
+the shell has no ending flow yet. 26 new checks in `test_titles` (136 there), with `Sound_Shutdown` pinned
+through the fake audio backend's sample-free and music-free counters, the timers through the timer
+backend's kill log (two kills, 0xC351 then 0xC352), and the tail call through the start menu coming up at
+17 with a startup env and staying at 18 without one. A 14-mutation sweep turned 12 red; two are true
+equivalences (`KillTimers_A`/`B`/`C` are byte-identical at 0x9e6a4 / 0x9e754 / 0x9e7c4). IDB: 3 function
+comments and 7 line comments, no renames; 3 new ledger rows (261).
+The previous unit ported the base facility grid's names, build icons and craft,
+`BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B) -- the last unported `strat-ui` function, and the only place `abFacilityGrid @ 0x159768`'s four layers are read together: `buildDays`
 (the remaining build days), `tileA` (the tile stamp), `tileB` (the facility name) and `layer2` (the craft
 standing in the cell). **The grid is 32 px cells, six per axis, starting at y 36** -- the backdrop loop
 bounds are `CMP #0xC0` on both axes (0x61CD4, 0x61CE0), so it spans x 0..191 and y 36..227, and the
@@ -1233,7 +1257,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 245 | 245 | 121164 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
-| `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
+| `titles` | 13 | 13 | 4444 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
 (`gx.dll` GAPI, registry helpers) that the port deliberately replaces with Win32 equivalents rather
@@ -2173,7 +2197,7 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 531 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 258-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 261-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |
