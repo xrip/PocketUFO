@@ -2416,7 +2416,7 @@ bool Save_ReadTGameData(DatFile *pDat, TactSaveState *pSt,
         if (!DatFile_Read(pDat, &pSt->anCraftTile[i], 1)) { bOk = false; }
     }
 
-    /* 0x4444C. */
+    /* 0x4444C: Font_LoadTactSprites @ 0x257c4, ported in pufo_font.c and installed by the caller. */
     if (pHooks->pfnLoadTactSprites != NULL) {
         pHooks->pfnLoadTactSprites(pHooks->pUser);
     }

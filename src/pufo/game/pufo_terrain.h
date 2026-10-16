@@ -96,8 +96,10 @@ typedef struct MapTerrainEnv {
      * only the sprite group base is separate, and it lives in the font block. */
     u16  nCraftSprBase;     /* fontSys + 0x06, the u16 the flag-3 template base also uses */
 
-    /* Font_LoadTactSprites (0x257c4, 752 B) is not ported; it loads the tactical sprite set the
-     * stamping passes then index into. Same hook shape as TactLoadHooks.pfnLoadTactSprites.
+    /* Font_LoadTactSprites @ 0x257c4 IS ported (pufo_font.c), but it is injected here rather than
+     * called: it ends with Font_BuildIndex, which rebuilds the index this builder's template and
+     * stamping passes read, so the hook belongs to whoever owns the font and its index. The caller
+     * installs Font_LoadTactSprites(pFont, &env) built from this env's own Map scalars.
      *
      * Combat_ResolveShot @ 0x2f12c IS ported, but its CombatCtx (TactState, the three rosters, the
      * 41x41 hit windows) belongs to the caller that owns the tactical context, not to the terrain

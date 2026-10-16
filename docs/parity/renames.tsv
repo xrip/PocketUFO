@@ -568,3 +568,15 @@ szBaseAtResultOk	szEmptyString	0x10DA38. The shared "" literal, not a BaseAt res
 unk_B8416	aTextRec94	0xB8416 = TEXTS record 94 (base 0xB38D0 + 94*205): "Personal Armour", the first armour row label in SoldierScreen_DrawEquipPanels (0x62EB0).
 unk_B84E3	aTextRec95	0xB84E3 = TEXTS record 95: "Power Armour", the second armour row label (0x62F30).
 unk_B85B0	aTextRec96	0xB85B0 = TEXTS record 96: "Fly armour", the third armour row label (0x62FC0).
+aJungle_0	aTactTerrainSetName	0xA6858. 40 names of 9 bytes = 4 sprite sets per mission type, indexed 4*nMissionType + i for i = 0..3; 360 bytes ending exactly at aTactUfoSetName. Read only by Font_LoadTactSprites (0x2582C). IDA's name came from its first entry, "jungle".
+aUfo1	aTactUfoSetName	0xA69C0. 32 names of 9 bytes = 4 sprite sets per UFO class, indexed 4*class + i; 288 bytes ending exactly at abTactUfoClassByVariant. Read only by Font_LoadTactSprites (0x258F0).
+byte_A6AE0	abTactUfoClassByVariant	0xA6AE0. 16 bytes, indexed 3*(nTerrainVariant-1) + nTerrainParam (the dword at Map+0x1510C), giving the aTactUfoSetName class 0..7. Only 15 entries are reachable; the 16th is the gap to g_aTerrainModuleCount @ 0xA6AF0.
+unk_15826A	fontSys_nCursorSprBase	0x15826A, fontSys+0x02. The cursor group's first frame index, written by Font_LoadTactSprites at 0x257F0 from nTotalSprFrames.
+unk_15826C	fontSys_nTerrainSprBase	0x15826C, fontSys+0x04. The mission-terrain group base, written at 0x25814 from nTotalMc1 -- one of the two .mc1-backed slots the .ma1 templates index as fontSys + 2*nFlag (flag 2).
+unk_158270	fontSys_nUfoSprBase	0x158270, fontSys+0x08. The UFO-module group base, written at 0x258B8 from nTotalMc1 (flag 4).
+unk_158272	fontSys_nXcom0SprBase	0x158272, fontSys+0x0A. Written at 0x25934 before Font_LoadSpr("xcom_0").
+unk_158274	fontSys_nXcom1SprBase	0x158274, fontSys+0x0C. Written at 0x2594C before Font_LoadSpr("xcom_1").
+unk_158276	fontSys_nXcom2SprBase	0x158276, fontSys+0x0E. Written at 0x25960 before Font_LoadSpr("xcom_2").
+unk_158278	fontSys_nXcom3SprBase	0x158278, fontSys+0x10. Written at 0x25974 before Font_LoadSpr("xcom_3").
+unk_158282	fontSys_nCivmSprBase	0x158282, fontSys+0x1A. Urban missions only: written at 0x25998 before Font_LoadSpr of aXcom0 slot 17, "civm".
+unk_158284	fontSys_nCivfSprBase	0x158284, fontSys+0x1C. Written at 0x259AC before aXcom0 slot 16, "civf" -- the two civilian names are out of table order.

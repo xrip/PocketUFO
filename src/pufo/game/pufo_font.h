@@ -49,6 +49,13 @@
 #define PUFO_FONT_PAL_MAX 19
 
 typedef struct PufoFont {
+    /* The five group bases the .ma1 templates index. Map_ApplyTemplateToCells @ 0x54cf4 resolves every
+     * template slot as Font_GetSprByIndex(fontSys, *(u16 *)(fontSys + 2 * nFlag) + value - 2), so the
+     * flag byte selects one of these five slots -- they are the font block's first five u16s, at
+     * +0x00, +0x02, +0x04, +0x06 and +0x08. Font_LoadTactSprites @ 0x257c4 is their only writer, and
+     * the shipped templates only ever carry flags 2, 3 and 4. */
+    u16       anFlagSprBase[5];                     /* 0x00 blanks, 0x02 cursor, 0x04 terrain modules,
+                                                     * 0x06 craft (fontSys_nCraftSprBase), 0x08 UFO modules */
     u8        bInited;                              /* 0x598 */
     u8        nSlotCount;                           /* 0x400 */
     /* The four alien sprite-set bases Tact_SpawnAliens @ 0x3a2ac writes at 0x3AAFC: for each of
@@ -69,6 +76,19 @@ typedef struct PufoFont {
     u16       nBigObsBase;                          /* 0x26, nBigObsSprBase */
     u16       nBaseBitsBase;                        /* 0x2C, fontSys_nBaseBitsSprBase */
     u16       nMapBitsBase;                         /* 0x34, fontSys_nMapBitsSprBase */
+    /* The rest of the group bases Font_LoadTactSprites @ 0x257c4 writes. Each is the running counter
+     * at the moment its own group is loaded -- nTotalSprFrames for the .spr groups, nTotalMc1 for the
+     * two .mc1-backed slots in anFlagSprBase. */
+    u16       anXcomSprBase[4];                     /* 0x0A, 0x0C, 0x0E, 0x10: the xcom_0..3 sets */
+    u16       nCivmSprBase;                         /* 0x1A, urban missions only */
+    u16       nCivfSprBase;                         /* 0x1C, urban missions only */
+    u16       nHandobBase;                          /* 0x20, nHandobSprBase */
+    u16       nFloorobBase;                         /* 0x22, nFloorobSprBase */
+    u16       nTanksBase;                           /* 0x24, nTanksSprBase */
+    u16       nBulletsBase;                         /* 0x2A, nBulletsSprBase */
+    u16       nScangBase;                           /* 0x2E, nScangSprBase */
+    u16       nSmokeBase;                           /* 0x30, nSmokeSprBase */
+    u16       nExplBase;                            /* 0x32, nExplSprBase */
     char      aszName[PUFO_FONT_SLOTS][PUFO_FONT_NAMELEN]; /* 0xe0 */
     void     *apSprData[PUFO_FONT_SLOTS];           /* 0x4f4 */
     Mc1Rec   *apMc1Data[PUFO_FONT_SLOTS];           /* 0x404 */
@@ -125,6 +145,64 @@ Mc1Rec *Font_GetSprByIndex(const PufoFont *pFont, u16 nIndex);
  * flag-3 base is the u16 at fontSys + 0x06, which is also what Map_PatchCraftSprites reads as the
  * craft sprite group -- the craft pad and the craft sprites come from the same group. */
 u16 Font_GetFlagSprBase(const PufoFont *pFont, u8 nFlag);
+
+/* --- Font_LoadTactSprites @ 0x257c4 (752 B) : the tactical sprite set and its group bases ---
+ *
+ * Reached from Map_BuildMissionTerrain (0x22e10) at 0x22E4C and from Save_ReadTGameData (0x44248) at
+ * 0x4444C; both already had it as a hook because it was not ported. It is the only writer of the
+ * group bases in the font block, and the rule is the same for every one of them: the base is the
+ * running counter captured immediately BEFORE that group's Font_LoadSpr, so it is the group's first
+ * frame index. The counter is fontSys.nTotalSprFrames (+0x36) for the .spr groups and
+ * fontSys.nTotalMc1 (+0x38) for the two .mc1-backed slots at +0x04 and +0x06.
+ *
+ * 1. blanks -> anFlagSprBase[0], then Font_LoadSpr("blanks").
+ * 2. cursor -> anFlagSprBase[1], then Font_LoadSpr("cursor").
+ * 3. the mission-terrain group -> anFlagSprBase[2], from nTotalMc1 read once here; then four names
+ *    aTactTerrainSetName[4 * nMissionType + i] for i = 0..3 (0xA6858, 40 names of 9), each skipped
+ *    when it is the empty string. nTotalMc1 is re-read after every load that actually ran.
+ * 4. the craft group -> anFlagSprBase[3], only when nMapLayers != 0, from the nTotalMc1 the step-3
+ *    loop left behind; the name is g_aPlaneName[nMapLayers - 1] (aPlane + 9 * nMapLayers - 9).
+ * 5. the UFO-module group -> anFlagSprBase[4], only when nTerrainVariant != 0, again from the
+ *    nTotalMc1 left by step 4; the class is abTactUfoClassByVariant[3 * (nTerrainVariant - 1) +
+ *    nTerrainParam] (0xA6AE0, 16 bytes) and the four names are aTactUfoSetName[4 * class + i]
+ *    (0xA69C0, 32 names of 9). nTotalMc1 is NOT re-read inside this loop, so the base stored at
+ *    +0x08 is the value from before the UFO loads -- and nothing later reads it as a running total.
+ * 6. "font" -> nGlyphBase, then xcom_0/1/2/3 -> anXcomSprBase[0..3], each from nTotalSprFrames.
+ * 7. urban missions only (nMissionType == 5): "civm" (aXcom0 + 0x99) -> nCivmSprBase, then "civf"
+ *    (aXcom0 + 0x90) -> nCivfSprBase. The two names are out of table order -- civm sits after civf.
+ * 8. "tanks" -> nTanksBase, "floorob" -> nFloorobBase, "handob" -> nHandobBase, "bigobs" ->
+ *    nBigObsBase, "bullets" -> nBulletsBase, "scang" -> nScangBase, "smoke" -> nSmokeBase,
+ *    "expl" -> nExplBase. The first three names come out of the aXcom0 table (+0x24, and floorob /
+ *    handob / bigobs are their own strings); the order the loads run is tanks, floorob, handob,
+ *    bigobs even though the slots are 0x24, 0x22, 0x20, 0x26.
+ * 9. Font_BuildIndex.
+ *
+ * Deviation: the original reads nMissionType, nMapLayers, nTerrainVariant and the Map+0x1510C dword
+ * straight out of the global Map block, and indexes the three name tables with no bound at all -- a
+ * mission type above 9 or a terrain variant above 5 reads past the end of aTactTerrainSetName /
+ * abTactUfoClassByVariant. The port takes the four bytes through the env and bounds the two indexes,
+ * skipping the group instead of reading out of the table. */
+typedef struct TactSpriteEnv {
+    u8   nMissionType;     /* Map+0x1511A */
+    u8   nMapLayers;       /* Map+0x15114 */
+    u8   nTerrainVariant;  /* Map+0x15111 */
+    i32  nTerrainParam;    /* Map+0x1510C, the dword Map_BuildMissionTerrain also takes the tier from */
+    const char (*paTerrainSets)[9]; /* aTactTerrainSetName @ 0xA6858, 40 slots */
+    const char (*paUfoSets)[9];     /* aTactUfoSetName @ 0xA69C0, 32 slots */
+    const char (*paPlaneNames)[9];  /* g_aPlaneName @ 0xA6668, 3 slots, taken as [nMapLayers - 1] here */
+    const u8   *paUfoClass;         /* abTactUfoClassByVariant @ 0xA6AE0, 16 bytes */
+    i32  nTerrainSetCount;          /* 10 mission types in the shipped table */
+    i32  nUfoClassCount;            /* 8 classes in the shipped table */
+    i32  nVariantCount;             /* 5 variants in the shipped table */
+} TactSpriteEnv;
+
+/* The three shipped tables, dumped by tools/gen_tact_sprite_tables.py and checked by
+ * docs/parity/audit_tables.py. */
+extern const char g_aTactTerrainSetName[40][9];
+extern const char g_aTactUfoSetName[32][9];
+extern const u8   g_abTactUfoClassByVariant[16];
+
+void Font_LoadTactSprites(PufoFont *pFont, const TactSpriteEnv *pEnv);
 
 /* What Map_PatchCraftSprites @ 0x25ab4 reads out of the font block and the Map block. The port owns
  * neither, so both come in here. */

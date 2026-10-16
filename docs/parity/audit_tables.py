@@ -68,6 +68,13 @@ TABLES = [
     ("craft pad names",          0xA6668, "g_aPlaneName",             "src/pufo/game/pufo_terrain.c",  27, "B", 0),
     ("terrain name by mission",  0xA67F8, "g_aTerrainNameByMission",  "src/pufo/game/pufo_terrain.c",  90, "B", 0),
     ("terrain name suffix",      0xA7B20, "g_aTerrainNameSuffix",     "src/pufo/game/pufo_terrain.c",  90, "B", 0),
+    # The three tables Font_LoadTactSprites (0x257c4) reads, dumped by tools/gen_tact_sprite_tables.py.
+    # Each extent is the gap to the next named symbol: aTactTerrainSetName ends exactly at
+    # aTactUfoSetName @ 0xA69C0, which ends exactly at abTactUfoClassByVariant @ 0xA6AE0, which ends
+    # at g_aTerrainModuleCount @ 0xA6AF0. All three are read only by that one function.
+    ("tact terrain sprite sets", 0xA6858, "g_aTactTerrainSetName",     "src/pufo/game/pufo_font.c", 360, "B", 0),
+    ("tact ufo sprite sets",     0xA69C0, "g_aTactUfoSetName",         "src/pufo/game/pufo_font.c", 288, "B", 0),
+    ("tact ufo class by variant",0xA6AE0, "g_abTactUfoClassByVariant", "src/pufo/game/pufo_font.c",  16, "B", 0),
     # aFacBuildSpec: 18 records of three bytes (tileA byte, tileB byte, signed build days). IDA
     # declares it as 56 bytes; the real extent is 54 -- the last two bytes are zero padding, and the
     # highest index the readers reach is 17.

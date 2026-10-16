@@ -160,7 +160,8 @@ typedef struct TactInitHooks {
                              const char *pszText, void *pUser);                /* UiPanel_WrapText (0x37144) */
     bool (*pfnLoadUiPads)(void *pUser);                                        /* Tact_LoadUiPads (0x37bdc) */
     void (*pfnInitUiControls)(void *pUser);                                    /* Tact_InitUiControls (0x37c8c) */
-    /* Font_LoadTactSprites (0x257c4): the same seam Map_BuildMissionTerrain uses. */
+    /* Font_LoadTactSprites @ 0x257c4, ported in pufo_font.c: the same seam Map_BuildMissionTerrain
+     * uses, forwarded into the terrain env. */
     void (*pfnLoadTactSprites)(void *pUser);
     bool (*pfnSoundInit)(const char *pszPrefix, void *pUser);                  /* Sound_InitAndLoadSamples (0x9e1f0) */
     void (*pfnSoundPlayMusic)(i32 nTrack, void *pUser);                        /* Sound_LoadAndPlayMusic (0x9e2b8) */

@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `a7bbc3e`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 101, the soldier readout and its two armour panels -- the two
-functions behind SCREEN 5), and the per-unit chain
+Date: 2026-10-17. HEAD before this edit: `0a4fcdf`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 102, the tactical sprite loader and the font's group bases),
+and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -208,16 +208,16 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 951 / 1103 (86.2%)
-                                             bytes cited:     549876 / 598792 (91.8%)
-python docs/parity/audit_credits.py       -> credited functions: 951, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 548 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 952 / 1103 (86.3%)
+                                             bytes cited:     550628 / 598792 (92.0%)
+python docs/parity/audit_credits.py       -> credited functions: 952, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 560 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
 python docs/parity/audit_bugs.py          -> ledger rows: 266, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
-python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
+python docs/parity/audit_tables.py        -> 43 tables checked, 0 mismatched
 ```
 
 Launch check, same session:
@@ -232,8 +232,43 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15547**. Coverage as of the latest commit: **951 / 1103
-functions (86.2%)**, **549876 / 598792 bytes (91.8%)**. This unit ported the two functions behind SCREEN 5,
+Test checks run across the 60 suites: **15581**. Coverage as of the latest commit: **952 / 1103
+functions (86.3%)**, **550628 / 598792 bytes (92.0%)**. This unit ported `Font_LoadTactSprites`
+(0x257c4, 752 B) -- the only writer of the per-group sprite bases in the font block at 0x158268, reached
+from `Map_BuildMissionTerrain` (0x22e10) at 0x22E4C and from `Save_ReadTGameData` (0x44248) at 0x4444C.
+**Every base is the running counter captured immediately before that group's `Font_LoadSpr`**, so it is
+the group's first frame index: `nTotalSprFrames` (+0x36) for the .spr groups, `nTotalMc1` (+0x38) for the
+two slots the .ma1 templates index as `fontSys + 2 * nFlag`. **The load order is not the slot order** --
+tanks, floorob, handob and bigobs load in that sequence while their slots are +0x24, +0x22, +0x20 and
++0x26 -- and urban missions load "civm" (aXcom0 slot 17) before "civf" (slot 16). The mc1 total is
+captured once at 0x25804 and then carried: +0x04 is the first value, +0x06 what the terrain loop left
+(it re-reads after every load that ran, 0x2584C) and +0x08 what the craft load left (the UFO loop does
+not re-read). Three shipped tables feed it and nothing else reads them: `aTactTerrainSetName` @ 0xA6858
+(40 names of 9 = 10 mission types x 4 sets), `aTactUfoSetName` @ 0xA69C0 (32 = 8 classes x 4) and
+`abTactUfoClassByVariant` @ 0xA6AE0 (16 bytes, indexed `3 * (nTerrainVariant - 1) + nTerrainParam`, only
+15 reachable). The craft name is `aPlane[nMapLayers - 1]` -- the layer count, not the mission type the
+terrain builder uses for the same table.
+
+**A defect in this port, found and fixed.** `Font_GetFlagSprBase` read `((const u16 *)pFont)[nFlag]`,
+which mirrors the original's `*(u16 *)(fontSys + 2 * nFlag)` only if `PufoFont` were laid out at the
+original offsets -- it is a model, not a mirror, and its first five u16s are `{bInited, nSlotCount}`
+followed by `anAlienSprBase[0..3]`, so flags 2, 3 and 4 were really reading the alien sprite-set bases.
+`tests/test_terrain.c` had been written around it, priming `anAlienSprBase[0..2]` to make template
+lookups miss. `PufoFont` now names the five slots as `anFlagSprBase[5]` (blanks, cursor, terrain, craft,
+UFO), the accessor reads them by name and returns 0 for a flag the shipped data never produces, and the
+terrain fixture primes `anFlagSprBase[2..4]`. **The seam stayed a seam**: both call sites still go
+through `pfnLoadTactSprites`, because the load ends with `Font_BuildIndex`, which frees and rebuilds the
+very index the terrain builder's template and stamping passes then read -- a caller that owns neither the
+font nor its index cannot have the builder rebuild it underneath them. The app, which owns the real
+`fontSys`, installs `Font_LoadTactSprites(pFont, &env)` built from the env's own Map scalars. Deviation:
+the original bounds neither table index; the port skips the group instead of reading past the end. 34 new
+checks in `test_font` (66 there), with the fixture presets `nTotalSprFrames = 11` / `nTotalMc1 = 7` so a
+group base that takes the wrong counter shows up as 11 where 7 was wanted, and every base asserted as an
+exact frame count from the shipped archives. A 12-mutation sweep turned all 12 red. IDB: 12 renames (the
+three tables, which IDA had named after their first entries, and nine unnamed fontSys base slots), a
+function comment on 0x257c4 and comments on the tables; three new audited tables (43 checked, 0
+mismatched), dumped by `tools/gen_tact_sprite_tables.py`.
+The previous unit ported the two functions behind SCREEN 5,
 `SoldierScreen_DrawDetail` (0x632cc, 6,096 B) and `SoldierScreen_DrawEquipPanels` (0x62d78, 960 B) -- 7,056
 bytes, the biggest pair left in `strat-ui`. **The IDB called 0x632cc `Ui_TextInputDialog`**, which describes only
 the keyboard block in its last ~1,100 bytes; the body is the whole selected-soldier readout (header ramp, rank

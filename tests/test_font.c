@@ -7,6 +7,7 @@
 #include "asset/pufo_asset.h"
 #include "game/pufo_font.h"
 #include "game/pufo_mapctx.h"   /* PUFO_MAP_CELL_DIM */
+#include "game/pufo_terrain.h"  /* g_aPlaneName */
 #include "render/pufo_render.h"
 
 #include <stdio.h>
@@ -379,6 +380,189 @@ static void TestPatchCraftSprites(void)
     Check(aSink.pWallSprA == NULL, "nothing outside the twelve stamped cells is touched");
 }
 
+/* ------------------------------------------------------------------ Font_LoadTactSprites */
+
+static PufoFont g_tacFont;
+
+/* The shipped sprite sets, in the order the original loads them. Every one of these members exists
+ * in lang.dat / main.dat, so the slot list is exact rather than "whatever the archives happened to
+ * have". */
+static const char *const g_aTacWantCulta[] = {
+    "blanks", "cursor", "cultivat", "barn", "lightnin", "ufo1", "font",
+    "xcom_0", "xcom_1", "xcom_2", "xcom_3",
+    "tanks", "floorob", "handob", "bigobs", "bullets", "scang", "smoke", "expl"
+};
+static const char *const g_aTacWantUrban[] = {
+    "blanks", "cursor", "roads", "urbits", "urban", "frniture", "plane",
+    "u_ext02", "u_wall02", "u_oper2", "u_bits",
+    "font", "xcom_0", "xcom_1", "xcom_2", "xcom_3", "civm", "civf",
+    "tanks", "floorob", "handob", "bigobs", "bullets", "scang", "smoke", "expl"
+};
+static const char *const g_aTacWantNoGroups[] = {
+    "blanks", "cursor", "cultivat", "barn", "font",
+    "xcom_0", "xcom_1", "xcom_2", "xcom_3",
+    "tanks", "floorob", "handob", "bigobs", "bullets", "scang", "smoke", "expl"
+};
+
+static void TacEnv(TactSpriteEnv *pEnv, i32 nMission, i32 nLayers, i32 nVariant, i32 nParam)
+{
+    memset(pEnv, 0, sizeof(*pEnv));
+    pEnv->nMissionType     = (u8)nMission;
+    pEnv->nMapLayers       = (u8)nLayers;
+    pEnv->nTerrainVariant  = (u8)nVariant;
+    pEnv->nTerrainParam    = nParam;
+    pEnv->paTerrainSets    = g_aTactTerrainSetName;
+    pEnv->paUfoSets        = g_aTactUfoSetName;
+    pEnv->paPlaneNames     = g_aPlaneName;
+    pEnv->paUfoClass       = g_abTactUfoClassByVariant;
+    pEnv->nTerrainSetCount = 10;
+    pEnv->nUfoClassCount   = 8;
+    pEnv->nVariantCount    = 5;
+}
+
+static void TacFontReset(u16 nSprTotal, u16 nMc1Total)
+{
+    memset(&g_tacFont, 0, sizeof(g_tacFont));
+    PufoFont_Init(&g_tacFont);
+    /* Preset counters make the two running totals distinguishable: a group base that takes the
+     * wrong counter shows up as 11 where 7 was wanted. */
+    g_tacFont.nTotalSprFrames = nSprTotal;
+    g_tacFont.nTotalMc1       = nMc1Total;
+}
+
+static void TacCheckNames(const char *const *apszWant, i32 nWant, const char *pszCase)
+{
+    char szGot[512];
+    char szWant[512];
+    size_t n;
+    i32 i;
+
+    szGot[0] = '\0';
+    szWant[0] = '\0';
+    n = 0;
+    for (i = 0; i < (i32)g_tacFont.nSlotCount && n < sizeof(szGot) - 16; ++i) {
+        n += (size_t)snprintf(szGot + n, sizeof(szGot) - n, "%s ", g_tacFont.aszName[i]);
+    }
+    n = 0;
+    for (i = 0; i < nWant; ++i) {
+        n += (size_t)snprintf(szWant + n, sizeof(szWant) - n, "%s ", apszWant[i]);
+    }
+    Check((i32)g_tacFont.nSlotCount == nWant && strcmp(szGot, szWant) == 0, pszCase);
+    if ((i32)g_tacFont.nSlotCount != nWant || strcmp(szGot, szWant) != 0) {
+        printf("       got:  %s\n       want: %s\n", szGot, szWant);
+    }
+}
+
+/* Map_ApplyTemplateToCells @ 0x54cf4 resolves every template slot through *(u16 *)(fontSys + 2 * nFlag),
+ * so the flag byte picks one of the font block's first five u16s. The shipped templates carry 2, 3 and 4. */
+static void TestFlagSprBases(void)
+{
+    PufoFont f;
+
+    memset(&f, 0, sizeof(f));
+    f.anFlagSprBase[0] = 10;
+    f.anFlagSprBase[1] = 20;
+    f.anFlagSprBase[2] = 30;
+    f.anFlagSprBase[3] = 40;
+    f.anFlagSprBase[4] = 50;
+
+    CheckEqI32(Font_GetFlagSprBase(&f, 0), 10, "flag 0 is the blanks base at fontSys + 0x00");
+    CheckEqI32(Font_GetFlagSprBase(&f, 1), 20, "flag 1 is the cursor base at +0x02");
+    CheckEqI32(Font_GetFlagSprBase(&f, 2), 30, "flag 2 is the terrain-module base at +0x04");
+    CheckEqI32(Font_GetFlagSprBase(&f, 3), 40, "flag 3 is the craft base at +0x06");
+    CheckEqI32(Font_GetFlagSprBase(&f, 4), 50, "flag 4 is the UFO-module base at +0x08");
+    CheckEqI32(Font_GetFlagSprBase(&f, 5), 0, "a flag past the five slots resolves to nothing");
+}
+
+static void TestLoadTactSprites(void)
+{
+    TactSpriteEnv env;
+
+    /* culta (mission 1), two map layers, terrain variant 1 with the tier dword 0. */
+    TacFontReset(11u, 7u);
+    TacEnv(&env, 1, 2, 1, 0);
+    Font_LoadTactSprites(&g_tacFont, &env);
+
+    TacCheckNames(g_aTacWantCulta, (i32)(sizeof(g_aTacWantCulta) / sizeof(g_aTacWantCulta[0])),
+                  "culta loads the 19 shipped sets in the original's order (0x257C4)");
+
+    /* The bases are the running total captured BEFORE their own group's load. */
+    CheckEqI32(g_tacFont.anFlagSprBase[0], 11, "the blanks base is the spr total at entry (0x257DC)");
+    CheckEqI32(g_tacFont.anFlagSprBase[1], 13, "the cursor base is the spr total after blanks (0x257F0)");
+    CheckEqI32(g_tacFont.anFlagSprBase[2], 9, "the terrain base is the MC1 total, not the spr one (0x25814)");
+    CheckEqI32(g_tacFont.anFlagSprBase[3], 75, "the craft base is the mc1 total the terrain loop left (0x25874)");
+    CheckEqI32(g_tacFont.anFlagSprBase[4], 121, "the UFO base is the mc1 total the craft load left (0x258B8)");
+    CheckEqI32(g_tacFont.nGlyphBase, 177, "the font group base is the spr total after the ufo1 set (0x25920)");
+    CheckEqI32(g_tacFont.anXcomSprBase[0], 433, "xcom_0 base (0x25934)");
+    CheckEqI32(g_tacFont.anXcomSprBase[1], 708, "xcom_1 base, 12 frames after xcom_0 (0x2594C)");
+    CheckEqI32(g_tacFont.anXcomSprBase[2], 983, "xcom_2 base (0x25960)");
+    CheckEqI32(g_tacFont.anXcomSprBase[3], 1266, "xcom_3 base (0x25974)");
+    Check(g_tacFont.nCivmSprBase == 0 && g_tacFont.nCivfSprBase == 0,
+          "a non-urban mission loads neither civilian set (0x2598C)");
+    CheckEqI32(g_tacFont.nTanksBase, 1549, "tanks base (0x259C0)");
+    CheckEqI32(g_tacFont.nFloorobBase, 1677, "floorob base, loaded second though its slot is lower (0x259D4)");
+    CheckEqI32(g_tacFont.nHandobBase, 1750, "handob base (0x259E8)");
+    CheckEqI32(g_tacFont.nBigObsBase, 1878, "bigobs base (0x259FC)");
+    CheckEqI32(g_tacFont.nBulletsBase, 1935, "bullets base (0x25A10)");
+    CheckEqI32(g_tacFont.nScangBase, 1956, "scang base (0x25A24)");
+    CheckEqI32(g_tacFont.nSmokeBase, 2410, "smoke base (0x25A38)");
+    CheckEqI32(g_tacFont.nExplBase, 2470, "expl base (0x25A4C)");
+    /* BuildIndex counts what the slots actually hold, so the preset 11 / 7 are not in these two. */
+    CheckEqI32(g_tacFont.nSprIndexCount, 2478 - 11, "the tail Font_BuildIndex rebuilt the glyph index (0x25A64)");
+    CheckEqI32(g_tacFont.nMc1IndexCount, 141 - 7, "  and the record index");
+
+    /* urban (mission 5), one layer, variant 3 with tier 1: the variant table says class 4, whose
+     * four sets are u_ext02 / u_wall02 / u_oper2 / u_bits -- u_oper2 is what separates class 4 from
+     * classes 1, 2, 5 and 6, and u_disec2 would mean classes 3 or 7. */
+    TacFontReset(0u, 0u);
+    TacEnv(&env, 5, 1, 3, 1);
+    Font_LoadTactSprites(&g_tacFont, &env);
+    TacCheckNames(g_aTacWantUrban, (i32)(sizeof(g_aTacWantUrban) / sizeof(g_aTacWantUrban[0])),
+                  "urban adds the four terrain sets, the plane and the two civilian sets");
+    Check(g_tacFont.nCivmSprBase != 0 && g_tacFont.nCivfSprBase > g_tacFont.nCivmSprBase,
+          "civm loads before civf and civf's base is higher (0x25998, 0x259AC)");
+
+    /* No layers and no terrain variant: the craft and UFO groups are skipped outright. */
+    TacFontReset(0u, 0u);
+    TacEnv(&env, 1, 0, 0, 0);
+    Font_LoadTactSprites(&g_tacFont, &env);
+    TacCheckNames(g_aTacWantNoGroups, (i32)(sizeof(g_aTacWantNoGroups) / sizeof(g_aTacWantNoGroups[0])),
+                  "nMapLayers 0 and nTerrainVariant 0 skip both optional groups (0x25870, 0x258A8)");
+
+    /* The craft name follows the layer count, not the mission type. */
+    TacFontReset(0u, 0u);
+    TacEnv(&env, 1, 3, 0, 0);
+    Font_LoadTactSprites(&g_tacFont, &env);
+    Check(strcmp(g_tacFont.aszName[4], "avenger") == 0,
+          "three layers pick aPlane[2] \"avenger\", so the index is nMapLayers - 1 (0x25890)");
+
+    /* Deviation: the original indexes both tables with no bound. The port skips the group instead. */
+    {
+        static const char *const apszNoTerrain[] = {
+            "blanks", "cursor", "plane", "ufo1", "font",
+            "xcom_0", "xcom_1", "xcom_2", "xcom_3",
+            "tanks", "floorob", "handob", "bigobs", "bullets", "scang", "smoke", "expl"
+        };
+        static const char *const apszNoUfo[] = {
+            "blanks", "cursor", "cultivat", "barn", "plane", "font",
+            "xcom_0", "xcom_1", "xcom_2", "xcom_3",
+            "tanks", "floorob", "handob", "bigobs", "bullets", "scang", "smoke", "expl"
+        };
+
+        TacFontReset(0u, 0u);
+        TacEnv(&env, 10, 1, 1, 0);
+        Font_LoadTactSprites(&g_tacFont, &env);
+        TacCheckNames(apszNoTerrain, (i32)(sizeof(apszNoTerrain) / sizeof(apszNoTerrain[0])),
+                      "mission type 10 loads no terrain set -- the original reads past aTactTerrainSetName");
+
+        TacFontReset(0u, 0u);
+        TacEnv(&env, 1, 1, 6, 0);
+        Font_LoadTactSprites(&g_tacFont, &env);
+        TacCheckNames(apszNoUfo, (i32)(sizeof(apszNoUfo) / sizeof(apszNoUfo[0])),
+                      "terrain variant 6 loads no UFO set -- the original reads past abTactUfoClassByVariant");
+    }
+}
+
 int main(void)
 {
     const char *const apszPaths[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
@@ -397,6 +581,8 @@ int main(void)
     TestBlitIntoSurface();
     TestMetrics();
     TestPatchCraftSprites();
+    TestFlagSprBases();
+    TestLoadTactSprites();
 
     Asset_CloseArchives();
 

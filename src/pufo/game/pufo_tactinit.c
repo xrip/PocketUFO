@@ -427,11 +427,12 @@ static void Init_FillCalleeEnvs(TactInitEnv *pEnv)
     pT->paTileTypes      = pEnv->pTileTypes;
     pT->pRmp             = pEnv->pRmp;
     pT->pFont            = pEnv->pFont;
-    /* The craft sprite group is the u16 at fontSys+0x06, which is also the flag-3
-     * template base the builder resolves its pad slots through. */
-    pT->nCraftSprBase    = Font_GetFlagSprBase(pEnv->pFont, 3);
+    /* The craft sprite group is the u16 at fontSys+0x06, which is also the flag-3 template base the
+     * builder resolves its pad slots through. Map_BuildMissionTerrain refreshes it after the
+     * Font_LoadTactSprites call that writes it, so this is only the pre-build value. */
+    pT->nCraftSprBase      = Font_GetFlagSprBase(pEnv->pFont, 3);
     pT->pfnLoadTactSprites = pEnv->hooks.pfnLoadTactSprites;
-    pT->pUser            = pEnv->hooks.pUser;
+    pT->pUser              = pEnv->hooks.pUser;
 
     pEnv->select.ppSelUnit   = &pMap->pSelUnit;
     pEnv->select.pCursorPos  = &pEnv->cursorPos;

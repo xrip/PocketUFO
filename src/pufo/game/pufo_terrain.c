@@ -926,6 +926,10 @@ void Map_BuildMissionTerrain(MapTerrainEnv *pEnv)
     memset(aGrid, 0, sizeof(aGrid));
     memset(aKind, 0, sizeof(aKind));
 
+    /* 0x22E4C: Font_LoadTactSprites @ 0x257c4 is ported in pufo_font.c, and the caller that owns a
+     * real font block installs it here. It stays a hook because the sprite load ends with
+     * Font_BuildIndex, which rebuilds the index the template and stamping passes then read -- a
+     * caller that owns neither the font nor its index has to supply both. */
     if (pEnv->pfnLoadTactSprites != NULL) {
         pEnv->pfnLoadTactSprites(pEnv->pUser);
     }

@@ -75,13 +75,13 @@ static void FontFixture_Reset(void)
     g_font.apMc1Index = g_apSprIndex;
     g_font.nMc1IndexCount = SPR_POOL;
 
-    /* The per-flag sprite bases live at fontSys + 2*nFlag, which for flags 2, 3 and 4 is offsets
-     * 4, 6 and 8 -- the first three entries of anAlienSprBase. Pushing them past the pool makes
-     * every sprite a .ma1 template resolves come back NULL, so the only sprites that ever land on a
-     * cell are the ones the stamping passes ask for by explicit index. */
-    g_font.anAlienSprBase[0] = SPR_POOL;
-    g_font.anAlienSprBase[1] = SPR_POOL;
-    g_font.anAlienSprBase[2] = SPR_POOL;
+    /* The per-flag sprite bases are the font block's first five u16s, so flags 2, 3 and 4 are
+     * anFlagSprBase[2..4] -- the terrain group, the craft group and the UFO-module group. Pushing
+     * them past the pool makes every sprite a .ma1 template resolves come back NULL, so the only
+     * sprites that ever land on a cell are the ones the stamping passes ask for by explicit index. */
+    g_font.anFlagSprBase[2] = SPR_POOL;
+    g_font.anFlagSprBase[3] = SPR_POOL;
+    g_font.anFlagSprBase[4] = SPR_POOL;
 }
 
 static Mc1Rec *Spr(i32 nIndex)

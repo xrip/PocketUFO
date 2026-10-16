@@ -17026,3 +17026,77 @@ ledger rows (266): the uninitialised craft-name buffer, the unchecked soldier/cr
 index, the reused transfer flag, the dead colour pair at 0x64420, and the empty stores
 label at 0x10DA38.
 
+## Unit 102 - the tactical sprite loader and the font's group bases
+(Font_LoadTactSprites @ 0x257c4, 752 B)
+
+Coverage moves to 952 / 1103 functions (86.2 -> 86.3 %) and 550,628 / 598,792 bytes
+(92.0 %).
+
+Font_LoadTactSprites is the only writer of the per-group sprite bases in the font
+block at 0x158268, and the rule is uniform: each base is the running counter captured
+immediately BEFORE that group's Font_LoadSpr, so it is the group's first frame index.
+The counter is fontSys.nTotalSprFrames (+0x36) for the .spr groups and
+fontSys.nTotalMc1 (+0x38) for the two slots the .ma1 templates index as fontSys + 2 *
+nFlag with flags 2 and 3. Reached from Map_BuildMissionTerrain (0x22e10) at 0x22E4C
+and from Save_ReadTGameData (0x44248) at 0x4444C.
+
+The load order is not the slot order. Tanks, floorob, handob and bigobs load in that
+sequence while their slots are +0x24, +0x22, +0x20 and +0x26; and urban missions load
+"civm" (aXcom0 slot 17) before "civf" (slot 16), so the higher slot loads first. The
+mission-terrain group takes four names from aTactTerrainSetName @ 0xA6858 (40 names of
+9 = 10 mission types x 4 sets, 360 bytes ending exactly at aTactUfoSetName), the UFO
+group takes four from aTactUfoSetName @ 0xA69C0 (32 names = 8 classes x 4, ending
+exactly at abTactUfoClassByVariant), and the class comes from abTactUfoClassByVariant
+@ 0xA6AE0 indexed 3 * (nTerrainVariant - 1) + nTerrainParam -- 16 bytes, of which only
+15 are reachable, the last being the gap to g_aTerrainModuleCount. All three are read
+by no other function in the binary. The craft name is aPlane[nMapLayers - 1], which is
+the layer count and not the mission type the terrain builder uses for the same table.
+
+The mc1 running total is captured once at 0x25804 and then carried: the terrain base
+stored at +0x04 is that first value, the craft base at +0x06 is what the terrain loop
+left, and the UFO base at +0x08 is what the craft load left. The terrain loop re-reads
+the counter after every load that actually ran (0x2584C); the UFO loop does not, so
++0x08 is the value from before the UFO sets.
+
+A defect in this port, found and fixed here. Font_GetFlagSprBase read `((const u16
+*)pFont)[nFlag]`, which mirrors the original's `*(u16 *)(fontSys + 2 * nFlag)` only if
+the port's PufoFont were laid out at the original offsets -- it is not, it is a model.
+In the model the first five u16s are {bInited, nSlotCount} followed by
+anAlienSprBase[0..3], so flags 2, 3 and 4 were really reading the alien sprite-set
+bases. tests/test_terrain.c had been written around it: its fixture primed
+anAlienSprBase[0..2] to make template lookups miss. PufoFont now names the five slots
+as anFlagSprBase[5] (blanks, cursor, terrain, craft, UFO), the accessor reads them by
+name and returns 0 for a flag the shipped templates never produce, and the terrain
+fixture primes anFlagSprBase[2..4]. The alien bases keep their own field.
+
+The seam stayed a seam. Map_BuildMissionTerrain and Save_ReadTGameData still call this
+through pfnLoadTactSprites rather than calling it directly, because the load ends with
+Font_BuildIndex, which frees and rebuilds the very index the terrain builder's
+template and stamping passes then read. A caller that owns neither the font nor its
+index cannot have the builder rebuild it underneath them -- test_terrain's font
+fixture is exactly that caller. The app, which owns the real fontSys, installs
+Font_LoadTactSprites(pFont, &env) built from the env's own Map scalars.
+
+Deviation: the original indexes aTactTerrainSetName with 4 * nMissionType and
+abTactUfoClassByVariant with 3 * (nTerrainVariant - 1) + nTerrainParam with no bound
+at all, so a mission type above 9 or a variant above 5 reads past the end of the
+table. The port bounds both and skips the group instead.
+
+Tests: 34 new checks in test_font (66 there, 15,581 across all 60 suites). The fixture
+presets nTotalSprFrames = 11 and nTotalMc1 = 7 so the two running totals are
+distinguishable -- a group base that takes the wrong counter shows up as 11 where 7
+was wanted. The assertions name the 19 shipped sets a culta mission loads, in order,
+and every base as an exact frame count read from the archives (cursor 13, terrain 9,
+craft 75, UFO 121, font 177, xcom_0..3 433 / 708 / 983 / 1266, tanks 1549, floorob
+1677, handob 1750, bigobs 1878, bullets 1935, scang 1956, smoke 2410, expl 2470), plus
+the urban 25-set list, the no-layers / no-variant skips, the aPlane[2] pick at three
+layers, and the two out-of-range cases. A 12-mutation sweep turned all 12 red.
+
+IDB: 12 renames (aJungle_0 -> aTactTerrainSetName, aUfo1 -> aTactUfoSetName,
+byte_A6AE0 -> abTactUfoClassByVariant, and the nine unnamed fontSys base slots
+fontSys_nCursorSprBase, fontSys_nTerrainSprBase, fontSys_nUfoSprBase,
+fontSys_nXcom0..3SprBase, fontSys_nCivmSprBase, fontSys_nCivfSprBase), a function
+comment on 0x257c4 and line comments at 0x2582C, 0x258F0, 0x2598C plus data comments
+on the three tables. Three new audited tables (43 checked, 0 mismatched), dumped by
+tools/gen_tact_sprite_tables.py.
+

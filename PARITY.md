@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 951 / 1103 (86.2%) |
-| Bytes of original code cited | 549876 / 598792 (91.8%) |
+| Functions cited as evidence | 952 / 1103 (86.3%) |
+| Bytes of original code cited | 550628 / 598792 (92.0%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 15547 |
+| Test checks run | 15581 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -42,7 +42,7 @@ the per-subsystem notes and the tests listed at the end.
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
 | `tact` | 211 | 214 | 177036 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
-| `ui-core` | 78 | 84 | 24436 / 36172 | shared UI panel, text engine, menus |
+| `ui-core` | 79 | 84 | 25188 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
 | `strat-ui` | 245 | 245 | 121164 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 13 | 13 | 4444 / 4444 | intro/outro animated scenes |
@@ -512,7 +512,7 @@ is the module that answers to it.
 | `0x45ec8` | `InvSel_SubItemQty` | 60 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x173e4` | `Inv_ScrollUp` | 44 | `src/pufo/game/pufo_tactui.h` |
 
-### `ui-core` (78 functions)
+### `ui-core` (79 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -523,6 +523,7 @@ is the module that answers to it.
 | `0x62d78` | `SoldierScreen_DrawEquipPanels` | 960 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x95bf0` | `Ui_AnimExpandBlit` | 948 | `src/pufo/ui/pufo_panel.c`, `src/pufo/ui/pufo_panel.h` |
 | `0x26104` | `Ui_FillActionCosts` | 812 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_input.c` (+2) |
+| `0x257c4` | `Font_LoadTactSprites` | 752 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+5) |
 | `0x461d8` | `Font_LoadSpr` | 680 | `src/pufo/game/pufo_font.h`, `src/pufo/game/pufo_save.h` |
 | `0x37144` | `UiPanel_WrapText` | 520 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` (+2) |
 | `0x1a3d8` | `UiControl_HitTest` | 488 | `src/pufo/ui/pufo_control.c`, `src/pufo/ui/pufo_control.h` |
@@ -1247,12 +1248,11 @@ whose port work they belong to.
 | `0x22620` | `Map_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `ui-core` — 6 functions, 11736 bytes remaining
+### `ui-core` — 5 functions, 10984 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x9b5f4` | `Ui_DrawBaseInfo` | 10196 | not yet ported; scheduled with the `ui-core` subsystem work |
-| `0x257c4` | `Font_LoadTactSprites` | 752 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x9ddc8` | `Ui_InitBaseInfo` | 744 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x46130` | `Font_Init_ReturnArg` | 20 | not yet ported; scheduled with the `ui-core` subsystem work |
 | `0x12254` | `UiModal_EndThunk` | 12 | not yet ported; scheduled with the `ui-core` subsystem work |
@@ -1286,7 +1286,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_cursordir` | PASS | 25 |
 | `test_data` | PASS | 55 |
 | `test_enemyai` | PASS | 198 |
-| `test_font` | PASS | 38 |
+| `test_font` | PASS | 72 |
 | `test_fov` | PASS | 31 |
 | `test_geoiinit` | PASS | 68 |
 | `test_geopointer` | PASS | 480 |
@@ -1353,16 +1353,16 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 725 citations.
+parity report. Total: 731 citations.
 
-### Offsets below the image base (40)
+### Offsets below the image base (43)
 
 IDA loaded `pufobeta.exe` at `0x10000`, so no original code or data lives
 below it. Every one of these is a field offset inside a struct.
 
-`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
+`0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000a68`, `0x000a69`, `0x000a6a`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (685)
+### At or above the image base (688)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1946,6 +1946,9 @@ against the IDB when the final report is assembled.
 - `0xa66b8`
 - `0xa67f0`
 - `0xa67f8`
+- `0xa6858`
+- `0xa69c0`
+- `0xa6ae0`
 - `0xa6af0`
 - `0xa6b00`
 - `0xa7230`

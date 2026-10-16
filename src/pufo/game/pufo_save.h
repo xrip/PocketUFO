@@ -991,7 +991,10 @@ typedef struct FlobjsReadState {
 } FlobjsReadState;
 
 typedef struct TactLoadHooks {
-    void (*pfnLoadTactSprites)(void *pUser);   /* Font_LoadTactSprites (0x257c4), not ported */
+    /* Font_LoadTactSprites @ 0x257c4 is ported in pufo_font.c; the caller installs it here, built
+     * from the Map scalars it owns, for the same reason the terrain builder's copy is a hook: the
+     * load ends with Font_BuildIndex, which rebuilds the index the sprite-set loads then read. */
+    void (*pfnLoadTactSprites)(void *pUser);
     bool (*pfnLoadSpr)(i32 nSpriteSet, void *pUser); /* Font_LoadSpr(font, "xcom_<n>") */
     void (*pfnBuildIndex)(void *pUser);        /* Font_BuildIndex @ 0x46480 */
     u32  (*pfnRandU16)(u32 nMax, void *pUser); /* Game_RandU16 @ 0x3e59c */
