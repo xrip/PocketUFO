@@ -81,8 +81,11 @@
  *      ten base-strip slots (0x87E38 in the press, 0x89DA4 in the release do check those), so a
  *      screen that was never built would fault there; the port refuses instead. Recorded in
  *      docs/parity/bugs.tsv.
- *   2. Smap_HitTestStrategSelect (0x82be8, 3,088 B) is not ported, so the two strateg select
- *      tests are injected through pfnHitTestStrategSelect. The release half never calls it.
+ *   2. Smap_HitTestStrategSelect @ 0x82be8 is ported in game/pufo_baseui.c, but on its own
+ *      SmapHitEnv, so the two strateg select tests reach the dispatcher through
+ *      pfnHitTestStrategSelect: the app binds a thunk that supplies that env. It builds no
+ *      SmapHitEnv yet, so today both tests answer "nothing selectable". The release half never
+ *      calls it.
  *   3. The original re-reads the line-0 flag before every test in the world arm. Nothing writes
  *      the list in between, so the port reads it once.
  *   4. The original's loop counters are the spilled global dword_186B08 (see
@@ -281,7 +284,8 @@ typedef struct GeoscapePointerEnv {
     /* Injected callees. */
     void (*pfnAppendNameGlyph)(i32 nX, i32 nY, void *pUser); /* SoldierScreen_AppendNameGlyph 0x63208 */
     void (*pfnPlaySample)(i32 nSample, void *pUser);         /* Sound_Play @ 0x9e0c0, sample 17 */
-    /* Smap_HitTestStrategSelect (0x82be8, 3,088 B) is not ported. */
+    /* Smap_HitTestStrategSelect @ 0x82be8, ported in game/pufo_baseui.c. The app binds a thunk that
+     * supplies the SmapHitEnv it needs; with no thunk the dispatcher reads "nothing selectable". */
     u8 (*pfnHitTestStrategSelect)(const SmapView *pView, i32 nX, i32 nY, void *pUser);
 
     /* Release only: the low-supply report the release gate reads and clears (0x89584 reads it as

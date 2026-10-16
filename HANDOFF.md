@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 908 / 1103 (82.3%)
-                                             bytes cited:     477608 / 598792 (79.8%)
-python docs/parity/audit_credits.py       -> credited functions: 908, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 383 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 909 / 1103 (82.4%)
+                                             bytes cited:     480696 / 598792 (80.3%)
+python docs/parity/audit_credits.py       -> credited functions: 909, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 386 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 200, ORIGINAL BUG markers in src/pufo: 79
+python docs/parity/audit_bugs.py          -> ledger rows: 210, ORIGINAL BUG markers in src/pufo: 81
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,10 +229,26 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 58 suites: **13267**. Coverage as of the latest commit: **908 / 1103
-functions (82.3%)**, **477608 / 598792 bytes (79.8%)**. This unit ported the pointer release —
-`Geoscape_OnPointerUp` (0x89450, 6,992 B), the release half of the same dispatcher, on the same
-`GeoscapePointerEnv`. It is not the press with `bDown` flipped: it takes only the 0x1864F8 block, reads the
+Test checks run across the 59 suites: **13405**. Coverage as of the latest commit: **909 / 1103
+functions (82.4%)**, **480696 / 598792 bytes (80.3%)**. This unit ported the map select test —
+`Smap_HitTestStrategSelect` (0x82be8, 3,088 B), the test the press dispatcher calls twice on one press
+(0x87C10, 0x87C94), now in `pufo_baseui.c` beside `Geoscape_OnRadarListClick @ 0x854c4` on its own
+`SmapHitEnv`. It is a strict strip gate (a click exactly at `320 - uHeight` still scans, and the gate runs
+before the line clear), a **16x16 window of cells** walked outside the item loop — so the built lines follow
+the cell offset, not the list order — item coordinates scaled by **1/1.333** at zoom level 1 and **1/1.694** at
+level 2, one status-panel line per matching item with the item index in `anLineAux`, the same six-branch
+dispatch the radar-list click runs for exactly one line, a multi-select layout for more, and a flag-27 tail that
+writes the pending click at 0x186414 / 0x186418 — the writer `Smap_ConfirmCraftTarget`'s note had called
+unported. Three things it fixed rather than inherited: `BaseRec.bUnk4` is loaded **signed** in both copies of
+the base search (0x82ED4, 0x6AC68) while the argument is masked to a byte, and the port compared it as `u8`;
+`Line_Write` now masks all four colour slots to a byte as 0x5A2FC..0x5A31C do, which matters because 0x836A0
+stores -1 into 0x187054 and 0x836D0 appends it (255, not 0xFFFFFFFF); and `unk_ECDB5`, `unk_ECE82` and
+`unk_ECF4F` are **TEXTS records 1145, 1146, 1147** (`aTextRecs + 205 * n`), renamed in the IDB. 132 new checks
+in `tests/test_smaphit.c` — the two scalers pinned at the window edge (591 scales to 443 where 1/1.33 gives 444;
+2631 scales to 1553 where the product of the scroll factors gives 1554) because a ±8 window swallows a 0.2%
+error anywhere else — and 10 new ledger rows.
+Unit 73 ported the pointer release — `Geoscape_OnPointerUp` (0x89450, 6,992 B), the release half of the same
+dispatcher, on the same `GeoscapePointerEnv`. It is not the press with `bDown` flipped: it takes only the 0x1864F8 block, reads the
 cursor pair the press stored (LDRSH), and every hit test it makes is a release (x = y = 0, bDown = 0,
 bForceClick = 0 — a release ignores the hit box). It owns the shortfall gate on 0x1870C8 (read as a DWORD at
 0x89584, the only such reader in the image, cleared unless the screen is 6, 9, 10, 11 or 12), it plays
@@ -262,8 +278,9 @@ doubles as the globe tap gate. Five original defects recorded — `Smap_HitTestS
 same arguments on one press (0x87C94), the world tail returning the drag flag or the screen id itself (0x87D84), a
 `<<16 / >>16` sign-extend on a value that is already a halfword (0x88F4C), the options page-2 arm being byte-for-byte
 the page-1 arm (0x89210 / 0x89270) and a `CMP #0 / BLS` on a u8 (0x88524) — plus three deviations: only the ten
-base-strip slots are null-checked in the original (0x87E38), `Smap_HitTestStrategSelect` (0x82be8, 3,088 B) is
-injected as a hook, and screen 10 tracks and clicks the buy/sell panel its own site-info controls do not belong to
+base-strip slots are null-checked in the original (0x87E38), `Smap_HitTestStrategSelect` (0x82be8) is ported but
+reaches the dispatcher through `pfnHitTestStrategSelect` because it runs on its own `SmapHitEnv` the app does not
+build yet, and screen 10 tracks and clicks the buy/sell panel its own site-info controls do not belong to
 (0x889F0). 235 new checks in `tests/test_geopointer.c`, 8 new ledger rows. IDB: `byte_187074` →
 `bGeoscapeDragActive`, comments on the entry, the drag gate, the tap division and the five defects.
 Unit 71 ported the step legality —
@@ -839,16 +856,17 @@ This is the shortest chain that produces a real game session, in dependency orde
 (Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
 `Tact_InitMission`, `Tact_DrawCommandPads`, `Tact_CheckBattleEnd`, `Unit_ApplyFallDamage`,
-`Tact_ProcessFallAction`, `Tact_ProcessFireAction`, `Geoscape_OnPointer` and `Geoscape_OnPointerUp` are no
+`Tact_ProcessFallAction`, `Tact_ProcessFireAction`, `Geoscape_OnPointer`, `Geoscape_OnPointerUp` and `Smap_HitTestStrategSelect` are no
 longer listed here.)
 
 `tact` is now down to 3 functions and 1,308 bytes: `Map_InitAndLoadRegistry` (1,284 B) plus the two 12-byte
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 102,360 of 160,496 (63.8%), and `Geoscape_Draw` alone is
-33,744 of the 58,136 left. Both geoscape pointer handlers are in now. `strat-ui` is 221 of 245 functions but
-80,516 of 121,164 bytes (66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
+`strat` is still the weakest subsystem by bytes: 105,448 of 160,496 (65.7%), and `Geoscape_Draw` alone is
+33,744 of the 55,048 left. Both geoscape pointer handlers and the map select test they call are in now.
+`strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes (66.5%) — the small screen handlers are in, the
+big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
 
@@ -1056,7 +1074,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-79 markers in the source, 200 ledger rows. Examples:
+81 markers in the source, 210 ledger rows. Examples:
 
 - `0x2b75c` — the +4 layer surcharge and `bFlags29` bit 3 both come from the probe's `g_bStepReanchored`
   report, not from the search flag. The port used the flag for both until unit 71.
@@ -1421,7 +1439,11 @@ function in the binary. `Geoscape_OnPointer` (0x872d0, 8,576 B) is ported in `ga
 `TactInputHooks.pfnGeoscapePointer` stays an unfilled seam; the env needs the plane panels, the options controls and
 the screen-16 panels that `PufoWorldState` does not own. `Geoscape_OnPointerUp` (0x89450, 6,992 B) is ported next to it in the
 same module and on the same env — 245 more checks in the same test file — and it is where the shortfall report
-at 0x1870C8 gets cleared on a pointer release. Both pointer halves are in; neither is wired into the app yet.
+at 0x1870C8 gets cleared on a pointer release. Both pointer halves are in; neither is wired into the app yet. The select test the press calls twice
+(`Smap_HitTestStrategSelect`, 0x82be8, 3,088 B) is ported in `pufo_baseui.c` on its own `SmapHitEnv` — 132 checks
+in `tests/test_smaphit.c` — and reaches the dispatcher through `pfnHitTestStrategSelect`, so wiring the app means
+building that env too: the strip pad, the status panel, the base info records and the TEXTS blob it reads labels
+from.
 The radar (intercept) screen is **done**:
 `RadarScreen_BlitMapBackdrop` (0x5eb10), `RadarScreen_DrawFuelGauge` (0x5d918),
 `RadarScreen_DrawRangeBar` (0x5d6e4), `RadarScreen_Init` (0x5f490), `RadarScreen_SetActive` (0x6144c),
@@ -1472,7 +1494,7 @@ the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiS
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 383 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 386 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 164-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

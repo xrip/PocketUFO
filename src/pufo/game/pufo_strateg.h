@@ -202,7 +202,8 @@ bool StrategItem_AllocAdd(PtrArray *pList, i32 nSeed);
  * are multiplied by the world scale of the CURRENT zoom level before being stored, so a
  * type-5 item created while zoomed in lands at the right world position:
  *
- *   nZoomMode 1 -> 1.333   (the same constant Smap_ZoomOut @ 0x81c08 uses for 1 -> 0)
+ *   nZoomMode 1 -> 1.333   (NOT the 1.33 Smap_ZoomOut @ 0x81c08 uses for 1 -> 0; the two are
+ *                          different constants in the original, see PUFO_SMAP_ITEM_SCALE_L1 below)
  *   nZoomMode 2 -> 1.694
  *   nZoomMode 0 -> no scaling
  *
@@ -686,6 +687,19 @@ typedef struct SmapWorldSize {
 #define PUFO_SMAP_ZOOM_IN_1_2  0.7874015748031495
 #define PUFO_SMAP_ZOOM_OUT_2_1 1.27
 #define PUFO_SMAP_ZOOM_OUT_1_0 1.33
+
+/* The item-coordinate factors Smap_HitTestStrategSelect @ 0x82be8 applies to a strateg item's
+ * stored x/y before it compares them against the cell under the pointer: 1/1.333 at zoom level 1
+ * (the muld pair at 0x82D48) and 1/1.694 at level 2 (0x82DD0). Level 0 and any other mode leave
+ * them unscaled. They are the reciprocals of the two world-scale factors StrategList_AddItem
+ * multiplies a type-5 position by, so an item stored at level L reads back at level L.
+ *
+ * They are NOT the products of the scroll factors above: 1 / (1.33 * 1.27) = 0.5906988558163163
+ * against 1 / 1.694 = 0.5903187721369539. The original keeps two different numbers for the same
+ * level-0-to-level-2 step, so a level-2 click is resolved against coordinates the zoom steps
+ * never produce. Recorded in docs/parity/bugs.tsv. */
+#define PUFO_SMAP_ITEM_SCALE_L1 0.7501875468867217
+#define PUFO_SMAP_ITEM_SCALE_L2 0.5903187721369539
 
 /* Smap_ZoomIn @ 0x81e44. Level 0 goes to 1, level 1 goes to 2, level 2 does nothing
  * (the original returns its argument unchanged). The new map size is taken from the

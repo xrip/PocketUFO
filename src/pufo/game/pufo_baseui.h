@@ -2926,8 +2926,9 @@ void Smap_ConfirmSelectedAlt(const SmapSelectedEnv *pEnv);   /* 0x853e4 */
  *   3. A fresh waypoint is added: nType 5, bActive 1, bCraftClass 0, nId -1, bVisible 1, at the
  *      pending click in 0x186414 / 0x186418. Those two dwords are 0x2C and 0x30 past the viewport
  *      block at 0x1863E8 but they are outside its 36 bytes, and each has exactly one xref in the IDB
- *      -- this function. Their writer is in the unported geoscape pointer path, so the port takes them
- *      as inputs rather than guessing. StrategList_AddItem scales a type-5 position out of the current
+ *      -- this function. Their writer is Smap_HitTestStrategSelect @ 0x82be8, the flag-27 pick-a-cell
+ *      tail at 0x83784 / 0x83788, so the port takes them as inputs and the app has to wire the two
+ *      environments onto the same storage. StrategList_AddItem scales a type-5 position out of the current
  *      zoom mode, so the viewport's nMode is passed too.
  *   4. The new item's index is GetCount() - 1 (0x843D0), the ship index is read out of the message
  *      line a SECOND time (0x843E0, after the removal has not yet happened but after the list
@@ -3087,6 +3088,115 @@ typedef struct RadarClickEnv {
 } RadarClickEnv;
 
 i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv);
+
+/* ------------------------------------------------- the select test under the pointer
+ *
+ * Evidence: Smap_HitTestStrategSelect @ 0x82be8 (3,088 B). Two call sites, both in the geoscape
+ * press dispatcher (0x87C10 and 0x87C94, the same arguments twice on one press), each passing the
+ * viewport at 0x1863E8 with the cursor pair read LDRSH from 0x186BD0 and nSmapCursorY @ 0x186BD4,
+ * and each masking the answer with `ANDS R3, R0, #0xFF`. The release half never calls it.
+ *
+ * ## What it does
+ *
+ *   1. 0x82C18: a click in the zoom strip is not a map click. The gate is strict --
+ *      `nClickY > 320 - pStripPad->uHeight` -- so a click exactly on the strip edge still scans.
+ *   2. The status panel's line count is cleared (0x82C3C) and a 16x16 window of cells around the
+ *      click is walked, dx and dy over -8..7, each cell resolved by the same screen-to-cell formula
+ *      Smap_GetTileAtScreen uses (0x82C84 / 0x82CAC), one wrap per axis.
+ *   3. Every strateg item is tested against every cell. Before the comparison the item's stored
+ *      coordinates are scaled by the zoom level: PUFO_SMAP_ITEM_SCALE_L1 at level 1 (0x82D48),
+ *      PUFO_SMAP_ITEM_SCALE_L2 at level 2 (0x82DD0), unscaled at level 0 or any other mode.
+ *   4. A coordinate match builds one panel line per item, and which line it is depends on the type
+ *      group. The item's list index goes into anLineAux beside the text (0x8306C / 0x83230).
+ *
+ *      nType 0 or 3 (0x82E6C). With bActive set the line needs bVisible too, and its text is TEXTS
+ *      record 1145 (0x82F9C) -- overwritten from the first character by record 1146 when the type
+ *      is 3 (0x82FE4) -- with itoa(nSiteId) appended (0x8301C / 0x83028). With bActive clear and no
+ *      map selection in progress the line is a base name instead: the first base whose BaseRec.bUnk4
+ *      byte, loaded SIGNED (LDRSB at 0x82ED4), equals nSiteId, named from byte_186C24 + 64 * i + 54,
+ *      the name field of the per-base info record Geoscape_Draw (0x8c180, unported) owns.
+ *
+ *      nType 1 or 4 (0x830B4). With bActive set, again gated on bVisible, the text is TEXTS record
+ *      1147 plus itoa(nDisplayId). With bActive clear, bVisible set and no map selection in progress
+ *      the line is Ship_FormatDisplayName of the first craft whose Ship.bId byte (LDRB at 0x83130,
+ *      unsigned) equals nDisplayId. That search is the same walk Ship_FindIndexByStrategType does,
+ *      and the original really does carry it twice in one function: inline here and as a call at
+ *      0x836A0. The port uses the ported function for both.
+ *
+ *   5. 0x83248 / 0x83250: a coordinate match sets the "something was under the pointer" answer and
+ *      re-stores the line count even when the gates above added no line. An invisible contact, or
+ *      one blocked by an in-progress map selection, is therefore selectable in the dispatcher's
+ *      sense while contributing nothing to the panel.
+ *   6. One line: the same six (nType, bActive) branches the status panel's own click handler runs
+ *      (Geoscape_OnRadarListClick @ 0x854c4), in a different order and each one first clearing the
+ *      panel's nUnk3032 -- so the appended line carries 0 in colour slot 0 where the click handler
+ *      puts the clicked row. The type-1 inactive branch is the odd one out: it stores the ship index
+ *      into 0x187054 and 0x159E74 first, appends flag 11 with that index in colour slot 0, and does
+ *      NOT drop line 0.
+ *   7. More than one line: the panel becomes a multi-select box -- nPosX 120, nPosY and nUnk7056
+ *      both 120 - (nLineCount / 2) * nFont, nUnk7052 20, nViewW 200, bFlag7073 clear -- the clock
+ *      pauses, byte_18709C[4] goes up and Sound_Play(7) plays.
+ *   8. The tail (0x83708..0x837BC) runs whatever the line count was. When message line 0 carries
+ *      flag 27 (the pick-a-target-cell prompt Smap_ConfirmCraftTarget's chain installs), nothing
+ *      was selectable, and the click is above the strip, it pauses, clears bMapSelectionFlag,
+ *      writes the clicked cell into 0x186414 and 0x186418 -- the pending click
+ *      Smap_ConfirmCraftTarget @ 0x842ec reads, whose writer Smap_ConfirmTargetEnv's note called
+ *      unported -- drops line 0 and re-inserts it as flag 12 with the selected ship index in colour
+ *      slot 0, and clears nUnk3032.
+ *
+ * Deviations:
+ *   1. Both searches are bounded by their counts. When nothing matches, the original walks one slot
+ *      past the block it is indexing -- byte_186C24 + 64 * nBaseCount + 54, or apCraft[nCraftCount],
+ *      a stale or null pointer -- and still adds a line. The port adds the line with an empty text.
+ *   2. PtrArray_Get results are null-checked; the original dereferences them.
+ *   3. The flag-27 gate re-reads nSmapCursorY from the global the caller had just read LDRSH from.
+ *      Nothing writes it in between, so the port tests its nClickY parameter.
+ *   4. The three label strings are TEXTS records 1145, 1146 and 1147 (0xECDB5, 0xECE82, 0xECF4F --
+ *      aTextRecs @ 0xB38D0 + 205 * n, renamed in the IDB from unk_* names). Nothing in the image
+ *      writes them and the binary's static table holds them empty, so with no TEXTS.DAT loaded the
+ *      line text is just the number. */
+#define PUFO_SMAP_HIT_SCAN_HALF 8   /* the scan window is dx, dy over -8..7 */
+#define PUFO_SMAP_HIT_TEXT_MAX  56  /* the original's v62 build buffer */
+
+/* The three label prefixes, as TEXTS record numbers. Each address is aTextRecs @ 0xB38D0 plus
+ * 205 * n, which is what the original's own `LDR R2, =(unk_... - 0xB38D0); ADD R1, R0, R2` pairs
+ * compute (0x80690, 0x808B0, 0x807E4). Renamed in the IDB to aTextRec1145/1146/1147. */
+#define PUFO_TEXT_REC_SITE_LABEL   1145 /* 0xECDB5, the nType 0 line prefix */
+#define PUFO_TEXT_REC_ALIEN_LABEL  1146 /* 0xECE82, the nType 3 prefix, written over the first */
+#define PUFO_TEXT_REC_CRAFT_LABEL  1147 /* 0xECF4F, the nType 1 / 4 prefix */
+
+typedef struct SmapHitEnv {
+    const PadImage *pStripPad;             /* apPad[GEOUI_PAD_186BBC] @ 0x186BBC, the zoom strip */
+    UiPanel        *pStatusPanel;          /* unk_18641C, the panel the lines are built in */
+    UiLineList     *pLines;                /* the root message list @ 0x158890 */
+    PtrArray       *pStrategList;          /* the strateg list @ 0x186534 */
+    const u8       *pTextRecs;             /* aTextRecs @ 0xB38D0, for records 1145..1147 */
+    BaseRec *const *apBases;               /* Map.apBases @ Map + 0x1174 */
+    const i8       *pnBaseCount;           /* nBaseCount @ 0x159D80, read SIGNED (LDRSB at 0x82EE8) */
+    const u8       *pbBaseInfoRecs;        /* byte_186C24, 64-byte records; the name is at +54 */
+    Ship *const *apCraft;                  /* Map.apCraft @ Map + 0x10AC */
+    const u8       *pnCraftCount;          /* Map_nCraftCount @ 0x114B4C, read unsigned */
+    u8             *pbSelectionFlag;       /* bMapSelectionFlag @ 0x159E84, cleared by the tail */
+    i32            *pnPendingPickX;        /* 0x186414, written by the flag-27 tail */
+    i32            *pnPendingPickY;        /* 0x186418 */
+    i32            *pnScreenId;            /* nGeoscapeScreen @ 0x186BC4 */
+    i32            *pnSelectedStrategIdx;  /* 0x186BE4 */
+    i32            *pnSelectedShipIdx;     /* 0x187054 */
+    i32            *pnStrategIndex;        /* 0x159E74 */
+    UiPanel        *pOptPanelShips;        /* pOptPanelShips @ 0x159E18, bFlag7073 cleared at 0x83494 */
+    GameTime       *pTime;                 /* 0x159618; bPaused is the byte GameTime_Pause writes */
+    u8             *pbFlag18708C;
+    u8             *pbFlag187090;
+    u8             *pbFlag187098;
+    u8             *pbFlag1870A0;          /* byte_18709C[4] */
+    i32            *pnRadarPulseTimer;     /* nRadarPulseTimer @ 0xAC224 */
+    const OptionsScreenHooks *pOptionsHooks; /* the type-0 inactive branch */
+    void (*pfnPlaySample)(i32 nSample, void *pUser);
+    void *pSoundUser;
+} SmapHitEnv;
+
+u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
+                             i32 nClickX, i32 nClickY);
 
 /* ------------------------------------------------- the base-facility screen's bring-up
  *

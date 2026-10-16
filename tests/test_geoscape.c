@@ -472,6 +472,16 @@ static void TestBaseGridLookup(void)
     CheckEqI32(BaseGrid_SubTypeByte(apBases, 3, aGrid, 5, 5), -1,
                "no match is refused, where the original reads and writes abGrid[-1]");
 
+    /* Both originals load the field SIGNED (LDRSB at 0x6AC68 and 0x5A900) while 0x6AC58 masks the
+     * argument to a byte, so a field of 0x80 or more matches nothing in 0..255. */
+    aBases[0].bUnk4 = 0x80;
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 0x80), -1,
+               "a field of 0x80 is read as -128 and never matches the byte 0x80");
+    aBases[0].bUnk4 = 0x7F;
+    CheckEqI32(Base_FindIndexByTypeByte(apBases, 3, 0x7F), 0,
+               "0x7F is the top of the signed range and does match");
+    aBases[0].bUnk4 = 7;
+
     memset(&obj, 0, sizeof(obj));
     aBases[1].bSlot = 2;
     aBases[1].nStoresTotal = 10;

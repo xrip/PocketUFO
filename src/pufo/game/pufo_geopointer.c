@@ -62,9 +62,10 @@ static void Ptr_HitRange(UiControl *const *apCtl, i32 nFirst, i32 nLast,
     }
 }
 
-/* Smap_HitTestStrategSelect (0x82be8, 3,088 B) is not ported, so the select test is
- * injected. With no hook installed the port reads "nothing selectable under the
- * pointer", which is the arm's common case (deviation 2). */
+/* Smap_HitTestStrategSelect @ 0x82be8 is ported in game/pufo_baseui.c, but it runs on its own
+ * SmapHitEnv, so it reaches the dispatcher through this seam. With no hook installed the port reads
+ * "nothing selectable under the pointer", which is what the app does today because it builds no
+ * SmapHitEnv yet (deviation 2). */
 static u8 Ptr_StrategHit(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY)
 {
     if (pEnv->pfnHitTestStrategSelect == NULL) {

@@ -14875,3 +14875,56 @@ test_geopointer.c gained 245 release checks. A release is observed by arming eve
 still armed is one the arm never reached, which is what an early return looks like. The screen-17
 row comparison needs a harness click handler on the psi panel, because without one the byte the
 comparison writes is already 0.
+
+## Unit 74 - Smap_HitTestStrategSelect @ 0x82be8 (3,088 B), ported as Smap_HitTestStrategSelect
+
+The map select test under the pointer, called twice on one press from the geoscape dispatcher
+(0x87C10 and 0x87C94) with the viewport at 0x1863E8 and the cursor pair read LDRSH from 0x186BD0 and
+nSmapCursorY @ 0x186BD4, each call site masking the answer with `ANDS R3, R0, #0xFF`. It lives in
+src/pufo/game/pufo_baseui.c next to Geoscape_OnRadarListClick @ 0x854c4, whose six-branch dispatch it
+mirrors, and it runs on its own SmapHitEnv.
+
+What the ARM showed that the pseudocode did not:
+
+- 0x82C18: the strip gate is strict. A click exactly at 320 - [0x186BBC]->uHeight is still a map
+  click, and the gate runs before the line-count clear at 0x82C3C, so a strip click leaves the panel
+  exactly as it was.
+- The scan is a 16x16 window of cells (dx, dy over -8..7) walked OUTSIDE the item loop, so the order
+  of the built lines follows the cell offset and not the list order. The cell arithmetic is the one
+  Smap_GetTileAtScreen @ 0x82244 uses, one wrap per axis, and the item coordinate is never wrapped.
+- 0x82D48 / 0x82DD0: item coordinates are scaled by 1/1.333 at zoom level 1 and 1/1.694 at level 2.
+  Those are the reciprocals of the 1.333 / 1.694 that StrategList_AddItem @ 0x826e8 scales a type-5
+  position by, so an item stored at level L reads back at level L. They are NOT the scroll factors:
+  Smap_ZoomOut rescales 1 -> 0 by 1.33 (not 1.333), and the two zoom-in steps multiply to
+  1/(1.33 * 1.27) = 0.5906988558163163 against 1/1.694 = 0.5903187721369539. Two ledger rows.
+- 0x82ED4 loads BaseRec.bUnk4 with LDRSB and compares it against the full i32 nSiteId, while
+  Base_FindIndexByTypeByte @ 0x6ac30 masks its argument to a byte at 0x6AC58 and loads the same field
+  signed at 0x6AC68. The port had been comparing that field as u8, which matched values of 0x80 or
+  more that the original can never match. Fixed in pufo_geoscape.c, with the same signed load now
+  visible in SmapHit_FindBaseBySiteId; two checks in test_geoscape.c pin it.
+- 0x82FE4: for nType 3 the second label copy restarts at index 0 of the 56-byte local, so record 1146
+  replaces record 1145 instead of appending to it.
+- 0x83250 sets the select answer on any coordinate match, even when the type/active/visible gates
+  added no line: an invisible contact is selectable while contributing nothing.
+- 0x82F1C and 0x83164: both searches are bounded by their counts but their index is used
+  unconditionally, so a miss reads byte_186C24 + 64 * nBaseCount + 54 or apCraft[nCraftCount]. The
+  port writes an empty line instead and keeps the line count, which is the observable half.
+- 0x836A0 is the same craft search as the inline walk at 0x830F8..0x83158, twice in one function; the
+  port calls Ship_FindIndexByStrategType for both.
+- 0x83784 / 0x83788 write 0x186414 and 0x186418. That is the pending click Smap_ConfirmCraftTarget @
+  0x842ec reads, and SmapConfirmTargetEnv's note had called its writer unported. It is now ported.
+- 0xECDB5, 0xECE82 and 0xECF4F are aTextRecs @ 0xB38D0 + 205 * 1145, 1146 and 1147 - TEXTS records,
+  not scratch buffers. Nothing in the image writes them and the binary's static copies are empty, so
+  with no TEXTS.DAT the line text is just the number. Renamed in the IDB to aTextRec1145/1146/1147.
+
+A shared-leaf fix this unit forced: 0x5A2FC masks colour slot 0 with `AND R3, R3, #0xFF` and
+0x5A30C / 0x5A314 / 0x5A31C byte-load slots 1..3, so no colour slot can hold more than 255. The port's
+Line_Write stored them as full dwords. It matters here because 0x836A0 stores -1 into 0x187054 and
+0x836D0 appends it: the original writes 255 into the slot, the port wrote 0xFFFFFFFF. Line_Write masks
+all four slots now, and test_panel.c asserts the truncation (900 arrives as 132).
+
+132 new checks in tests/test_smaphit.c. The two scalers are pinned at the window edge rather than by
+round trips - 591 scales to 443, the +7 edge around cell 436, where 1/1.33 would give 444 and miss,
+and 2631 scales to 1553 where the product of the scroll factors would give 1554 - because a +/-8
+window swallows a 0.2% error anywhere else. The window itself is pinned by 8 in / 9 out.
+

@@ -183,8 +183,11 @@ bool Geoscape_SetPanelFlagB(i32 nScreenMode, GeoscapePanelFlags *pFlags);
  * NO bound at all: it walks forward until some entry happens to match, off the end of
  * the array if none does. The port bounds it by nBaseCount and returns -1 (deviation).
  *
- * The comparison is against a `char` field. WinCE ARM treats plain char as unsigned,
- * and the port compares as u8, which is what the original does in practice. */
+ * The comparison is SIGNED on the field side and unsigned on the argument side: 0x6AC68 loads
+ * BaseRec.bUnk4 with LDRSB while 0x6AC58 masks the argument with `AND R1, R1, #0xFF`, so a field of
+ * 0x80 or more matches nothing in 0..255. Base_FindIndexBySiteId @ 0x5a8d0 loads the same field with
+ * LDRSB (0x5A900) and compares it against an unmasked i32. Both originals are reproduced; the port
+ * compared the field as u8 until Smap_HitTestStrategSelect @ 0x82be8 made the LDRSB visible. */
 i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType);
 
 /* BaseGrid_GetByte0x654 @ 0x6acc0 and BaseGrid_SetByteAtFound @ 0x6ac90. Both resolve a

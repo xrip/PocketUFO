@@ -6110,6 +6110,341 @@ i32 Geoscape_OnRadarListClick(const RadarClickEnv *pEnv)
     return 0; /* the original hands back the item pointer here; nothing reads it */
 }
 
+/* Smap_HitTestStrategSelect @ 0x82be8. See the header for the gates, the two line builders, the
+ * six-branch dispatch and the deviations. */
+
+/* Screen pixel to map cell -- the arithmetic Smap_GetTileAtScreen @ 0x82244 uses, without its
+ * nPickX/nPickY stores. The scan below runs it 256 times and only the flag-27 tail may publish a
+ * cell, so the port cannot reuse the leaf here. */
+static void SmapHit_CellAt(const SmapView *pView, i32 nX, i32 nY, i32 *pnCellX, i32 *pnCellY)
+{
+    i32 nCellX = pView->nScrollX + pView->nMapW / 2 + nX - 120; /* 0x82C84 */
+    i32 nCellY = pView->nScrollY + pView->nMapH / 2 + nY - 160; /* 0x82CAC */
+
+    if (nCellX < 0) {
+        nCellX += pView->nMapW; /* 0x82CB4, one wrap only */
+    }
+    if (nCellY < 0) {
+        nCellY += pView->nMapH; /* 0x82CC4 */
+    }
+    *pnCellX = nCellX;
+    *pnCellY = nCellY;
+}
+
+/* The base search at 0x82E9C..0x82EF8. Base_FindIndexByTypeByte @ 0x6ac30 walks the same array on
+ * the same field, but its argument is masked to a byte (`AND R1, R1, #0xFF` at 0x6AC58) while this
+ * one compares the full nSiteId against the SIGNED field (LDRSB at 0x82ED4). A site id above 127
+ * has no match here, and one above 255 would match the wrong base through the byte-typed helper,
+ * so this call site keeps its own walk. */
+static i32 SmapHit_FindBaseBySiteId(const SmapHitEnv *pEnv, i32 nSiteId)
+{
+    const i32 nCount = (pEnv->pnBaseCount != NULL) ? (i32)*pEnv->pnBaseCount : 0;
+
+    if (pEnv->apBases == NULL || nCount <= 0) {
+        return -1; /* 0x82EB0 */
+    }
+    for (i32 i = 0; i < nCount; ++i) {
+        if (pEnv->apBases[i] == NULL) {
+            continue; /* deviation 2 */
+        }
+        if ((i32)(i8)pEnv->apBases[i]->bUnk4 == nSiteId) {
+            return i; /* 0x82ED4 / 0x82EDC */
+        }
+    }
+    /* ORIGINAL BUG (0x82F1C): with no match the original leaves the index at nBaseCount and reads
+     * byte_186C24 + 64 * nBaseCount + 54, one record past the end of the block. The port refuses the
+     * read and the caller writes an empty name. */
+    return -1;
+}
+
+/* One built line: the text into the panel's 50-byte line buffer, the item's list index into the
+ * aux column beside it (0x8306C / 0x83230). */
+static void SmapHit_AddLine(UiPanel *pPanel, i32 nLine, const char *pszText, i32 nItemIdx)
+{
+    /* The original writes straight through apLines[nLine] with no count gate, and the count it
+     * carries at that moment is nLine itself. The port's setter gates on nLineCount, so the line is
+     * opened first; the count is stored back at 0x83248 either way. */
+    if (pPanel->nLineCount < nLine + 1) {
+        pPanel->nLineCount = nLine + 1;
+    }
+    (void)UiPanel_SetLineText(pPanel, nLine, pszText);
+    UiPanel_SetLineAux(pPanel, nLine, nItemIdx);
+}
+
+/* A TEXTS label into the build buffer. The original copies it with an unbounded loop and then
+ * strcat's the number onto the same buffer; UiPanel_SetLineText writes into a 50-byte line, so the
+ * port bounds the build at the original's own 56-byte local. */
+static void SmapHit_PutLabel(const SmapHitEnv *pEnv, i32 nRec, char *pszText, size_t cchText)
+{
+    pszText[0] = 0;
+    if (pEnv->pTextRecs != NULL) {
+        pufo_strncpy(pszText, (const char *)(pEnv->pTextRecs + (size_t)PUFO_TEXT_REC_STRIDE * (size_t)nRec),
+                     cchText);
+    }
+}
+
+static void SmapHit_AppendNumber(char *pszText, size_t cchText, i32 nValue)
+{
+    char szNum[16];
+
+    snprintf(szNum, sizeof(szNum), "%d", nValue); /* the original's j_itoa (0x9e9f0) */
+    (void)pufo_strcat(pszText, szNum, cchText);   /* and its strcat (0xa1174) */
+}
+
+u8 Smap_HitTestStrategSelect(const SmapView *pView, const SmapHitEnv *pEnv,
+                             i32 nClickX, i32 nClickY)
+{
+    char szText[PUFO_SMAP_HIT_TEXT_MAX];
+    char szName[PUFO_SMAP_HIT_TEXT_MAX];
+    UiPanel *pPanel;
+    GeoscapeWorld world;
+    StrategList view;
+    i32 nLine = 0;      /* v57, the line the next match writes */
+    u8 bSelectable = 0; /* v56, the answer */
+    i32 nStripH;
+
+    if (pView == NULL || pEnv == NULL || pEnv->pStatusPanel == NULL || pEnv->pLines == NULL ||
+        pEnv->pStrategList == NULL || pEnv->pStripPad == NULL || pEnv->pTime == NULL ||
+        pEnv->pnSelectedStrategIdx == NULL) {
+        return 0;
+    }
+    pPanel = pEnv->pStatusPanel;
+    nStripH = (i32)pEnv->pStripPad->uHeight;
+
+    if (nClickY > PUFO_SURF_H - nStripH) { /* 0x82C18, strict: the strip edge is still a map click */
+        return 0;
+    }
+
+    pPanel->nLineCount = 0; /* 0x82C3C */
+
+    for (i32 nDy = -PUFO_SMAP_HIT_SCAN_HALF; nDy < PUFO_SMAP_HIT_SCAN_HALF; ++nDy) {     /* 0x82C48 */
+        for (i32 nDx = -PUFO_SMAP_HIT_SCAN_HALF; nDx < PUFO_SMAP_HIT_SCAN_HALF; ++nDx) { /* 0x82C50 */
+            i32 nCellX;
+            i32 nCellY;
+
+            SmapHit_CellAt(pView, nDx + nClickX, nDy + nClickY, &nCellX, &nCellY);
+
+            for (i32 i = 0; i < pEnv->pStrategList->nCount; ++i) {
+                const StrategItem *pItem =
+                    (const StrategItem *)PtrArray_Get(pEnv->pStrategList, i);
+                i32 nX;
+                i32 nY;
+
+                if (pItem == NULL) {
+                    continue; /* deviation 2 */
+                }
+
+                nX = pItem->nX;
+                nY = pItem->nY;
+                if (pView->nMode == 1) {
+                    nX = (i32)((double)nX * PUFO_SMAP_ITEM_SCALE_L1); /* 0x82D48, dtoi truncates */
+                    nY = (i32)((double)nY * PUFO_SMAP_ITEM_SCALE_L1); /* 0x82D88 */
+                } else if (pView->nMode == 2) {
+                    /* 0x82DA4 tests the mode value loaded at 0x82D14, before the first scaling, so
+                     * the original's two separate ifs can never both run. */
+                    nX = (i32)((double)nX * PUFO_SMAP_ITEM_SCALE_L2); /* 0x82DD0 */
+                    nY = (i32)((double)nY * PUFO_SMAP_ITEM_SCALE_L2); /* 0x82E10 */
+                }
+
+                if (nX != nCellX || nY != nCellY) {
+                    continue; /* LABEL_57 @ 0x82E3C: no line, no answer byte */
+                }
+
+                if (pItem->nType == 0 || pItem->nType == 3) { /* 0x82E6C */
+                    if (pItem->bActive != 0) {                /* 0x82E84 */
+                        if (pItem->bVisible != 0) {           /* 0x82F8C */
+                            SmapHit_PutLabel(pEnv, PUFO_TEXT_REC_SITE_LABEL, szText, sizeof(szText));
+                            if (pItem->nType == 3) {
+                                /* 0x82FE4: the second copy starts again at index 0, it does not
+                                 * append -- an alien site's line is record 1146 alone. */
+                                SmapHit_PutLabel(pEnv, PUFO_TEXT_REC_ALIEN_LABEL, szText,
+                                                 sizeof(szText));
+                            }
+                            SmapHit_AppendNumber(szText, sizeof(szText), pItem->nSiteId); /* 0x8301C */
+                            SmapHit_AddLine(pPanel, nLine, szText, i);
+                            ++nLine;
+                        }
+                    } else if (pEnv->pbSelectionFlag == NULL || *pEnv->pbSelectionFlag == 0) {
+                        const i32 nBase = SmapHit_FindBaseBySiteId(pEnv, pItem->nSiteId); /* 0x82E94 */
+
+                        szText[0] = 0;
+                        if (nBase >= 0 && pEnv->pbBaseInfoRecs != NULL) {
+                            pufo_strncpy(szText,
+                                         (const char *)(pEnv->pbBaseInfoRecs + 64u * (size_t)nBase + 54u),
+                                         sizeof(szText)); /* 0x82F1C */
+                        }
+                        SmapHit_AddLine(pPanel, nLine, szText, i);
+                        ++nLine;
+                    }
+                }
+
+                if (pItem->nType == 1 || pItem->nType == 4) { /* 0x830B4 */
+                    if (pItem->bActive != 0) {                /* 0x830D4 */
+                        if (pItem->bVisible != 0) {           /* 0x831A0 */
+                            SmapHit_PutLabel(pEnv, PUFO_TEXT_REC_CRAFT_LABEL, szText, sizeof(szText));
+                            SmapHit_AppendNumber(szText, sizeof(szText), pItem->nDisplayId); /* 0x831E8 */
+                            SmapHit_AddLine(pPanel, nLine, szText, i);
+                            ++nLine;
+                        }
+                    } else if (pItem->bVisible != 0 &&
+                               (pEnv->pbSelectionFlag == NULL || *pEnv->pbSelectionFlag == 0)) {
+                        /* 0x830F4. The inline walk at 0x830F8..0x83158 is Ship_FindIndexByStrategType
+                         * over the same array on the same field, so the port calls it. */
+                        world.apCraft = (Ship *const *)pEnv->apCraft;
+                        world.nShipCount = (pEnv->pnCraftCount != NULL) ? *pEnv->pnCraftCount : 0;
+                        view.apItems = (StrategItem **)pEnv->pStrategList->apItems;
+                        view.nCount = pEnv->pStrategList->nCount;
+                        view.nNextDisplayId = 0; /* not read by the lookup */
+                        view.nNextSiteId = 0;
+
+                        const i32 nShipIdx = Ship_FindIndexByStrategType(&world, &view, i);
+
+                        if (nShipIdx >= 0) {
+                            (void)Ship_FormatDisplayName(pEnv->apCraft, nShipIdx, pEnv->pTextRecs,
+                                                         szName, sizeof(szName)); /* 0x83164, v39 */
+                            pufo_strncpy(szText, szName, sizeof(szText));
+                        } else {
+                            /* ORIGINAL BUG (0x83164): with no match the original formats
+                             * apCraft[nCraftCount] -- the slot past the count, a stale pointer or a
+                             * null one, which faults at 0x666E4. The port writes an empty name. */
+                            szText[0] = 0;
+                        }
+                        SmapHit_AddLine(pPanel, nLine, szText, i);
+                        ++nLine;
+                    }
+                }
+
+                pPanel->nLineCount = nLine; /* 0x83248 */
+                bSelectable = 1;            /* 0x83250, even when no line was added */
+            }
+        }
+    }
+
+    if (pPanel->nLineCount <= 1) {          /* 0x832B0 */
+        if (pPanel->nLineCount == 1) {      /* 0x83394 */
+            const i32 nItemIdx = pPanel->anLineAux[0];
+            const StrategItem *pItem =
+                (const StrategItem *)PtrArray_Get(pEnv->pStrategList, nItemIdx);
+
+            if (pItem == NULL) {
+                return bSelectable; /* deviation 2: the original dereferences it in every test */
+            }
+
+            if (pItem->nType == 1 && pItem->bActive == 1) { /* 0x833D0 */
+                pPanel->nUnk3032 = 0;                       /* 0x833DC */
+                UiLineList_Remove(pEnv->pLines, 0);         /* 0x833E4 */
+                UiLineList_Insert(pEnv->pLines, 0, 10, (u32)(u8)nItemIdx, 0u, 0u, 0u); /* 0x83408 */
+                pEnv->pTime->bPaused = 1;                   /* GameTime_Pause @ 0x83410 */
+            }
+
+            if (pItem->nType == 0 && pItem->bActive == 0) { /* 0x83448 */
+                pPanel->nUnk3032 = 0;                       /* 0x83450 */
+                pEnv->pTime->bPaused = 1;                   /* 0x83458 */
+                *pEnv->pnScreenId = 18;                     /* 0x83464 */
+                OptionsScreen_OpenWithSound(0, pItem->nSiteId, pEnv->pOptionsHooks); /* 0x83480 */
+                if (pEnv->pOptPanelShips != NULL) {
+                    pEnv->pOptPanelShips->bFlag7073 = 0;    /* 0x83494, no counterpart in the
+                                                             * status-panel click handler */
+                }
+            }
+
+            if (pItem->nType == 4 && pItem->bActive == 1) { /* 0x834D0 */
+                pPanel->nUnk3032 = 0;                       /* 0x834D8 */
+                *pEnv->pnSelectedStrategIdx = nItemIdx;     /* 0x834E4 */
+                pEnv->pTime->bPaused = 1;                   /* 0x834EC */
+                *pEnv->pbFlag18708C = 1;                    /* 0x834F8 */
+                UiLineList_Remove(pEnv->pLines, 0);         /* 0x83504 */
+                /* Both colour slots are read back out of the globals the branch just wrote, as the
+                 * original does: slot 0 is the nUnk3032 it cleared, slot 1 the strateg index. */
+                UiLineList_AppendWithSound(pEnv->pLines, 20, (u32)pPanel->nUnk3032,
+                                           (u32)*pEnv->pnSelectedStrategIdx, 0u, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x83524 */
+            }
+
+            if (pItem->nType == 3 && pItem->bActive == 1) { /* 0x83560 */
+                pPanel->nUnk3032 = 0;                       /* 0x83568 */
+                *pEnv->pnSelectedStrategIdx = nItemIdx;     /* 0x83574 */
+                pEnv->pTime->bPaused = 1;                   /* 0x8357C */
+                *pEnv->pbFlag187090 = 1;                    /* 0x83588 */
+                UiLineList_Remove(pEnv->pLines, 0);         /* 0x83594 */
+                UiLineList_AppendWithSound(pEnv->pLines, 19, (u32)pPanel->nUnk3032,
+                                           (u32)*pEnv->pnSelectedStrategIdx, 0u, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x835B4 */
+                *pEnv->pnRadarPulseTimer = 250;             /* 0x835BC */
+            }
+
+            if (pItem->nType == 0 && pItem->bActive == 1) { /* 0x835F4 */
+                pPanel->nUnk3032 = 0;                       /* 0x835FC */
+                *pEnv->pnSelectedStrategIdx = nItemIdx;     /* 0x83608 */
+                pEnv->pTime->bPaused = 1;                   /* 0x83610 */
+                *pEnv->pbFlag187098 = 1;                    /* 0x8361C, byte_187090 + 8 */
+                UiLineList_Remove(pEnv->pLines, 0);         /* 0x83628 */
+                UiLineList_AppendWithSound(pEnv->pLines, 18, (u32)pPanel->nUnk3032,
+                                           (u32)*pEnv->pnSelectedStrategIdx, 0u, 0u,
+                                           pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x83648 */
+                *pEnv->pnRadarPulseTimer = 250;             /* 0x83650 */
+            }
+
+            if (pItem->nType == 1 && pItem->bActive == 0) { /* 0x83688 */
+                i32 nShipIdx;
+
+                world.apCraft = (Ship *const *)pEnv->apCraft;
+                world.nShipCount = (pEnv->pnCraftCount != NULL) ? *pEnv->pnCraftCount : 0;
+                view.apItems = (StrategItem **)pEnv->pStrategList->apItems;
+                view.nCount = pEnv->pStrategList->nCount;
+                view.nNextDisplayId = 0;
+                view.nNextSiteId = 0;
+
+                nShipIdx = Ship_FindIndexByStrategType(&world, &view, nItemIdx); /* 0x836A0 */
+                *pEnv->pnSelectedShipIdx = nShipIdx;        /* 0x187054, 0x836A0 */
+                *pEnv->pnStrategIndex = *pEnv->pnSelectedShipIdx; /* 0x159E74, 0x836A4 */
+                pPanel->nUnk3032 = 0;                       /* 0x836AC */
+                pEnv->pTime->bPaused = 1;                   /* 0x836B4 */
+                /* No RemoveLine here -- the only one of the six that keeps line 0. */
+                UiLineList_AppendWithSound(pEnv->pLines, 11, (u32)*pEnv->pnSelectedShipIdx,
+                                           0u, 0u, 0u, pEnv->pfnPlaySample, pEnv->pSoundUser); /* 0x836D0 */
+                *pEnv->pnRadarPulseTimer = 250;             /* 0x836D8 */
+            }
+        }
+    } else {
+        pPanel->nPosX = 120;                                            /* 0x832C0 */
+        pPanel->nPosY = 120 - pPanel->nLineCount / 2 * pPanel->nFont;  /* 0x832F4 */
+        pPanel->nUnk7052 = 20;                                         /* 0x83308 */
+        pPanel->nUnk7056 = 120 - pPanel->nLineCount / 2 * pPanel->nFont; /* 0x83334, recomputed */
+        pPanel->nViewW = 200;                                          /* 0x83348 */
+        pPanel->bFlag7073 = 0;                                         /* 0x83358 */
+        pEnv->pTime->bPaused = 1;                                      /* 0x83360 */
+        *pEnv->pbFlag1870A0 = 1;                                       /* 0x8336C */
+        if (pEnv->pfnPlaySample != NULL) {
+            pEnv->pfnPlaySample(7, pEnv->pSoundUser);                  /* Sound_Play @ 0x83378 */
+        }
+    }
+
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 27 && nLine == 0 &&
+        nClickY < PUFO_SURF_H - nStripH) {                             /* 0x83708..0x83718 */
+        i32 nCellX;
+        i32 nCellY;
+
+        pEnv->pTime->bPaused = 1;                                      /* 0x83720 */
+        if (pEnv->pbSelectionFlag != NULL) {
+            *pEnv->pbSelectionFlag = 0;                                /* 0x8372C */
+        }
+        SmapHit_CellAt(pView, nClickX, nClickY, &nCellX, &nCellY);    /* 0x8374C / 0x83770 */
+        if (pEnv->pnPendingPickX != NULL) {
+            *pEnv->pnPendingPickX = nCellX;                            /* 0x83784 */
+        }
+        if (pEnv->pnPendingPickY != NULL) {
+            *pEnv->pnPendingPickY = nCellY;                            /* 0x83788 */
+        }
+        UiLineList_Remove(pEnv->pLines, 0);                            /* 0x83794 */
+        UiLineList_Insert(pEnv->pLines, 0, 12, (u32)(u8)*pEnv->pnSelectedShipIdx,
+                          0u, 0u, 0u);                                 /* 0x837B4 */
+        pPanel->nUnk3032 = 0;                                          /* 0x837BC */
+    }
+
+    return bSelectable;                                                /* 0x837C8 */
+}
+
 /* stru_AB220 @ 0xAB220: the two build-dialog panel buttons BaseFacScreen_Init positions. Printed
  * and checked by tools/gen_geoiinit_tables.py. */
 static const UiControlDesc g_aBaseFacPanelDesc[PUFO_BASEFAC_PANEL_DESC_COUNT] = {

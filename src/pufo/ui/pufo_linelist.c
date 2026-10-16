@@ -13,14 +13,20 @@ static void Line_MoveRec(UiLineList *pList, i32 nDst, i32 nSrc)
     memcpy(&pList->anColor[nDst][0], &pList->anColor[nSrc][0], sizeof(pList->anColor[0]));
 }
 
+/* The write boundary of UiPanel_InsertLine @ 0x5a294 and UiPanel_SetLineColors @ 0x5a450. The flag
+ * is a byte store (STRB at 0x5A2F8) and every colour slot is truncated to a byte before its dword
+ * store: slot 0 through `AND R3, R3, #0xFF` at 0x5A2FC, slots 1..3 through `LDRB R3, [SP,#arg_N]`
+ * at 0x5A30C, 0x5A314 and 0x5A31C. A caller that hands an index in a colour slot therefore cannot
+ * put more than 255 there -- Smap_HitTestStrategSelect @ 0x836A0 stores -1 into 0x187054 and appends
+ * it, and the original writes 255. The port masked nothing until that call site made it visible. */
 static void Line_Write(UiLineList *pList, i32 nLine, u8 bFlag,
                        u32 nC0, u32 nC1, u32 nC2, u32 nC3)
 {
     pList->abLineFlags[nLine] = bFlag;
-    pList->anColor[nLine][0] = nC0;
-    pList->anColor[nLine][1] = nC1;
-    pList->anColor[nLine][2] = nC2;
-    pList->anColor[nLine][3] = nC3;
+    pList->anColor[nLine][0] = nC0 & PUFO_LINE_COLOR_MAX;
+    pList->anColor[nLine][1] = nC1 & PUFO_LINE_COLOR_MAX;
+    pList->anColor[nLine][2] = nC2 & PUFO_LINE_COLOR_MAX;
+    pList->anColor[nLine][3] = nC3 & PUFO_LINE_COLOR_MAX;
 }
 
 void UiLineList_Insert(UiLineList *pList, u8 nLine, u8 bFlag,

@@ -296,6 +296,18 @@ add_test(NAME test_geopointer
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
+# Strateg select test: the 16x16 cell window, the two zoom scalers, the type groups that build a
+# status-panel line, the six-branch dispatch and the flag-27 pick-a-cell tail.
+add_executable(test_smaphit ${CMAKE_SOURCE_DIR}/tests/test_smaphit.c)
+target_link_libraries(test_smaphit PRIVATE pufo_options pufo_game pufo_ui pufo_render pufo_dat pufo_util)
+set_target_properties(test_smaphit PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_smaphit
+    COMMAND test_smaphit
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 # Voxel occupancy and line-of-sight: row-mask bit addressing, wall/floor/ceiling
 # and occupant blocking, plus the trace. Uses the real mask tables when present.
 add_executable(test_los ${CMAKE_SOURCE_DIR}/tests/test_los.c)

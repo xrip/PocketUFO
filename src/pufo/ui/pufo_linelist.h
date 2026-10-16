@@ -50,9 +50,11 @@ typedef struct UiLineList {
  * (0x5A2F4) and UiPanel_SetLineColors (0x5A454) both mask slot 0 with `AND R3, R3, #0xFF` and
  * byte-load slots 1..3 from their stack arguments (`LDRB R3, [SP,#arg_N]`), so no store through
  * either can put a value above 255 into a colour slot. Reads (UiLineList_GetColor) are plain
- * dwords. The four nC parameters stay u32 because the record really is four dwords; callers that
- * carry an index in a colour slot pass the byte the original loaded, e.g. Smap_SetWaypoint's
- * `LDRB R3, [R4]` at 0x85490. */
+ * dwords. The four nC parameters stay u32 because the record really is four dwords; the mask is
+ * applied inside the shared write helper, so no caller can bypass it and a negative index arrives
+ * as its low byte (Smap_HitTestStrategSelect @ 0x836A0 stores -1 into 0x187054 and the original
+ * appends it as 255). Callers that already load a byte, like Smap_SetWaypoint's `LDRB R3, [R4]` at
+ * 0x85490, are unaffected. */
 #define PUFO_LINE_COLOR_MAX 0xFFu
 
 /* UiPanel_InsertLine @ 0x5a294. Insert at `nLine`.

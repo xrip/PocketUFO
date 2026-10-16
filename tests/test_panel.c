@@ -436,13 +436,19 @@ static void TestLineList(void)
     CheckEqI32((i32)UiLineList_GetColor(&list, 1, 0), 100, "  the whole record moved");
     CheckEqI32((i32)UiLineList_GetColor(&list, 1, 3), 103, "  including its last slot");
     CheckEqI32((i32)UiLineList_GetColor(&list, 2, 0), 200, "  and so did the next one");
+    /* Every slot is truncated to a byte at the write: slot 0 by `AND R3,R3,#0xFF` at 0x5A2FC,
+     * slots 1..3 by the LDRB of their stack arguments at 0x5A30C..0x5A31C. */
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  slot 0 keeps 900 & 0xFF");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 1), 133, "  slot 1 keeps 901 & 0xFF");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 2), 134, "  slot 2 keeps 902 & 0xFF");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 3), 135, "  slot 3 keeps 903 & 0xFF");
 
     /* SetLine overwrites in place and leaves the count alone. */
     UiLineList_SetLine(&list, 1, 77, 1, 2, 3, 4);
     CheckEqI32((i32)list.nLineCount, 3, "  SetLine does not touch the count");
     CheckEqI32(UiLineList_GetFlag(&list, 1), 77, "  flag replaced");
     CheckEqI32((i32)UiLineList_GetColor(&list, 1, 1), 2, "  colours replaced");
-    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 900, "  neighbours untouched");
+    CheckEqI32((i32)UiLineList_GetColor(&list, 0, 0), 132, "  neighbours untouched");
 
     /* Remove shifts the tail down. */
     UiLineList_Remove(&list, 0);

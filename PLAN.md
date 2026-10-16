@@ -2214,6 +2214,33 @@ Order is by what unblocks what. Each item ends with gates + commit.
   to 102,360 of 160,496 bytes (63.8%). IDB: comments on the shortfall gate, the three residues, the null-check
   asymmetry, the slot immediates and the signed base-count product.
 
+- [x] **part 74, the map select test: `Smap_HitTestStrategSelect (0x82be8, 3,088 B)`** — the test the press
+  dispatcher calls twice on one press (0x87C10, 0x87C94), ported in `pufo_baseui.c` beside
+  `Geoscape_OnRadarListClick @ 0x854c4` on its own `SmapHitEnv`. A strict strip gate (0x82C18, before the line
+  clear), a **16x16 cell window** (dx, dy over -8..7) walked outside the item loop, item coordinates scaled by
+  **1/1.333** at level 1 and **1/1.694** at level 2, one status-panel line per matching item with the item index
+  in `anLineAux`, the six-branch dispatch for exactly one line, the multi-select layout for more, and the
+  flag-27 tail that writes the pending click.
+  **What the ARM showed and the pseudocode did not.** 0x82ED4 loads `BaseRec.bUnk4` with **LDRSB** against the
+  full i32 `nSiteId`, while `Base_FindIndexByTypeByte @ 0x6ac30` masks its argument to a byte (0x6AC58) and
+  loads the same field signed (0x6AC68) — the port compared that field as u8 and matched values of 0x80 or more
+  the original can never match. Fixed, with two checks in `test_geoscape.c`. 0x82FE4: the type-3 label copy
+  restarts at index 0, so record 1146 **replaces** record 1145. 0x83250 sets the select answer on any
+  coordinate match even when no line was added. 0x83784 / 0x83788 are the writer of 0x186414 / 0x186418, the
+  pending click `Smap_ConfirmCraftTarget @ 0x842ec` reads — the note there had called this writer unported.
+  0xECDB5 / 0xECE82 / 0xECF4F are **TEXTS records 1145, 1146, 1147** (`aTextRecs + 205 * n`), never written
+  anywhere in the image; renamed in the IDB to `aTextRec1145/1146/1147`.
+  **A shared-leaf fix this unit forced:** 0x5A2FC masks colour slot 0 with `AND R3,R3,#0xFF` and 0x5A30C /
+  0x5A314 / 0x5A31C byte-load slots 1..3, so no colour slot can hold more than 255. `Line_Write` stored them
+  as full dwords; 0x836A0 stores -1 into 0x187054 and 0x836D0 appends it, so the original writes 255 and the
+  port wrote 0xFFFFFFFF. Masked now, asserted in `test_panel.c`.
+  **10 ledger rows (210 total):** the two past-the-end search indexes (0x82f1c, 0x83164), the two scaler
+  inconsistencies (0x82d48, 0x82dd0), the answer-without-a-line rule (0x83250), the prefix replacement
+  (0x82fe4), the duplicated craft search (0x836a0), the `bFlag7073` asymmetry against the radar click (0x83494),
+  and the two write-boundary fixes (0x6ac68, 0x5a2fc).
+  132 new checks (13405 total, 59 suites), coverage 909/1103 (82.4%) and 480696/598792 (80.3%); `strat` moves
+  from 102,360 to 105,448 of 160,496 bytes (65.7%). IDB: 3 renames and 16 comments.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2541,6 +2568,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the step legality (`Unit_CanStepTo`; the head and twenty direction arms, the seam carrying the settled cell instead of the candidate, the surcharge and `bFlags29` bit 3 corrected to the probe's re-anchor report, 4 original findings recorded) | 57/57 (Release) | 12787 | 906/1103 (82.1%) | 462040/598792 (77.2%) | 40 checked, 0 mismatched |
 | the geoscape pointer dispatcher (`Geoscape_OnPointer`; the 16-bit cursor globals, the screen-0 menu band, the 19-arm screen switch, the drag gate and its tap cooldown, the `(v + 31) >> 5` tap division, 5 original findings and 3 deviations recorded) | 58/58 (Release) | 13022 | 907/1103 (82.2%) | 470616/598792 (78.6%) | 40 checked, 0 mismatched |
 | the pointer release (`Geoscape_OnPointerUp`; the shortfall gate on 0x1870C8 read as a dword, the list clicks where the press only tracked rows, the panel tail shared by two arms, the press/release disagreements on screens 0, 7, 10 and 18, 3 original findings and 6 ledger rows, one wrong slot address in the port corrected) | 58/58 (Release) | 13267 | 908/1103 (82.3%) | 477608/598792 (79.8%) | 40 checked, 0 mismatched |
+| the map select test (`Smap_HitTestStrategSelect`; the strict strip gate, the 16x16 cell window, the 1/1.333 and 1/1.694 item scalers that disagree with the scroll factors, the signed base-type byte, the two past-the-end search indexes, the flag-27 tail that writes the pending click, the colour-slot byte mask `Line_Write` was missing, 10 ledger rows) | 59/59 (Release) | 13405 | 909/1103 (82.4%) | 480696/598792 (80.3%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

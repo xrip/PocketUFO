@@ -225,7 +225,10 @@ i32 Base_FindIndexByTypeByte(BaseRec *const *apBases, i32 nBaseCount, u8 nType)
         if (apBases[i] == NULL) {
             continue;
         }
-        if (apBases[i]->bUnk4 == nType) {
+        /* 0x6AC68 loads the field with LDRSB and 0x6AC58 masks the argument with `AND R1,R1,#0xFF`,
+         * so the original compares a SIGNED field against an unsigned byte: a field of 0x80 or more
+         * never matches any argument in 0..255. The port compared both as u8, which matched them. */
+        if ((i32)(i8)apBases[i]->bUnk4 == (i32)nType) {
             return i;
         }
     }
