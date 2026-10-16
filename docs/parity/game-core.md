@@ -15426,3 +15426,92 @@ boundary at exactly the map
 size, each type's glyph index against a reference drawn by Font_DrawGlyph directly, the zoom scaling on both
 axes, the blank +6 frame, the palette-slot-32 dependency, the digit-pad origins, the skipped day-tens blit,
 the weekday centring and the month/day separator.
+## Unit 83: Geoscape_DrawScreen @ 0x6c16c (3,476 B)
+
+One whole geoscape frame: the wrapped map backdrop, the strateg icons, the zoom strip, the clock, the
+intercept overlay, the five options menus and the shared tail that draws the cancel label.
+
+### What the original does
+
+- 0x6C180: if bMapSelectionFlag (0x159E84) is set, Geoscape_CloseUI is called at 0x6C188 and 0x6C194
+  branches straight to the end. Nothing in the frame is drawn -- not the map, not the clock pads.
+- 0x6C1A4..0x6C340: the wrapped backdrop. Its instruction sequence is identical to the body of
+  RadarScreen_BlitMapBackdrop -- same half-extents, same two map-pad blits, same three layer copies at
+  bias - scroll - halfW, that minus nMapW and that plus nMapW. The port factors it into one shared
+  helper, Smap_BlitWrappedBackdrop, instead of transcribing it twice.
+- 0x6C348 Smap_DrawStrategIcons, 0x6C354 the zoom strip pad, then the clock pads.
+- 0x6C378: the intercept overlay. Ui_AnimExpandBlit mode 2 at (0, 25) with nW 236, nH 180, srcX 0x28,
+  srcY 0x32, nIdx 0. 0x6C3B4 ANDS/BEQ: while the animation is incomplete the frame FALLS THROUGH to the
+  menu branch instead of drawing the overlay.
+- 0x6C430 TEXTS[1154] (the "Корабль Статус База Э/Т/О" column header) left-anchored at (8, 50); 0x6C488
+  TEXTS[1155] "Перехват цели" centred on y 33; three vertical rules at x 80 / 150 / 200 from y 70, each
+  6 * pOptPanelMidA->nFont tall; one 236-wide horizontal rule under them (idx 10, mid 80, low 90);
+  option controls 7 and 8 blitted.
+- 0x6C640: gOptionsScratch[4] (0x159E8C) gates the whole menu layer -- when it is zero the wash, the menu
+  AND the tail label are all skipped (BEQ loc_6CEF0).
+- 0x6C680: a 240x320 wash at (0,0), idx 4, mid 67, low 80, key 100.
+- 0x6C68C: LDRSB gOptionsScratch[0] is the menu id. 0 options menu (loc_6CC3C), 1 save slots (loc_6CB30),
+  2 load slots (loc_6CA20), 3 quit confirm (loc_6C900), 4 volume (falls through at 0x6C6BC); any other
+  value goes to the tail only (loc_6CEB4).
+- Case 0: frame (20, 50, 200, 180); TEXTS[1156] "Опции" centred on y 60; controls 0..3 blitted with
+  TEXTS[1157..1159] ("Сохранить игру", "Загрузить игру", "Покинуть игру") drawn under each at its y + 1;
+  pGeoscapeCtlA blitted at 0x6CE84 AND again in the tail -- case 0 is the only case that blits it twice.
+- Cases 1 and 2: frame (20, 10, 200, 250); seven controls 0..6; the title is the only difference between
+  them -- TEXTS[1160] "Выбрать запись" versus TEXTS[1161] "Выбрать загрузку", centred on y 18. The seven
+  rows come from MainMenu_pSlotCtx @ 0x156938, seven 40-byte labels, NOT from TEXTS.
+- Case 3: frame (20, 80, 200, 100); TEXTS[1162] "Вы хотите выйти из игры" centred on y 90; pGeoscapeCtlB
+  blitted; TEXTS[1163] "Да" drawn at pGeoscapeCtlB->y + 1; TEXTS[1164] "Нет" is loaded into psz at 0x6C9E4
+  and drawn by the tail.
+- Case 4: frame (20, 80, 200, 150); four border rects (22,82,196,1), (22,228,196,1), (22,82,1,146),
+  (217,82,1,146) with idx 0x44, mid 0xF4, low 0xFC; controls 9..20 (six music then six sound); TEXTS[1031]
+  "Громкость музыки" centred on y 90 and TEXTS[1032] "Громкость звука" on y 130; six snprintf'd digits at
+  x 54 + 25*i on the y 111 and y 151 lines, so the scale runs 0..5 and stops at x 150.
+- 0x6CEB4/0x6CEEC: the shared tail. It blits pGeoscapeCtlA and draws whatever psz holds centred at
+  120 - Text_MeasureWidth/2 on pGeoscapeCtlA->y + 1. Cases 0..3 leave "Отмена" there, case 4 leaves "OK".
+
+### Deviations, listed rather than hidden
+
+- The original never initialises psz (sp+0x18), and its switch default jumps straight to the tail, which
+  then draws whatever the stack held there. The port initialises szText and szNum to the empty string: the
+  ids the game actually uses (0..4) are unchanged and an unknown id draws nothing instead of stack garbage.
+- The TEXTS-to-stack copies are unbounded in the original (a record longer than 199 bytes would overflow
+  psz[200]); the port caps them. Not in the bug ledger: unreachable with the shipped lang.dat.
+- The port guards pView / pMapPad / pLayerPad / pWorldBits and the four option panels for NULL; the original
+  reaches them through live globals.
+
+### IDB corrections this unit
+
+- gOptionsScratch @ 0x159E88 now carries its layout: [0] the menu id, [4] the visible gate. A new local
+  enum PufoOptionsMenuId (GEOOPT_MENU 0, GEOOPT_SAVE_LIST 1, GEOOPT_LOAD_LIST 2, GEOOPT_QUIT_ASK 3,
+  GEOOPT_VOLUME 4) records the dispatch.
+- Fourteen line comments record the label sites, including the record index behind each copy loop: the
+  byte offsets are exactly record * 205, so 0x39CE7 = 1155, 0x39E81 = 1157, 0x39F4E = 1158,
+  0x33A68 = 1032 and 0x3A41C = 1164.
+- 0x6C39C: Hex-Rays labels the stack dword it stores 0xB4 into as nKey. It is nH = 180. The real nKey is
+  the byte stored at 0x6C398, which MOV R3, #0 sets to 0.
+- Function comment added at 0x6c16c.
+
+### How the new tests avoid testing nothing
+
+Every menu paints a solid wash behind its labels, so a count of lit pixels is satisfied by the panel alone.
+The group therefore runs each case twice -- once with the TEXTS record intact, once with its first byte
+zeroed so the draw emits an empty string -- and asserts on the pixels that DIFFER. That isolates the glyphs
+from whatever was painted behind them. The digits are snprintf'd rather than TEXTS, so they are pinned a
+different way: the same digit on both rows hashes alike, 0 and 1 do not, the gap between two columns is
+clean, and the seventh column at x 204 is empty. The centring checks read the ink span of the differential
+scan, not of the raw frame. A mutation (the title band moved from y 63 to y 80) turns the title check red,
+which confirms the checks are position-sensitive rather than self-satisfying.
+
+Measured along the way: Text_DrawString(x, y) inks rows y+3..y+12 with this font, which is what every band
+position in the group encodes.
+
+77 new checks in tests/test_geoscape.c, all on the real 240x320 surface with the real font and the real
+lang.dat TEXTS records: the sixteen record indices each naming a distinct shipped string; the map-selection
+early return (close called once, nothing painted, no pad moved); the exact backdrop arithmetic with both map
+copies and the third layer copy read on the surface; the gate; the unknown-id fall-through; the four menu
+controls and the cancel control blitted twice in case 0; the seven slot controls and the slot table proven
+to be the label source; the save and load lists differing only in the title; Да and Нет on their own lines
+with each blanking leaving the other untouched, and the Да label moving with ctlB->y; the twelve volume
+controls, both captions, the six digit columns and the four border rects; the overlay branch taken only when
+the animation reports progress 100, its header left-anchored at 8 and its title centred, and its three column
+rules present with a clean gap between them.

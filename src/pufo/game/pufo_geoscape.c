@@ -2053,6 +2053,58 @@ void Base_DrawFacilityIconStrip(const BaseStripDrawEnv *pEnv)
     }
 }
 
+/* The wrapped map backdrop, written twice in the binary: 0x5EB44..0x5ECE0 inside
+ * RadarScreen_BlitMapBackdrop and 0x6C1A4..0x6C340 inline in Geoscape_DrawScreen. The two are
+ * instruction-for-instruction the same, so the port keeps one copy. The map pad is blitted twice
+ * (at the scroll position, then one map width further on); the layer pad is blitted three times
+ * (at the overlay origin, one map width left, one map width right), each of those three skipped
+ * when the screen id is 2. */
+static void Smap_BlitWrappedBackdrop(const SmapView *pView, PadImage *pMapPad,
+                                     PadImage *pLayerPad, const u8 *pWorldBits,
+                                     i32 nOverlayOriginX, i32 nScreenId)
+{
+    /* Map half-extent minus screen half-extent. The MOVS / ADDMI #1 / ASR #1 triple the ARM uses
+     * is C division by two: ADDMI only fires on a negative value. */
+    const i32 nHalfW = pView->nMapW / 2 - PUFO_RADAR_HALF_SCREEN_X; /* R7 */
+    const i32 nHalfH = pView->nMapH / 2 - PUFO_RADAR_HALF_SCREEN_Y; /* R6 */
+
+    /* The map pad centred on the scroll position, negated. */
+    pMapPad->nOriginX = -(pView->nScrollX + nHalfW);
+    pMapPad->nOriginY = -(pView->nScrollY + nHalfH);
+    PadImage_Blit(pMapPad);
+
+    /* The same pad one map width further on, which is the wrap copy. The original rewrites
+     * nOriginY with the identical value here; reproduced as written. */
+    pMapPad->nOriginX = -(pView->nScrollX + pView->nMapW + nHalfW);
+    pMapPad->nOriginY = -(pView->nScrollY + nHalfH);
+    PadImage_Blit(pMapPad);
+
+    /* The layer pad takes the overlay origin, not the pad origin, on x; on y it copies whatever
+     * the map pad ended with. */
+    pLayerPad->nOriginX = nOverlayOriginX - pView->nScrollX - nHalfW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pWorldBits,
+                          g_aPalette[PUFO_RADAR_MAP_PAL_SLOT], pLayerPad->pData);
+    }
+
+    /* One map width to the left. */
+    pLayerPad->nOriginX = nOverlayOriginX - pView->nScrollX - pView->nMapW - nHalfW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pWorldBits,
+                          g_aPalette[PUFO_RADAR_MAP_PAL_SLOT], pLayerPad->pData);
+    }
+
+    /* One map width to the right. The ARM's order is bias - scroll - halfW, then + nMapW. */
+    pLayerPad->nOriginX = nOverlayOriginX - pView->nScrollX - nHalfW + pView->nMapW;
+    pLayerPad->nOriginY = pMapPad->nOriginY;
+    if (nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) {
+        SoftSurf_BlitFlip(pLayerPad->nOriginX, pLayerPad->nOriginY, pWorldBits,
+                          g_aPalette[PUFO_RADAR_MAP_PAL_SLOT], pLayerPad->pData);
+    }
+}
+
 /* RadarScreen_BlitMapBackdrop @ 0x5eb10. See the header for the evidence map. */
 bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
 {
@@ -2073,53 +2125,8 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
         return false;
     }
 
-    /* 0x5EB44..0x5EB68: map half-extent minus screen half-extent. The ADDMI/ASR pair the ARM
-     * uses is C division by two, so a negative extent rounds toward zero. */
-    const i32 nHalfW = pEnv->pView->nMapW / 2 - PUFO_RADAR_HALF_SCREEN_X; /* R7 */
-    const i32 nHalfH = pEnv->pView->nMapH / 2 - PUFO_RADAR_HALF_SCREEN_Y; /* R6 */
-
-    /* 0x5EB6C..0x5EB94: the map pad centred on the scroll position, negated. */
-    pEnv->pMapPad->nOriginX = -(pEnv->pView->nScrollX + nHalfW);
-    pEnv->pMapPad->nOriginY = -(pEnv->pView->nScrollY + nHalfH);
-    PadImage_Blit(pEnv->pMapPad);
-
-    /* 0x5EB98..0x5EBCC: the same pad one map width further on, which is the wrap copy. The
-     * original rewrites nOriginY with the identical value here; reproduced as written. */
-    pEnv->pMapPad->nOriginX = -(pEnv->pView->nScrollX + pEnv->pView->nMapW + nHalfW);
-    pEnv->pMapPad->nOriginY = -(pEnv->pView->nScrollY + nHalfH);
-    PadImage_Blit(pEnv->pMapPad);
-
-    /* 0x5EBD0..0x5EC08: the layer pad takes the overlay origin, not the pad origin, on x; on y
-     * it copies whatever the map pad ended with. */
-    pEnv->pLayerPad->nOriginX = pEnv->nOverlayOriginX - pEnv->pView->nScrollX - nHalfW;
-    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
-    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5EC14 */
-        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
-                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
-                          pEnv->pLayerPad->pData);
-    }
-
-    /* 0x5EC50..0x5EC88: one map width to the left. */
-    pEnv->pLayerPad->nOriginX =
-        pEnv->nOverlayOriginX - pEnv->pView->nScrollX - pEnv->pView->nMapW - nHalfW;
-    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
-    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5EC6C */
-        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
-                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
-                          pEnv->pLayerPad->pData);
-    }
-
-    /* 0x5ECA8..0x5ECE0: one map width to the right. The ARM's order is bias - scroll - halfW,
-     * then + nMapW (0x5ECA0 ADD R3, R3, R0). */
-    pEnv->pLayerPad->nOriginX =
-        pEnv->nOverlayOriginX - pEnv->pView->nScrollX - nHalfW + pEnv->pView->nMapW;
-    pEnv->pLayerPad->nOriginY = pEnv->pMapPad->nOriginY;
-    if (pEnv->nScreenId != PUFO_RADAR_SCREEN_NO_WRAP) { /* 0x5ECC4 */
-        SoftSurf_BlitFlip(pEnv->pLayerPad->nOriginX, pEnv->pLayerPad->nOriginY,
-                          pEnv->pWorldBits, g_aPalette[PUFO_RADAR_MAP_PAL_SLOT],
-                          pEnv->pLayerPad->pData);
-    }
-
+    Smap_BlitWrappedBackdrop(pEnv->pView, pEnv->pMapPad, pEnv->pLayerPad, pEnv->pWorldBits,
+                             pEnv->nOverlayOriginX, pEnv->nScreenId);
     return true;
 }
 
@@ -3615,4 +3622,273 @@ void RadarScreen_Update(const RadarUpdateEnv *pEnv)
     } else {
         Radar_FullZoomExit(pEnv);
     }
+}
+
+/* --- Geoscape_DrawScreen @ 0x6c16c ------------------------------------------------------- */
+
+/* 0x6C40C and fourteen more: the original copies a TEXTS record into the 200-byte psz with an
+ * unbounded LDRSB / STRB loop. A record is 200 bytes on disk and psz is 200 bytes, so a record
+ * with no NUL inside its own 200 bytes would run past the buffer. The port caps the copy -- a
+ * hardening deviation, unreachable with the shipped lang.dat. */
+static void DrawScreen_CopyTextRec(char *pszDst, size_t cchDst, const char *pRec)
+{
+    size_t i = 0;
+
+    while (i + 1 < cchDst && pRec[i] != '\0') {
+        pszDst[i] = pRec[i];
+        ++i;
+    }
+    pszDst[i] = '\0';
+}
+
+/* 120 - Text_MeasureWidth(psz) / 2, the centring every text site in this function uses. */
+static void DrawScreen_DrawCentered(i32 nY, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);
+
+    Text_DrawString(120 - nWidth / 2, nY, psz);
+}
+
+/* The same centring anchored on a control: the label sits one pixel below the control's own y,
+ * which the original reads as a signed halfword (LDRSH [R1,#2] at 0x6C5B4, 0x6CBE0, 0x6CED0). */
+static void DrawScreen_DrawCtlLabel(const UiControl *pCtl, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);
+
+    Text_DrawString(120 - nWidth / 2, (i32)pCtl->y + 1, psz);
+}
+
+static void DrawScreen_BlitMenuFrame(i32 nY, i32 nHeight)
+{
+    SoftSurf_BlitSrcRect(20, nY, 200, nHeight, PUFO_GEOOPT_WASH_IDX,
+                         PUFO_GEOOPT_WASH_MID, PUFO_GEOOPT_WASH_LOW, PUFO_GEOOPT_WASH_KEY);
+}
+
+/* Cases 1 and 2 are the same seven rows; only the title record differs. Each row blits its own
+ * control and draws that control's slot label under it -- the original passes the label pointer
+ * straight through, with no copy (0x6CBD4 MOV R3,R5). */
+static void DrawScreen_DrawSlotList(const GeoscapeScreenDrawEnv *pEnv, i32 nTitleRec)
+{
+    i32 i;
+
+    DrawScreen_BlitMenuFrame(10, 250);                                   /* 0x6CB50 / 0x6CA40 */
+    DrawScreen_DrawCentered(18, pEnv->pTextRecs
+                                + PUFO_TEXT_REC_STRIDE * nTitleRec);     /* 0x6CBAC / 0x6CA98 */
+    for (i = 0; i < PUFO_GEOOPT_SLOT_COUNT; ++i) {
+        UiControl *pCtl = pEnv->apOptCtl[i];
+
+        (void)UiControl_BlitActivePad(pCtl, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x6CBC0 / 0x6CAAC */
+        DrawScreen_DrawCtlLabel(pCtl, (pEnv->pSlotLabels != NULL)
+                                          ? pEnv->pSlotLabels + PUFO_GEOOPT_LABEL_STRIDE * i
+                                          : "");                          /* 0x6CBF4 / 0x6CAE0 */
+    }
+}
+
+void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv)
+{
+    char szText[200]; /* psz @ sp+0x18 */
+    char szNum[200];  /* v74 @ sp+0xE0, the itoa scratch */
+    i32  i;
+
+    /* Deviation: the original never initialises psz, and its switch default (0x6C6B8 BNE loc_6CEB4)
+     * jumps straight to the tail, which then draws whatever the stack held at sp+0x18. Every id the
+     * game actually uses (0..4) fills the buffer first, so the port initialises it instead: the
+     * known paths are unchanged and an unknown id draws nothing rather than stack garbage. */
+    szText[0] = '\0';
+    szNum[0] = '\0';
+
+    if (pEnv == NULL) {
+        return;
+    }
+
+    /* 0x6C180: a pending map selection closes the geoscape UI and this frame draws nothing. */
+    if (pEnv->pbMapSelection != NULL && *pEnv->pbMapSelection != 0) {
+        if (pEnv->pfnCloseUi != NULL) {
+            pEnv->pfnCloseUi(pEnv->pCloseUser); /* 0x6C188 */
+        }
+        return;                                 /* 0x6C194 B loc_6CEF0 */
+    }
+
+    /* 0x6C1A4..0x6C340: the wrapped backdrop, then the icons, the strip pad and the clock. The
+     * port guards the four backdrop inputs; the original reaches them through live globals. */
+    if (pEnv->pView != NULL && pEnv->pMapPad != NULL && pEnv->pLayerPad != NULL
+        && pEnv->pWorldBits != NULL) {
+        Smap_BlitWrappedBackdrop(pEnv->pView, pEnv->pMapPad, pEnv->pLayerPad, pEnv->pWorldBits,
+                                 pEnv->nOverlayOriginX, pEnv->nScreenId);
+    }
+    /* The original passes only &gSmapCam and lets Smap_DrawStrategIcons read the animation phase
+     * out of Map + 0x60 itself; the port hands it in through the icon environment. */
+    const SmapIconDrawEnv iconEnv = { pEnv->pStrategList, pEnv->nAnimPhase, pEnv->nMapBitsBase };
+    Smap_DrawStrategIcons(pEnv->pView, &iconEnv);                        /* 0x6C348 */
+    if (pEnv->pStripPad != NULL) {
+        PadImage_Blit(pEnv->pStripPad);                                   /* 0x6C354 */
+    }
+    if (pEnv->pTime != NULL) {
+        const GeoscapeClockDrawEnv clockEnv = { pEnv->apClockPads, pEnv->pTextRecs, pEnv->pTime,
+                                                pEnv->pColor };
+        (void)GameTime_Decode(pEnv->pTime);                               /* 0x6C35C */
+        Geoscape_DrawClockPads(&clockEnv);                                /* 0x6C364 */
+    }
+
+    /* Port-side guards. The original reaches the overlay state through globals that are always
+     * live; the port takes them as arguments, so a missing one means nothing can be drawn on top
+     * of the map and the frame ends after the map itself. */
+    if (pEnv->pTextRecs == NULL || pEnv->apOptCtl == NULL || pEnv->pCtlA == NULL) {
+        return;
+    }
+
+    /* 0x6C3B4: the options overlay. Ui_AnimExpandBlit returns false until the animation has
+     * filled the rect, and then the whole overlay -- panels, column rules, labels -- is skipped
+     * and the frame falls through to the menu branch. */
+    if (pEnv->pbOptionsOpen != NULL && *pEnv->pbOptionsOpen != 0
+        && Ui_AnimExpandBlit(pEnv->pAnim, PUFO_GEOOPT_ANIM_X, PUFO_GEOOPT_ANIM_Y,
+                             PUFO_GEOOPT_ANIM_W, PUFO_GEOOPT_ANIM_H, 0, PUFO_GEOOPT_ANIM_SRC_X,
+                             PUFO_GEOOPT_ANIM_SRC_Y, 0, PUFO_GEOOPT_ANIM_MODE)) {
+        if (pEnv->pPanelShips == NULL || pEnv->pPanelMidA == NULL || pEnv->pPanelMidB == NULL
+            || pEnv->pPanelRight == NULL) {
+            return;
+        }
+        UiPanel_DrawText(pEnv->pPanelShips);                             /* 0x6C3C8, 0x159E18 */
+        UiPanel_DrawText(pEnv->pPanelMidA);                              /* 0x6C3D4, 0x159E78 */
+        UiPanel_DrawText(pEnv->pPanelMidB);                              /* 0x6C3E0, 0x159E7C */
+        UiPanel_DrawText(pEnv->pPanelRight);                             /* 0x6C3EC, 0x159E1C */
+
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_COLUMNS);
+        Text_DrawString(8, 50, szText);                                  /* 0x6C430 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_INTERCEPT);
+        DrawScreen_DrawCentered(33, szText);                             /* 0x6C488 */
+
+        /* 0x6C4D0..0x6C564: three column rules and the rule under them, all measured against
+         * pOptPanelMidA's own font height. */
+        const i32 nRuleH = PUFO_GEOOPT_RULE_FONT_MUL * pEnv->pPanelMidA->nFont;
+        SoftSurf_BlitRectProxy(0, PUFO_GEOOPT_RULE_X0, PUFO_GEOOPT_RULE_Y, 1, nRuleH,
+                               PUFO_GEOOPT_RULE_IDX, PUFO_GEOOPT_RULE_MID, PUFO_GEOOPT_RULE_LOW);
+        SoftSurf_BlitRectProxy(0, PUFO_GEOOPT_RULE_X1, PUFO_GEOOPT_RULE_Y, 1, nRuleH,
+                               PUFO_GEOOPT_RULE_IDX, PUFO_GEOOPT_RULE_MID, PUFO_GEOOPT_RULE_LOW);
+        SoftSurf_BlitRectProxy(0, PUFO_GEOOPT_RULE_X2, PUFO_GEOOPT_RULE_Y, 1, nRuleH,
+                               PUFO_GEOOPT_RULE_IDX, PUFO_GEOOPT_RULE_MID, PUFO_GEOOPT_RULE_LOW);
+        SoftSurf_BlitRectProxy(0, 4, nRuleH + PUFO_GEOOPT_RULE_Y, PUFO_GEOOPT_RULE_WIDTH, 1,
+                               PUFO_GEOOPT_RULE_IDX, PUFO_GEOOPT_RULE_MID, PUFO_GEOOPT_RULE_LOW);
+
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_CANCEL);
+        (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x6C59C */
+        DrawScreen_DrawCtlLabel(pEnv->pCtlA, szText);                    /* 0x6C5D0 */
+        for (i = 0; i < 2; ++i) {
+            (void)UiControl_BlitActivePad(pEnv->apOptCtl[7 + i], pEnv->pfnCtlBlit,
+                                          pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser); /* 0x6C5DC */
+        }
+        return;                                                          /* 0x6C5F4 */
+    }
+
+    /* 0x6C640: the geoscape menu is gated on a byte at 0x159E8C. */
+    if (pEnv->abOptionsScratch == NULL || pEnv->abOptionsScratch[4] == 0) {
+        return;                                                          /* 0x6C64C BEQ loc_6CEF0 */
+    }
+
+    SoftSurf_BlitSrcRect(0, 0, 240, 320, PUFO_GEOOPT_WASH_IDX, PUFO_GEOOPT_WASH_MID,
+                         PUFO_GEOOPT_WASH_LOW, PUFO_GEOOPT_WASH_KEY);    /* 0x6C680 */
+
+    switch (pEnv->abOptionsScratch[0]) {                                 /* LDRSB at 0x6C68C */
+    case PUFO_GEOOPT_SAVE_LIST:
+        DrawScreen_DrawSlotList(pEnv, PUFO_TEXT_REC_PICK_SAVE);
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_CANCEL);
+        break;
+
+    case PUFO_GEOOPT_LOAD_LIST:
+        DrawScreen_DrawSlotList(pEnv, PUFO_TEXT_REC_PICK_LOAD);
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_CANCEL);
+        break;
+
+    case PUFO_GEOOPT_QUIT_ASK:
+        DrawScreen_BlitMenuFrame(80, 100);                               /* 0x6C920 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_QUIT_ASK);
+        DrawScreen_DrawCentered(90, szText);                             /* 0x6C978 */
+        (void)UiControl_BlitActivePad(pEnv->pCtlB, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);               /* 0x6C984 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_YES);
+        DrawScreen_DrawCtlLabel(pEnv->pCtlB, szText);                    /* 0x6C9E0, "Да" */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_NO);
+        break;                                                           /* the tail draws "Нет" */
+
+    case PUFO_GEOOPT_VOLUME:
+        DrawScreen_BlitMenuFrame(80, 150);                               /* 0x6C6DC */
+        SoftSurf_BlitRectProxy(0, 22, 82, 196, 1, PUFO_GEOOPT_BORDER_IDX,
+                               PUFO_GEOOPT_BORDER_MID, PUFO_GEOOPT_BORDER_LOW);   /* 0x6C710 */
+        SoftSurf_BlitRectProxy(0, 22, 228, 196, 1, PUFO_GEOOPT_BORDER_IDX,
+                               PUFO_GEOOPT_BORDER_MID, PUFO_GEOOPT_BORDER_LOW);   /* 0x6C734 */
+        SoftSurf_BlitRectProxy(0, 22, 82, 1, 146, PUFO_GEOOPT_BORDER_IDX,
+                               PUFO_GEOOPT_BORDER_MID, PUFO_GEOOPT_BORDER_LOW);   /* 0x6C75C */
+        SoftSurf_BlitRectProxy(0, 217, 82, 1, 146, PUFO_GEOOPT_BORDER_IDX,
+                               PUFO_GEOOPT_BORDER_MID, PUFO_GEOOPT_BORDER_LOW);   /* 0x6C780 */
+        for (i = 0; i < 2 * PUFO_GEOOPT_VOL_STEPS; ++i) {
+            (void)UiControl_BlitActivePad(pEnv->apOptCtl[PUFO_GEOOPT_VOL_CONTROL0 + i],
+                                          pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                          pEnv->pCtlBlitUser);           /* 0x6C78C, slots 9..20 */
+        }
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_VOL_MUSIC);
+        DrawScreen_DrawCentered(90, szText);                             /* 0x6C7F8 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_VOL_SOUND);
+        DrawScreen_DrawCentered(130, szText);                            /* 0x6C850 */
+        /* 0x6C85C..0x6C8C0: the level scale, 0..5 on both rows. The original j_itoa's into the
+         * same 200-byte scratch and copies it; snprintf is the bounded stand-in. */
+        for (i = 0; i < PUFO_GEOOPT_VOL_STEPS; ++i) {
+            (void)snprintf(szNum, sizeof(szNum), "%d", i);
+            pufo_strncpy(szText, szNum, sizeof(szText));
+            Text_DrawString(PUFO_GEOOPT_VOL_X0 + PUFO_GEOOPT_VOL_STEP * i, 111, szText);
+            Text_DrawString(PUFO_GEOOPT_VOL_X0 + PUFO_GEOOPT_VOL_STEP * i, 151, szText);
+        }
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OK);
+        break;
+
+    case PUFO_GEOOPT_MENU:
+        DrawScreen_BlitMenuFrame(50, 180);                               /* 0x6CC5C */
+        for (i = 0; i < 4; ++i) {
+            (void)UiControl_BlitActivePad(pEnv->apOptCtl[i], pEnv->pfnCtlBlit,
+                                          pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser); /* 0x6CC6C */
+        }
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x6CCA8 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_HEAD);
+        DrawScreen_DrawCentered(60, szText);                             /* 0x6CD04 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_SAVE);
+        DrawScreen_DrawCtlLabel(pEnv->apOptCtl[0], szText);              /* 0x6CD60 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_LOAD);
+        DrawScreen_DrawCtlLabel(pEnv->apOptCtl[1], szText);              /* 0x6CDBC */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPT_QUIT);
+        DrawScreen_DrawCtlLabel(pEnv->apOptCtl[2], szText);              /* 0x6CE1C */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_OPTIONS);
+        DrawScreen_DrawCtlLabel(pEnv->apOptCtl[3], szText);              /* 0x6CE7C */
+        /* 0x6CE84: the menu blits the cancel control here, and the shared tail blits it again. */
+        (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                      pEnv->pCtlBlitUser);
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_REC_CANCEL);
+        break;
+
+    default:
+        break;                                                           /* 0x6C6B8 BNE loc_6CEB4 */
+    }
+
+    /* 0x6CEB4: the shared tail. Whatever string the case left in psz is drawn centred under the
+     * cancel control. */
+    (void)UiControl_BlitActivePad(pEnv->pCtlA, pEnv->pfnCtlBlit, pEnv->pfnCtlBlitEx,
+                                  pEnv->pCtlBlitUser);                   /* 0x6CEB8 */
+    DrawScreen_DrawCtlLabel(pEnv->pCtlA, szText);                        /* 0x6CEEC */
 }

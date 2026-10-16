@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `253c9bf`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 82, `Smap_DrawStrategIcons` 0x822c4 + `Geoscape_DrawClockPads`
-0x5c5c8), and the per-unit chain there runs back through every unit since. The block that follows is the
+Date: 2026-10-16. HEAD before this edit: `1a5f4a0`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 83, `Geoscape_DrawScreen` 0x6c16c), and the per-unit chain there
+runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
 
@@ -207,9 +207,9 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 919 / 1103 (83.3%)
-                                             bytes cited:     496036 / 598792 (82.8%)
-python docs/parity/audit_credits.py       -> credited functions: 919, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 920 / 1103 (83.4%)
+                                             bytes cited:     499512 / 598792 (83.4%)
+python docs/parity/audit_credits.py       -> credited functions: 920, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 426 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
@@ -231,11 +231,35 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13942**. Coverage as of the latest commit: **919 / 1103
-functions (83.3%)**, **496036 / 598792 bytes (82.8%)**. This unit ported the two leaves that were still
-missing from `Geoscape_DrawScreen` — `Smap_DrawStrategIcons` (0x822c4, 1,060 B), the pass that draws every
-strateg entry as a mapbits sprite, and `Geoscape_DrawClockPads` (0x5c5c8, 2,168 B), the date/time strip —
-so the geoscape draw itself now has no unported callee left in it.
+Test checks run across the 60 suites: **14019**. Coverage as of the latest commit: **920 / 1103
+functions (83.4%)**, **499512 / 598792 bytes (83.4%)**. This unit ported `Geoscape_DrawScreen`
+(0x6c16c, 3,476 B), the whole geoscape frame whose two draw leaves unit 82 ported first.
+**The backdrop is the radar backdrop.** 0x6C1A4..0x6C340 is instruction-for-instruction the body of
+`RadarScreen_BlitMapBackdrop`, so the port now has one `Smap_BlitWrappedBackdrop` helper instead of two
+copies of the same six blits. **`gOptionsScratch[0]` is the options menu id**, decoded from the shipped
+lang.dat strings rather than guessed: 0 menu (TEXTS[1156] "Опции" over 1157/1158/1159 rows), 1 save slots
+(1160), 2 load slots (1161), 3 quit confirm (1162 + 1163 "Да" + 1164 "Нет"), 4 volume (1031/1032 captions
+with six snprintf'd digits at x 54 + 25*i); anything else reaches the tail only. `gOptionsScratch[4]` gates
+the whole layer — zero skips the wash, the menu **and** the tail label (0x6C64C `BEQ loc_6CEF0`). A new IDB
+enum `PufoOptionsMenuId` records the dispatch. **The copy loops name their record through their offset**: the
+byte offsets are exactly `record * 205` (0x39CE7 = 1155, 0x39E81 = 1157, 0x39F4E = 1158, 0x33A68 = 1032,
+0x3A41C = 1164), which is how each label is pinned without reading strings the IDB stores as zero-filled
+labels. **Hex-Rays mislabels another stack slot:** 0x6C39C stores 0xB4 into the dword it calls `nKey`; it is
+`nH = 180`, and the real `nKey` is the byte at 0x6C398 set to 0. **The shared tail:** every case leaves its
+last string in `psz` and 0x6CEB4/0x6CEEC blits `pGeoscapeCtlA` and draws it centred at `120 - width / 2` on
+`pGeoscapeCtlA->y + 1`; cases 0..3 leave "Отмена", case 4 leaves "OK", and case 0 alone blits that control
+twice. The seven slot rows come from `MainMenu_pSlotCtx @ 0x156938`, not from TEXTS. **One deviation
+recorded:** the original never initialises `psz` and its switch default jumps straight to the tail, which
+then draws stack garbage; the port initialises it. **And the test method changed.** Every menu paints a
+solid wash behind its labels, so a lit-pixel count is satisfied by the panel alone — the first draft of this
+group had that defect. Each case now runs twice, once with the TEXTS record intact and once with its first
+byte zeroed, and the assertions are on the pixels that DIFFER; a mutation (title band moved from y 63 to
+y 80) turns the title check red. Measured along the way: `Text_DrawString(x, y)` inks rows y+3..y+12 with
+this font. 77 new checks, 14 line comments, one `gOptionsScratch` comment, one function comment, one new
+enum, 0 renames, 0 new ledger rows. `strat` moves to 195/204 functions and 120,508 of 160,496 bytes (75.1%).
+Unit 82 ported the two leaves that were still missing from `Geoscape_DrawScreen` — `Smap_DrawStrategIcons`
+(0x822c4, 1,060 B), the pass that draws every strateg entry as a mapbits sprite, and `Geoscape_DrawClockPads`
+(0x5c5c8, 2,168 B), the date/time strip.
 **It also corrected a reading this project had wrong.** `MOVS / ADDMI R3,R3,#1 / ASR #1` (the middle word
 is `0x42833001`) had been recorded three times as a **ceiling** half, and the map click (unit 80) and this
 icon pass both implemented `ceil(n/2)`. ADDMI is add-if-**minus**: the +1 is skipped for every
@@ -1020,10 +1044,11 @@ This is the shortest chain that produces a real game session, in dependency orde
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 117,032 of 160,496 (72.9%), and `Geoscape_Draw` alone is
-33,744 of the 43,464 left. Both geoscape pointer handlers, the map select test they call, both map click
-handlers they install, the per-tick strateg event pass, the strateg icon pass and the clock strip are in
-now — what is left in the geoscape is the draw functions themselves, not their leaves.
+`strat` is still the weakest subsystem by bytes: 120,508 of 160,496 (75.1%), and `Geoscape_Draw` alone is
+33,744 of the 39,988 left. Both geoscape pointer handlers, the map select test they call, both map click
+handlers they install, the per-tick strateg event pass, the strateg icon pass, the clock strip and the whole
+`Geoscape_DrawScreen` frame are in now — what is left in the geoscape is `Geoscape_Draw` itself and the
+globe-hover / pulse leaves, not the menu and label layer.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 

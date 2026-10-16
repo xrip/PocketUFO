@@ -2118,4 +2118,137 @@ typedef struct RadarUpdateEnv {
 
 void RadarScreen_Update(const RadarUpdateEnv *pEnv);
 
+/* Geoscape_DrawScreen @ 0x6c16c (3,476 B). One geoscape frame: the wrapped map backdrop, the
+ * strateg icons, the zoom strip pad, the clock strip, and then whichever overlay is open.
+ *
+ *   0x6C180  bMapSelectionFlag set -> tail-calls Geoscape_CloseUI(&0x1864F8) and NOTHING else
+ *            is drawn this frame (0x6C188 BL, 0x6C194 B loc_6CEF0).
+ *   0x6C1A4  the wrapped backdrop, instruction-identical to RadarScreen_BlitMapBackdrop's body.
+ *   0x6C348  Smap_DrawStrategIcons(&gSmapCam), 0x6C354 PadImage_Blit([0x186BBC]),
+ *            0x6C35C GameTime_Decode(0x159618), 0x6C364 Geoscape_DrawClockPads(0x159618).
+ *   0x6C3B4  the options overlay: bOptionsScreenOpen AND Ui_AnimExpandBlit(..., mode 2). When the
+ *            animation has not filled the rect yet the whole overlay is skipped and the frame
+ *            falls through to the menu branch instead.
+ *   0x6C640  otherwise gOptionsScratch[4] (a BYTE at 0x159E8C) gates the geoscape menu; zero and
+ *            the frame ends. gOptionsScratch[0] (a SIGNED byte, LDRSB at 0x6C68C) picks the menu:
+ *
+ *                0  the options menu      "Опции" + Save / Load / Quit, four controls
+ *                1  the save-slot list    "Выбрать запись" + seven MainMenu_pSlotCtx labels
+ *                2  the load-slot list    "Выбрать загрузку" + the same seven labels
+ *                3  the quit confirmation "Вы хотите выйти из игры", Да on ctlB / Нет on ctlA
+ *                4  the volume screen     music and sound, six + six controls, levels 0..5
+ *                any other value          the tail only (0x6C6B8 BNE loc_6CEB4)
+ *
+ *            Every case leaves its last string in psz and the shared tail (0x6CEB4) blits
+ *            pGeoscapeCtlA and draws that string centred under it: "Отмена" for cases 0..3 and
+ *            "OK" for case 4. Case 0 blits pGeoscapeCtlA TWICE (0x6CE84 and 0x6CEB8) — reproduced.
+ *
+ * Centring is `120 - Text_MeasureWidth(psz) / 2` at sixteen sites here (0x6C478, 0x6C5BC,
+ * 0x6C7E8, 0x6C840, 0x6C968, 0x6C9CC, 0x6CA88, 0x6CAD0, 0x6CB9C, 0x6CBE4, 0x6CCF4, 0x6CD4C,
+ * 0x6CDA8, 0x6CE08, 0x6CE68, 0x6CED8), all the same MOVS / ADDMI #1 / ASR #1 shape, which is C's
+ * `/ 2`. Control `y` is read as a signed halfword (LDRSH [R1,#2] at 0x6C5B4, 0x6CBE0, 0x6CED0). */
+#define PUFO_GEOOPT_MENU          0 /* gOptionsScratch[0]: the options menu itself */
+#define PUFO_GEOOPT_SAVE_LIST     1 /* the seven save slots */
+#define PUFO_GEOOPT_LOAD_LIST     2 /* the seven load slots */
+#define PUFO_GEOOPT_QUIT_ASK      3 /* "Вы хотите выйти из игры" */
+#define PUFO_GEOOPT_VOLUME        4 /* the music / sound level screen */
+#define PUFO_GEOOPT_SLOT_COUNT    7 /* MainMenu_pSlotCtx @ 0x156938, seven 40-byte labels */
+#define PUFO_GEOOPT_LABEL_STRIDE 40 /* 0x6CBFC ADD R5,R5,#0x28: the stride between slot labels */
+#define PUFO_GEOOPT_VOL_STEPS     6 /* the 0..5 level columns, drawn at x 54 + 25*n */
+#define PUFO_GEOOPT_VOL_X0       54 /* 0x6C888 ADD R5,R7,#0x36 */
+#define PUFO_GEOOPT_VOL_STEP     25 /* 0x6C8B4 ADD R7,R7,#0x19, loop while R7 < 0x96 */
+#define PUFO_GEOOPT_VOL_CONTROL0  9 /* case 4 walks aOptionsListCtl[9..20]: the six music buttons
+                                     * at 0x159E44 then the six sound buttons at 0x159E5C */
+
+/* The TEXTS records this frame draws (lang.dat texts.dat, 1650 records; the strings are the
+ * shipped Russian text, read out of the file rather than guessed). */
+#define PUFO_TEXT_REC_OPTIONS        20 /* "Опции" */
+#define PUFO_TEXT_REC_VOL_MUSIC    1031 /* "Громкость музыки" */
+#define PUFO_TEXT_REC_VOL_SOUND    1032 /* "Громкость звука" */
+#define PUFO_TEXT_REC_OK           1104 /* "OK", the tail label under ctlA in the volume case */
+#define PUFO_TEXT_REC_CANCEL       1144 /* "Отмена", the tail label under ctlA in every other case */
+#define PUFO_TEXT_REC_OPT_COLUMNS  1154 /* "Корабль            Статус        База     Э\\Т\\О" */
+#define PUFO_TEXT_REC_INTERCEPT    1155 /* "Перехват цели" */
+#define PUFO_TEXT_REC_OPT_HEAD     1156 /* "Опции", the menu title */
+#define PUFO_TEXT_REC_OPT_SAVE     1157 /* "Сохранить игру" */
+#define PUFO_TEXT_REC_OPT_LOAD     1158 /* "Загрузить игру" */
+#define PUFO_TEXT_REC_OPT_QUIT     1159 /* "Покинуть игру" */
+#define PUFO_TEXT_REC_PICK_SAVE    1160 /* "Выбрать запись" */
+#define PUFO_TEXT_REC_PICK_LOAD    1161 /* "Выбрать загрузку" */
+#define PUFO_TEXT_REC_QUIT_ASK     1162 /* "Вы хотите выйти из игры" */
+#define PUFO_TEXT_REC_YES          1163 /* "Да", under pGeoscapeCtlB */
+#define PUFO_TEXT_REC_NO           1164 /* "Нет", under pGeoscapeCtlA by the shared tail */
+
+/* The Ui_AnimExpandBlit call at 0x6C390. Hex-Rays labels the 0xB4 it stores twice, as nH AND as
+ * nKey; the ARM stores 0xB4 in the nH slot (0x6C38C STR, dword) and ZERO in the nKey slot
+ * (0x6C384 STRB into var_198), so nKey really is 0 here. */
+#define PUFO_GEOOPT_ANIM_X            0
+#define PUFO_GEOOPT_ANIM_Y           25 /* 0x6C390 MOV R2, #0x19 */
+#define PUFO_GEOOPT_ANIM_W          236 /* 0x6C388 MOV R3, #0xEC */
+#define PUFO_GEOOPT_ANIM_H          180 /* 0x6C380 MOV R0, #0xB4; STR */
+#define PUFO_GEOOPT_ANIM_SRC_X     0x28
+#define PUFO_GEOOPT_ANIM_SRC_Y     0x32
+#define PUFO_GEOOPT_ANIM_MODE         2 /* full width, height 50*progress centred */
+
+/* The menu panel frame: the full-screen wash and the per-case panel rect all use index 4 with the
+ * same colour pair, and the volume case's inner border uses index 0x44 with 0xF4 / 0xFC. */
+#define PUFO_GEOOPT_WASH_IDX          4
+#define PUFO_GEOOPT_WASH_MID         67 /* 0x6C65C MOV R6, #0x43 */
+#define PUFO_GEOOPT_WASH_LOW         80 /* 0x6C654 MOV R5, #0x50 */
+#define PUFO_GEOOPT_WASH_KEY        100 /* 0x6C658 MOV R7, #0x64 */
+#define PUFO_GEOOPT_BORDER_IDX     0x44
+#define PUFO_GEOOPT_BORDER_MID     0xF4
+#define PUFO_GEOOPT_BORDER_LOW     0xFC
+
+/* The options overlay's column separators: three vertical rules at x 80 / 150 / 200 from y 70,
+ * each 6 * pOptPanelMidA->nFont tall (MUL R2,R3,R8 with R8 = 6), and one horizontal rule under
+ * them 236 wide. Index 10, mid 80, low 90. */
+#define PUFO_GEOOPT_RULE_X0          80
+#define PUFO_GEOOPT_RULE_X1         150
+#define PUFO_GEOOPT_RULE_X2         200
+#define PUFO_GEOOPT_RULE_Y          70
+#define PUFO_GEOOPT_RULE_WIDTH     236
+#define PUFO_GEOOPT_RULE_FONT_MUL    6
+#define PUFO_GEOOPT_RULE_IDX        10
+#define PUFO_GEOOPT_RULE_MID        80
+#define PUFO_GEOOPT_RULE_LOW        90
+
+typedef struct GeoscapeScreenDrawEnv {
+    SmapView       *pView;          /* gSmapCam @ 0x1863E8 */
+    PadImage       *pMapPad;        /* pSmapPadCur @ 0x186E40 */
+    PadImage       *pLayerPad;      /* pSmapChromePad @ 0x186BE0 */
+    PadImage       *pStripPad;      /* [0x186BBC], the zoom-strip pad */
+    const u8       *pWorldBits;     /* pSmapWorldBits @ 0x186BC0 */
+    i32             nOverlayOriginX;/* nSmapOverlayOriginX @ 0x186C20 */
+    i32             nScreenId;      /* nGeoscapeScreen @ 0x186BC4 */
+    PtrArray       *pStrategList;   /* 0x1864F8 + 0x3C */
+    u16             nMapBitsBase;   /* fontSys.nMapBitsBase, the strateg sprite base */
+    u16             nAnimPhase;     /* nUiSlot0AnimPhase @ 0x113A18, low halfword */
+    GameTime       *pTime;          /* the clock block at 0x159608 */
+    PadImage *const *apClockPads;   /* apClockDigitPads @ 0x186BF0 */
+    const char     *pTextRecs;      /* aTextRecs @ 0xB38D0 */
+    u8             *pbMapSelection; /* bMapSelectionFlag @ 0x159E84 */
+    u8             *pbOptionsOpen;  /* bOptionsScreenOpen @ 0x159E80 */
+    i8             *abOptionsScratch; /* gOptionsScratch @ 0x159E88: [0] the menu id, [4] visible */
+    UiAnimBlitEnv  *pAnim;          /* the geoscape anim root @ 0x1864F8 */
+    UiPanel        *pPanelShips;    /* pOptPanelShips @ 0x159E18 */
+    UiPanel        *pPanelMidA;     /* pOptPanelMidA @ 0x159E78, the one whose nFont sizes the rules */
+    UiPanel        *pPanelMidB;     /* pOptPanelMidB @ 0x159E7C */
+    UiPanel        *pPanelRight;    /* pOptPanelRight @ 0x159E1C */
+    UiControl      *pCtlA;          /* pGeoscapeCtlA @ 0x186BB4, the cancel / OK control */
+    UiControl      *pCtlB;          /* pGeoscapeCtlB @ 0x186BB0, the "Да" control */
+    UiControl     **apOptCtl;       /* aOptionsListCtl @ 0x159E20, 21 slots through 0x159E73 */
+    const char     *pSlotLabels;    /* MainMenu_pSlotCtx @ 0x156938, seven 40-byte labels */
+    GfxColorEnv    *pColor;
+    /* Geoscape_CloseUI(&0x1864F8), injected because that dispatcher lives in the base-ui module
+     * and takes its own environment. */
+    void (*pfnCloseUi)(void *pUser);
+    void            *pCloseUser;
+    UiControlBlitFn  pfnCtlBlit;
+    UiControlBlitFn  pfnCtlBlitEx;
+    void            *pCtlBlitUser;
+} GeoscapeScreenDrawEnv;
+
+void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

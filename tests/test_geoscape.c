@@ -6631,6 +6631,591 @@ static void TestDrawClockPads(void)
     Check(true, "a null environment is refused");
 }
 
+/* ---- Geoscape_DrawScreen @ 0x6c16c -------------------------------------------------------
+ *
+ * Runs on the real 240x320 surface, the real font and the real lang.dat TEXTS records, so every
+ * text assertion below is about the shipped strings at their shipped positions. */
+
+#define DS_MAP_SLOT   7
+#define DS_MAP_W      6
+#define DS_MAP_H      5
+#define DS_STRIP_W    8
+#define DS_STRIP_H    3
+#define DS_MASK_W     40
+#define DS_MASK_H     20
+#define DS_CTLS       24
+#define DS_OPT_CTLS   21
+
+static u8        g_dsMapGlyph[4 + DS_MAP_W * DS_MAP_H];
+static u8        g_dsStripGlyph[4 + DS_STRIP_W * DS_STRIP_H];
+static u8        g_dsMask[4 + DS_MASK_W * DS_MASK_H];
+static u8        g_dsWorld[4 + 16];
+static PadImage  g_dsMapPad, g_dsLayerPad, g_dsStripPad;
+static SmapView  g_dsView;
+static GameTime  g_dsTime;
+static u8       *g_dsTexts;
+static UiControl g_dsCtl[DS_CTLS];
+static PadImage  g_dsCtlPad[DS_CTLS];
+static u8        g_dsCtlPadData[DS_CTLS][4 + 4 * 4];
+static UiControl *g_dsOptCtl[DS_OPT_CTLS];
+static UiPanel   g_dsPanel[4];
+static u8        g_dsAnimStarted;
+static i8        g_dsAnimProgress;
+static UiAnimBlitEnv g_dsAnim;
+static i8        g_dsScratch[8];
+static u8        g_dsSelFlag, g_dsOptOpen;
+static GfxColorEnv g_dsColor;
+static i32       g_dsCloseCalls;
+static i32       g_dsPadHits[DS_CTLS];
+static PadImage  g_dsClockPad[10];
+static PadImage *g_dsClockPads[10];
+static u8        g_dsClockData[10][4 + 4 * 6];
+static PtrArray  g_dsList;
+static GeoscapeScreenDrawEnv g_dsEnv;
+static char      g_dsSlotLabels[7 * PUFO_GEOOPT_LABEL_STRIDE]; /* MainMenu_pSlotCtx, a flat 280-byte block */
+static i16       g_dsCtlBY = 160; /* ctlB's y, moved by one test to show the label follows it */
+
+static void DsCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pUser;
+    for (i32 i = 0; i < DS_CTLS; ++i) {
+        if (&g_dsCtlPad[i] == pPad) {
+            ++g_dsPadHits[i];
+            return;
+        }
+    }
+}
+
+static void DsCtlBlitEx(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+}
+
+static void DsCloseUi(void *pUser)
+{
+    (void)pUser;
+    ++g_dsCloseCalls;
+}
+
+static bool DsLoadTexts(void)
+{
+    AssetReader rdr;
+    u8  aHdr[PUFO_TEXT_HDR_SIZE];
+    u32 cb, n, i;
+
+    AssetReader_Clear(&rdr);
+    if (!AssetReader_Find(&rdr, "texts.dat")) {
+        return false;
+    }
+    cb = AssetReader_Size(&rdr);
+    n  = (cb >= PUFO_TEXT_HDR_SIZE)
+       ? (cb - PUFO_TEXT_HDR_SIZE) / PUFO_TEXT_REC_SIZE_DISK : 0u;
+    if (n <= (u32)PUFO_TEXT_REC_PICK_LOAD) {
+        return false;
+    }
+    if (!AssetReader_Read(&rdr, aHdr, PUFO_TEXT_HDR_SIZE)) {
+        return false;
+    }
+    g_dsTexts = malloc((size_t)n * PUFO_TEXT_REC_STRIDE);
+    if (g_dsTexts == NULL) {
+        return false;
+    }
+    memset(g_dsTexts, 0, (size_t)n * PUFO_TEXT_REC_STRIDE);
+    for (i = 0; i < n; ++i) {
+        if (!AssetReader_Read(&rdr, g_dsTexts + (size_t)i * PUFO_TEXT_REC_STRIDE,
+                              PUFO_TEXT_REC_SIZE_DISK)) {
+            break;
+        }
+    }
+    return true;
+}
+
+static const char *DsRec(i32 nRec)
+{
+    return (const char *)g_dsTexts + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+static u16 g_dsSnap[16 * BD_SURF_W];
+static void DsFixture(void); /* DsTextScan re-runs it, and it is defined below */
+
+/* Pixels in a box that differ from a sampled background colour. Used where the drawing is not a
+ * TEXTS record (the volume screen's snprintf'd digits) and so cannot be isolated by blanking. */
+/* A hash of an exact box. GdHash's fixed 40x40 window is too wide here: on the volume screen it
+ * swallows the neighbouring caption row, and on the confirm panel it crosses the panel's lower
+ * edge, so two runs that differ only in a label's row hash differently for the wrong reason. */
+static u32 DsHashBox(i32 x0, i32 y0, i32 nW, i32 nH)
+{
+    u32 uHash = 2166136261u;
+
+    for (i32 y = 0; y < nH; ++y) {
+        for (i32 x = 0; x < nW; ++x) {
+            uHash = (uHash ^ (u32)BdPix(x0 + x, y0 + y)) * 16777619u;
+        }
+    }
+    return uHash;
+}
+
+static i32 DsDiffBg(i32 x0, i32 y0, i32 nW, i32 nH, u16 uBg)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y < y0 + nH; ++y) {
+        for (i32 x = x0; x < x0 + nW; ++x) {
+            if ((u16)BdPix(x, y) != uBg) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+/* Runs one menu case twice: once with the TEXTS record intact, once with its first byte zeroed so
+ * the draw emits an empty string, and reports the pixels that differ. Every menu paints a solid
+ * panel behind its labels (292 in this fixture), so a count of lit pixels would be satisfied by the
+ * panel alone -- only the difference between the two runs is the glyphs themselves.
+ *
+ * Returns the number of differing pixels and, through pnMin / pnMax, the leftmost and rightmost
+ * column they fall in. */
+static i32 DsTextScan(i32 nCase, i32 nRec, u8 bOverlay, i32 x0, i32 y0, i32 nW, i32 nH,
+                      i32 *pnMin, i32 *pnMax)
+{
+    char chSaved = g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec];
+    i32 nDiff = 0;
+
+    *pnMin = BD_SURF_W;
+    *pnMax = -1;
+
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = (i8)nCase;
+    g_dsOptOpen = bOverlay;
+    Geoscape_DrawScreen(&g_dsEnv);
+    for (i32 y = 0; y < nH; ++y) {
+        for (i32 x = 0; x < nW; ++x) {
+            g_dsSnap[y * BD_SURF_W + x] = (u16)BdPix(x0 + x, y0 + y);
+        }
+    }
+
+    g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec] = 0;
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = (i8)nCase;
+    g_dsOptOpen = bOverlay;
+    Geoscape_DrawScreen(&g_dsEnv);
+    g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec] = chSaved;
+
+    for (i32 x = 0; x < nW; ++x) {
+        for (i32 y = 0; y < nH; ++y) {
+            if ((u16)BdPix(x0 + x, y0 + y) != g_dsSnap[y * BD_SURF_W + x]) {
+                ++nDiff;
+                if (x < *pnMin) {
+                    *pnMin = x;
+                }
+                if (x > *pnMax) {
+                    *pnMax = x;
+                }
+            }
+        }
+    }
+    *pnMin += x0;
+    *pnMax += x0;
+    return nDiff;
+}
+
+static void DsFixture(void)
+{
+    GdClear();
+    memset(g_dsPadHits, 0, sizeof(g_dsPadHits));
+    g_dsCloseCalls = 0;
+
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    g_aPalette[PUFO_RADAR_MAP_PAL_SLOT][1] = 0xFFFFu;
+    g_aPalette[DS_MAP_SLOT][1]             = 0x0123u;
+    g_aPalette[CK_PAD_SLOT][1]             = 0x0FFFu;
+
+    g_dsMapGlyph[0] = DS_MAP_W;   g_dsMapGlyph[1] = 0;
+    g_dsMapGlyph[2] = DS_MAP_H;   g_dsMapGlyph[3] = 0;
+    memset(g_dsMapGlyph + 4, 1, sizeof(g_dsMapGlyph) - 4);
+    g_dsMapPad.pData = g_dsMapGlyph;
+    g_dsMapPad.nMode = DS_MAP_SLOT;
+    g_dsMapPad.uWidth = DS_MAP_W; g_dsMapPad.uHeight = DS_MAP_H;
+    g_dsMapPad.nOriginX = -1; g_dsMapPad.nOriginY = -1;
+
+    g_dsStripGlyph[0] = DS_STRIP_W; g_dsStripGlyph[1] = 0;
+    g_dsStripGlyph[2] = DS_STRIP_H; g_dsStripGlyph[3] = 0;
+    memset(g_dsStripGlyph + 4, 1, sizeof(g_dsStripGlyph) - 4);
+    g_dsStripPad.pData = g_dsStripGlyph;
+    g_dsStripPad.nMode = DS_MAP_SLOT;
+    g_dsStripPad.uWidth = DS_STRIP_W; g_dsStripPad.uHeight = DS_STRIP_H;
+    g_dsStripPad.nOriginX = 0; g_dsStripPad.nOriginY = 0;
+
+    g_dsMask[0] = DS_MASK_W; g_dsMask[1] = 0;
+    g_dsMask[2] = DS_MASK_H; g_dsMask[3] = 0;
+    memset(g_dsMask + 4, 0xFF, sizeof(g_dsMask) - 4);
+    g_dsLayerPad.pData = g_dsMask;
+    g_dsLayerPad.nMode = PUFO_RADAR_MAP_PAL_SLOT;
+    g_dsLayerPad.uWidth = DS_MASK_W; g_dsLayerPad.uHeight = DS_MASK_H;
+    g_dsLayerPad.nOriginX = -1; g_dsLayerPad.nOriginY = -1;
+
+    g_dsWorld[0] = 8; g_dsWorld[1] = 0; g_dsWorld[2] = 2; g_dsWorld[3] = 0;
+    memset(g_dsWorld + 4, 1, sizeof(g_dsWorld) - 4);
+
+    memset(&g_dsView, 0, sizeof(g_dsView));
+    /* Chosen so both wrap copies of the map pad land on screen: halfW = 100/2 - 120 = -70 and
+     * halfH = 100/2 - 160 = -110, which puts the copies at (130, 120) and (30, 120). */
+    g_dsView.nScrollX = -60;
+    g_dsView.nScrollY = -10;
+    g_dsView.nMapW    = 100;
+    g_dsView.nMapH    = 100;
+
+    for (i32 i = 0; i < 10; ++i) {
+        g_dsClockData[i][0] = 4; g_dsClockData[i][1] = 0;
+        g_dsClockData[i][2] = 6; g_dsClockData[i][3] = 0;
+        memset(g_dsClockData[i] + 4, 1, sizeof(g_dsClockData[i]) - 4);
+        g_dsClockPad[i].pData = g_dsClockData[i];
+        g_dsClockPad[i].nMode = CK_PAD_SLOT;
+        g_dsClockPad[i].uWidth = 4; g_dsClockPad[i].uHeight = 6;
+        g_dsClockPads[i] = &g_dsClockPad[i];
+    }
+
+    for (i32 i = 0; i < DS_CTLS; ++i) {
+        g_dsCtlPadData[i][0] = 4; g_dsCtlPadData[i][1] = 0;
+        g_dsCtlPadData[i][2] = 4; g_dsCtlPadData[i][3] = 0;
+        memset(g_dsCtlPadData[i] + 4, 0xC3, sizeof(g_dsCtlPadData[i]) - 4);
+        g_dsCtlPad[i].pData = g_dsCtlPadData[i];
+        g_dsCtlPad[i].nMode = DS_MAP_SLOT;
+        g_dsCtlPad[i].uWidth = 4; g_dsCtlPad[i].uHeight = 4;
+        UiControl_ctor(&g_dsCtl[i]);
+        g_dsCtl[i].bEnabled = 1;
+        g_dsCtl[i].nMode    = 0;
+        g_dsCtl[i].nState   = 0;
+        g_dsCtl[i].bUnk17   = 0;
+        g_dsCtl[i].apPads[0] = &g_dsCtlPad[i];
+    }
+    for (i32 i = 0; i < DS_OPT_CTLS; ++i) {
+        g_dsOptCtl[i] = &g_dsCtl[i];
+    }
+    for (i32 i = 0; i < DS_OPT_CTLS; ++i) {
+        g_dsCtl[i].x = (i16)(10 + 10 * i);
+        g_dsCtl[i].y = (i16)(100 + 10 * i);
+    }
+    g_dsCtl[21].x = 120; g_dsCtl[21].y = 150;   /* pGeoscapeCtlA */
+    g_dsCtl[22].x = 60;  g_dsCtl[22].y = g_dsCtlBY;   /* pGeoscapeCtlB */
+
+    memset(g_dsPanel, 0, sizeof(g_dsPanel));
+    for (i32 i = 0; i < 4; ++i) {
+        g_dsPanel[i].nFont = 17;
+    }
+
+    memset(&g_dsTime, 0, sizeof(g_dsTime));
+    g_dsTime.nTotalSec = 0;
+    (void)GameTime_Reset(&g_dsTime);
+
+    memset(&g_dsList, 0, sizeof(g_dsList));
+    PtrArray_ctor(&g_dsList);
+
+    g_dsAnimStarted  = 1;
+    g_dsAnimProgress = 100;
+    g_dsAnim.pbStarted   = &g_dsAnimStarted;
+    g_dsAnim.pnProgress  = &g_dsAnimProgress;
+    g_dsAnim.nFrameStyle = 0;
+
+    memset(g_dsScratch, 0, sizeof(g_dsScratch));
+    g_dsSelFlag  = 0;
+    g_dsOptOpen  = 0;
+    g_dsColor.nScaleSource = 1;
+    g_dsColor.nFadeCount   = 0;
+
+    memset(&g_dsEnv, 0, sizeof(g_dsEnv));
+    g_dsEnv.pView           = &g_dsView;
+    g_dsEnv.pMapPad         = &g_dsMapPad;
+    g_dsEnv.pLayerPad       = &g_dsLayerPad;
+    g_dsEnv.pStripPad       = &g_dsStripPad;
+    g_dsEnv.pWorldBits      = g_dsWorld;
+    g_dsEnv.nOverlayOriginX = 0;
+    g_dsEnv.nScreenId       = 1;
+    g_dsEnv.pStrategList    = &g_dsList;
+    g_dsEnv.nMapBitsBase    = g_fontSys.nMapBitsBase;
+    g_dsEnv.nAnimPhase      = 0;
+    g_dsEnv.pTime           = &g_dsTime;
+    g_dsEnv.apClockPads     = g_dsClockPads;
+    g_dsEnv.pTextRecs       = (const char *)g_dsTexts;
+    g_dsEnv.pbMapSelection  = &g_dsSelFlag;
+    g_dsEnv.pbOptionsOpen   = &g_dsOptOpen;
+    g_dsEnv.abOptionsScratch = g_dsScratch;
+    g_dsEnv.pAnim           = &g_dsAnim;
+    g_dsEnv.pPanelShips     = &g_dsPanel[0];
+    g_dsEnv.pPanelMidA      = &g_dsPanel[1];
+    g_dsEnv.pPanelMidB      = &g_dsPanel[2];
+    g_dsEnv.pPanelRight     = &g_dsPanel[3];
+    g_dsEnv.pCtlA           = &g_dsCtl[21];
+    g_dsEnv.pCtlB           = &g_dsCtl[22];
+    g_dsEnv.apOptCtl        = g_dsOptCtl;
+    g_dsEnv.pSlotLabels     = g_dsSlotLabels;
+    g_dsEnv.pColor          = &g_dsColor;
+    g_dsEnv.pfnCloseUi      = DsCloseUi;
+    g_dsEnv.pCloseUser      = NULL;
+    g_dsEnv.pfnCtlBlit      = DsCtlBlit;
+    g_dsEnv.pfnCtlBlitEx    = DsCtlBlitEx;
+    g_dsEnv.pCtlBlitUser    = NULL;
+}
+
+static void TestDrawScreen(void)
+{
+    i32 nMin, nMax, nDiff, nYes161;
+    char szDsMsg[96];
+
+    printf("\nGeoscape_DrawScreen @ 0x6c16c\n");
+    if (!GdEnsureFont()) {
+        Check(false, "the real font is loaded, so the labels are real glyphs");
+        return;
+    }
+    if (!DsLoadTexts()) {
+        Check(false, "lang.dat texts.dat loaded, so the labels are the shipped strings");
+        return;
+    }
+    for (i32 i = 0; i < 7; ++i) {
+        snprintf(g_dsSlotLabels + i * PUFO_GEOOPT_LABEL_STRIDE, PUFO_GEOOPT_LABEL_STRIDE,
+                 "slot%d", (int)i);
+    }
+
+    /* Every label below is reached through a PUFO_TEXT_REC_* index, so the indices themselves
+     * have to be checked against the shipped lang.dat: a wrong index still paints a string, it
+     * just paints the wrong one. */
+    Check(DsRec(PUFO_TEXT_REC_OPTIONS)[0] != 0 && DsRec(PUFO_TEXT_REC_INTERCEPT)[0] != 0
+          && DsRec(PUFO_TEXT_REC_OPT_HEAD)[0] != 0 && DsRec(PUFO_TEXT_REC_OPT_SAVE)[0] != 0
+          && DsRec(PUFO_TEXT_REC_OPT_LOAD)[0] != 0 && DsRec(PUFO_TEXT_REC_OPT_QUIT)[0] != 0
+          && DsRec(PUFO_TEXT_REC_PICK_SAVE)[0] != 0 && DsRec(PUFO_TEXT_REC_PICK_LOAD)[0] != 0
+          && DsRec(PUFO_TEXT_REC_QUIT_ASK)[0] != 0 && DsRec(PUFO_TEXT_REC_YES)[0] != 0
+          && DsRec(PUFO_TEXT_REC_NO)[0] != 0 && DsRec(PUFO_TEXT_REC_OK)[0] != 0
+          && DsRec(PUFO_TEXT_REC_CANCEL)[0] != 0 && DsRec(PUFO_TEXT_REC_VOL_MUSIC)[0] != 0
+          && DsRec(PUFO_TEXT_REC_VOL_SOUND)[0] != 0 && DsRec(PUFO_TEXT_REC_OPT_COLUMNS)[0] != 0,
+          "all sixteen record indices name a non-empty shipped string");
+    Check(strcmp(DsRec(PUFO_TEXT_REC_YES), DsRec(PUFO_TEXT_REC_NO)) != 0,
+          "Да and Нет are different records (1163 / 1164)");
+    Check(strcmp(DsRec(PUFO_TEXT_REC_OK), DsRec(PUFO_TEXT_REC_CANCEL)) != 0,
+          "OK and Отмена are different records (1104 / 1144)");
+    Check(strcmp(DsRec(PUFO_TEXT_REC_PICK_SAVE), DsRec(PUFO_TEXT_REC_PICK_LOAD)) != 0,
+          "Выбрать запись and Выбрать загрузку are different records (1160 / 1161)");
+    Check(strcmp(DsRec(PUFO_TEXT_REC_VOL_MUSIC), DsRec(PUFO_TEXT_REC_VOL_SOUND)) != 0,
+          "the two volume captions are different records (1031 / 1032)");
+    Check(strcmp(DsRec(PUFO_TEXT_REC_OPT_SAVE), DsRec(PUFO_TEXT_REC_OPT_LOAD)) != 0
+          && strcmp(DsRec(PUFO_TEXT_REC_OPT_LOAD), DsRec(PUFO_TEXT_REC_OPT_QUIT)) != 0,
+          "the three menu rows are three different records (1157 / 1158 / 1159)");
+
+    /* --- a pending map selection closes the UI and draws nothing at all --- */
+    DsFixture();
+    g_dsSelFlag = 1;
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsCloseCalls, 1, "bMapSelectionFlag set calls Geoscape_CloseUI once (0x6C188)");
+    CheckEqI32(GdCount(0, 0, 240, 320), 0, "and the whole frame draws nothing (0x6C194)");
+    CheckEqI32(g_dsMapPad.nOriginX, -1, "not even the backdrop pad is moved");
+    CheckEqI32(g_dsClockPads[0]->nOriginX, 0, "nor any clock pad");
+
+    /* --- no overlay, no menu: the map alone, with the layer wrap disabled so the two map copies
+     *    can be read on their own --- */
+    DsFixture();
+    g_dsEnv.nScreenId = PUFO_RADAR_SCREEN_NO_WRAP;
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsCloseCalls, 0, "with the flag clear the close is not reached");
+    CheckEqI32(BdPix(130, 120), 0x0123,
+               "map copy 1 sits at -(scroll + nMapW/2 - 120) = -(-60 - 70) = 130 (0x6C1A4)");
+    CheckEqI32(BdPix(135, 124), 0x0123, "and the pad is 6x5, so its last pixel is (135, 124)");
+    CheckEqI32(BdPix(30, 120), 0x0123,
+               "map copy 2 is one map width on: -(scroll + nMapW + halfW) = 30 (0x6C1F0)");
+    CheckEqI32(BdPix(80, 122), 0, "and the two copies are separate blits, not a fill");
+    CheckEqI32(g_dsMapPad.nOriginX, 30, "the pad is left holding the second (wrap) origin");
+    CheckEqI32(g_dsMapPad.nOriginY, 120, "-(scroll + nMapH/2 - 160) = -(-10 - 110) = 120");
+    CheckEqI32(BdPix(5, 5), 0,
+               "but the menu wash is not painted: gOptionsScratch[4] is zero (0x6C64C)");
+
+    /* --- the layer pad, which takes the overlay origin on x and the map pad's y --- */
+    DsFixture();
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsLayerPad.nOriginX, 230,
+               "the last layer copy is overlay - scroll - halfW + nMapW = 0 + 60 + 70 + 100 (0x6C2B0)");
+    CheckEqI32(g_dsLayerPad.nOriginY, 120, "and its y is copied from the map pad, not recomputed");
+    Check(BdPix(230, 120) != 0 && BdPix(230, 120) == BdPix(130, 120),
+          "the third wrap copy paints the same colour as the first, at its own origin");
+    CheckEqI32(BdPix(225, 120), 0, "and it is a discrete 8-wide copy");
+
+    /* --- the wash and the shared tail, on a menu id the switch has no case for --- */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = 7;
+    Geoscape_DrawScreen(&g_dsEnv);
+    Check(BdPix(5, 5) != 0, "the 240x320 wash is painted once the gate opens (0x6C680)");
+    CheckEqI32(g_dsPadHits[21], 1, "the unknown id still runs the tail's cancel-control blit (0x6CEB8)");
+    Check(DsTextScan(7, PUFO_TEXT_REC_CANCEL, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax) == 0,
+          "an unknown id reaches the tail but fills no string, so the tail draws nothing (0x6C6B8)");
+
+    /* --- case 0: the options menu --- */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_MENU;
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsPadHits[0] + g_dsPadHits[1] + g_dsPadHits[2] + g_dsPadHits[3], 4,
+               "the menu blits exactly its four controls (0x6CC6C)");
+    CheckEqI32(g_dsPadHits[21], 2,
+               "case 0 blits the cancel control TWICE, at 0x6CE84 and again in the tail");
+    /* The font draws its ink a few rows below the y it is given (measured: y 111 puts the glyph at
+     * rows 114..123), so every band below starts three rows under the call site. */
+    nDiff = DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_OPT_HEAD, 0, 0, 63, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0, "the menu title Опции is painted on the y 60 line (0x6CD04)");
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242,
+          "the title is centred on 120, i.e. 120 - Text_MeasureWidth / 2");
+    Check(DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_OPT_SAVE, 0, 0, 104, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "row 0 draws Сохранить игру under control 0 at its y + 1 (0x6CD5C)");
+    Check(DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_OPT_QUIT, 0, 0, 134, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "row 3 draws Покинуть игру under control 3 at y 131");
+    Check(DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_CANCEL, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "and the tail draws Отмена under the cancel control at y 151 (0x6CEEC)");
+
+    /* --- cases 1 and 2 differ only in the title record --- */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_SAVE_LIST;
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsPadHits[0] + g_dsPadHits[1] + g_dsPadHits[2] + g_dsPadHits[3]
+                   + g_dsPadHits[4] + g_dsPadHits[5] + g_dsPadHits[6], 7,
+               "the slot list blits seven controls (0x6CBBC)");
+    CheckEqI32(g_dsPadHits[7], 0, "and no eighth");
+    const u32 uSaveTitle  = GdHash(100, 18);
+    const u32 uSaveLabels = GdHash(100, 101);
+    Check(DsTextScan(PUFO_GEOOPT_SAVE_LIST, PUFO_TEXT_REC_PICK_SAVE, 0, 0, 21, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "the save list draws its Выбрать запись title on the y 18 line (0x6CBAC)");
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242, "and centres that title on 120 as well");
+    Check(DsTextScan(PUFO_GEOOPT_SAVE_LIST, PUFO_TEXT_REC_CANCEL, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "the tail label is Отмена here too (0x6CEEC)");
+
+    /* The seven rows are not TEXTS records: they come from the 280-byte slot table. Changing one
+     * entry has to move exactly one row. */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_SAVE_LIST;
+    Geoscape_DrawScreen(&g_dsEnv);
+    snprintf(g_dsSlotLabels, PUFO_GEOOPT_LABEL_STRIDE, "ZZZZZ");
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_SAVE_LIST;
+    Geoscape_DrawScreen(&g_dsEnv);
+    Check(GdHash(100, 101) != uSaveLabels, "the seven rows are drawn from MainMenu_pSlotCtx, not from TEXTS");
+    snprintf(g_dsSlotLabels, PUFO_GEOOPT_LABEL_STRIDE, "slot0");
+
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_LOAD_LIST;
+    Geoscape_DrawScreen(&g_dsEnv);
+    Check(GdHash(100, 18) != uSaveTitle,
+          "the load list's title is a different record (1160 vs 1161)");
+    Check(GdHash(100, 101) == uSaveLabels,
+          "the seven slot labels are the same table in both cases -- only the title record changes");
+
+    /* --- case 3: Да under ctlB, Нет under ctlA --- */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_QUIT_ASK;
+    Geoscape_DrawScreen(&g_dsEnv);
+    CheckEqI32(g_dsPadHits[22], 1, "the confirm blits pGeoscapeCtlB (0x6C984)");
+    CheckEqI32(g_dsPadHits[21], 1, "and the cancel control once, in the tail");
+    nYes161 = DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_YES, 0, 0, 164, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nYes161 > 0, "Да is drawn on the ctlB->y + 1 line, i.e. 161 (0x6C9E0)");
+    Check(DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_YES, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax) == 0,
+          "and blanking it changes nothing on the tail line -- the two labels are separate draws");
+    nDiff = DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_NO, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0, "Нет is drawn by the tail on the ctlA->y + 1 line, i.e. 151 (0x6CEEC)");
+    Check(DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_NO, 0, 0, 164, BD_SURF_W, 10, &nMin, &nMax) == 0,
+          "and blanking it leaves the Да line untouched");
+    nDiff = DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_YES, 0, 0, 164, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242, "Да is centred on 120 like every other label");
+
+    /* The anchor is the control's own y, not a constant: moving ctlB moves the label with it. The
+     * differential scan is used again here rather than a background sample, because the menu wash
+     * is not one flat colour and would not separate the glyphs from the panel behind them. */
+    g_dsCtlBY = 170;
+    Check(DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_YES, 0, 0, 164, BD_SURF_W, 10, &nMin, &nMax) == 0,
+          "with ctlB moved to y 170 the old line 161 draws nothing");
+    nDiff = DsTextScan(PUFO_GEOOPT_QUIT_ASK, PUFO_TEXT_REC_YES, 0, 0, 174, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0 && nDiff == nYes161,
+          "and the identical label now sits on line 171 (LDRSH [R1,#2] then + 1)");
+    g_dsCtlBY = 160;
+
+    /* --- case 4: the volume screen --- */
+    DsFixture();
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = PUFO_GEOOPT_VOLUME;
+    Geoscape_DrawScreen(&g_dsEnv);
+    i32 nVolHits = 0;
+    for (i32 i = 9; i < 21; ++i) {
+        nVolHits += g_dsPadHits[i];
+    }
+    CheckEqI32(nVolHits, 12, "the volume screen blits controls 9..20, the six music then six sound (0x6C78C)");
+    CheckEqI32(g_dsPadHits[0] + g_dsPadHits[8], 0, "and none of the others");
+    nDiff = DsTextScan(PUFO_GEOOPT_VOLUME, PUFO_TEXT_REC_VOL_MUSIC, 0, 0, 93, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0, "the Громкость музыки caption is on the y 90 line (0x6C7F8)");
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242, "and it is centred on 120");
+    Check(DsTextScan(PUFO_GEOOPT_VOLUME, PUFO_TEXT_REC_VOL_SOUND, 0, 0, 133, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "the Громкость звука caption is on the y 130 line (0x6C850)");
+    Check(DsTextScan(PUFO_GEOOPT_VOLUME, PUFO_TEXT_REC_OK, 0, 0, 154, BD_SURF_W, 10, &nMin, &nMax) > 0,
+          "and the tail label here is OK, not Отмена (0x6CEEC with the case-4 string)");
+
+    /* The digits are snprintf'd, not TEXTS, so they are isolated against the panel colour itself.
+     * Measured: Text_DrawString(x, 111) inks rows 114..123, seven columns wide. */
+    const u16 uBg = (u16)BdPix(30, 105);
+    for (i32 i = 0; i < PUFO_GEOOPT_VOL_STEPS; ++i) {
+        snprintf(szDsMsg, sizeof(szDsMsg),
+                 "level %d is inked at x %d on the 111 line and the 151 line", i, 54 + 25 * i);
+        Check(DsDiffBg(54 + 25 * i, 114, 7, 10, uBg) > 0
+              && DsDiffBg(54 + 25 * i, 154, 7, 10, uBg) > 0, szDsMsg);
+    }
+    Check(DsDiffBg(61, 114, 18, 10, uBg) == 0, "the columns are 25 apart with a clear gap between them");
+    Check(DsDiffBg(54 + 25 * PUFO_GEOOPT_VOL_STEPS, 114, 7, 10, uBg) == 0,
+          "and there is no seventh column: the loop stops at 150 (0x6C8C4)");
+    Check(DsHashBox(54, 114, 7, 10) == DsHashBox(54, 154, 7, 10),
+          "the same digit 0 is drawn on the 111 line and the 151 line");
+    Check(DsHashBox(54, 114, 7, 10) != DsHashBox(79, 114, 7, 10),
+          "and 0 and 1 are different glyphs, so the loop really counts");
+    Check(BdPix(100, 82) != uBg && BdPix(100, 228) != uBg
+          && BdPix(22, 150) != uBg && BdPix(217, 150) != uBg,
+          "the four border rects at (22,82)-(217,228) are painted (0x6C700)");
+    Check(BdPix(100, 105) == uBg, "the inside of that border is plain wash");
+
+    /* --- the options overlay, and the fall-through when its animation is not done --- */
+    DsFixture();
+    g_dsAnimProgress = 0;
+    g_dsOptOpen = 1;
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = 7;
+    Geoscape_DrawScreen(&g_dsEnv);
+    Check(BdPix(5, 5) != 0,
+          "an unfinished overlay animation falls through to the menu branch (0x6C3B4 AND)");
+
+    DsFixture();
+    g_dsAnimProgress = 100;
+    g_dsOptOpen = 1;
+    g_dsScratch[4] = 1;
+    g_dsScratch[0] = 7;
+    Geoscape_DrawScreen(&g_dsEnv);
+    Check(BdPix(5, 5) == 0,
+          "a finished overlay takes the overlay branch instead, so no menu wash is painted");
+    CheckEqI32(g_dsPadHits[7] + g_dsPadHits[8], 2, "the overlay blits option controls 7 and 8 (0x6C5DC)");
+    CheckEqI32(g_dsPadHits[0], 0, "and none of the menu controls");
+    nDiff = DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_INTERCEPT, 1, 0, 36, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0, "the Перехват цели title is on the y 33 line (0x6C488)");
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242, "and it is centred on 120 too");
+    nDiff = DsTextScan(PUFO_GEOOPT_MENU, PUFO_TEXT_REC_OPT_COLUMNS, 1, 0, 53, BD_SURF_W, 10, &nMin, &nMax);
+    Check(nDiff > 0, "the column header row is drawn from x 8 on the y 50 line (0x6C430)");
+    Check(nMin >= 8 && nMin <= 12, "and it is left-anchored at 8, not centred");
+    Check(BdPix(80, 75) != 0 && BdPix(150, 75) != 0 && BdPix(200, 75) != 0,
+          "the three column rules at x 80 / 150 / 200 are painted (0x6C4D0..0x6C530)");
+    Check(BdPix(120, 75) == 0, "and nothing between them at that row");
+
+    free(g_dsTexts);
+    g_dsTexts = NULL;
+    Asset_CloseArchives();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -6685,6 +7270,7 @@ int main(void)
     TestRadarUpdate();
     TestDrawStrategIcons();
     TestDrawClockPads();
+    TestDrawScreen();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

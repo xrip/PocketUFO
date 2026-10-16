@@ -2467,6 +2467,41 @@ Order is by what unblocks what. Each item ends with gates + commit.
   0x186C20, 0x186E40, 0x159618), 3 function comments and 4 halving-site comments. The clock block base is corrected in the port too: it is
   `gUiRootPanel(0x158890) + 0xBE4 + 4 * 101 = 0x159608`, not the 0x158A14 `pufo_clock.h` claimed.
 
+- [x] **part 83, the whole geoscape frame: `Geoscape_DrawScreen (0x6c16c, 3,476 B)`** — the caller of the
+  two leaves part 82 ported. **The backdrop is the radar backdrop.** 0x6C1A4..0x6C340 is instruction-for-
+  instruction the body of `RadarScreen_BlitMapBackdrop`: the same half-extents, the two map-pad blits, the
+  three layer copies at `bias - scroll - halfW`, that minus `nMapW` and that plus `nMapW`. The port factors
+  it into one `Smap_BlitWrappedBackdrop` helper rather than transcribing it twice.
+  **`gOptionsScratch[0]` is the geoscape options menu id**, decoded from the shipped lang.dat strings rather
+  than guessed: 0 options menu (TEXTS[1156] "Опции" + 1157/1158/1159 rows), 1 save slots (TEXTS[1160]
+  "Выбрать запись"), 2 load slots (TEXTS[1161] "Выбрать загрузку"), 3 quit confirm (TEXTS[1162] + 1163 "Да"
+  + 1164 "Нет"), 4 volume (TEXTS[1031]/[1032] captions with six snprintf'd digits at x 54 + 25*i); any other
+  value reaches the tail only. `gOptionsScratch[4]` gates the whole layer — when it is zero the wash, the menu
+  **and** the tail label are all skipped (0x6C64C `BEQ loc_6CEF0`). A new IDB enum `PufoOptionsMenuId` records
+  the dispatch and `gOptionsScratch @ 0x159E88` now carries its layout.
+  **The copy loops name their record through their offset.** The byte offsets are exactly `record * 205`:
+  0x39CE7 = 1155, 0x39E81 = 1157, 0x39F4E = 1158, 0x33A68 = 1032, 0x3A41C = 1164. That is what pins each
+  label to a record without reading the strings out of the IDB (the TEXTS labels there are zero-filled).
+  **Hex-Rays mislabels a stack slot again.** 0x6C39C stores 0xB4 into the dword Hex-Rays calls `nKey`; it is
+  `nH = 180`. The real `nKey` is the byte at 0x6C398, which `MOV R3, #0` sets to 0.
+  **The shared tail.** Every case leaves its last string in `psz` and 0x6CEB4/0x6CEEC blits `pGeoscapeCtlA`
+  and draws it centred at `120 - Text_MeasureWidth / 2` on `pGeoscapeCtlA->y + 1`. Cases 0..3 leave "Отмена",
+  case 4 leaves "OK", and case 0 is the only case that blits `pGeoscapeCtlA` twice (0x6CE84 and the tail). The
+  seven slot rows are **not** TEXTS: they come from `MainMenu_pSlotCtx @ 0x156938`, seven 40-byte labels.
+  **1 deviation recorded, not hidden:** the original never initialises `psz`, and its switch default jumps
+  straight to the tail, which then draws whatever the stack held at sp+0x18. The port initialises it, so the
+  ids the game uses (0..4) are unchanged and an unknown id draws nothing instead of stack garbage.
+  **How the new tests avoid testing nothing.** Every menu paints a solid wash behind its labels, so a lit-
+  pixel count is satisfied by the panel alone — the first draft of this group had exactly that defect and a
+  "no seventh digit column" check that the panel background made red. Each case is now run twice, once with
+  the TEXTS record intact and once with its first byte zeroed, and the assertions are on the pixels that
+  DIFFER. A mutation (title band moved from y 63 to y 80) turns the title check red, confirming the checks are
+  position-sensitive. Measured along the way: `Text_DrawString(x, y)` inks rows y+3..y+12 with this font.
+  **0 new ledger rows (226 on record), 89 markers, 0 renames (426 on record).** 77 new checks (14019 total,
+  60 suites), coverage 920/1103 (83.4%) and 499512/598792 (83.4%); `strat` moves to 195/204 functions and
+  120,508 of 160,496 bytes (75.1%). IDB: 14 line comments on the label sites, one on `gOptionsScratch`, one
+  function comment at 0x6c16c, and the `PufoOptionsMenuId` enum.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2803,6 +2838,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the map recentre click (`Smap_OnPointerUp`; the half-extents — read as ceilings here and corrected in unit 82, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
 | the geoscape event pass (`StrategList_ProcessEvents`, `Strateg_ConfirmInterceptTarget`; the `_rt_udiv` divisor-first convention, the exact 1/60 interpolation constant, the six re-reads behind the arrival dispatch, the wrapped-leg winner, the fractional diagonal, 1 original bug found, the 0x159E74 naming fix and the `Tact_Shutdown` wrong-index removal it exposed) | 60/60 (Release) | 13890 | 917/1103 (83.1%) | 492808/598792 (82.3%) | 40 checked, 0 mismatched |
 | the strateg icons and the clock strip (`Smap_DrawStrategIcons`, `Geoscape_DrawClockPads`; the halving triple corrected — ADDMI is add-if-minus, so Hex-Rays' `/ 2` was faithful and the port's ceil was not, the palette-slot-32 forcing cross-confirmed by `mapbits.pal`, zoom scaling both axes, the `>` wrap that leaves the map-size coordinate alone, the low-halfword animation phase, the blank `mapbits +6` frame measured in main.dat, the day-tens blit gate, the divisor-first `_rt_udiv`, the `apLayerPad` → `apClockDigitPads` misnomer and the corrected 0x159608 clock base) | 60/60 (Release) | 13942 | 919/1103 (83.3%) | 496036/598792 (82.8%) | 40 checked, 0 mismatched |
+| the whole geoscape frame (`Geoscape_DrawScreen`; the backdrop proven identical to the radar backdrop and factored into one helper, `gOptionsScratch[0]` decoded as the five-way options menu id from the shipped strings and `gOptionsScratch[4]` as its gate, the record * 205 copy offsets naming each label's record, the `nKey`/`nH` stack-slot mislabel corrected, the shared tail and case 0's double cancel blit, the slot rows proven to come from `MainMenu_pSlotCtx` rather than TEXTS, the uninitialised-`psz` default path recorded as a deviation) | 60/60 (Release) | 14019 | 920/1103 (83.4%) | 499512/598792 (83.4%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that
