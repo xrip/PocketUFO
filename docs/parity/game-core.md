@@ -15176,3 +15176,43 @@ the slot under test. The gate case asserts the opposite of a naive reading: the 
 ARE written before the readiness gate, and only the flag, the sound, the line, the button and the
 pause are skipped. A separate case sets the names panel's nUnk3032 to a row the stores panel does not
 have ready at the same index, which is only observable because both aux arrays share one index.
+## Unit 79 -- Smap_ResolveInterceptUI @ 0x84964 (340 B)
+
+Ported in src/pufo/game/pufo_baseui.c as Smap_ResolveInterceptUI over a SmapResolveInterceptEnv, with
+the evidence block in pufo_baseui.h. It is a click handler installed by Geoscape_Draw, and it is the
+answer to the message line that sits under the map cursor: the flag on line 0 decides what the pending
+order becomes.
+
+- 0x84968: GameTime_Set5Sec (sample 17, the tick goes back to five seconds, nav control 0 lights).
+  0x84984: bInterceptDone @ 0x18709C is cleared.
+- 0x84988: flag 27 sends line 0's colour slot 0 to Ship_RetargetTravel -- the craft is sent home along
+  a fresh travel leg. This is the same flag-27 line Smap_HitTestStrategSelect and (unit 78)
+  OptionsScreen_OnConfirm append.
+- 0x849B4: the flag is read a SECOND time and tested against 13. On 13 the function inserts a flag-11
+  line at index 1 carrying line 0's colour SLOT 1 masked to a byte (0x849DC), removes line 0 (0x849FC)
+  so the flag-11 line lands at index 0, sets bInterceptDone (0x84A04), pauses the clock and returns.
+  **0x84A10 branches to 0x84A9C, which is past the bFinalMissionCtlArmed clear at 0x84A94** -- the flag-13
+  path is the only one that leaves the final-mission control armed. Hex-Rays renders the two paths
+  correctly here but nothing marks the skip.
+- Any other flag: 0x84A20..0x84A3C clear 0x187090, 0x18708C, bMapSelectionFlag and 0x187098 -- the same
+  four bytes Smap_CancelTarget drops, in a different order and before the rest instead of after it.
+  Then three dismiss tests against 23, 21 and 22, each RE-READING line 0 (0x84A44, 0x84A58, 0x84A6C).
+  Smap_DismissSelected removes line 0 itself (0x84454), so these are not three tests of one flag: a
+  match shifts the list and the next test sees the line that was underneath. With [23, 21] two different
+  craft are dismissed; with [23, 18] only the first is.
+- ORIGINAL BUG (0x84A80): the tail UiPanel_RemoveLine(0) is unconditional. After a dismiss already
+  dropped line 0 it eats the NEXT message line, and the count test at 0x84A84 then unpauses a step
+  earlier than the messages warrant. Reproduced, with a test that shows the flag-18 line disappearing
+  while its craft is never touched.
+
+Naming: the port's GeoscapePointerEnv field for 0x187068 was pbTargetSelectActive, a name from before
+unit 78 showed what the byte gates. It is pbFinalMissionCtlArmed now, in the env, the two handlers and
+the test fixture, and the IDB name bFinalMissionCtlArmed is the one both sides use. byte_18709C is
+bInterceptDone in the IDB, matching the port's existing pbInterceptDone.
+
+IDB: byte_18709C renamed bInterceptDone, a function comment at 0x84964 and line comments at 0x84A10 (the
+branch that skips the armed clear), 0x84A20 (the four bytes), 0x84A4C (the shifting dismiss tests) and
+0x84A80 (the unconditional removal).
+
+38 new checks in tests/test_geoscape.c, on a fixture with two craft and two strateg entries so the two
+dismiss cases can be told apart by which craft's proximity timer restarts.

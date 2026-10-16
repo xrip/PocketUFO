@@ -3189,6 +3189,48 @@ typedef struct SmapConfirmTargetEnv {
 
 void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv);
 
+/* ------------------------------------------------- answering the message line under the map
+ *
+ * Evidence: Smap_ResolveInterceptUI @ 0x84964 (340 B). Installed as a click handler by Geoscape_Draw.
+ *
+ * 1. 0x84968: GameTime_Set5Sec -- the geoscape goes back onto a five-second tick and sample 17 plays.
+ *    0x84984: byte_18709C (the "intercept resolved" byte the two pointer dispatchers read) is cleared.
+ * 2. 0x84988: flag 27 on message line 0 -- the pick-a-cell line Smap_HitTestStrategSelect and
+ *    OptionsScreen_OnConfirm both append -- sends line 0's colour slot 0 to Ship_RetargetTravel, i.e.
+ *    the craft is sent home along a fresh travel leg.
+ * 3. 0x849B4: the flag is read a SECOND time and tested against 13. On 13: insert a flag-11 line at
+ *    index 1 carrying line 0's colour SLOT 1 masked to a byte (0x849DC), remove line 0 (0x849FC), so
+ *    the flag-11 line lands at index 0; set byte_18709C to 1 (0x84A04); GameTime_Pause; and return.
+ *    The branch jumps 0x84A10 -> 0x84A9C, which is past the armed-byte clear at 0x84A94, so this path
+ *    leaves bFinalMissionCtlArmed alone.
+ * 4. Any other flag: clear 0x187090, 0x18708C, bMapSelectionFlag and 0x187098 (0x84A20..0x84A3C) --
+ *    the same four bytes Smap_CancelTarget drops, in a different order and before the rest instead of
+ *    after it. Then three dismiss tests, each re-reading line 0 (0x84A44, 0x84A58, 0x84A6C) against
+ *    23, 21 and 22 and calling Smap_DismissSelected on a match. **Each of those calls removes line 0
+ *    itself**, so the three tests are not three tests of one flag: a match shifts the list and the
+ *    next test sees the line that was underneath. Then 0x84A80 removes line 0 AGAIN, unpauses only if
+ *    the list is now empty (0x84A84 reads the count byte at 0x158890+0xD48 after the removal), and
+ *    clears bFinalMissionCtlArmed.
+ *
+ * ORIGINAL BUG (0x84A80): that tail removal is unconditional. When one of 23/21/22 matched,
+ * Smap_DismissSelected already dropped the line, so the tail drops the NEXT message instead -- an
+ * unrelated line is eaten and the clock can unpause a step earlier than the messages warrant. */
+typedef struct SmapResolveInterceptEnv {
+    UiLineList           *pLines;            /* the root message list @ 0x158890 */
+    u8                   *pbInterceptDone;   /* byte_18709C */
+    u8                   *pbFlag187090;
+    u8                   *pbFlag18708C;
+    u8                   *pbFlag187098;
+    u8                   *pbSelectionFlag;   /* bMapSelectionFlag @ 0x159E84 */
+    u8                   *pbFinalMissionCtl; /* bFinalMissionCtlArmed @ 0x187068 */
+    GeoscapeWorld        *pWorld;            /* GameTime_Set5Sec's tick dword */
+    UiControl *const     *apSpeedCtl;        /* the six nav speed controls */
+    const ShipRemovalEnv *pShipEnv;          /* Ship_RetargetTravel and Smap_DismissSelected */
+    GameTime             *pTime;
+} SmapResolveInterceptEnv;
+
+void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv);
+
 /* ------------------------------------------------- delivering what a mission brought back
  *
  * Evidence: Smap_GrantSiteRecovery @ 0x98b50 (2572 B), one caller, Geoscape_TickHourly @ 0x5d1bc.

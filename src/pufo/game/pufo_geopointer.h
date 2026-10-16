@@ -65,7 +65,7 @@
  *   3. The world arm (LABEL_25 @ 0x896B4) clears the drag flag (0x896BC) instead of running the
  *      drag block, plays Sound_Play(17) in almost every flag arm, and merges flags 17 with 15
  *      (LABEL_30 @ 0x89760), flags 21/22/23 with 12 (LABEL_52 @ 0x89AA0), flags 10 with 60 and
- *      flags 13 with 27. With no flag matched it clears the target-select flag (0x89CD8), returns
+ *      flags 13 with 27. With no flag matched it clears bFinalMissionCtlArmed (0x89CD8), returns
  *      2 on screen 2, and otherwise releases all thirteen root controls.
  *   4. Where the press only tracked the hovered row, the release clicks the list:
  *      UiPanel_ClickRow @ 0x3eee0 on the soldier-name, research, manuf, buy/sell, plane, screen-16
@@ -170,7 +170,7 @@ typedef struct GeoscapePointerEnv {
     u8  *pbNewBaseMode;           /* bBaseFacDone @ 0x187078, also byte_187074[4] */
     u8  *pbPlaceFail;             /* bBasePlaceFail @ 0x1870B8 */
     u8  *pbPlaceActive;           /* bBasePlaceActive @ 0x1870BC */
-    u8  *pbTargetSelectActive;    /* unk_187068 */
+    u8  *pbFinalMissionCtlArmed;  /* bFinalMissionCtlArmed @ 0x187068, arms the final-mission control */
     u8  *pbInterceptDone;         /* byte_18709C[0] @ 0x18709C */
     u8  *pbMultiSelectPanel;      /* byte_18709C[4] @ 0x1870A0 (bSmapMultiSelectPanel) */
     const u8 *pbPlacementPending; /* bBaseFacConfirm @ 0x1870AC */

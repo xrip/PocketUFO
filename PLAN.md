@@ -2351,6 +2351,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   checks (13712 total, 60 suites), coverage 913/1103 (82.8%) and 486552/598792 (81.3%); `strat-ui` moves to
   224/245 functions and 84,272 of 121,164 bytes (69.5%). IDB: 3 renames (412 on record) and 21 comments.
 
+- [x] **part 79, the map-order answer: `Smap_ResolveInterceptUI (0x84964, 340 B)`** — the click handler
+  `Geoscape_Draw` installs, which reads the flag on message line 0 and decides what the pending order
+  becomes. `GameTime_Set5Sec` and a cleared `bInterceptDone` first; flag 27 sends the craft in colour slot 0
+  home via `Ship_RetargetTravel`; flag 13 rewrites the line (insert a flag-11 line at index 1 carrying line
+  0's colour **slot 1** masked to a byte, drop line 0), sets `bInterceptDone`, pauses and returns; anything
+  else clears the four selection bytes, runs three dismiss tests on 23/21/22, removes line 0 again, unpauses
+  only if the list is empty, and clears `bFinalMissionCtlArmed`.
+  **Three things only the ARM showed.** 0x84A10 branches to 0x84A9C, *past* the armed-byte clear at 0x84A94,
+  so the flag-13 path is the only one that leaves the final-mission control armed. The three dismiss tests
+  each re-read line 0 and `Smap_DismissSelected` removes line 0 itself (0x84454), so they are not three
+  tests of one flag — a match shifts the list and the next test sees the line underneath (`[23, 21]`
+  dismisses two different craft). **ORIGINAL BUG (0x84A80):** the tail removal is unconditional, so after a
+  dismiss it eats the NEXT message line and the clock unpauses a step early.
+  **Naming follow-through:** the port's `GeoscapePointerEnv` field for 0x187068 was `pbTargetSelectActive`, a
+  name from before unit 78 showed what that byte gates; it is `pbFinalMissionCtlArmed` in the env, both
+  handlers and the test fixture now, matching the IDB. `byte_18709C` → `bInterceptDone`.
+  **1 ledger row (224 on record), 87 markers.** 38 new checks (13750 total, 60 suites), coverage
+  914/1103 (82.9%) and 486892/598792 (81.3%); `strat` moves to 189/204 functions and 107,888 of 160,496
+  bytes (67.2%). IDB: 1 rename (413 on record) and 5 comments.
+
+- **Consequence for the ordering.**
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2683,6 +2705,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the audio-save callee (`Options_SaveAudioSettings`; all three arguments dead, the recursion's real two-pass shape via `OptionsScreen_Init` clearing the controls byte, the tab-4-only registry write, the pause-resume tail, 5 IDB renames with one corrected in the same unit) | 60/60 (Release) | 13632 | 911/1103 (82.6%) | 483132/598792 (80.7%) | 40 checked, 0 mismatched |
 | the options overlay (`OptionsScreen_Open`; the toggle, the four-panel release, the signed base match against `BaseRec.bUnk4`, the four-column craft rows, the TEXTS 149–152 / 1165–1172 labels, the uninitialised region label found) | 60/60 (Release) | 13683 | 912/1103 (82.7%) | 486292/598792 (81.2%) | 40 checked, 0 mismatched |
 | the overlay row confirm (`OptionsScreen_OnConfirm`; the shared aux index behind the readiness gate, the flag-27 travel-order line, the final-mission arm pinned to the Cydonia topic and the Avenger through the shipped data files, 1 latent out-of-bounds row) | 60/60 (Release) | 13712 | 913/1103 (82.8%) | 486552/598792 (81.3%) | 40 checked, 0 mismatched |
+| the map-order answer (`Smap_ResolveInterceptUI`; the flag-13 path that skips the armed-byte clear, the three dismiss tests that each re-read a shifting line 0, the unconditional tail removal found, the `0x187068` naming follow-through) | 60/60 (Release) | 13750 | 914/1103 (82.9%) | 486892/598792 (81.3%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

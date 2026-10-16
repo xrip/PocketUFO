@@ -86,7 +86,7 @@ static i32 PointerWorld(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDo
         (void)Ptr_HitSlot(pEnv, GEOUI_CTL_186BA4, nX, nY);
         return Ptr_HitSlot(pEnv, GEOUI_CTL_186BB4, nX, nY);
     }
-    if (*pEnv->pbTargetSelectActive != 0) {                                  /* 0x8759C */
+    if (*pEnv->pbFinalMissionCtlArmed != 0) {                                  /* 0x8759C */
         const i32 nHit = Ptr_HitSlot(pEnv, GEOUI_CTL_186B8C, nX, nY);
         if (nHit != 0) {
             return nHit;
@@ -682,7 +682,7 @@ static void PtrUp_ClickPanelRow(const GeoscapePointerEnv *pEnv, UiPanel *pPanel)
 /* ------------------------------------------------- screens 0 and 2: LABEL_25 @ 0x896B4
  *
  * The flag chain first, then the radar / multi-select gates, then the fall-through that clears
- * the target-select flag and - on any screen but 2 - releases all thirteen root controls. */
+ * the final-mission armed flag and - on any screen but 2 - releases all thirteen root controls. */
 static i32 PointerUpWorld(const GeoscapePointerEnv *pEnv)
 {
     *pEnv->pbDragActive = 0;                                                      /* 0x896BC */
@@ -692,7 +692,7 @@ static i32 PointerUpWorld(const GeoscapePointerEnv *pEnv)
         (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
         return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
     }
-    if (*pEnv->pbTargetSelectActive != 0) {                                       /* 0x8971C */
+    if (*pEnv->pbFinalMissionCtlArmed != 0) {                                       /* 0x8971C */
         const i32 nHit = PtrUp_HitSlot(pEnv, GEOUI_CTL_186B8C);
         if (nHit != 0) {
             return nHit;
@@ -754,10 +754,10 @@ static i32 PointerUpWorld(const GeoscapePointerEnv *pEnv)
         return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
     }
 
-    /* 0x89CD4..0x89D20: nothing matched. The target-select flag is dropped, screen 2 returns 2,
+    /* 0x89CD4..0x89D20: nothing matched. The final-mission armed flag is dropped, screen 2 returns 2,
      * and every other screen releases all thirteen root controls - with no null check, unlike
      * the strip run in case 1. */
-    *pEnv->pbTargetSelectActive = 0;
+    *pEnv->pbFinalMissionCtlArmed = 0;
     if (*pEnv->pnScreenId == 2) {
         return 2;
     }

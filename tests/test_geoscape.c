@@ -1304,6 +1304,213 @@ static void TestDismissSelected(void)
     free(pEntry);
 }
 
+/* Smap_ResolveInterceptUI @ 0x84964: the flag standing on message line 0 decides what the pending
+ * map order becomes. Two craft with their own strateg entries, one base at (100, 200), and a message
+ * list the function edits. */
+static void TestResolveInterceptUI(void)
+{
+    static UiLineList lines;
+    static GameTime time;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static Ship g_aShip[2];
+    static Ship *g_apShip[2];
+    static BaseRec g_Base;
+    static BaseRec *g_apBase[1];
+    static Soldier *g_apSol[1];
+    static ObjectRecFull *g_apObj[1];
+    static u8 g_abHangar[64];
+    static i32 g_anAssigned[1];
+    static UiControl ctl[6];
+    static UiControl *apCtl[6];
+    static StrategItem *pEnt[2];
+    static i32 nSeed, nTotalSec, nAssignedCount;
+    static u8 nShipCount, once;
+    static u16 nSoldierCount;
+    static u8 bSelected, bDone, b8C, b90, b98, bArmed;
+    ShipRemovalEnv env;
+    SmapResolveInterceptEnv renv;
+    void **apSlots;
+
+    printf("Smap_ResolveInterceptUI\n");
+
+    for (int i = 0; i < 2; ++i) {
+        memset(&g_aShip[i], 0, sizeof(g_aShip[i]));
+        g_aShip[i].bId = (u8)(10 + i);
+        g_aShip[i].bHomeBase = 0;
+        g_aShip[i].bIntercepting = 1;
+        g_aShip[i].nStrategIdx = 0; /* item 0 is type 1, so no one-shot waypoint is removed */
+        g_apShip[i] = &g_aShip[i];
+        pEnt[i] = (StrategItem *)calloc(1, sizeof(StrategItem));
+        pEnt[i]->nType = 1;
+        pEnt[i]->bActive = 0;
+        pEnt[i]->nDisplayId = (u8)(10 + i); /* found by Ship.bId */
+        pEnt[i]->nTimer = (i == 0) ? 111 : 222;
+        pEnt[i]->nX = 40;
+        pEnt[i]->nY = 60;
+    }
+    apSlots = (void **)malloc(sizeof(void *) * 2);
+    apSlots[0] = pEnt[0];
+    apSlots[1] = pEnt[1];
+    list.nCount = 2;
+    list.apItems = apSlots;
+
+    memset(&g_Base, 0, sizeof(g_Base));
+    g_Base.nUnk8 = 100;
+    g_Base.nUnk12 = 200;
+    g_apBase[0] = &g_Base;
+
+    nShipCount = 2;
+    nSoldierCount = 0;
+    nAssignedCount = 0;
+    once = 0;
+    nTotalSec = 0;
+    nSeed = 0;
+    world.apCraft = g_apShip;
+    world.nShipCount = 2;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+    for (int i = 0; i < 6; ++i) {
+        apCtl[i] = &ctl[i];
+    }
+
+    env.apCraft = g_apShip;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = g_apSol;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = g_apObj;
+    env.nObjectCount = 0;
+    env.pStrategList = &list;
+    env.pWorld = &world;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctx;
+    env.abHangarFlag = g_abHangar;
+    env.nHangarFlagCap = 64;
+    env.anAssignedShip = g_anAssigned;
+    env.pnAssignedShipCount = &nAssignedCount;
+    env.apBases = g_apBase;
+    env.pnGameTotalSec = &nTotalSec;
+
+    memset(&renv, 0, sizeof(renv));
+    renv.pLines = &lines;
+    renv.pbInterceptDone = &bDone;
+    renv.pbFlag187090 = &b90;
+    renv.pbFlag18708C = &b8C;
+    renv.pbFlag187098 = &b98;
+    renv.pbSelectionFlag = &bSelected;
+    renv.pbFinalMissionCtl = &bArmed;
+    renv.pWorld = &world;
+    renv.apSpeedCtl = apCtl;
+    renv.pShipEnv = &env;
+    renv.pTime = &time;
+
+    /* Flag 27 -- the pick-a-cell line -- sends the craft home and the tail still runs. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    memset(ctl, 0, sizeof(ctl));
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 27;
+    lines.abLineFlags[1] = 40;
+    lines.anColor[0][0] = 0;
+    time.bPaused = 1;
+    world.nTickSeconds = 60;
+    ctl[3].nState = 1;
+    bSelected = 1; b8C = 1; b90 = 1; b98 = 1; bDone = 1; bArmed = 1;
+    Smap_ResolveInterceptUI(&renv);
+    CheckEqI32(world.nTickSeconds, 5, "the head runs GameTime_Set5Sec (0x84968)");
+    CheckEqI32(ctl[0].nState, 1, "  which lights nav control 0");
+    CheckEqI32(ctl[3].nState, 0, "  and darkens the one that was lit");
+    CheckEqI32(bDone, 0, "byte_18709C is cleared on entry (0x84984)");
+    CheckEqI32(pEnt[0]->nTimer, 0, "flag 27 retargets the craft in colour slot 0: its timer restarts (0x849AC)");
+    CheckEqI32(pEnt[0]->nDestX, 100, "  towards the home base x");
+    CheckEqI32(pEnt[0]->nDestY, 200, "  and y");
+    CheckEqI32(g_aShip[0].bIntercepting, 0, "  and the intercept flag is cleared");
+    CheckEqI32(pEnt[1]->nTimer, 222, "the other craft is left alone");
+    CheckEqI32(bSelected, 0, "the tail clears the selection byte (0x84A34)");
+    CheckEqI32(b8C, 0, "  and 0x18708C (0x84A2C)");
+    CheckEqI32(b90, 0, "  and 0x187090 (0x84A24)");
+    CheckEqI32(b98, 0, "  and 0x187098 (0x84A3C)");
+    CheckEqI32(lines.nLineCount, 1, "line 0 is dropped and the flag-40 line survives");
+    CheckEqI32(lines.abLineFlags[0], 40, "  shifted down into slot 0");
+    CheckEqI32(time.bPaused, 1, "a message is still up, so the clock stays paused (0x84A84)");
+    CheckEqI32(bArmed, 0, "and the final-mission control is cleared on this path (0x84A94)");
+
+    /* Flag 13 is a different animal: it rewrites the line, pauses, and skips the whole tail. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 13;
+    lines.abLineFlags[1] = 40;
+    lines.anColor[0][1] = 0x1234;
+    time.bPaused = 0;
+    bSelected = 1; b8C = 1; b90 = 1; b98 = 1; bDone = 0; bArmed = 1;
+    pEnt[0]->nTimer = 111;
+    Smap_ResolveInterceptUI(&renv);
+    CheckEqI32(lines.nLineCount, 2, "flag 13 inserts a line at 1 and drops line 0 (0x849F0 / 0x849FC)");
+    CheckEqI32(lines.abLineFlags[0], 11, "the flag-11 line lands at index 0");
+    CheckEqI32((i32)lines.anColor[0][0], 0x34, "carrying line 0's colour SLOT 1 masked to a byte (0x849DC)");
+    CheckEqI32(lines.abLineFlags[1], 40, "and the line that was at index 1 lands back at index 1");
+    CheckEqI32(bDone, 1, "byte_18709C is set on this path (0x84A04)");
+    CheckEqI32(time.bPaused, 1, "and the clock is paused (0x84A0C)");
+    CheckEqI32(bArmed, 1, "0x84A10 branches to 0x84A9C, past the clear, so the armed byte survives");
+    CheckEqI32(bSelected, 1, "and none of the four selection bytes are touched");
+    CheckEqI32(b90, 1, "  including 0x187090");
+    CheckEqI32(pEnt[0]->nTimer, 111, "flag 13 does not retarget the craft -- only flag 27 and the dismiss arms do");
+
+    /* ORIGINAL BUG (0x84A80): the tail removal is unconditional. A dismiss already dropped line 0,
+     * so the tail eats the NEXT message and the clock unpauses a step early. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 23;
+    lines.abLineFlags[1] = 18;
+    lines.anColor[0][0] = 0;
+    lines.anColor[1][0] = 1;
+    time.bPaused = 1;
+    bSelected = 1; b8C = 1; b90 = 1; b98 = 1; bDone = 0; bArmed = 1;
+    pEnt[0]->nTimer = 111;
+    pEnt[1]->nTimer = 222;
+    Smap_ResolveInterceptUI(&renv);
+    CheckEqI32(pEnt[0]->nTimer, 0, "flag 23 runs Smap_DismissSelected, which retargets craft 0 (0x84A4C)");
+    CheckEqI32(pEnt[1]->nTimer, 222, "the flag-18 line under it is not a dismiss, so craft 1 is untouched");
+    CheckEqI32(lines.nLineCount, 0, "and the tail removal eats that flag-18 message too (0x84A80)");
+    CheckEqI32(time.bPaused, 0, "  which is why the clock unpauses here (0x84A90)");
+    CheckEqI32(bArmed, 0, "and the armed byte is cleared on this path");
+
+    /* The three dismiss tests re-read line 0, and every dismiss removes line 0 -- so a second
+     * dismissable line underneath is dismissed by the NEXT test, not by the one that saw it. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 23;
+    lines.abLineFlags[1] = 21;
+    lines.anColor[0][0] = 0;
+    lines.anColor[1][0] = 1;
+    time.bPaused = 1;
+    pEnt[0]->nTimer = 111;
+    pEnt[1]->nTimer = 222;
+    Smap_ResolveInterceptUI(&renv);
+    CheckEqI32(pEnt[0]->nTimer, 0, "the flag-23 test dismisses craft 0");
+    CheckEqI32(pEnt[1]->nTimer, 0, "and the shift hands the flag-21 line to the next test, which dismisses craft 1 (0x84A58)");
+    CheckEqI32(lines.nLineCount, 0, "both lines are gone and the guarded tail removal adds nothing (0x84A80)");
+    CheckEqI32(time.bPaused, 0, "so the clock resumes");
+
+    /* A null env touches nothing. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    bArmed = 1;
+    world.nTickSeconds = 60;
+    Smap_ResolveInterceptUI(NULL);
+    CheckEqI32(world.nTickSeconds, 60, "a null env does not even run GameTime_Set5Sec");
+    CheckEqI32(bArmed, 1, "  and clears nothing");
+
+    for (int i = 0; i < 2; ++i) {
+        free(pEnt[i]);
+    }
+    free(apSlots);
+}
+
 static void TestInitCraftSelectState(void)
 {
     static u8 g_abGrid[1524];
@@ -5773,6 +5980,7 @@ int main(void)
     TestClearSelection();
     TestRadarWeaponHit();
     TestDismissSelected();
+    TestResolveInterceptUI();
     TestInitCraftSelectState();
     TestBeginCraftSelect();
     TestDemolishBase();

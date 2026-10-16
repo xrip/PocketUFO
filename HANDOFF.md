@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 913 / 1103 (82.8%)
-                                             bytes cited:     486552 / 598792 (81.3%)
-python docs/parity/audit_credits.py       -> credited functions: 913, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 412 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 914 / 1103 (82.9%)
+                                             bytes cited:     486892 / 598792 (81.3%)
+python docs/parity/audit_credits.py       -> credited functions: 914, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 413 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 223, ORIGINAL BUG markers in src/pufo: 85
+python docs/parity/audit_bugs.py          -> ledger rows: 224, ORIGINAL BUG markers in src/pufo: 87
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,8 +229,25 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13712**. Coverage as of the latest commit: **913 / 1103
-functions (82.8%)**, **486552 / 598792 bytes (81.3%)**. This unit ported the options overlay's row confirm —
+Test checks run across the 60 suites: **13750**. Coverage as of the latest commit: **914 / 1103
+functions (82.9%)**, **486892 / 598792 bytes (81.3%)**. This unit ported the answer to a geoscape message
+line — `Smap_ResolveInterceptUI` (0x84964, 340 B), the click handler `Geoscape_Draw` installs, which reads the
+flag on message line 0 and decides what the pending map order becomes. `GameTime_Set5Sec` and a cleared
+`bInterceptDone` first; flag 27 sends the craft in colour slot 0 home through `Ship_RetargetTravel`; flag 13
+rewrites the line (insert a flag-11 line at index 1 carrying line 0's colour **slot 1** masked to a byte, drop
+line 0), sets `bInterceptDone`, pauses and returns; anything else clears the four selection bytes, runs three
+dismiss tests on 23/21/22, removes line 0 again, unpauses only if the list is empty, and clears
+`bFinalMissionCtlArmed`. Three things only the ARM showed: **0x84A10 branches to 0x84A9C, past the
+`bFinalMissionCtlArmed` clear at 0x84A94**, so the flag-13 path is the only one that leaves the final-mission
+control armed; the three dismiss tests each re-read line 0 and `Smap_DismissSelected` removes line 0 itself
+(0x84454), so they are not three tests of one flag — a match shifts the list and the next test sees the line
+underneath (`[23, 21]` dismisses two different craft); and **ORIGINAL BUG (0x84A80)** — the tail removal is
+unconditional, so after a dismiss it eats the NEXT message line and the clock unpauses a step early. The naming
+follow-through from unit 78: the port's `GeoscapePointerEnv` field for 0x187068 was `pbTargetSelectActive`, a
+name from before unit 78 showed what that byte gates; it is `pbFinalMissionCtlArmed` in the env, both handlers
+and the test fixture now, matching the IDB, and `byte_18709C` is `bInterceptDone`. 38 new checks, 1 IDB rename,
+5 comments, 1 ledger row.
+Unit 78 ported the options overlay's row confirm —
 `OptionsScreen_OnConfirm` (0x6cf18, 260 B), the click handler `OptionsScreen_Open` installs on the names
 panel at 0x6D2E8 — so the overlay is a ported screen with a ported handler. The row is the names panel's
 `nUnk3032` and the craft is `pPanelName->anLineAux[nUnk3032]`, written into both selection globals before
@@ -802,7 +819,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 223 rows, 85 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 224 rows, 87 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -928,8 +945,8 @@ longer listed here.)
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 107,548 of 160,496 (67.0%), and `Geoscape_Draw` alone is
-33,744 of the 52,948 left. Both geoscape pointer handlers and the map select test they call are in now.
+`strat` is still the weakest subsystem by bytes: 107,888 of 160,496 (67.2%), and `Geoscape_Draw` alone is
+33,744 of the 52,608 left. Both geoscape pointer handlers and the map select test they call are in now.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
@@ -1568,7 +1585,7 @@ manufacturing, research, soldier and base-facility families are complete, and so
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
-188 of 204 functions and 107,548 of 160,496 bytes (67.0%), 16 functions / 52,948 bytes left. What
+189 of 204 functions and 107,888 of 160,496 bytes (67.2%), 15 functions / 52,608 bytes left. What
 is left in `strat-ui` is
 21 functions / 36,892 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
@@ -1596,7 +1613,7 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 412 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 413 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

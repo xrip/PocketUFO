@@ -109,7 +109,7 @@ typedef struct Fix {
     i32 nSelectedCraftIdx, nPanelIndex;
     i8 nSelectedBase, nBaseCount, nTransferBase, nStripHitBase;
     u8 bPopupA, bPopupB, bDragActive, bNewBaseMode, bPlaceFail, bPlaceActive;
-    u8 bTargetSelect, bInterceptDone, bMultiSelect, bPlacementPending, bPendingRegion;
+    u8 bFinalMissionCtl, bInterceptDone, bMultiSelect, bPlacementPending, bPendingRegion;
     u8 bMapSelect, bRadarActive, bGateTransfer, bGateBaseInfo;
     u8 bPsiOpen, bPsiRow, bTransferRow, bSolOpen, bNameEdit, bAnimStarted, bTransferFlag;
     u8 bFacArmed, bRowSelected, bProductSelected;
@@ -295,7 +295,7 @@ static void Fix_Reset(void)
     p->pbNewBaseMode = &g.bNewBaseMode;
     p->pbPlaceFail = &g.bPlaceFail;
     p->pbPlaceActive = &g.bPlaceActive;
-    p->pbTargetSelectActive = &g.bTargetSelect;
+    p->pbFinalMissionCtlArmed = &g.bFinalMissionCtl;
     p->pbInterceptDone = &g.bInterceptDone;
     p->pbMultiSelectPanel = &g.bMultiSelect;
     p->pbPlacementPending = &g.bPlacementPending;
@@ -509,8 +509,8 @@ static void TestWorldFlags(void)
 
     Fix_Reset();
     g.nScreenId = 2;
-    g.bTargetSelect = 1;
-    CheckEqI32(Call(100, 100, true), 1, "the target-select gate returns the craft-select hit");
+    g.bFinalMissionCtl = 1;
+    CheckEqI32(Call(100, 100, true), 1, "the armed final-mission control returns the craft-select hit");
     Check(Hit(GEOUI_CTL_186B8C), "the gate hit-tests 186B8C");
     CheckEqI32(g.bNewBaseMode, 1, "screen 2 raises the new-base mode on the way in");
     Check(Hit(GEOUI_CTL_186B00), "with nothing pending the close control is hit");
@@ -1396,11 +1396,11 @@ static void TestUpWorldFlags(void)
     Fix_UpCursor();
     g.nScreenId = 2;
     g.bPlacementPending = 1;
-    g.bTargetSelect = 1;
+    g.bFinalMissionCtl = 1;
     g.oLines.abLineFlags[0] = 17;
     g.nSamplePlayed = 0;
-    CheckEqI32(CallUp(), 1, "a target-select hit returns 1 early");
-    Check(Up(GEOUI_CTL_186B8C), "the target-select control is released");
+    CheckEqI32(CallUp(), 1, "an armed final-mission control returns 1 early");
+    Check(Up(GEOUI_CTL_186B8C), "and pFinalMissionCtl is the control released");
     Check(StillArmed(GEOUI_CTL_186BB4), "the flag arm after it never runs");
     Check(g.nSamplePlayed == 0, "and its sample is not played");
 
@@ -1440,10 +1440,10 @@ static void TestUpWorldFallthrough(void)
     Fix_UpCursor();
     g.nScreenId = 2;
     g.bPlacementPending = 1;
-    g.bTargetSelect = 1;
+    g.bFinalMissionCtl = 1;
     g.aCtl[GEOUI_CTL_186B8C].nState = 0; /* down-free, so the gate falls through to the tail */
     CheckEqI32(CallUp(), 2, "screen 2 with no flag returns 2 (0x89CE0)");
-    Check(g.bTargetSelect == 0, "and clears the target-select flag (0x89CD8)");
+    Check(g.bFinalMissionCtl == 0, "and clears the final-mission armed flag (0x89CD8)");
     Check(g.aRoot[0].nState == 1 && g.aRoot[12].nState == 1, "screen 2 does not release the root controls");
 
     Fix_Reset();

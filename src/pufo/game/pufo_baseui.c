@@ -5735,6 +5735,64 @@ void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv)
     }
 }
 
+/* Smap_ResolveInterceptUI @ 0x84964. The flag standing on message line 0 decides what the pending
+ * map order becomes; the header block has the four steps and the tail-removal bug. */
+void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+
+    GameTime_Set5Sec(pEnv->pWorld, pEnv->apSpeedCtl);                      /* 0x84968 */
+    if (pEnv->pbInterceptDone != NULL) {
+        *pEnv->pbInterceptDone = 0;                                        /* 0x84984 */
+    }
+
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 27) {                       /* 0x84988 */
+        (void)Ship_RetargetTravel(pEnv->pShipEnv,
+                                  (i32)UiLineList_GetColor(pEnv->pLines, 0, 0)); /* 0x849AC */
+    }
+
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 13) {                /* 0x849B4, the flag read again */
+        const u32 nSlot1 = UiLineList_GetColor(pEnv->pLines, 0, 1) & PUFO_LINE_COLOR_MAX; /* 0x849DC */
+        UiLineList_Insert(pEnv->pLines, 1, 11, nSlot1, 0u, 0u, 0u);        /* 0x849F0 */
+        UiLineList_Remove(pEnv->pLines, 0);                                /* 0x849FC */
+        if (pEnv->pbInterceptDone != NULL) {
+            *pEnv->pbInterceptDone = 1;                                    /* 0x84A04 */
+        }
+        if (pEnv->pTime != NULL) {
+            pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x84A0C */
+        }
+        return;                                /* 0x84A10 branches to 0x84A9C, past the clear below */
+    }
+
+    if (pEnv->pbFlag187090 != NULL)    { *pEnv->pbFlag187090 = 0; }        /* 0x84A24 */
+    if (pEnv->pbFlag18708C != NULL)    { *pEnv->pbFlag18708C = 0; }        /* 0x84A2C */
+    if (pEnv->pbSelectionFlag != NULL) { *pEnv->pbSelectionFlag = 0; }     /* 0x84A34 */
+    if (pEnv->pbFlag187098 != NULL)    { *pEnv->pbFlag187098 = 0; }        /* 0x84A3C */
+
+    /* Each dismiss removes line 0 itself, so the next test reads the line that was underneath. */
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 23) {                       /* 0x84A44 */
+        (void)Smap_DismissSelected(pEnv->pShipEnv, pEnv->pLines, pEnv->pTime, pEnv->pbSelectionFlag);
+    }
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 21) {                       /* 0x84A58 */
+        (void)Smap_DismissSelected(pEnv->pShipEnv, pEnv->pLines, pEnv->pTime, pEnv->pbSelectionFlag);
+    }
+    if (UiLineList_GetFlag(pEnv->pLines, 0) == 22) {                       /* 0x84A6C */
+        (void)Smap_DismissSelected(pEnv->pShipEnv, pEnv->pLines, pEnv->pTime, pEnv->pbSelectionFlag);
+    }
+
+    /* ORIGINAL BUG (0x84A80), reproduced: the removal is unconditional, so after a dismiss already
+     * dropped line 0 this one eats the NEXT message line. */
+    UiLineList_Remove(pEnv->pLines, 0);
+    if (pEnv->pLines->nLineCount == 0 && pEnv->pTime != NULL) {
+        GameTime_Unpause(pEnv->pTime); /* 0x84A84 reads the count byte after the removal */
+    }
+    if (pEnv->pbFinalMissionCtl != NULL) {
+        *pEnv->pbFinalMissionCtl = 0;                                        /* 0x84A94 */
+    }
+}
+
 /* Smap_CorpseSlotForAlien -- the quantity-remap switch at 0x98DBC..0x98F98. An alien item that no
  * containment cell can hold is delivered as its corpse instead: the shipped names pair every
  * soldier slot with a corpse slot, and each medic lands on its own race's corpse. The original
