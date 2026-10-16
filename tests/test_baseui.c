@@ -15599,6 +15599,737 @@ static void TestBaseInfoDraw(void)
     BiRelease();
 }
 
+/* ================= unit 94: the base-attack screen ================= */
+
+/* Deliberately larger than PUFO_GRID_SIZE: one test asks about a base index past the eight grid
+ * blocks, and it has to read a defined zero rather than whatever follows the array. */
+static u8 g_abBaGrid[2048];
+static UiPanel *g_pBaPanel;
+static PadImage *g_pBaPad;
+static PadImage *g_pBaNoPad; /* a slot that stays NULL, so the draw tests see only panel text */
+static u8 g_bBaActive;
+static u8 g_bBaConfirm;
+static u8 g_bBaResult;
+static u8 g_bBaClass;
+static u8 g_bBaSpawn;
+static i32 g_nBaLimit;
+static i32 g_nBaCap;
+static i32 g_nBaCooldown;
+static BaseAtUpdateEnv g_baUpd;
+static BaseAtDrawEnv g_baDraw;
+static SoftSurf g_baSurf;
+static GfxColorEnv g_baColor;
+static UiControl g_baConfirmCtl;
+static PadImage g_baCtlPad;
+static i32 g_nBaBlitCalls;
+
+static void BaThunkBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    ++g_nBaBlitCalls;
+}
+
+static void BaLabels(void)
+{
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_FIRE_MISSILE, "MV");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_HIT, "HIT");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_MISS, "MISS");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_FIRE_LASER, "LR");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_FIRE_PLASMA, "PL");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_FIRE_FUSION, "FU");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_GRAVITY, "GRAV");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_RECHARGED, "RECH");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_DESTROYED, "DOWN");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_THREAT, "SAFE");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_LANDED, "LAND");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_PREPARING, "READY");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_OK, "OK");
+}
+
+static void BaFree(void)
+{
+    if (g_pBaPanel != NULL) {
+        UiPanel_FreeLines(g_pBaPanel);
+        free(g_pBaPanel);
+        g_pBaPanel = NULL;
+    }
+    if (g_pBaPad != NULL) {
+        PadImage_FreeData(g_pBaPad);
+        free(g_pBaPad);
+        g_pBaPad = NULL;
+    }
+}
+
+static void BaEnv(void)
+{
+    BaFree();
+    g_bBaActive = 0;
+    g_bBaConfirm = 9;
+    g_bBaResult = 9;
+    g_bBaClass = 0;
+    g_bBaSpawn = 0;
+    g_nBaLimit = -1;
+    g_nBaCap = -1;
+    g_nBaCooldown = 0;
+    g_nBaBlitCalls = 0;
+
+    memset(&g_baUpd, 0, sizeof(g_baUpd));
+    g_baUpd.pbActive = &g_bBaActive;
+    g_baUpd.pbConfirmShown = &g_bBaConfirm;
+    g_baUpd.pbMissionFollows = &g_bBaResult;
+    g_baUpd.ppPad = &g_pBaPad;
+    g_baUpd.ppPanel = &g_pBaPanel;
+    g_baUpd.pnLineLimit = &g_nBaLimit;
+    g_baUpd.pnLineCap = &g_nBaCap;
+    g_baUpd.pbCraftClass = &g_bBaClass;
+    g_baUpd.abFacilityGrid = g_abBaGrid;
+    g_baUpd.pTextRecs = (const char *)g_aXfText;
+    g_baUpd.pbSpawnReplacement = &g_bBaSpawn;
+    g_baUpd.pnRadarCooldownR = &g_nBaCooldown;
+}
+
+/* Base 0's 36 cells, laid out in order from the type layer. The days layer stays all zero, so every
+ * cell here is free -- the scan counts all of them. */
+static void BaGrid(i32 nMissile, i32 nLaser, i32 nPlasma, i32 nFusion, i32 nGravity)
+{
+    u8 *const pType = g_abBaGrid + PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF;
+    i32 nCell = 0;
+
+    memset(g_abBaGrid, 0, sizeof(g_abBaGrid));
+    for (i32 i = 0; i < nMissile; ++i) pType[nCell++] = (u8)FAC_MISSILE_DEFENCES;
+    for (i32 i = 0; i < nLaser; ++i) pType[nCell++] = (u8)FAC_LASER_DEFENCE;
+    for (i32 i = 0; i < nPlasma; ++i) pType[nCell++] = (u8)FAC_PLASMA_DEFENCE;
+    for (i32 i = 0; i < nFusion; ++i) pType[nCell++] = (u8)FAC_FUSION_BALL_DEFENCE;
+    for (i32 i = 0; i < nGravity; ++i) pType[nCell++] = (u8)FAC_GRAVITY_SHIELD;
+}
+
+/* A seed whose first Game_RandU16(100) lands in [nLo, nHi). The rolls are deterministic from the seed,
+ * so this pins a roll into the band that separates one kind's threshold from the next. */
+static i32 BaSeedRoll(i32 nLo, i32 nHi)
+{
+    for (i32 nSeed = 1; nSeed < 20000; ++nSeed) {
+        srand((unsigned)nSeed);
+        const i32 nRoll = (i32)Game_RandU16(100u);
+
+        if (nRoll >= nLo && nRoll < nHi) {
+            return nSeed;
+        }
+    }
+    return -1;
+}
+
+/* And the same for the first nCount rolls all landing in one band. */
+static i32 BaSeedRolls(i32 nCount, i32 nLo, i32 nHi)
+{
+    for (i32 nSeed = 1; nSeed < 500000; ++nSeed) {
+        i32 nOk = 1;
+
+        srand((unsigned)nSeed);
+        for (i32 i = 0; i < nCount; ++i) {
+            const i32 nRoll = (i32)Game_RandU16(100u);
+
+            if (nRoll < nLo || nRoll >= nHi) {
+                nOk = 0;
+                break;
+            }
+        }
+        if (nOk != 0) {
+            return nSeed;
+        }
+    }
+    return -1;
+}
+
+static void BaRun(i32 nClass, i32 nMissile, i32 nLaser, i32 nPlasma, i32 nFusion, i32 nGravity,
+                  i32 nSeed)
+{
+    BaEnv();
+    BaGrid(nMissile, nLaser, nPlasma, nFusion, nGravity);
+    g_bBaClass = (u8)nClass;
+    srand((unsigned)nSeed);
+    BaseAtScreen_Update(0, &g_baUpd);
+}
+
+static void CheckLine(i32 nRow, const char *pszWant, const char *pszWhat)
+{
+    /* The update leaves nLineCount at 0 -- it is the reveal counter, not the row count -- so the
+     * labels are read straight out of the line buffers. */
+    const char *pszGot = (g_pBaPanel != NULL && nRow >= 0 && nRow < PUFO_PANEL_LINES
+                          && g_pBaPanel->apLines[nRow] != NULL)
+                             ? (const char *)g_pBaPanel->apLines[nRow] : NULL;
+
+    CheckStr((pszGot != NULL) ? pszGot : "<none>", pszWant, pszWhat);
+}
+
+static void CheckAux(i32 nRow, i32 nWant, const char *pszWhat)
+{
+    CheckEqI32((g_pBaPanel != NULL) ? UiPanel_GetLineAux(g_pBaPanel, nRow) : -1, nWant, pszWhat);
+}
+
+static void CheckMeta(i32 nRow, i32 r0, i32 r1, i32 r2, i32 r3, i32 r4, i32 r5, const char *pszWhat)
+{
+    const u8 *p = (g_pBaPanel != NULL) ? (g_pBaPanel->aLineMeta + 6 * nRow) : NULL;
+
+    if (p != NULL && p[0] == r0 && p[1] == r1 && p[2] == r2 && p[3] == r3 && p[4] == r4 && p[5] == r5) {
+        printf("  ok   %s\n", pszWhat);
+    } else {
+        printf("  FAIL %s: got %d,%d,%d / %d,%d,%d want %d,%d,%d / %d,%d,%d\n", pszWhat,
+               (p != NULL) ? p[0] : -1, (p != NULL) ? p[1] : -1, (p != NULL) ? p[2] : -1,
+               (p != NULL) ? p[3] : -1, (p != NULL) ? p[4] : -1, (p != NULL) ? p[5] : -1,
+               r0, r1, r2, r3, r4, r5);
+        ++g_nFailures;
+    }
+}
+
+static void TestBaseAtUpdate(void)
+{
+    i32 nSeedMiss;
+    i32 nSeedHit;
+    i32 nSeedBand;
+    i32 nSeedHits;
+
+    printf("the base-attack screen's battle log\n");
+
+    BaLabels();
+
+    /* ---- the build arm: the pad, the panel geometry, the flags ---- */
+    nSeedMiss = BaSeedRoll(50, 100);
+    Check(nSeedMiss > 0, "a seed with a first roll of 50 or more was found");
+    BaRun(0, 1, 0, 0, 0, 0, nSeedMiss);
+    CheckEqI32(g_bBaActive, 1, "the build arm arms the screen");
+    CheckEqI32(g_bBaConfirm, 0, "and clears the confirm byte the pointer handlers gate on");
+    Check(g_pBaPad != NULL, "the baseat pad is allocated");
+    Check(g_pBaPad != NULL && g_pBaPad->nMode == 30, "and loaded in mode 30 (0x578E4)");
+    Check(g_pBaPad != NULL && g_pBaPad->pData != NULL, "  the pad data is really in main.dat");
+
+    Check(g_pBaPad != NULL && g_pBaPad->nOriginX == 0 && g_pBaPad->nOriginY == 0,
+          "with both origins cleared");
+    Check(g_pBaPanel != NULL, "the panel is allocated");
+    /* The geometry is asserted against the literals the ARM stores, not against the port's own macros:
+     * a check that reads the macro cannot tell a wrong macro from a right one. */
+    CheckEqI32(g_pBaPanel->nStyle, 15, "nStyle 15 is the visible row count (0x57AE4)");
+    CheckEqI32(g_pBaPanel->nFont, 16, "nFont 16 (0x57AF4)");
+    CheckEqI32(g_pBaPanel->nPosX, 10, "the panel sits at x 10 (0x57B08)");
+    CheckEqI32(g_pBaPanel->nPosY, 10, "and y 10 (0x57B18)");
+    CheckEqI32(g_pBaPanel->nUnk7052, 5, "nUnk7052 5 (0x57B2C)");
+    CheckEqI32(g_pBaPanel->nUnk7056, 70, "nUnk7056 70 (0x57B40)");
+    CheckEqI32(g_pBaPanel->nViewW, 230, "nViewW 230 (0x57B54)");
+    CheckEqI32(g_pBaPanel->gap_0[0], 0x64, "the style key is 0x64,0x96,0x64");
+    CheckEqI32(g_pBaPanel->gap_0[1], 0x96, "  its middle byte");
+    CheckEqI32(g_pBaPanel->gap_0[2], 0x64, "  and its last");
+    CheckEqI32(g_pBaPanel->gap_0[3], 0x32, "the source triple is 0x32,0x32,0xFA");
+    CheckEqI32(g_pBaPanel->gap_0[4], 0x32, "  written by the third setter call");
+    CheckEqI32(g_pBaPanel->gap_0[5], 0xFA, "  the three setters cover 0..11 without overlap");
+    CheckEqI32(g_pBaPanel->gap_0[6], 0xDC, "the panel colours are 0xDC,0xC8,0xF0");
+    CheckEqI32(g_pBaPanel->gap_0[8], 0xF0, "  and 0x14,0x14,0x14 for the second");
+    CheckEqI32(g_pBaPanel->gap_0[11], 0x14, "  reaching byte 11");
+    CheckEqI32(g_pBaPanel->bUnk7088, 0x96, "bUnk7088 is -106 as a byte");
+    CheckEqI32(g_pBaPanel->bFlag7072, 0, "both ctor flags are cleared");
+    CheckEqI32(g_pBaPanel->bFlag7073, 0, "  the second too");
+
+    /* ---- one missile cell, class 0: a miss leaves the budget alone ---- */
+    CheckEqI32(g_nBaLimit, 5, "one defence pair plus the three tail rows");
+    CheckEqI32(g_nBaCap, 5, "and the capacity formula gives the same 2*(1*1+0)+3");
+    CheckLine(0, "MV", "the missile cell opens with its FIRE line");
+    CheckLine(1, "MISS", "a roll of 50 or more is a miss");
+    CheckMeta(1, 255, 50, 50, 20, 0, 0, "  the miss row gets the red meta");
+    CheckLine(2, "", "the tail's first row is the empty label, not a text record");
+    CheckLine(3, "LAND", "the budget survived, so the craft got out");
+    CheckLine(4, "READY", "and the base prepares for the assault");
+    CheckEqI32(g_bBaResult, 1, "the follow-up flag is set, which is what the close thunk tests");
+    CheckAux(0, 20, "a defence row carries aux 20, the reveal delay");
+    CheckAux(1, 20, "  and so does its result row");
+    CheckAux(2, 0, "the tail rows carry aux 0");
+    CheckAux(3, 0, "  the middle one too, so its reveal delay is not 0 by accident");
+    CheckAux(4, 0, "  and the last");
+    CheckEqI32(g_nBaCooldown, PUFO_RADAR_COOLDOWN_READY, "the cooldown is parked at 255 for the reveal");
+    CheckEqI32(g_pBaPanel->nLineCount, 0, "and every row starts hidden");
+
+    /* ---- the same cell with a hit: 50 - 500 burns the whole budget ---- */
+    nSeedHit = BaSeedRoll(0, 50);
+    Check(nSeedHit > 0, "a seed with a first roll below 50 was found");
+    BaRun(0, 1, 0, 0, 0, 0, nSeedHit);
+    CheckLine(1, "HIT", "a roll below 50 is a hit");
+    CheckMeta(1, 50, 255, 50, 0, 20, 0, "  the hit row gets the green meta");
+    CheckLine(3, "DOWN", "the budget is gone, so the craft is destroyed");
+    CheckLine(4, "SAFE", "and the capture threat is lifted");
+    CheckEqI32(g_bBaResult, 0, "with no ground mission to follow");
+    CheckEqI32(g_nBaLimit, 5, "the pair still ran before the budget test stopped it");
+
+    /* ---- the four thresholds, each pinned by a roll in the band below the next ---- */
+    nSeedBand = BaSeedRoll(50, 60);
+    Check(nSeedBand > 0, "a seed with a first roll in [50,60) was found");
+    BaRun(0, 0, 1, 0, 0, 0, nSeedBand);
+    CheckLine(1, "HIT", "laser defence hits on a roll of 50, its threshold is 60");
+    BaRun(0, 1, 0, 0, 0, 0, nSeedBand);
+    CheckLine(1, "MISS", "  while missile defence misses on the same roll");
+
+    nSeedBand = BaSeedRoll(60, 70);
+    BaRun(0, 0, 0, 1, 0, 0, nSeedBand);
+    CheckLine(1, "HIT", "plasma defence hits on a roll of 60, its threshold is 70");
+    BaRun(0, 0, 1, 0, 0, 0, nSeedBand);
+    CheckLine(1, "MISS", "  laser defence misses on it");
+
+    nSeedBand = BaSeedRoll(70, 80);
+    BaRun(0, 0, 0, 0, 1, 0, nSeedBand);
+    CheckLine(1, "HIT", "fusion-ball defence hits on a roll of 70, its threshold is 80");
+    BaRun(0, 0, 0, 1, 0, 0, nSeedBand);
+    CheckLine(1, "MISS", "  plasma defence misses on it");
+
+    nSeedBand = BaSeedRoll(80, 100);
+    BaRun(0, 0, 0, 0, 1, 0, nSeedBand);
+    CheckLine(1, "MISS", "fusion-ball defence misses at 80 and above");
+    CheckLine(0, "FU", "  from its own FIRE line");
+
+    /* ---- the four damages, each pinned by how far the budget reaches ---- */
+    nSeedHits = BaSeedRolls(3, 0, 50);
+    Check(nSeedHits > 0, "a seed with three rolls below 50 was found");
+    BaRun(5, 3, 0, 0, 0, 0, nSeedHits); /* 1200 - 500 - 500 - 500 */
+    CheckEqI32(g_nBaLimit, 9, "class 5 burns 1200 over three missile hits of 500");
+    CheckEqI32(g_bBaResult, 0, "  and the third one finishes it");
+    BaRun(5, 2, 0, 0, 0, 0, nSeedHits); /* 1200 - 500 - 500 leaves 200 */
+    CheckEqI32(g_nBaLimit, 7, "two of those hits leave 200, so only two pairs run");
+    CheckEqI32(g_bBaResult, 1, "  and the craft lands");
+
+    BaRun(5, 0, 2, 0, 0, 0, nSeedHits); /* 1200 - 600 - 600 */
+    CheckEqI32(g_nBaLimit, 7, "class 5 burns 1200 over two laser hits of 600");
+    CheckEqI32(g_bBaResult, 0, "  the second reaches exactly 0, which is below 1");
+
+    nSeedHits = BaSeedRolls(3, 0, 60);
+    BaRun(6, 0, 0, 3, 0, 0, nSeedHits); /* 2200 - 900 - 900 - 900 */
+    CheckEqI32(g_nBaLimit, 9, "class 6 burns 2200 over three plasma hits of 900");
+    CheckEqI32(g_bBaResult, 0, "  and the third one finishes it");
+    BaRun(6, 0, 0, 2, 0, 0, nSeedHits); /* 2200 - 900 - 900 leaves 400 */
+    CheckEqI32(g_bBaResult, 1, "two plasma hits leave 400, so the craft lands");
+
+    nSeedHits = BaSeedRolls(2, 0, 70);
+    BaRun(7, 0, 0, 0, 2, 0, nSeedHits); /* 3000 - 1500 - 1500 */
+    CheckEqI32(g_nBaLimit, 7, "class 7 burns 3000 over two fusion hits of 1500");
+    CheckEqI32(g_bBaResult, 0, "  reaching exactly 0");
+    BaRun(7, 0, 0, 0, 1, 0, nSeedHits); /* 3000 - 1500 leaves 1500 */
+    CheckEqI32(g_bBaResult, 1, "one of them leaves 1500, so the craft lands");
+
+    /* ---- the budget table, read through how many hits each class can take ---- */
+    nSeedHits = BaSeedRolls(6, 0, 50);
+    Check(nSeedHits > 0, "a seed with six rolls below 50 was found");
+    BaRun(0, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "class 0's budget of 50 dies on the first 500-point hit");
+    BaRun(1, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "class 1's 200 does too");
+    BaRun(2, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "class 2's 250 does too");
+    BaRun(3, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "class 3's 500 reaches exactly 0");
+    BaRun(4, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "and class 4 shares that budget");
+    BaRun(5, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 9, "class 5's 1200 takes three hits");
+    BaRun(6, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 13, "class 6's 2200 takes five");
+    BaRun(7, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 15, "class 7's 3000 takes all six cells");
+    CheckEqI32(g_nBaCap, 15, "  and its capacity is 2*6+3");
+    BaRun(8, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "a class outside 0..7 has no budget at all");
+    CheckEqI32(g_bBaResult, 0, "  so the first pair already ends the fight");
+    BaRun(255, 6, 0, 0, 0, 0, nSeedHits);
+    CheckEqI32(g_nBaLimit, 5, "and 255 reads as -1, which the switch has no case for");
+
+    /* ---- the gravity rounds: the whole barrage runs (gravity + 1) times ---- */
+    nSeedMiss = BaSeedRolls(3, 50, 100);
+    Check(nSeedMiss > 0, "a seed with three rolls of 50 or more was found");
+    BaRun(0, 1, 0, 0, 0, 2, nSeedMiss);
+    CheckEqI32(g_nBaLimit, 13, "one defence cell with two gravity cells runs three rounds");
+    CheckEqI32(g_nBaCap, 13, "and the capacity 2*(1*3+2)+3 matches the rows produced");
+    CheckLine(0, "MV", "round 0's defence pair");
+    CheckLine(2, "GRAV", "  then the gravity pair");
+    CheckLine(3, "RECH", "  with the recharge line under it");
+    CheckLine(4, "MV", "round 1 runs the defence pair again");
+    CheckLine(6, "GRAV", "  and the gravity pair again");
+    CheckLine(8, "MV", "round 2 runs the defence pair a third time");
+    CheckLine(10, "", "the tail follows, with no gravity pair in the last round");
+    CheckLine(11, "LAND", "  and the budget survived every miss");
+    CheckAux(2, 0, "the gravity pair's first row has aux 0");
+    CheckAux(3, 10, "  and its second row aux 10");
+    CheckAux(6, 0, "the second gravity pair repeats it");
+    CheckAux(7, 10, "  in the same order");
+    CheckMeta(2, 150, 150, 255, 0, 20, 20, "the gravity rows share the 150,150,255 meta");
+    CheckMeta(3, 150, 150, 255, 0, 20, 20, "  on both of them");
+    CheckLine(9, "MISS", "  and the third defence pair still rolled");
+
+    BaRun(0, 1, 0, 0, 0, 0, nSeedMiss);
+    CheckEqI32(g_nBaLimit, 5, "with no gravity cell the barrage runs exactly once");
+
+    /* ---- only FREE cells count ---- */
+    BaEnv();
+    BaGrid(2, 0, 0, 0, 0);
+    g_abBaGrid[0] = 7; /* the days byte of the first missile cell */
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(0, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 5, "a cell still under construction is not a defence");
+    CheckLine(0, "MV", "  only the finished one fires");
+
+    BaEnv();
+    BaGrid(1, 0, 0, 0, 0);
+    g_abBaGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_TYPE_OFF] = (u8)FAC_HANGAR;
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(0, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "a hangar is not a defence either");
+    CheckLine(1, "LAND", "  so the log is only the tail");
+    CheckEqI32(g_nBaCap, 3, "and the capacity drops to the three tail rows");
+
+    /* ---- the base index selects the grid block ---- */
+    BaEnv();
+    BaGrid(0, 0, 0, 0, 0);
+    g_abBaGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE + PUFO_GRID_FAC_TYPE_OFF] =
+        (u8)FAC_MISSILE_DEFENCES; /* base 1's first cell */
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(1, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 5, "the scan follows the base index into the second grid block");
+    BaEnv();
+    BaGrid(1, 0, 0, 0, 0);
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(1, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "  and base 1 sees none of base 0's cells");
+
+    /* The days layer has to follow the base index too. Hex-Rays renders both layers through the
+     * buildDays array type, so a port that reuses one base offset for both looks correct. */
+    BaEnv();
+    BaGrid(0, 0, 0, 0, 0);
+    g_abBaGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE + PUFO_GRID_FAC_TYPE_OFF] =
+        (u8)FAC_MISSILE_DEFENCES;   /* base 1's first cell is a missile defence */
+    g_abBaGrid[PUFO_GRID_DAYS_STRIDE] = 9; /* and it is still under construction */
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(1, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "the days layer is read from the same base block as the type layer");
+
+    /* And the eight-block bound is real: a ninth block would sit at 480 + 144*8. */
+    BaEnv();
+    BaGrid(0, 0, 0, 0, 0);
+    g_abBaGrid[PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * 8 + PUFO_GRID_FAC_TYPE_OFF] =
+        (u8)FAC_MISSILE_DEFENCES;
+    g_bBaClass = 0;
+    srand(nSeedHits);
+    BaseAtScreen_Update(8, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "a base index past the eight grid blocks is refused");
+    Check(g_pBaPanel != NULL, "  the panel is still built, only the scan is skipped");
+
+    /* ---- the release arm ---- */
+    BaRun(0, 1, 0, 0, 0, 0, nSeedMiss);
+    Check(g_pBaPanel != NULL && g_pBaPad != NULL, "the build arm left both objects live");
+    g_bBaSpawn = 0;
+    BaseAtScreen_Update(0, &g_baUpd);
+    CheckEqI32(g_bBaActive, 0, "the second call takes the release arm instead");
+    Check(g_pBaPanel == NULL, "  the panel is freed and the slot nulled");
+    Check(g_pBaPad == NULL, "  and so is the pad");
+    CheckEqI32(g_bBaSpawn, 1, "and the one-shot replacement flag is armed for the strateg pass");
+    CheckEqI32(g_nBaLimit, 5, "the row limit is left as it was");
+
+    /* ---- guards ---- */
+    BaEnv();
+    BaGrid(1, 0, 0, 0, 0);
+    BaseAtScreen_Update(0, NULL);
+    CheckEqI32(g_bBaActive, 0, "a null environment does nothing");
+    BaEnv();
+    g_baUpd.abFacilityGrid = NULL;
+    srand(nSeedHits);
+    BaseAtScreen_Update(0, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "with no grid the log is only the tail");
+    Check(g_pBaPanel != NULL, "  the panel is still built");
+    BaEnv();
+    BaGrid(1, 0, 0, 0, 0);
+    srand(nSeedHits);
+    BaseAtScreen_Update(-1, &g_baUpd);
+    CheckEqI32(g_nBaLimit, 3, "a negative base index is bounded instead of reading before the grid");
+    BaseAtScreen_Update(8, &g_baUpd);
+    CheckEqI32(g_bBaActive, 0, "and the release arm runs on the same call");
+}
+
+static void BaDrawEnv(void)
+{
+    memset(&g_baDraw, 0, sizeof(g_baDraw));
+    g_baDraw.pColor = &g_baColor;
+    g_baDraw.pbActive = &g_bBaActive;
+    g_baDraw.ppPad = &g_pBaNoPad; /* the pad paint is checked on its own, away from the text */
+    g_baDraw.ppPanel = &g_pBaPanel;
+    g_baDraw.pnLineLimit = &g_nBaLimit;
+    g_baDraw.pnRadarCooldownR = &g_nBaCooldown;
+    g_baDraw.pbConfirmShown = &g_bBaConfirm;
+    g_baDraw.pCtlConfirm = &g_baConfirmCtl;
+    g_baDraw.pfnCtlBlit = BaThunkBlit;
+    g_baDraw.pfnCtlBlitEx = BaThunkBlit;
+    g_baDraw.pTextRecs = (const char *)g_aXfText;
+}
+
+static void TestBaseAtDraw(void)
+{
+    const u16 *pPix;
+    i32 nSeed;
+    i32 nSeedWide;
+    u16 uBaGlyph;
+
+    printf("the base-attack screen's frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_baSurf);
+    SoftSurf_AllocPixels(&g_baSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_baSurf;
+    pPix = (const u16 *)g_baSurf.pPixels;
+
+    g_baColor.nScaleSource = 0;
+    g_baColor.nFadeCount = 0;
+    /* The draw packs this same pair at 0x5884C right before the caption, so pre-packing it gives the
+     * glyph colour the caption must be drawn in. */
+    uBaGlyph = (u16)Gfx_PackRgb565Pair(&g_baColor, 68, 244, 252, 4, 70, 75);
+    Check(uBaGlyph != 0, "the caption colour pair packs to a non-zero glyph colour (0x2d82c)");
+    g_baConfirmCtl.uWidth = 40;
+    g_baConfirmCtl.nMode = 0;      /* mode 0 uses nState directly */
+    g_baConfirmCtl.bEnabled = 1;
+    g_baConfirmCtl.nState = 0;
+    g_baConfirmCtl.bUnk17 = 0;     /* so the plain blit hook is the one called */
+    g_baConfirmCtl.apPads[0] = &g_baCtlPad;
+
+    /* 13 rows: one missile cell and two gravity cells, every roll a miss. Row r draws at
+     * y = 16*r + 10, x 10, because nUnk7076 stays 0. */
+    nSeed = BaSeedRolls(3, 50, 100);
+    BaRun(0, 1, 0, 0, 0, 2, nSeed);
+    BaDrawEnv();
+
+    /* ---- the gate ---- */
+    BiClear(pPix);
+    g_bBaActive = 0;
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 0, "a screen the update released draws nothing");
+    g_bBaActive = 1;
+
+    /* ---- the reveal pacing ---- */
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_nBaCooldown, 235, "the first row's aux 20 parks the cooldown at 255-20");
+    CheckEqI32(g_pBaPanel->nLineCount, 1, "and one row becomes visible");
+    Check(BiInkAny(pPix, 10, 12, 60, 24) > 0, "row 0's FIRE line reaches the surface");
+    CheckEqI32(BiInkAny(pPix, 10, 28, 60, 40), 0, "  row 1 is still hidden");
+
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_nBaCooldown, 235, "a cooldown below 255 reveals nothing new");
+    CheckEqI32(g_pBaPanel->nLineCount, 1, "  and the row count stays put");
+
+    g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_nBaCooldown, 235, "the result row also carries aux 20");
+    CheckEqI32(g_pBaPanel->nLineCount, 2, "so two rows are visible now");
+    Check(BiInkAny(pPix, 10, 28, 60, 40) > 0, "row 1's MISS line draws");
+    CheckEqI32(BiInkAny(pPix, 10, 44, 60, 56), 0, "  and row 2 does not");
+
+    g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_nBaCooldown, 255, "the gravity pair's first row has aux 0, so the cooldown stays ready");
+    CheckEqI32(g_pBaPanel->nLineCount, 3, "  and the row appears at once");
+
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_nBaCooldown, 245, "its second row has aux 10, so the cooldown parks at 245");
+    CheckEqI32(g_pBaPanel->nLineCount, 4, "  after that row is shown");
+
+    /* ---- the empty tail row draws nothing ---- */
+    for (i32 nStep = 0; nStep < 9; ++nStep) {
+        g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
+        BaseAtScreen_Draw(&g_baDraw);
+    }
+    CheckEqI32(g_pBaPanel->nLineCount, 13, "every row is revealed once the cooldown keeps resetting");
+    CheckEqI32(g_pBaPanel->nLineCount, g_nBaLimit, "  which is exactly the row limit");
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(BiInkAny(pPix, 10, 16 * 10 + 10, 60, 16 * 10 + 24), 0,
+               "the tail's empty label draws no ink at all");
+    Check(BiInkAny(pPix, 10, 16 * 11 + 10, 60, 16 * 11 + 24) > 0, "  while the row under it does");
+
+    /* ---- the scroll gate at nStyle ---- */
+    /* Eight defence cells and no gravity: 16 pairs plus the tail is 19 rows, enough to pass 15. */
+    nSeedWide = BaSeedRolls(8, 50, 100);
+    Check(nSeedWide > 0, "a seed with eight rolls of 50 or more was found");
+    BaRun(0, 8, 0, 0, 0, 0, nSeedWide);
+    CheckEqI32(g_nBaLimit, 19, "eight cells with no gravity give 2*8+3 rows");
+    BaDrawEnv();
+    g_pBaPanel->nLineCount = 14;
+    g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_pBaPanel->nLineCount, 15, "the 15th row is shown");
+    CheckEqI32(g_pBaPanel->nUnk3028, 0, "  and 15 is not past nStyle, so nothing scrolls");
+    g_nBaCooldown = PUFO_RADAR_COOLDOWN_READY;
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_pBaPanel->nLineCount, 16, "the 16th row passes nStyle");
+    CheckEqI32(g_pBaPanel->nUnk3028, 1, "  and the panel scrolls one row");
+
+    /* ---- the confirm control ---- */
+    BaRun(0, 1, 0, 0, 0, 2, nSeed);
+    BaDrawEnv();
+    g_baConfirmCtl.x = 1;
+    g_baConfirmCtl.y = 1;
+    g_bBaConfirm = 0;
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_bBaConfirm, 0, "with rows still hidden the confirm byte stays clear");
+    CheckEqI32(g_baConfirmCtl.x, 1, "  the control is not moved");
+    CheckEqI32(g_baConfirmCtl.y, 1, "  and not placed");
+    CheckEqI32(g_nBaBlitCalls, 0, "  and its pad is not blitted");
+
+    g_pBaPanel->nLineCount = g_nBaLimit;
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_bBaConfirm, 1, "once every row is shown the confirm byte is set");
+    CheckEqI32(g_baConfirmCtl.x, 100, "the control is centred on 120 - (40 >> 1)");
+    CheckEqI32(g_baConfirmCtl.y, 290, "  at y 290");
+    CheckEqI32(g_nBaBlitCalls, 1, "its pad is blitted once");
+    Check(BiInkColour(pPix, 100, 292, 140, 306, uBaGlyph) > 0,
+          "and the OK caption is drawn in the packed pair's glyph colour");
+    Check(BiInkAny(pPix, 100, 292, 140, 306) > 0, "  which is real ink, not a palette accident");
+
+    /* The caption uses the pair this function packs, so a differential probe pins both the pack and
+     * the caption: the same draw with no text records for 1127 leaves the band empty. */
+    BaRun(0, 1, 0, 0, 0, 2, nSeed);
+    BaDrawEnv();
+    g_pBaPanel->nLineCount = g_nBaLimit;
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_OK, "");
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(BiInkAny(pPix, 100, 292, 140, 306), 0, "an empty caption leaves the band clear");
+    CheckEqI32(g_bBaConfirm, 1, "  while the confirm itself still runs");
+    PutTextRec(g_aXfText, PUFO_BASEAT_TEXT_OK, "OK");
+
+    /* ---- the pad blit ---- */
+    /* With no palette loaded for the pad's index slot the blit paints nothing, so the pad is pinned by
+     * what it LOADED as: the archive record's own dimensions and header bytes. */
+    BaRun(0, 1, 0, 0, 0, 2, nSeed);
+    BaDrawEnv();
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 143, "the frame without the pad still shows row 0");
+    BaRun(0, 1, 0, 0, 0, 2, nSeed);
+    BaDrawEnv();
+    g_baDraw.ppPad = &g_pBaPad;
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 143,
+               "  and the pad blit adds nothing to it: the same 143 pixels");
+    Check(g_pBaPad->pData != NULL, "the baseat record loads from main.dat");
+    CheckEqI32(g_pBaPad->uWidth, 240, "  as a 240 wide record");
+    CheckEqI32(g_pBaPad->uHeight, 320, "  and 320 tall");
+    Check(g_pBaPad->pData != NULL && ((const u8 *)g_pBaPad->pData)[4] == 35
+          && ((const u8 *)g_pBaPad->pData)[5] == 35,
+          "  with the first data bytes 35,35: baseinfo has 43,83, soldier 12,12 and emptyb 81,82");
+
+    /* ---- guards ---- */
+    BaseAtScreen_Draw(NULL);
+    Check(g_pBaPanel != NULL, "a null environment is refused");
+    g_baDraw.ppPanel = NULL;
+    g_baDraw.pnLineLimit = NULL;
+    g_bBaConfirm = 1;
+    BiClear(pPix);
+    BaseAtScreen_Draw(&g_baDraw);
+    CheckEqI32(g_bBaConfirm, 1, "with no panel the confirm gate cannot run");
+    CheckEqI32(g_nBaBlitCalls, 0, "  and no pad is blitted");
+}
+
+static i32 g_nBaCloseScreen;
+static i32 g_nBaCloseFail;
+
+static void TestBaseAtCloseThunk(void)
+{
+    static PtrArray list;
+    static GameTime clock;
+    static GeoscapeCloseEnv closeEnv;
+    BaseAtCloseEnv env;
+    StrategItem *pItem0;
+    StrategItem *pItem1;
+
+    printf("the base-attack screen's close\n");
+
+    /* Screen 13 has no case in the dispatcher's switch, so the head is all that runs: the action-fail
+     * dword it clears is the proof that the thunk reached Geoscape_CloseUI. */
+    memset(&env, 0, sizeof(env));
+    memset(&closeEnv, 0, sizeof(closeEnv));
+    g_nBaCloseScreen = 13;
+    g_nBaCloseFail = 1;
+    closeEnv.pnScreenId = &g_nBaCloseScreen;
+    closeEnv.pnActionFail = &g_nBaCloseFail;
+
+    /* The list OWNS its items: PtrArray_DeleteAt @ 0x82bac frees the element it removes. So the items
+     * have to come from StrategItem_AllocAdd (operator new(0x88) at 0x415d8), not from statics. */
+    PtrArray_ctor(&list);
+    Check(StrategItem_AllocAdd(&list, 100), "the list holds the first item");
+    Check(StrategItem_AllocAdd(&list, 200), "and the second");
+    pItem0 = (StrategItem *)PtrArray_Get(&list, 0);
+    pItem1 = (StrategItem *)PtrArray_Get(&list, 1);
+    Check(pItem0 != NULL && pItem1 != NULL && pItem0 != pItem1, "  as two distinct records");
+
+    clock.bPaused = 1;
+    env.pbMissionFollows = &g_bBaResult;
+    env.pStrategList = &list;
+    env.pnStrategIdx = &g_nBaLimit;
+    env.pTime = &clock;
+    env.pClose = &closeEnv;
+
+    /* ---- the aliens landed: the contact stays on the map and the game stays paused ---- */
+    g_bBaResult = 1;
+    g_nBaLimit = 0;
+    g_nBaCloseFail = 1;
+    clock.bPaused = 1;
+    BaseAtScreen_CloseThunk(&env);
+    CheckEqI32(PtrArray_GetCount(&list), 2, "with the follow-up flag set the contact is not removed");
+    CheckEqI32(clock.bPaused, 1, "  and the game stays paused for the ground mission");
+    CheckEqI32(g_nBaCloseFail, 0, "the dispatcher still ran, so the close happened");
+
+    /* ---- the craft was destroyed: the item goes and the game resumes ---- */
+    g_bBaResult = 0;
+    g_nBaLimit = 0;
+    g_nBaCloseFail = 1;
+    clock.bPaused = 1;
+    BaseAtScreen_CloseThunk(&env);
+    CheckEqI32(PtrArray_GetCount(&list), 1, "with the flag clear the contact is removed");
+    Check(PtrArray_Get(&list, 0) == pItem1, "  the index says which one");
+    CheckEqI32(clock.bPaused, 0, "and the pause byte is cleared");
+    CheckEqI32(g_nBaCloseFail, 0, "  with the same tail call");
+
+    /* ---- the index is the one the opener stored ---- */
+    PtrArray_DeleteAll(&list);
+    (void)StrategItem_AllocAdd(&list, 300);
+    (void)StrategItem_AllocAdd(&list, 400);
+    (void)StrategItem_AllocAdd(&list, 500);
+    pItem0 = (StrategItem *)PtrArray_Get(&list, 0);
+    pItem1 = (StrategItem *)PtrArray_Get(&list, 2);
+    g_bBaResult = 0;
+    g_nBaLimit = 1;
+    clock.bPaused = 1;
+    BaseAtScreen_CloseThunk(&env);
+    CheckEqI32(PtrArray_GetCount(&list), 2, "removing the stored index takes exactly that item");
+    Check(PtrArray_Get(&list, 0) == pItem0, "  leaving the first");
+    Check(PtrArray_Get(&list, 1) == pItem1, "  and the third in its place");
+
+    /* ---- the null guard ---- */
+    clock.bPaused = 1;
+    g_bBaResult = 0;
+    g_nBaLimit = 0;
+    BaseAtScreen_CloseThunk(NULL);
+    CheckEqI32(PtrArray_GetCount(&list), 2, "a null close environment removes nothing");
+    CheckEqI32(clock.bPaused, 1, "  and clears no pause byte");
+
+    PtrArray_DeleteAll(&list);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -15696,6 +16427,9 @@ int main(void)
     TestBaseInfoBuildPanels();
     TestBaseInfoInit();
     TestBaseInfoDraw();
+    TestBaseAtUpdate();
+    TestBaseAtDraw();
+    TestBaseAtCloseThunk();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -16392,3 +16392,91 @@ record index against the eight slots, bounds the name copy to the 60-byte local 
 IDB: unk_EB348 -> aTextBaseInfoSelect, unk_EB415 -> aTextBaseInfoMonthly, unk_EB4E2 -> aTextBaseInfoBase (all
 char[205]); a function comment at 0x56fb8 covering the ramp, the overlap and the adopt arm, and a line comment
 at 0x57118 recording the four identical Base_CountShipsAtBase calls.
+## Unit 94 - the base-attack screen (BaseAtScreen_Update @ 0x57808, BaseAtScreen_Draw @ 0x58728, BaseAtScreen_CloseThunk @ 0x577c0)
+
+Ported: BaseAtScreen_Update (3,872 B), BaseAtScreen_Draw (420 B) and BaseAtScreen_CloseThunk (72 B) in
+src/pufo/game/pufo_baseui.c, declared with BaseAtUpdateEnv, BaseAtDrawEnv and BaseAtCloseEnv in
+pufo_baseui.h. Tests: TestBaseAtUpdate, TestBaseAtDraw and TestBaseAtCloseThunk in tests/test_baseui.c.
+
+This is the report a base gets when a mission site lands on it. Geoscape_SpawnMissionSite fills the block
+at 0x158840..0x158849 from the strateg item (0x7EF50..0x7EF70): nBaseAtClass = bCraftClass (+2, read
+SIGNED), nBaseAtStrategIdx = the item's creation serial at +0x34, byte_158848 = nTargetIdx (+0x84),
+nAssaultBaseRace = bRace (+0x70); it pauses the game, writes the screen id 20 to 0x186BC4, and tail-calls
+BaseAtScreen_Open with the base index read SIGNED from the same +0x84. Geoscape_CloseUI case 20 (0x8BAF8)
+is the teardown: the same opener with nMode -1, which now takes the release arm. The port's
+Geoscape_SpawnMissionSite has NOT reproduced that assault branch yet - it routes the screen through
+SpawnMissionHooks.pfnContactScreen. Recorded as a separate issue.
+
+THE OUTER LOOP IS THE BARRAGE, NOT THE GRAVITY PAIR. Hex-Rays renders 0x57BEC..0x583F0 as a while(1) with
+a break into a second while(1), which hides what the ARM says: 0x583F0 is `BLT loc_57BE8` and 0x57BEC is
+`STR R10, [SP, #var_B8]`, so the per-kind pair counters are reset at the top of the round loop and the
+defence pairs are re-emitted in every one of the (gravity + 1) rounds. The capacity at 0x57A94,
+2*(defenceCells*(gravity + 1) + gravity) + 3, is exactly the row count that structure produces - that is
+what proves it. With one missile cell and two gravity cells the log is 13 rows: defence pair, gravity
+pair, defence pair, gravity pair, defence pair, then the tail.
+
+The budget comes from switch((char)nBaseAtClass) at 0x5784C: 50, 200, 250, 500, 500, 1200, 2200, 3000 for
+class 0..7 - the ARM builds the last two as 2192|8 and 2992|8 - and 0 for anything else, which makes even
+an out-of-range class lose on the first pair. A pair is rolled with Game_RandU16(100): below the kind's
+threshold the defence HITS (green meta 50,255,50 / 0,20,0, TEXTS[1116], budget -= damage), at or above it
+the defence MISSES (red meta 255,50,50 / 20,0,0, TEXTS[1117]). Thresholds 50/60/70/80 and damages
+500/600/900/1500 for kind 13/14/15/16, so the better the defence the more often it misses and the harder
+it hits. Each threshold is pinned by a seed whose roll falls in the band below the next kind's threshold:
+the same roll of 50..59 is a missile miss and a laser hit, 60..69 a laser miss and a plasma hit, 70..79 a
+plasma miss and a fusion hit. Each damage is pinned by how far the budget reaches: 1200 burns over three
+missile hits but over two laser hits, 2200 over three plasma hits, 3000 over two fusion hits.
+
+ORIGINAL BUG, not reproduced: the emitted row count is 2*(D*(G+1)+G)+3 with D+G <= 36, which peaks at 723
+for 18 gravity and 18 defence cells - past the 500 line buffers a UiPanel holds, so the writes run through
+apLines[500] at +0xBE4 into anLineAux[500] at +0x13B4 and then past the 0x1BB4 block. UiPanel_ctor's clamp
+and the line setters' bounds stop that in the port.
+
+UNPINNABLE BY CONSTRUCTION: the budget is tested only after a pair is emitted and every damage is at least
+500, so the budgets 50, 200, 250, 500 and 500 all die on the first hit. No observable behaviour separates
+classes 0..4 from each other; only 1200, 2200 and 3000 can be told apart.
+
+The grid scan (0x57914..0x57A38) reads the type byte at 36*(4*base+3)+372+cell, which is 480+144*base+cell
+- the same type layer the base-info screen uses - and the days byte at 36*base+cell, both with the cell
+index 6*row + col. Hex-Rays renders both through the buildDays array type, which is why the strides look
+different for one cell. Every kind test also requires the cell to be free, so a cell under construction is
+not a defence, and a hangar is not one either.
+
+The tail is three rows with aux 0. The first is the EMPTY label: 0x58464 is `LDR R0, =0x10DA38`, a pointer
+into zero-filled .data, not a TEXTS record. Then either TEXTS[1125] "НЛО высадилось рядом с базой" and
+TEXTS[1126] "Подготовка к защите" with bBaseAtMissionFollows = 1 - the budget survived and the ground
+mission follows - or TEXTS[1123] "НЛО уничтожен" and TEXTS[1124] "Угроза захвата снята" with the flag
+clear. nBaseAtLineLimit is the row count, nRadarCooldownR goes to 255 and nLineCount to 0, so the reveal
+starts again from row 0.
+
+Draw reveals one row per cooldown: with nRadarCooldownR at 255 and rows still hidden it parks the cooldown
+at 255 - aux of the row about to be shown (20 for a defence row, 10 for the gravity pair's second row, 0
+for a tail row, which the geoscape's saturating counter reaches at once), shows that row, and scrolls once
+the shown count passes nStyle (15). When every row is shown the shared confirm control goes to
+x = 120 - (uWidth >> 1), y 290, bBaseAtConfirmShown is set - the byte Geoscape_OnPointer (0x89414) and
+Geoscape_OnPointerUp (0x8AF70) gate on - its pad is blitted, and TEXTS[1127] "ОК" is drawn centred at
+(120, 290) in the same caption colour pair the base-info and psi frames pack. The "baseat" pad (mode 30,
+240x320) paints 143 pixels of the cleared frame, which is what pins the pad identity.
+
+CloseThunk: with bBaseAtMissionFollows clear the contact is over, so StrategList_RemoveAt drops the item
+(nBaseAtStrategIdx is the index) and 0x15961C - GameTime.bPaused - is cleared. Either way it tail-calls
+Geoscape_CloseUI, whose case 20 runs Update's release arm. The release arm restores nLineCount from
+nBaseAtLineCap BEFORE freeing, so UiPanel_FreeLines reaches every line buffer: the draw had left nLineCount
+at the revealed row count, which is smaller.
+
+Deviations. A null environment, panel, pad or counter is refused; the base index is bounded to the eight
+grid blocks (the original's -1 call would read grid - 36 and grid + 336 if it reached the build arm); the
+original writes nLineCount from the capacity before testing the panel for null and blits the pad and calls
+UiPanelMsg_Draw untested; the freed slots are nulled; and the labels go straight to UiPanel_SetLineText
+instead of through the original's 152-byte stack buffer.
+
+A 78-mutation sweep over the three functions turned 73 of them red. The five that stayed green are equivalences, not gaps: the (i8) craft-class cast cannot differ from (u8) because class bytes are 0..7; the nGravity > 0 conjunct is dead because the round loop already breaks at nRound >= nGravity; SetBytes3to5 and SetBytes6to11 write disjoint byte ranges so their order is irrelevant; an un-freed pad is a leak with no observable effect; and the scroll gate > against >= is masked by UiPanel_ScrollNext's own nUnk3028 < nLineCount - nStyle guard. The sweep also found two defects in the tests themselves: a static StrategItem handed to PtrArray_DeleteAt, which free()s its element, aborted the suite with 0xC0000409 and silently truncated the run before it, and a claimed 143 painted pixels that turned out to be the panel's own row text -- the pad blit paints nothing until a palette is loaded for its index slot.
+
+IDB: 12 renames (szBaseAtLine0..5, szBaseAtSepA/B, szBaseAtFailA/B, szBaseAtEndA/B to
+aTextBaseAtFireMissile, aTextBaseAtHit, aTextBaseAtMiss, aTextBaseAtFireLaser, aTextBaseAtFirePlasma,
+aTextBaseAtFireFusion, aTextBaseAtGravityRepelled, aTextBaseAtAllRecharged, aTextBaseAtUfoDestroyed,
+aTextBaseAtThreatLifted, aTextBaseAtUfoLanded and aTextBaseAtPrepareDefence, each char[205]) and 5 more
+(pBaseAtLineLimit to nBaseAtLineLimit, pBaseAtLineCap to nBaseAtLineCap, bBaseAtDone to
+bBaseAtConfirmShown, bBaseAtResult to bBaseAtMissionFollows, nBaseAtParam to nBaseAtStrategIdx). Function
+comments at 0x57808, 0x58728 and 0x577c0, and line comments at 0x57A80, 0x57A94, 0x57BE4, 0x57BEC, 0x582A8,
+0x583F0, 0x58464, 0x58698 and 0x7EF50 recording the round loop, the capacity, the empty label and the
+assault block.

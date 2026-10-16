@@ -507,3 +507,20 @@ asc_AB1D8	aDollarSign	0xAB1D8. The single '$' strcat'd onto the money rows of th
 unk_EB348	aTextBaseInfoSelect	0xEB348. TEXTS[1112] "Выбор базы", centred at (60, 300) by BaseInfoScreen_Draw (0x572F0). char[205].
 unk_EB415	aTextBaseInfoMonthly	0xEB415. TEXTS[1113] "Месячный расход", the (180, 300) toggle label while bBaseInfoPanelMode is set (0x57330). char[205].
 unk_EB4E2	aTextBaseInfoBase	0xEB4E2. TEXTS[1114] "База", the (180, 300) toggle label while the mode flag is clear (0x57370). char[205].
+szBaseAtLine0	aTextBaseAtFireMissile	0xEB5AF. TEXTS[1115 "Ракетная защ..ОГОНЬ!!!"], the kind-13 FIRE row of a defence pair (0x57BF8). char[205].
+szBaseAtLine1	aTextBaseAtHit	0xEB67C. TEXTS[1116 "ПОПАДАНИЕ!!!"], the result row when Game_RandU16(100) is below the kind threshold (0x57CC0). char[205].
+szBaseAtLine2	aTextBaseAtMiss	0xEB749. TEXTS[1117 "ПРОМАХ"], the result row at or above the threshold (0x57D1C). char[205].
+szBaseAtLine3	aTextBaseAtFireLaser	0xEB816. TEXTS[1118 "Лазерная защ..ОГОНЬ!!!"], the kind-14 FIRE row (0x57DB4). char[205].
+szBaseAtLine4	aTextBaseAtFirePlasma	0xEB8E3. TEXTS[1119 "Плазменная защ..ОГОНЬ!!!"], the kind-15 FIRE row (0x57F64). char[205].
+szBaseAtLine5	aTextBaseAtFireFusion	0xEB9B0. TEXTS[1120 "Термоядерная защита.ОГОНЬ!!!"], the kind-16 FIRE row (0x5810C). char[205].
+szBaseAtSepA	aTextBaseAtGravityRepelled	0xEBA7D. TEXTS[1121 "Гравитаци. щит отбросил НЛО"], the first row of the gravity-shield pair (0x58330). char[205].
+szBaseAtSepB	aTextBaseAtAllRecharged	0xEBB4A. TEXTS[1122 "Все сисст. защ. перезаряжены!!!"], the second row of that pair (0x58388). char[205].
+szBaseAtFailA	aTextBaseAtUfoDestroyed	0xEBC17. TEXTS[1123 "НЛО уничтожен"], tail row 1 when the attack budget was burned (0x584C0). The old name read from the alien side; this one names the base's outcome. char[205].
+szBaseAtFailB	aTextBaseAtThreatLifted	0xEBCE4. TEXTS[1124 "Угроза захвата снята"], tail row 2 of the same branch (0x58518). char[205].
+szBaseAtEndA	aTextBaseAtUfoLanded	0xEBDB1. TEXTS[1125 "НЛО высадилось рядом с базой"], tail row 1 when the budget survived (0x585D4). char[205].
+szBaseAtEndB	aTextBaseAtPrepareDefence	0xEBE7E. TEXTS[1126 "Подготовка к защите"], tail row 2 of the same branch (0x58630). char[205].
+pBaseAtLineLimit	nBaseAtLineLimit	0x158858. The row count BaseAtScreen_Update writes at 0x58424 and BaseAtScreen_Draw compares nLineCount against at 0x587D8. An int, not a pointer.
+pBaseAtLineCap	nBaseAtLineCap	0x158860. The line count the panel was constructed with (0x57A9C), restored into pBaseAtPanel->nLineCount at 0x586D0 so UiPanel_FreeLines frees every buffer. An int.
+bBaseAtDone	bBaseAtConfirmShown	0x158854. Cleared by the build arm (0x57840) and set by the draw once every row is revealed (0x5880C); Geoscape_OnPointer (0x89414) and Geoscape_OnPointerUp (0x8AF70) gate on it, so it means "the OK control is live".
+bBaseAtResult	bBaseAtMissionFollows	0x158850. Set when the attack budget survived and the aliens got out (0x58688), clear when the craft was destroyed (0x58570). BaseAtScreen_CloseThunk removes the strateg item only when it is clear, and Geoscape_CloseUI case 20 starts the craft-selection pass when it is set.
+nBaseAtParam	nBaseAtStrategIdx	0x158844. Written from the strateg item's +0x34 (the creation serial StrategItem_ctor wrote from the counter at 0x18640C) at 0x7EF60, and passed to StrategList_RemoveAt as the index at 0x577D4.

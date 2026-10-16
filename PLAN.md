@@ -2724,6 +2724,8 @@ Order is by what unblocks what. Each item ends with gates + commit.
 
 - [x] **part 93, the base-info screen's frame: `BaseInfoScreen_Draw (0x56fb8, 1,744 B)`** — completes the base-info family. **The grey ramp's two halves overlap**: the left one runs to x 120 and the right one starts at x 119, drawn in the same step order, so the left ramp's last block overdraws the right ramp's first two pixels — 250 appears 9 times in the frame, not 15. The byte arithmetic also makes the halves share colours (`-6-5*7 = -41 = 215`, `5*(7+20) = 135`), so 215 and 135 each appear 30 times. **The base name is drawn before the colour pair is packed** (0x57284 before 0x5729C), so it takes the colour already in the palette rather than the one this function installs. The bands move with `Base_CountShipsAtBase` when `bBaseInfoPanelMode` is clear — 35 / `18*n+59` / `18*n+169` — against fixed 35/113/225 when it is set, and the original re-reads the count on all four calls of every step. **The three captions are real lang.dat records**, not the zero-filled scratch the panel labels use: TEXTS[1112] "Выбор базы" at (60, 300), and the toggle label at (180, 300) is TEXTS[1113] "Месячный расход" in panel mode or TEXTS[1114] "База" outside it. **The adopt arm is inside the overlay arm**: a differing `byte_158834` is adopted by the draw itself, which frees the three panels and rebuilds them in the same call — so the pickup lands on the next draw, not on a click, and with the overlay closed a differing base is left alone entirely. 58 new checks; **all 35 mutations turn at least one red**, so nothing in this function is left unpinned. 3 new IDB symbols (484 → 487 renames on record), a function comment at 0x56fb8 and a line comment at 0x57118. 14923 checks (60 suites), coverage 938/1103 (85.0%) and 525952/598792 bytes (87.8%); `strat-ui` to 237/245.
 
+- [x] **part 94, the base-attack screen: `BaseAtScreen_Update (0x57808, 3,872 B)`, `BaseAtScreen_Draw (0x58728, 420 B)`, `BaseAtScreen_CloseThunk (0x577c0, 72 B)`** — the last member of the base UI family, reached from `Geoscape_SpawnMissionSite` case 13. **The barrage is a round loop, not the flat sequence Hex-Rays shows**: `0x57BE8..0x583F0` walks the four defence kinds in order (missile, laser, plasma, fusion), emits a FIRE row plus a HIT/MISS row per cell, then emits the gravity-shield pair once per round at `0x582A8` and loops while `nRound < nGravity` (`0x583F0 BLT loc_57BE8`), so a base with G gravity cells and D defence cells prints `2*(D*(G+1)+G)+3` rows. **Each kind has its own roll threshold and its own damage** — 50/500 missile, 60/600 laser, 70/900 plasma, 80/1500 fusion against `Game_RandU16(100)` — and the attack budget (50, 200, 250, 500, 500, 1200, 2200, 3000 by craft class) is burned by the damages and tested only after a pair is emitted, which is why the first five budgets are behaviourally identical. **The tail names the outcome**: budget gone prints "НЛО уничтожен" / "Угроза захвата снята" and clears the follow flag; budget left prints "НЛО высадилось рядом с базой" / "Подготовка к защите" and sets it, and `BaseAtScreen_CloseThunk` removes the strateg item and un-pauses the clock only when it is clear. **The original overflows its own panel here** — 18 gravity plus 18 defence cells asks for 723 rows against the 500 a `UiPanel` holds. Recorded in `docs/parity/bugs.tsv`; not reproduced. Coverage after this unit: 941/1103 functions and 530316/598792 bytes (88.6%); `strat-ui` to 240/245 and 108868/121164 (89.9%).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2741,6 +2743,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
+
+- [ ] **`Geoscape_SpawnMissionSite` has not reproduced the assault branch, so nothing in the port opens the
+  base-attack screen.** The original's type-2 branch (0x7EF38..0x7EF80) pauses the game, fills the block at
+  0x158840..0x158849 from the strateg item — `nBaseAtClass` = `bCraftClass` (+2, read SIGNED),
+  `nBaseAtStrategIdx` = the creation serial at +0x34, `nAssaultBaseRace` = `bRace` (+0x70), byte_158848 =
+  `nTargetIdx` (+0x84) — writes the screen id 20 to 0x186BC4, and tail-calls `BaseAtScreen_Open` with the base
+  index read SIGNED from +0x84. The port routes the screen through `SpawnMissionHooks.pfnContactScreen` and
+  leaves the block fill to the caller, which no caller does yet. The screen itself is ported (unit 94), so
+  this is the wiring that makes it reachable: it needs a `SpawnMissionCtx` that carries the five slots plus
+  `GeoscapeCloseEnv`'s screen id, and it is where `nBaseAtStrategIdx`'s index-vs-serial question gets settled.
 
 - [ ] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.**
   `src/pufo/game/pufo_mapcell.h` asserts `sizeof(MapCell) == 60` inside

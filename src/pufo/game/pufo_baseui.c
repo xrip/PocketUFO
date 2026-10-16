@@ -11973,3 +11973,323 @@ void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv)
         }
     }
 }
+
+/* ---- BaseAtScreen_Update @ 0x57808 ---- */
+
+/* The attack strength the defences have to burn through, per craft class (0x5784C..0x578B8). The ARM
+ * builds the last two as 2192|8 and 2992|8; a class outside 0..7 leaves the budget at 0. */
+static const i32 g_anBaseAtBudget[8] = { 50, 200, 250, 500, 500, 1200, 2200, 3000 };
+
+static const char *BaseAt_Text(const char *pTextRecs, i32 nRec)
+{
+    if (pTextRecs == NULL) {
+        return "";
+    }
+    return pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+/* One defence pair (0x57BF8..0x57D7C, and the same shape three more times at 0x57DB4, 0x57F64 and
+ * 0x5810C). The "ОГОНЬ!!!" row goes first with aux 20, then the roll decides the result row: below
+ * nThreshold the defence HITS -- green meta and TEXTS[1116] -- and burns nDamage off the budget; at
+ * or above it the defence MISSES -- red meta and TEXTS[1117]. The second row gets aux 20 last, after
+ * the label is already in place. */
+static void BaseAt_EmitDefencePair(const BaseAtUpdateEnv *pEnv, UiPanel *pPanel, i32 nRow,
+                                   i32 nFireRec, i32 nThreshold, i32 nDamage, i32 *pnBudget)
+{
+    (void)UiPanel_SetLineText(pPanel, nRow, BaseAt_Text(pEnv->pTextRecs, nFireRec)); /* 0x57C08..0x57C54 */
+    UiPanel_SetLineAux(pPanel, nRow, PUFO_BASEAT_AUX_DEFENCE);                       /* 0x57C70 */
+
+    if ((i32)Game_RandU16(PUFO_BASEAT_ROLL_MAX) >= nThreshold) {                     /* 0x57C74..0x57C90 */
+        UiPanel_SetLineMeta(pPanel, nRow + 1, 255, 50, 50, 20, 0, 0);                /* 0x57D0C */
+        (void)UiPanel_SetLineText(pPanel, nRow + 1,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_MISS));   /* 0x57D1C */
+    } else {
+        UiPanel_SetLineMeta(pPanel, nRow + 1, 50, 255, 50, 0, 20, 0);                /* 0x57CAC */
+        (void)UiPanel_SetLineText(pPanel, nRow + 1,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_HIT));    /* 0x57CC0 */
+        *pnBudget -= nDamage;                                                        /* 0x57CE4 */
+    }
+    UiPanel_SetLineAux(pPanel, nRow + 1, PUFO_BASEAT_AUX_DEFENCE);                   /* 0x57D74 */
+}
+
+/* The gravity-shield pair (0x582A8..0x583D8): aux 0 then 10, the same meta on both rows, and no
+ * budget change -- the shield repels the craft and the defences get their charge back. */
+static void BaseAt_EmitGravityPair(UiPanel *pPanel, i32 nRow, const char *pTextRecs)
+{
+    UiPanel_SetLineAux(pPanel, nRow, PUFO_BASEAT_AUX_GRAVITY_A);                     /* 0x582C4 */
+    UiPanel_SetLineAux(pPanel, nRow + 1, PUFO_BASEAT_AUX_GRAVITY_B);                 /* 0x582E0 */
+    UiPanel_SetLineMeta(pPanel, nRow, 150, 150, 255, 0, 20, 20);                     /* 0x582FC */
+    UiPanel_SetLineMeta(pPanel, nRow + 1, 150, 150, 255, 0, 20, 20);                 /* 0x58320 */
+    (void)UiPanel_SetLineText(pPanel, nRow,
+                              BaseAt_Text(pTextRecs, PUFO_BASEAT_TEXT_GRAVITY));     /* 0x58330..0x5837C */
+    (void)UiPanel_SetLineText(pPanel, nRow + 1,
+                              BaseAt_Text(pTextRecs, PUFO_BASEAT_TEXT_RECHARGED));   /* 0x58388..0x583D4 */
+}
+
+void BaseAtScreen_Update(i32 nBaseIdx, const BaseAtUpdateEnv *pEnv)
+{
+    i32 nGravity;
+    i32 nMissile;
+    i32 nLaser;
+    i32 nPlasma;
+    i32 nFusion;
+    i32 nBudget;
+    i32 nCap;
+    i32 nRounds;
+    i32 nRow;
+    i32 bBudgetGone;
+    UiPanel *pPanel;
+    PadImage *pPad;
+
+    if (pEnv == NULL || pEnv->pbActive == NULL || pEnv->ppPanel == NULL || pEnv->ppPad == NULL
+        || pEnv->pnLineLimit == NULL || pEnv->pnLineCap == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbActive != 0) {
+        /* 0x586B4..0x58718: the teardown. nLineCount is restored from the built capacity FIRST, so
+         * UiPanel_FreeLines reaches every line buffer -- the draw had left nLineCount at the revealed
+         * row count, which is smaller. The original deletes without nulling either slot. */
+        *pEnv->pbActive = 0;                                                       /* 0x586B4 */
+        pPanel = *pEnv->ppPanel;
+        if (pPanel != NULL) {
+            pPanel->nLineCount = *pEnv->pnLineCap;                                 /* 0x586D0 */
+            UiPanel_FreeLines(pPanel);                                             /* 0x586E4 */
+            free(pPanel);                                                          /* 0x586EC */
+            *pEnv->ppPanel = NULL;
+        }
+        pPad = *pEnv->ppPad;
+        if (pPad != NULL) {
+            PadImage_FreeData(pPad);                                               /* 0x58704 */
+            free(pPad);                                                            /* 0x5870C */
+            *pEnv->ppPad = NULL;
+        }
+        if (pEnv->pbSpawnReplacement != NULL) {
+            *pEnv->pbSpawnReplacement = 1;                                         /* 0x58718 */
+        }
+        return;
+    }
+
+    *pEnv->pbActive = 1;                                                           /* 0x57838 */
+    if (pEnv->pbConfirmShown != NULL) {
+        *pEnv->pbConfirmShown = 0;                                                 /* 0x57840 */
+    }
+
+    nBudget = 0;
+    if (pEnv->pbCraftClass != NULL) {
+        const i32 nClass = (i32)(i8)*pEnv->pbCraftClass;                           /* 0x5784C, (char) */
+
+        if (nClass >= 0 && nClass < 8) {
+            nBudget = g_anBaseAtBudget[nClass];
+        }
+    }
+
+    pPad = (PadImage *)calloc(1, sizeof(PadImage));                                /* 0x578BC, new(0x14) */
+    if (pPad != NULL) {
+        PadImage_ctor(pPad);                                                       /* 0x578CC */
+    }
+    *pEnv->ppPad = pPad;                                                           /* 0x578E0 */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_BASEAT_PAD_NAME, PUFO_BASEAT_PAD_MODE);     /* 0x578E4 */
+        pPad->nOriginX = 0;                                                        /* 0x578F8 */
+        pPad->nOriginY = 0;                                                        /* 0x5790C */
+    }
+
+    /* 0x57914..0x57A38: one pass over the base's 36 cells. Every kind test also requires the cell to
+     * be free (its buildDays byte is 0), so the days test comes first here. The type layer is
+     * 372 + 144*base + 108 and the days layer 36*base, both indexed 6*row + col -- the same cell. */
+    nGravity = 0;
+    nMissile = 0;
+    nLaser = 0;
+    nPlasma = 0;
+    nFusion = 0;
+    if (pEnv->abFacilityGrid != NULL && nBaseIdx >= 0 && nBaseIdx < PUFO_FAC_BASE_COUNT) {
+        const u8 *const pDays = pEnv->abFacilityGrid + PUFO_GRID_DAYS_STRIDE * nBaseIdx;
+        const u8 *const pType = pEnv->abFacilityGrid + PUFO_GRID_FAC_OFF
+                                + PUFO_GRID_FAC_STRIDE * nBaseIdx + PUFO_GRID_FAC_TYPE_OFF;
+
+        for (i32 nCell = 0; nCell < PUFO_GRID_CELL_COUNT; ++nCell) {
+            if (pDays[nCell] != 0) {
+                continue;
+            }
+            switch (pType[nCell]) {
+            case FAC_GRAVITY_SHIELD:      ++nGravity; break;                       /* 0x5796C */
+            case FAC_MISSILE_DEFENCES:    ++nMissile; break;                       /* 0x57998 */
+            case FAC_LASER_DEFENCE:       ++nLaser; break;                         /* 0x579C4 */
+            case FAC_PLASMA_DEFENCE:      ++nPlasma; break;                        /* 0x579F0 */
+            case FAC_FUSION_BALL_DEFENCE: ++nFusion; break;                        /* 0x57A1C */
+            default: break;
+            }
+        }
+    }
+
+    /* 0x57A80..0x57A9C: the barrage runs (gravity + 1) rounds, and the capacity is exactly the row
+     * count that produces -- defence pairs per round times the rounds, plus the gravity pairs, plus
+     * the three tail rows. */
+    nRounds = nGravity + 1;
+    nCap = 2 * ((nMissile + nLaser + nPlasma + nFusion) * nRounds + nGravity) + 3;
+    *pEnv->pnLineCap = nCap;
+
+    pPanel = (UiPanel *)calloc(1, sizeof(UiPanel));                                /* 0x57AA8, new(0x1BB4) */
+    if (pPanel != NULL) {
+        (void)UiPanel_ctor(pPanel, nCap);                                          /* 0x57AB8 */
+    }
+    *pEnv->ppPanel = pPanel;                                                       /* 0x57ADC */
+    if (pPanel == NULL) {
+        return;
+    }
+
+    pPanel->nStyle = PUFO_BASEAT_PANEL_STYLE;                                      /* 0x57AE4 */
+    pPanel->nFont = PUFO_BASEAT_PANEL_FONT;                                        /* 0x57AF4 */
+    pPanel->nPosX = PUFO_BASEAT_PANEL_X;                                           /* 0x57B08 */
+    pPanel->nPosY = PUFO_BASEAT_PANEL_Y;                                           /* 0x57B18 */
+    pPanel->nUnk7052 = PUFO_BASEAT_PANEL_CLICKL;                                   /* 0x57B2C */
+    pPanel->nUnk7056 = PUFO_BASEAT_PANEL_CLICKTOP;                                 /* 0x57B40 */
+    pPanel->nViewW = PUFO_BASEAT_PANEL_VIEWW;                                      /* 0x57B54 */
+    UiPanel_SetBytes0to2(pPanel, 0x64, 0x96, 0x64);                                /* 0x57B64 */
+    pPanel->bUnk7088 = (u8)-106;                                                   /* 0x57B78 */
+    UiPanel_SetBytes6to11(pPanel, 0xDC, 0xC8, 0xF0, 0x14, 0x14, 0x14);             /* 0x57B9C */
+    UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);                                /* 0x57BB0 */
+    pPanel->bFlag7073 = 0;                                                         /* 0x57BC4 */
+    pPanel->bFlag7072 = 0;                                                         /* 0x57BDC */
+
+    nRow = 0;
+    bBudgetGone = 0;
+    for (i32 nRound = 0;; ++nRound) {                                              /* 0x57BEC */
+        for (i32 i = 0; i < nMissile; ++i) {
+            BaseAt_EmitDefencePair(pEnv, pPanel, nRow, PUFO_BASEAT_TEXT_FIRE_MISSILE,
+                                   PUFO_BASEAT_THRESHOLD_MISSILE, PUFO_BASEAT_DAMAGE_MISSILE, &nBudget);
+            nRow += 2;
+            if (nBudget < 1) { bBudgetGone = 1; goto tail; }                       /* 0x57D7C */
+        }
+        for (i32 i = 0; i < nLaser; ++i) {
+            BaseAt_EmitDefencePair(pEnv, pPanel, nRow, PUFO_BASEAT_TEXT_FIRE_LASER,
+                                   PUFO_BASEAT_THRESHOLD_LASER, PUFO_BASEAT_DAMAGE_LASER, &nBudget);
+            nRow += 2;
+            if (nBudget < 1) { bBudgetGone = 1; goto tail; }                       /* 0x57F28 */
+        }
+        for (i32 i = 0; i < nPlasma; ++i) {
+            BaseAt_EmitDefencePair(pEnv, pPanel, nRow, PUFO_BASEAT_TEXT_FIRE_PLASMA,
+                                   PUFO_BASEAT_THRESHOLD_PLASMA, PUFO_BASEAT_DAMAGE_PLASMA, &nBudget);
+            nRow += 2;
+            if (nBudget < 1) { bBudgetGone = 1; goto tail; }                       /* 0x580D0 */
+        }
+        for (i32 i = 0; i < nFusion; ++i) {
+            BaseAt_EmitDefencePair(pEnv, pPanel, nRow, PUFO_BASEAT_TEXT_FIRE_FUSION,
+                                   PUFO_BASEAT_THRESHOLD_FUSION, PUFO_BASEAT_DAMAGE_FUSION, &nBudget);
+            nRow += 2;
+            if (nBudget < 1) { bBudgetGone = 1; goto tail; }                       /* 0x58280 */
+        }
+        if (nGravity > 0 && nGravity != nRound) {                                  /* 0x582A8 */
+            BaseAt_EmitGravityPair(pPanel, nRow, pEnv->pTextRecs);
+            nRow += 2;
+        }
+        if (nRound >= nGravity) {
+            break;                                                                 /* 0x583F0, ++v144 >= v10 + 1 */
+        }
+    }
+
+tail:
+    *pEnv->pnLineLimit = nRow + 3;                                                 /* 0x58424 */
+    UiPanel_SetLineAux(pPanel, nRow, 0);                                           /* 0x58434 */
+    UiPanel_SetLineAux(pPanel, nRow + 1, 0);                                       /* 0x58448 */
+    UiPanel_SetLineAux(pPanel, nRow + 2, 0);                                       /* 0x5845C */
+    (void)UiPanel_SetLineText(pPanel, nRow, ""); /* 0x58464: 0x10DA38 is zero-filled .data, not a record */
+
+    if (bBudgetGone) {
+        (void)UiPanel_SetLineText(pPanel, nRow + 1,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_DESTROYED)); /* 0x584C0 */
+        (void)UiPanel_SetLineText(pPanel, nRow + 2,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_THREAT));    /* 0x58518 */
+        if (pEnv->pbMissionFollows != NULL) {
+            *pEnv->pbMissionFollows = 0;                                           /* 0x58570 */
+        }
+    } else {
+        (void)UiPanel_SetLineText(pPanel, nRow + 1,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_LANDED));   /* 0x585D4 */
+        (void)UiPanel_SetLineText(pPanel, nRow + 2,
+                                  BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_PREPARING)); /* 0x58630 */
+        if (pEnv->pbMissionFollows != NULL) {
+            *pEnv->pbMissionFollows = 1;                                           /* 0x58688 */
+        }
+    }
+
+    if (pEnv->pnRadarCooldownR != NULL) {
+        *pEnv->pnRadarCooldownR = PUFO_RADAR_COOLDOWN_READY;                      /* 0x58698 */
+    }
+    pPanel->nLineCount = 0;                                                        /* 0x586A4 */
+}
+
+/* ---- BaseAtScreen_Draw @ 0x58728 ---- */
+
+void BaseAtScreen_Draw(const BaseAtDrawEnv *pEnv)
+{
+    char szOk[52];
+    UiPanel *pPanel;
+    i32 nLimit;
+
+    if (pEnv == NULL || pEnv->pbActive == NULL || *pEnv->pbActive == 0) {
+        return;
+    }
+    if (pEnv->ppPad != NULL && *pEnv->ppPad != NULL) {
+        PadImage_Blit(*pEnv->ppPad);                                               /* 0x58744 */
+    }
+    pPanel = (pEnv->ppPanel != NULL) ? *pEnv->ppPanel : NULL;
+    nLimit = (pEnv->pnLineLimit != NULL) ? *pEnv->pnLineLimit : 0;
+
+    /* 0x58758..0x587C0: one row per cooldown. The cooldown is parked at 255 minus the aux of the row
+     * about to be shown, so the geoscape's saturating counter has to run that many ticks before the
+     * next row appears -- 20 for a defence row, 10 for the gravity pair's second row, 0 for a tail row,
+     * which the counter reaches at once. */
+    if (pPanel != NULL && pEnv->pnRadarCooldownR != NULL
+        && *pEnv->pnRadarCooldownR == PUFO_RADAR_COOLDOWN_READY
+        && pPanel->nLineCount < nLimit) {
+        *pEnv->pnRadarCooldownR = PUFO_RADAR_COOLDOWN_READY
+                                  - UiPanel_GetLineAux(pPanel, pPanel->nLineCount); /* 0x58788 */
+        ++pPanel->nLineCount;                                                      /* 0x5879C */
+        if (pPanel->nLineCount > pPanel->nStyle) {                                 /* 0x587B4 */
+            UiPanel_ScrollNext(pPanel);                                            /* 0x587C0 */
+        }
+    }
+
+    if (pPanel != NULL) {
+        UiPanel_DrawText(pPanel);                                                  /* 0x587CC */
+    }
+    if (pPanel == NULL || nLimit != pPanel->nLineCount) {                          /* 0x587D8 */
+        return;
+    }
+
+    if (pEnv->pCtlConfirm != NULL) {
+        pEnv->pCtlConfirm->x = (i16)(PUFO_BASEAT_CONFIRM_X - (pEnv->pCtlConfirm->uWidth >> 1)); /* 0x587EC */
+        pEnv->pCtlConfirm->y = PUFO_BASEAT_CONFIRM_Y;                              /* 0x587F8 */
+    }
+    if (pEnv->pbConfirmShown != NULL) {
+        *pEnv->pbConfirmShown = 1;                                                 /* 0x5880C */
+    }
+    if (pEnv->pCtlConfirm != NULL) {
+        (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
+                                      pEnv->pfnCtlBlitEx, pEnv->pCtlUser);         /* 0x58814 */
+    }
+
+    snprintf(szOk, sizeof szOk, "%s", BaseAt_Text(pEnv->pTextRecs, PUFO_BASEAT_TEXT_OK)); /* 0x5881C..0x58838 */
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                    /* 0x5884C */
+    BaseInfo_DrawCentered(PUFO_BASEAT_CONFIRM_X, PUFO_BASEAT_CONFIRM_Y, szOk);     /* 0x58868..0x5888C */
+}
+
+/* ---- BaseAtScreen_CloseThunk @ 0x577c0 ---- */
+
+void BaseAtScreen_CloseThunk(const BaseAtCloseEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+    if (pEnv->pbMissionFollows == NULL || *pEnv->pbMissionFollows == 0) {          /* 0x577C8 */
+        (void)StrategList_RemoveAt(pEnv->pStrategList, pEnv->pWorld,
+                                   (pEnv->pnStrategIdx != NULL) ? *pEnv->pnStrategIdx : 0,
+                                   pEnv->pbSpawnReplacement, pEnv->pSpawnCtx);      /* 0x577D4 */
+        if (pEnv->pTime != NULL) {
+            pEnv->pTime->bPaused = 0; /* 0x577E4: GameTime_Unpause is a store of 0 to 0x15961C */
+        }
+    }
+    Geoscape_CloseUI(pEnv->pClose);                                                /* 0x577F4, the tail call */
+}

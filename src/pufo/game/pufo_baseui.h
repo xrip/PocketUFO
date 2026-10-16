@@ -5812,4 +5812,155 @@ typedef struct BaseInfoDrawEnv {
 
 void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv);
 
+/* ------------------------------------------------- the base-attack screen
+ *
+ * Evidence: BaseAtScreen_Update @ 0x57808 (3,872 B), BaseAtScreen_Draw @ 0x58728 (420 B),
+ * BaseAtScreen_CloseThunk @ 0x577c0 (72 B).
+ *
+ * This is the report a base gets when a mission site lands on it. Geoscape_SpawnMissionSite fills
+ * the block at 0x158840..0x158849 from the strateg item (0x7EF50..0x7EF70): nBaseAtClass = bCraftClass
+ * (+2, read SIGNED), nBaseAtStrategIdx = the item's creation serial at +0x34, byte_158848 =
+ * nTargetIdx (+0x84), nAssaultBaseRace = bRace (+0x70); it pauses the game, writes the screen id 20
+ * to 0x186BC4, and tail-calls BaseAtScreen_Open with the base index read SIGNED from the same +0x84.
+ * Geoscape_CloseUI case 20 (0x8BAF8) is the teardown: the same opener with nMode -1, which now takes
+ * the release arm.
+ *
+ * Update builds the panel as a scripted battle log.
+ *
+ * 1. Budget. The attacking craft's class sets the strength the defences have to burn through:
+ *    50, 200, 250, 500, 500, 1200, 2200, 3000 for class 0..7 and 0 for anything else. The ARM builds
+ *    the last two as 2192|8 and 2992|8 (0x578A8..0x578B4).
+ * 2. The base's 6x6 grid is scanned once. Every cell that is FREE (its buildDays byte is 0) and of
+ *    facility kind 12..16 is counted: gravity shield, missile, laser, plasma and fusion-ball defence.
+ *    The type layer is reached as 372 + 144*base + 108 and the days layer as 36*base, both with the
+ *    same 6*row + col cell index -- Hex-Rays renders the type reads through the buildDays array type,
+ *    which is why the decompile shows two different strides for one cell.
+ * 3. The log runs (gravity + 1) rounds. Each round emits one PAIR of rows per defence cell and then,
+ *    in every round except the last, one gravity-shield pair. The panel capacity
+ *    2*(defenceCells*(gravity + 1) + gravity) + 3 is exactly the row count that structure produces.
+ * 4. A defence pair is rolled with Game_RandU16(100). BELOW the kind's threshold the defence HITS:
+ *    green meta (50, 255, 50 / 0, 20, 0), TEXTS[1116] "ПОПАДАНИЕ!!!", and the budget drops by the
+ *    kind's damage. AT or above the threshold it MISSES: red meta (255, 50, 50 / 20, 0, 0) and
+ *    TEXTS[1117] "ПРОМАХ". Thresholds 50/60/70/80 and damages 500/600/900/1500 for
+ *    missile/laser/plasma/fusion -- the better the defence, the more often it misses and the harder
+ *    it hits. Both rows of the pair get aux 20, which is the delay the draw waits before the next row.
+ * 5. The gravity pair is TEXTS[1121] "Гравитаци. щит отбросил НЛО" and TEXTS[1122] "Все сисст. защ.
+ *    перезаряжены!!!" with meta (150, 150, 255 / 0, 20, 20) on both rows and aux 0 then 10. It burns
+ *    no budget.
+ * 6. The tail is three rows with aux 0: an EMPTY label (the original copies it from 0x10DA38, which
+ *    is zero-filled .data and not a TEXTS record), then either TEXTS[1125] "НЛО высадилось рядом с
+ *    базой" plus TEXTS[1126] "Подготовка к защите" with bBaseAtMissionFollows = 1 -- the budget
+ *    survived, the aliens got out and the tactical mission follows -- or TEXTS[1123] "НЛО уничтожен"
+ *    plus TEXTS[1124] "Угроза захвата снята" with the flag clear, when the budget reached 0 or less.
+ *    nBaseAtLineLimit is the row count, nRadarCooldownR goes to 255 and nLineCount to 0, so the
+ *    reveal starts again from the first row.
+ *
+ * Draw reveals one row per cooldown. With nRadarCooldownR at 255 and rows still hidden it parks the
+ * cooldown at 255 - aux of the row it is about to show, shows that row, and scrolls once the shown
+ * count passes nStyle (15). When every row is shown it centres the shared confirm control on x 120 at
+ * y 290, sets bBaseAtConfirmShown -- the byte Geoscape_OnPointer (0x89414) and Geoscape_OnPointerUp
+ * (0x8AF70) gate on -- blits its pad, and draws TEXTS[1127] "ОК" centred at (120, 290) in the same
+ * caption colour pair the base-info and psi frames pack.
+ *
+ * CloseThunk: with bBaseAtMissionFollows clear the contact is over, so the strateg item is removed
+ * (nBaseAtStrategIdx is the index handed to StrategList_RemoveAt) and the game is unpaused; either way
+ * it tail-calls Geoscape_CloseUI, whose case 20 runs Update's release arm.
+ *
+ * Deviations:
+ *   1. A null environment, panel, pad or counter is refused; the original dereferences all of them.
+ *   2. The base index is bounded to the eight grid slots. The original computes 36*(4*base+3) and
+ *      144*base + 480 without a test, so its -1 call would read grid - 36 and grid + 336 if it ever
+ *      reached the build arm.
+ *   3. The original writes the panel's nLineCount from nBaseAtLineCap BEFORE testing the panel for
+ *      null (0x586D0), and blits the pad and calls UiPanelMsg_Draw without a test.
+ *   4. The original's panel capacity is not bounded, and the row count it emits can reach 723 with
+ *      18 gravity cells and 18 defence cells -- past the 500 lines a UiPanel holds. UiPanel_ctor's
+ *      clamp and the line setters' bounds stop that here; the overflow is recorded as an original bug.
+ *   5. The labels are copied through a 152-byte stack buffer in the original (var_98); the port hands
+ *      the record straight to UiPanel_SetLineText, which bounds the copy to the 50-byte line.
+ */
+#define PUFO_BASEAT_PAD_NAME          "baseat" /* aBaseat @ 0xAB218 */
+#define PUFO_BASEAT_PAD_MODE          30
+#define PUFO_BASEAT_PANEL_STYLE       15   /* nStyle, and the scroll threshold in the draw */
+#define PUFO_BASEAT_PANEL_FONT        16
+#define PUFO_BASEAT_PANEL_X           10
+#define PUFO_BASEAT_PANEL_Y           10
+#define PUFO_BASEAT_PANEL_CLICKL      5    /* nUnk7052 */
+#define PUFO_BASEAT_PANEL_CLICKTOP    70   /* nUnk7056 */
+#define PUFO_BASEAT_PANEL_VIEWW       230
+#define PUFO_BASEAT_AUX_DEFENCE       20   /* both rows of a defence pair */
+#define PUFO_BASEAT_AUX_GRAVITY_A     0    /* the gravity pair's first row */
+#define PUFO_BASEAT_AUX_GRAVITY_B     10   /* and its second */
+#define PUFO_BASEAT_ROLL_MAX          100  /* Game_RandU16(0x64) per pair */
+#define PUFO_BASEAT_THRESHOLD_MISSILE 50   /* at or above it the defence misses */
+#define PUFO_BASEAT_THRESHOLD_LASER   60
+#define PUFO_BASEAT_THRESHOLD_PLASMA  70
+#define PUFO_BASEAT_THRESHOLD_FUSION  80
+#define PUFO_BASEAT_DAMAGE_MISSILE    500
+#define PUFO_BASEAT_DAMAGE_LASER      600
+#define PUFO_BASEAT_DAMAGE_PLASMA     900
+#define PUFO_BASEAT_DAMAGE_FUSION     1500
+#define PUFO_BASEAT_TEXT_FIRE_MISSILE 1115 /* "Ракетная защ..ОГОНЬ!!!" */
+#define PUFO_BASEAT_TEXT_HIT          1116 /* "ПОПАДАНИЕ!!!" */
+#define PUFO_BASEAT_TEXT_MISS         1117 /* "ПРОМАХ" */
+#define PUFO_BASEAT_TEXT_FIRE_LASER   1118 /* "Лазерная защ..ОГОНЬ!!!" */
+#define PUFO_BASEAT_TEXT_FIRE_PLASMA  1119 /* "Плазменная защ..ОГОНЬ!!!" */
+#define PUFO_BASEAT_TEXT_FIRE_FUSION  1120 /* "Термоядерная защита.ОГОНЬ!!!" */
+#define PUFO_BASEAT_TEXT_GRAVITY      1121 /* "Гравитаци. щит отбросил НЛО" */
+#define PUFO_BASEAT_TEXT_RECHARGED    1122 /* "Все сисст. защ. перезаряжены!!!" */
+#define PUFO_BASEAT_TEXT_DESTROYED    1123 /* "НЛО уничтожен" */
+#define PUFO_BASEAT_TEXT_THREAT       1124 /* "Угроза захвата снята" */
+#define PUFO_BASEAT_TEXT_LANDED       1125 /* "НЛО высадилось рядом с базой" */
+#define PUFO_BASEAT_TEXT_PREPARING    1126 /* "Подготовка к защите" */
+#define PUFO_BASEAT_TEXT_OK           1127 /* aTextOk @ 0xEBF4B, "ОК" */
+#define PUFO_BASEAT_CONFIRM_X         120
+#define PUFO_BASEAT_CONFIRM_Y         290
+
+typedef struct BaseAtUpdateEnv {
+    u8      *pbActive;              /* bBaseAtActive @ 0x158864, the build/release gate */
+    u8      *pbConfirmShown;        /* bBaseAtConfirmShown @ 0x158854, cleared by the build arm */
+    u8      *pbMissionFollows;      /* bBaseAtMissionFollows @ 0x158850, the tail's result flag */
+    PadImage **ppPad;               /* pBaseAtPad @ 0x15884C */
+    UiPanel **ppPanel;              /* pBaseAtPanel @ 0x15885C */
+    i32     *pnLineLimit;           /* nBaseAtLineLimit @ 0x158858, the row count to reveal */
+    i32     *pnLineCap;             /* nBaseAtLineCap @ 0x158860, the constructed line count */
+    const u8 *pbCraftClass;         /* nBaseAtClass @ 0x158840, read SIGNED for the switch */
+    const u8 *abFacilityGrid;       /* gBaseFacGrid @ 0x159768 */
+    const char *pTextRecs;          /* aTextRecs @ 0xB38D0, stride 205 */
+    u8      *pbSpawnReplacement;    /* bSpawnReplacementOnce @ 0x162028, set by the release arm */
+    i32     *pnRadarCooldownR;      /* nRadarCooldownR @ 0xAC218, set to 255 by the tail */
+} BaseAtUpdateEnv;
+
+void BaseAtScreen_Update(i32 nBaseIdx, const BaseAtUpdateEnv *pEnv);
+
+typedef struct BaseAtDrawEnv {
+    const GfxColorEnv *pColor;      /* pGX @ 0x1139B8, the colour-pair owner */
+    u8      *pbActive;              /* bBaseAtActive, the gate */
+    PadImage **ppPad;               /* pBaseAtPad, blitted first */
+    UiPanel **ppPanel;              /* pBaseAtPanel */
+    i32     *pnLineLimit;           /* nBaseAtLineLimit, the reveal target */
+    i32     *pnRadarCooldownR;      /* nRadarCooldownR, the pacing counter */
+    u8      *pbConfirmShown;        /* bBaseAtConfirmShown, set when every row is shown */
+    UiControl *pCtlConfirm;         /* unk_186BA4 @ 0x186BA4, the shared confirm control */
+    UiControlBlitFn pfnCtlBlit;     /* the pad blits UiControl_BlitActivePad picks between */
+    UiControlBlitFn pfnCtlBlitEx;
+    void *pCtlUser;
+    const char *pTextRecs;          /* TEXTS[1127] "ОК" */
+} BaseAtDrawEnv;
+
+void BaseAtScreen_Draw(const BaseAtDrawEnv *pEnv);
+
+typedef struct BaseAtCloseEnv {
+    const u8 *pbMissionFollows;     /* bBaseAtMissionFollows @ 0x158850 */
+    PtrArray *pStrategList;         /* the strateg list, 0x1864F8 + 0x3C */
+    GeoscapeWorld *pWorld;
+    const i32 *pnStrategIdx;        /* nBaseAtStrategIdx @ 0x158844 */
+    u8      *pbSpawnReplacement;    /* bSpawnReplacementOnce, StrategList_RemoveAt's replacement roll */
+    const StrategSpawnCtx *pSpawnCtx;
+    GameTime *pTime;                /* 0x159618; bPaused is the byte at 0x15961C it clears */
+    const GeoscapeCloseEnv *pClose;
+} BaseAtCloseEnv;
+
+void BaseAtScreen_CloseThunk(const BaseAtCloseEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */
