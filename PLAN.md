@@ -2309,6 +2309,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   49 new checks (13632 total, 60 suites), coverage 911/1103 (82.6%) and 483132/598792 (80.7%); `strat-ui` moves
   from 80,516 to 80,852 of 121,164 bytes (66.7%). IDB: 5 renames (396 on record) and 7 comments.
 
+- [x] **part 77, the options overlay: `OptionsScreen_Open (0x6d0ac, 3,160 B)`** — the last callee case 18
+  reached through a hook, so the whole case-18 chain is now ported code. A toggle on `bOptionsScreenOpen`:
+  the close half (0x6DC30) clears `nGeoscapeScreen` and the flag and releases four panels
+  (0x159E18 / 0x159E78 / 0x159E7C / 0x159E1C) plus the two scroll controls (0x159E3C / 0x159E40); the open
+  half sets the flag, clears `bUiAnimStarted`, resolves a line count, allocates the scroll pair, installs
+  `Options_SaveAudioSettings` on `pGeoscapeCtlA` at y = 179, builds four lists, and writes one row per craft
+  across all four. Line count: `Map_nCraftCount` when `nMode == -1`, else the craft homed at the first base
+  whose `BaseRec.bUnk4` (LDRSB) equals `nMode`.
+  **What the ARM showed and the pseudocode did not.** The base-walk bound is the signed byte at **0x159D80**,
+  reached as `[abFacilityGrid,#0x618]` — R0 is `abFacilityGrid` there because the `LDREQ` of `0x1139B8` at
+  0x6D0F0 is conditional on `nMode == -1` and did not run; Hex-Rays hides that both walks are the same block
+  with offsets 0x1174 (bases, 0x114B2C) and 0x10AC (craft, 0x114A64). `stru_AB9B0` is **not** two identical
+  records: "up"/"sup" at (20, 180) and "down"/"sdown" at (50, 180). The stores labels are TEXTS 149–152 and
+  the region labels are TEXTS 1165, 1166, 1167, 1036, 1168–1172 — the switch is on `BaseRec.bRegionId`, the
+  same 0x80..0x89 byte `FundingScreen_Init` groups. The stores aux dword starts at -1, rises to 0 only when
+  range AND fuel are both full, and returns to -1 whenever the craft is not at base; the fuel test reads
+  `uFuelMax` signed. **ORIGINAL BUG (0x6D884):** the region switch has no default copy and 0x6DA68 then
+  `strcat`s onto the uninitialised 104-byte local — any region outside 0x80..0x88 prints stack garbage.
+  **1 ledger row (222 on record), 85 markers.** 51 new checks (13683 total, 60 suites), coverage 912/1103
+  (82.7%) and 486292/598792 (81.2%); `strat-ui` moves from 80,852 to 84,012 of 121,164 bytes (69.3%). IDB:
+  13 renames (409 on record) and 5 comments.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2639,6 +2661,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the map select test (`Smap_HitTestStrategSelect`; the strict strip gate, the 16x16 cell window, the 1/1.333 and 1/1.694 item scalers that disagree with the scroll factors, the signed base-type byte, the two past-the-end search indexes, the flag-27 tail that writes the pending click, the colour-slot byte mask `Line_Write` was missing, 10 ledger rows) | 59/59 (Release) | 13405 | 909/1103 (82.4%) | 480696/598792 (80.3%) | 40 checked, 0 mismatched |
 | the screen close dispatcher (`Geoscape_CloseUI`; the head, the speed chain against `g_aGeoscapeSpeedSec` and its 3600 double call, the 17-case switch, the per-base needed-flag rebuild, the mutual recursion with `Options_SaveAudioSettings`, the five-slot funding bar and the strict -3000000 limit, 11 ledger rows) | 60/60 (Release) | 13583 | 910/1103 (82.5%) | 482796/598792 (80.6%) | 40 checked, 0 mismatched |
 | the audio-save callee (`Options_SaveAudioSettings`; all three arguments dead, the recursion's real two-pass shape via `OptionsScreen_Init` clearing the controls byte, the tab-4-only registry write, the pause-resume tail, 5 IDB renames with one corrected in the same unit) | 60/60 (Release) | 13632 | 911/1103 (82.6%) | 483132/598792 (80.7%) | 40 checked, 0 mismatched |
+| the options overlay (`OptionsScreen_Open`; the toggle, the four-panel release, the signed base match against `BaseRec.bUnk4`, the four-column craft rows, the TEXTS 149–152 / 1165–1172 labels, the uninitialised region label found) | 60/60 (Release) | 13683 | 912/1103 (82.7%) | 486292/598792 (81.2%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

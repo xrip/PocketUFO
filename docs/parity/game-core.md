@@ -15064,3 +15064,53 @@ layout is pinned too, including the ORIGINAL BUG (0x6B764) in LayoutButtons: the
 centred on the save control's 60-wide pad and lands at x = 90 where its own 100-wide pad would give 70.
 The recursion is pinned by the sample count -- 17 once or 17 twice -- which is what distinguishes one
 close pass from two.
+## Unit 77 - OptionsScreen_Open @ 0x6d0ac (3,160 B), ported as OptionsScreen_Open
+
+The options screen's overlay half, and the last callee Geoscape_CloseUI case 18 was reaching through a
+hook. It is a toggle: bOptionsScreenOpen @ 0x159E80 decides which half runs, and the close half's clear
+of that flag at 0x6DC40 is what ends the case-18 / Options_SaveAudioSettings recursion for the overlay.
+
+The close half (0x6DC30..0x6DCF4) clears nGeoscapeScreen @ 0x186BC4 and the flag, releases the four
+panels through UiPanel_FreeLines + operator delete in slot order 0x159E18, 0x159E78, 0x159E7C, 0x159E1C,
+and the two scroll controls at 0x159E3C / 0x159E40 through UiControl_FreePads + operator delete. It
+touches nothing else: the seven list rows and the twelve radio buttons belong to OptionsScreen_Init.
+
+The open half sets the flag, clears bUiAnimStarted @ 0x187080, resolves a line count, allocates the
+scroll pair, puts Options_SaveAudioSettings on pGeoscapeCtlA at y = 179, builds four lists, and writes
+one row per craft across all four. The line count is Map_nCraftCount when nMode is -1; otherwise it is
+the number of craft whose Ship.bHomeBase equals the first base index whose BaseRec.bUnk4, loaded LDRSB,
+equals nMode.
+
+What the ARM showed that the pseudocode did not:
+
+- The base-walk bound is the signed byte at 0x159D80, reached as [abFacilityGrid,#0x618]. R0 is
+  abFacilityGrid there because the LDREQ of 0x1139B8 at 0x6D0F0 is conditional on nMode == -1 and did
+  not execute. Hex-Rays renders the bound as a bare global and the walk as `*((_DWORD *)j + 1117)`,
+  which hides that both walks are the same 0x1139B8-relative block with different offsets: 0x1174 for
+  the base pointers (0x114B2C), 0x10AC for the craft pointers (0x114A64).
+- stru_AB9B0 is not the pair of identical records the pseudocode implies. The two 0x20-byte records
+  differ: "up"/"sup" at (20, 180) and "down"/"sdown" at (50, 180).
+- The four stores labels are TEXTS records 149, 150, 151 and 152, and the nine region labels are TEXTS
+  1165, 1166, 1167, 1036, 1168, 1169, 1170, 1171 and 1172 -- aTextRecs + 205 * n in every case, all
+  zero-filled in the image and filled from the text table at load. The region switch is on
+  BaseRec.bRegionId, the same 0x80..0x89 byte FundingScreen_Init groups into its five countries, so
+  the options list labels the base's region and the funding screen groups it. Renamed in the IDB to
+  aTextRec149/150/151/152, aTextRec1036 and aTextRec1165..1172.
+- The stores column's aux dword starts at -1, is lifted to 0 only when the range is full AND the fuel
+  is full, and is put back to -1 whenever the craft is not at base -- so a full craft away from base
+  reports -1. The fuel comparison reads uFuelMax with LDRSH, signed, against the signed nFuel.
+- 0x6D71C `LDR R1,[R8,R2,LSL#2]!` pre-increments R8 to &apCraft[n] and every later Ship field read
+  goes through it, which is why the pseudocode has two names for one pointer.
+- ORIGINAL BUG (0x6D884): the region switch has arms for 0x80..0x88 and no default copy, and 0x6DA68
+  then strcat's "-" onto the 104-byte local v95 that no arm initialised. For any region outside
+  0x80..0x88 the line text is whatever was on the stack. The port writes an empty label instead.
+- The craft loop re-reads Map_nCraftCount on every iteration (0x6DC08), so a count that changes while
+  the list is being built changes the number of rows.
+
+51 new checks in tests/test_closeui.c (274 in that suite). The text table is the real shape --
+PUFO_TEXT_REC_STRIDE apart -- so the record indices are the ones under test: TEXTS[151] for a full
+craft at base, TEXTS[152] plus aux back to -1 for a craft away from base, TEXTS[150] for short range,
+TEXTS[149] for short fuel, and "EUROPE--2" for a region label built from TEXTS[1165] plus the signed
+BaseRec.bUnk16. The signed base match is pinned by a mode of -3 finding a bUnk4 of 0xFD. Case 18's
+recursion is now asserted through the overlay's own state -- the flag clear at 0x6DC40 and the released
+panel slots -- rather than through a call counter, because the callee is real.

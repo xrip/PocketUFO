@@ -416,3 +416,16 @@ Set_byte_159E88_4	Options_SetTab4	named for what it does now that the global is 
 Set_byte_159E88_3_SetUiY	Options_SetTab3_AndUiY	stores 3 into gOptionsScratch[0] and drops pGeoscapeCtlB to y = 120 and pGeoscapeCtlA to y = 142 (0x6B680..0x6B69C).
 unk_186BB4	pGeoscapeCtlA	a UiControl * slot in the geoscape control block reused per screen: the research/manuf panel control (ManufScreen_Draw installed at 0x71228), the research OK control, the park control Smap_ParkCraft moves to 1000,1000, and the options 'save' hotspot (Options_SaveAudioSettings installed at 0x6D24C). Not options-only.
 unk_186BB0	pGeoscapeCtlB	the sibling slot of pGeoscapeCtlA: the manuf/research confirm ('cancel') control and the options 'return to title' hotspot (OptionsScreen_ReturnToTitle @ 0x6b46c). OptionsScreen_LayoutButtons centres it on pGeoscapeCtlA's width, not its own (0x6B764).
+unk_BB021	aTextRec149	TEXTS record 149 (aTextRecs @ 0xB38D0 + 205 * 149), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_BB0EE	aTextRec150	TEXTS record 150 (aTextRecs @ 0xB38D0 + 205 * 150), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_BB1BB	aTextRec151	TEXTS record 151 (aTextRecs @ 0xB38D0 + 205 * 151), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_BB288	aTextRec152	TEXTS record 152 (aTextRecs @ 0xB38D0 + 205 * 152), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_E766C	aTextRec1036	TEXTS record 1036 (aTextRecs @ 0xB38D0 + 205 * 1036), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EDDB9	aTextRec1165	TEXTS record 1165 (aTextRecs @ 0xB38D0 + 205 * 1165), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EDE86	aTextRec1166	TEXTS record 1166 (aTextRecs @ 0xB38D0 + 205 * 1166), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EDF53	aTextRec1167	TEXTS record 1167 (aTextRecs @ 0xB38D0 + 205 * 1167), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EE020	aTextRec1168	TEXTS record 1168 (aTextRecs @ 0xB38D0 + 205 * 1168), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EE0ED	aTextRec1169	TEXTS record 1169 (aTextRecs @ 0xB38D0 + 205 * 1169), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EE1BA	aTextRec1170	TEXTS record 1170 (aTextRecs @ 0xB38D0 + 205 * 1170), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EE287	aTextRec1171	TEXTS record 1171 (aTextRecs @ 0xB38D0 + 205 * 1171), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.
+unk_EE354	aTextRec1172	TEXTS record 1172 (aTextRecs @ 0xB38D0 + 205 * 1172), read by OptionsScreen_Open @ 0x6d0ac; zero-filled in the image and filled from the text table at load.

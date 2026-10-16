@@ -1553,6 +1553,7 @@ typedef struct GeoscapeCloseEnv {
     const FundingOpenEnv *pFundingOpen;
     const OptionsScreenHooks *pOptionsHooks;
     SaveAudioEnv *pSaveAudio;              /* Options_SaveAudioSettings @ 0x6b7ac */
+    struct OptionsOpenEnv *pOptionsOpen;   /* OptionsScreen_Open @ 0x6d0ac, called with nMode -1 */
     const BaseClearShipsEnv *pClearShips;
     const SmapCraftSelectEnv *pCraftSelect;
 
@@ -1565,7 +1566,6 @@ typedef struct GeoscapeCloseEnv {
     void (*pfnUfopaediaOpen)(void *pUser);        /* Ufopaedia_Open (0x9a8cc) */
     void (*pfnPsiInit)(void *pUser);              /* PsiScreen_Init (0x72b40) */
     void (*pfnBaseAtOpen)(void *pUser);           /* BaseAtScreen_Open (0x588cc) */
-    void (*pfnOptionsOpen)(i32 nMode, void *pUser);   /* OptionsScreen_Open (0x6d0ac) */
     void (*pfnFreeGeoscapeUi)(i32 bFreeWorld, void *pUser); /* GeoscapeUi_FreeAll (0x86d20), ui/ */
     const EndScreenInitEnv *pEndScreen;           /* EndScreen_Init @ 0x388b0 */
     void *pUser;
@@ -2632,9 +2632,11 @@ int StrategList_RegisterAtexit(PtrArray *pList);
  * argument, 4 (MOV R1, #4 at 0x6CF08 and 0x6DD10), the same as the geoscape openers.
  *
  * 0x6dd04 takes two arguments and keeps only the second: it saves R1 into R4 before the sample
- * and hands R4 to OptionsScreen_Open as the mode. The first argument is dropped. Both callees,
- * OptionsScreen_Init (0x6be74) and OptionsScreen_Open (0x6d0ac), are not ported, so they are
- * hooks and are named without a citation. */
+ * and hands R4 to OptionsScreen_Open as the mode. The first argument is dropped. Both callees are
+ * ported -- OptionsScreen_Init @ 0x6be74 and OptionsScreen_Open @ 0x6d0ac -- but neither reaches this
+ * pair directly: OptionsScreenHooks carries them as function pointers because RebuildWithSound and
+ * OpenWithSound have no env of their own to hand over. That seam is a design problem, recorded in
+ * HANDOFF rather than fixed here. */
 typedef struct OptionsScreenHooks {
     void (*pfnPlaySample)(u32 nSample, u32 nArg, void *pUser);
     void (*pfnInit)(void *pUser);
@@ -4168,6 +4170,111 @@ typedef struct SaveAudioEnv {
 } SaveAudioEnv;
 
 i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv); /* 0x6b7ac */
+
+/* ------------------------------------------------- OptionsScreen_Open @ 0x6d0ac (3,160 B)
+ *
+ * The options screen's overlay half. OptionsScreen_OpenWithSound @ 0x6dd04 tail-calls it with the mode
+ * it kept in R4, and Geoscape_CloseUI case 18 calls it with -1 at 0x8BD18. It is a toggle: the same
+ * global decides which half runs.
+ *
+ * ## The close half (bOptionsScreenOpen set, 0x6DC30..0x6DCF4)
+ *
+ * 0x6DC38 clears nGeoscapeScreen @ 0x186BC4 and 0x6DC40 clears bOptionsScreenOpen. That second store
+ * is what ends the Geoscape_CloseUI / Options_SaveAudioSettings recursion: case 18 re-reads the flag at
+ * 0x8BD10 *after* the callee returns, so an inner OptionsScreen_Open(-1) makes the outer one skip its
+ * own options-open arm. Then four panels are released through UiPanel_FreeLines + operator delete in
+ * slot order 0x159E18, 0x159E78, 0x159E7C, 0x159E1C, and the two prev/next controls at 0x159E3C /
+ * 0x159E40 through UiControl_FreePads + operator delete. Nothing else -- the seven list rows and the
+ * twelve radio buttons belong to OptionsScreen_Init, not to this half.
+ *
+ * ## The open half (clear on entry)
+ *
+ * 1. 0x6D0C8: bOptionsScreenOpen = 1. 0x6D0DC: bUiAnimStarted @ 0x187080 = 0.
+ * 2. The line count. nMode is sign-extended (0x6D0D4 / 0x6D0E0). If it is -1 both counts are simply
+ *    Map_nCraftCount. Otherwise:
+ *    - 0x6D104..0x6D144: walk the base pointer array (0x114B2C) for the first index whose BaseRec.bUnk4,
+ *      loaded LDRSB, equals nMode. The bound is the SIGNED byte at 0x159D80 and a count <= 0 skips the
+ *      walk; a miss leaves the index equal to the count.
+ *    - 0x6D16C..0x6D190: count the craft whose Ship.bHomeBase equals that index. That count is the line
+ *      count of all four panels, and the index is kept for the loop below.
+ * 3. 0x6D1A8: bMapSelectionFlag = 0. 0x6D1B0..0x6D1F4: two new UiControl into 0x159E3C / 0x159E40,
+ *    OptionsScreen_PanelPrev / OptionsScreen_PanelNext installed at +0xC, then UiControl_Setup over the
+ *    two identical descriptors at stru_AB9B0 (0x20 bytes each).
+ * 4. 0x6D240: pGeoscapeCtlA gets Options_SaveAudioSettings at +0xC, x = 120 - (uWidth >> 1), y = 179.
+ *    OptionsScreen_LayoutButtons puts the same control at y = 198 -- the two tabs disagree.
+ * 5. Four panels, each operator new(0x1BB4) + UiPanel_ctor(count), all with nStyle 6 and nFont 16:
+ *      0x159E18 names  nPosX 5,   nUnk7052 5,   nViewW 230, bFlag7073 1, bUnk7088 100,
+ *                     bytes0-2 (0A,50,5A), bytes3-5 (44,F4,FC), bytes6-11 (44,F4,FC,04,46,4B),
+ *                     pfnClick = OptionsScreen_OnConfirm
+ *      0x159E78 stores nPosX 115, nUnk7052 155, nViewW 30,  nUnk7076 1
+ *      0x159E7C region nPosX 175, nUnk7052 185, nViewW 30,  nUnk7076 1
+ *      0x159E1C cargo  nPosX 233, nUnk7052 5,   nViewW 230, nUnk7076 2, bUnk7088 150 (written -106)
+ * 6. 0x6D648..0x6DC18: the craft loop. With nMode == -1 the line index IS the craft index and nothing
+ *    is filtered; otherwise a craft whose Ship.bHomeBase differs from the found index is skipped. Per
+ *    line written:
+ *    - names: Ship_FormatDisplayName, and the line's aux dword = the craft index.
+ *    - stores: the aux dword starts at -1. uRangeRemain == uRangeMax AND nFuel == uFuelMax ->
+ *      TEXTS[151] and aux = 0. uRangeRemain != uRangeMax -> TEXTS[150]. nFuel != uFuelMax -> TEXTS[149].
+ *      bAtBase == 0 -> TEXTS[152] and aux back to -1.
+ *    - region: apBases[Ship.bHomeBase]; a switch on BaseRec.bRegionId picks TEXTS 1165, 1166, 1167,
+ *      1036, 1168, 1169, 1170, 1171, 1172 for 0x80..0x88, anything else leaves the buffer empty; then
+ *      "-", then itoa of the SIGNED BaseRec.bUnk16.
+ *    - cargo: Craft_CountSoldiersAboard, " \", Craft_CountWeaponSlotsCarried, " \", then "1" when
+ *      Ship.bWeaponsHot or Ship.bIntercepting, plus "2" when both, appended as one string.
+ *    The loop re-reads Map_nCraftCount on every iteration (0x6DC08) and returns as soon as the index
+ *    reaches it.
+ *
+ * ## What the ARM showed that the pseudocode did not
+ *
+ * - The base-count bound is the signed byte at 0x159D80, reached as [abFacilityGrid,#0x618]. R0 is
+ *   abFacilityGrid there because the LDREQ of 0x1139B8 at 0x6D0F0 is conditional on nMode == -1 and did
+ *   not run. Hex-Rays renders the bound as a bare global and the walk as `*((_DWORD *)j + 1117)`, which
+ *   hides that both walks are the same 0x1139B8-relative block with different offsets: 0x1174 for the
+ *   base pointers, 0x10AC for the craft pointers.
+ * - The four stores labels are TEXTS records 149, 150, 151 and 152 (aTextRecs + 205 * n) and the nine
+ *   region labels are TEXTS 1165, 1166, 1167, 1036, 1168, 1169, 1170, 1171 and 1172 -- the switch is on
+ *   BaseRec.bRegionId, the same region byte FundingScreen_Init groups into its five countries. All
+ *   thirteen are zero-filled in the image and filled from the text table at load, so with no data file
+ *   the labels are empty. Renamed in the IDB to aTextRecNNN.
+ * - 0x6D71C `LDR R1,[R8,R2,LSL#2]!` pre-increments R8 to &apCraft[n] and every later Ship field read
+ *   goes through it, which is why the pseudocode has two names for one pointer.
+ *
+ * Deviations: the original writes through the panel pointers with no null test after operator new; the
+ * port skips a panel whose allocation or ctor failed. The original's 50-byte line buffers are filled by
+ * unbounded copy loops; the port uses the bounded helpers. */
+#define PUFO_OPTIONS_PANEL_COUNT 4
+
+typedef struct OptionsOpenEnv {
+    u8   *pbOptionsOpen;      /* bOptionsScreenOpen @ 0x159E80, the toggle */
+    u8   *pbAnimStarted;      /* bUiAnimStarted @ 0x187080 */
+    u8   *pbSelectionFlag;    /* bMapSelectionFlag @ 0x159E84 */
+    i32  *pnScreenId;         /* nGeoscapeScreen @ 0x186BC4, cleared by the close half */
+    const i8   *pnBaseCount;  /* the signed byte at 0x159D80 */
+    const u8   *pnCraftCount; /* Map_nCraftCount @ 0x114B4C */
+    BaseRec *const *apBases;  /* 0x114B2C */
+    Ship *const *apCraft;     /* 0x114A64 */
+    Soldier *const *apSoldiers;
+    i32 nSoldierCount;
+    ObjectRecFull *const *apObjects;
+    i32 nObjectCount;
+    UiControl **apPairCtl;    /* aOptionsListCtl + 0x1C: the prev/next pair @ 0x159E3C / 0x159E40 */
+    UiPanel **ppPanelName;    /* 0x159E18 */
+    UiPanel **ppPanelStores;  /* 0x159E78 */
+    UiPanel **ppPanelRegion;  /* 0x159E7C */
+    UiPanel **ppPanelCargo;   /* 0x159E1C */
+    UiControl *pSaveCtl;      /* pGeoscapeCtlA @ 0x186BB4 */
+    const u8 *pTextRecs;      /* aTextRecs @ 0xB38D0, PUFO_TEXT_REC_STRIDE apart */
+    void (*pfnPanelPrev)(void);   /* OptionsScreen_PanelPrev (0x6d01c) over the four panels */
+    void (*pfnPanelNext)(void);   /* OptionsScreen_PanelNext (0x6d064) */
+    void (*pfnOnConfirm)(void);   /* OptionsScreen_OnConfirm (0x6cf18), as a thunk */
+    void (*pfnSaveAudio)(void);   /* Options_SaveAudioSettings (0x6b7ac) over a SaveAudioEnv */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                        const char *psz2, void *pUser);
+    void *pPadUser;
+    void *pUser;
+} OptionsOpenEnv;
+
+void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode);
 
 typedef struct OptionsInitEnv {
     OptionsScreenCtl *pCtl;

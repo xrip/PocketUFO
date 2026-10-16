@@ -3249,8 +3249,8 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
         }
         if (pEnv->pbOptionsOpen != NULL && *pEnv->pbOptionsOpen != 0) {
             *pEnv->pnScreenId = 0;                                     /* 0x8BD14 */
-            if (pEnv->pfnOptionsOpen != NULL) {
-                pEnv->pfnOptionsOpen(-1, pEnv->pUser);                 /* 0x8BD18 */
+            if (pEnv->pOptionsOpen != NULL) {
+                OptionsScreen_Open(pEnv->pOptionsOpen, -1);            /* 0x8BD18 */
             }
         }
         if (pEnv->pbDragActive != NULL) { *pEnv->pbDragActive = 0; }   /* 0x8BD1C -> 0x8BFF4 */
@@ -8234,6 +8234,306 @@ i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv)
         *pEnv->pbSelectionFlag = 0;                                            /* 0x6B8CC */
     }
     return 0;
+}
+
+/* stru_AB9B0 @ 0xAB9B0: the overlay's two scroll controls. Two 0x20-byte records, and they are NOT
+ * the identical pair the pseudocode implies -- the x offset and the pad names differ: "up"/"sup" at
+ * (20, 180) and "down"/"sdown" at (50, 180). */
+static const UiControlDesc g_aOptionsPairDesc[2] = {
+    { 0x0014, 0x00B4, "up",   "sup",   "", 0 }, /* 0xAB9B0 */
+    { 0x0032, 0x00B4, "down", "sdown", "", 0 }, /* 0xAB9D0 */
+};
+
+/* One of the overlay's four lists: operator new(0x1BB4) + UiPanel_ctor(nLines), then the fields all
+ * four share. The per-panel extras are applied by the caller, in the original's own order. */
+static UiPanel *OptionsNewPanel(i32 nLines, i32 nPosX, i32 nUnk7052, i32 nViewW)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel));                      /* 0x6D270 */
+
+    if (pPanel == NULL) {
+        return NULL;
+    }
+    if (!UiPanel_ctor(pPanel, nLines)) {                                       /* 0x6D288 */
+        free(pPanel);
+        return NULL;
+    }
+    pPanel->nStyle   = 6;                                                      /* 0x6D2C0 */
+    pPanel->nFont    = 16;                                                     /* 0x6D2D4 */
+    pPanel->nPosX    = nPosX;
+    pPanel->nPosY    = 70;                                                     /* 0x6D310 */
+    pPanel->nUnk7052 = nUnk7052;
+    pPanel->nUnk7056 = 70;                                                     /* 0x6D338 */
+    pPanel->nViewW   = nViewW;                                                 /* 0x6D340 */
+    return pPanel;
+}
+
+/* The close half, 0x6DC30..0x6DCF4. The bOptionsScreenOpen clear at 0x6DC40 is what ends the
+ * Geoscape_CloseUI / Options_SaveAudioSettings recursion. */
+static void Options_CloseOverlay(OptionsOpenEnv *pEnv)
+{
+    UiPanel **apPanels[PUFO_OPTIONS_PANEL_COUNT];
+    i32 i;
+
+    if (pEnv->pnScreenId != NULL) {
+        *pEnv->pnScreenId = 0;                                                 /* 0x6DC38 */
+    }
+    *pEnv->pbOptionsOpen = 0;                                                  /* 0x6DC40 */
+
+    apPanels[0] = pEnv->ppPanelName;                                           /* 0x159E18 */
+    apPanels[1] = pEnv->ppPanelStores;                                         /* 0x159E78 */
+    apPanels[2] = pEnv->ppPanelRegion;                                         /* 0x159E7C */
+    apPanels[3] = pEnv->ppPanelCargo;                                          /* 0x159E1C */
+
+    for (i = 0; i < PUFO_OPTIONS_PANEL_COUNT; ++i) {                           /* 0x6DC44..0x6DCC0 */
+        if (apPanels[i] == NULL || *apPanels[i] == NULL) {
+            continue;
+        }
+        UiPanel_FreeLines(*apPanels[i]);                                       /* 0x6DC58 */
+        free(*apPanels[i]);                                                    /* 0x6DC60 delete */
+        *apPanels[i] = NULL; /* deviation: the original leaves the slot dangling */
+    }
+
+    if (pEnv->apPairCtl != NULL) {
+        for (i = 0; i < 2; ++i) {                                              /* 0x6DCC8..0x6DCE4 */
+            if (pEnv->apPairCtl[i] == NULL) {
+                continue;
+            }
+            UiControl_FreePads(pEnv->apPairCtl[i]);                            /* 0x6DCDC */
+            free(pEnv->apPairCtl[i]);                                          /* 0x6DCE4 */
+            pEnv->apPairCtl[i] = NULL;                                         /* deviation, same */
+        }
+    }
+}
+
+/* One TEXTS record into a bounded buffer. The original copies with an unbounded LDRSB/STRB loop. */
+static void Options_CopyTextRec(const u8 *pTextRecs, i32 nRec, char *pszOut, size_t cchOut)
+{
+    if (pTextRecs == NULL || pszOut == NULL || cchOut == 0) {
+        return;
+    }
+    snprintf(pszOut, cchOut, "%s", (const char *)(pTextRecs + PUFO_TEXT_REC_STRIDE * nRec));
+}
+
+void OptionsScreen_Open(OptionsOpenEnv *pEnv, i32 nMode)
+{
+    UiPanel *pName;
+    UiPanel *pStores;
+    UiPanel *pRegion;
+    UiPanel *pCargo;
+    i32 nBaseIdx = 0;
+    i32 nLines = 0;
+    i32 nCraftCount;
+    i32 nLineIdx = -1;                                                          /* 0x6D63C */
+    i32 nShip;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbOptionsOpen == NULL) {
+        return;
+    }
+    if (*pEnv->pbOptionsOpen != 0) {                                            /* 0x6D0C0 */
+        Options_CloseOverlay(pEnv);
+        return;
+    }
+
+    *pEnv->pbOptionsOpen = 1;                                                   /* 0x6D0C8 */
+    if (pEnv->pbAnimStarted != NULL) {
+        *pEnv->pbAnimStarted = 0;                                               /* 0x6D0DC */
+    }
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 0;                                             /* 0x6D1A8 */
+    }
+
+    nCraftCount = (pEnv->pnCraftCount != NULL) ? (i32)*pEnv->pnCraftCount : 0;
+
+    if (nMode == -1) {                                                          /* 0x6D0EC */
+        nLines = nCraftCount;                                                   /* 0x6D0FC, 0x6D194 */
+    } else {
+        const i8 nBaseCount = (pEnv->pnBaseCount != NULL) ? *pEnv->pnBaseCount : 0;
+
+        if (nBaseCount > 0 && pEnv->apBases != NULL) {                          /* 0x6D118 BLE */
+            for (nBaseIdx = 0; nBaseIdx < (i32)nBaseCount; ++nBaseIdx) {
+                if ((i8)pEnv->apBases[nBaseIdx]->bUnk4 == nMode) {              /* 0x6D12C LDRSB */
+                    break;
+                }
+            }
+        }
+        nLines = 0;                                                             /* 0x6D14C */
+        if (nCraftCount > 0 && pEnv->apCraft != NULL) {                         /* 0x6D168 */
+            for (nShip = 0; nShip < nCraftCount; ++nShip) {                     /* 0x6D16C..0x6D190 */
+                if ((i32)pEnv->apCraft[nShip]->bHomeBase == nBaseIdx) {
+                    ++nLines;
+                }
+            }
+        }
+    }
+
+    /* 0x6D1B0..0x6D23C: the two scroll controls, handlers first, then the descriptors. */
+    if (pEnv->apPairCtl != NULL) {
+        for (i = 0; i < 2; ++i) {
+            UiControl *pCtl = (UiControl *)malloc(sizeof(UiControl));           /* 0x6D1B0 new(0x20) */
+
+            if (pCtl != NULL) {
+                UiControl_ctor(pCtl);                                           /* 0x6D1C0 */
+            }
+            pEnv->apPairCtl[i] = pCtl;                                          /* 0x159E3C / 0x159E40 */
+        }
+        if (pEnv->apPairCtl[0] != NULL) {
+            pEnv->apPairCtl[0]->pfnClick = pEnv->pfnPanelPrev;                  /* 0x6D208 */
+        }
+        if (pEnv->apPairCtl[1] != NULL) {
+            pEnv->apPairCtl[1]->pfnClick = pEnv->pfnPanelNext;                  /* 0x6D214 */
+        }
+        for (i = 0; i < 2; ++i) {
+            if (pEnv->apPairCtl[i] != NULL) {
+                UiControl_Setup(pEnv->apPairCtl[i], 0, 0, &g_aOptionsPairDesc[i],
+                                pEnv->pfnLoadPads, pEnv->pPadUser);             /* 0x6D228 */
+            }
+        }
+    }
+
+    if (pEnv->pSaveCtl != NULL) {                                               /* 0x6D240..0x6D26C */
+        pEnv->pSaveCtl->pfnClick = pEnv->pfnSaveAudio;                          /* 0x6D24C */
+        pEnv->pSaveCtl->x = (i16)(120 - (pEnv->pSaveCtl->uWidth >> 1));         /* 0x6D25C */
+        pEnv->pSaveCtl->y = 179;                                                /* 0x6D26C */
+    }
+
+    pName   = OptionsNewPanel(nLines, 5,   5,   230);                           /* 0x6D270 */
+    pStores = OptionsNewPanel(nLines, 115, 155, 30);                            /* 0x6D3BC */
+    pRegion = OptionsNewPanel(nLines, 175, 185, 30);                            /* 0x6D490 */
+    pCargo  = OptionsNewPanel(nLines, 233, 5,   230);                           /* 0x6D55C */
+
+    if (pEnv->ppPanelName != NULL)   { *pEnv->ppPanelName   = pName; }          /* 0x6D2B8 */
+    if (pEnv->ppPanelStores != NULL) { *pEnv->ppPanelStores = pStores; }        /* 0x6D3EC */
+    if (pEnv->ppPanelRegion != NULL) { *pEnv->ppPanelRegion = pRegion; }        /* 0x6D4BC */
+    if (pEnv->ppPanelCargo != NULL)  { *pEnv->ppPanelCargo  = pCargo; }         /* 0x6D588 */
+
+    if (pName != NULL) {
+        pName->pfnClick = pEnv->pfnOnConfirm;                                    /* 0x6D2E8 */
+        UiPanel_SetBytes0to2(pName, 0x0A, 0x50, 0x5A);                          /* 0x6D34C */
+        UiPanel_SetBytes6to11(pName, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);       /* 0x6D374 */
+        pName->bFlag7073 = 1;                                                   /* 0x6D388 */
+        UiPanel_SetBytes3to5(pName, 0x44, 0xF4, 0xFC);                          /* 0x6D39C */
+        pName->bUnk7088 = 100;                                                  /* 0x6D3B0 */
+    }
+    if (pStores != NULL) {
+        UiPanel_SetBytes0to2(pStores, 0x0A, 0x50, 0x5A);                        /* 0x6D444 */
+        UiPanel_SetBytes6to11(pStores, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);     /* 0x6D46C */
+        pStores->nUnk7076 = 1;                                                  /* 0x6D484 */
+    }
+    if (pRegion != NULL) {
+        UiPanel_SetBytes0to2(pRegion, 0x0A, 0x50, 0x5A);                        /* 0x6D514 */
+        UiPanel_SetBytes6to11(pRegion, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);     /* 0x6D540 */
+        pRegion->nUnk7076 = 1;                                                  /* 0x6D550 */
+    }
+    if (pCargo != NULL) {
+        UiPanel_SetBytes0to2(pCargo, 0x0A, 0x50, 0x5A);                         /* 0x6D5E0 */
+        UiPanel_SetBytes6to11(pCargo, 0x44, 0xF4, 0xFC, 0x04, 0x46, 0x4B);      /* 0x6D60C */
+        pCargo->nUnk7076 = 2;                                                   /* 0x6D61C */
+        pCargo->bUnk7088 = 150;                                                 /* 0x6D630, -106 as a byte */
+    }
+
+    if (nCraftCount == 0) {                                                     /* 0x6D654 BLS */
+        return;
+    }
+
+    /* 0x6D66C..0x6DC18. The bound is re-read on every iteration (0x6DC08), so a count that changes
+     * while the list is being built changes the number of lines. */
+    for (nShip = 0; nShip < ((pEnv->pnCraftCount != NULL) ? (i32)*pEnv->pnCraftCount : 0); ++nShip) {
+        Ship *pShip;
+        BaseRec *pBase;
+        char szRegion[104];                                                     /* v95 */
+        char szCargo[104];
+        char szFlags[2];
+        i32 nLine;
+        i32 nAux;
+
+        if (pEnv->apCraft == NULL || pEnv->apCraft[nShip] == NULL) {
+            continue;
+        }
+        pShip = pEnv->apCraft[nShip];
+
+        if (nMode == -1) {
+            nLine = nShip;                                                      /* 0x6D674 MOVEQ R4,R9 */
+        } else if ((i32)pShip->bHomeBase != nBaseIdx) {                         /* 0x6D69C BNE */
+            continue;
+        } else {
+            nLine = ++nLineIdx;                                                 /* 0x6D6A4 */
+        }
+
+        /* Names column: the craft display name, and the aux dword is the craft index. */
+        if (pName != NULL && nLine >= 0 && nLine < PUFO_PANEL_LINES) {
+            (void)Ship_FormatDisplayName(pEnv->apCraft, nShip, pEnv->pTextRecs,
+                                         (char *)pName->apLines[nLine], PUFO_PANEL_LINE_BYTES);
+            pName->anLineAux[nLine] = nShip;                                    /* 0x6D700 */
+        }
+
+        /* Stores column. The aux dword starts at -1 and only the "both full" case lifts it to 0;
+         * a craft that is not at base puts it back to -1 even if it was full. */
+        nAux = -1;                                                              /* 0x6D718 */
+        if (pStores != NULL && nLine >= 0 && nLine < PUFO_PANEL_LINES) {
+            if (pShip->uRangeRemain == pShip->uRangeMax &&
+                pShip->nFuel == (i16)pShip->uFuelMax) {                         /* 0x6D728 / 0x6D738 */
+                Options_CopyTextRec(pEnv->pTextRecs, 151,
+                                    (char *)pStores->apLines[nLine], PUFO_PANEL_LINE_BYTES);
+                nAux = 0;                                                       /* 0x6D77C */
+            }
+            if (pShip->uRangeRemain != pShip->uRangeMax) {                      /* 0x6D790 */
+                Options_CopyTextRec(pEnv->pTextRecs, 150,
+                                    (char *)pStores->apLines[nLine], PUFO_PANEL_LINE_BYTES);
+            }
+            if (pShip->nFuel != (i16)pShip->uFuelMax) {                         /* 0x6D7D4 */
+                Options_CopyTextRec(pEnv->pTextRecs, 149,
+                                    (char *)pStores->apLines[nLine], PUFO_PANEL_LINE_BYTES);
+            }
+            if (pShip->bAtBase == 0) {                                          /* 0x6D818 */
+                Options_CopyTextRec(pEnv->pTextRecs, 152,
+                                    (char *)pStores->apLines[nLine], PUFO_PANEL_LINE_BYTES);
+                nAux = -1;                                                      /* 0x6D858 */
+            }
+            pStores->anLineAux[nLine] = nAux;
+        }
+
+        /* Region column: the base's region name, "-", then the base's signed ordinal. */
+        szRegion[0] = '\0';
+        pBase = (pEnv->apBases != NULL && (i32)pShip->bHomeBase < PUFO_FAC_BASE_COUNT)
+                    ? pEnv->apBases[pShip->bHomeBase] : NULL;
+        if (pBase != NULL) {
+            switch (pBase->bRegionId) {                                         /* 0x6D884 */
+            case 0x80: Options_CopyTextRec(pEnv->pTextRecs, 1165, szRegion, sizeof(szRegion)); break;
+            case 0x81: Options_CopyTextRec(pEnv->pTextRecs, 1166, szRegion, sizeof(szRegion)); break;
+            case 0x82: Options_CopyTextRec(pEnv->pTextRecs, 1167, szRegion, sizeof(szRegion)); break;
+            case 0x83: Options_CopyTextRec(pEnv->pTextRecs, 1036, szRegion, sizeof(szRegion)); break;
+            case 0x84: Options_CopyTextRec(pEnv->pTextRecs, 1168, szRegion, sizeof(szRegion)); break;
+            case 0x85: Options_CopyTextRec(pEnv->pTextRecs, 1169, szRegion, sizeof(szRegion)); break;
+            case 0x86: Options_CopyTextRec(pEnv->pTextRecs, 1170, szRegion, sizeof(szRegion)); break;
+            case 0x87: Options_CopyTextRec(pEnv->pTextRecs, 1171, szRegion, sizeof(szRegion)); break;
+            case 0x88: Options_CopyTextRec(pEnv->pTextRecs, 1172, szRegion, sizeof(szRegion)); break;
+            default:   szRegion[0] = '\0'; break;                              /* ORIGINAL BUG (0x6D884) */
+            }
+            snprintf(szRegion + strlen(szRegion), sizeof(szRegion) - strlen(szRegion), "-%d",
+                     (int)(i8)pBase->bUnk16);                                   /* 0x6DA68 / 0x6DA8C */
+        }
+        if (pRegion != NULL && nLine >= 0 && nLine < PUFO_PANEL_LINES) {
+            snprintf((char *)pRegion->apLines[nLine], PUFO_PANEL_LINE_BYTES, "%s", szRegion);
+        }
+
+        /* Cargo column: crew, "\", weapon slots, "\", then the hot/intercepting flags. */
+        snprintf(szCargo, sizeof(szCargo), "%d\\%d\\",
+                 Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount, nShip),
+                 Craft_CountWeaponSlotsCarried(pEnv->apObjects, pEnv->nObjectCount, nShip));
+        szFlags[0] = '0';
+        szFlags[1] = '\0';
+        if (pShip->bWeaponsHot != 0 || pShip->bIntercepting != 0) {
+            szFlags[0] = '1';                                                   /* 0x6DB6C */
+        }
+        if (pShip->bWeaponsHot != 0 && pShip->bIntercepting != 0) {
+            szFlags[0] = '2';                                                   /* 0x6DBA4 */
+        }
+        snprintf(szCargo + strlen(szCargo), sizeof(szCargo) - strlen(szCargo), "%s", szFlags);
+        if (pCargo != NULL && nLine >= 0 && nLine < PUFO_PANEL_LINES) {
+            snprintf((char *)pCargo->apLines[nLine], PUFO_PANEL_LINE_BYTES, "%s", szCargo);
+        }
+    }
 }
 
 void OptionsScreen_Init(OptionsInitEnv *pEnv)

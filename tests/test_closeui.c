@@ -12,10 +12,9 @@
  *     suite covers it; only the non-assault half of case 20 is exercised here.
  *   - Case 19's bankruptcy calls EndScreen_Init, which opens main.dat and re-inits the font.
  *     The bankruptcy test hands pEndScreen as NULL and asserts the three things around it.
- *   - Case 18's second arm calls OptionsScreen_Open @ 0x6d0ac, still unported, so it is a recording
- *     hook here. The real callee clears bOptionsScreenOpen at 0x6DC40 in its close branch; the hook
- *     does not, which is why the options-open arm is counted twice in the recursion test rather than
- *     once. That count is the seam, and it is labelled as such where it is asserted.
+ *   - Case 18's second arm calls the ported OptionsScreen_Open @ 0x6d0ac, so the recursion is now
+ *     observable through the overlay's own state (the flag, the four panel slots, the two scroll
+ *     controls) rather than through a call counter.
  *
  * The gates that a caller cannot see (the flag that decides whether an already-ported callee
  * runs) are tested where the callee writes something the fixture can read -- the soldier
@@ -32,6 +31,7 @@
 #include "ui/pufo_control.h"      /* UiControl */
 #include "ui/pufo_linelist.h"     /* UiLineList */
 #include "platform/pufo_reg.h"    /* Reg_SetString / Reg_GetString, the four audio values */
+#include "game/pufo_boot.h"       /* PUFO_TEXT_REC_STRIDE */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -152,6 +152,46 @@ static ScreenScratch g_optScratch;
 static OptionsTabEnv g_tabEnv;
 static OptionsInitEnv g_optInitEnv;
 static SaveAudioEnv g_saveEnv;
+
+/* The options overlay OptionsScreen_Open builds and tears down. The text table is the real shape --
+ * PUFO_TEXT_REC_STRIDE apart -- so the record indices the original uses are the ones under test. */
+static u8 g_bAnimStarted;
+static UiControl *g_apPairCtl[2];
+static UiPanel *g_pPanelName, *g_pPanelStores, *g_pPanelRegion, *g_pPanelCargo;
+static OptionsOpenEnv g_openEnv;
+static u8 g_aTexts[(1172 + 1) * PUFO_TEXT_REC_STRIDE];
+
+static void TextPut(i32 nRec, const char *psz)
+{
+    snprintf((char *)(g_aTexts + PUFO_TEXT_REC_STRIDE * nRec), PUFO_TEXT_REC_STRIDE, "%s", psz);
+}
+
+static void OpenPanelPrev(void) {}
+static void OpenPanelNext(void) {}
+static void OpenOnConfirm(void) {}
+static void OpenSaveAudio(void) {}
+
+static UiPanel *OpenMakePanel(i32 nLines)
+{
+    UiPanel *p = (UiPanel *)malloc(sizeof(UiPanel));
+
+    if (p == NULL || !UiPanel_ctor(p, nLines)) {
+        free(p);
+        return NULL;
+    }
+    return p;
+}
+
+static UiControl *OpenMakeCtl(void)
+{
+    UiControl *p = (UiControl *)malloc(sizeof(UiControl));
+
+    if (p == NULL) {
+        return NULL;
+    }
+    UiControl_ctor(p);
+    return p;
+}
 static GameTime g_time;
 static u8 g_bSelFlag;
 static i32 g_nSfxVol, g_nMusicVol;
@@ -163,7 +203,6 @@ static GeoscapeCloseEnv g_e;
 
 static i32 g_nHBaseInfo, g_nHPlaneList, g_nHPlaneCtl, g_nHPlanePanels;
 static i32 g_nHUfRefresh, g_nHUfOpen, g_nHPsi, g_nHBaseAt;
-static i32 g_nHOptionsCalls, g_nHOptionsMode;
 static i32 g_nHFreeUi;
 static i32 g_nSample;
 static i32 g_nOptInit, g_nOptSample;
@@ -176,7 +215,6 @@ static void HUfRefresh(void *p) { (void)p; ++g_nHUfRefresh; }
 static void HUfOpen(void *p) { (void)p; ++g_nHUfOpen; }
 static void HPsi(void *p) { (void)p; ++g_nHPsi; }
 static void HBaseAt(void *p) { (void)p; ++g_nHBaseAt; }
-static void HOptionsOpen(i32 nMode, void *p) { (void)p; g_nHOptionsMode = nMode; ++g_nHOptionsCalls; }
 static void HFreeUi(i32 bFreeWorld, void *p) { (void)p; g_nHFreeUi = bFreeWorld; }
 static void HSample(i32 nSample, void *p) { (void)p; g_nSample += nSample; }
 static void HOptSample(u32 nSample, u32 nArg, void *p)
@@ -206,8 +244,6 @@ static void Fix_Hooks(void)
     g_nHUfOpen = 0;
     g_nHPsi = 0;
     g_nHBaseAt = 0;
-    g_nHOptionsCalls = 0;
-    g_nHOptionsMode = 0;
     g_nHFreeUi = -1;
     g_nSample = 0;
     g_nOptInit = 0;
@@ -310,6 +346,41 @@ static void Fix_Reset(i32 nScreen)
     memset(&g_optInitEnv, 0, sizeof(g_optInitEnv));
     g_optInitEnv.pCtl = &g_optCtl;
     g_optInitEnv.pbControlsExist = &g_bOptActive;
+
+    /* Release whatever a previous test's OptionsScreen_Open left behind, then wire the overlay env. */
+    for (i32 i = 0; i < 2; ++i) {
+        free(g_apPairCtl[i]);
+        g_apPairCtl[i] = NULL;
+    }
+    free(g_pPanelName);   g_pPanelName = NULL;
+    free(g_pPanelStores); g_pPanelStores = NULL;
+    free(g_pPanelRegion); g_pPanelRegion = NULL;
+    free(g_pPanelCargo);  g_pPanelCargo = NULL;
+    g_bAnimStarted = 0;
+    memset(&g_openEnv, 0, sizeof(g_openEnv));
+    g_openEnv.pbOptionsOpen = &g_bOptOpen;
+    g_openEnv.pbAnimStarted = &g_bAnimStarted;
+    g_openEnv.pbSelectionFlag = &g_bSelFlag;
+    g_openEnv.pnScreenId = &g_nScreen;
+    g_openEnv.pnBaseCount = &g_nBaseCount;
+    g_openEnv.pnCraftCount = &g_nCraftCount;
+    g_openEnv.apBases = g_apBase;
+    g_openEnv.apCraft = g_apShip;
+    g_openEnv.apSoldiers = g_apSold;
+    g_openEnv.nSoldierCount = 1;
+    g_openEnv.apObjects = g_apObj;
+    g_openEnv.nObjectCount = 1;
+    g_openEnv.apPairCtl = g_apPairCtl;
+    g_openEnv.ppPanelName = &g_pPanelName;
+    g_openEnv.ppPanelStores = &g_pPanelStores;
+    g_openEnv.ppPanelRegion = &g_pPanelRegion;
+    g_openEnv.ppPanelCargo = &g_pPanelCargo;
+    g_openEnv.pSaveCtl = &g_optSaveCtl;
+    g_openEnv.pTextRecs = g_aTexts;
+    g_openEnv.pfnPanelPrev = OpenPanelPrev;
+    g_openEnv.pfnPanelNext = OpenPanelNext;
+    g_openEnv.pfnOnConfirm = OpenOnConfirm;
+    g_openEnv.pfnSaveAudio = OpenSaveAudio;
 
     g_bAtAssault = 0;
     g_bTickHold = 0;
@@ -442,7 +513,7 @@ static void Fix_Reset(i32 nScreen)
     g_e.pfnUfopaediaOpen = HUfOpen;
     g_e.pfnPsiInit = HPsi;
     g_e.pfnBaseAtOpen = HBaseAt;
-    g_e.pfnOptionsOpen = HOptionsOpen;
+    g_e.pOptionsOpen = &g_openEnv;
     g_e.pSaveAudio = &g_saveEnv;
     g_e.pfnFreeGeoscapeUi = HFreeUi;
 }
@@ -898,10 +969,13 @@ static void TestScreen18(void)
 
     Fix_Reset(18);
     g_bOptOpen = 1;
+    g_pPanelName = OpenMakePanel(2);
+    g_apPairCtl[0] = OpenMakeCtl();
     Geoscape_CloseUI(&g_e);
-    CheckI(g_nHOptionsCalls, 1, "the options-open flag is the second, independent test (0x8BD10)");
-    CheckI(g_nHOptionsMode, -1, "  with nMode -1 (0x8BD10 MOVNE R0, #0xFFFFFFFF)");
-    CheckI(g_nScreen, 0, "  and screen 0 (0x8BD14)");
+    CheckI(g_bOptOpen, 0, "the options-open flag is the second, independent test (0x8BD10)");
+    Check(g_pPanelName == NULL && g_apPairCtl[0] == NULL,
+          "  it runs OptionsScreen_Open(-1), whose close half releases the overlay (0x6DC44 / 0x6DCC8)");
+    CheckI(g_nScreen, 0, "  and screen 0 (0x8BD14, then 0x6DC38)");
 
     /* The real flow: the options screen is open, so the callee's OWN close call at 0x6B7C4 runs
      * first. That pass rebuilds -- clearing byte_159E88[4] -- so the callee's re-test at 0x6B7D4
@@ -914,11 +988,12 @@ static void TestScreen18(void)
     CheckI(g_nSample, 17 * 2, "two close passes and no third (0x6B7C4 runs, 0x6B7F0 does not)");
     CheckI(g_nOptInit, 1, "  one rebuild, not two");
     CheckI(g_bOptActive, 0, "  the controls byte is cleared by the inner pass");
-    /* Two, not one: the inner pass runs the options-open arm, and so does the outer one, because
-     * the hook here only records. The real OptionsScreen_Open @ 0x6d0ac clears bOptionsScreenOpen
-     * at 0x6DC40 in its close branch, which would make the outer test at 0x8BD10 fail. That clear
-     * is the observable half of an unported callee -- the seam, not a defect in the close. */
-    CheckI(g_nHOptionsCalls, 2, "  both passes take the options-open arm (0x8BD10 is re-read after the call)");
+    /* One, not two. The inner pass runs OptionsScreen_Open(-1), whose close half clears
+     * bOptionsScreenOpen at 0x6DC40; case 18 re-reads that flag at 0x8BD10 only AFTER the callee
+     * returns, so the outer pass skips its own options-open arm. */
+    CheckI(g_bOptOpen, 0, "  the inner OptionsScreen_Open clears the flag (0x6DC40)");
+    Check(g_pPanelName == NULL && g_pPanelCargo == NULL,
+          "  and the overlay it released stays released for the outer pass");
 
     Fix_Reset(18);
     Geoscape_CloseUI(&g_e);
@@ -1053,9 +1128,213 @@ static void TestSaveAudioSettings(void)
     CheckI(g_nSample, 17, "the rebuild clears the controls byte, so only one close pass runs");
     CheckI(g_nOptInit, 1, "  one rebuild, not two");
     CheckI(g_bOptActive, 0, "  byte_159E88[4] is clear on the way back (0x6C0FC)");
-    CheckI(g_nHOptionsCalls, 1, "  and the inner pass takes the options-open arm once (0x8BD18)");
+    CheckI(g_bOptOpen, 0, "  and the inner pass runs OptionsScreen_Open(-1), which clears the flag (0x8BD18 -> 0x6DC40)");
 
     Check(Options_SaveAudioSettings(NULL) == 0, "a null env returns 0 and touches nothing");
+}
+
+/* ------------------------------------------------------------------ 12c. OptionsScreen_Open */
+
+static void Fix_Craft(u8 bHomeBase, u16 uRem, u16 uMax, u16 uFuelMax, i16 nFuel, u8 bAtBase)
+{
+    memset(g_aShip, 0, sizeof(g_aShip));
+    g_aShip[0].bType = 3;
+    g_aShip[0].bCraftType = 0;
+    g_aShip[0].bHomeBase = bHomeBase;
+    g_aShip[0].uRangeRemain = uRem;
+    g_aShip[0].uRangeMax = uMax;
+    g_aShip[0].uFuelMax = uFuelMax;
+    g_aShip[0].nFuel = nFuel;
+    g_aShip[0].bAtBase = bAtBase;
+    g_nCraftCount = 1;
+}
+
+static void Fix_Bases(void)
+{
+    memset(g_aBase, 0, sizeof(g_aBase));
+    g_aBase[0].bUnk4 = 3;
+    g_aBase[0].bRegionId = 0x83;
+    g_aBase[0].bUnk16 = 7;
+    g_aBase[1].bUnk4 = (u8)-3;   /* 0xFD: matched with the SIGNED load at 0x6D12C */
+    g_aBase[1].bRegionId = 0x80;
+    g_aBase[1].bUnk16 = -2;
+    g_nBaseCount = 2;
+}
+
+static void TestOptionsOpen(void)
+{
+    printf("OptionsScreen_Open @ 0x6d0ac: the overlay toggle\n");
+
+    TextPut(137, "");
+    TextPut(149, "NOFUEL");
+    TextPut(150, "NORANGE");
+    TextPut(151, "FULL");
+    TextPut(152, "NOTBASE");
+    TextPut(1036, "ASIA");
+    TextPut(1165, "EUROPE");
+
+    /* The close half: everything the open half allocated is released, in slot order. */
+    Fix_Reset(18);
+    g_bOptOpen = 1;
+    g_nScreen = 18;
+    g_pPanelName   = OpenMakePanel(3);
+    g_pPanelStores = OpenMakePanel(3);
+    g_pPanelRegion = OpenMakePanel(3);
+    g_pPanelCargo  = OpenMakePanel(3);
+    g_apPairCtl[0] = OpenMakeCtl();
+    g_apPairCtl[1] = OpenMakeCtl();
+    OptionsScreen_Open(&g_openEnv, -1);
+    CheckI(g_bOptOpen, 0, "the close half clears bOptionsScreenOpen (0x6DC40)");
+    CheckI(g_nScreen, 0, "  and nGeoscapeScreen (0x6DC38)");
+    Check(g_pPanelName == NULL && g_pPanelStores == NULL &&
+          g_pPanelRegion == NULL && g_pPanelCargo == NULL,
+          "all four panels are released and their slots nulled (0x6DC44..0x6DCC0)");
+    Check(g_apPairCtl[0] == NULL && g_apPairCtl[1] == NULL,
+          "  and both scroll controls (0x6DCC8..0x6DCE4)");
+
+    /* The open half with nMode -1: no filtering, one line per craft. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    g_bAnimStarted = 1;
+    g_bSelFlag = 1;
+    g_optSaveCtl.uWidth = 60;
+    OptionsScreen_Open(&g_openEnv, -1);
+    CheckI(g_bOptOpen, 1, "the open half sets bOptionsScreenOpen (0x6D0C8)");
+    CheckI(g_bAnimStarted, 0, "  and clears bUiAnimStarted (0x6D0DC)");
+    CheckI(g_bSelFlag, 0, "  and bMapSelectionFlag (0x6D1A8)");
+    Check(g_pPanelName != NULL && g_pPanelStores != NULL &&
+          g_pPanelRegion != NULL && g_pPanelCargo != NULL, "four panels are allocated (0x6D270..)");
+    CheckI(g_pPanelName->nLineCount, 1, "nMode -1 gives every panel Map_nCraftCount lines (0x6D0FC)");
+    CheckI(g_pPanelName->nStyle, 6, "all four get nStyle 6 (0x6D2C0)");
+    CheckI(g_pPanelName->nFont, 16, "  and nFont 16 (0x6D2D4)");
+    CheckI(g_pPanelName->nPosX, 5, "names at x 5 (0x6D2FC)");
+    CheckI(g_pPanelStores->nPosX, 115, "stores at 115 (0x6D410)");
+    CheckI(g_pPanelRegion->nPosX, 175, "region at 175 (0x6D4DC)");
+    CheckI(g_pPanelCargo->nPosX, 233, "cargo at 233 (0x6D5A8)");
+    CheckI(g_pPanelName->nViewW, 230, "the names and cargo panels are 230 wide (0x6D340)");
+    CheckI(g_pPanelStores->nViewW, 30, "  the stores and region panels are 30 (0x6D438)");
+    CheckI(g_pPanelName->bFlag7073, 1, "the names panel keeps bFlag7073 (0x6D388)");
+    CheckI(g_pPanelName->bUnk7088, 100, "  and bUnk7088 100 (0x6D3B0)");
+    CheckI(g_pPanelCargo->bUnk7088, 150, "the cargo panel's bUnk7088 is 150, written as -106 (0x6D630)");
+    CheckI(g_pPanelStores->nUnk7076, 1, "the two narrow panels carry nUnk7076 1 (0x6D484)");
+    CheckI(g_pPanelCargo->nUnk7076, 2, "  and the cargo panel carries 2 (0x6D61C)");
+    Check(g_apPairCtl[0] != NULL && g_apPairCtl[1] != NULL,
+          "the two scroll controls are allocated (0x6D1B0)");
+    CheckI(g_apPairCtl[0]->x, 20, "the descriptors put them at x 20 and 50 (0xAB9B0 / 0xAB9D0)");
+    CheckI(g_apPairCtl[1]->x, 50, "  the second one");
+    CheckI(g_apPairCtl[0]->y, 180, "both at y 180");
+    Check(g_apPairCtl[0]->pfnClick == OpenPanelPrev && g_apPairCtl[1]->pfnClick == OpenPanelNext,
+          "PanelPrev / PanelNext are installed at +0xC (0x6D208 / 0x6D214)");
+    CheckI(g_optSaveCtl.y, 179, "the save hotspot drops to 179 here, not LayoutButtons' 198 (0x6D26C)");
+    CheckI(g_optSaveCtl.x, 90, "  centred on its own 60-wide pad (0x6D25C)");
+    Check(g_optSaveCtl.pfnClick == OpenSaveAudio, "  and gets the audio-save handler (0x6D24C)");
+    Check(g_pPanelName->pfnClick == OpenOnConfirm, "the names panel gets the confirm handler (0x6D2E8)");
+    CheckS((const char *)g_pPanelName->apLines[0], "3",
+           "the names line is Ship_FormatDisplayName: TEXTS[137] empty plus itoa(Ship.bType)");
+    CheckI(g_pPanelName->anLineAux[0], 0, "its aux dword is the craft index (0x6D700)");
+    CheckS((const char *)g_pPanelStores->apLines[0], "FULL",
+           "full range and full fuel at base gives TEXTS[151] (0x6D728 / 0x6D74C)");
+    CheckI(g_pPanelStores->anLineAux[0], 0, "  and lifts the aux dword from -1 to 0 (0x6D77C)");
+    CheckS((const char *)g_pPanelRegion->apLines[0], "ASIA-7",
+           "the region line is TEXTS[1036] + \"-\" + the signed BaseRec.bUnk16 (0x6D884 / 0x6DA8C)");
+    CheckI((char)g_pPanelCargo->apLines[0][strlen((const char *)g_pPanelCargo->apLines[0]) - 1], '0',
+           "neither hot nor intercepting, the cargo line ends in the shared \"0\" (0x6DB34)");
+
+    /* Not at base puts the aux dword back to -1 even though the craft is full. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 0);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    CheckS((const char *)g_pPanelStores->apLines[0], "NOTBASE",
+           "a craft away from base gets TEXTS[152] (0x6D818 / 0x6D82C)");
+    CheckI(g_pPanelStores->anLineAux[0], -1, "  and the aux dword goes back to -1 (0x6D858)");
+
+    /* Short range and short fuel each replace the line, in the original's order. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 40, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    CheckS((const char *)g_pPanelStores->apLines[0], "NORANGE",
+           "short range gives TEXTS[150] (0x6D790)");
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 10, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    CheckS((const char *)g_pPanelStores->apLines[0], "NOFUEL",
+           "short fuel gives TEXTS[149], read SIGNED against uFuelMax (0x6D7D4)");
+
+    /* Both flags set appends "2", one of them "1". */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_aShip[0].bWeaponsHot = 1;
+    g_aShip[0].bIntercepting = 1;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    {
+        const char *psz = (const char *)g_pPanelCargo->apLines[0];
+        CheckI(psz[strlen(psz) - 1], '2', "both flags append the shared \"2\" (0x6DBA4)");
+    }
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_aShip[0].bWeaponsHot = 1;
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -1);
+    {
+        const char *psz = (const char *)g_pPanelCargo->apLines[0];
+        CheckI(psz[strlen(psz) - 1], '1', "either flag alone appends \"1\" (0x6DB6C)");
+    }
+
+    /* A mode that matches a base filters the craft by Ship.bHomeBase. Mode 3 finds base 0, and the
+     * craft is homed at base 1, so it is filtered out. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(1, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, 3);   /* base 0 has bUnk4 == 3 */
+    CheckI(g_pPanelName->nLineCount, 0,
+           "nMode 3 finds base 0 (BaseRec.bUnk4, 0x6D12C) and a craft homed at base 1 is filtered out (0x6D69C)");
+
+    /* The base match is SIGNED: 0xFD matches a mode of -3, and the craft homed at that base counts. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(1, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, -3);
+    CheckI(g_pPanelName->nLineCount, 1, "the base match loads bUnk4 SIGNED, so -3 finds 0xFD (0x6D12C)");
+    CheckS((const char *)g_pPanelRegion->apLines[0], "EUROPE--2",
+           "the region line comes from the craft's own home base, not the matched one (0x6D874)");
+
+    /* A mode that matches nothing leaves the index at the count, so no craft matches. */
+    Fix_Reset(18);
+    Fix_Bases();
+    Fix_Craft(1, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, 99);
+    CheckI(g_pPanelName->nLineCount, 0,
+           "a mode matching no base leaves the index at the count (0x6D140), so nothing is counted");
+
+    /* A base count of zero skips the walk entirely and the index stays 0. */
+    Fix_Reset(18);
+    Fix_Bases();
+    g_nBaseCount = 0;
+    Fix_Craft(0, 100, 100, 50, 50, 1);
+    g_bOptOpen = 0;
+    OptionsScreen_Open(&g_openEnv, 3);
+    CheckI(g_pPanelName->nLineCount, 1,
+           "a zero base count skips the walk (0x6D118) and leaves the index at 0, which the craft matches");
+
+    g_bOptOpen = 0;
+    g_bAnimStarted = 1;
+    OptionsScreen_Open(NULL, -1);
+    CheckI(g_bOptOpen, 0, "a null env touches nothing: the open flag is not set");
+    CheckI(g_bAnimStarted, 1, "  and the anim byte is not cleared");
 }
 
 /* ------------------------------------------------------------------ 13. case 19, the monthly close */
@@ -1231,6 +1510,7 @@ int main(void)
     TestScreen15And16();
     TestScreen18();
     TestSaveAudioSettings();
+    TestOptionsOpen();
     TestScreen19();
     TestScreen20();
     TestBasePass();
