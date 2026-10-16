@@ -622,3 +622,489 @@ i32 Geoscape_OnPointer(const GeoscapePointerEnv *pEnv, i32 nX, i32 nY, bool bDow
         return nResult;
     }
 }
+
+/* ============================================================ the release half
+ *
+ * Geoscape_OnPointerUp @ 0x89450. It takes only the 0x1864F8 block (R9 = a1): every coordinate
+ * it uses is the cursor pair Geoscape_OnPointer stored, and every UiControl_HitTest it makes is
+ * a release - x = y = 0, bDown = 0, bForceClick = 0, which is what the ARM sets at every call
+ * site (0x89D74..0x89D84, 0x89F74..0x89F80, ...). A release ignores the hit box entirely, so the
+ * zero coordinates are not a guess; they are what the original passes.
+ *
+ * The two halves are not the same function with bDown flipped. The release has no drag block, no
+ * strateg-select call and no tap arithmetic; it clears the drag flag instead (0x896BC). It adds
+ * Sound_Play(17) to almost every flag arm, it clicks the scroll lists (UiPanel_ClickRow) where
+ * the press only tracked the hovered row, and it carries the shortfall gate on byte_1870C8 that
+ * the press does not touch. */
+
+static i32 PtrUp_Hit(const GeoscapePointerEnv *pEnv, UiControl *pCtl)
+{
+    if (pCtl == NULL) {
+        return 0;
+    }
+    return UiControl_HitTest(pCtl, 0, 0, false, false, pEnv->pHit) ? 1 : 0;
+}
+
+static i32 PtrUp_HitSlot(const GeoscapePointerEnv *pEnv, GeoscapeUiCtlSlot nSlot)
+{
+    return PtrUp_Hit(pEnv, pEnv->apCtl[nSlot]);
+}
+
+static void PtrUp_HitRange(const GeoscapePointerEnv *pEnv, UiControl *const *apCtl,
+                           i32 nFirst, i32 nLast)
+{
+    for (i32 i = nFirst; i <= nLast; ++i) {
+        (void)PtrUp_Hit(pEnv, apCtl[i]);
+    }
+}
+
+static void PtrUp_Sample(const GeoscapePointerEnv *pEnv)
+{
+    if (pEnv->pfnPlaySample != NULL) {
+        pEnv->pfnPlaySample(17, pEnv->pUser);
+    }
+}
+
+/* The shared panel tail at 0x89B64..0x89B90: click the row under the stored cursor, then raise
+ * the panel's bFlag7073 (the ARM builds 0x1BA1 out of `MOV R3, #0x1B80 / ORR R3, R3, #0x21`).
+ * Two sites jump into it: the world arm's multi-select gate on the status panel (0x18641C) and
+ * the options confirm tail (0x8AF1C loads 0x159E18 and branches to 0x89B64). */
+static void PtrUp_ClickPanelRow(const GeoscapePointerEnv *pEnv, UiPanel *pPanel)
+{
+    if (pPanel == NULL) {
+        return;
+    }
+    (void)UiPanel_ClickRow(pPanel, *pEnv->pnCursorX, *pEnv->pnCursorY);
+    pPanel->bFlag7073 = 1;
+}
+
+/* ------------------------------------------------- screens 0 and 2: LABEL_25 @ 0x896B4
+ *
+ * The flag chain first, then the radar / multi-select gates, then the fall-through that clears
+ * the target-select flag and - on any screen but 2 - releases all thirteen root controls. */
+static i32 PointerUpWorld(const GeoscapePointerEnv *pEnv)
+{
+    *pEnv->pbDragActive = 0;                                                      /* 0x896BC */
+    const u8 nFlag = UiLineList_GetFlag(pEnv->pLines, 0);
+
+    if (nFlag == GEO_FLAG_PLACEMENT) {                                            /* 0x896C8 */
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+    }
+    if (*pEnv->pbTargetSelectActive != 0) {                                       /* 0x8971C */
+        const i32 nHit = PtrUp_HitSlot(pEnv, GEOUI_CTL_186B8C);
+        if (nHit != 0) {
+            return nHit;
+        }
+    }
+    /* 0x8975C (flag 17) and 0x89950 (flag 15) both land on LABEL_30 @ 0x89760. */
+    if (nFlag == GEO_FLAG_BUILD || nFlag == GEO_FLAG_CONFIRM) {
+        PtrUp_Sample(pEnv);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+    }
+    /* 0x897A4..0x897D0 (flags 21, 22, 23) and 0x89A9C (flag 12) both land on LABEL_52 @ 0x89AA0. */
+    if (nFlag == GEO_FLAG_ALT_A || nFlag == GEO_FLAG_ALT_B || nFlag == GEO_FLAG_ALT_C ||
+        nFlag == GEO_FLAG_SELECT_ROW) {
+        PtrUp_Sample(pEnv);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+    }
+    /* 0x897E4 / 0x89864 / 0x898DC: the three multi-select flags are the same arm, and each one
+     * plays the sample before it tests bMapSelectionFlag - the press arm does not. */
+    if (nFlag == GEO_FLAG_MULTI_A || nFlag == GEO_FLAG_MULTI_B || nFlag == GEO_FLAG_MULTI_C) {
+        PtrUp_Sample(pEnv);
+        if (*pEnv->pbMapSelectionFlag != 0) {
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+        }
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+    }
+    if (nFlag == GEO_FLAG_CANCEL) {                                               /* 0x89994 */
+        PtrUp_Sample(pEnv);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+    }
+    if (nFlag == GEO_FLAG_INTERCEPT) {                                            /* 0x899EC */
+        PtrUp_Sample(pEnv);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA8);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B9C);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B98);
+        if (*pEnv->pbInterceptDone == 0) {
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+        }
+        return *pEnv->pbInterceptDone;
+    }
+    if (*pEnv->pbRadarScreenActive != 0) {                                        /* 0x89AF0 */
+        PtrUp_Sample(pEnv);
+        PtrUp_HitRange(pEnv, pEnv->apRadarCtl, 0, PUFO_RADAR_CONTROLS - 1);
+        return PUFO_RADAR_CONTROLS;
+    }
+    if (*pEnv->pbMultiSelectPanel != 0) {                                         /* 0x89B54 */
+        PtrUp_ClickPanelRow(pEnv, pEnv->pStatusPanel);
+        return 0;   /* the original hands back the panel pointer itself; see deviation 5 */
+    }
+    if (nFlag == GEO_FLAG_SITE_LIST || nFlag == GEO_FLAG_SPAWN_MSG) {            /* 0x89BB0 / 0x89C0C */
+        PtrUp_Sample(pEnv);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+    }
+    if (nFlag == GEO_FLAG_CLOSE_ONLY || nFlag == GEO_FLAG_SCROLLING) {           /* 0x89C64 / 0x89CA4 */
+        PtrUp_Sample(pEnv);
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+    }
+
+    /* 0x89CD4..0x89D20: nothing matched. The target-select flag is dropped, screen 2 returns 2,
+     * and every other screen releases all thirteen root controls - with no null check, unlike
+     * the strip run in case 1. */
+    *pEnv->pbTargetSelectActive = 0;
+    if (*pEnv->pnScreenId == 2) {
+        return 2;
+    }
+    PtrUp_HitRange(pEnv, pEnv->apRootCtl, 0, PUFO_GEOUI_ROOT_CTLS - 1);
+    return 0;
+}
+
+/* ------------------------------------------------- screen 1: the base strip */
+static i32 PointerUpBaseStrip(const GeoscapePointerEnv *pEnv)
+{
+    (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);                                  /* 0x89D88 */
+
+    /* 0x89D9C..0x89DD0: the ten nav slots, and - as in the press - these are the only slots the
+     * original null-checks (0x89DA4). A null slot is skipped but the index still advances. */
+    for (i32 i = 0; i < PUFO_GEO_STRIP_CTLS; ++i) {
+        (void)PtrUp_Hit(pEnv, pEnv->apStripCtl[i]);
+    }
+
+    if (*pEnv->pbPlaceActive == 0) {                                              /* 0x89DD4, dword_1870B4[2] */
+        return 0;
+    }
+    return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+}
+
+/* ------------------------------------------------- screen 6: the craft loadout
+ *
+ * The press arm tracked the hovered row on five panels and clicked only the slot panel; the
+ * release clicks four of them and never touches pPlaneCraftStatusPanel or pPlaneSlotPanel. */
+static i32 PointerUpCraft(const GeoscapePointerEnv *pEnv)
+{
+    *pEnv->pbPopupA = 0;                                                          /* 0x8A0CC */
+    const i32 nCurX = *pEnv->pnCursorX;
+    const i32 nCurY = *pEnv->pnCursorY;
+
+    if (*pEnv->pbPlanePanelsBuilt != 0 && *pEnv->pbPlaneShowCraftDetail == 0) {   /* 0x8A0F0 */
+        (void)UiPanel_ClickRow(pEnv->pPlaneCraftPanel, nCurX, nCurY);
+    }
+    if (*pEnv->pbPlaneListBuilt != 0) {                                           /* 0x8A110 */
+        (void)UiPanel_ClickRow(pEnv->pPlaneCrewPanel, nCurX, nCurY);
+    }
+    if (*pEnv->pbPlaneStoresCommitted != 0) {                                     /* 0x8A130 */
+        (void)UiPanel_ClickRow(pEnv->pPlaneSelRowPanel, nCurX, nCurY);
+        (void)UiPanel_ClickRow(pEnv->pPlaneCommitRowPanel, nCurX, nCurY);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+    }
+    /* ORIGINAL BUG (residue, 0x8A188): the clear of bPopupVisibleB is written as a conditional
+     * store - `if (bPopupVisibleB != 0) bPopupVisibleB = 0`. Reproduced as the plain clear it is. */
+    *pEnv->pbPopupB = 0;
+
+    if (*pEnv->pbPlaneShowCraftDetail != 0) {                                     /* 0x8A198 */
+        const Ship *pCraft = pEnv->apCraft[*pEnv->pnSelectedCraftIdx];
+        const bool bQuiet = *pEnv->pbStatPanelAOpen == 0 && *pEnv->pbStatPanelBOpen == 0 &&
+                            *pEnv->pbPlaneListBuilt == 0 && *pEnv->pbPlaneStoresCommitted == 0;
+        if (*pEnv->pbPlaneStoresCommitted != 0) {                                 /* 0x8A1A8, slots 13,14 */
+            PtrUp_HitRange(pEnv, pEnv->apPlaneCtl, PUFO_GEO_PLANE_STORE_CTL,
+                           PUFO_GEO_PLANE_STORE_CTL + 1);
+        }
+        if (*pEnv->pbPlaneListBuilt != 0) {                                       /* 0x8A1F0, slots 11,12 */
+            PtrUp_HitRange(pEnv, pEnv->apPlaneCtl, PUFO_GEO_PLANE_CREW_CTL,
+                           PUFO_GEO_PLANE_CREW_CTL + 1);
+        }
+        /* 0x8A270..0x8A2D0: the weapon slots, one per Ship.bCrewSlots (+0x14), gated on the four
+         * panels being closed. The loop re-reads the crew count every iteration (0x8A2C0). */
+        if (pCraft != NULL && bQuiet && pCraft->bCrewSlots != 0) {
+            PtrUp_HitRange(pEnv, pEnv->apPlaneCtl, PUFO_GEO_PLANE_WEAPON_CTL,
+                           PUFO_GEO_PLANE_WEAPON_CTL + pCraft->bCrewSlots - 1);
+        }
+        /* 0x8A320: the dogfight pair, with its own copy of the same four gates. */
+        if (pCraft != NULL && pCraft->bCanDogfight != 0 && bQuiet) {
+            PtrUp_HitRange(pEnv, pEnv->apPlaneCtl, PUFO_GEO_PLANE_DOGFIGHT_CTL,
+                           PUFO_GEO_PLANE_DOGFIGHT_CTL + 1);
+        }
+    }
+
+    if (*pEnv->pbStatPanelAOpen != 0 || *pEnv->pbStatPanelBOpen != 0) {           /* 0x8A370 */
+        (void)PtrUp_Hit(pEnv, pEnv->apPlaneCtl[PUFO_GEO_PLANE_STAT_CTL_A]);
+        for (i32 i = 0; i < PUFO_GEO_PLANE_STAT_COUNT; ++i) {
+            if (*pEnv->apanStatGate[i] > 0) {
+                (void)PtrUp_Hit(pEnv, pEnv->apPlaneCtl[PUFO_GEO_PLANE_STAT_CTL + i]);
+            }
+        }
+    }
+    return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+}
+
+/* ------------------------------------------------- screen 7: the build dialog */
+static i32 PointerUpBuildDialog(const GeoscapePointerEnv *pEnv)
+{
+    *pEnv->pbPopupA = 0;                                                          /* 0x89E14 */
+    if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89E30 */
+        pEnv->pFacPanel->bFlag7073 = 1;
+    }
+    if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89E40 */
+        PtrUp_HitRange(pEnv, pEnv->apFacCtl, 0, 1);
+    }
+    *pEnv->pbPopupB = 1;                                                          /* 0x89E84 */
+    *pEnv->pnPendingPlaceX = *pEnv->pnTapX;                                       /* 0x89E8C */
+    *pEnv->pnPendingPlaceY = *pEnv->pnTapY;                                       /* 0x89E98 */
+
+    const i32 nCurX = *pEnv->pnCursorX;
+    i32 nCurY = *pEnv->pnCursorY;
+    /* 0x89EC8 / 0x89EEC: the two hot corners of the dialog hide the placement overlay. Both use
+     * the stored cursor here - the press arm used its arguments for the second corner. */
+    if (nCurY > 229 && nCurX > 220 && nCurY < 250) {
+        pEnv->pFacPanel->bFlag7073 = 0;
+    }
+    if (nCurY > 251 && nCurX > 0 && nCurY < 300 && nCurX < 40) {
+        pEnv->pFacPanel->bFlag7073 = 0;
+    }
+    if (*pEnv->pbFacPlaceArmed == 0) {                                            /* 0x89F10 */
+        (void)UiPanel_ClickRow(pEnv->pFacPanel, nCurX, nCurY);
+    }
+    return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+}
+
+/* ------------------------------------------------- the release dispatcher */
+i32 Geoscape_OnPointerUp(const GeoscapePointerEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pnScreenId == NULL || pEnv->pdwShortfall == NULL) {
+        return 0;
+    }
+
+    i32 nScreen = *pEnv->pnScreenId;                                              /* 0x89460 */
+
+    /* 0x8946c..0x89568: screen 0 with a main-menu message. Same band as the press, but the
+     * sample plays first and the flag-37 pair is released BEFORE the two menu controls. */
+    if (nScreen == 0) {
+        const u8 nFlag = UiLineList_GetFlag(pEnv->pLines, 0);
+        if (nFlag > PUFO_GEO_MENU_FLAG_MIN && nFlag < PUFO_GEO_MENU_FLAG_MAX) {
+            PtrUp_Sample(pEnv);                                                   /* 0x8949C */
+            if (nFlag == PUFO_GEO_MENU_FLAG_DIALOG) {                             /* 0x894C0 */
+                (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+                (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BAC);
+            }
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_18704C);
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_187024);
+        }
+        nScreen = *pEnv->pnScreenId;                                              /* 0x89574 */
+    }
+
+    /* 0x89578..0x89600: the low-supply report. The shortfall dword at 0x1870C8 survives a
+     * release only on the screens that draw the shortfall panel - 6, 9, 10, 11, 12 - and every
+     * other screen clears it here. Screen 0 never reaches this gate. */
+    if (*pEnv->pdwShortfall == 1 && nScreen != 0) {
+        if (nScreen == 9) {                                                       /* 0x895D4 */
+            *pEnv->pdwShortfall = 0;
+            if (*pEnv->pbProductSelected == 0) {                                  /* 0x895E0 */
+                *pEnv->pbPopupB = 0;
+                *pEnv->pbPopupA = 0;
+                return 0;
+            }
+            PtrUp_Sample(pEnv);                                                   /* 0x895F4 */
+        } else if (nScreen != 6 && nScreen != 10 && nScreen != 11 && nScreen != 12) {
+            *pEnv->pdwShortfall = 0;                                              /* 0x895C4 */
+            return 0;   /* the original hands back the address of byte_1870C8; see deviation 5 */
+        } else {
+            *pEnv->pdwShortfall = 0;                                              /* 0x89600 */
+        }
+    }
+
+    switch (nScreen) {
+    case 2:
+        if (*pEnv->pbPlacementPending == 0) {                                     /* 0x8966C */
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+        }
+        if (*pEnv->pbPendingRegionId != 0xFF) {                                   /* 0x89694 */
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+        }
+        return PointerUpWorld(pEnv);
+
+    case 0:
+        return PointerUpWorld(pEnv);
+
+    case 1:
+        return PointerUpBaseStrip(pEnv);
+
+    case 3:
+        if (*pEnv->pbTransferRowSel != 0) {                                       /* 0x8A710 */
+            return *pEnv->pbTransferRowSel;
+        }
+        PtrUp_HitRange(pEnv, pEnv->apBaseAtCtl, 0, 1);                            /* 0x8A744 */
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 4:
+        PtrUp_HitRange(pEnv, pEnv->apSolPanelCtl, 0, 1);                          /* 0x89F68 */
+        if (*pEnv->pbSolScreenOpen != 0) {                                        /* 0x89FA4 */
+            (void)UiPanel_ClickRow(pEnv->pSolPanelNames, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        }
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 5:
+        if (*pEnv->pbNameEditActive != 0) {                                       /* 0x8A000 */
+            *pEnv->pbPopupB = 0;
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA8);
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B9C);
+        }
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+        if (*pEnv->pbTransferFlag != 0) {                                         /* 0x8A058 */
+            return UiPanel_ClickRow(pEnv->pSolPanelEquip, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        }
+        PtrUp_HitRange(pEnv, pEnv->apSolNameCtl, 0, 2);                           /* 0x8A094 */
+        return 0;
+
+    case 6:
+        return PointerUpCraft(pEnv);
+
+    case 7:
+        return PointerUpBuildDialog(pEnv);
+
+    case 8:
+        *pEnv->pbPopupB = 0;                                                      /* 0x8A788 */
+        if (*pEnv->pbRowSelected == 0) {                                          /* 0x8A794 */
+            (void)UiPanel_ClickRow(pEnv->pResearchPanel, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        }
+        if (*pEnv->pbRowSelected != 0) {                                          /* 0x8A7C4 */
+            PtrUp_HitRange(pEnv, pEnv->apResearchCtl, 2, 3);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B94);
+        } else {
+            PtrUp_HitRange(pEnv, pEnv->apResearchCtl, 0, 1);
+        }
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 9:
+        (void)UiPanel_ClickRow(pEnv->pManufProductPanel, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);                              /* 0x8A90C */
+        if (*pEnv->pbProductSelected != 0) {                                      /* 0x8A920 */
+            PtrUp_HitRange(pEnv, pEnv->apManufCtl, 2, 5);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+            (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B94);
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B90);
+        }
+        PtrUp_HitRange(pEnv, pEnv->apManufCtl, 0, 1);
+        return 0;
+
+    case 10:
+        *pEnv->pbPopupB = 0;                                                      /* 0x8A64C */
+        (void)UiPanel_ClickRow(pEnv->pBuySellPanelB, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        (void)UiPanel_ClickRow(pEnv->pBuySellPanelC, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        if (*pEnv->pbTransferRowSel != 0) {                                       /* 0x8A680 */
+            return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+        }
+        PtrUp_HitRange(pEnv, pEnv->apSiteInfoCtl, 0, 3);                          /* 0x8A6AC */
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 11:
+    case 12:
+        *pEnv->pbPopupB = 0;                                                      /* 0x8A4DC / 0x8A59C */
+        (void)UiPanel_ClickRow(pEnv->pBuySellPanelB, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        (void)UiPanel_ClickRow(pEnv->pBuySellPanelC, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        PtrUp_HitRange(pEnv, pEnv->apBuySellCtl, 0, 1);                           /* 0x8A52C / 0x8A5EC */
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);                              /* LABEL_153 */
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+
+    case 15:
+    case 19:
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 16:
+        if (*pEnv->pb16ModeA != 0 && *pEnv->pb16ModeB == 0) {                     /* 0x8AA4C */
+            PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 4, 5);
+        }
+        if (*pEnv->pb16ModeB != 0) {                                              /* 0x8AA90 */
+            if (*pEnv->pb16ListFull != 0) {
+                PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 0, 3);
+            } else {
+                PtrUp_HitRange(pEnv, pEnv->ap16Ctl, 2, 3);
+            }
+        }
+        if (*pEnv->pb16ModeB == 0) {                                              /* 0x8AB30 */
+            UiPanel *pList = (*pEnv->pb16ModeA != 0)
+                                 ? pEnv->ap16PanelSet[*pEnv->pn16PanelIndex]
+                                 : pEnv->p16Panel;
+            (void)UiPanel_ClickRow(pList, *pEnv->pnCursorX, *pEnv->pnCursorY);
+        }
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186B00);
+
+    case 17:
+        if (*pEnv->pbTransferRowSel != 0) {                                       /* 0x8ABA0 */
+            return *pEnv->pbTransferRowSel;
+        }
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BAC);
+        if (*pEnv->pbPsiPanelOpen != 0 && *pEnv->pbPsiRowSel != 0) {              /* 0x8AC08 */
+            (void)UiPanel_ClickRow(pEnv->apPsiPanel[*pEnv->pnTransferBaseIdx],
+                                   *pEnv->pnCursorX, *pEnv->pnCursorY);
+            PtrUp_HitRange(pEnv, pEnv->apPsiCtl, 0, 1);
+        }
+        /* 0x8AC6C..0x8AC9C: both base indices are read SIGNED (LDRSB), the base count is read
+         * SIGNED (LDRSB at abFacilityGrid + 0x618), and the row bound is the stored cursor y.
+         *
+         * ORIGINAL BUG (residue, 0x8AC9C): this clear can only fire on a byte that is already 0 -
+         * the arm returns at 0x8ABA8 whenever byte_1870F8 is non-zero. It has an effect only if
+         * the psi panel's own click handler, tail-called by UiScrollList_ClickRow at 0x89B78, put
+         * the selection back up in between. Reproduced as written. */
+        if (*pEnv->pbStripHitBase == *pEnv->pnTransferBaseIdx &&
+            *pEnv->pnCursorY < 28 * *pEnv->pnBaseCount) {
+            *pEnv->pbTransferRowSel = 0;
+        }
+        *pEnv->pbPsiRowSel = 1;                                                   /* 0x8ACA4 */
+        return 1;
+
+    case 18: {
+        if (*pEnv->pbOptionsPageActive != 0) {                                    /* 0x8ACE4 */
+            const i8 nPage = *pEnv->pnOptionsPage;                                /* LDRSB, 0x8ACEC */
+            if (nPage == 0) {                                                     /* 0x8AE64 */
+                PtrUp_HitRange(pEnv, pEnv->apOptListCtl, 0, 3);
+                (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);                      /* LABEL_228 */
+            } else if (nPage == 1 || nPage == 2) {                                /* 0x8AE14 / 0x8ADC4 */
+                PtrUp_HitRange(pEnv, pEnv->apOptListCtl, 0, 6);
+                (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+            } else if (nPage == 3) {                                              /* 0x8AD7C */
+                const i32 nClose = PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+                if (nClose != 0) {
+                    return nClose;
+                }
+                const i32 nCancel = PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB0);
+                if (nCancel != 0) {
+                    return nCancel;
+                }
+            } else if (nPage == 4) {                                              /* 0x8AD1C: slots 9..20 */
+                PtrUp_HitRange(pEnv, pEnv->apOptMusicCtl, 0, PUFO_GEO_OPT_SOUND_CTLS - 1);
+                PtrUp_HitRange(pEnv, pEnv->apOptSfxCtl, 0, PUFO_GEO_OPT_SOUND_CTLS - 1);
+                (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);
+            }
+        }
+
+        /* LABEL_229 @ 0x8AEB0: reached from every page arm, and it overwrites the incoming result
+         * with the confirm byte before testing it. */
+        if (*pEnv->pbOptionsConfirm == 0) {
+            return 0;
+        }
+        (void)PtrUp_HitSlot(pEnv, GEOUI_CTL_186BB4);                              /* 0x8AED4 */
+        (void)PtrUp_Hit(pEnv, pEnv->pOptCtlPrev);                                 /* 0x8AEEC: slots 7,8 */
+        (void)PtrUp_Hit(pEnv, pEnv->pOptCtlNext);
+        PtrUp_ClickPanelRow(pEnv, pEnv->pOptPanelShips);                          /* 0x8AF1C -> 0x89B64 */
+        return 0;   /* the original hands back the panel pointer itself; see deviation 5 */
+    }
+
+    case 20:
+        if (*pEnv->pbBaseAtDone == 0) {                                           /* 0x8AF70 */
+            return 0;
+        }
+        return PtrUp_HitSlot(pEnv, GEOUI_CTL_186BA4);
+
+    default:
+        return 0;   /* screens 13 and 14: the original hands back the address of byte_1870C8 */
+    }
+}

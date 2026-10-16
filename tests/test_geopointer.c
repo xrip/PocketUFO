@@ -89,7 +89,7 @@ typedef struct Fix {
     Ship *apCraft[2];
 
     UiPanel pStatus, pSolNames, pSolEquip, pFac, pResearch, pManufProd, pManufD;
-    UiPanel pBuySell, p16, p16Set, pOptShips, pPsi[2];
+    UiPanel pBuySell, pBuySellB, pBuySellC, p16, p16Set, pOptShips, pPsi[2];
     UiPanel pPlaneCraft, pPlaneStatus, pPlaneSel, pPlaneCommit, pPlaneSlot, pPlaneCrew;
 
     UiControl *apCtl[PUFO_GEOUI_ROOT_CTLS];
@@ -118,6 +118,8 @@ typedef struct Fix {
     u8 bPlaneBuilt, bPlaneDetail, bPlaneStores, bPlaneListBuilt, bStatAOpen, bStatBOpen;
     i8 nOptPage;
     i32 anStatGate[PUFO_GEO_PLANE_STAT_COUNT];
+    u32 nShortfall;
+    i32 nPendingX, nPendingY;
 
     u32 nUiSlot0;
     UiControlHitCtx oHit;
@@ -157,6 +159,12 @@ static void HookAppendGlyph(i32 nX, i32 nY, void *pUser)
 }
 
 static void HookBackspace(void) { ++g.nBackspaceClicks; }
+
+/* Harness only. UiPanel_ClickRow tail-calls the panel's own pfnClick, and in the original that
+ * is the only way byte_1870F8 can be non-zero by the time the screen-17 tail re-tests it at
+ * 0x8AC9C. This handler stands in for the psi panel's unported click handler so the comparison
+ * there is observable at all. */
+static void HookPsiClickReArm(void) { g.bTransferRow = 1; }
 static void HookCopyName(void) {}
 
 static void Fix_Ctl(UiControl *pCtl)
@@ -234,6 +242,8 @@ static void Fix_Reset(void)
     Fix_Panel(&g.pManufProd);
     Fix_Panel(&g.pManufD);
     Fix_Panel(&g.pBuySell);
+    Fix_Panel(&g.pBuySellB);
+    Fix_Panel(&g.pBuySellC);
     Fix_Panel(&g.p16);
     Fix_Panel(&g.p16Set);
     Fix_Panel(&g.pOptShips);
@@ -377,6 +387,11 @@ static void Fix_Reset(void)
     p->pfnAppendNameGlyph = HookAppendGlyph;
     p->pfnPlaySample = HookPlaySample;
     p->pfnHitTestStrategSelect = HookStrategHit;
+    p->pdwShortfall = &g.nShortfall;
+    p->pBuySellPanelB = &g.pBuySellB;
+    p->pBuySellPanelC = &g.pBuySellC;
+    p->pnPendingPlaceX = &g.nPendingX;
+    p->pnPendingPlaceY = &g.nPendingY;
     p->pHit = &g.oHit;
 }
 
@@ -386,6 +401,65 @@ static i32 Call(i32 nX, i32 nY, bool bDown)
 }
 
 static bool Hit(GeoscapeUiCtlSlot nSlot) { return CtlHit(&g.aCtl[nSlot]); }
+
+/* ------------------------------------------------- the release fixture
+ *
+ * A release ignores the hit box, so the only way to see one is to start from a control that is
+ * already down: UiControl_HitTest with bDown == 0 takes a mode-0 control from state 1 to state 0
+ * and returns 1, and leaves a control at state 0 alone and returns 0. So every release test arms
+ * every control first (nState = 1, "the press hit it") and then asserts which ones the release
+ * put back down. A control still armed is one the arm never reached - which is what an early
+ * return looks like. */
+static void Fix_Arm(UiControl *apCtl, i32 nCount)
+{
+    for (i32 i = 0; i < nCount; ++i) {
+        apCtl[i].nState = 1;
+    }
+}
+
+static void Fix_ArmAll(void)
+{
+    Fix_Arm(g.aCtl, PUFO_GEOUI_ROOT_CTLS);
+    Fix_Arm(g.aRoot, PUFO_GEOUI_ROOT_CTLS);
+    Fix_Arm(g.aStrip, PUFO_GEO_STRIP_CTLS);
+    Fix_Arm(g.aBaseAt, 2);
+    Fix_Arm(g.aSolPanel, 2);
+    Fix_Arm(g.aSolName, 3);
+    Fix_Arm(g.aPlane, PUFO_GEO_PLANE_CTLS);
+    Fix_Arm(g.aRadar, PUFO_RADAR_CONTROLS);
+    Fix_Arm(g.aPsi, 2);
+    Fix_Arm(g.aFac, 2);
+    Fix_Arm(g.aResearch, 4);
+    Fix_Arm(g.aManuf, 6);
+    Fix_Arm(g.aSiteInfo, 4);
+    Fix_Arm(g.aBuySell, 2);
+    Fix_Arm(g.a16, 6);
+    Fix_Arm(g.aOptList, PUFO_GEO_OPT_LIST_CTLS);
+    Fix_Arm(g.aOptMusic, PUFO_GEO_OPT_SOUND_CTLS);
+    Fix_Arm(g.aOptSfx, PUFO_GEO_OPT_SOUND_CTLS);
+    Fix_Arm(&g.aOptPrev, 1);
+    Fix_Arm(&g.aOptNext, 1);
+}
+
+static i32 CallUp(void) { return Geoscape_OnPointerUp(&g.oEnv); }
+
+/* True when the release put this singleton back down. */
+static bool Up(GeoscapeUiCtlSlot nSlot) { return g.aCtl[nSlot].nState == 0; }
+static bool StillArmed(GeoscapeUiCtlSlot nSlot) { return g.aCtl[nSlot].nState != 0; }
+static bool UpCtl(const UiControl *pCtl) { return pCtl->nState == 0; }
+static bool ArmedCtl(const UiControl *pCtl) { return pCtl->nState != 0; }
+
+/* The release tests park the cursor here: inside every panel's click rect, so UiPanel_ClickRow
+ * lands on row 100 and writes nUnk3032 = nUnk3028 + 100, which a panel that was not clicked
+ * leaves at 0. */
+static void Fix_UpCursor(void)
+{
+    g.nCursorX = 100;
+    g.nCursorY = 100;
+}
+
+static bool Clicked(const UiPanel *p) { return p->nUnk3032 == 100; }
+static bool NotClicked(const UiPanel *p) { return p->nUnk3032 == 0; }
 
 /* ------------------------------------------------- screen 0: the main-menu band */
 static void TestMenuBand(void)
@@ -1176,6 +1250,959 @@ static void TestScreen20AndDefault(void)
     CheckEqI32(Call(-7, 100, true), -7, "an unknown screen id returns the cursor x unchanged");
 }
 
+/* =========================================== the release half, Geoscape_OnPointerUp @ 0x89450 */
+
+/* Screen 0's menu band: the sample plays first, and the flag-37 pair is released BEFORE the two
+ * menu controls - the opposite order from the press (0x894C0 vs 0x87384). */
+static void TestUpMenuBand(void)
+{
+    printf("release, screen 0: the main-menu message band\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 0;
+    g.oLines.abLineFlags[0] = 40;
+    g.nSamplePlayed = 0;
+    CheckEqI32(CallUp(), 1, "flag 40 returns the 187024 hit");
+    Check(g.nSamplePlayed == 17, "flag 40 plays sample 17 (0x8949C)");
+    Check(Up(GEOUI_CTL_18704C), "flag 40 releases 18704C");
+    Check(Up(GEOUI_CTL_187024), "flag 40 releases 187024");
+    Check(StillArmed(GEOUI_CTL_186BA4), "flag 40 does not release the dialog confirm");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 0;
+    g.oLines.abLineFlags[0] = 37;
+    CheckEqI32(CallUp(), 1, "flag 37 returns the 187024 hit");
+    Check(Up(GEOUI_CTL_186BA4), "flag 37 releases 186BA4");
+    Check(Up(GEOUI_CTL_186BAC), "flag 37 releases 186BAC");
+    Check(Up(GEOUI_CTL_18704C), "flag 37 still releases 18704C after the pair");
+    Check(Up(GEOUI_CTL_187024), "flag 37 still releases 187024");
+    Check(g.aRoot[0].nState == 1, "the menu band never touches the root controls");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 0;
+    g.oLines.abLineFlags[0] = 30; /* the band is exclusive at both ends (0x89478 / 0x8948C) */
+    CheckEqI32(CallUp(), 0, "flag 30 is outside the band and falls through to the world arm");
+    Check(g.nSamplePlayed == 0, "flag 30 plays no sample");
+}
+
+/* The world arm's flag chain, and the sample that almost every arm adds over the press. */
+static void TestUpWorldFlags(void)
+{
+    printf("release, screens 0 and 2: the message-flag chain\n");
+
+    struct { u8 nFlag; i32 nWantSample; i32 nWantRet; } aCases[] = {
+        { 16, 0, 1 }, { 17, 17, 1 }, { 15, 17, 1 }, { 21, 17, 1 }, { 22, 17, 1 },
+        { 23, 17, 1 }, { 12, 17, 1 }, { 14, 17, 1 }, { 10, 17, 1 }, { 60, 17, 1 },
+        { 13, 17, 1 }, { 27, 17, 1 }, { 18, 17, 1 }, { 19, 17, 1 }, { 20, 17, 1 },
+    };
+    for (i32 i = 0; i < (i32)(sizeof(aCases) / sizeof(aCases[0])); ++i) {
+        Fix_Reset();
+        Fix_ArmAll();
+        Fix_UpCursor();
+        g.nScreenId = 2;
+        g.bPlacementPending = 1;  /* keep the case-2 head quiet */
+        g.oLines.abLineFlags[0] = aCases[i].nFlag;
+        g.nSamplePlayed = 0;
+        CheckEqI32(CallUp(), aCases[i].nWantRet, "the flag arm returns its last hit test");
+        CheckEqI32(g.nSamplePlayed, aCases[i].nWantSample, "the flag arm plays the sample it owns");
+    }
+
+    /* Which control each arm ends on. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 16;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186BA4), "flag 16 releases 186BA4");
+    Check(Up(GEOUI_CTL_186BB4), "flag 16 releases 186BB4");
+    Check(StillArmed(GEOUI_CTL_186BB0), "flag 16 does not release 186BB0");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 21;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186BB4), "flag 21 releases 186BB4 first");
+    Check(Up(GEOUI_CTL_186BB0), "flag 21 releases 186BB0 last");
+    Check(StillArmed(GEOUI_CTL_186BA4), "flag 21 does not release 186BA4");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 14;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186BB4), "flag 14 releases 186BB4 first");
+    Check(Up(GEOUI_CTL_186BA4), "flag 14 releases 186BA4 last");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 18;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186BB4), "flag 18 without a map selection releases only 186BB4");
+    Check(StillArmed(GEOUI_CTL_186BB0), "flag 18 without a map selection keeps 186BB0 armed");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 19;
+    g.bMapSelect = 1;
+    CheckEqI32(CallUp(), 1, "flag 19 with a map selection returns the 186BB0 hit");
+    Check(Up(GEOUI_CTL_186BB4), "flag 19 with a map selection releases 186BB4 first");
+    Check(Up(GEOUI_CTL_186BB0), "flag 19 with a map selection releases 186BB0 last");
+
+    /* Intercept: three controls, then the intercept-done byte decides. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 11;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186BA8), "flag 11 releases 186BA8");
+    Check(Up(GEOUI_CTL_186B9C), "flag 11 releases 186B9C");
+    Check(Up(GEOUI_CTL_186B98), "flag 11 releases 186B98");
+    Check(Up(GEOUI_CTL_186BB0), "flag 11 with no intercept done releases 186BB0");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.oLines.abLineFlags[0] = 11;
+    g.bInterceptDone = 7;
+    CheckEqI32(CallUp(), 7, "flag 11 with an intercept done hands back that byte (0x89A54)");
+    Check(StillArmed(GEOUI_CTL_186BB0), "and it never reaches 186BB0");
+
+    /* Target select: a hit on 186B8C returns before the flag chain. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.bTargetSelect = 1;
+    g.oLines.abLineFlags[0] = 17;
+    g.nSamplePlayed = 0;
+    CheckEqI32(CallUp(), 1, "a target-select hit returns 1 early");
+    Check(Up(GEOUI_CTL_186B8C), "the target-select control is released");
+    Check(StillArmed(GEOUI_CTL_186BB4), "the flag arm after it never runs");
+    Check(g.nSamplePlayed == 0, "and its sample is not played");
+
+    /* Radar panel. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.bRadarActive = 1;
+    CheckEqI32(CallUp(), PUFO_RADAR_CONTROLS, "the radar gate returns 5");
+    Check(UpCtl(&g.aRadar[0]) && UpCtl(&g.aRadar[4]), "the radar gate releases all five controls");
+    Check(StillArmed(GEOUI_CTL_186BB0), "and nothing after it");
+
+    /* The multi-select panel goes through the shared click-and-flag7073 tail. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.bMultiSelect = 1;
+    g.pStatus.bFlag7073 = 0;
+    CheckEqI32(CallUp(), 0, "the multi-select gate returns 0 (deviation 5: the original returns the panel)");
+    Check(PanelRow(&g.pStatus) == 100, "the multi-select gate clicks the status panel row");
+    Check(g.pStatus.bFlag7073 == 1, "and raises the panel's bFlag7073 (0x89B8C)");
+
+    Check(g.bDragActive == 0, "the release clears the drag flag (0x896BC)");
+}
+
+/* The fall-through arm: no flag matched. */
+static void TestUpWorldFallthrough(void)
+{
+    printf("release, screens 0 and 2: the no-flag fall-through\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.bTargetSelect = 1;
+    g.aCtl[GEOUI_CTL_186B8C].nState = 0; /* down-free, so the gate falls through to the tail */
+    CheckEqI32(CallUp(), 2, "screen 2 with no flag returns 2 (0x89CE0)");
+    Check(g.bTargetSelect == 0, "and clears the target-select flag (0x89CD8)");
+    Check(g.aRoot[0].nState == 1 && g.aRoot[12].nState == 1, "screen 2 does not release the root controls");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 0;
+    CheckEqI32(CallUp(), 0, "screen 0 with no flag returns 0");
+    bool bAll = true;
+    for (i32 i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i) {
+        bAll = bAll && g.aRoot[i].nState == 0;
+    }
+    Check(bAll, "screen 0 releases all thirteen root controls (0x89CF4..0x89D1C)");
+
+    /* Screen 2's head: the close control unless a placement is pending, the confirm control
+     * unless a region is pending. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 0;
+    g.bPendingRegion = 0xFF;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186B00), "with no placement pending the close control is released");
+    Check(StillArmed(GEOUI_CTL_186BA4), "with no region pending the confirm control is not");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 2;
+    g.bPlacementPending = 1;
+    g.bPendingRegion = 3;
+    (void)CallUp();
+    Check(StillArmed(GEOUI_CTL_186B00), "with a placement pending the close control is skipped");
+    Check(Up(GEOUI_CTL_186BA4), "with a region pending the confirm control is released");
+}
+
+/* The shortfall gate on the dword at 0x1870C8 (0x89578..0x89600). */
+static void TestUpShortfallGate(void)
+{
+    printf("release: the shortfall gate on 0x1870C8\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 5;
+    g.nShortfall = 1;
+    CheckEqI32(CallUp(), 0, "a shortfall of 1 on an unlisted screen returns before the arm");
+    Check(g.nShortfall == 0, "and the report is cleared (0x895C4)");
+    Check(StillArmed(GEOUI_CTL_186B00), "the screen-5 arm never runs");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.nShortfall = 1;
+    (void)CallUp();
+    Check(g.nShortfall == 0, "screen 6 clears the report and carries on (0x89600)");
+    Check(Up(GEOUI_CTL_186B00), "and its arm runs normally");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 10;
+    g.nShortfall = 1;
+    (void)CallUp();
+    Check(g.nShortfall == 0, "screen 10 clears the report and carries on");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 5;
+    g.nShortfall = 2; /* only a value of exactly 1 takes the gate (0x89588) */
+    (void)CallUp();
+    Check(g.nShortfall == 2, "a shortfall of 2 is not the gate's value and survives");
+    Check(Up(GEOUI_CTL_186B00), "and the arm runs");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 0;
+    g.nShortfall = 1;
+    g.oLines.abLineFlags[0] = 0;
+    (void)CallUp();
+    Check(g.nShortfall == 1, "screen 0 never reaches the gate (0x89594)");
+
+    /* Screen 9 has its own branch: clear, then the product decides. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 9;
+    g.nShortfall = 1;
+    g.bProductSelected = 0;
+    g.bPopupA = 1;
+    g.bPopupB = 1;
+    CheckEqI32(CallUp(), 0, "screen 9 with no product selected returns 0");
+    Check(g.bPopupA == 0 && g.bPopupB == 0, "and drops both popup bytes (0x895E0 / 0x895E4)");
+    Check(StillArmed(GEOUI_CTL_186B00), "the manuf arm never runs");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 9;
+    g.nShortfall = 1;
+    g.bProductSelected = 1;
+    g.nSamplePlayed = 0;
+    (void)CallUp();
+    Check(g.nSamplePlayed == 17, "screen 9 with a product selected plays the sample (0x895F4)");
+    Check(Up(GEOUI_CTL_186B00), "and then runs the manuf arm");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 9;
+    g.nShortfall = 0;
+    g.bProductSelected = 1;
+    g.nSamplePlayed = 0;
+    (void)CallUp();
+    Check(g.nSamplePlayed == 0, "without the gate screen 9 plays no sample of its own");
+}
+
+static void TestUpBaseStrip(void)
+{
+    printf("release, screen 1: the base strip\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 1;
+    g.bPlaceActive = 0;
+    CheckEqI32(CallUp(), 0, "with no tap pending the arm returns 0 (0x89DE0)");
+    Check(Up(GEOUI_CTL_186B00), "the close control is released");
+    bool bAll = true;
+    for (i32 i = 0; i < PUFO_GEO_STRIP_CTLS; ++i) {
+        bAll = bAll && g.aStrip[i].nState == 0;
+    }
+    Check(bAll, "all ten nav slots are released");
+    Check(StillArmed(GEOUI_CTL_186BB4), "and the confirm control is not");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 1;
+    g.bPlaceActive = 1;
+    CheckEqI32(CallUp(), 1, "with a tap pending the arm returns the confirm hit");
+    Check(Up(GEOUI_CTL_186BB4), "and releases the confirm control");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 1;
+    g.apStrip[4] = NULL; /* the original null-checks only this run (0x89DA4) */
+    CheckEqI32(CallUp(), 0, "a null nav slot is skipped, not fatal");
+    bool bOthers = true;
+    for (i32 i = 0; i < PUFO_GEO_STRIP_CTLS; ++i) {
+        if (i == 4) {
+            continue;
+        }
+        bOthers = bOthers && g.aStrip[i].nState == 0;
+    }
+    Check(bOthers, "and the run continues past it");
+}
+
+static void TestUpTransferAndPsi(void)
+{
+    printf("release, screens 3 and 17: the transfer rows and the psi panel\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 3;
+    g.bTransferRow = 4;
+    CheckEqI32(CallUp(), 4, "screen 3 with a row selected hands the flag back and stops");
+    Check(StillArmed(GEOUI_CTL_186B00), "its controls are not released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 3;
+    CheckEqI32(CallUp(), 1, "screen 3 without a row returns the close hit");
+    Check(UpCtl(&g.aBaseAt[0]) && UpCtl(&g.aBaseAt[1]), "both base-at controls are released");
+    Check(Up(GEOUI_CTL_186B00), "and so is the close control");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.bTransferRow = 2;
+    CheckEqI32(CallUp(), 2, "screen 17 with a row selected hands the flag back and stops");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.bPsiOpen = 1;
+    g.bPsiRow = 1;
+    g.nStripHitBase = 1;
+    g.nTransferBase = 1;
+    g.nCursorY = 50; /* inside 28 * nBaseCount = 84 */
+    g.pPsi[1].pfnClick = HookPsiClickReArm;
+    CheckEqI32(CallUp(), 1, "screen 17 always returns 1 (0x8ACA8)");
+    Check(Up(GEOUI_CTL_186BA4), "186BA4 is released");
+    Check(Up(GEOUI_CTL_186BAC), "186BAC is released");
+    Check(PanelRow(&g.pPsi[1]) == 50, "the selected base's psi panel is clicked on row 50");
+    Check(UpCtl(&g.aPsi[0]) && UpCtl(&g.aPsi[1]), "both psi controls are released");
+    Check(g.bTransferRow == 0, "a strip hit on the selected base inside the rows drops the row the click handler raised (0x8AC9C)");
+    Check(g.bPsiRow == 1, "and the psi row-selection byte is set to 1 (0x8ACA4)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.bPsiOpen = 1;
+    g.bPsiRow = 0;
+    g.nStripHitBase = 1;
+    g.nTransferBase = 1;
+    (void)CallUp();
+    Check(NotClicked(&g.pPsi[1]), "with no psi row selected the panel is not clicked (0x8AC08)");
+    Check(ArmedCtl(&g.aPsi[0]), "and the psi controls are gated out with it");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.bPsiOpen = 1;
+    g.bPsiRow = 1;
+    g.nStripHitBase = 2;
+    g.nTransferBase = 1;
+    g.pPsi[1].pfnClick = HookPsiClickReArm;
+    (void)CallUp();
+    Check(g.bTransferRow == 1, "a strip hit on a different base keeps the row the handler raised");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.nCursorY = 28 * GEO_TEST_BASES; /* the bound is strict: cursorY < 28 * nBaseCount */
+    g.nStripHitBase = 1;
+    g.nTransferBase = 1;
+    g.bPsiOpen = 1;
+    g.bPsiRow = 1;
+    g.pPsi[1].pfnClick = HookPsiClickReArm;
+    (void)CallUp();
+    Check(g.bTransferRow == 1, "a row at or past 28 * nBaseCount keeps the selection");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 17;
+    g.nStripHitBase = 1;
+    g.nTransferBase = 1;
+    g.bPsiOpen = 1;
+    g.bPsiRow = 1;
+    g.nCursorY = 50;
+    g.nBaseCount = -1; /* read LDRSB at 0x8AC8C: the bound becomes -28, not 7140 */
+    g.pPsi[1].pfnClick = HookPsiClickReArm;
+    (void)CallUp();
+    Check(g.bTransferRow == 1, "the base count is read SIGNED, so a negative one fails the bound");
+}
+
+static void TestUpSoldier(void)
+{
+    printf("release, screens 4 and 5: the soldier screen\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 4;
+    g.bSolOpen = 1;
+    CheckEqI32(CallUp(), 1, "screen 4 returns the close hit");
+    Check(UpCtl(&g.aSolPanel[0]) && UpCtl(&g.aSolPanel[1]), "both page controls are released");
+    Check(Clicked(&g.pSolNames), "the name list is clicked while the screen is open (0x89FBC)");
+    Check(Up(GEOUI_CTL_186B00), "and the close control is released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 4;
+    g.bSolOpen = 0;
+    (void)CallUp();
+    Check(NotClicked(&g.pSolNames), "with the screen closed the name list is not clicked");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 5;
+    g.bNameEdit = 1;
+    g.bPopupB = 1;
+    CheckEqI32(CallUp(), 1, "an active name edit returns the confirm hit");
+    Check(g.bPopupB == 0, "and drops popup B (0x8A008)");
+    Check(Up(GEOUI_CTL_186BA8), "the backspace control is released");
+    Check(Up(GEOUI_CTL_186B9C), "the confirm control is released");
+    Check(StillArmed(GEOUI_CTL_186B00), "and the arm stops there");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 5;
+    g.bTransferFlag = 1;
+    CheckEqI32(CallUp(), 100, "with the transfer flag the arm returns the equip row clicked");
+    Check(Up(GEOUI_CTL_186B00), "the close control is released first");
+    Check(Clicked(&g.pSolEquip), "the equip list is clicked (0x8A074)");
+    Check(ArmedCtl(&g.aSolName[0]), "and the three find controls are not reached");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 5;
+    CheckEqI32(CallUp(), 0, "without the transfer flag the arm returns 0");
+    Check(UpCtl(&g.aSolName[0]) && UpCtl(&g.aSolName[2]), "all three find controls are released");
+    Check(NotClicked(&g.pSolEquip), "and the equip list is not clicked");
+}
+
+static void TestUpCraft(void)
+{
+    printf("release, screen 6: the craft loadout\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bPlaneBuilt = 1;
+    g.bPlaneDetail = 0;
+    g.bPopupA = 1;
+    CheckEqI32(CallUp(), 1, "the arm returns the close hit");
+    Check(g.bPopupA == 0, "popup A is cleared first (0x8A0CC)");
+    Check(Clicked(&g.pPlaneCraft), "the craft list is clicked when its panels are built (0x8A100)");
+    Check(NotClicked(&g.pPlaneStatus), "the craft status panel has no release counterpart");
+    Check(NotClicked(&g.pPlaneSlot), "nor has the slot panel");
+    Check(Up(GEOUI_CTL_186B00), "and the close control is released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bPlaneStores = 1;
+    g.bPlaneDetail = 1;
+    (void)CallUp();
+    Check(Clicked(&g.pPlaneSel) && Clicked(&g.pPlaneCommit), "both store row lists are clicked (0x8A144)");
+    Check(Up(GEOUI_CTL_186BA4), "and the confirm control is released (0x8A174)");
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_STORE_CTL]) &&
+          UpCtl(&g.aPlane[PUFO_GEO_PLANE_STORE_CTL + 1]), "the two store controls are released (0x8A1CC)");
+    Check(ArmedCtl(&g.aPlane[PUFO_GEO_PLANE_CREW_CTL]), "the crew pair is not reached without the list");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bPlaneListBuilt = 1;
+    g.bPlaneDetail = 1;
+    (void)CallUp();
+    Check(Clicked(&g.pPlaneCrew), "the crew list is clicked when its panels are built (0x8A120)");
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_CREW_CTL]) &&
+          UpCtl(&g.aPlane[PUFO_GEO_PLANE_CREW_CTL + 1]), "the crew pair is released (0x8A214)");
+
+    /* The weapon slots follow Ship.bCrewSlots, and only while no other plane panel is open. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bPlaneDetail = 1;
+    g.aCraft[0].bCrewSlots = 3;
+    (void)CallUp();
+    Check(UpCtl(&g.aPlane[0]) && UpCtl(&g.aPlane[1]) && UpCtl(&g.aPlane[2]),
+          "three crew slots release three weapon controls (0x8A2AC)");
+    Check(ArmedCtl(&g.aPlane[4]), "the stat control at slot 4 is outside the crew range");
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_DOGFIGHT_CTL]) &&
+          UpCtl(&g.aPlane[PUFO_GEO_PLANE_DOGFIGHT_CTL + 1]), "the dogfight pair is released (0x8A344)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bPlaneDetail = 1;
+    g.bStatAOpen = 1; /* the four-panel quiet gate closes */
+    (void)CallUp();
+    Check(ArmedCtl(&g.aPlane[0]), "with a stat panel open the weapon slots are not released");
+    Check(ArmedCtl(&g.aPlane[PUFO_GEO_PLANE_DOGFIGHT_CTL]), "nor is the dogfight pair");
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_STAT_CTL_A]), "the stat control itself is (0x8A388)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.bStatBOpen = 1;
+    g.anStatGate[0] = 1;
+    g.anStatGate[3] = 2;
+    (void)CallUp();
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_STAT_CTL]), "a stat gate above zero releases its control");
+    Check(UpCtl(&g.aPlane[PUFO_GEO_PLANE_STAT_CTL + 3]), "in the order the original tests them");
+    Check(ArmedCtl(&g.aPlane[PUFO_GEO_PLANE_STAT_CTL + 1]), "a zero gate keeps its control armed");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 6;
+    g.aCraft[0].bCrewSlots = 0;
+    g.aCraft[0].bCanDogfight = 0;
+    g.bPlaneDetail = 1;
+    (void)CallUp();
+    Check(ArmedCtl(&g.aPlane[0]), "a craft with no crew slots releases no weapon control (0x8A290)");
+    Check(ArmedCtl(&g.aPlane[PUFO_GEO_PLANE_DOGFIGHT_CTL]), "and no dogfight control (0x8A320)");
+}
+
+static void TestUpBuildDialog(void)
+{
+    printf("release, screen 7: the build dialog\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 7;
+    g.bFacArmed = 0;
+    g.nTapX = 77;
+    g.nTapY = 88;
+    g.bPopupA = 1;
+    g.bPopupB = 0;
+    CheckEqI32(CallUp(), 1, "the arm returns the close hit");
+    Check(g.bPopupA == 0 && g.bPopupB == 1, "popup A is cleared and popup B raised (0x89E14 / 0x89E84)");
+    Check(g.nPendingX == 77 && g.nPendingY == 88, "the tap is parked in nPendingPlaceX/Y (0x89E8C)");
+    Check(UpCtl(&g.aFac[0]) && UpCtl(&g.aFac[1]), "both dialog controls are released (0x89E68)");
+    Check(Clicked(&g.pFac), "the facility list is clicked while unarmed (0x89F20)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 7;
+    g.bFacArmed = 1;
+    g.pFac.bFlag7073 = 1;
+    (void)CallUp();
+    Check(ArmedCtl(&g.aFac[0]), "while armed the dialog controls are not released (0x89E40)");
+    Check(NotClicked(&g.pFac), "and the list is not clicked (0x89F10)");
+    Check(g.pFac.bFlag7073 == 1, "and the overlay flag is left alone");
+
+    /* The two hot corners hide the placement overlay. */
+    Fix_Reset();
+    Fix_ArmAll();
+    g.nScreenId = 7;
+    g.bFacArmed = 1;
+    g.nCursorX = 230;
+    g.nCursorY = 240; /* 229 < y < 250 and x > 220 */
+    (void)CallUp();
+    Check(g.pFac.bFlag7073 == 0, "the bottom-right hot corner hides the overlay (0x89ECC)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    g.nScreenId = 7;
+    g.bFacArmed = 1;
+    g.nCursorX = 20;
+    g.nCursorY = 260; /* 251 < y < 300 and 0 < x < 40 */
+    (void)CallUp();
+    Check(g.pFac.bFlag7073 == 0, "the bottom-left hot corner hides it too (0x89F00)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    g.nScreenId = 7;
+    g.bFacArmed = 1;
+    g.nCursorX = 20;
+    g.nCursorY = 300; /* the band is exclusive at 300 */
+    (void)CallUp();
+    Check(g.pFac.bFlag7073 == 1, "a cursor at y == 300 is outside the band");
+}
+
+static void TestUpResearchAndManuf(void)
+{
+    printf("release, screens 8 and 9: research and manufacturing\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 8;
+    g.bRowSelected = 0;
+    CheckEqI32(CallUp(), 1, "screen 8 returns the close hit");
+    Check(Clicked(&g.pResearch), "with no row selected the topic list is clicked (0x8A7B0)");
+    Check(UpCtl(&g.aResearch[0]) && UpCtl(&g.aResearch[1]), "the two list controls are released");
+    Check(ArmedCtl(&g.aResearch[2]), "the row controls are not");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 8;
+    g.bRowSelected = 1;
+    (void)CallUp();
+    Check(NotClicked(&g.pResearch), "with a row selected the list is not clicked");
+    Check(UpCtl(&g.aResearch[2]) && UpCtl(&g.aResearch[3]), "the row controls are released (0x8A840)");
+    Check(ArmedCtl(&g.aResearch[0]), "the list controls are not");
+    Check(Up(GEOUI_CTL_186BB4) && Up(GEOUI_CTL_186BB0) && Up(GEOUI_CTL_186B94),
+          "and the confirm, cancel and info controls are released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 9;
+    g.bProductSelected = 0;
+    CheckEqI32(CallUp(), 0, "screen 9 without a product returns 0");
+    Check(Clicked(&g.pManufProd), "the product list is clicked (0x8A8F0)");
+    Check(Up(GEOUI_CTL_186B00), "the close control is released");
+    Check(UpCtl(&g.aManuf[0]) && UpCtl(&g.aManuf[1]), "the two list controls are released");
+    Check(ArmedCtl(&g.aManuf[2]), "the product controls are not");
+    Check(NotClicked(&g.pManufD), "the release has no panel-D click (the press does)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 9;
+    g.bProductSelected = 1;
+    CheckEqI32(CallUp(), 1, "screen 9 with a product returns the 186B90 hit");
+    Check(UpCtl(&g.aManuf[2]) && UpCtl(&g.aManuf[5]), "four product controls are released (0x8A998)");
+    Check(ArmedCtl(&g.aManuf[0]), "the list controls are not");
+    Check(Up(GEOUI_CTL_186BB4) && Up(GEOUI_CTL_186BB0) && Up(GEOUI_CTL_186B94) &&
+          Up(GEOUI_CTL_186B90), "and the four dialog controls are released in order");
+}
+
+static void TestUpSiteAndBuySell(void)
+{
+    printf("release, screens 10, 11 and 12: site info and buy/sell\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 10;
+    g.bPopupB = 1;
+    CheckEqI32(CallUp(), 1, "screen 10 returns the close hit");
+    Check(g.bPopupB == 0, "popup B is cleared (0x8A64C)");
+    Check(Clicked(&g.pBuySellB) && Clicked(&g.pBuySellC),
+          "both buy/sell lists are clicked (0x8A65C / 0x8A670)");
+    Check(NotClicked(&g.pBuySell), "the panel the press arm tracks is not clicked here");
+    Check(UpCtl(&g.aSiteInfo[0]) && UpCtl(&g.aSiteInfo[3]), "all four site-info controls are released");
+    Check(Up(GEOUI_CTL_186B00), "and the close control is released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 10;
+    g.bTransferRow = 1;
+    CheckEqI32(CallUp(), 1, "with a transfer row selected screen 10 returns the confirm hit");
+    Check(Up(GEOUI_CTL_186BA4), "and releases only the confirm control (0x8A680)");
+    Check(ArmedCtl(&g.aSiteInfo[0]), "the site-info controls are not reached");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 11;
+    CheckEqI32(CallUp(), 1, "screen 11 returns the confirm hit");
+    Check(Clicked(&g.pBuySellB) && Clicked(&g.pBuySellC), "both lists are clicked");
+    Check(UpCtl(&g.aBuySell[0]) && UpCtl(&g.aBuySell[1]), "both buy/sell controls are released");
+    Check(Up(GEOUI_CTL_186B00) && Up(GEOUI_CTL_186BA4), "then close and confirm (LABEL_153)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 12;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186B00) && Up(GEOUI_CTL_186BA4), "screen 12 shares the screen-11 tail");
+    Check(ArmedCtl(&g.aSiteInfo[0]), "and it does not touch the site-info controls");
+}
+
+static void TestUpScreen16(void)
+{
+    printf("release, screen 16: the startup / load list\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 16;
+    g.b16ModeA = 1;
+    g.b16ModeB = 0;
+    CheckEqI32(CallUp(), 1, "the arm returns the close hit");
+    Check(UpCtl(&g.a16[4]) && UpCtl(&g.a16[5]), "mode A releases the two side controls (0x8AA70)");
+    Check(Clicked(&g.p16Set), "and clicks the panel from the panel set (0x8AB64)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 16;
+    g.b16ModeA = 0;
+    g.b16ModeB = 1;
+    g.b16Full = 1;
+    (void)CallUp();
+    Check(UpCtl(&g.a16[0]) && UpCtl(&g.a16[3]), "mode B with a full list releases slots 0..3");
+    Check(ArmedCtl(&g.a16[4]), "and not the side controls");
+    Check(NotClicked(&g.p16), "with mode B set no panel is clicked (0x8AB30)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 16;
+    g.b16ModeB = 1;
+    g.b16Full = 0;
+    (void)CallUp();
+    Check(ArmedCtl(&g.a16[0]) && UpCtl(&g.a16[2]) && UpCtl(&g.a16[3]),
+          "mode B with a short list releases only slots 2 and 3");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 16;
+    g.b16ModeA = 0;
+    g.b16ModeB = 0;
+    (void)CallUp();
+    Check(Clicked(&g.p16), "with neither mode the single panel is clicked (0x8AB50)");
+}
+
+static void TestUpOptions(void)
+{
+    printf("release, screen 18: the options pages\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 0;
+    g.bOptConfirm = 0;
+    CheckEqI32(CallUp(), 0, "with the page inactive nothing is released and the arm returns 0");
+    Check(ArmedCtl(&g.aOptList[0]), "no page control is touched");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 0;
+    (void)CallUp();
+    Check(UpCtl(&g.aOptList[0]) && UpCtl(&g.aOptList[3]), "page 0 releases four list controls (0x8AE80)");
+    Check(ArmedCtl(&g.aOptList[4]), "and no more");
+    Check(Up(GEOUI_CTL_186BB4), "then the shared tail releases 186BB4 (LABEL_228)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 1;
+    (void)CallUp();
+    Check(UpCtl(&g.aOptList[0]) && UpCtl(&g.aOptList[6]), "page 1 releases all seven list controls");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 2;
+    (void)CallUp();
+    Check(UpCtl(&g.aOptList[0]) && UpCtl(&g.aOptList[6]), "page 2 is the same arm as page 1");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 3;
+    CheckEqI32(CallUp(), 1, "page 3 returns the close hit and stops (0x8AD98)");
+    Check(StillArmed(GEOUI_CTL_186BB0), "the cancel control is not reached");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 3;
+    g.aCtl[GEOUI_CTL_186BB4].nState = 0; /* the close control was not down: no hit */
+    CheckEqI32(CallUp(), 1, "with the close control down-free page 3 falls to the cancel hit");
+    Check(Up(GEOUI_CTL_186BB0), "and the cancel control is released (0x8ADB4)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 4;
+    (void)CallUp();
+    bool bSound = true;
+    for (i32 i = 0; i < PUFO_GEO_OPT_SOUND_CTLS; ++i) {
+        bSound = bSound && g.aOptMusic[i].nState == 0 && g.aOptSfx[i].nState == 0;
+    }
+    Check(bSound, "page 4 releases the twelve sound controls, slots 9..20 (0x8AD3C)");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 1;
+    g.nOptPage = 5;
+    (void)CallUp();
+    Check(ArmedCtl(&g.aOptList[0]), "an unknown page releases no list control (0x8AD18)");
+
+    /* The confirm tail, reached from every page arm. */
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptPageActive = 0;
+    g.bOptConfirm = 1;
+    g.pOptShips.bFlag7073 = 0;
+    CheckEqI32(CallUp(), 0, "the confirm tail returns 0 (deviation 5: the original returns the panel)");
+    Check(Up(GEOUI_CTL_186BB4), "it releases 186BB4 (0x8AED4)");
+    Check(UpCtl(&g.aOptPrev) && UpCtl(&g.aOptNext), "and the prev / next pair, slots 7 and 8 (0x8AEEC)");
+    Check(PanelRow(&g.pOptShips) == 100,
+          "then clicks the ships panel through the shared tail (0x8AF1C -> 0x89B64)");
+    Check(g.pOptShips.bFlag7073 == 1, "and raises its bFlag7073");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 18;
+    g.bOptConfirm = 0;
+    (void)CallUp();
+    Check(ArmedCtl(&g.aOptPrev), "with no confirm the tail stops before the pair");
+    Check(NotClicked(&g.pOptShips), "and the ships panel is not clicked");
+}
+
+static void TestUpScreen20AndDefault(void)
+{
+    printf("release, screen 20 and the default arms\n");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 20;
+    g.bBaseAtDone = 0;
+    CheckEqI32(CallUp(), 0, "screen 20 with the base not placed returns 0");
+    Check(StillArmed(GEOUI_CTL_186BA4), "and releases nothing");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 20;
+    g.bBaseAtDone = 1;
+    CheckEqI32(CallUp(), 1, "screen 20 with the base placed returns the confirm hit");
+    Check(Up(GEOUI_CTL_186BA4), "and releases the confirm control");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 15;
+    CheckEqI32(CallUp(), 1, "screen 15 releases only the close control");
+    Check(StillArmed(GEOUI_CTL_186BA4), "and nothing else");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 19;
+    (void)CallUp();
+    Check(Up(GEOUI_CTL_186B00), "screen 19 shares the screen-15 arm");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 13;
+    CheckEqI32(CallUp(), 0, "screen 13 takes the default arm (deviation 5: the original returns an address)");
+    Check(ArmedCtl(&g.aSolName[0]), "and no control is released");
+
+    Fix_Reset();
+    Fix_ArmAll();
+    Fix_UpCursor();
+    g.nScreenId = 14;
+    (void)CallUp();
+    Check(StillArmed(GEOUI_CTL_186B00), "screen 14 likewise");
+}
+
 int main(void)
 {
     TestMenuBand();
@@ -1191,6 +2218,21 @@ int main(void)
     TestScreen16();
     TestOptions();
     TestScreen20AndDefault();
+
+    TestUpMenuBand();
+    TestUpWorldFlags();
+    TestUpWorldFallthrough();
+    TestUpShortfallGate();
+    TestUpBaseStrip();
+    TestUpTransferAndPsi();
+    TestUpSoldier();
+    TestUpCraft();
+    TestUpBuildDialog();
+    TestUpResearchAndManuf();
+    TestUpSiteAndBuySell();
+    TestUpScreen16();
+    TestUpOptions();
+    TestUpScreen20AndDefault();
 
     printf("\ngeopointer: %d checks, %d failures\n", g_nChecks, g_nFailures);
     return g_nFailures != 0 ? 1 : 0;

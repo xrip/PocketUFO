@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 907 / 1103 (82.2%)
-                                             bytes cited:     470616 / 598792 (78.6%)
-python docs/parity/audit_credits.py       -> credited functions: 907, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 908 / 1103 (82.3%)
+                                             bytes cited:     477608 / 598792 (79.8%)
+python docs/parity/audit_credits.py       -> credited functions: 908, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 383 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 194, ORIGINAL BUG markers in src/pufo: 77
+python docs/parity/audit_bugs.py          -> ledger rows: 200, ORIGINAL BUG markers in src/pufo: 79
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,8 +229,25 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 58 suites: **13022**. Coverage as of the latest commit: **907 / 1103
-functions (82.2%)**, **470616 / 598792 bytes (78.6%)**. This unit ported the geoscape pointer dispatcher —
+Test checks run across the 58 suites: **13267**. Coverage as of the latest commit: **908 / 1103
+functions (82.3%)**, **477608 / 598792 bytes (79.8%)**. This unit ported the pointer release —
+`Geoscape_OnPointerUp` (0x89450, 6,992 B), the release half of the same dispatcher, on the same
+`GeoscapePointerEnv`. It is not the press with `bDown` flipped: it takes only the 0x1864F8 block, reads the
+cursor pair the press stored (LDRSH), and every hit test it makes is a release (x = y = 0, bDown = 0,
+bForceClick = 0 — a release ignores the hit box). It owns the shortfall gate on 0x1870C8 (read as a DWORD at
+0x89584, the only such reader in the image, cleared unless the screen is 6, 9, 10, 11 or 12), it plays
+`Sound_Play(17)` in almost every world-arm branch where the press plays it in two, it clicks the scroll lists
+where the press only tracked the hovered row, and it ends the world arm by clearing the target-select flag and
+releasing all thirteen root controls on any screen but 2. Three original findings: the screen-17 tail's
+conditional clear of `byte_1870F8` can only fire on a byte that is already 0 (0x8ac9c), `bPopupVisibleB` cleared
+through a conditional store (0x8a188), and three arms that hand back an address instead of a result (0x895c8 /
+0x89b90, discarded by `Input_OnPointerUp` at 0x14910). It also caught a wrong pair of addresses in the port: the
+soldier-screen slots are `apSoldierPanelCtl @ 0x1598B0` and `apSoldierFindCtl @ 0x1598B8` (ARM `[base,#0x148]` /
+`[base,#0x150]`), not 0x159928 / 0x159948, which have no xrefs at all. 245 new checks in `tests/test_geopointer.c`
+— a release is observed by arming every control first and asserting which ones it put back down — and 6 new
+ledger rows. IDB: comments on the shortfall gate, the three residues, the null-check asymmetry, the slot
+immediates and the signed base-count product.
+Unit 72 ported the geoscape pointer dispatcher —
 `Geoscape_OnPointer` (0x872d0, 8,576 B), the largest UI function in the binary and the only reader of the 13-slot
 `GeoscapeScreenBlock` control array. It stores the cursor into the 16-bit globals `nSmapCursorX` / `nSmapCursorY`
 (0x186BD0 / 0x186BD4, STRH — every arm then reads the stored halfwords, not its own arguments), runs the screen-0
@@ -814,7 +831,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 |---|---|---|---|
 | 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
-| 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
 | 0x632cc | `Ui_TextInputDialog` | 6,096 | |
 | 0x557f4 | `BaseInfoScreen_BuildPanels` | 6,084 | |
 | 0x7fcb0 | `StrategList_ProcessEvents` | 4,904 | |
@@ -823,15 +839,16 @@ This is the shortest chain that produces a real game session, in dependency orde
 (Regenerated from `PARITY.md`'s per-subsystem "remaining" tables, so the ported `ManufScreen_DrawFrame`,
 `BuySellScreen_BuildPanels`, `TransferScreen_BuildPanels`, `Geoscape_InitUI`, `Game_StartNew`,
 `Tact_InitMission`, `Tact_DrawCommandPads`, `Tact_CheckBattleEnd`, `Unit_ApplyFallDamage`,
-`Tact_ProcessFallAction`, `Tact_ProcessFireAction` and `Geoscape_OnPointer` are no longer listed here.)
+`Tact_ProcessFallAction`, `Tact_ProcessFireAction`, `Geoscape_OnPointer` and `Geoscape_OnPointerUp` are no
+longer listed here.)
 
 `tact` is now down to 3 functions and 1,308 bytes: `Map_InitAndLoadRegistry` (1,284 B) plus the two 12-byte
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 95,368 of 160,496 (59.4%), because `Geoscape_Draw` and
-`Geoscape_OnPointerUp` alone are 41 KB of what is left. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
-(66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
+`strat` is still the weakest subsystem by bytes: 102,360 of 160,496 (63.8%), and `Geoscape_Draw` alone is
+33,744 of the 58,136 left. Both geoscape pointer handlers are in now. `strat-ui` is 221 of 245 functions but
+80,516 of 121,164 bytes (66.4%) — the small screen handlers are in, the big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
 
@@ -1018,7 +1035,7 @@ unwritten for mission mode > 3 by the `BNE loc_3A324` at 0x3A2F0).
 
 ### Deliberate deviations from the original
 
-Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (194 rows, 77 of them matching
+Recorded rather than hidden. The full list is in `docs/parity/bugs.tsv` (200 rows, 79 of them matching
 an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 - `UiModal_DrawDialog` uses a 205-byte record buffer where the original copies into a 92-byte stack
@@ -1039,7 +1056,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-77 markers in the source, 194 ledger rows. Examples:
+79 markers in the source, 200 ledger rows. Examples:
 
 - `0x2b75c` — the +4 layer surcharge and `bFlags29` bit 3 both come from the probe's `g_bStepReanchored`
   report, not from the search flag. The port used the flag for both until unit 71.
@@ -1402,8 +1419,10 @@ does.
 function in the binary. `Geoscape_OnPointer` (0x872d0, 8,576 B) is ported in `game/pufo_geopointer.{c,h}` behind
 `GeoscapePointerEnv` — 235 checks in `tests/test_geopointer.c` — but nothing in the app builds that env yet, so
 `TactInputHooks.pfnGeoscapePointer` stays an unfilled seam; the env needs the plane panels, the options controls and
-the screen-16 panels that `PufoWorldState` does not own. `Geoscape_OnPointerUp` (0x89450, 6,992 B) is large enough to
-need a fresh context window on its own. The radar (intercept) screen is **done**:
+the screen-16 panels that `PufoWorldState` does not own. `Geoscape_OnPointerUp` (0x89450, 6,992 B) is ported next to it in the
+same module and on the same env — 245 more checks in the same test file — and it is where the shortfall report
+at 0x1870C8 gets cleared on a pointer release. Both pointer halves are in; neither is wired into the app yet.
+The radar (intercept) screen is **done**:
 `RadarScreen_BlitMapBackdrop` (0x5eb10), `RadarScreen_DrawFuelGauge` (0x5d918),
 `RadarScreen_DrawRangeBar` (0x5d6e4), `RadarScreen_Init` (0x5f490), `RadarScreen_SetActive` (0x6144c),
 `RadarScreen_RollDetection` (0x602a0), `RadarScreen_DrawCraftArmament` (0x5edf4),

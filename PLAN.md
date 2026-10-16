@@ -2176,6 +2176,44 @@ Order is by what unblocks what. Each item ends with gates + commit.
   moves from 86,792 to 95,368 of 160,496 bytes (59.4%). IDB: `byte_187074` → `bGeoscapeDragActive`, comments on the
   entry, the drag gate, the tap division and the five defects.
 
+- [x] **part 73, the pointer release: `Geoscape_OnPointerUp (0x89450, 6,992 B)`** — the release half of the
+  same dispatcher, in the same module and on the same `GeoscapePointerEnv`. **It is not the press with
+  bDown flipped.** It takes only the 0x1864F8 block: every coordinate is the cursor pair the press stored
+  (read back with LDRSH), and every `UiControl_HitTest` is a release — x = y = 0, bDown = 0, bForceClick = 0
+  at every call site, because a release ignores the hit box.
+  **What only the release has.** The shortfall gate (0x89578..0x89600): when the dword at 0x1870C8 is exactly
+  1 and the screen is not 0, the report is cleared here unless the screen is 6, 9, 10, 11 or 12 — the screens
+  that draw the shortfall panel; screen 9 also drops both popup bytes when no product is selected. `Sound_Play(17)`
+  in almost every flag arm (the press plays it in two). `UiPanel_ClickRow` where the press only tracked the
+  hovered row — and the press's `pPlaneCraftStatusPanel` / `pPlaneSlotPanel` clicks have no release counterpart
+  at all. A tail shared by two arms (0x89B64..0x89B90): click the row, then set the panel's `bFlag7073` — the
+  multi-select gate reaches it with the status panel, the options confirm tail jumps to it with
+  `pOptPanelShips` (0x8AF1C). A fall-through (0x89CD4..0x89D20) that clears the target-select flag, returns 2 on
+  screen 2, and releases all thirteen root controls on any other screen.
+  **What only the press has**: the drag block, the strateg-select test, the tap arithmetic, the
+  placement-fail clear. The release clears the drag flag instead (0x896BC) and never calls
+  `Smap_HitTestStrategSelect`.
+  **Where the two halves disagree on one screen**: the menu band releases the flag-37 pair *before* the two
+  menu controls; flags 17/15 and 21/22/23/12 and 10/60 and 13/27 are merged arms here and separate ones in the
+  press; screen 10 tracks `pBuySellPanelA` on the press and clicks `pBuySellPanelB` / `pBuySellPanelC` on the
+  release (0x8A65C / 0x8A670); screen 7's second hot corner uses the arguments in the press and the stored
+  cursor here.
+  **Three original findings, 6 ledger rows (200 total):** 0x8ac9c (the screen-17 tail's conditional clear of
+  `byte_1870F8` can only fire on a byte that is already 0 — the arm returns at 0x8ABA8 whenever the selection
+  is non-zero, so it only matters if the psi panel's own click handler re-armed it at 0x89B78); 0x8a188
+  (`bPopupVisibleB` cleared through a conditional store); 0x895c8 / 0x89b90 (three arms hand back an address —
+  `&byte_1870C8`, or the `UiPanel *` the shared tail clicked — and `Input_OnPointerUp` discards it at 0x14910).
+  Plus the null-check asymmetry (0x89cf4) and the width finding (0x89584: the shortfall byte is read as a DWORD
+  here, the only reader in the image that does, which is why the env carries it as `u32 *`).
+  **A naming error this function caught in the port:** the soldier-screen slots were recorded as
+  `gBaseFacGrid + 0x1C0` (0x159928) and `+ 0x1E0` (0x159948). The ARM loads `[base,#0x148]` and `[base,#0x150]`
+  — **0x1598B0** (`apSoldierPanelCtl`, 2) and **0x1598B8** (`apSoldierFindCtl`, 3), right after the ten nav slots
+  at 0x159888. 0x159928 and 0x159948 have no xrefs at all. `pufo_geopointer.h` corrected; `pufo_baseui.h` already
+  had them right.
+  245 new checks (13267 total), coverage 908/1103 (82.3%) and 477608/598792 (79.8%); `strat` moves from 95,368
+  to 102,360 of 160,496 bytes (63.8%). IDB: comments on the shortfall gate, the three residues, the null-check
+  asymmetry, the slot immediates and the signed base-count product.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2502,6 +2540,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the step probe (`Map_ProbeStepOccupants`; the two vertical re-anchors and their asymmetric layer bookkeeping, the large unit's second column, the up anchor that cannot fire for a large unit going east, three unguarded reads of layer-gated state, 7 original findings recorded) | 57/57 (Release) | 12739 | 905/1103 (82.0%) | 447324/598792 (74.7%) | 40 checked, 0 mismatched |
 | the step legality (`Unit_CanStepTo`; the head and twenty direction arms, the seam carrying the settled cell instead of the candidate, the surcharge and `bFlags29` bit 3 corrected to the probe's re-anchor report, 4 original findings recorded) | 57/57 (Release) | 12787 | 906/1103 (82.1%) | 462040/598792 (77.2%) | 40 checked, 0 mismatched |
 | the geoscape pointer dispatcher (`Geoscape_OnPointer`; the 16-bit cursor globals, the screen-0 menu band, the 19-arm screen switch, the drag gate and its tap cooldown, the `(v + 31) >> 5` tap division, 5 original findings and 3 deviations recorded) | 58/58 (Release) | 13022 | 907/1103 (82.2%) | 470616/598792 (78.6%) | 40 checked, 0 mismatched |
+| the pointer release (`Geoscape_OnPointerUp`; the shortfall gate on 0x1870C8 read as a dword, the list clicks where the press only tracked rows, the panel tail shared by two arms, the press/release disagreements on screens 0, 7, 10 and 18, 3 original findings and 6 ledger rows, one wrong slot address in the port corrected) | 58/58 (Release) | 13267 | 908/1103 (82.3%) | 477608/598792 (79.8%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

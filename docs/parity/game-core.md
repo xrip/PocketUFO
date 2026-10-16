@@ -14810,3 +14810,68 @@ the six status controls only while no other plane panel is open.
 test_geopointer.c: 235 checks over the flag chain, the menu band, the drag gate and its cooldown,
 the tap division and its area gate, the transfer-row comparison (28 * nBaseCount, read signed), the
 plane control ranges, the research/manuf row arms, the options pages and the default arms.
+
+## Geoscape_OnPointerUp (0x89450) - ported
+
+6,992 B, the pointer-release half of the same dispatcher, ported as Geoscape_OnPointerUp in the
+same module and env. It is not the press with bDown flipped, and the two halves disagree in ways
+that matter.
+
+It takes only the 0x1864F8 block. Every coordinate it uses is the cursor pair the press stored,
+read back with LDRSH, and every UiControl_HitTest it makes is a release: x = y = 0, bDown = 0,
+bForceClick = 0 at every call site (0x89D74..0x89D84, 0x89F74..0x89F80, ...). A release ignores the
+hit box, so the zeros are what the original passes, not a placeholder.
+
+What only the release has:
+
+- The shortfall gate (0x89578..0x89600). When the dword at 0x1870C8 is exactly 1 and the screen is
+  not 0, the report is cleared here - unless the screen is 6, 9, 10, 11 or 12, the screens that draw
+  the shortfall panel. Screen 9 also drops both popup bytes when no product is selected and plays
+  the sample when one is. 0x89584 loads 0x1870C8 as a DWORD and its three clears are dword stores;
+  it is the only reader in the image that does, which is why the port carries it as a u32 *.
+- Sound_Play(17) in almost every flag arm of the world chain. The press plays it in two arms only.
+- List clicks instead of row tracking: UiPanel_ClickRow @ 0x3eee0 on the soldier-name, soldier-equip,
+  research, manuf, buy/sell B and C, plane craft/crew/sel-row/commit-row, screen-16 and psi panels.
+  The press arm's pPlaneCraftStatusPanel and pPlaneSlotPanel clicks have no release counterpart.
+- A tail shared by two arms (0x89B64..0x89B90): click the row under the cursor, then set the panel's
+  bFlag7073. The world arm's multi-select gate reaches it with the status panel (0x18641C); the
+  options confirm tail loads pOptPanelShips at 0x8AF1C and branches to it.
+- The fall-through (0x89CD4..0x89D20): clear the target-select flag, return 2 on screen 2, and on
+  any other screen release all thirteen root controls.
+
+What only the press has: the drag block, the strateg-select test, the tap arithmetic and the
+placement-fail clear. The release clears the drag flag instead (0x896BC) and never calls
+Smap_HitTestStrategSelect.
+
+Where the two halves disagree on the same screen:
+
+- Screen 0's menu band: the release plays the sample first and releases the flag-37 pair BEFORE the
+  two menu controls; the press released them after.
+- Flags 17 and 15 share LABEL_30, flags 21/22/23 share LABEL_52 with flag 12, flags 10 and 60 are one
+  arm, flags 13 and 27 are one arm. The press tests them separately and 60 alone plays the sample.
+- Screen 10 tracks pBuySellPanelA on the press and clicks pBuySellPanelB and pBuySellPanelC on the
+  release (0x8A65C / 0x8A670). Recorded as a deviation, not unified.
+- Screen 7's second hot corner uses the arguments in the press and the stored cursor here.
+
+Three original findings, each with a marker at its port site:
+
+- 0x8AC9C: the screen-17 tail's conditional clear of byte_1870F8 can only fire on a byte that is
+  already 0 - the arm returns at 0x8ABA8 whenever the row selection is non-zero. It has an effect
+  only if the psi panel's own click handler, tail-called by UiScrollList_ClickRow at 0x89B78, put the
+  selection back up in between.
+- 0x8A188: bPopupVisibleB is cleared through a conditional store, `if (b != 0) b = 0`.
+- 0x895C8 / 0x89B90: three arms hand back an address rather than a result - the address of
+  byte_1870C8, or the UiPanel pointer the shared tail just clicked. The port returns 0;
+  Input_OnPointerUp discards the value at 0x14910.
+
+A naming error this function caught in the port: the soldier-screen control slots were recorded as
+gBaseFacGrid + 0x1C0 (0x159928) and + 0x1E0 (0x159948). The ARM loads them as [base,#0x148] and
+[base,#0x150] - 0x1598B0 (apSoldierPanelCtl, two slots) and 0x1598B8 (apSoldierFindCtl, three),
+immediately after the ten nav slots at 0x159888. 0x159928 and 0x159948 have no xrefs at all. The
+header is corrected; pufo_baseui.h already had the right addresses from the nav-controls unit.
+
+test_geopointer.c gained 245 release checks. A release is observed by arming every control first
+(nState = 1, "the press hit it") and asserting which ones the release put back down - a control
+still armed is one the arm never reached, which is what an early return looks like. The screen-17
+row comparison needs a harness click handler on the psi panel, because without one the byte the
+comparison writes is already 0.

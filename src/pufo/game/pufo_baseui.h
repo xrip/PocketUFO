@@ -2699,8 +2699,11 @@ void Ui_SetTransferFlag(u8 *pbTransferFlag, void (*pfnPlaySample)(u32 nSample, u
  * dword_1870B4 (0); OnMapClick's result is returned otherwise.
  *
  * Width notes the source only shows in ARM: 0x1870AC is read as a BYTE (LDRB at 0x6153C);
- * the failure store into 0x1870C8 is a DWORD store (STRMI at 0x61574) while every reader in
- * the image loads it as a byte, so the port stores a byte (deviation, unobservable).
+ * the failure store into 0x1870C8 is a DWORD store (STRMI at 0x61574) while almost every reader
+ * in the image loads it as a byte, so the port stores a byte (deviation, unobservable).
+ * The one reader that does not is Geoscape_OnPointerUp: 0x89584 loads it as a DWORD and tests it
+ * against 1, and its three clears (0x895C4 / 0x895D4 / 0x89600) are dword stores. That is why
+ * GeoscapePointerEnv carries it as `u32 *pdwShortfall`.
  * byte_159DF4 is the pending region id 0x80..0x89 (0xFF marks "no pending placement" in the pointer
  * handlers); the original indexes the 10-entry cost table unguarded, so a region outside 0x80..0x89
  * reads adjacent image bytes. The shipped paths reach the ten regions only; the port treats
