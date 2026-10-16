@@ -5117,4 +5117,50 @@ typedef struct BuySellDrawEnv {
 
 void BuySellScreen_Draw(const BuySellDrawEnv *pEnv);
 
+/* ------------------------------------------------- the plane screen's stat rows
+ *
+ * Evidence: BasePlane_ResetDetailState @ 0x79cb8 (328 B), reached from 0x7baf8 -- the plane screen's
+ * craft-detail drawer, which is still unported, so it is named by address only here. It rebuilds the six
+ * craft-weapon rows of the plane screen's stat panel for the currently selected base.
+ *
+ * 1. 0x79CC0..0x79D1C: the six per-weapon counts and nPlaneStatRowCount are cleared, and the row count
+ *    starts at 1 rather than 0 -- the panel always has its header row, which is what
+ *    BasePlaneScreen_DrawStatLabel @ 0x79e00 sizes its three nested rects with
+ *    (20 * (nPlaneStatRowCount + 1), then 20 * n + 18 and 20 * n + 16).
+ * 2. 0x79D30..0x79DE8: the loop runs over EVERY object slot, 0..Map_nObjectCount - 1, and reads
+ *    apObjects[i]->auPerBaseVal[nSelectedBaseIdx] (the LDRH at +0x2A) for each of them. Only slots
+ *    25..30 have a switch arm; every other slot's read is evaluated and discarded, so the observable
+ *    effect comes from those six alone. They are the six craft weapons in the shipped OBJECTS.DAT:
+ *    25 Craft cannon, 26 Stingray launcher, 27 Avalanche launcher, 28 Laser cannon, 29 Plasma cannon,
+ *    30 Fusion ball launcher.
+ * 3. A slot whose per-base count is non-zero stores that count into its own global and bumps the row
+ *    count, so the panel lists exactly the weapons the selected base actually holds.
+ *
+ * The six globals are not contiguous -- they sit in the gaps between the plane screen's panel pointers
+ * at 0x161ED0..0x161EFC (pPlaneCraftStatusPanel, pPlaneCrewPanel, nPlaneCrewQuota, pPlaneCommitRowPanel,
+ * pPlaneTakenPanel, pPlaneCraftPanel), which is why the IDB carries them separately. They are dwords,
+ * not words: every store is a STR and every read an LDR, including the six gates in Geoscape_OnPointer
+ * (0x88674..0x88730) and Geoscape_OnPointerUp (0x8a38c..0x8a460), where a row's control is hit-tested
+ * only when that row's count is non-zero. The value stored is the u16 read at +0x2A widened.
+ *
+ * auPerBaseVal's slot count is PUFO_FAC_BASE_COUNT, already defined in pufo_geoscape.h. */
+#define PUFO_PLANE_WEAPON_FIRST   25 /* Craft cannon */
+#define PUFO_PLANE_WEAPON_LAST    30 /* Fusion ball launcher */
+
+typedef struct BasePlaneDetailEnv {
+    ObjectRecFull *const *apObjects; /* the Map-block array at 0x113AC0 = 0x1139B8 + 66 dwords */
+    i32             nObjectCount;    /* Map_nObjectCount @ 0x114A60, the loop bound */
+    i32             nBaseIdx;        /* nSelectedBaseIdx @ 0x159D81, a signed byte in the original */
+    i32            *pnCraftCannon;   /* nPlaneStatCraftCannon @ 0x161ED8, slot 25 */
+    i32            *pnStingray;      /* nPlaneStatStingray @ 0x161EE8, slot 26 */
+    i32            *pnAvalanche;     /* nPlaneStatAvalanche @ 0x161EF8, slot 27 */
+    i32            *pnLaserCannon;   /* nPlaneStatLaserCannon @ 0x161EF0, slot 28 */
+    i32            *pnPlasmaCannon;  /* nPlaneStatPlasmaCannon @ 0x161ABC, slot 29 */
+    i32            *pnFusionBall;    /* nPlaneStatFusionBall @ 0x161ED4, slot 30 */
+    i32            *pnRowCount;      /* nPlaneStatRowCount @ 0x161A38 */
+} BasePlaneDetailEnv;
+
+/* Returns the row count, which is also the original's return value (1 with nothing matched). */
+i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

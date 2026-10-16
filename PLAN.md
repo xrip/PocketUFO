@@ -2559,6 +2559,31 @@ Order is by what unblocks what. Each item ends with gates + commit.
   (83.7%) and 503872/598792 (84.1%); `strat` moves to 198/204 functions and 124,868 of 160,496 bytes
   (77.8%).
 
+- [x] **part 86, the plane screen's stat rows: `BasePlane_ResetDetailState (0x79cb8, 328 B)`** — **Six
+  craft-weapon counts rebuilt for the selected base, and a row count that starts at 1.** 0x79D20 stores 1
+  into `nPlaneStatRowCount`, not 0 — the panel always has its column-header row, which
+  `BasePlaneScreen_DrawStatLabel` (0x79e00 / 0x79fc4) sizes its three nested rects with. **The loop reads
+  every slot and keeps six:** 0x79D48 walks 0..`Map_nObjectCount`-1 and evaluates
+  `apObjects[i]->auPerBaseVal[nSelectedBaseIdx]` for all of them (the LDRH at +0x2A is outside the
+  switch), but only slots 25..30 have an arm and the default arm does not bump the row count. The shipped
+  OBJECTS.DAT makes the window concrete — 25 Craft cannon … 30 Fusion ball launcher, their names exactly
+  208 bytes apart in main.dat, with Psi-arm at 24 on one side and the five tank/hovertank weapons at
+  31..35 on the other. **The six counts are dwords** (every store STR, every read LDR) and each gates its
+  row's control in `Geoscape_OnPointer` (0x88674..0x88730) and `Geoscape_OnPointerUp` (0x8a38c..0x8a460).
+  **One global, two unrelated uses:** `nPlaneStatRowCount @ 0x161A38` is also the start-menu flicker's
+  scratch (0xA0AEC stores `nMapPhase` into it, 0xA0B20 writes `it * 32 - 1` into `MainMenu_anRowKeys[i]`);
+  the port's `g_nKeyAccum` is renamed `g_nPlaneStatRowCount` so the alias is visible. **1 deviation
+  recorded:** 0x79D5C indexes `auPerBaseVal` with a LDRSB'd signed byte and no range test, so an
+  out-of-range index reads inside the record (`auPerBaseVal[-1]` is the u16 at +0x28, `[8]` is
+  `aItemQty[0]`); the port refuses and reaches the same six-zeroes-one-row result. 49 new checks; two
+  mutations — first weapon slot 25 → 24 turns 13 red, dropping the non-zero filter turns 4 red. The guard
+  is tested by planting values exactly where the unchecked read would land, and the last case re-runs the
+  same object with a valid index to prove those zeroes came from the guard. 7 IDB renames (446 on record),
+  new enum `PufoCraftWeaponSlot` (25..30 plus 31..35), 1 function comment, 6 line comments. 14241 checks
+  (60 suites), coverage 924/1103 (83.8%) and 504200/598792 (84.2%); `strat` moves to 199/204 functions and
+  125,196 of 160,496 bytes (78.0%), leaving `Geoscape_Draw`, `BaseFac_BuildStatusMsg` and three 12-byte
+  atexit registrars.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable

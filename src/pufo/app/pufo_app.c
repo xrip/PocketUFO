@@ -78,8 +78,11 @@ static i32              g_aRowKeySrc[7];
 static i32              g_nListMode;
 static i32              g_nUiScreen;
 static i32              g_nAnimPhase;       /* unk_1139EF, the 0xC352 anim counter */
-static i32              g_nKeyAccum;        /* nPlaneStatRowCount @ 0x161A38: the flicker only writes it,
-                             *  but BasePlaneScreen_DrawStatLabelA/B (0x79E00 / 0x79FC4) read it as their panel row count */
+static i32              g_nPlaneStatRowCount; /* nPlaneStatRowCount @ 0x161A38. One global, two unrelated
+                             * uses in the original: the start-menu flicker reuses it as scratch (0xA0AEC
+                             * stores nMapPhase into it, 0xA0B14 adds a random roll), while the plane
+                             * screen uses it as its stat-panel row count (written at 0x79D24 / 0x79DE4,
+                             * read at 0x79E30..0x79E90). Named after the global, not after one of its uses. */
 static i32              g_nPhaseSave112;
 static u32              g_nUiSlot0;         /* apUiSlotsA[0] @ Map+0x60, cleared by UiControl_HitTest */
 static GfxColorEnv      g_color;
@@ -455,7 +458,7 @@ static void App_TickAnim(void)
         ++g_nAnimPhase;   /* 0xA098C */
     }
     if (g_nUiScreen == 17) {
-        MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nKeyAccum);
+        MainMenu_TickRowKeys(g_aRowKeys, g_aRowKeySrc, g_nAnimPhase, &g_nPlaneStatRowCount);
     } else if (g_nUiScreen == 0x10) {
         if (++g_titlesAnim.nScroll > 20 * (g_nTitlesMaxRows + 48)) {
             g_titlesAnim.nScroll = 0;

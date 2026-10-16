@@ -12520,6 +12520,214 @@ static void TestFundingReport(void)
     Asset_CloseArchives();
 }
 
+/* ------------------------------------------------- BasePlane_ResetDetailState @ 0x79cb8
+ *
+ * The six craft-weapon rows of the plane screen's stat panel. The fixture uses the shipped
+ * OBJECTS.DAT layout: 149 records of 208 bytes, slots 25..30 being exactly the six craft weapons
+ * (Craft cannon, Stingray launcher, Avalanche launcher, Laser cannon, Plasma cannon, Fusion ball
+ * launcher -- their names sit 208 bytes apart in main.dat at 0x2A082E, 0x2A08FE, ... 0x2A0C3E),
+ * with 24 Psi-arm and 31..35 being the soldier and vehicle weapons that must never become a row. */
+
+static ObjectRecFull g_psObj[149];
+static ObjectRecFull *g_psApObj[149];
+static i32 g_psStat[6];
+static i32 g_psRows;
+static BasePlaneDetailEnv g_psEnv;
+
+static const char *const g_apPsWeaponName[6] = {
+    "Craft cannon", "Stingray launcher", "Avalanche launcher",
+    "Laser cannon", "Plasma cannon", "Fusion ball launcher"
+};
+
+static void PsFixture(void)
+{
+    i32 i;
+
+    for (i = 0; i < 149; ++i) {
+        g_psApObj[i] = &g_psObj[i];
+    }
+    for (i = 0; i < 6; ++i) {
+        PutStr(g_psObj[PUFO_PLANE_WEAPON_FIRST + i].szName, g_apPsWeaponName[i]);
+    }
+    PutStr(g_psObj[24].szName, "Psi-arm");
+    PutStr(g_psObj[31].szName, "Tank - cannon");
+    PutStr(g_psObj[32].szName, "Tank - rocket launcher");
+    PutStr(g_psObj[34].szName, "Hovertank - plasma");
+    PutStr(g_psObj[117].szName, "Skyranger");
+
+    g_psEnv.apObjects    = g_psApObj;
+    g_psEnv.nObjectCount = 149;
+    g_psEnv.nBaseIdx     = 0;
+    g_psEnv.pnCraftCannon  = &g_psStat[0];
+    g_psEnv.pnStingray     = &g_psStat[1];
+    g_psEnv.pnAvalanche    = &g_psStat[2];
+    g_psEnv.pnLaserCannon  = &g_psStat[3];
+    g_psEnv.pnPlasmaCannon = &g_psStat[4];
+    g_psEnv.pnFusionBall   = &g_psStat[5];
+    g_psEnv.pnRowCount     = &g_psRows;
+}
+
+static void PsClearCounts(void)
+{
+    i32 i, c;
+
+    for (i = 0; i < 149; ++i) {
+        for (c = 0; c < PUFO_FAC_BASE_COUNT; ++c) {
+            g_psObj[i].auPerBaseVal[c] = 0;
+        }
+    }
+}
+
+/* Stale on purpose: 0x79CC0..0x79D24 clears the seven globals before it looks at any data, so a
+ * previous screen visit's values must not survive into the result. */
+static void PsSeedStale(void)
+{
+    i32 i;
+
+    for (i = 0; i < 6; ++i) {
+        g_psStat[i] = 777;
+    }
+    g_psRows = 99;
+}
+
+static void TestPlaneStatRows(void)
+{
+    static const i32 aHold[6] = { 5, 0, 7, 0, 9, 0 };
+    static const i32 aIdx[3] = { 0, 3, 7 };
+    static const i32 aWantCraft[3] = { 5, 9, 13 };
+    static const i32 aWantSting[3] = { 0, 21, 0 };
+    i32 i;
+    i32 nRet;
+
+    printf("the plane screen's stat rows\n");
+
+    PsFixture();
+
+    /* 1. Nothing to look at, and the reset still happens. */
+    PsClearCounts();
+    g_psEnv.nObjectCount = 0;
+    PsSeedStale();
+    nRet = BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psRows, 1, "an empty object list still leaves the panel its header row");
+    CheckEqI32(nRet, 1, "and the return value is that row count");
+    for (i = 0; i < 6; ++i) {
+        CheckEqI32(g_psStat[i], 0, "the six counts are cleared before the loop, not after it");
+    }
+    g_psEnv.nObjectCount = 149;
+
+    /* 2. Each slot has its own global, and the values are distinct so a swapped switch arm shows. */
+    PsClearCounts();
+    for (i = 0; i < 6; ++i) {
+        g_psObj[PUFO_PLANE_WEAPON_FIRST + i].auPerBaseVal[0] = (u16)(11 + i);
+    }
+    PsSeedStale();
+    nRet = BasePlane_ResetDetailState(&g_psEnv);
+    for (i = 0; i < 6; ++i) {
+        CheckEqI32(g_psStat[i], 11 + i, "each weapon slot stores its count into its own global");
+    }
+    CheckEqI32(g_psRows, 7, "six held weapons give six rows plus the header");
+    CheckEqI32(nRet, g_psRows, "the return value and the global agree");
+
+    /* 3. Slots outside 25..30 are read and thrown away. */
+    PsClearCounts();
+    g_psObj[0].auPerBaseVal[0] = 8;
+    g_psObj[24].auPerBaseVal[0] = 3;   /* Psi-arm */
+    g_psObj[31].auPerBaseVal[0] = 4;   /* Tank - cannon */
+    g_psObj[32].auPerBaseVal[0] = 5;   /* Tank - rocket launcher */
+    g_psObj[34].auPerBaseVal[0] = 6;   /* Hovertank - plasma */
+    g_psObj[117].auPerBaseVal[0] = 7;  /* Skyranger itself */
+    g_psObj[148].auPerBaseVal[0] = 9;
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    for (i = 0; i < 6; ++i) {
+        CheckEqI32(g_psStat[i], 0, "a non-craft slot's count is read and then discarded");
+    }
+    CheckEqI32(g_psRows, 1, "and it adds no row -- the switch has no arm outside 25..30");
+
+    /* 4. The boundary itself, at both ends. */
+    PsClearCounts();
+    g_psObj[24].auPerBaseVal[0] = 12;
+    g_psObj[25].auPerBaseVal[0] = 13;
+    g_psObj[30].auPerBaseVal[0] = 14;
+    g_psObj[31].auPerBaseVal[0] = 15;
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 13, "slot 25, Craft cannon, is the first row");
+    CheckEqI32(g_psStat[5], 14, "slot 30, Fusion ball launcher, is the last");
+    CheckEqI32(g_psRows, 3, "24 Psi-arm and 31 Tank - cannon sit just outside and add nothing");
+
+    /* 5. A weapon the base holds none of gets no row and keeps a zero count. */
+    PsClearCounts();
+    for (i = 0; i < 6; ++i) {
+        g_psObj[PUFO_PLANE_WEAPON_FIRST + i].auPerBaseVal[0] = (u16)aHold[i];
+    }
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    for (i = 0; i < 6; ++i) {
+        CheckEqI32(g_psStat[i], aHold[i], "an unheld weapon stays at zero rather than keeping its old value");
+    }
+    CheckEqI32(g_psRows, 4, "only the three held weapons get rows");
+
+    /* 6. The loop bound is Map_nObjectCount, so the slot has to be inside it. */
+    PsClearCounts();
+    g_psObj[25].auPerBaseVal[0] = 4;
+    g_psEnv.nObjectCount = 25; /* slots 0..24 */
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 0, "a count of 25 objects stops one short of slot 25");
+    CheckEqI32(g_psRows, 1, "so Craft cannon gets no row");
+    g_psEnv.nObjectCount = 26;
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 4, "one more object reaches slot 25");
+    CheckEqI32(g_psRows, 2, "and the row appears");
+    g_psEnv.nObjectCount = 149;
+
+    /* 7. The column is the selected base's, not a fixed one. */
+    PsClearCounts();
+    g_psObj[25].auPerBaseVal[0] = 5;
+    g_psObj[25].auPerBaseVal[3] = 9;
+    g_psObj[25].auPerBaseVal[7] = 13;
+    g_psObj[26].auPerBaseVal[3] = 21;
+    for (i = 0; i < 3; ++i) {
+        g_psEnv.nBaseIdx = aIdx[i];
+        PsSeedStale();
+        BasePlane_ResetDetailState(&g_psEnv);
+        CheckEqI32(g_psStat[0], aWantCraft[i], "the count comes from the selected base's column");
+        CheckEqI32(g_psStat[1], aWantSting[i], "a weapon only base 3 holds shows up only for base 3");
+    }
+    g_psEnv.nBaseIdx = 0;
+
+    /* 8. The out-of-range guard. auPerBaseVal[-1] is the u16 at record offset 0x28 (bTwoHanded /
+     * bUnk41) and auPerBaseVal[8] is aItemQty[0] at 0x3a; the original reads both, the port refuses
+     * and lands on the same observable result -- six zeroes and one row. */
+    PsClearCounts();
+    g_psObj[25].auPerBaseVal[0] = 6;
+    g_psObj[25].bTwoHanded = 0x34;
+    g_psObj[25].bUnk41 = 0x12;   /* auPerBaseVal[-1] would read 0x1234 */
+    g_psObj[25].aItemQty[0] = 0x5678; /* auPerBaseVal[8] would read 0x5678 */
+    g_psEnv.nBaseIdx = -1;
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 0, "a negative base index does not read the word below the column array");
+    CheckEqI32(g_psRows, 1, "and the panel still gets just its header row");
+    g_psEnv.nBaseIdx = PUFO_FAC_BASE_COUNT;
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 0, "a base index past the eight columns does not read aItemQty[0]");
+    CheckEqI32(g_psRows, 1, "and the same one-row result");
+    g_psObj[25].bTwoHanded = 0;
+    g_psObj[25].bUnk41 = 0;
+    g_psObj[25].aItemQty[0] = 0;
+    g_psEnv.nBaseIdx = 0;
+
+    /* 9. The last case's data is real, so the guard above was not testing an empty fixture. */
+    PsSeedStale();
+    BasePlane_ResetDetailState(&g_psEnv);
+    CheckEqI32(g_psStat[0], 6, "the same object with a valid base index does give Craft cannon its row");
+    CheckEqI32(g_psRows, 2, "so cases 8's zeroes came from the guard, not from missing data");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -12608,6 +12816,7 @@ int main(void)
     TestFundingRecompute();
     TestFundingPanels();
     TestFundingReport();
+    TestPlaneStatRows();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

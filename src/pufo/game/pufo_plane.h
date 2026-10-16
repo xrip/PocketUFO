@@ -175,8 +175,8 @@ i32 BasePlaneScreen_AddInterceptMission(i32 bCraftClass, const InterceptMissionC
  * The frame is three nested rectangles through SoftSurf_BlitRectProxy: 5,75 230 wide and
  * 20 * (rowCount + 1) tall in index 0x44 with colours 0xF4/0xFC, then 6,76 228 wide and
  * 20 * rowCount + 18, then 7,77 226 wide and 20 * rowCount + 16, both inner ones index 0x14 with
- * 0x50/0x63. The row count is the global the port calls g_nKeyAccum in the app shell; here it is
- * read as a row count, so "write-only residue" is not the whole story for that global.
+ * 0x50/0x63. The row count is nPlaneStatRowCount @ 0x161A38, the same global the start-menu flicker
+ * reuses as scratch at 0xA0AEC; the port names it g_nPlaneStatRowCount in the app shell.
  *
  * Then the cyan pair (68,244,252)/(4,70,75) and three centred column headers at y 75, centred on
  * 70, 164 and 210. The headers are text records 141, 142 and 143, and the original SHORTENS two of

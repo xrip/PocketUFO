@@ -10121,3 +10121,58 @@ void BuySellScreen_Draw(const BuySellDrawEnv *pEnv)
         }
     }
 }
+
+/* ---------------------------------------------------- the plane screen's stat rows */
+
+i32 BasePlane_ResetDetailState(const BasePlaneDetailEnv *pEnv)
+{
+    i32 nRows = 1;                                          /* 0x79D20: the header row is always there */
+    i32 i;
+
+    *pEnv->pnCraftCannon  = 0;                              /* 0x79CC0..0x79D1C, the six cleared */
+    *pEnv->pnStingray     = 0;
+    *pEnv->pnAvalanche    = 0;
+    *pEnv->pnLaserCannon  = 0;
+    *pEnv->pnPlasmaCannon = 0;
+    *pEnv->pnFusionBall   = 0;
+    *pEnv->pnRowCount     = 1;
+
+    if (pEnv->apObjects == NULL
+        || pEnv->nBaseIdx < 0
+        || pEnv->nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        /* Deviation: 0x79D5C dereferences apObjects[i] and indexes auPerBaseVal with
+         * 2 * (char)nSelectedBaseIdx with no test at all, so a negative or oversized base index reads
+         * outside the record. No shipped path does that; the port reaches the same observable result --
+         * six zeroes and one row -- without the out-of-bounds read. */
+        return nRows;
+    }
+
+    for (i = 0; i < pEnv->nObjectCount; ++i) {              /* 0x79D48: every slot, not just the six */
+        const ObjectRecFull *pObj = pEnv->apObjects[i];
+        u16 nCount;
+
+        if (pObj == NULL) {
+            continue;                                       /* the original would fault at 0x79D5C */
+        }
+        if (i < PUFO_PLANE_WEAPON_FIRST || i > PUFO_PLANE_WEAPON_LAST) {
+            continue;                                       /* the switch's default arm discards the read */
+        }
+        nCount = pObj->auPerBaseVal[pEnv->nBaseIdx];        /* 0x79D5C LDRH [R3,#0x2A] */
+        if (nCount == 0) {
+            continue;
+        }
+        switch (i) {
+        case 25: *pEnv->pnCraftCannon  = nCount; break;     /* 0x79DDC */
+        case 26: *pEnv->pnStingray     = nCount; break;     /* 0x79DD4 */
+        case 27: *pEnv->pnAvalanche    = nCount; break;     /* 0x79DCC */
+        case 28: *pEnv->pnLaserCannon  = nCount; break;     /* 0x79DC4 */
+        case 29: *pEnv->pnPlasmaCannon = nCount; break;     /* 0x79DBC */
+        case 30: *pEnv->pnFusionBall   = nCount; break;     /* 0x79D90 */
+        default: break;
+        }
+        ++nRows;                                           /* 0x79DE4: nPlaneStatRowCount = ++result */
+        *pEnv->pnRowCount = nRows;
+    }
+
+    return nRows;                                          /* 0x79DFC */
+}

@@ -15594,8 +15594,7 @@ self-satisfying. One fixture lesson recorded here because it cost a crash: PtrAr
 item it drops and PtrArray_Remove frees the slot array and installs a freshly malloc'd one, so a test
 that hands in a static array crashes, and a test that keeps a second handle on the items double-frees
 after a removal. The fixture now hands in malloc'd storage and lets the PtrArray own both.
-
-Unit 85: Geoscape_DrawGlobeHover @ 0x6727c (2,208 B)
+## Unit 85: Geoscape_DrawGlobeHover @ 0x6727c (2,208 B)
 
 The new-base globe hover frame: the crosshair, the scan animation, the two random readout lines, and the
 terrain / cost / Build base labels over the hovered region. It is reached from the geoscape dispatcher's
@@ -15682,3 +15681,78 @@ surfaced while writing them and are recorded because either would have made a wh
 tallying the blanked run's colour instead of the drawn run's makes every label look like it has the same
 ink, and a fixture runner that does not restore the animation counters makes the two runs of one
 differential differ for reasons that have nothing to do with the record being blanked.
+## Unit 86 -- BasePlane_ResetDetailState @ 0x79cb8 (328 B)
+
+The plane screen's stat panel, rebuilt for the currently selected base. Seven globals are cleared, the
+row count starts at 1, and the loop walks the whole object list looking for the six craft weapons the
+base actually holds.
+
+### The row count starts at 1, not 0
+
+0x79D20..0x79D24 store 1 into the result and into nPlaneStatRowCount @ 0x161A38 before anything is
+looked at. That is not an off-by-one: the panel always has its column-header row, and
+BasePlaneScreen_DrawStatLabelA @ 0x79e00 sizes its three nested rects from it -- 230 x 20*(n+1), then
+228 x 20*n+18 and 226 x 20*n+16. A base holding no craft weapon at all still gets a panel, one row
+tall, holding only the three headers.
+
+### The loop reads every slot and keeps six
+
+0x79D48..0x79DE8 runs i from 0 to Map_nObjectCount-1 and evaluates apObjects[i]->auPerBaseVal
+[nSelectedBaseIdx] for EVERY slot -- the LDRH at record +0x2A is outside the switch. Only slots 25..30
+have a switch arm, so every other slot's read is computed and thrown away, and the default arm does not
+bump the row count either (0x79DE4 is reached only from the six arms). The observable effect comes from
+those six alone.
+
+The shipped OBJECTS.DAT (main.dat, 30,992 B / 208 = 149 records) makes the boundary concrete: 25 Craft
+cannon, 26 Stingray launcher, 27 Avalanche launcher, 28 Laser cannon, 29 Plasma cannon, 30 Fusion ball
+launcher -- their names sit exactly 208 bytes apart at 0x2A082E, 0x2A08FE, 0x2A09CE, 0x2A0A9E, 0x2A0B6E
+and 0x2A0C3E. Slot 24 is Psi-arm (a soldier weapon) and 31..35 are Tank - cannon, Tank - rocket
+launcher, Tank - laser cannon, Hovertank - plasma and Hovertank - blaster launcher. So 25..30 is not an
+arbitrary window: it is the craft-weapon run, with a soldier weapon on one side and the vehicle weapons
+on the other. A new IDB enum PufoCraftWeaponSlot records all eleven.
+
+### The six counts are dwords, and each one gates its row's control
+
+Every store is a STR and every read an LDR, in this function and outside it. Geoscape_OnPointer
+(0x88674..0x88730) and Geoscape_OnPointerUp (0x8a38c..0x8a460) each hit-test a row's control only when
+that row's count is non-zero -- six `if (nPlaneStat* != 0) UiControl_HitTest(...)` in a row -- so the
+weapons a base does not hold have no clickable row at all. The value stored is the u16 read at +0x2A
+widened to a dword.
+
+They are not contiguous in memory: they sit in the gaps between the plane screen's panel pointers at
+0x161ED0..0x161EFC, which is why the IDB carries them as six separate unk_ globals.
+
+### One global, two unrelated uses
+
+nPlaneStatRowCount @ 0x161A38 is also the start-menu row-key flicker's scratch. 0xA0AEC stores nMapPhase
+straight into it, 0xA0B14 adds Game_RandU16(8 - nMapPhase), and 0xA0B20 writes (it * 32 - 1) into
+MainMenu_anRowKeys[i]. The port had named it g_nKeyAccum after that second use, which made the plane
+screen's row count look like an unrelated global; it is now g_nPlaneStatRowCount, named after the global
+rather than after one of its uses. This is a design problem in the original -- one dword serving two
+subsystems -- recorded here rather than papered over.
+
+### Deviation
+
+0x79D5C dereferences apObjects[i] and indexes auPerBaseVal with 2 * (char)nSelectedBaseIdx with no test
+at all. nSelectedBaseIdx is loaded with LDRSB, so it is a signed byte, and an out-of-range value reads
+inside the record: auPerBaseVal[-1] is the u16 at +0x28 (bTwoHanded / bUnk41) and auPerBaseVal[8] is
+aItemQty[0] at +0x3A. No shipped path sets a base index outside 0..7, and the port refuses the read and
+reaches the same observable result -- six zeroes and one row.
+
+### IDB corrections this unit
+
+- unk_161ED8 / unk_161EE8 / unk_161EF8 / unk_161EF0 / unk_161ABC / unk_161ED4 renamed to
+  nPlaneStatCraftCannon / nPlaneStatStingray / nPlaneStatAvalanche / nPlaneStatLaserCannon /
+  nPlaneStatPlasmaCannon / nPlaneStatFusionBall, all typed int (439 -> 446 renames on record).
+- New enum PufoCraftWeaponSlot: PW_CRAFT_CANNON 25 .. PW_FUSION_BALL_LAUNCHER 30, plus the five vehicle
+  slots 31..35 that must NOT be craft rows.
+- A function comment at 0x79cb8 and line comments at 0x79D20 (the row count starts at 1), 0x79D44 (the
+  LDRSB base index), 0x79D5C (the unchecked read), 0x79DE4 (the count bump is inside the six arms) and
+  0x161A38 / 0xA0AEC (the two-use global).
+
+49 new checks in tests/test_baseui.c, on the shipped 149-record object layout with the real slot names.
+Two mutations confirm they are not self-satisfying: moving the first weapon slot from 25 to 24 turns 13
+checks red, and dropping the non-zero filter turns 4 red. The out-of-range guard is tested by putting a
+distinguishable value exactly where the unchecked read would land -- 0x1234 in bTwoHanded/bUnk41 for
+auPerBaseVal[-1] and 0x5678 in aItemQty[0] for auPerBaseVal[8] -- and the last case re-runs the same
+object with a valid index to prove those zeroes came from the guard and not from an empty fixture.

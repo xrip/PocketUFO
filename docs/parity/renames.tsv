@@ -459,3 +459,10 @@ unk_EC74D	aTextBaseCostPrefix	aTextRecs + 205*1137, read at 0x67950. lang.dat: "
 unk_103C77	aTextBuildBaseCaption	aTextRecs + 205*1603, read at 0x67A44. lang.dat: "Build base", centred over the confirm control at y=290
 0x159D94	nPendingPickX	unnamed until unit 85. abFacilityGrid + 0x62C, written at 0x6786C with gSmapCam.nPickX as it stood BEFORE this frame's Smap_GetTileAtScreen at 0x67894
 0x159D98	nPendingPickY	unnamed until unit 85. abFacilityGrid + 0x630, written at 0x67874 with gSmapCam.nPickY, same ordering
+unk_161ED8	nPlaneStatCraftCannon	OBJECTS.DAT slot 25, Craft cannon. Written at 0x79DDC, gates its control at 0x88674 / 0x8a38c
+unk_161EE8	nPlaneStatStingray	slot 26, Stingray launcher. Written at 0x79DD4, gate at 0x88698 / 0x8a3b0
+unk_161EF8	nPlaneStatAvalanche	slot 27, Avalanche launcher. Written at 0x79DCC, gate at 0x886bc / 0x8a3d4
+unk_161EF0	nPlaneStatLaserCannon	slot 28, Laser cannon. Written at 0x79DC4, gate at 0x886e0 / 0x8a3f8
+unk_161ABC	nPlaneStatPlasmaCannon	slot 29, Plasma cannon. Written at 0x79DBC, gate at 0x88704 / 0x8a41c
+unk_161ED4	nPlaneStatFusionBall	slot 30, Fusion ball launcher. Written at 0x79D90, gate at 0x88728 / 0x8a440
+nPlaneStatRowCount	nPlaneStatRowCount	0x161A38. Already named in the IDB; recorded here because the port names the same global g_nPlaneStatRowCount in src/pufo/app/pufo_app.c. One global, two uses: the plane stat-panel row count (0x79D24 / 0x79DE4) and the start-menu flicker scratch (0xA0AEC)
