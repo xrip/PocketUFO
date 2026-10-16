@@ -2371,6 +2371,31 @@ Order is by what unblocks what. Each item ends with gates + commit.
   914/1103 (82.9%) and 486892/598792 (81.3%); `strat` moves to 189/204 functions and 107,888 of 160,496
   bytes (67.2%). IDB: 1 rename (413 on record) and 5 comments.
 
+- [x] **part 80, the map click that recentres: `Smap_OnPointerUp (0x84688, 732 B)`** — the other
+  `Geoscape_Draw` click handler. `bMapSelectionFlag` picks the arm and both arms share the tail.
+  Selection arm (0x8490C): line 0 colour slot 0 is the strateg index, `[0x187054]` the ship index,
+  `Ship_LaunchIntercept`, then the flag is cleared — no clock work. Recentre arm: `GameTime_Set5Sec`,
+  then the view is centred on the strateg entry the line names.
+  **Four things only the ARM showed.** The half-extents are **ceilings** (0x846B4..0x846D8 is
+  MOVS / ADMI / ASR #1, the +1 skipped only when the extent is 0), so a 401-wide map centres at 201;
+  the shipped 400x400 map is even and cannot show it, and the port keeps the ceiling with a 401x401
+  case that proves it. 0x846DC and 0x84700 read colour slot 0 **twice**, so nX and nY come from the
+  SAME entry. nMode 1 unscales both coordinates by 1/1.333 and nMode 2 by 1/1.694 — the exact
+  reciprocals of the `Geoscape_Draw` zoom factors, so stored item coordinates are map coordinates.
+  `nScrollY` has **two** replace arms: the RSBMI at 0x8484C (whose N flag comes from the `ADDS` at
+  0x84838 computing `nY - 160`, not from the value just stored) and the zoom-strip height test at
+  0x84870 (`LDRH [R1,#0xA]` of the PadImage at `[0x186BBC]`). The crosshair x is algebraically always
+  120 because `nScrollX` is exactly `nX - vW - 120` and has no replace arm.
+  **ORIGINAL BUG (0x84894):** the crosshair y wraps by `nMapH` with ONE conditional subtraction, so a
+  value more than nMapH above the range stays out of range (200 on a 100x100 view). Unreachable on the
+  shipped map; reproduced by a small-view test.
+  **Naming:** `unk_186BC8` → `nSmapCrosshairX`, `unk_186BCC` → `nSmapCrosshairY`, `unk_1870B0` →
+  `bSmapCrosshairPending` — all three are written only here and read only by `Geoscape_Draw` (0x8C6A8,
+  which blits the 1 x (320 - uHeight) vertical and 240 x 1 horizontal pair while `nRadarCooldownR < 5`).
+  **1 ledger row (225 on record), 88 markers.** 35 new checks (13785 total, 60 suites), coverage
+  915/1103 (83.0%) and 487624/598792 (81.4%); `strat` moves to 190/204 functions and 108,620 of
+  160,496 bytes (67.7%). IDB: 3 renames (416 on record) and 5 comments.
+
 - **Consequence for the ordering.**
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
@@ -2706,6 +2731,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the options overlay (`OptionsScreen_Open`; the toggle, the four-panel release, the signed base match against `BaseRec.bUnk4`, the four-column craft rows, the TEXTS 149–152 / 1165–1172 labels, the uninitialised region label found) | 60/60 (Release) | 13683 | 912/1103 (82.7%) | 486292/598792 (81.2%) | 40 checked, 0 mismatched |
 | the overlay row confirm (`OptionsScreen_OnConfirm`; the shared aux index behind the readiness gate, the flag-27 travel-order line, the final-mission arm pinned to the Cydonia topic and the Avenger through the shipped data files, 1 latent out-of-bounds row) | 60/60 (Release) | 13712 | 913/1103 (82.8%) | 486552/598792 (81.3%) | 40 checked, 0 mismatched |
 | the map-order answer (`Smap_ResolveInterceptUI`; the flag-13 path that skips the armed-byte clear, the three dismiss tests that each re-read a shifting line 0, the unconditional tail removal found, the `0x187068` naming follow-through) | 60/60 (Release) | 13750 | 914/1103 (82.9%) | 486892/598792 (81.3%) | 40 checked, 0 mismatched |
+| the map recentre click (`Smap_OnPointerUp`; the ceil half-extents, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

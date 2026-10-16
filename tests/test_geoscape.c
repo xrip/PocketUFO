@@ -1511,6 +1511,254 @@ static void TestResolveInterceptUI(void)
     free(apSlots);
 }
 
+/* Smap_OnPointerUp @ 0x84688: either launch the intercept the message line offers, or recentre the
+ * view on the strateg item it names and leave the crosshair Geoscape_Draw blits. */
+static void TestSmapPointerUp(void)
+{
+    static UiLineList lines;
+    static GameTime time;
+    static PtrArray list;
+    static GeoscapeWorld world;
+    static StrategSpawnCtx ctx;
+    static SmapView view;
+    static PadImage strip;
+    static Ship g_aShip[2];
+    static Ship *g_apShip[2];
+    static BaseRec g_Base;
+    static BaseRec *g_apBase[1];
+    static Soldier *g_apSol[1];
+    static ObjectRecFull *g_apObj[1];
+    static u8 g_abHangar[64];
+    static i32 g_anAssigned[1];
+    static UiControl ctl[6];
+    static UiControl *apCtl[6];
+    static StrategItem *pEnt[2];
+    static i32 nSeed, nTotalSec, nAssignedCount;
+    static i32 nCrossX, nCrossY, nCooldown, nSelShip;
+    static u8 nShipCount, once, bPending, bSelected;
+    static u16 nSoldierCount;
+    ShipRemovalEnv env;
+    SmapPointerUpEnv upEnv;
+    void **apSlots;
+
+    printf("Smap_OnPointerUp\n");
+
+    for (int i = 0; i < 2; ++i) {
+        memset(&g_aShip[i], 0, sizeof(g_aShip[i]));
+        g_aShip[i].bId = (u8)(10 + i);
+        g_aShip[i].bHomeBase = 0;
+        g_aShip[i].bAtBase = 1;
+        g_apShip[i] = &g_aShip[i];
+    }
+    pEnt[0] = (StrategItem *)calloc(1, sizeof(StrategItem));   /* craft 0's own entry */
+    pEnt[0]->nType = 1;
+    pEnt[0]->bActive = 0;
+    pEnt[0]->nDisplayId = 10;
+    pEnt[0]->nTimer = 111;
+    pEnt[0]->nX = 40;
+    pEnt[0]->nY = 60;
+    pEnt[1] = (StrategItem *)calloc(1, sizeof(StrategItem));   /* the target the line names */
+    pEnt[1]->nType = 5;
+    pEnt[1]->bActive = 1;
+    pEnt[1]->nX = 300;
+    pEnt[1]->nY = 250;
+    apSlots = (void **)malloc(sizeof(void *) * 2);
+    apSlots[0] = pEnt[0];
+    apSlots[1] = pEnt[1];
+    list.nCount = 2;
+    list.apItems = apSlots;
+
+    memset(&g_Base, 0, sizeof(g_Base));
+    g_Base.nUnk8 = 100;
+    g_Base.nUnk12 = 200;
+    g_apBase[0] = &g_Base;
+
+    nShipCount = 2;
+    nSoldierCount = 0;
+    nAssignedCount = 0;
+    once = 0;
+    nTotalSec = 0;
+    nSeed = 0;
+    world.apCraft = g_apShip;
+    world.nShipCount = 2;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.pnSeed = &nSeed;
+    for (int i = 0; i < 6; ++i) {
+        apCtl[i] = &ctl[i];
+    }
+    strip.uHeight = 40;
+
+    env.apCraft = g_apShip;
+    env.pnShipCount = &nShipCount;
+    env.apSoldiers = g_apSol;
+    env.pnSoldierCount = &nSoldierCount;
+    env.apObjects = g_apObj;
+    env.nObjectCount = 0;
+    env.pStrategList = &list;
+    env.pWorld = &world;
+    env.pnSpawnOnceFlag = &once;
+    env.pSpawnCtx = &ctx;
+    env.abHangarFlag = g_abHangar;
+    env.nHangarFlagCap = 64;
+    env.anAssignedShip = g_anAssigned;
+    env.pnAssignedShipCount = &nAssignedCount;
+    env.apBases = g_apBase;
+    env.pnGameTotalSec = &nTotalSec;
+
+    memset(&upEnv, 0, sizeof(upEnv));
+    upEnv.pbSelectionFlag = &bSelected;
+    upEnv.pLines = &lines;
+    upEnv.pnSelectedShipIdx = &nSelShip;
+    upEnv.pView = &view;
+    upEnv.pStrategList = &list;
+    upEnv.pStripPad = &strip;
+    upEnv.pnCrosshairX = &nCrossX;
+    upEnv.pnCrosshairY = &nCrossY;
+    upEnv.pbCrosshairPending = &bPending;
+    upEnv.pnCooldownR = &nCooldown;
+    upEnv.pWorld = &world;
+    upEnv.apSpeedCtl = apCtl;
+    upEnv.pShipEnv = &env;
+    upEnv.pTime = &time;
+
+    /* The selection arm: the line's colour slot 0 is the target, 0x187054 the craft. */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    lines.nLineCount = 2;
+    lines.abLineFlags[0] = 18;
+    lines.abLineFlags[1] = 40;
+    lines.anColor[0][0] = 1;                 /* pEnt[1], the target */
+    nSelShip = 0;                            /* the selected craft */
+    bSelected = 1;
+    time.bPaused = 1;
+    world.nTickSeconds = 60;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(g_aShip[0].bIntercepting, 1, "the selection arm launches the intercept (0x84930)");
+    CheckEqI32(g_aShip[0].nStrategIdx, 1, "  at the item the line names");
+    CheckEqI32(g_aShip[0].bAtBase, 0, "  and the craft leaves base");
+    CheckEqI32(g_aShip[0].bWeaponsHot, 1, "  with its weapons hot");
+    CheckEqI32(pEnt[0]->nDestX, 300, "  the travel heads for the target x");
+    CheckEqI32(pEnt[0]->nDestY, 250, "  and y");
+    CheckEqI32(bSelected, 0, "and the selection flag is cleared (0x84938)");
+    CheckEqI32(world.nTickSeconds, 60, "the selection arm never runs GameTime_Set5Sec");
+    CheckEqI32(lines.nLineCount, 1, "the shared tail drops line 0 (0x84944)");
+    CheckEqI32(bPending, 0, "  and leaves no crosshair pending");
+
+    /* The recentre arm, zoom mode 0: 400x400 map, half-extents 80 and 40, target at (300, 250). */
+    memset(&lines, 0, sizeof(lines));
+    memset(&time, 0, sizeof(time));
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 400;
+    view.nMapH = 400;
+    view.nMode = 0;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    bSelected = 0;
+    time.bPaused = 1;
+    world.nTickSeconds = 60;
+    ctl[4].nState = 1;
+    nCooldown = 0xFF;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(world.nTickSeconds, 5, "the recentre arm runs GameTime_Set5Sec (0x8469C)");
+    CheckEqI32(ctl[4].nState, 0, "  and darkens the nav control that was lit");
+    CheckEqI32(view.nScrollX, 100, "nScrollX = nX - (nMapW/2 - 120) - 120 (0x84850)");
+    CheckEqI32(view.nScrollY, 50, "nScrollY = nY - (nMapH/2 - 160) - 160 (0x8483C)");
+    CheckEqI32(nCrossX, 120, "the crosshair x is 120 while nMapW is at or above it (0x84880)");
+    CheckEqI32(nCrossY, 160, "nCrossY = nY - nScrollY - v4, which is the fixed 160 whenever no arm replaced the scroll");
+    CheckEqI32(bPending, 1, "the crosshair is armed for Geoscape_Draw (0x848B8)");
+    CheckEqI32(nCooldown, 0, "  and the radar cooldown is restarted (0x848C4)");
+    CheckEqI32(lines.nLineCount, 0, "the tail drops the line");
+    CheckEqI32(time.bPaused, 0, "  and the empty list lets the clock resume (0x84954)");
+
+    /* Zoom mode 1 unscales both coordinates by 1/1.333 before the recentre. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 400;
+    view.nMapH = 400;
+    view.nMode = 1;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(view.nScrollX, 25, "mode 1 scales 300 to 225 before the recentre (0x84730)");
+    CheckEqI32(view.nScrollY, -13, "  and 250 to 187");
+    CheckEqI32(nCrossY, 160, "the crosshair is still 160 -- the unscale moves the view, not the mark");
+
+    /* Zoom mode 2 uses 1/1.694. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 400;
+    view.nMapH = 400;
+    view.nMode = 2;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(view.nScrollX, -23, "mode 2 scales 300 to 177 (0x847B8)");
+    CheckEqI32(view.nScrollY, -40, "  and 250 to 147, which is under 160 so the replace arm takes over (0x8484C)");
+    CheckEqI32(nCrossY, 147, "  and the crosshair y becomes the SCALED nY");
+
+    /* nY below 160 takes the RSBMI arm: nScrollY becomes -nHalfH instead. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 400;
+    view.nMapH = 400;
+    view.nMode = 0;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    pEnt[1]->nY = 100;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(view.nScrollY, -40, "nY - 160 negative replaces nScrollY with -(nMapH/2 - 160) (0x8484C)");
+    CheckEqI32(nCrossY, 100, "  and the crosshair y becomes nY itself");
+    pEnt[1]->nY = 250;
+
+    /* The strip-height test can replace nScrollY a second time. Threshold here: 40 + 400 - 320 = 120. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 400;
+    view.nMapH = 400;
+    view.nMode = 0;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    pEnt[1]->nY = 350;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(view.nScrollY, 80, "nScrollY + nHalfH over the strip threshold replaces it with uHeight - nHalfH + nMapH - 320 (0x8487C)");
+    CheckEqI32(nCrossY, 230, "and the crosshair y is measured against the REPLACED scroll");
+    pEnt[1]->nY = 250;
+
+    /* Odd extents: the original halves with ceil, so a 401-wide map centres one pixel further out. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 401;
+    view.nMapH = 401;
+    view.nMode = 0;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(view.nScrollX, 99, "ceil(401/2) - 120 is 81, so nScrollX is 99 and not 100 (0x846C4)");
+    CheckEqI32(view.nScrollY, 49, "  and ceil(401/2) - 160 is 41, so nScrollY is 49 and not 50 (0x846D8)");
+    CheckEqI32(nCrossY, 160, "the crosshair y stays the fixed 160 because both halves grew together");
+
+    /* A small map: the crosshair y wraps once by nMapH and the x is 120 - nMapW. */
+    memset(&view, 0, sizeof(view));
+    view.nMapW = 100;
+    view.nMapH = 100;
+    view.nMode = 0;
+    lines.nLineCount = 1;
+    lines.abLineFlags[0] = 18;
+    lines.anColor[0][0] = 1;
+    pEnt[1]->nX = 120;
+    pEnt[1]->nY = 120;
+    Smap_OnPointerUp(&upEnv);
+    CheckEqI32(nCrossX, 20, "nMapW below 120 gives 120 - nMapW (0x848A0)");
+    CheckEqI32(nCrossY, 200, "and the y wraps ONCE by nMapH, not until it fits (0x84894)");
+    pEnt[1]->nX = 300;
+
+    free(apSlots);
+    for (int i = 0; i < 2; ++i) {
+        free(pEnt[i]);
+    }
+}
+
 static void TestInitCraftSelectState(void)
 {
     static u8 g_abGrid[1524];
@@ -5981,6 +6229,7 @@ int main(void)
     TestRadarWeaponHit();
     TestDismissSelected();
     TestResolveInterceptUI();
+    TestSmapPointerUp();
     TestInitCraftSelectState();
     TestBeginCraftSelect();
     TestDemolishBase();

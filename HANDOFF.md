@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 914 / 1103 (82.9%)
-                                             bytes cited:     486892 / 598792 (81.3%)
-python docs/parity/audit_credits.py       -> credited functions: 914, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 413 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 915 / 1103 (83.0%)
+                                             bytes cited:     487624 / 598792 (81.4%)
+python docs/parity/audit_credits.py       -> credited functions: 915, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 416 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 224, ORIGINAL BUG markers in src/pufo: 87
+python docs/parity/audit_bugs.py          -> ledger rows: 225, ORIGINAL BUG markers in src/pufo: 88
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,9 +229,24 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13750**. Coverage as of the latest commit: **914 / 1103
-functions (82.9%)**, **486892 / 598792 bytes (81.3%)**. This unit ported the answer to a geoscape message
-line — `Smap_ResolveInterceptUI` (0x84964, 340 B), the click handler `Geoscape_Draw` installs, which reads the
+Test checks run across the 60 suites: **13785**. Coverage as of the latest commit: **915 / 1103
+functions (83.0%)**, **487624 / 598792 bytes (81.4%)**. This unit ported the other geoscape map click —
+`Smap_OnPointerUp` (0x84688, 732 B), the handler `Geoscape_Draw` installs next to unit 79's. `bMapSelectionFlag`
+picks the arm and both arms share the tail (`UiPanel_RemoveLine(0)`, then unpause if the list is empty). The
+selection arm launches `Ship_LaunchIntercept` on the strateg entry line 0's colour slot 0 names, with the ship
+index from `[0x187054]`, and clears the flag; the recentre arm centres the view on that same entry. Four things
+only the ARM showed: the half-extents are **ceilings** (MOVS / ADMI / ASR #1, the +1 skipped only when the extent
+is 0), so a 401-wide map centres at 201 and not 200; 0x846DC and 0x84700 read colour slot 0 **twice** so nX and
+nY come from the SAME entry; nMode 1 unscales both coordinates by 1/1.333 and nMode 2 by 1/1.694, the exact
+reciprocals of the `Geoscape_Draw` zoom factors; and `nScrollY` has **two** replace arms — the RSBMI at 0x8484C
+(testing `nY - 160`, whose N flag comes from the `ADDS` at 0x84838 and not from the value just stored) and the
+zoom-strip height test at 0x84870 on `uHeight` of the PadImage at `[0x186BBC]`. The crosshair x is algebraically
+always 120 because `nScrollX` is exactly `nX - vW - 120` with no replace arm. **ORIGINAL BUG (0x84894):** the
+crosshair y wraps by `nMapH` with ONE conditional subtraction, so a value more than nMapH above the range stays
+out of range (200 on a 100x100 view); unreachable on the shipped 400x400 map, reproduced by a small-view test.
+35 new checks, 3 IDB renames (`nSmapCrosshairX`, `nSmapCrosshairY`, `bSmapCrosshairPending` — written only here,
+read only by `Geoscape_Draw` at 0x8C6A8), 5 comments, 1 ledger row.
+Unit 79 ported the answer to a geoscape message line — `Smap_ResolveInterceptUI` (0x84964, 340 B), the click handler `Geoscape_Draw` installs, which reads the
 flag on message line 0 and decides what the pending map order becomes. `GameTime_Set5Sec` and a cleared
 `bInterceptDone` first; flag 27 sends the craft in colour slot 0 home through `Ship_RetargetTravel`; flag 13
 rewrites the line (insert a flag-11 line at index 1 carrying line 0's colour **slot 1** masked to a byte, drop
@@ -819,7 +834,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 224 rows, 87 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 225 rows, 88 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -945,8 +960,9 @@ longer listed here.)
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 107,888 of 160,496 (67.2%), and `Geoscape_Draw` alone is
-33,744 of the 52,608 left. Both geoscape pointer handlers and the map select test they call are in now.
+`strat` is still the weakest subsystem by bytes: 108,620 of 160,496 (67.7%), and `Geoscape_Draw` alone is
+33,744 of the 51,876 left. Both geoscape pointer handlers, the map select test they call and both map click
+handlers they install are in now.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
@@ -1585,7 +1601,7 @@ manufacturing, research, soldier and base-facility families are complete, and so
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
-189 of 204 functions and 107,888 of 160,496 bytes (67.2%), 15 functions / 52,608 bytes left. What
+190 of 204 functions and 108,620 of 160,496 bytes (67.7%), 14 functions / 51,876 bytes left. What
 is left in `strat-ui` is
 21 functions / 36,892 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia

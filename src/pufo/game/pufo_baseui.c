@@ -5793,6 +5793,92 @@ void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv)
     }
 }
 
+/* The two zoom unscale factors: the exact reciprocals of the STRATEG_SCALE_MODE1/2 pair in
+ * pufo_strateg.c, which is what StrategList_AddItem scales a position OUT with. Pool words
+ * 0x3FE80189_5077D685 (1/1.333) and 0x3FE2E3E4_31916105 (1/1.694). */
+#define SMAP_UNSCALE_MODE1 (1.0 / 1.333)
+#define SMAP_UNSCALE_MODE2 (1.0 / 1.694)
+
+/* Smap_OnPointerUp @ 0x84688. Either launch the intercept the message line offers, or recentre the
+ * view on the strateg item it names and leave a crosshair for Geoscape_Draw to blit. */
+void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+
+    if (pEnv->pbSelectionFlag != NULL && *pEnv->pbSelectionFlag != 0) {            /* 0x84698 */
+        const i32 nStrategIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);      /* 0x8491C */
+        const i32 nShipIdx = (pEnv->pnSelectedShipIdx != NULL) ? *pEnv->pnSelectedShipIdx : -1;
+        (void)Ship_LaunchIntercept(pEnv->pShipEnv, nShipIdx, nStrategIdx);         /* 0x84930 */
+        *pEnv->pbSelectionFlag = 0;                                                /* 0x84938 */
+    } else if (pEnv->pView != NULL && pEnv->pStrategList != NULL) {
+        GameTime_Set5Sec(pEnv->pWorld, pEnv->apSpeedCtl);                          /* 0x8469C */
+
+        /* 0x846B4..0x846C4: MOVS/ADDMI/ASR is ceil(n/2), not n/2 -- the +1 is skipped only when the
+         * extent is 0. The shipped 400x400 map is even, so the two agree there; the ceil is kept so a
+         * smaller odd map cannot shift the view by one pixel. */
+        const i32 nHalfW = (pEnv->pView->nMapW != 0 ? pEnv->pView->nMapW + 1 : 0) / 2 - 120;   /* 0x846C4 */
+        const i32 nHalfH = (pEnv->pView->nMapH != 0 ? pEnv->pView->nMapH + 1 : 0) / 2 - 160;   /* 0x846D8 */
+        const StrategItem *pItem = (const StrategItem *)PtrArray_Get(pEnv->pStrategList,
+                                     (i32)UiLineList_GetColor(pEnv->pLines, 0, 0)); /* 0x846DC */
+        /* 0x84700 reads colour SLOT 0 a second time, so nX and nY come from the SAME item. */
+        if (pItem != NULL) {
+            i32 nX = pItem->nX;                                                    /* 0x846F4 */
+            i32 nY = pItem->nY;                                                    /* 0x84714 */
+
+            if (pEnv->pView->nMode == 1) {                                         /* 0x8471C */
+                nX = (i32)((double)nX * SMAP_UNSCALE_MODE1);
+                nY = (i32)((double)nY * SMAP_UNSCALE_MODE1);
+            }
+            if (pEnv->pView->nMode == 2) {                                         /* 0x847A4 */
+                nX = (i32)((double)nX * SMAP_UNSCALE_MODE2);
+                nY = (i32)((double)nY * SMAP_UNSCALE_MODE2);
+            }
+
+            i32 nScrollY = nY - nHalfH - 160;                                      /* 0x84830 */
+            pEnv->pView->nScrollY = nScrollY;                                      /* 0x8483C */
+            if (nY - 160 < 0) {                 /* 0x8484C RSBMI, on the N flag of the ADDS at 0x84838 */
+                nScrollY = -nHalfH;
+                pEnv->pView->nScrollY = nScrollY;                                  /* 0x84854 */
+            }
+            pEnv->pView->nScrollX = nX - nHalfW - 120;                             /* 0x84850 */
+
+            const i32 uHeight = (pEnv->pStripPad != NULL)
+                                    ? (i32)pEnv->pStripPad->uHeight : 0;           /* 0x84858 */
+            if (nScrollY + nHalfH > uHeight + pEnv->pView->nMapH - 320) {         /* 0x84870 */
+                nScrollY = uHeight - nHalfH + pEnv->pView->nMapH - 320;           /* 0x8487C */
+                pEnv->pView->nScrollY = nScrollY;                                  /* 0x84884 */
+            }
+
+            i32 nCrossY = nY - nScrollY - nHalfH;                                  /* 0x84888 */
+            /* ORIGINAL BUG (0x84894), reproduced: 0x84890 CMP R0,R1 / 0x84894 SUBGT subtracts nMapH
+             * ONCE, so a value more than nMapH above the range stays out of range (a 100x100 view with
+             * the target at (120, 120) lands the crosshair on 200, twice the map height). Unreachable
+             * on the shipped 400x400 map, where the value tops out near 350. */
+            if (nCrossY > pEnv->pView->nMapH) {
+                nCrossY -= pEnv->pView->nMapH;                                     /* 0x84894 */
+            }
+            i32 nCrossX = 120;              /* 0x84860 / 0x84880: (nHalfW + 120) - nHalfW */
+            if (nCrossX > pEnv->pView->nMapW) {
+                nCrossX -= pEnv->pView->nMapW;                                     /* 0x848A0 */
+            }
+
+            if (pEnv->pnCrosshairX != NULL)     { *pEnv->pnCrosshairX = nCrossX; } /* 0x848A4 */
+            if (pEnv->pnCrosshairY != NULL)     { *pEnv->pnCrosshairY = nCrossY; } /* 0x848AC */
+            if (pEnv->pbCrosshairPending != NULL) { *pEnv->pbCrosshairPending = 1; } /* 0x848B8 */
+            if (pEnv->pnCooldownR != NULL)      { *pEnv->pnCooldownR = 0; }        /* 0x848C4 */
+        }
+        /* Deviation: with no item at that index the original still runs the whole recentre on
+         * whatever PtrArray_Get handed back; the port skips it and keeps the tail. */
+    }
+
+    UiLineList_Remove(pEnv->pLines, 0);                 /* 0x84944, the tail both arms share */
+    if (pEnv->pLines->nLineCount == 0 && pEnv->pTime != NULL) {
+        GameTime_Unpause(pEnv->pTime);                   /* 0x84954 */
+    }
+}
+
 /* Smap_CorpseSlotForAlien -- the quantity-remap switch at 0x98DBC..0x98F98. An alien item that no
  * containment cell can hold is delivered as its corpse instead: the shipped names pair every
  * soldier slot with a corpse slot, and each medic lands on its own race's corpse. The original

@@ -15216,3 +15216,52 @@ branch that skips the armed clear), 0x84A20 (the four bytes), 0x84A4C (the shift
 
 38 new checks in tests/test_geoscape.c, on a fixture with two craft and two strateg entries so the two
 dismiss cases can be told apart by which craft's proximity timer restarts.
+## Unit 80 -- Smap_OnPointerUp @ 0x84688 (732 B)
+
+Ported in src/pufo/game/pufo_baseui.c as Smap_OnPointerUp over a SmapPointerUpEnv, with the evidence
+block in pufo_baseui.h. It is the other click handler Geoscape_Draw installs on the strategic map:
+bMapSelectionFlag picks the arm, and both arms fall into the same tail.
+
+- 0x8490C, the selection arm: line 0 colour SLOT 0 is the strateg index, [0x187054] the ship index,
+  Ship_LaunchIntercept at 0x84930 (bIntercepting = 1, bAtBase = 0, bWeaponsHot = 1, a fresh travel leg
+  to the target), then bMapSelectionFlag = 0 at 0x84938. The clock is untouched on this arm.
+- 0x8469C, the recentre arm: GameTime_Set5Sec first. The half-extents are CEILINGS -- 0x846B4..0x846D8
+  is MOVS / ADMI / ASR #1, which adds 1 only when the extent is non-zero, so a 401-wide map centres at
+  201 and not 200. The shipped 400x400 map is even and cannot show the difference; the port keeps the
+  ceiling and a 401x401 case proves it.
+- 0x846DC and 0x84700 read colour SLOT 0 of line 0 TWICE, so nX (item + 4) and nY (item + 8) come from
+  the SAME strateg entry. Two identical UiPanel_GetLineColor / PtrArray_Get pairs, not two different
+  items.
+- nMode 1 unscales both coordinates by 1/1.333 (the double 0x3FE80189_5077D685), nMode 2 by 1/1.694
+  (0x3FE2E3E4_31916105). These are the exact reciprocals of the zoom factors Geoscape_Draw scales the
+  map by, so the stored item coordinates are map coordinates and this arm converts them back.
+- 0x8483C: nScrollY = nY - vH - 160. 0x8484C RSBMI then replaces it with -vH when nY - 160 is negative
+  -- the N flag comes from the ADDS at 0x84838, which computes nY - 160 and is NOT the value just
+  stored, so the test is on the raw scaled y. 0x84850: nScrollX = nX - vW - 120, with no replace arm.
+- 0x84870: a second replace on nScrollY. When nScrollY + vH > uHeight + nMapH - 320, where uHeight is
+  LDRH [R1,#0xA] of the PadImage at [0x186BBC] (the zoom strip), nScrollY becomes
+  uHeight - vH + nMapH - 320.
+- 0x84888..0x84894: nCrossY = nY - nScrollY - vH, wrapped by nMapH with ONE conditional subtraction.
+- 0x84860 / 0x84880: nCrossX = (nX - nScrollX) - vW. Because nScrollX is exactly nX - vW - 120 and has
+  no replace arm, this always evaluates to 120; the original still runs the subtraction and the wrap.
+- 0x848A4 / 0x848AC / 0x848B8 / 0x848C4: nSmapCrosshairX, nSmapCrosshairY, bSmapCrosshairPending = 1,
+  nRadarCooldownR = 0. Geoscape_Draw @ 0x8C6A8 tests that pair with the cooldown under 5 and blits a
+  1 x (320 - uHeight) vertical line at x + 3 and a 240 x 1 horizontal line at y + 3, then clears the
+  flag at 0x8C754.
+- 0x84944, the tail BOTH arms share: UiPanel_RemoveLine(0), then unpause when the list is empty. A map
+  click always consumes line 0, whichever arm ran.
+
+- ORIGINAL BUG (0x84894): the wrap subtracts nMapH once, so a value more than nMapH above the range
+  stays out of range -- on a 100x100 view with the target at (120, 120) the crosshair y lands on 200,
+  twice the map height. Unreachable on the shipped 400x400 map, where the value tops out near 350.
+  Reproduced by a test that uses a small view.
+- Deviation: with no item at the named index the original still recentres on whatever PtrArray_Get
+  returned; the port skips the recentre and keeps the tail.
+
+IDB: unk_186BC8 -> nSmapCrosshairX, unk_186BCC -> nSmapCrosshairY, unk_1870B0 -> bSmapCrosshairPending,
+plus a function comment at 0x84688, one at the Geoscape_Draw crosshair blit (0x8C69C) and one on each
+of the three globals.
+
+35 new checks in tests/test_geoscape.c: the selection arm on a two-craft fixture, the recentre at zoom
+mode 0/1/2, both nScrollY replace arms, the strip-height replace, the ceil halves on a 401x401 view, and
+the single wrap on a 100x100 view.

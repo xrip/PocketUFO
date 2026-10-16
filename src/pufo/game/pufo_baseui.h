@@ -3231,6 +3231,62 @@ typedef struct SmapResolveInterceptEnv {
 
 void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv);
 
+/* ------------------------------------------------- the map pointer release
+ *
+ * Evidence: Smap_OnPointerUp @ 0x84688 (732 B). Installed as a click handler by Geoscape_Draw.
+ *
+ * Two arms on bMapSelectionFlag, and both end with RemoveLine(0) plus the unpause-if-the-list-is-empty
+ * tail at 0x84944..0x84954.
+ *
+ *   Set (0x8491C): the target is colour slot 0 of message line 0 and the craft is the selected-ship
+ *   dword, and Ship_LaunchIntercept sends the craft out to it. Then the flag is cleared.
+ *
+ *   Clear (0x8469C): GameTime_Set5Sec, then the view is recentred on the strateg item that colour slot 0
+ *   names. Both GetLineColor calls read SLOT 0 (0x846DC and 0x84700), so it is ONE item whose nX and nY are
+ *   used -- not the pair the two reads look like.
+ *     - v3 = ceil(nMapW / 2) - 120 and v4 = ceil(nMapH / 2) - 160. 0x846B4..0x846D8 is MOVS / ADMI /
+ *       ASR #1: the +1 is skipped only when the extent is 0, so the half is a CEILING. The shipped
+ *       400x400 map is even and cannot tell this from n / 2; a 401x401 view centres one pixel further
+ *       out and the port keeps the ceiling.
+ *     - Zoom unscale: mode 1 multiplies both coordinates by 1/1.333 and mode 2 by 1/1.694 -- the exact
+ *       reciprocals of the STRATEG_SCALE_MODE1/2 pair StrategList_AddItem scales OUT with (pool words
+ *       0x3FE80189_5077D685 and 0x3FE2E3E4_31916105). Mode 0 leaves them alone.
+ *     - nScrollY = nY - v4 - 160, and when nY - 160 is negative it becomes -v4 instead. The condition is
+ *       the N flag of the `ADDS R2, R0, R5` at 0x84838, which is nY - 160 because v4 cancels -- and nY is
+ *       the ZOOM-SCALED coordinate, so a target that unscales below 160 takes this arm (mode 2 turns 250
+ *       into 147 and 147 < 160).
+ *     - nScrollX = nX - v3 - 120, unconditionally.
+ *     - Then a second test on the strip height. With uHeight = [0x186BBC]->uHeight, if the value just
+ *       stored PLUS v4 exceeds uHeight + nMapH - 320, nScrollY is REPLACED by uHeight - v4 + nMapH - 320
+ *       (0x84874..0x84884). That sum is nY - 160 on the normal path and 0 on the negative one.
+ *     - Crosshair: nSmapCrosshairY = nY - nScrollY(final) - v4, wrapped once by nMapH when greater;
+ *       nSmapCrosshairX = 120, or 120 - nMapW when nMapW is below 120. The ARM reaches the 120 as
+ *       (v3 + 120) - v3 at 0x84860 / 0x84880, which is why the pseudocode looks arbitrary.
+ *       bSmapCrosshairPending = 1 and nRadarCooldownR = 0.
+ *
+ * Geoscape_Draw @ 0x8C69C is the only reader of the crosshair triple. While bSmapCrosshairPending is set
+ * and nRadarCooldownR < 5 it blits a 1-pixel vertical line at x = nSmapCrosshairX + 3 (height
+ * 320 - stripHeight) and a 240 x 1 horizontal line at y = nSmapCrosshairY + 3, both in the 50/200 colour
+ * pair; otherwise it clears the flag and parks the cooldown at 0xFF. Renamed in the IDB accordingly. */
+typedef struct SmapPointerUpEnv {
+    u8                   *pbSelectionFlag;    /* bMapSelectionFlag @ 0x159E84, the arm selector */
+    UiLineList           *pLines;             /* the root message list @ 0x158890 */
+    i32                  *pnSelectedShipIdx;  /* 0x187054 */
+    SmapView             *pView;              /* 0x1863E8 */
+    PtrArray             *pStrategList;       /* 0x1864F8 + 0x3C */
+    const PadImage       *pStripPad;          /* [0x186BBC], its uHeight is the strip */
+    i32                  *pnCrosshairX;       /* nSmapCrosshairX @ 0x186BC8 */
+    i32                  *pnCrosshairY;       /* nSmapCrosshairY @ 0x186BCC */
+    u8                   *pbCrosshairPending; /* bSmapCrosshairPending @ 0x1870B0 */
+    i32                  *pnCooldownR;        /* nRadarCooldownR @ 0xAC218 */
+    GeoscapeWorld        *pWorld;             /* GameTime_Set5Sec's tick dword */
+    UiControl *const     *apSpeedCtl;         /* the six nav speed controls */
+    const ShipRemovalEnv *pShipEnv;           /* Ship_LaunchIntercept */
+    GameTime             *pTime;
+} SmapPointerUpEnv;
+
+void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv);
+
 /* ------------------------------------------------- delivering what a mission brought back
  *
  * Evidence: Smap_GrantSiteRecovery @ 0x98b50 (2572 B), one caller, Geoscape_TickHourly @ 0x5d1bc.
