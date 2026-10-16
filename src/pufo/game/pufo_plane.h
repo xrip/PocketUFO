@@ -738,4 +738,115 @@ typedef struct PlaneStoreBuildEnv {
 
 void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuildEnv *pEnv);
 
+/* --- BasePlaneScreen_Draw @ 0x7d374 (1,648 B) : the hangar frame, the craft readout, the rails ---
+ *
+ * Three gates, and they do not gate the same amount of the screen:
+ *
+ *   1. bPlaneShowCraftDetail @ 0x161F20 (0x7D37C LDRB, `ANDS R3,R0,#0xFF`): set, the function calls
+ *      BasePlaneScreen_DrawCraftDetail and returns its value straight from 0x7D394 -- nothing
+ *      else here runs. SelectCraft raises that byte when the picked craft is at base, so the detail view
+ *      owns the screen. It is not ported yet and enters as a hook.
+ *   2. bPlanePanelsBuilt @ 0x161F08 (0x7D398): clear, the two list panels and the whole craft readout are
+ *      skipped -- but the two captions and all four rail loops still run, because this `BEQ` and the
+ *      preview gate's `BEQ` both land on loc_7D640, the second colour pair, and the rails follow it.
+ *   3. bBaseFacPreviewActive @ 0x18652C (0x7D3D0) AND nSmapCursorY @ 0x186BD4 inside the status panel's row
+ *      band: `nPosY < cursor < nPosY + 16 * nLineCount` (0x7D3E0 reads nPosY at +0x1B88 through
+ *      `MOV R3,#0x1B80 / ORR R3,#8`, 0x7D3FC reads nLineCount at +0xBDC, 0x7D408 `ADD R3,R2,R3,LSL#4`;
+ *      `BLE` and `BGE` both skip). nSmapCursorY is read with LDRSH and written with STRH (Geoscape_
+ *      OnPointer 0x872F8), so it is the signed 16-bit pointer row the pointer dispatcher keeps live for
+ *      whichever screen owns the pointer -- the hangar's included. Unlike the buy/sell, manuf and research
+ *      frames, this band has no nStyle cap.
+ *
+ * Panels (0x7D3B4, 0x7D3C4): pPlaneCraftPanel @ 0x161EFC first, then pPlaneCraftStatusPanel @ 0x161ED0,
+ * both through UiPanelMsg_Draw.
+ *
+ * The readout (0x7D41C..0x7D63C). All three sums index apObjects[i]->aItemQty with
+ * nPlaneSelCraftIdx @ 0x161F04 -- the draw uses THAT global, not the nSelectedCraftIdx @ 0x161AC4 the
+ * stores builder uses -- and each walk runs 0..Map_nObjectCount-1 with the count read LDRH at 0x7D41C,
+ * skipping a slot whose aItemQty is zero before the band test:
+ *   - v3 = slots 25..30, the six weapon slots the hangar's own weapon columns cover (0x7D45C `CMP #0x18 /
+ *     BLE`, 0x7D464 `CMP #0x1F / ADDLT`). Drawn against TEXTS[146] "Вооружение" as "<v3>\\<bCrewSlots>":
+ *     itoa(v3), then strcat with the single backslash at asc_AB9F0 @ 0xAB9F0, then strcat with
+ *     itoa(apCraft[nPlaneSelCraftIdx]->bCrewSlots @ +0x14) (0x7D588..0x7D5E0).
+ *   - v4 = slots 31..35, the same five crew slots the crew quota sums (0x7D4A4 `CMP #0x1E / BLE`, 0x7D4AC
+ *     `CMP #0x24 / ADDLT`), drawn against TEXTS[148] "ТОП кол-во".
+ *   - v5 = the soldiers whose Soldier.bUnk183 @ +0xB7 equals the craft index (0x7D4C4..0x7D500:
+ *     nSoldierCount read LDRH, the pointer array at the context's +0x1198), drawn against TEXTS[147]
+ *     "Экипаж". The compare is `CMP R3,R5` with R3 the zero-extended byte and R5 the dword index, so a
+ *     craft index above 255 matches nothing.
+ *
+ * Two colour pairs, five captions and three values. The captions are TEXTS records at aTextRecs @ 0xB38D0;
+ * the IDB's own TEXTS region is zero-filled because the text loads from lang.dat at runtime, so the five
+ * strings were read out of lang.dat at 0x102 + 200*n:
+ *   Gfx_PackRgb565Pair(250,250,250 / 20,25,20) (0x7D504), then TEXTS[146] at (25,23), TEXTS[147] at (25,43),
+ *   TEXTS[148] at (25,63); the values at (190,23), (195,43), (195,63).
+ *   Gfx_PackRgb565Pair(250,250,250 / 10,10,25) (0x7D640), then TEXTS[124] "Корабль: " at (25,90) and
+ *   TEXTS[153] "Статус" at (165,90).
+ *
+ * Four rail loops of SoftSurf_BlitRectProxy, every index triple stored with STRB:
+ *   A/B (0x7D6AC..0x7D840) are the shared screen rails -- 24 steps of 7 on the sides at x 5 and 234, 24
+ *     steps of 5 on the top and bottom at y 5 and 315, the same 5*(k+20) / 230-5k / 250-5k ramps the
+ *     transfer, manuf and research frames carry, so the port calls BaseUi_DrawFrameRails.
+ *   C (0x7D840..0x7D8FC) is the inner frame's top and bottom edges: a climbing x from 15 and a descending x
+ *     from 220, both stepping 5 while the descending one stays above 115 (`CMP #0x73 / BGT`), 21 steps, 5x1
+ *     rects at y 15 and 85, colour 5*(n+20) with n 0..20.
+ *   D (0x7D8FC..0x7D9B4) is the inner frame's left and right edges: x 15 and 224, 1x2 rects at y 2*v+15 and
+ *     m+83 with m from 0 down in steps of 2 (`MOV R3,#0xFFFFFFDC / CMP R7,R3 / BGT`). Both inner loops test
+ *     AFTER the step, so the last body is the one that lands on the bound: rail C's is x2 = 120 (21 bodies,
+ *     n 0..20, colour 100..200) and rail D's is m = -34 (18 bodies, v 0..17, colour 100..185). Rail D's two
+ *     halves therefore meet at y 49..50 rather than leaving a gap. C and D together close a rectangle from
+ *     (15,15) to (224,85) around the readout -- the two x runs 15..119 and 120..224 are continuous -- and
+ *     the rails run AFTER the text, so they paint over it where they overlap.
+ *
+ * Deviations: the original dereferences every apObjects and apSoldiers entry it walks, both panel pointers
+ * and the craft pointer at apCraft[nPlaneSelCraftIdx], with no null test, and indexes aItemQty with the
+ * unbounded dword craft index; the port skips a null entry and resolves an out-of-range craft index to zero /
+ * no craft. The value string is built by itoa into var_34 @ sp+0x48, a byte-copy loop into psz @ sp+0x10
+ * (0x7D590, unbounded), strcat with the backslash and strcat with the second itoa; the port builds the same
+ * string in one bounded snprintf over the same 52 / 56-byte sizes. The preview gate reads the status panel's
+ * two fields through the global with no null test; the port treats a missing panel as "not armed".
+ * BasePlaneScreen_DrawCraftDetail is not ported and enters as a hook, so the detail arm returns the hook's
+ * value. */
+#define PUFO_PLANE_TEXT_ARMAMENT       146 /* lang.dat "Вооружение" at (25,23), value at (190,23) */
+#define PUFO_PLANE_TEXT_CREW           147 /* "Экипаж" at (25,43), value at (195,43) */
+#define PUFO_PLANE_TEXT_CREW_QTY       148 /* "ТОП кол-во" at (25,63), value at (195,63) */
+#define PUFO_PLANE_TEXT_CRAFT_CAPTION  124 /* "Корабль: " at (25,90) */
+#define PUFO_PLANE_TEXT_STATUS_CAPTION 153 /* "Статус" at (165,90) */
+#define PUFO_PLANE_WEAPON_SLOT_FIRST    25 /* the six weapon slots v3 sums, the SelectWeapon25..30 band */
+#define PUFO_PLANE_WEAPON_SLOT_LAST     30
+#define PUFO_PLANE_QTY_SEP             "\\" /* asc_AB9F0 @ 0xAB9F0: one backslash */
+#define PUFO_PLANE_ITOA_BUF             52  /* var_34 @ sp+0x48, the j_itoa buffer */
+#define PUFO_PLANE_VALUE_BUF            56  /* psz @ sp+0x10, up to var_34 */
+#define PUFO_PLANE_INNER_X_FIRST        15  /* rail C's climbing x, and rail D's left edge */
+#define PUFO_PLANE_INNER_X_DESCEND     220  /* rail C's descending x */
+#define PUFO_PLANE_INNER_X_STOP        115  /* rail C stops when the descending x reaches 115 */
+#define PUFO_PLANE_INNER_X_RIGHT       224  /* rail D's right edge */
+#define PUFO_PLANE_INNER_Y_TOP          15  /* rail C's two rows, and rail D's climbing row base */
+#define PUFO_PLANE_INNER_Y_BOTTOM       85
+#define PUFO_PLANE_INNER_D_Y_BASE       83  /* rail D's descending row is m + 83 */
+#define PUFO_PLANE_INNER_D_STOP         -36 /* rail D stops when m reaches -36 */
+
+typedef struct PlaneDrawEnv {
+    const GfxColorEnv *pColor;       /* pGX @ 0x1139B8, the colour-pair owner */
+    const u8 *pbShowCraftDetail;     /* bPlaneShowCraftDetail @ 0x161F20, gate 1 */
+    const u8 *pbPanelsBuilt;         /* bPlanePanelsBuilt @ 0x161F08, gate 2 */
+    const u8 *pbPreviewActive;       /* bBaseFacPreviewActive @ 0x18652C, gate 3 */
+    const i32 *pnCursorY;            /* nSmapCursorY @ 0x186BD4: a 16-bit value, read LDRSH */
+    UiPanel *pCraftPanel;            /* pPlaneCraftPanel @ 0x161EFC */
+    UiPanel *pStatusPanel;           /* pPlaneCraftStatusPanel @ 0x161ED0, the band gate's panel */
+    Ship *const *apCraft;            /* apCraft @ 0x114A64, the context's +0x10AC */
+    i32 nCraftCount;                 /* Map_nCraftCount @ 0x114B4C: the original never bounds the craft
+                                      * index, the port bounds it here */
+    const i32 *pnSelCraftIdx;        /* nPlaneSelCraftIdx @ 0x161F04 */
+    ObjectRecFull *const *apObjects; /* apObjects @ 0x113AC0, the context's +0x108 */
+    i32 nObjectCount;                /* Map_nObjectCount @ 0x114A60, read LDRH */
+    Soldier **apSoldiers;            /* the context's +0x1198 */
+    i32 nSoldierCount;               /* nSoldierCount @ 0x115350, read LDRH */
+    const char *pTextRecs;           /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+    i32 (*pfnDrawCraftDetail)(void);  /* BasePlaneScreen_DrawCraftDetail, not ported: named without a
+                                       * citation so the parity report does not credit it */
+} PlaneDrawEnv;
+
+i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv);
+
 #endif /* PUFO_PLANE_H */

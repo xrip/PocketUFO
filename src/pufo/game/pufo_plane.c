@@ -1306,8 +1306,9 @@ static const UiControlDesc g_aPlaneStoreNavDesc[PUFO_PLANE_STORE_NAV] = {
 };
 
 /* 0x7B190..0x7B1A4: `CMP #0x19 / BLT keep`, `CMP #0x1E / BLE skip`, `CMP #0x34 / BGE skip`. Slots 0,
- * 25..30 and 52 up get no row -- 25..30 are the five craft slots and the five crew slots the hangar
- * handles through its own columns instead. */
+ * 25..30 and 52 up get no row -- 25..30 are the six weapon slots the hangar handles through its own
+ * weapon columns instead (the SelectWeapon25..30 handlers), and 31..35 are the five crew slots its
+ * crew quota sums. */
 static bool PlaneStoreSlotAdmits(i32 nSlot)
 {
     return nSlot < 25 || (nSlot > 30 && nSlot < 52);
@@ -1564,4 +1565,175 @@ void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuild
             }
         }
     }
+}
+
+/* --- BasePlaneScreen_Draw @ 0x7d374: the hangar frame, the craft readout and the rails.
+ * The header carries the gate map and the rail geometry. */
+
+static const char *PlaneDrawText(const PlaneDrawEnv *pEnv, i32 nRec)
+{
+    return (pEnv->pTextRecs != NULL) ? pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec : "";
+}
+
+/* 0x7D3D0..0x7D414: the readout runs only with the preview flag set and the pointer row inside the
+ * status panel's band -- 16 pixels per row, and no nStyle cap here, unlike the transfer frame's. */
+static bool PlaneDrawPreviewArmed(const PlaneDrawEnv *pEnv)
+{
+    i32 nTop;
+    i32 nBand;
+
+    if (pEnv->pbPreviewActive == NULL || *pEnv->pbPreviewActive == 0 || pEnv->pnCursorY == NULL
+        || pEnv->pStatusPanel == NULL) {
+        return false;
+    }
+    nTop = pEnv->pStatusPanel->nPosY;                    /* +0x1B88, read at 0x7D3E0 */
+    nBand = nTop + 16 * pEnv->pStatusPanel->nLineCount;  /* +0xBDC, 0x7D408 ADD R3,R2,R3,LSL#4 */
+    return *pEnv->pnCursorY > nTop && *pEnv->pnCursorY < nBand; /* 0x7D3F4 BLE, 0x7D414 BGE */
+}
+
+/* One of the two slot sums. The original carries them as two loops of one shape (0x7D448..0x7D478 and
+ * 0x7D490..0x7D4C0): load apObjects[i]->aItemQty[craft], skip the slot when it is zero, then the two
+ * band compares. */
+static i32 PlaneDrawSumSlots(const PlaneDrawEnv *pEnv, i32 nCraftIdx, i32 nSlotFirst, i32 nSlotLast)
+{
+    i32 nSum = 0;
+
+    for (i32 i = 0; i < pEnv->nObjectCount; ++i) {
+        const ObjectRecFull *pObj = (pEnv->apObjects != NULL) ? pEnv->apObjects[i] : NULL;
+        u16 wQty;
+
+        if (pObj == NULL) {
+            continue;
+        }
+        wQty = (nCraftIdx >= 0 && nCraftIdx < PUFO_PLANE_CRAFT_QTY_SLOTS)
+                 ? pObj->aItemQty[nCraftIdx] : 0u; /* 0x7D448 LDRH [obj,#0x3A], unbounded there */
+        if (wQty == 0) {
+            continue; /* 0x7D454 / 0x7D4A0 */
+        }
+        if (i < nSlotFirst || i > nSlotLast) {
+            continue; /* 0x7D45C / 0x7D464, 0x7D4A4 / 0x7D4AC */
+        }
+        nSum += wQty;
+    }
+    return nSum;
+}
+
+/* 0x7D4C4..0x7D500: the soldiers assigned to this craft. ARM compares with `CMP R3,R5` where R3 is the
+ * zero-extended byte and R5 the dword index, so a craft index above 255 matches nothing -- the port
+ * keeps that by comparing the promoted byte against the index. */
+static i32 PlaneDrawCountAboard(const PlaneDrawEnv *pEnv, i32 nCraftIdx)
+{
+    i32 nCount = 0;
+
+    for (i32 i = 0; i < pEnv->nSoldierCount; ++i) {
+        const Soldier *pSol = (pEnv->apSoldiers != NULL) ? pEnv->apSoldiers[i] : NULL;
+
+        if (pSol != NULL && (i32)pSol->bUnk183 == nCraftIdx) { /* 0x7D4F0 LDRB [sol,#0xB7] */
+            ++nCount;
+        }
+    }
+    return nCount;
+}
+
+/* Rail C, 0x7D840..0x7D8FC: the inner frame's top and bottom edges. A climbing x from 15 against a
+ * descending x from 220, both stepping 5 while the descending one stays above 115 -- 21 steps. */
+static void PlaneDrawInnerRailsH(void)
+{
+    for (i32 n = 0, x1 = PUFO_PLANE_INNER_X_FIRST, x2 = PUFO_PLANE_INNER_X_DESCEND;
+         x2 > PUFO_PLANE_INNER_X_STOP; x1 += PUFO_FRAME_RAMP_STEP, x2 -= PUFO_FRAME_RAMP_STEP, ++n) {
+        const u8 nRise = (u8)(PUFO_FRAME_RAMP_STEP * (n + PUFO_FRAME_RAMP_BASE)); /* 100..200 */
+
+        SoftSurf_BlitRectProxy(0, x1, PUFO_PLANE_INNER_Y_TOP, 5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, x1, PUFO_PLANE_INNER_Y_BOTTOM, 5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, x2, PUFO_PLANE_INNER_Y_TOP, 5, 1, nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, x2, PUFO_PLANE_INNER_Y_BOTTOM, 5, 1, nRise, nRise, nRise);
+    }
+}
+
+/* Rail D, 0x7D8FC..0x7D9B4: the inner frame's left and right edges. The bound is tested after the step, so
+ * the body that lands on m = -34 (v = 17) still draws -- 18 bodies, colour 100..185 -- and the climbing row
+ * 2*v+15 meets the descending row m+83 at y 49..50 rather than leaving a gap. */
+static void PlaneDrawInnerRailsV(void)
+{
+    for (i32 m = 0, v = 0; m > PUFO_PLANE_INNER_D_STOP; m -= 2, ++v) {
+        const u8 nRise = (u8)(PUFO_FRAME_RAMP_STEP * (v + PUFO_FRAME_RAMP_BASE)); /* 100..180 */
+
+        SoftSurf_BlitRectProxy(0, PUFO_PLANE_INNER_X_FIRST, 2 * v + PUFO_PLANE_INNER_Y_TOP, 1, 2,
+                               nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_PLANE_INNER_X_FIRST, m + PUFO_PLANE_INNER_D_Y_BASE, 1, 2,
+                               nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_PLANE_INNER_X_RIGHT, 2 * v + PUFO_PLANE_INNER_Y_TOP, 1, 2,
+                               nRise, nRise, nRise);
+        SoftSurf_BlitRectProxy(0, PUFO_PLANE_INNER_X_RIGHT, m + PUFO_PLANE_INNER_D_Y_BASE, 1, 2,
+                               nRise, nRise, nRise);
+    }
+}
+
+i32 BasePlaneScreen_Draw(const PlaneDrawEnv *pEnv)
+{
+    char szNum[PUFO_PLANE_ITOA_BUF];  /* var_34 @ sp+0x48 */
+    char szVal[PUFO_PLANE_VALUE_BUF]; /* psz @ sp+0x10 */
+    const Ship *pCraft;
+    i32 nCraftIdx = 0;
+    i32 nArmament;
+    i32 nCrewQty;
+    i32 nAboard;
+
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    /* 0x7D37C: the detail view owns the screen, and its value is this function's value. */
+    if (pEnv->pbShowCraftDetail != NULL && *pEnv->pbShowCraftDetail != 0) {
+        return (pEnv->pfnDrawCraftDetail != NULL) ? pEnv->pfnDrawCraftDetail() : 0;
+    }
+
+    if (pEnv->pbPanelsBuilt != NULL && *pEnv->pbPanelsBuilt != 0) {
+        if (pEnv->pCraftPanel != NULL) {
+            UiPanel_DrawText(pEnv->pCraftPanel); /* 0x7D3B4 */
+        }
+        if (pEnv->pStatusPanel != NULL) {
+            UiPanel_DrawText(pEnv->pStatusPanel); /* 0x7D3C4 */
+        }
+
+        if (PlaneDrawPreviewArmed(pEnv)) {
+            nCraftIdx = (pEnv->pnSelCraftIdx != NULL) ? *pEnv->pnSelCraftIdx : 0;
+            nArmament = PlaneDrawSumSlots(pEnv, nCraftIdx, PUFO_PLANE_WEAPON_SLOT_FIRST,
+                                          PUFO_PLANE_WEAPON_SLOT_LAST);
+            nCrewQty = PlaneDrawSumSlots(pEnv, nCraftIdx, PUFO_PLANE_CREW_SLOT_FIRST,
+                                         PUFO_PLANE_CREW_SLOT_LAST);
+            nAboard = PlaneDrawCountAboard(pEnv, nCraftIdx);
+
+            (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 20, 25, 20); /* 0x7D504 */
+            Text_DrawString(25, 23, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_ARMAMENT));   /* 0x7D540 */
+            Text_DrawString(25, 43, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CREW));       /* 0x7D55C */
+            Text_DrawString(25, 63, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CREW_QTY));   /* 0x7D578 */
+
+            /* 0x7D588..0x7D5E0: psz is itoa(v3), then strcat with the backslash at aQtyPairSep, then
+             * strcat with itoa(apCraft[nPlaneSelCraftIdx]->bCrewSlots). The port builds the same string
+             * in one bounded snprintf instead of three unbounded writes into the 56-byte psz. */
+            pCraft = (pEnv->apCraft != NULL && nCraftIdx >= 0 && nCraftIdx < pEnv->nCraftCount)
+                       ? pEnv->apCraft[nCraftIdx] : NULL;
+            (void)snprintf(szVal, sizeof(szVal), "%d%s%u", nArmament, PUFO_PLANE_QTY_SEP,
+                           (unsigned)((pCraft != NULL) ? pCraft->bCrewSlots : 0u));
+            Text_DrawString(190, 23, szVal); /* 0x7D5F4 */
+
+            (void)snprintf(szNum, sizeof(szNum), "%d", nAboard);
+            Text_DrawString(195, 43, szNum); /* 0x7D618 */
+
+            (void)snprintf(szNum, sizeof(szNum), "%d", nCrewQty);
+            Text_DrawString(195, 63, szNum); /* 0x7D63C */
+        }
+    }
+
+    /* 0x7D640: both skipped paths land here, so the two captions and all four rail loops run whatever
+     * the two flags say. The rails come AFTER the text, so they paint over it where they overlap. */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 250, 250, 250, 10, 10, 25);
+    Text_DrawString(25, 90, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_CRAFT_CAPTION));   /* 0x7D67C */
+    Text_DrawString(165, 90, PlaneDrawText(pEnv, PUFO_PLANE_TEXT_STATUS_CAPTION)); /* 0x7D698 */
+
+    BaseUi_DrawFrameRails(); /* 0x7D6AC..0x7D840, the same rails the transfer frame draws */
+    PlaneDrawInnerRailsH();  /* 0x7D840..0x7D8FC */
+    PlaneDrawInnerRailsV();  /* 0x7D8FC..0x7D9B4 */
+    return 0;
 }

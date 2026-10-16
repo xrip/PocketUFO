@@ -528,3 +528,9 @@ byte_AA968	g_abSlotTopicGate	0xAA968, 156 bytes (it runs to g_aBuySellRowOrder a
 dword_161AAC	pPlaneStoreNavPrevCtl	0x161AAC, the object block's +0x64. The "up" control BasePlaneScreen_BuildControls allocates (0x7B0EC), click BuySellScreen_DetailPanelPrev. Outside the IDB's BasePlaneScreen type until that type was extended to 108 bytes.
 unk_161AB0	pPlaneStoreNavNextCtl	0x161AB0, the object block's +0x68. The "down" control of the same pair, click BuySellScreen_DetailPanelNext.
 stru_ABC88	g_aPlaneStoreNavDesc	0xABC88, UiControlDesc[2]: {205, 18, "up", "sup", ""} and {205, 38, "down", "sdown", ""}. The crew-list pair at 0xABC48 carries the same two names at y 20 and 40, so the two nav pairs differ only in those offsets.
+unk_BADBA	aTextRec146_ArmamentCap	0xBADBA = aTextRecs + 205*146. lang.dat record 146 "Вооружение" (Armament), drawn by BasePlaneScreen_Draw at (25, 23) against the slots 25..30 sum at (190, 23).
+unk_BAE87	aTextRec147_CrewCap	0xBAE87 = aTextRecs + 205*147. lang.dat record 147 "Экипаж" (Crew), drawn at (25, 43) against the count of soldiers whose bUnk183 is this craft at (195, 43).
+unk_BAF54	aTextRec148_CrewQtyCap	0xBAF54 = aTextRecs + 205*148. lang.dat record 148 "ТОП кол-во", drawn at (25, 63) against the slots 31..35 sum at (195, 63).
+unk_B9C1C	aTextRec124_CraftCaption	0xB9C1C = aTextRecs + 205*124. lang.dat record 124 "Корабль: " (Ship: ), drawn at (25, 90) whatever the two flags say (both skips land on 0x7D640).
+unk_BB355	aTextRec153_StatusCaption	0xBB355 = aTextRecs + 205*153. lang.dat record 153 "Статус" (Status), drawn at (165, 90) above the craft status panel.
+asc_AB9F0	aQtyPairSep	0xAB9F0, the single backslash BasePlaneScreen_Draw strcat-s between the armament sum and Ship.bCrewSlots (0x7D5A8 loads it, 0x7D5B0 is the strcat).

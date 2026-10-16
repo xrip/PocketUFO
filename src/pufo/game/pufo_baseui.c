@@ -2670,7 +2670,7 @@ static void TransferUi_DrawCentered(i32 nCenterX, i32 y, const char *psz)
  * same constants -- the same loop bounds (CMP #0xA8 over a step of 7, CMP #0x78 over a step of 5), the
  * same x/y pairs, the same ramp formulas. Every index triple is stored with STRB, so each index is the
  * low byte of the ramp arithmetic. */
-static void BaseUi_DrawFrameRails(void)
+void BaseUi_DrawFrameRails(void) /* also the hangar's outer rails, 0x7D6AC..0x7D770 */
 {
     /* The two side rails, 24 steps of 7. */
     for (i32 k = 0; k < PUFO_FRAME_RAIL_STEPS; ++k) {

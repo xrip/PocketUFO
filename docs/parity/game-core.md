@@ -16506,8 +16506,8 @@ the end.
 
 **The row filter is three ARM compares** -- 0x7B190 `CMP #0x19 / BLT keep`, 0x7B198 `CMP #0x1E / BLE
 skip`, 0x7B1A0 `CMP #0x34 / BGE skip` -- so a slot gets a row when `slot < 25 || (slot > 30 && slot < 52)`.
-The refused band 25..30 is exactly the five craft slots and the five crew slots the hangar draws through
-its own columns, and 52 is ObjectRecFull.aItemQty's own length.
+The refused band 25..30 is the six weapon slots the hangar draws through its own weapon columns (the
+SelectWeapon25..30 handlers), and 52 is ObjectRecFull.aItemQty's own length.
 
 **Each admitted slot then needs the base to stock it or the craft to carry it** (0x7B1B8
 `LDRH [obj,#0x2A]` = auPerBaseVal[base], 0x7B1C8 `LDRH [obj,#0x3A]` = aItemQty[craft]) **and its
@@ -16567,3 +16567,77 @@ extended from 92 to 108 bytes with apCtlListNav[2] at +0x5C and apCtlStoreNav[2]
 `struct BasePlaneScreen *` arguments removed from BasePlaneScreen_BuildControls and BasePlaneScreen_Draw;
 a function comment at 0x7b014 and line comments at 0x7B07C, 0x7B12C, 0x7B190, 0x7B198, 0x7B1A0, 0x7B1D4,
 0x7B1E4, 0x7B838, 0x7B918, 0x7B9F4 and 0x7BA18.
+## Unit 96 - the hangar frame, the craft readout and the rails (BasePlaneScreen_Draw @ 0x7d374, 1,648 B)
+
+Ported in src/pufo/game/pufo_plane.c as BasePlaneScreen_Draw(const PlaneDrawEnv *env). The original
+takes no arguments (0x7D374 is `PUSH {R4-R11,LR}` straight into a global load), which unit 95 already
+corrected in the IDB.
+
+**Three gates, and they do not gate the same amount of the screen.** bPlaneShowCraftDetail @ 0x161F20
+(0x7D37C) sends the whole call into BasePlaneScreen_DrawCraftDetail and returns its value. Otherwise
+bPlanePanelsBuilt @ 0x161F08 (0x7D398) decides whether the two list panels and the craft readout run -
+but both `BEQ`s land on loc_7D640, the second colour pair, so the two captions and all four rail loops
+run whatever the flags say: a hangar whose panels were never built still paints the frame and still
+draws "Корабль: " and "Статус".
+
+**The readout is gated by a geoscape flag and the pointer row.** bBaseFacPreviewActive @ 0x18652C has
+six xrefs in the whole binary - four in BaseFacScreen_DrawPlacementOverlay, one in Geoscape_InitUI and
+this one - and the band test is `nPosY < nSmapCursorY < nPosY + 16 * nLineCount` (0x7D3E0 reads nPosY at
++0x1B88 through `MOV R3,#0x1B80 / ORR R3,#8`, 0x7D3FC reads nLineCount at +0xBDC, 0x7D408
+`ADD R3,R2,R3,LSL#4`, and `BLE` / `BGE` both skip). nSmapCursorY @ 0x186BD4 is read LDRSH and written
+STRH (Geoscape_OnPointer 0x872F8), so it is the signed 16-bit pointer row the pointer dispatcher keeps
+live for whichever screen owns the pointer. Unlike the transfer, manuf and research frames, this band
+has no nStyle cap.
+
+**The three sums all index aItemQty with nPlaneSelCraftIdx @ 0x161F04** - the draw uses that global,
+not the nSelectedCraftIdx @ 0x161AC4 the stores builder uses - and each walk runs 0..Map_nObjectCount-1
+(LDRH at 0x7D41C), skipping a slot whose aItemQty is zero before the band test. Armament is slots 25..30
+(0x7D45C `CMP #0x18 / BLE`, 0x7D464 `CMP #0x1F / ADDLT`), the six weapon slots the SelectWeapon25..30
+handlers cover; crew quantity is slots 31..35 (0x7D4A4 `CMP #0x1E / BLE`, 0x7D4AC `CMP #0x24 / ADDLT`),
+the same five crew slots the crew quota sums; crew aboard is the soldiers whose Soldier.bUnk183 @ +0xB7
+equals the craft index (0x7D4C4..0x7D500, nSoldierCount read LDRH, the pointer array at the context's
++0x1198). The compare is `CMP R3,R5` with R3 the zero-extended byte and R5 the dword index, so a craft
+index above 255 matches nothing.
+
+**The armament value is a pair, not a number**: itoa(v3), then strcat with the single backslash at
+aQtyPairSep @ 0xAB9F0 (0x7D5A8 / 0x7D5B0), then strcat with itoa(apCraft[nPlaneSelCraftIdx]
+->bCrewSlots @ +0x14) (0x7D5D0 / 0x7D5E0). The five captions are real lang.dat records - the IDB's own
+TEXTS region is zero-filled because the text loads at runtime - read out of lang.dat at 0x102 + 200*n.
+TEXTS[146] "Вооружение" at (25,23), TEXTS[147] "Экипаж" at (25,43), TEXTS[148] "ТОП кол-во" at (25,63),
+the three values at (190,23), (195,43), (195,63); then TEXTS[124] "Корабль: " at (25,90) and TEXTS[153]
+"Статус" at (165,90). Two colour pairs: (250,250,250 / 20,25,20) at 0x7D504 before the readout and
+(250,250,250 / 10,10,25) at 0x7D640 before the captions.
+
+**Four rail loops, and the two inner ones test their bound AFTER the step.** Rails A and B are the
+shared screen rails - 24 steps of 7 on the sides and 24 steps of 5 on the top and bottom, the same
+constants and the same 5*(k+20) / 230-5k / 250-5k ramps the transfer, manuf and research frames carry -
+so the port calls BaseUi_DrawFrameRails, which is now shared across four screens rather than three.
+Rail C (0x7D840..0x7D8FC) runs a climbing x from 15 against a descending x from 220, both stepping 5
+while the descending one stays above 115; the test comes after the step, so the body at x2 = 120 runs
+too - 21 bodies, colour 5*(n+20) with n 0..20, 5x1 at y 15 and 85. Rail D (0x7D8FC..0x7D9B4) runs m from
+0 down in steps of 2 with the same shape, so m = -34 / v = 17 draws too - 18 bodies, colour 100..185,
+1x2 at x 15 and 224, y 2v+15 and m+83. The two x runs 15..119 and 120..224 are continuous, and the two
+y halves meet at 49..50 rather than leaving a gap: together they close a rectangle from (15,15) to
+(224,85) around the readout. The rails run AFTER the text, so they paint over it where they overlap.
+
+61 new checks in test_baseui, drawn into a real 240x320 surface with the real font. The readout window
+(x 14..229, y 14..99) is compared against a hand-painted frame - the labels, the three value strings,
+the shared rails and the inner rails painted from the ARM with literals rather than the port's macros -
+so the exact strings "16\9", "3" and "13", their positions and the inner frame's geometry are all pinned
+at once; separate probes then move one input at a time (a decoy quantity outside each band, a quantity
+inside it, Ship.bCrewSlots, nSoldierCount, a craft index past the array) and re-compare. A 47-mutation sweep -- behaviour-bearing values only -- turned all 47 red. Two were unpinned on the first run and both were the macro-aliasing defect again: the fixture placed its caption text with the same record macro the port reads, so moving the macro moved the expectation with it, and the fixtures now use literal record numbers. The third was a pattern that matched two loops in the file rather than a gap in the tests.
+
+Deviations: the original dereferences both panel pointers, every apObjects and apSoldiers entry it walks
+and the craft pointer at apCraft[nPlaneSelCraftIdx] with no null test, and indexes aItemQty with the
+unbounded dword craft index; the port skips a null entry and resolves an out-of-range craft index to
+zero / no craft. The value string is built by itoa into the 52-byte var_34 @ sp+0x48, an unbounded
+byte-copy loop into the 56-byte psz @ sp+0x10 (0x7D590) and two unbounded strcat; the port builds the
+same string in one bounded snprintf. BasePlaneScreen_DrawCraftDetail is not ported and enters as a hook.
+
+IDB: 6 renames (unk_BADBA to aTextRec146_ArmamentCap, unk_BAE87 to aTextRec147_CrewCap, unk_BAF54 to
+aTextRec148_CrewQtyCap, unk_B9C1C to aTextRec124_CraftCaption, unk_BB355 to aTextRec153_StatusCaption,
+asc_AB9F0 to aQtyPairSep); a function comment at 0x7d374 and line comments at 0x7D38C, 0x7D3E0, 0x7D408,
+0x7D41C, 0x7D45C, 0x7D464, 0x7D4A4, 0x7D4AC, 0x7D4F0, 0x7D5A8, 0x7D5D0, 0x7D640, 0x7D6AC, 0x7D770,
+0x7D840 and 0x7D8FC. BaseUi_DrawFrameRails is no longer file-local, since the hangar draws the same
+rails. The unit-95 note that called the refused band 25..30 "the five craft slots and the five crew
+slots" is corrected: 25..30 is the six weapon slots.

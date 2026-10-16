@@ -29,17 +29,21 @@
 #include "ui/pufo_linelist.h"    /* UiLineList, the root message list the radar click edits */
 #include "game/pufo_save.h"      /* DatFile, SaveGameInput, LoadGameEnv, the save/load slot handlers */
 
-/* The screen frame rails, shared by the three screens that draw the same 24+24 step border:
- * TransferScreen_Draw (0x97FB8..0x98150), ManufScreen_DrawFrame (0x6F9C4..0x6FB54) and
- * ResearchScreen_Draw (0x73A54..0x73BD8). The ARM is identical in all three -- same loop bounds
- * (CMP #0xA8 over a step of 7, CMP #0x78 over a step of 5), same x/y pairs, same ramp formulas --
- * and the three index values of every blit are stored with STRB, so each index is the low byte of
- * the arithmetic: `RSB R5,R3,#0xE6` and `RSB R5,R3,#0xFA` are 230 - 5k and 250 - 5k as bytes. */
+/* The screen frame rails, shared by the four screens that draw the same 24+24 step border:
+ * TransferScreen_Draw (0x97FB8..0x98150), ManufScreen_DrawFrame (0x6F9C4..0x6FB54),
+ * ResearchScreen_Draw (0x73A54..0x73BD8) and BasePlaneScreen_Draw (0x7D6AC..0x7D770). The ARM is
+ * identical in all four -- same loop bounds (CMP #0xA8 over a step of 7, CMP #0x78 over a step of 5),
+ * same x/y pairs, same ramp formulas -- and the three index values of every blit are stored with STRB,
+ * so each index is the low byte of the arithmetic: `RSB R5,R3,#0xE6` and `RSB R5,R3,#0xFA` are
+ * 230 - 5k and 250 - 5k as bytes. */
 #define PUFO_FRAME_RAIL_STEPS     24  /* both loops run 24 times */
 #define PUFO_FRAME_RAMP_BASE      20  /* the climbing ramp is 5 * (k + 20), so it starts at 100 */
 #define PUFO_FRAME_RAMP_STEP      5   /* the ramp index steps by 5 per rail segment */
 #define PUFO_FRAME_RAMP_SIDE    0xE6  /* the descending side rail, 230 down to 115 */
 #define PUFO_FRAME_RAMP_EDGE    0xFA  /* the descending top/bottom rails, 250 down to 135 */
+
+/* The rails themselves, in pufo_baseui.c. The hangar draws them too, so they are not file-local. */
+void BaseUi_DrawFrameRails(void);
 
 typedef struct ScreenScratch {
     u8  nLineAux145;   /* gOptionsScratch[0] @ 0x159E88, the options tab byte. The name is a legacy:

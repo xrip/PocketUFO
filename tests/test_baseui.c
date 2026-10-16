@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "game/pufo_baseui.h"
+#include "game/pufo_plane.h"  /* PlaneDrawEnv, BasePlaneScreen_Draw @ 0x7d374 */
 #include "game/pufo_font.h"  /* PufoFont_Init, g_fontSys: the dump renders real labels */
 #include "asset/pufo_asset.h" /* Asset_OpenArchives */
 #include "game/pufo_strateg.h" /* StrategList_ctor, StrategItem_AllocAdd */
@@ -16330,6 +16331,504 @@ static void TestBaseAtCloseThunk(void)
     PtrArray_DeleteAll(&list);
 }
 
+/* -------------------------------------------------------------------------- *
+ * BasePlaneScreen_Draw @ 0x7d374: the hangar frame, the craft readout, the   *
+ * rails. The readout is checked against a hand-painted frame, so the exact   *
+ * value strings, their positions and the inner frame geometry are all pinned.*
+ * -------------------------------------------------------------------------- */
+
+static SoftSurf g_plSurf;
+static SoftSurf g_plRef;
+static PlaneDrawEnv g_plEnv;
+static GfxColorEnv g_plColor;
+static UiPanel g_plCraftPanel;
+static UiPanel g_plStatusPanel;
+static ObjectRecFull g_aPlObj[64];
+static ObjectRecFull *g_apPlObj[64];
+static Soldier g_aPlSol[6];
+static Soldier *g_apPlSol[6];
+static Ship g_aPlCraft[4];
+static Ship *g_apPlCraft[4];
+static u8 g_bPlDetail, g_bPlBuilt, g_bPlPreview;
+static i32 g_nPlCursorY, g_nPlSelIdx, g_nPlSoldiers, g_nPlCrafts;
+static i32 g_nPlDetailCalls, g_nPlDetailValue;
+
+/* The readout window: the three labels, the three values and the inner frame, and nothing else. The
+ * panels sit at y 110 and 210, the outer rails at x 5 / 234 and y 5 / 315, the inner rails' rows at
+ * y 15 and 85 and their columns at x 15 and 224 -- so the window x 14..229 / y 14..99 holds exactly
+ * the readout plus the inner frame's edges. */
+#define PL_BAND_X0 14
+#define PL_BAND_Y0 14
+#define PL_BAND_X1 229
+#define PL_BAND_Y1 99
+/* The label-only window: clear of the inner frame (x 15 / 224, y 15 / 85) and of the values at
+ * x 190 / 195, so ink here can only be one of the three readout captions. */
+#define PL_LBL_X0 20
+#define PL_LBL_Y0 20
+#define PL_LBL_X1 120
+#define PL_LBL_Y1 80
+/* The caption window, below the inner frame's bottom row at y 85. */
+#define PL_CAP_X0 20
+#define PL_CAP_Y0 88
+#define PL_CAP_X1 229
+#define PL_CAP_Y1 102
+/* The two panel windows. */
+#define PL_PANEL_X0 8
+#define PL_PANEL_X1 60
+#define PL_PANEL_Y0 108
+#define PL_PANEL_Y1 260
+
+static i32 PlDetailThunk(void)
+{
+    ++g_nPlDetailCalls;
+    return g_nPlDetailValue;
+}
+
+static i32 PlInk(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1, u16 uWant)
+{
+    i32 nInk = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * FRAME_W + x] == uWant) {
+                ++nInk;
+            }
+        }
+    }
+    return nInk;
+}
+
+static i32 PlInkAll(const u16 *pPix)
+{
+    i32 nInk = 0;
+
+    for (i32 i = 0; i < FRAME_PIX; ++i) {
+        if (pPix[i] != 0) {
+            ++nInk;
+        }
+    }
+    return nInk;
+}
+
+static void PlClear(void)
+{
+    memset(g_plSurf.pPixels, 0, (size_t)FRAME_PIX * 2u);
+}
+
+/* The inner frame, painted from the ARM rather than from the port's macros: rail C runs a climbing x
+ * from 15 against a descending x from 220 in steps of 5 while the descending one stays above 115
+ * (0x7D840..0x7D8FC), 5x1 at y 15 and 85, colour 5*(n+20); rail D runs m from 0 down to above -36 in
+ * steps of 2 (0x7D8FC..0x7D9B4), 1x2 at x 15 and 224, y 2*v+15 and m+83, colour 5*(v+20). The
+ * literals are the expectation, so a change on either side shows up as a difference. */
+static void PlPaintInnerRails(void)
+{
+    for (i32 n = 0, x1 = 15, x2 = 220; x2 > 115; x1 += 5, x2 -= 5, ++n) {
+        const u8 c = (u8)(5 * (n + 20));
+
+        SoftSurf_BlitRectProxy(0, x1, 15, 5, 1, c, c, c);
+        SoftSurf_BlitRectProxy(0, x1, 85, 5, 1, c, c, c);
+        SoftSurf_BlitRectProxy(0, x2, 15, 5, 1, c, c, c);
+        SoftSurf_BlitRectProxy(0, x2, 85, 5, 1, c, c, c);
+    }
+    for (i32 m = 0, v = 0; m > -36; m -= 2, ++v) {
+        const u8 c = (u8)(5 * (v + 20));
+
+        SoftSurf_BlitRectProxy(0, 15, 2 * v + 15, 1, 2, c, c, c);
+        SoftSurf_BlitRectProxy(0, 15, m + 83, 1, 2, c, c, c);
+        SoftSurf_BlitRectProxy(0, 224, 2 * v + 15, 1, 2, c, c, c);
+        SoftSurf_BlitRectProxy(0, 224, m + 83, 1, 2, c, c, c);
+    }
+}
+
+/* The frame the draw should produce, painted in the original's order: the readout (when armed), the
+ * two captions, then the shared outer rails, then the inner frame. */
+static void PlPaintRef(bool bReadout, const char *pszArm, const char *pszCrew, const char *pszQty)
+{
+    memset(g_plRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_plRef;
+
+    if (bReadout) {
+        (void)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 20, 25, 20);
+        Text_DrawString(25, 23, "ARM");
+        Text_DrawString(25, 43, "CREW");
+        Text_DrawString(25, 63, "QTY");
+        Text_DrawString(190, 23, pszArm);
+        Text_DrawString(195, 43, pszCrew);
+        Text_DrawString(195, 63, pszQty);
+    }
+    (void)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 10, 10, 25);
+    Text_DrawString(25, 90, "SHIP:");
+    Text_DrawString(165, 90, "STATUS");
+    BaseUi_DrawFrameRails();
+    PlPaintInnerRails();
+    g_pMainSurface = &g_plSurf;
+}
+
+static bool PlBandSame(const u16 *pa, const u16 *pb)
+{
+    for (i32 y = PL_BAND_Y0; y <= PL_BAND_Y1; ++y) {
+        for (i32 x = PL_BAND_X0; x <= PL_BAND_X1; ++x) {
+            if (pa[y * FRAME_W + x] != pb[y * FRAME_W + x]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static void PlFixture(void)
+{
+    memset(&g_plEnv, 0, sizeof(g_plEnv));
+    memset(g_aPlObj, 0, sizeof(g_aPlObj));
+    memset(g_aPlSol, 0, sizeof(g_aPlSol));
+    memset(g_aPlCraft, 0, sizeof(g_aPlCraft));
+    memset(g_aFrameText, 0, sizeof(g_aFrameText));
+
+    for (i32 i = 0; i < 64; ++i) {
+        g_apPlObj[i] = &g_aPlObj[i];
+    }
+    /* Craft 2 carries these. The two bands are 25..30 and 31..35; 24, 36 and 40 are decoys that must
+     * stay out of both sums. */
+    g_aPlObj[24].aItemQty[2] = 5;
+    g_aPlObj[25].aItemQty[2] = 3;
+    g_aPlObj[26].aItemQty[2] = 4;
+    g_aPlObj[28].aItemQty[2] = 2;
+    g_aPlObj[29].aItemQty[2] = 1;
+    g_aPlObj[30].aItemQty[2] = 6;  /* armament total 16 */
+    g_aPlObj[31].aItemQty[2] = 7;
+    g_aPlObj[32].aItemQty[2] = 5;
+    g_aPlObj[35].aItemQty[2] = 1;  /* crew total 13 */
+    g_aPlObj[36].aItemQty[2] = 9;
+    g_aPlObj[40].aItemQty[2] = 11;
+
+    for (i32 i = 0; i < 6; ++i) {
+        g_apPlSol[i] = &g_aPlSol[i];
+    }
+    g_aPlSol[0].bUnk183 = 2;
+    g_aPlSol[1].bUnk183 = 255;
+    g_aPlSol[2].bUnk183 = 1;
+    g_aPlSol[3].bUnk183 = 2;
+    g_aPlSol[4].bUnk183 = 2;  /* three aboard within the count of 5 */
+    g_aPlSol[5].bUnk183 = 2;  /* a fourth, past the count */
+
+    for (i32 i = 0; i < 4; ++i) {
+        g_apPlCraft[i] = &g_aPlCraft[i];
+    }
+    g_aPlCraft[2].bCrewSlots = 9;
+
+    /* The five record numbers are literals here on purpose: a test that places its text with the same
+     * macro the port reads cannot see the macro move. */
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * 146, "ARM");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * 147, "CREW");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * 148, "QTY");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * 124, "SHIP:");
+    PutStr(g_aFrameText + PUFO_TEXT_REC_STRIDE * 153, "STATUS");
+
+    g_bPlDetail = 0;
+    g_bPlBuilt = 1;
+    g_bPlPreview = 1;
+    g_nPlCursorY = 120;   /* inside the status panel's band 110..190 */
+    g_nPlSelIdx = 2;
+    g_nPlSoldiers = 5;
+    g_nPlCrafts = 4;
+    g_nPlDetailCalls = 0;
+    g_nPlDetailValue = 77;
+
+    g_plEnv.pColor = &g_plColor;
+    g_plEnv.pbShowCraftDetail = &g_bPlDetail;
+    g_plEnv.pbPanelsBuilt = &g_bPlBuilt;
+    g_plEnv.pbPreviewActive = &g_bPlPreview;
+    g_plEnv.pnCursorY = &g_nPlCursorY;
+    g_plEnv.pCraftPanel = &g_plCraftPanel;
+    g_plEnv.pStatusPanel = &g_plStatusPanel;
+    g_plEnv.apCraft = g_apPlCraft;
+    g_plEnv.nCraftCount = g_nPlCrafts;
+    g_plEnv.pnSelCraftIdx = &g_nPlSelIdx;
+    g_plEnv.apObjects = g_apPlObj;
+    g_plEnv.nObjectCount = 64;
+    g_plEnv.apSoldiers = g_apPlSol;
+    g_plEnv.nSoldierCount = g_nPlSoldiers;
+    g_plEnv.pTextRecs = (const char *)g_aFrameText;
+    g_plEnv.pfnDrawCraftDetail = PlDetailThunk;
+}
+
+static void PlBuildPanels(void)
+{
+    (void)UiPanel_ctor(&g_plCraftPanel, 3);
+    g_plCraftPanel.nPosX = 10;
+    g_plCraftPanel.nPosY = 210;
+    g_plCraftPanel.nStyle = 3;
+    g_plCraftPanel.nFont = 16;
+    g_plCraftPanel.nUnk7076 = 0;
+    for (i32 r = 0; r < 3; ++r) {
+        (void)UiPanel_SetLineText(&g_plCraftPanel, r, "Row");
+    }
+
+    (void)UiPanel_ctor(&g_plStatusPanel, 5);
+    g_plStatusPanel.nPosX = 10;
+    g_plStatusPanel.nPosY = 110;   /* the band the cursor gate reads: 110 .. 110 + 16*5 */
+    g_plStatusPanel.nStyle = 5;
+    g_plStatusPanel.nFont = 16;
+    g_plStatusPanel.nUnk7076 = 0;
+    for (i32 r = 0; r < 5; ++r) {
+        (void)UiPanel_SetLineText(&g_plStatusPanel, r, "Row");
+    }
+}
+
+static void TestPlaneScreenDraw(void)
+{
+    const u16 *pPix;
+    u16 uArmGlyph, uCapGlyph, uPanelGlyph;
+    i32 nRet;
+
+    printf("BasePlaneScreen_Draw @ 0x7d374\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open, so the frame cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_plSurf);
+    (void)SoftSurf_AllocPixels(&g_plSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_plRef);
+    (void)SoftSurf_AllocPixels(&g_plRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    g_pMainSurface = &g_plSurf;
+    g_blitState.nPixelMode = 2;
+    pPix = (const u16 *)g_plSurf.pPixels;
+
+    g_plColor.nScaleSource = 0;
+    g_plColor.nFadeCount = 0;
+    PlBuildPanels();
+
+    /* The three glyph colours the test counts. Gfx_PackRgb565Pair @ 0x2d82c writes the (r2,g2,b2)
+     * half into palette slot 2 entry 27 and Text_DrawString @ 0x2d7bc forces the glyph base to 2, so
+     * each packed pair is exactly the colour its following strings draw in. */
+    uPanelGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 0, 0, 0, 200, 30, 200); /* the panels' colour */
+    uArmGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 20, 25, 20);
+    uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_plColor, 250, 250, 250, 10, 10, 25);
+    Check(uPanelGlyph != uArmGlyph && uArmGlyph != uCapGlyph && uPanelGlyph != uCapGlyph,
+          "the three colour pairs pack to three distinct glyph colours");
+
+    /* 1. The detail arm: the hook runs, its value is returned, and nothing else of this function runs. */
+    PlFixture();
+    g_bPlDetail = 1;
+    g_nPlDetailValue = 77;
+    PlClear();
+    nRet = BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32(g_nPlDetailCalls, 1, "bPlaneShowCraftDetail @ 0x161F20 set runs the detail view once (0x7D38C)");
+    CheckEqI32(nRet, 77, "  and this function returns its value");
+    CheckEqI32(PlInkAll(pPix), 0, "  while nothing else here draws -- no captions, no rails");
+
+    PlFixture();
+    g_bPlDetail = 1;
+    g_plEnv.pfnDrawCraftDetail = NULL;
+    PlClear();
+    CheckEqI32(BasePlaneScreen_Draw(&g_plEnv), 0, "a missing detail hook returns 0 rather than faulting");
+    CheckEqI32(PlInkAll(pPix), 0, "  and the rest of the function still stays out");
+    g_plEnv.pfnDrawCraftDetail = PlDetailThunk;
+
+    /* 2. The built flag: the panels go, the captions and the rails stay. */
+    PlFixture();
+    g_bPlBuilt = 0;
+    PlClear();
+    (void)Gfx_PackRgb565Pair(&g_plColor, 0, 0, 0, 200, 30, 200); /* what the panels would draw in */
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32(PlInk(pPix, PL_PANEL_X0, PL_PANEL_Y0, PL_PANEL_X1, PL_PANEL_Y1, uPanelGlyph), 0,
+               "neither list panel draws while bPlanePanelsBuilt @ 0x161F08 is clear (0x7D398)");
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
+               "  and the craft readout stays off with it");
+    Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
+          "  yet the two captions still draw (both skips land on 0x7D640)");
+    CheckEqI32((i32)pPix[2 * FRAME_W + 5], XfPix(100, 100, 100), "  and so do the shared outer rails");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 15], XfPix(100, 100, 100), "  and the inner frame still closes");
+
+    /* 3. Built: both panels reach the surface. */
+    PlFixture();
+    PlClear();
+    (void)Gfx_PackRgb565Pair(&g_plColor, 0, 0, 0, 200, 30, 200);
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    Check(PlInk(pPix, PL_PANEL_X0, PL_PANEL_Y0, PL_PANEL_X1, PL_PANEL_Y1, uPanelGlyph) > 0,
+          "with the flag set both list panels draw (0x7D3B4 / 0x7D3C4)");
+    Check(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph) > 0,
+          "and the readout runs with the cursor inside the status panel's band (0x7D3E0..0x7D414)");
+
+    /* 4. The band gate, edge by edge. The status panel is nPosY 110 with 5 rows, so the band is
+     * 110 .. 190 and both ends are exclusive. */
+    for (i32 i = 0; i < 5; ++i) {
+        static const i32 anCursor[5] = { 109, 110, 111, 189, 190 };
+        static const bool abWant[5] = { false, false, true, true, false };
+
+        PlFixture();
+        g_nPlCursorY = anCursor[i];
+        PlClear();
+        (void)BasePlaneScreen_Draw(&g_plEnv);
+        CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph) > 0 ? 1 : 0,
+                   abWant[i] ? 1 : 0,
+                   "the readout band is strictly between nPosY and nPosY + 16 * nLineCount");
+        Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
+              "  whatever the gate says, the two captions draw");
+    }
+
+    PlFixture();
+    g_nPlCursorY = -5; /* nSmapCursorY is read LDRSH, so a negative row is a real value */
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
+               "a negative cursor row (LDRSH at 0x7D3EC) keeps the readout off");
+
+    PlFixture();
+    g_bPlPreview = 0;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
+               "bBaseFacPreviewActive @ 0x18652C clear keeps the readout off (0x7D3D0)");
+    Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
+          "  and the captions are not gated by it");
+
+    /* 5. The whole readout window against a hand-painted frame. This pins the three labels, the three
+     * value strings and their positions, and the inner frame's geometry, all at once. */
+    PlFixture();
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\9", "3", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "the readout window matches a hand-painted frame: 16\\9 at (190,23), 3 at (195,43), 13 at (195,63)");
+
+    /* 6. The two slot bands. The decoys at 24, 36 and 40 must stay out; a quantity at 27 must count. */
+    PlFixture();
+    g_aPlObj[24].aItemQty[2] = 40;
+    g_aPlObj[36].aItemQty[2] = 40;
+    g_aPlObj[40].aItemQty[2] = 40;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\9", "3", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "slots 24, 36 and 40 stay out of both sums (0x7D45C / 0x7D464, 0x7D4A4 / 0x7D4AC)");
+
+    PlFixture();
+    g_aPlObj[27].aItemQty[2] = 4; /* inside 25..30, and it was the only empty one */
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "20\\9", "3", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "slot 27 counts towards the armament total, 16 becomes 20");
+
+    PlFixture();
+    g_aPlObj[33].aItemQty[2] = 6; /* inside 31..35 */
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\9", "3", "19");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "slot 33 counts towards the crew total, 13 becomes 19");
+
+    /* 7. The value string is itoa(sum) + the backslash at asc_AB9F0 + itoa(Ship.bCrewSlots @ +0x14). */
+    PlFixture();
+    g_aPlCraft[2].bCrewSlots = 120;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\120", "3", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "the armament value is the sum, a backslash, then Ship.bCrewSlots (0x7D5A8 / 0x7D5D0)");
+
+    /* 8. The soldier count is bounded by nSoldierCount and keyed on Soldier.bUnk183 @ +0xB7. */
+    PlFixture();
+    g_plEnv.nSoldierCount = 6; /* the sixth soldier is assigned too, and now he counts */
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\9", "4", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "the crew value is the soldiers with bUnk183 == the craft index, bounded by nSoldierCount (0x7D4C4)");
+
+    PlFixture();
+    g_aPlSol[1].bUnk183 = 2; /* 255 is the unassigned sentinel; making it a match must show up */
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "16\\9", "4", "13");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "  and the sentinel 255 is only unassigned because it is not this craft's index");
+
+    /* 9. A craft index past the craft array and past aItemQty's 52 slots: the original reads whatever
+     * is there, the port resolves it to nothing. */
+    PlFixture();
+    g_nPlSelIdx = 60;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    PlPaintRef(true, "0\\0", "0", "0");
+    Check(PlBandSame(pPix, (const u16 *)g_plRef.pPixels),
+          "a craft index past the array and past aItemQty's 52 slots reads as nothing (port bound)");
+
+    /* 10. The inner frame's own geometry, probed at the corners the two rails meet. */
+    PlFixture();
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32((i32)pPix[15 * FRAME_W + 15], XfPix(100, 100, 100), "rail C starts at (15,15) with index 100 (0x7D840)");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 19], XfPix(100, 100, 100), "  its first block is 5 wide");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 20], XfPix(105, 105, 105), "  and the next block is one step up");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 124], XfPix(200, 200, 200), "  the descending x ends at 120..124 with 200");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 125], XfPix(195, 195, 195),
+               "  its two x runs are continuous: 125..129 is the previous step, 195");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 224], XfPix(100, 100, 100), "  the descending x starts at 220..224 with 100");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 225], 0, "  and nothing is drawn past x 224");
+    CheckEqI32((i32)pPix[85 * FRAME_W + 15], XfPix(100, 100, 100), "rail C mirrors the same ramp at y 85");
+    CheckEqI32((i32)pPix[86 * FRAME_W + 15], 0, "  and its rows are one pixel tall");
+    CheckEqI32((i32)pPix[47 * FRAME_W + 15], XfPix(180, 180, 180), "rail D's climbing row reaches y 47 with 180 (0x7D8FC)");
+    CheckEqI32((i32)pPix[48 * FRAME_W + 15], XfPix(180, 180, 180), "  its blocks are 2 tall");
+    CheckEqI32((i32)pPix[49 * FRAME_W + 15], XfPix(185, 185, 185),
+               "  the bound is tested after the step, so m = -34 / v = 17 draws too: y 49..50 with 185");
+    CheckEqI32((i32)pPix[50 * FRAME_W + 15], XfPix(185, 185, 185), "  and the two halves meet there, not at 47");
+    CheckEqI32((i32)pPix[51 * FRAME_W + 15], XfPix(180, 180, 180),
+               "  the descending half runs 51..52 with its own 180, so the column is continuous 15..84");
+    CheckEqI32((i32)pPix[84 * FRAME_W + 224], XfPix(100, 100, 100),
+               "rail D's descending row starts at m + 83, so y 83..84 carry its first index 100");
+    CheckEqI32((i32)pPix[14 * FRAME_W + 15], 0, "the inner frame starts at y 15 and x 15, not earlier");
+    CheckEqI32((i32)pPix[15 * FRAME_W + 14], 0, "  and not earlier in x either");
+
+    /* 11. The two colour pairs are packed in the header's order, so each caption draws in its own. */
+    PlFixture();
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    Check(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph) > 0,
+          "the three readout captions draw in the (20,25,20) pair (0x7D504)");
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uCapGlyph), 0,
+          "  and not in the caption pair's (10,10,25)");
+    Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
+          "the two captions draw in the (10,10,25) pair (0x7D640)");
+    CheckEqI32(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uArmGlyph), 0,
+          "  and not in the readout pair's");
+
+    /* 12. The null guards. */
+    CheckEqI32(BasePlaneScreen_Draw(NULL), 0, "a null draw environment draws nothing");
+
+    PlFixture();
+    g_plEnv.pCraftPanel = NULL;
+    g_plEnv.pStatusPanel = NULL;
+    g_plEnv.apObjects = NULL;
+    g_plEnv.apSoldiers = NULL;
+    g_plEnv.apCraft = NULL;
+    g_plEnv.pTextRecs = NULL;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32((i32)pPix[15 * FRAME_W + 15], XfPix(100, 100, 100),
+               "a hangar with no panels, no objects, no soldiers and no craft still frames itself");
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
+               "  the readout runs but has nothing to sum, so no caption reaches the surface");
+
+    PlFixture();
+    g_plEnv.pbPanelsBuilt = NULL;
+    g_plEnv.pbShowCraftDetail = NULL;
+    g_plEnv.pbPreviewActive = NULL;
+    g_plEnv.pnCursorY = NULL;
+    PlClear();
+    (void)BasePlaneScreen_Draw(&g_plEnv);
+    CheckEqI32(g_nPlDetailCalls, 0, "a missing flag byte never takes the detail arm");
+    CheckEqI32(PlInk(pPix, PL_LBL_X0, PL_LBL_Y0, PL_LBL_X1, PL_LBL_Y1, uArmGlyph), 0,
+               "  and a missing built flag draws no panels");
+    Check(PlInk(pPix, PL_CAP_X0, PL_CAP_Y0, PL_CAP_X1, PL_CAP_Y1, uCapGlyph) > 0,
+          "  while the captions and the rails keep running");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -16430,6 +16929,7 @@ int main(void)
     TestBaseAtUpdate();
     TestBaseAtDraw();
     TestBaseAtCloseThunk();
+    TestPlaneScreenDraw();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

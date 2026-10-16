@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `ecf7013`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 95, the hangar's stores-transfer panel set at 0x7b014), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `647ac99`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 96, the hangar frame and craft readout at 0x7d374), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,14 +207,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 942 / 1103 (85.4%)
-                                             bytes cited:     533104 / 598792 (89.0%)
-python docs/parity/audit_credits.py       -> credited functions: 942, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 508 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 943 / 1103 (85.5%)
+                                             bytes cited:     534752 / 598792 (89.3%)
+python docs/parity/audit_credits.py       -> credited functions: 943, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 514 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 236, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/audit_bugs.py          -> ledger rows: 242, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -231,12 +231,47 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15238**. Coverage as of the latest commit: **942 / 1103
-functions (85.4%)**, **533104 / 598792 bytes (89.0%)**. This unit ported the hangar's stores-transfer panel
-set, `BasePlaneScreen_BuildControls` (0x7b014, 2,788 B). **The row filter is three ARM compares** (0x7B190
+Test checks run across the 60 suites: **15299**. Coverage as of the latest commit: **943 / 1103
+functions (85.5%)**, **534752 / 598792 bytes (89.3%)**. This unit ported the hangar's own draw,
+`BasePlaneScreen_Draw` (0x7d374, 1,648 B): the two list panels, the three-row craft readout, two captions
+and four ramped rail loops. **Three gates, and they do not gate the same amount of the screen** -- the
+not-built skip (0x7D398) and the preview-gate skip (0x7D3D0) both land on `loc_7D640`, the second colour
+pair, so the two captions and all four rail loops run whatever the flags say: a hangar whose panels were
+never built still paints the frame and still draws "Корабль: " and "Статус". **The readout is gated by a
+geoscape flag and the pointer row** -- `bBaseFacPreviewActive @ 0x18652C`, which has six xrefs in the whole
+binary (four in `BaseFacScreen_DrawPlacementOverlay`, one in `Geoscape_InitUI`, this one), and
+`nPosY < nSmapCursorY < nPosY + 16 * nLineCount` with both ends exclusive (0x7D3E0 reads nPosY at +0x1B88
+through `MOV R3,#0x1B80 / ORR R3,#8`, 0x7D408 the band from nLineCount at +0xBDC). `nSmapCursorY` is read
+LDRSH and written STRH (Geoscape_OnPointer 0x872F8), so it is the signed 16-bit pointer row the pointer
+dispatcher keeps live for whichever screen owns the pointer; unlike the transfer, manuf and research frames
+this band has no `nStyle` cap. **All three sums index `aItemQty` with `nPlaneSelCraftIdx @ 0x161F04`** --
+the draw uses that global, not the `nSelectedCraftIdx @ 0x161AC4` the stores builder uses -- over slots
+25..30 (armament, the six weapon slots the `SelectWeapon25..30` handlers cover), 31..35 (crew quantity, the
+same five crew slots the crew quota sums) and the soldiers whose `Soldier.bUnk183 @ +0xB7` equals the craft
+index; the compare is `CMP R3,R5` with R3 the zero-extended byte, so a craft index above 255 matches
+nothing. **The armament value is a pair**: `itoa(sum)`, the backslash at `aQtyPairSep @ 0xAB9F0`
+(0x7D5A8 / 0x7D5B0), then `itoa(Ship.bCrewSlots @ +0x14)` (0x7D5D0 / 0x7D5E0). **Rails A and B are
+byte-for-byte the shared screen rails**, so `BaseUi_DrawFrameRails` is no longer file-local and the hangar
+calls it instead of carrying a fourth copy. **Rails C and D test their bound AFTER the step**, so the body
+that lands on the bound still runs: rail C's last body is x2 = 120 (21 bodies, colour up to 200) and rail
+D's is m = -34 / v = 17 (18 bodies, colour up to 185); reading the two `CMP`s as the last drawn value gives
+20 and 17 and a frame with a gap at y 49..50. The two x runs 15..119 and 120..224 are continuous, so the
+inner frame closes (15,15) to (224,85), and it runs after the text. 61 new checks in `test_baseui`, on a
+real 240x320 surface with the real font: the readout window (x 14..229, y 14..99) is compared against a
+hand-painted frame -- labels, the three value strings, the shared rails and the inner rails painted from
+the ARM with literals rather than the port's macros -- and separate probes then move one input at a time
+and re-compare. A 47-mutation sweep turned all 47 red; two were initially unpinned through the
+**macro-aliasing defect again** (the fixture placed its caption text with the same record macro the port
+reads, so moving the macro moved the expectation with it) and the fixtures now use literal record numbers.
+IDB: 6 renames (the five TEXTS records the hangar draws -- `aTextRec146_ArmamentCap`, `aTextRec147_CrewCap`,
+`aTextRec148_CrewQtyCap`, `aTextRec124_CraftCaption`, `aTextRec153_StatusCaption` -- plus `asc_AB9F0` to
+`aQtyPairSep`), a function comment at 0x7d374 and 16 line comments. `strat-ui` moves to 242/245 functions
+and 113,304 of 121,164 bytes (93.5%). The previous unit ported the hangar's stores-transfer panel set,
+`BasePlaneScreen_BuildControls` (0x7b014, 2,788 B). **The row filter is three ARM compares** (0x7B190
 `CMP #0x19`, 0x7B198 `CMP #0x1E`, 0x7B1A0 `CMP #0x34`): a slot gets a row when
-`slot < 25 || (slot > 30 && slot < 52)` -- the refused 25..30 is exactly the five craft slots and the five
-crew slots the hangar draws through its own columns, and 52 is `ObjectRecFull.aItemQty`'s own length.
+`slot < 25 || (slot > 30 && slot < 52)` -- the refused 25..30 is the six weapon slots the hangar draws
+through its own weapon columns (corrected in unit 96: it was called "the five craft slots and the five crew
+slots" here), and 52 is `ObjectRecFull.aItemQty`'s own length.
 **`byte_AA968` is a 156-byte slot-to-topic table** (now `g_abSlotTopicGate`): slots 0..24 map to topics
 0,1,6,9,2,7,10,4,3,8,5,11,13,12,18,23,24,22,21,25,14,15,17,20,16, slots 31..35 to 97..101, 37 to 113, 39 to
 114, 40..47 to 1 and 48..50 to 115, 117, 116 -- and a stocked slot still needs that topic's `bUnlocked` at
@@ -1110,7 +1145,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 241 | 245 | 111656 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar-stores screens |
+| `strat-ui` | 242 | 245 | 113304 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -1373,7 +1408,7 @@ handlers they install, the per-tick strateg event pass, the strateg icon pass, t
 stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
 itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
 `Geoscape_Draw` is now the single largest unported function in the binary.
-`strat-ui` is 241 of 245 functions and 111,656 of 121,164 bytes (92.1%) — the small screen handlers, the
+`strat-ui` is 242 of 245 functions and 113,304 of 121,164 bytes (93.5%) — the small screen handlers, the
 whole base-info family, the base-attack screen and the hangar's stores panel set are in; the base plane's
 three draw/build functions are not.
 
@@ -2014,14 +2049,15 @@ manufacturing, research, soldier and base-facility families are complete, and so
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
 200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
 is left in `strat-ui` is
-4 functions / 9,508 bytes. The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
+3 functions / 7,860 bytes. The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
 the largest single `strat-ui` function) and `BaseInfoScreen_Init` (0x57688) came in with unit 92,
 `BaseInfoScreen_Draw` (0x56fb8) with unit 93, the base-attack screen's update/draw/close trio
 (`BaseAtScreen_Update` 0x57808, 3,872 B, `BaseAtScreen_Draw` 0x58728, 420 B, `BaseAtScreen_CloseThunk`
 0x577c0, 72 B) with unit 94, and the hangar's stores panel set `BasePlaneScreen_BuildControls` (0x7b014,
-2,788 B) with unit 95. What is left is the base plane's draw side
-(`BasePlaneScreen_DrawCraftDetail` 0x7baf8, 3,824 B, `BasePlaneScreen_Draw` 0x7d374, 1,648 B) and two single
-handlers: `Transfer_WriteErrorDump` (0x996e4, 2,196 B) and `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
+2,788 B) with unit 95 and the hangar's own frame and craft readout `BasePlaneScreen_Draw` (0x7d374,
+1,648 B) with unit 96. What is left is the hangar's detail view
+(`BasePlaneScreen_DrawCraftDetail` 0x7baf8, 3,824 B) and two single handlers: `Transfer_WriteErrorDump`
+(0x996e4, 2,196 B) and `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
 The psi family is complete: `PsiScreen_BuildPanels`, `PsiScreen_SelectListed`, `PsiScreen_Init`,
 `PsiScreen_ApplyAssignments` and the two scroll handlers came in with unit 90, `PsiScreen_Draw` (0x72398,
 1,960 B) with unit 91. The ufopaedia family is complete: `Ufopaedia_Open` (0x9a8cc) came in with unit 89 after its
@@ -2049,8 +2085,8 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 508 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 236-row bug ledger, with a `qol` column |
+| `docs/parity/renames.tsv` | 514 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 242-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |
