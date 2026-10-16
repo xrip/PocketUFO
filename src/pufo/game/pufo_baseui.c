@@ -11334,6 +11334,410 @@ void PsiScreen_Init(PsiScreenEnv *pEnv)
     PsiScreen_BuildPanels(pEnv);                          /* 0x72C78 */
 }
 
+/* ---- BaseInfoScreen_Init @ 0x57688 ---- */
+
+static const UiControlDesc g_aBaseInfoCtlDesc[2] = {
+    { 0x0001, 0x012C, "emptyb", "cemptyb", "", 0 }, /* 0xAB198: the OK control, at (1, 300) */
+    { 0x0078, 0x012C, "emptyb", "cemptyb", "", 0 }  /* 0xAB1B8: the panel-mode toggle, at (120, 300) */
+};
+
+void BaseInfoScreen_Init(BaseInfoInitEnv *pEnv)
+{
+    PadImage *pPad;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->ppPad == NULL || pEnv->papCtl == NULL) {
+        return;
+    }
+
+    pPad = (PadImage *)calloc(1, sizeof(PadImage));   /* 0x57694, operator new(0x14) */
+    if (pPad != NULL) {
+        PadImage_ctor(pPad);                          /* 0x576A4 */
+    }
+    *pEnv->ppPad = pPad;                              /* 0x576B8: the ctor's result, not the raw new */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_BASEINFO_PAD_NAME, PUFO_BASEINFO_PAD_MODE); /* 0x576BC */
+        pPad->nOriginX = 0;                           /* 0x576CC */
+        pPad->nOriginY = 0;                           /* 0x576D4 */
+    }
+
+    for (i = 0; i < 2; ++i) {                         /* 0x576DC..0x57708, operator new(0x20) */
+        UiControl *pCtl = (UiControl *)calloc(1, sizeof(UiControl));
+
+        if (pCtl == NULL) {
+            continue;
+        }
+        UiControl_ctor(pCtl);                         /* 0x576E8 */
+        pEnv->papCtl[i] = pCtl;
+    }
+    if (pEnv->papCtl[0] != NULL) {
+        pEnv->papCtl[0]->pfnClick = pEnv->pfnOkClick;     /* 0x5772C, +0x0C */
+    }
+    if (pEnv->papCtl[1] != NULL) {
+        pEnv->papCtl[1]->pfnClick = pEnv->pfnToggleClick; /* 0x5771C */
+    }
+    if (pEnv->pCtlClose != NULL) {
+        pEnv->pCtlClose->x = 224;                        /* 0x57738 */
+        pEnv->pCtlClose->y = 1;                          /* 0x57744 */
+        pEnv->pCtlClose->pfnClick = pEnv->pfnCloseClick; /* 0x57750 */
+    }
+    for (i = 0; i < 2; ++i) {                            /* 0x57754..0x57774 */
+        UiControl_Setup(pEnv->papCtl[i], 0, 0, &g_aBaseInfoCtlDesc[i],
+                        pEnv->pfnLoadPads, pEnv->pPadUser);
+    }
+
+    if (pEnv->pnWorkBaseIdx != NULL && pEnv->pnSelectedBaseIdx != NULL) {
+        *pEnv->pnWorkBaseIdx = *pEnv->pnSelectedBaseIdx; /* 0x5778C */
+    }
+    if (pEnv->pbOverlayOpen != NULL) {
+        *pEnv->pbOverlayOpen = 0;                        /* 0x57794 */
+    }
+    if (pEnv->pfnBuildPanels != NULL) {
+        pEnv->pfnBuildPanels();                          /* 0x5779C, the tail call */
+    }
+}
+
+/* ---- BaseInfoScreen_BuildPanels @ 0x557f4 ---- */
+
+/* The money literals at 0xAB1D8..0xAB20B. The craft labels are indexed by the name column's aux,
+ * which is Ship.bCraftType; aux 0 is handled too (0x56810) and costs the same 500000 as aux 1.
+ * The costs are the table Base_CalcMonthlyUpkeep also uses (0x6A294..0x6A2D4). */
+static const char *const g_apzBaseInfoCraftLabel[5] = {
+    "500000$", "500000$", "700000$", "600000$", "400000$"
+};
+static const i32 g_anBaseInfoCraftCost[5] = {
+    PUFO_BASEINFO_CRAFT_COST_0, PUFO_BASEINFO_CRAFT_COST_0, PUFO_BASEINFO_CRAFT_COST_2,
+    PUFO_BASEINFO_CRAFT_COST_3, PUFO_BASEINFO_CRAFT_COST_4
+};
+
+static UiPanel *BaseInfoNewPanel(void)
+{
+    UiPanel *pPanel = (UiPanel *)calloc(1, sizeof(UiPanel)); /* 0x55828, operator new(0x1BB4) */
+
+    if (pPanel == NULL) {
+        return NULL;
+    }
+    if (!UiPanel_ctor(pPanel, PUFO_BASEINFO_PANEL_LINES)) {  /* 0x55844 */
+        free(pPanel);
+        return NULL;
+    }
+    return pPanel;
+}
+
+/* The three panels share everything but their x, their click-rect left and their view width
+ * (0x558D8..0x559B0 against 0x56188..0x56278 and 0x56288..0x56360). The name column never touches
+ * nUnk7076; only the two narrow ones set it, so it stays out of this helper. */
+static void BaseInfoPanelCommon(UiPanel *pPanel, i32 nPosX, i32 nClickLeft, i32 nViewW)
+{
+    pPanel->nStyle = PUFO_BASEINFO_PANEL_STYLE;
+    pPanel->nFont = PUFO_BASEINFO_PANEL_FONT;
+    pPanel->pfnClick = NULL;
+    pPanel->nPosX = nPosX;
+    pPanel->nPosY = PUFO_BASEINFO_PANEL_Y;
+    pPanel->nUnk7052 = nClickLeft;
+    pPanel->nUnk7056 = PUFO_BASEINFO_CLICK_TOP;
+    pPanel->nViewW = nViewW;
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+    pPanel->bFlag7073 = 0;
+    pPanel->bFlag7072 = 0;
+}
+
+static void BaseInfoRowMeta(UiPanel *pPanel, i32 nRow)
+{
+    UiPanel_SetLineMeta(pPanel, nRow, PUFO_BASEINFO_META_A, PUFO_BASEINFO_META_B,
+                        PUFO_BASEINFO_META_ROW, PUFO_BASEINFO_META_C,
+                        PUFO_BASEINFO_META_D, PUFO_BASEINFO_META_D);
+}
+
+/* Every label on this screen copies from a zero-filled scratch address, so each one is a clear. */
+static void BaseInfoClearRow(UiPanel *pPanel, i32 nRow)
+{
+    (void)UiPanel_SetLineText(pPanel, nRow, "");
+}
+
+static void BaseInfoSetNumber(UiPanel *pPanel, i32 nRow, i32 nValue, const char *pszSuffix)
+{
+    char szLine[PUFO_PANEL_LINE_BYTES];
+
+    (void)snprintf(szLine, sizeof(szLine), "%d%s", nValue, pszSuffix);
+    (void)UiPanel_SetLineText(pPanel, nRow, szLine);
+}
+
+static i32 BaseInfoPanelAux(UiPanel *pPanel, i32 nRow)
+{
+    if (pPanel == NULL || nRow < 0 || nRow >= pPanel->nLineCount) {
+        return 0;
+    }
+    return pPanel->anLineAux[nRow];
+}
+
+static void BaseInfoReleasePanels(BaseInfoBuildEnv *pEnv)
+{
+    i32 i;
+
+    *pEnv->pbBuilt = 0;                                  /* 0x56F0C */
+    for (i = 0; i < 3; ++i) {                            /* 0x56F18..0x56F6C: 0x158824, 0x158820, 0x158838 */
+        UiPanel *pPanel = pEnv->pppPanel[i];
+
+        if (pPanel != NULL) {
+            UiPanel_FreeLines(pPanel);                   /* 0x56F24 */
+            free(pPanel);                                /* 0x56F2C */
+        }
+        pEnv->pppPanel[i] = NULL;
+    }
+    for (i = 0; i < 2; ++i) {                            /* 0x56F74..0x56F90: 0x15882C then 0x158830 */
+        UiControl *pCtl = pEnv->papCtl[i];
+
+        if (pCtl != NULL) {
+            UiControl_FreePads(pCtl);                    /* 0x56F88 */
+            free(pCtl);                                  /* 0x56F90 */
+        }
+        pEnv->papCtl[i] = NULL;
+    }
+}
+
+void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv)
+{
+    UiPanel *pNames, *pFree, *pTotals;
+    const i32 nBase = (pEnv != NULL && pEnv->pnWorkBaseIdx != NULL) ? (i32)*pEnv->pnWorkBaseIdx : 0;
+    const ObjectRecFull *pObjEngineer =                                   /* byte_113C80, slot 112 */
+        (pEnv != NULL && pEnv->apObjects != NULL) ? pEnv->apObjects[PUFO_ROW_ENGINEER] : NULL;
+    const ObjectRecFull *pObjScientist =                                  /* byte_113C84, slot 113 */
+        (pEnv != NULL && pEnv->apObjects != NULL) ? pEnv->apObjects[PUFO_ROW_SCIENTIST] : NULL;
+    /* Map_nCraftCount @ 0x114B4C, read as an unsigned byte here (ANDS R3, R0, #0xFF then CMP #0). */
+    const i32 nCraftCount = (pEnv != NULL && pEnv->pnCraftCount != NULL)
+                                ? (i32)(*pEnv->pnCraftCount & 0xFF) : 0;
+    char szName[PUFO_PANEL_LINE_BYTES];
+    i32 nShips = 0;
+    i32 i;
+
+    if (pEnv == NULL || pEnv->pbBuilt == NULL || pEnv->pppPanel == NULL) {
+        return;
+    }
+    if (*pEnv->pbBuilt != 0) {
+        BaseInfoReleasePanels(pEnv);
+        return;
+    }
+
+    *pEnv->pbBuilt = 1;                                  /* 0x55810 */
+    if (pEnv->pbModeFlag != NULL) {
+        *pEnv->pbModeFlag = 1;                           /* 0x5581C: byte_AB190, the toggle's flag */
+    }
+
+    pEnv->pppPanel[0] = BaseInfoNewPanel();              /* 0x55828: 0x158824, the name column */
+    pEnv->pppPanel[1] = BaseInfoNewPanel();              /* 0x5586C: 0x158820, the free column */
+    pEnv->pppPanel[2] = BaseInfoNewPanel();              /* 0x558A0: 0x158838, the total column */
+    pNames = pEnv->pppPanel[0];
+    pFree = pEnv->pppPanel[1];
+    pTotals = pEnv->pppPanel[2];
+    if (pNames == NULL || pFree == NULL || pTotals == NULL) {
+        return; /* deviation: the original dereferences all three without testing them */
+    }
+
+    BaseInfoPanelCommon(pNames, PUFO_BASEINFO_NAME_X, PUFO_BASEINFO_NAME_CLICKL,
+                        PUFO_BASEINFO_NAME_VIEWW);
+    for (i = 0; i < PUFO_BASEINFO_PANEL_LINES; ++i) {    /* 0x559B4..0x55A34: all three panels cleared */
+        BaseInfoClearRow(pNames, i);
+        BaseInfoClearRow(pFree, i);
+        BaseInfoClearRow(pTotals, i);
+    }
+    for (i = 0; i < 4; ++i) {                            /* 0x55A6C..0x55AD8: rows 0, 5, 12 and 16 */
+        static const i32 anMetaRow[4] = { 0, 5, 12, 16 };
+        BaseInfoRowMeta(pNames, anMetaRow[i]);
+    }
+
+    /* 0x55E28..0x55F20: the base's craft, in apCraft order. Map_nCraftCount is read unsigned here
+     * (ANDS R3, R0, #0xFF then CMP #0 / BLS), byte_1870F4 signed (LDRSB at 0x55E6C) and Ship.bHomeBase
+     * unsigned (LDRB at 0x55E70). */
+    if (pEnv->apCraft != NULL && nCraftCount != 0) {
+        for (i = 0; i < nCraftCount; ++i) {
+            const Ship *pShip = pEnv->apCraft[i];
+
+            if (pShip == NULL || (i32)(u8)pShip->bHomeBase != nBase) {
+                continue;                                /* 0x55E78 */
+            }
+            {
+                const i32 nCraftIdx = Ship_FindIndexById(pEnv->apCraft, nCraftCount,
+                                                         (i32)(u8)pShip->bId); /* 0x55E84 */
+                const char *pszShip = Ship_FormatDisplayName(pEnv->apCraft, nCraftIdx,
+                                                             pEnv->pTextRecs, szName, sizeof(szName));
+
+                (void)UiPanel_SetLineText(pNames, PUFO_BASEINFO_SHIP_ROW + nShips,
+                                          (pszShip != NULL) ? pszShip : ""); /* 0x55E94..0x55EB8 */
+            }
+            UiPanel_SetLineAux(pNames, PUFO_BASEINFO_SHIP_ROW + nShips, (i32)(u8)pShip->bCraftType);
+            UiPanel_SetLineAux(pFree, PUFO_BASEINFO_SHIP_ROW + nShips, (i32)(u8)pShip->bId);
+            UiPanel_SetLineAux(pTotals, PUFO_BASEINFO_SHIP_ROW + nShips, 1); /* 0x55EE8: the run marker */
+            ++nShips;
+        }
+    }
+
+    BaseInfoClearRow(pNames, nShips + 17);                                 /* 0x55F30 */
+    for (i = 0; i < 3; ++i) {                            /* 0x55F44..0x55FB0: rows nShips+18, +23, +25 */
+        static const i32 anTailMeta[3] = { 18, 23, 25 };
+        BaseInfoRowMeta(pNames, nShips + anTailMeta[i]);
+    }
+    for (i = 18; i <= 25; ++i) {                        /* 0x55FE4..0x56178: eight more cleared rows */
+        BaseInfoClearRow(pNames, nShips + i);
+    }
+
+    BaseInfoPanelCommon(pFree, PUFO_BASEINFO_FREE_X, PUFO_BASEINFO_NARROW_CLICKL,
+                        PUFO_BASEINFO_NARROW_VIEWW);                       /* 0x56188..0x56278 */
+    pFree->nUnk7076 = 1;                                                   /* 0x56270 */
+    BaseInfoPanelCommon(pTotals, PUFO_BASEINFO_TOTAL_X, PUFO_BASEINFO_NARROW_CLICKL,
+                        PUFO_BASEINFO_NARROW_VIEWW);                       /* 0x56288..0x56360 */
+    pTotals->nUnk7076 = 1;                                                 /* 0x56358 */
+
+    /* 0x56364..0x563A8: the soldiers aboard the listed craft. The loop runs while the TOTAL column's
+     * aux is 1, and passes the FREE column's aux -- Ship.bId, not the roster index every other
+     * Craft_CountSoldiersAboard call site uses. */
+    {
+        i32 nAboard = 0;
+
+        if (BaseInfoPanelAux(pTotals, PUFO_BASEINFO_SHIP_ROW) == 1) {
+            i32 n = 0;
+
+            do {
+                nAboard += Craft_CountSoldiersAboard(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                     BaseInfoPanelAux(pFree, PUFO_BASEINFO_SHIP_ROW + n));
+                ++n;
+            } while (BaseInfoPanelAux(pTotals, PUFO_BASEINFO_SHIP_ROW + n) == 1);
+        }
+        BaseInfoSetNumber(pFree, 1, nAboard, "");                            /* 0x563B8 */
+    }
+
+    /* 0x563FC..0x56670: the five capacity deltas and the two crew ones. */
+    {
+        const i32 nEntries = (pEnv->pbEntryCount != NULL) ? (i32)*pEnv->pbEntryCount : 0;
+        const u16 *pManuf = (pEnv->apManufCol != NULL)
+                                ? pEnv->apManufCol + PUFO_PRODUCT_ENTRIES_PER_BASE * nBase : NULL;
+        const u16 *pResearch = (pEnv->apResearchCol != NULL)
+                                   ? pEnv->apResearchCol + PUFO_RESEARCH_TOPIC_COUNT * nBase : NULL;
+
+        BaseInfoSetNumber(pFree, 2,
+                          Base_GetItemQty(pObjEngineer, nBase)
+                              - Base_GetEngineerCount(pObjEngineer, pManuf, nBase, nEntries), "");
+        BaseInfoSetNumber(pFree, 3,
+                          Base_GetItemQty(pObjScientist, nBase)
+                              - Base_GetScientistCount(pObjScientist, pResearch, nBase, nEntries), "");
+        BaseInfoSetNumber(pFree, 6,
+                          Base_CalcLivingQuartersCap(pEnv->abFacilityGrid, nBase)
+                              - Base_CalcOccupiedSpace(pEnv->apSoldiers, pEnv->nSoldierCount,
+                                                       pEnv->apObjects, pEnv->nObjectCount, nBase), "");
+        BaseInfoSetNumber(pFree, 7,
+                          Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase)
+                              - Base_CalcStorageUsed(pEnv->apObjects, pEnv->nObjectCount, nBase), "");
+        BaseInfoSetNumber(pFree, 8,
+                          Base_CalcLabCap(pEnv->abFacilityGrid, nBase)
+                              - ((pResearch != NULL) ? Base_CountActiveResearch(pResearch, nEntries) : 0),
+                          "");
+        BaseInfoSetNumber(pFree, 9,
+                          Base_CalcWorkshopCap(pEnv->abFacilityGrid, nBase)
+                              - ((pManuf != NULL) ? Base_CountActiveManuf(pManuf, nEntries) : 0), "");
+        BaseInfoSetNumber(pFree, 10,
+                          Base_CalcHangarCap(pEnv->abFacilityGrid, nBase)
+                              - Base_CountInboundTransfers(pEnv->aSites, pEnv->nSiteCount, -1,
+                                                           pEnv->apBases, nBase, true)
+                              - Base_CountShipsAtBase(pEnv->apCraft, nCraftCount,
+                                                      pEnv->apBases, pEnv->nBaseCount,
+                                                      pEnv->abGridBytes, nBase), "");
+    }
+
+    /* 0x566A4..0x5685C: the craft cost rows. A zero aux is handled here too (0x56810) and the run
+     * continues; only the total column's marker ending stops it. */
+    {
+        i32 nShipTotal = 0;
+        i32 n = 0;
+
+        if (BaseInfoPanelAux(pTotals, PUFO_BASEINFO_SHIP_ROW) == 1) {
+            for (;;) {
+                const i32 nAux = BaseInfoPanelAux(pNames, PUFO_BASEINFO_SHIP_ROW + n);
+
+                if (nAux >= 0 && nAux <= 4) {
+                    (void)UiPanel_SetLineText(pFree, PUFO_BASEINFO_SHIP_ROW + n,
+                                              g_apzBaseInfoCraftLabel[nAux]);
+                    nShipTotal += g_anBaseInfoCraftCost[nAux];
+                }
+                ++n;
+                if (BaseInfoPanelAux(pTotals, PUFO_BASEINFO_SHIP_ROW + n) != 1) {
+                    break;
+                }
+            }
+        }
+
+        /* 0x56860..0x568FC: the free column's three unit-price rows. These are fixed literals, not
+         * computed -- the free column says what one of each costs, the total column what this base
+         * actually holds costs. */
+        (void)UiPanel_SetLineText(pFree, n + 19, "20000$");                 /* a20000 @ 0xAB1DC */
+        (void)UiPanel_SetLineText(pFree, n + 20, "20000$");                 /* the same literal twice */
+        (void)UiPanel_SetLineText(pFree, n + 21, "30000$");                 /* a30000 @ 0xAB1E4 */
+
+        {
+            const i32 nSoldiers = Base_CountSoldiers(pEnv->apSoldiers, pEnv->nSoldierCount, nBase);
+            const i32 nEngineers = Base_GetItemQty(pObjEngineer, nBase);
+            const i32 nScientists = Base_GetItemQty(pObjScientist, nBase);
+            i32 nFacTotal = 0;
+            i32 nGrand = PUFO_BASEINFO_PRICE_SOLDIER * (nSoldiers + nEngineers)
+                       + PUFO_BASEINFO_PRICE_SCIENTIST * nScientists + nShipTotal;
+
+            /* 0x56904..0x569B8: the total column's money breakdown, each row itoa'd and then
+             * strcat with the single '$' at asc_AB1D8. */
+            BaseInfoSetNumber(pTotals, n + 19, PUFO_BASEINFO_PRICE_SOLDIER * nSoldiers, "$");
+            BaseInfoSetNumber(pTotals, n + 20, PUFO_BASEINFO_PRICE_SOLDIER * nEngineers, "$");
+            BaseInfoSetNumber(pTotals, n + 21, PUFO_BASEINFO_PRICE_SCIENTIST * nScientists, "$");
+
+            if (pEnv->abFacilityGrid != NULL) {
+                const u8 *pType = pEnv->abFacilityGrid + 480 + 144 * nBase; /* 0x56AA4 + 0x174 */
+                i32 nCol, nRow;
+
+                for (nCol = 0; nCol < 6; ++nCol) {
+                    for (nRow = 0; nRow < 6; ++nRow) {
+                        if (pType[nCol + 6 * nRow] != PUFO_BASEINFO_FAC_EMPTY) {
+                            nFacTotal += PUFO_BASEINFO_PRICE_CELL;           /* 0x56ABC */
+                        }
+                    }
+                }
+            }
+
+            BaseInfoSetNumber(pFree, n + 23, nFacTotal, "$");                /* 0x56AE0 */
+            BaseInfoSetNumber(pFree, n + 25, nGrand + nFacTotal, "$");       /* 0x56B28 */
+
+            BaseInfoSetNumber(pTotals, 1, nSoldiers, "");                    /* 0x56B78 */
+            BaseInfoSetNumber(pTotals, 2, nEngineers, "");                   /* 0x56BBC */
+            BaseInfoSetNumber(pTotals, 3, nScientists, "");                  /* 0x56C00 */
+            BaseInfoSetNumber(pTotals, 6, Base_CalcLivingQuartersCap(pEnv->abFacilityGrid, nBase), "");
+            BaseInfoSetNumber(pTotals, 7, Base_CalcStoresCapacity(pEnv->abFacilityGrid, nBase), "");
+            BaseInfoSetNumber(pTotals, 8, Base_CalcLabCap(pEnv->abFacilityGrid, nBase), "");
+            BaseInfoSetNumber(pTotals, 9, Base_CalcWorkshopCap(pEnv->abFacilityGrid, nBase), "");
+            BaseInfoSetNumber(pTotals, 10, Base_CalcHangarCap(pEnv->abFacilityGrid, nBase), "");
+            BaseInfoSetNumber(pTotals, 13,
+                              Base_CountBuiltFacilities(pEnv->abFacilityGrid, nBase), ""); /* 0x56D88 */
+
+            /* 0x56DD4..0x56ED4: rows 14 and 15 are cleared, then cleared again for every cell of this
+             * base that is facility kind 4 or kind 5. Both sources are zero-filled scratch, so the
+             * scan has no visible effect -- reproduced because it is what the original does. */
+            BaseInfoClearRow(pTotals, 14);
+            BaseInfoClearRow(pTotals, 15);
+            if (pEnv->abFacilityGrid != NULL) {
+                const u8 *pType = pEnv->abFacilityGrid + 480 + 144 * nBase;
+                i32 nCol, nRow;
+
+                for (nRow = 0; nRow < 6; ++nRow) {
+                    for (nCol = 0; nCol < 6; ++nCol) {
+                        if (pType[6 * nRow + nCol] == PUFO_BASEINFO_FAC_LIVING) {
+                            BaseInfoClearRow(pTotals, 14);
+                        }
+                        if (pType[6 * nRow + nCol] == PUFO_BASEINFO_FAC_WORKSHOP) {
+                            BaseInfoClearRow(pTotals, 15);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 static const char *PsiUi_Text(const PsiScreenDrawEnv *pEnv, i32 nRec)
 {
     if (pEnv->pTextRecs == NULL) {

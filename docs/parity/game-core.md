@@ -16261,3 +16261,80 @@ through a BaseSiteRec array instead of the original's fixed globals; it bounds t
 uses; it takes the strip drawer and the two control blits as seams; it keeps the working base index and the
 drawn base index as two env fields where the original has one global and one argument; and it guards the
 pad pointer, the panel list, the base-count pointer and the strip hook that the original reaches unguarded.
+## Unit 92 - the base-info screen's panels (BaseInfoScreen_Init @ 0x57688, BaseInfoScreen_BuildPanels @ 0x557f4)
+
+Ported: BaseInfoScreen_Init (312 B) and BaseInfoScreen_BuildPanels (6,084 B) in src/pufo/game/pufo_baseui.c,
+declared in pufo_baseui.h as BaseInfoScreenInitEnv / BaseInfoBuildEnv. Tests: TestBaseInfoBuildPanels and
+TestBaseInfoInit in tests/test_baseui.c, 135 checks.
+
+Init @ 0x57688 takes the address of the three-slot block at 0x158828. Slot 0 is the screen pad: operator
+new(0x14), PadImage_ctor, PadImage_Load("baseinfo", 14) (aBaseinfo @ 0xAB20C), then both origins are set to 0.
+Slots 1 and 2 are controls: two rounds of operator new(0x20) plus UiControl_ctor, then slot 1 gets
+BaseInfoScreen_OnOk @ 0x557c8 and slot 2 gets BaseInfoScreen_TogglePanelMode @ 0x55754 through +0x0C. The shared
+close control unk_186B00 is moved to (224, 1) and given BaseInfoScreen_CloseThunk @ 0x557bc. Both controls then
+run UiControl_Setup(ctl, 0, 0, stru_AB198[i]) - the descriptors are {1, 300, "emptyb", "cemptyb", "", 0} and
+{120, 300, ...}, so the OK button lands at (1, 300) and the toggle at (120, 300), both in mode 0. The tail is
+byte_1870F4 = nSelectedBaseIdx, byte_1870F8 = 0, then BaseInfoScreen_BuildPanels() as a tail call.
+
+BuildPanels @ 0x557f4 has two arms off bBaseInfoPanelsBuilt @ 0x15883C. The release arm (0x56F0C..0x56F90)
+clears the flag, UiPanel_FreeLines plus operator delete on pBaseInfoPanelNames, pBaseInfoPanelFree and
+pBaseInfoPanelTotals, then UiControl_FreePads plus delete on the two slots after pBaseInfoPad - that is
+0x15882C and 0x158830. It does NOT free pBaseInfoPad itself; Geoscape_CloseUI @ 0x8BE00 does that.
+The build arm sets the flag, sets bBaseInfoPanelMode @ 0xAB190 to 1, and builds three UiPanel(42).
+
+Panel geometry, shared except for x, the click-rect left and the view width: nStyle 16, nFont 16, pfnClick null,
+nPosY 40, nUnk7056 70, SetBytes0to2(B4, B4, B4), SetBytes6to11(F0, F0, F0, 14, 14, 14), bFlag7073 and bFlag7072
+cleared. The name column is x 10, nUnk7052 5, nViewW 200 and never touches nUnk7076; the free column is x 130,
+nUnk7052 210, nViewW 10, nUnk7076 1; the total column is x 190 with the same narrow settings.
+
+Every label on this screen is a clear, not a string. The 42-row loop at 0x559B4 copies from 0x10DA38 into all
+three panels, and the per-row label copies at 0x55A90..0x55C58 (name rows 0..16), 0x55FE4..0x56178 (name rows
+nShips+18..nShips+25) and 0x56D8C..0x56DCC (total rows 14 and 15) copy from 0x104C7B, 0x104D48, ... 0x105C7F,
+0x105D4C and 0x105E19. All of those sit above 0xAC800, past the end of the .data file image (.data is va 0xA6000,
+vsz 0xE2D70, rsz only 0x6800), and none of them has a write xref anywhere in the binary: they are zero-filled
+scratch, so each copy writes an empty string. The port reproduces them as clears.
+
+Craft list, 0x55E28..0x55F20. Map_nCraftCount @ 0x114B4C is read unsigned (ANDS R3, R0, #0xFF then CMP #0 / BLS),
+byte_1870F4 signed (LDRSB at 0x55E6C) and Ship.bHomeBase unsigned (LDRB at 0x55E70); a craft joins the list when
+the two match. The name is Ship_FormatDisplayName(Ship_FindIndexById(Ship.bId)) - the display name comes from the
+id lookup, while the three aux writes come from the roster slot: name aux = Ship.bCraftType, free aux = Ship.bId,
+total aux = 1 as the run marker. Rows start at 17 and the counter only advances on a match.
+
+Row map. Free column: 1 soldiers aboard, 2 engineers free, 3 scientists free, 6..10 the capacity deltas
+(living quarters minus Base_CalcOccupiedSpace, stores minus Base_CalcStorageUsed, labs minus
+Base_CountActiveResearch, workshops minus Base_CountActiveManuf, hangar minus Base_CountInboundTransfers(-1, scan
+ON) minus Base_CountShipsAtBase), 17.. the craft cost labels, nShips+19/20/21 the fixed unit prices 20000$,
+20000$ and 30000$, nShips+23 the facility total and nShips+25 the grand total. Total column: 1, 2, 3 the crew
+counts, 6..10 the five capacities, 13 Base_CountBuiltFacilities, nShips+19/20/21 the money breakdown
+20000*soldiers$, 20000*engineers$ and 30000*scientists$. Name column: SetLineMeta(200, 150, -106, 50, 10, 10) on
+rows 0, 5, 12, 16 and on nShips+18, nShips+23, nShips+25.
+
+The soldiers-aboard loop (0x56364) runs while the TOTAL column's aux is 1 and passes the FREE column's aux, which
+is Ship.bId. This is the only Craft_CountSoldiersAboard @ 0x6649c call site in the binary that passes a craft id
+rather than the roster index; every other caller passes the index. Recorded as a comment on the function.
+
+The craft cost loop (0x566A4..0x5685C) is where Hex-Rays misleads. It renders the aux-0 case as a break out of
+the loop, but the break only leaves the switch: 0x56810 writes "500000$" and 0x56838 adds 500000, and the loop
+test at 0x56858 then continues. So aux 0 is priced like aux 1 and the run keeps going; only the total column's
+marker ceasing to be 1 ends it. A type outside 0..4 takes the switch default: no label, no cost, run continues.
+
+The money total (0x56958) is 20000 * (Base_CountSoldiers + engineers held here) + 30000 * scientists held here +
+the craft sum. The facility part (0x56A74..0x56AE0) walks grid + 144*base + 108 + k, reading [R1+372] and
+advancing R1 by 6, which is the same 36 cells as grid + 480 + 144*base that every capacity pass walks; each cell
+whose type byte is not 0xFF adds 50000, built or not. The final scan (0x56DD4..0x56ED4) re-clears total rows 14
+and 15 for every cell of kind 4 or kind 5 - both sources are zero-filled scratch, so it has no visible effect.
+
+Deviations. The port nulls the three panel slots and the two control slots after freeing them; the original
+leaves them dangling (nothing reads them before the next build). The port refuses a null environment, guards the
+three panel pointers after allocation and bounds every row index, where the original dereferences and indexes
+blindly. snprintf("%d") stands in for j_itoa @ 0x9e9f0. The original frees no pad in the release arm and the port
+matches that.
+
+Unobservable by construction, so no test can pin them: the clear of name row nShips+17, the eight-row clear count
+at 0x55FE4, the 42-row clear count and the kind-4/kind-5 re-clear all write empty strings over rows that are
+already empty. Four mutations in exactly those places stay green, as expected.
+
+IDB: unk_158824 -> pBaseInfoPanelNames, unk_158820 -> pBaseInfoPanelFree, unk_158838 -> pBaseInfoPanelTotals
+(all typed UiPanel *), byte_AB190 -> bBaseInfoPanelMode, asc_AB1D8 -> aDollarSign. Comments added at 0x557f4 (the
+row map and the zero-filled-scratch finding), 0x56810 (the aux-0 continuation that Hex-Rays renders as a break),
+0x57688 (the three-slot block layout) and 0x6649c (the id-vs-index call shape).

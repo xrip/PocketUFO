@@ -14788,6 +14788,491 @@ static void TestPsiScreenDraw(void)
     CheckEqI32(PdInkAll(pPix), 0, "a null env draws nothing");
 }
 
+/* ---- BaseInfoScreen_BuildPanels @ 0x557f4 and BaseInfoScreen_Init @ 0x57688 ---- */
+
+static UiPanel *g_apBiPanel[3];
+static UiControl *g_apBiCtl[2];
+static u8 g_bBiBuilt;
+static u8 g_bBiMode;
+static i8 g_nBiWorkBase;
+static Ship g_aBiShip[4];
+static Ship *g_apBiShip[4];
+static Soldier g_aBiSol[3];
+static Soldier *g_apBiSol[3];
+static ObjectRecFull g_aBiObj[149];
+static ObjectRecFull *g_apBiObj[149];
+static BaseRec g_aBiBase;
+static BaseRec *g_apBiBases[8];
+static SmapSite g_aBiSites[2];
+static u8 g_abBiGrid[PUFO_GRID_SIZE];
+static u8 g_abBiGridBytes[64];
+static u16 g_auBiManuf[PUFO_PRODUCT_ENTRIES_PER_BASE * PUFO_FAC_BASE_COUNT];
+static u16 g_auBiResearch[PUFO_RESEARCH_TOPIC_COUNT * PUFO_FAC_BASE_COUNT];
+static u8 g_bBiEntryCount;
+static u8 g_bBiCraftCount;
+static BaseInfoBuildEnv g_biEnv;
+static PadImage *g_pBiPad;
+static UiControl g_biCloseCtl;
+static i32 g_nBiOk, g_nBiToggle, g_nBiClose, g_nBiBuild;
+static char g_szBiPad0[32], g_szBiPad1[32], g_szBiPad2[32];
+
+static const char *BiRow(UiPanel *pPanel, i32 nRow)
+{
+    const char *psz = (pPanel != NULL) ? UiPanel_GetLineText(pPanel, nRow) : NULL;
+
+    return (psz != NULL) ? psz : "<none>";
+}
+
+static void BiRowMeta(UiPanel *pPanel, i32 nRow, i32 nWhich, i32 *pR, i32 *pG, i32 *pB)
+{
+    u8 r = 0, g = 0, b = 0;
+
+    (void)UiPanel_GetLineMeta(pPanel, nRow, nWhich, &r, &g, &b);
+    *pR = r; *pG = g; *pB = b;
+}
+
+static void BiFixture(void)
+{
+    i32 i;
+
+    for (i = 0; i < 3; ++i) {
+        g_apBiPanel[i] = NULL;
+    }
+    for (i = 0; i < 2; ++i) {
+        g_apBiCtl[i] = (UiControl *)calloc(1, sizeof(UiControl));
+        if (g_apBiCtl[i] != NULL) {
+            (void)UiControl_ctor(g_apBiCtl[i]);
+        }
+    }
+    g_bBiBuilt = 0;
+    g_bBiMode = 0;
+    g_nBiWorkBase = 0;
+    g_bBiEntryCount = 4;
+    g_bBiCraftCount = 4;
+
+    /* id 7 / type 1 at base 0, id 9 / type 2 at base 0, id 5 / type 4 at base 1 (skipped),
+     * id 3 / type 0 at base 0: the aux-0 craft the cost loop still prices at 500000. */
+    memset(g_aBiShip, 0, sizeof(g_aBiShip));
+    g_aBiShip[0].bType = 1; g_aBiShip[0].bId = 7; g_aBiShip[0].bCraftType = 1; g_aBiShip[0].bHomeBase = 0;
+    g_aBiShip[1].bType = 2; g_aBiShip[1].bId = 9; g_aBiShip[1].bCraftType = 2; g_aBiShip[1].bHomeBase = 0;
+    g_aBiShip[2].bType = 3; g_aBiShip[2].bId = 5; g_aBiShip[2].bCraftType = 4; g_aBiShip[2].bHomeBase = 1;
+    g_aBiShip[3].bType = 4; g_aBiShip[3].bId = 3; g_aBiShip[3].bCraftType = 0; g_aBiShip[3].bHomeBase = 0;
+    for (i = 0; i < 4; ++i) {
+        g_apBiShip[i] = &g_aBiShip[i];
+    }
+
+    /* Two soldiers at base 0 and one at base 1 that is still aboard craft 9: the aboard count
+     * keys on Soldier.bUnk183 alone, exactly as Craft_CountSoldiersAboard does. */
+    memset(g_aBiSol, 0, sizeof(g_aBiSol));
+    g_aBiSol[0].nKind = 0; g_aBiSol[0].bUnk183 = 7;
+    g_aBiSol[1].nKind = 0; g_aBiSol[1].bUnk183 = 9;
+    g_aBiSol[2].nKind = 1; g_aBiSol[2].bUnk183 = 9;
+    for (i = 0; i < 3; ++i) {
+        g_apBiSol[i] = &g_aBiSol[i];
+    }
+
+    memset(g_aBiObj, 0, sizeof(g_aBiObj));
+    for (i = 0; i < 149; ++i) {
+        g_apBiObj[i] = &g_aBiObj[i];
+    }
+    g_aBiObj[112].auPerBaseVal[0] = 5; /* engineers held at base 0 */
+    g_aBiObj[113].auPerBaseVal[0] = 3; /* scientists held at base 0 */
+
+    memset(g_auBiManuf, 0, sizeof(g_auBiManuf));
+    g_auBiManuf[0] = 1; g_auBiManuf[1] = 2;      /* 3 of the 5 engineers are allocated */
+    memset(g_auBiResearch, 0, sizeof(g_auBiResearch));
+    g_auBiResearch[0] = 1; g_auBiResearch[1] = 1; /* 2 of the 3 scientists are allocated */
+
+    memset(&g_aBiBase, 0, sizeof(g_aBiBase));
+    g_aBiBase.bUnk4 = 7;
+    for (i = 0; i < 8; ++i) {
+        g_apBiBases[i] = &g_aBiBase;
+    }
+    memset(g_aBiSites, 0, sizeof(g_aBiSites));
+    g_aBiSites[0].bFlag1 = 99; /* matches no base, so the inbound scan finds nothing */
+
+    /* Build days live at grid + 36*nBase, the facility type bytes at grid + 480 + 144*nBase. Only
+     * base 0's 36 type cells get the 0xFF "nothing here" marker, so every capacity starts at zero. */
+    memset(g_abBiGrid, 0, sizeof(g_abBiGrid));
+    memset(g_abBiGrid + 480, 0xFF, 36);
+    memset(g_abBiGridBytes, 0, sizeof(g_abBiGridBytes));
+
+    PutTextRec(g_aXfText, 137, "Inter");
+    PutTextRec(g_aXfText, 138, "Intercep");
+    PutTextRec(g_aXfText, 139, "Transport");
+    PutTextRec(g_aXfText, 418, "Blimp");
+    PutTextRec(g_aXfText, 419, "Ufo");
+
+    memset(&g_biEnv, 0, sizeof(g_biEnv));
+    g_biEnv.pbBuilt = &g_bBiBuilt;
+    g_biEnv.pbModeFlag = &g_bBiMode;
+    g_biEnv.pppPanel = g_apBiPanel;
+    g_biEnv.papCtl = g_apBiCtl;
+    g_biEnv.apCraft = g_apBiShip;
+    g_biEnv.pnCraftCount = &g_bBiCraftCount;
+    g_biEnv.pnWorkBaseIdx = &g_nBiWorkBase;
+    g_biEnv.pTextRecs = g_aXfText;
+    g_biEnv.apSoldiers = g_apBiSol;
+    g_biEnv.nSoldierCount = 3;
+    g_biEnv.apObjects = g_apBiObj;
+    g_biEnv.nObjectCount = 149;
+    g_biEnv.apManufCol = g_auBiManuf;
+    g_biEnv.apResearchCol = g_auBiResearch;
+    g_biEnv.pbEntryCount = &g_bBiEntryCount;
+    g_biEnv.apBases = g_apBiBases;
+    g_biEnv.nBaseCount = 1;
+    g_biEnv.aSites = g_aBiSites;
+    g_biEnv.nSiteCount = 1;
+    g_biEnv.abFacilityGrid = g_abBiGrid;
+    g_biEnv.abGridBytes = g_abBiGridBytes;
+}
+
+/* Runs the release arm, which is also how the fixture gives its panels and controls back. */
+static void BiRelease(void)
+{
+    g_bBiBuilt = 1;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+}
+
+static void TestBaseInfoBuildPanels(void)
+{
+    UiPanel *pNames, *pFree, *pTotals;
+    i32 nR, nG, nB;
+    i32 i;
+
+    printf("the base info screen's panels\n");
+
+    /* ---- the build arm, with an empty base layout ---- */
+    BiFixture();
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pNames = g_apBiPanel[0];
+    pFree = g_apBiPanel[1];
+    pTotals = g_apBiPanel[2];
+
+    Check(g_bBiBuilt == 1, "the build arm sets the built flag");
+    CheckEqI32(g_bBiMode, 1, "the build arm sets the panel-mode byte at 0xAB190");
+    Check(pNames != NULL && pFree != NULL && pTotals != NULL, "all three columns are allocated");
+    if (pNames == NULL || pFree == NULL || pTotals == NULL) {
+        return;
+    }
+
+    CheckEqI32(pNames->nLineCount, 42, "the name column is built with 42 lines");
+    CheckEqI32(pNames->nPosX, 10, "the name column sits at x 10");
+    CheckEqI32(pFree->nPosX, 130, "the free column at x 130");
+    CheckEqI32(pTotals->nPosX, 190, "the total column at x 190");
+    CheckEqI32(pNames->nViewW, 200, "the name column is 200 wide");
+    CheckEqI32(pFree->nViewW, 10, "the free column is 10 wide");
+    CheckEqI32(pTotals->nViewW, 10, "the total column is 10 wide");
+    CheckEqI32(pNames->nUnk7052, 5, "the name column's click rect starts at 5");
+    CheckEqI32(pFree->nUnk7052, 210, "the narrow columns' starts at 210");
+    CheckEqI32(pTotals->nUnk7052, 210, "in both of them");
+    CheckEqI32(pNames->nStyle, 16, "each column shows 16 rows");
+    CheckEqI32(pNames->nFont, 16, "each column draws in font 16");
+    CheckEqI32(pNames->nPosY, 40, "each column starts at y 40");
+    CheckEqI32(pNames->nUnk7056, 70, "and its click rect at y 70");
+    CheckEqI32(pNames->bFlag7072, 0, "the ctor's two style flags are cleared");
+    CheckEqI32(pNames->bFlag7073, 0, "in both");
+    CheckEqI32(pNames->nUnk7076, 0, "the name column leaves nUnk7076 alone");
+    CheckEqI32(pFree->nUnk7076, 1, "the free column sets it to 1");
+    CheckEqI32(pTotals->nUnk7076, 1, "and so does the total column");
+    Check(pNames->pfnClick == NULL, "no column gets a click handler");
+    CheckEqI32(pNames->gap_0[0], 0xB4, "the shared panel colours");
+    CheckEqI32(pNames->gap_0[2], 0xB4, "for the key triple");
+    CheckEqI32(pNames->gap_0[6], 0xF0, "and the two RGB triples");
+    CheckEqI32(pNames->gap_0[9], 0x14, "down to the last byte");
+
+    /* The four meta rows, and a row that must not have any. */
+    BiRowMeta(pNames, 0, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "name row 0 gets the 200,150,-106 triple");
+    BiRowMeta(pNames, 0, 2, &nR, &nG, &nB);
+    Check(nR == 50 && nG == 10 && nB == 10, "and the 50,10,10 highlight triple");
+    BiRowMeta(pNames, 5, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "row 5 too");
+    BiRowMeta(pNames, 12, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "row 12 too");
+    BiRowMeta(pNames, 16, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "row 16 too");
+    BiRowMeta(pNames, 1, 1, &nR, &nG, &nB);
+    Check(nR == 0 && nG == 0 && nB == 0, "while row 1 keeps the zeroed meta");
+
+    /* The craft list: three of the four craft are homed here, in apCraft order. */
+    Check(0 == strcmp(BiRow(pNames, 17), "Intercep1"), "name row 17 is the first craft's display name");
+    Check(0 == strcmp(BiRow(pNames, 18), "Transport2"), "row 18 the second");
+    Check(0 == strcmp(BiRow(pNames, 19), "Inter4"), "row 19 the type-0 one");
+    Check(0 == strcmp(BiRow(pNames, 20), ""), "row 20, past the last craft, is cleared");
+    CheckEqI32(pNames->anLineAux[17], 1, "the name column's aux is Ship.bCraftType");
+    CheckEqI32(pNames->anLineAux[18], 2, "for every craft row");
+    CheckEqI32(pNames->anLineAux[19], 0, "including the type-0 craft");
+    CheckEqI32(pFree->anLineAux[17], 7, "the free column's aux is Ship.bId");
+    CheckEqI32(pFree->anLineAux[18], 9, "for every craft row");
+    CheckEqI32(pFree->anLineAux[19], 3, "including the type-0 craft");
+    CheckEqI32(pTotals->anLineAux[17], 1, "the total column's aux is the run marker");
+    CheckEqI32(pTotals->anLineAux[19], 1, "on every craft row");
+    CheckEqI32(pTotals->anLineAux[20], 0, "and stops after the last one");
+
+    /* The tail rows move with the craft count: nShips is 3 here. */
+    BiRowMeta(pNames, 21, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "the tail meta lands on nShips+18");
+    BiRowMeta(pNames, 26, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "on nShips+23");
+    BiRowMeta(pNames, 28, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "and on nShips+25");
+    Check(0 == strcmp(BiRow(pNames, 21), "") && 0 == strcmp(BiRow(pNames, 28), ""),
+          "the eight rows after the craft list are cleared");
+
+    /* Crew and capacity rows of the free column. */
+    Check(0 == strcmp(BiRow(pFree, 1), "3"), "soldiers aboard counts by craft id, across every base");
+    Check(0 == strcmp(BiRow(pFree, 2), "3"), "free engineers is the held total minus the allocated");
+    Check(0 == strcmp(BiRow(pFree, 3), "2"), "and the same for scientists");
+    Check(0 == strcmp(BiRow(pFree, 6), "-10"), "living quarters: no cells, ten occupants");
+    Check(0 == strcmp(BiRow(pFree, 7), "0"), "stores: nothing built, nothing stored");
+    Check(0 == strcmp(BiRow(pFree, 8), "-2"), "labs: none built, two research lines active");
+    Check(0 == strcmp(BiRow(pFree, 9), "-3"), "workshops: none built, three manufacturing lines");
+    Check(0 == strcmp(BiRow(pFree, 10), "-3"), "hangar: no slots, three craft homed here");
+
+    /* The craft cost rows. Aux 0 gets the 500000 label and the run continues (0x56810). */
+    Check(0 == strcmp(BiRow(pFree, 17), "500000$"), "craft type 1 costs 500000");
+    Check(0 == strcmp(BiRow(pFree, 18), "700000$"), "type 2 costs 700000");
+    Check(0 == strcmp(BiRow(pFree, 19), "500000$"), "and aux 0 is priced at 500000 too");
+    Check(0 == strcmp(BiRow(pFree, 20), "") && 0 == strcmp(BiRow(pFree, 21), ""),
+          "the two rows between the craft and the prices stay empty");
+    Check(0 == strcmp(BiRow(pFree, 22), "20000$"), "the free column's soldier price row");
+    Check(0 == strcmp(BiRow(pFree, 23), "20000$"), "its engineer price row");
+    Check(0 == strcmp(BiRow(pFree, 24), "30000$"), "and its scientist price row");
+
+    /* The total column's money breakdown. */
+    Check(0 == strcmp(BiRow(pTotals, 22), "40000$"), "two soldiers at 20000");
+    Check(0 == strcmp(BiRow(pTotals, 23), "100000$"), "five engineers at 20000");
+    Check(0 == strcmp(BiRow(pTotals, 24), "90000$"), "three scientists at 30000");
+
+    /* Facility total and the grand total: 140000 + 90000 + 1700000 craft. */
+    Check(0 == strcmp(BiRow(pFree, 26), "0$"), "no facility cell is built, so the facility total is zero");
+    Check(0 == strcmp(BiRow(pFree, 28), "1930000$"), "the grand total is crew plus craft");
+
+    /* The total column's count rows. */
+    Check(0 == strcmp(BiRow(pTotals, 1), "2"), "soldiers assigned to this base");
+    Check(0 == strcmp(BiRow(pTotals, 2), "5"), "engineers held here");
+    Check(0 == strcmp(BiRow(pTotals, 3), "3"), "scientists held here");
+    Check(0 == strcmp(BiRow(pTotals, 6), "0"), "living quarters capacity");
+    Check(0 == strcmp(BiRow(pTotals, 7), "0"), "stores capacity");
+    Check(0 == strcmp(BiRow(pTotals, 8), "0"), "lab capacity");
+    Check(0 == strcmp(BiRow(pTotals, 9), "0"), "workshop capacity");
+    Check(0 == strcmp(BiRow(pTotals, 10), "0"), "hangar capacity");
+    Check(0 == strcmp(BiRow(pTotals, 13), "0"), "the built-facility score");
+    Check(0 == strcmp(BiRow(pTotals, 14), "") && 0 == strcmp(BiRow(pTotals, 15), ""),
+          "rows 14 and 15 are cleared");
+
+    BiRelease();
+    Check(g_apBiPanel[0] == NULL && g_apBiPanel[1] == NULL && g_apBiPanel[2] == NULL,
+          "the release arm clears all three panel slots");
+    Check(g_apBiCtl[0] == NULL && g_apBiCtl[1] == NULL, "and both control slots");
+    Check(g_bBiBuilt == 0, "and clears the built flag");
+
+    /* ---- a base with three living-quarters cells ---- */
+    BiFixture();
+    /* Four cells, one of them in the far corner of the 6x6 block, so the walk's extent matters. */
+    g_abBiGrid[480 + 144 * 0 + 6 * 0 + 0] = 1;
+    g_abBiGrid[480 + 144 * 0 + 6 * 0 + 1] = 1;
+    g_abBiGrid[480 + 144 * 0 + 6 * 1 + 2] = 1;
+    g_abBiGrid[480 + 144 * 0 + 6 * 5 + 5] = 1;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pNames = g_apBiPanel[0];
+    pFree = g_apBiPanel[1];
+    pTotals = g_apBiPanel[2];
+    Check(0 == strcmp(BiRow(pFree, 26), "200000$"),
+          "four built cells cost 50000 each, whatever kind they are");
+    Check(0 == strcmp(BiRow(pFree, 28), "2130000$"), "and the grand total follows them");
+    Check(0 == strcmp(BiRow(pTotals, 6), "200"), "the same four cells give 200 living places");
+    Check(0 == strcmp(BiRow(pFree, 6), "190"), "ten occupants leave 190 free");
+    Check(0 == strcmp(BiRow(pTotals, 13), "0"), "the built-facility score only counts kinds 13..16");
+    BiRelease();
+
+    /* ---- a site of this base's type is inbound with craft ---- */
+    BiFixture();
+    g_aBiSites[0].bFlag1 = 7;   /* the same type as base 0's bUnk4 */
+    g_aBiSites[0].bRecoveredCraftCount = 2;
+    g_aBiSites[0].bUnk518 = 1;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pFree = g_apBiPanel[1];
+    Check(0 == strcmp(BiRow(pFree, 10), "-6"), "the hangar row also subtracts the inbound craft");
+    BiRelease();
+
+    /* ---- no craft homed here: every tail row shifts down by the craft count ---- */
+    BiFixture();
+    for (i = 0; i < 4; ++i) {
+        g_aBiShip[i].bHomeBase = 1;
+    }
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pNames = g_apBiPanel[0];
+    pFree = g_apBiPanel[1];
+    pTotals = g_apBiPanel[2];
+    Check(0 == strcmp(BiRow(pNames, 17), ""), "no craft, so row 17 stays empty");
+    CheckEqI32(pTotals->anLineAux[17], 0, "and the run marker is never written");
+    Check(0 == strcmp(BiRow(pFree, 1), "0"), "the aboard count is zero");
+    Check(0 == strcmp(BiRow(pFree, 10), "0"), "no craft homed here leaves the hangar row at zero");
+    Check(0 == strcmp(BiRow(pFree, 17), "") && 0 == strcmp(BiRow(pFree, 18), ""),
+          "no craft cost rows");
+    Check(0 == strcmp(BiRow(pFree, 19), "20000$"), "the price rows move to nShips+19");
+    Check(0 == strcmp(BiRow(pTotals, 19), "40000$"), "and so do the money rows");
+    Check(0 == strcmp(BiRow(pFree, 23), "0$"), "the facility row to nShips+23");
+    Check(0 == strcmp(BiRow(pFree, 25), "230000$"), "the grand total to nShips+25");
+    BiRowMeta(pNames, 18, 1, &nR, &nG, &nB);
+    Check(nR == 200 && nG == 150 && nB == 150, "the tail meta moves to nShips+18");
+    BiRelease();
+
+    /* ---- a craft type outside the switch: no label, no cost, but the run continues ---- */
+    BiFixture();
+    g_aBiShip[3].bCraftType = 7;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pNames = g_apBiPanel[0];
+    pFree = g_apBiPanel[1];
+    pTotals = g_apBiPanel[2];
+    Check(0 == strcmp(BiRow(pNames, 19), ""), "an unknown craft type has no display name");
+    CheckEqI32(pNames->anLineAux[19], 7, "its aux still records the type");
+    CheckEqI32(pTotals->anLineAux[19], 1, "and it still marks the run");
+    Check(0 == strcmp(BiRow(pFree, 19), ""), "but the cost row stays empty");
+    Check(0 == strcmp(BiRow(pFree, 22), "20000$"), "the run still reaches nShips+19");
+    Check(0 == strcmp(BiRow(pFree, 28), "1430000$"), "and prices only the two known craft");
+    BiRelease();
+
+    /* ---- the name comes from the id lookup, the aux from the roster slot ---- */
+    BiFixture();
+    g_aBiShip[3].bId = 7; /* the same id as craft 0, so Ship_FindIndexById answers 0 */
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    pNames = g_apBiPanel[0];
+    Check(0 == strcmp(BiRow(pNames, 19), "Intercep1"),
+          "the row shows the craft the id resolves to, not the roster slot");
+    CheckEqI32(pNames->anLineAux[19], 0, "while the aux still comes from the roster slot");
+    Check(0 == strcmp(BiRow(g_apBiPanel[1], 19), "500000$"), "and it is still priced by that aux");
+    BiRelease();
+
+    /* ---- no craft at all ---- */
+    BiFixture();
+    g_bBiCraftCount = 0;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    Check(0 == strcmp(BiRow(g_apBiPanel[0], 17), ""), "a zero craft count builds no rows");
+    CheckEqI32(g_apBiPanel[0]->anLineAux[17], 0, "and leaves every aux at zero");
+    BiRelease();
+
+    /* ---- guards ---- */
+    BiFixture();
+    BaseInfoScreen_BuildPanels(NULL);
+    Check(g_bBiBuilt == 0, "a null environment is refused");
+    g_biEnv.pppPanel = NULL;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    Check(g_bBiBuilt == 0, "an environment without a panel array is refused");
+    BiFixture();
+    g_biEnv.apCraft = NULL;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+    Check(g_apBiPanel[0] != NULL && 0 == strcmp(BiRow(g_apBiPanel[0], 17), ""),
+          "a missing craft array still builds the screen");
+    BiRelease();
+}
+
+static void BiThunkOk(void) { g_nBiOk++; }
+static void BiThunkToggle(void) { g_nBiToggle++; }
+static void BiThunkClose(void) { g_nBiClose++; }
+static void BiThunkBuild(void) { g_nBiBuild++; }
+
+static bool BiLoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                       const char *psz2, void *pUser)
+{
+    (void)pCtl;
+    (void)pUser;
+    PutStr(g_szBiPad0, psz0);
+    PutStr(g_szBiPad1, psz1);
+    PutStr(g_szBiPad2, psz2);
+    return true;
+}
+
+static void TestBaseInfoInit(void)
+{
+    BaseInfoInitEnv env;
+    i8 nSelected = 2;
+    u8 bOverlay = 9;
+    UiControl *pOk, *pToggle;
+
+    printf("the base info screen bring-up\n");
+
+    g_pBiPad = NULL;
+    memset(&g_biCloseCtl, 0, sizeof(g_biCloseCtl));
+    g_apBiCtl[0] = NULL;
+    g_apBiCtl[1] = NULL;
+    g_nBiWorkBase = 77;
+    g_nBiOk = g_nBiToggle = g_nBiClose = g_nBiBuild = 0;
+    g_szBiPad0[0] = g_szBiPad1[0] = g_szBiPad2[0] = 0;
+
+    memset(&env, 0, sizeof(env));
+    env.ppPad = &g_pBiPad;
+    env.papCtl = g_apBiCtl;
+    env.pCtlClose = &g_biCloseCtl;
+    env.pfnOkClick = BiThunkOk;
+    env.pfnToggleClick = BiThunkToggle;
+    env.pfnCloseClick = BiThunkClose;
+    env.pfnLoadPads = BiLoadPads;
+    env.pPadUser = (void *)0x1234;
+    env.pnWorkBaseIdx = &g_nBiWorkBase;
+    env.pnSelectedBaseIdx = &nSelected;
+    env.pbOverlayOpen = &bOverlay;
+    env.pfnBuildPanels = BiThunkBuild;
+
+    BaseInfoScreen_Init(&env);
+
+    Check(g_pBiPad != NULL, "the screen pad is allocated");
+    Check(g_pBiPad->pData != NULL, "the baseinfo pad loads out of the archives");
+    CheckEqI32(g_pBiPad->nMode, PUFO_BASEINFO_PAD_MODE, "in palette slot 14");
+    CheckEqI32(g_pBiPad->nOriginX, 0, "with its origin at 0");
+    CheckEqI32(g_pBiPad->nOriginY, 0, "in both axes");
+    Check(g_apBiCtl[0] != NULL && g_apBiCtl[1] != NULL, "both controls are allocated");
+    if (g_apBiCtl[0] == NULL || g_apBiCtl[1] == NULL) {
+        return;
+    }
+    pOk = g_apBiCtl[0];
+    pToggle = g_apBiCtl[1];
+    CheckEqI32(pOk->x, 1, "the OK control is placed at (1, 300)");
+    CheckEqI32(pOk->y, 300, "in both axes");
+    CheckEqI32(pToggle->x, 120, "the panel-mode toggle at (120, 300)");
+    CheckEqI32(pToggle->y, 300, "in both axes");
+    CheckEqI32(pOk->nMode, 0, "both in mode 0");
+    Check(0 == strcmp(g_szBiPad0, "emptyb") && 0 == strcmp(g_szBiPad1, "cemptyb")
+          && 0 == strcmp(g_szBiPad2, ""), "both use the empty-button pad pair");
+    Check(pOk->pfnClick == BiThunkOk, "the first control gets the OK handler");
+    Check(pToggle->pfnClick == BiThunkToggle, "the second gets the panel-mode toggle");
+    CheckEqI32(g_biCloseCtl.x, 224, "the shared close control moves to (224, 1)");
+    CheckEqI32(g_biCloseCtl.y, 1, "in both axes");
+    Check(g_biCloseCtl.pfnClick == BiThunkClose, "and keeps the close thunk");
+
+    CheckEqI32(g_nBiWorkBase, 2, "the working base takes the psi screen's selection");
+    CheckEqI32(bOverlay, 0, "the overlay flag is cleared");
+    CheckEqI32(g_nBiBuild, 1, "the panel build runs once, as the tail call");
+
+    if (pOk->pfnClick != NULL) {
+        pOk->pfnClick();
+    }
+    if (pToggle->pfnClick != NULL) {
+        pToggle->pfnClick();
+    }
+    if (g_biCloseCtl.pfnClick != NULL) {
+        g_biCloseCtl.pfnClick();
+    }
+    Check(g_nBiOk == 1 && g_nBiToggle == 1 && g_nBiClose == 1, "all three handlers are the wired ones");
+
+    UiControl_FreePads(pOk);
+    free(pOk);
+    UiControl_FreePads(pToggle);
+    free(pToggle);
+    g_apBiCtl[0] = NULL;
+    g_apBiCtl[1] = NULL;
+    if (g_pBiPad != NULL) {
+        PadImage_FreeData(g_pBiPad);
+        free(g_pBiPad);
+        g_pBiPad = NULL;
+    }
+
+    BaseInfoScreen_Init(NULL);
+    Check(g_pBiPad == NULL && g_nBiBuild == 1, "a null environment is refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -14882,6 +15367,8 @@ int main(void)
     TestUfopaediaOpen();
     TestPsiScreen();
     TestPsiScreenDraw();
+    TestBaseInfoBuildPanels();
+    TestBaseInfoInit();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

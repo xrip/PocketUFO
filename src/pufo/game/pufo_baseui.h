@@ -5609,4 +5609,146 @@ typedef struct PsiScreenDrawEnv {
 
 void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv);
 
+/* ------------------------------------------------- the base info screen
+ *
+ * BaseInfoScreen_Init @ 0x57688 (312 B) and BaseInfoScreen_BuildPanels @ 0x557f4 (6,084 B).
+ *
+ * Init brings up the screen's own pad and two controls, then tail-calls BuildPanels:
+ *   - a PadImage at 0x158828 (IDA's pBaseInfoPad), loaded "baseinfo" at mode 14 with both origins 0
+ *     (0x57694..0x576D4).
+ *   - two UiControls at 0x15882C and 0x158830 (0x576DC..0x57708). Their clicks are BaseInfoScreen_OnOk
+ *     (0x557C8) on the FIRST and BaseInfoScreen_TogglePanelMode (0x55754) on the second (0x5771C /
+ *     0x5772C) -- the order the release arm of BuildPanels then frees them in.
+ *   - the shared geoscape close control unk_186B00 moved to (224, 1) with BaseInfoScreen_CloseThunk
+ *     (0x57738..0x57750).
+ *   - UiControl_Setup over the two 32-byte descriptors at 0xAB198: (1, 300) and (120, 300), both with
+ *     the pad names "emptyb" and "cemptyb" and an empty third (0x57754..0x57774).
+ *   - byte_1870F4 takes nSelectedBaseIdx and byte_1870F8 is cleared (0x5778C / 0x57794), so the base
+ *     info screen always works on the base the geoscape has selected, and the base-select overlay
+ *     starts closed.
+ *
+ * BuildPanels is the same build/release toggle on bBaseInfoPanelsBuilt @ 0x15883C the psi and ufopaedia
+ * screens use. The release arm (0x56F0C..0x56F90) frees the three panels and the two controls at
+ * 0x15882C / 0x158830 -- and NOT the pad at 0x158828, which Geoscape_CloseUI @ 0x8BE00 releases. The
+ * build arm sets the flag, sets byte_AB190 (the panel-mode flag BaseInfoScreen_TogglePanelMode flips),
+ * and builds three 42-line panels.
+ *
+ * The three panels, all 42 lines, all nStyle 16, nFont 16, nPosY 40, click top 70, no click handler,
+ * bytes 0..2 = (B4,B4,B4), bytes 6..11 = (F0,F0,F0,14,14,14), bFlag7072 and bFlag7073 cleared:
+ *   - 0x158824, the NAME column: x 10, click left 5, nViewW 200, nUnk7076 left at the ctor's 0.
+ *   - 0x158820, the FREE column: x 130, click left 210, nViewW 10, nUnk7076 1.
+ *   - 0x158838, the TOTAL column: x 190, click left 210, nViewW 10, nUnk7076 1.
+ *
+ * Every label on this screen is a clear, not a string. All 42 rows of all three panels are first
+ * filled from 0x10DA38, and the fixed captions come from 0x104C7B + 461*i (rows 0..16 of the name
+ * column), 0x10587E + 461*i (the eight rows after the ship list) and 0x105D4C / 0x105E19 (the two
+ * facility rows of the total column). Every one of those addresses is above 0xAC800, inside .data's
+ * zero-filled span, and nothing in the binary writes any of them -- so each copy lands exactly one
+ * NUL. The only strings the screen really writes are the money literals at 0xAB1D8..0xAB20B.
+ *
+ * Rows 0, 5, 12 and 16 of the name column, and rows nShips+18, nShips+23 and nShips+25, get
+ * UiPanel_SetLineMeta(200, 150, -106, 50, 10, 10).
+ *
+ * The ship list starts at row 17 in all three panels. For every craft in apCraft order whose
+ * Ship.bHomeBase equals byte_1870F4 (the base byte read SIGNED at 0x55E6C, the ship byte unsigned at
+ * 0x55E70), in order: the name column gets Ship_FormatDisplayName of Ship_FindIndexById(Ship.bId),
+ * the name column's aux takes Ship.bCraftType, the free column's aux takes Ship.bId, and the total
+ * column's aux is set to 1 -- that 1 is the run marker the three later loops test.
+ *
+ * The free column's fixed rows: 1 = the soldiers aboard those craft, summed with
+ * Craft_CountSoldiersAboard over the marked run (0x5638C). This is the only call site in the binary
+ * that passes the craft ID rather than the roster index -- the aux it reads is Ship.bId. 2 and 3 =
+ * engineers and scientists not already allocated; 6..9 = living quarters, stores, labs and workshops,
+ * each capacity minus what it holds; 10 = Base_CalcHangarCap minus Base_CountInboundTransfers AND
+ * Base_CountShipsAtBase (0x56644), the inbound call with nSiteIdx -1 so pending sites are not counted.
+ *
+ * The ship cost rows (0x566A4..0x5685C) read the name column's aux: 0 and 1 both write "500000$" and
+ * add 500000, 2 writes "700000$", 3 "600000$", 4 "400000$", and any other value writes nothing and adds
+ * nothing. A zero aux is NOT the end of the list -- 0x56810 handles it and 0x56858 loops on; only the
+ * total column's aux ceasing to be 1 ends the run. Hex-Rays renders that zero case as a `break` out of
+ * the loop, which is wrong.
+ *
+ * The money total (0x56958): 20000 * (soldiers + engineers) + 30000 * scientists + the ship total,
+ * plus 50000 for every one of the base's 36 facility cells whose type byte is not 255 (0x56A8C..
+ * 0x56AC0). The free column shows the facility part alone at nShips+23 and the whole at nShips+25,
+ * both with the trailing '$' from asc_AB1D8; the total column shows 20000*soldiers, 20000*engineers
+ * and 30000*scientists at nShips+19..21, each with the '$'. Rows 1, 2, 3, 6, 7, 8, 9, 10 and 13 of the
+ * total column are the raw counts -- soldiers, engineers, scientists, and the five capacities -- and
+ * rows 14 and 15 are cleared, then cleared again for every cell of the base that is facility kind 4
+ * and kind 5 (0x56E20..0x56ED4), which is the only visible effect that scan has. */
+#define PUFO_BASEINFO_PAD_NAME      "baseinfo"  /* aBaseinfo @ 0xAB20C */
+#define PUFO_BASEINFO_PAD_MODE      14
+#define PUFO_BASEINFO_PANEL_LINES   42   /* every panel is built with 42 lines (0x55844) */
+#define PUFO_BASEINFO_PANEL_STYLE   16   /* and shows 16 of them */
+#define PUFO_BASEINFO_PANEL_FONT    16
+#define PUFO_BASEINFO_PANEL_Y       40
+#define PUFO_BASEINFO_CLICK_TOP     70   /* nUnk7056, the same for all three */
+#define PUFO_BASEINFO_NAME_X        10
+#define PUFO_BASEINFO_FREE_X        130
+#define PUFO_BASEINFO_TOTAL_X       190
+#define PUFO_BASEINFO_NAME_CLICKL   5    /* nUnk7052 of the name column */
+#define PUFO_BASEINFO_NARROW_CLICKL 210  /* and of the two narrow ones */
+#define PUFO_BASEINFO_NAME_VIEWW    200
+#define PUFO_BASEINFO_NARROW_VIEWW  10
+#define PUFO_BASEINFO_SHIP_ROW      17   /* the first ship row, in all three panels */
+#define PUFO_BASEINFO_META_A        200  /* the four UiPanel_SetLineMeta arguments */
+#define PUFO_BASEINFO_META_B        150
+#define PUFO_BASEINFO_META_C        50
+#define PUFO_BASEINFO_META_D        10
+#define PUFO_BASEINFO_META_ROW      0x96 /* -106 as the byte the original stores */
+#define PUFO_BASEINFO_CRAFT_COST_0  500000 /* the aux 0 and 1 cost, 0x56838 */
+#define PUFO_BASEINFO_CRAFT_COST_2  700000
+#define PUFO_BASEINFO_CRAFT_COST_3  600000
+#define PUFO_BASEINFO_CRAFT_COST_4  400000
+#define PUFO_BASEINFO_PRICE_SOLDIER 20000  /* 0x56958 / a20000 @ 0xAB1DC */
+#define PUFO_BASEINFO_PRICE_SCIENTIST 30000 /* a30000 @ 0xAB1E4 */
+#define PUFO_BASEINFO_PRICE_CELL    50000  /* one built facility cell, 0x56A88 */
+#define PUFO_BASEINFO_FAC_EMPTY     0xFF   /* the type byte that means "no facility here" */
+#define PUFO_BASEINFO_FAC_LIVING    4      /* the kind that re-clears total row 14 */
+#define PUFO_BASEINFO_FAC_WORKSHOP  5      /* and total row 15 */
+
+typedef struct BaseInfoInitEnv {
+    PadImage  **ppPad;              /* pBaseInfoPad @ 0x158828 */
+    UiControl **papCtl;             /* 0x15882C (OnOk) then 0x158830 (the panel-mode toggle) */
+    UiControl *pCtlClose;           /* unk_186B00, the shared geoscape close control */
+    void (*pfnOkClick)(void);       /* BaseInfoScreen_OnOk @ 0x557c8 */
+    void (*pfnToggleClick)(void);   /* BaseInfoScreen_TogglePanelMode @ 0x55754 */
+    void (*pfnCloseClick)(void);    /* BaseInfoScreen_CloseThunk @ 0x557bc */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser);
+    void *pPadUser;
+    i8   *pnWorkBaseIdx;            /* byte_1870F4 @ 0x1870F4 */
+    const i8 *pnSelectedBaseIdx;    /* nSelectedBaseIdx @ 0x159D81 */
+    u8   *pbOverlayOpen;            /* byte_1870F8 @ 0x1870F8 */
+    void (*pfnBuildPanels)(void);   /* BaseInfoScreen_BuildPanels @ 0x557f4 */
+} BaseInfoInitEnv;
+
+void BaseInfoScreen_Init(BaseInfoInitEnv *pEnv);
+
+typedef struct BaseInfoBuildEnv {
+    u8      *pbBuilt;               /* bBaseInfoPanelsBuilt @ 0x15883C */
+    u8      *pbModeFlag;            /* byte_AB190 @ 0xAB190, set by the build arm */
+    UiPanel **pppPanel;             /* [0] 0x158824 names, [1] 0x158820 free, [2] 0x158838 totals */
+    UiControl **papCtl;             /* 0x15882C / 0x158830, the two controls the release arm frees */
+    Ship *const *apCraft;           /* apCraft @ 0x114A64 */
+    const u8 *pnCraftCount;         /* Map_nCraftCount @ 0x114B4C, read UNSIGNED (0x55E38) */
+    const i8 *pnWorkBaseIdx;        /* byte_1870F4, read SIGNED (0x55E6C) */
+    const u8 *pTextRecs;            /* aTextRecs @ 0xB38D0, for Ship_FormatDisplayName */
+    Soldier *const *apSoldiers;     /* apSoldiers @ 0x114B50 */
+    i32  nSoldierCount;
+    ObjectRecFull *const *apObjects; /* apObjects @ 0x113AC0 */
+    i32  nObjectCount;
+    const u16 *apManufCol;          /* auManufCol @ 0x15E19C, PUFO_PRODUCT_ENTRIES_PER_BASE per base */
+    const u16 *apResearchCol;       /* auResearchCol @ 0x16022C, PUFO_RESEARCH_TOPIC_COUNT per base */
+    const u8 *pbEntryCount;         /* 0x160C4C, the shared entry count byte */
+    BaseRec *const *apBases;        /* apBases @ 0x114B2C */
+    i32  nBaseCount;
+    const SmapSite *aSites;         /* aSmapSites @ 0x162030 */
+    i32  nSiteCount;
+    const u8 *abFacilityGrid;       /* gBaseFacGrid @ 0x159768 */
+    const u8 *abGridBytes;          /* 0x159DBC, Base_CountShipsAtBase's extra term */
+} BaseInfoBuildEnv;
+
+void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

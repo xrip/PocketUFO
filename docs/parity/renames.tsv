@@ -499,3 +499,8 @@ Soldier::bUnk423	Soldier::nPsiTrainDays	0x1A7. Days of psi training left. Armed 
 unk_EF024	aTextPsiColumnCaptions	0xEF024. TEXTS[1188], the four psi-screen column captions PsiScreen_Draw draws at (7, 54) (0x726A0). char[205].
 unk_EF0F1	aTextSelectBase	0xEF0F1. TEXTS[1189], the choose-a-base caption centred at (60, 300) by PsiScreen_Draw (0x726F8). char[205].
 unk_EF1BE	aTextNoPsiRoom	0xEF1BE. TEXTS[1190], the no-free-psi-lab caption centred at (120, 158) by PsiScreen_Draw (0x72B2C). char[205].
+unk_158824	pBaseInfoPanelNames	0x158824. The name column of the base-info screen: UiPanel(42) at x 10, view width 200, built by BaseInfoScreen_BuildPanels (0x55828). UiPanel *.
+unk_158820	pBaseInfoPanelFree	0x158820. The free/available column: UiPanel(42) at x 130, view width 10, nUnk7076 = 1 (0x5586C). UiPanel *.
+unk_158838	pBaseInfoPanelTotals	0x158838. The total column: UiPanel(42) at x 190, view width 10, nUnk7076 = 1 (0x558A0). Its line aux is the craft-run marker. UiPanel *.
+byte_AB190	bBaseInfoPanelMode	0xAB190. Set to 1 by the build arm of BaseInfoScreen_BuildPanels (0x5581C); the panel-mode toggle BaseInfoScreen_TogglePanelMode flips it.
+asc_AB1D8	aDollarSign	0xAB1D8. The single '$' strcat'd onto the money rows of the base-info screen (0x569A8, 0x56B14, 0x56B54).

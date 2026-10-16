@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `0632c09`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 91, the psi screen's frame at 0x72398), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `362f2d2`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 92, the base-info screen's panels at 0x557f4 and 0x57688), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,10 +207,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 934 / 1103 (84.7%)
-                                             bytes cited:     515852 / 598792 (86.1%)
-python docs/parity/audit_credits.py       -> credited functions: 934, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 476 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 937 / 1103 (85.0%)
+                                             bytes cited:     524208 / 598792 (87.5%)
+python docs/parity/audit_credits.py       -> credited functions: 937, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 484 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
@@ -231,8 +231,37 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **14730**. Coverage as of the latest commit: **935 / 1103
-functions (84.8%)**, **517812 / 598792 bytes (86.5%)**. This unit ported the psi screen's frame,
+Test checks run across the 60 suites: **14865**. Coverage as of the latest commit: **937 / 1103
+functions (85.0%)**, **524208 / 598792 bytes (87.5%)**. This unit ported the base-info screen's bring-up and
+panels: `BaseInfoScreen_Init` (0x57688, 312 B) and `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B) -- the
+largest single unported `strat-ui` function. **Init takes the address of the three-slot block at 0x158828**:
+slot 0 the screen pad (`operator new(0x14)`, `PadImage_ctor`, `PadImage_Load("baseinfo", 14)`, both origins 0),
+slots 1 and 2 the two controls (`operator new(0x20)` + `UiControl_ctor` twice), with `BaseInfoScreen_OnOk` on
+slot 1 and `BaseInfoScreen_TogglePanelMode` on slot 2 through +0x0C; `unk_186B00` moves to (224, 1) and takes
+`BaseInfoScreen_CloseThunk`; both controls run `UiControl_Setup(ctl, 0, 0, stru_AB198[i])` over the descriptors
+`{1, 300, "emptyb", "cemptyb", "", 0}` and `{120, 300, ...}`; the tail is `byte_1870F4 = nSelectedBaseIdx`,
+`byte_1870F8 = 0` and the panel build as a tail call. **Every label on this screen is a clear, not a string** --
+the sources 0x10DA38, 0x104C7B..0x105C7F, 0x105D4C and 0x105E19 all sit above 0xAC800, past the end of the
+`.data` file image (vsz 0xE2D70 against rsz 0x6800), and none has a write xref anywhere in the binary, so each
+copy writes an empty string. **Hex-Rays is wrong about the craft cost loop**: it renders the aux-0 case as
+leaving the loop, but the `break` at 0x5683C only leaves the switch -- 0x56810 writes "500000$", 0x56838 adds
+500000 and the test at 0x56858 continues, so aux 0 is priced exactly like aux 1 and only the total column's
+marker ceasing to be 1 ends the run. **`Craft_CountSoldiersAboard` here is fed the craft ID** (the free
+column's aux holds `Ship.bId`), the only call site in the binary that does not pass the roster index. The
+**row map** is the substance of the function: free column 1 soldiers aboard, 2/3 the crew availability, 6..10
+the five capacity deltas, 17.. the craft cost labels, `nShips+19/20/21` the fixed unit prices, `nShips+23` the
+facility total (50000 per type byte != 0xFF over the same 36 cells every capacity walk uses, built or not) and
+`nShips+25` the grand total; total column 1/2/3 crew, 6..10 capacities, 13 `Base_CountBuiltFacilities` and
+`nShips+19/20/21` the money breakdown. The tail rows move with the craft count, which the no-craft case pins.
+**6 deviations:** the port nulls the freed panel and control slots the original leaves dangling, guards the
+three panel pointers after allocation, bounds every row index, and uses `snprintf` for `j_itoa`. 135 new
+checks; 60 mutations turn at least one red, and four -- the clear of name row `nShips+17`, the eight-row clear
+count at 0x55FE4, the 42-row clear count and the kind-4/kind-5 re-clear at 0x56DD4 -- are provably invisible
+because each writes an empty string over a row that is already empty. 5 new IDB symbols (`unk_158824` ->
+`pBaseInfoPanelNames`, `unk_158820` -> `pBaseInfoPanelFree`, `unk_158838` -> `pBaseInfoPanelTotals`, all typed
+`UiPanel *`, `byte_AB190` -> `bBaseInfoPanelMode`, `asc_AB1D8` -> `aDollarSign`) and 4 comments, including the
+aux-0 correction at 0x56810 and the id-vs-index note at 0x6649c. `strat-ui` moves to 236/245 functions and
+102,760 of 121,164 bytes (84.8%). Unit 91 ported the psi screen's frame,
 `PsiScreen_Draw` (0x72398, 1,960 B), which completes the psi family. **The whole body sits behind
 `g_bPsiPanelOpen`** (0x723B8): a closed screen draws nothing at all -- not the rails, not the controls, not
 the tail. **The rails are the shared `BaseUi_DrawFrameRails`** (0x723C8..0x72558), the identical block
@@ -1020,7 +1049,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 234 | 245 | 96364 / 121164 | base/crew/manuf/research/buysell/transfer/options/ufopaedia/psi screens |
+| `strat-ui` | 236 | 245 | 102760 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -1283,8 +1312,8 @@ handlers they install, the per-tick strateg event pass, the strateg icon pass, t
 stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
 itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
 `Geoscape_Draw` is now the single largest unported function in the binary.
-`strat-ui` is 234 of 245 functions but 96,364 of 121,164 bytes (79.5%) — the small screen handlers are in,
-the big screens and their bring-up are not.
+`strat-ui` is 236 of 245 functions and 102,760 of 121,164 bytes (84.8%) — the small screen handlers and the
+base-info bring-up and panel build are in; the base plane and base-attack screens are not.
 
 ### Decoded but deliberately not ported
 
@@ -1916,15 +1945,16 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 234 of 245 functions and 96,364 of 121,164 bytes (79.5%). The buy/sell, transfer,
+`strat-ui` is 236 of 245 functions and 102,760 of 121,164 bytes (84.8%). The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
 200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
 is left in `strat-ui` is
-11 functions / 24,800 bytes: base info (`BaseInfoScreen_BuildPanels` 0x557f4 at 6,084 B is the largest single
-one, plus `BaseInfoScreen_Draw` 0x56fb8 and `BaseInfoScreen_Init` 0x57688), base plane
+9 functions / 18,404 bytes: base info (`BaseInfoScreen_Draw` 0x56fb8 is all that is left of the family --
+`BaseInfoScreen_BuildPanels` 0x557f4, 6,084 B, the largest single `strat-ui` function, and `BaseInfoScreen_Init`
+0x57688 came in with unit 92), base plane
 (`BasePlaneScreen_DrawCraftDetail` 0x7baf8, `BasePlaneScreen_BuildControls` 0x7b014, `BasePlaneScreen_Draw`
 0x7d374), the base-attack screen's update/draw/close trio (0x57808, 0x58728, 0x577c0), and two single
 handlers: `Transfer_WriteErrorDump` (0x996e4, 2,196 B) and `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
