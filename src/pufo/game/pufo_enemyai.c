@@ -126,22 +126,6 @@ static i32 EnemyAi_FloorLayerBelow(const EnemyAiActCtx *pCtx, const MapCell *pCe
     return nLayer;
 }
 
-/* 0x4af84..0x4afd0: the wander descent. Same idea, one layer deeper — the ARM's
- * `SUBS / BPL` tests layers nZ..0 inclusive, so a column with no floor anywhere ends
- * on the layer-0 cell. */
-static MapCell *EnemyAi_FloorCellBelow(const EnemyAiActCtx *pCtx, i32 nX, i32 nY, i32 nLayer)
-{
-    MapCell *pCell = NULL;
-
-    for (i32 n = nLayer; n >= 0; --n) {
-        pCell = pCtx->pfnLookupCell(nX, nY, n, pCtx->pUser);
-        if (pCell != NULL && pCell->pFloorSpr != NULL) {
-            break;
-        }
-    }
-    return pCell;
-}
-
 /* 0x4adc4..0x4ae08: one burst at the drawn target. The cost and the argument come from
  * the two action tables Ui_FillActionCosts just refilled: Map+0x4E4C and Map+0x4E7C. */
 static void EnemyAi_EnqueueBurst(Soldier *pUnit, TactItem *pWeapon, i32 nMode,
@@ -267,10 +251,13 @@ static void EnemyAi_Wander(Soldier *pUnit, const EnemyAiActCtx *pCtx)
 
         MapCell *pTarget = pCtx->pfnLookupCell(nX, nY, (i32)pCell->nZ, pCtx->pUser);
 
-        /* 0x4af88..0x4af94: types whose flag0 column is clear must land on a floor. */
+        /* 0x4af88..0x4af94: types whose flag0 column is clear must land on a floor.
+         * The descent itself is the shared MapCell_FloorCellBelow -- the same
+         * inclusive `SUBS / BPL` walk Tact_HandleMapClick @ 0x15500 does. */
         if (pUnit->nUnitType < PUFO_UNIT_TYPE_COUNT
             && g_aUnitTypeFlag0[pUnit->nUnitType] == 0) {
-            pTarget = EnemyAi_FloorCellBelow(pCtx, nX, nY, (i32)pCell->nZ);
+            pTarget = MapCell_FloorCellBelow(pCtx->pfnLookupCell, pCtx->pUser,
+                                             nX, nY, (i32)pCell->nZ);
         }
 
         if (pTarget == NULL || pTarget == pCell || MapCell_HasOccupant(pTarget)) {

@@ -255,6 +255,27 @@ size_t Map_CellIndex(i32 nDimX, i32 nDimY, i32 nX, i32 nY, i32 nLayer)
          + (size_t)nX;
 }
 
+MapCell *MapCell_FloorCellBelow(MapCellLookup pfnLookup, void *pUser,
+                                i32 nX, i32 nY, i32 nLayer)
+{
+    MapCell *pCell = NULL;
+    i32      n;
+
+    if (pfnLookup == NULL) {
+        return NULL;
+    }
+    for (n = nLayer; n >= 0; --n) {
+        pCell = pfnLookup(nX, nY, n, pUser);
+        if (pCell == NULL) {
+            break;
+        }
+        if (pCell->pFloorSpr != NULL) {
+            break;
+        }
+    }
+    return pCell;
+}
+
 i32 Map_IsoOffsetA(i32 nDimX, i32 nA, i32 nB)
 {
     return nA - 5 * nDimX + nB;

@@ -3,7 +3,10 @@
 #include "game/pufo_mapcell.h"   /* MapCell, TactItem, ObjectRecFull */
 #include "game/pufo_path.h"       /* g_aStepDir */
 #include "game/pufo_tactstate.h"  /* Map_QueueDoorAction, Unit_FaceToward, TactState_KickQueue */
+#include "game/pufo_tactui.h"     /* PUFO_ACTION_LATCH_*, PUFO_TXT_OUT_OF_TU, PUFO_ACTION_MODE_COUNT */
 #include "game/pufo_unit.h"       /* Unit_bIsLarge, Soldier.pCell/bFacing */
+
+#include <string.h>
 
 /* The original's UI-screen ids. */
 #define UI_SCREEN_NONE          0u
@@ -1392,6 +1395,290 @@ void UiPulse_OnTimer(const UiPulseCtx *pCtx)
             Input_OnSecondary(pCtx->pState, pCtx->pHooks, pCtx->pWorld,
                               pCtx->pbEscapeFlag);
         }
+    }
+}
+
+/* --- Tact_HandleMapClick @ 0x1512c ------------------------------------------
+ *
+ * The four latch arms are separate helpers because the original is one flat switch and
+ * each arm ends in a different place: 1 and 2 fall through to the shared queue kick at
+ * 0x153A0, 3 returns without kicking, 4 clears the latch, and 0 has three early exits
+ * before its move tail. */
+
+/* 0x1547C: the ceiling one layer below the cursor counts as breakable when its sprite's
+ * signed iCeilParam (Mc1Rec + 0x24) is strictly below -23 (`MOV R2, #0xFFFFFFE9` then
+ * `CMP R3, R2 / BGE` skips). The enemy-AI climb uses -15 on the unit's OWN ceiling
+ * (PUFO_ENEMYAI_CEIL_RAISE); this is a different, stricter threshold. */
+#define PUFO_CLICK_CEIL_BREAKS (-23)
+
+static void Click_PushText(const MapClickCtx *pCtx, i32 nRecord)
+{
+    if (pCtx->pHooks != NULL && pCtx->pHooks->pfnPushTextRecord != NULL) {
+        pCtx->pHooks->pfnPushTextRecord(nRecord, pCtx->pHooks->pUser);
+    }
+}
+
+/* The enqueue helpers take FaceToward as a seam; the ported Unit_FaceToward needs the
+ * queue as its first argument, so the queue travels as the seam's user pointer. */
+static void Click_FaceToward(Soldier *pUnit, i32 nX, i32 nY, void *pUser)
+{
+    Unit_FaceToward((TactState *)pUser, pUnit, nX, nY);
+}
+
+/* The cost/enabled tables are twelve dwords each and the original indexes them by
+ * nActionMode with no bound test. Input_OnPointerUp @ 0x14FC0 already refuses outside
+ * 0..11, and so does the port here. */
+static bool Click_ModeInRange(i32 nMode)
+{
+    return nMode >= 0 && nMode < PUFO_ACTION_MODE_COUNT;
+}
+
+/* 0x153B0..0x153F0: latch 1, the action-menu throw aimed at the cursor cell. */
+static void ClickArmThrow(const MapClickCtx *pCtx, MapCell *pCell, i32 nMode)
+{
+    TactInputState *pState = pCtx->pState;
+
+    if (!Click_ModeInRange(nMode)) {
+        return;
+    }
+    if (!TactState_EnqueueThrow(pCtx->pWorld->pQueue, pState->pSelUnit,
+                                pState->pSelWeapon, pCell->nX, pCell->nY, pCell->nZ,
+                                pState->anActionCost[nMode],
+                                pState->anActionEnabled[nMode],
+                                Click_FaceToward, pCtx->pWorld->pQueue)) {
+        /* 0x4B318: the callee pushes the shared "no free time" record itself; the port's
+         * version returns false and leaves the push to the caller. */
+        Click_PushText(pCtx, PUFO_TXT_OUT_OF_TU);
+    }
+    TactState_KickQueue(pCtx->pWorld->pQueue);
+}
+
+/* 0x1535C..0x153A8: latch 2, the fire burst aimed at the cursor cell. */
+static void ClickArmFire(const MapClickCtx *pCtx, MapCell *pCell, i32 nMode)
+{
+    TactInputState *pState = pCtx->pState;
+    FireBurstSpec   spec;
+
+    if (!Click_ModeInRange(nMode)) {
+        return;
+    }
+    memset(&spec, 0, sizeof(spec));
+    spec.pUnit             = pState->pSelUnit;
+    spec.pWeapon           = pState->pSelWeapon;
+    spec.nMode             = nMode;
+    spec.nX                = pCell->nX;
+    spec.nY                = pCell->nY;
+    spec.nZ                = pCell->nZ;
+    spec.nTuCost           = pState->anActionCost[nMode];
+    spec.nArg              = pState->anActionEnabled[nMode];
+    if (pState->pSelWeapon != NULL && pState->pSelWeapon->pObj != NULL) {
+        spec.uAmmoInWeapon = pState->pSelWeapon->nAmmo;
+        spec.bAmmoCap      = pState->pSelWeapon->pObj->bAmmoCap;
+    }
+    /* Mode 7 reads the shot coordinates out of the multi-target list, which is the same
+     * Map block the original's callee reaches directly. */
+    spec.apMultiTargets    = pState->apMultiTargets;
+    spec.nMultiTargetCount = pState->nMultiTargetCount;
+
+    if (!TactState_EnqueueFireBurst(pCtx->pWorld->pQueue, &spec, Click_FaceToward,
+                                    pCtx->pWorld->pQueue)) {
+        Click_PushText(pCtx, PUFO_TXT_OUT_OF_TU);   /* 0x4B0D8 */
+    }
+    TactState_KickQueue(pCtx->pWorld->pQueue);
+}
+
+/* 0x152E4..0x15354: latch 3, adding the cursor cell to the multi-target list. */
+static void ClickArmMultiTarget(const MapClickCtx *pCtx, MapCell *pCell)
+{
+    TactInputState *pState = pCtx->pState;
+    UiControl      *pCtl   = pCtx->pLookCtl;
+
+    /* 0x152EC..0x15320: the arm also brings the look control on screen -- it is slid
+     * left by its own width and enabled, with sample 14. This runs BEFORE the target
+     * cap is tested, so a ninth click still re-arms the control. */
+    if (pCtl != NULL && pCtl->bEnabled == 0) {
+        pCtl->x        = (i16)(-(i16)pCtl->uWidth);
+        pCtl->bEnabled = 1;
+        if (pCtx->pHooks != NULL && pCtx->pHooks->pfnPlaySample != NULL) {
+            pCtx->pHooks->pfnPlaySample(14, pCtx->pHooks->pUser);
+        }
+    }
+
+    /* 0x15324: eight targets, and the list is appended without a bounds test of its own. */
+    if (pState->nMultiTargetCount >= PUFO_MULTI_TARGET_MAX) {
+        return;
+    }
+    pCell->bFlags29 |= 0x40u;
+    pState->apMultiTargets[pState->nMultiTargetCount] = pCell;
+    pState->nMultiTargetCount += 1;
+    /* No queue kick on this arm -- the selection is not an action yet. */
+}
+
+/* 0x151D4..0x152D8: latch 4, the melee confirm against the cursor cell's occupant. */
+static void ClickArmMelee(const MapClickCtx *pCtx, MapCell *pCell, i32 nMode)
+{
+    TactInputState *pState = pCtx->pState;
+    Soldier        *pTarget = pCell->pUnit;
+
+    if (MapCell_HasOccupant(pCell) && !Unit_bIsOperative(pTarget)
+        && !Unit_bIsLarge(pTarget)) {
+        if (pCtx->pnMeleeCellX != NULL) {
+            *pCtx->pnMeleeCellX     = pCell->nX;
+            *pCtx->pnMeleeCellY     = pCell->nY;
+            *pCtx->pnMeleeCellLayer = pCell->nZ;
+        }
+        if (Click_ModeInRange(nMode)) {
+            if (!TactState_EnqueueAction18(pCtx->pWorld->pQueue, pState->pSelUnit,
+                                           pTarget, pState->pSelWeapon,
+                                           pState->anActionCost[nMode], nMode)) {
+                Click_PushText(pCtx, PUFO_TXT_OUT_OF_TU);   /* 0x4B420's own push */
+            }
+        }
+        TactState_KickQueue(pCtx->pWorld->pQueue);
+        pState->nActionLatch = PUFO_ACTION_LATCH_NONE;
+        return;
+    }
+
+    /* 0x15284..0x152D8: the refusal re-runs the same three tests, in the same order,
+     * purely to choose between the two records. */
+    if (MapCell_HasOccupant(pCell) && !Unit_bIsOperative(pTarget)
+        && Unit_bIsLarge(pTarget)) {
+        Click_PushText(pCtx, PUFO_TXT_CANNOT_ATTACK_SOLDIER);
+    } else {
+        Click_PushText(pCtx, PUFO_TXT_NO_ALIEN_SPECIFIED);
+    }
+}
+
+/* 0x153F4..0x1556C: latch 0 (or any latch value the switch does not name) -- select
+ * what is under the cursor, or walk the selected unit to it. */
+static void ClickArmSelectOrMove(const MapClickCtx *pCtx, MapCell *pCell)
+{
+    TactInputState *pState = pCtx->pState;
+    MapCell        *pBelow  = NULL;
+    MapCell        *pDest   = pCell;
+
+    /* 0x153F4..0x15424: the cell one layer down, and only when the cursor cell is above
+     * layer 0. The original leaves the stack slot uninitialised when nZ == 0 and never
+     * dereferences it -- the port simply keeps NULL. */
+    if (pCell->nZ > 0) {
+        pBelow = pCtx->pWorld->pfnLookup(pCell->nX, pCell->nY, (i32)pCell->nZ - 1,
+                                         pCtx->pWorld->pLookupUser);
+    }
+
+    /* 0x15428..0x1545C: a live unit under the cursor is selected outright. */
+    if (MapCell_HasOccupant(pCell) && Unit_bIsOperative(pCell->pUnit)) {
+        pState->nActionLatch = PUFO_ACTION_LATCH_NONE;
+        if (pCtx->pSelect != NULL) {
+            Tact_SelectUnit(pCtx->pSelect, pCell->pUnit);
+        }
+        return;
+    }
+
+    /* 0x15460..0x154AC: otherwise a breakable ceiling one layer down selects the unit
+     * standing under it. An occupant that is NOT operative stops the click entirely --
+     * it does not fall through to the move. */
+    if (pCell->nZ > 0 && pBelow != NULL && pBelow->pCeilSpr != NULL
+        && pBelow->pCeilSpr->iCeilParam < PUFO_CLICK_CEIL_BREAKS) {
+        if (pBelow->pUnit != NULL) {
+            if (!Unit_bIsOperative(pBelow->pUnit)) {
+                return;
+            }
+            pState->nActionLatch = PUFO_ACTION_LATCH_NONE;
+            if (pCtx->pSelect != NULL) {
+                Tact_SelectUnit(pCtx->pSelect, pBelow->pUnit);
+            }
+            return;
+        }
+    }
+
+    /* 0x154B0..0x154DC: an inoperative occupant whose bUnk148 is SET stops the click;
+     * an empty cell, a live occupant, or an inoperative one with bUnk148 clear all
+     * continue into the move. */
+    if (MapCell_HasOccupant(pCell) && !Unit_bIsOperative(pCell->pUnit)
+        && pCell->pUnit->bUnk148 != 0) {
+        return;
+    }
+
+    /* 0x154E0..0x1554C: the non-levitating types (g_aUnitTypeFlag0 clear) have to land
+     * on a floor, so the destination walks DOWN from the cursor cell's own layer. */
+    if (pState->pSelUnit->nUnitType < PUFO_UNIT_TYPE_COUNT
+        && g_aUnitTypeFlag0[pState->pSelUnit->nUnitType] == 0) {
+        MapCell *pFloor = MapCell_FloorCellBelow(pCtx->pWorld->pfnLookup,
+                                                 pCtx->pWorld->pLookupUser,
+                                                 pCell->nX, pCell->nY, (i32)pCell->nZ);
+        if (pFloor != NULL) {
+            pDest = pFloor;
+        }
+    }
+
+    /* 0x15550: the move only happens when the walk landed on a different cell from the
+     * unit's own, and it is always the bFlag = 1 form. */
+    if (pDest != pState->pSelUnit->pCell && pCtx->pfnPathToCell != NULL) {
+        (void)pCtx->pfnPathToCell(pDest->nX, pDest->nY, pDest->nZ, true, pCtx->pUser);
+    }
+}
+
+void Tact_HandleMapClick(const MapClickCtx *pCtx)
+{
+    TactInputState *pState;
+    TactCursor      cursor;
+    MapGeom         geom;
+    MapCell        *pCell;
+    Soldier        *pUnit;
+
+    if (pCtx == NULL || pCtx->pState == NULL || pCtx->pWorld == NULL
+        || pCtx->pWorld->pQueue == NULL || pCtx->pWorld->pfnLookup == NULL) {
+        return;
+    }
+    pState = pCtx->pState;
+
+    /* 0x1513C: the cursor has to be inside the map. MapCursor_IsValid @ 0x275FC checks
+     * x and y only, so an out-of-range layer still reaches the grid read below. */
+    cursor.nX     = pState->nCursorX;
+    cursor.nY     = pState->nCursorY;
+    cursor.nFlags = pState->nLayerScratch;
+    geom.nDimX    = pState->nMapDimX;
+    geom.nDimY    = pState->nMapDimY;
+    if (!MapCursor_IsValid(&cursor, &geom)) {
+        return;
+    }
+
+    /* Deviation: 0x15174 dereferences Map.pSelUnit and its cell with no NULL test. */
+    pUnit = pState->pSelUnit;
+    if (pUnit == NULL || pUnit->pCell == NULL) {
+        return;
+    }
+
+    /* 0x1519C: the cursor cell is apCells[nLayerScratch-1][nCursorY][nCursorX] -- the ARM
+     * builds 0x11AF8, which is apCells @ 0x15338 minus one 14400-byte layer. */
+    pCell = pCtx->pWorld->pfnLookup(pState->nCursorX, pState->nCursorY,
+                                    (i32)(i8)pState->nLayerScratch - 1,
+                                    pCtx->pWorld->pLookupUser);
+
+    /* 0x151A0: clicking the cell the selected unit already stands on does nothing. */
+    if (pCell == pUnit->pCell) {
+        return;
+    }
+    if (pCell == NULL) {
+        return;
+    }
+
+    switch (pState->nActionLatch) {
+    case PUFO_ACTION_LATCH_THROW:
+        ClickArmThrow(pCtx, pCell, pState->nActionMode);
+        break;
+    case PUFO_ACTION_LATCH_BURST:
+        ClickArmFire(pCtx, pCell, pState->nActionMode);
+        break;
+    case PUFO_ACTION_LATCH_TARGETING:
+        ClickArmMultiTarget(pCtx, pCell);
+        break;
+    case PUFO_ACTION_LATCH_FIRE:
+        ClickArmMelee(pCtx, pCell, pState->nActionMode);
+        break;
+    default:
+        ClickArmSelectOrMove(pCtx, pCell);
+        break;
     }
 }
 

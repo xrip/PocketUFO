@@ -21,7 +21,7 @@ python docs/parity/coverage.py            # coverage numbers only
 | Bytes of original code cited | 445204 / 598792 (74.4%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 12513 |
+| Test checks run | 12651 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -148,7 +148,7 @@ is the module that answers to it.
 | `0x9e454` | `Sound_ApplyMusicVolume` | 136 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
 | `0x9e3d4` | `Sound_Shutdown` | 128 | `src/pufo/audio/pufo_audio.h` |
 | `0x9e4dc` | `Sound_ApplySfxVolume` | 124 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+3) |
-| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+5) |
+| `0x9e0c0` | `Sound_Play` | 112 | `src/pufo/audio/pufo_audio.c`, `src/pufo/audio/pufo_audio.h` (+7) |
 
 ### `util` (18 functions)
 
@@ -284,7 +284,7 @@ is the module that answers to it.
 | `0x2b820` | `Map_ComputeReachable` | 1148 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` (+2) |
 | `0x33780` | `Tact_TallyUnitResults` | 1136 | `src/pufo/game/pufo_tactend.c`, `src/pufo/game/pufo_tactend.h` (+1) |
 | `0x1c240` | `MapView_DrawUnitHeightGlyph` | 1132 | `src/pufo/game/pufo_isodraw.h` |
-| `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/game/pufo_ballist.h` |
+| `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_input.c` (+2) |
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
@@ -324,7 +324,7 @@ is the module that answers to it.
 | `0x1b0d4` | `MapView_bResolveIsoCell` | 428 | `src/pufo/game/pufo_isodraw.c`, `src/pufo/game/pufo_isodraw.h` |
 | `0x4b4f8` | `Unit_DropAllItemsToCell` | 428 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
 | `0x32fa8` | `Combat_DetonateNearbyItems` | 416 | `src/pufo/game/pufo_combat.c`, `src/pufo/game/pufo_combat.h` (+1) |
-| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_objectrec.h` (+1) |
+| `0x17bb8` | `TactAction_ConfirmMeleeMode6` | 412 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_objectrec.h` (+3) |
 | `0x46fe0` | `Soldier_PickBestScoreAmong` | 388 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x6654c` | `Soldier_FormatDisplayName` | 384 | `src/pufo/app/pufo_world.c`, `src/pufo/game/pufo_baseui.c` (+1) |
 | `0x49a0c` | `Unit_PlaceOnMap` | 376 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -344,7 +344,7 @@ is the module that answers to it.
 | `0x178d4` | `TactAction_ConfirmUseItem` | 236 | `src/pufo/game/pufo_tactui.c`, `src/pufo/game/pufo_tactui.h` |
 | `0x430cc` | `Soldiers_Reload` | 224 | `src/pufo/game/pufo_save.c`, `src/pufo/game/pufo_save.h` |
 | `0x4a29c` | `TactState_EnqueueDeathFlash` | 224 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
-| `0x4b420` | `Tact_EnqueueActionOrStatus205` | 216 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
+| `0x4b420` | `Tact_EnqueueActionOrStatus205` | 216 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` (+1) |
 | `0x2b534` | `Path_EnqueueCell` | 208 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_path.h` |
 | `0x197b8` | `Tact_SelectNextUnitFiltered` | 204 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
 | `0x36b8c` | `Soldier_RemoveById` | 204 | `src/pufo/game/pufo_unit.c`, `src/pufo/game/pufo_unit.h` |
@@ -364,7 +364,7 @@ is the module that answers to it.
 | `0x54ba4` | `Map_LoadMa1` | 152 | `src/pufo/game/pufo_template.c`, `src/pufo/game/pufo_template.h` |
 | `0x1c7dc` | `MapView_SetWallPalFromSlotA` | 148 | `src/pufo/game/pufo_isodraw.h` |
 | `0x1c870` | `MapView_SetWallPalFromSlotB` | 148 | `src/pufo/game/pufo_isodraw.h` |
-| `0x2c6c4` | `Tact_SelectUnit` | 148 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` (+3) |
+| `0x2c6c4` | `Tact_SelectUnit` | 148 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` (+4) |
 | `0x47164` | `Soldier_FindNextSmallByType` | 148 | `src/pufo/game/pufo_roster.h` |
 | `0x33bf0` | `Tact_MarkAllSoldiersSeen` | 144 | `src/pufo/game/pufo_roster.h` |
 | `0x4b928` | `EnemyAi_bMultiTargetTypeMatch` | 144 | `src/pufo/game/pufo_enemyai.c`, `src/pufo/game/pufo_enemyai.h` |
@@ -388,7 +388,7 @@ is the module that answers to it.
 | `0x17790` | `Tact_SetFireModeAimed` | 108 | `src/pufo/game/pufo_tactui.h` |
 | `0x177fc` | `Tact_SetFireModeSnap` | 108 | `src/pufo/game/pufo_tactui.h` |
 | `0x17868` | `Tact_SetFireModeAuto` | 108 | `src/pufo/game/pufo_tactui.h` |
-| `0x275fc` | `MapCursor_IsValid` | 108 | `src/pufo/game/pufo_tactctl.c`, `src/pufo/game/pufo_tactctl.h` |
+| `0x275fc` | `MapCursor_IsValid` | 108 | `src/pufo/game/pufo_input.c`, `src/pufo/game/pufo_tactctl.c` (+1) |
 | `0x49b84` | `TactState_EnqueueTurn` | 108 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4cb74` | `Tact_EndEnemyTurn` | 108 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_turn.c` (+1) |
 | `0x26f14` | `Map_InitFacingScratch` | 100 | `src/pufo/game/pufo_tactctl.h` |
@@ -1300,7 +1300,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_geoiinit` | PASS | 68 |
 | `test_geoscape` | PASS | 1142 |
 | `test_geouimanage` | PASS | 73 |
-| `test_input` | PASS | 271 |
+| `test_input` | PASS | 337 |
 | `test_invdrag` | PASS | 370 |
 | `test_isodraw` | PASS | 308 |
 | `test_los` | PASS | 36 |
@@ -1329,7 +1329,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_tacthud` | PASS | 266 |
 | `test_tactinit` | PASS | 86 |
 | `test_tactstate` | PASS | 582 |
-| `test_tactui` | PASS | 423 |
+| `test_tactui` | PASS | 495 |
 | `test_template` | PASS | 48 |
 | `test_terrain` | PASS | 59 |
 | `test_timer` | PASS | 78 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 553 citations.
+parity report. Total: 566 citations.
 
 ### Offsets below the image base (40)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (513)
+### At or above the image base (526)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1468,10 +1468,13 @@ against the IDB when the final report is assembled.
 - `0x1472d0`
 - `0x147b3c`
 - `0x147b54`
+- `0x14f2c`
+- `0x14fc0`
 - `0x14fe4`
 - `0x15078`
 - `0x15088`
 - `0x1508c`
+- `0x15090`
 - `0x150d5`
 - `0x150d6`
 - `0x150d7`
@@ -1502,8 +1505,11 @@ against the IDB when the final report is assembled.
 - `0x1519a`
 - `0x151cc`
 - `0x15244`
+- `0x15328`
 - `0x15334`
 - `0x15338`
+- `0x1536c`
+- `0x15500`
 - `0x15674`
 - `0x1568d0`
 - `0x1568d8`
@@ -1527,6 +1533,7 @@ against the IDB when the final report is assembled.
 - `0x157198`
 - `0x1571b4`
 - `0x1571b8`
+- `0x1571e4`
 - `0x157204`
 - `0x157b0`
 - `0x15821c`
@@ -1658,6 +1665,9 @@ against the IDB when the final report is assembled.
 - `0x162008`
 - `0x162030`
 - `0x170d0`
+- `0x17c90`
+- `0x18014`
+- `0x18310`
 - `0x1863e8`
 - `0x186410`
 - `0x186488`
@@ -1738,6 +1748,9 @@ against the IDB when the final report is assembled.
 - `0x4836c`
 - `0x49994`
 - `0x4ab10`
+- `0x4afd0`
+- `0x4b0d8`
+- `0x4b318`
 - `0x4d770`
 - `0x502fc`
 - `0x5116c`

@@ -14379,3 +14379,91 @@ numerator's second factor are different fields.
 - `MapCell.abFaceDamage` is indexed through the field, not through the original's
   `pCell + 0x10 + slot`: on Win64 `MapCell`'s widened pointers move that field and a raw offset
   lands on `pWallSprB`. `Cell_FaceDamage` was removed for the same reason.
+
+## The tactical map click: Tact_HandleMapClick (0x1512c) and TactAction_ConfirmMeleeMode6 (0x17bb8)
+
+Ported in `src/pufo/game/pufo_input.c` (`Tact_HandleMapClick`, `MapClickCtx`) and
+`src/pufo/game/pufo_tactui.c` (`Ui_ConfirmMeleeMode6`). These were the last two addresses
+`audit_names` flagged, so every credited address in the port now has a function behind it.
+
+### Tact_HandleMapClick (0x1512c, 1104 B)
+
+Reached only from `Input_OnAction @ 0x15668`, and only when no UI screen is open.
+
+1. `MapCursor_IsValid @ 0x1513C` on the stored cursor. It checks x and y only - the layer is
+   not checked, so an out-of-range `nLayerScratch` still reaches the grid read.
+2. The cursor cell is `apCells[nLayerScratch-1][nCursorY][nCursorX]`. 0x1519C indexes with base
+   `0x11AF8`, which is `apCells @ 0x15338` minus one 14400-byte layer. Clicking the cell the
+   selected unit already stands on returns immediately (0x151A0).
+3. A switch on `Map_bActionLatch` (Map+0x02), modelled as `TactActionLatch` in the IDB:
+
+   - **1 (0x153B0)** `TactState_EnqueueThrow` at the cursor cell. Cost `anActionCost[nActionMode]`
+     (Map+0x4E4C), argument `anActionEnabled[nActionMode]` (Map+0x4E7C, the adjacent array), then
+     `TactState_KickQueue`.
+   - **2 (0x1535C)** `TactState_EnqueueFireBurst` aimed at the cursor cell, same cost/argument
+     pair, carrying the multi-target list for mode 7, then the same shared kick at 0x153A0.
+   - **3 (0x152E4)** multi-target pick. The look control (`pActiveLookCtl @ 0x1571E4`) is armed
+     first: `x = -(i16)uWidth`, `bEnabled = 1`, sample 14. Then, under the eight-target cap
+     (`CMP #8 / BGE` at 0x15328), `bFlags29 |= 0x40` and the cell is appended. **No queue kick on
+     this arm** - 0x15354 branches straight to the epilogue.
+   - **4 (0x151D4)** the melee confirm. Success needs occupied AND **not operative** AND not
+     large. `Map_nMeleeCellX/Y/Layer` take the **cursor** cell coordinates, command 18 is enqueued
+     at `anActionCost[nActionMode]` with `nActionMode` as the mode, the queue is kicked and the
+     latch is cleared. Failure re-runs the same three tests (0x15284..0x152B0) purely to choose the
+     message: occupied, not operative and large gives record 47; everything else record 7.
+   - **0 / default (0x153F4)** select-or-move, with three exits before the move tail:
+     an operative occupant under the cursor is selected outright (latch cleared first);
+     otherwise, if the cursor cell is above layer 0 and the cell **below** it has a ceiling sprite
+     whose signed `Mc1Rec.iCeilParam` (+0x24) is **strictly below -23**, the unit under that
+     ceiling is selected - unless it exists and is *not* operative, which stops the click entirely
+     (0x1549C); otherwise an inoperative occupant whose `Soldier.bUnk148` (+0x94) is SET stops the
+     click (0x154DC); otherwise a selected unit whose type has `g_aUnitTypeFlag0` clear walks DOWN
+     while `pFloorSpr == NULL` (0x15500..0x1554C, inclusive `SUBS / BPL`, layers nZ..0), and
+     `Unit_PathToCell(cell, bFlag = 1)` runs only when the walk landed on a different cell from
+     `pSelUnit->pCell` (0x15550).
+
+### TactAction_ConfirmMeleeMode6 (0x17bb8, 412 B)
+
+Action button 39, installed by `Tact_InitUiControls @ 0x3B608`. Action mode 6, the melee /
+paralyzer attack - its refusal pair is TEXTS[35]+TEXTS[36], "to use the paralyzer / aim it at an
+enemy".
+
+Sample 17, `Map_nActionMode = 6` committed before any gate. The candidate cell is
+`pSelUnit->pCell` shifted by `aDirDeltaXY[3*bFacing]` on the unit's own layer (bFacing is 0..7, so
+the table's two vertical entries are unreachable here). Gate 1 is `Unit_CanStepExitDir(pCell,
+bFacing)` - R2 still holds the facing at the BL. Gate 2 is occupied AND not large, with **no
+operative test at all**. `Map_pMeleeTarget` (renamed from `unk_128A48`; all six references in the
+binary are inside this function) is stored at 0x17C64 **before** gate 2, so it keeps the
+candidate's possibly NULL occupant on a failed gate.
+
+Success: `Map_nMeleeCellX/Y/Layer` = the **candidate** coordinates, `Tact_EnqueueActionOrStatus205
+(pSelUnit, Map_pMeleeTarget, pSelWeapon, anActionCost[6], 6)`, then the kick. Any failure joins at
+0x17D0C and pushes record 35 then record 36, unforced.
+
+### Original findings recorded (5 ledger rows)
+
+- 0x15424 - residue: with `nZ == 0` the branch skips the cell-below computation and loads an
+  uninitialised stack slot into R7. Every later use is gated on `nZ > 0`, so it is dead, not dangerous.
+- 0x151F0 - the map-click melee gate refuses **operative** occupants while
+  `TactAction_ConfirmMeleeMode6` does not test operativeness at all. Two entry points to the same
+  mode-4/6 attack family, different acceptance rules. Reproduced as-is.
+- 0x15324 - the look control is armed before the eight-target cap is tested, so an over-cap click
+  still re-arms it.
+- 0x18260 - `TactAction_ConfirmSpecial9` pushes records 11 and 12 (`unk_B419F`, `unk_B426C`), not
+  the out-of-ammo record. The port pushed its out-of-ammo constant twice; corrected.
+- 0x17790 - the out-of-ammo pointer is `aTextRecs + 1230` = record 6 ("weapon not charged"), not
+  record 0 ("not used"). `PUFO_TXT_OUT_OF_AMMO` was 0; corrected to 6 and now asserted.
+
+### Deviations
+
+- `Unit_PathToCell` (0x2c2a8) is unported, so the latch-0 move tail runs through a `pfnPathToCell`
+  seam on `MapClickCtx`. `Ui_ConfirmMeleeMode6` takes `MapGeom` and the cell lookup directly.
+- The port NULL-guards `Map.pSelUnit`, its cell, the cursor grid slot and the walked cell; the
+  original dereferences all four.
+- The cost/enabled index is bounded to 0..11 (`Click_ModeInRange`); the original indexes
+  `Map + 4*mode + 0x4E4C` with no test, which would read past `anActionCost` at mode 12.
+- The three enqueue helpers return false where the original pushes record 1 itself, so the push is
+  done at the call site here. `Ui_ConfirmFireBurst` (0x18774) still does not push it - recorded as a
+  separate issue in PLAN.md.
+- `MapCell_FloorCellBelow` in `pufo_mapcell.c` now serves both the 0x4AFD0 and the 0x15500 descent;
+  the exclusive variant at 0x4AE8C stays separate because it is a different bound and an original bug.

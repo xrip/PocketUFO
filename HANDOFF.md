@@ -208,13 +208,11 @@ Parity and audit scripts, same session:
 python docs/parity/coverage.py            -> functions cited: 903 / 1103 (81.9%)
                                              bytes cited:     445204 / 598792 (74.4%)
 python docs/parity/audit_credits.py       -> credited functions: 903, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 380 (explain 212 citations)
-                                             credited addresses whose original name is not defined: 2
-                                             (0x1512c Tact_HandleMapClick 1104 B,
-                                              0x17bb8 TactAction_ConfirmMeleeMode6 412 B - cited by port
-                                              names the IDB does not carry yet; 0x54130 left the list when
-                                              the walker itself was ported)
-python docs/parity/audit_bugs.py          -> ledger rows: 164, ORIGINAL BUG markers in src/pufo: 62
+python docs/parity/audit_names.py         -> renames on record: 382 (explain 213 citations)
+                                             credited addresses whose original name is not defined: 0
+                                             (worth 0 bytes -- the last two, 0x1512c Tact_HandleMapClick
+                                              and 0x17bb8 TactAction_ConfirmMeleeMode6, closed in this unit)
+python docs/parity/audit_bugs.py          -> ledger rows: 169, ORIGINAL BUG markers in src/pufo: 62
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -231,8 +229,21 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **12513**. Coverage as of the latest commit: **903 / 1103
-functions (81.9%)**, **445204 / 598792 bytes (74.4%)**. This unit ported the enemy-turn bracket —
+Test checks run across the 56 suites: **12651**. Coverage as of the latest commit: **903 / 1103
+functions (81.9%)**, **445204 / 598792 bytes (74.4%)** — unchanged, because both functions this unit
+ported were already cited; what changed is that `audit_names` now reports **zero** outstanding
+addresses. This unit ported the tactical map click and the mode-6 confirm — `Tact_HandleMapClick`
+(0x1512c, 1,104 B) and `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B): the one-layer-down cursor cell
+(`apCells[nLayerScratch-1][nCursorY][nCursorX]`, base 0x11AF8), the four asymmetric latch arms (1 and 2
+kick the queue, 3 does not, 4 clears the latch, 0 has three exits before its move), the -23 ceiling
+threshold, the eight-target cap tested after the look control is armed, and the two melee gates that
+disagree — the map-click arm refuses operative occupants, the action-button arm never tests operativeness.
+138 new checks, 5 ledger rows. It also fixed two wrong text-record indices the port already carried:
+`PUFO_TXT_OUT_OF_AMMO` was 0 where the original's pointer is record 6, and `Ui_ConfirmSpecial9` pushed
+that constant twice where the original pushes records 11 and 12; both are now named constants and both are
+asserted. `unk_128A48` is renamed `Map_pMeleeTarget` in the IDB (private scratch of the mode-6 confirm, all
+six references inside it), the eight tactical text globals are named, and a `TactActionLatch` enum was added.
+The previous unit ported the enemy-turn bracket —
 `BeforeEnemyStep` (0x4b9b8, 2,792 B), `Tact_UpdateUnitControl` (0x4a444, 788 B) and `AfterEnemyStep`
 (0x4c4a0, 1,368 B): the six-pass face loop that charges wall A twice when the west neighbour burns, the
 `counter + step` term the store adds a second time, the burn run that probes against its own axis, the
@@ -613,7 +624,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 164 rows, 62 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 169 rows, 62 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -938,7 +949,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-62 markers in the source, 164 ledger rows. Examples:
+62 markers in the source, 169 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -1028,9 +1039,8 @@ python docs/parity/audit_bugs.py      # bug ledger vs source markers
 python docs/parity/audit_tables.py    # port tables vs the shipped image
 ```
 
-All six must be clean. Expected right now: 0 negated citations, 2 name flags (both are port names the
-IDB does not carry yet — `Tact_HandleMapClick` (0x1512c) and `TactAction_ConfirmMeleeMode6` (0x17bb8)),
-ledger and markers agree, 40 tables exact.
+All six must be clean. Expected right now: 0 negated citations, **0 name flags** (every credited address
+now has a function defined for it in `src/pufo`), ledger and markers agree, 40 tables exact.
 
 ### Traps that will cost you a unit if you ignore them
 
@@ -1225,6 +1235,13 @@ does.
    (`MapCell_TickProximityItems`, `Map_RefreshCellMeta`, `UnitList_ForEachRefresh`, `Unit_UpdateVisibility`,
    `Game_RandU16`, `Tact_SelectUnit`, `StatusMsg_Push`, `EnemyAi_TryFireOrWander`, `Rmp_PickSpawnForUnit`)
    are all ported functions, but nothing in the app wires them into one context yet.
+   The tactical **input** side is ported too now: `Tact_HandleMapClick` (0x1512c, 1,104 B) in
+   `src/pufo/game/pufo_input.c` behind `MapClickCtx` (driven from `tests/test_input.c`), and
+   `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B) in `src/pufo/game/pufo_tactui.c` as
+   `Ui_ConfirmMeleeMode6`, beside its siblings `Ui_ConfirmUseItem`, `Ui_TryFireMode`,
+   `Ui_ConfirmFireBurst` and `Ui_BeginMultiTarget`. `Input_OnAction`'s `pfnHandleMapClick` seam is still
+   unfilled — the app populates no `TactInputHooks` at all yet — and the map click's move tail needs the
+   same unported `Unit_PathToCell`.
 
 ### Priority 2 — finish the tactical renderer
 

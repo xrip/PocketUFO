@@ -101,7 +101,15 @@ typedef struct TactInputState {
     /* Fields only Input_OnPointerUp @ 0x148d0 touches. */
     i32  nActionMode;                    /* 0x4c unk_113A04 */
     i32  anActionCost[12];               /* 0x4e4c, dword stride, Ui_FillActionCosts @ 0x26104 */
+    i32  anActionEnabled[12];            /* 0x4e7c, the sibling array the same fills write;
+                                          * Tact_HandleMapClick @ 0x1536C reads it as the
+                                          * enqueue argument */
 } TactInputState;
+
+/* Map.apMultiTargets @ Map+0x08 is eight cells wide and Tact_HandleMapClick @ 0x15328
+ * refuses a ninth (`CMP R0, #8 / BGE`). Note pufo_mapctx.h's PUFO_MAP_MULTI_TARGET_MAX
+ * is 10, not 8 -- a separate inconsistency, recorded in PLAN.md rather than changed here. */
+#define PUFO_MULTI_TARGET_MAX 8
 
 /* The effects the handlers trigger in other subsystems, all injected. */
 typedef struct TactInputHooks {
@@ -408,5 +416,68 @@ void Input_OnPointer(TactInputState *pState, const TactInputHooks *pHooks,
  * Screen 5 also clears the screen. Screens 20 and 21 adopt apUiSlotsA[11]. */
 void Input_OnPointerUp(TactInputState *pState, const TactInputHooks *pHooks,
                        TactPointerWorld *pWorld);
+
+/* ------------------------------------------------ the tactical map click */
+
+/* The two refusal records Tact_HandleMapClick's mode-4 arm pushes. 0x152C4 names
+ * unk_B5E73 = aTextRecs @ 0xB38D0 + 9635 = record 47 ("Вы не можете атак. этим
+ * солдатом", "you cannot attack with this soldier"), used only when the cursor cell
+ * holds an operative but large unit. 0x152D8 names unk_B3E6B = + 1435 = record 7
+ * ("Не указан пришелец", "no alien specified"), used for every other failure. */
+#define PUFO_TXT_NO_ALIEN_SPECIFIED    7
+#define PUFO_TXT_CANNOT_ATTACK_SOLDIER 47
+
+/* What Tact_HandleMapClick reaches beyond the Map fields. */
+typedef struct MapClickCtx {
+    TactInputState        *pState;
+    const TactInputWorld  *pWorld;      /* the tactical queue plus the cell grid lookup */
+    UiControl             *pLookCtl;    /* pActiveLookCtl @ 0x1571E4, the look-mode control */
+    TactSelectCtx         *pSelect;     /* for Tact_SelectUnit @ 0x2c6c4 */
+    const TactInputHooks  *pHooks;      /* sample playback and text-record pushes */
+    i32                   *pnMeleeCellX;     /* Map_nMeleeCellX @ 0x1279F8 */
+    i32                   *pnMeleeCellY;     /* Map_nMeleeCellY @ 0x1279FC */
+    i32                   *pnMeleeCellLayer; /* Map_nMeleeCellLayer @ 0x127A00 */
+    /* Seam for Unit_PathToCell (0x2c2a8, unported -- it needs Unit_CanStepTo (0x27bb8,
+     * 14,716 B) and Map_ProbeStepOccupants (0x2778c), neither ported yet). */
+    bool (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, bool bFlag, void *pUser);
+    void *pUser;
+} MapClickCtx;
+
+/* Tact_HandleMapClick @ 0x1512c. The tactical map click, reached from Input_OnAction
+ * when no UI screen is open.
+ *
+ * 1. `MapCursor_IsValid` on the stored cursor. The layer is NOT checked, so the grid
+ *    read below can ask for a layer outside 0..3.
+ * 2. The cursor cell is `apCells[nLayerScratch - 1][nCursorY][nCursorX]` -- the ARM base
+ *    0x11AF8 is apCells @ 0x15338 minus one 14400-byte layer. Clicking the selected
+ *    unit's own cell returns immediately.
+ * 3. A switch on the action latch (Map+0x02):
+ *      1  enqueue the throw at the cursor cell: TactState_EnqueueThrow with
+ *         anActionCost[nActionMode] and anActionEnabled[nActionMode], then kick the queue.
+ *      2  enqueue the fire burst the same way: TactState_EnqueueFireBurst aimed at the
+ *         cursor cell, carrying the multi-target list for mode 7, then kick the queue.
+ *      3  multi-target pick: the first click arms the look control (x = -uWidth,
+ *         bEnabled = 1, sample 14); then, under the eight-target cap, set bFlags29 bit
+ *         0x40 on the cell and append it. NO queue kick on this arm -- unlike 1 and 2.
+ *      4  the melee confirm: occupied AND not operative AND not large. On success the
+ *         melee triple takes the CURSOR cell coordinates and the command-18 action is
+ *         enqueued at anActionCost[nActionMode] with nActionMode as the mode, the queue
+ *         is kicked and the latch clears. On failure the two-message choice is made by
+ *         re-running the same three tests: operative-but-large gives record 47, every
+ *         other failure record 7.
+ *      0 or anything else  the select-or-move path:
+ *         - a live unit under the cursor is selected outright (latch cleared first);
+ *         - else, when the cursor cell is above layer 0 and the cell BELOW it has a
+ *           ceiling sprite whose signed iCeilParam is strictly below -23, the unit under
+ *           that ceiling is selected -- unless it exists and is not operative, which
+ *           stops the click entirely;
+ *         - else an inoperative occupant whose bUnk148 is SET stops the click;
+ *         - else a selected unit whose type has g_aUnitTypeFlag0 clear is walked DOWN
+ *           to the first cell with a floor sprite, and Unit_PathToCell(cell, bFlag = 1)
+ *           runs only when that walk landed on a different cell from the unit's own.
+ *
+ * Deviations: the original dereferences Map.pSelUnit, its cell, the cursor grid slot and
+ * the walked cell without NULL tests; the port refuses instead. */
+void Tact_HandleMapClick(const MapClickCtx *pCtx);
 
 #endif /* PUFO_INPUT_H */

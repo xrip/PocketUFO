@@ -7,7 +7,9 @@
 #include "game/pufo_input.h"
 #include "game/pufo_mapcell.h"
 #include "game/pufo_tactstate.h"  /* TactState, TactQueueEntry, TACTCMD_* */
-#include "game/pufo_unit.h"   /* the full Soldier type */
+#include "game/pufo_tactui.h"     /* PUFO_ACTION_LATCH_*, PUFO_TXT_OUT_OF_TU */
+#include "game/pufo_unit.h"   /* the full Soldier type, PUFO_RANK_NAME_STRIDE */
+#include "util/pufo_str.h"    /* pufo_strcpy: strcpy is deprecated under /WX */
 #include "pufo_test.h"
 
 /* This suite keeps the (condition, what) argument order its call sites use. */
@@ -47,7 +49,25 @@ typedef struct Trace {
     int nFocusY;
     int nFocusX;
     int nSaveOptions;
+    /* StatusMsg_Push records, in order, so a refusal can be pinned by index. */
+    int anText[8];
+    int nTextCount;
+    /* The Unit_PathToCell seam. */
+    int nPathCalls;
+    int nPathX;
+    int nPathY;
+    int nPathLayer;
+    int nPathFlag;
 } Trace;
+
+static void Tr_PushText(i32 nRecord, void *p)
+{
+    Trace *t = (Trace *)p;
+    if (t->nTextCount < 8) {
+        t->anText[t->nTextCount] = nRecord;
+    }
+    t->nTextCount++;
+}
 
 static void Tr_PanelA(void *p) { ((Trace *)p)->nPanelA++; }
 static void Tr_PanelB(void *p) { ((Trace *)p)->nPanelB++; }
@@ -127,6 +147,7 @@ static TactInputHooks MakeHooks(Trace *t)
     h.pfnSetCursorPos = Tr_SetCursor;
     h.pfnFocusOnViewCell = Tr_FocusView;
     h.pfnSaveOptions = Tr_SaveOptions;
+    h.pfnPushTextRecord = Tr_PushText;
     h.pUser = t;
     return h;
 }
@@ -1777,6 +1798,351 @@ static void TestPulseTimer(void)
     Check(true, "  NULL context is safe");
 }
 
+/* Tact_HandleMapClick @ 0x1512c. Reuses the secondary-key grid: with nLayerScratch 1 the
+ * cursor cell is g_aGrid[0][2][3] and the selected unit stands at (1,1,0). */
+static TactCursor   g_ClickCursor;
+static MapCursorPos g_ClickPos;
+static StatusStack  g_ClickStack;
+static Soldier     *g_pSelected;
+static char         g_aClickRank[9][PUFO_RANK_NAME_STRIDE];
+static Mc1Rec       g_ClickCeil;
+static Mc1Rec       g_ClickFloor;
+static Soldier      g_aClickUnit[2];
+
+static bool Click_NotBusy(void *pUser)   { (void)pUser; return false; }
+static bool Click_NoRepaint(void *pUser) { (void)pUser; return false; }
+static void Click_NoRender(void *pUser)  { (void)pUser; }
+
+static bool Click_Path(i32 nX, i32 nY, i32 nLayer, bool bFlag, void *pUser)
+{
+    Trace *t = (Trace *)pUser;
+
+    t->nPathCalls += 1;
+    t->nPathX = nX;
+    t->nPathY = nY;
+    t->nPathLayer = nLayer;
+    t->nPathFlag = bFlag ? 1 : 0;
+    return true;
+}
+
+static void ClickWorld(MapCell **ppCursorCell, i32 nLayerScratch)
+{
+    MapCell *pDoor;
+    i32      i;
+
+    SecWorldReset(&pDoor);
+    memset(&g_ClickCursor, 0, sizeof(g_ClickCursor));
+    memset(&g_ClickStack, 0, sizeof(g_ClickStack));
+    memset(g_aClickUnit, 0, sizeof(g_aClickUnit));
+    memset(&g_ClickCeil, 0, sizeof(g_ClickCeil));
+    memset(&g_ClickFloor, 0, sizeof(g_ClickFloor));
+    g_pSelected = NULL;
+    for (i = 0; i < 9; ++i) {
+        pufo_strcpy(g_aClickRank[i], "Squad");
+    }
+    g_ClickCursor.nX = 3;
+    g_ClickCursor.nY = 2;
+    g_ClickCursor.nFlags = (u8)nLayerScratch;
+    g_ClickPos.pCursor        = &g_ClickCursor;
+    g_ClickPos.geom.nDimX     = 1;
+    g_ClickPos.geom.nDimY     = 1;
+    g_ClickPos.bBusy          = false;
+    g_ClickPos.bSelUnitLarge  = false;
+    g_ClickPos.bSuppressLarge = false;
+    g_aClickUnit[0].bStatus   = 0;   /* operative, and an occupant */
+    g_aClickUnit[0].nUnitType = 0;   /* small */
+    g_aClickUnit[0].pCell     = &g_aGrid[nLayerScratch - 1][2][3];
+    *ppCursorCell = &g_aGrid[nLayerScratch - 1][2][3];
+}
+
+static TactSelectCtx ClickSelect(void)
+{
+    static const StatusHooks hooks = { Click_NotBusy, Click_NoRepaint, Click_NoRender, NULL };
+    TactSelectCtx c;
+
+    memset(&c, 0, sizeof(c));
+    c.ppSelUnit     = &g_pSelected;
+    c.pCursorPos    = &g_ClickPos;
+    c.pfnLookup     = SecLookup;
+    c.pStatus       = &g_ClickStack;
+    c.pStatusHooks  = &hooks;
+    c.panRankLow    = &g_aClickRank[0][0];
+    c.panRankOther  = &g_aClickRank[0][0];
+    return c;
+}
+
+static i32 g_nMeleeX;
+static i32 g_nMeleeY;
+static i32 g_nMeleeLayer;
+
+static void TestHandleMapClick(void)
+{
+    Trace          t;
+    TactInputHooks h = MakeHooks(&t);
+    TactInputState s;
+    TactInputWorld w = { &g_SecQueue, SecLookup, NULL };
+    MapClickCtx    c;
+    UiControl      look;
+    MapCell       *pCell;
+
+    printf("Tact_HandleMapClick @ 0x1512c\n");
+
+    #define CLICK_SETUP(nLayer)                                                  \
+        do {                                                                     \
+            TactSelectCtx sel = ClickSelect();                                   \
+            ClickWorld(&pCell, (nLayer));                                        \
+            s = SecState();                                                      \
+            s.nLayerScratch = (u8)(nLayer);                                      \
+            memset(&look, 0, sizeof(look));                                      \
+            look.uWidth = 60;                                                    \
+            memset(&c, 0, sizeof(c));                                            \
+            c.pState = &s;                                                       \
+            c.pWorld = &w;                                                       \
+            c.pLookCtl = &look;                                                  \
+            c.pSelect = &sel;                                                    \
+            c.pHooks = &h;                                                       \
+            c.pnMeleeCellX = &g_nMeleeX;                                         \
+            c.pnMeleeCellY = &g_nMeleeY;                                         \
+            c.pnMeleeCellLayer = &g_nMeleeLayer;                                 \
+            c.pfnPathToCell = Click_Path;                                        \
+            c.pUser = &t;                                                        \
+            g_SecUnit.uTu = 40;                                                  \
+            for (i32 i = 0; i < 12; ++i) {                                       \
+                s.anActionCost[i] = 4;                                           \
+                s.anActionEnabled[i] = 7;                                        \
+            }                                                                    \
+            memset(&t, 0, sizeof(t));                                            \
+        } while (0)
+
+    /* 1. The cursor gate and the own-cell gate. */
+    CLICK_SETUP(1);
+    s.nCursorX = 40;                       /* outside 0 .. 10*dimX-1 */
+    Tact_HandleMapClick(&c);
+    Check(t.nPathCalls == 0 && g_SecQueue.nQueueLen == 0 && t.nTextCount == 0,
+          "an out-of-map cursor does nothing at all");
+
+    CLICK_SETUP(1);
+    s.nCursorX = 1;
+    s.nCursorY = 1;                        /* the cell the selected unit stands on */
+    Tact_HandleMapClick(&c);
+    Check(t.nPathCalls == 0 && g_SecQueue.nQueueLen == 0 && t.nTextCount == 0,
+          "clicking the selected unit's own cell does nothing");
+
+    /* 2. Latch 1: the throw. FaceToward runs first, so the turn is entry 0. */
+    CLICK_SETUP(1);
+    s.nActionLatch = PUFO_ACTION_LATCH_THROW;
+    s.nActionMode = 11;
+    s.anActionCost[11] = 5;
+    s.anActionEnabled[11] = 3;
+    Tact_HandleMapClick(&c);
+    Check(g_SecQueue.nQueueLen == 2, "throw queues a turn plus the throw");
+    CheckEqI32(g_SecQueue.aQueue[0].nCmd, TACTCMD_TURN, "  entry 0 is the facing turn");
+    CheckEqI32(g_SecQueue.aQueue[1].nCmd, TACTCMD_THROW, "  entry 1 is command 17");
+    CheckEqI32(g_SecQueue.aQueue[1].nX, 3, "  aimed at the cursor cell x");
+    CheckEqI32(g_SecQueue.aQueue[1].nY, 2, "  cursor cell y");
+    CheckEqI32(g_SecQueue.aQueue[1].nZ, 0, "  cursor cell layer");
+    CheckEqI32(g_SecQueue.aQueue[1].nTuCost, 5, "  charged anActionCost[11]");
+    CheckEqI32(g_SecQueue.aQueue[1].nArg, 3, "  carried anActionEnabled[11]");
+    CheckEqI32(g_SecQueue.bQueueActive, 1, "  the queue was kicked");
+    CheckEqI32(t.nTextCount, 0, "  no message on the accepted throw");
+
+    /* The callee's own out-of-TU message, which the port moves to the caller. The TU
+     * check runs BEFORE the facing turn is queued (0x4B310 gates 0x4B344), so an
+     * unaffordable throw queues nothing at all. */
+    CLICK_SETUP(1);
+    s.nActionLatch = PUFO_ACTION_LATCH_THROW;
+    s.nActionMode = 11;
+    s.anActionCost[11] = 99;
+    g_SecUnit.uTu = 10;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(g_SecQueue.nQueueLen, 0, "  an unaffordable throw queues not even the turn");
+    CheckEqI32(t.nTextCount, 1, "  the out-of-TU message was pushed");
+    CheckEqI32(t.anText[0], PUFO_TXT_OUT_OF_TU, "  record 1");
+
+    /* 3. Latch 2: the fire burst. */
+    CLICK_SETUP(1);
+    g_aObj[1].bAmmoCap = 10;
+    g_aItem[1].pObj = &g_aObj[1];
+    g_aItem[1].nAmmo = 3;
+    s.pSelWeapon = &g_aItem[1];
+    s.nActionLatch = PUFO_ACTION_LATCH_BURST;
+    s.nActionMode = 1;                     /* snap: one shot */
+    s.anActionCost[1] = 6;
+    s.anActionEnabled[1] = 9;
+    Tact_HandleMapClick(&c);
+    Check(g_SecQueue.nQueueLen == 4, "burst queues turn + shot + mark + clear-aim");
+    CheckEqI32(g_SecQueue.aQueue[1].nCmd, TACTCMD_FIRE_SHOT, "  the shot entry");
+    CheckEqI32(g_SecQueue.aQueue[1].nX, 3, "  aimed at the cursor cell");
+    CheckEqI32(g_SecQueue.aQueue[1].nTuCost, 6, "  charged anActionCost[1]");
+    CheckEqI32(g_SecQueue.aQueue[1].nArgDword, 9, "  carried anActionEnabled[1]");
+    CheckEqI32(g_SecQueue.aQueue[2].nCmd, TACTCMD_FIRE_MARK, "  the paired mark entry");
+    CheckEqI32(g_SecQueue.aQueue[3].nCmd, TACTCMD_CLEAR_AIM, "  the aim is cleared after");
+
+    /* 4. Latch 3: multi-target pick. */
+    CLICK_SETUP(1);
+    s.nActionLatch = PUFO_ACTION_LATCH_TARGETING;
+    look.bEnabled = 0;
+    look.x = 100;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(look.bEnabled, 1, "  the first pick enables the look control");
+    CheckEqI32(look.x, -60, "  slid left by its own width");
+    CheckEqI32(t.nSampleCount, 1, "  sample 14 played");
+    CheckEqI32(t.anSamples[0], 14, "  sample 14");
+    CheckEqI32(s.nMultiTargetCount, 1, "  one target recorded");
+    Check(s.apMultiTargets[0] == pCell, "  the cursor cell was appended");
+    CheckEqI32(pCell->bFlags29 & 0x40, 0x40, "  the target mark is set on the cell");
+    CheckEqI32(g_SecQueue.nQueueLen, 0, "  this arm does not kick the queue");
+
+    CLICK_SETUP(1);
+    s.nActionLatch = PUFO_ACTION_LATCH_TARGETING;
+    look.bEnabled = 1;
+    s.nMultiTargetCount = PUFO_MULTI_TARGET_MAX;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nSampleCount, 0, "  an already-enabled control plays nothing");
+    CheckEqI32(s.nMultiTargetCount, PUFO_MULTI_TARGET_MAX, "  the ninth target is refused");
+
+    /* 5. Latch 4: the melee confirm. The gate is occupied AND NOT operative AND not
+     * large (0x151D8..0x15200: an OPERATIVE occupant is a failure, not a target) -- the
+     * paralyzer is used on a unit that is already down, not on a healthy one. */
+    CLICK_SETUP(1);
+    pCell->pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 1;         /* occupying, but not operative */
+    s.nActionLatch = PUFO_ACTION_LATCH_FIRE;
+    s.nActionMode = 6;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(g_nMeleeX, 3, "  melee x is the CURSOR cell");
+    CheckEqI32(g_nMeleeY, 2, "  melee y is the cursor cell");
+    CheckEqI32(g_nMeleeLayer, 0, "  melee layer is the cursor cell");
+    CheckEqI32(g_SecQueue.nQueueLen, 1, "  one command-18 entry");
+    CheckEqI32(g_SecQueue.aQueue[0].nCmd, TACTCMD_ACTION18, "  command 18");
+    Check(g_SecQueue.aQueue[0].pTarget == &g_aClickUnit[0], "  target is the occupant");
+    CheckEqI32(g_SecQueue.aQueue[0].nMode, 6, "  mode 6");
+    CheckEqI32(s.nActionLatch, PUFO_ACTION_LATCH_NONE, "  the latch is cleared");
+    CheckEqI32(t.nTextCount, 0, "  no refusal message");
+
+    CLICK_SETUP(1);                       /* empty cell -> record 7 */
+    s.nActionLatch = PUFO_ACTION_LATCH_FIRE;
+    s.nActionMode = 6;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nTextCount, 1, "  an empty cell refuses");
+    CheckEqI32(t.anText[0], PUFO_TXT_NO_ALIEN_SPECIFIED, "  record 7, no alien specified");
+    CheckEqI32(g_SecQueue.nQueueLen, 0, "  nothing queued");
+
+    CLICK_SETUP(1);                       /* large occupant -> record 47 */
+    pCell->pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 1;          /* not operative, so the large test is reached */
+    g_aClickUnit[0].nUnitType = 4;        /* a large type */
+    s.nActionLatch = PUFO_ACTION_LATCH_FIRE;
+    s.nActionMode = 6;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nTextCount, 1, "  a large occupant refuses");
+    CheckEqI32(t.anText[0], PUFO_TXT_CANNOT_ATTACK_SOLDIER, "  record 47, cannot attack");
+
+    CLICK_SETUP(1);                       /* an OPERATIVE occupant -> record 7 */
+    pCell->pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 0;          /* operative: not a valid paralyzer target */
+    s.nActionLatch = PUFO_ACTION_LATCH_FIRE;
+    s.nActionMode = 6;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.anText[0], PUFO_TXT_NO_ALIEN_SPECIFIED, "  an operative occupant gives record 7");
+    CheckEqI32(g_SecQueue.nQueueLen, 0, "  and nothing is queued");
+
+    /* 6. Latch 0: select the live unit under the cursor. */
+    CLICK_SETUP(1);
+    pCell->pUnit = &g_aClickUnit[0];
+    pufo_strcpy(g_aClickUnit[0].szName, "Sheeran");
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    s.nActionMode = 6;
+    Tact_HandleMapClick(&c);
+    Check(g_pSelected == &g_aClickUnit[0], "  the occupant was selected");
+    CheckEqI32(s.nActionLatch, PUFO_ACTION_LATCH_NONE, "  the latch was cleared");
+    CheckEqI32(t.nPathCalls, 0, "  and no move was attempted");
+    CheckEqI32(g_ClickStack.nCount, 1, "  the selection pushed the unit name");
+
+    /* 7. Latch 0: the breakable ceiling one layer down. */
+    CLICK_SETUP(2);                       /* cursor cell is g_aGrid[1][2][3] */
+    pCell = &g_aGrid[1][2][3];
+    g_ClickCeil.iCeilParam = -30;
+    g_aGrid[0][2][3].pCeilSpr = &g_ClickCeil;
+    g_aGrid[0][2][3].pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].pCell = &g_aGrid[0][2][3];
+    pufo_strcpy(g_aClickUnit[0].szName, "Viper");
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    Check(g_pSelected == &g_aClickUnit[0], "  a unit under a breakable ceiling is selected");
+    CheckEqI32(t.nPathCalls, 0, "  no move on that path");
+
+    CLICK_SETUP(2);                       /* -23 exactly is NOT breakable */
+    pCell = &g_aGrid[1][2][3];
+    g_ClickCeil.iCeilParam = -23;
+    g_aGrid[0][2][3].pCeilSpr = &g_ClickCeil;
+    g_aGrid[0][2][3].pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].pCell = &g_aGrid[0][2][3];
+    g_SecUnit.nUnitType = 11;             /* flag0 set, so no floor descent muddies the layer */
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    Check(g_pSelected == NULL, "  -23 exactly does not count as breakable");
+    CheckEqI32(t.nPathCalls, 1, "  and the click falls through to the move");
+    CheckEqI32(t.nPathLayer, 1, "  to the cursor cell's own layer");
+
+    CLICK_SETUP(2);                       /* breakable, but the unit under it is down */
+    pCell = &g_aGrid[1][2][3];
+    g_ClickCeil.iCeilParam = -40;
+    g_aGrid[0][2][3].pCeilSpr = &g_ClickCeil;
+    g_aGrid[0][2][3].pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 1;
+    g_aClickUnit[0].pCell = &g_aGrid[0][2][3];
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    Check(g_pSelected == NULL, "  a non-operative unit under the ceiling is not selected");
+    CheckEqI32(t.nPathCalls, 0, "  and the click stops there instead of moving");
+
+    /* 8. Latch 0: an inoperative occupant with bUnk148 set stops the click. */
+    CLICK_SETUP(1);
+    pCell->pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 1;
+    g_aClickUnit[0].bUnk148 = 1;
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nPathCalls, 0, "  bUnk148 set stops the click");
+
+    CLICK_SETUP(1);
+    pCell->pUnit = &g_aClickUnit[0];
+    g_aClickUnit[0].bStatus = 1;
+    g_aClickUnit[0].bUnk148 = 0;
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nPathCalls, 1, "  bUnk148 clear continues into the move");
+    CheckEqI32(t.nPathFlag, 1, "  always the bFlag = 1 form");
+
+    /* 9. Latch 0: the floor descent for the non-levitating types. */
+    CLICK_SETUP(3);                       /* cursor cell is g_aGrid[2][2][3] */
+    pCell = &g_aGrid[2][2][3];
+    g_SecUnit.nUnitType = 0;              /* flag0 clear -> must land on a floor */
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nPathCalls, 1, "  the walk ran");
+    CheckEqI32(t.nPathLayer, 0, "  down to layer 0, the last slot the walk loads");
+
+    CLICK_SETUP(3);
+    pCell = &g_aGrid[2][2][3];
+    g_ClickFloor.bStrength = 30;
+    g_aGrid[1][2][3].pFloorSpr = &g_ClickFloor;   /* the first floor is one layer down */
+    g_SecUnit.nUnitType = 0;
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nPathLayer, 1, "  the walk stops at the first cell with a floor sprite");
+
+    CLICK_SETUP(3);
+    pCell = &g_aGrid[2][2][3];
+    g_SecUnit.nUnitType = 11;             /* flag0 set (floater) -> no walk at all */
+    s.nActionLatch = PUFO_ACTION_LATCH_NONE;
+    Tact_HandleMapClick(&c);
+    CheckEqI32(t.nPathLayer, 2, "  a levitating type stays on the cursor layer");
+
+    #undef CLICK_SETUP
+}
+
 int main(void)
 {
     TestGeoscape();
@@ -1792,6 +2158,7 @@ int main(void)
     TestPointer();
     TestPointerUp();
     TestPulseTimer();
+    TestHandleMapClick();
 
     return TestSummary("test_input");
 }

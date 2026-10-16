@@ -45,6 +45,9 @@ typedef struct Log {
     i32 nLastSample;
     i32 nStatus;
     i32 nLastStatus;
+    /* Every pushed record, in order, so a two-message refusal can be pinned by index
+     * and not just by count. */
+    i32 aStatus[8];
     i32 nCursorFlags;
     i32 nLastFlags;
 } Log;
@@ -61,6 +64,9 @@ static void OnPlay(i32 nSample, void *pUser)
 static void OnStatus(i32 nIdx, void *pUser)
 {
     (void)pUser;
+    if (g_log.nStatus < (i32)(sizeof(g_log.aStatus) / sizeof(g_log.aStatus[0]))) {
+        g_log.aStatus[g_log.nStatus] = nIdx;
+    }
     g_log.nStatus += 1;
     g_log.nLastStatus = nIdx;
 }
@@ -402,6 +408,8 @@ static void TestFireModes(void)
     Check(!Ui_SetFireMode(&ui, PUFO_ACTION_MODE_AIMED, &w, &g_hooks),
           "  empty weapon refused");
     CheckEqI32(g_log.nStatus, 1, "  pushed the out-of-ammo message");
+    CheckEqI32(g_log.nLastStatus, PUFO_TXT_OUT_OF_AMMO,
+               "  the record is 6, byte_B3D9E = 1230/205");
     CheckEqI32(ui.nActionMode, 0, "  mode unchanged (was 0)");
 
     /* Capacity 255 means unlimited, so an empty weapon is allowed. */
@@ -1062,12 +1070,171 @@ static void H_SetCursor(i32 nX, i32 nY, void *pUser)
     g_nCursorY = nY;
 }
 
+/* TactAction_ConfirmMeleeMode6 @ 0x17bb8. One layer-0 grid; the actor stands at (2,2,0)
+ * facing east, so the candidate cell is (3,2,0). */
+#define MELEE_DIM 8
+static MapCell g_aMeleeGrid[MELEE_DIM][MELEE_DIM];
+static Soldier g_aMeleeUnits[2];
+static TactItem g_MeleeItem;
+static Mc1Rec  g_MeleeWall;
+
+static MapCell *MeleeLookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
+{
+    (void)pUser;
+    if (nLayer != 0 || nX < 0 || nX >= MELEE_DIM || nY < 0 || nY >= MELEE_DIM) {
+        return NULL;
+    }
+    return &g_aMeleeGrid[nY][nX];
+}
+
+static void MeleeReset(void)
+{
+    for (i32 y = 0; y < MELEE_DIM; ++y) {
+        for (i32 x = 0; x < MELEE_DIM; ++x) {
+            MapCell_Init(&g_aMeleeGrid[y][x], x, y, 0);
+            g_aMeleeGrid[y][x].pUnit = NULL;
+        }
+    }
+    memset(g_aMeleeUnits, 0, sizeof(g_aMeleeUnits));
+    memset(&g_MeleeWall, 0, sizeof(g_MeleeWall));
+    g_aMeleeUnits[0].pCell   = &g_aMeleeGrid[2][2];   /* the actor at (2,2,0) */
+    g_aMeleeUnits[0].bFacing = 2;                      /* east: aDirDeltaXY[2] = (+1, 0) */
+    g_aMeleeUnits[0].uTu     = 40;
+    g_aMeleeUnits[1].bStatus = 0;
+    g_aMeleeUnits[1].nUnitType = 0;                    /* small */
+}
+
+static void TestConfirmMeleeMode6(void)
+{
+    TactUiState ui;
+    TactState   queue;
+    MapGeom     geom = { 1, 1 };
+
+    printf("Ui_ConfirmMeleeMode6 -- mode 6, the paralyzer attack\n");
+
+    /* Accepted: the candidate cell's occupant becomes the target, the melee triple takes
+     * the CANDIDATE coordinates, and command 18 is queued at the mode-6 cost. */
+    MeleeReset();
+    g_aMeleeGrid[2][3].pUnit = &g_aMeleeUnits[1];
+    UiReset(&ui);
+    TactState_ctor(&queue);
+    LogReset();
+    Check(Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], &g_MeleeItem,
+                               &geom, MeleeLookup, NULL, &g_hooks),
+          "  a clear step onto an occupied cell is accepted");
+    CheckEqI32(g_log.nLastSample, 17, "  sample 17");
+    CheckEqI32(ui.nActionMode, PUFO_ACTION_MODE_MELEE, "  mode 6 committed before any gate");
+    CheckEqI32(ui.nFireTgtX, 3, "  melee x is the candidate cell, not the actor's");
+    CheckEqI32(ui.nFireTgtY, 2, "  candidate y");
+    CheckEqI32(ui.nFireTgtZ, 0, "  candidate layer");
+    Check(ui.pMeleeTarget == &g_aMeleeUnits[1], "  Map_pMeleeTarget holds the occupant");
+    CheckEqI32(queue.nQueueLen, 1, "  one command-18 entry");
+    CheckEqI32(queue.aQueue[0].nCmd, TACTCMD_ACTION18, "  command 18");
+    Check(queue.aQueue[0].pTarget == &g_aMeleeUnits[1], "  target is the parked unit");
+    CheckEqI32(queue.aQueue[0].nMode, 6, "  the mode travels too");
+    CheckEqI32(queue.aQueue[0].nTuCost, 16, "  anActionCost[6] was charged");
+    CheckEqI32((i32)queue.bQueueActive, 1, "  the queue was kicked");
+    CheckEqI32(g_log.nStatus, 0, "  no refusal message");
+
+    /* Refusal 1: the candidate cell is empty. */
+    MeleeReset();
+    UiReset(&ui);
+    ui.pMeleeTarget = &g_aMeleeUnits[1];
+    TactState_ctor(&queue);
+    LogReset();
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  an empty candidate cell is refused");
+    CheckEqI32(g_log.nStatus, 2, "  the refusal is a two-line message");
+    CheckEqI32(g_log.aStatus[0], PUFO_TXT_MELEE_NEED_TARGET, "  record 35");
+    CheckEqI32(g_log.aStatus[1], PUFO_TXT_MELEE_NEED_TARGET_2, "  record 36");
+    CheckEqI32(queue.nQueueLen, 0, "  nothing queued");
+    Check(ui.pMeleeTarget == NULL, "  the scratch is overwritten with the candidate's NULL");
+
+    /* Refusal 2: the occupant is large. The scratch is still written first (0x17C64). */
+    MeleeReset();
+    g_aMeleeGrid[2][3].pUnit = &g_aMeleeUnits[1];
+    g_aMeleeUnits[1].nUnitType = 4;                    /* a large type */
+    UiReset(&ui);
+    TactState_ctor(&queue);
+    LogReset();
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  a large occupant is refused");
+    Check(ui.pMeleeTarget == &g_aMeleeUnits[1], "  the scratch was stored before the test");
+    CheckEqI32(g_log.nStatus, 2, "  the same two-line refusal");
+
+    /* Refusal 3: the wall probe says the step is blocked, so the candidate cell is never
+     * even looked up and the scratch keeps its previous value. Unit_CanStepExitDir probes
+     * from the ALREADY stepped-to coordinate, so for facing 2 its single wall-A probe
+     * lands on (4,2,0) -- one past the candidate cell, not on it. */
+    MeleeReset();
+    g_MeleeWall.bTransparent = 0;      /* not a blank wall */
+    g_MeleeWall.bBlocksMove  = 0;      /* the flag test passes, so the sprite decides */
+    g_MeleeWall.gap_2f[0]    = 1;      /* and it is a real wall */
+    g_aMeleeGrid[2][4].pWallSprA = &g_MeleeWall;
+    g_aMeleeGrid[2][3].pUnit = &g_aMeleeUnits[1];
+    UiReset(&ui);
+    ui.pMeleeTarget = &g_aMeleeUnits[1];
+    TactState_ctor(&queue);
+    LogReset();
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  a blocked exit direction is refused");
+    Check(ui.pMeleeTarget == &g_aMeleeUnits[1], "  gate 1 short-circuits before the lookup");
+    CheckEqI32(g_log.nStatus, 2, "  the same two-line refusal");
+    CheckEqI32(ui.nFireTgtX, 0, "  the melee triple is untouched");
+
+    /* The enqueue's own TU gate: the function still reports success (its gates passed),
+     * the triple is still written, and the shared out-of-TU record is pushed. */
+    MeleeReset();
+    g_aMeleeGrid[2][3].pUnit = &g_aMeleeUnits[1];
+    g_aMeleeUnits[0].uTu = 3;
+    UiReset(&ui);
+    TactState_ctor(&queue);
+    LogReset();
+    Check(Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                               MeleeLookup, NULL, &g_hooks),
+          "  the gates pass even when the unit cannot pay");
+    CheckEqI32(ui.nFireTgtX, 3, "  the triple is still written");
+    CheckEqI32(g_log.nStatus, 1, "  the out-of-TU message was pushed");
+    CheckEqI32(g_log.nLastStatus, PUFO_TXT_OUT_OF_TU, "  record 1");
+    CheckEqI32(queue.nQueueLen, 0, "  nothing queued");
+    /* TactState_KickQueue @ 0x4f334 is a no-op on an empty queue -- it only resets the
+     * cursor and the active flag when nQueueLen is non-zero. */
+    CheckEqI32((i32)queue.bQueueActive, 0, "  the kick runs but does nothing on an empty queue");
+
+    MeleeReset();
+    UiReset(&ui);
+    TactState_ctor(&queue);
+    Check(!Ui_ConfirmMeleeMode6(NULL, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  NULL state refused");
+    Check(!Ui_ConfirmMeleeMode6(&ui, NULL, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  NULL queue refused");
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, NULL, NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  NULL unit refused");
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, NULL,
+                                MeleeLookup, NULL, &g_hooks),
+          "  NULL geometry refused");
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                NULL, NULL, &g_hooks),
+          "  NULL lookup refused");
+    g_aMeleeUnits[0].pCell = NULL;
+    Check(!Ui_ConfirmMeleeMode6(&ui, &queue, &g_aMeleeUnits[0], NULL, &geom,
+                                MeleeLookup, NULL, &g_hooks),
+          "  a unit with no cell is refused instead of faulting");
+}
+
 static void TestConfirmSpecial9(void)
 {
     TactUiState ui;
-    Soldier    unit;
-    TactItem   weapon;
-    MapCell    cell;
+    TactState   queue;
+    Soldier     unit;
+    TactItem    weapon;
+    MapCell     cell;
 
     printf("Ui_ConfirmSpecial9 -- mode 9 refusal guard\n");
     UiReset(&ui);
@@ -1083,26 +1250,21 @@ static void TestConfirmSpecial9(void)
     unit.bMorale = 100;
     unit.uTuSpent = 5;
     ui.nUiScreen = 9;
+    TactState_ctor(&queue);
     LogReset();
-    Check(!Ui_ConfirmSpecial9(&ui, &unit, &weapon, &cell, NULL, NULL, &g_hooks),
+    Check(!Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, &cell, &g_hooks),
           "  full HP + morale + spent TU is refused");
     CheckEqI32(ui.nActionMode, 9, "  mode 9 still set");
     CheckEqI32(ui.nUiScreen, 0, "  screen cleared");
     CheckEqI32(g_log.nStatus, 2, "  TWO status messages pushed");
     CheckEqI32(g_log.nLastSample, 17, "  sample 17");
+    /* 0x182D8 / 0x182F0 name unk_B419F and unk_B426C: records 11 and 12, NOT the
+     * out-of-ammo record. The first push is 11, the second 12. */
+    CheckEqI32(g_log.aStatus[0], PUFO_TXT_MEDKIT_NOT_NEEDED, "  first record is 11");
+    CheckEqI32(g_log.aStatus[1], PUFO_TXT_MEDKIT_NOT_NEEDED_2, "  second record is 12");
+    CheckEqI32(queue.nQueueLen, 0, "  the refusal queues nothing");
 
     /* Break each condition in turn: any one is enough to allow the action. */
-    {
-        struct { const char *pszWhat; void (*pMutate)(Soldier *); } aCases[] = {
-            { "kneeling", NULL },
-            { "wounded", NULL },
-            { "low morale", NULL },
-            { "no TU spent", NULL }
-        };
-
-        (void)aCases;
-    }
-
     #define SPECIAL9_CASE(label, setup)                                          \
         do {                                                                     \
             unit.bKneelOrPrimed = 0;                                             \
@@ -1110,17 +1272,28 @@ static void TestConfirmSpecial9(void)
             unit.auStat[1] = 50;                                                 \
             unit.bMorale = 100;                                                  \
             unit.uTuSpent = 5;                                                   \
+            unit.uTu = 40;                                                       \
             setup;                                                               \
             UiReset(&ui);                                                        \
             ui.nUiScreen = 9;                                                    \
+            ui.anActionCost[9] = 25;                                             \
+            TactState_ctor(&queue);                                              \
             LogReset();                                                          \
-            Check(Ui_ConfirmSpecial9(&ui, &unit, &weapon, &cell, NULL, NULL,      \
+            Check(Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, &cell,          \
                                      &g_hooks),                                  \
                   label);                                                        \
             CheckEqI32(ui.nFireTgtX, 12, "  target x is the unit's own cell");    \
             CheckEqI32(ui.nFireTgtY, 34, "  target y is the unit's own cell");    \
             CheckEqI32(ui.nFireTgtZ, 2, "  target z is the unit's own cell");     \
             CheckEqI32(g_log.nStatus, 0, "  no status messages");                 \
+            /* 0x18364 enqueues cmd 18 with the unit as BOTH actor and target,     \
+             * at the mode-9 cost, and 0x18370 kicks the queue. */                 \
+            CheckEqI32(queue.nQueueLen, 1, "  one command-18 entry queued");      \
+            CheckEqI32(queue.aQueue[0].nCmd, TACTCMD_ACTION18, "  command 18");   \
+            Check(queue.aQueue[0].pUnit == &unit, "  actor is the selected unit"); \
+            Check(queue.aQueue[0].pTarget == &unit, "  target is the SAME unit");  \
+            CheckEqI32(queue.aQueue[0].nTuCost, 25, "  charged the mode-9 cost");  \
+            CheckEqI32((i32)queue.bQueueActive, 1, "  the queue was kicked");      \
         } while (0)
 
     SPECIAL9_CASE("  kneel/primed breaks the guard", unit.bKneelOrPrimed = 1);
@@ -1130,23 +1303,42 @@ static void TestConfirmSpecial9(void)
 
     #undef SPECIAL9_CASE
 
-    /* The target triple is only written on the accepted path. */
+    /* The enqueue's own TU gate still applies: too little TU pushes the shared
+     * "no free time" record 1 and queues nothing, but the kick still runs. */
+    unit.bKneelOrPrimed = 1;
+    unit.uTu = 5;
     UiReset(&ui);
+    ui.anActionCost[9] = 25;
+    TactState_ctor(&queue);
+    LogReset();
+    Check(Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, &cell, &g_hooks),
+          "  the guard passed but the enqueue could not pay");
+    CheckEqI32(g_log.nStatus, 1, "  the out-of-TU message was pushed");
+    CheckEqI32(g_log.nLastStatus, PUFO_TXT_OUT_OF_TU, "  the record is 1");
+    CheckEqI32(queue.nQueueLen, 0, "  nothing queued");
+
+    /* The target triple is only written on the accepted path. Re-arm all four guard
+     * conditions -- the previous case left the unit kneeling. */
     unit.bKneelOrPrimed = 0;
     unit.uHp = 50;
     unit.auStat[1] = 50;
     unit.bMorale = 100;
     unit.uTuSpent = 5;
+    unit.uTu = 40;
     UiReset(&ui);
     ui.nFireTgtX = 777;
-    (void)Ui_ConfirmSpecial9(&ui, &unit, &weapon, &cell, NULL, NULL, &g_hooks);
+    TactState_ctor(&queue);
+    (void)Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, &cell, &g_hooks);
     CheckEqI32(ui.nFireTgtX, 777, "  refused path does not touch the target");
 
-    Check(!Ui_ConfirmSpecial9(NULL, &unit, &weapon, &cell, NULL, NULL, &g_hooks),
+    TactState_ctor(&queue);
+    Check(!Ui_ConfirmSpecial9(NULL, &queue, &unit, &weapon, &cell, &g_hooks),
           "  NULL state refused");
-    Check(!Ui_ConfirmSpecial9(&ui, NULL, &weapon, &cell, NULL, NULL, &g_hooks),
+    Check(!Ui_ConfirmSpecial9(&ui, NULL, &unit, &weapon, &cell, &g_hooks),
+          "  NULL queue refused");
+    Check(!Ui_ConfirmSpecial9(&ui, &queue, NULL, &weapon, &cell, &g_hooks),
           "  NULL unit refused");
-    Check(!Ui_ConfirmSpecial9(&ui, &unit, &weapon, NULL, NULL, NULL, &g_hooks),
+    Check(!Ui_ConfirmSpecial9(&ui, &queue, &unit, &weapon, NULL, &g_hooks),
           "  NULL cell refused");
 }
 
@@ -1328,6 +1520,7 @@ int main(void)
     TestConfirmUseItem();
     TestConfirmFireBurst();
     TestItemQueries();
+    TestConfirmMeleeMode6();
     TestConfirmSpecial9();
     TestBeginMultiTarget();
     TestMapTypeToGlyphIdx();

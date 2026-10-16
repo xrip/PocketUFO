@@ -318,6 +318,16 @@ bool Map_IsValidCell(const MapGeom *pMap, i32 nX, i32 nY, i32 nLayer);
 /* Index into a [layer][y][x] cell array. Callers own the storage. */
 size_t Map_CellIndex(i32 nDimX, i32 nDimY, i32 nX, i32 nY, i32 nLayer);
 
+/* Walk DOWN a column from nLayer to 0 and stop at the first cell that has a floor
+ * sprite. Two independent call sites implement exactly this descent with the same
+ * inclusive `SUBS / BPL` bound: EnemyAi_TryFireOrWander @ 0x4AFD0 and
+ * Tact_HandleMapClick @ 0x15500..0x1554C. When no cell in the column has a floor
+ * sprite the layer-0 lookup is what is returned, matching both originals' "last
+ * slot loaded" register. NULL from the lookup stops the walk early -- the originals
+ * would dereference it (deviation). */
+MapCell *MapCell_FloorCellBelow(MapCellLookup pfnLookup, void *pUser,
+                                i32 nX, i32 nY, i32 nLayer);
+
 /* Isometric helpers. Evidence: Map_IsoOffsetA @ 0x26f88, IsoOffsetB @ 0x26fa8,
  * Map_CenterOffsetX @ 0x26fcc, Map_CenterOffsetY @ 0x26ffc.
  *

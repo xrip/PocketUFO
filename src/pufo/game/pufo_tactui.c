@@ -4,6 +4,7 @@
  */
 #include "game/pufo_tactui.h"
 
+#include "game/pufo_path.h"      /* g_aStepDir, the facing delta */
 #include "game/pufo_tactstate.h"
 
 #include <string.h>
@@ -886,16 +887,96 @@ i32 TactItem_GetEquipDelta(i32 nActionId)
     return -3;                          /* 36 and 38 */
 }
 
+/* TactAction_ConfirmMeleeMode6 @ 0x17bb8. */
+bool Ui_ConfirmMeleeMode6(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
+                          TactItem *pWeapon, const MapGeom *pGeom,
+                          MapCellLookup pfnLookup, void *pLookupUser,
+                          const TactUiHooks *pHooks)
+{
+    MapCell        *pOrigin;
+    MapCell        *pTarget;
+    const StepDir  *pDir;
+    i32             nX;
+    i32             nY;
+    i32             nZ;
+    bool            bOk;
+
+    if (pUi == NULL || pQueue == NULL || pUnit == NULL || pGeom == NULL
+        || pfnLookup == NULL) {
+        return false;
+    }
+
+    /* 0x17BC8: sample 17. The MOV R1, #4 before it is dead -- Sound_Play @ 0x9e0c0
+     * takes one argument. 0x17BD8 then commits the mode before any gate runs. */
+    Ui_Play(pHooks, UI_SAMPLE_DEFAULT);
+    pUi->nActionMode = PUFO_ACTION_MODE_MELEE;
+
+    /* Deviation: 0x17BEC dereferences pUnit->pCell with no NULL test. */
+    pOrigin = pUnit->pCell;
+    if (pOrigin == NULL) {
+        return false;
+    }
+
+    /* 0x17BF4..0x17C14: the candidate cell is the unit's own cell shifted by
+     * aDirDeltaXY[3*bFacing]. The layer is the unit's own -- bFacing is 0..7, so the
+     * table's two vertical entries (8 and 9) are never reachable here. */
+    pDir = &g_aStepDir[pUnit->bFacing % PUFO_PATH_DIR_COUNT];
+    nX = (i32)pOrigin->nX + pDir->dx;
+    nY = (i32)pOrigin->nY + pDir->dy;
+    nZ = (i32)pOrigin->nZ;
+
+    /* Gate 1, 0x17C1C: the wall probe. R2 still holds bFacing at the BL, which is how
+     * the port's nDir argument is sourced. */
+    bOk = Unit_CanStepExitDir(pOrigin, pUnit->bFacing, pGeom, pfnLookup, pLookupUser);
+    if (!bOk) {
+        Ui_Status(pHooks, PUFO_TXT_MELEE_NEED_TARGET);
+        Ui_Status(pHooks, PUFO_TXT_MELEE_NEED_TARGET_2);
+        return false;
+    }
+
+    /* Gate 2, 0x17C54..0x17C8C. The original indexes apCells directly; the port goes
+     * through the lookup and refuses on NULL (deviation). pMeleeTarget is stored at
+     * 0x17C64 BEFORE the occupant test, so it keeps the candidate's -- possibly NULL --
+     * occupant even when the gate then fails. */
+    if (bOk) {
+        pTarget = pfnLookup(nX, nY, nZ, pLookupUser);
+        if (pTarget == NULL) {
+            bOk = false;
+        } else {
+            pUi->pMeleeTarget = pTarget->pUnit;
+            if (!MapCell_HasOccupant(pTarget) || Unit_bIsLarge(pUi->pMeleeTarget)) {
+                bOk = false;
+            }
+        }
+    }
+
+    /* 0x17D0C: every failure route joins here and pushes the same two-line refusal. */
+    if (!bOk) {
+        Ui_Status(pHooks, PUFO_TXT_MELEE_NEED_TARGET);
+        Ui_Status(pHooks, PUFO_TXT_MELEE_NEED_TARGET_2);
+        return false;
+    }
+
+    /* Success, 0x17C90..0x17CF4: the melee triple takes the CANDIDATE coordinates, the
+     * command-18 action is enqueued at the mode-6 cost, and the queue is kicked. */
+    pUi->nFireTgtX = nX;
+    pUi->nFireTgtY = nY;
+    pUi->nFireTgtZ = nZ;
+    if (!TactState_EnqueueAction18(pQueue, pUnit, pUi->pMeleeTarget, pWeapon,
+                                   pUi->anActionCost[PUFO_ACTION_MODE_MELEE],
+                                   PUFO_ACTION_MODE_MELEE)) {
+        Ui_Status(pHooks, PUFO_TXT_OUT_OF_TU);
+    }
+    TactState_KickQueue(pQueue);
+    return true;
+}
+
 /* TactAction_ConfirmSpecial9 @ 0x18260. */
-bool Ui_ConfirmSpecial9(TactUiState *pUi, Soldier *pUnit, TactItem *pWeapon,
-                        MapCell *pCell, void *pEnqueueAction, void *pEnqueueUser,
+bool Ui_ConfirmSpecial9(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
+                        TactItem *pWeapon, MapCell *pCell,
                         const TactUiHooks *pHooks)
 {
-    (void)pWeapon;
-    (void)pEnqueueAction;
-    (void)pEnqueueUser;
-
-    if (pUi == NULL || pUnit == NULL || pCell == NULL) {
+    if (pUi == NULL || pQueue == NULL || pUnit == NULL || pCell == NULL) {
         return false;
     }
 
@@ -909,19 +990,24 @@ bool Ui_ConfirmSpecial9(TactUiState *pUi, Soldier *pUnit, TactItem *pWeapon,
         && pUnit->uHp == pUnit->auStat[1]
         && pUnit->bMorale == 100
         && pUnit->uTuSpent != 0) {
-        /* The original pushes TWO messages here (the two text records at
-         * byte_B419F and byte_B426C). */
-        Ui_Status(pHooks, PUFO_TXT_OUT_OF_AMMO);
-        Ui_Status(pHooks, PUFO_TXT_OUT_OF_AMMO);
+        /* 0x182D8 / 0x182F0: the two records are unk_B419F (11) and unk_B426C (12),
+         * not the out-of-ammo record the port used to push twice. */
+        Ui_Status(pHooks, PUFO_TXT_MEDKIT_NOT_NEEDED);
+        Ui_Status(pHooks, PUFO_TXT_MEDKIT_NOT_NEEDED_2);
         return false;
     }
 
-    /* Otherwise the target is the unit's OWN cell and the action is enqueued at the
-     * mode-9 cost. The enqueue itself belongs to the caller (it needs the queue and
-     * the item model), so only the target selection is done here. */
+    /* Otherwise the target is the unit's OWN cell, and 0x18364 enqueues the action with
+     * the selected unit as BOTH actor and target (MOV R1, R0 with R0 still holding
+     * Map.pSelUnit) at the mode-9 cost, then 0x18370 kicks the queue. */
     pUi->nFireTgtX = pCell->nX;
     pUi->nFireTgtY = pCell->nY;
     pUi->nFireTgtZ = pCell->nZ;
+    if (!TactState_EnqueueAction18(pQueue, pUnit, pUnit, pWeapon,
+                                   pUi->anActionCost[9], 9)) {
+        Ui_Status(pHooks, PUFO_TXT_OUT_OF_TU);
+    }
+    TactState_KickQueue(pQueue);
     return true;
 }
 

@@ -65,7 +65,12 @@
 /* The invulnerable "action latch" byte gap_2[1]. CycleNext clears it; the fire
  * modes set it to 4 on success and 0 on failure. */
 #define PUFO_ACTION_LATCH_NONE 0
-#define PUFO_ACTION_LATCH_FIRE 4
+/* The two intermediate latches Tact_HandleMapClick @ 0x1512c switches on. Input_OnPointerUp
+ * @ 0x14F2C derives them from the action mode: modes 0..2 give 2, mode 11 gives 1. A latch-1
+ * click runs TactState_EnqueueThrow, a latch-2 click runs TactState_EnqueueFireBurst. */
+#define PUFO_ACTION_LATCH_THROW  1
+#define PUFO_ACTION_LATCH_BURST  2
+#define PUFO_ACTION_LATCH_FIRE  4
 
 /* Action modes that mean "cannot act". The fire-mode failures switch to 12. */
 #define PUFO_ACTION_MODE_NONE 12
@@ -74,6 +79,11 @@
 #define PUFO_ACTION_MODE_AIMED 2
 #define PUFO_ACTION_MODE_MENU 11
 #define PUFO_ACTION_MODE_HAND 12
+/* Mode 6 is the melee / paralyzer attack, confirmed by TactAction_ConfirmMeleeMode6
+ * @ 0x17bb8 (action button 39). Its refusal pair is TEXTS[35]+TEXTS[36], "To use the
+ * paralyzer / aim it at an enemy", which is why the mode reads as a special rather
+ * than as a shot. */
+#define PUFO_ACTION_MODE_MELEE 6
 /* Mode 7 is the multi-target burst. Tact_EnemyAiTick @ 0x4d770 arms it by writing 1 to
  * Map.nMultiTargetCount (0x1139BC) and Map.nBurstShots (0x1139E0) and putting the target
  * cell into Map.apMultiTargets[0] (0x1139C0) before the enqueue, and
@@ -105,10 +115,18 @@ typedef struct TactUiState {
     u8  bActionLatch;           /* gap_2[1] @ 0x0002 */
     u8  bUnk1508C;              /* gap15088+4 @ 0x1508C, cleared by OpenCommandScreen */
     u8  nLayerScratch;          /* 0x15138 */
-    /* The fire-target triple the confirm functions set (nFireTgtX/Y/Z). */
+    /* The fire-target triple the confirm functions set. These are Map_nMeleeCellX/Y/Layer
+     * @ 0x1279F8 / 0x1279FC / 0x127A00 -- TactAction_ConfirmMeleeMode6 @ 0x17C90,
+     * TactAction_ConfirmSpecial9 @ 0x18310 and TactHud_UseSpecialItem20 @ 0x18014 all write
+     * the same three dwords, and Tact_ProcessFallAction reads them back through
+     * pnMeleeCellX/Y/Layer in pufo_tactstate.h. */
     i32 nFireTgtX;
     i32 nFireTgtY;
     i32 nFireTgtZ;
+    /* Map_pMeleeTarget @ 0x15090 (the IDB's unk_128A48): the target unit the mode-6 confirm
+     * parks for its own use. All six references in the binary are inside
+     * TactAction_ConfirmMeleeMode6, so it is private scratch rather than shared state. */
+    Soldier *pMeleeTarget;
     u8  nInvFilterType;         /* 0x1A22 */
     u16 nInvListCount;          /* 0x4A24 */
     u8  nInvListSel;            /* 0x4A26 */
@@ -295,8 +313,25 @@ bool TactItem_TryReloadClip(TactItem *pItem, u8 bWeaponAmmoCap, u16 nAmmoTypeId,
 bool Ui_SetFireMode(TactUiState *pUi, i32 nMode, const FireModeWeapon *pWeapon,
                     const TactUiHooks *pHooks);
 
-/* The text-record index the out-of-ammo refusal pushes (byte_B3D9E). */
-#define PUFO_TXT_OUT_OF_AMMO 0
+/* The text-record index the out-of-ammo refusal pushes. The original's pointer is
+ * byte_B3D9E = aTextRecs @ 0xB38D0 + 1230 = record 1230/205 = 6, "Оружие не заряжено"
+ * ("weapon not charged"). The constant used to be 0, which is record 0 ("не исп.",
+ * "not used") -- a wrong index, corrected here and now asserted in the tests. */
+#define PUFO_TXT_OUT_OF_AMMO 6
+
+/* TactAction_ConfirmSpecial9 @ 0x18260 pushes a PAIR, not the out-of-ammo record:
+ * unk_B419F = record 11 ("Не нуждается в медкомплекте", "does not need a medkit") and
+ * unk_B426C = record 12, its continuation line. Record 12 is an empty string in the
+ * shipped lang.dat, exactly as records 10 and 12 continue 9 and 11 in the English set. */
+/* The out-of-TU refusal the three enqueue helpers perform themselves:
+ * TactState_EnqueueThrow @ 0x4B318, TactState_EnqueueFireBurst @ 0x4B0D8 and
+ * Tact_EnqueueActionOrStatus205 @ 0x4B420 all push byte_B399D = record 1
+ * ("Нет свободного времени", "no free time") when the unit cannot pay. The port's
+ * versions return false instead, so every call site has to push it. */
+#define PUFO_TXT_OUT_OF_TU 1
+
+#define PUFO_TXT_MEDKIT_NOT_NEEDED   11
+#define PUFO_TXT_MEDKIT_NOT_NEEDED_2 12
 
 /* Map_PlaySample17_SetMode11 @ 0x179c0: sample 17, nActionMode = 11. (Renamed in the IDB: the
  * old name said sample 11; 0x179CC plays 17.) */
@@ -383,6 +418,38 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
                                                void *pUser),
                          void *pUser, const TactUiHooks *pHooks);
 
+/* TactAction_ConfirmMeleeMode6 @ 0x17bb8. Action mode 6, the melee / paralyzer attack.
+ *
+ * Sample 17 (the `MOV R1, #4` before it is dead -- Sound_Play @ 0x9e0c0 takes one
+ * argument), then nActionMode = 6. The target is the cell the selected unit steps into
+ * when it faces its own `bFacing`: the probe origin is `pUnit->pCell` and the delta is
+ * `aDirDeltaXY[3*bFacing]`, so the candidate is `(nX+dx, nY+dy, nZ)`.
+ *
+ * Two gates, in this order:
+ *   1. `Unit_CanStepExitDir(pUnit->pCell, bFacing)` must say the step is clear.
+ *   2. the candidate cell must have an occupant, and that occupant must not be large.
+ *
+ * On success the candidate's `pUnit` is parked in `pMeleeTarget`, the melee triple
+ * (Map_nMeleeCellX/Y/Layer, the port's nFireTgtX/Y/Z) is set to the CANDIDATE
+ * coordinates, and the command-18 action is enqueued at the mode-6 cost with the queue
+ * kicked. `pMeleeTarget` is written even when gate 2 then fails -- the original stores
+ * it at 0x17C64 before testing the occupant.
+ *
+ * On any failure the two-line refusal TEXTS[35]+TEXTS[36] is pushed, unforced.
+ *
+ * Deviation: the original dereferences `pUnit->pCell` and the candidate cell pointer
+ * unconditionally; the port refuses on NULL. */
+bool Ui_ConfirmMeleeMode6(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
+                          TactItem *pWeapon, const MapGeom *pGeom,
+                          MapCellLookup pfnLookup, void *pLookupUser,
+                          const TactUiHooks *pHooks);
+
+/* The two halves of the mode-6 refusal. unk_B54D7 = record 35 ("Для использования
+ * парализатора", "to use the paralyzer") and unk_B55A4 = record 36 ("направте его на
+ * врага", "aim it at an enemy"). */
+#define PUFO_TXT_MELEE_NEED_TARGET   35
+#define PUFO_TXT_MELEE_NEED_TARGET_2 36
+
 /* TactAction_ConfirmSpecial9 @ 0x18260. Action mode 9.
  *
  * Sample 17, mode 9, screen 0. Then the "nothing to do" guard: if the unit is not
@@ -390,9 +457,14 @@ bool Ui_ConfirmFireBurst(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
  * has spent TU, two status messages are pushed and no action is queued. Otherwise
  * the target is the unit's OWN cell and the action is enqueued at the mode-9 cost.
  *
- * Returns true when an action was queued. */
-bool Ui_ConfirmSpecial9(TactUiState *pUi, Soldier *pUnit, TactItem *pWeapon,
-                        MapCell *pCell, void *pEnqueueAction, void *pEnqueueUser,
+ * Returns true when an action was queued.
+ *
+ * Correction: the enqueue is not left to the caller. 0x18364 calls
+ * Tact_EnqueueActionOrStatus205 with the SELECTED UNIT as both the actor and the target
+ * (`MOV R1, R0` with R0 still holding Map.pSelUnit) at the mode-9 cost, and 0x18370 kicks
+ * the queue. The earlier signature carried two unused `void *` placeholders instead. */
+bool Ui_ConfirmSpecial9(TactUiState *pUi, TactState *pQueue, Soldier *pUnit,
+                        TactItem *pWeapon, MapCell *pCell,
                         const TactUiHooks *pHooks);
 
 /* Tact_BeginMultiTarget @ 0x18380. Action mode 7.

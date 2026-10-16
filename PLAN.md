@@ -1990,6 +1990,48 @@ Order is by what unblocks what. Each item ends with gates + commit.
   layer builds one yet. The port bounds-checks the burn walk's neighbour cell reads, truncates the 52-byte
   status buffer, and skips both burden terms when the divisor is zero.
 
+- [x] **part 68, the tactical map click and the mode-6 confirm: `Tact_HandleMapClick (0x1512c, 1104 B)`,
+  `TactAction_ConfirmMeleeMode6 (0x17bb8, 412 B)`** — the last two addresses `audit_names` still flagged, so
+  **every credited address in the port now has a function defined for it (0 flags, 0 bytes outstanding).**
+  **The cursor cell is one layer below `nLayerScratch`.** 0x1519C indexes with base `0x11AF8`, which is
+  `apCells @ 0x15338` minus one 14400-byte layer, so the cell is `apCells[nLayerScratch-1][nCursorY][nCursorX]`
+  — the same convention `Input_OnSecondary` already uses. `MapCursor_IsValid` checks x and y only, so an
+  out-of-range layer still reaches the grid read.
+  **The latch switch is not symmetric.** Latches 1 and 2 fall through to the shared `TactState_KickQueue` at
+  0x153A0; latch 3 returns without kicking (selecting targets is not an action yet); latch 4 clears the latch;
+  latch 0 has three separate early exits before its move tail. Latch 3 also arms the look control *before*
+  testing the eight-target cap.
+  **The two melee gates disagree.** The map-click gate (0x151D8..0x15200) needs occupied AND **not operative**
+  AND not large, while `TactAction_ConfirmMeleeMode6` (0x17C6C..0x17C8C) tests only occupied and not large.
+  Two entry points to the same mode-4/6 attack family with different acceptance rules — recorded in the ledger,
+  reproduced as-is. `Map_pMeleeTarget` (renamed from `unk_128A48`, all six references inside the one function)
+  is stored *before* the occupant test, so it keeps a possibly NULL occupant on a failed gate.
+  **The ceiling threshold is -23, strictly.** 0x15478 reads the ceiling sprite's signed byte at +0x24
+  (`Mc1Rec.iCeilParam`) and skips when it is `>= -23`; the enemy-AI climb uses -15 on the unit's own ceiling,
+  so these are two different gates. An occupant under a breakable ceiling that is *not* operative stops the
+  click outright rather than falling through to the move.
+  **`Unit_CanStepExitDir` probes from the already stepped-to coordinate**, so its wall probes land one cell
+  past the candidate — the mode-6 test had to put the blocking wall at (4,2,0), not (3,2,0).
+  **Two text-record indices in the existing port were wrong.** `PUFO_TXT_OUT_OF_AMMO` was 0; the original's
+  pointer is `aTextRecs + 1230` = record 6 ("weapon not charged"). And `Ui_ConfirmSpecial9` pushed that
+  constant twice where the original pushes records **11 and 12** (`unk_B419F`, `unk_B426C`). Both corrected,
+  both now asserted, and the eight text globals the tactical handlers name are renamed in the IDB
+  (`aTextRec1_OutOfTime`, `aTextRec6_OutOfAmmo`, `aTextRec11/12_MedkitNotNeeded`, `aTextRec35/36_ParalyzerAim`).
+  **The enqueue helpers' out-of-TU message belongs to the call site.** `TactState_EnqueueThrow` (0x4B318),
+  `TactState_EnqueueFireBurst` (0x4B0D8) and `Tact_EnqueueActionOrStatus205` (0x4B420) each push record 1
+  themselves in the original; the port returns false instead, so every call site has to push it. The three new
+  call sites do. `Ui_ConfirmFireBurst` (0x18774) still does not — recorded under "Separate issues".
+  **`MapCell_FloorCellBelow` is now shared.** The inclusive `SUBS / BPL` descent appears twice in the binary
+  (0x4AFD0 in the enemy-AI wander, 0x15500 here) and the port had its own copy in `pufo_enemyai.c`; both now
+  call the one helper in `pufo_mapcell.c`. The *exclusive* variant at 0x4AE8C (`EnemyAi_FloorLayerBelow`,
+  ledger row 0x4ae8c) is deliberately left separate — it is a different bound, and an original bug.
+  138 new checks (12651 total), 5 ledger rows (169), coverage unchanged at 903/1103 (81.9%) and 445204/598792
+  (74.4%) — both functions were already cited, so this unit converts cited bytes into implemented ones.
+  **Deviation:** `Unit_PathToCell` (0x2c2a8) is still unported, so the latch-0 move tail runs through a
+  `pfnPathToCell` seam on `MapClickCtx`; `Ui_ConfirmMeleeMode6` takes the grid lookup and `MapGeom` directly.
+  The port NULL-guards `Map.pSelUnit`, its cell, the cursor grid slot and the walked cell, all of which the
+  original dereferences, and bounds the cost/enabled index to 0..11 where the original indexes freely.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2017,6 +2059,24 @@ Order is by what unblocks what. Each item ends with gates + commit.
   right through `Fall_SyncCounts`, and `Tact_UpdateUnitControl` now does the same through
   `Turn_SyncSideCounts`; the kill path does not. Fixing it means deciding whether `KillCtx.pRosters` should
   own the counts or whether `Tact_KillUnit` should sync them, so it is its own step.
+
+- [ ] **`Ui_ConfirmFireBurst` (0x18774) drops the out-of-TU message its callee pushes.** Found while wiring
+  the three new enqueue call sites in part 68. In the original the message is the callee's own work:
+  `TactState_EnqueueFireBurst @ 0x4B0D8`, `TactState_EnqueueThrow @ 0x4B318` and
+  `Tact_EnqueueActionOrStatus205 @ 0x4B420` each push `aTextRec1_OutOfTime` (record 1) when the unit cannot
+  pay. The port's three helpers return false instead and the header says the push belongs to the caller, so a
+  call site that ignores the return loses the message. `Tact_HandleMapClick`'s latch-1 and latch-2 arms and
+  `Ui_ConfirmMeleeMode6` / `Ui_ConfirmSpecial9` now push it; `Ui_ConfirmFireBurst` still returns false with no
+  push. Fixing it is a one-line change plus a test, but it changes what `test_tactui` asserts about the
+  refusal, so it is its own step.
+
+- [ ] **`PUFO_MAP_MULTI_TARGET_MAX` is 10 but `Map.apMultiTargets` is eight wide.** `src/pufo/game/pufo_mapctx.h:46`
+  defines it as `PUFO_AIM_SAMPLE_COUNT` (10, from `pufo_ballist.h:77`), while the Map block gives the array
+  eight entries (`Map.apMultiTargets @ Map+0x08`, `TactInputState.apMultiTargets[8]`) and
+  `Tact_HandleMapClick @ 0x15328` refuses the ninth with `CMP #8 / BGE`. The two constants describe different
+  things — the ballistician's ten arc samples and the multi-target cell list — and sharing a value makes one
+  of them wrong. `pufo_input.h` now carries its own `PUFO_MULTI_TARGET_MAX 8` rather than propagate the
+  mismatch; resolving it means checking every reader of `PUFO_MAP_MULTI_TARGET_MAX`.
 
 - [x] **The object name field is at record+0x00, not +0x04, and `Geoscape_InitUI`'s name loop is
   one slot short — fixed in part 18.** Found while verifying the alien race ids (part 17); it also explains the older
@@ -2283,6 +2343,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the low-morale AI (`EnemyAi_TryFireOrWander`; the large-unit early exit, the AI-action pair raised before the path choice, the same-column redraw Hex-Rays gets wrong, the two floor walks of different depth, 7 original bugs found) | 56/56 (Release) | 12305 | 899/1103 (81.5%) | 436816/598792 (72.9%) | 40 checked, 0 mismatched |
 | the enemy AI driver (`Tact_EnemyAiTick`; the byte-not-pointer at `TactCtx272+0x100`, the skip-without-advancing tick gate, `g_aUnitTypeFlag3` found, the neighbour-melee hand-off, the `cost * 2/3 + 8.0` fire gate, the RMP walk that never uses its drawn index, 3 original bugs found) | 56/56 (Release) | 12404 | 900/1103 (81.6%) | 440256/598792 (73.5%) | 40 checked, 0 mismatched |
 | the enemy-turn bracket (`BeforeEnemyStep`, `Tact_UpdateUnitControl`, `AfterEnemyStep`; six passes over four face counters, the `counter + step` term added twice, the burn run probing against its axis, the Win64 `abFaceDamage` offset fixed, 12 original findings recorded) | 56/56 (Release) | 12513 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
+| the tactical map click and the mode-6 confirm (`Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`; the one-layer-down cursor cell, the four asymmetric latch arms, the two disagreeing melee gates, two wrong text-record indices in the existing port fixed, `audit_names` now at zero flags) | 56/56 (Release) | 12651 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

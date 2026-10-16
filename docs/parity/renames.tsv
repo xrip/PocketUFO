@@ -398,3 +398,5 @@ qword_1278A0	Map_adMtX	renamed in the IDB (Map+0x13EE8). The ten arc sample X do
 qword_1278F0	Map_adMtY	renamed in the IDB (Map+0x13F38). The ten arc sample Y doubles; slot 1 is Map_dThrowY.
 qword_127940	Map_adMtZ	renamed in the IDB (Map+0x13F88). The ten arc sample Z doubles, 12 to a layer; slot 1 is Map_dThrowLayer.
 dword_1139E0	Map_nBurstShots	renamed in the IDB (Map+0x28). The shot count a mode-7 burst runs (TactState_EnqueueFireBurst at 0x4B144) and the limit nShotCount is compared against at 0x516DC. Tact_SetFireModeAuto writes 3.
+TactAction_ConfirmMeleeMode6	Ui_ConfirmMeleeMode6	action mode 6, the melee / paralyzer confirm (src/pufo/game/pufo_tactui.c)
+unk_128A48	Map_pMeleeTarget	renamed in the IDB (Map+0x15090). Private scratch of TactAction_ConfirmMeleeMode6 @ 0x17BB8 -- all six references are inside that function.
