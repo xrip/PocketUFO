@@ -16338,3 +16338,57 @@ IDB: unk_158824 -> pBaseInfoPanelNames, unk_158820 -> pBaseInfoPanelFree, unk_15
 (all typed UiPanel *), byte_AB190 -> bBaseInfoPanelMode, asc_AB1D8 -> aDollarSign. Comments added at 0x557f4 (the
 row map and the zero-filled-scratch finding), 0x56810 (the aux-0 continuation that Hex-Rays renders as a break),
 0x57688 (the three-slot block layout) and 0x6649c (the id-vs-index call shape).
+## Unit 93 - the base-info screen's frame (BaseInfoScreen_Draw @ 0x56fb8)
+
+Ported: BaseInfoScreen_Draw (1,744 B) in src/pufo/game/pufo_baseui.c, declared with BaseInfoDrawEnv in
+pufo_baseui.h. Test: TestBaseInfoDraw in tests/test_baseui.c, 58 checks.
+
+Everything sits behind bBaseInfoPanelsBuilt @ 0x15883C: with the flag clear the screen draws nothing at all.
+
+The grey ramp (0x56FE8..0x57210) is 24 steps of 5 pixels, x 0..115. Each step draws a 5x1 block at x+1 in the
+triple (5*(step+20), same, same) and another at x+119 in (-6-5*step, same, same). Both are BYTES, so the right
+one wraps: 250, 245, ... 135 while the left climbs 100, 105, ... 215. Three y bands. With bBaseInfoPanelMode
+set they are fixed at 35, 113 and 225; with it clear they are 35, 18*shipsAtBase+59 and 18*shipsAtBase+169,
+where shipsAtBase is Base_CountShipsAtBase for byte_1870F4 -- the original re-reads it on all four calls
+(0x57118, 0x57158, 0x57198, 0x571D8) of every step, with identical arguments.
+
+The two halves of the ramp OVERLAP. The left one reaches x 120 and the right one starts at x 119, and the left
+block of a step is drawn before that step's right block but the steps run in order, so the left ramp's last
+block (x 116..120) overdraws the right ramp's first block at x 119 and 120. Only 3 of its 5 pixels survive per
+band, which is what the pixel counts pin: 250 appears 9 times in the frame, not 15. The byte arithmetic also
+makes the two halves share colours -- -6-5*7 = -41 = 215 as a byte, and 5*(7+20) = 135 -- so 215 and 135 each
+appear 30 times rather than 15.
+
+UiPanelMsg_Draw runs on the three columns in build order (0x57218..0x57230). Only the name column's rows 0, 5,
+12 and 16 carry a meta colour from BuildPanels; every other row keeps the zeroed meta and draws in black, so
+the test puts text on a meta row to prove the columns really reach the surface.
+
+The base name is copied from the site record at byte_186C24 + 64*base + 54 into a 60-byte local and centred at
+(120, 13) at 0x57284 -- BEFORE Gfx_PackRgb565Pair(68, 244, 252, 4, 70, 75) runs at 0x5729C. The name is
+therefore drawn in whatever colour the palette already held, not in the pair this function packs. TEXTS[1112]
+then goes centred at (60, 300), and the toggle label at (180, 300) is TEXTS[1113] while the mode flag is set
+and TEXTS[1114] while it is clear. All three are real lang.dat records, not the zero-filled scratch the panel
+labels use: 1112 "Выбор базы", 1113 "Месячный расход", 1114 "База". They are now aTextBaseInfoSelect,
+aTextBaseInfoMonthly and aTextBaseInfoBase, each char[205].
+
+Overlay (byte_1870F8): a 32-wide erase strip at x 208 of height 28*nBaseCount + 4, Base_DrawFacilityIconStrip
+with the mark -1 so it paints no chevron of its own, the 210-wide rect, then one row per base with 205/204/201
+wide bevels at (3, 28*i+3), (3, 28*i+4) and (5, 28*i+5) and its name centred at (110, 28*i+7). The two erase
+rects together cover x 0..239 of that band, and the test pins each rect's own extent with a pre-painted pixel
+at x 207 (only the 210-wide rect reaches it) and x 235 (only the 32-wide strip reaches it). Unlike the psi
+frame there is no bracket on a base with no psi lab.
+
+The adopt arm (0x57500..0x57570) is INSIDE the overlay arm. When byte_158834 differs from byte_1870F4 the draw
+itself copies it, clears byte_1870F8 and bBaseInfoPanelsBuilt, frees the three panels with UiPanel_FreeLines
+plus delete and calls BaseInfoScreen_BuildPanels again. So a base the geoscape moved to is picked up on the
+next draw, not on a click -- and with the overlay closed a differing base is left alone entirely.
+
+Deviations. The port refuses a null environment, guards the panel list and each panel pointer, bounds the site
+record index against the eight slots, bounds the name copy to the 60-byte local (the original's copy at
+0x57250..0x57264 is unbounded), and computes Base_CountShipsAtBase once per step instead of four times.
+
+58 new checks; all 35 mutations turn at least one red, so nothing in this function is left unpinned.
+
+IDB: unk_EB348 -> aTextBaseInfoSelect, unk_EB415 -> aTextBaseInfoMonthly, unk_EB4E2 -> aTextBaseInfoBase (all
+char[205]); a function comment at 0x56fb8 covering the ramp, the overlap and the adopt arm, and a line comment
+at 0x57118 recording the four identical Base_CountShipsAtBase calls.

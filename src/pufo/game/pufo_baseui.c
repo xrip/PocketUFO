@@ -11835,3 +11835,141 @@ void PsiScreen_Draw(const PsiScreenDrawEnv *pEnv)
         *pEnv->pbOverlayOpen = 0;                                      /* 0x72A2C */
     }
 }
+
+/* ---- BaseInfoScreen_Draw @ 0x56fb8 ---- */
+
+static const char *BaseInfo_Text(const BaseInfoDrawEnv *pEnv, i32 nRec)
+{
+    if (pEnv->pTextRecs == NULL) {
+        return "";
+    }
+    return pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * nRec;
+}
+
+static const char *BaseInfo_SiteName(const BaseInfoDrawEnv *pEnv, i32 nBaseIdx)
+{
+    if (pEnv->apSiteRecs == NULL || nBaseIdx < 0 || nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return ""; /* deviation: 0x57244 indexes the eight records blindly */
+    }
+    return pEnv->apSiteRecs[nBaseIdx].abName; /* byte_186C24 + 64*i + 54 == 0x186C40 + 64*i + 26 */
+}
+
+static void BaseInfo_DrawCentered(i32 nCenterX, i32 y, const char *psz)
+{
+    const i32 nWidth = Text_MeasureWidth(psz);
+    Text_DrawString(nCenterX - nWidth / 2, y, psz);
+}
+
+/* The original copies the site name into the 60-byte local with a byte-at-a-time loop and no
+ * bound (0x57250..0x57264). The bound here is the deviation. */
+static void BaseInfo_CopyName(char *pszDst, i32 cchDst, const char *pszSrc)
+{
+    i32 i = 0;
+
+    while (i + 1 < cchDst && pszSrc[i] != 0) {
+        pszDst[i] = pszSrc[i];
+        ++i;
+    }
+    pszDst[i] = 0;
+}
+
+void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv)
+{
+    char szName[60]; /* psz[60] on the original's frame, at sp+18h */
+    i32 nBase, nBaseCount, i;
+
+    if (pEnv == NULL || pEnv->pbBuilt == NULL || *pEnv->pbBuilt == 0) {
+        return;                                          /* 0x56FCC: nothing draws while the flag is clear */
+    }
+    nBase = (pEnv->pnWorkBaseIdx != NULL) ? (i32)*pEnv->pnWorkBaseIdx : 0;
+
+    const bool bMode = (pEnv->pbModeFlag != NULL) && *pEnv->pbModeFlag != 0;
+    /* The moving bands need the craft count, and the original re-reads it on all four calls
+     * (0x57118, 0x57158, 0x57198, 0x571D8) of every iteration. It is pure, so once is enough. */
+    const i32 nShips = (!bMode && pEnv->apCraft != NULL)
+                           ? Base_CountShipsAtBase(pEnv->apCraft, pEnv->nCraftCount, pEnv->apBases,
+                                                   pEnv->nBaseCount, pEnv->abGridBytes, nBase)
+                           : 0;
+
+    /* 0x56FE8..0x57210: the grey ramp, 24 steps of 5 pixels. Both colours are bytes, so the right
+     * one wraps: -6-5*step runs 250, 245, ... 135 while the left runs 100, 105, ... 215. */
+    for (i32 nStep = 0; nStep < PUFO_BASEINFO_RAMP_STEPS; ++nStep) {
+        const i32 x = PUFO_BASEINFO_RAMP_STEP * nStep;
+        const u8 nLeft = (u8)(PUFO_BASEINFO_RAMP_STEP * (nStep + PUFO_BASEINFO_RAMP_BASE));
+        const u8 nRight = (u8)(PUFO_BASEINFO_RAMP_RIGHT0 - PUFO_BASEINFO_RAMP_STEP * nStep);
+        i32 nYb, nYc;
+
+        if (bMode) {
+            nYb = PUFO_BASEINFO_BAND_B_FIXED;
+            nYc = PUFO_BASEINFO_BAND_C_FIXED;
+        } else {
+            nYb = PUFO_BASEINFO_BAND_B_PITCH * nShips + PUFO_BASEINFO_BAND_B_OFF;
+            nYc = PUFO_BASEINFO_BAND_B_PITCH * nShips + PUFO_BASEINFO_BAND_C_OFF;
+        }
+        SoftSurf_BlitRectProxy(0, x + 1, PUFO_BASEINFO_BAND_A, 5, 1, nLeft, nLeft, nLeft);
+        SoftSurf_BlitRectProxy(0, x + 119, PUFO_BASEINFO_BAND_A, 5, 1, nRight, nRight, nRight);
+        SoftSurf_BlitRectProxy(0, x + 1, nYb, 5, 1, nLeft, nLeft, nLeft);
+        SoftSurf_BlitRectProxy(0, x + 119, nYb, 5, 1, nRight, nRight, nRight);
+        SoftSurf_BlitRectProxy(0, x + 1, nYc, 5, 1, nLeft, nLeft, nLeft);
+        SoftSurf_BlitRectProxy(0, x + 119, nYc, 5, 1, nRight, nRight, nRight);
+    }
+
+    for (i = 0; i < 3; ++i) {                            /* 0x57218..0x57230 */
+        if (pEnv->pppPanel != NULL && pEnv->pppPanel[i] != NULL) {
+            UiPanel_DrawText(pEnv->pppPanel[i]);
+        }
+    }
+
+    BaseInfo_CopyName(szName, (i32)sizeof(szName), BaseInfo_SiteName(pEnv, nBase));
+    BaseInfo_DrawCentered(120, 13, szName);             /* 0x57284 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x5729C */
+    BaseInfo_DrawCentered(60, 300, BaseInfo_Text(pEnv, PUFO_BASEINFO_TEXT_SELECT));   /* 0x572F0, TEXTS[1112] */
+    BaseInfo_DrawCentered(180, 300,                                              /* 0x57330 / 0x57370 */
+                          BaseInfo_Text(pEnv, bMode ? PUFO_BASEINFO_TEXT_MONTHLY
+                                                    : PUFO_BASEINFO_TEXT_BASE));
+
+    if (pEnv->pbOverlayOpen == NULL || *pEnv->pbOverlayOpen == 0) {
+        return;                                          /* 0x57388 */
+    }
+
+    nBaseCount = (pEnv->pnBaseCount != NULL) ? (i32)*pEnv->pnBaseCount : 0;
+    SoftSurf_BlitRectProxy(0, 208, 0, 32, PUFO_BASEINFO_ROW_PITCH * nBaseCount + 4,
+                           0, 0, 0);                                            /* 0x573B4 */
+    if (pEnv->pfnDrawIconStrip != NULL) {
+        pEnv->pfnDrawIconStrip(-1, pEnv->pStripUser);                          /* 0x573C0: -1 draws none */
+    }
+    SoftSurf_BlitRectProxy(0, 0, 0, 210, PUFO_BASEINFO_ROW_PITCH * nBaseCount + 4,
+                           0, 0, 0);                                           /* 0x573F0 */
+
+    for (i = 0; i < nBaseCount; ++i) {                       /* 0x57408..0x574F0 */
+        const i32 nY = PUFO_BASEINFO_ROW_PITCH * i;
+
+        SoftSurf_BlitRectProxy(0, 3, nY + 3, 205, 26, 0x46, 0xA0, 0xB3);      /* 0x57438 */
+        SoftSurf_BlitRectProxy(0, 3, nY + 4, 204, 24, 0x00, 0x6E, 0x77);      /* 0x5746C */
+        SoftSurf_BlitRectProxy(0, 5, nY + 5, 201, 22, 0x04, 0x46, 0x4B);      /* 0x57498 */
+        BaseInfo_DrawCentered(110, nY + 7, BaseInfo_SiteName(pEnv, i));       /* 0x574E4 */
+    }
+
+    /* 0x57500..0x57570: the draw itself adopts a base the geoscape moved to, and rebuilds the
+     * panels right here -- so the rebuild lands on this frame, not on the next click. */
+    if (pEnv->pnAltBaseIdx != NULL && pEnv->pnWorkBaseIdx != NULL
+        && (i32)*pEnv->pnAltBaseIdx != (i32)*pEnv->pnWorkBaseIdx) {
+        *pEnv->pnWorkBaseIdx = *pEnv->pnAltBaseIdx;                            /* 0x57508 */
+        *pEnv->pbOverlayOpen = 0;                                              /* 0x5750C */
+        *pEnv->pbBuilt = 0;                                                    /* 0x57514 */
+        if (pEnv->pppPanel != NULL) {
+            for (i = 0; i < 3; ++i) {
+                UiPanel *pPanel = pEnv->pppPanel[i];
+
+                if (pPanel != NULL) {
+                    UiPanel_FreeLines(pPanel);                                 /* 0x57520 / 0x57554 / 0x57588 */
+                    free(pPanel);
+                }
+                pEnv->pppPanel[i] = NULL;
+            }
+        }
+        if (pEnv->pfnBuildPanels != NULL) {
+            pEnv->pfnBuildPanels();                                            /* 0x575B0 */
+        }
+    }
+}

@@ -5751,4 +5751,65 @@ typedef struct BaseInfoBuildEnv {
 
 void BaseInfoScreen_BuildPanels(BaseInfoBuildEnv *pEnv);
 
+/* BaseInfoScreen_Draw @ 0x56fb8 (1,744 B). Everything sits behind bBaseInfoPanelsBuilt.
+ *
+ * 1. The grey ramp. 24 steps of 5 pixels, x 0..115, each step drawing a 5x1 rect at x+1 in the
+ *    left colour and another at x+119 in the right colour, at three y bands. The colours are the
+ *    RGB triples (5*(step+20), same, same) on the left and (-6-5*step, same, same) on the right,
+ *    both as BYTES: the left ramps 100..215 and the right 250..135. With bBaseInfoPanelMode set
+ *    the bands are y 35, 113 and 225; with it clear they are y 35, 18*shipsAtBase+59 and
+ *    18*shipsAtBase+169, where shipsAtBase is Base_CountShipsAtBase for byte_1870F4 -- the
+ *    original re-reads it on every one of the four calls (0x57118, 0x57158, 0x57198, 0x571D8).
+ * 2. UiPanelMsg_Draw on the three columns, in the build order.
+ * 3. The base name from the 64-byte site record at byte_186C24 + 64*base + 54, copied into a
+ *    60-byte local and centred at (120, 13). Then Gfx_PackRgb565Pair(68, 244, 252, 4, 70, 75) --
+ *    the same caption pair the psi frame packs -- and TEXTS[1112] "Выбор базы" centred at (60, 300).
+ * 4. The toggle label at (180, 300): TEXTS[1113] "Месячный расход" when the mode flag is set,
+ *    TEXTS[1114] "База" when it is clear. All three are real lang.dat records, not scratch.
+ * 5. Overlay (byte_1870F8): a 32-wide erase strip at x 208 of height 28*nBaseCount + 4,
+ *    Base_DrawFacilityIconStrip with the mark -1, the 210-wide panel, then one bevelled row per
+ *    base with its name centred at (110, 28*i + 7). No bracket here, unlike the psi frame.
+ * 6. Still inside the overlay: byte_158834 against byte_1870F4. Different, the draw ADOPTS it --
+ *    byte_1870F4 = byte_158834, byte_1870F8 = 0, bBaseInfoPanelsBuilt = 0, the three panels freed
+ *    with UiPanel_FreeLines plus delete, and BaseInfoScreen_BuildPanels() called again. So the
+ *    rebuild happens on the NEXT frame's draw, not on the click.
+ */
+#define PUFO_BASEINFO_TEXT_SELECT   1112 /* "Выбор базы", centred at (60, 300) */
+#define PUFO_BASEINFO_TEXT_MONTHLY  1113 /* "Месячный расход", centred at (180, 300) in panel mode */
+#define PUFO_BASEINFO_TEXT_BASE     1114 /* "База", centred at (180, 300) outside panel mode */
+#define PUFO_BASEINFO_RAMP_STEPS    24   /* x 0, 5, ... 115 */
+#define PUFO_BASEINFO_RAMP_STEP     5
+#define PUFO_BASEINFO_RAMP_BASE     20   /* the left colour is 5*(step+20) */
+#define PUFO_BASEINFO_RAMP_RIGHT0   -6   /* and the right one is -6-5*step */
+#define PUFO_BASEINFO_BAND_A        35
+#define PUFO_BASEINFO_BAND_B_FIXED  113
+#define PUFO_BASEINFO_BAND_C_FIXED  225
+#define PUFO_BASEINFO_BAND_B_PITCH  18   /* the moving bands are 18*shipsAtBase + 59 / + 169 */
+#define PUFO_BASEINFO_BAND_B_OFF    59
+#define PUFO_BASEINFO_BAND_C_OFF    169
+#define PUFO_BASEINFO_ROW_PITCH     28   /* one base row per 28 pixels in the overlay list */
+
+typedef struct BaseInfoDrawEnv {
+    const GfxColorEnv *pColor;      /* pGX @ 0x1139B8, the colour-pair owner */
+    u8      *pbBuilt;               /* bBaseInfoPanelsBuilt @ 0x15883C, cleared by the adopt arm */
+    const u8 *pbModeFlag;           /* bBaseInfoPanelMode @ 0xAB190 */
+    UiPanel **pppPanel;             /* the three columns, in build order */
+    i8      *pnWorkBaseIdx;         /* byte_1870F4, written by the adopt arm */
+    const i8 *pnAltBaseIdx;         /* byte_158834, the base the adopt arm copies from */
+    u8      *pbOverlayOpen;         /* byte_1870F8, cleared by the adopt arm */
+    const BaseSiteRec *apSiteRecs;  /* byte_186C40, eight 64-byte records; abName at +26 */
+    const char *pTextRecs;          /* aTextRecs @ 0xB38D0, stride 205 */
+    const i8 *pnBaseCount;          /* nBaseCount @ 0x159D80, read SIGNED as in the psi frame */
+    Ship *const *apCraft;           /* Base_CountShipsAtBase's inputs, for the moving bands */
+    i32  nCraftCount;
+    BaseRec *const *apBases;
+    i32  nBaseCount;
+    const u8 *abGridBytes;          /* 0x159DBC, Base_CountShipsAtBase's extra term */
+    void (*pfnDrawIconStrip)(i32 nMark, void *pUser);
+    void *pStripUser;
+    void (*pfnBuildPanels)(void);   /* BaseInfoScreen_BuildPanels @ 0x557f4 */
+} BaseInfoDrawEnv;
+
+void BaseInfoScreen_Draw(const BaseInfoDrawEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

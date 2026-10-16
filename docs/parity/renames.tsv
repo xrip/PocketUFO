@@ -504,3 +504,6 @@ unk_158820	pBaseInfoPanelFree	0x158820. The free/available column: UiPanel(42) a
 unk_158838	pBaseInfoPanelTotals	0x158838. The total column: UiPanel(42) at x 190, view width 10, nUnk7076 = 1 (0x558A0). Its line aux is the craft-run marker. UiPanel *.
 byte_AB190	bBaseInfoPanelMode	0xAB190. Set to 1 by the build arm of BaseInfoScreen_BuildPanels (0x5581C); the panel-mode toggle BaseInfoScreen_TogglePanelMode flips it.
 asc_AB1D8	aDollarSign	0xAB1D8. The single '$' strcat'd onto the money rows of the base-info screen (0x569A8, 0x56B14, 0x56B54).
+unk_EB348	aTextBaseInfoSelect	0xEB348. TEXTS[1112] "Выбор базы", centred at (60, 300) by BaseInfoScreen_Draw (0x572F0). char[205].
+unk_EB415	aTextBaseInfoMonthly	0xEB415. TEXTS[1113] "Месячный расход", the (180, 300) toggle label while bBaseInfoPanelMode is set (0x57330). char[205].
+unk_EB4E2	aTextBaseInfoBase	0xEB4E2. TEXTS[1114] "База", the (180, 300) toggle label while the mode flag is clear (0x57370). char[205].

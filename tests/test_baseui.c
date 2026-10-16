@@ -15273,6 +15273,332 @@ static void TestBaseInfoInit(void)
     Check(g_pBiPad == NULL && g_nBiBuild == 1, "a null environment is refused");
 }
 
+/* ---- BaseInfoScreen_Draw @ 0x56fb8 ---- */
+
+static SoftSurf g_biSurf;
+static GfxColorEnv g_biColor;
+static BaseSiteRec g_aBiSiteRecs[8];
+static BaseInfoDrawEnv g_biDrawEnv;
+static i8 g_nBiBaseCount;
+static i8 g_nBiAltBase;
+static u8 g_bBiOverlay;
+static i32 g_nBiStripCalls;
+static i32 g_nBiStripArg;
+static i32 g_nBiRebuildCalls;
+
+static void BiThunkStrip(i32 nMark, void *pUser)
+{
+    (void)pUser;
+    g_nBiStripArg = nMark;
+    g_nBiStripCalls++;
+}
+static void BiThunkRebuild(void) { g_nBiRebuildCalls++; }
+
+static i32 BiInkColour(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1, u16 uWant)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * 240 + x] == uWant) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+static i32 BiInkAny(const u16 *pPix, i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y <= y1; ++y) {
+        for (i32 x = x0; x <= x1; ++x) {
+            if (pPix[y * 240 + x] != 0) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+static void BiClear(const u16 *pPix)
+{
+    memset((void *)pPix, 0, 240 * 320 * 2);
+    g_nBiStripCalls = 0;
+    g_nBiStripArg = 999;
+    g_nBiRebuildCalls = 0;
+}
+
+/* Brings up the real panels through BuildPanels, then wires the draw env over them. Two craft are
+ * homed here, so the moving bands land at 18*2+59 = 95 and 18*2+169 = 205 -- clear of the fixed
+ * 113 and 225 the panel-mode arm uses. */
+static void BiDrawFixture(void)
+{
+    BiFixture();
+    g_bBiCraftCount = 2;
+    BaseInfoScreen_BuildPanels(&g_biEnv);
+
+    memset(g_aBiSiteRecs, 0, sizeof(g_aBiSiteRecs));
+    PutStr(g_aBiSiteRecs[0].abName, "Alpha");
+    PutStr(g_aBiSiteRecs[1].abName, "Beta");
+
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "Select");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "Monthly");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "Base");
+
+    g_nBiWorkBase = 0;
+    g_nBiAltBase = 0;
+    g_bBiOverlay = 0;
+    g_nBiBaseCount = 2;
+    g_biColor.nScaleSource = 0;
+    g_biColor.nFadeCount = 0;
+
+    memset(&g_biDrawEnv, 0, sizeof(g_biDrawEnv));
+    g_biDrawEnv.pColor = &g_biColor;
+    g_biDrawEnv.pbBuilt = &g_bBiBuilt;
+    g_biDrawEnv.pbModeFlag = &g_bBiMode;
+    g_biDrawEnv.pppPanel = g_apBiPanel;
+    g_biDrawEnv.pnWorkBaseIdx = &g_nBiWorkBase;
+    g_biDrawEnv.pnAltBaseIdx = &g_nBiAltBase;
+    g_biDrawEnv.pbOverlayOpen = &g_bBiOverlay;
+    g_biDrawEnv.apSiteRecs = g_aBiSiteRecs;
+    g_biDrawEnv.pTextRecs = (const char *)g_aXfText;
+    g_biDrawEnv.pnBaseCount = &g_nBiBaseCount;
+    g_biDrawEnv.apCraft = g_apBiShip;
+    g_biDrawEnv.nCraftCount = 2;
+    g_biDrawEnv.apBases = g_apBiBases;
+    g_biDrawEnv.nBaseCount = 1;
+    g_biDrawEnv.abGridBytes = g_abBiGridBytes;
+    g_biDrawEnv.pfnDrawIconStrip = BiThunkStrip;
+    g_biDrawEnv.pfnBuildPanels = BiThunkRebuild;
+}
+
+static void TestBaseInfoDraw(void)
+{
+    const u16 *pPix;
+    u16 uCapGlyph;
+
+    printf("the base info screen's frame\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+
+    g_blitState.nPixelMode = 2;
+    SoftSurf_ctor(&g_biSurf);
+    SoftSurf_AllocPixels(&g_biSurf, 240, 320, PIXMODE_16BPP);
+    g_pMainSurface = &g_biSurf;
+    pPix = (const u16 *)g_biSurf.pPixels;
+
+    /* The draw packs its colour pair at 0x5729C, AFTER the base name is drawn at 0x57284, so the
+     * name is drawn in whatever the palette already held -- here the same pair, packed on entry. */
+    uCapGlyph = (u16)Gfx_PackRgb565Pair(&g_biColor, 68, 244, 252, 4, 70, 75);
+    Check(uCapGlyph != 0, "the caption colour pair packs to a non-zero glyph colour (0x2d82c)");
+
+    /* ---- the gate ---- */
+    BiDrawFixture();
+    g_bBiBuilt = 0;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 0, "a screen with no panels built draws nothing at all");
+
+    /* ---- panel mode on: the three fixed bands ---- */
+    BiDrawFixture();
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(g_bBiMode, 1, "the build arm left the mode flag set");
+    CheckEqI32((i32)pPix[35 * 240 + 1], XfPix(100, 100, 100), "the ramp's first left block at (1, 35)");
+    CheckEqI32((i32)pPix[35 * 240 + 5], XfPix(100, 100, 100), "  and it is 5 wide");
+    CheckEqI32((i32)pPix[35 * 240 + 6], XfPix(105, 105, 105), "  the next step starts right at 6");
+    CheckEqI32((i32)pPix[36 * 240 + 1], 0, "each block is one pixel tall");
+    /* The left ramp runs to x 120 and the right one starts at x 119, so the left half -- drawn
+     * later, in the same step order -- overdraws x 119 and 120 of the right half's first block. */
+    CheckEqI32((i32)pPix[35 * 240 + 119], XfPix(215, 215, 215), "x 119 is the left ramp's last block, overdrawn");
+    CheckEqI32((i32)pPix[35 * 240 + 121], XfPix(250, 250, 250), "the right ramp shows from x 121 with 250");
+    CheckEqI32((i32)pPix[35 * 240 + 116], XfPix(215, 215, 215), "the left half climbs to 5*(23+20) = 215");
+    CheckEqI32((i32)pPix[35 * 240 + 234], XfPix(135, 135, 135), "the right half falls to -6-5*23 = 135");
+    CheckEqI32((i32)pPix[113 * 240 + 1], XfPix(100, 100, 100), "the second band is fixed at 113 in panel mode");
+    CheckEqI32((i32)pPix[225 * 240 + 1], XfPix(100, 100, 100), "and the third at 225");
+    CheckEqI32(BiInkColour(pPix, 0, 34, 239, 36, XfPix(100, 100, 100)), 5,
+               "only the first left block is 100 on band A");
+    CheckEqI32(BiInkColour(pPix, 0, 0, 239, 319, XfPix(100, 100, 100)), 15,
+               "and 100 appears on all three bands, 5 pixels each");
+    CheckEqI32(BiInkColour(pPix, 0, 0, 239, 319, XfPix(250, 250, 250)), 9,
+               "250 survives only 3 pixels per band, x 119 and 120 being overdrawn");
+    /* -6-5*7 = -41 = 215 as a byte, so the right ramp repeats the left ramp's top colour. */
+    CheckEqI32(BiInkColour(pPix, 0, 0, 239, 319, XfPix(215, 215, 215)), 30,
+               "215 comes from the left ramp's last step AND the right ramp's step 7");
+    /* 5*(7+20) = 135 on the left, -6-5*23 = 135 on the right: the same doubling. */
+    CheckEqI32(BiInkColour(pPix, 0, 0, 239, 319, XfPix(135, 135, 135)), 30,
+               "and 135 from the right ramp's last step AND the left ramp's step 7");
+
+    /* ---- panel mode off: the bands move with the craft count ---- */
+    BiDrawFixture();
+    g_bBiMode = 0;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32((i32)pPix[95 * 240 + 1], XfPix(100, 100, 100), "with two craft the second band is 18*2+59 = 95");
+    CheckEqI32((i32)pPix[205 * 240 + 1], XfPix(100, 100, 100), "and the third 18*2+169 = 205");
+    CheckEqI32((i32)pPix[113 * 240 + 1], 0, "the fixed 113 is left empty");
+    CheckEqI32((i32)pPix[225 * 240 + 1], 0, "and the fixed 225 too");
+    g_aBiShip[2].bHomeBase = 0; /* the third craft is homed here too */
+    g_bBiCraftCount = 3;
+    g_biDrawEnv.nCraftCount = 3;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32((i32)pPix[113 * 240 + 1], XfPix(100, 100, 100), "a third craft pushes the band to 18*3+59 = 113");
+    CheckEqI32((i32)pPix[223 * 240 + 1], XfPix(100, 100, 100), "and the last to 18*3+169 = 223");
+
+    /* ---- the two captions, one record at a time ---- */
+    BiDrawFixture();
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "");
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(BiInkColour(pPix, 20, 300, 100, 315, uCapGlyph), 0, "with all three records empty no caption is drawn");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "Select");
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    Check(BiInkColour(pPix, 20, 300, 100, 315, uCapGlyph) > 0, "TEXTS[1112] reaches the (60, 300) band");
+    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph), 0, "  and nothing lands at (180, 300) yet");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_SELECT, "");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "Monthly");
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    Check(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph) > 0,
+          "in panel mode the toggle label is TEXTS[1113] at (180, 300)");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_MONTHLY, "");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "Base");
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph), 0,
+               "TEXTS[1114] is NOT used while the mode flag is set");
+    g_bBiMode = 0;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    Check(BiInkColour(pPix, 140, 300, 220, 315, uCapGlyph) > 0,
+          "with the flag clear it is TEXTS[1114] at (180, 300)");
+    PutTextRec(g_aXfText, PUFO_BASEINFO_TEXT_BASE, "");
+
+    /* ---- the base name, centred at (120, 13) in the colour that was current on entry ---- */
+    BiDrawFixture();
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    {
+        const i32 nWithName = BiInkColour(pPix, 60, 12, 180, 22, uCapGlyph);
+        PutStr(g_aBiSiteRecs[0].abName, "");
+        BiClear(pPix);
+        BaseInfoScreen_Draw(&g_biDrawEnv);
+        Check(nWithName > 0 && BiInkColour(pPix, 60, 12, 180, 22, uCapGlyph) == 0,
+              "the site record's name is the caption centred at (120, 13)");
+    }
+
+    /* ---- the three panels really reach the surface. Only the name column's rows 0, 5, 12 and 16
+     * carry a meta colour; every other row keeps the zeroed meta and draws in black, which a
+     * cleared surface cannot show, so the probe uses a meta row. ---- */
+    BiDrawFixture();
+    (void)UiPanel_SetLineText(g_apBiPanel[0], 0, "Zeta");
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    {
+        const i32 nWithPanels = BiInkAny(pPix, 10, 40, 120, 60);
+        (void)UiPanel_SetLineText(g_apBiPanel[0], 0, "");
+        BiClear(pPix);
+        BaseInfoScreen_Draw(&g_biDrawEnv);
+        Check(nWithPanels > 0 && BiInkAny(pPix, 10, 40, 120, 60) == 0,
+              "the columns are drawn through UiPanelMsg_Draw, at y 40");
+    }
+
+    /* ---- the overlay ---- */
+    BiDrawFixture();
+    g_bBiOverlay = 1;
+    BiClear(pPix);
+    SoftSurf_BlitRectProxy(0, 210, 59, 20, 20, 0xFF, 0xFF, 0xFF);
+    SoftSurf_BlitRectProxy(0, 239, 300, 1, 1, 0xFF, 0xFF, 0xFF);
+    SoftSurf_BlitRectProxy(0, 235, 59, 1, 1, 0xFF, 0xFF, 0xFF); /* only the 32-wide strip reaches x 235 */
+    SoftSurf_BlitRectProxy(0, 207, 59, 1, 1, 0xFF, 0xFF, 0xFF); /* only the 210-wide rect reaches x 207 */
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(g_nBiStripCalls, 1, "the icon strip runs once under the overlay");
+    CheckEqI32(g_nBiStripArg, -1, "with the mark -1, so it paints no chevron of its own");
+    CheckEqI32((i32)pPix[59 * 240 + 210], 0, "the 32-wide erase strip covers y 0..59 (28*2+4)");
+    Check((i32)pPix[60 * 240 + 210] != 0, "  and stops exactly there");
+    CheckEqI32((i32)pPix[59 * 240 + 235], 0, "  and it reaches x 208..239");
+    CheckEqI32((i32)pPix[59 * 240 + 207], 0, "the 210-wide rect covers x 0..209, where the strip does not");
+    Check((i32)pPix[300 * 240 + 239] != 0, "and neither rect reaches y 60 or x 210..239 below it");
+    CheckEqI32((i32)pPix[3 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the first base row's outer bevel");
+    CheckEqI32((i32)pPix[4 * 240 + 3], XfPix(0x00, 0x6E, 0x77), "  its middle bevel");
+    CheckEqI32((i32)pPix[5 * 240 + 5], XfPix(0x04, 0x46, 0x4B), "  and its inner bevel");
+    CheckEqI32((i32)pPix[31 * 240 + 3], XfPix(0x46, 0xA0, 0xB3), "the second base row starts at 28+3");
+    CheckEqI32(BiInkColour(pPix, 0, 55, 205, 55, XfPix(0x46, 0xA0, 0xB3)), 0,
+               "a third row would start at 56, and there is none");
+    {
+        const i32 nRow0 = BiInkColour(pPix, 60, 7, 160, 17, uCapGlyph);
+        const i32 nRow1 = BiInkColour(pPix, 60, 35, 160, 45, uCapGlyph);
+        PutStr(g_aBiSiteRecs[0].abName, "");
+        PutStr(g_aBiSiteRecs[1].abName, "");
+        BiClear(pPix);
+        SoftSurf_BlitRectProxy(0, 210, 59, 20, 20, 0xFF, 0xFF, 0xFF);
+        SoftSurf_BlitRectProxy(0, 239, 300, 1, 1, 0xFF, 0xFF, 0xFF);
+        BaseInfoScreen_Draw(&g_biDrawEnv);
+        Check(nRow0 > 0 && nRow1 > 0
+                  && BiInkColour(pPix, 60, 7, 160, 17, uCapGlyph) == 0
+                  && BiInkColour(pPix, 60, 35, 160, 45, uCapGlyph) == 0,
+              "each base row carries its own name centred at (110, 28*i+7)");
+    }
+
+    /* ---- the adopt arm, inside the overlay ---- */
+    BiDrawFixture();
+    g_bBiOverlay = 1;
+    g_nBiAltBase = 1;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(g_nBiWorkBase, 1, "a different byte_158834 is adopted into byte_1870F4");
+    CheckEqI32(g_bBiOverlay, 0, "the overlay flag is cleared");
+    CheckEqI32(g_bBiBuilt, 0, "the built flag is cleared");
+    Check(g_apBiPanel[0] == NULL && g_apBiPanel[1] == NULL && g_apBiPanel[2] == NULL,
+          "the three panels are freed here, not on a click");
+    CheckEqI32(g_nBiRebuildCalls, 1, "and the panel build runs again in the same call");
+    BiRelease();
+
+    BiDrawFixture();
+    g_bBiOverlay = 1;
+    g_nBiAltBase = 0;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(g_nBiWorkBase, 0, "the same base is not adopted");
+    CheckEqI32(g_bBiBuilt, 1, "the panels stay built");
+    CheckEqI32(g_nBiRebuildCalls, 0, "and nothing is rebuilt");
+    BiRelease();
+
+    /* no overlay, different base: the adopt arm is inside the overlay and does not run */
+    BiDrawFixture();
+    g_bBiOverlay = 0;
+    g_nBiAltBase = 1;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32(g_nBiWorkBase, 0, "with the overlay closed a different base is left alone");
+    CheckEqI32(g_bBiBuilt, 1, "and the panels are not rebuilt");
+    BiRelease();
+
+    /* ---- guards ---- */
+    BiDrawFixture();
+    BiClear(pPix);
+    BaseInfoScreen_Draw(NULL);
+    CheckEqI32(BiInkAny(pPix, 0, 0, 239, 319), 0, "a null environment draws nothing");
+    g_biDrawEnv.pnBaseCount = NULL;
+    g_bBiOverlay = 1;
+    BiClear(pPix);
+    BaseInfoScreen_Draw(&g_biDrawEnv);
+    CheckEqI32((i32)pPix[3 * 240 + 3], 0, "a missing base count gives no base rows");
+    CheckEqI32(g_nBiStripCalls, 1, "but the erase rects and the strip still run");
+    BiRelease();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -15369,6 +15695,7 @@ int main(void)
     TestPsiScreenDraw();
     TestBaseInfoBuildPanels();
     TestBaseInfoInit();
+    TestBaseInfoDraw();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;
