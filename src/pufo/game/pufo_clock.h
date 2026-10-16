@@ -2,9 +2,11 @@
  *
  * Evidence: GameTime_Decode @ 0x5cfd4, GameTime_Reset @ 0x5c56c,
  * Geoscape_AdvanceTime @ 0x5ce40. The original keeps the whole block inside
- * the big global at 0x158890 (IDA's gUiRootPanel.apLines[101..115]); the IDB
- * type GameTime (60 bytes) sits at 0x158A14 and every field below is one of
- * those apLines slots.
+ * the big global at 0x158890: it is gUiRootPanel.apLines[101..115], which is
+ * 0x158890 + 0xBE4 + 4 * 101 = 0x159608. So nTotalSec is 0x159618 (IDA's nGameTimeSec),
+ * bPaused is 0x15961C, and the decoded fields are 0x159620 nGameYear, 0x159624 nGameMonth,
+ * 0x159628 nGameDay, 0x15962C nGameWeekday, 0x159630 nGameHour, 0x159634 nGameMinute and
+ * 0x159638 nGameSecond.
  *
  * Month lengths come from dword_AB270 @ 0xab270, read as 12 dwords:
  * 31,28,31,30,31,30,31,31,30,31,30,31 (a fixed non-leap year).

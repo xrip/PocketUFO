@@ -180,7 +180,7 @@ static void TestNewGame(void)
         for (i = 0; i < PUFO_GEOUI_PAD_SLOTS; ++i)   { if (g_ui.apPad[i] == NULL) { bAll = false; } }
         for (i = 0; i < PUFO_GEOUI_PAD_SLOTS; ++i)   { if (g_ui.apCtl[i] == NULL) { bAll = false; } }
         for (i = 0; i < PUFO_GEOUI_ROOT_CTLS; ++i)   { if (g_ui.apRootCtl[i] == NULL) { bAll = false; } }
-        for (i = 0; i < PUFO_GEOUI_LAYER_PADS; ++i)  { if (g_ui.apLayerPad[i] == NULL) { bAll = false; } }
+        for (i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i)  { if (g_ui.apClockDigitPads[i] == NULL) { bAll = false; } }
         Check(bAll, "13 pads + 13 controls + 13 root controls + 10 clock pads allocated");
     }
     Check(g_ui.pWorldSize != NULL && g_ui.pWorldSize->uW == 800 && g_ui.pWorldSize->uH == 400,
@@ -196,7 +196,7 @@ static void TestNewGame(void)
           "gamemenu pad loaded at origin y 236");
     Check(g_ui.apPad[GEOUI_PAD_187048]->pData != NULL && g_ui.apPad[GEOUI_PAD_187048]->nOriginY == 228,
           "bpanel pad loaded at origin y 228");
-    Check(g_ui.apLayerPad[0]->pData != NULL && g_ui.apLayerPad[9]->pData != NULL,
+    Check(g_ui.apClockDigitPads[0]->pData != NULL && g_ui.apClockDigitPads[9]->pData != NULL,
           "clock digit pads b0..b9 loaded");
 
     printf("facility table\n");
@@ -380,7 +380,7 @@ static void TestFreeAllPairing(void)
     GeoscapeUi_FreeAll(&g_ui, &roster, 0);
 
     Check(g_ui.apPad[0] == NULL && g_ui.apCtl[0] == NULL && g_ui.apRootCtl[0] == NULL
-              && g_ui.apLayerPad[0] == NULL && g_ui.pWorldSize == NULL
+              && g_ui.apClockDigitPads[0] == NULL && g_ui.pWorldSize == NULL
               && g_ui.pStatusPanel == NULL,
           "everything InitUI allocated is released");
 }

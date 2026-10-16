@@ -15326,3 +15326,87 @@ IDB: bBaseAtNeedsInit -> bSpawnReplacementOnce (five writers at 0x3658C / 0x3DF4
 99 new checks in tests/test_strateg.c (the type-3/4 expiry, the wrapped-leg sign, the fractional advance,
 the arrival dispatch for each target type, the clock interpolation, the landing and the three TEXTS
 captions) and 6 in tests/test_tactend.c (the outcome removal on both paths).
+
+## Unit 82 -- Smap_DrawStrategIcons @ 0x822c4 (1,060 B) + Geoscape_DrawClockPads @ 0x5c5c8 (2,168 B)
+
+Both are the two remaining unported leaves of Geoscape_DrawScreen, so they were ported before the caller.
+
+### Smap_DrawStrategIcons @ 0x822c4 -> Smap_DrawStrategIcons
+
+- The two map half-extents are CEILING halves, not plain halves. The ARM triple at 0x822EC..0x8231C is
+  MOVS / ADDMI R3,R3,#1 / ASR #1: the +1 is skipped only when the size is 0, so it is
+  (n != 0 ? n + 1 : 0) / 2 - PUFO_RADAR_HALF_SCREEN_{X,Y}. Hex-Rays renders the same triple as a plain
+  `/ 2`, which is wrong for odd sizes; the same trap sits at 0x846B4, 0x6C1A4 and 0x5EB44.
+- 0x82318 MOV R0, #0x20 forces palette slot 32 into Map_nGlyphPalBase (0x82328 repeats it after the
+  empty-list test), and the Font_DrawGlyph nPal argument is R9 = 0. PUFO_GLYPH_PAL_STRATEG_ICONS records
+  both. mapbits.pal is palette slot 32 in main.dat, which cross-confirms the value.
+- Zoom scales BOTH axes. Mode 1 multiplies nX and nY by the double 0x3FE80189_5077D685 (1/1.333), mode 2 by
+  0x3FE2E3E4_31916105 (1/1.694); mode 0 is unscaled. PUFO_SMAP_ITEM_SCALE_L1/L2 hold them.
+- The world->screen wrap is a single conditional subtract per axis, and the test is `>` not `>=`
+  (0x824BC / 0x824C0 SUBGT for Y, 0x824CC / 0x824D0 SUBGT for X), so a coordinate exactly equal to the map
+  size is NOT wrapped.
+- The animation phase is the LOW HALFWORD of nUiSlot0AnimPhase @ 0x113A18 (Map + 0x60), read with LDRH at
+  0x82634. It is added to the glyph index for every type except the inactive-visible case of type 1.
+- Glyph index per nType, with nBase = fontSys.nMapBitsBase and nAnim = the phase:
+      1 active + visible : nTimer ? nBase + nAnim + 12 : nBase + 4   (the no-timer case ignores nAnim)
+      1 inactive + visible: nBase + 2                                 (also ignores nAnim)
+      3                  : nBase + nAnim + 8
+      4                  : nBase + nAnim + 10
+      5                  : nBase + nAnim + 14
+      0 active + visible : nBase + nAnim + 6
+      0 inactive         : nBase + nAnim
+  Types 1 and 0 draw only under the visible/active conditions above; 3, 4 and 5 always draw.
+- mapbits has 16 frames: fontSys.nMapBitsBase @ 0x15829C is 256 and nTotalSprFrames is 272. Measured
+  lit-pixel counts for base+0..+15 are 32,32,20,20,20,20,0,32,32,32,28,28,28,28,28,28 -- frame +6 is
+  BLANK in the shipped main.dat, so the active-base type-0 case is tested at phase 1 (frame +7) instead.
+  The test asserts both facts: +6 paints nothing, and each of the eight checked indices paints something,
+  so a hash comparison cannot pass on an empty box.
+
+### Geoscape_DrawClockPads @ 0x5c5c8 -> Geoscape_DrawClockPads
+
+- The clock strip is pad images, not glyphs: the ten digit pads are apClockDigitPads @ 0x186BF0, indexed by
+  digit value, and the origin is written before each blit. The literal pool at 0x8662C pairs 0x186BF0 with
+  the name strings "b0".."b9", which is what forced the port-side rename apLayerPad -> apClockDigitPads
+  (PUFO_GEOUI_LAYER_PADS -> PUFO_GEOUI_CLOCK_DIGIT_PADS) in pufo_geouimanage.{c,h} and pufo_geoiinit.{c,h}.
+  pSmapChromePad @ 0x186BE0, the singular layer pad, is a different global and keeps its name.
+- Digit layout: hour pair at x 90/100, minute pair at 115/125, second pair at 140/150, all at y 260; the day
+  pair at 90/100 y 287; the year as four pads at 105/115/125/135 y 304. The ':' separators are text at
+  110,258 and 135,258 (0x5C7A8 / 0x5C7C0).
+- The day tens digit is SET (origin written) always but BLITTED only when non-zero -- 0x5CA00 tests the pad
+  pointer, 0x5CA14 tests the digit, 0x5CA18 is the blit. The ones digit blits whenever the pad exists.
+- The digit split uses _rt_udiv with the DIVISOR FIRST: 0x5C9D0 / 0x5C9D8 both MOV R0, #0xA before the call,
+  confirming the convention already settled at Geoscape_AdvanceTime and the clock port.
+- Text records, all read through aTextRecs @ 0xB38D0 at stride 205: the weekday name is
+  TEXTS[1244 + nWeekday - 1] (1244..1250), the separator between day and month is TEXTS[1251], the month
+  name is TEXTS[1252 + nMonth - 1] (1252..1263). PUFO_TEXT_WEEKDAY_FIRST, PUFO_TEXT_CLOCK_SEP and
+  PUFO_TEXT_MONTH_FIRST replace the magic numbers.
+- The weekday name is centred on x 124: Text_MeasureWidth then 124 - width / 2 at y 272 (0x5C9B0). The month
+  name is not centred -- it starts at a fixed 130,287 (0x5CCFC).
+- Colour: Gfx_PackRgb565Pair(68,244,252, 4,70,75) at 0x5C790, the bright-on-dark pair the strip is drawn in.
+- Out-of-range guards are the original's: weekday is used only for 1..7 and month only for 1..12; a 0 leaves
+  the buffer as the empty string the copy wrote.
+- Deviation, listed rather than hidden: the original copies a TEXTS record into a 52-byte stack buffer
+  (psz[52] at 0x5C5AC) with an unbounded byte loop, so a record longer than 51 bytes overflows the stack.
+  The port caps the copy at 51 bytes plus the NUL. This is a hardening deviation, not a behaviour change for
+  the shipped data, and it is NOT in the bug ledger because the original's overflow is not reachable with
+  main.dat/lang.dat contents.
+
+### IDB corrections this unit
+
+- unk_113A18 -> nUiSlot0AnimPhase (Map + 0x60): 0x36664 counts it up and wraps past 3, UiControl_HitTest
+  clears it, Smap_DrawStrategIcons reads its low halfword.
+- The seven decoded clock globals were unnamed: unk_159620 -> nGameYear, unk_159624 -> nGameMonth,
+  dword_159628 -> nGameDay, unk_15962C -> nGameWeekday, unk_159630 -> nGameHour, unk_159634 -> nGameMinute,
+  unk_159638 -> nGameSecond.
+- Six globals had the wrong size: 0x186BBC, 0x186BF0 (the ten pads, not one pointer), 0x186C1C, 0x186C20,
+  0x186E40 and 0x159618. 0x186E40 needed `undefine` first before a 4-byte data item could be created.
+- The clock block base is 0x159608 = gUiRootPanel(0x158890) + 0xBE4 + 4 * 101, i.e. apLines[101..115]. The
+  port header claimed the GameTime block sat at 0x158A14; that claim was wrong and pufo_clock.h now states
+  0x159608, with nTotalSec at 0x159618 and the pause byte at 0x15961C.
+- Function comments added at 0x822c4, 0x5c5c8 and 0x159608.
+
+51 new checks in tests/test_geoscape.c (30 for the icons, 21 for the clock), all on the real 240x320 surface
+with the real mapbits sprites and the real font: the ceiling halves, the wrap boundary at exactly the map
+size, each type's glyph index against a reference drawn by Font_DrawGlyph directly, the zoom scaling on both
+axes, the blank +6 frame, the palette-slot-32 dependency, the digit-pad origins, the skipped day-tens blit,
+the weekday centring and the month/day separator.

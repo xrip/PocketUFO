@@ -59,7 +59,7 @@
 
 #define PUFO_GEOUI_ROOT_CTLS 13
 #define PUFO_GEOUI_PAD_SLOTS 13
-#define PUFO_GEOUI_LAYER_PADS 10
+#define PUFO_GEOUI_CLOCK_DIGIT_PADS 10
 
 /* The thirteen widget singletons, in the order the original frees them (0x86F70..0x87104). */
 typedef enum GeoscapeUiCtlSlot {
@@ -102,7 +102,7 @@ typedef struct GeoscapeUiState {
     UiControl *apRootCtl[PUFO_GEOUI_ROOT_CTLS];
     UiControl *apCtl[PUFO_GEOUI_PAD_SLOTS];
     PadImage  *apPad[PUFO_GEOUI_PAD_SLOTS];
-    PadImage  *apLayerPad[PUFO_GEOUI_LAYER_PADS]; /* 0x186BF0 + 4*i */
+    PadImage  *apClockDigitPads[PUFO_GEOUI_CLOCK_DIGIT_PADS]; /* 0x186BF0 + 4*i */
 
     /* 0x186BC0 holds a pointer to the pair, not the pair itself. Freed with no null
      * check and no PadImage_FreeData, because it is not a PadImage. */

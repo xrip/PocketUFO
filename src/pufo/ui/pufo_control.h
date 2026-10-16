@@ -139,7 +139,8 @@ bool UiControl_BlitActivePad(UiControl *pCtl, UiControlBlitFn pfnBlit,
 void UiControl_SetPosMode(UiControl *pCtl, i16 x, i16 y, u8 nMode);
 
 /* What UiControl_HitTest reaches outside the widget: the pad blit callbacks and the
- * UI slot the original clears at Map+0x60 (apUiSlotsA[0], IDB unk_113A18). */
+ * UI slot the original clears at Map+0x60 (apUiSlotsA[0], IDB nUiSlot0AnimPhase @ 0x113A18;
+ * Smap_DrawStrategIcons reads its low halfword as the strateg-sprite animation phase). */
 typedef struct UiControlHitCtx {
     u32            *pnUiSlot0;
     UiControlBlitFn pfnBlit;

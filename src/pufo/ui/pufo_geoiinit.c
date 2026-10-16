@@ -311,11 +311,11 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode)
 
     /* 0x8660C..0x866DC: the ten clock digit pads "b0".."b9" (apClockDigitPads @ 0x186BF0),
      * each created and loaded in the same loop iteration. */
-    for (i = 0; i < PUFO_GEOUI_LAYER_PADS; ++i) {
+    for (i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
         char szName[8];
-        pUi->apLayerPad[i] = InitUI_NewPad();
+        pUi->apClockDigitPads[i] = InitUI_NewPad();
         (void)snprintf(szName, sizeof(szName), "b%d", (int)i);
-        InitUI_LoadPad(pUi->apLayerPad[i], szName, 1, 0, 0);
+        InitUI_LoadPad(pUi->apClockDigitPads[i], szName, 1, 0, 0);
     }
 
     /* 0x866E8..0x868C4: earth100.pal and the earth / chrome pads. */

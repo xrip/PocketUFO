@@ -39,15 +39,15 @@ static void FreePadSingletons(GeoscapeUiState *pUi)
     }
 }
 
-/* 0x86F38..0x86F64: the ten layer pads at 0x186BF0. */
+/* 0x86F38..0x86F64: the ten clock digit pads at 0x186BF0. */
 static void FreeLayerPads(GeoscapeUiState *pUi)
 {
-    for (i32 i = 0; i < PUFO_GEOUI_LAYER_PADS; ++i) {
-        PadImage *pPad = pUi->apLayerPad[i];
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        PadImage *pPad = pUi->apClockDigitPads[i];
         if (pPad != NULL) {
             PadImage_FreeData(pPad);
             free(pPad);
-            pUi->apLayerPad[i] = NULL;
+            pUi->apClockDigitPads[i] = NULL;
         }
     }
 }

@@ -1319,6 +1319,76 @@ typedef struct RadarBackdropEnv {
  * the +0x0C control slot. */
 bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv);
 
+/* Smap_DrawStrategIcons @ 0x822c4 (1,060 B). One glyph per strateg entry, at the entry's map
+ * coordinates converted into screen coordinates.
+ *
+ * The half-extents are the same ceilings the map click and the radar backdrop use: 0x822EC..0x822FC
+ * is MOVS / ADMI / ASR #1, so nHalfW = ceil(nMapW / 2) - 120 and nHalfH = ceil(nMapH / 2) - 160.
+ * Map_nGlyphPalBase is forced to 32 for the whole pass (0x82318 MOV R0, #0x20 / 0x82328 STR), so
+ * every glyph here takes palette slot 32 whatever the rest of the frame used. nPal is always 0
+ * (R9 = 0 at 0x822D8).
+ *
+ * Zoom scales the stored map coordinates exactly as Smap_HitTestStrategSelect does: 1/1.333 at mode
+ * 1 (0x823B4, the muld pair 1350030981:1072169353) and 1/1.694 at mode 2 (0x8243C,
+ * 831611141:1071834084), each truncated by dtoi. Mode 0 and any other mode leave them alone.
+ *
+ * 0x824A4..0x824D0: x = nX - nScrollX - nHalfW and y = nY - nScrollY - nHalfH, then each is wrapped
+ * by the map size with ONE conditional subtraction (CMP / SUBGT) — the same single-wrap shape as the
+ * 0x84894 crosshair bug, so a value more than one map size out of range stays out of range.
+ *
+ * The glyph index is (nMapBitsBase + nAnimPhase + k) for types 0, 3, 4, 5 and for an ACTIVE type-1
+ * entry whose nTimer is non-zero, but (nMapBitsBase + 2) and (nMapBitsBase + 4) WITHOUT the animation
+ * phase for an inactive visible type-1 entry (0x825DC) and for an idling one (0x82620). k is 6 for an
+ * active visible type 0, 8 for type 3, 10 for type 4, 14 for type 5, 12 for an active type 1 with a
+ * timer, and 0 for an inactive type 0.
+ *
+ * Visibility gates differ by type: a type-1 entry draws only when bVisible is set; a type-0 entry
+ * draws whenever it is inactive regardless of bVisible, but needs bVisible when active; types 3, 4 and
+ * 5 ignore bActive and bVisible entirely. */
+#define PUFO_GLYPH_PAL_STRATEG_ICONS 32 /* 0x82318 MOV R0, #0x20 -> Map_nGlyphPalBase */
+
+typedef struct SmapIconDrawEnv {
+    const PtrArray *pStrategList; /* 0x1864F8 + 0x3C */
+    u16             nAnimPhase;   /* nUiSlot0AnimPhase @ 0x113A18, Map + 0x60, read with LDRH at 0x82634 */
+    u16             nMapBitsBase; /* fontSys.nMapBitsBase @ 0x15829C */
+} SmapIconDrawEnv;
+
+void Smap_DrawStrategIcons(const SmapView *pView, const SmapIconDrawEnv *pEnv);
+
+/* Geoscape_DrawClockPads @ 0x5c5c8 (2,168 B). The clock strip at the bottom of the geoscape:
+ * HH:MM:SS as digit pads, then the weekday name, the day, the month name and the four-digit year.
+ *
+ * All seven values come from GameTime_Decode @ 0x5cfd4, which writes them into the block based at
+ * 0x159608 (nYear +0x18, nMonth +0x1C, nDay +0x20, nWeekday +0x24, nHour +0x28, nMinute +0x2C,
+ * nSecond +0x30). The two digit halves come apart with _rt_sdiv, divisor 10 in R0 again.
+ *
+ * Positions, all fixed: hour tens/ones at x 90/100, the two literal ':' glyphs (0xAB078) at 110 and
+ * 135, minute tens/ones at 115/125, second tens/ones at 140/150, all at y 260. The weekday name is
+ * centred on 124 at y 272. The day pair sits at y 287 x 90/100, TEXTS[1251] at 110, the month name at
+ * 130. The year's four digits are at y 304, x 105/115/125/135.
+ *
+ * The day's tens digit is blitted ONLY when it is non-zero (0x5CA00 CMP R8,#0 / 0x5CA14 LDRNE /
+ * 0x5CA18 BLNE) — that is how the original suppresses a leading zero — and 0x5CA0C MOVNE R1,#0 forces
+ * its bFlag to 0 before the only call, so the call is always PadImage_BlitEx(pad, 0). The ones digit
+ * at x 100 is always blitted.
+ *
+ * nMonth outside 1..12 is deterministic: psz still holds the TEXTS[1251] separator copied at 0x5CA48,
+ * and 0x5CCFC draws that, which the port reproduces. nWeekday outside 1..7 leaves psz at whatever the
+ * stack held (the original never writes it on that path), so the port draws an empty string there
+ * instead — the one deviation. */
+#define PUFO_TEXT_WEEKDAY_FIRST 1244 /* TEXTS[1244..1250], the seven weekday names */
+#define PUFO_TEXT_CLOCK_SEP     1251 /* TEXTS[1251], between the day and the month */
+#define PUFO_TEXT_MONTH_FIRST   1252 /* TEXTS[1252..1263], the twelve month names */
+
+typedef struct GeoscapeClockDrawEnv {
+    PadImage *const *apDigitPads; /* apClockDigitPads @ 0x186BF0, the ten pads "b0".."b9" */
+    const char       *pTextRecs;  /* aTextRecs @ 0xB38D0 */
+    const GameTime   *pTime;
+    GfxColorEnv      *pColor;     /* the pair the strip packs is 68,244,252 / 4,70,75 */
+} GeoscapeClockDrawEnv;
+
+void Geoscape_DrawClockPads(const GeoscapeClockDrawEnv *pEnv);
+
 /* ------------------------------------------------- the radar fuel gauge and range bar
  *
  * Evidence: RadarScreen_DrawFuelGauge @ 0x5d918 (524 B), RadarScreen_DrawRangeBar @ 0x5d6e4 (564 B).

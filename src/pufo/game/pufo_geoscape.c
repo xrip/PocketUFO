@@ -9,6 +9,7 @@
 #include "game/pufo_font.h"    /* Font_DrawGlyph, g_fontSys.nBaseBitsBase, Text_DrawString */
 #include "render/pufo_render.h" /* g_aPalette, the slot RadarScreen_CyclePalette rotates */
 #include "game/pufo_save.h"    /* SmapSite, for the monthly upkeep of a base */
+#include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten pads at 0x186BF0 */
 #include "util/pufo_rand.h"
 #include "util/pufo_str.h"     /* pufo_strncpy/pufo_strcat, the cost label */
 
@@ -2120,6 +2121,228 @@ bool RadarScreen_BlitMapBackdrop(const RadarBackdropEnv *pEnv)
     }
 
     return true;
+}
+
+/* 0x822EC..0x82304 and 0x8230C..0x8231C: MOVS / ADMI #1 / ASR #1. The +1 is skipped only when the
+ * size is 0, so this is ceil(n / 2) for a positive size and C's n / 2 for a negative one. */
+static i32 SmapIcon_HalfExtent(i32 nSize, i32 nSub)
+{
+    return (nSize != 0 ? nSize + 1 : 0) / 2 - nSub;
+}
+
+/* Smap_DrawStrategIcons @ 0x822c4. */
+void Smap_DrawStrategIcons(const SmapView *pView, const SmapIconDrawEnv *pEnv)
+{
+    i32 nHalfW;
+    i32 nHalfH;
+    i32 i;
+
+    if (pView == NULL || pEnv == NULL || pEnv->pStrategList == NULL) {
+        return;
+    }
+
+    nHalfW = SmapIcon_HalfExtent(pView->nMapW, PUFO_RADAR_HALF_SCREEN_X);  /* 0x82304 */
+    nHalfH = SmapIcon_HalfExtent(pView->nMapH, PUFO_RADAR_HALF_SCREEN_Y);  /* 0x8231C */
+    g_nGlyphPalSlotBase = PUFO_GLYPH_PAL_STRATEG_ICONS;                    /* 0x82318 / 0x82328 */
+
+    if (PtrArray_GetCount(pEnv->pStrategList) <= 0) {                      /* 0x82334 / 0x8233C */
+        return;
+    }
+
+    /* 0x826D0..0x826DC re-reads the count every step and tests (index + 1) against it, so the bound
+     * is taken fresh each iteration exactly as the original does. */
+    for (i = 0; i < PtrArray_GetCount(pEnv->pStrategList); ++i) {
+        const StrategItem *pItem = (const StrategItem *)PtrArray_Get(pEnv->pStrategList, i);
+        i32 nX;
+        i32 nY;
+        i32 nScreenX;
+        i32 nScreenY;
+        i32 nGlyph = 0;
+        bool bDraw = false;
+        i32 nAnim = (i32)pEnv->nAnimPhase;
+        i32 nBase = (i32)pEnv->nMapBitsBase;
+
+        if (pItem == NULL) {
+            continue; /* deviation: the original would dereference the null entry at 0x8236C */
+        }
+
+        nX = pItem->nX;                                                    /* 0x8236C */
+        nY = pItem->nY;                                                    /* 0x8237C */
+        if (pView->nMode == 1) {                                           /* 0x82388 */
+            nX = (i32)((double)nX * PUFO_SMAP_ITEM_SCALE_L1);              /* 0x823B4, dtoi truncates */
+            nY = (i32)((double)nY * PUFO_SMAP_ITEM_SCALE_L1);              /* 0x823F4 */
+        } else if (pView->nMode == 2) {                                    /* 0x82410 */
+            nX = (i32)((double)nX * PUFO_SMAP_ITEM_SCALE_L2);              /* 0x8243C */
+            nY = (i32)((double)nY * PUFO_SMAP_ITEM_SCALE_L2);              /* 0x8247C */
+        }
+
+        nScreenX = nX - pView->nScrollX - nHalfW;                          /* 0x824A4 */
+        nScreenY = nY - pView->nScrollY - nHalfH;                          /* 0x824B4 */
+        if (nScreenY > pView->nMapH) {                                     /* 0x824BC / 0x824C0 */
+            nScreenY -= pView->nMapH;
+        }
+        if (nScreenX > pView->nMapW) {                                     /* 0x824CC / 0x824D0 */
+            nScreenX -= pView->nMapW;
+        }
+
+        switch ((i8)pItem->nType) {                                        /* 0x824DC LDRSB / 0x824EC */
+        case 1:
+            if (pItem->bActive != 0) {
+                if (pItem->bVisible != 0) {
+                    if (pItem->nTimer != 0) {                              /* 0x82618 */
+                        nGlyph = nBase + nAnim + 12;                       /* 0x8263C..0x82640 */
+                    } else {
+                        nGlyph = nBase + 4;                                /* 0x82620, no anim phase */
+                    }
+                    bDraw = true;
+                }
+            } else if (pItem->bVisible != 0) {                             /* 0x825C8 */
+                nGlyph = nBase + 2;                                        /* 0x825DC, no anim phase */
+                bDraw = true;
+            }
+            break;
+        case 3:
+            nGlyph = nBase + nAnim + 8;                                    /* 0x82594 */
+            bDraw = true;
+            break;
+        case 4:
+            nGlyph = nBase + nAnim + 10;                                   /* 0x8256C */
+            bDraw = true;
+            break;
+        case 5:
+            nGlyph = nBase + nAnim + 14;                                   /* 0x82528 */
+            bDraw = true;
+            break;
+        case 0:
+            if (pItem->bActive != 0) {
+                if (pItem->bVisible != 0) {                                /* 0x826A0 */
+                    nGlyph = nBase + nAnim + 6;                            /* 0x826C4 */
+                    bDraw = true;
+                }
+            } else {
+                nGlyph = nBase + nAnim;                                    /* 0x82684 */
+                bDraw = true;
+            }
+            break;
+        default:
+            break;                                                         /* 0x824EC default */
+        }
+
+        if (bDraw) {
+            Font_DrawGlyph(nScreenX, nScreenY, (u16)nGlyph, 0);            /* nPal is R9 = 0 */
+        }
+    }
+}
+
+/* One digit pad of the clock strip: reposition, then blit with bFlag 0. The original indexes
+ * apClockDigitPads with the digit straight out of the division, so a digit outside the ten is
+ * undefined there; the port refuses it, as RadarDigitPad @ 0x5d918 does. */
+static PadImage *Clock_SetPad(const GeoscapeClockDrawEnv *pEnv, i32 nDigit, i32 nX, i32 nY)
+{
+    PadImage *pPad;
+
+    if (nDigit < 0 || nDigit >= PUFO_GEOUI_CLOCK_DIGIT_PADS) {
+        return NULL;
+    }
+    pPad = pEnv->apDigitPads[nDigit];
+    if (pPad == NULL) {
+        return NULL;
+    }
+    pPad->nOriginX = nX;
+    pPad->nOriginY = nY;
+    return pPad;
+}
+
+static void Clock_BlitDigit(const GeoscapeClockDrawEnv *pEnv, i32 nDigit, i32 nX, i32 nY)
+{
+    PadImage *pPad = Clock_SetPad(pEnv, nDigit, nX, nY);
+
+    if (pPad != NULL) {
+        PadImage_BlitEx(pPad, 0);
+    }
+}
+
+/* 0x5C5F8..0x5C6E0: one two-digit group of the clock. The two halves come apart with _rt_sdiv,
+ * divisor 10 in R0. */
+static void Clock_BlitDigitPair(const GeoscapeClockDrawEnv *pEnv, i32 nValue,
+                                i32 nTensX, i32 nOnesX, i32 nY)
+{
+    Clock_BlitDigit(pEnv, nValue / 10, nTensX, nY);
+    Clock_BlitDigit(pEnv, nValue % 10, nOnesX, nY);
+}
+
+/* The original copies the record with an unbounded byte loop into a 52-byte stack buffer
+ * (psz[52] at 0x5C5AC). The port caps the copy at that same 52 bytes. */
+static void Clock_CopyText(char *pszDst, const char *pRec)
+{
+    i32 i = 0;
+
+    while (i < 51 && pRec[i] != 0) {
+        pszDst[i] = pRec[i];
+        ++i;
+    }
+    pszDst[i] = 0;
+}
+
+/* Geoscape_DrawClockPads @ 0x5c5c8. */
+void Geoscape_DrawClockPads(const GeoscapeClockDrawEnv *pEnv)
+{
+    char szText[52];
+    PadImage *pTensPad;
+    PadImage *pOnesPad;
+    i32 nWidth;
+    i32 nDayTens;
+    i32 nDayOnes;
+
+    if (pEnv == NULL || pEnv->apDigitPads == NULL || pEnv->pTime == NULL || pEnv->pTextRecs == NULL) {
+        return;
+    }
+
+    szText[0] = 0;
+
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nHour, 90, 100, 260);               /* 0x5C618..0x5C65C */
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nMinute, 115, 125, 260);            /* 0x5C69C..0x5C6E0 */
+    Clock_BlitDigitPair(pEnv, pEnv->pTime->nSecond, 140, 150, 260);            /* 0x5C720..0x5C764 */
+
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                  /* 0x5C790 */
+    Text_DrawString(110, 258, ":");                                             /* 0x5C7A8, asc_AB078 */
+    Text_DrawString(135, 258, ":");                                             /* 0x5C7C0 */
+
+    if (pEnv->pTime->nWeekday >= 1 && pEnv->pTime->nWeekday <= 7) {             /* 0x5C7D0 */
+        Clock_CopyText(szText, pEnv->pTextRecs +
+                       PUFO_TEXT_REC_STRIDE * (PUFO_TEXT_WEEKDAY_FIRST + pEnv->pTime->nWeekday - 1));
+    }
+    /* Outside 1..7 the original draws whatever its uninitialised buffer held; the port draws the
+     * empty string it left there. */
+
+    Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75);                 /* 0x5C984 */
+    nWidth = Text_MeasureWidth(szText);                                         /* 0x5C998 */
+    Text_DrawString(124 - nWidth / 2, 272, szText);                             /* 0x5C9B0 */
+
+    nDayTens = pEnv->pTime->nDay / 10;                                          /* 0x5C9D4 */
+    nDayOnes = pEnv->pTime->nDay % 10;                                          /* 0x5C9E8 */
+    pTensPad = Clock_SetPad(pEnv, nDayTens, 90, 287);                           /* 0x5C9FC / 0x5CA10 */
+    if (pTensPad != NULL && nDayTens != 0) {                                    /* 0x5CA00 / 0x5CA14 */
+        PadImage_BlitEx(pTensPad, 0);                                           /* 0x5CA18 */
+    }
+    pOnesPad = Clock_SetPad(pEnv, nDayOnes, 100, 287);                          /* 0x5CA28 / 0x5CA30 */
+    if (pOnesPad != NULL) {
+        PadImage_BlitEx(pOnesPad, 0);                                           /* 0x5CA38 */
+    }
+
+    Clock_CopyText(szText, pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_CLOCK_SEP); /* 0x5CA48 */
+    Text_DrawString(110, 287, szText);                                          /* 0x5CA78 */
+
+    if (pEnv->pTime->nMonth >= 1 && pEnv->pTime->nMonth <= 12) {               /* 0x5CA88 */
+        Clock_CopyText(szText, pEnv->pTextRecs +
+                       PUFO_TEXT_REC_STRIDE * (PUFO_TEXT_MONTH_FIRST + pEnv->pTime->nMonth - 1));
+    }
+    Text_DrawString(130, 287, szText);                                          /* 0x5CCFC */
+
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 1000, 105, 304);                /* 0x5CD30 */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 100 % 10, 115, 304);            /* 0x5CD88 */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear / 10 % 10, 125, 304);             /* 0x5CDDC */
+    Clock_BlitDigit(pEnv, pEnv->pTime->nYear % 10, 135, 304);                  /* 0x5CE14..0x5CE38 */
 }
 
 /* The original indexes aRadarDigitPads with the digit straight out of the division, so a digit

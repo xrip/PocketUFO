@@ -1,8 +1,10 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `5e8b0d7`. This document is committed together with the enemy AI
-driver: **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** — the phase-3 arm of `Tact_ProcessActionPhase`, and the
-caller `EnemyAi_TryFireOrWander` was written for. Four things about it are worth knowing before you touch it:
+Date: 2026-10-16. HEAD before this edit: `253c9bf`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 82, `Smap_DrawStrategIcons` 0x822c4 + `Geoscape_DrawClockPads`
+0x5c5c8), and the per-unit chain there runs back through every unit since. The block that follows is the
+older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
+to anyone touching that code:
 
 - **`pTactCtx272+0x100` is a byte, not a pointer.** Hex-Rays types it `Soldier *pSavedFocus` because every read
   is `LOBYTE(pCtx->pSavedFocus)`, but all seven accesses in the binary are 0/1 byte stores and tests (0x4CC00,
@@ -205,10 +207,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 917 / 1103 (83.1%)
-                                             bytes cited:     492808 / 598792 (82.3%)
-python docs/parity/audit_credits.py       -> credited functions: 917, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 418 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 919 / 1103 (83.3%)
+                                             bytes cited:     496036 / 598792 (82.8%)
+python docs/parity/audit_credits.py       -> credited functions: 919, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 426 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
@@ -229,9 +231,38 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **13890**. Coverage as of the latest commit: **917 / 1103
-functions (83.1%)**, **492808 / 598792 bytes (82.3%)**. This unit ported the geoscape event pass —
-`StrategList_ProcessEvents` (0x7fcb0, 4,904 B) and the craft-to-craft tail it calls,
+Test checks run across the 60 suites: **13941**. Coverage as of the latest commit: **919 / 1103
+functions (83.3%)**, **496036 / 598792 bytes (82.8%)**. This unit ported the two leaves that were still
+missing from `Geoscape_DrawScreen` — `Smap_DrawStrategIcons` (0x822c4, 1,060 B), the pass that draws every
+strateg entry as a mapbits sprite, and `Geoscape_DrawClockPads` (0x5c5c8, 2,168 B), the date/time strip —
+so the geoscape draw itself now has no unported callee left in it. **The ceiling half appears a fourth
+time, and Hex-Rays still flattens it.** 0x822EC..0x8231C is `MOVS` / `ADDMI R3,R3,#1` / `ASR #1`, i.e.
+`(n != 0 ? n + 1 : 0) / 2 - half_screen`; the pseudocode writes a plain `/ 2`, which is wrong for every odd
+map size, and the same trap sits at 0x846B4, 0x6C1A4 and 0x5EB44. **What only the ARM fixes.** 0x82318
+`MOV R0, #0x20` forces palette slot **32** into `Map_nGlyphPalBase` while the `Font_DrawGlyph` nPal argument
+stays R9 = 0 — and `mapbits.pal` is palette slot 32 in main.dat, so the two confirm each other. Zoom scales
+**both** axes (1/1.333, 1/1.694). The world→screen wrap is one conditional subtract per axis with a `>` test
+(0x824BC/0x824C0, 0x824CC/0x824D0), so a coordinate exactly equal to the map size is NOT wrapped. The
+animation phase is the **low halfword** of `nUiSlot0AnimPhase @ 0x113A18` (LDRH at 0x82634). **Measured, not
+assumed:** mapbits has 16 frames (nMapBitsBase 256, nTotalSprFrames 272) and frame **+6 is blank in the
+shipped main.dat** — lit counts for base+0..+15 are 32,32,20,20,20,20,**0**,32,32,32,28,28,28,28,28,28 — so
+the test asserts the blank frame and that every checked frame paints pixels, which is what keeps a hash
+comparison from passing on an empty box. **The clock strip is pads, not glyphs:** the ten digit pads are
+`apClockDigitPads @ 0x186BF0`, indexed by digit value, and the literal pool at 0x8662C pairs 0x186BF0 with
+the names "b0".."b9". That exposed a **port-side misnomer** — `pufo_geouimanage.{c,h}` and
+`pufo_geoiinit.{c,h}` documented that array as layer pads, so it is `apClockDigitPads` /
+`PUFO_GEOUI_CLOCK_DIGIT_PADS` now (the singular `pSmapChromePad @ 0x186BE0` keeps its name). The day tens
+digit is SET always but BLITTED only when non-zero (0x5CA00 / 0x5CA14 / 0x5CA18); the digit split calls
+`_rt_udiv` with `MOV R0, #0xA` first (0x5C9D0 / 0x5C9D8), the divisor-first convention confirmed a fourth
+time. Weekday names are TEXTS[1244..1250], the day/month separator TEXTS[1251], months TEXTS[1252..1263];
+the weekday is centred (`124 - width / 2` at 0x5C9B0) while the month sits at a fixed 130,287. **One
+deviation recorded, not hidden:** the original copies a TEXTS record into a 52-byte stack buffer
+(`psz[52]` at 0x5C5AC) with an unbounded byte loop; the port caps it at 51 + NUL, and that is not a ledger
+row because the overflow is unreachable with the shipped data. 51 new checks, 8 IDB renames, 6 size fixes
+(0x186BBC, 0x186BF0, 0x186C1C, 0x186C20, 0x186E40, 0x159618), 3 comments, 0 new ledger rows. The port's own
+clock-block claim was wrong too: the block is `gUiRootPanel(0x158890) + 0xBE4 + 4 * 101 = 0x159608`, not the
+0x158A14 `pufo_clock.h` said, so `nTotalSec` is 0x159618 and the pause byte 0x15961C.
+Unit 81 ported the geoscape event pass —
 `Strateg_ConfirmInterceptTarget` (0x7fb98, 280 B) — and wired it into the shell as `World_ProcessEvents`, so the
 geoscape tick now runs the real per-item update instead of the stub. **Three things only the ARM showed, and all
 three change the answer.** `_rt_udiv` takes the **DIVISOR in R0 and the DIVIDEND in R1** (`Geoscape_AdvanceTime`
@@ -981,9 +1012,10 @@ This is the shortest chain that produces a real game session, in dependency orde
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 113,804 of 160,496 (70.9%), and `Geoscape_Draw` alone is
-33,744 of the 46,692 left. Both geoscape pointer handlers, the map select test they call, both map click
-handlers they install and the per-tick strateg event pass are in now.
+`strat` is still the weakest subsystem by bytes: 117,032 of 160,496 (72.9%), and `Geoscape_Draw` alone is
+33,744 of the 43,464 left. Both geoscape pointer handlers, the map select test they call, both map click
+handlers they install, the per-tick strateg event pass, the strateg icon pass and the clock strip are in
+now — what is left in the geoscape is the draw functions themselves, not their leaves.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
@@ -1622,7 +1654,7 @@ manufacturing, research, soldier and base-facility families are complete, and so
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
-192 of 204 functions and 113,804 of 160,496 bytes (70.9%), 12 functions / 46,692 bytes left. What
+194 of 204 functions and 117,032 of 160,496 bytes (72.9%), 10 functions / 43,464 bytes left. What
 is left in `strat-ui` is
 21 functions / 36,892 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia

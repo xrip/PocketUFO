@@ -78,8 +78,8 @@ static void TestFreeUiOnly(GeoscapeUiState *pUi, GeoscapeRoster *pRoster)
         TestCheck("a pad singleton is emptied", pUi->apPad[i] == NULL);
         TestCheck("a widget singleton is emptied", pUi->apCtl[i] == NULL);
     }
-    for (i32 i = 0; i < PUFO_GEOUI_LAYER_PADS; ++i) {
-        TestCheck("a layer pad is emptied", pUi->apLayerPad[i] == NULL);
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        TestCheck("a clock digit pad is emptied", pUi->apClockDigitPads[i] == NULL);
     }
     TestCheck("the world-size block is emptied", pUi->pWorldSize == NULL);
     TestCheck("the status panel is emptied", pUi->pStatusPanel == NULL);
@@ -127,8 +127,8 @@ static void Run(void)
         ui.apPad[i] = (PadImage *)calloc(1, sizeof(PadImage));
         ui.apCtl[i] = (UiControl *)calloc(1, sizeof(UiControl));
     }
-    for (i32 i = 0; i < PUFO_GEOUI_LAYER_PADS; ++i) {
-        ui.apLayerPad[i] = (PadImage *)calloc(1, sizeof(PadImage));
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        ui.apClockDigitPads[i] = (PadImage *)calloc(1, sizeof(PadImage));
     }
     ui.pWorldSize = (SmapWorldSize *)calloc(1, sizeof(SmapWorldSize));
 

@@ -2426,7 +2426,41 @@ Order is by what unblocks what. Each item ends with gates + commit.
   160,496 bytes (70.9%). IDB: 2 renames (418 on record), 1 size fix (0x159E74, 1 byte → dword; both
   save paths move 4 bytes) and 3 comments.
 
-- **Consequence for the ordering.**
+- [x] **part 82, the strateg icons and the clock strip: `Smap_DrawStrategIcons (0x822c4, 1,060 B)` +
+  `Geoscape_DrawClockPads (0x5c5c8, 2,168 B)`** — the two remaining unported leaves of
+  `Geoscape_DrawScreen`, ported before their caller so the caller has nothing left to stub.
+  **The ceiling half appears a fourth time.** 0x822EC..0x8231C is `MOVS` / `ADDMI R3,R3,#1` / `ASR #1`:
+  the +1 is skipped only when the size is 0, so the half-extent is `(n != 0 ? n + 1 : 0) / 2 - half_screen`.
+  Hex-Rays renders the same triple as a plain `/ 2`, which is wrong for every odd map size; the identical
+  trap sits at 0x846B4, 0x6C1A4 and 0x5EB44, and the port names the shape `SmapIcon_HalfExtent`.
+  **What the ARM pins down that the pseudocode flattens.** 0x82318 `MOV R0, #0x20` forces palette slot 32
+  into `Map_nGlyphPalBase` (repeated at 0x82328 after the empty-list test) while the `Font_DrawGlyph` nPal
+  argument stays R9 = 0 — and `mapbits.pal` is palette slot 32 in main.dat, which cross-confirms it. Zoom
+  scales **both** axes (mode 1 by 1/1.333, mode 2 by 1/1.694). The world→screen wrap is one conditional
+  subtract per axis with a `>` test (0x824BC/0x824C0, 0x824CC/0x824D0), so a coordinate exactly equal to the
+  map size is not wrapped. The animation phase is the **low halfword** of `nUiSlot0AnimPhase @ 0x113A18`
+  (LDRH at 0x82634), added to the glyph index for every case except the two no-animation type-1 forms.
+  **Measured, not assumed.** mapbits has 16 frames (nMapBitsBase 256, nTotalSprFrames 272) and frame **+6 is
+  blank in the shipped main.dat** — lit-pixel counts for base+0..+15 are 32,32,20,20,20,20,**0**,32,32,32,
+  28,28,28,28,28,28. The test asserts the blank frame and that each checked frame paints pixels, so no hash
+  comparison can pass on an empty box.
+  **The clock strip is pads, not glyphs.** The ten digit pads are `apClockDigitPads @ 0x186BF0`, indexed by
+  digit value with the origin written before each blit; the literal pool at 0x8662C pairs 0x186BF0 with the
+  names "b0".."b9". That forced the port-side rename `apLayerPad` → `apClockDigitPads` (and
+  `PUFO_GEOUI_LAYER_PADS` → `PUFO_GEOUI_CLOCK_DIGIT_PADS`) in `pufo_geouimanage.{c,h}` and
+  `pufo_geoiinit.{c,h}` — the port had documented a clock array as layer pads. The day tens digit is SET
+  always but BLITTED only when non-zero (0x5CA00 / 0x5CA14 / 0x5CA18); the digit split calls `_rt_udiv` with
+  `MOV R0, #0xA` first (0x5C9D0 / 0x5C9D8), confirming the divisor-first convention a fourth time. Text
+  records are TEXTS[1244..1250] weekdays, TEXTS[1251] the day/month separator and TEXTS[1252..1263] months;
+  the weekday is centred on 124 (`124 - width / 2` at 0x5C9B0) while the month sits at a fixed 130,287.
+  **1 deviation recorded, not hidden:** the original copies a TEXTS record into a 52-byte stack buffer
+  (`psz[52]` at 0x5C5AC) with an unbounded byte loop; the port caps it at 51 + NUL. Not a ledger row — the
+  overflow is unreachable with the shipped data.
+  **0 new ledger rows (226 on record), 89 markers.** 51 new checks (13941 total, 60 suites), coverage
+  919/1103 (83.3%) and 496036/598792 (82.8%); `strat` moves to 194/204 functions and 117,032 of
+  160,496 bytes (72.9%). IDB: 8 renames (426 on record) and 6 size fixes (0x186BBC, 0x186BF0, 0x186C1C,
+  0x186C20, 0x186E40, 0x159618) and 3 comments. The clock block base is corrected in the port too: it is
+  `gUiRootPanel(0x158890) + 0xBE4 + 4 * 101 = 0x159608`, not the 0x158A14 `pufo_clock.h` claimed.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -2763,6 +2797,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the map-order answer (`Smap_ResolveInterceptUI`; the flag-13 path that skips the armed-byte clear, the three dismiss tests that each re-read a shifting line 0, the unconditional tail removal found, the `0x187068` naming follow-through) | 60/60 (Release) | 13750 | 914/1103 (82.9%) | 486892/598792 (81.3%) | 40 checked, 0 mismatched |
 | the map recentre click (`Smap_OnPointerUp`; the ceil half-extents, the twice-read colour slot, the 1/1.333 and 1/1.694 unscale, the two `nScrollY` replace arms, the always-120 crosshair x, the single-wrap crosshair y found) | 60/60 (Release) | 13785 | 915/1103 (83.0%) | 487624/598792 (81.4%) | 40 checked, 0 mismatched |
 | the geoscape event pass (`StrategList_ProcessEvents`, `Strateg_ConfirmInterceptTarget`; the `_rt_udiv` divisor-first convention, the exact 1/60 interpolation constant, the six re-reads behind the arrival dispatch, the wrapped-leg winner, the fractional diagonal, 1 original bug found, the 0x159E74 naming fix and the `Tact_Shutdown` wrong-index removal it exposed) | 60/60 (Release) | 13890 | 917/1103 (83.1%) | 492808/598792 (82.3%) | 40 checked, 0 mismatched |
+| the strateg icons and the clock strip (`Smap_DrawStrategIcons`, `Geoscape_DrawClockPads`; the fourth ceiling-half triple Hex-Rays flattens to `/ 2`, the palette-slot-32 forcing cross-confirmed by `mapbits.pal`, zoom scaling both axes, the `>` wrap that leaves the map-size coordinate alone, the low-halfword animation phase, the blank `mapbits +6` frame measured in main.dat, the day-tens blit gate, the divisor-first `_rt_udiv`, the `apLayerPad` → `apClockDigitPads` misnomer and the corrected 0x159608 clock base) | 60/60 (Release) | 13941 | 919/1103 (83.3%) | 496036/598792 (82.8%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

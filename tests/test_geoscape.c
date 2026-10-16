@@ -20,6 +20,7 @@
 #include "render/pufo_render.h" /* g_aPalette, for the radar palette cycle */
 #include "game/pufo_font.h"     /* g_fontSys, Font_DrawGlyph: the mount icons are real sprites */
 #include "asset/pufo_asset.h"   /* Asset_OpenArchives, the radar session runs on real pads */
+#include "ui/pufo_geouimanage.h" /* PUFO_GEOUI_CLOCK_DIGIT_PADS, the ten clock pads at 0x186BF0 */
 #include "ui/pufo_linelist.h"
 #include "util/pufo_rand.h"
 
@@ -6209,6 +6210,413 @@ static void TestRadarUpdate(void)
     }
 }
 
+/* ---- Smap_DrawStrategIcons @ 0x822c4 and Geoscape_DrawClockPads @ 0x5c5c8 ----------
+ *
+ * Both run on the same real 240x320 surface. The strateg icons are real mapbits sprites (mapbits.pal
+ * is palette slot 32, which is the value the original forces into Map_nGlyphPalBase), so a glyph is
+ * identified by hashing the 40x40 box it paints. The clock digit pads are synthetic 2 x 1 glyphs whose
+ * first column carries the pad's own palette index and whose second column carries index 0 -- the
+ * colour key PadImage_BlitEx is called with -- so a pad is identified by the colour it leaves and the
+ * key column proves the keyed blit really skips it.
+ */
+#define GD_BOX 40        /* the box hashed around a glyph's origin */
+#define CK_PAD_SLOT 25   /* an arbitrary slot; only these ten indices are set */
+
+static bool g_bGdReady;
+
+static bool GdEnsureFont(void)
+{
+    static const char *const apszArchive[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+
+    if (g_bdSurf.pPixels == NULL) {
+        SoftSurf_ctor(&g_bdSurf);
+        SoftSurf_AllocPixels(&g_bdSurf, BD_SURF_W, BD_SURF_H, PIXMODE_16BPP);
+        g_pMainSurface = &g_bdSurf;
+        Render_SetTarget(BD_SURF_W, BD_SURF_H, 2, 2, BD_SURF_W * 2, g_bdSurf.pPixels);
+    }
+    if (!g_bGdReady) {
+        if (Asset_OpenArchives(apszArchive) == 0) {
+            return false;
+        }
+        FontMetrics_Load();
+        PufoFont_Init(&g_fontSys);
+        g_fontSys.nGlyphBase = g_fontSys.nTotalSprFrames;
+        (void)Font_LoadSpr(&g_fontSys, "font");
+        g_fontSys.nMapBitsBase = g_fontSys.nTotalSprFrames;
+        (void)Font_LoadSpr(&g_fontSys, "mapbits");
+        Font_BuildIndex(&g_fontSys);
+        g_bGdReady = g_fontMetrics.bLoaded && g_fontSys.apSprIndex != NULL
+                  && g_fontSys.nMapBitsBase > 16;
+    }
+    return g_bGdReady;
+}
+
+static void GdClear(void)
+{
+    memset(g_bdSurf.pPixels, 0, (size_t)g_bdSurf.nWidth * (size_t)g_bdSurf.nHeight * 2u);
+}
+
+static u32 GdHash(i32 x0, i32 y0)
+{
+    u32 uHash = 2166136261u;
+
+    for (i32 y = 0; y < GD_BOX; ++y) {
+        for (i32 x = 0; x < GD_BOX; ++x) {
+            uHash = (uHash ^ (u32)BdPix(x0 + x, y0 + y)) * 16777619u;
+        }
+    }
+    return uHash;
+}
+
+static i32 GdCount(i32 x0, i32 y0, i32 nW, i32 nH)
+{
+    i32 n = 0;
+
+    for (i32 y = y0; y < y0 + nH; ++y) {
+        for (i32 x = x0; x < x0 + nW; ++x) {
+            if (BdPix(x, y) != 0) {
+                ++n;
+            }
+        }
+    }
+    return n;
+}
+
+/* ---- the strateg icons ------------------------------------------------------------------ */
+
+static SmapView        g_siView;
+static StrategItem     g_siItem;
+static PtrArray        g_siList;
+static SmapIconDrawEnv g_siEnv;
+
+static void SiFixture(i32 nMapW, i32 nMapH)
+{
+    GdClear();
+    /* mapbits.pal is slot 32, but the palette table is only filled by Geoscape_InitUI's .pal
+     * table, which this test does not run. Filled here with one distinct colour per index so a
+     * glyph paints and two different glyph indices cannot hash alike. */
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    for (i32 k = 1; k < 256; ++k) {
+        g_aPalette[PUFO_GLYPH_PAL_STRATEG_ICONS][k] = (u32)(0x100 + k);
+    }
+    memset(&g_siView, 0, sizeof(g_siView));
+    g_siView.nMapW = nMapW;
+    g_siView.nMapH = nMapH;
+    memset(&g_siItem, 0, sizeof(g_siItem));
+    memset(&g_siList, 0, sizeof(g_siList));
+    PtrArray_ctor(&g_siList);
+    (void)PtrArray_Add(&g_siList, &g_siItem);
+    memset(&g_siEnv, 0, sizeof(g_siEnv));
+    g_siEnv.pStrategList = &g_siList;
+    g_siEnv.nMapBitsBase = g_fontSys.nMapBitsBase;
+}
+
+/* The reference: one mapbits glyph drawn straight onto a cleared surface, in the palette the
+ * original forces. This CLEARS the surface, so every reference is taken before the call under test. */
+static u32 SiRef(i32 nX, i32 nY, u16 nIdx)
+{
+    GdClear();
+    g_nGlyphPalSlotBase = PUFO_GLYPH_PAL_STRATEG_ICONS;
+    Font_DrawGlyph(nX, nY, nIdx, 0);
+    return GdHash(nX, nY);
+}
+
+static void SiRun(void)
+{
+    GdClear();
+    Smap_DrawStrategIcons(&g_siView, &g_siEnv);
+}
+
+
+static void TestDrawStrategIcons(void)
+{
+    u32 uRef;
+
+    printf("\nSmap_DrawStrategIcons @ 0x822c4\n");
+    if (!GdEnsureFont()) {
+        Check(false, "font.dat and mapbits.dat loaded, so the icons are real sprites");
+        return;
+    }
+
+    /* Every glyph index the function can pick must paint something, or a hash match against a
+     * reference that drew nothing would pass without testing anything. */
+    static const i32 anK[8] = { 0, 2, 4, 7, 8, 10, 12, 14 };
+    char szMsg[96];
+
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    for (i32 k = 1; k < 256; ++k) {
+        g_aPalette[PUFO_GLYPH_PAL_STRATEG_ICONS][k] = (u32)(0x100 + k);
+    }
+    /* Measured against the shipped main.dat: the mapbits frame the +6 glyph lands on is empty,
+     * which is why the active-base case below runs with animation phase 1 (frame +7) instead. */
+    GdClear();
+    g_nGlyphPalSlotBase = PUFO_GLYPH_PAL_STRATEG_ICONS;
+    Font_DrawGlyph(20, 20, (u16)(g_fontSys.nMapBitsBase + 6), 0);
+    CheckEqI32(GdCount(20, 20, GD_BOX, GD_BOX), 0,
+               "mapbits frame +6 is blank in the shipped main.dat (measured, not assumed)");
+    for (i32 k = 0; k < 8; ++k) {
+        GdClear();
+        g_nGlyphPalSlotBase = PUFO_GLYPH_PAL_STRATEG_ICONS;
+        Font_DrawGlyph(20, 20, (u16)(g_fontSys.nMapBitsBase + anK[k]), 0);
+        snprintf(szMsg, sizeof(szMsg), "mapbits +%d paints pixels, so its hash means something",
+                 anK[k]);
+        Check(GdCount(20, 20, GD_BOX, GD_BOX) > 0, szMsg);
+    }
+
+    /* 400x400 map, no scroll: half extents ceil(400/2) - 120 = 80 and - 160 = 40, so the map
+     * coordinate (180, 140) lands at screen (100, 100). */
+    g_siEnv.nAnimPhase = 0;
+
+    SiFixture(400, 400);
+    g_siItem.nType = 3; g_siItem.nX = 180; g_siItem.nY = 140;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 8));
+    SiRun();
+    CheckEqI32(g_nGlyphPalSlotBase, PUFO_GLYPH_PAL_STRATEG_ICONS,
+               "the pass forces palette slot 32, which is mapbits.pal");
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "a type-3 entry draws mapbits + anim + 8");
+    Check(GdCount(100, 100, GD_BOX, GD_BOX) > 0, "and the glyph really paints pixels");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 3; g_siItem.nX = 180; g_siItem.nY = 140;
+    g_siEnv.nAnimPhase = 2;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 2 + 8));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "the Map + 0x60 animation phase is added for a terror site");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 4; g_siItem.nX = 180; g_siItem.nY = 140;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 10));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "a type-4 UFO draws mapbits + anim + 10");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 5; g_siItem.nX = 180; g_siItem.nY = 140;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 14));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "a type-5 entry draws mapbits + anim + 14");
+
+    /* Type 0: inactive always draws, active needs bVisible. */
+    SiFixture(400, 400);
+    g_siItem.nType = 0; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 0; g_siItem.bVisible = 0;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 0));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "an inactive type-0 entry draws mapbits + anim even with bVisible 0");
+
+    SiFixture(400, 400);
+    g_siEnv.nAnimPhase = 1; /* frame +7, because +6 is the blank shipped frame */
+    g_siItem.nType = 0; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 1; g_siItem.bVisible = 1;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 1 + 6));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "an active visible base draws mapbits + anim + 6");
+    g_siEnv.nAnimPhase = 0;
+
+    SiFixture(400, 400);
+    g_siItem.nType = 0; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 1; g_siItem.bVisible = 0;
+    SiRun();
+    CheckEqI32(GdCount(100, 100, GD_BOX, GD_BOX), 0, "an active base with bVisible 0 is not drawn");
+
+    /* Type 1: the two branches that do NOT take the animation phase. */
+    SiFixture(400, 400);
+    g_siItem.nType = 1; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 0; g_siItem.bVisible = 1;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 2));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "an inactive visible craft draws mapbits + 2 (0x825DC adds no anim phase)");
+
+    g_siEnv.nAnimPhase = 3;
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "and the same glyph with anim 3, so the anim phase really is not added here");
+    g_siEnv.nAnimPhase = 0;
+
+    SiFixture(400, 400);
+    g_siItem.nType = 1; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 1; g_siItem.bVisible = 1;
+    g_siItem.nTimer = 0;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 4));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef,
+               "an active craft with nTimer 0 draws mapbits + 4 (0x82620, again no anim phase)");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 1; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 1; g_siItem.bVisible = 1;
+    g_siItem.nTimer = 7;
+    uRef = SiRef(100, 100, (u16)(g_fontSys.nMapBitsBase + 12));
+    SiRun();
+    CheckEqI32((i32)GdHash(100, 100), (i32)uRef, "an active craft with a timer draws mapbits + anim + 12");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 1; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 1; g_siItem.bVisible = 0;
+    SiRun();
+    CheckEqI32(GdCount(100, 100, GD_BOX, GD_BOX), 0, "an active invisible craft is not drawn");
+
+    SiFixture(400, 400);
+    g_siItem.nType = 1; g_siItem.nX = 180; g_siItem.nY = 140; g_siItem.bActive = 0; g_siItem.bVisible = 0;
+    SiRun();
+    CheckEqI32(GdCount(100, 100, GD_BOX, GD_BOX), 0, "nor is an inactive invisible craft");
+
+    /* Zoom scales the stored map coordinates before the scroll is subtracted. */
+    /* Zoom scales BOTH coordinates (0x8239C..0x82408 scales nX and nY in turn), so the y the test
+     * expects is the scaled one too. */
+    SiFixture(400, 400);
+    g_siView.nMode = 1;
+    g_siItem.nType = 3; g_siItem.nX = 200; g_siItem.nY = 140;
+    uRef = SiRef(70, 65, (u16)(g_fontSys.nMapBitsBase + 8)); /* 150 - 80, and 105 - 40 */
+    SiRun();
+    CheckEqI32((i32)GdHash(70, 65), (i32)uRef,
+               "zoom mode 1 scales nX by 1/1.333 (200 -> 150 -> x 70) and nY too (140 -> 105 -> y 65)");
+    Check(GdCount(70, 95, GD_BOX, GD_BOX) == 0, "so nothing is painted at the unscaled y 100");
+
+    SiFixture(400, 400);
+    g_siView.nMode = 2;
+    g_siItem.nType = 3; g_siItem.nX = 200; g_siItem.nY = 140;
+    uRef = SiRef(38, 42, (u16)(g_fontSys.nMapBitsBase + 8)); /* 118 - 80, and 82 - 40 */
+    SiRun();
+    CheckEqI32((i32)GdHash(38, 42), (i32)uRef, "zoom mode 2 scales by 1/1.694 instead (200 -> 118)");
+
+    /* The wrap: 100x100 map gives half extents -70 and -110, so an entry at (100, 100) computes
+     * (170, 210) and wraps to (70, 110). An entry at (200, 200) computes (270, 310) and must land on
+     * (170, 210) -- ONE subtraction, not a full modulo. */
+    SiFixture(100, 100);
+    g_siItem.nType = 3; g_siItem.nX = 100; g_siItem.nY = 100;
+    uRef = SiRef(70, 110, (u16)(g_fontSys.nMapBitsBase + 8));
+    SiRun();
+    CheckEqI32((i32)GdHash(70, 110), (i32)uRef, "an out-of-range entry wraps by the map size once");
+
+    SiFixture(100, 100);
+    g_siItem.nType = 3; g_siItem.nX = 200; g_siItem.nY = 200;
+    uRef = SiRef(170, 210, (u16)(g_fontSys.nMapBitsBase + 8));
+    SiRun();
+    CheckEqI32((i32)GdHash(170, 210), (i32)uRef,
+               "two map sizes out of range wraps to 170, not 70: the wrap is one SUBGT (0x824C0)");
+
+    Smap_DrawStrategIcons(NULL, &g_siEnv);
+    Check(true, "a null view is refused rather than dereferenced");
+}
+
+/* ---- the clock strip -------------------------------------------------------------------- */
+
+static PadImage             g_ckPad[PUFO_GEOUI_CLOCK_DIGIT_PADS];
+static u8                   g_ckGlyph[PUFO_GEOUI_CLOCK_DIGIT_PADS][6];
+static PadImage            *g_ckPads[PUFO_GEOUI_CLOCK_DIGIT_PADS];
+static GameTime             g_ckTime;
+static GfxColorEnv          g_ckColor;
+static char                 g_ckTexts[PUFO_TEXT_REC_STRIDE * 1300];
+static GeoscapeClockDrawEnv g_ckEnv;
+
+static void CkFixture(void)
+{
+    GdClear();
+    memset(g_aPalette, 0, sizeof(g_aPalette));
+    for (i32 i = 0; i < PUFO_GEOUI_CLOCK_DIGIT_PADS; ++i) {
+        g_ckGlyph[i][0] = 2;  g_ckGlyph[i][1] = 0; /* u16 width 2 */
+        g_ckGlyph[i][2] = 1;  g_ckGlyph[i][3] = 0; /* u16 height 1 */
+        g_ckGlyph[i][4] = (u8)(1 + i);             /* the pad's own colour */
+        g_ckGlyph[i][5] = 0;                       /* index 0, the key PadImage_BlitEx skips */
+        g_aPalette[CK_PAD_SLOT][1 + i] = (u32)(0x1000 + i);
+        memset(&g_ckPad[i], 0, sizeof(g_ckPad[i]));
+        g_ckPad[i].pData    = g_ckGlyph[i];
+        g_ckPad[i].nMode    = (u8)CK_PAD_SLOT;
+        g_ckPad[i].uWidth   = 2;
+        g_ckPad[i].uHeight  = 1;
+        g_ckPad[i].nOriginX = -1;
+        g_ckPad[i].nOriginY = -1;
+        g_ckPads[i] = &g_ckPad[i];
+    }
+    memset(g_ckTexts, 0, sizeof(g_ckTexts));
+    for (i32 i = 0; i < 7; ++i) {
+        snprintf(g_ckTexts + PUFO_TEXT_REC_STRIDE * (PUFO_TEXT_WEEKDAY_FIRST + i),
+                 PUFO_TEXT_REC_STRIDE, "WED%d", i + 1);
+    }
+    snprintf(g_ckTexts + PUFO_TEXT_REC_STRIDE * PUFO_TEXT_CLOCK_SEP, PUFO_TEXT_REC_STRIDE, "/");
+    for (i32 i = 0; i < 12; ++i) {
+        snprintf(g_ckTexts + PUFO_TEXT_REC_STRIDE * (PUFO_TEXT_MONTH_FIRST + i),
+                 PUFO_TEXT_REC_STRIDE, "MONTH%d", i + 1);
+    }
+    /* 1999 has no zero digit, so pad 0 is touched only by the hour / minute / second tens (all
+     * before the day) and by the day's own tens write -- which lets a test read pad 0's final
+     * position as proof of the day-tens write. */
+    memset(&g_ckTime, 0, sizeof(g_ckTime));
+    g_ckTime.nYear = 1999;
+    g_ckTime.nMonth = 1;
+    g_ckTime.nDay = 3;
+    g_ckTime.nWeekday = 1;
+    g_ckTime.nHour = 7;
+    g_ckTime.nMinute = 5;
+    g_ckTime.nSecond = 9;
+    memset(&g_ckEnv, 0, sizeof(g_ckEnv));
+    g_ckEnv.apDigitPads = g_ckPads;
+    g_ckEnv.pTextRecs = g_ckTexts;
+    g_ckEnv.pTime = &g_ckTime;
+    g_ckEnv.pColor = &g_ckColor;
+}
+
+static void TestDrawClockPads(void)
+{
+    printf("\nGeoscape_DrawClockPads @ 0x5c5c8\n");
+    if (!GdEnsureFont()) {
+        Check(false, "font.dat loaded, so the clock's text is real");
+        return;
+    }
+
+    CkFixture();
+    Geoscape_DrawClockPads(&g_ckEnv);
+
+    CheckEqI32(BdPix(90, 260), 0x1000, "hour tens 0 is drawn at 90 (no leading-zero rule for hours)");
+    CheckEqI32(BdPix(91, 260), 0, "the pad's second column is index 0, the key, and stays empty");
+    CheckEqI32(BdPix(100, 260), 0x1007, "hour ones 7 at 100");
+    CheckEqI32(BdPix(115, 260), 0x1000, "minute tens 0 at 115");
+    CheckEqI32(BdPix(125, 260), 0x1005, "minute ones 5 at 125");
+    CheckEqI32(BdPix(140, 260), 0x1000, "second tens 0 at 140");
+    CheckEqI32(BdPix(150, 260), 0x1009, "second ones 9 at 150");
+
+    CheckEqI32(BdPix(105, 304), 0x1001, "the year 1999 puts its thousands digit at 105");
+    CheckEqI32(BdPix(115, 304), 0x1009, "the hundreds at 115");
+    CheckEqI32(BdPix(125, 304), 0x1009, "the tens at 125");
+    CheckEqI32(BdPix(135, 304), 0x1009, "and the units at 135");
+
+    CheckEqI32(BdPix(90, 287), 0, "the day 3 tens zero is NOT blitted (0x5CA14 LDRNE / 0x5CA18 BLNE)");
+    CheckEqI32(g_ckPad[0].nOriginX, 90, "but its pad is still moved to 90 first (0x5C9FC STR)");
+    CheckEqI32(g_ckPad[0].nOriginY, 287, "and to y 287 (0x5CA10 STR)");
+    CheckEqI32(BdPix(100, 287), 0x1003, "the day's ones digit is always blitted, at 100");
+
+    /* The weekday name drawn at y 272 paints rows 275..284; the two ':' glyphs drawn at y 258
+     * paint rows 263..270 and the day/month line at y 287 starts at 287, so 273..286 isolates it. */
+    Check(GdCount(60, 273, 130, 14) > 0, "the weekday name from TEXTS[1244] is drawn at y 272");
+
+    CkFixture();
+    g_ckTime.nDay = 23;
+    Geoscape_DrawClockPads(&g_ckEnv);
+    CheckEqI32(BdPix(90, 287), 0x1002, "a two-digit day blits its tens at 90");
+    CheckEqI32(BdPix(100, 287), 0x1003, "and its ones at 100");
+
+    /* Month out of range: psz still holds the TEXTS[1251] separator copied at 0x5CA48, and 0x5CCFC
+     * draws that. In range it draws the month name instead, which paints strictly more pixels. */
+    CkFixture();
+    g_ckTime.nMonth = 0;
+    Geoscape_DrawClockPads(&g_ckEnv);
+    const i32 nSepPixels = GdCount(128, 285, 60, 14);
+
+    CkFixture();
+    g_ckTime.nMonth = 1;
+    Geoscape_DrawClockPads(&g_ckEnv);
+    const i32 nMonthPixels = GdCount(128, 285, 60, 14);
+    Check(nMonthPixels > nSepPixels,
+          "month 1 draws TEXTS[1252] while month 0 draws the stale TEXTS[1251] separator");
+
+    /* Weekday out of range: the original would draw its uninitialised buffer; the port draws an
+     * empty string, so nothing lands at y 272. */
+    CkFixture();
+    g_ckTime.nWeekday = 0;
+    Geoscape_DrawClockPads(&g_ckEnv);
+    CheckEqI32(GdCount(60, 273, 130, 14), 0,
+               "weekday 0 draws nothing at y 272 (the port's deviation: the original read uninitialised stack)");
+
+    Geoscape_DrawClockPads(NULL);
+    Check(true, "a null environment is refused");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -6261,6 +6669,8 @@ int main(void)
     TestRadarArmament();
     TestRadarOverlay();
     TestRadarUpdate();
+    TestDrawStrategIcons();
+    TestDrawClockPads();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }
