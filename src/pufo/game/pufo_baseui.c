@@ -8233,6 +8233,168 @@ i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv)
     return 1;
 }
 
+/* --- BaseFacScreen_DrawNameGrid @ 0x61c8c --- */
+
+#define PUFO_NAMEGRID_CELL       32
+#define PUFO_NAMEGRID_TOP        36   /* the name pass's first row; the craft pass starts 17 higher */
+#define PUFO_NAMEGRID_CRAFT_TOP  19
+#define PUFO_NAMEGRID_CRAFT_X0   (-16)
+#define PUFO_NAMEGRID_BASES      8    /* fac BaseFacBlock[8] and buildDays u8[8][6][6] */
+#define PUFO_NAMEGRID_HANGAR_BR  12   /* BaseFac_SetCellBuildState stamps the hangar 9,10,11,12 */
+#define PUFO_NAMEGRID_DAYS_UP    8    /* stamp 12 puts the remaining days 8 pixels above the cell */
+#define PUFO_NAMEGRID_DAYS_DOWN  7    /* stamps 1..3 put them 7 below and 16 to the right */
+
+/* The "under construction" sprite offset for a tileA stamp (0x61E08). Stamps 1, 2 and 3 are the three
+ * single-cell stamp groups and 9..12 the hangar's quadrants; anything else draws nothing further. */
+static i32 NameGrid_BuildSprite(i32 nStamp)
+{
+    switch (nStamp) {
+        case 1:  return 4;
+        case 2:  return 5;
+        case 3:  return 6;
+        case 9:  return 13;
+        case 10: return 14;
+        case 11: return 15;
+        case 12: return 16;
+        default: return -1; /* 0x61E38 */
+    }
+}
+
+/* The layer2 value both names the craft sprite (33 + bCraftType) and picks its vertical nudge. */
+static bool NameGrid_CraftNudge(i32 nLayer2, i32 *pnNudge)
+{
+    switch (nLayer2) {
+        case 33: *pnNudge = -1; return true; /* 0x62310 */
+        case 34: *pnNudge =  1; return true; /* 0x622C4 */
+        case 35: *pnNudge = -1; return true; /* 0x62278 falls through to LABEL_52 */
+        case 36: *pnNudge =  0; return true; /* 0x62230 */
+        case 37: *pnNudge = -2; return true; /* 0x621E4 */
+        default: return false;               /* 0x621E0 */
+    }
+}
+
+void BaseFacScreen_DrawNameGrid(const FacNameGridEnv *pEnv)
+{
+    const u8 *pGrid;
+    i32 nOriginX, nOriginY, nBase, nRow, nCol;
+    i32 nFacOff, nDaysOff;
+
+    if (pEnv == NULL || pEnv->abFacilityGrid == NULL || pEnv->pnOriginX == NULL
+        || pEnv->pnOriginY == NULL) {
+        return;
+    }
+
+    pGrid = pEnv->abFacilityGrid;
+    nOriginX = *pEnv->pnOriginX;
+    nOriginY = *pEnv->pnOriginY;
+    nBase = (i32)pEnv->nBaseIdx;
+
+    if (nBase < 0 || nBase >= PUFO_NAMEGRID_BASES) {
+        return; /* deviation: the original indexes fac[8] and buildDays[8] with no bound at all */
+    }
+
+    nFacOff = PUFO_GRID_FAC_OFF + PUFO_GRID_FAC_STRIDE * nBase;
+    nDaysOff = PUFO_GRID_DAYS_STRIDE * nBase;
+
+    /* 0x61CA4..0x61CC8: the 6x6 blank backdrop every cell is drawn over. */
+    for (nRow = 0; nRow < 6; ++nRow) {
+        for (nCol = 0; nCol < 6; ++nCol) {
+            Font_DrawGlyph(nCol * PUFO_NAMEGRID_CELL + nOriginX,
+                           PUFO_NAMEGRID_TOP + nRow * PUFO_NAMEGRID_CELL + nOriginY,
+                           g_fontSys.nBaseBitsBase, 0);
+        }
+    }
+
+    /* 0x61CEC..0x620E8: pass 0 over tileB, pass 1 over layer2. */
+    for (i32 nPass = 0; nPass < 2; ++nPass) {
+        const i32 nLayerOff = nFacOff
+                            + ((nPass == 0) ? PUFO_GRID_TILEB_OFF : PUFO_GRID_LAYER2_OFF);
+
+        for (nRow = 0; nRow < 6; ++nRow) {
+            const i32 y = PUFO_NAMEGRID_TOP + nRow * PUFO_NAMEGRID_CELL + nOriginY;
+
+            for (nCol = 0; nCol < 6; ++nCol) {
+                const i32 x = nCol * PUFO_NAMEGRID_CELL + nOriginX;
+                const u8 uLayer = pGrid[nLayerOff + 6 * nRow + nCol];
+                const u8 uDays = pGrid[nDaysOff + 6 * nRow + nCol];
+                char szNum[4]; /* var_1C @ sp+0xC, four bytes: exactly enough for "255" */
+                i32 nStamp, nSpr, nWidth;
+
+                if (uLayer == 0) {
+                    continue; /* 0x61D58 */
+                }
+                /* A finished cell, or any cell in pass 1, gets the name sprite; an unfinished cell in
+                 * pass 0 gets the blank one and the build icon below instead (0x61D74, 0x61D84). */
+                Font_DrawGlyph(x, y,
+                               (u16)((uDays == 0 || nPass != 0)
+                                     ? g_fontSys.nBaseBitsBase + uLayer
+                                     : g_fontSys.nBaseBitsBase), 0);
+                if (uDays == 0) {
+                    continue; /* 0x61DDC */
+                }
+                nStamp = pGrid[nFacOff + PUFO_GRID_TILEA_OFF + 6 * nRow + nCol]; /* 0x61E00 */
+                nSpr = NameGrid_BuildSprite(nStamp);
+                if (nSpr < 0) {
+                    continue;
+                }
+                Font_DrawGlyph(x, y, (u16)(g_fontSys.nBaseBitsBase + nSpr), 0);
+                if (nStamp >= 9 && nStamp <= 11) {
+                    continue; /* 0x61F58, 0x61F30, 0x61F08: goto LABEL_31, no days line */
+                }
+                (void)Gfx_PackRgb565Pair(pEnv->pColor, 150, 150, 255, 0, 0, 255);
+                snprintf(szNum, sizeof(szNum), "%u", (u32)uDays);
+                nWidth = Text_MeasureWidth(szNum); /* 0x61EA0 / 0x62060 */
+                snprintf(szNum, sizeof(szNum), "%u", (u32)uDays); /* the original itoa's twice */
+                if (nStamp == 12) {
+                    Text_DrawString(x - nWidth / 2, y - PUFO_NAMEGRID_DAYS_UP, szNum); /* 0x61ED4 */
+                } else {
+                    Text_DrawString(x - nWidth / 2 + 16, y + PUFO_NAMEGRID_DAYS_DOWN, szNum);
+                }
+            }
+        }
+    }
+
+    /* 0x620F0..0x623B0: the craft standing in a hangar, drawn from its bottom-right quadrant. */
+    {
+        const i32 nCraftCount = (pEnv->pnCraftCount != NULL) ? (i32)*pEnv->pnCraftCount : 0;
+
+        if (nCraftCount <= 0) {
+            return; /* 0x62154: LDRB then `BLS`, so a count of 0 skips the whole pass */
+        }
+        for (nRow = 0; nRow < 6; ++nRow) {
+            const i32 y = PUFO_NAMEGRID_CRAFT_TOP + nRow * PUFO_NAMEGRID_CELL + nOriginY;
+
+            for (nCol = 0; nCol < 6; ++nCol) {
+                const i32 x = PUFO_NAMEGRID_CRAFT_X0 + nCol * PUFO_NAMEGRID_CELL + nOriginX;
+                i32 nCraft, nLayer2, nNudge;
+
+                if (pGrid[nFacOff + PUFO_GRID_TILEA_OFF + 6 * nRow + nCol]
+                    != PUFO_NAMEGRID_HANGAR_BR) {
+                    continue; /* 0x62138 */
+                }
+                for (nCraft = 0; nCraft < nCraftCount; ++nCraft) {
+                    const Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[nCraft] : NULL;
+
+                    if (pShip == NULL) {
+                        continue; /* deviation: the original derefs the array blindly */
+                    }
+                    if ((i32)pShip->bHangarX != nCol || (i32)pShip->bHangarY != nRow
+                        || pShip->bAtBase == 0 || (i32)pShip->bHomeBase != nBase) {
+                        continue; /* 0x6216C..0x6219C */
+                    }
+                    /* The original reaches this byte as tileA.cell[12][...], the row index 6 * 2 left
+                     * over from the name pass, which lands exactly on layer2 (+72). */
+                    nLayer2 = pGrid[nFacOff + PUFO_GRID_LAYER2_OFF + 6 * nRow + nCol];
+                    if (!NameGrid_CraftNudge(nLayer2, &nNudge)) {
+                        continue;
+                    }
+                    Font_DrawGlyph(x, y + nNudge, (u16)(g_fontSys.nBaseBitsBase + nLayer2), 0);
+                }
+            }
+        }
+    }
+}
+
 /* --- Soldier_FormatDisplayName @ 0x6654c --- */
 
 /* aTextRecs @ 0xB38D0 record indices. 93 is the "no craft" label the 0xFF sentinel gets and 140 the

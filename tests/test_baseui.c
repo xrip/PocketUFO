@@ -17543,7 +17543,7 @@ static void CdFixture(void)
     g_cdStatEnv.pnFusionBall = &g_nCdStatW[5];
     g_cdStatEnv.pnRowCount = &g_nCdStatRows;
 
-    g_fontSys.nBaseBitsBase = 0; /* the shell sets this in Ui_InitBaseInfo; 0 keeps the glyph ids literal */
+    g_fontSys.nBaseBitsBase = 0; /* Geoscape_InitUI @ 0x85F78 fills it with the basebits group base; 0 here keeps the glyph ids literal */
 
     /* The two count lines call Font_DrawGlyph with nPal 0 while the glyph base is 0, so they read
      * palette slot 0. Left zeroed, every icon pixel would blit as 0 and the sprite id would be
@@ -17703,6 +17703,365 @@ static void CdPaintDetailRef(const char *pszName, const char *pszFuel, const cha
     }
 
     g_pMainSurface = &g_cdSurf;
+}
+
+/* BaseFacScreen_DrawNameGrid @ 0x61c8c. The whole draw is glyphs on the logical surface, so the check is
+ * the whole frame: a reference frame is painted here from the ARM's own coordinates and sprite offsets
+ * and compared against what the port drew. Every number below is a literal off the disassembly -- the
+ * test must not read the macros the port reads. */
+
+static SoftSurf g_ngSurf;
+static SoftSurf g_ngRef;
+static u8 g_aNgGrid[1524];
+static Ship g_aNgShip[4];
+static Ship *g_apNgShip[4];
+static u8 g_bNgCraftCount;
+static i32 g_nNgOriginX, g_nNgOriginY;
+static GfxColorEnv g_ngColor;
+static FacNameGridEnv g_ngEnv;
+
+/* abFacilityGrid @ 0x159768: buildDays u8[8][6][6] at +0, then eight 144-byte blocks at 0x174 whose
+ * layers sit at 0 (tileA), 36 (tileB) and 72 (layer2). */
+#define NG_FAC(nBase) (372 + 144 * (nBase))
+#define NG_CELL(nBase, nLayer, nRow, nCol) \
+    g_aNgGrid[NG_FAC(nBase) + (nLayer) + 6 * (nRow) + (nCol)]
+#define NG_DAYS(nBase, nRow, nCol) (36 * (nBase) + 6 * (nRow) + (nCol))
+
+static void NgClear(void)
+{
+    memset(g_ngSurf.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_ngSurf;
+}
+
+static bool NgSame(void)
+{
+    return memcmp(g_ngSurf.pPixels, g_ngRef.pPixels, (size_t)FRAME_PIX * 2u) == 0;
+}
+
+/* The fixture: base 0 carries a finished cell, three cells under construction (stamps 1, 9 and 12), an
+ * empty cell, a finished cell whose tileA stamp is outside the switch, and three hangar quadrants
+ * holding craft whose layer2 bytes are 34, 33 and 37. Base 1 carries one cell so the base index shows. */
+static void NgFixture(void)
+{
+    i32 i;
+
+    memset(g_aNgGrid, 0, sizeof(g_aNgGrid));
+    memset(g_aNgShip, 0, sizeof(g_aNgShip));
+    for (i = 0; i < 4; ++i) {
+        g_apNgShip[i] = &g_aNgShip[i];
+    }
+    g_aNgShip[0].bId = 1;
+    g_aNgShip[0].bHangarX = 3;
+    g_aNgShip[0].bHangarY = 3;
+    g_aNgShip[0].bAtBase = 1;
+    g_aNgShip[0].bHomeBase = 0;
+    g_aNgShip[1].bId = 2;
+    g_aNgShip[1].bHangarX = 4;
+    g_aNgShip[1].bHangarY = 4;
+    g_aNgShip[1].bAtBase = 1;
+    g_aNgShip[1].bHomeBase = 0;
+    g_aNgShip[2].bId = 3;
+    g_aNgShip[2].bHangarX = 5;  /* deliberately off the diagonal: a port that compares bHangarX against
+                                 * the row, or bHangarY against the column, would still match every craft
+                                 * if all three stood at (n,n) */
+    g_aNgShip[2].bHangarY = 3;
+    g_aNgShip[2].bAtBase = 1;
+    g_aNgShip[2].bHomeBase = 0;
+    g_aNgShip[3].bId = 4;
+    g_aNgShip[3].bHangarX = 0;
+    g_aNgShip[3].bHangarY = 0;
+    g_aNgShip[3].bAtBase = 1;
+    g_aNgShip[3].bHomeBase = 1; /* homed elsewhere, so the grid must not draw it */
+    g_bNgCraftCount = 4;
+
+    NG_CELL(0, 36, 0, 0) = 18;  /* finished: buildDays 0, so the name sprite is used as-is */
+    NG_CELL(0, 36, 0, 1) = 18;
+    NG_CELL(0, 0, 0, 1) = 1;    /* stamp 1: build icon +4, days at (-w/2 + 16, +7) */
+    g_aNgGrid[NG_DAYS(0, 0, 1)] = 5;
+    NG_CELL(0, 36, 1, 0) = 18;
+    NG_CELL(0, 0, 1, 0) = 9;    /* stamp 9: build icon +13, no days line at all */
+    g_aNgGrid[NG_DAYS(0, 1, 0)] = 3;
+    NG_CELL(0, 36, 1, 1) = 18;
+    NG_CELL(0, 0, 1, 1) = 12;   /* stamp 12: build icon +16, days at (-w/2, -8) */
+    g_aNgGrid[NG_DAYS(0, 1, 1)] = 12;
+    NG_CELL(0, 36, 0, 2) = 18;
+    NG_CELL(0, 0, 0, 2) = 11;   /* stamp 11: build icon +15 and, unlike 1..3, no days line */
+    g_aNgGrid[NG_DAYS(0, 0, 2)] = 1;
+    NG_CELL(0, 36, 2, 2) = 0;   /* a zero tileB skips the cell even though it is under construction */
+    NG_CELL(0, 0, 2, 2) = 1;
+    g_aNgGrid[NG_DAYS(0, 2, 2)] = 4;
+    NG_CELL(0, 36, 2, 3) = 18;
+    NG_CELL(0, 0, 2, 3) = 7;    /* a stamp outside the switch: the icon and the days line are both skipped */
+    g_aNgGrid[NG_DAYS(0, 2, 3)] = 2;
+    NG_CELL(0, 36, 3, 3) = 18;
+    NG_CELL(0, 0, 3, 3) = 12;   /* the hangar's bottom-right quadrant */
+    NG_CELL(0, 72, 3, 3) = 34;  /* craft sprite nudged one pixel LOW */
+    NG_CELL(0, 36, 4, 4) = 18;
+    NG_CELL(0, 0, 4, 4) = 12;
+    NG_CELL(0, 72, 4, 4) = 33;  /* nudged one pixel HIGH */
+    /* Days in a quadrant whose layer2 is non-zero: pass 1 has to take the NAME sprite there even though
+     * the cell is still under construction, which is the only thing that pins the `nPass != 0` test. */
+    g_aNgGrid[NG_DAYS(0, 4, 4)] = 6;
+    NG_CELL(0, 36, 3, 5) = 18;
+    NG_CELL(0, 0, 3, 5) = 12;   /* the hangar's other bottom-right quadrant, at column 5 row 3 */
+    NG_CELL(0, 72, 3, 5) = 37;  /* nudged two pixels HIGH */
+    NG_CELL(1, 36, 0, 0) = 20;  /* base 1's only cell, under construction: the buildDays stride for a
+                                 * non-zero base is only visible here, not in base 0 at offset 0 */
+    NG_CELL(1, 0, 0, 0) = 2;
+    g_aNgGrid[NG_DAYS(1, 0, 0)] = 9;
+
+    memset(&g_ngColor, 0, sizeof(g_ngColor));
+    g_nNgOriginX = 0;
+    g_nNgOriginY = 0;
+
+    memset(&g_ngEnv, 0, sizeof(g_ngEnv));
+    g_ngEnv.abFacilityGrid = g_aNgGrid;
+    g_ngEnv.apCraft = g_apNgShip;
+    g_ngEnv.pnCraftCount = &g_bNgCraftCount;
+    g_ngEnv.pnOriginX = &g_nNgOriginX;
+    g_ngEnv.pnOriginY = &g_nNgOriginY;
+    g_ngEnv.pColor = &g_ngColor;
+    g_ngEnv.nBaseIdx = 0;
+
+    /* Font_DrawGlyph with nPal 0 reads palette slot 0. Left zeroed, every glyph would blit as colour 0
+     * and the frame compare would prove nothing, so the slot gets distinct non-zero colours. */
+    for (i = 1; i < PUFO_PAL_SIZE; ++i) {
+        g_aPalette[0][i] = (u32)(0x100 + i);
+    }
+}
+
+/* The reference frame, painted from the ARM: the 36 blank sprites, the two name passes, the build icons
+ * with their days labels, then the craft. */
+static void NgPaintRef(i32 nBase, bool bCraft)
+{
+    const u8 *pG = g_aNgGrid;
+    i32 nRow, nCol;
+
+    memset(g_ngRef.pPixels, 0, (size_t)FRAME_PIX * 2u);
+    g_pMainSurface = &g_ngRef;
+
+    for (nRow = 0; nRow < 6; ++nRow) {
+        for (nCol = 0; nCol < 6; ++nCol) {
+            Font_DrawGlyph(32 * nCol + g_nNgOriginX, 36 + 32 * nRow + g_nNgOriginY,
+                           g_fontSys.nBaseBitsBase, 0);
+        }
+    }
+
+    for (i32 nPass = 0; nPass < 2; ++nPass) {
+        const i32 nLayer = (nPass == 0) ? 36 : 72;
+
+        for (nRow = 0; nRow < 6; ++nRow) {
+            for (nCol = 0; nCol < 6; ++nCol) {
+                const u8 uLayer = pG[NG_FAC(nBase) + nLayer + 6 * nRow + nCol];
+                const u8 uDays = pG[36 * nBase + 6 * nRow + nCol];
+                const i32 x = 32 * nCol + g_nNgOriginX;
+                const i32 y = 36 + 32 * nRow + g_nNgOriginY;
+                i32 nStamp;
+
+                if (uLayer == 0) {
+                    continue;
+                }
+                Font_DrawGlyph(x, y,
+                               (u16)((uDays == 0 || nPass != 0) ? g_fontSys.nBaseBitsBase + uLayer
+                                                                : g_fontSys.nBaseBitsBase), 0);
+                if (uDays == 0) {
+                    continue;
+                }
+                nStamp = pG[NG_FAC(nBase) + 6 * nRow + nCol];
+                if (nStamp == 1 || nStamp == 2 || nStamp == 3) {
+                    char szNum[8];
+                    i32 nW;
+
+                    Font_DrawGlyph(x, y, (u16)(g_fontSys.nBaseBitsBase + nStamp + 3), 0);
+                    (void)Gfx_PackRgb565Pair(&g_ngColor, 150, 150, 255, 0, 0, 255);
+                    snprintf(szNum, sizeof(szNum), "%u", (u32)uDays);
+                    nW = Text_MeasureWidth(szNum);
+                    Text_DrawString(x - nW / 2 + 16, y + 7, szNum);
+                } else if (nStamp >= 9 && nStamp <= 11) {
+                    Font_DrawGlyph(x, y, (u16)(g_fontSys.nBaseBitsBase + nStamp + 4), 0);
+                } else if (nStamp == 12) {
+                    char szNum[8];
+                    i32 nW;
+
+                    Font_DrawGlyph(x, y, (u16)(g_fontSys.nBaseBitsBase + 16), 0);
+                    (void)Gfx_PackRgb565Pair(&g_ngColor, 150, 150, 255, 0, 0, 255);
+                    snprintf(szNum, sizeof(szNum), "%u", (u32)uDays);
+                    nW = Text_MeasureWidth(szNum);
+                    Text_DrawString(x - nW / 2, y - 8, szNum);
+                }
+            }
+        }
+    }
+
+    if (bCraft && g_bNgCraftCount > 0) {
+        for (nRow = 0; nRow < 6; ++nRow) {
+            for (nCol = 0; nCol < 6; ++nCol) {
+                i32 i;
+
+                if (pG[NG_FAC(nBase) + 6 * nRow + nCol] != 12) {
+                    continue;
+                }
+                for (i = 0; i < (i32)g_bNgCraftCount; ++i) {
+                    const Ship *pShip = &g_aNgShip[i];
+                    i32 nLayer2 = pG[NG_FAC(nBase) + 72 + 6 * nRow + nCol];
+                    i32 nNudge;
+
+                    if ((i32)pShip->bHangarX != nCol || (i32)pShip->bHangarY != nRow
+                        || pShip->bAtBase == 0 || (i32)pShip->bHomeBase != nBase) {
+                        continue;
+                    }
+                    if (nLayer2 == 33 || nLayer2 == 35) {
+                        nNudge = -1;
+                    } else if (nLayer2 == 34) {
+                        nNudge = 1;
+                    } else if (nLayer2 == 36) {
+                        nNudge = 0;
+                    } else if (nLayer2 == 37) {
+                        nNudge = -2;
+                    } else {
+                        continue;
+                    }
+                    Font_DrawGlyph(32 * nCol - 16 + g_nNgOriginX,
+                                   19 + 32 * nRow + g_nNgOriginY + nNudge,
+                                   (u16)(g_fontSys.nBaseBitsBase + nLayer2), 0);
+                }
+            }
+        }
+    }
+
+    g_pMainSurface = &g_ngSurf;
+}
+
+static void TestBaseFacNameGrid(void)
+{
+    const u16 *pPix;
+
+    printf("BaseFacScreen_DrawNameGrid @ 0x61c8c\n");
+
+    FrameLoadFont();
+    if (!g_bFrameFontReady) {
+        printf("  FAIL lang.dat / main.dat did not open, so the name grid cannot be checked\n");
+        ++g_nFailures;
+        return;
+    }
+
+    SoftSurf_ctor(&g_ngSurf);
+    (void)SoftSurf_AllocPixels(&g_ngSurf, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    SoftSurf_ctor(&g_ngRef);
+    (void)SoftSurf_AllocPixels(&g_ngRef, FRAME_W, FRAME_H, PIXMODE_16BPP);
+    pPix = (const u16 *)g_ngSurf.pPixels;
+
+    /* Geoscape_InitUI @ 0x85F64..0x85F80 loads "basebits" straight after "font" and captures the frame
+     * count BEFORE the load into fontSys_nBaseBitsSprBase @ 0x158294. Every sprite this grid draws --
+     * the backdrop, the facility names, the build icons and the craft -- is a basebits sprite, so the
+     * group has to be loaded for the frame to mean anything. */
+    g_fontSys.nBaseBitsBase = g_fontSys.nTotalSprFrames;
+    if (!Font_LoadSpr(&g_fontSys, "basebits")) {
+        printf("  FAIL basebits.spr did not load, so the name grid has no sprites to draw\n");
+        ++g_nFailures;
+        return;
+    }
+    Font_BuildIndex(&g_fontSys);
+
+    NgFixture();
+
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "the whole name grid matches the ARM frame: backdrop, both name passes, the build icons, the days labels and the craft");
+
+    /* The 36 backdrop sprites are drawn whatever the cells hold. */
+    NgClear();
+    memset(g_aNgGrid, 0, sizeof(g_aNgGrid));
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    Check(CdInkAny(pPix, 0, 36, 239, 319) == 36 * 1024,
+          "an empty grid still draws the 6x6 blank backdrop: 36 full 32x32 basebits sprites (0x61CA4)");
+    Check(CdInkAny(pPix, 0, 0, 239, 35) == 0 && CdInkAny(pPix, 192, 0, 239, 319) == 0
+          && CdInkAny(pPix, 0, 228, 239, 319) == 0,
+          "  and the grid occupies exactly x 0..191 and y 36..227 -- six columns and six rows at a 32 px pitch");
+    NgFixture();
+
+    /* A base index outside the eight blocks draws nothing at all; the original walks off the array. */
+    NgClear();
+    g_ngEnv.nBaseIdx = 8;
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    Check(CdInkAny(pPix, 0, 36, 239, 227) == 0,
+          "a base index of 8 draws nothing -- the port bounds the eight fac blocks (deviation)");
+    g_ngEnv.nBaseIdx = -1;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    Check(CdInkAny(pPix, 0, 36, 239, 227) == 0,
+          "  and so does a negative one");
+    g_ngEnv.nBaseIdx = 7;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    Check(CdInkAny(pPix, 0, 36, 239, 319) == 36 * 1024,
+          "base 7 is the last of the eight blocks and is still drawn -- only its cells are empty");
+    g_ngEnv.nBaseIdx = 1;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(1, true);
+    Check(NgSame(), "base 1 draws its own grid, with base 0's cells left alone");
+    g_ngEnv.nBaseIdx = 0;
+
+    /* No craft: the name passes are untouched and only the craft sprites disappear. */
+    g_bNgCraftCount = 0;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, false);
+    Check(NgSame(), "Map_nCraftCount 0 skips the whole craft pass and nothing else (0x62154)");
+    g_bNgCraftCount = 4;
+
+    /* The craft must belong to the base being drawn: ship 0 stands in the (3,3) quadrant but is homed to
+     * base 1, so the quadrant keeps its tile stamp and the craft disappears. */
+    g_aNgShip[0].bHomeBase = 1;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "a craft homed to another base is not drawn (0x6219C)");
+    g_aNgShip[0].bHomeBase = 0;
+
+    /* bAtBase gates the same walk. */
+    g_aNgShip[1].bAtBase = 0;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "a craft that is not at the base is not drawn either (0x6217C)");
+    g_aNgShip[1].bAtBase = 1;
+
+    /* layer2 both names the craft sprite and picks its nudge: 36 is the one value that shifts nothing,
+     * 35 gets the same nudge as 33, and a byte outside 33..37 draws no craft at all. */
+    NG_CELL(0, 72, 3, 3) = 36;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "layer2 36 draws the craft sprite unshifted (0x62230)");
+    NG_CELL(0, 72, 3, 3) = 35;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "layer2 35 draws the craft one pixel HIGH, the same nudge 33 gets (0x62278)");
+    NG_CELL(0, 72, 3, 3) = 40;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "a layer2 byte outside 33..37 draws no craft at all (0x621E0)");
+    NG_CELL(0, 72, 3, 3) = 34;
+
+    /* The scroll origin moves every glyph, the craft's -16 x offset included. */
+    g_nNgOriginX = 40;
+    g_nNgOriginY = 20;
+    NgClear();
+    BaseFacScreen_DrawNameGrid(&g_ngEnv);
+    NgPaintRef(0, true);
+    Check(NgSame(), "nSmapOriginX / nSmapOriginY shift the whole grid");
+    g_nNgOriginX = 0;
+    g_nNgOriginY = 0;
+
+    NgClear();
+    BaseFacScreen_DrawNameGrid(NULL);
+    Check(CdInkAny(pPix, 0, 36, 239, 227) == 0,
+          "a null env draws nothing at all");
 }
 
 static void TestPlaneCraftDetail(void)
@@ -18140,6 +18499,7 @@ int main(void)
     TestBaseAtDraw();
     TestBaseAtCloseThunk();
     TestPlaneScreenDraw();
+    TestBaseFacNameGrid();
     TestPlaneCraftDetail();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);

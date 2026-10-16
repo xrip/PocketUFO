@@ -1,7 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `9dfe8e1`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 98, the transfer error dump at 0x996e4), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `fc2f29d`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 99, the base facility grid's names and craft at 0x61c8c -- the
+function that completes `strat-ui`), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,14 +208,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 945 / 1103 (85.7%)
-                                             bytes cited:     540772 / 598792 (90.3%)
-python docs/parity/audit_credits.py       -> credited functions: 945, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 946 / 1103 (85.8%)
+                                             bytes cited:     542612 / 598792 (90.6%)
+python docs/parity/audit_credits.py       -> credited functions: 946, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 531 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 255, ORIGINAL BUG markers in src/pufo: 90
+python docs/parity/audit_bugs.py          -> ledger rows: 258, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -231,9 +232,40 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15395**. Coverage as of the latest commit: **945 / 1103
-functions (85.7%)**, **540772 / 598792 bytes (90.3%)**. This unit ported the transfer error dump,
-`Transfer_WriteErrorDump` (0x996e4, 3,824 B) -- a debug dump writer, not a UI display, reached from
+Test checks run across the 60 suites: **15410**. Coverage as of the latest commit: **946 / 1103
+functions (85.8%)**, **542612 / 598792 bytes (90.6%)**. This unit ported the base facility grid's names,
+build icons and craft, `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B) -- the last unported `strat-ui`
+function, and the only place `abFacilityGrid @ 0x159768`'s four layers are read together: `buildDays`
+(the remaining build days), `tileA` (the tile stamp), `tileB` (the facility name) and `layer2` (the craft
+standing in the cell). **The grid is 32 px cells, six per axis, starting at y 36** -- the backdrop loop
+bounds are `CMP #0xC0` on both axes (0x61CD4, 0x61CE0), so it spans x 0..191 and y 36..227, and the
+backdrop is 36 copies of the blank *basebits* tile, not a font glyph. **That is the fact that made this
+function testable at all**: `fontSys_nBaseBitsSprBase @ 0x158294` is written at 0x85F78 with the frame
+count *before* the `"basebits"` load, so every sprite here -- backdrop, facility name, build icon, craft
+-- is indexed from that group base, and a fixture that loads only `"font"` draws sprite 0 and proves
+nothing. **Two name passes run over `tileB` (+36) and then `layer2` (+72)**, a zero byte skips the cell
+outright (0x61D58), and the sprite is the name tile except for a cell that is still building in the first
+pass, which gets the blank tile (0x61D74 tests `buildDays`, 0x61D84 tests the pass counter left in
+`var_18`). **`tileA` is a seven-way compare** (0x61E04..0x61E38): stamps 1/2/3 draw the build icon at
+sprite +4/+5/+6 with the days label at (x - w/2 + 16, y + 7); 9/10/11 draw +13/+14/+15 with **no days
+label at all**; 12 draws +16 with the label at (x - w/2, y - 8); anything else draws nothing further.
+**A cell carries a craft only when `tileA == 12`**, the hangar's bottom-right quadrant (0x62134), and the
+`layer2` byte does double duty: it is the sprite id (33..37, the five craft glyphs) *and* it picks the
+vertical nudge -- 33 and 35 one pixel HIGH (0x62278 falls through to the `SUB #1` at 0x622B0), 34 one
+pixel LOW, 36 unshifted, 37 two pixels HIGH, anything else nothing. The craft sprite sits 16 px LEFT of
+the cell origin (`R9 = -0x10` at 0x62124). **The original reaches `layer2` through leftover state**: the
+name pass's counter is 2 by the time the craft pass runs, so the row index carries 6 * 2 = 12 and the flat
+offset 72 lands exactly on `layer2`. Deviations: the port reads `layer2` directly, bounds the base index
+at 8 (the original indexes the eight `fac` blocks and eight `buildDays` blocks with no test at all), skips
+null craft pointers (the original derefs `apCraft[i]` at once), and returns void where the original returns
+register residue. 15 new checks, the main one a whole-frame compare against a reference frame painted in
+the test from the ARM's own coordinates and sprite offsets. A 42-mutation sweep turned 41 red; three are
+true equivalences and are not counted (`nCraftCount <= 0` to `< 0`, the days colour 255 to 250 in blue --
+both clamp to the same 5-bit 31 -- and `%u` to `%d` on a byte). IDB: 25 line comments plus function
+comments on 0x61c8c and 0x85f78, no renames; 3 new ledger rows. **`strat-ui` is complete: 245/245
+functions and 121,164 of 121,164 bytes.**
+The previous unit ported the transfer error dump, `Transfer_WriteErrorDump` (0x996e4, 3,824 B) -- a debug
+dump writer, not a UI display, reached from
 `TransferScreen_CommitTransfer` (0x97EE4) and `Smap_GrantSiteRecovery` (0x99038) when some base's
 per-object column passes 60000 (`0xEA60`). Both call sites now call it and the commit's `pfnShowTError`
 seam is gone. **Two original defects sit in the 20 instructions that build the name**: the strcpy of
@@ -255,7 +287,7 @@ new checks, the main one a byte-for-byte compare of the whole dump file against 
 the ARM's labels. A 30-mutation sweep turned all 30 red; `nSiteCount > 0` to `>= 0` is a true
 equivalence (the site loop runs zero iterations at a count of 0 either way) and is not counted. IDB: 10
 line comments, function comments on 0x996e4 and 0x5a8d0, no renames (`szAppDir @ 0x1883B0` was already
-named); 3 new ledger rows. `strat-ui` moves to 244/245 functions and 119,324 of 121,164 bytes (98.5%).
+named); 3 new ledger rows. `strat-ui` had moved to 244/245 functions and 119,324 of 121,164 bytes (98.5%).
 The previous unit ported the hangar's other face, `BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3,824 B): the stores-transfer list and the craft read-out that
 take over the whole frame when `bPlaneShowCraftDetail @ 0x161F20` is set. `BasePlaneScreen_Draw` hands the
 call over at 0x7D37C and returns its value, so the hook unit 96 carried for it is gone -- the draw env now
@@ -1200,7 +1232,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 244 | 245 | 119324 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
+| `strat-ui` | 245 | 245 | 121164 / 121164 | base/baseinfo/crew/manuf/research/buysell/transfer/options/ufopaedia/psi/base-attack/hangar screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -1463,9 +1495,9 @@ handlers they install, the per-tick strateg event pass, the strateg icon pass, t
 stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
 itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
 `Geoscape_Draw` is now the single largest unported function in the binary.
-`strat-ui` is 242 of 245 functions and 113,304 of 121,164 bytes (93.5%) — the small screen handlers, the
-whole base-info family, the base-attack screen and the hangar's stores panel set are in; the base plane's
-three draw/build functions are not.
+`strat-ui` is complete: 245 of 245 functions and 121,164 of 121,164 bytes — the small screen handlers, the
+whole base-info family, the base-attack screen, the hangar's panel set, frame, craft readout and craft
+detail, the transfer error dump and the base facility grid's name / build-icon / craft pass are all in.
 
 ### Decoded but deliberately not ported
 
@@ -2097,14 +2129,13 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 244 of 245 functions and 119,324 of 121,164 bytes (98.5%). The buy/sell, transfer,
+`strat-ui` is **complete: 245 of 245 functions and 121,164 of 121,164 bytes**. The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
-200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
-is left in `strat-ui` is
-1 function / 1,840 bytes. The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
+200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left, 33,744 of
+that one function: `Geoscape_Draw` (0x8c180). The base-info family is complete: `BaseInfoScreen_BuildPanels` (0x557f4, 6,084 B,
 the largest single `strat-ui` function) and `BaseInfoScreen_Init` (0x57688) came in with unit 92,
 `BaseInfoScreen_Draw` (0x56fb8) with unit 93, the base-attack screen's update/draw/close trio
 (`BaseAtScreen_Update` 0x57808, 3,872 B, `BaseAtScreen_Draw` 0x58728, 420 B, `BaseAtScreen_CloseThunk`
@@ -2112,8 +2143,8 @@ the largest single `strat-ui` function) and `BaseInfoScreen_Init` (0x57688) came
 2,788 B) with unit 95 and the hangar's own frame and craft readout `BasePlaneScreen_Draw` (0x7d374,
 1,648 B) with unit 96 and the hangar's stores list and craft detail
 `BasePlaneScreen_DrawCraftDetail` (0x7baf8, 3,824 B) with unit 97 and the transfer error dump
-`Transfer_WriteErrorDump` (0x996e4, 2,196 B) with unit 98. What is left is one single handler:
-`BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B).
+`Transfer_WriteErrorDump` (0x996e4, 2,196 B) with unit 98 and the base facility grid's names, build icons
+and craft `BaseFacScreen_DrawNameGrid` (0x61c8c, 1,840 B) with unit 99 -- the last `strat-ui` handler.
 The psi family is complete: `PsiScreen_BuildPanels`, `PsiScreen_SelectListed`, `PsiScreen_Init`,
 `PsiScreen_ApplyAssignments` and the two scroll handlers came in with unit 90, `PsiScreen_Draw` (0x72398,
 1,960 B) with unit 91. The ufopaedia family is complete: `Ufopaedia_Open` (0x9a8cc) came in with unit 89 after its
@@ -2142,7 +2173,7 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
 | `docs/parity/renames.tsv` | 531 renames on record per `audit_names.py`, **UTF-8** (that gate opens it with `encoding="utf-8"`, so cp1251 rows break it); check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 255-row bug ledger, with a `qol` column |
+| `docs/parity/bugs.tsv` | 258-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

@@ -4169,6 +4169,60 @@ typedef struct BuildDialogEnv {
 
 i32 BaseFacScreen_DrawBuildDialog(const BuildDialogEnv *pEnv);
 
+/* --- BaseFacScreen_DrawNameGrid @ 0x61c8c (1,840 B) : the base-facility screen's 6x6 cell grid ---
+ *
+ * Reached twice from Geoscape_Draw (0x922B4 and 0x92D34), the two states of the build overlay. It
+ * draws nothing but glyphs and changes no state.
+ *
+ * The backdrop (0x61CA4..0x61CC8). 36 blank sprites: for row 0..5 and column 0..5,
+ * Font_DrawGlyph(32*column + nSmapOriginX, 36 + 32*row + nSmapOriginY, nBaseBitsSprBase).
+ *
+ * The name pass (0x61CEC..0x620E8), two passes over the same 6x6 cells. Pass 0 reads
+ * fac[nBase].tileB (grid + 372 + 144*base + 36 + 6*row + column) and pass 1 reads
+ * fac[nBase].layer2 (+72); a zero cell is skipped (0x61D58). buildDays[nBase][row][column]
+ * (grid + 36*base + 6*row + column) then picks the sprite: a finished cell, or any cell in pass 1,
+ * gets the NAME sprite nBaseBitsSprBase + <layer byte>, while an unfinished cell in pass 0 gets the
+ * blank sprite instead (0x61D74 / 0x61D84). The layer byte is the aFacBuildSpec tileB stamp, 17..32
+ * for the sixteen named facility kinds, so the sprite id is the facility's own name glyph.
+ *
+ * A cell with build days left then consults fac[nBase].tileA (0x61E00) -- the tile stamp, 1/2/3 for
+ * the single-cell facilities of the three stamp groups and 9,10,11,12 for the hangar's four quadrants
+ * (BaseFac_SetCellBuildState writes those four) -- and draws the "under construction" sprite
+ * nBaseBitsSprBase + 4, 5, 6, 13, 14, 15 or 16. Stamps 9, 10 and 11 stop there (goto LABEL_31);
+ * stamp 12 packs (150,150,255 / 0,0,255) and draws the remaining days centred at
+ * (x - w/2, y - 8), and stamps 1, 2 and 3 pack the same pair and draw it at (x - w/2 + 16, y + 7).
+ * Any other stamp draws nothing further. The width comes from Text_MeasureWidth and the number is
+ * itoa'd TWICE (0x62054 and 0x62074, and 0x61E94 and 0x61EB4) into the same 4-byte scratch at
+ * sp+0xC -- exactly enough for "255".
+ *
+ * The craft pass (0x620F0..0x623B0). For row 0..5 and column 0..5, at
+ * x = 32*column - 16 + nSmapOriginX and y = 19 + 32*row + nSmapOriginY, it first requires
+ * fac[nBase].tileA[row][column] == 12 -- the hangar's bottom-right quadrant (0x62138) -- and then
+ * walks every craft (Map_nCraftCount read as a byte at 0x6214C, `BLS` skips zero) whose Ship.bHangarX
+ * is the column, Ship.bHangarY the row, Ship.bAtBase non-zero and Ship.bHomeBase the base. The
+ * sprite id is fac[nBase].layer2[row][column] + nBaseBitsSprBase -- 33..37, the five craft glyphs --
+ * and the layer2 value also picks the vertical nudge: 33 and 35 draw one pixel HIGH, 34 one pixel
+ * LOW, 36 unshifted and 37 two pixels HIGH; any other value draws nothing.
+ *
+ * Deviation: the original reaches that layer2 byte through `tileA.cell[6 * v27][6 * row + column]`
+ * where v27 is the name pass's loop counter left at 2, so the row index is 12 and the flat offset
+ * 6*12 = 72 lands exactly on layer2. The port reads layer2 directly. The original bounds nothing:
+ * nBase indexes the eight fac blocks and the eight buildDays blocks unchecked, and a craft pointer
+ * array of Map_nCraftCount entries is walked without a null test. The port bounds the base at 8 and
+ * skips null craft. The return value is register residue -- a craft-loop counter, or the address
+ * v29 + 372 when no cell matched -- and no caller reads it, so the port returns void. */
+typedef struct FacNameGridEnv {
+    const u8 *abFacilityGrid;       /* abFacilityGrid @ 0x159768 */
+    Ship *const *apCraft;           /* apCraft @ 0x114A64 */
+    const u8 *pnCraftCount;         /* Map_nCraftCount @ 0x114B4C, read as a byte */
+    const i32 *pnOriginX;           /* nSmapOriginX @ 0x159DC4 */
+    const i32 *pnOriginY;           /* nSmapOriginY @ 0x159DC8 */
+    const GfxColorEnv *pColor;      /* pGX @ 0x1139B8, the days label's colour pair */
+    i8 nBaseIdx;                    /* a2, the base whose blocks are drawn */
+} FacNameGridEnv;
+
+void BaseFacScreen_DrawNameGrid(const FacNameGridEnv *pEnv);
+
 /* --- Soldier_FormatDisplayName @ 0x6654c (384 B) : the soldier screen's craft column ---
  *
  * Called from SoldierScreen_Toggle (0x64AF0), BasePlaneScreen_FillCrewPanel (0x7A188) and
