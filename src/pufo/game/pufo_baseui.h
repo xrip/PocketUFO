@@ -1,12 +1,12 @@
 /* pufo_baseui.h - base-screen scratch-cell helpers.
  *
- * Evidence: Set_byte_159E88_4 @ 0x6b6b0,
- *           Set_byte_159E88_3_SetUiY @ 0x6b674,
+ * Evidence: Options_SetTab4 @ 0x6b6b0,
+ *           Options_SetTab3_AndUiY @ 0x6b674,
  *           Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec,
  *           PlaySample7_SetFlags_Cache0xBD8 @ 0x73328.
  *
- * The original writes scattered globals: `gUiRootPanel.anLineAux[145]`, two
- * controls' `y` fields (`dword_186BB0`/`dword_186BB4`), and two cached
+ * The original writes scattered globals: the options tab byte `gOptionsScratch[0]` @ 0x159E88, two
+ * controls' `y` fields (`pGeoscapeCtlB` @ 0x186BB0 / `pGeoscapeCtlA` @ 0x186BB4), and two cached
  * `nUnk3032` copies (`dword_186BE8` and `nResearchTopicRowCache` @ 0x160C74) plus the `unk_160C80` /
  * `byte_187080` flags. The port carries them in a ScreenScratch so the helpers
  * are testable without the global bank. The `nUnk3032` source values differ per
@@ -42,19 +42,20 @@
 #define PUFO_FRAME_RAMP_EDGE    0xFA  /* the descending top/bottom rails, 250 down to 135 */
 
 typedef struct ScreenScratch {
-    u8  nLineAux145;   /* gUiRootPanel.anLineAux[145] low byte (0x159E88+145) */
-    i32 nControl0Y;    /* dword_186BB0->y */
-    i32 nControl1Y;    /* dword_186BB4->y */
+    u8  nLineAux145;   /* gOptionsScratch[0] @ 0x159E88, the options tab byte. The name is a legacy:
+                        * nothing in the image addresses 0x159E88+145, and no anLineAux owner exists. */
+    i32 nControl0Y;    /* pGeoscapeCtlB @ 0x186BB0 ->y */
+    i32 nControl1Y;    /* pGeoscapeCtlA @ 0x186BB4 ->y */
     i32 nCache186BE8;  /* dword_186BE8 */
     bool bFlag160C80;  /* unk_160C80 */
     u8  bFlag187080;   /* byte_187080 */
     i32 nCache160C74;  /* unk_160C74 */
 } ScreenScratch;
 
-/* Set_byte_159E88_4 @ 0x6b6b0: sets the panel scratch byte to 4. */
+/* Options_SetTab4 @ 0x6b6b0: sets the panel scratch byte to 4. */
 void BaseUi_SetScratch4(ScreenScratch *pScratch);
 
-/* Set_byte_159E88_3_SetUiY @ 0x6b674: sets the panel scratch byte to 3 and the
+/* Options_SetTab3_AndUiY @ 0x6b674: sets the panel scratch byte to 3 and the
  * two controls' y to 120 and 142. */
 void BaseUi_SetScratch3AndUiY(ScreenScratch *pScratch);
 
@@ -1336,11 +1337,15 @@ void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *
  * BuySellScreen_CommitTransaction (0x75078), SaveGame_Slot_CloseUI (0x6AFB8), the thunk at
  * 0x7513C, and Options_SaveAudioSettings (0x6B7C4 and 0x6B7F0).
  *
- * The last pair is mutual recursion. Case 18 clears byte_159E88[0] at 0x8BCFC and then calls
- * Options_SaveAudioSettings, which re-tests byte_159E88[4], finds [0] now zero, and tail-calls
- * Geoscape_CloseUI again (0x6B7F0). The second pass takes the OTHER branch --
- * OptionsScreen_RebuildWithSound and screen 0 -- because the first pass zeroed the byte that
- * selected the branch. Two levels deep, and it terminates only because of that store.
+ * The last pair is mutual recursion, and the ARM shows the real path is not the one the pseudocode
+ * suggests. Case 18 clears gOptionsScratch[0] at 0x8BCFC and then calls Options_SaveAudioSettings. That
+ * function opens with its OWN close call at 0x6B7C4, gated on bOptionsScreenOpen @ 0x159E80 -- a
+ * global case 18 does not touch -- so while the options screen is open the second pass runs first.
+ * It takes the other branch (OptionsScreen_RebuildWithSound, screen 0), and that leaf's
+ * OptionsScreen_Init @ 0x6be74 clears gOptionsScratch[4] on its teardown branch. Control returns, this
+ * function re-tests gOptionsScratch[4] at 0x6B7D4, the test fails, and the 0x6B7F0 call is never reached.
+ * The 0x6B7F0 arm runs only when bOptionsScreenOpen was already clear on entry. Two close passes
+ * either way, and the store at 0x8BCFC is what ends the recursion.
  *
  * In execution order:
  *   1. 0x8B954: Sound_Play(17, 4). Sound_Play takes a second argument and every call site in
@@ -1362,7 +1367,8 @@ void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *
  *   5. 0x8BA00..0x8BA80: for every base, the five needed-flag passes. nBaseCount is loaded
  *      with LDRSB at 0x8BA10 and re-loaded at 0x8BA70 on each iteration, so it is SIGNED and
  *      a count that grows mid-loop extends the loop. The loop counter it leaves in R2 is the
- *      third argument case 18 hands to Options_SaveAudioSettings.
+ *      third argument case 18 hands to Options_SaveAudioSettings -- which reads none of its three
+ *      arguments, so all three are dead on arrival (see Options_SaveAudioSettings below).
  *   6. 0x8BA94: a switch on nGeoscapeScreen @ 0x186BC4, `SUB R0,#1 / CMP R0,#0x13`. Cases
  *      1..12, 15, 16, 18, 19 and 20 exist; 13, 14 and 17 fall to the default, which returns.
  *
@@ -1405,9 +1411,10 @@ void BaseAtScreen_Open(UiControl *pCtl, i32 nMode, const BaseAtScreenOpenHooks *
  *   15 (0x8BCAC) FundingScreen_Open, then screen 0.
  *   16 (0x8BD2C) 0x187310 set -> Ufopaedia_RefreshEntry; else 0x18730C set -> clear it and
  *      return; else Ufopaedia_Open, screen 0, Smap_ClampScrollY.
- *   18 (0x8BCBC) while byte_159E88[4] is set: if byte_159E88[0] (read SIGNED, 0x8BCD0 LDRSB)
- *      is non-zero, clear it and call Options_SaveAudioSettings(byte_159E88, that byte, the
- *      base-loop counter residue); else OptionsScreen_RebuildWithSound and screen 0. Then,
+ *   18 (0x8BCBC) while gOptionsScratch[4] is set: if gOptionsScratch[0] (read SIGNED, 0x8BCD0 LDRSB)
+ *      is non-zero, clear it and call Options_SaveAudioSettings(gOptionsScratch, that byte, the
+ *      base-loop counter residue) -- all three arguments unused by the callee; else
+ *      OptionsScreen_RebuildWithSound and screen 0. Then,
  *      while byte_159E80 is set, screen 0 and OptionsScreen_Open(-1). Then clear
  *      bGeoscapeDragActive @ 0x187074 and return.
  *   19 (0x8BB38) the monthly economy close, described on the case body below.
@@ -1453,6 +1460,7 @@ typedef struct SoldierScreenEnv SoldierScreenEnv;
 typedef struct FundingToggleEnv FundingToggleEnv;
 typedef struct FundingOpenEnv FundingOpenEnv;
 typedef struct OptionsScreenHooks OptionsScreenHooks;
+typedef struct SaveAudioEnv SaveAudioEnv;
 typedef struct EndScreenInitEnv EndScreenInitEnv;
 
 /* The bankruptcy limit at 0x8BBDC: 0xFFD23940 read as a signed dword. */
@@ -1518,8 +1526,8 @@ typedef struct GeoscapeCloseEnv {
     u8    *pbUfopaediaOpen;          /* 0x18730C */
     u8    *pbUfopaediaDirty;         /* 0x187310 */
     u8    *pbOptionsOpen;            /* 0x159E80 */
-    i8    *pnOptionsMode;            /* byte_159E88[0], read SIGNED at 0x8BCD0 */
-    const u8 *pbOptionsActive;       /* byte_159E88[4] */
+    i8    *pnOptionsMode;            /* gOptionsScratch[0], read SIGNED at 0x8BCD0 */
+    const u8 *pbOptionsActive;       /* gOptionsScratch[4] */
     i32   *pnFunds;                  /* nFunds @ 0x1598D8 */
     const i32 *anFundBar;            /* g_nFundBar0..4 @ 0x186594..0x1865A4 */
     PadImage **ppFundPad;            /* pFundPad @ 0x1595DC */
@@ -1544,6 +1552,7 @@ typedef struct GeoscapeCloseEnv {
     FundingToggleEnv *pFundingToggle;
     const FundingOpenEnv *pFundingOpen;
     const OptionsScreenHooks *pOptionsHooks;
+    SaveAudioEnv *pSaveAudio;              /* Options_SaveAudioSettings @ 0x6b7ac */
     const BaseClearShipsEnv *pClearShips;
     const SmapCraftSelectEnv *pCraftSelect;
 
@@ -1557,7 +1566,6 @@ typedef struct GeoscapeCloseEnv {
     void (*pfnPsiInit)(void *pUser);              /* PsiScreen_Init (0x72b40) */
     void (*pfnBaseAtOpen)(void *pUser);           /* BaseAtScreen_Open (0x588cc) */
     void (*pfnOptionsOpen)(i32 nMode, void *pUser);   /* OptionsScreen_Open (0x6d0ac) */
-    void (*pfnSaveAudioSettings)(i32 nMode, i32 nBaseCount, void *pUser); /* (0x6b7ac) */
     void (*pfnFreeGeoscapeUi)(i32 bFreeWorld, void *pUser); /* GeoscapeUi_FreeAll (0x86d20), ui/ */
     const EndScreenInitEnv *pEndScreen;           /* EndScreen_Init @ 0x388b0 */
     void *pUser;
@@ -2065,8 +2073,8 @@ void ManufScreen_ConfirmAndClose(const ManufClearEnv *pEnv, const GeoscapeCloseE
  *      5089..5094, which is what Hex-Rays shows.
  *   4. 0x71184..0x711EC: their handlers in slot order -- PanelPrev, PanelNext, IncSelectedQty,
  *      DecSelectedQty, IncEngineers, DecEngineers.
- *   5. 0x71200..0x71238: two controls that already exist as globals, unk_186BB4 at x 40 y 294 with
- *      handler ManufScreen_Draw, and unk_186BB0 at x 130 y 294 with handler
+ *   5. 0x71200..0x71238: two controls that already exist as globals, pGeoscapeCtlA at x 40 y 294 with
+ *      handler ManufScreen_Draw, and pGeoscapeCtlB at x 130 y 294 with handler
  *      ManufScreen_ConfirmAndClose. Neither is allocated here.
  *   6. 0x7123C..0x71260: UiControl_Setup(slot[5089+i], 0, 0, &g_aManufCtlDesc[i]). Both bases are zero,
  *      so every control lands exactly on its descriptor offset.
@@ -2091,8 +2099,8 @@ typedef struct ManufInitEnv {
     void **ppRoot;                  /* the screen block; [0] the PadImage, [1..6] the six controls */
     UiControl *apCtl[6];            /* caller-owned, stored into ppRoot[1..6] */
     UiControl *pCloseCtl;           /* unk_186B00 */
-    UiControl *pDrawCtl;            /* unk_186BB4 */
-    UiControl *pConfirmCtl;         /* unk_186BB0 */
+    UiControl *pDrawCtl;            /* pGeoscapeCtlA */
+    UiControl *pConfirmCtl;         /* pGeoscapeCtlB */
     void (*pfnCloseClick)(void);    /* ManufScreen_CloseThunk @ 0x6e3d4 */
     void (*pfnDrawClick)(void);     /* ManufScreen_Draw (0x6e3e0), not ported */
     void (*pfnConfirmClick)(void);  /* ManufScreen_ConfirmAndClose @ 0x6e98c */
@@ -2212,7 +2220,7 @@ void ManufScreen_BuildPanels(ManufBuildEnv *pEnv);
 /* ------------------------------------------------- the manufacturing screen's "draw" click
  *
  * Evidence: ManufScreen_Draw @ 0x6e3e0 (1332 B). Installed as the click handler of the shared draw
- * control unk_186BB4 by ManufScreen_Init (LDR R3,=ManufScreen_Draw / STR R3,[R0,#0xC] at 0x71228), and
+ * control pGeoscapeCtlA by ManufScreen_Init (LDR R3,=ManufScreen_Draw / STR R3,[R0,#0xC] at 0x71228), and
  * called again from Geoscape_CloseUI case 8 at 0x8BD78 whenever bManufProductSelected is set. Both call
  * sites discard the return value -- the original returns Base_UpdateLabNeeded's loop-counter residue of
  * 6 -- so the port returns void.
@@ -2351,8 +2359,8 @@ void ManufScreen_Draw(ManufDrawEnv *pEnv);
  * ManufScreen_ReduceSelectedQtyToOne -- this function re-points both every frame. TEXTS[1604] "ВСЕ" is
  * centred at (114 - w/2, 252) and TEXTS[1711] at (113 - w/2, 272); 1711 is past the 1650 records
  * TEXTS.DAT loads, so that second label draws an empty string in the shipped build. The draw control
- * unk_186BB4 blits, then TEXTS[1127] "ОК" is centred at (73 - w/2, 295) and TEXTS[1144] "Отмена" at
- * (164 - w/2, 295) under the confirm control unk_186BB0.
+ * pGeoscapeCtlA blits, then TEXTS[1127] "ОК" is centred at (73 - w/2, 295) and TEXTS[1144] "Отмена" at
+ * (164 - w/2, 295) under the confirm control pGeoscapeCtlB.
  *
  * Shortfall (0x70DB8..0x70EB4). Only when byte_1870C8 read as a dword is exactly 1: with
  * dword_1870B4[0] == 0 the 200x70 panel opens through Ui_AnimExpandBlit_IfEnabled and TEXTS[1184]
@@ -2422,8 +2430,8 @@ typedef struct ManufFrameEnv {
     UiControl *pCtlReset;               /* unk_186B00, blitted when no product is selected */
     UiControl *pCtlAllocAll;            /* unk_186B94, moved to (94, 251) and re-pointed every frame */
     UiControl *pCtlClampOne;            /* unk_186B90, moved to (94, 271) and re-pointed every frame */
-    UiControl *pCtlDraw;                /* unk_186BB4, the "ОК" control */
-    UiControl *pCtlConfirm;             /* unk_186BB0, the "Отмена" control */
+    UiControl *pCtlDraw;                /* pGeoscapeCtlA, the "ОК" control */
+    UiControl *pCtlConfirm;             /* pGeoscapeCtlB, the "Отмена" control */
     UiControlBlitFn pfnCtlBlit;
     UiControlBlitFn pfnCtlBlitEx;
     void *pCtlUser;
@@ -3071,7 +3079,7 @@ typedef struct BaseBuildModeEnv {
     const u16       *puResearchEntries;   /* nResearchEntryCount @ 0x160C4C */
     const i8        *pnSelectedBaseIdx;   /* nSelectedBaseIdx @ 0x159D81 */
     i32             *pnScreenId;          /* nGeoscapeScreen @ 0x186BC4 */
-    UiControl       *pParkCtl;            /* unk_186BB4, moved to 1000,1000 */
+    UiControl       *pParkCtl;            /* pGeoscapeCtlA, moved to 1000,1000 */
     void (*pfnPlaySample)(u32 nSample, void *pUser);
     void *pSampleUser;
 } BaseBuildModeEnv;
@@ -3983,8 +3991,8 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
  * The screen owns nineteen controls through .bss pointer slots: seven "list" rows at
  * 0x159E20..0x159E38, a two-slot gap, then six music radio buttons at 0x159E44..0x159E58 and six
  * sfx radio buttons at 0x159E5C..0x159E70. Two more controls live in the geoscape control block:
- * unk_186BB4 (the "save" hotspot) and unk_186BB0 (the "return to title" hotspot). The tab byte is
- * the scratch byte the helpers above already model (byte_159E88[0], ScreenScratch.nLineAux145):
+ * pGeoscapeCtlA (the "save" hotspot) and pGeoscapeCtlB (the "return to title" hotspot). The tab byte is
+ * the scratch byte the helpers above already model (gOptionsScratch[0], ScreenScratch.nLineAux145):
  * 0 audio, 1 save, 2 load, 3 and 4 the two pen rows. A different byte at 0x159E8C is the "the
  * controls exist" flag OptionsScreen_Init branches on.
  *
@@ -3994,8 +4002,8 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
  * delete over the seven list rows and the twelve radio buttons. Clear (0x6BE90..0x6C0B8): set it,
  * allocate and ctor seven list rows and position them with the seven identical records at 0xAB750
  * ("firebtn"/"cfirebtn", offset 1/229, mode 0); allocate and ctor twelve radio buttons; install
- * Options_SaveAudioSettings (0x6b7ac) on unk_186BB4 and OptionsScreen_ReturnToTitle (0x6b46c) on
- * unk_186BB0; position the twelve with the twelve identical records at 0xAB830
+ * Options_SaveAudioSettings (0x6b7ac) on pGeoscapeCtlA and OptionsScreen_ReturnToTitle (0x6b46c) on
+ * pGeoscapeCtlB; position the twelve with the twelve identical records at 0xAB830
  * ("initg"/"cinitg"/"cinitg", offset 1/229, mode 0). Then the two position loops: music buttons get
  * y = 107 and x = 46 + 25*i, sfx buttons get y = 147 and x = 46 + 25*i, i = 0..5 (the y store lands
  * at +2 and the x store at +0, so both survive). Then the twelve +12 handler slots get the twelve
@@ -4028,26 +4036,26 @@ char *Soldier_FormatDisplayName(const Soldier *pSol, Ship *const *apCraft, const
  * ## The three tab binders
  *
  * LayoutButtons (0x6b6c4) is the audio tab: scratch byte 0; the first four list rows get
- * OptionsScreen_BindSaveSlots, OptionsScreen_BindLoadSlots, Set_byte_159E88_3_SetUiY (0x6b674) and
- * Set_byte_159E88_4 (0x6b6b0); those four are centred at x = 120 - (uWidth >> 1) with y = 90 + 25*i.
- * unk_186BB4 then gets x = 120 - (its own uWidth >> 1) and y = 198, and unk_186BB0 gets
- * x = 120 - (unk_186BB4's uWidth >> 1): the second hotspot is centred on the FIRST control's width,
- * because the ARM reloads R1 from the same R0 (unk_186BB4) for the uWidth read at 0x6B764 and only
- * then switches the store target to unk_186BB0 at 0x6B778.
+ * OptionsScreen_BindSaveSlots, OptionsScreen_BindLoadSlots, Options_SetTab3_AndUiY (0x6b674) and
+ * Options_SetTab4 (0x6b6b0); those four are centred at x = 120 - (uWidth >> 1) with y = 90 + 25*i.
+ * pGeoscapeCtlA then gets x = 120 - (its own uWidth >> 1) and y = 198, and pGeoscapeCtlB gets
+ * x = 120 - (pGeoscapeCtlA's uWidth >> 1): the second hotspot is centred on the FIRST control's width,
+ * because the ARM reloads R1 from the same R0 (pGeoscapeCtlA) for the uWidth read at 0x6B764 and only
+ * then switches the store target to pGeoscapeCtlB at 0x6B778.
  *
  * BindSaveSlots (0x6b49c) and BindLoadSlots (0x6b588) are the same shape over all seven rows:
  * scratch byte 1 or 2, the seven SaveGame_SlotN_CloseUI / LoadGame_SlotN_InitOptions handlers,
- * x = 120 - (uWidth >> 1), y = 40 + 22*i, unk_186BB4->y = 215, and SaveSlot_FormatList over the main
+ * x = 120 - (uWidth >> 1), y = 40 + 22*i, pGeoscapeCtlA->y = 215, and SaveSlot_FormatList over the main
  * menu's slot context. The fourteen slot handlers are ported below; they arrive here as the caller's
  * thunks because the click slot takes no arguments.
  *
  * Deviations: the original allocates every control with operator new(0x20) into fixed .bss slots and
  * tears them down with UiControl_FreePads plus operator delete; the port takes caller-owned controls,
  * so its teardown branch runs UiControl_FreePads and leaves the storage to the caller. The port's
- * click slot is `void (*)(void)`, so the twelve radio handlers, the fourteen slot handlers and
- * OptionsScreen_ReturnToTitle arrive as the caller's thunks; Options_SaveAudioSettings (0x6b7ac) is
- * not ported and arrives the same way. The original returns the applier's register from the radio
- * handlers; the port returns 0, which nothing reads. */
+ * click slot is `void (*)(void)`, so the twelve radio handlers, the fourteen slot handlers,
+ * OptionsScreen_ReturnToTitle and Options_SaveAudioSettings (0x6b7ac, ported above) arrive as the
+ * caller's thunks over the caller's own env. The original returns the applier's register from the
+ * radio handlers; the port returns 0, which nothing reads. */
 #define PUFO_OPTIONS_LIST_COUNT 7
 #define PUFO_OPTIONS_VOL_COUNT  6
 
@@ -4087,14 +4095,14 @@ i32 OptionsScreen_RefreshVolumeHighlight(OptionsVolumeEnv *pEnv); /* 0x6b8fc */
 typedef struct OptionsTabEnv {
     OptionsScreenCtl *pCtl;
     ScreenScratch    *pScratch;
-    UiControl *pSaveCtl;   /* unk_186BB4, the "save" hotspot */
-    UiControl *pBackCtl;   /* unk_186BB0, the "return to title" hotspot */
+    UiControl *pSaveCtl;   /* pGeoscapeCtlA, the "save" hotspot */
+    UiControl *pBackCtl;   /* pGeoscapeCtlB, the "return to title" hotspot */
     /* The four handlers LayoutButtons installs on the first four rows. They land in a control's
      * click slot, so they are `void (*)(void)` thunks over the caller's own env. */
     void (*pfnBindSaveSlots)(void); /* OptionsScreen_BindSaveSlots (0x6b49c) */
     void (*pfnBindLoadSlots)(void); /* OptionsScreen_BindLoadSlots (0x6b588) */
-    void (*pfnSetTab3)(void);       /* Set_byte_159E88_3_SetUiY (0x6b674) */
-    void (*pfnSetTab4)(void);       /* Set_byte_159E88_4 (0x6b6b0) */
+    void (*pfnSetTab3)(void);       /* Options_SetTab3_AndUiY (0x6b674) */
+    void (*pfnSetTab4)(void);       /* Options_SetTab4 (0x6b6b0) */
     void (*apfnSaveSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* SaveGame_SlotN_CloseUI (0x6af80..0x6b148) */
     void (*apfnLoadSlot[PUFO_OPTIONS_LIST_COUNT])(void); /* LoadGame_SlotN_InitOptions (0x6b194..0x6b404) */
     void (*pfnFormatSlots)(void *pUser);   /* SaveSlot_FormatList (0x45904), reads the save files */
@@ -4105,14 +4113,71 @@ UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv);  /* 0x6b6c4 */
 void OptionsScreen_BindSaveSlots(OptionsTabEnv *pEnv);        /* 0x6b49c */
 void OptionsScreen_BindLoadSlots(OptionsTabEnv *pEnv);        /* 0x6b588 */
 
+/* ------------------------------------------------- Options_SaveAudioSettings @ 0x6b7ac (336 B)
+ *
+ * The "save" hotspot's click handler: OptionsScreen_Init installs it on pGeoscapeCtlA and
+ * OptionsScreen_Open does the same at 0x6D24C. Geoscape_CloseUI case 18 calls it at 0x8BD00, and it
+ * calls back into the close, so the two are mutually recursive.
+ *
+ * ## The body
+ *
+ * 1. 0x6B7C0: while bOptionsScreenOpen @ 0x159E80 is set, Geoscape_CloseUI(&0x1864F8).
+ * 2. 0x6B7D4: while gOptionsScratch[4] (the controls-exist flag) is set:
+ *    - 0x6B7E8: if gOptionsScratch[0] -- loaded LDRSB and sign-extended by 0x6B7E8..0x6B7D8 -- is
+ *      non-zero:
+ *      - 0x6B808: if it is exactly 4, the pen row Options_SetTab4 @ 0x6b6b0 selects, write the four
+ *        audio settings to the registry in this order: soundvolume = itoa(Map_nSoundVolume),
+ *        musicvolume = itoa(Map_nMusicVolume), musicoff = "1" when Map_bMusicOff is set else "0",
+ *        soundoff likewise for Map_bSoundOff. The "1" and the "0" are the shared strings at 0xA62A8
+ *        and 0xA62A4, and every value is stored as a REG_SZ string, the numbers included.
+ *      - 0x6B8A8: gOptionsScratch[0] = 0, then OptionsScreen_LayoutButtons @ 0x6b6c4, which writes 0 to
+ *        the same byte again at 0x6B6D0.
+ *    - 0x6B7F0: otherwise Geoscape_CloseUI(&0x1864F8) again.
+ * 3. 0x6B8BC: if bMapSelectionFlag @ 0x159E84 is clear, store 0 to 0x15961C -- GameTime.bPaused -- so
+ *    a close with no pending map selection resumes the clock. Then bMapSelectionFlag = 0.
+ *
+ * ## Why the recursion ends
+ *
+ * Geoscape_CloseUI case 18 clears gOptionsScratch[0] at 0x8BCFC before calling this function, so the pass
+ * started at 0x6B7C4 takes the 0x6B7F0 branch test rather than another call. That pass runs
+ * OptionsScreen_RebuildWithSound @ 0x6cf00, whose OptionsScreen_Init @ 0x6be74 clears gOptionsScratch[4]
+ * on its teardown branch -- so this function's own test at 0x6B7D4 fails and 0x6B7F0 is not reached at
+ * all. The 0x6B7F0 arm only runs when bOptionsScreenOpen was already clear on entry.
+ *
+ * ## The three arguments are dead
+ *
+ * The ARM overwrites R0 with Map_nSoundVolume at 0x6B824 before its first call, and R1 and R2 are
+ * never read anywhere in the function. Geoscape_CloseUI's a1 (the gOptionsScratch block), a2 (the signed
+ * byte it read at 0x8BCD0) and a3 (the base-loop counter residue from 0x8BA70) all reach a callee that
+ * ignores them. The port takes one env instead of three arguments.
+ *
+ * Deviation: the original dereferences every global it touches; the port skips a step whose pointer is
+ * NULL. */
+typedef struct SaveAudioEnv {
+    i8   *pbTab;             /* gOptionsScratch[0], the options tab byte */
+    u8   *pbControlsExist;   /* gOptionsScratch[4] */
+    u8   *pbOptionsOpen;     /* bOptionsScreenOpen @ 0x159E80 */
+    i32  *pnSfxVol;          /* Map_nSoundVolume @ 0x128A94 */
+    i32  *pnMusicVol;        /* Map_nMusicVolume @ 0x128A98 */
+    u8   *pbSfxOff;          /* Map_bSoundOff @ 0x128A93 */
+    u8   *pbMusicOff;        /* Map_bMusicOff @ 0x128A92 */
+    u8   *pbSelectionFlag;   /* bMapSelectionFlag @ 0x159E84 */
+    GameTime *pTime;         /* 0x159618; bPaused is the byte at 0x15961C */
+    const GeoscapeCloseEnv *pClose;  /* the close this function calls back into */
+    OptionsTabEnv *pTabEnv;          /* the state LayoutButtons lays out */
+} SaveAudioEnv;
+
+i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv); /* 0x6b7ac */
+
 typedef struct OptionsInitEnv {
     OptionsScreenCtl *pCtl;
     OptionsVolumeEnv *pVolEnv;  /* the state RefreshVolumeHighlight re-selects from */
     OptionsTabEnv    *pTabEnv;  /* the state LayoutButtons lays out */
-    u8 *pbControlsExist;        /* byte_159E88[4] @ 0x159E8C */
-    UiControl *pSaveCtl;        /* unk_186BB4 */
-    UiControl *pBackCtl;        /* unk_186BB0 */
-    void (*pfnSaveAudio)(void);          /* Options_SaveAudioSettings (0x6b7ac), not ported */
+    u8 *pbControlsExist;        /* gOptionsScratch[4] @ 0x159E8C */
+    UiControl *pSaveCtl;        /* pGeoscapeCtlA */
+    UiControl *pBackCtl;        /* pGeoscapeCtlB */
+    void (*pfnSaveAudio)(void);          /* Options_SaveAudioSettings (0x6b7ac), as a thunk over a
+                                          * SaveAudioEnv: the click slot takes no arguments */
     void (*pfnReturnToTitle)(void);      /* OptionsScreen_ReturnToTitle (0x6b46c), as a thunk */
     void (*apfnMusicVol[PUFO_OPTIONS_VOL_COUNT])(void); /* the twelve radio handlers, as thunks */
     void (*apfnSfxVol[PUFO_OPTIONS_VOL_COUNT])(void);
@@ -4152,8 +4217,8 @@ typedef struct SaveSlotEnv {
     SaveGameInput  *pIn;        /* nSlot is set to this handler's slot before SaveGame runs */
     LoadGameEnv    *pLoadEnv;   /* nSlot is set to this handler's slot before LoadGame runs */
     i32            *pnListMode;      /* MainMenu_nListMode @ 0x157188 */
-    ScreenScratch  *pScratch;        /* byte_159E88[0], the tab byte */
-    u8             *pbControlsExist; /* byte_159E88[4] */
+    ScreenScratch  *pScratch;        /* gOptionsScratch[0], the tab byte */
+    u8             *pbControlsExist; /* gOptionsScratch[4] */
     i32            *pnGeoscapeScreen;/* nGeoscapeScreen @ 0x186BC4 */
     OptionsInitEnv *pOptionsInit;    /* re-initialised before the load */
     const struct GeoscapeCloseEnv *pClose; /* Geoscape_CloseUI @ 0x8b94c, tail call at 0x6AFB8 */
@@ -4267,7 +4332,7 @@ void Geoscape_PrepScreenOpen(const ScreenResetOpenEnv *pEnv);
  *                                shortfall store straight to the call), then calls
  *                                Geoscape_PrepScreenOpen (0x84CBC), then GameTime_Set5Sec (0x84CC0),
  *                                then Geoscape_BuildNavControls(abFacilityGrid) (0x84CC8), then parks
- *                                the control at unk_186BB4 at (1000, 1000) with two STRH of 0x3E8,
+ *                                the control at pGeoscapeCtlA at (1000, 1000) with two STRH of 0x3E8,
  *                                then screen id 8, then the tail call ResearchScreen_Init(0x15EF08).
  *
  * byte_18706C is the ufopaedia "reselect pending" flag: Ui_OpenBaseInfoAlt sets it on the way in,
@@ -4278,7 +4343,7 @@ typedef struct ScreenResetOpen2Env {
     ScreenResetOpenEnv base;
     NavControls        *pNavOut;          /* the fifteen nav-control pointers Ui_OpenResearch rebuilds */
     const NavCtlEnv    *pNavEnv;          /* their wiring */
-    UiControl          *pParkCtl;         /* unk_186BB4, parked at (1000, 1000) */
+    UiControl          *pParkCtl;         /* pGeoscapeCtlA, parked at (1000, 1000) */
     u8                 *pbUfopaediaReselect; /* byte_18706C */
 } ScreenResetOpen2Env;
 
@@ -4301,7 +4366,7 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
  *   4. 0x74AA0..0x74AB8: the shared close control unk_186B00 moved to (224, 1) and pointed at
  *      ResearchScreen_CloseThunk (0x72ffc). Same position the manufacturing bring-up gives it.
  *   5. 0x74AC4 / 0x74AD0: the two shared bottom controls get their research handlers --
- *      unk_186BB4 -> ResearchScreen_CancelSelectedAndClose (0x73380), unk_186BB0 ->
+ *      pGeoscapeCtlA -> ResearchScreen_CancelSelectedAndClose (0x73380), pGeoscapeCtlB ->
  *      ResearchScreen_StartSelected (0x73240). Note the swap against the manufacturing screen,
  *      which points BB4 at its OK button and BB0 at its cancel: these two are generic geoscape
  *      controls and each screen re-points them. Their POSITIONS are not set here.
@@ -4312,8 +4377,8 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
  *      abFacilityGrid + 0x619 and is sign-extended by the usual LSL #24 / ASR #24 pair, so a
  *      negative index reaches the column from below; the count byte is re-read from memory on
  *      every iteration.
- *   9. 0x74B98..0x74BB4: NOW the two bottom controls are positioned -- unk_186BB4 to (165, 188)
- *      and unk_186BB0 to (165, 166). They sit one above the other in the same column.
+ *   9. 0x74B98..0x74BB4: NOW the two bottom controls are positioned -- pGeoscapeCtlA to (165, 188)
+ *      and pGeoscapeCtlB to (165, 166). They sit one above the other in the same column.
  *  10. 0x74BB8: ResearchScreen_BuildPanels (0x733f4), then the tail call
  *      ResearchScreen_RefreshPanels (0x73008) -- the only one of the four research screen entry
  *      points that refreshes the panels itself rather than leaving it to a handler.
@@ -4330,15 +4395,15 @@ void Ui_OpenResearch(const ScreenResetOpen2Env *pEnv);
 #define PUFO_RESEARCH_CLOSE_X   224        /* 0x74AA0: STRH #0xE0 */
 #define PUFO_RESEARCH_CLOSE_Y   1          /* 0x74AAC */
 #define PUFO_RESEARCH_BOTTOM_X  165        /* 0x74B98 and 0x74BAC: STRH #0xA5 into both */
-#define PUFO_RESEARCH_CANCEL_Y  188        /* 0x74BA0: STRH #0xBC, into unk_186BB4 */
-#define PUFO_RESEARCH_START_Y   166        /* 0x74BB4: STRH #0xA6, into unk_186BB0 */
+#define PUFO_RESEARCH_CANCEL_Y  188        /* 0x74BA0: STRH #0xBC, into pGeoscapeCtlA */
+#define PUFO_RESEARCH_START_Y   166        /* 0x74BB4: STRH #0xA6, into pGeoscapeCtlB */
 
 typedef struct ResearchInitEnv {
     void **ppRoot;                  /* the screen block; [0] the PadImage, [1..4] the four controls */
     UiControl *apCtl[4];            /* caller-owned, stored into ppRoot[1..4] */
     UiControl *pCloseCtl;           /* unk_186B00 */
-    UiControl *pCancelCtl;          /* unk_186BB4, handler CancelSelectedAndClose, moved to (165,188) */
-    UiControl *pStartCtl;           /* unk_186BB0, handler StartSelected, moved to (165,166) */
+    UiControl *pCancelCtl;          /* pGeoscapeCtlA, handler CancelSelectedAndClose, moved to (165,188) */
+    UiControl *pStartCtl;           /* pGeoscapeCtlB, handler StartSelected, moved to (165,166) */
     void (*pfnCloseClick)(void);    /* ResearchScreen_CloseThunk @ 0x72ffc */
     void (*pfnCancelClick)(void);   /* ResearchScreen_CancelSelectedAndClose @ 0x73380 */
     void (*pfnStartClick)(void);    /* ResearchScreen_StartSelected @ 0x73240 */
@@ -4574,9 +4639,9 @@ i32 ResearchScreen_RebuildTopicList(const ResearchRebuildEnv *pEnv);
  *      `&aResearchTopics[0].wTotal + 1874` advanced by two u16 slots, i.e. the screen block's control
  *      slots 1876 and 1877 at 0x160C58 and 0x160C5C -- the IncSelectedQty and DecSelectedQty controls
  *      ResearchScreen_Init installed.
- *  13. 0x7409C..0x74114: unk_186BB4 (the cancel control, which Init parked at (165, 188)), the teal
+ *  13. 0x7409C..0x74114: pGeoscapeCtlA (the cancel control, which Init parked at (165, 188)), the teal
  *      pair again, then TEXTS[1144] "Отмена" centred at (198 - w/2, 189).
- *  14. 0x74120..0x74174: unk_186BB0 (the start control, (165, 166)), then TEXTS[1127] "ОК" centred at
+ *  14. 0x74120..0x74174: pGeoscapeCtlB (the start control, (165, 166)), then TEXTS[1127] "ОК" centred at
  *      (198 - w/2, 167). Note the caption pair is swapped against the controls' own order: "ОК" sits
  *      under the upper control, "Отмена" under the lower one.
  *  15. 0x74184..0x741A4: unk_186B94 is re-pointed at ResearchScreen_UpdateProgress (0x72d14) and moved
@@ -4627,8 +4692,8 @@ typedef struct ResearchDrawEnv {
     const u8          *abFacilityGrid;    /* abFacilityGrid @ 0x159768, for Base_CalcLabCap */
     UiControl         *apCtlQty[2];       /* slots 1876/1877 @ 0x160C58 (IncSelectedQty) and
                                            * 0x160C5C (DecSelectedQty), blitted in that order */
-    UiControl         *pCtlCancel;        /* unk_186BB4, parked at (165, 188) by Init */
-    UiControl         *pCtlStart;         /* unk_186BB0, parked at (165, 166) by Init */
+    UiControl         *pCtlCancel;        /* pGeoscapeCtlA, parked at (165, 188) by Init */
+    UiControl         *pCtlStart;         /* pGeoscapeCtlB, parked at (165, 166) by Init */
     UiControl         *pCtlAllocAll;      /* unk_186B94, moved to (100, 164) and re-pointed here */
     UiControl         *pCtlClose;         /* unk_186B00, blitted only when no row is selected */
     void (*pfnAllocAllClick)(void);       /* ResearchScreen_UpdateProgress @ 0x72d14 */

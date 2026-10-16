@@ -2277,6 +2277,38 @@ Order is by what unblocks what. Each item ends with gates + commit.
   16-byte `bBasePlaceFail` item overlapping `bBasePlaceActive`, `byte_1870C8` typed as a byte though all three
   writers store a dword — 14 comments, and one wrong comment corrected at `BaseInfoScreen_OnOk @ 0x557c8`.
 
+- [x] **part 76, the audio-save callee: `Options_SaveAudioSettings (0x6b7ac, 336 B)`** — the options screen's
+  save-hotspot handler (installed on `pGeoscapeCtlA @ 0x186BB4` by `OptionsScreen_Init` and again by
+  `OptionsScreen_Open` at 0x6D24C) and the function case 18 reaches at 0x8BD00, so the mutual recursion the
+  previous unit opened now runs between two ported functions. Three steps: close while `bOptionsScreenOpen`
+  is set (0x6B7C4); while `gOptionsScratch[4]` is set, read `gOptionsScratch[0]` signed and, if non-zero,
+  write the four audio values to the registry **only when the tab is exactly 4** (soundvolume, musicvolume,
+  musicoff, soundoff — the last two as the shared "1" @ 0xA62A8 / "0" @ 0xA62A4), then clear the tab and run
+  `OptionsScreen_LayoutButtons`; if the tab is zero, close again at 0x6B7F0. Tail: a clear
+  `bMapSelectionFlag` clears 0x15961C (`GameTime.bPaused`) — a close with no pending map selection resumes
+  the clock — and the flag clears whatever happened.
+  **What the ARM showed and the pseudocode did not.** **All three arguments are dead**: 0x6B824 overwrites
+  R0 with `Map_nSoundVolume` before the first call and R1/R2 are never read, so the block, the signed byte
+  and the base-loop residue all reach a callee that ignores them — the port takes one env. And the recursion
+  is not the two-level shape Hex-Rays suggests: this function's own close at 0x6B7C4 runs **first** (gated on
+  `bOptionsScreenOpen`, which case 18 never touches), that pass runs `OptionsScreen_RebuildWithSound` whose
+  `OptionsScreen_Init` clears `gOptionsScratch[4]` at 0x6C0FC, so the re-test at 0x6B7D4 **fails** and 0x6B7F0
+  is never reached. The 0x6B7F0 arm runs only when `bOptionsScreenOpen` was already clear on entry. The tab
+  byte's sign is not observable here (both tests answer the same for 0xFD signed or unsigned) and is recorded
+  rather than tested.
+  **IDB naming, including a mistake caught in the same unit:** `byte_159E88` → `gOptionsScratch` ([0] tab byte
+  0..4, [4] @ 0x159E8C controls-exist; only offsets 0 and 4 are used anywhere), its setters
+  `Set_byte_159E88_4` / `Set_byte_159E88_3_SetUiY` → `Options_SetTab4` / `Options_SetTab3_AndUiY`, and
+  `unk_186BB4` / `unk_186BB0` → `pGeoscapeCtlA` / `pGeoscapeCtlB`. The first attempt at the pair —
+  `pOptionsSaveCtl` / `pOptionsBackCtl` — was wrong: the slots are reused per screen (manuf and research panel
+  controls, research OK/cancel, the park control, the options hotspots), so it was renamed again before the
+  commit. The port carried the mirror error: `ScreenScratch.nLineAux145` was commented as
+  `gUiRootPanel.anLineAux[145] (0x159E88+145)`, but nothing addresses 0x159F19 and no `anLineAux` owner exists
+  in the IDB — the byte is `gOptionsScratch[0]` at 0x159E88, offset 0.
+  **1 ledger row amended (221 on record):** 0x8bd00 now says all three arguments are dead, not just the third.
+  49 new checks (13632 total, 60 suites), coverage 911/1103 (82.6%) and 483132/598792 (80.7%); `strat-ui` moves
+  from 80,516 to 80,852 of 121,164 bytes (66.7%). IDB: 5 renames (396 on record) and 7 comments.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2606,6 +2638,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the pointer release (`Geoscape_OnPointerUp`; the shortfall gate on 0x1870C8 read as a dword, the list clicks where the press only tracked rows, the panel tail shared by two arms, the press/release disagreements on screens 0, 7, 10 and 18, 3 original findings and 6 ledger rows, one wrong slot address in the port corrected) | 58/58 (Release) | 13267 | 908/1103 (82.3%) | 477608/598792 (79.8%) | 40 checked, 0 mismatched |
 | the map select test (`Smap_HitTestStrategSelect`; the strict strip gate, the 16x16 cell window, the 1/1.333 and 1/1.694 item scalers that disagree with the scroll factors, the signed base-type byte, the two past-the-end search indexes, the flag-27 tail that writes the pending click, the colour-slot byte mask `Line_Write` was missing, 10 ledger rows) | 59/59 (Release) | 13405 | 909/1103 (82.4%) | 480696/598792 (80.3%) | 40 checked, 0 mismatched |
 | the screen close dispatcher (`Geoscape_CloseUI`; the head, the speed chain against `g_aGeoscapeSpeedSec` and its 3600 double call, the 17-case switch, the per-base needed-flag rebuild, the mutual recursion with `Options_SaveAudioSettings`, the five-slot funding bar and the strict -3000000 limit, 11 ledger rows) | 60/60 (Release) | 13583 | 910/1103 (82.5%) | 482796/598792 (80.6%) | 40 checked, 0 mismatched |
+| the audio-save callee (`Options_SaveAudioSettings`; all three arguments dead, the recursion's real two-pass shape via `OptionsScreen_Init` clearing the controls byte, the tab-4-only registry write, the pause-resume tail, 5 IDB renames with one corrected in the same unit) | 60/60 (Release) | 13632 | 911/1103 (82.6%) | 483132/598792 (80.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

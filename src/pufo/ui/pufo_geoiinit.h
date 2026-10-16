@@ -232,7 +232,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  *  18. 0x95400: Base_GrantStarterItems(base 0, bGrant 0); nAlienPoolAddend (word_1472C8)
  *      = 0 (STRH); nullsub_7 carries no behaviour and is not ported.
  *  19. 0x95418: screen id 1; Geoscape_BuildNavControls; the research panel control
- *      (unk_186BB4) parked at (1000, 1000) as two STRH stores; screen id 2; the confirm
+ *      (pGeoscapeCtlA) parked at (1000, 1000) as two STRH stores; screen id 2; the confirm
  *      control (unk_186BA4) gets NewBaseScreen_TryConfirm; Smap_ZoomOut twice;
  *      byte_187080 = 0.
  *  20. 0x9542C: return StrategList_MaybeSpawnCraft_Process(list, ..., bSpawn 1). The
@@ -319,7 +319,7 @@ typedef struct StartNewEnv {
 
     /* Geoscape UI and viewport. */
     GeoscapeScreenState *pScreen;     /* the screen id at 0x186BC4 */
-    UiControl *pCtlResearchPanel;     /* unk_186BB4, parked at (1000, 1000) */
+    UiControl *pCtlResearchPanel;     /* pGeoscapeCtlA, parked at (1000, 1000) */
     UiControl *pCtlConfirm;           /* unk_186BA4, TryConfirm installed */
     SmapView *pView;                  /* 0x1863E8 */
     const SmapZoomSet *pZoomSets;

@@ -11,6 +11,7 @@
 #include "game/pufo_mainmenu.h" /* PUFO_MAINMENU_MODE_*, the list mode the slot handlers set */
 #include "game/pufo_titles.h"   /* EndScreen_Init, the bankruptcy close of Geoscape_CloseUI */
 #include "util/pufo_rand.h"     /* Game_RandU16, the unlock roll of ResearchScreen_RebuildTopicList */
+#include "platform/pufo_reg.h"  /* Reg_SetString, the four audio values Options_SaveAudioSettings writes */
 
 void BaseUi_SetScratch4(ScreenScratch *pScratch)
 {
@@ -3233,11 +3234,13 @@ void Geoscape_CloseUI(const GeoscapeCloseEnv *pEnv)
             const i32 nMode = (pEnv->pnOptionsMode != NULL) ? (i32)*pEnv->pnOptionsMode : 0;
             if (nMode != 0) {
                 if (pEnv->pnOptionsMode != NULL) { *pEnv->pnOptionsMode = 0; } /* 0x8BCFC */
-                if (pEnv->pfnSaveAudioSettings != NULL) {
-                    /* ORIGINAL BUG (0x8BD00): a1 is the block itself and a2 the byte just read
-                     * (LDRSB at 0x8BCD0), but a3 is whatever the base loop left in R2 at 0x8BA70
-                     * -- the base count, not a value this function computes. */
-                    pEnv->pfnSaveAudioSettings(nMode, nBaseCount, pEnv->pUser);
+                if (pEnv->pSaveAudio != NULL) {
+                    /* ORIGINAL BUG (0x8BD00): a1 is the gOptionsScratch block, a2 the signed byte just
+                     * read (LDRSB at 0x8BCD0), and a3 is whatever the base loop left in R2 at 0x8BA70
+                     * -- the base count, not a value this function computes. The callee reads none of
+                     * the three: 0x6B824 overwrites R0 with Map_nSoundVolume before its first call and
+                     * R1/R2 are never read, so the port hands one env instead. */
+                    (void)Options_SaveAudioSettings(pEnv->pSaveAudio);
                 }
             } else {
                 OptionsScreen_RebuildWithSound(pEnv->pOptionsHooks);   /* 0x8BCE4 */
@@ -8146,8 +8149,8 @@ UiControl *OptionsScreen_LayoutButtons(OptionsTabEnv *pEnv)
         u16 w = (pEnv->pSaveCtl != NULL) ? pEnv->pSaveCtl->uWidth : 0;
 
         /* ORIGINAL BUG (0x6B764), reproduced: the width read for the return hotspot comes from
-         * *unk_186BB4 again (R1 is reloaded from the same R0), while the store at 0x6B778 lands on
-         * *unk_186BB0. The two hotspots share a pad in practice, so the game does not show it. */
+         * *pGeoscapeCtlA again (R1 is reloaded from the same R0), while the store at 0x6B778 lands on
+         * *pGeoscapeCtlB. The two hotspots share a pad in practice, so the game does not show it. */
         pEnv->pBackCtl->x = (i16)(120 - (w >> 1));
     }
     return pEnv->pSaveCtl;
@@ -8185,6 +8188,52 @@ void OptionsScreen_BindLoadSlots(OptionsTabEnv *pEnv)
         return;
     }
     Options_BindSlotRows(pEnv, 2, pEnv->apfnLoadSlot); /* 0x6b588 */
+}
+
+i32 Options_SaveAudioSettings(SaveAudioEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return 0;
+    }
+
+    if (pEnv->pbOptionsOpen != NULL && *pEnv->pbOptionsOpen != 0 && pEnv->pClose != NULL) {
+        Geoscape_CloseUI(pEnv->pClose);                                        /* 0x6B7C4 */
+    }
+
+    if (pEnv->pbControlsExist != NULL && *pEnv->pbControlsExist != 0) {       /* 0x6B7D4 */
+        const i8 nTab = (pEnv->pbTab != NULL) ? *pEnv->pbTab : 0;             /* 0x6B7E8 LDRSB */
+
+        if (nTab != 0) {
+            if (nTab == 4) {                                                  /* 0x6B808 */
+                char szNum[12];
+
+                snprintf(szNum, sizeof(szNum), "%d",
+                         (int)(pEnv->pnSfxVol != NULL ? *pEnv->pnSfxVol : 0));  /* 0x6B828 j_itoa */
+                (void)Reg_SetString("soundvolume", szNum);                     /* 0x6B834 */
+                snprintf(szNum, sizeof(szNum), "%d",
+                         (int)(pEnv->pnMusicVol != NULL ? *pEnv->pnMusicVol : 0)); /* 0x6B84C */
+                (void)Reg_SetString("musicvolume", szNum);                     /* 0x6B858 */
+                (void)Reg_SetString("musicoff",
+                                    (pEnv->pbMusicOff != NULL && *pEnv->pbMusicOff != 0) ? "1" : "0");
+                (void)Reg_SetString("soundoff",                                /* 0x6B878..0x6B8A0 */
+                                    (pEnv->pbSfxOff != NULL && *pEnv->pbSfxOff != 0) ? "1" : "0");
+            }
+            if (pEnv->pbTab != NULL) {
+                *pEnv->pbTab = 0;                                              /* 0x6B8A8 */
+            }
+            (void)OptionsScreen_LayoutButtons(pEnv->pTabEnv);                  /* 0x6B8AC */
+        } else if (pEnv->pClose != NULL) {
+            Geoscape_CloseUI(pEnv->pClose);                                    /* 0x6B7F0 */
+        }
+    }
+
+    if (pEnv->pbSelectionFlag != NULL) {
+        if (*pEnv->pbSelectionFlag == 0 && pEnv->pTime != NULL) {
+            pEnv->pTime->bPaused = 0;                                          /* 0x6B8C4 STRB */
+        }
+        *pEnv->pbSelectionFlag = 0;                                            /* 0x6B8CC */
+    }
+    return 0;
 }
 
 void OptionsScreen_Init(OptionsInitEnv *pEnv)

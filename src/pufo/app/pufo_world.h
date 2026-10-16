@@ -100,7 +100,7 @@ typedef struct PufoWorldState {
      * writes it through is wired to g_nGlyphPalSlotBase, the port's single instance of it. */
     BaseFacFlag       aFac[PUFO_BASEFAC_COUNT]; /* aBaseFacFlags @ 0x186E48 */
     MissionSiteRec    aMissionSites[PUFO_MISSION_SITE_COUNT]; /* unk_1865C0 */
-    UiControl         ctlResearchPanel;         /* unk_186BB4 */
+    UiControl         ctlResearchPanel;         /* pGeoscapeCtlA */
     UiControl         ctlConfirm;               /* unk_186BA4 */
     u8                bFlag187080;
     UiLineList        msgLines;                 /* the root message list @ 0x158890 */

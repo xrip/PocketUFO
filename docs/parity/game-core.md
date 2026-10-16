@@ -15008,3 +15008,59 @@ above the limit not bankrupt), and the two-base upkeep by 3,620,000 - 50,000 per
 is not 255 plus 20,000 per soldier at the base, which is the term that made a 3,600,000 guess wrong.
 Two gaps are recorded in the file header rather than papered over: case 20's assault half needs the
 full SmapCraftSelectEnv, and case 19's EndScreen_Init needs main.dat.
+## Unit 76 - Options_SaveAudioSettings @ 0x6b7ac (336 B), ported as Options_SaveAudioSettings
+
+The options screen's save hotspot handler -- installed on pGeoscapeCtlA @ 0x186BB4 by
+OptionsScreen_Init and again by OptionsScreen_Open at 0x6D24C -- and the callee Geoscape_CloseUI case
+18 reaches at 0x8BD00. Porting it closes the mutual recursion the previous unit opened: case 18 now
+calls a real function instead of a hook.
+
+The body is three steps. 0x6B7C0: while bOptionsScreenOpen @ 0x159E80 is set, call the close.
+0x6B7D4: while gOptionsScratch[4] (the controls-exist flag) is set, look at gOptionsScratch[0] --
+LDRSB, sign-extended -- and if it is non-zero, clear it at 0x6B8A8 and run OptionsScreen_LayoutButtons;
+but only if it is exactly 4, the pen row Options_SetTab4 @ 0x6b6b0 selects, write the four audio
+settings first: soundvolume = itoa(Map_nSoundVolume), musicvolume = itoa(Map_nMusicVolume), musicoff
+and soundoff as the shared "1" @ 0xA62A8 or "0" @ 0xA62A4. If the tab byte is zero, call the close
+again at 0x6B7F0. 0x6B8BC: if bMapSelectionFlag @ 0x159E84 is clear, store 0 to 0x15961C --
+GameTime.bPaused -- and then clear bMapSelectionFlag whatever happened.
+
+What the ARM showed that the pseudocode did not:
+
+- All three arguments are dead. 0x6B824 loads R0 with Map_nSoundVolume before the function's first
+  call, and R1 and R2 are never read anywhere in it. Geoscape_CloseUI hands over the gOptionsScratch
+  block, the signed byte it read at 0x8BCD0 and the base-loop counter residue from 0x8BA70, and the
+  callee ignores all three. The port takes one env instead of three arguments.
+- The recursion is not the two-level shape Hex-Rays suggests. Case 18 clears gOptionsScratch[0] at
+  0x8BCFC and calls this function; this function opens with its OWN close call at 0x6B7C4, gated on
+  bOptionsScreenOpen -- a global case 18 never touches -- so while the options screen is open the
+  second close pass runs FIRST. That pass takes the other branch, OptionsScreen_RebuildWithSound,
+  whose OptionsScreen_Init @ 0x6be74 clears gOptionsScratch[4] on its teardown branch at 0x6C0FC.
+  Control returns, this function re-tests gOptionsScratch[4] at 0x6B7D4, the test FAILS, and the
+  0x6B7F0 call is never reached. The 0x6B7F0 arm runs only when bOptionsScreenOpen was already clear
+  on entry. test_closeui.c pins both halves: with the screen id at 13 the inner close takes the
+  jumptable default and rebuilds nothing, so the controls byte survives and both closes run (sample 17
+  twice); with the screen id at 18 the rebuild clears it and only one close runs.
+- 0x15961C is GameTime.bPaused, the byte at 0x159618+4: a close with no pending map selection resumes
+  the game clock. It is the only place in this function where the selection flag matters.
+- The sign of the tab byte is not observable here. Both of the callee's tests -- non-zero and == 4 --
+  answer the same way for 0xFD signed or unsigned, and case 18 clears the byte before the callee reads
+  it. Recorded rather than tested, because a test would assert nothing.
+
+IDB naming this unit fixed. byte_159E88 is now gOptionsScratch: [0] is the tab byte (0 audio, 1 save,
+2 load, 3 and 4 the two pen rows) and [4] @ 0x159E8C is the controls-exist flag, and only offsets 0 and
+4 are used anywhere in the image. Its two setters, Set_byte_159E88_4 and Set_byte_159E88_3_SetUiY, are
+now Options_SetTab4 and Options_SetTab3_AndUiY. unk_186BB4 / unk_186BB0 are pGeoscapeCtlA /
+pGeoscapeCtlB -- and the first attempt at naming them pOptionsSaveCtl / pOptionsBackCtl was wrong and
+was corrected in the same unit: the pair is reused per screen (the manuf and research panel controls,
+the research OK and cancel controls, the park control Smap_ParkCraft parks at 1000,1000, and the options
+save and return-to-title hotspots), so an options-specific name would have misled the next reader. The
+port carried the same error in the other direction: ScreenScratch.nLineAux145 was commented as
+"gUiRootPanel.anLineAux[145] low byte (0x159E88+145)", but nothing in the image addresses 0x159F19 and
+no anLineAux owner exists in the IDB at all -- the byte is gOptionsScratch[0] at 0x159E88, offset 0.
+
+49 new checks in tests/test_closeui.c (223 in that suite). The four registry values are pinned by
+read-back after a sentinel write, so "tab 3 writes nothing" is an assertion and not an absence. The
+layout is pinned too, including the ORIGINAL BUG (0x6B764) in LayoutButtons: the return hotspot is
+centred on the save control's 60-wide pad and lands at x = 90 where its own 100-wide pad would give 70.
+The recursion is pinned by the sample count -- 17 once or 17 twice -- which is what distinguishes one
+close pass from two.
