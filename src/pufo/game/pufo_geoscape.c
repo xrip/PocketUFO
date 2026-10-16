@@ -129,9 +129,9 @@ void Geoscape_TickBases(GeoscapeState *pState, const GeoscapeHooks *pHooks)
 
     for (i32 s = 0; s < pState->nSoldierCount; ++s) {
         Soldier *pS = pState->apSoldiers[s];
-        if ((i8)pS->bUnk423 > 0) {
+        if ((i8)pS->nPsiTrainDays > 0) {
             ++pS->auStat[6];
-            --pS->bUnk423;
+            --pS->nPsiTrainDays;
         }
         if (pS->bUnk247 != 0)
             --pS->bUnk247;
@@ -1201,7 +1201,7 @@ i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseI
 
 /* Base_CountPsiSoldiers @ 0x65a08. Soldiers assigned to this base (nKind @ 0xB6 equals the base
  * index, compared as the original does: the byte against the sign-extended char argument) that
- * also have bUnk149 @ 0x95 set — the psi marker. The budget of Base_UpdatePsiLabNeeded. */
+ * also have bPsiAssigned @ 0x95 set — the psi marker. The budget of Base_UpdatePsiLabNeeded. */
 i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex)
 {
     i32 nCount = 0;
@@ -1215,7 +1215,7 @@ i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBa
         if (pSol == NULL) {
             continue;
         }
-        if ((i32)pSol->nKind == (i8)nBaseIndex && pSol->bUnk149 != 0) {
+        if ((i32)pSol->nKind == (i8)nBaseIndex && pSol->bPsiAssigned != 0) {
             ++nCount; /* 0x65A2C */
         }
     }

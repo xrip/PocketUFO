@@ -589,7 +589,7 @@ static void Deploy_ApplyHwpsPreset(Soldier *pUnit, i32 nObjectIdx)
     pUnit->bMorale = 100;
     pUnit->auStat[4] = 60;
     pUnit->auStat[8] = 60;
-    pUnit->bUnk422 = 0;
+    pUnit->bPsiActive = 0;
     pUnit->bUnk248 = bUnk248;
 }
 
@@ -1266,11 +1266,11 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
             if (pRec->nStat6 == -1) {
                 pUnit->auStat[6] = (u16)(Game_RandU16(50) + 30);        /* 0x3AA08 */
                 pUnit->auStat[7] = (u16)(Game_RandU16(50) + 30);        /* 0x3AA14 */
-                pUnit->bUnk422   = 1;                                   /* 0x3AA40 */
+                pUnit->bPsiActive   = 1;                                   /* 0x3AA40 */
             } else {
                 pUnit->auStat[6] = (u16)pRec->nStat6;                   /* 0x3AA24 */
                 pUnit->auStat[7] = (u16)pRec->nStat7;                   /* 0x3AA30 */
-                pUnit->bUnk422   = 0;
+                pUnit->bPsiActive   = 0;
             }
         }
 
@@ -1318,7 +1318,7 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
                              ? pEnv->apHiddenSoldiers[i]
                              : pEnv->apEnemyUnits[i];
 
-        if (pUnit->bUnk422 != 0) {                                       /* 0x3ABF0 */
+        if (pUnit->bPsiActive != 0) {                                       /* 0x3ABF0 */
             bool bKeep = false;
             if (pEnv->nMissionType == PUFO_MISSION_TYPE_URBAN ||
                 pEnv->nMissionType == PUFO_MISSION_TYPE_XCOM_BASE) {
@@ -1329,7 +1329,7 @@ i32 Tact_SpawnAliens(TactSpawnAliensEnv *pEnv)
             if (bKeep) {
                 ++nKeep;
             } else {
-                pUnit->bUnk422 = 0;                                      /* 0x3AC60 */
+                pUnit->bPsiActive = 0;                                      /* 0x3AC60 */
             }
         }
 

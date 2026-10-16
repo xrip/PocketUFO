@@ -3,7 +3,7 @@
  * The decisions worth pinning are the unit-type gate (craft family 4..8 / 14..20 / 22 skips the
  * pad slots), the uMissions <= 3 empty-slot frames, the class -> cs pad pair and the origin
  * rewriting, the bar widths (max >> 1, remainder (max >> 1) - (cur >> 1) - 2, negative dropped),
- * the kneel tick count, the morale bar, the bUnk422 rows, the ruler that scribbles over the label
+ * the kneel tick count, the morale bar, the bPsiActive rows, the ruler that scribbles over the label
  * rows, and the control set (widget 101 always, 102/103 only while bLookCommitFlag is zero).
  *
  * Ink is the observable for the rects; the cs pads ink one pixel at their origin plus (1,1), so a
@@ -117,7 +117,7 @@ static void Fixture_Reset(void)
     g_unit.auStat[4]     = 10;
     g_unit.auStat[5]     = 12;
     g_unit.auStat[8]     = 14;
-    g_unit.bUnk422       = 1;
+    g_unit.bPsiActive       = 1;
     g_unit.auStat[7]     = 8;
     g_unit.auStat[6]     = 6;
 
@@ -258,7 +258,7 @@ int main(void)
     Check(InkAt(208, 182) != 0, "and is 2 * 49 = 98 wide");
     CheckEqI32(InkAt(210, 182), 0, "stopping at (208, 182); the 6-tall full bar still covers (209, 182)");
 
-    /* --- bUnk422 gates the last two rows --- */
+    /* --- bPsiActive gates the last two rows --- */
     Check(InkAt(12, 277) != 0, "auStat[7] bar 8 >> 1 = 4 wide");
     Check(InkAt(11, 301) != 0, "auStat[6] bar 6 >> 1 = 3 wide");
 

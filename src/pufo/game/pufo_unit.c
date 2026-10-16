@@ -512,7 +512,7 @@ void Unit_Generate(Soldier *pUnit, u8 nKind)
     pUnit->bUnk183     = 0xFF;
     pUnit->nSpottedCount = 0;
     pUnit->nMultiTarget  = 0;
-    pUnit->bUnk149     = 0;
+    pUnit->bPsiAssigned     = 0;
     pUnit->nKind       = nKind;
     pUnit->bRankType   = 0;
     pUnit->uMissions   = 0;
@@ -543,8 +543,8 @@ void Unit_Generate(Soldier *pUnit, u8 nKind)
     pUnit->bUnk248    = 0;
     pUnit->auStat[7]  = uSeventh;
     pUnit->uHp        = pUnit->auStat[1];
-    pUnit->bUnk422    = 0;
-    pUnit->bUnk423    = 0;
+    pUnit->bPsiActive    = 0;
+    pUnit->nPsiTrainDays    = 0;
     pUnit->bFlags     = (u8)(pUnit->bFlags & ~0x20u);
     pUnit->bHumanoidInv = 1;
     pUnit->abReady252[0] = 1;
@@ -1780,7 +1780,7 @@ void Tact_KillUnit(const KillCtx *pCtx, const KillHooks *pHooks, Soldier *pUnit)
             pUnit->abReady252[n] = (u8)pTpl[9 + n];
         }
 
-        pUnit->bUnk422 = 0;
+        pUnit->bPsiActive = 0;
         Unit_PlaceOnMap(pUnit, pUnit->pCell->nX, pUnit->pCell->nY, pUnit->pCell->nZ,
                         pCtx->pCombat->pfnLookup, pCtx->pCombat->pUser);
         return;

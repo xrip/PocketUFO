@@ -1270,7 +1270,7 @@ static void TestMeleeNeighbourHandoff(void)
 
     TickReset(aScript, 3);   /* pick, accept roll, rand(2) for the mode */
     g_nEnemy = 2;
-    g_aEnemy[1].bUnk422 = 1;
+    g_aEnemy[1].bPsiActive = 1;
     g_aEnemy[1].uTu = 20;
     Tact_EnemyAiTick(&g_Tact, &g_Tick);
 

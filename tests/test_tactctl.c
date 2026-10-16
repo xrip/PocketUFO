@@ -1198,7 +1198,7 @@ static void TestDeployHwpsSpawn(void)
     CheckEqI32(pUnit->uStunOrArmor, 70, "stun comes from stat 9");
     CheckEqI32(pUnit->bMorale, 100, "morale is fixed at 100");
     CheckEqI32(pUnit->bUnk248, 40, "bUnk248 is 40 for objects 31 to 33");
-    CheckEqI32(pUnit->bUnk422, 0, "bUnk422 is cleared");
+    CheckEqI32(pUnit->bPsiActive, 0, "bPsiActive is cleared");
     CheckEqI32(pUnit->bStatus, 0, "status is cleared");
 
     Check(pUnit->pHandL == pUnit->pHandR, "both hands hold the same item");
@@ -1536,7 +1536,7 @@ static void TestSpawnAliensTerrainBranch(void)
           "sectoid auStat[7] rolled too");
     CheckEqI32(s_apEnemyUnits[16]->auStat[6], 0, "muton auStat[6] from the record");
     CheckEqI32(s_apEnemyUnits[16]->auStat[7], 0, "muton auStat[7] from the record");
-    CheckEqI32(s_apEnemyUnits[16]->bUnk422, 0, "muton keeps bUnk422 clear");
+    CheckEqI32(s_apEnemyUnits[16]->bPsiActive, 0, "muton keeps bPsiActive clear");
 
     /* Stealth budget (120 - 20) * 20 * 0.01 = 20, which equals the primary count, so it drops to
      * 19: the 20th enemy is not flagged, and neither is either secondary unit. */
@@ -1563,11 +1563,11 @@ static void TestSpawnAliensTerrainBranch(void)
     Check(s_apEnemyUnits[4]->apBelt[1] == NULL, "belt slot 1 held only four items");
     Check(s_apEnemyUnits[4]->apBelt[0] != NULL, "enemy 4 falls through to belt slot 0");
 
-    /* bUnk422 survives only for rank 4 or 8 outside the Urban and XCom base missions. Enemy 6 is a
+    /* bPsiActive survives only for rank 4 or 8 outside the Urban and XCom base missions. Enemy 6 is a
      * sectoid, the one race whose record sets it, so this is also the nStat6 == -1 case surviving. */
-    CheckEqI32(s_apEnemyUnits[6]->bUnk422, 1, "rank 4 keeps bUnk422");
-    CheckEqI32(s_apEnemyUnits[7]->bUnk422, 1, "rank 8 keeps bUnk422");
-    CheckEqI32(s_apEnemyUnits[0]->bUnk422, 0, "rank 3 loses bUnk422");
+    CheckEqI32(s_apEnemyUnits[6]->bPsiActive, 1, "rank 4 keeps bPsiActive");
+    CheckEqI32(s_apEnemyUnits[7]->bPsiActive, 1, "rank 8 keeps bPsiActive");
+    CheckEqI32(s_apEnemyUnits[0]->bPsiActive, 0, "rank 3 loses bPsiActive");
 
     /* The tail kills every still-flagged enemy and restarts the scan after each one. */
     CheckEqI32(s_nKills, 19, "19 flagged enemies killed");

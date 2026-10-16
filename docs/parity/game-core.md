@@ -772,14 +772,14 @@ sizes close to **exactly 740 bytes**:
 | bFacing, uTu, uStunOrArmor, uHp, bMorale | 8 |
 | cell nX/nY/nZ, nAnimPose, pad, nDrawOffX, nDrawOffY, bStatus, uTuSpent, nMultiTarget | 12 |
 | multi-target block | 120 |
-| bUnk148, bUnk149, nLook, bFemale, nUnitType | 11 |
+| bUnk148, bPsiAssigned, nLook, bFemale, nUnitType | 11 |
 | auStat[10] | 20 |
 | nKind, bUnk183, uMissions, szName[40], bRankType | 45 |
 | auStatBase[9] | 18 |
 | bKneelOrPrimed, bUnk247, bUnk248, uKills, abReady252[5], bUnk961 | 11 |
 | auUnk962[25], abUnk1012[25] | 75 |
 | inventory block | 150 |
-| bHumanoidInv, uInvBurden, bUnk422, nArmorPoints, nClass, nUnk436, nUnk440, bUnk423 | 21 |
+| bHumanoidInv, uInvBurden, bPsiActive, nArmorPoints, nClass, nUnk436, nUnk440, nPsiTrainDays | 21 |
 | spotted block | 244 |
 | **total** | **740** |
 
@@ -3393,7 +3393,7 @@ is a byte array, so the gate byte is at in-memory research-record offset **4**.
 `Tact_OpenLeftHandMenu @ 0x17030` and its mirror `Tact_OpenRightHandMenu @ 0x17148`
 confirm the gate and add two facts:
 
-- The gate also requires `uSortKey != 24 || Soldier.bUnk422 != 0`. Sort key 24 is a
+- The gate also requires `uSortKey != 24 || Soldier.bPsiActive != 0`. Sort key 24 is a
   weapon only units carrying that flag may use.
 - After the gate it calls `Ui_FillActionCosts @ 0x26104`, then scans the twelve mode
   slots that `Unit_SelectBestFireMode` writes - `nTrajFront0[1088 + 4*k]` (the
@@ -4493,7 +4493,7 @@ into the unit, then load stats from the 32-byte-per-type template at
 | `bUnk248` | byte 16 = 15 |
 | `abReady252[0..4]` | bytes 18,20,22,24,26 = 5,5,20,5,5 |
 
-Then `Unit_ResetBattleState`, `bUnk422 = 0`, and `Unit_PlaceOnMap` at the cell saved
+Then `Unit_ResetBattleState`, `bPsiActive = 0`, and `Unit_PlaceOnMap` at the cell saved
 in `Map.apMultiTargets[0]`.
 
 **Death path.** `bFlags |= 0x20`, `Unit_UpdateAnimPose`, `Tact_RemoveUnitFromSideLists`.
@@ -7248,7 +7248,7 @@ value is built in `IsoDrawCtx.szText` (itoa into szText[50], copy down, append "
 the second itoa). Rows: TU `uTu/auStat[0]` (45), stun `uStunOrArmor/auStat[9]` (69), HP `uHp/auStat[1]`
 (93), `bKneelOrPrimed` alone (117) plus one 12x6 block per point at y 133, `auStat[2]` (141), morale
 `bMorale "/100"` (165) with a fixed 200-wide bar and a `2*(99-morale)` remainder, `auStat[4]` (189),
-`auStat[5]` (213), `auStat[8]` (237), and `auStat[7]` / `auStat[6]` (261/285) only while `bUnk422`.
+`auStat[5]` (213), `auStat[8]` (237), and `auStat[7]` / `auStat[6]` (261/285) only while `bPsiActive`.
 The current/max bars are `max>>1` wide with a remainder `(max>>1) - (cur>>1) - 2` at `(cur>>1)+11` â€”
 negative at full value, which the clip drops.
 
@@ -7924,7 +7924,7 @@ Both are in `docs/parity/bugs.tsv`. A C port cannot read uninitialised memory, s
 - Unit stats come from 32-byte records at `unk_A8F38 + 32 * nUnitType - 288`, names from 40-byte records at
   `0xB1140 + 40 * nUnitType`. Three of the stats get `+ rand(0x14) - 10`, so a jitter of -10..+9.
 - A `-1` in record word 6 means "roll it": `auStat[6] = rand(0x32) + 30` and `auStat[7] = rand(0x32) + 30`
-  with `bUnk422 = 1`; otherwise both are taken from the record and `bUnk422 = 0`.
+  with `bPsiActive = 1`; otherwise both are taken from the record and `bPsiActive = 0`.
 - `bUnk435` is set on up to `v78` non-large aliens, excluding unit types 16 and 17. `v78` is
   `(Map_bUnk15115 - 20) * primary * 0.01` â€” the double pair `0x3F847AE1 : 0x47AE147B` is 0.01, so the
   divisor is 100 â€” and it is reduced by one when it would equal the whole enemy count.
@@ -8812,7 +8812,7 @@ directly instead of through hooks. Ported in `src/pufo/game/pufo_geoscape.c`, un
   The needed-pass call passes `a2 = -1`, and the original then gates on `aSmapSites[-1]` = 0x161D46
   — the buy/sell screen scratch below the site array, zero in the image and written only by
   screens — so at load time the term is 0. The port models a negative index as a zero gate.
-- **`Base_CountPsiSoldiers`** counts soldiers with `nKind` (0xB6) == base and `bUnk149` (0x95) != 0
+- **`Base_CountPsiSoldiers`** counts soldiers with `nKind` (0xB6) == base and `bPsiAssigned` (0x95) != 0
   — the psi marker. Budget of `Base_UpdatePsiLabNeeded` (divisor 10).
 
 `LoadGame` also restores the strateg seed counter from the smap chunk (`nParam3` -> `pnSeed`, the
@@ -14172,7 +14172,7 @@ roster is walked in order and the first unit passing every gate acts:
 
 ### The neighbour-melee hand-off (0x4d660..0x4d734)
 
-Another enemy is searched for with `bUnk422 != 0`, `!= self` and `uTu > 15`. Found:
+Another enemy is searched for with `bPsiActive != 0`, `!= self` and `uTu > 15`. Found:
 `Tact_SelectUnit(that unit)`, `Map.pSelWeapon = &TactItem_156910`, mode 4 or 5 by `rand(2)`,
 `Map.nBurstShots = 0`, the three melee-cell globals set to the multi-target's cell, a
 command-18 enqueue against that cell's occupant, then `Map_pSelUnit->uTu >>= 1`
@@ -16065,3 +16065,130 @@ abResearchZero write turns 1 red, raising the nStyle clamp to 22 turns 2 red, us
 visible row turns 10 red, skipping the race-name overwrite turns 9 red, not freeing the entry pad on
 teardown turns 1 red, building the category panel with the clamped count turns 4 red, and labelling the
 selector rows instead of clearing them turns 1 red.
+## Unit 90 -- PsiScreen_BuildPanels @ 0x716d4 (2,940 B) + PsiScreen_SelectListed @ 0x71298 (848 B) + PsiScreen_Init @ 0x72b40 (332 B) + PsiScreen_ApplyAssignments @ 0x72250 (328 B)
+
+The psi screen (geoscape screen 17): four parallel per-base columns, the psi-lab assignment toggle, and
+the apply pass that writes the toggle back into the soldier records.
+
+### Four parallel per-base columns
+
+Each column is its own UiPanel and each is an array of eight entries indexed by base:
+
+    unk_15EED0      -> g_apPsiNamePanel    the soldier name,        nPosX 10,  nUnk7052   5, nViewW 230
+    byte_15EE84+4   -> g_apPsiStatPanel    "auStat[6]\auStat[7]",  nPosX 154, nUnk7052 175, nViewW 10
+    byte_15EE84+36  -> g_apPsiDeltaPanel   the training delta,      nPosX 184, nUnk7052 209, nViewW 10
+    unk_15EE58      -> g_apPsiCheckPanel   the assignment box,      nPosX 215, nUnk7052 210, nViewW 10
+
+The middle two are not separate globals in the image: they are the dword runs at byte_15EE84+4 and +36,
+and the same 72-byte block holds the row-selected flag at +0 (set by Init at 0x72C70, cleared by the
+screen-17 branch of Geoscape_OnPointerUp at 0x890C4) and a scratch row index at +68 that SelectListed
+uses to hand one row to its four SetLineMeta calls. The port keeps four named arrays plus the two
+scalars.
+
+All four share nStyle 14, nFont 16, nPosY and nUnk7056 of 70, SetBytes0to2(B4,B4,B4) and
+SetBytes6to11(F0,F0,F0,14,14,14). Only the name column gets SetBytes3to5(32,32,FA) at 0x718D4,
+bFlag7073 = 1 at 0x718C0 and bUnk7088 = 0x96 at 0x718F4; only the three narrow columns get nUnk7076 = 1
+(0x719CC, 0x71AA0, 0x71B68). The name column is the only one with a click handler (0x7183C).
+
+### What the rows carry
+
+anLineAux is the row payload and each column uses it for something different. The name column stores
+the SOLDIER INDEX into Map.apSoldiers (0x71C6C), not a base-relative slot. The checkbox column stores 1
+when the soldier is assigned to this base's psi lab. The delta column stores the training total. The
+stat column stores nothing. PsiScreen_ApplyAssignments is what turns the checkbox column back into game
+state, and the delta column is what it feeds into Soldier.nPsiTrainDays.
+
+### BuildPanels is a build/release toggle, like Ufopaedia_Open
+
+byte_15EEF0 (now g_bPsiPanelOpen) clear means build: it is set at 0x716F0 and never cleared by the build
+arm. Set means release: nGeoscapeScreen goes to 0 at 0x7212C, the flag clears at 0x72134, and the screen
+pad, the four panels of every base and the two scroll controls at 0x15EE7C / 0x15EE80 are freed. The
+same flag is what Base_HitTestFacilityStrip @ 0x671b0 and the geoscape pointer handlers test to disable
+the base-tab strip while the screen is open.
+
+Building runs three passes. 0x71734 counts each base's soldiers (Soldier.nKind == base). 0x7178C builds
+four panels per base, each constructed with that base's own count. 0x71BA8 fills the rows and rezeroes
+the same count array as the row cursor (0x71BDC), so rows are packed from 0 in Map.apSoldiers order and
+a base's panel holds exactly its own roster.
+
+### The row colours
+
+UiPanel_SetLineMeta's first triple marks the row: (240, 120, 240) assigned, (240, 240, 240) free; the
+second triple is (10, 10, 10) either way. The original passes the third byte of the first triple as -16,
+which is 240 once it is stored as a byte. BuildPanels applies the assigned colour only, and only on rows
+whose soldier is assigned (0x71D1C..0x71D9C) -- an unassigned row gets no meta at all. SelectListed
+applies whichever colour the row is moving to, on all four columns (0x7137C..0x713FC or
+0x714D4..0x71554).
+
+### Original behaviour found
+
+- Assigning a soldier at the psi screen is what makes them psi-capable. 0x71D00 stores 1 into
+  Soldier.bPsiActive (+0x1A6) for every row whose bPsiAssigned is set, before the stat columns and the
+  training countdown read that byte. A soldier assigned who had no psi powers has them from the first
+  build.
+- The two stat columns are gated on bPsiActive alone, not on the assignment (0x71E2C): a psi-capable
+  soldier shows "auStat[6]\auStat[7]" and the delta even with their box clear. Only a soldier with no
+  psi powers gets the cleared pair at 0x71FDC / 0x72008.
+- The training countdown, 0x72034..0x720B0. Assigned and psi-capable with auStat[6] < auStat[7] arms
+  30 * auStat[7] / 100 days. Already at or above auStat[7] still arms exactly ONE day (0x7209C), so
+  auStat[6] keeps climbing past auStat[7]. Either flag clear arms nothing. Geoscape_TickBases spends one
+  day per tick raising auStat[6] by 1, which is exactly the gain the "+N" column advertises.
+- The checkbox rows are cleared, not labelled. Both label sources, unk_EEE8A and unk_EEF57, sit above
+  0xAC800 inside .data's zero-filled span, so each copy writes a single NUL; the state lives in
+  anLineAux.
+- The assigned counter compares anLineAux against 1 exactly (0x71314), so a row holding any other value
+  is not counted against the capacity gate.
+- ApplyAssignments closes the screen. Its tail call at 0x72394 reaches BuildPanels while
+  g_bPsiPanelOpen is still set, so it takes the release arm: pressing Apply commits and dismisses.
+- Hex-Rays renders PsiScreen_Init as returning an uninitialised value. 0x72C74 / 0x72C78 is
+  `POP {R4-R7,LR}` followed by `B PsiScreen_BuildPanels` -- a real tail call with no return value.
+
+### 1 original bug found, reproduced and pinned
+
+0x72370. Base_UpdatePsiLabNeeded takes its budget as its third argument, and its two other call sites
+load Base_CountPsiSoldiers into R2 first (Geoscape_CloseUI 0x8BA4C, Game_StartNew 0x953CC). This call
+site never writes R2: the last write is the inner loop's `ADD R2, R2, #1` at 0x7235C, so the budget is
+the loop's exit value -- the base's whole soldier row count, or 0 when the panel is empty. A base with
+twelve soldiers and one assigned gets a psi-lab budget of 12/10+1 = 2 instead of 1/10+1 = 1, and marks a
+second lab cell as needed. Reproduced; ledger row added.
+
+### Deviations, recorded
+
+- The original stores UiPanel_ctor's result into the global and writes through it without testing
+  (0x717F8 and the three that follow); the port guards all four.
+- Both roster passes dereference Map.apSoldiers[i] with no null test, and 0x722DC indexes it with the
+  row's aux value unguarded; the port skips nulls and bounds the index.
+- The stat and delta strings are built with j_itoa plus unbounded strcat into a 104-byte stack buffer
+  and copied into 50-byte rows with strcpy; the port bounds both.
+- 0x712EC indexes anLineAux with the panel's nUnk3032 cursor unguarded; the port bounds it.
+- UiPanel_ctor clamps to 500 lines where the original does not, so the port bounds the row cursor.
+- SelectListed returns either a pointer to a stack copy of the (empty) label or &dword_1870B4, neither
+  of which any caller reads; the port returns a bool.
+
+### IDB
+
+- unk_15EED0 -> g_apPsiNamePanel, unk_15EE58 -> g_apPsiCheckPanel, unk_15EE78 -> g_pPsiScreenPad,
+  byte_15EE84 -> g_bPsiRowSel, byte_15EEF0 -> g_bPsiPanelOpen, unk_ABB08 -> aPsiDeltaFull ("+1"),
+  unk_186BA4 -> pGeoscapeCtlConfirm, unk_186BAC -> pGeoscapeCtlApply, and new symbols
+  g_pPsiScrollPrevCtl (0x15EE7C), g_pPsiScrollNextCtl (0x15EE80), g_apPsiStatPanel (0x15EE88),
+  g_apPsiDeltaPanel (0x15EEA8), g_nPsiScratchRow (0x15EEC8). 466 -> 476 renames on record.
+- The Soldier struct's three psi members renamed to match the port: bUnk149 -> bPsiAssigned (+0x95),
+  bUnk422 -> bPsiActive (+0x1A6), bUnk423 -> nPsiTrainDays (+0x1A7). The port's own copies follow.
+- Function comments at 0x716d4, 0x71298, 0x72250 and 0x72b40; line comments at 0x71C6C (the aux is the
+  apSoldiers index), 0x71D00 (assigning sets bPsiActive), 0x71F7C and 0x72090 (the 30% training total),
+  0x71F98 (the "+1" literal), 0x7209C (one day even at full energy), 0x72370 (the R2 residue), 0x71314
+  (the exact 1), 0x71334 (the capacity gate), 0x72C70 (the row-selected flag), 0xABAC8 (the two scroll
+  descriptors) and 0x15EE84 (the block layout).
+- One new ledger row (228), 90 ORIGINAL BUG markers unchanged: this unit reproduces its finding rather
+  than deviating from it.
+
+121 new checks in tests/test_baseui.c. Fourteen mutations confirm they are not self-satisfying: letting
+the counting pass ignore nKind turns 8 red, storing the row instead of the soldier index in the name
+aux turns 6 red, reading bPsiActive where the original reads bPsiAssigned turns 11 red, the reverse swap
+turns 3 red, 10% instead of 30% turns 4 red, dropping the one training day at full energy turns 1 red,
+not setting bPsiActive turns 5 red, using the free colour for an assigned row turns 4 red, dropping the
++1 from the capacity gate turns 5 red, counting any non-zero aux instead of 1 turns 2 red, a constant
+budget of 1 turns 1 red, swapping the apply branches turns 6 red, applying the two scroll descriptors in
+reverse turns 4 red, and skipping the scroll-control release turns 1 red. Two mutations were tried that
+the tests cannot see and are not counted: an equivalent rewrite of the capacity comparison
+(`cap < n+1` to `cap <= n`), and dropping the free() while still nulling the pad pointer.

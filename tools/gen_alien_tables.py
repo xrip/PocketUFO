@@ -153,7 +153,7 @@ def emit():
     print(' * which closes the extent at both ends. Field map, from ARM in Tact_SpawnAliens:')
     print(' *   +00 nTu      +02 nStat8   +04 nStat9   +06 nStat2   +08 nHp    +0A nStat3')
     print(' *   +0C nStat6   +0E nStat7   +10 nUnk248  +12..+1A nReady[5]      +1C nStat4  +1E nStat5')
-    print(' * nStat6 == -1 means "roll both": stat6 and stat7 become rand(50) + 30 each and bUnk422 is')
+    print(' * nStat6 == -1 means "roll both": stat6 and stat7 become rand(50) + 30 each and bPsiActive is')
     print(' * set to 1. nStat2, nStat3 and nHp each take a rand(20) - 10 jitter on top. */')
     print('const AlienUnitStatRec g_aAlienUnitStats[14] = {')
     print(stat_rows(stats))

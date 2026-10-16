@@ -764,7 +764,7 @@ static AiActPath EnemyAi_ActUnit(Soldier *pUnit, TactCtx272 *pTact, const EnemyA
         for (i = 0; i < nEnemyCount; ++i) {
             Soldier *pOther = pCtx->apEnemyUnits[i];
 
-            if (pOther->bUnk422 != 0 && pOther != pUnit && pOther->uTu > PUFO_ENEMYAI_TU_MIN) {
+            if (pOther->bPsiActive != 0 && pOther != pUnit && pOther->uTu > PUFO_ENEMYAI_TU_MIN) {
                 break;
             }
         }

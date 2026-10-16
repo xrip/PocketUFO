@@ -225,7 +225,7 @@ void Geoscape_InitUI(const GeoscapeInitEnv *pEnv, i32 nMode);
  *      two cargo adds, weapons 25/26 and ammo bytes 10/3.
  *  16. 0x95310: eight soldiers via Unit_CreateAndClassify(0), each then pinned to
  *      nUnitType 0 (bUnk248 from the byte table at 0xABED0, {0,30,45,60} read at 2*type,
- *      so 0 here), nKind 0, bUnk183/uMissions/uKills/bUnk422/bRankType/bUnk247 = 0.
+ *      so 0 here), nKind 0, bUnk183/uMissions/uKills/bPsiActive/bRankType/bUnk247 = 0.
  *  17. 0x953A4: per base, the five Base_Update*Needed passes with the same budgets the
  *      LoadGame port lifts (CalcOccupiedSpace + OutboundTransferSpace, CalcStorageUsed +
  *      ItemQtyAcrossBases, CountPsiSoldiers, CountActiveResearch, CountActiveManuf).

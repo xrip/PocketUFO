@@ -136,7 +136,7 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
     }
 
     if (!W(pDat, &pUnit->bUnk148, 1)) { return false; }
-    if (!W(pDat, &pUnit->bUnk149, 1)) { return false; }
+    if (!W(pDat, &pUnit->bPsiAssigned, 1)) { return false; }
     nLook = pUnit->nLook;
     if (!W(pDat, &nLook, 4)) { return false; }
     nFemale = pUnit->bFemale;
@@ -177,12 +177,12 @@ bool Save_WriteSoldier(DatFile *pDat, const Soldier *pUnit)
 
     if (!W(pDat, &pUnit->bHumanoidInv, 1)) { return false; }
     if (!W(pDat, &pUnit->uInvBurden, 2)) { return false; }
-    if (!W(pDat, &pUnit->bUnk422, 1)) { return false; }
+    if (!W(pDat, &pUnit->bPsiActive, 1)) { return false; }
     if (!W(pDat, &pUnit->nArmorPoints, 4)) { return false; }
     if (!W(pDat, &pUnit->nClass, 4)) { return false; }
     if (!W(pDat, &pUnit->nUnk436, 4)) { return false; }
     if (!W(pDat, &pUnit->nUnk440, 4)) { return false; }
-    if (!W(pDat, &pUnit->bUnk423, 1)) { return false; }
+    if (!W(pDat, &pUnit->nPsiTrainDays, 1)) { return false; }
 
     /* The non-tactical spotted block: a 244-byte zero fill. */
     {
@@ -238,7 +238,7 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
     if (!DatFile_Read(pDat, aSkip, 120)) { return false; }
 
     if (!DatFile_Read(pDat, &pUnit->bUnk148, 1)) { return false; }
-    if (!DatFile_Read(pDat, &pUnit->bUnk149, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bPsiAssigned, 1)) { return false; }
     if (!DatFile_Read(pDat, &nLook, 4)) { return false; }
     pUnit->nLook = nLook;
     if (!DatFile_Read(pDat, &nFemale, 4)) { return false; }
@@ -265,12 +265,12 @@ bool Save_ReadSoldier(DatFile *pDat, Soldier *pUnit)
 
     if (!DatFile_Read(pDat, &pUnit->bHumanoidInv, 1)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->uInvBurden, 2)) { return false; }
-    if (!DatFile_Read(pDat, &pUnit->bUnk422, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->bPsiActive, 1)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nArmorPoints, 4)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nClass, 4)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nUnk436, 4)) { return false; }
     if (!DatFile_Read(pDat, &pUnit->nUnk440, 4)) { return false; }
-    if (!DatFile_Read(pDat, &pUnit->bUnk423, 1)) { return false; }
+    if (!DatFile_Read(pDat, &pUnit->nPsiTrainDays, 1)) { return false; }
 
     /* 244-byte spotted block, discarded. */
     if (!DatFile_Read(pDat, aSkip, 244)) { return false; }

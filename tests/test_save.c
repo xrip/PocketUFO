@@ -79,7 +79,7 @@ static void FillSoldier(Soldier *pUnit)
     pUnit->uTuSpent = 0x0DEF;
     pUnit->nMultiTarget = 2;
     pUnit->bUnk148 = 1;
-    pUnit->bUnk149 = 1;
+    pUnit->bPsiAssigned = 1;
     pUnit->nLook = 0x11223344;
     pUnit->bFemale = 1;
     pUnit->nUnitType = 4;
@@ -106,12 +106,12 @@ static void FillSoldier(Soldier *pUnit)
     }
     pUnit->bHumanoidInv = 1;
     pUnit->uInvBurden = 0x0FED;
-    pUnit->bUnk422 = 7;
+    pUnit->bPsiActive = 7;
     pUnit->nArmorPoints = 0x0AABBCCD;
     pUnit->nClass = 0x01020304;
     pUnit->nUnk436 = 0x05060708;
     pUnit->nUnk440 = 0x090A0B0C;
-    pUnit->bUnk423 = 3;
+    pUnit->nPsiTrainDays = 3;
     pUnit->bInTact = 1;
 }
 

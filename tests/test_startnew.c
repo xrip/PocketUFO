@@ -559,7 +559,7 @@ static void TestStartNew(void)
             Soldier *pSol = apSoldiers[i];
             if (pSol == NULL || pSol->nUnitType != 0 || pSol->bUnk248 != 0 ||
                 pSol->nKind != 0 || pSol->bUnk183 != 0 || pSol->uMissions != 0 ||
-                pSol->uKills != 0 || pSol->bUnk422 != 0 || pSol->bRankType != 0 ||
+                pSol->uKills != 0 || pSol->bPsiActive != 0 || pSol->bRankType != 0 ||
                 pSol->bUnk247 != 0) {
                 bAll = false;
             }

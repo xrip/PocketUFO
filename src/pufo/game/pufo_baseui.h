@@ -5414,4 +5414,140 @@ void Ufopaedia_Open(UfopaediaEnv *pEnv);
 extern const u8  g_aUfopaediaCatTopics[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH];
 extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];
 
+/* ------------------------------------------------- the psi screen (geoscape screen 17)
+ *
+ * Evidence: PsiScreen_Init @ 0x72b40, PsiScreen_BuildPanels @ 0x716d4,
+ *           PsiScreen_SelectListed @ 0x71298, PsiScreen_ApplyAssignments @ 0x72250.
+ *
+ * ## Four parallel per-base columns
+ *
+ * The screen lists the soldiers stationed at the selected base (byte_1870F4, read SIGNED) in four
+ * columns that scroll together through the already ported PsiScreen_PanelPrev/Next. Each column is
+ * its own UiPanel and each column is an array of PUFO_FAC_BASE_COUNT entries indexed by base:
+ *
+ *   unk_15EED0 @ 0x15EED0   the soldier name,   nPosX 10, nUnk7052   5, nViewW 230
+ *   unk_15EE88 @ 0x15EE88   "auStat[6]\auStat[7]", nPosX 154, nUnk7052 175, nViewW 10
+ *   unk_15EEA8 @ 0x15EEA8   the training delta, nPosX 184, nUnk7052 209, nViewW 10
+ *   unk_15EE58 @ 0x15EE58   the assignment box, nPosX 215, nUnk7052 210, nViewW 10
+ *
+ * The middle two are not separate globals in the image: they are the dword runs at byte_15EE84+4 and
+ * byte_15EE84+36. That same 72-byte block also holds the row-selected flag at +0 (byte_15EE84[0], set
+ * by PsiScreen_Init at 0x72C70 and cleared by the screen-17 branch of Geoscape_OnPointerUp at
+ * 0x890C4) and a scratch row index at +68 that PsiScreen_SelectListed uses to hand one row to its
+ * four SetLineMeta calls. The port keeps four named arrays plus the two scalars.
+ *
+ * All four share nStyle 14 (14 visible rows), nFont 16, nPosY / nUnk7056 of 70 and the same
+ * SetBytes0to2(B4,B4,B4) and SetBytes6to11(F0,F0,F0,14,14,14). Only the name column gets
+ * SetBytes3to5(32,32,FA), bFlag7073 = 1 and bUnk7088 = 0x96 (0x718C0..0x718F4); only the three
+ * narrow columns get nUnk7076 = 1 (0x719CC, 0x71AA0, 0x71B68). The name column is also the only one
+ * with a click handler (0x7183C, PsiScreen_SelectListed).
+ *
+ * ## What the rows carry
+ *
+ * anLineAux is the row payload and each column uses it for something different:
+ *   name    the SOLDIER INDEX into Map.apSoldiers (0x71C6C), not a base-relative slot
+ *   check   1 when the soldier is assigned to this base's psi lab, 0 otherwise
+ *   delta   the training total: 30 * auStat[7] / 100, or 1 when auStat[6] is already >= auStat[7]
+ *   stat    unused
+ *
+ * PsiScreen_ApplyAssignments is what turns the check column back into game state, and the delta
+ * column is what it feeds into Soldier.nPsiTrainDays @ 0x1A7 (read with LDRSB at 0x7230C).
+ *
+ * ## The row colours
+ *
+ * UiPanel_SetLineMeta's first triple marks the row: (240, 120, 240) when assigned, (240, 240, 240)
+ * when not; the second triple is (10, 10, 10) either way. The original passes the third byte of the
+ * first triple as -16, which is 240 once it is stored as a byte. BuildPanels applies the assigned
+ * colour only, on the rows it fills (0x71D1C..0x71D9C); SelectListed applies whichever colour the
+ * row is moving to, on all four columns (0x7137C..0x713FC or 0x714D4..0x71554).
+ *
+ * ## BuildPanels is a build/teardown toggle, like Ufopaedia_Open
+ *
+ * byte_15EEF0 clear means build: it is set at 0x716F0 and never cleared by the build arm. Set means
+ * release: nGeoscapeScreen @ 0x186BC4 goes to 0 at 0x7212C, the flag clears at 0x72134, and the
+ * screen pad, the four panels of every base and the two scroll controls are freed. The same flag is
+ * what Base_HitTestFacilityStrip @ 0x671b0 and the geoscape pointer handlers test to disable the
+ * base-tab strip while the screen is open.
+ *
+ * Building runs two passes over the roster. The counting pass (0x71734) sizes each base's four
+ * panels to the number of soldiers whose Soldier.nKind equals that base; the filling pass (0x71BD8)
+ * rezeroes the same array as a row counter and writes the rows. So a base's panel holds exactly its
+ * own roster, and the row order is Map.apSoldiers order.
+ *
+ * ## The third argument at 0x72370
+ *
+ * Base_UpdatePsiLabNeeded takes its budget as its third argument, and its two other call sites load
+ * Base_CountPsiSoldiers into R2 first (Geoscape_CloseUI 0x8BA4C, Game_StartNew 0x953CC). This call
+ * site never writes R2: the last write is the inner loop's `ADD R2, R2, #1` at 0x7235C, so the
+ * budget is the loop's exit value -- the base's whole row count, or 0 when the panel is empty. The
+ * port reproduces the residue and records it in docs/parity/bugs.tsv. */
+#define PUFO_PSI_PAD_NAME          "Psi"  /* aPsi @ 0xABB0C, loaded at 0x72B74 */
+#define PUFO_PSI_PAD_MODE           19    /* the palette slot PadImage_Load takes */
+#define PUFO_PSI_PANEL_STYLE        14    /* nStyle: 14 visible rows */
+#define PUFO_PSI_PANEL_FONT         16
+#define PUFO_PSI_ROW_Y              70    /* nPosY and nUnk7056 on all four columns */
+#define PUFO_PSI_NAME_X             10
+#define PUFO_PSI_STAT_X            154
+#define PUFO_PSI_DELTA_X           184
+#define PUFO_PSI_CHECK_X           215
+#define PUFO_PSI_NAME_VIEWW        230
+#define PUFO_PSI_NARROW_VIEWW       10
+#define PUFO_PSI_STAT_SEP         "\\"    /* asc_AB9F0 @ 0xAB9F0 */
+#define PUFO_PSI_DELTA_PREFIX     "+"     /* asc_AAF90 @ 0xAAF90 */
+#define PUFO_PSI_DELTA_FULL       "+1"    /* unk_ABB08 @ 0xABB08 */
+#define PUFO_PSI_TRAIN_PCT          30    /* 0x71F7C and 0x72090: 30% of auStat[7] */
+#define PUFO_PSI_ROW_ASSIGNED_1    120    /* the assigned row's middle colour */
+#define PUFO_PSI_ROW_FREE_1        240    /* and the unassigned row's */
+#define PUFO_PSI_ROW_EDGE          240    /* -16 as the original passes it, stored as a byte */
+#define PUFO_PSI_ROW_SECOND        10     /* the second triple, both colours */
+#define PUFO_PSI_SCROLL_CTLS        2
+
+typedef struct PsiScreenEnv {
+    UiPanel   *apNamePanel[PUFO_FAC_BASE_COUNT];   /* unk_15EED0 @ 0x15EED0 */
+    UiPanel   *apStatPanel[PUFO_FAC_BASE_COUNT];   /* unk_15EE88 @ 0x15EE88 */
+    UiPanel   *apDeltaPanel[PUFO_FAC_BASE_COUNT];  /* unk_15EEA8 @ 0x15EEA8 */
+    UiPanel   *apCheckPanel[PUFO_FAC_BASE_COUNT];  /* unk_15EE58 @ 0x15EE58 */
+    PadImage  *pScreenPad;                         /* unk_15EE78 */
+    UiControl *apScrollCtl[PUFO_PSI_SCROLL_CTLS];  /* 0x15EE7C prev, 0x15EE80 next */
+    u8        *pbBuilt;                            /* byte_15EEF0 */
+    u8        *pbRowSel;                           /* byte_15EE84[0] */
+    i32       *pnScratchRow;                       /* byte_15EE84[68] */
+    i8        *pnBaseIdx;                          /* byte_1870F4, read SIGNED */
+    const i8  *pnBaseCount;                        /* nBaseCount @ 0x159D80, read SIGNED */
+    u8        *abFacilityGrid;                     /* abFacilityGrid @ 0x159768 */
+    Soldier  **apSoldiers;                         /* Map.apSoldiers @ 0x114B50 */
+    i32        nSoldierCount;                      /* nSoldierCount @ 0x115350 */
+    i32       *pnActionFail;                       /* dwActionFail @ 0x1870C8 */
+    i32       *pnResidue;                          /* dword_1870B4[0], the shortfall reason */
+    i32       *pnGeoscapeScreen;                   /* nGeoscapeScreen @ 0x186BC4 */
+    UiControl *pCtlOk;                             /* unk_186BA4, x 1 y 300 */
+    UiControl *pCtlApply;                          /* unk_186BAC, x 120 y 300 */
+    void   (*pfnOkClick)(void);                    /* PsiScreen_OnOk @ 0x716a8 */
+    void   (*pfnApplyClick)(void);                 /* PsiScreen_ApplyAssignments @ 0x72250 */
+    void   (*pfnSelClick)(void);                   /* PsiScreen_SelectListed @ 0x71298 */
+    void   (*pfnScrollPrev)(void);                 /* PsiScreen_PanelPrev @ 0x715e8, into 0x15EE7C */
+    void   (*pfnScrollNext)(void);                 /* PsiScreen_PanelNext @ 0x71648, into 0x15EE80 */
+    bool   (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1,
+                          const char *psz2, void *pUser);
+    void    *pPadUser;
+} PsiScreenEnv;
+
+/* stru_ABAC8 @ 0xABAC8, the two scroll buttons PsiScreen_Init sets up. */
+extern const UiControlDesc g_aPsiScrollDesc[PUFO_PSI_SCROLL_CTLS];
+
+/* 0x716d4. Builds the four columns when byte_15EEF0 is clear, releases them when it is set. */
+void PsiScreen_BuildPanels(PsiScreenEnv *pEnv);
+
+/* 0x71298. Toggles the selected row's psi-lab assignment. False when the base has no free psi-lab
+ * capacity for one more soldier; that path sets dwActionFail and clears dword_1870B4[0]. */
+bool PsiScreen_SelectListed(PsiScreenEnv *pEnv);
+
+/* 0x72250. Writes the check column into Soldier.bPsiAssigned / nPsiTrainDays per base, refreshes
+ * each base's psi-lab needed flag, then rebuilds the panels. */
+void PsiScreen_ApplyAssignments(PsiScreenEnv *pEnv);
+
+/* 0x72b40. The screen's bring-up: the "Psi" pad, the OK and Apply buttons, the two scroll controls,
+ * then the build arm of PsiScreen_BuildPanels. */
+void PsiScreen_Init(PsiScreenEnv *pEnv);
+
 #endif /* PUFO_BASEUI_H */

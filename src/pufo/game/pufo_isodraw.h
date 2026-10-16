@@ -625,7 +625,7 @@ typedef struct TactCmdPadEnv {
  *   117 bKneelOrPrimed alone, plus one 12x6 block per point at y 133
  *   141 auStat[2]                  165 morale as bMorale "/100", bar fixed 200 wide
  *   189 auStat[4]                  213 auStat[5]      237 auStat[8]
- *   261/285 auStat[7] / auStat[6], only when bUnk422
+ *   261/285 auStat[7] / auStat[6], only when bPsiActive
  * The "remaining" bars are (max>>1) - (cur>>1) - 2 wide at (cur>>1)+11 — negative when the unit is
  * at full value, which the bounds check simply drops.
  *

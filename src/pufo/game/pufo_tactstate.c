@@ -1506,7 +1506,7 @@ static void Fall_ChryssalidTransform(TactState *pState, const FallActionCtx *pCt
         }
     }
 
-    pVictim->bUnk422 = 0;
+    pVictim->bPsiActive = 0;
     /* The cell is saved first because Unit_ResetBattleState clears pCell (0x498E0).
      * The original then places from the saved cell (0x53268), not from pCell. */
     pState->pStepFromCell = pVictim->pCell;
@@ -1514,7 +1514,7 @@ static void Fall_ChryssalidTransform(TactState *pState, const FallActionCtx *pCt
                           pVictim->auStat, PUFO_UNIT_STAT_COUNT);
     Unit_PlaceOnMap(pVictim, pState->pStepFromCell->nX, pState->pStepFromCell->nY,
                     pState->pStepFromCell->nZ, pCtx->pfnLookup, pCtx->pUser);
-    pActor->bUnk422 = 0;
+    pActor->bPsiActive = 0;
     pCtx->apEnemyUnits[(i32)(*pCtx->pnEnemyCount)++] = pVictim;
 }
 

@@ -681,7 +681,7 @@ i32 Game_StartNew(const StartNewEnv *pEnv)
         pSol->bUnk183 = 0;
         pSol->uMissions = 0;
         pSol->uKills = 0;
-        pSol->bUnk422 = 0;
+        pSol->bPsiActive = 0;
         pSol->bRankType = 0;
         pSol->bUnk247 = 0;
     }

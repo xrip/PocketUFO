@@ -237,6 +237,9 @@ void ManufScreen_PanelNext(UiPanel *const apPanels[4])
     ScrollPanelsNext(apPanels, 4); /* 0x6DD9C, 0x6DDAC, 0x6DDBC, 0x6DDCC */
 }
 
+/* PsiScreen_PanelPrev @ 0x715e8. The header's evidence comment cites it across a line break, which
+ * coverage.py's `@ 0x...` pattern cannot follow, so the entry address was never credited even though
+ * the handler is here. Cited on one line now. */
 void PsiScreen_PanelPrev(UiPanel *const apPanels[4])
 {
     ScrollPanelsPrev(apPanels, 4); /* 0x715F8, 0x71610, 0x71628, 0x71640 */
@@ -10950,4 +10953,383 @@ void Ufopaedia_Open(UfopaediaEnv *pEnv)
      * live entry's PadImage, which every Ufopaedia_RefreshEntry allocates. Closing the ufopaedia after
      * any entry has been shown leaks that pad. The port releases it. */
     CloseFreePad(pEnv->ppPad);
+}
+
+/* ------------------------------------------------- the psi screen (geoscape screen 17) */
+
+/* stru_ABAC8 @ 0xABAC8: the two scroll buttons PsiScreen_Init hands to UiControl_Setup at 0x72C54. */
+const UiControlDesc g_aPsiScrollDesc[PUFO_PSI_SCROLL_CTLS] = {
+    { 0x000A, 0x000A, "up",   "sup",   "", 0 }, /* 0xABAC8 */
+    { 0x000A, 0x0022, "down", "sdown", "", 0 }  /* 0xABAE8 */
+};
+
+static UiPanel *PsiNewPanel(UiPanel **ppSlot, i32 nLineCount)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel)); /* operator new(0x1BB4), 0x717D0 */
+
+    if (pPanel == NULL) {
+        return NULL; /* deviation: the original stores the null ctor result and writes through it */
+    }
+    if (!UiPanel_ctor(pPanel, nLineCount)) {
+        free(pPanel);
+        return NULL;
+    }
+    if (ppSlot != NULL) {
+        *ppSlot = pPanel;
+    }
+    return pPanel;
+}
+
+static void PsiFreePanel(UiPanel **ppSlot)
+{
+    if (*ppSlot != NULL) {
+        UiPanel_FreeLines(*ppSlot);
+        free(*ppSlot);
+        *ppSlot = NULL;
+    }
+}
+
+/* The style every column gets: nStyle 14 and nFont 16 (0x7181C/0x71828, 0x71934/0x71940,
+ * 0x71A08/0x71A14, 0x71AE0/0x71AEC), nPosY and nUnk7056 of 70, and the same two byte triples
+ * (0x71884/0x718A8, 0x71988/0x719AC, 0x71A5C/0x71A80, 0x71B34/0x71B54). */
+static void PsiInitPanelCommon(UiPanel *pPanel)
+{
+    pPanel->nStyle   = PUFO_PSI_PANEL_STYLE;
+    pPanel->nFont    = PUFO_PSI_PANEL_FONT;
+    pPanel->nPosY    = PUFO_PSI_ROW_Y;
+    pPanel->nUnk7056 = PUFO_PSI_ROW_Y;
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+}
+
+/* One row's colour across all four columns. bMid is 120 for an assigned row and 240 for a free one;
+ * the original passes the third byte of the first triple as -16, which is 240 once stored. */
+static void PsiSetRowMeta(const PsiScreenEnv *pEnv, i32 nBase, i32 nRow, u8 bMid)
+{
+    UiPanel *const apPanels[4] = {
+        pEnv->apNamePanel[nBase], pEnv->apStatPanel[nBase],
+        pEnv->apDeltaPanel[nBase], pEnv->apCheckPanel[nBase]
+    };
+    i32 i;
+
+    for (i = 0; i < 4; ++i) {
+        if (apPanels[i] != NULL) {
+            UiPanel_SetLineMeta(apPanels[i], nRow, PUFO_PSI_ROW_EDGE, bMid, PUFO_PSI_ROW_EDGE,
+                                PUFO_PSI_ROW_SECOND, PUFO_PSI_ROW_SECOND, PUFO_PSI_ROW_SECOND);
+        }
+    }
+}
+
+static Soldier *PsiSoldierAt(const PsiScreenEnv *pEnv, i32 nIdx)
+{
+    if (nIdx < 0 || nIdx >= pEnv->nSoldierCount) {
+        return NULL; /* deviation: 0x722DC indexes apSoldiers with the aux value unguarded */
+    }
+    return pEnv->apSoldiers[nIdx];
+}
+
+/* PsiScreen_BuildPanels @ 0x716d4. Build when byte_15EEF0 is clear, release when it is set -- the
+ * same one-flag shape as Ufopaedia_Open, and the build arm never clears the flag either. */
+void PsiScreen_BuildPanels(PsiScreenEnv *pEnv)
+{
+    i32 nBaseCount = (i32)*pEnv->pnBaseCount; /* LDRSB [grid,#0x618], read SIGNED */
+    i32 anRowCount[PUFO_FAC_BASE_COUNT];
+    i32 b, s;
+
+    if (*pEnv->pbBuilt != 0) {
+        *pEnv->pnGeoscapeScreen = 0;              /* 0x7212C: the geoscape screen id goes back to 0 */
+        *pEnv->pbBuilt = 0;                       /* 0x72134 */
+        if (pEnv->pScreenPad != NULL) {
+            PadImage_FreeData(pEnv->pScreenPad);  /* 0x72148 */
+            free(pEnv->pScreenPad);               /* 0x72150 */
+            pEnv->pScreenPad = NULL;
+        }
+        for (b = 0; b < nBaseCount; ++b) {        /* 0x7216C */
+            PsiFreePanel(&pEnv->apNamePanel[b]);  /* 0x7218C */
+            PsiFreePanel(&pEnv->apStatPanel[b]);  /* 0x721A8 */
+            PsiFreePanel(&pEnv->apDeltaPanel[b]); /* 0x721BC */
+            PsiFreePanel(&pEnv->apCheckPanel[b]); /* 0x721E0 */
+        }
+        for (b = 0; b < PUFO_PSI_SCROLL_CTLS; ++b) { /* 0x72214: v76 = &unk_15EE78, slot +1 twice */
+            if (pEnv->apScrollCtl[b] != NULL) {
+                UiControl_FreePads(pEnv->apScrollCtl[b]);
+                free(pEnv->apScrollCtl[b]);
+                pEnv->apScrollCtl[b] = NULL;
+            }
+        }
+        return;
+    }
+
+    *pEnv->pbBuilt = 1;                           /* 0x716F0 */
+
+    /* Pass 1, 0x71734..0x71788: how many soldiers each base lists. */
+    for (b = 0; b < nBaseCount; ++b) {
+        i32 nCount = 0;
+
+        for (s = 0; s < pEnv->nSoldierCount; ++s) {
+            const Soldier *pS = pEnv->apSoldiers[s];
+            if (pS != NULL && (i32)pS->nKind == b) { /* 0x71768: LDRB +0xB6 against the base index */
+                ++nCount;
+            }
+        }
+        anRowCount[b] = nCount;
+    }
+
+    /* Pass 2, 0x7178C..0x71B90: four panels per base, each built with that base's own row count. */
+    for (b = 0; b < nBaseCount; ++b) {
+        UiPanel *pName  = PsiNewPanel(&pEnv->apNamePanel[b], anRowCount[b]);  /* 0x717D0 */
+        UiPanel *pStat  = PsiNewPanel(&pEnv->apStatPanel[b], anRowCount[b]);  /* 0x718F8 */
+        UiPanel *pDelta = PsiNewPanel(&pEnv->apDeltaPanel[b], anRowCount[b]); /* 0x719D0 */
+        UiPanel *pCheck = PsiNewPanel(&pEnv->apCheckPanel[b], anRowCount[b]); /* 0x71AA4 */
+
+        if (pName != NULL) {
+            PsiInitPanelCommon(pName);
+            pName->pfnClick  = pEnv->pfnSelClick;          /* 0x7183C */
+            pName->nPosX     = PUFO_PSI_NAME_X;            /* 0x7184C */
+            pName->nUnk7052  = 5;                          /* 0x71860 */
+            pName->nViewW    = PUFO_PSI_NAME_VIEWW;        /* 0x71874 */
+            pName->bFlag7073 = 1;                          /* 0x718C0: only the name column */
+            UiPanel_SetBytes3to5(pName, 0x32, 0x32, 0xFA); /* 0x718D4 */
+            pName->bUnk7088  = 0x96;                       /* 0x718F4: -106 as a signed byte */
+        }
+        if (pStat != NULL) {
+            PsiInitPanelCommon(pStat);
+            pStat->nPosX    = PUFO_PSI_STAT_X;             /* 0x71950 */
+            pStat->nUnk7052 = 175;                         /* 0x71964 */
+            pStat->nViewW   = PUFO_PSI_NARROW_VIEWW;       /* 0x71978 */
+            pStat->nUnk7076 = 1;                           /* 0x719CC */
+        }
+        if (pDelta != NULL) {
+            PsiInitPanelCommon(pDelta);
+            pDelta->nPosX    = PUFO_PSI_DELTA_X;           /* 0x71A24 */
+            pDelta->nUnk7052 = 209;                        /* 0x71A38 */
+            pDelta->nViewW   = PUFO_PSI_NARROW_VIEWW;      /* 0x71A4C */
+            pDelta->nUnk7076 = 1;                          /* 0x71AA0 */
+        }
+        if (pCheck != NULL) {
+            PsiInitPanelCommon(pCheck);
+            pCheck->nPosX    = PUFO_PSI_CHECK_X;           /* 0x71AFC */
+            pCheck->nUnk7052 = 210;                        /* 0x71B10 */
+            pCheck->nViewW   = PUFO_PSI_NARROW_VIEWW;      /* 0x71B24 */
+            pCheck->nUnk7076 = 1;                          /* 0x71B68 */
+        }
+    }
+
+    /* Pass 3, 0x71BA8..0x72118: fill the rows. The count array is rezeroed at 0x71BDC and reused as
+     * the row cursor, so rows are packed from 0 in Map.apSoldiers order. */
+    for (b = 0; b < nBaseCount; ++b) {
+        UiPanel *pName  = pEnv->apNamePanel[b];
+        UiPanel *pStat  = pEnv->apStatPanel[b];
+        UiPanel *pDelta = pEnv->apDeltaPanel[b];
+        UiPanel *pCheck = pEnv->apCheckPanel[b];
+        char szText[104];                                  /* v103 in the original's frame */
+        i32  nRow = 0;
+
+        if (pName == NULL || pStat == NULL || pDelta == NULL || pCheck == NULL) {
+            continue; /* deviation: the original writes through all four without testing them */
+        }
+
+        for (s = 0; s < pEnv->nSoldierCount; ++s) {
+            Soldier *pS = pEnv->apSoldiers[s];
+
+            if (pS == NULL || (i32)pS->nKind != b) {
+                continue;                                  /* 0x71C1C */
+            }
+            if (nRow >= pName->nLineCount) {
+                break; /* deviation: UiPanel_ctor clamps to 500 lines, the original does not */
+            }
+
+            (void)UiPanel_SetLineText(pName, nRow, pS->szName); /* 0x71C3C, Soldier +0xBA */
+            pName->anLineAux[nRow] = s;                        /* 0x71C6C: the soldier INDEX */
+
+            if (pS->bPsiAssigned != 0) {
+                /* 0x71C8C: the label source unk_EEE8A sits above 0xAC800, inside .data's zero-filled
+                 * span, so the box row is cleared rather than labelled; the state is in anLineAux. */
+                (void)UiPanel_SetLineText(pCheck, nRow, "");
+                pCheck->anLineAux[nRow] = 1;                   /* 0x71CEC */
+                pS->bPsiActive = 1;                            /* 0x71D00: Soldier +0x1A6 */
+                PsiSetRowMeta(pEnv, b, nRow, PUFO_PSI_ROW_ASSIGNED_1); /* 0x71D1C..0x71D9C */
+            } else {
+                pCheck->anLineAux[nRow] = 0;                   /* 0x71DC4 */
+                (void)UiPanel_SetLineText(pCheck, nRow, "");   /* 0x71E14, unk_EEF57 is zero too */
+            }
+
+            if (pS->bPsiActive != 0) {
+                snprintf(szText, sizeof szText, "%u%s%u",
+                         (unsigned)pS->auStat[6], PUFO_PSI_STAT_SEP, (unsigned)pS->auStat[7]);
+                (void)UiPanel_SetLineText(pStat, nRow, szText); /* 0x71EB0 */
+
+                if (pS->auStat[6] >= pS->auStat[7]) {
+                    (void)UiPanel_SetLineText(pDelta, nRow, PUFO_PSI_DELTA_FULL); /* 0x71FC0 */
+                    pDelta->anLineAux[nRow] = 1;                                   /* 0x71FCC */
+                } else {
+                    i32 nDelta = PUFO_PSI_TRAIN_PCT * (i32)pS->auStat[7] / 100;
+                    snprintf(szText, sizeof szText, "%s%d", PUFO_PSI_DELTA_PREFIX, nDelta);
+                    (void)UiPanel_SetLineText(pDelta, nRow, szText); /* 0x71F4C */
+                    pDelta->anLineAux[nRow] = nDelta;                /* 0x71F7C */
+                }
+            } else {
+                (void)UiPanel_SetLineText(pStat, nRow, "");   /* 0x72000, the 0x10DA38 clear */
+                (void)UiPanel_SetLineText(pDelta, nRow, "");  /* 0x7202C */
+            }
+
+            /* 0x72034..0x720B0: arm the training countdown. A soldier already at or above their psi
+             * energy still gets one day, which is what makes auStat[6] keep climbing past auStat[7]. */
+            if (pS->bPsiActive != 0 && pS->bPsiAssigned != 0) {
+                if (pS->auStat[6] < pS->auStat[7]) {
+                    pS->nPsiTrainDays = (u8)(PUFO_PSI_TRAIN_PCT * (i32)pS->auStat[7] / 100); /* 0x72090 */
+                } else {
+                    pS->nPsiTrainDays = 1;                                                   /* 0x7209C */
+                }
+            } else {
+                pS->nPsiTrainDays = 0;                                                       /* 0x720A4 */
+            }
+            ++nRow;                                                        /* 0x720D0 */
+        }
+    }
+}
+
+/* PsiScreen_SelectListed @ 0x71298: the name column's click handler. It toggles the selected row's
+ * psi-lab box, and assigning is gated on the base's free psi-lab capacity. */
+bool PsiScreen_SelectListed(PsiScreenEnv *pEnv)
+{
+    i32 nBase = (i32)*pEnv->pnBaseIdx;                    /* byte_1870F4, read SIGNED */
+    UiPanel *pName, *pCheck;
+    i32 nRow, nAssigned = 0, j;
+
+    if (nBase < 0 || nBase >= PUFO_FAC_BASE_COUNT) {
+        return false;
+    }
+    pName  = pEnv->apNamePanel[nBase];
+    pCheck = pEnv->apCheckPanel[nBase];
+    if (pName == NULL || pCheck == NULL) {
+        return false; /* deviation: 0x712C4 dereferences both without testing */
+    }
+
+    nRow = pName->nUnk3032;                               /* 0x712D0: the selected row */
+    *pEnv->pnScratchRow = nRow;                           /* 0x712E0: byte_15EE84[68] */
+    if (nRow < 0 || nRow >= pCheck->nLineCount) {
+        return false; /* deviation: 0x712EC indexes anLineAux unguarded */
+    }
+
+    if (pCheck->anLineAux[nRow] != 0) {                   /* already assigned -> free it */
+        PsiSetRowMeta(pEnv, nBase, nRow, PUFO_PSI_ROW_FREE_1);   /* 0x714D4..0x71554 */
+        pCheck->anLineAux[nRow] = 0;                      /* 0x71578 */
+        (void)UiPanel_SetLineText(pCheck, nRow, "");      /* 0x715D8, unk_EEF57 */
+        return true;
+    }
+
+    /* 0x712F8..0x7131C: the count walks the NAME panel's line count but reads the CHECK panel's aux,
+     * and compares against 1 exactly. */
+    for (j = 0; j < pName->nLineCount; ++j) {
+        if (pCheck->anLineAux[j] == 1) {
+            ++nAssigned;
+        }
+    }
+
+    if (Base_CalcPsiLabCap(pEnv->abFacilityGrid, nBase) < nAssigned + 1) { /* 0x71334 */
+        *pEnv->pnActionFail = 1;                          /* 0x7133C */
+        *pEnv->pnResidue = 0;                             /* 0x71348 */
+        return false;
+    }
+
+    PsiSetRowMeta(pEnv, nBase, nRow, PUFO_PSI_ROW_ASSIGNED_1); /* 0x7137C..0x713FC */
+    pCheck->anLineAux[nRow] = 1;                          /* 0x71420 */
+    (void)UiPanel_SetLineText(pCheck, nRow, "");          /* 0x71480, unk_EEE8A */
+    return true;
+}
+
+/* PsiScreen_ApplyAssignments @ 0x72250: turn the check column back into game state, refresh each
+ * base's psi-lab needed flag, then rebuild. Tail call into BuildPanels at 0x72394. */
+void PsiScreen_ApplyAssignments(PsiScreenEnv *pEnv)
+{
+    i32 nBaseCount = (i32)*pEnv->pnBaseCount;
+
+    for (i32 b = 0; b < nBaseCount; ++b) {
+        UiPanel *pName  = pEnv->apNamePanel[b];
+        UiPanel *pCheck = pEnv->apCheckPanel[b];
+        UiPanel *pDelta = pEnv->apDeltaPanel[b];
+        i32 nRows = 0;
+
+        if (pName != NULL && pCheck != NULL && pDelta != NULL) {
+            i32 nLines = pName->nLineCount;               /* 0x722AC: BLE skips the body at <= 0 */
+
+            if (nLines > 0) {
+                nRows = nLines;
+                for (i32 j = 0; j < nLines; ++j) {
+                    Soldier *pS = PsiSoldierAt(pEnv, pName->anLineAux[j]);
+
+                    if (pS == NULL) {
+                        continue;
+                    }
+                    if (pCheck->anLineAux[j] == 1) {      /* 0x722E0 */
+                        pS->bPsiAssigned = 1;             /* 0x722E8 */
+                        pS->nPsiTrainDays = (u8)(i8)pDelta->anLineAux[j]; /* 0x7230C, LDRSB */
+                    } else {
+                        pS->nPsiTrainDays = 0;            /* 0x72330 */
+                        pS->bPsiAssigned = 0;             /* 0x7234C */
+                    }
+                }
+            }
+        }
+
+        /* 0x72370. The third argument is never loaded at this call site: the last write to R2 is the
+         * inner loop's ADD at 0x7235C, so the budget is the loop's exit value -- the base's whole row
+         * count, or 0 when the panel is empty. The other two call sites (0x8BA4C, 0x953CC) pass
+         * Base_CountPsiSoldiers instead. Recorded in docs/parity/bugs.tsv. */
+        (void)Base_UpdatePsiLabNeeded(pEnv->abFacilityGrid, b, nRows);
+    }
+
+    PsiScreen_BuildPanels(pEnv);                          /* 0x72394 */
+}
+
+/* PsiScreen_Init @ 0x72b40. The bring-up; the tail call at 0x72C78 is the build arm. */
+void PsiScreen_Init(PsiScreenEnv *pEnv)
+{
+    PadImage *pPad = (PadImage *)calloc(1, sizeof(PadImage)); /* 0x72B4C, operator new(0x14) */
+    i32 i;
+
+    if (pPad != NULL) {
+        PadImage_ctor(pPad);                              /* 0x72B5C */
+    }
+    pEnv->pScreenPad = pPad;                              /* 0x72B70: the ctor's result */
+    if (pPad != NULL) {
+        (void)PadImage_Load(pPad, PUFO_PSI_PAD_NAME, PUFO_PSI_PAD_MODE); /* 0x72B74 */
+        pPad->nOriginX = 0;                               /* 0x72B88 */
+        pPad->nOriginY = 0;                               /* 0x72B90 */
+    }
+
+    if (pEnv->pCtlOk != NULL) {
+        pEnv->pCtlOk->x = 1;                              /* 0x72B9C */
+        pEnv->pCtlOk->y = 300;                            /* 0x72BAC: 0x12C */
+        pEnv->pCtlOk->pfnClick = pEnv->pfnOkClick;       /* 0x72BB4 */
+    }
+    if (pEnv->pCtlApply != NULL) {
+        pEnv->pCtlApply->x = 120;                         /* 0x72BC4: 0x78 */
+        pEnv->pCtlApply->y = 300;                         /* 0x72BD0 */
+        pEnv->pCtlApply->pfnClick = pEnv->pfnApplyClick; /* 0x72BDC */
+    }
+
+    for (i = 0; i < PUFO_PSI_SCROLL_CTLS; ++i) {         /* 0x72BE4..0x72C20, operator new(0x20) */
+        UiControl *pCtl = (UiControl *)calloc(1, sizeof(UiControl));
+
+        if (pCtl == NULL) {
+            continue;
+        }
+        UiControl_ctor(pCtl);                             /* 0x72BF0 */
+        pEnv->apScrollCtl[i] = pCtl;
+    }
+    if (pEnv->apScrollCtl[0] != NULL) {
+        pEnv->apScrollCtl[0]->pfnClick = pEnv->pfnScrollPrev; /* 0x72C34, +0x0C */
+    }
+    if (pEnv->apScrollCtl[1] != NULL) {
+        pEnv->apScrollCtl[1]->pfnClick = pEnv->pfnScrollNext; /* 0x72C40 */
+    }
+    for (i = 0; i < PUFO_PSI_SCROLL_CTLS; ++i) {         /* 0x72C44..0x72C64, descriptors 0 and 1 */
+        UiControl_Setup(pEnv->apScrollCtl[i], 0, 0, &g_aPsiScrollDesc[i],
+                        pEnv->pfnLoadPads, pEnv->pPadUser);
+    }
+
+    *pEnv->pbRowSel = 1;                                  /* 0x72C70: byte_15EE84[0] */
+    PsiScreen_BuildPanels(pEnv);                          /* 0x72C78 */
 }

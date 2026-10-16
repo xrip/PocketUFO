@@ -327,7 +327,7 @@ Order is by what unblocks what. Each item ends with gates + commit.
     before every blit.
   - [x] eleven label/value rows from `aTextRecs` records 56..66 with current/max bars
     (`max>>1`, remainder `(max>>1)-(cur>>1)-2`, negative dropped by the clip), the kneel blocks, the
-    fixed 200-wide morale bar with `2*(99-morale)` remainder, and the `bUnk422`-gated extra rows.
+    fixed 200-wide morale bar with `2*(99-morale)` remainder, and the `bPsiActive`-gated extra rows.
   - [x] the ruler at 0x20AD4 is an original bug: 12x24 5x1 colour-ramp ticks land exactly on the
     label rows just drawn and cut through them. Hex-Rays' `-6 - 5*col` right index is a sign-extension
     artifact; the ARM is `RSB R0,R2,#0xFA` = 250 - 5*col. Reproduced, logged in `bugs.tsv` (79 rows).
@@ -2670,6 +2670,32 @@ Order is by what unblocks what. Each item ends with gates + commit.
   `abResearchZero`, 1 function comment, 9 line comments, 1 new ledger row (227), 90 bug markers. 14527 checks
   (60 suites), coverage 929/1103 (84.2%) and 511308/598792 (85.4%); `strat-ui` to 228/245 and 89,860 of
   121,164 bytes (74.2%), with the ufopaedia family now complete.
+
+- [x] **part 90, the psi screen: `PsiScreen_BuildPanels (0x716d4, 2,940 B)`, `PsiScreen_SelectListed
+  (0x71298, 848 B)`, `PsiScreen_Init (0x72b40, 332 B)`, `PsiScreen_ApplyAssignments (0x72250, 328 B)`** —
+  **Four parallel per-base columns**, each an array of eight `UiPanel *`: name (`g_apPsiNamePanel`),
+  "auStat[6]\auStat[7]" (`g_apPsiStatPanel`), the training delta (`g_apPsiDeltaPanel`) and the assignment
+  box (`g_apPsiCheckPanel`). The middle two are the dword runs at `byte_15EE84+4` and `+36`, and that
+  72-byte block also holds the row-selected flag at +0 and a scratch row index at +68 — the port splits
+  it into four named arrays plus two scalars. **BuildPanels is a build/release toggle on `g_bPsiPanelOpen`
+  like `Ufopaedia_Open`**, in three passes: count each base's soldiers (0x71734), build four panels sized
+  to that count (0x7178C), fill the rows reusing the count array as the cursor (0x71BA8). **Assigning a
+  soldier is what makes them psi-capable**: 0x71D00 sets `Soldier.bPsiActive` for every assigned row
+  before the stat columns and the countdown read it. **The stat columns are gated on `bPsiActive` alone**,
+  not on the assignment (0x71E2C). **The training countdown** arms 30% of `auStat[7]` days when
+  `auStat[6]` is below it and exactly **one** day when it is already at or above (0x7209C), which is what
+  `Geoscape_TickBases` spends one per day — the gain the "+N" column advertises. **The checkbox rows are
+  cleared, not labelled** (both label sources sit in `.data`'s zero-filled span). **The assigned counter
+  compares against 1 exactly** (0x71314). **ApplyAssignments closes the screen**: its tail call at 0x72394
+  reaches BuildPanels with the flag still set. **1 original bug found, reproduced and pinned:** 0x72370
+  calls `Base_UpdatePsiLabNeeded` without ever loading its third argument, so the budget is the inner
+  loop's exit value — the base's whole row count, not `Base_CountPsiSoldiers` as at the two other call
+  sites. **6 deviations:** unguarded dereferences of the freshly built panels, unguarded and un-null-checked
+  `Map.apSoldiers` indexing, unbounded `itoa`/`strcat`/`strcpy` into 50-byte rows, an unbounded row cursor
+  at 0x712EC, the port's 500-line clamp, and a return value no caller reads. 121 new checks; fourteen
+  mutations turn 8, 6, 11, 3, 4, 1, 5, 4, 5, 2, 1, 6, 4 and 1 red. 8 IDB renames plus 5 new symbols and the
+  three `Soldier` psi members renamed (466 → 476 on record), 4 function comments, 11 line comments, 1 new
+  ledger row (228). 14648 checks (60 suites), coverage 934/1103 (84.7%) and 515852/598792 bytes (86.1%).
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the

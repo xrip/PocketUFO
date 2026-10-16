@@ -1075,8 +1075,8 @@ void Tact_DrawCommandPads(IsoDrawCtx *pIso, const TactCmdPadEnv *pEnv)
     Text_DrawString(170, 237, pIso->szText);
     SoftSurf_BlitRectProxy(0, 10, 253, (i32)pUnit->auStat[8] >> 1, 6, 0xFF, 0x14, 0x32);
 
-    /* The two extra rows, only while bUnk422. */
-    if (pUnit->bUnk422 != 0) {
+    /* The two extra rows, only while bPsiActive. */
+    if (pUnit->bPsiActive != 0) {
         (void)Gfx_PackRgb565Pair(pEnv->pColor, 200, 210, 250, 20, 20, 20);
         Text_DrawString(10, 261, (const char *)(pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * 65));
         CmdPadNumber(pIso, pUnit->auStat[7]);

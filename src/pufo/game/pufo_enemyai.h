@@ -208,7 +208,7 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx);
  *    `apMultiTargets[rand(nMultiTarget)]`, stopping at the first one that is not large.
  * 4. The pick is accepted when it is small, not type 16/17, `rand(5) == 0`, and the enemy
  *    roster is non-empty (0x4cd60..0x4cda0). On acceptance the function looks for ANOTHER
- *    enemy with `bUnk422 != 0`, `uTu > 15` and hands the action to THAT unit:
+ *    enemy with `bPsiActive != 0`, `uTu > 15` and hands the action to THAT unit:
  *    Tact_SelectUnit(it), Map.pSelWeapon = &TactItem_156910, mode 4 or 5 by `rand(2)`,
  *    Map.nBurstShots = 0, the melee cell = the multi-target's cell, a command-18 enqueue
  *    against that cell's occupant, and then `Map_pSelUnit->uTu >>= 1`

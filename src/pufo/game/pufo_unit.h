@@ -207,7 +207,9 @@ typedef struct Soldier {
     /* A unit cannot hold both a multi-target list and an active animation, so the
      * two views are one storage in the original and one union here. */
     u8         bUnk148;        /* 0x094 */
-    u8         bUnk149;        /* 0x095 */
+    u8         bPsiAssigned;   /* 0x095, stationed at a psi lab: PsiScreen_SelectListed toggles it
+                                * (0x71420 / 0x71578), PsiScreen_ApplyAssignments writes it from the
+                                * row checkbox (0x722E8 / 0x7234C), Base_CountPsiSoldiers counts it */
     u8         gap_150[2];     /* 0x096 */
     i32        nLook;          /* 0x098 */
     i32        bFemale;        /* 0x09c, stored as a dword */
@@ -241,8 +243,12 @@ typedef struct Soldier {
     u8         bHumanoidInv;   /* 0x1a2 */
     u8         gap_419;        /* 0x1a3 */
     u16        uInvBurden;     /* 0x1a4 */
-    u8         bUnk422;        /* 0x1a6 */
-    u8         bUnk423;        /* 0x1a7 */
+    u8         bPsiActive;     /* 0x1a6, the unit carries psi powers: gates the two auStat[6]/[7]
+                                * rows in the unit info screen (0x44E64) and the psi-lab columns, and
+                                * PsiScreen_BuildPanels sets it when a soldier is assigned (0x71D00) */
+    u8         nPsiTrainDays;  /* 0x1a7, days of psi training left: Geoscape_TickBases spends one
+                                * per day raising auStat[6] (0x62..0x66 region, pufo_geoscape.c:132),
+                                * PsiScreen_BuildPanels arms it to 30% of auStat[7] (0x72090) */
     i32        nArmorPoints;   /* 0x1a8 */
     i32        nClass;         /* 0x1ac */
     u8         bSpecialMark;   /* 0x1b0 */

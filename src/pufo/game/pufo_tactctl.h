@@ -535,7 +535,7 @@ typedef struct AlienUnitStatRec {
     i16 nHp;        /* +08 -> auStat[1], plus a jitter */
     i16 nStat3;     /* +0A -> auStat[3], plus a jitter */
     i16 nStat6;     /* +0C -> auStat[6]. -1 means "roll both": auStat[6] and auStat[7]
-                     * each become rand(50) + 30 and bUnk422 is set to 1. */
+                     * each become rand(50) + 30 and bPsiActive is set to 1. */
     i16 nStat7;     /* +0E -> auStat[7] */
     i16 nUnk248;    /* +10, low byte -> bUnk248 */
     i16 nReady[5];  /* +12, +14, +16, +18, +1A, low bytes -> abReady252[0..4] */

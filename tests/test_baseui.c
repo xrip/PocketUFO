@@ -13803,6 +13803,463 @@ static void TestUfopaediaOpen(void)
     }
 }
 
+/* ------------------------------------------------- the psi screen (geoscape screen 17) */
+
+#define PSI_NAME  0
+#define PSI_STAT  1
+#define PSI_DELTA 2
+#define PSI_CHECK 3
+
+static Soldier   g_aPsiSol[16];
+static Soldier  *g_apPsiSol[16];
+static u8        g_abPsiGrid[PUFO_GRID_SIZE];
+static UiControl g_psiOkCtl, g_psiApplyCtl;
+static u8        g_bPsiBuilt, g_bPsiRowSel;
+static i32       g_nPsiScratch, g_nPsiActionFail, g_nPsiResidue, g_nPsiScreen;
+static i8        g_nPsiBaseIdx, g_nPsiBaseCount;
+static PsiScreenEnv g_psiEnv;
+
+static void PsiSeamOk(void)    { }
+static void PsiSeamApply(void) { }
+static void PsiSeamSel(void)   { }
+static void PsiSeamPrev(void)  { }
+static void PsiSeamNext(void)  { }
+
+/* The pad names UiControl_Setup hands down, captured so the descriptor table is read back from the
+ * image instead of assumed. */
+static const char *g_pszPsiPad0[2], *g_pszPsiPad1[2], *g_pszPsiPad2[2];
+static i32 g_nPsiPadCalls;
+
+static bool PsiSeamLoadPads(UiControl *pCtl, const char *psz0, const char *psz1,
+                            const char *psz2, void *pUser)
+{
+    (void)pCtl;
+    (void)pUser;
+    if (g_nPsiPadCalls < 2) {
+        g_pszPsiPad0[g_nPsiPadCalls] = psz0;
+        g_pszPsiPad1[g_nPsiPadCalls] = psz1;
+        g_pszPsiPad2[g_nPsiPadCalls] = psz2;
+    }
+    ++g_nPsiPadCalls;
+    return true;
+}
+
+static void PsiFixture(i32 nBaseCount, i32 nSoldierCount)
+{
+    i32 i;
+
+    if (g_bPsiBuilt != 0) {              /* release whatever the previous case left built */
+        PsiScreen_BuildPanels(&g_psiEnv);
+    }
+    memset(g_abPsiGrid, 0, sizeof(g_abPsiGrid));
+    memset(g_aPsiSol, 0, sizeof(g_aPsiSol));
+    memset(&g_psiEnv, 0, sizeof(g_psiEnv));
+    memset(&g_psiOkCtl, 0, sizeof(g_psiOkCtl));
+    memset(&g_psiApplyCtl, 0, sizeof(g_psiApplyCtl));
+    g_bPsiBuilt = 0;
+    g_bPsiRowSel = 0;
+    g_nPsiScratch = -1;
+    g_nPsiActionFail = 0;
+    g_nPsiResidue = -1;
+    g_nPsiScreen = 17;
+    g_nPsiBaseIdx = 0;
+    g_nPsiBaseCount = (i8)nBaseCount;
+    g_nPsiPadCalls = 0;
+    for (i = 0; i < 2; ++i) {
+        g_pszPsiPad0[i] = NULL;
+        g_pszPsiPad1[i] = NULL;
+        g_pszPsiPad2[i] = NULL;
+    }
+    for (i = 0; i < 16; ++i) {
+        g_apPsiSol[i] = NULL;
+    }
+    g_psiEnv.pbBuilt        = &g_bPsiBuilt;
+    g_psiEnv.pbRowSel       = &g_bPsiRowSel;
+    g_psiEnv.pnScratchRow   = &g_nPsiScratch;
+    g_psiEnv.pnBaseIdx      = &g_nPsiBaseIdx;
+    g_psiEnv.pnBaseCount    = &g_nPsiBaseCount;
+    g_psiEnv.pnActionFail   = &g_nPsiActionFail;
+    g_psiEnv.pnResidue      = &g_nPsiResidue;
+    g_psiEnv.pnGeoscapeScreen = &g_nPsiScreen;
+    g_psiEnv.abFacilityGrid = g_abPsiGrid;
+    g_psiEnv.apSoldiers     = g_apPsiSol;
+    g_psiEnv.nSoldierCount  = nSoldierCount;
+    g_psiEnv.pCtlOk         = &g_psiOkCtl;
+    g_psiEnv.pCtlApply      = &g_psiApplyCtl;
+    g_psiEnv.pfnOkClick     = PsiSeamOk;
+    g_psiEnv.pfnApplyClick  = PsiSeamApply;
+    g_psiEnv.pfnSelClick    = PsiSeamSel;
+    g_psiEnv.pfnScrollPrev  = PsiSeamPrev;
+    g_psiEnv.pfnScrollNext  = PsiSeamNext;
+    g_psiEnv.pfnLoadPads    = PsiSeamLoadPads;
+}
+
+/* The roster: soldier i is named "S<i>" and stationed at base anKind[i]. */
+static void PsiRoster(const i32 *anKind, i32 nCount)
+{
+    i32 i;
+
+    for (i = 0; i < nCount; ++i) {
+        g_aPsiSol[i].nKind = (u8)anKind[i];
+        snprintf(g_aPsiSol[i].szName, sizeof(g_aPsiSol[i].szName), "S%d", i);
+        g_apPsiSol[i] = &g_aPsiSol[i];
+    }
+    g_psiEnv.nSoldierCount = nCount;
+}
+
+static void PsiSetPsi(i32 i, u8 bAssigned, u8 bActive, u16 uPsi, u16 uEnergy)
+{
+    g_aPsiSol[i].bPsiAssigned = bAssigned;
+    g_aPsiSol[i].bPsiActive   = bActive;
+    g_aPsiSol[i].auStat[6]    = uPsi;
+    g_aPsiSol[i].auStat[7]    = uEnergy;
+}
+
+static void PsiAddLab(i32 nBase, i32 nCol, i32 nRow)
+{
+    g_abPsiGrid[480 + 144 * nBase + 6 * nCol + nRow] = (u8)FAC_PSI_LABORATORY;
+}
+
+static i32 PsiNeed(i32 nBase, i32 nCol, i32 nRow)
+{
+    return g_abPsiGrid[444 + 144 * nBase + 6 * nCol + nRow];
+}
+
+static UiPanel *PsiPanel(i32 nCol, i32 nBase)
+{
+    switch (nCol) {
+    case PSI_NAME:  return g_psiEnv.apNamePanel[nBase];
+    case PSI_STAT:  return g_psiEnv.apStatPanel[nBase];
+    case PSI_DELTA: return g_psiEnv.apDeltaPanel[nBase];
+    default:        return g_psiEnv.apCheckPanel[nBase];
+    }
+}
+
+static const char *PsiRow(i32 nCol, i32 nBase, i32 nRow)
+{
+    UiPanel *p = PsiPanel(nCol, nBase);
+
+    if (p == NULL || nRow < 0 || nRow >= p->nLineCount || p->apLines[nRow] == NULL) {
+        return "<none>";
+    }
+    return (const char *)p->apLines[nRow];
+}
+
+static i32 PsiAux(i32 nCol, i32 nBase, i32 nRow)
+{
+    UiPanel *p = PsiPanel(nCol, nBase);
+
+    if (p == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES) {
+        return -999;
+    }
+    return p->anLineAux[nRow];
+}
+
+static void PsiSetAux(i32 nCol, i32 nBase, i32 nRow, i32 nValue)
+{
+    UiPanel *p = PsiPanel(nCol, nBase);
+
+    if (p != NULL) {
+        p->anLineAux[nRow] = nValue;
+    }
+}
+
+static i32 PsiMeta(i32 nCol, i32 nBase, i32 nRow, i32 nSlot)
+{
+    UiPanel *p = PsiPanel(nCol, nBase);
+
+    if (p == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES || nSlot < 0 || nSlot > 5) {
+        return -1;
+    }
+    return p->aLineMeta[6 * nRow + nSlot];
+}
+
+/* True when a row's meta is exactly the given two triples. */
+static bool PsiMetaIs(i32 nCol, i32 nBase, i32 nRow, i32 a, i32 b, i32 c, i32 d, i32 e, i32 f)
+{
+    return PsiMeta(nCol, nBase, nRow, 0) == a && PsiMeta(nCol, nBase, nRow, 1) == b &&
+           PsiMeta(nCol, nBase, nRow, 2) == c && PsiMeta(nCol, nBase, nRow, 3) == d &&
+           PsiMeta(nCol, nBase, nRow, 4) == e && PsiMeta(nCol, nBase, nRow, 5) == f;
+}
+
+static void TestPsiScreen(void)
+{
+    static const i32 aKind6[6]  = { 0, 1, 0, 2, 0, 3 };
+    static const i32 aKind12[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    i32 i, nBad;
+
+    printf("the psi screen's panels, assignment and apply\n");
+
+    /* 1. Init: the screen pad, the two buttons, the two scroll controls, then the build arm. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiScreen_Init(&g_psiEnv);
+    Check(g_psiEnv.pScreenPad != NULL, "Init allocates the screen's own pad (0x72B4C)");
+    Check(g_psiEnv.pScreenPad != NULL && g_psiEnv.pScreenPad->nOriginX == 0 &&
+          g_psiEnv.pScreenPad->nOriginY == 0, "and zeroes its origin (0x72B88, 0x72B90)");
+    CheckEqI32(g_psiOkCtl.x, 1, "the OK control goes to x 1 (0x72B9C)");
+    CheckEqI32(g_psiOkCtl.y, 300, "and y 300 (0x72BAC)");
+    Check(g_psiOkCtl.pfnClick == PsiSeamOk, "with PsiScreen_OnOk installed (0x72BB4)");
+    CheckEqI32(g_psiApplyCtl.x, 120, "the Apply control goes to x 120 (0x72BC4)");
+    CheckEqI32(g_psiApplyCtl.y, 300, "and y 300 (0x72BD0)");
+    Check(g_psiApplyCtl.pfnClick == PsiSeamApply, "with ApplyAssignments installed (0x72BDC)");
+    CheckEqI32(g_nPsiPadCalls, 2, "UiControl_Setup runs once per scroll control (0x72C44)");
+    Check(g_pszPsiPad0[0] != NULL && strcmp(g_pszPsiPad0[0], "up") == 0 &&
+          g_pszPsiPad1[0] != NULL && strcmp(g_pszPsiPad1[0], "sup") == 0 &&
+          g_pszPsiPad2[0] != NULL && g_pszPsiPad2[0][0] == 0,
+          "descriptor 0 at 0xABAC8 is up/sup with no third pad");
+    Check(g_pszPsiPad0[1] != NULL && strcmp(g_pszPsiPad0[1], "down") == 0 &&
+          g_pszPsiPad1[1] != NULL && strcmp(g_pszPsiPad1[1], "sdown") == 0,
+          "descriptor 1 at 0xABAE8 is down/sdown");
+    CheckEqI32(g_psiEnv.apScrollCtl[0]->x, 10, "prev lands at 10,10");
+    CheckEqI32(g_psiEnv.apScrollCtl[0]->y, 10, "the descriptor's y offset is 10, not 34");
+    CheckEqI32(g_psiEnv.apScrollCtl[1]->x, 10, "next lands at 10,34");
+    CheckEqI32(g_psiEnv.apScrollCtl[1]->y, 34, "");
+    Check(g_psiEnv.apScrollCtl[0]->pfnClick == PsiSeamPrev, "prev carries PsiScreen_PanelPrev (0x72C34)");
+    Check(g_psiEnv.apScrollCtl[1]->pfnClick == PsiSeamNext, "next carries PsiScreen_PanelNext (0x72C40)");
+    CheckEqI32(g_bPsiRowSel, 1, "byte_15EE84[0] is set at 0x72C70");
+    CheckEqI32(g_bPsiBuilt, 1, "and the tail call at 0x72C78 builds the panels");
+
+    /* 2. The roster split: each base's four panels hold exactly its own soldiers. */
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->nLineCount, 3, "base 0 lists soldiers 0, 2 and 4");
+    CheckEqI32(PsiPanel(PSI_NAME, 1)->nLineCount, 1, "base 1 lists soldier 1");
+    CheckEqI32(PsiPanel(PSI_NAME, 2)->nLineCount, 1, "base 2 lists soldier 3");
+    Check(PsiPanel(PSI_NAME, 3) == NULL, "base 3 is outside the base count, so it is never built");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->nLineCount, 3, "the stat column is sized the same");
+    CheckEqI32(PsiPanel(PSI_DELTA, 0)->nLineCount, 3, "the delta column too");
+    CheckEqI32(PsiPanel(PSI_CHECK, 0)->nLineCount, 3, "and the checkbox column");
+
+    /* 3. The shared style, and the three things only the name column gets. */
+    nBad = 0;
+    for (i = 0; i < 4; ++i) {
+        UiPanel *p = PsiPanel(i, 0);
+        if (p->nStyle != PUFO_PSI_PANEL_STYLE || p->nFont != PUFO_PSI_PANEL_FONT ||
+            p->nPosY != PUFO_PSI_ROW_Y || p->nUnk7056 != PUFO_PSI_ROW_Y ||
+            p->gap_0[0] != 0xB4 || p->gap_0[1] != 0xB4 || p->gap_0[2] != 0xB4 ||
+            p->gap_0[6] != 0xF0 || p->gap_0[7] != 0xF0 || p->gap_0[8] != 0xF0 ||
+            p->gap_0[9] != 0x14 || p->gap_0[10] != 0x14 || p->gap_0[11] != 0x14) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "all four columns share nStyle 14, nFont 16, y 70 and the two byte triples");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->nPosX, 10, "the name column sits at x 10");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->nUnk7052, 5, "with its draw origin at 5");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->nViewW, 230, "and a 230-wide view");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->gap_0[3], 0x32, "only the name column gets SetBytes3to5");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->gap_0[5], 0xFA, "0x32, 0x32, 0xFA (0x718D4)");
+    CheckEqI32(PsiPanel(PSI_NAME, 0)->bUnk7088, 0x96, "and bUnk7088 0x96 instead of the ctor's 0xFF");
+    Check(PsiPanel(PSI_NAME, 0)->pfnClick == PsiSeamSel, "and it is the only column with a click handler");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->gap_0[3], 0, "the stat column leaves gap_0[3] at the ctor's 0");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->bUnk7088, 0xFF, "and keeps bUnk7088 0xFF");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->nPosX, 154, "the stat column is at x 154, origin 175, 10 wide");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->nUnk7052, 175, "");
+    CheckEqI32(PsiPanel(PSI_STAT, 0)->nViewW, 10, "");
+    CheckEqI32(PsiPanel(PSI_DELTA, 0)->nPosX, 184, "the delta column at 184, origin 209");
+    CheckEqI32(PsiPanel(PSI_DELTA, 0)->nUnk7052, 209, "");
+    CheckEqI32(PsiPanel(PSI_CHECK, 0)->nPosX, 215, "the checkbox column at 215, origin 210");
+    CheckEqI32(PsiPanel(PSI_CHECK, 0)->nUnk7052, 210, "");
+    nBad = 0;
+    for (i = 0; i < 4; ++i) {
+        if (PsiPanel(i, 0)->nUnk7076 != (i == PSI_NAME ? 0 : 1)) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "nUnk7076 = 1 on the three narrow columns only");
+
+    /* 4. Rows are packed from 0 in Map.apSoldiers order and carry the soldier INDEX. */
+    Check(strcmp(PsiRow(PSI_NAME, 0, 0), "S0") == 0, "row 0 is soldier 0");
+    Check(strcmp(PsiRow(PSI_NAME, 0, 1), "S2") == 0, "row 1 is soldier 2, not soldier 1");
+    Check(strcmp(PsiRow(PSI_NAME, 0, 2), "S4") == 0, "row 2 is soldier 4");
+    CheckEqI32(PsiAux(PSI_NAME, 0, 0), 0, "the name column's aux is the apSoldiers index");
+    CheckEqI32(PsiAux(PSI_NAME, 0, 1), 2, "");
+    CheckEqI32(PsiAux(PSI_NAME, 0, 2), 4, "");
+    Check(strcmp(PsiRow(PSI_NAME, 1, 0), "S1") == 0, "and base 1's single row is soldier 1");
+
+    /* 5. An assigned soldier: the box row is cleared, the aux carries the state, the row is
+     * highlighted on all four columns, and bPsiActive is set by the build itself. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiSetPsi(2, 1, 0, 40, 80);            /* assigned, but bPsiActive starts clear */
+    PsiScreen_BuildPanels(&g_psiEnv);
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 1, "an assigned soldier gets checkbox aux 1 (0x71CEC)");
+    Check(PsiRow(PSI_CHECK, 0, 1)[0] == 0, "while the box row itself is cleared, not labelled");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 0), 0, "an unassigned soldier gets 0 (0x71DC4)");
+    Check(PsiRow(PSI_CHECK, 0, 0)[0] == 0, "and its row is cleared the same way");
+    CheckEqI32(g_aPsiSol[2].bPsiActive, 1, "the build sets Soldier.bPsiActive for an assigned soldier (0x71D00)");
+    Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 120, 240, 10, 10, 10), "the assigned row is (240,120,240)");
+    Check(PsiMetaIs(PSI_STAT, 0, 1, 240, 120, 240, 10, 10, 10), "on the stat column");
+    Check(PsiMetaIs(PSI_DELTA, 0, 1, 240, 120, 240, 10, 10, 10), "on the delta column");
+    Check(PsiMetaIs(PSI_CHECK, 0, 1, 240, 120, 240, 10, 10, 10), "and on the checkbox column");
+    Check(PsiMetaIs(PSI_NAME, 0, 0, 0, 0, 0, 0, 0, 0), "an unassigned row gets no meta at all");
+    Check(PsiMetaIs(PSI_STAT, 0, 0, 0, 0, 0, 0, 0, 0), "on any of the four columns");
+
+    /* 6. The two stat columns, and the delta aux. */
+    Check(strcmp(PsiRow(PSI_STAT, 0, 1), "40\\80") == 0, "the stat column is auStat[6] backslash auStat[7]");
+    Check(strcmp(PsiRow(PSI_DELTA, 0, 1), "+24") == 0, "30% of 80 is 24, so the delta reads +24 (0x71F4C)");
+    CheckEqI32(PsiAux(PSI_DELTA, 0, 1), 24, "and the aux carries the same number (0x71F7C)");
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiSetPsi(2, 1, 1, 90, 80);            /* already at or above psi energy */
+    PsiScreen_BuildPanels(&g_psiEnv);
+    Check(strcmp(PsiRow(PSI_DELTA, 0, 1), "+1") == 0, "at or above auStat[7] the delta is the literal +1");
+    CheckEqI32(PsiAux(PSI_DELTA, 0, 1), 1, "with aux 1 (0x71FCC)");
+    Check(strcmp(PsiRow(PSI_STAT, 0, 1), "90\\80") == 0, "the stat column still shows both values");
+    /* The two stat columns are gated on bPsiActive alone, not on the assignment: a psi-capable
+     * soldier shows their numbers even while their box is clear. Only a soldier with no psi powers
+     * gets the cleared pair at 0x71FDC / 0x72008. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiSetPsi(2, 0, 1, 40, 80);            /* psi-capable but not assigned */
+    PsiScreen_BuildPanels(&g_psiEnv);
+    Check(strcmp(PsiRow(PSI_STAT, 0, 1), "40\\80") == 0, "an unassigned psi-capable soldier still shows both stats");
+    Check(strcmp(PsiRow(PSI_DELTA, 0, 1), "+24") == 0, "and still shows the training delta");
+    CheckEqI32(PsiAux(PSI_DELTA, 0, 1), 24, "with the aux filled in");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 0, "while the checkbox stays clear");
+    Check(PsiRow(PSI_STAT, 0, 0)[0] == 0, "a soldier with no psi powers gets a cleared stat row (0x72000)");
+    Check(PsiRow(PSI_DELTA, 0, 0)[0] == 0, "and a cleared delta row (0x7202C)");
+    CheckEqI32(PsiAux(PSI_DELTA, 0, 0), 0, "with the aux left at 0");
+
+    /* 7. The training countdown, in all four shapes. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiSetPsi(2, 1, 1, 40, 80);
+    PsiSetPsi(0, 1, 1, 90, 80);
+    PsiSetPsi(4, 0, 1, 40, 80);
+    PsiSetPsi(1, 1, 0, 40, 80);            /* assigned, but bPsiActive starts clear */
+    PsiScreen_BuildPanels(&g_psiEnv);
+    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 24, "assigned, psi-capable, below energy: 30% of 80 days (0x72090)");
+    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 1, "assigned and already at or above energy: still one day (0x7209C)");
+    CheckEqI32(g_aPsiSol[4].nPsiTrainDays, 0, "psi-capable but unassigned: no training (0x720A4)");
+    CheckEqI32(g_aPsiSol[1].nPsiTrainDays, 24,
+               "assigning a soldier marks them psi-capable at 0x71D00 first, so they train too");
+
+    /* 8. Teardown is the same function on the same flag. Re-init first: the previous case's panels
+     * are live but the pad and the two controls were already released by an earlier teardown. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiScreen_Init(&g_psiEnv);
+    Check(g_psiEnv.pScreenPad != NULL, "Init allocates a screen pad");
+    Check(g_psiEnv.apScrollCtl[0] != NULL && g_psiEnv.apScrollCtl[1] != NULL,
+          "and the two scroll controls, before the tail call builds");
+    CheckEqI32(g_bPsiBuilt, 1, "the build arm leaves the flag set");
+    PsiScreen_BuildPanels(&g_psiEnv);
+    CheckEqI32(g_bPsiBuilt, 0, "the second call clears byte_15EEF0 (0x72134)");
+    CheckEqI32(g_nPsiScreen, 0, "and puts the geoscape screen id back to 0 (0x7212C)");
+    Check(g_psiEnv.pScreenPad == NULL, "the screen pad is released (0x72148)");
+    nBad = 0;
+    for (i = 0; i < 3; ++i) {
+        if (PsiPanel(PSI_NAME, i) != NULL || PsiPanel(PSI_STAT, i) != NULL ||
+            PsiPanel(PSI_DELTA, i) != NULL || PsiPanel(PSI_CHECK, i) != NULL) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "and all four columns of every base");
+    Check(g_psiEnv.apScrollCtl[0] == NULL && g_psiEnv.apScrollCtl[1] == NULL,
+          "plus the two scroll controls at 0x15EE7C and 0x15EE80 (0x72214)");
+
+    /* 9. SelectListed: the row comes from the name column's cursor, and the scratch mirrors it. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiAddLab(0, 0, 0);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    PsiPanel(PSI_NAME, 0)->nUnk3032 = 1;
+    Check(PsiScreen_SelectListed(&g_psiEnv), "assigning the selected row succeeds when the lab has room");
+    CheckEqI32(g_nPsiScratch, 1, "byte_15EE84[68] takes the row the four meta calls use (0x712E0)");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 1, "the checkbox aux flips to 1 (0x71420)");
+    Check(PsiRow(PSI_CHECK, 0, 1)[0] == 0, "and the box row stays empty");
+    Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 120, 240, 10, 10, 10), "the row turns to the assigned colour");
+    Check(PsiMetaIs(PSI_DELTA, 0, 1, 240, 120, 240, 10, 10, 10), "on all four columns");
+    CheckEqI32(g_nPsiActionFail, 0, "no failure flag on the success path");
+    Check(PsiScreen_SelectListed(&g_psiEnv), "clicking again frees the row");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 1), 0, "the aux flips back to 0 (0x71578)");
+    Check(PsiMetaIs(PSI_NAME, 0, 1, 240, 240, 240, 10, 10, 10), "and the row takes the free colour (0x714D4)");
+    Check(PsiMetaIs(PSI_CHECK, 0, 1, 240, 240, 240, 10, 10, 10), "on all four columns");
+
+    /* 10. The capacity gate, and the exact 1 the counter compares against. */
+    PsiFixture(3, 12);
+    PsiRoster(aKind12, 12);
+    PsiAddLab(0, 0, 0);                    /* one free cell -> capacity 10 */
+    PsiScreen_BuildPanels(&g_psiEnv);
+    for (i = 0; i < 10; ++i) {
+        PsiSetAux(PSI_CHECK, 0, i, 1);
+    }
+    PsiPanel(PSI_NAME, 0)->nUnk3032 = 10;
+    Check(!PsiScreen_SelectListed(&g_psiEnv), "ten assigned rows against a capacity of 10 blocks the eleventh");
+    CheckEqI32(g_nPsiActionFail, 1, "dwActionFail is set (0x7133C)");
+    CheckEqI32(g_nPsiResidue, 0, "and dword_1870B4[0] is cleared (0x71348)");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 10), 0, "the row is left unassigned");
+    Check(PsiMetaIs(PSI_NAME, 0, 10, 0, 0, 0, 0, 0, 0), "and no colour is applied to it");
+    PsiFixture(3, 12);
+    PsiRoster(aKind12, 12);
+    PsiAddLab(0, 0, 0);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    for (i = 0; i < 10; ++i) {
+        PsiSetAux(PSI_CHECK, 0, i, 2);     /* assigned-looking, but not 1 */
+    }
+    PsiPanel(PSI_NAME, 0)->nUnk3032 = 10;
+    Check(PsiScreen_SelectListed(&g_psiEnv),
+          "the counter compares against 1 exactly, so aux values of 2 are not counted (0x71314)");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 10), 1, "and the row is assigned");
+
+    /* 11. The selected base is byte_1870F4, read SIGNED. */
+    PsiFixture(3, 6);
+    PsiRoster(aKind6, 6);
+    PsiAddLab(1, 0, 0);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    g_nPsiBaseIdx = 1;
+    PsiPanel(PSI_NAME, 1)->nUnk3032 = 0;
+    Check(PsiScreen_SelectListed(&g_psiEnv), "the handler works on the base byte_1870F4 selects");
+    CheckEqI32(PsiAux(PSI_CHECK, 1, 0), 1, "base 1's row flips");
+    CheckEqI32(PsiAux(PSI_CHECK, 0, 0), 0, "and base 0's does not");
+    g_nPsiBaseIdx = -1;
+    Check(!PsiScreen_SelectListed(&g_psiEnv), "a negative base index is refused");
+
+    /* 12. ApplyAssignments writes the checkbox column back into the soldier. */
+    PsiFixture(2, 3);
+    PsiRoster(aKind6, 3);                  /* soldier 0 and 2 at base 0, soldier 1 at base 1 */
+    PsiSetPsi(0, 0, 1, 10, 50);
+    PsiSetPsi(2, 1, 1, 20, 60);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    PsiSetAux(PSI_CHECK, 0, 0, 1);         /* row 0 -> soldier 0, now assigned */
+    PsiSetAux(PSI_CHECK, 0, 1, 0);         /* row 1 -> soldier 2, now freed */
+    PsiSetAux(PSI_DELTA, 0, 0, 15);        /* the delta aux is what feeds the countdown */
+    PsiSetAux(PSI_DELTA, 0, 1, 7);
+    PsiScreen_ApplyAssignments(&g_psiEnv);
+    CheckEqI32(g_aPsiSol[0].bPsiAssigned, 1, "an aux of 1 sets Soldier.bPsiAssigned (0x722E8)");
+    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 15, "and copies the delta column's aux into nPsiTrainDays (0x7230C)");
+    CheckEqI32(g_aPsiSol[2].bPsiAssigned, 0, "any other value clears it (0x7234C)");
+    CheckEqI32(g_aPsiSol[2].nPsiTrainDays, 0, "and clears the countdown too (0x72330)");
+    CheckEqI32(g_aPsiSol[1].bPsiAssigned, 0, "base 1's soldier is untouched by base 0's rows");
+
+    /* The delta aux is read with LDRSB, so a negative value lands as 255. */
+    PsiFixture(1, 1);
+    PsiRoster(aKind6, 1);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    PsiSetAux(PSI_CHECK, 0, 0, 1);
+    PsiSetAux(PSI_DELTA, 0, 0, -1);
+    PsiScreen_ApplyAssignments(&g_psiEnv);
+    CheckEqI32(g_aPsiSol[0].nPsiTrainDays, 255, "the delta aux is sign-extended before the byte store");
+
+    /* 13. The psi-lab needed pass takes the ROW COUNT as its budget, not the assigned count: R2 is
+     * never loaded at 0x72370, so it carries the inner loop's exit value. */
+    PsiFixture(1, 12);
+    PsiRoster(aKind12, 12);
+    PsiAddLab(0, 0, 0);
+    PsiAddLab(0, 1, 0);
+    PsiAddLab(0, 2, 0);
+    PsiScreen_BuildPanels(&g_psiEnv);
+    PsiSetAux(PSI_CHECK, 0, 0, 1);         /* one soldier assigned, twelve rows */
+    PsiScreen_ApplyAssignments(&g_psiEnv);
+    CheckEqI32(PsiNeed(0, 0, 0), 1, "twelve rows give a budget of 12/10+1 = 2, so the first cell is needed");
+    CheckEqI32(PsiNeed(0, 1, 0), 1, "and the second one is too -- the assigned count of 1 would not reach it");
+    CheckEqI32(PsiNeed(0, 2, 0), 0, "while the third is cleared, which pins the budget at exactly 2");
+
+    /* 14. ApplyAssignments ends in BuildPanels, and the flag is still set, so that call releases. */
+    CheckEqI32(g_bPsiBuilt, 0, "ApplyAssignments closes the screen through the toggle (0x72394)");
+    Check(g_psiEnv.apNamePanel[0] == NULL, "the panels are gone afterwards");
+    CheckEqI32(g_nPsiScreen, 0, "and the geoscape screen id is cleared with them");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -13895,6 +14352,7 @@ int main(void)
     TestFacStatusLine();
     TestUfopaedia();
     TestUfopaediaOpen();
+    TestPsiScreen();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

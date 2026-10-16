@@ -356,13 +356,13 @@ static void TestTickBases(void)
     CheckEqI32(g_aSiteState[1], 2, "site state from row result (base 1)");
 
     /* Soldier timers. */
-    g_aSoldiers[0].bUnk423 = 5;
+    g_aSoldiers[0].nPsiTrainDays = 5;
     g_aSoldiers[0].auStat[6] = 10;
     g_aSoldiers[0].bUnk247 = 1;
     g_aSoldiers[0].bUnk183 = 254;
     Geoscape_TickBases(&st, &hooks);
-    CheckEqI32(g_aSoldiers[0].auStat[6], 11, "bUnk423 > 0 raises auStat[6]");
-    CheckEqI32(g_aSoldiers[0].bUnk423, 4, "bUnk423 counts down");
+    CheckEqI32(g_aSoldiers[0].auStat[6], 11, "nPsiTrainDays > 0 raises auStat[6]");
+    CheckEqI32(g_aSoldiers[0].nPsiTrainDays, 4, "nPsiTrainDays counts down");
     CheckEqI32(g_aSoldiers[0].bUnk247, 0, "bUnk247 counts down");
     CheckEqI32(g_aSoldiers[0].bUnk183, 255, "bUnk183 254 -> -1 when timer hits 0");
 
@@ -2902,9 +2902,9 @@ static void TestBudgetHelpers(void)
                                             true),
                0, "Deviation: an index at the array end is refused, gate and scan both skipped");
 
-    sols[0].nKind = 0; sols[0].bUnk149 = 1;
-    sols[1].nKind = 0; sols[1].bUnk149 = 0; /* assigned but not psi */
-    sols[2].nKind = 1; sols[2].bUnk149 = 1; /* psi at another base */
+    sols[0].nKind = 0; sols[0].bPsiAssigned = 1;
+    sols[1].nKind = 0; sols[1].bPsiAssigned = 0; /* assigned but not psi */
+    sols[2].nKind = 1; sols[2].bPsiAssigned = 1; /* psi at another base */
     for (i = 0; i < 3; ++i) {
         apSols[i] = &sols[i];
     }

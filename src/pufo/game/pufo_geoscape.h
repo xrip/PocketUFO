@@ -370,7 +370,7 @@ i32 Base_CountSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseI
 typedef struct SmapSite SmapSite; /* forward, the two site helpers below need it */
 
 /* Base_CountPsiSoldiers @ 0x65a08. Soldiers assigned to this base (nKind) that also carry the
- * psi marker bUnk149 @ 0x95. The budget of Base_UpdatePsiLabNeeded (divisor 10). */
+ * psi marker bPsiAssigned @ 0x95. The budget of Base_UpdatePsiLabNeeded (divisor 10). */
 i32 Base_CountPsiSoldiers(Soldier *const *apSoldiers, i32 nSoldierCount, i32 nBaseIndex);
 
 /* Base_CountOutboundTransferSpace @ 0x68044. The recovery load (uRecoveredSoldiers +
