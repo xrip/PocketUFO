@@ -162,10 +162,11 @@ void Menu_ResizeWindow(const MenuHooks *pHooks, void (*pfnResizeWindow)(void *pU
 bool Menu_ToggleMusicMute(PufoOptions *pOpt, u8 *pPad, const MenuHooks *pHooks);
 bool Menu_ToggleSfxMute(PufoOptions *pOpt, u8 *pPad, const MenuHooks *pHooks);
 
-/* TactHud_ToggleFlag128A9C @ 0x19d94. Toggles the `forcenodrag` option byte
- * (+108) and writes its one-byte pad indicator. Note the pad is the INVERSE of the
- * new flag value: turning the flag ON writes 0, turning it OFF writes 1 -- unlike
- * the mute toggles. Returns the new flag value. */
+/* Menu_ToggleForceNoDrag @ 0x19d94. Toggles the `forcenodrag` option byte
+ * (Map_bForceNoDrag @ Map+0x150E4) and writes its widget-88 pad byte
+ * (bCtl88ForceNoDrag @ 0xAD1DA). Note the pad is the INVERSE of the new flag value:
+ * turning the flag ON writes 0, turning it OFF writes 1 -- unlike the mute toggles.
+ * Returns the new flag value. */
 bool Menu_ToggleForceNoDrag(PufoOptions *pOpt, u8 *pPad);
 
 /* Options_SyncUiFromMap_GotoScreen12 @ 0x188e4. The options button does not change

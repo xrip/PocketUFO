@@ -65,7 +65,7 @@ addr	name	size	subsystem
 177fc	Tact_SetFireModeSnap	108	tact
 17868	Tact_SetFireModeAuto	108	tact
 178d4	TactAction_ConfirmUseItem	236	tact
-179c0	Map_PlaySample11_SetMode0B	36	tact
+179c0	Map_PlaySample17_SetMode11	36	tact
 179e4	Tact_TryFireMode4	156	tact
 17a80	Tact_TryFireMode10	156	tact
 17b1c	Tact_TryFireMode5	156	tact
@@ -92,7 +92,7 @@ addr	name	size	subsystem
 18e04	Menu_CancelQuitDialog	20	strat-ui
 18e18	App_QuitFromTact	20	app-shell
 18e2c	Menu_ConfirmQuitDialog	112	strat-ui
-18e9c	Map_PlaySamples10_0E_ClearUiScreen	48	tact
+18e9c	Map_PlaySamples16_14_ClearUiScreen	48	tact
 18ecc	MenuBtn_SetSpeed0	84	strat-ui
 18f20	MenuBtn_SetSpeed1	84	strat-ui
 18f74	MenuBtn_SetSpeed2	84	strat-ui
@@ -110,9 +110,9 @@ addr	name	size	subsystem
 1941c	Map_ToggleFlag128A91_Play11	124	tact
 19498	MenuBtn_Secondary	48	strat-ui
 194c8	MenuBtn_ConfirmClear	48	strat-ui
-194f8	Map_UiScreen7_PlaySamples10_0E	48	tact
-19528	Map_PlaySamples10_7_SetFlag_ClearScreen	64	tact
-19568	Map_PlaySamples10_7_ClearFlag_ClearScreen	64	tact
+194f8	Map_UiScreen7_PlaySamples16_14	48	tact
+19528	Map_PlaySamples16_7_SetDeployFlag	64	tact
+19568	Map_PlaySamples16_7_ClearDeployFlag	64	tact
 195a8	MenuBtn_ActionBack0	56	strat-ui
 195e0	MenuBtn_SecondaryDismiss	56	strat-ui
 19618	MenuBtn_ActionBack1	56	strat-ui
@@ -140,7 +140,7 @@ addr	name	size	subsystem
 19c74	MenuBtn_SetSfxVol3	96	strat-ui
 19cd4	MenuBtn_SetSfxVol4	96	strat-ui
 19d34	MenuBtn_SetSfxVol5	96	strat-ui
-19d94	TactHud_ToggleFlag128A9C	80	tact-ui
+19d94	Menu_ToggleForceNoDrag	80	strat-ui
 19de4	SaveLoad_Slot0	80	strat-ui
 19e34	SaveLoad_Slot1	80	strat-ui
 19e84	SaveLoad_Slot2	80	strat-ui
@@ -520,7 +520,7 @@ addr	name	size	subsystem
 5a450	UiPanel_SetLineColors	52	ui-core
 5a484	Ship_RetargetTravel	308	strat
 5a5b8	Ship_ClearInterceptByStrategIdx	148	strat
-5a64c	Ship_AbortCourse	484	strat
+5a64c	Ship_LaunchIntercept	484	strat
 5a830	Ship_ClearWaypointIntercept	160	strat
 5a8d0	Base_FindIndexBySiteId	92	strat
 5a92c	Ship_FindIndexByStrategType	136	strat
@@ -589,11 +589,11 @@ addr	name	size	subsystem
 6250c	Base_DrawFacilityIconStrip	792	strat
 62824	Base_TickFacilityConstruction	396	strat
 629b0	Base_CanPlaceHangarAt	968	strat
-62d78	SoldierScreen_DrawEquipPanels	960	ui-core
+62d78	SoldierScreen_DrawEquipPanels	960	strat-ui
 63138	Map_BackspaceSelectedName	84	tact
 6318c	SoldierScreen_CopyNameToEdit	124	strat-ui
 63208	SoldierScreen_AppendNameGlyph	196	strat-ui
-632cc	SoldierScreen_DrawDetail	6096	ui-core
+632cc	SoldierScreen_DrawDetail	6096	strat-ui
 64a9c	SoldierScreen_SelectListed	72	strat-ui
 64ae4	SoldierScreen_CloseThunk	12	strat-ui
 64af0	SoldierScreen_Toggle	1952	strat-ui
@@ -683,7 +683,7 @@ addr	name	size	subsystem
 6b49c	OptionsScreen_BindSaveSlots	236	strat-ui
 6b588	OptionsScreen_BindLoadSlots	236	strat-ui
 6b674	Set_byte_159E88_3_SetUiY	60	util
-6b6b0	Set_byte_159E88_4	20	util
+6b6b0	Options_SetTab4	20	strat-ui
 6b6c4	OptionsScreen_LayoutButtons	232	strat-ui
 6b7ac	Options_SaveAudioSettings	336	strat-ui
 6b8fc	OptionsScreen_RefreshVolumeHighlight	152	strat-ui
@@ -800,9 +800,9 @@ addr	name	size	subsystem
 7d374	BasePlaneScreen_Draw	1648	strat-ui
 7d9e4	BasePlaneScreen_Init	1072	strat-ui
 7de14	BasePlaneScreen_AddInterceptMission	168	strat-ui
-7debc	Funding_AddRaceBonus	196	strat
+7debc	Funding_AddRegionBonus	196	strat
 7df80	Smap_DistWrapped	244	strat
-7e074	Smap_CanInterceptReach	768	strat
+7e074	Smap_CraftRangeExhausted	768	strat
 7e374	StrategList_AddUfoAt	64	strat
 7e3b4	StrategList_AddAlienSiteIfValid	108	strat
 7e420	StrategList_MaybeSpawnCraft_Process	124	strat

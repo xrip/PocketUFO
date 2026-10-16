@@ -842,18 +842,22 @@ widgets:
     }
 }
 
-/* 0x14624: the inventory screen. */
+/* 0x14624: the inventory screen. `forcenodrag` picks the transfer style: with it set
+ * the 13 controls are press hit-tested and a press while an item is held drops it
+ * (Inv_ClearHitSlot + Inv_HandlePointer at 0x146A8, then the held flag clears); with
+ * it clear the press only arms the drag and the 13 controls are skipped when an item
+ * is already held. */
 static void PointerScreen1(TactInputState *pState, const TactInputHooks *pHooks,
                            TactPointerWorld *pWorld, bool bDown, i32 nX, i32 nY)
 {
     if (pState->bSlot19Active != 0) {
         return;
     }
-    if (pState->bInvPanelOpen != 0 || pState->bInvDragActive == 0) {
+    if (pState->bForceNoDrag != 0 || pState->bInvDragActive == 0) {
         PointerHitTestRange(pWorld->pBank, &pWorld->hit, 19, 13, nX, nY);
     }
 
-    if (pState->bInvPanelOpen == 0 || !bDown) {
+    if (pState->bForceNoDrag == 0 || !bDown) {
         if (!bDown) {
             return;
         }
@@ -1104,10 +1108,10 @@ static void PointerUpScreen0(TactInputState *pState, TactPointerWorld *pWorld)
 static void PointerUpScreen1(TactInputState *pState, const TactInputHooks *pHooks,
                              TactPointerWorld *pWorld)
 {
-    if (pState->bInvPanelOpen != 0 || pState->bInvDragActive == 0) {
+    if (pState->bForceNoDrag != 0 || pState->bInvDragActive == 0) {
         PointerUpRelease(pWorld->pBank, &pWorld->hit, 19, 13, false);
     }
-    if (pState->bInvPanelOpen == 0 && pState->bInvDragActive != 0) {
+    if (pState->bForceNoDrag == 0 && pState->bInvDragActive != 0) {
         if (pHooks->pfnInvHandlePointer != NULL) {
             pHooks->pfnInvHandlePointer(pWorld->pBank, pHooks->pUser);
         }

@@ -78,7 +78,8 @@ typedef struct TactInputState {
      * handler, which is the second proof of the base. */
     u8   bNoHalfCursor;    /* 0x36 unk_1139EE: skip halving the drag coordinates */
     u8   bPlayerInputOn;   /* 0x38 unk_1139F0: the HUD panel owns the pointer */
-    u8   bInvDragActive;   /* 0x3c unk_1139F4: an inventory drag is in progress */
+    u8   bInvDragActive;   /* 0x3c unk_1139F4: an inventory item is held -- mid-drag, or
+                            * waiting for the second tap when bForceNoDrag is set */
     u32  nUiSlot0;         /* 0x60 apUiSlotsA[0], cleared by UiControl_HitTest */
     i32  nUiSlot3;         /* 0x6c unk_113A24: 8 = drag started, 0 = committed */
     i32  nUiSlot4;         /* 0x70 unk_113A28: 200 = the drag scrolled the view */
@@ -94,7 +95,12 @@ typedef struct TactInputState {
     u8   bClickCommits;    /* 0x150D7 anPhaseSave0[95]: a click on the same cell acts */
     u8   bDragScrollA;     /* 0x150D8 anPhaseSave0[96] */
     u8   bDragScrollB;     /* 0x150D9 anPhaseSave0[97] */
-    u8   bInvPanelOpen;    /* 0x150E4 anPhaseSave0[108]: the inventory is open */
+    u8   bForceNoDrag;     /* 0x150E4 anPhaseSave0[108], Map_bForceNoDrag: the persisted
+                            * `forcenodrag` option. Set means the transfer is tap-to-place
+                            * (Inv_ClearHitSlot + Inv_HandlePointer at 0x146A8), clear means
+                            * a drag. Options_SaveToRegistry @ 0x114d8 writes it under the
+                            * registry name "forcenodrag"; Map_InitAndLoadRegistry @ 0x22928
+                            * reads it back. */
     i32  anCamDragX;       /* 0x4eb4, anCamWorldOff[2]: the drag start x */
     i32  anCamDragY;       /* 0x4eb8, anCamWorldOff[3]: the drag start y */
 
@@ -104,6 +110,15 @@ typedef struct TactInputState {
     i32  anActionEnabled[12];            /* 0x4e7c, the sibling array the same fills write;
                                           * Tact_HandleMapClick @ 0x1536C reads it as the
                                           * enqueue argument */
+
+    /* Fields Map_InitAndLoadRegistry @ 0x22648 initialises at startup and no input
+     * handler touches. They are the rest of the apUiSlotsA array @ Map+0x60 this
+     * struct already models (slots 0, 3, 4, 5, 11 and 19..24 above); slot 26 takes
+     * the startup roll Game_RandU16(3). */
+    u8   bSlot2Byte0;      /* 0x68 LOBYTE(apUiSlotsA[2]), the sweep/repaint gate */
+    i32  nUiSlot7;         /* 0x7C apUiSlotsA[7] */
+    i32  nUiSlot25;        /* 0xC4 apUiSlotsA[25] */
+    i32  nUiSlot26;        /* 0xC8 apUiSlotsA[26], the startup roll */
 } TactInputState;
 
 /* Map.apMultiTargets @ Map+0x08 is eight cells wide and Tact_HandleMapClick @ 0x15328

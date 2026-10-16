@@ -1347,7 +1347,9 @@ void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *p
         (void)UiControl_BlitActivePad(&pEnv->aControls[i], pfnPadBlit, pfnPadBlitEx, pPadUser);
     }
 
-    if (pEnv->bInvPanelOpen != 0 && pEnv->nDragActive != 0) {
+    /* 0x1F5E0: the hit region is highlighted only while an item is held AND the
+     * forcenodrag option is set -- the tap-to-place mode needs the target shown. */
+    if (pEnv->bItemHeld != 0 && pEnv->bForceNoDrag != 0) {
         InventoryHighlight(pEnv);
     }
 
@@ -1384,7 +1386,7 @@ void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *p
                                            + 4 * pUnit->bFemale
                                            + pUnit->nLook], 0);
 
-    if (pEnv->bInvPanelOpen != 0) {
+    if (pEnv->bItemHeld != 0) {
         const TactItem  *pHit = pEnv->pHit->pHitItem;
         const ObjectRec *pObj = pHit->pObj;
 
@@ -1402,8 +1404,9 @@ void TactHud_DrawInventoryScreen(TactHudInventoryEnv *pEnv, const GfxColorEnv *p
         (void)Gfx_PackRgb565Pair(pColor, 26, 244, 252, 13, 122, 126);
         Text_DrawString(3, 203, szText);
 
-        /* The drag ghost is gated on the OPPOSITE sense of the highlight above. */
-        if (pEnv->nDragActive == 0) {
+        /* 0x1FC18: the carried-item ghost is gated on the OPPOSITE sense of the
+         * highlight -- with forcenodrag clear the item follows the finger instead. */
+        if (pEnv->bForceNoDrag == 0) {
             Font_DrawGlyph(pEnv->pHit->nDragOffX + pEnv->nCursorX,
                            pEnv->pHit->nDragOffY + pEnv->nCursorY,
                            (u16)(pObj->uIconId + pEnv->nBigObsBase - 1), 0);

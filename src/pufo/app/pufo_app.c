@@ -77,7 +77,9 @@ static i32              g_aRowKeys[7];
 static i32              g_aRowKeySrc[7];
 static i32              g_nListMode;
 static i32              g_nUiScreen;
-static i32              g_nAnimPhase;       /* unk_1139EF, the 0xC352 anim counter */
+static u8               g_nAnimPhase;       /* unk_1139EF @ Map+0x37, the 0xC352 anim counter.
+                             * A byte in the original -- Map_InitAndLoadRegistry @ 0x226A8 stores a
+                             * byte there -- and the shell's counter only runs 0..6. */
 static i32              g_nPlaneStatRowCount; /* nPlaneStatRowCount @ 0x161A38. One global, two unrelated
                              * uses in the original: the start-menu flicker reuses it as scratch (0xA0AEC
                              * stores nMapPhase into it, 0xA0B14 adds a random roll), while the plane
@@ -336,8 +338,28 @@ static void App_EmptyBtnClick(void)
 static void App_InitStartupUi(void)
 {
     GameUiStartupEnv env;
+    MapInitEnv initEnv;
 
-    Options_LoadFromRegistry(&g_options);
+    /* Map_InitAndLoadRegistry @ 0x22648, the Map subsystem's startup entry (the CRT
+     * thunk at 0x22604 runs it before Map_RegisterAtexit): clear the tactical
+     * scratch, then load the option block. The shell owns the scratch it can own;
+     * the battle-ended byte and the throw-target slot belong to a Map block the
+     * shell never allocates, so those two arrive as NULL. */
+    memset(&g_tactState, 0, sizeof(g_tactState));
+    memset(&initEnv, 0, sizeof(initEnv));
+    initEnv.pOptions          = &g_options;
+    initEnv.pbDeployPanelOpen = &g_tactState.bDeployPanelOpen; /* 0x15110 */
+    initEnv.pbMapPhase        = &g_nAnimPhase;                 /* 0x0037 */
+    initEnv.pbSlot2Byte0      = &g_tactState.bSlot2Byte0;      /* 0x0068 */
+    initEnv.pbSlot8Byte0      = &g_tactState.bUiSlot8Byte0;    /* 0x0080 */
+    initEnv.pnUiSlot3         = &g_tactState.nUiSlot3;         /* 0x006C */
+    initEnv.pnUiSlot4         = &g_tactState.nUiSlot4;         /* 0x0070 */
+    initEnv.pnUiSlot5         = &g_tactState.nUiSlot5;         /* 0x0074 */
+    initEnv.pnUiSlot7         = &g_tactState.nUiSlot7;         /* 0x007C */
+    initEnv.pnUiSlot25        = &g_tactState.nUiSlot25;        /* 0x00C4 */
+    initEnv.pnUiSlot26        = &g_tactState.nUiSlot26;        /* 0x00C8 */
+    initEnv.pnPhaseSave112    = &g_nPhaseSave112;              /* 0x150E8 */
+    Map_InitAndLoadRegistry(&initEnv);
     Timer_SetWindow(g_hWndMain);
 
     g_pStartCtl = (UiControl *)malloc(sizeof(UiControl)); /* the original's operator new(0x20) */
@@ -381,7 +403,8 @@ static void App_InitStartupUi(void)
     g_pointerWorld.hit.pfnBlit    = App_BlitPad;
     g_pointerWorld.hit.pfnBlitEx  = App_BlitPadEx;
 
-    memset(&g_tactState, 0, sizeof(g_tactState));
+    /* g_tactState was cleared by Map_InitAndLoadRegistry above, which also wrote the
+     * two non-zero slots (0x70 = 200 and the 0xC8 roll). */
     memset(&g_tactHooks, 0, sizeof(g_tactHooks));
     /* Screen 16 (the credits) answers a pointer release with Titles_Shutdown @ 0x3826c and then
      * GameUI_InitStartup @ 0x38a28 -- the credits go back to the start menu. Screen 18 (an ending)

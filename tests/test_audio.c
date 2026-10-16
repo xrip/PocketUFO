@@ -323,6 +323,16 @@ static void TestOptionsDefaults(void)
     CheckEqI32(opt.nSoundVolume, 5, "  soundvolume 0 -> fallback 5 (0 is out of range)");
     CheckEqI32(opt.nGamma, 1, "  gamma 1 is in range");
 
+    /* gamma's own upper bound: valid 0..4, so 9 is out of range and takes 2. */
+    (void)Reg_SetString("gamma", "9");
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.nGamma, 2, "  gamma 9 -> fallback 2");
+
+    /* musicvolume shares the 1..5 range with soundvolume. */
+    (void)Reg_SetString("musicvolume", "0");
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.nMusicVolume, 5, "  musicvolume 0 -> fallback 5");
+
     /* A negative value is out of range too. */
     (void)Reg_SetString("gamma", "-3");
     Options_LoadFromRegistry(&opt);

@@ -274,7 +274,7 @@ const char *const g_aUiClickName[PUFO_PBANK_WIDGET_COUNT] = {
     "MenuBtn_SetSfxVol3",
     "MenuBtn_SetSfxVol4",
     "MenuBtn_SetSfxVol5",
-    "TactHud_ToggleFlag128A9C",
+    "Menu_ToggleForceNoDrag",
     "MenuBtn_Secondary",
     "MenuBtn_ActionBack1",
     "MenuBtn_SecondaryDismiss",

@@ -156,7 +156,8 @@ bool Menu_ToggleSfxMute(PufoOptions *pOpt, u8 *pPad, const MenuHooks *pHooks)
     return bNew;
 }
 
-/* TactHud_ToggleFlag128A9C @ 0x19d94. The pad is the inverse of the new value. */
+/* Menu_ToggleForceNoDrag @ 0x19d94 (pBank widget 88's click handler). The pad is the
+ * inverse of the new value. */
 bool Menu_ToggleForceNoDrag(PufoOptions *pOpt, u8 *pPad)
 {
     bool bWasOn;

@@ -2787,6 +2787,28 @@ Order is by what unblocks what. Each item ends with gates + commit.
   should be written from the ARM evidence, not from the port's own macros. Worth a sweep of the existing
   suites for assertions that read a `PUFO_*` constant the code under test also reads.
 
+- [x] **`docs/idb/functions.tsv` drifted behind the IDB's own renames.** Unit 103 found eleven rows still
+  carrying names the IDB had dropped: `Map_PlaySamples10_7_SetFlag_ClearScreen` (0x19528),
+  `Map_PlaySamples10_7_ClearFlag_ClearScreen` (0x19568), `Map_UiScreen7_PlaySamples10_0E` (0x194f8),
+  `Map_PlaySamples10_0E_ClearUiScreen` (0x18e9c), `Map_PlaySample11_SetMode0B` (0x179c0),
+  `Ship_AbortCourse` (0x5a64c), `Smap_CanInterceptReach` (0x7e074), `Funding_AddRaceBonus` (0x7debc),
+  `Set_byte_159E88_4` (0x6b6b0), and the two unit-101 renames `Ui_TextInputDialog` (0x632cc) and
+  `Ui_DrawTextInputDialog` (0x62d78) — the last pair meant `inventory-grouped.tsv` and `functions.tsv`
+  disagreed with each other, and regenerating one propagated the stale names into the other. All eleven are
+  now the IDB's current names, `inventory-grouped.tsv` is regenerated from them, and six `renames.tsv` rows
+  map those IDB names to the port's, which takes `audit_names.py` to **0** unresolved citations for the
+  first time. **The check to re-run after any IDB function rename:** take every `renames.tsv` row whose old
+  name is still a name in `functions.tsv`, look those addresses up in the IDB, and fix the rows whose IDB
+  name differs.
+
+- [ ] **A negative pixel probe has to sit where the drawing would actually land.** Unit 103's mutation
+  sweep flipped the `forcenodrag` half of the inventory highlight gate and nothing failed. The "no highlight"
+  checks probed `PixAt(98, 263)`, but they ran after a case that left `hit.nHitSub0` at 1, and region 0 paints
+  at `38 * nHitSub0 + 22` — with sub-column 1 the highlight would have been at x 60, so the probe was asserting
+  on empty space. The probes are now pinned to sub-column 2. **Every "nothing is drawn here" check needs its
+  inputs pinned to the values that would put a mark on the probed pixel**; worth a sweep of the drawing suites
+  for negative checks whose coordinates were inherited from the case before them.
+
 - [ ] **`Geoscape_SpawnMissionSite` has not reproduced the assault branch, so nothing in the port opens the
   base-attack screen.** The original's type-2 branch (0x7EF38..0x7EF80) pauses the game, fills the block at
   0x158840..0x158849 from the strateg item — `nBaseAtClass` = `bCraftClass` (+2, read SIGNED),
@@ -3121,6 +3143,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the credits and ending shutdowns (`Titles_Shutdown`, `Titles_dtor`, `EndScreen_Shutdown`; the screen id 22 written unconditionally before the surface release, the five glyph-blob deletes with no null store, the unguarded ending-backdrop delete, the tail call back into `GameUI_InitStartup` that re-loads the font the shutdown just freed, the shipped `main.dat` carrying no `Z*.WAV` for the ending's own sample set, 3 original findings and 3 deviations recorded, `titles` complete at 13/13) | 60/60 (Release) | 15436 | 949/1103 (86.0%) | 542820/598792 (90.7%) | 40 checked, 0 mismatched |
 | the soldier readout and its armour panels (`SoldierScreen_DrawDetail`, `SoldierScreen_DrawEquipPanels`; the `Ui_TextInputDialog` misnomer corrected in the IDB, the row count from `nEquipRowCount @ 0xab710` over the three armour objects `apObjects[122..124]`, the six-entry class-insignia pair table, the `bUnk183 == 254` Wound Recovery gate, the nine stat bars that name all ten `auStat` slots, the 16x16 name-edit keyboard, 5 ledger rows and 2 documented deviations) | 60/60 (Release) | 15547 | 951/1103 (86.2%) | 549876/598792 (91.8%) | 40 checked, 0 mismatched |
 | the tactical sprite loader (`Font_LoadTactSprites`; the font block's five template-indexed group bases named as `anFlagSprBase[5]`, the port's own `Font_GetFlagSprBase` model-layout defect fixed, three shipped name tables dumped and audited, 12 IDB renames) | 60/60 (Release) | 15581 | 952/1103 (86.3%) | 550628/598792 (92.0%) | 43 checked, 0 mismatched |
+| the startup entry and the `forcenodrag` option (`Map_InitAndLoadRegistry`; the CRT init-term thunk at 0x22604, the fourteen scratch writes with slot 26 as the startup roll and slot 4 as 200 and no write to slot 1, the twelve registry reads with their constant out-of-range fallbacks and the `strcmp(value, "0")` flag test the port had been doing with `atoi`, the `Map_bInvPanelOpen` → `Map_bForceNoDrag` misnomer corrected in the IDB and in the port, the two swapped `TactHudInventoryEnv` field names, 4 IDB renames and 14 mutations all caught) | 60/60 (Release) | 15610 | 953/1103 (86.4%) | 551912/598792 (92.2%) | 43 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

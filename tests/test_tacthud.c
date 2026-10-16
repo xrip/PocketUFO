@@ -1718,8 +1718,8 @@ static void TestInventoryScreen(void)
     env.panRankOther   = &s_aInvRank[0][0];
     env.nCursorX       = 100;
     env.nCursorY       = 100;
-    env.nDragActive    = 1;
-    env.bInvPanelOpen  = 1;
+    env.bItemHeld      = 1;
+    env.bForceNoDrag   = 1;
     env.nBigObsBase    = 10;
     env.Strip.pUi           = &ui;
     env.Strip.pSelUnit      = &unit;
@@ -1771,18 +1771,28 @@ static void TestInventoryScreen(void)
     TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
     Check("region 9 draws no highlight", PixAt(190, 61) == 0);
 
+    /* Both gates are probed at the point region 0 with sub-column 2 actually paints
+     * (x 38*2 + 22 = 98, y 263), so a gate that stops holding shows up. */
     ClearStrip();
     hit.nHitRegion = 0;
-    env.bInvPanelOpen = 0;
+    hit.nHitSub0   = 2;
+    env.bForceNoDrag = 0;
     TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
-    Check("a closed panel draws no highlight", PixAt(98, 263) == 0);
-    env.bInvPanelOpen = 1;
+    Check("forcenodrag clear draws no highlight", PixAt(98, 263) == 0);
+    env.bForceNoDrag = 1;
 
     ClearStrip();
-    env.nDragActive = 0;
+    env.bItemHeld = 0;
     TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
-    Check("no drag flag means no highlight either", PixAt(98, 263) == 0);
-    Check("while the drag ghost is drawn instead, the opposite gate", PixAt(100, 100) != 0);
+    Check("no held item means no highlight either", PixAt(98, 263) == 0);
+    Check("and with nothing held neither is the carried-item ghost", PixAt(100, 100) == 0);
+    env.bItemHeld = 1;
+    ClearStrip();
+    env.bForceNoDrag = 0;
+    TactHud_DrawInventoryScreen(&env, &color, CountBlit, CountBlit, NULL);
+    Check("held item plus forcenodrag clear draws the ghost instead of the highlight",
+          PixAt(100, 100) != 0);
+    Check("and the highlight really is absent there", PixAt(98, 263) == 0);
     hit.nDragOffX = 5;
     hit.nDragOffY = 7;
     ClearStrip();
@@ -1791,7 +1801,7 @@ static void TestInventoryScreen(void)
     Check("and the highlight is absent in the same call", PixAt(98, 263) == 0);
     hit.nDragOffX = 0;
     hit.nDragOffY = 0;
-    env.nDragActive = 1;
+    env.bForceNoDrag = 1;
 
     /* The burden number is uInvBurden - 1, drawn left aligned at x 185, row 140. */
     ClearStrip();

@@ -17100,3 +17100,70 @@ comment on 0x257c4 and line comments at 0x2582C, 0x258F0, 0x2598C plus data comm
 on the three tables. Three new audited tables (43 checked, 0 mismatched), dumped by
 tools/gen_tact_sprite_tables.py.
 
+## Unit 103 - the startup entry and the forcenodrag option
+(Map_InitAndLoadRegistry @ 0x22648, 1,284 B)
+
+Coverage moves to 953 / 1103 functions (86.3 -> 86.4 %) and 551,912 / 598,792 bytes (92.2 %).
+
+The Map subsystem's startup entry is a CRT init-term record: the thunk at 0x22604 runs
+Map_InitAndLoadRegistry and then tail-calls Map_RegisterAtexit. It has two halves.
+
+0x22664..0x226C8 clears the tactical scratch and writes two constants. In the ARM's order:
+Map+0x15110 (the deploy panel), +0xC4, +0x7C, +0x150E8 (anActionPhaseSave0[112]), +0x68 low
+byte, +0x150F0 (pThrowTargetUnit), +0x37, +0x5C, +0x6C, +0x74..0x77 (the four edge bytes of
+apUiSlotsA[5]) and +0x80 low byte all go to zero; +0xC8 takes Game_RandU16(3) and +0x70 takes
+200. Slot numbering is (offset - 0x60) / 4, so +0xC4 is slot 25 and +0xC8 slot 26. Nothing
+writes +0x64 -- an early draft of the port claimed slot 1, and the sentinel fixture caught it.
+
+0x226CC..0x22AFC reads the twelve registry values. Numerics are atoi'd -- the original re-reads
+the same buffer twice or three times -- against an inclusive range whose out-of-range fallback
+is a constant rather than the caller's default: gamespeed 0..4 else 4, gamma 0..4 else 2,
+soundvolume 1..5 else 5, musicvolume 1..5 else 5. The volume range EXCLUDES 0. Flags are
+strcmp(value, "0") != 0, so any text other than "0" sets them, an empty string included; the
+Reg_GetString default is "1" for menubypen, runbydblclick, scrollbypen and showborder and "0"
+for musicoff, soundoff, forcenodrag and turnbypen. The port's Options_LoadFromRegistry had been
+reading the flags through atoi, which disagrees on exactly those two cases; it now uses the
+string test with the original's literal default strings.
+
+The naming fix this function proves. The byte at Map+0x150E4 was Map_bInvPanelOpen in the IDB
+and bInvPanelOpen in the port -- a name for what the inventory code does with it, not for what
+it is. The registry name is "forcenodrag" (written by Options_SaveToRegistry @ 0x115C4, read
+back at 0x22928), the options screen lights widget 88 from its INVERSE
+(Options_SyncUiFromMap_GotoScreen12 @ 0x18A18), and Menu_ToggleForceNoDrag @ 0x19d94 is that
+widget's click handler. In play it picks the transfer style: set means the 13 controls are press
+hit-tested and a press while an item is held places it (Inv_ClearHitSlot + Inv_HandlePointer at
+0x146A8, then the held byte clears); clear means a drag. TactHud_DrawInventoryScreen highlights
+the hit region when it is set and draws the carried-item ghost when it is clear. It is
+Map_bForceNoDrag in the IDB and bForceNoDrag in the port.
+
+A second naming defect, found in the same reading: TactHudInventoryEnv carried the two bytes
+under swapped names -- nDragActive held Map+0x150E4 and bInvPanelOpen held byte_1139F4 @
+Map+0x3C. The code read them the right way round; only the names were wrong. They are now
+bForceNoDrag and bItemHeld. Fixing them exposed three vacuous checks in test_tacthud: the
+"no highlight" probes sat at x 98 while the leftover nHitSub0 of 1 would have painted region 0
+at x 60. They are pinned to sub-column 2 now, and the mutation that had been missed is caught.
+
+Also renamed in the IDB: unk_128AB4 -> Map_nGameSpeed (Map+0x150FC, the dword GameClock.nSpeed
+already cites), unk_AD1DA -> bCtl88ForceNoDrag (pBank widget 88's nState byte, the port's
+MenuPads.bForceNoDrag), and TactHud_ToggleFlag128A9C -> Menu_ToggleForceNoDrag, the name
+renames.tsv already recorded for the port. docs/idb/functions.tsv and the regenerated
+inventory-grouped.tsv follow the rename, and the name-based grouping moves 0x19d94 from tact-ui
+to strat-ui -- the options screen is strategic UI, where its neighbours already sit.
+
+Deviation: the original writes all fourteen scratch slots through the context base. The port
+writes through MapInitEnv members and skips the ones the caller passes as NULL -- the shell runs
+no tactical mission, so it owns neither the battle-ended byte nor the throw-target slot, and
+clearing a field of a block that does not exist has no counterpart. test_boot drives the full
+non-NULL set.
+
+Tests: 24 new checks in test_boot (62 there) and 2 in test_audio (55 there), 15,610 across all
+60 suites. The scratch fixture starts every field at 0x5A / 0x5A5A5A5A so a write that lands in
+the wrong slot, or a constant read from the wrong one, fails; the roll is sampled 64 times so a
+wider or narrower Game_RandU16 argument and a roll written into slot 25 both show up; and the
+flag cases use "yes", "" and a 299-byte value -- the last one rejected by Reg_GetString, which
+is what makes the per-flag default strings observable. A 14-mutation sweep turned all 14 red.
+
+IDB: 4 renames (Map_bInvPanelOpen -> Map_bForceNoDrag, TactHud_ToggleFlag128A9C ->
+Menu_ToggleForceNoDrag, unk_AD1DA -> bCtl88ForceNoDrag, unk_128AB4 -> Map_nGameSpeed), a
+function comment on 0x22648, data comments on 0x128A9C, 0xAD1DA and 0x128AB4, a function comment
+on 0x19d94 and a correction appended to the TactHud_DrawInventoryScreen comment at 0x1f58c.

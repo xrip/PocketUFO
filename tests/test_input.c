@@ -1214,22 +1214,27 @@ static void TestPointer(void)
     CheckEqI32((i32)g_bank.aCtl[0].nState, 0, "  multi-target mode skips widget 0");
     CheckEqI32((i32)g_bank.aCtl[2].nState, 1, "  and hits widget 2 instead");
 
-    /* Screen 1: the inventory drag. */
+    /* Screen 1: the inventory transfer, which the `forcenodrag` option switches
+     * between tap-to-place and a drag. Widget 19, the first of the 13 inventory
+     * controls, is made live under the press so the hit-test pass is observable. */
     PtrBankReset();
+    PtrLive(19, 5, 5, 20, 20);
     memset(&g_ptr, 0, sizeof(g_ptr));
     s = PtrState(1);
-    s.bInvPanelOpen = 1;
+    s.bForceNoDrag = 1;
     s.bInvDragActive = 1;
     Input_OnPointer(&s, &h, &w, 10, 10, true);
     Check(g_ptr.nInvClear == 1 && g_ptr.nInvHandle == 1,
-          "  an open panel with a drag drops the item");
-    CheckEqI32((i32)s.bInvDragActive, 0, "  and the drag ends");
+          "  forcenodrag places the held item on this press");
+    CheckEqI32((i32)s.bInvDragActive, 0, "  and the held flag clears");
+    CheckEqI32((i32)g_bank.aCtl[19].nState, 1,
+               "  forcenodrag also press hit-tests the 13 controls (0x1464C)");
 
     memset(&g_ptr, 0, sizeof(g_ptr));
-    s.bInvPanelOpen = 0;
+    s.bForceNoDrag = 0;
     s.bInvDragActive = 0;
     Input_OnPointer(&s, &h, &w, 10, 10, true);
-    CheckEqI32((i32)s.bInvDragActive, 1, "  a hit on a closed panel starts a drag");
+    CheckEqI32((i32)s.bInvDragActive, 1, "  with forcenodrag clear a hit arms a drag");
 
     memset(&g_ptr, 0, sizeof(g_ptr));
     s.bInvDragActive = 0;
@@ -1373,25 +1378,25 @@ static void TestPointerUp(void)
     Input_OnPointerUp(&s, &h, &w);
     Check(UpLive(0), "  the HUD panel owns the pointer when 0x38 is clear");
 
-    /* Screen 1: thirteen widgets, then the drop when a drag is live. */
+    /* Screen 1: thirteen widgets, then the placement when an item is held. */
     PtrBankLiveAll();
     memset(&g_ptr, 0, sizeof(g_ptr));
     s = PtrState(1);
-    s.bInvPanelOpen = 1;
+    s.bForceNoDrag = 1;
     s.bInvDragActive = 1;
     Input_OnPointerUp(&s, &h, &w);
     Check(!UpLive(19) && !UpLive(31) && UpLive(32), "  screen 1 releases 19..31");
-    CheckEqI32(g_ptr.nInvHandle, 0, "  an open panel does not drop");
+    CheckEqI32(g_ptr.nInvHandle, 0, "  forcenodrag releases the controls, it does not place");
 
     PtrBankLiveAll();
     memset(&g_ptr, 0, sizeof(g_ptr));
     s = PtrState(1);
-    s.bInvPanelOpen = 0;
+    s.bForceNoDrag = 0;
     s.bInvDragActive = 1;
     Input_OnPointerUp(&s, &h, &w);
-    Check(UpLive(19), "  a closed panel skips the release");
-    CheckEqI32(g_ptr.nInvHandle, 1, "  the live drag drops the item");
-    CheckEqI32((i32)s.bInvDragActive, 0, "  and the drag flag clears");
+    Check(UpLive(19), "  with forcenodrag clear the release is skipped");
+    CheckEqI32(g_ptr.nInvHandle, 1, "  the held item is placed");
+    CheckEqI32((i32)s.bInvDragActive, 0, "  and the held flag clears");
 
     /* Screens 2, 4, 5, 7, 12, 15 and the standalone controls. */
     PtrBankLiveAll();

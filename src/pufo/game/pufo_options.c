@@ -1,8 +1,8 @@
 /* pufo_options.c - the game's option block and its registry persistence.
  *
- * Evidence: Options_SaveToRegistry @ 0x114d8, Reg_SetString @ 0x9ed0c,
- *           Reg_GetString @ 0x9edbc, Sound_ApplyMusicVolume @ 0x9e454,
- *           Sound_ApplySfxVolume @ 0x9e4dc.
+ * Evidence: Options_SaveToRegistry @ 0x114d8, Map_InitAndLoadRegistry @ 0x22648,
+ *           Reg_SetString @ 0x9ed0c, Reg_GetString @ 0x9edbc,
+ *           Sound_ApplyMusicVolume @ 0x9e454, Sound_ApplySfxVolume @ 0x9e4dc.
  */
 #include "game/pufo_options.h"
 
@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "platform/pufo_reg.h"
+#include "util/pufo_rand.h" /* Game_RandU16 */
 
 void Options_InitDefaults(PufoOptions *pOpt)
 {
@@ -61,6 +62,17 @@ static i32 Options_LoadInt(const char *pszName, i32 nDefault)
     const char *psz = Reg_GetString(pszName, NULL);
 
     return psz == NULL ? nDefault : (i32)atoi(psz);
+}
+
+/* A flag is tested with strcmp(value, "0") != 0 -- 0x22950 for forcenodrag, 0x228B4
+ * for musicoff, 0x229B0 for menubypen, and the same shape for the rest. ANY text
+ * other than "0" sets it, an empty string included; atoi would read both as clear.
+ * pszDefault is the literal string the original hands Reg_GetString: "1" for
+ * menubypen, runbydblclick, scrollbypen and showborder, "0" for musicoff, soundoff,
+ * forcenodrag and turnbypen. */
+static u8 Options_LoadFlag(const char *pszName, const char *pszDefault)
+{
+    return (u8)(strcmp(Reg_GetString(pszName, pszDefault), "0") != 0);
 }
 
 /* The original reads each numeric registry value through Reg_GetString into a
@@ -117,14 +129,46 @@ void Options_LoadFromRegistry(PufoOptions *pOpt)
     /* Load mirrors save: read the string, compare to "0" for a clear flag. The
      * original uses strcmp directly, so any value other than "0" -- including an
      * empty string -- sets the flag; atoi would disagree for non-numeric text. */
-    pOpt->bMusicOff     = (u8)(Options_LoadInt("musicoff", def.bMusicOff) != 0);
-    pOpt->bSoundOff     = (u8)(Options_LoadInt("soundoff", def.bSoundOff) != 0);
-    pOpt->bForceNoDrag  = (u8)(Options_LoadInt("forcenodrag", def.bForceNoDrag) != 0);
-    pOpt->bMenuByPen    = (u8)(Options_LoadInt("menubypen", def.bMenuByPen) != 0);
-    pOpt->bRunByDblClick = (u8)(Options_LoadInt("runbydblclick", def.bRunByDblClick) != 0);
-    pOpt->bScrollByPen  = (u8)(Options_LoadInt("scrollbypen", def.bScrollByPen) != 0);
-    pOpt->bShowBorder   = (u8)(Options_LoadInt("showborder", def.bShowBorder) != 0);
-    pOpt->bTurnByPen    = (u8)(Options_LoadInt("turnbypen", def.bTurnByPen) != 0);
+    pOpt->bMusicOff      = Options_LoadFlag("musicoff", "0");
+    pOpt->bSoundOff      = Options_LoadFlag("soundoff", "0");
+    pOpt->bForceNoDrag   = Options_LoadFlag("forcenodrag", "0");
+    pOpt->bMenuByPen     = Options_LoadFlag("menubypen", "1");
+    pOpt->bRunByDblClick = Options_LoadFlag("runbydblclick", "1");
+    pOpt->bScrollByPen   = Options_LoadFlag("scrollbypen", "1");
+    pOpt->bShowBorder    = Options_LoadFlag("showborder", "1");
+    pOpt->bTurnByPen     = Options_LoadFlag("turnbypen", "0");
+}
+
+/* Map_InitAndLoadRegistry @ 0x22648. The scratch half is 0x22664..0x226C8, in the
+ * ARM's order; the registry half is the twelve reads at 0x226CC..0x22AFC, which is
+ * Options_LoadFromRegistry. The original returns pMap; the port returns void because
+ * no caller uses the value (the thunk at 0x22604 discards it before tail-calling
+ * Map_RegisterAtexit). */
+void Map_InitAndLoadRegistry(const MapInitEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    /* 0x22664: the deploy panel closes, the animation slots reset, and the sweep
+     * roll is Game_RandU16(3) -- the only non-constant the scratch half writes. */
+    if (pEnv->pbDeployPanelOpen != NULL) { *pEnv->pbDeployPanelOpen = 0; }
+    if (pEnv->pnUiSlot25 != NULL) { *pEnv->pnUiSlot25 = 0; }
+    if (pEnv->pnUiSlot26 != NULL) { *pEnv->pnUiSlot26 = (i32)Game_RandU16(3); }
+    if (pEnv->pnUiSlot7 != NULL) { *pEnv->pnUiSlot7 = 0; }   /* 0x007C */
+    if (pEnv->pnPhaseSave112 != NULL) { *pEnv->pnPhaseSave112 = 0; }
+    if (pEnv->pbSlot2Byte0 != NULL) { *pEnv->pbSlot2Byte0 = 0; }
+    if (pEnv->ppThrowTarget != NULL) { *pEnv->ppThrowTarget = NULL; }
+    if (pEnv->pbMapPhase != NULL) { *pEnv->pbMapPhase = 0; }
+    if (pEnv->pbBattleEnded != NULL) { *pEnv->pbBattleEnded = 0; }
+    if (pEnv->pnUiSlot3 != NULL) { *pEnv->pnUiSlot3 = 0; }
+    if (pEnv->pnUiSlot4 != NULL) { *pEnv->pnUiSlot4 = 200; }
+    if (pEnv->pnUiSlot5 != NULL) { *pEnv->pnUiSlot5 = 0; }
+    if (pEnv->pbSlot8Byte0 != NULL) { *pEnv->pbSlot8Byte0 = 0; }
+
+    if (pEnv->pOptions != NULL) {
+        Options_LoadFromRegistry(pEnv->pOptions);
+    }
 }
 
 /* Sound_ApplyMusicVolume @ 0x9e454 and Sound_ApplySfxVolume @ 0x9e4dc:

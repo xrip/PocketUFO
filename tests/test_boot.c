@@ -1,4 +1,5 @@
-/* test_boot.c - checks startup asset loading against the shipped archives.
+/* test_boot.c - checks startup asset loading against the shipped archives, and the
+ * startup entry every subsystem hangs off.
  *
  * This is the end-to-end data test: it opens both archives, loads objects.dat,
  * fontsize.dat, texts.dat, the 240x320 surface, class.pal and the three pads, and
@@ -7,6 +8,9 @@
  */
 #include "game/pufo_boot.h"
 #include "game/pufo_font.h"
+#include "game/pufo_input.h"   /* TactInputState, the scratch the startup entry clears */
+#include "game/pufo_options.h"
+#include "platform/pufo_reg.h"
 #include "render/pufo_render.h"
 
 #include <stdio.h>
@@ -144,12 +148,166 @@ static void TestMissingArchive(void)
     Check(true, "  shutdown after a failed load is safe");
 }
 
+/* Both registry tests write into HKCU\Software\PocketUFO, so both end by putting the
+ * defaults back: another suite running after this one must see the defaults too. */
+static void MapOptionsRestoreDefaults(void)
+{
+    PufoOptions opt;
+
+    Options_InitDefaults(&opt);
+    Options_SaveToRegistry(&opt);
+}
+
+/* Map_InitAndLoadRegistry @ 0x22648, the Map subsystem's startup entry (the CRT thunk
+ * at 0x22604 runs it, then Map_RegisterAtexit). The scratch half is 0x22664..0x226C8.
+ * Every fixture field starts as a sentinel so a write that lands in the wrong slot, or
+ * a constant read from the wrong slot, fails. */
+static void TestMapInitScratch(void)
+{
+    TactInputState st;
+    PufoOptions opt;
+    MapInitEnv env;
+    u8   bPhase = 0x5A;
+    u8   bBattle = 0x5A;
+    i32  nSave112 = 0x5A5A5A5A;
+    void *pThrow = (void *)0x5A5A5A5Au;
+
+    printf("Map_InitAndLoadRegistry scratch\n");
+
+    /* Pin the registry first: the entry loads the option block at the end, and the
+     * scratch assertions must not depend on what the machine's registry holds. */
+    (void)Reg_SetString("gamespeed", "3");
+    (void)Reg_SetString("gamma", "1");
+    (void)Reg_SetString("soundvolume", "2");
+    (void)Reg_SetString("musicvolume", "4");
+    (void)Reg_SetString("musicoff", "0");
+    (void)Reg_SetString("soundoff", "0");
+    (void)Reg_SetString("forcenodrag", "0");
+    (void)Reg_SetString("menubypen", "0");
+    (void)Reg_SetString("runbydblclick", "0");
+    (void)Reg_SetString("scrollbypen", "0");
+    (void)Reg_SetString("showborder", "0");
+    (void)Reg_SetString("turnbypen", "0");
+
+    memset(&st, 0x5A, sizeof(st));
+    memset(&env, 0, sizeof(env));
+    env.pOptions          = &opt;
+    env.pbDeployPanelOpen = &st.bDeployPanelOpen;
+    env.pbMapPhase        = &bPhase;
+    env.pbBattleEnded     = &bBattle;
+    env.pbSlot2Byte0      = &st.bSlot2Byte0;
+    env.pbSlot8Byte0      = &st.bUiSlot8Byte0;
+    env.pnUiSlot3         = &st.nUiSlot3;
+    env.pnUiSlot4         = &st.nUiSlot4;
+    env.pnUiSlot5         = &st.nUiSlot5;
+    env.pnUiSlot7         = &st.nUiSlot7;
+    env.pnUiSlot25        = &st.nUiSlot25;
+    env.pnUiSlot26        = &st.nUiSlot26;
+    env.pnPhaseSave112    = &nSave112;
+    env.ppThrowTarget     = &pThrow;
+
+    Map_InitAndLoadRegistry(&env);
+
+    CheckEqI32(st.bDeployPanelOpen, 0, "  0x15110 closes the deploy panel");
+    CheckEqI32(bPhase, 0, "  0x0037 clears the map phase");
+    CheckEqI32(bBattle, 0, "  0x005C clears the battle-ended byte");
+    CheckEqI32(st.bSlot2Byte0, 0, "  0x0068 clears slot 2's low byte");
+    CheckEqI32(st.nUiSlot3, 0, "  0x006C clears slot 3");
+    CheckEqI32(st.nUiSlot4, 200, "  0x0070 sets slot 4 to 200");
+    CheckEqI32((i32)st.nUiSlot5, 0, "  0x0074 clears slot 5's four edge bytes");
+    CheckEqI32(st.nUiSlot7, 0, "  0x007C clears slot 7");
+    CheckEqI32(st.bUiSlot8Byte0, 0, "  0x0080 clears slot 8's low byte");
+    CheckEqI32(st.nUiSlot25, 0, "  0x00C4 clears slot 25");
+    Check(st.nUiSlot26 >= 0 && st.nUiSlot26 <= 2, "  0x00C8 takes the Game_RandU16(3) roll");
+    CheckEqI32(nSave112, 0, "  0x150E8 clears anActionPhaseSave0[112]");
+    Check(pThrow == NULL, "  0x150F0 clears the throw target");
+    CheckEqI32(opt.nGameSpeed, 3, "  the registry half runs after the scratch");
+
+    /* The roll is a random draw, so bound it over repeated runs: a wider or
+     * narrower Game_RandU16 argument shows up as a value outside 0..2. */
+    {
+        bool bInRange = true;
+        bool bSawTop = false;
+        bool bSlot25Clean = true;
+
+        for (i32 i = 0; i < 64; ++i) {
+            Map_InitAndLoadRegistry(&env);
+            if (st.nUiSlot26 < 0 || st.nUiSlot26 > 2) {
+                bInRange = false;
+            }
+            if (st.nUiSlot26 == 2) {
+                bSawTop = true;
+            }
+            /* Sampled every run: a roll written into the wrong slot would show up
+             * here even when the first sample happens to be zero. */
+            if (st.nUiSlot25 != 0) {
+                bSlot25Clean = false;
+            }
+        }
+        Check(bInRange, "  64 rolls all stay inside 0..2");
+        Check(bSawTop, "  and the top of the range is reachable");
+        Check(bSlot25Clean, "  and slot 25 stays cleared across all 64 runs");
+    }
+
+    /* A member the caller does not own is skipped, not dereferenced -- the shell
+     * passes NULL for the two fields of a Map block it never allocates. */
+    memset(&env, 0, sizeof(env));
+    env.pOptions     = &opt;
+    env.pnUiSlot4    = &st.nUiSlot4;
+    st.nUiSlot25     = 0x5A5A5A5A;
+    st.nUiSlot4      = 0x5A5A5A5A;
+    Map_InitAndLoadRegistry(&env);
+    CheckEqI32(st.nUiSlot4, 200, "  an owned member is still written");
+    CheckEqI32(st.nUiSlot25, 0x5A5A5A5A, "  an unowned member is left alone");
+
+    MapOptionsRestoreDefaults();
+}
+
+/* The flag half of Map_InitAndLoadRegistry reads a value and tests it with
+ * strcmp(value, "0") != 0 (0x22950 for forcenodrag, 0x228B4 for musicoff, ...), and
+ * hands Reg_GetString a literal default: "1" for menubypen, runbydblclick,
+ * scrollbypen and showborder, "0" for musicoff, soundoff, forcenodrag and turnbypen.
+ * atoi semantics would disagree on both counts. */
+static void TestOptionFlagSemantics(void)
+{
+    PufoOptions opt;
+    char szLong[300];
+
+    printf("the option flags are strcmp'd against \"0\"\n");
+
+    (void)Reg_SetString("forcenodrag", "yes");
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.bForceNoDrag, 1, "  a non-numeric value SETS the flag (atoi would clear it)");
+
+    (void)Reg_SetString("forcenodrag", "");
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.bForceNoDrag, 1, "  an empty value sets it too");
+
+    (void)Reg_SetString("forcenodrag", "0");
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.bForceNoDrag, 0, "  only the text \"0\" clears it");
+
+    /* A stored value longer than 0xFF is rejected by Reg_GetString, which then hands
+     * back the caller's default -- and the defaults differ per flag. */
+    memset(szLong, 'x', sizeof(szLong) - 1);
+    szLong[sizeof(szLong) - 1] = '\0';
+    (void)Reg_SetString("menubypen", szLong);
+    (void)Reg_SetString("forcenodrag", szLong);
+    Options_LoadFromRegistry(&opt);
+    CheckEqI32(opt.bMenuByPen, 1, "  menubypen falls back to its default \"1\", which sets it");
+    CheckEqI32(opt.bForceNoDrag, 0, "  forcenodrag falls back to its default \"0\", which clears it");
+
+    MapOptionsRestoreDefaults();
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
 
     TestRealLoad();
     TestMissingArchive();
+    TestMapInitScratch();
+    TestOptionFlagSemantics();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

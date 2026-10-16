@@ -65,7 +65,7 @@ addr	name	size
 177fc	Tact_SetFireModeSnap	108
 17868	Tact_SetFireModeAuto	108
 178d4	TactAction_ConfirmUseItem	236
-179c0	Map_PlaySample11_SetMode0B	36
+179c0	Map_PlaySample17_SetMode11	36
 179e4	Tact_TryFireMode4	156
 17a80	Tact_TryFireMode10	156
 17b1c	Tact_TryFireMode5	156
@@ -92,7 +92,7 @@ addr	name	size
 18e04	Menu_CancelQuitDialog	20
 18e18	App_QuitFromTact	20
 18e2c	Menu_ConfirmQuitDialog	112
-18e9c	Map_PlaySamples10_0E_ClearUiScreen	48
+18e9c	Map_PlaySamples16_14_ClearUiScreen	48
 18ecc	MenuBtn_SetSpeed0	84
 18f20	MenuBtn_SetSpeed1	84
 18f74	MenuBtn_SetSpeed2	84
@@ -110,9 +110,9 @@ addr	name	size
 1941c	Map_ToggleFlag128A91_Play11	124
 19498	MenuBtn_Secondary	48
 194c8	MenuBtn_ConfirmClear	48
-194f8	Map_UiScreen7_PlaySamples10_0E	48
-19528	Map_PlaySamples10_7_SetFlag_ClearScreen	64
-19568	Map_PlaySamples10_7_ClearFlag_ClearScreen	64
+194f8	Map_UiScreen7_PlaySamples16_14	48
+19528	Map_PlaySamples16_7_SetDeployFlag	64
+19568	Map_PlaySamples16_7_ClearDeployFlag	64
 195a8	MenuBtn_ActionBack0	56
 195e0	MenuBtn_SecondaryDismiss	56
 19618	MenuBtn_ActionBack1	56
@@ -140,7 +140,7 @@ addr	name	size
 19c74	MenuBtn_SetSfxVol3	96
 19cd4	MenuBtn_SetSfxVol4	96
 19d34	MenuBtn_SetSfxVol5	96
-19d94	TactHud_ToggleFlag128A9C	80
+19d94	Menu_ToggleForceNoDrag	80
 19de4	SaveLoad_Slot0	80
 19e34	SaveLoad_Slot1	80
 19e84	SaveLoad_Slot2	80
@@ -520,7 +520,7 @@ addr	name	size
 5a450	UiPanel_SetLineColors	52
 5a484	Ship_RetargetTravel	308
 5a5b8	Ship_ClearInterceptByStrategIdx	148
-5a64c	Ship_AbortCourse	484
+5a64c	Ship_LaunchIntercept	484
 5a830	Ship_ClearWaypointIntercept	160
 5a8d0	Base_FindIndexBySiteId	92
 5a92c	Ship_FindIndexByStrategType	136
@@ -589,11 +589,11 @@ addr	name	size
 6250c	Base_DrawFacilityIconStrip	792
 62824	Base_TickFacilityConstruction	396
 629b0	Base_CanPlaceHangarAt	968
-62d78	Ui_DrawTextInputDialog	960
+62d78	SoldierScreen_DrawEquipPanels	960
 63138	Map_BackspaceSelectedName	84
 6318c	SoldierScreen_CopyNameToEdit	124
 63208	SoldierScreen_AppendNameGlyph	196
-632cc	Ui_TextInputDialog	6096
+632cc	SoldierScreen_DrawDetail	6096
 64a9c	SoldierScreen_SelectListed	72
 64ae4	SoldierScreen_CloseThunk	12
 64af0	SoldierScreen_Toggle	1952
@@ -683,7 +683,7 @@ addr	name	size
 6b49c	OptionsScreen_BindSaveSlots	236
 6b588	OptionsScreen_BindLoadSlots	236
 6b674	Set_byte_159E88_3_SetUiY	60
-6b6b0	Set_byte_159E88_4	20
+6b6b0	Options_SetTab4	20
 6b6c4	OptionsScreen_LayoutButtons	232
 6b7ac	Options_SaveAudioSettings	336
 6b8fc	OptionsScreen_RefreshVolumeHighlight	152
@@ -800,9 +800,9 @@ addr	name	size
 7d374	BasePlaneScreen_Draw	1648
 7d9e4	BasePlaneScreen_Init	1072
 7de14	BasePlaneScreen_AddInterceptMission	168
-7debc	Funding_AddRaceBonus	196
+7debc	Funding_AddRegionBonus	196
 7df80	Smap_DistWrapped	244
-7e074	Smap_CanInterceptReach	768
+7e074	Smap_CraftRangeExhausted	768
 7e374	StrategList_AddUfoAt	64
 7e3b4	StrategList_AddAlienSiteIfValid	108
 7e420	StrategList_MaybeSpawnCraft_Process	124

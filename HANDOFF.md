@@ -1,7 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-17. HEAD before this edit: `0a4fcdf`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 102, the tactical sprite loader and the font's group bases),
+Date: 2026-10-17. HEAD before this edit: `a528d07`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 103, the startup entry and the `forcenodrag` option),
 and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
@@ -232,9 +232,47 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **15581**. Coverage as of the latest commit: **952 / 1103
-functions (86.3%)**, **550628 / 598792 bytes (92.0%)**. This unit ported `Font_LoadTactSprites`
-(0x257c4, 752 B) -- the only writer of the per-group sprite bases in the font block at 0x158268, reached
+Test checks run across the 60 suites: **15610**. Coverage as of the latest commit: **953 / 1103
+functions (86.4%)**, **551912 / 598792 bytes (92.2%)**. This unit ported `Map_InitAndLoadRegistry`
+(0x22648, 1,284 B) -- the Map subsystem's startup entry, a CRT init-term record whose thunk at 0x22604
+runs it and then tail-calls `Map_RegisterAtexit`. **Its scratch half writes fourteen slots and two
+constants**: Map+0x15110, +0xC4, +0x7C, +0x150E8, +0x68 (byte), +0x150F0, +0x37 (byte), +0x5C (byte),
++0x6C, +0x74..0x77 (four byte stores) and +0x80 (byte) go to zero, +0xC8 takes `Game_RandU16(3)` and
++0x70 takes 200; slot numbering is `(offset - 0x60) / 4`. **Nothing writes +0x64** -- an early draft of
+this port claimed slot 1 and the sentinel fixture caught it. **Its registry half tests flags with
+`strcmp(value, "0") != 0`** (0x22950, 0x228B4, 0x229B0, ...), so any text other than "0" sets a flag, an
+empty string included, and hands `Reg_GetString` a literal default per flag: "1" for menubypen,
+runbydblclick, scrollbypen and showborder, "0" for musicoff, soundoff, forcenodrag and turnbypen. The
+port's `Options_LoadFromRegistry` had been reading the flags through `atoi`, which disagrees on exactly
+those two cases. Numerics keep their inclusive ranges and constant fallbacks (gamespeed 0..4 else 4,
+gamma 0..4 else 2, both volumes 1..5 else 5 -- 0 is out of range for a volume).
+
+**The naming fix this function proves.** The byte at Map+0x150E4 was `Map_bInvPanelOpen` in the IDB and
+`bInvPanelOpen` in the port -- a name for what the inventory code does with it. Its registry name is
+`forcenodrag` (written at 0x115C4, read back at 0x22928), the options screen lights widget 88 from its
+INVERSE (0x18A18), and `Menu_ToggleForceNoDrag` @ 0x19d94 -- IDA's `TactHud_ToggleFlag128A9C` -- is that
+widget's click handler. In play it picks the transfer style: set means the 13 controls are press
+hit-tested and a press while an item is held places it (0x146A8), clear means a drag; the inventory
+screen highlights the hit region when set and draws the carried-item ghost when clear. It is
+`Map_bForceNoDrag` in the IDB and `bForceNoDrag` in `TactInputState`, `MapInitEnv` and `PufoOptions`.
+**A second naming defect fell out of the same reading**: `TactHudInventoryEnv` carried the two bytes under
+swapped names (`nDragActive` held Map+0x150E4, `bInvPanelOpen` held byte_1139F4 @ Map+0x3C) -- the code
+read them the right way round, only the names were wrong -- and correcting them exposed three vacuous
+"no highlight" probes in `test_tacthud`, which sat at x 98 while the leftover `nHitSub0` of 1 would have
+painted region 0 at x 60. Recorded as a separate issue. Deviation: the port writes through `MapInitEnv`
+members and skips the ones the caller passes as NULL, because the shell owns neither the battle-ended byte
+nor the throw-target slot. 24 new checks in `test_boot` (62 there) and 2 in `test_audio` (55 there), with
+the scratch fixture started at 0x5A / 0x5A5A5A5A, the roll sampled 64 times, and the flag cases using
+"yes", "" and a 299-byte value (rejected by `Reg_GetString`, which is what makes the per-flag default
+strings observable). A 14-mutation sweep turned all 14 red. IDB: 4 renames, comments on 0x22648, 0x128A9C,
+0x19d94, 0xAD1DA and 0x128AB4, and a correction appended to the `TactHud_DrawInventoryScreen` comment.
+Refreshing `docs/idb/functions.tsv` for the rename exposed **eleven rows that had drifted behind IDB
+renames** -- the five `Map_PlaySamples10_*` / `Map_PlaySample11_*` handlers, `Ship_AbortCourse`,
+`Smap_CanInterceptReach`, `Funding_AddRaceBonus`, `Set_byte_159E88_4`, and the two unit-101 renames
+`Ui_TextInputDialog` / `Ui_DrawTextInputDialog`, which is why regenerating the grouped inventory had
+pushed the stale names back into it. All eleven now carry the IDB's current names and six `renames.tsv`
+rows map those to the port's, which takes `audit_names.py` to 0 unresolved citations.
+The previous unit ported `Font_LoadTactSprites` (0x257c4, 752 B) -- the only writer of the per-group sprite bases in the font block at 0x158268, reached
 from `Map_BuildMissionTerrain` (0x22e10) at 0x22E4C and from `Save_ReadTGameData` (0x44248) at 0x4444C.
 **Every base is the running counter captured immediately before that group's `Font_LoadSpr`**, so it is
 the group's first frame index: `nTotalSprFrames` (+0x36) for the .spr groups, `nTotalMc1` (+0x38) for the

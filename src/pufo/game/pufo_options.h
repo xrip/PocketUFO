@@ -23,6 +23,10 @@
  *
  * Registry key: HKEY_CURRENT_USER\Software\PocketUFO (SubKey @ 0xac680).
  * Values are REG_SZ even for the numbers (Reg_SetString writes type 1).
+ *
+ * The loader side is Map_InitAndLoadRegistry @ 0x22648, the Map subsystem's startup
+ * entry: the CRT init-term thunk at 0x22604 runs it and then Map_RegisterAtexit.
+ * It clears the tactical scratch first and then reads the twelve values below.
  */
 #ifndef PUFO_OPTIONS_H
 #define PUFO_OPTIONS_H
@@ -54,6 +58,40 @@ void Options_InitDefaults(PufoOptions *pOpt);
  * the defaults, matching Reg_GetString's pDefault behaviour. */
 void Options_SaveToRegistry(const PufoOptions *pOpt);
 void Options_LoadFromRegistry(PufoOptions *pOpt);
+
+/* Map_InitAndLoadRegistry @ 0x22648 -- the Map subsystem's startup entry, reached
+ * from the CRT init-term table through the thunk at 0x22604 (this function, then
+ * Map_RegisterAtexit). It initialises the Map block's scratch and then loads the
+ * option block. The scratch lives in caller storage, the way TactInitEnv carries
+ * the per-mission flags, because the port splits the original 152 KB block across
+ * several models; every member cites the Map offset the original writes.
+ *
+ * The original writes every one of these unconditionally. The port writes through
+ * the members the caller owns and skips the ones it passes as NULL -- the shell
+ * runs no tactical mission, so it owns neither the battle-ended byte nor the
+ * throw-target slot, and clearing a field of a block that does not exist has no
+ * counterpart. Recorded in PLAN.md. */
+typedef struct MapInitEnv {
+    PufoOptions *pOptions;
+
+    u8   *pbDeployPanelOpen; /* 0x15110 */
+    u8   *pbMapPhase;        /* 0x0037 unk_1139EF. The original stores a byte; the
+                              * port's home is the wider anim counter, and a zero
+                              * store is the same value in either width. */
+    u8   *pbBattleEnded;     /* 0x005C unk_113A14 */
+    u8   *pbSlot2Byte0;      /* 0x0068 LOBYTE(apUiSlotsA[2]), the sweep gate */
+    u8   *pbSlot8Byte0;      /* 0x0080 LOBYTE(apUiSlotsA[8]) */
+    i32  *pnUiSlot3;         /* 0x006C */
+    i32  *pnUiSlot4;         /* 0x0070, set to 200 */
+    u32  *pnUiSlot5;         /* 0x0074: the original clears its four bytes one by one */
+    i32  *pnUiSlot7;         /* 0x007C */
+    i32  *pnUiSlot25;        /* 0x00C4 */
+    i32  *pnUiSlot26;        /* 0x00C8, set to Game_RandU16(3) */
+    i32  *pnPhaseSave112;    /* 0x150E8 anActionPhaseSave0[112] */
+    void **ppThrowTarget;    /* 0x150F0 pThrowTargetUnit */
+} MapInitEnv;
+
+void Map_InitAndLoadRegistry(const MapInitEnv *pEnv);
 
 /* Volume step -> the master level the audio backend receives.
  * Verified against Sound_ApplyMusicVolume @ 0x9e454 and Sound_ApplySfxVolume

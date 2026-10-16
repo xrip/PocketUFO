@@ -580,3 +580,12 @@ unk_158276	fontSys_nXcom2SprBase	0x158276, fontSys+0x0E. Written at 0x25960 befo
 unk_158278	fontSys_nXcom3SprBase	0x158278, fontSys+0x10. Written at 0x25974 before Font_LoadSpr("xcom_3").
 unk_158282	fontSys_nCivmSprBase	0x158282, fontSys+0x1A. Urban missions only: written at 0x25998 before Font_LoadSpr of aXcom0 slot 17, "civm".
 unk_158284	fontSys_nCivfSprBase	0x158284, fontSys+0x1C. Written at 0x259AC before aXcom0 slot 16, "civf" -- the two civilian names are out of table order.
+Map_bInvPanelOpen	Map_bForceNoDrag	the registry name is "forcenodrag" (0x115C4, 0x22928); the old name described the inventory consequence, not the option
+unk_AD1DA	bCtl88ForceNoDrag	pBank widget 88's nState byte; MenuPads.bForceNoDrag in the port
+unk_128AB4	Map_nGameSpeed	Map+0x150FC, the dword GameClock.nSpeed already cites
+Map_PlaySamples16_7_SetDeployFlag	Ui_Samples16_7_SetDeployFlag	0x19528. The IDB name after the samples-16 correction; the port's name is the same claim in port style.
+Map_PlaySamples16_7_ClearDeployFlag	Ui_Samples16_7_ClearDeployFlag	0x19568. Same pair.
+Map_UiScreen7_PlaySamples16_14	Ui_Screen7_Samples16_14	0x194f8. Same pair.
+Map_PlaySamples16_14_ClearUiScreen	Ui_Samples16_14_ClearScreen	0x18e9c. Same pair.
+Map_PlaySample17_SetMode11	Ui_SetMode11	0x179c0. The IDB name after the samples-17 correction (0x179CC plays 17).
+Options_SetTab4	BaseUi_SetScratch4	0x6b6b0. The IDB name after the rename; the port names the scratch slot it writes.

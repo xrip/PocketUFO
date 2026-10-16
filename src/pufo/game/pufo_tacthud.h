@@ -519,8 +519,8 @@ typedef struct TactHudInventoryEnv {
     const char  *panRankOther;     /* rank table for Unit_FormatDisplayName, 0xB2148 */
     i32          nCursorX;         /* 0xAD714, the drag ghost position */
     i32          nCursorY;         /* 0xAD718 */
-    i32          nDragActive;      /* anActionPhaseSave0[108] */
-    u8           bInvPanelOpen;    /* Map_bInvPanelOpen, Map+0x3C */
+    u8           bItemHeld;        /* byte_1139F4 @ Map+0x3C: an inventory item is held */
+    u8           bForceNoDrag;     /* Map_bForceNoDrag @ Map+0x150E4 = anActionPhaseSave0[108] */
     u16          nBigObsBase;      /* fontSys + 0x26, the bigobs group */
     TactHudItemStripEnv Strip;     /* the item strip, drawn with the same context */
 } TactHudInventoryEnv;
