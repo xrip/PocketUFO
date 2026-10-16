@@ -5341,8 +5341,17 @@ typedef struct UfopaediaEnv {
     u8        *pbReselect;      /* Ufopaedia_bReselectPending @ 0x18706C */
     PadImage **ppPad;           /* g_pUfopaediaPad @ 0x1872E4 */
     const ResearchTopicLive *aTopics;      /* aResearchTopics @ 0x15EF08 */
-    const u8  *abResearchZero;  /* abResearchZero @ 0x160B2C, the unlock mirror */
+    u8        *abResearchZero;  /* abResearchZero @ 0x160B2C, the unlock mirror. Not const:
+                                 * Ufopaedia_Open writes it at 0x9AD68 / 0x9B344. */
     const u8  *pTextRecs;       /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+
+    /* The three fields only Ufopaedia_Open @ 0x9a8cc uses. */
+    UiPanel   *pSelPanel;       /* g_pUfopaediaSelPanel @ 0x187204, the 9-line category selector */
+    PadImage  **ppScreenPad;    /* unk_1872E0, the screen's own pad */
+    UiControl **apCtl;          /* 0x1872E8..0x1872FC, the six controls the teardown releases */
+    u8        *pbOpen;          /* unk_187308, the build/teardown toggle */
+    void (*pfnSelClick)(void);  /* 0x9A958 installs Ufopaedia_CacheSelRow @ 0x99fd0 */
+    void (*pfnCatClick)(void);  /* 0x9AE1C installs Ufopaedia_RefreshEntry @ 0x9a014 */
 } UfopaediaEnv;
 
 /* 0x9A014. Re-picks the current entry when neither the pointer nor a paging step has already
@@ -5361,6 +5370,46 @@ void Ufopaedia_RefreshEntry(UfopaediaEnv *pEnv);
  * dropping the current pad and calling Ufopaedia_RefreshEntry. */
 void Ufopaedia_PrevEntry(UfopaediaEnv *pEnv);
 void Ufopaedia_NextEntry(UfopaediaEnv *pEnv);
+
+/* ---- Ufopaedia_Open @ 0x9a8cc: the builder and the teardown ----------------------
+ *
+ * One function does both, on a toggle. unk_187308 clear builds the screen and LEAVES THE FLAG SET;
+ * the build path returns from inside its last loop (0x9B4FC), so the release code below it only
+ * runs on the next call, which clears the flag first. Calling it twice is open-then-close.
+ *
+ * Build: a 9-line selector panel, a 50-line text panel, then nine category panels. Each category
+ * panel is constructed with the FULL number of shown entries -- the ufopaedia pages through all of
+ * them -- but nStyle, the visible row count, is clamped to 13 (0x9AE44) and the panel is centred at
+ * posY = 160 - 8 * visible (0x9AE58..0x9AE6C).
+ *
+ * Which entries are shown is a two-part test, evaluated twice (a counting pass at 0x9AB04 that
+ * sizes the panel, then a filling pass at 0x9B0C4 that writes the names):
+ *   (aResearchTopics[topic].bUnlocked != 0 && topic != 0) || raceOverride != 0
+ * The override is non-zero only in category 5, only for the five race topics 55..59, and only when
+ * the race is "known" -- any of a hand-written list of its encounter topics is unlocked. A known
+ * race also writes abResearchZero[topic] = 1 (0x9AD68 / 0x9B344), so opening the ufopaedia is what
+ * puts a met race into the research mirror; that is why the paging gate accepts on that byte.
+ *
+ * The name written into the row is TEXTS[aResearchTopics[topic].wGate4], and for the five race rows
+ * it is then overwritten with a literal race name (0x9B3D8..0x9B4E0). */
+
+#define PUFO_UFOPAEDIA_RACE_CATEGORY     5   /* 0x9AB3C: only this category has the race override */
+#define PUFO_UFOPAEDIA_RACE_COUNT        5   /* topics 55..59 */
+#define PUFO_UFOPAEDIA_RACE_TOPIC_FIRST 55   /* Sectoid, Snakeman, Ethereal, Muton, Floater */
+#define PUFO_UFOPAEDIA_SEL_LINES         9   /* UiPanel_ctor's line count for the selector */
+#define PUFO_UFOPAEDIA_TEXT_LINES_BUILT 50   /* and for the text panel */
+#define PUFO_UFOPAEDIA_CAT_VISIBLE_MAX  13   /* 0x9AE44 clamps nStyle, not the panel's line count */
+#define PUFO_UFOPAEDIA_CAT_CENTRE_Y    160   /* posY = 160 - 8 * visible rows */
+#define PUFO_UFOPAEDIA_CTL_COUNT         6   /* 0x1872E8..0x1872FC */
+
+/* The encounter topics that make each race appear, in the order the original's AND-chains list
+ * them, fallback last. The five families are 118..142 by residue mod 5, and two of the chains are
+ * incomplete: Ethereal never mentions 142 and Muton never mentions 135 or 140. -1 is an empty slot. */
+extern const i32 g_anRaceKnownTopics[PUFO_UFOPAEDIA_RACE_COUNT][6];
+extern const char *const g_apszUfopaediaRaceName[PUFO_UFOPAEDIA_RACE_COUNT];
+
+/* 0x9A8CC. Builds the screen when the toggle is clear, releases it when it is set. */
+void Ufopaedia_Open(UfopaediaEnv *pEnv);
 
 extern const u8  g_aUfopaediaCatTopics[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH];
 extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];

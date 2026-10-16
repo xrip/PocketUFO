@@ -13486,6 +13486,323 @@ static void TestUfopaedia(void)
     }
 }
 
+/* ---- ufopaedia's builder and teardown ------------------------------------------- */
+
+static ResearchTopicLive g_ufoTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_ufoZero[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_ufoOpen;
+static PadImage *g_ufoScreenPad;
+static PadImage *g_ufoEntryPad;
+static UiControl *g_ufoCtl[PUFO_UFOPAEDIA_CTL_COUNT];
+static UfopaediaEnv g_ufoEnv;
+
+/* The original installs Ufopaedia_CacheSelRow and Ufopaedia_RefreshEntry straight into the
+ * argument-less pfnClick slot. The port's versions take an env, so the caller supplies thunks. */
+static void UfoSeamSel(void) { }
+static void UfoSeamCat(void) { }
+
+static void UfoFixture(void)
+{
+    i32 i;
+
+    if (g_ufoOpen != 0) {           /* release whatever the previous case left built */
+        Ufopaedia_Open(&g_ufoEnv);
+    }
+    memset(g_ufoTopics, 0, sizeof(g_ufoTopics));
+    memset(g_ufoZero, 0, sizeof(g_ufoZero));
+    memset(&g_ufoEnv, 0, sizeof(g_ufoEnv));
+    g_ufoOpen = 0;
+    g_ufoScreenPad = NULL;
+    g_ufoEntryPad = NULL;
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        g_ufoCtl[i] = NULL;
+    }
+    for (i = 0; i < PUFO_UFOPAEDIA_CATEGORIES; ++i) {
+        g_ufoEnv.apCatPanels[i] = NULL;
+    }
+    g_ufoEnv.pTextPanel = NULL;
+    g_ufoEnv.pSelPanel  = NULL;
+    g_ufoEnv.aTopics        = g_ufoTopics;
+    g_ufoEnv.abResearchZero = g_ufoZero;
+    g_ufoEnv.pTextRecs      = g_fsTexts;
+    g_ufoEnv.pbOpen         = &g_ufoOpen;
+    g_ufoEnv.ppScreenPad    = &g_ufoScreenPad;
+    g_ufoEnv.ppPad          = &g_ufoEntryPad;
+    g_ufoEnv.apCtl          = g_ufoCtl;
+    g_ufoEnv.pfnSelClick    = UfoSeamSel;
+    g_ufoEnv.pfnCatClick    = UfoSeamCat;
+    g_ufoEnv.pnEntryIdx   = &g_ufEntryIdx;
+    g_ufoEnv.pnCategory   = &g_ufCategory;
+    g_ufoEnv.pnTopic      = &g_ufTopic;
+    g_ufoEnv.pnEntryNum   = &g_ufEntryNum;
+    g_ufoEnv.pbWidePanel  = &g_ufWide;
+    g_ufoEnv.pbPadDirty   = &g_ufPadDirty;
+    g_ufoEnv.pbEntryDirty = &g_ufEntryDirty;
+    g_ufoEnv.pbReselect   = &g_ufReselect;
+}
+
+static void UfoUnlock(i32 nTopic)
+{
+    g_ufoTopics[nTopic].bUnlocked = 1;
+}
+
+static i32 UfoCount(i32 nCat)
+{
+    return g_ufoEnv.apCatPanels[nCat] != NULL ? g_ufoEnv.apCatPanels[nCat]->nLineCount : -1;
+}
+
+static const char *UfoRow(i32 nCat, i32 nRow)
+{
+    UiPanel *p = g_ufoEnv.apCatPanels[nCat];
+    if (p == NULL || nRow < 0 || nRow >= PUFO_PANEL_LINES || p->apLines[nRow] == NULL) {
+        return "<none>";
+    }
+    return (const char *)p->apLines[nRow];
+}
+
+/* How many of a panel's rows carry text. The two passes must agree: the counting pass sizes the
+ * panel and the filling pass writes exactly that many rows. */
+static i32 UfoFilledRows(i32 nCat)
+{
+    UiPanel *p = g_ufoEnv.apCatPanels[nCat];
+    i32 i, n = 0;
+    if (p == NULL) {
+        return -1;
+    }
+    for (i = 0; i < p->nLineCount; ++i) {
+        if (p->apLines[i] != NULL && p->apLines[i][0] != 0) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+static void TestUfopaediaOpen(void)
+{
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    static const i32 aAllOpen[PUFO_UFOPAEDIA_CATEGORIES] = { 11, 5, 17, 13, 17, 22, 11, 9, 8 };
+    i32 c, i, nBad;
+
+    printf("the ufopaedia's builder and teardown\n");
+
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+    if (g_fsTexts == NULL && !FsLoadTexts()) {
+        printf("  FAIL lang.dat texts.dat did not load\n");
+        ++g_nFailures;
+        return;
+    }
+
+    /* 1. One function, two jobs, on a toggle. */
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(g_ufoOpen, 1, "the build arm sets the toggle and leaves it set");
+    Check(g_ufoEnv.pSelPanel != NULL && g_ufoEnv.pTextPanel != NULL,
+          "the selector and the text panel are allocated");
+    nBad = 0;
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        if (g_ufoEnv.apCatPanels[c] == NULL) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "and all nine category panels");
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(g_ufoOpen, 0, "the second call takes the release arm and clears the toggle");
+    Check(g_ufoEnv.pSelPanel == NULL && g_ufoEnv.pTextPanel == NULL,
+          "the selector and the text panel are released");
+    nBad = 0;
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        if (g_ufoEnv.apCatPanels[c] != NULL) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "and every category panel with them");
+
+    /* 2. Panel geometry. */
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(g_ufoEnv.pSelPanel->nLineCount, PUFO_UFOPAEDIA_SEL_LINES, "the selector is built with 9 rows");
+    CheckEqI32(g_ufoEnv.pSelPanel->nStyle, 15, "and shows 15 of them");
+    CheckEqI32(g_ufoEnv.pSelPanel->nFont, 24, "at font 24");
+    CheckEqI32(g_ufoEnv.pSelPanel->nPosX, 120, "at x 120");
+    CheckEqI32(g_ufoEnv.pSelPanel->nPosY, 50, "y 50");
+    CheckEqI32(g_ufoEnv.pSelPanel->nViewW, 230, "230 wide");
+    CheckEqI32(g_ufoEnv.pSelPanel->nUnk7076, 1, "centred rows");
+    CheckEqI32(g_ufoEnv.pSelPanel->bUnk7088, 0x96, "the -106 byte");
+    Check(g_ufoEnv.pSelPanel->gap_0[0] == 0xB4 && g_ufoEnv.pSelPanel->gap_0[1] == 0xB4 &&
+          g_ufoEnv.pSelPanel->gap_0[2] == 0xB4, "the row-blit key triple is 0xB4");
+    Check(g_ufoEnv.pSelPanel->gap_0[6] == 0xF0 && g_ufoEnv.pSelPanel->gap_0[7] == 0xF0 &&
+          g_ufoEnv.pSelPanel->gap_0[8] == 0xF0, "the panel colour is white");
+    Check(g_ufoEnv.pSelPanel->gap_0[9] == 0x14 && g_ufoEnv.pSelPanel->gap_0[11] == 0x14,
+          "the second triple is 0x14");
+    Check(g_ufoEnv.pSelPanel->gap_0[3] == 0x32 && g_ufoEnv.pSelPanel->gap_0[5] == 0xFA,
+          "the source rect is (50, 50, 250)");
+    Check(g_ufoEnv.pSelPanel->pfnClick == (void (*)(void))UfoSeamSel,
+          "the selector gets the selector click seam");
+    CheckEqI32(g_ufoEnv.pTextPanel->nLineCount, PUFO_UFOPAEDIA_TEXT_LINES_BUILT,
+               "the text panel is built with 50 rows");
+    CheckEqI32(g_ufoEnv.pTextPanel->nStyle, 7, "shows 7");
+    CheckEqI32(g_ufoEnv.pTextPanel->nFont, 12, "at font 12");
+    CheckEqI32(g_ufoEnv.pTextPanel->nPosX, 5, "at x 5");
+    CheckEqI32(g_ufoEnv.pTextPanel->nPosY, 230, "y 230");
+    CheckEqI32(g_ufoEnv.pTextPanel->bFlag7072, 0, "the text panel is the one panel that clears bFlag7072");
+    CheckEqI32(g_ufoEnv.pSelPanel->bFlag7072, 1, "the selector keeps the ctor's 1");
+    Check(g_ufoEnv.pTextPanel->gap_0[6] == 0xBE && g_ufoEnv.pTextPanel->gap_0[7] == 0x78 &&
+          g_ufoEnv.pTextPanel->gap_0[8] == 0xF0, "and its colour is the pale blue 0xBE,0x78,0xF0");
+    Check(g_ufoEnv.apCatPanels[0]->pfnClick == (void (*)(void))UfoSeamCat,
+          "the category panels get the refresh seam, not the selector's");
+
+    /* 3. Nothing researched: every panel is built, with no rows. */
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        CheckEqI32(UfoCount(c), 0, "an unresearched category still gets its panel, with zero rows");
+        CheckEqI32(g_ufoEnv.apCatPanels[c]->nStyle, 0, "and a zero visible row count");
+        CheckEqI32(g_ufoEnv.apCatPanels[c]->nPosY, PUFO_UFOPAEDIA_CAT_CENTRE_Y,
+                   "centred at 160 when there is nothing to centre");
+    }
+
+    /* 4. Everything researched: the counts are the table's own row lengths. */
+    UfoFixture();
+    for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        UfoUnlock(i);
+    }
+    Ufopaedia_Open(&g_ufoEnv);
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        CheckEqI32(UfoCount(c), aAllOpen[c], "fully researched, the category shows exactly its table row");
+        CheckEqI32(UfoFilledRows(c), UfoCount(c), "and the filling pass writes exactly that many rows");
+        CheckEqI32(g_ufoEnv.apCatPanels[c]->nStyle,
+                   aAllOpen[c] > PUFO_UFOPAEDIA_CAT_VISIBLE_MAX ? PUFO_UFOPAEDIA_CAT_VISIBLE_MAX : aAllOpen[c],
+                   "nStyle is the count clamped to 13");
+        CheckEqI32(g_ufoEnv.apCatPanels[c]->nPosY,
+                   PUFO_UFOPAEDIA_CAT_CENTRE_Y - 8 * (aAllOpen[c] > PUFO_UFOPAEDIA_CAT_VISIBLE_MAX
+                                                    ? PUFO_UFOPAEDIA_CAT_VISIBLE_MAX : aAllOpen[c]),
+                   "and the panel is centred on 160 minus 8 per visible row");
+    }
+    CheckEqI32(g_ufoEnv.apCatPanels[PUFO_UFOPAEDIA_RACE_CATEGORY]->nLineCount, 22,
+               "category 5 keeps all 22 line buffers even though only 13 are visible");
+    CheckEqI32(g_ufoEnv.apCatPanels[PUFO_UFOPAEDIA_RACE_CATEGORY]->nStyle, 13, "the clamp lands on nStyle, not on the panel");
+    CheckEqI32(g_ufoEnv.apCatPanels[PUFO_UFOPAEDIA_RACE_CATEGORY]->nPosY, 56, "so its y is 160 - 8*13");
+
+    /* 5. The race override: a race row shows on an encounter topic, not on its own. */
+    UfoFixture();
+    UfoUnlock(123);                       /* a Sectoid-family topic only */
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(UfoCount(PUFO_UFOPAEDIA_RACE_CATEGORY), 1, "one Sectoid encounter topic puts Sectoid on the list");
+    CheckEqI32(g_ufoEnv.apCatPanels[PUFO_UFOPAEDIA_RACE_CATEGORY]->anLineAux[0], 55, "on the Sectoid row");
+    CheckEqI32(g_ufoTopics[55].bUnlocked, 0, "although Sectoid's own topic is not researched");
+    CheckEqI32(g_ufoZero[55], 1, "and opening the screen marks abResearchZero[55], the mirror the pager reads");
+    CheckStr(UfoRow(5, 0), "Sectoid", "the row is named Sectoid");
+    CheckEqI32(UfoCount(0), 0, "and nothing else appears");
+
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);            /* nothing researched */
+    CheckEqI32(UfoCount(PUFO_UFOPAEDIA_RACE_CATEGORY), 0, "with no encounter topic researched the race row is absent");
+    CheckEqI32(g_ufoZero[55], 0, "and the mirror byte is not written");
+
+    /* 6. Each race's own list, at the topics the original actually names. */
+    UfoFixture(); UfoUnlock(138); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Sectoid", "138 is Sectoid's fallback");
+    UfoFixture(); UfoUnlock(141); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Snakeman", "141 is Snakeman's fallback");
+    UfoFixture(); UfoUnlock(130); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Muton", "130 is Muton's fallback");
+    UfoFixture(); UfoUnlock(119); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Floater", "119 is Floater's fallback");
+    UfoFixture(); UfoUnlock(57); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Ethereal", "Ethereal's fallback is its own topic 57");
+    UfoFixture(); UfoUnlock(58); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Muton", "Muton's own topic 58 sits inside its chain");
+
+    /* The two chains the original left incomplete. The 25 encounter topics 118..142 form five
+     * families by residue mod 5, so 142 belongs to Ethereal and 135 / 140 to Muton -- but neither
+     * is ever mentioned, so researching them shows nothing. */
+    UfoFixture(); UfoUnlock(142); Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(UfoCount(PUFO_UFOPAEDIA_RACE_CATEGORY), 0, "topic 142 is Ethereal's family slot and the original never lists it");
+    UfoFixture(); UfoUnlock(135); Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(UfoCount(PUFO_UFOPAEDIA_RACE_CATEGORY), 0, "topic 135 is a Muton family slot and is never listed either");
+    UfoFixture(); UfoUnlock(140); Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(UfoCount(PUFO_UFOPAEDIA_RACE_CATEGORY), 0, "nor is 140");
+    UfoFixture(); UfoUnlock(137); Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Ethereal", "while 137, the last Ethereal topic the chain does list, works");
+
+    /* 7. The row name is TEXTS[aResearchTopics[topic].wGate4], and the race name overwrites it. */
+    UfoFixture();
+    UfPutRec(1300, "HyperWave");
+    g_ufoTopics[1].wGate4 = 1300;
+    UfoUnlock(1);
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(2, 0), "HyperWave", "an ordinary row takes its name from the topic's wGate4 record");
+    CheckEqI32(g_ufoEnv.apCatPanels[2]->anLineAux[0], 1, "and the aux column carries the topic number");
+
+    UfoFixture();
+    UfPutRec(1301, "SHOULD_NOT_SURVIVE");
+    g_ufoTopics[55].wGate4 = 1301;
+    UfoUnlock(123);
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckStr(UfoRow(5, 0), "Sectoid", "the race row is overwritten with the literal race name");
+
+    /* 8. Accepted rows are packed from row 0, whatever slots they came from. */
+    UfoFixture();
+    UfoUnlock(2); UfoUnlock(4);           /* category 2 slots 1 and 3 */
+    Ufopaedia_Open(&g_ufoEnv);
+    CheckEqI32(UfoCount(2), 2, "two researched topics in slots 1 and 3 give two rows");
+    CheckEqI32(g_ufoEnv.apCatPanels[2]->anLineAux[0], 2, "packed into row 0");
+    CheckEqI32(g_ufoEnv.apCatPanels[2]->anLineAux[1], 4, "and row 1");
+    Check(g_ufoEnv.apCatPanels[2]->apLines[2] == NULL,
+          "the panel is sized to the shown count, so a third row does not exist at all");
+
+    /* 9. The selector's nine rows are cleared, not labelled: the nine sources sit in .data's
+     * zero-filled span. The category panels, by contrast, do get names. */
+    UfoFixture();
+    for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        UfoUnlock(i);
+    }
+    Ufopaedia_Open(&g_ufoEnv);
+    nBad = 0;
+    for (i = 0; i < PUFO_UFOPAEDIA_SEL_LINES; ++i) {
+        if (g_ufoEnv.pSelPanel->apLines[i] == NULL || g_ufoEnv.pSelPanel->apLines[i][0] != 0) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "the selector's nine rows come out empty -- the sources are all-zero .data");
+    Check(g_ufoEnv.apCatPanels[0]->apLines[0] != NULL && g_ufoEnv.apCatPanels[0]->apLines[0][0] != 0,
+          "while the category panels do carry names, so the clear is not a general 'no names' path");
+
+    /* 10. The teardown releases the live entry pad, which the original's loop misses. */
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);
+    g_ufoEntryPad = (PadImage *)calloc(1, sizeof(PadImage));
+    Check(g_ufoEntryPad != NULL, "a live entry pad is planted, the state every refresh leaves behind");
+    Ufopaedia_Open(&g_ufoEnv);
+    Check(g_ufoEntryPad == NULL,
+          "the release frees it -- the original's loop starts at 0x1872E0 and reads slot +2, so it never reaches 0x1872E4 and leaks the pad");
+
+    /* 11. The screen pad and the six controls. */
+    UfoFixture();
+    Ufopaedia_Open(&g_ufoEnv);
+    g_ufoScreenPad = (PadImage *)calloc(1, sizeof(PadImage));
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        g_ufoCtl[i] = (UiControl *)calloc(1, sizeof(UiControl));
+    }
+    Ufopaedia_Open(&g_ufoEnv);
+    Check(g_ufoScreenPad == NULL, "the screen's own pad is released");
+    nBad = 0;
+    for (i = 0; i < PUFO_UFOPAEDIA_CTL_COUNT; ++i) {
+        if (g_ufoCtl[i] != NULL) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "and all six controls at 0x1872E8..0x1872FC");
+
+    if (g_ufoOpen != 0) {
+        Ufopaedia_Open(&g_ufoEnv);
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -13577,6 +13894,7 @@ int main(void)
     TestPlaneStatRows();
     TestFacStatusLine();
     TestUfopaedia();
+    TestUfopaediaOpen();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -483,3 +483,6 @@ unk_187300	g_nUfopaediaTopic	0x187300. The current entry's research topic, store
 dword_1872D8	g_nUfopaediaEntryNum	0x1872D8. The current ufopaedia entry number; selects the layout bands at 0x9A14C..0x9A244.
 unk_1872E4	g_pUfopaediaPad	0x1872E4. The current entry's PadImage, freed at 0x9A718 / 0x9A880 / 0x9A5E4 and rebuilt at 0x9A530.
 unk_187304	g_bUfopaediaPadDirty	0x187304. Set by paging at 0x9A6F4 / 0x9A85C, which is what holds off 0x9A054's reselect.
+byte_160B2C	abResearchZero	0x160B2C. The research unlock mirror: written at 0x74334 when a topic's bUnlocked becomes 1 and at 0x9AD68 / 0x9B344 by Ufopaedia_Open for a met race; read as a second unlock test at 0x9A6D4. The port has used this name for several units; the IDB still had the address name.
+unk_187308	g_bUfopaediaScreenBuilt	0x187308. Set at 0x9A8E8 by the build arm and cleared at 0x9B50C by the release arm, which is what makes Ufopaedia_Open open-then-close.
+unk_1872E0	g_pUfopaediaScreenPad	0x1872E0. The ufopaedia's own PadImage, released at 0x9B578. Slot +4 is the live entry's pad and slot +8 onward are the six controls.

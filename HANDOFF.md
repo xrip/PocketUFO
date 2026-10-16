@@ -1,8 +1,7 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `cd68cc4`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 88, `Ufopaedia_RefreshEntry` 0x9a014 + `Ufopaedia_PrevEntry`
-0x9a60c + `Ufopaedia_NextEntry` 0x9a754), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `d50a75c`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 89, `Ufopaedia_Open` 0x9a8cc), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -208,14 +207,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 928 / 1103 (84.1%)
-                                             bytes cited:     507940 / 598792 (84.8%)
-python docs/parity/audit_credits.py       -> credited functions: 928, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 463 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 929 / 1103 (84.2%)
+                                             bytes cited:     511308 / 598792 (85.4%)
+python docs/parity/audit_credits.py       -> credited functions: 929, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 466 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 226, ORIGINAL BUG markers in src/pufo: 89
+python docs/parity/audit_bugs.py          -> ledger rows: 227, ORIGINAL BUG markers in src/pufo: 90
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -232,9 +231,38 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **14402**. Coverage as of the latest commit: **928 / 1103
-functions (84.1%)**, **507940 / 598792 bytes (84.8%)**. This unit ported the ufopaedia's paging and entry
-layout -- `Ufopaedia_RefreshEntry` (0x9a014, 1,528 B), `Ufopaedia_PrevEntry` (0x9a60c, 328 B) and
+Test checks run across the 60 suites: **14527**. Coverage as of the latest commit: **929 / 1103
+functions (84.2%)**, **511308 / 598792 bytes (85.4%)**. This unit ported `Ufopaedia_Open` (0x9a8cc, 3,368 B),
+the ufopaedia's builder and teardown, which completes that family. **One function does both jobs on one
+flag:** the build arm sets `g_bUfopaediaScreenBuilt` at 0x9A8E8 and *returns from inside its last loop*
+(0x9B4FC), so the release code that follows the whole build block only runs on the next call, which clears
+the flag first -- calling it twice is open-then-close. **The nStyle clamp lands on nStyle only.** Each
+category panel is constructed with the full shown count and only `nStyle` is clamped to 13 (0x9AE44), so
+category 5 keeps all 22 line buffers and pages through 22 entries while showing 13 -- and that full count is
+what unit 88's paging filter compares against at 0x9A684. **The shown test runs twice**, a counting pass at
+0x9AB04 that sizes each panel and a filling pass at 0x9B0C4 that writes the names, both on
+`(aResearchTopics[topic].bUnlocked != 0 && topic != 0) || raceOverride != 0`. **The race lists are
+hand-written and two of them are incomplete.** The 25 encounter topics 118..142 form five families by residue
+mod 5, but Sectoid (118/123/128/133, fallback 138), Snakeman (121/126/131/136, fallback 141) and Floater
+(124/129/134/139/59, fallback 119) cover their families while Ethereal never mentions 142 and Muton never
+mentions 135 or 140 -- researching 142, 135 or 140 therefore shows nothing, and Ethereal's fallback is its own
+topic 57 rather than a family slot. **Opening the screen writes the research mirror:** 0x9AD68 stores 1 into
+`abResearchZero[topic]` for a race that passes its gate, which is *why* the paging gate at 0x9A6D4 accepts on
+that byte at all -- a race met in the field becomes pageable without its own research topic ever being
+unlocked. Row names come from `TEXTS[aResearchTopics[topic].wGate4]` and the five race rows are then
+overwritten with the literals at 0xAC610..0xAC638; the selector's nine rows are **cleared, not labelled** --
+the nine sources at 0x105EE6..0x10654E are 205 bytes apart and all sit above 0xAC800, inside `.data`'s
+zero-filled span. **1 original bug found:** the teardown's control loop starts at 0x1872E0 and reads slot +2
+on each of its six steps, releasing 0x1872E8..0x1872FC and never 0x1872E4 -- the live entry's PadImage that
+every `Ufopaedia_RefreshEntry` allocates at 0x9A530 -- so closing the ufopaedia after any entry has been shown
+leaks that pad. Ledger row added, not reproduced. 0x9B544 also writes `nLineCount = 50` into the text panel
+*before* the null test at 0x9B550. 125 new checks; nine mutations -- completing Ethereal's family turns 1 red,
+completing Muton's turns 2, removing the mirror write turns 1, raising the clamp to 22 turns 2, using 16 px
+instead of 8 per visible row turns 10, skipping the race-name overwrite turns 9, not freeing the entry pad
+turns 1, building the panel with the clamped count turns 4, and labelling the selector rows turns 1. 3 IDB
+renames (466 on record) including `byte_160B2C` -> `abResearchZero`, 1 function comment, 9 line comments, 1
+new ledger row (227), 90 markers. `strat-ui` moves to 228/245 functions and 89,860 of 121,164 bytes (74.2%).
+Unit 88 ported the ufopaedia's paging and entry layout -- `Ufopaedia_RefreshEntry` (0x9a014, 1,528 B), `Ufopaedia_PrevEntry` (0x9a60c, 328 B) and
 `Ufopaedia_NextEntry` (0x9a754, 364 B), 2,220 B into `strat-ui`, now 227/245 functions and 86,492 of
 121,164 bytes (71.4%). **Two tables drive the screen.** `aUfopaediaCatTopics @ 0xAA830` -- IDA called it
 `aFghijklmnop` because row 0's bytes happen to be ASCII `'f'..'p'` (102..112), which is also why the listing
@@ -932,7 +960,7 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 227 | 245 | 86492 / 121164 | base/crew/manuf/research/buysell/transfer/options/ufopaedia screens |
+| `strat-ui` | 228 | 245 | 89860 / 121164 | base/crew/manuf/research/buysell/transfer/options/ufopaedia screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -1195,7 +1223,7 @@ handlers they install, the per-tick strateg event pass, the strateg icon pass, t
 stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
 itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
 `Geoscape_Draw` is now the single largest unported function in the binary.
-`strat-ui` is 227 of 245 functions but 86,492 of 121,164 bytes (71.4%) — the small screen handlers are in, the
+`strat-ui` is 228 of 245 functions but 89,860 of 121,164 bytes (74.2%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
@@ -1828,17 +1856,17 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 227 of 245 functions and 86,492 of 121,164 bytes (71.4%). The buy/sell, transfer,
+`strat-ui` is 228 of 245 functions and 89,860 of 121,164 bytes (74.2%). The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
 200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
 is left in `strat-ui` is
-18 functions / 34,672 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
-the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
-(only `Ufopaedia_Open` 0x9a8cc, 3,368 B, the panel builder, is left — its paging and entry layout came in
-with unit 88), and the base-attack screen's update/draw pair. The options screen is complete:
+17 functions / 31,304 bytes in four screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
+the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), and the base-attack
+screen's update/draw pair. The ufopaedia family is complete: `Ufopaedia_Open` (0x9a8cc) came in with unit 89
+after its paging and entry layout came in with unit 88. The options screen is complete:
 `OptionsScreen_Init`, `OptionsScreen_Open` (0x6d0ac) and `OptionsScreen_OnConfirm` (0x6cf18) are all ported;
 the click slot still reaches the last one through a thunk because the slot takes no arguments, which is the
 `OptionsScreenHooks` shape §7 records as a separate issue.
@@ -1862,8 +1890,8 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 463 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
-| `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
+| `docs/parity/renames.tsv` | 466 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/bugs.tsv` | 227-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |
 | `src/pufo/game/pufo_mapctx.h` | the Map block layout and cell indexing |

@@ -10683,3 +10683,271 @@ void Ufopaedia_RefreshEntry(UfopaediaEnv *pEnv)
         *pEnv->pbPadDirty = 0;                           /* 0x9A5C4 */
     }
 }
+
+/* The five race topics, in the order the switch at 0x9AB50 lists them: '7'..';' are 55..59. */
+static const i32 g_anRaceTopic[PUFO_UFOPAEDIA_RACE_COUNT] = { 55, 56, 57, 58, 59 };
+
+/* The encounter topics that make a race appear, in the order the original's AND-chains list them,
+ * with the fallback last. The 25 topics 118..142 form five families by residue mod 5, and two of
+ * the chains are incomplete: Ethereal's never mentions 142 and Muton's never mentions 135 or 140. */
+const i32 g_anRaceKnownTopics[PUFO_UFOPAEDIA_RACE_COUNT][6] = {
+    { 118, 123, 128, 133,  55, 138 },   /* Sectoid  */
+    { 121, 126, 131, 136,  56, 141 },   /* Snakeman */
+    { 122, 127, 132, 137,  57,   -1 },  /* Ethereal: the chain stops at 137, the fallback is 57 */
+    { 120, 125,  58, 130,   -1,  -1 },  /* Muton: the chain is 120, 125, 58, the fallback 130 */
+    { 124, 129, 134, 139,  59, 119 }    /* Floater  */
+};
+
+const char *const g_apszUfopaediaRaceName[PUFO_UFOPAEDIA_RACE_COUNT] = {
+    "Sectoid", "Snakeman", "Ethereal", "Muton", "Floater"
+};  /* aSectoid @ 0xAC610, aSnakeman @ 0xAC618, aEthereal @ 0xAC624, aMuton @ 0xAC630, aFloater @ 0xAC638 */
+
+static i32 Ufopaedia_RaceIndex(i32 nTopic)
+{
+    i32 r;
+    for (r = 0; r < PUFO_UFOPAEDIA_RACE_COUNT; ++r) {
+        if (g_anRaceTopic[r] == nTopic) {
+            return r;
+        }
+    }
+    return -1;   /* the switch's default arm, 0x9AB70 */
+}
+
+/* 0x9AB34..0x9AD68. Category 5 only, and only for the five race topics. Returns the topic id when
+ * the race is known, else 0. A known race also marks abResearchZero[topic] = 1, so opening the
+ * ufopaedia is what puts a met race into the research mirror -- which is why the paging gate at
+ * 0x9A6D4 accepts on that byte. */
+static i32 Ufopaedia_RaceOverride(UfopaediaEnv *pEnv, i32 nCategory, i32 nTopic)
+{
+    i32 r, k;
+
+    if (nCategory != PUFO_UFOPAEDIA_RACE_CATEGORY) {   /* 0x9AB3C: `if (v4 != 5) goto LABEL_45` */
+        return 0;
+    }
+    r = Ufopaedia_RaceIndex(nTopic);
+    if (r < 0) {
+        return 0;
+    }
+    for (k = 0; k < 6; ++k) {
+        i32 nGate = g_anRaceKnownTopics[r][k];
+        if (nGate < 0 || nGate >= PUFO_RESEARCH_TOPIC_COUNT) {
+            continue;
+        }
+        if (pEnv->aTopics[nGate].bUnlocked == 1) {     /* the chain's `!= 1` tests, then the fallback */
+            if (nTopic >= 0 && nTopic < PUFO_RESEARCH_TOPIC_COUNT) {
+                pEnv->abResearchZero[nTopic] = 1;      /* 0x9AD68 STRB */
+            }
+            return nTopic;                             /* 0x9AD60: v6 = aUfopaediaCatTopics[5][n] */
+        }
+    }
+    return 0;
+}
+
+/* 0x9ADAC: `(aResearchTopics[topic].bUnlocked != 0 && topic != 0) || override != 0`. */
+static bool Ufopaedia_SlotShown(const UfopaediaEnv *pEnv, i32 nTopic, i32 nOverride)
+{
+    if (nOverride != 0) {
+        return true;
+    }
+    if (nTopic == 0) {
+        return false;
+    }
+    if (nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return false;
+    }
+    return pEnv->aTopics[nTopic].bUnlocked != 0;
+}
+
+static UiPanel *Ufopaedia_NewPanel(i32 nLines)
+{
+    UiPanel *pPanel = (UiPanel *)malloc(sizeof(UiPanel));   /* operator new(0x1BB4) */
+
+    if (pPanel == NULL) {
+        return NULL;
+    }
+    if (!UiPanel_ctor(pPanel, nLines)) {
+        free(pPanel);
+        return NULL;
+    }
+    return pPanel;
+}
+
+static void Ufopaedia_InitSelPanel(UiPanel *pPanel, void (*pfnClick)(void))
+{
+    pPanel->nStyle   = 15;                                  /* 0x9A928 */
+    pPanel->nFont    = 24;                                  /* 0x9A93C */
+    pPanel->pfnClick = pfnClick;                            /* 0x9A958: Ufopaedia_CacheSelRow */
+    pPanel->nPosX    = 120;                                 /* 0x9A96C */
+    pPanel->nPosY    = 50;                                  /* 0x9A980 */
+    pPanel->nUnk7052 = 5;                                   /* 0x9A994 */
+    pPanel->nUnk7056 = 50;                                  /* 0x9A9A8 */
+    pPanel->nViewW   = 230;                                 /* 0x9A9B0 */
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9A9BC */
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x9A9E0 */
+    pPanel->bFlag7073 = 1;                                  /* 0x9A9F0 */
+    pPanel->bUnk7088  = 0x96;                               /* 0x9AA04: -106 as a signed byte */
+    UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);         /* 0x9AA18 */
+    pPanel->nUnk7076  = 1;                                  /* 0x9AA28: centred rows */
+}
+
+static void Ufopaedia_InitTextPanel(UiPanel *pPanel)
+{
+    pPanel->nStyle   = 7;                                   /* 0x9AA6C */
+    pPanel->nFont    = 12;                                  /* 0x9AA7C */
+    pPanel->nPosX    = 5;                                   /* 0x9AA90 */
+    pPanel->nPosY    = 230;                                 /* 0x9AA9C */
+    pPanel->nUnk7052 = 5;                                   /* 0x9AAA4 */
+    pPanel->nUnk7056 = 50;                                  /* 0x9AAB0 */
+    pPanel->nViewW   = 230;                                 /* 0x9AAB8 */
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9AAC4 */
+    UiPanel_SetBytes6to11(pPanel, 0xBE, 0x78, 0xF0, 0x14, 0x14, 0x14); /* 0x9AAE4 */
+    pPanel->bFlag7072 = 0;                                  /* 0x9AAF8: the only panel that clears it */
+}
+
+static void Ufopaedia_InitCatPanel(UiPanel *pPanel, i32 nShown, void (*pfnClick)(void))
+{
+    i32 nVisible = nShown;
+
+    if (nVisible > PUFO_UFOPAEDIA_CAT_VISIBLE_MAX) {        /* 0x9AE44 */
+        nVisible = PUFO_UFOPAEDIA_CAT_VISIBLE_MAX;
+    }
+    pPanel->nFont    = 16;                                  /* 0x9AE0C */
+    pPanel->pfnClick = pfnClick;                            /* 0x9AE1C: Ufopaedia_RefreshEntry */
+    pPanel->nPosX    = 120;                                 /* 0x9AE30 */
+    pPanel->nStyle   = nVisible;                            /* 0x9AE54 */
+    /* 0x9AE58..0x9AE6C: `v12 = 16 * n; if (n & 0x8000000) ++v12; posY = 160 - (v12 >> 1)`. The sign
+     * correction is the ARM's arithmetic-shift rounding and never fires for a non-negative count. */
+    pPanel->nPosY    = PUFO_UFOPAEDIA_CAT_CENTRE_Y - 8 * nVisible;
+    pPanel->nUnk7052 = 5;                                   /* 0x9AE74 */
+    pPanel->nUnk7056 = pPanel->nPosY;                       /* 0x9AE80 */
+    pPanel->nViewW   = 230;                                 /* 0x9AE88 */
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);         /* 0x9AE98 */
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14); /* 0x9AEB8 */
+    pPanel->bFlag7073 = 1;                                  /* 0x9AECC */
+    UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);         /* 0x9AEE0 */
+    pPanel->nUnk7076  = 1;                                  /* 0x9AEF4 */
+    pPanel->bUnk7088  = 0x96;                               /* 0x9AF0C */
+}
+
+void Ufopaedia_Open(UfopaediaEnv *pEnv)
+{
+    i32 c, k;
+
+    if (*pEnv->pbOpen == 0) {                               /* 0x9A8E0 */
+        *pEnv->pbOpen = 1;                                  /* 0x9A8E8: left set, so the next call releases */
+
+        pEnv->pSelPanel = Ufopaedia_NewPanel(PUFO_UFOPAEDIA_SEL_LINES);        /* 0x9A8F4 */
+        if (pEnv->pSelPanel != NULL) {
+            Ufopaedia_InitSelPanel(pEnv->pSelPanel, pEnv->pfnSelClick);
+        }
+        pEnv->pTextPanel = Ufopaedia_NewPanel(PUFO_UFOPAEDIA_TEXT_LINES_BUILT); /* 0x9AA34 */
+        if (pEnv->pTextPanel != NULL) {
+            Ufopaedia_InitTextPanel(pEnv->pTextPanel);
+        }
+
+        /* Pass 1, 0x9AB04..0x9AF14: count the shown entries, then build each panel with that many
+         * line buffers. The panel keeps all of them; only nStyle is clamped to 13. */
+        for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+            i32 nShown = 0;
+            for (k = 0; k < PUFO_UFOPAEDIA_CAT_WIDTH; ++k) {
+                i32 nTopic = g_aUfopaediaCatTopics[c][k];
+                if (Ufopaedia_SlotShown(pEnv, nTopic, Ufopaedia_RaceOverride(pEnv, c, nTopic))) {
+                    ++nShown;
+                }
+            }
+            pEnv->apCatPanels[c] = Ufopaedia_NewPanel(nShown);   /* 0x9ADD8..0x9AE04 */
+            if (pEnv->apCatPanels[c] != NULL) {
+                Ufopaedia_InitCatPanel(pEnv->apCatPanels[c], nShown, pEnv->pfnCatClick);
+            }
+        }
+
+        /* 0x9AF2C..0x9B0BC: the selector's nine rows. The nine sources at 0x105EE6 .. 0x10654E are
+         * 205 bytes apart and all sit above 0xAC800, inside .data's zero-filled span, so each copy
+         * writes a single NUL: this clears the rows, it does not label them. */
+        if (pEnv->pSelPanel != NULL) {
+            for (k = 0; k < PUFO_UFOPAEDIA_SEL_LINES; ++k) {
+                if (pEnv->pSelPanel->apLines[k] != NULL) {
+                    pEnv->pSelPanel->apLines[k][0] = '\0';
+                }
+            }
+        }
+
+        /* Pass 2, 0x9B0C4..0x9B4FC: the same test again, this time writing the names. The row index
+         * counts only accepted slots, so the rows are packed. */
+        for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+            UiPanel *pPanel = pEnv->apCatPanels[c];
+            i32 nRow = 0;
+            if (pPanel == NULL) {
+                continue;
+            }
+            for (k = 0; k < PUFO_UFOPAEDIA_CAT_WIDTH; ++k) {
+                i32 nTopic = g_aUfopaediaCatTopics[c][k];
+                i32 nOverride = Ufopaedia_RaceOverride(pEnv, c, nTopic);
+                i32 nRace;
+                if (!Ufopaedia_SlotShown(pEnv, nTopic, nOverride)) {
+                    continue;
+                }
+                if (nRow >= PUFO_PANEL_LINES || pPanel->apLines[nRow] == NULL) {
+                    break; /* deviation: the original writes past a panel it under-sized */
+                }
+                /* 0x9B38C..0x9B3B4: strcpy(row, TEXTS[205 * aResearchTopics[topic].wGate4]) */
+                pufo_strncpy((char *)pPanel->apLines[nRow],
+                             Ufopaedia_TextRec(pEnv, pEnv->aTopics[nTopic].wGate4),
+                             PUFO_PANEL_LINE_BYTES);
+                pPanel->anLineAux[nRow] = nTopic;           /* 0x9B3CC */
+                nRace = Ufopaedia_RaceIndex(nOverride);     /* 0x9B3D8 */
+                if (nRace >= 0) {
+                    pufo_strncpy((char *)pPanel->apLines[nRow],
+                                 g_apszUfopaediaRaceName[nRace], PUFO_PANEL_LINE_BYTES);
+                }
+                ++nRow;
+            }
+        }
+        return;                                             /* 0x9B4FC */
+    }
+
+    /* The release half, 0x9B50C..0x9B5DC. */
+    *pEnv->pbOpen = 0;                                      /* 0x9B50C */
+
+    if (pEnv->pSelPanel != NULL) {
+        UiPanel_FreeLines(pEnv->pSelPanel);                 /* 0x9B524 */
+        free(pEnv->pSelPanel);                              /* 0x9B52C */
+        pEnv->pSelPanel = NULL;
+    }
+    if (pEnv->pTextPanel != NULL) {
+        /* 0x9B544 writes nLineCount = 50 BEFORE the null test at 0x9B550, so a null text panel
+         * would fault here. The port moves the write inside the guard. */
+        pEnv->pTextPanel->nLineCount = PUFO_UFOPAEDIA_TEXT_LINES_BUILT;
+        UiPanel_FreeLines(pEnv->pTextPanel);                /* 0x9B558 */
+        free(pEnv->pTextPanel);                             /* 0x9B560 */
+        pEnv->pTextPanel = NULL;
+    }
+    if (pEnv->ppScreenPad != NULL && *pEnv->ppScreenPad != NULL) {
+        PadImage_FreeData(*pEnv->ppScreenPad);              /* 0x9B578 */
+        free(*pEnv->ppScreenPad);                           /* 0x9B580 */
+        *pEnv->ppScreenPad = NULL;
+    }
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {       /* 0x9B588..0x9B5AC, slot order 0..8 */
+        if (pEnv->apCatPanels[c] != NULL) {
+            UiPanel_FreeLines(pEnv->apCatPanels[c]);
+            free(pEnv->apCatPanels[c]);
+            pEnv->apCatPanels[c] = NULL;
+        }
+    }
+    if (pEnv->apCtl != NULL) {
+        /* 0x9B5B8..0x9B5DC: v70 starts at 0x1872E0 and reads slot +2 each step, so the six controls
+         * released are 0x1872E8, 0x1872EC, 0x1872F0, 0x1872F4, 0x1872F8 and 0x1872FC. */
+        for (k = 0; k < PUFO_UFOPAEDIA_CTL_COUNT; ++k) {
+            if (pEnv->apCtl[k] != NULL) {
+                UiControl_FreePads(pEnv->apCtl[k]);
+                free(pEnv->apCtl[k]);
+                pEnv->apCtl[k] = NULL;
+            }
+        }
+    }
+    /* ORIGINAL BUG (0x9B5B8..0x9B5DC), not reproduced. The loop above starts at 0x1872E0 and steps by
+     * one pointer while reading slot +2, so it covers 0x1872E8..0x1872FC and never 0x1872E4 -- the
+     * live entry's PadImage, which every Ufopaedia_RefreshEntry allocates. Closing the ufopaedia after
+     * any entry has been shown leaks that pad. The port releases it. */
+    CloseFreePad(pEnv->ppPad);
+}

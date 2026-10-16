@@ -2642,6 +2642,35 @@ Order is by what unblocks what. Each item ends with gates + commit.
   record) including two retyped tables and a new symbol at 0x1871F4, 3 function comments, 7 line comments.
   14402 checks (60 suites), coverage 928/1103 (84.1%) and 507940/598792 (84.8%).
 
+- [x] **part 89, the ufopaedia's builder and teardown: `Ufopaedia_Open (0x9a8cc, 3,368 B)`** — **One
+  function, two jobs, on a toggle.** The build arm sets `g_bUfopaediaScreenBuilt` and *returns from inside
+  its last loop* (0x9B4FC), so the release code that follows the whole build block only runs on the next
+  call — calling it twice is open-then-close. **The nStyle clamp lands on nStyle only:** each category panel
+  is constructed with the full shown count and only `nStyle` is clamped to 13 (0x9AE44), so category 5 keeps
+  all 22 line buffers and pages through 22 entries while showing 13 — and that full count is what unit 88's
+  paging filter compares against. **The shown test is evaluated twice** (a counting pass at 0x9AB04 that
+  sizes the panel, a filling pass at 0x9B0C4 that writes the names): `(bUnlocked && topic != 0) ||
+  raceOverride`. **The race lists are hand-written and two are incomplete:** the 25 encounter topics
+  118..142 form five families by residue mod 5, but Sectoid (118/123/128/133 + 138), Snakeman (121/126/131/136
+  + 141) and Floater (124/129/134/139 + 119) are complete while Ethereal never mentions 142 and Muton never
+  mentions 135 or 140 — so researching 142, 135 or 140 shows nothing. **Opening the screen writes the
+  research mirror:** 0x9AD68 stores 1 into `abResearchZero[topic]` for a met race, which is *why* the paging
+  gate at 0x9A6D4 accepts on that byte at all — a race met in the field becomes pageable without its own
+  topic being unlocked. Row names come from `TEXTS[aResearchTopics[topic].wGate4]` and the five race rows are
+  then overwritten with literal names; the selector's nine rows are *cleared*, not labelled (the nine sources
+  at 0x105EE6..0x10654E sit in `.data`'s zero-filled span). **1 original bug found:** the teardown's control
+  loop starts at 0x1872E0 and reads slot +2 six times, releasing 0x1872E8..0x1872FC and never 0x1872E4 — the
+  live entry's PadImage — so closing the ufopaedia after any entry has been shown leaks it; ledger row added,
+  not reproduced. **4 further deviations:** unguarded dereferences of freshly allocated panels, an unbounded
+  name copy into a 50-byte row, an unbounded row index, and `nLineCount = 50` written before the null test at
+  0x9B550. 125 new checks; nine mutations — completing Ethereal's family (1 red), completing Muton's (2),
+  removing the mirror write (1), raising the clamp to 22 (2), 16 instead of 8 px per visible row (10),
+  skipping the race-name overwrite (9), not freeing the entry pad (1), building the panel with the clamped
+  count (4), labelling the selector rows (1). 3 IDB renames (466 on record) including `byte_160B2C` →
+  `abResearchZero`, 1 function comment, 9 line comments, 1 new ledger row (227), 90 bug markers. 14527 checks
+  (60 suites), coverage 929/1103 (84.2%) and 511308/598792 (85.4%); `strat-ui` to 228/245 and 89,860 of
+  121,164 bytes (74.2%), with the ufopaedia family now complete.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable

@@ -15963,3 +15963,105 @@ NextEntry's table terminator test turns 3 red, giving PrevEntry the table test N
 reading the mirror byte one late -- exactly what Hex-Rays claims -- turns 2 red, making the > 2999 boundary
 exclusive turns 3 red, shifting the description window one record early turns 6 red, removing the 93..97
 indent turns 2 red, and wrapping the category in the wrong direction turns 3 red.
+## Unit 89 -- Ufopaedia_Open @ 0x9a8cc (3,368 B)
+
+The ufopaedia's builder and its teardown, in one function on one flag.
+
+### One function, two jobs, on a toggle
+
+0x9A8E0 tests g_bUfopaediaScreenBuilt (was unk_187308). Clear, the build arm sets it at 0x9A8E8 and
+returns from inside its last loop at 0x9B4FC -- so the release code that follows the whole build block
+only runs on the NEXT call, which clears the flag first at 0x9B50C. Calling it twice is open-then-close.
+The build arm never clears the flag, which is what makes the pairing work.
+
+### What gets built
+
+A 9-line selector panel (nStyle 15, font 24, at 120/50, 230 wide, centred rows, the -106 byte at
+bUnk7088, row-blit key 0xB4, colour 0xF0/0xF0/0xF0, source rect 50/50/250), a 50-line text panel (nStyle
+7, font 12, at 5/230, colour 0xBE/0x78/0xF0, and the only panel that clears bFlag7072), then nine category
+panels: font 16, x 120, 230 wide, nStyle clamped to 13 at 0x9AE44, and posY = 160 - 8 * visible rows
+(0x9AE58..0x9AE6C, where the `if (n & 0x8000000) ++v12` is the ARM's arithmetic-shift rounding and never
+fires for a non-negative count).
+
+**The clamp lands on nStyle only.** The panel is constructed with the FULL shown count, so category 5 keeps
+all 22 line buffers and pages through 22 entries while showing 13. That is also what the paging filter at
+0x9A684 compares against -- panel->nLineCount is the full count, not the visible one.
+
+### Which entries show
+
+The test is evaluated twice: a counting pass at 0x9AB04 that sizes each panel, then a filling pass at
+0x9B0C4 that writes the names. Both use
+
+  (aResearchTopics[topic].bUnlocked != 0 && topic != 0) || raceOverride != 0
+
+The override is non-zero only in category 5 (0x9AB3C: `if (v4 != 5) goto LABEL_45`) and only for the five
+race topics 55..59, and it means "this race has been met".
+
+### The race lists are hand-written and two of them are incomplete
+
+The 25 encounter topics 118..142 form five families by residue mod 5, but the original's AND-chains do not
+cover them:
+
+  Sectoid  (55): 118, 123, 128, 133, then 138            complete
+  Snakeman (56): 121, 126, 131, 136, then 141            complete
+  Floater  (59): 124, 129, 134, 139, 59, then 119        complete
+  Ethereal (57): 122, 127, 132, 137, then 57             142 never appears
+  Muton    (58): 120, 125, 58, then 130                 135 and 140 never appear
+
+So researching topic 142, 135 or 140 shows nothing in the ufopaedia, while researching 138, 141, 119 or 130
+brings its race up. Ethereal's fallback is its own topic 57 rather than a family slot.
+
+**Opening the screen writes the research mirror.** When a race passes its gate, 0x9AD68 (and 0x9B344 in the
+filling pass) stores 1 into abResearchZero[topic]. That is why the paging gate at 0x9A6D4 accepts on
+abResearchZero[topic] at all: the ufopaedia itself put the byte there. A race met in the field becomes
+pageable without its own research topic ever being unlocked.
+
+### Names
+
+The row name is TEXTS[aResearchTopics[topic].wGate4] (0x9B38C, the same `MUL #0xCD` against 0xB38D0 the
+research screen uses), and for the five race rows it is then overwritten with a literal -- aSectoid @
+0xAC610, aSnakeman @ 0xAC618, aEthereal @ 0xAC624, aMuton @ 0xAC630, aFloater @ 0xAC638 (0x9B3D8..0x9B4E0).
+Rows are packed from row 0: the row index counts only accepted slots.
+
+The selector's nine rows are cleared, not labelled. The nine sources at 0x105EE6..0x10654E are 205 bytes
+apart and all sit above 0xAC800, inside .data's zero-filled span, so each copy writes a single NUL -- the
+same all-zero source the rest of the binary uses for a clear.
+
+### The teardown, and the pad it misses
+
+0x9B50C..0x9B5DC releases the selector panel, the text panel, the screen pad at 0x1872E0, the nine category
+panels in slot order, and six controls. The control loop starts at 0x1872E0 and reads slot +2 on each of its
+six steps, so the six released are 0x1872E8, 0x1872EC, 0x1872F0, 0x1872F4, 0x1872F8 and 0x1872FC -- and
+0x1872E4, the live entry's PadImage that every Ufopaedia_RefreshEntry allocates at 0x9A530, appears in no
+release path at all. **Original bug, recorded in the ledger and not reproduced:** closing the ufopaedia after
+any entry has been shown leaks that pad.
+
+0x9B544 also writes nLineCount = 50 into the text panel *before* the null test at 0x9B550, so a null text
+panel would fault there.
+
+### Deviations
+
+- The pad leak above: the port releases 0x1872E4.
+- The original dereferences the freshly allocated panels without testing them (0x9A928, 0x9AA6C); the port
+  guards.
+- The name copy is an unbounded strcpy into a 50-byte line buffer, and the row index is not bounded against
+  the panel. The port bounds both.
+- The nLineCount write ahead of the null test is moved inside the guard.
+
+### IDB
+
+- byte_160B2C -> abResearchZero (the port has called it that for several units; the IDB still had the
+  address name), unk_187308 -> g_bUfopaediaScreenBuilt, unk_1872E0 -> g_pUfopaediaScreenPad (463 -> 466 on
+  record).
+- A function comment at 0x9a8cc; line comments at 0x9AB50 (the five race lists, with the two incomplete
+  families spelled out), 0x9AD68 (the mirror write), 0x9AE44 (the clamp lands on nStyle only), 0x9AF2C (the
+  selector clear), 0x9B3D8 (the race-name overwrite), 0x9B544 (the write before the null test), 0x9B5B8 (the
+  leak), 0xAC610 (the five literal names) and 0x160B2C (what the mirror is and who writes it).
+- One new ledger row (227), 90 ORIGINAL BUG markers.
+
+125 new checks in tests/test_baseui.c. Nine mutations confirm they are not self-satisfying: completing
+Ethereal's family with 142 turns 1 red, completing Muton's with 135 and 140 turns 2 red, removing the
+abResearchZero write turns 1 red, raising the nStyle clamp to 22 turns 2 red, using 16 instead of 8 per
+visible row turns 10 red, skipping the race-name overwrite turns 9 red, not freeing the entry pad on
+teardown turns 1 red, building the category panel with the clamped count turns 4 red, and labelling the
+selector rows instead of clearing them turns 1 red.
