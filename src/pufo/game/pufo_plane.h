@@ -30,6 +30,7 @@
 #include "render/pufo_render.h" /* GfxColorEnv, SoftSurf_BlitRectProxy */
 #include "ui/pufo_panel.h"   /* UiPanel: nUnk3032 @ 0xBD8, anLineAux @ 0x13B4 */
 #include "ui/pufo_control.h" /* UiControl + UiControlDesc, the list nav pair */
+#include "game/pufo_baseui.h" /* ResearchTopicLive + g_aBuySellRowOrder, the stores builder's gate and sort */
 
 typedef struct PlaneWeaponPanels {
     u8 nPanelASel;  /* unk_161F10, the weapon the first panel has selected */
@@ -627,5 +628,114 @@ typedef struct BasePlaneScreenInitEnv {
 } BasePlaneScreenInitEnv;
 
 void BasePlaneScreen_Init(const BasePlaneScreenInitEnv *pEnv);
+
+/* --- BasePlaneScreen_BuildControls @ 0x7b014 (2,788 B) : the hangar's stores-transfer panel set ---
+ *
+ * One byte decides the direction: bPlaneStoresCommitted @ 0x161F28, read with LDRB at 0x7B02C and written
+ * with STRB at 0x7B12C and 0x7BA18. The IDB sized this global 12 bytes; every access to it in the binary
+ * is a byte access, so the size is corrected there.
+ *
+ * COMMITTED (0x7BA10..0x7BAF8): the flag goes down FIRST (0x7BA18), before anything is released. Then the
+ * two store-nav controls at the object block's +0x64 / +0x68 (0x161AAC, 0x161AB0 -- `ADD R4,R4,#4` over two
+ * steps starting from pPlaneBackdropPad at 0x7BA1C) go through UiControl_FreePads + operator delete, and
+ * then the five panels in the order slot (0x7BA48), sel-row (0x7BA68), avail, commit-row, taken. The
+ * original frees through the globals and never nulls them.
+ *
+ * NOT COMMITTED (0x7B038..0x7BA00), in the original's order:
+ *   1. anSlotCarryCount[256] is zeroed (0x7B038..0x7B058: `MOV R3,#0x100`, `SUBS R3,#1` / `BPL`, so 256
+ *      stores, not 255).
+ *   2. nPlaneCrewQuota = what this craft already carries of the five crew slots: apObjects[31..35]
+ *      ->aItemQty[nSelectedCraftIdx]. The loop reaches slot 31 as the context base 0x1139B8 + 0x184
+ *      (0x7B07C), which is apObjects + 0x7C, and stores the running total on every step (0x7B070), so the
+ *      global is written five times rather than once at the end.
+ *   3. two UiControls (operator new 0x20 + UiControl_ctor) into 0x161AAC / 0x161AB0 (0x7B0A8..0x7B0E8).
+ *   4. their clicks are written by a direct store at +0xC BEFORE UiControl_Setup: BuySellScreen_
+ *      DetailPanelPrev on the first (0x7B0F4..0x7B0FC), DetailPanelNext on the second. These are the same
+ *      two handlers the buy/sell screen installs -- they page five panels, and here they page the hangar's.
+ *   5. UiControl_Setup(ctl, 0, 0, desc) over the two 32-byte descriptors at 0xABC88: {205, 18, "up", "sup",
+ *      ""} and {205, 38, "down", "sdown", ""}. The crew-list pair at 0xABC48 carries the same two names
+ *      with y 20 and 40, so the two nav pairs differ only in those offsets.
+ *   6. bPlaneStoresCommitted goes up (0x7B12C) before a single row exists -- the flag means "this panel set
+ *      is live", not "a row was committed", which is why BasePlaneScreen_Close tests it the same way.
+ *   7. the row scan (0x7B130..0x7B22C) walks slot 1..nObjectCount-1 and admits a slot only when
+ *      `slot < 25 || (slot > 30 && slot < 52)` -- ARM 0x7B190 `CMP #0x19 / BLT`, 0x7B198 `CMP #0x1E / BLE
+ *      skip`, 0x7B1A0 `CMP #0x34 / BGE skip` -- and then only when the base stocks it or the craft carries
+ *      it (0x7B1B8 `LDRH [obj,#0x2A]` = auPerBaseVal[base], 0x7B1C8 `LDRH [obj,#0x3A]` = aItemQty[craft])
+ *      AND its unlocking research topic is unlocked: `aResearchTopics[byte_AA968[slot]].bUnlocked`, ARM
+ *      0x7B1D4 `LDRB [slot, table]`, `MUL #0x22` (34 = sizeof ResearchTopicLive), `LDRB [#0xD]`. The pair
+ *      (base stock, craft carry) and the row counter are all under the same STRNE (0x7B1F0, 0x7B1FC,
+ *      0x7B204), so a slot the topic gate refuses leaves a zero pair behind and the row pass skips it again.
+ *   8. five panels, each operator new 0x1BB4 + UiPanel_ctor(nLineCount). All five share nStyle 14, nFont
+ *      16, nPosY 70, nUnk7056 70, gap_0[0..2] B4,B4,B4 and gap_0[6..11] F0,F0,F0,14,14,14, and differ as:
+ *
+ *        panel        slot       nPosX  nUnk7052  nViewW  click                       extras
+ *        slot         0x161AC8     10       5        125   Cache_ObjPlus0xBD8 thunk   bFlag7073 1, bUnk7088 0x96
+ *        avail        0x161A40    164     130         50   none                       bFlag7073 0, bFlag7074 1, nUnk7076 2
+ *        sel-row      0x161F00    170     166         15   AdjustSelectedQty          bFlag7073 1, gap_0[3..5] 32,32,FA, nUnk7084 5, bUnk7088 0x96
+ *        commit-row   0x161EEC    186     182         15   CommitStores               same as sel-row
+ *        taken        0x161EF4    232     190         45   none                       bFlag7073 0, bFlag7074 1, nUnk7076 2
+ *
+ *      nUnk7084 5 on the two 15-wide row panels is the auto-repeat count UiPanel_ClickRow consults, so
+ *      holding the "<" or ">" row repeats the quantity change every fifth click.
+ *   9. the row pass (0x7B7D0..0x7B930) walks the same slot range, re-tests the stored pair, and for a kept
+ *      slot copies apObjects[slot]->szName through a 112-byte stack buffer cut to 17 characters when strlen
+ *      is above 0x11 (0x7B838) into the slot panel's line; that panel's aux column gets the SLOT id; the
+ *      sel-row line is "<" (aRowQtyDec @ 0xABC24) and the commit-row line is ">" (aRowQtyInc @ 0xABC20);
+ *      and the two counts go into the avail and taken panels' aux columns -- the decompiler writes them as
+ *      `gap_0[row*4+5044]`, and 5044 is anLineAux at +0x13B4. The row index advances only for kept slots
+ *      while the slot counter advances for all of them, which is what makes the aux column a slot id rather
+ *      than a row index.
+ *  10. the sort (0x7B950..0x7B9F8) reads the first nObjectCount-1 entries of g_aBuySellRowOrder @ 0xAAA04
+ *      and, for each, swaps the row whose slot-panel aux equals it with the next placed row -- in the slot,
+ *      avail and taken panels only. The buy/sell builders swap five panels at this point; this one swaps
+ *      three, and it bounds the table walk by the object count rather than by the table's 148 entries.
+ *
+ * Deviations: the original dereferences each freshly allocated panel straight after the ctor (0x7B218 writes
+ * `v22->nStyle` with no test) and writes the two control clicks through the globals with no test either; the
+ * port skips a failed allocation. The scan buffer is the 2032-byte stack block at 0x7B018, 254 pairs, and
+ * the scan writes one pair per slot with no bound, so a Map_nObjectCount above 255 would run past it; the
+ * shipped object count is 149, and the port bounds the scan at 254 pairs anyway. The original also indexes
+ * auPerBaseVal with the unbounded signed base byte and aItemQty with the unbounded craft index; the port
+ * resolves both to zero when out of range. */
+#define PUFO_PLANE_STORE_NAV      2   /* the two nav controls at the object block's +0x64 / +0x68 */
+#define PUFO_PLANE_CARRY_SLOTS  256   /* anSlotCarryCount @ 0x161AD0, the count the build zeroes */
+#define PUFO_PLANE_SCAN_SLOTS   254   /* the 2032-byte scan block at 0x7B018: one (stock, carry) pair each */
+#define PUFO_PLANE_ROW_DEC        "<" /* aRowQtyDec @ 0xABC24: the sel-row column */
+#define PUFO_PLANE_ROW_INC        ">" /* aRowQtyInc @ 0xABC20: the commit-row column */
+#define PUFO_PLANE_CREW_SLOT_FIRST 31 /* the five crew slots the crew quota sums */
+#define PUFO_PLANE_CREW_SLOT_LAST  35
+#define PUFO_PLANE_SLOT_TOPIC_COUNT 156 /* byte_AA968 @ 0xAA968, up to the next global at 0xAAA04 */
+#define PUFO_PLANE_CRAFT_QTY_SLOTS 52   /* ObjectRecFull.aItemQty @ +0x3A, the same 52 the filter's
+                                         * `slot < 52` stops at */
+
+typedef struct PlaneStorePanels {
+    UiControl *apNavCtl[PUFO_PLANE_STORE_NAV]; /* 0x161AAC, 0x161AB0 */
+    UiPanel *pSlotPanel;   /* pPlaneSlotPanel @ 0x161AC8: the item name column */
+    UiPanel *pAvailPanel;  /* pPlaneAvailPanel @ 0x161A40: aux = what the base still has */
+    UiPanel *pSelRowPanel; /* pPlaneSelRowPanel @ 0x161F00: the "<" column */
+    UiPanel *pCommitPanel; /* pPlaneCommitRowPanel @ 0x161EEC: the ">" column */
+    UiPanel *pTakenPanel;  /* pPlaneTakenPanel @ 0x161EF4: aux = what the craft carries */
+} PlaneStorePanels;
+
+typedef struct PlaneStoreBuildEnv {
+    u8   *pbStoresCommitted;          /* bPlaneStoresCommitted @ 0x161F28, a byte */
+    i32  *anSlotCarryCount;           /* anSlotCarryCount @ 0x161AD0 */
+    i32  *pnCrewQuota;                /* nPlaneCrewQuota @ 0x161EE0 */
+    ObjectRecFull *const *apObjects;  /* apObjects @ 0x113AC0, the context's +0x108 */
+    i32   nObjectCount;               /* Map_nObjectCount @ 0x114A60, read with LDRH */
+    i32   nCraftIdx;                  /* nSelectedCraftIdx @ 0x161AC4, a dword */
+    i8    nBaseIdx;                   /* nSelectedBaseIdx @ 0x159D81, the signed byte */
+    const ResearchTopicLive *aTopics; /* aResearchTopics @ 0x15EF08 */
+    const u8 *abSlotTopic;            /* byte_AA968 @ 0xAA968: the topic that unlocks each slot */
+    void (*apfnNavClick[PUFO_PLANE_STORE_NAV])(void); /* BuySellScreen_DetailPanelPrev / Next */
+    void (*pfnSlotClick)(void);       /* Cache_ObjPlus0xBD8_To_dword_186BE8 @ 0x7afec */
+    void (*pfnSelRowClick)(void);     /* BasePlaneScreen_AdjustSelectedQty @ 0x7a9b4 */
+    void (*pfnCommitClick)(void);     /* BasePlaneScreen_CommitStores @ 0x7ac38 */
+    bool (*pfnLoadPads)(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser);
+    void *pPadUser;
+} PlaneStoreBuildEnv;
+
+void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuildEnv *pEnv);
 
 #endif /* PUFO_PLANE_H */

@@ -730,6 +730,12 @@ void BuySellScreen_Init(const BuySellInitEnv *pEnv);
  * Deviations: the original allocates the four controls and the five panels with operator new and
  * deletes the controls in its teardown; the port takes caller-owned controls and frees only the
  * panels it allocated. The original dereferences every allocation without a test. */
+/* unk_AAA04 @ 0xAAA04, g_aBuySellRowOrder in the IDB: the row order the selection sort walks. Both
+ * buy/sell builders and the hangar's BasePlaneScreen_BuildControls sort with it, and each reads only
+ * nObjectCount - 1 of the 148 entries. 124 are non-zero; the rest match nothing. */
+#define PUFO_BUYSELL_ORDER_COUNT 148
+extern const i32 g_aBuySellRowOrder[PUFO_BUYSELL_ORDER_COUNT];
+
 #define PUFO_BUYSSELL_SITE_FLAG_NEW     8    /* 0x761A8: the working site's bFlag0 while the shop is open */
 #define PUFO_TRANSFER_SITE_FLAG_COMMIT  24   /* 0x97DA4: bFlag0 of a site whose transfer has been committed */
 #define PUFO_BUYSSELL_SOLDIER_TEXT_REC  159  /* aTextRecs + 205*159 = 0xBB823, "Soldier" */

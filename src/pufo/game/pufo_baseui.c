@@ -411,10 +411,10 @@ static const UiControlDesc g_aBuySellCtlDesc[4] = {
  * each weapon followed by its two ammunition lines; then the research items, the three armour
  * slots, and the alien rank slots interleaved with their medic slots. 124 entries are non-zero;
  * the shipped map reads all 148 and the rest match nothing. */
-#define PUFO_BUYSELL_ORDER_COUNT 148 /* the sort pass reads nObjectCount - 1 of them */
 #define PUFO_BUYSELL_SLOT_FLAGS  255 /* the original's v108[255] at 0x76FC8 */
 
-static const i32 g_aBuySellRowOrder[PUFO_BUYSELL_ORDER_COUNT] = {
+/* Declared in pufo_baseui.h: the hangar's BasePlaneScreen_BuildControls sorts with this same table. */
+const i32 g_aBuySellRowOrder[PUFO_BUYSELL_ORDER_COUNT] = {
     117, 118, 119, 120, 121, 1000, 112, 113,
     1, 36, 4, 38, 7, 40, 41, 42,
     8, 43, 44, 45, 10, 46, 47, 48,

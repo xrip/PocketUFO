@@ -4,6 +4,9 @@
 #include "game/pufo_font.h"       /* Text_DrawString / Text_MeasureWidth, the panel headers */
 #include "game/pufo_baseui.h"      /* Soldier_FormatDisplayName, the crew status column */
 
+#include <stdio.h>   /* snprintf, the row name copy */
+#include <string.h>  /* strlen, the 17-character cut at 0x7B838 */
+
 /* One body for BasePlaneScreen_SelectWeapon25..30; only the constant differs. */
 i32 BasePlaneScreen_SelectWeapon(PlaneWeaponPanels *pPanels, i32 nWeaponIndex,
                                  i32 (*pfnApplySwap)(void *pUser), void *pUser)
@@ -1292,4 +1295,273 @@ void BasePlaneScreen_Init(const BasePlaneScreenInitEnv *pEnv)
     }
 
     BasePlaneScreen_BuildPanels(pEnv->pPanels, pEnv->pBuildEnv); /* 0x7DDE8, the tail call */
+}
+
+/* stru_ABC88 @ 0xABC88: the two nav controls BuildControls installs, in the order the UiControl_Setup
+ * loop at 0x7B110 consumes them. The crew-list pair at 0xABC48 carries the same two names at y 20 and 40;
+ * these are at y 18 and 38. */
+static const UiControlDesc g_aPlaneStoreNavDesc[PUFO_PLANE_STORE_NAV] = {
+    { 0x00CD, 0x0012, "up",   "sup",   "", 0 }, /* 0xABC88 */
+    { 0x00CD, 0x0026, "down", "sdown", "", 0 }, /* 0xABCA8 */
+};
+
+/* 0x7B190..0x7B1A4: `CMP #0x19 / BLT keep`, `CMP #0x1E / BLE skip`, `CMP #0x34 / BGE skip`. Slots 0,
+ * 25..30 and 52 up get no row -- 25..30 are the five craft slots and the five crew slots the hangar
+ * handles through its own columns instead. */
+static bool PlaneStoreSlotAdmits(i32 nSlot)
+{
+    return nSlot < 25 || (nSlot > 30 && nSlot < 52);
+}
+
+/* 0x7B1D4..0x7B1F0: byte_AA968[slot] names the research topic that unlocks the slot, and the gate is that
+ * topic's bUnlocked at ResearchTopicLive + 0xD. */
+static bool PlaneStoreSlotUnlocked(const PlaneStoreBuildEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->abSlotTopic == NULL || pEnv->aTopics == NULL
+        || nSlot < 0 || nSlot >= PUFO_PLANE_SLOT_TOPIC_COUNT) {
+        return false;
+    }
+    const i32 nTopic = pEnv->abSlotTopic[nSlot];
+
+    if (nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return false; /* deviation: the original indexes the topic table with no bound */
+    }
+    return pEnv->aTopics[nTopic].bUnlocked != 0;
+}
+
+static const ObjectRecFull *PlaneStoreObject(const PlaneStoreBuildEnv *pEnv, i32 nSlot)
+{
+    if (pEnv->apObjects == NULL || nSlot < 0 || nSlot >= pEnv->nObjectCount) {
+        return NULL; /* deviation: the original indexes the array whatever the slot says */
+    }
+    return pEnv->apObjects[nSlot];
+}
+
+/* auPerBaseVal @ ObjectRecFull + 0x2A (0x7B1B8 LDRH) and aItemQty @ + 0x3A (0x7B1C8 LDRH). Both are
+ * bounded here; the original uses the signed base byte and the craft dword index straight as subscripts. */
+static u16 PlaneStoreBaseQty(const PlaneStoreBuildEnv *pEnv, const ObjectRecFull *pObj)
+{
+    if (pObj == NULL || pEnv->nBaseIdx < 0 || pEnv->nBaseIdx >= PUFO_FAC_BASE_COUNT) {
+        return 0;
+    }
+    return pObj->auPerBaseVal[pEnv->nBaseIdx];
+}
+
+static u16 PlaneStoreCraftQty(const PlaneStoreBuildEnv *pEnv, const ObjectRecFull *pObj)
+{
+    if (pObj == NULL || pEnv->nCraftIdx < 0 || pEnv->nCraftIdx >= PUFO_PLANE_CRAFT_QTY_SLOTS) {
+        return 0;
+    }
+    return pObj->aItemQty[pEnv->nCraftIdx];
+}
+
+/* The five store panels share nStyle 14, nFont 16, nPosY 70, nUnk7056 70 and both colour triples, and
+ * differ only as the header table records. nRightAlign marks the two count columns (avail, taken), which
+ * clear bFlag7073, set bFlag7074 and get nUnk7076 2; nRowExtras marks the two 15-wide quantity columns,
+ * which add gap_0[3..5] 32,32,FA and the nUnk7084 5 auto-repeat. */
+static void PlaneStorePanelStyle(UiPanel *pPanel, i32 nPosX, i32 nUnk7052, i32 nViewW,
+                                 bool bRowExtras, bool bRightAlign)
+{
+    pPanel->nStyle = 14;
+    pPanel->nFont = 16;
+    pPanel->nPosY = 70;
+    pPanel->nUnk7052 = nUnk7052;
+    pPanel->nUnk7056 = 70;
+    pPanel->nPosX = nPosX;
+    pPanel->nViewW = nViewW;
+    UiPanel_SetBytes0to2(pPanel, 0xB4, 0xB4, 0xB4);
+    UiPanel_SetBytes6to11(pPanel, 0xF0, 0xF0, 0xF0, 0x14, 0x14, 0x14);
+
+    if (bRightAlign) {
+        pPanel->bFlag7073 = 0;
+        pPanel->bFlag7074 = 1;
+        pPanel->nUnk7076 = 2;
+        return;
+    }
+    pPanel->bFlag7073 = 1;
+    pPanel->bUnk7088 = 0x96;
+
+    if (bRowExtras) {
+        UiPanel_SetBytes3to5(pPanel, 0x32, 0x32, 0xFA);
+        pPanel->nUnk7084 = 5;
+    }
+}
+
+/* BasePlaneScreen_BuildControls @ 0x7b014. See the header for the branch map and the panel table. */
+void BasePlaneScreen_BuildControls(PlaneStorePanels *pOut, const PlaneStoreBuildEnv *pEnv)
+{
+    i32 anBaseQty[PUFO_PLANE_SCAN_SLOTS];
+    i32 anCarryQty[PUFO_PLANE_SCAN_SLOTS];
+    UiPanel *apFree[5];
+    char szName[112]; /* the original's v67 @ 0x7B018's frame slot */
+    i32 nRows = 0;
+    i32 nQuota = 0;
+    i32 nSlots;
+    i32 nRow;
+    i32 i;
+
+    if (pOut == NULL || pEnv == NULL || pEnv->pbStoresCommitted == NULL) {
+        return;
+    }
+
+    if (*pEnv->pbStoresCommitted != 0) {
+        *pEnv->pbStoresCommitted = 0; /* 0x7BA18: the flag goes down before anything is released */
+
+        for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+            PlaneFreeCtl(&pOut->apNavCtl[i]); /* 0x7BA1C..0x7BA44, the object block's +0x64 / +0x68 */
+        }
+        apFree[0] = pOut->pSlotPanel;   /* 0x7BA48 */
+        apFree[1] = pOut->pSelRowPanel; /* 0x7BA68 */
+        apFree[2] = pOut->pAvailPanel;
+        apFree[3] = pOut->pCommitPanel;
+        apFree[4] = pOut->pTakenPanel;
+        for (i = 0; i < 5; ++i) {
+            PlanePanelFree(apFree[i]); /* 0x7BA5C..0x7BAE4 */
+        }
+        pOut->pSlotPanel = NULL;   /* deviation: the original leaves all seven slots dangling */
+        pOut->pSelRowPanel = NULL;
+        pOut->pAvailPanel = NULL;
+        pOut->pCommitPanel = NULL;
+        pOut->pTakenPanel = NULL;
+        return;
+    }
+
+    if (pEnv->anSlotCarryCount != NULL) {
+        for (i = 0; i < PUFO_PLANE_CARRY_SLOTS; ++i) {
+            pEnv->anSlotCarryCount[i] = 0; /* 0x7B038..0x7B058: 256 stores */
+        }
+    }
+
+    /* 0x7B05C..0x7B09C: the crew quota starts as what the craft already carries of the five crew slots.
+     * The original stores the running total on every step; the port writes it once, which is the same
+     * value and the only value any reader can see. */
+    for (i = PUFO_PLANE_CREW_SLOT_FIRST; i <= PUFO_PLANE_CREW_SLOT_LAST; ++i) {
+        nQuota += (i32)PlaneStoreCraftQty(pEnv, PlaneStoreObject(pEnv, i));
+    }
+    if (pEnv->pnCrewQuota != NULL) {
+        *pEnv->pnCrewQuota = nQuota;
+    }
+
+    for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+        UiControl *pCtl = (UiControl *)malloc(sizeof(UiControl)); /* 0x7B0AC: operator new 0x20 */
+
+        if (pCtl != NULL) {
+            UiControl_ctor(pCtl); /* 0x7B0BC */
+        }
+        pOut->apNavCtl[i] = pCtl;
+    }
+    for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+        if (pOut->apNavCtl[i] != NULL) {
+            pOut->apNavCtl[i]->pfnClick = pEnv->apfnNavClick[i]; /* 0x7B0FC / 0x7B10C, before Setup */
+        }
+    }
+    for (i = 0; i < PUFO_PLANE_STORE_NAV; ++i) {
+        if (pOut->apNavCtl[i] != NULL) {
+            UiControl_Setup(pOut->apNavCtl[i], 0, 0, &g_aPlaneStoreNavDesc[i],
+                            pEnv->pfnLoadPads, pEnv->pPadUser); /* 0x7B110..0x7B128 */
+        }
+    }
+
+    *pEnv->pbStoresCommitted = 1; /* 0x7B12C: set before a single row exists */
+
+    nSlots = pEnv->nObjectCount;
+    if (nSlots > PUFO_PLANE_SCAN_SLOTS + 1) {
+        nSlots = PUFO_PLANE_SCAN_SLOTS + 1; /* deviation: the 2032-byte scan block is unbounded */
+    }
+
+    /* The scan, 0x7B130..0x7B22C. The pair is cleared before any test runs, so a refused slot leaves a
+     * zero pair the row pass can re-test rather than an uninitialised one. */
+    for (i = 1; i < nSlots; ++i) {
+        const ObjectRecFull *pObj = PlaneStoreObject(pEnv, i);
+        const u16 wBase = PlaneStoreBaseQty(pEnv, pObj);
+        const u16 wCarry = PlaneStoreCraftQty(pEnv, pObj);
+
+        anBaseQty[i - 1] = 0;  /* 0x7B180 */
+        anCarryQty[i - 1] = 0; /* 0x7B188 */
+
+        if (!PlaneStoreSlotAdmits(i) || (wBase == 0 && wCarry == 0) || !PlaneStoreSlotUnlocked(pEnv, i)) {
+            continue;
+        }
+        anBaseQty[i - 1] = (i32)wBase;  /* 0x7B1F0 STRNE */
+        anCarryQty[i - 1] = (i32)wCarry; /* 0x7B1FC STRNE */
+        ++nRows;                         /* 0x7B204 */
+    }
+
+    pOut->pSlotPanel   = PlanePanelNew(nRows); /* 0x7B218 */
+    pOut->pAvailPanel  = PlanePanelNew(nRows); /* 0x7B310 */
+    pOut->pSelRowPanel = PlanePanelNew(nRows); /* 0x7B418 */
+    pOut->pCommitPanel = PlanePanelNew(nRows); /* 0x7B538 */
+    pOut->pTakenPanel  = PlanePanelNew(nRows); /* 0x7B65C */
+
+    if (pOut->pSlotPanel != NULL) {
+        PlaneStorePanelStyle(pOut->pSlotPanel, 10, 5, 125, false, false);
+        pOut->pSlotPanel->pfnClick = pEnv->pfnSlotClick; /* 0x7B244 */
+    }
+    if (pOut->pAvailPanel != NULL) {
+        PlaneStorePanelStyle(pOut->pAvailPanel, 164, 130, 50, false, true);
+        pOut->pAvailPanel->pfnClick = NULL; /* 0x7B354 */
+    }
+    if (pOut->pSelRowPanel != NULL) {
+        PlaneStorePanelStyle(pOut->pSelRowPanel, 170, 166, 15, true, false);
+        pOut->pSelRowPanel->pfnClick = pEnv->pfnSelRowClick; /* 0x7B454 */
+    }
+    if (pOut->pCommitPanel != NULL) {
+        PlaneStorePanelStyle(pOut->pCommitPanel, 186, 182, 15, true, false);
+        pOut->pCommitPanel->pfnClick = pEnv->pfnCommitClick; /* 0x7B574 */
+    }
+    if (pOut->pTakenPanel != NULL) {
+        PlaneStorePanelStyle(pOut->pTakenPanel, 232, 190, 45, false, true);
+        pOut->pTakenPanel->pfnClick = NULL; /* 0x7B6C4 */
+    }
+
+    if (pOut->pSlotPanel == NULL || pOut->pAvailPanel == NULL || pOut->pSelRowPanel == NULL
+        || pOut->pCommitPanel == NULL || pOut->pTakenPanel == NULL) {
+        return; /* deviation: the original writes v22->nStyle straight after a ctor that may fail */
+    }
+
+    /* The row pass, 0x7B7D0..0x7B930. The row index advances only for kept slots while the slot counter
+     * advances for all of them, which is why the aux column holds a slot id and not a row index. */
+    nRow = 0;
+    for (i = 1; i < nSlots; ++i) {
+        if (anBaseQty[i - 1] == 0 && anCarryQty[i - 1] == 0) {
+            continue; /* 0x7B7F8: the stored pair is re-tested */
+        }
+        const ObjectRecFull *pObj = PlaneStoreObject(pEnv, i);
+
+        snprintf(szName, sizeof szName, "%s", (pObj != NULL) ? pObj->szName : "");
+        if (strlen(szName) > 17) {
+            szName[17] = 0; /* 0x7B838: strlen above 0x11, and index 17 is the terminator */
+        }
+        (void)UiPanel_SetLineText(pOut->pSlotPanel, nRow, szName);                  /* 0x7B854..0x7B878 */
+        UiPanel_SetLineAux(pOut->pSlotPanel, nRow, i);                              /* 0x7B8A0 */
+        (void)UiPanel_SetLineText(pOut->pSelRowPanel, nRow, PUFO_PLANE_ROW_DEC);    /* 0x7B8C0..0x7B8E8 */
+        (void)UiPanel_SetLineText(pOut->pCommitPanel, nRow, PUFO_PLANE_ROW_INC);    /* 0x7B8F8..0x7B920 */
+        UiPanel_SetLineAux(pOut->pAvailPanel, nRow, anBaseQty[i - 1]);  /* 0x7B918: gap_0[row*4+5044] */
+        UiPanel_SetLineAux(pOut->pTakenPanel, nRow, anCarryQty[i - 1]); /* 0x7B924 */
+        ++nRow;
+    }
+
+    /* The sort, 0x7B950..0x7B9F8: the first nObjectCount - 1 order entries, three panels swapped together
+     * rather than the buy/sell builders' five. */
+    {
+        i32 nPlaced = 0;
+        i32 nOrder = (nSlots > 0) ? nSlots - 1 : 0;
+
+        if (nOrder > PUFO_BUYSELL_ORDER_COUNT) {
+            nOrder = PUFO_BUYSELL_ORDER_COUNT;
+        }
+        for (i = 0; i < nOrder; ++i) {
+            const i32 nWant = g_aBuySellRowOrder[i];
+            i32 r;
+
+            for (r = 0; r < pOut->pSlotPanel->nLineCount; ++r) { /* 0x7B9D8: the panel's own line count */
+                if (pOut->pSlotPanel->anLineAux[r] == nWant) {
+                    (void)UiPanel_SwapLines(pOut->pSlotPanel, nPlaced, r);  /* 0x7B97C */
+                    (void)UiPanel_SwapLines(pOut->pAvailPanel, nPlaced, r); /* 0x7B98C */
+                    (void)UiPanel_SwapLines(pOut->pTakenPanel, nPlaced, r); /* 0x7B99C */
+                    ++nPlaced;
+                }
+            }
+        }
+    }
 }

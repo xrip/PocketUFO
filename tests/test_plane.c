@@ -1655,45 +1655,25 @@ static BasePlaneScreenInitEnv g_hngInitEnv;
 static i32 g_nPadLoadCalls;
 static const char *g_szPad0Seen[11];
 
-static void HngMain0(void)
-{
-}
-static void HngMain1(void)
-{
-}
-static void HngMain2(void)
-{
-}
-static void HngMain3(void)
-{
-}
-static void HngWpn0(void)
-{
-}
-static void HngWpn1(void)
-{
-}
-static void HngWpn2(void)
-{
-}
-static void HngWpn3(void)
-{
-}
-static void HngWpn4(void)
-{
-}
-static void HngWpn5(void)
-{
-}
-static void HngWpn6(void)
-{
-}
-static void HngClose(void)
-{
-}
-static void HngBuySell(void)
-{
-}
+/* Each handler writes a distinct value. Empty handlers are identical code, and the linker's identical
+ * code folding (MSVC's /OPT:ICF, on by default in Release) merges identical functions to ONE address --
+ * so a pointer-identity check between two empty handlers passes no matter which one was installed. The
+ * volatile keeps the store from being optimised out, which is what keeps the bodies distinct. */
+static volatile i32 g_nHandlerId;
+
+static void HngMain0(void) { g_nHandlerId = 1; }
+static void HngMain1(void) { g_nHandlerId = 2; }
+static void HngMain2(void) { g_nHandlerId = 3; }
+static void HngMain3(void) { g_nHandlerId = 4; }
+static void HngWpn0(void) { g_nHandlerId = 5; }
+static void HngWpn1(void) { g_nHandlerId = 6; }
+static void HngWpn2(void) { g_nHandlerId = 7; }
+static void HngWpn3(void) { g_nHandlerId = 8; }
+static void HngWpn4(void) { g_nHandlerId = 9; }
+static void HngWpn5(void) { g_nHandlerId = 10; }
+static void HngWpn6(void) { g_nHandlerId = 11; }
+static void HngClose(void) { g_nHandlerId = 12; }
+static void HngBuySell(void) { g_nHandlerId = 13; }
 
 static bool HngLoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
                         void *pUser)
@@ -1812,6 +1792,353 @@ static void TestPlaneInit(void)
     TestCheck("a null init env does nothing", true);
 }
 
+/* --------------------------------------------------------------------------
+ * BasePlaneScreen_BuildControls @ 0x7b014: the hangar's stores-transfer panel set.
+ * -------------------------------------------------------------------------- */
+
+#define CTL_OBJ_COUNT 60 /* the fixture's object array; the shipped count is 149 */
+
+/* byte_AA968 @ 0xAA968 as shipped, the part the row filter can reach. Slots 25..30 are zero and the
+ * filter refuses them anyway; 31..35 map to topics 97..101, 37 to 113, 39 to 114, 40..47 to 1, and
+ * 48..50 to 115, 117, 116. Slot 51 is zero, so its topic is topic 0. */
+static const u8 g_abCtlTopicShipped[] = {
+    0, 1, 6, 9, 2, 7, 10, 4, 3, 8, 5, 11, 13, 12, 18, 23, 24, 22, 21, 25, 14, 15, 17, 20, 16,
+    0, 0, 0, 0, 0, 0,
+    97, 98, 99, 100, 101, 1, 113, 1, 114, 1, 1, 1, 1, 1, 1, 1, 1, 1, 115, 117, 116, 0
+};
+
+static ObjectRecFull g_aCtlObj[CTL_OBJ_COUNT + 1];
+static ObjectRecFull *g_apCtlObj[300];
+static ResearchTopicLive g_aCtlTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_abCtlTopic[PUFO_PLANE_SLOT_TOPIC_COUNT];
+static i32 g_anCtlCarry[256]; /* a literal 256: anSlotCarryCount @ 0x161AD0 is 1024 bytes */
+static PlaneStorePanels g_ctlOut;
+static PlaneStoreBuildEnv g_ctlEnv;
+static u8 g_bCtlCommitted;
+static i32 g_nCtlQuota;
+static i32 g_nCtlPadCalls;
+static char g_aCtlPadName[6][16]; /* three descriptor names per control */
+
+/* Distinct bodies for the same reason as the Hng* pair above: identical empty handlers share one address. */
+static void CtlSlotClick(void) { g_nHandlerId = 21; }
+static void CtlSelRowClick(void) { g_nHandlerId = 22; }
+static void CtlCommitClick(void) { g_nHandlerId = 23; }
+static void CtlNavPrev(void) { g_nHandlerId = 24; }
+static void CtlNavNext(void) { g_nHandlerId = 25; }
+
+static bool CtlLoadPads(UiControl *pCtl, const char *psz0, const char *psz1, const char *psz2,
+                        void *pUser)
+{
+    (void)pCtl;
+    (void)pUser;
+
+    if (g_nCtlPadCalls < 2) {
+        snprintf(g_aCtlPadName[g_nCtlPadCalls * 3], sizeof g_aCtlPadName[0], "%s", psz0);
+        snprintf(g_aCtlPadName[g_nCtlPadCalls * 3 + 1], sizeof g_aCtlPadName[0], "%s", psz1);
+        snprintf(g_aCtlPadName[g_nCtlPadCalls * 3 + 2], sizeof g_aCtlPadName[0], "%s", psz2);
+    }
+    ++g_nCtlPadCalls;
+    return true;
+}
+
+static void CtlReset(void)
+{
+    memset(g_aCtlObj, 0, sizeof g_aCtlObj);
+    memset(g_aCtlTopics, 0, sizeof g_aCtlTopics);
+    memset(g_abCtlTopic, 0, sizeof g_abCtlTopic);
+    memset(g_aCtlPadName, 0, sizeof g_aCtlPadName);
+    memcpy(g_abCtlTopic, g_abCtlTopicShipped, sizeof g_abCtlTopicShipped);
+
+    for (i32 i = 0; i < CTL_OBJ_COUNT + 1; ++i) {
+        snprintf(g_aCtlObj[i].szName, sizeof g_aCtlObj[i].szName, "obj%02d", i);
+    }
+    for (i32 t = 0; t < PUFO_RESEARCH_TOPIC_COUNT; ++t) {
+        g_aCtlTopics[t].bUnlocked = 1;
+    }
+    /* Slots past the fixture all point at one empty record, so a large Map_nObjectCount is safe to walk. */
+    for (i32 i = 0; i < 300; ++i) {
+        g_apCtlObj[i] = (i < CTL_OBJ_COUNT) ? &g_aCtlObj[i] : &g_aCtlObj[CTL_OBJ_COUNT];
+    }
+    memset(g_anCtlCarry, 0x5A, sizeof g_anCtlCarry); /* prove the build zeroes all 256 */
+    memset(&g_ctlOut, 0, sizeof g_ctlOut);
+    memset(&g_ctlEnv, 0, sizeof g_ctlEnv);
+
+    g_bCtlCommitted = 0;
+    g_nCtlQuota = -1;
+    g_nCtlPadCalls = 0;
+    g_ctlEnv.pbStoresCommitted = &g_bCtlCommitted;
+    g_ctlEnv.anSlotCarryCount = g_anCtlCarry;
+    g_ctlEnv.pnCrewQuota = &g_nCtlQuota;
+    g_ctlEnv.apObjects = g_apCtlObj;
+    g_ctlEnv.nObjectCount = CTL_OBJ_COUNT;
+    g_ctlEnv.nCraftIdx = 0;
+    g_ctlEnv.nBaseIdx = 0;
+    g_ctlEnv.aTopics = g_aCtlTopics;
+    g_ctlEnv.abSlotTopic = g_abCtlTopic;
+    g_ctlEnv.apfnNavClick[0] = CtlNavPrev;
+    g_ctlEnv.apfnNavClick[1] = CtlNavNext;
+    g_ctlEnv.pfnSlotClick = CtlSlotClick;
+    g_ctlEnv.pfnSelRowClick = CtlSelRowClick;
+    g_ctlEnv.pfnCommitClick = CtlCommitClick;
+    g_ctlEnv.pfnLoadPads = CtlLoadPads;
+}
+
+static void CtlStock(i32 nSlot, u16 wBase, u16 wCarry)
+{
+    g_aCtlObj[nSlot].auPerBaseVal[0] = wBase;
+    g_aCtlObj[nSlot].aItemQty[0] = wCarry;
+}
+
+/* The five panels' shared style plus the fields that tell them apart (the header's panel table). */
+static void CtlPanelStyle(const char *pszName, UiPanel *pPanel, i32 nPosX, i32 nUnk7052, i32 nViewW,
+                          u8 bFlag7073, u8 bFlag7074, i32 nUnk7076, u8 bUnk7088, i32 nUnk7084,
+                          u8 b3)
+{
+    char szMsg[96];
+
+    snprintf(szMsg, sizeof szMsg, "%s: fourteen rows, font 16", pszName);
+    TestEqI32(szMsg, pPanel->nStyle, 14);
+    TestEqI32("  at font 16", pPanel->nFont, 16);
+    TestEqI32("  on row 70 with the click band top also 70", pPanel->nPosY, 70);
+    TestEqI32("  and the click band top 70", pPanel->nUnk7056, 70);
+    snprintf(szMsg, sizeof szMsg, "%s: x %d", pszName, nPosX);
+    TestEqI32(szMsg, pPanel->nPosX, nPosX);
+    snprintf(szMsg, sizeof szMsg, "%s: click band left %d", pszName, nUnk7052);
+    TestEqI32(szMsg, pPanel->nUnk7052, nUnk7052);
+    snprintf(szMsg, sizeof szMsg, "%s: view width %d", pszName, nViewW);
+    TestEqI32(szMsg, pPanel->nViewW, nViewW);
+    TestEqI32("  row colour B4,B4,B4", pPanel->gap_0[0], 0xB4);
+    TestEqI32("  text pair F0,F0,F0", pPanel->gap_0[6], 0xF0);
+    TestEqI32("  over 14,14,14", pPanel->gap_0[9], 0x14);
+    snprintf(szMsg, sizeof szMsg, "%s: bFlag7073 %d", pszName, bFlag7073);
+    TestEqI32(szMsg, pPanel->bFlag7073, bFlag7073);
+    snprintf(szMsg, sizeof szMsg, "%s: bFlag7074 %d", pszName, bFlag7074);
+    TestEqI32(szMsg, pPanel->bFlag7074, bFlag7074);
+    snprintf(szMsg, sizeof szMsg, "%s: alignment key nUnk7076 %d", pszName, nUnk7076);
+    TestEqI32(szMsg, pPanel->nUnk7076, nUnk7076);
+    snprintf(szMsg, sizeof szMsg, "%s: bUnk7088 0x%02X", pszName, bUnk7088);
+    TestEqI32(szMsg, pPanel->bUnk7088, bUnk7088);
+    snprintf(szMsg, sizeof szMsg, "%s: auto-repeat nUnk7084 %d", pszName, nUnk7084);
+    TestEqI32(szMsg, pPanel->nUnk7084, nUnk7084);
+    snprintf(szMsg, sizeof szMsg, "%s: second colour byte 0x%02X", pszName, b3);
+    TestEqI32(szMsg, pPanel->gap_0[3], b3);
+}
+
+/* The fixture: rows at slots 1, 24, 31, 32, 34, 35 and 51; refusals at 0 (below the loop), 25 and 30
+ * (the filter's gap), 33 (nothing stocked) and 52 (past the filter). The crew quota is 4+1+0+2+3. */
+static void CtlFixture(void)
+{
+    CtlStock(0, 6, 6);
+    CtlStock(1, 5, 2);
+    CtlStock(24, 3, 0);
+    CtlStock(25, 9, 9);
+    CtlStock(30, 9, 9);
+    CtlStock(31, 7, 4);
+    CtlStock(32, 0, 1);
+    CtlStock(34, 0, 2);
+    CtlStock(35, 0, 3);
+    CtlStock(51, 1, 0);
+    CtlStock(52, 8, 8);
+}
+
+static void TestBuildControls(void)
+{
+    bool bCarryZeroed = true;
+
+    printf("BasePlaneScreen_BuildControls @ 0x7b014\n");
+
+    CtlReset();
+    CtlFixture();
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+
+    TestEqI32("the build raises the committed flag", g_bCtlCommitted, 1);
+    /* A literal 256, not the port's macro: a test that reads the same constant the code reads cannot
+     * catch the constant being wrong. */
+    for (i32 i = 0; i < 256; ++i) {
+        if (g_anCtlCarry[i] != 0) {
+            bCarryZeroed = false;
+        }
+    }
+    TestCheck("all 256 carry-count slots are cleared (0x7B038)", bCarryZeroed);
+    TestEqI32("  the last one included", g_anCtlCarry[255], 0);
+    TestEqI32("the crew quota starts as what the craft carries of slots 31..35 (0x7B05C)", g_nCtlQuota, 10);
+
+    TestCheck("the two store-nav controls exist", g_ctlOut.apNavCtl[0] != NULL
+              && g_ctlOut.apNavCtl[1] != NULL);
+    if (g_ctlOut.apNavCtl[0] != NULL && g_ctlOut.apNavCtl[1] != NULL) {
+        TestEqI32("  both sit at x 205 (0xABC88's descriptor pair)", g_ctlOut.apNavCtl[0]->x, 205);
+        TestEqI32("  and the same x", g_ctlOut.apNavCtl[1]->x, 205);
+        TestEqI32("the up control is at y 18, not the crew list's 20", g_ctlOut.apNavCtl[0]->y, 18);
+        TestEqI32("the down control is at y 38, not the crew list's 40", g_ctlOut.apNavCtl[1]->y, 38);
+        TestCheck("  the clicks are the buy/sell detail pair, installed before Setup",
+                  g_ctlOut.apNavCtl[0]->pfnClick == CtlNavPrev
+                  && g_ctlOut.apNavCtl[1]->pfnClick == CtlNavNext);
+    }
+    TestEqI32("each control loads its pads once", g_nCtlPadCalls, 2);
+    TestCheck("  the first loads up/sup and no third pad name", strcmp(g_aCtlPadName[0], "up") == 0
+              && strcmp(g_aCtlPadName[1], "sup") == 0 && g_aCtlPadName[2][0] == 0);
+    TestCheck("  the second loads down/sdown and no third pad name",
+              strcmp(g_aCtlPadName[3], "down") == 0 && strcmp(g_aCtlPadName[4], "sdown") == 0
+              && g_aCtlPadName[5][0] == 0);
+
+    TestCheck("all five panels exist", g_ctlOut.pSlotPanel != NULL && g_ctlOut.pAvailPanel != NULL
+              && g_ctlOut.pSelRowPanel != NULL && g_ctlOut.pCommitPanel != NULL
+              && g_ctlOut.pTakenPanel != NULL);
+    if (g_ctlOut.pSlotPanel == NULL) {
+        return;
+    }
+    TestEqI32("seven rows: slots 1, 24, 31, 32, 34, 35 and 51", g_ctlOut.pSlotPanel->nLineCount, 7);
+    TestEqI32("  and every panel was built with the same row count", g_ctlOut.pTakenPanel->nLineCount, 7);
+
+    /* bUnk7088 stays at UiPanel_ctor's 0xFF on the two count columns: BuildControls only writes it on
+     * the three columns that also get bFlag7073. */
+    CtlPanelStyle("the name column", g_ctlOut.pSlotPanel, 10, 5, 125, 1, 0, 0, 0x96, 0, 0x00);
+    CtlPanelStyle("the available column", g_ctlOut.pAvailPanel, 164, 130, 50, 0, 1, 2, 0xFF, 0, 0x00);
+    CtlPanelStyle("the minus column", g_ctlOut.pSelRowPanel, 170, 166, 15, 1, 0, 0, 0x96, 5, 0x32);
+    CtlPanelStyle("the plus column", g_ctlOut.pCommitPanel, 186, 182, 15, 1, 0, 0, 0x96, 5, 0x32);
+    CtlPanelStyle("the taken column", g_ctlOut.pTakenPanel, 232, 190, 45, 0, 1, 2, 0xFF, 0, 0x00);
+
+    TestCheck("only the name column has a click handler",
+              g_ctlOut.pSlotPanel->pfnClick == CtlSlotClick
+              && g_ctlOut.pSelRowPanel->pfnClick == CtlSelRowClick
+              && g_ctlOut.pCommitPanel->pfnClick == CtlCommitClick
+              && g_ctlOut.pAvailPanel->pfnClick == NULL
+              && g_ctlOut.pTakenPanel->pfnClick == NULL);
+
+    /* The sort, 0x7B950..0x7B9F8. It walks only the first nObjectCount - 1 order entries -- 59 here --
+     * so slot 1 (table index 8), 51 (36), 24 (47) and 31 (58) get placed while 32 (60), 34 (63) and 35
+     * (64) are never reached and stay in the scan order behind them. Walking the table's full 148 entries
+     * instead would put 32, 34 and 35 before 31's leftovers and give 1, 51, 24, 31, 32, 34, 35. */
+    {
+        static const i32 anWant[7] = { 1, 51, 24, 31, 34, 35, 32 };
+        static const i32 anAvail[7] = { 5, 1, 3, 7, 0, 0, 0 };
+        static const i32 anTaken[7] = { 2, 0, 0, 4, 2, 3, 1 };
+        bool bOrder = true;
+        bool bAvail = true;
+        bool bTaken = true;
+        bool bNames = true;
+
+        for (i32 r = 0; r < 7; ++r) {
+            char szWant[40];
+
+            if (g_ctlOut.pSlotPanel->anLineAux[r] != anWant[r]) {
+                bOrder = false;
+            }
+            if (g_ctlOut.pAvailPanel->anLineAux[r] != anAvail[r]) {
+                bAvail = false;
+            }
+            if (g_ctlOut.pTakenPanel->anLineAux[r] != anTaken[r]) {
+                bTaken = false;
+            }
+            snprintf(szWant, sizeof szWant, "obj%02d", anWant[r]);
+            if (strcmp(UiPanel_GetLineText(g_ctlOut.pSlotPanel, r), szWant) != 0) {
+                bNames = false;
+            }
+        }
+        TestCheck("the aux column holds slot ids, sorted into the order table's sequence", bOrder);
+        TestCheck("  the available counts moved with their rows", bAvail);
+        TestCheck("  the taken counts moved with their rows", bTaken);
+        TestCheck("  and so did the object names", bNames);
+    }
+
+    /* Literal labels, not the port's macros -- a test that reads the same constant cannot catch it moving. */
+    TestCheck("the minus column reads '<' (aRowQtyDec @ 0xABC24)",
+              strcmp(UiPanel_GetLineText(g_ctlOut.pSelRowPanel, 0), "<") == 0);
+    TestCheck("and the plus column '>' (aRowQtyInc @ 0xABC20)",
+              strcmp(UiPanel_GetLineText(g_ctlOut.pCommitPanel, 0), ">") == 0);
+
+    /* The topic gate: slot 1 maps to topic 1, and locking that topic removes the row even though the
+     * base stocks it and the craft carries it. */
+    CtlReset();
+    CtlFixture();
+    g_aCtlTopics[g_abCtlTopic[1]].bUnlocked = 0;
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("a locked topic drops the row (0x7B1D4..0x7B1F0)", g_ctlOut.pSlotPanel->nLineCount, 6);
+    TestEqI32("  and the first row is now slot 51", g_ctlOut.pSlotPanel->anLineAux[0], 51);
+
+    /* The stock gate: a slot neither stocked nor carried gets no row even though the filter admits it. */
+    CtlReset();
+    CtlStock(40, 0, 0);
+    CtlStock(41, 0, 4);
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("an empty admitted slot gets no row", g_ctlOut.pSlotPanel->nLineCount, 1);
+    TestEqI32("  a carried-only slot does, with nothing available", g_ctlOut.pAvailPanel->anLineAux[0], 0);
+    TestEqI32("  and four taken", g_ctlOut.pTakenPanel->anLineAux[0], 4);
+
+    /* The 17-character cut at 0x7B838: `CMP R3, #0x11` is a test on strlen ABOVE 17, so an 18-character
+     * name is already cut and a 17-character name is not. */
+    CtlReset();
+    snprintf(g_aCtlObj[7].szName, sizeof g_aCtlObj[7].szName, "abcdefghijklmnopqrstuvwxy");
+    snprintf(g_aCtlObj[8].szName, sizeof g_aCtlObj[8].szName, "abcdefghijklmnopqr");
+    snprintf(g_aCtlObj[9].szName, sizeof g_aCtlObj[9].szName, "abcdefghijklmnopq");
+    CtlStock(7, 3, 0);
+    CtlStock(8, 3, 0);
+    CtlStock(9, 3, 0);
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("three long-named rows", g_ctlOut.pSlotPanel->nLineCount, 3);
+    TestCheck("a 25-character name is cut to 17",
+              strcmp(UiPanel_GetLineText(g_ctlOut.pSlotPanel, 0), "abcdefghijklmnopq") == 0);
+    TestCheck("an 18-character name is cut too, because the test is above 17",
+              strcmp(UiPanel_GetLineText(g_ctlOut.pSlotPanel, 1), "abcdefghijklmnopq") == 0);
+    TestCheck("and a 17-character name survives whole",
+              strcmp(UiPanel_GetLineText(g_ctlOut.pSlotPanel, 2), "abcdefghijklmnopq") == 0);
+
+    /* A build with nothing to list still raises the flag and still builds the panels -- the flag means
+     * "this panel set is live", which is why BasePlaneScreen_Close tests it the same way. */
+    CtlReset();
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("an empty object set still raises the flag", g_bCtlCommitted, 1);
+    TestEqI32("  with zero rows", g_ctlOut.pSlotPanel->nLineCount, 0);
+    TestCheck("  and all five panels present", g_ctlOut.pAvailPanel != NULL && g_ctlOut.pTakenPanel != NULL);
+
+    /* The teardown arm. */
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("the teardown clears the flag", g_bCtlCommitted, 0);
+    TestCheck("  and releases both nav controls", g_ctlOut.apNavCtl[0] == NULL
+              && g_ctlOut.apNavCtl[1] == NULL);
+    TestCheck("  and all five panels", g_ctlOut.pSlotPanel == NULL && g_ctlOut.pAvailPanel == NULL
+              && g_ctlOut.pSelRowPanel == NULL && g_ctlOut.pCommitPanel == NULL
+              && g_ctlOut.pTakenPanel == NULL);
+    g_bCtlCommitted = 1; /* a teardown leaves the flag down, so arm it again to re-enter that arm */
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("a teardown over already-empty slots still clears the flag", g_bCtlCommitted, 0);
+    TestCheck("  and allocates nothing", g_ctlOut.pSlotPanel == NULL && g_ctlOut.apNavCtl[0] == NULL);
+
+    /* The bounds the original does not have. */
+    CtlReset();
+    CtlFixture();
+    g_ctlEnv.nCraftIdx = 60; /* past aItemQty's 52 entries */
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("an out-of-range craft index reads no carried quantity", g_nCtlQuota, 0);
+    TestEqI32("  so only the base-stocked slots keep rows", g_ctlOut.pSlotPanel->nLineCount, 4);
+
+    CtlReset();
+    CtlFixture();
+    g_ctlEnv.nBaseIdx = -1;
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("a negative base index reads no stock", g_ctlOut.pSlotPanel->nLineCount, 5);
+    TestEqI32("  leaving only the five carried slots, first one slot 1 with 2 carried",
+              g_ctlOut.pTakenPanel->anLineAux[0], 2);
+
+    CtlReset();
+    g_ctlEnv.nObjectCount = 300; /* above the 254-pair scan block the original does not bound */
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("a 300-slot object walk is bounded and lists nothing", g_ctlOut.pSlotPanel->nLineCount, 0);
+
+    CtlReset();
+    g_ctlEnv.nObjectCount = 1;
+    BasePlaneScreen_BuildControls(&g_ctlOut, &g_ctlEnv);
+    TestEqI32("one object means no rows and no sort pass", g_ctlOut.pSlotPanel->nLineCount, 0);
+
+    /* The guards. */
+    CtlReset();
+    CtlFixture();
+    BasePlaneScreen_BuildControls(NULL, &g_ctlEnv);
+    BasePlaneScreen_BuildControls(&g_ctlOut, NULL);
+    TestEqI32("a null env leaves the flag alone", g_bCtlCommitted, 0);
+    TestCheck("  and allocates nothing", g_ctlOut.pSlotPanel == NULL && g_ctlOut.apNavCtl[0] == NULL);
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -1832,6 +2159,7 @@ int main(void)
     TestBuildListPanels();
     TestBuildCraftPanels();
     TestPlaneInit();
+    TestBuildControls();
 
     return TestSummary("test_plane");
 }

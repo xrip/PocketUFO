@@ -16480,3 +16480,90 @@ bBaseAtConfirmShown, bBaseAtResult to bBaseAtMissionFollows, nBaseAtParam to nBa
 comments at 0x57808, 0x58728 and 0x577c0, and line comments at 0x57A80, 0x57A94, 0x57BE4, 0x57BEC, 0x582A8,
 0x583F0, 0x58464, 0x58698 and 0x7EF50 recording the round loop, the capacity, the empty label and the
 assault block.
+## Unit 95 - the hangar's stores-transfer panel set (BasePlaneScreen_BuildControls @ 0x7b014, 2,788 B)
+
+Ported in src/pufo/game/pufo_plane.c as BasePlaneScreen_BuildControls(PlaneStorePanels *out, const
+PlaneStoreBuildEnv *env). The original takes no arguments -- the decompiler's
+`__fastcall BasePlaneScreen_BuildControls(struct BasePlaneScreen *pScr)` is invented (0x7B014 is
+`PUSH {R4-R11,LR}` straight into a global load), and the same is true of BasePlaneScreen_Draw at
+0x7D374. Both signatures are corrected in the IDB.
+
+**bPlaneStoresCommitted @ 0x161F28 picks the arm**, and the IDB had it as a 12-byte object although every
+access to it in the binary is LDRB or STRB; it is one byte now. The teardown clears it FIRST (0x7BA18),
+before releasing anything, then walks the two store-nav control slots at the object block's +0x64 / +0x68
+(0x161AAC, 0x161AB0 -- `ADD R4,R4,#4` twice from pPlaneBackdropPad) through UiControl_FreePads and
+operator delete, then the five panels in the order slot (0x7BA48), sel-row (0x7BA68), avail, commit-row,
+taken. The original frees through the globals and never nulls them.
+
+**The build raises the flag before a single row exists** (0x7B12C). The flag means "this panel set is
+live", not "a row was committed", which is why BasePlaneScreen_Close tests it the same way
+CommitStores sets it, and why a teardown is reachable even when the build listed nothing.
+
+**The crew quota is seeded from the craft rather than zeroed** (0x7B05C..0x7B09C): it is
+apObjects[31..35]->aItemQty[nSelectedCraftIdx], and the loop reaches slot 31 as the context base 0x1139B8
+plus 0x184, which is apObjects + 0x7C. The running total is stored on every step (0x7B070), not once at
+the end.
+
+**The row filter is three ARM compares** -- 0x7B190 `CMP #0x19 / BLT keep`, 0x7B198 `CMP #0x1E / BLE
+skip`, 0x7B1A0 `CMP #0x34 / BGE skip` -- so a slot gets a row when `slot < 25 || (slot > 30 && slot < 52)`.
+The refused band 25..30 is exactly the five craft slots and the five crew slots the hangar draws through
+its own columns, and 52 is ObjectRecFull.aItemQty's own length.
+
+**Each admitted slot then needs the base to stock it or the craft to carry it** (0x7B1B8
+`LDRH [obj,#0x2A]` = auPerBaseVal[base], 0x7B1C8 `LDRH [obj,#0x3A]` = aItemQty[craft]) **and its
+unlocking research topic to be unlocked**: `aResearchTopics[g_abSlotTopicGate[slot]].bUnlocked`, ARM
+0x7B1D4 `LDRB [slot, table]`, `MUL #0x22` (34 = sizeof ResearchTopicLive), 0x7B1E4 `LDRB [#0xD]`. The
+pair and the row counter are all under the same STRNE (0x7B1F0, 0x7B1FC, 0x7B204), so a slot the topic
+gate refuses leaves a cleared pair behind rather than an uninitialised one -- which is what makes the row
+pass's re-test of the pair well-defined.
+
+**byte_AA968 is a 156-byte slot-to-topic table**, now g_abSlotTopicGate in the IDB (it runs to the next
+global at 0xAAA04). Slots 0..24 map to topics 0,1,6,9,2,7,10,4,3,8,5,11,13,12,18,23,24,22,21,25,14,15,17,
+20,16; slots 31..35 to topics 97..101; 37 to 113, 39 to 114, 40..47 to 1, and 48..50 to 115, 117, 116.
+
+**Five panels, one shared style, five geometries.** All five are operator new 0x1BB4 with
+UiPanel_ctor(row count), nStyle 14, nFont 16, nPosY 70, nUnk7056 70, gap_0[0..2] B4,B4,B4 and gap_0[6..11]
+F0,F0,F0,14,14,14. They differ as: slot (0x161AC8) x 10, band left 5, width 125, click
+Cache_ObjPlus0xBD8_To_dword_186BE8, bFlag7073 1, bUnk7088 0x96; avail (0x161A40) x 164, band left 130,
+width 50, no click, bFlag7073 0, bFlag7074 1, nUnk7076 2; sel-row (0x161F00) x 170, band left 166, width
+15, click BasePlaneScreen_AdjustSelectedQty, bFlag7073 1, gap_0[3..5] 32,32,FA, nUnk7084 5, bUnk7088 0x96;
+commit-row (0x161EEC) x 186, band left 182, width 15, click BasePlaneScreen_CommitStores, same extras;
+taken (0x161EF4) x 232, band left 190, width 45, no click, bFlag7073 0, bFlag7074 1, nUnk7076 2. The two
+count columns keep UiPanel_ctor's bUnk7088 0xFF -- BuildControls only writes that byte where it also
+writes bFlag7073. nUnk7084 5 on the two 15-wide quantity columns is UiPanel_ClickRow's auto-repeat count,
+so holding the "<" or ">" row repeats the quantity change every fifth click.
+
+**The row pass** (0x7B7D0..0x7B930) re-tests the stored pair, copies apObjects[slot]->szName through a
+112-byte stack buffer cut to 17 characters when strlen is above 0x11 (0x7B838 `CMP R3, #0x11`, so an
+18-character name is already cut and a 17-character one is not), writes the SLOT id into the slot panel's
+aux column (0x7B8A0), "<" (aRowQtyDec @ 0xABC24) into the sel-row line and ">" (aRowQtyInc @ 0xABC20)
+into the commit-row line, and puts the two counts into the avail and taken panels' aux columns -- the
+decompiler renders those stores as `gap_0[row*4+5044]`, and 5044 is anLineAux at +0x13B4. The row index
+advances only for kept slots while the slot counter advances for all of them, which is what makes the aux
+column a slot id rather than a row index.
+
+**The sort walks nObjectCount-1 order entries, not the table's 148** (0x7B9F4 `CMP R11, R3,LSR#16` on the
+u16 Map_nObjectCount read with LDRH at 0x7B9D0), and it swaps THREE panels -- slot, avail, taken -- where
+the buy/sell builders swap five. With the shipped 149 objects the two bounds coincide, so the shorter walk
+is invisible in the shipped game; with 60 objects it is not, and the test pins the difference: slots 1,
+24, 31, 32, 34, 35 and 51 come out as 1, 51, 24, 31, 34, 35, 32 because 32, 34 and 35 sit at table
+indices 60, 63 and 64, past the walk.
+
+128 new checks in test_plane. A 46-mutation sweep -- the reduced form, behaviour-bearing values only -- turned all 46 red. Four were unpinned on the first run and all four turned out to be defects in the tests rather than equivalences: three compared a value against the very macro the mutation moves (the 256-slot carry clear, the two row labels), so shrinking the macro shrank the expectation with it; and the fourth swapped the two nav clicks between fixture handlers that were empty functions, which the linker's identical-code folding (MSVC /OPT:ICF, on by default in Release) merges into a single address, making every pointer-identity check between them vacuous. The fixtures now write distinct values into a volatile global so their bodies differ, and the same fix was applied to the thirteen empty handlers in the older TestPlaneInit, whose 'clicks are the four handlers in order' and 'clicks are Rearm plus the six weapon slots' checks were vacuous for exactly the same reason.
+
+Deviations: the original dereferences each freshly allocated panel straight after its ctor (0x7B218 writes
+nStyle with no test) and writes the two control clicks through the globals with no test either, so an
+allocation failure faults; the port skips a failed allocation. The scan buffer is the 2032-byte stack
+block at 0x7B018, 254 pairs, and the scan writes one pair per slot with no bound -- the shipped 149
+objects fit, a Map_nObjectCount above 255 would not, and the port bounds at 254 pairs. The original also
+indexes auPerBaseVal with the unbounded signed base byte and aItemQty with the unbounded craft dword
+index; the port resolves both to zero out of range. The port nulls the seven freed slots, which makes a
+second teardown harmless.
+
+IDB: 4 renames (byte_AA968 to g_abSlotTopicGate as unsigned __int8[156], dword_161AAC to
+pPlaneStoreNavPrevCtl and unk_161AB0 to pPlaneStoreNavNextCtl as UiControl*, stru_ABC88 to
+g_aPlaneStoreNavDesc as UiControlDesc[2]); bPlaneStoresCommitted resized 12 to 1; BasePlaneScreen
+extended from 92 to 108 bytes with apCtlListNav[2] at +0x5C and apCtlStoreNav[2] at +0x64; the phantom
+`struct BasePlaneScreen *` arguments removed from BasePlaneScreen_BuildControls and BasePlaneScreen_Draw;
+a function comment at 0x7b014 and line comments at 0x7B07C, 0x7B12C, 0x7B190, 0x7B198, 0x7B1A0, 0x7B1D4,
+0x7B1E4, 0x7B838, 0x7B918, 0x7B9F4 and 0x7BA18.
