@@ -2502,6 +2502,39 @@ Order is by what unblocks what. Each item ends with gates + commit.
   120,508 of 160,496 bytes (75.1%). IDB: 14 line comments on the label sites, one on `gOptionsScratch`, one
   function comment at 0x6c16c, and the `PufoOptionsMenuId` enum.
 
+- [x] **part 84, the geoscape pulse tick and the map-target arm: `Geoscape_PulseUpdate (0x954dc, 1,812 B)`
+  + `Smap_SelectMapTarget (0x84484, 340 B)`** — **The tick has three halves that do not depend on each
+  other**, so the tests drive each alone: the map-screen craft pass, the phase-gated screen switch, and
+  four saturating counters. **What the ARM fixes that the pseudocode flattens.** `Map_nCraftCount` is read
+  with **LDRB** (0x95524, 0x955F4) — an unsigned byte, not a dword. And the empty-craft exit is
+  `CMP R3,#0 / BLS loc_9560C` at 0x9552C, which jumps **into** the clock block rather than past it, so an
+  empty craft list still advances the clock; the pause byte 0x15961C gates the clock, not the craft pass.
+  **The phase gate is not a counter.** If `nUiSlot0AnimPhase` is already above 1 the whole switch is
+  **skipped** (0x95644); otherwise it is incremented and the switch runs only when that lands above 1 — so
+  the switch fires exactly when the phase arrives as 1, and LABEL_88 resets it on every path. **The held-
+  direction scroll is absolute, not incremental.** The four flag bytes `unk_1864F4..F7` — renamed
+  `bGeoscapeScrollUp / Right / Down / Left` — give +25 on dy, +25 on dx, −25 on dy, −25 on dx (5 on screen
+  2, 0x95844); `nLastDx / nLastDy` are preset 120 / 160 and the call is `Smap_ScrollBy(dx + 120, dy + 160)`,
+  which is what `Smap_ScrollBy`'s `pos - delta + last_delta` form expects. `Smap_ScrollBy` skips its
+  vertical clamp when the screen id is 2, so the same starting scroll clamps on the map screen and does not
+  on the zoom screen — both directions asserted. **A forced click only fires on a lit control**: the
+  auto-repeat path needs mode 0 and state 1, so an unlit control in the group is silent. **The craft pass
+  is not the alien-site discovery pass** — it makes an INACTIVE type-1 entry visible, and type 1 is the
+  player's own craft record; the active entry with the same id and the inactive type-0 entry are both
+  asserted untouched. **`Smap_SelectMapTarget` is the other end of unit 83's wire**: it SETS
+  `bMapSelectionFlag` (0x84498), the flag `Geoscape_DrawScreen` tests at 0x6C180, and it is the map-target
+  arm that PAUSES the geoscape with no unpause at all (0x84588). Its tail reads the line colour a FOURTH
+  time, after the insert and the removal, so line 0 is the flag-27 line the insert just put there and both
+  0x187054 and 0x159E74 receive the value the insert carried. **1 deviation recorded:** the original
+  indexes `apCraft` with the line colour with no bounds test (0x844BC); the port checks it and skips the
+  two ship steps while the line rewrite and the pause still run. **And a fixture lesson worth recording:**
+  `PtrArray_DeleteAt` frees the item it drops and `PtrArray_Remove` frees the slot array and installs a
+  freshly malloc'd one — a test that hands in a static array crashes, and one that keeps a second handle on
+  the items double-frees after a removal. 65 new checks; mutating the port's zoom step from 5 to 25 turns
+  two of them red. **0 new ledger rows (226 on record), 89 markers.** 4 IDB renames (430 on record), 2
+  function comments, 9 line comments. 14084 checks (60 suites), coverage 922/1103 (83.6%) and 501664/598792
+  (83.8%); `strat` moves to 197/204 functions and 122,660 of 160,496 bytes (76.4%).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2839,6 +2872,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the geoscape event pass (`StrategList_ProcessEvents`, `Strateg_ConfirmInterceptTarget`; the `_rt_udiv` divisor-first convention, the exact 1/60 interpolation constant, the six re-reads behind the arrival dispatch, the wrapped-leg winner, the fractional diagonal, 1 original bug found, the 0x159E74 naming fix and the `Tact_Shutdown` wrong-index removal it exposed) | 60/60 (Release) | 13890 | 917/1103 (83.1%) | 492808/598792 (82.3%) | 40 checked, 0 mismatched |
 | the strateg icons and the clock strip (`Smap_DrawStrategIcons`, `Geoscape_DrawClockPads`; the halving triple corrected — ADDMI is add-if-minus, so Hex-Rays' `/ 2` was faithful and the port's ceil was not, the palette-slot-32 forcing cross-confirmed by `mapbits.pal`, zoom scaling both axes, the `>` wrap that leaves the map-size coordinate alone, the low-halfword animation phase, the blank `mapbits +6` frame measured in main.dat, the day-tens blit gate, the divisor-first `_rt_udiv`, the `apLayerPad` → `apClockDigitPads` misnomer and the corrected 0x159608 clock base) | 60/60 (Release) | 13942 | 919/1103 (83.3%) | 496036/598792 (82.8%) | 40 checked, 0 mismatched |
 | the whole geoscape frame (`Geoscape_DrawScreen`; the backdrop proven identical to the radar backdrop and factored into one helper, `gOptionsScratch[0]` decoded as the five-way options menu id from the shipped strings and `gOptionsScratch[4]` as its gate, the record * 205 copy offsets naming each label's record, the `nKey`/`nH` stack-slot mislabel corrected, the shared tail and case 0's double cancel blit, the slot rows proven to come from `MainMenu_pSlotCtx` rather than TEXTS, the uninitialised-`psz` default path recorded as a deviation) | 60/60 (Release) | 14019 | 920/1103 (83.4%) | 499512/598792 (83.4%) | 40 checked, 0 mismatched |
+| the geoscape pulse tick and the map-target arm (`Geoscape_PulseUpdate`, `Smap_SelectMapTarget`; the LDRB `Map_nCraftCount` and the empty-list jump into the clock block, the phase gate that skips the switch when the phase is already above 1, the absolute 120/160-anchored direction scroll with its 25/5 pair and the screen-2 clamp skip, the lit-control-only forced click, the four saturating counters, the selection flag that unit 83's frame reads, the unconditional pause and the fourth line-colour read) | 60/60 (Release) | 14084 | 922/1103 (83.6%) | 501664/598792 (83.8%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

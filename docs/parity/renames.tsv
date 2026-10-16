@@ -446,3 +446,7 @@ unk_159630	GameTime.nHour	GameTime_Decode @ 0x5D148; the clock's first digit pai
 unk_159634	GameTime.nMinute	GameTime_Decode @ 0x5D14C; the second digit pair at x 115/125, y 260.
 unk_159638	GameTime.nSecond	GameTime_Decode @ 0x5D154; the third digit pair at x 140/150, y 260.
 unk_113A18	nUiSlot0AnimPhase	Map + 0x60, apUiSlotsA[0]: 0x36664 counts it up and wraps past 3, UiControl_HitTest clears it, and Smap_DrawStrategIcons reads its LOW HALFWORD (LDRH at 0x82634) as the strateg-sprite animation phase added to the glyph index.
+unk_1864F4	bGeoscapeScrollUp	Geoscape_PulseUpdate @ 0x954DC: +25 on the dy term at 0x95718 (5 on screen 2 at 0x95844); the nav Prev button writes it
+unk_1864F5	bGeoscapeScrollRight	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: +25 on the dx term at 0x95724
+unk_1864F6	bGeoscapeScrollDown	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: -25 on the dy term at 0x9572C; the nav Next button writes it
+unk_1864F7	bGeoscapeScrollLeft	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: -25 on the dx term at 0x95734

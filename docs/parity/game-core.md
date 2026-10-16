@@ -15515,3 +15515,82 @@ with each blanking leaving the other untouched, and the Да label moving with ctl
 controls, both captions, the six digit columns and the four border rects; the overlay branch taken only when
 the animation reports progress 100, its header left-anchored at 8 and its title centred, and its three column
 rules present with a clean gap between them.
+## Unit 84: Geoscape_PulseUpdate @ 0x954dc (1,812 B) + Smap_SelectMapTarget @ 0x84484 (340 B)
+
+The geoscape pulse tick and the map-target arm -- the two geoscape functions that were still unported
+apart from the draw family.
+
+### Geoscape_PulseUpdate
+
+Three independent halves, which is why the tests drive each one alone.
+
+- 0x954E8/0x954F0: dwActionFail @ 0x1870C8 == 1 returns before everything, cooldowns included.
+- 0x95500..0x95634, the MAP screen only. For every craft whose bAtBase (Ship +0x06) is clear, the
+  strateg list is scanned for an entry with nDisplayId == Ship.bId, bActive == 0 and nType == 1; a match
+  gets bVisible = 1 (0x955C0) and the craft gets bWeaponsHot (Ship +0x34) = 1 (0x955C8). The IDB's own
+  note on this function records what it is NOT: it is not the alien-site discovery pass -- it makes an
+  INACTIVE type-1 entry visible, and a type-1 entry is the player's own craft record.
+- Map_nCraftCount is read with LDRB at 0x95524 and 0x955F4: an unsigned byte, not a dword. And the
+  count == 0 exit is `BLS loc_9560C` (0x9552C), which jumps INTO the clock block rather than past it,
+  so an empty craft list still advances the clock. The pause byte 0x15961C gates the clock, not the
+  craft pass.
+- 0x95644..0x95B78: the animation-phase gate. If nUiSlot0AnimPhase is ALREADY above 1 the whole switch
+  is skipped; otherwise it is incremented and the switch runs only when that increment lands above 1 --
+  so the switch fires exactly when the phase arrives as 1. LABEL_88 resets it on every path.
+- Screens 0 and 2: the held-direction scroll. The four flag bytes unk_1864F4..F7 (now
+  bGeoscapeScrollUp / Right / Down / Left) give +25 on dy, +25 on dx, -25 on dy, -25 on dx -- 5 instead
+  of 25 on screen 2 (0x95844). nLastDx / nLastDy are preset 120 / 160 and the call is
+  Smap_ScrollBy(dx + 120, dy + 160), so the drag is absolute rather than incremental, which is what
+  Smap_ScrollBy's `pos - delta + last_delta` form expects. All four flags are cleared afterwards.
+  Smap_ScrollBy skips its vertical clamp when the screen id is 2, so the same starting scroll clamps on
+  the map screen and does not on the zoom screen -- both directions are asserted.
+- The other screens get their controls driven with bForceClick = 1, the auto-repeat of a held button.
+  A forced click only fires on a mode-0 control already in state 1, so an unlit control is silent; the
+  gates are per group (bPlaneStoresCommitted, bPlaneListPanelsBuilt, bBaseFacPlaceArmed inverted,
+  bUfopaediaOpen / bUfopaediaEntryDirty, byte_1870F8 inverted, bOptionsScreenOpen).
+- 0x95B80..0x95BCC: nRadarCooldownR, nRadarCooldownL, nRadarMsgTimer and nRadarPulseTimer each step by
+  one and stop at 255. They run on every screen, after the switch -- the only part of the tick that does.
+
+### Smap_SelectMapTarget
+
+- 0x84498 sets bMapSelectionFlag -- the flag Geoscape_DrawScreen tests at 0x6C180, which closes the UI
+  and draws nothing on the next frame. Unit 83's frame and this arm are two ends of one wire.
+- 0x844A4 reads the craft index from colour slot 0 of message line 0 and stores it at 0x187054; every
+  later use re-reads that stored dword rather than keeping a register.
+- 0x844D0..0x84514 removes the type-5 waypoint the craft was chasing and clears bIntercepting INSIDE
+  the type-5 branch -- a craft chasing a real contact keeps its flag. StrategList_RemoveAt then
+  re-points every intercept that sits after the hole.
+- 0x84520..0x84544 arms bFinalMissionCtlArmed when aResearchTopics[28] (the Cydonia topic) is unlocked
+  AND Ship.bCraftType == 2 (the Avenger). Both halves are tested independently.
+- 0x84554..0x84588 inserts a flag-27 line at index 1 carrying the colour, removes line 0, and pauses the
+  geoscape unconditionally -- unlike its siblings this arm has no unpause at all.
+- 0x84598..0x845A4 reads the colour a FOURTH time, after the insert and the removal. Line 0 is now the
+  inserted flag-27 line, so 0x187054 and 0x159E74 both receive the value the insert carried.
+
+### Deviations, listed rather than hidden
+
+- Smap_SelectMapTarget indexes apCraft with the line colour with no bounds test (0x844BC); the port
+  checks the index against the craft count and skips the two ship-dependent steps when it is out of
+  range. The line rewrite and the pause still run. Not a ledger row -- the shipped panel only ever
+  carries a valid index.
+- Geoscape_PulseUpdate's per-screen forced-click arrays belong to the screens themselves, several of
+  which are still unported, so the port takes them as a per-screen table rather than hardcoding
+  addresses. The original's group shapes and their gates are recorded in the port header and in the IDB
+  function comment.
+
+### IDB corrections this unit
+
+- unk_1864F4..F7 renamed to bGeoscapeScrollUp / bGeoscapeScrollRight / bGeoscapeScrollDown /
+  bGeoscapeScrollLeft (426 -> 430 on record), with a comment at 0x1864F4 tying them to the nav Prev /
+  Next buttons that write them.
+- Function comments at 0x954dc and 0x84484, plus line comments at 0x9552C (the LDRB count and the
+  jump-into-the-clock-block), 0x955B0 (the three-part match), 0x95644 (the phase gate), 0x95718 (the
+  direction terms and the 120/160 preset), 0x95874 (the flags cleared), 0x95B8C (the four saturating
+  counters), 0x84588 (the unconditional pause) and 0x84598 (the fourth read).
+
+65 new checks in tests/test_geoscape.c. A mutation of the port -- the zoom step changed from 5 to 25 --
+turns two of them red, which confirms the scroll checks are position-sensitive rather than
+self-satisfying. One fixture lesson recorded here because it cost a crash: PtrArray_DeleteAt frees the
+item it drops and PtrArray_Remove frees the slot array and installs a freshly malloc'd one, so a test
+that hands in a static array crashes, and a test that keeps a second handle on the items double-frees
+after a removal. The fixture now hands in malloc'd storage and lets the PtrArray own both.

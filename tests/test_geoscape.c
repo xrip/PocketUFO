@@ -7216,6 +7216,450 @@ static void TestDrawScreen(void)
     Asset_CloseArchives();
 }
 
+/* ---- Smap_SelectMapTarget @ 0x84484 ---------------------------------------------------------
+ *
+ * The arm that pauses the geoscape. Two craft, three strateg entries, a two-line message list. */
+
+static UiLineList        g_stLines;
+static GameTime          g_stTime;
+static PtrArray          g_stList;
+/* The list owns both its item array and its items: PtrArray_DeleteAt frees the item it drops and
+ * PtrArray_Remove frees the slot array and installs a freshly malloc'd one. So the fixture hands in
+ * malloc'd storage and never keeps a second handle on it -- after a removal the array the fixture
+ * started with is already gone. */
+static Ship              g_stShip[2];
+static Ship             *g_stShips[2];
+static u8                g_stShipCount, g_stOnce;
+static GeoscapeWorld     g_stWorld;
+static StrategSpawnCtx   g_stSpawn;
+static ShipRemovalEnv    g_stRem;
+static ResearchTopicLive g_stTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static SmapSelectTargetEnv g_stEnv;
+static i32               g_stSelIdx, g_stMsgIdx, g_stSeed;
+static u8                g_stFlag, g_stArmed;
+
+static void StFixture(i32 nLineColour, i32 nType0)
+{
+    memset(&g_stLines, 0, sizeof(g_stLines));
+    g_stLines.nLineCount = 2;
+    g_stLines.abLineFlags[0] = 40;
+    g_stLines.abLineFlags[1] = 41;
+    g_stLines.anColor[0][0] = (u32)nLineColour;
+    g_stLines.anColor[1][0] = 7u;
+
+    PtrArray_DeleteAll(&g_stList);
+    PtrArray_Clear(&g_stList);
+    g_stList.nCount = 0;
+    g_stList.apItems = NULL;
+
+    void **apSlots = (void **)malloc(sizeof(void *) * 3);
+    for (i32 i = 0; i < 3; ++i) {
+        StrategItem *pItem = (StrategItem *)calloc(1, sizeof(StrategItem));
+        pItem->nType = (u8)((i == 0) ? nType0 : 1);
+        pItem->bActive = 1;
+        apSlots[i] = pItem;
+    }
+    g_stList.apItems = apSlots;
+    g_stList.nCount = 3;
+
+    memset(g_stShip, 0, sizeof(g_stShip));
+    g_stShip[0].bId = 10; g_stShip[0].bCraftType = 0;
+    g_stShip[0].bIntercepting = 1; g_stShip[0].nStrategIdx = 0;
+    g_stShip[1].bId = 11; g_stShip[1].bCraftType = 2;   /* the Avenger */
+    g_stShip[1].bIntercepting = 1; g_stShip[1].nStrategIdx = 2;
+    g_stShips[0] = &g_stShip[0];
+    g_stShips[1] = &g_stShip[1];
+    g_stShipCount = 2;
+
+    memset(&g_stWorld, 0, sizeof(g_stWorld));
+    g_stWorld.apCraft = g_stShips;
+    g_stWorld.nShipCount = 2;
+    memset(&g_stSpawn, 0, sizeof(g_stSpawn));
+    g_stSpawn.pnSeed = &g_stSeed;
+    g_stOnce = 0;
+
+    memset(&g_stRem, 0, sizeof(g_stRem));
+    g_stRem.apCraft = g_stShips;
+    g_stRem.pnShipCount = &g_stShipCount;
+    g_stRem.pStrategList = &g_stList;
+    g_stRem.pWorld = &g_stWorld;
+    g_stRem.pnSpawnOnceFlag = &g_stOnce;
+    g_stRem.pSpawnCtx = &g_stSpawn;
+
+    memset(g_stTopics, 0, sizeof(g_stTopics));
+    memset(&g_stTime, 0, sizeof(g_stTime));
+
+    g_stSelIdx = -1;
+    g_stMsgIdx = -1;
+    g_stFlag = 0;
+    g_stArmed = 0;
+
+    memset(&g_stEnv, 0, sizeof(g_stEnv));
+    g_stEnv.pLines = &g_stLines;
+    g_stEnv.pnSelectedShipIdx = &g_stSelIdx;
+    g_stEnv.pnSlot159E74 = &g_stMsgIdx;
+    g_stEnv.pStrategList = &g_stList;
+    g_stEnv.pShipEnv = &g_stRem;
+    g_stEnv.aTopics = g_stTopics;
+    g_stEnv.pTime = &g_stTime;
+    g_stEnv.pbSelectionFlag = &g_stFlag;
+    g_stEnv.pbFinalMissionCtl = &g_stArmed;
+}
+
+static void TestSelectMapTarget(void)
+{
+    printf("\nSmap_SelectMapTarget @ 0x84484\n");
+
+    /* Line colour 1 selects the Avenger, and its target is a type-1 contact, not a waypoint. */
+    StFixture(1, 1);
+    g_stTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    Smap_SelectMapTarget(&g_stEnv);
+    CheckEqI32(g_stFlag, 1, "bMapSelectionFlag is SET here (0x84498) -- the flag that blanks the next frame");
+    CheckEqI32(g_stSelIdx, 1, "the ship index is colour slot 0 of message line 0 (0x844A4)");
+    CheckEqI32(g_stList.nCount, 3, "a type-1 target is left in the list (0x844F0)");
+    CheckEqI32(g_stShip[1].bIntercepting, 1,
+               "and bIntercepting survives -- the clear sits inside the type-5 branch (0x84514)");
+    CheckEqI32(g_stArmed, 1, "Cydonia researched plus bCraftType 2 arms the final-mission control (0x84544)");
+    CheckEqI32(g_stTime.bPaused, 1, "the geoscape is paused, unconditionally (0x84588)");
+    CheckEqI32(g_stLines.nLineCount, 2, "insert at 1 then remove 0 leaves the count unchanged");
+    CheckEqI32(g_stLines.abLineFlags[0], 27, "line 0 is now the flag-27 line the insert put there");
+    CheckEqI32((i32)g_stLines.abLineFlags[1], 41, "and the old line 1 is the one that moved up");
+    CheckEqI32(g_stSelIdx, 1, "the fourth read leaves 0x187054 on the value the insert carried (0x845A0)");
+    CheckEqI32(g_stMsgIdx, 1, "and writes the same value to 0x159E74 (0x845A4)");
+
+    /* A type-5 waypoint IS removed, and the other craft's reference shifts down with it. */
+    StFixture(0, 5);
+    Smap_SelectMapTarget(&g_stEnv);
+    CheckEqI32(g_stList.nCount, 2, "the waypoint the craft was chasing is removed (0x84504)");
+    CheckEqI32(g_stShip[0].bIntercepting, 0, "and its intercept flag is cleared");
+    CheckEqI32(g_stShip[1].nStrategIdx, 1,
+               "StrategList_RemoveAt shifts the other craft's index down, so it still points at its own item");
+    CheckEqI32(g_stArmed, 0,
+               "line colour 0 selects the non-Avenger, so nothing is armed even with Cydonia clear");
+
+    /* The arm needs BOTH halves of its test. */
+    StFixture(1, 1);
+    Smap_SelectMapTarget(&g_stEnv);
+    CheckEqI32(g_stArmed, 0, "with the Cydonia topic unresearched the Avenger alone does not arm it");
+
+    StFixture(1, 1);
+    g_stTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    g_stShip[1].bCraftType = 1;
+    Smap_SelectMapTarget(&g_stEnv);
+    CheckEqI32(g_stArmed, 0, "and with Cydonia researched a non-Avenger does not arm it either");
+
+    /* Out of range: the original indexes apCraft blind; the port skips the two ship steps and the
+     * line work and the pause still happen. */
+    StFixture(9, 1);
+    g_stTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked = 1;
+    Smap_SelectMapTarget(&g_stEnv);
+    CheckEqI32(g_stArmed, 0, "an out-of-range craft index arms nothing");
+    CheckEqI32(g_stTime.bPaused, 1, "but the pause still runs");
+    CheckEqI32(g_stLines.abLineFlags[0], 27, "and the message list is still rewritten");
+    CheckEqI32(g_stMsgIdx, 9, "the fourth read still records the index the insert carried");
+
+    Smap_SelectMapTarget(NULL);
+    Check(true, "a NULL environment is a no-op rather than a crash");
+
+    PtrArray_DeleteAll(&g_stList);
+    PtrArray_Clear(&g_stList);
+    g_stList.nCount = 0;
+    g_stList.apItems = NULL;
+}
+
+/* ---- Geoscape_PulseUpdate @ 0x954dc ---------------------------------------------------------
+ *
+ * Three independent halves -- the map-screen craft pass, the phase-gated screen switch, and the four
+ * saturating counters -- so each is driven on its own. */
+
+static i32 g_nPulseClicks;
+static i32 g_nTickShips, g_nTickHourly, g_nTickBases, g_nOpenMonthly;
+
+static void PulseCountClick(void) { ++g_nPulseClicks; }
+static void PulseTickShips(void *p)   { (void)p; ++g_nTickShips; }
+static void PulseTickHourly(void *p)  { (void)p; ++g_nTickHourly; }
+static void PulseTickBases(void *p)   { (void)p; ++g_nTickBases; }
+static void PulseOpenMonthly(void *p) { (void)p; ++g_nOpenMonthly; }
+
+static SmapView              g_pvView;
+static PtrArray              g_pvList;
+static void                 *g_pvSlots[3];
+static StrategItem           g_pvItem[3];
+static Ship                  g_pvShip[2];
+static Ship                 *g_pvShips[2];
+static u8                    g_pvShipCount;
+static u8                    g_pvDrag[4];
+static i32                   g_pvPhase, g_pvFail;
+static i32                   g_pvCR, g_pvCL, g_pvCM, g_pvCP;
+static UiControl             g_pvCtl[6];
+static UiControl            *g_pvCtls[6];
+static UiControlHitCtx       g_pvHit;
+static u32                   g_pvUiSlot;
+static GameTime              g_pvTime;
+static GeoscapeClockHooks    g_pvHooks;
+static GeoscapePulseCtlGroup g_pvGroup[3];
+static GeoscapePulseScreen   g_pvScreen[2];
+static GeoscapePulseEnv      g_pvEnv;
+static u8                    g_pvGate;
+
+static void PvFixture(i32 nScreenId)
+{
+    g_nPulseClicks = 0;
+    g_nTickShips = g_nTickHourly = g_nTickBases = g_nOpenMonthly = 0;
+
+    memset(&g_pvView, 0, sizeof(g_pvView));
+    g_pvView.nMapW = 400;
+    g_pvView.nMapH = 400;
+
+    /* item 0 is the player craft's own entry: type 1, INACTIVE, id 10. Item 1 has the same id but is
+     * active, item 2 is inactive but type 0 -- neither is a match. */
+    memset(g_pvItem, 0, sizeof(g_pvItem));
+    for (i32 i = 0; i < 3; ++i) {
+        g_pvSlots[i] = &g_pvItem[i];
+        g_pvItem[i].nDisplayId = 10;
+    }
+    g_pvItem[0].nType = 1; g_pvItem[0].bActive = 0;
+    g_pvItem[1].nType = 1; g_pvItem[1].bActive = 1;
+    g_pvItem[2].nType = 0; g_pvItem[2].bActive = 0;
+    g_pvList.nCount = 3;
+    g_pvList.apItems = g_pvSlots;
+
+    memset(g_pvShip, 0, sizeof(g_pvShip));
+    g_pvShip[0].bId = 10; g_pvShip[0].bAtBase = 0;
+    g_pvShip[1].bId = 11; g_pvShip[1].bAtBase = 1;
+    g_pvShips[0] = &g_pvShip[0];
+    g_pvShips[1] = &g_pvShip[1];
+    g_pvShipCount = 2;
+
+    memset(g_pvDrag, 0, sizeof(g_pvDrag));
+    g_pvPhase = 0;
+    g_pvFail = 0;
+    g_pvCR = 0; g_pvCL = 1; g_pvCM = 2; g_pvCP = 3;
+
+    memset(&g_pvTime, 0, sizeof(g_pvTime));
+    (void)GameTime_Reset(&g_pvTime);
+
+    memset(g_pvCtl, 0, sizeof(g_pvCtl));
+    for (i32 i = 0; i < 6; ++i) {
+        g_pvCtls[i] = &g_pvCtl[i];
+        g_pvCtl[i].bEnabled = 1;
+        g_pvCtl[i].nMode = 0;
+        g_pvCtl[i].nState = 1;                 /* lit, so a forced click fires */
+        g_pvCtl[i].pfnClick = PulseCountClick;
+    }
+    g_pvUiSlot = 7;
+    memset(&g_pvHit, 0, sizeof(g_pvHit));
+    g_pvHit.pnUiSlot0 = &g_pvUiSlot;
+
+    g_pvGate = 1;
+
+    /* Screen 18 gets three groups: 2 ungated, 3 gated on a set byte, 1 gated on a CLEAR byte. With
+     * the gate set that is 5 clicks; with it clear, 3. */
+    g_pvGroup[0].apCtl = &g_pvCtls[0]; g_pvGroup[0].nCount = 2;
+    g_pvGroup[0].pbGate = NULL; g_pvGroup[0].pbNotGate = NULL;
+    g_pvGroup[1].apCtl = &g_pvCtls[2]; g_pvGroup[1].nCount = 3;
+    g_pvGroup[1].pbGate = &g_pvGate; g_pvGroup[1].pbNotGate = NULL;
+    g_pvGroup[2].apCtl = &g_pvCtls[5]; g_pvGroup[2].nCount = 1;
+    g_pvGroup[2].pbGate = NULL; g_pvGroup[2].pbNotGate = &g_pvGate;
+    g_pvScreen[0].nScreenId = 18;
+    g_pvScreen[0].pGroups = g_pvGroup;
+    g_pvScreen[0].nGroupCount = 3;
+    g_pvScreen[1].nScreenId = 4;
+    g_pvScreen[1].pGroups = NULL;
+    g_pvScreen[1].nGroupCount = 0;
+
+    memset(&g_pvHooks, 0, sizeof(g_pvHooks));
+    g_pvHooks.pfnTickShips = PulseTickShips;
+    g_pvHooks.pfnTickHourly = PulseTickHourly;
+    g_pvHooks.pfnTickBases = PulseTickBases;
+    g_pvHooks.pfnOpenMonthly = PulseOpenMonthly;
+
+    memset(&g_pvEnv, 0, sizeof(g_pvEnv));
+    g_pvEnv.pnActionFail = &g_pvFail;
+    g_pvEnv.nScreenId = nScreenId;
+    g_pvEnv.pView = &g_pvView;
+    g_pvEnv.nStripHeight = 0;
+    g_pvEnv.pabDragFlags = g_pvDrag;
+    g_pvEnv.apCraft = g_pvShips;
+    g_pvEnv.pnCraftCount = &g_pvShipCount;
+    g_pvEnv.pStrategList = &g_pvList;
+    g_pvEnv.pTime = &g_pvTime;
+    g_pvEnv.pClockHooks = &g_pvHooks;
+    g_pvEnv.nTickSeconds = 59;
+    g_pvEnv.pnAnimPhase = &g_pvPhase;
+    g_pvEnv.pnCooldownR = &g_pvCR;
+    g_pvEnv.pnCooldownL = &g_pvCL;
+    g_pvEnv.pnMsgTimer = &g_pvCM;
+    g_pvEnv.pnPulseTimer = &g_pvCP;
+    g_pvEnv.pScreens = g_pvScreen;
+    g_pvEnv.nScreenCount = 2;
+    g_pvEnv.pHitCtx = &g_pvHit;
+}
+
+static void TestPulseUpdate(void)
+{
+    printf("\nGeoscape_PulseUpdate @ 0x954dc\n");
+
+    /* --- a failed action stops everything, cooldowns included --- */
+    PvFixture(0);
+    g_pvFail = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvTime.nTotalSec, 0, "dwActionFail == 1 returns before the clock (0x954F0)");
+    CheckEqI32(g_pvCR, 0, "and before the four counters");
+    CheckEqI32(g_pvItem[0].bVisible, 0, "and before the craft pass");
+
+    /* --- the craft pass is map-screen only --- */
+    PvFixture(18);
+    g_pvPhase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvItem[0].bVisible, 0, "off the map screen the craft pass does not run");
+    CheckEqI32(g_pvTime.nTotalSec, 0, "and neither does the clock");
+    CheckEqI32(g_pvCR, 1, "but the counters still step (0x95B8C)");
+
+    PvFixture(0);
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvItem[0].bVisible, 1,
+               "an INACTIVE type-1 entry with nDisplayId == Ship.bId becomes visible (0x955B0)");
+    CheckEqI32(g_pvShip[0].bWeaponsHot, 1, "and the craft gets bWeaponsHot (0x955C8)");
+    CheckEqI32(g_pvItem[1].bVisible, 0, "the ACTIVE entry with the same id is not touched (bActive == 0)");
+    CheckEqI32(g_pvItem[2].bVisible, 0, "and the inactive TYPE-0 entry is not touched either (nType == 1)");
+    CheckEqI32(g_pvTime.nTotalSec, 60, "the clock advances nGeoscapeTickSeconds + 1 (0x9562C)");
+    Check(g_nTickShips > 0, "and the minute tick actually ran");
+
+    PvFixture(0);
+    g_pvShip[0].bAtBase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvItem[0].bVisible, 0, "a craft that is AT base is skipped outright (0x9554C)");
+
+    PvFixture(0);
+    g_pvShipCount = 0;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvTime.nTotalSec, 60,
+               "an empty craft list jumps INTO the clock block rather than skipping it (LABEL_13, 0x95618)");
+
+    PvFixture(0);
+    g_pvTime.bPaused = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvTime.nTotalSec, 0, "the pause byte at 0x15961C gates the clock (0x95618)");
+
+    /* --- the phase gate: the switch fires only when the phase arrives as exactly 1 --- */
+    PvFixture(18);
+    g_pvPhase = 0;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 0, "phase 0 increments to 1, which is not above 1, so no switch (0x95654)");
+    CheckEqI32(g_pvPhase, 0, "and the phase is reset either way (LABEL_88, 0x95B78)");
+
+    PvFixture(18);
+    g_pvPhase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 5, "phase 1 increments to 2 and the switch runs: 2 + 3 gated-on + 0 gated-off");
+    CheckEqI32(g_pvPhase, 0, "and the phase resets");
+
+    PvFixture(18);
+    g_pvPhase = 2;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 0, "a phase already above 1 SKIPS the switch entirely (0x95644)");
+    CheckEqI32(g_pvPhase, 0, "and is reset");
+
+    PvFixture(18);
+    g_pvGate = 0;
+    g_pvPhase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 3, "flipping the gate moves the group that runs: 2 + 0 + 1");
+
+    PvFixture(18);
+    g_pvCtl[0].nState = 0;
+    g_pvPhase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 4,
+               "a forced click only fires on a control already in state 1, so the unlit one is silent");
+
+    PvFixture(4);
+    g_pvPhase = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_nPulseClicks, 0, "a screen with no group list runs the switch and clicks nothing");
+
+    /* --- the held-direction scroll, map screen: step 25, absolute, flags cleared --- */
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_UP] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, -25, "the up flag moves the view by 25 (0x95718, 0x95864)");
+    CheckEqI32(g_pvView.nScrollX, 0, "and nothing on x");
+    CheckEqI32(g_pvView.nLastDx, 120, "nLastDx ends on the 120 that was passed (0x95714 preset, stored last)");
+    CheckEqI32(g_pvView.nLastDy, 185,
+               "nLastDy ends on 160 + 25, which is what Smap_ScrollBy was handed (0x9570C, 0x95864)");
+    CheckEqI32(g_pvDrag[PUFO_PULSE_FLAG_UP], 0, "the flag is cleared afterwards (0x95874)");
+
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_DOWN] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, 25, "the down flag goes the other way (0x9572C)");
+
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_RIGHT] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollX, -25, "the right flag moves x by 25 (0x95724)");
+
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_LEFT] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollX, 25, "and the left flag the other way (0x95734)");
+
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_UP] = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_DOWN] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, 0, "opposite flags cancel, because each is an independent +/- (0x9572C)");
+
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvView.nLastDx = 999;
+    g_pvView.nLastDy = 999;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollX, 0, "with no flag set the view does not move");
+    CheckEqI32(g_pvView.nLastDx, 999, "and the last-delta preset is not written either");
+
+    PvFixture(2);
+    g_pvPhase = 1;
+    g_pvDrag[PUFO_PULSE_FLAG_UP] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, -5, "the zoom screen uses step 5, not 25 (0x95844)");
+
+    /* Smap_ScrollBy skips its vertical clamp when the screen id is 2, so the same starting scroll
+     * clamps on the map screen and does not on the zoom screen. */
+    PvFixture(0);
+    g_pvPhase = 1;
+    g_pvView.nScrollY = -100;
+    g_pvDrag[PUFO_PULSE_FLAG_UP] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, -40,
+               "on the map screen the clamp pulls it back to -(nMapH/2 - 160) (Smap_ScrollBy)");
+
+    PvFixture(2);
+    g_pvPhase = 1;
+    g_pvView.nScrollY = -100;
+    g_pvDrag[PUFO_PULSE_FLAG_UP] = 1;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvView.nScrollY, -105, "on the zoom screen the clamp is skipped, so it stays where it went");
+
+    /* --- the four counters saturate at 255 --- */
+    PvFixture(18);
+    g_pvCR = 254; g_pvCL = 255; g_pvCM = 0; g_pvCP = 255;
+    Geoscape_PulseUpdate(&g_pvEnv);
+    CheckEqI32(g_pvCR, 255, "254 steps to 255 (0x95B8C)");
+    CheckEqI32(g_pvCL, 255, "255 stays at 255 (0x95BA0)");
+    CheckEqI32(g_pvCM, 1, "and an unrelated counter is unaffected");
+    CheckEqI32(g_pvCP, 255, "the pulse timer saturates too (0x95BC8)");
+
+    Geoscape_PulseUpdate(NULL);
+    Check(true, "a NULL environment is a no-op rather than a crash");
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -7271,6 +7715,8 @@ int main(void)
     TestDrawStrategIcons();
     TestDrawClockPads();
     TestDrawScreen();
+    TestSelectMapTarget();
+    TestPulseUpdate();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

@@ -5735,6 +5735,72 @@ void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv)
     }
 }
 
+/* Smap_SelectMapTarget @ 0x84484. The arm that PAUSES the geoscape and puts a target on the pending
+ * order; the header block has the six steps and the fourth read at the tail. */
+void Smap_SelectMapTarget(const SmapSelectTargetEnv *pEnv)
+{
+    if (pEnv == NULL || pEnv->pLines == NULL) {
+        return;
+    }
+
+    if (pEnv->pbSelectionFlag != NULL) {
+        *pEnv->pbSelectionFlag = 1; /* 0x84498 */
+    }
+
+    const i32 nShipIdx = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x844A4 */
+    if (pEnv->pnSelectedShipIdx != NULL) {
+        *pEnv->pnSelectedShipIdx = nShipIdx; /* 0x844C4 */
+    }
+
+    const ShipRemovalEnv *pRem = pEnv->pShipEnv;
+    Ship *pShip = NULL;
+    if (pRem != NULL && pRem->apCraft != NULL && pRem->pnShipCount != NULL
+        && nShipIdx >= 0 && nShipIdx < (i32)*pRem->pnShipCount) {
+        pShip = pRem->apCraft[nShipIdx];
+    }
+
+    if (pShip != NULL && pShip->bIntercepting != 0) { /* 0x844D0 */
+        const StrategItem *pTarget =
+            (const StrategItem *)PtrArray_Get(pEnv->pStrategList, pShip->nStrategIdx); /* 0x844E4 */
+        if (pTarget != NULL && (i8)pTarget->nType == 5) { /* 0x844F0 */
+            (void)StrategList_RemoveAt(pEnv->pStrategList, pRem->pWorld, pShip->nStrategIdx,
+                                       pRem->pnSpawnOnceFlag, pRem->pSpawnCtx); /* 0x84504 */
+            pShip->bIntercepting = 0; /* 0x84514, inside the type-5 branch */
+        }
+    }
+
+    /* 0x84520..0x84544: the ship is re-fetched through the stored dword here, the way 0x844E8 and
+     * 0x84518 re-read 0x187054 instead of keeping a register. */
+    const i32 nStored = (pEnv->pnSelectedShipIdx != NULL) ? *pEnv->pnSelectedShipIdx : nShipIdx;
+    Ship *pArmShip = pShip;
+    if (pRem != NULL && pRem->apCraft != NULL && pRem->pnShipCount != NULL
+        && nStored >= 0 && nStored < (i32)*pRem->pnShipCount) {
+        pArmShip = pRem->apCraft[nStored];
+    }
+    if (pEnv->aTopics != NULL && pEnv->pbFinalMissionCtl != NULL && pArmShip != NULL
+        && pEnv->aTopics[PUFO_RESEARCH_TOPIC_CYDONIA].bUnlocked != 0
+        && pArmShip->bCraftType == 2) { /* 0x8453C: the Avenger */
+        *pEnv->pbFinalMissionCtl = 1; /* 0x84544 */
+    }
+
+    const u32 uColour = UiLineList_GetColor(pEnv->pLines, 0, 0); /* 0x84554, the third read */
+    UiLineList_Insert(pEnv->pLines, 1, 27, uColour, 0u, 0u, 0u); /* 0x84574 */
+    UiLineList_Remove(pEnv->pLines, 0);                          /* 0x84580 */
+    if (pEnv->pTime != NULL) {
+        pEnv->pTime->bPaused = 1; /* GameTime_Pause @ 0x5d6ac, called unconditionally at 0x84588 */
+    }
+
+    /* 0x84598: the fourth read, after the insert and the removal. Line 0 is now the flag-27 line the
+     * insert just put there, so both slots receive the value the insert carried. */
+    const i32 nAfter = (i32)UiLineList_GetColor(pEnv->pLines, 0, 0);
+    if (pEnv->pnSelectedShipIdx != NULL) {
+        *pEnv->pnSelectedShipIdx = nAfter; /* 0x845A0 */
+    }
+    if (pEnv->pnSlot159E74 != NULL) {
+        *pEnv->pnSlot159E74 = nAfter; /* 0x845A4 */
+    }
+}
+
 /* Smap_ResolveInterceptUI @ 0x84964. The flag standing on message line 0 decides what the pending
  * map order becomes; the header block has the four steps and the tail-removal bug. */
 void Smap_ResolveInterceptUI(const SmapResolveInterceptEnv *pEnv)

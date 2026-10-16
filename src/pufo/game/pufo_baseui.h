@@ -3189,6 +3189,45 @@ typedef struct SmapConfirmTargetEnv {
 
 void Smap_ConfirmCraftTarget(const SmapConfirmTargetEnv *pEnv);
 
+/* ------------------------------------------------- putting a map target on the pending order
+ *
+ * Evidence: Smap_SelectMapTarget @ 0x84484 (340 B). Installed as a click handler by Geoscape_Draw.
+ *
+ * 1. 0x84498: bMapSelectionFlag is SET here. This is the flag Geoscape_DrawScreen tests at 0x6C180,
+ *    which closes the geoscape UI and draws nothing at all on the next frame.
+ * 2. 0x844A4: the ship index is colour SLOT 0 of message line 0, stored into the selected-ship dword
+ *    0x187054 at 0x844C4. Every later use in this function re-reads that stored dword, not the line.
+ * 3. 0x844D0..0x84514: if the craft has bIntercepting and the item at its nStrategIdx is nType 5 (a
+ *    waypoint), the waypoint is removed and bIntercepting is cleared -- the same shape as
+ *    Smap_ConfirmCraftTarget's step 2, and again the clear sits INSIDE the type-5 branch.
+ * 4. 0x84520..0x84544: with the Cydonia topic researched (aResearchTopics[28].bUnlocked) and the
+ *    craft's bCraftType == 2 -- the Avenger, the constant the shipped data confirms -- arm
+ *    bFinalMissionCtlArmed. Note the ship is re-fetched through the stored dword here (0x844E8,
+ *    0x84518), not through the local.
+ * 5. 0x84554..0x84588: the line colour is read a THIRD time, a flag-27 line is inserted at index 1
+ *    carrying it, line 0 is removed, and the clock is paused. Unlike the sibling handlers there is no
+ *    unpause here at all: this is the arm that PAUSES the geoscape.
+ * 6. 0x84598..0x845A4: the colour is read a FOURTH time -- after the insert and the removal -- and
+ *    written to both 0x187054 and 0x159E74. After the removal the line at index 0 IS the inserted
+ *    flag-27 line, so what lands in those two slots is the value the insert just carried.
+ *
+ * Deviation: the original indexes apCraft with the line colour with no bounds test (0x844BC); the port
+ * checks the index against the craft count and skips the two ship-dependent steps when it is out of
+ * range. Not a ledger row -- the shipped panel only ever carries a valid index. */
+typedef struct SmapSelectTargetEnv {
+    UiLineList           *pLines;             /* the root message list @ 0x158890 */
+    i32                  *pnSelectedShipIdx;  /* 0x187054 */
+    i32                  *pnSlot159E74;       /* 0x159E74, written with the same value at 0x845A4 */
+    PtrArray             *pStrategList;       /* 0x1864F8 + 0x3C */
+    const ShipRemovalEnv *pShipEnv;           /* apCraft / nCraftCount, for the waypoint removal */
+    const ResearchTopicLive *aTopics;         /* aResearchTopics @ 0x15EF08 */
+    GameTime             *pTime;
+    u8                   *pbSelectionFlag;    /* bMapSelectionFlag @ 0x159E84 */
+    u8                   *pbFinalMissionCtl;  /* bFinalMissionCtlArmed @ 0x187068 */
+} SmapSelectTargetEnv;
+
+void Smap_SelectMapTarget(const SmapSelectTargetEnv *pEnv);
+
 /* ------------------------------------------------- answering the message line under the map
  *
  * Evidence: Smap_ResolveInterceptUI @ 0x84964 (340 B). Installed as a click handler by Geoscape_Draw.

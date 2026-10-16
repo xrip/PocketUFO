@@ -3892,3 +3892,128 @@ void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv)
                                   pEnv->pCtlBlitUser);                   /* 0x6CEB8 */
     DrawScreen_DrawCtlLabel(pEnv->pCtlA, szText);                        /* 0x6CEEC */
 }
+
+/* ---- the geoscape pulse tick -----------------------------------------------------------------
+ *
+ * The header block in pufo_geoscape.h carries the seven steps and the per-screen control groups. */
+
+/* 0x95B8C..0x95BCC: each counter steps by one and stops at 255. */
+static void Pulse_Saturate(i32 *pn)
+{
+    if (pn != NULL && *pn < PUFO_PULSE_COOLDOWN_MAX) {
+        ++*pn;
+    }
+}
+
+/* One screen's auto-repeat groups, in the order the original walks them. */
+static void Pulse_RunGroups(const GeoscapePulseEnv *pEnv, const GeoscapePulseScreen *pScreen)
+{
+    for (i32 g = 0; g < pScreen->nGroupCount; ++g) {
+        const GeoscapePulseCtlGroup *pGrp = &pScreen->pGroups[g];
+        if (pGrp->pbGate != NULL && *pGrp->pbGate == 0) {
+            continue;
+        }
+        if (pGrp->pbNotGate != NULL && *pGrp->pbNotGate != 0) {
+            continue;
+        }
+        for (i32 i = 0; i < pGrp->nCount; ++i) {
+            (void)UiControl_HitTest(pGrp->apCtl[i], 0, 0, false, true, pEnv->pHitCtx);
+        }
+    }
+}
+
+void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv)
+{
+    if (pEnv == NULL) {
+        return;
+    }
+
+    /* 0x954E8/0x954F0: a failed action stops the tick before anything, cooldowns included. */
+    if (pEnv->pnActionFail != NULL && *pEnv->pnActionFail == 1) {
+        return;
+    }
+
+    if (pEnv->nScreenId == 0) {
+        const i32 nCraft = (pEnv->pnCraftCount != NULL) ? *pEnv->pnCraftCount : 0;
+        for (i32 c = 0; c < nCraft; ++c) {                                /* 0x9552C..0x955FC */
+            Ship *pShip = (pEnv->apCraft != NULL) ? pEnv->apCraft[c] : NULL;
+            if (pShip == NULL || pShip->bAtBase != 0) {                  /* 0x9554C */
+                continue;
+            }
+            const i32 nItems = PtrArray_GetCount(pEnv->pStrategList);
+            for (i32 k = 0; k < nItems; ++k) {                           /* 0x95560 */
+                StrategItem *pItem = (StrategItem *)PtrArray_Get(pEnv->pStrategList, k);
+                if (pItem == NULL) {
+                    continue;
+                }
+                if (pItem->nDisplayId == (i32)pShip->bId && pItem->bActive == 0
+                    && pItem->nType == 1) {                              /* 0x955B0 */
+                    pItem->bVisible = 1;                                 /* 0x955C0 */
+                    pShip->bWeaponsHot = 1;                              /* 0x955C8 */
+                }
+            }
+        }
+
+        /* 0x95618: LABEL_13, which the empty-craft-list exit jumps straight into. */
+        if (pEnv->pTime != NULL && pEnv->pTime->bPaused == 0) {
+            Geoscape_AdvanceTime(pEnv->pTime, pEnv->nTickSeconds + 1, pEnv->pClockHooks);
+            (void)GameTime_Decode(pEnv->pTime);
+        }
+    }
+
+    if (pEnv->pnAnimPhase != NULL) {
+        if (*pEnv->pnAnimPhase > 1) {
+            /* 0x95644: an already-advanced phase skips the switch entirely. */
+        } else if (++(*pEnv->pnAnimPhase) > 1) {                         /* 0x95654 */
+            const GeoscapePulseScreen *pScreen = NULL;
+            for (i32 s = 0; s < pEnv->nScreenCount; ++s) {
+                if (pEnv->pScreens[s].nScreenId == pEnv->nScreenId) {
+                    pScreen = &pEnv->pScreens[s];
+                    break;
+                }
+            }
+
+            if (pEnv->nScreenId == 0 || pEnv->nScreenId == 2) {
+                const i32 nStep = (pEnv->nScreenId == 2) ? PUFO_PULSE_SCROLL_STEP_ZOOM
+                                                         : PUFO_PULSE_SCROLL_STEP_MAP;
+                if (pEnv->pabDragFlags != NULL && pEnv->pView != NULL
+                    && (pEnv->pabDragFlags[PUFO_PULSE_FLAG_UP]
+                        | pEnv->pabDragFlags[PUFO_PULSE_FLAG_RIGHT]
+                        | pEnv->pabDragFlags[PUFO_PULSE_FLAG_DOWN]
+                        | pEnv->pabDragFlags[PUFO_PULSE_FLAG_LEFT]) != 0) {
+                    i32 nDx = 0;
+                    i32 nDy = 0;
+                    if (pEnv->pabDragFlags[PUFO_PULSE_FLAG_UP] != 0) {
+                        nDy = nStep;                                     /* 0x95718 */
+                    }
+                    if (pEnv->pabDragFlags[PUFO_PULSE_FLAG_RIGHT] != 0) {
+                        nDx = nStep;                                     /* 0x95724 */
+                    }
+                    if (pEnv->pabDragFlags[PUFO_PULSE_FLAG_DOWN] != 0) {
+                        nDy -= nStep;                                    /* 0x9572C */
+                    }
+                    if (pEnv->pabDragFlags[PUFO_PULSE_FLAG_LEFT] != 0) {
+                        nDx -= nStep;                                    /* 0x95734 */
+                    }
+                    pEnv->pView->nLastDx = PUFO_PULSE_SCROLL_BASE_X;     /* 0x95714 */
+                    pEnv->pView->nLastDy = PUFO_PULSE_SCROLL_BASE_Y;     /* 0x9570C */
+                    Smap_ScrollBy(pEnv->pView, nDx + PUFO_PULSE_SCROLL_BASE_X,
+                                  nDy + PUFO_PULSE_SCROLL_BASE_Y, pEnv->nScreenId,
+                                  pEnv->nStripHeight);                   /* 0x95864 */
+                    pEnv->pabDragFlags[PUFO_PULSE_FLAG_UP] = 0;          /* 0x95874..0x95880 */
+                    pEnv->pabDragFlags[PUFO_PULSE_FLAG_RIGHT] = 0;
+                    pEnv->pabDragFlags[PUFO_PULSE_FLAG_DOWN] = 0;
+                    pEnv->pabDragFlags[PUFO_PULSE_FLAG_LEFT] = 0;
+                }
+            } else if (pScreen != NULL) {
+                Pulse_RunGroups(pEnv, pScreen);
+            }
+        }
+        *pEnv->pnAnimPhase = 0;                                          /* LABEL_88 at 0x95B78 */
+    }
+
+    Pulse_Saturate(pEnv->pnCooldownR);                                   /* 0x95B8C */
+    Pulse_Saturate(pEnv->pnCooldownL);                                   /* 0x95BA0 */
+    Pulse_Saturate(pEnv->pnMsgTimer);                                    /* 0x95BB4 */
+    Pulse_Saturate(pEnv->pnPulseTimer);                                  /* 0x95BC8 */
+}

@@ -2251,4 +2251,104 @@ typedef struct GeoscapeScreenDrawEnv {
 
 void Geoscape_DrawScreen(const GeoscapeScreenDrawEnv *pEnv);
 
+/* ------------------------------------------------- the geoscape pulse tick
+ *
+ * Evidence: Geoscape_PulseUpdate @ 0x954dc (1,812 B). The port already routes to it: Input_OnPointer
+ * hands over through the injected pfnPulseUpdate slot in pufo_input.h.
+ *
+ * 1. 0x954E8/0x954F0: dwActionFail @ 0x1870C8 == 1 stops the whole tick, cooldowns included.
+ * 2. 0x95500..0x955FC, the MAP screen only. For every craft whose bAtBase (Ship +0x06) is clear, the
+ *    strateg list is scanned for an entry with nDisplayId == Ship.bId, bActive == 0 and nType == 1; a
+ *    match gets bVisible = 1 (0x955C0) and the craft gets bWeaponsHot (Ship +0x34) = 1 (0x955C8). The
+ *    IDB's own note on this function records what it is NOT: it is not the alien-site discovery pass,
+ *    it makes an INACTIVE type-1 entry visible, which is the player's own craft record.
+ * 3. 0x95608..0x95634: still map-screen only, gated on the pause byte 0x15961C, the clock runs
+ *    Geoscape_AdvanceTime(nGeoscapeTickSeconds + 1) and then GameTime_Decode. The craft loop's
+ *    `Map_nCraftCount == 0` exit jumps INTO this block (LABEL_13 at 0x95618), so an empty craft list
+ *    still advances the clock -- it is not a skip of the whole screen-0 half.
+ * 4. 0x95644..0x95654: the animation-phase gate. nUiSlot0AnimPhase @ 0x113A18 is counted up elsewhere
+ *    (0x36664) and cleared by UiControl_HitTest. Here, if it is ALREADY above 1 the switch is skipped;
+ *    otherwise it is incremented and the switch runs only when that increment lands above 1 -- so the
+ *    switch fires exactly when the phase arrives as 1. Either way the phase ends at 0 (LABEL_88).
+ * 5. Screens 0 and 2: the held-direction scroll. The four flag bytes unk_1864F4..F7 are written by the
+ *    nav Prev/Next buttons (the panel-scroll dispatcher in pufo_baseui.h records which two) and here
+ *    mean +y, +x, -y, -x. nLastDx / nLastDy are preset to 120 / 160 and the call is
+ *    Smap_ScrollBy(view, dx + 120, dy + 160), so the drag is absolute rather than incremental -- which
+ *    is what Smap_ScrollBy's `pos - delta + last_delta` form expects. The step is 25 on the map screen
+ *    and 5 on the zoom screen. All four flags are cleared afterwards (0x95874..0x95880).
+ * 6. Every other screen gets its controls driven with bForceClick = 1 -- the auto-repeat of a held
+ *    button. The control arrays belong to the screens themselves, so the port takes them as a
+ *    per-screen table; the original's own shapes are recorded in GeoscapePulseCtlGroup below.
+ * 7. 0x95B80..0x95BCC: four saturating counters, each `if (x < 255) ++x` -- nRadarCooldownR @ 0xAC218,
+ *    nRadarCooldownL @ 0xAC21C, nRadarMsgTimer @ 0xAC220, nRadarPulseTimer @ 0xAC224. They run on
+ *    every screen, after the switch, and they are the only part that does.
+ *
+ * The original's per-screen groups, as the ARM addresses them:
+ *   4   apSoldierPanelCtl @ 0x1598B0, then the control at 0x1598B4
+ *   6   two passes; each pass runs the base+0x64 control while bPlaneStoresCommitted @ 0x161F28 is set
+ *       and the base+0x5C control while bPlaneListPanelsBuilt @ 0x161F24 is set, with the base advancing
+ *       one dword per pass from pPlaneBackdropPad @ 0x161A48
+ *   7   the controls at 0x158874 and 0x158878, only while bBaseFacPlaceArmed @ 0x158888 is CLEAR
+ *   8   two controls reached through the research topic table @ 0x15EF08, one pair when
+ *       bUiRowSelected @ 0x160C80 is set and a different pair when it is clear
+ *   9   six consecutive controls reached from 0x159E98
+ *   10  two consecutive controls reached from 0x1870D8
+ *   11  two consecutive controls reached from pBuySellScreenPad @ 0x161A08
+ *   12  the same two again, reached from pBuySellScreenPad a second time
+ *   16  two reached from 0x1872F0 while bUfopaediaOpen @ 0x18730C is set and bUfopaediaEntryDirty
+ *       @ 0x187310 is CLEAR, plus two reached from 0x1872E0 when the dirty byte is set and 0x1871FC is
+ *       set -- the halves are mutually exclusive on the dirty byte
+ *   17  two reached from 0x15EE78 while byte_1870F8 is CLEAR
+ *   18  aOptionsListCtl[7] and aOptionsListCtl[8] while bOptionsScreenOpen @ 0x159E80 is set */
+
+/* One auto-repeat group: nCount consecutive controls, optionally gated on a flag byte. */
+typedef struct GeoscapePulseCtlGroup {
+    UiControl *const *apCtl;
+    i32         nCount;
+    const u8   *pbGate;    /* NULL = always; otherwise the group runs only while this is non-zero */
+    const u8   *pbNotGate; /* NULL = always; otherwise the group runs only while this is zero */
+} GeoscapePulseCtlGroup;
+
+typedef struct GeoscapePulseScreen {
+    i32                          nScreenId;
+    const GeoscapePulseCtlGroup *pGroups;
+    i32                          nGroupCount;
+} GeoscapePulseScreen;
+
+#define PUFO_PULSE_SCROLL_STEP_MAP  25  /* 0x95718, the map screen */
+#define PUFO_PULSE_SCROLL_STEP_ZOOM  5  /* 0x95844, the zoom screen */
+#define PUFO_PULSE_SCROLL_BASE_X   120  /* 0x95714, the nLastDx preset */
+#define PUFO_PULSE_SCROLL_BASE_Y   160  /* 0x9570C, the nLastDy preset */
+#define PUFO_PULSE_COOLDOWN_MAX    255  /* every one of the four counters saturates here */
+
+/* unk_1864F4..F7, in the order the original reads them. */
+#define PUFO_PULSE_FLAG_UP    0
+#define PUFO_PULSE_FLAG_RIGHT 1
+#define PUFO_PULSE_FLAG_DOWN  2
+#define PUFO_PULSE_FLAG_LEFT  3
+
+typedef struct GeoscapePulseEnv {
+    const i32          *pnActionFail;   /* dwActionFail @ 0x1870C8 */
+    i32                 nScreenId;      /* nGeoscapeScreen @ 0x186BC4 */
+    SmapView           *pView;          /* gSmapCam @ 0x1863E8 */
+    i32                 nStripHeight;   /* pSmapStripPad @ 0x186BBC uHeight, Smap_ScrollBy's clamp */
+    u8                 *pabDragFlags;   /* unk_1864F4..F7 */
+    Ship *const        *apCraft;        /* Map.apCraft @ Map+0x10AC */
+    const u8           *pnCraftCount;   /* Map_nCraftCount @ 0x114B4C, read LDRB at 0x95524 / 0x955F4 */
+    PtrArray           *pStrategList;   /* the strateg list */
+    GameTime           *pTime;          /* the clock block @ 0x159608 */
+    const GeoscapeClockHooks *pClockHooks;
+    i32                 nTickSeconds;   /* nGeoscapeTickSeconds @ 0x187070 */
+    i32                *pnAnimPhase;    /* nUiSlot0AnimPhase @ 0x113A18 */
+    i32                *pnCooldownR;    /* nRadarCooldownR @ 0xAC218 */
+    i32                *pnCooldownL;    /* nRadarCooldownL @ 0xAC21C */
+    i32                *pnMsgTimer;     /* nRadarMsgTimer @ 0xAC220 */
+    i32                *pnPulseTimer;   /* nRadarPulseTimer @ 0xAC224 */
+    const GeoscapePulseScreen *pScreens;
+    i32                 nScreenCount;
+    const UiControlHitCtx *pHitCtx;     /* the context the forced clicks are handed */
+} GeoscapePulseEnv;
+
+void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */
