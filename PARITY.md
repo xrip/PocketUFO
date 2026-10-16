@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 905 / 1103 (82.0%) |
-| Bytes of original code cited | 447324 / 598792 (74.7%) |
+| Functions cited as evidence | 906 / 1103 (82.1%) |
+| Bytes of original code cited | 462040 / 598792 (77.2%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 57 |
-| Test checks run | 12739 |
+| Test checks run | 12787 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 210 | 214 | 162320 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 211 | 214 | 177036 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -239,10 +239,11 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (210 functions)
+### `tact` (211 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
+| `0x27bb8` | `Unit_CanStepTo` | 14716 | `src/pufo/game/pufo_step.c`, `src/pufo/game/pufo_step.h` |
 | `0x22e10` | `Map_BuildMissionTerrain` | 10676 | `src/pufo/game/pufo_tactinit.h`, `src/pufo/game/pufo_terrain.c` (+1) |
 | `0x50adc` | `Tact_ProcessFireAction` | 8192 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x4f3f0` | `Tact_ProcessMoveAction` | 5868 | `src/pufo/game/pufo_ballist.c`, `src/pufo/game/pufo_ballist.h` (+5) |
@@ -1193,12 +1194,11 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `tact` — 4 functions, 16024 bytes remaining
+### `tact` — 3 functions, 1308 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x27bb8` | `Unit_CanStepTo` | 14716 | cell addressing and the vertical re-anchor probe are resolved (Map_ProbeStepOccupants, src/pufo/game/pufo_step.c); what is left are the ten small-unit and ten large-unit direction arms |
-| `0x22648` | `Map_InitAndLoadRegistry` | 1284 | not yet ported; scheduled with the `tact` subsystem work |
+| `0x22648` | `Map_InitAndLoadRegistry` | 1284 | the tact registry bring-up; scheduled with the last tact item |
 | `0x22620` | `Map_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
@@ -1312,7 +1312,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_modal` | PASS | 30 |
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 167 |
-| `test_path` | PASS | 98 |
+| `test_path` | PASS | 102 |
 | `test_plane` | PASS | 381 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 18 |
@@ -1323,7 +1323,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_soldiername` | PASS | 22 |
 | `test_startnew` | PASS | 107 |
 | `test_statusmsg` | PASS | 106 |
-| `test_step` | PASS | 38 |
+| `test_step` | PASS | 82 |
 | `test_strateg` | PASS | 309 |
 | `test_tactctl` | PASS | 378 |
 | `test_tactend` | PASS | 395 |

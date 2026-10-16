@@ -570,12 +570,12 @@ globals. That working-set contract is ported now: every one of those globals is 
 in the IDB, the probe itself is ported in `src/pufo/game/pufo_step.c`, and the port
 carries the same state as one explicit `StepProbe` struct in `src/pufo/game/pufo_step.h`
 instead of one shared set of globals. See "The step probe: Map_ProbeStepOccupants
-(0x2778c)" at the end of this file. What is left of `Unit_CanStepTo` is its ten
-small-unit and ten large-unit direction arms.
+(0x2778c)" at the end of this file. `Unit_CanStepTo` itself landed in the next unit; see "Unit_CanStepTo (0x27bb8)
+- ported" at the end of this file.
 
-The port's pathfinding is complete and tested *without* those arms: the flood fill
-takes an injected step probe (`PathStepProbe` in `pufo_path.h`), so the shape of the
-predicate is already accommodated, and the real function drops into that seam.
+The flood fill takes an injected step probe (`PathStepProbe` in `pufo_path.h`), and
+`Unit_CanStepTo` matches that seam, so a `StepCtx` over the real grid is all that is
+left before the flood runs on real legality.
 
 ## Not yet recreated, with reason
 
@@ -14490,12 +14490,13 @@ argument: `Map_ComputeReachable` reads `Map.pSelUnit->pCell` itself (0x2b868,
 
 That flag is the interesting one. `Map_ComputeReachable` never uses it - it stores it
 into the global `g_bPathSearchFlag` at 0x10db84 (0x2b850 LDRB, 0x2b860 STRB) and
-`Path_ExpandCell` reads it back at 0x2b6ac. Set, it lifts two rules at once: the +4
-surcharge for leaving the seed layer, and the gate that refuses to expand a cell with
-no floor sprite. It is set for unit types 3, 7, 8, 11, 13 and 18 - the same six rows
+`Path_ExpandCell` reads it back at 0x2b6ac. Set, it lifts the gate that refuses to expand a cell with no floor
+sprite. It does **not** touch the +4 surcharge: that is gated on the probe's own
+g_bStepReanchored report (0x2b75c), not on this flag - see the correction in the
+"Unit_CanStepTo (0x27bb8) - ported" section at the end of this file. It is set for unit types 3, 7, 8, 11, 13 and 18 - the same six rows
 `g_aUnitTypeFlag0` marks, and the same six the enemy AI tests before it looks for a
-floor. The port used to hardcode the flag clear, which is why the layer surcharge was
-visible in the tests and the floor gate was not; both are now asserted.
+floor. The port used to hardcode the flag clear, which is why the floor gate was
+invisible in the tests; it is asserted now.
 
 Before the fill, `bFlag` also picks a piece of bookkeeping at `Map_pPathDestUnit`
 (Map+0x150f4, 0x128ab0): with the flag clear the destination cell's occupant is
@@ -14667,3 +14668,78 @@ The original dereferences `var_14`, `var_8` and `g_pStepCellAbove` blindly; the 
 each for NULL first, which is why the three unguarded reads are recorded as not reproduced.
 The original calls `Unit_bIsLarge(pSelUnit)` eight times in this function; the port computes
 it once, which is the same value every time.
+
+## Unit_CanStepTo (0x27bb8) - ported
+
+Ported in `src/pufo/game/pufo_step.c`, tested in `tests/test_step.c` (82 checks with the probe).
+14,716 bytes, 361 basic blocks, the largest tactical function and the last game-behaviour gap in
+the tact subsystem.
+
+### The shape
+
+`Unit_CanStepTo` takes one argument, the Map block. It seeds the candidate itself -
+`g_nStepDstX/Y/Layer = g_nStepCurX/Y + aDirDeltaXY[3 * g_nStepDir]` (0x27bd8..0x27c24) - then
+branches on `Unit_bIsLarge` into two ten-way switches, at 0x27D28 for a normal unit and 0x28A44
+for a large one.
+
+The head. A normal unit's candidate has to be in range, has to not be blank
+(`MapCell_TestFlag` 0), and its occupant has to be the swap partner, the mover, or a foreign unit
+that is not flagged at `bUnk148`, is not operative, and is not unit type 16 or 17
+(0x27cb0..0x27d18). A large unit's head is only the range test plus settling `g_pStepDstCell`
+(0x289f4..0x28a38); its blank tests are per-arm, over the whole footprint.
+
+The arms. Each runs `Map_ProbeStepOccupants` first - except directions 8 and 9, which never call
+it, because the step is already vertical - then the arm's own occupant gate, then a
+direction-specific list of blank, wall and occupant tests, and ends with one more test whose
+result is the answer. The lists are uneven on purpose: a diagonal direction tests the walls of the
+cells it passes between as well as the cell it enters, which is how the original stops a mover
+cutting a corner through a wall. A large unit's arms test the four cells of its 2x2 footprint.
+
+### The seam has to carry the settled cell, not the candidate
+
+`Path_ExpandCell` takes the neighbour through `g_pStepDstCell` (0x2b6d4, read at 0x2b768), and a
+downward re-anchor moves that cell without moving `g_nStepDstLayer` (see the `Map_ProbeStepOccupants`
+section). A seam that reports only coordinates has to report the layer the settled cell actually
+lives in, which is `g_nStepAdjLayer`; the vertical pair never calls the probe, so for those two
+directions it is `g_nStepDstLayer`.
+
+### The correction this function forced (0x2b75c)
+
+`Path_ExpandCell` gates the +4 layer surcharge on `g_bStepReanchored`, not on `g_bPathSearchFlag`,
+and stores that same byte into `bFlags29` bit 3 at 0x2b7a4:
+
+```
+0x2b74c  LDR  R0, [g_nStepDstLayer]
+0x2b750  LDR  R1, [g_nCurLayer]
+0x2b754  CMP  R0, R1
+0x2b758  BEQ  loc_2B768          ; same layer, no surcharge
+0x2b75c  LDRB R0, [g_bStepReanchored]
+0x2b764  ADDEQ R6, R6, #4        ; a layer change the probe did not cause costs 4
+```
+
+A horizontal direction only changes layer through the probe's own anchor, and that anchor sets the
+flag, so the surcharge is really the vertical directions' price and the search flag never reaches
+it. The port had been using the flag for both the surcharge and bit 3, which charged the surcharge
+to re-anchored horizontal steps and set bit 3 on the wrong condition. `PathStepProbe` now carries a
+re-anchor report and `tests/test_path.c` pins both halves.
+
+### Original findings recorded (4 ledger rows)
+
+- **0x28c90**: every large arm re-runs `Map_IsValidCell` for the far corner of its footprint and
+  passes `nLayer = 0`, although `Map_IsValidCell` does test the layer - the call is really only an
+  x/y test. Harmless, because the head validated the layer, but not what the call says. Same at
+  0x2915c, 0x293a4, 0x29910 and 0x29b54.
+- **0x27e0c**: the arms' occupant gate is weaker than the head's - `bUnk148` alone lets a foreign
+  unit through, with no operative or unit-type test. For a step the probe did not move, the head
+  already refused that cell, so the weaker gate is only reachable through a re-anchored candidate.
+- **0x2ab80**: the large unit's vertical arms chain the same two floor tests four times over in
+  direction 8 (0x2ab80..0x2abf8) and seven times over in direction 9 (0x2b4f8..0x2b520), always the
+  same two cells.
+- **0x2b75c**: the surcharge and `bFlags29` bit 3 gate above, recorded as the port deviation it was.
+
+### Deviations
+
+The original indexes its fixed 60x60x4 grid with no bounds test inside the arms, so an out-of-range
+coordinate reads a different cell of the same array; the port's injected lookup returns NULL there
+and every helper reads that as "no flag, no occupant". The one cell the port still dereferences
+blindly is `Map_ProbeStepOccupants`' candidate, because the original does.

@@ -37,15 +37,26 @@ static void CheckEqI32(i32 nGot, i32 nWant, const char *pszWhat)
     }
 }
 
-#define S_DIM 8
+/* Ten cells across and down, matching g_Geom below: Map_IsValidCell validates against
+ * the same bounds, and Map_ProbeStepOccupants dereferences the candidate the way the
+ * original does, so the fixture's lookup has to cover every coordinate the geometry
+ * calls valid. */
+#define S_DIM 10
 
 typedef struct World {
     MapCell aCells[PUFO_MAP_LAYERS][S_DIM][S_DIM];
-    Mc1Rec  aFloor[S_DIM][S_DIM];      /* layer 0 floors, reused per layer */
+    Mc1Rec  aFloor[PUFO_MAP_LAYERS][S_DIM][S_DIM];
+    Mc1Rec  aWallA[PUFO_MAP_LAYERS][S_DIM][S_DIM];
+    Mc1Rec  aWallB[PUFO_MAP_LAYERS][S_DIM][S_DIM];
     Mc1Rec  aCeil[PUFO_MAP_LAYERS][S_DIM][S_DIM];
     Soldier aUnit[2];
     StepProbe probe;
 } World;
+
+static Soldier  g_Sel;    /* the mover: ctx pSelUnit, Map+0x15334 */
+static Soldier  g_Swap;   /* the swap partner: Map_pPathDestUnit @ Map+0x150f4 */
+static Soldier  g_Foreign;
+static MapGeom  g_Geom = { 1, 1 }; /* ten cells across and down */
 
 static MapCell *World_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 {
@@ -73,14 +84,23 @@ static void World_Init(World *pW)
         for (y = 0; y < S_DIM; ++y) {
             for (x = 0; x < S_DIM; ++x) {
                 MapCell_Init(&pW->aCells[z][y][x], x, y, z);
-                memset(&pW->aFloor[y][x], 0, sizeof(Mc1Rec));
-                pW->aCells[z][y][x].pFloorSpr = &pW->aFloor[y][x];
+                pW->aCells[z][y][x].pFloorSpr = &pW->aFloor[z][y][x];
+                pW->aCells[z][y][x].pWallSprA = &pW->aWallA[z][y][x];
+                pW->aCells[z][y][x].pWallSprB = &pW->aWallB[z][y][x];
+                pW->aCells[z][y][x].pCeilSpr  = NULL;
             }
         }
     }
     memset(pW->aUnit, 0, sizeof(pW->aUnit));
     pW->aUnit[0].nUnitType = 0;  /* not large */
     pW->aUnit[1].nUnitType = 4;  /* large */
+
+    memset(&g_Sel, 0, sizeof(g_Sel));
+    memset(&g_Swap, 0, sizeof(g_Swap));
+    memset(&g_Foreign, 0, sizeof(g_Foreign));
+    g_Sel.bStatus     = 0;   /* operative */
+    g_Swap.bStatus    = 0;
+    g_Foreign.bStatus = 0;   /* an operative stranger: the head gate refuses it */
 }
 
 /* A candidate step from (2,2,1) in direction nDir, which is the shape both anchors
@@ -94,7 +114,8 @@ static void World_Setup(World *pW, StepCtx *pCtx, i32 nUnit, bool bSearchFlag, u
     pCtx->pfnLookup    = World_Lookup;
     pCtx->pLookupUser  = pW;
     pCtx->pSelUnit     = &pW->aUnit[nUnit];
-    pCtx->pSwapUnit    = NULL;
+    pCtx->pSwapUnit    = &g_Swap;
+    pCtx->pGeom        = &g_Geom;
     pCtx->bSearchFlag  = bSearchFlag;
     pCtx->pProbe       = &pW->probe;
 
@@ -120,6 +141,43 @@ static Mc1Rec *World_Ceil(World *pW, i32 nLayer, i32 nX, i32 nY, i8 nParam)
 static void World_NoFloor(World *pW, i32 nLayer, i32 nX, i32 nY)
 {
     pW->aCells[nLayer][nY][nX].pFloorSpr = NULL;
+}
+
+/* A floor sprite marked transparent makes the cell blank (MapCell_TestFlag 0). */
+static void World_Blank(World *pW, i32 nLayer, i32 nX, i32 nY)
+{
+    pW->aFloor[nLayer][nY][nX].bTransparent = 255;
+}
+
+static void World_WallA(World *pW, i32 nLayer, i32 nX, i32 nY, u8 bTransparent, u8 bBlocks)
+{
+    pW->aWallA[nLayer][nY][nX].bTransparent = bTransparent;
+    pW->aWallA[nLayer][nY][nX].bBlocksMove  = bBlocks;
+}
+
+static void World_WallB(World *pW, i32 nLayer, i32 nX, i32 nY, u8 bTransparent, u8 bBlocks)
+{
+    pW->aWallB[nLayer][nY][nX].bTransparent = bTransparent;
+    pW->aWallB[nLayer][nY][nX].bBlocksMove  = bBlocks;
+}
+
+/* The floor byte MapCell_TestFlag 6 reads. */
+static void World_FloorBlocks(World *pW, i32 nLayer, i32 nX, i32 nY, u8 bBlocks)
+{
+    pW->aFloor[nLayer][nY][nX].bBlocksSight = bBlocks;
+}
+
+static void World_Occupy(World *pW, i32 nLayer, i32 nX, i32 nY, Soldier *pUnit)
+{
+    pW->aCells[nLayer][nY][nX].pUnit = pUnit;
+}
+
+/* The seam call, from the fixture's fixed current cell. */
+static bool CanStep(World *pW, StepCtx *pCtx, i32 nDir,
+                    i32 *pnX, i32 *pnY, i32 *pnLayer, bool *pbRe)
+{
+    return Unit_CanStepTo(pW->probe.nCurX, pW->probe.nCurY, pW->probe.nCurLayer,
+                          (u8)nDir, pnX, pnY, pnLayer, pbRe, pCtx);
 }
 
 /* Nothing wants moving: the candidate has a floor and the current cell has no
@@ -332,6 +390,260 @@ static void TestCandidateCeiling(World *pW)
     Check(Map_ProbeStepOccupants(&ctx), "  -8 exactly is the boundary and passes");
 }
 
+/* --- Unit_CanStepTo --------------------------------------------------------- */
+
+static void TestCanStepPlain(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (a plain step)\n");
+    World_Setup(pW, &ctx, 0, false, 2);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  east step accepted");
+    CheckEqI32(x, 3, "  output x");
+    CheckEqI32(y, 2, "  output y");
+    CheckEqI32(z, 1, "  output layer");
+    Check(!re, "  no re-anchor reported");
+
+    /* 0x27d2c: a direction outside the switch takes the default, which accepts. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    Check(Unit_CanStepTo(2, 2, 1, 10, &x, &y, &z, &re, &ctx),
+          "  direction 10 falls to the switch default");
+}
+
+static void TestCanStepBlank(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (the head's blank test)\n");
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_Blank(pW, 1, 3, 2);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  a blank candidate is refused");
+
+    /* A large unit has no head blank test; its footprint is tested per arm instead. */
+    World_Setup(pW, &ctx, 1, false, 2);
+    World_Blank(pW, 1, 3, 2);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  a large unit's own cell is not blank-tested in the head");
+}
+
+static void TestCanStepOccupant(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (the head's occupant gate)\n");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_Occupy(pW, 1, 3, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  an operative stranger blocks the cell");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_Occupy(pW, 1, 3, 2, &pW->aUnit[0]);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  the mover itself does not");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_Occupy(pW, 1, 3, 2, &g_Swap);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  the swap partner does not");
+
+    /* 0x27cf0..0x27d18: a stranger that is not operative, not flagged at bUnk148 and
+     * not one of the two special types does not block the cell. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    g_Foreign.bStatus = 1;
+    World_Occupy(pW, 1, 3, 2, &g_Foreign);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  a downed stranger does not block");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    g_Foreign.bStatus = 1;
+    g_Foreign.bUnk148 = 1;
+    World_Occupy(pW, 1, 3, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  bUnk148 set blocks even when downed");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    g_Foreign.bStatus   = 1;
+    g_Foreign.nUnitType = 16;
+    World_Occupy(pW, 1, 3, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  unit type 16 blocks even when downed");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    g_Foreign.bStatus   = 1;
+    g_Foreign.nUnitType = 17;
+    World_Occupy(pW, 1, 3, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  unit type 17 blocks even when downed");
+}
+
+static void TestCanStepWalls(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (the wall tests)\n");
+
+    /* Direction 2 ends on the candidate's wall A having to be a real wall (0x28138). */
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_WallA(pW, 1, 3, 2, 255, 0);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  direction 2 refuses a candidate with no wall A");
+
+    /* Direction 0 ends on the current cell's wall B (0x27e24). */
+    World_Setup(pW, &ctx, 0, false, 0);
+    World_WallB(pW, 1, 2, 2, 255, 0);
+    Check(!CanStep(pW, &ctx, 0, &x, &y, &z, &re),
+          "  direction 0 refuses a current cell with no wall B");
+
+    /* Direction 1 tests the candidate's wall A as a blocking wall (0x27f78). */
+    World_Setup(pW, &ctx, 0, false, 1);
+    Check(CanStep(pW, &ctx, 1, &x, &y, &z, &re), "  direction 1 accepted with clear walls");
+    World_Setup(pW, &ctx, 0, false, 1);
+    World_WallA(pW, 1, 3, 1, 0, 1);
+    Check(!CanStep(pW, &ctx, 1, &x, &y, &z, &re),
+          "  direction 1 refuses a blocking wall A on the candidate");
+
+    /* Direction 1 also refuses when the cell it passes between is blank (0x2807c). */
+    World_Setup(pW, &ctx, 0, false, 1);
+    World_Blank(pW, 1, 3, 1);
+    Check(!CanStep(pW, &ctx, 1, &x, &y, &z, &re),
+          "  direction 1 refuses a blank cell on the way round");
+}
+
+static void TestCanStepVertical(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (the vertical pair)\n");
+
+    /* Up: the cell entered and the cell left both need a floor that blocks (0x28918). */
+    World_Setup(pW, &ctx, 0, false, 8);
+    World_FloorBlocks(pW, 2, 2, 2, 1);
+    World_FloorBlocks(pW, 1, 2, 2, 1);
+    Check(CanStep(pW, &ctx, 8, &x, &y, &z, &re), "  up accepted when both floors block");
+    CheckEqI32(z, 2, "  output layer is the cell entered");
+    Check(!re, "  a vertical step reports no re-anchor");
+
+    World_Setup(pW, &ctx, 0, false, 8);
+    World_FloorBlocks(pW, 2, 2, 2, 1);
+    Check(!CanStep(pW, &ctx, 8, &x, &y, &z, &re),
+          "  refused when the cell left has no blocking floor");
+
+    World_Setup(pW, &ctx, 0, false, 8);
+    World_FloorBlocks(pW, 2, 2, 2, 1);
+    World_FloorBlocks(pW, 1, 2, 2, 1);
+    World_Occupy(pW, 2, 2, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 8, &x, &y, &z, &re),
+          "  refused when the cell above the current one is held");
+
+    /* Down. */
+    World_Setup(pW, &ctx, 0, false, 9);
+    World_FloorBlocks(pW, 0, 2, 2, 1);
+    World_FloorBlocks(pW, 1, 2, 2, 1);
+    Check(CanStep(pW, &ctx, 9, &x, &y, &z, &re), "  down accepted");
+    CheckEqI32(z, 0, "  output layer is the cell entered");
+
+    /* With the search flag set, direction 9 tests the cell being left instead of the
+     * one being entered (0x289AC..0x289F0). */
+    World_Setup(pW, &ctx, 0, true, 9);
+    World_FloorBlocks(pW, 1, 2, 2, 1);
+    Check(CanStep(pW, &ctx, 9, &x, &y, &z, &re),
+          "  with the flag set the cell left is what has to have a floor");
+}
+
+static void TestCanStepLarge(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (a large unit's footprint)\n");
+
+    World_Setup(pW, &ctx, 1, false, 2);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  accepted with a clear footprint");
+
+    /* Direction 2 covers (3,2) and (4,2) on the current row and (3,3)/(4,3) behind it;
+     * the far column is blank-tested at 0x29194 and 0x291d0. */
+    World_Setup(pW, &ctx, 1, false, 2);
+    World_Blank(pW, 1, 4, 2);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  a blank cell in the footprint refuses the step");
+
+    World_Setup(pW, &ctx, 1, false, 2);
+    World_Occupy(pW, 1, 4, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  a stranger in the footprint refuses it, downed or not");
+
+    World_Setup(pW, &ctx, 1, false, 2);
+    g_Foreign.bStatus = 1;
+    World_Occupy(pW, 1, 4, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  the large gate has no bUnk148 escape");
+
+    World_Setup(pW, &ctx, 1, false, 2);
+    World_Occupy(pW, 1, 4, 2, &g_Swap);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  the swap partner does not");
+
+    /* The footprint's far corner gets its own bounds test (0x2915c). With the mover at
+     * x = 8 the candidate at x = 9 is inside a ten-cell map and passes the head, but
+     * the corner at x = 10 is not, and that is what refuses the step. */
+    World_Setup(pW, &ctx, 1, false, 2);
+    pW->probe.nCurX = 8;
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  a footprint hanging off the map edge is refused");
+
+    /* A normal unit has no second bounds test, so the same step goes through. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    pW->probe.nCurX = 8;
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  the same step for a normal unit is accepted");
+}
+
+static void TestCanStepAnchored(World *pW)
+{
+    StepCtx ctx;
+    i32 x, y, z;
+    bool re;
+
+    printf("Unit_CanStepTo (the re-anchor reaches the caller)\n");
+
+    /* Down: the candidate has no floor, so the step is really taken one layer lower,
+     * and the seam reports the layer the settled cell lives in. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_NoFloor(pW, 1, 3, 2);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  accepted");
+    CheckEqI32(z, 0, "  output layer follows the anchored cell");
+    CheckEqI32(x, 3, "  the column does not move");
+    Check(re, "  the re-anchor is reported");
+
+    /* Up. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_Ceil(pW, 1, 2, 2, -20);
+    World_NoFloor(pW, 2, 2, 2);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re), "  accepted");
+    CheckEqI32(z, 2, "  output layer follows the anchored cell");
+    Check(re, "  reported");
+
+    /* The arm's occupant gate is weaker than the head's: it accepts an operative
+     * stranger as soon as bUnk148 is clear (0x27e0c..0x27e20). The head only ever sees
+     * the pre-anchor candidate, so here it never sees this unit at all. */
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_NoFloor(pW, 1, 3, 2);
+    World_Occupy(pW, 0, 3, 2, &g_Foreign);
+    Check(CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  the arm gate accepts an operative stranger the head would refuse");
+
+    World_Setup(pW, &ctx, 0, false, 2);
+    World_NoFloor(pW, 1, 3, 2);
+    g_Foreign.bUnk148 = 1;
+    World_Occupy(pW, 0, 3, 2, &g_Foreign);
+    Check(!CanStep(pW, &ctx, 2, &x, &y, &z, &re),
+          "  and refuses it once bUnk148 is set");
+}
+
 int main(void)
 {
     static World world;
@@ -348,6 +660,14 @@ int main(void)
     TestCeilingReject(&world);
     TestRejectSkippedAtLayer3(&world);
     TestCandidateCeiling(&world);
+
+    TestCanStepPlain(&world);
+    TestCanStepBlank(&world);
+    TestCanStepOccupant(&world);
+    TestCanStepWalls(&world);
+    TestCanStepVertical(&world);
+    TestCanStepLarge(&world);
+    TestCanStepAnchored(&world);
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

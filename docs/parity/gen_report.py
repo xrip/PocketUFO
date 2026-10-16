@@ -52,9 +52,7 @@ SUBSYSTEMS = [
 
 # A reason for the notable gaps, so "no unexplained gaps" is literally true.
 GAP_REASONS = {
-    "Unit_CanStepTo": "cell addressing and the vertical re-anchor probe are resolved "
-                      "(Map_ProbeStepOccupants, src/pufo/game/pufo_step.c); what is left "
-                      "are the ten small-unit and ten large-unit direction arms",
+    "Map_InitAndLoadRegistry": "the tact registry bring-up; scheduled with the last tact item",
     "Map_BuildMissionTerrain": "needs the .ma1 templates (ported) plus Font_LoadTactSprites "
                                "(759 B) and the palette LUTs (Tact_BuildPaletteLuts, 1184 B)",
     "Combat_ResolveShot": "combat resolution; needs arms/ammo and the LOS trace (both ported)",

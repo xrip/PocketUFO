@@ -101,16 +101,21 @@ u8 Map_FacingDelta(u8 nFrom, u8 nTo);
  * positive (the original does not flip at 4, only above it). */
 bool Map_bFacingTurnPositive(u8 nFrom, u8 nTo);
 
-/* A step probe. Mirrors the predicate of Unit_CanStepTo (0x27bb8), which reads the cell grid and
- * the selected unit through globals. It is injected here because the real
- * function is ~14.7 KB and is its own body of work; the flood fill above it is
- * what this module owns.
+/* A step probe: Unit_CanStepTo (0x27bb8) behind a seam. The original reads the grid,
+ * the selected unit and the swap partner through globals and writes the settled
+ * candidate back into globals, which is what Path_ExpandCell reads at
+ * 0x2b748..0x2b7bc; the port passes the candidate and the re-anchor report out
+ * through arguments instead.
  *
- * Implementations must fill the neighbour coordinates when the step is allowed
- * and return true; on false the outputs are ignored. */
+ * Implementations must fill the neighbour coordinates and *pbReanchored when the step
+ * is allowed; on false the outputs are ignored. *pbReanchored is the original's
+ * g_bStepReanchored: true when the probe moved the candidate a layer on its own
+ * (Map_ProbeStepOccupants). That flag, not the search flag, is what suppresses the
+ * +4 layer surcharge at 0x2b764 and what Path_ExpandCell stores into bFlags29 bit 3
+ * at 0x2b7a4. */
 typedef bool (*PathStepProbe)(i32 nX, i32 nY, i32 nLayer, u8 nDir,
                               i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
-                              void *pUser);
+                              bool *pbReanchored, void *pUser);
 
 typedef struct PathScratch {
     MapCell *apListA[PUFO_PATH_LIST_CAP];
@@ -135,9 +140,10 @@ typedef MapCell *(*PathCellLookup)(i32 nX, i32 nY, i32 nLayer, void *pUser);
 
 /* bFlag is the original's sixth argument, taken by Unit_PathToCell from
  * g_aUnitTypeRecord[4 * nUnitType] (0x2c33c). It reaches Path_ExpandCell through
- * the global byte_10DB84 in the original; here it is an argument. Set, it lifts
- * both rules the expansion applies to a unit that is not on its seed layer: the
- * +4 layer surcharge and the "no floor sprite, do not expand" gate. */
+ * the global g_bPathSearchFlag in the original; here it is an argument. Inside the
+ * expansion it lifts exactly one rule: the "no floor sprite, do not expand" gate at
+ * 0x2b6ac. It does NOT touch the +4 layer surcharge - that is gated on the probe's
+ * own g_bStepReanchored report (0x2b75c), not on this flag. */
 bool Path_ComputeReachable(PathScratch *pScratch,
                            i32 nSeedX, i32 nSeedY, i32 nSeedLayer, u8 nSeedFacing,
                            i32 nTargetX, i32 nTargetY, i32 nTargetLayer, bool bFlag,

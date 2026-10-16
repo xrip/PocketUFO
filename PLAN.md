@@ -2035,9 +2035,11 @@ Order is by what unblocks what. Each item ends with gates + commit.
 - [x] **part 69, the path replay: `Unit_PathToCell (0x2c2a8, 1052 B)`** — the move tail the map click and both
   enemy-AI paths were waiting on. **`Map_ComputeReachable`'s sixth argument was being dropped.** The original
   stores it to the global `g_bPathSearchFlag` @ 0x10db84 (0x2b850/0x2b860) and `Path_ExpandCell` reads it back
-  (0x2b6ac); the port hardcoded it clear. Set, it lifts *two* rules at once — the +4 layer surcharge and the
-  "no floor sprite, do not expand" gate — and it comes from `g_aUnitTypeRecord[4 * nUnitType]`, so it is set for
-  types 3, 7, 8, 11, 13 and 18. It is now an argument, and both effects are asserted.
+  (0x2b6ac); the port hardcoded it clear. It comes from `g_aUnitTypeRecord[4 * nUnitType]`, so it is set for
+  types 3, 7, 8, 11, 13 and 18, and it is an argument now. **Corrected in part 71:** this part said the flag
+  lifts two rules, the +4 layer surcharge and the "no floor sprite, do not expand" gate. Only the second one is
+  the flag's — the surcharge is gated on the probe's own `g_bStepReanchored` (0x2b75c), and the port had been
+  using the flag for it and for `bFlags29` bit 3.
   **The walk back re-checks the layer.** `bFlags29` bit 3 (set by `Path_ExpandCell` whenever the search flag was
   clear) opens two probes: the layer above needs no floor at the old column and a cost at the new one
   (0x2c458/0x2c478), the layer below needs a ceiling with `iCeilParam < -15` and a cost (0x2c4d8). The two
@@ -2099,6 +2101,42 @@ Order is by what unblocks what. Each item ends with gates + commit.
   38 new checks (12739 total), 7 ledger rows (182), coverage 905/1103 (82.0%) and 447324/598792 (74.7%).
   **Deviation:** the original dereferences the layer-gated pointers blindly; the port tests them for NULL first,
   which is why the three bugs above are recorded as not reproduced.
+
+- [x] **part 71, the step legality: `Unit_CanStepTo (0x27bb8, 14,716 B)`** — the last blocker in the tact
+  subsystem, and the biggest single function ported so far. It seeds `g_nStepDstX/Y/Layer` from
+  `aDirDeltaXY[3 * g_nStepDir]` itself (0x27bd8..0x27c24), runs a head every direction shares, then dispatches
+  through a ten-way switch, with a second ten-way switch for a large unit at 0x28A44.
+  **The head.** Normal unit: the candidate must be in range, must not be blank (`MapCell_TestFlag` 0), and its
+  occupant must be the swap partner, the mover, or a foreign unit that is not flagged at `bUnk148`, is not
+  operative, and is not unit type 16 or 17 (0x27cb0..0x27d18). Large unit: only the range test, and
+  `g_pStepDstCell` is settled before the switch — a large unit's blank tests are per-arm, over its whole
+  footprint.
+  **The arms.** Each runs `Map_ProbeStepOccupants` first — except directions 8 and 9, which never call it,
+  because the step is already vertical — then the arm's own occupant gate, then a direction-specific list of
+  blank, wall and occupant tests. The lists are uneven on purpose: a diagonal direction tests the walls of the
+  cells it passes between as well as the cell it enters, which is how the original stops a mover cutting a
+  corner through a wall. A large unit's arms test the four cells of its 2x2 footprint.
+  **The seam had to carry the settled cell, not the candidate.** `Path_ExpandCell` takes the neighbour through
+  `g_pStepDstCell` (0x2b6d4, read at 0x2b768), and a downward re-anchor moves that cell without moving
+  `g_nStepDstLayer`. The port reports `g_nStepAdjLayer` for the horizontal directions — the layer the settled
+  cell actually lives in — and `g_nStepDstLayer` for the vertical pair, which never calls the probe.
+  **ORIGINAL BUG (0x28c90):** every large arm re-runs `Map_IsValidCell` for the footprint's far corner and
+  passes `nLayer = 0`, although the function does test the layer, so the call is really only an x/y test.
+  Harmless because the head validated the layer, but not what the call says.
+  **ORIGINAL BUG (0x27e0c):** the arms' occupant gate is weaker than the head's — `bUnk148` alone lets a foreign
+  unit through, with no operative or unit-type test. For a step the probe did not move the head already refused
+  that cell, so the weaker gate is only reachable through a re-anchored candidate.
+  **ORIGINAL BUG (0x2ab80):** the large unit's vertical arms chain the same two floor tests four times over in
+  direction 8 and seven times over in direction 9, always the same two cells.
+  **The correction this unit forced, 0x2b75c.** `Path_ExpandCell` gates the +4 layer surcharge on
+  `g_bStepReanchored`, not on `g_bPathSearchFlag`, and stores that same byte into `bFlags29` bit 3 at 0x2b7a4.
+  The port used the search flag for both. Since a horizontal direction only changes layer through the probe's own
+  anchor — which sets the flag — the surcharge is really the vertical directions' price, and the port was
+  charging it to re-anchored horizontal steps and setting bit 3 on the wrong condition. The `PathStepProbe` seam
+  now carries a re-anchor report, and `tests/test_path.c` pins both halves.
+  48 new checks (12787 total), 4 ledger rows (186), coverage 906/1103 (82.1%) and 462040/598792 (77.2%). The
+  tact subsystem is at 211 of 214 functions and 1308 bytes, all three of them the atexit registry glue and
+  `Map_InitAndLoadRegistry`.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -2424,6 +2462,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the tactical map click and the mode-6 confirm (`Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`; the one-layer-down cursor cell, the four asymmetric latch arms, the two disagreeing melee gates, two wrong text-record indices in the existing port fixed, `audit_names` now at zero flags) | 56/56 (Release) | 12651 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 | the path replay (`Unit_PathToCell`; the dropped `Map_ComputeReachable` flag that hid half its effect, the layer re-check on `bFlags29` bit 3 with its two disagreeing ceiling thresholds, the 27-byte facing table, the layer delta that lives in the `nFacing` slot, 6 original findings recorded) | 56/56 (Release) | 12701 | 904/1103 (82.0%) | 446256/598792 (74.5%) | 40 checked, 0 mismatched |
 | the step probe (`Map_ProbeStepOccupants`; the two vertical re-anchors and their asymmetric layer bookkeeping, the large unit's second column, the up anchor that cannot fire for a large unit going east, three unguarded reads of layer-gated state, 7 original findings recorded) | 57/57 (Release) | 12739 | 905/1103 (82.0%) | 447324/598792 (74.7%) | 40 checked, 0 mismatched |
+| the step legality (`Unit_CanStepTo`; the head and twenty direction arms, the seam carrying the settled cell instead of the candidate, the surcharge and `bFlags29` bit 3 corrected to the probe's re-anchor report, 4 original findings recorded) | 57/57 (Release) | 12787 | 906/1103 (82.1%) | 462040/598792 (77.2%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

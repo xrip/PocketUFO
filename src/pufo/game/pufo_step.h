@@ -59,10 +59,38 @@
  *
  * ## Unit_CanStepTo
  *
- * Unit_CanStepTo (0x27bb8, 14,716 B) is the direction switch on top of this probe -
+ * Unit_CanStepTo @ 0x27bb8 (14,716 B) is the direction switch on top of this probe:
  * ten arms for a normal unit and ten for a large one, each checking the destination
- * footprint for blank cells, blocking walls and foreign occupants. It is ported
- * separately; until it lands, Path_ComputeReachable runs an injected PathStepProbe.
+ * footprint for blank cells, blocking walls and foreign occupants. It seeds
+ * g_nStepDstX/Y/Layer itself from aDirDeltaXY[g_nStepDir] (0x27bd8..0x27c24), runs a
+ * head test common to every direction, then dispatches.
+ *
+ * The head. Normal unit: the candidate must be in range, must not be blank
+ * (MapCell_TestFlag 0), and its occupant must be the swap partner, the mover, or a
+ * foreign unit that is not flagged at bUnk148, is not operative, and is not unit type
+ * 16 or 17. Large unit: only the range test, and g_pStepDstCell is set before the
+ * switch.
+ *
+ * The arms. Each one runs Map_ProbeStepOccupants first (except the two vertical
+ * directions, 8 and 9, which never call it) and then a direction-specific list of
+ * blank-cell, occupant and wall tests over the footprint it is about to occupy. The
+ * wall tests are the interesting part: a normal unit tests the walls of the cells it
+ * leaves and the cell it enters, and a large unit tests the walls of all four cells of
+ * its 2x2 footprint, which is why the same flag shows up on three or four cells at
+ * once.
+ *
+ * The occupant gate is weaker inside the arms than in the head: an arm accepts a
+ * foreign occupant as soon as its bUnk148 is clear, without the operative or unit-type
+ * tests the head runs.
+ *
+ * Deviations: the original indexes its fixed 60x60x4 grid with no bounds test inside
+ * the arms, so an out-of-range coordinate reads a different cell of the same array;
+ * the port's injected lookup returns NULL there and every helper treats NULL as "no
+ * flag, no occupant". The one cell the port still dereferences blindly is
+ * Map_ProbeStepOccupants' candidate, because the original does - an injected lookup
+ * has to cover every coordinate Map_IsValidCell calls valid. The original also passes
+ * nLayer = 0 to the large arms' second Map_IsValidCell call (0x28c90), which makes
+ * that call a pure x/y test - the layer was already validated by the head.
  */
 #ifndef PUFO_STEP_H
 #define PUFO_STEP_H
@@ -101,6 +129,7 @@ typedef struct StepProbe {
 typedef struct StepCtx {
     MapCellLookup  pfnLookup;
     void          *pLookupUser;
+    const MapGeom *pGeom;           /* the grid bounds Map_IsValidCell tests */
     Soldier       *pSelUnit;        /* Map.pSelUnit @ Map+0x15334 */
     Soldier       *pSwapUnit;       /* Map_pPathDestUnit @ Map+0x150f4 */
     bool           bSearchFlag;     /* g_bPathSearchFlag @ 0x10db84 */
@@ -115,5 +144,15 @@ typedef struct StepCtx {
  * The original recomputes Unit_bIsLarge(pSelUnit) eight times in this function; the
  * port computes it once, which is the same value every time. */
 bool Map_ProbeStepOccupants(const StepCtx *pCtx);
+
+/* Unit_CanStepTo @ 0x27bb8, behind Path_ComputeReachable's PathStepProbe seam; pUser
+ * is a StepCtx *. It seeds the probe's candidate from g_aStepDir[nDir] the way the
+ * original seeds its globals (0x27bd8..0x27c24), runs the head test every direction
+ * shares, then the direction arm. On true the outputs carry the settled candidate -
+ * g_nStepDstX, g_nStepDstY, g_nStepDstLayer - and the probe's re-anchor report, which
+ * is what Path_ExpandCell reads at 0x2b748..0x2b7bc. */
+bool Unit_CanStepTo(i32 nX, i32 nY, i32 nLayer, u8 nDir,
+                    i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                    bool *pbReanchored, void *pUser);
 
 #endif /* PUFO_STEP_H */

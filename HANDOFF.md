@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 905 / 1103 (82.0%)
-                                             bytes cited:     447324 / 598792 (74.7%)
-python docs/parity/audit_credits.py       -> credited functions: 905, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 906 / 1103 (82.1%)
+                                             bytes cited:     462040 / 598792 (77.2%)
+python docs/parity/audit_credits.py       -> credited functions: 906, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 382 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
-python docs/parity/audit_bugs.py          -> ledger rows: 182, ORIGINAL BUG markers in src/pufo: 69
+python docs/parity/audit_bugs.py          -> ledger rows: 186, ORIGINAL BUG markers in src/pufo: 72
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,8 +229,26 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 57 suites: **12739**. Coverage as of the latest commit: **905 / 1103
-functions (82.0%)**, **447324 / 598792 bytes (74.7%)**. This unit ported the step probe —
+Test checks run across the 57 suites: **12787**. Coverage as of the latest commit: **906 / 1103
+functions (82.1%)**, **462040 / 598792 bytes (77.2%)**. This unit ported the step legality —
+`Unit_CanStepTo` (0x27bb8, 14,716 B), the last blocker in the tact subsystem and the largest single function
+ported so far. It seeds the candidate from `aDirDeltaXY[3 * g_nStepDir]` itself, runs a head every direction
+shares (in range, not blank, and an occupant that is the swap partner, the mover, or a foreign unit that is not
+flagged at `bUnk148`, not operative and not unit type 16 or 17), then dispatches through a ten-way switch, with
+a second ten-way switch for a large unit at 0x28A44. Every arm runs `Map_ProbeStepOccupants` first except the
+two vertical directions, which never call it. The arms' cell lists are the substance: a diagonal direction tests
+the walls of the cells it passes between as well as the cell it enters, and a large unit's arms test all four
+cells of its 2x2 footprint. **The seam had to change:** `Path_ExpandCell` takes the neighbour through
+`g_pStepDstCell` (read at 0x2b768), and a downward re-anchor moves that cell without moving
+`g_nStepDstLayer`, so the port reports `g_nStepAdjLayer` for the horizontal directions and `g_nStepDstLayer` for
+the vertical pair. **The correction it forced (0x2b75c):** the +4 layer surcharge and `bFlags29` bit 3 both come
+from the probe's `g_bStepReanchored` report, not from the search flag; the port used the flag for both, which
+charged the surcharge to re-anchored horizontal steps and set bit 3 on the wrong condition. Three original
+defects recorded: the large arms pass `nLayer = 0` to their footprint corner's bounds test (0x28c90), the arms'
+occupant gate is weaker than the head's (0x27e0c), and the large vertical arms chain the same two floor tests
+four and seven times over (0x2ab80). 48 new checks, 4 ledger rows. IDB: `Unit_CanStepTo` given the `Map *`
+signature and comments on the head, the three defects and the surcharge gate.
+Unit 70 ported the step probe —
 `Map_ProbeStepOccupants` (0x2778c, 1,068 B), the half of the step test that decides *which cell* a step
 is before any wall or occupant is examined. A step is not always the cell the direction delta points at:
 the probe tries a downward re-anchor (0x27990, candidate floorless, current cell floored, search flag
@@ -254,7 +272,7 @@ the original, seeded by `Path_ExpandCell`, `Map_ComputeFov` (0x2deac), `Map_Scan
 7 ledger rows. IDB: twelve step globals named (`g_nStepCurX`, `g_nStepCurY`, `g_nStepDir`, `g_nStepDstX`,
 `g_nStepDstY`, `g_nStepDstLayer`, `g_pStepCurCell`, `g_pStepDstCell`, `g_pStepCellAbove`, `g_nStepAdjLayer`,
 `g_bStepReanchored`, `g_nStepCeilParamNeg`) and `Map_ProbeStepOccupants` given the `Map *` signature.
-The unit before it ported the path replay —
+Unit 69 ported the path replay —
 `Unit_PathToCell` (0x2c2a8, 1,052 B), the move tail the map click and both enemy-AI paths were waiting
 on. The flood fill it drives was already ported, and that is where the one real defect was: the port
 dropped `Map_ComputeReachable`'s sixth argument, which the original stores to the global
@@ -274,7 +292,7 @@ step's draw offset reads at 0x50FBC); renamed to `nLayerDelta` in the port and i
 `g_bPathSearchFlag`, and the three Map scratch fields named (`Map_apPathCells` @ Map+0x4a44,
 `Map_nPathCount` @ Map+0x4e44, and `Map_pPathDestUnit` @ Map+0x150f4 — the swap partner
 `Unit_CanStepTo` compares cell occupants against).
-The unit before that ported the tactical map click and the mode-6 confirm — `Tact_HandleMapClick`
+Unit 68 ported the tactical map click and the mode-6 confirm — `Tact_HandleMapClick`
 (0x1512c, 1,104 B) and `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B): the one-layer-down cursor cell
 (`apCells[nLayerScratch-1][nCursorY][nCursorX]`, base 0x11AF8), the four asymmetric latch arms (1 and 2
 kick the queue, 3 does not, 4 clears the latch, 0 has three exits before its move), the -23 ceiling
@@ -776,7 +794,6 @@ This is the shortest chain that produces a real game session, in dependency orde
 | Address | Function | Bytes | Note |
 |---|---|---|---|
 | 0x8c180 | `Geoscape_Draw` | 33,744 | the geoscape renderer |
-| 0x27bb8 | `Unit_CanStepTo` | 14,716 | |
 | 0x9b5f4 | `Ui_DrawBaseInfo` | 10,196 | |
 | 0x872d0 | `Geoscape_OnPointer` | 8,576 | needs a fresh context window |
 | 0x89450 | `Geoscape_OnPointerUp` | 6,992 | needs a fresh context window |
@@ -790,9 +807,9 @@ This is the shortest chain that produces a real game session, in dependency orde
 `Tact_InitMission`, `Tact_DrawCommandPads`, `Tact_CheckBattleEnd`, `Unit_ApplyFallDamage`,
 `Tact_ProcessFallAction` and `Tact_ProcessFireAction` are no longer listed here.)
 
-`tact` is now down to 4 functions and 16,024 bytes, and 14,716 of those are `Unit_CanStepTo` — the ten
-direction arms for a normal unit and the ten for a large one. Its 1,068-byte probe helper
-`Map_ProbeStepOccupants` landed in unit 70, so the remaining work is the arms themselves.
+`tact` is now down to 3 functions and 1,308 bytes: `Map_InitAndLoadRegistry` (1,284 B) plus the two 12-byte
+atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
+unit 71 — was the last game-behaviour gap in the subsystem.
 
 `strat` is the weakest subsystem by bytes: 86,792 of 160,496 (54.1%), because `Geoscape_Draw` and the
 pointer handlers alone are 49 KB of it. `strat-ui` is 221 of 245 functions but 80,516 of 121,164 bytes
@@ -992,8 +1009,14 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-69 markers in the source, 182 ledger rows. Examples:
+72 markers in the source, 186 ledger rows. Examples:
 
+- `0x2b75c` — the +4 layer surcharge and `bFlags29` bit 3 both come from the probe's `g_bStepReanchored`
+  report, not from the search flag. The port used the flag for both until unit 71.
+- `0x28c90` — every large-unit arm re-tests the far corner of its footprint with `nLayer = 0`, although
+  `Map_IsValidCell` does test the layer; the call is really only an x/y test.
+- `0x27e0c` — the occupant gate inside the direction arms is weaker than the head's: `bUnk148` alone lets a
+  foreign unit through.
 - `0x27a94` / `0x27a88` / `0x27ae0` — three reads of layer-gated state with no guard: `var_14`,
   `g_pStepCellAbove` and `var_8` are each written only when the layer is below 3 and dereferenced
   regardless, so a probe on layer 3 reads a stale pointer or an unwritten stack slot.
@@ -1275,11 +1298,11 @@ does.
      either.
    - **`Unit_PathToCell` (0x2c2a8, 1,052 B) is ported** (unit 69, `src/pufo/game/pufo_path.c`) and its signature
      matches the `pfnPathToCell` seam in `MapClickCtx`, `EnemyAiActCtx` and `EnemyAiTickCtx`, so the real
-     function drops into all three. The probe half of the *step predicate* the flood fill runs is in too —
-     `Map_ProbeStepOccupants` (0x2778c, 1,068 B), unit 70, `src/pufo/game/pufo_step.c` with 38 checks in
-     `tests/test_step.c`. What is still missing is `Unit_CanStepTo` (0x27bb8, 14,716 B) itself: its ten
-     small-unit and ten large-unit direction arms. That 14.7 KB is now the largest single blocker in the tact
-     subsystem, injected today as the `PathStepProbe`.
+     function drops into all three. So is the whole *step predicate* the flood fill runs:
+     `Map_ProbeStepOccupants` (0x2778c, 1,068 B, unit 70) and `Unit_CanStepTo` (0x27bb8, 14,716 B, unit 71), both
+     in `src/pufo/game/pufo_step.c`, 82 checks in `tests/test_step.c`. `Unit_CanStepTo` already matches the
+     `PathStepProbe` seam, so a `StepCtx` over the real `GameMap` is all that stands between the flood fill and
+     real legality — and nothing in the app builds one yet.
    The enemy-turn group is now ported too: `BeforeEnemyStep` (0x4b9b8, 2,792 B) and `AfterEnemyStep`
    (0x4c4a0, 1,368 B) live in `src/pufo/game/pufo_turn.c` behind `EnemyStepCtx`, driven from
    `tests/test_turn.c`. What is still missing is the app layer building an `EnemyStepCtx` — its nine seams

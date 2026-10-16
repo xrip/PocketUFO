@@ -108,7 +108,7 @@ bool Path_EnqueueCell(PathScratch *pScratch, MapCell *pCell)
  * The first is what makes this a flood fill rather than a blind sweep: only
  * cells that have been assigned a cost are expanded. */
 static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
-                            i32 nSeedLayer, bool bFlag, u8 nInFacing,
+                            bool bFlag, u8 nInFacing,
                             PathScratch *pScratch,
                             PathCellLookup pfnLookup, PathStepProbe pfnProbe,
                             void *pUser)
@@ -131,11 +131,13 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
     }
 
     for (nDir = 0; nDir < PUFO_PATH_DIR_COUNT; ++nDir) {
-        i32 nNx = nCellX;
-        i32 nNy = nCellY;
-        i32 nNz = nCellLayer;
+        i32  nNx = nCellX;
+        i32  nNy = nCellY;
+        i32  nNz = nCellLayer;
+        bool bReanchored = false;
 
-        if (!pfnProbe(nCellX, nCellY, nCellLayer, nDir, &nNx, &nNy, &nNz, pUser)) {
+        if (!pfnProbe(nCellX, nCellY, nCellLayer, nDir,
+                      &nNx, &nNy, &nNz, &bReanchored, pUser)) {
             continue;
         }
         {
@@ -147,10 +149,14 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
                 continue;
             }
 
-            /* Cost, exactly as the original composes it:
+            /* Cost, exactly as the original composes it (0x2b704..0x2b768):
              *   cur->nPathCost (u16) + facing delta + 4
              *   + 2 when the direction is diagonal (odd, and below 8)
-             *   + 4 when changing layer and the flag is not set */
+             *   + 4 when the step changes layer and the probe did not re-anchor it.
+             * The surcharge is gated on g_bStepReanchored (0x2b75c), not on bFlag:
+             * the only way a horizontal direction changes layer is the probe's own
+             * upward anchor, which sets that flag, so in practice the surcharge is
+             * the vertical directions' price and bFlag never reaches it. */
             nCost = (u16)pCur->nPathCost;
             nNew  = (i32)nCost
                   + (i32)Map_FacingDelta(nDir, nInFacing)
@@ -158,7 +164,7 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
             if (nDir < 8u && (nDir % 2) == 1) {
                 nNew += PUFO_PATH_DIAGONAL_COST;
             }
-            if (nNz != nSeedLayer && !bFlag) {
+            if (nNz != nCellLayer && !bReanchored) {
                 nNew += PUFO_PATH_LAYER_COST;
             }
 
@@ -167,7 +173,9 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
                 continue;
             }
             pNext->nPathCost   = nNew;
-            pNext->bFlags29 = (u8)((pNext->bFlags29 & 0xF7) | (8 * (bFlag ? 0 : 1)));
+            /* 0x2b794..0x2b7a8: bFlags29 bit 3 is the re-anchor report, not the
+             * search flag. Unit_PathToCell reads it back at 0x2c420. */
+            pNext->bFlags29 = (u8)((pNext->bFlags29 & 0xF7) | (8 * (bReanchored ? 1 : 0)));
             pNext->bPathDir   = nDir;
             bAny = true;
 
@@ -254,7 +262,7 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListA[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, bFlag, pCell->bPathDir,
+                                  bFlag, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountA = 0;
@@ -271,7 +279,7 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListB[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, bFlag, pCell->bPathDir,
+                                  bFlag, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountB = 0;
@@ -417,10 +425,11 @@ bool Unit_PathToCell(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pVoid)
                 nWalkX += g_aStepDir[nOpp].dx;
                 nWalkY += g_aStepDir[nOpp].dy;
 
-                /* 0x2c420: bFlags29 bit 3 is set by Path_ExpandCell whenever the
-                 * flood ran without its flag. It marks the cell as one whose layer
-                 * bookkeeping has to be re-checked, because a horizontal step here
-                 * may really have been taken one layer up or one layer down. */
+                /* 0x2c420: bFlags29 bit 3 is the re-anchor report Path_ExpandCell
+                 * stored at 0x2b7a4 - set when the probe moved this cell one layer
+                 * on its own. It marks the cell as one whose layer bookkeeping has
+                 * to be re-checked, because a step recorded as horizontal here may
+                 * really have been taken one layer up or one layer down. */
                 if ((pCell->bFlags29 & 8u) != 0) {
                     bool bMoved = false;
 

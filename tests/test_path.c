@@ -128,7 +128,8 @@ static MapCell *Grid_Lookup(i32 nX, i32 nY, i32 nLayer, void *pUser)
 }
 
 static bool Grid_Probe(i32 nX, i32 nY, i32 nLayer, u8 nDir,
-                       i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer, void *pUser)
+                       i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                       bool *pbReanchored, void *pUser)
 {
     Grid *pG = (Grid *)pUser;
 
@@ -136,6 +137,7 @@ static bool Grid_Probe(i32 nX, i32 nY, i32 nLayer, u8 nDir,
         return false;
     }
     pG->nProbeCalls += 1;
+    *pbReanchored = false;
 
     *pnOutX     = nX + g_aStepDir[nDir].dx;
     *pnOutY     = nY + g_aStepDir[nDir].dy;
@@ -150,6 +152,21 @@ static bool Grid_Probe(i32 nX, i32 nY, i32 nLayer, u8 nDir,
     if (pG->aBlocked[*pnOutY][*pnOutX]) {
         return false;
     }
+    return true;
+}
+
+/* The same probe, reporting that it moved the candidate a layer on its own - the
+ * original's g_bStepReanchored, which is what suppresses the layer surcharge at
+ * 0x2b764 and sets bFlags29 bit 3 at 0x2b7a4. */
+static bool Grid_ProbeAnchored(i32 nX, i32 nY, i32 nLayer, u8 nDir,
+                               i32 *pnOutX, i32 *pnOutY, i32 *pnOutLayer,
+                               bool *pbReanchored, void *pUser)
+{
+    if (!Grid_Probe(nX, nY, nLayer, nDir, pnOutX, pnOutY, pnOutLayer,
+                    pbReanchored, pUser)) {
+        return false;
+    }
+    *pbReanchored = true;
     return true;
 }
 
@@ -360,14 +377,28 @@ static void TestReachableFlag(void)
 
     printf("Path_ComputeReachable (the bFlag argument)\n");
 
-    /* The layer surcharge is the flag's most direct effect: the same vertical step
-     * costs 9 with the flag clear and 5 with it set. */
+    /* The flag does not reach the layer surcharge. 0x2b75c gates it on the probe's
+     * own re-anchor report, not on bFlag, so the same vertical step costs the same
+     * with the flag set as with it clear. */
     Grid_Init(&grid);
     Check(Path_ComputeReachable(&grid.scratch, 2, 2, 0, DIR_UP, 2, 2, 1, true,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  vertical move reachable with the flag set");
+    CheckEqI32(grid.aCells[1][2][2].nPathCost, 9,
+               "  the flag does NOT lift the +4 layer surcharge");
+    CheckEqI32(grid.aCells[1][2][2].bFlags29 & 8u, 0,
+               "  bFlags29 bit 3 stays clear when the probe did not re-anchor");
+
+    /* The probe's report is what gates both. Same flood, probe says it moved the
+     * candidate a layer itself: no surcharge, and bit 3 set (0x2b7a4). */
+    Grid_Init(&grid);
+    Check(Path_ComputeReachable(&grid.scratch, 2, 2, 0, DIR_UP, 2, 2, 1, false,
+                                Grid_Lookup, Grid_ProbeAnchored, &grid),
+          "  re-anchored vertical move reachable");
     CheckEqI32(grid.aCells[1][2][2].nPathCost, 5,
-               "  flag set drops the +4 layer surcharge");
+               "  the re-anchor report drops the +4 layer surcharge");
+    CheckEqI32(grid.aCells[1][2][2].bFlags29 & 8u, 8,
+               "  and it is what sets bFlags29 bit 3");
 
     /* The floor gate is the other effect. The same floorless column that blocks the
      * flood in TestFloorGate does not block it when the flag is set. */
