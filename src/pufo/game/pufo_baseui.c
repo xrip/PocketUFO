@@ -2504,6 +2504,108 @@ i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv)
     return nLimit;
 }
 
+/* Transfer_WriteErrorDump @ 0x996e4: the transfer error dump. The header carries the name build, the
+ * labelled blocks, the signedness of every value and the deviations. */
+static const i16 s_nDumpCrlf = 2573; /* 0x99784: the 2-byte value every line ends with, 0x0D 0x0A on the wire */
+
+static void DumpEol(HANDLE hFile)
+{
+    DWORD cbWritten;
+
+    (void)WriteFile(hFile, &s_nDumpCrlf, 2u, &cbWritten, NULL); /* 0x997D0: fwrite(&var_358, 2, 1, f) */
+}
+
+static void DumpText(HANDLE hFile, const char *psz)
+{
+    DWORD cbWritten;
+
+    (void)WriteFile(hFile, psz, (DWORD)strlen(psz), &cbWritten, NULL); /* 0x997A8..0x997BC */
+}
+
+/* The original fwrites the label and the number separately (0x9980C then 0x9983C); one line each. */
+static void DumpValue(HANDLE hFile, const char *pszLabel, i32 nValue)
+{
+    char szNum[400]; /* v72 @ sp+0x10, the 400-byte buffer j_itoa writes into */
+
+    DumpText(hFile, pszLabel);
+    snprintf(szNum, sizeof(szNum), "%d", nValue);
+    DumpText(hFile, szNum);
+    DumpEol(hFile);
+}
+
+i32 Transfer_WriteErrorDump(const TransferDumpEnv *pEnv)
+{
+    char szPath[40]; /* v73 @ sp+0x1A0 */
+    char szNum[400]; /* v72 @ sp+0x10 and v74 @ sp+0x1C8 */
+    HANDLE hFile;
+    i32 nSiteCount;
+    i32 nSite;
+
+    if (pEnv == NULL) {
+        return -1;
+    }
+
+    nSiteCount = (pEnv->pnSiteCount != NULL) ? *pEnv->pnSiteCount : 0;
+
+    /* 0x996EC..0x9977C: szAppDir + "t_error" + itoa(Game_RandU16(0xE100)) + ".txt", then fopen("wb").
+     * The original's strcpy is unbounded into this 40-byte buffer and it never tests the FILE *. */
+    szPath[0] = '\0';
+    if (pEnv->pszAppDir != NULL) {
+        pufo_strncpy(szPath, pEnv->pszAppDir, sizeof(szPath));
+    }
+    (void)pufo_strcat(szPath, "t_error", sizeof(szPath));
+    snprintf(szNum, sizeof(szNum), "%u", (u32)Game_RandU16(0xE100u));
+    (void)pufo_strcat(szPath, szNum, sizeof(szPath));
+    (void)pufo_strcat(szPath, ".txt", sizeof(szPath));
+
+    /* The original calls fopen(path, "wb"). The MSVC CRT deprecates the whole fopen family and the
+     * project keeps /WX on project-wide (see util/pufo_str.h), so the port writes through the Win32
+     * file API it already uses in the asset and save layers; the bytes on disk are the same. */
+    hFile = CreateFileA(szPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return -1; /* deviation: the original hands the NULL FILE * to every fwrite and to fclose */
+    }
+
+    DumpText(hFile, "TRANSFERS");                                        /* 0x99780 */
+    DumpEol(hFile);
+    DumpValue(hFile, "count=", nSiteCount);                              /* 0x997D4 */
+    DumpValue(hFile, "(basenumber)current base=", (i32)pEnv->bBaseIdx);  /* 0x99854, a2 sign-extended */
+    DumpValue(hFile, "problem with obj=", pEnv->nObjSlot);               /* 0x998DC */
+
+    if (nSiteCount > 0 && pEnv->aSites != NULL) {
+        for (nSite = 0; nSite < nSiteCount; ++nSite) {
+            const SmapSite *pSite = &pEnv->aSites[nSite];
+
+            DumpEol(hFile);                                              /* 0x999E0: a bare CRLF opens the block */
+            DumpValue(hFile, "transfer N ", nSite);                      /* 0x999E4, the label has a trailing space */
+            DumpText(hFile, "(baseidx)destination base=");               /* 0x99A60 */
+            snprintf(szNum, sizeof(szNum), "%d", (i32)(i8)pSite->bFlag1);
+            DumpText(hFile, szNum);
+            if ((i32)pEnv->bBaseIdx ==
+                Base_FindIndexByTypeByte(pEnv->apBases, pEnv->nBaseCount, pSite->bFlag1)) {
+                DumpText(hFile, "(incoming transfer)");                  /* 0x99B14: on the SAME line */
+            }
+            DumpEol(hFile);
+            DumpValue(hFile, "timeremain=", (i32)(i8)pSite->bFlag0);     /* 0x99B2C, LDRSB */
+            DumpValue(hFile, "add_new_ship= ", (i32)(i8)pSite->bUnk518); /* 0x99BA8, LDRSB, trailing space */
+            DumpValue(hFile, "add_new_soldiers=", (i32)pSite->uRecoveredSoldiers); /* 0x99C30, LDRH */
+            DumpValue(hFile, "ship_transfer=", (i32)(i8)pSite->bRecoveredCraftCount);      /* 0x99CB4, LDRSB */
+            DumpValue(hFile, "soldier_transfer=", (i32)(i8)pSite->bRecoveredSoldierAssign); /* 0x99D38, LDRSB */
+            DumpValue(hFile, "(bool)frommiss=", (i32)pSite->bHasLoot);   /* 0x99DB8, LDRB at 0x99DF0 */
+
+            for (i32 nSlot = 0; nSlot < pEnv->nObjectCount; ++nSlot) {
+                snprintf(szNum, sizeof(szNum), "obj%d=%d", nSlot,        /* 0x99E48..0x99EC0 */
+                         (i32)pSite->auItemQty[nSlot]);
+                DumpText(hFile, szNum);
+                DumpEol(hFile);
+            }
+        }
+    }
+
+    (void)CloseHandle(hFile);
+    return 0; /* 0x99F4C is fclose, which answers 0 on success; no caller reads it */
+}
+
 /* TransferScreen_CommitTransfer @ 0x97aa4: the transfer screen's confirm control. The header carries
  * the row pass, the commit gate and the commit body. */
 SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv)
@@ -2607,12 +2709,17 @@ SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv)
     nSiteCount += 1; /* 0x97E8C */
     *pEnv->pnSiteCount = nSiteCount;
 
+    TransferDumpEnv dump = {
+        pEnv->pszAppDir, pEnv->pnSiteCount, pEnv->aSites, pEnv->nObjectCount, pEnv->apBases,
+        (pEnv->pbBaseCount != NULL) ? (i32)(i8)*pEnv->pbBaseCount : 0,
+        pEnv->nSelectedBaseIdx, 0
+    };
+
     for (i = 0; i < pEnv->nObjectCount; ++i) {
         if (Base_GetItemQty((pEnv->apObjects != NULL) ? pEnv->apObjects[i] : NULL,
                             pEnv->nSelectedBaseIdx) > 60000) { /* 0x97ED8, CMP #0xEA60 */
-            if (pEnv->pfnShowTError != NULL) {
-                pEnv->pfnShowTError(pEnv->nSelectedBaseIdx, i, pEnv->pUser); /* 0x97EE4 */
-            }
+            dump.nObjSlot = i;
+            (void)Transfer_WriteErrorDump(&dump); /* 0x97EE4 */
         }
     }
 
@@ -6063,9 +6170,13 @@ void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv)
                 }
                 if (pEnv->apObjects[nSlot] != NULL &&
                     pEnv->apObjects[nSlot]->auPerBaseVal[nBase] > 60000) {
-                    /* 0x99038: Transfer_WriteErrorDump (0x996e4, not ported) writes a debug text
-                     * dump when a base's column for the slot passes 60000. It changes no game
-                     * state, so the port keeps the test and drops the dump. */
+                    /* 0x99038: the dump fires with the base index the site resolved to (the stack
+                     * slot nKind, read back with LDRSB) and the slot number. */
+                    TransferDumpEnv dump = {
+                        pEnv->pszAppDir, pEnv->pnSiteCount, pEnv->aSites, pEnv->nObjectCount,
+                        (BaseRec *const *)pEnv->apBases, nBaseCount, (i8)nKind, nSlot
+                    };
+                    (void)Transfer_WriteErrorDump(&dump);
                 }
                 Base_DistributeRecoveredItems(&dist); /* 0x99040: after EVERY slot */
                 continue;

@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 944 / 1103 (85.6%) |
-| Bytes of original code cited | 538576 / 598792 (89.9%) |
+| Functions cited as evidence | 945 / 1103 (85.7%) |
+| Bytes of original code cited | 540772 / 598792 (90.3%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 60 |
-| Test checks run | 15368 |
+| Test checks run | 15395 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -44,7 +44,7 @@ the per-subsystem notes and the tests listed at the end.
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 243 | 245 | 117128 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat-ui` | 244 | 245 | 119324 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 ## Recreated functions -> source file
@@ -750,7 +750,7 @@ is the module that answers to it.
 | `0x84fc8` | `GameTime_Set5Min` | 100 | `src/pufo/game/pufo_geoscape.h` |
 | `0x69ffc` | `Ship_FindIndexById` | 96 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
 | `0x6ac30` | `Base_FindIndexByTypeByte` | 96 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_geoscape.h` (+1) |
-| `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | `src/pufo/game/pufo_geoscape.h`, `src/pufo/game/pufo_strateg.h` |
+| `0x5a8d0` | `Base_FindIndexBySiteId` | 92 | `src/pufo/game/pufo_baseui.h`, `src/pufo/game/pufo_geoscape.h` (+1) |
 | `0x5c56c` | `GameTime_Reset` | 92 | `src/pufo/game/pufo_clock.h` |
 | `0x5d160` | `FundingScreen_OpenMonthly` | 92 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x664f0` | `Craft_CountWeaponSlotsCarried` | 92 | `src/pufo/game/pufo_ship.c`, `src/pufo/game/pufo_ship.h` |
@@ -798,7 +798,7 @@ is the module that answers to it.
 | `0x96020` | `Geoscape_CloseUI_ThunkB` | 12 | `src/pufo/game/pufo_baseui.h` |
 | `0x9a8c0` | `Geoscape_CloseUI_ThunkC` | 12 | `src/pufo/game/pufo_baseui.h` |
 
-### `strat-ui` (243 functions)
+### `strat-ui` (244 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -817,6 +817,7 @@ is the module that answers to it.
 | `0x716d4` | `PsiScreen_BuildPanels` | 2940 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x7b014` | `BasePlaneScreen_BuildControls` | 2788 | `src/pufo/game/pufo_plane.c`, `src/pufo/game/pufo_plane.h` |
 | `0x6e9e8` | `ManufScreen_BuildPanels` | 2404 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
+| `0x996e4` | `Transfer_WriteErrorDump` | 2196 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x73a34` | `ResearchScreen_Draw` | 2108 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x72398` | `PsiScreen_Draw` | 1960 | `src/pufo/game/pufo_baseui.c`, `src/pufo/game/pufo_baseui.h` |
 | `0x64af0` | `SoldierScreen_Toggle` | 1952 | `src/pufo/app/pufo_world.h`, `src/pufo/game/pufo_baseui.c` (+1) |
@@ -1262,11 +1263,10 @@ whose port work they belong to.
 | `0x614b4` | `BaseGrid_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x614c0` | `BaseGrid_Atexit_nullsub6` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `strat-ui` — 2 functions, 4036 bytes remaining
+### `strat-ui` — 1 functions, 1840 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
-| `0x996e4` | `Transfer_WriteErrorDump` | 2196 | not yet ported; scheduled with the `strat-ui` subsystem work |
 | `0x61c8c` | `BaseFacScreen_DrawNameGrid` | 1840 | not yet ported; scheduled with the `strat-ui` subsystem work |
 
 ### `titles` — 3 functions, 208 bytes remaining
@@ -1285,7 +1285,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 |---|---|---|
 | `test_audio` | PASS | 53 |
 | `test_ballist` | PASS | 105 |
-| `test_baseui` | PASS | 3655 |
+| `test_baseui` | PASS | 3682 |
 | `test_blast` | PASS | 14 |
 | `test_boot` | PASS | 38 |
 | `test_clock` | PASS | 44 |

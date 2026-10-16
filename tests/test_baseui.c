@@ -2415,16 +2415,68 @@ static void TestTransferCapacityGate(void)
     UiPanel_FreeLines(&pE);
 }
 
-static i32 g_nCommitTErrorCalls;
-static i32 g_nCommitTErrorBase;
-static i32 g_nCommitTErrorObj;
+/* Transfer_WriteErrorDump @ 0x996e4 writes "<dir>t_error<rand>.txt" into the working directory, with
+ * the number from Game_RandU16(0xE100). The tests point it at a fixed prefix so the files are
+ * findable and removable without guessing the number. */
+#define PUFO_TEST_DUMP_DIR "test_dump_"
 
-static void CommitStubTError(i32 nBaseIdx, i32 nObjectIdx, void *pUser)
+static void DumpPattern(char *pszPat, size_t cchPat)
 {
-    (void)pUser;
-    ++g_nCommitTErrorCalls;
-    g_nCommitTErrorBase = nBaseIdx;
-    g_nCommitTErrorObj = nObjectIdx;
+    snprintf(pszPat, cchPat, "%st_error*.txt", PUFO_TEST_DUMP_DIR);
+}
+
+/* Removes every dump file the tests left behind, under any name: the sweep that mutates the dump's own
+ * name label has to be cleaned up too. Returns how many went. */
+static i32 DumpClean(void)
+{
+    char szPat[256];
+    WIN32_FIND_DATAA fd;
+    i32 nRemoved = 0;
+
+    snprintf(szPat, sizeof(szPat), "%s*", PUFO_TEST_DUMP_DIR);
+    for (;;) {
+        HANDLE hFind = FindFirstFileA(szPat, &fd);
+
+        if (hFind == INVALID_HANDLE_VALUE) {
+            break;
+        }
+        (void)FindClose(hFind);
+        if (remove(fd.cFileName) != 0) {
+            break; /* a file that will not go would loop forever */
+        }
+        ++nRemoved;
+    }
+    return nRemoved;
+}
+
+/* Copies the bytes of the one dump file that is there into pszOut, NUL-terminates it and copies the
+ * name into pszName. Returns the byte count, or -1 when no dump file exists. */
+static i32 DumpReadOne(char *pszOut, i32 cchOut, char *pszName, size_t cchName)
+{
+    char szPat[256];
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind, hFile;
+    DWORD cbRead = 0;
+    i32 cb = -1;
+
+    DumpPattern(szPat, sizeof(szPat));
+    hFind = FindFirstFileA(szPat, &fd);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    (void)FindClose(hFind);
+    snprintf(pszName, cchName, "%s", fd.cFileName);
+    hFile = CreateFileA(fd.cFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    if (ReadFile(hFile, pszOut, (DWORD)(cchOut - 1), &cbRead, NULL)) {
+        pszOut[cbRead] = '\0';
+        cb = (i32)cbRead;
+    }
+    (void)CloseHandle(hFile);
+    return cb;
 }
 
 static void TestTransferCommit(void)
@@ -2444,6 +2496,7 @@ static void TestTransferCommit(void)
     SmapSite *pNew;
     i32 nSiteCount = 1;
     i32 i;
+    u8 bBaseCount = 1;
 
     printf("the transfer screen's commit\n");
 
@@ -2520,9 +2573,10 @@ static void TestTransferCommit(void)
     env.abFacilityGrid = aGrid;
     env.nSelectedBaseIdx = 0;
     env.nTransferBaseIdx = 0;
-    env.pfnShowTError = CommitStubTError;
+    env.pszAppDir = PUFO_TEST_DUMP_DIR;
+    env.pbBaseCount = &bBaseCount; /* one base, its type byte is 7 */
 
-    g_nCommitTErrorCalls = 0;
+    (void)DumpClean();
     pNew = TransferScreen_CommitTransfer(&env);
 
     Check(pNew == &aSites[2], "the commit returns the fresh working record at the new count");
@@ -2541,9 +2595,29 @@ static void TestTransferCommit(void)
                "the pending column is zeroed over every row");
     CheckEqI32(aObj[10].auPerBaseVal[0], 2, "the three queued pistols leave the selected base");
     CheckEqI32(aBase.nStoresTotal, 97, "and the base's stores total drops by the same three");
-    CheckEqI32(g_nCommitTErrorCalls, 1, "the overfull stock reports once through the error dump");
-    CheckEqI32(g_nCommitTErrorBase, 0, "against the selected base");
-    CheckEqI32(g_nCommitTErrorObj, 20, "with the object index");
+    {
+        static char aDump[8192];
+        char szName[256];
+        i32 cb = DumpReadOne(aDump, sizeof(aDump), szName, sizeof(szName));
+        i32 nIncoming = 0;
+        const char *p;
+
+        Check(cb > 0, "the overfull stock writes a t_error<rand>.txt dump (0x996e4)");
+        Check(cb > 0 && strncmp(szName, PUFO_TEST_DUMP_DIR "t_error", 17) == 0,
+              "  named <szAppDir>t_error<rand>.txt");
+        Check(cb > 0 && strstr(aDump, "problem with obj=20") != NULL,
+              "  reporting the object index that tripped the 60000 gate");
+        Check(cb > 0 && strstr(aDump, "(basenumber)current base=0") != NULL,
+              "  against the selected base");
+        Check(cb > 0 && strstr(aDump, "count=2") != NULL,
+              "  with the site count the commit just raised");
+        for (p = aDump; (p = strstr(p, "(incoming transfer)")) != NULL; p += 19) {
+            ++nIncoming;
+        }
+        CheckEqI32(nIncoming, 1,
+                   "  and only the site whose destination byte resolves to this base is marked incoming");
+        CheckEqI32(DumpClean(), 1, "  the dump is exactly one file");
+    }
     CheckEqI32(aSites[2].bUnk518, 0, "the fresh record is cleared: bUnk518");
     CheckEqI32(aSites[2].uRecoveredSoldiers, 0, "uRecoveredSoldiers");
     CheckEqI32(aSites[2].bRecoveredCraftCount, 0, "bRecoveredCraftCount");
@@ -2578,9 +2652,324 @@ static void TestTransferCommit(void)
     env.aSites = NULL;
     Check(TransferScreen_CommitTransfer(&env) == NULL, "and so does a missing site array");
 
+    (void)DumpClean(); /* the commits above that reached the gate each wrote their own dump */
+
     UiPanel_FreeLines(&pA);
     UiPanel_FreeLines(&pC);
     UiPanel_FreeLines(&pE);
+}
+
+/* Transfer_WriteErrorDump @ 0x996e4. The dump is a text file, so the check is the whole file: the
+ * expected bytes are written out here from the ARM's own labels and the fixture's own values, and the
+ * file the port produced is compared against them byte for byte. */
+static SmapSite     g_aTdSites[3];
+static BaseRec      g_aTdBase[3];
+static BaseRec     *g_apTdBases[3];
+static u8           g_bTdBaseCount;
+static i32          g_nTdSiteCount;
+static TransferDumpEnv g_tdEnv;
+static char         g_aTdWant[8192];
+static char         g_aTdFile[8192];
+static char         g_szTdName[256];
+static char        *g_pTdWant;
+
+static size_t TdLeft(void)
+{
+    return (size_t)(g_aTdWant + sizeof(g_aTdWant) - g_pTdWant);
+}
+
+static void TdWant(const char *psz)
+{
+    size_t n = strlen(psz);
+
+    memcpy(g_pTdWant, psz, n);
+    g_pTdWant += n;
+    *g_pTdWant = '\0'; /* the buffer is reused case by case, so it has to end where the case ends */
+}
+
+static void TdWantEol(void)
+{
+    *g_pTdWant++ = '\r'; /* the 2-byte value 2573 at 0x99784 is 0x0D 0x0A on the wire */
+    *g_pTdWant++ = '\n';
+}
+
+static void TdWantNum(const char *pszLabel, i32 nValue)
+{
+    g_pTdWant += snprintf(g_pTdWant, TdLeft(), "%s%d\r\n", pszLabel, nValue);
+}
+
+static bool DumpExists(const char *pszPat)
+{
+    WIN32_FIND_DATAA fd;
+    HANDLE hFind = FindFirstFileA(pszPat, &fd);
+
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    (void)FindClose(hFind);
+    return true;
+}
+
+static void TdFixture(void)
+{
+    i32 i;
+
+    (void)DumpClean();
+    memset(g_aTdSites, 0, sizeof(g_aTdSites));
+    memset(g_aTdBase, 0, sizeof(g_aTdBase));
+    for (i = 0; i < 3; ++i) {
+        g_apTdBases[i] = &g_aTdBase[i];
+    }
+    g_aTdBase[0].bUnk4 = 7;
+    g_aTdBase[1].bUnk4 = 9;
+    g_aTdBase[2].bUnk4 = 11;
+    g_bTdBaseCount = 3;
+    g_nTdSiteCount = 2;
+
+    /* Values chosen so every signed load shows up: six of the nine site numbers are read LDRSB and
+     * print negative for 0x80 and above, while uRecoveredSoldiers (LDRH) and bHasLoot (LDRB) do not. */
+    g_aTdSites[0].bFlag0 = 0xFF;                  /* -1 */
+    g_aTdSites[0].bFlag1 = 7;                     /* base 0, not the dump's own index 1 */
+    g_aTdSites[0].uRecoveredSoldiers = 65535;     /* 65535 */
+    g_aTdSites[0].bRecoveredSoldierAssign = 0x80; /* -128 */
+    g_aTdSites[0].bRecoveredCraftCount = 0x82;    /* -126 */
+    g_aTdSites[0].bUnk518 = 0x81;                 /* -127 */
+    g_aTdSites[0].bHasLoot = 0x80;                /* 128, LDRB */
+    g_aTdSites[0].auItemQty[0] = 1;
+    g_aTdSites[0].auItemQty[1] = 65535;
+
+    g_aTdSites[1].bFlag0 = 1;
+    g_aTdSites[1].bFlag1 = 9;                     /* base 1, the dump's own index */
+    g_aTdSites[1].auItemQty[2] = 4;
+}
+
+static void TdRun(i32 nObjCount, i8 bBaseIdx, i32 nObjSlot, const char *pszDir)
+{
+    g_tdEnv.pszAppDir = pszDir;
+    g_tdEnv.pnSiteCount = &g_nTdSiteCount;
+    g_tdEnv.aSites = g_aTdSites;
+    g_tdEnv.nObjectCount = nObjCount;
+    g_tdEnv.apBases = g_apTdBases;
+    g_tdEnv.nBaseCount = (i32)(i8)g_bTdBaseCount;
+    g_tdEnv.bBaseIdx = bBaseIdx;
+    g_tdEnv.nObjSlot = nObjSlot;
+    (void)Transfer_WriteErrorDump(&g_tdEnv);
+}
+
+/* The header every report starts with. */
+static void TdWantHeader(i32 nSiteCount, i32 nBaseIdx, i32 nObjSlot)
+{
+    g_pTdWant = g_aTdWant;
+    TdWant("TRANSFERS\r\n");
+    TdWantNum("count=", nSiteCount);
+    TdWantNum("(basenumber)current base=", nBaseIdx);
+    TdWantNum("problem with obj=", nObjSlot);
+}
+
+static void TestTransferErrorDump(void)
+{
+    i32 nRet, cb;
+
+    printf("the transfer error dump\n");
+    TdFixture();
+
+    TdWantHeader(2, 1, 7);
+    TdWantEol();
+    TdWantNum("transfer N ", 0);
+    TdWant("(baseidx)destination base=7\r\n");
+    TdWantNum("timeremain=", -1);
+    TdWantNum("add_new_ship= ", -127);
+    TdWantNum("add_new_soldiers=", 65535);
+    TdWantNum("ship_transfer=", -126);
+    TdWantNum("soldier_transfer=", -128);
+    TdWantNum("(bool)frommiss=", 128);
+    TdWant("obj0=1\r\nobj1=65535\r\nobj2=0\r\n");
+    TdWantEol();
+    TdWantNum("transfer N ", 1);
+    TdWant("(baseidx)destination base=9(incoming transfer)\r\n");
+    TdWantNum("timeremain=", 1);
+    TdWantNum("add_new_ship= ", 0);
+    TdWantNum("add_new_soldiers=", 0);
+    TdWantNum("ship_transfer=", 0);
+    TdWantNum("soldier_transfer=", 0);
+    TdWantNum("(bool)frommiss=", 0);
+    TdWant("obj0=0\r\nobj1=0\r\nobj2=4\r\n");
+
+    srand(20261016u);
+    TdRun(3, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    {
+        const char *pNum = g_szTdName + strlen(PUFO_TEST_DUMP_DIR "t_error");
+        i32 nGot = atoi(pNum);
+
+        srand(20261016u);
+        CheckEqI32(nGot, (i32)Game_RandU16(0xE100u),
+                   "the number in the name is the dump's own Game_RandU16(0xE100) draw (0x9972C)");
+    }
+    CheckEqI32(cb, (i32)strlen(g_aTdWant), "the report is exactly the expected byte count (0x996e4)");
+    Check(cb > 0 && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "and byte for byte the report the ARM writes: labels, order, the blank line between blocks");
+    Check(cb > 0 && strncmp(g_szTdName, PUFO_TEST_DUMP_DIR "t_error", 17) == 0,
+          "named <szAppDir>t_error<rand>, the number from Game_RandU16(0xE100) (0x9972C)");
+    Check(cb > 0 && strlen(g_szTdName) > 4 && strcmp(g_szTdName + strlen(g_szTdName) - 4, ".txt") == 0,
+          "  and closed with .txt (0x99760)");
+    CheckEqI32(DumpClean(), 1, "one file, in the directory the env names");
+
+    /* The base lookup is bounded by nBaseCount, so a site whose destination sits past the visible
+     * bases is not incoming even though a later base would match. */
+    g_bTdBaseCount = 1;
+    TdWantHeader(2, 1, 7);
+    TdWantEol();
+    TdWantNum("transfer N ", 0);
+    TdWant("(baseidx)destination base=7\r\n");
+    TdWantNum("timeremain=", -1);
+    TdWantNum("add_new_ship= ", -127);
+    TdWantNum("add_new_soldiers=", 65535);
+    TdWantNum("ship_transfer=", -126);
+    TdWantNum("soldier_transfer=", -128);
+    TdWantNum("(bool)frommiss=", 128);
+    TdWant("obj0=1\r\nobj1=65535\r\nobj2=0\r\n");
+    TdWantEol();
+    TdWantNum("transfer N ", 1);
+    TdWant("(baseidx)destination base=9\r\n");
+    TdWantNum("timeremain=", 1);
+    TdWantNum("add_new_ship= ", 0);
+    TdWantNum("add_new_soldiers=", 0);
+    TdWantNum("ship_transfer=", 0);
+    TdWantNum("soldier_transfer=", 0);
+    TdWantNum("(bool)frommiss=", 0);
+    TdWant("obj0=0\r\nobj1=0\r\nobj2=4\r\n");
+    TdRun(3, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "one visible base drops the (incoming transfer) tail from the second site (0x99AD8)");
+    (void)DumpClean();
+    g_bTdBaseCount = 3;
+
+    /* nSmapSiteCount not positive: the header block only, no site blocks at all. */
+    g_nTdSiteCount = 0;
+    TdWantHeader(0, 1, 7);
+    TdRun(3, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "a site count of 0 writes the header block and nothing else (0x9996C)");
+    (void)DumpClean();
+
+    g_nTdSiteCount = -1;
+    TdWantHeader(-1, 1, 7);
+    TdRun(3, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "  and a negative one prints as-is in count= while still writing no site block");
+    (void)DumpClean();
+    g_nTdSiteCount = 2;
+
+    /* Map_nObjectCount 0: the obj lines are gone, everything else stays. */
+    TdWantHeader(2, 1, 7);
+    TdWantEol();
+    TdWantNum("transfer N ", 0);
+    TdWant("(baseidx)destination base=7\r\n");
+    TdWantNum("timeremain=", -1);
+    TdWantNum("add_new_ship= ", -127);
+    TdWantNum("add_new_soldiers=", 65535);
+    TdWantNum("ship_transfer=", -126);
+    TdWantNum("soldier_transfer=", -128);
+    TdWantNum("(bool)frommiss=", 128);
+    TdWantEol();
+    TdWantNum("transfer N ", 1);
+    TdWant("(baseidx)destination base=9(incoming transfer)\r\n");
+    TdWantNum("timeremain=", 1);
+    TdWantNum("add_new_ship= ", 0);
+    TdWantNum("add_new_soldiers=", 0);
+    TdWantNum("ship_transfer=", 0);
+    TdWantNum("soldier_transfer=", 0);
+    TdWantNum("(bool)frommiss=", 0);
+    TdRun(0, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "an object count of 0 drops every objN line and nothing else (0x99E44)");
+    (void)DumpClean();
+
+    /* The base index is a signed char: 0x80 prints -128 in the header line (0x99890). */
+    TdWantHeader(2, -128, 7);
+    TdWantEol();
+    TdWantNum("transfer N ", 0);
+    TdWant("(baseidx)destination base=7\r\n");
+    TdWantNum("timeremain=", -1);
+    TdWantNum("add_new_ship= ", -127);
+    TdWantNum("add_new_soldiers=", 65535);
+    TdWantNum("ship_transfer=", -126);
+    TdWantNum("soldier_transfer=", -128);
+    TdWantNum("(bool)frommiss=", 128);
+    TdWant("obj0=1\r\nobj1=65535\r\nobj2=0\r\n");
+    TdWantEol();
+    TdWantNum("transfer N ", 1);
+    TdWant("(baseidx)destination base=9\r\n");
+    TdWantNum("timeremain=", 1);
+    TdWantNum("add_new_ship= ", 0);
+    TdWantNum("add_new_soldiers=", 0);
+    TdWantNum("ship_transfer=", 0);
+    TdWantNum("soldier_transfer=", 0);
+    TdWantNum("(bool)frommiss=", 0);
+    TdWant("obj0=0\r\nobj1=0\r\nobj2=4\r\n");
+    TdRun(3, (i8)0x80, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "a base index of 0x80 prints -128, and no site matches it so no incoming tail either");
+    (void)DumpClean();
+
+    /* bFlag1 is read LDRSB as well (0x99A9C): a destination byte of 0x81 prints -127. */
+    g_aTdSites[0].bFlag1 = 0x81;
+    g_nTdSiteCount = 1;
+    TdWantHeader(1, 1, 7);
+    TdWantEol();
+    TdWantNum("transfer N ", 0);
+    TdWant("(baseidx)destination base=-127\r\n");
+    TdWantNum("timeremain=", -1);
+    TdWantNum("add_new_ship= ", -127);
+    TdWantNum("add_new_soldiers=", 65535);
+    TdWantNum("ship_transfer=", -126);
+    TdWantNum("soldier_transfer=", -128);
+    TdWantNum("(bool)frommiss=", 128);
+    TdWant("obj0=1\r\nobj1=65535\r\nobj2=0\r\n");
+    TdRun(3, 1, 7, PUFO_TEST_DUMP_DIR);
+    cb = DumpReadOne(g_aTdFile, sizeof(g_aTdFile), g_szTdName, sizeof(g_szTdName));
+    Check(cb > 0 && cb == (i32)strlen(g_aTdWant) && memcmp(g_aTdFile, g_aTdWant, (size_t)cb) == 0,
+          "the destination byte is read LDRSB too: 0x81 prints -127 (0x99A9C)");
+    (void)DumpClean();
+    g_aTdSites[0].bFlag1 = 7;
+    g_nTdSiteCount = 2;
+
+    /* A failed open: the original hands the NULL FILE * to every fwrite and to fclose. The port
+     * refuses. The path is made unopenable by putting a plain FILE where a directory should be. */
+    {
+        static const char szBlocker[] = "test_dump_blocker";
+        char szDir[64];
+        HANDLE hFile;
+
+        (void)remove(szBlocker);
+        hFile = CreateFileA(szBlocker, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                            FILE_ATTRIBUTE_NORMAL, NULL);
+        Check(hFile != INVALID_HANDLE_VALUE, "the test's blocker file was created");
+        (void)CloseHandle(hFile);
+
+        snprintf(szDir, sizeof(szDir), "%s/", szBlocker);
+        g_tdEnv.pszAppDir = szDir;
+        g_tdEnv.pnSiteCount = &g_nTdSiteCount;
+        g_tdEnv.aSites = g_aTdSites;
+        g_tdEnv.nObjectCount = 3;
+        g_tdEnv.apBases = g_apTdBases;
+        g_tdEnv.nBaseCount = 3;
+        g_tdEnv.bBaseIdx = 1;
+        g_tdEnv.nObjSlot = 7;
+        nRet = Transfer_WriteErrorDump(&g_tdEnv);
+        CheckEqI32(nRet, -1, "an unopenable path returns -1 instead of writing through a NULL FILE *");
+        Check(!DumpExists("test_dump_blocker/*"), "  and nothing was created under it");
+        (void)remove(szBlocker);
+    }
+
+    CheckEqI32(Transfer_WriteErrorDump(NULL), -1, "a missing env writes nothing");
+    CheckEqI32(DumpClean(), 0, "  and no dump file appeared anywhere");
 }
 
 /* TransferScreen_Draw @ 0x97fa4. The draw writes into the loaded surface, so the checks read pixels
@@ -8487,6 +8876,34 @@ static void TestGrantSiteRecovery(void)
     CheckEqI32(g_nGrantSiteCount, 1, "three delivered sites collapse in one call");
     CheckEqI32(g_aGrantSites[0].bFlag1, 1, "the survivor shifted down to index 0");
     CheckEqI32(g_aGrantSites[0].bFlag0, 4, "aged from 5 to 4");
+
+    /* The delivery path's overflow report (0x99038): the base's column for the slot passes 60000
+     * after the site's quantity is added, and the dump goes out with the base the site resolved to
+     * and the slot number. */
+    GRANT_RESET();
+    g_nGrantSiteCount = 1;
+    g_aGrantSites[0].bFlag0 = 0;                    /* delivered on this pass */
+    g_aGrantSites[0].bFlag1 = 0;                    /* resolves to base 0 */
+    g_aGrantSites[0].bHasLoot = 1;
+    g_aGrantSites[0].auItemQty[10] = 1;
+    g_aGrantObj[10].auPerBaseVal[0] = 60000;        /* the add takes it to 60001 */
+    GRANT_ENV(env);
+    env.pszAppDir = PUFO_TEST_DUMP_DIR;
+    (void)DumpClean();
+    Smap_GrantSiteRecovery(&env);
+    {
+        static char aDump[8192];
+        char szName[256];
+        i32 cb = DumpReadOne(aDump, sizeof(aDump), szName, sizeof(szName));
+
+        CheckEqI32(g_aGrantObj[10].auPerBaseVal[0], 60001, "the delivered quantity lands on the base");
+        Check(cb > 0, "  and the 60001 column writes the dump too (0x99038)");
+        Check(cb > 0 && strstr(aDump, "problem with obj=10") != NULL, "  naming the slot");
+        Check(cb > 0 && strstr(aDump, "(basenumber)current base=0") != NULL,
+              "  against the base the site resolved to");
+        Check(cb > 0 && strstr(aDump, "obj10=1") != NULL, "  with the site's own quantity line");
+        CheckEqI32(DumpClean(), 1, "  one file");
+    }
 }
 
 /* ManufScreen_RefreshBaseTabs @ 0x70ebc. Fixture: the quantity table auManufCol (200 u16 per
@@ -17647,6 +18064,7 @@ int main(void)
     TestTransferBuildAndMove();
     TestTransferCapacityGate();
     TestTransferCommit();
+    TestTransferErrorDump();
     TestTransferDraw();
     TestBaseStripDrawer();
     TestGrantSiteRecovery();

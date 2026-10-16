@@ -1086,9 +1086,8 @@ i32 TransferScreen_ValidateCapacity(TransferCapacityEnv *pEnv);
  * every row (0x97DDC); BaseRec_SubItemQty(apBases[nSelectedBaseIdx], apObjects[i],
  * site.auItemQty[i]) for every object (0x97E5C) -- the pending quantities leave the SELECTED base;
  * nSmapSiteCount raised (0x97E8C); then every object whose auPerBaseVal[nSelectedBaseIdx] exceeds
- * 60000 (0xEA60) reports through Transfer_WriteErrorDump (0x996e4, not ported -- a debug dump writer
- * that opens t_error<rand>.txt, not a UI display) with the base index and the object index
- * (0x97EE4); finally the fresh working record at the new count is cleared -- bUnk518,
+ * 60000 (0xEA60) sends the base index and the object index to Transfer_WriteErrorDump @ 0x996e4
+ * (0x97EE4), the debug dump below; finally the fresh working record at the new count is cleared -- bUnk518,
  * uRecoveredSoldiers, bRecoveredCraftCount, bRecoveredSoldierAssign, bHasLoot and
  * auItemQty[0..nObjectCount-1].
  *
@@ -1112,11 +1111,71 @@ typedef struct TransferCommitEnv {
     u8 *abFacilityGrid;              /* abFacilityGrid @ 0x159768, the hangar cell is cleared */
     i8 nSelectedBaseIdx;             /* nSelectedBaseIdx @ 0x159D81, the base the items leave */
     i8 nTransferBaseIdx;             /* byte_1870F4, the destination base */
-    void (*pfnShowTError)(i32 nBaseIdx, i32 nObjectIdx, void *pUser);
-    void *pUser;
+    const char *pszAppDir;           /* szAppDir @ 0x1883B0, the dump's output directory */
+    const u8 *pbBaseCount;           /* nBaseCount @ 0x159D80, read signed there, for the dump */
 } TransferCommitEnv;
 
 SmapSite *TransferScreen_CommitTransfer(TransferCommitEnv *pEnv);
+
+/* ------------------------------------------------- the transfer error dump
+ *
+ * Evidence: Transfer_WriteErrorDump @ 0x996e4 (2,196 B), reached from TransferScreen_CommitTransfer
+ * (0x97EE4) and Smap_GrantSiteRecovery (0x99038), both when some base's per-object column passes
+ * 60000 (0xEA60). It is a debug dump writer, not a UI display: it opens
+ * "<szAppDir>t_error<rand>.txt" and writes a labelled text report, and it changes no game state.
+ * The original's first argument is the pointer 0x1870D8 and is never read.
+ *
+ * The name (0x996EC..0x9977C). strcpy(szPath[40], szAppDir @ 0x1883B0), strcat "t_error",
+ * itoa(Game_RandU16(0xE100)) -- 0..57599 -- strcat ".txt", fopen(path, "wb"). The copy is unbounded
+ * into a 40-byte stack buffer and the FILE * is never tested: a long directory or a failed open sends
+ * NULL to every fwrite and to fclose. The port bounds the copy and returns -1 without writing when
+ * the open fails, and writes through CreateFileA / WriteFile because the MSVC CRT deprecates the whole
+ * fopen family (see util/pufo_str.h); the bytes on disk are identical.
+ *
+ * The header block (0x99780..0x99954): "TRANSFERS", "count=" + itoa(nSmapSiteCount),
+ * "(basenumber)current base=" + itoa((char)bBaseIdx) -- the argument is sign-extended at 0x99890
+ * (`MOV R3,R5,LSL#24 / MOV R5,R3,ASR#24`), so a base index of 0x80 or more prints negative --
+ * "problem with obj=" + itoa(nObjSlot). Every line ends with the 2-byte value 2573 written at
+ * 0x99784, which is 0x0D 0x0A on the wire: CRLF.
+ *
+ * One block per site (0x99960..0x99F44), skipped entirely when nSmapSiteCount is not positive. Each
+ * block opens with a bare CRLF (0x999E0), so blocks are separated by a blank line:
+ *   "transfer N " + itoa(nSiteIdx)                                    -- the label has a trailing space
+ *   "(baseidx)destination base=" + itoa((char)site->bFlag1), and when that id resolves through the
+ *   base lookup to the very index the dump was called with, "(incoming transfer)" is appended to the
+ *   SAME line before its CRLF (0x99AD8..0x99B14)
+ *   "timeremain=" + itoa((char)site->bFlag0)
+ *   "add_new_ship= " + itoa((char)site->bUnk518)                      -- the label has a trailing space
+ *   "add_new_soldiers=" + itoa(site->uRecoveredSoldiers)              -- LDRH, the only unsigned one
+ *   "ship_transfer=" + itoa((char)site->bRecoveredCraftCount)
+ *   "soldier_transfer=" + itoa((char)site->bRecoveredSoldierAssign)
+ *   "(bool)frommiss=" + itoa(site->bHasLoot)                          -- LDRB at 0x99DF0, unsigned
+ * then "objN=<auItemQty[N]>" for N in 0..nObjectCount-1, one line each. Six of the nine values are
+ * loaded LDRSB and print signed, so a byte of 0x80 or more prints negative; the port matches that
+ * with an explicit (i8).
+ *
+ * The site walk keeps a second counter that adds 371 (0x173, half the 742-byte record) per site and
+ * divides it back at 0x99EB4 to index auItemQty, while the site pointer itself advances by 742
+ * (`MOV R3,#0x2E4 / ORR R3,#2` at 0x99F1C). The counter is residue, not a different stride.
+ *
+ * Returns 0 where the original returns fclose's value; no caller reads it.
+ *
+ * Deviation: the original's site-id lookup is Base_FindIndexBySiteId @ 0x5a8d0, which compares the
+ * sign-extended byte against the LDRSB field, so a site id of 0x80 or more matches a base whose
+ * bUnk4 is the same negative byte. The port's shared Base_FindIndexByTypeByte takes a u8, so that
+ * one case answers -1 here; base ids are 0..25 in the shipped data, so it is unreachable in play. */
+typedef struct TransferDumpEnv {
+    const char *pszAppDir;           /* szAppDir @ 0x1883B0 */
+    const i32 *pnSiteCount;          /* nSmapSiteCount @ 0x186410 */
+    const SmapSite *aSites;          /* aSmapSites @ 0x162030 */
+    i32 nObjectCount;                /* Map_nObjectCount @ 0x114A60 */
+    BaseRec *const *apBases;         /* apBases @ 0x114B2C, for the site-id lookup */
+    i32 nBaseCount;                  /* nBaseCount @ 0x159D80, read signed there */
+    i8 bBaseIdx;                     /* a2, sign-extended at 0x99890 */
+    i32 nObjSlot;                    /* a3 */
+} TransferDumpEnv;
+
+i32 Transfer_WriteErrorDump(const TransferDumpEnv *pEnv);
 
 /* ------------------------------------------------- the transfer screen's frame
  *
@@ -3365,9 +3424,9 @@ void Smap_OnPointerUp(const SmapPointerUpEnv *pEnv);
  *      structure at 0x98DBC..0x98F98) with the source slot zeroed. Everything else, and every
  *      alien that still fits, takes the normal path: the quantity is added to the base except
  *      for slots 117..121 (the new-craft counts, delivered by step 5 instead), a debug dump
- *      (Transfer_WriteErrorDump (0x996e4, not ported)) fires when the base's column for the slot
- *      passes 60000, and Base_DistributeRecoveredItems runs after EVERY slot -- empty slot or
- *      not, alien slot or not.
+ *      (Transfer_WriteErrorDump @ 0x996e4, the transfer error dump above) fires with the base index
+ *      and the slot when the base's column for the slot passes 60000, and
+ *      Base_DistributeRecoveredItems runs after EVERY slot -- empty slot or not, alien slot or not.
  *   4. 0x9905C..0x99330: uRecoveredSoldiers calls of Soldier_CreateAndClassify (port:
  *      Unit_CreateAndClassify) with the base index as nKind. Then per recovered craft: the craft
  *      whose Ship.bId matches site->anCraftIds[i] gets Ship.bHomeBase = the base index
@@ -3421,6 +3480,7 @@ typedef struct SmapGrantRecoveryEnv {
     ShipSpawnEnv    *pShipEnv;           /* Ship_SpawnAtSlot's Map block */
     void (*pfnPlaySample)(i32 nSample, void *pUser); /* the message seam */
     void *pSoundUser;
+    const char      *pszAppDir;          /* szAppDir @ 0x1883B0, the dump's output directory */
 } SmapGrantRecoveryEnv;
 
 void Smap_GrantSiteRecovery(const SmapGrantRecoveryEnv *pEnv);

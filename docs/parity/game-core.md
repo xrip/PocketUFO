@@ -16758,3 +16758,61 @@ keyed index maps through palette slot 2 entry 254, which is zero unless the fixt
 the ARM at 0xa4288 tests *v5 != 0), giving slot 2 entry 254 its own colour, and turning the reason-0 case
 into a full-frame compare made every one of them observable. The sweep now catches 52 of 52 applied
 mutations; a reason-3 full-frame compare also pins the switch's fall-through return.
+## Unit 98 - the transfer error dump (Transfer_WriteErrorDump @ 0x996e4, 3,824 B)
+
+Ported in src/pufo/game/pufo_baseui.c as Transfer_WriteErrorDump(const TransferDumpEnv *env), and both
+call sites now call it: TransferScreen_CommitTransfer at 0x97EE4 and Smap_GrantSiteRecovery at 0x99038,
+each when some base's per-object column passes 60000 (0xEA60). The pfnShowTError seam the commit env
+carried while the dump was unported is gone, and both envs gained pszAppDir instead.
+
+**It is a debug dump writer, not a UI display, and it changes no game state.** The name is
+szAppDir @ 0x1883B0 + "t_error" + itoa(Game_RandU16(0xE100)) (0..57599) + ".txt", opened "wb"
+(0x996EC..0x9977C). Two original defects sit in those 20 instructions: the strcpy of szAppDir into the
+40-byte stack buffer at sp+0x1A0 has no bound, and fopen's result is never tested, so a failed open
+sends the NULL FILE * to every fwrite and to the fclose at 0x99F4C. The binary imports no remove,
+unlink or DeleteFile at all, so nothing ever deletes a dump either - a long game with an overfull base
+accumulates one file per report.
+
+**Every line ends with the 2-byte value 2573 written at 0x99784**, which is 0x0D 0x0A on the wire:
+CRLF, written by `fwrite(&var_358, 2, 1, f)` rather than as part of the label.
+
+**The header block** (0x99780..0x99954) is TRANSFERS, count= with nSmapSiteCount,
+(basenumber)current base= with the second argument, and problem with obj= with the third. The base
+index is sign-extended from a byte at 0x99890 (`MOV R3,R5,LSL#24 / MOV R5,R3,ASR#24`), so a base index
+of 0x80 or more prints negative.
+
+**One block per site** (0x99960..0x99F44), skipped entirely when nSmapSiteCount is not positive, and
+each block opens with a bare CRLF at 0x999E0, so blocks are separated by a blank line. The nine site
+values do not agree on signedness: bFlag1 (0x99A9C), bFlag0 (0x99B68), bUnk518 (0x99BEC),
+bRecoveredCraftCount (0x99CF4) and bRecoveredSoldierAssign (0x99D74) are LDRSB and print signed, so a
+byte of 0x80 or more prints negative, while uRecoveredSoldiers (0x99C70, LDRH) and bHasLoot (0x99DF0,
+LDRB) print unsigned. Two labels carry a trailing space the reader has to keep: "transfer N " and
+"add_new_ship= ". "(incoming transfer)" is appended to the SAME line as the destination base, before
+its CRLF (0x99AD8..0x99B14), when the destination byte resolves through the base lookup to the very
+index the dump was called with. Then "objN=<auItemQty[N]>" for N in 0..Map_nObjectCount-1.
+
+**The site walk keeps a half-stride counter.** var_350 adds 371 (0x173) per site and is divided back
+by 0x173 at 0x99EB4 to index auItemQty, while the site pointer itself advances by 742 - `MOV R3,#0x2E4
+/ ORR R3,#2` at 0x99F1C. 371 is half the 742-byte SmapSite, so the counter is residue, not a second
+stride; the port uses the index directly.
+
+**Deviations.** The port bounds the 40-byte path copy, refuses a failed open with -1 instead of writing
+through NULL, and writes through CreateFileA / WriteFile because the MSVC CRT deprecates the whole
+fopen family and the project keeps /WX on project-wide (the same reason util/pufo_str.h exists); the
+bytes on disk are identical. The original's site-id lookup is Base_FindIndexBySiteId @ 0x5a8d0, which
+compares the sign-extended byte against the LDRSB field, so a site id of 0x80 or more would match a
+base whose bUnk4 is the same negative byte; the port's shared Base_FindIndexByTypeByte takes a u8 and
+answers -1 there. Base ids are 0..25 in the shipped data, so that case is unreachable in play.
+
+Tests: 27 new checks in test_baseui (3682 there), the main one a byte-for-byte compare of the whole
+dump file against expected text built in the test from the ARM's own labels and the fixture's own
+values, plus the commit and delivery paths checked through the file they now write. A 30-mutation sweep
+turned all 30 red - every label, both trailing spaces, the CRLF value, all six signedness casts, the
+incoming test, the lookup bound, the object-count bound, the random maximum, both name fragments, the
+block-opening CRLF and all three call-site arguments. One mutation is a true equivalence and is not
+counted: `nSiteCount > 0` to `>= 0` cannot change the output, because the site loop runs zero
+iterations at a count of 0 either way.
+
+IDB: 10 line comments (0x9972C, 0x99784, 0x99890, 0x999E0, 0x99A9C, 0x99B14, 0x99C70, 0x99DF0, 0x99EB4,
+0x99F1C), function comments on 0x996e4 and 0x5a8d0, no renames - szAppDir @ 0x1883B0 was already named.
+Three new ledger rows: the unbounded path copy, the untested FILE *, and the dump files nothing removes.
