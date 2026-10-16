@@ -523,7 +523,7 @@ Three raw-offset writes, expressed through the queue struct: the entry at
 (`Unit_UpdateVisibility` @ `0x48580` is injected � 3,728 bytes, its own body of
 work).
 
-## Unit_CanStepTo: cell addressing resolved (still not ported)
+## Unit_CanStepTo: cell addressing and the probe half resolved
 
 `Unit_CanStepTo` @ `0x27bb8` is 14,716 bytes with 361 basic blocks and a 10-way
 direction dispatch. It is the largest tactical function and decides every legal
@@ -558,20 +558,24 @@ which are precisely the 2x2 large-unit probes in the `case 3` and `case 9` arms.
 This also makes the `case 8` / `case 9` vertical-step arms readable: they compare a
 cell's value against the cell one layer down, which is the step-down rule.
 
-### Why it is still not ported
+### What was blocking it, and what is left
 
-The remaining obstacle is not the arithmetic but the coupling: the function reads
-and writes ~15 file-scope globals (`byte_10DBB4` direction, `dword_10DBA8` /
-`dword_10DBAC` / `dword_113980` the working cell, `dword_113990` / `dword_113994` /
-`dword_138E94` the target cell, `g_pCurCell`, `byte_10DB84`, `byte_113984`,
-`dword_1139A4`), and it calls `Map_ProbeStepOccupants` @ `0x2778c`, which is itself
-1,068 bytes with its own globals. Porting it means porting that whole working-set
-contract, which is a task of its own rather than a step in this one.
+The obstacle was the coupling, not the arithmetic: the function reads and writes ~15
+file-scope globals (`g_nStepDir` @ 0x10dbb4 for the direction, `g_nStepCurX` /
+`g_nStepCurY` / `g_nCurLayer` for the working cell, `g_nStepDstX` / `g_nStepDstY` /
+`g_nStepDstLayer` for the target cell, `g_pStepCurCell`, `g_pStepDstCell`,
+`g_bPathSearchFlag`, `g_bStepReanchored`, `g_nStepAdjLayer`), and it calls
+`Map_ProbeStepOccupants` @ `0x2778c`, which is itself 1,068 bytes with its own
+globals. That working-set contract is ported now: every one of those globals is named
+in the IDB, the probe itself is ported in `src/pufo/game/pufo_step.c`, and the port
+carries the same state as one explicit `StepProbe` struct in `src/pufo/game/pufo_step.h`
+instead of one shared set of globals. See "The step probe: Map_ProbeStepOccupants
+(0x2778c)" at the end of this file. What is left of `Unit_CanStepTo` is its ten
+small-unit and ten large-unit direction arms.
 
-The port's pathfinding is complete and tested *without* it: the flood fill takes an
-injected step probe (`PathStepProbe` in `pufo_path.h`), so the shape of the
-predicate is already accommodated. Wiring in the real `Unit_CanStepTo` is a
-drop-in once the working-set contract is ported.
+The port's pathfinding is complete and tested *without* those arms: the flood fill
+takes an injected step probe (`PathStepProbe` in `pufo_path.h`), so the shape of the
+predicate is already accommodated, and the real function drops into that seam.
 
 ## Not yet recreated, with reason
 
@@ -14496,8 +14500,12 @@ visible in the tests and the floor gate was not; both are now asserted.
 Before the fill, `bFlag` also picks a piece of bookkeeping at `Map_pPathDestUnit`
 (Map+0x150f4, 0x128ab0): with the flag clear the destination cell's occupant is
 stored there (0x2c304..0x2c314), with it set the slot is cleared (0x2c2bc..0x2c2d4).
-Nothing in the binary ever reads that slot - the only `0x150F4` immediate in the whole
-image is the one at 0x2c308.
+That slot is not dead state. `Unit_CanStepTo` reads it back as the one occupant a mover is
+allowed to share a cell with, nine times over, and each read builds the offset as
+`MOV R10,#0x15000 / ORR R10,#0xF4` (0x27cbc, 0x28b3c, 0x28d98, 0x29218, 0x294d0, 0x299cc,
+0x29c44, 0x2a0b0, 0x2a314) instead of the single `0x150F4` immediate 0x2c308 uses - which is why a
+first pass that only followed the immediate called it unread. Hex-Rays renders the reader as
+`pMap->pad86260`, which is how the slot was named before it was understood.
 
 ### The walk back (0x2c360..0x2c57c)
 
@@ -14556,7 +14564,7 @@ The tail is unconditional: `EnqueueEndMark`, `KickQueue`, return 1 (0x2c6a0..0x2
 - 0x2c54c - the bail-out stores before it tests, so a rejected walk still writes slot 201.
 - 0x2c4e4 - the ceiling-break threshold is -15 here and -23 in `Tact_HandleMapClick`, for the same sprite byte.
 - 0x49ddc - `TactState_EnqueueVertStep`'s second argument is a layer delta stored in the `nFacing` slot.
-- 0x2c308 - `Map_pPathDestUnit` is written on every call and read nowhere.
+- 0x2c308 - `Map_pPathDestUnit` is the swap partner: `Unit_PathToCell` writes it, `Unit_CanStepTo` reads it as the occupant a mover may share a cell with.
 - 0x2b860 - the search flag travels to `Path_ExpandCell` through a global.
 - 0x2c388 - `Map_ComputeReachable`'s return value is discarded in favour of a cost re-read.
 
@@ -14568,3 +14576,94 @@ The tail is unconditional: `EnqueueEndMark`, `KickQueue`, return 1 (0x2c6a0..0x2
 - `g_nCurLayer` is a local in the port's walk-back. The original's global matters only
   to `Unit_CanStepTo` and `Map_ProbeStepOccupants`, which the port still injects as the
   flood fill's step probe and which already receive the layer as an argument.
+
+## The step probe: Map_ProbeStepOccupants (0x2778c)
+
+Ported in `src/pufo/game/pufo_step.c`, tested in `tests/test_step.c` (38 checks). This is
+the half of the step test that decides *which cell* a step even is, before any wall,
+occupant or footprint is examined: every direction arm of `Unit_CanStepTo` runs it first
+and tests its return value before anything else.
+
+### The probe is a global-state machine
+
+`Unit_CanStepTo` takes one argument, the Map block (`MOV R5, R0` at 0x27794), and reads
+everything else from globals its caller seeds. `Path_ExpandCell` writes `g_nStepCurX` @
+0x10dba8, `g_nStepCurY` @ 0x10dbac, `g_nCurLayer` @ 0x113980, `g_nStepDir` @ 0x10dbb4,
+`g_pStepCurCell` @ 0x138e90 (0x2b678), `g_pStepCellAbove` @ 0x11399c (0x2b67c, and only
+when the current layer is below 3 - the pair is LDRLT at 0x2b658) and `g_nStepCeilParamNeg`
+@ 0x113988, which is `-(i8) g_pStepCurCell->pCeilSpr->iCeilParam` or 0 when there is no
+ceiling sprite (0x2b684..0x2b69c). The probe writes the candidate back into `g_nStepDstX` @
+0x113990, `g_nStepDstY` @ 0x113994, `g_nStepDstLayer` @ 0x138e94, `g_pStepDstCell` @
+0x113998, `g_nStepAdjLayer` @ 0x1139a4 and `g_bStepReanchored` @ 0x113984. Four call sites
+seed the inputs: `Path_ExpandCell`, `Map_ComputeFov` @ 0x2deac, `Map_ScanBlastFootprint` @
+0x32cd4 and `GameTick_Step` @ 0x27324. The port keeps the same shape as one explicit
+`StepProbe` struct so the four callers do not share mutable state.
+
+### The two vertical re-anchors
+
+The body seeds `g_nStepAdjLayer = g_nStepDstLayer` (0x277b4) and clears
+`g_bStepReanchored` (0x277d4), reads the cell below the candidate into `var_10` (0x27808,
+base 0x11AF8 = `apCells` minus one 14400-byte layer, and only when the candidate layer is
+above 0) and the cell above it into `var_14` (0x2787c, base 0x18B78 = `apCells` plus one
+layer, and only when the candidate layer is below 3), then:
+
+- **down** (0x27990..0x27a54): the candidate has no floor sprite, the current cell has one,
+  `g_bPathSearchFlag` is clear and the candidate's own `nZ` is above 0. The cell being
+  moved into must have a floor - if it does not, the step is **refused outright** (0x27a10),
+  not merely left unanchored. Otherwise the candidate becomes `var_10` and
+  `g_nStepAdjLayer` drops by one.
+- **up** (0x27a6c..0x27b1c): the current cell has a ceiling whose `iCeilParam` is below
+  -15, `g_pStepCellAbove` has no floor, and `var_14` has a floor. The candidate becomes
+  `var_14`, and here `g_nStepDstLayer` and `g_nStepAdjLayer` each rise by one.
+
+If neither anchor fires, two tests remain: the rejection test (0x27b44) refuses the step
+below layer 3 when the current cell's ceiling breaks below -8 *and* the cell above the
+candidate has a floor; then (0x27b84) a ceiling on the current cell accepts the step, and
+otherwise the candidate's own ceiling must not break below -8.
+
+### The two anchors are not symmetric
+
+0x27a48 stores the new cell into `g_pStepDstCell` and 0x27a50 drops `g_nStepAdjLayer`, but
+nothing writes `g_nStepDstLayer` - the upward anchor at 0x27b00 / 0x27b08 / 0x27b18 updates
+the cell and both counters. The direction arms index with `g_nStepAdjLayer`, so a
+downward-anchored step keeps its pre-anchor candidate layer. Reproduced, and asserted.
+
+### A large unit drags a second column
+
+Both anchors gain the cell at `x + 1`, reached by adding one to the `apCells` index rather
+than to the coordinate: `R7 = 0x1533C` (`apCells` @ 0x15338 plus one dword) at 0x27840,
+0x278ac, 0x278fc, 0x27930 and 0x27958. For the downward anchor the candidate's second
+column must also be floorless and above layer 0 and the current cell's second column must
+have a floor; for the upward anchor the current cell's second column needs the same
+breakable ceiling, the cell above it must be floorless and the cell above the candidate's
+second column must have a floor.
+
+### Original findings recorded (7 ledger rows)
+
+- **0x27ae4 against 0x27a94**: for a large unit stepping due east, the cell the upward
+  anchor wants floorless (`var_8`, the cell above the current cell's second column) *is*
+  the cell the preceding test requires to be floored (`var_14`, the cell above the
+  candidate) - with `dx = +1, dy = 0` they are the same cell. The two tests contradict, so
+  the upward anchor can never fire for a large unit in that direction, while a small unit
+  with the identical geometry does re-anchor. `TestAnchorUpDeadForLargeEast` pins both
+  halves.
+- **0x27a94**: `var_14` is stored only when the candidate layer is below 3 (0x27848 BGE
+  loc_278B4) and dereferenced here regardless, so a probe with the candidate on layer 3
+  reads whatever an earlier call left in the slot.
+- **0x27a88**: `g_pStepCellAbove` is dereferenced unconditionally although
+  `Path_ExpandCell` only writes it when the current layer is below 3.
+- **0x27ae0**: `var_8` is stored only when `g_nCurLayer < 3` (0x2790c) and dereferenced
+  with no guard.
+- **0x27a24**: a third `Unit_bIsLarge` call in the same branch whose `BEQ` to the
+  return-zero path is unreachable, because control only reaches 0x27a24 when the unit is
+  already known to be large.
+- **0x27988**: the non-large path loads `R11` and `R6` from `var_4`, which only the large
+  path stores (0x278b0), and uses neither.
+- **0x27a48**: the anchor asymmetry above.
+
+### Deviations
+
+The original dereferences `var_14`, `var_8` and `g_pStepCellAbove` blindly; the port tests
+each for NULL first, which is why the three unguarded reads are recorded as not reproduced.
+The original calls `Unit_bIsLarge(pSelUnit)` eight times in this function; the port computes
+it once, which is the same value every time.

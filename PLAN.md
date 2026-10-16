@@ -2050,14 +2050,55 @@ Order is by what unblocks what. Each item ends with gates + commit.
   **`TactState_EnqueueVertStep`'s second argument is a layer delta** stored in the queue entry's `nFacing` slot
   (0x49ddc), which is the slot the vertical step's draw offset reads back at 0x50FBC. Renamed to `nLayerDelta` in
   the port and in the IDB.
-  **`Map_pPathDestUnit` (Map+0x150f4) is dead state**: written on every call, read nowhere — the only `0x150F4`
-  immediate in the image is 0x2c308. Named in the IDB along with `Map_apPathCells` (Map+0x4a44),
-  `Map_nPathCount` (Map+0x4e44) and `g_nCurLayer` (0x113980).
+  **`Map_pPathDestUnit` (Map+0x150f4) is the swap partner.** `Unit_PathToCell` parks the destination cell's
+  occupant there (or clears the slot), and `Unit_CanStepTo` reads it back as the one occupant a mover may share a
+  cell with — nine times over, each one built as `MOV #0x15000 / ORR #0xF4` (0x27cbc, 0x28b3c, 0x28d98, 0x29218,
+  0x294d0, 0x299cc, 0x29c44, 0x2a0b0, 0x2a314) rather than as the `0x150F4` immediate that 0x2c308 uses. An
+  earlier pass called the slot dead state because Hex-Rays renders the reader as `pMap->pad86260`; it is not.
+  Named in the IDB along with `Map_apPathCells` (Map+0x4a44), `Map_nPathCount` (Map+0x4e44) and
+  `g_nCurLayer` (0x113980).
   50 new checks (12701 total), 6 ledger rows (175), coverage 904/1103 (82.0%) and 446256/598792 (74.5%).
-  **Deviation:** the real step predicate the flood still needs, `Unit_CanStepTo` (0x27bb8, 14716 B) and its
-  helper `Map_ProbeStepOccupants` (0x2778c, 1068 B), remain unported, so the flood runs through the
-  `PathStepProbe` seam; `Unit_PathToCell` itself matches the `pfnPathToCell` seam signatures in
-  `MapClickCtx` and the two enemy-AI contexts, so the real function drops straight into them.
+  **Deviation:** the real step predicate the flood still needs, `Unit_CanStepTo` (0x27bb8, 14716 B), remains
+  unported, so the flood runs through the `PathStepProbe` seam; `Unit_PathToCell` itself matches the
+  `pfnPathToCell` seam signatures in `MapClickCtx` and the two enemy-AI contexts, so the real function drops
+  straight into them. Its helper `Map_ProbeStepOccupants` landed in the next part.
+
+- [x] **part 70, the step probe: `Map_ProbeStepOccupants (0x2778c, 1068 B)`** — the half of the step test that
+  decides *which cell* a step even is, before any wall or occupant is looked at. **A step is not always the cell
+  the direction delta points at.** The probe tries two vertical re-anchors on the candidate:
+  **down** (0x27990..0x27a54) when the candidate has no floor sprite, the current cell has one, the search flag is
+  clear and the candidate is above layer 0 — the candidate becomes `apCells[dstLayer-1][dstY][dstX]`;
+  **up** (0x27a6c..0x27b1c) when the current cell has a ceiling with `iCeilParam < -15`, the cell above the
+  current one has no floor and the cell above the candidate has one — the candidate becomes
+  `apCells[dstLayer+1][dstY][dstX]`. If the candidate wants moving and the cell it would move into has no floor,
+  the step is refused outright, not merely left unanchored (0x27a10).
+  **The two anchors are not symmetric** (0x27a48): the downward one stores the new cell and drops
+  `g_nStepAdjLayer` but never touches `g_nStepDstLayer`, while the upward one updates the cell and both counters.
+  The direction arms index with `g_nStepAdjLayer`, so a downward-anchored step keeps its pre-anchor candidate
+  layer. Reproduced, and asserted.
+  **A large unit drags a second column.** Both anchors gain the cell at `x + 1` of the cell being moved into and
+  of the current cell, reached by adding one to the `apCells` index rather than to the coordinate — the
+  `R7 = 0x1533C` base (apCells @ 0x15338 plus one dword) at 0x27840, 0x278ac, 0x278fc, 0x27930, 0x27958.
+  **ORIGINAL BUG (0x27ae4):** for a large unit stepping due east the cell the upward anchor wants floorless
+  (`pAboveOldX1`, 0x27adc/0x27ae4) *is* the cell the preceding test requires to be floored (`var_14`, 0x27a94),
+  so the upward anchor can never fire in that direction — a small unit with the same geometry does re-anchor.
+  **Three unguarded reads of layer-gated state:** `var_14` is stored only when the candidate layer is below 3
+  (0x27848) yet dereferenced at 0x27a94; `g_pStepCellAbove` is written by `Path_ExpandCell` only when the current
+  layer is below 3 (0x2b658/0x2b67c) yet dereferenced at 0x27a88; `var_8` is stored only when `g_nCurLayer < 3`
+  (0x2790c) yet dereferenced at 0x27ae0. Two dead leftovers: a third `Unit_bIsLarge` call whose `BEQ` to the
+  return-zero path is unreachable (0x27a24), and the non-large path loading `R11`/`R6` from a stack slot only the
+  large path writes (0x27988).
+  **The probe is a global-state machine** in the original: `Path_ExpandCell` seeds `g_nStepCurX/Y`, `g_nCurLayer`,
+  `g_nStepDir`, `g_pStepCurCell`, `g_pStepCellAbove` and `g_nStepCeilParamNeg`, and the probe writes the candidate
+  back into `g_nStepDstX/Y`, `g_nStepDstLayer`, `g_pStepDstCell`, `g_nStepAdjLayer` and `g_bStepReanchored`. Four
+  call sites seed it: `Path_ExpandCell`, `Map_ComputeFov` (0x2deac), `Map_ScanBlastFootprint` (0x32cd4) and
+  `GameTick_Step` (0x27324). The port keeps the same shape as one explicit `StepProbe` struct so the four callers
+  do not share mutable state. Eleven globals named in the IDB (`g_nStepCurX`, `g_nStepCurY`, `g_nStepDir`,
+  `g_nStepDstX`, `g_nStepDstY`, `g_nStepDstLayer`, `g_pStepCurCell`, `g_pStepDstCell`, `g_pStepCellAbove`,
+  `g_nStepAdjLayer`, `g_bStepReanchored`, `g_nStepCeilParamNeg`) and the function given the `Map *` signature.
+  38 new checks (12739 total), 7 ledger rows (182), coverage 905/1103 (82.0%) and 447324/598792 (74.7%).
+  **Deviation:** the original dereferences the layer-gated pointers blindly; the port tests them for NULL first,
+  which is why the three bugs above are recorded as not reproduced.
 
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
@@ -2382,6 +2423,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the enemy-turn bracket (`BeforeEnemyStep`, `Tact_UpdateUnitControl`, `AfterEnemyStep`; six passes over four face counters, the `counter + step` term added twice, the burn run probing against its axis, the Win64 `abFaceDamage` offset fixed, 12 original findings recorded) | 56/56 (Release) | 12513 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 | the tactical map click and the mode-6 confirm (`Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`; the one-layer-down cursor cell, the four asymmetric latch arms, the two disagreeing melee gates, two wrong text-record indices in the existing port fixed, `audit_names` now at zero flags) | 56/56 (Release) | 12651 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 | the path replay (`Unit_PathToCell`; the dropped `Map_ComputeReachable` flag that hid half its effect, the layer re-check on `bFlags29` bit 3 with its two disagreeing ceiling thresholds, the 27-byte facing table, the layer delta that lives in the `nFacing` slot, 6 original findings recorded) | 56/56 (Release) | 12701 | 904/1103 (82.0%) | 446256/598792 (74.5%) | 40 checked, 0 mismatched |
+| the step probe (`Map_ProbeStepOccupants`; the two vertical re-anchors and their asymmetric layer bookkeeping, the large unit's second column, the up anchor that cannot fire for a large unit going east, three unguarded reads of layer-gated state, 7 original findings recorded) | 57/57 (Release) | 12739 | 905/1103 (82.0%) | 447324/598792 (74.7%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

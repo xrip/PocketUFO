@@ -52,10 +52,9 @@ SUBSYSTEMS = [
 
 # A reason for the notable gaps, so "no unexplained gaps" is literally true.
 GAP_REASONS = {
-    "Unit_CanStepTo": "cell addressing resolved but the ~15-global working set and "
-                      "Map_ProbeStepOccupants are not ported; the path flood takes an "
-                      "injected probe, so it is a drop-in once that contract exists",
-    "Map_ProbeStepOccupants": "same working set as Unit_CanStepTo; needs the step-context contract",
+    "Unit_CanStepTo": "cell addressing and the vertical re-anchor probe are resolved "
+                      "(Map_ProbeStepOccupants, src/pufo/game/pufo_step.c); what is left "
+                      "are the ten small-unit and ten large-unit direction arms",
     "Map_BuildMissionTerrain": "needs the .ma1 templates (ported) plus Font_LoadTactSprites "
                                "(759 B) and the palette LUTs (Tact_BuildPaletteLuts, 1184 B)",
     "Combat_ResolveShot": "combat resolution; needs arms/ammo and the LOS trace (both ported)",

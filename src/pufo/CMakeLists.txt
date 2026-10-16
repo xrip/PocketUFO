@@ -31,6 +31,7 @@ target_link_libraries(pufo_render PUBLIC pufo_options pufo_dat pufo_util)
 add_library(pufo_game STATIC
     game/pufo_options.c
     game/pufo_mapcell.c
+    game/pufo_step.c
     game/pufo_font.c
     game/pufo_unit.c
     game/pufo_tactstate.c
@@ -267,6 +268,18 @@ set_target_properties(test_path PROPERTIES
 )
 add_test(NAME test_path
     COMMAND test_path
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Step probe: the vertical re-anchor (down moves the cell only, up moves cell and
+# both layer counters), the -15/-8 ceiling thresholds, the large unit's second column.
+add_executable(test_step ${CMAKE_SOURCE_DIR}/tests/test_step.c)
+target_link_libraries(test_step PRIVATE pufo_options pufo_game pufo_render pufo_dat pufo_util)
+set_target_properties(test_step PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build/tests
+)
+add_test(NAME test_step
+    COMMAND test_step
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
