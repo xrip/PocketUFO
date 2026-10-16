@@ -1,7 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `6973df7`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 87, `BaseFac_BuildStatusMsg` 0x6a4bc), and the per-unit chain
+Date: 2026-10-16. HEAD before this edit: `cd68cc4`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 88, `Ufopaedia_RefreshEntry` 0x9a014 + `Ufopaedia_PrevEntry`
+0x9a60c + `Ufopaedia_NextEntry` 0x9a754), and the per-unit chain
 there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
@@ -207,10 +208,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 925 / 1103 (83.9%)
-                                             bytes cited:     505720 / 598792 (84.5%)
-python docs/parity/audit_credits.py       -> credited functions: 925, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 452 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 928 / 1103 (84.1%)
+                                             bytes cited:     507940 / 598792 (84.8%)
+python docs/parity/audit_credits.py       -> credited functions: 928, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 463 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
@@ -231,8 +232,49 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **14295**. Coverage as of the latest commit: **925 / 1103
-functions (83.9%)**, **505720 / 598792 bytes (84.5%)**. This unit ported `BaseFac_BuildStatusMsg`
+Test checks run across the 60 suites: **14402**. Coverage as of the latest commit: **928 / 1103
+functions (84.1%)**, **507940 / 598792 bytes (84.8%)**. This unit ported the ufopaedia's paging and entry
+layout -- `Ufopaedia_RefreshEntry` (0x9a014, 1,528 B), `Ufopaedia_PrevEntry` (0x9a60c, 328 B) and
+`Ufopaedia_NextEntry` (0x9a754, 364 B), 2,220 B into `strat-ui`, now 227/245 functions and 86,492 of
+121,164 bytes (71.4%). **Two tables drive the screen.** `aUfopaediaCatTopics @ 0xAA830` -- IDA called it
+`aFghijklmnop` because row 0's bytes happen to be ASCII `'f'..'p'` (102..112), which is also why the listing
+rendered a 198-byte table as a 12-byte string -- is 9 rows of 22 research topic numbers, and **row 5 is the
+only row that fills all 22 slots**: that is the sole reason the `++idx == 22` test exists. `anUfopaediaEntryNum
+@ 0xAA5F0` maps topic to entry number, with topics 47/94/95/96/143 unmapped and the race topics 118..142
+collapsing onto the five race entries 54..58, so each race appears once per race topic. **The category panels
+reuse UiPanel's own storage for their entry list**: the paging code reads the topic as `panel + 4*(n+1261)`,
+and 4*1261 = 5044 is exactly `anLineAux`'s offset in the 7092-byte panel -- so `apLines[n]` is the entry name,
+`anLineAux[n]` its topic, `nLineCount` the count and `nUnk3032` the row the pointer last selected. No new
+structure was needed. `dword_1871D0` is a ten-dword block: nine panels, then slot 9 at 0x1871F4 (the entry
+index, which had no name of its own and reads as `dword_1871D0[9]`), then slot 10 (the category byte).
+**PrevEntry and NextEntry are not symmetric** -- NextEntry stops on the table's zero terminator (0x9A7A8),
+PrevEntry never consults the table at all: 0x9A640 walks the index down to -1, wraps the category there and
+restarts at slot 21, leaving only the panel's own line-count filter to reject the slots past a short row.
+**The unlock gate's second read is `abResearchZero[topic]`, not what Hex-Rays claims**: `MOV R0,#0x1C00 / ORR
+#0x24 / ADD R1,R1,R4 / LDRB R1,[R1,R0]` addresses `aResearchTopics + topic + 0x1C24`, and 0x15EF08 + 0x1C24 =
+0x160B2C. Hex-Rays renders the same address as `aResearchTopics[211].abActivateTopics[topic + 1]` -- one byte
+late, which would test the *next* topic's mirror byte. The ARM is the authority and the port follows it; two
+checks pin the direction by setting the two adjacent mirror bytes to opposite values. **The wrap loop at
+0x9A308..0x9A4D0 is a byte-for-byte inline clone of `UiPanel_WrapText @ 0x37144`** -- same cursors, same
+`psz[++v7 - v9] = 0` break, same `i = v7` resume, same trailing flush, same `nLineCount = nLineStart + count`
+tail, same appended space -- so the port calls the shared function instead of duplicating 400 bytes of it.
+**The layout cascade has a goto in it but reduces to four bands**: entry <= 1000 gives 220 px / style 7 / y 230
+with no flag; 1000 < entry < 2000 gives 220 px plus the flag; 2000 < entry < 3000 gives 180 px / style 13 /
+y 50; entry > 2999 gives 200 px / style 8 / y 110. Entry 1000 and entry 2000 both keep the default, and entry
+3000 is the 200 px band rather than the 180 px one. Four further tests set only the flag (93..97, 54..75,
+76..84, 85..92) and 93..97 also indents the text by seven lines so the panel's first rows stay clear of the
+entry's picture. The description is `TEXTS[4*topic + 534..537]` concatenated -- 109470/109675/109880/110085
+are 205*534..537. **The pad is a toggle, not a rebuild**: paging clears `bUfopaediaEntryDirty` (0x9A700 /
+0x9A868), so the refresh it triggers takes the create arm, while any refresh that did not come from paging
+finds the flag set and frees instead. **4 deviations recorded:** the four description records can need 816
+bytes of an 800-byte stack buffer; the original never nulls the pad pointer after `operator delete` and reads
+it again on the next refresh; `PadImage_Load` is called even when `operator new` returned null; and neither
+paging function bounds its category or entry index. 107 new checks; seven mutations -- dropping NextEntry's
+terminator test turns 3 red, giving PrevEntry the test NextEntry has turns 9 red, reading the mirror byte one
+late exactly as Hex-Rays claims turns 2 red, making the > 2999 boundary exclusive turns 3 red, shifting the
+description window one record early turns 6 red, removing the indent turns 2 red, and wrapping the category the
+wrong way turns 3 red. 11 IDB renames (463 on record) including two retyped tables and a new symbol at
+0x1871F4, 3 function comments and 7 line comments. Unit 87 ported `BaseFac_BuildStatusMsg`
 (0x6a4bc, 1,520 B), the geoscape's two-line base-facility status string. **Thirteen arms on a character
 code**, 0x20..0x2C (`SUB #0x20 / CMP #0xC / ADDLS PC` at 0x6A4E0, the char sign-extended), and
 **`GameTime_Pause` runs at 0x6A4D4, ahead of the switch** -- so it happens on all thirteen arms and on the
@@ -886,11 +928,11 @@ From `PARITY.md`, regenerated by `docs/parity/gen_report.py`.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 203 | 214 | 150604 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 211 | 214 | 177036 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
-| `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
-| `strat-ui` | 223 | 245 | 84012 / 121164 | base/crew/manuf/research/buysell/transfer/options screens |
+| `strat` | 200 | 204 | 126716 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
+| `strat-ui` | 227 | 245 | 86492 / 121164 | base/crew/manuf/research/buysell/transfer/options/ufopaedia screens |
 | `titles` | 10 | 13 | 4236 / 4444 | intro/outro animated scenes |
 
 `platform` at 0/132 is not a real gap in the usual sense: those 132 functions are WinCE APIs
@@ -1153,7 +1195,7 @@ handlers they install, the per-tick strateg event pass, the strateg icon pass, t
 stat rows and the base-facility status line are in now — what is left in the geoscape is `Geoscape_Draw`
 itself (33,744 B) and the three 12-byte atexit registrars, which is exactly the subsystem's remaining gap.
 `Geoscape_Draw` is now the single largest unported function in the binary.
-`strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
+`strat-ui` is 227 of 245 functions but 86,492 of 121,164 bytes (71.4%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 
 ### Decoded but deliberately not ported
@@ -1786,16 +1828,17 @@ screen families in Priority 4 that it draws.
 
 ### Priority 4 — screens
 
-`strat-ui` is 224 of 245 functions and 84,272 of 121,164 bytes (69.6%). The buy/sell, transfer,
+`strat-ui` is 227 of 245 functions and 86,492 of 121,164 bytes (71.4%). The buy/sell, transfer,
 manufacturing, research, soldier and base-facility families are complete, and so is the funding screen:
 `FundingScreen_Init` (0x5c084) with `FundingScreen_OpenMonthly` (0x5d160) in one unit, and
 `FundingScreen_Toggle` (0x5abe4), `FundingScreen_Open` (0x5b560), `FundingScreen_Draw` (0x5b1fc) and
 `FundingScreen_DrawExtended` (0x5b59c) in one more — the report groups those four under `strat`, which is
-194 of 204 functions and 117,032 of 160,496 bytes (72.9%), 10 functions / 43,464 bytes left. What
+200 of 204 functions and 126,716 of 160,496 bytes (79.0%), 4 functions / 33,780 bytes left. What
 is left in `strat-ui` is
-21 functions / 36,892 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
+18 functions / 34,672 bytes in five screen families: base info (`BaseInfoScreen_BuildPanels` 0x557f4 is
 the largest single one at 6,084 B), base plane (`BasePlaneScreen_*`), psi (`PsiScreen_*`), ufopaedia
-(`Ufopaedia_*`), and the base-attack screen's update/draw pair. The options screen is complete:
+(only `Ufopaedia_Open` 0x9a8cc, 3,368 B, the panel builder, is left — its paging and entry layout came in
+with unit 88), and the base-attack screen's update/draw pair. The options screen is complete:
 `OptionsScreen_Init`, `OptionsScreen_Open` (0x6d0ac) and `OptionsScreen_OnConfirm` (0x6cf18) are all ported;
 the click slot still reaches the last one through a thunk because the slot takes no arguments, which is the
 `OptionsScreenHooks` shape §7 records as a separate issue.
@@ -1819,7 +1862,7 @@ the click slot still reaches the last one through a thunk because the slot takes
 | `PARITY.md` | the generated parity report; start here for any "is X done" question |
 | `docs/parity/coverage.py` | how a citation is counted; read before adding comments |
 | `docs/parity/audit_credits.py`, `audit_names.py`, `audit_bugs.py`, `audit_tables.py` | the four integrity gates |
-| `docs/parity/renames.tsv` | 452 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
+| `docs/parity/renames.tsv` | 463 renames on record per `audit_names.py`; check here before "porting" something a name scan says is missing |
 | `docs/parity/bugs.tsv` | 221-row bug ledger, with a `qol` column |
 | `docs/parity/game-core.md` | the running decode log; most of the hard-won detail lives here |
 | `docs/idb/inventory-grouped.tsv` | authoritative function sizes per subsystem; use it to check coverage deltas |

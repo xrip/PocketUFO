@@ -5263,4 +5263,106 @@ typedef struct BaseFacStatusEnv {
 char *BaseFac_BuildStatusMsg(const BaseFacStatusEnv *pEnv, i32 nCase, i32 nBaseIdx,
                              i32 nFacRow, i32 nFacCol);
 
+/* ---- Ufopaedia: the in-game encyclopedia -------------------------------------------
+ *
+ * Evidence: Ufopaedia_RefreshEntry @ 0x9a014, Ufopaedia_PrevEntry @ 0x9a60c,
+ *           Ufopaedia_NextEntry @ 0x9a754.
+ *
+ * The screen is nine category panels plus one 50-line text panel. Paging walks the
+ * category panels and lands on a research topic; that topic's ufopaedia entry number
+ * then selects the text layout and the pad asset.
+ *
+ * Two tables drive it, both read straight out of the image:
+ *
+ *   aUfopaediaCatTopics @ 0xAA830 -- 9 rows of 22 research topic numbers, the category
+ *     order. IDA names it aFghijklmnop after the first row's bytes, which happen to be
+ *     ASCII 'f'..'p' (102..112). Row 5 is the only row that fills all 22 slots; every
+ *     other row ends at a zero byte, and Ufopaedia_NextEntry stops on that zero
+ *     (0x9A7A8). Ufopaedia_PrevEntry has no such test -- it walks down to -1 and wraps
+ *     the category there (0x9A640), then relies on the panel's own line count.
+ *   anUfopaediaEntryNum @ 0xAA5F0 -- 144 dwords, research topic number -> entry number.
+ *     Five topics map to 0 (47, 94, 95, 96, 143) and the alien-race topics 118..142 map
+ *     onto the five race entries 54..58.
+ *
+ * Entry numbers are not sequential per category: topics 55..76 map to 54..75, topics
+ * 77..93 to 76..92, topics 102..112 to 93..103, and the rest to 1001..1051, 2026..2036,
+ * 2097..2101 and 3000..3016. Ufopaedia_RefreshEntry branches on those ranges.
+ *
+ * The category panels reuse UiPanel's own storage for their entry list: apLines[n] holds
+ * the entry name and anLineAux[n] holds its topic number. That is why both paging
+ * functions read the topic as `panel + 4 * (n + 1261)` -- 4 * 1261 = 5044 = anLineAux's
+ * offset in the 7092-byte layout. nLineCount is the entry count and nUnk3032 the row the
+ * pointer last selected. */
+
+#define PUFO_UFOPAEDIA_CATEGORIES   9   /* g_apUfopaediaCatPanels[0..8] @ 0x1871D0 */
+#define PUFO_UFOPAEDIA_CAT_WIDTH    22  /* aUfopaediaCatTopics's row length; 0x9A7A8's wrap test */
+#define PUFO_UFOPAEDIA_TEXT_LINES   50  /* the text panel's line capacity, from 0x9A0F0's clear loop */
+#define PUFO_UFOPAEDIA_TEXT_MAXW    220 /* the default wrap width (0x9A0D4) */
+#define PUFO_UFOPAEDIA_MAXW_ALIEN   200 /* entry > 2999 (0x9A160) */
+#define PUFO_UFOPAEDIA_MAXW_TIGHT   180 /* 2000 < entry < 3000 (0x9A1CC) */
+
+/* Ufopaedia_RefreshEntry's layout bands, keyed on the entry number. The bands are what the
+ * ARM branches on (0x9A14C..0x9A1F0); what each band's entries depict is not recorded in the
+ * IDB, so they are named after the layout they select, not after their subject matter. */
+#define PUFO_UFOPAEDIA_BAND_ALIEN_FIRST  3000 /* entry > 2999: 200 px, style 8, panel at y 110 */
+#define PUFO_UFOPAEDIA_BAND_DEFAULT_LAST 1000 /* entry <= 1000: 220 px, style 7, panel at y 230 */
+#define PUFO_UFOPAEDIA_BAND_WIDE_LAST    2000 /* 1000 < entry < 2000: 220 px, wide flag set */
+#define PUFO_UFOPAEDIA_BAND_TIGHT_LAST   3000 /* 2000 < entry < 3000: 180 px, style 13, y 50 */
+#define PUFO_UFOPAEDIA_INDENT_FIRST        93 /* 93..97 also start the text at line 7 (0x9A20C) */
+#define PUFO_UFOPAEDIA_INDENT_LAST         97
+#define PUFO_UFOPAEDIA_INDENT_LINES         7 /* the line the indented band starts writing at */
+/* Three further bands that only set the wide flag (0x9A21C, 0x9A230, 0x9A244). Entries 54..58
+ * are the five alien races -- that much the IDB states outright, through the race-name
+ * overwrite in the screen's opener -- but what the rest of 54..92 depicts is not recorded
+ * anywhere, so the bands carry no subject name here. */
+#define PUFO_UFOPAEDIA_FLAG_BAND1_FIRST    54 /* 53 < entry < 76 */
+#define PUFO_UFOPAEDIA_FLAG_BAND1_LAST     75
+#define PUFO_UFOPAEDIA_FLAG_BAND2_FIRST    76 /* 75 < entry < 85 */
+#define PUFO_UFOPAEDIA_FLAG_BAND2_LAST     84
+#define PUFO_UFOPAEDIA_FLAG_BAND3_FIRST    85 /* 84 < entry < 93 */
+#define PUFO_UFOPAEDIA_FLAG_BAND3_LAST     92
+#define PUFO_UFOPAEDIA_RACE_ENTRY_FIRST    54 /* Sectoid, Snakeman, Ethereal, Muton, Floater */
+#define PUFO_UFOPAEDIA_RACE_ENTRY_LAST     58
+
+#define PUFO_UFOPAEDIA_DESC_REC_FIRST 534 /* TEXTS[4*topic + 534..537], the four description records */
+#define PUFO_UFOPAEDIA_PAL_SLOT        17 /* Palette_Load's slot for "<entry>.pal" (0x9A584) */
+#define PUFO_UFOPAEDIA_PAD_MODE        17 /* PadImage_Load's palette slot (0x9A5A4) */
+
+typedef struct UfopaediaEnv {
+    UiPanel   *apCatPanels[PUFO_UFOPAEDIA_CATEGORIES]; /* g_apUfopaediaCatPanels @ 0x1871D0 */
+    UiPanel   *pTextPanel;      /* g_pUfopaediaTextPanel @ 0x187200, 50 lines */
+    i32       *pnEntryIdx;      /* 0x1871F4, the entry slot inside the current category */
+    i32       *pnCategory;      /* g_nUfopaediaCategory @ 0x1871F8, 0..8 */
+    i32       *pnTopic;         /* g_nUfopaediaTopic @ 0x187300 */
+    i32       *pnEntryNum;      /* g_nUfopaediaEntryNum @ 0x1872D8 */
+    u8        *pbWidePanel;     /* unk_1871FC, shared with the geoscape pointer's 16-mode panel set */
+    u8        *pbPadDirty;      /* g_bUfopaediaPadDirty @ 0x187304 */
+    u8        *pbEntryDirty;    /* bUfopaediaEntryDirty @ 0x187310 */
+    u8        *pbReselect;      /* Ufopaedia_bReselectPending @ 0x18706C */
+    PadImage **ppPad;           /* g_pUfopaediaPad @ 0x1872E4 */
+    const ResearchTopicLive *aTopics;      /* aResearchTopics @ 0x15EF08 */
+    const u8  *abResearchZero;  /* abResearchZero @ 0x160B2C, the unlock mirror */
+    const u8  *pTextRecs;       /* aTextRecs @ 0xB38D0, stride PUFO_TEXT_REC_STRIDE */
+} UfopaediaEnv;
+
+/* 0x9A014. Re-picks the current entry when neither the pointer nor a paging step has already
+ * chosen one, lays the text panel out for the entry number, word-wraps the four description
+ * records into it, and creates or frees the entry's pad.
+ *
+ * The wrap loop at 0x9A308..0x9A4D0 is a byte-for-byte inline clone of UiPanel_WrapText
+ * @ 0x37144 -- same cursors, same `psz[++v7 - v9] = 0` break, same trailing space appended to
+ * the working copy, same `nLineCount = nLineStart + count` tail. The port calls the shared
+ * function instead of duplicating it; the trailing space UiPanel_WrapText appends is the one
+ * space 0x9A2FC appends here. */
+void Ufopaedia_RefreshEntry(UfopaediaEnv *pEnv);
+
+/* 0x9A60c / 0x9A754. Page to the previous / next entry, wrapping the entry index into the
+ * neighbouring category and skipping entries whose research topic is not unlocked. Both end by
+ * dropping the current pad and calling Ufopaedia_RefreshEntry. */
+void Ufopaedia_PrevEntry(UfopaediaEnv *pEnv);
+void Ufopaedia_NextEntry(UfopaediaEnv *pEnv);
+
+extern const u8  g_aUfopaediaCatTopics[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH];
+extern const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT];
+
 #endif /* PUFO_BASEUI_H */

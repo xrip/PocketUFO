@@ -13053,6 +13053,439 @@ static void TestPlaneStatRows(void)
     CheckEqI32(g_psRows, 2, "so cases 8's zeroes came from the guard, not from missing data");
 }
 
+/* ---- ufopaedia: the encyclopedia's paging and entry layout ----------------------- */
+
+static UiPanel g_ufCat[PUFO_UFOPAEDIA_CATEGORIES];
+static UiPanel g_ufText;
+static u8 g_ufCatLines[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH][PUFO_PANEL_LINE_BYTES];
+/* All 500 line slots are backed, not just the 50 the panel was built with: the original's wrap
+ * has no bound against its own panel, so a fixture that needs more than 50 lines must not turn
+ * into a crash in the middle of the suite. */
+static u8 g_ufTextLines[PUFO_PANEL_LINES][PUFO_PANEL_LINE_BYTES];
+static ResearchTopicLive g_ufTopics[PUFO_RESEARCH_TOPIC_COUNT];
+static u8 g_ufZero[PUFO_RESEARCH_TOPIC_COUNT];
+static i32 g_ufEntryIdx, g_ufCategory, g_ufTopic, g_ufEntryNum;
+static u8 g_ufWide, g_ufPadDirty, g_ufEntryDirty, g_ufReselect;
+static PadImage *g_ufPad;
+static UfopaediaEnv g_ufEnv;
+
+/* The nine rows, transcribed from aUfopaediaCatTopics @ 0xAA830. They are written out here as
+ * literals rather than read back out of the port's table, so the table itself is under test. */
+static const u8 aCatWant[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH] = {
+    { 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  97,  98,  99, 100, 101,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {   1,   2,   3,   4,   5,   6,   7,   8,  14,  15,  16,  17,  18,  22,  23,  24,  25,   0,   0,   0,   0,   0 },
+    {   9, 113,  10, 114,  11, 115,  12, 116,  13, 117,  21,  19,  20,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  48,  49,  50,  51,  52,  53,  54,   0,   0,   0,   0,   0 },
+    {  55,  66,  56,  67,  57,  68,  58,  69,  59,  70,  60,  71,  61,  72,  62,  73,  63,  74,  64,  75,  65,  76 },
+    {  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  77,  78,  79,  80,  81,  82,  83,  84,  85,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  86,  87,  88,  89,  90,  91,  92,  93,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 }
+};
+static const i32 aCatLen[PUFO_UFOPAEDIA_CATEGORIES] = { 11, 5, 17, 13, 17, 22, 11, 9, 8 };
+
+/* The order Ufopaedia_NextEntry walks, starting at (category 0, entry 0): every slot of every
+ * row in table order, 113 stops, and the 113th lands back on the start. */
+static const i32 aWalkTopic[113] = {
+    103, 104, 105, 106, 107, 108, 109, 110, 111, 112,
+     97,  98,  99, 100, 101,
+      1,   2,   3,   4,   5,   6,   7,   8,  14,  15,  16,  17,  18,  22,  23,  24,  25,
+      9, 113,  10, 114,  11, 115,  12, 116,  13, 117,  21,  19,  20,
+     37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  48,  49,  50,  51,  52,  53,  54,
+     55,  66,  56,  67,  57,  68,  58,  69,  59,  70,  60,  71,  61,  72,  62,  73,  63,  74,  64,  75,  65,  76,
+     26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,
+     77,  78,  79,  80,  81,  82,  83,  84,  85,
+     86,  87,  88,  89,  90,  91,  92,  93,
+    102
+};
+static const i32 aWalkCat[113] = {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
+    7, 7, 7, 7, 7, 7, 7, 7, 7,
+    8, 8, 8, 8, 8, 8, 8, 8,
+    0
+};
+
+static void UfPutRec(i32 nRec, const char *psz)
+{
+    PutStr((char *)(g_fsTexts) + PUFO_TEXT_REC_STRIDE * (size_t)nRec, psz);
+}
+
+static void UfFixture(void)
+{
+    i32 c, i;
+
+    if (g_ufPad != NULL) {
+        PadImage_FreeData(g_ufPad);
+        free(g_ufPad);
+        g_ufPad = NULL;
+    }
+    memset(g_ufCat, 0, sizeof(g_ufCat));
+    memset(&g_ufText, 0, sizeof(g_ufText));
+    memset(g_ufTopics, 0, sizeof(g_ufTopics));
+    memset(g_ufZero, 0, sizeof(g_ufZero));
+
+    /* The panels are built the way the screen's opener builds them: one row of the table per
+     * panel, nLineCount the row's length, anLineAux the topic number. */
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        g_ufCat[c].nLineCount = aCatLen[c];
+        for (i = 0; i < PUFO_UFOPAEDIA_CAT_WIDTH; ++i) {
+            g_ufCat[c].apLines[i] = g_ufCatLines[c][i];
+            g_ufCatLines[c][i][0] = 0;
+            g_ufCat[c].anLineAux[i] = g_aUfopaediaCatTopics[c][i];
+        }
+    }
+    for (i = 0; i < PUFO_PANEL_LINES; ++i) {
+        g_ufText.apLines[i] = g_ufTextLines[i];
+        g_ufTextLines[i][0] = 0;
+    }
+    for (i = 0; i < PUFO_RESEARCH_TOPIC_COUNT; ++i) {
+        g_ufTopics[i].bUnlocked = 1;   /* paging is tested first with everything unlocked */
+    }
+
+    g_ufEntryIdx = 0;
+    g_ufCategory = 0;
+    g_ufTopic = 0;
+    g_ufEntryNum = 0;
+    g_ufWide = 0;
+    g_ufPadDirty = 0;
+    g_ufEntryDirty = 0;
+    g_ufReselect = 0;
+
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        g_ufEnv.apCatPanels[c] = &g_ufCat[c];
+    }
+    g_ufEnv.pTextPanel  = &g_ufText;
+    g_ufEnv.pnEntryIdx  = &g_ufEntryIdx;
+    g_ufEnv.pnCategory  = &g_ufCategory;
+    g_ufEnv.pnTopic     = &g_ufTopic;
+    g_ufEnv.pnEntryNum  = &g_ufEntryNum;
+    g_ufEnv.pbWidePanel = &g_ufWide;
+    g_ufEnv.pbPadDirty  = &g_ufPadDirty;
+    g_ufEnv.pbEntryDirty= &g_ufEntryDirty;
+    g_ufEnv.pbReselect  = &g_ufReselect;
+    g_ufEnv.ppPad       = &g_ufPad;
+    g_ufEnv.aTopics     = g_ufTopics;
+    g_ufEnv.abResearchZero = g_ufZero;
+    g_ufEnv.pTextRecs   = g_fsTexts;
+}
+
+/* Drives RefreshEntry straight from an entry number, with the reselect branch and the pad
+ * branch both held off so the number under test is the one the layout sees. */
+static void UfLayoutFor(i32 nEntry)
+{
+    g_ufPadDirty = 1;      /* skip 0x9A054's reselect, so pnEntryNum survives */
+    g_ufEntryDirty = 1;    /* take the free arm, so no asset work happens */
+    g_ufEntryNum = nEntry;
+    g_ufTopic = 0;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+}
+
+static void TestUfopaedia(void)
+{
+    const char *const apszArch[2] = { "lang.dat", "main.dat" };
+    i32 c, i, nBad, nFirst;
+    i32 nWideLines, nTightLines;
+
+    printf("the ufopaedia's paging and entry layout\n");
+
+    if (!Asset_OpenArchives(apszArch)) {
+        printf("  FAIL lang.dat / main.dat did not open\n");
+        ++g_nFailures;
+        return;
+    }
+    if (g_fsTexts == NULL && !FsLoadTexts()) {
+        printf("  FAIL lang.dat texts.dat did not load\n");
+        ++g_nFailures;
+        return;
+    }
+    FontMetrics_Load();
+    Check(g_fontMetrics.aAdvance['A'] > 0 && g_fontMetrics.aAdvance[' '] > 0,
+          "real glyph advances are loaded, so the wrap widths below are measured, not assumed");
+
+    /* The shipped description text is replaced with the test's own wording: the wrap tests measure
+     * the band widths, not the language file's phrasing, and no fixture can overflow the 50-line
+     * panel with a real paragraph. 4 * 143 + 537 = 1109 covers the last topic's last record. */
+    for (i = PUFO_UFOPAEDIA_DESC_REC_FIRST; i <= 4 * (PUFO_RESEARCH_TOPIC_COUNT - 1) + PUFO_UFOPAEDIA_DESC_REC_FIRST + 3; ++i) {
+        UfPutRec(i, "");
+    }
+
+    /* 1. The category table, against the literals transcribed from 0xAA830. */
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        Check(memcmp(g_aUfopaediaCatTopics[c], aCatWant[c], PUFO_UFOPAEDIA_CAT_WIDTH) == 0,
+              "category row matches the shipped topic order");
+    }
+    Check(g_aUfopaediaCatTopics[5][PUFO_UFOPAEDIA_CAT_WIDTH - 1] != 0 &&
+          g_aUfopaediaCatTopics[0][PUFO_UFOPAEDIA_CAT_WIDTH - 1] == 0,
+          "row 5 is the only row that fills all 22 slots, so the ++idx == 22 test is not dead code");
+    for (c = 0; c < PUFO_UFOPAEDIA_CATEGORIES; ++c) {
+        Check(aCatLen[c] != PUFO_UFOPAEDIA_CAT_WIDTH || c == 5,
+              "every other row is shorter than the row width");
+    }
+
+    /* 2. The topic -> entry map, at the values that make the stride and the aliases visible. */
+    CheckEqI32(g_anUfopaediaEntryNum[0], 0, "topic 0 has no ufopaedia entry");
+    CheckEqI32(g_anUfopaediaEntryNum[1], 1001, "topic 1 is entry 1001");
+    CheckEqI32(g_anUfopaediaEntryNum[55], 54, "topic 55 is entry 54");
+    CheckEqI32(g_anUfopaediaEntryNum[66], 65, "topic 66 is entry 65, not 66 -- the row interleaves");
+    CheckEqI32(g_anUfopaediaEntryNum[93], 92, "topic 93 is entry 92, the last of the sub-1000 run");
+    CheckEqI32(g_anUfopaediaEntryNum[102], 93, "topic 102 restarts the numbering at 93");
+    CheckEqI32(g_anUfopaediaEntryNum[112], 103, "topic 112 is entry 103");
+    CheckEqI32(g_anUfopaediaEntryNum[26], 2026, "topic 26 is entry 2026");
+    CheckEqI32(g_anUfopaediaEntryNum[37], 3000, "topic 37 is entry 3000");
+    CheckEqI32(g_anUfopaediaEntryNum[47], 0, "topic 47 is the gap in the 3000-run");
+    CheckEqI32(g_anUfopaediaEntryNum[118], 54, "the Sectoid topic reuses race entry 54");
+    CheckEqI32(g_anUfopaediaEntryNum[142], 56, "the last race topic reuses entry 56");
+    CheckEqI32(g_anUfopaediaEntryNum[143], 0, "topic 143, the last record, has no entry");
+
+    /* 3. A full cycle of NextEntry, everything unlocked. */
+    UfFixture();
+    nBad = 0;
+    nFirst = -1;
+    for (i = 0; i < 113; ++i) {
+        Ufopaedia_NextEntry(&g_ufEnv);
+        if (g_ufTopic != aWalkTopic[i] || g_ufCategory != aWalkCat[i]) {
+            ++nBad;
+            if (nFirst < 0) {
+                nFirst = i;
+            }
+        }
+    }
+    CheckEqI32(nBad, 0, "113 NextEntry calls walk every slot of every row in the table's order");
+    if (nFirst >= 0) {
+        printf("       first mismatch at step %d: got cat %d topic %d, want cat %d topic %d\n",
+               nFirst, g_ufCategory, g_ufTopic, aWalkCat[nFirst], aWalkTopic[nFirst]);
+    }
+    CheckEqI32(g_ufCategory, 0, "the cycle closes back onto category 0");
+    CheckEqI32(g_ufEntryIdx, 0, "and onto entry slot 0");
+    CheckEqI32(g_ufTopic, 102, "the 113th stop is the row-0 head topic again");
+
+    /* 4. Paging's own choice survives the refresh it calls. DropPad sets the pad-dirty byte,
+     * which is exactly what holds off 0x9A054's re-read of the panel's selected row. */
+    UfFixture();
+    g_ufCat[0].nUnk3032 = 0;
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufEntryIdx, 1, "paging's entry index is not overwritten by the panel's stale selection");
+    CheckEqI32(g_ufCat[0].nUnk3032, 0, "the panel's own selection byte is left alone");
+    Check(g_ufPadDirty == 0 && g_ufEntryDirty == 1,
+          "the refresh that paging triggers takes the create arm, not the free arm");
+    Check(g_ufPad != NULL, "and it builds the entry's pad");
+
+    /* 5. PrevEntry has no table test at all: from the head of row 0 it walks the index to -1 and
+     * wraps to the LAST category's LAST slot, then filters by the panel's line count. */
+    UfFixture();
+    Ufopaedia_PrevEntry(&g_ufEnv);
+    CheckEqI32(g_ufCategory, 8, "PrevEntry from (0,0) wraps to category 8");
+    CheckEqI32(g_ufEntryIdx, 7, "and lands on slot 7, the last real entry of row 8");
+    CheckEqI32(g_ufTopic, 93, "which is topic 93");
+    UfFixture();
+    g_ufCategory = 1;
+    g_ufEntryIdx = 0;
+    Ufopaedia_PrevEntry(&g_ufEnv);
+    CheckEqI32(g_ufCategory, 0, "PrevEntry from (1,0) wraps back to category 0");
+    CheckEqI32(g_ufEntryIdx, 10, "slots 21..11 of row 0 are past its 11 entries and get skipped");
+    CheckEqI32(g_ufTopic, 112, "so the first accepted slot is row 0's last topic");
+
+    /* 6. The asymmetry, made explicit: a slot the table calls empty is left by NextEntry and
+     * entered by PrevEntry, because only NextEntry consults the table. */
+    UfFixture();
+    g_ufCat[0].nLineCount = PUFO_UFOPAEDIA_CAT_WIDTH;   /* pretend row 0 is full */
+    for (i = 0; i < PUFO_UFOPAEDIA_CAT_WIDTH; ++i) {
+        g_ufCat[0].anLineAux[i] = (i < PUFO_RESEARCH_TOPIC_COUNT) ? (i + 1) : 0;
+    }
+    g_ufCategory = 0;
+    g_ufEntryIdx = 12;                                  /* a slot the table says is empty */
+    Ufopaedia_PrevEntry(&g_ufEnv);
+    CheckEqI32(g_ufCategory, 0, "PrevEntry stays in category 0 at a table-empty slot");
+    CheckEqI32(g_ufEntryIdx, 11, "it steps to 11, which the table also calls empty");
+    CheckEqI32(g_ufTopic, 12, "and accepts it, because PrevEntry filters on the panel, not the table");
+    UfFixture();
+    g_ufCat[0].nLineCount = PUFO_UFOPAEDIA_CAT_WIDTH;
+    for (i = 0; i < PUFO_UFOPAEDIA_CAT_WIDTH; ++i) {
+        g_ufCat[0].anLineAux[i] = (i < PUFO_RESEARCH_TOPIC_COUNT) ? (i + 1) : 0;
+    }
+    g_ufCategory = 0;
+    g_ufEntryIdx = 12;
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufCategory, 1, "NextEntry leaves category 0 from the same slot");
+    CheckEqI32(g_ufEntryIdx, 0, "starting the next row at its head");
+    CheckEqI32(g_ufTopic, 97, "the table's zero terminator at row 0 slot 13 is what moved it");
+
+    /* 7. The unlock filter, and which byte it really reads. */
+    UfFixture();
+    g_ufTopics[103].bUnlocked = 0;
+    g_ufTopics[104].bUnlocked = 0;
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufTopic, 105, "locked topics are stepped over, not shown blank");
+    CheckEqI32(g_ufEntryIdx, 3, "one call still lands on the next ACCEPTED slot, two past the start");
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufTopic, 106, "and the next call moves on from there, not from the locked pair");
+
+    UfFixture();
+    g_ufTopics[103].bUnlocked = 0;
+    g_ufZero[103] = 1;      /* abResearchZero[103] set, abResearchZero[104] left clear */
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufTopic, 103,
+               "the mirror byte at aResearchTopics + 0x1C24 is abResearchZero[topic], not [topic + 1]");
+    UfFixture();
+    g_ufTopics[103].bUnlocked = 0;
+    g_ufZero[104] = 1;      /* the decompiler's reading would accept on this byte instead */
+    Ufopaedia_NextEntry(&g_ufEnv);
+    CheckEqI32(g_ufTopic, 104,
+               "and the mirror is read at the topic itself: setting the NEXT topic's byte does not unlock it");
+
+    /* 8. The layout bands. */
+    UfFixture();
+    UfLayoutFor(0);
+    CheckEqI32(g_ufText.nStyle, 7, "entry 0 keeps the default 7-row panel");
+    CheckEqI32(g_ufText.nPosY, 230, "at y 230");
+    CheckEqI32(g_ufWide, 0, "and no wide flag");
+    UfLayoutFor(1000);
+    CheckEqI32(g_ufText.nStyle, 7, "entry 1000 is still the default band");
+    CheckEqI32(g_ufWide, 0, "the cascade's `<= 1000` arm is inclusive");
+    UfLayoutFor(1001);
+    CheckEqI32(g_ufText.nStyle, 7, "entry 1001 keeps 7 rows and y 230");
+    CheckEqI32(g_ufText.nPosY, 230, "only the flag changes");
+    CheckEqI32(g_ufWide, 1, "1000 < entry < 2000 sets the wide flag");
+    UfLayoutFor(2000);
+    CheckEqI32(g_ufWide, 0, "entry 2000 falls back to the default -- the cascade's exact boundary");
+    CheckEqI32(g_ufText.nStyle, 7, "with the default row count");
+    UfLayoutFor(2001);
+    CheckEqI32(g_ufText.nStyle, 13, "2000 < entry < 3000 gives 13 rows");
+    CheckEqI32(g_ufText.nPosY, 50, "at y 50");
+    CheckEqI32(g_ufWide, 1, "and the wide flag");
+    UfLayoutFor(2999);
+    CheckEqI32(g_ufText.nStyle, 13, "2999 is still the 13-row band");
+    UfLayoutFor(3000);
+    CheckEqI32(g_ufText.nStyle, 8, "entry 3000 is the > 2999 band, not the 13-row one");
+    CheckEqI32(g_ufText.nPosY, 110, "at y 110");
+    CheckEqI32(g_ufWide, 1, "and the wide flag");
+    UfLayoutFor(9999);
+    CheckEqI32(g_ufText.nStyle, 8, "the > 2999 band has no upper end");
+
+    /* The flag-only bands, at each of their four boundaries. */
+    UfLayoutFor(53);
+    CheckEqI32(g_ufWide, 0, "entry 53 sits just below the first flag band");
+    UfLayoutFor(54);
+    CheckEqI32(g_ufWide, 1, "entry 54, Sectoid, opens it");
+    UfLayoutFor(75);
+    CheckEqI32(g_ufWide, 1, "entry 75 is the band's last");
+    UfLayoutFor(76);
+    CheckEqI32(g_ufWide, 1, "and 76 continues it through the second band");
+    UfLayoutFor(84);
+    CheckEqI32(g_ufWide, 1, "84 ends the second band");
+    UfLayoutFor(85);
+    CheckEqI32(g_ufWide, 1, "85 starts the third");
+    UfLayoutFor(92);
+    CheckEqI32(g_ufWide, 1, "92 ends the third");
+    UfLayoutFor(98);
+    CheckEqI32(g_ufWide, 0, "98 sits past all four bands");
+
+    /* 93..97 also indents the text by seven lines. */
+    UfLayoutFor(93);
+    CheckEqI32(g_ufWide, 1, "93 sets the flag");
+    CheckEqI32(g_ufText.nLineCount, PUFO_UFOPAEDIA_INDENT_LINES,
+               "and reserves seven lines: nLineCount is the indent with no text yet");
+    UfLayoutFor(97);
+    CheckEqI32(g_ufText.nLineCount, PUFO_UFOPAEDIA_INDENT_LINES, "97 is the indent band's last entry");
+    UfLayoutFor(98);
+    CheckEqI32(g_ufText.nLineCount, 0, "98 gets no indent");
+
+    /* 9. The description is TEXTS[4*topic + 534..537], concatenated. */
+    UfFixture();
+    UfPutRec(533, "PRE");
+    UfPutRec(534, "A1");
+    UfPutRec(535, "B2");
+    UfPutRec(536, "C3");
+    UfPutRec(537, "D4");
+    UfPutRec(538, "E5");
+    UfPutRec(539, "F6");
+    UfPutRec(540, "G7");
+    UfPutRec(541, "H8");
+    g_ufPadDirty = 1;
+    g_ufEntryDirty = 1;
+    g_ufEntryNum = 0;
+    g_ufTopic = 0;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    CheckStr((const char *)g_ufTextLines[0], "A1B2C3D4", "topic 0's text is records 534,535,536,537 in order");
+    Check(strstr((const char *)g_ufTextLines[0], "PRE") == NULL, "record 533 is not part of it");
+    Check(strstr((const char *)g_ufTextLines[0], "E5") == NULL, "and record 538 is not either");
+    CheckEqI32(g_ufText.nLineCount, 1, "one short paragraph is one line");
+
+    g_ufTopic = 1;   /* the stride is 4 records per topic */
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    CheckStr((const char *)g_ufTextLines[0], "E5F6G7H8", "topic 1 shifts the window by exactly four records");
+
+    /* 10. The panel is cleared before the wrap, and the scroll cursor is reset. */
+    for (i = 0; i < PUFO_UFOPAEDIA_TEXT_LINES; ++i) {
+        PutStr((char *)g_ufTextLines[i], "stale");
+    }
+    g_ufText.nUnk3028 = 9;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    nBad = 0;
+    for (i = 1; i < PUFO_UFOPAEDIA_TEXT_LINES; ++i) {
+        if (g_ufTextLines[i][0] != 0) {
+            ++nBad;
+        }
+    }
+    CheckEqI32(nBad, 0, "all 50 lines are cleared before the new text is wrapped in");
+    CheckEqI32(g_ufText.nUnk3028, 0, "and the scroll cursor is reset");
+
+    /* 11. The wrap width really is what the band selects: the same text needs more lines at 180
+     * than at 220. */
+    UfPutRec(534, "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega");
+    UfPutRec(535, "");
+    UfPutRec(536, "");
+    UfPutRec(537, "");
+    UfLayoutFor(1001);   /* 220 px */
+    nWideLines = g_ufText.nLineCount;
+    UfLayoutFor(2001);   /* 180 px */
+    nTightLines = g_ufText.nLineCount;
+    Check(nWideLines > 1, "the long description wraps onto several lines at 220 px");
+    Check(nTightLines > nWideLines,
+          "the 2000..3000 band's 180 px limit wraps the same text onto strictly more lines");
+
+    /* 12. The pad toggle: paging builds it, a refresh that did not come from paging frees it. */
+    UfFixture();
+    g_ufEntryNum = 54;   /* < 1000, so the entry has palette and pad art */
+    g_ufPadDirty = 1;
+    g_ufEntryDirty = 0;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    Check(g_ufPad != NULL, "the create arm allocates the pad");
+    CheckEqI32(g_ufEntryDirty, 1, "and marks the entry dirty for the next call");
+    CheckEqI32(g_ufPadDirty, 0, "clearing its own dirty byte");
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    Check(g_ufPad == NULL, "the second call finds the flag set and frees the pad instead");
+    CheckEqI32(g_ufEntryDirty, 0, "leaving the pair back at its starting state");
+
+    /* 13. The reselect branch reads the panel's own selection when neither flag is set. */
+    UfFixture();
+    g_ufCategory = 2;
+    g_ufCat[2].nUnk3032 = 8;      /* row 2 slot 8 is topic 14 */
+    g_ufPadDirty = 0;
+    g_ufReselect = 0;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    CheckEqI32(g_ufEntryIdx, 8, "the reselect reads nUnk3032 out of the current category panel");
+    CheckEqI32(g_ufTopic, 14, "and takes the topic from that slot's aux column");
+    CheckEqI32(g_ufEntryNum, 1020, "and the entry number from the topic -- 0xAA5F0[14], note the 1105 outlier nearby");
+    g_ufPadDirty = 1;
+    g_ufEntryIdx = 3;
+    Ufopaedia_RefreshEntry(&g_ufEnv);
+    CheckEqI32(g_ufEntryIdx, 3, "with the pad-dirty byte set the reselect is skipped and the index stands");
+    CheckEqI32(g_ufTopic, 14, "and the entry stays the one paging chose");
+
+    if (g_ufPad != NULL) {
+        PadImage_FreeData(g_ufPad);
+        free(g_ufPad);
+        g_ufPad = NULL;
+    }
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0);
@@ -13143,6 +13576,7 @@ int main(void)
     TestFundingReport();
     TestPlaneStatRows();
     TestFacStatusLine();
+    TestUfopaedia();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

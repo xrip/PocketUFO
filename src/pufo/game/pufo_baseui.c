@@ -10369,3 +10369,317 @@ char *BaseFac_BuildStatusMsg(const BaseFacStatusEnv *pEnv, i32 nCase, i32 nBaseI
         return NULL;
     }
 }
+
+/* ---- Ufopaedia ------------------------------------------------------------------ */
+
+/* aUfopaediaCatTopics @ 0xAA830, read straight out of the image. Row 5 is the only row that
+ * fills all 22 slots; every other row is terminated by a zero byte, which is what
+ * Ufopaedia_NextEntry stops on at 0x9A7A8. IDA's own name, aFghijklmnop, comes from row 0's
+ * bytes happening to be ASCII 'f'..'p'. */
+const u8 g_aUfopaediaCatTopics[PUFO_UFOPAEDIA_CATEGORIES][PUFO_UFOPAEDIA_CAT_WIDTH] = {
+    { 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  97,  98,  99, 100, 101,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {   1,   2,   3,   4,   5,   6,   7,   8,  14,  15,  16,  17,  18,  22,  23,  24,  25,   0,   0,   0,   0,   0 },
+    {   9, 113,  10, 114,  11, 115,  12, 116,  13, 117,  21,  19,  20,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  48,  49,  50,  51,  52,  53,  54,   0,   0,   0,   0,   0 },
+    {  55,  66,  56,  67,  57,  68,  58,  69,  59,  70,  60,  71,  61,  72,  62,  73,  63,  74,  64,  75,  65,  76 },
+    {  26,  27,  28,  29,  30,  31,  32,  33,  34,  35,  36,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  77,  78,  79,  80,  81,  82,  83,  84,  85,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 },
+    {  86,  87,  88,  89,  90,  91,  92,  93,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0 }
+};
+
+/* anUfopaediaEntryNum @ 0xAA5F0: research topic number -> ufopaedia entry number. Five topics
+ * have no entry (47, 94, 95, 96, 143) and the alien-race topics 118..142 all map onto the five
+ * race entries 54..58, which is why the ufopaedia lists each race once per race topic. */
+const i32 g_anUfopaediaEntryNum[PUFO_RESEARCH_TOPIC_COUNT] = {
+        0, 1001, 1004, 1008, 1007, 1010, 1002, 1005, 1009, 1003, 1006, 1011,
+     1013, 1012, 1020, 1021, 1024, 1022, 1014, 1105, 1023, 1018, 1017, 1015,
+     1016, 1019, 2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033, 2034, 2035,
+     2036, 3000, 3001, 3002, 3003, 3004, 3005, 3013, 3006, 3007, 3014,    0,
+     3015, 3016, 3012, 3010, 3008, 3009, 3011,   54,   55,   56,   57,   58,
+       59,   60,   61,   62,   63,   64,   65,   66,   67,   68,   69,   70,
+       71,   72,   73,   74,   75,   76,   77,   78,   79,   80,   81,   82,
+       83,   84,   85,   86,   87,   88,   89,   90,   91,   92,    0,    0,
+        0, 2097, 2098, 2099, 2100, 2101,   93,   94,   95,   96,   97,   98,
+       99,  100,  101,  102,  103, 1037, 1039, 1049, 1051, 1050,   54,   58,
+       57,   55,   56,   54,   58,   57,   55,   56,   54,   58,   57,   55,
+       56,   54,   58,   57,   55,   56,   54,   58,   57,   55,   56,    0
+};
+
+static UiPanel *Ufopaedia_CatPanelAt(const UfopaediaEnv *pEnv, i32 nCategory)
+{
+    if (nCategory < 0 || nCategory >= PUFO_UFOPAEDIA_CATEGORIES) {
+        return NULL;
+    }
+    return pEnv->apCatPanels[nCategory];
+}
+
+/* g_aUfopaediaCatTopics's cell, the static category order. Out of range reads as the row
+ * terminator 0, which is what the table itself uses past the end of every short row. */
+static i32 Ufopaedia_TableTopic(i32 nCategory, i32 nEntryIdx)
+{
+    if (nCategory < 0 || nCategory >= PUFO_UFOPAEDIA_CATEGORIES) {
+        return 0;
+    }
+    if (nEntryIdx < 0 || nEntryIdx >= PUFO_UFOPAEDIA_CAT_WIDTH) {
+        return 0;
+    }
+    return g_aUfopaediaCatTopics[nCategory][nEntryIdx];
+}
+
+/* panel->anLineAux[nEntryIdx]: the entry's topic number. The original reaches it as
+ * `panel + 4 * (n + 1261)`, and 4 * 1261 = 5044 is exactly anLineAux's offset in the
+ * 7092-byte UiPanel. -1 marks "no entry here" and is never a valid topic. */
+static i32 Ufopaedia_CatTopic(const UiPanel *pPanel, i32 nEntryIdx)
+{
+    if (nEntryIdx < 0 || nEntryIdx >= PUFO_PANEL_LINES) {
+        return -1;
+    }
+    return pPanel->anLineAux[nEntryIdx];
+}
+
+static i32 Ufopaedia_EntryNum(i32 nTopic)
+{
+    if (nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return 0;
+    }
+    return g_anUfopaediaEntryNum[nTopic];
+}
+
+static const char *Ufopaedia_TextRec(const UfopaediaEnv *pEnv, i32 nRec)
+{
+    return (const char *)(pEnv->pTextRecs) + PUFO_TEXT_REC_STRIDE * (size_t)nRec;
+}
+
+/* The unlock gate both paging functions share, 0x9A6BC..0x9A6E8:
+ *   MOV R0, #0x22 ; MUL R0, R11, R0 ; ADD R0, R0, R4 ; LDRB R0, [R0, #0xD]
+ *     -> aResearchTopics[topic].bUnlocked
+ *   MOV R0, #0x1C00 ; ORR R0, #0x24 ; ADD R1, R1, R4 ; LDRB R1, [R1, R0]
+ *     -> byte at aResearchTopics + topic + 0x1C24, and 0x15EF08 + 0x1C24 = 0x160B2C.
+ * Hex-Rays renders the second as aResearchTopics[211].abActivateTopics[topic + 1] because
+ * 211 * 34 + 0x1E = 0x1C24 -- one byte late. The ARM is the authority: it is
+ * abResearchZero[topic], the mirror ResearchScreen_RebuildTopicList sets at 0x74334 when a
+ * topic's bUnlocked becomes 1. */
+static bool Ufopaedia_TopicUnlocked(const UfopaediaEnv *pEnv, i32 nTopic)
+{
+    if (nTopic < 0 || nTopic >= PUFO_RESEARCH_TOPIC_COUNT) {
+        return false;
+    }
+    return pEnv->aTopics[nTopic].bUnlocked != 0 || pEnv->abResearchZero[nTopic] != 0;
+}
+
+/* The accept test both paging loops share, 0x9A684..0x9A6B8 / 0x9A7E8..0x9A820. The three
+ * comparisons are the original's own: count != 0, index != count, index <= count -- together
+ * "index is inside the panel's entries", written out as the ARM writes them. Returns the topic
+ * it landed on, or -1 to keep paging. */
+static i32 Ufopaedia_TryEntry(UfopaediaEnv *pEnv, UiPanel *pCat, i32 nEntryIdx)
+{
+    i32 nTopic;
+    if (pCat == NULL) {
+        return -1;
+    }
+    if (pCat->nLineCount == 0) {            /* 0x9A684 CMP R1, #0 */
+        return -1;
+    }
+    if (nEntryIdx == pCat->nLineCount) {    /* 0x9A68C CMP R2, R1 */
+        return -1;
+    }
+    if (nEntryIdx > pCat->nLineCount) {     /* 0x9A694 BGT */
+        return -1;
+    }
+    nTopic = Ufopaedia_CatTopic(pCat, nEntryIdx);
+    if (!Ufopaedia_TopicUnlocked(pEnv, nTopic)) {
+        return -1;
+    }
+    *pEnv->pnTopic = nTopic;                /* 0x9A6A8 STR R1, [R7] */
+    *pEnv->pnEntryNum = Ufopaedia_EntryNum(nTopic); /* 0x9A6B4 LDR R0, [R5,R0,LSL#2] */
+    return nTopic;
+}
+
+/* The tail both paging functions run before refreshing: the pad is dropped here and rebuilt by
+ * Ufopaedia_RefreshEntry, which is why the two flags are set here rather than there. */
+static void Ufopaedia_DropPad(UfopaediaEnv *pEnv)
+{
+    *pEnv->pbPadDirty = 1;      /* 0x9A6F4 / 0x9A85C */
+    *pEnv->pbEntryDirty = 0;    /* 0x9A700 / 0x9A868 */
+    CloseFreePad(pEnv->ppPad);  /* 0x9A718..0x9A720 / 0x9A880..0x9A888 */
+}
+
+void Ufopaedia_PrevEntry(UfopaediaEnv *pEnv)
+{
+    i32 nEntryIdx = *pEnv->pnEntryIdx;      /* 0x9A618 */
+    i32 nCategory  = *pEnv->pnCategory;     /* 0x9A630 */
+
+    for (;;) {
+        /* 0x9A640. PrevEntry has no table test at all -- unlike NextEntry it walks the index
+         * down to -1 and wraps the category there, starting again at the row's last slot. */
+        if (--nEntryIdx == -1) {
+            if (nCategory <= 0) {
+                nCategory = PUFO_UFOPAEDIA_CATEGORIES - 1; /* 0x9A65C */
+            } else {
+                --nCategory;                               /* 0x9A658 */
+            }
+            nEntryIdx = PUFO_UFOPAEDIA_CAT_WIDTH - 1;      /* 0x9A660 */
+            *pEnv->pnCategory = nCategory;                 /* 0x9A664 */
+        }
+        *pEnv->pnEntryIdx = nEntryIdx;                     /* 0x9A66C */
+        if (Ufopaedia_TryEntry(pEnv, Ufopaedia_CatPanelAt(pEnv, nCategory), nEntryIdx) >= 0) {
+            break;
+        }
+    }
+    Ufopaedia_DropPad(pEnv);
+    Ufopaedia_RefreshEntry(pEnv);                          /* 0x9A728 */
+}
+
+void Ufopaedia_NextEntry(UfopaediaEnv *pEnv)
+{
+    i32 nEntryIdx = *pEnv->pnEntryIdx;      /* 0x9A760 */
+    i32 nCategory  = *pEnv->pnCategory;     /* 0x9A77C */
+
+    for (;;) {
+        /* 0x9A7A8: `++v0 == 22 || table[22 * category + v0] == 0`. The table read uses the OLD
+         * category and is short-circuited when the index reaches 22, which only row 5 can do. */
+        if (++nEntryIdx == PUFO_UFOPAEDIA_CAT_WIDTH ||
+            Ufopaedia_TableTopic(nCategory, nEntryIdx) == 0) {
+            if (nCategory >= PUFO_UFOPAEDIA_CATEGORIES - 1) {
+                nCategory = 0;                             /* 0x9A7C4 */
+            } else {
+                ++nCategory;                               /* 0x9A7C0 */
+            }
+            nEntryIdx = 0;                                 /* 0x9A7C8 */
+            *pEnv->pnCategory = nCategory;                 /* 0x9A7CC */
+        }
+        *pEnv->pnEntryIdx = nEntryIdx;                     /* 0x9A7D4 */
+        if (Ufopaedia_TryEntry(pEnv, Ufopaedia_CatPanelAt(pEnv, nCategory), nEntryIdx) >= 0) {
+            break;
+        }
+    }
+    Ufopaedia_DropPad(pEnv);
+    Ufopaedia_RefreshEntry(pEnv);                          /* 0x9A890 */
+}
+
+void Ufopaedia_RefreshEntry(UfopaediaEnv *pEnv)
+{
+    UiPanel *pText = pEnv->pTextPanel;
+    char szDesc[800];                     /* v51 @ 0x9A014's frame, bp-0x320 */
+    i32 nLineStart = 0;
+    i32 nMaxW = PUFO_UFOPAEDIA_TEXT_MAXW;
+    i32 nEntry, nTopic, i;
+
+    if (pText == NULL) {
+        return;
+    }
+
+    /* 0x9A054: neither the pointer (which stores the row into the panel's own nUnk3032) nor a
+     * paging step has settled an entry, so read the category panel's selected row back out. */
+    if (*pEnv->pbReselect == 0 && *pEnv->pbPadDirty == 0) {
+        UiPanel *pCat = Ufopaedia_CatPanelAt(pEnv, *pEnv->pnCategory); /* 0x9A06C */
+        if (pCat != NULL) {
+            *pEnv->pnEntryIdx = pCat->nUnk3032;                        /* 0x9A078 */
+            nTopic = Ufopaedia_CatTopic(pCat, *pEnv->pnEntryIdx);     /* 0x9A08C */
+            *pEnv->pnEntryNum = Ufopaedia_EntryNum(nTopic);           /* 0x9A094 */
+            *pEnv->pnTopic = nTopic;                                  /* 0x9A09C */
+        }
+    }
+
+    /* The layout defaults, 0x9A0B8..0x9A0EC. */
+    *pEnv->pbWidePanel = 0;
+    pText->nStyle = 7;
+    pText->nPosX = 10;
+    pText->nPosY = 230;
+    nMaxW = PUFO_UFOPAEDIA_TEXT_MAXW;
+    nLineStart = 0;
+    for (i = 0; i < PUFO_UFOPAEDIA_TEXT_LINES; ++i) {   /* 0x9A0F0: strcpy(line, "") from 0x10DA38 */
+        if (pText->apLines[i] != NULL) {
+            pText->apLines[i][0] = '\0';
+        }
+    }
+    pText->nUnk3028 = 0;                                /* 0x9A138: the scroll cursor */
+
+    /* 0x9A14C..0x9A1F0. The original is a cascade with a goto: the > 2999 arm first, then
+     * `if (v7 <= 1000) goto LABEL_13`, then `v8 = v7 <= 2000`, then `if (v7 < 2000) { wide = 1;
+     * maxW = 220; LABEL_13: v8 = v7 <= 2000; }`, then `if (!v8 && v7 < 3000)`. Every path lands
+     * in exactly one of the four bands below, so the port writes the bands directly. The two
+     * boundaries the cascade makes explicit are worth pinning: entry 1000 and entry 2000 both
+     * keep the default layout, and entry 3000 is the alien band, not the tight one. */
+    nEntry = *pEnv->pnEntryNum;
+    if (nEntry >= PUFO_UFOPAEDIA_BAND_ALIEN_FIRST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A154 */
+        nMaxW = PUFO_UFOPAEDIA_MAXW_ALIEN;               /* 0x9A160 */
+        pText->nPosY = 110;                              /* 0x9A16C */
+        pText->nStyle = 8;                               /* 0x9A178 */
+    } else if (nEntry > PUFO_UFOPAEDIA_BAND_DEFAULT_LAST &&
+               nEntry < PUFO_UFOPAEDIA_BAND_WIDE_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A19C */
+        nMaxW = PUFO_UFOPAEDIA_TEXT_MAXW;                /* 0x9A1A0 */
+    } else if (nEntry > PUFO_UFOPAEDIA_BAND_WIDE_LAST &&
+               nEntry < PUFO_UFOPAEDIA_BAND_TIGHT_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A1C0 */
+        nMaxW = PUFO_UFOPAEDIA_MAXW_TIGHT;               /* 0x9A1CC */
+        pText->nPosY = 50;                               /* 0x9A1E0 */
+        pText->nStyle = 13;                              /* 0x9A1EC */
+    }
+
+    /* Four more bands that only set the flag; 93..97 also indents the text by seven lines so the
+     * panel's first rows stay clear of the entry's picture. */
+    if (nEntry >= PUFO_UFOPAEDIA_INDENT_FIRST && nEntry <= PUFO_UFOPAEDIA_INDENT_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A208 */
+        nLineStart = PUFO_UFOPAEDIA_INDENT_LINES;        /* 0x9A20C */
+    }
+    if (nEntry >= PUFO_UFOPAEDIA_FLAG_BAND1_FIRST && nEntry <= PUFO_UFOPAEDIA_FLAG_BAND1_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A21C: 53 < entry < 76 */
+    }
+    if (nEntry >= PUFO_UFOPAEDIA_FLAG_BAND2_FIRST && nEntry <= PUFO_UFOPAEDIA_FLAG_BAND2_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A230: 75 < entry < 85 */
+    }
+    if (nEntry >= PUFO_UFOPAEDIA_FLAG_BAND3_FIRST && nEntry <= PUFO_UFOPAEDIA_FLAG_BAND3_LAST) {
+        *pEnv->pbWidePanel = 1;                          /* 0x9A244: 84 < entry < 93 */
+    }
+
+    /* 0x9A24C..0x9A2CC: the description is TEXTS[4*topic + 534] then records 535, 536 and 537
+     * appended. 109470 / 109675 / 109880 / 110085 are 205 * 534..537. The trailing space the
+     * original appends at 0x9A2FC is the one UiPanel_WrapText appends to its own working copy,
+     * so it is not added here. */
+    szDesc[0] = '\0';
+    nTopic = *pEnv->pnTopic;
+    if (nTopic >= 0 && nTopic < PUFO_RESEARCH_TOPIC_COUNT) {
+        for (i = 0; i < 4; ++i) {
+            (void)pufo_strcat(szDesc,
+                              Ufopaedia_TextRec(pEnv, PUFO_UFOPAEDIA_DESC_REC_FIRST + 4 * nTopic + i),
+                              sizeof(szDesc));
+        }
+    }
+
+    /* 0x9A308..0x9A4D0 is a byte-for-byte inline clone of UiPanel_WrapText @ 0x37144: same
+     * cursors, same `psz[++v7 - v9] = 0` break, same `i = v7` resume, same trailing flush, same
+     * `nLineCount = nLineStart + count` tail. The port calls the shared function. */
+    (void)UiPanel_WrapText(pText, (u8)nMaxW, (u8)nLineStart, szDesc);
+
+    /* The pad toggle, 0x9A4F8..0x9A5D8. Paging sets bEntryDirty to 0 (0x9A700 / 0x9A868), so the
+     * call it makes lands in the else arm and builds the pad; a refresh that did not come from
+     * paging finds the flag set and frees instead. */
+    if (*pEnv->pbEntryDirty != 0) {
+        *pEnv->pbEntryDirty = 0;                         /* 0x9A5D8 */
+        CloseFreePad(pEnv->ppPad);                       /* 0x9A5E4..0x9A5F8 */
+    } else {
+        PadImage *pPad = (PadImage *)calloc(1, sizeof(PadImage)); /* operator new(0x14), 0x9A508 */
+        char szPal[56];                                  /* pszName @ bp-0x458 */
+        char szNum[56];                                  /* v49 @ bp-0x420 */
+        *pEnv->pbEntryDirty = 1;                         /* 0x9A500 */
+        if (pPad != NULL) {
+            PadImage_ctor(pPad);                         /* 0x9A514: the ctor's result is stored */
+        }
+        *pEnv->ppPad = pPad;                             /* 0x9A530 */
+        (void)snprintf(szPal, sizeof(szPal), "%d.pal", nEntry); /* 0x9A53C..0x9A564: itoa + ".pal" */
+        if (nEntry < 1000) {                             /* 0x9A578: only the sub-1000 entries have art */
+            Palette_Load(szPal, PUFO_UFOPAEDIA_PAL_SLOT);        /* 0x9A584 */
+            (void)snprintf(szNum, sizeof(szNum), "%d", nEntry); /* 0x9A594: the bare number, no ".pal" */
+            if (pPad != NULL) {
+                (void)PadImage_Load(pPad, szNum, PUFO_UFOPAEDIA_PAD_MODE); /* 0x9A5A4 */
+                pPad->nOriginX = 0;                      /* 0x9A5B0 */
+                pPad->nOriginY = 0;                      /* 0x9A5B8 */
+            }
+        }
+        *pEnv->pbPadDirty = 0;                           /* 0x9A5C4 */
+    }
+}

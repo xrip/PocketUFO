@@ -2611,6 +2611,37 @@ Order is by what unblocks what. Each item ends with gates + commit.
   505720/598792 (84.5%); `strat` moves to 200/204 functions and 126,716 of 160,496 bytes (79.0%), leaving
   `Geoscape_Draw` and three 12-byte atexit registrars.
 
+- [x] **part 88, the ufopaedia's paging and entry layout: `Ufopaedia_RefreshEntry (0x9a014, 1,528 B)`,
+  `Ufopaedia_PrevEntry (0x9a60c, 328 B)`, `Ufopaedia_NextEntry (0x9a754, 364 B)`** — **Two tables drive
+  the screen.** `aUfopaediaCatTopics @ 0xAA830` (IDA's `aFghijklmnop`, named after row 0's bytes happening
+  to be ASCII `'f'..'p'`) is 9 rows of 22 research topic numbers, and row 5 is the only row that fills all
+  22 slots — which is the only reason the `++idx == 22` test exists. `anUfopaediaEntryNum @ 0xAA5F0` maps
+  topic → entry number, with topics 47/94/95/96/143 unmapped and the race topics 118..142 collapsing onto
+  the five race entries 54..58. **The category panels reuse UiPanel's own storage**: `panel + 4*(n+1261)` is
+  `anLineAux[n]` (4×1261 = 5044, anLineAux's offset), so apLines holds the entry name, anLineAux the topic,
+  nLineCount the count and nUnk3032 the selected row — no new structure. `dword_1871D0` is nine panels plus
+  slot 9 (0x1871F4, the entry index, previously unnamed) plus slot 10 (the category byte). **PrevEntry and
+  NextEntry are not symmetric:** NextEntry stops on the table's zero terminator (0x9A7A8), PrevEntry never
+  consults the table at all and walks the index to −1 (0x9A640), relying on the panel's line count. **The
+  unlock gate's second read is `abResearchZero[topic]`, not the decompiler's claim:** `LDRB R1,[R1,#0x1C24]`
+  off the `aResearchTopics` anchor is 0x160B2C + topic, while Hex-Rays renders it as
+  `aResearchTopics[211].abActivateTopics[topic+1]` — the same address, one byte late, reading the *next*
+  topic's mirror. **The wrap loop at 0x9A308..0x9A4D0 is a byte-for-byte inline clone of
+  `UiPanel_WrapText @ 0x37144`**, so the port calls the shared function rather than duplicating it. **The
+  layout cascade reduces to four bands** (≤1000 → 220 px/style 7/y 230; 1000..2000 → 220 px + flag;
+  2000..3000 → 180 px/style 13/y 50; >2999 → 200 px/style 8/y 110), with entry 1000 and entry 2000 both
+  keeping the default and entry 3000 landing in the 200 px band; four further tests set only the flag, and
+  93..97 also indents the text by seven lines. The description is `TEXTS[4*topic + 534..537]`, and the pad
+  is a toggle — paging clears `bUfopaediaEntryDirty` so its refresh builds the pad, any other refresh frees
+  it. **4 deviations recorded:** the four description records can need 816 bytes of an 800-byte buffer, the
+  pad pointer is left dangling after delete, `PadImage_Load` is called on a possibly-null pad, and neither
+  paging function bounds its indices. 107 new checks; seven mutations — dropping NextEntry's terminator test
+  (3 red), giving PrevEntry that test (9 red), reading the mirror byte one late exactly as Hex-Rays claims
+  (2 red), making the >2999 boundary exclusive (3 red), shifting the description window one record early
+  (6 red), removing the indent (2 red), wrapping the category the wrong way (3 red). 11 IDB renames (463 on
+  record) including two retyped tables and a new symbol at 0x1871F4, 3 function comments, 7 line comments.
+  14402 checks (60 suites), coverage 928/1103 (84.1%) and 507940/598792 (84.8%).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable

@@ -15851,3 +15851,115 @@ reaching the same observable text for the values the shipped game produces.
 they are not self-satisfying: shifting every prefix index by one record -- the exact mistake made while
 writing this unit -- turns 31 checks red, moving the '&' cell read to the hangar offset turns 4 red, and
 reading the '%' topic byte in place instead of one record in turns 1 red.
+## Unit 88 -- Ufopaedia_RefreshEntry @ 0x9a014 (1,528 B) + Ufopaedia_PrevEntry @ 0x9a60c (328 B) + Ufopaedia_NextEntry @ 0x9a754 (364 B)
+
+The encyclopedia's paging and entry layout, 2,220 B. The screen's builder, Ufopaedia_Open @ 0x9a8cc
+(3,368 B), is the next unit; these three are what runs after it has built the panels.
+
+### The two tables that drive it
+
+aUfopaediaCatTopics @ 0xAA830, 9 rows of 22 research topic numbers -- one row per category panel. Row
+5 is the only row that fills all 22 slots; every other row ends at a zero byte. IDA's old name,
+aFghijklmnop, came from row 0's bytes happening to be ASCII 'f'..'p' (102..112), which is also why the
+table reads as a string in the listing.
+
+anUfopaediaEntryNum @ 0xAA5F0, 144 dwords, research topic -> ufopaedia entry number. Topics 47, 94, 95,
+96 and 143 have no entry. The alien-race topics 118..142 all map onto the five race entries 54..58, so
+each race appears once per race topic. Entry numbers are not sequential per category: topics 55..76 map
+to 54..75, 77..93 to 76..92, 102..112 back to 93..103, and the rest to 1001..1051, 2026..2036, 2097..2101
+and 3000..3016. RefreshEntry branches on those ranges.
+
+### The category panels reuse UiPanel's own storage for their entry list
+
+Both paging functions read the topic as `panel + 4 * (n + 1261)`. 4 * 1261 = 5044, which is exactly
+anLineAux's offset in the 7092-byte UiPanel, so apLines[n] holds the entry name and anLineAux[n] holds
+its topic number; nLineCount is the entry count and nUnk3032 the row the pointer last selected. No new
+structure is needed -- the port's existing UiPanel already has all four fields at the right offsets.
+
+g_apUfopaediaCatPanels @ 0x1871D0 is a ten-dword block: slots 0..8 are the nine panels, slot 9 (0x1871F4)
+is the current entry index, slot 10 (0x1871F8) is the current category byte. The paging code writes the
+entry index as `dword_1871D0[9]`, which is what hides the fact that it is a separate variable.
+
+### PrevEntry and NextEntry are not symmetric
+
+NextEntry tests `++idx == 22 || aUfopaediaCatTopics[22 * category + idx] == 0` at 0x9A7A8 -- it stops at
+the table's own terminator, and the 22 test exists only because row 5 has no terminator. PrevEntry has no
+table test at all: 0x9A640 walks the index down to -1, wraps the category there and restarts at slot 21.
+Only the panel's line-count filter at 0x9A684..0x9A694 rejects the slots past a short row. The two
+functions share the accept test and the tail, so the port factors those and keeps the loops separate.
+
+The unlock gate at 0x9A6BC..0x9A6E8 is two byte reads:
+
+  MOV R0,#0x22 ; MUL R0,R11,R0 ; ADD R0,R0,R4 ; LDRB R0,[R0,#0xD]   -> aResearchTopics[topic].bUnlocked
+  MOV R0,#0x1C00 ; ORR R0,#0x24 ; ADD R1,R1,R4 ; LDRB R1,[R1,R0]    -> aResearchTopics + topic + 0x1C24
+
+0x15EF08 + 0x1C24 = 0x160B2C, so the second is abResearchZero[topic] -- the mirror
+ResearchScreen_RebuildTopicList sets at 0x74334 when a topic's bUnlocked becomes 1. Hex-Rays renders it
+as `aResearchTopics[211].abActivateTopics[topic + 1]`, because 211 * 34 + 0x1E = 0x1C24: the same address
+but one byte late, and it would read the NEXT topic's mirror byte. The ARM is the authority and the port
+follows it.
+
+### The wrap loop is UiPanel_WrapText, inlined
+
+0x9A308..0x9A4D0 is a byte-for-byte clone of UiPanel_WrapText @ 0x37144: same cursors, same
+`psz[++v7 - v9] = 0` break, same `i = v7` resume, same trailing flush, same `nLineCount = nLineStart +
+count` tail, same space appended to the working copy. Only the working buffer differs (200 bytes here,
+104 there). The port calls the shared function instead of duplicating the loop, and passes the
+description without the trailing space because UiPanel_WrapText adds it.
+
+### The layout bands
+
+The cascade at 0x9A14C..0x9A1F0 has a goto in it, but every path lands in exactly one of four bands:
+
+  entry <= 1000            220 px, style 7, panel at y 230, no wide flag
+  1000 < entry < 2000      220 px, style 7, y 230, wide flag set
+  2000 < entry < 3000      180 px, style 13, y 50, wide flag set
+  entry > 2999             200 px, style 8, y 110, wide flag set
+
+Entry 1000 and entry 2000 both keep the default layout, and entry 3000 is the 200 px band, not the 180 px
+one -- the cascade's `<= 1000` arm is inclusive and its `< 3000` arm is exclusive. Four further tests at
+0x9A200..0x9A244 only set the wide flag: 93..97 (which also indents the text by seven lines so the panel's
+first rows stay clear of the entry's picture), 54..75, 76..84 and 85..92. Entries 54..58 are the five alien
+races; what the rest of 54..92 depicts is not recorded anywhere in the IDB, so those bands carry no subject
+name.
+
+### The description and the pad
+
+The text is TEXTS[4*topic + 534], then records 535, 536 and 537 appended -- 109470 / 109675 / 109880 /
+110085 are 205 * 534..537. Four records of up to 204 bytes each into an 800-byte stack buffer.
+
+The pad is a toggle, not a rebuild. Paging sets bUfopaediaEntryDirty to 0 (0x9A700 / 0x9A868), so the
+refresh it triggers takes the create arm; a refresh that did not come from paging finds the flag set and
+frees instead. Only entries below 1000 get art: "<n>.pal" into palette slot 17, then PadImage_Load with the
+bare number at mode 17.
+
+### Deviations
+
+- The four description records are copied with strcpy/strcat into an 800-byte buffer and can need 816. The
+  port bounds each append by the buffer size.
+- The original never nulls g_pUfopaediaPad after operator delete, and 0x1872E4 is read again by the next
+  refresh. The port nulls it, the same policy as CloseFreePad elsewhere in the file.
+- The original calls PadImage_Load on the pad even when operator new returned null. The port guards.
+- Neither paging function bounds the category index or the entry index before using them, and the wrap has
+  no bound against the panel's 50 line buffers. The port bounds the indices; the wrap stays as the original
+  wrote it.
+
+### IDB
+
+- aFghijklmnop -> aUfopaediaCatTopics, typed `unsigned char [9][22]` (the listing had it as a 12-byte
+  string, which is why the row-5 terminator test looked odd).
+- dword_AA5F0 -> anUfopaediaEntryNum, typed `int [144]`.
+- dword_1871D0 -> g_apUfopaediaCatPanels, typed `UiPanel *[9]` at 36 bytes; a new int symbol
+  g_nUfopaediaEntryIdx created at 0x1871F4, which had no name of its own.
+- unk_1871F8 -> g_nUfopaediaCategory, unk_187200 -> g_pUfopaediaTextPanel, unk_187204 ->
+  g_pUfopaediaSelPanel, unk_187300 -> g_nUfopaediaTopic, dword_1872D8 -> g_nUfopaediaEntryNum,
+  unk_1872E4 -> g_pUfopaediaPad, unk_187304 -> g_bUfopaediaPadDirty.
+- Function comments at 0x9a014, 0x9a60c, 0x9a754; line comments at 0xAA830, 0xAA5F0, 0x1871F4, 0x9A640
+  (PrevEntry has no table test), 0x9A7A8 (the terminator test), 0x9A308 (the inlined UiPanel_WrapText)
+  and 0x9A6D4 (the 0x1C24 mirror read, with the one-byte-late Hex-Rays rendering spelled out).
+
+107 new checks in tests/test_baseui.c. Seven mutations confirm they are not self-satisfying: dropping
+NextEntry's table terminator test turns 3 red, giving PrevEntry the table test NextEntry has turns 9 red,
+reading the mirror byte one late -- exactly what Hex-Rays claims -- turns 2 red, making the > 2999 boundary
+exclusive turns 3 red, shifting the description window one record early turns 6 red, removing the 93..97
+indent turns 2 red, and wrapping the category in the wrong direction turns 3 red.
