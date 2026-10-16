@@ -205,14 +205,14 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 903 / 1103 (81.9%)
-                                             bytes cited:     445204 / 598792 (74.4%)
-python docs/parity/audit_credits.py       -> credited functions: 903, NEGATED citations: 0
+python docs/parity/coverage.py            -> functions cited: 904 / 1103 (82.0%)
+                                             bytes cited:     446256 / 598792 (74.5%)
+python docs/parity/audit_credits.py       -> credited functions: 904, NEGATED citations: 0
 python docs/parity/audit_names.py         -> renames on record: 382 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
-                                             (worth 0 bytes -- the last two, 0x1512c Tact_HandleMapClick
-                                              and 0x17bb8 TactAction_ConfirmMeleeMode6, closed in this unit)
-python docs/parity/audit_bugs.py          -> ledger rows: 169, ORIGINAL BUG markers in src/pufo: 62
+                                             (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
+                                              and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
+python docs/parity/audit_bugs.py          -> ledger rows: 175, ORIGINAL BUG markers in src/pufo: 62
                                              ledger and port agree: every marker is listed and every row resolves
 python docs/parity/audit_tables.py        -> 40 tables checked, 0 mismatched
 ```
@@ -229,10 +229,27 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 56 suites: **12651**. Coverage as of the latest commit: **903 / 1103
-functions (81.9%)**, **445204 / 598792 bytes (74.4%)** — unchanged, because both functions this unit
-ported were already cited; what changed is that `audit_names` now reports **zero** outstanding
-addresses. This unit ported the tactical map click and the mode-6 confirm — `Tact_HandleMapClick`
+Test checks run across the 56 suites: **12701**. Coverage as of the latest commit: **904 / 1103
+functions (82.0%)**, **446256 / 598792 bytes (74.5%)**. This unit ported the path replay —
+`Unit_PathToCell` (0x2c2a8, 1,052 B), the move tail the map click and both enemy-AI paths were waiting
+on. The flood fill it drives was already ported, and that is where the one real defect was: the port
+dropped `Map_ComputeReachable`'s sixth argument, which the original stores to the global
+`g_bPathSearchFlag` @ 0x10db84 (0x2b850/0x2b860) for `Path_ExpandCell` to read back (0x2b6ac). Set from
+`g_aUnitTypeRecord[4 * nUnitType]` — types 3, 7, 8, 11, 13, 18 — it lifts two rules at once, the +4 layer
+surcharge and the "no floor sprite, do not expand" gate, and the port only ever showed the first. It is an
+argument now and both effects are asserted. The rest is the walk back through `MapCell.bPathDir` (opposite
+compass direction, or the layer delta for a recorded vertical step) with its layer re-check on `bFlags29`
+bit 3 — the layer above needs no floor at the old column and a cost at the new one, the layer below needs a
+ceiling with `iCeilParam < -15` and a cost — and the replay, which takes its facings from
+`g_aFacingFromDelta` @ 0xa7b00 (`3 * (3 * dz + dy) + dx + 13`, the compass facing except at the pure
+vertical delta, where it reports 8 up and 9 down), turns only when the facing changes, runs
+`Map_QueueDoorAction` per step, and emits STEP or VERT_STEP. `TactState_EnqueueVertStep`'s second argument
+turned out to be a layer delta that the original stores in the entry's `nFacing` slot (the slot the vertical
+step's draw offset reads at 0x50FBC); renamed to `nLayerDelta` in the port and in the IDB. 50 new checks,
+6 ledger rows. IDB: `byte_A7B00` → `g_aFacingFromDelta`, `dword_113980` → `g_nCurLayer`, `unk_10DB84` →
+`g_bPathSearchFlag`, and the three Map scratch fields named (`Map_apPathCells` @ Map+0x4a44,
+`Map_nPathCount` @ Map+0x4e44, `Map_pPathDestUnit` @ Map+0x150f4 — written on every call, read nowhere).
+The unit before it ported the tactical map click and the mode-6 confirm — `Tact_HandleMapClick`
 (0x1512c, 1,104 B) and `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B): the one-layer-down cursor cell
 (`apCells[nLayerScratch-1][nCursorY][nCursorX]`, base 0x11AF8), the four asymmetric latch arms (1 and 2
 kick the queue, 3 does not, 4 clears the latch, 0 has three exits before its move), the -23 ceiling
@@ -624,7 +641,7 @@ This is what makes teardown and draw functions testable: a test fills the struct
 
 ### Decision: reproduce original bugs by default
 
-`docs/parity/bugs.tsv` is the ledger. 169 rows, 62 `ORIGINAL BUG` markers in the source, and
+`docs/parity/bugs.tsv` is the ledger. 175 rows, 62 `ORIGINAL BUG` markers in the source, and
 `docs/parity/audit_bugs.py` enforces that the two agree in both directions. A marker must carry the
 canonical ledger address inside it, e.g. `ORIGINAL BUG (0x67048), reproduced: ...`.
 
@@ -949,7 +966,7 @@ an `ORIGINAL BUG` marker in `src/pufo`) and the subsystem notes. Notable ones:
 
 ### Original bugs reproduced on purpose
 
-62 markers in the source, 169 ledger rows. Examples:
+62 markers in the source, 175 ledger rows. Examples:
 
 - `0x39A5C` — writes `nAmmo = 0` into `apTactItems[nTactItemCount]`, a slot that does not exist yet.
 - `0x39B20` — the ammo switch has cases 31, 32, 34, 35 with `default: break`, so object index 33
@@ -1225,10 +1242,11 @@ does.
      no `TactTickCtx`, and nothing in the app builds a `Tact_EnemyAiTick` context (`EnemyAiTickCtx` needs a
      `TactSelectCtx`, a `TurnHooks`, the RMP data and the two static melee `TactItem`s) or an `EnemyAiActCtx`
      either.
-   - **`Unit_PathToCell` (0x2c2a8, 2,260 B) is unported**, and it is the hook the AI's wander path and the
-     walker's `pAiActionUnit` both depend on. It needs `Unit_CanStepTo` (0x27bb8, 14,716 B) plus its
-     `Map_ProbeStepOccupants` (0x2778c, 1,068 B) — 18 KB that is now the largest single blocker in the tact
-     subsystem.
+   - **`Unit_PathToCell` (0x2c2a8, 1,052 B) is ported** (unit 69, `src/pufo/game/pufo_path.c`) and its signature
+     matches the `pfnPathToCell` seam in `MapClickCtx`, `EnemyAiActCtx` and `EnemyAiTickCtx`, so the real
+     function drops into all three. What is still missing is the *step predicate* the flood fill runs through:
+     `Unit_CanStepTo` (0x27bb8, 14,716 B) plus its helper `Map_ProbeStepOccupants` (0x2778c, 1,068 B) — 15.8 KB
+     that is now the largest single blocker in the tact subsystem, injected today as the `PathStepProbe`.
    The enemy-turn group is now ported too: `BeforeEnemyStep` (0x4b9b8, 2,792 B) and `AfterEnemyStep`
    (0x4c4a0, 1,368 B) live in `src/pufo/game/pufo_turn.c` behind `EnemyStepCtx`, driven from
    `tests/test_turn.c`. What is still missing is the app layer building an `EnemyStepCtx` — its nine seams
@@ -1240,8 +1258,8 @@ does.
    `TactAction_ConfirmMeleeMode6` (0x17bb8, 412 B) in `src/pufo/game/pufo_tactui.c` as
    `Ui_ConfirmMeleeMode6`, beside its siblings `Ui_ConfirmUseItem`, `Ui_TryFireMode`,
    `Ui_ConfirmFireBurst` and `Ui_BeginMultiTarget`. `Input_OnAction`'s `pfnHandleMapClick` seam is still
-   unfilled — the app populates no `TactInputHooks` at all yet — and the map click's move tail needs the
-   same unported `Unit_PathToCell`.
+   unfilled — the app populates no `TactInputHooks` at all yet — so the map click and its now-ported move tail
+   are driven only from the tests.
 
 ### Priority 2 — finish the tactical renderer
 

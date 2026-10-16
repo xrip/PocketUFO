@@ -144,7 +144,8 @@ void EnemyAi_EnqueueRandomTurn(Soldier *pUnit, const EnemyAiHooks *pHooks);
  */
 typedef struct EnemyAiActCtx {
     u32     (*pfnRandU16)(u32 nMax, void *pUser);        /* Game_RandU16 @ 0x3e59c */
-    /* Unit_PathToCell (0x2c2a8, unported — it needs Unit_CanStepTo, 0x27bb8). */
+    /* Unit_PathToCell @ 0x2c2a8, ported in pufo_path.c with a matching signature; its
+     * pUser is a PathToCellCtx. Kept as a seam so the AI is testable without a grid. */
     bool    (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
     void    (*pfnFillActionCosts)(void *pUser);          /* Ui_FillActionCosts @ 0x26104 */
     void    (*pfnPushStatus)(const char *pszMsg, void *pUser); /* StatusMsg_Push @ 0x2dda4 */
@@ -274,7 +275,7 @@ void EnemyAi_TryFireOrWander(Soldier *pUnit, const EnemyAiActCtx *pCtx);
  * is still 0, then `TactState_KickQueue(pMapTactical)`. Every path that queued something
  * sets that byte, so the enemy turn continues; a tick where nothing acted ends the turn. */
 typedef struct EnemyAiTickCtx {
-    /* Seams. Unit_PathToCell (0x2c2a8, unported -- it needs Unit_CanStepTo, 0x27bb8),
+    /* Seams. Unit_PathToCell @ 0x2c2a8 (ported in pufo_path.c, signature matches),
      * Ui_FillActionCosts @ 0x26104, Unit_UpdateVisibility @ 0x48580 (ported, but it needs a
      * whole VisCtx), AfterEnemyStep (0x4c4a0, unported) and the clip lookup inside
      * TactItem_bTryReloadClip are injected. pfnEnqueueTurnAndKick is the same pair

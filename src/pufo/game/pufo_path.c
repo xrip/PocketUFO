@@ -181,7 +181,7 @@ static bool Path_ExpandCell(i32 nCellX, i32 nCellY, i32 nCellLayer,
 
 bool Path_ComputeReachable(PathScratch *pScratch,
                            i32 nSeedX, i32 nSeedY, i32 nSeedLayer, u8 nSeedFacing,
-                           i32 nTargetX, i32 nTargetY, i32 nTargetLayer,
+                           i32 nTargetX, i32 nTargetY, i32 nTargetLayer, bool bFlag,
                            PathCellLookup pfnLookup, PathStepProbe pfnProbe,
                            void *pUser)
 {
@@ -191,6 +191,10 @@ bool Path_ComputeReachable(PathScratch *pScratch,
     i32      nY;
     i32      nLayer;
 
+    /* bFlag is the original's sixth argument, and Map_ComputeReachable never reads
+     * it itself: it stores it to the global byte_10DB84 @ 0x10db84 (LDRB/STRB at
+     * 0x2b850/0x2b860) and Path_ExpandCell reads it back from there at 0x2b6ac.
+     * Carrying it as an argument is the same data flow without the global. */
     pScratch->nCountA = 0;
     pScratch->nCountB = 0;
     pScratch->bUseA   = false;
@@ -250,7 +254,7 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListA[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, false, pCell->bPathDir,
+                                  nSeedLayer, bFlag, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountA = 0;
@@ -267,7 +271,7 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             MapCell *pCell = pScratch->apListB[i];
 
             (void)Path_ExpandCell(pCell->nX, pCell->nY, pCell->nZ,
-                                  nSeedLayer, false, pCell->bPathDir,
+                                  nSeedLayer, bFlag, pCell->bPathDir,
                                   pScratch, pfnLookup, pfnProbe, pUser);
         }
         pScratch->nCountB = 0;
@@ -278,4 +282,249 @@ bool Path_ComputeReachable(PathScratch *pScratch,
             return false;
         }
     }
+}
+
+/* byte_A7B00 @ 0xa7b00, decoded from the 27 bytes at that address. Three bands of
+ * nine, indexed 3 * (3 * dz + dy) + dx + 13. The middle band (dz == 0) is the
+ * compass facing for a horizontal delta; the other two are identical to it except
+ * at the pure vertical delta, where they report 8 (up) and 9 (down). */
+const u8 g_aFacingFromDelta[PUFO_FACING_FROM_DELTA_COUNT] = {
+    /* dz = -1 */ 7, 0, 1, 6, 9, 2, 5, 4, 3,
+    /* dz =  0 */ 7, 0, 1, 6, 0, 2, 5, 4, 3,
+    /* dz = +1 */ 7, 0, 1, 6, 8, 2, 5, 4, 3
+};
+
+u8 Path_FacingFromDelta(i32 nDx, i32 nDy, i32 nDz)
+{
+    i32 nIndex;
+
+    /* The original applies no clamp: every pair it looks at is one recorded step
+     * apart, so each component is already -1..1. The clamp only keeps a caller that
+     * breaks that promise inside the table. */
+    if (nDx < -1) { nDx = -1; } else if (nDx > 1) { nDx = 1; }
+    if (nDy < -1) { nDy = -1; } else if (nDy > 1) { nDy = 1; }
+    if (nDz < -1) { nDz = -1; } else if (nDz > 1) { nDz = 1; }
+
+    nIndex = 3 * (3 * nDz + nDy) + nDx + PUFO_FACING_FROM_DELTA_BIAS;
+    return g_aFacingFromDelta[nIndex];
+}
+
+/* The walk-back bail-out, from `CMP R3, #0xC8 / BGT loc_2C674` at 0x2c54c. */
+#define PUFO_PATH_BAIL_COUNT 200
+
+/* The ceiling-break threshold the walk-back uses to decide that a step actually
+ * dropped through a ceiling. `LDRSB R2, [R2,#0x24]` against -15 at 0x2c4d8..0x2c4e4.
+ * The map click tests the same sprite byte against -23 (see Tact_HandleMapClick),
+ * so the two call sites genuinely disagree. */
+#define PUFO_PATH_CEIL_DROP_LIMIT (-15)
+
+/* Unit_PathToCell @ 0x2c2a8. */
+bool Unit_PathToCell(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pVoid)
+{
+    const PathToCellCtx *pCtx = (const PathToCellCtx *)pVoid;
+    DoorActionCtx        door;
+    MapCell             *pDest;
+    MapCell             *pCell;
+    i32                  nWalkX = nX;
+    i32                  nWalkY = nY;
+    i32                  nCurLayer = nLayer;
+    i32                  nCount;
+    i32                  nDir;
+    i32                  nOpp;
+    i32                  nDelta;
+    i32                  k;
+    u8                   nFacing;
+    u8                   nWant;
+
+    /* 0x2c324: the selected unit, read straight out of Map.pSelUnit with no test.
+     * 0x2b868: Map_ComputeReachable reads the same slot to find the seed cell. */
+    if (pCtx->ppSelUnit == NULL || *pCtx->ppSelUnit == NULL) {
+        return false; /* deviation: the original would fault */
+    }
+    {
+        Soldier *pUnit = *pCtx->ppSelUnit;
+
+        if (pUnit->pCell == NULL) {
+            return false; /* deviation: 0x2b874 dereferences it */
+        }
+
+        /* 0x2c2e8..0x2c314: with the flag clear the destination cell's occupant is
+         * parked in Map+0x150f4; with it set the slot is cleared instead. Nothing
+         * else in the binary touches that slot. */
+        pDest = pCtx->pfnLookup(nX, nY, nLayer, pCtx->pLookupUser);
+        if (pDest == NULL) {
+            return false; /* deviation: 0x2c304 indexes the grid blind */
+        }
+        if (pCtx->ppPathDestUnit != NULL) {
+            *pCtx->ppPathDestUnit = (bFlag != 0) ? NULL : pDest->pUnit;
+        }
+
+        /* 0x2c334..0x2c358: the flood fill's seed is the unit's own cell, its seed
+         * facing is the unit's facing, and its flag is column 0 of the unit type
+         * table. */
+        {
+            bool bTypeFlag = pUnit->nUnitType < PUFO_UNIT_TYPE_COUNT
+                           && g_aUnitTypeFlag0[pUnit->nUnitType] != 0;
+
+            /* The original ignores Map_ComputeReachable's return value and tests the
+             * destination cell's cost instead (0x2c388). */
+            (void)Path_ComputeReachable(pCtx->pScratch,
+                                        pUnit->pCell->nX, pUnit->pCell->nY,
+                                        pUnit->pCell->nZ, pUnit->bFacing,
+                                        nX, nY, nLayer, bTypeFlag,
+                                        pCtx->pfnLookup, pCtx->pfnProbe,
+                                        pCtx->pProbeUser);
+        }
+
+        /* 0x2c364..0x2c390: dword_113980 @ 0x113980 is set to the target layer, and
+         * a destination still at cost 0 means there is no path. */
+        if (pDest->nPathCost == 0) {
+            return false;
+        }
+
+        /* 0x2c39c/0x2c3ac: slot 0 is the destination, the count starts at zero. */
+        pCtx->apPathCells[0] = pDest;
+        *pCtx->pnPathCount   = 0;
+        nCount = 0;
+
+        /* The walk back, undoing one recorded step per turn. bPathDir records the
+         * step that reached this cell, so the previous cell sits at the opposite
+         * compass direction. */
+        for (;;) {
+            i32 nOldX = nWalkX;
+            i32 nOldY = nWalkY;
+
+            pCell = pCtx->pfnLookup(nWalkX, nWalkY, nCurLayer, pCtx->pLookupUser);
+            if (pCell == NULL) {
+                return false; /* deviation: 0x2c3d8 indexes blind */
+            }
+            nDir = pCell->bPathDir;
+            if (nDir >= PUFO_PATH_DIR_COUNT) {
+                return false; /* deviation: 0x2c3e8 indexes aDirDeltaXY blind */
+            }
+
+            nDelta = g_aStepDir[nDir].dz;
+            if (nDelta != 0) {
+                /* 0x2c3fc..0x2c404: a recorded vertical step. Undo it by taking the
+                 * layer delta off; the column does not move. */
+                nCurLayer -= nDelta;
+            } else {
+                /* 0x2c408..0x2c414: the opposite compass direction, (dir + 4) % 8. */
+                nOpp = nDir + 4;
+                if (nOpp > 7) {
+                    nOpp -= 8;
+                }
+                nWalkX += g_aStepDir[nOpp].dx;
+                nWalkY += g_aStepDir[nOpp].dy;
+
+                /* 0x2c420: bFlags29 bit 3 is set by Path_ExpandCell whenever the
+                 * flood ran without its flag. It marks the cell as one whose layer
+                 * bookkeeping has to be re-checked, because a horizontal step here
+                 * may really have been taken one layer up or one layer down. */
+                if ((pCell->bFlags29 & 8u) != 0) {
+                    bool bMoved = false;
+
+                    /* 0x2c438..0x2c494: try the layer above. The cell the step came
+                     * from must have no floor sprite there, and the cell it went to
+                     * must have been reached by the flood. Both lookups use layer
+                     * nCurLayer + 1, one at the old coordinates and one at the new. */
+                    if (nCurLayer < 3) {
+                        MapCell *pAboveOld = pCtx->pfnLookup(nOldX, nOldY,
+                                                             nCurLayer + 1,
+                                                             pCtx->pLookupUser);
+                        MapCell *pAboveNew = pCtx->pfnLookup(nWalkX, nWalkY,
+                                                             nCurLayer + 1,
+                                                             pCtx->pLookupUser);
+
+                        if (pAboveOld != NULL && pAboveOld->pFloorSpr == NULL
+                            && pAboveNew != NULL && pAboveNew->nPathCost != 0) {
+                            nCurLayer += 1;
+                            bMoved = true;
+                        }
+                    }
+                    /* 0x2c4a8..0x2c4f8: otherwise try the layer below, at the NEW
+                     * coordinates only. The cell there needs a ceiling sprite whose
+                     * break parameter says it is breakable, and it needs a cost. */
+                    if (!bMoved && nCurLayer > 0) {
+                        MapCell *pBelow = pCtx->pfnLookup(nWalkX, nWalkY,
+                                                          nCurLayer - 1,
+                                                          pCtx->pLookupUser);
+
+                        if (pBelow != NULL && pBelow->pCeilSpr != NULL
+                            && pBelow->pCeilSpr->iCeilParam < PUFO_PATH_CEIL_DROP_LIMIT
+                            && pBelow->nPathCost != 0) {
+                            nCurLayer -= 1;
+                        }
+                    }
+                }
+            }
+
+            /* 0x2c508..0x2c550: append the cell the undo landed on, then stop when
+             * the walk has run too long or reached the seed (cost 1). */
+            nCount += 1;
+            *pCtx->pnPathCount = nCount;
+
+            pCell = pCtx->pfnLookup(nWalkX, nWalkY, nCurLayer, pCtx->pLookupUser);
+            if (pCell == NULL) {
+                return false; /* deviation: 0x2c53c indexes blind */
+            }
+            pCtx->apPathCells[nCount] = pCell;
+
+            if (nCount > PUFO_PATH_BAIL_COUNT) {
+                return false;
+            }
+            if (pCell->nPathCost == 1) {
+                break;
+            }
+        }
+
+        /* 0x2c588: a unit that still has to stand up pays for it before it moves. */
+        if ((pUnit->bFlags & PUFO_UNITFLAG_STAND_UP) != 0) {
+            TactState_EnqueueStandFromKneel(pCtx->pState, pUnit);
+        }
+
+        nFacing = pUnit->bFacing; /* 0x2c598 */
+
+        door.pSelUnit       = pUnit;
+        door.bSelUnitLarge  = Unit_bIsLarge(pUnit);
+        door.geom           = *pCtx->pGeom;
+        door.pfnLookup      = pCtx->pfnLookup;
+        door.pUser          = pCtx->pLookupUser;
+
+        /* The replay. The array runs destination-first, so walking it from the last
+         * slot down replays the walk in order: pFrom is the cell being left, pTo the
+         * cell being entered. */
+        for (k = nCount; k >= 1; --k) {
+            MapCell *pFrom = pCtx->apPathCells[k];
+            MapCell *pTo   = pCtx->apPathCells[k - 1];
+
+            nDelta = (i32)pTo->nZ - (i32)pFrom->nZ; /* 0x2c5d8..0x2c5e4 */
+            nWant = Path_FacingFromDelta((i32)pTo->nX - (i32)pFrom->nX,
+                                         (i32)pTo->nY - (i32)pFrom->nY, nDelta);
+
+            /* 0x2c620..0x2c630: turn only when the facing actually changes. */
+            if (nFacing != nWant) {
+                TactState_EnqueueTurn(pCtx->pState, pUnit, nWant);
+            }
+            nFacing = nWant; /* 0x2c644 */
+
+            (void)Map_QueueDoorAction(pCtx->pState, pFrom, pTo, nWant, &door); /* 0x2c648 */
+
+            /* 0x2c64c..0x2c684: the entered cell's recorded direction decides the
+             * command. A direction above 7 is a vertical step, and the original
+             * puts the layer delta into the entry's nFacing slot for that command
+             * (TactState_EnqueueVertStep @ 0x49ddc), which is the slot the vertical
+             * step's draw offset reads. */
+            if (pTo->bPathDir > 7) {
+                TactState_EnqueueVertStep(pCtx->pState, pUnit, (u8)nDelta);
+            } else {
+                TactState_EnqueueStep(pCtx->pState, pUnit, nWant, nDelta);
+            }
+        }
+    }
+
+    /* 0x2c6a0..0x2c6b4: the end marker, the queue kick, and success. */
+    TactState_EnqueueEndMark(pCtx->pState);
+    TactState_KickQueue(pCtx->pState);
+    return true;
 }

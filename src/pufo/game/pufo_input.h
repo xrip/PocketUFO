@@ -437,9 +437,12 @@ typedef struct MapClickCtx {
     i32                   *pnMeleeCellX;     /* Map_nMeleeCellX @ 0x1279F8 */
     i32                   *pnMeleeCellY;     /* Map_nMeleeCellY @ 0x1279FC */
     i32                   *pnMeleeCellLayer; /* Map_nMeleeCellLayer @ 0x127A00 */
-    /* Seam for Unit_PathToCell (0x2c2a8, unported -- it needs Unit_CanStepTo (0x27bb8,
-     * 14,716 B) and Map_ProbeStepOccupants (0x2778c), neither ported yet). */
-    bool (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, bool bFlag, void *pUser);
+    /* The move tail. Unit_PathToCell @ 0x2c2a8 is ported in pufo_path.c and matches
+     * this signature exactly - its pUser is a PathToCellCtx - so the real function
+     * drops in here. It stays a seam because the click path should not have to own a
+     * flood-fill scratch to be testable, and because the real step predicate the
+     * flood still needs is Unit_CanStepTo (0x27bb8, 14,716 B). */
+    bool (*pfnPathToCell)(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
     void *pUser;
 } MapClickCtx;
 

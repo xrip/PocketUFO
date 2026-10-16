@@ -1813,7 +1813,7 @@ static bool Click_NotBusy(void *pUser)   { (void)pUser; return false; }
 static bool Click_NoRepaint(void *pUser) { (void)pUser; return false; }
 static void Click_NoRender(void *pUser)  { (void)pUser; }
 
-static bool Click_Path(i32 nX, i32 nY, i32 nLayer, bool bFlag, void *pUser)
+static bool Click_Path(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser)
 {
     Trace *t = (Trace *)pUser;
 

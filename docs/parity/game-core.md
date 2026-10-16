@@ -14467,3 +14467,104 @@ Success: `Map_nMeleeCellX/Y/Layer` = the **candidate** coordinates, `Tact_Enqueu
   separate issue in PLAN.md.
 - `MapCell_FloorCellBelow` in `pufo_mapcell.c` now serves both the 0x4AFD0 and the 0x15500 descent;
   the exclusive variant at 0x4AE8C stays separate because it is a different bound and an original bug.
+
+## The path replay: Unit_PathToCell (0x2c2a8)
+
+`Unit_PathToCell(pMap, nX, nY, nLayer, bFlag)` is the function that actually moves a
+unit. Three call sites reach it: `Tact_HandleMapClick` at 0x1556C,
+`EnemyAi_TryFireOrWander` at 0x4b004, and `Tact_EnemyAiTick` at 0x4d170 and 0x4d5f8.
+It is a flood fill, then a walk back through the directions the fill recorded, then a
+replay that turns the walk into queue entries. Ported in `src/pufo/game/pufo_path.c`.
+
+### The flood fill (0x2c2b0..0x2c35c)
+
+`Map_ComputeReachable` is called with the target coordinates, the seed facing taken
+from `pSelUnit->bFacing` (0x2c34c) and a flag taken from column 0 of the unit type
+table, `g_aUnitTypeRecord[4 * nUnitType]` (0x2c33c). The seed cell is not an
+argument: `Map_ComputeReachable` reads `Map.pSelUnit->pCell` itself (0x2b868,
+0x2b874).
+
+That flag is the interesting one. `Map_ComputeReachable` never uses it - it stores it
+into the global `g_bPathSearchFlag` at 0x10db84 (0x2b850 LDRB, 0x2b860 STRB) and
+`Path_ExpandCell` reads it back at 0x2b6ac. Set, it lifts two rules at once: the +4
+surcharge for leaving the seed layer, and the gate that refuses to expand a cell with
+no floor sprite. It is set for unit types 3, 7, 8, 11, 13 and 18 - the same six rows
+`g_aUnitTypeFlag0` marks, and the same six the enemy AI tests before it looks for a
+floor. The port used to hardcode the flag clear, which is why the layer surcharge was
+visible in the tests and the floor gate was not; both are now asserted.
+
+Before the fill, `bFlag` also picks a piece of bookkeeping at `Map_pPathDestUnit`
+(Map+0x150f4, 0x128ab0): with the flag clear the destination cell's occupant is
+stored there (0x2c304..0x2c314), with it set the slot is cleared (0x2c2bc..0x2c2d4).
+Nothing in the binary ever reads that slot - the only `0x150F4` immediate in the whole
+image is the one at 0x2c308.
+
+### The walk back (0x2c360..0x2c57c)
+
+`g_nCurLayer` (0x113980, the shared current-layer scratch) is set to the target layer,
+and a destination still at `nPathCost == 0` means there is no path (0x2c388). Slot 0
+of the path array at `Map_apPathCells` (Map+0x4a44, 0x118400) gets the destination and
+`Map_nPathCount` (Map+0x4e44) starts at zero.
+
+Each turn undoes one recorded step. `MapCell.bPathDir` records the direction that
+reached the cell, so the previous cell sits at `(dir + 4) % 8` (0x2c408..0x2c414); a
+recorded vertical step is undone on the layer instead of in the column (0x2c3fc).
+
+Then the layer is re-checked whenever `bFlags29` bit 3 is set (0x2c420) - the bit
+`Path_ExpandCell` writes on every relaxed cell whenever the search flag was clear. A
+horizontal step may really have been taken one layer up or one layer down:
+
+- layer above, tried first and only below layer 3: the cell at the OLD column must
+  have no floor sprite there (0x2c458) and the cell at the NEW column must have a
+  cost (0x2c478);
+- layer below, tried whenever the first probe did not fire: the cell there needs a
+  ceiling sprite whose `iCeilParam` is below -15 (0x2c4d8, 0x2c4e4) and a cost.
+
+The second probe uses the new coordinates only; the first uses the old ones for its
+floor test and the new ones for its cost test.
+
+The cell the undo landed on is appended, and the walk stops at the seed - the cell
+with `nPathCost == 1` (0x2c57c). The bail-out at 0x2c54c gives up past 200 steps, and
+because the store happens before the test, slot 201 is the last one the original ever
+writes.
+
+### The replay (0x2c580..0x2c6b4)
+
+A unit with `bFlags` bit 0 set queues `STAND_FROM_KNEEL` before anything moves
+(0x2c588). The array runs destination-first, so the replay walks it from the last slot
+down and each pair is (cell being left, cell being entered).
+
+The facing for a pair comes from `g_aFacingFromDelta` (0xa7b00, 27 bytes) indexed
+`3 * (3 * dz + dy) + dx + 13` (0x2c61c). The table is the compass facing for every
+delta that has a horizontal component, and differs from it only at the pure vertical
+delta, where it reports 8 for a climb and 9 for a descent. It is the table's only
+reader in the whole binary. A `TURN` is queued only when the facing actually changes,
+and the facing is carried across iterations, so a straight walk pays at most one turn.
+
+`Map_QueueDoorAction` runs for every step with the new facing (0x2c648). Then the
+ENTERED cell's `bPathDir` decides the command: above 7 is a vertical step, otherwise a
+step (0x2c660). For the vertical step the original passes the layer delta as
+`TactState_EnqueueVertStep`'s second argument (0x2c664), and that function stores it
+into the queue entry's `nFacing` slot - the slot the vertical step's draw offset reads
+back as `-2 * nPhaseTick * nFacing` at 0x50FBC. The port's parameter is now named
+`nLayerDelta` for that reason.
+
+The tail is unconditional: `EnqueueEndMark`, `KickQueue`, return 1 (0x2c6a0..0x2c6b4).
+
+### Original findings recorded (6 ledger rows)
+
+- 0x2c54c - the bail-out stores before it tests, so a rejected walk still writes slot 201.
+- 0x2c4e4 - the ceiling-break threshold is -15 here and -23 in `Tact_HandleMapClick`, for the same sprite byte.
+- 0x49ddc - `TactState_EnqueueVertStep`'s second argument is a layer delta stored in the `nFacing` slot.
+- 0x2c308 - `Map_pPathDestUnit` is written on every call and read nowhere.
+- 0x2b860 - the search flag travels to `Path_ExpandCell` through a global.
+- 0x2c388 - `Map_ComputeReachable`'s return value is discarded in favour of a cost re-read.
+
+### Deviations
+
+- The port returns false where the original would dereference a NULL grid slot or a
+  NULL `pSelUnit` (0x2c304, 0x2c3d8, 0x2c53c, 0x2b874).
+- The port bounds `bPathDir` against the direction table before indexing it (0x2c3e8).
+- `g_nCurLayer` is a local in the port's walk-back. The original's global matters only
+  to `Unit_CanStepTo` and `Map_ProbeStepOccupants`, which the port still injects as the
+  flood fill's step probe and which already receive the layer as an argument.

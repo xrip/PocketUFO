@@ -17,11 +17,11 @@ python docs/parity/coverage.py            # coverage numbers only
 
 | Measure | Value |
 |---|---|
-| Functions cited as evidence | 903 / 1103 (81.9%) |
-| Bytes of original code cited | 445204 / 598792 (74.4%) |
+| Functions cited as evidence | 904 / 1103 (82.0%) |
+| Bytes of original code cited | 446256 / 598792 (74.5%) |
 | Subsystems in the IDB map | 14 |
 | Test suites | 56 |
-| Test checks run | 12651 |
+| Test checks run | 12701 |
 
 A citation means the port names the original function it answers to in a
 source comment of the form `@ 0xADDR`. It answers "is this original function
@@ -40,7 +40,7 @@ the per-subsystem notes and the tests listed at the end.
 | `app-shell` | 21 | 24 | 6252 / 6376 | WinMain, window class, display bring-up, registry options |
 | `platform` | 0 | 132 | 0 / 1908 | WinCE -> Win32 seams (GDI display, registry) |
 | `save` | 35 | 35 | 27172 / 27172 | save/load chunk read/write |
-| `tact` | 208 | 214 | 160200 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
+| `tact` | 209 | 214 | 161252 / 178344 | tactical: map cells, entities, pathing, LOS, turns, action queue |
 | `tact-ui` | 52 | 52 | 43764 / 43764 | tactical HUD, inventory, command pads, input dispatch |
 | `ui-core` | 76 | 84 | 17380 / 36172 | shared UI panel, text engine, menus |
 | `strat` | 184 | 204 | 86792 / 160496 | geoscape: globe, radar, ships, bases, strategy list |
@@ -239,7 +239,7 @@ is the module that answers to it.
 | `0x44928` | `Save_WriteGameState` | 48 | `src/pufo/game/pufo_save.h` |
 | `0x44958` | `Save_ReadGameState` | 48 | `src/pufo/game/pufo_save.h` |
 
-### `tact` (208 functions)
+### `tact` (209 functions)
 
 | Address | Original | Size | Recreated in |
 |---|---|---|---|
@@ -286,6 +286,7 @@ is the module that answers to it.
 | `0x1c240` | `MapView_DrawUnitHeightGlyph` | 1132 | `src/pufo/game/pufo_isodraw.h` |
 | `0x1512c` | `Tact_HandleMapClick` | 1104 | `src/pufo/game/pufo_ballist.h`, `src/pufo/game/pufo_input.c` (+2) |
 | `0x47280` | `Soldier_PromoteByTypeScores` | 1096 | `src/pufo/game/pufo_roster.c`, `src/pufo/game/pufo_roster.h` |
+| `0x2c2a8` | `Unit_PathToCell` | 1052 | `src/pufo/game/pufo_enemyai.h`, `src/pufo/game/pufo_input.h` (+4) |
 | `0x47c38` | `Unit_bTryOpportunityFire` | 1008 | `src/pufo/game/pufo_turn.h`, `src/pufo/game/pufo_unit.c` (+1) |
 | `0x4a7b0` | `Unit_ApplyFallDamage` | 1000 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
 | `0x25ab4` | `Map_PatchCraftSprites` | 952 | `src/pufo/game/pufo_font.c`, `src/pufo/game/pufo_font.h` (+2) |
@@ -372,7 +373,7 @@ is the module that answers to it.
 | `0x471f8` | `Soldier_CountSmallByType` | 136 | `src/pufo/game/pufo_roster.h` |
 | `0x4f368` | `Tact_RefreshTeamVisibility` | 136 | `src/pufo/game/pufo_turn.c`, `src/pufo/game/pufo_turn.h` |
 | `0x19250` | `Map_ToggleFlag128A8D_Play11` | 132 | `src/pufo/game/pufo_tactui.h` |
-| `0x49ddc` | `TactState_EnqueueVertStep` | 132 | `src/pufo/game/pufo_tactstate.c`, `src/pufo/game/pufo_tactstate.h` |
+| `0x49ddc` | `TactState_EnqueueVertStep` | 132 | `src/pufo/game/pufo_path.c`, `src/pufo/game/pufo_tactstate.c` (+1) |
 | `0x54944` | `MapCell_Init` | 132 | `src/pufo/game/pufo_mapcell.h` |
 | `0x54a90` | `MapCell_Reset` | 132 | `src/pufo/game/pufo_mapcell.h` |
 | `0x49d5c` | `TactState_EnqueueStep` | 128 | `src/pufo/game/pufo_tactstate.h` |
@@ -1191,14 +1192,13 @@ whose port work they belong to.
 | `0xa0f90` | `j_PtrArray_Clear` | 4 | jump thunk to `PtrArray_Clear`, which is ported; the port calls the target directly, so the thunk wrapper has no behaviour of its own |
 | `0xa42e0` | `nullsub_10` | 4 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
-### `tact` — 6 functions, 18144 bytes remaining
+### `tact` — 5 functions, 17092 bytes remaining
 
 | Address | Original | Size | Note |
 |---|---|---|---|
 | `0x27bb8` | `Unit_CanStepTo` | 14716 | cell addressing resolved but the ~15-global working set and Map_ProbeStepOccupants are not ported; the path flood takes an injected probe, so it is a drop-in once that contract exists |
 | `0x22648` | `Map_InitAndLoadRegistry` | 1284 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x2778c` | `Map_ProbeStepOccupants` | 1068 | same working set as Unit_CanStepTo; needs the step-context contract |
-| `0x2c2a8` | `Unit_PathToCell` | 1052 | not yet ported; scheduled with the `tact` subsystem work |
 | `0x22620` | `Map_RegisterAtexit` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 | `0x2262c` | `Map_Atexit_nullsub2` | 12 | glue only: a nullsub, jump thunk, MFC import stub or atexit registrar; carries no game behaviour to recreate |
 
@@ -1312,7 +1312,7 @@ Run from the repository root (the data tests read `main.dat` / `lang.dat`).
 | `test_modal` | PASS | 30 |
 | `test_moveaction` | PASS | 48 |
 | `test_panel` | PASS | 167 |
-| `test_path` | PASS | 48 |
+| `test_path` | PASS | 98 |
 | `test_plane` | PASS | 381 |
 | `test_render` | PASS | 177 |
 | `test_renderframe` | PASS | 18 |
@@ -1359,7 +1359,7 @@ every deviation with its reason, and the residual uncertainty.
 IDB, and an offset inside a named block (`nLosX0 @ 0x14004` is `Map+0x14004`).
 Only the first kind can be matched against the function inventory, so the
 rest are listed here instead of counted. Splitting them is part of the final
-parity report. Total: 566 citations.
+parity report. Total: 569 citations.
 
 ### Offsets below the image base (40)
 
@@ -1368,7 +1368,7 @@ below it. Every one of these is a field offset inside a struct.
 
 `0x0000`, `0x00002`, `0x0002`, `0x00080`, `0x000abc`, `0x000abe`, `0x000ac0`, `0x0010`, `0x0028`, `0x002c`, `0x003a`, `0x0040`, `0x004c`, `0x0054`, `0x00fc`, `0x0100`, `0x0bc8`, `0x0bcc`, `0x0bd0`, `0x0bd4`, `0x0bd8`, `0x0bdc`, `0x0be0`, `0x0be4`, `0x13b4`, `0x1a21`, `0x1a22`, `0x1a24`, `0x1b84`, `0x1b94`, `0x1b9c`, `0x3a24`, `0x4a24`, `0x4a26`, `0x4a28`, `0x4a2c`, `0x4a30`, `0x4a34`, `0x4a38`, `0x4a3c`
 
-### At or above the image base (526)
+### At or above the image base (529)
 
 Two kinds are mixed here and the report cannot tell them apart on its own:
 global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
@@ -1376,10 +1376,12 @@ global data symbols the port cites as blocks (the `Map` block at `0x1139b8`,
 offsets that happen to be numerically large (`Map+0x14004`). Triage them
 against the IDB when the final report is assembled.
 
+- `0x10db84`
 - `0x10dbc0`
 - `0x110aa0`
 - `0x111d4`
 - `0x111d6`
+- `0x113980`
 - `0x11398c`
 - `0x1139a8`
 - `0x1139b8`
@@ -1829,6 +1831,7 @@ against the IDB when the final report is assembled.
 - `0xa7958`
 - `0xa7a28`
 - `0xa7ae0`
+- `0xa7b00`
 - `0xa7b20`
 - `0xa7b80`
 - `0xa7be0`

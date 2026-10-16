@@ -160,7 +160,9 @@ void TactState_EnqueueTurn(TactState *pState, Soldier *pUnit, u8 nFacing);
 void Unit_FaceToward(TactState *pState, Soldier *pUnit, i32 nX, i32 nY);
 void TactState_EnqueueStep(TactState *pState, Soldier *pUnit, u8 nFacing, i32 nDelta);
 void TactState_EnqueueStandFromKneel(TactState *pState, Soldier *pUnit);
-void TactState_EnqueueVertStep(TactState *pState, Soldier *pUnit, u8 nFacing);
+/* nLayerDelta, not a facing: cmd 5 stores it in the entry's nFacing slot and the
+ * vertical step's draw offset is what reads it back. See the definition. */
+void TactState_EnqueueVertStep(TactState *pState, Soldier *pUnit, u8 nLayerDelta);
 void TactState_EnqueueRecover(TactState *pState, Soldier *pUnit);
 void TactState_EnqueueClearAim(TactState *pState, Soldier *pUnit);
 void TactState_EnqueueEndMark(TactState *pState);
@@ -639,6 +641,12 @@ void Tact_ProcessFallAction(TactState *pState, const FallActionCtx *pCtx);
 #define PUFO_CELLFLAG_SHOT_TRACE 0x20u
 #define PUFO_UNITFLAG_KNEEL      0x10u
 #define PUFO_UNITFLAG_AIMING     0x04u
+/* Bit 0 of Soldier.bFlags is the "still has to stand up" state, a different bit from
+ * the kneel pose flag above. Cmd 7 (TactState_EnqueueStandFromKneel @ 0x49e60) does
+ * nothing when it is clear, pays 2 TU and clears it otherwise, and both
+ * TactState_EnqueueVertStep @ 0x49ddc and Unit_PathToCell @ 0x2c2a8 (0x2c588) queue
+ * that command up front when it is set. */
+#define PUFO_UNITFLAG_STAND_UP   0x01u
 
 /* The fire FSM's own progress counter, Map.dTravel @ 0x14020, starts from the
  * value the last aim setup left (Tact_ComputeAimVector writes 0.0) and the shot

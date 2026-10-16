@@ -2032,6 +2032,33 @@ Order is by what unblocks what. Each item ends with gates + commit.
   The port NULL-guards `Map.pSelUnit`, its cell, the cursor grid slot and the walked cell, all of which the
   original dereferences, and bounds the cost/enabled index to 0..11 where the original indexes freely.
 
+- [x] **part 69, the path replay: `Unit_PathToCell (0x2c2a8, 1052 B)`** — the move tail the map click and both
+  enemy-AI paths were waiting on. **`Map_ComputeReachable`'s sixth argument was being dropped.** The original
+  stores it to the global `g_bPathSearchFlag` @ 0x10db84 (0x2b850/0x2b860) and `Path_ExpandCell` reads it back
+  (0x2b6ac); the port hardcoded it clear. Set, it lifts *two* rules at once — the +4 layer surcharge and the
+  "no floor sprite, do not expand" gate — and it comes from `g_aUnitTypeRecord[4 * nUnitType]`, so it is set for
+  types 3, 7, 8, 11, 13 and 18. It is now an argument, and both effects are asserted.
+  **The walk back re-checks the layer.** `bFlags29` bit 3 (set by `Path_ExpandCell` whenever the search flag was
+  clear) opens two probes: the layer above needs no floor at the old column and a cost at the new one
+  (0x2c458/0x2c478), the layer below needs a ceiling with `iCeilParam < -15` and a cost (0x2c4d8). The two
+  probes use different columns — the first mixes old and new, the second uses only the new.
+  **The ceiling threshold is -15 here and -23 in the map click**, on the same sprite byte: two gates, recorded.
+  **`g_aFacingFromDelta` @ 0xa7b00** (renamed from `byte_A7B00`) is a 27-byte facing table indexed
+  `3 * (3 * dz + dy) + dx + 13`. It is the plain compass facing for every delta with a horizontal component and
+  differs only at the pure vertical delta, where it reports 8 up and 9 down; `Unit_PathToCell` is its only reader
+  in the binary. A turn is queued only when the facing actually changes, and the facing carries across the walk.
+  **`TactState_EnqueueVertStep`'s second argument is a layer delta** stored in the queue entry's `nFacing` slot
+  (0x49ddc), which is the slot the vertical step's draw offset reads back at 0x50FBC. Renamed to `nLayerDelta` in
+  the port and in the IDB.
+  **`Map_pPathDestUnit` (Map+0x150f4) is dead state**: written on every call, read nowhere — the only `0x150F4`
+  immediate in the image is 0x2c308. Named in the IDB along with `Map_apPathCells` (Map+0x4a44),
+  `Map_nPathCount` (Map+0x4e44) and `g_nCurLayer` (0x113980).
+  50 new checks (12701 total), 6 ledger rows (175), coverage 904/1103 (82.0%) and 446256/598792 (74.5%).
+  **Deviation:** the real step predicate the flood still needs, `Unit_CanStepTo` (0x27bb8, 14716 B) and its
+  helper `Map_ProbeStepOccupants` (0x2778c, 1068 B), remain unported, so the flood runs through the
+  `PathStepProbe` seam; `Unit_PathToCell` itself matches the `pfnPathToCell` seam signatures in
+  `MapClickCtx` and the two enemy-AI contexts, so the real function drops straight into them.
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable
@@ -2049,6 +2076,16 @@ Order is by what unblocks what. Each item ends with gates + commit.
    3. Geoscape. 4. Screens. 5. Housekeeping. See `HANDOFF.md` §10.
 
 ## Separate issues, not folded into the porting steps
+
+- [ ] **The dormant `sizeof(MapCell)` assert is wrong, and the original's cell is 62 bytes.**
+  `src/pufo/game/pufo_mapcell.h` asserts `sizeof(MapCell) == 60` inside
+  `#if UINTPTR_MAX == 0xFFFFFFFFu`, so it never runs on the Win64 build. It would fail if the port were ever
+  built 32-bit: the port's own layout ends at `bFlags57[4]` (0x39..0x3c), which rounds to 64 with 4-byte
+  pointers. The IDB's `MapCell` has the same 23 members and reports size 62, i.e. two bytes past the last
+  named field. Nothing is hurt today — `Map.apCells @ 0x15338` is a `MapCell *[4][60][60]` pointer table and
+  cells are never serialised — but the assert states an invariant that is not true, and the two unnamed bytes
+  at 0x3d/0x3e have never been accounted for. Worth a pass that either finds what reads them or deletes the
+  assert.
 
 - [ ] **`Tact_KillUnit` removes a dead unit from the side lists without writing the counts back.**
   `src/pufo/game/pufo_unit.c` builds `SideLists lists = Kill_SideLists(pCtx->pRosters)` twice (the chryssalid
@@ -2344,6 +2381,7 @@ Refresh after each commit. A coverage delta must match the function size in
 | the enemy AI driver (`Tact_EnemyAiTick`; the byte-not-pointer at `TactCtx272+0x100`, the skip-without-advancing tick gate, `g_aUnitTypeFlag3` found, the neighbour-melee hand-off, the `cost * 2/3 + 8.0` fire gate, the RMP walk that never uses its drawn index, 3 original bugs found) | 56/56 (Release) | 12404 | 900/1103 (81.6%) | 440256/598792 (73.5%) | 40 checked, 0 mismatched |
 | the enemy-turn bracket (`BeforeEnemyStep`, `Tact_UpdateUnitControl`, `AfterEnemyStep`; six passes over four face counters, the `counter + step` term added twice, the burn run probing against its axis, the Win64 `abFaceDamage` offset fixed, 12 original findings recorded) | 56/56 (Release) | 12513 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
 | the tactical map click and the mode-6 confirm (`Tact_HandleMapClick`, `TactAction_ConfirmMeleeMode6`; the one-layer-down cursor cell, the four asymmetric latch arms, the two disagreeing melee gates, two wrong text-record indices in the existing port fixed, `audit_names` now at zero flags) | 56/56 (Release) | 12651 | 903/1103 (81.9%) | 445204/598792 (74.4%) | 40 checked, 0 mismatched |
+| the path replay (`Unit_PathToCell`; the dropped `Map_ComputeReachable` flag that hid half its effect, the layer re-check on `bFlags29` bit 3 with its two disagreeing ceiling thresholds, the 27-byte facing table, the layer delta that lives in the `nFacing` slot, 6 original findings recorded) | 56/56 (Release) | 12701 | 904/1103 (82.0%) | 446256/598792 (74.5%) | 40 checked, 0 mismatched |
 
 Release is the documented configuration and it is green. In **Debug**, `test_titles` and `test_save`
 fail and `test_template` is flaky; all three already fail at `04f1155` (verified by building that

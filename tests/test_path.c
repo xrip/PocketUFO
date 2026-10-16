@@ -1,9 +1,15 @@
-/* test_path.c - checks the tactical reachability search.
+/* test_path.c - checks the tactical reachability search and the path replay.
  *
  * Map_FacingDelta is a simple circular distance; the flood fill is the part that
  * matters. The cost composition (base 4, diagonal +2, layer +4, plus the facing
  * delta) and the "cost 0 means unvisited" rule are asserted because both are easy
- * to get subtly wrong.
+ * to get subtly wrong. The bFlag argument is asserted on both of its effects, the
+ * layer surcharge and the floor-sprite gate, because the port used to hardcode it
+ * clear and only one of those two effects was visible.
+ *
+ * Unit_PathToCell is checked through the queue it produces rather than through the
+ * path array alone: the array is internal scratch, and what the game sees is the
+ * turn/step/vertical-step sequence, the stand-up prefix, and the end marker.
  *
  * Note on the facings used below: the seed's facing becomes the current cell's
  * bPathDir, and every step pays Map_FacingDelta(stepDir, curCell->bPathDir). Tests
@@ -176,7 +182,7 @@ static void TestReachableStraight(void)
     printf("Path_ComputeReachable (straight line east)\n");
     Grid_Init(&grid);
     /* Seed facing east so each step's turn cost is 0. */
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  target reachable");
     Check(grid.aCells[0][1][4].nPathCost != 0, "  target cost set");
@@ -196,7 +202,7 @@ static void TestUnreachable(void)
     for (y = 0; y < T_DIM; ++y) {
         grid.aBlocked[y][3] = 1;
     }
-    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 6, 1, 0,
+    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 6, 1, 0, false,
                                  Grid_Lookup, Grid_Probe, &grid),
           "  target unreachable behind a wall");
     CheckEqI32(grid.aCells[0][1][6].nPathCost, 0, "  target cost left 0");
@@ -213,7 +219,7 @@ static void TestBlankTarget(void)
      * flood happens. */
     grid.aFloors[0][1][4].bTransparent = 255;
     grid.nProbeCalls = 0;
-    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
+    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                  Grid_Lookup, Grid_Probe, &grid),
           "  blank target rejected");
     CheckEqI32(grid.nProbeCalls, 0, "  no expansion attempted at all");
@@ -226,14 +232,14 @@ static void TestDiagonalCost(void)
     printf("Path_ComputeReachable (diagonal surcharge)\n");
     Grid_Init(&grid);
     /* Orthogonal: (1,1) -> (1,2) is south, seed facing south so delta is 0. */
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_S, 1, 2, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_S, 1, 2, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  orthogonal step reachable");
     CheckEqI32(grid.aCells[0][2][1].nPathCost, 5, "  orthogonal costs base only");
 
     /* Diagonal: (1,1) -> (2,2) is southeast, an odd direction, so +2. */
     Grid_Init(&grid);
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_SE, 2, 2, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_SE, 2, 2, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  diagonal step reachable");
     CheckEqI32(grid.aCells[0][2][2].nPathCost, 7, "  diagonal costs base + 2");
@@ -246,7 +252,7 @@ static void TestTurningCost(void)
     printf("Path_ComputeReachable (turning costs extra)\n");
     /* Seed facing north, then travel south. The turn adds the facing delta. */
     Grid_Init(&grid);
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_N, 1, 3, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_N, 1, 3, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  reachable behind the unit");
     /* Step 1 (dir 4 = south): delta(4, 0) == 4, so cost 1 + 4 + 4 = 9.
@@ -263,7 +269,7 @@ static void TestLayerCost(void)
     printf("Path_ComputeReachable (layer change surcharge)\n");
     Grid_Init(&grid);
     /* Target one layer up: dir 8. A layer change with the flag clear adds 4. */
-    Check(Path_ComputeReachable(&grid.scratch, 2, 2, 0, DIR_UP, 2, 2, 1,
+    Check(Path_ComputeReachable(&grid.scratch, 2, 2, 0, DIR_UP, 2, 2, 1, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  vertical move reachable");
     /* 1 (seed) + delta(8,8)==0 + 4 base + 4 layer = 9. */
@@ -277,7 +283,7 @@ static void TestCostAccumulationLimit(void)
 
     printf("Path_ComputeReachable (accumulated cost and the 140 limit)\n");
     Grid_Init(&grid);
-    Check(Path_ComputeReachable(&grid.scratch, 0, 0, 0, DIR_E, nFar, 0, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 0, 0, 0, DIR_E, nFar, 0, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  far corner reachable");
     /* 7 steps of base cost 4, plus the seed of 1 == 29, under the limit. */
@@ -319,7 +325,7 @@ static void TestFloorGate(void)
 
     /* One hole is routed around diagonally. */
     grid.aCells[0][1][2].pFloorSpr = NULL;
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  a single hole is routed around diagonally");
 
@@ -329,7 +335,7 @@ static void TestFloorGate(void)
     for (y = 0; y < T_DIM; ++y) {
         grid.aCells[0][y][2].pFloorSpr = NULL;
     }
-    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                 Grid_Lookup, Grid_Probe, &grid),
           "  a wall on one layer is bypassed via another layer");
 
@@ -340,9 +346,271 @@ static void TestFloorGate(void)
             grid.aCells[z][y][2].pFloorSpr = NULL;
         }
     }
-    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0,
+    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
                                  Grid_Lookup, Grid_Probe, &grid),
           "  a floorless column on every layer blocks the flood");
+}
+
+/* bFlag is the original's sixth argument (Map_ComputeReachable, 0x2b850/0x2b860),
+ * taken from column 0 of the unit type table. It lifts both rules the expansion
+ * applies off the seed layer: the +4 layer surcharge and the floor-sprite gate. */
+static void TestReachableFlag(void)
+{
+    Grid grid;
+
+    printf("Path_ComputeReachable (the bFlag argument)\n");
+
+    /* The layer surcharge is the flag's most direct effect: the same vertical step
+     * costs 9 with the flag clear and 5 with it set. */
+    Grid_Init(&grid);
+    Check(Path_ComputeReachable(&grid.scratch, 2, 2, 0, DIR_UP, 2, 2, 1, true,
+                                Grid_Lookup, Grid_Probe, &grid),
+          "  vertical move reachable with the flag set");
+    CheckEqI32(grid.aCells[1][2][2].nPathCost, 5,
+               "  flag set drops the +4 layer surcharge");
+
+    /* The floor gate is the other effect. The same floorless column that blocks the
+     * flood in TestFloorGate does not block it when the flag is set. */
+    Grid_Init(&grid);
+    {
+        i32 y;
+        i32 z;
+
+        for (z = 0; z < PUFO_MAP_LAYERS; ++z) {
+            for (y = 0; y < T_DIM; ++y) {
+                grid.aCells[z][y][2].pFloorSpr = NULL;
+            }
+        }
+    }
+    Check(Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, true,
+                                Grid_Lookup, Grid_Probe, &grid),
+          "  flag set expands cells that have no floor sprite");
+
+    /* And the flag is what Path_ExpandCell reads back, not just what the caller
+     * passed: with it clear the same grid is still blocked. */
+    Grid_Init(&grid);
+    {
+        i32 y;
+        i32 z;
+
+        for (z = 0; z < PUFO_MAP_LAYERS; ++z) {
+            for (y = 0; y < T_DIM; ++y) {
+                grid.aCells[z][y][2].pFloorSpr = NULL;
+            }
+        }
+    }
+    Check(!Path_ComputeReachable(&grid.scratch, 1, 1, 0, DIR_E, 4, 1, 0, false,
+                                 Grid_Lookup, Grid_Probe, &grid),
+          "  flag clear keeps the floor gate");
+}
+
+/* byte_A7B00 @ 0xa7b00, read through Path_FacingFromDelta. The compass band is the
+ * interesting half: the table has to agree with g_aStepDir, which is where the
+ * flood records the direction it came from. */
+static void TestFacingFromDelta(void)
+{
+    i32 nDir;
+
+    printf("Path_FacingFromDelta (byte_A7B00 @ 0xa7b00)\n");
+    for (nDir = 0; nDir < 8; ++nDir) {
+        u8 nWant = Path_FacingFromDelta(g_aStepDir[nDir].dx,
+                                        g_aStepDir[nDir].dy, 0);
+
+        CheckEqI32(nWant, nDir,
+                   "  each compass delta reports its own direction");
+    }
+    CheckEqI32(Path_FacingFromDelta(0, 0, 1), 8, "  a pure climb reports direction 8");
+    CheckEqI32(Path_FacingFromDelta(0, 0, -1), 9, "  a pure descent reports direction 9");
+    /* The two vertical bands differ from the compass band only at that pure
+     * delta; every delta with a horizontal component reads the same facing. */
+    CheckEqI32(Path_FacingFromDelta(1, 1, 1), 3, "  a diagonal climb keeps the compass facing");
+    CheckEqI32(Path_FacingFromDelta(-1, 0, -1), 6, "  a diagonal descent keeps it too");
+}
+
+/* --- Unit_PathToCell --- */
+
+static TactState   g_State;
+static Soldier     g_Unit;
+static Soldier     g_Other;
+static Soldier    *g_pSelUnit;
+static Soldier    *g_pDestUnit;
+static MapCell    *g_apPath[PUFO_PATH_MAX_CELLS];
+static i32         g_nPathCount;
+static MapGeom     g_Geom = { 1, 1 };
+
+/* A fresh grid, an empty queue, and a unit standing at (1,1,0) facing east. The
+ * selected unit is reached through a pointer-to-pointer because that is how the
+ * original reaches it: through the Map slot, not through an argument. */
+static void Path_Reset(Grid *pG, u8 bFacing, u8 bFlags)
+{
+    Grid_Init(pG);
+    memset(&g_State, 0, sizeof(g_State));
+    g_pTactState = &g_State;
+    memset(&g_Unit, 0, sizeof(g_Unit));
+    memset(&g_Other, 0, sizeof(g_Other));
+    g_Unit.bFacing = bFacing;
+    g_Unit.bFlags = bFlags;
+    g_Unit.nUnitType = 0; /* g_aUnitTypeFlag0[0] is clear */
+    g_Unit.pCell = &pG->aCells[0][1][1];
+    g_pSelUnit = &g_Unit;
+    g_pDestUnit = NULL;
+    memset(g_apPath, 0, sizeof(g_apPath));
+    g_nPathCount = -1;
+}
+
+static PathToCellCtx Path_Ctx(Grid *pG)
+{
+    PathToCellCtx c;
+
+    c.pState          = &g_State;
+    c.ppSelUnit       = &g_pSelUnit;
+    c.ppPathDestUnit  = &g_pDestUnit;
+    c.apPathCells     = g_apPath;
+    c.pnPathCount     = &g_nPathCount;
+    c.pScratch        = &pG->scratch;
+    c.pfnLookup       = Grid_Lookup;
+    c.pfnProbe        = Grid_Probe;
+    c.pProbeUser      = pG;
+    c.pLookupUser     = pG;
+    c.pGeom           = &g_Geom;
+    return c;
+}
+
+static i32 QueueCmdCount(u8 nCmd)
+{
+    i32 i;
+    i32 n = 0;
+
+    for (i = 0; i < g_State.nQueueLen; ++i) {
+        if (g_State.aQueue[i].nCmd == nCmd) {
+            n += 1;
+        }
+    }
+    return n;
+}
+
+/* Walking east in a straight line, which is the case where nothing interesting
+ * happens: no turn (the unit already faces east), three steps, one end marker. */
+static void TestPathStraight(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+
+    printf("Unit_PathToCell (straight line, no turn needed)\n");
+    Path_Reset(&grid, DIR_E, 0);
+    g_Other.pCell = &grid.aCells[0][1][4];
+    grid.aCells[0][1][4].pUnit = &g_Other;
+    ctx = Path_Ctx(&grid);
+
+    Check(Unit_PathToCell(4, 1, 0, 0, &ctx), "  path built");
+    CheckEqI32(g_nPathCount, 3, "  three steps recorded");
+    Check(g_apPath[0] == &grid.aCells[0][1][4], "  slot 0 is the destination");
+    Check(g_apPath[3] == &grid.aCells[0][1][1], "  the last slot is the unit's own cell");
+    CheckEqI32(g_State.nQueueLen, 4, "  three steps plus the end marker");
+    CheckEqI32(QueueCmdCount(TACTCMD_STEP), 3, "  three STEP entries");
+    CheckEqI32(QueueCmdCount(TACTCMD_TURN), 0, "  no TURN entry, the facing already matched");
+    CheckEqI32(g_State.aQueue[3].nCmd, TACTCMD_END_MARK, "  the queue ends with the end marker");
+    CheckEqI32(g_State.aQueue[0].nFacing, DIR_E, "  step facing is east");
+    CheckEqI32(g_State.aQueue[0].nDelta, 0, "  a horizontal step carries no layer delta");
+    Check(g_State.aQueue[0].pUnit == &g_Unit, "  the entries name the unit");
+    CheckEqI32(g_State.bQueueActive, 1, "  the queue was kicked");
+
+    /* 0x2c2e8..0x2c314: with the flag clear the destination cell's occupant is
+     * parked in the Map+0x150f4 slot. */
+    Check(g_pDestUnit == &g_Other, "  flag clear parks the destination occupant");
+}
+
+/* The same walk with the flag set takes the other branch of the same pair: the
+ * slot is cleared rather than filled. */
+static void TestPathFlagClearsSlot(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+
+    printf("Unit_PathToCell (the bFlag bookkeeping)\n");
+    Path_Reset(&grid, DIR_E, 0);
+    grid.aCells[0][1][4].pUnit = &g_Other;
+    ctx = Path_Ctx(&grid);
+
+    Check(Unit_PathToCell(4, 1, 0, 1, &ctx), "  path built");
+    Check(g_pDestUnit == NULL, "  flag set clears the slot instead");
+}
+
+/* The unit faces north and walks south. The facing table says the first step needs
+ * facing 4, so a TURN goes in first; the second step keeps it. */
+static void TestPathTurnsOnce(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+
+    printf("Unit_PathToCell (turn once, then walk)\n");
+    Path_Reset(&grid, DIR_N, 0);
+    ctx = Path_Ctx(&grid);
+
+    Check(Unit_PathToCell(1, 3, 0, 0, &ctx), "  path built behind the unit");
+    CheckEqI32(g_State.nQueueLen, 4, "  turn, two steps, end marker");
+    CheckEqI32(g_State.aQueue[0].nCmd, TACTCMD_TURN, "  the first entry is the turn");
+    CheckEqI32(g_State.aQueue[0].nFacing, DIR_S, "  the turn faces south");
+    CheckEqI32(QueueCmdCount(TACTCMD_TURN), 1, "  only one turn - the facing is remembered");
+    CheckEqI32(QueueCmdCount(TACTCMD_STEP), 2, "  two STEP entries");
+}
+
+/* 0x2c588: a unit that still has to stand up pays for it before anything moves. */
+static void TestPathStandFirst(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+
+    printf("Unit_PathToCell (the stand-up prefix)\n");
+    Path_Reset(&grid, DIR_E, PUFO_UNITFLAG_STAND_UP);
+    ctx = Path_Ctx(&grid);
+
+    Check(Unit_PathToCell(4, 1, 0, 0, &ctx), "  path built");
+    CheckEqI32(g_State.aQueue[0].nCmd, TACTCMD_STAND_FROM_KNEEL,
+               "  the stand-up entry comes before the steps");
+    CheckEqI32(g_State.nQueueLen, 5, "  stand, three steps, end marker");
+}
+
+/* An unreachable target: no queue at all, and the queue is not even kicked. */
+static void TestPathUnreachable(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+    i32 y;
+
+    printf("Unit_PathToCell (unreachable target)\n");
+    Path_Reset(&grid, DIR_E, 0);
+    for (y = 0; y < T_DIM; ++y) {
+        grid.aBlocked[y][3] = 1;
+    }
+    ctx = Path_Ctx(&grid);
+
+    Check(!Unit_PathToCell(6, 1, 0, 0, &ctx), "  no path through a solid column");
+    CheckEqI32(g_State.nQueueLen, 0, "  nothing was queued");
+    CheckEqI32(g_State.bQueueActive, 0, "  the queue was not kicked");
+}
+
+/* A vertical step. The interesting part is where the layer delta lands: cmd 5
+ * stores it in the entry's nFacing slot, which is the slot the vertical step's draw
+ * offset reads back. */
+static void TestPathVertical(void)
+{
+    Grid grid;
+    PathToCellCtx ctx;
+
+    printf("Unit_PathToCell (vertical step)\n");
+    Path_Reset(&grid, DIR_E, 0);
+    g_Unit.pCell = &grid.aCells[0][2][2];
+    ctx = Path_Ctx(&grid);
+
+    Check(Unit_PathToCell(2, 2, 1, 0, &ctx), "  path built one layer up");
+    CheckEqI32(g_nPathCount, 1, "  one step recorded");
+    CheckEqI32(g_State.nQueueLen, 3, "  turn, vertical step, end marker");
+    CheckEqI32(g_State.aQueue[0].nCmd, TACTCMD_TURN, "  the climb needs a turn first");
+    CheckEqI32(g_State.aQueue[0].nFacing, DIR_UP, "  the turn faces up (direction 8)");
+    CheckEqI32(g_State.aQueue[1].nCmd, TACTCMD_VERT_STEP, "  the move is a vertical step");
+    CheckEqI32(g_State.aQueue[1].nFacing, 1,
+               "  the layer delta is stored in the nFacing slot");
 }
 
 int main(void)
@@ -359,6 +627,14 @@ int main(void)
     TestLayerCost();
     TestCostAccumulationLimit();
     TestFloorGate();
+    TestReachableFlag();
+    TestFacingFromDelta();
+    TestPathStraight();
+    TestPathFlagClearsSlot();
+    TestPathTurnsOnce();
+    TestPathStandFirst();
+    TestPathUnreachable();
+    TestPathVertical();
 
     printf("\n%s: %d failure(s)\n", g_nFailures == 0 ? "PASS" : "FAIL", g_nFailures);
     return g_nFailures == 0 ? 0 : 1;

@@ -2,6 +2,7 @@
  *
  * Evidence: Map_FacingDelta @ 0x276a0, Path_EnqueueCell @ 0x2b534,
  *           Path_ExpandCell @ 0x2b604, Map_ComputeReachable @ 0x2b820,
+ *           Unit_PathToCell @ 0x2c2a8, byte_A7B00 @ 0xa7b00,
  *           Unit_CanStepTo (0x27bb8) -- predicate only, the 14.7 KB body is not ported.
  *
  * The original runs a cost-based flood fill over the cell grid. Two frontier
@@ -16,6 +17,10 @@
  *   3. seed the selected unit's own cell with cost 1
  *   4. expand list A, then list B, then A again, ... until either both lists are
  *      empty, or the target cell has a non-zero cost (a path exists)
+ *
+ * Its sixth argument, bFlag, is not used in the body: it is stored to the global
+ * byte_10DB84 (0x10db84) at 0x2b860 and Path_ExpandCell reads it back from there
+ * (0x2b6ac). The port passes it as an explicit argument instead of a global.
  *
  * Path_ExpandCell @ 0x2b604, for one frontier cell, tries ten directions and
  * relaxes the neighbour's cost:
@@ -34,6 +39,8 @@
 #define PUFO_PATH_H
 
 #include "game/pufo_mapcell.h"
+#include "game/pufo_tactstate.h" /* TactState, Map_QueueDoorAction, DoorActionCtx */
+#include "game/pufo_unit.h"      /* Soldier, g_aUnitTypeFlag0, Unit_bIsLarge */
 #include "pufo_common.h"
 
 /* Frontier list capacities. Measured from the original's arrays:
@@ -126,10 +133,75 @@ bool Path_EnqueueCell(PathScratch *pScratch, MapCell *pCell);
  * pfnCells maps (x, y, layer) to a cell; the original indexes its own grid. */
 typedef MapCell *(*PathCellLookup)(i32 nX, i32 nY, i32 nLayer, void *pUser);
 
+/* bFlag is the original's sixth argument, taken by Unit_PathToCell from
+ * g_aUnitTypeRecord[4 * nUnitType] (0x2c33c). It reaches Path_ExpandCell through
+ * the global byte_10DB84 in the original; here it is an argument. Set, it lifts
+ * both rules the expansion applies to a unit that is not on its seed layer: the
+ * +4 layer surcharge and the "no floor sprite, do not expand" gate. */
 bool Path_ComputeReachable(PathScratch *pScratch,
                            i32 nSeedX, i32 nSeedY, i32 nSeedLayer, u8 nSeedFacing,
-                           i32 nTargetX, i32 nTargetY, i32 nTargetLayer,
+                           i32 nTargetX, i32 nTargetY, i32 nTargetLayer, bool bFlag,
                            PathCellLookup pfnLookup, PathStepProbe pfnProbe,
                            void *pUser);
+
+/* --- Unit_PathToCell @ 0x2c2a8 --- */
+
+/* The reconstructed path is written into a Map array the original keeps at
+ * Map+0x4A44 (0x118400), with the step count in the dword right after it at
+ * Map+0x4E44 (0x1187fc). Slot 0 is the destination and slots 1..nCount walk back
+ * to the start, so the replay reads them in reverse. The walk gives up when the
+ * count passes 200 (0x2c54c), and because the store happens before the test slot
+ * 201 is the last one the original ever writes. */
+#define PUFO_PATH_MAX_CELLS 202
+
+/* Facing for a step delta, byte_A7B00 @ 0xa7b00: 27 bytes indexed
+ *     3 * (3 * dz + dy) + dx + 13
+ * over dx, dy, dz in {-1, 0, 1}. The dz == 0 band is the plain compass facing -
+ * (0,-1) gives 0, (1,0) gives 2, (-1,-1) gives 7 - and it agrees with the other
+ * two bands for every delta that has a horizontal component. The bands differ only
+ * at the pure vertical delta: dz == 0 reports 0, dz == +1 reports 8 (up) and
+ * dz == -1 reports 9 (down), matching g_aStepDir's directions 8 and 9.
+ * Unit_PathToCell @ 0x2c2a8 is the table's only reader in the whole binary. */
+#define PUFO_FACING_FROM_DELTA_COUNT 27
+#define PUFO_FACING_FROM_DELTA_BIAS  13
+extern const u8 g_aFacingFromDelta[PUFO_FACING_FROM_DELTA_COUNT];
+
+/* The table lookup, with the index written out. Out-of-range deltas are clamped
+ * to -1..1; the original's caller only ever produces -1..1 because every entry of
+ * the path array is one step from the next. */
+u8 Path_FacingFromDelta(i32 nDx, i32 nDy, i32 nDz);
+
+/* Everything Unit_PathToCell reaches through the context base pointer. The Map
+ * fields are pointers rather than offsets because the port's GameMap does not
+ * keep the original's field order. */
+typedef struct PathToCellCtx {
+    TactState    *pState;          /* pMapTactical @ 0x157198 */
+    Soldier     **ppSelUnit;       /* Map.pSelUnit @ Map+0x15334 (0x128cec) */
+    Soldier     **ppPathDestUnit;  /* Map+0x150f4 (0x128ab0), see below */
+    MapCell     **apPathCells;     /* Map+0x4A44, PUFO_PATH_MAX_CELLS slots */
+    i32          *pnPathCount;     /* Map+0x4E44 */
+    PathScratch  *pScratch;        /* the flood fill's frontier lists */
+    MapCellLookup pfnLookup;
+    PathStepProbe  pfnProbe;       /* Unit_CanStepTo (0x27bb8), not ported yet */
+    void          *pProbeUser;
+    void          *pLookupUser;
+    const MapGeom *pGeom;
+} PathToCellCtx;
+
+/* Unit_PathToCell @ 0x2c2a8. Flood-fills from the selected unit's own cell to
+ * (nX, nY, nLayer), walks the result back through MapCell.bPathDir into the
+ * context's path array, then replays that array as queue entries: an optional
+ * stand-from-kneel, a turn whenever the facing changes, the door test for the
+ * step, and either a step or a vertical step. Ends with the end marker and a
+ * queue kick.
+ *
+ * bFlag picks the Map+0x150f4 bookkeeping: clear, the destination cell's occupant
+ * is stored there; set, the slot is cleared. The same byte also feeds the flood
+ * fill (see Path_ComputeReachable). Returns false when the target has no cost
+ * (unreachable) or when the walk back exceeds PUFO_PATH_MAX_CELLS - 2.
+ *
+ * pUser is the PathToCellCtx, which is what lets this function drop straight into
+ * the pfnPathToCell seams in the enemy AI and map-click contexts. */
+bool Unit_PathToCell(i32 nX, i32 nY, i32 nLayer, u8 bFlag, void *pUser);
 
 #endif /* PUFO_PATH_H */

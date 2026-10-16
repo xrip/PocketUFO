@@ -73,18 +73,25 @@ void TactState_EnqueueStandFromKneel(TactState *pState, Soldier *pUnit)
     pState->nQueueLen += 1;
 }
 
-/* TactState_EnqueueVertStep @ 0x49ddc. A kneeling unit stands first, which is
- * why this can emit two entries. */
-void TactState_EnqueueVertStep(TactState *pState, Soldier *pUnit, u8 nFacing)
+/* TactState_EnqueueVertStep @ 0x49ddc. A unit that still has to stand up does so
+ * first, which is why this can emit two entries.
+ *
+ * The layer delta goes into the entry's nFacing slot, not into nDelta: the original
+ * writes `pMapTactical->aQueue[n].nFacing = nFacing` with the caller's second
+ * argument, and the vertical step's draw offset is the field it reads back
+ * (`nDrawOffY = -2 * tick * nFacing`, 0x50FBC..0x50FFC). Both callers pass a layer
+ * delta - Unit_PathToCell @ 0x2c2a8 passes the step's dz (0x2c664) and the HUD's
+ * climb helpers pass +1 and -1. */
+void TactState_EnqueueVertStep(TactState *pState, Soldier *pUnit, u8 nLayerDelta)
 {
     TactQueueEntry *pEntry;
 
-    if ((pUnit->bFlags & 1) != 0) {
+    if ((pUnit->bFlags & PUFO_UNITFLAG_STAND_UP) != 0) {
         TactState_EnqueueStandFromKneel(pState, pUnit);
     }
     pEntry = &pState->aQueue[pState->nQueueLen];
     pEntry->nCmd    = TACTCMD_VERT_STEP;
-    pEntry->nFacing = nFacing;
+    pEntry->nFacing = nLayerDelta;
     pEntry->pUnit   = pUnit;
     pState->nQueueLen += 1;
 }
