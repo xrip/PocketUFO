@@ -2535,6 +2535,30 @@ Order is by what unblocks what. Each item ends with gates + commit.
   function comments, 9 line comments. 14084 checks (60 suites), coverage 922/1103 (83.6%) and 501664/598792
   (83.8%); `strat` moves to 197/204 functions and 122,660 of 160,496 bytes (76.4%).
 
+- [x] **part 85, the new-base globe hover frame: `Geoscape_DrawGlobeHover (0x6727c, 2,208 B)`** — **The
+  crosshair, the scan animation, the two random readout lines and the terrain / cost / Build base labels
+  over the hovered region.** The wash key is `Game_RandU16(10)` with every roll below 8 collapsed to 0
+  (0x672B4), so only 8 and 9 survive and key 0 leaves the surface alone — that is how the globe shows
+  through. The bottom panel gates the rest of the frame: while `Ui_AnimExpandBlit` mode 3 is incomplete the
+  function returns at 0x67490 and the scan animation, the readouts, the labels AND the counter advance
+  never run. The three counters step after the drawing, `nGlobeScanX` zeroes past 320, and
+  `nGlobeSweepV + 1 > 40` zeroes both sweep counters from one CMP at 0x67694. **The four label sources are
+  TEXTS records, not literals:** 0xE7B3A / 0xEC680 / 0xEC74D / 0x103C77 sit past `.data`'s initialised span
+  (929,136 virtual bytes, 26,624 raw — everything from 0xAC800 up is zero-filled at load) and each is an
+  exact multiple of 205 past `aTextRecs`, i.e. records 1042, 1136, 1137 and 1603; out of lang.dat they read
+  "Can`t build here", "Terrain: ", "Base cost: " and "Build base". TEXTS[1042] is also what
+  `TEXTS[905 + 0x89]` names, which is why ocean and region 0x89 read identically and
+  `aNewBaseCostByRegion[9] == 0`. **The halving triple appears twice more** (0x6733C, 0x67884) and both are
+  plain C `(320 - uHeight) / 2`; Hex-Rays' `321 - uHeight` for a tall strip is the same truncation, not a
+  special case. **1 deviation recorded:** 0x67980 indexes `aNewBaseCostByRegion[tile - 0x80]` with no range
+  test; the port skips the cost line for an out-of-range tile. 108 new checks; two mutations were run — the
+  tick base 3 → 4 turns five red, the horizontal sweep gate 15 → 16 turns two red. Two helper bugs found
+  while writing them are recorded in the parity doc because either would have made a whole group vacuous.
+  **0 new ledger rows (226 on record), 89 markers.** 9 IDB renames (439 on record), `aNewBaseCostByRegion`
+  retyped to `u32[10]`, 1 function comment, 9 line comments. 14192 checks (60 suites), coverage 923/1103
+  (83.7%) and 503872/598792 (84.1%); `strat` moves to 198/204 functions and 124,868 of 160,496 bytes
+  (77.8%).
+
 - **Consequence for the ordering.** Priority 1's remaining tail is `LoadGame` — `Game_StartNew` and
   `Geoscape_InitUI` are ported and wired into the shell (`app/pufo_world.c`), and they want the
   screens subsystem for anything visible. The workable

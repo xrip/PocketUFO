@@ -7660,6 +7660,599 @@ static void TestPulseUpdate(void)
     Check(true, "a NULL environment is a no-op rather than a crash");
 }
 
+/* ------------------------------------------------------- Geoscape_DrawGlobeHover @ 0x6727c
+ *
+ * Fixture: a real 240x320 surface, the shipped lang.dat TEXTS records, and a 100x100 tile grid with
+ * nScrollX = nScrollY = 0. With the strip pad at uHeight 100 the sample point is (120, 110), so
+ * tileX = 0 + 50 + 120 - 120 = 50 and tileY = 0 + 50 + 110 - 160 = 0 -- tile (50, 0). At uHeight 102
+ * the point is (120, 109), tileY becomes -1, and the one wrap puts it at tile (50, 99).
+ *
+ * Rect fills here take their colour straight from Blit_PackedColor -- the index plus the two colour
+ * bytes, no palette -- so the expected pixel values are arithmetic and are pinned exactly:
+ *   rule  0x32 / 0xC8 / 0x32 -> 13894   sweep 0x0A / 0xFF / 0x0A -> 4065
+ *   scan  8 / 80 / 85        -> 2698    wash  0xFF / 255 / 255   -> 65535 */
+#define GH_DIM        100
+#define GH_STRIP_H    100
+#define GH_RULE_COL   13894u
+#define GH_SWEEP_COL   4065u
+#define GH_SCAN_COL    2698u
+#define GH_WASH_COL   65535u
+#define GH_SAMPLE_IDX (0 * GH_DIM + 50)  /* tile (50, 0): what (120, 110) resolves to */
+#define GH_ALT_IDX    (99 * GH_DIM + 50) /* tile (50, 99): what (120, 109) wraps to */
+
+static u8        g_ghTiles[GH_DIM * GH_DIM];
+static u8        g_ghStripGlyph[4 + 8 * 3]; /* the strip pad's bytes are never read here, only uHeight is */
+static PadImage  g_ghStripPad;
+static SmapView  g_ghView;
+static i32       g_ghScanX, g_ghSweepV, g_ghSweepH, g_ghPendX, g_ghPendY;
+static u8        g_ghPending;
+static UiControl g_ghCtl;
+static PadImage  g_ghCtlPad;
+static u8        g_ghCtlPadData[4 + 6 * 4];
+static u8        g_ghAnimStarted;
+static i8        g_ghAnimProgress;
+static UiAnimBlitEnv g_ghAnim;
+static GfxColorEnv g_ghColor;
+static GeoscapeGlobeHoverEnv g_ghEnv;
+static i32       g_ghCtlBlits;
+static i32       g_ghStripH = GH_STRIP_H;
+static i32       g_ghSeed;
+static i32       g_ghAnimDone = 1;
+static i32       g_ghSetScanX, g_ghSetSweepV, g_ghSetSweepH; /* the counters each frame starts from */
+static u16       g_ghSnap[10 * BD_SURF_W];
+
+/* aNewBaseCostByRegion @ 0xab488, read straight out of the image. */
+static const u32 g_ghRegionCost[10] = { 800000, 600000, 1000000, 800000, 750000,
+                                        650000, 900000, 950000, 800000, 0 };
+
+/* The sixteen tick columns in row nMidY - 1: (i + 3)^2 and 240 - (i + 3)^2 for i = 0..7. */
+static const i32 g_aGhTickCols[16] = { 9, 16, 25, 36, 49, 64, 81, 100,
+                                       140, 159, 176, 191, 204, 215, 224, 231 };
+
+static void GhCtlBlit(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+    ++g_ghCtlBlits;
+}
+
+static void GhCtlBlitEx(const PadImage *pPad, void *pUser)
+{
+    (void)pPad;
+    (void)pUser;
+}
+
+/* Seeds whose FIRST Game_RandU16(nMax) is nWant. The wash key is the first roll the frame makes, so
+ * this pins it without touching the six readout rolls that follow. */
+static i32 GhSeedFor(i32 nMax, i32 nWant)
+{
+    for (i32 nSeed = 1; nSeed < 200000; ++nSeed) {
+        srand((unsigned)nSeed);
+        if ((i32)Game_RandU16((u16)nMax) == nWant) {
+            return nSeed;
+        }
+    }
+    return -1;
+}
+
+/* A seed whose first roll is nWant1 and whose second (the first readout number) is nWant2. Two
+ * seeds with the same nWant1 paint the same wash and the same crosshair but different readouts,
+ * which is what separates the seed-dependent drawing from the seed-independent one. */
+static i32 GhSeedForRolls(i32 nWant1, i32 nWant2)
+{
+    for (i32 nSeed = 1; nSeed < 200000; ++nSeed) {
+        srand((unsigned)nSeed);
+        if ((i32)Game_RandU16(10) == nWant1 && (i32)Game_RandU16(PUFO_GLOBE_READOUT_SPAN) == nWant2) {
+            return nSeed;
+        }
+    }
+    return -1;
+}
+
+static u16 g_ghRowSnap[BD_SURF_W];
+
+static void GhRowSave(i32 nY)
+{
+    for (i32 x = 0; x < BD_SURF_W; ++x) {
+        g_ghRowSnap[x] = (u16)BdPix(x, nY);
+    }
+}
+
+/* Columns of one row that changed since GhRowSave. The scan strips blend (key 100), so their exact
+ * colour is not arithmetic the way an opaque rect fill is; the difference between two runs is. */
+static i32 GhRowDiff(i32 nY, i32 *pnMin, i32 *pnMax)
+{
+    i32 n = 0;
+
+    *pnMin = BD_SURF_W;
+    *pnMax = -1;
+    for (i32 x = 0; x < BD_SURF_W; ++x) {
+        if ((u16)BdPix(x, nY) != g_ghRowSnap[x]) {
+            ++n;
+            if (x < *pnMin) {
+                *pnMin = x;
+            }
+            if (x > *pnMax) {
+                *pnMax = x;
+            }
+        }
+    }
+    return n;
+}
+
+static void GhFixture(i32 nTile)
+{
+    memset(g_ghTiles, 0, sizeof(g_ghTiles));
+    g_ghTiles[GH_SAMPLE_IDX] = (u8)nTile;
+    g_ghTiles[GH_ALT_IDX]    = PUFO_REGION_AFRICA; /* the tile the sample moves to when the strip grows */
+
+    memset(&g_ghStripPad, 0, sizeof(g_ghStripPad));
+    g_ghStripPad.pData   = g_ghStripGlyph;
+    g_ghStripPad.uWidth  = 8;
+    g_ghStripPad.uHeight = (u16)g_ghStripH;
+
+    memset(&g_ghView, 0, sizeof(g_ghView));
+    g_ghView.nScrollX = 0;
+    g_ghView.nScrollY = 0;
+    g_ghView.nMapW    = GH_DIM;
+    g_ghView.nMapH    = GH_DIM;
+
+    UiControl_ctor(&g_ghCtl);
+    memset(g_ghCtlPadData, 0xC3, sizeof(g_ghCtlPadData));
+    g_ghCtlPad.pData   = g_ghCtlPadData;
+    g_ghCtlPad.uWidth  = 60;
+    g_ghCtlPad.uHeight = 4;
+    g_ghCtl.apPads[0]  = &g_ghCtlPad;
+    g_ghCtl.bEnabled   = 1;
+    g_ghCtl.uWidth     = 60; /* the control's own width is what 0x679F0 halves, not the pad's */
+
+    g_ghAnim.pbStarted   = &g_ghAnimStarted;
+    g_ghAnim.pnProgress  = &g_ghAnimProgress;
+    g_ghAnim.nFrameStyle = 0;
+
+    g_ghColor.nScaleSource = 1;
+    g_ghColor.nFadeCount   = 0;
+
+    memset(&g_ghEnv, 0, sizeof(g_ghEnv));
+    g_ghEnv.pStripPad          = &g_ghStripPad;
+    g_ghEnv.pTiles             = g_ghTiles;
+    g_ghEnv.pView              = &g_ghView;
+    g_ghEnv.pAnim              = &g_ghAnim;
+    g_ghEnv.pnPendingPickX     = &g_ghPendX;
+    g_ghEnv.pnPendingPickY     = &g_ghPendY;
+    g_ghEnv.pnScanX            = &g_ghScanX;
+    g_ghEnv.pnSweepV           = &g_ghSweepV;
+    g_ghEnv.pnSweepH           = &g_ghSweepH;
+    g_ghEnv.pbPlacementPending = &g_ghPending;
+    g_ghEnv.pCtlConfirm        = &g_ghCtl;
+    g_ghEnv.pTextRecs          = (const char *)g_dsTexts;
+    g_ghEnv.paRegionCost       = g_ghRegionCost;
+    g_ghEnv.pColor             = &g_ghColor;
+    g_ghEnv.pfnCtlBlit         = GhCtlBlit;
+    g_ghEnv.pfnCtlBlitEx       = GhCtlBlitEx;
+
+    g_ghSetScanX  = 0;
+    g_ghSetSweepV = 37; /* both sweep gates closed by default, so a test opens exactly one at a time */
+    g_ghSetSweepH = 15;
+    g_ghPendX  = -1;
+    g_ghPendY  = -1;
+    g_ghPending = 0;
+    g_ghSeed   = GhSeedFor(10, 0);
+    g_ghAnimDone = 1;
+}
+
+/* One frame, from a known start state. GhTextScan replays it, so every input is re-applied here. */
+static i32 GhRun(void)
+{
+    GdClear();
+    g_ghStripPad.uHeight = (u16)g_ghStripH;
+    g_ghScanX  = g_ghSetScanX;  /* every frame starts from the same counters, so GhTextScan's two
+                                 * runs differ only in the TEXTS record it blanked */
+    g_ghSweepV = g_ghSetSweepV;
+    g_ghSweepH = g_ghSetSweepH;
+    g_ghCtl.x = 7;   /* sentinels: a moved control is then visible */
+    g_ghCtl.y = 9;
+    g_ghCtlBlits = 0;
+    g_ghAnimStarted  = g_ghAnimDone ? 1 : 0;
+    g_ghAnimProgress = g_ghAnimDone ? 100 : 50;
+    g_ghView.nPickX  = 111; /* the PREVIOUS pick, which the pending copy must see */
+    g_ghView.nPickY  = 222;
+    srand((unsigned)g_ghSeed);
+    return Geoscape_DrawGlobeHover(&g_ghEnv);
+}
+
+/* Columns of one row whose colour is exactly uWant. */
+static i32 GhRowColour(i32 nY, i32 x0, i32 x1, u16 uWant, i32 *pnFirst, i32 *pnLast)
+{
+    i32 n = 0;
+
+    *pnFirst = -1;
+    *pnLast  = -1;
+    for (i32 x = x0; x <= x1; ++x) {
+        if ((u16)BdPix(x, nY) == uWant) {
+            ++n;
+            if (*pnFirst < 0) {
+                *pnFirst = x;
+            }
+            *pnLast = x;
+        }
+    }
+    return n;
+}
+
+/* Runs one frame twice, once with a TEXTS record intact and once with its first byte zeroed, and
+ * reports the pixels that differ plus the dominant colour among them. The frame paints a solid panel
+ * and two dark rects behind every label, so a count of lit pixels would be satisfied by those alone;
+ * only the difference between the two runs is the glyphs. The dominant colour is what pins the two
+ * Gfx_PackRgb565Pair calls and their order. */
+static i32 GhTextScan(i32 nRec, i32 x0, i32 y0, i32 nW, i32 nH,
+                      i32 *pnMin, i32 *pnMax, u16 *puInk)
+{
+    char  chSaved = (char)g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec];
+    u16   aSeen[32];
+    i32   aCount[32];
+    i32   nColours = 0;
+    i32   nDiff = 0;
+    i32   nBest = 0;
+
+    *pnMin = BD_SURF_W;
+    *pnMax = -1;
+    *puInk = 0;
+
+    (void)GhRun();
+    for (i32 y = 0; y < nH; ++y) {
+        for (i32 x = 0; x < nW; ++x) {
+            g_ghSnap[y * BD_SURF_W + x] = (u16)BdPix(x0 + x, y0 + y);
+        }
+    }
+
+    g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec] = 0;
+    (void)GhRun();
+    g_dsTexts[PUFO_TEXT_REC_STRIDE * nRec] = (u8)chSaved;
+
+    for (i32 y = 0; y < nH; ++y) {
+        for (i32 x = 0; x < nW; ++x) {
+            const u16 uNow = (u16)BdPix(x0 + x, y0 + y);
+
+            if (uNow != g_ghSnap[y * BD_SURF_W + x]) {
+                /* The colour tallied is the one from the run that DREW the text: the blanked run
+                 * leaves the panel behind there, which is the same for every label and would make
+                 * every ink look identical. */
+                const u16 uInk = g_ghSnap[y * BD_SURF_W + x];
+
+                ++nDiff;
+                if (x0 + x < *pnMin) {
+                    *pnMin = x0 + x;
+                }
+                if (x0 + x > *pnMax) {
+                    *pnMax = x0 + x;
+                }
+                i32 k;
+                for (k = 0; k < nColours; ++k) {
+                    if (aSeen[k] == uInk) {
+                        ++aCount[k];
+                        break;
+                    }
+                }
+                if (k == nColours && nColours < 32) {
+                    aSeen[nColours] = uInk;
+                    aCount[nColours] = 1;
+                    ++nColours;
+                }
+            }
+        }
+    }
+
+    for (i32 k = 0; k < nColours; ++k) {
+        if (aCount[k] > nBest) {
+            nBest = aCount[k];
+            *puInk = aSeen[k];
+        }
+    }
+    return nDiff;
+}
+
+static void TestGlobeHover(void)
+{
+    i32 nMin, nMax, nFirst, nLast, nDiff, nRet, nLit, i;
+    i32 nSeed0, nSeed8, nSeed9, nSeedA, nSeedB, nMinLong, nMinShort;
+    u16 uInkName, uInkCost, uInkBuild, uInkOther;
+    u32 uHashReadout, uHashCrosshair;
+    char szMsg[120];
+
+    printf("\nGeoscape_DrawGlobeHover @ 0x6727c\n");
+    if (!GdEnsureFont()) {
+        Check(false, "the real font is loaded, so the labels are real glyphs");
+        return;
+    }
+    if (g_dsTexts == NULL) {
+        /* TestDrawScreen frees the blob it loaded, and a later group may have closed the archives,
+         * so this group reopens them and loads its own copy. */
+        static const char *const apszArchive[PUFO_ARCHIVE_COUNT] = { "lang.dat", "main.dat" };
+        (void)Asset_OpenArchives(apszArchive);
+        if (!DsLoadTexts()) {
+            Check(false, "lang.dat texts.dat loaded, so the labels are the shipped strings");
+            return;
+        }
+    }
+
+    nSeed0 = GhSeedFor(10, 0);
+    nSeed8 = GhSeedFor(10, 8);
+    nSeed9 = GhSeedFor(10, 9);
+    nSeedA = GhSeedForRolls(0, 0);
+    nSeedB = GhSeedForRolls(0, PUFO_GLOBE_READOUT_SPAN - 1);
+    Check(nSeed0 > 0 && nSeed8 > 0 && nSeed9 > 0, "seeds exist for a first roll of 0, 8 and 9");
+    Check(nSeedA > 0 && nSeedB > 0 && nSeedA != nSeedB,
+          "and for a first roll of 0 paired with a first readout number of 100 or 999");
+
+    /* --- 1. the wash key: rolls 0..7 collapse to 0, and key 0 leaves the pixel alone --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeed0;
+    (void)GhRun();
+    CheckEqI32(BdPix(200, 30), 0,
+               "a roll below 8 becomes key 0 (0x672B4 MOVLT), and key 0 leaves the surface alone");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeed8;
+    (void)GhRun();
+    CheckEqI32(BdPix(200, 30), 32,
+               "roll 8 blends 8/255 of the index-0xFF wash: only the 6-bit field survives truncation");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeed9;
+    (void)GhRun();
+    CheckEqI32(BdPix(200, 30), 2113,
+               "roll 9 blends more, so the two surviving rolls really are different keys");
+
+    /* --- 2. the crosshair: the rule, its span, and the sixteen (i + 3)^2 ticks --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    nRet = GhRun();
+    CheckEqI32(nRet, PUFO_REGION_EUROPE,
+               "the hovered tile is the return value, which the caller stores as bPendingRegionId");
+
+    nLit = GhRowColour(110, 0, 239, GH_RULE_COL, &nFirst, &nLast);
+    CheckEqI32(nLit, 240, "the horizontal rule spans the whole width at (320 - uHeight) / 2 = 110");
+    CheckEqI32(nFirst, 0, "from x=0");
+    CheckEqI32(nLast, 239, "to x=239");
+
+    nLit = GhRowColour(109, 0, 239, GH_RULE_COL, &nFirst, &nLast);
+    CheckEqI32(nLit, 17, "row 109 carries the sixteen tick marks plus the vertical rule crossing it");
+    Check((u16)BdPix(120, 109) == GH_RULE_COL, "the 17th column is the vertical rule, not a tick");
+    for (i = 0; i < 16; ++i) {
+        snprintf(szMsg, sizeof(szMsg), "tick %d of 16 sits at x=%d ((i + 3)^2 and its mirror)",
+                 i + 1, g_aGhTickCols[i]);
+        Check((u16)BdPix(g_aGhTickCols[i], 109) == GH_RULE_COL, szMsg);
+    }
+    Check((u16)BdPix(10, 109) != GH_RULE_COL, "the gap after the first tick (x=9) is empty");
+    Check((u16)BdPix(101, 109) != GH_RULE_COL, "and the gap after the last one (x=100) is empty");
+
+    Check((u16)BdPix(120, 0) == GH_RULE_COL, "the vertical rule starts at y=0");
+    Check((u16)BdPix(120, 219) == GH_RULE_COL, "and runs to 320 - uHeight - 1 = 219");
+    Check((u16)BdPix(120, 220) != GH_RULE_COL, "one pixel further is the panel, not the rule");
+    Check((u16)BdPix(119, 0) != GH_RULE_COL, "the rule is one column wide");
+
+    Check((u16)BdPix(119, 9) == GH_RULE_COL, "the upper vertical ticks are 3 wide at x=119..121");
+    Check((u16)BdPix(121, 9) == GH_RULE_COL, "including the far column");
+    Check((u16)BdPix(118, 9) != GH_RULE_COL, "and no further");
+    Check((u16)BdPix(119, 211) == GH_RULE_COL, "the lower mirror is at 320 - uHeight - (i + 3)^2 = 211");
+    Check((u16)BdPix(119, 120) == GH_RULE_COL, "down to the last one at 120");
+
+    /* --- 3. the panel gate: while it expands, nothing below the frame runs --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghAnimDone = 0;
+    g_ghSetScanX = 7; g_ghSetSweepV = 5; g_ghSetSweepH = 3;
+    nRet = GhRun();
+    CheckEqI32(nRet, 0, "an unfinished Ui_AnimExpandBlit returns the frame out at 0x67490");
+    CheckEqI32(g_ghScanX, 7, "so the scan counter never advances");
+    CheckEqI32(g_ghSweepV, 5, "nor the vertical sweep counter");
+    CheckEqI32(g_ghSweepH, 3, "nor the horizontal one");
+    CheckEqI32(g_ghPendX, -1, "and the pending pick is not written");
+    CheckEqI32(g_ghCtlBlits, 0, "and the Build base button is never blitted");
+    CheckEqI32((i32)g_ghCtl.x, 7, "nor moved");
+
+    /* --- 4. the counters, and the order of the pending pick --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 7; g_ghSetSweepV = 5; g_ghSetSweepH = 3;
+    (void)GhRun();
+    CheckEqI32(g_ghScanX, 8, "all three counters step by one, after the drawing (0x67664)");
+    CheckEqI32(g_ghSweepV, 6, "including the vertical sweep");
+    CheckEqI32(g_ghSweepH, 4, "and the horizontal one");
+    CheckEqI32(g_ghPendX, 111,
+               "the pending copy sees the pick from BEFORE this frame's lookup (0x6786C runs first)");
+    CheckEqI32(g_ghPendY, 222, "for both axes");
+    CheckEqI32(g_ghView.nPickX, 50, "and the lookup writes the view's pick: 0 + 50 + 120 - 120");
+    CheckEqI32(g_ghView.nPickY, 0, "0 + 50 + 110 - 160 = 0, so (120, 110) resolves to tile (50, 0)");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 319;
+    (void)GhRun();
+    CheckEqI32(g_ghScanX, 320, "319 steps to 320 and stays, because the wrap is past 320 (0x67684)");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 320;
+    (void)GhRun();
+    CheckEqI32(g_ghScanX, 0, "320 steps to 321, which is past the wrap, so it zeroes");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 39; g_ghSetSweepH = 9;
+    (void)GhRun();
+    CheckEqI32(g_ghSweepV, 40, "39 steps to 40, which is not past the sweep wrap");
+    CheckEqI32(g_ghSweepH, 10, "so the horizontal counter keeps its own value");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 40; g_ghSetSweepH = 9;
+    (void)GhRun();
+    CheckEqI32(g_ghSweepV, 0, "past 40 the vertical sweep zeroes (0x67694 CMP #0x28)");
+    CheckEqI32(g_ghSweepH, 0, "and it takes the horizontal one with it -- one condition, two stores");
+
+    /* --- 5. the sweep gates, measured on the surface --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 36; g_ghSetSweepH = 15;
+    (void)GhRun();
+    nLit = GhRowColour(228, 0, 239, GH_SWEEP_COL, &nFirst, &nLast);
+    CheckEqI32(nLit, 2, "sweep 36 draws the vertical pair: x = 2 * (36 + 80) and 235 - 2 * 36");
+    CheckEqI32(nFirst, 163, "the inner line at 235 - 72 = 163");
+    CheckEqI32(nLast, 232, "the outer line at 2 * 116 = 232");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 37; g_ghSetSweepH = 15;
+    (void)GhRun();
+    CheckEqI32(GhRowColour(228, 0, 239, GH_SWEEP_COL, &nFirst, &nLast), 0,
+               "sweep 37 is past the gate (0x67594), so the pair is gone");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 37; g_ghSetSweepH = 14;
+    (void)GhRun();
+    nLit = GhRowColour(228, 0, 239, GH_SWEEP_COL, &nFirst, &nLast);
+    CheckEqI32(nLit, 75, "sweep 14 draws the horizontal pair, 75 wide from x=160");
+    CheckEqI32(nFirst, 160, "starting at 160");
+    CheckEqI32(nLast, 234, "ending at 234");
+    CheckEqI32(GhRowColour(202, 0, 239, GH_SWEEP_COL, &nFirst, &nLast), 75,
+               "and its mirror at 2 * (115 - 14) = 202");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetSweepV = 37; g_ghSetSweepH = 15;
+    (void)GhRun();
+    CheckEqI32(GhRowColour(228, 0, 239, GH_SWEEP_COL, &nFirst, &nLast), 0,
+               "sweep 15 is past the horizontal gate (0x67600)");
+    CheckEqI32(GhRowColour(202, 0, 239, GH_SWEEP_COL, &nFirst, &nLast), 0, "on both rows");
+    CheckEqI32(GhRowColour(230, 0, 239, GH_SWEEP_COL, &nFirst, &nLast), 0,
+               "and nothing lands at 2 * (15 + 100) = 230, the row a gate of 16 would have used");
+
+    /* --- 6. the scan strips and their two bounds --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 220; /* both bounds fail here, so this row is the baseline */
+    (void)GhRun();
+    GhRowSave(242);
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 0;
+    (void)GhRun();
+    nLit = GhRowDiff(242, &nMin, &nMax);
+    CheckEqI32(nLit, 20, "scan 0 draws both 10-wide strips: x=10..19 and x=230..239");
+    CheckEqI32(nMin, 10, "the left copy starts at scanX + 10");
+    CheckEqI32(nMax, 239, "the right copy ends at 230 - scanX + 9");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 219;
+    (void)GhRun();
+    nLit = GhRowDiff(242, &nMin, &nMax);
+    CheckEqI32(nLit, 20, "scan 219 still draws both: 229 < 230 and 11 > 10");
+    CheckEqI32(nMin, 11, "the right copy is now at 230 - 219 = 11");
+    CheckEqI32(nMax, 238, "and the left copy at 219 + 10 = 229, ten wide");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSetScanX = 220;
+    (void)GhRun();
+    CheckEqI32(GhRowDiff(242, &nMin, &nMax), 0,
+               "scan 220 fails both bounds (0x6752C / 0x67560), so neither strip is drawn");
+
+    /* --- 7. the dark rects the readouts sit on --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    (void)GhRun();
+    CheckEqI32(BdPix(79, 200), 25356,
+               "the 75x30 rect at (5, 200) blends index 0xFF at key 100 over the cleared surface (0x674E0)");
+    CheckEqI32(BdPix(234, 200), 25356, "and its twin at (160, 200) (0x674BC)");
+
+    /* --- 8. the readout lines: seeded, live, and really inked --- */
+    /* Two seeds with the SAME wash key but different first readout numbers: everything that does
+     * not depend on the roll has to match, everything that does has to differ. */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeedA;
+    (void)GhRun();
+    uHashReadout   = DsHashBox(5, 203, 75, 10);
+    uHashCrosshair = DsHashBox(0, 109, 240, 1);
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeedA;
+    (void)GhRun();
+    Check(DsHashBox(5, 203, 75, 10) == uHashReadout,
+          "the same seed paints the same readout, so the frame is reproducible");
+
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghSeed = nSeedB;
+    (void)GhRun();
+    Check(DsHashBox(5, 203, 75, 10) != uHashReadout,
+          "the same key with different rolls paints a different readout -- the six rolls are live");
+    Check(DsHashBox(0, 109, 240, 1) == uHashCrosshair,
+          "while the tick row is identical, because nothing there depends on the roll");
+    Check(DsDiffBg(5, 203, 75, 10, 25356u) > 0,
+          "digits are inked over the dark rect, not just reserved space");
+
+    /* --- 9. the region labels, isolated by blanking each TEXTS record --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    (void)GhRun();
+    nDiff = GhTextScan(PUFO_GLOBE_TEXT_TERRAIN, 0, 253, 240, 10, &nMin, &nMax, &uInkName);
+    Check(nDiff > 0, "TEXTS[1136] \"Terrain: \" really is drawn at y=250");
+    nDiff = GhTextScan(PUFO_GLOBE_TEXT_REGION0 + PUFO_REGION_EUROPE, 0, 253, 240, 10,
+                       &nMin, &nMax, &uInkOther);
+    Check(nDiff > 0, "and so is the region's own name, TEXTS[905 + tile]");
+    Check(uInkName == uInkOther, "both come from the colour pair set at 0x678B8");
+
+    nDiff = GhTextScan(PUFO_GLOBE_TEXT_COST, 0, 273, 240, 10, &nMin, &nMax, &uInkCost);
+    Check(nDiff > 0, "TEXTS[1137] \"Base cost: \" is drawn at y=270");
+    Check(uInkCost == uInkName, "the cost line shares the name's colour -- no colour call between them");
+
+    nDiff = GhTextScan(PUFO_GLOBE_TEXT_BUILD, 0, 293, 240, 10, &nMin, &nMax, &uInkBuild);
+    Check(nDiff > 0, "TEXTS[1603] \"Build base\" is drawn at y=290");
+    Check(uInkBuild != uInkName, "and it is a different colour, because 0x67A34 repacks between them");
+    Check(nMin + nMax >= 236 && nMin + nMax <= 242,
+          "the caption is centred on 120 (120 - Text_MeasureWidth / 2)");
+
+    CheckEqI32((i32)g_ghCtl.x, 90, "the confirm control centres on 120 - uWidth / 2, uWidth 60 (0x679F0)");
+    CheckEqI32((i32)g_ghCtl.y, 290, "and pins to y=290 (0x67A00)");
+    CheckEqI32(g_ghCtlBlits, 1, "its pad is blitted exactly once (0x67A08)");
+
+    /* centring follows the real measured width, not a fixed offset */
+    GhFixture(PUFO_REGION_NORTH_AMERICA);
+    GhTextScan(PUFO_GLOBE_TEXT_REGION0 + PUFO_REGION_NORTH_AMERICA, 0, 253, 240, 10,
+               &nMinLong, &nMax, &uInkOther);
+    GhFixture(PUFO_REGION_ASIA);
+    GhTextScan(PUFO_GLOBE_TEXT_REGION0 + PUFO_REGION_ASIA, 0, 253, 240, 10,
+               &nMinShort, &nMax, &uInkOther);
+    Check(nMinLong < nMinShort,
+          "the longer region name starts further left, so the centring uses its measured width");
+
+    /* --- 10. the cost line's gate --- */
+    GhFixture(PUFO_REGION_EUROPE);
+    g_ghPending = 1;
+    (void)GhRun();
+    Check(GhTextScan(PUFO_GLOBE_TEXT_COST, 0, 273, 240, 10, &nMin, &nMax, &uInkOther) == 0,
+          "bPlacementPending @ 0x1870AC suppresses the cost line (0x679A8)");
+    Check(GhTextScan(PUFO_GLOBE_TEXT_TERRAIN, 0, 253, 240, 10, &nMin, &nMax, &uInkOther) > 0,
+          "but not the name line");
+    Check(GhTextScan(PUFO_GLOBE_TEXT_BUILD, 0, 293, 240, 10, &nMin, &nMax, &uInkOther) > 0,
+          "nor the caption");
+    CheckEqI32(g_ghCtlBlits, 1, "and the button still blits -- the gate covers only the cost text");
+
+    /* --- 11. ocean: the no-build label and nothing else --- */
+    GhFixture(PUFO_REGION_ID_NONE);
+    nRet = GhRun();
+    CheckEqI32(nRet, PUFO_REGION_ID_NONE, "tile 0xFF is the ocean and is returned unchanged");
+    Check(GhTextScan(PUFO_GLOBE_TEXT_OCEAN, 0, 253, 240, 10, &nMin, &nMax, &uInkOther) > 0,
+          "ocean gets TEXTS[1042] centred at y=250");
+    Check(GhTextScan(PUFO_GLOBE_TEXT_COST, 0, 273, 240, 10, &nMin, &nMax, &uInkOther) == 0,
+          "no cost line on ocean");
+    Check(GhTextScan(PUFO_GLOBE_TEXT_BUILD, 0, 293, 240, 10, &nMin, &nMax, &uInkOther) == 0,
+          "no Build base caption either");
+    CheckEqI32(g_ghCtlBlits, 0, "and the button is not blitted");
+    CheckEqI32((i32)g_ghCtl.x, 7, "nor moved -- the whole region arm is skipped");
+
+    /* --- 12. the sample point follows the strip height --- */
+    g_ghStripH = 102;
+    GhFixture(PUFO_REGION_EUROPE);
+    nRet = GhRun();
+    CheckEqI32(nRet, PUFO_REGION_AFRICA,
+               "a 2-pixel taller strip moves the sample to (120, 109), a whole tile row up (0x67884)");
+    Check((u16)BdPix(0, 109) == GH_RULE_COL, "and the horizontal rule moves with it, at (320 - 102) / 2");
+    Check((u16)BdPix(120, 217) == GH_RULE_COL, "the vertical rule shortens to 320 - uHeight too");
+    Check((u16)BdPix(120, 218) != GH_RULE_COL, "one pixel past it is the panel");
+    g_ghStripH = GH_STRIP_H;
+
+    free(g_dsTexts);
+    g_dsTexts = NULL;
+}
+
 int main(void)
 {
     (void)setvbuf(stdout, NULL, _IONBF, 0); /* so a crash points at the check that caused it */
@@ -7717,6 +8310,7 @@ int main(void)
     TestDrawScreen();
     TestSelectMapTarget();
     TestPulseUpdate();
+    TestGlobeHover();
     printf(g_nFailures ? "FAIL %d checks\n" : "PASS (%d failures)\n", g_nFailures);
     return g_nFailures != 0;
 }

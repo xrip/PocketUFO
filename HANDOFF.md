@@ -1,8 +1,8 @@
 # HANDOFF — PocketUFO Win64 recreation
 
-Date: 2026-10-16. HEAD before this edit: `c89d8b3`. The unit this commit carries is described under "Test
-checks run across the 60 suites" below (unit 84, `Geoscape_PulseUpdate` 0x954dc + `Smap_SelectMapTarget`
-0x84484), and the per-unit chain there runs back through every unit since. The block that follows is the
+Date: 2026-10-16. HEAD before this edit: `7d867a0`. The unit this commit carries is described under "Test
+checks run across the 60 suites" below (unit 85, `Geoscape_DrawGlobeHover` 0x6727c), and the per-unit chain
+there runs back through every unit since. The block that follows is the
 older **`Tact_EnemyAiTick` (0x4cbe0, 3,440 B)** unit's write-up, kept because its four findings still apply
 to anyone touching that code:
 
@@ -207,10 +207,10 @@ read. See §7.
 Parity and audit scripts, same session:
 
 ```
-python docs/parity/coverage.py            -> functions cited: 922 / 1103 (83.6%)
-                                             bytes cited:     501664 / 598792 (83.8%)
-python docs/parity/audit_credits.py       -> credited functions: 922, NEGATED citations: 0
-python docs/parity/audit_names.py         -> renames on record: 430 (explain 213 citations)
+python docs/parity/coverage.py            -> functions cited: 923 / 1103 (83.7%)
+                                             bytes cited:     503872 / 598792 (84.1%)
+python docs/parity/audit_credits.py       -> credited functions: 923, NEGATED citations: 0
+python docs/parity/audit_names.py         -> renames on record: 439 (explain 213 citations)
                                              credited addresses whose original name is not defined: 0
                                              (worth 0 bytes -- still zero since 0x1512c Tact_HandleMapClick
                                               and 0x17bb8 TactAction_ConfirmMeleeMode6 closed in unit 68)
@@ -231,10 +231,31 @@ build/src/pufo/Release/pocketufo.exe --dump-frame <path.ppm>
      four teal rows with black Cyrillic labels, SMK logo.
 ```
 
-Test checks run across the 60 suites: **14084**. Coverage as of the latest commit: **922 / 1103
-functions (83.6%)**, **501664 / 598792 bytes (83.8%)**. This unit ported `Geoscape_PulseUpdate`
-(0x954dc, 1,812 B), the geoscape pulse tick, and `Smap_SelectMapTarget` (0x84484, 340 B), the map-target
-arm. **The tick has three halves that do not depend on each other** -- the map-screen craft pass, the
+Test checks run across the 60 suites: **14192**. Coverage as of the latest commit: **923 / 1103
+functions (83.7%)**, **503872 / 598792 bytes (84.1%)**. This unit ported `Geoscape_DrawGlobeHover`
+(0x6727c, 2,208 B), the new-base globe hover frame: the crosshair, the scan animation, the two random
+readout lines and the terrain / cost / Build base labels over the hovered region. **The four label sources
+are TEXTS records, not literals.** 0xE7B3A / 0xEC680 / 0xEC74D / 0x103C77 sit past `.data`'s initialised
+span -- the section declares 929,136 virtual bytes and carries only 26,624 raw, so everything from 0xAC800
+up is zero-filled at load -- and each address is an exact multiple of 205 past `aTextRecs`, i.e. records
+1042, 1136, 1137 and 1603. Out of lang.dat they read "Can`t build here", "Terrain: ", "Base cost: " and
+"Build base". TEXTS[1042] is also the record `TEXTS[905 + 0x89]` names, which is why the ocean tile and
+region 0x89 read identically and `aNewBaseCostByRegion[9] == 0`; the nine buildable regions are
+TEXTS[1033..1041]. **The halving triple, twice more.** 0x6733C and 0x67884 are both
+`RSB #0x140 / CMP #0 / ADDMI #1 / ASR #1`, plain C `(320 - uHeight) / 2`; Hex-Rays renders the second as
+`321 - uHeight` for a tall strip, which reads like a special case and is not one. **The panel gates the
+rest of the frame:** while `Ui_AnimExpandBlit` mode 3 is incomplete the function returns at 0x67490 and the
+scan animation, the readouts, the labels AND the counter advance never run. The wash key is
+`Game_RandU16(10)` with every roll below 8 collapsed to 0 (0x672B4), so only 8 and 9 survive and key 0
+leaves the surface alone -- that is how the globe shows through, and the tests pin the blended pixel for
+all three cases. **1 deviation recorded:** 0x67980 indexes `aNewBaseCostByRegion[tile - 0x80]` with no
+range test; the port skips the cost line for an out-of-range tile. 108 new checks; two mutations were run
+(tick base 3 -> 4 turns five red, horizontal sweep gate 15 -> 16 turns two red), and two helper bugs found
+on the way are recorded in the parity doc because either would have made a whole group vacuous. 9 IDB
+renames, `aNewBaseCostByRegion` retyped to `u32[10]`, 1 function comment, 9 line comments, 0 new ledger
+rows. `strat` moves to 198/204 functions and 124,868 of 160,496 bytes (77.8%).
+Unit 84 ported `Geoscape_PulseUpdate` (0x954dc, 1,812 B), the geoscape pulse tick, and
+`Smap_SelectMapTarget` (0x84484, 340 B), the map-target arm. **The tick has three halves that do not depend on each other** -- the map-screen craft pass, the
 phase-gated screen switch, and four saturating counters -- so the tests drive each alone. **What only the
 ARM fixes.** `Map_nCraftCount` is read with **LDRB** (0x95524, 0x955F4): an unsigned byte. And the empty-
 craft exit is `CMP R3,#0 / BLS loc_9560C` at 0x9552C, which jumps **into** the clock block rather than past
@@ -1073,11 +1094,13 @@ This is the shortest chain that produces a real game session, in dependency orde
 atexit registrars it installs. The step family — `Map_ProbeStepOccupants` in unit 70 and `Unit_CanStepTo` in
 unit 71 — was the last game-behaviour gap in the subsystem.
 
-`strat` is still the weakest subsystem by bytes: 122,660 of 160,496 (76.4%), and `Geoscape_Draw` alone is
-33,744 of the 37,836 left. Both geoscape pointer handlers, the map select test they call, both map click
+`strat` is still the weakest subsystem by bytes: 124,868 of 160,496 (77.8%), and `Geoscape_Draw` alone is
+33,744 of the 35,628 left. Both geoscape pointer handlers, the map select test they call, both map click
 handlers they install, the per-tick strateg event pass, the strateg icon pass, the clock strip, the whole
-`Geoscape_DrawScreen` frame, the pulse tick and the map-target arm are in now — what is left in the geoscape
-is `Geoscape_Draw` itself plus `Geoscape_DrawGlobeHover` (2,208 B) and `BaseFac_BuildStatusMsg` (1,520 B).
+`Geoscape_DrawScreen` frame, the pulse tick, the map-target arm and the globe hover frame are in now — what
+is left in the geoscape is `Geoscape_Draw` itself (33,744 B) plus `BaseFac_BuildStatusMsg` (1,520 B),
+`BasePlane_ResetDetailState` (328 B) and the three 12-byte atexit registrars -- 35,628 bytes, which is
+exactly the subsystem's remaining gap.
 `strat-ui` is 224 of 245 functions but 84,272 of 121,164 bytes (69.6%) — the small screen handlers are in, the
 big screens and their bring-up are not.
 

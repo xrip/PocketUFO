@@ -4017,3 +4017,215 @@ void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv)
     Pulse_Saturate(pEnv->pnMsgTimer);                                    /* 0x95BB4 */
     Pulse_Saturate(pEnv->pnPulseTimer);                                  /* 0x95BC8 */
 }
+
+/* 0x676AC..0x67780 and 0x67784..0x67854: one readout line -- " " then three
+ * itoa(Game_RandU16(900) + 100) joined by '.', drawn at x=5. The original reuses one scratch slot
+ * for every itoa and appends with unbounded strcat into a 56-byte stack buffer (psz @ sp+0x20, with
+ * the 92-byte scratch right behind it); the port bounds every append with pufo_strcat. */
+static void GlobeHover_DrawReadout(i32 nY)
+{
+    char szText[64];
+    char szNum[16];
+    i32  i;
+
+    szText[0] = ' ';                                                     /* asc_AADB8 */
+    szText[1] = '\0';
+
+    for (i = 0; i < PUFO_GLOBE_READOUT_PARTS; ++i) {
+        if (i != 0) {
+            (void)pufo_strcat(szText, ".", sizeof(szText));              /* asc_AB084, 0x67700 */
+        }
+        snprintf(szNum, sizeof(szNum), "%u",
+                 (u32)Game_RandU16(PUFO_GLOBE_READOUT_SPAN) + PUFO_GLOBE_READOUT_BASE);
+        (void)pufo_strcat(szText, szNum, sizeof(szText));
+    }
+    Text_DrawString(PUFO_GLOBE_READOUT_X, nY, szText);
+}
+
+i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv)
+{
+    char szText[200];
+    char szNum[16];
+    i32  nKey;
+    i32  nStripH;
+    i32  nStripTop;
+    i32  nMidY;
+    i32  nScanX;
+    i32  nSweepV;
+    i32  nSweepH;
+    i32  nTile;
+    i32  nWidth;
+    i32  nLabelY;
+    i32  i;
+
+    nStripH   = (i32)pEnv->pStripPad->uHeight;
+    nStripTop = 320 - nStripH;
+    /* 0x6733C..0x6734C is the halving triple (CMP #0 / ADDMI #1 / ASR #1), which is C's division,
+     * so the horizontal rule and the tile sample share one value. */
+    nMidY     = nStripTop / 2;
+
+    /* 1. 0x67290..0x672D8: the wash key. Only rolls 8 and 9 survive; everything below collapses to
+     * 0, and the key is what lets the globe underneath show through the index-0xFF wash. */
+    nKey = (i32)Game_RandU16(PUFO_GLOBE_WASH_KEY_SPAN);
+    if (nKey < PUFO_GLOBE_WASH_KEY_MIN) {
+        nKey = 0;                                                        /* 0x672B4 MOVLT */
+    }
+    SoftSurf_BlitSrcRect(0, 0, 240, 320, PUFO_GLOBE_WASH_IDX, 255, 255, nKey); /* 0x672D8 */
+
+    /* 2. 0x672DC..0x67450: the crosshair, all in index 0x32 / 0xC8 / 0x32. */
+    SoftSurf_BlitRectProxy(0, 120, 0, 1, nStripTop,
+                           PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                           PUFO_GLOBE_RULE_LOW);                        /* 0x67314 */
+    SoftSurf_BlitRectProxy(0, 0, nMidY, 240, 1,
+                           PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                           PUFO_GLOBE_RULE_LOW);                        /* 0x67350 */
+    for (i = 0; i < PUFO_GLOBE_TICK_COUNT; ++i) {
+        const i32 nTick = (i + PUFO_GLOBE_TICK_BASE) * (i + PUFO_GLOBE_TICK_BASE); /* 0x6736C */
+
+        SoftSurf_BlitRectProxy(0, nTick, nMidY - 1, 1, 3,
+                               PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                               PUFO_GLOBE_RULE_LOW);                    /* 0x673A0 */
+        SoftSurf_BlitRectProxy(0, 240 - nTick, nMidY - 1, 1, 3,
+                               PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                               PUFO_GLOBE_RULE_LOW);                    /* 0x673E0 */
+        SoftSurf_BlitRectProxy(0, 119, nTick, 3, 1,
+                               PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                               PUFO_GLOBE_RULE_LOW);                    /* 0x67408 */
+        SoftSurf_BlitRectProxy(0, 119, nStripTop - nTick, 3, 1,
+                               PUFO_GLOBE_RULE_IDX, PUFO_GLOBE_RULE_MID,
+                               PUFO_GLOBE_RULE_LOW);                    /* 0x6743C */
+    }
+
+    /* 3. 0x67450..0x67494: the bottom panel. While it is still expanding the function stops here
+     * and the scan animation, the readouts and the labels never run. */
+    if (!Ui_AnimExpandBlit(pEnv->pAnim, 0, nStripTop, PUFO_GLOBE_PANEL_WIDTH,
+                           nStripH - PUFO_GLOBE_PANEL_INSET, PUFO_GLOBE_PANEL_IDX,
+                           PUFO_GLOBE_PANEL_SRC_X, PUFO_GLOBE_PANEL_SRC_Y,
+                           PUFO_GLOBE_PANEL_KEY, 3)) {
+        return 0;                                                        /* 0x67490 BEQ loc_67B10 */
+    }
+
+    /* 4. 0x67498..0x67674: the scan animation. */
+    SoftSurf_BlitSrcRect(160, 200, 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100); /* 0x674BC */
+    SoftSurf_BlitSrcRect(  5, 200, 75, 30, PUFO_GLOBE_WASH_IDX, 255, 255, 100); /* 0x674E0 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 10, 5 * (51 - nKey), 10, 10, 50, 10); /* 0x67510 */
+
+    nScanX  = *pEnv->pnScanX;
+    nSweepV = *pEnv->pnSweepV;
+    nSweepH = *pEnv->pnSweepH;
+
+    if (nScanX + PUFO_GLOBE_SCAN_X0 < PUFO_GLOBE_SCAN_SPAN) {           /* 0x6752C */
+        SoftSurf_BlitSrcRect(nScanX + PUFO_GLOBE_SCAN_X0, PUFO_GLOBE_SCAN_Y,
+                             PUFO_GLOBE_SCAN_W, PUFO_GLOBE_SCAN_H, PUFO_GLOBE_SCAN_IDX,
+                             PUFO_GLOBE_SCAN_MID, PUFO_GLOBE_SCAN_LOW,
+                             PUFO_GLOBE_SCAN_KEY);                       /* 0x67550 */
+    }
+    if (PUFO_GLOBE_SCAN_SPAN - nScanX > PUFO_GLOBE_SCAN_X0) {           /* 0x67560 */
+        SoftSurf_BlitSrcRect(PUFO_GLOBE_SCAN_SPAN - nScanX, PUFO_GLOBE_SCAN_Y,
+                             PUFO_GLOBE_SCAN_W, PUFO_GLOBE_SCAN_H, PUFO_GLOBE_SCAN_IDX,
+                             PUFO_GLOBE_SCAN_MID, PUFO_GLOBE_SCAN_LOW,
+                             PUFO_GLOBE_SCAN_KEY);                       /* 0x67584 */
+    }
+    if (nSweepV < PUFO_GLOBE_SWEEP_V_GATE) {                             /* 0x67594 */
+        SoftSurf_BlitRectProxy(0, 2 * (nSweepV + PUFO_GLOBE_SWEEP_V_BASE), PUFO_GLOBE_SWEEP_Y,
+                               1, PUFO_GLOBE_SWEEP_V_H, PUFO_GLOBE_SWEEP_IDX,
+                               PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x675C0 */
+        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_V_SPAN - 2 * nSweepV, PUFO_GLOBE_SWEEP_Y,
+                               1, PUFO_GLOBE_SWEEP_V_H, PUFO_GLOBE_SWEEP_IDX,
+                               PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x675EC */
+    }
+    if (nSweepH < PUFO_GLOBE_SWEEP_H_GATE) {                             /* 0x67600 */
+        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_X,
+                               2 * (nSweepH + PUFO_GLOBE_SWEEP_H_BASE),
+                               PUFO_GLOBE_SWEEP_H_W, 1, PUFO_GLOBE_SWEEP_IDX,
+                               PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x6762C */
+        SoftSurf_BlitRectProxy(0, PUFO_GLOBE_SWEEP_X,
+                               2 * (PUFO_GLOBE_SWEEP_H_SPAN - nSweepH),
+                               PUFO_GLOBE_SWEEP_H_W, 1, PUFO_GLOBE_SWEEP_IDX,
+                               PUFO_GLOBE_SWEEP_MID, PUFO_GLOBE_SWEEP_LOW); /* 0x67658 */
+    }
+
+    /* 0x67664..0x676A8: all three counters advance after the drawing, the scan wraps once it
+     * passes 320, and the sweep pair zeroes together -- nGlobeSweepV + 1 > 40 clears both. */
+    ++nSweepV;
+    ++nSweepH;
+    ++nScanX;
+    if (nScanX > PUFO_GLOBE_SCAN_WRAP) {                                 /* 0x67684 */
+        nScanX = 0;
+    }
+    if (nSweepV > PUFO_GLOBE_SWEEP_V_WRAP) {                             /* 0x67694 CMP #0x28 */
+        nSweepV = 0;
+        nSweepH = 0;
+    }
+    *pEnv->pnScanX  = nScanX;
+    *pEnv->pnSweepV = nSweepV;
+    *pEnv->pnSweepH = nSweepH;
+
+    /* 5. 0x676AC..0x67854: the two readout lines. Six rolls per frame, none buffered. */
+    GlobeHover_DrawReadout(PUFO_GLOBE_READOUT_Y0);
+    GlobeHover_DrawReadout(PUFO_GLOBE_READOUT_Y1);
+
+    /* 6. 0x67858..0x67894: the pending pick and the hovered tile. */
+    *pEnv->pnPendingPickX = pEnv->pView->nPickX;                         /* 0x6786C */
+    *pEnv->pnPendingPickY = pEnv->pView->nPickY;                         /* 0x67874 */
+    nTile = (i32)Smap_GetTileAtScreen(pEnv->pView, pEnv->pTiles, 120, nMidY); /* 0x67894 */
+    (void)Gfx_PackRgb565Pair(pEnv->pColor, 10, 200, 10, 10, 50, 10);    /* 0x678B8 */
+
+    if (nTile == PUFO_REGION_ID_NONE) {
+        /* 0x67AC0..0x67AEC: ocean gets the no-build label and nothing else. It is the same TEXTS
+         * record the region arm would reach for tile 0x89 -- 905 + 0x89 = 1042 -- which is why the
+         * ocean and the unbuildable region read identically. */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_GLOBE_TEXT_OCEAN);
+        nWidth  = Text_MeasureWidth(szText);                             /* 0x67AE8 */
+        nLabelY = PUFO_GLOBE_LABEL_Y_NAME;                               /* 0x67AEC */
+    } else {
+        /* 0x678DC..0x67940: "Terrain: " + the region's own name, centred at y=250. */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_GLOBE_TEXT_TERRAIN);
+        (void)pufo_strcat(szText,
+                          pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE
+                              * (PUFO_GLOBE_TEXT_REGION0 + nTile), sizeof(szText)); /* 0x67914 */
+        nWidth = Text_MeasureWidth(szText);                              /* 0x67928 */
+        Text_DrawString(120 - nWidth / 2, PUFO_GLOBE_LABEL_Y_NAME, szText); /* 0x67940 */
+
+        /* 0x67950..0x679D8: "Base cost: " + the region's price + "$", centred at y=270, and only
+         * while the placement-pending byte is clear.
+         *
+         * Deviation: 0x67980 indexes aNewBaseCostByRegion[tile - 0x80] with no range test, so a tile
+         * outside 0x80..0x89 reads past the ten-entry table. The shipped tile grid carries only
+         * 0x80..0x89 and 0xFF, and 0xFF takes the other arm; the port skips the cost line for an
+         * out-of-range tile instead of reading out of bounds. */
+        if (nTile >= PUFO_REGION_ID_FIRST
+            && nTile < PUFO_REGION_ID_FIRST + PUFO_REGION_ID_COUNT) {
+            DrawScreen_CopyTextRec(szText, sizeof(szText),
+                                   pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_GLOBE_TEXT_COST);
+            snprintf(szNum, sizeof(szNum), "%u",
+                     pEnv->paRegionCost[nTile - PUFO_REGION_ID_FIRST]); /* 0x67980 */
+            (void)pufo_strcat(szText, szNum, sizeof(szText));           /* 0x6798C */
+            (void)pufo_strcat(szText, "$", sizeof(szText));             /* 0x67998 asc_AB1D8 */
+            if (pEnv->pbPlacementPending == NULL || *pEnv->pbPlacementPending == 0) { /* 0x679A8 */
+                nWidth = Text_MeasureWidth(szText);                     /* 0x679BC */
+                Text_DrawString(120 - nWidth / 2, PUFO_GLOBE_LABEL_Y_COST, szText); /* 0x679D8 */
+            }
+        }
+
+        /* 0x679F0..0x67A08: the confirm control, centred on 120 and pinned to y=290. */
+        if (pEnv->pCtlConfirm != NULL) {
+            pEnv->pCtlConfirm->x = (i16)(120 - (pEnv->pCtlConfirm->uWidth >> 1)); /* 0x679F0 */
+            pEnv->pCtlConfirm->y = PUFO_GLOBE_LABEL_Y_BUILD;            /* 0x67A00 */
+            (void)UiControl_BlitActivePad(pEnv->pCtlConfirm, pEnv->pfnCtlBlit,
+                                          pEnv->pfnCtlBlitEx, pEnv->pCtlBlitUser); /* 0x67A08 */
+        }
+
+        /* 0x67A34..0x67A6C: the caption over it, drawn by the shared tail below. */
+        (void)Gfx_PackRgb565Pair(pEnv->pColor, 68, 244, 252, 4, 70, 75); /* 0x67A34 */
+        DrawScreen_CopyTextRec(szText, sizeof(szText),
+                               pEnv->pTextRecs + PUFO_TEXT_REC_STRIDE * PUFO_GLOBE_TEXT_BUILD);
+        nWidth  = Text_MeasureWidth(szText);                             /* 0x67A68 */
+        nLabelY = PUFO_GLOBE_LABEL_Y_BUILD;                              /* 0x67A6C */
+    }
+
+    Text_DrawString(120 - nWidth / 2, nLabelY, szText);                 /* 0x67B08, both arms land here */
+    return nTile;                                                        /* 0x67B0C, the caller's bPendingRegionId */
+}

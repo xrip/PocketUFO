@@ -2351,4 +2351,125 @@ typedef struct GeoscapePulseEnv {
 
 void Geoscape_PulseUpdate(const GeoscapePulseEnv *pEnv);
 
+/* ------------------------------------------------- the new-base globe hover frame
+ *
+ * Evidence: Geoscape_DrawGlobeHover @ 0x6727c (2,208 B), reached from the geoscape dispatcher's
+ * jumptable default arm (screen ids 13 and 14) at 0x91D8C. That dispatcher is still unported, so it
+ * is named by address only. The caller loads nSmapCursorX / nSmapCursorY into R1 / R2 first, but the
+ * callee's prologue pushes only R0 (0x67280), so those two are dead; the callee's return value is
+ * stored with STRB into bPendingRegionId @ 0x159DF4.
+ *
+ * 1. 0x67290..0x672D8: the wash key is Game_RandU16(10) and any roll below 8 becomes 0, so only 8
+ *    and 9 survive. The whole 240x320 surface is washed with palette index 0xFF at that key, which is
+ *    what lets the globe show through on two rolls out of ten.
+ * 2. 0x672DC..0x67450: the crosshair. A 1-wide rule at x=120 from y=0 down to 320 - uHeight, a
+ *    1-tall rule across the full width at (320 - uHeight) / 2 -- the halving triple at 0x6733C, so
+ *    plain C division -- and eight tick marks at (i + 3)^2, that is 9, 16, 25, 36, 49, 64, 81, 100,
+ *    mirrored on both axes. All in index 0x32 / 0xC8 / 0x32.
+ * 3. 0x67450..0x67494: the bottom panel opens through Ui_AnimExpandBlit(0, 320 - uHeight, 236,
+ *    uHeight - 6, index 4, source 0x46/0x4B, key 0xC8, mode 3). While the animation is still
+ *    expanding the function returns 0 here and nothing below it runs.
+ * 4. 0x67498..0x67674: the scan animation. Two 75x30 dark rects at (160, 200) and (5, 200), then a
+ *    colour pair whose green is 5 * (51 - key) -- 255 for the ordinary key 0, 210 or 215 when the wash
+ *    let the globe through -- then a 10x72 strip at y=242 driven by nGlobeScanX (a left copy gated on
+ *    scanX + 10 < 230 and a right copy gated on 230 - scanX > 10), a pair of vertical rules driven by
+ *    nGlobeSweepV while it is under 37 and a pair of horizontal rules driven by nGlobeSweepH while it
+ *    is under 15. The counters advance after the drawing (0x67664..0x676A8): all three go up by one,
+ *    nGlobeScanX wraps when it passes 320, and nGlobeSweepV + 1 > 40 zeroes BOTH sweep counters.
+ * 5. 0x676AC..0x67854: two readout lines at (5, 200) and (5, 214). Each is " " followed by three
+ *    itoa(Game_RandU16(900) + 100) joined by '.' -- six rolls per frame, none of them buffered.
+ * 6. 0x67858..0x67894: the pending pick. The viewport's nPickX / nPickY are copied into the facility
+ *    block at +0x62C / +0x630 (0x159D94 / 0x159D98), and the hovered tile is Smap_GetTileAtScreen at
+ *    (120, (320 - uHeight) / 2) -- 0x67884..0x67890 is the halving triple again, so the odd +1 the
+ *    decompiler shows for uHeight > 0x140 is just C's truncation toward zero, not a special case.
+ * 7. 0x678B8..0x67B0C: the labels. Ocean (tile 0xFF) gets TEXTS[1042] centred at y=250 and nothing
+ *    else. A region gets TEXTS[1136] + TEXTS[905 + tile] centred at 250, then TEXTS[1137] +
+ *    itoa(aNewBaseCostByRegion[tile - 0x80]) + "$" centred at 270 -- only while bPlacementPending
+ *    @ 0x1870AC is clear -- then the confirm control moved to (120 - uWidth/2, 290), blitted, and
+ *    TEXTS[1603] centred over it at 290. The tile is the return value, which the caller stores as
+ *    bPendingRegionId.
+ *
+ * The four label sources are TEXTS records reached by absolute address instead of through the base:
+ * 0xE7B3A, 0xEC680, 0xEC74D and 0x103C77 are aTextRecs + 205*1042, +205*1136, +205*1137 and
+ * +205*1603. With lang.dat loaded they read "Can`t build here", "Terrain: ", "Base cost: " and
+ * "Build base". The region names are TEXTS[1033..1041] -- nine regions -- and TEXTS[1042] doubles as
+ * the ocean label, which is why tile 0x89, cost 0 in aNewBaseCostByRegion, is the unbuildable slot. */
+#define PUFO_GLOBE_TEXT_OCEAN     1042 /* "Can`t build here", also the name of tile 0x89 */
+#define PUFO_GLOBE_TEXT_TERRAIN   1136 /* "Terrain: " */
+#define PUFO_GLOBE_TEXT_COST      1137 /* "Base cost: " */
+#define PUFO_GLOBE_TEXT_BUILD     1603 /* "Build base" */
+#define PUFO_GLOBE_TEXT_REGION0    905 /* TEXTS[905 + tile] is the hovered region's name */
+
+#define PUFO_GLOBE_WASH_IDX          0xFF
+#define PUFO_GLOBE_WASH_KEY_SPAN     10 /* Game_RandU16(10) at 0x67290 */
+#define PUFO_GLOBE_WASH_KEY_MIN       8 /* 0x672AC: rolls 0..7 collapse to 0 */
+#define PUFO_GLOBE_RULE_IDX          0x32
+#define PUFO_GLOBE_RULE_MID          0xC8
+#define PUFO_GLOBE_RULE_LOW          0x32
+#define PUFO_GLOBE_TICK_COUNT          8
+#define PUFO_GLOBE_TICK_BASE           3 /* the tick offsets are (i + 3)^2 */
+#define PUFO_GLOBE_PANEL_IDX           4
+#define PUFO_GLOBE_PANEL_SRC_X      0x46
+#define PUFO_GLOBE_PANEL_SRC_Y      0x4B
+#define PUFO_GLOBE_PANEL_KEY        0xC8
+#define PUFO_GLOBE_PANEL_WIDTH       236 /* 0x67484 MOV R3, #0xEC */
+#define PUFO_GLOBE_PANEL_INSET         6 /* 0x67470 SUB R3, R0, #6 */
+#define PUFO_GLOBE_READOUT_X           5
+#define PUFO_GLOBE_READOUT_Y0        200
+#define PUFO_GLOBE_READOUT_Y1        214
+#define PUFO_GLOBE_READOUT_SPAN     0x383 /* Game_RandU16(900) at 0x676D0 and five more */
+#define PUFO_GLOBE_READOUT_BASE      100 /* every readout number is roll + 100 */
+#define PUFO_GLOBE_READOUT_PARTS       3
+#define PUFO_GLOBE_SCAN_IDX            8
+#define PUFO_GLOBE_SCAN_MID           80
+#define PUFO_GLOBE_SCAN_LOW           85
+#define PUFO_GLOBE_SCAN_KEY          100
+#define PUFO_GLOBE_SCAN_X0            10
+#define PUFO_GLOBE_SCAN_SPAN         230 /* 0x6752C / 0x67560: the two copies' bounds */
+#define PUFO_GLOBE_SCAN_Y            242
+#define PUFO_GLOBE_SCAN_W             10
+#define PUFO_GLOBE_SCAN_H             72
+#define PUFO_GLOBE_SCAN_WRAP         320 /* 0x67684: nGlobeScanX resets when it passes this */
+#define PUFO_GLOBE_SWEEP_IDX        0x0A
+#define PUFO_GLOBE_SWEEP_MID        0xFF
+#define PUFO_GLOBE_SWEEP_LOW        0x0A
+#define PUFO_GLOBE_SWEEP_X           160
+#define PUFO_GLOBE_SWEEP_Y           200
+#define PUFO_GLOBE_SWEEP_H_W          75
+#define PUFO_GLOBE_SWEEP_V_H          30
+#define PUFO_GLOBE_SWEEP_V_GATE       37 /* 0x67594: the vertical pair stops drawing above this */
+#define PUFO_GLOBE_SWEEP_H_GATE       15 /* 0x67600: the horizontal pair stops above this */
+#define PUFO_GLOBE_SWEEP_V_WRAP       40 /* 0x67694 CMP #0x28: both counters zero past this */
+#define PUFO_GLOBE_SWEEP_V_BASE       80 /* 0x675C4 x = 2 * (nGlobeSweepV + 80) */
+#define PUFO_GLOBE_SWEEP_V_SPAN      235 /* 0x675EC x = 235 - 2 * nGlobeSweepV */
+#define PUFO_GLOBE_SWEEP_H_BASE      100 /* 0x6762C y = 2 * (nGlobeSweepH + 100) */
+#define PUFO_GLOBE_SWEEP_H_SPAN      115 /* 0x67658 y = 2 * (115 - nGlobeSweepH) */
+#define PUFO_GLOBE_LABEL_Y_NAME      250
+#define PUFO_GLOBE_LABEL_Y_COST      270
+#define PUFO_GLOBE_LABEL_Y_BUILD     290
+
+typedef struct GeoscapeGlobeHoverEnv {
+    const PadImage   *pStripPad;          /* the object [0x186BBC] points at; uHeight is the strip */
+    const u8         *pTiles;             /* the current zoom tile grid, [0x186B04]->pData */
+    SmapView         *pView;              /* gSmapCam @ 0x1863E8 */
+    UiAnimBlitEnv    *pAnim;              /* the geoscape anim root @ 0x1864F8 */
+    i32              *pnPendingPickX;     /* abFacilityGrid + 0x62C @ 0x159D94 */
+    i32              *pnPendingPickY;     /* abFacilityGrid + 0x630 @ 0x159D98 */
+    i32              *pnScanX;            /* nGlobeScanX @ 0x159E00 */
+    i32              *pnSweepV;           /* nGlobeSweepV @ 0x159DFC */
+    i32              *pnSweepH;           /* nGlobeSweepH @ 0x159DF8 */
+    const u8         *pbPlacementPending; /* bPlacementPending @ 0x1870AC, gates the cost line */
+    UiControl        *pCtlConfirm;        /* unk_186BA4, the "Build base" button */
+    const char       *pTextRecs;          /* aTextRecs @ 0xB38D0 */
+    const u32        *paRegionCost;       /* aNewBaseCostByRegion @ 0xAB488, indexed tile - 0x80 */
+    GfxColorEnv      *pColor;
+    UiControlBlitFn   pfnCtlBlit;
+    UiControlBlitFn   pfnCtlBlitEx;
+    void             *pCtlBlitUser;
+} GeoscapeGlobeHoverEnv;
+
+/* Returns the hovered tile, which the caller stores as bPendingRegionId, or 0 while the panel
+ * animation is still expanding (0x67490 ANDS / BEQ loc_67B10). */
+i32 Geoscape_DrawGlobeHover(const GeoscapeGlobeHoverEnv *pEnv);
+
 #endif /* PUFO_GEOSCAPE_H */

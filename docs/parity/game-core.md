@@ -15594,3 +15594,91 @@ self-satisfying. One fixture lesson recorded here because it cost a crash: PtrAr
 item it drops and PtrArray_Remove frees the slot array and installs a freshly malloc'd one, so a test
 that hands in a static array crashes, and a test that keeps a second handle on the items double-frees
 after a removal. The fixture now hands in malloc'd storage and lets the PtrArray own both.
+
+Unit 85: Geoscape_DrawGlobeHover @ 0x6727c (2,208 B)
+
+The new-base globe hover frame: the crosshair, the scan animation, the two random readout lines, and the
+terrain / cost / Build base labels over the hovered region. It is reached from the geoscape dispatcher's
+jumptable default arm (screen ids 13 and 14) at 0x91D8C; that dispatcher is still unported, so it is
+named by address only.
+
+### What the frame does
+
+- 0x67290..0x672D8: the wash key is Game_RandU16(10) and any roll below 8 collapses to 0 (MOVLT at
+  0x672B4), so only 8 and 9 survive. The whole 240x320 surface is then washed with palette index 0xFF at
+  that key. Key 0 leaves every pixel alone, which is how the globe underneath shows through.
+- 0x672DC..0x67450: the crosshair -- a 1-wide rule at x=120 from y=0 to 320 - uHeight, a 1-tall rule
+  across the full width at (320 - uHeight) / 2, and eight tick marks at (i + 3)^2 = 9, 16, 25, 36, 49,
+  64, 81, 100 mirrored on both axes.
+- 0x67450..0x67494: the bottom panel opens through Ui_AnimExpandBlit(0, 320 - uHeight, 236, uHeight - 6,
+  index 4, source 0x46/0x4B, key 0xC8, mode 3). While the animation is incomplete the function returns 0
+  there (ANDS / BEQ loc_67B10) and the scan animation, the readouts, the labels AND the counter advance
+  never run.
+- 0x67498..0x676A8: the scan animation and its counters. Two 75x30 dark rects at (160, 200) and (5, 200),
+  a colour pair whose green is 5 * (51 - key) -- 255 for the ordinary key 0, 210 or 215 when the wash let
+  the globe through -- a 10x72 strip at y=242 in two copies driven by nGlobeScanX @ 0x159E00 (left copy
+  gated on scanX + 10 < 230, right on 230 - scanX > 10), a vertical pair driven by nGlobeSweepV @ 0x159DFC
+  while it is under 37, and a horizontal pair driven by nGlobeSweepH @ 0x159DF8 while it is under 15. All
+  three counters then step by one; nGlobeScanX zeroes past 320, and nGlobeSweepV + 1 > 40 zeroes BOTH
+  sweep counters -- one CMP at 0x67694, two STRGT.
+- 0x676AC..0x67854: two readout lines at (5, 200) and (5, 214), each " " plus three
+  itoa(Game_RandU16(900) + 100) joined by '.'. Six rolls per frame, none of them buffered.
+- 0x67858..0x67894: the pending pick. gSmapCam.nPickX / nPickY are copied into abFacilityGrid + 0x62C /
+  +0x630 (0x159D94 / 0x159D98, now nPendingPickX / nPendingPickY) BEFORE this frame's
+  Smap_GetTileAtScreen at 0x67894, so the stored pair is the PREVIOUS frame's pick.
+- 0x678B8..0x67B0C: the labels. Ocean (0xFF) gets TEXTS[1042] centred at y=250 and nothing else. A region
+  gets TEXTS[1136] + TEXTS[905 + tile] centred at 250, then TEXTS[1137] +
+  itoa(aNewBaseCostByRegion[tile - 0x80]) + "$" centred at 270 while bPlacementPending @ 0x1870AC is
+  clear, then the confirm control moved to (120 - uWidth/2, 290) and blitted, then TEXTS[1603] centred
+  over it at 290. The tile is the return value, which the caller stores with STRB into
+  bPendingRegionId @ 0x159DF4.
+
+### The four label sources are TEXTS records, not literals
+
+0xE7B3A, 0xEC680, 0xEC74D and 0x103C77 read like string literals in the decompilation but sit past the
+end of .data's initialised span: the section declares a virtual size of 929,136 bytes and only 26,624
+bytes of raw data, so everything from 0xAC800 up is zero-filled at load. Each address is an exact
+multiple of 205 past aTextRecs @ 0xB38D0 -- 205*1042, 205*1136, 205*1137 and 205*1603 -- so they are
+TEXTS records reached by absolute address instead of through the base. Read out of lang.dat they are
+"Can`t build here", "Terrain: ", "Base cost: " and "Build base".
+
+That also explains the ocean branch. TEXTS[1042] is the record TEXTS[905 + 0x89] would name, so the ocean
+tile and region 0x89 read identically, and aNewBaseCostByRegion[9] == 0 fits 0x89 being the unbuildable
+slot. The nine buildable regions are TEXTS[1033..1041].
+
+### The halving triple, twice more
+
+0x6733C..0x6734C and 0x67884..0x67890 are both `RSB #0x140 / CMP #0 / ADDMI #1 / ASR #1`, which is C's
+(320 - uHeight) / 2. Hex-Rays renders the second as `v25 = 320 - h; if (h > 0x140) v25 = 321 - h;
+v25 >> 1`, which reads like a special case for a tall strip and is not one -- it is the same
+truncation-toward-zero the ADDMI triple implements. The port writes the division, and the tests pin the
+sample row for two different strip heights.
+
+### Deviation
+
+0x67980 indexes aNewBaseCostByRegion[tile - 0x80] with no range test, so a tile outside 0x80..0x89 reads
+past the ten-entry table. The shipped tile grid carries only 0x80..0x89 and 0xFF, and 0xFF takes the
+other arm; the port skips the cost line for an out-of-range tile rather than reading out of bounds.
+
+### IDB corrections this unit
+
+- unk_159E00 / dword_159DFC / dword_159DF8 renamed to nGlobeScanX / nGlobeSweepV / nGlobeSweepH, and the
+  two previously unnamed dwords at 0x159D94 / 0x159D98 named nPendingPickX / nPendingPickY.
+- unk_E7B3A / unk_EC680 / unk_EC74D / unk_103C77 renamed to aTextCantBuildHere / aTextTerrainPrefix /
+  aTextBaseCostPrefix / aTextBuildBaseCaption (430 -> 439 on record).
+- aNewBaseCostByRegion retyped from a lone dword to u32[10]: 800000, 600000, 1000000, 800000, 750000,
+  650000, 900000, 950000, 800000, 0.
+- A function comment at 0x6727c and line comments at 0x672B4 (the key collapse), 0x6733C and 0x67884 (the
+  two halving triples), 0x67490 (the animation gate), 0x67694 (the paired sweep reset), 0x6786C (the
+  pending-pick ordering), 0x67914 (the region-name record), 0x67980 (the unchecked cost index) and
+  0x67AC0 (the ocean label).
+
+108 new checks in tests/test_geoscape.c. Two mutations of the port were run to confirm the checks are not
+self-satisfying: the tick base changed from 3 to 4 turns five checks red, and the horizontal sweep gate
+changed from 15 to 16 turns two red. The label checks use the differential method -- each case runs twice,
+once with the TEXTS record intact and once with its first byte zeroed, and only the pixels that differ are
+asserted -- because the frame paints a solid panel and two dark rects behind every label. Two helper bugs
+surfaced while writing them and are recorded because either would have made a whole group vacuous:
+tallying the blanked run's colour instead of the drawn run's makes every label look like it has the same
+ink, and a fixture runner that does not restore the animation counters makes the two runs of one
+differential differ for reasons that have nothing to do with the record being blanked.

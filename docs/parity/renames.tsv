@@ -450,3 +450,12 @@ unk_1864F4	bGeoscapeScrollUp	Geoscape_PulseUpdate @ 0x954DC: +25 on the dy term 
 unk_1864F5	bGeoscapeScrollRight	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: +25 on the dx term at 0x95724
 unk_1864F6	bGeoscapeScrollDown	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: -25 on the dy term at 0x9572C; the nav Next button writes it
 unk_1864F7	bGeoscapeScrollLeft	Geoscape_PulseUpdate @ 0x95660 cases 0 and 2: -25 on the dx term at 0x95734
+unk_159E00	nGlobeScanX	Geoscape_DrawGlobeHover @ 0x6727C: drives the two 10x72 strips at y=242 (x = nGlobeScanX + 10 and 230 - nGlobeScanX), steps at 0x67680 and zeroes past 320 at 0x67684
+dword_159DFC	nGlobeSweepV	Geoscape_DrawGlobeHover @ 0x6727C: the vertical sweep pair at x = 2*(n+80) and 235-2*n, drawn while n < 37 (0x67594); steps at 0x67670 and, past 40, zeroes itself AND nGlobeSweepH (0x67694)
+dword_159DF8	nGlobeSweepH	Geoscape_DrawGlobeHover @ 0x6727C: the horizontal sweep pair at y = 2*(n+100) and 2*(115-n), drawn while n < 15 (0x67600); steps at 0x67674 and is zeroed by nGlobeSweepV's wrap
+unk_E7B3A	aTextCantBuildHere	aTextRecs + 205*1042, read by absolute address at 0x67AC0. lang.dat: "Can`t build here". It is also the record TEXTS[905 + 0x89] names, so the ocean tile and tile 0x89 read identically
+unk_EC680	aTextTerrainPrefix	aTextRecs + 205*1136, read at 0x678DC. lang.dat: "Terrain: ", the prefix of the hovered region's name line at y=250
+unk_EC74D	aTextBaseCostPrefix	aTextRecs + 205*1137, read at 0x67950. lang.dat: "Base cost: ", the prefix of the price line at y=270, gated on bPlacementPending @ 0x1870AC
+unk_103C77	aTextBuildBaseCaption	aTextRecs + 205*1603, read at 0x67A44. lang.dat: "Build base", centred over the confirm control at y=290
+0x159D94	nPendingPickX	unnamed until unit 85. abFacilityGrid + 0x62C, written at 0x6786C with gSmapCam.nPickX as it stood BEFORE this frame's Smap_GetTileAtScreen at 0x67894
+0x159D98	nPendingPickY	unnamed until unit 85. abFacilityGrid + 0x630, written at 0x67874 with gSmapCam.nPickY, same ordering
